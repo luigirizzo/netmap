@@ -1,0 +1,141 @@
+    	Netmap - a framework for fast packet I/O
+    VALE -  a Virtual Local Ethernet using the netmap API
+===================================================================
+
+NETMAP is a framework for very fast packet I/O from userspace.
+VALE implements an equally fast software switch using the netmap API.
+Both can deal with line rate on real or emulated 10 Gbit ports.
+See details at
+
+	http://info.iet.unipi.it/~luigi/netmap/
+	http://info.iet.unipi.it/~luigi/vale/
+
+In this directory you can find source code (BSD-Copyright)
+for FreeBSD and Linux. Note that recent FreeBSD distributions
+already include both NETMAP and VALE.
+
+Last update: 2013-03-12 (start hosting on code.google.com/p/netmap)
+
+Installation instructions 
+-------------------------
+A kernel module (netmap.ko or netmap_lin.ko) implements the whole
+VALE switch and the core NETMAP routines.
+Netmap-aware device drivers are needed to use netmap on ethernet ports.
+To date, we have support for Intel ixgbe (10G), e1000/e1000e/igb (1G),
+Realtek 8169 (1G) and Nvidia (1G).
+
+  FreeBSD
+  --------
+  (FreeBSD HEAD and stable/9 already include netmap in the source tree
+  so you should not need the code in this distribution.)
+  + add 'device netmap' to your kernel config file and rebuild a kernel.
+    This will include the netmap module and netmap support in the device
+    drivers.  Alternatively, you can build standalone modules
+    (netmap, ixgbe, em, lem, re, igb)
+
+  Linux
+  -------
+  + make sure you have kernel sources matching your installed kernel,
+    so the build system can patch the sources and build netmap-enabled
+    drivers. If kernel sources are in /a/b/c/linux-A.B.C/ , then you should do
+
+	cd netmap/LINUX
+	make KSRC=/a/b/c/linux-A.B.C/		# builds the kernel modules
+	make KSRC=/a/b/c/linux-A.B.C/ apps	# builds sample applications
+
+    You can omit KSRC if your kernel sources are in a standard place.
+  
+
+Applications
+-------------
+The directory examples/ contains some programs that use the netmap API
+
+    pkt-gen	a packet generator/receiver working at line rate at 10Gbit/s
+    bridge	a utility that bridges two interfaces or one interface
+		with the host stack
+    pcap.c	a simple libpcap-over-netmap library, and some test
+		code, to help porting pcap applications to netmap.
+		The library compiles as libnetmap.so, you can use it
+		to replace your libpcap.so.* 
+
+Testing
+-------
+pkt-gen is a generic test program which can act as a sender or receiver.
+It has a large number of options, but the simplest form is:
+
+    pkt-gen -i ix0 -f rx	# receive and print stats
+    pkt-gen -i ix0 -f tx -l 60	# send a stream of 60-byte packets
+
+(replace ix0 with the name of the interface or VALE port).
+This should be able to work at line rate (up to 14.88 Mpps on 10
+Gbit/interfaces, even higher on VALE) but note the following
+
+CAVEATS
+-------
+Before reporting slow send or receive speed on a physical interface,
+check ALL of the following:
+
+  + make sure the interface is up before invoking pkt-gen
+  + make sure that the netmap module and drivers are correctly
+    loaded and can allocate all the memory they need (check into
+    /var/log/messages or equivalent)
+
+    	These errors will generally cause a failure to register
+	the netmap port
+
+  + some switches/interfaces take a long time to (re)negotiate
+    the link after starting pkt-gen; in case, use the -w N option
+    to increase the initial delay to N seconds;
+
+    	This may cause inability to transmit, or lost packets for
+	the first few seconds of transmission
+
+  + make sure that the interface and switch you connect to has
+    flow control (FC) disabled (either via sysctl or ethtool).
+
+        If FC is enabled and the receiving end is unable to cope
+	with the traffic, the driver will try to slow down transmission,
+	sometimes to very low rates.
+
+  + a lot of hardware is not able to sustain line rate. For instance,
+    ixgbe has problems with receiving frames that are not multiple
+    of 64 bytes (with/without CRC depending on the driver); also on
+    transmissions, ixgbe tops at about 12.5 Mpps unless the driver
+    prefetches tx descriptors. igb does line rate in all configurations.
+    e1000/e1000e vary between 1.15 and 1.32 Mpps. re/r8169 is
+    extremely slow in sending (max 4-500 Kpps)
+
+
+Credits
+-------
+NETMAP and VALE are projects of the Universita` di Pisa,
+partially supported by Intel Research Berkeley, EU FP7 projects CHANGE
+and OPENLAB.
+
+Author:		Luigi Rizzo
+Contributors:
+		Giuseppe Lettieri
+		Marta Carbone
+		Gaetano Catalli
+		Matteo Landi
+
+References
+----------
+There are a few academic papers describing netmap, VALE and applications.
+You can find the papers at http://info.iet.unipi.it/~luigi/research.html
+
++ Luigi Rizzo,
+	netmap: a novel framework for fast packet I/O,
+	Usenix ATC'12, Boston, June 2012
+
++ Luigi Rizzo,
+	Revisiting network I/O APIs: the netmap framework,
+	Communications of the ACM 55 (3), 45-51, March 2012
+
++ Luigi Rizzo, Marta Carbone, Gaetano Catalli,
+	Transparent acceleration of software packet forwarding using netmap,
+	IEEE Infocom 2012, Orlando, March 2012
+
++ Luigi Rizzo, Giuseppe Lettieri,
+	VALE: a switched ethernet for virtual machines,
+	CoNext 2012, Nice, December 2012
