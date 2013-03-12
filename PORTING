@@ -1,0 +1,131 @@
+# $Id: PORTING 11964 2012-12-19 17:34:50Z luigi $
+
+Adding netmap support to network device drivers
+------------------------------------------------
+
+Netmap requires some small modifications to device drivers
+to support the new API. You will need to add small patches
+in 3-4 places in the original source, and implement typically
+5 new functions.
+
+Device driver patches
+------------------------
++ in the initial part of the source, after the device-specific
+  headers and prototypes have been declared, add the following
+    <pre>
+	+#if defined(DEV_NETMAP) || defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
+	+#include <dev/netmap/if_re_netmap.h>
+	+#endif /* !DEV_NETMAP */
+    </pre>
+    The place is typically ... in FreeBSD, and
+    ... on Linux.
+
+    The header really contains the new functions that implement
+    the netmap API. Including them inline simplifies the building
+    as it does not require to insert additional dependencies in the
+    build system.
+
+    On FreeBSD DEV_NETMAP is sufficient to detect whether netmap extensions
+    should be compiled in, whereas CONFIG_NETMAP and CONFIG_NETMAP_MODULE
+    are the Linux equivalent.
+
+    If a driver is made of multiple source files, you will need to include
+    the additional header in all the (few) patched files, preferably using
+    a macro such as NETMAP_FOO_MAIN to indicate the file where the
+    new functions should be compiled in.
+
++ near the end of the attach routine, once the ifnet/net_device structure
+  has been filled and initialized, add
+    <pre>
+	+#ifdef DEV_NETMAP
+	+	foo_netmap_attach(adapter);
+	+#endif /* DEV_NETMAP */
+    </pre>
+  The argument is either the ifnet or the private device descriptor.  
+  This is in foo_attach() on FreeBSD, and somewhere in the path of
+  XXX foo_open() in Linux
+
++ near the code called on device removal, add
+    <pre>
+	+#ifdef DEV_NETMAP
+	+	netmap_detach(ifp);
+	+#endif /* DEV_NETMAP */
+    </pre>
+
++ after the tx/rx rings have been initialized, add a patch like this:
+    <pre>
+	+#ifdef DEV_NETMAP
+	+	foo_netmap_config(priv);
+	+#endif /* DEV_NETMAP */
+    </pre>
+    The argument is typically the private device descriptor, or even
+    the struct ifnet/net_device.
+
++ in the interrupt dispatch routines, something like
+    <pre>
+	+#ifdef DEV_NETMAP
+	+       int dummy;
+	+       if (netmap_rx_irq(adapter->netdev, rx_ring->queue_index, &dummy))
+	+               return true;
+	+#endif /* DEV_NETMAP */
+	...
+	+#ifdef DEV_NETMAP
+	+       if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index))
+	+               return true; /* seems to be ignored */
+	+#endif /* DEV_NETMAP */
+     </pre>
+     to skip the normal processing and instead wake up the process in
+     charge of doing I/O
+
+New functions
+----------------
+The new functions serve to register the netmap-enabled device driver,
+support the enable/disable of netmap mode, attach netmap buffers to the
+NIC rings, and finally implement the handlers (*_txsync(), *_rxsync())
+called by the system calls.
+
+* foo_netmap_attach()
+    This is a relatively mechanical function. The purpose is to fetch from
+    the device descriptor information on the number of rings and buffers,
+    the way locks are used, and invoke netmap_attach().
+
+* foo_netmap_config()
+    This function is in charge of (over)writing the NIC rings with
+    pointers to the netmap buffers. Although this is device dependent,
+    we can often ignore the locking issue and expect that the locking is
+    already taken care of by the caller.
+
+    foo_netmap_config() only needs to run if the card is in netmap mode.
+    A quick way to check is to call netmap_ring_init() on one of the rings,
+    if the function returns NULL we can immediately exit.
+    Otherwise, we should run a couple of nested loops (on the rings,
+    and then on the buffers) to fill the NIC descriptors with the
+    addresses of the (preallocated) netmap buffers.
+
+    For the TX rings this can even be a no-op because these rings are
+    typically uninitialized, and the pointers can be overridden in the
+    txsync() routine.
+
+    For the receive ring, the operation is more critical because the
+    buffers should be available by the time the NIC is enabled.
+
+    Note that the device driver typically maintains head and tail pointers
+    to indicate which buffers are used. It might be convenient to retain
+    these indexes because may of the support routines, watchdogs etc.
+    depends on their values.
+
+    We should note that, especially on the receive ring, there might be
+    an offset between the indexes used in the netmap ring and those used
+    in the NIC ring (which might even be non-contiguous).
+
+* foo_netmap_reg()
+    support entering/exiting of netmap mode. Typically, lock, stop the device,
+    set/clear the netmap flag, and restart the device.
+    An unfortunate side effect of stopping and restarting the device is that
+    in many drivers the link is reinitialized, causing long delays for the
+    speed negotiations and spanning tree setup.
+
+
+* foo_netmap_txsync()
+
+* foo_netmap_rxsync()
