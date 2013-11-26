@@ -1,0 +1,90 @@
+NOTES on debugging netmap performance
+
+/*
+ * debugging support to analyse syscall behaviour
+ *	netmap_drop is the point where to drop
+
+	Path is:
+
+	./libthr/thread/thr_syscalls.c
+	lib/libc/i386/SYS.h
+	lib/libc/i386/sys/syscall.S
+
+	head/sys/kern/syscall.master
+	; Processed to created init_sysent.c, syscalls.c and syscall.h.
+	sys/kern/uipc_syscalls.c::sys_sendto()
+		sendit()
+		kern_sendit()
+		sosend()
+	sys/kern/uipc_socket.c::sosend()
+		so->so_proto->pr_usrreqs->pru_sosend(...)
+	sys/netinet/udp_usrreq.c::udp_usrreqs { }
+		.pru_sosend =           sosend_dgram,
+		.pru_send =             udp_send,
+		.pru_soreceive =        soreceive_dgram,
+	sys/kern/uipc_socket.c::sosend_dgram()
+		m_uiotombuf()
+		(*so->so_proto->pr_usrreqs->pru_send)
+	sys/netinet/udp_usrreq.c::udp_send()
+		sotoinpcb(so);
+		udp_output()
+			INP_RLOCK(inp);
+			INP_HASH_RLOCK(&V_udbinfo);
+		fill udp and ip headers
+		ip_output()
+
+	30	udp_send() before udp_output	
+	31	udp_output before ip_output
+	32	udp_output beginning
+	33	before in_pcbbind_setup
+	34	after in_pcbbind_setup
+	35	before prison_remote_ip4
+	36	after prison_remote_ip4
+	37	before computing udp
+
+	20	beginning of sys_sendto
+	21	beginning of sendit
+	22	sendit after getsockaddr
+	23	before kern_sendit
+	24	kern_sendit before getsock_cap()
+	25	kern_sendit before sosend()
+
+	40	sosend_dgram beginning
+	41	sosend_dgram after sbspace
+	42	sosend_dgram after m_uiotombuf
+	43	sosend_dgram after SO_DONTROUTE
+	44	sosend_dgram after pru_send (useless)
+
+	50	ip_output beginning
+	51	ip_output after flowtable
+	52	ip_output at sendit
+	53	ip_output after pfil_hooked
+	54	ip_output at passout
+	55	ip_output before if_output
+	56	ip_output after rtalloc etc.
+
+	60	uiomove print
+
+	70	pfil.c:: pfil_run_hooks beginning
+	71	print number of pfil entries
+
+	80	ether_output start
+	81	ether_output after first switch
+	82	ether_output after M_PREPEND
+	83	ether_output after simloop
+	84	ether_output after carp and netgraph
+	85	ether_output_frame before if_transmit()
+
+	90	ixgbe_mq_start (if_transmit) beginning
+	91	ixgbe_mq_start_locked before ixgbe_xmit
+
+FLAGS:
+	1	disable ETHER_BPF_MTAP
+	2	disable drbr stats update
+	4
+	8
+	16
+	32
+	64
+	128
+ */

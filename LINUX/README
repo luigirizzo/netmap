@@ -1,0 +1,154 @@
+# $Id: README 10863 2012-04-11 17:10:39Z luigi $
+
+NETMAP FOR LINUX
+----------------
+
+This directory contains a version of the "netmap" and "VALE" code for Linux.
+
+Netmap is a BSD-licensed framework that supports line-rate direct packet
+I/O even on 10GBit/s interfaces (14.88Mpps) with limited system load,
+and includes a libpcap emulation library to port applications.
+
+See
+
+	http://info.iet.unipi.it/~luigi/netmap/
+
+for more details. There you can also find the latest versions
+of the code and documentation as well as pre-built TinyCore
+images based on linux 3.0.3 and containing the netmap modules
+and some test applications.
+
+This version supports r8169, ixgbe, igb, e1000, e1000e and forcedeth.
+
+Netmap relies on a kernel module (netmap_lin.ko) and slightly modified
+device drivers. Userspace programs can use the native API (documented
+in netmap.4) or a libpcap emulation library.
+
+The FreeBSD and Linux versions share the same codebase, which
+is located in ../sys . For Linux we use some additional glue code,
+(bsd_glue.h).
+
+Device drivers are taken directly from the Linux distributions,
+and patched using the files in the patches/ directory.
+Common driver modifications are in the .h files in this directory.
+
+
+HOW TO BUILD THE CODE
+---------------------
+
+1. make sure you have kernel sources/headers matching your installed system
+
+2. do the following
+	make clean; make KSRC=/usr/src/linux-kernel-source-or-headers
+   this produces ./netmap_lin.ko and other kernel modules.
+
+3. to build sample applications, run
+	(cd ../examples; make )
+   (you will need the pthreads and libpcap-dev packages to build them)
+
+If you want support for additional drivers please have a look at
+ixgbe_netmap_linux.h and the patches in patches/
+The patch file are named as diff--DRIVER--LOW--HIGH--otherstuff
+where DRIVER is the driver name to patch, LOW and HIGH are the
+versions to which the patch applies (LOW included, HIGH excluded, so
+diff--r8169.c--20638--30300--ok applies from 2.6.38 to 3.3.0 (excluded)
+
+HOW TO USE THE CODE
+-------------------
+
+    REMEMBER
+	THIS IS EXPERIMENTAL CODE WHICH MAY CRASH YOUR SYSTEM.
+	USE IT AT YOUR OWN RISk.
+
+Whether you built your own modules, or are using the prebuilt
+TinyCore image, the following steps can be used for initial testing:
+
+1. unload any modules for the network cards you want to use, e.g.
+	sudo rmmod ixgbe
+	sudo rmmod e1000
+	...
+
+2. load netmap and device driver module
+	sudo insmod ./netmap_lin.ko
+	sudo insmod ./ixgbe/ixgbe.ko
+	sudo insmod ./e1000/e1000.ko
+	...
+
+3. turn the interface(s) up
+
+	sudo ifconfig eth0 up # and same for others
+
+4. Run test applications -- as an example, pkt-gen is a raw packet
+   sender/receiver which can do line rate on a 10G interface
+
+	# send about 500 million packets of 60 bytes each.
+	# wait 5s before starting, so the link can go up
+	sudo pkt-gen -i eth0 -f tx -n 500111222 -l 60 -w 5
+	# you should see about 14.88 Mpps
+
+	sudo pkt-gen -i eth0 -f rx # act as a receiver
+
+
+COMMON PROBLEMS
+----------------
+
+* switching in/out of netmap mode causes the link to go down and up.
+  If your card is connected to a switch with spanning tree enabled,
+  the switch will likely MUTE THE LINK FOR 10 SECONDS while it is
+  detecting the new topology. Either disable the spanning tree on
+  the switch or use long pauses before sending data;
+
+* Not all cards can do line rate no matter how fast is your software or
+  CPU. Several have hardware limitations that prevent reaching the peak
+  speed, especially for small packet sizes. Examples:
+
+  - ixgbe cannot receive at line rate with packet sizes that are
+    not multiple of 64 (after CRC stripping).
+    This is especially evident with minimum-sized frames (-l 60 )
+
+  - some of the low-end 'e1000' cards can send 1.2 - 1.3Mpps instead
+    of the theoretical maximum (1.488Mpps)
+
+  - the 'realtek' cards seem unable to send more than 450-500Kpps
+    even though they can receive at least 1.1Mpps
+
+* if the link is not up when the packet generator starts, you will
+  see frequent messages about a link reset. While we work on a fix,
+  use the '-w' argument on the generator to specify a longer timeout
+
+* the ixgbe driver (and perhaps others) is severely slowed down if the
+  remote party is senting flow control frames to slow down traffic.
+  If that happens try to use the ethtool command to disable flow control.
+
+
+REVISION HISTORY
+-----------------
+
+20120813 - updated distribution using common code for FreeBSD and Linux,
+	and inclusion of drivers from the linux source tree
+
+20120322 - fixed the 'igb' driver, now it can send and receive correctly
+	(the problem was in netmap_rx_irq() so it might have affected
+	other multiqueue cards).
+	Also tested the 'r8169' in transmit mode.
+	Added comments on switches and spanning tree.
+
+20120217 - initial version. Only ixgbe, e1000 and e1000e are working.
+	Other drivers (igb, r8169, forcedeth) are supplied only as a
+	proof of concept.
+
+DETAILS
+--------
++ igb: on linux 3.2 and above the igb driver moved to split buffers,
+  and netmap was not updated until end of june 2013.
+  Symptoms were inability to receive short packets.
+
++ there are reports of ixgbe and igb unable to read packets.
+  We are unable to reproduce the problem.
+  - Ubuntu 12.04 LTS 3.5.0-25-generic. igb read problems ?
+  - 3.2.0-32-generic with 82598 not working
+
++ if_e1000_e uses regular descriptor up 3.1 at least
+  3.2.32 is reported to use extended descriptors
+	(in my repo updated at -r 11975)
+	

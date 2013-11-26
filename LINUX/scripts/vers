@@ -1,0 +1,162 @@
+#!/usr/bin/perl
+## Simple stack-based RPN calculator for linux version numbers.
+## Usage:
+##
+##    scripts/vers [operand|operation ...]
+##
+## Operations all start with '-', everything else is an operand
+## and is pushed on the stack as-is. 
+## When all arguments have been processed, the content of the
+## top of the stack is printed on stdout and the script ends.
+##
+## Available operations:
+
+sub badversion
+{
+	my $v = shift;
+	die "Bad version $v";
+}
+
+sub conv
+{
+	my $v = shift;
+
+	return sprintf "%x%02x%02x", (split /\./, $v);
+}
+
+
+sub rconv
+{
+	my $v = shift;
+
+	$v =~ /(.*)(..)(..)$/;
+	if ($1 > 2 && $3 == 0) {
+		return sprintf "%d.%d", (hex $1), (hex $2);
+	}
+	return sprintf "%d.%d.%d", (hex $1), (hex $2), (hex $3);
+}
+
+sub next
+{
+	my $v = shift;
+	my ($may, $min, $sub) = split /\./, $v;
+
+	if ($may < 2 || ($may == 2 && $min != 6)) {
+		&badversion($v);
+	}
+	if ($may == 2) {
+	       	if ($sub < 39) {
+			return "2.6." . ($sub + 1);
+		} elsif ($sub == 39) {
+			return "3.0";
+		} else {
+			&badversion($v);
+		}
+	} else {
+		return "$may." . ($min + 1);
+	}
+}
+
+@ARGV or do { system("scripts/help $0"); exit 1; };
+
+for (@ARGV) {
+##
+##  -b	(nullary) suppress normal output. On exit, return 1
+## 	if stack top is "false", 0 otherwise.
+	/^-b$/  && do {
+		$silent=1;
+		next;
+	};
+##
+##  -c	(unary) convert from dot to fixed notation
+	/^-c$/	&& do {
+		$v = pop @stack;
+		push @stack, &conv($v);
+		next;
+	};
+##
+##  -C	(unary) convert from fixed to dot notation
+	/^-C$/	&& do {
+		$v = pop @stack;
+		push @stack, &rconv($v);
+		next;
+	};
+##
+##  -i	(unary) increment version number
+##	(must be in dot notation)
+	/^-i$/ && do {
+		$v = pop @stack;
+		push @stack, &next($v);
+		next;
+	};
+##
+##  -s	(unary) assume the stack top is a
+## 	string containing several fields separated
+## 	by '--'. Replace the stack top with these
+## 	fields (last on top)
+	/^-s$/ && do {
+		$v = pop @stack;
+		push @stack, split /--/, $v;
+		next;
+	};
+##
+##  -SN	(N-ary) pop N elements from the stack,
+## 	join them using '--' as a separator
+## 	(top as last) and push the resulting 
+## 	string
+	/^-S(\d+)$/ && do {
+		$n = $1;
+		@t = @stack[-$n..-1];
+		while ($n--) {
+			pop @stack;
+		}
+		push @stack, (join '--', @t);
+		next;
+	};
+##
+##  -p	(unary) pop
+	/^-p$/ && do {
+		pop @stack;
+		next;
+	};
+##
+##  -l	(binary) push "true" if first version
+## 	number is stricly less then second version
+## 	number (versions in fixed notation)
+##
+##  -L	(binary) like -l, but for version numbers
+## 	in dot notation
+	/^-[lL]$/ && do {
+		$v1 = pop @stack;
+		$v2 = pop @stack;
+		/^-L$/ && do {
+			$v1 = &conv($v1);
+			$v2 = &conv($v2);
+		};
+		push @stack, (($v2 lt $v1) ? "true" : "false");
+		next;
+	};
+##
+##  -a	(binary) logical and. Arguments must be
+## 	either "true" or "false".
+	/^-a$/ && do {
+		$v1 = pop @stack;
+		$v2 = pop @stack;
+		push @stack, (($v1 eq "true" && $v2 eq "true") ? "true" : "false");
+		next;
+	};
+##
+##  -n	(unary) logical not. Argument must be
+## 	either "true" or "false".
+	/^-n$/ && do {
+		$v1 = pop @stack;
+		push @stack, (($v1 eq "true") ? "false" : "true");
+		next;
+	};
+	push @stack, $_;
+}
+$v = pop @stack;
+if ($silent) {
+	exit ($v eq "false");
+}
+print "$v\n";

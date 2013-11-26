@@ -1,0 +1,145 @@
+diff -urp --exclude '*.o' --exclude '*.cmd' --exclude '*mod.c' drivers/net/ethernet/mellanox/mlx4/en_netdev.c ./mellanox/mlx4/en_netdev.c
+--- drivers/net/ethernet/mellanox/mlx4/en_netdev.c	2012-09-11 20:50:55.982624673 -0700
++++ ./mellanox/mlx4/en_netdev.c	2012-09-27 00:05:22.703523430 -0700
+@@ -48,6 +48,39 @@
+ #include "mlx4_en.h"
+ #include "en_port.h"
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++/*
++ * This driver is split in multiple small files.
++ * The main device descriptor has type struct mlx4_en_priv *priv;
++ * and we attach to the device in mlx4_en_init_netdev()
++ * (do port numbers start from 1 ?)
++ *
++ * The reconfig routine is in mlx4_en_start_port() (also here)
++ * which is called on a mlx4_en_restart() (watchdog), open and set-mtu.
++ *
++ *	priv->num_frags				??
++ *	DS_SIZE					??
++ *		apparently each rx desc is followed by frag.descriptors
++ *		and the rx desc is rounded up to a power of 2.
++ *
++ *   Receive code is in en_rx.c
++ *	priv->rx_ring_num			number of rx rings
++ *	rxr = prov->rx_ring[ring_ind]		rx ring descriptor
++ *	rxr->size				number of slots
++ *	rxr->prod				producer
++ *	   probably written into a mmio reg at *rxr->wqres.db.db
++ *	   trimmed to 16 bits.
++ *
++ *	Rx init routine:
++ *		mlx4_en_activate_rx_rings()
++ *		  mlx4_en_init_rx_desc()
++ *   Transmit code is in en_tx.c
++ */
++
++#define NETMAP_MLX4_MAIN
++#include <mlx4_netmap_linux.h>        /* extern stuff */
++#endif /* CONFIG_NETMAP */
++
+ int mlx4_en_setup_tc(struct net_device *dev, u8 up)
+ {
+ 	if (up != MLX4_EN_NUM_UP)
+@@ -1042,6 +1075,9 @@ int mlx4_en_start_port(struct net_device
+ 		/* Set initial ownership of all Tx TXBBs to SW (1) */
+ 		for (j = 0; j < tx_ring->buf_size; j += STAMP_STRIDE)
+ 			*((u32 *) (tx_ring->buf + j)) = 0xffffffff;
++#ifdef DEV_NETMAP
++		mlx4_netmap_tx_config(priv, i);
++#endif /* DEV_NETMAP */
+ 		++tx_index;
+ 	}
+ 
+@@ -1639,6 +1675,9 @@ int mlx4_en_init_netdev(struct mlx4_en_d
+ 	en_warn(priv, "Using %d RX rings\n", prof->rx_ring_num);
+ 
+ 	queue_delayed_work(mdev->workqueue, &priv->stats_task, STATS_DELAY);
++#ifdef DEV_NETMAP
++	mlx4_netmap_attach(priv);
++#endif /* DEV_NETMAP */
+ 	return 0;
+ 
+ out:
+--- drivers/net/ethernet/mellanox/mlx4/en_rx.c	2012-09-11 20:50:55.982624673 -0700
++++ ./mellanox/mlx4/en_rx.c	2012-09-27 00:13:16.099550954 -0700
+@@ -41,6 +41,9 @@
+ 
+ #include "mlx4_en.h"
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <mlx4_netmap_linux.h>
++#endif /* !DEV_NETMAP */
+ 
+ static int mlx4_en_alloc_frag(struct mlx4_en_priv *priv,
+ 			      struct mlx4_en_rx_desc *rx_desc,
+@@ -365,9 +368,16 @@ int mlx4_en_activate_rx_rings(struct mlx
+ 		ring = &priv->rx_ring[ring_ind];
+ 
+ 		ring->size_mask = ring->actual_size - 1;
++#ifdef DEV_NETMAP
++		if (priv->dev->if_capenable & IFCAP_NETMAP) {
++			int saved_cons = ring->cons;
++			mlx4_en_free_rx_buf(priv, ring);
++			ring->cons = saved_cons;
++			mlx4_netmap_rx_config(priv, ring_ind);
++		}
++#endif /* DEV_NETMAP */
+ 		mlx4_en_update_rx_prod_db(ring);
+ 	}
+-
+ 	return 0;
+ 
+ err_buffers:
+@@ -402,6 +412,11 @@ void mlx4_en_destroy_rx_ring(struct mlx4
+ void mlx4_en_deactivate_rx_ring(struct mlx4_en_priv *priv,
+ 				struct mlx4_en_rx_ring *ring)
+ {
++#ifdef DEV_NETMAP
++	if (priv->dev->if_capenable & IFCAP_NETMAP)
++		ND("netmap mode, rx buf already freed");
++	else
++#endif /* DEV_NETMAP */
+ 	mlx4_en_free_rx_buf(priv, ring);
+ 	if (ring->stride <= TXBB_SIZE)
+ 		ring->buf -= TXBB_SIZE;
+@@ -718,6 +739,11 @@ int mlx4_en_poll_rx_cq(struct napi_struc
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+ 	int done;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_rx_irq(cq->dev, cq->ring, &done)) {
++		ND("rx_irq %d for netmap, budget %d done %d", cq->ring, budget, done);
++	} else
++#endif /* DEV_NETMAP */
+ 	done = mlx4_en_process_rx_cq(dev, cq, budget);
+ 
+ 	/* If we used up all the quota - we're probably not done yet... */
+--- drivers/net/ethernet/mellanox/mlx4/en_tx.c	2012-09-11 20:50:55.982624673 -0700
++++ ./mellanox/mlx4/en_tx.c	2012-09-27 00:05:22.713523348 -0700
+@@ -55,6 +55,10 @@ MODULE_PARM_DESC(inline_thold, "threshol
+ 
+ static u32 hashrnd __read_mostly;
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <mlx4_netmap_linux.h>        /* extern stuff */
++#endif /* CONFIG_NETMAP */
++
+ int mlx4_en_create_tx_ring(struct mlx4_en_priv *priv,
+ 			   struct mlx4_en_tx_ring *ring, u32 size,
+ 			   u16 stride)
+@@ -396,6 +400,13 @@ void mlx4_en_tx_irq(struct mlx4_cq *mcq)
+ 
+ 	if (!spin_trylock(&ring->comp_lock))
+ 		return;
++#ifdef DEV_NETMAP
++	/* XXX should be integrated with appropriate lock_wrapper manner? */
++	if (netmap_tx_irq(cq->dev, cq->ring)) {
++		ND(5, "wakeup queue %d", cq->ring);
++		spin_unlock(&ring->comp_lock);
++		return;
++	}
++#endif /* DEV_NETMAP */
+ 	mlx4_en_process_tx_cq(cq->dev, cq);
+ 	mod_timer(&cq->timer, jiffies + 1);
+ 	spin_unlock(&ring->comp_lock);

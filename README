@@ -14,44 +14,77 @@ In this directory you can find source code (BSD-Copyright)
 for FreeBSD and Linux. Note that recent FreeBSD distributions
 already include both NETMAP and VALE.
 
-Last update: 2013-03-12 (start hosting on code.google.com/p/netmap)
+Architecture
+------------
+netmap uses a number of techniques to establish a fast and efficient path
+between applications and the network. In order of importance:
+
+	1. I/O batching
+	2. efficient device drivers
+	3. pre-allocated tx/rx buffers
+	4. memory mapped buffers
+
+Note that memory mapping is NOT the key feature, and system that
+do not apply all these techniques do not achieve the same speed
+_and_ efficiency.
+
+Netmap clients use a select()-able file descriptor to synchronize
+with the network card/software switch, and exchange multiple packets
+per system call through device-independent memory mapped buffers
+and descriptors. Device drivers are completely in the kernel, and
+the system does not rely on IOMMU or other special mechamisms.
+
+
 
 Installation instructions 
 -------------------------
-A kernel module (netmap.ko or netmap_lin.ko) implements the whole
-VALE switch and the core NETMAP routines.
+A kernel module (netmap.ko or netmap_lin.ko) implements the core
+NETMAP routines and the VALE switch.
 Netmap-aware device drivers are needed to use netmap on ethernet ports.
 To date, we have support for Intel ixgbe (10G), e1000/e1000e/igb (1G),
 Realtek 8169 (1G) and Nvidia (1G).
 
   FreeBSD
   --------
-  (FreeBSD HEAD and stable/9 already include netmap in the source tree
-  so you should not need the code in this distribution.)
+  Since recent FreeBSD distributions already include netmap, you only
+  need build the new kernel or modules as below:
+
   + add 'device netmap' to your kernel config file and rebuild a kernel.
     This will include the netmap module and netmap support in the device
     drivers.  Alternatively, you can build standalone modules
     (netmap, ixgbe, em, lem, re, igb)
+  + sample applications are in the examples/ directory in this archive,
+    or in src/tools/tools/netmap/ in FreeBSD distributions
 
   Linux
   -------
-  + make sure you have kernel sources matching your installed kernel,
-    so the build system can patch the sources and build netmap-enabled
-    drivers. If kernel sources are in /a/b/c/linux-A.B.C/ , then you should do
+  On Linux, netmap is an out-of-tree module, so you need to compile it
+  from these sources. The Makefile in the LINUX/ directory will also
+  let you patch device driver sources and build some netmap-enabled
+  device drivers.
+  + make sure you have kernel sources matching your installed kernel
+    (headers only suffice, if you want NETMAP/VALE but no drivers)
+
+  + build kernel modules and sample applications:
+    If kernel sources are in /foo//linux-A.B.C/ , then you should do
 
 	cd netmap/LINUX
-	make KSRC=/a/b/c/linux-A.B.C/		# builds the kernel modules
+	# build kernel modules
+	make NODRIVERS=1 KSRC=/foo/linux-A.B.C/	# only netmap
+	make KSRC=/a/b/c/linux-A.B.C/		# netmap+device drivers
+	# build sample applications
 	make KSRC=/a/b/c/linux-A.B.C/ apps	# builds sample applications
 
     You can omit KSRC if your kernel sources are in a standard place.
   
 
 Applications
--------------
+------------
 The directory examples/ contains some programs that use the netmap API
 
-    pkt-gen	a packet generator/receiver working at line rate at 10Gbit/s
-    bridge	a utility that bridges two interfaces or one interface
+    pkt-gen.c	a packet generator/receiver working at line rate at 10Gbit/s
+    vale-cfg.c	utility to configure ports of a VALE switch
+    bridge.c	a utility that bridges two interfaces or one interface
 		with the host stack
     pcap.c	a simple libpcap-over-netmap library, and some test
 		code, to help porting pcap applications to netmap.
@@ -70,19 +103,47 @@ It has a large number of options, but the simplest form is:
 This should be able to work at line rate (up to 14.88 Mpps on 10
 Gbit/interfaces, even higher on VALE) but note the following
 
-CAVEATS
--------
+OPERATING SPEED
+---------------
+Netmap is able to send packets at very high rates, and for simple
+packet transmission and reception, speed generally not limited by
+the CPU but by other factors (link speed, bus or NIC hw limitations).
+
+For a physical link, the maximum numer of packets per second can
+be computed with the formula:
+
+	pps = line_rate / (672 + 8 * pkt_size)
+
+where "line_rate" is the nominal link rate (e.g 10 Gbit/s) and
+pkt_size is the actual packet size including MAC headers and CRC.
+The following table summarizes some results
+
+			LINE RATE
+    pkt_size \	100M	1G	10G	40G
+
+	  64	.1488	1.488	14.88	59.52
+	 128	.0589	0.589	 5.89	23.58
+	 256	.0367	0.367	 3.67	14.70
+	 512	.0209	0.209	 2.09	 8.38
+	1024	.0113	0.113	 1.13	 4.51
+	1518	.0078	0.078	 0.78	 3.12
+
+On VALE ports, there is no physical link and the throughput is
+limited by CPU or memory depending on the packet size.
+
+COMMON PROBLEMS
+---------------
 Before reporting slow send or receive speed on a physical interface,
 check ALL of the following:
 
-  + make sure the interface is up before invoking pkt-gen
+CANNOT SET THE DEVICE IN NETMAP MODE:
   + make sure that the netmap module and drivers are correctly
     loaded and can allocate all the memory they need (check into
     /var/log/messages or equivalent)
+  + check permissions on /dev/netmap
+  + make sure the interface is up before invoking pkt-gen
 
-    	These errors will generally cause a failure to register
-	the netmap port
-
+SENDER DOES NOT TRANSMIT
   + some switches/interfaces take a long time to (re)negotiate
     the link after starting pkt-gen; in case, use the -w N option
     to increase the initial delay to N seconds;
@@ -90,7 +151,17 @@ check ALL of the following:
     	This may cause inability to transmit, or lost packets for
 	the first few seconds of transmission
 
-  + make sure that the interface and switch you connect to has
+RECEIVER DOES NOT RECEIVE
+  + make sure traffic uses a broadcast MAC addresses, or the UNICAST
+    address of the receiving interface, or the receiving interface is in
+    promiscuous mode (this must be done with ifconfig; pkt-gen does not
+    change the operating mode)
+
+LOWER SPEED THAN LINE RATE
+  + check that your CPUs are running at the maximum clock rate
+    and are not throttled down by the governor/powerd.
+
+  + make sure that the sender/receiver interfaces and switch have
     flow control (FC) disabled (either via sysctl or ethtool).
 
         If FC is enabled and the receiving end is unable to cope
@@ -115,9 +186,11 @@ and OPENLAB.
 Author:		Luigi Rizzo
 Contributors:
 		Giuseppe Lettieri
+		Michio Honda
 		Marta Carbone
 		Gaetano Catalli
 		Matteo Landi
+		Vincenzo Maffione
 
 References
 ----------
@@ -138,4 +211,8 @@ You can find the papers at http://info.iet.unipi.it/~luigi/research.html
 
 + Luigi Rizzo, Giuseppe Lettieri,
 	VALE: a switched ethernet for virtual machines,
-	CoNext 2012, Nice, December 2012
+	ACM Conext 2012, Nice, Dec. 2012
+
++ Luigi Rizzo, Giuseppe Lettieri, Vincenzo Maffione
+	IEEE/ACM ANCS 2013, San Jose, Oct. 2013
+

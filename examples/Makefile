@@ -1,19 +1,20 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
 PROGS	=	pkt-gen bridge testpcap libnetmap.so
-PROGS	+= testlock
+#PROGS += pingd
+PROGS	+= testlock testcsum test_select kern_test testmmap vale-ctl
 
 CLEANFILES = $(PROGS) pcap.o nm_util.o *.o
 NO_MAN=
 CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall
-CFLAGS += -I ../sys
+CFLAGS += -I ../sys # -I/home/luigi/FreeBSD/head/sys -I../sys
 CFLAGS += -Wextra
 CFLAGS += -DNO_PCAP
 
 LDFLAGS += -lpthread
 #LDFLAGS += -lpcap
-#LDFLAGS += -lrt	# on linux
+LDFLAGS += -lrt	# needed on linux, does not harm on BSD
 #SRCS = pkt-gen.c
 
 all: $(PROGS)
@@ -29,6 +30,10 @@ pkt-gen: pkt-gen.o nm_util.o
 	$(CC) $(CFLAGS) -o pkt-gen pkt-gen.o nm_util.o $(LDFLAGS)
 
 bridge: bridge.o nm_util.o
+	$(CC) $(CFLAGS) -o bridge bridge.o nm_util.o
+
+vale-ctl: vale-ctl.o
+	$(CC) $(CFLAGS) -o vale-ctl vale-ctl.o
 
 libnetmap.so:	pcap.c nm_util.c
 	$(CC) $(CFLAGS) -fpic -c pcap.c

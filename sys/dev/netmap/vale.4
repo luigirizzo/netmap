@@ -1,0 +1,253 @@
+.\" Copyright (c) 2012-2013 Luigi Rizzo, Universita` di Pisa
+.\" All rights reserved.
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" This document is derived in part from the enet man page (enet.4)
+.\" distributed with 4.3BSD Unix.
+.\"
+.\" $FreeBSD: head/share/man/man4/vale.4 228017 2011-11-27 06:55:57Z gjb $
+.\"
+.Dd July 27, 2012
+.Dt VALE 4
+.Os
+.Sh NAME
+.Nm vale
+.Nd a very fast Virtual Local Ethernet using the netmap API
+.Sh SYNOPSIS
+.Cd device netmap
+.Sh DESCRIPTION
+.Nm
+is a feature of the
+.Nm netmap
+module that implements multiple Virtual switches that can
+be used to interconnect netmap clients, including traffic
+sources and sinks, packet forwarders, userspace firewalls,
+and so on.
+.Pp
+.Nm
+is implemented completely in software, and is extremely fast.
+On a modern machine it can move almost 20 Million packets per
+second (Mpps) per core with small frames, and about 70 Gbit/s
+with 1500 byte frames.
+.Pp
+.Sh OPERATION
+.Nm
+dynamically creates switches and ports as client connect
+to it using the
+.Xr netmap 4
+API.
+.Pp
+.Nm
+ports are named
+.Pa vale[bdg:][port]
+where
+.Pa vale
+is the prefix indicating a VALE switch rather than a standard interface,
+.Pa bdg
+indicates a specific switch (the colon is a separator),
+and
+.Pa port
+indicates a port within the switch.
+Bridge and ports names are arbitrary strings, the only
+constraint being that the full name must fit within 16
+characters.
+.Pp
+.Nm
+ports can be physical network interfaces that support
+.Xr netmap 4
+API
+by specifying the interface name for
+.Pa [port].
+See
+.Nm OPERATION
+section in
+.Xr netmap 4
+for details of the naming rule.
+.Pp
+Physical interfaces are attached using
+.Pa NIOCGREGIF
+command of
+.Pa ioctl(),
+and
+.Pa NETMAP_BDG_ATTACH
+at
+.Em nr_cmd
+field in
+.Em struct nmreq .
+The corresponding host stack can also be attached to the bridge, specifying
+.Pa NETMAP_BDG_HOST
+in
+.Em nr_arg1 .
+To detach the interface from the bridge,
+.Pa NETMAP_BDG_DETACH
+is used instead of NETMAP_BDG_ATTACH.
+The host stack is also detached from the bridge at the same
+time if it has been attached.
+.Pp
+Physical interfaces are treated as system configuration;
+they are kept being attached even after the configuring process dies,
+and detached by any process.
+.Pp
+Once a physical interface is attached, this interface is no longer
+available to be directly accessed by netmap clients (user processes) or to be
+attached by another bridge.
+On the other hand, when any netmap client holds the physical interface,
+this interface cannot be attached to a bridge.
+.Pp
+.Pa NETMAP_BDG_LIST
+subcommand in nr_cmd of
+.Em struct nmreq
+is used to obtain bridge and port
+information.  There are two modes of how it works;
+If any
+.Em nr_name
+starting from non '\\0' is provided,
+.Pa ioctl()
+returning
+indicates the position of
+the named interface.
+This position is represented by an index of the bridge and the port, and
+put in
+.Em nr_arg1
+and
+.Em nr_arg2
+fields, respectively.  If the named interface does not exist,
+.Pa ioctl()
+returns
+.Pa EINVAL .
+.Pp
+If
+.Em nr_name
+starting from '\\0' is provided,
+.Pa ioctl()
+returning indicates the
+first existing interface on and after the position specified in
+.Em nr_arg1
+and
+.Em nr_arg2.
+If the caller specified a port index greater than the highest
+index of the ports, it is recognized as port index 0 of the
+next bridge
+(
+.Em nr_arg1
++ 1,
+.Em nr_arg2
+= 0).
+.Pa ioctl()
+returns
+.Pa EINVAL
+if the given position is higher than that of
+any existing interface.
+On successful return of
+.Pa ioctl() ,
+the interface name is also stored in
+.Em nr_name .
+.Pa NETMAP_BDG_LIST
+is always used with
+.Pa NIOCGINFO
+command of
+.Pa ioctl()
+.Pp
+Below is an example of printing all the existing ports walking through
+all the bridges.
+
+.Bd -literal -compact
+struct nmreq nmr;
+int fd = open("/dev/netmap", O_RDWR);
+
+bzero(&nmr, sizeof(nmr));
+nmr.nr_version = NETMAP_API;
+nmr.nr_cmd = NETMAP_BDG_LIST;
+nmr.nr_arg1 = nmr.nr_arg2 = 0; /* start from bridge:0 port:0 */
+for (; !ioctl(fd, NIOCGINFO, &nmr); nmr.nr_arg2++) {
+	D("bridge:%d port:%d %s", nmr.nr_arg1, nmr.nr_arg2,
+	    nmr.nr_name);
+	nmr.nr_name[0] = '\\0';
+}
+.Ed
+.Pp
+See
+.Xr netmap 4
+for details on the API.
+.Ss LIMITS
+.Nm
+currently supports up to 8 switches, 254 ports per switch,
+1024 buffers per port. These hard limits will be
+changed to sysctl variables in future releases.
+.Pp
+Attaching the host stack to the bridge imposes significant performance
+degradation when many packets are forwarded to the host stack by either
+unicast or broadcast.
+This is because every single packet going to the host stack causes mbuf
+allocation in the same thread context as one forwarding packets.
+.Pp
+.Sh SYSCTL VARIABLES
+.Nm
+uses the following sysctl variables to control operation:
+.Bl -tag -width 12
+.It dev.netmap.bridge
+The maximum number of packets processed internally
+in each iteration.
+Defaults to 1024, use lower values to trade latency
+with throughput.
+.Pp
+.It dev.netmap.verbose
+Set to non-zero values to enable in-kernel diagnostics.
+.El
+.Pp
+.Sh EXAMPLES
+Create one switch, with a traffic generator connected to one
+port, and a netmap-enabled tcpdump instance on another port:
+.Bd -literal -offset indent
+tcpdump -ni vale-a:1 &
+pkt-gen  -i vale-a:0 -f tx &
+.Ed
+.Pp
+Create two switches,
+each connected to two qemu machines on different ports.
+.Bd -literal -offset indent
+qemu -net nic -net netmap,ifname=vale-1:a ... &
+qemu -net nic -net netmap,ifname=vale-1:b ... &
+qemu -net nic -net netmap,ifname=vale-2:c ... &
+qemu -net nic -net netmap,ifname=vale-2:d ... &
+.Ed
+.Sh SEE ALSO
+.Xr netmap 4
+.Pp
+.Xr http://info.iet.unipi.it/~luigi/vale/
+.Pp
+Luigi Rizzo, Giuseppe Lettieri: VALE, a switched ethernet for virtual machines,
+June 2012, http://info.iet.unipi.it/~luigi/vale/
+.Sh AUTHORS
+.An -nosplit
+The
+.Nm
+switch  has been designed and implemented in 2012 by
+.An Luigi Rizzo
+and
+.An Giuseppe Lettieri
+at the Universita` di Pisa.
+.Pp
+.Nm
+has been funded by the European Commission within FP7 Projects
+CHANGE (257422) and OPENLAB (287581).

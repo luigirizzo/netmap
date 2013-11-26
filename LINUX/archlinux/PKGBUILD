@@ -1,0 +1,79 @@
+# Maintainer: Vincenzo Maffione <v.maffione@gmail.com>
+
+# Name of the Software your PKGBUILD will install - should be unique.
+pkgname=netmap
+
+# The version number for the software
+pkgver=1.0
+
+#The release number for the arch package, as fixes are added to the
+# PKGBUILD, the release number will increase
+pkgrel=1
+
+# The description of the package, should be about 80 characters long
+pkgdesc="Netmap is a framework for high speed network packet I/O."
+
+# The type of processor this software can build and work on.
+arch=('any')
+
+# The official website for the software your PKGBUILD will install
+url="http://info.iet.unipi.it/~luigi/netmap"
+
+# The License that the software is released under.
+license=('BSD')
+
+# Packages that your software needs to run. If the dependancy requires
+# a minimum version number use the >= operator
+depends=('linux' 'glibc')
+
+# Packages that must be installed to build the software, but at not
+# necessary to run it
+makedepends=('sed' 'gzip' 'linux-headers')
+
+# Optional packages that extend the software's functionality
+optdepends=()
+
+# Change the default behavior of makepkg see PKGBUILD#options
+options=
+
+# The url containing the archived source files
+source="http://info.iet.unipi.it/~luigi/doc/20131019-netmap.tgz"
+
+install="netmap.install"
+
+# Generated with "makepkg -g" (into the directory containing this PKGBUILD
+md5sums=('ff0d01ef0c56e12fd227e40755afc5ca')
+
+build() {
+    # Build the netmap kernel module
+    cd "$srcdir/netmap-release/LINUX"
+    make || return 1
+    # Build pkt-gen and vale-ctl
+    cd "$srcdir/netmap-release/examples"
+    make pkt-gen vale-ctl || return 1
+}
+
+check() {
+    echo "nothing to check"
+}
+
+package() {
+    # Compute the version numbers of the running kernel
+    KVER1=$(uname -r)
+    KVER2=$(uname -r | sed 's/\.[0-9]\+-[0-9]\+//')
+
+    # Install the netmap module into the extramodules-VERSION directory
+    mkdir -p "$pkgdir/lib/modules/extramodules-${KVER2}"
+    cp "$srcdir/netmap-release/LINUX/netmap_lin.ko" "$pkgdir/lib/modules/extramodules-${KVER2}"
+
+    # Install pkt-gen and valectl into /usr/bin
+    mkdir -p "$pkgdir/usr/bin"
+    cp "$srcdir/netmap-release/examples/pkt-gen" "$pkgdir/usr/bin"
+    cp "$srcdir/netmap-release/examples/vale-ctl" "$pkgdir/usr/bin"
+
+    # Install the netmap man page
+    mkdir -p "$pkgdir/usr/share/man/man4"
+    cp "$srcdir/netmap-release/sys/dev/netmap/netmap.4" "$pkgdir/usr/share/man/man4"
+    gzip "$pkgdir/usr/share/man/man4/netmap.4"
+}
+# vim:set ts=2 sw=2 et:

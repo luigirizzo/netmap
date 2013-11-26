@@ -26,7 +26,6 @@
 
 /*
  * $FreeBSD: head/sys/dev/netmap/if_lem_netmap.h 231881 2012-02-17 14:09:04Z luigi $
- * $Id: if_lem_netmap.h 11998 2013-01-17 22:04:36Z luigi $
  *
  * netmap support for "lem"
  *
@@ -40,47 +39,20 @@
 #include <dev/netmap/netmap_kern.h>
 
 
-static void
-lem_netmap_lock_wrapper(struct ifnet *ifp, int what, u_int ringid)
-{
-	struct adapter *adapter = ifp->if_softc;
-
-	/* only one ring here so ignore the ringid */
-	switch (what) {
-	case NETMAP_CORE_LOCK:
-		EM_CORE_LOCK(adapter);
-		break;
-	case NETMAP_CORE_UNLOCK:
-		EM_CORE_UNLOCK(adapter);
-		break;
-	case NETMAP_TX_LOCK:
-		EM_TX_LOCK(adapter);
-		break;
-	case NETMAP_TX_UNLOCK:
-		EM_TX_UNLOCK(adapter);
-		break;
-	case NETMAP_RX_LOCK:
-		EM_RX_LOCK(adapter);
-		break;
-	case NETMAP_RX_UNLOCK:
-		EM_RX_UNLOCK(adapter);
-		break;
-	}
-}
-
-
 /*
  * Register/unregister
  */
 static int
-lem_netmap_reg(struct ifnet *ifp, int onoff)
+lem_netmap_reg(struct netmap_adapter *na, int onoff)
 {
+        struct ifnet *ifp = na->ifp;
 	struct adapter *adapter = ifp->if_softc;
-	struct netmap_adapter *na = NA(ifp);
 	int error = 0;
 
 	if (na == NULL)
 		return EINVAL;
+
+	EM_CORE_LOCK(adapter);
 
 	lem_disable_intr(adapter);
 
@@ -94,9 +66,10 @@ lem_netmap_reg(struct ifnet *ifp, int onoff)
 #endif /* !EM_LEGCY_IRQ */
 	if (onoff) {
 		ifp->if_capenable |= IFCAP_NETMAP;
+                na->na_flags |= NAF_NATIVE_ON;
 
 		na->if_transmit = ifp->if_transmit;
-		ifp->if_transmit = netmap_start;
+		ifp->if_transmit = netmap_transmit;
 
 		lem_init_locked(adapter);
 		if ((ifp->if_drv_flags & (IFF_DRV_RUNNING | IFF_DRV_OACTIVE)) == 0) {
@@ -108,12 +81,15 @@ fail:
 		/* return to non-netmap mode */
 		ifp->if_transmit = na->if_transmit;
 		ifp->if_capenable &= ~IFCAP_NETMAP;
+                na->na_flags &= ~NAF_NATIVE_ON;
 		lem_init_locked(adapter);	/* also enable intr */
 	}
 
 #ifndef EM_LEGACY_IRQ
 	taskqueue_unblock(adapter->tq); // XXX do we need this ?
 #endif /* !EM_LEGCY_IRQ */
+
+	EM_CORE_UNLOCK(adapter);
 
 	return (error);
 }
@@ -123,10 +99,10 @@ fail:
  * Reconcile kernel and user view of the transmit ring.
  */
 static int
-lem_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
+lem_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
+        struct ifnet *ifp = na->ifp;
 	struct adapter *adapter = ifp->if_softc;
-	struct netmap_adapter *na = NA(ifp);
 	struct netmap_kring *kring = &na->tx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
 	u_int j, k, l, n = 0, lim = kring->nkr_num_slots - 1;
@@ -134,13 +110,16 @@ lem_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 	/* generate an interrupt approximately every half ring */
 	int report_frequency = kring->nkr_num_slots >> 1;
 
+	ND("%s: hwofs %d, hwcur %d hwavail %d lease %d cur %d avail %d",
+		ifp->if_xname,
+		kring->nkr_hwofs, kring->nr_hwcur, kring->nr_hwavail,
+		kring->nkr_hwlease,
+		ring->cur, ring->avail);
 	/* take a copy of ring->cur now, and never read it again */
 	k = ring->cur;
 	if (k > lim)
 		return netmap_ring_reinit(kring);
 
-	if (do_lock)
-		EM_TX_LOCK(adapter);
 	bus_dmamap_sync(adapter->txdma.dma_tag, adapter->txdma.dma_map,
 			BUS_DMASYNC_POSTREAD);
 	/*
@@ -148,6 +127,8 @@ lem_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 	 * netmap ring, l is the corresponding index in the NIC ring.
 	 */
 	j = kring->nr_hwcur;
+	if (netmap_verbose > 255)
+		RD(5, "device %s send %d->%d", ifp->if_xname, j, k);
 	if (j != k) {	/* we have new packets to send */
 		l = netmap_idx_k2n(kring, j);
 		for (n = 0; j != k; n++) {
@@ -164,13 +145,12 @@ lem_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 			u_int len = slot->len;
 
 			if (addr == netmap_buffer_base || len > NETMAP_BUF_SIZE) {
-				if (do_lock)
-					EM_TX_UNLOCK(adapter);
 				return netmap_ring_reinit(kring);
 			}
+			ND("slot %d NIC %d %s", j, l, nm_dump_buf(addr, len, 128, NULL));
 
 			slot->flags &= ~NS_REPORT;
-			if (slot->flags & NS_BUF_CHANGED) {
+			if (1 || slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
 				netmap_reload_map(adapter->txtag, txbuf->map, addr);
 				curr->buffer_addr = htole64(paddr);
@@ -181,11 +161,13 @@ lem_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 			    htole32( adapter->txd_cmd | len |
 				(E1000_TXD_CMD_EOP | flags) );
 
+			ND("len %d kring %d nic %d", len, j, l);
 			bus_dmamap_sync(adapter->txtag, txbuf->map,
 			    BUS_DMASYNC_PREWRITE);
 			j = (j == lim) ? 0 : j + 1;
 			l = (l == lim) ? 0 : l + 1;
 		}
+		ND("sent %d packets from %d, TDT now %d", n, kring->nr_hwcur, l);
 		kring->nr_hwcur = k; /* the saved ring->cur */
 		kring->nr_hwavail -= n;
 
@@ -200,6 +182,7 @@ lem_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 
 		/* record completed transmissions using TDH */
 		l = E1000_READ_REG(&adapter->hw, E1000_TDH(0));
+		ND("tdh is now %d", l);
 		if (l >= kring->nkr_num_slots) { /* XXX can it happen ? */
 			D("bad TDH %d", l);
 			l -= kring->nkr_num_slots;
@@ -209,6 +192,9 @@ lem_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 			/* some tx completed, increment hwavail. */
 			if (delta < 0)
 				delta += kring->nkr_num_slots;
+			if (netmap_verbose > 255)
+				RD(5, "%s tx recover %d bufs",
+					ifp->if_xname, delta);
 			adapter->next_tx_to_clean = l;
 			kring->nr_hwavail += delta;
 		}
@@ -216,8 +202,6 @@ lem_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 	/* update avail to what the kernel knows */
 	ring->avail = kring->nr_hwavail;
 
-	if (do_lock)
-		EM_TX_UNLOCK(adapter);
 	return 0;
 }
 
@@ -226,21 +210,19 @@ lem_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
  * Reconcile kernel and user view of the receive ring.
  */
 static int
-lem_netmap_rxsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
+lem_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
+        struct ifnet *ifp = na->ifp;
 	struct adapter *adapter = ifp->if_softc;
-	struct netmap_adapter *na = NA(ifp);
 	struct netmap_kring *kring = &na->rx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
 	int j, l, n, lim = kring->nkr_num_slots - 1;
-	int force_update = do_lock || kring->nr_kflags & NKR_PENDINTR;
+	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 	u_int k = ring->cur, resvd = ring->reserved;
 
 	if (k > lim)
 		return netmap_ring_reinit(kring);
 
-	if (do_lock)
-		EM_RX_LOCK(adapter);
 
 	/* XXX check sync modes */
 	bus_dmamap_sync(adapter->rxdma.dma_tag, adapter->rxdma.dma_map,
@@ -252,6 +234,10 @@ lem_netmap_rxsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 	 */
 	l = adapter->next_rx_desc_to_check;
 	j = netmap_idx_n2k(kring, l);
+	ND("%s: next NIC %d kring %d (ofs %d), hwcur %d hwavail %d cur %d avail %d",
+		ifp->if_xname,
+		l, j,  kring->nkr_hwofs, kring->nr_hwcur, kring->nr_hwavail,
+		ring->cur, ring->avail);
 	if (netmap_no_pendintr || force_update) {
 		uint16_t slot_flags = kring->nkr_slot_flags;
 
@@ -267,6 +253,8 @@ lem_netmap_rxsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 				D("bogus pkt size at %d", j);
 				len = 0;
 			}
+			ND("\n%s", nm_dump_buf(NMB(&ring->slot[j]),
+				len, 128, NULL));
 			ring->slot[j].len = len;
 			ring->slot[j].flags = slot_flags;
 			bus_dmamap_sync(adapter->rxtag,
@@ -301,8 +289,6 @@ lem_netmap_rxsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 			void *addr = PNMB(slot, &paddr);
 
 			if (addr == netmap_buffer_base) { /* bad buf */
-				if (do_lock)
-					EM_RX_UNLOCK(adapter);
 				return netmap_ring_reinit(kring);
 			}
 
@@ -333,8 +319,6 @@ lem_netmap_rxsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 	}
 	/* tell userspace that there are new packets */
 	ring->avail = kring->nr_hwavail - resvd;
-	if (do_lock)
-		EM_RX_UNLOCK(adapter);
 	return 0;
 }
 
@@ -347,14 +331,14 @@ lem_netmap_attach(struct adapter *adapter)
 	bzero(&na, sizeof(na));
 
 	na.ifp = adapter->ifp;
-	na.separate_locks = 1;
+	na.na_flags = NAF_BDG_MAYSLEEP;
 	na.num_tx_desc = adapter->num_tx_desc;
 	na.num_rx_desc = adapter->num_rx_desc;
 	na.nm_txsync = lem_netmap_txsync;
 	na.nm_rxsync = lem_netmap_rxsync;
-	na.nm_lock = lem_netmap_lock_wrapper;
 	na.nm_register = lem_netmap_reg;
-	netmap_attach(&na, 1);
+	na.num_tx_rings = na.num_rx_rings = 1;
+	netmap_attach(&na);
 }
 
 /* end of file */

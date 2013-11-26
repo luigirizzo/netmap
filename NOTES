@@ -1,0 +1,1175 @@
+20121227 -- netmap-epair.diff
+	attempt to build a driver for epair
+
+20121227 -- netmap-nfe.diff
+	partial diff to support nfe
+
+20121026 broadcom on 2.6.xx
+- missing cnic_if.h (used by bnx2x)
+
+--- status and other development notes ---
+20120824 devfs_get_cdevpriv()
+	curthread		struct thread	sys/proc.h
+	->td_fpop		struct file	
+	->f_cdevpriv		struct cdev_privdata sys/fs/devfs/devfs_int.h
+	->cdpd_data		void *
+
+    in mmap:
+	dev			struct cdev, sys/conf.h
+20120802	http://www.asciiflow.com/ ascii art
+
+20120724 barelli	svn+ssh://27148317-unipi@onelab3.iet.unipi.it/usr/home/PPM10/27148317/thesis
+
+20120528 NM_BRIDGE
+	error on initialization order for locks.
+	Not a problem on linux, but it is on FreeBSD with witnesses.
+
+20120524 virtual bridging
+
+get_ifp lookup the fake bridge interface
+	returns the object with a reference
+
+netmap_if_new() allocates the software rings
+
+na->nm_register() puts the interface in netmap mode
+	in our case, attach to an (existing) bridge
+
+
+20120503 interrupt dispatching
+	apic_vector.S::call lapic_handle_intr
+	`-> intr_execute_handlers()
+	  `-> kern_intr.c::intr_event_handle()
+	   `-> if ih_filter --> call filter
+		or if filter returns FILTER_SCHEDULE_THREAD
+	    `-> schedule thread to execute handler
+
+    in the lem driver, the filter is lem_irq_fast() which
+    calls taskqueue_enqueue to run lem_handle_rxtx.
+    In qemu it takes between 70 and 210k cycles (20..60us)
+    to schedule the task.
+	On the test machine, at least 10k ticks corresponding
+    to about 3us before the task runs (rarely we have 3k ticks).
+
+20120505 -- immediate operation for output and input
+    OUT: we get the mbuf, need to copy into the nm_buf and
+	kick the output queue. If the queue is idle we should
+	operate immediately, otherwise schedule a deferred
+	interrupt (txintr ?) and act on it.
+
+20120504 -- latency between filter and task
+	on the emulator (3.4GHz machine) up to 130k cycles, min 70k
+	on the i7-870 @2.93G the min is 3k cycles, more often 13k
+		and several 30k spikes.
+
+
+20120503 -- prefetch and the like
++ added userspace flags to pkt-gen to enable various
+  prefetch and copies.
+	pkt-gen -o 1		prefetch send source 
+	pkt-gen -o 2		access (not implemented)
+	pkt-gen -o 4		pkt_copy
+		takes from a static buffer and writes to buffers
+		spread in memory. The write buffer should absorb
+		the operation
+	pkt-gen -o 8		memcpy()
++ added dev.netmap.copy to test with in-kernel copies
+	dev.netmap.copy=1	bcopy
+	dev.netmap.copy=2	bcopy (later)
+	dev.netmap.copy=3	memcpy (later)
+	dev.netmap.copy=4	access (maybe ignored ?)
+	dev.netmap.copy=5	only prefetch
+
++ test with different packet lengths (intr=3000)
+	2048
+	2048 - 64
+	2048 - 128
+
+
+    ---- buf_size: 2048-128, intr=3k, 4 cores at 900 mhz ----
+		-- options=0 --	-- options=1 --	-- options=4 --
+	nm.copy	len=60	len=64	len=60	len=64	len=60	len=64
+	0	14.78	14.20	13.78	13.80	 9.46	 9.47
+	1	 4.35	 8.17*	 4.29	 7.88	 3.75	 6.25
+	2	 4.71	 7.75*	 4.62	 8.14*	 4.01	 6.42
+	3	 2.85	 2.85	 2.81	 2.75	 2.57	 2.57
+	4	11.70	11.70	12.35	12.35	 8.78	 8.78
+	5	13.98	14.00	13.04	13.04	 9.11	 9.11
+
+    ---- buf_size: 2048-64, intr=3k, 4 cores at 900 mhz ----
+		-- options=0 --	-- options=1 --	-- options=4 --
+	nm.copy	len=60	len=64	len=60	len=64	len=60	len=64
+	0	14.78	14.20	13.72	13.70	 9.45	 9.44
+	1	 4.35	 7.68*	 4.22	 7.74	 3.92	 6.33
+	2	 4.70	 7.79	 4.68	 8.04*	 4.11	 6.52
+	3	 2.85	 2.74	 2.80	 2.75	 2.56	 2.55
+	4	12.31*	11.83*	12.31	12.28	 8.78	 8.78
+	5	13.94	13.93	12.96	12.98	 9.03	 9.09
+
+    ---- buf_size: 2048, intr=3k, 4 cores at 900 mhz ----
+		-- options=0 --	-- options=1 --	-- options=4 --
+	nm.copy	len=60	len=64	len=60	len=64	len=60	len=64
+	0		14.20			 8.81	 8.84
+	1		 6.90			 3.78	 6.08
+	2		 7.82			 3.98	 6.16
+	3		 2.73			 2.44	 2.58
+	4	12.40	12.36			 8.33	 8.32
+	5		14.20			 8.87	 8.67
+
+-------------
+20120419 netsend statistics (with various breakpoints)
+sysctl dev.ix.0.enable_aim=0
+sysctl dev.ix.0.queue0.interrupt_rate=5000
+sysctl dev.ix.0.fc=0
+sysctl net.inet.drop ...
+
+call tree
+send()
+sendto()
+---- within the kernel ------ R/W = lock, T= tail call, C = normall call,
+kern/uipc_syscalls.c :: sys_sendto()
+kern/uipc_syscalls.c :: sendit()
+kern/uipc_syscalls.c :: kern_sendit()
+kern/uipc_socket.c :: sosend()
+			so->so_proto->pr_usrreqs->pru_sosend = sosend_dgram
+kern/uipc_socket.c :: sosend_dgram()
+			so->so_proto->pr_usrreqs->pru_send = udp_send
+netinet/udp_usrreq.c :: udp_send()
+netinet/udp_usrreq.c :: udp_output()
+netinet/ip_output.c :: ip_output()
+			ifp->if_output = ether_output
+net/if_ethersubr.c :: ether_output()
+	memcpy() or arpresolve()
+	3 memcpy for MAC header
+	pf_find_mtag() and csum_flags
+
+net/if_ethersubr.c :: ether_output_frame()
+		check ether_ipfw
+		call ifp->if_transmit
+			ifp->if_transmit = ixgbe_mq_start
+
+dev/ixgbe/ixgbe.c :: ixgbe_mq_start()
+	IXGBE_TX_TRYLOCK()
+	ixgbe_mq_start_locked()
+	IXGBE_TX_UNLOCK()
+
+dev/ixgbe/ixgbe.c :: ixgbe_mq_start_locked()
+	drbr_needs_enqueue() 30ns aka buf_ring_empty
+	for (;;) {
+		ixgbe_xmit()
+		drbr_dequeue()
+	}
+	
+dev/ixgbe/ixgbe.c :: ixgbe_xmit()
+	huge stack (32 descriptors)
+			bus_dmamap_load_mbuf_sg()
+			ixgbe_tso_setup() or ixgbe_tx_ctx_setup()
+	loop on descriptors
+	IXGBE_WRITE_REG(&adapter->hw, IXGBE_TDT(txr->me), i);
+
+... drbr_dequeue() uses sys/sys/buf_ring.h
+
+
+	BREAK	CLOCK	SIZE	TC		NSEC	KPPS	
+	0	2934	18	HPET		1289	775
+	p5556	2934	18	HPET		   8	118M
+	20	2934	18	HPET		107		103 107 103 103 103 103 107 107
+	20x4	2934	18	HPET		107
+	21x4	2934	18	HPET		111
+	22x4	2934	18	HPET		111	same as 21
+	23x4	2934	18	HPET		112-115
+	24x4	2934	18	HPET		117-121
+	25x4	2934	18	HPET		135-141
+	40x4	2934	18	HPET		144-150
+	41x4	2934	18	HPET		157-167		insensitive to length
+		allocation m_uiotombuf() -> uma_zalloc(zone_mbuf)
+			uma_zalloc():
+				critical_enter()
+				cache->uc_allocs++;
+	42x4	2934	18	HPET		266-270
+	42x4	2934	180	HPET		297
+	42x4	2934	1080	HPET		312
+	51x4	2934	1080	HPET		412
+	52x4	2934	18	HPET		1282 (!XXX slower than 1080)
+	52	2934	1080	HPET		515
+	56x4	2934	1080	HPET		1290
+	52x4	2934	1080	HPET		1325 (1256 in other tests)
+
+
+20120417 netsend statistics (with various breakpoints)
+	tests on i7-870 at 2934
+
+	BREAK	CLOCK	SIZE	TC		NSEC	KPPS	
+	20	2934	18	TSC-low			9786
+	20	2934	1418	TSC-low			9786
+	20	2933	18	TSC-low			8970	8651 alternate
+	20	2933	1418	TSC-low			8970
+	20	900	18	TSC-low			2704
+	20	900	18	HPET			2685	2590 alternate
+	
+	nosend	2934	18	HPET		 	119000	i7-870 no send (drop port)
+	nosendx4 2934	18	HPET		 	118200	i7-870 no send (drop port)
+	20	2934	18	HPET		 	9783	sys_sendto()
+	20	2934	18	HPET		 	9634	send()
+	20x4	2934	18	HPET		 	9606	send() four threads
+	20	2934	18	HPET		 104	9602	9267 alternate
+	21	2934	18	HPET		 111	8982
+	22	2934	18	HPET			9006	alt 8710
+	23	2934	18	HPET			8906
+	24	2934	18	HPET		 117	8502	alt 8238
+	25	2934	18	HPET		 136	7347
+	
+	40	2934	18	HPET		 144	6903	to 10.0.0.1
+	40x4	2934	18	HPET		 144	6720	to 10.0.0.1
+	41	2934	18	HPET		 156	6404	to 10.0.0.1 down to 6017
+	41x4	2934	18	HPET		 156	6423	to 10.0.0.1 down to 6017
+		--- 41-42 is m_uiotombuf()
+				uiomove()
+				sys/kern/subr_uio.c::uiomove_faultflag(cp, n, uio, 0)
+			involves copyin in
+			/home/luigi/FreeBSD/head/sys/amd64/amd64/support.S:
+	42	2934	18	HPET		 279	3577	to 10.0.0.1 down to 3544
+	42x4	2934	18	HPET		 279	3725	to 10.0.0.1 down to 3544
+	43	2934	18	HPET		 283	3522	to 10.0.0.1 down to 3544
+
+	30	2934	18	HPET		 292	3418	to 10.0.0.1
+	31	2934	18	HPET		 340	2936
+
+	50	2934	18	HPET		 361	2765	to 10.0.0.1
+	50x4	2934	18	HPET		 361	2802	to 10.0.0.1
+	51	2934	18	HPET			2635	to 10.0.0.1
+	51x4	2934	18	HPET			2689	to 10.0.0.1
+	52	2934	18	HPET		 477	2093	to 10.0.0.1
+	52x4	2934	18	HPET		 	 775	to 10.0.0.1
+		--- 52-53 is the pfil call
+	53	2934	18	HPET			 613	to 10.0.0.1 (not here ?)
+	54	2934	18	HPET			2090	to 10.0.0.1 also 2031 2046 ...
+	54x4	2934	18	HPET			 783	to 10.0.0.1 also 2031 2046 ...
+	55	2934	18	HPET		 534	1871	to 10.0.0.1
+	55x2	2934	18	HPET		 	1555	to 10.0.0.1 two threads
+	55x4	2934	18	HPET		 	 770	to 10.0.0.1 four threads
+
+	0	2934	18	HPET		 968	1032	to 127.0.0.1
+	0	2934	18	HPET			 622	to 10.0.0.1 (via ix0)
+	0x2	2934	18	HPET			 450	to 10.0.0.1 (via ix0)
+	0x4	2934	18	HPET			 351	to 10.0.0.1 (via ix0)
+	0	2934	18	HPET			 322	to 10.0.0.1 (and netmap-bridge)
+
+20120416 XXX BUG
+	em lock issue in em_netmap_init(), try to remove the
+		callback to shut down handlers
+
+20120407 sendto and other functions
+
+Measure netsend (and sendto() ) on various machines and dropping
+the packet at different places in the stack.
+sysctl kern.ipc.drop_send=N picks the place where packets are dropped
+Tests run using tools/tools/netrate/netsend
+
+CONFIG				QEMU		LE-2300		i7-3400
+				i7-3400
+l=18, no send			18.9		86.4		211
+l=18,   1 thread, pipe drop	.0436				1.400
+l=1400, 1 thread, pipe drop	.0393				1.300
+l=18, 2 thread, pipe drop					.943
+l=1400, 2 thread, pipe drop					.857
+l=18, 5 thread, pipe drop					.51
+l=1400, 5 thread, pipe drop					.50
+
+
+20120407 syscall path
+lib/libc/net/Symbol.map
+    defines a few symbols that the linker is supposed to export
+
+lib/libc/net/send.c
+    send() calls _sendto()
+
+./libc/include/namespace.h:#define              sendto                          _sendto
+
+lib/libc/sys/Symbol.map
+	FBSDprivate_1.0		_sendto, __sys_sendto
+
+the threading library defines them
+./libthr/thread/thr_syscalls.c
+	ssize_t
+	__sendto(int s, const void *m, size_t l, int f, const struct sockaddr *t,
+	    socklen_t tl)
+	{
+		struct pthread *curthread = _get_curthread();
+		ssize_t ret;
+
+		_thr_cancel_enter(curthread);
+		ret = __sys_sendto(s, m, l, f, t, tl);
+		_thr_cancel_leave(curthread, ret <= 0);
+		return (ret);
+	}
+
+
+head/sys/kern/syscall.master
+; Processed to created init_sysent.c, syscalls.c and syscall.h.
+
+lib/libc/i386/SYS.h
+#define	SYSCALL(x)	2: PIC_PROLOGUE; jmp PIC_PLT(HIDENAME(cerror));	\
+			ENTRY(__CONCAT(__sys_,x));			\
+			.weak CNAME(x);					\
+			.set CNAME(x),CNAME(__CONCAT(__sys_,x));	\
+			.weak CNAME(__CONCAT(_,x));			\
+			.set CNAME(__CONCAT(_,x)),CNAME(__CONCAT(__sys_,x)); \
+			mov __CONCAT($SYS_,x),%eax; KERNCALL; jb 2b
+
+#define	RSYSCALL(x)	SYSCALL(x); ret; END(__CONCAT(__sys_,x))
+
+#define	PSEUDO(x)	2: PIC_PROLOGUE; jmp PIC_PLT(HIDENAME(cerror)); \
+			ENTRY(__CONCAT(__sys_,x));			\
+			.weak CNAME(__CONCAT(_,x));			\
+			.set CNAME(__CONCAT(_,x)),CNAME(__CONCAT(__sys_,x)); \
+			mov __CONCAT($SYS_,x),%eax; KERNCALL; jb 2b; ret; \
+			END(__CONCAT(__sys_,x))
+
+/* gas messes up offset -- although we don't currently need it, do for BCS */
+#define	LCALL(x,y)	.byte 0x9a ; .long y; .word x
+
+#define KERNCALL	int $0x80
+
+The main syscall in lib/libc/i386/sys/syscall.S
+
+ENTRY(syscall)
+	pop	%ecx	/* rta */
+	pop	%eax	/* syscall number */
+	push	%ecx
+	KERNCALL
+	push	%ecx	/* need to push a word to keep stack frame intact
+			   upon return; the word must be the return address. */
+	jb	1f
+	ret
+1:
+	PIC_PROLOGUE
+	jmp	PIC_PLT(HIDENAME(cerror))
+
+                                    
+
+--------------
+20120313 unetstack and linux netqueue
+  http://www.ioremap.net/archive/unetstack/
+  http://www.dnull.com/Alpine/
+	userspace stack
+
+20120306 receive speed
+
+    ixgbe seems to have some rx losses when used with receive
+    interrupt mitigation. Symptoms are the card is missing ~0.2%
+    of the incoming traffic.
+    As a workaround, set  by setting dev.netmap.netmap_no_pendintr=1
+    makes the receiver not lose packets.
+
+20120306 behaviour with one tx queue
+	report:
+	0		 5.678
+	1		11.13
+	3		11.53
+	7		11.85
+	15		12.10
+	255		12.40
+   Increasing the interrupt rate marginally improves the
+   behaviour but never better than 12.48Mpps.
+   Increasing the report frequency does not seem to help
+   (actually, it harms)
+
+Setting TXDCTL.PTHRESH and HTHRESH improves the rate.
+
+   Using dd for the status reporting does not seem to work - it
+   requires the use of RS on every descriptor, which slows down
+   the card.
+	TXDCTL.WTHRESH
+
+   Options: a) TDH is updated late, check the bits
+	b) the descriptor read is delayed.
+
+# $Id$
+
+20120128 select/usleep comparison FreeBSD Linux OSX
+
+select	| Iterations/second
+timeout	| FBSD	| Linux	| OSX
+usec	| 9.0	| Vbox	| 10.6
+--------+-------+-------+----------
+    1	   500	  15.0k	  150k
+   10	   500	  12.9k	   65k
+   50	   500	   8.6k	   15k
+  100	   500	   6.0k	    7.5k
+  500	   500	  1744	  1620
+ 1000	   500	   922	   880
+ 1500	   331	   629	   613
+ 2000	   331     477	   470
+
+
+20120112 RELENG_8 and RELENG_9
+    Original code committed in HEAD r227614
+    svn diff -r 227613:227614 svn+ssh://svn.freebsd.org/base/head
+    New files:
+	share/man/man4/netmap.4
+	sys/dev/netmap/
+	sys/net/netmap.h
+	sys/net/netmap_user.h
+	tools/tools/netmap/
+    Patches: (sys/conf done in  227845) see netmap-conf.diff
+	share/man/man4/Makefile
+	sys/conf/NOTES
+	sys/conf/files
+	sys/conf/options
+
+    Driver changes (done later)
+	sys/dev/e1000/if_igb.c
+	sys/dev/e1000/if_lem.c
+	sys/dev/e1000/if_em.c
+	sys/dev/re/if_re.c
+	sys/dev/ixgbe/ixgbe.c
+
+20111207 lr performance tests
+
+	ixgbe, RELENG_8 picobsd, no IPFW, no INVARIANTS, no i586
+	software LRO even on 82599
+
+	default latency is 16us, l=0 means no interrupt mitigation.
+	lro is the software implementation of lro,
+	hwlro is the hardware one (on 82599)
+
+	Summary:
+
+	- hardware checksum seems to help a lot on the tx side
+	  but practically useless on the receive side.
+
+	- with default interrupt mitigation, setting
+	  HWCSUM and TSO on the sender is really disruptive;
+	  (while it seems to help a bit with l=0)
+
+	- lro helps a lot on the receive side.
+
+	- the software lro on the transmit side is detrimental,
+	  not sure why (acks collapsed too much ?)
+	  Disabling it on pure acks 
+	  The sw version is actually pretty good., but on the tx side
+		the software version kills performance.
+		it really starves
+		
+	Peak
+	Tput	transmitter		receiver
+	======= =======================	========================
+	4975	-csum,-tso,-lro		-csum,-tso,-lro
+	5050	-csum,-tso,-lro, w 100	-csum,-tso,-lro
+
+	5350	-csum,-tso,-lro		+csum,-tso,+lro
+	5500	-csum,-tso,-lro, w 100	+csum,-tso,+lro
+	6000	-csum,-tso,-lro, w 150	+csum,-tso,+lro
+	6000	-csum,-tso,-lro, w 200	+csum,-tso,+lro
+
+	8000	csum,-tso,-lro		+csum,-tso,+lro
+	3950	csum,-tso,+lro		+csum,-tso,+lro
+
+	3144	-csum,tso,-lro		+csum,-tso,+lro
+	1600	csum,tso,-lro		+csum,-tso,+lro
+	2600	csum,tso,-lro		-csum,-tso,-lro
+	5200	-csum,tso,-lro		-csum,-tso,-lro
+
+	9400	csum,tso,-lro,l=0	+csum,-tso,hwlro
+	8400	-csum,tso,-lro,l=0	+csum,-tso,hwlro
+	7700	csum,tso,-lro,l=0	+csum,-tso,-lro (6.3 to 7.7)
+
+	8000	csum,-tso,lro, w 100	+csum,-tso,hwlro
+	7500	csum,-tso,lro, w 1000	+csum,-tso,hwlro	cache effect ?
+
+20111107 lr - forked version for the release
+
+20111021 - cache and memory latencies for various architectures
+	http://arstechnica.com/gadgets/news/2011/10/can-amd-survive-bulldozers-disappointing-debut.ars
+
+	Similarly, the cache and main memory latencies are longer than
+	they are for K10 (four cycles compared to three for level 1
+	cache; 21 cycles compared to 14 or 15 for level 2; 65 compared
+	to 55 or 59 for level 3; and 195 versus 182 or 157 cycles for
+	main memory). K10's latencies were already worse overall than
+	Sandy Bridge's (which boasts 4, 11, 25, and 148 cycle latencies,
+	from level 1 through to main memory), and Bulldozer makes them
+	worse still.
+
+
+20111003 - New measures: RX throughput vs burst size
+	Take new RX throughput measures, varying the number of hardware queues
+	and the value of the flag enabling the fast path for the poll handler.
+
+	During these experiments we measured the throughput based on the
+	reception of 64+4 bytes packets
+
+		 4 que	 4 que	 1 que
+		 1 thr	 1 thr	 1 thr
+		 1 cor	 1 cor	 1 cor
+	burst	  fast	  slow	  fast
+	=====	 =====	 =====	 =====
+	    1	  2.11	  0.30	  2.37
+	    2	  4.09	  0.60	  4.56
+	    4	  7.70	  1.20	  8.32
+	    8	 13.55	  2.34	 14.20
+	   16	 14.20	  4.60	 14.20
+	   32	 14.20	  8.01	 14.20
+	   64	 14.20	 14.20	 14.20
+	 1024	 14.20	 14.20	 14.20
+
+	 It seems the throughput obtained with the poll fast path is 7x the one
+	 obtained with the slow one; that is confirmed by the fact that we need
+	 a burst equal to 8 to obtain a throughput comparable with the fast
+	 poll and unitary burst.
+
+
+20111003 - New measures: TX throughput vs burst size
+	Take new TX throughput measures varying the number of hardware queues
+	and the size of burst; like in the previous update, both adaptive
+	interrupt moderation and maximum interrupt rate have been left to its
+	default value.
+	XXX much better values checking TDH only when avail == 0
+
+		 4 que	 2 que	 1 que
+		 1 thr	 1 thr	 1 thr
+	burst	 1 cor	 1 cor	 1 cor
+	=====	 =====	 =====	 =====
+	    1	  1.05	  0.89	  0.77
+	    2	  1.81	  1.71	  1.53
+	    4	  3.51	  3.41	  2.92
+	    8	  6.58	  6.38	  5.90
+	   16	 11.60	 11.22	 10.41
+	   32	 14.88	 14.88	 12.49
+	 1024			 12.49
+
+
+20111003 - New measures: throughput vs clock speed
+	Take new TX throughput measures varying the number of threads/hardware
+	queues; adaptive interrupt moderation was kept active and maximum
+	interrupt rate was left to its default value.
+
+	All the following measures are relative to the Intel 10 Gbe adapter.
+
+		 4 que	 4 que	 2 que	 2 que	 1 que
+		 4 thr	 1 thr	 2 thr	 1 thr	 1 thr
+	freq	 4 cor	 1 cor	 2 cor	 1 cor	 1 cor
+	====	 =====	 =====	 =====	 =====	 =====
+	 150	  5.31	  2.17	  2.88	  1.81	  1.70
+	 300	 10.13	  4.57	  5.88	  3.97	  3.49
+	 450	 14.88	  7.46	  8.04*	  6.35	  5.13
+	 600		 10.87	 11.54	  8.65	  6.92
+	 750		 13.64	 14.55	 10.67	  8.98
+	 900		 14.88	 14.88	 12.51	 11.67
+	1050				 14.00	 12.60
+	1200				 14.88	 12.60
+	2934					 12.60
+
+
+20110926 - New throughput measures.
+	Given the introduction of a couple of debugging features which caused
+	some slowdown in terms of TX and RX throughput, we decided to opt-out
+	such features with pre-processor defines, and take again throughput
+	measurements (here we report TX results only):
+
+	    cpu=150MHz queues=4 cores=1 threads=1 throughput= 2.17 Mpps
+	    cpu=300MHz queues=4 cores=1 threads=1 throughput= 4.57 Mpps
+	    cpu=450MHz queues=4 cores=1 threads=1 throughput= 7.53 Mpps
+	    cpu=600MHz queues=4 cores=1 threads=1 throughput= 10.88 Mpps
+	    cpu=750MHz queues=4 cores=1 threads=1 throughput= 13.62 Mpps
+	    cpu=900MHz queues=4 cores=1 threads=1 throughput= 14.84 Mpps
+
+	    cpu=150MHz queues=4 cores=4 threads=4 throughput= 5.35 Mpps
+	    cpu=300MHz queues=4 cores=4 threads=4 throughput= 9.75 Mpps
+	    cpu=450MHz queues=4 cores=4 threads=4 throughput= 14.88 Mpps
+
+	We did not measured the throughput with 2 cores and 2 queues, because
+	at the moment we are interested in not having introduced slow
+	operations; a more complete set of data will be taken next week.
+
+	There is always the super-linear trend which needs to be explained.
+
+
+20110921 - More latency experiments with different hosts and tx rages
+
+	Here is the summary of the results collected while measuring the RTT
+	between two hosts:
+
+	1 experiment
+	  - hosts: BSD - BSD
+	  - CPU freq: 2800 MHz
+	  - packet size: 98 bytes
+	  - transmit rates: 100 Hz, 1 KHz, 10 KHz
+	    100) 0.024/0.031/0.042/0.002 ms
+	    1000) 0.024/0.030/0.042/0.001 ms
+	    10000) 0.013/0.015/0.043/0.001 ms
+
+	2 experiment
+	  - hosts: BSD - Linux
+	  - CPU freq: 2800 MHz
+	  - packet size: 98 bytes
+	  - transmit rates: 100 Hz, 1 KHz, 10 KHz
+	    100) 0.036/0.078/0.091/0.003 ms
+	    1000) 0.057/0.078/0.090/0.002 ms
+	    10000) 0.013/0.022/0.092/0.005 ms
+
+	3 experiment
+	 - hosts: BSD - BSD w/ netmap bridge
+	 - CPU freq: 2800 MHz
+	 - packet size: 98 bytes
+	 - transmit rates: 100 Hz, 1 KHz, 10 KHz
+	   100) 0.055/0.065/0.073/0.003 ms
+	   1000) 0.041/0.060/0.076/0.002 ms
+	   10000) 0.026/0.033/0.133/0.007 ms
+
+	Considerations:
+	  - above 1 Khz of transmit frequency all measured times are way below
+	    data collected at lower freqs; we don't know why, probably the
+	    application is entering in *flood* mode and timestamps are no more
+	    reliable. More investigation is needed.
+	  - using the netmap bridge with high TX rates, we get high values of
+	    RTT for the first packets; afterwards the average decreases. Again,
+	    more investigation is needed.
+
+	Additional information can be found:
+	  - stats/ping-bsd-bsd-100-2800
+	  - stats/ping-bsd-bsd-1k-2800
+	  - stats/ping-bsd-bsd-10k-2800
+	  - stats/ping-bsd-linux-100-2800
+	  - stats/ping-bsd-linux-1k-2800
+	  - stats/ping-bsd-linux-10k-2800
+	  - stats/ping-bsd-netmap-100-2800
+	  - stats/ping-bsd-netmap-1k-2800
+	  - stats/ping-bsd-netmap-10k-2800
+
+20110920 - RTT break up measures
+	Using a patched version of `ping' we have been able to break up
+	measured RTT into small chunks, each one associated to a specific
+	network operation.
+
+	The following is the summary of the measures taken on a machine with
+	two interfaces in loopback, and interrupt latency reduced as much as
+	possible, and an high transmit rate:
+
+	  ~ 6 us to move a message between userspace and kernel: we expected
+	    a smaller time, but maybe we are taking the userspace timestamp to
+	    early
+
+	  ~ 11.7 us measures the time between A notifying the NIC of the packet
+	    to send, and B schedule the interrupt routine
+
+	  ~ 0.4 us between interrupt and rxeof: we expected this value, given
+	    that the function call is one of the first operation executed
+	    inside the interrupt service routine
+
+	  ~ 5 us the latency introduced by the receiver processing the ICMP
+	    message
+
+	  ~ 11.9 us measures the time between B notifying the NIC of the packet
+	    to send, and A schedule the interrupt routine; as we expected, this
+	    value is kind of equal to delta #2.
+
+          ~ 0.4 us between interrupt and rxeof
+
+          ~ 20 us to traverse the network stack and reach userspace
+
+	Hence:
+	  - from userspace to userspace: ~50 us
+	  - from userspace to kernelspace: ~30 us which is what we get from
+	    standard ping.
+
+	For the whole data set collected, have a look:
+	  - stats/patchedping-c1000-i0005-s68-2800-bulklat
+	  - stats/patchedping-c1000-i0005-s68-2800-lowlat
+	  - stats/patchedping-c1000-i0005-s68-2800-zerolat
+
+
+20110916 - More tests on ping latency (Linux) with a varying transmit rate.
+	We took the measures again varying the transmit rate to investigate the
+	origin of this high RTT. An higher transmit size does not produces
+	better results (they are kind of stable); on the other hand, increasing
+	the transmit rate:
+
+	  - hosts: Linux->Linux
+	  - command: ping -c 100000 -i 0.0001 -s [56, 200, 400, 800, 1200, 1450]
+	    56) min/avg/max: 0.022/0.033/0.123
+	    200) min/avg/max: 0.027/0.035/0.146
+	    400) min/avg/max: 0.020/0.035/0.145
+	    800) min/avg/max: 0.029/0.034/0.136
+	    1200) min/avg/max: 0.032/0.042/0.148
+	    1450) min/avg/max: 0.032/0.052/0.143
+
+	This time, collected data seem to be more reasonable than before:
+	moreover this suggests that interrupt mitigation (still active on
+	Linux) is more effective under *heavy* work load.
+
+
+20110915 - Test ping latency with different hosts and packet sizes
+	1 experiment
+	  - hosts: BSD->BSD
+	  - command: ping -c 1000 -i 0.005 -s [56, 200, 400, 800, 1200, 1450]
+	    56) min/avg/max: 0.049/0.050/0.055
+	    200) min/avg/max: 0.049/0.050/0.055
+	    400) min/avg/max: 0.049/0.050/0.055
+	    800) min/avg/max: 0.051/0.052/0.056
+	    1200) min/avg/max: 0.051/0.052/0.057
+	    1450) min/avg/max: 0.052/0.053/0.057
+
+	2 experiment
+	  - hosts: BSD->Linux
+	  - command: ping -c 1000 -i 0.005 -s [56, 200, 400, 800, 1200, 1450]
+	    56) min/avg/max: 0.073/0.085/0.091
+	    200) min/avg/max: 0.057/0.086/0.091
+	    400) min/avg/max: 0.059/0.087/0.093
+	    800) min/avg/max: 0.063/0.089/0.095
+	    1200) min/avg/max: 0.082/0.092/0.097
+	    1450) min/avg/max: 0.078/0.093/0.101
+
+	3 experiment
+	  - hosts: Linux->BSD
+	  - command: ping -c 1000 -i 0.006 -s [56, 200, 400, 800, 1200, 1450]
+	    * transmit rate has been increased to prevent icmp mitigation on
+	      the RX side: maybe there is a syctl to disable it *
+	    56) min/avg/max: 0.070/0.074/0.083
+	    200) min/avg/max: 0.070/0.074/0.087
+	    400) min/avg/max: 0.070/0.074/0.082
+	    800) min/avg/max: 0.071/0.075/0.084
+	    1200) min/avg/max: 0.071/0.075/0.088
+	    1450) min/avg/max: 0.071/0.075/0.086
+
+	4 experiment
+	  - hosts: Linux->Linux
+	  - command: ping -c 1000 -i 0.005 -s [56, 200, 400, 800, 1200, 1450]
+	    56) min/avg/max: 0.060/0.102/0.123
+	    200) min/avg/max: 0.065/0.106/0.140
+	    400) min/avg/max: 0.062/0.107/0.140
+	    800) min/avg/max: 0.068/0.113/0.150
+	    1200) min/avg/max: 0.075/0.113/0.157
+	    1450) min/avg/max: 0.083/0.117/0.140
+
+	Collected values are still to high.
+	
+
+20110915 - Interrupt mitigation study
+	Disabling `ixgbe' adaptive interrupt moderation, and varying
+	max_interrupt_rate, we used `vmstat - i' to measure the number of
+	received interrupts to find out whether such setting gets correctly
+	honored by device driver or not.
+
+	All the experiment have been taken on the receiver side (on the
+	transmit one, we had `pkt-gen' sending wire-limit traffic)
+
+	1 legacy driver, low interrupt latency
+	  - max_intr_rate: 62500
+	  - duration: 6.73 s
+	  - interrupts before: ~106289
+	  - interrupts after: ~212437
+	  - interrupts per second: ~15772
+
+	2 pkt-gen (RX), low interrupt latency
+	  - max_intr_rate: 62500
+	  - duration: 6.73 s
+	  - interrupts before: ~212515
+	  - interrupts after: ~315407
+	  - interrupts per second: ~15288
+
+	3 legacy driver, high interrupt latency
+	  - max_intr_rate: 6666
+	  - duration: 6.73s
+	  - interrupts before: ~172
+	  - interrupts after: ~108285
+	  - interrupts per second: ~16064
+	    how is this possible? should this value be under 6666? Does this
+	    count the number of received interrupts, or the number of served
+	    ones?
+
+	4 pkt-gen (RX), high interrupt latency
+	  - max_intr_rate: 6666
+	  - duration: 6.73s
+	  - interrupts before: ~68450
+	  - interrupts after: ~136538
+	  - interrupts per second: ~10115
+	    why we are still counting more interrupts than configured limit?
+	    why we are getting less interrupts than before?
+
+	These are measures that need to be investigated more.
+
+
+20110914 - Latency tests (part 2)
+	In these tests we wanted to measure the RTT deltas with different
+	packet sizes and different OSes. In particular we sent packets of 64,
+	98 and 132 bytes (`ping -s 56/90/124') and we tested all the possible
+	configurations of sender / receiver hosting different OSes (FreeBSD and
+	Linux)
+
+				Size	10 Gbe	1 Gbe
+				======	======	=====
+
+				64 B	33 us	57 us
+	FreeBSD-FreeBSD		98 B	37 us	58 us
+				132 B	38 us	60 us
+
+				64 B	88 us	132 us
+	FreeBSD-Linux		98 B	90 us	140 us
+				132 B	92 us	150 us
+
+				64 B	110 us	153 us
+	Linux-FreeBSD		98 B	112 us	169 us
+				132 B	113 us	178 us
+
+				64 B	169 us	182 us
+	Linux-Linux		98 B	170 us	185 us
+				132 B	176 us	188 us
+
+	Collected measures are likely to be wrong: why a ping on a Linux
+	machine takes so long? We are better off taking again the measures and
+	fix some ping variables like for example the message interval.
+
+
+20110913 - Latency tests (part 1)
+	In these tests we measured the latency measured by the `ping'
+	application; we repeated the tests using the standard driver, then
+	enabling NIC off-loading features, and finally disabling interrupt
+	mitigation. In the end, we tried to use the brige application (built on
+	top of netmap) which links hardware with stack queues.
+
+	OS: FreeBSD 9.0 beta
+	Kernel: head (r225462)
+
+	NIC: Intel 10Gbe (82599)
+	Setup: ping
+
+	standard	rxcsum		no intr		netmap
+			txcsum		mitigation	bridge
+	========	=======		==========	=======
+	35 usec		35 usec		35 usec		65 usec
+
+
+	NIC: Intel 1Gbe (PCH_D_HV_DM)
+	Setup: ping
+
+	standard	rxcsum		no intr		netmap
+			txcsum		mitigation	bridge
+	========	=======		==========	=======
+	57 usec		57 usec		/		183 usec
+
+
+20110909 - Transmission performance
+	OS: FreeBSD 9.0 beta
+	Kernel: head (r225380)
+
+	NIC: Intel 10Gbe (82599)
+	Setup: netsend throughput varying cpu freq and number of instances
+
+	freq	1 instance	2 instances	4 instances
+	====	==========	===========	===========
+	2934	725 Kpps	1.21 Mpps	1.64 Mpps
+	1467	372 Kpps	640 Kpps	808 Kpps
+	750	202 Kpps	344 Kpps	432 Kpps
+	150	36.7 Kpps	63.2 Kpps	80.9 Kpps
+
+	NIC: Intel 1Gbe (82572EI_COPPER)
+	Setup: pkt-gen
+
+	freq(MHz)	throughput (Mpps)
+	========	=================
+	150		1.13
+	2934		1.13
+
+	NIC: Intel 1Gbe (82574L)
+	Setup: pkt-gen
+
+	freq(MHz)	throughput (Mpps)
+	========	=================
+	150		1.13
+	2934		1.13
+
+
+20110908 - Transmission performance
+
+	OS: FreeBSD 9.0 beta
+	Kernel: head (r225380)
+
+	NIC: Intel 10Gbe (82599)
+	Setup: pkt-gen, 4 queues, 1 thread, 1 core, 64 bytes
+
+	freq (MHz)	throughput (Mpps)
+	=========	=================
+	150		2.18
+	450		7.10
+	750		13.93
+	900		14.88
+
+	NIC: Intel 10Gbe (82599)
+	Setup: pkt-gen, 4 queues, 4 threads, 4 cores, 64 bytes
+
+	freq (MHz)	throughput (Mpps)
+	=========	=================
+	150		5.32
+	300		9.42
+	450		14.20
+	600		14.88
+
+	NIC: Intel 1Gbe (PCH_D_HV_DM)
+	Setup: pkt-gen
+
+	freq(MHz)	throughput (Mpps)
+	========	=================
+	150		1.39
+	2934		1.39
+
+	NIC: Intel 1Gbe (ICH10_D_BM_LM)
+	Setup: pkt-gen
+
+	freq(MHz)	throughput (Mpps)
+	========	=================
+	150		1.13
+
+
+20110902 - kevent / kqueue userspace example
+
+	Monitor changes to the /tmp/foo file and print messages whenever
+	it is deleted, modified or their attributes change. The program
+	finishes when the file being monitoring is deleted.
+
+	1 Call kqueue(2) to create a new kernel event queue. The
+	  descriptor it returns will be later used by kevent(2).
+
+	2 Open the file to monitor and keep its descriptor around. We'll
+	  need this to attach an event monitor to it.
+
+	3 Initialize a vector of struct kevent elements that describes
+	  the changes to monitor. Since we are only monitoring a single
+	  file, we need a one-element vector. This vector is filled up
+	  with calls to the EV_SET macro. This macro takes: the
+	  descriptor of the kqueue, the descriptor of the file to
+	  monitor (ident), the filter to apply to it, several flags and
+	  optional arguments to the filter.
+
+	4 Call the kevent(2) function. This system call takes the list
+	  of changes to monitor we constructed before and does not
+	  return until at least one event is received (or when an
+	  associated timeout is exhausted). The function returns the
+	  number of changes received and stores information about them
+	  in another vector of struct kevent elements (we'll only get
+	  notifications of one event at a time, hence we don't use
+	  a vector, but a simple variable).
+
+	5 Interpret the results. If kevent(2) returned a number greater
+	  than 0, we have to inspect the output vector and see which
+	  events were received. Each filter has its semantics about the
+	  results. For example, we are using the EVFILT_VNODE filter,
+	  which takes a list of conditions to monitor in the fflags
+	  field and modifies it to include only the conditions that
+	  triggered the filter.
+
+
+	And now the code:
+
+#include <sys/event.h>
+#include <sys/time.h> 
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h> 
+
+int
+main(void)
+{
+   int f, kq, nev;
+   struct kevent change;
+   struct kevent event;
+
+   kq = kqueue();
+   if (kq == -1)
+       perror("kqueue");
+
+   f = open("/tmp/foo", O_RDONLY);
+   if (f == -1)
+       perror("open");
+
+   EV_SET(&change, f, EVFILT_VNODE,
+          EV_ADD | EV_ENABLE | EV_ONESHOT,
+          NOTE_DELETE | NOTE_EXTEND | NOTE_WRITE | NOTE_ATTRIB,
+          0, 0);
+
+   for (;;) {
+       nev = kevent(kq, &change, 1, &event, 1, NULL);
+       if (nev == -1)
+           perror("kevent");
+       else if (nev > 0) {
+           if (event.fflags & NOTE_DELETE) {
+               printf("File deleted\n");
+               break;
+           }
+           if (event.fflags & NOTE_EXTEND ||
+               event.fflags & NOTE_WRITE)
+               printf("File modified\n");
+           if (event.fflags & NOTE_ATTRIB)
+               printf("File attributes modified\n");
+       }
+   }
+
+   close(kq);
+   close(f);
+   return EXIT_SUCCESS;
+}
+
+
+	Source: http://blog.julipedia.org/2004/10/example-of-kqueue.html
+	Documentation: http://people.freebsd.org/~jlemon/papers/kqueue.pdf
+
+
+20110826 - kqueue support
+
+	kevent() introduction
+
+	A client program of the kevent system should:
+	- use kqueue() to creates a new kernel event queue;
+	- use kevent() to register, change or check events.
+
+	One of the main difference with the poll() implementation
+	in kernel space is that kevent() require the kernel to
+	store some information state. This work is done by the
+	kqueue() function, that allocates a new kqueue object
+	into the kernel.
+
+	Each event is identified by the tuple <id, filter> and 
+	can be selected by a filter. A filter is declared
+	by a filterops structure, and should define at least three
+	hooks: attach, detach and filter.
+
+	The user application calls the kevent() function with a
+	list of events. For each event the kernel calls the 
+	kqueue_register() function that lookup its queues and if
+	there is no match 
+	i) calls the "attach" hook and
+	ii) add the event on its kqueue.
+
+	The "filter" hook is called each time a data structure
+	is modified. This means that the .f_filter function should
+	be placed where new data are read/write. The filter execution
+	check the filter conditions and possibly add the event to the
+	kernel active kqueue.
+
+	Example of devices using kevents are:
+		net/bpf.c net/if_tap.c net/if_tun.c
+
+	The function executed for each event is the netmap_kqfilter()
+	function, that is declared to the netmap_cdevsw structure.
+	See the netmap_kqfilter() comments into the netmap.c file 
+	for mode details on its implementation.
+
+20110811 - kqueue support
+	The method to implement is defined in sys/sys/conf.h
+	        d_kqfilter_t            *d_kqfilter;
+	one that implements it is sys/kern/kern_tty.c
+
+2011.06.28	WORKING RELEASE (8943)
+
+2011.06.27	luigi
+
+Notes on reset, reinit etc.
+
+    Ring reset can be asynchronous wrt userland. Right now
+
+    RX RING
+	if there were no pending buffers passed up (keep a
+	copy of cur and avail in the kring ?) then the op is not
+	critical
+
+	Otherwise we should try to preserve the range from
+	cur to cur+avail -- not sure how.
+
+    TX RING:
+	If the reset does not change hwcur then there is no problem.
+	Otherwise we should preserve the old hwcur and move the
+	range of buffers that we get on the next write.
+
+	If the reset does not change hwcur, there is no need
+	to change cur either. Otherwise we need to set the flag
+	and throw away part of the content. But this decision
+	must be taken in the driver which knows the correct
+	values for cur and avail.
+
+	So, perhaps the callback should be in two steps, one
+	that returns slot, another one that fixes the flags
+	at the end. If the reset is harmless, no problem.
+	If it changes things, then set the flag, throw away stuff
+	at the next syscall and clear the flag.
+
+2011.06.21	luigi
+
+  version 0.3
+
+  + the diffs for RELENG_8 are out of date.
+
+  + revising the netmap_poll implementation, the new method
+    is generally a lot more efficient than the old one
+    especially for small bursts, as it avoids some useless function
+    calls. There is still some issue on the handling of NR_REINIT
+    which needs to be investigated;
+
+  + the 're' driver seems to have problems receiving.
+    The machine stalls.
+
+  + started an initial implementation of a bridge in testpcap.
+    More or less works but seems to lose control when the link goes
+    down.
+
+  + Bridging performance (Mpps, l=64 until we remove CRCSTRIP)
+		
+       burst	old	new	new	testpcap (XXX NO)
+		poll	no_ts	do_ts	(with ts)
+
+       1	 0.21	 9.59	 8.57	 0.75
+       2	 0.41	10.05	 8.96	 1.37
+       16	 2.55			 4.86
+       1024	10.61	10.66	 9.42	 7.50
+
+
+  + RX performance, em on PCI bus: 740Kpps (?)
+
+---------------------------------------------------------
+
+2011.06.22	marta
+
+  svn rev. 8912
+
+  + Bridging and pcap performance (Mpps, l=64)
+  freq 2934
+  bridge no_timestamp=0
+
+  burst	bridge	pcap 	note
+  1	9.5	-
+  2	9.9	-
+  5	10.02	-
+  10	10.1	-
+  20	10.1	-	oscilla 10.3
+  50	10.1	-	oscilla 10.3
+  70	10.4	-	oscilla
+  
+  freq 2934
+  bridge no_timestamp=1
+  burst	bridge	pcap 	note
+  1	9.9	777
+  2	10.6	1.3
+  5	11.07	2.6
+  10	11.1	3.7
+  20	11.2	4.8
+  50	11.2	5.7
+
+  freq 1200
+  bridge no_timestamp=0
+
+  burst	bridge	pcap 	note
+  1	3.6	-
+  2	3.9	-
+  5	4.04	-
+  10	4.08	-	oscilla 4.1
+  20	4.01	- 	oscilla
+  50	4.01	-
+  
+  freq 1200
+  bridge no_timestamp=1
+  burst	bridge	pcap 	note
+  1	3.8	317
+  2	4.04	592
+  5	4.1	1.2
+  10	4.25	1.95
+  20	4.25	2.7	
+  50	4.30	3.5

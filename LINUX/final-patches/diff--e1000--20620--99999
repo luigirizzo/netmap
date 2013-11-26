@@ -1,0 +1,104 @@
+diff --git a/e1000/e1000_main.c b/e1000/e1000_main.c
+index bcd192c..5de7009 100644
+--- a/e1000/e1000_main.c
++++ b/e1000/e1000_main.c
+@@ -213,6 +213,10 @@ static int debug = NETIF_MSG_DRV | NETIF_MSG_PROBE;
+ module_param(debug, int, 0);
+ MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <if_e1000_netmap.h>
++#endif
++
+ /**
+  * e1000_init_module - Driver Registration Routine
+  *
+@@ -375,6 +379,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
+ 	e1000_configure_tx(adapter);
+ 	e1000_setup_rctl(adapter);
+ 	e1000_configure_rx(adapter);
++#ifdef DEV_NETMAP
++	if (e1000_netmap_init_buffers(adapter))
++		return;
++#endif /* DEV_NETMAP */
+ 	/* call E1000_DESC_UNUSED which always leaves
+ 	 * at least 1 descriptor unused to make sure
+ 	 * next_to_use != next_to_clean */
+@@ -402,6 +410,10 @@ int e1000_up(struct e1000_adapter *adapter)
+ 
+ 	netif_wake_queue(adapter->netdev);
+ 
++#ifdef DEV_NETMAP
++	netmap_enable_all_rings(adapter->netdev);
++#endif /* DEV_NETMAP */
++
+ 	/* fire a link change interrupt to start the watchdog */
+ 	ew32(ICS, E1000_ICS_LSC);
+ 	return 0;
+@@ -485,6 +497,10 @@ void e1000_down(struct e1000_adapter *adapter)
+ 	ew32(RCTL, rctl & ~E1000_RCTL_EN);
+ 	/* flush and sleep below */
+ 
++#ifdef DEV_NETMAP
++	netmap_disable_all_rings(netdev);
++#endif /* DEV_NETMAP */
++
+ 	netif_tx_disable(netdev);
+ 
+ 	/* disable transmits in the hardware */
+@@ -1035,6 +1051,10 @@ static int __devinit e1000_probe(struct pci_dev *pdev,
+ 	adapter->wol = adapter->eeprom_wol;
+ 	device_set_wakeup_enable(&adapter->pdev->dev, adapter->wol);
+ 
++#ifdef DEV_NETMAP
++	e1000_netmap_attach(adapter);
++#endif /* DEV_NETMAP */
++
+ 	/* print bus type/speed/width info */
+ 	DPRINTK(PROBE, INFO, "(PCI%s:%s:%s) ",
+ 		((hw->bus_type == e1000_bus_type_pcix) ? "-X" : ""),
+@@ -1113,6 +1133,10 @@ static void __devexit e1000_remove(struct pci_dev *pdev)
+ 
+ 	kfree(adapter->tx_ring);
+ 	kfree(adapter->rx_ring);
++	
++#ifdef DEV_NETMAP
++	netmap_detach(netdev);
++#endif /* DEV_NETMAP */
+ 
+ 	iounmap(hw->hw_addr);
+ 	if (hw->flash_address)
+@@ -1291,6 +1315,10 @@ static int e1000_open(struct net_device *netdev)
+ 
+ 	netif_start_queue(netdev);
+ 
++#ifdef DEV_NETMAP
++	netmap_enable_all_rings(netdev);
++#endif
++
+ 	/* fire a link status change interrupt to start the watchdog */
+ 	ew32(ICS, E1000_ICS_LSC);
+ 
+@@ -3429,6 +3457,10 @@ static bool e1000_clean_tx_irq(struct e1000_adapter *adapter,
+ 	unsigned int count = 0;
+ 	unsigned int total_tx_bytes=0, total_tx_packets=0;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_tx_irq(netdev, 0))
++		return 1; /* cleaned ok */
++#endif /* DEV_NETMAP */
+ 	i = tx_ring->next_to_clean;
+ 	eop = tx_ring->buffer_info[i].next_to_watch;
+ 	eop_desc = E1000_TX_DESC(*tx_ring, eop);
+@@ -3795,6 +3827,11 @@ static bool e1000_clean_rx_irq(struct e1000_adapter *adapter,
+ 	bool cleaned = false;
+ 	unsigned int total_rx_bytes=0, total_rx_packets=0;
+ 
++#ifdef DEV_NETMAP
++	ND("calling netmap_rx_irq");
++	if (netmap_rx_irq(netdev, 0, work_done))
++		return 1; /* seems to be ignored */
++#endif /* DEV_NETMAP */
+ 	i = rx_ring->next_to_clean;
+ 	rx_desc = E1000_RX_DESC(*rx_ring, i);
+ 	buffer_info = &rx_ring->buffer_info[i];

@@ -25,7 +25,6 @@
 
 /*
  * $FreeBSD: head/sys/dev/netmap/if_re_netmap.h 234225 2012-04-13 15:33:12Z luigi $
- * $Id: if_re_netmap.h 11998 2013-01-17 22:04:36Z luigi $
  *
  * netmap support for "re"
  * For details on netmap support please see ixgbe_netmap.h
@@ -40,41 +39,14 @@
 
 
 /*
- * wrapper to export locks to the generic code
- * We should not use the tx/rx locks
- */
-static void
-re_netmap_lock_wrapper(struct ifnet *ifp, int what, u_int queueid)
-{
-	struct rl_softc *adapter = ifp->if_softc;
-
-	switch (what) {
-	case NETMAP_CORE_LOCK:
-		RL_LOCK(adapter);
-		break;
-	case NETMAP_CORE_UNLOCK:
-		RL_UNLOCK(adapter);
-		break;
-
-	case NETMAP_TX_LOCK:
-	case NETMAP_RX_LOCK:
-	case NETMAP_TX_UNLOCK:
-	case NETMAP_RX_UNLOCK:
-		D("invalid lock call %d, no tx/rx locks here", what);
-		break;
-	}
-}
-
-
-/*
  * support for netmap register/unregisted. We are already under core lock.
  * only called on the first register or the last unregister.
  */
 static int
-re_netmap_reg(struct ifnet *ifp, int onoff)
+re_netmap_reg(struct netmap_adapter *na, int onoff)
 {
+        struct ifnet *ifp = na->ifp;
 	struct rl_softc *adapter = ifp->if_softc;
-	struct netmap_adapter *na = NA(ifp);
 	int error = 0;
 
 	if (na == NULL)
@@ -86,10 +58,11 @@ re_netmap_reg(struct ifnet *ifp, int onoff)
 
 	if (onoff) {
 		ifp->if_capenable |= IFCAP_NETMAP;
+                na->na_flags |= NAF_NATIVE_ON;
 
 		/* save if_transmit to restore it later */
 		na->if_transmit = ifp->if_transmit;
-		ifp->if_transmit = netmap_start;
+		ifp->if_transmit = netmap_transmit;
 
 		re_init_locked(adapter);
 
@@ -102,6 +75,7 @@ fail:
 		/* restore if_transmit */
 		ifp->if_transmit = na->if_transmit;
 		ifp->if_capenable &= ~IFCAP_NETMAP;
+                na->na_flags &= ~NAF_NATIVE_ON;
 		re_init_locked(adapter);	/* also enables intr */
 	}
 	return (error);
@@ -112,11 +86,11 @@ fail:
  * Reconcile kernel and user view of the transmit ring.
  */
 static int
-re_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
+re_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
+        struct ifnet *ifp = na->ifp;
 	struct rl_softc *sc = ifp->if_softc;
 	struct rl_txdesc *txd = sc->rl_ldata.rl_tx_desc;
-	struct netmap_adapter *na = NA(sc->rl_ifp);
 	struct netmap_kring *kring = &na->tx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
 	int j, k, l, n, lim = kring->nkr_num_slots - 1;
@@ -124,9 +98,6 @@ re_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 	k = ring->cur;
 	if (k > lim)
 		return netmap_ring_reinit(kring);
-
-	if (do_lock)
-		RL_LOCK(sc);
 
 	/* Sync the TX descriptor list */
 	bus_dmamap_sync(sc->rl_ldata.rl_tx_list_tag,
@@ -151,7 +122,7 @@ re_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 
 	/* update avail to what the kernel knows */
 	ring->avail = kring->nr_hwavail;
-	
+
 	j = kring->nr_hwcur;
 	if (j != k) {	/* we have new packets to send */
 		l = sc->rl_ldata.rl_tx_prodidx;
@@ -165,12 +136,10 @@ re_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 			int len = slot->len;
 
 			if (addr == netmap_buffer_base || len > NETMAP_BUF_SIZE) {
-				if (do_lock)
-					RL_UNLOCK(sc);
 				// XXX what about prodidx ?
 				return netmap_ring_reinit(kring);
 			}
-			
+
 			if (l == lim)	/* mark end of ring */
 				cmd |= RL_TDESC_CMD_EOR;
 
@@ -201,8 +170,6 @@ re_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 		/* start ? */
 		CSR_WRITE_1(sc, sc->rl_txstart, RL_TXSTART_START);
 	}
-	if (do_lock)
-		RL_UNLOCK(sc);
 	return 0;
 }
 
@@ -211,23 +178,21 @@ re_netmap_txsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
  * Reconcile kernel and user view of the receive ring.
  */
 static int
-re_netmap_rxsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
+re_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
+        struct ifnet *ifp = na->ifp;
 	struct rl_softc *sc = ifp->if_softc;
 	struct rl_rxdesc *rxd = sc->rl_ldata.rl_rx_desc;
-	struct netmap_adapter *na = NA(sc->rl_ifp);
 	struct netmap_kring *kring = &na->rx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
 	int j, l, n, lim = kring->nkr_num_slots - 1;
-	int force_update = do_lock || kring->nr_kflags & NKR_PENDINTR;
+	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 	u_int k = ring->cur, resvd = ring->reserved;
 
 	k = ring->cur;
 	if (k > lim)
 		return netmap_ring_reinit(kring);
 
-	if (do_lock)
-		RL_LOCK(sc);
 	/* XXX check sync modes */
 	bus_dmamap_sync(sc->rl_ldata.rl_rx_list_tag,
 	    sc->rl_ldata.rl_rx_list_map,
@@ -292,8 +257,6 @@ re_netmap_rxsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 			void *addr = PNMB(slot, &paddr);
 
 			if (addr == netmap_buffer_base) { /* bad buf */
-				if (do_lock)
-					RL_UNLOCK(sc);
 				return netmap_ring_reinit(kring);
 			}
 
@@ -324,8 +287,6 @@ re_netmap_rxsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
 	}
 	/* tell userspace that there are new packets */
 	ring->avail = kring->nr_hwavail - resvd;
-	if (do_lock)
-		RL_UNLOCK(sc);
 	return 0;
 }
 
@@ -335,16 +296,21 @@ re_netmap_rxsync(struct ifnet *ifp, u_int ring_nr, int do_lock)
  */
 static void
 re_netmap_tx_init(struct rl_softc *sc)
-{   
+{
 	struct rl_txdesc *txd;
 	struct rl_desc *desc;
 	int i, n;
 	struct netmap_adapter *na = NA(sc->rl_ifp);
-	struct netmap_slot *slot = netmap_reset(na, NR_TX, 0, 0);
+	struct netmap_slot *slot;
 
+        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
+            return;
+        }
+
+        slot = netmap_reset(na, NR_TX, 0, 0);
 	/* slot is NULL if we are not in netmap mode */
 	if (!slot)
-		return;
+		return;  // XXX cannot happen
 	/* in netmap mode, overwrite addresses and maps */
 	txd = sc->rl_ldata.rl_tx_desc;
 	desc = sc->rl_ldata.rl_tx_list;
@@ -412,13 +378,13 @@ re_netmap_attach(struct rl_softc *sc)
 	bzero(&na, sizeof(na));
 
 	na.ifp = sc->rl_ifp;
-	na.separate_locks = 0;
+	na.na_flags = NAF_BDG_MAYSLEEP;
 	na.num_tx_desc = sc->rl_ldata.rl_tx_desc_cnt;
 	na.num_rx_desc = sc->rl_ldata.rl_rx_desc_cnt;
 	na.nm_txsync = re_netmap_txsync;
 	na.nm_rxsync = re_netmap_rxsync;
-	na.nm_lock = re_netmap_lock_wrapper;
 	na.nm_register = re_netmap_reg;
-	netmap_attach(&na, 1);
+	na.num_tx_rings = na.num_rx_rings = 1;
+	netmap_attach(&na);
 }
 /* end of file */

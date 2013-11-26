@@ -1,4 +1,4 @@
-# $Id: PORTING 11964 2012-12-19 17:34:50Z luigi $
+# $Id$
 
 Adding netmap support to network device drivers
 ------------------------------------------------

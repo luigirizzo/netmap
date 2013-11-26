@@ -24,7 +24,7 @@
  */
 
 /*
- * $Id: testlock.c 12022 2013-01-24 02:20:24Z luigi $
+ * $Id$
  *
  * Test program to study various ops and concurrency issues.
  * Create multiple threads, possibly bind to cpus, and run a workload.
@@ -272,7 +272,7 @@ td_body(void *data)
 #endif
 	{
 		/* main loop.*/
-		D("testing %ld cycles", t->g->m_cycles);
+		D("testing %"PRIu64" cycles", t->g->m_cycles);
 		gettimeofday(&t->tic, NULL);
 		t->g->fn(t);
 		gettimeofday(&t->toc, NULL);
@@ -370,13 +370,13 @@ test_rdtsc(struct targ *t)
 {
         int64_t m, i;
 	volatile uint64_t v;
-	(void)v;
         for (m = 0; m < t->g->m_cycles; m++) {
 		for (i = 0; i < ONE_MILLION; i++) {
                 	v = rdtsc();
 			t->count++;
 		}
         }
+	(void)v;
 }
 
 void
@@ -478,6 +478,30 @@ fast_bcopy(void *_src, void *_dst, int l)
 	}
 }
 
+static inline void
+asmcopy(void *dst, void *src, uint64_t l)
+{
+	(void)dst;
+	(void)src;
+	asm(
+	"\n\t"
+	"movq %0, %%rcx\n\t"
+	"addq $7, %%rcx\n\t"
+	"shrq $03, %%rcx\n\t"
+	"cld\n\t"
+	"movq %1, %%rdi\n\t"
+	"movq %2, %%rsi\n\t"
+	"repe movsq\n\t"
+/*	"movq %0, %%rcx\n\t"
+	"andq $0x7, %%rcx\n\t"
+	"repe movsb\n\t"
+*/
+	: /* out */
+	: "r" (l), "r" (dst), "r" (src) /* in */
+	: "%rcx", "%rsi", "%rdi" /* clobbered */
+	);
+
+}
 // XXX if you want to make sure there is no inlining...
 // static void (*fp)(void *_src, void *_dst, int l) = fast_bcopy;
 
@@ -495,6 +519,21 @@ test_fastcopy(struct targ *t)
 	D("fast copying %d bytes", len);
         for (m = 0; m < t->g->m_cycles; m++) {
 		fast_bcopy(t->g, (void *)&huge[m & HU], len);
+		t->count+=1;
+        }
+}
+
+void
+test_asmcopy(struct targ *t)
+{
+        int64_t m;
+	int len = t->g->arg;
+
+	if (len > (int)sizeof(struct glob_arg))
+		len = sizeof(struct glob_arg);
+	D("fast copying %d bytes", len);
+        for (m = 0; m < t->g->m_cycles; m++) {
+		asmcopy((void *)&huge[m & HU], t->g, len);
 		t->count+=1;
         }
 }
@@ -544,6 +583,33 @@ test_memcpy(struct targ *t)
         }
 }
 
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <net/netmap.h>
+void
+test_netmap(struct targ *t)
+{
+	struct nmreq nmr;
+	int fd;
+        int64_t m, scale;
+
+	scale = t->g->m_cycles / 100;
+	fd = open("/dev/netmap", O_RDWR);
+	if (fd < 0) {
+		D("fail to open netmap, exit");
+		return;
+	}
+	bzero(&nmr, sizeof(nmr));
+        for (m = 0; m < t->g->m_cycles; m += scale) {
+		nmr.nr_version = 666;
+		nmr.nr_cmd = t->g->arg;
+		nmr.nr_offset = (uint32_t)scale;
+		ioctl(fd, NIOCGINFO, &nmr);
+		t->count += scale;
+        }
+	return;
+}
+
 struct entry {
 	void (*fn)(struct targ *);
 	char *name;
@@ -561,6 +627,7 @@ struct entry tests[] = {
 	{ test_builtin_memcpy, "__builtin_memcpy", 1000, 100000000 },
 	{ test_memcpy, "memcpy", 1000, 100000000 },
 	{ test_fastcopy, "fastcopy", 1000, 100000000 },
+	{ test_asmcopy, "asmcopy", 1000, 100000000 },
 	{ test_add, "add", ONE_MILLION, 100000000 },
 	{ test_nop, "nop", ONE_MILLION, 100000000 },
 	{ test_atomic_add, "atomic-add", ONE_MILLION, 100000000 },
@@ -568,6 +635,7 @@ struct entry tests[] = {
 	{ test_rdtsc, "rdtsc", ONE_MILLION, 100000000 },	// unserialized
 	{ test_rdtsc1, "rdtsc1", ONE_MILLION, 100000000 },	// serialized
 	{ test_atomic_cmpset, "cmpset", ONE_MILLION, 100000000 },
+	{ test_netmap, "netmap", 1000, 100000000 },
 	{ NULL, NULL, 0, 0 }
 };
 

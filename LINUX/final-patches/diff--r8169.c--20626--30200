@@ -1,0 +1,114 @@
+diff --git a/r8169.c b/r8169.c
+index 7ffdb80..6bae7e6 100644
+--- a/r8169.c
++++ b/r8169.c
+@@ -590,6 +590,10 @@ static int rtl8169_poll(struct napi_struct *napi, int budget);
+ static const unsigned int rtl8169_rx_config =
+ 	(RX_FIFO_THRESH << RxCfgFIFOShift) | (RX_DMA_BURST << RxCfgDMAShift);
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <if_re_netmap_linux.h>
++#endif
++
+ static u32 ocp_read(struct rtl8169_private *tp, u8 mask, u16 reg)
+ {
+ 	void __iomem *ioaddr = tp->mmio_addr;
+@@ -3207,6 +3211,10 @@ rtl8169_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	if (pci_dev_run_wake(pdev))
+ 		pm_runtime_put_noidle(&pdev->dev);
+ 
++#ifdef DEV_NETMAP
++	re_netmap_attach(tp);
++#endif /* DEV_NETMAP */
++
+ 	netif_carrier_off(dev);
+ 
+ out:
+@@ -3238,6 +3246,9 @@ static void __devexit rtl8169_remove_one(struct pci_dev *pdev)
+ 	cancel_delayed_work_sync(&tp->task);
+ 
+ 	rtl_release_firmware(tp);
++#ifdef DEV_NETMAP
++	netmap_detach(dev);
++#endif /* DEV_NETMAP */
+ 
+ 	unregister_netdev(dev);
+ 
+@@ -3291,6 +3302,10 @@ static int rtl8169_open(struct net_device *dev)
+ 
+ 	napi_enable(&tp->napi);
+ 
++#ifdef DEV_NETMAP
++	netmap_enable_all_rings(dev);
++#endif /* DEV_NETMAP */
++
+ 	rtl8169_init_phy(dev, tp);
+ 
+ 	/*
+@@ -4074,6 +4089,11 @@ static inline void rtl8169_mark_as_last_descriptor(struct RxDesc *desc)
+ static int rtl8169_rx_fill(struct rtl8169_private *tp)
+ {
+ 	unsigned int i;
++#ifdef DEV_NETMAP
++	re_netmap_tx_init(tp);
++	if (re_netmap_rx_init(tp))
++		return 0; // success
++#endif /* DEV_NETMAP */
+ 
+ 	for (i = 0; i < NUM_RX_DESC; i++) {
+ 		void *data;
+@@ -4175,11 +4195,19 @@ static void rtl8169_wait_for_quiescence(struct net_device *dev)
+ 	/* Wait for any pending NAPI task to complete */
+ 	napi_disable(&tp->napi);
+ 
++#ifdef DEV_NETMAP
++	netmap_disable_all_rings(dev);
++#endif /* DEV_NETMAP */
++
+ 	rtl8169_irq_mask_and_ack(ioaddr);
+ 
+ 	tp->intr_mask = 0xffff;
+ 	RTL_W16(IntrMask, tp->intr_event);
+ 	napi_enable(&tp->napi);
++
++#ifdef DEV_NETMAP
++	netmap_enable_all_rings(dev);
++#endif /* DEV_NETMAP */
+ }
+ 
+ static void rtl8169_reinit_task(struct work_struct *work)
+@@ -4452,6 +4480,11 @@ static void rtl8169_tx_interrupt(struct net_device *dev,
+ {
+ 	unsigned int dirty_tx, tx_left;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_tx_irq(dev, 0))
++		return;
++#endif /* DEV_NETMAP */
++
+ 	dirty_tx = tp->dirty_tx;
+ 	smp_rmb();
+ 	tx_left = tp->cur_tx - dirty_tx;
+@@ -4547,6 +4580,11 @@ static int rtl8169_rx_interrupt(struct net_device *dev,
+ 	unsigned int count;
+ 	int polling = (budget != ~(u32)0) ? 1 : 0;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_rx_irq(dev, 0, &count))
++   		return count;
++#endif /* DEV_NETMAP */
++
+ 	cur_rx = tp->cur_rx;
+ 	rx_left = NUM_RX_DESC + tp->dirty_rx - cur_rx;
+ 	rx_left = min(rx_left, budget);
+@@ -4769,6 +4807,10 @@ static void rtl8169_down(struct net_device *dev)
+ 
+ 	napi_disable(&tp->napi);
+ 
++#ifdef DEV_NETMAP
++	netmap_disable_all_rings(dev);
++#endif /* DEV_NETMAP */
++
+ 	spin_lock_irq(&tp->lock);
+ 
+ 	rtl8169_asic_down(ioaddr);
