@@ -1634,14 +1634,18 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 
 	ND("%s[%d] %s %x", NM_IFPNAME(ifp), ring_nr, (tx == NR_TX ? "TX" : "RX"), flags);
 
-	if (!(ifp->if_capenable & IFCAP_NETMAP))
-		return 0;
-
 	if (flags & NAF_DISABLE_NOTIFY) {
-		bkring = &vpna->up.rx_rings[ring_nr];
-		netmap_disable_ring(bkring);
+		kring = tx == NR_TX ? na->tx_rings : na->rx_rings;
+		bkring = tx == NR_TX ? vpna->up.rx_rings : vpna->up.tx_rings;
+		if (kring->nkr_stopped)
+			netmap_disable_ring(bkring);
+		else
+			bkring->nkr_stopped = 0;
 		return 0;
 	}
+
+	if (ifp == NULL || !(ifp->if_capenable & IFCAP_NETMAP))
+		return 0;
 
 	if (tx == NR_TX)
 		return 0;

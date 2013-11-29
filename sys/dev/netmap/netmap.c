@@ -260,7 +260,7 @@ void netmap_disable_ring(struct netmap_kring *kr)
 	nm_kr_put(kr);
 }
 
-void netmap_disable_all_rings(struct ifnet *ifp)
+static void netmap_set_all_rings(struct ifnet *ifp, int stopped)
 {
 	struct netmap_adapter *na;
 	int i;
@@ -270,35 +270,33 @@ void netmap_disable_all_rings(struct ifnet *ifp)
 
 	na = NA(ifp);
 
-	for (i = 0; i < na->num_tx_rings + 1; i++) {
-		netmap_disable_ring(na->tx_rings + i);
+	for (i = 0; i <= na->num_tx_rings; i++) {
+		if (stopped)
+			netmap_disable_ring(na->tx_rings + i);
+		else
+			na->tx_rings[i].nkr_stopped = 0;
 		na->nm_notify(na, i, NR_TX, NAF_DISABLE_NOTIFY |
 			(i == na->num_tx_rings ? NAF_GLOBAL_NOTIFY: 0));
 	}
-	for (i = 0; i < na->num_rx_rings + 1; i++) {
-		netmap_disable_ring(na->rx_rings + i);
+
+	for (i = 0; i <= na->num_rx_rings; i++) {
+		if (stopped)
+			netmap_disable_ring(na->rx_rings + i);
+		else
+			na->rx_rings[i].nkr_stopped = 0;
 		na->nm_notify(na, i, NR_RX, NAF_DISABLE_NOTIFY |
 			(i == na->num_rx_rings ? NAF_GLOBAL_NOTIFY: 0));
 	}
 }
 
+void netmap_disable_all_rings(struct ifnet *ifp)
+{
+	netmap_set_all_rings(ifp, 1 /* stopped */);
+}
+
 void netmap_enable_all_rings(struct ifnet *ifp)
 {
-	struct netmap_adapter *na;
-	int i;
-
-	if (!(ifp->if_capenable & IFCAP_NETMAP))
-		return;
-
-	na = NA(ifp);
-	for (i = 0; i < na->num_tx_rings + 1; i++) {
-		ND("enabling %p", na->tx_rings + i);
-		na->tx_rings[i].nkr_stopped = 0;
-	}
-	for (i = 0; i < na->num_rx_rings + 1; i++) {
-		ND("enabling %p", na->rx_rings + i);
-		na->rx_rings[i].nkr_stopped = 0;
-	}
+	netmap_set_all_rings(ifp, 0 /* enabled */);
 }
 
 

@@ -235,6 +235,7 @@ mlx4_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 	struct netmap_ring *ring = kring->ring;
 	u_int j, k = ring->cur, n = 0, lim = kring->nkr_num_slots - 1;
 	int error = 0;
+	int new_slots;
 
 	/* if cur is invalid reinitialize the ring. */
 	if (k > lim)
@@ -255,6 +256,19 @@ mlx4_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 		D("XXXXXXXXXXXXX ERROR q %d nwcur overflow %d", j, lim);
 		error = EINVAL;
 		goto err;
+	}
+	new_slots = k - j - kring->nr_hwreserved;
+	if (new_slots < 0)
+		new_slots += kring->nkr_num_slots;
+	if (new_slots > kring->nr_hwavail) {
+		RD(5, "=== j %d k %d d %d hwavail %d hwreserved %d",
+			j, k, new_slots, kring->nr_hwavail, kring->nr_hwreserved);
+		return netmap_ring_reinit(kring);
+	}
+	if (!netif_carrier_ok(ifp)) {
+		/* All the new slots are now unavailable. */
+		kring->nr_hwavail -= new_slots;
+		goto out;
 	}
 	// XXX debugging, assuming lim is 2^x-1
 	n = 0; // XXX debugging
@@ -328,7 +342,7 @@ mlx4_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 		}
 		kring->nr_hwcur = k; /* the saved ring->cur */
 		/* decrease avail by number of packets  sent */
-		kring->nr_hwavail -= n;
+		kring->nr_hwavail -= new_slots;
 
 		/* XXX Check how to deal with nkr_hwofs */
 		/* these two are always in sync. */
@@ -412,8 +426,17 @@ mlx4_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 		mlx4_en_arm_cq(priv, cq);
 	}
     }
-	ring->avail = kring->nr_hwavail;
 
+out:
+	/* recompute hwreserved */
+	kring->nr_hwreserved = k - j;
+	if (kring->nr_hwreserved < 0) {
+		kring->nr_hwreserved += kring->nkr_num_slots;
+	}
+
+	/* update avail and reserved to what the kernel knows */
+	ring->avail = kring->nr_hwavail;
+	ring->reserved = kring->nr_hwreserved;
 err:
 	if (error)
 		return netmap_ring_reinit(kring);

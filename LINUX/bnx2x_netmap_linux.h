@@ -235,6 +235,7 @@ bnx2x_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 	u_int j, k = ring->cur, n, lim = kring->nkr_num_slots - 1;
 	uint16_t l;
 	int error = 0;
+	int new_slots;
 
 	/* if cur is invalid reinitialize the ring. */
 	if (k > lim)
@@ -250,6 +251,19 @@ bnx2x_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 		D("q %d nwcur overflow slot %d", ring_nr, j);
 		error = EINVAL;
 		goto err;
+	}
+	new_slots = k - j - kring->nr_hwreserved;
+	if (new_slots < 0)
+		new_slots += kring->nkr_num_slots;
+	if (new_slots > kring->nr_hwavail) {
+		RD(5, "=== j %d k %d d %d hwavail %d hwreserved %d",
+			j, k, new_slots, kring->nr_hwavail, kring->nr_hwreserved);
+		return netmap_ring_reinit(kring);
+	}
+	if (!netif_carrier_ok(ifp)) {
+		/* All the new slots are now unavailable. */
+		kring->nr_hwavail -= new_slots;
+		goto out;
 	}
 	if (j != k) {	/* we have new packets to send */
 		if (txdata->tx_desc_ring == NULL) {
@@ -322,8 +336,8 @@ bnx2x_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 			l = NEXT_TX_IDX(l); // skip link fields.
 		}
 		kring->nr_hwcur = k; /* the saved ring->cur */
-		/* decrease avail by number of packets  sent */
-		kring->nr_hwavail -= n;
+		/* decrease avail by number of new slots */
+		kring->nr_hwavail -= new_slots;
 
 		/* XXX Check how to deal with nkr_hwofs */
 		/* these two are always in sync. */
@@ -389,13 +403,19 @@ bnx2x_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 		ND(5, "doorbell cid %d data 0x%x", txdata->cid, txdata->tx_db.raw);
 		DOORBELL(adapter, ring_nr, txdata->tx_db.raw);
 	}
-	/* update avail to what the kernel knows */
+out:
+	/* recompute hwreserved */
+	kring->nr_hwreserved = k - j;
+	if (kring->nr_hwreserved < 0) {
+		kring->nr_hwreserved += kring->nkr_num_slots;
+	}
 	if (ring->avail == 0 && kring->nr_hwavail >0)
 		ND(3,"txring %d restarted", ring_nr);
+	/* update avail and reserved to what the kernel knows */
 	ring->avail = kring->nr_hwavail;
+	ring->reserved = kring->nr_hwreserved;
 	if (ring->avail == 0)
 		ND(3,"txring %d full", ring_nr);
-
 err:
 	if (error)
 		return netmap_ring_reinit(kring);

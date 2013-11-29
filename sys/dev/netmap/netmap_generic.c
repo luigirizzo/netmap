@@ -371,7 +371,7 @@ generic_mbuf_destructor(struct mbuf *m)
  * nr_hwcur is the first unsent buffer.
  * When cleaning, we try to recover buffers between nr_ntc and nr_hwcur.
  */
-int
+static int
 generic_netmap_tx_clean(struct netmap_kring *kring)
 {
     u_int num_slots = kring->nkr_num_slots;
