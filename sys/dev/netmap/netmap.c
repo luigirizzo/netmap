@@ -8,7 +8,7 @@
  *      notice, this list of conditions and the following disclaimer.
  *   2. Redistributions in binary form must reproduce the above copyright
  *      notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ *      documentation and/or other materials provided with the distribution.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -245,13 +245,16 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_
 NMG_LOCK_T	netmap_global_lock;
 
 
-static void nm_kr_get(struct netmap_kring *kr)
+static void
+nm_kr_get(struct netmap_kring *kr)
 {
 	while (NM_ATOMIC_TEST_AND_SET(&kr->nr_busy))
 		tsleep(kr, 0, "NM_KR_GET", 4);
 }
 
-void netmap_disable_ring(struct netmap_kring *kr)
+
+static void
+netmap_disable_ring(struct netmap_kring *kr)
 {
 	kr->nkr_stopped = 1;
 	nm_kr_get(kr);
@@ -260,7 +263,9 @@ void netmap_disable_ring(struct netmap_kring *kr)
 	nm_kr_put(kr);
 }
 
-static void netmap_set_all_rings(struct ifnet *ifp, int stopped)
+
+static void
+netmap_set_all_rings(struct ifnet *ifp, int stopped)
 {
 	struct netmap_adapter *na;
 	int i;
@@ -289,12 +294,16 @@ static void netmap_set_all_rings(struct ifnet *ifp, int stopped)
 	}
 }
 
-void netmap_disable_all_rings(struct ifnet *ifp)
+
+void
+netmap_disable_all_rings(struct ifnet *ifp)
 {
 	netmap_set_all_rings(ifp, 1 /* stopped */);
 }
 
-void netmap_enable_all_rings(struct ifnet *ifp)
+
+void
+netmap_enable_all_rings(struct ifnet *ifp)
 {
 	netmap_set_all_rings(ifp, 0 /* enabled */);
 }
@@ -324,6 +333,7 @@ nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg)
 		printf("%s %s to %d (was %d)\n", op, msg, *v, oldv);
 	return *v;
 }
+
 
 /*
  * packet-dump function, user-supplied or static buffer.
@@ -416,6 +426,7 @@ netmap_update_config(struct netmap_adapter *na)
 	return 1;
 }
 
+
 int
 netmap_krings_create(struct netmap_adapter *na, u_int ntx, u_int nrx, u_int tailroom)
 {
@@ -466,6 +477,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int ntx, u_int nrx, u_int tail
 
 }
 
+
 void
 netmap_krings_delete(struct netmap_adapter *na)
 {
@@ -480,6 +492,7 @@ netmap_krings_delete(struct netmap_adapter *na)
 	free(na->tx_rings, M_DEVBUF);
 	na->tx_rings = na->rx_rings = na->tailroom = NULL;
 }
+
 
 static struct netmap_if*
 netmap_if_new(const char *ifname, struct netmap_adapter *na)
@@ -554,6 +567,7 @@ netmap_get_memory_locked(struct netmap_priv_d* p)
 	return error;
 }
 
+
 int
 netmap_get_memory(struct netmap_priv_d* p)
 {
@@ -564,11 +578,13 @@ netmap_get_memory(struct netmap_priv_d* p)
 	return error;
 }
 
+
 static int
 netmap_have_memory_locked(struct netmap_priv_d* p)
 {
 	return p->np_mref != NULL;
 }
+
 
 static void
 netmap_drop_memory_locked(struct netmap_priv_d* p)
@@ -578,6 +594,7 @@ netmap_drop_memory_locked(struct netmap_priv_d* p)
 		p->np_mref = NULL;
 	}
 }
+
 
 /*
  * File descriptor's private data destructor.
@@ -635,7 +652,6 @@ netmap_do_unregif(struct netmap_priv_d *priv, struct netmap_if *nifp)
 }
 
 
-
 /*
  * returns 1 if this is the last instance and we can free priv
  */
@@ -643,7 +659,7 @@ int
 netmap_dtor_locked(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
-	
+
 #ifdef __FreeBSD__
 	/*
 	 * np_refcount is the number of active mmaps on
@@ -665,6 +681,7 @@ netmap_dtor_locked(struct netmap_priv_d *priv)
 	}
 	return 1;
 }
+
 
 void
 netmap_dtor(void *data)
@@ -849,7 +866,7 @@ netmap_txsync_to_host(struct netmap_adapter *na)
 
 	error = nm_kr_tryget(kring);
 	if (error) {
-		if (error == NM_KR_BUSY) 
+		if (error == NM_KR_BUSY)
 			D("ring %p busy (user error)", kring);
 		return;
 	}
@@ -998,9 +1015,9 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	 */
 	if (!NETMAP_CAPABLE(ifp) && i == NETMAP_ADMODE_NATIVE)
 		return EINVAL;
-		
+
 	/* Otherwise, create a generic adapter and return it,
-         * saving the previously used netmap adapter, if any.
+	 * saving the previously used netmap adapter, if any.
 	 *
 	 * Note that here 'prev_na', if not NULL, MUST be a
 	 * native adapter, and CANNOT be a generic one. This is
@@ -1012,7 +1029,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	 * Consequently, if NA(ifp) is generic, we will enter one of
 	 * the branches above. This ensures that we never override
 	 * a generic adapter with another generic adapter.
-         */
+	 */
 	prev_na = NA(ifp);
 	error = generic_netmap_attach(ifp);
 	if (error)
@@ -1082,7 +1099,7 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		if (NETMAP_OWNED_BY_KERN(ret)) {
 			error = EINVAL;
 			goto out;
-		} 
+		}
 		error = 0;
 		*na = ret;
 		netmap_adapter_get(ret);
@@ -1351,7 +1368,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 					break;
 				nmd = na->nm_mem; /* get memory allocator */
 			}
-			
+
 			error = netmap_mem_get_info(nmd, &nmr->nr_memsize, &memflags);
 			if (error)
 				break;
@@ -1856,6 +1873,7 @@ netmap_attach_common(struct netmap_adapter *na)
 	return 0;
 }
 
+
 void
 netmap_detach_common(struct netmap_adapter *na)
 {
@@ -1927,6 +1945,7 @@ fail:
 	return (hwna ? EINVAL : ENOMEM);
 }
 
+
 void
 NM_DBG(netmap_adapter_get)(struct netmap_adapter *na)
 {
@@ -1936,6 +1955,7 @@ NM_DBG(netmap_adapter_get)(struct netmap_adapter *na)
 
 	refcount_acquire(&na->na_refcount);
 }
+
 
 /* returns 1 iff the netmap_adapter is destroyed */
 int
@@ -1954,6 +1974,7 @@ NM_DBG(netmap_adapter_put)(struct netmap_adapter *na)
 
 	return 1;
 }
+
 
 int
 netmap_hw_krings_create(struct netmap_adapter *na)

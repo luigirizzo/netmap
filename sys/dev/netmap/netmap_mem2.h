@@ -189,7 +189,7 @@ struct netmap_mem_d {
 	/* the three allocators */
 	struct netmap_obj_pool pools[NETMAP_POOLS_NR];
 
-	netmap_mem_config_t   config;	
+	netmap_mem_config_t   config;
 	netmap_mem_finalize_t finalize;
 	netmap_mem_deref_t    deref;
 };

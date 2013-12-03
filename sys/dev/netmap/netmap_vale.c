@@ -8,7 +8,7 @@
  *      notice, this list of conditions and the following disclaimer.
  *   2. Redistributions in binary form must reproduce the above copyright
  *      notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ *      documentation and/or other materials provided with the distribution.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -461,7 +461,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	decrement bdg_active_ports;
 	acquire BDG_WLOCK() and copy back the array.
 	 */
-	
+
 	D("detach %d and %d (lim %d)", hw, sw, lim);
 	/* make a copy of the list of active ports, update it,
 	 * and then copy back within BDG_WLOCK().
@@ -664,7 +664,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		if (nmr->nr_arg1 != NETMAP_BDG_HOST)
 			cand2 = -1; /* only need one port */
 		if_rele(ifp);
-	} 
+	}
 	vpna = (struct netmap_vp_adapter *)ret;
 
 	BDG_WLOCK(b);
@@ -941,7 +941,7 @@ netmap_vp_krings_create(struct netmap_adapter *na)
 		return error;
 
 	leases = na->tailroom;
-	
+
 	for (i = 0; i < nrx; i++) { /* Receive rings */
 		na->rx_rings[i].nkr_leases = leases;
 		leases += na->num_rx_desc;
@@ -1304,7 +1304,7 @@ retry:
 		}
 		if (dst_na->retry) {
 			dst_na->up.nm_notify(&dst_na->up, dst_nr, NR_RX, 0);
-		}	
+		}
 		my_start = j = kring->nkr_hwlease;
 		howmany = nm_kr_space(kring, 1);
 		if (needed < howmany)
@@ -1410,7 +1410,7 @@ retry:
 				p[lease_idx] != NR_NOSLOT) {
 			    j = p[lease_idx];
 			    p[lease_idx] = NR_NOSLOT;
-			    lease_idx = nm_next(lease_idx, lim); 
+			    lease_idx = nm_next(lease_idx, lim);
 			}
 			/* j is the new 'write' position. j != my_start
 			 * means there are new buffers to report
@@ -1618,7 +1618,7 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
  */
 /* callback that overwrites the hwna notify callback.
  * Packets come from the outside or from the host stack and are put on an hwna rx ring.
- * The bridge wrapper then sends the packets through the bridge. 
+ * The bridge wrapper then sends the packets through the bridge.
  */
 static int
 netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx, int flags)
@@ -1654,7 +1654,7 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 	ring = kring->ring;
 
 	/* make sure the ring is not disabled */
-	if (nm_kr_tryget(kring)) 
+	if (nm_kr_tryget(kring))
 		return 0;
 
 	if (is_host_ring && hostna->na_bdg == NULL) {
@@ -1785,7 +1785,7 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 
 	hostna->tx_rings = na->tx_rings + na->num_tx_rings;
 	hostna->rx_rings = na->rx_rings + na->num_rx_rings;
-	
+
 	return 0;
 }
 
@@ -1813,17 +1813,17 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 	struct netmap_ring *ring;
 	u_int lim, k;
 	int error = 0;
-	
+
 	if (tx == NR_TX)
 	        return ENXIO;
-	
+
 	kring = &na->rx_rings[ring_n];
 	hw_kring = &hwna->tx_rings[ring_n];
 	ring = kring->ring;
-	
+
 	lim = kring->nkr_num_slots - 1;
 	k = nm_kr_rxpos(kring);
-	
+
 	if (hwna->ifp == NULL || !(hwna->ifp->if_capenable & IFCAP_NETMAP))
 		return 0;
 	ring->cur = k;
@@ -1841,11 +1841,11 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 	kring->nr_hwavail = 0;
 	kring->nr_hwreserved = lim - ring->avail;
 	ND("%s[%d] PST rx(%d, %d, %d, %d) ring(%d, %d, %d) tx(%d, %d)",
-		NM_IFPNAME(na->ifp), ring_n, 
+		NM_IFPNAME(na->ifp), ring_n,
 		kring->nr_hwcur, kring->nr_hwavail, kring->nkr_hwlease, kring->nr_hwreserved,
 		ring->cur, ring->avail, ring->reserved,
 		hw_kring->nr_hwcur, hw_kring->nr_hwavail);
-	
+
 	return error;
 }
 
@@ -1868,7 +1868,7 @@ netmap_bwrap_attach(struct ifnet *fake, struct ifnet *real)
 	struct netmap_adapter *hwna = NA(real);
 	struct netmap_adapter *hostna;
 	int error;
-	
+
 
 	bna = malloc(sizeof(*bna), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (bna == NULL)
@@ -1915,7 +1915,7 @@ netmap_bwrap_attach(struct ifnet *fake, struct ifnet *real)
 	D("%s<->%s txr %d txd %d rxr %d rxd %d", fake->if_xname, real->if_xname,
 		na->num_tx_rings, na->num_tx_desc,
 		na->num_rx_rings, na->num_rx_desc);
-	
+
 	error = netmap_attach_common(na);
 	if (error) {
 		netmap_adapter_put(hwna);

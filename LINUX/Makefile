@@ -55,7 +55,7 @@ SRC ?= $(KSRC)
 LIN_VER = $(shell V=linux/version.h; G=. ; \
 	[ -f $(KSRC)/include/$${V} ] || G=generated/uapi ;\
 	grep LINUX_VERSION_CODE $(KSRC)/include/$${G}/linux/version.h | \
-	awk '{printf "%03x%02d", $$3/256, $$3%256} ')
+	awk '{printf "%03x%02x", $$3/256, $$3%256} ')
 
 PATCHES := $(shell \
 	    cd $(PWD)/patches; ls diff--* | awk -v v=$(LIN_VER) -F -- '{ \

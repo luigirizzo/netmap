@@ -8,7 +8,7 @@
  *      notice, this list of conditions and the following disclaimer.
  *   2. Redistributions in binary form must reproduce the above copyright
  *      notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ *      documentation and/or other materials provided with the distribution.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -34,6 +34,8 @@
 
 /* a set of headers used in netmap */
 #include <linux/version.h>
+#include <linux/compiler.h>	// ACCESS_ONCE()
+
 #include <linux/if.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
@@ -45,15 +47,47 @@
 #include <linux/sched.h>
 #include <linux/wait.h>
 #include <linux/miscdevice.h>
-//#include <linux/log2.h>	// ilog2
 #include <linux/etherdevice.h>	// eth_type_trans
 #include <linux/module.h>
 #include <linux/moduleparam.h>
-#include <linux/virtio.h>	// virt_to_phys
+#include <linux/delay.h>	// msleep
+#include <linux/skbuff.h>		// skb_copy_to_linear_data_offset
+
+#include <linux/io.h>	// virt_to_phys
 #include <linux/hrtimer.h>
 
 #define printf(fmt, arg...)	printk(KERN_ERR fmt, ##arg)
 #define KASSERT(a, b)		BUG_ON(!(a))
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 21)
+#define HRTIMER_MODE_REL	HRTIMER_REL
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 22)
+#define skb_copy_from_linear_data_offset(skb, offset, to, copy)	\
+	memcpy(to, (skb)->data + offset, copy)
+
+#define skb_copy_to_linear_data_offset(skb, offset, from, copy)	\
+	memcpy((skb)->data + offset, from, copy)
+
+#define skb_copy_to_linear_data(skb, from, copy)		\
+	memcpy((skb)->data, from, copy)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24)
+#define ACCESS_ONCE(x)	(x)
+#define uintptr_t	unsigned long
+#define skb_get_queue_mapping(m)	(0)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 25)
+/* Forward a hrtimer so it expires after the hrtimer's current now */
+static inline u64 hrtimer_forward_now(struct hrtimer *timer,
+                                      ktime_t interval)
+{
+        return hrtimer_forward(timer, timer->base->get_time(), interval);
+}
+#endif /* 2.6.24 and below */
 
 /* Type redefinitions. XXX check them */
 typedef	void *			bus_dma_tag_t;
@@ -89,12 +123,14 @@ struct thread;
 #define NM_ATOMIC_READ_AND_CLEAR(p)     atomic_xchg(p, 0)
 #define NM_ATOMIC_READ(p)               atomic_read(p)
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 32) // XXX 31
 #define	netdev_tx_t	int
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28) // XXX
 #define	netdev_ops	hard_start_xmit
 struct net_device_ops {
 	int (*ndo_start_xmit)(struct sk_buff *skb, struct net_device *dev);
-
 };
 #endif /* < 2.6.28 */
 
@@ -166,6 +202,7 @@ netdev_tx_t linux_netmap_start_xmit(struct sk_buff *, struct net_device *);
 typedef unsigned long phys_addr_t;
 extern struct net init_net;
 #endif
+
 #define CURVNET_SET(x)
 #define CURVNET_RESTORE(x)
 
@@ -221,6 +258,17 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 // XXX do we need GPF_ZERO ?
 // XXX do we need GFP_DMA for slots ?
 // http://www.mjmwired.net/kernel/Documentation/DMA-API.txt
+
+#ifndef ilog2 /* not in 2.6.18 */
+static inline int ilog2(uint64_t n)
+{
+	uint64_t k = 1ULL<<63;
+	int i;
+	for (i = 63; i >= 0 && !(n &k); i--, k >>=1)
+		;
+	return i;
+}
+#endif /* ilog2 */
 
 #define contigmalloc(sz, ty, flags, a, b, pgsz, c)		\
 	(char *) __get_free_pages(GFP_ATOMIC |  __GFP_ZERO,	\

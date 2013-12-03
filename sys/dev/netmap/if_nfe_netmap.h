@@ -45,23 +45,23 @@ nfe_netmap_init_buffers(struct nfe_softc *sc)
 	struct netmap_adapter *na = NA(sc->nfe_ifp);
 	struct netmap_slot *slot;
 	int i, l, n, max_avail;
-        struct nfe_desc32 *desc32 = NULL;
-        struct nfe_desc64 *desc64 = NULL;
+	struct nfe_desc32 *desc32 = NULL;
+	struct nfe_desc64 *desc64 = NULL;
 	void *addr;
 	uint64_t paddr;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
+	if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
+		return 0;
+	}
 
-        slot = netmap_reset(na, NR_TX, 0, 0);
+	slot = netmap_reset(na, NR_TX, 0, 0);
 	if (!slot)
 		return 0; // XXX cannot happen
 	// XXX init the tx ring
 	n = NFE_TX_RING_COUNT;
 	for (i = 0; i < n; i++) {
-                l = netmap_idx_n2k(&na->tx_rings[0], i);
-                addr = PNMB(slot + l, &paddr);
+		l = netmap_idx_n2k(&na->tx_rings[0], i);
+		addr = PNMB(slot + l, &paddr);
 		netmap_reload_map(sc->txq.tx_data_tag,
 		    sc->txq.data[l].tx_data_map, addr);
 		slot[l].flags = 0;
@@ -82,18 +82,18 @@ nfe_netmap_init_buffers(struct nfe_softc *sc)
 
 	slot = netmap_reset(na, NR_RX, 0, 0);
 	// XXX init the rx ring
-        /*
-         * Userspace owned hwavail packets before the reset,
-         * so the NIC that last hwavail descriptors of the ring
-         * are still owned by the driver (and keep one empty).
-         */
+	/*
+	 * Userspace owned hwavail packets before the reset,
+	 * so the NIC that last hwavail descriptors of the ring
+	 * are still owned by the driver (and keep one empty).
+	 */
 	n = NFE_RX_RING_COUNT;
-        max_avail = n - 1 - na->rx_rings[0].nr_hwavail;
-        for (i = 0; i < n; i++) {
+	max_avail = n - 1 - na->rx_rings[0].nr_hwavail;
+	for (i = 0; i < n; i++) {
 		uint16_t flags;
-                l = netmap_idx_n2k(&na->rx_rings[0], i);
-                addr = PNMB(slot + l, &paddr);
-                flags = (i < max_avail) ? NFE_RX_READY : 0;
+		l = netmap_idx_n2k(&na->rx_rings[0], i);
+		addr = PNMB(slot + l, &paddr);
+		flags = (i < max_avail) ? NFE_RX_READY : 0;
 		if (sc->nfe_flags & NFE_40BIT_ADDR) {
 			desc64 = &sc->rxq.desc64[l];
 			desc64->physaddr[0] = htole32(NFE_ADDR_HI(paddr));
@@ -110,9 +110,9 @@ nfe_netmap_init_buffers(struct nfe_softc *sc)
 
 		netmap_reload_map(sc->rxq.rx_data_tag,
 		    sc->rxq.data[l].rx_data_map, addr);
-                bus_dmamap_sync(sc->rxq.rx_data_tag,
+		bus_dmamap_sync(sc->rxq.rx_data_tag,
 		    sc->rxq.data[l].rx_data_map, BUS_DMASYNC_PREREAD);
-        }
+	}
 
 	return 1;
 }
@@ -139,7 +139,7 @@ nfe_netmap_lock_wrapper(struct ifnet *ifp, int what, u_int queueid)
 static int
 nfe_netmap_reg(struct netmap_adapter *na, int onoff)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct nfe_softc *sc = ifp->if_softc;
 
 	if (na == NULL)
@@ -150,7 +150,7 @@ nfe_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (onoff) {
 		ifp->if_capenable |= IFCAP_NETMAP;
-                na->na_flags |= NAF_NATIVE_ON;
+		na->na_flags |= NAF_NATIVE_ON;
 
 		na->if_transmit = ifp->if_transmit;
 		ifp->if_transmit = netmap_transmit;
@@ -160,7 +160,7 @@ nfe_netmap_reg(struct netmap_adapter *na, int onoff)
 		/* return to non-netmap mode */
 		ifp->if_transmit = na->if_transmit;
 		ifp->if_capenable &= ~IFCAP_NETMAP;
-                na->na_flags &= ~NAF_NATIVE_ON;
+		na->na_flags &= ~NAF_NATIVE_ON;
 		nfe_init_locked(sc);	/* also enable intr */
 	}
 	return (0);
@@ -173,7 +173,7 @@ nfe_netmap_reg(struct netmap_adapter *na, int onoff)
 static int
 nfe_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct nfe_softc *sc = ifp->if_softc;
 	struct netmap_kring *kring = &na->tx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
@@ -288,7 +288,7 @@ nfe_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 static int
 nfe_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct nfe_softc *sc = ifp->if_softc;
 	struct netmap_kring *kring = &na->rx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
@@ -354,7 +354,7 @@ nfe_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 		}
 		k = (k >= resvd) ? k - resvd : k + lim + 1 - resvd;
 	}
-        if (j != k) { /* userspace has released some packets. */
+	if (j != k) { /* userspace has released some packets. */
 		l = netmap_idx_k2n(kring, j); /* NIC ring index */
 		for (n = 0; j != k; n++) {
 			struct netmap_slot *slot = &ring->slot[j];

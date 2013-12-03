@@ -46,6 +46,10 @@
 #include <netmap/netmap_kern.h>
 #define SOFTC_T	ixgbe_adapter
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
+#define usleep_range(a, b)	msleep((a)+(b)+999)
+#endif /* up to 2.6.35 */
+
 /*
  * Adaptation to various version of the driver.
  * Recent drivers (3.4 and above) redefine some macros

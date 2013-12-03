@@ -44,7 +44,7 @@
 static int
 igb_netmap_reg(struct netmap_adapter *na, int onoff)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct adapter *adapter = ifp->if_softc;
 	int error = 0;
 
@@ -58,7 +58,7 @@ igb_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (onoff) {
 		ifp->if_capenable |= IFCAP_NETMAP;
-                na->na_flags |= NAF_NATIVE_ON;
+		na->na_flags |= NAF_NATIVE_ON;
 
 		na->if_transmit = ifp->if_transmit;
 		ifp->if_transmit = netmap_transmit;
@@ -73,7 +73,7 @@ fail:
 		/* restore if_transmit */
 		ifp->if_transmit = na->if_transmit;
 		ifp->if_capenable &= ~IFCAP_NETMAP;
-                na->na_flags &= ~NAF_NATIVE_ON;
+		na->na_flags &= ~NAF_NATIVE_ON;
 		igb_init_locked(adapter);	/* also enable intr */
 	}
 	return (error);
@@ -86,7 +86,7 @@ fail:
 static int
 igb_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct adapter *adapter = ifp->if_softc;
 	struct tx_ring *txr = &adapter->tx_rings[ring_nr];
 	struct netmap_kring *kring = &na->tx_rings[ring_nr];
@@ -206,7 +206,7 @@ igb_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 static int
 igb_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct adapter *adapter = ifp->if_softc;
 	struct rx_ring *rxr = &adapter->rx_rings[ring_nr];
 	struct netmap_kring *kring = &na->rx_rings[ring_nr];
@@ -253,7 +253,7 @@ igb_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 	}
 
 	/* skip past packets that userspace has released */
-        j = kring->nr_hwcur;    /* netmap ring index */
+	j = kring->nr_hwcur;    /* netmap ring index */
 	if (resvd > 0) {
 		if (resvd + ring->avail >= lim + 1) {
 			D("XXX invalid reserve/avail %d %d", resvd, ring->avail);
@@ -318,5 +318,5 @@ igb_netmap_attach(struct adapter *adapter)
 	na.nm_register = igb_netmap_reg;
 	na.num_tx_rings = na.num_rx_rings = adapter->num_queues;
 	netmap_attach(&na);
-}	
+}
 /* end of file */

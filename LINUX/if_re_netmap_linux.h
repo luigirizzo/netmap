@@ -50,6 +50,7 @@ re_netmap_reg(struct netmap_adapter *na, int onoff)
 {
         struct ifnet *ifp = na->ifp;
 	int error = 0;
+	struct netmap_hw_adapter *hwna = (struct netmap_hw_adapter*)na;
 
 	if (na == NULL)
 		return EINVAL;
@@ -61,7 +62,7 @@ re_netmap_reg(struct netmap_adapter *na, int onoff)
 		ifp->if_capenable |= IFCAP_NETMAP;
                 na->na_flags |= NAF_NATIVE_ON;
 		na->if_transmit = (void *)ifp->netdev_ops;
-		ifp->netdev_ops = na->nm_ndo_p;
+		ifp->netdev_ops = &hwna->nm_ndo;
 
 		if (rtl8169_open(ifp) < 0) {
 			error = ENOMEM;

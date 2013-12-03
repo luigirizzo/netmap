@@ -9,7 +9,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * BSD Copyright
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -42,6 +41,10 @@
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
 #define SOFTC_T	e1000_adapter
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
+#define usleep_range(a, b)	msleep((a)+(b)+999)
+#endif /* up to 2.6.35 */
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
 #warning this driver uses extended descriptors

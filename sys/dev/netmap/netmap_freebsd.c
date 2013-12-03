@@ -8,7 +8,7 @@
  *      notice, this list of conditions and the following disclaimer.
  *   2. Redistributions in binary form must reproduce the above copyright
  *      notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ *      documentation and/or other materials provided with the distribution.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -200,8 +200,8 @@ netmap_dev_pager_ctor(void *handle, vm_ooffset_t size, vm_prot_t prot,
 	struct netmap_vm_handle_t *vmh = handle;
 	D("handle %p size %jd prot %d foff %jd",
 		handle, (intmax_t)size, prot, (intmax_t)foff);
-	dev_ref(vmh->dev);	
-	return 0;	
+	dev_ref(vmh->dev);
+	return 0;
 }
 
 
@@ -268,9 +268,9 @@ netmap_dev_pager_fault(vm_object_t object, vm_ooffset_t offset,
 
 
 static struct cdev_pager_ops netmap_cdev_pager_ops = {
-        .cdev_pg_ctor = netmap_dev_pager_ctor,
-        .cdev_pg_dtor = netmap_dev_pager_dtor,
-        .cdev_pg_fault = netmap_dev_pager_fault,
+	.cdev_pg_ctor = netmap_dev_pager_ctor,
+	.cdev_pg_dtor = netmap_dev_pager_dtor,
+	.cdev_pg_fault = netmap_dev_pager_fault,
 };
 
 
@@ -285,7 +285,7 @@ netmap_mmap_single(struct cdev *cdev, vm_ooffset_t *foff,
 
 	D("cdev %p foff %jd size %jd objp %p prot %d", cdev,
 	    (intmax_t )*foff, (intmax_t )objsize, objp, prot);
-	
+
 	vmh = malloc(sizeof(struct netmap_vm_handle_t), M_DEVBUF,
 			      M_NOWAIT | M_ZERO);
 	if (vmh == NULL)
@@ -304,7 +304,7 @@ netmap_mmap_single(struct cdev *cdev, vm_ooffset_t *foff,
 	if (error)
 		goto err_deref;
 
-	obj = cdev_pager_allocate(vmh, OBJT_DEVICE, 
+	obj = cdev_pager_allocate(vmh, OBJT_DEVICE,
 		&netmap_cdev_pager_ops, objsize, prot,
 		*foff, NULL);
 	if (obj == NULL) {
@@ -312,7 +312,7 @@ netmap_mmap_single(struct cdev *cdev, vm_ooffset_t *foff,
 		error = EINVAL;
 		goto err_deref;
 	}
-		
+
 	*objp = obj;
 	return 0;
 
