@@ -8,7 +8,7 @@
  *      notice, this list of conditions and the following disclaimer.
  *   2. Redistributions in binary form must reproduce the above copyright
  *      notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ *      documentation and/or other materials provided with the distribution.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -167,12 +167,12 @@ const struct netmap_mem_d nm_blueprint = {
 #define DECLARE_SYSCTLS(id, name) \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_size, \
 	    CTLFLAG_RW, &netmap_params[id].size, 0, "Requested size of netmap " STRINGIFY(name) "s"); \
-        SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_size, \
-            CTLFLAG_RD, &nm_mem.pools[id]._objsize, 0, "Current size of netmap " STRINGIFY(name) "s"); \
-        SYSCTL_INT(_dev_netmap, OID_AUTO, name##_num, \
-            CTLFLAG_RW, &netmap_params[id].num, 0, "Requested number of netmap " STRINGIFY(name) "s"); \
-        SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_num, \
-            CTLFLAG_RD, &nm_mem.pools[id].objtotal, 0, "Current number of netmap " STRINGIFY(name) "s")
+	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_size, \
+	    CTLFLAG_RD, &nm_mem.pools[id]._objsize, 0, "Current size of netmap " STRINGIFY(name) "s"); \
+	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_num, \
+	    CTLFLAG_RW, &netmap_params[id].num, 0, "Requested number of netmap " STRINGIFY(name) "s"); \
+	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_num, \
+	    CTLFLAG_RD, &nm_mem.pools[id].objtotal, 0, "Current number of netmap " STRINGIFY(name) "s")
 
 SYSCTL_DECL(_dev_netmap);
 DECLARE_SYSCTLS(NETMAP_IF_POOL, if);
@@ -843,7 +843,7 @@ netmap_mem_global_config(struct netmap_mem_d *nmd)
 			netmap_reset_obj_allocator(&nmd->pools[i]);
 		}
 		nmd->flags &= ~NETMAP_MEM_FINALIZED;
-        }
+	}
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		nmd->lasterr = netmap_config_obj_allocator(&nmd->pools[i],

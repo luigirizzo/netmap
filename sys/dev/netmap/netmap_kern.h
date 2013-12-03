@@ -84,7 +84,7 @@ struct hrtimer {
 // XXX a mtx would suffice here too 20130404 gl
 #define NMG_LOCK_T		struct semaphore
 #define NMG_LOCK_INIT()		sema_init(&netmap_global_lock, 1)
-#define NMG_LOCK_DESTROY()	
+#define NMG_LOCK_DESTROY()
 #define NMG_LOCK()		down(&netmap_global_lock)
 #define NMG_UNLOCK()		up(&netmap_global_lock)
 #define NMG_LOCK_ASSERT()	//	XXX to be completed
@@ -191,7 +191,7 @@ extern NMG_LOCK_T	netmap_global_lock;
  *	nkr_leases	array of nkr_num_slots where writers can report
  *			completion of their block. NR_NOSLOT (~0) indicates
  *			that the writer has not finished yet
- *	nkr_lease_idx	index of next free slot in nr_leases, to be assigned 
+ *	nkr_lease_idx	index of next free slot in nr_leases, to be assigned
  *
  * The kring is manipulated by txsync/rxsync and generic netmap function.
  * q_lock is used to arbitrate access to the kring from within the netmap
@@ -231,8 +231,8 @@ struct netmap_kring {
 	 * XXX who writes to the rx queue ?
 	 */
 	struct mbuf **tx_pool;
-        u_int nr_ntc;                   /* Emulation of a next-to-clean RX ring pointer. */
-        struct mbq rx_queue;            /* A queue for intercepted rx mbufs. */
+	u_int nr_ntc;                   /* Emulation of a next-to-clean RX ring pointer. */
+	struct mbq rx_queue;            /* A queue for intercepted rx mbufs. */
 
 } __attribute__((__aligned__(64)));
 
@@ -328,8 +328,8 @@ struct netmap_adapter {
 				 * deallocation of the memory allocator
 				 */
 #define NAF_NATIVE_ON   16      /* the adapter is native and the attached
-                                 * interface is in netmap mode
-                                 */
+				 * interface is in netmap mode
+				 */
 	int active_fds; /* number of user-space descriptors using this
 			 interface, which is equal to the number of
 			 struct netmap_if objs in the mapped region. */
@@ -382,8 +382,8 @@ struct netmap_adapter {
 #define NAF_DISABLE_NOTIFY 8
 
 	/* standard refcount to control the lifetime of the adapter
-         * (it should be equal to the lifetime of the corresponding ifp)
-         */
+	 * (it should be equal to the lifetime of the corresponding ifp)
+	 */
 	int na_refcount;
 
 	/* memory allocator (opaque)
@@ -395,8 +395,8 @@ struct netmap_adapter {
 	uint32_t na_lut_objtotal;	/* max buffer index */
 
 	/* used internally. If non-null, the interface cannot be bound
-         * from userspace
-         */
+	 * from userspace
+	 */
 	void *na_private;
 };
 
@@ -437,10 +437,10 @@ struct netmap_hw_adapter {	/* physical device */
 struct netmap_generic_adapter {	/* non-native device */
 	struct netmap_hw_adapter up;
 
-        /* Pointer to a previously used netmap adapter. */
-        struct netmap_adapter *prev;
+	/* Pointer to a previously used netmap adapter. */
+	struct netmap_adapter *prev;
 
-        /* generic netmap adapters support:
+	/* generic netmap adapters support:
 	 * a net_device_ops struct overrides ndo_select_queue(),
 	 * save_if_input saves the if_input hook (FreeBSD),
 	 * mit_timer and mit_pending implement rx interrupt mitigation,
@@ -448,8 +448,8 @@ struct netmap_generic_adapter {	/* non-native device */
 	struct net_device_ops generic_ndo;
 	void (*save_if_input)(struct ifnet *, struct mbuf *);
 
-        struct hrtimer mit_timer;
-        int mit_pending;
+	struct hrtimer mit_timer;
+	int mit_pending;
 };
 
 #ifdef WITH_VALE
@@ -492,7 +492,7 @@ struct netmap_generic_adapter {	/* non-native device */
  *   host adapter depending on the ring number.
  *
  */
-struct netmap_bwrap_adapter {	
+struct netmap_bwrap_adapter {
 	struct netmap_vp_adapter up;
 	struct netmap_vp_adapter host;  /* for host rings */
 	struct netmap_adapter *hwna;	/* the underlying device */
@@ -615,7 +615,7 @@ static __inline void nm_kr_put(struct netmap_kring *kr)
 
 static __inline int nm_kr_tryget(struct netmap_kring *kr)
 {
-	/* check a first time without taking the lock 
+	/* check a first time without taking the lock
 	 * to avoid starvation for nm_kr_get()
 	 */
 	if (unlikely(kr->nkr_stopped)) {
@@ -671,7 +671,7 @@ void netmap_krings_delete(struct netmap_adapter *na);
 
 struct netmap_if *
 netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
-        uint16_t ringid, int *err);
+	uint16_t ringid, int *err);
 
 
 
@@ -1048,6 +1048,6 @@ void netmap_mitigation_restart(struct netmap_generic_adapter *na);
 int netmap_mitigation_active(struct netmap_generic_adapter *na);
 void netmap_mitigation_cleanup(struct netmap_generic_adapter *na);
 
-enum hrtimer_restart generic_timer_handler(struct hrtimer *t);
+// int generic_timer_handler(struct hrtimer *t);
 
 #endif /* _NET_NETMAP_KERN_H_ */

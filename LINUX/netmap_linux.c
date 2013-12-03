@@ -31,6 +31,7 @@
 
 /* ========================== LINUX-SPECIFIC ROUTINES ================== */
 
+
 /*
  * The generic driver calls netmap once per received packet.
  * This is inefficient so we implement a mitigation mechanism,
@@ -42,7 +43,11 @@
  * - when the timer expires and there are pending packets,
  *   a notification is sent up and the timer is restarted.
  */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,21)
+int
+#else
 enum hrtimer_restart
+#endif
 generic_timer_handler(struct hrtimer *t)
 {
     struct netmap_generic_adapter *gna =
@@ -104,12 +109,20 @@ void netmap_mitigation_cleanup(struct netmap_generic_adapter *gna)
  * Stolen packets are put in a queue where the
  * generic_netmap_rxsync() callback can extract them.
  */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38) // not defined before
 rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 {
     generic_rx_handler((*pm)->dev, *pm);
 
     return RX_HANDLER_CONSUMED;
 }
+#else /* 2.6.36 .. 2.6.38 */
+struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
+{
+	generic_rx_handler(m->dev, m);
+	return NULL;
+}
+#endif /* 2.6.36..2.6.38 */
 
 /* Ask the Linux RX subsystem to intercept (or stop intercepting)
  * the packets incoming from the interface attached to 'na'.
@@ -117,6 +130,9 @@ rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 int
 netmap_catch_rx(struct netmap_adapter *na, int intercept)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36) // not defined before
+    return 0;
+#else
     struct ifnet *ifp = na->ifp;
 
     if (intercept) {
@@ -126,17 +142,21 @@ netmap_catch_rx(struct netmap_adapter *na, int intercept)
         netdev_rx_handler_unregister(ifp);
         return 0;
     }
+#endif
 }
 
 
-static u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m)
+u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m)
 {
-    return skb_get_queue_mapping(m);
+    return skb_get_queue_mapping(m); // actually 0 on 2.6.23 and before
 }
 
 /* Must be called under rtnl. */
 void netmap_catch_packet_steering(struct netmap_generic_adapter *gna, int enable)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28) // not defined before
+    printf("%s: no packet steering support\n", __FUNCTION__);
+#else
     struct netmap_adapter *na = &gna->up.up;
     struct ifnet *ifp = na->ifp;
 
@@ -155,6 +175,7 @@ void netmap_catch_packet_steering(struct netmap_generic_adapter *gna, int enable
 	/* Restore the original netdev_ops. */
         ifp->netdev_ops = (void *)na->if_transmit;
     }
+#endif
 }
 
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
@@ -173,7 +194,9 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     NM_ATOMIC_INC(&m->users);
     m->dev = ifp;
     m->priority = 100;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24) // XXX
     skb_set_queue_mapping(m, ring_nr);
+#endif
 
     ret = dev_queue_xmit(m);
 
@@ -193,6 +216,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 int
 generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31) // XXX
     struct ethtool_ringparam rp;
 
     if (ifp->ethtool_ops && ifp->ethtool_ops->get_ringparam) {
@@ -200,7 +224,7 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
         *tx = rp.tx_pending;
         *rx = rp.rx_pending;
     }
-
+#endif /* 2.6.31 and above */
     return 0;
 }
 
@@ -208,14 +232,22 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 void
 generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28) // XXX
+    *txq = 1;
+#else
     *txq = ifp->real_num_tx_queues;
+#endif
     *rxq = 1; /* TODO ifp->real_num_rx_queues */
 }
 
 struct net_device *
 ifunit_ref(const char *name)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24) // XXX
+	return dev_get_by_name(name);
+#else
 	return dev_get_by_name(&init_net, name);
+#endif
 }
 
 void if_rele(struct net_device *ifp)
@@ -237,7 +269,7 @@ void if_rele(struct net_device *ifp)
 static u_int
 linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31) // was 28 XXX
 	int events = POLLIN | POLLOUT; /* XXX maybe... */
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
 	int events = pwait ? pwait->key : POLLIN | POLLOUT | POLLERR;
@@ -301,7 +333,7 @@ linux_netmap_start_xmit(struct sk_buff *skb, struct net_device *dev)
 }
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)	// XXX was 38
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)	// XXX was 38
 #define LIN_IOCTL_NAME	.ioctl
 int
 linux_netmap_ioctl(struct inode *inode, struct file *file, u_int cmd, u_long data /* arg */)

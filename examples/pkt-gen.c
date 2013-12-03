@@ -847,42 +847,46 @@ timespec2val(const struct timespec *a)
 }
 
 
-static int
-wait_time(struct timespec ts, struct timespec *wakeup_ts, long long *waited)
+static __inline struct timespec
+timespec_add(struct timespec a, struct timespec b)
 {
-	struct timespec curtime;
-
-	curtime.tv_sec = 0;
-	curtime.tv_nsec = 0;
-
-	if (clock_gettime(CLOCK_REALTIME_PRECISE, &curtime) == -1) {
-		D("clock_gettime: %s", strerror(errno));
-		return (-1);
+	struct timespec ret = { a.tv_sec + b.tv_sec, a.tv_nsec + b.tv_nsec };
+	if (ret.tv_nsec >= 1000000000) {
+		ret.tv_sec++;
+		ret.tv_nsec -= 1000000000;
 	}
-	while (timespec_ge(&ts, &curtime)) {
-		if (waited != NULL)
-			(*waited)++;
-		if (clock_gettime(CLOCK_REALTIME_PRECISE, &curtime) == -1) {
-			D("clock_gettime");
-			return (-1);
-		}
-	}
-	if (wakeup_ts != NULL)
-		*wakeup_ts = curtime;
-	return (0);
+	return ret;
 }
 
-static __inline void
-timespec_add(struct timespec *tsa, struct timespec *tsb)
+static __inline struct timespec
+timespec_sub(struct timespec a, struct timespec b)
 {
-	tsa->tv_sec += tsb->tv_sec;
-	tsa->tv_nsec += tsb->tv_nsec;
-	if (tsa->tv_nsec >= 1000000000) {
-		tsa->tv_sec++;
-		tsa->tv_nsec -= 1000000000;
+	struct timespec ret = { a.tv_sec - b.tv_sec, a.tv_nsec - b.tv_nsec };
+	if (ret.tv_nsec < 0) {
+		ret.tv_sec--;
+		ret.tv_nsec += 1000000000;
 	}
+	return ret;
 }
 
+
+/*
+ * wait until ts, either busy or sleeping if more than 1ms.
+ * Return wakeup time.
+ */
+static struct timespec
+wait_time(struct timespec ts)
+{
+	for (;;) {
+		struct timespec w, cur;
+		clock_gettime(CLOCK_REALTIME_PRECISE, &cur);
+		w = timespec_sub(ts, cur);
+		if (w.tv_sec < 0)
+			return cur;
+		else if (w.tv_sec > 0 || w.tv_nsec > 1000000)
+			poll(NULL, 0, 1);
+	}
+}
 
 static void *
 sender_body(void *data)
@@ -894,9 +898,8 @@ sender_body(void *data)
 	struct netmap_ring *txring;
 	int i, n = targ->g->npackets / targ->g->nthreads, sent = 0;
 	int options = targ->g->options | OPT_COPY;
-	struct timespec tmptime, nexttime = { 0, 0}; // XXX silence compiler
+	struct timespec nexttime = { 0, 0}; // XXX silence compiler
 	int rate_limit = targ->g->tx_rate;
-	long long waited = 0;
 
 	D("start");
 	if (setaffinity(targ->thread, targ->affinity))
@@ -909,14 +912,9 @@ sender_body(void *data)
 	/* main loop.*/
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
 	if (rate_limit) {
-		tmptime.tv_sec = 2;
-		tmptime.tv_nsec = 0;
-		timespec_add(&targ->tic, &tmptime);
+		targ->tic = timespec_add(targ->tic, (struct timespec){2,0});
 		targ->tic.tv_nsec = 0;
-		if (wait_time(targ->tic, NULL, NULL) == -1) {
-			D("wait_time: %s", strerror(errno));
-			goto quit;
-		}
+		wait_time(targ->tic);
 		nexttime = targ->tic;
 	}
     if (targ->g->dev_type == DEV_PCAP) {
@@ -955,11 +953,8 @@ sender_body(void *data)
 
 		if (rate_limit && tosend <= 0) {
 			tosend = targ->g->burst;
-			timespec_add(&nexttime, &targ->g->tx_period);
-			if (wait_time(nexttime, &tmptime, &waited) == -1) {
-				D("wait_time");
-				goto quit;
-			}
+			nexttime = timespec_add(nexttime, targ->g->tx_period);
+			wait_time(nexttime);
 		}
 
 		/*
@@ -1781,14 +1776,17 @@ main(int arc, char **argv)
 	g.tx_period.tv_sec = g.tx_period.tv_nsec = 0;
 	if (g.tx_rate > 0) {
 		/* try to have at least something every second,
-		 * reducing the burst size to 0.5s worth of data
+		 * reducing the burst size to some 0.01s worth of data
 		 * (but no less than one full set of fragments)
 	 	 */
-		if (g.burst > g.tx_rate/2)
-			g.burst = g.tx_rate/2;
+		uint64_t x;
+		int lim = (g.tx_rate)/300;
+		if (g.burst > lim)
+			g.burst = lim;
 		if (g.burst < g.frags)
 			g.burst = g.frags;
-		g.tx_period.tv_nsec = (1e9 / g.tx_rate) * g.burst;
+		x = ((uint64_t)1000000000 * (uint64_t)g.burst) / (uint64_t) g.tx_rate;
+		g.tx_period.tv_nsec = x;
 		g.tx_period.tv_sec = g.tx_period.tv_nsec / 1000000000;
 		g.tx_period.tv_nsec = g.tx_period.tv_nsec % 1000000000;
 	}
