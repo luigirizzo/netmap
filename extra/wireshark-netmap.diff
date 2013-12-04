@@ -1,6 +1,6 @@
-diff -urp wireshark-1.11.2/dumpcap.c my_ws/dumpcap.c
---- wireshark-1.11.2/dumpcap.c	2013-11-09 09:07:55.000000000 -0800
-+++ my_ws/dumpcap.c	2013-11-30 00:16:29.640022246 -0800
+diff -urp ../wireshark-1.11.2/dumpcap.c ./dumpcap.c
+--- ../wireshark-1.11.2/dumpcap.c	2013-11-09 09:07:55.000000000 -0800
++++ ./dumpcap.c	2013-12-04 13:46:02.009528218 -0800
 @@ -23,6 +23,8 @@
  
  #include "config.h"
@@ -10,181 +10,53 @@ diff -urp wireshark-1.11.2/dumpcap.c my_ws/dumpcap.c
  #include <stdio.h>
  #include <stdlib.h> /* for exit() */
  #include <glib.h>
-@@ -418,6 +420,140 @@ static void report_cfilter_error(capture
+@@ -418,6 +420,12 @@ static void report_cfilter_error(capture
  
  #define MSG_MAX_LENGTH 4096
  
 +#ifdef HAVE_NETMAP
-+
-+#include <net/if.h>
-+#include <net/netmap.h>
++#define NETMAP_WITH_LIBS
 +#include <net/netmap_user.h>
-+#include <sys/ioctl.h>
-+#include <sys/mman.h>
-+
-+#define P2NM(_x)	((struct nm_desc_t *)(void *)(_x))
-+#define IS_NMH(_x)	(P2NM(_x)->self == P2NM(_x))
-+/* opaque descriptor, similar to pcap_t.
-+ * We detect it because the first field is a self pointer
-+ */
-+
-+struct nm_desc_t {
-+	struct nm_desc_t *self;
-+	int fd;
-+	void *mem;
-+	int memsize;
-+	struct netmap_if *nifp;
-+	int first_ring;
-+	int last_ring;
-+	int cur_ring;
-+	struct pcap_pkthdr hdr;
-+};
-+
-+#define NM_PREFIX "netmap:"
-+
-+pcap_t *nm_open(const char *ifname)
-+{
-+	const char *dev;
-+	struct nm_desc_t *d;
-+	struct nmreq req;
-+	int err, ring_id;
-+	char *s;
-+
-+	if (strncmp(ifname, NM_PREFIX, strlen(NM_PREFIX)) &&
-+			strncmp(ifname, "vale", 4) )
-+		return NULL;
-+
-+	dev = (*ifname == 'v') ? ifname : ifname + strlen(NM_PREFIX);
-+	d = (struct nm_desc_t *)calloc(1, sizeof(*d));
-+	if (!d)
-+		return NULL;
-+	d->self = d;
-+	d->fd = open("/dev/netmap", O_RDWR);
-+	if (d->fd < 0) {
-+		printf("cannot open /dev/netmap for %s", dev);
-+		goto fail;
-+	}
-+	s = getenv("NETMAP_RING_ID");
-+	ring_id = s ? atoi(s) : -1;
-+
-+	bzero(&req, sizeof(req));
-+	if (ring_id >=0 && ring_id < 256)
-+		req.nr_ringid = ring_id | NETMAP_HW_RING;
-+	req.nr_version = NETMAP_API;
-+	strncpy(req.nr_name, dev, sizeof(req.nr_name));
-+	err = ioctl(d->fd, NIOCREGIF, &req);
-+	if (err) {
-+		printf("cannot REGIF /dev/netmap for %s", dev);
-+		goto fail;
-+	}
-+	d->memsize = req.nr_memsize;
-+	d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
-+			d->fd, 0);
-+	if (d->mem == NULL) {
-+		printf("cannot mmap /dev/netmap for %s", ifname);
-+		goto fail;
-+	}
-+	d->nifp = NETMAP_IF(d->mem, req.nr_offset);
-+	if (ring_id >=0 && ring_id < 256) {
-+		d->first_ring = d->last_ring = ring_id;
-+	} else {
-+		d->first_ring = 0;
-+		d->last_ring = req.nr_rx_rings - 1;
-+	}
-+	d->cur_ring = d->first_ring;
-+
-+	return (pcap_t *)d;
-+
-+fail:
-+	if (d->fd >= 0)
-+		close(d->fd);
-+	free(d);
-+	return NULL;
-+}
-+
-+
-+int nm_dispatch(struct nm_desc_t *d, int cnt, pcap_handler cb, u_char *user)
-+{
-+	int n = d->last_ring - d->first_ring + 1;
-+	int c, got = 0, ri = d->cur_ring;
-+
-+	if (cnt == 0)
-+		cnt = -1;
-+	for (c=0; c < n; c++) {
-+		/* compute current ring to use */
-+		struct netmap_ring *ring;
-+		ri = d->cur_ring + c;
-+
-+		if (ri > d->last_ring)
-+			ri -= n;
-+		ring = NETMAP_RXRING(d->nifp, ri);
-+		if (ring->avail == 0)
-+			continue;
-+		d->hdr.ts = ring->ts;
-+		while ((cnt == -1 || cnt != got) && ring->avail > 0) {
-+			u_int i = ring->cur;
-+			u_int idx = ring->slot[i].buf_idx;
-+			u_char *buf;
-+
-+			if (idx < 2) {
-+				printf("%s bogus RX index %d at offset %d",
-+					d->nifp->ni_name, idx, i);
-+				sleep(2);
-+			}
-+			buf = (u_char *)NETMAP_BUF(ring, idx);
-+			// prefetch(buf);
-+			d->hdr.len = d->hdr.caplen = ring->slot[i].len;
-+			cb(user, &d->hdr, buf);
-+			ring->cur = NETMAP_RING_NEXT(ring, i);
-+			ring->avail--;
-+			got++;
-+		}
-+        }
-+	d->cur_ring = ri;
-+	// d->st.ps_recv += got;
-+        return got;
-+}
-+
 +#endif /* HAVE_NETMAP */
 +
 +
  /* Copied from pcapio.c pcapng_write_interface_statistics_block()*/
  static guint64
  create_timestamp(void) {
-@@ -708,6 +844,13 @@ open_capture_device(interface_options *i
+@@ -708,6 +716,15 @@ open_capture_device(interface_options *i
                "pcap_open() returned %p.", (void *)pcap_h);
      } else
  #endif
 +
 +#ifdef HAVE_NETMAP
-+    if ((pcap_h = nm_open(interface_opts->name)) ) {
++    if ((pcap_h = (pcap_t *)nm_open(interface_opts->name,
++		getenv("NETMAP_RING_ID"), 0, 0)) || errno > 0 ) {
 +	printf("--- opening netmap %s gives %p\n", interface_opts->name, pcap_h);
++	/* can return NULL if valid name but error setting netmap */
 +	return pcap_h;
 +    } else
 +#endif /* HAVE_NETMAP */
      {
          /*
           * If we're not opening a remote device, use pcap_create() and
-@@ -2740,6 +2883,13 @@ capture_loop_open_input(capture_options
+@@ -2740,6 +2757,11 @@ capture_loop_open_input(capture_options
  
  /* XXX - will this work for tshark? */
  #ifdef MUST_DO_SELECT
 +#ifdef HAVE_NETMAP
-+
-+	if (IS_NMH(pcap_opts->pcap_h)) {
-+		pcap_opts->pcap_fd = P2NM(pcap_opts->pcap_h)->fd;
-+printf("--- return netmap fd %d\n", pcap_opts->pcap_fd);
++	if (IS_NETMAP_DESC(pcap_opts->pcap_h)) {
++		pcap_opts->pcap_fd = NETMAP_FD(pcap_opts->pcap_h);
 +	} else
 +#endif /* HAVE_NETMAP */
          if (!pcap_opts->from_cap_pipe) {
  #ifdef HAVE_PCAP_GET_SELECTABLE_FD
              pcap_opts->pcap_fd = pcap_get_selectable_fd(pcap_opts->pcap_h);
-@@ -2823,6 +2973,12 @@ capture_loop_init_filter(pcap_t *pcap_h,
+@@ -2823,6 +2845,12 @@ capture_loop_init_filter(pcap_t *pcap_h,
  
      /* capture filters only work on real interfaces */
      if (cfilter && !from_cap_pipe) {
 +#ifdef HAVE_NETMAP
-+	if (IS_NMH(pcap_h)) {
++	if (IS_NETMAP_DESC(pcap_h)) {
 +		printf("no filters on netmap\n");
 +		return INITFILTER_NO_ERROR; // pretend ok
 +	}
@@ -192,18 +64,18 @@ diff -urp wireshark-1.11.2/dumpcap.c my_ws/dumpcap.c
          /* A capture filter was specified; set it up. */
          if (!compile_capture_filter(name, pcap_h, &fcode, cfilter)) {
              /* Treat this specially - our caller might try to compile this
-@@ -3089,6 +3245,16 @@ capture_loop_dispatch(loop_data *ld,
+@@ -3089,6 +3117,16 @@ capture_loop_dispatch(loop_data *ld,
                   * processing immediately, rather than processing all packets
                   * in a batch before quitting.
                   */
 +#ifdef HAVE_NETMAP
-+		if (IS_NMH(pcap_opts->pcap_h)) {
++		if (IS_NETMAP_DESC(pcap_opts->pcap_h)) {
 +			pcap_handler cb = use_threads ?
 +				capture_loop_queue_packet_cb :
 +				capture_loop_write_packet_cb ;
 +			// printf("dispatch to netmap\n");
-+			inpkts = nm_dispatch(P2NM(pcap_opts->pcap_h),
-+				1, cb, (u_char *)pcap_opts);
++			inpkts = nm_dispatch((struct nm_desc_t *)(pcap_opts->pcap_h),
++				1, (nm_cb_t)cb, (u_char *)pcap_opts);
 +		} else
 +#endif /* HAVE_NETMAP */
                  if (use_threads) {

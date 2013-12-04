@@ -89,7 +89,7 @@ cxgbe_netmap_attach(struct port_info *pi)
 	na.num_tx_rings = na->num_rx_rings = pi->ntxq;
 	na.buff_size = NETMAP_BUF_SIZE;
 	netmap_attach(&na);
-}	
+}
 
 
 /*
