@@ -29,8 +29,9 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 
-/* ========================== LINUX-SPECIFIC ROUTINES ================== */
 
+
+/* ##################### LINUX-SPECIFIC ROUTINES ################### */
 
 /*
  * The generic driver calls netmap once per received packet.

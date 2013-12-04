@@ -33,7 +33,7 @@ NOTES on debugging netmap performance
 		fill udp and ip headers
 		ip_output()
 
-	30	udp_send() before udp_output	
+	30	udp_send() before udp_output
 	31	udp_output before ip_output
 	32	udp_output beginning
 	33	before in_pcbbind_setup
