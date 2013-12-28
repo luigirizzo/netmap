@@ -1097,6 +1097,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 		 */
 		if (NA(ifp)->active_fds > 0
 			|| i != NETMAP_ADMODE_GENERIC 
+			|| NA(ifp)->na_flags & NAF_FORCE_NATIVE
 #ifdef WITH_PIPES
 			/* ugly, but we cannot allow an adapter switch
 			 * if some pipe is referring to this one
@@ -2186,6 +2187,8 @@ netmap_attach_common(struct netmap_adapter *na)
 
 	if (na->nm_mem == NULL)
 		na->nm_mem = &nm_mem;
+	if (na->nm_bdg_attach == NULL)
+		na->nm_bdg_attach = netmap_bwrap_attach;
 	return 0;
 }
 

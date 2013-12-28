@@ -399,6 +399,7 @@ struct netmap_adapter {
 				 * IFCAP_NETMAP also mirrors this flag.
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
+#define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
 	int active_fds; /* number of user-space descriptors using this
 			 interface, which is equal to the number of
 			 struct netmap_if objs in the mapped region. */
@@ -480,6 +481,9 @@ struct netmap_adapter {
 	void (*nm_krings_delete)(struct netmap_adapter *);
 	int (*nm_notify)(struct netmap_adapter *,
 		u_int ring, enum txrx, int flags);
+	int (*nm_kern_regif)(struct netmap_adapter *, struct nmreq *, int);
+	int (*nm_bdg_attach)(struct netmap_adapter *,
+		struct netmap_adapter **, struct netmap_adapter **);
 #define NAF_DISABLE_NOTIFY 8
 
 	/* standard refcount to control the lifetime of the adapter
@@ -655,6 +659,8 @@ struct netmap_bwrap_adapter {
 	 */
 	struct netmap_priv_d *na_kpriv;
 };
+int netmap_bwrap_attach(struct netmap_adapter *,
+		struct netmap_adapter **, struct netmap_adapter **);
 
 
 #endif /* WITH_VALE */
