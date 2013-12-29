@@ -496,7 +496,8 @@ struct nmreq {
 #define NETMAP_BDG_LIST		4	/* get bridge's info */
 #define NETMAP_BDG_VNET_HDR     5       /* set the port virtio-net-hdr length */
 #define NETMAP_BDG_OFFSET	NETMAP_BDG_VNET_HDR	/* deprecated alias */
-
+#define NETMAP_BDG_NEWIF	6	/* create a virtual port */
+#define NETMAP_BDG_DELIF	7	/* destroy a virtual port */
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
 #define NETMAP_BDG_HOST		1	/* attach the host stack on ATTACH */
 

@@ -29,6 +29,7 @@
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
+#include <linux/rtnetlink.h>
 
 
 /* #################### VALE OFFLOADINGS SUPPORT ################## */
@@ -1248,6 +1249,93 @@ static void linux_netmap_fini(void)
         netmap_fini();
 }
 
+static struct device_driver linux_dummy_drv = {.owner = THIS_MODULE};
+
+static int linux_nm_vi_open(struct net_device *netdev)
+{
+	netif_start_queue(netdev);
+	return 0;
+}
+
+static int linux_nm_vi_stop(struct net_device *netdev)
+{
+	netif_stop_queue(netdev);
+	return 0;
+}
+static int linux_nm_vi_xmit(struct sk_buff *skb, struct net_device *netdev)
+{
+	if (skb != NULL)
+		kfree_skb(skb);
+	return 0;
+}
+static struct rtnl_link_stats64 *linux_nm_vi_get_stats(
+		struct net_device *netdev,
+		struct rtnl_link_stats64 *stats)
+{
+	return stats;
+}
+static int linux_nm_vi_change_mtu(struct net_device *netdev, int new_mtu)
+{
+	return 0;
+}
+static void linux_nm_vi_destructor(struct net_device *netdev)
+{
+//	netmap_detach(netdev);
+	free_netdev(netdev);
+}
+static const struct net_device_ops nm_vi_ops = {
+	.ndo_open = linux_nm_vi_open,
+	.ndo_stop = linux_nm_vi_stop,
+	.ndo_start_xmit = linux_nm_vi_xmit,
+	.ndo_set_mac_address = eth_mac_addr,
+	.ndo_change_mtu = linux_nm_vi_change_mtu,
+	.ndo_get_stats64 = linux_nm_vi_get_stats,
+};
+/* dev->name is not initialized yet */
+static void
+linux_nm_vi_setup(struct ifnet *dev)
+{
+	ether_setup(dev);
+	dev->netdev_ops = &nm_vi_ops;
+	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
+	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
+	dev->destructor = linux_nm_vi_destructor;
+	dev->tx_queue_len = 0;
+	/* XXX */
+	dev->features = NETIF_F_LLTX | NETIF_F_SG | NETIF_F_FRAGLIST |
+		NETIF_F_HIGHDMA | NETIF_F_HW_CSUM | NETIF_F_TSO;
+	dev->hw_features = dev->features & ~NETIF_F_LLTX;
+	eth_hw_addr_random(dev);
+}
+
+int
+nm_vi_persist(const char *name, struct ifnet **ret)
+{
+	struct ifnet *ifp;
+
+	if (!try_module_get(linux_dummy_drv.owner))
+		return EFAULT;
+	ifp = alloc_netdev(0, name, linux_nm_vi_setup);
+	if (!ifp) {
+		module_put(linux_dummy_drv.owner);
+		return ENOMEM;
+	}
+	dev_net_set(ifp, &init_net);
+	ifp->features |= NETIF_F_NETNS_LOCAL; /* just for safety */
+	register_netdev(ifp);
+	ifp->dev.driver = &linux_dummy_drv;
+	netif_start_queue(ifp);
+	*ret = ifp;
+	return 0;
+}
+
+void
+nm_vi_detach(struct ifnet *ifp)
+{
+	netif_stop_queue(ifp);
+	unregister_netdev(ifp);
+	module_put(linux_dummy_drv.owner);
+}
 
 module_init(linux_netmap_init);
 module_exit(linux_netmap_fini);

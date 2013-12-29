@@ -481,7 +481,7 @@ struct netmap_adapter {
 	void (*nm_krings_delete)(struct netmap_adapter *);
 	int (*nm_notify)(struct netmap_adapter *,
 		u_int ring, enum txrx, int flags);
-	int (*nm_kern_regif)(struct netmap_adapter *, struct nmreq *, int);
+	int (*nm_bdg_ctl)(struct netmap_adapter *, struct nmreq *, int);
 	int (*nm_bdg_attach)(struct netmap_adapter *,
 		struct netmap_adapter **, struct netmap_adapter **);
 #define NAF_DISABLE_NOTIFY 8
@@ -1389,5 +1389,10 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 			   struct netmap_vp_adapter *dst_na,
 			   struct nm_bdg_fwd *ft_p, struct netmap_ring *ring,
 			   u_int *j, u_int lim, u_int *howmany);
+
+/* persistent virtual port routines */
+int nm_vi_persist(const char *, struct ifnet **);
+void nm_vi_detach(struct ifnet *);
+void nm_vi_init_index(void);
 
 #endif /* _NET_NETMAP_KERN_H_ */

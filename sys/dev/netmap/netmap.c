@@ -1693,7 +1693,9 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		/* possibly attach/detach NIC and VALE switch */
 		i = nmr->nr_cmd;
 		if (i == NETMAP_BDG_ATTACH || i == NETMAP_BDG_DETACH
-				|| i == NETMAP_BDG_VNET_HDR) {
+				|| i == NETMAP_BDG_VNET_HDR
+				|| i == NETMAP_BDG_NEWIF
+				|| i == NETMAP_BDG_DELIF) {
 			error = netmap_bdg_ctl(nmr, NULL);
 			break;
 		} else if (i != 0) {
@@ -2615,6 +2617,9 @@ netmap_init(void)
 		goto fail;
 
 	netmap_init_bridges();
+#ifdef __FreeBSD__
+	nm_vi_init_index();
+#endif
 	printf("netmap: loaded module\n");
 	return (0);
 fail:
