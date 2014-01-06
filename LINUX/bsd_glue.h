@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2013 Luigi Rizzo - Universita` di Pisa
+ * Copyright (C) 2012-2014 Luigi Rizzo - Universita` di Pisa
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -50,6 +50,8 @@
 #include <linux/etherdevice.h>	// eth_type_trans
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/virtio.h>	// virt_to_phys
+#include <net/sock.h>
 #include <linux/delay.h>	// msleep
 #include <linux/skbuff.h>		// skb_copy_to_linear_data_offset
 
@@ -58,6 +60,8 @@
 
 #define printf(fmt, arg...)	printk(KERN_ERR fmt, ##arg)
 #define KASSERT(a, b)		BUG_ON(!(a))
+
+/*----- support for compiling on older versions of linux -----*/
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 21)
 #define HRTIMER_MODE_REL	HRTIMER_REL
@@ -87,7 +91,29 @@ static inline u64 hrtimer_forward_now(struct hrtimer *timer,
 {
         return hrtimer_forward(timer, timer->base->get_time(), interval);
 }
-#endif /* 2.6.24 and below */
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27)
+typedef unsigned long phys_addr_t;
+extern struct net init_net;
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28) // XXX
+#define netdev_ops	hard_start_xmit
+struct net_device_ops {
+	int (*ndo_start_xmit)(struct sk_buff *skb, struct net_device *dev);
+};
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 32) // XXX 31
+#define netdev_tx_t	int
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
+#define usleep_range(a, b)	msleep((a)+(b)+999)
+#endif /* up to 2.6.35 */
+
+/*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 
 /* Type redefinitions. XXX check them */
 typedef	void *			bus_dma_tag_t;
@@ -123,16 +149,6 @@ struct thread;
 #define NM_ATOMIC_READ_AND_CLEAR(p)     atomic_xchg(p, 0)
 #define NM_ATOMIC_READ(p)               atomic_read(p)
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 32) // XXX 31
-#define	netdev_tx_t	int
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28) // XXX
-#define	netdev_ops	hard_start_xmit
-struct net_device_ops {
-	int (*ndo_start_xmit)(struct sk_buff *skb, struct net_device *dev);
-};
-#endif /* < 2.6.28 */
 
 // XXX maybe implement it as a proper function somewhere
 // it is important to set s->len before the copy.
@@ -153,6 +169,11 @@ struct net_device_ops {
 #define netmap_get_mbuf(size)	alloc_skb(size, GFP_ATOMIC)
 #define MBUF_TXQ(m)		skb_get_queue_mapping(m)
 #define SET_MBUF_DESTRUCTOR(m, f) m->destructor = (void *)&f
+
+/* Magic number for sk_buff.priority field, used to take decisions in
+ * generic_ndo_start_xmit() and in linux_generic_rx_handler().
+ */
+#define NM_MAGIC_PRIORITY 0xad86d310U
 
 /*
  * m_copydata() copies from mbuf to buffer following the mbuf chain.
@@ -192,16 +213,8 @@ struct net_device_ops {
 struct net_device* ifunit_ref(const char *name);
 void if_rele(struct net_device *ifp);
 
-/* char device support */
-extern struct miscdevice netmap_cdevsw;
-
 /* hook to send from user space */
 netdev_tx_t linux_netmap_start_xmit(struct sk_buff *, struct net_device *);
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27)
-typedef unsigned long phys_addr_t;
-extern struct net init_net;
-#endif
 
 #define CURVNET_SET(x)
 #define CURVNET_RESTORE(x)
@@ -293,8 +306,10 @@ static inline int ilog2(uint64_t n)
 
 /*
  * The following trick is to map a struct cdev into a struct miscdevice
+ * On FreeBSD cdev and cdevsw are two different objects.
  */
 #define	cdev			miscdevice
+#define	cdevsw			miscdevice
 
 
 /*

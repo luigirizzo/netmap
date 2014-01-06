@@ -19,6 +19,8 @@
 	exit 1
 }
 
+NETMAP_BRANHC=${NETMAP_BRANCH:-master}
+
 ##
 ## LINUX_SOURCES: the absolute path of a
 ## 	directory used to store all required linux-* source trees
@@ -297,7 +299,7 @@ function check-patch()
 		local ksrc=$(build-prep $v1)
 		local tmpdir=$(mktemp -d)
 		trap "rm -rf $tmpdir" 0
-		(cd ..; git archive master | tar xf - -C $tmpdir )
+		(cd ..; git archive $NETMAP_BRANCH | tar xf - -C $tmpdir )
 		pushd $tmpdir/LINUX >/dev/null
 		mkdir single-patch
 		rm patches

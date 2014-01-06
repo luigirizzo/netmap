@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Luigi Rizzo. All rights reserved.
+ * Copyright (C) 2012-2014 Luigi Rizzo. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -39,6 +39,7 @@
 
 #if defined(__APPLE__)
 
+#include <net/if_var.h>
 #include <libkern/OSAtomic.h>
 #define atomic_add_int(p, n) OSAtomicAdd32(n, (int *)p)
 #define	atomic_cmpset_32(p, o, n)	OSAtomicCompareAndSwap32(o, n, (int *)p)
@@ -165,6 +166,7 @@ struct glob_arg {
 	int cpus;
 	int privs;	// 1 if has IO privileges
 	int arg;	// microseconds in usleep
+	int nullfd;	// open(/dev/null)
 	char *test_name;
 	void (*fn)(struct targ *);
 	uint64_t scale;	// scaling factor
@@ -272,7 +274,8 @@ td_body(void *data)
 #endif
 	{
 		/* main loop.*/
-		D("testing %"PRIu64" cycles", t->g->m_cycles);
+		D("testing %"PRIu64" cycles arg %d",
+			t->g->m_cycles, t->g->arg);
 		gettimeofday(&t->tic, NULL);
 		t->g->fn(t);
 		gettimeofday(&t->toc, NULL);
@@ -281,17 +284,46 @@ td_body(void *data)
 	return (NULL);
 }
 
+/*
+ * select and poll:
+ *	arg	fd	timeout
+ *	>0	block	>0
+ *	 0	block	0
+ *		block	NULL (not implemented)
+ *	< -2	ready	-arg
+ *	-1	ready	0
+ *	-2	ready	NULL / <0 for poll
+ *
+ * arg = -1 -> NULL timeout (select)
+ */
 void
 test_sel(struct targ *t)
 {
+	int arg = t->g->arg;
+	// stdin is blocking on reads /dev/null or /dev/zero are not
+	int fd = (arg < 0) ? t->g->nullfd : 0;
+	fd_set r;
+	struct timeval t0 = { 0, arg};
+	struct timeval tcur, *tp = (arg == -2) ? NULL : &tcur;
 	int64_t m;
+
+	if (arg == -1)
+		t0.tv_usec = 0;
+	else if (arg < -2)
+		t0.tv_usec = -arg;
+
+	D("tp %p mode %s timeout %d", tp, arg < 0 ? "ready" : "block",
+		(int)t0.tv_usec);
 	for (m = 0; m < t->g->m_cycles; m++) {
-		fd_set r;
-		struct timeval to = { 0, t->g->arg};
+		int ret;
+		tcur = t0;
 		FD_ZERO(&r);
-		FD_SET(0,&r);
-		// FD_SET(1,&r);
-		select(1, &r, NULL, NULL, &to);
+		FD_SET(fd, &r);
+		ret = select(fd+1, &r, NULL, NULL, tp);
+		(void)ret;
+		ND("ret %d r %d w %d", ret,
+			FD_ISSET(fd, &r),
+			FD_ISSET(fd, &w));
 		t->count++;
 	}
 }
@@ -299,10 +331,25 @@ test_sel(struct targ *t)
 void
 test_poll(struct targ *t)
 {
-	int64_t m, ms = t->g->arg/1000;
+	int arg = t->g->arg;
+	// stdin is blocking on reads /dev/null is not
+	int fd = (arg < 0) ? t->g->nullfd : 0;
+	int64_t m;
+	int ms;
+
+	if (arg == -1)
+		ms = 0;
+	else if (arg == -2)
+		ms = -1; /* blocking */
+	else if (arg < 0)
+		ms = -arg/1000;
+	else
+		ms = arg/1000;
+
+	D("mode %s timeout %d", arg < 0 ? "ready" : "block", ms);
 	for (m = 0; m < t->g->m_cycles; m++) {
 		struct pollfd x;
-		x.fd = 0;
+		x.fd = fd;
 		x.events = POLLIN;
 		poll(&x, 1, ms);
 		t->count++;
@@ -584,6 +631,7 @@ test_memcpy(struct targ *t)
 }
 
 #include <sys/ioctl.h>
+#include <sys/socket.h>	// OSX
 #include <net/if.h>
 #include <net/netmap.h>
 void
@@ -708,6 +756,8 @@ main(int argc, char **argv)
 	g.nthreads = 1;
 	g.cpus = 1;
 	g.m_cycles = 0;
+	g.nullfd = open("/dev/zero", O_RDWR);
+	D("nullfd is %d", g.nullfd);
 
 	while ( (ch = getopt(argc, argv, "A:a:m:n:w:c:t:vl:")) != -1) {
 		switch(ch) {
