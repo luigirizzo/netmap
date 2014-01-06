@@ -1,0 +1,90 @@
+diff --git a/virtio_net.c b/virtio_net.c
+index f18149a..95e1580 100644
+--- a/virtio_net.c
++++ b/virtio_net.c
+@@ -90,6 +90,10 @@ struct virtnet_info {
+ 	struct scatterlist tx_sg[MAX_SKB_FRAGS + 2];
+ };
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <virtio_netmap.h>
++#endif
++
+ struct skb_vnet_hdr {
+ 	union {
+ 		struct virtio_net_hdr hdr;
+@@ -147,6 +151,10 @@ static void skb_xmit_done(struct virtqueue *svq)
+ 	/* Suppress further interrupts. */
+ 	virtqueue_disable_cb(svq);
+ 
++#ifdef DEV_NETMAP
++	if (netmap_tx_irq(vi->dev, 0))
++		return;
++#endif
+ 	/* We were probably waiting for more output buffers. */
+ 	netif_wake_queue(vi->dev);
+ }
+@@ -529,7 +537,16 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+ 	struct virtnet_info *vi = container_of(napi, struct virtnet_info, napi);
+ 	void *buf;
+ 	unsigned int len, received = 0;
++#ifdef DEV_NETMAP
++	int work_done = 0;
+ 
++	if (netmap_rx_irq(vi->dev, 0, &work_done)) {
++		napi_complete(napi);
++		ND("called netmap_rx_irq");
++
++		return 1;
++	}
++#endif
+ again:
+ 	while (received < budget &&
+ 	       (buf = virtqueue_get_buf(vi->rvq, &len)) != NULL) {
+@@ -742,6 +759,15 @@ static void virtnet_netpoll(struct net_device *dev)
+ static int virtnet_open(struct net_device *dev)
+ {
+ 	struct virtnet_info *vi = netdev_priv(dev);
++#ifdef DEV_NETMAP
++	int ok = virtio_netmap_init_buffers(vi);
++
++	netmap_enable_all_rings(dev);
++	if (ok) {
++		virtnet_napi_enable(vi);
++		return 0;
++	}
++#endif
+ 
+ 	/* Make sure we have some buffers: if oom use wq. */
+ 	if (!try_fill_recv(vi, GFP_KERNEL))
+@@ -810,6 +836,9 @@ static int virtnet_close(struct net_device *dev)
+ {
+ 	struct virtnet_info *vi = netdev_priv(dev);
+ 
++#ifdef DEV_NETMAP
++	netmap_disable_all_rings(dev);
++#endif
+ 	/* Make sure refill_work doesn't re-enable napi! */
+ 	cancel_delayed_work_sync(&vi->refill);
+ 	napi_disable(&vi->napi);
+@@ -1148,6 +1177,10 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 		goto unregister;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	virtio_netmap_attach(vi);
++#endif
++
+ 	/* Assume link up if device can't report link status,
+ 	   otherwise get link status from config. */
+ 	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_STATUS)) {
+@@ -1211,6 +1244,9 @@ static void __devexit virtnet_remove(struct virtio_device *vdev)
+ {
+ 	struct virtnet_info *vi = vdev->priv;
+ 
++#ifdef DEV_NETMAP
++	netmap_detach(vi->dev);
++#endif
+ 	/* Prevent config work handler from accessing the device. */
+ 	mutex_lock(&vi->config_lock);
+ 	vi->config_enable = false;

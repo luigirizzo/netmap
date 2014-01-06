@@ -1,0 +1,85 @@
+diff --git a/virtio_net.c b/virtio_net.c
+index 82dba5a..f217797 100644
+--- a/virtio_net.c
++++ b/virtio_net.c
+@@ -67,6 +67,10 @@ struct virtnet_info {
+ 	struct scatterlist tx_sg[MAX_SKB_FRAGS + 2];
+ };
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <virtio_netmap.h>
++#endif
++
+ struct skb_vnet_hdr {
+ 	union {
+ 		struct virtio_net_hdr hdr;
+@@ -124,6 +128,10 @@ static void skb_xmit_done(struct virtqueue *svq)
+ 	/* Suppress further interrupts. */
+ 	virtqueue_disable_cb(svq);
+ 
++#ifdef DEV_NETMAP
++	if (netmap_tx_irq(vi->dev, 0))
++		return;
++#endif
+ 	/* We were probably waiting for more output buffers. */
+ 	netif_wake_queue(vi->dev);
+ }
+@@ -481,7 +489,16 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+ 	struct virtnet_info *vi = container_of(napi, struct virtnet_info, napi);
+ 	void *buf;
+ 	unsigned int len, received = 0;
++#ifdef DEV_NETMAP
++	int work_done = 0;
+ 
++	if (netmap_rx_irq(vi->dev, 0, &work_done)) {
++		napi_complete(napi);
++		ND("called netmap_rx_irq");
++
++		return 1;
++	}
++#endif
+ again:
+ 	while (received < budget &&
+ 	       (buf = virtqueue_get_buf(vi->rvq, &len)) != NULL) {
+@@ -652,6 +669,10 @@ static int virtnet_open(struct net_device *dev)
+ {
+ 	struct virtnet_info *vi = netdev_priv(dev);
+ 
++#ifdef DEV_NETMAP
++	virtio_netmap_init_buffers(vi);
++	netmap_enable_all_rings(dev);
++#endif
+ 	virtnet_napi_enable(vi);
+ 	return 0;
+ }
+@@ -705,6 +726,9 @@ static int virtnet_close(struct net_device *dev)
+ {
+ 	struct virtnet_info *vi = netdev_priv(dev);
+ 
++#ifdef DEV_NETMAP
++	netmap_disable_all_rings(dev);
++#endif
+ 	napi_disable(&vi->napi);
+ 
+ 	return 0;
+@@ -991,6 +1015,10 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 		goto unregister;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	virtio_netmap_attach(vi);
++#endif
++
+ 	/* Assume link up if device can't report link status,
+ 	   otherwise get link status from config. */
+ 	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_STATUS)) {
+@@ -1040,6 +1068,9 @@ static void __devexit virtnet_remove(struct virtio_device *vdev)
+ {
+ 	struct virtnet_info *vi = vdev->priv;
+ 
++#ifdef DEV_NETMAP
++	netmap_detach(vi->dev);
++#endif
+ 	/* Stop all the virtqueues. */
+ 	vdev->config->reset(vdev);
+ 

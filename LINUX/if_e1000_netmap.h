@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Gaetano Catalli, Luigi Rizzo. All rights reserved.
+ * Copyright (C) 2012-2014 Gaetano Catalli, Luigi Rizzo. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,11 +23,10 @@
  * SUCH DAMAGE.
  */
 
-
 /*
  * $Id: if_e1000_netmap.h 10878 2012-04-12 22:28:48Z luigi $
  *
- * netmap support for e1000 (lem)
+ * netmap support for: e1000 (linux version)
  * For details on netmap support please see ixgbe_netmap.h
  */
 
@@ -35,52 +34,41 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
+
 #define SOFTC_T	e1000_adapter
 
 
 /*
- * Register/unregister, similar to e1000_reinit_safe()
+ * Register/unregister. We are already under netmap lock.
  */
 static int
 e1000_netmap_reg(struct netmap_adapter *na, int onoff)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *adapter = netdev_priv(ifp);
-	struct netmap_hw_adapter *hwna = (struct netmap_hw_adapter*)na;
-	int error = 0;
 
-	if (na == NULL)
-		return EINVAL;
+	/* protect against other reinit */
+	while (test_and_set_bit(__E1000_RESETTING, &adapter->flags))
+		usleep_range(1000, 2000);
 
 	rtnl_lock();
-
-	while (test_and_set_bit(__E1000_RESETTING, &adapter->flags))
-		msleep(1);
-
 	if (netif_running(adapter->netdev))
 		e1000_down(adapter);
 
-	if (onoff) { /* enable netmap mode */
-		ifp->if_capenable |= IFCAP_NETMAP;
-                na->na_flags |= NAF_NATIVE_ON;
-		na->if_transmit = (void *)ifp->netdev_ops;
-		ifp->netdev_ops = &hwna->nm_ndo;
+	/* enable or disable flags and callbacks in na and ifp */
+	if (onoff) {
+		nm_set_native_flags(na);
 	} else {
-		ifp->if_capenable &= ~IFCAP_NETMAP;
-                na->na_flags &= ~NAF_NATIVE_ON;
-		ifp->netdev_ops = (void *)na->if_transmit;
+		nm_clear_native_flags(na);
 	}
-
 	if (netif_running(adapter->netdev))
 		e1000_up(adapter);
 	else
 		e1000_reset(adapter);
 
-	clear_bit(__E1000_RESETTING, &adapter->flags);
-
 	rtnl_unlock();
-
-	return (error);
+	clear_bit(__E1000_RESETTING, &adapter->flags);
+	return (0);
 }
 
 
@@ -90,115 +78,86 @@ e1000_netmap_reg(struct netmap_adapter *na, int onoff)
 static int
 e1000_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
-        struct ifnet *ifp = na->ifp;
-	struct SOFTC_T *adapter = netdev_priv(ifp);
-	struct e1000_tx_ring* txr = &adapter->tx_ring[ring_nr];
+	struct ifnet *ifp = na->ifp;
 	struct netmap_kring *kring = &na->tx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
-	u_int j, k, l, n = 0, lim = kring->nkr_num_slots - 1;
-	int new_slots;
-
+	u_int nm_i;	/* index into the netmap ring */
+	u_int nic_i;	/* index into the NIC ring */
+	u_int n;
+	u_int const lim = kring->nkr_num_slots - 1;
+	u_int const head = kring->rhead;
 	/* generate an interrupt approximately every half ring */
-	int report_frequency = kring->nkr_num_slots >> 1;
+	u_int report_frequency = kring->nkr_num_slots >> 1;
 
-	/* take a copy of ring->cur now, and never read it again */
-	k = ring->cur;
-	if (k > lim)
-		return netmap_ring_reinit(kring);
+	/* device-specific */
+	struct SOFTC_T *adapter = netdev_priv(ifp);
+	struct e1000_tx_ring* txr = &adapter->tx_ring[ring_nr];
 
 	rmb();
 	/*
-	 * Process new packets to send. j is the current index in the
-	 * netmap ring, l is the corresponding index in the NIC ring.
+	 * First part: process new packets to send.
 	 */
-	j = kring->nr_hwcur;
-	new_slots = k - j - kring->nr_hwreserved;
-	if (new_slots < 0)
-		new_slots += kring->nkr_num_slots;
-	if (new_slots > kring->nr_hwavail) {
-		RD(5, "=== j %d k %d d %d hwavail %d hwreserved %d",
-			j, k, new_slots, kring->nr_hwavail, kring->nr_hwreserved);
-		return netmap_ring_reinit(kring);
-	}
+
 	if (!netif_carrier_ok(ifp)) {
-		/* All the new slots are now unavailable. */
-		kring->nr_hwavail -= new_slots;
 		goto out;
 	}
-	if (j != k) {	/* we have new packets to send */
-		l = netmap_idx_k2n(kring, j);
-		for (n = 0; j != k; n++) {
-			/* slot is the current slot in the netmap ring */
-			struct netmap_slot *slot = &ring->slot[j];
-			/* curr is the current slot in the nic ring */
-			struct e1000_tx_desc *curr = E1000_TX_DESC(*txr, l);
-			int flags = ((slot->flags & NS_REPORT) ||
-				j == 0 || j == report_frequency) ?
-					E1000_TXD_CMD_RS : 0;
+
+	nm_i = kring->nr_hwcur;
+	if (nm_i != head) {	/* we have new packets to send */
+		nic_i = netmap_idx_k2n(kring, nm_i);
+		for (n = 0; nm_i != head; n++) {
+			struct netmap_slot *slot = &ring->slot[nm_i];
+			u_int len = slot->len;
 			uint64_t paddr;
 			void *addr = PNMB(slot, &paddr);
-			u_int len = slot->len;
 
-			if (addr == netmap_buffer_base || len > NETMAP_BUF_SIZE) {
-				return netmap_ring_reinit(kring);
-			}
+			/* device-specific */
+			struct e1000_tx_desc *curr = E1000_TX_DESC(*txr, nic_i);
+			int flags = (slot->flags & NS_REPORT ||
+				nic_i == 0 || nic_i == report_frequency) ?
+				E1000_TXD_CMD_RS : 0;
 
-			slot->flags &= ~NS_REPORT;
+			NM_CHECK_ADDR_LEN(addr, len);
+
 			if (slot->flags & NS_BUF_CHANGED) {
+				/* buffer has changed, reload map */
 				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_addr, paddr);
 				curr->buffer_addr = htole64(paddr);
-				slot->flags &= ~NS_BUF_CHANGED;
 			}
+			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+
+			/* Fill the slot in the NIC ring. */
 			curr->upper.data = 0;
-			curr->lower.data = htole32(adapter->txd_cmd | len |
-					(E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS | flags) );
-			j = (j == lim) ? 0 : j + 1;
-			l = (l == lim) ? 0 : l + 1;
+			curr->lower.data = htole32(adapter->txd_cmd |
+				len | flags |
+				E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS);
+			nm_i = nm_next(nm_i, lim);
+			nic_i = nm_next(nic_i, lim);
 		}
-		/* hwcur becomes the saved ring->cur */
-		kring->nr_hwcur = k;
-		/* The new slots have been sent and so reported as
-		 * unavailable. Note that if the previous loop sent
-		 * previously reserved slots (as well as new slots),
-		 * we have n > new_slots.
-		 */
-		kring->nr_hwavail -= new_slots;
+		kring->nr_hwcur = head;
 
-		wmb(); /* synchronize writes to the NIC ring */
-
-		txr->next_to_use = l;
-		writel(l, adapter->hw.hw_addr + txr->tdt);
+		wmb();	/* synchronize writes to the NIC ring */
+		txr->next_to_use = nic_i; /* XXX what for ? */
+		/* (re)start the tx unit up to slot nic_i (excluded) */
+		writel(nic_i, adapter->hw.hw_addr + txr->tdt);
 		mmiowb(); // XXX where do we need this ?
 	}
 
-	if (n == 0 || kring->nr_hwavail < 1) {
-		int delta;
-
+	/*
+	 * Second part: reclaim buffers for completed transmissions.
+	 */
+	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
 		/* record completed transmissions using TDH */
-		l = readl(adapter->hw.hw_addr + txr->tdh);
-		if (l >= kring->nkr_num_slots) { /* XXX can happen */
-			D("TDH wrap %d", l);
-			l -= kring->nkr_num_slots;
+		nic_i = readl(adapter->hw.hw_addr + txr->tdh);
+		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
+			D("TDH wrap %d", nic_i);
+			nic_i -= kring->nkr_num_slots;
 		}
-		delta = l - txr->next_to_clean;
-		if (delta) {
-			/* some tx completed, increment hwavail. */
-			if (delta < 0)
-				delta += kring->nkr_num_slots;
-			txr->next_to_clean = l;
-			kring->nr_hwavail += delta;
-		}
+		txr->next_to_clean = nic_i;
+		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 out:
-	/* recompute hwreserved */
-	kring->nr_hwreserved = k - j;
-	if (kring->nr_hwreserved < 0) {
-		kring->nr_hwreserved += kring->nkr_num_slots;
-	}
-
-	/* update avail and reserved to what the kernel knows */
-	ring->avail = kring->nr_hwavail;
-	ring->reserved = kring->nr_hwreserved;
+	nm_txsync_finalize(kring);
 
 	return 0;
 }
@@ -210,90 +169,95 @@ out:
 static int
 e1000_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 {
-        struct ifnet *ifp = na->ifp;
-	struct SOFTC_T *adapter = netdev_priv(ifp);
-	struct e1000_rx_ring *rxr = &adapter->rx_ring[ring_nr];
+	struct ifnet *ifp = na->ifp;
 	struct netmap_kring *kring = &na->rx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
-	u_int j, l, n, lim = kring->nkr_num_slots - 1;
+	u_int nm_i;	/* index into the netmap ring */
+	u_int nic_i;	/* index into the NIC ring */
+	u_int n;
+	u_int const lim = kring->nkr_num_slots - 1;
+	u_int const head = nm_rxsync_prologue(kring);
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
-	u_int k = ring->cur, resvd = ring->reserved;
 
-	if (k > lim)
+	/* device-specific */
+	struct SOFTC_T *adapter = netdev_priv(ifp);
+	struct e1000_rx_ring *rxr = &adapter->rx_ring[ring_nr];
+
+	// XXX carrier check ?
+
+	if (head > lim)
 		return netmap_ring_reinit(kring);
 
 	rmb();
+
 	/*
-	 * Import newly received packets into the netmap ring.
-	 * j is an index in the netmap ring, l in the NIC ring.
+	 * First part: import newly received packets.
 	 */
-	l = rxr->next_to_clean;
-	j = netmap_idx_n2k(kring, l);
 	if (netmap_no_pendintr || force_update) {
 		uint16_t slot_flags = kring->nkr_slot_flags;
 
+		nic_i = rxr->next_to_clean;
+		nm_i = netmap_idx_n2k(kring, nic_i);
+
 		for (n = 0; ; n++) {
-			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, l);
+			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, nic_i);
 			uint32_t staterr = le32toh(curr->status);
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
-			ring->slot[j].len = le16toh(curr->length) - 4;
-			ring->slot[j].flags = slot_flags;
-			j = (j == lim) ? 0 : j + 1;
-			l = (l == lim) ? 0 : l + 1;
+			ring->slot[nm_i].len = le16toh(curr->length) - 4;
+			ring->slot[nm_i].flags = slot_flags;
+			nm_i = nm_next(nm_i, lim);
+			nic_i = nm_next(nic_i, lim);
 		}
 		if (n) { /* update the state variables */
-			rxr->next_to_clean = l;
-			kring->nr_hwavail += n;
+			rxr->next_to_clean = nic_i;
+			kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
 
-	/* skip past packets that userspace has released */
-	j = kring->nr_hwcur; /* netmap ring index */
-	if (resvd > 0) {
-		if (resvd + ring->avail >= lim + 1) {
-			D("XXX invalid reserve/avail %d %d", resvd, ring->avail);
-			ring->reserved = resvd = 0; // XXX panic...
-		}
-		k = (k >= resvd) ? k - resvd : k + lim + 1 - resvd;
-	}
-	if (j != k) { /* userspace has released some packets. */
-		l = netmap_idx_k2n(kring, j); /* NIC ring index */
-		for (n = 0; j != k; n++) {
-			struct netmap_slot *slot = &ring->slot[j];
-			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, l);
+	/*
+	 * Second part: skip past packets that userspace has released.
+	 */
+	nm_i = kring->nr_hwcur;
+	if (nm_i != head) {
+		nic_i = netmap_idx_k2n(kring, nm_i);
+		for (n = 0; nm_i != head; n++) {
+			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
 			void *addr = PNMB(slot, &paddr);
+			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, nic_i);
 
-			if (addr == netmap_buffer_base) { /* bad buf */
-				return netmap_ring_reinit(kring);
-			}
+			if (addr == netmap_buffer_base) /* bad buf */
+				goto ring_reset;
 			if (slot->flags & NS_BUF_CHANGED) {
 				// netmap_reload_map(...)
 				curr->buffer_addr = htole64(paddr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
 			curr->status = 0;
-			j = (j == lim) ? 0 : j + 1;
-			l = (l == lim) ? 0 : l + 1;
+			nm_i = nm_next(nm_i, lim);
+			nic_i = nm_next(nic_i, lim);
 		}
-		kring->nr_hwavail -= n;
-		kring->nr_hwcur = k;
+		kring->nr_hwcur = head;
+		rxr->next_to_use = nic_i; // XXX not really used
 		wmb();
-		rxr->next_to_use = l; // XXX not really used
 		/*
 		 * IMPORTANT: we must leave one free slot in the ring,
-		 * so move l back by one unit
+		 * so move nic_i back by one unit
 		 */
-		l = (l == 0) ? lim : l - 1;
-		writel(l, adapter->hw.hw_addr + rxr->rdt);
+		nic_i = nm_prev(nic_i, lim);
+		writel(nic_i, adapter->hw.hw_addr + rxr->rdt);
 	}
-	/* tell userspace that there are new packets */
-	ring->avail = kring->nr_hwavail - resvd;
+
+	/* tell userspace that there might be new packets */
+	nm_rxsync_finalize(kring);
 
 	return 0;
+
+ring_reset:
+	return netmap_ring_reinit(kring);
 }
 
 
@@ -345,9 +309,9 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 
 		rxr->next_to_use = 0;
 		/* preserve buffers already made available to clients */
-		i = rxr->count - 1 - na->rx_rings[0].nr_hwavail;
-		if (i < 0)
-		i += rxr->count;
+		i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[0]);
+		if (i < 0) // XXX something wrong here, can it really happen ?
+			i += rxr->count;
 		D("i now is %d", i);
 		wmb(); /* Force memory writes to complete */
 		writel(i, hw->hw_addr + rxr->rdt);
@@ -380,4 +344,5 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.num_tx_rings = na.num_rx_rings = 1;
 	netmap_attach(&na);
 }
+
 /* end of file */

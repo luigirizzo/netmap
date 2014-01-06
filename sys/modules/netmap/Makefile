@@ -5,7 +5,7 @@
 
 .PATH: ${.CURDIR}/../../dev/netmap
 .PATH.h: ${.CURDIR}/../../net
-CFLAGS += -I../../
+CFLAGS += -I${.CURDIR}/../../
 KMOD	= netmap
 SRCS	= device_if.h bus_if.h opt_netmap.h
 SRCS	+= netmap.c netmap.h netmap_kern.h
