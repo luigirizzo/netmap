@@ -374,8 +374,8 @@ process_rings(struct netmap_ring *rxring, struct netmap_ring *txring,
 		/* report status */
 		if (report)
 			ts->flags |= NS_REPORT;
-		j = NETMAP_RING_NEXT(rxring, j);
-		k = NETMAP_RING_NEXT(txring, k);
+		j = nm_ring_next(rxring, j);
+		k = nm_ring_next(txring, k);
 		m++;
 	}
 	rxring->avail -= m;
