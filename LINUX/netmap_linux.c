@@ -125,6 +125,13 @@ rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
     if ((*pm)->priority == NM_MAGIC_PRIORITY)
             return RX_HANDLER_PASS;
 
+    /* When we intercept a sk_buff coming from the driver, it happens that
+       skb->data points to the IP header, e.g. the ethernet header has
+       already been pulled. Since we want the netmap rings to contain the
+       full ethernet header, we push it back, so that the RX ring reader
+       can see it. */
+    skb_push(*pm, 14);
+
     /* Steal the mbuf and notify the pollers for a new RX packet. */
     generic_rx_handler((*pm)->dev, *pm);
 
