@@ -38,6 +38,7 @@
  */
 
 #include "nm_util.h"
+// #include <net/netmap_user.h>
 
 #include <ctype.h>	// isprint()
 
@@ -112,7 +113,7 @@ struct glob_arg {
 
 	int affinity;
 	int main_fd;
-	int report_interval;
+	int report_interval;		/* milliseconds between prints */
 	void *(*td_body)(void *);
 	void *mmap_addr;
 	int mmap_size;
@@ -486,17 +487,18 @@ update_addresses(struct pkt *pkt, struct glob_arg *g)
 	struct ip *ip = &pkt->ip;
 	struct udphdr *udp = &pkt->udp;
 
+    do {
 	p = ntohs(udp->uh_sport);
 	if (p < g->src_ip.port1) { /* just inc, no wrap */
 		udp->uh_sport = htons(p + 1);
-		return;
+		break;
 	}
 	udp->uh_sport = htons(g->src_ip.port0);
 
 	a = ntohl(ip->ip_src.s_addr);
 	if (a < g->src_ip.end) { /* just inc, no wrap */
 		ip->ip_src.s_addr = htonl(a + 1);
-		return;
+		break;
 	}
 	ip->ip_src.s_addr = htonl(g->src_ip.start);
 
@@ -504,17 +506,18 @@ update_addresses(struct pkt *pkt, struct glob_arg *g)
 	p = ntohs(udp->uh_dport);
 	if (p < g->dst_ip.port1) { /* just inc, no wrap */
 		udp->uh_dport = htons(p + 1);
-		return;
+		break;
 	}
 	udp->uh_dport = htons(g->dst_ip.port0);
 
 	a = ntohl(ip->ip_dst.s_addr);
 	if (a < g->dst_ip.end) { /* just inc, no wrap */
 		ip->ip_dst.s_addr = htonl(a + 1);
-		return;
+		break;
 	}
 	ip->ip_dst.s_addr = htonl(g->dst_ip.start);
-
+    } while (0);
+    // update checksum
 }
 
 /*
@@ -593,7 +596,7 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		u_int nfrags)
 {
 	u_int n, sent, cur = ring->cur;
-	int fcnt;
+	u_int fcnt;
 
 	n = nm_ring_space(ring);
 	if (n < count)
@@ -624,11 +627,11 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 			slot->ptr = (uint64_t)frame;
 		} else if (options & OPT_COPY) {
 			pkt_copy(frame, p, size);
-			if (fcnt == 1)
+			if (fcnt == nfrags)
 				update_addresses(pkt, g);
 		} else if (options & OPT_MEMCPY) {
 			memcpy(p, frame, size);
-			if (fcnt == 1)
+			if (fcnt == nfrags)
 				update_addresses(pkt, g);
 		} else if (options & OPT_PREFETCH) {
 			prefetch(p);
@@ -1016,8 +1019,8 @@ sender_body(void *data)
 				
 			m = send_packets(txring, pkt, frame, size, targ->g,
 					 limit, options, frags);
-			ND("limit %d avail %d frags %d m %d", 
-				limit, txring->avail, frags, m);
+			ND("limit %d tail %d frags %d m %d", 
+				limit, txring->tail, frags, m);
 			sent += m;
 			targ->count = sent;
 			if (rate_limit) {
