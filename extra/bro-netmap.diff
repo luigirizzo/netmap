@@ -1,5 +1,5 @@
 diff --git a/src/PktSrc.cc b/src/PktSrc.cc
-index 9d6bce6..6c343a0 100644
+index 9d6bce6..e8f59dd 100644
 --- a/src/PktSrc.cc
 +++ b/src/PktSrc.cc
 @@ -11,6 +11,26 @@
@@ -36,7 +36,7 @@ index 9d6bce6..6c343a0 100644
 +#ifdef HAVE_NETMAP
 +	// in netmap mode call netmap equivalent of pcap_next()
 +	if (IS_NETMAP_DESC(pd))
-+		data = last_data = nm_next((struct nm_desc_t *)pd,
++		data = last_data = nm_nextpkt((struct nm_desc_t *)pd,
 +				(struct nm_hdr_t *)&hdr);
 +	else
 +#else /* !HAVE_NETMAP */
