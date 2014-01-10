@@ -258,7 +258,7 @@ Helper routines for multiple readers from the same queue
   In particular we have a shared head+tail pointers that work
   together with cur and available
   ON RETURN FROM THE SYSCALL:
-  shadow->head = ring->cur
+  shadow->cur = ring->cur
   shadow->tail = ring->tail
   shadow->link[i] = i for all slots // mark invalid
  
@@ -267,7 +267,7 @@ Helper routines for multiple readers from the same queue
 struct nm_q_arg {
 	u_int want;	/* Input */
 	u_int have;	/* Output, 0 on error */
-	u_int head;
+	u_int cur;
 	u_int tail;
 	struct netmap_ring *ring;
 };
@@ -280,24 +280,26 @@ my_grab(struct nm_q_arg q)
 {
 	const u_int ns = q.ring->num_slots;
 
+	// lock(ring);
 	for (;;) {
 
-		q.head = (volatile u_int)q.ring->head;
+		q.cur = (volatile u_int)q.ring->head;
 		q.have = ns + q.head - (volatile u_int)q.ring->tail;
 		if (q.have >= ns)
 			q.have -= ns;
-		if (q.have == 0) /* no space */
+		if (q.have == 0) /* no space; caller may ioctl/retry */
 			break;
 		if (q.want < q.have)
 			q.have = q.want;
-		q.tail = q.head + q.have;
+		q.tail = q.cur + q.have;
 		if (q.tail >= ns)
 			q.tail -= ns;
-		if (atomic_cmpset_int(&q.ring->head, q.head, q.tail)
+		if (atomic_cmpset_int(&q.ring->cur, q.cur, q.tail)
 			break; /* success */
 	}
+	// unlock(ring);
 	D("returns %d out of %d at %d,%d",
-		q.have, q.want, q.head, q.tail);
+		q.have, q.want, q.cur, q.tail);
 	/* the last one can clear avail ? */
 	return q;
 }
@@ -306,16 +308,18 @@ my_grab(struct nm_q_arg q)
 int
 my_release(struct nm_q_arg q)
 {
-	u_int head = q.head, tail = q.tail, i;
+	u_int cur = q.cur, tail = q.tail, i;
 	struct netmap_ring *r = q.ring;
 
 	/* link the block to the next one.
 	 * there is no race here because the location is mine.
 	 */
-	r->slot[head].ptr = tail; /* this is mine */
+	r->slot[cur].ptr = tail; /* this is mine */
+	r->slot[cur].flags |= NM_SLOT_PTR;	// points to next block
 	// memory barrier
-	if (r->head != head)
-		return; /* not my turn to release */
+	// lock(ring);
+	if (r->head != cur)
+		goto done;
 	for (;;) {
 		// advance head
 		r->head = head = r->slot[head].ptr;
@@ -327,5 +331,8 @@ my_release(struct nm_q_arg q)
 	 * further down.
 	 */
 	// do an ioctl/poll to flush.
+done:
+	// unlock(ring);
+	return; /* not my turn to release */
 }
 #endif /* unused */
