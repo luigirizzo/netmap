@@ -8,7 +8,6 @@ Both can deal with line rate on real or emulated 10 Gbit ports.
 See details at
 
 	http://info.iet.unipi.it/~luigi/netmap/
-	http://info.iet.unipi.it/~luigi/vale/
 
 In this directory you can find source code (BSD-Copyright)
 for FreeBSD and Linux. Note that recent FreeBSD distributions
@@ -24,15 +23,15 @@ between applications and the network. In order of importance:
 	3. pre-allocated tx/rx buffers
 	4. memory mapped buffers
 
-Note that memory mapping is NOT the key feature, and system that
-do not apply all these techniques do not achieve the same speed
-_and_ efficiency.
+Despite the name,that memory mapping is NOT the key feature
+for netmap's speed; systems that do not apply all these techniques
+do not achieve the same speed _and_ efficiency.
 
 Netmap clients use a select()-able file descriptor to synchronize
 with the network card/software switch, and exchange multiple packets
 per system call through device-independent memory mapped buffers
 and descriptors. Device drivers are completely in the kernel, and
-the system does not rely on IOMMU or other special mechamisms.
+the system does not rely on IOMMU or other special mechanisms.
 
 
 
@@ -213,6 +212,6 @@ You can find the papers at http://info.iet.unipi.it/~luigi/research.html
 	VALE: a switched ethernet for virtual machines,
 	ACM Conext 2012, Nice, Dec. 2012
 
-+ Luigi Rizzo, Giuseppe Lettieri, Vincenzo Maffione
++ Luigi Rizzo, Giuseppe Lettieri, Vincenzo Maffione,
+	Speeding up packet I/O in virtual machines,
 	IEEE/ACM ANCS 2013, San Jose, Oct. 2013
-
