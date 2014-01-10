@@ -107,6 +107,20 @@ struct pcap_pkthdr;
 #endif	/* __FreeBSD__ */
 
 #ifdef __APPLE__
+
+#define cpuset_t	uint64_t	// XXX
+static inline void CPU_ZERO(cpuset_t *p)
+{
+	*p = 0;
+}
+
+static inline void CPU_SET(uint32_t i, cpuset_t *p)
+{
+	*p |= 1<< (i & 0x3f);
+}
+
+#define pthread_setaffinity_np(a, b, c)	((void)a, 0)
+
 #define ifr_flagshigh  ifr_flags	// XXX
 #define IFF_PPROMISC   IFF_PROMISC
 #include <net/if_dl.h>  /* LLADDR */
