@@ -2,13 +2,13 @@
 # we can just define 'progs' and create custom targets.
 PROGS	=	pkt-gen bridge testpcap libnetmap.so
 #PROGS += pingd
-PROGS	+= testlock testcsum test_select kern_test testmmap vale-ctl
+PROGS	+= testlock testcsum test_select testmmap vale-ctl
 LIBNETMAP = pcap-pic.o nm_util-pic.o
 
 CLEANFILES = $(PROGS) pcap.o nm_util.o *.o
 NO_MAN=
 CFLAGS = -O2 -pipe
-CFLAGS += -Werror -Wall
+CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I ../sys # -I/home/luigi/FreeBSD/head/sys -I../sys
 CFLAGS += -Wextra
 CFLAGS += -DNO_PCAP
