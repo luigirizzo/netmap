@@ -1536,7 +1536,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:It:r:l:d:s:D:S:b:c:o:p:PT:w:WvR:XC:H:h")) != -1) {
+			"a:f:F:n:i:It:r:l:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:h")) != -1) {
 		struct sf *fn;
 
 		switch(ch) {
@@ -1578,13 +1578,27 @@ main(int arc, char **argv)
 			break;
 
 		case 'i':	/* interface */
+			/* a prefix of tap: netmap: or pcap: forces the mode.
+			 * otherwise we guess
+			 */
 			g.ifname = optarg;
-			if (!strncmp(optarg, "tap", 3))
-				g.dev_type = DEV_TAP;
-			else
+			if (!strcmp(optarg, "null")) {
 				g.dev_type = DEV_NETMAP;
-			if (!strcmp(g.ifname, "null"))
 				g.dummy_send = 1;
+			} else if (!strncmp(optarg, "tap:", 4)) {
+				g.dev_type = DEV_TAP;
+				g.ifname = optarg + 4;
+			} else if (!strncmp(optarg, "pcap:", 5)) {
+				g.dev_type = DEV_PCAP;
+				g.ifname = optarg + 5;
+			} else if (!strncmp(optarg, "netmap:", 7)) {
+				g.dev_type = DEV_NETMAP;
+				g.ifname = optarg + 7;
+			} else if (!strncmp(optarg, "tap", 3)) {
+				g.dev_type = DEV_TAP;
+			} else {
+				g.dev_type = DEV_NETMAP;
+			}
 			break;
 
 		case 'I':
@@ -1635,10 +1649,6 @@ main(int arc, char **argv)
 			break;
 		case 'p':
 			g.nthreads = atoi(optarg);
-			break;
-
-		case 'P':
-			g.dev_type = DEV_PCAP;
 			break;
 
 		case 'D': /* destination mac */
@@ -1713,7 +1723,7 @@ main(int arc, char **argv)
 		D("cannot open tap %s", g.ifname);
 		usage();
 	}
-    } else if (g.dev_type > DEV_NETMAP) {
+    } else if (g.dev_type == DEV_PCAP) {
 	char pcap_errbuf[PCAP_ERRBUF_SIZE];
 
 	D("using pcap on %s", g.ifname);
@@ -1723,7 +1733,7 @@ main(int arc, char **argv)
 		D("cannot open pcap on %s", g.ifname);
 		usage();
 	}
-    } else if (g.dummy_send) {
+    } else if (g.dummy_send) { /* but DEV_NETMAP */
 	D("using a dummy send routine");
     } else {
 	bzero(&nmr, sizeof(nmr));
