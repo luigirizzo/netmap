@@ -2,6 +2,7 @@
 # that contains the configuration and header files used in the build.
 # go in the kernel directory and do a
 #       make oldconfig; make scripts; make prepare
+# or    make defconfig; make scripts; make prepare
 #
 
 

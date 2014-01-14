@@ -82,11 +82,6 @@ uint32_t atomic_add_int(uint32_t *p, int v)
 #define HAVE_AFFINITY
 #endif
 
-inline void prefetch (const void *x)
-{
-        __asm volatile("prefetcht0 %0" :: "m" (*(const unsigned long *)x));
-}
-
 
 #else /* FreeBSD 4.x */
 int atomic_cmpset_32(volatile uint32_t *p, uint32_t old, uint32_t new)

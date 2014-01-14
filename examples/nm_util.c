@@ -37,16 +37,21 @@
 extern int verbose;
 
 int
-nm_do_ioctl(struct my_ring *me, u_long what, int subcmd)
+nm_do_ioctl(struct nm_desc_t *me, u_long what, int subcmd)
 {
 	struct ifreq ifr;
 	int error;
+	int fd;
+
 #if defined( __FreeBSD__ ) || defined (__APPLE__)
-	int fd = me->fd;
+	(void)subcmd;	// only used on Linux
+	fd = me->fd;
 #endif
+
 #ifdef linux 
 	struct ethtool_value eval;
-	int fd;
+
+	bzero(&eval, sizeof(eval));
 	fd = socket(AF_INET, SOCK_DGRAM, 0);
 	if (fd < 0) {
 		printf("Error: cannot get device control socket.\n");
@@ -54,9 +59,8 @@ nm_do_ioctl(struct my_ring *me, u_long what, int subcmd)
 	}
 #endif /* linux */
 
-	(void)subcmd;	// unused
 	bzero(&ifr, sizeof(ifr));
-	strncpy(ifr.ifr_name, me->ifname, sizeof(ifr.ifr_name));
+	strncpy(ifr.ifr_name, me->req.nr_name, sizeof(ifr.ifr_name));
 	switch (what) {
 	case SIOCSIFFLAGS:
 #ifndef __APPLE__
@@ -71,6 +75,7 @@ nm_do_ioctl(struct my_ring *me, u_long what, int subcmd)
 		ifr.ifr_curcap = me->if_curcap;
 		break;
 #endif
+
 #ifdef linux
 	case SIOCETHTOOL:
 		eval.cmd = subcmd;
@@ -115,108 +120,47 @@ done:
  * Returns the file descriptor.
  * The extra flag checks configures promisc mode.
  */
-int
-netmap_open(struct my_ring *me, int ringid, int promisc)
+struct nm_desc_t *
+netmap_open(const char *name, int ringid, int promisc)
 {
-	int fd, err, l;
-	struct nmreq req;
+	struct nm_desc_t *d = nm_open(name, NULL, ringid, 0);
 
-	me->fd = fd = open("/dev/netmap", O_RDWR);
-	if (fd < 0) {
-		D("Unable to open /dev/netmap");
-		return (-1);
-	}
-	bzero(&req, sizeof(req));
-	req.nr_version = NETMAP_API;
-	strncpy(req.nr_name, me->ifname, sizeof(req.nr_name));
-	req.nr_ringid = ringid;
-	err = ioctl(fd, NIOCREGIF, &req);
-	if (err) {
-		D("Unable to register %s", me->ifname);
-		goto error;
-	}
-	me->memsize = l = req.nr_memsize;
+	if (d == NULL)
+		return d;
+
 	if (verbose)
-		D("memsize is %d MB", l>>20);
-
-	if (me->mem == NULL) {
-		me->mem = mmap(0, l, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 0);
-		if (me->mem == MAP_FAILED) {
-			D("Unable to mmap");
-			me->mem = NULL;
-			goto error;
-		}
-	}
-
+		D("memsize is %d MB", d->req.nr_memsize>>20);
 
 	/* Set the operating mode. */
 	if (ringid != NETMAP_SW_RING) {
-		nm_do_ioctl(me, SIOCGIFFLAGS, 0);
-		if ((me[0].if_flags & IFF_UP) == 0) {
-			D("%s is down, bringing up...", me[0].ifname);
-			me[0].if_flags |= IFF_UP;
+		nm_do_ioctl(d, SIOCGIFFLAGS, 0);
+		if ((d->if_flags & IFF_UP) == 0) {
+			D("%s is down, bringing up...", name);
+			d->if_flags |= IFF_UP;
 		}
 		if (promisc) {
-			me[0].if_flags |= IFF_PPROMISC;
-			nm_do_ioctl(me, SIOCSIFFLAGS, 0);
+			d->if_flags |= IFF_PPROMISC;
+			nm_do_ioctl(d, SIOCSIFFLAGS, 0);
 		}
 
+		/* disable GSO, TSO, RXCSUM, TXCSUM...
+		 * TODO: set them back when done.
+		 */
 #ifdef __FreeBSD__
-		/* also disable checksums etc. */
-		nm_do_ioctl(me, SIOCGIFCAP, 0);
-		me[0].if_reqcap = me[0].if_curcap;
-		me[0].if_reqcap &= ~(IFCAP_HWCSUM | IFCAP_TSO | IFCAP_TOE);
-		nm_do_ioctl(me+0, SIOCSIFCAP, 0);
+		nm_do_ioctl(d, SIOCGIFCAP, 0);
+		d->if_reqcap = d->if_curcap;
+		d->if_reqcap &= ~(IFCAP_HWCSUM | IFCAP_TSO | IFCAP_TOE);
+		nm_do_ioctl(d, SIOCSIFCAP, 0);
 #endif
 #ifdef linux
-		/* disable:
-		 * - generic-segmentation-offload
-		 * - tcp-segmentation-offload
-		 * - rx-checksumming
-		 * - tx-checksumming
-		 * XXX check how to set back the caps.
-		 */
-		nm_do_ioctl(me, SIOCETHTOOL, ETHTOOL_SGSO);
-		nm_do_ioctl(me, SIOCETHTOOL, ETHTOOL_STSO);
-		nm_do_ioctl(me, SIOCETHTOOL, ETHTOOL_SRXCSUM);
-		nm_do_ioctl(me, SIOCETHTOOL, ETHTOOL_STXCSUM);
+		nm_do_ioctl(d, SIOCETHTOOL, ETHTOOL_SGSO);
+		nm_do_ioctl(d, SIOCETHTOOL, ETHTOOL_STSO);
+		nm_do_ioctl(d, SIOCETHTOOL, ETHTOOL_SRXCSUM);
+		nm_do_ioctl(d, SIOCETHTOOL, ETHTOOL_STXCSUM);
 #endif /* linux */
 	}
 
-	me->nifp = NETMAP_IF(me->mem, req.nr_offset);
-	me->queueid = ringid;
-	if (ringid & NETMAP_SW_RING) {
-		me->begin = req.nr_rx_rings;
-		me->end = me->begin + 1;
-		me->tx = NETMAP_TXRING(me->nifp, req.nr_tx_rings);
-		me->rx = NETMAP_RXRING(me->nifp, req.nr_rx_rings);
-	} else if (ringid & NETMAP_HW_RING) {
-		D("XXX check multiple threads");
-		me->begin = ringid & NETMAP_RING_MASK;
-		me->end = me->begin + 1;
-		me->tx = NETMAP_TXRING(me->nifp, me->begin);
-		me->rx = NETMAP_RXRING(me->nifp, me->begin);
-	} else {
-		me->begin = 0;
-		me->end = req.nr_rx_rings; // XXX max of the two
-		me->tx = NETMAP_TXRING(me->nifp, 0);
-		me->rx = NETMAP_RXRING(me->nifp, 0);
-	}
-	return (0);
-error:
-	close(me->fd);
-	return -1;
-}
-
-
-int
-netmap_close(struct my_ring *me)
-{
-	D("");
-	if (me->mem)
-		munmap(me->mem, me->memsize);
-	close(me->fd);
-	return (0);
+	return d;
 }
 
 
@@ -224,22 +168,18 @@ netmap_close(struct my_ring *me)
  * how many packets on this set of queues ?
  */
 int
-pkt_queued(struct my_ring *me, int tx)
+pkt_queued(struct nm_desc_t *d, int tx)
 {
 	u_int i, tot = 0;
 
 	ND("me %p begin %d end %d", me, me->begin, me->end);
-	for (i = me->begin; i < me->end; i++) {
-		struct netmap_ring *ring = tx ?
-			NETMAP_TXRING(me->nifp, i) : NETMAP_RXRING(me->nifp, i);
-		tot += nm_ring_space(ring);
+	if (tx) {
+		for (i = d->first_tx_ring; i <= d->last_tx_ring; i++)
+			tot += nm_ring_space(d->tx + i);
+	} else {
+		for (i = d->first_rx_ring; i <= d->last_rx_ring; i++)
+			tot += nm_ring_space(d->rx + i);
 	}
-	if (0 && verbose && tot && !tx)
-		D("ring %s %s %s has %d avail at %d",
-			me->ifname, tx ? "tx": "rx",
-			me->end >= me->nifp->ni_tx_rings ? // XXX who comes first ?
-				"host":"net",
-			tot, NETMAP_TXRING(me->nifp, me->begin)->cur);
 	return tot;
 }
 

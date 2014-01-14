@@ -48,10 +48,6 @@ bufs    size    ns/cy
 #include <inttypes.h>
 #include <sys/time.h>
 
-inline void prefetch (const void *x)
-{
-	__asm volatile("prefetcht0 %0" :: "m" (*(const unsigned long *)x));
-}
 
 volatile uint16_t res;
 
@@ -254,8 +250,8 @@ main(int argc, char *argv[])
 	for (n = 0; n < lim; n++) {
 		for (i = j = 0; i < 1000000; i++) {
 			const unsigned char *x = buf0 + j*MAXLEN;
-			prefetch(x + MAXLEN);
-			prefetch(x + MAXLEN + 64);
+			__builtin_prefetch(x + MAXLEN);
+			__builtin_prefetch(x + MAXLEN + 64);
 			res = fnp(x, len);
 			if (++j == ring_size)
 				j = 0;

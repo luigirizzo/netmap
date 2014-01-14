@@ -11,10 +11,13 @@ CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I ../sys # -I/home/luigi/FreeBSD/head/sys -I../sys
 CFLAGS += -Wextra
+.ifdef WITH_PCAP
+LDFLAGS += -lpcap
+.else
 CFLAGS += -DNO_PCAP
+.endif
 
 LDFLAGS += -lpthread
-#LDFLAGS += -lpcap
 LDFLAGS += -lrt	# needed on linux, does not harm on BSD
 #SRCS = pkt-gen.c
 

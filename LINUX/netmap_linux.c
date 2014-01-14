@@ -157,7 +157,7 @@ netmap_catch_rx(struct netmap_adapter *na, int intercept)
     struct ifnet *ifp = na->ifp;
 
     if (intercept) {
-        return netdev_rx_handler_register(na->ifp,
+        return -netdev_rx_handler_register(na->ifp,
                 &linux_generic_rx_handler, na);
     } else {
         netdev_rx_handler_unregister(ifp);
