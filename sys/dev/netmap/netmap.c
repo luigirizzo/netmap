@@ -1052,7 +1052,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	 * to use generic adapters, we cannot satisfy the request.
 	 */
 	if (!NETMAP_CAPABLE(ifp) && i == NETMAP_ADMODE_NATIVE)
-		return ENOTSUP;
+		return ENOTSUPP;
 
 	/* Otherwise, create a generic adapter and return it,
 	 * saving the previously used netmap adapter, if any.
