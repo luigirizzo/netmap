@@ -29,7 +29,7 @@ index 9d6bce6..e8f59dd 100644
  
  // ### This needs auto-confing.
  #ifdef HAVE_PCAP_INT_H
-@@ -75,7 +95,15 @@ int PktSrc::ExtractNextPacket()
+@@ -75,7 +95,14 @@ int PktSrc::ExtractNextPacket()
  		return 0;
  		}
  
@@ -39,9 +39,8 @@ index 9d6bce6..e8f59dd 100644
 +		data = last_data = nm_nextpkt((struct nm_desc_t *)pd,
 +				(struct nm_hdr_t *)&hdr);
 +	else
-+#else /* !HAVE_NETMAP */
++#endif /* HAVE_NETMAP */
  	data = last_data = pcap_next(pd, &hdr);
-+#endif /* !HAVE_NETMAP */
  
  	if ( data && (hdr.len == 0 || hdr.caplen == 0) )
  		{
