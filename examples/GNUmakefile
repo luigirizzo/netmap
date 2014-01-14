@@ -11,7 +11,12 @@ CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I ../sys # -I/home/luigi/FreeBSD/head/sys -I../sys
 CFLAGS += -Wextra
+ifdef WITH_PCAP
+# do not make pcap default, as it is not always available on linux
+LDLIBS += -lpcap
+else
 CFLAGS += -DNO_PCAP
+endif
 
 LDLIBS += -lpthread
 ifeq ($(shell uname),Linux)

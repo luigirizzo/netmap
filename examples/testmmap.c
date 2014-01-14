@@ -1,5 +1,19 @@
-#include "nm_util.h"
+#define TEST_NETMAP
+
+#include <inttypes.h>
+#include <sys/param.h>	/* ULONG_MAX */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/poll.h>
 #include <sys/wait.h>
+#include <sys/mman.h>	/* PROT_* */
+#include <fcntl.h>	/* O_RDWR */
+#include <pthread.h>
+#include <signal.h>
+
 
 #define MAX_VARS 100
 
@@ -124,6 +138,12 @@ void do_close()
 	output_err(ret, "close(%d)=%d", fd, ret);
 }
 
+#ifdef TEST_NETMAP
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <ifaddrs.h>
+#include <net/netmap_user.h>
+
 void parse_nmr_config(char* w, struct nmreq *nmr)
 {
 	char *tok;
@@ -222,6 +242,26 @@ doit:
 	output_err(ret, "ioctl(%d, NIOCREGIF) for %s: %s memsize=%zu",
 		fd, name, (nmr.nr_ringid & NETMAP_PRIV_MEM ? "PRIVATE" : "GLOBAL"), last_memsize);
 }
+
+
+void
+do_txsync()
+{
+	char *arg = nextarg();
+	int fd = arg ? atoi(arg) : last_fd;
+	int ret = ioctl(fd, NIOCTXSYNC, NULL);
+	output_err(ret, "ioctl(%d, NIOCTXSYNC)=%d", fd, ret);
+}
+
+void
+do_rxsync()
+{
+	char *arg = nextarg();
+	int fd = arg ? atoi(arg) : last_fd;
+	int ret = ioctl(fd, NIOCRXSYNC, NULL);
+	output_err(ret, "ioctl(%d, NIOCRXSYNC)=%d", fd, ret);
+}
+#endif /* TEST_NETMAP */
 
 
 volatile char tmp1;
@@ -347,23 +387,6 @@ void do_poll()
 	free(fds);
 }
 
-void
-do_txsync()
-{
-	char *arg = nextarg();
-	int fd = arg ? atoi(arg) : last_fd;
-	int ret = ioctl(fd, NIOCTXSYNC, NULL);
-	output_err(ret, "ioctl(%d, NIOCTXSYNC)=%d", fd, ret);
-}
-
-void
-do_rxsync()
-{
-	char *arg = nextarg();
-	int fd = arg ? atoi(arg) : last_fd;
-	int ret = ioctl(fd, NIOCRXSYNC, NULL);
-	output_err(ret, "ioctl(%d, NIOCRXSYNC)=%d", fd, ret);
-}
 
 void
 do_expr()
@@ -451,55 +474,21 @@ struct cmd_def {
 
 
 struct cmd_def commands[] = {
-	{
-		.name = "open",
-		.f    = do_open,
-	},
-	{
-		.name = "close",
-		.f    = do_close,
-	},
-	{
-		.name = "getinfo",
-		.f    = do_getinfo,
-	},
-	{
-		.name = "regif",
-		.f    = do_regif,
-	},
-	{
-		.name = "mmap",
-		.f    = do_mmap,
-	},
-	{	.name = "access", .f = do_access, },
-	{
-		.name = "munmap",
-		.f    = do_munmap,
-	},
-	{
-		.name = "poll",
-		.f    = do_poll,
-	},
-	{
-		.name = "txsync",
-		.f    = do_txsync,
-	},
-	{
-		.name = "rxsync",
-		.f    = do_rxsync,
-	},
-	{
-		.name = "expr",
-		.f    = do_expr,
-	},
-	{
-		.name = "echo",
-		.f    = do_echo,
-	},
-	{
-		.name = "vars",
-		.f    = do_vars,
-	}
+	{ "open",	do_open,	},
+	{ "close", 	do_close,	},
+#ifdef TEST_NETMAP
+	{ "getinfo",	do_getinfo,	},
+	{ "regif",	do_regif,	},
+	{ "txsync",	do_txsync,	},
+	{ "rxsync",	do_rxsync,	},
+#endif /* TEST_NETMAP */
+	{ "mmap",	do_mmap,	},
+	{ "access",	do_access,	},
+	{ "munmap",	do_munmap,	},
+	{ "poll",	do_poll,	},
+	{ "expr",	do_expr,	},
+	{ "echo",	do_echo,	},
+	{ "vars",	do_vars,	}
 };
 
 const int N_CMDS = sizeof(commands) / sizeof(struct cmd_def);
