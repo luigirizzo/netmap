@@ -1685,8 +1685,10 @@ main(int arc, char **argv)
 			break;
 		case 'H':
 			g.virt_header = atoi(optarg);
+			break;
 		case 'h':
 			g.host_ring = 1;
+			break;
 		}
 	}
 
