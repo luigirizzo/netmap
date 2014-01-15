@@ -141,9 +141,6 @@ nm_ring_space(struct netmap_ring *ring)
 #include <unistd.h>	/* close() */
 #include <signal.h>
 #include <stdlib.h>
-#ifndef __FreeBSD__
-// #include <malloc.h>	/* on FreeBSD it is stdlib.h */
-#endif
 
 struct nm_hdr_t {	/* same as pcap_pkthdr */
 	struct timeval	ts;
