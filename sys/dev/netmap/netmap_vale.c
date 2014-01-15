@@ -160,7 +160,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0 , "
 static int bdg_netmap_attach(struct nmreq *nmr, struct ifnet *ifp);
 static int bdg_netmap_reg(struct netmap_adapter *na, int onoff);
 static int netmap_bwrap_register(struct netmap_adapter *, int onoff);
-int kern_netmap_regif(struct nmreq *nmr);
 
 /*
  * For each output interface, nm_bdg_q is used to construct a list.
