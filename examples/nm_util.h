@@ -58,10 +58,8 @@
 
 #define cpuset_t	cpu_set_t
 
-#define ifr_flagshigh  ifr_flags
-#define ifr_curcap     ifr_flags
-#define ifr_reqcap     ifr_flags
-#define IFF_PPROMISC   IFF_PROMISC
+#define ifr_flagshigh  ifr_flags	/* only the low 16 bits here */
+#define IFF_PPROMISC   IFF_PROMISC	/* IFF_PPROMISC does not exist */
 #include <linux/ethtool.h>
 #include <linux/sockios.h>
 
