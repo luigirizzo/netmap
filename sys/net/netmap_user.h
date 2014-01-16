@@ -189,7 +189,7 @@ struct nm_desc_t {
 
 /*
  * when the descriptor is open correctly, d->self == d
- * actually we better use some magic number.
+ * Eventually we should also use some magic number.
  */
 #define P2NMD(p)		((struct nm_desc_t *)(p))
 #define IS_NETMAP_DESC(d)	(P2NMD(d)->self == P2NMD(d))
@@ -295,7 +295,6 @@ nm_open(const char *ifname, const char *ring_name, int flags, int ring_flags)
 	}
 	if (namelen >= sizeof(d->req.nr_name))
 		namelen = sizeof(d->req.nr_name) - 1;
-	// fprintf(stderr, "opening %.*s port %s", namelen, ifname, port);
 
 	d = (struct nm_desc_t *)calloc(1, sizeof(*d));
 	if (d == NULL) {
@@ -323,7 +322,6 @@ nm_open(const char *ifname, const char *ring_name, int flags, int ring_flags)
 	memcpy(d->req.nr_name, ifname, namelen);
 	d->req.nr_name[namelen] = '\0';
 	if (ioctl(d->fd, NIOCREGIF, &d->req)) {
-		fprintf(stderr, "NIOCREGIF %s fails\n", d->req.nr_name);
 		goto fail;
 	}
 
