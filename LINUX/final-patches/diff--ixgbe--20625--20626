@@ -51,7 +51,7 @@ index eee0b29..70581eb 100644
 +	 * Same as the txeof routine: only wakeup clients on intr.
 +	 */
 +	if (netmap_rx_irq(adapter->netdev, rx_ring->queue_index, work_done))
-+		return false;
++		return;
 +#endif /* DEV_NETMAP */
  	i = rx_ring->next_to_clean;
  	rx_desc = IXGBE_RX_DESC_ADV(rx_ring, i);

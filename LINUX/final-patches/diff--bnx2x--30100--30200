@@ -1,0 +1,112 @@
+diff --git a/bnx2x/bnx2x_cmn.c b/bnx2x/bnx2x_cmn.c
+index c4cbf97..47296a1 100644
+--- a/bnx2x/bnx2x_cmn.c
++++ b/bnx2x/bnx2x_cmn.c
+@@ -28,6 +28,9 @@
+ #include "bnx2x_sp.h"
+ 
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <bnx2x_netmap_linux.h>	/* extern stuff */
++#endif /* CONFIG_NETMAP */
+ 
+ /**
+  * bnx2x_bz_fp - zero content of the fastpath structure.
+@@ -1898,6 +1901,9 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
+ 
+ 	/* Start fast path */
+ 
++#ifdef DEV_NETMAP
++	bnx2x_netmap_config(bp);
++#endif /* DEV_NETMAP */
+ 	/* Initialize Rx filter. */
+ 	netif_addr_lock_bh(bp->dev);
+ 	bnx2x_set_rx_mode(bp->dev);
+@@ -2163,6 +2169,50 @@ int bnx2x_poll(struct napi_struct *napi, int budget)
+ 						 napi);
+ 	struct bnx2x *bp = fp->bp;
+ 
++#ifdef DEV_NETMAP
++	/* fake no work if we are in netmap mode */
++	struct netmap_adapter *na = NA(fp->bp->dev);
++	if (!(na && na->ifp->if_capenable & IFCAP_NETMAP))
++		goto normal_path;
++
++	/* grab tx interrupts (we only care for cos 0 */
++	netmap_tx_irq(bp->dev, fp->txdata[0].txq_index);
++
++#if 0
++	/* XXX receive logic */
++	if (0 && netmap_rx_irq(bp->dev, fp->index, &rx_pkt))
++		return true; /* no more interrupts */
++#endif /* 0 */
++
++	/* temporarily duplicate the rx logic, see below */
++	ND(5, "q[%d] rx intr start", fp->index);
++	while (1) {
++		if (bnx2x_has_rx_work(fp)) {
++			work_done += bnx2x_rx_int(fp, budget - work_done);
++			/* must not complete if we consumed full budget */
++			if (work_done >= budget)
++				break;
++		}
++		/* Fall out from the NAPI loop if needed */
++		if (!(bnx2x_has_rx_work(fp))) {
++			bnx2x_update_fpsb_idx(fp);
++			rmb();
++			if (!(bnx2x_has_rx_work(fp))) {
++				napi_complete(napi);
++				/* Re-enable interrupts */
++				bnx2x_ack_sb(bp, fp->igu_sb_id, USTORM_ID,
++					     le16_to_cpu(fp->fp_hc_idx),
++					     IGU_INT_ENABLE, 1);
++				break;
++			}
++		}
++	}
++	ND(5, "q[%d] rx intr done", fp->index);
++
++	return work_done;
++
++normal_path:
++#endif /* DEV_NETMAP */
+ 	while (1) {
+ #ifdef BNX2X_STOP_ON_ERROR
+ 		if (unlikely(bp->panic)) {
+diff --git a/bnx2x/bnx2x_main.c b/bnx2x/bnx2x_main.c
+index 15f8000..43ccd5b 100644
+--- a/bnx2x/bnx2x_main.c
++++ b/bnx2x/bnx2x_main.c
+@@ -587,6 +587,22 @@ static u64 bnx2x_wb_rd(struct bnx2x *bp, int reg)
+ }
+ #endif
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++/*
++ * This driver uses multiple source files. The netmap header is included
++ * in all (2) files where we need netmap hooks, while new functions are
++ * compiled only in the file with #define NETMAP_BNX2X_MAIN.
++ *
++ * NETMAP Intercept points:
++ * - netmap_attach() is in bnx2x_init_one() (this file).
++ * - netmap_[tr]x_irq() attach into bnx2x_tx_int() and bnx2x_rx_int()
++ * - ring (re)init is globally done in bnx2x_nic_load()
++ * both in bnx2x_cmn.c
++ */
++#define NETMAP_BNX2X_MAIN
++#include <bnx2x_netmap_linux.h>
++#endif /* CONFIG_NETMAP */
++
+ static int bnx2x_mc_assert(struct bnx2x *bp)
+ {
+ 	char last_idx;
+@@ -10978,6 +10994,9 @@ static int bnx2x_eeh_nic_unload(struct bnx2x *bp)
+ 
+ 	netif_carrier_off(bp->dev);
+ 
++#ifdef DEV_NETMAP
++	bnx2x_netmap_attach(bp);
++#endif /* DEV_NETMAP */
+ 	return 0;
+ }
+ 
