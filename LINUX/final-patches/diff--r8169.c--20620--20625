@@ -53,7 +53,7 @@ index 0fe2fc9..efee0a4 100644
 +#ifdef DEV_NETMAP
 +	re_netmap_tx_init(tp);
 +	if (re_netmap_rx_init(tp))
-+		return; // success
++		return 0; // success
 +#endif /* DEV_NETMAP */
  
  	for (i = 0; i < NUM_RX_DESC; i++) {
