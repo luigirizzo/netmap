@@ -183,7 +183,9 @@ e1000_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 	struct SOFTC_T *adapter = netdev_priv(ifp);
 	struct e1000_rx_ring *rxr = &adapter->rx_ring[ring_nr];
 
-	// XXX carrier check ?
+	if (!netif_carrier_ok(ifp)) {
+		goto out;
+	}
 
 	if (head > lim)
 		return netmap_ring_reinit(kring);
@@ -250,7 +252,7 @@ e1000_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 		nic_i = nm_prev(nic_i, lim);
 		writel(nic_i, adapter->hw.hw_addr + rxr->rdt);
 	}
-
+out:
 	/* tell userspace that there might be new packets */
 	nm_rxsync_finalize(kring);
 
