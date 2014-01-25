@@ -919,6 +919,14 @@ int netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na);
  */
 typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
 		const struct netmap_vp_adapter *);
+typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
+typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
+struct netmap_bdg_ops {
+	bdg_lookup_fn_t lookup;
+	bdg_config_fn_t config;
+	bdg_dtor_fn_t	dtor;
+};
+
 u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		const struct netmap_vp_adapter *);
 
@@ -928,11 +936,11 @@ u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 
 #define	NM_NAME			"vale"	/* prefix for bridge port name */
 
-
 /* these are redefined in case of no VALE support */
 int netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 void netmap_init_bridges(void);
-int netmap_bdg_ctl(struct nmreq *nmr, bdg_lookup_fn_t func);
+int netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops);
+int netmap_bdg_config(struct nmreq *nmr);
 
 #else /* !WITH_VALE */
 #define	netmap_get_bdg_na(_1, _2, _3)	0

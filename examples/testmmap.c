@@ -601,7 +601,7 @@ do_nmr_dump()
 			printf("BDG_LIST");
 			arg_interp = nmr_arg_bdg_list;
 			break;
-		case NETMAP_BDG_LOOKUP_REG:
+		case NETMAP_BDG_REGOPS:
 			printf("BDG_LOOKUP_REG");
 			arg_interp = nmr_arg_lookup_reg;
 			break;

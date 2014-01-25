@@ -1825,6 +1825,9 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 
 		break;
 
+	case NIOCCONFIG:
+		error = netmap_bdg_config(nmr);
+		break;
 #ifdef __FreeBSD__
 	case FIONBIO:
 	case FIOASYNC:

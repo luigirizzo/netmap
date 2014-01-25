@@ -215,7 +215,7 @@ struct nm_bridge {
 	 * different ring index.
 	 * This function must be set by netmap_bdgctl().
 	 */
-	bdg_lookup_fn_t nm_bdg_lookup;
+	struct netmap_bdg_ops bdg_ops;
 
 	/* the forwarding table, MAC+ports.
 	 * XXX should be changed to an argument to be passed to
@@ -319,7 +319,7 @@ nm_find_bridge(const char *name, int create)
 		for (i = 0; i < NM_BDG_MAXPORTS; i++)
 			b->bdg_port_index[i] = i;
 		/* set the default function */
-		b->nm_bdg_lookup = netmap_bdg_learning;
+		b->bdg_ops.lookup = netmap_bdg_learning;
 		/* reset the MAC address table */
 		bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
 	}
@@ -432,6 +432,8 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	}
 
 	BDG_WLOCK(b);
+	if (b->bdg_ops.dtor)
+		b->bdg_ops.dtor(b->bdg_ports[s_hw]);
 	b->bdg_ports[s_hw] = NULL;
 	if (s_sw >= 0) {
 		b->bdg_ports[s_sw] = NULL;
@@ -443,7 +445,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	ND("now %d active ports", lim);
 	if (lim == 0) {
 		ND("marking bridge %s as free", b->bdg_basename);
-		b->nm_bdg_lookup = NULL;
+		bzero(&b->bdg_ops, sizeof(b->bdg_ops));
 	}
 }
 
@@ -798,12 +800,16 @@ unlock_exit:
 }
 
 
-/* exported to kernel callers, e.g. OVS ?
- * Entry point.
+/* Called by either user's context (netmap_ioctl())
+ * or external kernel modules (e.g., Openvswitch).
+ * Operation is indicated in nmr->nr_cmd.
+ * NETMAP_BDG_OPS that sets configure/lookup/dtor functions to the bridge
+ * requires bdg_ops argument; the other commands ignore this argument.
+ *
  * Called without NMG_LOCK.
  */
 int
-netmap_bdg_ctl(struct nmreq *nmr, bdg_lookup_fn_t func)
+netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 {
 	struct nm_bridge *b;
 	struct netmap_adapter *na;
@@ -898,12 +904,12 @@ netmap_bdg_ctl(struct nmreq *nmr, bdg_lookup_fn_t func)
 		}
 		break;
 
-	case NETMAP_BDG_LOOKUP_REG:
-		/* register a lookup function to the given bridge.
+	case NETMAP_BDG_REGOPS:
+		/* register callbacks to the given bridge.
 		 * nmr->nr_name may be just bridge's name (including ':'
 		 * if it is not just NM_NAME).
 		 */
-		if (!func) {
+		if (!bdg_ops) {
 			error = EINVAL;
 			break;
 		}
@@ -912,7 +918,7 @@ netmap_bdg_ctl(struct nmreq *nmr, bdg_lookup_fn_t func)
 		if (!b) {
 			error = EINVAL;
 		} else {
-			b->nm_bdg_lookup = func;
+			b->bdg_ops = *bdg_ops;
 		}
 		NMG_UNLOCK();
 		break;
@@ -944,6 +950,27 @@ netmap_bdg_ctl(struct nmreq *nmr, bdg_lookup_fn_t func)
 		error = EINVAL;
 		break;
 	}
+	return error;
+}
+
+int
+netmap_bdg_config(struct nmreq *nmr)
+{
+	struct nm_bridge *b;
+	int error = EINVAL;
+
+	NMG_LOCK();
+	b = nm_find_bridge(nmr->nr_name, 0);
+	if (!b) {
+		NMG_UNLOCK();
+		return error;
+	}
+	NMG_UNLOCK();
+	/* Don't call config() with NMG_LOCK() held */
+	BDG_RLOCK(b);
+	if (b->bdg_ops.config != NULL)
+		error = b->bdg_ops.config((struct nm_ifreq *)nmr);
+	BDG_RUNLOCK(b);
 	return error;
 }
 
@@ -1293,7 +1320,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 			buf += na->virt_hdr_len;
 			len -= na->virt_hdr_len;
 		}
-		dst_port = b->nm_bdg_lookup(&ft[i], &dst_ring, na);
+		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
 		if (dst_port == NM_BDG_NOPORT)
