@@ -917,10 +917,10 @@ int netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na);
  * NM_BDG_MAXPORTS for broadcast, NM_BDG_MAXPORTS+1 for unknown.
  * XXX in practice "unknown" might be handled same as broadcast.
  */
-typedef u_int (*bdg_lookup_fn_t)(char *buf, u_int len,
-		uint8_t *ring_nr, struct netmap_vp_adapter *);
-u_int netmap_bdg_learning(char *, u_int, uint8_t *,
-		struct netmap_vp_adapter *);
+typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
+		const struct netmap_vp_adapter *);
+u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
+		const struct netmap_vp_adapter *);
 
 #define	NM_BDG_MAXPORTS		254	/* up to 254 */
 #define	NM_BDG_BROADCAST	NM_BDG_MAXPORTS

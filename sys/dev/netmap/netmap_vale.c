@@ -1135,9 +1135,11 @@ bdg_netmap_reg(struct netmap_adapter *na, int onoff)
  * ring in *dst_ring (at the moment, always use ring 0)
  */
 u_int
-netmap_bdg_learning(char *buf, u_int buf_len, uint8_t *dst_ring,
-		struct netmap_vp_adapter *na)
+netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
+		const struct netmap_vp_adapter *na)
 {
+	char *buf = ft->ft_buf;
+	u_int buf_len = ft->ft_len;
 	struct nm_hash_ent *ht = na->na_bdg->ht;
 	uint32_t sh, dh;
 	u_int dst, mysrc = na->bdg_port;
@@ -1291,7 +1293,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 			buf += na->virt_hdr_len;
 			len -= na->virt_hdr_len;
 		}
-		dst_port = b->nm_bdg_lookup(buf, len, &dst_ring, na);
+		dst_port = b->nm_bdg_lookup(&ft[i], &dst_ring, na);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
 		if (dst_port == NM_BDG_NOPORT)
