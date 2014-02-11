@@ -111,8 +111,9 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config)
 		if (error == -1) {
 			ND("Unable to %s %s", nr_cmd == NETMAP_BDG_DELIF ? "delete":"create", name);
 			perror(name);
-		} else
+		} else {
 			ND("Success to %s %s", nr_cmd == NETMAP_BDG_DELIF ? "delete":"create", name);
+		}
 		break;
 	case NETMAP_BDG_ATTACH:
 	case NETMAP_BDG_DETACH:

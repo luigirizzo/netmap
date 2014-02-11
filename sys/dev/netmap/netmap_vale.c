@@ -507,17 +507,21 @@ static int
 nm_vi_destroy(const char *name)
 {
 	struct ifnet *ifp;
+	int error;
 
 	ifp = ifunit_ref(name);
 	if (!ifp)
-		return EINVAL;
+		return ENXIO;
 	/* security check */
 	NMG_LOCK();
-	if (!NETMAP_CAPABLE(ifp) || NA(ifp)->nm_register != bdg_netmap_reg ||
-	    NA(ifp)->na_refcount > 1) {
-		NMG_UNLOCK();
-		if_rele(ifp);
-		return EINVAL;
+	if (!NETMAP_CAPABLE(ifp) || NA(ifp)->nm_register != bdg_netmap_reg) {
+		error = EINVAL;
+		goto err;
+	}
+
+	if (NA(ifp)->na_refcount > 1) {
+		error = EBUSY;
+		goto err;
 	}
 	NMG_UNLOCK();
 
@@ -528,6 +532,11 @@ nm_vi_destroy(const char *name)
 	if_rele(ifp);
 	netmap_detach(ifp);
 	return 0;
+
+err:
+	NMG_UNLOCK();
+	if_rele(ifp);
+	return error;
 }
 
 /*
@@ -546,7 +555,7 @@ nm_vi_create(struct nmreq *nmr)
 	ifp = ifunit_ref(nmr->nr_name);
 	if (ifp) { /* already exist, cannot create new one */
 		if_rele(ifp);
-		return EINVAL;
+		return EEXIST;
 	}
 	error = nm_vi_persist(nmr->nr_name, &ifp);
 	if (error)
