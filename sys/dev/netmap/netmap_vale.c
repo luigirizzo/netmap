@@ -513,7 +513,7 @@ nm_vi_destroy(const char *name)
 		return EINVAL;
 	/* security check */
 	NMG_LOCK();
-	if ((NETMAP_CAPABLE(ifp) && NA(ifp)->nm_register != bdg_netmap_reg) ||
+	if (!NETMAP_CAPABLE(ifp) || NA(ifp)->nm_register != bdg_netmap_reg ||
 	    NA(ifp)->na_refcount > 1) {
 		NMG_UNLOCK();
 		if_rele(ifp);
