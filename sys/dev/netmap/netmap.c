@@ -434,20 +434,6 @@ netmap_update_config(struct netmap_adapter *na)
 }
 
 static int
-netmap_txsync_compat(struct netmap_kring *kring, int flags)
-{
-	struct netmap_adapter *na = kring->na;
-	return na->nm_txsync(na, kring->ring_id, flags);
-}
-
-static int
-netmap_rxsync_compat(struct netmap_kring *kring, int flags)
-{
-	struct netmap_adapter *na = kring->na;
-	return na->nm_rxsync(na, kring->ring_id, flags);
-}
-
-static int
 netmap_txsync_to_host_compat(struct netmap_kring *kring, int flags)
 {
 	(void)flags;
@@ -521,7 +507,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 		kring->ring_id = i;
 		kring->nkr_num_slots = ndesc;
 		if (i < na->num_tx_rings) {
-			kring->nm_sync = netmap_txsync_compat; // XXX
+			kring->nm_sync = na->nm_txsync;
 		} else if (i == na->num_tx_rings) {
 			kring->nm_sync = netmap_txsync_to_host_compat;
 		}
@@ -545,7 +531,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 		kring->ring_id = i;
 		kring->nkr_num_slots = ndesc;
 		if (i < na->num_rx_rings) {
-			kring->nm_sync = netmap_rxsync_compat; // XXX
+			kring->nm_sync = na->nm_rxsync;
 		} else if (i == na->num_rx_rings) {
 			kring->nm_sync = netmap_rxsync_from_host_compat;
 		}

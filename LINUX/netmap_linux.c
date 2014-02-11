@@ -666,6 +666,7 @@ static int netmap_common_sendmsg(struct netmap_adapter *na, struct msghdr *m,
                           size_t len, unsigned flags)
 {
     struct netmap_ring *ring;
+    struct netmap_kring *kring;
     unsigned i, last;
     unsigned avail;
     unsigned j;
@@ -681,7 +682,8 @@ static int netmap_common_sendmsg(struct netmap_adapter *na, struct msghdr *m,
     }
 
     /* Grab the netmap ring normally used from userspace. */
-    ring = na->tx_rings[0].ring;
+    kring = &na->tx_rings[0];
+    ring = kring->ring;
     nm_buf_size = ring->nr_buf_size;
 
     i = last = ring->cur;
@@ -743,7 +745,7 @@ static int netmap_common_sendmsg(struct netmap_adapter *na, struct msghdr *m,
     ring->cur = i;
 
     if (!(flags & MSG_MORE))
-        na->nm_txsync(na, 0, 0);
+        kring->nm_sync(kring, 0);
     ND("B) cur=%d avail=%d, hwcur=%d, hwtail=%d\n",
 	i, avail, na->tx_rings[0].nr_hwcur, na->tx_rings[0].nr_hwtail);
 
@@ -762,14 +764,15 @@ static inline int netmap_common_peek_head_len(struct netmap_adapter *na)
 {
         /* Here we assume to have a virtual port. */
         struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
-        struct netmap_ring *ring = na->rx_rings[0].ring;
+	struct netmap_kring *kring = &na->rx_rings[0];
+        struct netmap_ring *ring = kring->ring;
 	u_int i;
 	int ret = 0;
 
         /* Do the rxsync here. The recvmsg() callback must be
            called after the peek_head_len() callback. */
         if (nm_ring_empty(ring))
-            na->nm_rxsync(na, 0, NAF_FORCE_READ);
+            kring->nm_sync(kring, NAF_FORCE_READ);
 
         i = ring->cur;
 	if (!nm_ring_empty(ring)) {

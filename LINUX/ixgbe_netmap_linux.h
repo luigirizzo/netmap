@@ -104,11 +104,12 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
  * methods should be handled by the individual drivers.
  */
 static int
-ixgbe_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 {
+	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
-	struct netmap_kring *kring = &na->tx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
+	u_int ring_nr = kring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int nic_i;	/* index into the NIC ring */
 	u_int n;
@@ -271,11 +272,12 @@ out:
  * of whether or not we received an interrupt.
  */
 static int
-ixgbe_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
+	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
-	struct netmap_kring *kring = &na->rx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
+	u_int ring_nr = kring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int nic_i;	/* index into the NIC ring */
 	u_int n;

@@ -503,14 +503,15 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
  * since it implements the TX flow control (and takes some locks).
  */
 static int
-generic_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+generic_netmap_txsync(struct netmap_kring *kring, int flags)
 {
+	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
-	struct netmap_kring *kring = &na->tx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i;	/* index into the netmap ring */ // j
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
+	u_int ring_nr = kring->ring_id;
 
 	IFRATE(rate_ctx.new.txsync++);
 
@@ -659,9 +660,8 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
  * Access must be protected because the rx handler is asynchronous,
  */
 static int
-generic_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
-	struct netmap_kring *kring = &na->rx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i;	/* index into the netmap ring */ //j,
 	u_int n;

@@ -110,11 +110,12 @@ e1000_netmap_reg(struct netmap_adapter *na, int onoff)
  * Reconcile kernel and user view of the transmit ring.
  */
 static int
-e1000_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 {
+	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
-	struct netmap_kring *kring = &na->tx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
+	u_int ring_nr = kring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int nic_i;	/* index into the NIC ring */
 	u_int n;
@@ -200,11 +201,12 @@ out:
  * Reconcile kernel and user view of the receive ring.
  */
 static int
-e1000_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
+	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
-	struct netmap_kring *kring = &na->rx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
+	u_int ring_nr = kring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int nic_i;	/* index into the NIC ring */
 	u_int n;
