@@ -467,8 +467,8 @@ struct netmap_adapter {
 
 	int (*nm_register)(struct netmap_adapter *, int onoff);
 
-	int (*nm_txsync)(struct netmap_adapter *, u_int ring, int flags);
-	int (*nm_rxsync)(struct netmap_adapter *, u_int ring, int flags);
+	int (*nm_txsync)(struct netmap_kring *kring, int flags);
+	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
 #define NAF_FORCE_READ    1
 #define NAF_FORCE_RECLAIM 2
 	/* return configuration information */
@@ -860,7 +860,7 @@ nm_rxsync_finalize(struct netmap_kring *kring)
 #define	NM_CHECK_ADDR_LEN(_a, _l)	do {				\
 	if (_a == netmap_buffer_base || _l > NETMAP_BUF_SIZE) {		\
 		RD(5, "bad addr/len ring %d slot %d idx %d len %d",	\
-			ring_nr, nm_i, slot->buf_idx, len);		\
+			kring->ring_id, nm_i, slot->buf_idx, len);		\
 		if (_l > NETMAP_BUF_SIZE)				\
 			_l = NETMAP_BUF_SIZE;				\
 	} } while (0)

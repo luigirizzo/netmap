@@ -81,10 +81,10 @@ igb_netmap_reg(struct netmap_adapter *na, int onoff)
  * Reconcile kernel and user view of the transmit ring.
  */
 static int
-igb_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+igb_netmap_txsync(struct netmap_kring *kring, int flags)
 {
+	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
-	struct netmap_kring *kring = &na->tx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int nic_i;	/* index into the NIC ring */
@@ -96,7 +96,7 @@ igb_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 
 	/* device-specific */
 	struct adapter *adapter = ifp->if_softc;
-	struct tx_ring *txr = &adapter->tx_rings[ring_nr];
+	struct tx_ring *txr = &adapter->tx_rings[kring->ring_id];
 	/* 82575 needs the queue index added */
 	u32 olinfo_status =
 	    (adapter->hw.mac.type == e1000_82575) ? (txr->me << 4) : 0;
@@ -171,7 +171,7 @@ igb_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 	 */
 	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
 		/* record completed transmissions using TDH */
-		nic_i = E1000_READ_REG(&adapter->hw, E1000_TDH(ring_nr));
+		nic_i = E1000_READ_REG(&adapter->hw, E1000_TDH(kring->ring_id));
 		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
 			D("TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
@@ -190,10 +190,10 @@ igb_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
  * Reconcile kernel and user view of the receive ring.
  */
 static int
-igb_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
+	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
-	struct netmap_kring *kring = &na->rx_rings[ring_nr];
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int nic_i;	/* index into the NIC ring */
@@ -204,7 +204,7 @@ igb_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 
 	/* device-specific */
 	struct adapter *adapter = ifp->if_softc;
-	struct rx_ring *rxr = &adapter->rx_rings[ring_nr];
+	struct rx_ring *rxr = &adapter->rx_rings[kring->ring_id];
 
 	if (head > lim)
 		return netmap_ring_reinit(kring);

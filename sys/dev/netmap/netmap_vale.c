@@ -925,11 +925,13 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n,
  * Returns the next position in the ring.
  */
 static int
-nm_bdg_preflush(struct netmap_vp_adapter *na, u_int ring_nr,
-	struct netmap_kring *kring, u_int end)
+nm_bdg_preflush(struct netmap_kring *kring, u_int end)
 {
+	struct netmap_vp_adapter *na =
+		(struct netmap_vp_adapter*)kring->na;
 	struct netmap_ring *ring = kring->ring;
 	struct nm_bdg_fwd *ft;
+	u_int ring_nr = kring->ring_id;
 	u_int j = kring->nr_hwcur, lim = kring->nkr_num_slots - 1;
 	u_int ft_i = 0;	/* start from 0 */
 	u_int frags = 1; /* how many frags ? */
@@ -1497,11 +1499,16 @@ cleanup:
 	return 0;
 }
 
-
+/*
+ * main dispatch routine for the bridge.
+ * We already know that only one thread is running this.
+ * we must run nm_bdg_preflush without lock.
+ */
 static int
-netmap_vp_txsync(struct netmap_vp_adapter *na, u_int ring_nr, int flags)
+netmap_vp_txsync(struct netmap_kring *kring, int flags)
 {
-	struct netmap_kring *kring = &na->up.tx_rings[ring_nr];
+	struct netmap_vp_adapter *na =
+		(struct netmap_vp_adapter *)kring->na;
 	u_int done;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const cur = kring->rcur;
@@ -1513,7 +1520,7 @@ netmap_vp_txsync(struct netmap_vp_adapter *na, u_int ring_nr, int flags)
 	if (bridge_batch > NM_BDG_BATCH)
 		bridge_batch = NM_BDG_BATCH;
 
-	done = nm_bdg_preflush(na, ring_nr, kring, cur);
+	done = nm_bdg_preflush(kring, cur);
 done:
 	if (done != cur)
 		D("early break at %d/ %d, tail %d", done, cur, kring->nr_hwtail);
@@ -1524,27 +1531,15 @@ done:
 	kring->nr_hwtail = nm_prev(done, lim);
 	nm_txsync_finalize(kring);
 	if (netmap_verbose)
-		D("%s ring %d flags %d", NM_IFPNAME(na->up.ifp), ring_nr, flags);
+		D("%s ring %d flags %d", NM_IFPNAME(na->up.ifp), kring->ring_id, flags);
 	return 0;
 }
 
 
-/*
- * main dispatch routine for the bridge.
- * We already know that only one thread is running this.
- * we must run nm_bdg_preflush without lock.
- */
 static int
-bdg_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+netmap_vp_rxsync_locked(struct netmap_kring *kring, int flags)
 {
-	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter*)na;
-	return netmap_vp_txsync(vpna, ring_nr, flags);
-}
-
-static int
-netmap_vp_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
-{
-	struct netmap_kring *kring = &na->rx_rings[ring_nr];
+	struct netmap_adapter *na = kring->na;
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i, lim = kring->nkr_num_slots - 1;
 	u_int head = nm_rxsync_prologue(kring);
@@ -1591,13 +1586,12 @@ done:
  * writers on the same queue.
  */
 static int
-bdg_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+netmap_vp_rxsync(struct netmap_kring *kring, int flags)
 {
-	struct netmap_kring *kring = &na->rx_rings[ring_nr];
 	int n;
 
 	mtx_lock(&kring->q_lock);
-	n = netmap_vp_rxsync(na, ring_nr, flags);
+	n = netmap_vp_rxsync_locked(kring, flags);
 	mtx_unlock(&kring->q_lock);
 	return n;
 }
@@ -1650,8 +1644,8 @@ bdg_netmap_attach(struct nmreq *nmr, struct ifnet *ifp)
 		D("max frame size %u", vpna->mfs);
 
 	na->na_flags |= NAF_BDG_MAYSLEEP | NAF_MEM_OWNER;
-	na->nm_txsync = bdg_netmap_txsync;
-	na->nm_rxsync = bdg_netmap_rxsync;
+	na->nm_txsync = netmap_vp_txsync;
+	na->nm_rxsync = netmap_vp_rxsync;
 	na->nm_register = bdg_netmap_reg;
 	na->nm_dtor = netmap_adapter_vp_dtor;
 	na->nm_krings_create = netmap_vp_krings_create;
@@ -1809,7 +1803,7 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 
 	/* pass packets to the switch */
 	nm_txsync_prologue(bkring); // XXX error checking ?
-	netmap_vp_txsync(vpna, ring_nr, flags);
+	netmap_vp_txsync(bkring, flags);
 
 	/* mark all buffers as released on this ring */
 	ring->head = ring->cur = kring->nr_hwtail;
@@ -1976,7 +1970,7 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 		return 0;
 	mtx_lock(&kring->q_lock);
 	/* first step: simulate a user wakeup on the rx ring */
-	netmap_vp_rxsync(na, ring_n, flags);
+	netmap_vp_rxsync_locked(kring, flags);
 	ND("%s[%d] PRE rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",
 		NM_IFPNAME(na->ifp), ring_n,
 		kring->nr_hwcur, kring->nr_hwtail, kring->nkr_hwlease,
@@ -1999,7 +1993,7 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 	ring->tail = kring->rtail; /* restore saved value of tail, for safety */
 
 	/* fifth step: the user goes to sleep again, causing another rxsync */
-	netmap_vp_rxsync(na, ring_n, flags);
+	netmap_vp_rxsync_locked(kring, flags);
 	ND("%s[%d] PST rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",
 		NM_IFPNAME(na->ifp), ring_n,
 		kring->nr_hwcur, kring->nr_hwtail, kring->nkr_hwlease,

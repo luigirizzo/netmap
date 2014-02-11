@@ -178,10 +178,9 @@ netmap_pipe_remove(struct netmap_adapter *parent, struct netmap_pipe_adapter *na
 }
 
 static int
-netmap_pipe_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 {
-        struct netmap_kring *txkring = na->tx_rings + ring_nr,
-		*rxkring = txkring->pipe;
+        struct netmap_kring *rxkring = txkring->pipe;
         u_int limit; /* slots to transfer */
         u_int j, k, lim_tx = txkring->nkr_num_slots - 1,
                 lim_rx = rxkring->nkr_num_slots - 1;
@@ -244,10 +243,9 @@ netmap_pipe_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 }
 
 static int
-netmap_pipe_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
+netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
 {
-        struct netmap_kring *rxkring = na->rx_rings + ring_nr,
-		*txkring = rxkring->pipe;
+        struct netmap_kring *txkring = rxkring->pipe;
 	uint32_t oldhwcur = rxkring->nr_hwcur;
 
         ND("%s %x <- %s", rxkring->name, flags, txkring->name);
