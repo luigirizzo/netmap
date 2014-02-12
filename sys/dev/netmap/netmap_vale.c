@@ -2141,6 +2141,10 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 	int error = 0;
 
 	if (attach) {
+		if (bna->na_kpriv) {
+			/* nothing to do */
+			return 0;
+		}
 		npriv = malloc(sizeof(*npriv), M_DEVBUF, M_NOWAIT|M_ZERO);
 		if (npriv == NULL)
 			return ENOMEM;
