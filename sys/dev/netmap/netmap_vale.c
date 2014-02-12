@@ -458,8 +458,10 @@ netmap_vp_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 	if (attach)
 		return 0; /* nothing to do */
 	if (b) {
+		netmap_disable_all_rings(na->ifp);
 		netmap_bdg_detach_common(b, vpna->bdg_port, -1);
 		vpna->na_bdg = NULL;
+		netmap_enable_all_rings(na->ifp);
 	}
 	/* I have took reference just for attach */
 	netmap_adapter_put(na);
@@ -685,13 +687,6 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		if (error || hw == NULL)
 			goto out;
 
-		/* make sure the NIC is not already in use */
-		if (NETMAP_OWNED_BY_ANY(hw)) {
-			D("NIC %s busy, cannot attach to bridge",
-				NM_IFPNAME(ifp));
-			error = EBUSY;
-			goto out;
-		}
 		/* host adapter might not be created */
 		error = hw->nm_bdg_attach(hw, &ret, &host);
 		if (error)
@@ -748,11 +743,6 @@ nm_bdg_ctl_attach(struct nmreq *nmr)
 	if (na == NULL) { /* VALE prefix missing */
 		error = EINVAL;
 		goto unlock_exit;
-	}
-
-	if (na->active_fds > 0) { /* already registered */
-		error = EBUSY;
-		goto unref_exit;
 	}
 
 	if (na->nm_bdg_ctl) {
@@ -2196,11 +2186,18 @@ netmap_bwrap_attach(struct netmap_adapter *hwna,
 			struct netmap_adapter **ret_host)
 {
 	struct netmap_bwrap_adapter *bna;
-	struct netmap_adapter *na;
+	struct netmap_adapter *na = NULL;
 	struct netmap_adapter *hwna = NA(real);
 	struct netmap_adapter *hostna = NULL;
 	struct ifnet *ifp = hwna->ifp, *fake_ifp;
 	int error = 0;
+
+	/* make sure the NIC is not already in use */
+	if (NETMAP_OWNED_BY_ANY(hwna)) {
+		D("NIC %s busy, cannot attach to bridge",
+			NM_IFPNAME(ifp));
+		return EBUSY;
+	}
 
 	/* create a fake interface */
 	fake_ifp = malloc(sizeof(*ifp), M_DEVBUF, M_NOWAIT | M_ZERO);
