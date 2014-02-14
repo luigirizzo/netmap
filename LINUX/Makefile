@@ -8,8 +8,13 @@
 
 
 # list of objects for this module
-netmap_lin-objs := netmap.o netmap_mem2.o netmap_linux.o \
-	netmap_generic.o netmap_mbq.o netmap_vale.o
+#
+# objects whose source file is in ../sys/dev/netmap
+remoteobjs := netmap.o netmap_mem2.o \
+	netmap_generic.o netmap_mbq.o netmap_vale.o \
+	netmap_offloadings.o netmap_pipe.o
+# all objects
+netmap_lin-objs := $(remoteobjs) netmap_linux.o
 
 obj-$(CONFIG_NETMAP) = netmap_lin.o
 
@@ -71,7 +76,20 @@ S_DRIVERS := $(shell \
 
 # actual drivers after copy and patch
 DRIVERS = $(shell [ "$(PATCHES)" != "" ] && ls -dAp \
-	`echo $(PATCHES:diff--%=%) | sed -E 's/--[0-9a-f-]+//g'` 2> /dev/null)
+	`echo $(PATCHES:diff--%=%) | sed -r 's/--[0-9a-f-]+//g'` 2> /dev/null)
+
+# Compile v1000 (vhost porting to e1000) only if
+# the LIN_VER >= 3.8.0, because we don't want to deal
+# with backporting problems for v1000.
+ifeq ($(word 1, $(sort 30800 $(LIN_VER))), 30800)
+CONFIG_V1000:=m
+else
+CONFIG_V1000:=n
+endif
+
+CONFIG_V1000:=n	# force disable by now
+
+obj-$(CONFIG_V1000) += vhost-port/
 
 
 all: build
@@ -95,26 +113,12 @@ clean:
 		Module.symvers .*.cmd get-drivers )
 
 # the source is not here so we need to specify a dependency
-# XXX can we do better ?
-$(obj)/netmap.o: $(M)/../sys/dev/netmap/netmap.c
-	$(call cmd,cc_o_c)
-	$(call cmd,modversions)
-
-$(obj)/netmap_mem2.o: $(M)/../sys/dev/netmap/netmap_mem2.c
-	$(call cmd,cc_o_c)
-	$(call cmd,modversions)
-
-$(obj)/netmap_generic.o: $(M)/../sys/dev/netmap/netmap_generic.c
-	$(call cmd,cc_o_c)
-	$(call cmd,modversions)
-
-$(obj)/netmap_mbq.o: $(M)/../sys/dev/netmap/netmap_mbq.c
-	$(call cmd,cc_o_c)
-	$(call cmd,modversions)
-
-$(obj)/netmap_vale.o: $(M)/../sys/dev/netmap/netmap_vale.c
-	$(call cmd,cc_o_c)
-	$(call cmd,modversions)
+define remote_template
+$$(obj)/$(1): $$(M)/../sys/dev/netmap/$(1:.o=.c)
+	$$(call cmd,cc_o_c)
+	$$(call cmd,modversions)
+endef
+$(foreach o,$(remoteobjs),$(eval $(call remote_template,$(o))))
 
 #-- copy and patch initial files
 # The location changes depending on the OS version, so ...
@@ -132,6 +136,7 @@ get-drivers:
 	    [ "$${what}" = "" ] && echo "-- NO DRIVERS --" && return;	\
 	    echo "---- Building from `pwd`";				\
 	    echo "---- copying $${what} ---" ;				\
+	    what="$${what} cnic_if.h";					\
 	    for i in $$s; do (cd $$i ;					\
 		echo "  From `pwd` :";					\
 		ls -ldp $${what} 2> /dev/null | sed 's/^/    /' ;	\

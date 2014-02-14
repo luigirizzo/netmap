@@ -110,8 +110,8 @@ Common problems are:
   loops, so the CPU load is generally low and this can trigger
   the clock slowdown.
 
-  Make sure that ALL CPUs run at maximum speed disabling the
-  dynamic frequency-scaling mechanisms.
+  Make sure that ALL CPUs run at maximum speed, possibly
+  disabling the dynamic frequency-scaling mechanisms.
 
     cpufreq-set -gperformance	# on linux
 

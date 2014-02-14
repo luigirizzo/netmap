@@ -1,17 +1,38 @@
-    	Netmap - a framework for fast packet I/O
-    VALE -  a Virtual Local Ethernet using the netmap API
-===================================================================
+	    Netmap - a framework for fast packet I/O
+	VALE -  a Virtual Local Ethernet using the netmap API
+========================================================================
 
 NETMAP is a framework for very fast packet I/O from userspace.
-VALE implements an equally fast software switch using the netmap API.
-Both can deal with line rate on real or emulated 10 Gbit ports.
+VALE is an equally fast in-kernel software switch using the netmap API.
+Both are implemented as a single kernel module for FreeBSD and Linux,
+and can deal with line rate on real or emulated 10 Gbit ports.
 See details at
 
 	http://info.iet.unipi.it/~luigi/netmap/
 
-In this directory you can find source code (BSD-Copyright)
-for FreeBSD and Linux. Note that recent FreeBSD distributions
-already include both NETMAP and VALE.
+In this directory you can find source code (BSD-Copyright) for FreeBSD
+and Linux. Note that recent FreeBSD distributions already include both
+NETMAP and VALE.
+
+For more details please look at the manpage (netmap.4) and
+netmap home page above.
+
+
+What is this good for
+---------------------
+Netmap is mostly useful for userspace applications that must deal with raw
+packets: traffic generators, sinks, monitors, loggers, software switches
+and routers, generic middleboxes, interconnection of virtual machines.
+
+In this distribution you will find some example userspace code to build
+a generator, a sink, and a simple bridge. The kernel module implements a
+learning ethernet bridge. We also include patches for some applications
+(noticeably libpcap) so you can run any libpcap client on top of netmap
+hopefully at a higher speed.
+
+Netmap alone DOES NOT accelerate your TCP. For that you need to implement
+your own tcp/ip stack probably using some of the techniques indicated
+below to reduce the processing costs.
 
 Architecture
 ------------
@@ -23,15 +44,15 @@ between applications and the network. In order of importance:
 	3. pre-allocated tx/rx buffers
 	4. memory mapped buffers
 
-Despite the name,that memory mapping is NOT the key feature
-for netmap's speed; systems that do not apply all these techniques
-do not achieve the same speed _and_ efficiency.
+Despite the name, memory mapping is NOT the key feature for netmap's
+speed; systems that do not apply all these techniques do not achieve
+the same speed _and_ efficiency.
 
 Netmap clients use a select()-able file descriptor to synchronize
 with the network card/software switch, and exchange multiple packets
-per system call through device-independent memory mapped buffers
-and descriptors. Device drivers are completely in the kernel, and
-the system does not rely on IOMMU or other special mechanisms.
+per system call through device-independent memory mapped buffers and
+descriptors. Device drivers are completely in the kernel, and the system
+does not rely on IOMMU or other special mechanisms.
 
 
 
@@ -43,8 +64,12 @@ Netmap-aware device drivers are needed to use netmap on ethernet ports.
 To date, we have support for Intel ixgbe (10G), e1000/e1000e/igb (1G),
 Realtek 8169 (1G) and Nvidia (1G).
 
-  FreeBSD
-  --------
+If you do not have a supported device, you can still try out netmap
+(with reduced performance) because the main kernel module emulates
+the netmap API on top of standard device drivers.
+
+  FreeBSD instructions:
+  ---------------------
   Since recent FreeBSD distributions already include netmap, you only
   need build the new kernel or modules as below:
 
@@ -55,8 +80,8 @@ Realtek 8169 (1G) and Nvidia (1G).
   + sample applications are in the examples/ directory in this archive,
     or in src/tools/tools/netmap/ in FreeBSD distributions
 
-  Linux
-  -------
+  Linux instructions:
+  -------------------
   On Linux, netmap is an out-of-tree module, so you need to compile it
   from these sources. The Makefile in the LINUX/ directory will also
   let you patch device driver sources and build some netmap-enabled
@@ -85,10 +110,8 @@ The directory examples/ contains some programs that use the netmap API
     vale-cfg.c	utility to configure ports of a VALE switch
     bridge.c	a utility that bridges two interfaces or one interface
 		with the host stack
-    pcap.c	a simple libpcap-over-netmap library, and some test
-		code, to help porting pcap applications to netmap.
-		The library compiles as libnetmap.so, you can use it
-		to replace your libpcap.so.* 
+
+For libpcap and other applications look at the extra/ directory.
 
 Testing
 -------
@@ -179,8 +202,9 @@ LOWER SPEED THAN LINE RATE
 Credits
 -------
 NETMAP and VALE are projects of the Universita` di Pisa,
-partially supported by Intel Research Berkeley, EU FP7 projects CHANGE
-and OPENLAB.
+partially supported by various entities including:
+Intel Research Berkeley, EU FP7 projects CHANGE and OPENLAB,
+Netapp/Silicon Valley Community Foundation, ICSI
 
 Author:		Luigi Rizzo
 Contributors:
