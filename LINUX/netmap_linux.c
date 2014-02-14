@@ -31,6 +31,56 @@
 #include <dev/netmap/netmap_mem2.h>
 
 
+/* #################### VALE OFFLOADINGS SUPPORT ################## */
+
+/* Compute and return a raw checksum over (data, len), using 'cur_sum'
+ * as initial value. Both 'cur_sum' and the return value are in host
+ * byte order.
+ */
+rawsum_t nm_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
+{
+	return csum_partial(data, len, cur_sum);
+}
+
+/* Compute an IPv4 header checksum, where 'data' points to the IPv4 header,
+ * and 'len' is the IPv4 header length. Return value is in network byte
+ * order.
+ */
+uint16_t nm_csum_ipv4(struct nm_iphdr *iph)
+{
+	return ip_compute_csum((void*)iph, sizeof(struct nm_iphdr));
+}
+
+/* Compute and insert a TCP/UDP checksum over IPv4: 'iph' points to the IPv4
+ * header, 'data' points to the TCP/UDP header, 'datalen' is the lenght of
+ * TCP/UDP header + payload.
+ */
+void nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
+		      size_t datalen, uint16_t *check)
+{
+	*check = csum_tcpudp_magic(iph->saddr, iph->daddr,
+				datalen, iph->protocol,
+				csum_partial(data, datalen, 0));
+}
+
+/* Compute and insert a TCP/UDP checksum over IPv6: 'ip6h' points to the IPv6
+ * header, 'data' points to the TCP/UDP header, 'datalen' is the lenght of
+ * TCP/UDP header + payload.
+ */
+void nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
+		      size_t datalen, uint16_t *check)
+{
+	*check = csum_ipv6_magic((void *)&ip6h->saddr, (void*)&ip6h->daddr,
+				datalen, ip6h->nexthdr,
+				csum_partial(data, datalen, 0));
+}
+
+uint16_t nm_csum_fold(rawsum_t cur_sum)
+{
+	return csum_fold(cur_sum);
+}
+
+
 /* ####################### MITIGATION SUPPORT ###################### */
 
 /*
@@ -51,12 +101,11 @@ enum hrtimer_restart
 #endif
 generic_timer_handler(struct hrtimer *t)
 {
-    struct netmap_generic_adapter *gna =
-	container_of(t, struct netmap_generic_adapter, mit_timer);
-    struct netmap_adapter *na = (struct netmap_adapter *)gna;
+    struct nm_generic_mit *mit =
+	container_of(t, struct nm_generic_mit, mit_timer);
     u_int work_done;
 
-    if (!gna->mit_pending) {
+    if (!mit->mit_pending) {
         return HRTIMER_NORESTART;
     }
 
@@ -64,43 +113,44 @@ generic_timer_handler(struct hrtimer *t)
      * Reset the pending work flag, restart the timer and send
      * a notification.
      */
-    gna->mit_pending = 0;
+    mit->mit_pending = 0;
     /* below is a variation of netmap_generic_irq */
-    if (na->ifp->if_capenable & IFCAP_NETMAP)
-        netmap_common_irq(na->ifp, 0, &work_done);
+    if (mit->mit_na->ifp->if_capenable & IFCAP_NETMAP)
+        netmap_common_irq(mit->mit_na->ifp, 0, &work_done);
     // IFRATE(rate_ctx.new.rxirq++);
-    netmap_mitigation_restart(gna);
+    netmap_mitigation_restart(mit);
 
     return HRTIMER_RESTART;
 }
 
 
-void netmap_mitigation_init(struct netmap_generic_adapter *gna)
+void netmap_mitigation_init(struct nm_generic_mit *mit, struct netmap_adapter *na)
 {
-    hrtimer_init(&gna->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-    gna->mit_timer.function = &generic_timer_handler;
-    gna->mit_pending = 0;
+    hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+    mit->mit_timer.function = &generic_timer_handler;
+    mit->mit_pending = 0;
+    mit->mit_na = na;
 }
 
 
-void netmap_mitigation_start(struct netmap_generic_adapter *gna)
+void netmap_mitigation_start(struct nm_generic_mit *mit)
 {
-    hrtimer_start(&gna->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
+    hrtimer_start(&mit->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
 }
 
-void netmap_mitigation_restart(struct netmap_generic_adapter *gna)
+void netmap_mitigation_restart(struct nm_generic_mit *mit)
 {
-    hrtimer_forward_now(&gna->mit_timer, ktime_set(0, netmap_generic_mit));
+    hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
 }
 
-int netmap_mitigation_active(struct netmap_generic_adapter *gna)
+int netmap_mitigation_active(struct nm_generic_mit *mit)
 {
-    return hrtimer_active(&gna->mit_timer);
+    return hrtimer_active(&mit->mit_timer);
 }
 
-void netmap_mitigation_cleanup(struct netmap_generic_adapter *gna)
+void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
 {
-    hrtimer_cancel(&gna->mit_timer);
+    hrtimer_cancel(&mit->mit_timer);
 }
 
 
@@ -166,7 +216,12 @@ netmap_catch_rx(struct netmap_adapter *na, int intercept)
 #endif
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,13,0)
 u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m)
+#else
+u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m,
+                                void *accel_priv)
+#endif
 {
     return skb_get_queue_mapping(m); // actually 0 on 2.6.23 and before
 }
@@ -232,6 +287,8 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     netdev_tx_t ret;
 
     /* Empty the sk_buff. */
+    if (unlikely(skb_headroom(m)))
+	skb_push(m, skb_headroom(m));
     skb_trim(m, 0);
 
     /* TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
@@ -279,12 +336,13 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 void
 generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28) // XXX
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37) // XXX
     *txq = 1;
+    *rxq = 1; /* TODO ifp->real_num_rx_queues */
 #else
     *txq = ifp->real_num_tx_queues;
+    *rxq = ifp->real_num_rx_queues;
 #endif
-    *rxq = 1; /* TODO ifp->real_num_rx_queues */
 }
 
 
@@ -500,14 +558,14 @@ static int netmap_backend_nm_notify(struct netmap_adapter *na,
 		kring = na->tx_rings + n_ring;
 		wake_up_interruptible_poll(&kring->si, POLLIN |
 					POLLRDNORM | POLLRDBAND);
-		if (flags & NAF_GLOBAL_NOTIFY)
+		if (na->tx_si_users > 0)
 			wake_up_interruptible_poll(&na->tx_si, POLLIN |
 					POLLRDNORM | POLLRDBAND);
 	} else {
 		kring = na->rx_rings + n_ring;
 		wake_up_interruptible_poll(&kring->si, POLLIN |
 					POLLRDNORM | POLLRDBAND);
-		if (flags & NAF_GLOBAL_NOTIFY)
+		if (na->rx_si_users > 0)
 			wake_up_interruptible_poll(&na->rx_si, POLLIN |
 					POLLRDNORM | POLLRDBAND);
 	}
@@ -727,8 +785,8 @@ static inline int netmap_common_peek_head_len(struct netmap_adapter *na)
 
         /* The v1000 frontend assumes that the peek_head_len() callback
            doesn't count the bytes of the virtio-net-header. */
-        if (likely(ret >= vpna->offset)) {
-            ret -= vpna->offset;
+        if (likely(ret >= vpna->virt_hdr_len)) {
+            ret -= vpna->virt_hdr_len;
         }
 
 	return ret;
@@ -812,8 +870,10 @@ static int netmap_common_recvmsg(struct netmap_adapter *na,
 	 */
 	while (copied < len) {
 		copy_size = min(nm_frag_size, iov_frag_size);
-		copy_to_user(dst + iov_frag_ofs, src + nm_frag_ofs,
-			     copy_size);
+		if (unlikely(copy_to_user(dst + iov_frag_ofs,
+				src + nm_frag_ofs, copy_size))) {
+			RD(5, "copy_to_user() failed");
+		}
 		nm_frag_ofs += copy_size;
 		nm_frag_size -= copy_size;
 		iov_frag_ofs += copy_size;
@@ -982,14 +1042,14 @@ static int netmap_socket_nm_notify(struct netmap_adapter *na,
 		kring = na->tx_rings + n_ring;
 		wake_up_interruptible_poll(&kring->si, POLLIN |
 					POLLRDNORM | POLLRDBAND);
-		if (flags & NAF_GLOBAL_NOTIFY)
+		if (na->tx_si_users > 0)
 			wake_up_interruptible_poll(&na->tx_si, POLLIN |
 					POLLRDNORM | POLLRDBAND);
 	} else {
 		kring = na->rx_rings + n_ring;
 		wake_up_interruptible_poll(&kring->si, POLLIN |
 					POLLRDNORM | POLLRDBAND);
-		if (flags & NAF_GLOBAL_NOTIFY)
+		if (na->rx_si_users > 0)
 			wake_up_interruptible_poll(&na->rx_si, POLLIN |
 					POLLRDNORM | POLLRDBAND);
 	}

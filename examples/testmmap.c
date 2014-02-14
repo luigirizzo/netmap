@@ -121,6 +121,8 @@ int last_fd = -1;
 size_t last_memsize = 0;
 void* last_mmap_addr = NULL;
 char* last_access_addr = NULL;
+struct nmreq curr_nmr;
+char nmr_name[64];
 
 
 void do_open()
@@ -176,17 +178,16 @@ void parse_nmr_config(char* w, struct nmreq *nmr)
 
 void do_getinfo()
 {
-	struct nmreq nmr;
 	int ret;
 	char *arg, *name;
 	int fd;
 
-	bzero(&nmr, sizeof(nmr));
-	nmr.nr_version = NETMAP_API;
+	bzero(&curr_nmr, sizeof(curr_nmr));
+	curr_nmr.nr_version = NETMAP_API;
 
 	name = nextarg();
 	if (name) {
-		strncpy(nmr.nr_name, name, sizeof(nmr.nr_name));
+		strncpy(curr_nmr.nr_name, name, sizeof(curr_nmr.nr_name));
 	} else {
 		name = "any";
 	}
@@ -199,48 +200,46 @@ void do_getinfo()
 	fd = atoi(arg);
 
 	arg = nextarg();
-	parse_nmr_config(arg, &nmr);
+	parse_nmr_config(arg, &curr_nmr);
 
 doit:
-	ret = ioctl(fd, NIOCGINFO, &nmr);
-	last_memsize = nmr.nr_memsize;
-	output_err(ret, "ioctl(%d, NIOCGINFO) for %s: %s memsize=%zu",
-		fd, name, (nmr.nr_ringid & NETMAP_PRIV_MEM ? "PRIVATE" : "GLOBAL"), last_memsize);
+	ret = ioctl(fd, NIOCGINFO, &curr_nmr);
+	last_memsize = curr_nmr.nr_memsize;
+	output_err(ret, "ioctl(%d, NIOCGINFO) for %s: region %d memsize=%zu",
+		fd, name, curr_nmr.nr_arg2, last_memsize);
 }
 
 
 void do_regif()
 {
-	struct nmreq nmr;
 	int ret;
 	char *arg, *name;
-	int fd;
-
-	bzero(&nmr, sizeof(nmr));
-	nmr.nr_version = NETMAP_API;
+	int fd = last_fd;
 
 	name = nextarg();
 	if (!name) {
-		output("missing ifname");
-		return;
+		name = nmr_name;
+		goto doit;
 	}
-	strncpy(nmr.nr_name, name, sizeof(nmr.nr_name));
+
+	bzero(&curr_nmr, sizeof(curr_nmr));
+	curr_nmr.nr_version = NETMAP_API;
+	strncpy(curr_nmr.nr_name, name, sizeof(curr_nmr.nr_name));
 
 	arg = nextarg();
 	if (!arg) {
-		fd = last_fd;
 		goto doit;
 	}
 	fd = atoi(arg);
 
 	arg = nextarg();
-	parse_nmr_config(arg, &nmr);
+	parse_nmr_config(arg, &curr_nmr);
 
 doit:
-	ret = ioctl(fd, NIOCREGIF, &nmr);
-	last_memsize = nmr.nr_memsize;
-	output_err(ret, "ioctl(%d, NIOCREGIF) for %s: %s memsize=%zu",
-		fd, name, (nmr.nr_ringid & NETMAP_PRIV_MEM ? "PRIVATE" : "GLOBAL"), last_memsize);
+	ret = ioctl(fd, NIOCREGIF, &curr_nmr);
+	last_memsize = curr_nmr.nr_memsize;
+	output_err(ret, "ioctl(%d, NIOCREGIF) for %s: region %d memsize=%zu",
+		fd, name, curr_nmr.nr_arg2, last_memsize);
 }
 
 
@@ -467,10 +466,348 @@ do_vars()
 	}
 }
 
+
 struct cmd_def {
 	const char *name;
 	void (*f)(void);
 };
+
+int _find_command(const struct cmd_def *cmds, int ncmds, const char* cmd)
+{
+	int i;
+	for (i = 0; i < ncmds; i++) {
+		if (strcmp(cmds[i].name, cmd) == 0)
+			break;
+	}
+	return i;
+}
+
+typedef void (*nmr_arg_interp_fun)();
+
+#define nmr_arg_unexpected(n) \
+	printf("arg%d:      %d%s\n", n, curr_nmr.nr_arg ## n, \
+		(curr_nmr.nr_arg ## n ? "???" : ""))
+
+void
+nmr_arg_bdg_attach()
+{
+	uint16_t v = curr_nmr.nr_arg1;
+	printf("arg1:      %d [", v);
+	if (v == 0) {
+		printf("no host rings");
+	} else if (v == NETMAP_BDG_HOST) {
+		printf("BDG_HOST");
+	} else {
+		printf("???");
+	}
+	printf("]\n");
+	nmr_arg_unexpected(2);
+	nmr_arg_unexpected(3);
+}
+
+void
+nmr_arg_bdg_detach()
+{
+	nmr_arg_unexpected(1);
+	nmr_arg_unexpected(2);
+	nmr_arg_unexpected(3);
+}
+
+void
+nmr_arg_bdg_list()
+{
+}
+
+void
+nmr_arg_lookup_reg()
+{
+}
+
+void
+nmr_arg_vnet_hdr()
+{
+	printf("arg1:      %d [vnet hdr len]", curr_nmr.nr_arg1);
+	nmr_arg_unexpected(2);
+	nmr_arg_unexpected(3);
+}
+
+void
+nmr_arg_error()
+{
+	nmr_arg_unexpected(1);
+	nmr_arg_unexpected(2);
+	nmr_arg_unexpected(3);
+}
+
+void
+nmr_arg_extra()
+{
+	printf("arg1:      %d [%sextra rings]\n", curr_nmr.nr_arg1,
+		(curr_nmr.nr_arg1 ? "" : "no "));
+	printf("arg2:      %d [%s memory allocator]\n", curr_nmr.nr_arg2,
+		(curr_nmr.nr_arg2 == 0 ? "global" : "private"));
+	printf("arg3:      %d [%sextra buffers]\n", curr_nmr.nr_arg3,
+		(curr_nmr.nr_arg3 ? "" : "no "));
+}
+
+void
+do_nmr_dump()
+{
+	u_int ringid = curr_nmr.nr_ringid & NETMAP_RING_MASK;
+	nmr_arg_interp_fun arg_interp;
+
+	snprintf(nmr_name, IFNAMSIZ + 1, "%s", curr_nmr.nr_name);
+	nmr_name[IFNAMSIZ] = '\0';
+	printf("name:      %s\n", nmr_name);
+	printf("version:   %d\n", curr_nmr.nr_version);
+	printf("offset:    %d\n", curr_nmr.nr_offset);
+	printf("memsize:   %d [", curr_nmr.nr_memsize);
+	if (curr_nmr.nr_memsize < (1<<20)) {
+		printf("%d KiB", curr_nmr.nr_memsize >> 10);
+	} else {
+		printf("%d MiB", curr_nmr.nr_memsize >> 20);
+	}
+	printf("]\n");
+	printf("tx_slots:  %d\n", curr_nmr.nr_tx_slots);
+	printf("rx_slots:  %d\n", curr_nmr.nr_rx_slots);
+	printf("tx_rings:  %d\n", curr_nmr.nr_tx_rings);
+	printf("rx_rings:  %d\n", curr_nmr.nr_rx_rings);
+	printf("ringid:    %x [", curr_nmr.nr_ringid);
+	if (curr_nmr.nr_ringid & NETMAP_SW_RING) {
+		printf("host rings");
+	} else if (curr_nmr.nr_ringid & NETMAP_HW_RING) {
+		printf("hw ring %d", ringid);
+	} else {
+		printf("hw rings");
+	}
+	if (curr_nmr.nr_ringid & NETMAP_NO_TX_POLL) {
+		printf(", no tx poll");
+	}
+	printf(", region %d", curr_nmr.nr_arg2);
+	printf("]\n");
+	printf("cmd:       %d", curr_nmr.nr_cmd);
+	if (curr_nmr.nr_cmd) {
+		printf("[");
+		switch (curr_nmr.nr_cmd) {
+		case NETMAP_BDG_ATTACH:
+			printf("BDG_ATTACH");
+			arg_interp = nmr_arg_bdg_attach;
+			break;
+		case NETMAP_BDG_DETACH:
+			printf("BDG_DETACH");
+			arg_interp = nmr_arg_bdg_detach;
+			break;
+		case NETMAP_BDG_LIST:
+			printf("BDG_LIST");
+			arg_interp = nmr_arg_bdg_list;
+			break;
+		case NETMAP_BDG_LOOKUP_REG:
+			printf("BDG_LOOKUP_REG");
+			arg_interp = nmr_arg_lookup_reg;
+			break;
+		case NETMAP_BDG_VNET_HDR:
+			printf("BDG_VNET_HDR");
+			arg_interp = nmr_arg_vnet_hdr;
+			break;
+		default:
+			printf("???");
+			arg_interp = nmr_arg_error;
+			break;
+		}
+		printf("]\n");
+	} else {
+		arg_interp = nmr_arg_extra;
+	}
+	printf("\n");
+	arg_interp();
+	printf("flags:     %x [", curr_nmr.nr_flags);
+	switch (curr_nmr.nr_flags & NR_REG_MASK) {
+	case NR_REG_DEFAULT:
+		printf("obey ringid");
+		break;
+	case NR_REG_ALL_NIC:
+		printf("ALL_NIC");
+		break;
+	case NR_REG_SW:
+		printf("SW");
+		break;
+	case NR_REG_NIC_SW:
+		printf("NIC_SW");
+		break;
+	case NR_REG_ONE_NIC:
+		printf("ONE_NIC(%d)", ringid);
+		break;
+	case NR_REG_PIPE_MASTER:
+		printf("PIPE_MASTER(%d)", ringid);
+		break;
+	case NR_REG_PIPE_SLAVE:
+		printf("PIPE_SLAVE(%d)", ringid);
+		break;
+	default:
+		printf("???");
+		break;
+	}
+	if (curr_nmr.nr_flags & NR_MONITOR_TX) {
+		printf(", MONITOR_TX");
+	}
+	if (curr_nmr.nr_flags & NR_MONITOR_RX) {
+		printf(", MONITOR_RX");
+	}
+	printf("]\n");
+	printf("spare2[0]: %x\n", curr_nmr.spare2[0]);
+}
+
+void
+do_nmr_reset()
+{
+	bzero(&curr_nmr, sizeof(curr_nmr));
+}
+
+void
+do_nmr_name()
+{
+	char *name = nextarg();
+	if (name) {
+		strncpy(curr_nmr.nr_name, name, IFNAMSIZ);
+	}
+	strncpy(nmr_name, curr_nmr.nr_name, IFNAMSIZ);
+	nmr_name[IFNAMSIZ] = '\0';
+	output("name=%s", nmr_name);
+}
+
+void
+do_nmr_ringid()
+{
+	char *arg;
+	uint16_t ringid = curr_nmr.nr_ringid;
+	int n;
+	for (n = 0, arg = nextarg(); arg; arg = nextarg(), n++) {
+		if (strcmp(arg, "hw-ring") == 0) {
+			ringid |= NETMAP_HW_RING; 	
+		} else if (strcmp(arg, "sw-ring") == 0) {
+			ringid |= NETMAP_SW_RING;
+		} else if (strcmp(arg, "no-tx-poll") == 0) {
+			ringid |= NETMAP_NO_TX_POLL;
+		} else if (strcmp(arg, "default") == 0) {
+			ringid = 0;
+		} else {
+			ringid &= ~NETMAP_RING_MASK;
+			ringid |= (atoi(arg) & NETMAP_RING_MASK);
+		}
+	}
+	if (n)
+		curr_nmr.nr_ringid = ringid;
+	output("ringid=%x", curr_nmr.nr_ringid);
+}
+
+void
+do_nmr_cmd()
+{
+}
+
+void
+do_nmr_flags()
+{
+	char *arg;
+	uint32_t flags = curr_nmr.nr_flags;
+	int n;
+	for (n = 0, arg = nextarg(); arg; arg = nextarg(), n++) {
+		if (strcmp(arg, "all-nic") == 0) {
+			flags &= ~NR_REG_MASK;
+			flags |= NR_REG_ALL_NIC;
+		} else if (strcmp(arg, "sw") == 0) {
+			flags &= ~NR_REG_MASK;
+			flags |= NR_REG_SW;
+		} else if (strcmp(arg, "nic-sw") == 0) {
+			flags &= ~NR_REG_MASK;
+			flags |= NR_REG_NIC_SW;
+		} else if (strcmp(arg, "pipe-master") == 0) {
+			flags &= ~NR_REG_MASK;
+			flags |= NR_REG_PIPE_MASTER;
+		} else if (strcmp(arg, "pipe-slave") == 0) {
+			flags &= ~NR_REG_MASK;
+			flags |= NR_REG_PIPE_SLAVE;
+		} else if (strcmp(arg, "monitor-tx") == 0) {
+			flags |= NR_MONITOR_TX;
+		} else if (strcmp(arg, "monitor-rx") == 0) {
+			flags |= NR_MONITOR_RX;
+		} else if (strcmp(arg, "default") == 0) {
+			flags = 0;
+		} 
+	}
+	if (n)
+		curr_nmr.nr_flags = flags;
+	output("flags=%x", curr_nmr.nr_flags);
+}
+
+struct cmd_def nmr_commands[] = {
+	{ "dump",	do_nmr_dump },
+	{ "reset",	do_nmr_reset },
+	{ "name",	do_nmr_name },
+	{ "ringid",	do_nmr_ringid },
+	{ "cmd",	do_nmr_cmd },
+	{ "flags",	do_nmr_flags },
+};
+
+const int N_NMR_CMDS = sizeof(nmr_commands) / sizeof(struct cmd_def);
+
+int
+find_nmr_command(const char *cmd)
+{
+	return _find_command(nmr_commands, N_NMR_CMDS, cmd);
+}
+
+#define nmr_arg_update(f) 				\
+	({						\
+		int __ret = 0;				\
+		if (strcmp(cmd, #f) == 0) {		\
+			char *arg = nextarg();		\
+			if (arg) {			\
+				curr_nmr.nr_##f = strtol(arg, NULL, 0); \
+			}				\
+			output(#f "=%d", curr_nmr.nr_##f);	\
+			__ret = 1;			\
+		} 					\
+		__ret;					\
+	})
+
+/* prepare the curr_nmr */
+void
+do_nmr()
+{
+	char *cmd = nextarg();
+	int i;
+
+	if (cmd == NULL) {
+		do_nmr_dump();
+		return;
+	}
+	if (cmd[0] == '.') {
+		cmd++;
+	} else {
+		i = find_nmr_command(cmd);
+		if (i < N_NMR_CMDS) {
+			nmr_commands[i].f();
+			return;
+		}
+	}
+	if (nmr_arg_update(version) ||
+	    nmr_arg_update(offset) ||
+	    nmr_arg_update(memsize) ||
+	    nmr_arg_update(tx_slots) ||
+	    nmr_arg_update(rx_slots) ||
+	    nmr_arg_update(tx_rings) ||
+	    nmr_arg_update(rx_rings) ||
+	    nmr_arg_update(ringid) ||
+	    nmr_arg_update(cmd) ||
+	    nmr_arg_update(arg1) ||
+	    nmr_arg_update(arg2) ||
+	    nmr_arg_update(arg3) ||
+	    nmr_arg_update(flags))
+		return;
+	output("unknown field: %s", cmd);
+}
+
 
 
 struct cmd_def commands[] = {
@@ -488,19 +825,15 @@ struct cmd_def commands[] = {
 	{ "poll",	do_poll,	},
 	{ "expr",	do_expr,	},
 	{ "echo",	do_echo,	},
-	{ "vars",	do_vars,	}
+	{ "vars",	do_vars,	},
+	{ "nmr",	do_nmr,		}
 };
 
 const int N_CMDS = sizeof(commands) / sizeof(struct cmd_def);
 
 int find_command(const char* cmd)
 {
-	int i;
-	for (i = 0; i < N_CMDS; i++) {
-		if (strcmp(commands[i].name, cmd) == 0)
-			break;
-	}
-	return i;
+	return _find_command(commands, N_CMDS, cmd);
 }
 
 #define MAX_CHAN 10

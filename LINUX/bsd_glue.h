@@ -131,9 +131,13 @@ struct thread;
 #define le16toh			le16_to_cpu
 #define le32toh			le32_to_cpu
 #define le64toh			le64_to_cpu
+#define be16toh			be16_to_cpu
+#define be32toh			be32_to_cpu
 #define be64toh			be64_to_cpu
 #define htole32			cpu_to_le32
 #define htole64			cpu_to_le64
+#define htobe16			cpu_to_be16
+#define htobe32			cpu_to_be32
 
 #include <linux/jiffies.h>
 #define	time_second	(jiffies_to_msecs(jiffies) / 1000U )
@@ -167,7 +171,13 @@ struct thread;
 
 #define GET_MBUF_REFCNT(m)	NM_ATOMIC_READ(&((m)->users))
 #define netmap_get_mbuf(size)	alloc_skb(size, GFP_ATOMIC)
+/*
+ * on tx we force skb->queue_mapping = ring_nr,
+ * but on rx it is the driver that sets the value,
+ * and it is 0 for no setting, ring_nr+1 otherwise.
+ */
 #define MBUF_TXQ(m)		skb_get_queue_mapping(m)
+#define MBUF_RXQ(m)		(skb_rx_queue_recorded(m) ? skb_get_rx_queue(m) : 0)
 #define SET_MBUF_DESTRUCTOR(m, f) m->destructor = (void *)&f
 
 /* Magic number for sk_buff.priority field, used to take decisions in
@@ -293,7 +303,7 @@ static inline int ilog2(uint64_t n)
 
 /*--- selrecord and friends ---*/
 /* wake_up() or wake_up_interruptible() ? */
-#define	selwakeuppri(sw, pri)	wake_up(sw)
+#define	OS_selwakeup(sw, pri)	wake_up(sw)
 #define selrecord(x, y)		poll_wait((struct file *)x, y, pwait)
 
 // #define knlist_destroy(x)	// XXX todo
@@ -392,5 +402,18 @@ int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 
 #define MALLOC_DECLARE(a)
 #define MALLOC_DEFINE(a, b, c)
+
+#define devfs_get_cdevpriv(pp)				\
+	({ *(struct netmap_priv_d **)pp = ((struct file *)td)->private_data; 	\
+		(*pp ? 0 : ENOENT); })
+
+/* devfs_set_cdevpriv cannot fail on linux */
+#define devfs_set_cdevpriv(p, fn)				\
+	({ ((struct file *)td)->private_data = p; (p ? 0 : EINVAL); })
+
+
+#define devfs_clear_cdevpriv()	do {				\
+		netmap_dtor(priv); ((struct file *)td)->private_data = 0;	\
+	} while (0)
 
 #endif /* _BSD_GLUE_H */
