@@ -226,7 +226,9 @@ netdev_tx_t linux_netmap_start_xmit(struct sk_buff *, struct net_device *);
 
 /* prevent ring params change while in netmap mode */
 int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *);
+#ifdef ETHTOOL_SCHANNELS
 int linux_netmap_set_channels(struct net_device *, struct ethtool_channels *);
+#endif
 
 #define CURVNET_SET(x)
 #define CURVNET_RESTORE(x)

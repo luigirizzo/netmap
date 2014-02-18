@@ -2243,7 +2243,9 @@ netmap_attach(struct netmap_adapter *arg)
 		hwna->nm_eto = *ifp->ethtool_ops;
 	}
 	hwna->nm_eto.set_ringparam = linux_netmap_set_ringparam;
+#ifdef ETHTOOL_SCHANNELS
 	hwna->nm_eto.set_channels = linux_netmap_set_channels;
+#endif
 #endif /* linux */
 
 	D("success for %s", NM_IFPNAME(ifp));
