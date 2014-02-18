@@ -68,6 +68,8 @@ MALLOC_DECLARE(M_NETMAP);
 // XXX linux struct, not used in FreeBSD
 struct net_device_ops {
 };
+struct ethtool_ops {
+};
 struct hrtimer {
 };
 
@@ -544,6 +546,8 @@ struct netmap_hw_adapter {	/* physical device */
 	struct netmap_adapter up;
 
 	struct net_device_ops nm_ndo;	// XXX linux only
+	struct ethtool_ops    nm_eto;	// XXX linux only
+	const struct ethtool_ops*   save_ethtool;
 };
 
 /* Mitigation support. */
@@ -784,6 +788,8 @@ nm_set_native_flags(struct netmap_adapter *na)
 #else
 	na->if_transmit = (void *)ifp->netdev_ops;
 	ifp->netdev_ops = &((struct netmap_hw_adapter *)na)->nm_ndo;
+	((struct netmap_hw_adapter *)na)->save_ethtool = ifp->ethtool_ops;
+	SET_ETHTOOL_OPS(ifp, &((struct netmap_hw_adapter*)na)->nm_eto);
 #endif
 }
 
@@ -797,6 +803,7 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	ifp->if_transmit = na->if_transmit;
 #else
 	ifp->netdev_ops = (void *)na->if_transmit;
+	SET_ETHTOOL_OPS(ifp, ((struct netmap_hw_adapter*)na)->save_ethtool);
 #endif
 	na->na_flags &= ~(NAF_NATIVE_ON | NAF_NETMAP_ON);
 #ifdef IFCAP_NETMAP /* or FreeBSD ? */

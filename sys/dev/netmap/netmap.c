@@ -2239,6 +2239,11 @@ netmap_attach(struct netmap_adapter *arg)
 #endif
 	}
 	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;
+	if (ifp->ethtool_ops) {
+		hwna->nm_eto = *ifp->ethtool_ops;
+	}
+	hwna->nm_eto.set_ringparam = linux_netmap_set_ringparam;
+	hwna->nm_eto.set_channels = linux_netmap_set_channels;
 #endif /* linux */
 
 	D("success for %s", NM_IFPNAME(ifp));
