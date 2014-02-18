@@ -175,7 +175,7 @@ rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
     /* If we were called by NM_SEND_UP(), we want to pass the mbuf
        to network stack. We detect this situation looking at the
        priority field. */
-    if ((*pm)->priority == NM_MAGIC_PRIORITY)
+    if ((*pm)->priority == NM_MAGIC_PRIORITY_RX)
             return RX_HANDLER_PASS;
 
     /* When we intercept a sk_buff coming from the driver, it happens that
@@ -243,7 +243,7 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
     struct netmap_generic_adapter *gna =
                         (struct netmap_generic_adapter *)NA(ifp);
 
-    if (likely(m->priority == NM_MAGIC_PRIORITY))
+    if (likely(m->priority == NM_MAGIC_PRIORITY_TX))
         return gna->save_start_xmit(m, ifp); /* To the driver. */
 
     /* To a netmap RX ring. */
@@ -300,7 +300,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     NM_ATOMIC_INC(&m->users);
     m->dev = ifp;
     /* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
-    m->priority = NM_MAGIC_PRIORITY;
+    m->priority = NM_MAGIC_PRIORITY_TX;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24) // XXX
     skb_set_queue_mapping(m, ring_nr);
 #endif
