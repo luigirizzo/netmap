@@ -443,6 +443,23 @@ linux_netmap_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	return (NETDEV_TX_OK);
 }
 
+/* while in netmap mode, we cannot tolerate any change in the
+ * number of rx/tx rings and descriptors
+ */
+int
+linux_netmap_set_ringparam(struct net_device *dev,
+	struct ethtool_ringparam *e)
+{
+	return -EBUSY;
+}
+
+int
+linux_netmap_set_channels(struct net_device *dev,
+	struct ethtool_channels *e)
+{
+	return -EBUSY;
+}
+
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)	// XXX was 38
 #define LIN_IOCTL_NAME	.ioctl
