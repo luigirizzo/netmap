@@ -978,7 +978,7 @@ sender_body(void *data)
 {
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
-	struct netmap_if *nifp = targ->nmd->nifp;
+	struct netmap_if *nifp;
 	struct netmap_ring *txring;
 	int i, n = targ->g->npackets / targ->g->nthreads;
 	int64_t sent = 0;
@@ -1035,6 +1035,7 @@ sender_body(void *data)
 	int tosend = 0;
 	int frags = targ->g->frags;
 
+        nifp = targ->nmd->nifp;
 	while (!targ->cancel && (n == 0 || sent < n)) {
 
 		if (rate_limit && tosend <= 0) {
@@ -1152,7 +1153,7 @@ receiver_body(void *data)
 {
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
-	struct netmap_if *nifp = targ->nmd->nifp;
+	struct netmap_if *nifp;
 	struct netmap_ring *rxring;
 	int i;
 	uint64_t received = 0;
@@ -1188,6 +1189,8 @@ receiver_body(void *data)
 #endif /* !NO_PCAP */
     } else {
 	int dump = targ->g->options & OPT_DUMP;
+
+        nifp = targ->nmd->nifp;
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
