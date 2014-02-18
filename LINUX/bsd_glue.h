@@ -183,7 +183,8 @@ struct thread;
 /* Magic number for sk_buff.priority field, used to take decisions in
  * generic_ndo_start_xmit() and in linux_generic_rx_handler().
  */
-#define NM_MAGIC_PRIORITY 0xad86d310U
+#define NM_MAGIC_PRIORITY_TX 0xad86d310U
+#define NM_MAGIC_PRIORITY_RX 0xad86d311U
 
 /*
  * m_copydata() copies from mbuf to buffer following the mbuf chain.

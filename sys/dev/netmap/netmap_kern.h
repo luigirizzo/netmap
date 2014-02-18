@@ -81,7 +81,7 @@ struct hrtimer {
 #define	MBUF_IFP(m)	((m)->dev)
 #define	NM_SEND_UP(ifp, m)  \
                         do { \
-                            m->priority = NM_MAGIC_PRIORITY; \
+                            m->priority = NM_MAGIC_PRIORITY_RX; \
                             netif_rx(m); \
                         } while (0)
 
