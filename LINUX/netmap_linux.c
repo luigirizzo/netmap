@@ -453,12 +453,14 @@ linux_netmap_set_ringparam(struct net_device *dev,
 	return -EBUSY;
 }
 
+#ifdef ETHTOOL_SCHANNELS
 int
 linux_netmap_set_channels(struct net_device *dev,
 	struct ethtool_channels *e)
 {
 	return -EBUSY;
 }
+#endif
 
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)	// XXX was 38
