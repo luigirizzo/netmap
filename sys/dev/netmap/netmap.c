@@ -1094,8 +1094,15 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 		 * netmap is not forced to use generic
 		 * adapters.
 		 */
-		if (NA(ifp)->active_fds > 0 ||
-				i != NETMAP_ADMODE_GENERIC) {
+		if (NA(ifp)->active_fds > 0
+			|| i != NETMAP_ADMODE_GENERIC 
+#ifdef WITH_PIPES
+			/* ugly, but we cannot allow an adapter switch
+			 * if some pipe is referring to this one
+			 */
+			|| NA(ifp)->na_next_pipe > 0
+#endif
+		) {
 			*na = NA(ifp);
 			return 0;
 		}
