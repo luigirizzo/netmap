@@ -416,7 +416,11 @@ ifunit_ref(const char *name)
 #ifndef NETMAP_LINUX_HAVE_INIT_NET
 	return dev_get_by_name(name);
 #else
-	return dev_get_by_name(&init_net, name);
+	void *ns = &init_net;
+#ifdef CONFIG_NET_NS
+	ns = current->nsproxy->net_ns;
+#endif
+	return dev_get_by_name(ns, name);
 #endif
 }
 
