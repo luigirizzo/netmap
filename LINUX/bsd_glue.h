@@ -457,5 +457,11 @@ int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 struct netmap_adapter;
 int netmap_linux_config(struct netmap_adapter *na, 
 		u_int *txr, u_int *rxr, u_int *txd, u_int *rxd);
+/* ---- namespaces ------ */
+#ifdef CONFIG_NET_NS
+int netmap_bns_register(void);
+#define NM_BNS_GET(b)	(b)->ns = netmap_bns_get()
+#define NM_BNS_PUT(b)	netmap_bns_put(b->ns)
+#endif
 
 #endif /* _BSD_GLUE_H */

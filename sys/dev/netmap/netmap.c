@@ -3049,10 +3049,14 @@ netmap_init(void)
 	if (!netmap_dev)
 		goto fail;
 
-	netmap_init_bridges();
+	error = netmap_init_bridges();
+	if (error)
+		goto fail;
+
 #ifdef __FreeBSD__
 	nm_vi_init_index();
 #endif
+
 	printf("netmap: loaded module\n");
 	return (0);
 fail:

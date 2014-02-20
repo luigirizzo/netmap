@@ -1313,6 +1313,82 @@ static int netmap_socket_recvmsg(struct kiocb *iocb, struct socket *sock,
 #endif  /* >= 2.6.35 */
 
 
+#ifdef CONFIG_NET_NS
+#include <net/netns/generic.h>
+
+int netmap_bns_id;
+
+struct netmap_bns {
+	struct net *net;
+	struct nm_bridge *bridges;
+	u_int num_bridges;
+	int id;
+};
+
+struct net*
+netmap_bns_get(void)
+{
+	return get_net(current->nsproxy->net_ns);
+}
+
+void
+netmap_bns_put(struct net *net_ns)
+{
+	put_net(net_ns);
+}
+
+void
+netmap_bns_getbridges(struct nm_bridge **b, u_int *n)
+{
+	struct net *net_ns = current->nsproxy->net_ns;
+	struct netmap_bns *ns = net_generic(net_ns, netmap_bns_id);
+
+	*b = ns->bridges;
+	*n = ns->num_bridges;
+}
+
+static int __net_init
+netmap_pernet_init(struct net *net)
+{
+	struct netmap_bns *ns = net_generic(net, netmap_bns_id);
+	static int _id = 0;
+
+	ns->id = ++_id;
+	ns->net = net;
+	ns->num_bridges = 64;
+	ns->bridges = netmap_init_bridges2(ns->num_bridges);
+	if (ns->bridges == NULL)
+		return -ENOMEM;
+	D("ns(%d)", ns->id);
+
+	return 0;
+}
+
+static void __net_init
+netmap_pernet_exit(struct net *net)
+{
+	struct netmap_bns *ns = net_generic(net, netmap_bns_id);
+
+	D("ns(%d)", ns->id);
+	free(ns->bridges, M_DEVBUF);
+	ns->bridges = NULL;
+}
+
+static struct pernet_operations netmap_pernet_ops = {
+	.init = netmap_pernet_init,
+	.exit = netmap_pernet_exit,
+	.id = &netmap_bns_id,
+	.size = sizeof(struct netmap_bns),
+};
+
+int
+netmap_bns_register(void)
+{
+	return -register_pernet_subsys(&netmap_pernet_ops);	
+}
+#endif
+
+
 /* ########################## MODULE INIT ######################### */
 
 struct miscdevice netmap_cdevsw = { /* same name as FreeBSD */

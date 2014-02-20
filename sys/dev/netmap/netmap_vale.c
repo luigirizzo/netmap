@@ -222,6 +222,10 @@ struct nm_bridge {
 	 * the lookup function, and allocated on attach
 	 */
 	struct nm_hash_ent ht[NM_BDG_HASH];
+
+#ifdef CONFIG_NET_NS
+	struct net *ns;
+#endif /* CONFIG_NET_NS */
 };
 
 const char*
@@ -234,12 +238,14 @@ netmap_bdg_name(struct netmap_vp_adapter *vp)
 }
 
 
+#ifndef CONFIG_NET_NS
 /*
  * XXX in principle nm_bridges could be created dynamically
  * Right now we have a static array and deletions are protected
  * by an exclusive lock.
  */
-struct nm_bridge nm_bridges[NM_BRIDGES];
+struct nm_bridge *nm_bridges;
+#endif /* !CONFIG_NET_NS */
 
 
 /*
@@ -283,9 +289,12 @@ static struct nm_bridge *
 nm_find_bridge(const char *name, int create)
 {
 	int i, l, namelen;
-	struct nm_bridge *b = NULL;
+	struct nm_bridge *b = NULL, *bridges;
+	u_int num_bridges;
 
 	NMG_LOCK_ASSERT();
+
+	netmap_bns_getbridges(&bridges, &num_bridges);
 
 	namelen = strlen(NM_NAME);	/* base length */
 	l = name ? strlen(name) : 0;		/* actual length */
@@ -304,8 +313,8 @@ nm_find_bridge(const char *name, int create)
 	ND("--- prefix is '%.*s' ---", namelen, name);
 
 	/* lookup the name, remember empty slot if there is one */
-	for (i = 0; i < NM_BRIDGES; i++) {
-		struct nm_bridge *x = nm_bridges + i;
+	for (i = 0; i < num_bridges; i++) {
+		struct nm_bridge *x = bridges + i;
 
 		if (x->bdg_active_ports == 0) {
 			if (create && b == NULL)
@@ -318,7 +327,7 @@ nm_find_bridge(const char *name, int create)
 			break;
 		}
 	}
-	if (i == NM_BRIDGES && b) { /* name not found, can create entry */
+	if (i == num_bridges && b) { /* name not found, can create entry */
 		/* initialize the bridge */
 		strncpy(b->bdg_basename, name, namelen);
 		ND("create new bridge %s with ports %d", b->bdg_basename,
@@ -331,6 +340,7 @@ nm_find_bridge(const char *name, int create)
 		b->bdg_ops.lookup = netmap_bdg_learning;
 		/* reset the MAC address table */
 		bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
+		NM_BNS_GET(b);
 	}
 	return b;
 }
@@ -458,6 +468,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	if (lim == 0) {
 		ND("marking bridge %s as free", b->bdg_basename);
 		bzero(&b->bdg_ops, sizeof(b->bdg_ops));
+		NM_BNS_PUT(b);
 	}
 }
 
@@ -813,12 +824,15 @@ unlock_exit:
 int
 netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 {
-	struct nm_bridge *b;
+	struct nm_bridge *b, *bridges;
 	struct netmap_adapter *na;
 	struct netmap_vp_adapter *vpna;
 	char *name = nmr->nr_name;
 	int cmd = nmr->nr_cmd, namelen = strlen(name);
 	int error = 0, i, j;
+	u_int num_bridges;
+
+	netmap_bns_getbridges(&bridges, &num_bridges);
 
 	switch (cmd) {
 	case NETMAP_BDG_NEWIF:
@@ -866,7 +880,7 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 				 */
 				if (!strcmp(vpna->up.name, name)) {
 					/* bridge index */
-					nmr->nr_arg1 = b - nm_bridges;
+					nmr->nr_arg1 = b - bridges;
 					nmr->nr_arg2 = i; /* port index */
 					error = 0;
 					break;
@@ -886,7 +900,7 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 
 			NMG_LOCK();
 			for (error = ENOENT; i < NM_BRIDGES; i++) {
-				b = nm_bridges + i;
+				b = bridges + i;
 				if (j >= b->bdg_active_ports) {
 					j = 0; /* following bridges scan from 0 */
 					continue;
@@ -2412,13 +2426,31 @@ err_put:
 
 }
 
-
-void
-netmap_init_bridges(void)
+struct nm_bridge *
+netmap_init_bridges2(u_int n)
 {
 	int i;
-	bzero(nm_bridges, sizeof(struct nm_bridge) * NM_BRIDGES); /* safety */
-	for (i = 0; i < NM_BRIDGES; i++)
-		BDG_RWINIT(&nm_bridges[i]);
+	struct nm_bridge *b;
+
+	b = malloc(sizeof(struct nm_bridge) * n, M_DEVBUF,
+		M_NOWAIT | M_ZERO);
+	if (b == NULL)
+		return NULL;
+	for (i = 0; i < n; i++)
+		BDG_RWINIT(&b[i]);
+	return b;
+}
+
+int
+netmap_init_bridges(void)
+{
+#ifdef CONFIG_NET_NS
+	return netmap_bns_register();
+#else
+	nm_bridges = netmap_init_bridges2(NM_BRIDGES);
+	if (nm_bridges == NULL)
+		return ENOMEM;
+	return 0;
+#endif
 }
 #endif /* WITH_VALE */

@@ -86,6 +86,8 @@ struct ethtool_ops {
 };
 struct hrtimer {
 };
+#define NM_BNS_GET(b)
+#define NM_BNS_PUT(b)
 
 #elif defined (linux)
 
@@ -1087,13 +1089,14 @@ u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 
 /* these are redefined in case of no VALE support */
 int netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
-void netmap_init_bridges(void);
+struct nm_bridge *netmap_init_bridges2(u_int);
+int netmap_init_bridges(void);
 int netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops);
 int netmap_bdg_config(struct nmreq *nmr);
 
 #else /* !WITH_VALE */
 #define	netmap_get_bdg_na(_1, _2, _3)	0
-#define netmap_init_bridges(_1)
+#define netmap_init_bridges(_1) 0
 #define	netmap_bdg_ctl(_1, _2)	EINVAL
 #endif /* !WITH_VALE */
 
@@ -1115,6 +1118,17 @@ int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create
 int netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 #else
 #define netmap_get_monitor_na(_1, _2, _3) 0
+#endif
+
+#ifdef CONFIG_NET_NS
+struct net *netmap_bns_get(void);
+void netmap_bns_put(struct net *);
+void netmap_bns_getbridges(struct nm_bridge **, u_int *);
+#else
+#define netmap_bns_get()
+#define netmap_bns_put(_1)
+#define netmap_bns_getbridges(b, n) \
+	do { *b = nm_bridges; *n = NM_BRIDGES; } while (0)
 #endif
 
 /* Various prototypes */
