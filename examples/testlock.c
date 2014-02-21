@@ -277,6 +277,60 @@ td_body(void *data)
 	return (NULL);
 }
 
+#include <sys/wait.h>
+
+void
+test_fork(struct targ *t)
+{
+	int arg = t->g->arg;
+	int m;
+	struct timeval tot = {0, 0};
+	struct timeval ta, tb;
+	char *p = NULL;
+	int sum = 0;
+
+	D("memsize is %d MB", arg);
+
+	if (arg > 0) {
+		long int i;
+		p = malloc(arg*1000000);
+		if (p == NULL)
+			D("malloc failed");
+		for (i = 0; i < arg*1000000; i += 4096) {
+			sum += p[i];
+		}
+		for (i = 0; i < arg*1000000; i += 4*4096) {
+			p[i] = 3;
+		}
+		D("memory touched %d", sum);
+	}
+	for (m = 0; m < t->g->m_cycles; m++) {
+		int pid;
+		int st = 0;
+		gettimeofday(&ta, NULL);
+		pid = fork();
+		if (pid == 0)
+			exit(0);
+		gettimeofday(&tb, NULL);
+		if (waitpid(-1, &st, WNOHANG) > 0) // another try
+			waitpid(-1, &st, WNOHANG);
+
+		tot.tv_sec += (tb.tv_sec - ta.tv_sec);
+		tot.tv_usec += (tb.tv_usec - ta.tv_usec);
+		if (tot.tv_usec < 0) {
+			tot.tv_sec--;
+			tot.tv_usec += ONE_MILLION;
+		} else if (tot.tv_usec >= ONE_MILLION) {
+			tot.tv_sec++;
+			tot.tv_usec -= ONE_MILLION;
+		}
+		t->count++;
+	}
+	D("avg is %lu ns", (tot.tv_sec * ONE_MILLION + tot.tv_usec)*1000/t->count);
+	if (p)
+		free(p);
+}
+
 /*
  * select and poll:
  *	arg	fd	timeout
@@ -658,6 +712,7 @@ struct entry {
 	uint64_t m_cycles;
 };
 struct entry tests[] = {
+	{ test_fork, "fork", 1, 1000 },
 	{ test_sel, "select", 1, 1000 },
 	{ test_poll, "poll", 1, 1000 },
 	{ test_usleep, "usleep", 1, 1000 },
