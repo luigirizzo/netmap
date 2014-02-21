@@ -1322,7 +1322,6 @@ struct netmap_bns {
 	struct net *net;
 	struct nm_bridge *bridges;
 	u_int num_bridges;
-	int id;
 };
 
 struct net*
@@ -1351,15 +1350,12 @@ static int __net_init
 netmap_pernet_init(struct net *net)
 {
 	struct netmap_bns *ns = net_generic(net, netmap_bns_id);
-	static int _id = 0;
 
-	ns->id = ++_id;
 	ns->net = net;
-	ns->num_bridges = 64;
+	ns->num_bridges = 8;
 	ns->bridges = netmap_init_bridges2(ns->num_bridges);
 	if (ns->bridges == NULL)
 		return -ENOMEM;
-	D("ns(%d)", ns->id);
 
 	return 0;
 }
@@ -1369,7 +1365,6 @@ netmap_pernet_exit(struct net *net)
 {
 	struct netmap_bns *ns = net_generic(net, netmap_bns_id);
 
-	D("ns(%d)", ns->id);
 	free(ns->bridges, M_DEVBUF);
 	ns->bridges = NULL;
 }
