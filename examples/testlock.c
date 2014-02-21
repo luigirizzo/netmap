@@ -288,25 +288,28 @@ test_fork(struct targ *t)
 	struct timeval ta, tb;
 	char *p = NULL;
 	int sum = 0;
+	long int i;
+	int np=arg*1000000/4096;
+	p = malloc(arg*1000000);
 
 	D("memsize is %d MB", arg);
 
 	if (arg > 0) {
-		long int i;
-		p = malloc(arg*1000000);
 		if (p == NULL)
 			D("malloc failed");
-		for (i = 0; i < arg*1000000; i += 4096) {
-			sum += p[i];
-		}
-		for (i = 0; i < arg*1000000; i += 4*4096) {
-			p[i] = 3;
-		}
-		D("memory touched %d", sum);
+		D("pages %d %s %s", np, arg & 1 ? "READ" : "",
+			arg & 2 ? "WRITE" : "");
 	}
 	for (m = 0; m < t->g->m_cycles; m++) {
 		int pid;
 		int st = 0;
+		if (arg & 1) for (i = 0; i < arg*1000000; i += 4096) {
+			sum += p[i];
+		}
+		if (arg & 2) for (i = 0; i < arg*1000000; i += 4096) {
+			p[i] = 3;
+		}
+		ta.tv_sec = sum;
 		gettimeofday(&ta, NULL);
 		pid = fork();
 		if (pid == 0)
