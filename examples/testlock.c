@@ -109,8 +109,6 @@ int atomic_cmpset_32(volatile uint32_t *p, uint32_t old, uint32_t new)
 #include <sys/sysctl.h>	/* sysctl */
 #include <sys/time.h>	/* timersub */
 
-static inline int min(int a, int b) { return a < b ? a : b; }
-
 #define ONE_MILLION	1000000
 /* debug support */
 #define ND(format, ...)			
