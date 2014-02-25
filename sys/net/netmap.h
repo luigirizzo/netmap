@@ -460,8 +460,8 @@ struct netmap_if {
  * selection			FLAGS	RING INDEX
  *
  *	all the NIC rings	0x0000	-
- *	only HOST ring		0x2000	ring index
- *	single NIC ring		0x4000	-
+ *	only HOST ring		0x2000	-
+ *	single NIC ring		0x4000	ring index
  *	all the NIC+HOST rings	0x6000	-
  *	one pipe ring, master	0x8000	ring index
  *	*** INVALID		0xA000
