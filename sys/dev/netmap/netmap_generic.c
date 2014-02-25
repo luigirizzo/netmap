@@ -119,8 +119,6 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257666 2013-11-05 01:06:22Z lui
 #include <linux/ethtool.h>      /* struct ethtool_ops, get_ringparam */
 #include <linux/hrtimer.h>
 
-//#define RATE  /* Enables communication statistics. */
-
 //#define REG_RESET
 
 #endif /* linux */
@@ -135,7 +133,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257666 2013-11-05 01:06:22Z lui
 
 /* ======================== usage stats =========================== */
 
-#ifdef RATE
+#ifdef RATE_GENERIC
 #define IFRATE(x) x
 struct rate_stats {
 	unsigned long txpkt;
@@ -178,6 +176,16 @@ static void rate_callback(unsigned long arg)
 }
 
 static struct rate_context rate_ctx;
+
+void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi)
+{
+    if (txp) rate_ctx.new.txpkt++;
+    if (txs) rate_ctx.new.txsync++;
+    if (txi) rate_ctx.new.txirq++;
+    if (rxp) rate_ctx.new.rxpkt++;
+    if (rxs) rate_ctx.new.rxsync++;
+    if (rxi) rate_ctx.new.rxirq++;
+}
 
 #else /* !RATE */
 #define IFRATE(x)
@@ -223,7 +231,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 #endif /* REG_RESET */
 
 	if (enable) { /* Enable netmap mode. */
-		/* Init the mitigation support. */
+		/* Init the mitigation support on all the rx queues. */
 		gna->mit = malloc(na->num_rx_rings * sizeof(struct nm_generic_mit),
 					M_DEVBUF, M_NOWAIT | M_ZERO);
 		if (!gna->mit) {
@@ -232,7 +240,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			goto out;
 		}
 		for (r=0; r<na->num_rx_rings; r++)
-			netmap_mitigation_init(&gna->mit[r], na);
+			netmap_mitigation_init(&gna->mit[r], r, na);
 
 		/* Initialize the rx queue, as generic_rx_handler() can
 		 * be called as soon as netmap_catch_rx() returns.
@@ -280,7 +288,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 
 		rtnl_unlock();
 
-#ifdef RATE
+#ifdef RATE_GENERIC
 		if (rate_ctx.refcount == 0) {
 			D("setup_timer()");
 			memset(&rate_ctx, 0, sizeof(rate_ctx));
@@ -326,7 +334,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			free(na->tx_rings[r].tx_pool, M_DEVBUF);
 		}
 
-#ifdef RATE
+#ifdef RATE_GENERIC
 		if (--rate_ctx.refcount == 0) {
 			D("del_timer()");
 			del_timer(&rate_ctx.timer);

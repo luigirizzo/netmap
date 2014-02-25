@@ -115,20 +115,23 @@ generic_timer_handler(struct hrtimer *t)
      */
     mit->mit_pending = 0;
     /* below is a variation of netmap_generic_irq */
-    if (mit->mit_na->ifp->if_capenable & IFCAP_NETMAP)
-        netmap_common_irq(mit->mit_na->ifp, 0, &work_done);
-    // IFRATE(rate_ctx.new.rxirq++);
+    if (mit->mit_na->ifp->if_capenable & IFCAP_NETMAP) {
+        netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
+        generic_rate(0, 0, 0, 0, 0, 1);
+    }
     netmap_mitigation_restart(mit);
 
     return HRTIMER_RESTART;
 }
 
 
-void netmap_mitigation_init(struct nm_generic_mit *mit, struct netmap_adapter *na)
+void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
+                                struct netmap_adapter *na)
 {
     hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
     mit->mit_timer.function = &generic_timer_handler;
     mit->mit_pending = 0;
+    mit->mit_ring_idx = idx;
     mit->mit_na = na;
 }
 

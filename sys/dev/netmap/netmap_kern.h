@@ -550,6 +550,7 @@ struct netmap_hw_adapter {	/* physical device */
 struct nm_generic_mit {
 	struct hrtimer mit_timer;
 	int mit_pending;
+	int mit_ring_idx;  /* index of the ring being mitigated */
 	struct netmap_adapter *mit_na;  /* backpointer */
 };
 
@@ -1263,12 +1264,20 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len,
 int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
 
+//#define RATE_GENERIC  /* Enables communication statistics for generic. */
+#ifdef RATE_GENERIC
+void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi);
+#else
+#define generic_rate(txp, txs, txi, rxp, rxs, rxi)
+#endif
+
 /*
  * netmap_mitigation API. This is used by the generic adapter
  * to reduce the number of interrupt requests/selwakeup
  * to clients on incoming packets.
  */
-void netmap_mitigation_init(struct nm_generic_mit *mit, struct netmap_adapter *na);
+void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
+                                struct netmap_adapter *na);
 void netmap_mitigation_start(struct nm_generic_mit *mit);
 void netmap_mitigation_restart(struct nm_generic_mit *mit);
 int netmap_mitigation_active(struct nm_generic_mit *mit);
