@@ -778,6 +778,10 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	generic_find_num_desc(ifp, &num_tx_desc, &num_rx_desc);
 	ND("Netmap ring size: TX = %d, RX = %d", num_tx_desc, num_rx_desc);
+	if (num_tx_desc == 0 || num_rx_desc == 0) {
+		D("Device has no hw slots (tx %u, rx %u)", num_tx_desc, num_rx_desc);
+		return EINVAL;
+	}
 
 	gna = malloc(sizeof(*gna), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (gna == NULL) {
