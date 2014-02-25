@@ -187,12 +187,10 @@ struct thread;
 
 /*
  * m_copydata() copies from mbuf to buffer following the mbuf chain.
- * XXX check which linux equivalent we should use to follow fragmented
- * skbufs.
+ * skb_copy_bits() copies the skb headlen and all the fragments.
  */
 
-//#define m_copydata(m, o, l, b)	skb_copy_bits(m, o, b, l)
-#define m_copydata(m, o, l, b)	skb_copy_from_linear_data_offset(m, o, b, l)
+#define m_copydata(m, o, l, b)          skb_copy_bits(m, o, b, l)
 
 #define copyin(_from, _to, _len)	copy_from_user(_to, _from, _len)
 
