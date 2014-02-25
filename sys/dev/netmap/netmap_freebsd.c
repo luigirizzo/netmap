@@ -236,10 +236,12 @@ generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 }
 
 
-void netmap_mitigation_init(struct nm_generic_mit *mit, struct netmap_adapter *na)
+void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
+                            struct netmap_adapter *na)
 {
 	ND("called");
 	mit->mit_pending = 0;
+	mit->mit_ring_idx = idx;
 	mit->mit_na = na;
 }
 
