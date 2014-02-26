@@ -1017,6 +1017,7 @@ netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwai
 			slot->len = len;
 			slot->flags = kring->nkr_slot_flags;
 			nm_i = nm_next(nm_i, lim);
+			m_freem(m);
 		}
 		kring->nr_hwtail = nm_i;
 	}
