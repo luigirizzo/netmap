@@ -1924,8 +1924,14 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	}
 
 	if (na->na_flags & NAF_HOST_RINGS) {
+		/* the hostna rings are the host rings of the bwrap.
+		 * The corresponding krings must point back to the 
+		 * hostna
+		 */
 		hostna->tx_rings = na->tx_rings + na->num_tx_rings;
+		hostna->tx_rings[0].na = hostna;
 		hostna->rx_rings = na->rx_rings + na->num_rx_rings;
+		hostna->rx_rings[0].na = hostna;
 	}
 
 	return 0;
