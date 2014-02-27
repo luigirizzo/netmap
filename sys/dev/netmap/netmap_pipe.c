@@ -626,7 +626,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 			1, NM_PIPE_MAXSLOTS, NULL);
 	error = netmap_attach_common(&mna->up);
 	if (error)
-		goto free_ifp;
+		goto free_mna;
 	/* register the master with the parent */
 	error = netmap_pipe_add(pna, mna);
 	if (error)
