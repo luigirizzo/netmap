@@ -318,6 +318,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     return -1;
 }
 
+
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
    rings can have the same lengths. */
 int
@@ -346,6 +347,31 @@ generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
     *txq = ifp->real_num_tx_queues;
     *rxq = ifp->real_num_rx_queues;
 #endif
+}
+
+int
+netmap_linux_config(struct netmap_adapter *na,
+		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
+{
+	struct ifnet *ifp = na->ifp;
+	int error = 0;
+
+	rtnl_lock();
+
+	if (ifp == NULL) {
+		D("zombie adapter");
+		error = ENXIO;
+		goto out;
+	}
+	error = generic_find_num_desc(ifp, txd, rxd);
+	if (error)
+		goto out;
+	generic_find_num_queues(ifp, txr, rxr);
+
+out:
+	rtnl_unlock();
+
+	return error;
 }
 
 

@@ -2254,6 +2254,9 @@ netmap_attach(struct netmap_adapter *arg)
 #ifdef ETHTOOL_SCHANNELS
 	hwna->nm_eto.set_channels = linux_netmap_set_channels;
 #endif
+	if (arg->nm_config == NULL) {
+		hwna->up.nm_config = netmap_linux_config;
+	}
 #endif /* linux */
 
 	D("success for %s", NM_IFPNAME(ifp));

@@ -421,4 +421,8 @@ int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 		netmap_dtor(priv); ((struct file *)td)->private_data = 0;	\
 	} while (0)
 
+struct netmap_adapter;
+int netmap_linux_config(struct netmap_adapter *na, 
+		u_int *txr, u_int *rxr, u_int *txd, u_int *rxd);
+
 #endif /* _BSD_GLUE_H */
