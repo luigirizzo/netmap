@@ -271,16 +271,13 @@ netmap_disable_ring(struct netmap_kring *kr)
 
 
 static void
-netmap_set_all_rings(struct ifnet *ifp, int stopped)
+netmap_set_all_rings(struct netmap_adapter *na, int stopped)
 {
-	struct netmap_adapter *na;
 	int i;
 	u_int ntx, nrx;
 
-	if (!(ifp->if_capenable & IFCAP_NETMAP))
+	if (!(na->na_flags & NAF_NETMAP_ON))
 		return;
-
-	na = NA(ifp);
 
 	ntx = netmap_real_tx_rings(na);
 	nrx = netmap_real_rx_rings(na);
@@ -306,14 +303,14 @@ netmap_set_all_rings(struct ifnet *ifp, int stopped)
 void
 netmap_disable_all_rings(struct ifnet *ifp)
 {
-	netmap_set_all_rings(ifp, 1 /* stopped */);
+	netmap_set_all_rings(NA(ifp), 1 /* stopped */);
 }
 
 
 void
 netmap_enable_all_rings(struct ifnet *ifp)
 {
-	netmap_set_all_rings(ifp, 0 /* enabled */);
+	netmap_set_all_rings(NA(ifp), 0 /* enabled */);
 }
 
 
@@ -396,7 +393,6 @@ nm_dump_buf(char *p, int len, int lim, char *dst)
 int
 netmap_update_config(struct netmap_adapter *na)
 {
-	struct ifnet *ifp = na->ifp;
 	u_int txr, txd, rxr, rxd;
 
 	txr = txd = rxr = rxd = 0;
@@ -415,11 +411,11 @@ netmap_update_config(struct netmap_adapter *na)
 		return 0; /* nothing changed */
 	if (netmap_verbose || na->active_fds > 0) {
 		D("stored config %s: txring %d x %d, rxring %d x %d",
-			NM_IFPNAME(ifp),
+			na->name,
 			na->num_tx_rings, na->num_tx_desc,
 			na->num_rx_rings, na->num_rx_desc);
 		D("new config %s: txring %d x %d, rxring %d x %d",
-			NM_IFPNAME(ifp), txr, txd, rxr, rxd);
+			na->name, txr, txd, rxr, rxd);
 	}
 	if (na->active_fds == 0) {
 		D("configuration changed (but fine)");
@@ -516,7 +512,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 		 */
 		kring->rhead = kring->rcur = kring->nr_hwcur = 0;
 		kring->rtail = kring->nr_hwtail = ndesc - 1;
-		snprintf(kring->name, sizeof(kring->name) - 1, "%s TX%d", NM_IFPNAME(na->ifp), i);
+		snprintf(kring->name, sizeof(kring->name) - 1, "%s TX%d", na->name, i);
 		ND("ktx %s h %d c %d t %d",
 			kring->name, kring->rhead, kring->rcur, kring->rtail);
 		mtx_init(&kring->q_lock, "nm_txq_lock", NULL, MTX_DEF);
@@ -537,7 +533,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 		}
 		kring->rhead = kring->rcur = kring->nr_hwcur = 0;
 		kring->rtail = kring->nr_hwtail = 0;
-		snprintf(kring->name, sizeof(kring->name) - 1, "%s RX%d", NM_IFPNAME(na->ifp), i);
+		snprintf(kring->name, sizeof(kring->name) - 1, "%s RX%d", na->name, i);
 		ND("krx %s h %d c %d t %d",
 			kring->name, kring->rhead, kring->rcur, kring->rtail);
 		mtx_init(&kring->q_lock, "nm_rxq_lock", NULL, MTX_DEF);
@@ -700,14 +696,13 @@ static void
 netmap_do_unregif(struct netmap_priv_d *priv, struct netmap_if *nifp)
 {
 	struct netmap_adapter *na = priv->np_na;
-	struct ifnet *ifp = na->ifp;
 
 	NMG_LOCK_ASSERT();
 	na->active_fds--;
 	if (na->active_fds <= 0) {	/* last instance */
 
 		if (netmap_verbose)
-			D("deleting last instance for %s", NM_IFPNAME(ifp));
+			D("deleting last instance for %s", na->name);
 		/*
 		 * (TO CHECK) This function is only called
 		 * when the last reference to this file descriptor goes
@@ -722,7 +717,7 @@ netmap_do_unregif(struct netmap_priv_d *priv, struct netmap_if *nifp)
 		 * happens if the close() occurs while a concurrent
 		 * syscall is running.
 		 */
-		if (ifp)
+		if (na->ifp != NULL)
 			na->nm_register(na, 0); /* off, clear flags */
 		/* Wake up any sleeping threads. netmap_poll will
 		 * then return POLLERR
@@ -1396,7 +1391,7 @@ netmap_ring_reinit(struct netmap_kring *kring)
 	int errors = 0;
 
 	// XXX KASSERT nm_kr_tryget
-	RD(10, "called for %s", NM_IFPNAME(kring->na->ifp));
+	RD(10, "called for %s", kring->name);
 	// XXX probably wrong to trust userspace
 	kring->rhead = ring->head;
 	kring->rcur  = ring->cur;
@@ -1511,7 +1506,7 @@ netmap_set_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags)
 		na->rx_si_users++;
 	if (netmap_verbose) {
 		D("%s: tx [%d,%d) rx [%d,%d) id %d", 
-			NM_IFPNAME(na->ifp),
+			na->name,
 			priv->np_txqfirst,
 			priv->np_txqlast,
 			priv->np_rxqfirst,
@@ -1530,7 +1525,6 @@ struct netmap_if *
 netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	uint16_t ringid, uint32_t flags, int *err)
 {
-	struct ifnet *ifp = na->ifp;
 	struct netmap_if *nifp = NULL;
 	int error, need_mem = 0;
 
@@ -1549,7 +1543,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		if (error)
 			goto out;
 	}
-	nifp = netmap_if_new(NM_IFPNAME(ifp), na);
+	nifp = netmap_if_new(na->name, na);
 	if (nifp == NULL) { /* allocation failed */
 		/* we should drop the allocator, but only
 		 * if we were the ones who grabbed it
@@ -1558,7 +1552,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		goto out;
 	}
 	na->active_fds++;
-	if (ifp->if_capenable & IFCAP_NETMAP) {
+	if (na->na_flags & NAF_NETMAP_ON) {
 		/* was already set */
 	} else {
 		/* Otherwise set the card in netmap mode
@@ -1615,7 +1609,6 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 	int fflag, struct thread *td)
 {
 	struct netmap_priv_d *priv = NULL;
-	struct ifnet *ifp = NULL;
 	struct nmreq *nmr = (struct nmreq *) data;
 	struct netmap_adapter *na = NULL;
 	int error;
@@ -1717,7 +1710,6 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 			error = netmap_get_na(nmr, &na, 1 /* create */); /* keep reference */
 			if (error)
 				break;
-			ifp = na->ifp;
 			if (NETMAP_OWNED_BY_KERN(na)) {
 				netmap_adapter_put(na);
 				error = EBUSY;
@@ -1779,9 +1771,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 			break;
 		}
 
-		ifp = na->ifp;
-		if (ifp == NULL) {
-			RD(1, "the ifp is gone");
+		if (!(na->na_flags & NAF_NETMAP_ON)) {
 			error = ENXIO;
 			break;
 		}
@@ -1844,6 +1834,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 	default:	/* allow device-specific ioctls */
 	    {
 		struct socket so;
+		struct ifnet *ifp;
 
 		bzero(&so, sizeof(so));
 		NMG_LOCK();
@@ -1893,7 +1884,6 @@ netmap_poll(struct cdev *dev, int events, struct thread *td)
 {
 	struct netmap_priv_d *priv = NULL;
 	struct netmap_adapter *na;
-	struct ifnet *ifp;
 	struct netmap_kring *kring;
 	u_int i, check_all_tx, check_all_rx, want_tx, want_rx, revents = 0;
 	struct mbq q;		/* packets from hw queues to host stack */
@@ -1932,18 +1922,12 @@ netmap_poll(struct cdev *dev, int events, struct thread *td)
 	rmb(); /* make sure following reads are not from cache */
 
 	na = priv->np_na;
-	ifp = na->ifp;
-	// check for deleted
-	if (ifp == NULL) {
-		RD(1, "the ifp is gone");
-		return POLLERR;
-	}
 
-	if ( (ifp->if_capenable & IFCAP_NETMAP) == 0)
+	if ( (na->na_flags & NAF_NETMAP_ON) == 0)
 		return POLLERR;
 
 	if (netmap_verbose & 0x8000)
-		D("device %s events 0x%x", NM_IFPNAME(ifp), events);
+		D("device %s events 0x%x", na->name, events);
 	want_tx = events & (POLLOUT | POLLWRNORM);
 	want_rx = events & (POLLIN | POLLRDNORM);
 
@@ -2129,7 +2113,7 @@ do_retry_rx:
  	 * rings to a single file descriptor.
 	 */
 
-	if (q.head)
+	if (q.head && na->ifp != NULL)
 		netmap_send_up(na->ifp, &q);
 
 	return (revents);
@@ -2169,19 +2153,21 @@ netmap_attach_common(struct netmap_adapter *na)
 
 	if (na->num_tx_rings == 0 || na->num_rx_rings == 0) {
 		D("%s: invalid rings tx %d rx %d",
-			ifp->if_xname, na->num_tx_rings, na->num_rx_rings);
+			NM_IFPNAME(ifp), na->num_tx_rings, na->num_rx_rings);
 		return EINVAL;
 	}
-	WNA(ifp) = na;
+	if (ifp != NULL) {
+		WNA(ifp) = na;
 
 	/* the following is only needed for na that use the host port.
 	 * XXX do we have something similar for linux ?
 	 */
 #ifdef __FreeBSD__
-	na->if_input = ifp->if_input; /* for netmap_send_up */
+		na->if_input = ifp->if_input; /* for netmap_send_up */
 #endif /* __FreeBSD__ */
 
-	NETMAP_SET_CAPABLE(ifp);
+		NETMAP_SET_CAPABLE(ifp);
+	}
 	if (na->nm_krings_create == NULL) {
 		na->nm_krings_create = netmap_hw_krings_create;
 		na->nm_krings_delete = netmap_hw_krings_delete;
@@ -2201,7 +2187,7 @@ netmap_attach_common(struct netmap_adapter *na)
 void
 netmap_detach_common(struct netmap_adapter *na)
 {
-	if (na->ifp)
+	if (na->ifp != NULL)
 		WNA(na->ifp) = NULL; /* XXX do we need this? */
 
 	if (na->tx_rings) { /* XXX should not happen */
@@ -2240,6 +2226,7 @@ netmap_attach(struct netmap_adapter *arg)
 		goto fail;
 	hwna->up = *arg;
 	hwna->up.na_flags |= NAF_HOST_RINGS;
+	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
 	if (netmap_attach_common(&hwna->up)) {
 		free(hwna, M_DEVBUF);
 		goto fail;
@@ -2340,6 +2327,7 @@ netmap_detach(struct ifnet *ifp)
 		 * tell them that the interface is gone
 		 */
 		na->ifp = NULL;
+		na->na_flags &= ~NAF_NETMAP_ON;
 		/* give them a chance to notice */
 		netmap_enable_all_rings(ifp);
 	}
@@ -2373,8 +2361,8 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	// if we follow the down/configure/up protocol -gl
 	// mtx_lock(&na->core_lock);
 
-	if ( (ifp->if_capenable & IFCAP_NETMAP) == 0) {
-		D("%s not in netmap mode anymore", NM_IFPNAME(ifp));
+	if ( (na->na_flags & NAF_NETMAP_ON) == 0) {
+		D("%s not in netmap mode anymore", na->name);
 		error = ENXIO;
 		goto done;
 	}
@@ -2384,7 +2372,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	// XXX reconsider long packets if we handle fragments
 	if (len > NETMAP_BUF_SIZE(na)) { /* too long for us */
-		D("%s from_host, drop packet size %d > %d", NM_IFPNAME(ifp),
+		D("%s from_host, drop packet size %d > %d", na->name,
 			len, NETMAP_BUF_SIZE(na));
 		goto done;
 	}
@@ -2401,12 +2389,12 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
                 space += kring->nkr_num_slots;
 	if (space + mbq_len(q) >= kring->nkr_num_slots - 1) { // XXX
 		RD(10, "%s full hwcur %d hwtail %d qlen %d len %d m %p",
-			 NM_IFPNAME(ifp), kring->nr_hwcur, kring->nr_hwtail, mbq_len(q),
+			na->name, kring->nr_hwcur, kring->nr_hwtail, mbq_len(q),
 			len, m);
 	} else {
 		mbq_enqueue(q, m);
 		ND(10, "%s %d bufs in queue len %d m %p",
-			NM_IFPNAME(ifp), mbq_len(q), len, m);
+			na->name, mbq_len(q), len, m);
 		/* notify outside the lock */
 		m = NULL;
 		error = 0;
@@ -2439,7 +2427,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 		D("NULL na, should not happen");
 		return NULL;	/* no netmap support here */
 	}
-	if (!(na->ifp->if_capenable & IFCAP_NETMAP)) {
+	if (!(na->na_flags & NAF_NETMAP_ON)) {
 		ND("interface not in netmap mode");
 		return NULL;	/* nothing to reinitialize */
 	}
@@ -2471,7 +2459,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 	/* Always set the new offset value and realign the ring. */
 	if (netmap_verbose)
 	    D("%s %s%d hwofs %d -> %d, hwtail %d -> %d",
-		NM_IFPNAME(na->ifp),
+		na->name,
 		tx == NR_TX ? "TX" : "RX", n,
 		kring->nkr_hwofs, new_hwofs,
 		kring->nr_hwtail,
@@ -2563,11 +2551,12 @@ netmap_common_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 int
 netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 {
+	struct netmap_adapter *na = NA(ifp);
 	// XXX could we check NAF_NATIVE_ON ?
-	if (!(ifp->if_capenable & IFCAP_NETMAP))
+	if (!(na->na_flags & NAF_NETMAP_ON))
 		return 0;
 
-	if (NA(ifp)->na_flags & NAF_SKIP_INTR) {
+	if (na->na_flags & NAF_SKIP_INTR) {
 		ND("use regular interrupt");
 		return 0;
 	}

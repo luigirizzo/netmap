@@ -526,6 +526,8 @@ struct netmap_adapter {
 	int na_next_pipe;
 	int na_max_pipes;
 #endif /* WITH_PIPES */
+
+	char name[64];
 };
 
 
