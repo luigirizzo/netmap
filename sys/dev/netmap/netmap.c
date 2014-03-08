@@ -717,8 +717,7 @@ netmap_do_unregif(struct netmap_priv_d *priv, struct netmap_if *nifp)
 		 * happens if the close() occurs while a concurrent
 		 * syscall is running.
 		 */
-		if (na->ifp != NULL)
-			na->nm_register(na, 0); /* off, clear flags */
+		na->nm_register(na, 0); /* off, clear flags */
 		/* Wake up any sleeping threads. netmap_poll will
 		 * then return POLLERR
 		 * XXX The wake up now must happen during *_down(), when
@@ -2201,6 +2200,18 @@ netmap_detach_common(struct netmap_adapter *na)
 	free(na, M_DEVBUF);
 }
 
+int
+netmap_hw_register(struct netmap_adapter *na, int onoff)
+{
+	struct netmap_hw_adapter *hwna =
+		(struct netmap_hw_adapter*)na;
+
+	if (na->ifp == NULL)
+		return onoff ? ENXIO : 0;
+
+	return hwna->nm_hw_register(na, onoff);
+}
+
 
 /*
  * Initialize a ``netmap_adapter`` object created by driver on attach.
@@ -2227,6 +2238,8 @@ netmap_attach(struct netmap_adapter *arg)
 	hwna->up = *arg;
 	hwna->up.na_flags |= NAF_HOST_RINGS;
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
+	hwna->nm_hw_register = hwna->up.nm_register;
+	hwna->up.nm_register = netmap_hw_register;
 	if (netmap_attach_common(&hwna->up)) {
 		free(hwna, M_DEVBUF);
 		goto fail;

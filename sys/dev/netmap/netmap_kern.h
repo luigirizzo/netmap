@@ -571,6 +571,8 @@ struct netmap_hw_adapter {	/* physical device */
 	struct net_device_ops nm_ndo;	// XXX linux only
 	struct ethtool_ops    nm_eto;	// XXX linux only
 	const struct ethtool_ops*   save_ethtool;
+
+	int (*nm_hw_register)(struct netmap_adapter *, int onoff);
 };
 
 /* Mitigation support. */
