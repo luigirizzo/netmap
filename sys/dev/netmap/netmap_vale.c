@@ -450,7 +450,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 }
 
 static int
-netmap_vp_bdg_ctl(struct netmap_adapter *na, uint16_t ringid, int attach)
+netmap_vp_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	struct nm_bridge *b = vpna->na_bdg;

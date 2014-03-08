@@ -500,7 +500,7 @@ long
 linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 #endif
 {
-	int ret;
+	int ret = 0;
 
         if (cmd == NIOCTXSYNC || cmd == NIOCRXSYNC) {
             data = 0;       /* no argument required here */
