@@ -197,12 +197,13 @@ void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi)
 /*
  * Wrapper used by the generic adapter layer to notify
  * the poller threads. Differently from netmap_rx_irq(), we check
- * only IFCAP_NETMAP instead of NAF_NATIVE_ON to enable the irq.
+ * only NAF_NETMAP_ON instead of NAF_NATIVE_ON to enable the irq.
  */
 static void
 netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 {
-	if (unlikely(!(ifp->if_capenable & IFCAP_NETMAP)))
+	struct netmap_adapter *na = NA(ifp);
+	if (unlikely(!na || !(na->na_flags & NAF_NETMAP_ON)))
 		return;
 
 	netmap_common_irq(ifp, q, work_done);
@@ -213,7 +214,6 @@ netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 static int
 generic_netmap_register(struct netmap_adapter *na, int enable)
 {
-	struct ifnet *ifp = na->ifp;
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
 	struct mbuf *m;
 	int error;
@@ -280,7 +280,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			D("netdev_rx_handler_register() failed (%d)", error);
 			goto register_handler;
 		}
-		ifp->if_capenable |= IFCAP_NETMAP;
+		na->na_flags |= NAF_NETMAP_ON;
 
 		/* Make netmap control the packet steering. */
 		netmap_catch_tx(gna, 1);
@@ -306,7 +306,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		   error handling code below. */
 		rtnl_lock();
 
-		ifp->if_capenable &= ~IFCAP_NETMAP;
+		na->na_flags &= ~NAF_NETMAP_ON;
 
 		/* Release packet steering control. */
 		netmap_catch_tx(gna, 0);
@@ -796,7 +796,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	na->nm_txsync = &generic_netmap_txsync;
 	na->nm_rxsync = &generic_netmap_rxsync;
 	na->nm_dtor = &generic_netmap_dtor;
-	/* when using generic, IFCAP_NETMAP is set so we force
+	/* when using generic, NAF_NETMAP_ON is set so we force
 	 * NAF_SKIP_INTR to use the regular interrupt handler
 	 */
 	na->na_flags = NAF_SKIP_INTR | NAF_HOST_RINGS;
