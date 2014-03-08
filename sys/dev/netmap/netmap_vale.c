@@ -2032,7 +2032,7 @@ netmap_bwrap_attach(struct ifnet *fake, struct ifnet *real)
 	struct netmap_adapter *na;
 	struct netmap_adapter *hwna = NA(real);
 	struct netmap_adapter *hostna;
-	int error;
+	int error = 0;
 
 
 	bna = malloc(sizeof(*bna), M_DEVBUF, M_NOWAIT | M_ZERO);
@@ -2057,7 +2057,13 @@ netmap_bwrap_attach(struct ifnet *fake, struct ifnet *real)
 	na->nm_krings_create = netmap_bwrap_krings_create;
 	na->nm_krings_delete = netmap_bwrap_krings_delete;
 	na->nm_notify = netmap_bwrap_notify;
-	na->nm_mem = hwna->nm_mem;
+	na->nm_mem = netmap_mem_private_new(NM_IFPNAME(na->ifp),
+			na->num_tx_rings, na->num_tx_desc,
+			na->num_rx_rings, na->num_rx_desc,
+			0, 0, &error);
+	na->na_flags |= NAF_MEM_OWNER;
+	if (na->nm_mem == NULL)
+		goto err_put;
 	na->na_private = na; /* prevent NIOCREGIF */
 	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
 
@@ -2087,11 +2093,17 @@ netmap_bwrap_attach(struct ifnet *fake, struct ifnet *real)
 
 	error = netmap_attach_common(na);
 	if (error) {
-		netmap_adapter_put(hwna);
-		free(bna, M_DEVBUF);
-		return error;
+		goto err_free;
 	}
 	return 0;
+
+err_free:
+	netmap_mem_private_delete(na->nm_mem);
+err_put:
+	netmap_adapter_put(hwna);
+	free(bna, M_DEVBUF);
+	return error;
+
 }
 
 
