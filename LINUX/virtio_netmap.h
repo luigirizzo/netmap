@@ -296,10 +296,10 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
-			void *addr = NMB(slot);
+			void *addr = NMB(na, slot);
                         int err;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 			/* Initialize the scatterlist, expose it to the hypervisor,
@@ -401,10 +401,10 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	if (nm_i != head) {
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
-			void *addr = NMB(slot);
+			void *addr = NMB(na, slot);
                         int err;
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				return netmap_ring_reinit(kring);
 
 			slot->flags &= ~NS_BUF_CHANGED;
@@ -474,7 +474,7 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
                         void *addr;
 
                         slot = &ring->slot[i];
-                        addr = NMB(slot);
+                        addr = NMB(na, slot);
                         sg_set_buf(sg, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {

@@ -144,7 +144,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = E1000_TX_DESC(*txr, nic_i);
@@ -152,7 +152,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 				nic_i == 0 || nic_i == report_frequency) ?
 				E1000_TXD_CMD_RS : 0;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
@@ -263,10 +263,10 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 			NM_E1K_RX_DESC_T *curr = E1000_RX_DESC_EXT(*rxr, nic_i);
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 			curr->NM_E1R_RX_BUFADDR = htole64(paddr); /* reload ext.desc. addr. */
 			if (slot->flags & NS_BUF_CHANGED) {
@@ -332,7 +332,7 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 		// XXX the skb check and cleanup can go away
 		struct e1000_buffer *bi = &rxr->buffer_info[i];
 		si = netmap_idx_n2k(&na->rx_rings[0], i);
-		PNMB(slot + si, &paddr);
+		PNMB(na, slot + si, &paddr);
 		if (bi->skb)
 			D("rx buf %d was set", i);
 		bi->skb = NULL; // XXX leak if set
@@ -349,7 +349,7 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 	slot = netmap_reset(na, NR_TX, 0, 0);
 	for (i = 0; i < na->num_tx_desc; i++) {
 		si = netmap_idx_n2k(&na->tx_rings[0], i);
-		PNMB(slot + si, &paddr);
+		PNMB(na, slot + si, &paddr);
 		// netmap_load_map(...)
 		E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
 	}

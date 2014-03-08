@@ -219,8 +219,6 @@ struct netmap_mem_d* netmap_mem_private_new(const char *name,
 	int* error);
 void	   netmap_mem_private_delete(struct netmap_mem_d *);
 
-#define NETMAP_BDG_BUF_SIZE(n)	((n)->pools[NETMAP_BUF_POOL]._objsize)
-
 uint32_t netmap_extra_alloc(struct netmap_adapter *, uint32_t *, uint32_t n);
 
 

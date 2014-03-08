@@ -113,7 +113,7 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = &adapter->tx_desc_base[nic_i];
@@ -249,7 +249,7 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			struct e1000_rx_desc *curr = &adapter->rx_desc_base[nic_i];
 			struct em_buffer *rxbuf = &adapter->rx_buffer_area[nic_i];

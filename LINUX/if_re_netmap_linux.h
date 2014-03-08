@@ -108,7 +108,7 @@ re_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			struct TxDesc *curr = &sc->TxDescArray[nic_i];
@@ -226,12 +226,12 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			struct RxDesc *curr = &sc->RxDescArray[nic_i];
 			uint32_t flags = NETMAP_BUF_SIZE | DescOwn;
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (nic_i == lim)	/* mark end of ring */
@@ -285,7 +285,7 @@ re_netmap_tx_init(struct SOFTC_T *sc)
 	/* l points in the netmap ring, i points in the NIC ring */
 	for (i = 0; i < na->num_tx_desc; i++) {
 		l = netmap_idx_n2k(&na->tx_rings[0], i);
-		PNMB(slot + l, &paddr);
+		PNMB(na, slot + l, &paddr);
 		desc[i].addr = htole64(paddr);
 	}
 	return 1;
@@ -317,7 +317,7 @@ re_netmap_rx_init(struct SOFTC_T *sc)
 	lim = na->num_rx_desc /* - 1 */ - nm_kr_rxspace(&na->rx_rings[0]);
 	for (i = 0; i < na->num_rx_desc; i++) {
 		l = netmap_idx_n2k(&na->rx_rings[0], i);
-		PNMB(slot + l, &paddr);
+		PNMB(na, slot + l, &paddr);
 		cmdstat = NETMAP_BUF_SIZE;
 		if (i == na->num_rx_desc - 1)
 			cmdstat |= RingEnd;

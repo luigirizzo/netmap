@@ -132,7 +132,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			union e1000_adv_tx_desc *curr =
@@ -141,7 +141,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 				nic_i == 0 || nic_i == report_frequency) ?
 				E1000_TXD_CMD_RS : 0;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
@@ -257,10 +257,10 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 			union e1000_adv_rx_desc *curr = E1000_RX_DESC_ADV(*rxr, nic_i);
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
@@ -314,7 +314,7 @@ igb_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	for (i = 0; i < na->num_tx_desc; i++) {
 		union e1000_adv_tx_desc *tx_desc;
 		si = netmap_idx_n2k(&na->tx_rings[ring_nr], i);
-		addr = PNMB(slot + si, &paddr);
+		addr = PNMB(na, slot + si, &paddr);
 		tx_desc = E1000_TX_DESC_ADV(*txr, i);
 		tx_desc->read.buffer_addr = htole64(paddr);
 		/* actually we don't care to init the rings here */
@@ -363,7 +363,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 		bi->skb = NULL; // XXX leak if set
 #endif /* useless */
 
-		PNMB(slot + si, &paddr);
+		PNMB(na, slot + si, &paddr);
 		rx_desc = E1000_RX_DESC_ADV(*rxr, i);
 		rx_desc->read.hdr_addr = 0;
 		rx_desc->read.pkt_addr = htole64(paddr);

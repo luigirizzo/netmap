@@ -494,6 +494,7 @@ struct netmap_adapter {
  	struct netmap_mem_d *nm_mem;
 	struct lut_entry *na_lut;
 	uint32_t na_lut_objtotal;	/* max buffer index */
+	uint32_t na_lut_objsize;	/* buffer size */
 
 	/* used internally. If non-null, the interface cannot be bound
 	 * from userspace
@@ -864,17 +865,17 @@ nm_rxsync_finalize(struct netmap_kring *kring)
 
 /* check/fix address and len in tx rings */
 #if 1 /* debug version */
-#define	NM_CHECK_ADDR_LEN(_a, _l)	do {				\
-	if (_a == netmap_buffer_base || _l > NETMAP_BUF_SIZE) {		\
+#define	NM_CHECK_ADDR_LEN(_na, _a, _l)	do {				\
+	if (_a == NETMAP_BUF_BASE(_na) || _l > NETMAP_BUF_SIZE(_na)) {	\
 		RD(5, "bad addr/len ring %d slot %d idx %d len %d",	\
-			kring->ring_id, nm_i, slot->buf_idx, len);		\
-		if (_l > NETMAP_BUF_SIZE)				\
-			_l = NETMAP_BUF_SIZE;				\
+			kring->ring_id, nm_i, slot->buf_idx, len);	\
+		if (_l > NETMAP_BUF_SIZE(_na))				\
+			_l = NETMAP_BUF_SIZE(_na);			\
 	} } while (0)
 #else /* no debug version */
-#define	NM_CHECK_ADDR_LEN(_a, _l)	do {				\
-		if (_l > NETMAP_BUF_SIZE)				\
-			_l = NETMAP_BUF_SIZE;				\
+#define	NM_CHECK_ADDR_LEN(_na, _a, _l)	do {				\
+		if (_l > NETMAP_BUF_SIZE(_na))				\
+			_l = NETMAP_BUF_SIZE(_na);			\
 	} while (0)
 #endif
 
@@ -996,12 +997,10 @@ int netmap_adapter_put(struct netmap_adapter *na);
 /*
  * module variables
  */
-extern u_int netmap_buf_size;
-#define NETMAP_BUF_SIZE	netmap_buf_size	// XXX remove
+#define NETMAP_BUF_BASE(na)	((na)->na_lut[0].vaddr)
+#define NETMAP_BUF_SIZE(na)	((na)->na_lut_objsize)
 extern int netmap_mitigate;	// XXX not really used
 extern int netmap_no_pendintr;
-extern u_int netmap_total_buffers;	// global allocator
-extern char *netmap_buffer_base;	// global allocator
 extern int netmap_verbose;	// XXX debugging
 enum {                                  /* verbose flags */
 	NM_VERB_ON = 1,                 /* generic verbose */
@@ -1171,40 +1170,32 @@ struct lut_entry {
 };
 
 struct netmap_obj_pool;
-extern struct lut_entry *netmap_buffer_lut;
-#define NMB_VA(i)	(netmap_buffer_lut[i].vaddr)
-#define NMB_PA(i)	(netmap_buffer_lut[i].paddr)
 
 /*
  * NMB return the virtual address of a buffer (buffer 0 on bad index)
  * PNMB also fills the physical address
  */
 static inline void *
-NMB(struct netmap_slot *slot)
-{
-	uint32_t i = slot->buf_idx;
-	return (unlikely(i >= netmap_total_buffers)) ?  NMB_VA(0) : NMB_VA(i);
-}
-
-static inline void *
-PNMB(struct netmap_slot *slot, uint64_t *pp)
-{
-	uint32_t i = slot->buf_idx;
-	void *ret = (i >= netmap_total_buffers) ? NMB_VA(0) : NMB_VA(i);
-
-	*pp = (i >= netmap_total_buffers) ? NMB_PA(0) : NMB_PA(i);
-	return ret;
-}
-
-/* Generic version of NMB, which uses device-specific memory. */
-static inline void *
-BDG_NMB(struct netmap_adapter *na, struct netmap_slot *slot)
+NMB(struct netmap_adapter *na, struct netmap_slot *slot)
 {
 	struct lut_entry *lut = na->na_lut;
 	uint32_t i = slot->buf_idx;
 	return (unlikely(i >= na->na_lut_objtotal)) ?
 		lut[0].vaddr : lut[i].vaddr;
 }
+
+static inline void *
+PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
+{
+	uint32_t i = slot->buf_idx;
+	struct lut_entry *lut = na->na_lut;
+	void *ret = (i >= na->na_lut_objtotal) ? lut[0].vaddr : lut[i].vaddr;
+
+	*pp = (i >= na->na_lut_objtotal) ? lut[0].paddr : lut[i].paddr;
+	return ret;
+}
+
+/* Generic version of NMB, which uses device-specific memory. */
 
 
 

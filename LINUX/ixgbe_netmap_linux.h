@@ -172,7 +172,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			union ixgbe_adv_tx_desc *curr = IXGBE_TX_DESC_ADV(txr, nic_i);
@@ -180,7 +180,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 				nic_i == 0 || nic_i == report_frequency) ?
 				IXGBE_TXD_CMD_RS : 0;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
@@ -350,10 +350,10 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			union ixgbe_adv_rx_desc *curr = IXGBE_RX_DESC_ADV(rxr, nic_i);
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
@@ -415,7 +415,7 @@ ixgbe_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	for (j = 0; j < na->num_tx_desc; j++) {
 		int sj = netmap_idx_n2k(&na->tx_rings[ring_nr], j);
 		uint64_t paddr;
-		void *addr = PNMB(slot + sj, &paddr);
+		void *addr = PNMB(na, slot + sj, &paddr);
 	}
 #endif
 	return 1;
@@ -465,7 +465,7 @@ ixgbe_netmap_configure_rx_ring(struct SOFTC_T *adapter, int ring_nr)
 		 */
 		int si = netmap_idx_n2k(&na->rx_rings[ring_nr], i);
 		uint64_t paddr;
-		PNMB(slot + si, &paddr);
+		PNMB(na, slot + si, &paddr);
 		// netmap_load_map(rxr->ptag, rxbuf->pmap, addr);
 		/* Update descriptor */
 		IXGBE_RX_DESC_ADV(ring, i)->read.pkt_addr = htole64(paddr);

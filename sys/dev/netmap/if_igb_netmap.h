@@ -115,7 +115,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			union e1000_adv_tx_desc *curr =
@@ -251,7 +251,7 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			union e1000_adv_rx_desc *curr = &rxr->rx_base[nic_i];
 			struct igb_rx_buf *rxbuf = &rxr->rx_buffers[nic_i];

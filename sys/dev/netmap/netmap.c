@@ -867,13 +867,13 @@ netmap_grab_packets(struct netmap_kring *kring, struct mbq *q, int force)
 
 		if ((slot->flags & NS_FORWARD) == 0 && !force)
 			continue;
-		if (slot->len < 14 || slot->len > NETMAP_BDG_BUF_SIZE(na->nm_mem)) {
+		if (slot->len < 14 || slot->len > NETMAP_BUF_SIZE(na)) {
 			RD(5, "bad pkt at %d len %d", n, slot->len);
 			continue;
 		}
 		slot->flags &= ~NS_FORWARD; // XXX needed ?
 		/* XXX TODO: adapt to the case of a multisegment packet */
-		m = m_devget(BDG_NMB(na, slot), slot->len, 0, na->ifp, NULL);
+		m = m_devget(NMB(na, slot), slot->len, 0, na->ifp, NULL);
 
 		if (m == NULL)
 			break;
@@ -1009,10 +1009,10 @@ netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwai
 			int len = MBUF_LEN(m);
 			struct netmap_slot *slot = &ring->slot[nm_i];
 
-			m_copydata(m, 0, len, BDG_NMB(na, slot));
+			m_copydata(m, 0, len, NMB(na, slot));
 			ND("nm %d len %d", nm_i, len);
 			if (netmap_verbose)
-                                D("%s", nm_dump_buf(BDG_NMB(na, slot),len, 128, NULL));
+                                D("%s", nm_dump_buf(NMB(na, slot),len, 128, NULL));
 
 			slot->len = len;
 			slot->flags = kring->nkr_slot_flags;
@@ -1414,7 +1414,7 @@ netmap_ring_reinit(struct netmap_kring *kring)
 			RD(5, "bad index at slot %d idx %d len %d ", i, idx, len);
 			ring->slot[i].buf_idx = 0;
 			ring->slot[i].len = 0;
-		} else if (len > NETMAP_BDG_BUF_SIZE(kring->na->nm_mem)) {
+		} else if (len > NETMAP_BUF_SIZE(kring->na)) {
 			ring->slot[i].len = 0;
 			RD(5, "bad len at slot %d idx %d len %d", i, idx, len);
 		}
@@ -1569,6 +1569,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		na->na_lut = na->nm_mem->pools[NETMAP_BUF_POOL].lut;
 		ND("%p->na_lut == %p", na, na->na_lut);
 		na->na_lut_objtotal = na->nm_mem->pools[NETMAP_BUF_POOL].objtotal;
+		na->na_lut_objsize = na->nm_mem->pools[NETMAP_BUF_POOL]._objsize;
 		error = na->nm_register(na, 1); /* mode on */
 		if (error) {
 			netmap_do_unregif(priv, nifp);
@@ -2374,9 +2375,9 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	q = &kring->rx_queue;
 
 	// XXX reconsider long packets if we handle fragments
-	if (len > NETMAP_BDG_BUF_SIZE(na->nm_mem)) { /* too long for us */
+	if (len > NETMAP_BUF_SIZE(na)) { /* too long for us */
 		D("%s from_host, drop packet size %d > %d", NM_IFPNAME(ifp),
-			len, NETMAP_BDG_BUF_SIZE(na->nm_mem));
+			len, NETMAP_BUF_SIZE(na));
 		goto done;
 	}
 

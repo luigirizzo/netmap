@@ -856,7 +856,7 @@ netmap_bdg_ctl(struct nmreq *nmr, bdg_lookup_fn_t func)
 			vpna = (struct netmap_vp_adapter *)na;
 			vpna->virt_hdr_len = nmr->nr_arg1;
 			if (vpna->virt_hdr_len)
-				vpna->mfs = NETMAP_BDG_BUF_SIZE(na->nm_mem);
+				vpna->mfs = NETMAP_BUF_SIZE(na);
 			D("Using vnet_hdr_len %d for %p", vpna->virt_hdr_len, vpna);
 			netmap_adapter_put(na);
 		}
@@ -960,7 +960,7 @@ nm_bdg_preflush(struct netmap_kring *kring, u_int end)
 		/* this slot goes into a list so initialize the link field */
 		ft[ft_i].ft_next = NM_FT_NULL;
 		buf = ft[ft_i].ft_buf = (slot->flags & NS_INDIRECT) ?
-			(void *)(uintptr_t)slot->ptr : BDG_NMB(&na->up, slot);
+			(void *)(uintptr_t)slot->ptr : NMB(&na->up, slot);
 		__builtin_prefetch(buf);
 		++ft_i;
 		if (slot->flags & NS_MOREFRAG) {
@@ -1406,7 +1406,7 @@ retry:
 					size_t copy_len = ft_p->ft_len, dst_len = copy_len;
 
 					slot = &ring->slot[j];
-					dst = BDG_NMB(&dst_na->up, slot);
+					dst = NMB(&dst_na->up, slot);
 
 					ND("send [%d] %d(%d) bytes at %s:%d",
 							i, (int)copy_len, (int)dst_len,
@@ -1560,9 +1560,9 @@ netmap_vp_rxsync_locked(struct netmap_kring *kring, int flags)
 		/* consistency check, but nothing really important here */
 		for (n = 0; likely(nm_i != head); n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
-			void *addr = BDG_NMB(na, slot);
+			void *addr = NMB(na, slot);
 
-			if (addr == netmap_buffer_base) { /* bad buf */
+			if (addr == NETMAP_BUF_BASE(kring->na)) { /* bad buf */
 				D("bad buffer index %d, ignore ?",
 					slot->buf_idx);
 			}
@@ -1841,10 +1841,12 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 
 		hwna->na_lut = na->na_lut;
 		hwna->na_lut_objtotal = na->na_lut_objtotal;
+		hwna->na_lut_objsize = na->na_lut_objsize;
 
 		if (hostna->na_bdg) {
 			hostna->up.na_lut = na->na_lut;
 			hostna->up.na_lut_objtotal = na->na_lut_objtotal;
+			hostna->up.na_lut_objsize = na->na_lut_objsize;
 		}
 
 		/* cross-link the netmap rings
@@ -1876,6 +1878,7 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 		hwna->nm_notify = bna->save_notify;
 		hwna->na_lut = NULL;
 		hwna->na_lut_objtotal = 0;
+		hwna->na_lut_objsize = 0;
 	}
 
 	return 0;

@@ -193,7 +193,6 @@ void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi)
 
 
 /* =============== GENERIC NETMAP ADAPTER SUPPORT ================= */
-#define GENERIC_BUF_SIZE        netmap_buf_size    /* Size of the mbufs in the Tx pool. */
 
 /*
  * Wrapper used by the generic adapter layer to notify
@@ -265,7 +264,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			for (i=0; i<na->num_tx_desc; i++)
 				na->tx_rings[r].tx_pool[i] = NULL;
 			for (i=0; i<na->num_tx_desc; i++) {
-				m = netmap_get_mbuf(GENERIC_BUF_SIZE);
+				m = netmap_get_mbuf(NETMAP_BUF_SIZE(na));
 				if (!m) {
 					D("tx_pool[%d] allocation failed", i);
 					error = ENOMEM;
@@ -413,7 +412,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring)
 
 		if (unlikely(m == NULL)) {
 			/* this is done, try to replenish the entry */
-			tx_pool[nm_i] = m = netmap_get_mbuf(GENERIC_BUF_SIZE);
+			tx_pool[nm_i] = m = netmap_get_mbuf(NETMAP_BUF_SIZE(kring->na));
 			if (unlikely(m == NULL)) {
 				D("mbuf allocation failed, XXX error");
 				// XXX how do we proceed ? break ?
@@ -527,19 +526,19 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 		while (nm_i != head) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
-			void *addr = NMB(slot);
+			void *addr = NMB(na, slot);
 
 			/* device-specific */
 			struct mbuf *m;
 			int tx_ret;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			/* Tale a mbuf from the tx pool and copy in the user packet. */
 			m = kring->tx_pool[nm_i];
 			if (unlikely(!m)) {
 				RD(5, "This should never happen");
-				kring->tx_pool[nm_i] = m = netmap_get_mbuf(GENERIC_BUF_SIZE);
+				kring->tx_pool[nm_i] = m = netmap_get_mbuf(NETMAP_BUF_SIZE(na));
 				if (unlikely(m == NULL)) {
 					D("mbuf allocation failed");
 					break;
@@ -663,6 +662,7 @@ static int
 generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_ring *ring = kring->ring;
+	struct netmap_adapter *na = kring->na;
 	u_int nm_i;	/* index into the netmap ring */ //j,
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
@@ -685,11 +685,11 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		nm_i = kring->nr_hwtail; /* first empty slot in the receive ring */
 		for (n = 0; nm_i != stop_i; n++) {
 			int len;
-			void *addr = NMB(&ring->slot[nm_i]);
+			void *addr = NMB(na, &ring->slot[nm_i]);
 			struct mbuf *m;
 
 			/* we only check the address here on generic rx rings */
-			if (addr == netmap_buffer_base) { /* Bad buffer */
+			if (addr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
 				return netmap_ring_reinit(kring);
 			}
 			/*

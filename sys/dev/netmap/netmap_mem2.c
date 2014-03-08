@@ -143,9 +143,6 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 
 struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
 
-// XXX logically belongs to nm_mem
-struct lut_entry *netmap_buffer_lut;	/* exported */
-
 /* blueprint for the private memory allocators */
 static int netmap_mem_private_config(struct netmap_mem_d *nmd);
 static int netmap_mem_private_finalize(struct netmap_mem_d *nmd);
@@ -471,12 +468,15 @@ netmap_obj_free_va(struct netmap_obj_pool *p, void *vaddr)
 	    vaddr, p->name);
 }
 
+#define netmap_mem_bufsize(n)	\
+	((n)->pools[NETMAP_BUF_POOL]._objsize)
+
 #define netmap_if_malloc(n, len)	netmap_obj_malloc(&(n)->pools[NETMAP_IF_POOL], len, NULL, NULL)
 #define netmap_if_free(n, v)		netmap_obj_free_va(&(n)->pools[NETMAP_IF_POOL], (v))
 #define netmap_ring_malloc(n, len)	netmap_obj_malloc(&(n)->pools[NETMAP_RING_POOL], len, NULL, NULL)
 #define netmap_ring_free(n, v)		netmap_obj_free_va(&(n)->pools[NETMAP_RING_POOL], (v))
 #define netmap_buf_malloc(n, _pos, _index)			\
-	netmap_obj_malloc(&(n)->pools[NETMAP_BUF_POOL], NETMAP_BDG_BUF_SIZE(n), _pos, _index)
+	netmap_obj_malloc(&(n)->pools[NETMAP_BUF_POOL], netmap_mem_bufsize(n), _pos, _index)
 
 
 #if 0 // XXX unused
@@ -1091,13 +1091,6 @@ netmap_mem_global_finalize(struct netmap_mem_d *nmd)
 	if (netmap_mem_finalize_all(nmd))
 		goto out;
 
-	/* backward compatibility */
-	netmap_buf_size = nmd->pools[NETMAP_BUF_POOL]._objsize;
-	netmap_total_buffers = nmd->pools[NETMAP_BUF_POOL].objtotal;
-
-	netmap_buffer_lut = nmd->pools[NETMAP_BUF_POOL].lut;
-	netmap_buffer_base = nmd->pools[NETMAP_BUF_POOL].lut[0].vaddr;
-
 	nmd->lasterr = 0;
 
 out:
@@ -1198,7 +1191,7 @@ netmap_mem_rings_create(struct netmap_adapter *na)
 		ring->cur = kring->rcur;
 		ring->tail = kring->rtail;
 		*(uint16_t *)(uintptr_t)&ring->nr_buf_size =
-			NETMAP_BDG_BUF_SIZE(na->nm_mem);
+			netmap_mem_bufsize(na->nm_mem);
 		ND("%s h %d c %d t %d", kring->name,
 			ring->head, ring->cur, ring->tail);
 		ND("initializing slots for txring");
@@ -1241,7 +1234,7 @@ netmap_mem_rings_create(struct netmap_adapter *na)
 		ring->cur = kring->rcur;
 		ring->tail = kring->rtail;
 		*(int *)(uintptr_t)&ring->nr_buf_size =
-			NETMAP_BDG_BUF_SIZE(na->nm_mem);
+			netmap_mem_bufsize(na->nm_mem);
 		ND("%s h %d c %d t %d", kring->name,
 			ring->head, ring->cur, ring->tail);
 		ND("initializing slots for rxring %p", ring);

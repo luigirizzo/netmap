@@ -62,7 +62,7 @@ nfe_netmap_init_buffers(struct nfe_softc *sc)
 	n = NFE_TX_RING_COUNT;
 	for (i = 0; i < n; i++) {
 		l = netmap_idx_n2k(&na->tx_rings[0], i);
-		addr = PNMB(slot + l, &paddr);
+		addr = PNMB(na, slot + l, &paddr);
 		netmap_reload_map(sc->txq.tx_data_tag,
 		    sc->txq.data[l].tx_data_map, addr);
 		slot[l].flags = 0;
@@ -91,7 +91,7 @@ nfe_netmap_init_buffers(struct nfe_softc *sc)
 	for (i = 0; i < n; i++) {
 		uint16_t flags;
 		l = netmap_idx_n2k(&na->rx_rings[0], i);
-		addr = PNMB(slot + l, &paddr);
+		addr = PNMB(na, slot + l, &paddr);
 		flags = (i < max_avail) ? NFE_RX_READY : 0;
 		if (sc->nfe_flags & NFE_40BIT_ADDR) {
 			desc64 = &sc->rxq.desc64[l];
@@ -176,7 +176,7 @@ nfe_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			NM_CHECK_ADDR_LEN(addr, len);
 
@@ -322,7 +322,7 @@ nfe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			if (addr == netmap_buffer_base) /* bad buf */
 				goto ring_reset;

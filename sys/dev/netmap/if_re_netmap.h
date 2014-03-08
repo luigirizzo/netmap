@@ -96,7 +96,7 @@ re_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			struct rl_desc *desc = &sc->rl_ldata.rl_tx_list[nic_i];
@@ -240,7 +240,7 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			struct rl_desc *desc = &sc->rl_ldata.rl_rx_list[nic_i];
 			int cmd = NETMAP_BUF_SIZE | RL_RDESC_CMD_OWN;
@@ -313,7 +313,7 @@ re_netmap_tx_init(struct rl_softc *sc)
 	for (i = 0; i < n; i++) {
 		uint64_t paddr;
 		int l = netmap_idx_n2k(&na->tx_rings[0], i);
-		void *addr = PNMB(slot + l, &paddr);
+		void *addr = PNMB(na, slot + l, &paddr);
 
 		desc[i].rl_bufaddr_lo = htole32(RL_ADDR_LO(paddr));
 		desc[i].rl_bufaddr_hi = htole32(RL_ADDR_HI(paddr));
@@ -344,7 +344,7 @@ re_netmap_rx_init(struct rl_softc *sc)
 		uint64_t paddr;
 		uint32_t nm_i = netmap_idx_n2k(&na->rx_rings[0], nic_i);
 
-		addr = PNMB(slot + nm_i, &paddr);
+		addr = PNMB(na, slot + nm_i, &paddr);
 
 		netmap_reload_map(sc->rl_ldata.rl_rx_mtag,
 		    sc->rl_ldata.rl_rx_desc[nic_i].rx_dmamap, addr);

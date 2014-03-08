@@ -767,7 +767,7 @@ static int netmap_common_sendmsg(struct netmap_adapter *na, struct msghdr *m,
                 return 0;
             }
 
-            dst = BDG_NMB(na, &ring->slot[i]);
+            dst = NMB(na, &ring->slot[i]);
 
             ring->slot[i].len = nm_frag_size;
             ring->slot[i].flags = NS_MOREFRAG;
@@ -905,7 +905,7 @@ static int netmap_common_recvmsg(struct netmap_adapter *na,
 	morefrag = (ring->slot[i].flags & NS_MOREFRAG);
 	nm_frag_ofs = 0;
 	nm_frag_size = ring->slot[i].len;
-	src = BDG_NMB(na, &ring->slot[i]);
+	src = NMB(na, &ring->slot[i]);
         if (unlikely(++i == ring->num_slots))
             i = 0;
         avail--;
@@ -940,7 +940,7 @@ static int netmap_common_recvmsg(struct netmap_adapter *na,
 			morefrag = (ring->slot[i].flags & NS_MOREFRAG);
 			nm_frag_ofs = 0;
 			nm_frag_size = ring->slot[i].len;
-			src = BDG_NMB(na, &ring->slot[i]);
+			src = NMB(na, &ring->slot[i]);
 			/* Take the next slot. */
                         if (unlikely(++i == ring->num_slots))
                             i = 0;
@@ -1258,11 +1258,7 @@ EXPORT_SYMBOL(netmap_detach);		/* driver detach routines */
 EXPORT_SYMBOL(nm_txsync_prologue);	/* txsync support */
 EXPORT_SYMBOL(nm_rxsync_prologue);	/* rxsync support */
 EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */
-EXPORT_SYMBOL(netmap_buffer_lut);
-EXPORT_SYMBOL(netmap_total_buffers);	/* index check */
-EXPORT_SYMBOL(netmap_buffer_base);
 EXPORT_SYMBOL(netmap_reset);		/* ring init routines */
-EXPORT_SYMBOL(netmap_buf_size);
 EXPORT_SYMBOL(netmap_rx_irq);	        /* default irq handler */
 EXPORT_SYMBOL(netmap_no_pendintr);	/* XXX mitigation - should go away */
 #ifdef WITH_VALE

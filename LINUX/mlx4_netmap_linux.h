@@ -257,7 +257,7 @@ mlx4_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			uint32_t l = txr->prod & txr->size_mask;
@@ -507,11 +507,11 @@ mlx4_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 			/* collect per-slot info, with similar validations
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			struct mlx4_en_rx_desc *rx_desc = rxr->buf + (nic_i * rxr->stride);
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
@@ -650,7 +650,7 @@ mlx4_netmap_rx_config(struct SOFTC_T *priv, int ring_nr)
 		uint64_t paddr;
 		struct mlx4_en_rx_desc *rx_desc = rxr->buf + (i * rxr->stride);
 
-		PNMB(slot + i, &paddr);
+		PNMB(na, slot + i, &paddr);
 
 		// see mlx4_en_prepare_rx_desc() and mlx4_en_alloc_frag()
 		rx_desc->data[0].addr = cpu_to_be64(paddr);
