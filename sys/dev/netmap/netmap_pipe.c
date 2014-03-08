@@ -125,7 +125,7 @@ void
 netmap_pipe_dealloc(struct netmap_adapter *na)
 {
 	if (na->na_pipes) {
-		ND("freeing pipes for %s", NM_IFPNAME(na->ifp));
+		ND("freeing pipes for %s", na->name);
 		free(na->na_pipes, M_DEVBUF);
 		na->na_pipes = NULL;
 		na->na_max_pipes = 0;
@@ -154,7 +154,7 @@ static int
 netmap_pipe_add(struct netmap_adapter *parent, struct netmap_pipe_adapter *na)
 {
 	if (parent->na_next_pipe >= parent->na_max_pipes) {
-		D("%s: no space left for pipes", NM_IFPNAME(parent->ifp));
+		D("%s: no space left for pipes", parent->name);
 		return ENOMEM;
 	}
 
@@ -422,12 +422,11 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_pipe_adapter *pna =
 		(struct netmap_pipe_adapter *)na;
-	struct ifnet *ifp = na->ifp;
 	ND("%p: onoff %d", na, onoff);
 	if (onoff) {
-		ifp->if_capenable |= IFCAP_NETMAP;
+		na->na_flags |= NAF_NETMAP_ON;
 	} else {
-		ifp->if_capenable &= ~IFCAP_NETMAP;
+		na->na_flags &= ~NAF_NETMAP_ON;
 	}
 	if (pna->peer_ref) {
 		ND("%p: case 1.a or 2.a, nothing to do", na);
@@ -519,8 +518,6 @@ netmap_pipe_dtor(struct netmap_adapter *na)
 	if (pna->role == NR_REG_PIPE_MASTER) 
 		netmap_pipe_remove(pna->parent, pna);
 	netmap_adapter_put(pna->parent);
-	free(na->ifp, M_DEVBUF);
-	na->ifp = NULL;
 	pna->parent = NULL;
 }
 
@@ -530,7 +527,6 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	struct nmreq pnmr;
 	struct netmap_adapter *pna; /* parent adapter */
 	struct netmap_pipe_adapter *mna, *sna, *req;
-	struct ifnet *ifp, *ifp2;
 	u_int pipe_id;
 	int role = nmr->nr_flags & NR_REG_MASK;
 	int error;
@@ -553,7 +549,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		ND("parent lookup failed: %d", error);
 		return error;
 	}
-	ND("found parent: %s", NM_IFPNAME(pna->ifp));
+	ND("found parent: %s", na->name);
 
 	if (NETMAP_OWNED_BY_KERN(pna)) {
 		ND("parent busy");
@@ -588,19 +584,12 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
          * The endpoint we were asked for holds a reference to
          * the other one.
          */
-	ifp = malloc(sizeof(*ifp), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (!ifp) {
-		error = ENOMEM;
-		goto put_out;
-	}
-	strcpy(ifp->if_xname, NM_IFPNAME(pna->ifp));
-
 	mna = malloc(sizeof(*mna), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (mna == NULL) {
 		error = ENOMEM;
-		goto free_ifp;
+		goto put_out;
 	}
-	mna->up.ifp = ifp;
+	snprintf(mna->up.name, sizeof(mna->up.name), "%s{%d", pna->name, pipe_id);
 
 	mna->id = pipe_id;
 	mna->role = NR_REG_PIPE_MASTER;
@@ -633,21 +622,14 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		goto free_mna;
 
 	/* create the slave */
-	ifp2 = malloc(sizeof(*ifp), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (!ifp) {
-		error = ENOMEM;
-		goto free_mna;
-	}
-	strcpy(ifp2->if_xname, NM_IFPNAME(pna->ifp));
-
 	sna = malloc(sizeof(*mna), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (sna == NULL) {
 		error = ENOMEM;
-		goto free_ifp2;
+		goto free_mna;
 	}
 	/* most fields are the same, copy from master and then fix */
 	*sna = *mna;
-	sna->up.ifp = ifp2;
+	snprintf(sna->up.name, sizeof(sna->up.name), "%s}%d", pna->name, pipe_id);
 	sna->role = NR_REG_PIPE_SLAVE;
 	error = netmap_attach_common(&sna->up);
 	if (error)
@@ -693,12 +675,8 @@ found:
 
 free_sna:
 	free(sna, M_DEVBUF);
-free_ifp2:
-	free(ifp2, M_DEVBUF);
 free_mna:
 	free(mna, M_DEVBUF);
-free_ifp:
-	free(ifp, M_DEVBUF);
 put_out:
 	netmap_adapter_put(pna);
 	return error;
