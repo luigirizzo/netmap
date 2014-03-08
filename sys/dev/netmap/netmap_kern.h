@@ -794,6 +794,7 @@ int netmap_rx_irq(struct ifnet *, u_int, u_int *);
 #define netmap_tx_irq(_n, _q) netmap_rx_irq(_n, _q, NULL)
 void netmap_common_irq(struct ifnet *, u_int, u_int *work_done);
 
+void netmap_set_all_rings(struct netmap_adapter *, int stopped);
 void netmap_disable_all_rings(struct ifnet *);
 void netmap_enable_all_rings(struct ifnet *);
 void netmap_disable_ring(struct netmap_kring *kr);

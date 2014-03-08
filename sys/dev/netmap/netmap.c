@@ -270,7 +270,7 @@ netmap_disable_ring(struct netmap_kring *kr)
 }
 
 
-static void
+void
 netmap_set_all_rings(struct netmap_adapter *na, int stopped)
 {
 	int i;
