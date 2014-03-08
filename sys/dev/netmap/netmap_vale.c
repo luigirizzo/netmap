@@ -585,7 +585,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	const char *ifname;
 	struct ifnet *ifp;
 	int error = 0;
-	struct netmap_vp_adapter *vpna, *hostna;
+	struct netmap_vp_adapter *vpna, *hostna = NULL;
 	struct nm_bridge *b;
 	int i, j, cand = -1, cand2 = -1;
 	int needed;
