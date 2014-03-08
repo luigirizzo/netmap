@@ -1283,7 +1283,7 @@ netmap_mem_rings_delete(struct netmap_adapter *na)
  * the interface is in netmap mode.
  */
 struct netmap_if *
-netmap_mem_if_new(const char *ifname, struct netmap_adapter *na)
+netmap_mem_if_new(struct netmap_adapter *na)
 {
 	struct netmap_if *nifp;
 	ssize_t base; /* handy for relative offsets between rings and nifp */
@@ -1309,7 +1309,7 @@ netmap_mem_if_new(const char *ifname, struct netmap_adapter *na)
 	/* initialize base fields -- override const */
 	*(u_int *)(uintptr_t)&nifp->ni_tx_rings = na->num_tx_rings;
 	*(u_int *)(uintptr_t)&nifp->ni_rx_rings = na->num_rx_rings;
-	strncpy(nifp->ni_name, ifname, (size_t)IFNAMSIZ);
+	strncpy(nifp->ni_name, na->name, (size_t)IFNAMSIZ);
 
 	/*
 	 * fill the slots for the rx and tx rings. They contain the offset

@@ -581,7 +581,7 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 
 
 static struct netmap_if*
-netmap_if_new(const char *ifname, struct netmap_adapter *na)
+netmap_if_new(struct netmap_adapter *na)
 {
 	struct netmap_if *nifp;
 
@@ -601,7 +601,7 @@ netmap_if_new(const char *ifname, struct netmap_adapter *na)
 
 final:
 
-	nifp = netmap_mem_if_new(ifname, na);
+	nifp = netmap_mem_if_new(na);
 	if (nifp == NULL)
 		goto cleanup;
 
@@ -1542,7 +1542,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		if (error)
 			goto out;
 	}
-	nifp = netmap_if_new(na->name, na);
+	nifp = netmap_if_new(na);
 	if (nifp == NULL) { /* allocation failed */
 		/* we should drop the allocator, but only
 		 * if we were the ones who grabbed it

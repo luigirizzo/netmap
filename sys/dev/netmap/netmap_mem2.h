@@ -207,7 +207,7 @@ int	   netmap_mem_finalize(struct netmap_mem_d *);
 int 	   netmap_mem_init(void);
 void 	   netmap_mem_fini(void);
 struct netmap_if *
-	   netmap_mem_if_new(const char *, struct netmap_adapter *);
+	   netmap_mem_if_new(struct netmap_adapter *);
 void 	   netmap_mem_if_delete(struct netmap_adapter *, struct netmap_if *);
 int	   netmap_mem_rings_create(struct netmap_adapter *);
 void	   netmap_mem_rings_delete(struct netmap_adapter *);
