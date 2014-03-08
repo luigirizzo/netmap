@@ -2200,7 +2200,7 @@ netmap_detach_common(struct netmap_adapter *na)
 	free(na, M_DEVBUF);
 }
 
-int
+static int
 netmap_hw_register(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_hw_adapter *hwna =
