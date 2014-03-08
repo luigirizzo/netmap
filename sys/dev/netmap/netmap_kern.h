@@ -362,6 +362,8 @@ tail->|                 |<-hwtail    |                 |<-hwlease
 
 enum txrx { NR_RX = 0, NR_TX = 1 };
 
+struct netmap_vp_adapter; // forward
+
 /*
  * The "struct netmap_adapter" extends the "struct adapter"
  * (or equivalent) device descriptor.
@@ -464,8 +466,6 @@ struct netmap_adapter {
 	 *	but for NIC/host ports attached to a switch (or vice-versa)
 	 *	we also need to invoke the 'txsync' code downstream.
 	 */
-
-	/* private cleanup */
 	void (*nm_dtor)(struct netmap_adapter *);
 
 	int (*nm_register)(struct netmap_adapter *, int onoff);
@@ -481,10 +481,26 @@ struct netmap_adapter {
 	void (*nm_krings_delete)(struct netmap_adapter *);
 	int (*nm_notify)(struct netmap_adapter *,
 		u_int ring, enum txrx, int flags);
-	int (*nm_bdg_ctl)(struct netmap_adapter *, struct nmreq *, int);
-	int (*nm_bdg_attach)(struct netmap_adapter *,
-		struct netmap_adapter **, struct netmap_adapter **);
 #define NAF_DISABLE_NOTIFY 8
+
+#ifdef WITH_VALE
+	/*
+	 * nm_bdg_attach() converts this adapter to a netmap_vp_adapter,
+	 *      suitable for attaching to a VALE switch. If this adapter
+	 *      is already a VALE port, this is simply a cast; otherwise,
+	 *      this may require the creation of netmap_bwrap_adapter.
+	 *      If applicable, this callback also returns a second 
+	 *      netmap_vp_adapter that can be used to connect the 
+	 *      adapter host rings to the switch.
+	 *
+	 * nm_bdg_ctl() is called on the actual attach/detach to/from
+	 *      to/from the switch, to perform adapter-specific 
+	 *      initializations
+	 */
+	int (*nm_bdg_attach)(struct netmap_adapter *,
+		struct netmap_vp_adapter **, struct netmap_vp_adapter **);
+	int (*nm_bdg_ctl)(struct netmap_adapter *, struct nmreq *, int);
+#endif
 
 	/* standard refcount to control the lifetime of the adapter
 	 * (it should be equal to the lifetime of the corresponding ifp)
@@ -660,7 +676,7 @@ struct netmap_bwrap_adapter {
 	struct netmap_priv_d *na_kpriv;
 };
 int netmap_bwrap_attach(struct netmap_adapter *,
-		struct netmap_adapter **, struct netmap_adapter **);
+		struct netmap_vp_adapter **, struct netmap_vp_adapter **);
 
 
 #endif /* WITH_VALE */

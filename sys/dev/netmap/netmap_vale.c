@@ -585,8 +585,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	const char *ifname;
 	struct ifnet *ifp;
 	int error = 0;
-	struct netmap_adapter *ret, *host;
-	struct netmap_vp_adapter *vpna;
+	struct netmap_vp_adapter *vpna, *hostna;
 	struct nm_bridge *b;
 	int i, j, cand = -1, cand2 = -1;
 	int needed;
@@ -644,8 +643,6 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	ND("+++ bridge %s port %s used %d avail %d %d",
 		b->bdg_basename, ifname, b->bdg_active_ports, cand, cand2);
 
-	ret = host = NULL;
-
 	/*
 	 * try see if there is a matching NIC with this name
 	 * (after the bridge's name)
@@ -679,7 +676,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		/* shortcut - we can skip get_hw_na(),
 		 * ownership check and nm_bdg_attach()
 		 */
-		ret = NA(ifp);
+		vpna = (struct netmap_vp_adapter *)NA(ifp);
 	} else {
 		struct netmap_adapter *hw;
 
@@ -688,14 +685,13 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 			goto out;
 
 		/* host adapter might not be created */
-		error = hw->nm_bdg_attach(hw, &ret, &host);
+		error = hw->nm_bdg_attach(hw, &vpna, &hostna);
 		if (error)
 			goto out;
 		if_rele(ifp);
 		if (nmr->nr_arg1 != NETMAP_BDG_HOST)
-			host = NULL;
+			hostna = NULL;
 	}
-	vpna = (struct netmap_vp_adapter *)ret;
 
 	BDG_WLOCK(b);
 	vpna->bdg_port = cand;
@@ -704,9 +700,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	b->bdg_ports[cand] = vpna;
 	vpna->na_bdg = b;
 	b->bdg_active_ports++;
-	if (host != NULL) {
-		struct netmap_vp_adapter *hostna =
-			(struct netmap_vp_adapter *)host;
+	if (hostna != NULL) {
 		/* also bind the host stack to the bridge */
 		b->bdg_ports[cand2] = hostna;
 		hostna->bdg_port = cand2;
@@ -716,8 +710,8 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	}
 	ND("if %s refs %d", ifname, vpna->up.na_refcount);
 	BDG_WUNLOCK(b);
-	*na = ret;
-	netmap_adapter_get(ret);
+	*na = &vpna->up;
+	netmap_adapter_get(*na);
 	return 0;
 
 out:
@@ -780,7 +774,7 @@ nm_bdg_ctl_detach(struct nmreq *nmr)
 	}
 
 	if (na->nm_bdg_ctl)
-		error = na->nm_bdg_ctl(na, 0, 0);
+		error = na->nm_bdg_ctl(na, nmr, 0);
 
 	netmap_adapter_put(na);
 unlock_exit:
@@ -1700,14 +1694,14 @@ netmap_vp_rxsync(struct netmap_kring *kring, int flags)
 
 static int
 netmap_vp_bdg_attach(struct netmap_adapter *na,
-			struct netmap_adapter **vpna_p,
-			struct netmap_adapter **hostna_p)
+			struct netmap_vp_adapter **vpna_p,
+			struct netmap_vp_adapter **hostna_p)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 
 	if (vpna->na_bdg)
 		return EBUSY;
-	*vpna_p = na;
+	*vpna_p = vpna;
 	*hostna_p = NULL;
 	return 0;
 }
@@ -2186,8 +2180,8 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 /* attach a bridge wrapper to the 'real' device */
 int
 netmap_bwrap_attach(struct netmap_adapter *hwna,
-			struct netmap_adapter **ret_vp,
-			struct netmap_adapter **ret_host)
+			struct netmap_vp_adapter **ret_vp,
+			struct netmap_vp_adapter **ret_host)
 {
 	struct netmap_bwrap_adapter *bna;
 	struct netmap_adapter *na = NULL;
@@ -2272,8 +2266,8 @@ netmap_bwrap_attach(struct netmap_adapter *hwna,
 	if (error) {
 		goto err_free;
 	}
-	*ret_host = hostna;
-	*ret_vp = &bna->up.up;
+	*ret_vp = &bna->up;
+	*ret_host = &bna->host;
 	return 0;
 
 err_free:
