@@ -2114,6 +2114,9 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 	int error = 0;
 
 	if (attach) {
+		if (NETMAP_OWNED_BY_ANY(na)) {
+			return EBUSY;
+		}
 		if (bna->na_kpriv) {
 			/* nothing to do */
 			return 0;
