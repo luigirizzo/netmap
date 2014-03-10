@@ -402,6 +402,9 @@ struct netmap_adapter {
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
+#define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
+				  * cannot be registered from userspace
+				  */
 	int active_fds; /* number of user-space descriptors using this
 			 interface, which is equal to the number of
 			 struct netmap_if objs in the mapped region. */
@@ -518,9 +521,6 @@ struct netmap_adapter {
 	uint32_t na_lut_objtotal;	/* max buffer index */
 	uint32_t na_lut_objsize;	/* buffer size */
 
-	/* used internally. If non-null, the interface cannot be bound
-	 * from userspace
-	 */
 	void *na_private;
 
 #ifdef WITH_PIPES
@@ -539,9 +539,9 @@ struct netmap_adapter {
  * if the NIC is owned by a user, only users can share it.
  * Evaluation must be done under NMG_LOCK().
  */
-#define NETMAP_OWNED_BY_KERN(na)	(na->na_private)
+#define NETMAP_OWNED_BY_KERN(na)	((na)->na_flags & NAF_BUSY)
 #define NETMAP_OWNED_BY_ANY(na) \
-	(NETMAP_OWNED_BY_KERN(na) || (na->active_fds > 0))
+	(NETMAP_OWNED_BY_KERN(na) || ((na)->active_fds > 0))
 
 
 /*

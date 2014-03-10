@@ -1774,6 +1774,7 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 
 	hwna->na_private = NULL;
 	hwna->na_vp = hwna->na_hostvp = NULL;
+	hwna->na_flags &= ~NAF_BUSY;
 	netmap_adapter_put(hwna);
 
 }
@@ -2127,6 +2128,7 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 			return error;
 		}
 		bna->na_kpriv = npriv;
+		na->na_flags |= NAF_BUSY;
 	} else {
 		int last_instance;
 
@@ -2149,6 +2151,7 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 				netmap_bdg_detach_common(b, bna->up.bdg_port,
 				    (bh ? bna->host.bdg_port : -1));
 			}
+			na->na_flags &= ~NAF_BUSY;
 		}
 	}
 	return error;
@@ -2200,7 +2203,6 @@ netmap_bwrap_attach(struct netmap_adapter *hwna)
 	na->na_flags |= NAF_MEM_OWNER;
 	if (na->nm_mem == NULL)
 		goto err_put;
-	na->na_private = na; /* prevent NIOCREGIF */
 	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
 
 	bna->hwna = hwna;
@@ -2224,6 +2226,7 @@ netmap_bwrap_attach(struct netmap_adapter *hwna)
 		hostna->na_vp = &bna->up;
 		na->na_hostvp = hwna->na_hostvp =
 			hostna->na_hostvp = &bna->host;
+		hostna->na_flags = NAF_BUSY; /* prevent NIOCREGIF */
 	}
 
 	ND("%s<->%s txr %d txd %d rxr %d rxd %d",
@@ -2242,6 +2245,7 @@ netmap_bwrap_attach(struct netmap_adapter *hwna)
 	 * the following assignment has to be delayed until now
 	 */
 	na->ifp = hwna->ifp;
+	hwna->na_flags |= NAF_BUSY;
 	return 0;
 
 err_free:
