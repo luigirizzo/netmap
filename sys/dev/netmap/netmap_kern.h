@@ -485,21 +485,23 @@ struct netmap_adapter {
 
 #ifdef WITH_VALE
 	/*
-	 * nm_bdg_attach() converts this adapter to a netmap_vp_adapter,
-	 *      suitable for attaching to a VALE switch. If this adapter
-	 *      is already a VALE port, this is simply a cast; otherwise,
-	 *      this may require the creation of netmap_bwrap_adapter.
-	 *      If applicable, this callback also returns a second 
-	 *      netmap_vp_adapter that can be used to connect the 
-	 *      adapter host rings to the switch.
+	 * nm_bdg_attach() initializes the na_vp field to point
+	 *      to an adapter that can be attached to a VALE switch. If the
+	 *      current adapter is already a VALE port, na_vp is simply a cast;
+	 *      otherwise, na_vp points to a netmap_bwrap_adapter.
+	 *      If applicable, this callback also initializes na_hostvp,
+	 *      that can be used to connect the adapter host rings to the
+	 *      switch.
 	 *
 	 * nm_bdg_ctl() is called on the actual attach/detach to/from
 	 *      to/from the switch, to perform adapter-specific 
 	 *      initializations
 	 */
-	int (*nm_bdg_attach)(struct netmap_adapter *,
-		struct netmap_vp_adapter **, struct netmap_vp_adapter **);
+	int (*nm_bdg_attach)(struct netmap_adapter *);
 	int (*nm_bdg_ctl)(struct netmap_adapter *, struct nmreq *, int);
+
+	struct netmap_vp_adapter *na_vp;
+	struct netmap_vp_adapter *na_hostvp;
 #endif
 
 	/* standard refcount to control the lifetime of the adapter
@@ -679,8 +681,7 @@ struct netmap_bwrap_adapter {
 	 */
 	struct netmap_priv_d *na_kpriv;
 };
-int netmap_bwrap_attach(struct netmap_adapter *,
-		struct netmap_vp_adapter **, struct netmap_vp_adapter **);
+int netmap_bwrap_attach(struct netmap_adapter *);
 
 
 #endif /* WITH_VALE */

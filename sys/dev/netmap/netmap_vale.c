@@ -673,9 +673,11 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 			goto out;
 
 		/* host adapter might not be created */
-		error = hw->nm_bdg_attach(hw, &vpna, &hostna);
+		error = hw->nm_bdg_attach(hw);
 		if (error)
 			goto out;
+		vpna = hw->na_vp;
+		hostna = hw->na_hostvp;
 		if_rele(ifp);
 		if (nmr->nr_arg1 != NETMAP_BDG_HOST)
 			hostna = NULL;
@@ -1676,16 +1678,14 @@ netmap_vp_rxsync(struct netmap_kring *kring, int flags)
 
 
 static int
-netmap_vp_bdg_attach(struct netmap_adapter *na,
-			struct netmap_vp_adapter **vpna_p,
-			struct netmap_vp_adapter **hostna_p)
+netmap_vp_bdg_attach(struct netmap_adapter *na)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 
 	if (vpna->na_bdg)
 		return EBUSY;
-	*vpna_p = vpna;
-	*hostna_p = NULL;
+	na->na_vp = vpna;
+	na->na_hostvp = NULL;
 	return 0;
 }
 
@@ -1773,6 +1773,7 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	ND("na %p", na);
 
 	hwna->na_private = NULL;
+	hwna->na_vp = hwna->na_hostvp = NULL;
 	netmap_adapter_put(hwna);
 
 }
@@ -2156,9 +2157,7 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 
 /* attach a bridge wrapper to the 'real' device */
 int
-netmap_bwrap_attach(struct netmap_adapter *hwna,
-			struct netmap_vp_adapter **ret_vp,
-			struct netmap_vp_adapter **ret_host)
+netmap_bwrap_attach(struct netmap_adapter *hwna)
 {
 	struct netmap_bwrap_adapter *bna;
 	struct netmap_adapter *na = NULL;
@@ -2207,6 +2206,7 @@ netmap_bwrap_attach(struct netmap_adapter *hwna,
 	bna->hwna = hwna;
 	netmap_adapter_get(hwna);
 	hwna->na_private = bna; /* weak reference */
+	hwna->na_vp = &bna->up;
 	
 	if (hwna->na_flags & NAF_HOST_RINGS) {
 		na->na_flags |= NAF_HOST_RINGS;
@@ -2221,6 +2221,9 @@ netmap_bwrap_attach(struct netmap_adapter *hwna,
 		hostna->nm_notify = netmap_bwrap_host_notify;
 		hostna->nm_mem = na->nm_mem;
 		hostna->na_private = bna;
+		hostna->na_vp = &bna->up;
+		na->na_hostvp = hwna->na_hostvp =
+			hostna->na_hostvp = &bna->host;
 	}
 
 	ND("%s<->%s txr %d txd %d rxr %d rxd %d",
@@ -2239,13 +2242,12 @@ netmap_bwrap_attach(struct netmap_adapter *hwna,
 	 * the following assignment has to be delayed until now
 	 */
 	na->ifp = hwna->ifp;
-	*ret_vp = &bna->up;
-	*ret_host = &bna->host;
 	return 0;
 
 err_free:
 	netmap_mem_private_delete(na->nm_mem);
 err_put:
+	hwna->na_vp = hwna->na_hostvp = NULL;
 	netmap_adapter_put(hwna);
 	free(bna, M_DEVBUF);
 	return error;
