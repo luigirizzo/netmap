@@ -2232,6 +2232,13 @@ netmap_bwrap_attach(struct netmap_adapter *hwna,
 	if (error) {
 		goto err_free;
 	}
+	/* make bwrap ifp point to the real ifp
+	 * NOTE: netmap_attach_common() interprets a non-NULL na->ifp
+	 * as a request to make the ifp point to the na. Since we
+	 * do not want to change the na already pointed to by hwna->ifp,
+	 * the following assignment has to be delayed until now
+	 */
+	na->ifp = hwna->ifp;
 	*ret_vp = &bna->up;
 	*ret_host = &bna->host;
 	return 0;
