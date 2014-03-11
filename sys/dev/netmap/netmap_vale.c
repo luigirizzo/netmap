@@ -1771,6 +1771,15 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	struct netmap_adapter *hwna = bna->hwna;
 
 	ND("na %p", na);
+	/* drop reference to hwna->ifp. I
+	 * If we don't do this, netmap_detach_common(na)
+	 * will think it has set NA(na->ifp) to NULL
+	 */
+	na->ifp = NULL;
+	/* for safety, also drop the possible reference
+	 * in the hostna
+	 */
+	bna->host.up.ifp = NULL;
 
 	hwna->na_private = NULL;
 	hwna->na_vp = hwna->na_hostvp = NULL;
