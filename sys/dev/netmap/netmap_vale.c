@@ -224,6 +224,15 @@ struct nm_bridge {
 	struct nm_hash_ent ht[NM_BDG_HASH];
 };
 
+const char*
+netmap_bdg_name(struct netmap_vp_adapter *vp)
+{
+	struct nm_bridge *b = vp->na_bdg;
+	if (b == NULL)
+		return NULL;
+	return b->bdg_basename;
+}
+
 
 /*
  * XXX in principle nm_bridges could be created dynamically

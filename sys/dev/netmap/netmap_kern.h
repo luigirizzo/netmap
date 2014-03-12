@@ -800,6 +800,21 @@ void netmap_disable_all_rings(struct ifnet *);
 void netmap_enable_all_rings(struct ifnet *);
 void netmap_disable_ring(struct netmap_kring *kr);
 
+#ifdef WITH_VALE
+/* functions used by external modules to interface with VALE */
+#define netmap_vp_to_ifp(_vp)	((_vp)->up.ifp)
+#define netmap_ifp_to_vp(_ifp)	((_ifp)->na->na_vp)
+#define netmap_ifp_to_host_vp(_ifp) ((_ifp)->na->na_hostvp)
+#define netmap_bdg_idx(_vp)	((_vp)->bdg_port)
+const char *netmap_bdg_name(struct netmap_vp_adapter *);
+#else /* !WITH_VALE */
+#define netmap_vp_to_ifp(_vp)	NULL
+#define netmap_ifp_to_vp(_ifp)	NULL
+#define netmap_ifp_to_host_vp(_ifp) NULL
+#define netmap_bdg_idx(_vp)	-1
+#define netmap_bdg_name(_vp)	NULL
+#endif /* WITH_VALE */
+
 
 /* set/clear native flags and if_transmit/netdev_ops */
 static inline void
