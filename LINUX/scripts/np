@@ -267,6 +267,8 @@ function get-kernel()
 
 	[ -d $dst ] && { echo $dst; return; }
 
+	local v=$version
+
 	mkdir -p $dst
 
 	(
