@@ -903,7 +903,7 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 		}
 		break;
 
-	case NETMAP_BDG_REGOPS:
+	case NETMAP_BDG_REGOPS: /* XXX this should not be available from userspace */
 		/* register callbacks to the given bridge.
 		 * nmr->nr_name may be just bridge's name (including ':'
 		 * if it is not just NM_NAME).
