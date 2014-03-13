@@ -99,18 +99,6 @@ struct hrtimer {
 #define DEV_NETMAP
 #endif /* DEV_NETMAP */
 
-/*
- * IFCAP_NETMAP goes into net_device's priv_flags (if_capenable).
- * This was 16 bits up to linux 2.6.36, so we need a 16 bit value on older
- * platforms and tolerate the clash with IFF_DYNAMIC and IFF_BRIDGE_PORT.
- * For the 32-bit value, 0x100000 has no clashes until at least 3.5.1
- */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)
-#define IFCAP_NETMAP	0x8000
-#else
-#define IFCAP_NETMAP	0x200000
-#endif
-
 #elif defined (__APPLE__)
 
 #warning apple support is incomplete.

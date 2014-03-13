@@ -116,7 +116,7 @@ generic_timer_handler(struct hrtimer *t)
      */
     mit->mit_pending = 0;
     /* below is a variation of netmap_generic_irq */
-    if (mit->mit_na->ifp->if_capenable & IFCAP_NETMAP) {
+    if (mit->mit_na->na_flags & NAF_NETMAP_ON) {
         netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
         generic_rate(0, 0, 0, 0, 0, 1);
     }

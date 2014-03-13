@@ -218,13 +218,11 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		free_receive_bufs(vi);
 
 		/* enable netmap mode */
-		ifp->if_capenable |= IFCAP_NETMAP;
-                na->na_flags |= NAF_NATIVE_ON;
+                na->na_flags |= NAF_NETMAP_ON | NAF_NATIVE_ON;
 		na->if_transmit = (void *)ifp->netdev_ops;
 		ifp->netdev_ops = &hwna->nm_ndo;
 	} else {
-		ifp->if_capenable &= ~IFCAP_NETMAP;
-                na->na_flags &= ~NAF_NATIVE_ON;
+                na->na_flags &= ~(NAF_NATIVE_ON | NAF_NETMAP_ON);
 		ifp->netdev_ops = (void *)na->if_transmit;
 
 		/* Drain the RX virtqueues, otherwise the driver will
