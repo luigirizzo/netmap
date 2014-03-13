@@ -39,7 +39,7 @@ HOW TO BUILD THE CODE
 1. make sure you have kernel sources/headers matching your installed system
 
 2. do the following
-	make clean; make KSRC=/usr/src/linux-kernel-source-or-headers
+	make clean; make SRC=/usr/src/linux-source KSRC=/usr/src/linux-header
    this produces ./netmap_lin.ko and other kernel modules.
 
 3. to build sample applications, run
