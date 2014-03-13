@@ -133,6 +133,7 @@ nm_ring_space(struct netmap_ring *ring)
 #ifndef HAVE_NETMAP_WITH_LIBS
 #define HAVE_NETMAP_WITH_LIBS
 
+#include <stdio.h>
 #include <sys/time.h>
 #include <sys/mman.h>
 #include <string.h>	/* memset */
