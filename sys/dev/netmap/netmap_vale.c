@@ -1145,12 +1145,21 @@ u_int
 netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		const struct netmap_vp_adapter *na)
 {
-	char *buf = ft->ft_buf;
+	uint8_t *buf = ft->ft_buf;
 	u_int buf_len = ft->ft_len;
 	struct nm_hash_ent *ht = na->na_bdg->ht;
 	uint32_t sh, dh;
 	u_int dst, mysrc = na->bdg_port;
 	uint64_t smac, dmac;
+
+	if (buf_len == na->virt_hdr_len) {
+		ft++;
+		buf = ft->ft_buf;
+		buf_len = ft->ft_len;
+	} else {
+		buf += na->virt_hdr_len;
+		buf_len -= na->virt_hdr_len;
+	}
 
 	if (buf_len < 14) {
 		D("invalid buf length %d", buf_len);
@@ -1285,21 +1294,12 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		uint8_t dst_ring = ring_nr; /* default, same ring as origin */
 		uint16_t dst_port, d_i;
 		struct nm_bdg_q *d;
-		uint8_t *buf = ft[i].ft_buf;
-		u_int len = ft[i].ft_len;
 
 		ND("slot %d frags %d", i, ft[i].ft_frags);
 		/* Drop the packet if the virtio-net header is not into the first
 		   fragment nor at the very beginning of the second. */
-		if (unlikely(na->virt_hdr_len > len))
+		if (unlikely(na->virt_hdr_len > ft[i].ft_len))
 			continue;
-		if (len == na->virt_hdr_len) {
-			buf = ft[i+1].ft_buf;
-			len = ft[i+1].ft_len;
-		} else {
-			buf += na->virt_hdr_len;
-			len -= na->virt_hdr_len;
-		}
 		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
