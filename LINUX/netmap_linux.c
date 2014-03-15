@@ -1265,6 +1265,21 @@ static void linux_netmap_fini(void)
         netmap_fini();
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)
+int
+nm_vi_persist(const char *name, struct ifnet **ret)
+{
+	(void)name;
+	(void)ret;
+	return EOPNOTSUPP;
+}
+
+void
+nm_vi_detach(struct ifnet *ifp) {
+	(void)ifp;
+}
+#else
+
 static struct device_driver linux_dummy_drv = {.owner = THIS_MODULE};
 
 static int linux_nm_vi_open(struct net_device *netdev)
@@ -1352,6 +1367,7 @@ nm_vi_detach(struct ifnet *ifp)
 	unregister_netdev(ifp);
 	module_put(linux_dummy_drv.owner);
 }
+#endif /* kernel >= 3.6.0 */
 
 module_init(linux_netmap_init);
 module_exit(linux_netmap_fini);
