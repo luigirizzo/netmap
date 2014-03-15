@@ -501,31 +501,33 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 #endif
 {
 	int ret = 0;
-
-        if (cmd == NIOCTXSYNC || cmd == NIOCRXSYNC) {
-            data = 0;       /* no argument required here */
-        } else if (cmd == NIOCCONFIG) {
+	union {
 		struct nm_ifreq ifr;
+		struct nmreq nmr;
+	} arg;
+	size_t argsize = 0;
 
+	switch (cmd) {
+	case NIOCTXSYNC:
+	case NIOCRXSYNC:
+		break;
+	case NIOCCONFIG:
+		argsize = sizeof(arg.ifr);
+		break;
+	default:
+		argsize = sizeof(arg.nmr);
+		break;
+	}
+	if (argsize) {
 		if (!data)
 			return -EINVAL;
-		bzero(&ifr, sizeof(ifr));
-		if (copy_from_user(&ifr, (void *)data, sizeof(ifr) ) != 0)
-			return -EFAULT;
-		ret = netmap_ioctl(NULL, cmd, (caddr_t)&ifr, 0, (void *)file);
-		if (copy_to_user((void*)data, &ifr, sizeof(ifr) ) != 0)
-			return -EFAULT;
-	} else {
-		struct nmreq nmr;
-
-		bzero(&nmr, sizeof(nmr));
-		if (data && copy_from_user(&nmr, (void *)data, sizeof(nmr) )
-		    != 0)
-			return -EFAULT;
-		ret = netmap_ioctl(NULL, cmd, (caddr_t)&nmr, 0, (void *)file);
-		if (data && copy_to_user((void*)data, &nmr, sizeof(nmr) ) != 0)
+		bzero(&arg, argsize);
+		if (copy_from_user(&arg, (void *)data, argsize) != 0)
 			return -EFAULT;
 	}
+	ret = netmap_ioctl(NULL, cmd, (caddr_t)&arg, 0, (void *)file);
+	if (data && copy_to_user((void*)data, &arg, argsize) != 0)
+		return -EFAULT;
 	return -ret;
 }
 
