@@ -1,5 +1,5 @@
 diff --git a/igb/igb_main.c b/igb/igb_main.c
-index ced5444..fb7c766 100644
+index ced5444..b7c6cb4 100644
 --- a/igb/igb_main.c
 +++ b/igb/igb_main.c
 @@ -225,6 +225,10 @@ MODULE_DESCRIPTION("Intel(R) Gigabit Ethernet Network Driver");
@@ -88,7 +88,7 @@ index ced5444..fb7c766 100644
 +		 * supported in netmap mode */
 +		struct ifnet *ifp = adapter->netdev;
 +		struct netmap_adapter *na = NA(ifp);
-+		if (na && ifp->if_capenable & IFCAP_NETMAP) {
++		if (na && na->na_flags & NAF_NETMAP_ON) {
 +			srrctl &= ~(7 << 25); /* clear descriptor type */
 +			srrctl |= E1000_SRRCTL_DESCTYPE_ADV_ONEBUF;
 +			/* XXX we should set tail here */
