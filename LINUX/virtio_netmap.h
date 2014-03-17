@@ -103,10 +103,10 @@ static void free_receive_bufs(struct virtnet_info *vi);
 /* Before 3.8.0 virtio did not have multiple queues, and therefore
    it did not have per-queue data structures. We then abstract the
    way data structure are accessed, ignoring the queue indexes. */
-#define DECR_NUM(_vi, _i)		--(_vi)->num
-#define GET_RX_VQ(_vi, _i)		(_vi)->rvq
-#define GET_TX_VQ(_vi, _i)		(_vi)->svq
-#define VQ_FULL(_vq, _err)		(_err > 0)
+#define DECR_NUM(_vi, _i)		({ (void)(_i); --(_vi)->num; })
+#define GET_RX_VQ(_vi, _i)		({ (void)(_i); (_vi)->rvq; })
+#define GET_TX_VQ(_vi, _i)		({ (void)(_i); (_vi)->svq; })
+#define VQ_FULL(_vq, _err)		({ (void)(_vq); (_err) > 0; })
 
 static void give_pages(struct SOFTC_T *vi, struct page *page);
 static struct page *get_a_page(struct SOFTC_T *vi, gfp_t gfp_mask);
@@ -126,7 +126,7 @@ static void give_pages(struct receive_queue *rq, struct page *page);
 #define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
 #define GET_RX_VQ(_vi, _i)		(_vi)->rq[_i].vq
 #define GET_TX_VQ(_vi, _i)		(_vi)->sq[_i].vq
-#define VQ_FULL(_vq, _err)		((_vq)->num_free == 0)
+#define VQ_FULL(_vq, _err)		({ (void)(_err); (_vq)->num_free == 0; })
 
 #endif  /* >= 3.8.0 */
 
