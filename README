@@ -101,7 +101,7 @@ the netmap API on top of standard device drivers.
 
     You can omit KSRC if your kernel sources are in a standard place.
 
-  + if you use distribution packages, source may no contain headers (eg on
+  + if you use distribution packages, source may not contain headers (e.g., on
     debian systems). Use
 
         make SRC=/a/b/c/linux-sources-A.B/ KSRC=/a/b/c/linux-headers-A.B/
