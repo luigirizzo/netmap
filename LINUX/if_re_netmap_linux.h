@@ -114,7 +114,7 @@ re_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct TxDesc *curr = &sc->TxDescArray[nic_i];
 			uint32_t flags = slot->len | LastFrag | DescOwn | FirstFrag ;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (nic_i == lim)	/* mark end of ring */
 				flags |= RingEnd;
@@ -229,7 +229,7 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 			void *addr = PNMB(na, slot, &paddr);
 
 			struct RxDesc *curr = &sc->RxDescArray[nic_i];
-			uint32_t flags = NETMAP_BUF_SIZE | DescOwn;
+			uint32_t flags = NETMAP_BUF_SIZE(na) | DescOwn;
 
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
@@ -318,7 +318,7 @@ re_netmap_rx_init(struct SOFTC_T *sc)
 	for (i = 0; i < na->num_rx_desc; i++) {
 		l = netmap_idx_n2k(&na->rx_rings[0], i);
 		PNMB(na, slot + l, &paddr);
-		cmdstat = NETMAP_BUF_SIZE;
+		cmdstat = NETMAP_BUF_SIZE(na);
 		if (i == na->num_rx_desc - 1)
 			cmdstat |= RingEnd;
 		if (i < lim)
