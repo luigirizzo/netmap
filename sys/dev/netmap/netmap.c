@@ -1560,10 +1560,10 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		 * do not core lock because the race is harmless here,
 		 * there cannot be any traffic to netmap_transmit()
 		 */
-		na->na_lut = na->nm_mem->pools[NETMAP_BUF_POOL].lut;
+		na->na_lut = netmap_mem_get_lut(na->nm_mem);
 		ND("%p->na_lut == %p", na, na->na_lut);
-		na->na_lut_objtotal = na->nm_mem->pools[NETMAP_BUF_POOL].objtotal;
-		na->na_lut_objsize = na->nm_mem->pools[NETMAP_BUF_POOL]._objsize;
+		na->na_lut_objtotal = netmap_mem_get_buftotal(na->nm_mem);
+		na->na_lut_objsize = netmap_mem_get_bufsize(na->nm_mem);
 		error = na->nm_register(na, 1); /* mode on */
 		if (error) {
 			netmap_do_unregif(priv, nifp);
