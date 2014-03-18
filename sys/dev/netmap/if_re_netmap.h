@@ -103,7 +103,7 @@ re_netmap_txsync(struct netmap_kring *kring, int flags)
 			int cmd = slot->len | RL_TDESC_CMD_EOF |
 				RL_TDESC_CMD_OWN | RL_TDESC_CMD_SOF ;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (nic_i == lim)	/* mark end of ring */
 				cmd |= RL_TDESC_CMD_EOR;
@@ -112,7 +112,7 @@ re_netmap_txsync(struct netmap_kring *kring, int flags)
 				/* buffer has changed, reload map */
 				desc->rl_bufaddr_lo = htole32(RL_ADDR_LO(paddr));
 				desc->rl_bufaddr_hi = htole32(RL_ADDR_HI(paddr));
-				netmap_reload_map(sc->rl_ldata.rl_tx_mtag,
+				netmap_reload_map(na, sc->rl_ldata.rl_tx_mtag,
 					txd[nic_i].tx_dmamap, addr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
@@ -243,9 +243,9 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 			void *addr = PNMB(na, slot, &paddr);
 
 			struct rl_desc *desc = &sc->rl_ldata.rl_rx_list[nic_i];
-			int cmd = NETMAP_BUF_SIZE | RL_RDESC_CMD_OWN;
+			int cmd = NETMAP_BUF_SIZE(na) | RL_RDESC_CMD_OWN;
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (nic_i == lim)	/* mark end of ring */
@@ -255,7 +255,7 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 				/* buffer has changed, reload map */
 				desc->rl_bufaddr_lo = htole32(RL_ADDR_LO(paddr));
 				desc->rl_bufaddr_hi = htole32(RL_ADDR_HI(paddr));
-				netmap_reload_map(sc->rl_ldata.rl_rx_mtag,
+				netmap_reload_map(na, sc->rl_ldata.rl_rx_mtag,
 					rxd[nic_i].rx_dmamap, addr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
@@ -317,7 +317,7 @@ re_netmap_tx_init(struct rl_softc *sc)
 
 		desc[i].rl_bufaddr_lo = htole32(RL_ADDR_LO(paddr));
 		desc[i].rl_bufaddr_hi = htole32(RL_ADDR_HI(paddr));
-		netmap_load_map(sc->rl_ldata.rl_tx_mtag,
+		netmap_load_map(na, sc->rl_ldata.rl_tx_mtag,
 			txd[i].tx_dmamap, addr);
 	}
 }
@@ -346,13 +346,13 @@ re_netmap_rx_init(struct rl_softc *sc)
 
 		addr = PNMB(na, slot + nm_i, &paddr);
 
-		netmap_reload_map(sc->rl_ldata.rl_rx_mtag,
+		netmap_reload_map(na, sc->rl_ldata.rl_rx_mtag,
 		    sc->rl_ldata.rl_rx_desc[nic_i].rx_dmamap, addr);
 		bus_dmamap_sync(sc->rl_ldata.rl_rx_mtag,
 		    sc->rl_ldata.rl_rx_desc[nic_i].rx_dmamap, BUS_DMASYNC_PREREAD);
 		desc[nic_i].rl_bufaddr_lo = htole32(RL_ADDR_LO(paddr));
 		desc[nic_i].rl_bufaddr_hi = htole32(RL_ADDR_HI(paddr));
-		cmdstat = NETMAP_BUF_SIZE;
+		cmdstat = NETMAP_BUF_SIZE(na);
 		if (nic_i == n - 1) /* mark the end of ring */
 			cmdstat |= RL_RDESC_CMD_EOR;
 		if (nic_i < max_avail)

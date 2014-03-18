@@ -122,12 +122,12 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 				nic_i == 0 || nic_i == report_frequency) ?
 				E1000_TXD_CMD_RS : 0;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
 				curr->buffer_addr = htole64(paddr);
-				netmap_reload_map(adapter->txtag, txbuf->map, addr);
+				netmap_reload_map(na, adapter->txtag, txbuf->map, addr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 
@@ -254,13 +254,13 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 			struct e1000_rx_desc *curr = &adapter->rx_desc_base[nic_i];
 			struct em_buffer *rxbuf = &adapter->rx_buffer_area[nic_i];
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
 				curr->buffer_addr = htole64(paddr);
-				netmap_reload_map(adapter->rxtag, rxbuf->map, addr);
+				netmap_reload_map(na, adapter->rxtag, rxbuf->map, addr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
 			curr->status = 0;
