@@ -699,6 +699,8 @@ struct netmap_bwrap_adapter {
 	/* backup of the hwna notify callback */
 	int (*save_notify)(struct netmap_adapter *,
 			u_int ring, enum txrx, int flags);
+	/* backup of the hwna memory allocator */
+	struct netmap_mem_d *save_nmd;
 
 	/*
 	 * When we attach a physical interface to the bridge, we

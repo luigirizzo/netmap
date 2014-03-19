@@ -1865,6 +1865,7 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	 */
 	bna->host.up.ifp = NULL;
 
+	hwna->nm_mem = bna->save_nmd;
 	hwna->na_private = NULL;
 	hwna->na_vp = hwna->na_hostvp = NULL;
 	hwna->na_flags &= ~NAF_BUSY;
@@ -2380,6 +2381,11 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	 */
 	na->ifp = hwna->ifp;
 	hwna->na_flags |= NAF_BUSY;
+	/* make hwna point to the allocator we are actually using,
+	 * so that monitors will be able to find it
+	 */
+	bna->save_nmd = hwna->nm_mem;
+	hwna->nm_mem = na->nm_mem;
 	return 0;
 
 err_free:
