@@ -2057,6 +2057,8 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 
 	/* impersonate a netmap_vp_adapter */
 	netmap_vp_reg(na, onoff);
+	if (hostna->na_bdg)
+		netmap_vp_reg(&hostna->up, onoff);
 
 	if (onoff) {
 		/* intercept the hwna nm_nofify callback */
