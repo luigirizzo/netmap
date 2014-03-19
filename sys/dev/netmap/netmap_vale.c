@@ -1757,6 +1757,7 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
  	na = &vpna->up;
 
 	na->ifp = ifp;
+	strncpy(na->name, nmr->nr_name, sizeof(na->name));
 
 	/* bound checking */
 	na->num_tx_rings = nmr->nr_tx_rings;
