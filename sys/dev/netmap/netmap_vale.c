@@ -688,7 +688,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 			goto out;
 
 		/* host adapter might not be created */
-		error = hw->nm_bdg_attach(hw);
+		error = hw->nm_bdg_attach(nr_name, hw);
 		if (error)
 			goto out;
 		vpna = hw->na_vp;
@@ -697,7 +697,6 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		if (nmr->nr_arg1 != NETMAP_BDG_HOST)
 			hostna = NULL;
 	}
-	strncpy(vpna->up.name, nr_name, sizeof(vpna->up.name));
 
 	BDG_WLOCK(b);
 	vpna->bdg_port = cand;
@@ -1728,13 +1727,14 @@ netmap_vp_rxsync(struct netmap_kring *kring, int flags)
  * The na_vp port is this same netmap_adapter. There is no host port.
  */
 static int
-netmap_vp_bdg_attach(struct netmap_adapter *na)
+netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 
 	if (vpna->na_bdg)
 		return EBUSY;
 	na->na_vp = vpna;
+	strncpy(na->name, name, sizeof(na->name));
 	na->na_hostvp = NULL;
 	return 0;
 }
@@ -2291,7 +2291,7 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 
 /* attach a bridge wrapper to the 'real' device */
 int
-netmap_bwrap_attach(struct netmap_adapter *hwna)
+netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 {
 	struct netmap_bwrap_adapter *bna;
 	struct netmap_adapter *na = NULL;
@@ -2310,6 +2310,7 @@ netmap_bwrap_attach(struct netmap_adapter *hwna)
 	}
 
 	na = &bna->up.up;
+	strncpy(na->name, nr_name, sizeof(na->name));
 	/* fill the ring data for the bwrap adapter with rx/tx meanings
 	 * swapped. The real cross-linking will be done during register,
 	 * when all the krings will have been created.
@@ -2344,6 +2345,7 @@ netmap_bwrap_attach(struct netmap_adapter *hwna)
 	if (hwna->na_flags & NAF_HOST_RINGS) {
 		na->na_flags |= NAF_HOST_RINGS;
 		hostna = &bna->host.up;
+		snprintf(hostna->name, sizeof(hostna->name), "%s^", nr_name);
 		hostna->ifp = hwna->ifp;
 		hostna->num_tx_rings = 1;
 		hostna->num_tx_desc = hwna->num_rx_desc;
