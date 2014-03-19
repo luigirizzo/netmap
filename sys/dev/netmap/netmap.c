@@ -1344,29 +1344,23 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 		i = netmap_admode = NETMAP_ADMODE_BEST;
 
 	if (NETMAP_CAPABLE(ifp)) {
-		/* If an adapter already exists, but is
-		 * attached to a vale port, we report that the
-		 * port is busy.
-		 */
-		if (NETMAP_OWNED_BY_KERN(NA(ifp)))
-			return EBUSY;
-
+		prev_na = NA(ifp);
 		/* If an adapter already exists, return it if
 		 * there are active file descriptors or if
 		 * netmap is not forced to use generic
 		 * adapters.
 		 */
-		if (NA(ifp)->active_fds > 0
+		if (NETMAP_OWNED_BY_ANY(prev_na)
 			|| i != NETMAP_ADMODE_GENERIC 
-			|| NA(ifp)->na_flags & NAF_FORCE_NATIVE
+			|| prev_na->na_flags & NAF_FORCE_NATIVE
 #ifdef WITH_PIPES
 			/* ugly, but we cannot allow an adapter switch
 			 * if some pipe is referring to this one
 			 */
-			|| NA(ifp)->na_next_pipe > 0
+			|| prev_na->na_next_pipe > 0
 #endif
 		) {
-			*na = NA(ifp);
+			*na = prev_na;
 			return 0;
 		}
 	}
