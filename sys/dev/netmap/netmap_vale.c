@@ -2330,7 +2330,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->nm_krings_delete = netmap_bwrap_krings_delete;
 	na->nm_notify = netmap_bwrap_notify;
 	na->nm_bdg_ctl = netmap_bwrap_bdg_ctl;
-	na->nm_mem = netmap_mem_private_new(NM_IFPNAME(na->ifp),
+	na->nm_mem = netmap_mem_private_new(na->name,
 			na->num_tx_rings, na->num_tx_desc,
 			na->num_rx_rings, na->num_rx_desc,
 			0, 0, &error);

@@ -1075,7 +1075,6 @@ int netmap_dtor_locked(struct netmap_priv_d *priv);
 int netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread *td);
 
 /* netmap_adapter creation/destruction */
-#define NM_IFPNAME(ifp) ((ifp) ? (ifp)->if_xname : "zombie")
 
 // #define NM_DEBUG_PUTGET 1
 
@@ -1088,7 +1087,7 @@ void __netmap_adapter_get(struct netmap_adapter *na);
 #define netmap_adapter_get(na) 				\
 	do {						\
 		struct netmap_adapter *__na = na;	\
-		D("getting %p:%s (%d)", __na, NM_IFPNAME(__na->ifp), __na->na_refcount);	\
+		D("getting %p:%s (%d)", __na, (__na)->name, (__na)->na_refcount);	\
 		__netmap_adapter_get(__na);		\
 	} while (0)
 
@@ -1097,7 +1096,7 @@ int __netmap_adapter_put(struct netmap_adapter *na);
 #define netmap_adapter_put(na)				\
 	({						\
 		struct netmap_adapter *__na = na;	\
-		D("putting %p:%s (%d)", __na, NM_IFPNAME(__na->ifp), __na->na_refcount);	\
+		D("putting %p:%s (%d)", __na, (__na)->name, (__na)->na_refcount);	\
 		__netmap_adapter_put(__na);		\
 	})
 

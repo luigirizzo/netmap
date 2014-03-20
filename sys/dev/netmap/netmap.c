@@ -2521,7 +2521,7 @@ netmap_attach_common(struct netmap_adapter *na)
 
 	if (na->num_tx_rings == 0 || na->num_rx_rings == 0) {
 		D("%s: invalid rings tx %d rx %d",
-			NM_IFPNAME(ifp), na->num_tx_rings, na->num_rx_rings);
+			na->name, na->num_tx_rings, na->num_rx_rings);
 		return EINVAL;
 	}
 	/* ifp is NULL for virtual adapters (bwrap, non-persistent VALE ports,
@@ -2662,7 +2662,7 @@ netmap_attach(struct netmap_adapter *arg)
 	}
 #endif /* linux */
 
-	D("success for %s", NM_IFPNAME(ifp));
+	D("success for %s", hwna->up.name);
 	return 0;
 
 fail:
