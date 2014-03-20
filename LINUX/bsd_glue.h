@@ -204,7 +204,6 @@ struct thread;
  * We don't use this in netmap, though.
  *
  *	if_xname	name		device name
- *	if_capenable	priv_flags
  *		we would use "features" but it is all taken.
  *		XXX check for conflict in flags use.
  *
@@ -216,7 +215,6 @@ struct thread;
 
 #define ifnet           	net_device      /* remap */
 #define	if_xname		name		/* field ifnet-> net_device */
-#define	if_capenable		priv_flags	/* IFCAP_NETMAP */
 
 /* some other FreeBSD APIs */
 struct net_device* ifunit_ref(const char *name);
