@@ -539,14 +539,24 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
 	}
 }
 
-/* convenience function used in drivers */
+/* 
+ * Convenience function used in drivers.  Waits for current txsync()s/rxsync()s
+ * to finish and prevents any new one from starting.  Call this before turning
+ * netmap mode off, or before removing the harware rings (e.g., on module
+ * onload).  As a rule of thumb for linux drivers, this should be placed near
+ * each napi_disable().
+ */
 void
 netmap_disable_all_rings(struct ifnet *ifp)
 {
 	netmap_set_all_rings(NA(ifp), 1 /* stopped */);
 }
 
-/* convenience function used in drivers */
+/* 
+ * Convenience function used in drivers.  Re-enables rxsync and txsync on the
+ * adapter's rings In linux drivers, this should be placed near each
+ * napi_enable().
+ */
 void
 netmap_enable_all_rings(struct ifnet *ifp)
 {
