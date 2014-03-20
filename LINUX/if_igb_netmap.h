@@ -373,7 +373,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[reg_idx]);
 
 	wmb();	/* Force memory writes to complete */
-	ND("%s rxr%d.tail %d", ifp->if_xname, reg_idx, i);
+	ND("%s rxr%d.tail %d", na->name, reg_idx, i);
 	writel(i, rxr->tail);
 	return 1;	// success
 }

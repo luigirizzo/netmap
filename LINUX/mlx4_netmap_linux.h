@@ -121,10 +121,10 @@ mlx4_netmap_reg(struct netmap_adapter *na, int onoff)
 	 * On enable, flush pending ops, set flag and reinit rings.
 	 * On disable, flush again, and restart the interface.
 	 */
-	D("setting netmap mode for %s to %s", ifp->if_xname, onoff ? "ON" : "OFF");
+	D("setting netmap mode for %s to %s", na->name, onoff ? "ON" : "OFF");
 	// rtnl_lock(); // ???
 	if (netif_running(ifp)) {
-		D("unloading %s", ifp->if_xname);
+		D("unloading %s", na->name);
 		//double_mutex_state_lock(mdev);
 		mutex_lock(&mdev->state_lock);
 		if (onoff == 0) {
@@ -159,7 +159,7 @@ retry:
 		nm_clear_native_flags(na);
 	}
 	if (need_load) {
-		D("loading %s", ifp->if_xname);
+		D("loading %s", na->name);
 		error = mlx4_en_start_port(ifp);
 		D("start_port returns %d", error);
 		if (error && onoff) {
