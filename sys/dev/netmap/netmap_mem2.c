@@ -137,22 +137,12 @@ struct netmap_mem_d {
 };
 
 /* accessor functions */
-struct lut_entry*
-netmap_mem_get_lut(struct netmap_mem_d *nmd)
+void
+netmap_mem_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 {
-	return nmd->pools[NETMAP_BUF_POOL].lut;
-}
-
-u_int
-netmap_mem_get_buftotal(struct netmap_mem_d *nmd)
-{
-	return nmd->pools[NETMAP_BUF_POOL].objtotal;
-}
-
-size_t
-netmap_mem_get_bufsize(struct netmap_mem_d *nmd)
-{
-	return nmd->pools[NETMAP_BUF_POOL]._objsize;
+	lut->lut = nmd->pools[NETMAP_BUF_POOL].lut;
+	lut->objtotal = nmd->pools[NETMAP_BUF_POOL].objtotal;
+	lut->objsize = nmd->pools[NETMAP_BUF_POOL]._objsize;
 }
 
 #define NMA_LOCK_INIT(n)	NM_MTX_INIT((n)->nm_mtx)
@@ -636,7 +626,7 @@ netmap_extra_alloc(struct netmap_adapter *na, uint32_t *head, uint32_t n)
 static void
 netmap_extra_free(struct netmap_adapter *na, uint32_t head)
 {
-        struct lut_entry *lut = na->na_lut;
+        struct lut_entry *lut = na->na_lut.lut;
 	struct netmap_mem_d *nmd = na->nm_mem;
 	struct netmap_obj_pool *p = &nmd->pools[NETMAP_BUF_POOL];
 	uint32_t i, cur, *buf;

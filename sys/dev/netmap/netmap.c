@@ -1623,7 +1623,7 @@ netmap_ring_reinit(struct netmap_kring *kring)
 	for (i = 0; i <= lim; i++) {
 		u_int idx = ring->slot[i].buf_idx;
 		u_int len = ring->slot[i].len;
-		if (idx < 2 || idx >= kring->na->na_lut_objtotal) {
+		if (idx < 2 || idx >= kring->na->na_lut.objtotal) {
 			RD(5, "bad index at slot %d idx %d len %d ", i, idx, len);
 			ring->slot[i].buf_idx = 0;
 			ring->slot[i].len = 0;
@@ -1985,10 +1985,8 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		 * and make it use the shared buffers.
 		 */
 		/* cache the allocator info in the na */
-		na->na_lut = netmap_mem_get_lut(na->nm_mem);
-		ND("%p->na_lut == %p", na, na->na_lut);
-		na->na_lut_objtotal = netmap_mem_get_buftotal(na->nm_mem);
-		na->na_lut_objsize = netmap_mem_get_bufsize(na->nm_mem);
+		netmap_mem_get_lut(na->nm_mem, &na->na_lut);
+		ND("%p->na_lut == %p", na, na->na_lut.lut);
 		error = na->nm_register(na, 1); /* mode on */
 		if (error) 
 			goto err_del_if;
@@ -2005,9 +2003,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	return 0;
 
 err_del_if:
-	na->na_lut = NULL;
-	na->na_lut_objtotal = 0;
-	na->na_lut_objsize = 0;
+	memset(&na->na_lut, 0, sizeof(na->na_lut));
 	na->active_fds--;
 	netmap_mem_if_delete(na, nifp);
 err_rel_excl:

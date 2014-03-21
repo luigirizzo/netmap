@@ -2007,8 +2007,6 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 		 * putting it in netmap mode
 		 */
 		hwna->na_lut = na->na_lut;
-		hwna->na_lut_objtotal = na->na_lut_objtotal;
-		hwna->na_lut_objsize = na->na_lut_objsize;
 
 		if (hostna->na_bdg) {
 			/* if the host rings have been attached to switch,
@@ -2016,8 +2014,6 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 			 * in the hostna also
 			 */
 			hostna->up.na_lut = na->na_lut;
-			hostna->up.na_lut_objtotal = na->na_lut_objtotal;
-			hostna->up.na_lut_objsize = na->na_lut_objsize;
 		}
 
 		/* cross-link the netmap rings
@@ -2066,9 +2062,9 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 			hwna->rx_rings[i].nm_notify = hwna->rx_rings[i].save_notify;
 			hwna->rx_rings[i].save_notify = NULL;
 		}
-		hwna->na_lut = NULL;
-		hwna->na_lut_objtotal = 0;
-		hwna->na_lut_objsize = 0;
+		hwna->na_lut.lut = NULL;
+		hwna->na_lut.objtotal = 0;
+		hwna->na_lut.objsize = 0;
 	}
 
 	return 0;

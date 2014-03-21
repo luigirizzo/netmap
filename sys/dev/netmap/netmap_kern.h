@@ -465,6 +465,11 @@ tail->|                 |<-hwtail    |                 |<-hwlease
  */
 
 
+struct netmap_lut {
+	struct lut_entry *lut;
+	uint32_t objtotal;	/* max buffer index */
+	uint32_t objsize;	/* buffer size */
+};
 
 struct netmap_vp_adapter; // forward
 
@@ -636,9 +641,7 @@ struct netmap_adapter {
 	 * buffer addresses, and the total number of buffers.
 	 */
  	struct netmap_mem_d *nm_mem;
-	struct lut_entry *na_lut;
-	uint32_t na_lut_objtotal;	/* max buffer index */
-	uint32_t na_lut_objsize;	/* buffer size */
+	struct netmap_lut na_lut;
 
 	/* additional information attached to this adapter
 	 * by other netmap subsystems. Currently used by
@@ -1280,8 +1283,8 @@ int netmap_adapter_put(struct netmap_adapter *na);
 /*
  * module variables
  */
-#define NETMAP_BUF_BASE(na)	((na)->na_lut[0].vaddr)
-#define NETMAP_BUF_SIZE(na)	((na)->na_lut_objsize)
+#define NETMAP_BUF_BASE(na)	((na)->na_lut.lut[0].vaddr)
+#define NETMAP_BUF_SIZE(na)	((na)->na_lut.objsize)
 extern int netmap_mitigate;	// XXX not really used
 extern int netmap_no_pendintr;
 extern int netmap_verbose;	// XXX debugging
@@ -1392,7 +1395,7 @@ netmap_load_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
 	if (0 && map) {
-		*map = dma_map_single(na->pdev, buf, na->na_lut_objsize,
+		*map = dma_map_single(na->pdev, buf, na->na_lut.objsize,
 				DMA_BIDIRECTIONAL);
 	}
 }
@@ -1401,7 +1404,7 @@ static inline void
 netmap_unload_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map)
 {
-	u_int sz = na->na_lut_objsize;
+	u_int sz = na->na_lut.objsize;
 
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,
@@ -1413,7 +1416,7 @@ static inline void
 netmap_reload_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
-	u_int sz = na->na_lut_objsize;
+	u_int sz = na->na_lut.objsize;
 
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,
@@ -1511,9 +1514,9 @@ struct netmap_obj_pool;
 static inline void *
 NMB(struct netmap_adapter *na, struct netmap_slot *slot)
 {
-	struct lut_entry *lut = na->na_lut;
+	struct lut_entry *lut = na->na_lut.lut;
 	uint32_t i = slot->buf_idx;
-	return (unlikely(i >= na->na_lut_objtotal)) ?
+	return (unlikely(i >= na->na_lut.objtotal)) ?
 		lut[0].vaddr : lut[i].vaddr;
 }
 
@@ -1521,10 +1524,10 @@ static inline void *
 PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 {
 	uint32_t i = slot->buf_idx;
-	struct lut_entry *lut = na->na_lut;
-	void *ret = (i >= na->na_lut_objtotal) ? lut[0].vaddr : lut[i].vaddr;
+	struct lut_entry *lut = na->na_lut.lut;
+	void *ret = (i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr;
 
-	*pp = (i >= na->na_lut_objtotal) ? lut[0].paddr : lut[i].paddr;
+	*pp = (i >= na->na_lut.objtotal) ? lut[0].paddr : lut[i].paddr;
 	return ret;
 }
 
