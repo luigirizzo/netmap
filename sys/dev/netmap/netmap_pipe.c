@@ -604,6 +604,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	mna->up.nm_mem = pna->nm_mem;
 	mna->up.na_lut = pna->na_lut;
 	mna->up.na_lut_objtotal = pna->na_lut_objtotal;
+	mna->up.na_lut_objsize = pna->na_lut_objsize;
 
 	mna->up.num_tx_rings = 1;
 	mna->up.num_rx_rings = 1;
