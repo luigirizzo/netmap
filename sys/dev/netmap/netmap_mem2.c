@@ -120,6 +120,7 @@ struct netmap_mem_ops {
 	int (*nmd_finalize)(struct netmap_mem_d *);
 	void (*nmd_deref)(struct netmap_mem_d *);
 	ssize_t  (*nmd_if_offset)(struct netmap_mem_d *, const void *vaddr);
+	void (*nmd_delete)(struct netmap_mem_d *);
 
 	struct netmap_if * (*nmd_if_new)(struct netmap_adapter *);
 	void (*nmd_if_delete)(struct netmap_adapter *, struct netmap_if *);
@@ -189,6 +190,7 @@ NMD_DEFCB3(int, get_info, u_int *, u_int *, uint16_t *);
 NMD_DEFCB1(vm_paddr_t, ofstophys, vm_ooffset_t);
 NMD_DEFCB(int, config);
 NMD_DEFCB1(ssize_t, if_offset, const void *);
+NMD_DEFCB(void, delete);
 
 NMD_DEFNACB(struct netmap_if *, if_new);
 NMD_DEFNACB1(void, if_delete, struct netmap_if *);
@@ -1140,7 +1142,7 @@ error:
 
 
 
-void
+static void
 netmap_mem_private_delete(struct netmap_mem_d *nmd)
 {
 	if (nmd == NULL)
@@ -1576,6 +1578,7 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 	.nmd_finalize = netmap_mem_private_finalize,
 	.nmd_deref = netmap_mem_private_deref,
 	.nmd_if_offset = netmap_mem2_if_offset,
+	.nmd_delete = netmap_mem_private_delete,
 	.nmd_if_new = netmap_mem2_if_new,
 	.nmd_if_delete = netmap_mem2_if_delete,
 	.nmd_rings_create = netmap_mem2_rings_create,

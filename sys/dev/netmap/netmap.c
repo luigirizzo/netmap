@@ -2657,7 +2657,7 @@ netmap_detach_common(struct netmap_adapter *na)
 	}
 	netmap_pipe_dealloc(na);
 	if (na->na_flags & NAF_MEM_OWNER)
-		netmap_mem_private_delete(na->nm_mem);
+		netmap_mem_delete(na->nm_mem);
 	bzero(na, sizeof(*na));
 	free(na, M_DEVBUF);
 }

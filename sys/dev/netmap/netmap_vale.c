@@ -1846,7 +1846,7 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 
 err:
 	if (na->nm_mem != NULL)
-		netmap_mem_private_delete(na->nm_mem);
+		netmap_mem_delete(na->nm_mem);
 	free(vpna, M_DEVBUF);
 	return error;
 }
@@ -2374,7 +2374,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	return 0;
 
 err_free:
-	netmap_mem_private_delete(na->nm_mem);
+	netmap_mem_delete(na->nm_mem);
 err_put:
 	hwna->na_vp = hwna->na_hostvp = NULL;
 	netmap_adapter_put(hwna);
