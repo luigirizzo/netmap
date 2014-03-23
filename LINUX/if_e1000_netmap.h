@@ -336,9 +336,12 @@ static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
 	struct e1000_hw *hw = &adapter->hw;
+	uint32_t ret;
 
 	ew32(PTCTL, val);
-	return er32(PTSTS);
+	ret = er32(PTSTS);
+	D("PTSTS = %u", ret);
+	return ret;
 }
 
 static struct netmap_paravirt_ops e1000_netmap_paravirt_ops = {

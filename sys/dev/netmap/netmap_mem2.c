@@ -1645,6 +1645,7 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 };
 
 /* paravirtual allocator */
+#include "paravirt.h"
 
 struct netmap_mem_pv {
 	struct netmap_mem_d up;
@@ -1662,8 +1663,21 @@ netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 static int  
 netmap_mem_paravirt_get_info(struct netmap_mem_d *nmd, u_int *size, u_int *memflags, uint16_t *id)
 {
+	int error = 0;
 	D("");
-	return EINVAL;
+	NMA_LOCK(nmd);
+
+	error = nmd->ops->nmd_config(nmd);
+	if (error)
+		goto out;
+
+	*size = nmd->nm_totalsize;
+	*memflags = nmd->flags;
+	*id = nmd->nm_id;
+
+out:
+	NMA_UNLOCK(nmd);
+	return error;
 }
 
 static vm_paddr_t 
@@ -1676,8 +1690,20 @@ netmap_mem_paravirt_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
 static int 
 netmap_mem_paravirt_config(struct netmap_mem_d *nmd)
 {
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
+	struct ifnet *ifp = pv->ifp;
+	struct paravirt_csb *csb;
+	int error;
+
 	D("");
-	return EINVAL;
+	csb = pv->pv_ops->nm_getcsb(ifp);
+	if (csb == NULL)
+		return EINVAL;
+	error = pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	if (error)
+		return error;
+	nmd->nm_totalsize = csb->memsize;
+	return 0;
 }
 
 static int 
