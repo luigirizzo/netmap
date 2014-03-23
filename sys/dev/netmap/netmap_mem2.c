@@ -1643,3 +1643,155 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 	.nmd_rings_create = netmap_mem2_rings_create,
 	.nmd_rings_delete = netmap_mem2_rings_delete
 };
+
+/* paravirtual allocator */
+
+struct netmap_mem_pv {
+	struct netmap_mem_d up;
+
+	struct ifnet *ifp;
+	struct netmap_paravirt_ops *pv_ops;
+};
+
+static void
+netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
+{
+	D("");
+}
+
+static int  
+netmap_mem_paravirt_get_info(struct netmap_mem_d *nmd, u_int *size, u_int *memflags, uint16_t *id)
+{
+	D("");
+	return EINVAL;
+}
+
+static vm_paddr_t 
+netmap_mem_paravirt_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
+{
+	D("");
+	return 0;
+}
+
+static int 
+netmap_mem_paravirt_config(struct netmap_mem_d *nmd)
+{
+	D("");
+	return EINVAL;
+}
+
+static int 
+netmap_mem_paravirt_finalize(struct netmap_mem_d *nmd)
+{
+	D("");
+	return EINVAL;
+}
+
+static void 
+netmap_mem_paravirt_deref(struct netmap_mem_d *nmd)
+{
+	D("");
+}
+
+static ssize_t  
+netmap_mem_paravirt_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
+{
+	D("");
+	return 0;
+}
+
+static void
+netmap_mem_paravirt_delete(struct netmap_mem_d *d)
+{
+	struct netmap_mem_pv *nmd =
+		(struct netmap_mem_pv *)nmd;
+
+	D("");
+	if (nmd == NULL)
+		return;
+	if (netmap_verbose)
+		D("deleting %p", nmd);
+	if (d->refcount > 0)
+		D("bug: deleting mem allocator with refcount=%d!", d->refcount);
+	nm_mem_release_id(d);
+	if (netmap_verbose)
+		D("done deleting %p", nmd);
+	NMA_LOCK_DESTROY(d);
+	free(nmd, M_DEVBUF);
+}
+
+static struct netmap_if *
+netmap_mem_paravirt_if_new(struct netmap_adapter *na)
+{
+	D("");
+	return NULL;
+}
+
+static void 
+netmap_mem_paravirt_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
+{
+	D("");
+}
+
+static int  
+netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
+{
+	D("");
+	return EINVAL;
+}
+
+static void 
+netmap_mem_paravirt_rings_delete(struct netmap_adapter *na)
+{
+	D("");
+}
+
+
+
+struct netmap_mem_ops netmap_mem_paravirt_ops = {
+	.nmd_get_lut = netmap_mem_paravirt_get_lut,
+	.nmd_get_info = netmap_mem_paravirt_get_info,
+	.nmd_ofstophys = netmap_mem_paravirt_ofstophys,
+	.nmd_config = netmap_mem_paravirt_config,
+	.nmd_finalize = netmap_mem_paravirt_finalize,
+	.nmd_deref = netmap_mem_paravirt_deref,
+	.nmd_if_offset = netmap_mem_paravirt_if_offset,
+	.nmd_delete = netmap_mem_paravirt_delete,
+	.nmd_if_new = netmap_mem_paravirt_if_new,
+	.nmd_if_delete = netmap_mem_paravirt_if_delete,
+	.nmd_rings_create = netmap_mem_paravirt_rings_create,
+	.nmd_rings_delete = netmap_mem_paravirt_rings_delete
+};
+
+struct netmap_mem_d *
+netmap_mem_paravirt_new(struct ifnet *ifp,
+		struct netmap_paravirt_ops *ops)
+{
+	struct netmap_mem_pv *d = NULL;
+	int err = 0;
+
+	d = malloc(sizeof(struct netmap_mem_pv),
+			M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (d == NULL) {
+		err = ENOMEM;
+		goto error;
+	}
+
+	d->ifp = ifp;
+	d->pv_ops = ops;
+	d->up.ops = &netmap_mem_paravirt_ops;
+
+	err = nm_mem_assign_id(&d->up);
+	if (err)
+		goto error;
+
+	d->up.flags &= ~NETMAP_MEM_FINALIZED;
+
+	NMA_LOCK_INIT(&d->up);
+
+	return &d->up;
+error:
+	netmap_mem_paravirt_delete(&d->up);
+	return NULL;
+}
+

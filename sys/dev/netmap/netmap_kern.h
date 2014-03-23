@@ -1672,4 +1672,13 @@ int nm_vi_persist(const char *, struct ifnet **);
 void nm_vi_detach(struct ifnet *);
 void nm_vi_init_index(void);
 
+/* paravirtual operations */
+
+struct netmap_paravirt_ops {
+	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
+	struct paravirt_csb *(*nm_getcsb)(struct ifnet *);
+};
+
+int netmap_paravirt_attach(struct netmap_adapter *, struct netmap_paravirt_ops *);
+
 #endif /* _NET_NETMAP_KERN_H_ */

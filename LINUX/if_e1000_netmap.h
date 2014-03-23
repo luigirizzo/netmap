@@ -323,7 +323,30 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	}
 	return 1;
 }
+#ifdef CONFIG_E1000_NETMAP_PT
 
+static struct paravirt_csb * e1000_netmap_getcsb(struct net_device *netdev)
+{
+	struct e1000_adapter *adapter = netdev_priv(netdev);
+
+	return adapter->csb;
+}
+
+static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
+{
+	struct e1000_adapter *adapter = netdev_priv(netdev);
+	struct e1000_hw *hw = &adapter->hw;
+
+	ew32(PTCTL, val);
+	return er32(PTSTS);
+}
+
+static struct netmap_paravirt_ops e1000_netmap_paravirt_ops = {
+	.nm_getcsb = e1000_netmap_getcsb,
+	.nm_ptctl = e1000_netmap_ptctl,
+};
+
+#endif
 
 static void
 e1000_netmap_attach(struct SOFTC_T *adapter)
@@ -340,7 +363,12 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;
 	na.num_tx_rings = na.num_rx_rings = 1;
+
+#ifdef CONFIG_E1000_NETMAP_PT
+	netmap_paravirt_attach(&na, &e1000_netmap_paravirt_ops);
+#else
 	netmap_attach(&na);
+#endif
 }
 
 /* end of file */

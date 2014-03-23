@@ -2780,6 +2780,17 @@ fail:
 	return (hwna ? EINVAL : ENOMEM);
 }
 
+int
+netmap_paravirt_attach(struct netmap_adapter *arg,
+		struct netmap_paravirt_ops *pv_ops)
+{
+	arg->nm_mem = netmap_mem_paravirt_new(arg->ifp, pv_ops);
+	if (arg->nm_mem == NULL)
+		return ENOMEM;
+	arg->na_flags |= NAF_MEM_OWNER;
+	return netmap_attach(arg);
+}
+
 
 void
 NM_DBG(netmap_adapter_get)(struct netmap_adapter *na)
