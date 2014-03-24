@@ -1709,21 +1709,60 @@ netmap_mem_paravirt_config(struct netmap_mem_d *nmd)
 static int 
 netmap_mem_paravirt_finalize(struct netmap_mem_d *nmd)
 {
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
+	struct ifnet *ifp = pv->ifp;
+	struct paravirt_csb *csb;
+	int error = 0;
+
 	D("");
-	return EINVAL;
+	NMA_LOCK(nmd);
+	nmd->refcount++;
+	if (nmd->flags & NETMAP_MEM_FINALIZED)
+		goto out;
+
+	csb = pv->pv_ops->nm_getcsb(ifp);
+	if (csb == NULL) {
+		error = EINVAL;
+		goto out;
+	}
+	error = pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_FINALIZE);
+	if (error)
+		goto out;
+	nmd->nm_totalsize = csb->memsize;
+	nmd->flags |= NETMAP_MEM_FINALIZED;
+out:
+	NMA_UNLOCK(nmd);
+	return error;
 }
 
 static void 
 netmap_mem_paravirt_deref(struct netmap_mem_d *nmd)
 {
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
+	struct ifnet *ifp = pv->ifp;
+
 	D("");
+	NMA_LOCK(nmd);
+	nmd->refcount--;
+	if (nmd->refcount <= 0 && 
+	   (nmd->flags & NETMAP_MEM_FINALIZED))
+	{
+		pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_DEREF);
+	}
+	NMA_UNLOCK(nmd);
 }
 
 static ssize_t  
 netmap_mem_paravirt_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
 {
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
+	struct ifnet *ifp = pv->ifp;
+	struct paravirt_csb *csb;
 	D("");
-	return 0;
+	csb = pv->pv_ops->nm_getcsb(ifp);
+	if (csb == NULL)
+		return EINVAL;
+	return csb->offset;
 }
 
 static void

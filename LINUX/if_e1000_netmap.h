@@ -336,11 +336,35 @@ static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
 	struct e1000_hw *hw = &adapter->hw;
+	struct paravirt_csb *csb = adapter->csb;
+	void *base_addr;
 	uint32_t ret;
 
 	ew32(PTCTL, val);
 	ret = er32(PTSTS);
 	D("PTSTS = %u", ret);
+	if (ret) {
+		return ret;
+	}
+	switch (val) {
+	case NET_PARAVIRT_PTCTL_FINALIZE:
+		base_addr = pci_iomap(adapter->pdev, csb->pci_bar, 0);
+		if (base_addr == NULL) {
+			ret = ENOMEM;
+			break;
+		}
+		csb->base_addr = (uint64_t)base_addr;
+		D("shared memory at %llx", csb->base_addr);
+		break;
+	case NET_PARAVIRT_PTCTL_DEREF:
+		base_addr = (void*)csb->base_addr;
+		if (base_addr != NULL) {
+			pci_iounmap(adapter->pdev, base_addr);
+		}
+		break;
+	default:
+		break;
+	}
 	return ret;
 }
 
