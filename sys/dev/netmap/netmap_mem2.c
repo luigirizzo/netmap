@@ -1816,12 +1816,38 @@ netmap_mem_paravirt_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 static int  
 netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 {
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)na->nm_mem;
+	struct ifnet *ifp = pv->ifp;
+	struct paravirt_csb *csb;
+	struct netmap_if *nifp;
+	int i;
+
 	D("");
+	csb = pv->pv_ops->nm_getcsb(ifp);
+	if (csb == NULL)
+		return EINVAL;
 	/* if na is our owner, point each kring to the
 	 * corresponding backend ring, otherwise ENOMEM
 	 */
+	nifp = (struct netmap_if *)(csb->base_addr + csb->nifp_offset);
+	for (i = 0; i <= na->num_tx_rings; i++) {
+		struct netmap_kring *kring = na->tx_rings + i;
+		if (kring->ring)
+			continue;
+		kring->ring = (struct netmap_ring *)
+			((char *)nifp + nifp->ring_ofs[i]);
+
+	}
+	for (i = 0; i <= na->num_rx_rings; i++) {
+		struct netmap_kring *kring = na->rx_rings + i;
+		if (kring->ring)
+			continue;
+		kring->ring = (struct netmap_ring *)
+			((char *)nifp +
+			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
+
+	}
 	return 0;
-	//return EINVAL;
 }
 
 static void 

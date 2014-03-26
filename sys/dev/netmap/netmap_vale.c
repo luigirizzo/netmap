@@ -1531,7 +1531,7 @@ retry:
 				RD(5, "rx %d frags to %d", cnt, j);
 			ft_end = ft_p + cnt;
 			if (unlikely(virt_hdr_mismatch)) {
-				bdg_mismatch_datapath(na, dst_na, ft_p, ring, &j, lim, &howmany);
+				//bdg_mismatch_datapath(na, dst_na, ft_p, ring, &j, lim, &howmany);
 			} else {
 				howmany -= cnt;
 				do {

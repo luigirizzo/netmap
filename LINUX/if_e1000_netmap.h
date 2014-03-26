@@ -326,6 +326,55 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 #ifdef CONFIG_E1000_NETMAP_PT
 
 static int
+e1000_paravirt_netmap_config(struct netmap_adapter *na,
+		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
+{
+	struct e1000_adapter *adapter = netdev_priv(na->ifp);
+	struct paravirt_csb *csb = adapter->csb;
+
+	*txr = csb->num_tx_rings;
+	*rxr = csb->num_rx_rings;
+	*txd = csb->num_tx_slots;
+	*rxd = csb->num_rx_slots;
+
+	D("txr %u rxr %u txd %u rxd %u",
+			*txr, *rxr, *txd, *rxd);
+	return 0;
+}
+
+static int
+e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	struct ifnet *ifp = na->ifp;
+	struct e1000_adapter *adapter = netdev_priv(ifp);
+	struct e1000_hw *hw = &adapter->hw;
+
+	ew32(PTCTL, NET_PARAVIRT_PTCTL_TXSYNC);
+	kring->rcur = kring->ring->cur;
+	kring->rhead = kring->ring->head;
+	kring->rtail = kring->ring->tail;
+
+	return 0;
+}
+
+static int
+e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	struct ifnet *ifp = na->ifp;
+	struct e1000_adapter *adapter = netdev_priv(ifp);
+	struct e1000_hw *hw = &adapter->hw;
+
+	ew32(PTCTL, NET_PARAVIRT_PTCTL_RXSYNC);
+	kring->rcur = kring->ring->cur;
+	kring->rhead = kring->ring->head;
+	kring->rtail = kring->ring->tail;
+
+	return 0;
+}
+
+static int
 e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	if (onoff) {
@@ -406,13 +455,16 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.pdev = &adapter->pdev->dev;
 	na.num_tx_desc = adapter->tx_ring[0].count;
 	na.num_rx_desc = adapter->rx_ring[0].count;
+	na.num_tx_rings = na.num_rx_rings = 1;
 	na.nm_register = e1000_netmap_reg;
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;
-	na.num_tx_rings = na.num_rx_rings = 1;
 
 #ifdef CONFIG_E1000_NETMAP_PT
+	na.nm_config = e1000_paravirt_netmap_config;
 	na.nm_register = e1000_paravirt_netmap_reg;
+	na.nm_txsync = e1000_paravirt_netmap_txsync;
+	na.nm_rxsync = e1000_paravirt_netmap_rxsync;
 	netmap_paravirt_attach(&na, &e1000_netmap_paravirt_ops);
 #else
 	netmap_attach(&na);

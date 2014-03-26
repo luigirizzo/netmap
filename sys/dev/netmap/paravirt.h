@@ -141,6 +141,10 @@ struct paravirt_csb {
     uint32_t nifp_offset;          /* offset of the netmap_if in the shared memory */
     uint64_t base_addr;		   /* guest kernel-virtual base address */
     uint64_t base_paddr;	   /* guest kernel-physical base address */
+    uint16_t num_tx_rings;
+    uint16_t num_rx_rings;
+    uint16_t num_tx_slots;
+    uint16_t num_rx_slots;
 };
 
 #define NET_PARAVIRT_CSB_SIZE   4096
@@ -154,6 +158,8 @@ struct paravirt_csb {
 #define NET_PARAVIRT_PTCTL_RINGSCREATE	5
 #define NET_PARAVIRT_PTCTL_RINGSDELETE	6
 #define NET_PARAVIRT_PTCTL_DEREF	7
+#define NET_PARAVIRT_PTCTL_TXSYNC	8
+#define NET_PARAVIRT_PTCTL_RXSYNC	9
 
 #ifdef	QEMU_PCI_H
 
