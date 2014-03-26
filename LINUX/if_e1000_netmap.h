@@ -325,6 +325,17 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 }
 #ifdef CONFIG_E1000_NETMAP_PT
 
+static int
+e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)
+{
+	if (onoff) {
+		na->na_flags |= NAF_NETMAP_ON;
+	} else {
+		na->na_flags &= ~NAF_NETMAP_ON;
+	}
+	return (0);
+}
+
 static struct paravirt_csb * e1000_netmap_getcsb(struct net_device *netdev)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
@@ -348,13 +359,22 @@ static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
 	}
 	switch (val) {
 	case NET_PARAVIRT_PTCTL_FINALIZE:
-		base_addr = pci_iomap(adapter->pdev, csb->pci_bar, 0);
+		base_addr = ioremap_cache(
+				pci_resource_start(adapter->pdev, csb->pci_bar),
+				pci_resource_len(adapter->pdev, csb->pci_bar));
 		if (base_addr == NULL) {
 			ret = ENOMEM;
 			break;
 		}
 		csb->base_addr = (uint64_t)base_addr;
-		D("shared memory at %llx", csb->base_addr);
+		csb->base_paddr = (uint64_t)pci_resource_start(
+				adapter->pdev, csb->pci_bar);
+		D("BAR %d start %llx len %llx at %llx (%s)", csb->pci_bar,
+				csb->base_paddr,
+				pci_resource_len(adapter->pdev, csb->pci_bar),
+				csb->base_addr,
+				((struct netmap_if*)base_addr)->ni_name);
+		ND("name %s", name);
 		break;
 	case NET_PARAVIRT_PTCTL_DEREF:
 		base_addr = (void*)csb->base_addr;
@@ -392,6 +412,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.num_tx_rings = na.num_rx_rings = 1;
 
 #ifdef CONFIG_E1000_NETMAP_PT
+	na.nm_register = e1000_paravirt_netmap_reg;
 	netmap_paravirt_attach(&na, &e1000_netmap_paravirt_ops);
 #else
 	netmap_attach(&na);

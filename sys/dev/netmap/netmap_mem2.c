@@ -1652,6 +1652,7 @@ struct netmap_mem_pv {
 
 	struct ifnet *ifp;
 	struct netmap_paravirt_ops *pv_ops;
+	vm_paddr_t nm_paddr;
 };
 
 static void
@@ -1683,8 +1684,13 @@ out:
 static vm_paddr_t 
 netmap_mem_paravirt_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
 {
-	D("");
-	return 0;
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
+	vm_paddr_t paddr;
+	ND("");
+	/* if the offset is valid, just return csb->base_addr + off */
+	paddr = (vm_paddr_t)(pv->nm_paddr + off);
+	ND("off %lx padr %lx", off, (unsigned long)paddr);
+	return paddr;
 }
 
 static int 
@@ -1729,6 +1735,7 @@ netmap_mem_paravirt_finalize(struct netmap_mem_d *nmd)
 	if (error)
 		goto out;
 	nmd->nm_totalsize = csb->memsize;
+	pv->nm_paddr = csb->base_paddr;
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 out:
 	NMA_UNLOCK(nmd);
@@ -1762,7 +1769,7 @@ netmap_mem_paravirt_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
 	csb = pv->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL)
 		return EINVAL;
-	return csb->offset;
+	return csb->nifp_offset;
 }
 
 static void
@@ -1788,8 +1795,16 @@ netmap_mem_paravirt_delete(struct netmap_mem_d *d)
 static struct netmap_if *
 netmap_mem_paravirt_if_new(struct netmap_adapter *na)
 {
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)na->nm_mem;
+	struct ifnet *ifp = pv->ifp;
+	struct paravirt_csb *csb;
 	D("");
-	return NULL;
+	/* if na is our owner return the backend ifp, otherwise NULL */
+	//return NULL;
+	csb = pv->pv_ops->nm_getcsb(ifp);
+	if (csb == NULL)
+		return NULL;
+	return (struct netmap_if *)(csb->base_addr + csb->nifp_offset);
 }
 
 static void 
@@ -1802,7 +1817,11 @@ static int
 netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 {
 	D("");
-	return EINVAL;
+	/* if na is our owner, point each kring to the
+	 * corresponding backend ring, otherwise ENOMEM
+	 */
+	return 0;
+	//return EINVAL;
 }
 
 static void 
