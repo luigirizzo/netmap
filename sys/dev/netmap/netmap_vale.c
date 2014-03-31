@@ -1186,7 +1186,7 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	}
 
 	if (buf_len < 14) {
-		D("invalid buf length %d", buf_len);
+		RD(5, "invalid buf length %d", buf_len);
 		return NM_BDG_NOPORT;
 	}
 	dmac = le64toh(*(uint64_t *)(buf)) & 0xffffffffffff;
