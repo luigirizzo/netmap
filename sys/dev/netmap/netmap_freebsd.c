@@ -298,7 +298,7 @@ static struct {
 } nm_vi_indices;
 
 void
-nm_vi_init_index()
+nm_vi_init_index(void)
 {
 	int i;
 	for (i = 0; i < NM_VI_MAX; i++)
@@ -309,7 +309,7 @@ nm_vi_init_index()
 
 /* return -1 if no index available */
 static int
-nm_vi_get_index()
+nm_vi_get_index(void)
 {
 	int ret;
 
