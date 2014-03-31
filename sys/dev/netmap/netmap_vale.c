@@ -1065,6 +1065,14 @@ nm_bdg_preflush(struct netmap_kring *kring, u_int end)
 		ft[ft_i].ft_next = NM_FT_NULL;
 		buf = ft[ft_i].ft_buf = (slot->flags & NS_INDIRECT) ?
 			(void *)(uintptr_t)slot->ptr : NMB(&na->up, slot);
+		if (unlikely(buf == NULL)) {
+			RD(5, "NULL %s buffer pointer from %s slot %d len %d",
+				(slot->flags & NS_INDIRECT) ? "INDIRECT" : "DIRECT",
+				kring->name, j, ft[ft_i].ft_len);
+			buf = ft[ft_i].ft_buf = NETMAP_BUF_BASE(&na->up);
+			ft[ft_i].ft_len = 0;
+			ft[ft_i].ft_flags = 0;
+		}
 		__builtin_prefetch(buf);
 		++ft_i;
 		if (slot->flags & NS_MOREFRAG) {
@@ -1424,6 +1432,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		needed = d->bq_len + brddst->bq_len;
 
 		if (unlikely(dst_na->virt_hdr_len != na->virt_hdr_len)) {
+			RD(3, "virt_hdr_mismatch, src %d len %d", na->virt_hdr_len, dst_na->virt_hdr_len);
 			/* There is a virtio-net header/offloadings mismatch between
 			 * source and destination. The slower mismatch datapath will
 			 * be used to cope with all the mismatches.
@@ -1528,6 +1537,11 @@ retry:
 					/* round to a multiple of 64 */
 					copy_len = (copy_len + 63) & ~63;
 
+					if (unlikely(copy_len > NETMAP_BUF_SIZE(&dst_na->up) ||
+						     copy_len > NETMAP_BUF_SIZE(&na->up))) {
+						RD(5, "invalid len %d, down to 64", (int)copy_len);
+						copy_len = dst_len = 64; // XXX
+					}
 					if (ft_p->ft_flags & NS_INDIRECT) {
 						if (copyin(src, dst, copy_len)) {
 							// invalid user pointer, pretend len is 0
