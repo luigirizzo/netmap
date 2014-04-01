@@ -1672,9 +1672,12 @@ netmap_mem_paravirt_get_info(struct netmap_mem_d *nmd, u_int *size, u_int *memfl
 	if (error)
 		goto out;
 
-	*size = nmd->nm_totalsize;
-	*memflags = nmd->flags;
-	*id = nmd->nm_id;
+	if (size)
+		*size = nmd->nm_totalsize;
+	if (memflags)
+		*memflags = nmd->flags;
+	if (id)
+		*id = nmd->nm_id;
 
 out:
 	NMA_UNLOCK(nmd);
