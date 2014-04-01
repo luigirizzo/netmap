@@ -296,11 +296,22 @@ static inline int ilog2(uint64_t n)
 }
 #endif /* ilog2 */
 
-#define contigmalloc(sz, ty, flags, a, b, pgsz, c)		\
-	(char *) __get_free_pages(GFP_ATOMIC |  __GFP_ZERO,	\
-		    ilog2(roundup_pow_of_two((sz)/PAGE_SIZE)))
-#define contigfree(va, sz, ty)	free_pages((unsigned long)va,	\
-		    ilog2(roundup_pow_of_two(sz)/PAGE_SIZE))
+#define contigmalloc(sz, ty, flags, a, b, pgsz, c) ({		\
+	unsigned int order_ =					\
+		ilog2(roundup_pow_of_two(sz)/PAGE_SIZE);	\
+	struct page *p_ = alloc_pages(GFP_ATOMIC | __GFP_ZERO,  \
+		order_);					\
+	if (p_ != NULL) 					\
+		split_page(p_, order_);				\
+	(p_ != NULL ? (char*)page_address(p_) : NULL); })
+	
+#define contigfree(va, sz, ty)					\
+	do {							\
+		unsigned int npages_ =				\
+			roundup_pow_of_two(sz)/PAGE_SIZE;	\
+		for (; npages_; npages_--, va += PAGE_SIZE)	\
+			free_page((unsigned long)va);		\
+	} while (0)
 
 #define vtophys		virt_to_phys
 

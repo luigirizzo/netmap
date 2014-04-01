@@ -402,18 +402,22 @@ netmap_mem_get_info(struct netmap_mem_d* nmd, u_int* size, u_int *memflags,
 	error = nmd->config(nmd);
 	if (error)
 		goto out;
-	if (nmd->flags & NETMAP_MEM_FINALIZED) {
-		*size = nmd->nm_totalsize;
-	} else {
-		int i;
-		*size = 0;
-		for (i = 0; i < NETMAP_POOLS_NR; i++) {
-			struct netmap_obj_pool *p = nmd->pools + i;
-			*size += (p->_numclusters * p->_clustsize);
+	if (size) {
+		if (nmd->flags & NETMAP_MEM_FINALIZED) {
+			*size = nmd->nm_totalsize;
+		} else {
+			int i;
+			*size = 0;
+			for (i = 0; i < NETMAP_POOLS_NR; i++) {
+				struct netmap_obj_pool *p = nmd->pools + i;
+				*size += (p->_numclusters * p->_clustsize);
+			}
 		}
 	}
-	*memflags = nmd->flags;
-	*id = nmd->nm_id;
+	if (memflags)
+		*memflags = nmd->flags;
+	if (id)
+		*id = nmd->nm_id;
 out:
 	NMA_UNLOCK(nmd);
 	return error;

@@ -421,13 +421,37 @@ linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 	return netmap_poll((void *)pwait, events, (void *)file);
 }
 
+int
+linux_netmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+	struct netmap_priv_d *priv = vma->vm_private_data;
+	struct page *page;
+	unsigned long off = (vma->vm_pgoff + vmf->pgoff) << PAGE_SHIFT;
+	unsigned long pa, pfn;
+
+	pa = netmap_mem_ofstophys(priv->np_mref, off);
+	ND("fault off %lx -> phys addr %lx", off, pa);
+	if (pa == 0)
+		return VM_FAULT_SIGBUS;
+	pfn = pa >> PAGE_SHIFT;
+	if (!pfn_valid(pfn))
+		return VM_FAULT_SIGBUS;
+	page = pfn_to_page(pfn);
+	get_page(page);
+	vmf->page = page;
+	return 0;
+}
+
+static struct vm_operations_struct linux_netmap_mmap_ops = {
+	.fault = linux_netmap_fault,
+};
 
 static int
 linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 {
 	int error = 0;
-	unsigned long off, va;
-	vm_ooffset_t pa;
+	unsigned long off;
+	u_int memsize, memflags;
 	struct netmap_priv_d *priv = f->private_data;
 	/*
 	 * vma->vm_start: start of mapping user address space
@@ -435,30 +459,38 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 	 * vma->vm_pfoff: offset of first page in the device
 	 */
 
-	// XXX security checks
-
 	error = netmap_get_memory(priv);
 	ND("get_memory returned %d", error);
 	if (error)
 	    return -error;
 
-	if ((vma->vm_start & ~PAGE_MASK) || (vma->vm_end & ~PAGE_MASK)) {
-		ND("vm_start = %lx vm_end = %lx", vma->vm_start, vma->vm_end);
+	/* check that [off, off + vsize) is within our memory */
+	error = netmap_mem_get_info(priv->np_mref, &memsize, &memflags, NULL);
+	ND("get_info returned %d", error);
+	if (error)
+		return -error;
+	off = vma->vm_pgoff << PAGE_SHIFT;
+	ND("off %lx size %lx memsize %x", off,
+			(vma->vm_end - vma->vm_start), memsize);
+	if (off + (vma->vm_end - vma->vm_start) > memsize)
 		return -EINVAL;
-	}
+	if (memflags & NETMAP_MEM_IO) {
+		vm_ooffset_t pa;
 
-	for (va = vma->vm_start, off = vma->vm_pgoff;
-	     va < vma->vm_end;
-	     va += PAGE_SIZE, off++)
-	{
-		pa = netmap_mem_ofstophys(priv->np_mref, off << PAGE_SHIFT);
-		if (pa == 0) 
+		/* the underlying memory is contiguous */
+		pa = netmap_mem_ofstophys(priv->np_mref, 0);
+		if (pa == 0)
 			return -EINVAL;
-	
-		ND("va %lx pa %p", va, pa);	
-		error = remap_pfn_range(vma, va, pa >> PAGE_SHIFT, PAGE_SIZE, vma->vm_page_prot);
-		if (error) 
-			return error;
+		return remap_pfn_range(vma, vma->vm_start, 
+				pa >> PAGE_SHIFT,
+				vma->vm_end - vma->vm_start,
+				vma->vm_page_prot);
+	} else {
+		/* non contiguous memory, we serve 
+		 * page faults as they come
+		 */
+		vma->vm_private_data = priv;
+		vma->vm_ops = &linux_netmap_mmap_ops;
 	}
 	return 0;
 }
