@@ -95,7 +95,7 @@ static void free_receive_bufs(struct virtnet_info *vi);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 2, 0)
 /* Not yet found a way to find out virtqueue length in these
    kernel series. Use the virtio default value. */
-#define virtqueue_get_vring_size(_vq)	256
+#define virtqueue_get_vring_size(_vq)	({ (void)(_vq); 256; })
 #endif  /* < 3.2 */
 
 
