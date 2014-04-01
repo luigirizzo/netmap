@@ -123,7 +123,11 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 
 static void give_pages(struct receive_queue *rq, struct page *page);
 #define GIVE_PAGES(_vi, _i, _buf)	give_pages(&(_vi)->rq[_i], _buf)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)
 #define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
+#else
+#define DECR_NUM(_vi, _i)		({ (void)(_vi); (void)(_i); })
+#endif /* < 3.14.0 */
 #define GET_RX_VQ(_vi, _i)		(_vi)->rq[_i].vq
 #define GET_TX_VQ(_vi, _i)		(_vi)->sq[_i].vq
 #define VQ_FULL(_vq, _err)		({ (void)(_err); (_vq)->num_free == 0; })
