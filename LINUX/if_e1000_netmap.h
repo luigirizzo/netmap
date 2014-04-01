@@ -408,9 +408,14 @@ static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
 	}
 	switch (val) {
 	case NET_PARAVIRT_PTCTL_FINALIZE:
+		D("=== BAR %d start %llx len %llx actual %x ===",
+				csb->pci_bar,
+				pci_resource_start(adapter->pdev, csb->pci_bar),
+				pci_resource_len(adapter->pdev, csb->pci_bar),
+				csb->memsize);
 		base_addr = ioremap_cache(
 				pci_resource_start(adapter->pdev, csb->pci_bar),
-				pci_resource_len(adapter->pdev, csb->pci_bar));
+				csb->memsize);
 		if (base_addr == NULL) {
 			ret = ENOMEM;
 			break;

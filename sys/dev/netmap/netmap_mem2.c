@@ -1899,6 +1899,7 @@ netmap_mem_paravirt_new(struct ifnet *ifp,
 		goto error;
 
 	d->up.flags &= ~NETMAP_MEM_FINALIZED;
+	d->up.flags |= NETMAP_MEM_IO;
 
 	NMA_LOCK_INIT(&d->up);
 
