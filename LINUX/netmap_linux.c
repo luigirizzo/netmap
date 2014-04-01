@@ -222,9 +222,13 @@ netmap_catch_rx(struct netmap_adapter *na, int intercept)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,13,0)
 u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m)
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0)
 u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m,
                                 void *accel_priv)
+#else
+u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m,
+                                void *accel_priv,
+				select_queue_fallback_t fallback)
 #endif
 {
     return skb_get_queue_mapping(m); // actually 0 on 2.6.23 and before
