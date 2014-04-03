@@ -332,6 +332,9 @@ e1000_paravirt_netmap_config(struct netmap_adapter *na,
 	struct e1000_adapter *adapter = netdev_priv(na->ifp);
 	struct paravirt_csb *csb = adapter->csb;
 
+	if (csb == NULL)
+		return EINVAL;
+
 	*txr = csb->num_tx_rings;
 	*rxr = csb->num_rx_rings;
 	*txd = csb->num_tx_slots;
