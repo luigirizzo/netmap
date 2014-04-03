@@ -405,8 +405,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 		errmsg = "invalid ringid";
 		goto fail;
 	}
-	/* add the *XPOLL flags */
-	nr_ringid |= new_flags & (NETMAP_NO_TX_POLL | NETMAP_DO_RX_POLL);
 
 	d = (struct nm_desc *)calloc(1, sizeof(*d));
 	if (d == NULL) {
@@ -462,6 +460,9 @@ nm_open(const char *ifname, const struct nmreq *req,
 			d->req.nr_flags = parent->req.nr_flags;
 		}
 	}
+	/* add the *XPOLL flags */
+	d->req.nr_ringid |= new_flags & (NETMAP_NO_TX_POLL | NETMAP_DO_RX_POLL);
+
 	if (ioctl(d->fd, NIOCREGIF, &d->req)) {
 		errmsg = "NIOCREGIF failed";
 		goto fail;

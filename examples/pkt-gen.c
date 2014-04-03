@@ -1347,7 +1347,7 @@ start_threads(struct glob_arg *g)
 		}
 		/* Only touch one of the rings (rx is already ok) */
 		if (g->td_body == receiver_body)
-			nmd.req.nr_ringid |= NETMAP_NO_TX_POLL;
+			g->nmd_flags |= NETMAP_NO_TX_POLL;
 
 		/* register interface. Override ifname and ringid etc. */
 
