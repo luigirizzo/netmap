@@ -396,6 +396,9 @@ nm_alloc_bdgfwd(struct netmap_adapter *na)
 }
 
 
+/* remove from bridge b the ports in slots hw and sw
+ * (sw can be -1 if not needed)
+ */
 static void
 netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 {
@@ -458,6 +461,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	}
 }
 
+/* nm_bdg_ctl callback for VALE ports */
 static int
 netmap_vp_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 {
@@ -477,7 +481,7 @@ netmap_vp_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 	return 0;
 }
 
-/* only needed for ephemeral one */
+/* nm_dtor callback for ephemeral VALE ports */
 static void
 netmap_vp_dtor(struct netmap_adapter *na)
 {
@@ -491,6 +495,7 @@ netmap_vp_dtor(struct netmap_adapter *na)
 	}
 }
 
+/* nm_dtor callback for persistent VALE ports */
 static void
 netmap_persist_vp_dtor(struct netmap_adapter *na)
 {
@@ -501,6 +506,7 @@ netmap_persist_vp_dtor(struct netmap_adapter *na)
 	nm_vi_detach(ifp);
 }
 
+/* remove a persistent VALE port from the system */
 static int
 nm_vi_destroy(const char *name)
 {
@@ -510,8 +516,8 @@ nm_vi_destroy(const char *name)
 	ifp = ifunit_ref(name);
 	if (!ifp)
 		return ENXIO;
-	/* security check */
 	NMG_LOCK();
+	/* make sure this is actually a VALE port */
 	if (!NETMAP_CAPABLE(ifp) || NA(ifp)->nm_register != netmap_vp_reg) {
 		error = EINVAL;
 		goto err;
@@ -539,7 +545,7 @@ err:
 
 /*
  * Create a virtual interface registered to the system.
- * The interface be attached to a bridge later.
+ * The interface will be attached to a bridge later.
  */
 static int
 nm_vi_create(struct nmreq *nmr)
@@ -561,7 +567,7 @@ nm_vi_create(struct nmreq *nmr)
 		return error;
 
 	NMG_LOCK();
-	/* bdg_netmap_attach creates a struct netmap_adapter */
+	/* netmap_vp_create creates a struct netmap_vp_adapter */
 	error = netmap_vp_create(nmr, ifp, &vpna);
 	if (error) {
 		D("error %d", error);
@@ -721,7 +727,7 @@ out:
 }
 
 
-/* Process NETMAP_BDG_ATTACH and NETMAP_BDG_DETACH */
+/* Process NETMAP_BDG_ATTACH */
 static int
 nm_bdg_ctl_attach(struct nmreq *nmr)
 {
@@ -740,6 +746,9 @@ nm_bdg_ctl_attach(struct nmreq *nmr)
 	}
 
 	if (na->nm_bdg_ctl) {
+		/* nop for VALE ports. The bwrap needs to put the hwna
+		 * in netmap mode (see netmap_bwrap_bdg_ctl)
+		 */
 		error = na->nm_bdg_ctl(na, nmr, 1);
 		if (error)
 			goto unref_exit;
@@ -756,6 +765,7 @@ unlock_exit:
 }
 
 
+/* process NETMAP_BDG_DETACH */
 static int
 nm_bdg_ctl_detach(struct nmreq *nmr)
 {
@@ -773,8 +783,12 @@ nm_bdg_ctl_detach(struct nmreq *nmr)
 		goto unlock_exit;
 	}
 
-	if (na->nm_bdg_ctl)
+	if (na->nm_bdg_ctl) {
+		/* remove the port from bridge. The bwrap
+		 * also needs to put the hwna in normal mode
+		 */
 		error = na->nm_bdg_ctl(na, nmr, 0);
+	}
 
 	netmap_adapter_put(na);
 unlock_exit:
@@ -955,6 +969,11 @@ netmap_bdg_config(struct nmreq *nmr)
 	return error;
 }
 
+
+/* nm_krings_create callback for VALE ports.
+ * Calls the standard netmap_krings_create, then adds leases on rx
+ * rings and bdgfwd on tx rings.
+ */
 static int
 netmap_vp_krings_create(struct netmap_adapter *na)
 {
@@ -989,6 +1008,7 @@ netmap_vp_krings_create(struct netmap_adapter *na)
 }
 
 
+/* nm_krings_delete callback for VALE ports. */
 static void
 netmap_vp_krings_delete(struct netmap_adapter *na)
 {
@@ -1003,6 +1023,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n,
 
 
 /*
+ * main dispatch routine for the bridge.
  * Grab packets from a kring, move them into the ft structure
  * associated to the tx (input) port. Max one instance per port,
  * filtered on input (ioctl, poll or XXX).
@@ -1113,19 +1134,23 @@ nm_bridge_rthash(const uint8_t *addr)
 #undef mix
 
 
+/* nm_register callback for VALE ports */
 static int
 netmap_vp_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_vp_adapter *vpna =
 		(struct netmap_vp_adapter*)na;
 
-	/* the interface is already attached to the bridge,
-	 * so we only need to toggle IFCAP_NETMAP.
+	/* persistent ports may be put in netmap mode
+	 * before being attached to a bridge
 	 */
-	if (vpna->na_bdg)
+	if (vpna->na_bdg) 
 		BDG_WLOCK(vpna->na_bdg);
 	if (onoff) {
 		na->na_flags |= NAF_NETMAP_ON;
+		 /* XXX on FreeBSD, persistent VALE ports should also
+		 * toggle IFCAP_NETMAP in na->ifp (2014-03-16)
+		 */
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 	}
@@ -1268,6 +1293,7 @@ nm_kr_lease(struct netmap_kring *k, u_int n, int is_rx)
 }
 
 /*
+ *
  * This flush routine supports only unicast and broadcast but a large
  * number of ports, and lets us replace the learn and dispatch functions.
  */
@@ -1351,7 +1377,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 	}
 
 	ND(5, "pass 1 done %d pkts %d dsts", n, num_dsts);
-	/* second pass: scan destinations (XXX will be modular somehow) */
+	/* second pass: scan destinations */
 	for (i = 0; i < num_dsts; i++) {
 		struct netmap_vp_adapter *dst_na;
 		struct netmap_kring *kring;
@@ -1436,6 +1462,10 @@ retry:
 		if (dst_na->retry && retry) {
 			/* try to get some free slot from the previous run */
 			dst_na->up.nm_notify(&dst_na->up, dst_nr, NR_RX, 0);
+			/* actually useful only for bwraps, since there
+			 * the notify will trigger a txsync on the hwna. VALE ports
+			 * have dst_na->retry == 0
+			 */
 		}
 		/* reserve the buffers in the queue and an entry
 		 * to report completion, and drop lock.
@@ -1568,8 +1598,16 @@ retry:
 				still_locked = 0;
 				mtx_unlock(&kring->q_lock);
 				dst_na->up.nm_notify(&dst_na->up, dst_nr, NR_RX, 0);
-				if (dst_na->retry && retry--)
+				/* this is netmap_notify for VALE ports and 
+				 * netmap_bwrap_notify for bwrap. The latter will
+				 * trigger a txsync on the underlying hwna
+				 */
+				if (dst_na->retry && retry--) {
+					/* XXX this is going to call nm_notify again.
+					 * Only useful for bwrap in virtual machines
+					 */
 					goto retry;
+				}
 			}
 		    }
 		    if (still_locked)
@@ -1584,11 +1622,7 @@ cleanup:
 	return 0;
 }
 
-/*
- * main dispatch routine for the bridge.
- * We already know that only one thread is running this.
- * we must run nm_bdg_preflush without lock.
- */
+/* nm_txsync callback for VALE ports */
 static int
 netmap_vp_txsync(struct netmap_kring *kring, int flags)
 {
@@ -1625,6 +1659,9 @@ done:
 }
 
 
+/* rxsync code used by VALE ports nm_rxsync callback and also
+ * internally by the brwap
+ */
 static int
 netmap_vp_rxsync_locked(struct netmap_kring *kring, int flags)
 {
@@ -1669,6 +1706,7 @@ done:
 }
 
 /*
+ * nm_rxsync callback for VALE ports 
  * user process reading from a VALE switch.
  * Already protected against concurrent calls from userspace,
  * but we must acquire the queue's lock to protect against
@@ -1686,6 +1724,9 @@ netmap_vp_rxsync(struct netmap_kring *kring, int flags)
 }
 
 
+/* nm_bdg_attach callback for VALE ports 
+ * The na_vp port is this same netmap_adapter. There is no host port.
+ */
 static int
 netmap_vp_bdg_attach(struct netmap_adapter *na)
 {
@@ -1698,6 +1739,9 @@ netmap_vp_bdg_attach(struct netmap_adapter *na)
 	return 0;
 }
 
+/* create a netmap_vp_adapter that describes a VALE port.
+ * Only persistent VALE ports have a non-null ifp.
+ */
 static int
 netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter **ret) 
 {
@@ -1772,6 +1816,36 @@ err:
 	return error;
 }
 
+/* Bridge wrapper code (bwrap). 
+ * This is used to connect a non-VALE-port netmap_adapter (hwna) to a
+ * VALE switch. 
+ * The main task is to swap the meaning of tx and rx rings to match the 
+ * expectations of the VALE switch code (see nm_bdg_flush). 
+ *
+ * The bwrap works by interposing a netmap_bwrap_adapter between the
+ * rest of the system and the hwna. The netmap_bwrap_adapter looks like
+ * a netmap_vp_adapter to the rest the system, but, internally, it 
+ * translates all callbacks to what the hwna expects.
+ *
+ * Note that we have to intercept callbacks coming from two sides:
+ *
+ *  - callbacks coming from the netmap module are intercepted by
+ *    passing around the netmap_bwrap_adapter instead of the hwna
+ *
+ *  - callbacks coming from outside of the netmap module only know 
+ *    about the hwna. This, however, only happens in interrupt 
+ *    handlers, where only the hwna->nm_notify callback is called.
+ *    What the bwrap does is to overwrite the hwna->nm_notify callback
+ *    with its own netmap_bwrap_intr_notify.
+ *    XXX This assumes that the hwna->nm_notify callback was the
+ *    standard netmap_notify(), as it is the case for nic adapters.
+ *    Any additional action performed by hwna->nm_notify will not be
+ *    performed by netmap_bwrap_intr_notify.
+ *
+ * Additionally, the bwrap can optionally attach the host rings pair
+ * of the wrapped adapter to a different port of the switch. 
+ */
+
 
 static void
 netmap_bwrap_dtor(struct netmap_adapter *na)
@@ -1780,7 +1854,7 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	struct netmap_adapter *hwna = bna->hwna;
 
 	ND("na %p", na);
-	/* drop reference to hwna->ifp. I
+	/* drop reference to hwna->ifp.
 	 * If we don't do this, netmap_detach_common(na)
 	 * will think it has set NA(na->ifp) to NULL
 	 */
@@ -1926,6 +2000,7 @@ put_out:
 }
 
 
+/* nm_register callback for bwrap */
 static int
 netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 {
@@ -1940,11 +2015,20 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 	if (onoff) {
 		int i;
 
+		/* netmap_do_regif has been called on the bwrap na.
+		 * We need to pass the information about the 
+		 * memory allocator down to the hwna before 
+		 * putting it in netmap mode
+		 */
 		hwna->na_lut = na->na_lut;
 		hwna->na_lut_objtotal = na->na_lut_objtotal;
 		hwna->na_lut_objsize = na->na_lut_objsize;
 
 		if (hostna->na_bdg) {
+			/* if the host rings have been attached to switch,
+			 * we need to copy the memory allocator information
+			 * in the hostna also
+			 */
 			hostna->up.na_lut = na->na_lut;
 			hostna->up.na_lut_objtotal = na->na_lut_objtotal;
 			hostna->up.na_lut_objsize = na->na_lut_objsize;
@@ -1953,6 +2037,8 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 		/* cross-link the netmap rings
 		 * The original number of rings comes from hwna,
 		 * rx rings on one side equals tx rings on the other.
+		 * We need to do this now, after the initialization
+		 * of the kring->ring pointers 
 		 */
 		for (i = 0; i < na->num_rx_rings + 1; i++) {
 			hwna->tx_rings[i].nkr_num_slots = na->rx_rings[i].nkr_num_slots;
@@ -1964,13 +2050,16 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 		}
 	}
 
+	/* forward the request to the hwna */
 	error = hwna->nm_register(hwna, onoff);
 	if (error)
 		return error;
 
+	/* impersonate a netmap_vp_adapter */
 	netmap_vp_reg(na, onoff);
 
 	if (onoff) {
+		/* intercept the hwna nm_nofify callback */
 		bna->save_notify = hwna->nm_notify;
 		hwna->nm_notify = netmap_bwrap_intr_notify;
 	} else {
@@ -1983,7 +2072,7 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 	return 0;
 }
 
-
+/* nm_config callback for bwrap */
 static int
 netmap_bwrap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 				    u_int *rxr, u_int *rxd)
@@ -2004,6 +2093,7 @@ netmap_bwrap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 }
 
 
+/* nm_krings_create callback for bwrap */
 static int
 netmap_bwrap_krings_create(struct netmap_adapter *na)
 {
@@ -2015,15 +2105,21 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 
 	ND("%s", na->name);
 
+	/* impersonate a netmap_vp_adapter */
 	error = netmap_vp_krings_create(na);
 	if (error)
 		return error;
 
+	/* also create the hwna krings */
 	error = hwna->nm_krings_create(hwna);
 	if (error) {
 		netmap_vp_krings_delete(na);
 		return error;
 	}
+	/* the connection between the bwrap krings and the hwna krings
+	 * will be perfomed later, in the nm_register callback, since
+	 * now the kring->ring pointers have not been initialized yet
+	 */
 
 	if (na->na_flags & NAF_HOST_RINGS) {
 		/* the hostna rings are the host rings of the bwrap.
@@ -2112,6 +2208,7 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 }
 
 
+/* notify method for the bridge-->host-rings path */
 static int
 netmap_bwrap_host_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int flags)
 {
@@ -2123,6 +2220,14 @@ netmap_bwrap_host_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, 
 }
 
 
+/* nm_bdg_ctl callback for the bwrap.
+ * Called on bridge-attach and detach, as an effect of vale-ctl -[ahd].
+ * On attach, it needs to provide a fake netmap_priv_d structure and
+ * perform a netmap_do_regif() on the bwrap. This will put both the
+ * bwrap and the hwna in netmap mode, with the netmap rings shared
+ * and cross linked. Moroever, it will start intercepting interrupts 
+ * directed to hwna.
+ */
 static int
 netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 {
@@ -2169,6 +2274,9 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 			bzero(npriv, sizeof(*npriv));
 			free(npriv, M_DEVBUF);
 			if (b) {
+				/* XXX the bwrap dtor should take care
+				 * of this (2014-06-16)
+				 */
 				netmap_bdg_detach_common(b, bna->up.bdg_port,
 				    (bh ? bna->host.bdg_port : -1));
 			}

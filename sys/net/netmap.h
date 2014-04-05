@@ -126,9 +126,6 @@
  *   bind the master or slave side, the index (from nr_ringid)
  *   is just a cookie and does need to be sequential.
  *
- * + NIOCREGIF can also attach to 'monitor' rings that replicate
- *   the content of specific rings, also from the same memory space.
- *
  *   Extra flags in nr_flags support the above functions.
  *   Application libraries may use the following naming scheme:
  *	netmap:foo			all NIC ring pairs
