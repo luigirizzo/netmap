@@ -842,8 +842,8 @@ void netmap_common_irq(struct ifnet *, u_int, u_int *work_done);
 #ifdef WITH_VALE
 /* functions used by external modules to interface with VALE */
 #define netmap_vp_to_ifp(_vp)	((_vp)->up.ifp)
-#define netmap_ifp_to_vp(_ifp)	((_ifp)->na->na_vp)
-#define netmap_ifp_to_host_vp(_ifp) ((_ifp)->na->na_hostvp)
+#define netmap_ifp_to_vp(_ifp)	(NA(_ifp)->na_vp)
+#define netmap_ifp_to_host_vp(_ifp) (NA(_ifp)->na_hostvp)
 #define netmap_bdg_idx(_vp)	((_vp)->bdg_port)
 const char *netmap_bdg_name(struct netmap_vp_adapter *);
 #else /* !WITH_VALE */
