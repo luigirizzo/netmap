@@ -453,6 +453,8 @@ struct netmap_adapter {
 	/* count users of the global wait queues */
 	int tx_si_users, rx_si_users;
 
+	struct device *pdev;
+
 	/* copy of if_qflush and if_transmit pointers, to intercept
 	 * packets from the network stack when netmap is active.
 	 */
@@ -1230,6 +1232,45 @@ netmap_reload_map(struct netmap_adapter *na,
 
 #else /* linux */
 
+extern size_t     netmap_mem_get_bufsize(struct netmap_mem_d *);
+
+static inline void
+netmap_load_map(struct netmap_adapter *na,
+	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
+{
+	if (map) {
+		*map = dma_map_single(na->pdev, buf, netmap_mem_get_bufsize(na->nm_mem),
+				DMA_BIDIRECTIONAL);
+	}
+}
+
+static inline void
+netmap_unload_map(struct netmap_adapter *na,
+	bus_dma_tag_t tag, bus_dmamap_t map)
+{
+	u_int sz = netmap_mem_get_bufsize(na->nm_mem);
+
+	if (*map) {
+		dma_unmap_single(na->pdev, *map, sz,
+				DMA_BIDIRECTIONAL);
+	}
+}
+
+static inline void
+netmap_reload_map(struct netmap_adapter *na,
+	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
+{
+	u_int sz = netmap_mem_get_bufsize(na->nm_mem);
+
+	if (*map) {
+		dma_unmap_single(na->pdev, *map, sz,
+				DMA_BIDIRECTIONAL);
+	}
+
+	*map = dma_map_single(na->pdev, buf, sz,
+				DMA_BIDIRECTIONAL);
+}
+
 /*
  * XXX How do we redefine these functions:
  *
@@ -1240,8 +1281,7 @@ netmap_reload_map(struct netmap_adapter *na,
  * unfortunately the direction is not, so we need to change
  * something to have a cross API
  */
-#define netmap_load_map(_t, _m, _b)
-#define netmap_reload_map(_t, _m, _b)
+
 #if 0
 	struct e1000_buffer *buffer_info =  &tx_ring->buffer_info[l];
 	/* set time_stamp *before* dma to help avoid a possible race */

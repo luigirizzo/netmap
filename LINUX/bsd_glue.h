@@ -125,8 +125,9 @@ struct net_device_ops {
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 
 /* Type redefinitions. XXX check them */
-typedef	void *			bus_dma_tag_t;
-typedef	void *			bus_dmamap_t;
+#define bus_dma_tag_t 		struct device *
+#define bus_dmamap_t 		phys_addr_t*
+
 typedef	int			bus_size_t;
 typedef	int			bus_dma_segment_t;
 typedef void *			bus_addr_t;
