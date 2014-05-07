@@ -387,6 +387,7 @@ igb_netmap_attach(struct SOFTC_T *adapter)
 	bzero(&na, sizeof(na));
 
 	na.ifp = adapter->netdev;
+	na.pdev = &adapter->pdev->dev;
 	na.num_tx_desc = adapter->tx_ring_count;
 	na.num_rx_desc = adapter->rx_ring_count;
 	na.nm_register = igb_netmap_reg;
