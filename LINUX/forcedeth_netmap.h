@@ -371,8 +371,8 @@ forcedeth_netmap_rx_init(struct SOFTC_T *np)
 		int l = netmap_idx_n2k(&na->rx_rings[0], i);
 
 		addr = PNMB(na, slot + l, &paddr);
-		netmap_reload_map(np->rl_ldata.rl_rx_mtag,
-		    np->rl_ldata.rl_rx_desc[i].rx_dmamap, addr);
+		//netmap_reload_map(np->rl_ldata.rl_rx_mtag,
+		//    np->rl_ldata.rl_rx_desc[i].rx_dmamap, addr);
 		desc[i].bufhigh = htole32(dma_high(paddr));
 		desc[i].buflow = htole32(dma_low(paddr));
 		cmdstat = NETMAP_BUF_SIZE(na);
@@ -395,6 +395,7 @@ forcedeth_netmap_attach(struct SOFTC_T *np)
 	bzero(&na, sizeof(na));
 
 	na.ifp = np->dev;
+	na.pdev = &np->pci_dev->dev;
 	na.num_tx_desc = np->tx_ring_size;
 	na.num_rx_desc = np->tx_ring_size;
 	na.nm_txsync = forcedeth_netmap_txsync;
