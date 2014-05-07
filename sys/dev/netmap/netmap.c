@@ -908,7 +908,7 @@ netmap_get_memory_locked(struct netmap_priv_d* p)
 		nmd = p->np_na->nm_mem;
 	}
 	if (p->np_mref == NULL) {
-		error = netmap_mem_finalize(nmd);
+		error = netmap_mem_finalize(nmd, p->np_na);
 		if (!error)
 			p->np_mref = nmd;
 	} else if (p->np_mref != nmd) {
@@ -947,7 +947,7 @@ static void
 netmap_drop_memory_locked(struct netmap_priv_d* p)
 {
 	if (p->np_mref) {
-		netmap_mem_deref(p->np_mref);
+		netmap_mem_deref(p->np_mref, p->np_na);
 		p->np_mref = NULL;
 	}
 }

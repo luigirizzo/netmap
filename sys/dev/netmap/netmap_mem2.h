@@ -121,14 +121,14 @@ struct lut_entry* netmap_mem_get_lut(struct netmap_mem_d *);
 u_int      netmap_mem_get_buftotal(struct netmap_mem_d *);
 size_t     netmap_mem_get_bufsize(struct netmap_mem_d *);
 vm_paddr_t netmap_mem_ofstophys(struct netmap_mem_d *, vm_ooffset_t);
-int	   netmap_mem_finalize(struct netmap_mem_d *);
+int	   netmap_mem_finalize(struct netmap_mem_d *, struct netmap_adapter *);
 int 	   netmap_mem_init(void);
 void 	   netmap_mem_fini(void);
 struct netmap_if * netmap_mem_if_new(struct netmap_adapter *);
 void 	   netmap_mem_if_delete(struct netmap_adapter *, struct netmap_if *);
 int	   netmap_mem_rings_create(struct netmap_adapter *);
 void	   netmap_mem_rings_delete(struct netmap_adapter *);
-void 	   netmap_mem_deref(struct netmap_mem_d *);
+void 	   netmap_mem_deref(struct netmap_mem_d *, struct netmap_adapter *);
 int	   netmap_mem_get_info(struct netmap_mem_d *, u_int *size, u_int *memflags, uint16_t *id);
 ssize_t    netmap_mem_if_offset(struct netmap_mem_d *, const void *vaddr);
 struct netmap_mem_d* netmap_mem_private_new(const char *name,

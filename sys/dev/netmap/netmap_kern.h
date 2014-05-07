@@ -453,7 +453,7 @@ struct netmap_adapter {
 	/* count users of the global wait queues */
 	int tx_si_users, rx_si_users;
 
-	struct device *pdev;
+	void *pdev; /* used to store pci device */
 
 	/* copy of if_qflush and if_transmit pointers, to intercept
 	 * packets from the network stack when netmap is active.

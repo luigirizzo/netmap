@@ -356,7 +356,6 @@ nm_mem_release_id(struct netmap_mem_d *nmd)
 	NMA_UNLOCK(&nm_mem);
 }
 
-
 /*
  * First, find the allocator that contains the requested offset,
  * then locate the cluster through a lookup table.
@@ -376,7 +375,7 @@ netmap_mem_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 		if (offset >= p[i].memtotal)
 			continue;
 		// now lookup the cluster's address
-		pa = p[i].lut[offset / p[i]._objsize].paddr +
+		pa = vtophys(p[i].lut[offset / p[i]._objsize].vaddr) +
 			offset % p[i]._objsize;
 		NMA_UNLOCK(nmd);
 		return pa;
@@ -965,6 +964,37 @@ netmap_mem_reset_all(struct netmap_mem_d *nmd)
 }
 
 static int
+netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
+{
+	int i, lim = p->_objtotal;
+
+	if (na->pdev == NULL)
+		return 0;
+
+	for (i = 2; i < lim; i++) {
+		netmap_unload_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr);
+	}
+
+	return 0;
+}
+
+static int
+netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
+{
+	int i, lim = p->_objtotal;
+
+	if (na->pdev == NULL)
+		return 0;
+
+	for (i = 2; i < lim; i++) {
+		netmap_load_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr,
+				p->lut[i].vaddr);
+	}
+
+	return 0;
+}
+
+static int
 netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 {
 	int i;
@@ -1466,13 +1496,21 @@ netmap_mem_global_deref(struct netmap_mem_d *nmd)
 }
 
 int
-netmap_mem_finalize(struct netmap_mem_d *nmd)
+netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
-	return nmd->finalize(nmd);
+	nmd->finalize(nmd);
+
+	if (!nmd->lasterr)
+		netmap_mem_map(&nmd->pools[NETMAP_BUF_POOL], na);
+
+	return 0;
 }
 
 void
-netmap_mem_deref(struct netmap_mem_d *nmd)
+netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
+	NMA_LOCK(nmd);
+	netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
+	NMA_UNLOCK(nmd);
 	return nmd->deref(nmd);
 }
