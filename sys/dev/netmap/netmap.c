@@ -522,7 +522,7 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
 	int i;
 	u_int ntx, nrx;
 
-	if (!(na->na_flags & NAF_NETMAP_ON))
+	if (na == NULL || !(na->na_flags & NAF_NETMAP_ON))
 		return;
 
 	ntx = netmap_real_tx_rings(na);
