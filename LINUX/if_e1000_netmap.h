@@ -340,6 +340,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	bzero(&na, sizeof(na));
 
 	na.ifp = adapter->netdev;
+	na.pdev = &adapter->pdev->dev;
 	na.num_tx_desc = adapter->tx_ring[0].count;
 	na.num_rx_desc = adapter->rx_ring[0].count;
 	na.nm_register = e1000_netmap_reg;
