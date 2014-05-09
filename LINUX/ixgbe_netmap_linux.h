@@ -421,6 +421,38 @@ ixgbe_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	return 1;
 }
 
+/*
+ * In netmap mode, overwrite the srrctl register with netmap_buf_size
+ * to properly configure the Receive Buffer Size
+ */
+static void
+ixgbe_netmap_configure_srrctl(struct SOFTC_T *adapter, struct ixgbe_ring *rx_ring)
+{
+	struct netmap_adapter *na = NA(adapter->netdev);
+	struct ixgbe_hw *hw = &adapter->hw;
+	u32 srrctl;
+	u8 reg_idx = rx_ring->reg_idx;
+
+	if (hw->mac.type == ixgbe_mac_82598EB) {
+		u16 mask = adapter->ring_feature[RING_F_RSS].mask;
+		reg_idx &= mask;
+	}
+	srrctl = IXGBE_RX_HDR_SIZE << 2;
+	srrctl |= NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT;
+	D("bufsz: %d srrctl: %d", NETMAP_BUF_SIZE(na),
+		NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT);
+	/*
+	 * XXX
+	 * With Advanced RX descriptor, the address needs to be rewritten,
+	 * but with Legacy RX descriptor, it simply has to zero the status
+	 * byte in the descriptor to make it ready for reuse by hardware.
+	 * (ixgbe datasheet - Section 7.1.9)
+	 */
+	srrctl |= IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF;
+	IXGBE_WRITE_REG(hw, IXGBE_SRRCTL(reg_idx), srrctl);
+}
+
+
 
 static int
 ixgbe_netmap_configure_rx_ring(struct SOFTC_T *adapter, int ring_nr)
@@ -449,6 +481,8 @@ ixgbe_netmap_configure_rx_ring(struct SOFTC_T *adapter, int ring_nr)
         if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
             return 0;
         }
+
+	ixgbe_netmap_configure_srrctl(adapter, ring);
 
         slot = netmap_reset(na, NR_RX, ring_nr, 0);
         /* same as in ixgbe_setup_transmit_ring() */
