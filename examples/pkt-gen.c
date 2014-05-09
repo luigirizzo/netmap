@@ -123,12 +123,14 @@ struct virt_header {
 	uint8_t fields[VIRT_HDR_MAX];
 };
 
+#define MAX_BODYSIZE	16384
+
 struct pkt {
 	struct virt_header vh;
 	struct ether_header eh;
 	struct ip ip;
 	struct udphdr udp;
-	uint8_t body[2048];	// XXX hardwired
+	uint8_t body[MAX_BODYSIZE];	// XXX hardwired
 } __attribute__((__packed__));
 
 struct ip_range {
@@ -144,6 +146,8 @@ struct mac_range {
 
 /* ifname can be netmap:foo-xxxx */
 #define MAX_IFNAMELEN	64	/* our buffer for ifname */
+//#define MAX_PKTSIZE	1536
+#define MAX_PKTSIZE	MAX_BODYSIZE	/* XXX: + IP_HDR + ETH_HDR */
 /*
  * global arguments for all threads
  */
@@ -1177,7 +1181,7 @@ receiver_body(void *data)
     if (targ->g->dev_type == DEV_TAP) {
 	D("reading from %s fd %d", targ->g->ifname, targ->g->main_fd);
 	while (!targ->cancel) {
-		char buf[2048];
+		char buf[MAX_BODYSIZE];
 		/* XXX should we poll ? */
 		if (read(targ->g->main_fd, buf, sizeof(buf)) > 0)
 			targ->count++;
@@ -1741,8 +1745,8 @@ main(int arc, char **argv)
 	if (g.cpus == 0)
 		g.cpus = i;
 
-	if (g.pkt_size < 16 || g.pkt_size > 1536) {
-		D("bad pktsize %d\n", g.pkt_size);
+	if (g.pkt_size < 16 || g.pkt_size > MAX_PKTSIZE) {
+		D("bad pktsize %d [16..%d]\n", g.pkt_size, MAX_PKTSIZE);
 		usage();
 	}
 
