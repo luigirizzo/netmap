@@ -193,7 +193,7 @@ struct nm_desc {
 	struct nm_desc *self; /* point to self if netmap. */
 	int fd;
 	void *mem;
-	int memsize;
+	uint32_t memsize;
 	int done_mmap;	/* set if mem is the result of mmap */
 	struct netmap_if * const nifp;
 	uint16_t first_tx_ring, last_tx_ring, cur_tx_ring;
@@ -474,10 +474,11 @@ nm_open(const char *ifname, const struct nmreq *req,
 		d->memsize = parent->memsize;
 		d->mem = parent->mem;
 	} else {
-		d->memsize = d->req.nr_memsize;
+		/* XXX TODO: check if memsize is too large (or there is overflow) */
+		d->memsize = d->req.nr_memsize; 
 		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
 				d->fd, 0);
-		if (d->mem == NULL) {
+		if (d->mem == MAP_FAILED) {
 			errmsg = "mmap failed";
 			goto fail;
 		}
