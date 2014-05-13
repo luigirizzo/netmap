@@ -67,12 +67,12 @@ LIN_VER = $(shell V=linux/version.h; G=. ; \
 # produce a list of applicable patches for this version
 PATCHES := $(shell \
 	    cd $(PWD)/patches; ls diff--* | awk -v v=$(LIN_VER) -F -- \
-	    '{ if ((!$$3 || $$3 <= v) && (!$$4 || v < $$4)) print $$0; }')
+	    '{ if ((!$$3 || $$3 <= v"") && (!$$4 || v"" < $$4)) print $$0; }')
 
 # source drivers to copy. Names derived from the patches
 S_DRIVERS := $(shell \
 	    cd $(PWD)/patches; ls diff--* | awk -v v=$(LIN_VER) -F -- \
-	    '{ if ((!$$3 || $$3 <= v) && (!$$4 || v < $$4)) print $$2 }' )
+	    '{ if ((!$$3 || $$3 <= v"") && (!$$4 || v"" < $$4)) print $$2 }' )
 
 # actual drivers after copy and patch
 DRIVERS = $(shell [ "$(PATCHES)" != "" ] && ls -dAp \
