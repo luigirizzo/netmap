@@ -784,7 +784,7 @@ netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int obj
 	p->r_objtotal = objtotal;
 	p->r_objsize = objsize;
 
-#define MAX_CLUSTSIZE	(1<<17)
+#define MAX_CLUSTSIZE	(1<<22)		// 4 MB
 #define LINE_ROUND	NM_CACHE_ALIGN	// 64
 	if (objsize >= MAX_CLUSTSIZE) {
 		/* we could do it but there is no point */
@@ -822,15 +822,14 @@ netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int obj
 			clustentries = i;
 			break;
 		}
-		if (delta > ( (clustentries*objsize) % PAGE_SIZE) )
-			clustentries = i;
 	}
-	// D("XXX --- ouch, delta %d (bad for buffers)", delta);
-	/* compute clustsize and round to the next page */
+	/* exact solution not found */
+	if (clustentries == 0) {
+		D("unsupported allocation for %d bytes", objsize);
+		return EINVAL;
+	}
+	/* compute clustsize */
 	clustsize = clustentries * objsize;
-	i =  (clustsize & (PAGE_SIZE - 1));
-	if (i)
-		clustsize += PAGE_SIZE - i;
 	if (netmap_verbose)
 		D("objsize %d clustsize %d objects %d",
 			objsize, clustsize, clustentries);
