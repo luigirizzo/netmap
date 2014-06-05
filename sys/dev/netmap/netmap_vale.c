@@ -1777,7 +1777,7 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 	if (is_host_ring) {
 		vpna = hostna;
 		ring_nr = 0;
-	} 
+	}
 	/* simulate a user wakeup on the rx ring */
 	/* fetch packets that have arrived.
 	 * XXX maybe do this in a loop ?
@@ -1925,7 +1925,7 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 
 	if (na->na_flags & NAF_HOST_RINGS) {
 		/* the hostna rings are the host rings of the bwrap.
-		 * The corresponding krings must point back to the 
+		 * The corresponding krings must point back to the
 		 * hostna
 		 */
 		hostna->tx_rings = na->tx_rings + na->num_tx_rings;
@@ -2061,7 +2061,7 @@ netmap_bwrap_attach(struct ifnet *fake, struct ifnet *real)
 	bna->hwna = hwna;
 	netmap_adapter_get(hwna);
 	hwna->na_private = bna; /* weak reference */
-	
+
 	if (hwna->na_flags & NAF_HOST_RINGS) {
 		na->na_flags |= NAF_HOST_RINGS;
 		hostna = &bna->host.up;
