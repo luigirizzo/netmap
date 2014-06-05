@@ -225,7 +225,7 @@ generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 int
 generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
-	D("called");
+	D("called, in tx %d rx %d", *tx, *rx);
 	return 0;
 }
 
@@ -233,7 +233,7 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 void
 generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
-	D("called");
+	D("called, in txq %d rxq %d", *txq, *rxq);
 	*txq = netmap_generic_rings;
 	*rxq = netmap_generic_rings;
 }

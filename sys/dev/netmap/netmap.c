@@ -2694,7 +2694,11 @@ netmap_attach(struct netmap_adapter *arg)
 	}
 #endif /* linux */
 
-	D("success for %s", hwna->up.name);
+	D("success for %s tx %d/%d rx %d/%d queues/slots",
+		hwna->up.name,
+		hwna->up.num_tx_rings, hwna->up.num_tx_desc,
+		hwna->up.num_rx_rings, hwna->up.num_rx_desc
+		);
 	return 0;
 
 fail:

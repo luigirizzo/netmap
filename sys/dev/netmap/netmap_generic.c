@@ -381,7 +381,7 @@ static void
 generic_mbuf_destructor(struct mbuf *m)
 {
 	if (netmap_verbose)
-		D("Tx irq (%p) queue %d", m, MBUF_TXQ(m));
+		RD(5, "Tx irq (%p) queue %d index %d" , m, MBUF_TXQ(m), (int)(uintptr_t)m->m_ext.ext_arg1);
 	netmap_generic_irq(MBUF_IFP(m), MBUF_TXQ(m), NULL);
 #ifdef __FreeBSD__
 	m->m_ext.ext_type = EXT_PACKET;
@@ -816,3 +816,11 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	return retval;
 }
+
+#if __FreeBSD_version >= 1100005
+struct netmap_adapter*
+netmap_getna(if_t ifp)
+{
+	return (NA((struct ifnet *)ifp));
+}
+#endif
