@@ -999,7 +999,7 @@ sender_body(void *data)
 	frame += sizeof(pkt->vh) - targ->g->virt_header;
 	size = targ->g->pkt_size + targ->g->virt_header;
 
-	D("start");
+	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
 
@@ -1167,6 +1167,8 @@ receiver_body(void *data)
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
 
+	D("reading from %s fd %d main_fd %d",
+		targ->g->ifname, targ->fd, targ->g->main_fd);
 	/* unbounded wait for the first packet. */
 	for (;;) {
 		i = poll(&pfd, 1, 1000);
@@ -1175,11 +1177,9 @@ receiver_body(void *data)
 		RD(1, "waiting for initial packets, poll returns %d %d",
 			i, pfd.revents);
 	}
-
 	/* main loop, exit after 1s silence */
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
     if (targ->g->dev_type == DEV_TAP) {
-	D("reading from %s fd %d", targ->g->ifname, targ->g->main_fd);
 	while (!targ->cancel) {
 		char buf[MAX_BODYSIZE];
 		/* XXX should we poll ? */
@@ -1190,7 +1190,8 @@ receiver_body(void *data)
     } else if (targ->g->dev_type == DEV_PCAP) {
 	while (!targ->cancel) {
 		/* XXX should we poll ? */
-		pcap_dispatch(targ->g->p, targ->g->burst, receive_pcap, NULL);
+		pcap_dispatch(targ->g->p, targ->g->burst, receive_pcap,
+			(u_char *)&targ->count);
 	}
 #endif /* !NO_PCAP */
     } else {
@@ -1788,13 +1789,14 @@ main(int arc, char **argv)
     } else if (g.dev_type == DEV_PCAP) {
 	char pcap_errbuf[PCAP_ERRBUF_SIZE];
 
-	D("using pcap on %s", g.ifname);
 	pcap_errbuf[0] = '\0'; // init the buffer
-	g.p = pcap_open_live(g.ifname, 0, 1, 100, pcap_errbuf);
+	g.p = pcap_open_live(g.ifname, 256 /* XXX */, 1, 100, pcap_errbuf);
 	if (g.p == NULL) {
 		D("cannot open pcap on %s", g.ifname);
 		usage();
 	}
+	g.main_fd = pcap_fileno(g.p);
+	D("using pcap on %s fileno %d", g.ifname, g.main_fd);
 #endif /* !NO_PCAP */
     } else if (g.dummy_send) { /* but DEV_NETMAP */
 	D("using a dummy send routine");
