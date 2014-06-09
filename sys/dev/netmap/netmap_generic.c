@@ -81,20 +81,26 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257666 2013-11-05 01:06:22Z lui
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 
-#define rtnl_lock() D("rtnl_lock called");
-#define rtnl_unlock() D("rtnl_unlock called");
+#define rtnl_lock()	ND("rtnl_lock called")
+#define rtnl_unlock()	ND("rtnl_unlock called")
 #define MBUF_TXQ(m)	((m)->m_pkthdr.flowid)
 #define MBUF_RXQ(m)	((m)->m_pkthdr.flowid)
 #define smp_mb()
 
 /*
- * mbuf wrappers
+ * FreeBSD mbuf allocator/deallocator in emulation mode:
+ *
+ * We allocate EXT_PACKET mbuf+clusters, but need to set M_NOFREE
+ * so that the destructor, if invoked, will not free the packet.
+ *    In principle we should set the destructor only on demand,
+ * but since there might be a race we better do it on allocation.
+ * As a consequence, we also need to set the destructor or we
+ * would leak buffers.
  */
 
 /*
- * we allocate an EXT_PACKET
+ * mbuf wrappers
  */
-#define netmap_get_mbuf(len) m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR|M_NOFREE)
 
 /* mbuf destructor, also need to change the type to EXT_EXTREF,
  * add an M_NOFREE flag, and then clear the flag and
@@ -106,6 +112,32 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257666 2013-11-05 01:06:22Z lui
 	(m)->m_ext.ext_type = EXT_EXTREF;	\
 } while (0)
 
+static void
+netmap_default_mbuf_destructor(struct mbuf *m)
+{
+	/* restore original mbuf */
+	m->m_ext.ext_buf = m->m_data = m->m_ext.ext_arg1;
+	m->m_ext.ext_arg1 = NULL;
+	m->m_ext.ext_type = EXT_PACKET;
+	m->m_ext.ext_free = NULL;
+	if (*(m->m_ext.ref_cnt) == 0)
+		*(m->m_ext.ref_cnt) = 1;
+	uma_zfree(zone_pack, m);
+}
+
+static inline struct mbuf *
+netmap_get_mbuf(int len)
+{
+	struct mbuf *m;
+	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR | M_NOFREE);
+	if (m) {
+		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
+		m->m_ext.ext_free = (void *)netmap_default_mbuf_destructor;
+		m->m_ext.ext_type = EXT_EXTREF;
+		ND(5, "create m %p refcnt %d", m, *m->m_ext.ref_cnt);
+	}
+	return m;
+}
 
 #define GET_MBUF_REFCNT(m)	((m)->m_ext.ref_cnt ? *(m)->m_ext.ref_cnt : -1)
 
@@ -380,18 +412,16 @@ out:
 static void
 generic_mbuf_destructor(struct mbuf *m)
 {
-	if (netmap_verbose)
-		RD(5, "Tx irq (%p) queue %d index %d" , m, MBUF_TXQ(m), (int)(uintptr_t)m->m_ext.ext_arg1);
 	netmap_generic_irq(MBUF_IFP(m), MBUF_TXQ(m), NULL);
 #ifdef __FreeBSD__
-	m->m_ext.ext_type = EXT_PACKET;
-	m->m_ext.ext_free = NULL;
-	if (*(m->m_ext.ref_cnt) == 0)
-		*(m->m_ext.ref_cnt) = 1;
-	uma_zfree(zone_pack, m);
+	if (netmap_verbose)
+		RD(5, "Tx irq (%p) queue %d index %d" , m, MBUF_TXQ(m), (int)(uintptr_t)m->m_ext.ext_arg1);
+	netmap_default_mbuf_destructor(m);
 #endif /* __FreeBSD__ */
 	IFRATE(rate_ctx.new.txirq++);
 }
+
+extern int netmap_adaptive_io;
 
 /* Record completed transmissions and update hwtail.
  *
@@ -478,12 +508,12 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 	e = generic_tx_event_middle(kring, hwcur);
 
 	m = kring->tx_pool[e];
+	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? GET_MBUF_REFCNT(m) : -2 );
 	if (m == NULL) {
 		/* This can happen if there is already an event on the netmap
 		   slot 'e': There is nothing to do. */
 		return;
 	}
-	ND("Event at %d mbuf %p refcnt %d", e, m, GET_MBUF_REFCNT(m));
 	kring->tx_pool[e] = NULL;
 	SET_MBUF_DESTRUCTOR(m, generic_mbuf_destructor);
 
@@ -553,7 +583,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 */
 			tx_ret = generic_xmit_frame(ifp, m, addr, len, ring_nr);
 			if (unlikely(tx_ret)) {
-				RD(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
+				ND(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
 						tx_ret, nm_i, head, kring->nr_hwtail);
 				/*
 				 * No room for this mbuf in the device driver.
@@ -816,11 +846,3 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	return retval;
 }
-
-#if __FreeBSD_version >= 1100005
-struct netmap_adapter*
-netmap_getna(if_t ifp)
-{
-	return (NA((struct ifnet *)ifp));
-}
-#endif

@@ -63,6 +63,9 @@
 #define NM_ATOMIC_TEST_AND_SET(p)       (!atomic_cmpset_acq_int((p), 0, 1))
 #define NM_ATOMIC_CLEAR(p)              atomic_store_rel_int((p), 0)
 
+#if __FreeBSD_version >= 1100005
+struct netmap_adapter *netmap_getna(if_t ifp);
+#endif
 
 MALLOC_DECLARE(M_NETMAP);
 
@@ -1408,9 +1411,6 @@ void netmap_catch_tx(struct netmap_generic_adapter *na, int enable);
 int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
 int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
-#if __FreeBSD_version >= 1100005
-struct netmap_adapter *netmap_getna(if_t ifp);
-#endif
 
 //#define RATE_GENERIC  /* Enables communication statistics for generic. */
 #ifdef RATE_GENERIC
