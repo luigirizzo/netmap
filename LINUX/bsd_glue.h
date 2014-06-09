@@ -268,6 +268,9 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 #define mtx_init(a, b, c, d)	spin_lock_init(&((a)->sl))
 #define mtx_destroy(a)		// XXX spin_lock_destroy(a)
 
+#define mtx_lock_spin(a)	mtx_lock(a)
+#define mtx_unlock_spin(a)	mtx_unlock(a)
+
 /*
  * XXX these must be changed, as we cannot sleep within the RCU.
  * Must change to proper rwlock, and then can move the definitions
