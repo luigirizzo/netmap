@@ -69,6 +69,12 @@
 #define	NM_RD_TX_HEAD()		readl(adapter->hw.hw_addr + txr->head)
 #endif /* < 3.4.0 */
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
+#define nm_e1000e_down(_a)	e1000e_down(_a, true)
+#else
+#define nm_e1000e_down(_a)	e1000e_down(_a)
+#endif
+
 
 /*
  * Register/unregister. We are already under netmap lock.
@@ -85,7 +91,7 @@ e1000_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	rtnl_lock();
 	if (netif_running(adapter->netdev))
-		e1000e_down(adapter);
+		nm_e1000e_down(adapter);
 
 	/* enable or disable flags and callbacks in na and ifp */
 	if (onoff) {
