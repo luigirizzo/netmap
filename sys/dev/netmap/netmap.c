@@ -501,6 +501,7 @@ netmap_set_txring(struct netmap_adapter *na, u_int ring_id, int stopped)
 	na->nm_notify(na, ring_id, NR_TX, NAF_DISABLE_NOTIFY);
 }
 
+/* stop or enable a single rx ring */
 void
 netmap_set_rxring(struct netmap_adapter *na, u_int ring_id, int stopped)
 {
@@ -514,6 +515,7 @@ netmap_set_rxring(struct netmap_adapter *na, u_int ring_id, int stopped)
 	 */
 	na->nm_notify(na, ring_id, NR_RX, NAF_DISABLE_NOTIFY);
 }
+
 
 /* stop or enable all the rings of na */
 void
@@ -850,8 +852,7 @@ netmap_if_new(struct netmap_adapter *na)
 		return NULL;
 	}
 
-	if (na->active_fds)
-		/* already registered */
+	if (na->active_fds)	/* already registered */
 		goto final;
 
 	/* create and init the krings arrays.
@@ -1057,6 +1058,7 @@ netmap_dtor_locked(struct netmap_priv_d *priv)
 	}
 	return 1;
 }
+
 
 /* call with NMG_LOCK *not* held */
 void
@@ -1468,7 +1470,8 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	if (*na != NULL) /* valid match in netmap_get_bdg_na() */
 		goto pipes;
 
-	/* this must be an hardware na, lookup the name in the system.
+	/*
+	 * This must be a hardware na, lookup the name in the system.
 	 * Note that by hardware we actually mean "it shows up in ifconfig".
 	 * This may still be a tap, a veth/epair, or even a
 	 * persistent VALE port.
@@ -1486,7 +1489,8 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	netmap_adapter_get(ret);
 
 pipes:
-	/* if we are opening a pipe whose parent was not in netmap mode,
+	/*
+	 * If we are opening a pipe whose parent was not in netmap mode,
 	 * we have to allocate the pipe array now.
 	 * XXX get rid of this clumsiness (2014-03-15)
 	 */
@@ -1927,9 +1931,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		if (error)
 			goto out;
 	}
-	/* allocate a netmap_if and, if necessary, also
-	 * all the netmap_ring's
-	 */
+	/* Allocate a netmap_if and, if necessary, all the netmap_ring's */
 	nifp = netmap_if_new(na);
 	if (nifp == NULL) { /* allocation failed */
 		error = ENOMEM;

@@ -475,7 +475,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		d->mem = parent->mem;
 	} else {
 		/* XXX TODO: check if memsize is too large (or there is overflow) */
-		d->memsize = d->req.nr_memsize; 
+		d->memsize = d->req.nr_memsize;
 		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
 				d->fd, 0);
 		if (d->mem == MAP_FAILED) {

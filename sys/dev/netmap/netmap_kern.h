@@ -839,6 +839,7 @@ int netmap_rx_irq(struct ifnet *, u_int, u_int *);
 #define netmap_tx_irq(_n, _q) netmap_rx_irq(_n, _q, NULL)
 void netmap_common_irq(struct ifnet *, u_int, u_int *work_done);
 
+
 #ifdef WITH_VALE
 /* functions used by external modules to interface with VALE */
 #define netmap_vp_to_ifp(_vp)	((_vp)->up.ifp)
@@ -965,7 +966,7 @@ nm_rxsync_finalize(struct netmap_kring *kring)
 /*---------------------------------------------------------------*/
 /*
  * Support routines used by netmap subsystems
- * (native drivers, VALE, generic, pipes, ...)
+ * (native drivers, VALE, generic, pipes, monitors, ...)
  */
 
 
