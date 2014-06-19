@@ -157,7 +157,7 @@ SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0 , "");
 
 
-static int netmap_vp_create(struct nmreq *, struct ifnet *, struct netmap_vp_adapter **); 
+static int netmap_vp_create(struct nmreq *, struct ifnet *, struct netmap_vp_adapter **);
 static int netmap_vp_reg(struct netmap_adapter *na, int onoff);
 static int netmap_bwrap_register(struct netmap_adapter *, int onoff);
 
@@ -736,12 +736,17 @@ nm_bdg_ctl_attach(struct nmreq *nmr)
 	NMG_LOCK();
 
 	error = netmap_get_bdg_na(nmr, &na, 1 /* create if not exists */);
-	if (error) /* no device, or another bridge or user owns the device */
+	if (error) /* no device */
 		goto unlock_exit;
 
 	if (na == NULL) { /* VALE prefix missing */
 		error = EINVAL;
 		goto unlock_exit;
+	}
+
+	if (NETMAP_OWNED_BY_ANY(na)) {
+		error = EBUSY;
+		goto unref_exit;
 	}
 
 	if (na->nm_bdg_ctl) {
@@ -1151,7 +1156,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 	/* persistent ports may be put in netmap mode
 	 * before being attached to a bridge
 	 */
-	if (vpna->na_bdg) 
+	if (vpna->na_bdg)
 		BDG_WLOCK(vpna->na_bdg);
 	if (onoff) {
 		na->na_flags |= NAF_NETMAP_ON;
@@ -1611,7 +1616,7 @@ retry:
 				still_locked = 0;
 				mtx_unlock(&kring->q_lock);
 				dst_na->up.nm_notify(&dst_na->up, dst_nr, NR_RX, 0);
-				/* this is netmap_notify for VALE ports and 
+				/* this is netmap_notify for VALE ports and
 				 * netmap_bwrap_notify for bwrap. The latter will
 				 * trigger a txsync on the underlying hwna
 				 */
@@ -1719,7 +1724,7 @@ done:
 }
 
 /*
- * nm_rxsync callback for VALE ports 
+ * nm_rxsync callback for VALE ports
  * user process reading from a VALE switch.
  * Already protected against concurrent calls from userspace,
  * but we must acquire the queue's lock to protect against
@@ -1737,7 +1742,7 @@ netmap_vp_rxsync(struct netmap_kring *kring, int flags)
 }
 
 
-/* nm_bdg_attach callback for VALE ports 
+/* nm_bdg_attach callback for VALE ports
  * The na_vp port is this same netmap_adapter. There is no host port.
  */
 static int
@@ -1757,7 +1762,7 @@ netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na)
  * Only persistent VALE ports have a non-null ifp.
  */
 static int
-netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter **ret) 
+netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter **ret)
 {
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
@@ -1831,15 +1836,15 @@ err:
 	return error;
 }
 
-/* Bridge wrapper code (bwrap). 
+/* Bridge wrapper code (bwrap).
  * This is used to connect a non-VALE-port netmap_adapter (hwna) to a
- * VALE switch. 
- * The main task is to swap the meaning of tx and rx rings to match the 
- * expectations of the VALE switch code (see nm_bdg_flush). 
+ * VALE switch.
+ * The main task is to swap the meaning of tx and rx rings to match the
+ * expectations of the VALE switch code (see nm_bdg_flush).
  *
  * The bwrap works by interposing a netmap_bwrap_adapter between the
  * rest of the system and the hwna. The netmap_bwrap_adapter looks like
- * a netmap_vp_adapter to the rest the system, but, internally, it 
+ * a netmap_vp_adapter to the rest the system, but, internally, it
  * translates all callbacks to what the hwna expects.
  *
  * Note that we have to intercept callbacks coming from two sides:
@@ -1847,8 +1852,8 @@ err:
  *  - callbacks coming from the netmap module are intercepted by
  *    passing around the netmap_bwrap_adapter instead of the hwna
  *
- *  - callbacks coming from outside of the netmap module only know 
- *    about the hwna. This, however, only happens in interrupt 
+ *  - callbacks coming from outside of the netmap module only know
+ *    about the hwna. This, however, only happens in interrupt
  *    handlers, where only the hwna->nm_notify callback is called.
  *    What the bwrap does is to overwrite the hwna->nm_notify callback
  *    with its own netmap_bwrap_intr_notify.
@@ -1858,7 +1863,7 @@ err:
  *    performed by netmap_bwrap_intr_notify.
  *
  * Additionally, the bwrap can optionally attach the host rings pair
- * of the wrapped adapter to a different port of the switch. 
+ * of the wrapped adapter to a different port of the switch.
  */
 
 
@@ -1922,12 +1927,16 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 		(tx == NR_TX ? "TX" : "RX"), ring_nr, flags);
 
 	if (flags & NAF_DISABLE_NOTIFY) {
-		kring = tx == NR_TX ? na->tx_rings : na->rx_rings;
-		bkring = tx == NR_TX ? vpna->up.rx_rings : vpna->up.tx_rings;
-		if (kring[ring_nr].nkr_stopped)
-			netmap_disable_ring(&bkring[ring_nr]);
-		else
-			bkring[ring_nr].nkr_stopped = 0;
+		/* the enabled/disabled state of the ring has changed,
+		 * propagate the info to the wrapper (with tx/rx swapped)
+		 */
+		if (tx == NR_TX) {
+			netmap_set_rxring(&vpna->up, ring_nr,
+					na->tx_rings[ring_nr].nkr_stopped);
+		} else {
+			netmap_set_txring(&vpna->up, ring_nr,
+					na->rx_rings[ring_nr].nkr_stopped);
+		}
 		return 0;
 	}
 
@@ -1968,7 +1977,7 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 	if (is_host_ring) {
 		vpna = hostna;
 		ring_nr = 0;
-	} 
+	}
 	/* simulate a user wakeup on the rx ring */
 	/* fetch packets that have arrived.
 	 * XXX maybe do this in a loop ?
@@ -2032,8 +2041,8 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 		int i;
 
 		/* netmap_do_regif has been called on the bwrap na.
-		 * We need to pass the information about the 
-		 * memory allocator down to the hwna before 
+		 * We need to pass the information about the
+		 * memory allocator down to the hwna before
 		 * putting it in netmap mode
 		 */
 		hwna->na_lut = na->na_lut;
@@ -2054,7 +2063,7 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 		 * The original number of rings comes from hwna,
 		 * rx rings on one side equals tx rings on the other.
 		 * We need to do this now, after the initialization
-		 * of the kring->ring pointers 
+		 * of the kring->ring pointers
 		 */
 		for (i = 0; i < na->num_rx_rings + 1; i++) {
 			hwna->tx_rings[i].nkr_num_slots = na->rx_rings[i].nkr_num_slots;
@@ -2141,7 +2150,7 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 
 	if (na->na_flags & NAF_HOST_RINGS) {
 		/* the hostna rings are the host rings of the bwrap.
-		 * The corresponding krings must point back to the 
+		 * The corresponding krings must point back to the
 		 * hostna
 		 */
 		hostna->tx_rings = na->tx_rings + na->num_tx_rings;
@@ -2243,7 +2252,7 @@ netmap_bwrap_host_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, 
  * On attach, it needs to provide a fake netmap_priv_d structure and
  * perform a netmap_do_regif() on the bwrap. This will put both the
  * bwrap and the hwna in netmap mode, with the netmap rings shared
- * and cross linked. Moroever, it will start intercepting interrupts 
+ * and cross linked. Moroever, it will start intercepting interrupts
  * directed to hwna.
  */
 static int
@@ -2357,7 +2366,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	netmap_adapter_get(hwna);
 	hwna->na_private = bna; /* weak reference */
 	hwna->na_vp = &bna->up;
-	
+
 	if (hwna->na_flags & NAF_HOST_RINGS) {
 		na->na_flags |= NAF_HOST_RINGS;
 		hostna = &bna->host.up;

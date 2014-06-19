@@ -36,6 +36,7 @@
 
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
+#define WITH_MONITOR
 
 #if defined(__FreeBSD__)
 
@@ -279,11 +280,11 @@ struct netmap_kring {
 	 * sets the nm_sync callback of each hardware tx(rx) kring to
 	 * the corresponding nm_txsync(nm_rxsync) taken from the
 	 * netmap_adapter; moreover, it sets the sync callback
-	 * of the host tx(rx) ring to netmap_txsync_to_host 
+	 * of the host tx(rx) ring to netmap_txsync_to_host
 	 * (netmap_rxsync_from_host).
 	 *
 	 * Overrides: the above configuration is not changed by
-	 * any of the nm_krings_create callbacks. 
+	 * any of the nm_krings_create callbacks.
 	 */
 	int (*nm_sync)(struct netmap_kring *kring, int flags);
 
@@ -296,6 +297,18 @@ struct netmap_kring {
 					 */
 #endif /* WITH_PIPES */
 
+#ifdef WITH_MONITOR
+	/* pointer to the adapter that is monitoring this kring (if any)
+	 */
+	struct netmap_monitor_adapter *monitor;
+	/*
+	 * Monitors work by intercepting the txsync and/or rxsync of the
+	 * monitored krings. This is implemented by replacing
+	 * the nm_sync pointer above and saving the previous
+	 * one in save_sync below.
+	 */
+	int (*save_sync)(struct netmap_kring *kring, int flags);
+#endif
 } __attribute__((__aligned__(64)));
 
 
@@ -516,7 +529,7 @@ struct netmap_adapter {
 	 *      Called with NMG_LOCK held.
 	 *
 	 * nm_bdg_ctl() is called on the actual attach/detach to/from
-	 *      to/from the switch, to perform adapter-specific 
+	 *      to/from the switch, to perform adapter-specific
 	 *      initializations
 	 *      Called with NMG_LOCK held.
 	 */
@@ -544,7 +557,7 @@ struct netmap_adapter {
 	uint32_t na_lut_objtotal;	/* max buffer index */
 	uint32_t na_lut_objsize;	/* buffer size */
 
-	/* additional information attached to this adapter 
+	/* additional information attached to this adapter
 	 * by other netmap subsystems. Currently used by
 	 * bwrap and LINUX/v1000.
 	 */
@@ -705,7 +718,7 @@ struct netmap_bwrap_adapter {
 	/*
 	 * When we attach a physical interface to the bridge, we
 	 * allow the controlling process to terminate, so we need
-	 * a place to store the netmap_priv_d data structure.
+	 * a place to store the n_detmap_priv_d data structure.
 	 * This is only done when physical interfaces
 	 * are attached to a bridge.
 	 */
@@ -741,7 +754,7 @@ static inline uint32_t
 nm_kr_rxspace(struct netmap_kring *k)
 {
 	int space = k->nr_hwtail - k->nr_hwcur;
-	if (space < 0) 
+	if (space < 0)
 		space += k->nkr_num_slots;
 	ND("preserving %d rx slots %d -> %d", space, k->nr_hwcur, k->nr_hwtail);
 
@@ -902,7 +915,7 @@ nm_txsync_finalize(struct netmap_kring *kring)
 {
 	/* update ring tail to what the kernel knows */
 	kring->ring->tail = kring->rtail = kring->nr_hwtail;
-	
+
 	/* note, head/rhead/hwcur might be behind cur/rcur
 	 * if no carrier
 	 */
@@ -955,7 +968,7 @@ nm_rxsync_finalize(struct netmap_kring *kring)
 
 /* common routine for all functions that create a netmap adapter. It performs
  * two main tasks:
- * - if the na points to an ifp, mark the ifp as netmap capable 
+ * - if the na points to an ifp, mark the ifp as netmap capable
  *   using na as its native adapter;
  * - provide defaults for the setup callbacks and the memory allocator
  */
@@ -973,8 +986,8 @@ int netmap_update_config(struct netmap_adapter *na);
 /* create and initialize the common fields of the krings array.
  * using the information that must be already available in the na.
  * tailroom can be used to request the allocation of additional
- * tailroom bytes after the krings array. This is used by 
- * netmap_vp_adapter's (i.e., VALE ports) to make room for 
+ * tailroom bytes after the krings array. This is used by
+ * netmap_vp_adapter's (i.e., VALE ports) to make room for
  * leasing-related data structures
  */
 int netmap_krings_create(struct netmap_adapter *na, u_int tailroom);
@@ -1062,6 +1075,12 @@ int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create
 #define netmap_pipe_alloc(_1, _2) 	EOPNOTSUPP
 #define netmap_pipe_dealloc(_1)
 #define netmap_get_pipe_na(_1, _2, _3)	0
+#endif
+
+#ifdef WITH_MONITOR
+int netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
+#else
+#define netmap_get_monitor_na(_1, _2, _3) 0
 #endif
 
 /* Various prototypes */
@@ -1364,6 +1383,17 @@ struct netmap_priv_d {
 	NM_SELINFO_T *np_rxsi, *np_txsi;
 	struct thread	*np_td;		/* kqueue, just debugging */
 };
+
+#ifdef WITH_MONITOR
+
+struct netmap_monitor_adapter {
+	struct netmap_adapter up;
+
+	struct netmap_priv_d priv;
+	uint32_t flags;
+};
+
+#endif /* WITH_MONITOR */
 
 
 /*

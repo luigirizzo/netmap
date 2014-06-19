@@ -12,7 +12,8 @@
 # objects whose source file is in ../sys/dev/netmap
 remoteobjs := netmap.o netmap_mem2.o \
 	netmap_generic.o netmap_mbq.o netmap_vale.o \
-	netmap_offloadings.o netmap_pipe.o
+	netmap_offloadings.o netmap_pipe.o \
+	netmap_monitor.o
 # all objects
 netmap_lin-objs := $(remoteobjs) netmap_linux.o
 
