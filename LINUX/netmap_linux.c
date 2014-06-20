@@ -30,8 +30,27 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 #include <linux/rtnetlink.h>
+#include <linux/iommu.h>
 
+/* #################### IOMMU ################## */
+/*
+ * Returns the IOMMU domain id that the device belongs to.
+ */
+int nm_iommu_group_id(struct device *dev)
+{
+	struct iommu_group *grp;
+	int id;
 
+	if (!dev)
+		return 0;
+
+	grp = iommu_group_get(dev);
+	if (!grp)
+		return 0;
+
+	id = iommu_group_id(grp);
+	return id;
+}
 /* #################### VALE OFFLOADINGS SUPPORT ################## */
 
 /* Compute and return a raw checksum over (data, len), using 'cur_sum'

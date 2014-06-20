@@ -1200,6 +1200,10 @@ extern int netmap_generic_rings;
 
 #ifdef __FreeBSD__
 
+/* Assigns the device IOMMU domain to an allocator.
+ * Returns -ENOMEM in case the domain is different */
+#define nm_iommu_group_id(dev) (0)
+
 /* Callback invoked by the dma machinery after a successful dmamap_load */
 static void netmap_dmamap_cb(__unused void *arg,
     __unused bus_dma_segment_t * segs, __unused int nseg, __unused int error)
@@ -1232,6 +1236,7 @@ netmap_reload_map(struct netmap_adapter *na,
 
 #else /* linux */
 
+int nm_iommu_group_id(bus_dma_tag_t dev);
 extern size_t     netmap_mem_get_bufsize(struct netmap_mem_d *);
 
 static inline void

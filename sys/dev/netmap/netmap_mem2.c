@@ -135,6 +135,7 @@ struct netmap_mem_d {
 	netmap_mem_deref_t    deref;
 
 	nm_memid_t nm_id;	/* allocator identifier */
+	int nm_grp;	/* iommu groupd id */
 
 	/* list of all existing allocators, sorted by nm_id */
 	struct netmap_mem_d *prev, *next;
@@ -240,6 +241,7 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 	.deref    = netmap_mem_global_deref,
 
 	.nm_id = 1,
+	.nm_grp = -1,
 
 	.prev = &nm_mem,
 	.next = &nm_mem,
@@ -354,6 +356,26 @@ nm_mem_release_id(struct netmap_mem_d *nmd)
 	nmd->prev = nmd->next = NULL;
 
 	NMA_UNLOCK(&nm_mem);
+}
+
+static int
+nm_mem_assign_group(struct netmap_mem_d *nmd, struct device *dev)
+{
+	int err, id;
+	id = nm_iommu_group_id(dev);
+	if (netmap_verbose)
+		D("iommu_group %d", id);
+
+	NMA_LOCK(nmd);
+
+	if (nmd->nm_grp < 0)
+		nmd->nm_grp = id;
+
+	if (nmd->nm_grp != id)
+		nmd->lasterr = err = ENOMEM;
+
+	NMA_UNLOCK(nmd);
+	return err;
 }
 
 /*
@@ -1489,6 +1511,8 @@ netmap_mem_global_deref(struct netmap_mem_d *nmd)
 	NMA_LOCK(nmd);
 
 	nmd->refcount--;
+	if (!nmd->refcount)
+		nmd->nm_grp = -1;
 	if (netmap_verbose)
 		D("refcount = %d", nmd->refcount);
 
@@ -1498,12 +1522,16 @@ netmap_mem_global_deref(struct netmap_mem_d *nmd)
 int
 netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
-	nmd->finalize(nmd);
+	if (nm_mem_assign_group(nmd, na->pdev) < 0) {
+		return ENOMEM;
+	} else {
+		nmd->finalize(nmd);
+	}
 
-	if (!nmd->lasterr)
+	if (!nmd->lasterr && na->pdev)
 		netmap_mem_map(&nmd->pools[NETMAP_BUF_POOL], na);
 
-	return 0;
+	return nmd->lasterr;
 }
 
 void
