@@ -334,6 +334,7 @@ function check-patch()
 	while scripts/vers -b $v1 $v2 -L; do
 		# cache lookup
 		local cache=cache/$v1/$driver
+		mkdir -p $cache
 		local cpatch=$cache/patch
 		local cnmcommit=$cache/nmcommit
 		local cstatus=$cache/status
