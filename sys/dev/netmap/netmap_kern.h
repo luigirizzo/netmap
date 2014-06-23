@@ -899,7 +899,7 @@ nm_set_native_flags(struct netmap_adapter *na)
 	na->if_transmit = (void *)ifp->netdev_ops;
 	ifp->netdev_ops = &((struct netmap_hw_adapter *)na)->nm_ndo;
 	((struct netmap_hw_adapter *)na)->save_ethtool = ifp->ethtool_ops;
-	SET_ETHTOOL_OPS(ifp, &((struct netmap_hw_adapter*)na)->nm_eto);
+	ifp->ethtool_ops = &((struct netmap_hw_adapter*)na)->nm_eto;
 #endif
 }
 
@@ -913,7 +913,7 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	ifp->if_transmit = na->if_transmit;
 #else
 	ifp->netdev_ops = (void *)na->if_transmit;
-	SET_ETHTOOL_OPS(ifp, ((struct netmap_hw_adapter*)na)->save_ethtool);
+	ifp->ethtool_ops = ((struct netmap_hw_adapter*)na)->save_ethtool;
 #endif
 	na->na_flags &= ~(NAF_NATIVE_ON | NAF_NETMAP_ON);
 #ifdef IFCAP_NETMAP /* or FreeBSD ? */
