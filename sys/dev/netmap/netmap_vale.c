@@ -2370,6 +2370,8 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	hwna->na_vp = &bna->up;
 
 	if (hwna->na_flags & NAF_HOST_RINGS) {
+		if (hwna->na_flags & NAF_SW_ONLY)
+			na->na_flags |= NAF_SW_ONLY;
 		na->na_flags |= NAF_HOST_RINGS;
 		hostna = &bna->host.up;
 		snprintf(hostna->name, sizeof(hostna->name), "%s^", nr_name);
