@@ -1458,6 +1458,8 @@ nm_txsync_prologue(struct netmap_kring *kring)
 	    kring->rtail >= n ||  kring->nr_hwtail >= n)
 		goto error;
 #endif /* kernel sanity checks */
+	if (kring->nr_kflags & NKR_PASSTHROUGH)
+		return kring->nr_hwcur;
 	/*
 	 * user sanity checks. We only use 'cur',
 	 * A, B, ... are possible positions for cur:
@@ -2389,7 +2391,6 @@ netmap_poll(struct cdev *dev, int events, struct thread *td)
 		D("device %s events 0x%x", na->name, events);
 	want_tx = events & (POLLOUT | POLLWRNORM);
 	want_rx = events & (POLLIN | POLLRDNORM);
-
 
 	/*
 	 * check_all_{tx|rx} are set if the card has more than one queue AND

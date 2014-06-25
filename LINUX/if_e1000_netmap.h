@@ -380,10 +380,14 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 static int
 e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)
 {
+	struct e1000_adapter *adapter = netdev_priv(na->ifp);
+
 	if (onoff) {
 		na->na_flags |= NAF_NETMAP_ON;
+		adapter->passthrough = 1;
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
+		adapter->passthrough = 0;
 	}
 	return (0);
 }

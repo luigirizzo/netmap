@@ -1839,6 +1839,7 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 			continue;
 		kring->ring = (struct netmap_ring *)
 			((char *)nifp + nifp->ring_ofs[i]);
+		kring->nr_kflags |= NKR_PASSTHROUGH;
 
 	}
 	for (i = 0; i <= na->num_rx_rings; i++) {
@@ -1848,6 +1849,7 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 		kring->ring = (struct netmap_ring *)
 			((char *)nifp +
 			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
+		kring->nr_kflags |= NKR_PASSTHROUGH;
 
 	}
 	return 0;
