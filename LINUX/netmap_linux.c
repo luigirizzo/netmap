@@ -357,6 +357,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 int
 generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
+    int error = EOPNOTSUPP;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31) // XXX
     struct ethtool_ringparam rp;
 
@@ -364,9 +365,10 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
         ifp->ethtool_ops->get_ringparam(ifp, &rp);
         *tx = rp.tx_pending;
         *rx = rp.rx_pending;
+	error = 0;
     }
 #endif /* 2.6.31 and above */
-    return 0;
+    return error;
 }
 
 /* Fills in the output arguments with the number of hardware TX/RX queues. */

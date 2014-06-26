@@ -647,9 +647,9 @@ netmap_update_config(struct netmap_adapter *na)
 	u_int txr, txd, rxr, rxd;
 
 	txr = txd = rxr = rxd = 0;
-	if (na->nm_config) {
-		na->nm_config(na, &txr, &txd, &rxr, &rxd);
-	} else {
+	if (na->nm_config == NULL ||
+	    na->nm_config(na, &txr, &txd, &rxr, &rxd))
+	{
 		/* take whatever we had at init time */
 		txr = na->num_tx_rings;
 		txd = na->num_tx_desc;
