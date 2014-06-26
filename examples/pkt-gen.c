@@ -1841,7 +1841,11 @@ main(int arc, char **argv)
 	g.main_fd = g.nmd->fd;
 	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
-	devqueues = g.nmd->req.nr_rx_rings;
+	/* get num of queues in tx or rx */ 
+	if (g.td_body == sender_body)
+		devqueues = g.nmd->req.nr_tx_rings;
+	else 
+		devqueues = g.nmd->req.nr_rx_rings;
 
 	/* validate provided nthreads. */
 	if (g.nthreads < 1 || g.nthreads > devqueues) {
