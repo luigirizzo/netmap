@@ -148,6 +148,13 @@ struct mac_range {
 #define MAX_IFNAMELEN	64	/* our buffer for ifname */
 //#define MAX_PKTSIZE	1536
 #define MAX_PKTSIZE	MAX_BODYSIZE	/* XXX: + IP_HDR + ETH_HDR */
+
+/* compact timestamp to fit into 60 byte packet. (enough to obtain RTT) */
+struct tstamp {
+	uint32_t sec;
+	uint32_t nsec;
+};
+
 /*
  * global arguments for all threads
  */
@@ -766,10 +773,13 @@ pinger_body(void *data)
 		if (nm_ring_empty(ring)) {
 			D("-- ouch, cannot send");
 		} else {
+			struct tstamp *tp;
 			nm_pkt_copy(frame, p, size);
 			clock_gettime(CLOCK_REALTIME_PRECISE, &ts);
 			bcopy(&sent, p+42, sizeof(sent));
-			bcopy(&ts, p+46, sizeof(ts));
+			tp = (struct tstamp *)(p+46);
+			tp->sec = (uint32_t)ts.tv_sec;
+			tp->nsec = (uint32_t)ts.tv_nsec;
 			sent++;
 			ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 		}
@@ -786,12 +796,15 @@ pinger_body(void *data)
 			ring = NETMAP_RXRING(nifp, i);
 			while (!nm_ring_empty(ring)) {
 				uint32_t seq;
+				struct tstamp *tp;
 				slot = &ring->slot[ring->cur];
 				p = NETMAP_BUF(ring, slot->buf_idx);
 
 				clock_gettime(CLOCK_REALTIME_PRECISE, &now);
 				bcopy(p+42, &seq, sizeof(seq));
-				bcopy(p+46, &ts, sizeof(ts));
+				tp = (struct tstamp *)(p+46);
+				ts.tv_sec = (time_t)tp->sec;
+				ts.tv_nsec = (long)tp->nsec;
 				ts.tv_sec = now.tv_sec - ts.tv_sec;
 				ts.tv_nsec = now.tv_nsec - ts.tv_nsec;
 				if (ts.tv_nsec < 0) {
