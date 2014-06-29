@@ -1183,7 +1183,7 @@ receiver_body(void *data)
 	D("reading from %s fd %d main_fd %d",
 		targ->g->ifname, targ->fd, targ->g->main_fd);
 	/* unbounded wait for the first packet. */
-	for (;;) {
+	for (;!targ->cancel;) {
 		i = poll(&pfd, 1, 1000);
 		if (i > 0 && !(pfd.revents & POLLERR))
 			break;
