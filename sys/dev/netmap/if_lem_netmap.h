@@ -261,7 +261,7 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 #ifdef NIC_PARAVIRT
 	if (csb_mode) {
 		force_update = 1;
-		csb->guest_need_txkick = 0;
+		csb->guest_need_rxkick = 0;
 	}
 #endif /* NIC_PARAVIRT */
 	/* XXX check sync modes */
