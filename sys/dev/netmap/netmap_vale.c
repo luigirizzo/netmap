@@ -1189,17 +1189,18 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	u_int dst, mysrc = na->bdg_port;
 	uint64_t smac, dmac;
 
-	if (buf_len == na->virt_hdr_len) {
+	/* safety check, unfortunately we have many cases */
+	if (buf_len >= 14 + na->virt_hdr_len) {
+		/* virthdr + mac_hdr in the same slot */
+		buf += na->virt_hdr_len;
+		buf_len -= na->virt_hdr_len;
+	} else if (buf_len == na->virt_hdr_len && ft->ft_flags & NS_MOREFRAG) {
+		/* only header in first fragment */
 		ft++;
 		buf = ft->ft_buf;
 		buf_len = ft->ft_len;
 	} else {
-		buf += na->virt_hdr_len;
-		buf_len -= na->virt_hdr_len;
-	}
-
-	if (buf_len < 14) {
-		RD(5, "invalid buf length %d", buf_len);
+		RD(5, "invalid buf format, length %d", buf_len);
 		return NM_BDG_NOPORT;
 	}
 	dmac = le64toh(*(uint64_t *)(buf)) & 0xffffffffffff;
