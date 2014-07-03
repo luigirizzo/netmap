@@ -1236,6 +1236,14 @@ netmap_load_map(struct netmap_adapter *na,
 		    netmap_dmamap_cb, NULL, BUS_DMA_NOWAIT);
 }
 
+static inline void
+netmap_unload_map(struct netmap_adapter *na,
+        bus_dma_tag_t tag, bus_dmamap_t map)
+{
+	if (map)
+		bus_dmamap_unload(tag, map);
+}
+
 /* update the map when a buffer changes. */
 static inline void
 netmap_reload_map(struct netmap_adapter *na,

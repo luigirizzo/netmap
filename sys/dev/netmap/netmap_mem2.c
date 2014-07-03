@@ -361,7 +361,7 @@ nm_mem_release_id(struct netmap_mem_d *nmd)
 static int
 nm_mem_assign_group(struct netmap_mem_d *nmd, struct device *dev)
 {
-	int err, id;
+	int err = 0, id;
 	id = nm_iommu_group_id(dev);
 	if (netmap_verbose)
 		D("iommu_group %d", id);
@@ -988,6 +988,9 @@ netmap_mem_reset_all(struct netmap_mem_d *nmd)
 static int
 netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
+#ifdef __FreeBSD__
+	D("unsupported on FreeBSD");
+#else /* linux */
 	int i, lim = p->_objtotal;
 
 	if (na->pdev == NULL)
@@ -996,6 +999,7 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	for (i = 2; i < lim; i++) {
 		netmap_unload_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr);
 	}
+#endif /* linux */
 
 	return 0;
 }
@@ -1003,6 +1007,9 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 static int
 netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
+#ifdef __FreeBSD__
+	D("unsupported on FreeBSD");
+#else /* linux */
 	int i, lim = p->_objtotal;
 
 	if (na->pdev == NULL)
@@ -1012,6 +1019,7 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 		netmap_load_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr,
 				p->lut[i].vaddr);
 	}
+#endif /* linux */
 
 	return 0;
 }
