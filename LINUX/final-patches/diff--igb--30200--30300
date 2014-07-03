@@ -85,10 +85,10 @@ index ced5444..b7c6cb4 100644
 +#ifdef DEV_NETMAP
 +	{
 +		/* The driver uses split buffers, which are not
-+		 * supported in netmap mode */
++		 * supported in native netmap mode */
 +		struct ifnet *ifp = adapter->netdev;
 +		struct netmap_adapter *na = NA(ifp);
-+		if (na && na->na_flags & NAF_NETMAP_ON) {
++		if (nm_native_on(na)) {
 +			srrctl &= ~(7 << 25); /* clear descriptor type */
 +			srrctl |= E1000_SRRCTL_DESCTYPE_ADV_ONEBUF;
 +			/* XXX we should set tail here */

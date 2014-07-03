@@ -51,13 +51,9 @@ nfe_netmap_init_buffers(struct nfe_softc *sc)
 	void *addr;
 	uint64_t paddr;
 
-	if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-		return 0;
-	}
-
 	slot = netmap_reset(na, NR_TX, 0, 0);
 	if (!slot)
-		return 0; // XXX cannot happen
+		return 0; // not in native mode
 	// XXX init the tx ring
 	n = NFE_TX_RING_COUNT;
 	for (i = 0; i < n; i++) {

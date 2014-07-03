@@ -1419,7 +1419,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		 * - when na is attached but not activated yet;
 		 * - when na is being deactivated but is still attached.
 		 */
-		if (unlikely(!(dst_na->up.na_flags & NAF_NETMAP_ON))) {
+		if (unlikely(!nm_netmap_on(&dst_na->up))) {
 			ND("not in netmap mode!");
 			goto cleanup;
 		}
@@ -1437,7 +1437,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		needed = d->bq_len + brddst->bq_len;
 
 		if (unlikely(dst_na->virt_hdr_len != na->virt_hdr_len)) {
-			RD(3, "virt_hdr_mismatch, src %d len %d", na->virt_hdr_len, dst_na->virt_hdr_len);
+			RD(3, "virt_hdr_mismatch, src %d dst %d", na->virt_hdr_len, dst_na->virt_hdr_len);
 			/* There is a virtio-net header/offloadings mismatch between
 			 * source and destination. The slower mismatch datapath will
 			 * be used to cope with all the mismatches.
@@ -1940,7 +1940,7 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 		return 0;
 	}
 
-	if (!(na->na_flags & NAF_NETMAP_ON))
+	if (!nm_netmap_on(na))
 		return 0;
 
 	/* we only care about receive interrupts */
@@ -2197,7 +2197,7 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 	ring = kring->ring;
 	lim = kring->nkr_num_slots - 1;
 
-	if (!(hwna->na_flags & NAF_NETMAP_ON))
+	if (!nm_netmap_on(hwna))
 		return 0;
 	mtx_lock(&kring->q_lock);
 	/* first step: simulate a user wakeup on the rx ring */

@@ -134,8 +134,8 @@ generic_timer_handler(struct hrtimer *t)
      * a notification.
      */
     mit->mit_pending = 0;
-    /* below is a variation of netmap_generic_irq */
-    if (mit->mit_na->na_flags & NAF_NETMAP_ON) {
+    /* below is a variation of netmap_generic_irq  XXX revise */
+    if (nm_netmap_on(mit->mit_na)) {
         netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
         generic_rate(0, 0, 0, 0, 0, 1);
     }

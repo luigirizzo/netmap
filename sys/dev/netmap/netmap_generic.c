@@ -235,7 +235,7 @@ static void
 netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 {
 	struct netmap_adapter *na = NA(ifp);
-	if (unlikely(!na || !(na->na_flags & NAF_NETMAP_ON)))
+	if (unlikely(!nm_netmap_on(na)))
 		return;
 
 	netmap_common_irq(ifp, q, work_done);

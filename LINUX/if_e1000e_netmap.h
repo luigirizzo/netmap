@@ -325,13 +325,9 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 	int i, si;
 	uint64_t paddr;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
 	slot = netmap_reset(na, NR_RX, 0, 0);
 	if (!slot)
-		return 0;	// not in netmap mode XXX check is useless
+		return 0;	// not in netmap native mode
 
 	adapter->alloc_rx_buf = (void*)e1000e_no_rx_alloc;
 	for (i = 0; i < rxr->count; i++) {

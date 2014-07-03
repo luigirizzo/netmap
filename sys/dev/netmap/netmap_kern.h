@@ -416,10 +416,12 @@ struct netmap_adapter {
 				 * deallocation of the memory allocator
 				 */
 #define NAF_NATIVE_ON   16      /* the adapter is native and the attached
-				 * interface is in netmap mode
+				 * interface is in netmap mode.
+				 * Virtual ports (vale, pipe, monitor...)
+				 * should never use this flag.
 				 */
 #define	NAF_NETMAP_ON	32	/* netmap is active (either native or
-				 * emulated. Where possible (e.g. FreeBSD)
+				 * emulated). Where possible (e.g. FreeBSD)
 				 * IFCAP_NETMAP also mirrors this flag.
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
@@ -826,8 +828,9 @@ static __inline int nm_kr_tryget(struct netmap_kring *kr)
  * netmap_load_map/netmap_reload_map are helper routines to set/reset
  *	the dmamap for a packet buffer
  *
- * netmap_reset() is a helper routine to be called in the driver
- *	when reinitializing a ring.
+ * netmap_reset() is a helper routine to be called in the hw driver
+ *	when reinitializing a ring. It should not be called by
+ *	virtual ports (vale, pipes, monitor)
  */
 int netmap_attach(struct netmap_adapter *);
 void netmap_detach(struct ifnet *);
@@ -857,6 +860,17 @@ const char *netmap_bdg_name(struct netmap_vp_adapter *);
 #define netmap_bdg_name(_vp)	NULL
 #endif /* WITH_VALE */
 
+static inline int
+nm_native_on(struct netmap_adapter *na)
+{
+	return na && na->na_flags & NAF_NATIVE_ON;
+}
+
+static inline int
+nm_netmap_on(struct netmap_adapter *na)
+{
+	return na && na->na_flags & NAF_NETMAP_ON;
+}
 
 /* set/clear native flags and if_transmit/netdev_ops */
 static inline void

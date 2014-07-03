@@ -584,10 +584,6 @@ mlx4_netmap_tx_config(struct SOFTC_T *priv, int ring_nr)
 
 	ND(5, "priv %p ring_nr %d", priv, ring_nr);
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
 /*
  CONFIGURE TX RINGS IN NETMAP MODE
  little if anything to do
@@ -599,7 +595,7 @@ mlx4_netmap_tx_config(struct SOFTC_T *priv, int ring_nr)
  */
 	slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
-		return 0;			// not in netmap mode;
+		return 0;		// not in netmap native mode;
 	ND(5, "init tx ring %d with %d slots (driver %d)", ring_nr,
 		na->num_tx_desc,
 		priv->tx_ring[ring_nr].size);
@@ -618,10 +614,6 @@ mlx4_netmap_rx_config(struct SOFTC_T *priv, int ring_nr)
 	struct netmap_kring *kring;
         int i, j, possible_frags;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
 	/*
 	 * on the receive ring, must set buf addresses into the slots.
 
@@ -631,8 +623,8 @@ mlx4_netmap_rx_config(struct SOFTC_T *priv, int ring_nr)
 
 	 */
 	slot = netmap_reset(na, NR_RX, ring_nr, 0);
-	if (!slot) // XXX should not happen
-		return 0;
+	if (!slot)
+		return 0;	// not in native netmap mode
 	kring = &na->rx_rings[ring_nr];
 	rxr = &priv->rx_ring[ring_nr];
 	ND(20, "ring %d slots %d (driver says %d) frags %d stride %d", ring_nr,

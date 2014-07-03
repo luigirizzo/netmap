@@ -261,7 +261,7 @@ netmap_monitor_reg(struct netmap_adapter *na, int onoff)
 
 	ND("%p: onoff %d", na, onoff);
 	if (onoff) {
-		if (!(pna->na_flags & NAF_NETMAP_ON)) {
+		if (!nm_netmap_on(pna)) {
 			/* parent left netmap mode, fatal */
 			return ENXIO;
 		}
@@ -281,7 +281,7 @@ netmap_monitor_reg(struct netmap_adapter *na, int onoff)
 		}
 		na->na_flags |= NAF_NETMAP_ON;
 	} else {
-		if (!(pna->na_flags & NAF_NETMAP_ON)) {
+		if (!nm_netmap_on(pna)) {
 			/* parent left netmap mode, nothing to restore */
 			return 0;
 		}
@@ -326,7 +326,7 @@ netmap_monitor_dtor(struct netmap_adapter *na)
 	int i;
 
 	ND("%p", na);
-	if (pna->na_flags & NAF_NETMAP_ON) {
+	if (nm_netmap_on(pna)) {
 		/* parent still in netmap mode, mark its krings as free */
 		if (mna->flags & NR_MONITOR_TX) {
 			for (i = priv->np_txqfirst; i < priv->np_txqlast; i++) {
@@ -380,7 +380,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	}
 	D("found parent: %s", pna->name);
 
-	if (!(pna->na_flags & NAF_NETMAP_ON)) {
+	if (!nm_netmap_on(pna)) {
 		/* parent not in netmap mode */
 		/* XXX we can wait for the parent to enter netmap mode,
 		 * by intercepting its nm_register callback (2014-03-16)

@@ -222,12 +222,9 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		free_receive_bufs(vi);
 
 		/* enable netmap mode */
-                na->na_flags |= NAF_NETMAP_ON | NAF_NATIVE_ON;
-		na->if_transmit = (void *)ifp->netdev_ops;
-		ifp->netdev_ops = &hwna->nm_ndo;
+		nm_set_native_flags(na);
 	} else {
-                na->na_flags &= ~(NAF_NATIVE_ON | NAF_NETMAP_ON);
-		ifp->netdev_ops = (void *)na->if_transmit;
+		nm_clear_native_flags(na);
 
 		/* Drain the RX virtqueues, otherwise the driver will
 		 * interpret the netmap buffers currently linked to the
@@ -450,9 +447,8 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
 	struct netmap_adapter* na = NA(ifp);
 	unsigned int r;
 
-	if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
+	if (!nm_native_on(na))
 		return 0;
-        }
 	for (r = 0; r < na->num_rx_rings; r++) {
 		COMPAT_DECL_SG
                 struct netmap_ring *ring = na->rx_rings[r].ring;

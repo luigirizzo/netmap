@@ -323,12 +323,8 @@ forcedeth_netmap_tx_init(struct SOFTC_T *np)
 	struct netmap_adapter *na = NA(np->dev);
 	struct netmap_slot *slot;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_TX, 0, 0);
-	/* slot is NULL if we are not in netmap mode */
+	/* slot is NULL if we are not in native netmap mode */
 	if (!slot)
 		return 0;
 	/* in netmap mode, overwrite addresses and maps */

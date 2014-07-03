@@ -304,13 +304,9 @@ igb_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	void *addr;
 	uint64_t paddr;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
-		return 0;  // XXX this should never happen
+		return 0;  // not in netmap native mode
 	for (i = 0; i < na->num_tx_desc; i++) {
 		union e1000_adv_tx_desc *tx_desc;
 		si = netmap_idx_n2k(&na->tx_rings[ring_nr], i);
@@ -332,10 +328,6 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	struct netmap_slot* slot;
 	u_int i;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
 	/*
 	 * XXX watch out, the main driver must not use
 	 * split headers. The buffer len should be written
@@ -348,7 +340,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	 */
         slot = netmap_reset(na, NR_RX, reg_idx, 0);
 	if (!slot)
-		return 0;	// not in netmap mode
+		return 0;	// not in native netmap mode
 
 	for (i = 0; i < rxr->count; i++) {
 		union e1000_adv_rx_desc *rx_desc;

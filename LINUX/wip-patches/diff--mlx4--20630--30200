@@ -78,7 +78,7 @@ diff -urp --exclude '*.o' --exclude '*.cmd' --exclude '*mod.c' drivers/net/ether
  
  		ring->size_mask = ring->actual_size - 1;
 +#ifdef DEV_NETMAP
-+		if (NA(priv->dev)->na_flags & NAF_NATIVE_ON) {
++		if (nm_native_on(NA(priv->dev))) {
 +			int saved_cons = ring->cons;
 +			mlx4_en_free_rx_buf(priv, ring);
 +			ring->cons = saved_cons;
@@ -96,7 +96,7 @@ diff -urp --exclude '*.o' --exclude '*.cmd' --exclude '*mod.c' drivers/net/ether
  				struct mlx4_en_rx_ring *ring)
  {
 +#ifdef DEV_NETMAP
-+	if (NA(priv->dev)->na_flags & NAF_NATIVE_ON)
++	if (nm_native_on(NA(priv->dev)))
 +		ND("netmap mode, rx buf already freed");
 +	else
 +#endif /* DEV_NETMAP */

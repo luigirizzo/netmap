@@ -296,14 +296,10 @@ re_netmap_tx_init(struct rl_softc *sc)
 	struct netmap_adapter *na = NA(sc->rl_ifp);
 	struct netmap_slot *slot;
 
-	if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-		return;
-	}
-
 	slot = netmap_reset(na, NR_TX, 0, 0);
-	/* slot is NULL if we are not in netmap mode */
+	/* slot is NULL if we are not in native netmap mode */
 	if (!slot)
-		return;  // XXX cannot happen
+		return;
 	/* in netmap mode, overwrite addresses and maps */
 	txd = sc->rl_ldata.rl_tx_desc;
 	desc = sc->rl_ldata.rl_tx_list;

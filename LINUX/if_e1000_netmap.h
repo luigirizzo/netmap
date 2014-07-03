@@ -286,9 +286,8 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	unsigned int i, r, si;
 	uint64_t paddr;
 
-	if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
+	if (!nm_native_on(na))
 		return 0;
-        }
 	adapter->alloc_rx_buf = e1000_no_rx_alloc;
 	for (r = 0; r < na->num_rx_rings; r++) {
 		struct e1000_rx_ring *rxr;

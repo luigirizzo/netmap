@@ -398,13 +398,9 @@ ixgbe_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	struct netmap_slot *slot;
 	//int j;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
-		return 0;	// not in netmap; XXX cannot happen
+		return 0;	// not in native netmap mode
 #if 0
 	/*
 	 * on a generic card we should set the address in the slot.
@@ -478,16 +474,12 @@ ixgbe_netmap_configure_rx_ring(struct SOFTC_T *adapter, int ring_nr)
 	int lim, i;
 	struct ixgbe_ring *ring = adapter->rx_ring[ring_nr];
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
-	ixgbe_netmap_configure_srrctl(adapter, ring);
-
         slot = netmap_reset(na, NR_RX, ring_nr, 0);
         /* same as in ixgbe_setup_transmit_ring() */
 	if (!slot)
-		return 0;	// not in netmap; XXX cannot happen
+		return 0;	// not in native netmap mode
+	// XXX can we move it later ?
+	ixgbe_netmap_configure_srrctl(adapter, ring);
 
 	lim = na->num_rx_desc - 1 - nm_kr_rxspace(&na->rx_rings[ring_nr]);
 

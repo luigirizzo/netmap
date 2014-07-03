@@ -524,7 +524,7 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
 	int i;
 	u_int ntx, nrx;
 
-	if (na == NULL || !(na->na_flags & NAF_NETMAP_ON))
+	if (!nm_netmap_on(na))
 		return;
 
 	ntx = netmap_real_tx_rings(na);
@@ -1938,10 +1938,8 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		goto out;
 	}
 	na->active_fds++;
-	if (na->na_flags & NAF_NETMAP_ON) {
-		/* was already set */
-	} else {
-		/* Otherwise set the card in netmap mode
+	if (!nm_netmap_on(na)) {
+		/* Netmap not active, set the card in netmap mode
 		 * and make it use the shared buffers.
 		 */
 		/* cache the allocator info in the na */
@@ -2158,7 +2156,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 			break;
 		}
 
-		if (!(na->na_flags & NAF_NETMAP_ON)) {
+		if (!nm_netmap_on(na)) {
 			error = ENXIO;
 			break;
 		}
@@ -2310,7 +2308,7 @@ netmap_poll(struct cdev *dev, int events, struct thread *td)
 
 	na = priv->np_na;
 
-	if ( (na->na_flags & NAF_NETMAP_ON) == 0)
+	if (!nm_netmap_on(na))
 		return POLLERR;
 
 	if (netmap_verbose & 0x8000)
@@ -2773,6 +2771,7 @@ netmap_detach(struct ifnet *ifp)
 		 * tell them that the interface is gone
 		 */
 		na->ifp = NULL;
+		// XXX also clear NAF_NATIVE_ON ?
 		na->na_flags &= ~NAF_NETMAP_ON;
 		/* give them a chance to notice */
 		netmap_enable_all_rings(ifp);
@@ -2807,7 +2806,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	// if we follow the down/configure/up protocol -gl
 	// mtx_lock(&na->core_lock);
 
-	if ( (na->na_flags & NAF_NETMAP_ON) == 0) {
+	if (!nm_netmap_on(na)) {
 		D("%s not in netmap mode anymore", na->name);
 		error = ENXIO;
 		goto done;
@@ -2873,12 +2872,8 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 	struct netmap_kring *kring;
 	int new_hwofs, lim;
 
-	if (na == NULL) {
-		D("NULL na, should not happen");
-		return NULL;	/* no netmap support here */
-	}
-	if (!(na->na_flags & NAF_NETMAP_ON)) {
-		ND("interface not in netmap mode");
+	if (!nm_native_on(na)) {
+		ND("interface not in native netmap mode");
 		return NULL;	/* nothing to reinitialize */
 	}
 
@@ -3003,8 +2998,14 @@ int
 netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 {
 	struct netmap_adapter *na = NA(ifp);
-	// XXX could we check NAF_NATIVE_ON ?
-	if (!(na->na_flags & NAF_NETMAP_ON))
+
+	/*
+	 * XXX emulated netmap mode sets NAF_SKIP_INTR so
+	 * we still use the regular driver even though the previous
+	 * check fails. It is unclear whether we should use
+	 * nm_native_on() here.
+	 */
+	if (!nm_netmap_on(na))
 		return 0;
 
 	if (na->na_flags & NAF_SKIP_INTR) {

@@ -273,14 +273,9 @@ re_netmap_tx_init(struct SOFTC_T *sc)
 	int i, l;
 	uint64_t paddr;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_TX, 0, 0);
-	/* slot is NULL if we are not in netmap mode XXX cannot happen */
 	if (!slot)
-		return 0;
+		return 0;	// not in native netmap mode
 
 	/* l points in the netmap ring, i points in the NIC ring */
 	for (i = 0; i < na->num_tx_desc; i++) {
@@ -302,13 +297,9 @@ re_netmap_rx_init(struct SOFTC_T *sc)
 	int i, lim, l;
 	uint64_t paddr;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_RX, 0, 0);
 	if (!slot)
-		return 0;  /* XXX cannot happen */
+		return 0;  // not in native netmap mode
 	/*
 	 * Do not release the slots owned by userspace
 	 * XXX we use all slots, so no '-1' here
