@@ -495,23 +495,23 @@ nm_open(const char *ifname, const struct nmreq *req,
 			(char *)d->mem + d->memsize;
 	}
 
-	if (nr_flags ==  NR_REG_SW) { /* host stack */
+	if (d->req.nr_flags ==  NR_REG_SW) { /* host stack */
 		d->first_tx_ring = d->last_tx_ring = d->req.nr_tx_rings;
 		d->first_rx_ring = d->last_rx_ring = d->req.nr_rx_rings;
-	} else if (nr_flags ==  NR_REG_ALL_NIC) { /* only nic */
+	} else if (d->req.nr_flags ==  NR_REG_ALL_NIC) { /* only nic */
 		d->first_tx_ring = 0;
 		d->first_rx_ring = 0;
 		d->last_tx_ring = d->req.nr_tx_rings - 1;
 		d->last_rx_ring = d->req.nr_rx_rings - 1;
-	} else if (nr_flags ==  NR_REG_NIC_SW) {
+	} else if (d->req.nr_flags ==  NR_REG_NIC_SW) {
 		d->first_tx_ring = 0;
 		d->first_rx_ring = 0;
 		d->last_tx_ring = d->req.nr_tx_rings;
 		d->last_rx_ring = d->req.nr_rx_rings;
-	} else if (nr_flags == NR_REG_ONE_NIC) {
+	} else if (d->req.nr_flags == NR_REG_ONE_NIC) {
 		/* XXX check validity */
 		d->first_tx_ring = d->last_tx_ring =
-		d->first_rx_ring = d->last_rx_ring = nr_ringid;
+		d->first_rx_ring = d->last_rx_ring = d->req.nr_ringid & NETMAP_RING_MASK;
 	} else { /* pipes */
 		d->first_tx_ring = d->last_tx_ring = 0;
 		d->first_rx_ring = d->last_rx_ring = 0;
