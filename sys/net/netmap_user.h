@@ -543,7 +543,8 @@ fail:
 	nm_close(d);
 	if (errmsg)
 		D("%s %s", errmsg, ifname);
-	errno = EINVAL;
+	if (errno == 0)
+		errno = EINVAL;
 	return NULL;
 }
 
