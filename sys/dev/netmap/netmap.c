@@ -1956,12 +1956,12 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 out:
 	*err = error;
 	if (error) {
-		priv->np_na = NULL;
 		/* we should drop the allocator, but only
 		 * if we were the ones who grabbed it
 		 */
 		if (need_mem)
 			netmap_drop_memory_locked(priv);
+		priv->np_na = NULL;
 	}
 	if (nifp != NULL) {
 		/*
