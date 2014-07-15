@@ -30,6 +30,8 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 #include <linux/rtnetlink.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
 #include <linux/iommu.h>
 
 /* #################### IOMMU ################## */
@@ -51,6 +53,13 @@ int nm_iommu_group_id(struct device *dev)
 	id = iommu_group_id(grp);
 	return id;
 }
+#else
+int nm_iommu_group_id(struct device *dev)
+{
+	return 0;
+}
+#endif
+
 /* #################### VALE OFFLOADINGS SUPPORT ################## */
 
 /* Compute and return a raw checksum over (data, len), using 'cur_sum'
