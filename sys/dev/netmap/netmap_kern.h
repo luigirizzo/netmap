@@ -1270,6 +1270,7 @@ netmap_reload_map(struct netmap_adapter *na,
 
 int nm_iommu_group_id(bus_dma_tag_t dev);
 extern size_t     netmap_mem_get_bufsize(struct netmap_mem_d *);
+#include <linux/dma-mapping.h>
 
 static inline void
 netmap_load_map(struct netmap_adapter *na,
