@@ -222,9 +222,9 @@ generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	 * (and eventually, just reference the netmap buffer)
 	 */
 
-	if (*m->m_ext.ref_cnt != 1) {
+	if (GET_MBUF_REFCNT(m) != 1) {
 		D("invalid refcnt %d for %p",
-			*m->m_ext.ref_cnt, m);
+			GET_MBUF_REFCNT(m), m);
 		panic("in generic_xmit_frame");
 	}
 	// XXX the ext_size check is unnecessary if we link the netmap buf
@@ -239,7 +239,7 @@ generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	}
 	m->m_len = m->m_pkthdr.len = len;
 	// inc refcount. All ours, we could skip the atomic
-	atomic_fetchadd_int(m->m_ext.ref_cnt, 1);
+	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
 	m->m_flags |= M_FLOWID;
 	m->m_pkthdr.flowid = ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */

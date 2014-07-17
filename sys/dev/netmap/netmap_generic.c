@@ -120,8 +120,8 @@ netmap_default_mbuf_destructor(struct mbuf *m)
 	m->m_ext.ext_arg1 = NULL;
 	m->m_ext.ext_type = EXT_PACKET;
 	m->m_ext.ext_free = NULL;
-	if (*(m->m_ext.ref_cnt) == 0)
-		*(m->m_ext.ref_cnt) = 1;
+	if (GET_MBUF_REFCNT(m) == 0)
+		SET_MBUF_REFCNT(m, 1);
 	uma_zfree(zone_pack, m);
 }
 
@@ -134,12 +134,10 @@ netmap_get_mbuf(int len)
 		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
 		m->m_ext.ext_free = (void *)netmap_default_mbuf_destructor;
 		m->m_ext.ext_type = EXT_EXTREF;
-		ND(5, "create m %p refcnt %d", m, *m->m_ext.ref_cnt);
+		ND(5, "create m %p refcnt %d", m, GET_MBUF_REFCNT(m));
 	}
 	return m;
 }
-
-#define GET_MBUF_REFCNT(m)	((m)->m_ext.ref_cnt ? *(m)->m_ext.ref_cnt : -1)
 
 
 
