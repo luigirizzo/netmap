@@ -860,7 +860,7 @@ netmap_if_new(struct netmap_adapter *na)
 	 * the netmap rings themselves
 	 */
 	if (na->nm_krings_create(na))
-		goto cleanup;
+		return NULL;
 
 	/* create all missing netmap rings */
 	if (netmap_mem_rings_create(na))
