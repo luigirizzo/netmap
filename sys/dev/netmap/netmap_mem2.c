@@ -107,8 +107,7 @@ struct netmap_obj_pool {
 };
 
 #ifdef linux
-// XXX a mtx would suffice here 20130415 lr
-#define NMA_LOCK_T		struct semaphore
+#define NMA_LOCK_T		struct mutex
 #else /* !linux */
 #define NMA_LOCK_T		struct mtx
 #endif /* linux */
@@ -161,10 +160,10 @@ netmap_mem_get_bufsize(struct netmap_mem_d *nmd)
 }
 
 #ifdef linux
-#define NMA_LOCK_INIT(n)	sema_init(&(n)->nm_mtx, 1)
+#define NMA_LOCK_INIT(n)	mutex_init(&(n)->nm_mtx)
 #define NMA_LOCK_DESTROY(n)
-#define NMA_LOCK(n)		down(&(n)->nm_mtx)
-#define NMA_UNLOCK(n)		up(&(n)->nm_mtx)
+#define NMA_LOCK(n)		mutex_lock(&(n)->nm_mtx)
+#define NMA_UNLOCK(n)		mutex_unlock(&(n)->nm_mtx)
 #else /* !linux */
 #define NMA_LOCK_INIT(n)	mtx_init(&(n)->nm_mtx, "netmap memory allocator lock", NULL, MTX_DEF)
 #define NMA_LOCK_DESTROY(n)	mtx_destroy(&(n)->nm_mtx)

@@ -101,13 +101,12 @@ struct hrtimer {
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
-// XXX a mtx would suffice here too 20130404 gl
-#define NMG_LOCK_T		struct semaphore
-#define NMG_LOCK_INIT()		sema_init(&netmap_global_lock, 1)
+#define NMG_LOCK_T		struct mutex
+#define NMG_LOCK_INIT()		mutex_init(&netmap_global_lock)
 #define NMG_LOCK_DESTROY()
-#define NMG_LOCK()		down(&netmap_global_lock)
-#define NMG_UNLOCK()		up(&netmap_global_lock)
-#define NMG_LOCK_ASSERT()	//	XXX to be completed
+#define NMG_LOCK()		mutex_lock(&netmap_global_lock)
+#define NMG_UNLOCK()		mutex_unlock(&netmap_global_lock)
+#define NMG_LOCK_ASSERT()	mutex_is_locked(&netmap_global_lock)
 
 #ifndef DEV_NETMAP
 #define DEV_NETMAP
