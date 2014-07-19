@@ -437,7 +437,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
 
 int netmap_flags = 0;	/* debug flags */
 int netmap_fwd = 0;	/* force transparent mode */
-int netmap_mmap_unreg = 0; /* allow mmap of unregistered fds */
 
 /*
  * netmap_admode selects the netmap mode to use.
@@ -455,7 +454,6 @@ int netmap_generic_rings = 1;   /* number of queues in generic. */
 
 SYSCTL_INT(_dev_netmap, OID_AUTO, flags, CTLFLAG_RW, &netmap_flags, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, mmap_unreg, CTLFLAG_RW, &netmap_mmap_unreg, 0, "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_ringsize, 0 , "");
@@ -885,74 +883,6 @@ cleanup:
 	return NULL;
 }
 
-
-/* grab a reference to the memory allocator, if we don't have one already.  The
- * reference is taken from the netmap_adapter registered with the priv.
- */
-/* call with NMG_LOCK held */
-static int
-netmap_get_memory_locked(struct netmap_priv_d* p)
-{
-	struct netmap_mem_d *nmd;
-	int error = 0;
-
-	if (p->np_na == NULL) {
-		if (!netmap_mmap_unreg)
-			return ENODEV;
-		/* for compatibility with older versions of the API
- 		 * we use the global allocator when no interface has been
- 		 * registered
- 		 */
-		nmd = &nm_mem;
-	} else {
-		nmd = p->np_na->nm_mem;
-	}
-	if (p->np_mref == NULL) {
-		error = netmap_mem_finalize(nmd, p->np_na);
-		if (!error)
-			p->np_mref = nmd;
-	} else if (p->np_mref != nmd) {
-		/* a virtual port has been registered, but previous
- 		 * syscalls already used the global allocator.
- 		 * We cannot continue
- 		 */
-		error = ENODEV;
-	}
-	return error;
-}
-
-
-/* call with NMG_LOCK *not* held */
-int
-netmap_get_memory(struct netmap_priv_d* p)
-{
-	int error;
-	NMG_LOCK();
-	error = netmap_get_memory_locked(p);
-	NMG_UNLOCK();
-	return error;
-}
-
-
-/* call with NMG_LOCK held */
-static int
-netmap_have_memory_locked(struct netmap_priv_d* p)
-{
-	return p->np_mref != NULL;
-}
-
-
-/* call with NMG_LOCK held */
-static void
-netmap_drop_memory_locked(struct netmap_priv_d* p)
-{
-	if (p->np_mref) {
-		netmap_mem_deref(p->np_mref, p->np_na);
-		p->np_mref = NULL;
-	}
-}
-
-
 /*
  * Call nm_register(ifp,0) to stop netmap mode on the interface and
  * revert to normal operation.
@@ -1047,7 +977,7 @@ netmap_dtor_locked(struct netmap_priv_d *priv)
 	}
 	netmap_do_unregif(priv, priv->np_nifp);
 	priv->np_nifp = NULL;
-	netmap_drop_memory_locked(priv);
+	netmap_mem_deref(na->nm_mem, na);
 	if (priv->np_na) {
 		if (nm_tx_si_user(priv))
 			na->tx_si_users--;
@@ -1923,14 +1853,10 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	error = netmap_set_ringid(priv, ringid, flags);
 	if (error)
 		goto out;
-	/* ensure allocators are ready */
-	need_mem = !netmap_have_memory_locked(priv);
-	if (need_mem) {
-		error = netmap_get_memory_locked(priv);
-		ND("get_memory returned %d", error);
-		if (error)
-			goto out;
-	}
+	error = netmap_mem_finalize(na->nm_mem, na);
+	if (error)
+		goto out;
+	need_mem = 1;
 	/* Allocate a netmap_if and, if necessary, all the netmap_ring's */
 	nifp = netmap_if_new(na);
 	if (nifp == NULL) { /* allocation failed */
@@ -1956,11 +1882,8 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 out:
 	*err = error;
 	if (error) {
-		/* we should drop the allocator, but only
-		 * if we were the ones who grabbed it
-		 */
 		if (need_mem)
-			netmap_drop_memory_locked(priv);
+			netmap_mem_deref(na->nm_mem, na);
 		priv->np_na = NULL;
 	}
 	if (nifp != NULL) {

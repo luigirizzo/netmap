@@ -492,6 +492,7 @@ netmap_dev_pager_fault(vm_object_t object, vm_ooffset_t offset,
 {
 	struct netmap_vm_handle_t *vmh = object->handle;
 	struct netmap_priv_d *priv = vmh->priv;
+	struct netmap_adapter *na = priv->np_na;
 	vm_paddr_t paddr;
 	vm_page_t page;
 	vm_memattr_t memattr;
@@ -501,7 +502,7 @@ netmap_dev_pager_fault(vm_object_t object, vm_ooffset_t offset,
 			object, (intmax_t)offset, prot, mres);
 	memattr = object->memattr;
 	pidx = OFF_TO_IDX(offset);
-	paddr = netmap_mem_ofstophys(priv->np_mref, offset);
+	paddr = netmap_mem_ofstophys(na->nm_mem, offset);
 	if (paddr == 0)
 		return VM_PAGER_FAIL;
 

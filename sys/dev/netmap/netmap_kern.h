@@ -1462,7 +1462,6 @@ struct netmap_priv_d {
 	u_int		np_rxqfirst, np_rxqlast; /* range of rx rings to scan */
 	uint16_t	np_txpoll;	/* XXX and also np_rxpoll ? */
 
-	struct netmap_mem_d     *np_mref;	/* use with NMG_LOCK held */
 	/* np_refcount is only used on FreeBSD */
 	int		np_refcount;	/* use with NMG_LOCK held */
 

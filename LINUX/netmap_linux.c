@@ -455,11 +455,12 @@ int
 linux_netmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct netmap_priv_d *priv = vma->vm_private_data;
+	struct netmap_adapter *na = priv->np_na;
 	struct page *page;
 	unsigned long off = (vma->vm_pgoff + vmf->pgoff) << PAGE_SHIFT;
 	unsigned long pa, pfn;
 
-	pa = netmap_mem_ofstophys(priv->np_mref, off);
+	pa = netmap_mem_ofstophys(na->nm_mem, off);
 	ND("fault off %lx -> phys addr %lx", off, pa);
 	if (pa == 0)
 		return VM_FAULT_SIGBUS;
@@ -483,19 +484,20 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 	unsigned long off;
 	u_int memsize, memflags;
 	struct netmap_priv_d *priv = f->private_data;
+	struct netmap_adapter *na = priv->np_na;
 	/*
 	 * vma->vm_start: start of mapping user address space
 	 * vma->vm_end: end of the mapping user address space
 	 * vma->vm_pfoff: offset of first page in the device
 	 */
 
-	error = netmap_get_memory(priv);
-	ND("get_memory returned %d", error);
-	if (error)
-	    return -error;
+	if (priv->np_nifp == NULL) {
+		return -EINVAL;
+	}
+	mb();
 
 	/* check that [off, off + vsize) is within our memory */
-	error = netmap_mem_get_info(priv->np_mref, &memsize, &memflags, NULL);
+	error = netmap_mem_get_info(na->nm_mem, &memsize, &memflags, NULL);
 	ND("get_info returned %d", error);
 	if (error)
 		return -error;
@@ -508,7 +510,7 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 		vm_ooffset_t pa;
 
 		/* the underlying memory is contiguous */
-		pa = netmap_mem_ofstophys(priv->np_mref, 0);
+		pa = netmap_mem_ofstophys(na->nm_mem, 0);
 		if (pa == 0)
 			return -EINVAL;
 		return remap_pfn_range(vma, vma->vm_start, 
