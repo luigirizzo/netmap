@@ -1969,7 +1969,7 @@ out:
 		 * The barrier is needed because readers (poll and *SYNC)
 		 * check for priv->np_nifp != NULL without locking
 		 */
-		wmb(); /* make sure previous writes are visible to all CPUs */
+		mb(); /* make sure previous writes are visible to all CPUs */
 		priv->np_nifp = nifp;
 	}
 	return nifp;
@@ -2146,7 +2146,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 			error = ENXIO;
 			break;
 		}
-		rmb(); /* make sure following reads are not from cache */
+		mb(); /* make sure following reads are not from cache */
 
 		na = priv->np_na;      /* we have a reference */
 
@@ -2304,7 +2304,7 @@ netmap_poll(struct cdev *dev, int events, struct thread *td)
 		D("No if registered");
 		return POLLERR;
 	}
-	rmb(); /* make sure following reads are not from cache */
+	mb(); /* make sure following reads are not from cache */
 
 	na = priv->np_na;
 
