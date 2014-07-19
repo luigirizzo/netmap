@@ -106,11 +106,7 @@ struct netmap_obj_pool {
 	u_int r_objsize;
 };
 
-#ifdef linux
-#define NMA_LOCK_T		struct mutex
-#else /* !linux */
-#define NMA_LOCK_T		struct mtx
-#endif /* linux */
+#define NMA_LOCK_T		NM_MTX_T
 
 typedef int (*netmap_mem_config_t)(struct netmap_mem_d*);
 typedef int (*netmap_mem_finalize_t)(struct netmap_mem_d*);
@@ -159,17 +155,11 @@ netmap_mem_get_bufsize(struct netmap_mem_d *nmd)
 	return nmd->pools[NETMAP_BUF_POOL]._objsize;
 }
 
-#ifdef linux
-#define NMA_LOCK_INIT(n)	mutex_init(&(n)->nm_mtx)
-#define NMA_LOCK_DESTROY(n)
-#define NMA_LOCK(n)		mutex_lock(&(n)->nm_mtx)
-#define NMA_UNLOCK(n)		mutex_unlock(&(n)->nm_mtx)
-#else /* !linux */
-#define NMA_LOCK_INIT(n)	mtx_init(&(n)->nm_mtx, "netmap memory allocator lock", NULL, MTX_DEF)
-#define NMA_LOCK_DESTROY(n)	mtx_destroy(&(n)->nm_mtx)
-#define NMA_LOCK(n)		mtx_lock(&(n)->nm_mtx)
-#define NMA_UNLOCK(n)		mtx_unlock(&(n)->nm_mtx)
-#endif /* linux */
+#define NMA_LOCK_INIT(n)	NM_MTX_INIT((n)->nm_mtx, \
+					"netmap memory allocator lock")
+#define NMA_LOCK_DESTROY(n)	NM_MTX_DESTROY((n)->nm_mtx)
+#define NMA_LOCK(n)		NM_MTX_LOCK((n)->nm_mtx)
+#define NMA_UNLOCK(n)		NM_MTX_UNLOCK((n)->nm_mtx)
 
 
 struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {

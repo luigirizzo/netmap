@@ -44,13 +44,13 @@
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
 
 #define	NM_LOCK_T	struct mtx
-#define	NMG_LOCK_T	struct mtx
-#define NMG_LOCK_INIT()	mtx_init(&netmap_global_lock, \
-				"netmap global lock", NULL, MTX_DEF)
-#define NMG_LOCK_DESTROY()	mtx_destroy(&netmap_global_lock)
-#define NMG_LOCK()	mtx_lock(&netmap_global_lock)
-#define NMG_UNLOCK()	mtx_unlock(&netmap_global_lock)
-#define NMG_LOCK_ASSERT()	mtx_assert(&netmap_global_lock, MA_OWNED)
+
+#define NM_MTX_T		struct mtx
+#define NM_MTX_INIT(m, s)	mtx_init(&(m), (s), NULL, MTX_DEF)
+#define NM_MTX_DESTROY(m)	mtx_destroy(&(m))
+#define NM_MTX_LOCK(m)		mtx_lock(&(m))
+#define NM_MTX_UNLOCK(m)	mtx_unlock(&(m))
+#define NM_MTX_LOCK_ASSERT(m)	mtx_assert(&(m), MA_OWNED)
 
 #define	NM_SELINFO_T	struct selinfo
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
@@ -101,12 +101,13 @@ struct hrtimer {
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
-#define NMG_LOCK_T		struct mutex
-#define NMG_LOCK_INIT()		mutex_init(&netmap_global_lock)
-#define NMG_LOCK_DESTROY()
-#define NMG_LOCK()		mutex_lock(&netmap_global_lock)
-#define NMG_UNLOCK()		mutex_unlock(&netmap_global_lock)
-#define NMG_LOCK_ASSERT()	mutex_is_locked(&netmap_global_lock)
+#define NM_MTX_T		struct mutex
+#define NM_MTX_INIT(m, s)	do { (void)s; mutex_init(&(m)); } while (0)
+#define NM_MTX_DESTROY(m)	do { (void)m; } while (0)
+#define NM_MTX_LOCK(m)		mutex_lock(&(m))
+#define NM_MTX_UNLOCK(m)	mutex_unlock(&(m))
+#define NM_MTX_LOCK_ASSERT(m)	mutex_is_locked(&(m))
+
 
 #ifndef DEV_NETMAP
 #define DEV_NETMAP
@@ -127,6 +128,14 @@ struct hrtimer {
 #error unsupported platform
 
 #endif /* end - platform-specific code */
+
+#define NMG_LOCK_T		NM_MTX_T
+#define NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock, \
+					"netmap_global_locl")
+#define NMG_LOCK_DESTROY()	NM_MTX_DESTROY(netmap_global_lock)
+#define NMG_LOCK()		NM_MTX_LOCK(netmap_global_lock)
+#define NMG_UNLOCK()		NM_MTX_UNLOCK(netmap_global_lock)
+#define NMG_LOCK_ASSERT()	NM_MTX_LOCK_ASSERT(netmap_global_lock)
 
 #define ND(format, ...)
 #define D(format, ...)						\
