@@ -834,55 +834,6 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 }
 
 
-/* create a new netmap_if for a newly registered fd.
- * If this is the first registration of the adapter,
- * also create the netmap rings and their in-kernel view,
- * the netmap krings.
- */
-/* call with NMG_LOCK held */
-static struct netmap_if*
-netmap_if_new(struct netmap_adapter *na)
-{
-	struct netmap_if *nifp;
-
-	if (netmap_update_config(na)) {
-		/* configuration mismatch, report and fail */
-		return NULL;
-	}
-
-	if (na->active_fds)	/* already registered */
-		goto final;
-
-	/* create and init the krings arrays.
-	 * Depending on the adapter, this may also create
-	 * the netmap rings themselves
-	 */
-	if (na->nm_krings_create(na))
-		return NULL;
-
-	/* create all missing netmap rings */
-	if (netmap_mem_rings_create(na))
-		goto cleanup;
-
-final:
-
-	/* in all cases, create a new netmap if */
-	nifp = netmap_mem_if_new(na);
-	if (nifp == NULL)
-		goto cleanup;
-
-	return (nifp);
-
-cleanup:
-
-	if (na->active_fds == 0) {
-		netmap_mem_rings_delete(na);
-		na->nm_krings_delete(na);
-	}
-
-	return NULL;
-}
-
 /*
  * Call nm_register(ifp,0) to stop netmap mode on the interface and
  * revert to normal operation.
@@ -1780,9 +1731,8 @@ netmap_set_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags)
  *  	The bwrap has to override this, since it has to forward
  *  	the request to the wrapped adapter (netmap_bwrap_config).
  *
- *    	XXX netmap_if_new calls this again (2014-03-15)
  *
- * na->nm_krings_create()		[by netmap_if_new]
+ * na->nm_krings_create()
  * (create and init the krings array)
  *
  * 	One of the following:
@@ -1836,15 +1786,14 @@ netmap_set_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags)
  *		the hwna notify callback (to get the frames
  *		coming from outside go through the bridge).
  *
- * XXX maybe netmap_if_new() should be merged with this (2014-03-15).
  *
  */
-struct netmap_if *
+int
 netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
-	uint16_t ringid, uint32_t flags, int *err)
+	uint16_t ringid, uint32_t flags)
 {
 	struct netmap_if *nifp = NULL;
-	int error, need_mem = 0;
+	int error;
 
 	NMG_LOCK_ASSERT();
 	/* ring configuration may have changed, fetch from the card */
@@ -1852,17 +1801,39 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	priv->np_na = na;     /* store the reference */
 	error = netmap_set_ringid(priv, ringid, flags);
 	if (error)
-		goto out;
+		goto err;
 	error = netmap_mem_finalize(na->nm_mem, na);
 	if (error)
-		goto out;
-	need_mem = 1;
-	/* Allocate a netmap_if and, if necessary, all the netmap_ring's */
-	nifp = netmap_if_new(na);
-	if (nifp == NULL) { /* allocation failed */
-		error = ENOMEM;
-		goto out;
+		goto err;
+
+	if (na->active_fds == 0) {
+		/*
+		 * If this is the first registration of the adapter,
+		 * also create the netmap rings and their in-kernel view,
+		 * the netmap krings.
+		 */
+
+		/*
+		 * Depending on the adapter, this may also create
+		 * the netmap rings themselves
+		 */
+		error = na->nm_krings_create(na);
+		if (error)
+			goto err_drop_mem;
+
+		/* create all missing netmap rings */
+		error = netmap_mem_rings_create(na);
+		if (error)
+			goto err_del_krings;
 	}
+
+	/* in all cases, create a new netmap if */
+	nifp = netmap_mem_if_new(na);
+	if (nifp == NULL) {
+		error = ENOMEM;
+		goto err_del_rings;
+	}
+
 	na->active_fds++;
 	if (!nm_netmap_on(na)) {
 		/* Netmap not active, set the card in netmap mode
@@ -1874,28 +1845,37 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		na->na_lut_objtotal = netmap_mem_get_buftotal(na->nm_mem);
 		na->na_lut_objsize = netmap_mem_get_bufsize(na->nm_mem);
 		error = na->nm_register(na, 1); /* mode on */
-		if (error) {
-			netmap_do_unregif(priv, nifp);
-			nifp = NULL;
-		}
+		if (error) 
+			goto err_del_if;
 	}
-out:
-	*err = error;
-	if (error) {
-		if (need_mem)
-			netmap_mem_deref(na->nm_mem, na);
-		priv->np_na = NULL;
-	}
-	if (nifp != NULL) {
-		/*
-		 * advertise that the interface is ready bt setting ni_nifp.
-		 * The barrier is needed because readers (poll and *SYNC)
-		 * check for priv->np_nifp != NULL without locking
-		 */
-		mb(); /* make sure previous writes are visible to all CPUs */
-		priv->np_nifp = nifp;
-	}
-	return nifp;
+
+	/*
+	 * advertise that the interface is ready bt setting np_nifp.
+	 * The barrier is needed because readers (poll and *SYNC)
+	 * check for priv->np_nifp != NULL without locking
+	 */
+	mb(); /* make sure previous writes are visible to all CPUs */
+	priv->np_nifp = nifp;
+
+	return 0;
+
+err_del_if:
+	na->na_lut = NULL;
+	na->na_lut_objtotal = 0;
+	na->na_lut_objsize = 0;
+	na->active_fds--;
+	netmap_mem_if_delete(na, nifp);
+err_del_rings:
+	if (na->active_fds == 0)
+		netmap_mem_rings_delete(na);
+err_del_krings:
+	if (na->active_fds == 0)
+		na->nm_krings_delete(na);
+err_drop_mem:
+	netmap_mem_deref(na->nm_mem, na);
+	priv->np_na = NULL;
+err:
+	return error;
 }
 
 
@@ -2010,7 +1990,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		do {
 			u_int memflags;
 
-			if (priv->np_na != NULL) {	/* thread already registered */
+			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
 				break;
 			}
@@ -2023,12 +2003,12 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				error = EBUSY;
 				break;
 			}
-			nifp = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags, &error);
-			if (!nifp) {    /* reg. failed, release priv and ref */
+			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
+			if (error) {    /* reg. failed, release priv and ref */
 				netmap_adapter_put(na);
-				priv->np_nifp = NULL;
 				break;
 			}
+			nifp = priv->np_nifp;
 			priv->np_td = td; // XXX kqueue, debugging only
 
 			/* return the offset of the netmap_if object */

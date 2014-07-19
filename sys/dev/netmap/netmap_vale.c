@@ -2261,7 +2261,6 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 {
 	struct netmap_priv_d *npriv;
 	struct netmap_bwrap_adapter *bna = (struct netmap_bwrap_adapter*)na;
-	struct netmap_if *nifp;
 	int error = 0;
 
 	if (attach) {
@@ -2275,8 +2274,8 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 		npriv = malloc(sizeof(*npriv), M_DEVBUF, M_NOWAIT|M_ZERO);
 		if (npriv == NULL)
 			return ENOMEM;
-		nifp = netmap_do_regif(npriv, na, nmr->nr_ringid, nmr->nr_flags, &error);
-		if (!nifp) {
+		error = netmap_do_regif(npriv, na, nmr->nr_ringid, nmr->nr_flags);
+		if (error) {
 			bzero(npriv, sizeof(*npriv));
 			free(npriv, M_DEVBUF);
 			return error;
