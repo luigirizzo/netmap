@@ -1850,8 +1850,8 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	}
 
 	/*
-	 * advertise that the interface is ready bt setting np_nifp.
-	 * The barrier is needed because readers (poll and *SYNC)
+	 * advertise that the interface is ready by setting np_nifp.
+	 * The barrier is needed because readers (poll, *SYNC and mmap)
 	 * check for priv->np_nifp != NULL without locking
 	 */
 	mb(); /* make sure previous writes are visible to all CPUs */
