@@ -835,15 +835,14 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 
 
 /*
- * Call nm_register(ifp,0) to stop netmap mode on the interface and
+ * Undo everything that was done in netmap_do_regif(). In particular,
+ * call nm_register(ifp,0) to stop netmap mode on the interface and
  * revert to normal operation.
- * The second argument is the nifp to work on. In some cases it is
- * not attached yet to the netmap_priv_d so we need to pass it as
- * a separate argument.
  */
 /* call with NMG_LOCK held */
+static void netmap_unset_ringid(struct netmap_priv_d *);
 static void
-netmap_do_unregif(struct netmap_priv_d *priv, struct netmap_if *nifp)
+netmap_do_unregif(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
 
@@ -881,8 +880,15 @@ netmap_do_unregif(struct netmap_priv_d *priv, struct netmap_if *nifp)
 		netmap_mem_rings_delete(na);
 		na->nm_krings_delete(na);
 	}
+	/* possibily decrement counter of tx_si/rx_si users */
+	netmap_unset_ringid(priv);
 	/* delete the nifp */
-	netmap_mem_if_delete(na, nifp);
+	netmap_mem_if_delete(na, priv->np_nifp);
+	/* drop the allocator */
+	netmap_mem_deref(na->nm_mem, na);
+	/* mark the priv as unregistered */
+	priv->np_na = NULL;
+	priv->np_nifp = NULL;
 }
 
 /* call with NMG_LOCK held */
@@ -904,7 +910,8 @@ nm_rx_si_user(struct netmap_priv_d *priv)
 
 /*
  * Destructor of the netmap_priv_d, called when the fd has
- * no active open() and mmap(). Also called in error paths.
+ * no active open() and mmap().
+ * Undo all the things done by NIOCREGIF.
  *
  * returns 1 if this is the last instance and we can free priv
  */
@@ -926,17 +933,8 @@ netmap_dtor_locked(struct netmap_priv_d *priv)
 	if (!na) {
 	    return 1; //XXX is it correct?
 	}
-	netmap_do_unregif(priv, priv->np_nifp);
-	priv->np_nifp = NULL;
-	netmap_mem_deref(na->nm_mem, na);
-	if (priv->np_na) {
-		if (nm_tx_si_user(priv))
-			na->tx_si_users--;
-		if (nm_rx_si_user(priv))
-			na->rx_si_users--;
-		netmap_adapter_put(na);
-		priv->np_na = NULL;
-	}
+	netmap_do_unregif(priv);
+	netmap_adapter_put(na);
 	return 1;
 }
 
@@ -1717,6 +1715,21 @@ netmap_set_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags)
 	return 0;
 }
 
+static void
+netmap_unset_ringid(struct netmap_priv_d *priv)
+{
+	struct netmap_adapter *na = priv->np_na;
+
+	if (nm_tx_si_user(priv))
+		na->tx_si_users--;
+	if (nm_rx_si_user(priv))
+		na->rx_si_users--;
+	priv->np_txqfirst = priv->np_txqlast = 0;
+	priv->np_rxqfirst = priv->np_rxqlast = 0;
+	priv->np_flags = 0;
+	priv->np_txpoll = 0;
+}
+
 /*
  * possibly move the interface to netmap-mode.
  * If success it returns a pointer to netmap_if, otherwise NULL.
@@ -2019,6 +2032,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 			error = netmap_mem_get_info(na->nm_mem, &nmr->nr_memsize, &memflags,
 				&nmr->nr_arg2);
 			if (error) {
+				netmap_do_unregif(priv);
 				netmap_adapter_put(na);
 				break;
 			}
