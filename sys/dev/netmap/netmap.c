@@ -353,29 +353,81 @@ ports attached to the switch)
  *                   linux: netif_rx() with NM_MAGIC_PRIORITY_RX
  *
  *
- *                           -= VALE PORT =-
+ *                           -= VALE =-
  *
+ *   INCOMING:
  *
+ *      - VALE ports:
+ *          ioctl(NIOCTXSYNC)/netmap_poll() in process context
+ *              kring->nm_sync() == netmap_vp_txsync()
  *
- *                           -= NETMAP PIPE =-
+ *      - system device with native support:
+ *         from cable:
+ *             interrupt
+ *                na->nm_notify() == netmap_bwrap_intr_notify(ring_nr != host ring)
+ *                     kring->nm_sync() == DEVICE_netmap_rxsync()
+ *                     netmap_vp_txsync()
+ *                     kring->nm_sync() == DEVICE_netmap_rxsync()
+ *         from host stack:
+ *             netmap_transmit()
+ *                na->nm_notify() == netmap_bwrap_intr_notify(ring_nr == host ring)
+ *                     kring->nm_sync() == netmap_rxsync_from_host_compat()
+ *                     netmap_vp_txsync()
  *
+ *      - system device with generic support:
+ *         from device driver:
+ *            generic_rx_handler()
+ *                na->nm_notify() == netmap_bwrap_intr_notify(ring_nr != host ring)
+ *                     kring->nm_sync() == generic_netmap_rxsync()
+ *                     netmap_vp_txsync()
+ *                     kring->nm_sync() == generic_netmap_rxsync()
+ *         from host stack:
+ *            netmap_transmit()
+ *                na->nm_notify() == netmap_bwrap_intr_notify(ring_nr == host ring)
+ *                     kring->nm_sync() == netmap_rxsync_from_host_compat()
+ *                     netmap_vp_txsync()
  *
+ *   (all cases) --> nm_bdg_flush()
+ *                      dest_na->nm_notify() == (see below)
  *
- *  -= SYSTEM DEVICE WITH NATIVE SUPPORT, CONNECTED TO VALE, NO HOST RINGS =-
+ *   OUTGOING:
  *
+ *      - VALE ports:
+ *         concurrently:
+ *             1) ioctlNIOCRXSYNC)/netmap_poll() in process context
+ *                    kring->nm_sync() == netmap_vp_rxsync()
+ *             2) from nm_bdg_flush()
+ *                    na->nm_notify() == netmap_notify()
  *
+ *      - system device with native support:
+ *          to cable:
+ *             na->nm_notify() == netmap_bwrap_notify()
+ *                 lock ring
+ *                 netmap_vp_rxsync_locked()
+ *                 kring->nm_sync() == DEVICE_netmap_txsync()
+ *                 netmap_vp_rxsync_locked()
+ *                 unlock ring
+ *          to host stack:
+ *                 lock ring
+ *                 netmap_vp_rxsync_locked()
+ *                 kring->nm_sync() == netmap_txsync_to_host_compat
+ *                 netmap_vp_rxsync_locked()
+ *                 unlock ring
  *
- *  -= SYSTEM DEVICE WITH NATIVE SUPPORT, CONNECTED TO VALE, WITH HOST RINGS =-
- *
- *
- *
- *  -= SYSTEM DEVICE WITH GENERIC SUPPORT, CONNECTED TO VALE, NO HOST RINGS =-
- *
- *
- *
- *  -= SYSTEM DEVICE WITH GENERIC SUPPORT, CONNECTED TO VALE, WITH HOST RINGS =-
- *
- *
+ *      - system device with generic adapter:
+ *          to device driver:
+ *             na->nm_notify() == netmap_bwrap_notify()
+ *                 lock ring
+ *                 netmap_vp_rxsync_locked()
+ *                 kring->nm_sync() == generic_netmap_txsync()
+ *                 netmap_vp_rxsync_locked()
+ *                 unlock ring
+ *          to host stack:
+ *                 lock ring
+ *                 netmap_vp_rxsync_locked()
+ *                 kring->nm_sync() == netmap_txsync_to_host_compat
+ *                 netmap_vp_rxsync_locked()
+ *                 unlock ring
  *
  */
 
