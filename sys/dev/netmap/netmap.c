@@ -293,7 +293,7 @@ ports attached to the switch)
  *                kring->nm_sync() == DEVICE_netmap_rxsync()
  *           2) device interrupt handler
  *                na->nm_notify()  == netmap_notify()
- *    - tx from host stack
+ *    - rx from host stack
  *       concurrently:
  *           1) host stack
  *                netmap_transmit()
@@ -333,7 +333,7 @@ ports attached to the switch)
  *               generic_rx_handler()
  *                   mbq_safe_enqueue()
  *                   na->nm_notify() == netmap_notify()
- *    - tx from host stack:
+ *    - rx from host stack:
  *        concurrently:
  *           1) host stack
  *               linux: generic_ndo_start_xmit()
