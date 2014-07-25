@@ -988,14 +988,16 @@ netmap_mem_reset_all(struct netmap_mem_d *nmd)
 static int
 netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
-#ifdef __FreeBSD__
-	D("unsupported on FreeBSD");
-#else /* linux */
 	int i, lim = p->_objtotal;
 
 	if (na->pdev == NULL)
 		return 0;
 
+#ifdef __FreeBSD__
+	(void)i;
+	(void)lim;
+	D("unsupported on FreeBSD");
+#else /* linux */
 	for (i = 2; i < lim; i++) {
 		netmap_unload_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr);
 	}
