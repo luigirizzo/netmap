@@ -2,7 +2,7 @@
 # we can just define 'progs' and create custom targets.
 PROGS	=	pkt-gen bridge vale-ctl
 #PROGS += pingd
-PROGS	+= testlock test_select testmmap
+PROGS	+= testlock test_select testmmap vale-ctl
 MORE_PROGS = kern_test
 
 CLEANFILES = $(PROGS) *.o
