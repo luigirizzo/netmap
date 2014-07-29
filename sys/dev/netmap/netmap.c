@@ -582,11 +582,6 @@ netmap_set_txring(struct netmap_adapter *na, u_int ring_id, int stopped)
 		netmap_disable_ring(na->tx_rings + ring_id);
 	else
 		na->tx_rings[ring_id].nkr_stopped = 0;
-	/* nofify that the stopped state has changed. This is currently
-	 *only used by bwrap to propagate the state to its own krings.
-	 * (see netmap_bwrap_intr_notify).
-	 */
-	na->nm_notify(na, ring_id, NR_TX, NAF_DISABLE_NOTIFY);
 }
 
 /* stop or enable a single rx ring */
@@ -597,11 +592,6 @@ netmap_set_rxring(struct netmap_adapter *na, u_int ring_id, int stopped)
 		netmap_disable_ring(na->rx_rings + ring_id);
 	else
 		na->rx_rings[ring_id].nkr_stopped = 0;
-	/* nofify that the stopped state has changed. This is currently
-	 *only used by bwrap to propagate the state to its own krings.
-	 * (see netmap_bwrap_intr_notify).
-	 */
-	na->nm_notify(na, ring_id, NR_RX, NAF_DISABLE_NOTIFY);
 }
 
 

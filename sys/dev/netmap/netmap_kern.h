@@ -538,10 +538,6 @@ struct netmap_adapter {
 	void (*nm_krings_delete)(struct netmap_adapter *);
 	int (*nm_notify)(struct netmap_adapter *,
 		u_int ring, enum txrx, int flags);
-#define NAF_DISABLE_NOTIFY 8	/* notify that the stopped state of the
-				 * ring has changed (kring->nkr_stopped)
-				 */
-
 #ifdef WITH_VALE
 	/*
 	 * nm_bdg_attach() initializes the na_vp field to point

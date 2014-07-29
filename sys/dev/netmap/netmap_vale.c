@@ -1927,20 +1927,6 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 	    D("%s %s%d 0x%x", na->name,
 		(tx == NR_TX ? "TX" : "RX"), ring_nr, flags);
 
-	if (flags & NAF_DISABLE_NOTIFY) {
-		/* the enabled/disabled state of the ring has changed,
-		 * propagate the info to the wrapper (with tx/rx swapped)
-		 */
-		if (tx == NR_TX) {
-			netmap_set_rxring(&vpna->up, ring_nr,
-					na->tx_rings[ring_nr].nkr_stopped);
-		} else {
-			netmap_set_txring(&vpna->up, ring_nr,
-					na->rx_rings[ring_nr].nkr_stopped);
-		}
-		return 0;
-	}
-
 	if (!nm_netmap_on(na))
 		return 0;
 
