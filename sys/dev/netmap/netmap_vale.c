@@ -2198,11 +2198,13 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 	ring = kring->ring;
 	lim = kring->nkr_num_slots - 1;
 
+	if (nm_kr_tryget(hw_kring))
+		return 0;
+
 	if (!nm_netmap_on(hwna))
 		return 0;
-	mtx_lock(&kring->q_lock);
 	/* first step: simulate a user wakeup on the rx ring */
-	netmap_vp_rxsync_locked(kring, flags);
+	netmap_vp_rxsync(kring, flags);
 	ND("%s[%d] PRE rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",
 		na->name, ring_n,
 		kring->nr_hwcur, kring->nr_hwtail, kring->nkr_hwlease,
@@ -2225,13 +2227,13 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 	ring->tail = kring->rtail; /* restore saved value of tail, for safety */
 
 	/* fifth step: the user goes to sleep again, causing another rxsync */
-	netmap_vp_rxsync_locked(kring, flags);
+	netmap_vp_rxsync(kring, flags);
 	ND("%s[%d] PST rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",
 		na->name, ring_n,
 		kring->nr_hwcur, kring->nr_hwtail, kring->nkr_hwlease,
 		ring->head, ring->cur, ring->tail,
 		hw_kring->nr_hwcur, hw_kring->nr_hwtail, hw_kring->rtail);
-	mtx_unlock(&kring->q_lock);
+	nm_kr_put(hw_kring);
 	return error;
 }
 
