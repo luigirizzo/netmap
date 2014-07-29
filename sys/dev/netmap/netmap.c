@@ -402,32 +402,24 @@ ports attached to the switch)
  *      - system device with native support:
  *          to cable:
  *             na->nm_notify() == netmap_bwrap_notify()
- *                 lock ring
- *                 netmap_vp_rxsync_locked()
+ *                 netmap_vp_rxsync()
  *                 kring->nm_sync() == DEVICE_netmap_txsync()
- *                 netmap_vp_rxsync_locked()
- *                 unlock ring
+ *                 netmap_vp_rxsync()
  *          to host stack:
- *                 lock ring
- *                 netmap_vp_rxsync_locked()
+ *                 netmap_vp_rxsync()
  *                 kring->nm_sync() == netmap_txsync_to_host_compat
  *                 netmap_vp_rxsync_locked()
- *                 unlock ring
  *
  *      - system device with generic adapter:
  *          to device driver:
  *             na->nm_notify() == netmap_bwrap_notify()
- *                 lock ring
- *                 netmap_vp_rxsync_locked()
+ *                 netmap_vp_rxsync()
  *                 kring->nm_sync() == generic_netmap_txsync()
- *                 netmap_vp_rxsync_locked()
- *                 unlock ring
+ *                 netmap_vp_rxsync()
  *          to host stack:
- *                 lock ring
- *                 netmap_vp_rxsync_locked()
+ *                 netmap_vp_rxsync()
  *                 kring->nm_sync() == netmap_txsync_to_host_compat
- *                 netmap_vp_rxsync_locked()
- *                 unlock ring
+ *                 netmap_vp_rxsync()
  *
  */
 
