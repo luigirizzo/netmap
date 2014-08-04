@@ -1815,15 +1815,13 @@ main(int arc, char **argv)
     } else if (g.dummy_send) { /* but DEV_NETMAP */
 	D("using a dummy send routine");
     } else {
-	struct nm_desc base_nmd;
+	struct nmreq base_nmd;
 
 	bzero(&base_nmd, sizeof(base_nmd));
 
-	g.nmd_flags = 0;
-	g.nmd_flags |= parse_nmr_config(g.nmr_config, &base_nmd.req);
+	parse_nmr_config(g.nmr_config, &base_nmd);
 	if (g.extra_bufs) {
-		base_nmd.req.nr_arg3 = g.extra_bufs;
-		g.nmd_flags |= NM_OPEN_ARG3;
+		base_nmd.nr_arg3 = g.extra_bufs;
 	}
 
 	/*
@@ -1833,7 +1831,7 @@ main(int arc, char **argv)
 	 * which in turn may take some time for the PHY to
 	 * reconfigure. We do the open here to have time to reset.
 	 */
-	g.nmd = nm_open(g.ifname, NULL, g.nmd_flags, &base_nmd);
+	g.nmd = nm_open(g.ifname, &base_nmd, 0, NULL);
 	if (g.nmd == NULL) {
 		D("Unable to open %s: %s", g.ifname, strerror(errno));
 		goto out;
