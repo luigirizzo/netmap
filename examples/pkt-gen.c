@@ -192,7 +192,6 @@ struct glob_arg {
 	int affinity;
 	int main_fd;
 	struct nm_desc *nmd;
-	uint64_t nmd_flags;
 	int report_interval;		/* milliseconds between prints */
 	void *(*td_body)(void *);
 	void *mmap_addr;
@@ -1356,6 +1355,7 @@ start_threads(struct glob_arg *g)
 
 	    if (g->dev_type == DEV_NETMAP) {
 		struct nm_desc nmd = *g->nmd; /* copy, we overwrite ringid */
+		uint64_t nmd_flags = 0;
 		nmd.self = &nmd;
 
 		if (g->nthreads > 1) {
@@ -1368,7 +1368,7 @@ start_threads(struct glob_arg *g)
 		}
 		/* Only touch one of the rings (rx is already ok) */
 		if (g->td_body == receiver_body)
-			g->nmd_flags |= NETMAP_NO_TX_POLL;
+			nmd_flags |= NETMAP_NO_TX_POLL;
 
 		/* register interface. Override ifname and ringid etc. */
 		if (g->options & OPT_MONITOR_TX)
@@ -1376,7 +1376,7 @@ start_threads(struct glob_arg *g)
 		if (g->options & OPT_MONITOR_RX)
 			nmd.req.nr_flags |= NR_MONITOR_RX;
 
-		t->nmd = nm_open(t->g->ifname, NULL, g->nmd_flags |
+		t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
 			NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
 		if (t->nmd == NULL) {
 			D("Unable to open %s: %s",
