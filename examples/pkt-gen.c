@@ -1861,12 +1861,14 @@ main(int arc, char **argv)
 		    req->nr_offset, req->nr_tx_rings, req->nr_rx_rings,
 		    req->nr_arg2);
 		for (i = 0; i <= req->nr_tx_rings; i++) {
-			D("   TX%d at 0x%lx", i,
-			    (char *)NETMAP_TXRING(nifp, i) - (char *)nifp);
+			struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
+			D("   TX%d at 0x%lx slots %d", i,
+			    (char *)ring - (char *)nifp, ring->num_slots);
 		}
 		for (i = 0; i <= req->nr_rx_rings; i++) {
-			D("   RX%d at 0x%lx", i,
-			    (char *)NETMAP_RXRING(nifp, i) - (char *)nifp);
+			struct netmap_ring *ring = NETMAP_RXRING(nifp, i);
+			D("   RX%d at 0x%lx slots %d", i,
+			    (char *)ring - (char *)nifp, ring->num_slots);
 		}
 	}
 
