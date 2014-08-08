@@ -149,21 +149,21 @@ nm_ring_space(struct netmap_ring *ring)
 #define ND(_fmt, ...) do {} while(0)
 #define D(_fmt, ...)						\
 	do {							\
-		struct timeval t0;				\
-		gettimeofday(&t0, NULL);			\
+		struct timeval _t0;				\
+		gettimeofday(&_t0, NULL);			\
 		fprintf(stderr, "%03d.%06d %s [%d] " _fmt "\n",	\
-		    (int)(t0.tv_sec % 1000), (int)t0.tv_usec,	\
+		    (int)(_t0.tv_sec % 1000), (int)_t0.tv_usec,	\
 		    __FUNCTION__, __LINE__, ##__VA_ARGS__);	\
         } while (0)
 
 /* Rate limited version of "D", lps indicates how many per second */
 #define RD(lps, format, ...)                                    \
     do {                                                        \
-        static int t0, __cnt;                                   \
+        static int __t0, __cnt;                                 \
         struct timeval __xxts;                                  \
         gettimeofday(&__xxts, NULL);                            \
-        if (t0 != __xxts.tv_sec) {                              \
-            t0 = __xxts.tv_sec;                                 \
+        if (__t0 != __xxts.tv_sec) {                            \
+            __t0 = __xxts.tv_sec;                               \
             __cnt = 0;                                          \
         }                                                       \
         if (__cnt++ < lps) {                                    \
