@@ -9,6 +9,7 @@ print_help() {
 	echo "  --help                       print this message"
 	echo "  --kernel-dir                 path to configured kernel directory"
 	echo "  --kernel-sources             path to full kernel sources"
+	echo "  --no-drivers                 do not compile patched drivers"
 }
 
 rm -f config.log
@@ -27,6 +28,7 @@ set -x
 
 ksrc=
 src=
+nodrivers=
 # get ksrc and src before anything else
 for opt do
 	optarg=${opt#*=}
@@ -34,6 +36,8 @@ for opt do
 	--kernel-dir=*) ksrc="$optarg"
 	;;
 	--kernel-sources=*) src="$optarg"
+	;;
+	--no-drivers) nodrivers="true"
 	;;
 	--help)
 		print_help
@@ -59,14 +63,28 @@ version_hdr="$ksrc/include/linux/version.h"
 [ -f "$version_hdr" ] || version_hdr="$ksrc/include/generated/uapi/linux/version.h"
 [ -f "$version_hdr" ] || error "version.h is missing"
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
-[ -d "$src" ] || error "Cannot find kernel sources"
-[ -n "$(find "$src" -name '*.c' -print -quit)" ] || error "'$src' does not appear to contain full kernel sources"
+
+patches=
+s_drivers=
+if [ -z "$nodrivers" ]; then
+	[ -d "$src" ] || error "Cannot find kernel sources"
+	[ -n "$(find "$src" -name '*.c' -print -quit)" ] ||
+		error "'$src' does not appear to contain full kernel sources"
+	# produce a list of applicable patches for this version
+	[ -d patches ] || { rm -f patches; ln -s final-patches patches; }
+	patches=$(cd patches; ls diff--* | awk -v v=$lin_ver -F -- '($3 <= v"") && (v"" < $4)')
+	# extract the driver names
+	s_drivers=$(echo $patches | awk 'BEGIN { RS=" "; FS="--" } { print $2 }')
+fi
 
 # create Makefile
 sed \
 	-e "s|@KSRC@|$ksrc|g" \
 	-e "s|@SRC@|$src|g" \
 	-e "s|@LIN_VER@|$lin_ver|g" \
+	-e "s|@NODRIVERS@|$nodrivers|g" \
+	-e "s|@PATCHES@|$(echo $patches)|g" \
+	-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
 	Makefile.in > Makefile
 
 
@@ -74,3 +92,11 @@ sed \
 echo "kernel directory            $ksrc"
 echo "kernel sources              $src"
 echo "linux version               $lin_ver"
+echo -n "drivers                     "
+if [ -n "$nodrivers" ]; then
+	echo DISABLED
+else
+	echo $s_drivers
+	echo
+	echo -e "Selected patches:\n\n$patches"
+fi
