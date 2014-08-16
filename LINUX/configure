@@ -43,6 +43,9 @@ for opt do
 		print_help
 		exit
 	;;
+	*)
+		echo "WARNING: Unrecognized option: $opt"
+	;;
 	esac
 done
 
