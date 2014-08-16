@@ -41,9 +41,16 @@ done
 }
 
 [ -d "$ksrc" ] || error "Cannot find kernel directory"
+[ -f "$ksrc/.config" ] || error "kernel not configured"
+version_hdr="$ksrc/include/linux/version.h"
+[ -f "$version_hdr" ] || version_hdr="$ksrc/include/generated/uapi/linux/version.h"
+[ -f "$version_hdr" ] || error "version.h is missing"
+lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 [ -d "$src" ] || error "Cannot find kernel sources"
+[ -n "$(find "$src" -name '*.c' -print -quit)" ] || error "'$src' does not appear to contain full kernel sources"
 
 
 # report
 echo "kernel directory            $ksrc"
 echo "kernel sources              $src"
+echo "linux version               $lin_ver"
