@@ -7,6 +7,7 @@ error() {
 
 rm -f config.log
 
+
 {
 	echo "# netmap configure log $(date)"
 	echo "# Configured with:"
@@ -15,6 +16,8 @@ rm -f config.log
 	echo "#"
 } > config.log
 
+exec 2>> config.log
+set -x
 
 ksrc=
 src=
