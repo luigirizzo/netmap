@@ -1,0 +1,49 @@
+#!/bin/bash
+
+error() {
+	echo "ERROR: $1" | tee -a config.log
+	exit 1
+}
+
+rm -f config.log
+
+{
+	echo "# netmap configure log $(date)"
+	echo "# Configured with:"
+	printf " '%s'" "$0" "$@"
+	echo
+	echo "#"
+} > config.log
+
+
+ksrc=
+src=
+# get ksrc and src before anything else
+for opt do
+	optarg=${opt#*=}
+	case "$opt" in
+	--kernel-dir=*) ksrc="$optarg"
+	;;
+	--kernel-sources=*) src="$optarg"
+	;;
+	esac
+done
+
+[ -n "$ksrc" ] || {
+	# user did not provide a kernel dir,
+	# we try to find one by ourselves
+	ksrc="/lib/modules/$(uname -r)/build"
+}
+
+[ -n "$src" ] || {
+	[ -d "$ksrc/source" ] && src="$ksrc/source"
+	[ -n "$src" ] || src=$ksrc
+}
+
+[ -d "$ksrc" ] || error "Cannot find kernel directory"
+[ -d "$src" ] || error "Cannot find kernel sources"
+
+
+# report
+echo "kernel directory            $ksrc"
+echo "kernel sources              $src"
