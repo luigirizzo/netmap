@@ -5,6 +5,12 @@ error() {
 	exit 1
 }
 
+print_help() {
+	echo "  --help                       print this message"
+	echo "  --kernel-dir                 path to configured kernel directory"
+	echo "  --kernel-sources             path to full kernel sources"
+}
+
 rm -f config.log
 
 
@@ -28,6 +34,10 @@ for opt do
 	--kernel-dir=*) ksrc="$optarg"
 	;;
 	--kernel-sources=*) src="$optarg"
+	;;
+	--help)
+		print_help
+		exit
 	;;
 	esac
 done
