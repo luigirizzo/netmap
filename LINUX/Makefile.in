@@ -62,8 +62,7 @@ PATCHES = @PATCHES@
 S_DRIVERS = @S_DRIVERS@
 
 # actual drivers after copy and patch
-DRIVERS = $(shell [ "$(PATCHES)" != "" ] && ls -dAp \
-	`echo $(PATCHES:diff--%=%) | sed -r 's/--[0-9a-f-]+//g'` 2> /dev/null)
+DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
 
 # Compile v1000 (vhost porting to e1000) only if
 # the LIN_VER >= 3.8.0, because we don't want to deal
