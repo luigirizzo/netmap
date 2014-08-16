@@ -54,16 +54,9 @@ EXTRA_CFLAGS += -Wno-unused-but-set-variable
 
 # We use KSRC for the kernel configuration and sources.
 # If the sources are elsewhere, then use SRC to point to them.
-KSRC ?= /lib/modules/$(shell uname -r)/build
-SRC ?= $(KSRC)
-
-# extract version number.
-# version.h can be in two different places.
-# NOTE- A.B.C translates to aXXYY where XXYY are hex
-LIN_VER = $(shell V=linux/version.h; G=. ; \
-	[ -f $(KSRC)/include/$${V} ] || G=generated/uapi ;\
-	grep LINUX_VERSION_CODE $(KSRC)/include/$${G}/linux/version.h | \
-	awk '{printf "%03x%02x", $$3/256, $$3%256} ')
+KSRC = @KSRC@
+SRC  = @SRC@
+LIN_VER = @LIN_VER@
 
 patcheslink := $(shell \
 	[ -L $(PWD)/patches ] || \

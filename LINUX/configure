@@ -49,6 +49,13 @@ lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$vers
 [ -d "$src" ] || error "Cannot find kernel sources"
 [ -n "$(find "$src" -name '*.c' -print -quit)" ] || error "'$src' does not appear to contain full kernel sources"
 
+# create Makefile
+sed \
+	-e "s|@KSRC@|$ksrc|g" \
+	-e "s|@SRC@|$src|g" \
+	-e "s|@LIN_VER@|$lin_ver|g" \
+	Makefile.in > Makefile
+
 
 # report
 echo "kernel directory            $ksrc"
