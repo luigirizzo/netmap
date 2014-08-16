@@ -26,7 +26,6 @@ MOD_LIST:=	CONFIG_E1000=m CONFIG_E1000E=m	\
 		CONFIG_BNX2X=m CONFIG_MLX4=m	\
 		CONFIG_VIRTIO_NET=m
 obj-m += $(O_DRIVERS)
-GET_DRIVERS := get-drivers
 else
 MOD_LIST:=
 endif
@@ -35,12 +34,6 @@ endif
 # clean files that we copied.
 DRIVER_SRCS = r8169.c forcedeth.c e1000/ e1000e/ ixgbe/ igb/
 DRIVER_SRCS += bnx2x/ mellanox/ mlx4/ virtio_net.c
-
-# _DRV_SUBDIRS contains the subdirs with driver sources.
-# In old linuxes everything is under drivers/net, newer versions
-# have them in source/drivers/net/ethernet/$(manufacturer)
-
-_DRV_SUBDIRS= nvidia realtek intel broadcom . ..
 
 # The following commands are needed to build the modules as out-of-tree,
 # in fact the kernel sources path must be specified.
@@ -52,6 +45,11 @@ M:=$(PWD)
 EXTRA_CFLAGS := -I$(M) -I$(M)/../sys -I$(M)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
 
+all: build
+
+ifneq ($(KERNELRELEASE),)
+GET_DRIVERS =
+else
 # We use KSRC for the kernel configuration and sources.
 # If the sources are elsewhere, then use SRC to point to them.
 KSRC = @KSRC@
@@ -60,6 +58,9 @@ LIN_VER = @LIN_VER@
 NODRIVERS = @NODRIVERS@
 PATCHES = @PATCHES@
 S_DRIVERS = @S_DRIVERS@
+GET_DRIVERS = $(S_DRIVERS:%=get-%)
+include drivers.mak
+endif
 
 # actual drivers after copy and patch
 DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
@@ -78,8 +79,6 @@ CONFIG_V1000:=n	# force disable by now
 obj-$(CONFIG_V1000) += vhost-port/
 
 
-all: build
-
 build: $(GET_DRIVERS)
 	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
 		EXTRA_CFLAGS='$(EXTRA_CFLAGS)'			\
@@ -96,7 +95,7 @@ clean:
 	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
 	-@ (rm -rf $(DRIVER_SRCS) *.orig *.rej *.ko *.o .*.d \
 		.tmp_versions *.mod.c modules.order	\
-		Module.symvers .*.cmd get-drivers )
+		Module.symvers .*.cmd get-* )
 
 # the source is not here so we need to specify a dependency
 define remote_template
@@ -105,36 +104,6 @@ $$(obj)/$(1): $$(M)/../sys/dev/netmap/$(1:.o=.c)
 	$$(call cmd,modversions)
 endef
 $(foreach o,$(remoteobjs),$(eval $(call remote_template,$(o))))
-
-#-- copy and patch initial files
-# The location changes depending on the OS version, so ...
-get-drivers:
-	-@(								\
-	    if [ -d "$(DRIVER_SRC)" ] ; then				\
-		cd "$(DRIVER_SRC)"; s=.; what="`ls -dp *`" ;		\
-	    else							\
-		cd $(SRC); [ -d source ] && cd source ;			\
-		cd drivers/net; s=. ;					\
-		[ -d ethernet ] && cd ethernet && s="$(_DRV_SUBDIRS)" ;	\
-		what="$(S_DRIVERS)" ;					\
-	    fi ;							\
-	    echo "LIN_VER $(LIN_VER)" ;					\
-	    [ "$${what}" = "" ] && echo "-- NO DRIVERS --" && return;	\
-	    echo "---- Building from `pwd`";				\
-	    echo "---- copying $${what} ---" ;				\
-	    what="$${what} cnic_if.h";					\
-	    for i in $$s; do (cd $$i ;					\
-		echo "  From `pwd` :";					\
-		ls -ldp $${what} 2> /dev/null | sed 's/^/    /' ;	\
-	    	cp -Rp $${what} $(PWD) 2>/dev/null );			\
-	    done ;							\
-	    cd $(PWD) ;							\
-	    for i in $(PATCHES) ;					\
-		do echo "** patch with $$i";				\
-		patch --posix --quiet --force -p1 < patches/$$i;	\
-	    done ;							\
-	    echo "Building the following drivers: $(S_DRIVERS)" )
-	@touch get-drivers
 
 
 test3:

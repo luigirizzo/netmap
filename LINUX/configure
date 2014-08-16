@@ -76,9 +76,24 @@ if [ -z "$nodrivers" ]; then
 	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s final-patches patches; }
 	patches=$(cd patches; ls diff--* | awk -v v=$lin_ver -F -- '($3 <= v"") && (v"" < $4)')
-	# extract the driver names
-	s_drivers=$(echo $patches | awk 'BEGIN { RS=" "; FS="--" } { print $2 }')
 fi
+
+rm -f drivers.mak
+for p in $patches; do
+	# extract the driver name
+	driver=$(echo $p | awk -F -- '{ print $2 }')
+	# find the driver sources
+	s=$(find $src/drivers -name "$driver" -print -quit)
+	[ -n "$s" ] || { echo "WARNING: $driver sources not found"; continue; }
+	cat >> drivers.mak <<EOF
+get-$driver:
+	cp -Rp $s .
+	patch --posix --quiet --force -p1 < patches/$p
+	touch get-$driver
+
+EOF
+	s_drivers="$driver $s_drivers"
+done
 
 # create Makefile
 sed \
