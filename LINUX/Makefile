@@ -65,6 +65,10 @@ LIN_VER = $(shell V=linux/version.h; G=. ; \
 	grep LINUX_VERSION_CODE $(KSRC)/include/$${G}/linux/version.h | \
 	awk '{printf "%03x%02x", $$3/256, $$3%256} ')
 
+patcheslink := $(shell \
+	[ -L $(PWD)/patches ] || \
+		{ rm $(PWD)/patches; ln -s final-patches $(PWD)/patches; })
+
 # produce a list of applicable patches for this version
 PATCHES := $(shell \
 	    cd $(PWD)/patches; ls diff--* | awk -v v=$(LIN_VER) -F -- \
