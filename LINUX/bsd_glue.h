@@ -92,7 +92,7 @@
 #define skb_set_queue_mapping(a, b)	do { (void)(a); (void)(b); } while (0)
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 25)
+#ifndef NETMAP_LINUX_HAVE_HRTIMER_FORWARD_NOW
 /* Forward a hrtimer so it expires after the hrtimer's current now */
 static inline u64 hrtimer_forward_now(struct hrtimer *timer,
                                       ktime_t interval)

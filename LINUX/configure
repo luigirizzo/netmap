@@ -290,6 +290,16 @@ u16 dummy(const struct sk_buff *skb)
 }
 EOF
 
+# check for hrtimer_forward_now
+add_test <<EOF 'have HRTIMER_FORWARD_NOW'
+#include <linux/hrtimer.h>
+
+u64 dummy(struct hrtimer *timer, ktime_t interval)
+{
+	return hrtimer_forward_now(timer, interval);
+}
+EOF
+
 rm -f $configh
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H
