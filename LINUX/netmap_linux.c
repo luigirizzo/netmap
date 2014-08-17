@@ -31,7 +31,9 @@
 #include <dev/netmap/netmap_mem2.h>
 #include <linux/rtnetlink.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+#include "netmap_linux_config.h"
+
+#ifdef NETMAP_LINUX_HAVE_IOMMU
 #include <linux/iommu.h>
 
 /* #################### IOMMU ################## */
@@ -53,12 +55,12 @@ int nm_iommu_group_id(struct device *dev)
 	id = iommu_group_id(grp);
 	return id;
 }
-#else
+#else /* ! HAVE_IOMMU */
 int nm_iommu_group_id(struct device *dev)
 {
 	return 0;
 }
-#endif
+#endif /* HAVE_IOMMU */
 
 /* #################### VALE OFFLOADINGS SUPPORT ################## */
 

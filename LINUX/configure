@@ -14,6 +14,7 @@ print_help() {
 
 TMPDIR=netmap-tmpdir
 TESTMOD=testmod
+TMPC=netmap-tmp.c
 compile() {
 	rm -rf $TMPDIR
 	mkdir -p $TMPDIR
@@ -31,7 +32,9 @@ EOF
 #include <linux/kernel.h>
 #include <linux/init.h>
 EOF
-		[ -n "$1" ] && cat "$1"
+		f=$1
+		[ -n "$f" ] || f=$TMPC
+		[ -f "$f" ] && cat $f
 		cat <<EOF
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("netmap");
@@ -52,8 +55,19 @@ EOF
 	} > $TMPDIR/$TESTMOD.c
 	(
 		cd $TMPDIR
+		echo "************* compiling *************"
+		cat $TESTMOD.c
+		echo "*************************************"
 		make
 	) >> config.log
+}
+
+configh=netmap_linux_config.h
+have() {
+	cat >> $configh <<EOF
+
+#define NETMAP_LINUX_HAVE_$1
+EOF
 }
 
 rm -f config.log
@@ -113,7 +127,38 @@ lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$vers
 
 
 # check that the build system is sane
+rm -f $TMPC
 compile || error "Unable to build external modules"
+
+
+#################################################
+# create the config.h file
+#################################################
+rm -f $configh
+cat > $configh <<EOF
+#ifndef NETMAP_LINUX_CONFIG_H
+#define NETMAP_LINUX_CONFIG_H
+EOF
+
+cat > $TMPC <<EOF
+#include <linux/iommu.h>
+
+void dummy(void)
+{
+	struct iommu_group *grp = iommu_group_get(NULL);
+	int id = iommu_group_id(grp);
+
+	(void)grp;
+	(void)id;
+}
+EOF
+compile && have IOMMU
+
+cat >> $configh <<EOF
+
+#endif
+EOF
+#################################################
 
 patches=
 s_drivers=
