@@ -12,6 +12,50 @@ print_help() {
 	echo "  --no-drivers                 do not compile patched drivers"
 }
 
+TMPDIR=netmap-tmpdir
+TESTMOD=testmod
+compile() {
+	rm -rf $TMPDIR
+	mkdir -p $TMPDIR
+	cat > $TMPDIR/Makefile <<EOF
+ifneq (\$(KERNELRELEASE),)
+obj-m := $TESTMOD.o
+else
+all:
+	\$(MAKE) -C $ksrc M=\$\$PWD
+endif
+EOF
+	{
+		cat <<EOF
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/init.h>
+EOF
+		[ -n "$1" ] && cat "$1"
+		cat <<EOF
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("netmap");
+MODULE_DESCRIPTION("test module");
+
+static int __init testmod_init(void)
+{
+	return 0;
+}
+
+static void __exit testmod_cleanup(void)
+{
+}
+
+module_init(testmod_init);
+module_exit(testmod_cleanup);
+EOF
+	} > $TMPDIR/$TESTMOD.c
+	(
+		cd $TMPDIR
+		make
+	) >> config.log
+}
+
 rm -f config.log
 
 
@@ -66,6 +110,10 @@ version_hdr="$ksrc/include/linux/version.h"
 [ -f "$version_hdr" ] || version_hdr="$ksrc/include/generated/uapi/linux/version.h"
 [ -f "$version_hdr" ] || error "version.h is missing"
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
+
+
+# check that the build system is sane
+compile || error "Unable to build external modules"
 
 patches=
 s_drivers=
