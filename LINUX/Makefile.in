@@ -47,11 +47,6 @@ else
 MOD_LIST:=
 endif
 
-# DRIVER_SRCS names of the driver sources is only used to
-# clean files that we copied.
-DRIVER_SRCS = r8169.c forcedeth.c e1000/ e1000e/ ixgbe/ igb/
-DRIVER_SRCS += bnx2x/ mellanox/ mlx4/ virtio_net.c
-
 # The following commands are needed to build the modules as out-of-tree,
 # in fact the kernel sources path must be specified.
 
@@ -102,11 +97,11 @@ test:
 	@echo "patches $(PATCHES)"
 	@echo "drivers $(DRIVERS)"
 
-clean:
+clean: clean-drivers
 	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
-	-@ (rm -rf $(DRIVER_SRCS) *.orig *.rej *.ko *.o .*.d \
+	-@ rm -f *.orig *.rej *.ko *.o .*.d 		\
 		.tmp_versions *.mod.c modules.order	\
-		Module.symvers .*.cmd get-* )
+		Module.symvers .*.cmd
 
 
 

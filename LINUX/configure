@@ -69,6 +69,8 @@ lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$vers
 
 patches=
 s_drivers=
+get_drivers=
+clean_drivers=
 if [ -z "$nodrivers" ]; then
 	[ -d "$src" ] || error "Cannot find kernel sources"
 	[ -n "$(find "$src" -name '*.c' -print -quit)" ] ||
@@ -91,9 +93,19 @@ get-$driver:
 	patch --posix --quiet --force -p1 < patches/$p
 	touch get-$driver
 
+clean-$driver:
+	rm -rf $driver get-$driver
+
 EOF
 	s_drivers="$driver $s_drivers"
+	get_drivers="get-$driver $get_drivers"
+	clean_drivers="clean-$driver $clean_drivers"
 done
+cat >> drivers.mak <<EOF
+.PHONY: get-drivers clean-drivers
+get-drivers: $get_drivers
+clean-drivers: $clean_drivers
+EOF
 
 # create Makefile
 sed \
