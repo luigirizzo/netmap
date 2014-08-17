@@ -221,6 +221,20 @@ dummy(struct net_device *net, struct ethtool_ringparam *rp) {
 EOF
 compile && have GET_RINGPARAM
 
+
+# number of tx/rx queues
+cat > $TMPC <<EOF
+#include <linux/netdevice.h>
+
+void
+dummy(struct net_device *net, unsigned int *txq, unsigned int *rxq)
+{
+    *txq = net->real_num_tx_queues;
+    *rxq = net->real_num_rx_queues;
+}
+EOF
+compile && have NUM_QUEUES
+
 # file end
 cat >> $configh <<EOF
 

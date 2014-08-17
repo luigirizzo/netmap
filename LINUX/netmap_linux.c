@@ -373,13 +373,13 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 void
 generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37) // XXX
-    *txq = 1;
-    *rxq = 1; /* TODO ifp->real_num_rx_queues */
-#else
+#ifdef NETMAP_LINUX_HAVE_NUM_QUEUES
     *txq = ifp->real_num_tx_queues;
     *rxq = ifp->real_num_rx_queues;
-#endif
+#else
+    *txq = 1;
+    *rxq = 1; /* TODO ifp->real_num_rx_queues */
+#endif /* HAVE_NUM_QUEUES */
 }
 
 int
