@@ -79,9 +79,15 @@
 	memcpy((skb)->data, from, copy)
 #endif /* HAVE_SKB_COPY_LINEAR */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24)
+#ifndef NETMAP_LINUX_HAVE_ACCESS_ONCE
 #define ACCESS_ONCE(x)	(x)
+#endif
+
+#ifndef NETMAP_LINUX_HAVE_UINTPTR
 #define uintptr_t	unsigned long
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24)
 #define skb_get_queue_mapping(m)	(0)
 #endif
 

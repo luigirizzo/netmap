@@ -265,6 +265,21 @@ void dummy(struct sk_buff *skb, const void *from, const unsigned int len)
 }
 EOF
 
+# check for ACCESS_ONCE
+add_test <<EOF 'have ACCESS_ONCE'
+#include <linux/compiler.h>
+
+int dummy(int *p)
+{
+	return ACCESS_ONCE(*p);	
+}
+EOF
+
+# check for uintptr_t
+add_test <<EOF 'have UINTPTR'
+uintptr_t dummy;
+EOF
+
 rm -f $configh
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H
