@@ -184,6 +184,23 @@ int dummy(void)
 }
 EOF
 
+# rx_handler_result_t
+add_test <<EOF 'have RX_HANDLER_RESULT'
+#include <linux/netdevice.h>
+
+
+static rx_handler_result_t dummy_rx_handler(struct sk_buf **pm)
+{
+	(void)pm;
+	return RX_HANDLER_PASS;
+}
+
+int dummy(void)
+{
+	return netdev_rx_handler_register(NULL, dummy_rx_handler, NULL);
+}
+EOF
+
 # number of parameters in ndo_select_queue
 params="NULL, NULL"
 for n in 2 3 4; do

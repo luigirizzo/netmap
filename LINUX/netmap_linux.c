@@ -197,7 +197,8 @@ void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
  * stolen.
  */
 #ifdef NETMAP_LINUX_HAVE_RX_REGISTER
-rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
+#ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
+static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 {
     /* If we were called by NM_SEND_UP(), we want to pass the mbuf
        to network stack. We detect this situation looking at the
@@ -217,12 +218,13 @@ rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 
     return RX_HANDLER_CONSUMED;
 }
-#else /* ! HAVE_RX_REGISTER */
-struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
+#else /* ! HAVE_RX_HANDLER_RESULT */
+static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
 {
 	generic_rx_handler(m->dev, m);
 	return NULL;
 }
+#endif /* HAVE_RX_HANDLER_RESULT */
 #endif /* HAVE_RX_REGISTER */
 
 /* Ask the Linux RX subsystem to intercept (or stop intercepting)
