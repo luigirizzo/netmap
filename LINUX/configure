@@ -142,11 +142,13 @@ compile || error "Unable to build external modules"
 # create the config.h file
 #################################################
 rm -f $configh
+
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H
 #define NETMAP_LINUX_CONFIG_H
 EOF
 
+# iommu support
 cat > $TMPC <<EOF
 #include <linux/iommu.h>
 
@@ -161,6 +163,7 @@ void dummy(void)
 EOF
 compile && have IOMMU
 
+# return value of hrtimer handler
 cat > $TMPC <<EOF
 #include <linux/hrtimer.h>
 
@@ -177,6 +180,18 @@ else
 	define TIMER_RTYPE 'int'
 fi
 
+# rx_register (intercept packets in the generic adapter)
+cat > $TMPC <<EOF
+#include <linux/netdevice.h>
+
+int dummy(void)
+{
+	return netdev_rx_handler_register(NULL, NULL, NULL);
+}
+EOF
+compile && have RX_REGISTER
+
+# file end
 cat >> $configh <<EOF
 
 #endif

@@ -196,7 +196,7 @@ void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
  * Packets that comes from netmap_txsync_to_host() are not
  * stolen.
  */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38) // not defined before
+#ifdef NETMAP_LINUX_HAVE_RX_REGISTER
 rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 {
     /* If we were called by NM_SEND_UP(), we want to pass the mbuf
@@ -217,13 +217,13 @@ rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 
     return RX_HANDLER_CONSUMED;
 }
-#else /* 2.6.36 .. 2.6.38 */
+#else /* ! HAVE_RX_REGISTER */
 struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
 {
 	generic_rx_handler(m->dev, m);
 	return NULL;
 }
-#endif /* 2.6.36..2.6.38 */
+#endif /* HAVE_RX_REGISTER */
 
 /* Ask the Linux RX subsystem to intercept (or stop intercepting)
  * the packets incoming from the interface attached to 'na'.
@@ -231,9 +231,9 @@ struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
 int
 netmap_catch_rx(struct netmap_adapter *na, int intercept)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36) // not defined before
+#ifndef NETMAP_LINUX_HAVE_RX_REGISTER
     return 0;
-#else
+#else /* HAVE_RX_REGISTER */
     struct ifnet *ifp = na->ifp;
 
     if (intercept) {
@@ -243,7 +243,7 @@ netmap_catch_rx(struct netmap_adapter *na, int intercept)
         netdev_rx_handler_unregister(ifp);
         return 0;
     }
-#endif
+#endif /* HAVE_RX_REGISTER */
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,13,0)
