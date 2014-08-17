@@ -6,18 +6,36 @@
 #
 
 
+ifneq ($(KERNELRELEASE),)
+# kbuild part of Makefile
 
 # list of objects for this module
 #
 # objects whose source file is in ../sys/dev/netmap
+# the source is not here so we need to specify a dependency
+
 remoteobjs := netmap.o netmap_mem2.o \
 	netmap_generic.o netmap_mbq.o netmap_vale.o \
 	netmap_offloadings.o netmap_pipe.o \
 	netmap_monitor.o
+
+define remote_template
+$$(obj)/$(1): $$(M)/../sys/dev/netmap/$(1:.o=.c)
+	$$(call cmd,cc_o_c)
+	$$(call cmd,modversions)
+endef
+$(foreach o,$(remoteobjs),$(eval $(call remote_template,$(o))))
+
 # all objects
 netmap_lin-objs := $(remoteobjs) netmap_linux.o
 
 obj-$(CONFIG_NETMAP) = netmap_lin.o
+
+obj-$(CONFIG_V1000) += vhost-port/
+
+obj-m += $(O_DRIVERS)
+else
+# normal Makefile
 
 ifndef NODRIVERS
 # list of modules to be built (actually also forcedeth and r8169)
@@ -25,7 +43,6 @@ MOD_LIST:=	CONFIG_E1000=m CONFIG_E1000E=m	\
 		CONFIG_IXGBE=m CONFIG_IGB=m	\
 		CONFIG_BNX2X=m CONFIG_MLX4=m	\
 		CONFIG_VIRTIO_NET=m
-obj-m += $(O_DRIVERS)
 else
 MOD_LIST:=
 endif
@@ -47,9 +64,6 @@ EXTRA_CFLAGS += -Wno-unused-but-set-variable
 
 all: build
 
-ifneq ($(KERNELRELEASE),)
-GET_DRIVERS =
-else
 # We use KSRC for the kernel configuration and sources.
 # If the sources are elsewhere, then use SRC to point to them.
 KSRC = @KSRC@
@@ -74,9 +88,6 @@ else
 CONFIG_V1000:=n
 endif
 
-CONFIG_V1000:=n	# force disable by now
-
-obj-$(CONFIG_V1000) += vhost-port/
 
 
 build: $(GET_DRIVERS)
@@ -97,13 +108,6 @@ clean:
 		.tmp_versions *.mod.c modules.order	\
 		Module.symvers .*.cmd get-* )
 
-# the source is not here so we need to specify a dependency
-define remote_template
-$$(obj)/$(1): $$(M)/../sys/dev/netmap/$(1:.o=.c)
-	$$(call cmd,cc_o_c)
-	$$(call cmd,modversions)
-endef
-$(foreach o,$(remoteobjs),$(eval $(call remote_template,$(o))))
 
 
 test3:
