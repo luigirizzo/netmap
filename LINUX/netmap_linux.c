@@ -555,7 +555,7 @@ linux_netmap_set_channels(struct net_device *dev,
 #endif
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)	// XXX was 38
+#ifndef NETMAP_LINUX_HAVE_UNLOCKED_IOCTL
 #define LIN_IOCTL_NAME	.ioctl
 int
 linux_netmap_ioctl(struct inode *inode, struct file *file, u_int cmd, u_long data /* arg */)

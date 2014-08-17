@@ -252,6 +252,18 @@ EOF
 	fi
 done
 
+# check for unlocked_ioctl
+cat > $TMPC <<EOF
+#include <linux/fs.h>
+
+void *
+dummy(struct file_operations *fops)
+{
+	return fops->unlocked_ioctl;
+}
+EOF
+compile && have UNLOCKED_IOCTL
+
 # file end
 cat >> $configh <<EOF
 
