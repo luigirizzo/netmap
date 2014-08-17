@@ -130,3 +130,7 @@ else
 	echo
 	echo -e "Selected patches:\n\n$patches"
 fi
+
+rm -f config.status
+{ printf " '%s'" "$0" "$@"; echo; } > config.status
+chmod +x config.status
