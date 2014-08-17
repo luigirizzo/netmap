@@ -13,54 +13,64 @@ print_help() {
 }
 
 TMPDIR=netmap-tmpdir
-TESTMOD=testmod
 TMPC=netmap-tmp.c
-compile() {
-	rm -rf $TMPDIR
-	mkdir -p $TMPDIR
-	cat > $TMPDIR/Makefile <<EOF
-ifneq (\$(KERNELRELEASE),)
-obj-m := $TESTMOD.o
-else
-all:
-	\$(MAKE) -C $ksrc M=\$\$PWD
-endif
-EOF
+
+TESTOBJS=
+TESTPOSTPROC=
+add_named_test() {
 	{
 		cat <<EOF
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 EOF
-		f=$1
-		[ -n "$f" ] || f=$TMPC
-		[ -f "$f" ] && cat $f
+		cat
 		cat <<EOF
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("netmap");
-MODULE_DESCRIPTION("test module");
+MODULE_DESCRIPTION("module $1");
 
-static int __init testmod_init(void)
+static int __init $1_init(void)
 {
 	return 0;
 }
 
-static void __exit testmod_cleanup(void)
-{
+module_init($1_init);
+EOF
+	} > $TMPDIR/$1.c
+	TESTOBJS="$1.o $TESTOBJS"
+	if [ -n "$2" ]; then
+		cmd="if [ -f $TMPDIR/$1.o ]; then $2"
+		[ -n "$3" ] && cmd="$cmd; else $3"
+		cmd="$cmd; fi"
+		TESTPOSTPROC="$cmd; $TESTPOSTPROC"
+	fi
 }
 
-module_init(testmod_init);
-module_exit(testmod_cleanup);
+NEXTTEST=1
+add_test() {
+	local t="__test__$NEXTTEST"
+	add_named_test $t "$@"
+	: $((NEXTTEST++))
+}
+
+run_tests() {
+	cat > $TMPDIR/Makefile <<EOF
+ifneq (\$(KERNELRELEASE),)
+obj-m := $TESTOBJS
+else
+all:
+	\$(MAKE) -C $ksrc M=\$\$PWD
+endif
 EOF
-	} > $TMPDIR/$TESTMOD.c
 	(
 		cd $TMPDIR
-		echo "************* compiling *************"
-		cat $TESTMOD.c
-		echo "*************************************"
-		make
+		make -k -j $(grep -c processor /proc/cpuinfo)
 	) >> config.log
+	eval "$TESTPOSTPROC"
 }
+
 
 configh=netmap_linux_config.h
 have() {
@@ -133,23 +143,12 @@ version_hdr="$ksrc/include/linux/version.h"
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
 
-# check that the build system is sane
-rm -f $TMPC
-compile || error "Unable to build external modules"
-
-
 #################################################
 # create the config.h file
 #################################################
-rm -f $configh
-
-cat > $configh <<EOF
-#ifndef NETMAP_LINUX_CONFIG_H
-#define NETMAP_LINUX_CONFIG_H
-EOF
 
 # iommu support
-cat > $TMPC <<EOF
+add_test <<EOF 'have IOMMU'
 #include <linux/iommu.h>
 
 void dummy(void)
@@ -161,10 +160,9 @@ void dummy(void)
 	(void)id;
 }
 EOF
-compile && have IOMMU
 
 # return value of hrtimer handler
-cat > $TMPC <<EOF
+add_test <<EOF 'define TIMER_RTYPE "enum hrtimer_restart"' 'define TIMER_RTYPE int'
 #include <linux/hrtimer.h>
 
 enum hrtimer_restart
@@ -174,14 +172,9 @@ testmod_timer_handler(struct hrtimer *t)
 	return HRTIMER_RESTART;
 }
 EOF
-if compile; then
-	define TIMER_RTYPE 'enum hrtimer_restart'
-else
-	define TIMER_RTYPE 'int'
-fi
 
 # rx_register (intercept packets in the generic adapter)
-cat > $TMPC <<EOF
+add_test <<EOF 'have RX_REGISTER'
 #include <linux/netdevice.h>
 
 int dummy(void)
@@ -189,28 +182,23 @@ int dummy(void)
 	return netdev_rx_handler_register(NULL, NULL, NULL);
 }
 EOF
-compile && have RX_REGISTER
 
 # number of parameters in ndo_select_queue
 params="NULL, NULL"
 for n in 2 3 4; do
-	cat > $TMPC <<EOF
-#include <linux/netdevice.h>
+	add_named_test ndo_select_queue$n <<EOF
+	#include <linux/netdevice.h>
 
-u16 dummy(struct net_device_ops *ndo)
-{
-	return ndo->ndo_select_queue($params);
-}
+	u16 dummy(struct net_device_ops *ndo)
+	{
+		return ndo->ndo_select_queue($params);
+	}
 EOF
-	if compile; then
-		define SELECT_QUEUE $n
-		break;
-	fi
 	params="NULL, $params"
 done
 
 # ethtool get_ringparam
-cat > $TMPC <<EOF
+add_test <<EOF 'have GET_RINGPARAM'
 #include <linux/netdevice.h>
 #include <linux/ethtool.h>
 
@@ -219,11 +207,9 @@ dummy(struct net_device *net, struct ethtool_ringparam *rp) {
 	net->ethtool_ops->get_ringparam(net, rp);
 }
 EOF
-compile && have GET_RINGPARAM
-
 
 # number of tx/rx queues
-cat > $TMPC <<EOF
+add_test <<EOF 'have NUM_QUEUES'
 #include <linux/netdevice.h>
 
 void
@@ -233,11 +219,10 @@ dummy(struct net_device *net, unsigned int *txq, unsigned int *rxq)
     *rxq = net->real_num_rx_queues;
 }
 EOF
-compile && have NUM_QUEUES
 
 # poll_table key field
 for k in _key key; do
-	cat > $TMPC <<EOF
+	add_named_test poll_table_$k <<EOF
 	#include <linux/poll.h>
 
 	int
@@ -246,14 +231,10 @@ for k in _key key; do
 		return pwait->$k;
 	}
 EOF
-	if compile; then
-		define PWAIT_KEY $k
-		break;
-	fi
 done
 
 # check for unlocked_ioctl
-cat > $TMPC <<EOF
+add_test <<EOF 'have UNLOCKED_IOCTL'
 #include <linux/fs.h>
 
 void *
@@ -262,10 +243,9 @@ dummy(struct file_operations *fops)
 	return fops->unlocked_ioctl;
 }
 EOF
-compile && have UNLOCKED_IOCTL
 
 # check for init_net
-cat > $TMPC <<EOF
+add_test <<EOF 'have INIT_NET'
 #include <linux/netdevice.h>
 
 struct net_device *
@@ -274,7 +254,28 @@ dummy(const char *name)
 	return dev_get_by_name(&init_net, name);
 }
 EOF
-compile && have INIT_NET
+
+rm -f $configh
+cat > $configh <<EOF
+#ifndef NETMAP_LINUX_CONFIG_H
+#define NETMAP_LINUX_CONFIG_H
+EOF
+
+run_tests
+
+for n in 2 3 4; do
+	if [ -f $TMPDIR/ndo_select_queue$n.o ]; then
+		define SELECT_QUEUE $n
+		break
+	fi
+done
+
+for k in _key key; do
+	if [ -f $TMPDIR/poll_table_$k.o ]; then
+		define PWAIT_KEY $k
+		break
+	fi
+done
 
 # file end
 cat >> $configh <<EOF
