@@ -191,6 +191,24 @@ int dummy(void)
 EOF
 compile && have RX_REGISTER
 
+# number of parameters in ndo_select_queue
+params="NULL, NULL"
+for n in 2 3 4; do
+	cat > $TMPC <<EOF
+#include <linux/netdevice.h>
+
+u16 dummy(struct net_device_ops *ndo)
+{
+	return ndo->ndo_select_queue($params);
+}
+EOF
+	if compile; then
+		define SELECT_QUEUE $n
+		break;
+	fi
+	params="NULL, $params"
+done
+
 # file end
 cat >> $configh <<EOF
 

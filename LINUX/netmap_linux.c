@@ -246,19 +246,19 @@ netmap_catch_rx(struct netmap_adapter *na, int intercept)
 #endif /* HAVE_RX_REGISTER */
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,13,0)
-u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m)
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0)
-u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m,
-                                void *accel_priv)
-#else
-u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m,
-                                void *accel_priv,
-				select_queue_fallback_t fallback)
-#endif
+#ifdef NETMAP_LINUX_SELECT_QUEUE
+u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m
+#if NETMAP_LINUX_SELECT_QUEUE >= 3
+                                , void *accel_priv
+#if NETMAP_LINUX_SELECT_QUEUE >= 4
+				, select_queue_fallback_t fallback
+#endif /* >= 4 */
+#endif /* >= 3 */
+		)
 {
     return skb_get_queue_mapping(m); // actually 0 on 2.6.23 and before
 }
+#endif /* SELECT_QUEUE */
 
 /* Replacement for the driver ndo_start_xmit() method.
  * When this function is invoked because of the dev_queue_xmit() call
@@ -300,7 +300,7 @@ void netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 
         gna->generic_ndo = *ifp->netdev_ops;  /* Copy all */
         gna->generic_ndo.ndo_start_xmit = &generic_ndo_start_xmit;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
+#ifndef NETMAP_LINUX_SELECT_QUEUE
 	printk("%s: no packet steering support\n", __FUNCTION__);
 #else
         gna->generic_ndo.ndo_select_queue = &generic_ndo_select_queue;
@@ -332,7 +332,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     m->dev = ifp;
     /* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
     m->priority = NM_MAGIC_PRIORITY_TX;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24) // XXX
+#ifdef NETMAP_LINUX_SELECT_QUEUE
     skb_set_queue_mapping(m, ring_nr);
 #endif
 
