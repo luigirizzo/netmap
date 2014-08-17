@@ -73,7 +73,7 @@ get_drivers=
 clean_drivers=
 if [ -z "$nodrivers" ]; then
 	[ -d "$src" ] || error "Cannot find kernel sources"
-	[ -n "$(find "$src" -name '*.c' -print -quit)" ] ||
+	[ -n "$(find "$src/" -name '*.c' -print -quit)" ] ||
 		error "'$src' does not appear to contain full kernel sources"
 	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s final-patches patches; }
@@ -85,7 +85,7 @@ for p in $patches; do
 	# extract the driver name
 	driver=$(echo $p | awk -F -- '{ print $2 }')
 	# find the driver sources
-	s=$(find $src/drivers -name "$driver" -print -quit)
+	s=$(find $src/drivers/ -name "$driver" -print -quit)
 	[ -n "$s" ] || { echo "WARNING: $driver sources not found"; continue; }
 	cat >> drivers.mak <<EOF
 get-$driver:
