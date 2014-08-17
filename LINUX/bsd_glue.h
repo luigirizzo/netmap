@@ -62,12 +62,13 @@
 #define KASSERT(a, b)		BUG_ON(!(a))
 
 /*----- support for compiling on older versions of linux -----*/
+#include "netmap_linux_config.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 21)
 #define HRTIMER_MODE_REL	HRTIMER_REL
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 22)
+#ifndef NETMAP_LINUX_HAVE_SKB_COPY_LINEAR
 #define skb_copy_from_linear_data_offset(skb, offset, to, copy)	\
 	memcpy(to, (skb)->data + offset, copy)
 
@@ -76,7 +77,7 @@
 
 #define skb_copy_to_linear_data(skb, from, copy)		\
 	memcpy((skb)->data, from, copy)
-#endif
+#endif /* HAVE_SKB_COPY_LINEAR */
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24)
 #define ACCESS_ONCE(x)	(x)
