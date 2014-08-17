@@ -332,9 +332,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     m->dev = ifp;
     /* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
     m->priority = NM_MAGIC_PRIORITY_TX;
-#ifdef NETMAP_LINUX_SELECT_QUEUE
     skb_set_queue_mapping(m, ring_nr);
-#endif
 
     ret = dev_queue_xmit(m);
 

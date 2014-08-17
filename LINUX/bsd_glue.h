@@ -87,8 +87,9 @@
 #define uintptr_t	unsigned long
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24)
+#ifndef NETMAP_LINUX_HAVE_QUEUE_MAPPING
 #define skb_get_queue_mapping(m)	(0)
+#define skb_set_queue_mapping(a, b)	do { (void)(a); (void)(b); } while (0)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 25)

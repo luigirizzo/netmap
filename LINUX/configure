@@ -280,6 +280,16 @@ add_test <<EOF 'have UINTPTR'
 uintptr_t dummy;
 EOF
 
+# check for queue_mapping
+add_test <<EOF 'have QUEUE_MAPPING'
+#include <linux/skbuff.h>
+
+u16 dummy(const struct sk_buff *skb)
+{
+	return skb_get_queue_mapping(skb);
+}
+EOF
+
 rm -f $configh
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H
