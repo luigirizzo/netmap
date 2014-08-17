@@ -209,6 +209,18 @@ EOF
 	params="NULL, $params"
 done
 
+# ethtool get_ringparam
+cat > $TMPC <<EOF
+#include <linux/netdevice.h>
+#include <linux/ethtool.h>
+
+void
+dummy(struct net_device *net, struct ethtool_ringparam *rp) {
+	net->ethtool_ops->get_ringparam(net, rp);
+}
+EOF
+compile && have GET_RINGPARAM
+
 # file end
 cat >> $configh <<EOF
 

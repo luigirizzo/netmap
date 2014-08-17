@@ -356,7 +356,7 @@ int
 generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
     int error = EOPNOTSUPP;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31) // XXX
+#ifdef NETMAP_LINUX_HAVE_GET_RINGPARAM
     struct ethtool_ringparam rp;
 
     if (ifp->ethtool_ops && ifp->ethtool_ops->get_ringparam) {
@@ -365,7 +365,7 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
         *rx = rp.rx_pending;
 	error = 0;
     }
-#endif /* 2.6.31 and above */
+#endif /* HAVE_GET_RINGPARAM */
     return error;
 }
 
