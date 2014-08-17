@@ -109,12 +109,12 @@ typedef unsigned long phys_addr_t;
 extern struct net init_net;
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28) // XXX
+#ifndef NETMAP_LINUX_HAVE_NETDEV_OPS
 #define netdev_ops	hard_start_xmit
 struct net_device_ops {
 	int (*ndo_start_xmit)(struct sk_buff *skb, struct net_device *dev);
 };
-#endif
+#endif /* NETDEV_OPS */
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 32) // XXX 31
 #define netdev_tx_t	int

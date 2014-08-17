@@ -307,6 +307,13 @@ add_test <<EOF 'have PHYS_ADDR_T'
 phys_addr_t dummy;
 EOF
 
+# check for net_device_ops
+add_test <<EOF 'have NETDEV_OPS'
+#include <linux/netdevice.h>
+
+struct net_device_ops dummy;
+EOF
+
 rm -f $configh
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H
