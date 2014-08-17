@@ -300,6 +300,13 @@ u64 dummy(struct hrtimer *timer, ktime_t interval)
 }
 EOF
 
+# check for phys_addr_t
+add_test <<EOF 'have PHYS_ADDR_T'
+#include <linux/types.h>
+
+phys_addr_t dummy;
+EOF
+
 rm -f $configh
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H

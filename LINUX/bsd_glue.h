@@ -101,8 +101,11 @@ static inline u64 hrtimer_forward_now(struct hrtimer *timer,
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27)
+#ifndef NETMAP_LINUX_HAVE_PHYS_ADDR_T
 typedef unsigned long phys_addr_t;
+#endif
+
+#ifndef NETMAP_LINUX_HAVE_INIT_NET
 extern struct net init_net;
 #endif
 
