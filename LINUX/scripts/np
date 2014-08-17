@@ -370,11 +370,12 @@ function check-patch()
 			(cd ..; git archive $NETMAP_BRANCH | tar xf - -C $tmpdir )
 			pushd $tmpdir/LINUX >/dev/null
 			mkdir single-patch
-			rm patches
+			rm -f patches
 			ln -s single-patch patches
 			cp $p single-patch
 			ok=false
-			make KSRC=$ksrc >>$log 2>&1 && ok=true
+			./configure --kernel-dir=$ksrc >>$log
+			make >>$log 2>&1 && ok=true
 			popd >/dev/null
 			cp $log $clog
 		fi
