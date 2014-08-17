@@ -439,13 +439,12 @@ void if_rele(struct net_device *ifp)
 static u_int
 linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31) // was 28 XXX
+#ifdef NETMAP_LINUX_PWAIT_KEY
+	int events = pwait ? pwait->NETMAP_LINUX_PWAIT_KEY : \
+		     POLLIN | POLLOUT | POLLERR;
+#else
 	int events = POLLIN | POLLOUT; /* XXX maybe... */
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
-	int events = pwait ? pwait->key : POLLIN | POLLOUT | POLLERR;
-#else /* in 3.4.0 field 'key' was renamed to '_key' */
-	int events = pwait ? pwait->_key : POLLIN | POLLOUT | POLLERR;
-#endif
+#endif /* PWAIT_KEY */
 	return netmap_poll((void *)pwait, events, (void *)file);
 }
 

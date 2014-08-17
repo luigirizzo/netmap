@@ -235,6 +235,23 @@ dummy(struct net_device *net, unsigned int *txq, unsigned int *rxq)
 EOF
 compile && have NUM_QUEUES
 
+# poll_table key field
+for k in _key key; do
+	cat > $TMPC <<EOF
+	#include <linux/poll.h>
+
+	int
+	dummy(struct poll_table_struct *pwait)
+	{
+		return pwait->$k;
+	}
+EOF
+	if compile; then
+		define PWAIT_KEY $k
+		break;
+	fi
+done
+
 # file end
 cat >> $configh <<EOF
 
