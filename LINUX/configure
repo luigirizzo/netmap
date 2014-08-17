@@ -264,6 +264,18 @@ dummy(struct file_operations *fops)
 EOF
 compile && have UNLOCKED_IOCTL
 
+# check for init_net
+cat > $TMPC <<EOF
+#include <linux/netdevice.h>
+
+struct net_device *
+dummy(const char *name)
+{
+	return dev_get_by_name(&init_net, name);
+}
+EOF
+compile && have INIT_NET
+
 # file end
 cat >> $configh <<EOF
 

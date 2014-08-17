@@ -413,7 +413,7 @@ out:
 struct net_device *
 ifunit_ref(const char *name)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24) // XXX
+#ifndef NETMAP_LINUX_HAVE_INIT_NET
 	return dev_get_by_name(name);
 #else
 	return dev_get_by_name(&init_net, name);
