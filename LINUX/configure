@@ -314,6 +314,23 @@ add_test <<EOF 'have NETDEV_OPS'
 struct net_device_ops dummy;
 EOF
 
+# check for netdev_tx_t
+add_test <<EOF 'have NETDEV_TX_T'
+#include <linux/netdevice.h>
+
+netdev_tx_t dummy;
+EOF
+
+# check for usleep_range
+add_test <<EOF 'have USLEEP_RANGE'
+#include <linux/delay.h>
+
+void dummy(void)
+{
+	usleep_range(0, 0);
+}
+EOF
+
 rm -f $configh
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H

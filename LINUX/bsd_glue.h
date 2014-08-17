@@ -116,13 +116,13 @@ struct net_device_ops {
 };
 #endif /* NETDEV_OPS */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 32) // XXX 31
+#ifndef NETMAP_LINUX_HAVE_NETDEV_TX_T
 #define netdev_tx_t	int
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
+#ifndef NETMAP_LINUX_HAVE_USLEEP_RANGE
 #define usleep_range(a, b)	msleep((a)+(b)+999)
-#endif /* up to 2.6.35 */
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0)
 #define split_page(page, order) 			\
