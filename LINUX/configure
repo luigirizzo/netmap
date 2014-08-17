@@ -13,7 +13,8 @@ print_help() {
 }
 
 TMPDIR=netmap-tmpdir
-TMPC=netmap-tmp.c
+rm -rf $TMPDIR
+mkdir $TMPDIR
 
 TESTOBJS=
 TESTPOSTPROC=
