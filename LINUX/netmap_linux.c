@@ -125,11 +125,7 @@ uint16_t nm_csum_fold(rawsum_t cur_sum)
  * - when the timer expires and there are pending packets,
  *   a notification is sent up and the timer is restarted.
  */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,21)
-int
-#else
-enum hrtimer_restart
-#endif
+NETMAP_LINUX_TIMER_RTYPE
 generic_timer_handler(struct hrtimer *t)
 {
     struct nm_generic_mit *mit =

@@ -70,6 +70,13 @@ have() {
 EOF
 }
 
+define() {
+	cat >> $configh <<EOF
+
+#define NETMAP_LINUX_$1 $2
+EOF
+}
+
 rm -f config.log
 
 
@@ -153,6 +160,22 @@ void dummy(void)
 }
 EOF
 compile && have IOMMU
+
+cat > $TMPC <<EOF
+#include <linux/hrtimer.h>
+
+enum hrtimer_restart
+testmod_timer_handler(struct hrtimer *t)
+{
+	(void)t;
+	return HRTIMER_RESTART;
+}
+EOF
+if compile; then
+	define TIMER_RTYPE 'enum hrtimer_restart'
+else
+	define TIMER_RTYPE 'int'
+fi
 
 cat >> $configh <<EOF
 
