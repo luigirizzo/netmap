@@ -64,7 +64,7 @@
 /*----- support for compiling on older versions of linux -----*/
 #include "netmap_linux_config.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 21)
+#ifndef NETMAP_LINUX_HAVE_HRTIMER_MODE_REL
 #define HRTIMER_MODE_REL	HRTIMER_REL
 #endif
 

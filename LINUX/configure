@@ -341,6 +341,16 @@ void dummy(struct page *page, unsigned int order)
 }
 EOF
 
+# check for HRTIMER_MODE_REL
+add_test <<EOF 'have HRTIMER_MODE_REL'
+#include <linux/hrtimer.h>
+
+void dummy(struct hrtimer *timer, clockid_t which_clock)
+{
+	hrtimer_init(timer, which_clock, HRTIMER_MODE_REL);
+}
+EOF
+
 rm -f $configh
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H
