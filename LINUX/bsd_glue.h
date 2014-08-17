@@ -124,14 +124,14 @@ struct net_device_ops {
 #define usleep_range(a, b)	msleep((a)+(b)+999)
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0)
-#define split_page(page, order) 			\
-	do {						\
-		int i_;					\
-		for (i_ = 1; i_ < (1 << order); i_++)	\
-			atomic_set(&page[i_]._count, 1);\
+#ifndef NETMAP_LINUX_HAVE_SPLIT_PAGE
+#define split_page(page, order) 			  \
+	do {						  \
+		int i_;					  \
+		for (i_ = 1; i_ < (1 << (order)); i_++)	  \
+			atomic_set(&(page)[i_]._count, 1);\
 	} while (0)
-#endif /* was unexported before */
+#endif /* HAVE_SPLIT_PAGE */
 
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 

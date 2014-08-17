@@ -331,6 +331,16 @@ void dummy(void)
 }
 EOF
 
+# check for exported split_page
+add_test <<EOF 'have SPLIT_PAGE'
+#include <linux/mm.h>
+
+void dummy(struct page *page, unsigned int order)
+{
+	return split_page(page, order);
+}
+EOF
+
 rm -f $configh
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H
