@@ -347,9 +347,10 @@ int dummy(void)
 EOF
 
 # number of parameters in ndo_select_queue
+# (we expect at most one of these to succeed)
 params="NULL, NULL"
 for n in 2 3 4; do
-	add_named_test ndo_select_queue$n <<EOF
+	add_test <<EOF "define SELECT_QUEUE $n"
 	#include <linux/netdevice.h>
 
 	u16 dummy(struct net_device_ops *ndo)
@@ -385,7 +386,7 @@ EOF
 
 # poll_table key field
 for k in _key key; do
-	add_named_test poll_table_$k <<EOF
+	add_test <<EOF "define PWAIT_KEY $k"
 	#include <linux/poll.h>
 
 	int
@@ -526,25 +527,6 @@ EOF
 
 # the TESTPOSTPROC script will add macros to $configh
 run_tests
-
-# for some sligthly more complex tests, we need to do
-# the check by ourselves:
-
-# find out which one of ndo_select_queue$n tests succeded
-for n in 2 3 4; do
-	if [ -f $TMPDIR/ndo_select_queue$n.o ]; then
-		define SELECT_QUEUE $n
-		break
-	fi
-done
-
-# find out which one of poll_table_$k tests succeded
-for k in _key key; do
-	if [ -f $TMPDIR/poll_table_$k.o ]; then
-		define PWAIT_KEY $k
-		break
-	fi
-done
 
 # file end
 cat >> $configh <<EOF
