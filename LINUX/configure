@@ -1,9 +1,11 @@
 #!/bin/bash
 
+# with <command>: success iff <command> is available
 with() {
 	type $1 >/dev/null 2>&1
 }
 
+# report: print the current state of the configuration variables
 report() {
 	echo "kernel directory            $ksrc"
 	if with realpath; then
@@ -40,6 +42,8 @@ report() {
 	fi
 }
 
+# error [line line...]: format an error msg containing the provided lines
+# 			and exit with failure.
 error() {
 	{
 		local line
@@ -57,6 +61,7 @@ error() {
 	exit 1
 }
 
+# print_help
 print_help() {
 	echo "  --help                       print this message"
 	echo "  --kernel-dir                 path to configured kernel directory"
@@ -64,12 +69,45 @@ print_help() {
 	echo "  --no-drivers                 do not compile patched drivers"
 }
 
+#################################################################
+# machinery for the creation of netmap_linux_config.h           #
+#################################################################
+
+# We check for the availability/version of several linux
+# internal APIs by running compilation tests. The results
+# of the tests will produce a set of macros in the 
+# 'netmap_linux_config.h' file. All macros names begin
+# with 'NETMAP_LINUX'.
+
+# TMPDIR is where we build all the tests
 TMPDIR=netmap-tmpdir
 rm -rf $TMPDIR
 mkdir $TMPDIR
 
+# tests are first accumulated using add_named_test and add_test, then
+# run by run_tests. This setup amortizes the cost of going
+# through linux kbuild and opens the opportunity of using the '-j'
+# flag of make. Speedup is in the order of x10.
+
+# TESTOBJS will contain the list of test modules to build
 TESTOBJS=
+# TESTPOSTPROC will contain a script that runs the pertinent
+# 'on success' or 'on failure' action for each test at the
+# end of 'run_tests'.
 TESTPOSTPROC=
+
+# add_named_test <test-name> [<on success> [<on failure>]]:
+#     the test code is read from stdin, completed with
+#     some standard modules boiler plate and put in
+#     $TMPDIR/test-name.c for future compilation by 'run_tests'.
+#     The optional <on success> script (which must be a single
+#     argument) will be executed if $TMPDIR/test-name.o will
+#     be correctly created. The optional <on failure>
+#     script (one argument) will be executed if compilation fails.
+#
+#     Note: add_test (below) is preferred. Use add_named_test
+#     only if you need to do some complex check for which you need to
+#     know the name of the test files.
 add_named_test() {
 	{
 		cat <<EOF
@@ -77,7 +115,7 @@ add_named_test() {
 #include <linux/kernel.h>
 #include <linux/init.h>
 EOF
-		cat
+		cat	# output the test code read from stdin
 		cat <<EOF
 
 MODULE_LICENSE("GPL");
@@ -92,7 +130,9 @@ static int __init $1_init(void)
 module_init($1_init);
 EOF
 	} > $TMPDIR/$1.c
+	# add the module to the running list
 	TESTOBJS="$1.o $TESTOBJS"
+	# add the postprocess script for this test
 	if [ -n "$2" ]; then
 		cmd="if [ -f $TMPDIR/$1.o ]; then $2"
 		[ -n "$3" ] && cmd="$cmd; else $3"
@@ -101,6 +141,9 @@ EOF
 	fi
 }
 
+# add_test [<on success> [<on failure>]]
+#     used like add_named_test above, but without the need of
+#     explicitly naming the test.
 NEXTTEST=1
 add_test() {
 	local t="__test__$NEXTTEST"
@@ -108,6 +151,8 @@ add_test() {
 	: $((NEXTTEST++))
 }
 
+# run_tests: run all accumulated tests and exec the pertinent
+#   success/failure actions for each one.
 run_tests() {
 	cat > $TMPDIR/Makefile <<EOF
 ifneq (\$(KERNELRELEASE),)
@@ -124,8 +169,12 @@ EOF
 	eval "$TESTPOSTPROC"
 }
 
-
 configh=netmap_linux_config.h
+# succes/failure actions are expected to write some macros
+# in netma_linux_config.h. The following functions can be
+# used to simplify the task.
+
+# have <macro>: define NETMAP_LINUX_HAVE_<macro>
 have() {
 	cat >> $configh <<EOF
 
@@ -133,6 +182,7 @@ have() {
 EOF
 }
 
+# define <macro> <value>: define NETMAP_LINUX_<macro> as <value>
 define() {
 	cat >> $configh <<EOF
 
@@ -140,9 +190,11 @@ define() {
 EOF
 }
 
+####################################################################
+################### START OF PROCESSING ############################
+####################################################################
+
 rm -f config.log
-
-
 {
 	echo "# netmap configure log $(date)"
 	echo "# Configured with:"
@@ -154,6 +206,9 @@ rm -f config.log
 exec 2>> config.log
 set -x
 
+############################
+# parse options 
+############################
 ksrc=
 src=
 nodrivers=
@@ -176,6 +231,10 @@ for opt do
 	;;
 	esac
 done
+
+################################
+# check for sane configuration
+################################
 
 [ -n "$ksrc" ] || {
 	# user did not provide a kernel dir,
@@ -231,6 +290,8 @@ fi
 #################################################
 # create the config.h file
 #################################################
+
+# BEGIN_TESTS
 
 # iommu support
 add_test <<EOF 'have IOMMU'
@@ -453,14 +514,23 @@ void dummy(struct hrtimer *timer, clockid_t which_clock)
 }
 EOF
 
+# END_TESTS
+
+# now we actually create the file
+
 rm -f $configh
 cat > $configh <<EOF
 #ifndef NETMAP_LINUX_CONFIG_H
 #define NETMAP_LINUX_CONFIG_H
 EOF
 
+# the TESTPOSTPROC script will add macros to $configh
 run_tests
 
+# for some sligthly more complex tests, we need to do
+# the check by ourselves:
+
+# find out which one of ndo_select_queue$n tests succeded
 for n in 2 3 4; do
 	if [ -f $TMPDIR/ndo_select_queue$n.o ]; then
 		define SELECT_QUEUE $n
@@ -468,6 +538,7 @@ for n in 2 3 4; do
 	fi
 done
 
+# find out which one of poll_table_$k tests succeded
 for k in _key key; do
 	if [ -f $TMPDIR/poll_table_$k.o ]; then
 		define PWAIT_KEY $k
@@ -480,7 +551,17 @@ cat >> $configh <<EOF
 
 #endif
 EOF
-#################################################
+
+###############################################################
+# Makefile creation
+###############################################################
+
+# here we select the patches for the drivers and create the
+# main Makefile. The Makefile is obtained from Makefile.in
+# with some values replaced in (mainly the kernel directory).
+# The final Makefile will include drivers.mak, which is also
+# created here. drivers.mak will contain a get-driver and
+# clear-driver target for each of the available drivers.
 
 patches=
 s_drivers=
@@ -489,6 +570,7 @@ clean_drivers=
 if [ -z "$nodrivers" ]; then
 	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s final-patches patches; }
+	# the selection is based only on the kernel version
 	patches=$(cd patches; ls diff--* | awk -v v=$lin_ver -F -- '($3 <= v"") && (v"" < $4)')
 fi
 
@@ -499,6 +581,7 @@ for p in $patches; do
 	# find the driver sources
 	s=$(find $src/drivers/ -name "$driver" -print -quit)
 	[ -n "$s" ] || { echo "WARNING: $driver sources not found"; continue; }
+	# add the driver related targets to drivers.mak
 	cat >> drivers.mak <<EOF
 get-$driver:
 	cp -Rp $s .
@@ -513,6 +596,7 @@ EOF
 	get_drivers="get-$driver $get_drivers"
 	clean_drivers="clean-$driver $clean_drivers"
 done
+# add some convenience cumulative targets
 cat >> drivers.mak <<EOF
 .PHONY: get-drivers clean-drivers
 get-drivers: $get_drivers
@@ -532,6 +616,8 @@ sed \
 
 report
 
+# config.status can be used to rerun configure with the
+# same arguments
 rm -f config.status
 { printf " '%s'" "$0" "$@"; echo; } > config.status
 chmod +x config.status
