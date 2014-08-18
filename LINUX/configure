@@ -1,7 +1,38 @@
 #!/bin/bash
 
+report() {
+	echo "kernel directory            $ksrc"
+	local v=$lin_ver
+	[ -n "$v" ] || v="-"
+	echo "linux version               $v"
+	if [ -n "$nodrivers" ]; then
+		echo "no-drivers"
+	else
+		echo "kernel sources              $src"
+		local d=$s_drivers
+		[ -n "$d" ] || d="-"
+		echo "drivers                     $d"
+		echo
+		if [ -n "$(echo $patches)" ]; then
+			echo -e "Selected patches:\n\n$patches"
+		fi
+	fi
+}
+
 error() {
-	echo "ERROR: $1" | tee -a config.log
+	{
+		local line
+		echo "*********************************** ERROR ***********************************"
+		for line; do
+			echo "*** "$line
+		done
+		echo "***"
+		echo
+		echo "     Current configuration values:"
+		echo
+		report
+		echo "*****************************************************************************"
+	} | tee -a config.log
 	exit 1
 }
 
@@ -136,11 +167,26 @@ done
 	[ -n "$src" ] || src=$ksrc
 }
 
-[ -d "$ksrc" ] || error "Cannot find kernel directory"
-[ -f "$ksrc/.config" ] || error "kernel not configured"
+if [ ! -d "$ksrc" ]; then
+	error "Cannot find kernel directory." \
+	      "" \
+	      "We need at least the kernel headers to compile the netmap kernel module." \
+	      "If your kernel headers are not in the standard place, please provide " \
+	      "the correct path  using the '--kernel-dir=...' option." \
+	      "Otherwise, check that the 'build' symlink in /lib/modules/... is not broken."
+fi
 version_hdr="$ksrc/include/linux/version.h"
 [ -f "$version_hdr" ] || version_hdr="$ksrc/include/generated/uapi/linux/version.h"
-[ -f "$version_hdr" ] || error "version.h is missing"
+if [ ! -f "$ksrc/.config" ] || [ ! -f "$version_hdr" ]; then
+	error "kernel not configured." \
+	      "" \
+	      "The kernel directory must be ready for external module compilation. " \
+	      "You may need to issue the following or equivalent commands: "\
+	      "" \
+	      "  cd $ksrc" \
+	      "  make oldconfig" \
+	      "  make modules_prepare"
+fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
 
@@ -403,9 +449,20 @@ s_drivers=
 get_drivers=
 clean_drivers=
 if [ -z "$nodrivers" ]; then
-	[ -d "$src" ] || error "Cannot find kernel sources"
-	[ -n "$(find "$src/" -name '*.c' -print -quit)" ] ||
-		error "'$src' does not appear to contain full kernel sources"
+	if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
+		error "Cannot find full kernel sources." \
+		      "" \
+		      "We need the full kernel sources to build the netmap-enabled drivers. " \
+		      "Please note that most distributions provide separate packages for " \
+		      "kernel headers and sources. Once you know the path to kernel sources, " \
+		      "you can rerun this script with the additional " \
+		      "   --kernel-sources=/path/to/sources " \
+		      "option. "\
+		      "" \
+		      "If you are only interested in VALE and pipes, you can rerun the script " \
+		      "now with the '--no-drivers' option. Hardware devices will then be " \
+		      "accessed via a generic adapter at reduced performance."
+	fi
 	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s final-patches patches; }
 	patches=$(cd patches; ls diff--* | awk -v v=$lin_ver -F -- '($3 <= v"") && (v"" < $4)')
@@ -449,18 +506,7 @@ sed \
 	Makefile.in > Makefile
 
 
-# report
-echo "kernel directory            $ksrc"
-echo "kernel sources              $src"
-echo "linux version               $lin_ver"
-echo -n "drivers                     "
-if [ -n "$nodrivers" ]; then
-	echo DISABLED
-else
-	echo $s_drivers
-	echo
-	echo -e "Selected patches:\n\n$patches"
-fi
+report
 
 rm -f config.status
 { printf " '%s'" "$0" "$@"; echo; } > config.status
