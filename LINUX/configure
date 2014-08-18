@@ -1,14 +1,35 @@
 #!/bin/bash
 
+with() {
+	type $1 >/dev/null 2>&1
+}
+
 report() {
 	echo "kernel directory            $ksrc"
+	if with realpath; then
+		rksrc=$(realpath "$ksrc")
+		if [ "$ksrc" != "$rksrc" ]; then
+			echo "                            [$rksrc]"
+		fi
+	fi
 	local v=$lin_ver
 	[ -n "$v" ] || v="-"
-	echo "linux version               $v"
+	echo -n "linux version               $v"
+	if [ -n "$lin_ver" ] && with perl; then
+		echo " [$(scripts/vers $lin_ver -C)]"
+	else
+		echo
+	fi
 	if [ -n "$nodrivers" ]; then
 		echo "no-drivers"
 	else
 		echo "kernel sources              $src"
+		if with realpath; then
+			rsrc=$(realpath "$src")
+			if [ "$src" != "$rsrc" ]; then
+				echo "                            [$rsrc]"
+			fi
+		fi
 		local d=$s_drivers
 		[ -n "$d" ] || d="-"
 		echo "drivers                     $d"
