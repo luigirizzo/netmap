@@ -210,6 +210,23 @@ if [ ! -f "$ksrc/.config" ] || [ ! -f "$version_hdr" ]; then
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
+if [ -z "$nodrivers" ]; then
+	if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
+		error "Cannot find full kernel sources." \
+		      "" \
+		      "We need the full kernel sources to build the netmap-enabled drivers. " \
+		      "Please note that most distributions provide separate packages for " \
+		      "kernel headers and sources. Once you know the path to kernel sources, " \
+		      "you can rerun this script with the additional " \
+		      "   --kernel-sources=/path/to/sources " \
+		      "option. "\
+		      "" \
+		      "If you are only interested in VALE and pipes, you can rerun the script " \
+		      "now with the '--no-drivers' option. Hardware devices will then be " \
+		      "accessed via a generic adapter at reduced performance."
+	fi
+fi
+
 
 #################################################
 # create the config.h file
@@ -470,20 +487,6 @@ s_drivers=
 get_drivers=
 clean_drivers=
 if [ -z "$nodrivers" ]; then
-	if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
-		error "Cannot find full kernel sources." \
-		      "" \
-		      "We need the full kernel sources to build the netmap-enabled drivers. " \
-		      "Please note that most distributions provide separate packages for " \
-		      "kernel headers and sources. Once you know the path to kernel sources, " \
-		      "you can rerun this script with the additional " \
-		      "   --kernel-sources=/path/to/sources " \
-		      "option. "\
-		      "" \
-		      "If you are only interested in VALE and pipes, you can rerun the script " \
-		      "now with the '--no-drivers' option. Hardware devices will then be " \
-		      "accessed via a generic adapter at reduced performance."
-	fi
 	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s final-patches patches; }
 	patches=$(cd patches; ls diff--* | awk -v v=$lin_ver -F -- '($3 <= v"") && (v"" < $4)')
