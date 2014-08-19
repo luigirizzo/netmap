@@ -91,7 +91,6 @@ build: $(GET_DRIVERS)
 		O_DRIVERS="$(DRIVERS:%.c=%.o)" modules
 	@ls -l `find . -name \*.ko`
 
-
 test:
 	@echo "version $(LIN_VER)"
 	@echo "patches $(PATCHES)"
@@ -116,8 +115,15 @@ diffs:
 		diff -urp $$i $${i%.orig} ;	\
 	done
 
+APPS_CC=@APPS_CC@
+APPS_LD=@APPS_LD@
+PREFIX=@PREFIX@
+
 apps:
-	(cd ../examples; $(MAKE))
+	$(MAKE) -C ../examples CC=$(APPS_CC) LD=$(APPS_LD)
+
+install-apps:
+	$(MAKE) -C ../examples install DESTDIR=$(abspath $(DESTDIR)) PREFIX=$(PREFIX)
 
 +%:
 	@echo $($*)

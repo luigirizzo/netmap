@@ -24,6 +24,8 @@ ifeq ($(shell uname),Linux)
 endif
 #SRCS = pkt-gen.c
 
+PREFIX ?= /usr/local
+
 all: $(PROGS)
 
 kern_test: testmod/kern_test.c
@@ -41,3 +43,9 @@ clean:
 	-@rm -rf $(CLEANFILES)
 
 testlock: testlock.c
+
+.PHONY: install
+install: $(PROGS:%=install-%)
+
+install-%:
+	install -D $* $(DESTDIR)$(PREFIX)/bin/$*

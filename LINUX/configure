@@ -1,5 +1,9 @@
 #!/bin/bash
 
+prefix=/usr/local
+cc=cc
+ld=ld
+
 # with <command>: success iff <command> is available
 with() {
 	type $1 >/dev/null 2>&1
@@ -72,6 +76,10 @@ Available options:
   --kernel-dir=                path to configured kernel directory
   --kernel-sources=            path to full kernel sources
   --no-drivers                 do not compile patched drivers
+
+  --cc=                        C compiler for the examples [$cc]
+  --ld=                        linker for the examples [$ld]
+  --prefix=                    install path for the examples [$prefix]
 	EOF
 }
 
@@ -226,6 +234,12 @@ for opt do
 	--kernel-sources=*) src="$optarg"
 	;;
 	--no-drivers) nodrivers="true"
+	;;
+	--cc=*) cc="$optarg"
+	;;
+	--ld=*) ld="$optarg"
+	;;
+	--prefix=*) prefix="$prefix"
 	;;
 	--help)
 		print_help
@@ -617,6 +631,9 @@ sed \
 	-e "s|@NODRIVERS@|$nodrivers|g" \
 	-e "s|@PATCHES@|$(echo $patches)|g" \
 	-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
+	-e "s|@APPS_CC@|$cc|g" \
+	-e "s|@APPS_LD@|$ld|g" \
+	-e "s|@PREFIX@|$prefix|g" \
 	Makefile.in > Makefile
 
 
