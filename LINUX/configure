@@ -181,14 +181,6 @@ configh=netmap_linux_config.h
 # in netma_linux_config.h. The following functions can be
 # used to simplify the task.
 
-# have <macro>: define NETMAP_LINUX_HAVE_<macro>
-have() {
-	cat >> $configh <<-EOF
-
-		#define NETMAP_LINUX_HAVE_$1
-	EOF
-}
-
 # define <macro> <value>: define NETMAP_LINUX_<macro> as <value>
 define() {
 	cat >> $configh <<-EOF
@@ -196,6 +188,12 @@ define() {
 		#define NETMAP_LINUX_$1 $2
 	EOF
 }
+
+# have <macro>: define NETMAP_LINUX_HAVE_<macro>
+have() {
+	define "HAVE_$1"
+}
+
 
 ####################################################################
 ################### START OF PROCESSING ############################
