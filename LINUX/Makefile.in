@@ -63,6 +63,7 @@ all: build
 # If the sources are elsewhere, then use SRC to point to them.
 KSRC = @KSRC@
 SRC  = @SRC@
+KOPTS = @KOPTS@
 LIN_VER = @LIN_VER@
 NODRIVERS = @NODRIVERS@
 PATCHES = @PATCHES@
@@ -88,7 +89,9 @@ endif
 build: $(GET_DRIVERS)
 	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
 		EXTRA_CFLAGS='$(EXTRA_CFLAGS)'			\
-		O_DRIVERS="$(DRIVERS:%.c=%.o)" modules
+		O_DRIVERS="$(DRIVERS:%.c=%.o)" \
+		$(KOPTS) \
+		modules
 	@ls -l `find . -name \*.ko`
 
 test:

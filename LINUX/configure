@@ -75,6 +75,8 @@ Available options:
   --help                       print this message
   --kernel-dir=                path to configured kernel directory
   --kernel-sources=            path to full kernel sources
+  --kernel-opts=	       additional options to pass to kernel make
+                               (you can call this several times)
   --no-drivers                 do not compile patched drivers
 
   --cc=                        C compiler for the examples [$cc]
@@ -225,6 +227,7 @@ set -x
 ksrc=
 src=
 nodrivers=
+kopts=
 # get ksrc and src before anything else
 for opt do
 	optarg=${opt#*=}
@@ -232,6 +235,8 @@ for opt do
 	--kernel-dir=*) ksrc="$optarg"
 	;;
 	--kernel-sources=*) src="$optarg"
+	;;
+	--kernel-opts=*) kopts="$kopts $optarg"
 	;;
 	--no-drivers) nodrivers="true"
 	;;
@@ -627,6 +632,7 @@ EOF
 sed \
 	-e "s|@KSRC@|$ksrc|g" \
 	-e "s|@SRC@|$src|g" \
+	-e "s|@KOPTS@|$kopts|g" \
 	-e "s|@LIN_VER@|$lin_ver|g" \
 	-e "s|@NODRIVERS@|$nodrivers|g" \
 	-e "s|@PATCHES@|$(echo $patches)|g" \
