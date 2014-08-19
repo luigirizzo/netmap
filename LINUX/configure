@@ -75,7 +75,7 @@ print_help() {
 
 # We check for the availability/version of several linux
 # internal APIs by running compilation tests. The results
-# of the tests will produce a set of macros in the 
+# of the tests will produce a set of macros in the
 # 'netmap_linux_config.h' file. All macros names begin
 # with 'NETMAP_LINUX'.
 
@@ -110,25 +110,25 @@ TESTPOSTPROC=
 #     know the name of the test files.
 add_named_test() {
 	{
-		cat <<EOF
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/init.h>
-EOF
+		cat <<-EOF
+			#include <linux/module.h>
+			#include <linux/kernel.h>
+			#include <linux/init.h>
+		EOF
 		cat	# output the test code read from stdin
-		cat <<EOF
+		cat <<-EOF
 
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("netmap");
-MODULE_DESCRIPTION("module $1");
+			MODULE_LICENSE("GPL");
+			MODULE_AUTHOR("netmap");
+			MODULE_DESCRIPTION("module $1");
 
-static int __init $1_init(void)
-{
-	return 0;
-}
+			static int __init $1_init(void)
+			{
+			        return 0;
+			}
 
-module_init($1_init);
-EOF
+			module_init($1_init);
+		EOF
 	} > $TMPDIR/$1.c
 	# add the module to the running list
 	TESTOBJS="$1.o $TESTOBJS"
@@ -154,14 +154,15 @@ add_test() {
 # run_tests: run all accumulated tests and exec the pertinent
 #   success/failure actions for each one.
 run_tests() {
-	cat > $TMPDIR/Makefile <<EOF
-ifneq (\$(KERNELRELEASE),)
-obj-m := $TESTOBJS
-else
-all:
-	\$(MAKE) -C $ksrc M=\$\$PWD
-endif
-EOF
+	local $t= 	# prevent -EOF to eat the make TAB
+	cat > $TMPDIR/Makefile <<-EOF
+		ifneq (\$(KERNELRELEASE),)
+		obj-m := $TESTOBJS
+		else
+		all:
+		$t	\$(MAKE) -C $ksrc M=\$\$PWD
+		endif
+	EOF
 	(
 		cd $TMPDIR
 		make -k -j $(grep -c processor /proc/cpuinfo)
@@ -176,18 +177,18 @@ configh=netmap_linux_config.h
 
 # have <macro>: define NETMAP_LINUX_HAVE_<macro>
 have() {
-	cat >> $configh <<EOF
+	cat >> $configh <<-EOF
 
-#define NETMAP_LINUX_HAVE_$1
-EOF
+		#define NETMAP_LINUX_HAVE_$1
+	EOF
 }
 
 # define <macro> <value>: define NETMAP_LINUX_<macro> as <value>
 define() {
-	cat >> $configh <<EOF
+	cat >> $configh <<-EOF
 
-#define NETMAP_LINUX_$1 $2
-EOF
+		#define NETMAP_LINUX_$1 $2
+	EOF
 }
 
 ####################################################################
@@ -207,7 +208,7 @@ exec 2>> config.log
 set -x
 
 ############################
-# parse options 
+# parse options
 ############################
 ksrc=
 src=
@@ -294,225 +295,225 @@ fi
 # BEGIN_TESTS
 
 # iommu support
-add_test <<EOF 'have IOMMU'
-#include <linux/iommu.h>
+add_test 'have IOMMU' <<-EOF
+	#include <linux/iommu.h>
 
-void dummy(void)
-{
-	struct iommu_group *grp = iommu_group_get(NULL);
-	int id = iommu_group_id(grp);
+	void dummy(void)
+	{
+	        struct iommu_group *grp = iommu_group_get(NULL);
+	        int id = iommu_group_id(grp);
 
-	(void)grp;
-	(void)id;
-}
+	        (void)grp;
+	        (void)id;
+	}
 EOF
 
 # return value of hrtimer handler
-add_test <<EOF 'define TIMER_RTYPE "enum hrtimer_restart"' 'define TIMER_RTYPE int'
-#include <linux/hrtimer.h>
+add_test 'define TIMER_RTYPE "enum hrtimer_restart"' 'define TIMER_RTYPE int' <<-EOF
+	#include <linux/hrtimer.h>
 
-enum hrtimer_restart
-testmod_timer_handler(struct hrtimer *t)
-{
-	(void)t;
-	return HRTIMER_RESTART;
-}
+	enum hrtimer_restart
+	testmod_timer_handler(struct hrtimer *t)
+	{
+	        (void)t;
+	        return HRTIMER_RESTART;
+	}
 EOF
 
 # rx_register (intercept packets in the generic adapter)
-add_test <<EOF 'have RX_REGISTER'
-#include <linux/netdevice.h>
+add_test 'have RX_REGISTER' <<-EOF
+	#include <linux/netdevice.h>
 
-int dummy(void)
-{
-	return netdev_rx_handler_register(NULL, NULL, NULL);
-}
+	int dummy(void)
+	{
+	        return netdev_rx_handler_register(NULL, NULL, NULL);
+	}
 EOF
 
 # rx_handler_result_t
-add_test <<EOF 'have RX_HANDLER_RESULT'
-#include <linux/netdevice.h>
+add_test 'have RX_HANDLER_RESULT' <<-EOF
+	#include <linux/netdevice.h>
 
 
-static rx_handler_result_t dummy_rx_handler(struct sk_buf **pm)
-{
-	(void)pm;
-	return RX_HANDLER_PASS;
-}
+	static rx_handler_result_t dummy_rx_handler(struct sk_buf **pm)
+	{
+	        (void)pm;
+	        return RX_HANDLER_PASS;
+	}
 
-int dummy(void)
-{
-	return netdev_rx_handler_register(NULL, dummy_rx_handler, NULL);
-}
+	int dummy(void)
+	{
+	        return netdev_rx_handler_register(NULL, dummy_rx_handler, NULL);
+	}
 EOF
 
 # number of parameters in ndo_select_queue
 # (we expect at most one of these to succeed)
 params="NULL, NULL"
 for n in 2 3 4; do
-	add_test <<EOF "define SELECT_QUEUE $n"
-	#include <linux/netdevice.h>
+	add_test "define SELECT_QUEUE $n" <<-EOF
+		#include <linux/netdevice.h>
 
-	u16 dummy(struct net_device_ops *ndo)
-	{
-		return ndo->ndo_select_queue($params);
-	}
-EOF
+		u16 dummy(struct net_device_ops *ndo)
+		{
+		        return ndo->ndo_select_queue($params);
+		}
+	EOF
 	params="NULL, $params"
 done
 
 # ethtool get_ringparam
-add_test <<EOF 'have GET_RINGPARAM'
-#include <linux/netdevice.h>
-#include <linux/ethtool.h>
+add_test 'have GET_RINGPARAM' <<-EOF
+	#include <linux/netdevice.h>
+	#include <linux/ethtool.h>
 
-void
-dummy(struct net_device *net, struct ethtool_ringparam *rp) {
-	net->ethtool_ops->get_ringparam(net, rp);
-}
+	void
+	dummy(struct net_device *net, struct ethtool_ringparam *rp) {
+	        net->ethtool_ops->get_ringparam(net, rp);
+	}
 EOF
 
 # number of tx/rx queues
-add_test <<EOF 'have NUM_QUEUES'
-#include <linux/netdevice.h>
+add_test 'have NUM_QUEUES' <<-EOF
+	#include <linux/netdevice.h>
 
-void
-dummy(struct net_device *net, unsigned int *txq, unsigned int *rxq)
-{
-    *txq = net->real_num_tx_queues;
-    *rxq = net->real_num_rx_queues;
-}
+	void
+	dummy(struct net_device *net, unsigned int *txq, unsigned int *rxq)
+	{
+	    *txq = net->real_num_tx_queues;
+	    *rxq = net->real_num_rx_queues;
+	}
 EOF
 
 # poll_table key field
 for k in _key key; do
-	add_test <<EOF "define PWAIT_KEY $k"
-	#include <linux/poll.h>
+	add_test "define PWAIT_KEY $k" <<-EOF
+		#include <linux/poll.h>
 
-	int
-	dummy(struct poll_table_struct *pwait)
-	{
-		return pwait->$k;
-	}
-EOF
+		int
+		dummy(struct poll_table_struct *pwait)
+		{
+		        return pwait->$k;
+		}
+	EOF
 done
 
 # check for unlocked_ioctl
-add_test <<EOF 'have UNLOCKED_IOCTL'
-#include <linux/fs.h>
+add_test 'have UNLOCKED_IOCTL' <<-EOF
+	#include <linux/fs.h>
 
-void *
-dummy(struct file_operations *fops)
-{
-	return fops->unlocked_ioctl;
-}
+	void *
+	dummy(struct file_operations *fops)
+	{
+	        return fops->unlocked_ioctl;
+	}
 EOF
 
 # check for init_net
-add_test <<EOF 'have INIT_NET'
-#include <linux/netdevice.h>
+add_test 'have INIT_NET' <<-EOF
+	#include <linux/netdevice.h>
 
-struct net_device *
-dummy(const char *name)
-{
-	return dev_get_by_name(&init_net, name);
-}
+	struct net_device *
+	dummy(const char *name)
+	{
+	        return dev_get_by_name(&init_net, name);
+	}
 EOF
 
 # check for skb_copy_to_linear_data*
-add_test <<EOF 'have SKB_COPY_LINEAR'
-#include <linux/skbuff.h>
+add_test 'have SKB_COPY_LINEAR' <<-EOF
+	#include <linux/skbuff.h>
 
-void dummy(struct sk_buff *skb, const void *from, const unsigned int len)
-{
-	skb_copy_to_linear_data(skb, from, len);
-}
+	void dummy(struct sk_buff *skb, const void *from, const unsigned int len)
+	{
+	        skb_copy_to_linear_data(skb, from, len);
+	}
 EOF
 
 # check for ACCESS_ONCE
-add_test <<EOF 'have ACCESS_ONCE'
-#include <linux/compiler.h>
+add_test 'have ACCESS_ONCE' <<-EOF
+	#include <linux/compiler.h>
 
-int dummy(int *p)
-{
-	return ACCESS_ONCE(*p);	
-}
+	int dummy(int *p)
+	{
+	        return ACCESS_ONCE(*p);
+	}
 EOF
 
 # check for uintptr_t
-add_test <<EOF 'have UINTPTR'
-uintptr_t dummy;
+add_test 'have UINTPTR' <<-EOF
+	uintptr_t dummy;
 EOF
 
 # check for queue_mapping
-add_test <<EOF 'have QUEUE_MAPPING'
-#include <linux/skbuff.h>
+add_test 'have QUEUE_MAPPING' <<-EOF
+	#include <linux/skbuff.h>
 
-u16 dummy(const struct sk_buff *skb)
-{
-	return skb_get_queue_mapping(skb);
-}
+	u16 dummy(const struct sk_buff *skb)
+	{
+	        return skb_get_queue_mapping(skb);
+	}
 EOF
 
 # check for hrtimer_forward_now
-add_test <<EOF 'have HRTIMER_FORWARD_NOW'
-#include <linux/hrtimer.h>
+add_test 'have HRTIMER_FORWARD_NOW' <<-EOF
+	#include <linux/hrtimer.h>
 
-u64 dummy(struct hrtimer *timer, ktime_t interval)
-{
-	return hrtimer_forward_now(timer, interval);
-}
+	u64 dummy(struct hrtimer *timer, ktime_t interval)
+	{
+	        return hrtimer_forward_now(timer, interval);
+	}
 EOF
 
 # check for phys_addr_t
-add_test <<EOF 'have PHYS_ADDR_T'
-#include <linux/types.h>
+add_test 'have PHYS_ADDR_T' <<-EOF
+	#include <linux/types.h>
 
-phys_addr_t dummy;
+	phys_addr_t dummy;
 EOF
 
 # check for net_device_ops
-add_test <<EOF 'have NETDEV_OPS'
-#include <linux/netdevice.h>
+add_test 'have NETDEV_OPS' <<-EOF
+	#include <linux/netdevice.h>
 
-struct net_device_ops dummy;
+	struct net_device_ops dummy;
 EOF
 
 # check for netdev_tx_t
-add_test <<EOF 'have NETDEV_TX_T'
-#include <linux/netdevice.h>
+add_test 'have NETDEV_TX_T' <<-EOF
+	#include <linux/netdevice.h>
 
-netdev_tx_t dummy;
+	netdev_tx_t dummy;
 EOF
 
 # check for usleep_range
-add_test <<EOF 'have USLEEP_RANGE'
-#include <linux/delay.h>
+add_test 'have USLEEP_RANGE' <<-EOF
+	#include <linux/delay.h>
 
-void dummy(void)
-{
-	usleep_range(0, 0);
-}
+	void dummy(void)
+	{
+	        usleep_range(0, 0);
+	}
 EOF
 
 # check for exported split_page
-add_test <<EOF 'have SPLIT_PAGE'
-#include <linux/mm.h>
+add_test 'have SPLIT_PAGE' <<-EOF
+	#include <linux/mm.h>
 
-void dummy(struct page *page, unsigned int order)
-{
-	return split_page(page, order);
-}
+	void dummy(struct page *page, unsigned int order)
+	{
+	        return split_page(page, order);
+	}
 EOF
 
 # check for HRTIMER_MODE_REL
-add_test <<EOF 'have HRTIMER_MODE_REL'
-#include <linux/hrtimer.h>
+add_test 'have HRTIMER_MODE_REL' <<-EOF
+	#include <linux/hrtimer.h>
 
-void dummy(struct hrtimer *timer, clockid_t which_clock)
-{
-	hrtimer_init(timer, which_clock, HRTIMER_MODE_REL);
-}
+	void dummy(struct hrtimer *timer, clockid_t which_clock)
+	{
+	        hrtimer_init(timer, which_clock, HRTIMER_MODE_REL);
+	}
 EOF
 
 # END_TESTS
@@ -520,18 +521,18 @@ EOF
 # now we actually create the file
 
 rm -f $configh
-cat > $configh <<EOF
-#ifndef NETMAP_LINUX_CONFIG_H
-#define NETMAP_LINUX_CONFIG_H
+cat > $configh <<-EOF
+	#ifndef NETMAP_LINUX_CONFIG_H
+	#define NETMAP_LINUX_CONFIG_H
 EOF
 
 # the TESTPOSTPROC script will add macros to $configh
 run_tests
 
 # file end
-cat >> $configh <<EOF
+cat >> $configh <<-EOF
 
-#endif
+	#endif
 EOF
 
 ###############################################################
@@ -564,25 +565,26 @@ for p in $patches; do
 	s=$(find $src/drivers/ -name "$driver" -print -quit)
 	[ -n "$s" ] || { echo "WARNING: $driver sources not found"; continue; }
 	# add the driver related targets to drivers.mak
-	cat >> drivers.mak <<EOF
-get-$driver:
-	cp -Rp $s .
-	patch --posix --quiet --force -p1 < patches/$p
-	touch get-$driver
+	local $t=	# prevent -EOF to eat the make TAB
+	cat >> drivers.mak <<-EOF
+		get-$driver:
+		$t	cp -Rp $s .
+		$t	patch --posix --quiet --force -p1 < patches/$p
+		$t	touch get-$driver
 
-clean-$driver:
-	rm -rf $driver get-$driver
+		clean-$driver:
+		$t	rm -rf $driver get-$driver
 
-EOF
+	EOF
 	s_drivers="$driver $s_drivers"
 	get_drivers="get-$driver $get_drivers"
 	clean_drivers="clean-$driver $clean_drivers"
 done
 # add some convenience cumulative targets
-cat >> drivers.mak <<EOF
-.PHONY: get-drivers clean-drivers
-get-drivers: $get_drivers
-clean-drivers: $clean_drivers
+cat >> drivers.mak <<-EOF
+	.PHONY: get-drivers clean-drivers
+	get-drivers: $get_drivers
+	clean-drivers: $clean_drivers
 EOF
 
 # create Makefile
