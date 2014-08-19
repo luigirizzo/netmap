@@ -48,14 +48,12 @@ error() {
 	{
 		local line
 		echo "*********************************** ERROR ***********************************"
-		for line; do
-			echo "*** "$line
-		done
+		sed 's/^/*** /' # output the error message from stdin
 		echo "***"
-		echo
-		echo "     Current configuration values:"
-		echo
-		report
+		echo "***"
+		echo "***     Current configuration values:"
+		echo "***"
+		report | sed 's/^/*** /'
 		echo "*****************************************************************************"
 	} | tee -a config.log
 	exit 1
@@ -249,41 +247,59 @@ done
 }
 
 if [ ! -d "$ksrc" ]; then
-	error "Cannot find kernel directory." \
-	      "" \
-	      "We need at least the kernel headers to compile the netmap kernel module." \
-	      "If your kernel headers are not in the standard place, please provide " \
-	      "the correct path  using the '--kernel-dir=...' option." \
-	      "Otherwise, check that the 'build' symlink in /lib/modules/... is not broken."
+	error <<EOF
+Cannot find kernel directory.
+
+We need at least the kernel headers to compile the netmap kernel module.
+If your kernel headers are not in the standard place, please provide the
+correct path using the
+
+    --kernel-dir=/path/to/kernel/dir
+
+option.
+
+Otherwise, check that the 'build' symlink in
+
+    /lib/modules/\$(uname -r)
+
+is not broken.
+EOF
 fi
 version_hdr="$ksrc/include/linux/version.h"
 [ -f "$version_hdr" ] || version_hdr="$ksrc/include/generated/uapi/linux/version.h"
 if [ ! -f "$ksrc/.config" ] || [ ! -f "$version_hdr" ]; then
-	error "kernel not configured." \
-	      "" \
-	      "The kernel directory must be ready for external module compilation. " \
-	      "You may need to issue the following or equivalent commands: "\
-	      "" \
-	      "  cd $ksrc" \
-	      "  make oldconfig" \
-	      "  make modules_prepare"
+	error <<EOF
+kernel not configured.
+
+The kernel directory must be ready for external module compilation.
+You may need to issue the following or equivalent commands:
+
+    cd $ksrc
+    make oldconfig
+    make modules_prepare
+EOF
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
 if [ -z "$nodrivers" ]; then
-	if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
-		error "Cannot find full kernel sources." \
-		      "" \
-		      "We need the full kernel sources to build the netmap-enabled drivers. " \
-		      "Please note that most distributions provide separate packages for " \
-		      "kernel headers and sources. Once you know the path to kernel sources, " \
-		      "you can rerun this script with the additional " \
-		      "   --kernel-sources=/path/to/sources " \
-		      "option. "\
-		      "" \
-		      "If you are only interested in VALE and pipes, you can rerun the script " \
-		      "now with the '--no-drivers' option. Hardware devices will then be " \
-		      "accessed via a generic adapter at reduced performance."
+	if [ ! -d "$src" ] ||
+	   [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
+		error <<EOF
+Cannot find full kernel sources.
+
+We need the full kernel sources to build the netmap-enabled drivers.
+Please note that most distributions provide separate packages for kernel
+headers and sources. Once you know the path to kernel sources, you can
+rerun this script with the additional
+
+    --kernel-sources=/path/to/sources
+
+option.
+
+If you are only interested in VALE and pipes, you can rerun the script
+now with the '--no-drivers' option. Hardware devices will then be accessed
+via a generic adapter at reduced performance."
+EOF
 	fi
 fi
 
