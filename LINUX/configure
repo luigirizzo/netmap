@@ -5,15 +5,19 @@ with() {
 	type $1 >/dev/null 2>&1
 }
 
+print_realpath() {
+	if with realpath; then
+		rp=$(realpath "$1")
+		if [ "$rp" != "$1" ]; then
+			echo "                            [$rp]"
+		fi
+	fi
+}
+
 # report: print the current state of the configuration variables
 report() {
 	echo "kernel directory            $ksrc"
-	if with realpath; then
-		rksrc=$(realpath "$ksrc")
-		if [ "$ksrc" != "$rksrc" ]; then
-			echo "                            [$rksrc]"
-		fi
-	fi
+	print_realpath "$ksrc"
 	local v=$lin_ver
 	[ -n "$v" ] || v="-"
 	echo -n "linux version               $v"
@@ -26,12 +30,7 @@ report() {
 		echo "no-drivers"
 	else
 		echo "kernel sources              $src"
-		if with realpath; then
-			rsrc=$(realpath "$src")
-			if [ "$src" != "$rsrc" ]; then
-				echo "                            [$rsrc]"
-			fi
-		fi
+		print_realpath "$src"
 		local d=$s_drivers
 		[ -n "$d" ] || d="-"
 		echo "drivers                     $d"
