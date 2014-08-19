@@ -37,16 +37,6 @@ obj-m += $(O_DRIVERS)
 else
 # normal Makefile
 
-ifndef NODRIVERS
-# list of modules to be built (actually also forcedeth and r8169)
-MOD_LIST:=	CONFIG_E1000=m CONFIG_E1000E=m	\
-		CONFIG_IXGBE=m CONFIG_IGB=m	\
-		CONFIG_BNX2X=m CONFIG_MLX4=m	\
-		CONFIG_VIRTIO_NET=m
-else
-MOD_LIST:=
-endif
-
 # The following commands are needed to build the modules as out-of-tree,
 # in fact the kernel sources path must be specified.
 
@@ -65,7 +55,7 @@ KSRC = @KSRC@
 SRC  = @SRC@
 KOPTS = @KOPTS@
 LIN_VER = @LIN_VER@
-NODRIVERS = @NODRIVERS@
+MOD_LIST := @MOD_LIST@
 PATCHES = @PATCHES@
 S_DRIVERS = @S_DRIVERS@
 GET_DRIVERS = $(S_DRIVERS:%=get-%)

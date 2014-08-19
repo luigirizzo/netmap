@@ -591,6 +591,7 @@ patches=
 s_drivers=
 get_drivers=
 clean_drivers=
+mod_list=
 if [ -z "$nodrivers" ]; then
 	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s final-patches patches; }
@@ -599,12 +600,19 @@ if [ -z "$nodrivers" ]; then
 fi
 
 rm -f drivers.mak
+source $ksrc/.config
 for p in $patches; do
 	# extract the driver name
 	driver=$(echo $p | awk -F -- '{ print $2 }')
 	# find the driver sources
 	s=$(find $src/drivers/ -name "$driver" -print -quit)
 	[ -n "$s" ] || { echo "WARNING: $driver sources not found"; continue; }
+	drv_conf="CONFIG_$(basename $driver .c | tr a-z A-Z)"
+	[ "${!drv_conf}" = m ] || {
+		echo "WARNING: $drv_conf=m not set in $ksrc/.config, skipping $driver"
+		continue
+	}
+	mod_list="$drv_conf=m $mod_list"
 	# add the driver related targets to drivers.mak
 	local $t=	# prevent -EOF to eat the make TAB
 	cat >> drivers.mak <<-EOF
@@ -634,7 +642,7 @@ sed \
 	-e "s|@SRC@|$src|g" \
 	-e "s|@KOPTS@|$kopts|g" \
 	-e "s|@LIN_VER@|$lin_ver|g" \
-	-e "s|@NODRIVERS@|$nodrivers|g" \
+	-e "s|@MOD_LIST@|$mod_list|g" \
 	-e "s|@PATCHES@|$(echo $patches)|g" \
 	-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
 	-e "s|@APPS_CC@|$cc|g" \
