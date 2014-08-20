@@ -20,6 +20,7 @@
 }
 
 NETMAP_BRANCH=${NETMAP_BRANCH:-master}
+PARALLEL_MAKE=${PARALLEL_MAKE:-$(grep -c processor /proc/cpuinfo)}
 
 function error {
 	echo "$@" >&2
@@ -376,7 +377,7 @@ function check-patch()
 			ok=false
 			./configure --kernel-dir=$ksrc >>$log
 			cat netmap_linux_config.h >>$log
-			make >>$log 2>&1 && ok=true
+			make drivers -j $PARALLEL_MAKE >>$log 2>&1 && ok=true
 			popd >/dev/null
 			cp $log $clog
 		fi

@@ -47,7 +47,7 @@ M:=$(PWD)
 EXTRA_CFLAGS := -I$(M) -I$(M)/../sys -I$(M)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
 
-all: build
+all: netmap drivers
 
 # We use KSRC for the kernel configuration and sources.
 # If the sources are elsewhere, then use SRC to point to them.
@@ -75,14 +75,13 @@ CONFIG_V1000:=n
 endif
 
 
+COMMON_OPTS=-C $(KSRC) M=$(PWD) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
 
-build: $(GET_DRIVERS)
-	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
-		EXTRA_CFLAGS='$(EXTRA_CFLAGS)'			\
-		O_DRIVERS="$(DRIVERS:%.c=%.o)" \
-		$(KOPTS) \
-		modules
-	@ls -l `find . -name \*.ko`
+netmap:
+	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m
+
+drivers: get-drivers
+	$(MAKE) $(COMMON_OPTS) $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)"
 
 install:
 	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
