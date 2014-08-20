@@ -636,6 +636,29 @@ add_test 'have HRTIMER_MODE_REL' <<-EOF
 	}
 EOF
 
+# e1000e
+add_test 'have E1000E_HWADDR' <<-EOF
+	#include "e1000e/e1000.h"
+
+	void* dummy(struct e1000_adapter *adapter,
+	        struct e1000_ring *ring)
+	{
+		return adapter->hw.hw_addr + ring->tail;
+	}
+EOF
+
+add_test 'have E1000E_DOWN2' <<-EOF
+	#include "e1000e/e1000.h"
+
+	void dummy(struct e1000_adapter *adapter)
+	{
+		e1000e_down(adapter, false);
+	}
+EOF
+
+add_test "grep -q '\<e1000_rx_desc_extended\>' $TMPDIR/e1000e/netdev.c \
+	&& have E1000E_EXT_RXDESC" </dev/null
+
 # END_TESTS
 
 # now we actually create the file
