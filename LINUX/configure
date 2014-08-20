@@ -170,7 +170,7 @@ add_test() {
 # run_tests: run all accumulated tests and exec the pertinent
 #   success/failure actions for each one.
 run_tests() {
-	local $t= 	# prevent -EOF to eat the make TAB
+	local t= 	# prevent -EOF to eat the make TAB
 	cat > $TMPDIR/Makefile <<-EOF
 		ifneq (\$(KERNELRELEASE),)
 		obj-m := $TESTOBJS
@@ -614,7 +614,7 @@ for p in $patches; do
 	}
 	mod_list="$drv_conf=m $mod_list"
 	# add the driver related targets to drivers.mak
-	local $t=	# prevent -EOF to eat the make TAB
+	$t=	# prevent -EOF to eat the make TAB
 	cat >> drivers.mak <<-EOF
 		get-$driver:
 		$t	cp -Rp $s .
