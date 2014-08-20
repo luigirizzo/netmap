@@ -375,6 +375,7 @@ function check-patch()
 			cp $p single-patch
 			ok=false
 			./configure --kernel-dir=$ksrc >>$log
+			cat netmap_linux_config.h >>$log
 			make >>$log 2>&1 && ok=true
 			popd >/dev/null
 			cp $log $clog
