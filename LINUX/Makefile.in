@@ -113,10 +113,10 @@ APPS_LD=@APPS_LD@
 PREFIX=@PREFIX@
 
 apps:
-	$(MAKE) -C ../examples CC=$(APPS_CC) LD=$(APPS_LD)
+	$(MAKE) -C ../examples CC="$(APPS_CC)" LD="$(APPS_LD)"
 
 install-apps:
-	$(MAKE) -C ../examples install DESTDIR=$(abspath $(DESTDIR)) PREFIX=$(PREFIX)
+	$(MAKE) -C ../examples install DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
 
 +%:
 	@echo $($*)
