@@ -252,7 +252,7 @@ for opt do
 	;;
 	--ld=*) ld="$optarg"
 	;;
-	--prefix=*) prefix="$prefix"
+	--prefix=*) prefix="$optarg"
 	;;
 	--help)
 		print_help
