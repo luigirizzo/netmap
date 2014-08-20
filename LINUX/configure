@@ -79,6 +79,7 @@ Available options:
   --kernel-sources=            path to full kernel sources
   --kernel-opts=	       additional options to pass to kernel make
                                (you can call this several times)
+  --install-mod-path=          where the modules will be installed
   --no-drivers                 do not compile patched drivers
 
   --cc=                        C compiler for the examples [$cc]
@@ -232,6 +233,7 @@ ksrc=
 src=
 nodrivers=
 kopts=
+modpath=
 # get ksrc and src before anything else
 for opt do
 	optarg=${opt#*=}
@@ -241,6 +243,8 @@ for opt do
 	--kernel-sources=*) src="$optarg"
 	;;
 	--kernel-opts=*) kopts="$kopts $optarg"
+	;;
+	--install-mod-path=*) modpath="$optarg"
 	;;
 	--no-drivers) nodrivers="true"
 	;;
@@ -398,6 +402,7 @@ sed \
 	-e "s|@KSRC@|$ksrc|g" \
 	-e "s|@SRC@|$src|g" \
 	-e "s|@KOPTS@|$kopts|g" \
+	-e "s|@MODPATH@|$modpath|g" \
 	-e "s|@LIN_VER@|$lin_ver|g" \
 	-e "s|@MOD_LIST@|$mod_list|g" \
 	-e "s|@PATCHES@|$(echo $patches)|g" \
