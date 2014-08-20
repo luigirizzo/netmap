@@ -84,6 +84,12 @@ build: $(GET_DRIVERS)
 		modules
 	@ls -l `find . -name \*.ko`
 
+install:
+	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
+		O_DRIVERS="$(DRIVERS:%.c=%.o)" \
+		$(KOPTS) \
+		modules_install
+
 test:
 	@echo "version $(LIN_VER)"
 	@echo "patches $(PATCHES)"
