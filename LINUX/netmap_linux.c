@@ -1405,20 +1405,13 @@ static void linux_netmap_fini(void)
         netmap_fini();
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)
-int
-nm_vi_persist(const char *name, struct ifnet **ret)
-{
-	(void)name;
-	(void)ret;
-	return EOPNOTSUPP;
-}
+#ifndef NETMAP_LINUX_HAVE_LIVE_ADDR_CHANGE
+#define IFF_LIVE_ADDR_CHANGE 0
+#endif
 
-void
-nm_vi_detach(struct ifnet *ifp) {
-	(void)ifp;
-}
-#else
+#ifndef NETMAP_LINUX_HAVE_TX_SKB_SHARING
+#define IFF_TX_SKB_SHARING 0
+#endif
 
 static struct device_driver linux_dummy_drv = {.owner = THIS_MODULE};
 
@@ -1439,12 +1432,16 @@ static int linux_nm_vi_xmit(struct sk_buff *skb, struct net_device *netdev)
 		kfree_skb(skb);
 	return 0;
 }
+
+#ifdef NETMAP_LINUX_HAVE_GET_STATS64
 static struct rtnl_link_stats64 *linux_nm_vi_get_stats(
 		struct net_device *netdev,
 		struct rtnl_link_stats64 *stats)
 {
 	return stats;
 }
+#endif
+
 static int linux_nm_vi_change_mtu(struct net_device *netdev, int new_mtu)
 {
 	return 0;
@@ -1460,7 +1457,9 @@ static const struct net_device_ops nm_vi_ops = {
 	.ndo_start_xmit = linux_nm_vi_xmit,
 	.ndo_set_mac_address = eth_mac_addr,
 	.ndo_change_mtu = linux_nm_vi_change_mtu,
+#ifdef NETMAP_LINUX_HAVE_GET_STATS64
 	.ndo_get_stats64 = linux_nm_vi_get_stats,
+#endif
 };
 /* dev->name is not initialized yet */
 static void
@@ -1475,8 +1474,12 @@ linux_nm_vi_setup(struct ifnet *dev)
 	/* XXX */
 	dev->features = NETIF_F_LLTX | NETIF_F_SG | NETIF_F_FRAGLIST |
 		NETIF_F_HIGHDMA | NETIF_F_HW_CSUM | NETIF_F_TSO;
+#ifdef NETMAP_LINUX_HAVE_HW_FEATURES
 	dev->hw_features = dev->features & ~NETIF_F_LLTX;
+#endif
+#ifdef NETMA_LINUX_HAVE_ADDR_RANDOM
 	eth_hw_addr_random(dev);
+#endif
 }
 
 int
@@ -1507,7 +1510,6 @@ nm_vi_detach(struct ifnet *ifp)
 	unregister_netdev(ifp);
 	module_put(linux_dummy_drv.owner);
 }
-#endif /* kernel >= 3.6.0 */
 
 module_init(linux_netmap_init);
 module_exit(linux_netmap_fini);

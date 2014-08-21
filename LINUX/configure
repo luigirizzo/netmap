@@ -641,6 +641,47 @@ add_test 'have HRTIMER_MODE_REL' <<-EOF
 	}
 EOF
 
+# check for IFF_LIVE_ADDR_CHANGE
+add_test 'have LIVE_ADDR_CHANGE' <<-EOF
+	#include <linux/netdevice.h>
+
+	int dummy = IFF_LIVE_ADDR_CHANGE;
+EOF
+
+# check for ndo_get_stats64
+add_test 'have GET_STATS64' <<-EOF
+	#include <linux/netdevice.h>
+
+	void * dummy(struct net_device_ops *ops) {
+	       return ops->ndo_get_stats64;
+	}
+EOF
+
+# check for IFF_TX_SKB_SHARING
+add_test 'have TX_SKB_SHARING' <<-EOF
+	#include <linux/if.h>
+
+	int dummy = IFF_TX_SKB_SHARING;
+EOF
+
+# check for hw_features in net_device
+add_test 'have HW_FEATURES' <<-EOF
+	#include <linux/netdevice.h>
+
+	struct net_device *n;
+        (void)n->hw_features;
+EOF
+
+# check for eth_hw_addr_random
+add_test 'have ADDR_RANDOM' <<-EOF
+	#include <linux/etherdevice.h>
+
+	void dummy(struct net_device *dev) {
+	        eth_hw_addr_random(dev);
+	}
+EOF
+
+
 # e1000e
 add_test 'have E1000E_HWADDR' <<-EOF
 	#include "e1000e/e1000.h"
