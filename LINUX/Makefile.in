@@ -118,6 +118,7 @@ diffs:
 APPS_CC=@APPS_CC@
 APPS_LD=@APPS_LD@
 PREFIX=@PREFIX@
+DESTDIR?=@DESTDIR@
 
 apps:
 	$(MAKE) -C ../examples CC="$(APPS_CC)" LD="$(APPS_LD)"

@@ -85,6 +85,7 @@ Available options:
   --cc=                        C compiler for the examples [$cc]
   --ld=                        linker for the examples [$ld]
   --prefix=                    install path for the examples [$prefix]
+  --destir=                    destination dir for the examples [$DESTDIR]
 	EOF
 }
 
@@ -254,6 +255,8 @@ for opt do
 	;;
 	--prefix=*) prefix="$optarg"
 	;;
+	--destdir=*) DESTDIR="$optarg"
+	;;
 	--help)
 		print_help
 		exit
@@ -410,6 +413,7 @@ sed \
 	-e "s|@APPS_CC@|$cc|g" \
 	-e "s|@APPS_LD@|$ld|g" \
 	-e "s|@PREFIX@|$prefix|g" \
+	-e "s|@DESTDIR@|$DESTDIR|g" \
 	Makefile.in > Makefile
 
 
