@@ -659,7 +659,7 @@ EOF
 
 # check for IFF_TX_SKB_SHARING
 add_test 'have TX_SKB_SHARING' <<-EOF
-	#include <linux/if.h>
+	#include <linux/netdevice.h>
 
 	int dummy = IFF_TX_SKB_SHARING;
 EOF
