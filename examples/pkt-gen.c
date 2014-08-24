@@ -698,7 +698,7 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		slot->flags = 0;
 		if (options & OPT_INDIRECT) {
 			slot->flags |= NS_INDIRECT;
-			slot->ptr = (uint64_t)frame;
+			slot->ptr = (uint64_t)((uintptr_t)frame);
 		} else if (options & OPT_COPY) {
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == nfrags)
@@ -1860,13 +1860,13 @@ main(int arc, char **argv)
 		    req->nr_arg2);
 		for (i = 0; i <= req->nr_tx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
-			D("   TX%d at 0x%lx slots %d", i,
-			    (char *)ring - (char *)nifp, ring->num_slots);
+			D("   TX%d at 0x%p slots %d", i,
+			    (void *)((char *)ring - (char *)nifp), ring->num_slots);
 		}
 		for (i = 0; i <= req->nr_rx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_RXRING(nifp, i);
-			D("   RX%d at 0x%lx slots %d", i,
-			    (char *)ring - (char *)nifp, ring->num_slots);
+			D("   RX%d at 0x%p slots %d", i,
+			    (void *)((char *)ring - (char *)nifp), ring->num_slots);
 		}
 	}
 
