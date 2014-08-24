@@ -78,6 +78,14 @@ define KernelPackage/forcedeth-netmap
   FILES=$(wildcard $(PKG_BUILD_DIR)/LINUX/forcedeth-netmap.ko)
 endef
 
+define Package/netmap-utils
+  TITLE:=Netmap utils (pkt-gen, vale-ctl, bridge)
+  DEPENDS:= +kmod-netmap
+  SECTION:=net
+  CATEGORY:=Network
+  DEPENDS:= +libpthreads +librt
+endef
+
 include $(INCLUDE_DIR)/kernel-defaults.mk
 
 define Build/Configure
@@ -99,6 +107,7 @@ define Build/Configure
 		--cc="$(TARGET_CC) $(TARGET_CFLAGS)" \
 		--ld="$(TARGET_CC) $(TARGET_LDFLAGS)" \
 		--prefix=/usr \
+		--driver-suffix=-netmap \
 	)
 endef
 
@@ -110,17 +119,11 @@ define Build/Compile
 	)
 endef
 
-define Build/Install
-	( \
-	    cd $(PKG_BUILD_DIR)/LINUX; \
-	    mv r8169.ko r8169-netmap.ko 2>/dev/null; \
-	    mv e1000/e1000.ko e1000/e1000-netmap.ko 2>/dev/null; \
-	    mv e1000e/e1000e.ko e1000e/e1000e-netmap.ko 2>/dev/null; \
-	    mv igb/igb.ko igb/igb-netmap.ko 2>/dev/null; \
-	    mv ixgbe/ixgbe.ko ixgbe/ixgbe-netmap.ko 2>/dev/null; \
-	    mv forcedeth.ko forcedeth-netmap.ko 2>/dev/null; \
-	    make install-apps DESTDIR=$(1); \
-	)
+define Package/netmap-utils/install
+	$(INSTALL_DIR) $(1)/usr/bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/examples/pkt-gen $(1)/usr/bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/examples/vale-ctl $(1)/usr/bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/examples/bridge $(1)/usr/bin
 endef
 
 $(eval $(call KernelPackage,netmap))
@@ -130,3 +133,4 @@ $(eval $(call KernelPackage,e1000e-netmap))
 $(eval $(call KernelPackage,igb-netmap))
 #$(eval $(call KernelPackage,ixgbe-netmap))
 $(eval $(call KernelPackage,forcedeth-netmap))
+$(eval $(call BuildPackage,netmap-utils))
