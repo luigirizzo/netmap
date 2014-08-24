@@ -42,6 +42,9 @@
 
 #define SOFTC_T	ixgbe_adapter
 
+#define ixgbe_driver_name netmap_ixgbe_driver_name
+char ixgbe_driver_name[] = "ixgbe" NETMAP_LINUX_DRIVER_SUFFIX;
+
 /*
  * Adaptation to different versions of the driver.
  * Recent drivers (3.4 and above) redefine some macros

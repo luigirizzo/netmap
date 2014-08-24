@@ -41,6 +41,9 @@
 
 #define SOFTC_T	e1000_adapter
 
+#define e1000e_driver_name netmap_e1000e_driver_name
+char netmap_e1000e_driver_name[] = "e1000e" NETMAP_LINUX_DRIVER_SUFFIX;
+
 /*
  * Adaptation to different versions of the driver.
  */

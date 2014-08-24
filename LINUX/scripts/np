@@ -375,7 +375,7 @@ function check-patch()
 			ln -s single-patch patches
 			cp $p single-patch
 			ok=false
-			./configure --kernel-dir=$ksrc >>$log
+			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX >>$log
 			cat netmap_linux_config.h >>$log
 			make drivers -j $PARALLEL_MAKE >>$log 2>&1 && ok=true
 			popd >/dev/null

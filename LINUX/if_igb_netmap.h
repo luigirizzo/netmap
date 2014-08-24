@@ -37,6 +37,8 @@
 
 #define SOFTC_T	igb_adapter
 
+#define igb_driver_name netmap_igb_driver_name
+char netmap_igb_driver_name[] = "igb" NETMAP_LINUX_DRIVER_SUFFIX;
 
 /*
  * Adapt to different versions of the driver.

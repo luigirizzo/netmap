@@ -37,6 +37,8 @@
 
 #define SOFTC_T	e1000_adapter
 
+#define e1000_driver_name netmap_e1000_driver_name
+char netmap_e1000_driver_name[] = "e1000" NETMAP_LINUX_DRIVER_SUFFIX;
 
 /*
  * Register/unregister. We are already under netmap lock.

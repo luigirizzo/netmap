@@ -80,6 +80,7 @@ Available options:
   --kernel-opts=	       additional options to pass to kernel make
                                (you can call this several times)
   --install-mod-path=          where the modules will be installed
+  --driver-suffix=             add suffix to the patched modules names
   --no-drivers                 do not compile patched drivers
 
   --cc=                        C compiler for the examples [$cc]
@@ -235,6 +236,7 @@ src=
 nodrivers=
 kopts=
 modpath=
+drvsuffix=
 # get ksrc and src before anything else
 for opt do
 	optarg=${opt#*=}
@@ -246,6 +248,8 @@ for opt do
 	--kernel-opts=*) kopts="$kopts $optarg"
 	;;
 	--install-mod-path=*) modpath="$optarg"
+	;;
+	--driver-suffix=*) drvsuffix="$optarg"
 	;;
 	--no-drivers) nodrivers="true"
 	;;
@@ -383,6 +387,14 @@ for p in $patches; do
 		get-$driver:
 		$t	cp -Rp $s .
 		$t	if [ -f patches/$p ]; then patch --posix --quiet --force -p1 < patches/$p; fi
+	EOF
+	if [ -d $s ]; then
+		d=$(basename $s)
+		cat >> drivers.mak <<-EOF
+			$t	if [ -f drv-subdir.mak ]; then mv $d/Makefile $d/orig.mak; cp drv-subdir.mak $d/Makefile; fi
+		EOF
+	fi
+	cat >> drivers.mak <<-EOF
 		$t	touch get-$driver
 
 		clean-$driver:
@@ -410,6 +422,7 @@ sed \
 	-e "s|@MOD_LIST@|$mod_list|g" \
 	-e "s|@PATCHES@|$(echo $patches)|g" \
 	-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
+	-e "s|@DRVSUFFIX@|$drvsuffix|g" \
 	-e "s|@APPS_CC@|$cc|g" \
 	-e "s|@APPS_LD@|$ld|g" \
 	-e "s|@PREFIX@|$prefix|g" \
@@ -721,6 +734,8 @@ EOF
 
 # the TESTPOSTPROC script will add macros to $configh
 run_tests
+
+define DRIVER_SUFFIX \"$drvsuffix\"
 
 # file end
 cat >> $configh <<-EOF

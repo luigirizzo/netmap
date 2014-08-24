@@ -33,7 +33,13 @@ obj-$(CONFIG_NETMAP) = netmap_lin.o
 
 obj-$(CONFIG_V1000) += vhost-port/
 
-obj-m += $(O_DRIVERS)
+ifdef NETMAP_DRIVER_SUFFIX
+  $(eval $(foreach v,$(filter %.o,$(O_DRIVERS)),$(v:.o=$(NETMAP_DRIVER_SUFFIX)-objs) := $v))
+  obj-m += $(O_DRIVERS:%.o=%$(NETMAP_DRIVER_SUFFIX).o)
+else
+	obj-m += $(O_DRIVERS)
+endif
+
 else
 # normal Makefile
 
@@ -59,6 +65,7 @@ LIN_VER = @LIN_VER@
 MOD_LIST := @MOD_LIST@
 PATCHES = @PATCHES@
 S_DRIVERS = @S_DRIVERS@
+DRVSUFFIX = @DRVSUFFIX@
 GET_DRIVERS = $(S_DRIVERS:%=get-%)
 include drivers.mak
 endif
@@ -82,12 +89,14 @@ netmap:
 	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m
 
 drivers: get-drivers
-	$(MAKE) $(COMMON_OPTS) $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)"
+	$(MAKE) $(COMMON_OPTS) $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)" \
+		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
 
 install:
 	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
 		O_DRIVERS="$(DRIVERS:%.c=%.o)" \
 		$(KOPTS) \
+		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX) \
 		$(if $(MODPATH),INSTALL_MOD_PATH=$(MODPATH)) \
 		modules_install
 

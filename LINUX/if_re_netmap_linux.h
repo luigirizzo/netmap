@@ -41,6 +41,11 @@
 static void rtl8169_wait_for_quiescence(struct ifnet *);
 #define SOFTC_T	rtl8169_private
 
+#ifdef MODULENAME
+#undef MODULENAME
+#define MODULENAME "r8169" NETMAP_LINUX_DRIVER_SUFFIX
+#endif
+
 
 /*
  * Register/unregister, mostly the reinit task
