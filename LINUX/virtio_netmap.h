@@ -33,6 +33,7 @@
 static int virtnet_close(struct ifnet *ifp);
 static int virtnet_open(struct ifnet *ifp);
 static void free_receive_bufs(struct virtnet_info *vi);
+static void free_unused_bufs(struct virtnet_info *vi);
 
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
@@ -108,9 +109,7 @@ static void free_receive_bufs(struct virtnet_info *vi);
 #define GET_TX_VQ(_vi, _i)		({ (void)(_i); (_vi)->svq; })
 #define VQ_FULL(_vq, _err)		({ (void)(_vq); (_err) > 0; })
 
-static void give_pages(struct SOFTC_T *vi, struct page *page);
 static struct page *get_a_page(struct SOFTC_T *vi, gfp_t gfp_mask);
-#define GIVE_PAGES(_vi, _i, _buf)	give_pages(_vi, _buf)
 
 /* This function did not exists, there was just the code. */
 static void free_receive_bufs(struct SOFTC_T *vi)
@@ -121,8 +120,6 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 
 #else   /* >= 3.8.0 */
 
-static void give_pages(struct receive_queue *rq, struct page *page);
-#define GIVE_PAGES(_vi, _i, _buf)	give_pages(&(_vi)->rq[_i], _buf)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)
 #define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
 #else
@@ -175,12 +172,6 @@ static void virtio_netmap_free_rx_unused_bufs(struct SOFTC_T* vi, int onoff)
 
 		c = 0;
 		while ((buf = virtqueue_detach_unused_buf(vq)) != NULL) {
-			if (onoff) {
-				if (vi->mergeable_rx_bufs || vi->big_packets)
-					GIVE_PAGES(vi, i, buf);
-				else
-					dev_kfree_skb(buf);
-			}
 			DECR_NUM(vi, i);
 			c++;
 		}
@@ -217,7 +208,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		 * virtio_netmap_init_buffer() called by the subsequent
 		 * virtnet_open() cannot link the netmap buffers to the
 		 * virtio RX ring. */
-		virtio_netmap_free_rx_unused_bufs(vi, onoff);
+                free_unused_bufs(vi);
 		/* Also free the pages allocated by the driver. */
 		free_receive_bufs(vi);
 
@@ -363,7 +354,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * First part: import newly received packets.
 	 * Only accept our
 	 * own buffers (matching the token). We should only get
-	 * matching buffers, because of virtio_netmap_free_rx_unused_bufs()
+	 * matching buffers, because of free_unused_bufs()
 	 * and virtio_netmap_init_buffers().
 	 */
 	if (netmap_no_pendintr || force_update) {
