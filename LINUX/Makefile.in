@@ -34,7 +34,8 @@ obj-$(CONFIG_NETMAP) = netmap_lin.o
 obj-$(CONFIG_V1000) += vhost-port/
 
 ifdef NETMAP_DRIVER_SUFFIX
-  $(eval $(foreach v,$(filter %.o,$(O_DRIVERS)),$(v:.o=$(NETMAP_DRIVER_SUFFIX)-objs) := $v))
+  $(foreach v,$(filter %.o,$(O_DRIVERS)),$(eval $(v:.o=$(NETMAP_DRIVER_SUFFIX)-objs) := $v))
+  $(foreach v,$(filter %.o,$(O_DRIVERS)),$(info $(v:.o=$(NETMAP_DRIVER_SUFFIX)-objs) := $v))
   obj-m += $(O_DRIVERS:%.o=%$(NETMAP_DRIVER_SUFFIX).o)
 else
 	obj-m += $(O_DRIVERS)
