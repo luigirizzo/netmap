@@ -138,3 +138,6 @@ install-apps:
 
 +%:
 	@echo $($*)
+
+distclean: clean
+	rm -f config.status config.log Makefile
