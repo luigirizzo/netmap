@@ -40,7 +40,7 @@
  * From there:
  *	struct netmap_ring *NETMAP_TXRING(nifp, index)
  *	struct netmap_ring *NETMAP_RXRING(nifp, index)
- *		we can access ring->nr_cur, ring->nr_avail, ring->nr_flags
+ *		we can access ring->cur, ring->head, ring->tail, etc.
  *
  *	ring->slot[i] gives us the i-th slot (we can access
  *		directly len, flags, buf_idx)

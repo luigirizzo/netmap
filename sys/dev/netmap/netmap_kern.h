@@ -270,7 +270,7 @@ struct netmap_kring {
 
 	struct netmap_adapter *na;
 
-	/* The folloiwing fields are for VALE switch support */
+	/* The following fields are for VALE switch support */
 	struct nm_bdg_fwd *nkr_ft;
 	uint32_t	*nkr_leases;
 #define NR_NOSLOT	((uint32_t)~0)	/* used in nkr_*lease* */
@@ -936,8 +936,7 @@ uint32_t nm_txsync_prologue(struct netmap_kring *);
 
 
 /*
- * validates parameters in the ring/kring, returns a value for head,
- * and the 'reserved' value in the argument.
+ * validates parameters in the ring/kring, returns a value for head
  * If any error, returns ring_size lim to force a reinit.
  */
 uint32_t nm_rxsync_prologue(struct netmap_kring *);
@@ -1455,7 +1454,7 @@ void netmap_txsync_to_host(struct netmap_adapter *na);
  * If np_nifp is NULL initialization has not been performed,
  * so they should return an error to userspace.
  *
- * The ref_done field is used to regulate access to the refcount in the
+ * The ref_done field (XXX ?) is used to regulate access to the refcount in the
  * memory allocator. The refcount must be incremented at most once for
  * each open("/dev/netmap"). The increment is performed by the first
  * function that calls netmap_get_memory() (currently called by
