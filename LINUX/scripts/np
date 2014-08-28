@@ -423,10 +423,7 @@ function forall()
 {
 	local cmd=$1
 	shift
-	# we obtain the value of DRIVER_SRC from the makefile
-	# (the +% target is defined in our Makefile and prints
-	# the contents of variable %)
-	local driver_srcs=$(make +DRIVER_SRCS)
+	local driver_srcs="ixgbe/ e1000e/ e1000/ igb/ r8169.c forcedeth.c virtio_net.c"
 
 	local driver
 	for driver in $driver_srcs; do
