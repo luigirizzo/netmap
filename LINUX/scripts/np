@@ -338,6 +338,8 @@ function check-patch()
 	local nmcommit=$(cd ..; git show-ref -s heads/$NETMAP_BRANCH)
 	local warn=false
 
+	rm -f $log
+
 	echo -n $patch...
 
 	while scripts/vers -b $v1 $v2 -L; do
