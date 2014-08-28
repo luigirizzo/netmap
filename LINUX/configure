@@ -137,19 +137,6 @@ add_named_test() {
 			#include <linux/init.h>
 		EOF
 		cat	# output the test code read from stdin
-		cat <<-EOF
-
-			MODULE_LICENSE("GPL");
-			MODULE_AUTHOR("netmap");
-			MODULE_DESCRIPTION("module $1");
-
-			static int __init $1_init(void)
-			{
-			        return 0;
-			}
-
-			module_init($1_init);
-		EOF
 	} > $TMPDIR/$1.c
 	# add the module to the running list
 	TESTOBJS="$1.o $TESTOBJS"
