@@ -709,6 +709,23 @@ EOF
 add_test "grep -q '\<e1000_rx_desc_extended\>' $TMPDIR/e1000e/netdev.c \
 	&& have E1000E_EXT_RXDESC" </dev/null
 
+# rtl8169
+add_test 'define RTL_OPEN rtl8169_open' 'define RTL_OPEN rtl_open' <<-EOF
+	#include "r8169.c"
+
+	static int dummy(struct net_device *dev) {
+		return rtl8169_open(dev);
+	}
+EOF
+
+add_test 'have RTL_WFQ' <<-EOF
+	#include "r8169.c"
+
+	static void dummy(struct net_device *dev) {
+		rtl8169_wait_for_quiescence(dev);
+	}
+EOF
+
 # END_TESTS
 
 # now we actually create the file
