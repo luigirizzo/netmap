@@ -336,6 +336,7 @@ function check-patch()
 	mkdir -p log
 	local log="$(realpath log)/$(basename $patch)"
 	local nmcommit=$(cd ..; git show-ref -s heads/$NETMAP_BRANCH)
+	local warn=false
 
 	echo -n $patch...
 
@@ -379,6 +380,7 @@ function check-patch()
 			cat netmap_linux_config.h >>$log
 			make drivers -j $PARALLEL_MAKE >>$log 2>&1 && ok=true
 			popd >/dev/null
+			grep -q warning: $log && warn=true
 			cp $log $clog
 		fi
 		[ $ok = true ] || { echo FAILED; echo false > $cstatus; return 1; }
@@ -387,7 +389,11 @@ function check-patch()
 		# compute next version
 		v1=$(scripts/vers $v1 -i)
 	done
-	echo OK
+	if [ "$warn" = true ]; then
+		echo WARNING
+	else
+		echo OK
+	fi
 }
 
 ##
