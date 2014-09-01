@@ -47,8 +47,8 @@ report() {
 	fi
 }
 
-# error [line line...]: format an error msg containing the provided lines
-# 			and exit with failure.
+# error: format an error msg containing the lines read from stdin
+# 	and exit with failure.
 error() {
 	{
 		cat <<-EOF
@@ -224,7 +224,6 @@ nodrivers=
 kopts=
 modpath=
 drvsuffix=
-# get ksrc and src before anything else
 for opt do
 	optarg=${opt#*=}
 	case "$opt" in
@@ -269,6 +268,8 @@ done
 }
 
 [ -n "$src" ] || {
+	# user did not provide the path for the full kernel sources
+	# we try to find one by ourselves
 	[ -d "$ksrc/source" ] && src="$ksrc/source"
 	[ -n "$src" ] || src=$ksrc
 }
@@ -292,6 +293,10 @@ Otherwise, check that the 'build' symlink in
 is not broken.
 	EOF
 fi
+
+# check that ksrc has been prepared for external modules compilation
+# It should contain a version.h file (in one of two possible places,
+# depending on kernel version, and a .config file
 version_hdr="$ksrc/include/linux/version.h"
 [ -f "$version_hdr" ] || version_hdr="$ksrc/include/generated/uapi/linux/version.h"
 if [ ! -f "$ksrc/.config" ] || [ ! -f "$version_hdr" ]; then
@@ -308,6 +313,10 @@ You may need to issue the following or equivalent commands:
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
+# if the user has asked for the patched drivers, we also need the
+# full kernel sources. Since we may have put $src=$ksrc, and $ksrc
+# may only contain header files, we check that $src/drivers actually
+# contains some .c file
 if [ -z "$nodrivers" ]; then
 	if [ ! -d "$src" ] ||
 	   [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
@@ -341,6 +350,8 @@ fi
 # The final Makefile will include drivers.mak, which is also
 # created here. drivers.mak will contain a get-driver and
 # clear-driver target for each of the available drivers.
+# The get-driver target is responsible for the copying and
+# patching of the driver sources.
 
 patches=
 s_drivers=
@@ -350,11 +361,12 @@ mod_list=
 if [ -z "$nodrivers" ]; then
 	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s final-patches patches; }
-	# the selection is based only on the kernel version
+	# XXX the selection is based only on the kernel version
 	patches=$(cd patches; ls diff--* | awk -v v=$lin_ver -F -- '($3 <= v"") && (v"" < $4)')
 fi
 
 rm -f drivers.mak
+# read in all the kernel .config, we use it below
 source $ksrc/.config
 for p in $patches; do
 	# extract the driver name
@@ -362,6 +374,11 @@ for p in $patches; do
 	# find the driver sources
 	s=$(find $src/drivers/ -name "$driver" -print -quit)
 	[ -n "$s" ] || { echo "WARNING: $driver sources not found"; continue; }
+	# check that the original driver had been compiled as a module, otherwise
+	# skip this driver
+	# (we do this mainly to be sure that any module dependency has already
+	#  been taken care of)
+	# XXX maybe add a (per driver?) flag to force compilation anyway
 	drv_conf="CONFIG_$(basename $driver .c | tr a-z A-Z)"
 	[ "${!drv_conf}" = m ] || {
 		echo "WARNING: $drv_conf=m not set in $ksrc/.config, skipping $driver"
