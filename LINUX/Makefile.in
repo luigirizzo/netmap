@@ -6,9 +6,8 @@
 #
 
 MODNAME:=@MODNAME@
-SUBSYS:=vale pipe monitor
+SUBSYS:=vale pipe monitor generic
 NOSUBSYS:=@NOSUBSYS@
-
 
 ifneq ($(KERNELRELEASE),)
 # kbuild part of Makefile
@@ -17,15 +16,14 @@ ifneq ($(KERNELRELEASE),)
 #
 # objects whose source file is in ../sys/dev/netmap
 # the source is not here so we need to specify a dependency
-
 $(foreach s,$(filter-out $(NOSUBSYS),$(SUBSYS)),$(eval CONFIG_NETMAP_$(shell echo $s|tr a-z A-Z)=y))
 
-remoteobjs-y := netmap_mem2.o \
-	netmap_generic.o netmap_mbq.o
+remoteobjs-y := netmap_mem2.o netmap_mbq.o
 
 remoteobjs-$(CONFIG_NETMAP_VALE)    += netmap_vale.o netmap_offloadings.o
 remoteobjs-$(CONFIG_NETMAP_PIPE)    += netmap_pipe.o
 remoteobjs-$(CONFIG_NETMAP_MONITOR) += netmap_monitor.o
+remoteobjs-$(CONFIG_NETMAP_GENERIC) += netmap_generic.o
 
 define remote_template
 $$(obj)/$(1): $$(M)/../sys/dev/netmap/$(2)

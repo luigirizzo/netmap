@@ -2,7 +2,7 @@
 
 TOPDIR=$PWD
 MODNAME=netmap
-SUBSYS="vale pipe monitor"
+SUBSYS="vale pipe monitor generic"
 
 prefix=/usr/local
 cc=cc
@@ -108,6 +108,7 @@ Available options:
   --disable-vale               do not compile vale support
   --disable-pipe               do not compile netmap pipes
   --disable-monitor            do not compile nemtap monitors
+  --disable-generic            do not compile the generic netmap adapter
 
   --cc=                        C compiler for the examples [$cc]
   --ld=                        linker for the examples [$ld]

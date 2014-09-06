@@ -1293,9 +1293,11 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 {
 	/* generic support */
 	int i = netmap_admode;	/* Take a snapshot. */
-	int error = 0;
 	struct netmap_adapter *prev_na;
+#ifdef WITH_GENERIC
 	struct netmap_generic_adapter *gna;
+	int error = 0;
+#endif
 
 	*na = NULL; /* default */
 
@@ -1331,6 +1333,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	if (!NETMAP_CAPABLE(ifp) && i == NETMAP_ADMODE_NATIVE)
 		return EOPNOTSUPP;
 
+#ifdef WITH_GENERIC
 	/* Otherwise, create a generic adapter and return it,
 	 * saving the previously used netmap adapter, if any.
 	 *
@@ -1361,6 +1364,9 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	ND("Created generic NA %p (prev %p)", gna, gna->prev);
 
 	return 0;
+#else /* !WITH_GENERIC */
+	return EOPNOTSUPP;
+#endif
 }
 
 

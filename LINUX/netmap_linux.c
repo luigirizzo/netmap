@@ -112,6 +112,7 @@ uint16_t nm_csum_fold(rawsum_t cur_sum)
 }
 
 
+#ifdef WITH_GENERIC
 /* ####################### MITIGATION SUPPORT ###################### */
 
 /*
@@ -348,7 +349,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     }
     return -1;
 }
-
+#endif /* WITH_GENERIC */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
    rings can have the same lengths. */

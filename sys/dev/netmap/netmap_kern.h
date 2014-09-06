@@ -45,12 +45,16 @@
 #if defined(CONFIG_NETMAP_MONITOR)
 #define WITH_MONITOR
 #endif
+#if defined(CONFIG_NETMAP_GENERIC)
+#define WITH_GENERIC
+#endif
 
 #else /* not linux */
 
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
+#define WITH_GENERIC
 
 #endif
 
@@ -657,6 +661,7 @@ struct netmap_hw_adapter {	/* physical device */
 	int (*nm_hw_register)(struct netmap_adapter *, int onoff);
 };
 
+#ifdef WITH_GENERIC
 /* Mitigation support. */
 struct nm_generic_mit {
 	struct hrtimer mit_timer;
@@ -684,6 +689,7 @@ struct netmap_generic_adapter {	/* emulated device */
         netdev_tx_t (*save_start_xmit)(struct mbuf *, struct ifnet *);
 #endif
 };
+#endif  /* WITH_GENERIC */
 
 static __inline int
 netmap_real_tx_rings(struct netmap_adapter *na)
@@ -1514,6 +1520,7 @@ struct netmap_monitor_adapter {
 #endif /* WITH_MONITOR */
 
 
+#ifdef WITH_GENERIC
 /*
  * generic netmap emulation for devices that do not have
  * native netmap support.
@@ -1545,6 +1552,7 @@ void netmap_mitigation_start(struct nm_generic_mit *mit);
 void netmap_mitigation_restart(struct nm_generic_mit *mit);
 int netmap_mitigation_active(struct nm_generic_mit *mit);
 void netmap_mitigation_cleanup(struct nm_generic_mit *mit);
+#endif /* WITH_GENERIC */
 
 
 
