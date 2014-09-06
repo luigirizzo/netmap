@@ -34,9 +34,25 @@
 #ifndef _NET_NETMAP_KERN_H_
 #define _NET_NETMAP_KERN_H_
 
+#if defined(linux)
+
+#if  defined(CONFIG_NETMAP_VALE)
+#define WITH_VALE
+#endif
+#if defined(CONFIG_NETMAP_PIPE)
+#define WITH_PIPES
+#endif
+#if defined(CONFIG_NETMAP_MONITOR)
+#define WITH_MONITOR
+#endif
+
+#else /* not linux */
+
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
+
+#endif
 
 #if defined(__FreeBSD__)
 
@@ -1108,15 +1124,19 @@ void netmap_pipe_dealloc(struct netmap_adapter *);
 int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 #else /* !WITH_PIPES */
 #define NM_MAXPIPES	0
-#define netmap_pipe_alloc(_1, _2) 	EOPNOTSUPP
+#define netmap_pipe_alloc(_1, _2) 	0
 #define netmap_pipe_dealloc(_1)
-#define netmap_get_pipe_na(_1, _2, _3)	0
+#define netmap_get_pipe_na(nmr, _2, _3)	\
+	({ int role__ = (nmr)->nr_flags & NR_REG_MASK; \
+	   (role__ == NR_REG_PIPE_MASTER || 	       \
+	    role__ == NR_REG_PIPE_SLAVE) ? EOPNOTSUPP : 0; })
 #endif
 
 #ifdef WITH_MONITOR
 int netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 #else
-#define netmap_get_monitor_na(_1, _2, _3) 0
+#define netmap_get_monitor_na(nmr, _2, _3) \
+	((nmr)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
 #endif
 
 #ifdef CONFIG_NET_NS

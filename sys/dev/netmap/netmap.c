@@ -2189,9 +2189,11 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 
 		break;
 
+#ifdef WITH_VALE
 	case NIOCCONFIG:
 		error = netmap_bdg_config(nmr);
 		break;
+#endif
 #ifdef __FreeBSD__
 	case FIONBIO:
 	case FIOASYNC:
@@ -2578,11 +2580,13 @@ netmap_attach_common(struct netmap_adapter *na)
 	if (na->nm_mem == NULL)
 		/* use the global allocator */
 		na->nm_mem = &nm_mem;
+#ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
 		/* no special nm_bdg_attach callback. On VALE
 		 * attach, we need to interpose a bwrap
 		 */
 		na->nm_bdg_attach = netmap_bwrap_attach;
+#endif
 	return 0;
 }
 

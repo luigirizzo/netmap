@@ -6,6 +6,8 @@
 #
 
 MODNAME:=@MODNAME@
+SUBSYS:=vale pipe monitor
+NOSUBSYS:=@NOSUBSYS@
 
 
 ifneq ($(KERNELRELEASE),)
@@ -16,23 +18,27 @@ ifneq ($(KERNELRELEASE),)
 # objects whose source file is in ../sys/dev/netmap
 # the source is not here so we need to specify a dependency
 
-remoteobjs := netmap_mem2.o \
-	netmap_generic.o netmap_mbq.o netmap_vale.o \
-	netmap_offloadings.o netmap_pipe.o \
-	netmap_monitor.o
+$(foreach s,$(filter-out $(NOSUBSYS),$(SUBSYS)),$(eval CONFIG_NETMAP_$(shell echo $s|tr a-z A-Z)=y))
+
+remoteobjs-y := netmap_mem2.o \
+	netmap_generic.o netmap_mbq.o
+
+remoteobjs-$(CONFIG_NETMAP_VALE)    += netmap_vale.o netmap_offloadings.o
+remoteobjs-$(CONFIG_NETMAP_PIPE)    += netmap_pipe.o
+remoteobjs-$(CONFIG_NETMAP_MONITOR) += netmap_monitor.o
 
 define remote_template
 $$(obj)/$(1): $$(M)/../sys/dev/netmap/$(2)
 	$$(call cmd,cc_o_c)
 	$$(call cmd,modversions)
 endef
-$(foreach o,$(remoteobjs),$(eval $(call remote_template,$(o),$(o:.o=.c))))
+$(foreach o,$(remoteobjs-y),$(eval $(call remote_template,$(o),$(o:.o=.c))))
 # we compile netmap.c into netmap_common.o to allow
 # for MODNAME=netmap
 $(eval $(call remote_template,netmap_common.o,netmap.c))
 
 # all objects
-$(MODNAME)-objs := $(remoteobjs) netmap_common.o netmap_linux.o
+$(MODNAME)-objs := $(remoteobjs-y) netmap_common.o netmap_linux.o
 
 obj-$(CONFIG_NETMAP) = $(MODNAME).o
 
@@ -58,6 +64,7 @@ M:=$(PWD)
 # Additional compile flags (e.g. header location)
 EXTRA_CFLAGS := -I$(M) -I$(M)/../sys -I$(M)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
+EXTRA_CFLAGS += $(foreach s,$(filter-out $(NOSUBSYS),$(SUBSYS)),-DCONFIG_NETMAP_$(shell echo $s|tr a-z A-Z))
 
 all: netmap drivers
 
@@ -74,7 +81,6 @@ S_DRIVERS = @S_DRIVERS@
 DRVSUFFIX = @DRVSUFFIX@
 GET_DRIVERS = $(S_DRIVERS:%=get-%)
 include drivers.mak
-endif
 
 # actual drivers after copy and patch
 DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
@@ -146,3 +152,4 @@ install-apps:
 
 distclean: clean
 	rm -f config.status config.log Makefile
+endif
