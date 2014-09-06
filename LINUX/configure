@@ -1,6 +1,7 @@
 #!/bin/bash
 
 TOPDIR=$PWD
+MODNAME=netmap
 
 prefix=/usr/local
 cc=cc
@@ -32,6 +33,7 @@ report() {
 	else
 		echo
 	fi
+	echo "module file                 $MODNAME.ko"
 	if [ -n "$nodrivers" ]; then
 		echo "no-drivers"
 	else
@@ -82,6 +84,7 @@ Available options:
   --install-mod-path=          where the modules will be installed
   --driver-suffix=             add suffix to the patched modules names
   --no-drivers                 do not compile patched drivers
+  --mod-name=		       netmap module name [$MODNAME]
 
   --cc=                        C compiler for the examples [$cc]
   --ld=                        linker for the examples [$ld]
@@ -246,6 +249,8 @@ for opt do
 	--prefix=*) prefix="$optarg"
 	;;
 	--destdir=*) DESTDIR="$optarg"
+	;;
+	--mod-name=*) MODNAME="$optarg"
 	;;
 	--help)
 		print_help
@@ -422,6 +427,7 @@ sed \
 	-e "s|@SRC@|$src|g" \
 	-e "s|@KOPTS@|$kopts|g" \
 	-e "s|@MODPATH@|$modpath|g" \
+	-e "s|@MODNAME@|$MODNAME|g" \
 	-e "s|@LIN_VER@|$lin_ver|g" \
 	-e "s|@MOD_LIST@|$mod_list|g" \
 	-e "s|@PATCHES@|$(echo $patches)|g" \

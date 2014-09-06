@@ -5,6 +5,8 @@
 # or    make defconfig; make scripts; make prepare
 #
 
+MODNAME:=@MODNAME@
+
 
 ifneq ($(KERNELRELEASE),)
 # kbuild part of Makefile
@@ -14,22 +16,25 @@ ifneq ($(KERNELRELEASE),)
 # objects whose source file is in ../sys/dev/netmap
 # the source is not here so we need to specify a dependency
 
-remoteobjs := netmap.o netmap_mem2.o \
+remoteobjs := netmap_mem2.o \
 	netmap_generic.o netmap_mbq.o netmap_vale.o \
 	netmap_offloadings.o netmap_pipe.o \
 	netmap_monitor.o
 
 define remote_template
-$$(obj)/$(1): $$(M)/../sys/dev/netmap/$(1:.o=.c)
+$$(obj)/$(1): $$(M)/../sys/dev/netmap/$(2)
 	$$(call cmd,cc_o_c)
 	$$(call cmd,modversions)
 endef
-$(foreach o,$(remoteobjs),$(eval $(call remote_template,$(o))))
+$(foreach o,$(remoteobjs),$(eval $(call remote_template,$(o),$(o:.o=.c))))
+# we compile netmap.c into netmap_common.o to allow
+# for MODNAME=netmap
+$(eval $(call remote_template,netmap_common.o,netmap.c))
 
 # all objects
-netmap_lin-objs := $(remoteobjs) netmap_linux.o
+$(MODNAME)-objs := $(remoteobjs) netmap_common.o netmap_linux.o
 
-obj-$(CONFIG_NETMAP) = netmap_lin.o
+obj-$(CONFIG_NETMAP) = $(MODNAME).o
 
 obj-$(CONFIG_V1000) += vhost-port/
 
