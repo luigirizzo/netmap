@@ -48,6 +48,9 @@
 #if defined(CONFIG_NETMAP_GENERIC)
 #define WITH_GENERIC
 #endif
+#if defined(CONFIG_NETMAP_V1000)
+#define WITH_V1000
+#endif
 
 #else /* not linux */
 

@@ -3,7 +3,41 @@
 TOPDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
-SUBSYS="vale pipe monitor generic"
+
+SUBSYS_vale=1
+SUBSYS_pipe=2
+SUBSYS_monitor=4
+SUBSYS_generic=8
+SUBSYS_v1000=16
+
+subsys()
+{
+	local w="SUBSYS_$2"
+	[[ -z "${!w}" ]] && {
+		echo "WARNING: unknown subsystem: $2" >&2
+		return
+	}
+	case "$1" in
+	enable)  SUBSYS=$((SUBSYS |  ${!w})) ;;
+        disable) SUBSYS=$((SUBSYS & ~${!w})) ;;
+        enabled) [ $((SUBSYS & ${!w})) -gt 0 ];;
+        esac
+}
+
+subsys_print()
+{
+	local s
+	for s in ${!SUBSYS_*}; do
+		[[ $((SUBSYS & ${!s})) -gt 0 ]] && 
+			echo -n "${s#SUBSYS_} "
+	done
+}
+
+
+subsys enable vale
+subsys enable pipe
+subsys enable monitor
+subsys enable generic
 
 prefix=/usr/local
 cc=cc
@@ -39,15 +73,7 @@ report() {
 	echo "linux version               $v $dv"
 	echo "module file                 $MODNAME.ko"
 	echo -n "subsystems                  "
-	local s
-	for s in $SUBSYS; do
-		if echo $NOSUBSYS | grep -q "\<$s\>"; then
-			echo -n "-"
-		else
-			echo -n "+"
-		fi
-		echo -n "$s "
-	done
+	subsys_print
 	echo
 
 	if [ -n "$nodrivers" ]; then
@@ -106,10 +132,12 @@ Available options:
   --driver-suffix=             add suffix to the patched modules names
   --no-drivers                 do not compile patched drivers
   --mod-name=		       netmap module name [$MODNAME]
-  --disable-vale               do not compile vale support
-  --disable-pipe               do not compile netmap pipes
-  --disable-monitor            do not compile nemtap monitors
-  --disable-generic            do not compile the generic netmap adapter
+  --{enable,disable}-vale      enable/disable the VALE switch
+  --{enable,disable}-pipe      enable/disable the netmap pipes
+  --{enable,disable}-monitor   enable/disable the nemtap monitors
+  --{enable,disable}-generic   enable/disable the generic netmap adapter
+  --{enable,disable}-v1000     enable/disable the v1000 backend for
+                               the e1000-paravirt driver
 
   --cc=                        C compiler for the examples [$cc]
   --ld=                        linker for the examples [$ld]
@@ -278,8 +306,10 @@ for opt do
 	--mod-name=*) MODNAME="$optarg"
 	;;
 	--disable-*)
-		wo=${opt#--disable-}
-		NOSUBSYS="$NOSUBSYS $wo"
+		subsys disable "${opt#--disable-}"
+	;;
+	--enable-*)
+		subsys enable "${opt#--enable-}"
 	;;
 	--help)
 		print_help
@@ -420,7 +450,7 @@ for p in $patches; do
 	}
 	mod_list="$drv_conf=m $mod_list"
 	# add the driver related targets to drivers.mak
-	$t=	# prevent -EOF to eat the make TAB
+	t=	# prevent -EOF to eat the make TAB
 	cat >> drivers.mak <<-EOF
 		get-$driver:
 		$t	cp -Rp $s .
@@ -443,6 +473,21 @@ for p in $patches; do
 	get_drivers="get-$driver $get_drivers"
 	clean_drivers="clean-$driver $clean_drivers"
 done
+# add v1000 if enabled
+if subsys enabled v1000; then
+	t=
+	cat >> drivers.mak <<-EOF
+		get-v1000:
+		$t	cp -r $SRCDIR/vhost-port v1000
+		$t	touch get-v1000
+
+		clean-v1000:
+		$t	rm -rf v1000	
+	EOF
+	s_drivers="v1000 $s_drivers"
+	get_drivers="get-v1000 $get_drivers"
+	clean_drivers="clean-v1000"
+fi
 # add some convenience cumulative targets
 cat >> drivers.mak <<-EOF
 	.PHONY: get-drivers clean-drivers
@@ -458,7 +503,7 @@ sed \
 	-e "s|@KOPTS@|$kopts|g" \
 	-e "s|@MODPATH@|$modpath|g" \
 	-e "s|@MODNAME@|$MODNAME|g" \
-	-e "s|@NOSUBSYS@|$NOSUBSYS|g" \
+	-e "s|@SUBSYS@|$(subsys_print)|g" \
 	-e "s|@LIN_VER@|$lin_ver|g" \
 	-e "s|@MOD_LIST@|$mod_list|g" \
 	-e "s|@PATCHES@|$(echo $patches)|g" \

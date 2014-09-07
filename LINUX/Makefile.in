@@ -6,8 +6,7 @@
 #
 
 MODNAME:=@MODNAME@
-SUBSYS:=vale pipe monitor generic
-NOSUBSYS:=@NOSUBSYS@
+SUBSYS:=@SUBSYS@
 SRCDIR:=@SRCDIR@
 
 ifneq ($(KERNELRELEASE),)
@@ -17,7 +16,7 @@ ifneq ($(KERNELRELEASE),)
 #
 # objects whose source file is in ../sys/dev/netmap
 # the source is not here so we need to specify a dependency
-$(foreach s,$(filter-out $(NOSUBSYS),$(SUBSYS)),$(eval CONFIG_NETMAP_$(shell echo $s|tr a-z A-Z)=y))
+$(foreach s,$(SUBSYS),$(eval CONFIG_NETMAP_$(shell echo $s|tr a-z A-Z)=y))
 
 remoteobjs-y := netmap_mem2.o netmap_mbq.o
 
@@ -45,8 +44,6 @@ $(MODNAME)-objs := $(remoteobjs-y) netmap_common.o netmap_linux.o
 
 obj-$(CONFIG_NETMAP) = $(MODNAME).o
 
-obj-$(CONFIG_V1000) += vhost-port/
-
 ifdef NETMAP_DRIVER_SUFFIX
   $(foreach v,$(filter %.o,$(O_DRIVERS)),$(eval $(v:.o=$(NETMAP_DRIVER_SUFFIX)-objs) := $v))
   $(foreach v,$(filter %.o,$(O_DRIVERS)),$(info $(v:.o=$(NETMAP_DRIVER_SUFFIX)-objs) := $v))
@@ -66,7 +63,7 @@ PWD ?= $(CURDIR)
 # Additional compile flags (e.g. header location)
 EXTRA_CFLAGS := -I$(PWD) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
-EXTRA_CFLAGS += $(foreach s,$(filter-out $(NOSUBSYS),$(SUBSYS)),-DCONFIG_NETMAP_$(shell echo $s|tr a-z A-Z))
+EXTRA_CFLAGS += $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z A-Z))
 
 all: netmap drivers
 
@@ -86,16 +83,6 @@ include drivers.mak
 
 # actual drivers after copy and patch
 DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
-
-# Compile v1000 (vhost porting to e1000) only if
-# the LIN_VER >= 3.8.0, because we don't want to deal
-# with backporting problems for v1000.
-ifeq ($(word 1, $(sort 30800 $(LIN_VER))), 30800)
-CONFIG_V1000:=m
-else
-CONFIG_V1000:=n
-endif
-
 
 COMMON_OPTS=-C $(KSRC) M=$(PWD) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
 

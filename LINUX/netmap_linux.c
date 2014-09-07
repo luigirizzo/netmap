@@ -640,6 +640,7 @@ static struct file_operations netmap_fops = {
 
 
 
+#ifdef WITH_V1000
 /* ##################### V1000 BACKEND SUPPORT ##################### */
 
 /* Private info stored into the memory area pointed by
@@ -1312,6 +1313,7 @@ static int netmap_socket_recvmsg(struct kiocb *iocb, struct socket *sock,
 	return ret;
 }
 #endif  /* >= 2.6.35 */
+#endif /* WITH_V1000 */
 
 
 #ifdef CONFIG_NET_NS
