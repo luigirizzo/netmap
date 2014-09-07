@@ -1,6 +1,7 @@
 #!/bin/sh
 
 TOPDIR=$PWD
+SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
 SUBSYS="vale pipe monitor generic"
 
@@ -24,7 +25,7 @@ print_realpath() {
 
 decode_version() {
 	if [ -n "$1" ] && with perl; then
-		echo " [$(scripts/vers $1 -C)]"
+		echo " [$($SRCDIR/scripts/vers $1 -C)]"
 	fi
 }
 
@@ -393,7 +394,7 @@ clean_drivers=
 mod_list=
 if [ -z "$nodrivers" ]; then
 	# produce a list of applicable patches for this version
-	[ -d patches ] || { rm -f patches; ln -s final-patches patches; }
+	[ -d patches ] || { rm -f patches; ln -s $SRCDIR/final-patches patches; }
 	# XXX the selection is based only on the kernel version
 	patches=$(cd patches; ls diff--* | awk -v v=$lin_ver -F -- '($3 <= v"") && (v"" < $4)')
 fi
@@ -451,6 +452,7 @@ EOF
 
 # create Makefile
 sed \
+	-e "s|@SRCDIR@|$SRCDIR|g" \
 	-e "s|@KSRC@|$ksrc|g" \
 	-e "s|@SRC@|$src|g" \
 	-e "s|@KOPTS@|$kopts|g" \
@@ -466,7 +468,7 @@ sed \
 	-e "s|@APPS_LD@|$ld|g" \
 	-e "s|@PREFIX@|$prefix|g" \
 	-e "s|@DESTDIR@|$DESTDIR|g" \
-	Makefile.in > Makefile
+	$SRCDIR/Makefile.in > Makefile
 
 
 #################################################

@@ -35,6 +35,10 @@ $(foreach o,$(remoteobjs-y),$(eval $(call remote_template,$(o),$(o:.o=.c))))
 # for MODNAME=netmap
 $(eval $(call remote_template,netmap_common.o,netmap.c))
 
+$(obj)/netmap_linux.o: $(M)/../LINUX/netmap_linux.c
+	$(call cmd,cc_o_c)
+	$(call cmd,modversions)
+
 # all objects
 $(MODNAME)-objs := $(remoteobjs-y) netmap_common.o netmap_linux.o
 
@@ -57,10 +61,10 @@ else
 # in fact the kernel sources path must be specified.
 
 PWD ?= $(CURDIR)
-M:=$(PWD)
+M:=@SRCDIR@
 
 # Additional compile flags (e.g. header location)
-EXTRA_CFLAGS := -I$(M) -I$(M)/../sys -I$(M)/../sys/dev -DCONFIG_NETMAP
+EXTRA_CFLAGS := -I$(PWD) -I$(M) -I$(M)/../sys -I$(M)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
 EXTRA_CFLAGS += $(foreach s,$(filter-out $(NOSUBSYS),$(SUBSYS)),-DCONFIG_NETMAP_$(shell echo $s|tr a-z A-Z))
 
@@ -140,10 +144,10 @@ PREFIX=@PREFIX@
 DESTDIR?=@DESTDIR@
 
 apps:
-	$(MAKE) -C ../examples CC="$(APPS_CC)" LD="$(APPS_LD)"
+	$(MAKE) -C $(SRCDIR)../examples CC="$(APPS_CC)" LD="$(APPS_LD)"
 
 install-apps:
-	$(MAKE) -C ../examples install DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+	$(MAKE) -C $(SRCDIR)../examples install DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
 
 +%:
 	@echo $($*)
