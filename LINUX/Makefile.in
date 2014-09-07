@@ -8,6 +8,7 @@
 MODNAME:=@MODNAME@
 SUBSYS:=vale pipe monitor generic
 NOSUBSYS:=@NOSUBSYS@
+SRCDIR:=@SRCDIR@
 
 ifneq ($(KERNELRELEASE),)
 # kbuild part of Makefile
@@ -26,7 +27,7 @@ remoteobjs-$(CONFIG_NETMAP_MONITOR) += netmap_monitor.o
 remoteobjs-$(CONFIG_NETMAP_GENERIC) += netmap_generic.o
 
 define remote_template
-$$(obj)/$(1): $$(M)/../sys/dev/netmap/$(2)
+$$(obj)/$(1): $$(SRCDIR)/../sys/dev/netmap/$(2)
 	$$(call cmd,cc_o_c)
 	$$(call cmd,modversions)
 endef
@@ -35,7 +36,7 @@ $(foreach o,$(remoteobjs-y),$(eval $(call remote_template,$(o),$(o:.o=.c))))
 # for MODNAME=netmap
 $(eval $(call remote_template,netmap_common.o,netmap.c))
 
-$(obj)/netmap_linux.o: $(M)/../LINUX/netmap_linux.c
+$(obj)/netmap_linux.o: $(SRCDIR)/netmap_linux.c
 	$(call cmd,cc_o_c)
 	$(call cmd,modversions)
 
@@ -61,10 +62,9 @@ else
 # in fact the kernel sources path must be specified.
 
 PWD ?= $(CURDIR)
-M:=@SRCDIR@
 
 # Additional compile flags (e.g. header location)
-EXTRA_CFLAGS := -I$(PWD) -I$(M) -I$(M)/../sys -I$(M)/../sys/dev -DCONFIG_NETMAP
+EXTRA_CFLAGS := -I$(PWD) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
 EXTRA_CFLAGS += $(foreach s,$(filter-out $(NOSUBSYS),$(SUBSYS)),-DCONFIG_NETMAP_$(shell echo $s|tr a-z A-Z))
 
@@ -122,8 +122,9 @@ test:
 clean: clean-drivers
 	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
 	-@ rm -f *.orig *.rej *.ko *.o .*.d 		\
-		.tmp_versions *.mod.c modules.order	\
+		*.mod.c modules.order			\
 		Module.symvers .*.cmd
+	-@ rm -rf .tmp_versions
 
 
 
@@ -153,5 +154,7 @@ install-apps:
 	@echo $($*)
 
 distclean: clean
-	rm -f config.status config.log Makefile
+	rm -f config.status config.log Makefile netmap_linux_config.h \
+		patches drivers.mak
+	rm -rf netmap-tmpdir
 endif
