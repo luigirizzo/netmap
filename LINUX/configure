@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 TOPDIR=$PWD
 MODNAME=netmap
@@ -21,30 +21,37 @@ print_realpath() {
 	fi
 }
 
+decode_version() {
+	if [ -n "$1" ] && with perl; then
+		echo " [$(scripts/vers $1 -C)]"
+	fi
+}
+
 # report: print the current state of the configuration variables
 report() {
 	echo "kernel directory            $ksrc"
-	print_realpath "$ksrc"
+	print_realpath $ksrc
 	local v=$lin_ver
 	[ -n "$v" ] || v="-"
-	echo -n "linux version               $v"
-	if [ -n "$lin_ver" ] && with perl; then
-		echo " [$(scripts/vers $lin_ver -C)]"
-	else
-		echo
-	fi
+	local dv="$(decode_version $lin_ver)"
+	echo "linux version               $v $dv"
 	echo "module file                 $MODNAME.ko"
 	if [ -n "$nodrivers" ]; then
 		echo "no-drivers"
 	else
 		echo "kernel sources              $src"
 		print_realpath "$src"
-		local d=$s_drivers
+		local d="$s_drivers"
 		[ -n "$d" ] || d="-"
 		echo "drivers                     $d"
 		echo
 		if [ -n "$(echo $patches)" ]; then
-			echo -e "Selected patches:\n\n$patches"
+			echo "Selected patches:"
+			echo
+			local p
+			for p in $patches; do
+				echo "   $p"
+			done
 		fi
 	fi
 }
@@ -159,7 +166,7 @@ NEXTTEST=1
 add_test() {
 	local t="__test__$NEXTTEST"
 	add_named_test $t "$@"
-	: $((NEXTTEST++))
+	NEXTTEST=$(($NEXTTEST+1))
 }
 
 # run_tests: run all accumulated tests and exec the pertinent
@@ -372,7 +379,7 @@ fi
 
 rm -f drivers.mak
 # read in all the kernel .config, we use it below
-source $ksrc/.config
+. $ksrc/.config
 for p in $patches; do
 	# extract the driver name
 	driver=$(echo $p | awk -F -- '{ print $2 }')
@@ -385,7 +392,7 @@ for p in $patches; do
 	#  been taken care of)
 	# XXX maybe add a (per driver?) flag to force compilation anyway
 	drv_conf="CONFIG_$(basename $driver .c | tr a-z A-Z)"
-	[ "${!drv_conf}" = m ] || {
+	[ "$(eval echo \$$drv_conf)" = m ] || {
 		echo "WARNING: $drv_conf=m not set in $ksrc/.config, skipping $driver"
 		continue
 	}
