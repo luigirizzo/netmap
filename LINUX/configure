@@ -4,35 +4,46 @@ TOPDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
 
-SUBSYS_vale=1
-SUBSYS_pipe=2
-SUBSYS_monitor=4
-SUBSYS_generic=8
-SUBSYS_v1000=16
+# available subsystems
+subsys="vale pipe monitor generic v1000"
+#enabled subsystems (bitfield)
+SUBSYS=0
+
+subsys2n()
+{
+	local i=1
+	local n
+	for n in $subsys; do
+		if [ $n = $1 ]; then
+			echo $i
+			return
+		fi
+		i=$((2 * i))
+	done
+}
 
 subsys()
 {
-	local w="SUBSYS_$2"
-	[[ -z "${!w}" ]] && {
-		echo "WARNING: unknown subsystem: $2" >&2
+	local w=$(subsys2n $2)
+	[ -n "$w" ] || {
+		echo "WARNING: unknown subsystem: $2"
 		return
 	}
 	case "$1" in
-	enable)  SUBSYS=$((SUBSYS |  ${!w})) ;;
-        disable) SUBSYS=$((SUBSYS & ~${!w})) ;;
-        enabled) [ $((SUBSYS & ${!w})) -gt 0 ];;
+	enable)  SUBSYS=$(($SUBSYS | $w)) ;;
+        disable) SUBSYS=$(($SUBSYS & ~$w)) ;;
+        enabled) [ $(($SUBSYS & $w)) -gt 0 ];;
         esac
 }
 
 subsys_print()
 {
-	local s
-	for s in ${!SUBSYS_*}; do
-		[[ $((SUBSYS & ${!s})) -gt 0 ]] && 
-			echo -n "${s#SUBSYS_} "
+	local e=
+	for n in $subsys; do
+		subsys enabled $n && e="$e $n"
 	done
+	echo $e
 }
-
 
 subsys enable vale
 subsys enable pipe
@@ -72,9 +83,8 @@ report() {
 	local dv="$(decode_version $lin_ver)"
 	echo "linux version               $v $dv"
 	echo "module file                 $MODNAME.ko"
-	echo -n "subsystems                  "
-	subsys_print
-	echo
+	echo "subsystems                  $(subsys_print)"
+
 
 	if [ -n "$nodrivers" ]; then
 		echo "no-drivers"
