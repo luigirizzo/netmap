@@ -569,13 +569,13 @@ netmap_mmap_single(struct cdev *cdev, vm_ooffset_t *foff,
 	error = devfs_get_cdevpriv((void**)&priv);
 	if (error)
 		goto err_unlock;
+	if (priv->np_nifp == NULL) {
+		error = EINVAL;
+		goto err_unlock;
+	}
 	vmh->priv = priv;
 	priv->np_refcount++;
 	NMG_UNLOCK();
-
-	error = netmap_get_memory(priv);
-	if (error)
-		goto err_deref;
 
 	obj = cdev_pager_allocate(vmh, OBJT_DEVICE,
 		&netmap_cdev_pager_ops, objsize, prot,
