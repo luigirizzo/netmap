@@ -9,52 +9,6 @@ MODNAME:=@MODNAME@
 SUBSYS:=@SUBSYS@
 SRCDIR:=@SRCDIR@
 
-ifneq ($(KERNELRELEASE),)
-# kbuild part of Makefile
-
-# list of objects for this module
-#
-# objects whose source file is in ../sys/dev/netmap
-# the source is not here so we need to specify a dependency
-$(foreach s,$(SUBSYS),$(eval CONFIG_NETMAP_$(shell echo $s|tr a-z A-Z)=y))
-
-remoteobjs-y := netmap_mem2.o netmap_mbq.o
-
-remoteobjs-$(CONFIG_NETMAP_VALE)    += netmap_vale.o netmap_offloadings.o
-remoteobjs-$(CONFIG_NETMAP_PIPE)    += netmap_pipe.o
-remoteobjs-$(CONFIG_NETMAP_MONITOR) += netmap_monitor.o
-remoteobjs-$(CONFIG_NETMAP_GENERIC) += netmap_generic.o
-
-define remote_template
-$$(obj)/$(1): $$(SRCDIR)/../sys/dev/netmap/$(2)
-	$$(call cmd,cc_o_c)
-	$$(call cmd,modversions)
-endef
-$(foreach o,$(remoteobjs-y),$(eval $(call remote_template,$(o),$(o:.o=.c))))
-# we compile netmap.c into netmap_common.o to allow
-# for MODNAME=netmap
-$(eval $(call remote_template,netmap_common.o,netmap.c))
-
-$(obj)/netmap_linux.o: $(SRCDIR)/netmap_linux.c
-	$(call cmd,cc_o_c)
-	$(call cmd,modversions)
-
-# all objects
-$(MODNAME)-objs := $(remoteobjs-y) netmap_common.o netmap_linux.o
-
-obj-$(CONFIG_NETMAP) = $(MODNAME).o
-
-ifdef NETMAP_DRIVER_SUFFIX
-  $(foreach v,$(filter %.o,$(O_DRIVERS)),$(eval $(v:.o=$(NETMAP_DRIVER_SUFFIX)-objs) := $v))
-  $(foreach v,$(filter %.o,$(O_DRIVERS)),$(info $(v:.o=$(NETMAP_DRIVER_SUFFIX)-objs) := $v))
-  obj-m += $(O_DRIVERS:%.o=%$(NETMAP_DRIVER_SUFFIX).o)
-else
-	obj-m += $(O_DRIVERS)
-endif
-
-else
-# normal Makefile
-
 # The following commands are needed to build the modules as out-of-tree,
 # in fact the kernel sources path must be specified.
 
@@ -141,7 +95,7 @@ install-apps:
 	@echo $($*)
 
 distclean: clean
-	rm -f config.status config.log Makefile netmap_linux_config.h \
-		patches drivers.mak
+	rm -f config.status config.log netmap_linux_config.h \
+		patches drivers.mak Kbuild netmap.mak
 	rm -rf netmap-tmpdir
-endif
+	if [ -L Makefile ]; then rm Makefile; fi
