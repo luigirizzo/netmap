@@ -418,6 +418,13 @@ via a generic adapter at reduced performance."
 fi
 
 
+drvname2config() {
+	local name=$1
+	local conf=$(awk -v n=$name '$1==n { print $2 }' $SRCDIR/drvname2config)
+	if [ x"$conf" = x ]; then conf="CONFIG_$(echo $name|tr a-z- A-Z_)"; fi
+	echo $conf
+}
+
 ###############################################################
 # Makefile creation
 ###############################################################
@@ -457,7 +464,8 @@ for p in $patches; do
 	# (we do this mainly to be sure that any module dependency has already
 	#  been taken care of)
 	# XXX maybe add a (per driver?) flag to force compilation anyway
-	drv_conf="CONFIG_$(basename $driver .c | tr a-z A-Z)"
+	basen=$(basename $driver .c)
+	drv_conf=$(drvname2config $basen)
 	[ "$(eval echo \$$drv_conf)" = m ] || {
 		echo "WARNING: $drv_conf=m not set in $ksrc/.config, skipping $driver"
 		continue
