@@ -304,11 +304,15 @@ function build-prep()
 	[ -z "$dst" ] && return
 
 	exec 3>&1 4>&2 >$dst.log 2>&1
-	cp $LINUX_CONFIGS/config-$v $dst/.config  2>/dev/null ||
-	cp $LINUX_CONFIGS/config-all $dst/.config 
 	(
 		cd $dst
-		yes '' | make oldconfig
+		if [ -f $LINUX_CONFIGS/config-$v ]; then
+			cp $LINUX_CONFIGS/config-$v .config
+			yes '' | make oldconfig
+		else
+			make allmodconfig
+			cp .config $LINUX_CONFIGS/config-$v1
+		fi
 		make modules_prepare
 	)
 	exec 1>&3 2>&4
@@ -389,7 +393,7 @@ function check-patch()
 			popd >/dev/null
 			cp $log $clog
 		fi
-		[ $ok = true ] || { echo FAILED; echo false > $cstatus; return 1; }
+		[ "$ok" = true ] || { echo FAILED; echo false > $cstatus; return 1; }
 		echo true > $cstatus
 		rm -rf $tmpdir
 		# compute next version
