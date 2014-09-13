@@ -148,6 +148,7 @@ Available options:
   --{enable,disable}-generic   enable/disable the generic netmap adapter
   --{enable,disable}-v1000     enable/disable the v1000 backend for
                                the e1000-paravirt driver
+  --cache=		       dir for reusing/caching of netmap_linux_config.h
 
   --cc=                        C compiler for the examples [$cc]
   --ld=                        linker for the examples [$ld]
@@ -290,6 +291,7 @@ nodrivers=
 kopts=
 modpath=
 drvsuffix=
+cache=
 for opt do
 	optarg=${opt#*=}
 	case "$opt" in
@@ -320,6 +322,8 @@ for opt do
 	;;
 	--enable-*)
 		subsys enable "${opt#--enable-}"
+	;;
+	--cache=*) cache="$optarg"
 	;;
 	--help)
 		print_help
@@ -535,6 +539,10 @@ ln -s $SRCDIR/Makefile || true
 #################################################
 # create the config.h file
 #################################################
+
+if [ -d "$cache" ] && [ -f "$cache/netmap_linux_config.h" ]; then
+	cp "$cache/netmap_linux_config.h" .
+else
 
 # BEGIN_TESTS
 
@@ -861,6 +869,12 @@ cat >> $configh <<-EOF
 
 	#endif
 EOF
+
+if [ -d "$cache" ]; then
+	cp $configh "$cache"
+fi
+
+fi # ! -f $cache/netmap_config_h
 
 
 report
