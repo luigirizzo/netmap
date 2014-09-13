@@ -349,12 +349,14 @@ function check-patch()
 		local cpatch=$cache/patch
 		local cnmcommit=$cache/nmcommit
 		local cstatus=$cache/status
+		local cwarn=$cache/warn
 		local clog=$cache/log
 		if [ -f $cpatch ]				&&
 		   cmp -s $cpatch $patch			&&
 		   [ "$nmcommit" = "$(cat $cnmcommit)" ]; then
 			cp $clog $log
 			ok=$(cat $cstatus)
+			if [ -f "$cwarn" ]; then warn=$(cat $cwarn); fi
 		else
 			# update cache
 			cp $patch $cpatch
@@ -380,11 +382,11 @@ function check-patch()
 			ok=false
 			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX \
 				--cache=$cache >>$log
+			make drivers -j $PARALLEL_MAKE >>$log 2>&1 && ok=true
+			grep -q warning: $log && { warn=true; echo $warn > $cwarn; }
 			cat config.log >>$log
 			cat netmap_linux_config.h >>$log
-			make drivers -j $PARALLEL_MAKE >>$log 2>&1 && ok=true
 			popd >/dev/null
-			grep -q warning: $log && warn=true
 			cp $log $clog
 		fi
 		[ $ok = true ] || { echo FAILED; echo false > $cstatus; return 1; }
