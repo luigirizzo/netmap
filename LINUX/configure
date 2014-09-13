@@ -466,8 +466,8 @@ for p in $patches; do
 	# XXX maybe add a (per driver?) flag to force compilation anyway
 	basen=$(basename $driver .c)
 	drv_conf=$(drvname2config $basen)
-	[ "$(eval echo \$$drv_conf)" = m ] || {
-		echo "WARNING: $drv_conf=m not set in $ksrc/.config, skipping $driver"
+	[ -n "$(eval echo \$$drv_conf)" ] || {
+		echo "WARNING: $drv_conf not set in $ksrc/.config, skipping $driver"
 		continue
 	}
 	mod_list="$drv_conf=m $mod_list"
