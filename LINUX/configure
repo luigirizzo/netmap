@@ -484,7 +484,7 @@ for p in $patches; do
 			warning
 		continue
 	}
-	[ "$m" = y ] && [ -z "$DRVSUFFIX" ] && {
+	[ "$m" = y ] && [ -z "$drvsuffix" ] && {
 		warning <<-EOF
 The $driver driver is not compiled as a module:
 you will not be able to load the netmap enabled driver on this kernel.
@@ -494,7 +494,7 @@ Please consider setting
 
 in your .config.
 
-Alternatively, you can pass a --drv-suffix= option to configure.
+Alternatively, you can pass a --driver-suffix= option to configure.
 		EOF
 	}
 	mod_list="$drv_conf=m $mod_list"
