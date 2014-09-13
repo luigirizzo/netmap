@@ -26,7 +26,7 @@ subsys()
 {
 	local w=$(subsys2n $2)
 	[ -n "$w" ] || {
-		echo "WARNING: unknown subsystem: $2"
+		echo "unknown subsystem: $2" | warning
 		return
 	}
 	case "$1" in
@@ -106,14 +106,14 @@ report() {
 	fi
 }
 
-# error: format an error msg containing the lines read from stdin
-# 	and exit with failure.
-error() {
+message()
+{
 	{
 		cat <<-EOF
-*********************************** ERROR ***********************************
+********************************** $1 **********************************
 		EOF
 		sed 's/^/*** /' # output the error message from stdin
+	if [ -n "$2" ]; then
 		cat <<-EOF
 ***
 ***
@@ -121,11 +121,23 @@ error() {
 ***
 		EOF
 		report | sed 's/^/*** /'
+	fi
 		cat <<-EOF
 *****************************************************************************
 		EOF
 	} | tee -a config.log
+}
+
+# error: format an error msg containing the lines read from stdin
+# 	and exit with failure.
+error() {
+	message " ERROR " true
 	exit 1
+}
+
+warning()
+{
+	message WARNING
 }
 
 # print_help
@@ -330,7 +342,7 @@ for opt do
 		exit
 	;;
 	*)
-		echo "WARNING: Unrecognized option: $opt"
+		echo "Unrecognized option: $opt" | warning
 	;;
 	esac
 done
@@ -458,17 +470,32 @@ for p in $patches; do
 	driver=$(echo $p | awk -F -- '{ print $2 }')
 	# find the driver sources
 	s=$(find $src/drivers/ -name "$driver" -print -quit)
-	[ -n "$s" ] || { echo "WARNING: $driver sources not found"; continue; }
-	# check that the original driver had been compiled as a module, otherwise
-	# skip this driver
+	[ -n "$s" ] || { echo "$driver sources not found" | warning; continue; }
+	# check that the original driver had been compiled in,
+	# otherwise skip this driver
 	# (we do this mainly to be sure that any module dependency has already
 	#  been taken care of)
 	# XXX maybe add a (per driver?) flag to force compilation anyway
 	basen=$(basename $driver .c)
 	drv_conf=$(drvname2config $basen)
-	[ -n "$(eval echo \$$drv_conf)" ] || {
-		echo "WARNING: $drv_conf not set in $ksrc/.config, skipping $driver"
+	m="$(eval echo \$$drv_conf)"
+	[ -n "$m" ] || {
+		echo "$drv_conf not set in $ksrc/.config, skipping $driver" | 
+			warning
 		continue
+	}
+	[ "$m" = y ] && [ -z "$DRVSUFFIX" ] && {
+		warning <<-EOF
+The $driver driver is not compiled as a module:
+you will not be able to load the netmap enabled driver on this kernel.
+Please consider setting
+
+    $drv_conf=m
+
+in your .config.
+
+Alternatively, you can pass a --drv-suffix= option to configure.
+		EOF
 	}
 	mod_list="$drv_conf=m $mod_list"
 	# add the driver related targets to drivers.mak
