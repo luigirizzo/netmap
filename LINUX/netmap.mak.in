@@ -19,7 +19,6 @@ EXTRA_CFLAGS := -I$(PWD) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
 EXTRA_CFLAGS += $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z A-Z))
 
-all: netmap drivers
 
 # We use KSRC for the kernel configuration and sources.
 # If the sources are elsewhere, then use SRC to point to them.
@@ -33,6 +32,9 @@ PATCHES = @PATCHES@
 S_DRIVERS = @S_DRIVERS@
 DRVSUFFIX = @DRVSUFFIX@
 GET_DRIVERS = $(S_DRIVERS:%=get-%)
+
+all: netmap $(if $(S_DRIVERS),drivers,)
+
 include drivers.mak
 
 # actual drivers after copy and patch

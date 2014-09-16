@@ -4,17 +4,13 @@ TOPDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
 
-# available subsystems
-subsys="vale pipe monitor generic v1000"
-#enabled subsystems (bitfield)
-SUBSYS=0
-
-subsys2n()
+# setelem2n <set> <elem>
+setelem2n()
 {
 	local i=1
 	local n
-	for n in $subsys; do
-		if [ $n = $1 ]; then
+	for n in $(eval echo \$$1_avail); do
+		if [ $n = $2 ]; then
 			echo $i
 			return
 		fi
@@ -22,33 +18,85 @@ subsys2n()
 	done
 }
 
-subsys()
+# setop <set> <op> [<elem>]
+setop()
 {
-	local w=$(subsys2n $2)
-	[ -n "$w" ] || {
-		echo "unknown subsystem: $2" | warning
-		return
-	}
-	case "$1" in
-	enable)  SUBSYS=$(($SUBSYS | $w)) ;;
-        disable) SUBSYS=$(($SUBSYS & ~$w)) ;;
-        enabled) [ $(($SUBSYS & $w)) -gt 0 ];;
+	local w
+	local n
+	local s
+	local e
+
+	if [ -n "$3" ]; then
+		w=$(setelem2n $1 $3)
+		[ -n "$w" ] || {
+			echo "unknown $1: $3" | warning
+			return
+		}
+	fi
+	case "$2" in
+	is-empty)
+		[ $(eval echo \$$1) -eq 0 ]
+		;;
+	disable-all)
+		eval "$1=0"
+		;;
+	enable-all)
+		eval "$1=0"
+		s=$(eval echo \$$1_avail)
+		for n in $s; do
+			eval "$1=\$(( ($1 << 1) | 1))"
+		done
+		;;
+	enable)
+		eval "$1=\$(($1 | $w))"
+		;;
+        disable)
+		eval "$1=\$(($1 & ~$w))"
+		;;
+        enabled)
+		eval "w=\$(($1 & $w))"
+		[ $w -ne 0 ]
+		;;
+	print)
+		s=$(eval echo \$$1_avail)
+		e=
+		for n in $s; do
+			w=$(setelem2n $1 $n)
+			eval "w=\$(($1 & $w))"
+			[ $w -ne 0 ] && e="$n $e"
+		done
+		echo $e
+		;;
         esac
 }
 
-subsys_print()
+# available subsystems
+subsystem_avail="vale pipe monitor generic v1000"
+#enabled subsystems (bitfield)
+subsystem=0
+
+subsys()
 {
-	local e=
-	for n in $subsys; do
-		subsys enabled $n && e="$e $n"
-	done
-	echo $e
+	setop subsystem "$@"
 }
 
 subsys enable vale
 subsys enable pipe
 subsys enable monitor
 subsys enable generic
+
+# available drivers
+driver_avail="r8169.c virtio_net.c forcedeth.c \
+	e1000 e1000e igb ixgbe"
+# enabled drivers (bitfield)
+driver=
+
+drv()
+{
+	setop driver "$@"
+}
+
+drv enable-all
 
 prefix=/usr/local
 cc=cc
@@ -83,20 +131,18 @@ report() {
 	local dv="$(decode_version $lin_ver)"
 	echo "linux version               $v $dv"
 	echo "module file                 $MODNAME.ko"
-	echo "subsystems                  $(subsys_print)"
+	echo "subsystems                  $(subsys print)"
 
 
-	if [ -n "$nodrivers" ]; then
+	if drv is-empty; then
 		echo "no-drivers"
 	else
 		echo "kernel sources              $src"
 		print_realpath "$src"
-		local d="$s_drivers"
-		[ -n "$d" ] || d="-"
-		echo "drivers                     $d"
+		echo "drivers                     $(drv print)"
 		echo
 		if [ -n "$(echo $patches)" ]; then
-			echo "Selected patches:"
+			echo "Candidate patches for this kernel:"
 			echo
 			local p
 			for p in $patches; do
@@ -152,7 +198,8 @@ Available options:
                                (you can call this several times)
   --install-mod-path=          where the modules will be installed
   --driver-suffix=             add suffix to the patched modules names
-  --no-drivers                 do not compile patched drivers
+  --no-drivers                 do not compile any driver
+  --no-driver=		       do not compile the given driver
   --mod-name=		       netmap module name [$MODNAME]
   --{enable,disable}-vale      enable/disable the VALE switch
   --{enable,disable}-pipe      enable/disable the netmap pipes
@@ -299,7 +346,6 @@ set -x
 ############################
 ksrc=
 src=
-nodrivers=
 kopts=
 modpath=
 drvsuffix=
@@ -317,7 +363,9 @@ for opt do
 	;;
 	--driver-suffix=*) drvsuffix="$optarg"
 	;;
-	--no-drivers) nodrivers="true"
+	--no-drivers) drv disable-all
+	;;
+	--no-driver=*) drv disable "$optarg"
 	;;
 	--cc=*) cc="$optarg"
 	;;
@@ -407,9 +455,10 @@ lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$vers
 # full kernel sources. Since we may have put $src=$ksrc, and $ksrc
 # may only contain header files, we check that $src/drivers actually
 # contains some .c file
-if [ -z "$nodrivers" ]; then
+if ! drv is-empty; then
 	if [ ! -d "$src" ] ||
 	   [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
+		drv disable-all
 		error <<-EOF
 Cannot find full kernel sources.
 
@@ -455,7 +504,7 @@ s_drivers=
 get_drivers=
 clean_drivers=
 mod_list=
-if [ -z "$nodrivers" ]; then
+if ! drv is-empty; then
 	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s $SRCDIR/final-patches patches; }
 	# XXX the selection is based only on the kernel version
@@ -467,26 +516,31 @@ rm -f drivers.mak
 . $ksrc/.config
 for p in $patches; do
 	# extract the driver name
-	driver=$(echo $p | awk -F -- '{ print $2 }')
+	d=$(echo $p | awk -F -- '{ print $2 }')
+	# skip this driver if the user does not want it
+	drv enabled $d || continue
 	# find the driver sources
-	s=$(find $src/drivers/ -name "$driver" -print -quit)
-	[ -n "$s" ] || { echo "$driver sources not found" | warning; continue; }
-	# check that the original driver had been compiled in,
-	# otherwise skip this driver
+	s=$(find $src/drivers/ -name "$d" -print -quit)
+	[ -n "$s" ] || { 
+		echo "$d sources not found" | warning
+		drv disable $d
+		continue
+	}
+	# check that the original driver had been compiled as a module, otherwise
+	# skip this driver
 	# (we do this mainly to be sure that any module dependency has already
 	#  been taken care of)
 	# XXX maybe add a (per driver?) flag to force compilation anyway
-	basen=$(basename $driver .c)
-	drv_conf=$(drvname2config $basen)
+	drv_conf="CONFIG_$(basename $d .c | tr a-z A-Z)"
 	m="$(eval echo \$$drv_conf)"
 	[ -n "$m" ] || {
-		echo "$drv_conf not set in $ksrc/.config, skipping $driver" | 
-			warning
+		echo "$drv_conf not set in $ksrc/.config, skipping $d" | warning
+		drv disable $d
 		continue
 	}
 	[ "$m" = y ] && [ -z "$drvsuffix" ] && {
 		warning <<-EOF
-The $driver driver is not compiled as a module:
+The $d driver is not compiled as a module:
 you will not be able to load the netmap enabled driver on this kernel.
 Please consider setting
 
@@ -501,27 +555,28 @@ Alternatively, you can pass a --driver-suffix= option to configure.
 	# add the driver related targets to drivers.mak
 	t=	# prevent -EOF to eat the make TAB
 	cat >> drivers.mak <<-EOF
-		get-$driver:
+		get-$d:
 		$t	cp -Rp $s .
 		$t	if [ -f patches/$p ]; then patch --posix --quiet --force -p1 < patches/$p; fi
 	EOF
 	if [ -d $s ]; then
-		d=$(basename $s)
+		bs=$(basename $s)
 		cat >> drivers.mak <<-EOF
-			$t	if [ -f drv-subdir.mak ]; then mv $d/Makefile $d/orig.mak; cp drv-subdir.mak $d/Makefile; fi
+			$t	if [ -f drv-subdir.mak ]; then mv $bs/Makefile $bs/orig.mak; cp drv-subdir.mak $bs/Makefile; fi
 		EOF
 	fi
 	cat >> drivers.mak <<-EOF
-		$t	touch get-$driver
+		$t	touch get-$d
 
-		clean-$driver:
-		$t	rm -rf $driver get-$driver
+		clean-$d:
+		$t	rm -rf $d get-$d
 
 	EOF
-	s_drivers="$driver $s_drivers"
-	get_drivers="get-$driver $get_drivers"
-	clean_drivers="clean-$driver $clean_drivers"
+	get_drivers="get-$d $get_drivers"
+	clean_drivers="clean-$d $clean_drivers"
 done
+s_drivers="$(drv print)"
+
 # add v1000 if enabled
 if subsys enabled v1000; then
 	t=
@@ -553,7 +608,7 @@ for f in $SRCDIR/*.in; do
 		-e "s|@KOPTS@|$kopts|g" \
 		-e "s|@MODPATH@|$modpath|g" \
 		-e "s|@MODNAME@|$MODNAME|g" \
-		-e "s|@SUBSYS@|$(subsys_print)|g" \
+		-e "s|@SUBSYS@|$(subsys print)|g" \
 		-e "s|@LIN_VER@|$lin_ver|g" \
 		-e "s|@MOD_LIST@|$mod_list|g" \
 		-e "s|@PATCHES@|$(echo $patches)|g" \
@@ -845,6 +900,7 @@ EOF
 
 
 # e1000e
+if drv enabled e1000e; then
 add_test 'have E1000E_HWADDR' <<-EOF
 	#include "e1000e/e1000.h"
 
@@ -866,8 +922,10 @@ EOF
 
 add_test "grep -q '\<e1000_rx_desc_extended\>' $TMPDIR/e1000e/netdev.c \
 	&& have E1000E_EXT_RXDESC" </dev/null
+fi # e1000e
 
 # rtl8169
+if drv enabled r8169.c; then
 add_test 'define RTL_OPEN rtl8169_open' 'define RTL_OPEN rtl_open' <<-EOF
 	#include "r8169.c"
 
@@ -883,6 +941,7 @@ add_test 'have RTL_WFQ' <<-EOF
 		rtl8169_wait_for_quiescence(dev);
 	}
 EOF
+fi # r8169.c
 
 # END_TESTS
 
