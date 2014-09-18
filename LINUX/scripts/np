@@ -1,5 +1,57 @@
 #!/bin/bash
 ## Manage linux driver patches for netmap.
+##
+## Initial setup: 
+##
+## - a git clone of netmap/linux with all the netmap-* branches created (GITDIR)
+##
+## - a directory where the linux trees for each major version of linux can 
+##   be extracted (LINUX_SOURCES)
+##
+## - a directory containing configuration files for linux compilation
+##   (LINUX_CONFIGS). This directory may be empty, and in that case
+##   the linux trees will be prepared with 'make allmodconfig'
+##
+## - a scripts/conf file containing the above variables (GITDIR, etc.)
+##   and the NETMAP_BRANCH variable, which must point to the netmap branch
+##   that will be used for compilation.
+##
+## Once the setup is ready, the typical workflow is:
+## 
+## 1)  scripts/np get-range driver v1 v2
+##
+## This extracts the patches for driver from all the netmap-$v branches,
+## with $v ranging from v1 (included) to v2 (excluded). In this phase,
+## each extracted patch applies to a single kernel version. The patches
+## are dropped in tmp-patches/.
+##
+## 2) scripts/np build-check driver
+##
+## Tries to build netmap+driver for each driver patch in tmp-patches,
+## extracting and configuring the relevant linux kernel version. 
+## Many things are cached to speed things up. Clear the 'cache' directory
+## in case of trouble. Patches that fail to compile are moved to
+## failed-patches. Logs are in log/patch-name.
+##
+## 3) scripts/np minimize driver
+##
+## Tries to merge the patches that survived from step 2. The resulting
+## patches are put in final-patches.
+##
+## 4) scripts/np infty driver v2
+##
+## Replaces the right-end applicability of all final patches for driver
+## from v2 to infty (99999).
+##
+## 
+
+PROGNAME=$0
+
+[ -n "$1" ] || {
+	scripts/help $PROGNAME;
+	exit 1
+}
+
 ## usage (from the dir containing the Makefile):
 ## 
 ##    scripts/np <action> [args...]
@@ -440,13 +492,6 @@ function forall()
 }
 
 mkdir -p tmp-patches
-
-PROGNAME=$0
-
-[ -n "$1" ] || {
-	scripts/help $PROGNAME;
-	exit 1
-}
 
 COMMAND=$1; shift
 case $COMMAND in
