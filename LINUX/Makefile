@@ -1,7 +1,6 @@
-all: netmap modules
+all: netmap drivers
 
-netmap: netmap.mak
-modules: netmap.mak
+netmap drivers: netmap.mak
 
 -include netmap.mak
 
@@ -12,6 +11,6 @@ COMPAT_ARGS=$(if $(KSRC),--kernel-dir=$(KSRC),)\
 netmap.mak:
 	@echo 'The new way to build netmap is to run the provided configure script first,'
 	@echo 'followed by make.'
-	@echo 'We run configure for you now, with default arguments, and restart make.'
+	@echo 'We run configure for you now, with compatible arguments, and restart make.'
 	@echo 'Please run configure again if this is not what you want.'
 	./configure $(COMPAT_ARGS)
