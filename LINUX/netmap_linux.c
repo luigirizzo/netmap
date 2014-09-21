@@ -1317,6 +1317,7 @@ static int netmap_socket_recvmsg(struct kiocb *iocb, struct socket *sock,
 #endif /* WITH_V1000 */
 
 
+#ifdef WITH_VALE
 #ifdef CONFIG_NET_NS
 #include <net/netns/generic.h>
 
@@ -1446,7 +1447,8 @@ netmap_bns_unregister(void)
 			&netmap_pernet_ops);
 #endif
 }
-#endif
+#endif /* CONFIG_NET_NS */
+#endif /* WITH_VALE */
 
 
 /* ########################## MODULE INIT ######################### */
