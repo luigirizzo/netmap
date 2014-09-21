@@ -98,5 +98,4 @@ distclean: clean
 	rm -rf netmap-tmpdir
 	if [ -L Makefile ]; then rm Makefile; fi
 	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
-	rm -f build-apps/Makefile
-	rmdir build-apps
+	rm -rf build-apps

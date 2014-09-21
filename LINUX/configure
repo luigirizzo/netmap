@@ -651,7 +651,7 @@ for f in $SRCDIR/*.in; do
 		$f > $(basename $f .in)
 done
 
-# if we are not in SRCDIR this will fail, since
+# if we are in SRCDIR this will fail, since
 # Makefile already exists
 ln -s $SRCDIR/Makefile || true
 ln -s $SRCDIR/drv-subdir.mak || true
