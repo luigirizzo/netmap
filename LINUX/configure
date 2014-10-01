@@ -442,6 +442,7 @@ Otherwise, check that the 'build' symlink in
 is not broken.
 	EOF
 fi
+ksrc=$(cd $ksrc; pwd)
 
 # check that ksrc has been prepared for external modules compilation
 # It should contain a version.h file (in one of two possible places,
@@ -488,6 +489,7 @@ via a generic adapter at reduced performance."
 		EOF
 	fi
 fi
+src=$(cd $src; pwd)
 
 
 drvname2config() {
