@@ -1048,6 +1048,10 @@ fi # ! -f $cache/netmap_config_h
 
 report
 
+# create the build directory for the examples
+mkdir build-apps
+ln -s $SRCDIR/../examples/GNUmakefile build-apps/Makefile
+
 # config.status can be used to rerun configure with the
 # same arguments
 rm -f config.status

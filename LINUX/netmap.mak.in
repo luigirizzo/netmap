@@ -64,6 +64,7 @@ test:
 
 clean: clean-drivers
 	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
+	-@ $(MAKE) -C build-apps clean
 	-@ rm -f *.orig *.rej *.ko *.o .*.d 		\
 		*.mod.c modules.order			\
 		Module.symvers .*.cmd
@@ -88,10 +89,10 @@ PREFIX=@PREFIX@
 DESTDIR?=@DESTDIR@
 
 apps:
-	$(MAKE) -C $(SRCDIR)../examples CC="$(APPS_CC)" LD="$(APPS_LD)"
+	$(MAKE) -C build-apps SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)"
 
 install-apps:
-	$(MAKE) -C $(SRCDIR)../examples install DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+	$(MAKE) -C build-apps install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
 
 +%:
 	@echo $($*)
@@ -101,3 +102,5 @@ distclean: clean
 		patches drivers.mak Kbuild netmap.mak
 	rm -rf netmap-tmpdir
 	if [ -L Makefile ]; then rm Makefile; fi
+	rm -f build-apps/Makefile
+	rmdir build-apps

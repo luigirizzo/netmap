@@ -7,10 +7,14 @@ X86PROG = testlock testcsum
 LIBNETMAP =
 
 CLEANFILES = $(PROGS) $(X86PROGS) *.o
+
+SRCDIR ?= ..
+VPATH = $(SRCDIR)/examples
+
 NO_MAN=
 CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
-CFLAGS += -I ../sys # -I/home/luigi/FreeBSD/head/sys -I../sys
+CFLAGS += -I $(SRCDIR)/sys # -I/home/luigi/FreeBSD/head/sys -I../sys
 CFLAGS += -Wextra
 ifdef WITH_PCAP
 # do not use pcap by default, as it is not always available on linux
@@ -51,4 +55,4 @@ testlock: testlock.c
 install: $(PROGS:%=install-%)
 
 install-%:
-	install -D $* $(DESTDIR)$(PREFIX)/bin/$*
+	install -D $* $(DESTDIR)/$(PREFIX)/bin/$*
