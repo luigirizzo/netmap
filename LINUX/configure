@@ -445,6 +445,8 @@ for opt do
 			drv enable "$d"
 		done
 	;;
+	--driver=*) drv enable "$optarg"
+	;;
 	--cc=*) cc="$optarg"
 	;;
 	--ld=*) ld="$optarg"
