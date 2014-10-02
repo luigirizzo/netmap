@@ -325,15 +325,21 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 }
 #ifdef CONFIG_E1000_NETMAP_PT
 
+static uint32_t e1000_netmap_ptctl(struct net_device *, uint32_t);
 static int
 e1000_paravirt_netmap_config(struct netmap_adapter *na,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
 {
 	struct e1000_adapter *adapter = netdev_priv(na->ifp);
 	struct paravirt_csb *csb = adapter->csb;
+	int ret;
 
 	if (csb == NULL)
 		return EINVAL;
+
+	ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	if (ret)
+		return ret;
 
 	*txr = csb->num_tx_rings;
 	*rxr = csb->num_rx_rings;
