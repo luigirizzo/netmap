@@ -1,6 +1,4 @@
-all: netmap drivers
-
-netmap drivers: netmap.mak
+all: netmap.mak
 
 -include netmap.mak
 
