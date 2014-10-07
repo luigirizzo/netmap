@@ -302,7 +302,7 @@ run_tests() {
 		obj-m := $TESTOBJS
 		else
 		all: $get_drivers
-		$t	\$(MAKE) -C $ksrc M=\$\$PWD
+		$t	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
 		-include $TOPDIR/drivers.mak
 		endif
