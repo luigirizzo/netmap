@@ -2,10 +2,11 @@
 # we can just define 'progs' and create custom targets.
 PROGS	=	pkt-gen bridge vale-ctl
 #PROGS += pingd
-PROGS	+= testlock test_select testmmap vale-ctl
+PROGS	+= test_select testmmap
+X86PROG = testlock testcsum
 LIBNETMAP =
 
-CLEANFILES = $(PROGS) *.o
+CLEANFILES = $(PROGS) $(X86PROGS) *.o
 NO_MAN=
 CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
@@ -27,6 +28,8 @@ endif
 PREFIX ?= /usr/local
 
 all: $(PROGS)
+
+all-x86: $(PROGS) $(X86PROGS)
 
 kern_test: testmod/kern_test.c
 
