@@ -229,8 +229,6 @@ Available options:
 
 # TMPDIR is where we build all the tests
 TMPDIR=netmap-tmpdir
-rm -rf $TMPDIR
-mkdir $TMPDIR
 
 # tests are first accumulated using add_named_test and add_test, then
 # run by run_tests. This setup amortizes the cost of going
@@ -284,6 +282,15 @@ add_test() {
 	local t="__test__$NEXTTEST"
 	add_named_test $t "$@"
 	NEXTTEST=$(($NEXTTEST+1))
+}
+
+reset_tests() {
+	rm -rf $TMPDIR
+	mkdir $TMPDIR
+
+	TESTOBJS=
+	TESTPOSTPROC=
+	NEXTTEST=1
 }
 
 # run_tests: run all accumulated tests and exec the pertinent
@@ -491,6 +498,16 @@ via a generic adapter at reduced performance."
 fi
 src=$(cd $src; pwd)
 
+broken_buildsystem() {
+	error <<-EOF
+It looks like we are not able to build kernel modules for the current
+configuration. Please check 'config.log' for possible clues.
+	EOF
+}
+
+reset_tests
+add_test true broken_buildsystem < /dev/null
+run_tests
 
 drvname2config() {
 	local name=$1
@@ -649,6 +666,7 @@ if [ -d "$cache" ] && [ -f "$cache/netmap_linux_config.h" ]; then
 else
 
 # BEGIN_TESTS
+reset_tests
 
 # iommu support
 add_test 'have IOMMU' <<-EOF
