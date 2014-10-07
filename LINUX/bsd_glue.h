@@ -465,6 +465,9 @@ int netmap_bns_register(void);
 void netmap_bns_unregister(void);
 #define NM_BNS_GET(b)	(b)->ns = netmap_bns_get()
 #define NM_BNS_PUT(b)	netmap_bns_put(b->ns)
+#else
+#define NM_BNS_GET(b)	do { (void)(b); } while (0)
+#define NM_BNS_PUT(b)   do { (void)(b); } while (0)
 #endif
 
 #endif /* _BSD_GLUE_H */
