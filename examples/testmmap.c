@@ -570,6 +570,48 @@ do_ring()
 void
 do_slot()
 {
+	struct netmap_ring *ring;
+	struct netmap_slot *slot;
+	long int index;
+	char *arg;
+
+	/* defaults */
+	index = 0;
+
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	index = strtoll(arg, NULL, 0);
+doit:
+	ring = get_ring();
+	slot = ring->slot + index;
+	printf("buf_idx       %u\n", slot->buf_idx);
+	printf("len           %u\n", slot->len);
+	printf("flags         %x", slot->flags);
+	if (slot->flags) {
+		printf(" [");
+		if (slot->flags & NS_BUF_CHANGED) {
+			printf(" BUF_CHANGED");
+		}
+		if (slot->flags & NS_REPORT) {
+			printf(" REPORT");
+		}     
+		if (slot->flags & NS_FORWARD) {
+			printf(" FORWARD");
+		}    
+		if (slot->flags & NS_NO_LEARN) {
+			printf(" NO_LEARN");
+		}   
+		if (slot->flags & NS_INDIRECT) {
+			printf(" INDIRECT");
+		}   
+		if (slot->flags & NS_MOREFRAG) {
+			printf(" MOREFRAG");
+		}   
+		printf(" ]");
+	}
+	printf("\n");
+	printf("ptr           %lx\n", slot->ptr);
 }
 
 void
