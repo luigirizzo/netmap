@@ -13,6 +13,7 @@
 #include <fcntl.h>	/* O_RDWR */
 #include <pthread.h>
 #include <signal.h>
+#include <ctype.h>
 
 
 #define MAX_VARS 100
@@ -614,9 +615,51 @@ doit:
 	printf("ptr           %lx\n", slot->ptr);
 }
 
+static void
+dump_payload(char *p, int len)
+{
+	char buf[128];
+	int i, j, i0;
+
+	/* hexdump routine */
+	for (i = 0; i < len; ) {
+		memset(buf, sizeof(buf), ' ');
+		sprintf(buf, "%5d: ", i);
+		i0 = i;
+		for (j=0; j < 16 && i < len; i++, j++)
+			sprintf(buf+7+j*3, "%02x ", (uint8_t)(p[i]));
+		i = i0;
+		for (j=0; j < 16 && i < len; i++, j++)
+			sprintf(buf+7+j + 48, "%c",
+				isprint(p[i]) ? p[i] : '.');
+		printf("%s\n", buf);
+	}
+}
+
 void
 do_buf()
 {
+	struct netmap_ring *ring;
+	long int buf_idx, len;
+	char *buf, *arg;
+
+	/* defaults */
+	buf_idx = 2;
+	len = 64;
+
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	buf_idx = strtoll(arg, NULL, 0);
+	
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	len = strtoll(arg, NULL, 0);
+doit:
+	ring = get_ring();
+	buf = NETMAP_BUF(ring, buf_idx);
+	dump_payload(buf, len);
 }
 
 struct cmd_def {
