@@ -117,7 +117,7 @@
 
 extern struct netmap_mem_d nm_mem;
 
-void	   netmap_mem_get_lut(struct netmap_mem_d *, struct netmap_lut *);
+int	   netmap_mem_get_lut(struct netmap_mem_d *, struct netmap_lut *);
 vm_paddr_t netmap_mem_ofstophys(struct netmap_mem_d *, vm_ooffset_t);
 int	   netmap_mem_finalize(struct netmap_mem_d *, struct netmap_adapter *);
 int 	   netmap_mem_init(void);

@@ -825,8 +825,9 @@ struct netmap_bwrap_adapter {
 	struct netmap_vp_adapter host;  /* for host rings */
 	struct netmap_adapter *hwna;	/* the underlying device */
 
-	/* backup of the hwna memory allocator */
-	struct netmap_mem_d *save_nmd;
+	/* backup of the hwna notify callback */
+	int (*save_notify)(struct netmap_adapter *,
+			u_int ring, enum txrx, int flags);
 
 	/*
 	 * When we attach a physical interface to the bridge, we

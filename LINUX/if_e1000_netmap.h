@@ -359,6 +359,8 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 	struct e1000_adapter *adapter = netdev_priv(ifp);
 	struct e1000_hw *hw = &adapter->hw;
 
+	ND("");
+
 	ew32(PTCTL, NET_PARAVIRT_PTCTL_TXSYNC);
 	kring->rcur = kring->ring->cur;
 	kring->rhead = kring->ring->head;
@@ -374,6 +376,8 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 	struct ifnet *ifp = na->ifp;
 	struct e1000_adapter *adapter = netdev_priv(ifp);
 	struct e1000_hw *hw = &adapter->hw;
+
+	ND("");
 
 	ew32(PTCTL, NET_PARAVIRT_PTCTL_RXSYNC);
 	kring->rcur = kring->ring->cur;

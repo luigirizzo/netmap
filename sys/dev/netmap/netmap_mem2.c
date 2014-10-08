@@ -115,7 +115,7 @@ struct netmap_obj_pool {
 
 
 struct netmap_mem_ops {
-	void (*nmd_get_lut)(struct netmap_mem_d *, struct netmap_lut*);
+	int (*nmd_get_lut)(struct netmap_mem_d *, struct netmap_lut*);
 	int  (*nmd_get_info)(struct netmap_mem_d *, u_int *size,
 			u_int *memflags, uint16_t *id);
 
@@ -193,7 +193,7 @@ netmap_mem_##name(struct netmap_adapter *na, t1 a1) \
 	return na->nm_mem->ops->nmd_##name(na, a1); \
 }
 
-NMD_DEFCB1(void, get_lut, struct netmap_lut *);
+NMD_DEFCB1(int, get_lut, struct netmap_lut *);
 NMD_DEFCB3(int, get_info, u_int *, u_int *, uint16_t *);
 NMD_DEFCB1(vm_paddr_t, ofstophys, vm_ooffset_t);
 static int netmap_mem_config(struct netmap_mem_d *);
@@ -981,6 +981,19 @@ netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int obj
 }
 
 
+static struct lut_entry *
+nm_alloc_lut(u_int nobj)
+{
+	size_t n = sizeof(struct lut_entry) * nobj;
+	struct lut_entry *lut;
+#ifdef linux
+	lut = vmalloc(n);
+#else
+	lut = malloc(n, M_NETMAP, M_NOWAIT | M_ZERO);
+#endif
+	return lut;
+}
+
 /* call with NMA_LOCK held */
 static int
 netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
@@ -992,14 +1005,9 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 	p->numclusters = p->_numclusters;
 	p->objtotal = p->_objtotal;
 
-	n = sizeof(struct lut_entry) * p->objtotal;
-#ifdef linux
-	p->lut = vmalloc(n);
-#else
-	p->lut = malloc(n, M_NETMAP, M_NOWAIT | M_ZERO);
-#endif
+	p->lut = nm_alloc_lut(p->objtotal);
 	if (p->lut == NULL) {
-		D("Unable to create lookup table (%d bytes) for '%s'", (int)n, p->name);
+		D("Unable to create lookup table for '%s'", p->name);
 		goto clean;
 	}
 
@@ -1653,12 +1661,59 @@ struct netmap_mem_pv {
 	struct ifnet *ifp;
 	struct netmap_paravirt_ops *pv_ops;
 	vm_paddr_t nm_paddr;
+	struct lut_entry *lut;
 };
 
-static void
+static int
 netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 {
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
+	struct paravirt_csb *csb;
+	struct netmap_if *nifp;
+	struct netmap_ring *ring;
+	void *vaddr;
+	vm_paddr_t paddr;
+	uint32_t bufsize;
+	int i;
+
 	D("");
+	if (! (nmd->flags & NETMAP_MEM_FINALIZED)) {
+		return EINVAL;
+	}
+
+	csb = pv->pv_ops->nm_getcsb(pv->ifp);
+	if (csb == NULL)
+		return EINVAL;
+
+	if (pv->lut == NULL) {
+		D("allocating lut");
+		pv->lut = nm_alloc_lut(csb->nbuffers);
+		if (pv->lut == NULL) {
+			D("lut allocation failed");
+			return ENOMEM;
+		}
+	}
+
+	/* XXX check that the pointers are within the mapped area */
+
+	nifp = (struct netmap_if *)(csb->base_addr + csb->nifp_offset);
+	ring = (struct netmap_ring *)((void *)nifp + nifp->ring_ofs[0]);
+	vaddr = (void *)((char *)ring + ring->buf_ofs);
+	D("vaddr %p", vaddr);
+	paddr = csb->base_addr + nifp->ring_ofs[0] + ring->buf_ofs;
+	bufsize = ring->nr_buf_size;
+	for (i = 0; i < csb->nbuffers; i++) {
+		pv->lut[i].vaddr = vaddr;
+		pv->lut[i].paddr = paddr;
+		vaddr += bufsize;
+		paddr += bufsize;
+	}
+
+	lut->lut = pv->lut;
+	lut->objtotal = csb->nbuffers;
+	lut->objsize = bufsize;
+
+	return 0;
 }
 
 static int  
