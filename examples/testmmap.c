@@ -551,15 +551,19 @@ do_ring()
 	printf("head        %u\n", ring->head);
 	printf("cur         %u\n", ring->head);
 	printf("tail        %u\n", ring->head);
-	printf("flags       %x [", ring->flags);
-	if (ring->flags & NR_TIMESTAMP) {
-		printf(" NR_TIMESTAMP");
+	printf("flags       %x", ring->flags);
+	if (ring->flags) {
+		printf(" [");
+		if (ring->flags & NR_TIMESTAMP) {
+			printf(" TIMESTAMP");
+		}
+		if (ring->flags & NR_FORWARD) {
+			printf(" FORWARD");
+		}
+		printf(" ]");
 	}
-	if (ring->flags & NR_FORWARD) {
-		printf(" NR_FORWARD");
-	}
-	printf(" ]\n");
-	printf("ts         %ld:%ld\n",
+	printf("\n");
+	printf("ts          %ld:%ld\n",
 			(long int)ring->ts.tv_sec, (long int)ring->ts.tv_usec);
 }
 
