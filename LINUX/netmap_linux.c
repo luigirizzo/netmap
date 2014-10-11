@@ -1368,7 +1368,7 @@ netmap_pernet_exit(struct net *net)
 {
 	struct netmap_bns *ns = net_generic(net, netmap_bns_id);
 
-	free(ns->bridges, M_DEVBUF);
+	netmap_uninit_bridges2(ns->bridges, ns->num_bridges);
 	ns->bridges = NULL;
 }
 
@@ -1382,7 +1382,13 @@ static struct pernet_operations netmap_pernet_ops = {
 int
 netmap_bns_register(void)
 {
-	return -register_pernet_subsys(&netmap_pernet_ops);	
+	return -register_pernet_subsys(&netmap_pernet_ops);
+}
+
+void
+netmap_bns_unregister(void)
+{
+	unregister_pernet_subsys(&netmap_pernet_ops);	
 }
 #endif
 

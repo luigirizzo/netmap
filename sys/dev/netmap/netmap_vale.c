@@ -2441,6 +2441,19 @@ netmap_init_bridges2(u_int n)
 	return b;
 }
 
+void
+netmap_uninit_bridges2(struct nm_bridge *b, u_int n)
+{
+	int i;
+
+	if (b == NULL)
+		return;
+
+	for (i = 0; i < n; i++)
+		BDG_RWDESTROY(&b[i]);
+	free(b, M_DEVBUF);
+}
+
 int
 netmap_init_bridges(void)
 {
@@ -2451,6 +2464,16 @@ netmap_init_bridges(void)
 	if (nm_bridges == NULL)
 		return ENOMEM;
 	return 0;
+#endif
+}
+
+void
+netmap_uninit_bridges(void)
+{
+#ifdef CONFIG_NET_NS
+	netmap_bns_unregister();
+#else
+	netmap_uninit_bridges2(nm_bridges, NM_BRIDGES);
 #endif
 }
 #endif /* WITH_VALE */

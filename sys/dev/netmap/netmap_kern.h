@@ -1114,7 +1114,9 @@ u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 /* these are redefined in case of no VALE support */
 int netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 struct nm_bridge *netmap_init_bridges2(u_int);
+void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
+void netmap_uninit_bridges(void);
 int netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops);
 int netmap_bdg_config(struct nmreq *nmr);
 

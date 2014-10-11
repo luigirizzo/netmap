@@ -290,6 +290,7 @@ static inline void mtx_unlock(safe_spinlock_t *m)
  */
 #define BDG_RWLOCK_T		struct rw_semaphore
 #define BDG_RWINIT(b)		init_rwsem(&(b)->bdg_lock)
+#define BDG_RWDESTROY(b)
 #define BDG_WLOCK(b)		down_write(&(b)->bdg_lock)
 #define BDG_WUNLOCK(b)		up_write(&(b)->bdg_lock)
 #define BDG_RLOCK(b)		down_read(&(b)->bdg_lock)
@@ -460,6 +461,7 @@ int netmap_linux_config(struct netmap_adapter *na,
 /* ---- namespaces ------ */
 #ifdef CONFIG_NET_NS
 int netmap_bns_register(void);
+void netmap_bns_unregister(void);
 #define NM_BNS_GET(b)	(b)->ns = netmap_bns_get()
 #define NM_BNS_PUT(b)	netmap_bns_put(b->ns)
 #endif

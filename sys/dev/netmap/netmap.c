@@ -3034,7 +3034,7 @@ extern struct cdevsw netmap_cdevsw;
 void
 netmap_fini(void)
 {
-	// XXX destroy_bridges() ?
+	netmap_uninit_bridges();
 	if (netmap_dev)
 		destroy_dev(netmap_dev);
 	netmap_mem_fini();
