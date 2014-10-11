@@ -637,6 +637,7 @@ done
 # if we are not in SRCDIR this will fail, since
 # Makefile already exists
 ln -s $SRCDIR/Makefile || true
+ln -s $SRCDIR/drv-subdir.mak || true
 
 
 #################################################
