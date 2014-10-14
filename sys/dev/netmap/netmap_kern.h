@@ -1123,6 +1123,7 @@ int netmap_bdg_config(struct nmreq *nmr);
 #else /* !WITH_VALE */
 #define	netmap_get_bdg_na(_1, _2, _3)	0
 #define netmap_init_bridges(_1) 0
+#define netmap_uninit_bridges()
 #define	netmap_bdg_ctl(_1, _2)	EINVAL
 #endif /* !WITH_VALE */
 
