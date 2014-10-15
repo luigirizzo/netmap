@@ -1334,7 +1334,7 @@ static inline void
 netmap_load_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
-	if (map) {
+	if (0 && map) {
 		*map = dma_map_single(na->pdev, buf, na->na_lut_objsize,
 				DMA_BIDIRECTIONAL);
 	}

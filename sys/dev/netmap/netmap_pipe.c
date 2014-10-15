@@ -208,7 +208,6 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 
 	if (limit == 0) {
 		/* either the rxring is full, or nothing to send */
-		nm_txsync_finalize(txkring); /* actually useless */
 		return 0;
 	}
 
@@ -233,7 +232,6 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
         txkring->nr_hwcur = k;
         txkring->nr_hwtail = nm_prev(k, lim_tx);
 
-        nm_txsync_finalize(txkring);
         ND(2, "after: hwcur %d hwtail %d cur %d head %d tail %d j %d", txkring->nr_hwcur, txkring->nr_hwtail,
                 txkring->rcur, txkring->rhead, txkring->rtail, j);
 
@@ -254,7 +252,6 @@ netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
         ND(5, "hwcur %d hwtail %d cur %d head %d tail %d", rxkring->nr_hwcur, rxkring->nr_hwtail,
                 rxkring->rcur, rxkring->rhead, rxkring->rtail);
         mb(); /* paired with the first mb() in txsync */
-        nm_rxsync_finalize(rxkring);
 
 	if (oldhwcur != rxkring->nr_hwcur) {
 		/* we have released some slots, notify the other end */

@@ -1094,7 +1094,7 @@ static void
 netmap_grab_packets(struct netmap_kring *kring, struct mbq *q, int force)
 {
 	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const head = kring->ring->head;
+	u_int const head = kring->rhead;
 	u_int n;
 	struct netmap_adapter *na = kring->na;
 
@@ -1181,7 +1181,6 @@ void
 netmap_txsync_to_host(struct netmap_adapter *na)
 {
 	struct netmap_kring *kring = &na->tx_rings[na->num_tx_rings];
-	struct netmap_ring *ring = kring->ring;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	struct mbq q;
@@ -1192,14 +1191,12 @@ netmap_txsync_to_host(struct netmap_adapter *na)
 	 * the queue is drained in all cases.
 	 */
 	mbq_init(&q);
-	ring->cur = head;
 	netmap_grab_packets(kring, &q, 1 /* force */);
 	ND("have %d pkts in queue", mbq_len(&q));
 	kring->nr_hwcur = head;
 	kring->nr_hwtail = head + lim;
 	if (kring->nr_hwtail > lim)
 		kring->nr_hwtail -= lim + 1;
-	nm_txsync_finalize(kring);
 
 	netmap_send_up(na->ifp, &q);
 }
@@ -1268,8 +1265,6 @@ netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwai
 			ret = netmap_sw_to_nic(na);
 		kring->nr_hwcur = head;
 	}
-
-	nm_rxsync_finalize(kring);
 
 	/* access copies of cur,tail in the kring */
 	if (kring->rcur == kring->rtail && td) /* no bufs available */
@@ -1579,7 +1574,7 @@ nm_rxsync_prologue(struct netmap_kring *kring)
 	uint32_t const n = kring->nkr_num_slots;
 	uint32_t head, cur;
 
-	ND("%s kc %d kt %d h %d c %d t %d",
+	RD(5,"%s kc %d kt %d h %d c %d t %d",
 		kring->name,
 		kring->nr_hwcur, kring->nr_hwtail,
 		ring->head, ring->cur, ring->tail);
@@ -2195,15 +2190,19 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 					    kring->nr_hwcur);
 				if (nm_txsync_prologue(kring) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
-				} else {
-					kring->nm_sync(kring, NAF_FORCE_RECLAIM);
+				} else if (kring->nm_sync(kring, NAF_FORCE_RECLAIM) == 0) {
+					nm_txsync_finalize(kring);
 				}
 				if (netmap_verbose & NM_VERB_TXSYNC)
 					D("post txsync ring %d cur %d hwcur %d",
 					    i, kring->ring->cur,
 					    kring->nr_hwcur);
 			} else {
-				kring->nm_sync(kring, NAF_FORCE_READ);
+				if (nm_rxsync_prologue(kring) >= kring->nkr_num_slots) {
+					netmap_ring_reinit(kring);
+				} else if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
+					nm_rxsync_finalize(kring);
+				}
 				microtime(&na->rx_rings[i].ring->ts);
 			}
 			nm_kr_put(kring);
@@ -2402,6 +2401,8 @@ flush_tx:
 			} else {
 				if (kring->nm_sync(kring, 0))
 					revents |= POLLERR;
+				else
+					nm_txsync_finalize(kring);
 			}
 
 			/*
@@ -2446,6 +2447,12 @@ do_retry_rx:
 				continue;
 			}
 
+			if (nm_rxsync_prologue(kring) >= kring->nkr_num_slots) {
+				netmap_ring_reinit(kring);
+				revents |= POLLERR;
+			}
+			/* now we can use kring->rcur, rtail */
+
 			/*
 			 * transparent mode support: collect packets
 			 * from the rxring(s).
@@ -2460,11 +2467,12 @@ do_retry_rx:
 
 			if (kring->nm_sync(kring, 0))
 				revents |= POLLERR;
+			else
+				nm_rxsync_finalize(kring);
 			if (netmap_no_timestamp == 0 ||
 					kring->ring->flags & NR_TIMESTAMP) {
 				microtime(&kring->ring->ts);
 			}
-			/* after an rxsync we can use kring->rcur, rtail */
 			found = kring->rcur != kring->rtail;
 			nm_kr_put(kring);
 			if (found) {

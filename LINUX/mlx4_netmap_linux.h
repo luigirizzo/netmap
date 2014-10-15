@@ -385,7 +385,6 @@ mlx4_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
     }
 
 out:
-	nm_txsync_finalize(kring);
 	return 0;
 
 err:
@@ -418,7 +417,7 @@ mlx4_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 	u_int nic_i;	/* index into the NIC ring */
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const head = nm_rxsync_prologue(kring);
+	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	struct SOFTC_T *priv = netdev_priv(ifp);
@@ -559,8 +558,6 @@ mlx4_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 			kring->nr_hwcur, kring->nr_hwtail);
 	}
 
-	/* tell userspace that there are new packets */
-	nm_rxsync_finalize(kring);
 
 	return 0;
 
