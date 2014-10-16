@@ -550,7 +550,7 @@ linux_netmap_set_ringparam(struct net_device *dev,
 	return -EBUSY;
 }
 
-#ifdef ETHTOOL_SCHANNELS
+#ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
 int
 linux_netmap_set_channels(struct net_device *dev,
 	struct ethtool_channels *e)

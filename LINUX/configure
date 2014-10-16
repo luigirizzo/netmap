@@ -715,6 +715,17 @@ add_test 'have GET_RINGPARAM' <<-EOF
 	}
 EOF
 
+# ethtool set_channels
+add_test 'have SET_CHANNELS' <<-EOF
+	#include <linux/netdevice.h>
+	#include <linux/ethtool.h>
+
+	int
+	dummy(struct net_device *net, struct ethtool_channels *c) {
+		return net->ethtool_ops->set_channels(net, c);
+	}
+EOF
+
 # number of tx/rx queues
 add_test 'have NUM_QUEUES' <<-EOF
 	#include <linux/netdevice.h>
