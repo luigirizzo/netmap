@@ -1328,6 +1328,40 @@ struct netmap_bns {
 	u_int num_bridges;
 };
 
+#ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
+int
+nm_bns_create(struct net *net, struct netmap_bns **ns)
+{
+	*ns = net_generic(net, netmap_bns_id);
+	return 0;
+}
+#define nm_bns_destroy(_1, _2)
+#else
+int
+nm_bns_create(struct net *net, struct netmap_bns **ns)
+{
+	int error = 0;
+
+	*ns = kmalloc(sizeof(*ns), GFP_KERNEL);
+	if (!*ns)
+		return -ENOMEM;
+
+	error = net_assign_generic(net, netmap_bns_id, *ns);
+	if (error) {
+		kfree(*ns);
+		*ns = NULL;
+	}
+	return error;
+}
+
+void
+nm_bns_destroy(struct net *net, struct netmap_bns *ns)
+{
+	kfree(ns);
+	net_assign_generic(net, netmap_bns_id, NULL);
+}
+#endif
+
 struct net*
 netmap_bns_get(void)
 {
@@ -1353,13 +1387,20 @@ netmap_bns_getbridges(struct nm_bridge **b, u_int *n)
 static int __net_init
 netmap_pernet_init(struct net *net)
 {
-	struct netmap_bns *ns = net_generic(net, netmap_bns_id);
+	struct netmap_bns *ns;
+	int error = 0;
+
+	error = nm_bns_create(net, &ns);
+	if (error)
+		return error;
 
 	ns->net = net;
 	ns->num_bridges = 8;
 	ns->bridges = netmap_init_bridges2(ns->num_bridges);
-	if (ns->bridges == NULL)
+	if (ns->bridges == NULL) {
+		nm_bns_destroy(net, ns);
 		return -ENOMEM;
+	}
 
 	return 0;
 }
@@ -1371,25 +1412,39 @@ netmap_pernet_exit(struct net *net)
 
 	netmap_uninit_bridges2(ns->bridges, ns->num_bridges);
 	ns->bridges = NULL;
+
+	nm_bns_destroy(net, ns);
 }
 
 static struct pernet_operations netmap_pernet_ops = {
 	.init = netmap_pernet_init,
 	.exit = netmap_pernet_exit,
+#ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
 	.id = &netmap_bns_id,
 	.size = sizeof(struct netmap_bns),
+#endif
 };
 
 int
 netmap_bns_register(void)
 {
+#ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
 	return -register_pernet_subsys(&netmap_pernet_ops);
+#else
+	return -register_pernet_gen_subsys(&netmap_bns_id,
+			&netmap_pernet_ops);
+#endif
 }
 
 void
 netmap_bns_unregister(void)
 {
-	unregister_pernet_subsys(&netmap_pernet_ops);	
+#ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
+	unregister_pernet_subsys(&netmap_pernet_ops);
+#else
+	unregister_pernet_gen_subsys(netmap_bns_id,
+			&netmap_pernet_ops);
+#endif
 }
 #endif
 

@@ -726,6 +726,16 @@ add_test 'have SET_CHANNELS' <<-EOF
 	}
 EOF
 
+# pernet_operations id field
+add_test 'have PERNET_OPS_ID' <<-EOF
+	#include <net/net_namespace.h>
+
+	int *
+	dummy(struct pernet_operations *ops) {
+		return ops->id;
+	}
+EOF
+
 # number of tx/rx queues
 add_test 'have NUM_QUEUES' <<-EOF
 	#include <linux/netdevice.h>
