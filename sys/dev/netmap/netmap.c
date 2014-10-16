@@ -2674,7 +2674,7 @@ netmap_attach(struct netmap_adapter *arg)
 #ifdef linux
 	if (ifp->netdev_ops) {
 		/* prepare a clone of the netdev ops */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
+#ifndef NETMAP_LINUX_HAVE_NETDEV_OPS
 		hwna->nm_ndo.ndo_start_xmit = ifp->netdev_ops;
 #else
 		hwna->nm_ndo = *ifp->netdev_ops;
