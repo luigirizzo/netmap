@@ -30,6 +30,7 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 #include <linux/rtnetlink.h>
+#include <linux/nsproxy.h>
 
 #include "netmap_linux_config.h"
 
