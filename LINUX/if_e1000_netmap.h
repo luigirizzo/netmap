@@ -402,6 +402,12 @@ e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (0);
 }
 
+static int
+e1000_paravirt_netmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
+{
+	return EOPNOTSUPP;
+}
+
 static struct paravirt_csb * e1000_netmap_getcsb(struct net_device *netdev)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
@@ -487,6 +493,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_register = e1000_paravirt_netmap_reg;
 	na.nm_txsync = e1000_paravirt_netmap_txsync;
 	na.nm_rxsync = e1000_paravirt_netmap_rxsync;
+	na.nm_bdg_attach = e1000_paravirt_netmap_bdg_attach;
 	netmap_paravirt_attach(&na, &e1000_netmap_paravirt_ops);
 #else
 	netmap_attach(&na);
