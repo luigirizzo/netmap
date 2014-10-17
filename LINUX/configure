@@ -870,16 +870,6 @@ add_test 'have USLEEP_RANGE' <<-EOF
 	}
 EOF
 
-# check for exported split_page
-add_test 'have SPLIT_PAGE' <<-EOF
-	#include <linux/mm.h>
-
-	void dummy(struct page *page, unsigned int order)
-	{
-	        return split_page(page, order);
-	}
-EOF
-
 # check for HRTIMER_MODE_REL
 add_test 'have HRTIMER_MODE_REL' <<-EOF
 	#include <linux/hrtimer.h>
