@@ -1,0 +1,126 @@
+diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
+index a456578..188b961 100644
+--- a/ixgbe/ixgbe_main.c
++++ b/ixgbe/ixgbe_main.c
+@@ -337,6 +337,16 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
+ 	unsigned int i, eop, count = 0;
+ 	unsigned int total_bytes = 0, total_packets = 0;
+ 
++#ifdef DEV_NETMAP
++	/*
++	* In netmap mode, all the work is done in the context
++	* of the client thread. Interrupt handlers only wake up
++	* clients, which may be sleeping on individual rings
++	* or on a global resource for all rings.
++	*/
++	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index))
++		return 1; /* seems to be ignored */
++#endif /* DEV_NETMAP */
+ 	i = tx_ring->next_to_clean;
+ 	eop = tx_ring->tx_buffer_info[i].next_to_watch;
+ 	eop_desc = IXGBE_TX_DESC_ADV(*tx_ring, eop);
+@@ -778,6 +788,14 @@ static bool ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+ 	int ddp_bytes = 0;
+ #endif /* IXGBE_FCOE */
+ 
++#ifdef DEV_NETMAP
++	/*
++	* Same as the txeof routine: only wakeup clients on intr.
++	*/
++	if (netmap_rx_irq(adapter->netdev, rx_ring->queue_index, work_done))
++		return true; /* no more interrupts */
++#endif /* DEV_NETMAP */
++
+ 	i = rx_ring->next_to_clean;
+ 	rx_desc = IXGBE_RX_DESC_ADV(*rx_ring, i);
+ 	staterr = le32_to_cpu(rx_desc->wb.upper.status_error);
+@@ -1008,6 +1026,24 @@ static void ixgbe_configure_msix(struct ixgbe_adapter *adapter)
+ 	IXGBE_WRITE_REG(&adapter->hw, IXGBE_EIAC, mask);
+ }
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++/*
++ * The #ifdef DEV_NETMAP / #endif blocks in this file are meant to
++ * be a reference on how to implement netmap support in a driver.
++ * Additional comments are in ixgbe_netmap_linux.h .
++ *
++ * The code is originally developed on FreeBSD and in the interest
++ * of maintainability we try to limit differences between the two systems.
++ *
++ * <ixgbe_netmap_linux.h> contains functions for netmap support
++ * that extend the standard driver.
++ * It also defines DEV_NETMAP so further conditional sections use
++ * that instead of CONFIG_NETMAP
++ */
++#include <ixgbe_netmap_linux.h>
++#endif
++
++
+ enum latency_range {
+ 	lowest_latency = 0,
+ 	low_latency = 1,
+@@ -1044,7 +1080,6 @@ static u8 ixgbe_update_itr(struct ixgbe_adapter *adapter,
+ 	if (packets == 0)
+ 		goto update_itr_done;
+ 
+-
+ 	/* simple throttlerate management
+ 	 *    0-20MB/s lowest (100000 ints/s)
+ 	 *   20-100MB/s low   (20000 ints/s)
+@@ -2568,6 +2603,12 @@ static void ixgbe_configure(struct ixgbe_adapter *adapter)
+ 
+ 	ixgbe_configure_tx(adapter);
+ 	ixgbe_configure_rx(adapter);
++#ifdef DEV_NETMAP
++	for (i = 0; i < adapter->num_rx_queues; i++)
++		ixgbe_netmap_configure_rx_ring(adapter,
++			adapter->rx_ring[i].reg_idx);
++	return;
++#endif /* DEV_NETMAP */
+ 	for (i = 0; i < adapter->num_rx_queues; i++)
+ 		ixgbe_alloc_rx_buffers(adapter, &adapter->rx_ring[i],
+ 		                       (adapter->rx_ring[i].count - 1));
+@@ -2753,6 +2794,11 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
+ 		txdctl = IXGBE_READ_REG(hw, IXGBE_TXDCTL(j));
+ 		txdctl |= IXGBE_TXDCTL_ENABLE;
+ 		IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(j), txdctl);
++
++#ifdef DEV_NETMAP // XXX i and j are the same ?
++		ixgbe_netmap_configure_tx_ring(adapter, j);
++#endif /* DEV_NETMAP */
++
+ 	}
+ 
+ 	for (i = 0; i < num_rx_rings; i++) {
+@@ -2835,6 +2881,10 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
+ 	/* enable transmits */
+ 	netif_tx_start_all_queues(netdev);
+ 
++#ifdef DEV_NETMAP
++	netmap_enable_all_rings(adapter->netdev);
++#endif
++
+ 	/* bring the link up in the watchdog, this could race with our first
+ 	 * link up interrupt but shouldn't be a problem */
+ 	adapter->flags |= IXGBE_FLAG_NEED_LINK_UPDATE;
+@@ -3040,6 +3090,10 @@ void ixgbe_down(struct ixgbe_adapter *adapter)
+ 	del_timer_sync(&adapter->watchdog_timer);
+ 	cancel_work_sync(&adapter->watchdog_task);
+ 
++#ifdef DEV_NETMAP
++	netmap_disable_all_rings(netdev);
++#endif
++
+ 	if (adapter->flags & IXGBE_FLAG_FDIR_HASH_CAPABLE ||
+ 	    adapter->flags & IXGBE_FLAG_FDIR_PERFECT_CAPABLE)
+ 		cancel_work_sync(&adapter->fdir_reinit_task);
+@@ -4290,6 +4344,9 @@ static int ixgbe_open(struct net_device *netdev)
+ 		goto err_up;
+ 
+ 	netif_tx_start_all_queues(netdev);
++#ifdef DEV_NETMAP
++	ixgbe_netmap_attach(adapter);
++#endif /* DEV_NETMAP */
+ 
+ 	return 0;
+ 
