@@ -1016,6 +1016,16 @@ add_test 'define IXGBE_DESC 3' <<-EOF
 		return IXGBE_TX_DESC(ring, 0);
 	}
 EOF
+
+# array of rings or array of poiners to rings?
+add_test 'define IXGBE_PTR_ARRAY' <<-EOF
+	#include "ixgbe/ixgbe.h"
+
+	struct ixgbe_ring *
+	dummy(struct ixgbe_adapter *adapter) {
+		return adapter->tx_ring[0];
+	}
+EOF
 fi # ixgbe
 
 # END_TESTS

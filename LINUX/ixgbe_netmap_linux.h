@@ -65,6 +65,13 @@ char ixgbe_driver_name[] = "ixgbe" NETMAP_LINUX_DRIVER_SUFFIX;
 #endif
 #endif
 
+#ifdef NETMAP_LINUX_IXGBE_PTR_ARRAY
+#define NM_IXGBE_TX_RING(a, r)		((a)->tx_ring[(r)])
+#define NM_IXGBE_RX_RING(a, r)		((a)->rx_ring[(r)])
+#else
+#define NM_IXGBE_TX_RING(a, r)		(&(a)->tx_ring[(r)])
+#define NM_IXGBE_RX_RING(a, r)		(&(a)->rx_ring[(r)])
+#endif
 
 /*
  * Register/unregister. We are already under netmap lock.
@@ -137,7 +144,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	/* device-specific */
 	struct SOFTC_T *adapter = netdev_priv(ifp);
-	struct ixgbe_ring *txr = adapter->tx_ring[ring_nr];
+	struct ixgbe_ring *txr = NM_IXGBE_TX_RING(adapter, ring_nr);
 	int reclaim_tx;
 
 	/*
@@ -301,7 +308,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	/* device-specific */
 	struct SOFTC_T *adapter = netdev_priv(ifp);
-	struct ixgbe_ring *rxr = adapter->rx_ring[ring_nr];
+	struct ixgbe_ring *rxr = NM_IXGBE_RX_RING(adapter, ring_nr);
 
 	if (!netif_carrier_ok(ifp))
 		return 0;
@@ -486,7 +493,7 @@ ixgbe_netmap_configure_rx_ring(struct SOFTC_T *adapter, int ring_nr)
 	struct netmap_adapter *na = NA(adapter->netdev);
 	struct netmap_slot *slot;
 	int lim, i;
-	struct ixgbe_ring *ring = adapter->rx_ring[ring_nr];
+	struct ixgbe_ring *ring = NM_IXGBE_RX_RING(adapter, ring_nr);
 
         slot = netmap_reset(na, NR_RX, ring_nr, 0);
         /* same as in ixgbe_setup_transmit_ring() */
@@ -531,8 +538,8 @@ ixgbe_netmap_attach(struct SOFTC_T *adapter)
 
 	na.ifp = adapter->netdev;
 	na.pdev = &adapter->pdev->dev;
-	na.num_tx_desc = adapter->tx_ring[0]->count;
-	na.num_rx_desc = adapter->rx_ring[0]->count;
+	na.num_tx_desc = NM_IXGBE_TX_RING(adapter, 0)->count;
+	na.num_rx_desc = NM_IXGBE_RX_RING(adapter, 0)->count;
 	na.nm_txsync = ixgbe_netmap_txsync;
 	na.nm_rxsync = ixgbe_netmap_rxsync;
 	na.nm_register = ixgbe_netmap_reg;
