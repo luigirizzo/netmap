@@ -199,7 +199,8 @@ Available options:
   --install-mod-path=          where the modules will be installed
   --driver-suffix=             add suffix to the patched modules names
   --no-drivers                 do not compile any driver
-  --no-driver=		       do not compile the given driver
+  --no-drivers=                do not compile the given drivers (comma sep.)
+  --drivers=                   only compile the given drivers (comma sep.)
   --mod-name=		       netmap module name [$MODNAME]
   --{enable,disable}-vale      enable/disable the VALE switch
   --{enable,disable}-pipe      enable/disable the netmap pipes
@@ -365,7 +366,17 @@ for opt do
 	;;
 	--no-drivers) drv disable-all
 	;;
-	--no-driver=*) drv disable "$optarg"
+	--no-drivers=*)
+		drv enable-all
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			drv disable "$d"
+		done
+	;;
+	--drivers=*)
+		drv disable-all
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			drv enable "$d"
+		done
 	;;
 	--cc=*) cc="$optarg"
 	;;
