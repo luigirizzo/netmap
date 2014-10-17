@@ -989,6 +989,35 @@ add_test 'have RTL_WFQ' <<-EOF
 EOF
 fi # r8169.c
 
+# ixgbe
+if drv enabled ixgbe; then
+# different versions of IXGBE_?X_DESC
+add_test 'define IXGBE_DESC 1' <<-EOF
+	#include "ixgbe/ixgbe.h"
+
+	union ixgbe_adv_tx_desc *
+	dummy(struct ixgbe_ring *ring) {
+		return IXGBE_TX_DESC_ADV(*ring, 0);
+	}
+EOF
+add_test 'define IXGBE_DESC 2' <<-EOF
+	#include "ixgbe/ixgbe.h"
+
+	union ixgbe_adv_tx_desc *
+	dummy(struct ixgbe_ring *ring) {
+		return IXGBE_TX_DESC_ADV(ring, 0);
+	}
+EOF
+add_test 'define IXGBE_DESC 3' <<-EOF
+	#include "ixgbe/ixgbe.h"
+
+	union ixgbe_adv_tx_desc *
+	dummy(struct ixgbe_ring *ring) {
+		return IXGBE_TX_DESC(ring, 0);
+	}
+EOF
+fi # ixgbe
+
 # END_TESTS
 
 # now we actually create the file
