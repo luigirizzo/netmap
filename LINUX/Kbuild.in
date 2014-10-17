@@ -16,18 +16,16 @@ remoteobjs-$(CONFIG_NETMAP_MONITOR) += netmap_monitor.o
 remoteobjs-$(CONFIG_NETMAP_GENERIC) += netmap_generic.o
 
 define remote_template
-$$(obj)/$(1): $$(SRCDIR)/../sys/dev/netmap/$(2)
-	$$(call cmd,cc_o_c)
-	$$(call cmd,modversions)
+$$(obj)/$(1): $$(SRCDIR)/../sys/dev/netmap/$(2) FORCE
+	$$(call if_changed_rule,cc_o_c)
 endef
 $(foreach o,$(remoteobjs-y),$(eval $(call remote_template,$(o),$(o:.o=.c))))
 # we compile netmap.c into netmap_common.o to allow
 # for MODNAME=netmap
 $(eval $(call remote_template,netmap_common.o,netmap.c))
 
-$(obj)/netmap_linux.o: $(SRCDIR)/netmap_linux.c
-	$(call cmd,cc_o_c)
-	$(call cmd,modversions)
+$(obj)/netmap_linux.o: $(SRCDIR)/netmap_linux.c FORCE
+	$(call if_changed_rule,cc_o_c)
 
 # all objects
 $(MODNAME)-objs := $(remoteobjs-y) netmap_common.o netmap_linux.o
