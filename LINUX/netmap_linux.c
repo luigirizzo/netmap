@@ -1554,7 +1554,11 @@ nm_vi_persist(const char *name, struct ifnet **ret)
 
 	if (!try_module_get(linux_dummy_drv.owner))
 		return EFAULT;
+#ifdef NETMAP_LINUX_ALLOC_NETDEV_4ARGS
+	ifp = alloc_netdev(0, name, NET_NAME_UNKNOWN, linux_nm_vi_setup);
+#else
 	ifp = alloc_netdev(0, name, linux_nm_vi_setup);
+#endif
 	if (!ifp) {
 		module_put(linux_dummy_drv.owner);
 		return ENOMEM;

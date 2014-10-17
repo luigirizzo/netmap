@@ -930,6 +930,20 @@ add_test 'have ADDR_RANDOM' <<-EOF
 	}
 EOF
 
+# arguments of alloc_netdev (either 4 or 3)
+add_test 'define ALLOC_NETDEV_4ARGS' <<-EOF
+	#include <linux/netdevice.h>
+
+	struct net_device *
+	dummy(int sizeof_priv, const char *name,
+		unsigned char name_assign_type,
+		void (*setup)(struct net_device *))
+	{
+		return alloc_netdev(sizeof_priv, name,
+			name_assign_type, setup);
+	}
+EOF
+
 
 # e1000e
 if drv enabled e1000e; then
