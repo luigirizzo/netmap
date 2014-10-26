@@ -189,6 +189,7 @@ netmap_mem_##name(struct netmap_adapter *na, t1 a1) \
 NMD_DEFCB1(void, get_lut, struct netmap_lut *);
 NMD_DEFCB3(int, get_info, u_int *, u_int *, uint16_t *);
 NMD_DEFCB1(vm_paddr_t, ofstophys, vm_ooffset_t);
+static int netmap_mem_config(struct netmap_mem_d *);
 NMD_DEFCB(int, config);
 NMD_DEFCB1(ssize_t, if_offset, const void *);
 NMD_DEFCB(void, delete);
@@ -501,7 +502,7 @@ netmap_mem2_get_info(struct netmap_mem_d* nmd, u_int* size, u_int *memflags,
 {
 	int error = 0;
 	NMA_LOCK(nmd);
-	error = nmd->ops->nmd_config(nmd);
+	error = netmap_mem_config(nmd);
 	if (error)
 		goto out;
 	if (size) {
@@ -1368,7 +1369,7 @@ out:
 
 }
 
-void
+static void
 netmap_mem_global_delete(struct netmap_mem_d *nmd)
 {
 	int i;
