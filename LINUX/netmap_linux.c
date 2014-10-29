@@ -30,8 +30,11 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 #include <linux/rtnetlink.h>
+#include <linux/nsproxy.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+#include "netmap_linux_config.h"
+
+#ifdef NETMAP_LINUX_HAVE_IOMMU
 #include <linux/iommu.h>
 
 /* #################### IOMMU ################## */
@@ -53,12 +56,12 @@ int nm_iommu_group_id(struct device *dev)
 	id = iommu_group_id(grp);
 	return id;
 }
-#else
+#else /* ! HAVE_IOMMU */
 int nm_iommu_group_id(struct device *dev)
 {
 	return 0;
 }
-#endif
+#endif /* HAVE_IOMMU */
 
 /* #################### VALE OFFLOADINGS SUPPORT ################## */
 
@@ -110,6 +113,7 @@ uint16_t nm_csum_fold(rawsum_t cur_sum)
 }
 
 
+#ifdef WITH_GENERIC
 /* ####################### MITIGATION SUPPORT ###################### */
 
 /*
@@ -123,11 +127,7 @@ uint16_t nm_csum_fold(rawsum_t cur_sum)
  * - when the timer expires and there are pending packets,
  *   a notification is sent up and the timer is restarted.
  */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,21)
-int
-#else
-enum hrtimer_restart
-#endif
+NETMAP_LINUX_TIMER_RTYPE
 generic_timer_handler(struct hrtimer *t)
 {
     struct nm_generic_mit *mit =
@@ -198,8 +198,9 @@ void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
  * Packets that comes from netmap_txsync_to_host() are not
  * stolen.
  */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38) // not defined before
-rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
+#ifdef NETMAP_LINUX_HAVE_RX_REGISTER
+#ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
+static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 {
     /* If we were called by NM_SEND_UP(), we want to pass the mbuf
        to network stack. We detect this situation looking at the
@@ -219,13 +220,14 @@ rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 
     return RX_HANDLER_CONSUMED;
 }
-#else /* 2.6.36 .. 2.6.38 */
-struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
+#else /* ! HAVE_RX_HANDLER_RESULT */
+static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
 {
 	generic_rx_handler(m->dev, m);
 	return NULL;
 }
-#endif /* 2.6.36..2.6.38 */
+#endif /* HAVE_RX_HANDLER_RESULT */
+#endif /* HAVE_RX_REGISTER */
 
 /* Ask the Linux RX subsystem to intercept (or stop intercepting)
  * the packets incoming from the interface attached to 'na'.
@@ -233,9 +235,9 @@ struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
 int
 netmap_catch_rx(struct netmap_adapter *na, int intercept)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36) // not defined before
+#ifndef NETMAP_LINUX_HAVE_RX_REGISTER
     return 0;
-#else
+#else /* HAVE_RX_REGISTER */
     struct ifnet *ifp = na->ifp;
 
     if (intercept) {
@@ -245,22 +247,22 @@ netmap_catch_rx(struct netmap_adapter *na, int intercept)
         netdev_rx_handler_unregister(ifp);
         return 0;
     }
-#endif
+#endif /* HAVE_RX_REGISTER */
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,13,0)
-u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m)
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0)
-u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m,
-                                void *accel_priv)
-#else
-u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m,
-                                void *accel_priv,
-				select_queue_fallback_t fallback)
-#endif
+#ifdef NETMAP_LINUX_SELECT_QUEUE
+u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m
+#if NETMAP_LINUX_SELECT_QUEUE >= 3
+                                , void *accel_priv
+#if NETMAP_LINUX_SELECT_QUEUE >= 4
+				, select_queue_fallback_t fallback
+#endif /* >= 4 */
+#endif /* >= 3 */
+		)
 {
     return skb_get_queue_mapping(m); // actually 0 on 2.6.23 and before
 }
+#endif /* SELECT_QUEUE */
 
 /* Replacement for the driver ndo_start_xmit() method.
  * When this function is invoked because of the dev_queue_xmit() call
@@ -302,7 +304,7 @@ void netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 
         gna->generic_ndo = *ifp->netdev_ops;  /* Copy all */
         gna->generic_ndo.ndo_start_xmit = &generic_ndo_start_xmit;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
+#ifndef NETMAP_LINUX_SELECT_QUEUE
 	printk("%s: no packet steering support\n", __FUNCTION__);
 #else
         gna->generic_ndo.ndo_select_queue = &generic_ndo_select_queue;
@@ -334,9 +336,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     m->dev = ifp;
     /* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
     m->priority = NM_MAGIC_PRIORITY_TX;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24) // XXX
     skb_set_queue_mapping(m, ring_nr);
-#endif
 
     ret = dev_queue_xmit(m);
 
@@ -350,7 +350,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     }
     return -1;
 }
-
+#endif /* WITH_GENERIC */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
    rings can have the same lengths. */
@@ -358,7 +358,7 @@ int
 generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
     int error = EOPNOTSUPP;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31) // XXX
+#ifdef NETMAP_LINUX_HAVE_GET_RINGPARAM
     struct ethtool_ringparam rp;
 
     if (ifp->ethtool_ops && ifp->ethtool_ops->get_ringparam) {
@@ -367,7 +367,7 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
         *rx = rp.rx_pending;
 	error = 0;
     }
-#endif /* 2.6.31 and above */
+#endif /* HAVE_GET_RINGPARAM */
     return error;
 }
 
@@ -375,13 +375,13 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 void
 generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37) // XXX
-    *txq = 1;
-    *rxq = 1; /* TODO ifp->real_num_rx_queues */
-#else
+#ifdef NETMAP_LINUX_HAVE_NUM_QUEUES
     *txq = ifp->real_num_tx_queues;
     *rxq = ifp->real_num_rx_queues;
-#endif
+#else
+    *txq = 1;
+    *rxq = 1; /* TODO ifp->real_num_rx_queues */
+#endif /* HAVE_NUM_QUEUES */
 }
 
 int
@@ -415,10 +415,14 @@ out:
 struct net_device *
 ifunit_ref(const char *name)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24) // XXX
+#ifndef NETMAP_LINUX_HAVE_INIT_NET
 	return dev_get_by_name(name);
 #else
-	return dev_get_by_name(&init_net, name);
+	void *ns = &init_net;
+#ifdef CONFIG_NET_NS
+	ns = current->nsproxy->net_ns;
+#endif
+	return dev_get_by_name(ns, name);
 #endif
 }
 
@@ -441,13 +445,12 @@ void if_rele(struct net_device *ifp)
 static u_int
 linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31) // was 28 XXX
+#ifdef NETMAP_LINUX_PWAIT_KEY
+	int events = pwait ? pwait->NETMAP_LINUX_PWAIT_KEY : \
+		     POLLIN | POLLOUT | POLLERR;
+#else
 	int events = POLLIN | POLLOUT; /* XXX maybe... */
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
-	int events = pwait ? pwait->key : POLLIN | POLLOUT | POLLERR;
-#else /* in 3.4.0 field 'key' was renamed to '_key' */
-	int events = pwait ? pwait->_key : POLLIN | POLLOUT | POLLERR;
-#endif
+#endif /* PWAIT_KEY */
 	return netmap_poll((void *)pwait, events, (void *)file);
 }
 
@@ -548,7 +551,7 @@ linux_netmap_set_ringparam(struct net_device *dev,
 	return -EBUSY;
 }
 
-#ifdef ETHTOOL_SCHANNELS
+#ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
 int
 linux_netmap_set_channels(struct net_device *dev,
 	struct ethtool_channels *e)
@@ -558,7 +561,7 @@ linux_netmap_set_channels(struct net_device *dev,
 #endif
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)	// XXX was 38
+#ifndef NETMAP_LINUX_HAVE_UNLOCKED_IOCTL
 #define LIN_IOCTL_NAME	.ioctl
 int
 linux_netmap_ioctl(struct inode *inode, struct file *file, u_int cmd, u_long data /* arg */)
@@ -638,6 +641,7 @@ static struct file_operations netmap_fops = {
 
 
 
+#ifdef WITH_V1000
 /* ##################### V1000 BACKEND SUPPORT ##################### */
 
 /* Private info stored into the memory area pointed by
@@ -1310,6 +1314,139 @@ static int netmap_socket_recvmsg(struct kiocb *iocb, struct socket *sock,
 	return ret;
 }
 #endif  /* >= 2.6.35 */
+#endif /* WITH_V1000 */
+
+
+#ifdef CONFIG_NET_NS
+#include <net/netns/generic.h>
+
+int netmap_bns_id;
+
+struct netmap_bns {
+	struct net *net;
+	struct nm_bridge *bridges;
+	u_int num_bridges;
+};
+
+#ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
+int
+nm_bns_create(struct net *net, struct netmap_bns **ns)
+{
+	*ns = net_generic(net, netmap_bns_id);
+	return 0;
+}
+#define nm_bns_destroy(_1, _2)
+#else
+int
+nm_bns_create(struct net *net, struct netmap_bns **ns)
+{
+	int error = 0;
+
+	*ns = kmalloc(sizeof(*ns), GFP_KERNEL);
+	if (!*ns)
+		return -ENOMEM;
+
+	error = net_assign_generic(net, netmap_bns_id, *ns);
+	if (error) {
+		kfree(*ns);
+		*ns = NULL;
+	}
+	return error;
+}
+
+void
+nm_bns_destroy(struct net *net, struct netmap_bns *ns)
+{
+	kfree(ns);
+	net_assign_generic(net, netmap_bns_id, NULL);
+}
+#endif
+
+struct net*
+netmap_bns_get(void)
+{
+	return get_net(current->nsproxy->net_ns);
+}
+
+void
+netmap_bns_put(struct net *net_ns)
+{
+	put_net(net_ns);
+}
+
+void
+netmap_bns_getbridges(struct nm_bridge **b, u_int *n)
+{
+	struct net *net_ns = current->nsproxy->net_ns;
+	struct netmap_bns *ns = net_generic(net_ns, netmap_bns_id);
+
+	*b = ns->bridges;
+	*n = ns->num_bridges;
+}
+
+static int __net_init
+netmap_pernet_init(struct net *net)
+{
+	struct netmap_bns *ns;
+	int error = 0;
+
+	error = nm_bns_create(net, &ns);
+	if (error)
+		return error;
+
+	ns->net = net;
+	ns->num_bridges = 8;
+	ns->bridges = netmap_init_bridges2(ns->num_bridges);
+	if (ns->bridges == NULL) {
+		nm_bns_destroy(net, ns);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void __net_init
+netmap_pernet_exit(struct net *net)
+{
+	struct netmap_bns *ns = net_generic(net, netmap_bns_id);
+
+	netmap_uninit_bridges2(ns->bridges, ns->num_bridges);
+	ns->bridges = NULL;
+
+	nm_bns_destroy(net, ns);
+}
+
+static struct pernet_operations netmap_pernet_ops = {
+	.init = netmap_pernet_init,
+	.exit = netmap_pernet_exit,
+#ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
+	.id = &netmap_bns_id,
+	.size = sizeof(struct netmap_bns),
+#endif
+};
+
+int
+netmap_bns_register(void)
+{
+#ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
+	return -register_pernet_subsys(&netmap_pernet_ops);
+#else
+	return -register_pernet_gen_subsys(&netmap_bns_id,
+			&netmap_pernet_ops);
+#endif
+}
+
+void
+netmap_bns_unregister(void)
+{
+#ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
+	unregister_pernet_subsys(&netmap_pernet_ops);
+#else
+	unregister_pernet_gen_subsys(netmap_bns_id,
+			&netmap_pernet_ops);
+#endif
+}
+#endif
 
 
 /* ########################## MODULE INIT ######################### */
@@ -1333,20 +1470,13 @@ static void linux_netmap_fini(void)
         netmap_fini();
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)
-int
-nm_vi_persist(const char *name, struct ifnet **ret)
-{
-	(void)name;
-	(void)ret;
-	return EOPNOTSUPP;
-}
+#ifndef NETMAP_LINUX_HAVE_LIVE_ADDR_CHANGE
+#define IFF_LIVE_ADDR_CHANGE 0
+#endif
 
-void
-nm_vi_detach(struct ifnet *ifp) {
-	(void)ifp;
-}
-#else
+#ifndef NETMAP_LINUX_HAVE_TX_SKB_SHARING
+#define IFF_TX_SKB_SHARING 0
+#endif
 
 static struct device_driver linux_dummy_drv = {.owner = THIS_MODULE};
 
@@ -1367,12 +1497,16 @@ static int linux_nm_vi_xmit(struct sk_buff *skb, struct net_device *netdev)
 		kfree_skb(skb);
 	return 0;
 }
+
+#ifdef NETMAP_LINUX_HAVE_GET_STATS64
 static struct rtnl_link_stats64 *linux_nm_vi_get_stats(
 		struct net_device *netdev,
 		struct rtnl_link_stats64 *stats)
 {
 	return stats;
 }
+#endif
+
 static int linux_nm_vi_change_mtu(struct net_device *netdev, int new_mtu)
 {
 	return 0;
@@ -1388,7 +1522,9 @@ static const struct net_device_ops nm_vi_ops = {
 	.ndo_start_xmit = linux_nm_vi_xmit,
 	.ndo_set_mac_address = eth_mac_addr,
 	.ndo_change_mtu = linux_nm_vi_change_mtu,
+#ifdef NETMAP_LINUX_HAVE_GET_STATS64
 	.ndo_get_stats64 = linux_nm_vi_get_stats,
+#endif
 };
 /* dev->name is not initialized yet */
 static void
@@ -1403,8 +1539,12 @@ linux_nm_vi_setup(struct ifnet *dev)
 	/* XXX */
 	dev->features = NETIF_F_LLTX | NETIF_F_SG | NETIF_F_FRAGLIST |
 		NETIF_F_HIGHDMA | NETIF_F_HW_CSUM | NETIF_F_TSO;
+#ifdef NETMAP_LINUX_HAVE_HW_FEATURES
 	dev->hw_features = dev->features & ~NETIF_F_LLTX;
+#endif
+#ifdef NETMA_LINUX_HAVE_ADDR_RANDOM
 	eth_hw_addr_random(dev);
+#endif
 }
 
 int
@@ -1414,7 +1554,11 @@ nm_vi_persist(const char *name, struct ifnet **ret)
 
 	if (!try_module_get(linux_dummy_drv.owner))
 		return EFAULT;
+#ifdef NETMAP_LINUX_ALLOC_NETDEV_4ARGS
+	ifp = alloc_netdev(0, name, NET_NAME_UNKNOWN, linux_nm_vi_setup);
+#else
 	ifp = alloc_netdev(0, name, linux_nm_vi_setup);
+#endif
 	if (!ifp) {
 		module_put(linux_dummy_drv.owner);
 		return ENOMEM;
@@ -1435,7 +1579,6 @@ nm_vi_detach(struct ifnet *ifp)
 	unregister_netdev(ifp);
 	module_put(linux_dummy_drv.owner);
 }
-#endif /* kernel >= 3.6.0 */
 
 module_init(linux_netmap_init);
 module_exit(linux_netmap_fini);

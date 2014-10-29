@@ -39,11 +39,14 @@ HOW TO BUILD THE CODE
 1. make sure you have kernel sources/headers matching your installed system
 
 2. do the following
-	make clean; make SRC=/usr/src/linux-source KSRC=/usr/src/linux-header
+	./configure
+	make
    this produces ./netmap_lin.ko and other kernel modules.
+   (If your kernel sources are not in standard places, follow the
+    instructions in the errors output by ./configure)
 
 3. to build sample applications, run
-	(cd ../examples; make )
+	make apps
    (you will need the pthreads and libpcap-dev packages to build them)
 
 If you want support for additional drivers please have a look at

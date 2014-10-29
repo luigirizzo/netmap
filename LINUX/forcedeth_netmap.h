@@ -57,6 +57,11 @@ This makes sure that there is always a free slot.
 #include <netmap/netmap_kern.h>
 #define SOFTC_T	fe_priv
 
+#ifdef DRV_NAME
+#undef DRV_NAME
+#define DRV_NAME "forcedeth" NETMAP_LINUX_DRIVER_SUFFIX
+#endif
+
 
 /*
  * Register/unregister. We are already under netmap lock.

@@ -37,9 +37,20 @@
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
 
-
+static int NETMAP_LINUX_RTL_OPEN(struct ifnet *);
+static int rtl8169_close(struct ifnet *);
+#ifdef NETMAP_LINUX_HAVE_RTL_WFQ
 static void rtl8169_wait_for_quiescence(struct ifnet *);
+#define NETMAP_LINUX_RTL_WFQ(ifp) rtl8169_wait_for_quiescence(ifp)
+#else
+#define NETMAP_LINUX_RTL_WFQ(ifp) do { (void)(ifp); } while (0)
+#endif
 #define SOFTC_T	rtl8169_private
+
+#ifdef MODULENAME
+#undef MODULENAME
+#define MODULENAME "r8169" NETMAP_LINUX_DRIVER_SUFFIX
+#endif
 
 
 /*
@@ -52,21 +63,21 @@ re_netmap_reg(struct netmap_adapter *na, int onoff)
 	int error = 0;
 
 	rtnl_lock();
-	rtl8169_wait_for_quiescence(ifp);
+	NETMAP_LINUX_RTL_WFQ(ifp);
 	rtl8169_close(ifp);
 
 	/* enable or disable flags and callbacks in na and ifp */
 	if (onoff) {
 		nm_set_native_flags(na);
 
-		if (rtl8169_open(ifp) < 0) {
+		if (NETMAP_LINUX_RTL_OPEN(ifp) < 0) {
 			error = ENOMEM;
 			goto fail;
 		}
 	} else {
 fail:
 		nm_clear_native_flags(na);
-		error = rtl8169_open(ifp) ? EINVAL : 0;
+		error = NETMAP_LINUX_RTL_OPEN(ifp) ? EINVAL : 0;
 	}
 	rtnl_unlock();
 	return (error);
@@ -329,9 +340,7 @@ re_netmap_attach(struct SOFTC_T *sc)
 	bzero(&na, sizeof(na));
 
 	na.ifp = sc->dev;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
-	na.pdev = &sc->pdev->dev;
-#endif
+	na.pdev = &sc->pci_dev->dev;
 	na.num_tx_desc = NUM_TX_DESC;
 	na.num_rx_desc = NUM_RX_DESC;
 	na.nm_txsync = re_netmap_txsync;

@@ -42,15 +42,36 @@
 
 #define SOFTC_T	ixgbe_adapter
 
+#define ixgbe_driver_name netmap_ixgbe_driver_name
+char ixgbe_driver_name[] = "ixgbe" NETMAP_LINUX_DRIVER_SUFFIX;
+
 /*
  * Adaptation to different versions of the driver.
- * Recent drivers (3.4 and above) redefine some macros
  */
-#ifndef	IXGBE_TX_DESC_ADV
-#define	IXGBE_TX_DESC_ADV	IXGBE_TX_DESC
-#define	IXGBE_RX_DESC_ADV	IXGBE_RX_DESC
+#ifndef NETMAP_LINUX_IXGBE_DESC
+#error "unsupported ixgbe driver version"
+#else
+#if   NETMAP_LINUX_IXGBE_DESC == 1
+#define NM_IXGBE_TX_DESC(_1, _2)	IXGBE_TX_DESC_ADV(*(_1), _2)
+#define NM_IXGBE_RX_DESC(_1, _2)	IXGBE_RX_DESC_ADV(*(_1), _2)
+#elif NETMAP_LINUX_IXGBE_DESC == 2
+#define NM_IXGBE_TX_DESC(_1, _2)	IXGBE_TX_DESC_ADV(_1, _2)
+#define NM_IXGBE_RX_DESC(_1, _2)	IXGBE_RX_DESC_ADV(_1, _2)
+#elif NETMAP_LINUX_IXGBE_DESC == 3
+#define NM_IXGBE_TX_DESC(_1, _2)	IXGBE_TX_DESC(_1, _2)
+#define NM_IXGBE_RX_DESC(_1, _2)	IXGBE_RX_DESC(_1, _2)
+#else
+#error "netmap build error: unexpected NETMAP_LINUX_IXGBE_DESC == " #NETMAP_LINUX_IXGBE_DESC
+#endif
 #endif
 
+#ifdef NETMAP_LINUX_IXGBE_PTR_ARRAY
+#define NM_IXGBE_TX_RING(a, r)		((a)->tx_ring[(r)])
+#define NM_IXGBE_RX_RING(a, r)		((a)->rx_ring[(r)])
+#else
+#define NM_IXGBE_TX_RING(a, r)		(&(a)->tx_ring[(r)])
+#define NM_IXGBE_RX_RING(a, r)		(&(a)->rx_ring[(r)])
+#endif
 
 /*
  * Register/unregister. We are already under netmap lock.
@@ -123,7 +144,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	/* device-specific */
 	struct SOFTC_T *adapter = netdev_priv(ifp);
-	struct ixgbe_ring *txr = adapter->tx_ring[ring_nr];
+	struct ixgbe_ring *txr = NM_IXGBE_TX_RING(adapter, ring_nr);
 	int reclaim_tx;
 
 	/*
@@ -175,7 +196,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
-			union ixgbe_adv_tx_desc *curr = IXGBE_TX_DESC_ADV(txr, nic_i);
+			union ixgbe_adv_tx_desc *curr = NM_IXGBE_TX_DESC(txr, nic_i);
 			int flags = (slot->flags & NS_REPORT ||
 				nic_i == 0 || nic_i == report_frequency) ?
 				IXGBE_TXD_CMD_RS : 0;
@@ -222,7 +243,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		 * This enables interrupt moderation on the tx
 		 * side though it might reduce throughput.
 		 */
-		union ixgbe_adv_tx_desc *txd = IXGBE_TX_DESC_ADV(txr, 0);
+		union ixgbe_adv_tx_desc *txd = NM_IXGBE_TX_DESC(txr, 0);
 
 		nic_i = txr->next_to_clean + report_frequency;
 		if (nic_i > lim)
@@ -287,7 +308,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	/* device-specific */
 	struct SOFTC_T *adapter = netdev_priv(ifp);
-	struct ixgbe_ring *rxr = adapter->rx_ring[ring_nr];
+	struct ixgbe_ring *rxr = NM_IXGBE_RX_RING(adapter, ring_nr);
 
 	if (!netif_carrier_ok(ifp))
 		return 0;
@@ -319,7 +340,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		nm_i = netmap_idx_n2k(kring, nic_i);
 
 		for (n = 0; ; n++) {
-			union ixgbe_adv_rx_desc *curr = IXGBE_RX_DESC_ADV(rxr, nic_i);
+			union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(rxr, nic_i);
 			uint32_t staterr = le32toh(curr->wb.upper.status_error);
 
 			if ((staterr & IXGBE_RXD_STAT_DD) == 0)
@@ -352,7 +373,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint64_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
-			union ixgbe_adv_rx_desc *curr = IXGBE_RX_DESC_ADV(rxr, nic_i);
+			union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(rxr, nic_i);
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
@@ -472,7 +493,7 @@ ixgbe_netmap_configure_rx_ring(struct SOFTC_T *adapter, int ring_nr)
 	struct netmap_adapter *na = NA(adapter->netdev);
 	struct netmap_slot *slot;
 	int lim, i;
-	struct ixgbe_ring *ring = adapter->rx_ring[ring_nr];
+	struct ixgbe_ring *ring = NM_IXGBE_RX_RING(adapter, ring_nr);
 
         slot = netmap_reset(na, NR_RX, ring_nr, 0);
         /* same as in ixgbe_setup_transmit_ring() */
@@ -494,7 +515,7 @@ ixgbe_netmap_configure_rx_ring(struct SOFTC_T *adapter, int ring_nr)
 		PNMB(na, slot + si, &paddr);
 		// netmap_load_map(rxr->ptag, rxbuf->pmap, addr);
 		/* Update descriptor */
-		IXGBE_RX_DESC_ADV(ring, i)->read.pkt_addr = htole64(paddr);
+		NM_IXGBE_RX_DESC(ring, i)->read.pkt_addr = htole64(paddr);
 	}
 	IXGBE_WRITE_REG(&adapter->hw, IXGBE_RDT(ring_nr), lim);
 	return 1;
@@ -517,8 +538,8 @@ ixgbe_netmap_attach(struct SOFTC_T *adapter)
 
 	na.ifp = adapter->netdev;
 	na.pdev = &adapter->pdev->dev;
-	na.num_tx_desc = adapter->tx_ring[0]->count;
-	na.num_rx_desc = adapter->rx_ring[0]->count;
+	na.num_tx_desc = NM_IXGBE_TX_RING(adapter, 0)->count;
+	na.num_rx_desc = NM_IXGBE_RX_RING(adapter, 0)->count;
 	na.nm_txsync = ixgbe_netmap_txsync;
 	na.nm_rxsync = ixgbe_netmap_rxsync;
 	na.nm_register = ixgbe_netmap_reg;

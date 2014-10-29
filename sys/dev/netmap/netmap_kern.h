@@ -34,9 +34,32 @@
 #ifndef _NET_NETMAP_KERN_H_
 #define _NET_NETMAP_KERN_H_
 
+#if defined(linux)
+
+#if  defined(CONFIG_NETMAP_VALE)
+#define WITH_VALE
+#endif
+#if defined(CONFIG_NETMAP_PIPE)
+#define WITH_PIPES
+#endif
+#if defined(CONFIG_NETMAP_MONITOR)
+#define WITH_MONITOR
+#endif
+#if defined(CONFIG_NETMAP_GENERIC)
+#define WITH_GENERIC
+#endif
+#if defined(CONFIG_NETMAP_V1000)
+#define WITH_V1000
+#endif
+
+#else /* not linux */
+
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
+#define WITH_GENERIC
+
+#endif
 
 #if defined(__FreeBSD__)
 
@@ -86,6 +109,8 @@ struct ethtool_ops {
 };
 struct hrtimer {
 };
+#define NM_BNS_GET(b)
+#define NM_BNS_PUT(b)
 
 #elif defined (linux)
 
@@ -268,7 +293,7 @@ struct netmap_kring {
 
 	struct netmap_adapter *na;
 
-	/* The folloiwing fields are for VALE switch support */
+	/* The following fields are for VALE switch support */
 	struct nm_bdg_fwd *nkr_ft;
 	uint32_t	*nkr_leases;
 #define NR_NOSLOT	((uint32_t)~0)	/* used in nkr_*lease* */
@@ -639,6 +664,7 @@ struct netmap_hw_adapter {	/* physical device */
 	int (*nm_hw_register)(struct netmap_adapter *, int onoff);
 };
 
+#ifdef WITH_GENERIC
 /* Mitigation support. */
 struct nm_generic_mit {
 	struct hrtimer mit_timer;
@@ -666,6 +692,7 @@ struct netmap_generic_adapter {	/* emulated device */
         netdev_tx_t (*save_start_xmit)(struct mbuf *, struct ifnet *);
 #endif
 };
+#endif  /* WITH_GENERIC */
 
 static __inline int
 netmap_real_tx_rings(struct netmap_adapter *na)
@@ -934,8 +961,7 @@ uint32_t nm_txsync_prologue(struct netmap_kring *);
 
 
 /*
- * validates parameters in the ring/kring, returns a value for head,
- * and the 'reserved' value in the argument.
+ * validates parameters in the ring/kring, returns a value for head
  * If any error, returns ring_size lim to force a reinit.
  */
 uint32_t nm_rxsync_prologue(struct netmap_kring *);
@@ -1089,13 +1115,17 @@ u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 
 /* these are redefined in case of no VALE support */
 int netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
-void netmap_init_bridges(void);
+struct nm_bridge *netmap_init_bridges2(u_int);
+void netmap_uninit_bridges2(struct nm_bridge *, u_int);
+int netmap_init_bridges(void);
+void netmap_uninit_bridges(void);
 int netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops);
 int netmap_bdg_config(struct nmreq *nmr);
 
 #else /* !WITH_VALE */
 #define	netmap_get_bdg_na(_1, _2, _3)	0
-#define netmap_init_bridges(_1)
+#define netmap_init_bridges(_1) 0
+#define netmap_uninit_bridges()
 #define	netmap_bdg_ctl(_1, _2)	EINVAL
 #endif /* !WITH_VALE */
 
@@ -1108,15 +1138,30 @@ void netmap_pipe_dealloc(struct netmap_adapter *);
 int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 #else /* !WITH_PIPES */
 #define NM_MAXPIPES	0
-#define netmap_pipe_alloc(_1, _2) 	EOPNOTSUPP
+#define netmap_pipe_alloc(_1, _2) 	0
 #define netmap_pipe_dealloc(_1)
-#define netmap_get_pipe_na(_1, _2, _3)	0
+#define netmap_get_pipe_na(nmr, _2, _3)	\
+	({ int role__ = (nmr)->nr_flags & NR_REG_MASK; \
+	   (role__ == NR_REG_PIPE_MASTER || 	       \
+	    role__ == NR_REG_PIPE_SLAVE) ? EOPNOTSUPP : 0; })
 #endif
 
 #ifdef WITH_MONITOR
 int netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 #else
-#define netmap_get_monitor_na(_1, _2, _3) 0
+#define netmap_get_monitor_na(nmr, _2, _3) \
+	((nmr)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
+#endif
+
+#ifdef CONFIG_NET_NS
+struct net *netmap_bns_get(void);
+void netmap_bns_put(struct net *);
+void netmap_bns_getbridges(struct nm_bridge **, u_int *);
+#else
+#define netmap_bns_get()
+#define netmap_bns_put(_1)
+#define netmap_bns_getbridges(b, n) \
+	do { *b = nm_bridges; *n = NM_BRIDGES; } while (0)
 #endif
 
 /* Various prototypes */
@@ -1443,7 +1488,7 @@ void netmap_txsync_to_host(struct netmap_adapter *na);
  * If np_nifp is NULL initialization has not been performed,
  * so they should return an error to userspace.
  *
- * The ref_done field is used to regulate access to the refcount in the
+ * The ref_done field (XXX ?) is used to regulate access to the refcount in the
  * memory allocator. The refcount must be incremented at most once for
  * each open("/dev/netmap"). The increment is performed by the first
  * function that calls netmap_get_memory() (currently called by
@@ -1483,6 +1528,7 @@ struct netmap_monitor_adapter {
 #endif /* WITH_MONITOR */
 
 
+#ifdef WITH_GENERIC
 /*
  * generic netmap emulation for devices that do not have
  * native netmap support.
@@ -1514,6 +1560,7 @@ void netmap_mitigation_start(struct nm_generic_mit *mit);
 void netmap_mitigation_restart(struct nm_generic_mit *mit);
 int netmap_mitigation_active(struct nm_generic_mit *mit);
 void netmap_mitigation_cleanup(struct nm_generic_mit *mit);
+#endif /* WITH_GENERIC */
 
 
 

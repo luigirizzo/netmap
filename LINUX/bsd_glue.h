@@ -62,12 +62,13 @@
 #define KASSERT(a, b)		BUG_ON(!(a))
 
 /*----- support for compiling on older versions of linux -----*/
+#include "netmap_linux_config.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 21)
+#ifndef NETMAP_LINUX_HAVE_HRTIMER_MODE_REL
 #define HRTIMER_MODE_REL	HRTIMER_REL
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 22)
+#ifndef NETMAP_LINUX_HAVE_SKB_COPY_LINEAR
 #define skb_copy_from_linear_data_offset(skb, offset, to, copy)	\
 	memcpy(to, (skb)->data + offset, copy)
 
@@ -76,15 +77,22 @@
 
 #define skb_copy_to_linear_data(skb, from, copy)		\
 	memcpy((skb)->data, from, copy)
-#endif
+#endif /* HAVE_SKB_COPY_LINEAR */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24)
+#ifndef NETMAP_LINUX_HAVE_ACCESS_ONCE
 #define ACCESS_ONCE(x)	(x)
-#define uintptr_t	unsigned long
-#define skb_get_queue_mapping(m)	(0)
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 25)
+#ifndef NETMAP_LINUX_HAVE_UINTPTR
+#define uintptr_t	unsigned long
+#endif
+
+#ifndef NETMAP_LINUX_HAVE_QUEUE_MAPPING
+#define skb_get_queue_mapping(m)	(0)
+#define skb_set_queue_mapping(a, b)	do { (void)(a); (void)(b); } while (0)
+#endif
+
+#ifndef NETMAP_LINUX_HAVE_HRTIMER_FORWARD_NOW
 /* Forward a hrtimer so it expires after the hrtimer's current now */
 static inline u64 hrtimer_forward_now(struct hrtimer *timer,
                                       ktime_t interval)
@@ -93,34 +101,37 @@ static inline u64 hrtimer_forward_now(struct hrtimer *timer,
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27)
+#ifndef NETMAP_LINUX_HAVE_PHYS_ADDR_T
 typedef unsigned long phys_addr_t;
+#endif
+
+#ifndef NETMAP_LINUX_HAVE_INIT_NET
 extern struct net init_net;
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28) // XXX
+#ifndef NETMAP_LINUX_HAVE_NETDEV_OPS
 #define netdev_ops	hard_start_xmit
 struct net_device_ops {
 	int (*ndo_start_xmit)(struct sk_buff *skb, struct net_device *dev);
 };
-#endif
+#endif /* NETDEV_OPS */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 32) // XXX 31
+#ifndef NETMAP_LINUX_HAVE_NETDEV_TX_T
 #define netdev_tx_t	int
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
+#ifndef NETMAP_LINUX_HAVE_USLEEP_RANGE
 #define usleep_range(a, b)	msleep((a)+(b)+999)
-#endif /* up to 2.6.35 */
+#endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0)
-#define split_page(page, order) 			\
-	do {						\
-		int i_;					\
-		for (i_ = 1; i_ < (1 << order); i_++)	\
-			atomic_set(&page[i_]._count, 1);\
+#ifndef NETMAP_LINUX_HAVE_SPLIT_PAGE
+#define split_page(page, order) 			  \
+	do {						  \
+		int i_;					  \
+		for (i_ = 1; i_ < (1 << (order)); i_++)	  \
+			atomic_set(&(page)[i_]._count, 1);\
 	} while (0)
-#endif /* was unexported before */
+#endif /* HAVE_SPLIT_PAGE */
 
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 
@@ -235,7 +246,7 @@ netdev_tx_t linux_netmap_start_xmit(struct sk_buff *, struct net_device *);
 
 /* prevent ring params change while in netmap mode */
 int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *);
-#ifdef ETHTOOL_SCHANNELS
+#ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
 int linux_netmap_set_channels(struct net_device *, struct ethtool_channels *);
 #endif
 
@@ -279,6 +290,7 @@ static inline void mtx_unlock(safe_spinlock_t *m)
  */
 #define BDG_RWLOCK_T		struct rw_semaphore
 #define BDG_RWINIT(b)		init_rwsem(&(b)->bdg_lock)
+#define BDG_RWDESTROY(b)
 #define BDG_WLOCK(b)		down_write(&(b)->bdg_lock)
 #define BDG_WUNLOCK(b)		up_write(&(b)->bdg_lock)
 #define BDG_RLOCK(b)		down_read(&(b)->bdg_lock)
@@ -446,5 +458,12 @@ int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 struct netmap_adapter;
 int netmap_linux_config(struct netmap_adapter *na, 
 		u_int *txr, u_int *rxr, u_int *txd, u_int *rxd);
+/* ---- namespaces ------ */
+#ifdef CONFIG_NET_NS
+int netmap_bns_register(void);
+void netmap_bns_unregister(void);
+#define NM_BNS_GET(b)	(b)->ns = netmap_bns_get()
+#define NM_BNS_PUT(b)	netmap_bns_put(b->ns)
+#endif
 
 #endif /* _BSD_GLUE_H */

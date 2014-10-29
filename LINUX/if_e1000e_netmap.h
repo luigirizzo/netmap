@@ -41,10 +41,13 @@
 
 #define SOFTC_T	e1000_adapter
 
+#define e1000e_driver_name netmap_e1000e_driver_name
+char netmap_e1000e_driver_name[] = "e1000e" NETMAP_LINUX_DRIVER_SUFFIX;
+
 /*
  * Adaptation to different versions of the driver.
  */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
+#ifdef NETMAP_LINUX_HAVE_E1000E_EXT_RXDESC
 #warning this driver uses extended descriptors
 #define NM_E1K_RX_DESC_T	union e1000_rx_desc_extended
 #define	NM_E1R_RX_STATUS	wb.upper.status_error
@@ -59,7 +62,7 @@
 #define	NM_E1R_RX_LENGTH	length
 #endif /* up to 3.2.x */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)
+#ifndef NETMAP_LINUX_HAVE_E1000E_HWADDR
 #define NM_WR_TX_TAIL(_x)	writel(_x, txr->tail)	// XXX tx_ring
 #define	NM_WR_RX_TAIL(_x)	writel(_x, rxr->tail)	// XXX rx_ring
 #define	NM_RD_TX_HEAD()		readl(txr->head)
@@ -67,9 +70,9 @@
 #define NM_WR_TX_TAIL(_x)	writel(_x, adapter->hw.hw_addr + txr->tail)
 #define	NM_WR_RX_TAIL(_x)	writel(_x, adapter->hw.hw_addr + rxr->tail)
 #define	NM_RD_TX_HEAD()		readl(adapter->hw.hw_addr + txr->head)
-#endif /* < 3.4.0 */
+#endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
+#ifdef NETMAP_LINUX_HAVE_E1000E_DOWN2
 #define nm_e1000e_down(_a)	e1000e_down(_a, true)
 #else
 #define nm_e1000e_down(_a)	e1000e_down(_a)

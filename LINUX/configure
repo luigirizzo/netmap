@@ -1,0 +1,1059 @@
+#!/bin/sh
+
+TOPDIR=$PWD
+SRCDIR=$(cd $(dirname $0); pwd)
+MODNAME=netmap
+
+# setelem2n <set> <elem>
+setelem2n()
+{
+	local i=1
+	local n
+	for n in $(eval echo \$$1_avail); do
+		if [ $n = $2 ]; then
+			echo $i
+			return
+		fi
+		i=$((2 * i))
+	done
+}
+
+# setop <set> <op> [<elem>]
+setop()
+{
+	local w
+	local n
+	local s
+	local e
+
+	if [ -n "$3" ]; then
+		w=$(setelem2n $1 $3)
+		[ -n "$w" ] || {
+			echo "unknown $1: $3" | warning
+			return
+		}
+	fi
+	case "$2" in
+	is-empty)
+		[ $(eval echo \$$1) -eq 0 ]
+		;;
+	disable-all)
+		eval "$1=0"
+		;;
+	enable-all)
+		eval "$1=0"
+		s=$(eval echo \$$1_avail)
+		for n in $s; do
+			eval "$1=\$(( ($1 << 1) | 1))"
+		done
+		;;
+	enable)
+		eval "$1=\$(($1 | $w))"
+		;;
+        disable)
+		eval "$1=\$(($1 & ~$w))"
+		;;
+        enabled)
+		eval "w=\$(($1 & $w))"
+		[ $w -ne 0 ]
+		;;
+	print)
+		s=$(eval echo \$$1_avail)
+		e=
+		for n in $s; do
+			w=$(setelem2n $1 $n)
+			eval "w=\$(($1 & $w))"
+			[ $w -ne 0 ] && e="$n $e"
+		done
+		echo $e
+		;;
+        esac
+}
+
+# available subsystems
+subsystem_avail="vale pipe monitor generic v1000"
+#enabled subsystems (bitfield)
+subsystem=0
+
+subsys()
+{
+	setop subsystem "$@"
+}
+
+subsys enable vale
+subsys enable pipe
+subsys enable monitor
+subsys enable generic
+
+# available drivers
+driver_avail="r8169.c virtio_net.c forcedeth.c \
+	e1000 e1000e igb ixgbe"
+# enabled drivers (bitfield)
+driver=
+
+drv()
+{
+	setop driver "$@"
+}
+
+drv enable-all
+
+prefix=/usr/local
+cc=cc
+ld=ld
+
+# with <command>: success iff <command> is available
+with() {
+	type $1 >/dev/null 2>&1
+}
+
+print_realpath() {
+	if with realpath; then
+		rp=$(realpath "$1")
+		if [ "$rp" != "$1" ]; then
+			echo "                            [$rp]"
+		fi
+	fi
+}
+
+decode_version() {
+	if [ -n "$1" ] && with perl; then
+		echo " [$($SRCDIR/scripts/vers $1 -C)]"
+	fi
+}
+
+# report: print the current state of the configuration variables
+report() {
+	echo "kernel directory            $ksrc"
+	print_realpath $ksrc
+	local v=$lin_ver
+	[ -n "$v" ] || v="-"
+	local dv="$(decode_version $lin_ver)"
+	echo "linux version               $v $dv"
+	echo "module file                 $MODNAME.ko"
+	echo "subsystems                  $(subsys print)"
+
+
+	if drv is-empty; then
+		echo "no-drivers"
+	else
+		echo "kernel sources              $src"
+		print_realpath "$src"
+		echo "drivers                     $(drv print)"
+		echo
+		if [ -n "$(echo $patches)" ]; then
+			echo "Candidate patches for this kernel:"
+			echo
+			local p
+			for p in $patches; do
+				echo "   $p"
+			done
+		fi
+	fi
+}
+
+message()
+{
+	{
+		cat <<-EOF
+********************************** $1 **********************************
+		EOF
+		sed 's/^/*** /' # output the error message from stdin
+	if [ -n "$2" ]; then
+		cat <<-EOF
+***
+***
+***     Current configuration values:
+***
+		EOF
+		report | sed 's/^/*** /'
+	fi
+		cat <<-EOF
+*****************************************************************************
+		EOF
+	} | tee -a config.log
+}
+
+# error: format an error msg containing the lines read from stdin
+# 	and exit with failure.
+error() {
+	message " ERROR " true
+	exit 1
+}
+
+warning()
+{
+	message WARNING
+}
+
+# print_help
+print_help() {
+	cat <<-EOF
+Available options:
+
+  --help                       print this message
+  --kernel-dir=                path to configured kernel directory
+  --kernel-sources=            path to full kernel sources
+  --kernel-opts=	       additional options to pass to kernel make
+                               (you can call this several times)
+  --install-mod-path=          where the modules will be installed
+  --driver-suffix=             add suffix to the patched modules names
+  --no-drivers                 do not compile any driver
+  --no-drivers=                do not compile the given drivers (comma sep.)
+  --drivers=                   only compile the given drivers (comma sep.)
+  --mod-name=		       netmap module name [$MODNAME]
+  --{enable,disable}-vale      enable/disable the VALE switch
+  --{enable,disable}-pipe      enable/disable the netmap pipes
+  --{enable,disable}-monitor   enable/disable the nemtap monitors
+  --{enable,disable}-generic   enable/disable the generic netmap adapter
+  --{enable,disable}-v1000     enable/disable the v1000 backend for
+                               the e1000-paravirt driver
+  --cache=		       dir for reusing/caching of netmap_linux_config.h
+
+  --cc=                        C compiler for the examples [$cc]
+  --ld=                        linker for the examples [$ld]
+  --prefix=                    install path for the examples [$prefix]
+  --destir=                    destination dir for the examples [$DESTDIR]
+	EOF
+}
+
+#################################################################
+# machinery for the creation of netmap_linux_config.h           #
+#################################################################
+
+# We check for the availability/version of several linux
+# internal APIs by running compilation tests. The results
+# of the tests will produce a set of macros in the
+# 'netmap_linux_config.h' file. All macros names begin
+# with 'NETMAP_LINUX'.
+
+# TMPDIR is where we build all the tests
+TMPDIR=netmap-tmpdir
+rm -rf $TMPDIR
+mkdir $TMPDIR
+
+# tests are first accumulated using add_named_test and add_test, then
+# run by run_tests. This setup amortizes the cost of going
+# through linux kbuild and opens the opportunity of using the '-j'
+# flag of make. Speedup is in the order of x10.
+
+# TESTOBJS will contain the list of test modules to build
+TESTOBJS=
+# TESTPOSTPROC will contain a script that runs the pertinent
+# 'on success' or 'on failure' action for each test at the
+# end of 'run_tests'.
+TESTPOSTPROC=
+
+# add_named_test <test-name> [<on success> [<on failure>]]:
+#     the test code is read from stdin, completed with
+#     some standard modules boiler plate and put in
+#     $TMPDIR/test-name.c for future compilation by 'run_tests'.
+#     The optional <on success> script (which must be a single
+#     argument) will be executed if $TMPDIR/test-name.o will
+#     be correctly created. The optional <on failure>
+#     script (one argument) will be executed if compilation fails.
+#
+#     Note: add_test (below) is preferred. Use add_named_test
+#     only if you need to do some complex check for which you need to
+#     know the name of the test files.
+add_named_test() {
+	{
+		cat <<-EOF
+			#include <linux/module.h>
+			#include <linux/kernel.h>
+			#include <linux/init.h>
+		EOF
+		cat	# output the test code read from stdin
+	} > $TMPDIR/$1.c
+	# add the module to the running list
+	TESTOBJS="$1.o $TESTOBJS"
+	# add the postprocess script for this test
+	if [ -n "$2" ]; then
+		cmd="if [ -f $TMPDIR/$1.o ]; then $2"
+		[ -n "$3" ] && cmd="$cmd; else $3"
+		cmd="$cmd; fi"
+		TESTPOSTPROC="$cmd; $TESTPOSTPROC"
+	fi
+}
+
+# add_test [<on success> [<on failure>]]
+#     used like add_named_test above, but without the need of
+#     explicitly naming the test.
+NEXTTEST=1
+add_test() {
+	local t="__test__$NEXTTEST"
+	add_named_test $t "$@"
+	NEXTTEST=$(($NEXTTEST+1))
+}
+
+# run_tests: run all accumulated tests and exec the pertinent
+#   success/failure actions for each one.
+run_tests() {
+	local t= 	# prevent -EOF to eat the make TAB
+	cat > $TMPDIR/Makefile <<-EOF
+		ifneq (\$(KERNELRELEASE),)
+		obj-m := $TESTOBJS
+		else
+		all: $get_drivers
+		$t	\$(MAKE) -C $ksrc M=\$\$PWD
+
+		-include $TOPDIR/drivers.mak
+		endif
+	EOF
+	(
+		cd $TMPDIR
+		make -k -j $(grep -c processor /proc/cpuinfo)
+	) >> config.log
+	eval "$TESTPOSTPROC"
+}
+
+configh=netmap_linux_config.h
+# succes/failure actions are expected to write some macros
+# in netma_linux_config.h. The following functions can be
+# used to simplify the task.
+
+# define <macro> <value>: define NETMAP_LINUX_<macro> as <value>
+define() {
+	cat >> $configh <<-EOF
+
+		#define NETMAP_LINUX_$1 $2
+	EOF
+}
+
+# have <macro>: define NETMAP_LINUX_HAVE_<macro>
+have() {
+	define "HAVE_$1"
+}
+
+
+####################################################################
+################### START OF PROCESSING ############################
+####################################################################
+
+rm -f config.log
+{
+	echo "# netmap configure log $(date)"
+	echo "# Configured with:"
+	printf " '%s'" "$0" "$@"
+	echo
+	echo "#"
+} > config.log
+
+exec 2>> config.log
+set -x
+
+############################
+# parse options
+############################
+ksrc=
+src=
+kopts=
+modpath=
+drvsuffix=
+cache=
+for opt do
+	optarg=${opt#*=}
+	case "$opt" in
+	--kernel-dir=*) ksrc="$optarg"
+	;;
+	--kernel-sources=*) src="$optarg"
+	;;
+	--kernel-opts=*) kopts="$kopts $optarg"
+	;;
+	--install-mod-path=*) modpath="$optarg"
+	;;
+	--driver-suffix=*) drvsuffix="$optarg"
+	;;
+	--no-drivers) drv disable-all
+	;;
+	--no-drivers=*)
+		drv enable-all
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			drv disable "$d"
+		done
+	;;
+	--drivers=*)
+		drv disable-all
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			drv enable "$d"
+		done
+	;;
+	--cc=*) cc="$optarg"
+	;;
+	--ld=*) ld="$optarg"
+	;;
+	--prefix=*) prefix="$optarg"
+	;;
+	--destdir=*) DESTDIR="$optarg"
+	;;
+	--mod-name=*) MODNAME="$optarg"
+	;;
+	--disable-*)
+		subsys disable "${opt#--disable-}"
+	;;
+	--enable-*)
+		subsys enable "${opt#--enable-}"
+	;;
+	--cache=*) cache="$optarg"
+	;;
+	--help)
+		print_help
+		exit
+	;;
+	*)
+		echo "Unrecognized option: $opt" | warning
+	;;
+	esac
+done
+
+################################
+# check for sane configuration
+################################
+
+[ -n "$ksrc" ] || {
+	# user did not provide a kernel dir,
+	# we try to find one by ourselves
+	ksrc="/lib/modules/$(uname -r)/build"
+}
+
+[ -n "$src" ] || {
+	# user did not provide the path for the full kernel sources
+	# we try to find one by ourselves
+	[ -d "$ksrc/source" ] && src="$ksrc/source"
+	[ -n "$src" ] || src=$ksrc
+}
+
+if [ ! -d "$ksrc" ]; then
+	error <<-EOF
+Cannot find kernel directory.
+
+We need at least the kernel headers to compile the netmap kernel module.
+If your kernel headers are not in the standard place, please provide the
+correct path using the
+
+    --kernel-dir=/path/to/kernel/dir
+
+option.
+
+Otherwise, check that the 'build' symlink in
+
+    /lib/modules/\$(uname -r)
+
+is not broken.
+	EOF
+fi
+
+# check that ksrc has been prepared for external modules compilation
+# It should contain a version.h file (in one of two possible places,
+# depending on kernel version, and a .config file
+version_hdr="$ksrc/include/linux/version.h"
+[ -f "$version_hdr" ] || version_hdr="$ksrc/include/generated/uapi/linux/version.h"
+if [ ! -f "$ksrc/.config" ] || [ ! -f "$version_hdr" ]; then
+	error <<-EOF
+kernel not configured.
+
+The kernel directory must be ready for external module compilation.
+You may need to issue the following or equivalent commands:
+
+    cd $ksrc
+    make oldconfig
+    make modules_prepare
+	EOF
+fi
+lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
+
+# if the user has asked for the patched drivers, we also need the
+# full kernel sources. Since we may have put $src=$ksrc, and $ksrc
+# may only contain header files, we check that $src/drivers actually
+# contains some .c file
+if ! drv is-empty; then
+	if [ ! -d "$src" ] ||
+	   [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
+		drv disable-all
+		error <<-EOF
+Cannot find full kernel sources.
+
+We need the full kernel sources to build the netmap-enabled drivers.
+Please note that most distributions provide separate packages for kernel
+headers and sources. Once you know the path to kernel sources, you can
+rerun this script with the additional
+
+    --kernel-sources=/path/to/sources
+
+option.
+
+If you are only interested in VALE and pipes, you can rerun the script
+now with the '--no-drivers' option. Hardware devices will then be accessed
+via a generic adapter at reduced performance."
+		EOF
+	fi
+fi
+
+
+drvname2config() {
+	local name=$1
+	local conf=$(awk -v n=$name '$1==n { print $2 }' $SRCDIR/drvname2config)
+	if [ x"$conf" = x ]; then conf="CONFIG_$(echo $name|tr a-z- A-Z_)"; fi
+	echo $conf
+}
+
+###############################################################
+# Makefile creation
+###############################################################
+
+# here we select the patches for the drivers and create the
+# main Makefile. The Makefile is obtained from Makefile.in
+# with some values replaced in (mainly the kernel directory).
+# The final Makefile will include drivers.mak, which is also
+# created here. drivers.mak will contain a get-driver and
+# clear-driver target for each of the available drivers.
+# The get-driver target is responsible for the copying and
+# patching of the driver sources.
+
+patches=
+s_drivers=
+get_drivers=
+clean_drivers=
+mod_list=
+if ! drv is-empty; then
+	# produce a list of applicable patches for this version
+	[ -d patches ] || { rm -f patches; ln -s $SRCDIR/final-patches patches; }
+	# XXX the selection is based only on the kernel version
+	patches=$(cd patches; ls diff--* | awk -v v=$lin_ver -F -- '($3 <= v"") && (v"" < $4)')
+fi
+
+rm -f drivers.mak
+# read in all the kernel .config, we use it below
+. $ksrc/.config
+for p in $patches; do
+	# extract the driver name
+	d=$(echo $p | awk -F -- '{ print $2 }')
+	# skip this driver if the user does not want it
+	drv enabled $d || continue
+	# find the driver sources
+	s=$(find $src/drivers/ -name "$d" -print -quit)
+	[ -n "$s" ] || { 
+		echo "$d sources not found" | warning
+		drv disable $d
+		continue
+	}
+	# check that the original driver had been compiled as a module, otherwise
+	# skip this driver
+	# (we do this mainly to be sure that any module dependency has already
+	#  been taken care of)
+	# XXX maybe add a (per driver?) flag to force compilation anyway
+	drv_conf="CONFIG_$(basename $d .c | tr a-z A-Z)"
+	m="$(eval echo \$$drv_conf)"
+	[ -n "$m" ] || {
+		echo "$drv_conf not set in $ksrc/.config, skipping $d" | warning
+		drv disable $d
+		continue
+	}
+	[ "$m" = y ] && [ -z "$drvsuffix" ] && {
+		warning <<-EOF
+The $d driver is not compiled as a module:
+you will not be able to load the netmap enabled driver on this kernel.
+Please consider setting
+
+    $drv_conf=m
+
+in your .config.
+
+Alternatively, you can pass a --driver-suffix= option to configure.
+		EOF
+	}
+	mod_list="$drv_conf=m $mod_list"
+	# add the driver related targets to drivers.mak
+	t=	# prevent -EOF to eat the make TAB
+	cat >> drivers.mak <<-EOF
+		get-$d:
+		$t	cp -Rp $s .
+		$t	if [ -f patches/$p ]; then patch --posix --quiet --force -p1 < patches/$p; fi
+	EOF
+	if [ -d $s ]; then
+		bs=$(basename $s)
+		cat >> drivers.mak <<-EOF
+			$t	if [ -f drv-subdir.mak ]; then mv $bs/Makefile $bs/orig.mak; cp drv-subdir.mak $bs/Makefile; fi
+		EOF
+	fi
+	cat >> drivers.mak <<-EOF
+		$t	touch get-$d
+
+		clean-$d:
+		$t	rm -rf $d get-$d
+
+	EOF
+	get_drivers="get-$d $get_drivers"
+	clean_drivers="clean-$d $clean_drivers"
+done
+s_drivers="$(drv print)"
+
+# add v1000 if enabled
+if subsys enabled v1000; then
+	t=
+	cat >> drivers.mak <<-EOF
+		get-v1000:
+		$t	cp -r $SRCDIR/vhost-port v1000
+		$t	touch get-v1000
+
+		clean-v1000:
+		$t	rm -rf v1000	
+	EOF
+	s_drivers="v1000 $s_drivers"
+	get_drivers="get-v1000 $get_drivers"
+	clean_drivers="clean-v1000"
+fi
+# add some convenience cumulative targets
+cat >> drivers.mak <<-EOF
+	.PHONY: get-drivers clean-drivers
+	get-drivers: $get_drivers
+	clean-drivers: $clean_drivers
+EOF
+
+# create netmap.mak and Kbuild
+for f in $SRCDIR/*.in; do
+	sed \
+		-e "s|@SRCDIR@|$SRCDIR|g" \
+		-e "s|@KSRC@|$ksrc|g" \
+		-e "s|@SRC@|$src|g" \
+		-e "s|@KOPTS@|$kopts|g" \
+		-e "s|@MODPATH@|$modpath|g" \
+		-e "s|@MODNAME@|$MODNAME|g" \
+		-e "s|@SUBSYS@|$(subsys print)|g" \
+		-e "s|@LIN_VER@|$lin_ver|g" \
+		-e "s|@MOD_LIST@|$mod_list|g" \
+		-e "s|@PATCHES@|$(echo $patches)|g" \
+		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
+		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
+		-e "s|@APPS_CC@|$cc|g" \
+		-e "s|@APPS_LD@|$ld|g" \
+		-e "s|@PREFIX@|$prefix|g" \
+		-e "s|@DESTDIR@|$DESTDIR|g" \
+		$f > $(basename $f .in)
+done
+
+# if we are not in SRCDIR this will fail, since
+# Makefile already exists
+ln -s $SRCDIR/Makefile || true
+
+
+#################################################
+# create the config.h file
+#################################################
+
+if [ -d "$cache" ] && [ -f "$cache/netmap_linux_config.h" ]; then
+	cp "$cache/netmap_linux_config.h" .
+else
+
+# BEGIN_TESTS
+
+# iommu support
+add_test 'have IOMMU' <<-EOF
+	#include <linux/iommu.h>
+
+	void dummy(void)
+	{
+	        struct iommu_group *grp = iommu_group_get(NULL);
+	        int id = iommu_group_id(grp);
+
+	        (void)grp;
+	        (void)id;
+	}
+EOF
+
+# return value of hrtimer handler
+add_test 'define TIMER_RTYPE "enum hrtimer_restart"' 'define TIMER_RTYPE int' <<-EOF
+	#include <linux/hrtimer.h>
+
+	enum hrtimer_restart
+	testmod_timer_handler(struct hrtimer *t)
+	{
+	        (void)t;
+	        return HRTIMER_RESTART;
+	}
+EOF
+
+# rx_register (intercept packets in the generic adapter)
+add_test 'have RX_REGISTER' <<-EOF
+	#include <linux/netdevice.h>
+
+	int dummy(void)
+	{
+	        return netdev_rx_handler_register(NULL, NULL, NULL);
+	}
+EOF
+
+# rx_handler_result_t
+add_test 'have RX_HANDLER_RESULT' <<-EOF
+	#include <linux/netdevice.h>
+
+
+	static rx_handler_result_t dummy_rx_handler(struct sk_buf **pm)
+	{
+	        (void)pm;
+	        return RX_HANDLER_PASS;
+	}
+
+	int dummy(void)
+	{
+	        return netdev_rx_handler_register(NULL, dummy_rx_handler, NULL);
+	}
+EOF
+
+# number of parameters in ndo_select_queue
+# (we expect at most one of these to succeed)
+params="NULL, NULL"
+for n in 2 3 4; do
+	add_test "define SELECT_QUEUE $n" <<-EOF
+		#include <linux/netdevice.h>
+
+		u16 dummy(struct net_device_ops *ndo)
+		{
+		        return ndo->ndo_select_queue($params);
+		}
+	EOF
+	params="NULL, $params"
+done
+
+# ethtool get_ringparam
+add_test 'have GET_RINGPARAM' <<-EOF
+	#include <linux/netdevice.h>
+	#include <linux/ethtool.h>
+
+	void
+	dummy(struct net_device *net, struct ethtool_ringparam *rp) {
+	        net->ethtool_ops->get_ringparam(net, rp);
+	}
+EOF
+
+# ethtool set_channels
+add_test 'have SET_CHANNELS' <<-EOF
+	#include <linux/netdevice.h>
+	#include <linux/ethtool.h>
+
+	int
+	dummy(struct net_device *net, struct ethtool_channels *c) {
+		return net->ethtool_ops->set_channels(net, c);
+	}
+EOF
+
+# pernet_operations id field
+add_test 'have PERNET_OPS_ID' <<-EOF
+	#include <net/net_namespace.h>
+
+	int *
+	dummy(struct pernet_operations *ops) {
+		return ops->id;
+	}
+EOF
+
+# number of tx/rx queues
+add_test 'have NUM_QUEUES' <<-EOF
+	#include <linux/netdevice.h>
+
+	void
+	dummy(struct net_device *net, unsigned int *txq, unsigned int *rxq)
+	{
+	    *txq = net->real_num_tx_queues;
+	    *rxq = net->real_num_rx_queues;
+	}
+EOF
+
+# poll_table key field
+for k in _key key; do
+	add_test "define PWAIT_KEY $k" <<-EOF
+		#include <linux/poll.h>
+
+		int
+		dummy(struct poll_table_struct *pwait)
+		{
+		        return pwait->$k;
+		}
+	EOF
+done
+
+# check for unlocked_ioctl
+add_test 'have UNLOCKED_IOCTL' <<-EOF
+	#include <linux/fs.h>
+
+	void *
+	dummy(struct file_operations *fops)
+	{
+	        return fops->unlocked_ioctl;
+	}
+EOF
+
+# check for init_net
+add_test 'have INIT_NET' <<-EOF
+	#include <linux/netdevice.h>
+
+	struct net_device *
+	dummy(const char *name)
+	{
+	        return dev_get_by_name(&init_net, name);
+	}
+EOF
+
+# check for skb_copy_to_linear_data*
+add_test 'have SKB_COPY_LINEAR' <<-EOF
+	#include <linux/skbuff.h>
+
+	void dummy(struct sk_buff *skb, const void *from, const unsigned int len)
+	{
+	        skb_copy_to_linear_data(skb, from, len);
+	}
+EOF
+
+# check for ACCESS_ONCE
+add_test 'have ACCESS_ONCE' <<-EOF
+	#include <linux/compiler.h>
+
+	int dummy(int *p)
+	{
+	        return ACCESS_ONCE(*p);
+	}
+EOF
+
+# check for uintptr_t
+add_test 'have UINTPTR' <<-EOF
+	uintptr_t dummy;
+EOF
+
+# check for queue_mapping
+add_test 'have QUEUE_MAPPING' <<-EOF
+	#include <linux/skbuff.h>
+
+	u16 dummy(const struct sk_buff *skb)
+	{
+	        return skb_get_queue_mapping(skb);
+	}
+EOF
+
+# check for hrtimer_forward_now
+add_test 'have HRTIMER_FORWARD_NOW' <<-EOF
+	#include <linux/hrtimer.h>
+
+	u64 dummy(struct hrtimer *timer, ktime_t interval)
+	{
+	        return hrtimer_forward_now(timer, interval);
+	}
+EOF
+
+# check for phys_addr_t
+add_test 'have PHYS_ADDR_T' <<-EOF
+	#include <linux/types.h>
+
+	phys_addr_t dummy;
+EOF
+
+# check for net_device_ops
+add_test 'have NETDEV_OPS' <<-EOF
+	#include <linux/netdevice.h>
+
+	struct net_device_ops dummy;
+EOF
+
+# check for netdev_tx_t
+add_test 'have NETDEV_TX_T' <<-EOF
+	#include <linux/netdevice.h>
+
+	netdev_tx_t dummy;
+EOF
+
+# check for usleep_range
+add_test 'have USLEEP_RANGE' <<-EOF
+	#include <linux/delay.h>
+
+	void dummy(void)
+	{
+	        usleep_range(0, 0);
+	}
+EOF
+
+# check for HRTIMER_MODE_REL
+add_test 'have HRTIMER_MODE_REL' <<-EOF
+	#include <linux/hrtimer.h>
+
+	void dummy(struct hrtimer *timer, clockid_t which_clock)
+	{
+	        hrtimer_init(timer, which_clock, HRTIMER_MODE_REL);
+	}
+EOF
+
+# check for IFF_LIVE_ADDR_CHANGE
+add_test 'have LIVE_ADDR_CHANGE' <<-EOF
+	#include <linux/netdevice.h>
+
+	int dummy = IFF_LIVE_ADDR_CHANGE;
+EOF
+
+# check for ndo_get_stats64
+add_test 'have GET_STATS64' <<-EOF
+	#include <linux/netdevice.h>
+
+	void * dummy(struct net_device_ops *ops) {
+	       return ops->ndo_get_stats64;
+	}
+EOF
+
+# check for IFF_TX_SKB_SHARING
+add_test 'have TX_SKB_SHARING' <<-EOF
+	#include <linux/netdevice.h>
+
+	int dummy = IFF_TX_SKB_SHARING;
+EOF
+
+# check for hw_features in net_device
+add_test 'have HW_FEATURES' <<-EOF
+	#include <linux/netdevice.h>
+
+	struct net_device *n;
+        (void)n->hw_features;
+EOF
+
+# check for eth_hw_addr_random
+add_test 'have ADDR_RANDOM' <<-EOF
+	#include <linux/etherdevice.h>
+
+	void dummy(struct net_device *dev) {
+	        eth_hw_addr_random(dev);
+	}
+EOF
+
+# arguments of alloc_netdev (either 4 or 3)
+add_test 'define ALLOC_NETDEV_4ARGS' <<-EOF
+	#include <linux/netdevice.h>
+
+	struct net_device *
+	dummy(int sizeof_priv, const char *name,
+		unsigned char name_assign_type,
+		void (*setup)(struct net_device *))
+	{
+		return alloc_netdev(sizeof_priv, name,
+			name_assign_type, setup);
+	}
+EOF
+
+
+# e1000e
+if drv enabled e1000e; then
+add_test 'have E1000E_HWADDR' <<-EOF
+	#include "e1000e/e1000.h"
+
+	void* dummy(struct e1000_adapter *adapter,
+	        struct e1000_ring *ring)
+	{
+		return adapter->hw.hw_addr + ring->tail;
+	}
+EOF
+
+add_test 'have E1000E_DOWN2' <<-EOF
+	#include "e1000e/e1000.h"
+
+	void dummy(struct e1000_adapter *adapter)
+	{
+		e1000e_down(adapter, false);
+	}
+EOF
+
+add_test "grep -q '\<e1000_rx_desc_extended\>' $TMPDIR/e1000e/netdev.c \
+	&& have E1000E_EXT_RXDESC" </dev/null
+fi # e1000e
+
+# rtl8169
+if drv enabled r8169.c; then
+add_test 'define RTL_OPEN rtl8169_open' 'define RTL_OPEN rtl_open' <<-EOF
+	#include "r8169.c"
+
+	static int dummy(struct net_device *dev) {
+		return rtl8169_open(dev);
+	}
+EOF
+
+add_test 'have RTL_WFQ' <<-EOF
+	#include "r8169.c"
+
+	static void dummy(struct net_device *dev) {
+		rtl8169_wait_for_quiescence(dev);
+	}
+EOF
+fi # r8169.c
+
+# ixgbe
+if drv enabled ixgbe; then
+# different versions of IXGBE_?X_DESC
+add_test 'define IXGBE_DESC 1' <<-EOF
+	#include "ixgbe/ixgbe.h"
+
+	union ixgbe_adv_tx_desc *
+	dummy(struct ixgbe_ring *ring) {
+		return IXGBE_TX_DESC_ADV(*ring, 0);
+	}
+EOF
+add_test 'define IXGBE_DESC 2' <<-EOF
+	#include "ixgbe/ixgbe.h"
+
+	union ixgbe_adv_tx_desc *
+	dummy(struct ixgbe_ring *ring) {
+		return IXGBE_TX_DESC_ADV(ring, 0);
+	}
+EOF
+add_test 'define IXGBE_DESC 3' <<-EOF
+	#include "ixgbe/ixgbe.h"
+
+	union ixgbe_adv_tx_desc *
+	dummy(struct ixgbe_ring *ring) {
+		return IXGBE_TX_DESC(ring, 0);
+	}
+EOF
+
+# array of rings or array of poiners to rings?
+add_test 'define IXGBE_PTR_ARRAY' <<-EOF
+	#include "ixgbe/ixgbe.h"
+
+	struct ixgbe_ring *
+	dummy(struct ixgbe_adapter *adapter) {
+		return adapter->tx_ring[0];
+	}
+EOF
+fi # ixgbe
+
+# END_TESTS
+
+# now we actually create the file
+
+rm -f $configh
+cat > $configh <<-EOF
+	#ifndef NETMAP_LINUX_CONFIG_H
+	#define NETMAP_LINUX_CONFIG_H
+EOF
+
+# the TESTPOSTPROC script will add macros to $configh
+run_tests
+
+define DRIVER_SUFFIX \"$drvsuffix\"
+
+# file end
+cat >> $configh <<-EOF
+
+	#endif
+EOF
+
+if [ -d "$cache" ]; then
+	cp $configh "$cache"
+fi
+
+fi # ! -f $cache/netmap_config_h
+
+
+report
+
+# create the build directory for the examples
+mkdir build-apps
+ln -s $SRCDIR/../examples/GNUmakefile build-apps/Makefile
+
+# config.status can be used to rerun configure with the
+# same arguments
+rm -f config.status
+{ printf " '%s'" "$0" "$@"; echo; } > config.status
+chmod +x config.status

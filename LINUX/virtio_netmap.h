@@ -33,11 +33,13 @@
 static int virtnet_close(struct ifnet *ifp);
 static int virtnet_open(struct ifnet *ifp);
 static void free_receive_bufs(struct virtnet_info *vi);
+static void free_unused_bufs(struct virtnet_info *vi);
 
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
 /* Before 2.6.35 there was no net_device.num_rx_queues, so we assume 1. */
 #define DEV_NUM_RX_QUEUES(_netdev)	1
+#define DEV_NUM_TX_QUEUES(_netdev)	1
 /* A scatterlist struct is needed by functions that invoke
    virtqueue_add_buf() methods, but before 2.6.35 these struct were
    not part of virtio-net data structures, but were defined in those
@@ -48,6 +50,7 @@ static void free_receive_bufs(struct virtnet_info *vi);
 #else  /* >= 2.6.35 */
 
 #define DEV_NUM_RX_QUEUES(_netdev)	(_netdev)->num_rx_queues
+#define DEV_NUM_TX_QUEUES(_netdev)	(_netdev)->num_tx_queues
 #define COMPAT_DECL_SG
 
 #endif  /* >= 2.6.35 */
@@ -108,9 +111,7 @@ static void free_receive_bufs(struct virtnet_info *vi);
 #define GET_TX_VQ(_vi, _i)		({ (void)(_i); (_vi)->svq; })
 #define VQ_FULL(_vq, _err)		({ (void)(_vq); (_err) > 0; })
 
-static void give_pages(struct SOFTC_T *vi, struct page *page);
 static struct page *get_a_page(struct SOFTC_T *vi, gfp_t gfp_mask);
-#define GIVE_PAGES(_vi, _i, _buf)	give_pages(_vi, _buf)
 
 /* This function did not exists, there was just the code. */
 static void free_receive_bufs(struct SOFTC_T *vi)
@@ -121,8 +122,6 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 
 #else   /* >= 3.8.0 */
 
-static void give_pages(struct receive_queue *rq, struct page *page);
-#define GIVE_PAGES(_vi, _i, _buf)	give_pages(&(_vi)->rq[_i], _buf)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)
 #define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
 #else
@@ -155,36 +154,37 @@ static void give_pages(struct receive_queue *rq, struct page *page);
 #endif  /* >= 3.8.0 */
 
 
-/* Free all the unused buffer in all the RX virtqueues.
- * This function is called when entering and exiting netmap mode.
- * In the former case, the unused buffers point to memory allocated by
- * the virtio-driver (e.g. sk_buffs). We need to free that
- * memory, otherwise we have leakage.
- * In the latter case, the unused buffers point to memory allocated by
- * netmap, and so we don't need to free anything.
- * We scan all the RX virtqueues, even those that have not been
- * activated (by 'ethtool --set-channels eth0 combined $N').
- */
-static void virtio_netmap_free_rx_unused_bufs(struct SOFTC_T* vi, int onoff)
+static void
+virtio_netmap_clean_used_rings(struct netmap_adapter *na, struct SOFTC_T *vi)
 {
-	void *buf;
-	int i, c;
+	int i;
+
+	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+		struct virtqueue *vq = GET_TX_VQ(vi, i);
+		unsigned int wlen;
+		void *token;
+		int n = 0;
+
+		while ((token = virtqueue_get_buf(vq, &wlen)) != NULL) {
+			if (token != na) {
+				/* Not ours, it's a sk_buff,
+				 * let's free. */
+				dev_kfree_skb(token);
+			}
+			n++;
+		}
+		D("got %d used bufs on queue tx-%d", n, i);
+	}
 
 	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
 		struct virtqueue *vq = GET_RX_VQ(vi, i);
+		unsigned int wlen;
+		void *token;
+		int n = 0;
 
-		c = 0;
-		while ((buf = virtqueue_detach_unused_buf(vq)) != NULL) {
-			if (onoff) {
-				if (vi->mergeable_rx_bufs || vi->big_packets)
-					GIVE_PAGES(vi, i, buf);
-				else
-					dev_kfree_skb(buf);
-			}
-			DECR_NUM(vi, i);
-			c++;
-		}
-		D("[%d] freed %d rx unused bufs on queue %d", onoff, c, i);
+		while ((token = virtqueue_get_buf(vq, &wlen)) != NULL)
+			n++;
+		D("got %d used bufs on queue rx-%d", n, i);
 	}
 }
 
@@ -192,32 +192,41 @@ static void virtio_netmap_free_rx_unused_bufs(struct SOFTC_T* vi, int onoff)
 static int
 virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *vi = netdev_priv(ifp);
-	struct netmap_hw_adapter *hwna = (struct netmap_hw_adapter*)na;
 	int error = 0;
+	int i;
 
 	if (na == NULL)
 		return EINVAL;
 
-        /* It's important to deny the registration if the interface is
-           not up, otherwise the virtnet_close() is not matched by a
-           virtnet_open(), and so a napi_disable() is not matched by
-           a napi_enable(), which results in a deadlock. */
-        if (!netif_running(ifp))
-                return EBUSY;
+	/* It's important to deny the registration if the interface is
+	   not up, otherwise the virtnet_close() is not matched by a
+	   virtnet_open(), and so a napi_disable() is not matched by
+	   a napi_enable(), which results in a deadlock. */
+	if (!netif_running(ifp))
+		return EBUSY;
 
 	rtnl_lock();
 
 	/* Down the interface. This also disables napi. */
-        virtnet_close(ifp);
+	virtnet_close(ifp);
 
 	if (onoff) {
+		/* Get and free any used buffer. This is necessary
+		 * before calling free_unused_bufs(), that uses
+		 * virtqueue_detach_unused_buf(). */
+		virtio_netmap_clean_used_rings(na, vi);
+
 		/* We have to drain the RX virtqueues, otherwise the
 		 * virtio_netmap_init_buffer() called by the subsequent
 		 * virtnet_open() cannot link the netmap buffers to the
-		 * virtio RX ring. */
-		virtio_netmap_free_rx_unused_bufs(vi, onoff);
+		 * virtio RX ring.
+		 * The unused buffers point to memory allocated by
+		 * the virtio-driver (e.g. sk_buffs). We need to free that
+		 * memory, otherwise we have leakage.
+		 */
+		free_unused_bufs(vi);
 		/* Also free the pages allocated by the driver. */
 		free_receive_bufs(vi);
 
@@ -226,21 +235,49 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		nm_clear_native_flags(na);
 
-		/* Drain the RX virtqueues, otherwise the driver will
+		/* Get and free any used buffer. This is necessary
+		 * before calling virtqueue_detach_unused_buf(). */
+		virtio_netmap_clean_used_rings(na, vi);
+
+		/* Drain the RX/TX virtqueues, otherwise the driver will
 		 * interpret the netmap buffers currently linked to the
 		 * netmap ring as buffers allocated by the driver. This
-		 * would break the driver (and kernel panic/ooops). */
-		virtio_netmap_free_rx_unused_bufs(vi, onoff);
+		 * would break the driver (and kernel panic/ooops).
+		 * We scan all the virtqueues, even those that have not been
+		 * activated (by 'ethtool --set-channels eth0 combined $N').
+		 */
+
+		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+			struct virtqueue *vq = GET_TX_VQ(vi, i);
+			void *token;
+			int n = 0;
+
+			while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
+				n++;
+			}
+			D("detached %d pending bufs on queue tx-%d", n, i);
+		}
+
+		for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
+			struct virtqueue *vq = GET_RX_VQ(vi, i);
+			void *token;
+			int n = 0;
+
+			while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
+				DECR_NUM(vi, i);
+				n++;
+			}
+			D("detached %d pending bufs on queue rx-%d", n, i);
+		}
 	}
 
 	/* Up the interface. This also enables the napi. */
-        virtnet_open(ifp);
+	virtnet_open(ifp);
 
 	rtnl_unlock();
 
 	return (error);
 }
-
 
 /* Reconcile kernel and user view of the transmit ring. */
 static int
@@ -307,7 +344,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
                         sg_set_buf(sg, addr, len);
                         err = virtqueue_add_outbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
-                                D("virtqueue_add_outbuf failed");
+                                D("virtqueue_add_outbuf failed [%d]", err);
                                 break;
                         }
 			virtqueue_kick(vq);
@@ -363,7 +400,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * First part: import newly received packets.
 	 * Only accept our
 	 * own buffers (matching the token). We should only get
-	 * matching buffers, because of virtio_netmap_free_rx_unused_bufs()
+	 * matching buffers, because of free_unused_bufs()
 	 * and virtio_netmap_init_buffers().
 	 */
 	if (netmap_no_pendintr || force_update) {

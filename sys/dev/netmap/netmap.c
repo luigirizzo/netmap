@@ -1294,9 +1294,11 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 {
 	/* generic support */
 	int i = netmap_admode;	/* Take a snapshot. */
-	int error = 0;
 	struct netmap_adapter *prev_na;
+#ifdef WITH_GENERIC
 	struct netmap_generic_adapter *gna;
+	int error = 0;
+#endif
 
 	*na = NULL; /* default */
 
@@ -1332,6 +1334,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	if (!NETMAP_CAPABLE(ifp) && i == NETMAP_ADMODE_NATIVE)
 		return EOPNOTSUPP;
 
+#ifdef WITH_GENERIC
 	/* Otherwise, create a generic adapter and return it,
 	 * saving the previously used netmap adapter, if any.
 	 *
@@ -1362,6 +1365,9 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	ND("Created generic NA %p (prev %p)", gna, gna->prev);
 
 	return 0;
+#else /* !WITH_GENERIC */
+	return EOPNOTSUPP;
+#endif
 }
 
 
@@ -2190,9 +2196,11 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 
 		break;
 
+#ifdef WITH_VALE
 	case NIOCCONFIG:
 		error = netmap_bdg_config(nmr);
 		break;
+#endif
 #ifdef __FreeBSD__
 	case FIONBIO:
 	case FIOASYNC:
@@ -2579,11 +2587,13 @@ netmap_attach_common(struct netmap_adapter *na)
 	if (na->nm_mem == NULL)
 		/* use the global allocator */
 		na->nm_mem = &nm_mem;
+#ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
 		/* no special nm_bdg_attach callback. On VALE
 		 * attach, we need to interpose a bwrap
 		 */
 		na->nm_bdg_attach = netmap_bwrap_attach;
+#endif
 	return 0;
 }
 
@@ -2665,7 +2675,7 @@ netmap_attach(struct netmap_adapter *arg)
 #ifdef linux
 	if (ifp->netdev_ops) {
 		/* prepare a clone of the netdev ops */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
+#ifndef NETMAP_LINUX_HAVE_NETDEV_OPS
 		hwna->nm_ndo.ndo_start_xmit = ifp->netdev_ops;
 #else
 		hwna->nm_ndo = *ifp->netdev_ops;
@@ -2676,7 +2686,7 @@ netmap_attach(struct netmap_adapter *arg)
 		hwna->nm_eto = *ifp->ethtool_ops;
 	}
 	hwna->nm_eto.set_ringparam = linux_netmap_set_ringparam;
-#ifdef ETHTOOL_SCHANNELS
+#ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
 	hwna->nm_eto.set_channels = linux_netmap_set_channels;
 #endif
 	if (arg->nm_config == NULL) {
@@ -3025,7 +3035,7 @@ extern struct cdevsw netmap_cdevsw;
 void
 netmap_fini(void)
 {
-	// XXX destroy_bridges() ?
+	netmap_uninit_bridges();
 	if (netmap_dev)
 		destroy_dev(netmap_dev);
 	netmap_mem_fini();
@@ -3050,10 +3060,14 @@ netmap_init(void)
 	if (!netmap_dev)
 		goto fail;
 
-	netmap_init_bridges();
+	error = netmap_init_bridges();
+	if (error)
+		goto fail;
+
 #ifdef __FreeBSD__
 	nm_vi_init_index();
 #endif
+
 	printf("netmap: loaded module\n");
 	return (0);
 fail:

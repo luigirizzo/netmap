@@ -2,14 +2,19 @@
 # we can just define 'progs' and create custom targets.
 PROGS	=	pkt-gen bridge vale-ctl
 #PROGS += pingd
-PROGS	+= testlock test_select testmmap vale-ctl
+PROGS	+= test_select testmmap
+X86PROG = testlock testcsum
 LIBNETMAP =
 
-CLEANFILES = $(PROGS) *.o
+CLEANFILES = $(PROGS) $(X86PROGS) *.o
+
+SRCDIR ?= ..
+VPATH = $(SRCDIR)/examples
+
 NO_MAN=
 CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
-CFLAGS += -I ../sys # -I/home/luigi/FreeBSD/head/sys -I../sys
+CFLAGS += -I $(SRCDIR)/sys # -I/home/luigi/FreeBSD/head/sys -I../sys
 CFLAGS += -Wextra
 ifdef WITH_PCAP
 # do not use pcap by default, as it is not always available on linux
@@ -24,7 +29,11 @@ ifeq ($(shell uname),Linux)
 endif
 #SRCS = pkt-gen.c
 
+PREFIX ?= /usr/local
+
 all: $(PROGS)
+
+all-x86: $(PROGS) $(X86PROGS)
 
 kern_test: testmod/kern_test.c
 
@@ -41,3 +50,9 @@ clean:
 	-@rm -rf $(CLEANFILES)
 
 testlock: testlock.c
+
+.PHONY: install
+install: $(PROGS:%=install-%)
+
+install-%:
+	install -D $* $(DESTDIR)/$(PREFIX)/bin/$*

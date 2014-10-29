@@ -1,0 +1,106 @@
+# To build external modules, you must have a prebuilt kernel available
+# that contains the configuration and header files used in the build.
+# go in the kernel directory and do a
+#       make oldconfig; make scripts; make prepare
+# or    make defconfig; make scripts; make prepare
+#
+
+MODNAME:=@MODNAME@
+SUBSYS:=@SUBSYS@
+SRCDIR:=@SRCDIR@
+
+# The following commands are needed to build the modules as out-of-tree,
+# in fact the kernel sources path must be specified.
+
+PWD ?= $(CURDIR)
+
+# Additional compile flags (e.g. header location)
+EXTRA_CFLAGS := -I$(PWD) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
+EXTRA_CFLAGS += -Wno-unused-but-set-variable
+EXTRA_CFLAGS += $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z A-Z))
+
+
+# We use KSRC for the kernel configuration and sources.
+# If the sources are elsewhere, then use SRC to point to them.
+KSRC = @KSRC@
+SRC  = @SRC@
+KOPTS = @KOPTS@
+MODPATH = @MODPATH@
+LIN_VER = @LIN_VER@
+MOD_LIST := @MOD_LIST@
+PATCHES = @PATCHES@
+S_DRIVERS = @S_DRIVERS@
+DRVSUFFIX = @DRVSUFFIX@
+GET_DRIVERS = $(S_DRIVERS:%=get-%)
+
+all: netmap $(if $(S_DRIVERS),drivers,)
+
+include drivers.mak
+
+# actual drivers after copy and patch
+DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
+
+COMMON_OPTS=-C $(KSRC) M=$(PWD) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
+
+netmap:
+	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m
+
+drivers: get-drivers
+	$(MAKE) $(COMMON_OPTS) $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)" \
+		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
+
+install:
+	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
+		O_DRIVERS="$(DRIVERS:%.c=%.o)" \
+		$(KOPTS) \
+		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX) \
+		$(if $(MODPATH),INSTALL_MOD_PATH=$(MODPATH)) \
+		modules_install
+
+test:
+	@echo "version $(LIN_VER)"
+	@echo "patches $(PATCHES)"
+	@echo "drivers $(DRIVERS)"
+
+clean: clean-drivers
+	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
+	-@ $(MAKE) -C build-apps clean
+	-@ rm -f *.orig *.rej *.ko *.o .*.d 		\
+		*.mod.c modules.order			\
+		Module.symvers .*.cmd
+	-@ rm -rf .tmp_versions
+
+
+
+test3:
+	@echo "from $(PATCHES) -- to $(MYDRIVERS)"
+	@echo "Drivers is $(DRIVERS)"
+	@echo "Actually have `ls -d $(DRIVERS) 2> /dev/null`"
+
+# compute the diffs for the original files
+diffs:
+	@for i in `find . -name \*.orig`; do 	\
+		diff -urp $$i $${i%.orig} ;	\
+	done
+
+APPS_CC=@APPS_CC@
+APPS_LD=@APPS_LD@
+PREFIX=@PREFIX@
+DESTDIR?=@DESTDIR@
+
+apps:
+	$(MAKE) -C build-apps SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)"
+
+install-apps:
+	$(MAKE) -C build-apps install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+
++%:
+	@echo $($*)
+
+distclean: clean
+	rm -f config.status config.log netmap_linux_config.h \
+		patches drivers.mak Kbuild netmap.mak
+	rm -rf netmap-tmpdir
+	if [ -L Makefile ]; then rm Makefile; fi
+	rm -f build-apps/Makefile
+	rmdir build-apps
