@@ -172,7 +172,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			union ixgbe_adv_tx_desc *curr = IXGBE_TX_DESC_ADV(txr, nic_i);
@@ -180,7 +180,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 				nic_i == 0 || nic_i == report_frequency) ?
 				IXGBE_TXD_CMD_RS : 0;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
@@ -350,10 +350,10 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			union ixgbe_adv_rx_desc *curr = IXGBE_RX_DESC_ADV(rxr, nic_i);
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
@@ -398,13 +398,9 @@ ixgbe_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	struct netmap_slot *slot;
 	//int j;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
-		return 0;	// not in netmap; XXX cannot happen
+		return 0;	// not in native netmap mode
 #if 0
 	/*
 	 * on a generic card we should set the address in the slot.
@@ -415,11 +411,43 @@ ixgbe_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	for (j = 0; j < na->num_tx_desc; j++) {
 		int sj = netmap_idx_n2k(&na->tx_rings[ring_nr], j);
 		uint64_t paddr;
-		void *addr = PNMB(slot + sj, &paddr);
+		void *addr = PNMB(na, slot + sj, &paddr);
 	}
 #endif
 	return 1;
 }
+
+/*
+ * In netmap mode, overwrite the srrctl register with netmap_buf_size
+ * to properly configure the Receive Buffer Size
+ */
+static void
+ixgbe_netmap_configure_srrctl(struct SOFTC_T *adapter, struct ixgbe_ring *rx_ring)
+{
+	struct netmap_adapter *na = NA(adapter->netdev);
+	struct ixgbe_hw *hw = &adapter->hw;
+	u32 srrctl;
+	u8 reg_idx = rx_ring->reg_idx;
+
+	if (hw->mac.type == ixgbe_mac_82598EB) {
+		u16 mask = adapter->ring_feature[RING_F_RSS].mask;
+		reg_idx &= mask;
+	}
+	srrctl = IXGBE_RX_HDR_SIZE << 2;
+	srrctl |= NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT;
+	D("bufsz: %d srrctl: %d", NETMAP_BUF_SIZE(na),
+		NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT);
+	/*
+	 * XXX
+	 * With Advanced RX descriptor, the address needs to be rewritten,
+	 * but with Legacy RX descriptor, it simply has to zero the status
+	 * byte in the descriptor to make it ready for reuse by hardware.
+	 * (ixgbe datasheet - Section 7.1.9)
+	 */
+	srrctl |= IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF;
+	IXGBE_WRITE_REG(hw, IXGBE_SRRCTL(reg_idx), srrctl);
+}
+
 
 
 static int
@@ -446,14 +474,12 @@ ixgbe_netmap_configure_rx_ring(struct SOFTC_T *adapter, int ring_nr)
 	int lim, i;
 	struct ixgbe_ring *ring = adapter->rx_ring[ring_nr];
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_RX, ring_nr, 0);
         /* same as in ixgbe_setup_transmit_ring() */
 	if (!slot)
-		return 0;	// not in netmap; XXX cannot happen
+		return 0;	// not in native netmap mode
+	// XXX can we move it later ?
+	ixgbe_netmap_configure_srrctl(adapter, ring);
 
 	lim = na->num_rx_desc - 1 - nm_kr_rxspace(&na->rx_rings[ring_nr]);
 
@@ -465,7 +491,7 @@ ixgbe_netmap_configure_rx_ring(struct SOFTC_T *adapter, int ring_nr)
 		 */
 		int si = netmap_idx_n2k(&na->rx_rings[ring_nr], i);
 		uint64_t paddr;
-		PNMB(slot + si, &paddr);
+		PNMB(na, slot + si, &paddr);
 		// netmap_load_map(rxr->ptag, rxbuf->pmap, addr);
 		/* Update descriptor */
 		IXGBE_RX_DESC_ADV(ring, i)->read.pkt_addr = htole64(paddr);
@@ -490,6 +516,7 @@ ixgbe_netmap_attach(struct SOFTC_T *adapter)
 	bzero(&na, sizeof(na));
 
 	na.ifp = adapter->netdev;
+	na.pdev = &adapter->pdev->dev;
 	na.num_tx_desc = adapter->tx_ring[0]->count;
 	na.num_rx_desc = adapter->rx_ring[0]->count;
 	na.nm_txsync = ixgbe_netmap_txsync;

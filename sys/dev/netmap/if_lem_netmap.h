@@ -98,6 +98,9 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	/* device-specific */
 	struct adapter *adapter = ifp->if_softc;
+#ifdef NIC_PARAVIRT
+	struct paravirt_csb *csb = adapter->csb;
+#endif /* NIC_PARAVIRT */
 
 	bus_dmamap_sync(adapter->txdma.dma_tag, adapter->txdma.dma_map,
 			BUS_DMASYNC_POSTREAD);
@@ -113,7 +116,7 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = &adapter->tx_desc_base[nic_i];
@@ -122,12 +125,12 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 				nic_i == 0 || nic_i == report_frequency) ?
 				E1000_TXD_CMD_RS : 0;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
 				curr->buffer_addr = htole64(paddr);
-				netmap_reload_map(adapter->txtag, txbuf->map, addr);
+				netmap_reload_map(na, adapter->txtag, txbuf->map, addr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 
@@ -140,6 +143,7 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
+			// XXX might try an early kick
 		}
 		kring->nr_hwcur = head;
 
@@ -147,6 +151,12 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 		bus_dmamap_sync(adapter->txdma.dma_tag, adapter->txdma.dma_map,
 			BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
+#ifdef NIC_PARAVIRT
+		/* set unconditionally, then also kick if needed */
+		if (csb)
+			csb->guest_tdt = nic_i;
+		if (!csb || !csb->guest_csb_on || csb->host_need_txkick)
+#endif /* NIC_PARAVIRT */
 		/* (re)start the tx unit up to slot nic_i (excluded) */
 		E1000_WRITE_REG(&adapter->hw, E1000_TDT(0), nic_i);
 	}
@@ -157,6 +167,55 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 	if (ticks != kring->last_reclaim || flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
 		kring->last_reclaim = ticks;
 		/* record completed transmissions using TDH */
+#ifdef NIC_PARAVIRT
+		/* host updates tdh unconditionally, and we have
+		 * no side effects on reads, so we can read from there
+		 * instead of exiting.
+		 */
+		if (csb) {
+		    static int drain = 0, nodrain=0, good = 0, bad = 0, fail = 0;
+		    u_int x = adapter->next_tx_to_clean;
+		    nic_i = csb->host_tdh;
+		    if (csb->guest_csb_on) {
+			if (nic_i == x) {
+			    bad++;
+			    /* no progress, request kick and retry */
+			    csb->guest_need_txkick = 1;
+			    mb(); // XXX barrier
+		    	    nic_i = csb->host_tdh;
+			} else {
+			    good++;
+			}
+			if (nic_i != x) {
+			    csb->guest_need_txkick = 0;
+			    if (nic_i == csb->guest_tdt)
+				drain++;
+			    else
+				nodrain++;
+#if 1
+			    x = x*31 + nic_i;
+			    /* advance exponentially slow */
+			    if (nic_i < adapter->next_tx_to_clean) {
+			        x = (x + lim + 1)/32;
+				if (x > lim)
+				    x -= lim;
+			    } else {
+			        x = x / 32;
+			    }
+			    ND(15, "ntc %d x %d nic_i %d",
+				adapter->next_tx_to_clean, x, nic_i);
+			    if (x != adapter->next_tx_to_clean)
+				nic_i = x;
+#endif
+			} else {
+			    bad--;
+			    fail++;
+			}
+		    }
+		    RD(1, "drain %d nodrain %d good %d retry %d fail %d",
+			drain, nodrain, good, bad, fail);
+		} else
+#endif /* !NIC_PARAVIRT */
 		nic_i = E1000_READ_REG(&adapter->hw, E1000_TDH(0));
 		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
 			D("TDH wrap %d", nic_i);
@@ -190,10 +249,21 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	/* device-specific */
 	struct adapter *adapter = ifp->if_softc;
+#ifdef NIC_PARAVIRT
+	struct paravirt_csb *csb = adapter->csb;
+	uint32_t csb_mode = csb && csb->guest_csb_on;
+	uint32_t do_host_rxkick = 0;
+#endif /* NIC_PARAVIRT */
 
 	if (head > lim)
 		return netmap_ring_reinit(kring);
 
+#ifdef NIC_PARAVIRT
+	if (csb_mode) {
+		force_update = 1;
+		csb->guest_need_rxkick = 0;
+	}
+#endif /* NIC_PARAVIRT */
 	/* XXX check sync modes */
 	bus_dmamap_sync(adapter->rxdma.dma_tag, adapter->rxdma.dma_map,
 			BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
@@ -212,11 +282,28 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint32_t staterr = le32toh(curr->status);
 			int len;
 
+#ifdef NIC_PARAVIRT
+			if (csb_mode) {
+			    if ((staterr & E1000_RXD_STAT_DD) == 0) {
+				/* don't bother to retry if more than 1 pkt */
+				if (n > 1)
+				    break;
+				csb->guest_need_rxkick = 1;
+				wmb();
+				staterr = le32toh(curr->status);
+				if ((staterr & E1000_RXD_STAT_DD) == 0) {
+				    break;
+				} else { /* we are good */
+				   csb->guest_need_rxkick = 0;
+				}
+			    }
+			} else
+#endif /* NIC_PARAVIRT */
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
 			len = le16toh(curr->length) - 4; // CRC
 			if (len < 0) {
-				D("bogus pkt size %d nic idx %d", len, nic_i);
+				RD(5, "bogus pkt (%d) size %d nic idx %d", n, len, nic_i);
 				len = 0;
 			}
 			ring->slot[nm_i].len = len;
@@ -228,6 +315,18 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 			nic_i = nm_next(nic_i, lim);
 		}
 		if (n) { /* update the state variables */
+#ifdef NIC_PARAVIRT
+			if (csb_mode) {
+			    if (n > 1) {
+				/* leave one spare buffer so we avoid rxkicks */
+				nm_i = nm_prev(nm_i, lim);
+				nic_i = nm_prev(nic_i, lim);
+				n--;
+			    } else {
+				csb->guest_need_rxkick = 1;
+			    }
+			}
+#endif /* NIC_PARAVIRT */
 			ND("%d new packets at nic %d nm %d tail %d",
 				n,
 				adapter->next_rx_desc_to_check,
@@ -249,23 +348,27 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			struct e1000_rx_desc *curr = &adapter->rx_desc_base[nic_i];
 			struct em_buffer *rxbuf = &adapter->rx_buffer_area[nic_i];
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
 				curr->buffer_addr = htole64(paddr);
-				netmap_reload_map(adapter->rxtag, rxbuf->map, addr);
+				netmap_reload_map(na, adapter->rxtag, rxbuf->map, addr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
 			curr->status = 0;
 			bus_dmamap_sync(adapter->rxtag, rxbuf->map,
 			    BUS_DMASYNC_PREREAD);
+#ifdef NIC_PARAVIRT
+			if (csb_mode && csb->host_rxkick_at == nic_i)
+				do_host_rxkick = 1;
+#endif /* NIC_PARAVIRT */
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -277,6 +380,12 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 		 * so move nic_i back by one unit
 		 */
 		nic_i = nm_prev(nic_i, lim);
+#ifdef NIC_PARAVIRT
+		/* set unconditionally, then also kick if needed */
+		if (csb)
+			csb->guest_rdt = nic_i;
+		if (!csb_mode || do_host_rxkick)
+#endif /* NIC_PARAVIRT */
 		E1000_WRITE_REG(&adapter->hw, E1000_RDT(0), nic_i);
 	}
 

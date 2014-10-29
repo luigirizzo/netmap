@@ -29,7 +29,36 @@
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
+#include <linux/rtnetlink.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+#include <linux/iommu.h>
+
+/* #################### IOMMU ################## */
+/*
+ * Returns the IOMMU domain id that the device belongs to.
+ */
+int nm_iommu_group_id(struct device *dev)
+{
+	struct iommu_group *grp;
+	int id;
+
+	if (!dev)
+		return 0;
+
+	grp = iommu_group_get(dev);
+	if (!grp)
+		return 0;
+
+	id = iommu_group_id(grp);
+	return id;
+}
+#else
+int nm_iommu_group_id(struct device *dev)
+{
+	return 0;
+}
+#endif
 
 /* #################### VALE OFFLOADINGS SUPPORT ################## */
 
@@ -114,8 +143,8 @@ generic_timer_handler(struct hrtimer *t)
      * a notification.
      */
     mit->mit_pending = 0;
-    /* below is a variation of netmap_generic_irq */
-    if (mit->mit_na->ifp->if_capenable & IFCAP_NETMAP) {
+    /* below is a variation of netmap_generic_irq  XXX revise */
+    if (nm_netmap_on(mit->mit_na)) {
         netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
         generic_rate(0, 0, 0, 0, 0, 1);
     }
@@ -322,11 +351,13 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     return -1;
 }
 
+
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
    rings can have the same lengths. */
 int
 generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
+    int error = EOPNOTSUPP;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31) // XXX
     struct ethtool_ringparam rp;
 
@@ -334,9 +365,10 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
         ifp->ethtool_ops->get_ringparam(ifp, &rp);
         *tx = rp.tx_pending;
         *rx = rp.rx_pending;
+	error = 0;
     }
 #endif /* 2.6.31 and above */
-    return 0;
+    return error;
 }
 
 /* Fills in the output arguments with the number of hardware TX/RX queues. */
@@ -350,6 +382,31 @@ generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
     *txq = ifp->real_num_tx_queues;
     *rxq = ifp->real_num_rx_queues;
 #endif
+}
+
+int
+netmap_linux_config(struct netmap_adapter *na,
+		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
+{
+	struct ifnet *ifp = na->ifp;
+	int error = 0;
+
+	rtnl_lock();
+
+	if (ifp == NULL) {
+		D("zombie adapter");
+		error = ENXIO;
+		goto out;
+	}
+	error = generic_find_num_desc(ifp, txd, rxd);
+	if (error)
+		goto out;
+	generic_find_num_queues(ifp, txr, rxr);
+
+out:
+	rtnl_unlock();
+
+	return error;
 }
 
 
@@ -394,44 +451,78 @@ linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 	return netmap_poll((void *)pwait, events, (void *)file);
 }
 
+int
+linux_netmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+	struct netmap_priv_d *priv = vma->vm_private_data;
+	struct netmap_adapter *na = priv->np_na;
+	struct page *page;
+	unsigned long off = (vma->vm_pgoff + vmf->pgoff) << PAGE_SHIFT;
+	unsigned long pa, pfn;
+
+	pa = netmap_mem_ofstophys(na->nm_mem, off);
+	ND("fault off %lx -> phys addr %lx", off, pa);
+	if (pa == 0)
+		return VM_FAULT_SIGBUS;
+	pfn = pa >> PAGE_SHIFT;
+	if (!pfn_valid(pfn))
+		return VM_FAULT_SIGBUS;
+	page = pfn_to_page(pfn);
+	get_page(page);
+	vmf->page = page;
+	return 0;
+}
+
+static struct vm_operations_struct linux_netmap_mmap_ops = {
+	.fault = linux_netmap_fault,
+};
 
 static int
 linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 {
 	int error = 0;
-	unsigned long off, va;
-	vm_ooffset_t pa;
+	unsigned long off;
+	u_int memsize, memflags;
 	struct netmap_priv_d *priv = f->private_data;
+	struct netmap_adapter *na = priv->np_na;
 	/*
 	 * vma->vm_start: start of mapping user address space
 	 * vma->vm_end: end of the mapping user address space
 	 * vma->vm_pfoff: offset of first page in the device
 	 */
 
-	// XXX security checks
-
-	error = netmap_get_memory(priv);
-	ND("get_memory returned %d", error);
-	if (error)
-	    return -error;
-
-	if ((vma->vm_start & ~PAGE_MASK) || (vma->vm_end & ~PAGE_MASK)) {
-		ND("vm_start = %lx vm_end = %lx", vma->vm_start, vma->vm_end);
+	if (priv->np_nifp == NULL) {
 		return -EINVAL;
 	}
+	mb();
 
-	for (va = vma->vm_start, off = vma->vm_pgoff;
-	     va < vma->vm_end;
-	     va += PAGE_SIZE, off++)
-	{
-		pa = netmap_mem_ofstophys(priv->np_mref, off << PAGE_SHIFT);
-		if (pa == 0) 
+	/* check that [off, off + vsize) is within our memory */
+	error = netmap_mem_get_info(na->nm_mem, &memsize, &memflags, NULL);
+	ND("get_info returned %d", error);
+	if (error)
+		return -error;
+	off = vma->vm_pgoff << PAGE_SHIFT;
+	ND("off %lx size %lx memsize %x", off,
+			(vma->vm_end - vma->vm_start), memsize);
+	if (off + (vma->vm_end - vma->vm_start) > memsize)
+		return -EINVAL;
+	if (memflags & NETMAP_MEM_IO) {
+		vm_ooffset_t pa;
+
+		/* the underlying memory is contiguous */
+		pa = netmap_mem_ofstophys(na->nm_mem, 0);
+		if (pa == 0)
 			return -EINVAL;
-	
-		ND("va %lx pa %p", va, pa);	
-		error = remap_pfn_range(vma, va, pa >> PAGE_SHIFT, PAGE_SIZE, vma->vm_page_prot);
-		if (error) 
-			return error;
+		return remap_pfn_range(vma, vma->vm_start, 
+				pa >> PAGE_SHIFT,
+				vma->vm_end - vma->vm_start,
+				vma->vm_page_prot);
+	} else {
+		/* non contiguous memory, we serve 
+		 * page faults as they come
+		 */
+		vma->vm_private_data = priv;
+		vma->vm_ops = &linux_netmap_mmap_ops;
 	}
 	return 0;
 }
@@ -477,17 +568,33 @@ long
 linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 #endif
 {
-	int ret;
-	struct nmreq nmr;
-	bzero(&nmr, sizeof(nmr));
+	int ret = 0;
+	union {
+		struct nm_ifreq ifr;
+		struct nmreq nmr;
+	} arg;
+	size_t argsize = 0;
 
-        if (cmd == NIOCTXSYNC || cmd == NIOCRXSYNC) {
-            data = 0;       /* no argument required here */
-        }
-	if (data && copy_from_user(&nmr, (void *)data, sizeof(nmr) ) != 0)
-		return -EFAULT;
-	ret = netmap_ioctl(NULL, cmd, (caddr_t)&nmr, 0, (void *)file);
-	if (data && copy_to_user((void*)data, &nmr, sizeof(nmr) ) != 0)
+	switch (cmd) {
+	case NIOCTXSYNC:
+	case NIOCRXSYNC:
+		break;
+	case NIOCCONFIG:
+		argsize = sizeof(arg.ifr);
+		break;
+	default:
+		argsize = sizeof(arg.nmr);
+		break;
+	}
+	if (argsize) {
+		if (!data)
+			return -EINVAL;
+		bzero(&arg, argsize);
+		if (copy_from_user(&arg, (void *)data, argsize) != 0)
+			return -EFAULT;
+	}
+	ret = netmap_ioctl(NULL, cmd, (caddr_t)&arg, 0, (void *)file);
+	if (data && copy_to_user((void*)data, &arg, argsize) != 0)
 		return -EFAULT;
 	return -ret;
 }
@@ -745,7 +852,7 @@ static int netmap_common_sendmsg(struct netmap_adapter *na, struct msghdr *m,
                 return 0;
             }
 
-            dst = BDG_NMB(na, &ring->slot[i]);
+            dst = NMB(na, &ring->slot[i]);
 
             ring->slot[i].len = nm_frag_size;
             ring->slot[i].flags = NS_MOREFRAG;
@@ -883,7 +990,7 @@ static int netmap_common_recvmsg(struct netmap_adapter *na,
 	morefrag = (ring->slot[i].flags & NS_MOREFRAG);
 	nm_frag_ofs = 0;
 	nm_frag_size = ring->slot[i].len;
-	src = BDG_NMB(na, &ring->slot[i]);
+	src = NMB(na, &ring->slot[i]);
         if (unlikely(++i == ring->num_slots))
             i = 0;
         avail--;
@@ -918,7 +1025,7 @@ static int netmap_common_recvmsg(struct netmap_adapter *na,
 			morefrag = (ring->slot[i].flags & NS_MOREFRAG);
 			nm_frag_ofs = 0;
 			nm_frag_size = ring->slot[i].len;
-			src = BDG_NMB(na, &ring->slot[i]);
+			src = NMB(na, &ring->slot[i]);
 			/* Take the next slot. */
                         if (unlikely(++i == ring->num_slots))
                             i = 0;
@@ -1226,6 +1333,109 @@ static void linux_netmap_fini(void)
         netmap_fini();
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)
+int
+nm_vi_persist(const char *name, struct ifnet **ret)
+{
+	(void)name;
+	(void)ret;
+	return EOPNOTSUPP;
+}
+
+void
+nm_vi_detach(struct ifnet *ifp) {
+	(void)ifp;
+}
+#else
+
+static struct device_driver linux_dummy_drv = {.owner = THIS_MODULE};
+
+static int linux_nm_vi_open(struct net_device *netdev)
+{
+	netif_start_queue(netdev);
+	return 0;
+}
+
+static int linux_nm_vi_stop(struct net_device *netdev)
+{
+	netif_stop_queue(netdev);
+	return 0;
+}
+static int linux_nm_vi_xmit(struct sk_buff *skb, struct net_device *netdev)
+{
+	if (skb != NULL)
+		kfree_skb(skb);
+	return 0;
+}
+static struct rtnl_link_stats64 *linux_nm_vi_get_stats(
+		struct net_device *netdev,
+		struct rtnl_link_stats64 *stats)
+{
+	return stats;
+}
+static int linux_nm_vi_change_mtu(struct net_device *netdev, int new_mtu)
+{
+	return 0;
+}
+static void linux_nm_vi_destructor(struct net_device *netdev)
+{
+//	netmap_detach(netdev);
+	free_netdev(netdev);
+}
+static const struct net_device_ops nm_vi_ops = {
+	.ndo_open = linux_nm_vi_open,
+	.ndo_stop = linux_nm_vi_stop,
+	.ndo_start_xmit = linux_nm_vi_xmit,
+	.ndo_set_mac_address = eth_mac_addr,
+	.ndo_change_mtu = linux_nm_vi_change_mtu,
+	.ndo_get_stats64 = linux_nm_vi_get_stats,
+};
+/* dev->name is not initialized yet */
+static void
+linux_nm_vi_setup(struct ifnet *dev)
+{
+	ether_setup(dev);
+	dev->netdev_ops = &nm_vi_ops;
+	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
+	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
+	dev->destructor = linux_nm_vi_destructor;
+	dev->tx_queue_len = 0;
+	/* XXX */
+	dev->features = NETIF_F_LLTX | NETIF_F_SG | NETIF_F_FRAGLIST |
+		NETIF_F_HIGHDMA | NETIF_F_HW_CSUM | NETIF_F_TSO;
+	dev->hw_features = dev->features & ~NETIF_F_LLTX;
+	eth_hw_addr_random(dev);
+}
+
+int
+nm_vi_persist(const char *name, struct ifnet **ret)
+{
+	struct ifnet *ifp;
+
+	if (!try_module_get(linux_dummy_drv.owner))
+		return EFAULT;
+	ifp = alloc_netdev(0, name, linux_nm_vi_setup);
+	if (!ifp) {
+		module_put(linux_dummy_drv.owner);
+		return ENOMEM;
+	}
+	dev_net_set(ifp, &init_net);
+	ifp->features |= NETIF_F_NETNS_LOCAL; /* just for safety */
+	register_netdev(ifp);
+	ifp->dev.driver = &linux_dummy_drv;
+	netif_start_queue(ifp);
+	*ret = ifp;
+	return 0;
+}
+
+void
+nm_vi_detach(struct ifnet *ifp)
+{
+	netif_stop_queue(ifp);
+	unregister_netdev(ifp);
+	module_put(linux_dummy_drv.owner);
+}
+#endif /* kernel >= 3.6.0 */
 
 module_init(linux_netmap_init);
 module_exit(linux_netmap_fini);
@@ -1236,16 +1446,13 @@ EXPORT_SYMBOL(netmap_detach);		/* driver detach routines */
 EXPORT_SYMBOL(nm_txsync_prologue);	/* txsync support */
 EXPORT_SYMBOL(nm_rxsync_prologue);	/* rxsync support */
 EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */
-EXPORT_SYMBOL(netmap_buffer_lut);
-EXPORT_SYMBOL(netmap_total_buffers);	/* index check */
-EXPORT_SYMBOL(netmap_buffer_base);
 EXPORT_SYMBOL(netmap_reset);		/* ring init routines */
-EXPORT_SYMBOL(netmap_buf_size);
 EXPORT_SYMBOL(netmap_rx_irq);	        /* default irq handler */
 EXPORT_SYMBOL(netmap_no_pendintr);	/* XXX mitigation - should go away */
 #ifdef WITH_VALE
 EXPORT_SYMBOL(netmap_bdg_ctl);		/* bridge configuration routine */
 EXPORT_SYMBOL(netmap_bdg_learning);	/* the default lookup function */
+EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
 #endif /* WITH_VALE */
 EXPORT_SYMBOL(netmap_disable_all_rings);
 EXPORT_SYMBOL(netmap_enable_all_rings);

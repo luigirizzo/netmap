@@ -4,7 +4,7 @@
 # Maintainer: Vincenzo Maffione <v.maffione@gmail.com>
 pkgname=netmap
 pkgver=2.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Netmap is a framework for high speed network packet I/O."
 arch=('any')
 url="http://info.iet.unipi.it/~luigi/netmap"
@@ -64,6 +64,10 @@ package() {
     mkdir -p "$pkgdir/usr/bin"
     cp "$srcdir/$_gitname-build/examples/pkt-gen" "$pkgdir/usr/bin"
     cp "$srcdir/$_gitname-build/examples/vale-ctl" "$pkgdir/usr/bin"
+
+    # Install the netmap public headers
+    mkdir -p "$pkgdir/usr/include/net"
+    cp "$srcdir/$_gitname/sys/net/netmap.h" "$srcdir/$_gitname/sys/net/netmap_user.h" "$pkgdir/usr/include/net"
 
     # Install the netmap man page
     mkdir -p "$pkgdir/usr/share/man/man4"

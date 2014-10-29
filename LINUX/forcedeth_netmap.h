@@ -150,14 +150,14 @@ forcedeth_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			struct ring_desc_ex *put_tx = txr + nic_i;
 			// XXX check who needs lastpkt
 			int cmd = (len - 1) | NV_TX2_VALID | lastpkt;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
@@ -273,11 +273,11 @@ forcedeth_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			struct ring_desc_ex *desc = rxr + nic_i;
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
@@ -286,7 +286,7 @@ forcedeth_netmap_rxsync(struct netmap_kring *kring, int flags)
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
 
-			desc->flaglen = htole32(NETMAP_BUF_SIZE);
+			desc->flaglen = htole32(NETMAP_BUF_SIZE(na));
 			desc->bufhigh = htole32(dma_high(paddr));
 			desc->buflow = htole32(dma_low(paddr));
 			// enable the previous buffer
@@ -323,12 +323,8 @@ forcedeth_netmap_tx_init(struct SOFTC_T *np)
 	struct netmap_adapter *na = NA(np->dev);
 	struct netmap_slot *slot;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_TX, 0, 0);
-	/* slot is NULL if we are not in netmap mode */
+	/* slot is NULL if we are not in native netmap mode */
 	if (!slot)
 		return 0;
 	/* in netmap mode, overwrite addresses and maps */
@@ -340,7 +336,7 @@ forcedeth_netmap_tx_init(struct SOFTC_T *np)
 	for (i = 0; i < n; i++) {
 		int l = netmap_idx_n2k(&na->tx_rings[0], i);
 		uint64_t paddr;
-		PNMB(slot + l, &paddr);
+		PNMB(na, slot + l, &paddr);
 		desc[i].flaglen = 0;
 		desc[i].bufhigh = htole32(dma_high(paddr));
 		desc[i].buflow = htole32(dma_low(paddr));
@@ -370,12 +366,12 @@ forcedeth_netmap_rx_init(struct SOFTC_T *np)
 		uint64_t paddr;
 		int l = netmap_idx_n2k(&na->rx_rings[0], i);
 
-		addr = PNMB(slot + l, &paddr);
-		netmap_reload_map(np->rl_ldata.rl_rx_mtag,
-		    np->rl_ldata.rl_rx_desc[i].rx_dmamap, addr);
+		addr = PNMB(na, slot + l, &paddr);
+		//netmap_reload_map(np->rl_ldata.rl_rx_mtag,
+		//    np->rl_ldata.rl_rx_desc[i].rx_dmamap, addr);
 		desc[i].bufhigh = htole32(dma_high(paddr));
 		desc[i].buflow = htole32(dma_low(paddr));
-		cmdstat = NETMAP_BUF_SIZE;
+		cmdstat = NETMAP_BUF_SIZE(na);
 		if (i < lim)
 			cmdstat |= NV_RX2_AVAIL;
 		desc[i].flaglen = htole32(cmdstat);
@@ -395,6 +391,7 @@ forcedeth_netmap_attach(struct SOFTC_T *np)
 	bzero(&na, sizeof(na));
 
 	na.ifp = np->dev;
+	na.pdev = &np->pci_dev->dev;
 	na.num_tx_desc = np->tx_ring_size;
 	na.num_rx_desc = np->tx_ring_size;
 	na.nm_txsync = forcedeth_netmap_txsync;

@@ -242,7 +242,6 @@ doit:
 		fd, name, curr_nmr.nr_arg2, last_memsize);
 }
 
-
 void
 do_txsync()
 {
@@ -587,7 +586,7 @@ do_nmr_dump()
 	printf("]\n");
 	printf("cmd:       %d", curr_nmr.nr_cmd);
 	if (curr_nmr.nr_cmd) {
-		printf("[");
+		printf(" [");
 		switch (curr_nmr.nr_cmd) {
 		case NETMAP_BDG_ATTACH:
 			printf("BDG_ATTACH");
@@ -601,13 +600,21 @@ do_nmr_dump()
 			printf("BDG_LIST");
 			arg_interp = nmr_arg_bdg_list;
 			break;
-		case NETMAP_BDG_LOOKUP_REG:
+		case NETMAP_BDG_REGOPS:
 			printf("BDG_LOOKUP_REG");
 			arg_interp = nmr_arg_lookup_reg;
 			break;
 		case NETMAP_BDG_VNET_HDR:
 			printf("BDG_VNET_HDR");
 			arg_interp = nmr_arg_vnet_hdr;
+			break;
+		case NETMAP_BDG_NEWIF:
+			printf("BDG_NEWIF");
+			arg_interp = nmr_arg_error;
+			break;
+		case NETMAP_BDG_DELIF:
+			printf("BDG_DELIF");
+			arg_interp = nmr_arg_error;
 			break;
 		default:
 			printf("???");
@@ -703,6 +710,27 @@ do_nmr_ringid()
 void
 do_nmr_cmd()
 {
+	char *arg = nextarg();
+	if (arg == NULL)
+		goto out;
+
+	if (strcmp(arg, "bdg-attach") == 0) {
+		curr_nmr.nr_cmd = NETMAP_BDG_ATTACH;
+	} else if (strcmp(arg, "bdg-detach") == 0) {
+		curr_nmr.nr_cmd = NETMAP_BDG_DETACH;
+	} else if (strcmp(arg, "bdg-list") == 0) {
+		curr_nmr.nr_cmd = NETMAP_BDG_LIST;
+	} else if (strcmp(arg, "bdg-host") == 0) {
+		curr_nmr.nr_cmd = NETMAP_BDG_HOST;
+	} else if (strcmp(arg, "bdg-vnet-hdr") == 0) {
+		curr_nmr.nr_cmd = NETMAP_BDG_VNET_HDR;
+	} else if (strcmp(arg, "bdg-newif") == 0) {
+		curr_nmr.nr_cmd = NETMAP_BDG_NEWIF;
+	} else if (strcmp(arg, "bdg-delif") == 0) {
+		curr_nmr.nr_cmd = NETMAP_BDG_DELIF;
+	}
+out:
+	output("cmd=%x", curr_nmr.nr_cmd);
 }
 
 void

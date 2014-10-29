@@ -110,7 +110,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = E1000_TX_DESC(*txr, nic_i);
@@ -118,7 +118,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 				nic_i == 0 || nic_i == report_frequency) ?
 				E1000_TXD_CMD_RS : 0;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
@@ -230,10 +230,10 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, nic_i);
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 			if (slot->flags & NS_BUF_CHANGED) {
 				// netmap_reload_map(...)
@@ -286,9 +286,8 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	unsigned int i, r, si;
 	uint64_t paddr;
 
-	if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
+	if (!nm_native_on(na))
 		return 0;
-        }
 	adapter->alloc_rx_buf = e1000_no_rx_alloc;
 	for (r = 0; r < na->num_rx_rings; r++) {
 		struct e1000_rx_ring *rxr;
@@ -303,7 +302,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 			// XXX the skb check and cleanup can go away
 			struct e1000_buffer *bi = &rxr->buffer_info[i];
 			si = netmap_idx_n2k(&na->rx_rings[r], i);
-			PNMB(slot + si, &paddr);
+			PNMB(na, slot + si, &paddr);
 			if (bi->skb)
 				D("rx buf %d was set", i);
 			bi->skb = NULL;
@@ -324,7 +323,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	slot = netmap_reset(na, NR_TX, 0, 0);
 	for (i = 0; i < na->num_tx_desc; i++) {
 		si = netmap_idx_n2k(&na->tx_rings[0], i);
-		PNMB(slot + si, &paddr);
+		PNMB(na, slot + si, &paddr);
 		// netmap_load_map(...)
 		E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
 	}
@@ -340,6 +339,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	bzero(&na, sizeof(na));
 
 	na.ifp = adapter->netdev;
+	na.pdev = &adapter->pdev->dev;
 	na.num_tx_desc = adapter->tx_ring[0].count;
 	na.num_rx_desc = adapter->rx_ring[0].count;
 	na.nm_register = e1000_netmap_reg;

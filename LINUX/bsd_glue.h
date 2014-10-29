@@ -113,11 +113,21 @@ struct net_device_ops {
 #define usleep_range(a, b)	msleep((a)+(b)+999)
 #endif /* up to 2.6.35 */
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0)
+#define split_page(page, order) 			\
+	do {						\
+		int i_;					\
+		for (i_ = 1; i_ < (1 << order); i_++)	\
+			atomic_set(&page[i_]._count, 1);\
+	} while (0)
+#endif /* was unexported before */
+
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 
 /* Type redefinitions. XXX check them */
-typedef	void *			bus_dma_tag_t;
-typedef	void *			bus_dmamap_t;
+#define bus_dma_tag_t 		struct device *
+#define bus_dmamap_t 		phys_addr_t*
+
 typedef	int			bus_size_t;
 typedef	int			bus_dma_segment_t;
 typedef void *			bus_addr_t;
@@ -204,7 +214,6 @@ struct thread;
  * We don't use this in netmap, though.
  *
  *	if_xname	name		device name
- *	if_capenable	priv_flags
  *		we would use "features" but it is all taken.
  *		XXX check for conflict in flags use.
  *
@@ -216,7 +225,6 @@ struct thread;
 
 #define ifnet           	net_device      /* remap */
 #define	if_xname		name		/* field ifnet-> net_device */
-#define	if_capenable		priv_flags	/* IFCAP_NETMAP */
 
 /* some other FreeBSD APIs */
 struct net_device* ifunit_ref(const char *name);
@@ -261,6 +269,9 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 #define mtx_init(a, b, c, d)	spin_lock_init(&((a)->sl))
 #define mtx_destroy(a)		// XXX spin_lock_destroy(a)
 
+#define mtx_lock_spin(a)	mtx_lock(a)
+#define mtx_unlock_spin(a)	mtx_unlock(a)
+
 /*
  * XXX these must be changed, as we cannot sleep within the RCU.
  * Must change to proper rwlock, and then can move the definitions
@@ -298,11 +309,22 @@ static inline int ilog2(uint64_t n)
 }
 #endif /* ilog2 */
 
-#define contigmalloc(sz, ty, flags, a, b, pgsz, c)		\
-	(char *) __get_free_pages(GFP_ATOMIC |  __GFP_ZERO,	\
-		    ilog2(roundup_pow_of_two((sz)/PAGE_SIZE)))
-#define contigfree(va, sz, ty)	free_pages((unsigned long)va,	\
-		    ilog2(roundup_pow_of_two(sz)/PAGE_SIZE))
+#define contigmalloc(sz, ty, flags, a, b, pgsz, c) ({		\
+	unsigned int order_ =					\
+		ilog2(roundup_pow_of_two(sz)/PAGE_SIZE);	\
+	struct page *p_ = alloc_pages(GFP_ATOMIC | __GFP_ZERO,  \
+		order_);					\
+	if (p_ != NULL) 					\
+		split_page(p_, order_);				\
+	(p_ != NULL ? (char*)page_address(p_) : NULL); })
+	
+#define contigfree(va, sz, ty)					\
+	do {							\
+		unsigned int npages_ =				\
+			roundup_pow_of_two(sz)/PAGE_SIZE;	\
+		for (; npages_; npages_--, va += PAGE_SIZE)	\
+			free_page((unsigned long)va);		\
+	} while (0)
 
 #define vtophys		virt_to_phys
 
@@ -420,5 +442,9 @@ int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 #define devfs_clear_cdevpriv()	do {				\
 		netmap_dtor(priv); ((struct file *)td)->private_data = 0;	\
 	} while (0)
+
+struct netmap_adapter;
+int netmap_linux_config(struct netmap_adapter *na, 
+		u_int *txr, u_int *rxr, u_int *txd, u_int *rxd);
 
 #endif /* _BSD_GLUE_H */

@@ -69,6 +69,7 @@ function driver-path()
 	
 	cat cache/$version/$driver/path 2>/dev/null && return
 	local kern=$(get-kernel $version)
+	[ -z "$kern" ] && error "no such kernel version: $version"
 	mkdir -p cache/$version/$driver
 	(
 		cd $kern
@@ -144,6 +145,7 @@ function get-src()
 	get-params "driver version dest" "$@"
 
 	local kern=$(get-kernel $version)
+	[ -z "$kern" ] && error "no such kernel version: $version"
 	local src=$(driver-path $driver $version)
 	cp -r $kern/$src $dest
 }
@@ -267,13 +269,16 @@ function get-kernel()
 
 	[ -d $dst ] && { echo $dst; return; }
 
-	mkdir -p $dst
+	local v=$version
 
 	(
 		cd $GITDIR
-		git archive v$v | tar xf - -C $dst 
+		if git show-ref --tags --quiet --verify -- "refs/tags/v$v"; then
+			mkdir -p $dst
+			git archive v$v | tar xf - -C $dst
+			echo $dst
+		fi
 	)
-	echo $dst
 }
 
 
@@ -294,6 +299,8 @@ function build-prep()
 	get-params "version" "$@"
 
 	local dst=$(get-kernel $version)
+
+	[ -z "$dst" ] && return
 
 	exec 3>&1 4>&2 >$dst.log 2>&1
 	cp $LINUX_CONFIGS/config-$v $dst/.config  2>/dev/null ||
@@ -320,6 +327,8 @@ function check-patch()
 	local v1=$(scripts/vers $patch -s -p -C)
 	# extract the right version
 	local v2=$(scripts/vers $patch -s -C)
+	# extract the uncoverted right version (might be 99999)
+	local end=$(scripts/vers $patch -s)
 	# extract the driver name
 	local driver=$(scripts/vers $patch -s -p -p)
 	local p=$(realpath $patch)
@@ -332,6 +341,7 @@ function check-patch()
 	while scripts/vers -b $v1 $v2 -L; do
 		# cache lookup
 		local cache=cache/$v1/$driver
+		mkdir -p $cache
 		local cpatch=$cache/patch
 		local cnmcommit=$cache/nmcommit
 		local cstatus=$cache/status
@@ -347,6 +357,14 @@ function check-patch()
 			echo $nmcommit > $cnmcommit
 
 			local ksrc=$(build-prep $v1)
+			if [ -z "$ksrc" ]; then
+				rm -rf $cache
+				if [ "$end" = 99999 ]; then
+					ok=true
+					break
+				fi
+				error "no such kernel version: $v1"
+			fi
 			local tmpdir=$(mktemp -d)
 			trap "rm -rf $tmpdir" 0
 			(cd ..; git archive $NETMAP_BRANCH | tar xf - -C $tmpdir )
@@ -356,7 +374,7 @@ function check-patch()
 			ln -s single-patch patches
 			cp $p single-patch
 			ok=false
-			make KSRC=$ksrc >$log 2>&1 && ok=true
+			make KSRC=$ksrc >>$log 2>&1 && ok=true
 			popd >/dev/null
 			cp $log $clog
 		fi

@@ -132,7 +132,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			union e1000_adv_tx_desc *curr =
@@ -141,7 +141,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 				nic_i == 0 || nic_i == report_frequency) ?
 				E1000_TXD_CMD_RS : 0;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
@@ -257,10 +257,10 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 			union e1000_adv_rx_desc *curr = E1000_RX_DESC_ADV(*rxr, nic_i);
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
@@ -304,17 +304,13 @@ igb_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	void *addr;
 	uint64_t paddr;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
-		return 0;  // XXX this should never happen
+		return 0;  // not in netmap native mode
 	for (i = 0; i < na->num_tx_desc; i++) {
 		union e1000_adv_tx_desc *tx_desc;
 		si = netmap_idx_n2k(&na->tx_rings[ring_nr], i);
-		addr = PNMB(slot + si, &paddr);
+		addr = PNMB(na, slot + si, &paddr);
 		tx_desc = E1000_TX_DESC_ADV(*txr, i);
 		tx_desc->read.buffer_addr = htole64(paddr);
 		/* actually we don't care to init the rings here */
@@ -332,10 +328,6 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	struct netmap_slot* slot;
 	u_int i;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
 	/*
 	 * XXX watch out, the main driver must not use
 	 * split headers. The buffer len should be written
@@ -348,7 +340,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	 */
         slot = netmap_reset(na, NR_RX, reg_idx, 0);
 	if (!slot)
-		return 0;	// not in netmap mode
+		return 0;	// not in native netmap mode
 
 	for (i = 0; i < rxr->count; i++) {
 		union e1000_adv_rx_desc *rx_desc;
@@ -363,7 +355,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 		bi->skb = NULL; // XXX leak if set
 #endif /* useless */
 
-		PNMB(slot + si, &paddr);
+		PNMB(na, slot + si, &paddr);
 		rx_desc = E1000_RX_DESC_ADV(*rxr, i);
 		rx_desc->read.hdr_addr = 0;
 		rx_desc->read.pkt_addr = htole64(paddr);
@@ -373,7 +365,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[reg_idx]);
 
 	wmb();	/* Force memory writes to complete */
-	ND("%s rxr%d.tail %d", ifp->if_xname, reg_idx, i);
+	ND("%s rxr%d.tail %d", na->name, reg_idx, i);
 	writel(i, rxr->tail);
 	return 1;	// success
 }
@@ -387,6 +379,7 @@ igb_netmap_attach(struct SOFTC_T *adapter)
 	bzero(&na, sizeof(na));
 
 	na.ifp = adapter->netdev;
+	na.pdev = &adapter->pdev->dev;
 	na.num_tx_desc = adapter->tx_ring_count;
 	na.num_rx_desc = adapter->rx_ring_count;
 	na.nm_register = igb_netmap_reg;

@@ -108,13 +108,13 @@ re_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
 			struct TxDesc *curr = &sc->TxDescArray[nic_i];
 			uint32_t flags = slot->len | LastFrag | DescOwn | FirstFrag ;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (nic_i == lim)	/* mark end of ring */
 				flags |= RingEnd;
@@ -226,12 +226,12 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(slot, &paddr);
+			void *addr = PNMB(na, slot, &paddr);
 
 			struct RxDesc *curr = &sc->RxDescArray[nic_i];
-			uint32_t flags = NETMAP_BUF_SIZE | DescOwn;
+			uint32_t flags = NETMAP_BUF_SIZE(na) | DescOwn;
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (nic_i == lim)	/* mark end of ring */
@@ -273,19 +273,14 @@ re_netmap_tx_init(struct SOFTC_T *sc)
 	int i, l;
 	uint64_t paddr;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_TX, 0, 0);
-	/* slot is NULL if we are not in netmap mode XXX cannot happen */
 	if (!slot)
-		return 0;
+		return 0;	// not in native netmap mode
 
 	/* l points in the netmap ring, i points in the NIC ring */
 	for (i = 0; i < na->num_tx_desc; i++) {
 		l = netmap_idx_n2k(&na->tx_rings[0], i);
-		PNMB(slot + l, &paddr);
+		PNMB(na, slot + l, &paddr);
 		desc[i].addr = htole64(paddr);
 	}
 	return 1;
@@ -302,13 +297,9 @@ re_netmap_rx_init(struct SOFTC_T *sc)
 	int i, lim, l;
 	uint64_t paddr;
 
-        if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
-            return 0;
-        }
-
         slot = netmap_reset(na, NR_RX, 0, 0);
 	if (!slot)
-		return 0;  /* XXX cannot happen */
+		return 0;  // not in native netmap mode
 	/*
 	 * Do not release the slots owned by userspace
 	 * XXX we use all slots, so no '-1' here
@@ -317,8 +308,8 @@ re_netmap_rx_init(struct SOFTC_T *sc)
 	lim = na->num_rx_desc /* - 1 */ - nm_kr_rxspace(&na->rx_rings[0]);
 	for (i = 0; i < na->num_rx_desc; i++) {
 		l = netmap_idx_n2k(&na->rx_rings[0], i);
-		PNMB(slot + l, &paddr);
-		cmdstat = NETMAP_BUF_SIZE;
+		PNMB(na, slot + l, &paddr);
+		cmdstat = NETMAP_BUF_SIZE(na);
 		if (i == na->num_rx_desc - 1)
 			cmdstat |= RingEnd;
 		if (i < lim)
@@ -338,6 +329,9 @@ re_netmap_attach(struct SOFTC_T *sc)
 	bzero(&na, sizeof(na));
 
 	na.ifp = sc->dev;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+	na.pdev = &sc->pdev->dev;
+#endif
 	na.num_tx_desc = NUM_TX_DESC;
 	na.num_rx_desc = NUM_RX_DESC;
 	na.nm_txsync = re_netmap_txsync;

@@ -33,6 +33,8 @@
  *	you might need -lrt
  */
 
+#define _GNU_SOURCE	// setaffinity ?
+
 #include <inttypes.h>
 #include <sys/types.h>
 #include <pthread.h>	/* pthread_* */
@@ -46,12 +48,10 @@
 
 #elif defined(linux)
 
-int atomic_cmpset_32(volatile uint32_t *p, uint32_t old, uint32_t new)
-{
-	int ret = *p == old;
-	*p = new;
-	return ret;
-}
+#define atomic_cmpset_32(p, o, n) __sync_bool_compare_and_swap(p, o, n)
+#include <sched.h>	// affinity
+#define HAVE_AFFINITY	1
+#define	cpuset_t	cpu_set_t
 
 #if defined(HAVE_GCC_ATOMICS)
 int atomic_add_int(volatile int *p, int v)
@@ -161,6 +161,7 @@ struct glob_arg {
 	int arg;	// microseconds in usleep
 	int nullfd;	// open(/dev/null)
 	char *test_name;
+	pthread_mutex_t mtx;
 	void (*fn)(struct targ *);
 	uint64_t scale;	// scaling factor
 	char *scale_name;	// scaling factor
@@ -208,7 +209,7 @@ static int
 system_ncpus(void)
 {
 #ifdef linux
-	return 1;
+	return sysconf(_SC_NPROCESSORS_ONLN);
 #else
 	int mib[2] = { CTL_HW, HW_NCPU}, ncpus;
 	size_t len = sizeof(mib);
@@ -275,6 +276,64 @@ td_body(void *data)
 	}
 	t->completed = 1;
 	return (NULL);
+}
+
+#include <sys/wait.h>
+
+void
+test_fork(struct targ *t)
+{
+	int arg = t->g->arg;
+	int m;
+	struct timeval tot = {0, 0};
+	struct timeval ta, tb;
+	char *p = NULL;
+	int sum = 0;
+	long int i;
+	int np=arg*1000000/4096;
+	p = malloc(arg*1000000);
+
+	D("memsize is %d MB", arg);
+
+	if (arg > 0) {
+		if (p == NULL)
+			D("malloc failed");
+		D("pages %d %s %s", np, arg & 1 ? "READ" : "",
+			arg & 2 ? "WRITE" : "");
+	}
+	for (m = 0; m < t->g->m_cycles; m++) {
+		int pid;
+		int st = 0;
+		if (arg & 1) for (i = 0; i < arg*1000000; i += 4096) {
+			sum += p[i];
+		}
+		if (arg & 2) for (i = 0; i < arg*1000000; i += 4096) {
+			p[i] = 3;
+		}
+		ta.tv_sec = sum;
+		gettimeofday(&ta, NULL);
+		pid = fork();
+		if (pid == 0)
+			exit(0);
+		gettimeofday(&tb, NULL);
+		if (waitpid(-1, &st, WNOHANG) > 0) // another try
+			waitpid(-1, &st, WNOHANG);
+
+		tot.tv_sec += (tb.tv_sec - ta.tv_sec);
+		tot.tv_usec += (tb.tv_usec - ta.tv_usec);
+		if (tot.tv_usec < 0) {
+			tot.tv_sec--;
+			tot.tv_usec += ONE_MILLION;
+		} else if (tot.tv_usec >= ONE_MILLION) {
+			tot.tv_sec++;
+			tot.tv_usec -= ONE_MILLION;
+		}
+		t->count++;
+	}
+	D("avg is %lu ns", (unsigned long)
+		((tot.tv_sec * ONE_MILLION + tot.tv_usec)*1000/t->count));
+	if (p)
+		free(p);
 }
 
 /*
@@ -451,6 +510,37 @@ test_atomic_cmpset(struct targ *t)
 		for (i = 0; i < ONE_MILLION; i++) {
 		        atomic_cmpset_32(t->glob_ctr, m, i);
 			t->count++;
+		}
+        }
+}
+
+void
+test_pthread_mutex(struct targ *t)
+{
+        int64_t m, i;
+	pthread_mutex_t *mtx = &t->g->mtx;
+        for (m = 0; m < t->g->m_cycles; m++) {
+		for (i = 0; i < ONE_MILLION; i++) {
+		        pthread_mutex_lock(mtx);
+			t->count++;
+		        pthread_mutex_unlock(mtx);
+		}
+        }
+}
+
+volatile int foo;
+
+void
+test_spinlock(struct targ *t)
+{
+        int64_t m, i;
+//	uint64_t min = 1000000, minp=1000000, max=0, maxp = 0, cur=0;
+        for (m = 0; m < t->g->m_cycles; m++) {
+		for (i = 0; i < 100*ONE_MILLION; i++) {
+		        while (!atomic_cmpset_32(t->glob_ctr, 0, 1)) {
+			}
+			t->count++;
+		        atomic_cmpset_32(t->glob_ctr, 1, 0);
 		}
         }
 }
@@ -658,6 +748,7 @@ struct entry {
 	uint64_t m_cycles;
 };
 struct entry tests[] = {
+	{ test_fork, "fork", 1, 1000 },
 	{ test_sel, "select", 1, 1000 },
 	{ test_poll, "poll", 1, 1000 },
 	{ test_usleep, "usleep", 1, 1000 },
@@ -677,6 +768,8 @@ struct entry tests[] = {
 	{ test_rdtsc1, "rdtsc1", ONE_MILLION, 100000000 },	// serialized
 	{ test_atomic_cmpset, "cmpset", ONE_MILLION, 100000000 },
 	{ test_netmap, "netmap", 1000, 100000000 },
+	{ test_pthread_mutex, "mutex", 1000, 100000000 },
+	{ test_spinlock, "spinlock", 1000, 100000000 },
 	{ NULL, NULL, 0, 0 }
 };
 
@@ -746,6 +839,7 @@ main(int argc, char **argv)
 	bzero(&g, sizeof(g));
 
 	g.privs = getprivs();
+	pthread_mutex_init(&g.mtx, NULL);
 	g.nthreads = 1;
 	g.cpus = 1;
 	g.m_cycles = 0;

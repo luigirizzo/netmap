@@ -12,7 +12,8 @@
 # objects whose source file is in ../sys/dev/netmap
 remoteobjs := netmap.o netmap_mem2.o \
 	netmap_generic.o netmap_mbq.o netmap_vale.o \
-	netmap_offloadings.o netmap_pipe.o
+	netmap_offloadings.o netmap_pipe.o \
+	netmap_monitor.o
 # all objects
 netmap_lin-objs := $(remoteobjs) netmap_linux.o
 
@@ -64,15 +65,19 @@ LIN_VER = $(shell V=linux/version.h; G=. ; \
 	grep LINUX_VERSION_CODE $(KSRC)/include/$${G}/linux/version.h | \
 	awk '{printf "%03x%02x", $$3/256, $$3%256} ')
 
+patcheslink := $(shell \
+	[ -L $(PWD)/patches ] || \
+		{ rm $(PWD)/patches; ln -s final-patches $(PWD)/patches; })
+
 # produce a list of applicable patches for this version
 PATCHES := $(shell \
 	    cd $(PWD)/patches; ls diff--* | awk -v v=$(LIN_VER) -F -- \
-	    '{ if ((!$$3 || $$3 <= v) && (!$$4 || v < $$4)) print $$0; }')
+	    '{ if ((!$$3 || $$3 <= v"") && (!$$4 || v"" < $$4)) print $$0; }')
 
 # source drivers to copy. Names derived from the patches
 S_DRIVERS := $(shell \
 	    cd $(PWD)/patches; ls diff--* | awk -v v=$(LIN_VER) -F -- \
-	    '{ if ((!$$3 || $$3 <= v) && (!$$4 || v < $$4)) print $$2 }' )
+	    '{ if ((!$$3 || $$3 <= v"") && (!$$4 || v"" < $$4)) print $$2 }' )
 
 # actual drivers after copy and patch
 DRIVERS = $(shell [ "$(PATCHES)" != "" ] && ls -dAp \

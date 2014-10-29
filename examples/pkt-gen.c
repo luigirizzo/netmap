@@ -123,12 +123,14 @@ struct virt_header {
 	uint8_t fields[VIRT_HDR_MAX];
 };
 
+#define MAX_BODYSIZE	16384
+
 struct pkt {
 	struct virt_header vh;
 	struct ether_header eh;
 	struct ip ip;
 	struct udphdr udp;
-	uint8_t body[2048];	// XXX hardwired
+	uint8_t body[MAX_BODYSIZE];	// XXX hardwired
 } __attribute__((__packed__));
 
 struct ip_range {
@@ -144,6 +146,15 @@ struct mac_range {
 
 /* ifname can be netmap:foo-xxxx */
 #define MAX_IFNAMELEN	64	/* our buffer for ifname */
+//#define MAX_PKTSIZE	1536
+#define MAX_PKTSIZE	MAX_BODYSIZE	/* XXX: + IP_HDR + ETH_HDR */
+
+/* compact timestamp to fit into 60 byte packet. (enough to obtain RTT) */
+struct tstamp {
+	uint32_t sec;
+	uint32_t nsec;
+};
+
 /*
  * global arguments for all threads
  */
@@ -168,6 +179,8 @@ struct glob_arg {
 #define OPT_TS		16	/* add a timestamp */
 #define OPT_INDIRECT	32	/* use indirect buffers, tx only */
 #define OPT_DUMP	64	/* dump rx/tx traffic */
+#define OPT_MONITOR_TX  128
+#define OPT_MONITOR_RX  256
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -179,7 +192,6 @@ struct glob_arg {
 	int affinity;
 	int main_fd;
 	struct nm_desc *nmd;
-	uint64_t nmd_flags;
 	int report_interval;		/* milliseconds between prints */
 	void *(*td_body)(void *);
 	void *mmap_addr;
@@ -760,10 +772,13 @@ pinger_body(void *data)
 		if (nm_ring_empty(ring)) {
 			D("-- ouch, cannot send");
 		} else {
+			struct tstamp *tp;
 			nm_pkt_copy(frame, p, size);
 			clock_gettime(CLOCK_REALTIME_PRECISE, &ts);
 			bcopy(&sent, p+42, sizeof(sent));
-			bcopy(&ts, p+46, sizeof(ts));
+			tp = (struct tstamp *)(p+46);
+			tp->sec = (uint32_t)ts.tv_sec;
+			tp->nsec = (uint32_t)ts.tv_nsec;
 			sent++;
 			ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 		}
@@ -780,12 +795,15 @@ pinger_body(void *data)
 			ring = NETMAP_RXRING(nifp, i);
 			while (!nm_ring_empty(ring)) {
 				uint32_t seq;
+				struct tstamp *tp;
 				slot = &ring->slot[ring->cur];
 				p = NETMAP_BUF(ring, slot->buf_idx);
 
 				clock_gettime(CLOCK_REALTIME_PRECISE, &now);
 				bcopy(p+42, &seq, sizeof(seq));
-				bcopy(p+46, &ts, sizeof(ts));
+				tp = (struct tstamp *)(p+46);
+				ts.tv_sec = (time_t)tp->sec;
+				ts.tv_nsec = (long)tp->nsec;
 				ts.tv_sec = now.tv_sec - ts.tv_sec;
 				ts.tv_nsec = now.tv_nsec - ts.tv_nsec;
 				if (ts.tv_nsec < 0) {
@@ -993,7 +1011,7 @@ sender_body(void *data)
 	frame += sizeof(pkt->vh) - targ->g->virt_header;
 	size = targ->g->pkt_size + targ->g->virt_header;
 
-	D("start");
+	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
 
@@ -1161,21 +1179,21 @@ receiver_body(void *data)
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
 
+	D("reading from %s fd %d main_fd %d",
+		targ->g->ifname, targ->fd, targ->g->main_fd);
 	/* unbounded wait for the first packet. */
-	for (;;) {
+	for (;!targ->cancel;) {
 		i = poll(&pfd, 1, 1000);
 		if (i > 0 && !(pfd.revents & POLLERR))
 			break;
 		RD(1, "waiting for initial packets, poll returns %d %d",
 			i, pfd.revents);
 	}
-
 	/* main loop, exit after 1s silence */
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
     if (targ->g->dev_type == DEV_TAP) {
-	D("reading from %s fd %d", targ->g->ifname, targ->g->main_fd);
 	while (!targ->cancel) {
-		char buf[2048];
+		char buf[MAX_BODYSIZE];
 		/* XXX should we poll ? */
 		if (read(targ->g->main_fd, buf, sizeof(buf)) > 0)
 			targ->count++;
@@ -1184,7 +1202,8 @@ receiver_body(void *data)
     } else if (targ->g->dev_type == DEV_PCAP) {
 	while (!targ->cancel) {
 		/* XXX should we poll ? */
-		pcap_dispatch(targ->g->p, targ->g->burst, receive_pcap, NULL);
+		pcap_dispatch(targ->g->p, targ->g->burst, receive_pcap,
+			(u_char *)&targ->count);
 	}
 #endif /* !NO_PCAP */
     } else {
@@ -1336,6 +1355,8 @@ start_threads(struct glob_arg *g)
 
 	    if (g->dev_type == DEV_NETMAP) {
 		struct nm_desc nmd = *g->nmd; /* copy, we overwrite ringid */
+		uint64_t nmd_flags = 0;
+		nmd.self = &nmd;
 
 		if (g->nthreads > 1) {
 			if (nmd.req.nr_flags != NR_REG_ALL_NIC) {
@@ -1347,12 +1368,16 @@ start_threads(struct glob_arg *g)
 		}
 		/* Only touch one of the rings (rx is already ok) */
 		if (g->td_body == receiver_body)
-			nmd.req.nr_ringid |= NETMAP_NO_TX_POLL;
+			nmd_flags |= NETMAP_NO_TX_POLL;
 
 		/* register interface. Override ifname and ringid etc. */
+		if (g->options & OPT_MONITOR_TX)
+			nmd.req.nr_flags |= NR_MONITOR_TX;
+		if (g->options & OPT_MONITOR_RX)
+			nmd.req.nr_flags |= NR_MONITOR_RX;
 
-		t->nmd = nm_open(t->g->ifname, NULL, g->nmd_flags |
-			NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, g->nmd);
+		t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
+			NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
 		if (t->nmd == NULL) {
 			D("Unable to open %s: %s",
 				t->g->ifname, strerror(errno));
@@ -1576,7 +1601,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:m:")) != -1) {
 		struct sf *fn;
 
 		switch(ch) {
@@ -1710,6 +1735,15 @@ main(int arc, char **argv)
 		case 'e': /* extra bufs */
 			g.extra_bufs = atoi(optarg);
 			break;
+		case 'm':
+			if (strcmp(optarg, "tx") == 0) {
+				g.options |= OPT_MONITOR_TX;
+			} else if (strcmp(optarg, "rx") == 0) {
+				g.options |= OPT_MONITOR_RX;
+			} else {
+				D("unrecognized monitor mode %s", optarg);
+			}
+			break;
 		}
 	}
 
@@ -1726,8 +1760,8 @@ main(int arc, char **argv)
 	if (g.cpus == 0)
 		g.cpus = i;
 
-	if (g.pkt_size < 16 || g.pkt_size > 1536) {
-		D("bad pktsize %d\n", g.pkt_size);
+	if (g.pkt_size < 16 || g.pkt_size > MAX_PKTSIZE) {
+		D("bad pktsize %d [16..%d]\n", g.pkt_size, MAX_PKTSIZE);
 		usage();
 	}
 
@@ -1769,26 +1803,25 @@ main(int arc, char **argv)
     } else if (g.dev_type == DEV_PCAP) {
 	char pcap_errbuf[PCAP_ERRBUF_SIZE];
 
-	D("using pcap on %s", g.ifname);
 	pcap_errbuf[0] = '\0'; // init the buffer
-	g.p = pcap_open_live(g.ifname, 0, 1, 100, pcap_errbuf);
+	g.p = pcap_open_live(g.ifname, 256 /* XXX */, 1, 100, pcap_errbuf);
 	if (g.p == NULL) {
 		D("cannot open pcap on %s", g.ifname);
 		usage();
 	}
+	g.main_fd = pcap_fileno(g.p);
+	D("using pcap on %s fileno %d", g.ifname, g.main_fd);
 #endif /* !NO_PCAP */
     } else if (g.dummy_send) { /* but DEV_NETMAP */
 	D("using a dummy send routine");
     } else {
-	struct nm_desc base_nmd;
+	struct nmreq base_nmd;
 
 	bzero(&base_nmd, sizeof(base_nmd));
 
-	g.nmd_flags = 0;
-	g.nmd_flags |= parse_nmr_config(g.nmr_config, &base_nmd.req);
+	parse_nmr_config(g.nmr_config, &base_nmd);
 	if (g.extra_bufs) {
-		base_nmd.req.nr_arg3 = g.extra_bufs;
-		g.nmd_flags |= NM_OPEN_ARG3;
+		base_nmd.nr_arg3 = g.extra_bufs;
 	}
 
 	/*
@@ -1798,7 +1831,7 @@ main(int arc, char **argv)
 	 * which in turn may take some time for the PHY to
 	 * reconfigure. We do the open here to have time to reset.
 	 */
-	g.nmd = nm_open(g.ifname, NULL, g.nmd_flags, &base_nmd);
+	g.nmd = nm_open(g.ifname, &base_nmd, 0, NULL);
 	if (g.nmd == NULL) {
 		D("Unable to open %s: %s", g.ifname, strerror(errno));
 		goto out;
@@ -1806,7 +1839,11 @@ main(int arc, char **argv)
 	g.main_fd = g.nmd->fd;
 	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
-	devqueues = g.nmd->req.nr_rx_rings;
+	/* get num of queues in tx or rx */ 
+	if (g.td_body == sender_body)
+		devqueues = g.nmd->req.nr_tx_rings;
+	else 
+		devqueues = g.nmd->req.nr_rx_rings;
 
 	/* validate provided nthreads. */
 	if (g.nthreads < 1 || g.nthreads > devqueues) {
@@ -1822,12 +1859,14 @@ main(int arc, char **argv)
 		    req->nr_offset, req->nr_tx_rings, req->nr_rx_rings,
 		    req->nr_arg2);
 		for (i = 0; i <= req->nr_tx_rings; i++) {
-			D("   TX%d at 0x%lx", i,
-			    (char *)NETMAP_TXRING(nifp, i) - (char *)nifp);
+			struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
+			D("   TX%d at 0x%lx slots %d", i,
+			    (char *)ring - (char *)nifp, ring->num_slots);
 		}
 		for (i = 0; i <= req->nr_rx_rings; i++) {
-			D("   RX%d at 0x%lx", i,
-			    (char *)NETMAP_RXRING(nifp, i) - (char *)nifp);
+			struct netmap_ring *ring = NETMAP_RXRING(nifp, i);
+			D("   RX%d at 0x%lx slots %d", i,
+			    (char *)ring - (char *)nifp, ring->num_slots);
 		}
 	}
 

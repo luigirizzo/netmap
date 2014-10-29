@@ -95,7 +95,7 @@ static void free_receive_bufs(struct virtnet_info *vi);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 2, 0)
 /* Not yet found a way to find out virtqueue length in these
    kernel series. Use the virtio default value. */
-#define virtqueue_get_vring_size(_vq)	256
+#define virtqueue_get_vring_size(_vq)	({ (void)(_vq); 256; })
 #endif  /* < 3.2 */
 
 
@@ -103,10 +103,10 @@ static void free_receive_bufs(struct virtnet_info *vi);
 /* Before 3.8.0 virtio did not have multiple queues, and therefore
    it did not have per-queue data structures. We then abstract the
    way data structure are accessed, ignoring the queue indexes. */
-#define DECR_NUM(_vi, _i)		--(_vi)->num
-#define GET_RX_VQ(_vi, _i)		(_vi)->rvq
-#define GET_TX_VQ(_vi, _i)		(_vi)->svq
-#define VQ_FULL(_vq, _err)		(_err > 0)
+#define DECR_NUM(_vi, _i)		({ (void)(_i); --(_vi)->num; })
+#define GET_RX_VQ(_vi, _i)		({ (void)(_i); (_vi)->rvq; })
+#define GET_TX_VQ(_vi, _i)		({ (void)(_i); (_vi)->svq; })
+#define VQ_FULL(_vq, _err)		({ (void)(_vq); (_err) > 0; })
 
 static void give_pages(struct SOFTC_T *vi, struct page *page);
 static struct page *get_a_page(struct SOFTC_T *vi, gfp_t gfp_mask);
@@ -123,10 +123,14 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 
 static void give_pages(struct receive_queue *rq, struct page *page);
 #define GIVE_PAGES(_vi, _i, _buf)	give_pages(&(_vi)->rq[_i], _buf)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)
 #define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
+#else
+#define DECR_NUM(_vi, _i)		({ (void)(_vi); (void)(_i); })
+#endif /* < 3.14.0 */
 #define GET_RX_VQ(_vi, _i)		(_vi)->rq[_i].vq
 #define GET_TX_VQ(_vi, _i)		(_vi)->sq[_i].vq
-#define VQ_FULL(_vq, _err)		((_vq)->num_free == 0)
+#define VQ_FULL(_vq, _err)		({ (void)(_err); (_vq)->num_free == 0; })
 
 #endif  /* >= 3.8.0 */
 
@@ -218,14 +222,9 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		free_receive_bufs(vi);
 
 		/* enable netmap mode */
-		ifp->if_capenable |= IFCAP_NETMAP;
-                na->na_flags |= NAF_NATIVE_ON;
-		na->if_transmit = (void *)ifp->netdev_ops;
-		ifp->netdev_ops = &hwna->nm_ndo;
+		nm_set_native_flags(na);
 	} else {
-		ifp->if_capenable &= ~IFCAP_NETMAP;
-                na->na_flags &= ~NAF_NATIVE_ON;
-		ifp->netdev_ops = (void *)na->if_transmit;
+		nm_clear_native_flags(na);
 
 		/* Drain the RX virtqueues, otherwise the driver will
 		 * interpret the netmap buffers currently linked to the
@@ -296,10 +295,10 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
-			void *addr = NMB(slot);
+			void *addr = NMB(na, slot);
                         int err;
 
-			NM_CHECK_ADDR_LEN(addr, len);
+			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 			/* Initialize the scatterlist, expose it to the hypervisor,
@@ -401,10 +400,10 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	if (nm_i != head) {
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
-			void *addr = NMB(slot);
+			void *addr = NMB(na, slot);
                         int err;
 
-			if (addr == netmap_buffer_base) /* bad buf */
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				return netmap_ring_reinit(kring);
 
 			slot->flags &= ~NS_BUF_CHANGED;
@@ -448,9 +447,8 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
 	struct netmap_adapter* na = NA(ifp);
 	unsigned int r;
 
-	if (!na || !(na->na_flags & NAF_NATIVE_ON)) {
+	if (!nm_native_on(na))
 		return 0;
-        }
 	for (r = 0; r < na->num_rx_rings; r++) {
 		COMPAT_DECL_SG
                 struct netmap_ring *ring = na->rx_rings[r].ring;
@@ -474,7 +472,7 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
                         void *addr;
 
                         slot = &ring->slot[i];
-                        addr = NMB(slot);
+                        addr = NMB(na, slot);
                         sg_set_buf(sg, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
