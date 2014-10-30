@@ -1975,8 +1975,8 @@ err_del_krings:
 		na->nm_krings_delete(na);
 err_drop_mem:
 	netmap_mem_deref(na->nm_mem, na);
-	priv->np_na = NULL;
 err:
+	priv->np_na = NULL;
 	return error;
 }
 
