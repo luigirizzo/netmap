@@ -1300,7 +1300,7 @@ tx_output(uint64_t sent, int size, uint64_t events, double delta)
 	raw_bw = (8.0 * (size + 24) * sent) / delta;
 	abs = sent / (double)(events);
 
-	printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.0f pkts\n",
+	printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
 		norm(b1, pps), norm(b2, bw), norm(b3, raw_bw), abs);
 }
 
@@ -1319,7 +1319,7 @@ rx_output(uint64_t received, uint64_t events, double delta)
 	pps = received / delta;
 	abs = received / (double)(events);
 
-	printf("Speed: %spps. Average batch: %.0f pkts\n", norm(b1, pps), abs);
+	printf("Speed: %spps. Average batch: %.2f pkts\n", norm(b1, pps), abs);
 }
 
 static void
@@ -1444,7 +1444,8 @@ main_thread(struct glob_arg *g)
 	for (;;) {
 		struct timeval now, delta;
 		uint64_t pps, usec, my_count, npkts;
-		uint64_t my_count_e, nevents, abs;
+		uint64_t my_count_e, nevents;
+		double abs;
 		int done = 0;
 
 		delta.tv_sec = g->report_interval/1000;
@@ -1466,13 +1467,13 @@ main_thread(struct glob_arg *g)
 		npkts = my_count - prev;
 		nevents = my_count_e - prev_e;
 		pps = (npkts*1000000 + usec/2) / usec;
-		abs = (nevents > 0) ? (npkts / nevents) : 0;
+		abs = (nevents > 0) ? (npkts / (double) nevents) : 0;
 
-		D("%llu pps (%llu pkts in %llu usec) %llu avg_batch",
+		D("%llu pps (%llu pkts in %llu usec) %.2f avg_batch",
 			(unsigned long long)pps,
 			(unsigned long long)npkts,
 			(unsigned long long)usec,
-			(unsigned long long)abs);
+			abs);
 		prev = my_count;
 		prev_e = my_count_e;
 		toc = now;
