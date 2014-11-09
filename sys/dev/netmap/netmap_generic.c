@@ -63,7 +63,7 @@
 #ifdef __FreeBSD__
 
 #include <sys/cdefs.h> /* prerequisite */
-__FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257666 2013-11-05 01:06:22Z luigi $");
+__FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19:58Z luigi $");
 
 #include <sys/types.h>
 #include <sys/errno.h>
@@ -451,6 +451,23 @@ generic_netmap_tx_clean(struct netmap_kring *kring)
 		}
 		n++;
 		nm_i = nm_next(nm_i, lim);
+#if 0 /* rate adaptation */
+		if (netmap_adaptive_io > 1) {
+			if (n >= netmap_adaptive_io)
+				break;
+		} else if (netmap_adaptive_io) {
+			/* if hwcur - nm_i < lim/8 do an early break
+			 * so we prevent the sender from stalling. See CVT.
+			 */
+			if (hwcur >= nm_i) {
+				if (hwcur - nm_i < lim/2)
+					break;
+			} else {
+				if (hwcur + lim + 1 - nm_i < lim/2)
+					break;
+			}
+		}
+#endif
 	}
 	kring->nr_hwtail = nm_prev(nm_i, lim);
 	ND("tx completed [%d] -> hwtail %d", n, kring->nr_hwtail);

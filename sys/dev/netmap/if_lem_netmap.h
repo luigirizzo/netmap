@@ -25,7 +25,7 @@
 
 
 /*
- * $FreeBSD: head/sys/dev/netmap/if_lem_netmap.h 231881 2012-02-17 14:09:04Z luigi $
+ * $FreeBSD: head/sys/dev/netmap/if_lem_netmap.h 271849 2014-09-19 03:51:26Z glebius $
  *
  * netmap support for: lem
  *
@@ -39,6 +39,7 @@
 #include <vm/pmap.h>    /* vtophys ? */
 #include <dev/netmap/netmap_kern.h>
 
+extern int netmap_adaptive_io;
 
 /*
  * Register/unregister. We are already under netmap lock.
@@ -100,6 +101,7 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 	struct adapter *adapter = ifp->if_softc;
 #ifdef NIC_PARAVIRT
 	struct paravirt_csb *csb = adapter->csb;
+	uint64_t *csbd = (uint64_t *)(csb + 1);
 #endif /* NIC_PARAVIRT */
 
 	bus_dmamap_sync(adapter->txdma.dma_tag, adapter->txdma.dma_map,
@@ -111,6 +113,19 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
+#ifdef NIC_PARAVIRT
+		int do_kick = 0;
+		uint64_t t = 0; // timestamp
+		int n = head - nm_i;
+		if (n < 0)
+			n += lim + 1;
+		if (csb) {
+			t = rdtsc(); /* last timestamp */
+			csbd[16] += t - csbd[0]; /* total Wg */
+			csbd[17] += n;		/* Wg count */
+			csbd[0] = t;
+		}
+#endif /* NIC_PARAVIRT */
 		nic_i = netmap_idx_k2n(kring, nm_i);
 		while (nm_i != head) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
@@ -153,12 +168,36 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 
 #ifdef NIC_PARAVIRT
 		/* set unconditionally, then also kick if needed */
-		if (csb)
+		if (csb) {
+			t = rdtsc();
+			if (csb->host_need_txkick == 2) {
+				/* can compute an update of delta */
+				int64_t delta = t - csbd[3];
+				if (delta < 0)
+					delta = -delta;
+				if (csbd[8] == 0 || delta < csbd[8]) {
+					csbd[8] = delta;
+					csbd[9]++;
+				}
+				csbd[10]++;
+			}
 			csb->guest_tdt = nic_i;
-		if (!csb || !csb->guest_csb_on || csb->host_need_txkick)
+			csbd[18] += t - csbd[0]; // total wp
+			csbd[19] += n;
+		}
+		if (!csb || !csb->guest_csb_on || (csb->host_need_txkick & 1))
+			do_kick = 1;
+		if (do_kick)
 #endif /* NIC_PARAVIRT */
 		/* (re)start the tx unit up to slot nic_i (excluded) */
 		E1000_WRITE_REG(&adapter->hw, E1000_TDT(0), nic_i);
+#ifdef NIC_PARAVIRT
+		if (do_kick) {
+			uint64_t t1 = rdtsc();
+			csbd[20] += t1 - t; // total Np
+			csbd[21]++;
+		}
+#endif /* NIC_PARAVIRT */
 	}
 
 	/*
@@ -175,10 +214,12 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 		if (csb) {
 		    static int drain = 0, nodrain=0, good = 0, bad = 0, fail = 0;
 		    u_int x = adapter->next_tx_to_clean;
+		    csbd[19]++; // XXX count reclaims
 		    nic_i = csb->host_tdh;
 		    if (csb->guest_csb_on) {
 			if (nic_i == x) {
 			    bad++;
+		    	    csbd[24]++; // failed reclaims
 			    /* no progress, request kick and retry */
 			    csb->guest_need_txkick = 1;
 			    mb(); // XXX barrier
@@ -187,27 +228,63 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 			    good++;
 			}
 			if (nic_i != x) {
-			    csb->guest_need_txkick = 0;
+			    csb->guest_need_txkick = 2;
 			    if (nic_i == csb->guest_tdt)
 				drain++;
 			    else
 				nodrain++;
 #if 1
-			    x = x*31 + nic_i;
-			    /* advance exponentially slow */
-			    if (nic_i < adapter->next_tx_to_clean) {
-			        x = (x + lim + 1)/32;
-				if (x > lim)
-				    x -= lim;
-			    } else {
-			        x = x / 32;
+			if (netmap_adaptive_io) {
+			    /* new mechanism: last half ring (or so)
+			     * released one slot at a time.
+			     * This effectively makes the system spin.
+			     *
+			     * Take next_to_clean + 1 as a reference.
+			     * tdh must be ahead or equal
+			     * On entry, the logical order is
+			     *		x < tdh = nic_i
+			     * We first push tdh up to avoid wraps.
+			     * The limit is tdh-ll (half ring).
+			     * if tdh-256 < x we report x;
+			     * else we report tdh-256
+			     */
+			    u_int tdh = nic_i;
+			    u_int ll = csbd[15];
+			    u_int delta = lim/8;
+			    if (netmap_adaptive_io == 2 || ll > delta)
+				csbd[15] = ll = delta;
+			    else if (netmap_adaptive_io == 1 && ll > 1) {
+				csbd[15]--;
 			    }
-			    ND(15, "ntc %d x %d nic_i %d",
-				adapter->next_tx_to_clean, x, nic_i);
-			    if (x != adapter->next_tx_to_clean)
+
+			    if (nic_i >= kring->nkr_num_slots) {
+				RD(5, "bad nic_i %d on input", nic_i);
+			    }
+			    x = nm_next(x, lim);
+			    if (tdh < x)
+				tdh += lim + 1;
+			    if (tdh <= x + ll) {
 				nic_i = x;
+				csbd[25]++; //report n + 1;
+			    } else {
+				tdh = nic_i;
+				if (tdh < ll)
+				    tdh += lim + 1;
+				nic_i = tdh - ll;
+				csbd[26]++; // report tdh - ll
+			    }
+			}
 #endif
 			} else {
+			    /* we stop, count whether we are idle or not */
+			    int bh_active = csb->host_need_txkick & 2 ? 4 : 0;
+			    csbd[27+ csb->host_need_txkick]++;
+			    if (netmap_adaptive_io == 1) {
+				if (bh_active && csbd[15] > 1)
+				    csbd[15]--;
+				else if (!bh_active && csbd[15] < lim/2)
+				    csbd[15]++;
+			    }
 			    bad--;
 			    fail++;
 			}
