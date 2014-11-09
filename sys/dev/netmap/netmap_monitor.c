@@ -23,7 +23,10 @@
  * SUCH DAMAGE.
  */
 
-/* Monitors
+/*
+ * $FreeBSD: head/sys/dev/netmap/netmap_monitor.c 270063 2014-08-16 15:00:01Z luigi $
+ *
+ * Monitors
  *
  * netmap monitors can be used to do zero-copy monitoring of network traffic
  * on another adapter, when the latter adapter is working in netmap mode.
