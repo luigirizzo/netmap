@@ -341,8 +341,9 @@ static inline int ilog2(uint64_t n)
 #define vtophys		virt_to_phys
 
 /*--- selrecord and friends ---*/
-/* wake_up() or wake_up_interruptible() ? */
-#define	OS_selwakeup(sw, pri)	wake_up(sw)
+/* We use wake_up_interruptible() since select() and poll()
+ * sleep in an interruptbile way. */
+#define	OS_selwakeup(sw, pri)	wake_up_interruptible(sw)
 #define OS_selrecord(x, y)		poll_wait((struct file *)x, y, pwait)
 
 #define netmap_knlist_destroy(x)	// XXX todo
