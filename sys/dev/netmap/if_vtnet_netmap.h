@@ -23,6 +23,10 @@
  * SUCH DAMAGE.
  */
 
+/*
+ * $FreeBSD: head/sys/dev/netmap/if_vtnet_netmap.h 270097 2014-08-17 10:25:27Z luigi $
+ */
+
 #include <net/netmap.h>
 #include <sys/selinfo.h>
 #include <vm/vm.h>
