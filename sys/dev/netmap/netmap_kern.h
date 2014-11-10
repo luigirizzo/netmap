@@ -68,7 +68,15 @@
 
 #define	NM_LOCK_T	struct mtx
 
-#define NM_MTX_T		struct mtx
+/* netmap global lock */
+#define	NMG_LOCK_T	struct sx
+#define NMG_LOCK_INIT()	sx_init(&netmap_global_lock, \
+				"netmap global lock")
+#define NMG_LOCK_DESTROY()	sx_destroy(&netmap_global_lock)
+#define NMG_LOCK()	sx_xlock(&netmap_global_lock)
+#define NMG_UNLOCK()	sx_xunlock(&netmap_global_lock)
+#define NMG_LOCK_ASSERT()	sx_assert(&netmap_global_lock, SA_XLOCKED)
+
 #define NM_MTX_INIT(m, s)	mtx_init(&(m), (s), NULL, MTX_DEF)
 #define NM_MTX_DESTROY(m)	mtx_destroy(&(m))
 #define NM_MTX_LOCK(m)		mtx_lock(&(m))
@@ -85,6 +93,12 @@
 #include <machine/atomic.h>
 #define NM_ATOMIC_TEST_AND_SET(p)       (!atomic_cmpset_acq_int((p), 0, 1))
 #define NM_ATOMIC_CLEAR(p)              atomic_store_rel_int((p), 0)
+
+#if __FreeBSD_version >= 1100030$
+#define	WNA(_ifp)	(_ifp)->if_netmap
+#else /* older FreeBSD */
+#define	WNA(_ifp)	(_ifp)->if_pspare[0]
+#endif /* older FreeBSD */
 
 #if __FreeBSD_version >= 1100005
 struct netmap_adapter *netmap_getna(if_t ifp);
@@ -133,6 +147,13 @@ struct hrtimer {
 #define NM_MTX_UNLOCK(m)	mutex_unlock(&(m))
 #define NM_MTX_LOCK_ASSERT(m)	mutex_is_locked(&(m))
 
+#define	NMG_LOCK_T		NM_MTX_T
+#define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock, \
+					"netmap_global_lock")
+#define	NMG_LOCK_DESTROY()	NM_MTX_DESTROY(netmap_global_lock)
+#define	NMG_LOCK()		NM_MTX_LOCK(netmap_global_lock)
+#define	NMG_UNLOCK()		NM_MTX_UNLOCK(netmap_global_lock)
+#define	NMG_LOCK_ASSERT()	NM_MTX_LOCK_ASSERT(netmap_global_lock)
 
 #ifndef DEV_NETMAP
 #define DEV_NETMAP
@@ -153,14 +174,6 @@ struct hrtimer {
 #error unsupported platform
 
 #endif /* end - platform-specific code */
-
-#define NMG_LOCK_T		NM_MTX_T
-#define NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock, \
-					"netmap_global_locl")
-#define NMG_LOCK_DESTROY()	NM_MTX_DESTROY(netmap_global_lock)
-#define NMG_LOCK()		NM_MTX_LOCK(netmap_global_lock)
-#define NMG_UNLOCK()		NM_MTX_UNLOCK(netmap_global_lock)
-#define NMG_LOCK_ASSERT()	NM_MTX_LOCK_ASSERT(netmap_global_lock)
 
 #define ND(format, ...)
 #define D(format, ...)						\
@@ -1235,9 +1248,6 @@ extern int netmap_generic_rings;
  * NA returns a pointer to the struct netmap adapter from the ifp,
  * WNA is used to write it.
  */
-#ifndef WNA
-#define	WNA(_ifp)	(_ifp)->if_pspare[0]
-#endif
 #define	NA(_ifp)	((struct netmap_adapter *)WNA(_ifp))
 
 /*
