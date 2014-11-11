@@ -77,12 +77,6 @@
 #define NMG_UNLOCK()	sx_xunlock(&netmap_global_lock)
 #define NMG_LOCK_ASSERT()	sx_assert(&netmap_global_lock, SA_XLOCKED)
 
-#define NM_MTX_INIT(m, s)	mtx_init(&(m), (s), NULL, MTX_DEF)
-#define NM_MTX_DESTROY(m)	mtx_destroy(&(m))
-#define NM_MTX_LOCK(m)		mtx_lock(&(m))
-#define NM_MTX_UNLOCK(m)	mtx_unlock(&(m))
-#define NM_MTX_LOCK_ASSERT(m)	mtx_assert(&(m), MA_OWNED)
-
 #define	NM_SELINFO_T	struct selinfo
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
 #define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
@@ -94,7 +88,7 @@
 #define NM_ATOMIC_TEST_AND_SET(p)       (!atomic_cmpset_acq_int((p), 0, 1))
 #define NM_ATOMIC_CLEAR(p)              atomic_store_rel_int((p), 0)
 
-#if __FreeBSD_version >= 1100030$
+#if __FreeBSD_version >= 1100030
 #define	WNA(_ifp)	(_ifp)->if_netmap
 #else /* older FreeBSD */
 #define	WNA(_ifp)	(_ifp)->if_pspare[0]
