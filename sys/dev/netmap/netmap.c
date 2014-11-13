@@ -494,15 +494,6 @@ ports attached to the switch)
 
 MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
 
-/*
- * The following variables are used by the drivers and replicate
- * fields in the global memory pool. They only refer to buffers
- * used by physical interfaces.
- */
-u_int netmap_total_buffers;
-u_int netmap_buf_size;
-char *netmap_buffer_base;	/* also address of an invalid buffer */
-
 /* user-controlled variables */
 int netmap_verbose;
 
