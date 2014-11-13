@@ -343,9 +343,9 @@ static inline int ilog2(uint64_t n)
 /*--- selrecord and friends ---*/
 /* wake_up() or wake_up_interruptible() ? */
 #define	OS_selwakeup(sw, pri)	wake_up(sw)
-#define selrecord(x, y)		poll_wait((struct file *)x, y, pwait)
+#define OS_selrecord(x, y)		poll_wait((struct file *)x, y, pwait)
 
-// #define knlist_destroy(x)	// XXX todo
+#define netmap_knlist_destroy(x)	// XXX todo
 
 #define	tsleep(a, b, c, t)	msleep(10)
 // #define	wakeup(sw)				// XXX double check
