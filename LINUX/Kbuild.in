@@ -24,11 +24,17 @@ $(foreach o,$(remoteobjs-y),$(eval $(call remote_template,$(o),$(o:.o=.c))))
 # for MODNAME=netmap
 $(eval $(call remote_template,netmap_common.o,netmap.c))
 
-$(obj)/netmap_linux.o: %.o: $(SRCDIR)/netmap_linux.c FORCE
-	$(call if_changed_rule,cc_o_c)
+localobjs-y := netmap_linux.o
+localobjs-$(CONFIG_NETMAP_PASSTHROUGH) += netmap_passthrough.o vhost-netmap-pt/vhost_netmap_pt.o
+
+define local_template
+$$(obj)/$(1): %.o: $$(SRCDIR)/$(2) FORCE
+	$$(call if_changed_rule,cc_o_c)
+endef
+$(foreach o,$(localobjs-y),$(eval $(call local_template,$(o),$(o:.o=.c))))
 
 # all objects
-$(MODNAME)-objs := $(remoteobjs-y) netmap_common.o netmap_linux.o
+$(MODNAME)-objs := $(remoteobjs-y) netmap_common.o $(localobjs-y)
 
 obj-$(CONFIG_NETMAP) = $(MODNAME).o
 
