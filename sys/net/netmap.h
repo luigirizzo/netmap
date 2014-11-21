@@ -496,6 +496,8 @@ struct nmreq {
 #define NETMAP_BDG_OFFSET	NETMAP_BDG_VNET_HDR	/* deprecated alias */
 #define NETMAP_BDG_NEWIF	6	/* create a virtual port */
 #define NETMAP_BDG_DELIF	7	/* destroy a virtual port */
+#define NETMAP_PT_CREATE	8	/* create netmap-pt kthread */
+#define NETMAP_PT_DELETE	9	/* delete netmap-pt kthread */
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
 #define NETMAP_BDG_HOST		1	/* attach the host stack on ATTACH */
 
@@ -521,7 +523,39 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NR_ZCOPY_MON	0x400
 /* request exclusive access to the selected rings */
 #define NR_EXCLUSIVE	0x800
+/* request netmap passthrough full support */
+#define NR_PASSTHROUGH_FULL	0x1000
 
+/*
+ * Functions to write or read buffer in struct nmreq.
+ * These functions use the fields from nr_arg1 to store
+ * the pointer to a buffer and the length.
+ */
+static inline void
+nmr_write_buf(struct nmreq *nmr, void *buf, uint16_t buf_len)
+{
+	uintptr_t *nmr_buf;
+	uint16_t *nmr_buf_len;
+
+	nmr_buf = (uintptr_t *)&nmr->nr_arg1;
+	nmr_buf_len = (uint16_t *)(nmr_buf + 1);
+
+	*nmr_buf = (uintptr_t)buf;
+	*nmr_buf_len = buf_len;
+}
+
+static inline void
+nmr_read_buf(struct nmreq *nmr, void **buf, uint16_t *buf_len)
+{
+	uintptr_t *nmr_buf;
+	uint16_t *nmr_buf_len;
+
+	nmr_buf = (uintptr_t *)&nmr->nr_arg1;
+	nmr_buf_len = (uint16_t *)(nmr_buf + 1);
+
+	*buf = (void *)*nmr_buf;
+	*buf_len = *nmr_buf_len;
+}
 
 /*
  * FreeBSD uses the size value embedded in the _IOWR to determine

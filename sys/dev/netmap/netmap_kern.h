@@ -51,6 +51,9 @@
 #if defined(CONFIG_NETMAP_V1000)
 #define WITH_V1000
 #endif
+#if defined(CONFIG_NETMAP_PASSTHROUGH)
+#define WITH_PASSTHROUGH
+#endif
 
 #else /* not linux */
 
@@ -58,6 +61,7 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
+#define WITH_PASSTHROUGH
 
 #endif
 
@@ -512,6 +516,7 @@ struct netmap_adapter {
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
+#define NAF_PASSTHROUGH_FULL 256/* the adapter supports passthrough */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
 				  */
@@ -1168,6 +1173,21 @@ void netmap_monitor_stop(struct netmap_adapter *na);
 	((nmr)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
 #endif
 
+#ifdef WITH_PASSTHROUGH
+int netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
+int netmap_pt_ctl(struct nmreq *nmr, struct netmap_adapter *na);
+static inline int
+nm_passthrough_on(struct netmap_adapter *na)
+{
+	return na && na->na_flags & NAF_PASSTHROUGH_FULL;
+}
+#else /* !WITH_PASSTHROUGH */
+#define netmap_get_passthrough_na(nmr, _2, _3) \
+	((nmr)->nr_flags & (NR_PASSTHROUGH_FULL) ? EOPNOTSUPP : 0)
+#define netmap_pt_ctl(_1, _2)   EINVAL
+#define nm_passthrough_on(_1)   EINVAL
+#endif /* WITH_PASSTHROUGH */
+
 #ifdef CONFIG_NET_NS
 struct net *netmap_bns_get(void);
 void netmap_bns_put(struct net *);
@@ -1522,6 +1542,16 @@ struct netmap_monitor_adapter {
 
 #endif /* WITH_MONITOR */
 
+#ifdef WITH_PASSTHROUGH
+
+struct netmap_passthrough_adapter {
+	struct netmap_adapter up;
+
+	struct netmap_adapter *parent;
+	void *private;
+};
+
+#endif /* WITH_PASSTHROUGH */
 
 #ifdef WITH_GENERIC
 /*

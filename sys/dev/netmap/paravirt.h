@@ -107,6 +107,14 @@
 	would free only a few buffers at a time.
 
  */
+struct pt_ring {
+    uint32_t head;
+    uint32_t cur;
+    uint32_t hwcur;
+    uint32_t hwtail;
+    uint32_t sync_flags;
+};
+
 struct paravirt_csb {
     /* XXX revise the layout to minimize cache bounces.
      * Usage is described as follows:
@@ -146,6 +154,10 @@ struct paravirt_csb {
     uint16_t num_rx_rings;
     uint16_t num_tx_slots;
     uint16_t num_rx_slots;
+
+    /* passthrough full */
+    struct pt_ring tx_ring;
+    struct pt_ring rx_ring;
 };
 
 #define NET_PARAVIRT_CSB_SIZE   4096

@@ -1812,6 +1812,7 @@ netmap_mem_paravirt_deref(struct netmap_mem_d *nmd)
 	if (nmd->refcount <= 0 && 
 	   (nmd->flags & NETMAP_MEM_FINALIZED))
 	{
+		nmd->flags  &= ~NETMAP_MEM_FINALIZED;
 		pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_DEREF);
 	}
 	NMA_UNLOCK(nmd);
@@ -1878,7 +1879,7 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 	struct ifnet *ifp = pv->ifp;
 	struct paravirt_csb *csb;
 	struct netmap_if *nifp;
-	int i;
+	int i, error = 0;
 
 	D("");
 	csb = pv->pv_ops->nm_getcsb(ifp);
@@ -1896,6 +1897,13 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 			((char *)nifp + nifp->ring_ofs[i]);
 		kring->nr_kflags |= NKR_PASSTHROUGH;
 
+		/* copy values from kring and init csb fields */
+		csb->tx_ring.head = kring->ring->head = kring->rhead;
+		csb->tx_ring.cur = kring->ring->cur = kring->rcur;
+		kring->ring->tail = kring->rtail;
+		csb->tx_ring.hwcur = kring->nr_hwcur;
+		csb->tx_ring.hwtail = kring->nr_hwtail;
+		csb->tx_ring.sync_flags = 0;
 	}
 	for (i = 0; i <= na->num_rx_rings; i++) {
 		struct netmap_kring *kring = na->rx_rings + i;
@@ -1906,14 +1914,28 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
 		kring->nr_kflags |= NKR_PASSTHROUGH;
 
+		/* copy values from kring */
+		csb->rx_ring.head = kring->ring->head = kring->rhead;
+		csb->rx_ring.cur = kring->ring->cur = kring->rcur;
+		kring->ring->tail = kring->rtail;
+		csb->rx_ring.hwcur = kring->nr_hwcur;
+		csb->rx_ring.hwtail = kring->nr_hwtail;
+		csb->rx_ring.sync_flags = 0;
 	}
-	return 0;
+
+	error = pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
+
+	return error;
 }
 
 static void 
 netmap_mem_paravirt_rings_delete(struct netmap_adapter *na)
 {
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)na->nm_mem;
+	struct ifnet *ifp = pv->ifp;
+
 	D("");
+	pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSDELETE);
 }
 
 

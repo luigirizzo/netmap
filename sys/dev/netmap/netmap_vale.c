@@ -1540,7 +1540,7 @@ retry:
 
 					slot = &ring->slot[j];
 					dst = NMB(&dst_na->up, slot);
-					D("send to buf %d at %p", slot->buf_idx, dst);
+					ND("send to buf %d at %p", slot->buf_idx, dst);
 
 					ND("send [%d] %d(%d) bytes at %s:%d",
 							i, (int)copy_len, (int)dst_len,

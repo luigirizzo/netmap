@@ -1380,6 +1380,11 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	 *  !0    !NULL		impossible
 	 */
 
+	/* try to see if this is a passthrough port */
+	error = netmap_get_passthrough_na(nmr, na, create);
+	if (error || *na != NULL)
+		return error;
+
 	/* try to see if this is a monitor port */
 	error = netmap_get_monitor_na(nmr, na, create);
 	if (error || *na != NULL)
@@ -1458,8 +1463,10 @@ nm_txsync_prologue(struct netmap_kring *kring)
 	    kring->rtail >= n ||  kring->nr_hwtail >= n)
 		goto error;
 #endif /* kernel sanity checks */
+#if 0
 	if (kring->nr_kflags & NKR_PASSTHROUGH)
 		return kring->nr_hwcur;
+#endif
 	/*
 	 * user sanity checks. We only use 'cur',
 	 * A, B, ... are possible positions for cur:
@@ -2154,6 +2161,12 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				|| i == NETMAP_BDG_NEWIF
 				|| i == NETMAP_BDG_DELIF) {
 			error = netmap_bdg_ctl(nmr, NULL);
+			break;
+		} else if (i == NETMAP_PT_CREATE || i == NETMAP_PT_DELETE) {
+			//XXX-ste: protect priv access??
+			//NMG_LOCK();
+			error = netmap_pt_ctl(nmr, priv->np_na);
+			//NMG_UNLOCK();
 			break;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);

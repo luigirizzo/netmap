@@ -487,7 +487,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	/* these fields are overridden by ifname and flags processing */
 	d->req.nr_ringid |= nr_ringid;
-	d->req.nr_flags = nr_flags;
+	d->req.nr_flags |= nr_flags;
 	memcpy(d->req.nr_name, ifname, namelen);
 	d->req.nr_name[namelen] = '\0';
 	/* optionally import info from parent */
