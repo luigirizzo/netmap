@@ -355,16 +355,55 @@ static int
 e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
+	//u_int ring_nr = kring->ring_id;
 	struct ifnet *ifp = na->ifp;
 	struct e1000_adapter *adapter = netdev_priv(ifp);
 	struct e1000_hw *hw = &adapter->hw;
+	struct e1000_tx_ring* txr = &adapter->tx_ring[0];
+	struct paravirt_csb *csb = adapter->csb;
 
 	ND("");
 
-	ew32(PTCTL, NET_PARAVIRT_PTCTL_TXSYNC);
-	kring->rcur = kring->ring->cur;
-	kring->rhead = kring->ring->head;
-	kring->rtail = kring->ring->tail;
+	//XXX-ste: temporary - maybe is better to change the txsync pointer func
+	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
+	{
+		uint32_t pre_tail = kring->nr_hwtail;
+
+		csb->tx_ring.head = kring->rhead;
+		csb->tx_ring.cur = kring->rcur;
+		csb->tx_ring.sync_flags = flags;
+		mb();
+
+		ND(1, "TX - CSB: head:%u cur:%u - KRING: head:%u cur:%u",
+				csb->tx_ring.head, csb->tx_ring.cur, kring->rhead, kring->rcur);
+
+		writel(0, adapter->hw.hw_addr + txr->tdt);
+
+		mb();
+		kring->nr_hwcur = csb->tx_ring.hwcur; ///XXX: useless
+		kring->nr_hwtail = csb->tx_ring.hwtail;
+#if 0
+		if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+			int i = 0;
+			//TODO: or wait until kring is empty
+			while (pre_tail == kring->nr_hwtail /*|| i < 100 */) {
+				mb();
+				//udelay(1);
+				kring->nr_hwcur = csb->tx_ring.hwcur; ///XXX: useless
+				kring->nr_hwtail = csb->tx_ring.hwtail;
+				i++;
+			}
+		}
+#endif
+	} else {
+		ew32(PTCTL, NET_PARAVIRT_PTCTL_TXSYNC);
+		kring->rcur = kring->ring->cur;
+		kring->rhead = kring->ring->head;
+		kring->rtail = kring->ring->tail;
+
+		kring->nr_hwcur = kring->ring->cur;
+		kring->nr_hwtail = kring->ring->tail;
+	}
 
 	return 0;
 }
@@ -373,16 +412,36 @@ static int
 e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
+	//u_int ring_nr = kring->ring_id;
 	struct ifnet *ifp = na->ifp;
 	struct e1000_adapter *adapter = netdev_priv(ifp);
 	struct e1000_hw *hw = &adapter->hw;
+	struct e1000_rx_ring *rxr = &adapter->rx_ring[0];
+	struct paravirt_csb *csb = adapter->csb;
 
 	ND("");
 
-	ew32(PTCTL, NET_PARAVIRT_PTCTL_RXSYNC);
-	kring->rcur = kring->ring->cur;
-	kring->rhead = kring->ring->head;
-	kring->rtail = kring->ring->tail;
+	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
+	{
+		csb->rx_ring.head = kring->rhead;
+		csb->rx_ring.cur = kring->rcur;
+		csb->rx_ring.sync_flags = flags;
+		mb();
+
+		writel(0, hw->hw_addr + rxr->rdt);
+
+		mb();
+		kring->nr_hwcur = csb->rx_ring.hwcur;
+		kring->nr_hwtail = csb->rx_ring.hwtail;
+	} else {
+		ew32(PTCTL, NET_PARAVIRT_PTCTL_RXSYNC);
+		kring->rcur = kring->ring->cur;
+		kring->rhead = kring->ring->head;
+		kring->rtail = kring->ring->tail;
+
+		kring->nr_hwcur = kring->ring->cur;
+		kring->nr_hwtail = kring->ring->tail;
+	}
 
 	return 0;
 }
@@ -454,6 +513,7 @@ static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
 		ND("name %s", name);
 		break;
 	case NET_PARAVIRT_PTCTL_DEREF:
+                D("NET_PARAVIRT_PTCTL_DEREF");
 		base_addr = (void*)csb->base_addr;
 		if (base_addr != NULL) {
 			pci_iounmap(adapter->pdev, base_addr);
@@ -489,6 +549,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_rxsync = e1000_netmap_rxsync;
 
 #ifdef CONFIG_E1000_NETMAP_PT
+        D("e1000 passthrough");
 	na.nm_config = e1000_paravirt_netmap_config;
 	na.nm_register = e1000_paravirt_netmap_reg;
 	na.nm_txsync = e1000_paravirt_netmap_txsync;
