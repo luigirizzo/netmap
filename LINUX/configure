@@ -71,7 +71,7 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic v1000"
+subsystem_avail="vale pipe monitor generic v1000 passthrough"
 #enabled subsystems (bitfield)
 subsystem=0
 
