@@ -364,10 +364,14 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	ND("");
 
+        IFRATE(adapter->rate_ctx.new.tx_sync++);
+
 	//XXX-ste: temporary - maybe is better to change the txsync pointer func
 	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
 	{
-		uint32_t pre_tail = kring->nr_hwtail;
+		//uint32_t pre_tail = kring->nr_hwtail;
+
+                csb->guest_need_txkick = 0;
 
 		csb->tx_ring.head = kring->rhead;
 		csb->tx_ring.cur = kring->rcur;
@@ -376,12 +380,28 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		ND(1, "TX - CSB: head:%u cur:%u - KRING: head:%u cur:%u",
 				csb->tx_ring.head, csb->tx_ring.cur, kring->rhead, kring->rcur);
-
-		writel(0, adapter->hw.hw_addr + txr->tdt);
+                if (csb->host_need_txkick) {
+                    IFRATE(adapter->rate_ctx.new.tx_kick++);
+		    writel(0, adapter->hw.hw_addr + txr->tdt);
+                }
 
 		mb();
 		kring->nr_hwcur = csb->tx_ring.hwcur; ///XXX: useless
 		kring->nr_hwtail = csb->tx_ring.hwtail;
+
+                /* Empty ring */
+                if (kring->rcur == kring->nr_hwtail) {
+                    csb->guest_need_txkick = 1;
+                    mb();
+                    /* Double check */
+                    kring->nr_hwcur = csb->tx_ring.hwcur;
+                    kring->nr_hwtail = csb->tx_ring.hwtail;
+                    if (unlikely(kring->rcur != kring->nr_hwtail)) {
+                        csb->guest_need_txkick = 0;
+                        mb();
+                    }
+                }
+
 #if 0
 		if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
 			int i = 0;
@@ -421,18 +441,39 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	ND("");
 
+        IFRATE(adapter->rate_ctx.new.rx_sync++);
+
 	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
 	{
+                csb->guest_need_rxkick = 0;
+
 		csb->rx_ring.head = kring->rhead;
 		csb->rx_ring.cur = kring->rcur;
 		csb->rx_ring.sync_flags = flags;
 		mb();
 
-		writel(0, hw->hw_addr + rxr->rdt);
+                if (csb->host_need_rxkick) {
+                    IFRATE(adapter->rate_ctx.new.rx_kick++);
+		    writel(0, hw->hw_addr + rxr->rdt);
+                }
 
 		mb();
 		kring->nr_hwcur = csb->rx_ring.hwcur;
 		kring->nr_hwtail = csb->rx_ring.hwtail;
+#if 1
+                /* empty ring */
+                if (kring->rcur == kring->nr_hwtail) {
+                    csb->guest_need_rxkick = 1;
+                    mb();
+                    /* Double check */
+                    kring->nr_hwcur = csb->rx_ring.hwcur;
+                    kring->nr_hwtail = csb->rx_ring.hwtail;
+                    if (unlikely(kring->rcur != kring->nr_hwtail)) {
+                        csb->guest_need_rxkick = 0;
+                        mb();
+                    }
+                }
+#endif
 	} else {
 		ew32(PTCTL, NET_PARAVIRT_PTCTL_RXSYNC);
 		kring->rcur = kring->ring->cur;
