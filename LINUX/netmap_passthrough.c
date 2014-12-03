@@ -109,6 +109,15 @@ struct vPT_net {
         } \
     } while (0)
 
+static inline void
+nm_kring_dump(const char *title, const struct netmap_kring *kring)
+{
+    D("%s - name: %s hwcur: %d hwtail: %d rhead: %d rcur: %d head: %d cur: %d tail: %d",
+            title, kring->name, kring->nr_hwcur,
+            kring->nr_hwtail, kring->rhead, kring->rcur,
+            kring->ring->head, kring->ring->cur, kring->ring->tail);
+}
+
 static inline void vPT_set_txkick(struct vPT_net *net, bool enable)
 {
     uint32_t v = enable ? 1 : 0;
@@ -125,6 +134,21 @@ static inline bool vPT_tx_interrupts_enabled(struct vPT_net * net)
     return v;
 }
 
+/*
+ * We needs kick from the guest when:
+ * - TX: tail == cur - 1
+ *       ring is empty
+ *       We need to wait that the guest puts some packets in the ring and then it notifies us.
+ *
+ * - RX: tail == cur - 1
+ *       ring is full
+ *       We need to wait that the guest gets some packets from the ring and then it notifies us.
+ */
+static inline int
+nm_kring_need_kick(struct netmap_kring *kring)
+{
+    return (ACCESS_ONCE(kring->nr_hwtail) == nm_prev(kring->rcur, kring->nkr_num_slots - 1));
+}
 
 /* Expects to be always run from workqueue - which acts as
  * read-size critical section for our kind of RCU. */
@@ -134,7 +158,7 @@ static void handle_tx(struct vPT_net *net)
     struct netmap_kring *kring;
     uint32_t flags;
     int error = 0;
-    //bool work = false;
+    bool work = false;
     int n_slots;
 
     mutex_lock(&vr->mutex);
@@ -149,64 +173,86 @@ static void handle_tx(struct vPT_net *net)
     if (nm_kr_tryget(kring)) {
         error = EBUSY;
         D("error: %d", error);
-        goto leave;
+        goto leave_kr_put;
     }
 
-    // prologue
-    //smp_mb();
-    mb();
-    CSB_READ(net->csb, tx_ring.head, kring->rhead);
-    CSB_READ(net->csb, tx_ring.cur, kring->rcur);
-    CSB_READ(net->csb, tx_ring.sync_flags, flags);
-    n_slots = kring->nr_hwtail;
-    if (netmap_verbose & NM_VERB_TXSYNC)
-        D("pre txsync %s kcur %d ktail %d rhead %d rcur %d head %d cur %d tail %d",
-                kring->name, kring->nr_hwcur, kring->nr_hwtail,
-                kring->rhead, kring->rcur,
-                kring->ring->head, kring->ring->cur, kring->ring->tail);
+    /* Disable notifications. */
+    vPT_set_txkick(net, false);
 
-    if (kring->nm_sync(kring, flags) == 0) {
-        //nm_txsync_finalize(kring);
-        //finalize
-        //smp_wmb();
-        CSB_WRITE(net->csb, tx_ring.hwcur, kring->nr_hwcur);
-        CSB_WRITE(net->csb, tx_ring.hwtail, kring->nr_hwtail);
-        mb();
-    } else
-        goto leave;
+    for (;;) {
+        // prologue
+        mb(); //XXX: or smp_mb() ?
+        CSB_READ(net->csb, tx_ring.cur, kring->rcur);
+        CSB_READ(net->csb, tx_ring.head, kring->rhead);
+        CSB_READ(net->csb, tx_ring.sync_flags, flags);
 
-    n_slots = kring->nr_hwtail - n_slots;
+        /* Nothing to transmit */
+        if (nm_kring_need_kick(kring)) {
+            /* Reenable notifications. */
+            vPT_set_txkick(net, true);
+            /* Doublecheck. */
+            mb();
+            CSB_READ(net->csb, tx_ring.cur, kring->rcur);
+            if (unlikely(!nm_kring_need_kick(kring))) {
+                vPT_set_txkick(net, false);
+                continue;
+            }
+            break;
+        }
 
-    if (n_slots) {
-        if (n_slots < 0)
-            n_slots += kring->nkr_num_slots;
+        n_slots = kring->nr_hwtail;
 
-        net->tx_events++;
-        net->tx_slots += (uint32_t) n_slots;
-    } else {
-        net->tx_zero_events++;
+        if (netmap_verbose & NM_VERB_TXSYNC)
+            nm_kring_dump("pre txsync", kring);
+
+        if (likely(kring->nm_sync(kring, flags) == 0)) {
+            /* finalize */
+            //nm_txsync_finalize(kring);
+            CSB_WRITE(net->csb, tx_ring.hwcur, kring->nr_hwcur);
+            CSB_WRITE(net->csb, tx_ring.hwtail, kring->nr_hwtail);
+            mb();
+        } else {
+            /* Reenable notifications. */
+            vPT_set_txkick(net, true);
+            D("nm_sync error");
+            goto leave_kr_put;
+        }
+        work = true;
+
+#ifdef DEBUG
+        n_slots = kring->nr_hwtail - n_slots;
+
+        if (n_slots) {
+            if (n_slots < 0)
+                n_slots += kring->nkr_num_slots;
+
+            net->tx_events++;
+            net->tx_slots += (uint32_t) n_slots;
+        } else {
+            net->tx_zero_events++;
+        }
+
+        RD(1, "Average batch size: %d pkts - Slots: %d Events: %d Zero Events: %d", net->tx_slots / net->tx_events, net->tx_slots, net->tx_events, net->tx_zero_events);
+#endif /* DEBUG */
+
+        if (netmap_verbose & NM_VERB_TXSYNC)
+            nm_kring_dump("post txsync", kring);
+
+        if (work && vPT_tx_interrupts_enabled(net)) {
+            eventfd_signal(vr->call_ctx, 1);
+            IFRATE(net->rate_ctx.new.htxk++);
+            work = false;
+        }
     }
 
-    RD(1, "Average batch size: %d pkts - Slots: %d Events: %d Zero Events: %d", net->tx_slots / net->tx_events, net->tx_slots, net->tx_events, net->tx_zero_events);
-
-    //udelay(1);
-    if (netmap_verbose & NM_VERB_TXSYNC)
-        D("post txsync %s kcur %d ktail %d rhead %d rcur %d head %d cur %d tail %d",
-                kring->name, kring->nr_hwcur, kring->nr_hwtail,
-                kring->rhead, kring->rcur,
-                kring->ring->head, kring->ring->cur, kring->ring->tail);
-
+leave_kr_put:
     nm_kr_put(kring);
 
 leave:
-   // if (n_slots) {
+    if (work && vPT_tx_interrupts_enabled(net)) {
         eventfd_signal(vr->call_ctx, 1);
         IFRATE(net->rate_ctx.new.htxk++);
-   // }
-    /*if (work && vPT_tx_interrupts_enabled(net)) {
-        eventfd_signal(vr->call_ctx, 1);
-        IFRATE(net->rate_ctx.new.htxk++);
-    }*/
+    }
     mutex_unlock(&vr->mutex);
 
     return;
@@ -214,14 +260,9 @@ leave:
 
 static inline void vPT_set_rxkick(struct vPT_net *net, bool enable)
 {
-    uint32_t v;
+    uint32_t v = enable ? 1 : 0;
 
-    if (enable) {
-        //v = (net->state.rdt + 1 + (net->state.rxnum - vPT_avail_rx(net) - 1) * 3/4) % net->state.rxnum;
-        v = 0;
-    } else
-        v = NET_PARAVIRT_NONE;
-    CSB_WRITE(net->csb, host_rxkick_at, v);
+    CSB_WRITE(net->csb, host_need_rxkick, v);
 }
 
 static inline bool vPT_rx_interrupts_enabled(struct vPT_net * net)
@@ -242,7 +283,9 @@ static void handle_rx(struct vPT_net *net)
     struct netmap_kring *kring;
     uint32_t flags;
     int error = 0;
-    //bool work = false;
+    bool work = false;
+    uint32_t pre_tail;
+    int cicle = 0;
 
     mutex_lock(&vr->mutex);
 
@@ -259,40 +302,67 @@ static void handle_rx(struct vPT_net *net)
         goto leave;
     }
 
-    // prologue
-    mb();
-    CSB_READ(net->csb, rx_ring.head, kring->rhead);
-    CSB_READ(net->csb, rx_ring.cur, kring->rcur);
-    CSB_READ(net->csb, rx_ring.sync_flags, flags);
+    /* Disable notifications. */
+    vPT_set_rxkick(net, false);
 
-    if (netmap_verbose & NM_VERB_RXSYNC)
-        D("pre rxsync %s kcur %d ktail %d rhead %d rcur %d head %d cur %d tail %d",
-                kring->name, kring->nr_hwcur, kring->nr_hwtail,
-                kring->rhead, kring->rcur,
-                kring->ring->head, kring->ring->cur, kring->ring->tail);
-
-    if (kring->nm_sync(kring, flags) == 0) {
-        //nm_rxsync_finalize(kring);
-        //finalize
-        CSB_WRITE(net->csb, rx_ring.hwcur, kring->nr_hwcur);
-        CSB_WRITE(net->csb, rx_ring.hwtail, kring->nr_hwtail);
+    for (;;) {
+        // prologue
         mb();
-    }
-    if (netmap_verbose & NM_VERB_RXSYNC)
-        D("post txsync %s kcur %d ktail %d rhead %d rcur %d head %d cur %d tail %d",
-                kring->name, kring->nr_hwcur, kring->nr_hwtail,
-                kring->rhead, kring->rcur,
-                kring->ring->head, kring->ring->cur, kring->ring->tail);
+        CSB_READ(net->csb, rx_ring.head, kring->rhead);
+        CSB_READ(net->csb, rx_ring.cur, kring->rcur);
+        CSB_READ(net->csb, rx_ring.sync_flags, flags);
 
+        CSB_READ(net->csb, rx_ring.hwtail, pre_tail);
+
+        if (netmap_verbose & NM_VERB_RXSYNC)
+            nm_kring_dump("pre rxsync", kring);
+
+        if (kring->nm_sync(kring, flags) == 0) {
+            //nm_rxsync_finalize(kring);
+            //finalize
+            CSB_WRITE(net->csb, rx_ring.hwcur, kring->nr_hwcur);
+            CSB_WRITE(net->csb, rx_ring.hwtail, ACCESS_ONCE(kring->nr_hwtail));
+            mb();
+        } else {
+            /* Reenable notifications. */
+            vPT_set_rxkick(net, true);
+            D("nm_sync error");
+            goto leave_kr_put;
+        }
+
+        if (netmap_verbose & NM_VERB_RXSYNC)
+            nm_kring_dump("post rxsync", kring);
+
+#if 1
+        /* No space to receive */
+        if (nm_kring_need_kick(kring)) {
+            /* Reenable notifications. */
+            vPT_set_rxkick(net, true);
+            /* Doublecheck. */
+            mb();
+            CSB_READ(net->csb, rx_ring.cur, kring->rcur);
+            if (unlikely(!nm_kring_need_kick(kring))) {
+                vPT_set_rxkick(net, false);
+            } else
+                break;
+        }
+#endif
+
+        /* No packets received */
+        if (pre_tail == ACCESS_ONCE(kring->nr_hwtail)) {
+            break;
+        }
+        work = true;
+    }
+
+leave_kr_put:
     nm_kr_put(kring);
 
 leave:
-    eventfd_signal(vr->call_ctx, 1);
-    IFRATE(net->rate_ctx.new.hrxk++);
-   /* if (vPT_rx_interrupts_enabled(net)) {
+    if (work && vPT_rx_interrupts_enabled(net)) {
         eventfd_signal(vr->call_ctx, 1);
         IFRATE(net->rate_ctx.new.hrxk++);
-    }*/
+    }
     mutex_unlock(&vr->mutex);
    // DBG(printk("rxintr=%d\n", vPT_rx_interrupts_enabled(net)));
 }
