@@ -467,17 +467,22 @@ static void vPT_print_configuration(struct vPT_net * net)
 
 }
 
-int vPT_netmap_poll_start(struct vPT_poll *poll, struct file *file,
+int vPT_netmap_poll_start(struct vPT_net *net, struct file *file,
         struct netmap_passthrough_adapter *pt_na)
 {
     int ret = 0;
 
-    if (poll->wqh)
-        return 0;
+    if (!net->tx_poll.wqh) {
+        poll_wait(file, &pt_na->parent->tx_rings[0].si, &net->tx_poll.table);
+        vPT_poll_queue(&net->tx_poll);
+        printk("%p.poll_start()\n", &net->tx_poll);
+    }
 
-    poll_wait(file, &pt_na->up.tx_rings[0].si, &poll->table);
-    //XXX vPT_poll_queue(poll);
-    printk("%p.poll_start()\n", poll);
+    if (!net->rx_poll.wqh) {
+        poll_wait(file, &pt_na->parent->rx_rings[0].si, &net->rx_poll.table);
+        vPT_poll_queue(&net->rx_poll);
+        printk("%p.poll_start()\n", &net->rx_poll);
+    }
 
     return ret;
 }
@@ -503,9 +508,7 @@ static int vPT_configure(struct vPT_net * net, struct netmap_passthrough_adapter
         return r;
     if (net->rx_ring.handle_kick && (r = vPT_poll_start(&net->rx_ring.poll, net->rx_ring.kick)))
         return r;
-    if (net->nm_f && (r = vPT_netmap_poll_start(&net->tx_poll, net->nm_f, pt_na)))
-        return r;
-    if (net->nm_f && (r = vPT_netmap_poll_start(&net->rx_poll, net->nm_f, pt_na)))
+    if (net->nm_f && (r = vPT_netmap_poll_start(net, net->nm_f, pt_na)))
         return r;
 
     return 0;
@@ -735,6 +738,37 @@ done:
     return error;
 }
 
+static int
+netmap_pt_notify(struct netmap_adapter *na, u_int n_ring,
+        enum txrx tx, int flags)
+{
+    struct netmap_kring *kring;
+
+    if (tx == NR_TX) {
+        kring = na->tx_rings + n_ring;
+        mb();
+        //wake_up(&kring->si);
+        wake_up_interruptible_poll(&kring->si, POLLOUT |
+                POLLWRNORM | POLLWRBAND);
+        /* optimization: avoid a wake up on the global
+         * queue if nobody has registered for more
+         * than one ring
+         */
+        if (na->tx_si_users > 0)
+            OS_selwakeup(&na->tx_si, PI_NET);
+    } else {
+        kring = na->rx_rings + n_ring;
+        mb();
+        //wake_up(&kring->si);
+        wake_up_interruptible_poll(&kring->si, POLLIN |
+                POLLRDNORM | POLLRDBAND);
+        /* optimization: same as above */
+        if (na->rx_si_users > 0)
+            OS_selwakeup(&na->rx_si, PI_NET);
+    }
+    return 0;
+}
+
 //XXX maybe is unnecessary redefine the *xsync
 /* nm_txsync callback for passthrough */
 static int
@@ -934,6 +968,10 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     pt_na->up.nm_krings_delete = netmap_pt_krings_delete;
     pt_na->up.nm_config = netmap_pt_config;
 
+    pt_na->up.nm_notify = netmap_pt_notify;
+    //XXX restore
+    parent->nm_notify = netmap_pt_notify;
+
     //XXX needed?
     //pt_na->up.nm_bdg_attach = netmap_pt_bdg_attach;
     //pt_na->up.nm_bdg_ctl = netmap_pt_bdg_ctl;
@@ -953,10 +991,12 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     nmr->nr_rx_rings = pt_na->up.num_rx_rings;
     nmr->nr_tx_slots = pt_na->up.num_tx_desc;
     nmr->nr_rx_slots = pt_na->up.num_rx_desc;
-    D("passthrough full ok");
 
     pt_na->up.nm_mem = parent->nm_mem;
 
+    strncpy(pt_na->up.name, parent->name, sizeof(pt_na->up.name));
+    strcat(pt_na->up.name, "-PT");
+    D("passthrough full ok");
     return 0;
 
 put_out:
