@@ -1454,7 +1454,7 @@ nm_txsync_prologue(struct netmap_kring *kring, uint32_t head, uint32_t cur, uint
 	ND(5, "%s kcur %d ktail %d head %d cur %d tail %d",
 		kring->name,
 		kring->nr_hwcur, kring->nr_hwtail,
-		head, cur, *tail);
+		head, cur, tail ? *tail : 0);
 #if 1 /* kernel sanity checks; but we can trust the kring. */
 	if (kring->nr_hwcur >= n || kring->rhead >= n ||
 	    kring->rtail >= n ||  kring->nr_hwtail >= n)
@@ -1503,7 +1503,7 @@ nm_txsync_prologue(struct netmap_kring *kring, uint32_t head, uint32_t cur, uint
 error:
 	RD(5, "%s kring error: head %d cur %d tail %d rhead %d rcur %d rtail %d hwcur %d hwtail %d",
 		kring->name,
-		head, cur, *tail,
+		head, cur, tail ? *tail : 0,
 		kring->rhead, kring->rcur, kring->rtail,
 		kring->nr_hwcur, kring->nr_hwtail);
 	return n;
@@ -1530,7 +1530,7 @@ nm_rxsync_prologue(struct netmap_kring *kring, uint32_t head, uint32_t cur, uint
 	ND(5,"%s kc %d kt %d h %d c %d t %d",
 		kring->name,
 		kring->nr_hwcur, kring->nr_hwtail,
-		head, cur, tail);
+		head, cur, tail ? *tail : 0);
 	/*
 	 * Before storing the new values, we should check they do not
 	 * move backwards. However:
@@ -1579,7 +1579,7 @@ error:
 	RD(5, "kring error: hwcur %d rcur %d hwtail %d head %d cur %d tail %d",
 		kring->nr_hwcur,
 		kring->rcur, kring->nr_hwtail,
-		kring->rhead, kring->rcur, *tail);
+		kring->rhead, kring->rcur, tail ? *tail : 0);
 	return n;
 }
 
