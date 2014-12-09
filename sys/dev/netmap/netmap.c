@@ -1445,19 +1445,16 @@ out:
  *
  * hwcur, rhead, rtail and hwtail are reliable
  */
-static u_int
-nm_txsync_prologue(struct netmap_kring *kring)
+u_int
+nm_txsync_prologue(struct netmap_kring *kring, uint32_t head, uint32_t cur, uint32_t *tail)
 {
 #define NM_ASSERT(t) if (t) { D("fail " #t); goto error; }
-	struct netmap_ring *ring = kring->ring;
-	u_int head = ring->head; /* read only once */
-	u_int cur = ring->cur; /* read only once */
 	u_int n = kring->nkr_num_slots;
 
 	ND(5, "%s kcur %d ktail %d head %d cur %d tail %d",
 		kring->name,
 		kring->nr_hwcur, kring->nr_hwtail,
-		ring->head, ring->cur, ring->tail);
+		head, cur, *tail);
 #if 1 /* kernel sanity checks; but we can trust the kring. */
 	if (kring->nr_hwcur >= n || kring->rhead >= n ||
 	    kring->rtail >= n ||  kring->nr_hwtail >= n)
@@ -1494,10 +1491,10 @@ nm_txsync_prologue(struct netmap_kring *kring)
 			NM_ASSERT(cur > kring->rtail && cur < head);
 		}
 	}
-	if (ring->tail != kring->rtail) {
+	if (tail && *tail != kring->rtail) {
 		RD(5, "tail overwritten was %d need %d",
-			ring->tail, kring->rtail);
-		ring->tail = kring->rtail;
+			*tail, kring->rtail);
+		*tail = kring->rtail;
 	}
 	kring->rhead = head;
 	kring->rcur = cur;
@@ -1506,7 +1503,7 @@ nm_txsync_prologue(struct netmap_kring *kring)
 error:
 	RD(5, "%s kring error: head %d cur %d tail %d rhead %d rcur %d rtail %d hwcur %d hwtail %d",
 		kring->name,
-		head, cur, ring->tail,
+		head, cur, *tail,
 		kring->rhead, kring->rcur, kring->rtail,
 		kring->nr_hwcur, kring->nr_hwtail);
 	return n;
@@ -1525,17 +1522,15 @@ error:
  * hwcur and hwtail are reliable.
  *
  */
-static u_int
-nm_rxsync_prologue(struct netmap_kring *kring)
+u_int
+nm_rxsync_prologue(struct netmap_kring *kring, uint32_t head, uint32_t cur, uint32_t *tail)
 {
-	struct netmap_ring *ring = kring->ring;
 	uint32_t const n = kring->nkr_num_slots;
-	uint32_t head, cur;
 
 	ND(5,"%s kc %d kt %d h %d c %d t %d",
 		kring->name,
 		kring->nr_hwcur, kring->nr_hwtail,
-		ring->head, ring->cur, ring->tail);
+		head, cur, tail);
 	/*
 	 * Before storing the new values, we should check they do not
 	 * move backwards. However:
@@ -1543,8 +1538,8 @@ nm_rxsync_prologue(struct netmap_kring *kring)
 	 * - cur could in principle go back, however it does not matter
 	 *   because we are processing a brand new rxsync()
 	 */
-	cur = kring->rcur = ring->cur;	/* read only once */
-	head = kring->rhead = ring->head;	/* read only once */
+	kring->rcur = cur;	/* read only once */
+	kring->rhead = head;	/* read only once */
 #if 1 /* kernel sanity checks */
 	if (kring->nr_hwcur >= n || kring->nr_hwtail >= n)
 		goto error;
@@ -1572,11 +1567,11 @@ nm_rxsync_prologue(struct netmap_kring *kring)
 				goto error;
 		}
 	}
-	if (ring->tail != kring->rtail) {
+	if (tail && *tail != kring->rtail) {
 		RD(5, "%s tail overwritten was %d need %d",
 			kring->name,
-			ring->tail, kring->rtail);
-		ring->tail = kring->rtail;
+			*tail, kring->rtail);
+		*tail = kring->rtail;
 	}
 	return head;
 
@@ -1584,7 +1579,7 @@ error:
 	RD(5, "kring error: hwcur %d rcur %d hwtail %d head %d cur %d tail %d",
 		kring->nr_hwcur,
 		kring->rcur, kring->nr_hwtail,
-		kring->rhead, kring->rcur, ring->tail);
+		kring->rhead, kring->rcur, *tail);
 	return n;
 }
 
@@ -2270,7 +2265,8 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 					D("pre txsync ring %d cur %d hwcur %d",
 					    i, kring->ring->cur,
 					    kring->nr_hwcur);
-				if (nm_txsync_prologue(kring) >= kring->nkr_num_slots) {
+				if (nm_txsync_prologue(kring, kring->ring->head, kring->ring->cur,
+                                            &kring->ring->tail) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
 				} else if (kring->nm_sync(kring, NAF_FORCE_RECLAIM) == 0) {
 					nm_txsync_finalize(kring);
@@ -2280,7 +2276,8 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 					    i, kring->ring->cur,
 					    kring->nr_hwcur);
 			} else {
-				if (nm_rxsync_prologue(kring) >= kring->nkr_num_slots) {
+				if (nm_rxsync_prologue(kring, kring->ring->head, kring->ring->cur,
+                                            &kring->ring->tail) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
 				} else if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
 					nm_rxsync_finalize(kring);
@@ -2473,7 +2470,8 @@ flush_tx:
 					    priv, i);
 				continue;
 			}
-			if (nm_txsync_prologue(kring) >= kring->nkr_num_slots) {
+			if (nm_txsync_prologue(kring, kring->ring->head, kring->ring->cur,
+                                    &kring->ring->tail) >= kring->nkr_num_slots) {
 				netmap_ring_reinit(kring);
 				revents |= POLLERR;
 			} else {
@@ -2525,7 +2523,8 @@ do_retry_rx:
 				continue;
 			}
 
-			if (nm_rxsync_prologue(kring) >= kring->nkr_num_slots) {
+			if (nm_rxsync_prologue(kring, kring->ring->head, kring->ring->cur,
+                                    &kring->ring->tail) >= kring->nkr_num_slots) {
 				netmap_ring_reinit(kring);
 				revents |= POLLERR;
 			}
