@@ -314,6 +314,20 @@ static void handle_rx(struct vPT_net *net)
 
         CSB_READ(net->csb, rx_ring.hwtail, pre_tail);
 
+#if 1
+        /* No space to receive */
+        if (nm_kring_need_kick(kring)) {
+            /* Reenable notifications. */
+            vPT_set_rxkick(net, true);
+            /* Doublecheck. */
+            mb();
+            CSB_READ(net->csb, rx_ring.cur, kring->rcur);
+            if (unlikely(!nm_kring_need_kick(kring))) {
+                vPT_set_rxkick(net, false);
+            } else
+                break;
+        }
+#endif
         if (netmap_verbose & NM_VERB_RXSYNC)
             nm_kring_dump("pre rxsync", kring);
 
@@ -332,21 +346,6 @@ static void handle_rx(struct vPT_net *net)
 
         if (netmap_verbose & NM_VERB_RXSYNC)
             nm_kring_dump("post rxsync", kring);
-
-#if 1
-        /* No space to receive */
-        if (nm_kring_need_kick(kring)) {
-            /* Reenable notifications. */
-            vPT_set_rxkick(net, true);
-            /* Doublecheck. */
-            mb();
-            CSB_READ(net->csb, rx_ring.cur, kring->rcur);
-            if (unlikely(!nm_kring_need_kick(kring))) {
-                vPT_set_rxkick(net, false);
-            } else
-                break;
-        }
-#endif
 
         /* No packets received */
         if (pre_tail == ACCESS_ONCE(kring->nr_hwtail)) {
