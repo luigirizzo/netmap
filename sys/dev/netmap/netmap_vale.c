@@ -1663,23 +1663,23 @@ netmap_vp_txsync(struct netmap_kring *kring, int flags)
 		(struct netmap_vp_adapter *)kring->na;
 	u_int done;
 	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const cur = kring->rcur;
+	u_int const head = kring->rhead;
 
 	if (bridge_batch <= 0) { /* testing only */
-		done = cur; // used all
+		done = head; // used all
 		goto done;
 	}
 	if (!na->na_bdg) {
-		done = cur;
+		done = head;
 		goto done;
 	}
 	if (bridge_batch > NM_BDG_BATCH)
 		bridge_batch = NM_BDG_BATCH;
 
-	done = nm_bdg_preflush(kring, cur);
+	done = nm_bdg_preflush(kring, head);
 done:
-	if (done != cur)
-		D("early break at %d/ %d, tail %d", done, cur, kring->nr_hwtail);
+	if (done != head)
+		D("early break at %d/ %d, tail %d", done, head, kring->nr_hwtail);
 	/*
 	 * packets between 'done' and 'cur' are left unsent.
 	 */
