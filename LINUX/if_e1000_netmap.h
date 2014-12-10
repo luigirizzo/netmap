@@ -373,21 +373,21 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 
                 csb->guest_need_txkick = 0;
 
-		csb->tx_ring.head = kring->rhead;
-		csb->tx_ring.cur = kring->rcur;
-		csb->tx_ring.sync_flags = flags;
 		mb();
+		csb->tx_ring.cur = kring->rcur;
+		csb->tx_ring.head = kring->rhead;
+		csb->tx_ring.sync_flags = flags;
 
-		ND(1, "TX - CSB: head:%u cur:%u - KRING: head:%u cur:%u",
+		ND("TX - CSB: head:%u cur:%u - KRING: head:%u cur:%u",
 				csb->tx_ring.head, csb->tx_ring.cur, kring->rhead, kring->rcur);
                 if (csb->host_need_txkick) {
                     IFRATE(adapter->rate_ctx.new.tx_kick++);
 		    writel(0, adapter->hw.hw_addr + txr->tdt);
                 }
 
-		mb();
 		kring->nr_hwcur = csb->tx_ring.hwcur; ///XXX: useless
 		kring->nr_hwtail = csb->tx_ring.hwtail;
+		mb();
 
                 /* Empty ring */
                 if (kring->rcur == kring->nr_hwtail) {
@@ -447,19 +447,19 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 	{
                 csb->guest_need_rxkick = 0;
 
-		csb->rx_ring.head = kring->rhead;
-		csb->rx_ring.cur = kring->rcur;
-		csb->rx_ring.sync_flags = flags;
 		mb();
+		csb->rx_ring.cur = kring->rcur;
+		csb->rx_ring.head = kring->rhead;
+		csb->rx_ring.sync_flags = flags;
 
                 if (csb->host_need_rxkick) {
                     IFRATE(adapter->rate_ctx.new.rx_kick++);
 		    writel(0, hw->hw_addr + rxr->rdt);
                 }
 
-		mb();
 		kring->nr_hwcur = csb->rx_ring.hwcur;
 		kring->nr_hwtail = csb->rx_ring.hwtail;
+		mb();
 #if 1
                 /* empty ring */
                 if (kring->rcur == kring->nr_hwtail) {
