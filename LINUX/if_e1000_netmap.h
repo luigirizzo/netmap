@@ -301,13 +301,8 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		rxr = &adapter->rx_ring[r];
 
 		for (i = 0; i < rxr->count; i++) {
-			// XXX the skb check and cleanup can go away
-			struct e1000_buffer *bi = &rxr->buffer_info[i];
 			si = netmap_idx_n2k(&na->rx_rings[r], i);
 			PNMB(na, slot + si, &paddr);
-			if (bi->skb)
-				D("rx buf %d was set", i);
-			bi->skb = NULL;
 			// netmap_load_map(...)
 			E1000_RX_DESC(*rxr, i)->buffer_addr = htole64(paddr);
 		}
