@@ -12,6 +12,8 @@
 
 #ifdef WITH_PASSTHROUGH
 
+#define NM_PT_NOWORK_LIMIT 100
+
 //#define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
 #define DBG(x) x
@@ -136,18 +138,18 @@ static inline bool vPT_tx_interrupts_enabled(struct vPT_net * net)
 
 /*
  * We needs kick from the guest when:
- * - TX: tail == cur - 1
+ * - TX: tail == head - 1
  *       ring is empty
  *       We need to wait that the guest puts some packets in the ring and then it notifies us.
  *
- * - RX: tail == cur - 1
+ * - RX: tail == head - 1
  *       ring is full
  *       We need to wait that the guest gets some packets from the ring and then it notifies us.
  */
 static inline int
-nm_kring_need_kick(struct netmap_kring *kring, uint32_t g_cur)
+nm_kring_need_kick(struct netmap_kring *kring, uint32_t g_head)
 {
-    return (ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_cur, kring->nkr_num_slots - 1));
+    return (ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_head, kring->nkr_num_slots - 1));
 }
 
 /* Expects to be always run from workqueue - which acts as
@@ -159,6 +161,7 @@ static void handle_tx(struct vPT_net *net)
     uint32_t g_cur, g_head, g_flags; /* guest variables */
     int error = 0;
     bool work = false;
+    int cicle_nowork = 0;
     int n_slots;
 
     mutex_lock(&vr->mutex);
@@ -179,27 +182,13 @@ static void handle_tx(struct vPT_net *net)
     /* Disable notifications. */
     vPT_set_txkick(net, false);
 
-    for (;;) {
-        // prologue
-        CSB_READ(net->csb, tx_ring.head, g_head);
-        CSB_READ(net->csb, tx_ring.cur, g_cur);
-        CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
-        mb(); //XXX: or smp_mb() ?
+    // prologue
+    CSB_READ(net->csb, tx_ring.head, g_head);
+    CSB_READ(net->csb, tx_ring.cur, g_cur);
+    CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
+    mb(); //XXX: or smp_mb() ?
 
-        /* Nothing to transmit */
-        if (nm_kring_need_kick(kring, g_cur)) {
-            /* Reenable notifications. */
-            vPT_set_txkick(net, true);
-            /* Doublecheck. */
-            CSB_READ(net->csb, tx_ring.head, g_head);
-            CSB_READ(net->csb, tx_ring.cur, g_cur);
-            mb();
-            if (unlikely(!nm_kring_need_kick(kring, g_cur))) {
-                vPT_set_txkick(net, false);
-                continue;
-            }
-            break;
-        }
+    for (;;) {
 
         if (nm_txsync_prologue(kring, g_head, g_cur, NULL)
                 >= kring->nkr_num_slots) {
@@ -209,7 +198,6 @@ static void handle_tx(struct vPT_net *net)
             vPT_set_txkick(net, true);
             break;
         }
-
 
         n_slots = kring->nr_hwtail;
 
@@ -221,16 +209,20 @@ static void handle_tx(struct vPT_net *net)
             //nm_txsync_finalize(kring);
             mb();
             CSB_WRITE(net->csb, tx_ring.hwcur, kring->nr_hwcur);
-            CSB_WRITE(net->csb, tx_ring.hwtail, kring->nr_hwtail);
-            kring->rtail = kring->nr_hwtail;
+            CSB_WRITE(net->csb, tx_ring.hwtail, ACCESS_ONCE(kring->nr_hwtail));
+            if (kring->rtail != kring->nr_hwtail) {
+                kring->rtail = kring->nr_hwtail;
+                work = true;
+                cicle_nowork = 0;
+            } else {
+                cicle_nowork++;
+            }
         } else {
             /* Reenable notifications. */
             vPT_set_txkick(net, true);
             D("nm_sync error");
             goto leave_kr_put;
         }
-        work = true;
-
 #ifdef DEBUG
         n_slots = kring->nr_hwtail - n_slots;
 
@@ -250,10 +242,37 @@ static void handle_tx(struct vPT_net *net)
         if (netmap_verbose & NM_VERB_TXSYNC)
             nm_kring_dump("post txsync", kring);
 
+#if 1
         if (work && vPT_tx_interrupts_enabled(net)) {
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.htxk++);
             work = false;
+        }
+#endif
+        // prologue
+        CSB_READ(net->csb, tx_ring.head, g_head);
+        CSB_READ(net->csb, tx_ring.cur, g_cur);
+        CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
+        mb(); //XXX: or smp_mb() ?
+
+        /* Nothing to transmit */
+        if (nm_kring_need_kick(kring, g_head)) {
+            /* Reenable notifications. */
+            vPT_set_txkick(net, true);
+            /* Doublecheck. */
+            CSB_READ(net->csb, tx_ring.head, g_head);
+            CSB_READ(net->csb, tx_ring.cur, g_cur);
+            mb();
+            if (unlikely(!nm_kring_need_kick(kring, g_head))) {
+                vPT_set_txkick(net, false);
+            } else
+                break;
+        }
+
+        /* ring full */
+        if (kring->nr_hwtail == kring->rhead || cicle_nowork >= NM_PT_NOWORK_LIMIT) {
+            RD(1, "cicle_nowork: %d", cicle_nowork);
+            break;
         }
     }
 
@@ -295,9 +314,8 @@ static void handle_rx(struct vPT_net *net)
     struct netmap_kring *kring;
     uint32_t g_cur, g_head, g_flags; /* guest variables */
     int error = 0;
+    int cicle_nowork = 0;
     bool work = false;
-    uint32_t pre_tail;
-    int cicle = 0;
 
     mutex_lock(&vr->mutex);
 
@@ -317,31 +335,14 @@ static void handle_rx(struct vPT_net *net)
     /* Disable notifications. */
     vPT_set_rxkick(net, false);
 
+    // prologue
+    mb();
+    CSB_READ(net->csb, rx_ring.head, g_head);
+    CSB_READ(net->csb, rx_ring.cur, g_cur);
+    CSB_READ(net->csb, rx_ring.sync_flags, g_flags);
+
     for (;;) {
-        // prologue
-        mb();
-        CSB_READ(net->csb, rx_ring.head, g_head);
-        CSB_READ(net->csb, rx_ring.cur, g_cur);
-        CSB_READ(net->csb, rx_ring.sync_flags, g_flags);
 
-        CSB_READ(net->csb, rx_ring.hwtail, pre_tail);
-
-
-#if 1
-        /* No space to receive */
-        if (nm_kring_need_kick(kring, g_cur)) {
-            /* Reenable notifications. */
-            vPT_set_rxkick(net, true);
-            /* Doublecheck. */
-            CSB_READ(net->csb, rx_ring.head, g_head);
-            CSB_READ(net->csb, rx_ring.cur, g_cur);
-            mb();
-            if (unlikely(!nm_kring_need_kick(kring, g_cur))) {
-                vPT_set_rxkick(net, false);
-            } else
-                break;
-        }
-#endif
         if (nm_rxsync_prologue(kring, g_head, g_cur, NULL)
                 >= kring->nkr_num_slots) {
             netmap_ring_reinit(kring);
@@ -359,7 +360,13 @@ static void handle_rx(struct vPT_net *net)
             CSB_WRITE(net->csb, rx_ring.hwcur, kring->nr_hwcur);
             CSB_WRITE(net->csb, rx_ring.hwtail, ACCESS_ONCE(kring->nr_hwtail));
             mb();
-            kring->rtail = kring->nr_hwtail;
+            if (kring->rtail != kring->nr_hwtail) {
+                kring->rtail = kring->nr_hwtail;
+                work = true;
+                cicle_nowork = 0;
+            } else {
+                cicle_nowork++;
+            }
         } else {
             /* Reenable notifications. */
             vPT_set_rxkick(net, true);
@@ -370,11 +377,37 @@ static void handle_rx(struct vPT_net *net)
         if (netmap_verbose & NM_VERB_RXSYNC)
             nm_kring_dump("post rxsync", kring);
 
-        /* No packets received */
-        if (pre_tail == ACCESS_ONCE(kring->nr_hwtail)) {
+        if (work && vPT_rx_interrupts_enabled(net)) {
+            eventfd_signal(vr->call_ctx, 1);
+            IFRATE(net->rate_ctx.new.hrxk++);
+            work = false;
+        }
+#if 1
+        // prologue
+        mb();
+        CSB_READ(net->csb, rx_ring.head, g_head);
+        CSB_READ(net->csb, rx_ring.cur, g_cur);
+        CSB_READ(net->csb, rx_ring.sync_flags, g_flags);
+        /* No space to receive */
+        if (nm_kring_need_kick(kring, g_head)) {
+            /* Reenable notifications. */
+            vPT_set_rxkick(net, true);
+            /* Doublecheck. */
+            CSB_READ(net->csb, rx_ring.head, g_head);
+            CSB_READ(net->csb, rx_ring.cur, g_cur);
+            mb();
+            if (unlikely(!nm_kring_need_kick(kring, g_head))) {
+                vPT_set_rxkick(net, false);
+            } else
+                break;
+        }
+#endif
+        /* ring full */
+        if (kring->nr_hwtail == kring->rhead || cicle_nowork >= NM_PT_NOWORK_LIMIT) {
+            RD(1, "cicle_nowork: %d", cicle_nowork);
             break;
         }
-        work = true;
+
     }
 
 leave_kr_put:
