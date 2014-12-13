@@ -380,7 +380,7 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		ND("TX - CSB: head:%u cur:%u - KRING: head:%u cur:%u",
 				csb->tx_ring.head, csb->tx_ring.cur, kring->rhead, kring->rcur);
-                if (csb->host_need_txkick) {
+                if (csb->host_need_txkick || (flags & NAF_FORCE_RECLAIM)) {
                     IFRATE(adapter->rate_ctx.new.tx_kick++);
 		    writel(0, adapter->hw.hw_addr + txr->tdt);
                 }
@@ -452,7 +452,7 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 		csb->rx_ring.head = kring->rhead;
 		csb->rx_ring.sync_flags = flags;
 
-                if (csb->host_need_rxkick) {
+                if (csb->host_need_rxkick || (flags & NAF_FORCE_RECLAIM)) {
                     IFRATE(adapter->rate_ctx.new.rx_kick++);
 		    writel(0, hw->hw_addr + rxr->rdt);
                 }
