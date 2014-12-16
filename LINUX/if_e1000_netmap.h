@@ -603,7 +603,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_register = e1000_paravirt_netmap_reg;
 	na.nm_txsync = e1000_paravirt_netmap_txsync;
 	na.nm_rxsync = e1000_paravirt_netmap_rxsync;
-	na.nm_bdg_attach = e1000_paravirt_netmap_bdg_attach;
+	//na.nm_bdg_attach = e1000_paravirt_netmap_bdg_attach; /* XXX: maybe only for PT BASE */
 	netmap_paravirt_attach(&na, &e1000_netmap_paravirt_ops);
 #else
 	netmap_attach(&na);

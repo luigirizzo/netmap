@@ -1935,6 +1935,7 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 	if (!nm_netmap_on(na))
 		return 0;
 
+
 	bkring = &vpna->up.tx_rings[ring_nr];
 
 	/* make sure the ring is not disabled */
@@ -2308,6 +2309,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->nm_notify = netmap_bwrap_notify;
 	na->nm_bdg_ctl = netmap_bwrap_bdg_ctl;
 	na->pdev = hwna->pdev;
+	na->nm_mem = hwna->nm_mem;
 	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
 
 	bna->hwna = hwna;
@@ -2355,7 +2357,6 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	 */
 	na->ifp = hwna->ifp;
 	hwna->na_flags |= NAF_BUSY;
-	na->nm_mem = hwna->nm_mem;
 	return 0;
 
 err_free:
