@@ -1923,7 +1923,7 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 		csb->rx_ring.sync_flags = 0;
 	}
 
-	error = pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
+	//error = pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
 
 	return error;
 }
@@ -1935,7 +1935,7 @@ netmap_mem_paravirt_rings_delete(struct netmap_adapter *na)
 	struct ifnet *ifp = pv->ifp;
 
 	D("");
-	pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSDELETE);
+	//pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSDELETE);
 }
 
 

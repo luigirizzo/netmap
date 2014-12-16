@@ -491,15 +491,19 @@ static int
 e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct e1000_adapter *adapter = netdev_priv(na->ifp);
+	int ret = 0;
 
 	if (onoff) {
 		na->na_flags |= NAF_NETMAP_ON;
 		adapter->passthrough = 1;
+		ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 		adapter->passthrough = 0;
+		ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
-	return (0);
+
+	return ret;
 }
 
 static int
