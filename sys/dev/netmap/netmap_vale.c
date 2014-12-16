@@ -2166,7 +2166,7 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 
 	if (!nm_netmap_on(hwna))
 		return 0;
-	D("sending to %s", hw_kring->name);
+	ND("sending to %s", hw_kring->name);
 	/* first step: simulate a user wakeup on the rx ring */
 	netmap_vp_rxsync(kring, flags);
 	ND("%s[%d] PRE rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",
