@@ -446,38 +446,36 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
 	{
-                csb->guest_need_rxkick = 0;
+		int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
-		mb();
-		csb->rx_ring.cur = kring->rcur;
-		csb->rx_ring.head = kring->rhead;
-		csb->rx_ring.sync_flags = flags;
+		/*
+		 * First part: import newly received packets.
+		 */
+		if (netmap_no_pendintr || force_update) {
+			//csb->guest_need_rxkick = 0;
+			kring->nr_hwtail = csb->rx_ring.hwtail;
+			kring->nr_kflags &= ~NKR_PENDINTR;
+			//csb->guest_need_rxkick = 1;
+		}
 
-                if (csb->host_need_rxkick || (flags & NAF_FORCE_RECLAIM)) {
-                    IFRATE(adapter->rate_ctx.new.rx_kick++);
-		    writel(0, hw->hw_addr + rxr->rdt);
-                }
 
+		/*
+		 * Second part: skip past packets that userspace has released.
+		 */
 		kring->nr_hwcur = csb->rx_ring.hwcur;
-		kring->nr_hwtail = csb->rx_ring.hwtail;
-		mb();
+		if (kring->rhead != kring->nr_hwcur) {
+			csb->rx_ring.cur = kring->rcur;
+			csb->rx_ring.head = kring->rhead;
+			csb->rx_ring.sync_flags = flags;
+
+			if (csb->host_need_rxkick || (flags & NAF_FORCE_RECLAIM)) {
+				IFRATE(adapter->rate_ctx.new.rx_kick++);
+				writel(0, hw->hw_addr + rxr->rdt);
+			}
+		}
 
 		ND("RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
-		    csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail, kring->rhead, kring->rcur);
-#if 1
-                /* empty ring */
-                if (kring->rcur == kring->nr_hwtail) {
-                    csb->guest_need_rxkick = 1;
-                    mb();
-                    /* Double check */
-                    kring->nr_hwcur = csb->rx_ring.hwcur;
-                    kring->nr_hwtail = csb->rx_ring.hwtail;
-                    if (unlikely(kring->rcur != kring->nr_hwtail)) {
-                        csb->guest_need_rxkick = 0;
-                        mb();
-                    }
-                }
-#endif
+			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail, kring->rhead, kring->rcur);
 	} else {
 		ew32(PTCTL, NET_PARAVIRT_PTCTL_RXSYNC);
 		kring->rcur = kring->ring->cur;
@@ -490,6 +488,33 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	return 0;
 }
+
+inline bool
+e1000_paravirt_rx_disable_kick(struct SOFTC_T *adapter, int ring)
+{
+    struct ifnet *ifp = adapter->netdev;
+    struct netmap_adapter* na = NA(ifp);
+    struct netmap_kring *kring = na->rx_rings + ring;
+    struct paravirt_csb *csb = adapter->csb;
+
+    /* empty ring */
+    if (csb->rx_ring.hwtail == kring->nr_hwtail) {
+        csb->guest_need_rxkick = 1;
+        mb();
+        /* Double check */
+        if (csb->rx_ring.hwtail != kring->nr_hwtail) {
+            csb->guest_need_rxkick = 0;
+            mb();
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+
+
+
 
 static int
 e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)

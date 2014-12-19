@@ -12,7 +12,7 @@
 
 #ifdef WITH_PASSTHROUGH
 
-#define NM_PT_NOWORK_LIMIT 100
+#define NM_PT_NOWORK_LIMIT 2
 
 //#define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
@@ -304,6 +304,12 @@ static inline bool vPT_rx_interrupts_enabled(struct vPT_net * net)
 
     return v;
 }
+static inline void vPT_disable_guest_rxkick(struct vPT_net *net)
+{
+    uint32_t v = 0;
+
+    CSB_WRITE(net->csb, guest_need_rxkick, v);
+}
 
 
 /* Expects to be always run from workqueue - which acts as
@@ -381,6 +387,7 @@ static void handle_rx(struct vPT_net *net)
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.hrxk++);
             work = false;
+            //vPT_disable_guest_rxkick(net);
         }
 #if 1
         // prologue
@@ -417,6 +424,7 @@ leave:
     if (work && vPT_rx_interrupts_enabled(net)) {
         eventfd_signal(vr->call_ctx, 1);
         IFRATE(net->rate_ctx.new.hrxk++);
+        //vPT_disable_guest_rxkick(net);
     }
     mutex_unlock(&vr->mutex);
    // DBG(printk("rxintr=%d\n", vPT_rx_interrupts_enabled(net)));
