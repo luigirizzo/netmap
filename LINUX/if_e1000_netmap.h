@@ -468,7 +468,7 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 			csb->rx_ring.head = kring->rhead;
 			csb->rx_ring.sync_flags = flags;
 
-			if (csb->host_need_rxkick || (flags & NAF_FORCE_RECLAIM)) {
+			if (csb->host_need_rxkick) {
 				IFRATE(adapter->rate_ctx.new.rx_kick++);
 				writel(0, hw->hw_addr + rxr->rdt);
 			}
