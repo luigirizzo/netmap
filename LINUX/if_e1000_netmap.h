@@ -369,53 +369,41 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 	//XXX-ste: temporary - maybe is better to change the txsync pointer func
 	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
 	{
-		//uint32_t pre_tail = kring->nr_hwtail;
+		bool send_kick = false;
+		csb->guest_need_txkick = 0;
 
-                csb->guest_need_txkick = 0;
-
-		mb();
-		csb->tx_ring.cur = kring->rcur;
-		csb->tx_ring.head = kring->rhead;
-		csb->tx_ring.sync_flags = flags;
-
-                if (csb->host_need_txkick || (flags & NAF_FORCE_RECLAIM)) {
-                    IFRATE(adapter->rate_ctx.new.tx_kick++);
-		    writel(0, adapter->hw.hw_addr + txr->tdt);
+		/*
+		 * First part: process new packets to send.
+		 */
+		kring->nr_hwcur = csb->tx_ring.hwcur;
+		if (kring->rhead != kring->nr_hwcur) {
+			csb->tx_ring.cur = kring->rcur;
+			csb->tx_ring.head = kring->rhead;
+			send_kick = true;
                 }
 
-		kring->nr_hwcur = csb->tx_ring.hwcur; ///XXX: useless
+
+		if ((send_kick && csb->host_need_txkick) || (flags & NAF_FORCE_RECLAIM)) {
+			csb->tx_ring.sync_flags = flags;
+			IFRATE(adapter->rate_ctx.new.tx_kick++);
+			writel(0, adapter->hw.hw_addr + txr->tdt);
+		}
+
+		/*
+		 * Second part: reclaim buffers for completed transmissions.
+		 */
 		kring->nr_hwtail = csb->tx_ring.hwtail;
-		mb();
+		if (nm_kr_txempty(kring) ) {
+			csb->guest_need_txkick = 1;
+			kring->nr_hwtail = csb->tx_ring.hwtail;
+			if (!nm_kr_txempty(kring)) {
+				csb->guest_need_txkick = 0;
+			}
+		}
+
 
 		ND("TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
 		    csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail, kring->rhead, kring->rcur);
-
-                /* Empty ring */
-                if (kring->rcur == kring->nr_hwtail) {
-                    csb->guest_need_txkick = 1;
-                    mb();
-                    /* Double check */
-                    kring->nr_hwcur = csb->tx_ring.hwcur;
-                    kring->nr_hwtail = csb->tx_ring.hwtail;
-                    if (unlikely(kring->rcur != kring->nr_hwtail)) {
-                        csb->guest_need_txkick = 0;
-                        mb();
-                    }
-                }
-
-#if 0
-		if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
-			int i = 0;
-			//TODO: or wait until kring is empty
-			while (pre_tail == kring->nr_hwtail /*|| i < 100 */) {
-				mb();
-				//udelay(1);
-				kring->nr_hwcur = csb->tx_ring.hwcur; ///XXX: useless
-				kring->nr_hwtail = csb->tx_ring.hwtail;
-				i++;
-			}
-		}
-#endif
 	} else {
 		ew32(PTCTL, NET_PARAVIRT_PTCTL_TXSYNC);
 		kring->rcur = kring->ring->cur;

@@ -12,7 +12,7 @@
 
 #ifdef WITH_PASSTHROUGH
 
-#define NM_PT_NOWORK_LIMIT 2
+#define NM_PT_NOWORK_LIMIT 5
 
 //#define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
@@ -253,24 +253,23 @@ static void handle_tx(struct vPT_net *net)
         CSB_READ(net->csb, tx_ring.head, g_head);
         CSB_READ(net->csb, tx_ring.cur, g_cur);
         CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
-        mb(); //XXX: or smp_mb() ?
 
         /* Nothing to transmit */
-        if (nm_kring_need_kick(kring, g_head)) {
+        if ((cicle_nowork >= NM_PT_NOWORK_LIMIT) && nm_kring_need_kick(kring, g_head)) {
             /* Reenable notifications. */
             vPT_set_txkick(net, true);
             /* Doublecheck. */
             CSB_READ(net->csb, tx_ring.head, g_head);
             CSB_READ(net->csb, tx_ring.cur, g_cur);
-            mb();
             if (unlikely(!nm_kring_need_kick(kring, g_head))) {
                 vPT_set_txkick(net, false);
+                cicle_nowork = 0;
             } else
                 break;
         }
 
         /* ring full */
-        if (kring->nr_hwtail == kring->rhead || cicle_nowork >= NM_PT_NOWORK_LIMIT) {
+        if (kring->nr_hwtail == kring->rhead) {
             RD(1, "cicle_nowork: %d", cicle_nowork);
             break;
         }
