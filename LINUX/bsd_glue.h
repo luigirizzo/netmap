@@ -373,13 +373,13 @@ typedef int (d_mmap_t)(struct file *f, struct vm_area_struct *vma);
 typedef unsigned int (d_poll_t)(struct file * file, struct poll_table_struct *pwait);
 
 /*
- * make_dev will set an error and return the first argument.
+ * make_dev_credf() will set an error and return the first argument.
  * This relies on the availability of the 'error' local variable.
  * For old linux systems that do not have devfs, generate a
  * message in syslog so the sysadmin knows which command to run
  * in order to create the /dev/netmap entry
  */
-#define make_dev(_cdev, _zero, _uid, _gid, _perm, _name)	\
+#define make_dev_credf(_flags, _cdev, _zero, _cred, _uid, _gid, _perm, _name)	\
 	({error = misc_register(_cdev);				\
 	D("run mknod /dev/%s c %d %d # error %d",		\
 	    (_cdev)->name, MISC_MAJOR, (_cdev)->minor, error);	\
