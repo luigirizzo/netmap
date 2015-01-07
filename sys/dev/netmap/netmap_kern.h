@@ -66,16 +66,14 @@
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
 
-#define	NM_LOCK_T	struct mtx
+#define	NM_LOCK_T	struct mtx	/* low level spinlock, used to protect queues */
 
-/* netmap global lock */
-#define	NMG_LOCK_T	struct sx
-#define NMG_LOCK_INIT()	sx_init(&netmap_global_lock, \
-				"netmap global lock")
-#define NMG_LOCK_DESTROY()	sx_destroy(&netmap_global_lock)
-#define NMG_LOCK()	sx_xlock(&netmap_global_lock)
-#define NMG_UNLOCK()	sx_xunlock(&netmap_global_lock)
-#define NMG_LOCK_ASSERT()	sx_assert(&netmap_global_lock, SA_XLOCKED)
+#define NM_MTX_T	struct sx	/* OS-specific mutex (sleepable) */
+#define NM_MTX_INIT(m)		sx_init(&(m), #m)
+#define NM_MTX_DESTROY(m)	sx_destroy(&(m))
+#define NM_MTX_LOCK(m)		sx_xlock(&(m))
+#define NM_MTX_UNLOCK(m)	sx_xunlock(&(m))
+#define NM_MTX_ASSERT(m)	sx_assert(&(m), SA_XLOCKED)
 
 #define	NM_SELINFO_T	struct nm_selinfo
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
@@ -141,20 +139,12 @@ struct hrtimer {
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
-#define NM_MTX_T		struct mutex
-#define NM_MTX_INIT(m, s)	do { (void)s; mutex_init(&(m)); } while (0)
-#define NM_MTX_DESTROY(m)	do { (void)m; } while (0)
+#define NM_MTX_T	struct mutex	/* OS-specific sleepable lock */
+#define NM_MTX_INIT(m)	mutex_init(&(m))
+#define NM_MTX_DESTROY(m)	do { (void)(m); } while (0)
 #define NM_MTX_LOCK(m)		mutex_lock(&(m))
 #define NM_MTX_UNLOCK(m)	mutex_unlock(&(m))
-#define NM_MTX_LOCK_ASSERT(m)	mutex_is_locked(&(m))
-
-#define	NMG_LOCK_T		NM_MTX_T
-#define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock, \
-					"netmap_global_lock")
-#define	NMG_LOCK_DESTROY()	NM_MTX_DESTROY(netmap_global_lock)
-#define	NMG_LOCK()		NM_MTX_LOCK(netmap_global_lock)
-#define	NMG_UNLOCK()		NM_MTX_UNLOCK(netmap_global_lock)
-#define	NMG_LOCK_ASSERT()	NM_MTX_LOCK_ASSERT(netmap_global_lock)
+#define NM_MTX_ASSERT(m)	mutex_is_locked(&(m))
 
 #ifndef DEV_NETMAP
 #define DEV_NETMAP
@@ -175,6 +165,13 @@ struct hrtimer {
 #error unsupported platform
 
 #endif /* end - platform-specific code */
+
+#define	NMG_LOCK_T		NM_MTX_T
+#define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock)
+#define	NMG_LOCK_DESTROY()	NM_MTX_DESTROY(netmap_global_lock)
+#define	NMG_LOCK()		NM_MTX_LOCK(netmap_global_lock)
+#define	NMG_UNLOCK()		NM_MTX_UNLOCK(netmap_global_lock)
+#define	NMG_LOCK_ASSERT()	NM_MTX_ASSERT(netmap_global_lock)
 
 #define ND(format, ...)
 #define D(format, ...)						\

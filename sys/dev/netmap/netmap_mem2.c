@@ -155,8 +155,7 @@ netmap_mem_get_bufsize(struct netmap_mem_d *nmd)
 	return nmd->pools[NETMAP_BUF_POOL]._objsize;
 }
 
-#define NMA_LOCK_INIT(n)	NM_MTX_INIT((n)->nm_mtx, \
-					"netmap memory allocator lock")
+#define NMA_LOCK_INIT(n)	NM_MTX_INIT((n)->nm_mtx)
 #define NMA_LOCK_DESTROY(n)	NM_MTX_DESTROY((n)->nm_mtx)
 #define NMA_LOCK(n)		NM_MTX_LOCK((n)->nm_mtx)
 #define NMA_UNLOCK(n)		NM_MTX_UNLOCK((n)->nm_mtx)
