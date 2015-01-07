@@ -931,6 +931,7 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 }
 
 
+
 /*
  * Undo everything that was done in netmap_do_regif(). In particular,
  * call nm_register(ifp,0) to stop netmap mode on the interface and

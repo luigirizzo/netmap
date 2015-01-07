@@ -242,7 +242,6 @@ doit:
 		fd, name, curr_nmr.nr_arg2, last_memsize);
 }
 
-
 void
 do_txsync()
 {

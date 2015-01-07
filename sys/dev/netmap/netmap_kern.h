@@ -1066,6 +1066,8 @@ int netmap_krings_create(struct netmap_adapter *na, u_int tailroom);
  * been created using netmap_krings_create
  */
 void netmap_krings_delete(struct netmap_adapter *na);
+int netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwait);
+
 
 /* set the stopped/enabled status of ring
  * When stopping, they also wait for all current activity on the ring to
