@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 30f9ccf..60c0252 100644
+index 30f9ccf..65c8ead 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -221,6 +221,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
@@ -111,3 +111,14 @@ index 30f9ccf..60c0252 100644
  	return 0;
  
  err_register:
+@@ -7490,6 +7543,10 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
+ 	struct ixgbe_adapter *adapter = pci_get_drvdata(pdev);
+ 	struct net_device *netdev = adapter->netdev;
+ 
++#ifdef DEV_NETMAP
++	netmap_detach(netdev);
++#endif /* DEV_NETMAP */
++
+ 	set_bit(__IXGBE_DOWN, &adapter->state);
+ 
+ 	/*
