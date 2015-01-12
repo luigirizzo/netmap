@@ -885,7 +885,6 @@ netmap_pt_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
     struct netmap_adapter *parent = pt_na->parent;
     int error;
 
-    D("");
     //XXX: maybe call parent->nm_config is better
 
     /* forward the request */
@@ -895,6 +894,8 @@ netmap_pt_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
     *txr = na->num_tx_rings = parent->num_tx_rings;
     *txd = na->num_tx_desc = parent->num_tx_desc;
     *rxd = na->num_rx_desc = parent->num_rx_desc;
+
+    D("rxr: %d txr: %d txd: %d rxd: %d", *rxr, *txr, *txd, *rxd);
 
     return error;
 }
