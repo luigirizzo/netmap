@@ -341,8 +341,8 @@ e1000_paravirt_netmap_config(struct netmap_adapter *na,
 	if (ret)
 		return ret;
 
-	*txr = csb->num_tx_rings;
-	*rxr = csb->num_rx_rings;
+	*txr = 1; //*txr = csb->num_tx_rings;
+	*rxr = 1; //*rxr = csb->num_rx_rings;
 	*txd = csb->num_tx_slots;
 	*rxd = csb->num_rx_slots;
 
