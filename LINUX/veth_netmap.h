@@ -87,6 +87,7 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
         struct netmap_kring *peer_kring;
         struct netmap_ring *peer_ring;
         u_int nm_j;
+        u_int peer_hwtail_lim;
 	u_int lim_peer;
 
         rcu_read_lock();
@@ -111,9 +112,11 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 	 */
 	nm_i = kring->nr_hwcur;
         nm_j = peer_kring->nr_hwtail;
+        mb();  /* for reading peer_kring->nr_hwcur */
+        peer_hwtail_lim = nm_prev(peer_kring->nr_hwcur, lim_peer);
 	if (nm_i != head) {	/* we have new packets to send */
 		nic_i = netmap_idx_k2n(kring, nm_i);
-		for (n = 0; nm_i != head; n++) {
+		for (n = 0; nm_i != head && nm_j != peer_hwtail_lim; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			void *addr = NMB(na, slot);
@@ -130,19 +133,23 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 
                         memcpy(peer_addr, addr, len);
+                        peer_slot->len = len;
+                        peer_slot->flags = NS_BUF_CHANGED;
 
 			nm_i = nm_next(nm_i, lim);
 			nm_j = nm_next(nm_j, lim_peer);
 			nic_i = nm_next(nic_i, lim);
 		}
-		kring->nr_hwcur = head;
+		kring->nr_hwcur = nm_i;
 
-                mb();
+                mb();  /* for writing the slots */
 
                 peer_kring->nr_hwtail = nm_j;
                 if (peer_kring->nr_hwtail > lim_peer) {
                     peer_kring->nr_hwtail -= lim_peer + 1;
                 }
+
+                mb();  /* for writing peer_kring->nr_hwtail */
 
                 /*
                  * Second part: reclaim buffers for completed transmissions.
@@ -150,8 +157,6 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
                 kring->nr_hwtail += n;
                 if (kring->nr_hwtail > lim)
                     kring->nr_hwtail -= lim + 1;
-
-                mb();
 
                 peer_na->nm_notify(peer_na, ring_nr, NR_RX, 0);
 	}
