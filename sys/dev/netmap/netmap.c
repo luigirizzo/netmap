@@ -2809,7 +2809,6 @@ netmap_paravirt_attach(struct netmap_adapter *arg,
 	error = netmap_attach(arg);
 	if (error)
 		return error;
-	NA(arg->ifp)->na_flags &= ~NAF_HOST_RINGS;
 	return 0;
 }
 
