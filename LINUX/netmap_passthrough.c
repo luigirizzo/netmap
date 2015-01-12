@@ -156,7 +156,7 @@ nm_kring_need_kick(struct netmap_kring *kring, uint32_t g_head)
  * read-size critical section for our kind of RCU. */
 static void handle_tx(struct vPT_net *net)
 {
-    struct vPT_ring *vr = &net->tx_ring;
+    struct vPT_ring *vr;
     struct netmap_kring *kring;
     uint32_t g_cur, g_head, g_flags; /* guest variables */
     int error = 0;
@@ -164,6 +164,12 @@ static void handle_tx(struct vPT_net *net)
     int cicle_nowork = 0;
     int n_slots;
 
+    if (unlikely(!net)) {
+        D("backend netmap is not configured");
+        return;
+    }
+
+    vr = &net->tx_ring;
     mutex_lock(&vr->mutex);
 
     if (unlikely(!net->pt_na || net->broken || !net->configured)) {
@@ -315,12 +321,19 @@ static inline void vPT_disable_guest_rxkick(struct vPT_net *net)
  * read-size critical section for our kind of RCU. */
 static void handle_rx(struct vPT_net *net)
 {
-    struct vPT_ring *vr = &net->rx_ring;
+    struct vPT_ring *vr;
     struct netmap_kring *kring;
     uint32_t g_cur, g_head, g_flags; /* guest variables */
     int error = 0;
     int cicle_nowork = 0;
     bool work = false;
+
+    if (unlikely(!net)) {
+        D("backend netmap is not configured");
+        return;
+    }
+
+    vr = &net->rx_ring;
 
     mutex_lock(&vr->mutex);
 
