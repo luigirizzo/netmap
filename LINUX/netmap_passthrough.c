@@ -985,6 +985,7 @@ netmap_pt_dtor(struct netmap_adapter *na)
 
     D("%p", na);
 
+    pt_na->parent->na_flags &= ~NAF_BUSY;
     netmap_adapter_put(pt_na->parent);
     pt_na->parent = NULL;
 }
@@ -1020,9 +1021,16 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     error = netmap_get_na(&parent_nmr, &parent, create);
     if (error) {
         D("parent lookup failed: %d", error);
-        return error;
+        goto put_out_noputparent;
     }
     D("found parent: %s", parent->name);
+
+    /* make sure the NIC is not already in use */
+    if (NETMAP_OWNED_BY_ANY(parent)) {
+        D("NIC %s busy, cannot passthrough", parent->name);
+        error = EBUSY;
+        goto put_out;
+    }
 
     pt_na->parent = parent;
 
@@ -1068,6 +1076,7 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     nmr->nr_rx_slots = pt_na->up.num_rx_desc;
 
     pt_na->up.nm_mem = parent->nm_mem;
+    parent->na_flags |= NAF_BUSY;
 
     strncpy(pt_na->up.name, parent->name, sizeof(pt_na->up.name));
     strcat(pt_na->up.name, "-PT");
@@ -1076,6 +1085,7 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
 
 put_out:
     netmap_adapter_put(parent);
+put_out_noputparent:
     free(pt_na, M_DEVBUF);
     return error;
 }
