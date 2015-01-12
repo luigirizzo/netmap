@@ -39,7 +39,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
 
-	/* It's important to deny the registration if the interface is
+	/* Deny the registration if the interface is
 	   not up, otherwise the veth_close() is not matched by a
 	   veth_open(). */
 	if (!netif_running(ifp))
@@ -47,7 +47,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	rtnl_lock();
 
-        veth_close(ifp);
+	veth_close(ifp);
 
 	/* enable or disable flags and callbacks in na and ifp */
 	if (onoff) {
@@ -56,7 +56,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		nm_clear_native_flags(na);
 	}
 
-        veth_open(ifp);
+	veth_open(ifp);
 
 	rtnl_unlock();
 
@@ -81,57 +81,55 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int const head = kring->rhead;
 
 	/* device-specific */
-        struct veth_priv *priv = netdev_priv(ifp);
-        struct net_device *peer_ifp;
-        struct netmap_adapter *peer_na;
-        struct netmap_kring *peer_kring;
-        struct netmap_ring *peer_ring;
-        u_int nm_j;
-        u_int peer_hwtail_lim;
+	struct veth_priv *priv = netdev_priv(ifp);
+	struct net_device *peer_ifp;
+	struct netmap_adapter *peer_na;
+	struct netmap_kring *peer_kring;
+	struct netmap_ring *peer_ring;
+	u_int nm_j;
+	u_int peer_hwtail_lim;
 	u_int lim_peer;
 
-        rcu_read_lock();
+	rcu_read_lock();
 
 	if (unlikely(!netif_carrier_ok(ifp)))
 		goto out;
 
-        peer_ifp = rcu_dereference(priv->peer);
-        if (unlikely(!peer_ifp))
-                goto out;
+	peer_ifp = rcu_dereference(priv->peer);
+	if (unlikely(!peer_ifp))
+		goto out;
 
-        peer_na = NA(peer_ifp);
-        if (unlikely(!nm_netmap_on(peer_na)))
-                goto out;
+	peer_na = NA(peer_ifp);
+	if (unlikely(!nm_netmap_on(peer_na)))
+		goto out;
 
-        peer_kring = &peer_na->rx_rings[ring_nr];
-        peer_ring = peer_kring->ring;
-        lim_peer = peer_kring->nkr_num_slots - 1;
+	peer_kring = &peer_na->rx_rings[ring_nr];
+	peer_ring = peer_kring->ring;
+	lim_peer = peer_kring->nkr_num_slots - 1;
 
 	/*
 	 * First part: process new packets to send.
 	 */
 	nm_i = kring->nr_hwcur;
-        nm_j = peer_kring->nr_hwtail;
-        mb();  /* for reading peer_kring->nr_hwcur */
-        peer_hwtail_lim = nm_prev(peer_kring->nr_hwcur, lim_peer);
+	nm_j = peer_kring->nr_hwtail;
+	mb();  /* for reading peer_kring->nr_hwcur */
+	peer_hwtail_lim = nm_prev(peer_kring->nr_hwcur, lim_peer);
 	if (nm_i != head) {	/* we have new packets to send */
 		nic_i = netmap_idx_k2n(kring, nm_i);
 		for (n = 0; nm_i != head && nm_j != peer_hwtail_lim; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
-                        struct netmap_slot tmp;
+			struct netmap_slot tmp;
 			void *addr = NMB(na, slot);
 
-                        /* device specific */
-                        struct netmap_slot *peer_slot = &peer_ring->slot[nm_j];
+			/* device specific */
+			struct netmap_slot *peer_slot = &peer_ring->slot[nm_j];
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
-			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
-
-                        tmp = *slot;
-                        *slot = *peer_slot;
-                        *peer_slot = tmp;
+			tmp = *slot;
+			*slot = *peer_slot;
+			*peer_slot = tmp;
 
 			nm_i = nm_next(nm_i, lim);
 			nm_j = nm_next(nm_j, lim_peer);
@@ -139,26 +137,26 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 		}
 		kring->nr_hwcur = nm_i;
 
-                mb();  /* for writing the slots */
+		mb();  /* for writing the slots */
 
-                peer_kring->nr_hwtail = nm_j;
-                if (peer_kring->nr_hwtail > lim_peer) {
-                    peer_kring->nr_hwtail -= lim_peer + 1;
-                }
+		peer_kring->nr_hwtail = nm_j;
+		if (peer_kring->nr_hwtail > lim_peer) {
+			peer_kring->nr_hwtail -= lim_peer + 1;
+		}
 
-                mb();  /* for writing peer_kring->nr_hwtail */
+		mb();  /* for writing peer_kring->nr_hwtail */
 
-                /*
-                 * Second part: reclaim buffers for completed transmissions.
-                 */
-                kring->nr_hwtail += n;
-                if (kring->nr_hwtail > lim)
-                    kring->nr_hwtail -= lim + 1;
+		/*
+		 * Second part: reclaim buffers for completed transmissions.
+		 */
+		kring->nr_hwtail += n;
+		if (kring->nr_hwtail > lim)
+			kring->nr_hwtail -= lim + 1;
 
-                peer_na->nm_notify(peer_na, ring_nr, NR_RX, 0);
+		peer_na->nm_notify(peer_na, ring_nr, NR_RX, 0);
 	}
 out:
-        rcu_read_unlock();
+	rcu_read_unlock();
 
 	return 0;
 }
@@ -182,37 +180,37 @@ veth_netmap_rxsync(struct netmap_kring *kring, int flags)
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	/* device-specific */
-        struct veth_priv *priv = netdev_priv(ifp);
-        struct net_device *peer_ifp;
-        struct netmap_adapter *peer_na;
-        uint32_t oldhwcur = kring->nr_hwcur;
+	struct veth_priv *priv = netdev_priv(ifp);
+	struct net_device *peer_ifp;
+	struct netmap_adapter *peer_na;
+	uint32_t oldhwcur = kring->nr_hwcur;
 
-        (void)lim;
-        (void)nic_i;
-        (void)n;
-        (void)nm_i;
-        (void)ring;
-        (void)force_update;
+	(void)lim;
+	(void)nic_i;
+	(void)n;
+	(void)nm_i;
+	(void)ring;
+	(void)force_update;
 
-        rcu_read_lock();
+	rcu_read_lock();
 
 	if (unlikely(!netif_carrier_ok(ifp)))
 		goto out;
 
-        peer_ifp = rcu_dereference(priv->peer);
-        if (unlikely(!peer_ifp))
-                goto out;
+	peer_ifp = rcu_dereference(priv->peer);
+	if (unlikely(!peer_ifp))
+		goto out;
 
-        peer_na = NA(peer_ifp);
-        if (unlikely(!nm_netmap_on(peer_na)))
-                goto out;
+	peer_na = NA(peer_ifp);
+	if (unlikely(!nm_netmap_on(peer_na)))
+		goto out;
 
 
-        mb();
+	mb();
 
 	/*
 	 * First part: import newly received packets.
-         * This is done by the peer's txsync.
+	 * This is done by the peer's txsync.
 	 */
 
 	/*
@@ -220,12 +218,12 @@ veth_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	kring->nr_hwcur = head;
 
-        if (oldhwcur != head) {
-                mb();
-                peer_na->nm_notify(peer_na, ring_nr, NR_TX, 0);
-        }
+	if (oldhwcur != head) {
+		mb();  /* for writing kring->nr_hwcur */
+		peer_na->nm_notify(peer_na, ring_nr, NR_TX, 0);
+	}
 out:
-        rcu_read_unlock();
+	rcu_read_unlock();
 
 	return 0;
 }
