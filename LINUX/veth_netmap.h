@@ -119,22 +119,19 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head && nm_j != peer_hwtail_lim; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
+                        struct netmap_slot tmp;
 			void *addr = NMB(na, slot);
 
                         /* device specific */
                         struct netmap_slot *peer_slot = &peer_ring->slot[nm_j];
-                        void *peer_addr = NMB(peer_na, peer_slot);
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
-			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, something to do ? XXX */
-			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 
-                        memcpy(peer_addr, addr, len);
-                        peer_slot->len = len;
-                        peer_slot->flags = NS_BUF_CHANGED;
+                        tmp = *slot;
+                        *slot = *peer_slot;
+                        *peer_slot = tmp;
 
 			nm_i = nm_next(nm_i, lim);
 			nm_j = nm_next(nm_j, lim_peer);
@@ -242,8 +239,8 @@ veth_netmap_attach(struct ifnet *ifp)
 
 	na.ifp = ifp;
 	na.pdev = NULL;
-	na.num_tx_desc = 256;
-	na.num_rx_desc = 256;
+	na.num_tx_desc = 1024;
+	na.num_rx_desc = 1024;
 	na.nm_register = veth_netmap_reg;
 	na.nm_txsync = veth_netmap_txsync;
 	na.nm_rxsync = veth_netmap_rxsync;
