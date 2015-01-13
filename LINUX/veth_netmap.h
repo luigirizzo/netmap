@@ -75,7 +75,6 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 	struct netmap_ring *ring = kring->ring;
 	u_int ring_nr = kring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
-	u_int nic_i;	/* index into the NIC ring */
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
@@ -115,7 +114,6 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 	mb();  /* for reading peer_kring->nr_hwcur */
 	peer_hwtail_lim = nm_prev(peer_kring->nr_hwcur, lim_peer);
 	if (nm_i != head) {	/* we have new packets to send */
-		nic_i = netmap_idx_k2n(kring, nm_i);
 		for (n = 0; nm_i != head && nm_j != peer_hwtail_lim; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
@@ -133,7 +131,6 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			nm_i = nm_next(nm_i, lim);
 			nm_j = nm_next(nm_j, lim_peer);
-			nic_i = nm_next(nic_i, lim);
 		}
 		kring->nr_hwcur = nm_i;
 
@@ -170,27 +167,14 @@ veth_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
-	struct netmap_ring *ring = kring->ring;
 	u_int ring_nr = kring->ring_id;
-	u_int nm_i;	/* index into the netmap ring */
-	u_int nic_i;	/* index into the NIC ring */
-	u_int n;
-	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
-	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	/* device-specific */
 	struct veth_priv *priv = netdev_priv(ifp);
 	struct net_device *peer_ifp;
 	struct netmap_adapter *peer_na;
 	uint32_t oldhwcur = kring->nr_hwcur;
-
-	(void)lim;
-	(void)nic_i;
-	(void)n;
-	(void)nm_i;
-	(void)ring;
-	(void)force_update;
 
 	rcu_read_lock();
 
