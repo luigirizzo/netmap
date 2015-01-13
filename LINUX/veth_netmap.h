@@ -38,16 +38,15 @@ static int
 veth_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
-
-	/* Deny the registration if the interface is
-	   not up, otherwise the veth_close() is not matched by a
-	   veth_open(). */
-	if (!netif_running(ifp))
-		return EBUSY;
+	bool was_up = false;
 
 	rtnl_lock();
 
-	veth_close(ifp);
+	if (netif_running(ifp)) {
+		/* The interface is up. Close it while (un)registering. */
+		was_up = true;
+		veth_close(ifp);
+	}
 
 	/* enable or disable flags and callbacks in na and ifp */
 	if (onoff) {
@@ -56,7 +55,8 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		nm_clear_native_flags(na);
 	}
 
-	veth_open(ifp);
+	if (was_up)
+		veth_open(ifp);
 
 	rtnl_unlock();
 
