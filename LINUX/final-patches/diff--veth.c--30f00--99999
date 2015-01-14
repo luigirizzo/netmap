@@ -1,5 +1,5 @@
 diff --git a/veth.c b/veth.c
-index 8ad5965..a3da13d 100644
+index b4a10bc..d7f0596 100644
 --- a/veth.c
 +++ b/veth.c
 @@ -37,6 +37,10 @@ struct veth_priv {
