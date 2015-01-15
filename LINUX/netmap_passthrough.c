@@ -22,10 +22,33 @@
 #endif
 
 
-//#undef RATE
-#define RATE  /* Enables communication statistics. */
+#undef RATE
+//#define RATE  /* Enables communication statistics. */
 #ifdef RATE
 #define IFRATE(x) x
+struct batch_info {
+    uint64_t events;
+    uint64_t zero_events;
+    uint64_t slots;
+};
+
+
+static void batch_info_update(struct batch_info *bf, uint32_t pre_tail, uint32_t act_tail, uint32_t lim)
+{
+    int n_slots;
+
+    n_slots = (int)act_tail - pre_tail;
+    if (n_slots) {
+        if (n_slots < 0)
+            n_slots += lim;
+
+        bf->events++;
+        bf->slots += (uint64_t) n_slots;
+    } else {
+        bf->zero_events++;
+    }
+}
+
 struct rate_stats {
     unsigned long gtxk;     /* Guest --> Host Tx kicks. */
     unsigned long grxk;     /* Guest --> Host Rx kicks. */
@@ -36,6 +59,8 @@ struct rate_stats {
     unsigned long txpkts;   /* Transmitted packets. */
     unsigned long rxpkts;   /* Received packets. */
     unsigned long txfl;     /* TX flushes requests. */
+    struct batch_info bf_tx;
+    struct batch_info bf_rx;
 };
 
 struct rate_context {
@@ -49,7 +74,17 @@ static void rate_callback(unsigned long arg)
 {
     struct rate_context * ctx = (struct rate_context *)arg;
     struct rate_stats cur = ctx->new;
+    struct batch_info *bf_tx = &cur.bf_tx;
+    struct batch_info *bf_rx = &cur.bf_rx;
+    struct batch_info *bf_tx_old = &ctx->old.bf_tx;
+    struct batch_info *bf_rx_old = &ctx->old.bf_rx;
+    uint64_t tx_batch, rx_batch;
     int r;
+
+    tx_batch = ((bf_tx->events - bf_tx_old->events) > 0) ?
+        (bf_tx->slots - bf_tx_old->slots) / (bf_tx->events - bf_tx_old->events): 0;
+    rx_batch = ((bf_rx->events - bf_rx_old->events) > 0) ?
+        (bf_rx->slots - bf_rx_old->slots) / (bf_rx->events - bf_rx_old->events): 0;
 
     printk("txp  = %lu Hz\n", (cur.txpkts - ctx->old.txpkts)/RATE_PERIOD);
     printk("gtxk = %lu Hz\n", (cur.gtxk - ctx->old.gtxk)/RATE_PERIOD);
@@ -60,6 +95,8 @@ static void rate_callback(unsigned long arg)
     printk("hrxk = %lu Hz\n", (cur.hrxk - ctx->old.hrxk)/RATE_PERIOD);
     printk("brxw = %lu Hz\n", (cur.brxwu - ctx->old.brxwu)/RATE_PERIOD);
     printk("txfl = %lu Hz\n", (cur.txfl - ctx->old.txfl)/RATE_PERIOD);
+    printk("tx_batch = %llu avg\n", tx_batch);
+    printk("rx_batch = %llu avg\n", rx_batch);
     printk("\n");
 
     ctx->old = cur;
@@ -68,6 +105,7 @@ static void rate_callback(unsigned long arg)
     if (unlikely(r))
         printk("[vPT] Error: mod_timer()\n");
 }
+
 #else /* !RATE */
 #define IFRATE(x)
 #endif /* RATE */
@@ -85,10 +123,6 @@ struct vPT_net {
     struct file *nm_f;
     int nm_fput_needed;
     struct netmap_passthrough_adapter *pt_na;
-
-    uint32_t tx_events;
-    uint32_t tx_zero_events;
-    uint32_t tx_slots;
 
     IFRATE(struct rate_context rate_ctx);
 };
@@ -163,6 +197,7 @@ static void handle_tx(struct vPT_net *net)
     bool work = false;
     int cicle_nowork = 0;
     int n_slots;
+    IFRATE(uint32_t pre_tail;)
 
     if (unlikely(!net)) {
         D("backend netmap is not configured");
@@ -205,10 +240,10 @@ static void handle_tx(struct vPT_net *net)
             break;
         }
 
-        n_slots = kring->nr_hwtail;
-
         if (netmap_verbose & NM_VERB_TXSYNC)
             nm_kring_dump("pre txsync", kring);
+
+        IFRATE(pre_tail = kring->rtail;)
 
         if (likely(kring->nm_sync(kring, g_flags) == 0)) {
             /* finalize */
@@ -229,21 +264,8 @@ static void handle_tx(struct vPT_net *net)
             D("nm_sync error");
             goto leave_kr_put;
         }
-#ifdef DEBUG
-        n_slots = kring->nr_hwtail - n_slots;
 
-        if (n_slots) {
-            if (n_slots < 0)
-                n_slots += kring->nkr_num_slots;
-
-            net->tx_events++;
-            net->tx_slots += (uint32_t) n_slots;
-        } else {
-            net->tx_zero_events++;
-        }
-
-        RD(1, "Average batch size: %d pkts - Slots: %d Events: %d Zero Events: %d", net->tx_slots / net->tx_events, net->tx_slots, net->tx_events, net->tx_zero_events);
-#endif /* DEBUG */
+        IFRATE(batch_info_update(&net->rate_ctx.new.bf_tx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
         if (netmap_verbose & NM_VERB_TXSYNC)
             nm_kring_dump("post txsync", kring);
@@ -254,7 +276,7 @@ static void handle_tx(struct vPT_net *net)
             IFRATE(net->rate_ctx.new.htxk++);
             work = false;
         }
-#endif
+
         // prologue
         CSB_READ(net->csb, tx_ring.head, g_head);
         CSB_READ(net->csb, tx_ring.cur, g_cur);
@@ -327,6 +349,7 @@ static void handle_rx(struct vPT_net *net)
     int error = 0;
     int cicle_nowork = 0;
     bool work = false;
+    IFRATE(uint32_t pre_tail;)
 
     if (unlikely(!net)) {
         D("backend netmap is not configured");
@@ -372,6 +395,8 @@ static void handle_rx(struct vPT_net *net)
         if (netmap_verbose & NM_VERB_RXSYNC)
             nm_kring_dump("pre rxsync", kring);
 
+        IFRATE(pre_tail = kring->rtail;)
+
         if (kring->nm_sync(kring, g_flags) == 0) {
             //nm_rxsync_finalize(kring);
             //finalize
@@ -391,6 +416,8 @@ static void handle_rx(struct vPT_net *net)
             D("nm_sync error");
             goto leave_kr_put;
         }
+
+        IFRATE(batch_info_update(&net->rate_ctx.new.bf_rx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
         if (netmap_verbose & NM_VERB_RXSYNC)
             nm_kring_dump("post rxsync", kring);
@@ -659,10 +686,6 @@ netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *bu
 
     vPT_poll_init(&net->tx_poll, handle_tx_net, POLLOUT, dev);
     vPT_poll_init(&net->rx_poll, handle_rx_net, POLLIN, dev);
-
-    net->tx_events = 0;
-    net->tx_zero_events = 0;
-    net->tx_slots = 0;
 
 #ifdef RATE
     memset(&net->rate_ctx, 0, sizeof(net->rate_ctx));
