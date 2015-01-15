@@ -518,12 +518,37 @@ static int
 e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct e1000_adapter *adapter = netdev_priv(na->ifp);
+	struct paravirt_csb *csb = adapter->csb;
+	struct netmap_kring *kring;
 	int ret = 0;
 
 	if (onoff) {
 		na->na_flags |= NAF_NETMAP_ON;
 		adapter->passthrough = 1;
 		ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+
+		/*
+		 * Init ring and kring pointers
+		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
+		 * host kring pointers.
+		 * XXX This initialization is required, because we don't close the
+		 * host port on UNREGIF.
+		 */
+
+		// Init rx ring
+		kring = na->rx_rings;
+		kring->rhead = kring->ring->head = csb->rx_ring.head;
+		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
+		kring->nr_hwcur = csb->rx_ring.hwcur;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->rx_ring.hwtail;
+
+		// Init tx ring
+		kring = na->tx_rings;
+		kring->rhead = kring->ring->head = csb->tx_ring.head;
+		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
+		kring->nr_hwcur = csb->tx_ring.hwcur;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
+
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 		adapter->passthrough = 0;

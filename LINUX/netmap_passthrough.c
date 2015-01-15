@@ -638,28 +638,21 @@ static int vPT_configure(struct vPT_net * net, struct netmap_passthrough_adapter
 
     return 0;
 }
-#if 0
+
 static int
-netmap_pt_kring_init(struct netmap_kring *kring, struct pt_ring __user *pt_ring)
+netmap_pt_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *pt_ring)
 {
-    /* XXX-ste: copy from netmap_ring?? */
-    if(get_user(kring->rhead, &pt_ring->head))
+    if(put_user(kring->rhead, &pt_ring->head))
         goto err;
-    if(get_user(kring->rcur, &pt_ring->cur))
-        goto err;
-    if(get_user(kring->rtail, &pt_ring->hwtail))
+    if(put_user(kring->rcur, &pt_ring->cur))
         goto err;
 
-    if(get_user(kring->nr_hwcur, &pt_ring->hwcur))
+    if(put_user(kring->nr_hwcur, &pt_ring->hwcur))
         goto err;
-    if(get_user(kring->nr_hwtail, &pt_ring->hwtail))
+    if(put_user(kring->nr_hwtail, &pt_ring->hwtail))
         goto err;
 
-    //if (netmap_verbose)
-        D("kring %s kcur %d ktail %d rhead %d rcur %d head %d cur %d tail %d",
-                kring->name, kring->nr_hwcur, kring->nr_hwtail,
-                kring->rhead, kring->rcur,
-                kring->ring->head, kring->ring->cur, kring->ring->tail);
+    nm_kring_dump("", kring);
 
     return 0;
 err:
@@ -667,22 +660,22 @@ err:
 }
 
 static int
-netmap_pt_krings_init(struct netmap_passthrough_adapter *pt_na, struct vPT_net * net)
+netmap_pt_krings_snapshot(struct netmap_passthrough_adapter *pt_na, struct vPT_net * net)
 {
     struct netmap_kring *kring;
     int error = 0;
 
     kring = &pt_na->parent->tx_rings[0];
-    if((error = netmap_pt_kring_init(kring, &net->csb->tx_ring)))
+    if((error = netmap_pt_kring_snapshot(kring, &net->csb->tx_ring)))
         goto err;
 
     kring = &pt_na->parent->rx_rings[0];
-    error = netmap_pt_kring_init(kring, &net->csb->rx_ring);
+    error = netmap_pt_kring_snapshot(kring, &net->csb->rx_ring);
 
 err:
     return error;
 }
-#endif
+
 static int
 netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf, uint16_t buf_len)
 {
@@ -740,12 +733,12 @@ netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *bu
         D("vPT_configure error");
         goto err;
     }
-    /*
-    if ((ret = netmap_pt_krings_init(pt_na, net))) {
-        D("netmap_pt_krings_init error");
+
+    if ((ret = netmap_pt_krings_snapshot(pt_na, net))) {
+        D("netmap_pt_krings_snapshot error");
         goto err;
     }
-    */
+
     printk("[vPT] configuration OK\n");
 
     net->configured = true;
