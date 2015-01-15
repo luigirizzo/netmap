@@ -12,7 +12,7 @@
 
 #ifdef WITH_PASSTHROUGH
 
-#define NM_PT_NOWORK_LIMIT 5
+#define NM_PT_NOWORK_LIMIT 1
 
 //#define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
@@ -169,6 +169,12 @@ static inline bool vPT_tx_interrupts_enabled(struct vPT_net * net)
 
     return v;
 }
+static inline void vPT_disable_guest_txkick(struct vPT_net *net)
+{
+    uint32_t v = 0;
+
+    CSB_WRITE(net->csb, guest_need_txkick, v);
+}
 
 /*
  * We needs kick from the guest when:
@@ -195,8 +201,6 @@ static void handle_tx(struct vPT_net *net)
     uint32_t g_cur, g_head, g_flags; /* guest variables */
     int error = 0;
     bool work = false;
-    int cicle_nowork = 0;
-    int n_slots;
     IFRATE(uint32_t pre_tail;)
 
     if (unlikely(!net)) {
@@ -254,9 +258,6 @@ static void handle_tx(struct vPT_net *net)
             if (kring->rtail != kring->nr_hwtail) {
                 kring->rtail = kring->nr_hwtail;
                 work = true;
-                cicle_nowork = 0;
-            } else {
-                cicle_nowork++;
             }
         } else {
             /* Reenable notifications. */
@@ -270,8 +271,8 @@ static void handle_tx(struct vPT_net *net)
         if (netmap_verbose & NM_VERB_TXSYNC)
             nm_kring_dump("post txsync", kring);
 
-#if 1
         if (work && vPT_tx_interrupts_enabled(net)) {
+            vPT_disable_guest_txkick(net);
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.htxk++);
             work = false;
@@ -283,22 +284,23 @@ static void handle_tx(struct vPT_net *net)
         CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
 
         /* Nothing to transmit */
-        if ((cicle_nowork >= NM_PT_NOWORK_LIMIT) && nm_kring_need_kick(kring, g_head)) {
+        if (g_head == kring->rhead) {
+            usleep_range(1,1);
             /* Reenable notifications. */
             vPT_set_txkick(net, true);
             /* Doublecheck. */
             CSB_READ(net->csb, tx_ring.head, g_head);
             CSB_READ(net->csb, tx_ring.cur, g_cur);
-            if (unlikely(!nm_kring_need_kick(kring, g_head))) {
+            if (unlikely(g_head != kring->rhead)) {
                 vPT_set_txkick(net, false);
-                cicle_nowork = 0;
+                continue;
             } else
                 break;
         }
 
         /* ring full */
         if (kring->nr_hwtail == kring->rhead) {
-            RD(1, "cicle_nowork: %d", cicle_nowork);
+            ND(1, "TX ring FULL");
             break;
         }
     }
@@ -308,6 +310,7 @@ leave_kr_put:
 
 leave:
     if (work && vPT_tx_interrupts_enabled(net)) {
+        vPT_disable_guest_txkick(net);
         eventfd_signal(vr->call_ctx, 1);
         IFRATE(net->rate_ctx.new.htxk++);
     }
@@ -423,19 +426,21 @@ static void handle_rx(struct vPT_net *net)
             nm_kring_dump("post rxsync", kring);
 
         if (work && vPT_rx_interrupts_enabled(net)) {
+            vPT_disable_guest_rxkick(net);
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.hrxk++);
             work = false;
-            //vPT_disable_guest_rxkick(net);
         }
-#if 1
+
         // prologue
         mb();
         CSB_READ(net->csb, rx_ring.head, g_head);
         CSB_READ(net->csb, rx_ring.cur, g_cur);
         CSB_READ(net->csb, rx_ring.sync_flags, g_flags);
+
         /* No space to receive */
         if (nm_kring_need_kick(kring, g_head)) {
+            usleep_range(1,1);
             /* Reenable notifications. */
             vPT_set_rxkick(net, true);
             /* Doublecheck. */
@@ -444,13 +449,14 @@ static void handle_rx(struct vPT_net *net)
             mb();
             if (unlikely(!nm_kring_need_kick(kring, g_head))) {
                 vPT_set_rxkick(net, false);
+                continue;
             } else
                 break;
         }
-#endif
-        /* ring full */
+
+        /* ring empty */
         if (kring->nr_hwtail == kring->rhead || cicle_nowork >= NM_PT_NOWORK_LIMIT) {
-            RD(1, "cicle_nowork: %d", cicle_nowork);
+            ND(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d", kring->nr_hwtail, kring->rhead, cicle_nowork);
             break;
         }
 
@@ -461,9 +467,9 @@ leave_kr_put:
 
 leave:
     if (work && vPT_rx_interrupts_enabled(net)) {
+        vPT_disable_guest_rxkick(net);
         eventfd_signal(vr->call_ctx, 1);
         IFRATE(net->rate_ctx.new.hrxk++);
-        //vPT_disable_guest_rxkick(net);
     }
     mutex_unlock(&vr->mutex);
    // DBG(printk("rxintr=%d\n", vPT_rx_interrupts_enabled(net)));

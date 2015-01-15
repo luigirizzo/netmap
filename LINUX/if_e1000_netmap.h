@@ -395,6 +395,7 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = csb->tx_ring.hwtail;
 		if (nm_kr_txempty(kring) ) {
 			csb->guest_need_txkick = 1;
+                        /* Double check */
 			kring->nr_hwtail = csb->tx_ring.hwtail;
 			if (!nm_kr_txempty(kring)) {
 				csb->guest_need_txkick = 0;
@@ -436,14 +437,13 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 	{
 		int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
+		csb->guest_need_rxkick = 0;
 		/*
 		 * First part: import newly received packets.
 		 */
 		if (netmap_no_pendintr || force_update) {
-			//csb->guest_need_rxkick = 0;
 			kring->nr_hwtail = csb->rx_ring.hwtail;
 			kring->nr_kflags &= ~NKR_PENDINTR;
-			//csb->guest_need_rxkick = 1;
 		}
 
 
@@ -461,6 +461,16 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 				writel(0, hw->hw_addr + rxr->rdt);
 			}
 		}
+
+                /* empty ring */
+                if (kring->rcur == kring->nr_hwtail) {
+                    csb->guest_need_rxkick = 1;
+                    /* Double check */
+                    kring->nr_hwtail = csb->rx_ring.hwtail;
+                    if (unlikely(kring->rcur != kring->nr_hwtail)) {
+                        csb->guest_need_rxkick = 0;
+                    }
+                }
 
 		ND("RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
 			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail, kring->rhead, kring->rcur);
