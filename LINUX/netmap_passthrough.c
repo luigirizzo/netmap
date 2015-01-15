@@ -154,6 +154,24 @@ nm_kring_dump(const char *title, const struct netmap_kring *kring)
             kring->ring->head, kring->ring->cur, kring->ring->tail);
 }
 
+static inline void
+nm_pt_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur)
+{
+    struct netmap_ring *ring = kring->ring;
+
+    // XXX trust guest?
+    ring->head = g_head;
+    ring->cur = g_cur;
+    ring->tail = kring->nr_hwtail;
+
+    //ring->head = kring->rhead = kring->nr_hwcur;
+    //ring->cur = kring->rcur = kring->nr_hwcur;
+    //ring->tail = kring->rtail = kring->nr_hwtail;
+
+    netmap_ring_reinit(kring);
+    nm_kring_dump("post reinit", kring);
+}
+
 static inline void vPT_set_txkick(struct vPT_net *net, bool enable)
 {
     uint32_t v = enable ? 1 : 0;
@@ -237,8 +255,7 @@ static void handle_tx(struct vPT_net *net)
 
         if (nm_txsync_prologue(kring, g_head, g_cur, NULL)
                 >= kring->nkr_num_slots) {
-            netmap_ring_reinit(kring);
-            /* XXX-ste: copy new ring pointers in CSB? */
+            nm_pt_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
             vPT_set_txkick(net, true);
             break;
@@ -389,7 +406,7 @@ static void handle_rx(struct vPT_net *net)
 
         if (nm_rxsync_prologue(kring, g_head, g_cur, NULL)
                 >= kring->nkr_num_slots) {
-            netmap_ring_reinit(kring);
+            nm_pt_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
             vPT_set_rxkick(net, true);
             break;
