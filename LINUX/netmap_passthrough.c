@@ -111,7 +111,7 @@ static void rate_callback(unsigned long arg)
 #endif /* RATE */
 
 struct vPT_net {
-    struct vPT_dev dev;
+    struct vPT_dev dev_tx, dev_rx;
     struct vPT_ring tx_ring, rx_ring;
     struct vPT_poll tx_poll, rx_poll;
 
@@ -496,7 +496,7 @@ static void handle_tx_kick(struct vPT_work *work)
 {
     struct vPT_ring *vr = container_of(work, struct vPT_ring,
             poll.work);
-    struct vPT_net *net = container_of(vr->dev, struct vPT_net, dev);
+    struct vPT_net *net = container_of(vr->dev, struct vPT_net, dev_tx);
 
     IFRATE(net->rate_ctx.new.gtxk++);
     handle_tx(net);
@@ -506,7 +506,7 @@ static void handle_rx_kick(struct vPT_work *work)
 {
     struct vPT_ring *vr = container_of(work, struct vPT_ring,
             poll.work);
-    struct vPT_net *net = container_of(vr->dev, struct vPT_net, dev);
+    struct vPT_net *net = container_of(vr->dev, struct vPT_net, dev_rx);
 
     IFRATE(net->rate_ctx.new.grxk++);
     handle_rx(net);
@@ -617,7 +617,9 @@ static int vPT_configure(struct vPT_net * net, struct netmap_passthrough_adapter
     int r;
 
     /* Configure. */
-    if ((r = vPT_dev_set_owner(&net->dev)))
+    if ((r = vPT_dev_set_owner(&net->dev_tx)))
+        return r;
+    if ((r = vPT_dev_set_owner(&net->dev_rx)))
         return r;
     if ((r = vPT_set_eventfds(net)))
         return r;
@@ -680,7 +682,7 @@ static int
 netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf, uint16_t buf_len)
 {
     struct vPT_net *net = kmalloc(sizeof *net, GFP_KERNEL);
-    struct vPT_dev *dev;
+    struct vPT_dev *dev_tx, *dev_rx;
     int ret;
 
     /* XXX check if already attached */
@@ -691,17 +693,24 @@ netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *bu
         return ENOMEM;
     net->configured = net->broken = false;
 
-    dev = &net->dev;
+    dev_tx = &net->dev_tx;
+    dev_rx = &net->dev_rx;
     net->tx_ring.handle_kick = handle_tx_kick;
     net->rx_ring.handle_kick = handle_rx_kick;
-    ret = vPT_dev_init(dev, &net->tx_ring, &net->rx_ring);
+
+    ret = vPT_dev_init(dev_tx, &net->tx_ring, NULL);
+    if (ret < 0) {
+        kfree(net);
+        return ret;
+    }
+    ret = vPT_dev_init(dev_rx, NULL, &net->rx_ring);
     if (ret < 0) {
         kfree(net);
         return ret;
     }
 
-    vPT_poll_init(&net->tx_poll, handle_tx_net, POLLOUT, dev);
-    vPT_poll_init(&net->rx_poll, handle_rx_net, POLLIN, dev);
+    vPT_poll_init(&net->tx_poll, handle_tx_net, POLLOUT, dev_tx);
+    vPT_poll_init(&net->rx_poll, handle_rx_net, POLLIN, dev_rx);
 
 #ifdef RATE
     memset(&net->rate_ctx, 0, sizeof(net->rate_ctx));
@@ -713,7 +722,8 @@ netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *bu
 
     printk("%p.OPEN_END()\n", net);
 
-    mutex_lock(&net->dev.mutex);
+    mutex_lock(&net->dev_tx.mutex);
+    mutex_lock(&net->dev_rx.mutex);
 
     if (buf_len != sizeof(struct vPT_Config)) {
         D("buf_len error buf_len %d, expected %d", (int)buf_len, (int)sizeof(struct vPT_Config));
@@ -745,12 +755,14 @@ netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *bu
     pt_na->private = net;
     net->pt_na = pt_na;
 
-    mutex_unlock(&net->dev.mutex);
+    mutex_unlock(&net->dev_rx.mutex);
+    mutex_unlock(&net->dev_tx.mutex);
 
     return 0;
 
 err:
-    mutex_unlock(&net->dev.mutex);
+    mutex_unlock(&net->dev_rx.mutex);
+    mutex_unlock(&net->dev_tx.mutex);
     kfree(net);
     return ret;
 }
@@ -775,9 +787,9 @@ static void vPT_net_stop(struct vPT_net *net)
 static void vPT_net_flush(struct vPT_net *n)
 {
     vPT_poll_flush(&n->rx_poll);
-    vPT_poll_flush(&n->dev.rx_ring->poll);
+    vPT_poll_flush(&n->dev_rx.rx_ring->poll);
     vPT_poll_flush(&n->tx_poll);
-    vPT_poll_flush(&n->dev.tx_ring->poll);
+    vPT_poll_flush(&n->dev_tx.tx_ring->poll);
 }
 
 static int
@@ -792,11 +804,14 @@ netmap_pt_delete(struct netmap_passthrough_adapter *pt_na)
     if (!net)
         return EFAULT;
 
+    net->configured = false;
 
     vPT_net_stop(net);
     vPT_net_flush(net);
-    vPT_dev_stop(&net->dev);
-    vPT_dev_cleanup(&net->dev);
+    vPT_dev_stop(&net->dev_tx);
+    vPT_dev_stop(&net->dev_rx);
+    vPT_dev_cleanup(&net->dev_tx);
+    vPT_dev_cleanup(&net->dev_rx);
     if (net->nm_f)
         fput(net->nm_f);
     /* We do an extra flush before freeing memory,

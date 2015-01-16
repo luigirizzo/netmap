@@ -231,6 +231,9 @@ long vPT_dev_init(struct vPT_dev * dev, struct vPT_ring * tx_ring,
     dev->worker = NULL;
 
     for (i=0; i<2; i++) {
+        if (!(dev->rings[i]))
+            continue;
+
 	dev->rings[i]->dev = dev;
 	mutex_init(&dev->rings[i]->mutex);
 	vPT_vr_reset(dev, dev->rings[i]);
@@ -263,7 +266,11 @@ long vPT_dev_set_owner(struct vPT_dev *dev)
 
     /* No owner, become one */
     dev->mm = get_task_mm(current);
-    worker = kthread_create(vPT_worker, dev, "vPT-%d", current->pid);
+    if (dev->tx_ring)
+        worker = kthread_create(vPT_worker, dev, "vPT-TX-%d", current->pid);
+    else if (dev->rx_ring)
+        worker = kthread_create(vPT_worker, dev, "vPT-RX-%d", current->pid);
+
     if (IS_ERR(worker)) {
 	err = PTR_ERR(worker);
 	goto err_worker;
@@ -287,7 +294,7 @@ void vPT_dev_stop(struct vPT_dev *dev)
     int i;
 
     for (i = 0; i<2; i++) {
-	if (dev->rings[i]->kick && dev->rings[i]->handle_kick) {
+	if (dev->rings[i] && dev->rings[i]->kick && dev->rings[i]->handle_kick) {
 	    vPT_poll_stop(&dev->rings[i]->poll);
 	    vPT_poll_flush(&dev->rings[i]->poll);
 	}
@@ -300,6 +307,8 @@ void vPT_dev_cleanup(struct vPT_dev *dev)
     int i;
 
     for (i = 0; i<2; i++) {
+        if (!(dev->rings[i]))
+            continue;
 	if (dev->rings[i]->kick)
 	    fput(dev->rings[i]->kick);
 	if (dev->rings[i]->call_ctx)
