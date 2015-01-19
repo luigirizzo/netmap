@@ -12,7 +12,8 @@
 
 #ifdef WITH_PASSTHROUGH
 
-#define NM_PT_NOWORK_LIMIT 1
+#define NM_PT_RX_NOWORK_CYCLE   2                               /* RX cycle without receive any packets */
+#define NM_PT_TX_BATCH_LIM      ((kring->nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
 
 //#define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
@@ -219,6 +220,7 @@ static void handle_tx(struct vPT_net *net)
     uint32_t g_cur, g_head, g_flags; /* guest variables */
     int error = 0;
     bool work = false;
+    int batch;
     IFRATE(uint32_t pre_tail;)
 
     if (unlikely(!net)) {
@@ -252,6 +254,24 @@ static void handle_tx(struct vPT_net *net)
     mb(); //XXX: or smp_mb() ?
 
     for (;;) {
+#ifdef NM_PT_TX_BATCH_LIM
+        batch = g_head - kring->nr_hwcur;
+
+        if (batch < 0)
+            batch += kring->nkr_num_slots;
+
+        if (batch > NM_PT_TX_BATCH_LIM) {
+            uint32_t new_head = kring->nr_hwcur + NM_PT_TX_BATCH_LIM;
+            if (new_head >= kring->nkr_num_slots)
+                new_head -= kring->nkr_num_slots;
+            ND(1, "batch: %d old_head: %d new_head: %d", batch, g_head, new_head);
+            g_head = new_head;
+        }
+#endif /* NM_PT_TX_BATCH_LIM */
+
+        if (nm_kr_txspace(kring) <= (kring->nkr_num_slots >> 1)) {
+            g_flags |= NAF_FORCE_RECLAIM;
+        }
 
         if (nm_txsync_prologue(kring, g_head, g_cur, NULL)
                 >= kring->nkr_num_slots) {
@@ -299,7 +319,8 @@ static void handle_tx(struct vPT_net *net)
         CSB_READ(net->csb, tx_ring.head, g_head);
         CSB_READ(net->csb, tx_ring.cur, g_cur);
         CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
-
+//#define INFINITE_WORK
+#ifndef INFINITE_WORK
         /* Nothing to transmit */
         if (g_head == kring->rhead) {
             usleep_range(1,1);
@@ -317,7 +338,12 @@ static void handle_tx(struct vPT_net *net)
 
         /* ring full */
         if (kring->nr_hwtail == kring->rhead) {
-            ND(1, "TX ring FULL");
+            RD(1, "TX ring FULL");
+            break;
+        }
+#endif
+        if (unlikely(net->broken || !net->configured)) {
+            D("net broken");
             break;
         }
     }
@@ -454,7 +480,7 @@ static void handle_rx(struct vPT_net *net)
         CSB_READ(net->csb, rx_ring.head, g_head);
         CSB_READ(net->csb, rx_ring.cur, g_cur);
         CSB_READ(net->csb, rx_ring.sync_flags, g_flags);
-
+#ifndef INFINITE_WORK
         /* No space to receive */
         if (nm_kring_need_kick(kring, g_head)) {
             usleep_range(1,1);
@@ -472,11 +498,15 @@ static void handle_rx(struct vPT_net *net)
         }
 
         /* ring empty */
-        if (kring->nr_hwtail == kring->rhead || cicle_nowork >= NM_PT_NOWORK_LIMIT) {
-            ND(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d", kring->nr_hwtail, kring->rhead, cicle_nowork);
+        if (kring->nr_hwtail == kring->rhead || cicle_nowork >= NM_PT_RX_NOWORK_CYCLE) {
+            RD(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d", kring->nr_hwtail, kring->rhead, cicle_nowork);
             break;
         }
-
+#endif
+        if (unlikely(net->broken || !net->configured)) {
+            D("net broken");
+            break;
+        }
     }
 
 leave_kr_put:

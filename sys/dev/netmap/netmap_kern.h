@@ -879,6 +879,8 @@ nm_kr_rxspace(struct netmap_kring *k)
 
 	return space;
 }
+/* return slots reserved to tx clients */
+#define nm_kr_txspace(_k) nm_kr_rxspace(_k)
 
 
 /* True if no space in the tx ring. only valid after txsync_prologue */
