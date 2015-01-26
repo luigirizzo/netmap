@@ -1,0 +1,95 @@
+diff --git a/src/PktSrc.cc b/src/PktSrc.cc
+index 9d6bce6..e8f59dd 100644
+--- a/src/PktSrc.cc
++++ b/src/PktSrc.cc
+@@ -11,6 +11,26 @@
+ #include "Net.h"
+ #include "Sessions.h"
+ 
++#define HAVE_NETMAP
++
++#ifdef HAVE_NETMAP
++
++// Compile in netmap support. If the interface name starts with
++// "netmap:" or "vale" we use a netmap fd instead of pcap, and bind
++// one or all rings depending on NETMAP_RING_ID environment variable.
++//
++// For a test run  you can use the vale switch,
++//	pkt-gen -i vale1:b -f tx -R ..rate_in_pps
++// and launch bro like this
++/*
++
++BROPATH=`./bro-path-dev` ./src/bro -i vale1:a -b -e 'global l=0; event p(){local s=net_stats(); local c=s$pkts_recvd;print c-l;l=c; schedule 1 sec {p()};} event bro_init(){event p();}'
++
++ */
++#define NETMAP_WITH_LIBS
++#include <net/netmap_user.h>
++
++#endif /* HAVE_NETMAP */
+ 
+ // ### This needs auto-confing.
+ #ifdef HAVE_PCAP_INT_H
+@@ -75,7 +95,14 @@ int PktSrc::ExtractNextPacket()
+ 		return 0;
+ 		}
+ 
++#ifdef HAVE_NETMAP
++	// in netmap mode call netmap equivalent of pcap_next()
++	if (IS_NETMAP_DESC(pd))
++		data = last_data = nm_nextpkt((struct nm_desc *)pd,
++				(struct nm_pkthdr *)&hdr);
++	else
++#endif /* HAVE_NETMAP */
+ 	data = last_data = pcap_next(pd, &hdr);
+ 
+ 	if ( data && (hdr.len == 0 || hdr.caplen == 0) )
+ 		{
+@@ -407,6 +435,11 @@ void PktSrc::Close()
+ 	{
+ 	if ( pd )
+ 		{
++#ifdef HAVE_NETMAP
++		if (IS_NETMAP_DESC(pd))
++			nm_close((struct nm_desc *)pd);
++		else
++#endif /* HAVE_NETMAP */
+ 		pcap_close(pd);
+ 		pd = 0;
+ 		closed = true;
+@@ -443,6 +476,14 @@ void PktSrc::Statistics(Stats* s)
+ 	else
+ 		{
+ 		struct pcap_stat pstat;
++#ifdef HAVE_NETMAP
++		if (IS_NETMAP_DESC(pd))
++			{
++			s->dropped = stats.dropped;
++			s->link = stats.received;
++			}
++		else
++#endif /* HAVE_NETMAP */
+ 		if ( pcap_stats(pd, &pstat) < 0 )
+ 			{
+ 			reporter->Error("problem getting packet filter statistics: %s",
+@@ -482,6 +523,21 @@ PktInterfaceSrc::PktInterfaceSrc(const char* arg_interface, const char* filter,
+ 
+ 	interface = copy_string(arg_interface);
+ 
++#ifdef HAVE_NETMAP
++	pd = (pcap_t *)nm_open(interface, getenv("NETMAP_RING_ID"), 0, 0);
++	// netmap interfaces are named netmap:* or vale*
++	// If pd == 0 && errno == 0 "interface" is not a valid
++	// netmap interface name, so we fall through to pcap
++	if (pd || errno > 0)
++		{
++		if (pd)
++			selectable_fd = NETMAP_FD(pd);
++		else
++			closed = true;
++		return;
++		}
++#endif /* HAVE_NETMAP */
++
+ 	// Determine network and netmask.
+ 	uint32 net;
+ 	if ( pcap_lookupnet(interface, &net, &netmask, tmp_errbuf) < 0 )

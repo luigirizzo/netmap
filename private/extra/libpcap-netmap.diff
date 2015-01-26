@@ -1,0 +1,389 @@
+diff --git a/Makefile.in b/Makefile.in
+index 9995458..c670d66 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -83,7 +83,7 @@ YACC = @V_YACC@
+ 	@rm -f $@
+ 	$(CC) $(FULL_CFLAGS) -c $(srcdir)/$*.c
+ 
+-PSRC =	pcap-@V_PCAP@.c @USB_SRC@ @BT_SRC@ @CAN_SRC@ @NETFILTER_SRC@ @CANUSB_SRC@ @DBUS_SRC@
++PSRC =	pcap-@V_PCAP@.c @USB_SRC@ @BT_SRC@ @CAN_SRC@ @NETFILTER_SRC@ @CANUSB_SRC@ @DBUS_SRC@ @NETMAP_SRC@
+ FSRC =  fad-@V_FINDALLDEVS@.c
+ SSRC =  @SSRC@
+ CSRC =	pcap.c inet.c gencode.c optimize.c nametoaddr.c etherent.c \
+@@ -313,6 +313,7 @@ EXTRA_DIST = \
+ 	pcap-namedb.h \
+ 	pcap-netfilter-linux.c \
+ 	pcap-netfilter-linux.h \
++	pcap-netmap.c \
+ 	pcap-nit.c \
+ 	pcap-null.c \
+ 	pcap-pf.c \
+diff --git a/config.h.in b/config.h.in
+index c6bc68e..09c8557 100644
+--- a/config.h.in
++++ b/config.h.in
+@@ -268,6 +268,9 @@
+ /* target host supports netfilter sniffing */
+ #undef PCAP_SUPPORT_NETFILTER
+ 
++/* target host supports netmap */
++#undef PCAP_SUPPORT_NETMAP
++
+ /* target host supports USB sniffing */
+ #undef PCAP_SUPPORT_USB
+ 
+diff --git a/configure b/configure
+index be87668..a8d0cae 100755
+--- a/configure
++++ b/configure
+@@ -626,6 +626,8 @@ INSTALL_PROGRAM
+ DBUS_SRC
+ PCAP_SUPPORT_DBUS
+ PKGCONFIG
++NETMAP_SRC
++PCAP_SUPPORT_NETMAP
+ CAN_SRC
+ PCAP_SUPPORT_CAN
+ CANUSB_SRC
+@@ -747,6 +749,7 @@ enable_shared
+ enable_bluetooth
+ enable_canusb
+ enable_can
++enable_netmap
+ enable_dbus
+ '
+       ac_precious_vars='build_alias
+@@ -1385,6 +1388,8 @@ Optional Features:
+                           available]
+   --enable-can            enable CAN support [default=yes, if support
+                           available]
++  --enable-netmap         enable netmap support [default=yes, if support
++                          available]
+   --enable-dbus           enable D-Bus capture support [default=yes, if
+                           support available]
+ 
+@@ -8148,6 +8153,39 @@ $as_echo "$as_me: no CAN sniffing support implemented for $host_os" >&6;}
+ 
+ fi
+ 
++# Check whether --enable-netmap was given.
++if test "${enable_netmap+set}" = set; then :
++  enableval=$enable_netmap;
++else
++  enable_netmap=yes
++fi
++
++
++if test "x$enable_netmap" != "xno" ; then
++                case "$host_os" in
++        *)
++                ac_fn_c_check_header_compile "$LINENO" "net/netmap_user.h" "ac_cv_header_net_netmap_user_h" "#include <net/netmap_user.h>
++
++"
++if test "x$ac_cv_header_net_netmap_user_h" = xyes; then :
++
++$as_echo "#define PCAP_SUPPORT_NETMAP 1" >>confdefs.h
++
++                        NETMAP_SRC=pcap-netmap.c
++                        { $as_echo "$as_me:${as_lineno-$LINENO}: netmap is supported" >&5
++$as_echo "$as_me: netmap is supported" >&6;}
++else
++  { $as_echo "$as_me:${as_lineno-$LINENO}: netmap is not supported" >&5
++$as_echo "$as_me: netmap is not supported" >&6;}
++fi
++
++
++                ;;
++        esac
++
++
++fi
++
+ # Check whether --enable-dbus was given.
+ if test "${enable_dbus+set}" = set; then :
+   enableval=$enable_dbus;
+diff --git a/configure.in b/configure.in
+index f0aa2c5..55464ba 100644
+--- a/configure.in
++++ b/configure.in
+@@ -1550,6 +1550,28 @@ if test "x$enable_can" != "xno" ; then
+ 	AC_SUBST(CAN_SRC)
+ fi
+ 
++AC_ARG_ENABLE([netmap],
++[AC_HELP_STRING([--enable-netmap],[enable netmap support @<:@default=yes, if support available@:>@])],
++    [],
++    [enable_netmap=yes])
++
++if test "x$enable_netmap" != "xno" ; then
++        dnl check for netmap support
++        case "$host_os" in
++        *)
++                AC_CHECK_HEADER(net/netmap_user.h,
++                        [ AC_DEFINE(PCAP_SUPPORT_NETMAP, 1, [target host supports netmap])
++                        NETMAP_SRC=pcap-netmap.c
++                        AC_MSG_NOTICE(netmap is supported)],
++                        AC_MSG_NOTICE(netmap is not supported),
++                        [#include <net/netmap_user.h>]
++                   )
++                ;;
++        esac
++        AC_SUBST(PCAP_SUPPORT_NETMAP)
++        AC_SUBST(NETMAP_SRC)
++fi
++
+ AC_ARG_ENABLE([dbus],
+ [AC_HELP_STRING([--enable-dbus],[enable D-Bus capture support @<:@default=yes, if support available@:>@])],
+     [],
+diff --git a/inet.c b/inet.c
+index c699658..d132507 100644
+--- a/inet.c
++++ b/inet.c
+@@ -883,6 +883,10 @@ pcap_lookupnet(device, netp, maskp, errbuf)
+ #ifdef PCAP_SUPPORT_USB
+ 	    || strstr(device, "usbmon") != NULL
+ #endif
++#ifdef PCAP_SUPPORT_NETMAP
++	    || !strncmp(device, "netmap:", 7)
++	    || !strncmp(device, "vale", 4)
++#endif
+ #ifdef HAVE_SNF_API
+ 	    || strstr(device, "snf") != NULL
+ #endif
+diff --git a/pcap-netmap.c b/pcap-netmap.c
+new file mode 100644
+index 0000000..2568c2f
+--- /dev/null
++++ b/pcap-netmap.c
+@@ -0,0 +1,205 @@
++/*
++ * Copyright 2014 Universita` di Pisa
++ *
++ * packet filter subroutines for netmap
++ */
++
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include <poll.h>
++#include <ctype.h>
++#include <errno.h>
++#include <netdb.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++
++#define NETMAP_WITH_LIBS
++#include <net/netmap_user.h>
++
++#include "pcap-int.h"
++
++#if defined (linux)
++/* On FreeBSD we use IFF_PPROMISC which is in ifr_flagshigh.
++ * remap to IFF_PROMISC on linux
++ */
++#define IFF_PPROMISC	IFF_PROMISC
++#define ifr_flagshigh	ifr_flags
++#endif /* linux */
++
++struct pcap_netmap {
++	struct nm_desc *d;	/* pointer returned by nm_open() */
++	pcap_handler cb;	/* callback and argument */
++	u_char *cb_arg;
++	int must_clear_promisc;	/* flag */
++	uint64_t rx_pkts;	/* count of packets received before the filter */
++};
++
++static int
++pcap_netmap_stats(pcap_t *p, struct pcap_stat *ps)
++{
++	struct pcap_netmap *pn = p->priv;
++
++	ps->ps_recv = pn->rx_pkts;
++	ps->ps_drop = 0;
++	ps->ps_ifdrop = 0;
++	return 0;
++}
++
++static void
++pcap_netmap_filter(u_char *arg, struct pcap_pkthdr *h, const u_char *buf)
++{
++	pcap_t *p = (pcap_t *)arg;
++	struct pcap_netmap *pn = p->priv;
++
++	++pn->rx_pkts;
++	if (bpf_filter(p->fcode.bf_insns, buf, h->len, h->caplen))
++		pn->cb(pn->cb_arg, h, buf);
++}
++
++static int
++pcap_netmap_dispatch(pcap_t *p, int cnt, pcap_handler cb, u_char *user)
++{
++	int ret;
++	struct pcap_netmap *pn = p->priv;
++	struct nm_desc *d = pn->d;
++	struct pollfd pfd = { .fd = p->fd, .events = POLLIN, .revents = 0 };
++
++	pn->cb = cb;
++	pn->cb_arg = user;
++
++	for (;;) {
++		if (p->break_loop) {
++			p->break_loop = 0;
++			return PCAP_ERROR_BREAK;
++		}
++		/* nm_dispatch won't run forever */
++		ret = nm_dispatch((void *)d, cnt, (void *)pcap_netmap_filter, (void *)p);
++		if (ret != 0)
++			break;
++		poll(&pfd, 1, p->opt.timeout);
++	}
++	return ret;
++}
++
++/* XXX need to check the NIOCTXSYNC/poll */
++static int
++pcap_netmap_inject(pcap_t *p, const void *buf, size_t size)
++{
++	struct nm_desc *d = ((struct pcap_netmap *)p->priv)->d;
++
++	return nm_inject(d, buf, size);
++}
++
++static int
++pcap_netmap_ioctl(pcap_t *p, u_long what, uint32_t *if_flags)
++{
++	struct pcap_netmap *pn = p->priv;
++	struct nm_desc *d = pn->d;
++	struct ifreq ifr;
++	int error, fd = d->fd;
++
++#ifdef linux
++	fd = socket(AF_INET, SOCK_DGRAM, 0);
++	if (fd < 0) {
++		fprintf(stderr, "Error: cannot get device control socket.\n");
++		return -1;
++	}
++#endif /* linux */
++	bzero(&ifr, sizeof(ifr));
++	strncpy(ifr.ifr_name, d->req.nr_name, sizeof(ifr.ifr_name));
++	switch (what) {
++	case SIOCSIFFLAGS:
++		ifr.ifr_flags = *if_flags;
++		ifr.ifr_flagshigh = *if_flags >> 16;
++		break;
++	}
++	error = ioctl(fd, what, &ifr);
++	fprintf(stderr, "%s %s ioctl 0x%lx returns %d\n", __FUNCTION__,
++		d->req.nr_name, what, error);
++	if (error)
++		return -1;
++	switch (what) {
++	case SIOCGIFFLAGS:
++		*if_flags = ifr.ifr_flags | (ifr.ifr_flagshigh << 16);
++	}
++	return 0;
++}
++
++static void
++pcap_netmap_close(pcap_t *p)
++{
++	struct pcap_netmap *pn = p->priv;
++	struct nm_desc *d = pn->d;
++	uint32_t if_flags = 0;
++
++	if (pn->must_clear_promisc) {
++		pcap_netmap_ioctl(p, SIOCGIFFLAGS, &if_flags); /* fetch flags */
++		if (if_flags & IFF_PPROMISC) {
++			if_flags &= ~IFF_PPROMISC;
++			pcap_netmap_ioctl(p, SIOCSIFFLAGS, &if_flags);
++		}
++	}
++	nm_close(d);
++}
++
++static int
++pcap_netmap_activate(pcap_t *p)
++{
++	struct pcap_netmap *pn = p->priv;
++	struct nm_desc *d = nm_open(p->opt.source, NULL, 0, NULL);
++	uint32_t if_flags = 0;
++
++	if (d == NULL) {
++		snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
++			"netmap open: cannot access %s: %s\n",
++			p->opt.source, pcap_strerror(errno));
++		goto bad;
++	}
++	fprintf(stderr, "%s device %s priv %p fd %d ports %d..%d\n",
++		__FUNCTION__, p->opt.source, d, d->fd, d->first_rx_ring, d->last_rx_ring);
++	pn->d = d;
++	p->fd = d->fd;
++	if (p->opt.promisc && !(d->req.nr_ringid & NETMAP_SW_RING)) {
++		pcap_netmap_ioctl(p, SIOCGIFFLAGS, &if_flags); /* fetch flags */
++		if (!(if_flags & IFF_PPROMISC)) {
++			pn->must_clear_promisc = 1;
++			if_flags |= IFF_PPROMISC;
++			pcap_netmap_ioctl(p, SIOCSIFFLAGS, &if_flags);
++		}
++	}
++	p->linktype = DLT_EN10MB;
++	p->selectable_fd = p->fd;
++	p->read_op = pcap_netmap_dispatch;
++	p->inject_op = pcap_netmap_inject,
++	p->setfilter_op = install_bpf_program;
++	p->setdirection_op = NULL;
++	p->set_datalink_op = NULL;
++	p->getnonblock_op = pcap_getnonblock_fd;
++	p->setnonblock_op = pcap_setnonblock_fd;
++	p->stats_op = pcap_netmap_stats;
++	p->cleanup_op = pcap_netmap_close;
++	return (0);
++
++    bad:
++	pcap_cleanup_live_common(p);
++	return (PCAP_ERROR);
++}
++
++pcap_t *
++pcap_netmap_create(const char *device, char *ebuf, int *is_ours)
++{
++	pcap_t *p;
++
++	*is_ours = (!strncmp(device, "netmap:", 7) || !strncmp(device, "vale", 4));
++	if (! *is_ours)
++		return NULL;
++	p = pcap_create_common(device, ebuf, sizeof (struct pcap_netmap));
++	if (p == NULL)
++		return (NULL);
++	p->activate_op = pcap_netmap_activate;
++	return (p);
++}
+diff --git a/pcap.c b/pcap.c
+index b2b5da6..beda714 100644
+--- a/pcap.c
++++ b/pcap.c
+@@ -104,6 +104,10 @@
+ #include "pcap-dbus.h"
+ #endif
+ 
++#ifdef PCAP_SUPPORT_NETMAP
++pcap_t* pcap_netmap_create(const char *device, char *ebuf, int *is_ours);
++#endif
++
+ int
+ pcap_not_initialized(pcap_t *pcap _U_)
+ {
+@@ -307,6 +311,9 @@ struct capture_source_type {
+ 	int (*findalldevs_op)(pcap_if_t **, char *);
+ 	pcap_t *(*create_op)(const char *, char *, int *);
+ } capture_source_types[] = {
++#ifdef PCAP_SUPPORT_NETMAP
++	{ NULL, pcap_netmap_create },
++#endif
+ #ifdef HAVE_DAG_API
+ 	{ dag_findalldevs, dag_create },
+ #endif
