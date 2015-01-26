@@ -40,3 +40,4 @@ examples/testlock
 examples/testmmap
 examples/vale-ctl
 build*/
+LINUX/tmp-patches
