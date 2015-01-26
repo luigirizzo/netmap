@@ -1,0 +1,3 @@
+testmod/* 	merge=ignore -diff
+testcsum.c	merge=ignore -diff
+test_nm.c	merge=ignore -diff
