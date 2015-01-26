@@ -3079,7 +3079,7 @@ netmap_init(void)
 	 * XXX could use make_dev_credv() to get error number
 	 */
 	netmap_dev = make_dev_credf(MAKEDEV_ETERNAL_KLD,
-		&netmap_cdevsw, 0, NULL, UID_ROOT, GID_WHEEL, 0660,
+		&netmap_cdevsw, 0, NULL, UID_ROOT, GID_WHEEL, 0600,
 			      "netmap");
 	if (!netmap_dev)
 		goto fail;
