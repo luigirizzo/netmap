@@ -392,7 +392,10 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 		/*
 		 * Second part: reclaim buffers for completed transmissions.
 		 */
-		kring->nr_hwtail = csb->tx_ring.hwtail;
+	        if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+		    kring->nr_hwtail = csb->tx_ring.hwtail;
+		}
+
 		if (nm_kr_txempty(kring) ) {
 			csb->guest_need_txkick = 1;
                         /* Double check */
