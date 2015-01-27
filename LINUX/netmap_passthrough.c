@@ -308,19 +308,21 @@ static void handle_tx(struct vPT_net *net)
         if (netmap_verbose & NM_VERB_TXSYNC)
             nm_kring_dump("post txsync", kring);
 
+//#define BUSY_WAIT
+#ifndef BUSY_WAIT
         if (work && vPT_tx_interrupts_enabled(net)) {
             vPT_disable_guest_txkick(net);
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.htxk++);
             work = false;
         }
+#endif
 
         // prologue
         CSB_READ(net->csb, tx_ring.head, g_head);
         CSB_READ(net->csb, tx_ring.cur, g_cur);
         CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
-//#define INFINITE_WORK
-#ifndef INFINITE_WORK
+#ifndef BUSY_WAIT
         /* Nothing to transmit */
         if (g_head == kring->rhead) {
             usleep_range(1,1);
@@ -468,19 +470,21 @@ static void handle_rx(struct vPT_net *net)
         if (netmap_verbose & NM_VERB_RXSYNC)
             nm_kring_dump("post rxsync", kring);
 
+#ifndef BUSY_WAIT
         if (work && vPT_rx_interrupts_enabled(net)) {
             vPT_disable_guest_rxkick(net);
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.hrxk++);
             work = false;
         }
+#endif
 
         // prologue
         mb();
         CSB_READ(net->csb, rx_ring.head, g_head);
         CSB_READ(net->csb, rx_ring.cur, g_cur);
         CSB_READ(net->csb, rx_ring.sync_flags, g_flags);
-#ifndef INFINITE_WORK
+#ifndef BUSY_WAIT
         /* No space to receive */
         if (nm_kring_need_kick(kring, g_head)) {
             usleep_range(1,1);
