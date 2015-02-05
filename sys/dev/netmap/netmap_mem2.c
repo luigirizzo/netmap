@@ -1780,7 +1780,7 @@ netmap_mem_paravirt_finalize(struct netmap_mem_d *nmd)
 
 	D("");
 	NMA_LOCK(nmd);
-	nmd->refcount++;
+	nmd->active++;
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		goto out;
 
@@ -1808,8 +1808,8 @@ netmap_mem_paravirt_deref(struct netmap_mem_d *nmd)
 
 	D("");
 	NMA_LOCK(nmd);
-	nmd->refcount--;
-	if (nmd->refcount <= 0 && 
+	nmd->active--;
+	if (nmd->active <= 0 &&
 	   (nmd->flags & NETMAP_MEM_FINALIZED))
 	{
 		nmd->flags  &= ~NETMAP_MEM_FINALIZED;
@@ -1842,8 +1842,8 @@ netmap_mem_paravirt_delete(struct netmap_mem_d *d)
 		return;
 	if (netmap_verbose)
 		D("deleting %p", nmd);
-	if (d->refcount > 0)
-		D("bug: deleting mem allocator with refcount=%d!", d->refcount);
+	if (d->active > 0)
+		D("bug: deleting mem allocator with active=%d!", d->active);
 	nm_mem_release_id(d);
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
