@@ -121,8 +121,8 @@ struct netmap_mem_ops {
 
 	vm_paddr_t (*nmd_ofstophys)(struct netmap_mem_d *, vm_ooffset_t);
 	int (*nmd_config)(struct netmap_mem_d *);
-	int (*nmd_finalize)(struct netmap_mem_d *);
-	void (*nmd_deref)(struct netmap_mem_d *);
+	int (*nmd_finalize)(struct netmap_mem_d *, struct netmap_adapter *);
+	void (*nmd_deref)(struct netmap_mem_d *, struct netmap_adapter *);
 	ssize_t  (*nmd_if_offset)(struct netmap_mem_d *, const void *vaddr);
 	void (*nmd_delete)(struct netmap_mem_d *);
 
@@ -255,7 +255,7 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	if (nm_mem_assign_group(nmd, na->pdev) < 0) {
 		return ENOMEM;
 	} else {
-		nmd->ops->nmd_finalize(nmd);
+		nmd->ops->nmd_finalize(nmd, na);
 	}
 
 	if (!nmd->lasterr && na->pdev)
@@ -270,7 +270,7 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	NMA_LOCK(nmd);
 	netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
 	NMA_UNLOCK(nmd);
-	return nmd->ops->nmd_deref(nmd);
+	return nmd->ops->nmd_deref(nmd, na);
 }
 
 
@@ -1219,7 +1219,7 @@ netmap_mem_private_config(struct netmap_mem_d *nmd)
 }
 
 static int
-netmap_mem_private_finalize(struct netmap_mem_d *nmd)
+netmap_mem_private_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	int err;
 	NMA_LOCK(nmd);
@@ -1231,7 +1231,7 @@ netmap_mem_private_finalize(struct netmap_mem_d *nmd)
 }
 
 static void
-netmap_mem_private_deref(struct netmap_mem_d *nmd)
+netmap_mem_private_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	NMA_LOCK(nmd);
 	if (--nmd->active <= 0)
@@ -1369,7 +1369,7 @@ out:
 }
 
 static int
-netmap_mem_global_finalize(struct netmap_mem_d *nmd)
+netmap_mem_global_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	int err;
 		
@@ -1612,7 +1612,7 @@ netmap_mem2_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 }
 
 static void
-netmap_mem_global_deref(struct netmap_mem_d *nmd)
+netmap_mem_global_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 
 	nmd->active--;
@@ -1771,7 +1771,7 @@ netmap_mem_paravirt_config(struct netmap_mem_d *nmd)
 }
 
 static int 
-netmap_mem_paravirt_finalize(struct netmap_mem_d *nmd)
+netmap_mem_paravirt_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
 	struct ifnet *ifp = pv->ifp;
@@ -1801,7 +1801,7 @@ out:
 }
 
 static void 
-netmap_mem_paravirt_deref(struct netmap_mem_d *nmd)
+netmap_mem_paravirt_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
 	struct ifnet *ifp = pv->ifp;
