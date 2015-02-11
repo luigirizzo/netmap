@@ -175,6 +175,7 @@ struct paravirt_csb {
 #define NET_PARAVIRT_PTCTL_RXSYNC	9
 #define NET_PARAVIRT_PTCTL_REGIF        10
 #define NET_PARAVIRT_PTCTL_UNREGIF      11
+#define NET_PARAVIRT_PTCTL_HOSTMEMID	12
 
 #ifdef	QEMU_PCI_H
 
