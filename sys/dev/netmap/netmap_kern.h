@@ -1560,7 +1560,7 @@ struct netmap_monitor_adapter {
 
 #ifdef WITH_PASSTHROUGH
 
-struct netmap_passthrough_adapter {
+struct netmap_passthrough_adapter { //TODO-ste: refact to netmap_host_pt_adapter
 	struct netmap_adapter up;
 
 	struct netmap_adapter *parent;
@@ -1568,6 +1568,12 @@ struct netmap_passthrough_adapter {
 };
 
 #endif /* WITH_PASSTHROUGH */
+
+struct netmap_guest_pt_adapter {
+	struct netmap_hw_adapter hwup;
+
+	struct netmap_paravirt_ops *pv_ops;
+};
 
 #ifdef WITH_GENERIC
 /*

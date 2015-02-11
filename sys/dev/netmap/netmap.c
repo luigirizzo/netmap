@@ -2739,8 +2739,8 @@ netmap_hw_register(struct netmap_adapter *na, int onoff)
  * kring	N+1	is only used for the selinfo for all queues. // XXX still true ?
  * Return 0 on success, ENOMEM otherwise.
  */
-int
-netmap_attach(struct netmap_adapter *arg)
+static int
+_netmap_attach(struct netmap_adapter *arg, size_t size)
 {
 	struct netmap_hw_adapter *hwna = NULL;
 	// XXX when is arg == NULL ?
@@ -2748,7 +2748,7 @@ netmap_attach(struct netmap_adapter *arg)
 
 	if (arg == NULL || ifp == NULL)
 		goto fail;
-	hwna = malloc(sizeof(*hwna), M_DEVBUF, M_NOWAIT | M_ZERO);
+	hwna = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (hwna == NULL)
 		goto fail;
 	hwna->up = *arg;
@@ -2796,19 +2796,35 @@ fail:
 	return (hwna ? EINVAL : ENOMEM);
 }
 
+
+int
+netmap_attach(struct netmap_adapter *arg)
+{
+	return _netmap_attach(arg, sizeof(struct netmap_hw_adapter));
+}
+
+
 int
 netmap_paravirt_attach(struct netmap_adapter *arg,
 		struct netmap_paravirt_ops *pv_ops)
 {
+	struct netmap_guest_pt_adapter *ptna;
+	struct ifnet *ifp = arg ? arg->ifp : NULL;
 	int error;
 
-	arg->nm_mem = netmap_mem_paravirt_new(arg->ifp, pv_ops);
+	/* get allocator */
+	arg->nm_mem = netmap_mem_paravirt_new(ifp, pv_ops);
 	if (arg->nm_mem == NULL)
 		return ENOMEM;
 	arg->na_flags |= NAF_MEM_OWNER;
-	error = netmap_attach(arg);
+	error = _netmap_attach(arg, sizeof(struct netmap_guest_pt_adapter));
 	if (error)
 		return error;
+
+	/* get the netmap_guest_pt_adapter */
+	ptna = (struct netmap_guest_pt_adapter *) NA(ifp);
+	ptna->pv_ops = pv_ops;
+
 	return 0;
 }
 

@@ -25,6 +25,7 @@
 
 #ifdef linux
 #include "bsd_glue.h"
+#include "bsd_queue.h"
 #endif /* linux */
 
 #ifdef __APPLE__
@@ -48,6 +49,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 241723 2012-10-19 09:41:45Z gle
 #include <net/if_var.h>
 #include <net/vnet.h>
 #include <machine/bus.h>	/* bus_dmamap_* */
+#include <sys/queue.h>
 
 /* M_NETMAP only used in here */
 MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
@@ -1654,20 +1656,33 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 
 /* paravirtual allocator */
 #include "paravirt.h"
+struct netmap_mem_pv_na {
+	struct netmap_guest_pt_adapter *ptna;
+
+	TAILQ_ENTRY(netmap_mem_pv_na) next;
+};
 
 struct netmap_mem_pv {
 	struct netmap_mem_d up;
 
-	struct ifnet *ifp;
-	struct netmap_paravirt_ops *pv_ops;
 	vm_paddr_t nm_paddr;
+	uint64_t nm_addr;
 	struct lut_entry *lut;
+
+	nm_memid_t nm_host_id;       /* allocator identifier in the host */
+	TAILQ_HEAD(, netmap_mem_pv_na) active_na;
+
+	TAILQ_ENTRY(netmap_mem_pv) next;
 };
+
+TAILQ_HEAD(, netmap_mem_pv) nm_mem_pv_head =
+	TAILQ_HEAD_INITIALIZER(nm_mem_pv_head);
 
 static int
 netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
+	struct netmap_mem_pv_na *pv_na = TAILQ_FIRST(&pv->active_na);
 	struct paravirt_csb *csb;
 	struct netmap_if *nifp;
 	struct netmap_ring *ring;
@@ -1677,11 +1692,14 @@ netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 	int i;
 
 	D("");
-	if (! (nmd->flags & NETMAP_MEM_FINALIZED)) {
+	if (!(nmd->flags & NETMAP_MEM_FINALIZED)) {
 		return EINVAL;
 	}
 
-	csb = pv->pv_ops->nm_getcsb(pv->ifp);
+	if (pv_na == NULL)
+		return EINVAL;
+
+	csb = pv_na->ptna->pv_ops->nm_getcsb(pv_na->ptna->hwup.up.ifp);
 	if (csb == NULL)
 		return EINVAL;
 
@@ -1696,11 +1714,11 @@ netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 
 	/* XXX check that the pointers are within the mapped area */
 
-	nifp = (struct netmap_if *)(csb->base_addr + csb->nifp_offset);
+	nifp = (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
 	ring = (struct netmap_ring *)((void *)nifp + nifp->ring_ofs[0]);
 	vaddr = (void *)((char *)ring + ring->buf_ofs);
 	D("vaddr %p", vaddr);
-	paddr = csb->base_addr + nifp->ring_ofs[0] + ring->buf_ofs;
+	paddr = pv->nm_addr + nifp->ring_ofs[0] + ring->buf_ofs;
 	bufsize = ring->nr_buf_size;
 	for (i = 0; i < csb->nbuffers; i++) {
 		pv->lut[i].vaddr = vaddr;
@@ -1755,15 +1773,20 @@ static int
 netmap_mem_paravirt_config(struct netmap_mem_d *nmd)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
-	struct ifnet *ifp = pv->ifp;
+	struct netmap_mem_pv_na *pv_na = TAILQ_FIRST(&pv->active_na);
+	struct ifnet *ifp;
 	struct paravirt_csb *csb;
 	int error;
 
 	D("");
-	csb = pv->pv_ops->nm_getcsb(ifp);
+	if (pv_na == NULL)
+		return EINVAL;
+	ifp = pv_na->ptna->hwup.up.ifp;
+
+	csb = pv_na->ptna->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL)
 		return EINVAL;
-	error = pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	error = pv_na->ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
 	if (error)
 		return error;
 	nmd->nm_totalsize = csb->memsize;
@@ -1774,28 +1797,45 @@ static int
 netmap_mem_paravirt_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
-	struct ifnet *ifp = pv->ifp;
+	struct netmap_guest_pt_adapter *ptna = (struct netmap_guest_pt_adapter *) na;
+	struct netmap_mem_pv_na *pv_na;
+	struct ifnet *ifp = ptna->hwup.up.ifp;
 	struct paravirt_csb *csb;
 	int error = 0;
 
 	D("");
+
+	if (ptna->pv_ops == NULL)
+		return EINVAL;
+
 	NMA_LOCK(nmd);
 	nmd->active++;
+	pv_na = malloc(sizeof(struct netmap_mem_pv_na),
+			M_DEVBUF, M_NOWAIT | M_ZERO);
+	pv_na->ptna = ptna;
+	TAILQ_INSERT_HEAD(&pv->active_na, pv_na, next);
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		goto out;
 
-	csb = pv->pv_ops->nm_getcsb(ifp);
+	csb = ptna->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL) {
 		error = EINVAL;
-		goto out;
+		goto err;
 	}
-	error = pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_FINALIZE);
+	error = ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_FINALIZE);
 	if (error)
-		goto out;
+		goto err;
 	nmd->nm_totalsize = csb->memsize;
 	pv->nm_paddr = csb->base_paddr;
+	pv->nm_addr = csb->base_addr;
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 out:
+	NMA_UNLOCK(nmd);
+	return 0;
+err:
+	TAILQ_REMOVE(&pv->active_na, pv_na, next);
+	free(pv_na, M_DEVBUF);
+	nmd->active--;
 	NMA_UNLOCK(nmd);
 	return error;
 }
@@ -1804,16 +1844,35 @@ static void
 netmap_mem_paravirt_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
-	struct ifnet *ifp = pv->ifp;
+	struct netmap_guest_pt_adapter *ptna = NULL;
+	struct netmap_mem_pv_na *pv_na, *pv_na_tmp;
+	struct ifnet *ifp = na->ifp;
+	struct paravirt_csb *csb;
 
-	D("");
+
 	NMA_LOCK(nmd);
-	nmd->active--;
-	if (nmd->active <= 0 &&
-	   (nmd->flags & NETMAP_MEM_FINALIZED))
-	{
-		nmd->flags  &= ~NETMAP_MEM_FINALIZED;
-		pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_DEREF);
+	TAILQ_FOREACH_SAFE(pv_na, &pv->active_na, next, pv_na_tmp) {
+		if (pv_na->ptna == (struct netmap_guest_pt_adapter *) na) {
+			TAILQ_REMOVE(&pv->active_na, pv_na, next);
+			ptna = pv_na->ptna;
+			free(pv_na, M_DEVBUF);
+			break;
+		}
+	}
+	if (ptna) {
+		nmd->active--;
+		if (nmd->active <= 0 &&
+	   			(nmd->flags & NETMAP_MEM_FINALIZED))
+		{
+			nmd->flags  &= ~NETMAP_MEM_FINALIZED;
+			if (ifp && NA(ifp) && (csb = ptna->pv_ops->nm_getcsb(ifp))) {
+				csb->base_addr = pv->nm_addr;
+				ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_DEREF);
+			} else
+				iounmap((void*)pv->nm_addr);//XXX
+			pv->nm_addr = 0;
+			pv->nm_paddr = 0;
+		}
 	}
 	NMA_UNLOCK(nmd);
 }
@@ -1822,10 +1881,14 @@ static ssize_t
 netmap_mem_paravirt_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
-	struct ifnet *ifp = pv->ifp;
+	struct netmap_mem_pv_na *pv_na = TAILQ_FIRST(&pv->active_na);
+	struct ifnet *ifp;
 	struct paravirt_csb *csb;
 	D("");
-	csb = pv->pv_ops->nm_getcsb(ifp);
+	if (pv_na == NULL)
+		return EINVAL;
+	ifp = pv_na->ptna->hwup.up.ifp;
+	csb = pv_na->ptna->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL)
 		return EINVAL;
 	return csb->nifp_offset;
@@ -1848,6 +1911,11 @@ netmap_mem_paravirt_delete(struct netmap_mem_d *d)
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
 	NMA_LOCK_DESTROY(d);
+
+	NMA_LOCK(&nm_mem);
+	TAILQ_REMOVE(&nm_mem_pv_head, nmd, next);
+	NMA_UNLOCK(&nm_mem);
+
 	free(nmd, M_DEVBUF);
 }
 
@@ -1855,15 +1923,19 @@ static struct netmap_if *
 netmap_mem_paravirt_if_new(struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)na->nm_mem;
-	struct ifnet *ifp = pv->ifp;
+	struct netmap_mem_pv_na *pv_na = TAILQ_FIRST(&pv->active_na);
+	struct ifnet *ifp;
 	struct paravirt_csb *csb;
 	D("");
+	if (pv_na == NULL)
+		return NULL;
+	ifp = pv_na->ptna->hwup.up.ifp;
 	/* if na is our owner return the backend ifp, otherwise NULL */
 	//return NULL;
-	csb = pv->pv_ops->nm_getcsb(ifp);
+	csb = pv_na->ptna->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL)
 		return NULL;
-	return (struct netmap_if *)(csb->base_addr + csb->nifp_offset);
+	return (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
 }
 
 static void 
@@ -1876,19 +1948,23 @@ static int
 netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)na->nm_mem;
-	struct ifnet *ifp = pv->ifp;
+	struct netmap_mem_pv_na *pv_na = TAILQ_FIRST(&pv->active_na);
+	struct ifnet *ifp;
 	struct paravirt_csb *csb;
 	struct netmap_if *nifp;
 	int i, error = 0;
 
 	D("");
-	csb = pv->pv_ops->nm_getcsb(ifp);
+	if (pv_na == NULL)
+		return EINVAL;
+	ifp = pv_na->ptna->hwup.up.ifp;
+	csb = pv_na->ptna->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL)
 		return EINVAL;
 	/* if na is our owner, point each kring to the
 	 * corresponding backend ring, otherwise ENOMEM
 	 */
-	nifp = (struct netmap_if *)(csb->base_addr + csb->nifp_offset);
+	nifp = (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
 	for (i = 0; i <= na->num_tx_rings; i++) {
 		struct netmap_kring *kring = na->tx_rings + i;
 		if (kring->ring)
@@ -1923,7 +1999,7 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 		csb->rx_ring.sync_flags = 0;
 	}
 
-	//error = pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
+	//error = pv_na->ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
 
 	return error;
 }
@@ -1932,10 +2008,14 @@ static void
 netmap_mem_paravirt_rings_delete(struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)na->nm_mem;
-	struct ifnet *ifp = pv->ifp;
+	struct netmap_mem_pv_na *pv_na = TAILQ_FIRST(&pv->active_na);
+	struct ifnet *ifp;
 
 	D("");
-	//pv->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSDELETE);
+	if (pv_na == NULL)
+		return;
+	ifp = pv_na->ptna->hwup.up.ifp;
+	//pv_na->na->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSDELETE);
 }
 
 
@@ -1955,11 +2035,27 @@ struct netmap_mem_ops netmap_mem_paravirt_ops = {
 	.nmd_rings_delete = netmap_mem_paravirt_rings_delete
 };
 
-struct netmap_mem_d *
-netmap_mem_paravirt_new(struct ifnet *ifp,
-		struct netmap_paravirt_ops *ops)
+static struct netmap_mem_d *
+netmap_mem_paravirt_find_hostid(nm_memid_t host_id)
 {
-	struct netmap_mem_pv *d = NULL;
+	struct netmap_mem_pv *nmd = NULL;
+
+	NMA_LOCK(&nm_mem);
+	TAILQ_FOREACH(nmd, &nm_mem_pv_head, next) {
+		if (nmd->nm_host_id == host_id) {
+			NMA_UNLOCK(&nm_mem);
+			return &nmd->up;
+		}
+	}
+	NMA_UNLOCK(&nm_mem);
+
+	return NULL;
+}
+
+static struct netmap_mem_d *
+netmap_mem_paravirt_create(nm_memid_t host_id)
+{
+	struct netmap_mem_pv *d;
 	int err = 0;
 
 	d = malloc(sizeof(struct netmap_mem_pv),
@@ -1969,9 +2065,10 @@ netmap_mem_paravirt_new(struct ifnet *ifp,
 		goto error;
 	}
 
-	d->ifp = ifp;
-	d->pv_ops = ops;
 	d->up.ops = &netmap_mem_paravirt_ops;
+	d->nm_host_id = host_id;
+	//d->ifp = na->ifp;
+	//d->pv_ops = ops;
 
 	err = nm_mem_assign_id(&d->up);
 	if (err)
@@ -1981,10 +2078,39 @@ netmap_mem_paravirt_new(struct ifnet *ifp,
 	d->up.flags |= NETMAP_MEM_IO;
 
 	NMA_LOCK_INIT(&d->up);
+	TAILQ_INIT(&d->active_na);
+
+	NMA_LOCK(&nm_mem);
+	TAILQ_INSERT_HEAD(&nm_mem_pv_head, d, next);
+	NMA_UNLOCK(&nm_mem);
 
 	return &d->up;
 error:
 	netmap_mem_paravirt_delete(&d->up);
 	return NULL;
+}
+
+struct netmap_mem_d *
+netmap_mem_paravirt_new(struct ifnet *ifp,
+		struct netmap_paravirt_ops *pv_ops)
+{
+	struct netmap_mem_d *mem;
+	nm_memid_t host_id;
+
+	if (ifp == NULL || pv_ops == NULL)
+		return NULL;
+
+	/* get the host id allocator */
+	host_id = pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_HOSTMEMID);
+
+	/* find host id in guest allocators */
+	mem = netmap_mem_paravirt_find_hostid(host_id);
+	if (mem)
+		return mem;
+
+	/* create new guest allocator */
+	mem = netmap_mem_paravirt_create(host_id);
+
+	return mem;
 }
 
