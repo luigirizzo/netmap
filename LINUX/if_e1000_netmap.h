@@ -526,10 +526,12 @@ e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)
 	int ret = 0;
 
 	if (onoff) {
+		ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+		if (ret)
+			return ret;
+
 		na->na_flags |= NAF_NETMAP_ON;
 		adapter->passthrough = 1;
-		ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
-
 		/*
 		 * Init ring and kring pointers
 		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
