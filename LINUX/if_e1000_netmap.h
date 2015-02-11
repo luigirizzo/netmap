@@ -618,7 +618,10 @@ static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
                 D("NET_PARAVIRT_PTCTL_DEREF");
 		base_addr = (void*)csb->base_addr;
 		if (base_addr != NULL) {
-			pci_iounmap(adapter->pdev, base_addr);
+			//pci_iounmap(adapter->pdev, base_addr);
+			iounmap(base_addr);
+		} else {
+			D("base_addr NULL");
 		}
 		break;
 	default:
