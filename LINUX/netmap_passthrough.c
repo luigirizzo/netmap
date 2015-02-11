@@ -1148,7 +1148,7 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     //pt_na->up.nm_bdg_attach = netmap_pt_bdg_attach;
     //pt_na->up.nm_bdg_ctl = netmap_pt_bdg_ctl;
 
-
+    pt_na->up.nm_mem = parent->nm_mem;
     error = netmap_attach_common(&pt_na->up);
     if (error) {
         D("attach_common error");
@@ -1164,7 +1164,6 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     nmr->nr_tx_slots = pt_na->up.num_tx_desc;
     nmr->nr_rx_slots = pt_na->up.num_rx_desc;
 
-    pt_na->up.nm_mem = parent->nm_mem;
     parent->na_flags |= NAF_BUSY;
 
     strncpy(pt_na->up.name, parent->name, sizeof(pt_na->up.name));
