@@ -26,33 +26,33 @@
 #include <linux/kthread.h>
 #include <linux/cgroup.h>
 
-#include "vhost_netmap_pt.h"
+#include "ptnetmap_vhost.h"
 
 
-static void vPT_poll_func(struct file *file, wait_queue_head_t *wqh,
+static void ptn_vhost_poll_func(struct file *file, wait_queue_head_t *wqh,
 	poll_table *pt)
 {
-    struct vPT_poll *poll;
+    struct ptn_vhost_poll *poll;
 
-    poll = container_of(pt, struct vPT_poll, table);
+    poll = container_of(pt, struct ptn_vhost_poll, table);
     poll->wqh = wqh;
     add_wait_queue(wqh, &poll->wait);
 }
 
-static int vPT_poll_wakeup(wait_queue_t *wait, unsigned mode, int sync,
+static int ptn_vhost_poll_wakeup(wait_queue_t *wait, unsigned mode, int sync,
 	void *key)
 {
-    struct vPT_poll *poll = container_of(wait, struct vPT_poll, wait);
+    struct ptn_vhost_poll *poll = container_of(wait, struct ptn_vhost_poll, wait);
 
-    //printk("%p.vPT_poll_wakeup(), %lu, %lu\n",poll,(unsigned long)key, poll->mask);
+    //printk("%p.ptn_vhost_poll_wakeup(), %lu, %lu\n",poll,(unsigned long)key, poll->mask);
     if (!((unsigned long)key & poll->mask))
 	return 0;
 
-    vPT_poll_queue(poll);
+    ptn_vhost_poll_queue(poll);
     return 0;
 }
 
-void vPT_work_init(struct vPT_work *work, vPT_work_fn_t fn)
+void ptn_vhost_work_init(struct ptn_vhost_work *work, ptn_vhost_work_fn_t fn)
 {
     INIT_LIST_HEAD(&work->node);
     work->fn = fn;
@@ -62,21 +62,21 @@ void vPT_work_init(struct vPT_work *work, vPT_work_fn_t fn)
 }
 
 /* Init poll structure */
-void vPT_poll_init(struct vPT_poll *poll, vPT_work_fn_t fn,
-	unsigned long mask, struct vPT_dev *dev)
+void ptn_vhost_poll_init(struct ptn_vhost_poll *poll, ptn_vhost_work_fn_t fn,
+	unsigned long mask, struct ptn_vhost_dev *dev)
 {
-    init_waitqueue_func_entry(&poll->wait, vPT_poll_wakeup);
-    init_poll_funcptr(&poll->table, vPT_poll_func);
+    init_waitqueue_func_entry(&poll->wait, ptn_vhost_poll_wakeup);
+    init_poll_funcptr(&poll->table, ptn_vhost_poll_func);
     poll->mask = mask;
     poll->dev = dev;
     poll->wqh = NULL;
 
-    vPT_work_init(&poll->work, fn);
+    ptn_vhost_work_init(&poll->work, fn);
 }
 
 /* Start polling a file. We add ourselves to file's wait queue. The caller must
- * keep a reference to a file until after vPT_poll_stop is called. */
-int vPT_poll_start(struct vPT_poll *poll, struct file *file)
+ * keep a reference to a file until after ptn_vhost_poll_stop is called. */
+int ptn_vhost_poll_start(struct ptn_vhost_poll *poll, struct file *file)
 {
     unsigned long mask;
     int ret = 0;
@@ -85,7 +85,7 @@ int vPT_poll_start(struct vPT_poll *poll, struct file *file)
         return 0;
     mask = file->f_op->poll(file, &poll->table);
     if (mask)
-	vPT_poll_wakeup(&poll->wait, 0, 0, (void *)mask);
+	ptn_vhost_poll_wakeup(&poll->wait, 0, 0, (void *)mask);
     if (mask & POLLERR) {
 	if (poll->wqh)
 	    remove_wait_queue(poll->wqh, &poll->wait);
@@ -97,7 +97,7 @@ int vPT_poll_start(struct vPT_poll *poll, struct file *file)
 
 /* Stop polling a file. After this function returns, it becomes safe to drop the
  * file reference. You must also flush afterwards. */
-void vPT_poll_stop(struct vPT_poll *poll)
+void ptn_vhost_poll_stop(struct ptn_vhost_poll *poll)
 {
     if (poll->wqh) {
 	remove_wait_queue(poll->wqh, &poll->wait);
@@ -106,7 +106,7 @@ void vPT_poll_stop(struct vPT_poll *poll)
     printk("%p.poll_stop()\n", poll);
 }
 
-static bool vPT_work_seq_done(struct vPT_dev *dev, struct vPT_work *work,
+static bool ptn_vhost_work_seq_done(struct ptn_vhost_dev *dev, struct ptn_vhost_work *work,
 	unsigned seq)
 {
     int left;
@@ -117,7 +117,7 @@ static bool vPT_work_seq_done(struct vPT_dev *dev, struct vPT_work *work,
     return left <= 0;
 }
 
-static void vPT_work_flush(struct vPT_dev *dev, struct vPT_work *work)
+static void ptn_vhost_work_flush(struct ptn_vhost_dev *dev, struct ptn_vhost_work *work)
 {
     unsigned seq;
     int flushing;
@@ -126,7 +126,7 @@ static void vPT_work_flush(struct vPT_dev *dev, struct vPT_work *work)
     seq = work->queue_seq;
     work->flushing++;
     spin_unlock_irq(&dev->work_lock);
-    wait_event(work->done, vPT_work_seq_done(dev, work, seq));
+    wait_event(work->done, ptn_vhost_work_seq_done(dev, work, seq));
     spin_lock_irq(&dev->work_lock);
     flushing = --work->flushing;
     spin_unlock_irq(&dev->work_lock);
@@ -135,12 +135,12 @@ static void vPT_work_flush(struct vPT_dev *dev, struct vPT_work *work)
 
 /* Flush any work that has been scheduled. When calling this, don't hold any
  * locks that are also used by the callback. */
-void vPT_poll_flush(struct vPT_poll *poll)
+void ptn_vhost_poll_flush(struct ptn_vhost_poll *poll)
 {
-    vPT_work_flush(poll->dev, &poll->work);
+    ptn_vhost_work_flush(poll->dev, &poll->work);
 }
 
-void vPT_work_queue(struct vPT_dev *dev, struct vPT_work *work)
+void ptn_vhost_work_queue(struct ptn_vhost_dev *dev, struct ptn_vhost_work *work)
 {
     unsigned long flags;
 
@@ -153,13 +153,13 @@ void vPT_work_queue(struct vPT_dev *dev, struct vPT_work *work)
     spin_unlock_irqrestore(&dev->work_lock, flags);
 }
 
-void vPT_poll_queue(struct vPT_poll *poll)
+void ptn_vhost_poll_queue(struct ptn_vhost_poll *poll)
 {
-    vPT_work_queue(poll->dev, &poll->work);
+    ptn_vhost_work_queue(poll->dev, &poll->work);
 }
 
-static void vPT_vr_reset(struct vPT_dev *dev,
-	struct vPT_ring *vr)
+static void ptn_vhost_vr_reset(struct ptn_vhost_dev *dev,
+	struct ptn_vhost_ring *vr)
 {
     vr->private_data = NULL;
     vr->kick = NULL;
@@ -167,10 +167,10 @@ static void vPT_vr_reset(struct vPT_dev *dev,
     vr->call = NULL;
 }
 
-static int vPT_worker(void *data)
+static int ptn_vhost_worker(void *data)
 {
-    struct vPT_dev *dev = data;
-    struct vPT_work *work = NULL;
+    struct ptn_vhost_dev *dev = data;
+    struct ptn_vhost_work *work = NULL;
     unsigned uninitialized_var(seq);
     mm_segment_t oldfs = get_fs();
 
@@ -195,7 +195,7 @@ static int vPT_worker(void *data)
 	}
 	if (!list_empty(&dev->work_list)) {
 	    work = list_first_entry(&dev->work_list,
-		    struct vPT_work, node);
+		    struct ptn_vhost_work, node);
 	    list_del_init(&work->node);
 	    seq = work->queue_seq;
 	} else
@@ -216,8 +216,8 @@ static int vPT_worker(void *data)
     return 0;
 }
 
-long vPT_dev_init(struct vPT_dev * dev, struct vPT_ring * tx_ring,
-	struct vPT_ring * rx_ring)
+long ptn_vhost_dev_init(struct ptn_vhost_dev * dev, struct ptn_vhost_ring * tx_ring,
+	struct ptn_vhost_ring * rx_ring)
 {
     int i;
 
@@ -236,9 +236,9 @@ long vPT_dev_init(struct vPT_dev * dev, struct vPT_ring * tx_ring,
 
 	dev->rings[i]->dev = dev;
 	mutex_init(&dev->rings[i]->mutex);
-	vPT_vr_reset(dev, dev->rings[i]);
+	ptn_vhost_vr_reset(dev, dev->rings[i]);
 	if (dev->rings[i]->handle_kick)
-	    vPT_poll_init(&dev->rings[i]->poll,
+	    ptn_vhost_poll_init(&dev->rings[i]->poll,
 		dev->rings[i]->handle_kick, POLLIN, dev);
     }
 
@@ -246,16 +246,16 @@ long vPT_dev_init(struct vPT_dev * dev, struct vPT_ring * tx_ring,
 }
 
 /* Caller should have device mutex */
-long vPT_dev_check_owner(struct vPT_dev *dev)
+long ptn_vhost_dev_check_owner(struct ptn_vhost_dev *dev)
 {
     /* Are you the owner? If not, I don't think you mean to do that */
     return dev->mm == current->mm ? 0 : -EPERM;
 }
 
 /* Caller should have device mutex */
-long vPT_dev_set_owner(struct vPT_dev *dev)
+long ptn_vhost_dev_set_owner(struct ptn_vhost_dev *dev)
 {
-    struct task_struct *worker;
+    struct task_struct *worker = NULL;
     int err;
 
     /* Is there an owner already? */
@@ -267,9 +267,9 @@ long vPT_dev_set_owner(struct vPT_dev *dev)
     /* No owner, become one */
     dev->mm = get_task_mm(current);
     if (dev->tx_ring)
-        worker = kthread_create(vPT_worker, dev, "vPT-TX-%d", current->pid);
+        worker = kthread_create(ptn_vhost_worker, dev, "ptn_vhost-TX-%d", current->pid);
     else if (dev->rx_ring)
-        worker = kthread_create(vPT_worker, dev, "vPT-RX-%d", current->pid);
+        worker = kthread_create(ptn_vhost_worker, dev, "ptn_vhost-RX-%d", current->pid);
 
     if (IS_ERR(worker)) {
 	err = PTR_ERR(worker);
@@ -289,20 +289,20 @@ err_mm:
     return err;
 }
 
-void vPT_dev_stop(struct vPT_dev *dev)
+void ptn_vhost_dev_stop(struct ptn_vhost_dev *dev)
 {
     int i;
 
     for (i = 0; i<2; i++) {
 	if (dev->rings[i] && dev->rings[i]->kick && dev->rings[i]->handle_kick) {
-	    vPT_poll_stop(&dev->rings[i]->poll);
-	    vPT_poll_flush(&dev->rings[i]->poll);
+	    ptn_vhost_poll_stop(&dev->rings[i]->poll);
+	    ptn_vhost_poll_flush(&dev->rings[i]->poll);
 	}
     }
 }
 
 /* Caller should have device mutex if and only if locked is set */
-void vPT_dev_cleanup(struct vPT_dev *dev)
+void ptn_vhost_dev_cleanup(struct ptn_vhost_dev *dev)
 {
     int i;
 
@@ -315,7 +315,7 @@ void vPT_dev_cleanup(struct vPT_dev *dev)
 	    eventfd_ctx_put(dev->rings[i]->call_ctx);
 	if (dev->rings[i]->call)
 	    fput(dev->rings[i]->call);
-	vPT_vr_reset(dev, dev->rings[i]);
+	ptn_vhost_vr_reset(dev, dev->rings[i]);
     }
     WARN_ON(!list_empty(&dev->work_list));
     if (dev->worker) {
@@ -328,7 +328,7 @@ void vPT_dev_cleanup(struct vPT_dev *dev)
 }
 
 /* This actually signals the guest, using eventfd. */
-void vhost_signal(struct vPT_dev *dev, struct vPT_ring *vr)
+void vhost_signal(struct ptn_vhost_dev *dev, struct ptn_vhost_ring *vr)
 {
     /* Signal the Guest tell them we used something up. */
     if (vr->call_ctx)

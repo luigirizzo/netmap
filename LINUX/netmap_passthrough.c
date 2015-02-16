@@ -7,8 +7,9 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 
-#include "vhost-netmap-pt/paravirt.h"
-#include "vhost-netmap-pt/vhost_netmap_pt.h"
+#include "ptnetmap_user.h" //TODO: include ptnetmap_user.h into netmap.h or netmap_user.h
+#include "ptnetmap-vhost/paravirt.h"
+#include "ptnetmap-vhost/ptnetmap_vhost.h"
 
 #ifdef WITH_PASSTHROUGH
 
@@ -104,19 +105,19 @@ static void rate_callback(unsigned long arg)
     r = mod_timer(&ctx->timer, jiffies +
             msecs_to_jiffies(RATE_PERIOD * 1000));
     if (unlikely(r))
-        printk("[vPT] Error: mod_timer()\n");
+        D("[ptnetmap] Error: mod_timer()\n");
 }
 
 #else /* !RATE */
 #define IFRATE(x)
 #endif /* RATE */
 
-struct vPT_net {
-    struct vPT_dev dev_tx, dev_rx;
-    struct vPT_ring tx_ring, rx_ring;
-    struct vPT_poll tx_poll, rx_poll;
+struct ptnetmap_net {
+    struct ptn_vhost_dev dev_tx, dev_rx;
+    struct ptn_vhost_ring tx_ring, rx_ring;
+    struct ptn_vhost_poll tx_poll, rx_poll;
 
-    struct vPT_Config config;
+    struct ptnetmap_config config;
     bool configured;
     struct paravirt_csb __user * csb;
     bool broken;
@@ -173,14 +174,14 @@ nm_pt_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur)
     nm_kring_dump("post reinit", kring);
 }
 
-static inline void vPT_set_txkick(struct vPT_net *net, bool enable)
+static inline void ptnetmap_set_txkick(struct ptnetmap_net *net, bool enable)
 {
     uint32_t v = enable ? 1 : 0;
 
     CSB_WRITE(net->csb, host_need_txkick, v);
 }
 
-static inline bool vPT_tx_interrupts_enabled(struct vPT_net * net)
+static inline bool ptnetmap_tx_interrupts_enabled(struct ptnetmap_net * net)
 {
     uint32_t v;
 
@@ -188,7 +189,7 @@ static inline bool vPT_tx_interrupts_enabled(struct vPT_net * net)
 
     return v;
 }
-static inline void vPT_disable_guest_txkick(struct vPT_net *net)
+static inline void ptnetmap_disable_guest_txkick(struct ptnetmap_net *net)
 {
     uint32_t v = 0;
 
@@ -213,9 +214,9 @@ nm_kring_need_kick(struct netmap_kring *kring, uint32_t g_head)
 
 /* Expects to be always run from workqueue - which acts as
  * read-size critical section for our kind of RCU. */
-static void handle_tx(struct vPT_net *net)
+static void handle_tx(struct ptnetmap_net *net)
 {
-    struct vPT_ring *vr;
+    struct ptn_vhost_ring *vr;
     struct netmap_kring *kring;
     uint32_t g_cur, g_head, g_flags; /* guest variables */
     int error = 0;
@@ -245,7 +246,7 @@ static void handle_tx(struct vPT_net *net)
     }
 
     /* Disable notifications. */
-    vPT_set_txkick(net, false);
+    ptnetmap_set_txkick(net, false);
 
     // prologue
     CSB_READ(net->csb, tx_ring.head, g_head);
@@ -277,7 +278,7 @@ static void handle_tx(struct vPT_net *net)
                 >= kring->nkr_num_slots) {
             nm_pt_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
-            vPT_set_txkick(net, true);
+            ptnetmap_set_txkick(net, true);
             break;
         }
 
@@ -298,7 +299,7 @@ static void handle_tx(struct vPT_net *net)
             }
         } else {
             /* Reenable notifications. */
-            vPT_set_txkick(net, true);
+            ptnetmap_set_txkick(net, true);
             D("nm_sync error");
             goto leave_kr_put;
         }
@@ -310,8 +311,8 @@ static void handle_tx(struct vPT_net *net)
 
 //#define BUSY_WAIT
 #ifndef BUSY_WAIT
-        if (work && vPT_tx_interrupts_enabled(net)) {
-            vPT_disable_guest_txkick(net);
+        if (work && ptnetmap_tx_interrupts_enabled(net)) {
+            ptnetmap_disable_guest_txkick(net);
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.htxk++);
             work = false;
@@ -327,12 +328,12 @@ static void handle_tx(struct vPT_net *net)
         if (g_head == kring->rhead) {
             usleep_range(1,1);
             /* Reenable notifications. */
-            vPT_set_txkick(net, true);
+            ptnetmap_set_txkick(net, true);
             /* Doublecheck. */
             CSB_READ(net->csb, tx_ring.head, g_head);
             CSB_READ(net->csb, tx_ring.cur, g_cur);
             if (unlikely(g_head != kring->rhead)) {
-                vPT_set_txkick(net, false);
+                ptnetmap_set_txkick(net, false);
                 continue;
             } else
                 break;
@@ -354,8 +355,8 @@ leave_kr_put:
     nm_kr_put(kring);
 
 leave:
-    if (work && vPT_tx_interrupts_enabled(net)) {
-        vPT_disable_guest_txkick(net);
+    if (work && ptnetmap_tx_interrupts_enabled(net)) {
+        ptnetmap_disable_guest_txkick(net);
         eventfd_signal(vr->call_ctx, 1);
         IFRATE(net->rate_ctx.new.htxk++);
     }
@@ -364,14 +365,14 @@ leave:
     return;
 }
 
-static inline void vPT_set_rxkick(struct vPT_net *net, bool enable)
+static inline void ptnetmap_set_rxkick(struct ptnetmap_net *net, bool enable)
 {
     uint32_t v = enable ? 1 : 0;
 
     CSB_WRITE(net->csb, host_need_rxkick, v);
 }
 
-static inline bool vPT_rx_interrupts_enabled(struct vPT_net * net)
+static inline bool ptnetmap_rx_interrupts_enabled(struct ptnetmap_net * net)
 {
     uint32_t v;
 
@@ -379,7 +380,7 @@ static inline bool vPT_rx_interrupts_enabled(struct vPT_net * net)
 
     return v;
 }
-static inline void vPT_disable_guest_rxkick(struct vPT_net *net)
+static inline void ptnetmap_disable_guest_rxkick(struct ptnetmap_net *net)
 {
     uint32_t v = 0;
 
@@ -389,9 +390,9 @@ static inline void vPT_disable_guest_rxkick(struct vPT_net *net)
 
 /* Expects to be always run from workqueue - which acts as
  * read-size critical section for our kind of RCU. */
-static void handle_rx(struct vPT_net *net)
+static void handle_rx(struct ptnetmap_net *net)
 {
-    struct vPT_ring *vr;
+    struct ptn_vhost_ring *vr;
     struct netmap_kring *kring;
     uint32_t g_cur, g_head, g_flags; /* guest variables */
     int error = 0;
@@ -422,7 +423,7 @@ static void handle_rx(struct vPT_net *net)
     }
 
     /* Disable notifications. */
-    vPT_set_rxkick(net, false);
+    ptnetmap_set_rxkick(net, false);
 
     // prologue
     mb();
@@ -436,7 +437,7 @@ static void handle_rx(struct vPT_net *net)
                 >= kring->nkr_num_slots) {
             nm_pt_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
-            vPT_set_rxkick(net, true);
+            ptnetmap_set_rxkick(net, true);
             break;
         }
 
@@ -460,7 +461,7 @@ static void handle_rx(struct vPT_net *net)
             }
         } else {
             /* Reenable notifications. */
-            vPT_set_rxkick(net, true);
+            ptnetmap_set_rxkick(net, true);
             D("nm_sync error");
             goto leave_kr_put;
         }
@@ -471,8 +472,8 @@ static void handle_rx(struct vPT_net *net)
             nm_kring_dump("post rxsync", kring);
 
 #ifndef BUSY_WAIT
-        if (work && vPT_rx_interrupts_enabled(net)) {
-            vPT_disable_guest_rxkick(net);
+        if (work && ptnetmap_rx_interrupts_enabled(net)) {
+            ptnetmap_disable_guest_rxkick(net);
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.hrxk++);
             work = false;
@@ -489,13 +490,13 @@ static void handle_rx(struct vPT_net *net)
         if (nm_kring_need_kick(kring, g_head)) {
             usleep_range(1,1);
             /* Reenable notifications. */
-            vPT_set_rxkick(net, true);
+            ptnetmap_set_rxkick(net, true);
             /* Doublecheck. */
             CSB_READ(net->csb, rx_ring.head, g_head);
             CSB_READ(net->csb, rx_ring.cur, g_cur);
             mb();
             if (unlikely(!nm_kring_need_kick(kring, g_head))) {
-                vPT_set_rxkick(net, false);
+                ptnetmap_set_rxkick(net, false);
                 continue;
             } else
                 break;
@@ -517,54 +518,54 @@ leave_kr_put:
     nm_kr_put(kring);
 
 leave:
-    if (work && vPT_rx_interrupts_enabled(net)) {
-        vPT_disable_guest_rxkick(net);
+    if (work && ptnetmap_rx_interrupts_enabled(net)) {
+        ptnetmap_disable_guest_rxkick(net);
         eventfd_signal(vr->call_ctx, 1);
         IFRATE(net->rate_ctx.new.hrxk++);
     }
     mutex_unlock(&vr->mutex);
-   // DBG(printk("rxintr=%d\n", vPT_rx_interrupts_enabled(net)));
+   // DBG(printk("rxintr=%d\n", ptnetmap_rx_interrupts_enabled(net)));
 }
 
-static void handle_tx_kick(struct vPT_work *work)
+static void handle_tx_kick(struct ptn_vhost_work *work)
 {
-    struct vPT_ring *vr = container_of(work, struct vPT_ring,
+    struct ptn_vhost_ring *vr = container_of(work, struct ptn_vhost_ring,
             poll.work);
-    struct vPT_net *net = container_of(vr->dev, struct vPT_net, dev_tx);
+    struct ptnetmap_net *net = container_of(vr->dev, struct ptnetmap_net, dev_tx);
 
     IFRATE(net->rate_ctx.new.gtxk++);
     handle_tx(net);
 }
 
-static void handle_rx_kick(struct vPT_work *work)
+static void handle_rx_kick(struct ptn_vhost_work *work)
 {
-    struct vPT_ring *vr = container_of(work, struct vPT_ring,
+    struct ptn_vhost_ring *vr = container_of(work, struct ptn_vhost_ring,
             poll.work);
-    struct vPT_net *net = container_of(vr->dev, struct vPT_net, dev_rx);
+    struct ptnetmap_net *net = container_of(vr->dev, struct ptnetmap_net, dev_rx);
 
     IFRATE(net->rate_ctx.new.grxk++);
     handle_rx(net);
 }
 
-static void handle_tx_net(struct vPT_work *work)
+static void handle_tx_net(struct ptn_vhost_work *work)
 {
-    struct vPT_net *net = container_of(work, struct vPT_net,
+    struct ptnetmap_net *net = container_of(work, struct ptnetmap_net,
             tx_poll.work);
 
     IFRATE(net->rate_ctx.new.btxwu++);
     handle_tx(net);
 }
 
-static void handle_rx_net(struct vPT_work *work)
+static void handle_rx_net(struct ptn_vhost_work *work)
 {
-    struct vPT_net *net = container_of(work, struct vPT_net,
+    struct ptnetmap_net *net = container_of(work, struct ptnetmap_net,
             rx_poll.work);
 
     IFRATE(net->rate_ctx.new.brxwu++);
     handle_rx(net);
 }
 
-static int vPT_set_eventfds_ring(struct vPT_ring * vr, struct vPT_RingConfig * vrc)
+static int ptnetmap_set_eventfds_ring(struct ptn_vhost_ring *vr, struct ptnetmap_config_ring *vrc)
 {
     vr->kick = eventfd_fget(vrc->ioeventfd);
     if (IS_ERR(vr->kick))
@@ -588,19 +589,19 @@ static int vPT_set_eventfds_ring(struct vPT_ring * vr, struct vPT_RingConfig * v
     return 0;
 }
 
-static int vPT_set_eventfds(struct vPT_net * net)
+static int ptnetmap_set_eventfds(struct ptnetmap_net * net)
 {
     int r;
 
-    if ((r = vPT_set_eventfds_ring(&net->tx_ring, &net->config.tx_ring)))
+    if ((r = ptnetmap_set_eventfds_ring(&net->tx_ring, &net->config.tx_ring)))
         return r;
-    if ((r = vPT_set_eventfds_ring(&net->rx_ring, &net->config.rx_ring)))
+    if ((r = ptnetmap_set_eventfds_ring(&net->rx_ring, &net->config.rx_ring)))
         return r;
 
     return 0;
 }
 
-static int vPT_set_backend(struct vPT_net * net)
+static int ptnetmap_set_backend(struct ptnetmap_net * net)
 {
     //net->nm_f = fget_light(net->config.netmap_fd, &net->nm_fput_needed);
     net->nm_f = fget(net->config.netmap_fd);
@@ -612,11 +613,11 @@ static int vPT_set_backend(struct vPT_net * net)
     return 0;
 }
 
-static void vPT_print_configuration(struct vPT_net * net)
+static void ptnetmap_print_configuration(struct ptnetmap_net * net)
 {
-    struct vPT_Config *cfg = &net->config;
+    struct ptnetmap_config *cfg = &net->config;
 
-    printk("[vPT] configuration:\n");
+    printk("[ptn] configuration:\n");
     printk("TX: iofd=%u, irqfd=%u, resfd=%d\n",
             cfg->tx_ring.ioeventfd, cfg->tx_ring.irqfd, cfg->tx_ring.resamplefd);
     printk("RX: iofd=%u, irqfd=%u, resfd=%d\n",
@@ -626,50 +627,50 @@ static void vPT_print_configuration(struct vPT_net * net)
 
 }
 
-int vPT_netmap_poll_start(struct vPT_net *net, struct file *file,
+int ptnetmap_poll_start(struct ptnetmap_net *net, struct file *file,
         struct netmap_passthrough_adapter *pt_na)
 {
     int ret = 0;
 
     if (!net->tx_poll.wqh) {
         poll_wait(file, &pt_na->parent->tx_rings[0].si, &net->tx_poll.table);
-        vPT_poll_queue(&net->tx_poll);
+        ptn_vhost_poll_queue(&net->tx_poll);
         printk("%p.poll_start()\n", &net->tx_poll);
     }
 
     if (!net->rx_poll.wqh) {
         poll_wait(file, &pt_na->parent->rx_rings[0].si, &net->rx_poll.table);
-        vPT_poll_queue(&net->rx_poll);
+        ptn_vhost_poll_queue(&net->rx_poll);
         printk("%p.poll_start()\n", &net->rx_poll);
     }
 
     return ret;
 }
 
-static int vPT_configure(struct vPT_net * net, struct netmap_passthrough_adapter *pt_na)
+static int ptnetmap_configure(struct ptnetmap_net * net, struct netmap_passthrough_adapter *pt_na)
 {
     int r;
 
     /* Configure. */
-    if ((r = vPT_dev_set_owner(&net->dev_tx)))
+    if ((r = ptn_vhost_dev_set_owner(&net->dev_tx)))
         return r;
-    if ((r = vPT_dev_set_owner(&net->dev_rx)))
+    if ((r = ptn_vhost_dev_set_owner(&net->dev_rx)))
         return r;
-    if ((r = vPT_set_eventfds(net)))
+    if ((r = ptnetmap_set_eventfds(net)))
         return r;
-    if ((r = vPT_set_backend(net)))
+    if ((r = ptnetmap_set_backend(net)))
         return r;
     ///XXX function ???
     net->csb = net->config.csb;
 
-    vPT_print_configuration(net);
+    ptnetmap_print_configuration(net);
 
     /* Start polling. */
-    if (net->tx_ring.handle_kick && (r = vPT_poll_start(&net->tx_ring.poll, net->tx_ring.kick)))
+    if (net->tx_ring.handle_kick && (r = ptn_vhost_poll_start(&net->tx_ring.poll, net->tx_ring.kick)))
         return r;
-    if (net->rx_ring.handle_kick && (r = vPT_poll_start(&net->rx_ring.poll, net->rx_ring.kick)))
+    if (net->rx_ring.handle_kick && (r = ptn_vhost_poll_start(&net->rx_ring.poll, net->rx_ring.kick)))
         return r;
-    if (net->nm_f && (r = vPT_netmap_poll_start(net, net->nm_f, pt_na)))
+    if (net->nm_f && (r = ptnetmap_poll_start(net, net->nm_f, pt_na)))
         return r;
 
     return 0;
@@ -696,7 +697,7 @@ err:
 }
 
 static int
-netmap_pt_krings_snapshot(struct netmap_passthrough_adapter *pt_na, struct vPT_net * net)
+netmap_pt_krings_snapshot(struct netmap_passthrough_adapter *pt_na, struct ptnetmap_net * net)
 {
     struct netmap_kring *kring;
     int error = 0;
@@ -715,8 +716,8 @@ err:
 static int
 netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf, uint16_t buf_len)
 {
-    struct vPT_net *net = kmalloc(sizeof *net, GFP_KERNEL);
-    struct vPT_dev *dev_tx, *dev_rx;
+    struct ptnetmap_net *net = kmalloc(sizeof *net, GFP_KERNEL);
+    struct ptn_vhost_dev *dev_tx, *dev_rx;
     int ret;
 
     /* XXX check if already attached */
@@ -732,26 +733,26 @@ netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *bu
     net->tx_ring.handle_kick = handle_tx_kick;
     net->rx_ring.handle_kick = handle_rx_kick;
 
-    ret = vPT_dev_init(dev_tx, &net->tx_ring, NULL);
+    ret = ptn_vhost_dev_init(dev_tx, &net->tx_ring, NULL);
     if (ret < 0) {
         kfree(net);
         return ret;
     }
-    ret = vPT_dev_init(dev_rx, NULL, &net->rx_ring);
+    ret = ptn_vhost_dev_init(dev_rx, NULL, &net->rx_ring);
     if (ret < 0) {
         kfree(net);
         return ret;
     }
 
-    vPT_poll_init(&net->tx_poll, handle_tx_net, POLLOUT, dev_tx);
-    vPT_poll_init(&net->rx_poll, handle_rx_net, POLLIN, dev_rx);
+    ptn_vhost_poll_init(&net->tx_poll, handle_tx_net, POLLOUT, dev_tx);
+    ptn_vhost_poll_init(&net->rx_poll, handle_rx_net, POLLIN, dev_rx);
 
 #ifdef RATE
     memset(&net->rate_ctx, 0, sizeof(net->rate_ctx));
     setup_timer(&net->rate_ctx.timer, &rate_callback,
             (unsigned long)&net->rate_ctx);
     if (mod_timer(&net->rate_ctx.timer, jiffies + msecs_to_jiffies(1500)))
-        printk("[vPT] Error: mod_timer()\n");
+        printk("[ptn] Error: mod_timer()\n");
 #endif
 
     printk("%p.OPEN_END()\n", net);
@@ -759,22 +760,22 @@ netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *bu
     mutex_lock(&net->dev_tx.mutex);
     mutex_lock(&net->dev_rx.mutex);
 
-    if (buf_len != sizeof(struct vPT_Config)) {
-        D("buf_len error buf_len %d, expected %d", (int)buf_len, (int)sizeof(struct vPT_Config));
+    if (buf_len != sizeof(struct ptnetmap_config)) {
+        D("buf_len ERROR! - buf_len %d, expected %d", (int)buf_len, (int)sizeof(struct ptnetmap_config));
         ret = EINVAL;
         goto err;
     }
 
     /* Read the configuration from userspace. */
-    if (copy_from_user(&net->config, buf, sizeof(struct vPT_Config))) {
-        printk(KERN_ALERT "vPT_first_write(): copy_from_user()\n");
+    if (copy_from_user(&net->config, buf, sizeof(struct ptnetmap_config))) {
+        D("copy_from_user() ERROR!");
         ret = EFAULT;
         goto err;
     }
 
-    printk("[vPT] configuration read\n");
-    if ((ret = vPT_configure(net, pt_na))) {
-        D("vPT_configure error");
+    D("configuration read");
+    if ((ret = ptnetmap_configure(net, pt_na))) {
+        D("ptnetmap_configure error");
         goto err;
     }
 
@@ -783,7 +784,7 @@ netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *bu
         goto err;
     }
 
-    printk("[vPT] configuration OK\n");
+    D("configuration OK");
 
     net->configured = true;
     pt_na->private = net;
@@ -801,35 +802,35 @@ err:
     return ret;
 }
 
-static void vPT_net_stop_vr(struct vPT_net *net,
-        struct vPT_ring *vr)
+static void ptnetmap_net_stop_vr(struct ptnetmap_net *net,
+        struct ptn_vhost_ring *vr)
 {
     mutex_lock(&vr->mutex);
     if (vr == &net->tx_ring)
-        vPT_poll_stop(&net->tx_poll);
+        ptn_vhost_poll_stop(&net->tx_poll);
     else
-        vPT_poll_stop(&net->rx_poll);
+        ptn_vhost_poll_stop(&net->rx_poll);
     mutex_unlock(&vr->mutex);
 }
 
-static void vPT_net_stop(struct vPT_net *net)
+static void ptnetmap_net_stop(struct ptnetmap_net *net)
 {
-    vPT_net_stop_vr(net, &net->tx_ring);
-    vPT_net_stop_vr(net, &net->rx_ring);
+    ptnetmap_net_stop_vr(net, &net->tx_ring);
+    ptnetmap_net_stop_vr(net, &net->rx_ring);
 }
 
-static void vPT_net_flush(struct vPT_net *n)
+static void ptnetmap_net_flush(struct ptnetmap_net *n)
 {
-    vPT_poll_flush(&n->rx_poll);
-    vPT_poll_flush(&n->dev_rx.rx_ring->poll);
-    vPT_poll_flush(&n->tx_poll);
-    vPT_poll_flush(&n->dev_tx.tx_ring->poll);
+    ptn_vhost_poll_flush(&n->rx_poll);
+    ptn_vhost_poll_flush(&n->dev_rx.rx_ring->poll);
+    ptn_vhost_poll_flush(&n->tx_poll);
+    ptn_vhost_poll_flush(&n->dev_tx.tx_ring->poll);
 }
 
 static int
 netmap_pt_delete(struct netmap_passthrough_adapter *pt_na)
 {
-    struct vPT_net *net = pt_na->private;
+    struct ptnetmap_net *net = pt_na->private;
 
     D("");
     printk("%p.RELEASE()\n", net);
@@ -840,17 +841,17 @@ netmap_pt_delete(struct netmap_passthrough_adapter *pt_na)
 
     net->configured = false;
 
-    vPT_net_stop(net);
-    vPT_net_flush(net);
-    vPT_dev_stop(&net->dev_tx);
-    vPT_dev_stop(&net->dev_rx);
-    vPT_dev_cleanup(&net->dev_tx);
-    vPT_dev_cleanup(&net->dev_rx);
+    ptnetmap_net_stop(net);
+    ptnetmap_net_flush(net);
+    ptn_vhost_dev_stop(&net->dev_tx);
+    ptn_vhost_dev_stop(&net->dev_rx);
+    ptn_vhost_dev_cleanup(&net->dev_tx);
+    ptn_vhost_dev_cleanup(&net->dev_rx);
     if (net->nm_f)
         fput(net->nm_f);
     /* We do an extra flush before freeing memory,
      * since jobs can re-queue themselves. */
-    vPT_net_flush(net);
+    ptnetmap_net_flush(net);
 
     IFRATE(del_timer(&net->rate_ctx.timer));
     kfree(net);
