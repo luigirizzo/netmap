@@ -1686,7 +1686,7 @@ netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 	struct paravirt_csb *csb;
 	struct netmap_if *nifp;
 	struct netmap_ring *ring;
-	void *vaddr;
+	char *vaddr;
 	vm_paddr_t paddr;
 	uint32_t bufsize;
 	int i;
@@ -1715,7 +1715,7 @@ netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 	/* XXX check that the pointers are within the mapped area */
 
 	nifp = (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
-	ring = (struct netmap_ring *)((void *)nifp + nifp->ring_ofs[0]);
+	ring = (struct netmap_ring *)((char *)nifp + nifp->ring_ofs[0]);
 	vaddr = (void *)((char *)ring + ring->buf_ofs);
 	D("vaddr %p", vaddr);
 	paddr = pv->nm_addr + nifp->ring_ofs[0] + ring->buf_ofs;
@@ -1895,25 +1895,24 @@ netmap_mem_paravirt_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
 }
 
 static void
-netmap_mem_paravirt_delete(struct netmap_mem_d *d)
+netmap_mem_paravirt_delete(struct netmap_mem_d *nmd)
 {
-	struct netmap_mem_pv *nmd =
-		(struct netmap_mem_pv *)nmd;
+	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
 
 	D("");
 	if (nmd == NULL)
 		return;
 	if (netmap_verbose)
 		D("deleting %p", nmd);
-	if (d->active > 0)
-		D("bug: deleting mem allocator with active=%d!", d->active);
-	nm_mem_release_id(d);
+	if (nmd->active > 0)
+		D("bug: deleting mem allocator with active=%d!", nmd->active);
+	nm_mem_release_id(nmd);
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
-	NMA_LOCK_DESTROY(d);
+	NMA_LOCK_DESTROY(nmd);
 
 	NMA_LOCK(&nm_mem);
-	TAILQ_REMOVE(&nm_mem_pv_head, nmd, next);
+	TAILQ_REMOVE(&nm_mem_pv_head, pv, next);
 	NMA_UNLOCK(&nm_mem);
 
 	free(nmd, M_DEVBUF);
@@ -2038,13 +2037,13 @@ struct netmap_mem_ops netmap_mem_paravirt_ops = {
 static struct netmap_mem_d *
 netmap_mem_paravirt_find_hostid(nm_memid_t host_id)
 {
-	struct netmap_mem_pv *nmd = NULL;
+	struct netmap_mem_pv *pv = NULL;
 
 	NMA_LOCK(&nm_mem);
-	TAILQ_FOREACH(nmd, &nm_mem_pv_head, next) {
-		if (nmd->nm_host_id == host_id) {
+	TAILQ_FOREACH(pv, &nm_mem_pv_head, next) {
+		if (pv->nm_host_id == host_id) {
 			NMA_UNLOCK(&nm_mem);
-			return &nmd->up;
+			return &pv->up;
 		}
 	}
 	NMA_UNLOCK(&nm_mem);
@@ -2055,38 +2054,38 @@ netmap_mem_paravirt_find_hostid(nm_memid_t host_id)
 static struct netmap_mem_d *
 netmap_mem_paravirt_create(nm_memid_t host_id)
 {
-	struct netmap_mem_pv *d;
+	struct netmap_mem_pv *pv;
 	int err = 0;
 
-	d = malloc(sizeof(struct netmap_mem_pv),
+	pv = malloc(sizeof(struct netmap_mem_pv),
 			M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (d == NULL) {
+	if (pv == NULL) {
 		err = ENOMEM;
 		goto error;
 	}
 
-	d->up.ops = &netmap_mem_paravirt_ops;
-	d->nm_host_id = host_id;
-	//d->ifp = na->ifp;
-	//d->pv_ops = ops;
+	pv->up.ops = &netmap_mem_paravirt_ops;
+	pv->nm_host_id = host_id;
+	//pv->ifp = na->ifp;
+	//pv->pv_ops = ops;
 
-	err = nm_mem_assign_id(&d->up);
+	err = nm_mem_assign_id(&pv->up);
 	if (err)
 		goto error;
 
-	d->up.flags &= ~NETMAP_MEM_FINALIZED;
-	d->up.flags |= NETMAP_MEM_IO;
+	pv->up.flags &= ~NETMAP_MEM_FINALIZED;
+	pv->up.flags |= NETMAP_MEM_IO;
 
-	NMA_LOCK_INIT(&d->up);
-	TAILQ_INIT(&d->active_na);
+	NMA_LOCK_INIT(&pv->up);
+	TAILQ_INIT(&pv->active_na);
 
 	NMA_LOCK(&nm_mem);
-	TAILQ_INSERT_HEAD(&nm_mem_pv_head, d, next);
+	TAILQ_INSERT_HEAD(&nm_mem_pv_head, pv, next);
 	NMA_UNLOCK(&nm_mem);
 
-	return &d->up;
+	return &pv->up;
 error:
-	netmap_mem_paravirt_delete(&d->up);
+	netmap_mem_paravirt_delete(&pv->up);
 	return NULL;
 }
 
