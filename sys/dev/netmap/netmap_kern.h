@@ -1191,7 +1191,7 @@ void netmap_monitor_stop(struct netmap_adapter *na);
 
 #ifdef WITH_PASSTHROUGH
 int netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
-int netmap_pt_ctl(struct nmreq *nmr, struct netmap_adapter *na);
+int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
 static inline int
 nm_passthrough_on(struct netmap_adapter *na)
 {
@@ -1200,7 +1200,7 @@ nm_passthrough_on(struct netmap_adapter *na)
 #else /* !WITH_PASSTHROUGH */
 #define netmap_get_passthrough_na(nmr, _2, _3) \
 	((nmr)->nr_flags & (NR_PASSTHROUGH_FULL) ? EOPNOTSUPP : 0)
-#define netmap_pt_ctl(_1, _2)   EINVAL
+#define ptnetmap_ctl(_1, _2)   EINVAL
 #define nm_passthrough_on(_1)   EINVAL
 #endif /* WITH_PASSTHROUGH */
 

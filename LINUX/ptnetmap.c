@@ -13,8 +13,8 @@
 
 #ifdef WITH_PASSTHROUGH
 
-#define NM_PT_RX_NOWORK_CYCLE   2                               /* RX cycle without receive any packets */
-#define NM_PT_TX_BATCH_LIM      ((kring->nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
+#define PTN_RX_NOWORK_CYCLE   2                               /* RX cycle without receive any packets */
+#define PTN_TX_BATCH_LIM      ((kring->nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
 
 //#define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
@@ -148,7 +148,7 @@ struct ptnetmap_net {
     } while (0)
 
 static inline void
-nm_kring_dump(const char *title, const struct netmap_kring *kring)
+ptn_kring_dump(const char *title, const struct netmap_kring *kring)
 {
     D("%s - name: %s hwcur: %d hwtail: %d rhead: %d rcur: %d rtail: %d head: %d cur: %d tail: %d",
             title, kring->name, kring->nr_hwcur,
@@ -157,7 +157,7 @@ nm_kring_dump(const char *title, const struct netmap_kring *kring)
 }
 
 static inline void
-nm_pt_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur)
+ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur)
 {
     struct netmap_ring *ring = kring->ring;
 
@@ -171,7 +171,7 @@ nm_pt_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur)
     //ring->tail = kring->rtail = kring->nr_hwtail;
 
     netmap_ring_reinit(kring);
-    nm_kring_dump("post reinit", kring);
+    ptn_kring_dump("post reinit", kring);
 }
 
 static inline void ptnetmap_set_txkick(struct ptnetmap_net *net, bool enable)
@@ -255,20 +255,20 @@ static void handle_tx(struct ptnetmap_net *net)
     mb(); //XXX: or smp_mb() ?
 
     for (;;) {
-#ifdef NM_PT_TX_BATCH_LIM
+#ifdef PTN_TX_BATCH_LIM
         batch = g_head - kring->nr_hwcur;
 
         if (batch < 0)
             batch += kring->nkr_num_slots;
 
-        if (batch > NM_PT_TX_BATCH_LIM) {
-            uint32_t new_head = kring->nr_hwcur + NM_PT_TX_BATCH_LIM;
+        if (batch > PTN_TX_BATCH_LIM) {
+            uint32_t new_head = kring->nr_hwcur + PTN_TX_BATCH_LIM;
             if (new_head >= kring->nkr_num_slots)
                 new_head -= kring->nkr_num_slots;
             ND(1, "batch: %d old_head: %d new_head: %d", batch, g_head, new_head);
             g_head = new_head;
         }
-#endif /* NM_PT_TX_BATCH_LIM */
+#endif /* PTN_TX_BATCH_LIM */
 
         if (nm_kr_txspace(kring) <= (kring->nkr_num_slots >> 1)) {
             g_flags |= NAF_FORCE_RECLAIM;
@@ -276,14 +276,14 @@ static void handle_tx(struct ptnetmap_net *net)
 
         if (nm_txsync_prologue(kring, g_head, g_cur, NULL)
                 >= kring->nkr_num_slots) {
-            nm_pt_ring_reinit(kring, g_head, g_cur);
+            ptnetmap_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
             ptnetmap_set_txkick(net, true);
             break;
         }
 
         if (netmap_verbose & NM_VERB_TXSYNC)
-            nm_kring_dump("pre txsync", kring);
+            ptn_kring_dump("pre txsync", kring);
 
         IFRATE(pre_tail = kring->rtail;)
 
@@ -307,7 +307,7 @@ static void handle_tx(struct ptnetmap_net *net)
         IFRATE(batch_info_update(&net->rate_ctx.new.bf_tx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
         if (netmap_verbose & NM_VERB_TXSYNC)
-            nm_kring_dump("post txsync", kring);
+            ptn_kring_dump("post txsync", kring);
 
 //#define BUSY_WAIT
 #ifndef BUSY_WAIT
@@ -435,14 +435,14 @@ static void handle_rx(struct ptnetmap_net *net)
 
         if (nm_rxsync_prologue(kring, g_head, g_cur, NULL)
                 >= kring->nkr_num_slots) {
-            nm_pt_ring_reinit(kring, g_head, g_cur);
+            ptnetmap_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
             ptnetmap_set_rxkick(net, true);
             break;
         }
 
         if (netmap_verbose & NM_VERB_RXSYNC)
-            nm_kring_dump("pre rxsync", kring);
+            ptn_kring_dump("pre rxsync", kring);
 
         IFRATE(pre_tail = kring->rtail;)
 
@@ -469,7 +469,7 @@ static void handle_rx(struct ptnetmap_net *net)
         IFRATE(batch_info_update(&net->rate_ctx.new.bf_rx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
         if (netmap_verbose & NM_VERB_RXSYNC)
-            nm_kring_dump("post rxsync", kring);
+            ptn_kring_dump("post rxsync", kring);
 
 #ifndef BUSY_WAIT
         if (work && ptnetmap_rx_interrupts_enabled(net)) {
@@ -503,7 +503,7 @@ static void handle_rx(struct ptnetmap_net *net)
         }
 
         /* ring empty */
-        if (kring->nr_hwtail == kring->rhead || cicle_nowork >= NM_PT_RX_NOWORK_CYCLE) {
+        if (kring->nr_hwtail == kring->rhead || cicle_nowork >= PTN_RX_NOWORK_CYCLE) {
             RD(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d", kring->nr_hwtail, kring->rhead, cicle_nowork);
             break;
         }
@@ -677,7 +677,7 @@ static int ptnetmap_configure(struct ptnetmap_net * net, struct netmap_passthrou
 }
 
 static int
-netmap_pt_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *pt_ring)
+ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *pt_ring)
 {
     if(put_user(kring->rhead, &pt_ring->head))
         goto err;
@@ -689,7 +689,7 @@ netmap_pt_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *pt_r
     if(put_user(kring->nr_hwtail, &pt_ring->hwtail))
         goto err;
 
-    nm_kring_dump("", kring);
+    ptn_kring_dump("", kring);
 
     return 0;
 err:
@@ -697,24 +697,24 @@ err:
 }
 
 static int
-netmap_pt_krings_snapshot(struct netmap_passthrough_adapter *pt_na, struct ptnetmap_net * net)
+ptnetmap_krings_snapshot(struct netmap_passthrough_adapter *pt_na, struct ptnetmap_net * net)
 {
     struct netmap_kring *kring;
     int error = 0;
 
     kring = &pt_na->parent->tx_rings[0];
-    if((error = netmap_pt_kring_snapshot(kring, &net->csb->tx_ring)))
+    if((error = ptnetmap_kring_snapshot(kring, &net->csb->tx_ring)))
         goto err;
 
     kring = &pt_na->parent->rx_rings[0];
-    error = netmap_pt_kring_snapshot(kring, &net->csb->rx_ring);
+    error = ptnetmap_kring_snapshot(kring, &net->csb->rx_ring);
 
 err:
     return error;
 }
 
 static int
-netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf, uint16_t buf_len)
+ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf, uint16_t buf_len)
 {
     struct ptnetmap_net *net = kmalloc(sizeof *net, GFP_KERNEL);
     struct ptn_vhost_dev *dev_tx, *dev_rx;
@@ -779,8 +779,8 @@ netmap_pt_create(struct netmap_passthrough_adapter *pt_na, const void __user *bu
         goto err;
     }
 
-    if ((ret = netmap_pt_krings_snapshot(pt_na, net))) {
-        D("netmap_pt_krings_snapshot error");
+    if ((ret = ptnetmap_krings_snapshot(pt_na, net))) {
+        D("ptnetmap_krings_snapshot error");
         goto err;
     }
 
@@ -828,7 +828,7 @@ static void ptnetmap_net_flush(struct ptnetmap_net *n)
 }
 
 static int
-netmap_pt_delete(struct netmap_passthrough_adapter *pt_na)
+ptnetmap_delete(struct netmap_passthrough_adapter *pt_na)
 {
     struct ptnetmap_net *net = pt_na->private;
 
@@ -864,7 +864,7 @@ netmap_pt_delete(struct netmap_passthrough_adapter *pt_na)
 
 
 int
-netmap_pt_ctl(struct nmreq *nmr, struct netmap_adapter *na)
+ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
 {
     struct netmap_passthrough_adapter *pt_na;
     char *name;
@@ -887,10 +887,10 @@ netmap_pt_ctl(struct nmreq *nmr, struct netmap_adapter *na)
     switch (cmd) {
         case NETMAP_PT_CREATE:
             nmr_read_buf(nmr, &buf, &buf_len);
-            error = netmap_pt_create(pt_na, buf, buf_len);
+            error = ptnetmap_create(pt_na, buf, buf_len);
             break;
         case NETMAP_PT_DELETE:
-            error = netmap_pt_delete(pt_na);
+            error = ptnetmap_delete(pt_na);
             break;
         default:
             D("invalid cmd (nmr->nr_cmd) (0x%x)", cmd);
@@ -903,7 +903,7 @@ done:
 }
 
 static int
-netmap_pt_notify(struct netmap_adapter *na, u_int n_ring,
+ptnetmap_notify(struct netmap_adapter *na, u_int n_ring,
         enum txrx tx, int flags)
 {
     struct netmap_kring *kring;
@@ -936,7 +936,7 @@ netmap_pt_notify(struct netmap_adapter *na, u_int n_ring,
 //XXX maybe is unnecessary redefine the *xsync
 /* nm_txsync callback for passthrough */
 static int
-netmap_pt_txsync(struct netmap_kring *kring, int flags)
+ptnetmap_txsync(struct netmap_kring *kring, int flags)
 {
     struct netmap_passthrough_adapter *pt_na =
         (struct netmap_passthrough_adapter *)kring->na;
@@ -951,7 +951,7 @@ netmap_pt_txsync(struct netmap_kring *kring, int flags)
 
 /* nm_rxsync callback for passthrough */
     static int
-netmap_pt_rxsync(struct netmap_kring *kring, int flags)
+ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 {
     struct netmap_passthrough_adapter *pt_na =
         (struct netmap_passthrough_adapter *)kring->na;
@@ -966,7 +966,7 @@ netmap_pt_rxsync(struct netmap_kring *kring, int flags)
 
 /* nm_config callback for bwrap */
 static int
-netmap_pt_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
+ptnetmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
         u_int *rxr, u_int *rxd)
 {
     struct netmap_passthrough_adapter *pt_na =
@@ -991,7 +991,7 @@ netmap_pt_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 
 /* nm_krings_create callback for passthrough */
 static int
-netmap_pt_krings_create(struct netmap_adapter *na)
+ptnetmap_krings_create(struct netmap_adapter *na)
 {
     struct netmap_passthrough_adapter *pt_na =
         (struct netmap_passthrough_adapter *)na;
@@ -1015,7 +1015,7 @@ netmap_pt_krings_create(struct netmap_adapter *na)
 
 /* nm_krings_delete callback for passthrough */
 static void
-netmap_pt_krings_delete(struct netmap_adapter *na)
+ptnetmap_krings_delete(struct netmap_adapter *na)
 {
     struct netmap_passthrough_adapter *pt_na =
         (struct netmap_passthrough_adapter *)na;
@@ -1030,7 +1030,7 @@ netmap_pt_krings_delete(struct netmap_adapter *na)
 
 /* nm_register callback */
 static int
-netmap_pt_register(struct netmap_adapter *na, int onoff)
+ptnetmap_register(struct netmap_adapter *na, int onoff)
 {
     struct netmap_passthrough_adapter *pt_na =
         (struct netmap_passthrough_adapter *)na;
@@ -1058,7 +1058,7 @@ netmap_pt_register(struct netmap_adapter *na, int onoff)
         na->na_flags |= NAF_NETMAP_ON | NAF_PASSTHROUGH_FULL;
         //TODO: creare il kthread
     } else {
-        netmap_pt_delete(pt_na);
+        ptnetmap_delete(pt_na);
         na->na_flags &= ~(NAF_NETMAP_ON | NAF_PASSTHROUGH_FULL);
         //TODO: uccidere il kthread
     }
@@ -1068,7 +1068,7 @@ netmap_pt_register(struct netmap_adapter *na, int onoff)
 
 /* nm_dtor callback */
 static void
-netmap_pt_dtor(struct netmap_adapter *na)
+ptnetmap_dtor(struct netmap_adapter *na)
 {
     struct netmap_passthrough_adapter *pt_na =
         (struct netmap_passthrough_adapter *)na;
@@ -1130,24 +1130,24 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     pt_na->up.num_tx_desc = parent->num_tx_desc;
     pt_na->up.num_rx_desc = parent->num_rx_desc;
 
-    pt_na->up.nm_dtor = netmap_pt_dtor;
-    pt_na->up.nm_register = netmap_pt_register;
+    pt_na->up.nm_dtor = ptnetmap_dtor;
+    pt_na->up.nm_register = ptnetmap_register;
 
     //XXX maybe is unnecessary redefine the *xsync
-    pt_na->up.nm_txsync = netmap_pt_txsync;
-    pt_na->up.nm_rxsync = netmap_pt_rxsync;
+    pt_na->up.nm_txsync = ptnetmap_txsync;
+    pt_na->up.nm_rxsync = ptnetmap_rxsync;
 
-    pt_na->up.nm_krings_create = netmap_pt_krings_create;
-    pt_na->up.nm_krings_delete = netmap_pt_krings_delete;
-    pt_na->up.nm_config = netmap_pt_config;
+    pt_na->up.nm_krings_create = ptnetmap_krings_create;
+    pt_na->up.nm_krings_delete = ptnetmap_krings_delete;
+    pt_na->up.nm_config = ptnetmap_config;
 
-    pt_na->up.nm_notify = netmap_pt_notify;
+    pt_na->up.nm_notify = ptnetmap_notify;
     //XXX restore
-    parent->nm_notify = netmap_pt_notify;
+    parent->nm_notify = ptnetmap_notify;
 
     //XXX needed?
-    //pt_na->up.nm_bdg_attach = netmap_pt_bdg_attach;
-    //pt_na->up.nm_bdg_ctl = netmap_pt_bdg_ctl;
+    //pt_na->up.nm_bdg_attach = ptnetmap_bdg_attach;
+    //pt_na->up.nm_bdg_ctl = ptnetmap_bdg_ctl;
 
     pt_na->up.nm_mem = parent->nm_mem;
     error = netmap_attach_common(&pt_na->up);

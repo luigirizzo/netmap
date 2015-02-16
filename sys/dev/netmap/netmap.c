@@ -2160,7 +2160,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		} else if (i == NETMAP_PT_CREATE || i == NETMAP_PT_DELETE) {
 			//XXX-ste: protect priv access??
 			//NMG_LOCK();
-			error = netmap_pt_ctl(nmr, priv->np_na);
+			error = ptnetmap_ctl(nmr, priv->np_na);
 			//NMG_UNLOCK();
 			break;
 		} else if (i != 0) {
