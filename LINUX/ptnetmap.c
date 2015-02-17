@@ -123,7 +123,6 @@ struct ptnetmap_net {
     bool broken;
 
     struct file *nm_f;
-    int nm_fput_needed;
     struct netmap_passthrough_adapter *pt_na;
 
     IFRATE(struct rate_context rate_ctx);
@@ -147,6 +146,7 @@ struct ptnetmap_net {
         } \
     } while (0)
 
+
 static inline void
 ptn_kring_dump(const char *title, const struct netmap_kring *kring)
 {
@@ -166,12 +166,8 @@ ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur
     ring->cur = g_cur;
     ring->tail = kring->nr_hwtail;
 
-    //ring->head = kring->rhead = kring->nr_hwcur;
-    //ring->cur = kring->rcur = kring->nr_hwcur;
-    //ring->tail = kring->rtail = kring->nr_hwtail;
-
     netmap_ring_reinit(kring);
-    ptn_kring_dump("post reinit", kring);
+    ptn_kring_dump("kring reinit", kring);
 }
 
 static inline void ptnetmap_set_txkick(struct ptnetmap_net *net, bool enable)
@@ -248,7 +244,6 @@ static void handle_tx(struct ptnetmap_net *net)
     /* Disable notifications. */
     ptnetmap_set_txkick(net, false);
 
-    // prologue
     CSB_READ(net->csb, tx_ring.head, g_head);
     CSB_READ(net->csb, tx_ring.cur, g_cur);
     CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
@@ -289,7 +284,6 @@ static void handle_tx(struct ptnetmap_net *net)
 
         if (likely(kring->nm_sync(kring, g_flags) == 0)) {
             /* finalize */
-            //nm_txsync_finalize(kring);
             mb();
             CSB_WRITE(net->csb, tx_ring.hwcur, kring->nr_hwcur);
             CSB_WRITE(net->csb, tx_ring.hwtail, ACCESS_ONCE(kring->nr_hwtail));
@@ -318,8 +312,6 @@ static void handle_tx(struct ptnetmap_net *net)
             work = false;
         }
 #endif
-
-        // prologue
         CSB_READ(net->csb, tx_ring.head, g_head);
         CSB_READ(net->csb, tx_ring.cur, g_cur);
         CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
@@ -425,7 +417,6 @@ static void handle_rx(struct ptnetmap_net *net)
     /* Disable notifications. */
     ptnetmap_set_rxkick(net, false);
 
-    // prologue
     mb();
     CSB_READ(net->csb, rx_ring.head, g_head);
     CSB_READ(net->csb, rx_ring.cur, g_cur);
@@ -447,8 +438,7 @@ static void handle_rx(struct ptnetmap_net *net)
         IFRATE(pre_tail = kring->rtail;)
 
         if (kring->nm_sync(kring, g_flags) == 0) {
-            //nm_rxsync_finalize(kring);
-            //finalize
+            /* finalize */
             CSB_WRITE(net->csb, rx_ring.hwcur, kring->nr_hwcur);
             CSB_WRITE(net->csb, rx_ring.hwtail, ACCESS_ONCE(kring->nr_hwtail));
             mb();
@@ -479,8 +469,6 @@ static void handle_rx(struct ptnetmap_net *net)
             work = false;
         }
 #endif
-
-        // prologue
         mb();
         CSB_READ(net->csb, rx_ring.head, g_head);
         CSB_READ(net->csb, rx_ring.cur, g_cur);
@@ -524,7 +512,6 @@ leave:
         IFRATE(net->rate_ctx.new.hrxk++);
     }
     mutex_unlock(&vr->mutex);
-   // DBG(printk("rxintr=%d\n", ptnetmap_rx_interrupts_enabled(net)));
 }
 
 static void handle_tx_kick(struct ptn_vhost_work *work)
@@ -603,11 +590,9 @@ static int ptnetmap_set_eventfds(struct ptnetmap_net * net)
 
 static int ptnetmap_set_backend(struct ptnetmap_net * net)
 {
-    //net->nm_f = fget_light(net->config.netmap_fd, &net->nm_fput_needed);
     net->nm_f = fget(net->config.netmap_fd);
     if (IS_ERR(net->nm_f))
         return PTR_ERR(net->nm_f);
-    //D("fget_light - fput_neede=%d", net->nm_fput_needed);
     D("netmap_fd:%u f_count:%d", net->config.netmap_fd, (int)net->nm_f->f_count.counter);
 
     return 0;
@@ -835,7 +820,7 @@ ptnetmap_delete(struct netmap_passthrough_adapter *pt_na)
     D("");
     printk("%p.RELEASE()\n", net);
 
-    //XXX check if is configured
+    /* check if it is configured */
     if (!net)
         return EFAULT;
 
@@ -1056,11 +1041,9 @@ ptnetmap_register(struct netmap_adapter *na, int onoff)
 
     if (onoff) {
         na->na_flags |= NAF_NETMAP_ON | NAF_PASSTHROUGH_FULL;
-        //TODO: creare il kthread
     } else {
         ptnetmap_delete(pt_na);
         na->na_flags &= ~(NAF_NETMAP_ON | NAF_PASSTHROUGH_FULL);
-        //TODO: uccidere il kthread
     }
 
     return 0;
