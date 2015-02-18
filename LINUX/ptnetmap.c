@@ -119,7 +119,7 @@ struct ptnetmap_net {
 
     struct ptnetmap_config config;
     bool configured;
-    struct paravirt_csb __user * csb;
+    struct paravirt_csb __user *csb;
     bool broken;
 
     struct file *nm_f;
@@ -146,6 +146,41 @@ struct ptnetmap_net {
         } \
     } while (0)
 
+static inline int
+ptnetmap_read_kring_csb(struct pt_ring __user *ptr, uint32_t *g_head,
+        uint32_t *g_cur, uint32_t *g_flags)
+{
+    if(get_user(*g_head, &ptr->head))
+        goto err;
+
+    smp_mb();
+
+    if(get_user(*g_cur, &ptr->cur))
+        goto err;
+    if(get_user(*g_flags, &ptr->sync_flags))
+        goto err;
+
+    return 0;
+err:
+    return EFAULT;
+}
+
+static inline int
+ptnetmap_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
+        uint32_t hwtail)
+{
+    if(put_user(hwcur, &ptr->hwcur))
+        goto err;
+
+    smp_mb();
+
+    if(put_user(hwtail, &ptr->hwtail))
+        goto err;
+
+    return 0;
+err:
+    return EFAULT;
+}
 
 static inline void
 ptn_kring_dump(const char *title, const struct netmap_kring *kring)
@@ -192,30 +227,14 @@ static inline void ptnetmap_disable_guest_txkick(struct ptnetmap_net *net)
     CSB_WRITE(net->csb, guest_need_txkick, v);
 }
 
-/*
- * We needs kick from the guest when:
- * - TX: tail == head - 1
- *       ring is empty
- *       We need to wait that the guest puts some packets in the ring and then it notifies us.
- *
- * - RX: tail == head - 1
- *       ring is full
- *       We need to wait that the guest gets some packets from the ring and then it notifies us.
- */
-static inline int
-nm_kring_need_kick(struct netmap_kring *kring, uint32_t g_head)
-{
-    return (ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_head, kring->nkr_num_slots - 1));
-}
-
 /* Expects to be always run from workqueue - which acts as
  * read-size critical section for our kind of RCU. */
 static void handle_tx(struct ptnetmap_net *net)
 {
     struct ptn_vhost_ring *vr;
     struct netmap_kring *kring;
-    uint32_t g_cur, g_head, g_flags; /* guest variables */
-    int error = 0;
+    struct pt_ring __user *csb_ring;
+    uint32_t g_cur = 0, g_head = 0, g_flags = 0; /* guest variables; init for compiler */
     bool work = false;
     int batch;
     IFRATE(uint32_t pre_tail;)
@@ -226,6 +245,8 @@ static void handle_tx(struct ptnetmap_net *net)
     }
 
     vr = &net->tx_ring;
+    csb_ring = &net->csb->tx_ring; /* netmap TX pointers in CSB */
+
     mutex_lock(&vr->mutex);
 
     if (unlikely(!net->pt_na || net->broken || !net->configured)) {
@@ -236,18 +257,17 @@ static void handle_tx(struct ptnetmap_net *net)
     kring = &net->pt_na->parent->tx_rings[0];
 
     if (nm_kr_tryget(kring)) {
-        error = EBUSY;
-        D("error: %d", error);
+        D("error nm_kr_tryget()");
         goto leave_kr_put;
     }
 
     /* Disable notifications. */
     ptnetmap_set_txkick(net, false);
 
-    CSB_READ(net->csb, tx_ring.head, g_head);
-    CSB_READ(net->csb, tx_ring.cur, g_cur);
-    CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
-    mb(); //XXX: or smp_mb() ?
+    if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
+        D("error reading CSB()");
+        goto leave_kr_put;
+    }
 
     for (;;) {
 #ifdef PTN_TX_BATCH_LIM
@@ -284,9 +304,10 @@ static void handle_tx(struct ptnetmap_net *net)
 
         if (likely(kring->nm_sync(kring, g_flags) == 0)) {
             /* finalize */
-            mb();
-            CSB_WRITE(net->csb, tx_ring.hwcur, kring->nr_hwcur);
-            CSB_WRITE(net->csb, tx_ring.hwtail, ACCESS_ONCE(kring->nr_hwtail));
+            if (ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, kring->nr_hwtail)) {
+                D("error writing CSB()");
+                break;
+            }
             if (kring->rtail != kring->nr_hwtail) {
                 kring->rtail = kring->nr_hwtail;
                 work = true;
@@ -312,9 +333,10 @@ static void handle_tx(struct ptnetmap_net *net)
             work = false;
         }
 #endif
-        CSB_READ(net->csb, tx_ring.head, g_head);
-        CSB_READ(net->csb, tx_ring.cur, g_cur);
-        CSB_READ(net->csb, tx_ring.sync_flags, g_flags);
+        if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
+            D("error reading CSB()");
+            break;
+        }
 #ifndef BUSY_WAIT
         /* Nothing to transmit */
         if (g_head == kring->rhead) {
@@ -322,8 +344,10 @@ static void handle_tx(struct ptnetmap_net *net)
             /* Reenable notifications. */
             ptnetmap_set_txkick(net, true);
             /* Doublecheck. */
-            CSB_READ(net->csb, tx_ring.head, g_head);
-            CSB_READ(net->csb, tx_ring.cur, g_cur);
+            if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
+                D("error reading CSB()");
+                break;
+            }
             if (unlikely(g_head != kring->rhead)) {
                 ptnetmap_set_txkick(net, false);
                 continue;
@@ -379,6 +403,18 @@ static inline void ptnetmap_disable_guest_rxkick(struct ptnetmap_net *net)
     CSB_WRITE(net->csb, guest_need_rxkick, v);
 }
 
+/*
+ * We needs kick from the guest when:
+ *
+ * - RX: tail == head - 1
+ *       ring is full
+ *       We need to wait that the guest gets some packets from the ring and then it notifies us.
+ */
+static inline int
+nm_kr_rxfull(struct netmap_kring *kring, uint32_t g_head)
+{
+    return (ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_head, kring->nkr_num_slots - 1));
+}
 
 /* Expects to be always run from workqueue - which acts as
  * read-size critical section for our kind of RCU. */
@@ -386,8 +422,8 @@ static void handle_rx(struct ptnetmap_net *net)
 {
     struct ptn_vhost_ring *vr;
     struct netmap_kring *kring;
-    uint32_t g_cur, g_head, g_flags; /* guest variables */
-    int error = 0;
+    struct pt_ring __user *csb_ring;
+    uint32_t g_cur = 0, g_head = 0, g_flags = 0; /* guest variables; init for compiler */
     int cicle_nowork = 0;
     bool work = false;
     IFRATE(uint32_t pre_tail;)
@@ -398,6 +434,7 @@ static void handle_rx(struct ptnetmap_net *net)
     }
 
     vr = &net->rx_ring;
+    csb_ring = &net->csb->rx_ring; /* netmap RX pointers in CSB */
 
     mutex_lock(&vr->mutex);
 
@@ -409,18 +446,17 @@ static void handle_rx(struct ptnetmap_net *net)
     kring = &net->pt_na->parent->rx_rings[0];
 
     if (nm_kr_tryget(kring)) {
-        error = EBUSY;
-        D("error: %d", error);
+        D("error nm_kr_tryget()");
         goto leave;
     }
 
     /* Disable notifications. */
     ptnetmap_set_rxkick(net, false);
 
-    mb();
-    CSB_READ(net->csb, rx_ring.head, g_head);
-    CSB_READ(net->csb, rx_ring.cur, g_cur);
-    CSB_READ(net->csb, rx_ring.sync_flags, g_flags);
+    if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
+        D("error reading CSB()");
+        goto leave_kr_put;
+    }
 
     for (;;) {
 
@@ -439,9 +475,10 @@ static void handle_rx(struct ptnetmap_net *net)
 
         if (kring->nm_sync(kring, g_flags) == 0) {
             /* finalize */
-            CSB_WRITE(net->csb, rx_ring.hwcur, kring->nr_hwcur);
-            CSB_WRITE(net->csb, rx_ring.hwtail, ACCESS_ONCE(kring->nr_hwtail));
-            mb();
+            if (ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, kring->nr_hwtail)) {
+                D("error writing CSB()");
+                break;
+            }
             if (kring->rtail != kring->nr_hwtail) {
                 kring->rtail = kring->nr_hwtail;
                 work = true;
@@ -469,21 +506,22 @@ static void handle_rx(struct ptnetmap_net *net)
             work = false;
         }
 #endif
-        mb();
-        CSB_READ(net->csb, rx_ring.head, g_head);
-        CSB_READ(net->csb, rx_ring.cur, g_cur);
-        CSB_READ(net->csb, rx_ring.sync_flags, g_flags);
+        if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
+            D("error reading CSB()");
+            break;
+        }
 #ifndef BUSY_WAIT
         /* No space to receive */
-        if (nm_kring_need_kick(kring, g_head)) {
+        if (nm_kr_rxfull(kring, g_head)) {
             usleep_range(1,1);
             /* Reenable notifications. */
             ptnetmap_set_rxkick(net, true);
             /* Doublecheck. */
-            CSB_READ(net->csb, rx_ring.head, g_head);
-            CSB_READ(net->csb, rx_ring.cur, g_cur);
-            mb();
-            if (unlikely(!nm_kring_need_kick(kring, g_head))) {
+            if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
+                D("error reading CSB()");
+                break;
+            }
+            if (unlikely(!nm_kr_rxfull(kring, g_head))) {
                 ptnetmap_set_rxkick(net, false);
                 continue;
             } else
@@ -678,7 +716,7 @@ ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *pt_ri
 
     return 0;
 err:
-    return -EFAULT;
+    return EFAULT;
 }
 
 static int
