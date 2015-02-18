@@ -128,8 +128,6 @@ struct ptnetmap_net {
     IFRATE(struct rate_context rate_ctx);
 };
 
-
-
 #define CSB_READ(csb, field, r) \
     do { \
         if (get_user(r, &csb->field)) { \
@@ -183,7 +181,7 @@ err:
 }
 
 static inline void
-ptn_kring_dump(const char *title, const struct netmap_kring *kring)
+ptnetmap_kring_dump(const char *title, const struct netmap_kring *kring)
 {
     D("%s - name: %s hwcur: %d hwtail: %d rhead: %d rcur: %d rtail: %d head: %d cur: %d tail: %d",
             title, kring->name, kring->nr_hwcur,
@@ -202,17 +200,15 @@ ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur
     ring->tail = kring->nr_hwtail;
 
     netmap_ring_reinit(kring);
-    ptn_kring_dump("kring reinit", kring);
+    ptnetmap_kring_dump("kring reinit", kring);
 }
 
-static inline void ptnetmap_set_txkick(struct ptnetmap_net *net, bool enable)
+static inline void ptnetmap_tx_set_hostkick(struct ptnetmap_net *net, uint32_t val)
 {
-    uint32_t v = enable ? 1 : 0;
-
-    CSB_WRITE(net->csb, host_need_txkick, v);
+    CSB_WRITE(net->csb, host_need_txkick, val);
 }
 
-static inline bool ptnetmap_tx_interrupts_enabled(struct ptnetmap_net * net)
+static inline uint32_t ptnetmap_tx_get_guestkick(struct ptnetmap_net * net)
 {
     uint32_t v;
 
@@ -220,16 +216,15 @@ static inline bool ptnetmap_tx_interrupts_enabled(struct ptnetmap_net * net)
 
     return v;
 }
-static inline void ptnetmap_disable_guest_txkick(struct ptnetmap_net *net)
+static inline void ptnetmap_tx_set_guestkick(struct ptnetmap_net *net, uint32_t val)
 {
-    uint32_t v = 0;
-
-    CSB_WRITE(net->csb, guest_need_txkick, v);
+    CSB_WRITE(net->csb, guest_need_txkick, val);
 }
 
-/* Expects to be always run from workqueue - which acts as
- * read-size critical section for our kind of RCU. */
-static void handle_tx(struct ptnetmap_net *net)
+/*
+ * Handle tx events: from the guest or from the backend
+ */
+static void ptnetmap_tx_handler(struct ptnetmap_net *net)
 {
     struct ptn_vhost_ring *vr;
     struct netmap_kring *kring;
@@ -262,7 +257,7 @@ static void handle_tx(struct ptnetmap_net *net)
     }
 
     /* Disable notifications. */
-    ptnetmap_set_txkick(net, false);
+    ptnetmap_tx_set_hostkick(net, 0);
 
     if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
         D("error reading CSB()");
@@ -293,12 +288,12 @@ static void handle_tx(struct ptnetmap_net *net)
                 >= kring->nkr_num_slots) {
             ptnetmap_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
-            ptnetmap_set_txkick(net, true);
+            ptnetmap_tx_set_hostkick(net, 1);
             break;
         }
 
         if (netmap_verbose & NM_VERB_TXSYNC)
-            ptn_kring_dump("pre txsync", kring);
+            ptnetmap_kring_dump("pre txsync", kring);
 
         IFRATE(pre_tail = kring->rtail;)
 
@@ -314,7 +309,7 @@ static void handle_tx(struct ptnetmap_net *net)
             }
         } else {
             /* Reenable notifications. */
-            ptnetmap_set_txkick(net, true);
+            ptnetmap_tx_set_hostkick(net, 0);
             D("nm_sync error");
             goto leave_kr_put;
         }
@@ -322,12 +317,12 @@ static void handle_tx(struct ptnetmap_net *net)
         IFRATE(batch_info_update(&net->rate_ctx.new.bf_tx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
         if (netmap_verbose & NM_VERB_TXSYNC)
-            ptn_kring_dump("post txsync", kring);
+            ptnetmap_kring_dump("post txsync", kring);
 
 //#define BUSY_WAIT
 #ifndef BUSY_WAIT
-        if (work && ptnetmap_tx_interrupts_enabled(net)) {
-            ptnetmap_disable_guest_txkick(net);
+        if (work && ptnetmap_tx_get_guestkick(net)) {
+            ptnetmap_tx_set_guestkick(net, 0);
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.htxk++);
             work = false;
@@ -342,14 +337,14 @@ static void handle_tx(struct ptnetmap_net *net)
         if (g_head == kring->rhead) {
             usleep_range(1,1);
             /* Reenable notifications. */
-            ptnetmap_set_txkick(net, true);
+            ptnetmap_tx_set_hostkick(net, 1);
             /* Doublecheck. */
             if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
                 D("error reading CSB()");
                 break;
             }
             if (unlikely(g_head != kring->rhead)) {
-                ptnetmap_set_txkick(net, false);
+                ptnetmap_tx_set_hostkick(net, 0);
                 continue;
             } else
                 break;
@@ -371,8 +366,8 @@ leave_kr_put:
     nm_kr_put(kring);
 
 leave:
-    if (work && ptnetmap_tx_interrupts_enabled(net)) {
-        ptnetmap_disable_guest_txkick(net);
+    if (work && ptnetmap_tx_get_guestkick(net)) {
+        ptnetmap_tx_set_guestkick(net, 0);
         eventfd_signal(vr->call_ctx, 1);
         IFRATE(net->rate_ctx.new.htxk++);
     }
@@ -381,14 +376,12 @@ leave:
     return;
 }
 
-static inline void ptnetmap_set_rxkick(struct ptnetmap_net *net, bool enable)
+static inline void ptnetmap_rx_set_hostkick(struct ptnetmap_net *net, uint32_t val)
 {
-    uint32_t v = enable ? 1 : 0;
-
-    CSB_WRITE(net->csb, host_need_rxkick, v);
+    CSB_WRITE(net->csb, host_need_rxkick, val);
 }
 
-static inline bool ptnetmap_rx_interrupts_enabled(struct ptnetmap_net * net)
+static inline uint32_t ptnetmap_rx_get_guestkick(struct ptnetmap_net * net)
 {
     uint32_t v;
 
@@ -396,11 +389,9 @@ static inline bool ptnetmap_rx_interrupts_enabled(struct ptnetmap_net * net)
 
     return v;
 }
-static inline void ptnetmap_disable_guest_rxkick(struct ptnetmap_net *net)
+static inline void ptnetmap_rx_set_guestkick(struct ptnetmap_net *net, uint32_t val)
 {
-    uint32_t v = 0;
-
-    CSB_WRITE(net->csb, guest_need_rxkick, v);
+    CSB_WRITE(net->csb, guest_need_rxkick, val);
 }
 
 /*
@@ -416,9 +407,10 @@ nm_kr_rxfull(struct netmap_kring *kring, uint32_t g_head)
     return (ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_head, kring->nkr_num_slots - 1));
 }
 
-/* Expects to be always run from workqueue - which acts as
- * read-size critical section for our kind of RCU. */
-static void handle_rx(struct ptnetmap_net *net)
+/*
+ * Handle rx events: from the guest or from the backend
+ */
+static void ptnetmap_rx_handler(struct ptnetmap_net *net)
 {
     struct ptn_vhost_ring *vr;
     struct netmap_kring *kring;
@@ -451,7 +443,7 @@ static void handle_rx(struct ptnetmap_net *net)
     }
 
     /* Disable notifications. */
-    ptnetmap_set_rxkick(net, false);
+    ptnetmap_rx_set_hostkick(net, 0);
 
     if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
         D("error reading CSB()");
@@ -464,12 +456,12 @@ static void handle_rx(struct ptnetmap_net *net)
                 >= kring->nkr_num_slots) {
             ptnetmap_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
-            ptnetmap_set_rxkick(net, true);
+            ptnetmap_rx_set_hostkick(net, 1);
             break;
         }
 
         if (netmap_verbose & NM_VERB_RXSYNC)
-            ptn_kring_dump("pre rxsync", kring);
+            ptnetmap_kring_dump("pre rxsync", kring);
 
         IFRATE(pre_tail = kring->rtail;)
 
@@ -488,7 +480,7 @@ static void handle_rx(struct ptnetmap_net *net)
             }
         } else {
             /* Reenable notifications. */
-            ptnetmap_set_rxkick(net, true);
+            ptnetmap_rx_set_hostkick(net, 0);
             D("nm_sync error");
             goto leave_kr_put;
         }
@@ -496,11 +488,11 @@ static void handle_rx(struct ptnetmap_net *net)
         IFRATE(batch_info_update(&net->rate_ctx.new.bf_rx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
         if (netmap_verbose & NM_VERB_RXSYNC)
-            ptn_kring_dump("post rxsync", kring);
+            ptnetmap_kring_dump("post rxsync", kring);
 
 #ifndef BUSY_WAIT
-        if (work && ptnetmap_rx_interrupts_enabled(net)) {
-            ptnetmap_disable_guest_rxkick(net);
+        if (work && ptnetmap_rx_get_guestkick(net)) {
+            ptnetmap_rx_set_guestkick(net, 0);
             eventfd_signal(vr->call_ctx, 1);
             IFRATE(net->rate_ctx.new.hrxk++);
             work = false;
@@ -515,14 +507,14 @@ static void handle_rx(struct ptnetmap_net *net)
         if (nm_kr_rxfull(kring, g_head)) {
             usleep_range(1,1);
             /* Reenable notifications. */
-            ptnetmap_set_rxkick(net, true);
+            ptnetmap_rx_set_hostkick(net, 1);
             /* Doublecheck. */
             if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
                 D("error reading CSB()");
                 break;
             }
             if (unlikely(!nm_kr_rxfull(kring, g_head))) {
-                ptnetmap_set_rxkick(net, false);
+                ptnetmap_rx_set_hostkick(net, 0);
                 continue;
             } else
                 break;
@@ -544,50 +536,50 @@ leave_kr_put:
     nm_kr_put(kring);
 
 leave:
-    if (work && ptnetmap_rx_interrupts_enabled(net)) {
-        ptnetmap_disable_guest_rxkick(net);
+    if (work && ptnetmap_rx_get_guestkick(net)) {
+        ptnetmap_rx_set_guestkick(net, 0);
         eventfd_signal(vr->call_ctx, 1);
         IFRATE(net->rate_ctx.new.hrxk++);
     }
     mutex_unlock(&vr->mutex);
 }
 
-static void handle_tx_kick(struct ptn_vhost_work *work)
+static void ptnetmap_tx_handle_kick(struct ptn_vhost_work *work)
 {
     struct ptn_vhost_ring *vr = container_of(work, struct ptn_vhost_ring,
             poll.work);
     struct ptnetmap_net *net = container_of(vr->dev, struct ptnetmap_net, dev_tx);
 
     IFRATE(net->rate_ctx.new.gtxk++);
-    handle_tx(net);
+    ptnetmap_tx_handler(net);
 }
 
-static void handle_rx_kick(struct ptn_vhost_work *work)
+static void ptnetmap_rx_handle_kick(struct ptn_vhost_work *work)
 {
     struct ptn_vhost_ring *vr = container_of(work, struct ptn_vhost_ring,
             poll.work);
     struct ptnetmap_net *net = container_of(vr->dev, struct ptnetmap_net, dev_rx);
 
     IFRATE(net->rate_ctx.new.grxk++);
-    handle_rx(net);
+    ptnetmap_rx_handler(net);
 }
 
-static void handle_tx_net(struct ptn_vhost_work *work)
+static void ptnetmap_tx_handle_net(struct ptn_vhost_work *work)
 {
     struct ptnetmap_net *net = container_of(work, struct ptnetmap_net,
             tx_poll.work);
 
     IFRATE(net->rate_ctx.new.btxwu++);
-    handle_tx(net);
+    ptnetmap_tx_handler(net);
 }
 
-static void handle_rx_net(struct ptn_vhost_work *work)
+static void ptnetmap_rx_handle_net(struct ptn_vhost_work *work)
 {
     struct ptnetmap_net *net = container_of(work, struct ptnetmap_net,
             rx_poll.work);
 
     IFRATE(net->rate_ctx.new.brxwu++);
-    handle_rx(net);
+    ptnetmap_rx_handler(net);
 }
 
 static int ptnetmap_set_eventfds_ring(struct ptn_vhost_ring *vr, struct ptnetmap_config_ring *vrc)
@@ -712,7 +704,7 @@ ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *pt_ri
     if(put_user(kring->nr_hwtail, &pt_ring->hwtail))
         goto err;
 
-    ptn_kring_dump("", kring);
+    ptnetmap_kring_dump("", kring);
 
     return 0;
 err:
@@ -753,8 +745,8 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
 
     dev_tx = &net->dev_tx;
     dev_rx = &net->dev_rx;
-    net->tx_ring.handle_kick = handle_tx_kick;
-    net->rx_ring.handle_kick = handle_rx_kick;
+    net->tx_ring.handle_kick = ptnetmap_tx_handle_kick;
+    net->rx_ring.handle_kick = ptnetmap_rx_handle_kick;
 
     ret = ptn_vhost_dev_init(dev_tx, &net->tx_ring, NULL);
     if (ret < 0) {
@@ -767,8 +759,8 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
         return ret;
     }
 
-    ptn_vhost_poll_init(&net->tx_poll, handle_tx_net, POLLOUT, dev_tx);
-    ptn_vhost_poll_init(&net->rx_poll, handle_rx_net, POLLIN, dev_rx);
+    ptn_vhost_poll_init(&net->tx_poll, ptnetmap_tx_handle_net, POLLOUT, dev_tx);
+    ptn_vhost_poll_init(&net->rx_poll, ptnetmap_rx_handle_net, POLLIN, dev_rx);
 
 #ifdef RATE
     memset(&net->rate_ctx, 0, sizeof(net->rate_ctx));
