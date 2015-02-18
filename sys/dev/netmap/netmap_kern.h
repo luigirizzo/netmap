@@ -1564,7 +1564,7 @@ struct netmap_passthrough_adapter { //TODO-ste: refact to netmap_host_pt_adapter
 	struct netmap_adapter up;
 
 	struct netmap_adapter *parent;
-	void *private;
+	void *ptn_state;
 };
 
 #endif /* WITH_PASSTHROUGH */
