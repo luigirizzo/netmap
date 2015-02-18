@@ -650,7 +650,7 @@ struct netmap_adapter {
 
 	/* additional information attached to this adapter
 	 * by other netmap subsystems. Currently used by
-	 * bwrap and LINUX/v1000.
+	 * bwrap, LINUX/v1000 and ptnetmap
 	 */
 	void *na_private;
 
@@ -1564,6 +1564,9 @@ struct netmap_passthrough_adapter { //TODO-ste: refact to netmap_host_pt_adapter
 	struct netmap_adapter up;
 
 	struct netmap_adapter *parent;
+	int (*parent_nm_notify)(struct netmap_adapter *,
+		u_int ring, enum txrx, int flags);
+
 	void *ptn_state;
 };
 

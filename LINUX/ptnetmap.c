@@ -122,7 +122,6 @@ struct ptnetmap_state {
     struct paravirt_csb __user *csb;
     bool broken;
 
-    struct file *nm_f;
     struct netmap_passthrough_adapter *pt_na;
 
     IFRATE(struct rate_context rate_ctx);
@@ -582,6 +581,16 @@ static void ptnetmap_rx_handle_net(struct ptn_vhost_work *work)
     ptnetmap_rx_handler(pts);
 }
 
+static void inline
+ptnetmap_tx_notify(struct ptnetmap_state *pts) {
+    ptn_vhost_poll_queue(&pts->tx_poll);
+}
+
+static void inline
+ptnetmap_rx_notify(struct ptnetmap_state *pts) {
+    ptn_vhost_poll_queue(&pts->rx_poll);
+}
+
 static int ptnetmap_set_eventfds_ring(struct ptn_vhost_ring *vr, struct ptnetmap_config_ring *vrc)
 {
     vr->kick = eventfd_fget(vrc->ioeventfd);
@@ -614,16 +623,6 @@ static int ptnetmap_set_eventfds(struct ptnetmap_state *pts)
         return r;
     if ((r = ptnetmap_set_eventfds_ring(&pts->rx_ring, &pts->config.rx_ring)))
         return r;
-
-    return 0;
-}
-
-static int ptnetmap_set_backend(struct ptnetmap_state *pts)
-{
-    pts->nm_f = fget(pts->config.netmap_fd);
-    if (IS_ERR(pts->nm_f))
-        return PTR_ERR(pts->nm_f);
-    D("netmap_fd:%u f_count:%d", pts->config.netmap_fd, (int)pts->nm_f->f_count.counter);
 
     return 0;
 }
@@ -673,8 +672,6 @@ static int ptnetmap_configure(struct ptnetmap_state *pts, struct netmap_passthro
         return r;
     if ((r = ptnetmap_set_eventfds(pts)))
         return r;
-    if ((r = ptnetmap_set_backend(pts)))
-        return r;
     ///XXX function ???
     pts->csb = pts->config.csb;
 
@@ -684,8 +681,6 @@ static int ptnetmap_configure(struct ptnetmap_state *pts, struct netmap_passthro
     if (pts->tx_ring.handle_kick && (r = ptn_vhost_poll_start(&pts->tx_ring.poll, pts->tx_ring.kick)))
         return r;
     if (pts->rx_ring.handle_kick && (r = ptn_vhost_poll_start(&pts->rx_ring.poll, pts->rx_ring.kick)))
-        return r;
-    if (pts->nm_f && (r = ptnetmap_poll_start(pts, pts->nm_f, pt_na)))
         return r;
 
     return 0;
@@ -727,6 +722,8 @@ ptnetmap_krings_snapshot(struct netmap_passthrough_adapter *pt_na, struct ptnetm
 err:
     return error;
 }
+
+static int ptnetmap_notify(struct netmap_adapter *, u_int, enum txrx, int);
 
 static int
 ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf, uint16_t buf_len)
@@ -805,6 +802,10 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
     pt_na->ptn_state = pts;
     pts->pt_na = pt_na;
 
+    pt_na->parent_nm_notify = pt_na->parent->nm_notify;
+    pt_na->parent->nm_notify = ptnetmap_notify;
+    pt_na->parent->na_private = pt_na;
+
     mutex_unlock(&pts->dev_rx.mutex);
     mutex_unlock(&pts->dev_tx.mutex);
 
@@ -862,8 +863,10 @@ ptnetmap_delete(struct netmap_passthrough_adapter *pt_na)
     ptn_vhost_dev_stop(&pts->dev_rx);
     ptn_vhost_dev_cleanup(&pts->dev_tx);
     ptn_vhost_dev_cleanup(&pts->dev_rx);
-    if (pts->nm_f)
-        fput(pts->nm_f);
+
+    pt_na->parent->nm_notify = pt_na->parent_nm_notify;
+    pt_na->parent->na_private = NULL;
+
     /* We do an extra flush before freeing memory,
      * since jobs can re-queue themselves. */
     ptnetmap_flush(pts);
@@ -921,14 +924,11 @@ static int
 ptnetmap_notify(struct netmap_adapter *na, u_int n_ring,
         enum txrx tx, int flags)
 {
-    struct netmap_kring *kring;
+    struct netmap_passthrough_adapter *pt_na = na->na_private;
+    struct ptnetmap_state *pts = pt_na->ptn_state;
 
     if (tx == NR_TX) {
-        kring = na->tx_rings + n_ring;
-        mb();
-        //wake_up(&kring->si);
-        wake_up_interruptible_poll(&kring->si, POLLOUT |
-                POLLWRNORM | POLLWRBAND);
+        ptnetmap_tx_notify(pts);
         /* optimization: avoid a wake up on the global
          * queue if nobody has registered for more
          * than one ring
@@ -936,11 +936,7 @@ ptnetmap_notify(struct netmap_adapter *na, u_int n_ring,
         if (na->tx_si_users > 0)
             OS_selwakeup(&na->tx_si, PI_NET);
     } else {
-        kring = na->rx_rings + n_ring;
-        mb();
-        //wake_up(&kring->si);
-        wake_up_interruptible_poll(&kring->si, POLLIN |
-                POLLRDNORM | POLLRDBAND);
+        ptnetmap_rx_notify(pts);
         /* optimization: same as above */
         if (na->rx_si_users > 0)
             OS_selwakeup(&na->rx_si, PI_NET);
@@ -1085,10 +1081,12 @@ ptnetmap_dtor(struct netmap_adapter *na)
 {
     struct netmap_passthrough_adapter *pt_na =
         (struct netmap_passthrough_adapter *)na;
+    struct netmap_adapter *parent = pt_na->parent;
 
     D("%p", na);
 
-    pt_na->parent->na_flags &= ~NAF_BUSY;
+    parent->na_flags &= ~NAF_BUSY;
+
     netmap_adapter_put(pt_na->parent);
     pt_na->parent = NULL;
 }
@@ -1153,10 +1151,8 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     pt_na->up.nm_krings_create = ptnetmap_krings_create;
     pt_na->up.nm_krings_delete = ptnetmap_krings_delete;
     pt_na->up.nm_config = ptnetmap_config;
-
     pt_na->up.nm_notify = ptnetmap_notify;
-    //XXX restore
-    parent->nm_notify = ptnetmap_notify;
+
 
     //XXX needed?
     //pt_na->up.nm_bdg_attach = ptnetmap_bdg_attach;
