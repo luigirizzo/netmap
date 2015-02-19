@@ -595,4 +595,18 @@ struct nm_ifreq {
 	char data[NM_IFRDATA_LEN];
 };
 
+/*
+ * Structures used for ptnetmap configuration
+ */
+struct ptn_cfg_ring {
+	uint32_t ioeventfd;
+	uint32_t irqfd;
+};
+
+struct ptn_cfg {
+	struct ptn_cfg_ring tx_ring;
+	struct ptn_cfg_ring rx_ring;
+	void *csb;   /* CSB */
+};
+
 #endif /* _NET_NETMAP_H_ */

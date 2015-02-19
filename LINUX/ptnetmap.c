@@ -7,7 +7,6 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 
-#include "ptnetmap_user.h" //TODO: include ptnetmap_user.h into netmap.h or netmap_user.h
 #include "ptnetmap-vhost/paravirt.h"
 #include "ptnetmap-vhost/ptnetmap_vhost.h"
 
@@ -117,7 +116,7 @@ struct ptnetmap_state {
     struct ptn_vhost_ring tx_ring, rx_ring;
     struct ptn_vhost_poll tx_poll, rx_poll;
 
-    struct ptnetmap_config config;
+    struct ptn_cfg config;
     bool configured;
     struct paravirt_csb __user *csb;
     bool broken;
@@ -591,7 +590,7 @@ ptnetmap_rx_notify(struct ptnetmap_state *pts) {
     ptn_vhost_poll_queue(&pts->rx_poll);
 }
 
-static int ptnetmap_set_eventfds_ring(struct ptn_vhost_ring *vr, struct ptnetmap_config_ring *vrc)
+static int ptnetmap_set_eventfds_ring(struct ptn_vhost_ring *vr, struct ptn_cfg_ring *vrc)
 {
     vr->kick = eventfd_fget(vrc->ioeventfd);
     if (IS_ERR(vr->kick))
@@ -602,15 +601,8 @@ static int ptnetmap_set_eventfds_ring(struct ptn_vhost_ring *vr, struct ptnetmap
         return PTR_ERR(vr->call);
     vr->call_ctx = eventfd_ctx_fileget(vr->call);
 
-    if (vrc->resamplefd != ~0U) {
-        vr->resample = eventfd_fget(vrc->resamplefd);
-        if (IS_ERR(vr->resample))
-            return PTR_ERR(vr->resample);
-        vr->resample_ctx = eventfd_ctx_fileget(vr->resample);
-    } else {
-        vr->resample = NULL;
-        vr->resample_ctx = NULL;
-    }
+    vr->resample = NULL;
+    vr->resample_ctx = NULL;
 
     return 0;
 }
@@ -629,14 +621,13 @@ static int ptnetmap_set_eventfds(struct ptnetmap_state *pts)
 
 static void ptnetmap_print_configuration(struct ptnetmap_state *pts)
 {
-    struct ptnetmap_config *cfg = &pts->config;
+    struct ptn_cfg *cfg = &pts->config;
 
     printk("[ptn] configuration:\n");
-    printk("TX: iofd=%u, irqfd=%u, resfd=%d\n",
-            cfg->tx_ring.ioeventfd, cfg->tx_ring.irqfd, cfg->tx_ring.resamplefd);
-    printk("RX: iofd=%u, irqfd=%u, resfd=%d\n",
-            cfg->rx_ring.ioeventfd, cfg->rx_ring.irqfd, cfg->rx_ring.resamplefd);
-    printk("Backend: netmapfd=%u\n", cfg->netmap_fd);
+    printk("TX: iofd=%u, irqfd=%u\n",
+            cfg->tx_ring.ioeventfd, cfg->tx_ring.irqfd);
+    printk("RX: iofd=%u, irqfd=%u\n",
+            cfg->rx_ring.ioeventfd, cfg->rx_ring.irqfd);
     printk("CSB: csb_addr=%p\n", cfg->csb);
 
 }
@@ -772,14 +763,14 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
     mutex_lock(&pts->dev_tx.mutex);
     mutex_lock(&pts->dev_rx.mutex);
 
-    if (buf_len != sizeof(struct ptnetmap_config)) {
-        D("buf_len ERROR! - buf_len %d, expected %d", (int)buf_len, (int)sizeof(struct ptnetmap_config));
+    if (buf_len != sizeof(struct ptn_cfg)) {
+        D("buf_len ERROR! - buf_len %d, expected %d", (int)buf_len, (int)sizeof(struct ptn_cfg));
         ret = EINVAL;
         goto err;
     }
 
     /* Read the configuration from userspace. */
-    if (copy_from_user(&pts->config, buf, sizeof(struct ptnetmap_config))) {
+    if (copy_from_user(&pts->config, buf, sizeof(struct ptn_cfg))) {
         D("copy_from_user() ERROR!");
         ret = EFAULT;
         goto err;
