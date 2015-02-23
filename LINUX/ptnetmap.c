@@ -8,11 +8,11 @@
 #include <dev/netmap/netmap_mem2.h>
 #include <dev/netmap/paravirt.h>
 
-#include "ptnetmap-vhost/ptnetmap_vhost.h"
+#include "ptnetmap.h"
 
 #ifdef WITH_PASSTHROUGH
 
-#define PTN_RX_NOWORK_CYCLE   2                               /* RX cycle without receive any packets */
+#define PTN_RX_NOWORK_CYCLE   10                               /* RX cycle without receive any packets */
 #define PTN_TX_BATCH_LIM      ((kring->nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
 
 //#define DEBUG  /* Enables communication debugging. */
@@ -112,14 +112,12 @@ static void rate_callback(unsigned long arg)
 #endif /* RATE */
 
 struct ptnetmap_state {
-    struct ptn_vhost_dev dev_tx, dev_rx;
-    struct ptn_vhost_ring tx_ring, rx_ring;
-    struct ptn_vhost_poll tx_poll, rx_poll;
+    struct ptn_kthread *ptk_tx, *ptk_rx;
 
     struct ptn_cfg config;
     bool configured;
     struct paravirt_csb __user *csb;
-    bool broken;
+    bool stopped;
 
     struct netmap_passthrough_adapter *pt_na;
 
@@ -209,9 +207,9 @@ static inline void ptnetmap_tx_set_guestkick(struct ptnetmap_state *pts, uint32_
 /*
  * Handle tx events: from the guest or from the backend
  */
-static void ptnetmap_tx_handler(struct ptnetmap_state *pts)
+static void ptnetmap_tx_handler(void *data)
 {
-    struct ptn_vhost_ring *vr;
+    struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
     struct pt_ring __user *csb_ring;
     uint32_t g_cur = 0, g_head = 0, g_flags = 0; /* guest variables; init for compiler */
@@ -224,12 +222,9 @@ static void ptnetmap_tx_handler(struct ptnetmap_state *pts)
         return;
     }
 
-    vr = &pts->tx_ring;
     csb_ring = &pts->csb->tx_ring; /* netmap TX pointers in CSB */
 
-    mutex_lock(&vr->mutex);
-
-    if (unlikely(!pts->pt_na || pts->broken || !pts->configured)) {
+    if (unlikely(!pts->pt_na || pts->stopped || !pts->configured)) {
         D("backend netmap is not configured");
         goto leave;
     }
@@ -302,7 +297,7 @@ static void ptnetmap_tx_handler(struct ptnetmap_state *pts)
 #ifndef BUSY_WAIT
         if (work && ptnetmap_tx_get_guestkick(pts)) {
             ptnetmap_tx_set_guestkick(pts, 0);
-            eventfd_signal(vr->call_ctx, 1);
+            ptn_kthread_send_irq(pts->ptk_tx);
             IFRATE(pts->rate_ctx.new.htxk++);
             work = false;
         }
@@ -329,8 +324,8 @@ static void ptnetmap_tx_handler(struct ptnetmap_state *pts)
             break;
         }
 #endif
-        if (unlikely(pts->broken || !pts->configured)) {
-            D("broken or not configured");
+        if (unlikely(pts->stopped || !pts->configured)) {
+            D("stopped or not configured");
             break;
         }
     }
@@ -341,16 +336,16 @@ leave_kr_put:
 leave:
     if (work && ptnetmap_tx_get_guestkick(pts)) {
         ptnetmap_tx_set_guestkick(pts, 0);
-        eventfd_signal(vr->call_ctx, 1);
+        ptn_kthread_send_irq(pts->ptk_tx);
         IFRATE(pts->rate_ctx.new.htxk++);
     }
-    mutex_unlock(&vr->mutex);
 
     return;
 }
 
 static inline void ptnetmap_rx_set_hostkick(struct ptnetmap_state *pts, uint32_t val)
 {
+    smp_mb();
     CSB_WRITE(pts->csb, host_need_rxkick, val);
 }
 
@@ -383,9 +378,9 @@ nm_kr_rxfull(struct netmap_kring *kring, uint32_t g_head)
 /*
  * Handle rx events: from the guest or from the backend
  */
-static void ptnetmap_rx_handler(struct ptnetmap_state *pts)
+static void ptnetmap_rx_handler(void *data)
 {
-    struct ptn_vhost_ring *vr;
+    struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
     struct pt_ring __user *csb_ring;
     uint32_t g_cur = 0, g_head = 0, g_flags = 0; /* guest variables; init for compiler */
@@ -398,12 +393,9 @@ static void ptnetmap_rx_handler(struct ptnetmap_state *pts)
         return;
     }
 
-    vr = &pts->rx_ring;
     csb_ring = &pts->csb->rx_ring; /* netmap RX pointers in CSB */
 
-    mutex_lock(&vr->mutex);
-
-    if (unlikely(!pts->pt_na || pts->broken || !pts->configured)) {
+    if (unlikely(!pts->pt_na || pts->stopped || !pts->configured)) {
         D("backend netmap is not configured");
         goto leave;
     }
@@ -460,7 +452,7 @@ static void ptnetmap_rx_handler(struct ptnetmap_state *pts)
 #ifndef BUSY_WAIT
         if (work && ptnetmap_rx_get_guestkick(pts)) {
             ptnetmap_rx_set_guestkick(pts, 0);
-            eventfd_signal(vr->call_ctx, 1);
+            ptn_kthread_send_irq(pts->ptk_rx);
             IFRATE(pts->rate_ctx.new.hrxk++);
             work = false;
         }
@@ -487,8 +479,8 @@ static void ptnetmap_rx_handler(struct ptnetmap_state *pts)
             break;
         }
 #endif
-        if (unlikely(pts->broken || !pts->configured)) {
-            D("broken or not configured");
+        if (unlikely(pts->stopped || !pts->configured)) {
+            D("stopped or not configured");
             break;
         }
     }
@@ -499,145 +491,68 @@ leave_kr_put:
 leave:
     if (work && ptnetmap_rx_get_guestkick(pts)) {
         ptnetmap_rx_set_guestkick(pts, 0);
-        eventfd_signal(vr->call_ctx, 1);
+        ptn_kthread_send_irq(pts->ptk_rx);
         IFRATE(pts->rate_ctx.new.hrxk++);
     }
-    mutex_unlock(&vr->mutex);
-}
-
-static void ptnetmap_tx_handle_kick(struct ptn_vhost_work *work)
-{
-    struct ptn_vhost_ring *vr = container_of(work, struct ptn_vhost_ring,
-            poll.work);
-    struct ptnetmap_state *pts = container_of(vr->dev, struct ptnetmap_state, dev_tx);
-
-    IFRATE(pts->rate_ctx.new.gtxk++);
-    ptnetmap_tx_handler(pts);
-}
-
-static void ptnetmap_rx_handle_kick(struct ptn_vhost_work *work)
-{
-    struct ptn_vhost_ring *vr = container_of(work, struct ptn_vhost_ring,
-            poll.work);
-    struct ptnetmap_state *pts = container_of(vr->dev, struct ptnetmap_state, dev_rx);
-
-    IFRATE(pts->rate_ctx.new.grxk++);
-    ptnetmap_rx_handler(pts);
-}
-
-static void ptnetmap_tx_handle_net(struct ptn_vhost_work *work)
-{
-    struct ptnetmap_state *pts = container_of(work, struct ptnetmap_state,
-            tx_poll.work);
-
-    IFRATE(pts->rate_ctx.new.btxwu++);
-    ptnetmap_tx_handler(pts);
-}
-
-static void ptnetmap_rx_handle_net(struct ptn_vhost_work *work)
-{
-    struct ptnetmap_state *pts = container_of(work, struct ptnetmap_state,
-            rx_poll.work);
-
-    IFRATE(pts->rate_ctx.new.brxwu++);
-    ptnetmap_rx_handler(pts);
 }
 
 static void inline
 ptnetmap_tx_notify(struct ptnetmap_state *pts) {
-    ptn_vhost_poll_queue(&pts->tx_poll);
+    ptn_kthread_wakeup_worker(pts->ptk_tx);
+    IFRATE(pts->rate_ctx.new.btxwu++);
 }
 
 static void inline
 ptnetmap_rx_notify(struct ptnetmap_state *pts) {
-    ptn_vhost_poll_queue(&pts->rx_poll);
-}
-
-static int ptnetmap_set_eventfds_ring(struct ptn_vhost_ring *vr, struct ptn_cfg_ring *vrc)
-{
-    vr->kick = eventfd_fget(vrc->ioeventfd);
-    if (IS_ERR(vr->kick))
-        return PTR_ERR(vr->kick);
-
-    vr->call = eventfd_fget(vrc->irqfd);
-    if (IS_ERR(vr->call))
-        return PTR_ERR(vr->call);
-    vr->call_ctx = eventfd_ctx_fileget(vr->call);
-
-    vr->resample = NULL;
-    vr->resample_ctx = NULL;
-
-    return 0;
-}
-
-static int ptnetmap_set_eventfds(struct ptnetmap_state *pts)
-{
-    int r;
-
-    if ((r = ptnetmap_set_eventfds_ring(&pts->tx_ring, &pts->config.tx_ring)))
-        return r;
-    if ((r = ptnetmap_set_eventfds_ring(&pts->rx_ring, &pts->config.rx_ring)))
-        return r;
-
-    return 0;
+    ptn_kthread_wakeup_worker(pts->ptk_rx);
+    IFRATE(pts->rate_ctx.new.brxwu++);
 }
 
 static void ptnetmap_print_configuration(struct ptnetmap_state *pts)
 {
     struct ptn_cfg *cfg = &pts->config;
 
-    printk("[ptn] configuration:\n");
-    printk("TX: iofd=%u, irqfd=%u\n",
+    D("[ptn] configuration:");
+    D("TX: iofd=%u, irqfd=%u",
             cfg->tx_ring.ioeventfd, cfg->tx_ring.irqfd);
-    printk("RX: iofd=%u, irqfd=%u\n",
+    D("RX: iofd=%u, irqfd=%u",
             cfg->rx_ring.ioeventfd, cfg->rx_ring.irqfd);
-    printk("CSB: csb_addr=%p\n", cfg->csb);
+    D("CSB: csb_addr=%p", cfg->csb);
 
 }
 
-int ptnetmap_poll_start(struct ptnetmap_state *pts, struct file *file,
-        struct netmap_passthrough_adapter *pt_na)
+static int
+ptnetmap_create_kthreads(struct ptnetmap_state *pts)
 {
-    int ret = 0;
+    struct ptn_kthread_cfg ptk_cfg;
 
-    if (!pts->tx_poll.wqh) {
-        poll_wait(file, &pt_na->parent->tx_rings[0].si, &pts->tx_poll.table);
-        ptn_vhost_poll_queue(&pts->tx_poll);
-        printk("%p.poll_start()\n", &pts->tx_poll);
+    ptk_cfg.worker_private = pts;
+
+    /* TX kthread */
+    ptk_cfg.type = PTK_TX;
+    ptk_cfg.ring = pts->config.tx_ring;
+    ptk_cfg.worker_fn = ptnetmap_tx_handler;
+    pts->ptk_tx = ptn_kthread_create(&ptk_cfg);
+    if (pts->ptk_tx == NULL) {
+        goto err;
     }
 
-    if (!pts->rx_poll.wqh) {
-        poll_wait(file, &pt_na->parent->rx_rings[0].si, &pts->rx_poll.table);
-        ptn_vhost_poll_queue(&pts->rx_poll);
-        printk("%p.poll_start()\n", &pts->rx_poll);
+    /* RX kthread */
+    ptk_cfg.type = PTK_RX;
+    ptk_cfg.ring = pts->config.rx_ring;
+    ptk_cfg.worker_fn = ptnetmap_rx_handler;
+    pts->ptk_rx = ptn_kthread_create(&ptk_cfg);
+    if (pts->ptk_rx == NULL) {
+        goto err;
     }
-
-    return ret;
-}
-
-static int ptnetmap_configure(struct ptnetmap_state *pts, struct netmap_passthrough_adapter *pt_na)
-{
-    int r;
-
-    /* Configure. */
-    if ((r = ptn_vhost_dev_set_owner(&pts->dev_tx)))
-        return r;
-    if ((r = ptn_vhost_dev_set_owner(&pts->dev_rx)))
-        return r;
-    if ((r = ptnetmap_set_eventfds(pts)))
-        return r;
-    ///XXX function ???
-    pts->csb = pts->config.csb;
-
-    ptnetmap_print_configuration(pts);
-
-    /* Start polling. */
-    if (pts->tx_ring.handle_kick && (r = ptn_vhost_poll_start(&pts->tx_ring.poll, pts->tx_ring.kick)))
-        return r;
-    if (pts->rx_ring.handle_kick && (r = ptn_vhost_poll_start(&pts->rx_ring.poll, pts->rx_ring.kick)))
-        return r;
 
     return 0;
+err:
+    if (pts->ptk_tx) {
+        ptn_kthread_delete(pts->ptk_tx);
+        pts->ptk_tx = NULL;
+    }
+    return EFAULT;
 }
 
 static int
@@ -661,7 +576,7 @@ err:
 }
 
 static int
-ptnetmap_krings_snapshot(struct netmap_passthrough_adapter *pt_na, struct ptnetmap_state *pts)
+ptnetmap_krings_snapshot(struct ptnetmap_state *pts, struct netmap_passthrough_adapter *pt_na)
 {
     struct netmap_kring *kring;
     int error = 0;
@@ -682,49 +597,17 @@ static int ptnetmap_notify(struct netmap_adapter *, u_int, enum txrx, int);
 static int
 ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf, uint16_t buf_len)
 {
-    struct ptnetmap_state *pts = kmalloc(sizeof *pts, GFP_KERNEL);
-    struct ptn_vhost_dev *dev_tx, *dev_rx;
+    struct ptnetmap_state *pts;
     int ret;
 
     /* XXX check if already attached */
 
     D("");
-    printk("%p.OPEN()\n", pts);
+    pts = kzalloc(sizeof *pts, GFP_KERNEL);
     if (!pts)
         return ENOMEM;
-    pts->configured = pts->broken = false;
-
-    dev_tx = &pts->dev_tx;
-    dev_rx = &pts->dev_rx;
-    pts->tx_ring.handle_kick = ptnetmap_tx_handle_kick;
-    pts->rx_ring.handle_kick = ptnetmap_rx_handle_kick;
-
-    ret = ptn_vhost_dev_init(dev_tx, &pts->tx_ring, NULL);
-    if (ret < 0) {
-        kfree(pts);
-        return ret;
-    }
-    ret = ptn_vhost_dev_init(dev_rx, NULL, &pts->rx_ring);
-    if (ret < 0) {
-        kfree(pts);
-        return ret;
-    }
-
-    ptn_vhost_poll_init(&pts->tx_poll, ptnetmap_tx_handle_net, POLLOUT, dev_tx);
-    ptn_vhost_poll_init(&pts->rx_poll, ptnetmap_rx_handle_net, POLLIN, dev_rx);
-
-#ifdef RATE
-    memset(&pts->rate_ctx, 0, sizeof(pts->rate_ctx));
-    setup_timer(&pts->rate_ctx.timer, &rate_callback,
-            (unsigned long)&pts->rate_ctx);
-    if (mod_timer(&pts->rate_ctx.timer, jiffies + msecs_to_jiffies(1500)))
-        printk("[ptn] Error: mod_timer()\n");
-#endif
-
-    printk("%p.OPEN_END()\n", pts);
-
-    mutex_lock(&pts->dev_tx.mutex);
-    mutex_lock(&pts->dev_rx.mutex);
+    pts->configured = false;
+    pts->stopped = true;
 
     if (buf_len != sizeof(struct ptn_cfg)) {
         D("buf_len ERROR! - buf_len %d, expected %d", (int)buf_len, (int)sizeof(struct ptn_cfg));
@@ -739,13 +622,16 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
         goto err;
     }
 
+    pts->csb = pts->config.csb;
     D("configuration read");
-    if ((ret = ptnetmap_configure(pts, pt_na))) {
-        D("ptnetmap_configure error");
+    ptnetmap_print_configuration(pts);
+
+    if ((ret = ptnetmap_create_kthreads(pts))) {
+        D("ptnetmap error creation kthreads");
         goto err;
     }
 
-    if ((ret = ptnetmap_krings_snapshot(pt_na, pts))) {
+    if ((ret = ptnetmap_krings_snapshot(pts, pt_na))) {
         D("ptnetmap_krings_snapshot error");
         goto err;
     }
@@ -760,78 +646,90 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
     pt_na->parent->nm_notify = ptnetmap_notify;
     pt_na->parent->na_private = pt_na;
 
-    mutex_unlock(&pts->dev_rx.mutex);
-    mutex_unlock(&pts->dev_tx.mutex);
+#ifdef RATE
+    memset(&pts->rate_ctx, 0, sizeof(pts->rate_ctx));
+    setup_timer(&pts->rate_ctx.timer, &rate_callback,
+            (unsigned long)&pts->rate_ctx);
+    if (mod_timer(&pts->rate_ctx.timer, jiffies + msecs_to_jiffies(1500)))
+        D("[ptn] Error: mod_timer()\n");
+#endif
 
     return 0;
 
 err:
-    mutex_unlock(&pts->dev_rx.mutex);
-    mutex_unlock(&pts->dev_tx.mutex);
     kfree(pts);
     return ret;
 }
 
-static void ptnetmap_stop_vr(struct ptnetmap_state *pts,
-        struct ptn_vhost_ring *vr)
-{
-    mutex_lock(&vr->mutex);
-    if (vr == &pts->tx_ring)
-        ptn_vhost_poll_stop(&pts->tx_poll);
-    else
-        ptn_vhost_poll_stop(&pts->rx_poll);
-    mutex_unlock(&vr->mutex);
-}
-
-static void ptnetmap_stop(struct ptnetmap_state *pts)
-{
-    ptnetmap_stop_vr(pts, &pts->tx_ring);
-    ptnetmap_stop_vr(pts, &pts->rx_ring);
-}
-
-static void ptnetmap_flush(struct ptnetmap_state *pts)
-{
-    ptn_vhost_poll_flush(&pts->rx_poll);
-    ptn_vhost_poll_flush(&pts->dev_rx.rx_ring->poll);
-    ptn_vhost_poll_flush(&pts->tx_poll);
-    ptn_vhost_poll_flush(&pts->dev_tx.tx_ring->poll);
-}
-
 static int
+ptnetmap_start_kthreads(struct ptnetmap_state *pts)
+{
+    int error;
+
+    /* check if ptnetmap is configured */
+    if (!pts) {
+        D("ptnetmap not configured");
+        return EFAULT;
+    }
+
+    pts->stopped = false;
+
+    /* TX kthread */
+    error = ptn_kthread_start(pts->ptk_tx);
+    if (error) {
+        return error;
+    }
+    /* RX kthread */
+    error = ptn_kthread_start(pts->ptk_rx);
+    if (error) {
+        ptn_kthread_stop(pts->ptk_tx);
+        return error;
+    }
+
+    return 0;
+}
+
+static void
+ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
+{
+    /* check if it is configured */
+    if (!pts)
+        return;
+
+    pts->stopped = true;
+
+    /* TX kthread */
+    ptn_kthread_stop(pts->ptk_tx);
+    /* RX kthread */
+    ptn_kthread_stop(pts->ptk_rx);
+}
+
+static void
 ptnetmap_delete(struct netmap_passthrough_adapter *pt_na)
 {
     struct ptnetmap_state *pts = pt_na->ptn_state;
 
     D("");
-    printk("%p.RELEASE()\n", pts);
 
-    /* check if it is configured */
+    /* check if ptnetmap is configured */
     if (!pts)
-        return EFAULT;
+        return;
 
     pts->configured = false;
 
-    ptnetmap_stop(pts);
-    ptnetmap_flush(pts);
-    ptn_vhost_dev_stop(&pts->dev_tx);
-    ptn_vhost_dev_stop(&pts->dev_rx);
-    ptn_vhost_dev_cleanup(&pts->dev_tx);
-    ptn_vhost_dev_cleanup(&pts->dev_rx);
+    /* delete kthreads */
+    ptn_kthread_delete(pts->ptk_tx);
+    ptn_kthread_delete(pts->ptk_rx);
 
     pt_na->parent->nm_notify = pt_na->parent_nm_notify;
     pt_na->parent->na_private = NULL;
 
-    /* We do an extra flush before freeing memory,
-     * since jobs can re-queue themselves. */
-    ptnetmap_flush(pts);
-
     IFRATE(del_timer(&pts->rate_ctx.timer));
+
     kfree(pts);
 
     pt_na->ptn_state = NULL;
 
-    printk("%p.RELEASE_END()\n", pts);
-    return 0;
 }
 
 
@@ -859,10 +757,22 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
     switch (cmd) {
         case NETMAP_PT_CREATE:
             nmr_read_buf(nmr, &buf, &buf_len);
+
+            /* create kthreads */
             error = ptnetmap_create(pt_na, buf, buf_len);
+            if (error)
+                break;
+            /* start kthreads */
+            error = ptnetmap_start_kthreads(pt_na->ptn_state);
+            if (error)
+                ptnetmap_delete(pt_na);
+
             break;
         case NETMAP_PT_DELETE:
-            error = ptnetmap_delete(pt_na);
+            /* stop kthreads */
+            ptnetmap_stop_kthreads(pt_na->ptn_state);
+            /* delete kthreads */
+            ptnetmap_delete(pt_na);
             break;
         default:
             D("invalid cmd (nmr->nr_cmd) (0x%x)", cmd);
