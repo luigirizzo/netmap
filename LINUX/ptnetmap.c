@@ -142,40 +142,27 @@ struct ptnetmap_state {
         } \
     } while (0)
 
-static inline int
+static inline void
 ptnetmap_read_kring_csb(struct pt_ring __user *ptr, uint32_t *g_head,
         uint32_t *g_cur, uint32_t *g_flags)
 {
-    if(get_user(*g_head, &ptr->head))
-        goto err;
+    get_user(*g_head, &ptr->head);
 
     smp_mb();
 
-    if(get_user(*g_cur, &ptr->cur))
-        goto err;
-    if(get_user(*g_flags, &ptr->sync_flags))
-        goto err;
-
-    return 0;
-err:
-    return EFAULT;
+    get_user(*g_cur, &ptr->cur);
+    get_user(*g_flags, &ptr->sync_flags);
 }
 
-static inline int
+static inline void
 ptnetmap_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
         uint32_t hwtail)
 {
-    if(put_user(hwcur, &ptr->hwcur))
-        goto err;
+    put_user(hwcur, &ptr->hwcur);
 
     smp_mb();
 
-    if(put_user(hwtail, &ptr->hwtail))
-        goto err;
-
-    return 0;
-err:
-    return EFAULT;
+    put_user(hwtail, &ptr->hwtail);
 }
 
 static inline void
@@ -257,10 +244,7 @@ static void ptnetmap_tx_handler(struct ptnetmap_state *pts)
     /* Disable notifications. */
     ptnetmap_tx_set_hostkick(pts, 0);
 
-    if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
-        D("error reading CSB()");
-        goto leave_kr_put;
-    }
+    ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
 
     for (;;) {
 #ifdef PTN_TX_BATCH_LIM
@@ -297,17 +281,14 @@ static void ptnetmap_tx_handler(struct ptnetmap_state *pts)
 
         if (likely(kring->nm_sync(kring, g_flags) == 0)) {
             /* finalize */
-            if (ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, kring->nr_hwtail)) {
-                D("error writing CSB()");
-                break;
-            }
+            ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, kring->nr_hwtail);
             if (kring->rtail != kring->nr_hwtail) {
                 kring->rtail = kring->nr_hwtail;
                 work = true;
             }
         } else {
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(pts, 0);
+            ptnetmap_tx_set_hostkick(pts, 1);
             D("nm_sync error");
             goto leave_kr_put;
         }
@@ -326,10 +307,7 @@ static void ptnetmap_tx_handler(struct ptnetmap_state *pts)
             work = false;
         }
 #endif
-        if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
-            D("error reading CSB()");
-            break;
-        }
+        ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
 #ifndef BUSY_WAIT
         /* Nothing to transmit */
         if (g_head == kring->rhead) {
@@ -337,10 +315,7 @@ static void ptnetmap_tx_handler(struct ptnetmap_state *pts)
             /* Reenable notifications. */
             ptnetmap_tx_set_hostkick(pts, 1);
             /* Doublecheck. */
-            if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
-                D("error reading CSB()");
-                break;
-            }
+            ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
             if (unlikely(g_head != kring->rhead)) {
                 ptnetmap_tx_set_hostkick(pts, 0);
                 continue;
@@ -443,10 +418,7 @@ static void ptnetmap_rx_handler(struct ptnetmap_state *pts)
     /* Disable notifications. */
     ptnetmap_rx_set_hostkick(pts, 0);
 
-    if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
-        D("error reading CSB()");
-        goto leave_kr_put;
-    }
+    ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
 
     for (;;) {
 
@@ -465,10 +437,7 @@ static void ptnetmap_rx_handler(struct ptnetmap_state *pts)
 
         if (kring->nm_sync(kring, g_flags) == 0) {
             /* finalize */
-            if (ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, kring->nr_hwtail)) {
-                D("error writing CSB()");
-                break;
-            }
+            ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, kring->nr_hwtail);
             if (kring->rtail != kring->nr_hwtail) {
                 kring->rtail = kring->nr_hwtail;
                 work = true;
@@ -478,7 +447,7 @@ static void ptnetmap_rx_handler(struct ptnetmap_state *pts)
             }
         } else {
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(pts, 0);
+            ptnetmap_rx_set_hostkick(pts, 1);
             D("nm_sync error");
             goto leave_kr_put;
         }
@@ -496,10 +465,7 @@ static void ptnetmap_rx_handler(struct ptnetmap_state *pts)
             work = false;
         }
 #endif
-        if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
-            D("error reading CSB()");
-            break;
-        }
+        ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
 #ifndef BUSY_WAIT
         /* No space to receive */
         if (nm_kr_rxfull(kring, g_head)) {
@@ -507,10 +473,7 @@ static void ptnetmap_rx_handler(struct ptnetmap_state *pts)
             /* Reenable notifications. */
             ptnetmap_rx_set_hostkick(pts, 1);
             /* Doublecheck. */
-            if (ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags)) {
-                D("error reading CSB()");
-                break;
-            }
+            ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
             if (unlikely(!nm_kr_rxfull(kring, g_head))) {
                 ptnetmap_rx_set_hostkick(pts, 0);
                 continue;
