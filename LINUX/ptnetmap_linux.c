@@ -38,8 +38,8 @@ struct ptn_kthread {
     struct mm_struct *mm;
     struct task_struct *worker;
 
-    spinlock_t worker_lock;
-    bool scheduled;
+    spinlock_t worker_lock;     /* XXX: unused */
+    uint64_t scheduled;         /* pending wake_up request */
 
     struct ptn_kthread_ctx worker_ctx;
 };
@@ -49,16 +49,19 @@ ptn_kthread_wakeup_worker(struct ptn_kthread *ptk)
 {
     unsigned long flags;
 
-    spin_lock_irqsave(&ptk->worker_lock, flags);
+    //spin_lock_irqsave(&ptk->worker_lock, flags);
     /*
-     * if worker is running,
-     * we need to store this notification
+     * There may be a race between FE and BE,
+     * which call both this function, and worker kthread,
+     * that reads ptk->scheduled.
+     *
+     * For us it is not important the counter value,
+     * but simply that it has changed since the last
+     * time the kthread saw it.
      */
-    //if (!ptk->scheduled) {
-        ptk->scheduled = true;
-        wake_up_process(ptk->worker);
-    //}
-    spin_unlock_irqrestore(&ptk->worker_lock, flags);
+    ptk->scheduled++;
+    wake_up_process(ptk->worker);
+    //spin_unlock_irqrestore(&ptk->worker_lock, flags);
 }
 
 
@@ -88,26 +91,28 @@ ptn_kthread_worker(void *data)
 {
     struct ptn_kthread *ptk = data;
     struct ptn_kthread_ctx *ctx = &ptk->worker_ctx;
-    bool scheduled;
+    uint64_t old_scheduled = 0, new_scheduled = 0;
     mm_segment_t oldfs = get_fs();
 
     set_fs(USER_DS);
     use_mm(ptk->mm);
 
-    for (;;) {
+    while (!kthread_should_stop()) {
+        /*
+         * Set INTERRUPTIBLE state before to check if there is work.
+         * if wake_up() is called, although we have not seen the new
+         * counter value, the kthread state is set to RUNNING and
+         * after schedule() it is not moved off run queue.
+         */
         set_current_state(TASK_INTERRUPTIBLE);
 
-        spin_lock_irq(&ptk->worker_lock);
-        if (kthread_should_stop()) {
-            spin_unlock_irq(&ptk->worker_lock);
-            break;
-        }
-        /* check if wakeup is called when worker_fx was running */
-        scheduled = ptk->scheduled;
-        ptk->scheduled = false;
-        spin_unlock_irq(&ptk->worker_lock);
+        //spin_lock_irq(&ptk->worker_lock);
+        new_scheduled = ptk->scheduled;
+        //spin_unlock_irq(&ptk->worker_lock);
 
-        if (scheduled) {
+        /* checks if there is a pending notification */
+        if (new_scheduled != old_scheduled) {
+            old_scheduled = new_scheduled;
             __set_current_state(TASK_RUNNING);
             ctx->worker_fn(ctx->worker_private); /* worker body */
             if (need_resched())
