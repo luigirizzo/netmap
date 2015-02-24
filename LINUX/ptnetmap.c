@@ -27,7 +27,7 @@
 //#define RATE  /* Enables communication statistics. */
 #ifdef RATE
 #define IFRATE(x) x
-struct batch_info {
+struct rate_batch_info {
     uint64_t events;
     uint64_t zero_events;
     uint64_t slots;
@@ -43,8 +43,8 @@ struct rate_stats {
     unsigned long txpkts;   /* Transmitted packets. */
     unsigned long rxpkts;   /* Received packets. */
     unsigned long txfl;     /* TX flushes requests. */
-    struct batch_info bf_tx;
-    struct batch_info bf_rx;
+    struct rate_batch_info bf_tx;
+    struct rate_batch_info bf_rx;
 };
 
 struct rate_context {
@@ -59,10 +59,10 @@ rate_callback(unsigned long arg)
 {
     struct rate_context * ctx = (struct rate_context *)arg;
     struct rate_stats cur = ctx->new;
-    struct batch_info *bf_tx = &cur.bf_tx;
-    struct batch_info *bf_rx = &cur.bf_rx;
-    struct batch_info *bf_tx_old = &ctx->old.bf_tx;
-    struct batch_info *bf_rx_old = &ctx->old.bf_rx;
+    struct rate_batch_info *bf_tx = &cur.bf_tx;
+    struct rate_batch_info *bf_rx = &cur.bf_rx;
+    struct rate_batch_info *bf_tx_old = &ctx->old.bf_tx;
+    struct rate_batch_info *bf_rx_old = &ctx->old.bf_rx;
     uint64_t tx_batch, rx_batch;
     int r;
 
@@ -92,7 +92,7 @@ rate_callback(unsigned long arg)
 }
 
 static void
-batch_info_update(struct batch_info *bf, uint32_t pre_tail, uint32_t act_tail, uint32_t lim)
+rate_batch_info_update(struct rate_batch_info *bf, uint32_t pre_tail, uint32_t act_tail, uint32_t lim)
 {
     int n_slots;
 
@@ -303,7 +303,7 @@ ptnetmap_tx_handler(void *data)
             goto leave_kr_put;
         }
 
-        IFRATE(batch_info_update(&pts->rate_ctx.new.bf_tx, pre_tail, kring->rtail, kring->nkr_num_slots);)
+        IFRATE(rate_batch_info_update(&pts->rate_ctx.new.bf_tx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
         if (netmap_verbose & NM_VERB_TXSYNC)
             ptnetmap_kring_dump("post txsync", kring);
@@ -481,7 +481,7 @@ ptnetmap_rx_handler(void *data)
             goto leave_kr_put;
         }
 
-        IFRATE(batch_info_update(&pts->rate_ctx.new.bf_rx, pre_tail, kring->rtail, kring->nkr_num_slots);)
+        IFRATE(rate_batch_info_update(&pts->rate_ctx.new.bf_rx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
         if (netmap_verbose & NM_VERB_RXSYNC)
             ptnetmap_kring_dump("post rxsync", kring);
