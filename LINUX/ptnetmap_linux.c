@@ -252,7 +252,6 @@ ptn_kthread_start(struct ptn_kthread *ptk)
     int error = 0;
 
     if (ptk->worker) {
-        D("");
         return EBUSY;
     }
 

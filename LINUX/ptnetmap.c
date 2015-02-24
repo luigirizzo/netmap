@@ -15,7 +15,7 @@
 #define PTN_RX_NOWORK_CYCLE   10                               /* RX cycle without receive any packets */
 #define PTN_TX_BATCH_LIM      ((kring->nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
 
-//#define DEBUG  /* Enables communication debugging. */
+#define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
 #define DBG(x) x
 #else
@@ -229,19 +229,19 @@ ptnetmap_tx_handler(void *data)
     IFRATE(uint32_t pre_tail;)
 
     if (unlikely(!pts)) {
-        D("backend netmap is not configured");
+        D("ptnetmap_state is NULL");
         return;
     }
 
     if (unlikely(!pts->pt_na || pts->stopped || !pts->configured)) {
-        D("backend netmap is not configured");
+        D("backend netmap is not configured or stopped");
         goto leave;
     }
 
     kring = &pts->pt_na->parent->tx_rings[0];
 
     if (nm_kr_tryget(kring)) {
-        D("error nm_kr_tryget()");
+        D("ERROR nm_kr_tryget()");
         goto leave_kr_put;
     }
 
@@ -299,7 +299,7 @@ ptnetmap_tx_handler(void *data)
         } else {
             /* Reenable notifications. */
             ptnetmap_tx_set_hostkick(csb, 1);
-            D("nm_sync error");
+            D("ERROR txsync()");
             goto leave_kr_put;
         }
 
@@ -342,12 +342,12 @@ ptnetmap_tx_handler(void *data)
          * because we await the BE.
          */
         if (kring->nr_hwtail == kring->rhead) {
-            RD(1, "TX ring FULL");
+            ND(1, "TX ring FULL");
             break;
         }
 #endif
         if (unlikely(pts->stopped || !pts->configured)) {
-            D("stopped or not configured");
+            D("backend netmap is not configured or stopped");
             break;
         }
     }
@@ -422,19 +422,19 @@ ptnetmap_rx_handler(void *data)
     IFRATE(uint32_t pre_tail;)
 
     if (unlikely(!pts)) {
-        D("backend netmap is not configured");
+        D("ptnetmap_state is NULL");
         return;
     }
 
     if (unlikely(!pts->pt_na || pts->stopped || !pts->configured)) {
-        D("backend netmap is not configured");
+        D("backend netmap is not configured or stopped");
         goto leave;
     }
 
     kring = &pts->pt_na->parent->rx_rings[0];
 
     if (nm_kr_tryget(kring)) {
-        D("error nm_kr_tryget()");
+        D("ERROR nm_kr_tryget()");
         goto leave;
     }
 
@@ -477,7 +477,7 @@ ptnetmap_rx_handler(void *data)
         } else {
             /* Reenable notifications. */
             ptnetmap_rx_set_hostkick(csb, 1);
-            D("nm_sync error");
+            D("ERROR rxsync()");
             goto leave_kr_put;
         }
 
@@ -519,12 +519,12 @@ ptnetmap_rx_handler(void *data)
          * because we await the BE.
          */
         if (kring->nr_hwtail == kring->rhead || cicle_nowork >= PTN_RX_NOWORK_CYCLE) {
-            RD(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d", kring->nr_hwtail, kring->rhead, cicle_nowork);
+            ND(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d", kring->nr_hwtail, kring->rhead, cicle_nowork);
             break;
         }
 #endif
         if (unlikely(pts->stopped || !pts->configured)) {
-            D("stopped or not configured");
+            D("backend netmap is not configured or stopped");
             break;
         }
     }
@@ -554,12 +554,13 @@ ptnetmap_rx_notify(struct ptnetmap_state *pts) {
     IFRATE(pts->rate_ctx.new.brxwu++);
 }
 
+#ifdef DEBUG
 static void
 ptnetmap_print_configuration(struct ptnetmap_state *pts)
 {
     struct ptn_cfg *cfg = &pts->config;
 
-    D("[ptn] configuration:");
+    D("[PTN] configuration:");
     D("TX: iofd=%u, irqfd=%u",
             cfg->tx_ring.ioeventfd, cfg->tx_ring.irqfd);
     D("RX: iofd=%u, irqfd=%u",
@@ -567,6 +568,7 @@ ptnetmap_print_configuration(struct ptnetmap_state *pts)
     D("CSB: csb_addr=%p", cfg->csb);
 
 }
+#endif
 
 /* Copy actual state of the host ring into the CSB for the guest init */
 static int
@@ -582,7 +584,7 @@ ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *ptr)
     if(CSB_WRITE(ptr, hwtail, kring->nr_hwtail))
         goto err;
 
-    ptnetmap_kring_dump("ptnetmap_kring_snapshot", kring);
+    DBG(ptnetmap_kring_dump("ptnetmap_kring_snapshot", kring);)
 
     return 0;
 err:
@@ -651,7 +653,7 @@ ptnetmap_start_kthreads(struct ptnetmap_state *pts)
 
     /* check if ptnetmap is configured */
     if (!pts) {
-        D("ptnetmap not configured");
+        D("ptnetmap is not configured");
         return EFAULT;
     }
 
@@ -698,7 +700,7 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
 
     /* check if already in pt mode */
     if (pt_na->ptn_state) {
-        D("ERROR! adapter already in netmap passthrough mode");
+        D("ERROR adapter already in netmap passthrough mode");
         return EFAULT;
     }
 
@@ -710,26 +712,26 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
 
     /* Read the configuration from userspace. */
     if (buf_len != sizeof(struct ptn_cfg)) {
-        D("buf_len ERROR! - buf_len %d, expected %d", (int)buf_len, (int)sizeof(struct ptn_cfg));
+        D("ERROR - buf_len %d, expected %d", (int)buf_len, (int)sizeof(struct ptn_cfg));
         ret = EINVAL;
         goto err;
     }
     if (copy_from_user(&pts->config, buf, sizeof(struct ptn_cfg))) {
-        D("copy_from_user() ERROR!");
+        D("ERROR copy_from_user()");
         ret = EFAULT;
         goto err;
     }
     pts->csb = pts->config.csb;
-    ptnetmap_print_configuration(pts);
+    DBG(ptnetmap_print_configuration(pts);)
 
     /* Create kthreads */
     if ((ret = ptnetmap_create_kthreads(pts))) {
-        D("ptnetmap error creation kthreads");
+        D("ERROR ptnetmap_create_kthreads()");
         goto err;
     }
     /* Copy krings state into the CSB for the guest initialization */
     if ((ret = ptnetmap_krings_snapshot(pts, pt_na))) {
-        D("ptnetmap_krings_snapshot error");
+        D("ERROR ptnetmap_krings_snapshot()");
         goto err;
     }
 
@@ -749,6 +751,8 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
     if (mod_timer(&pts->rate_ctx.timer, jiffies + msecs_to_jiffies(1500)))
         D("[ptn] Error: mod_timer()\n");
 #endif
+
+    DBG(D("[%s] ptnetmap configuration DONE", pt_na->up.name));
 
     return 0;
 
@@ -782,6 +786,8 @@ ptnetmap_delete(struct netmap_passthrough_adapter *pt_na)
     kfree(pts);
 
     pt_na->ptn_state = NULL;
+
+    DBG(D("[%s] ptnetmap deleted", pt_na->up.name));
 }
 
 /*
@@ -802,10 +808,10 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
     name = nmr->nr_name;
     cmd = nmr->nr_cmd;
 
-    D("name: %s", name);
+    DBG(D("name: %s", name);)
 
     if (!nm_passthrough_on(na)) {
-        D("Internal error: interface not in netmap passthrough mode. na = %p", na);
+        D("ERROR interface not support passthrough mode. na = %p", na);
         error = ENXIO;
         goto done;
     }
@@ -832,7 +838,7 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
             ptnetmap_delete(pt_na);
             break;
         default:
-            D("invalid cmd (nmr->nr_cmd) (0x%x)", cmd);
+            D("ERROR invalid cmd (nmr->nr_cmd) (0x%x)", cmd);
             error = EINVAL;
             break;
     }
@@ -876,7 +882,8 @@ ptnetmap_txsync(struct netmap_kring *kring, int flags)
     struct netmap_adapter *parent = pt_na->parent;
     int n;
 
-    D("");
+    DBG(D("%s", pt_na->up.name);)
+
     n = parent->nm_txsync(kring, flags);
 
     return n;
@@ -891,7 +898,8 @@ ptnetmap_rxsync(struct netmap_kring *kring, int flags)
     struct netmap_adapter *parent = pt_na->parent;
     int n;
 
-    D("");
+    DBG(D("%s", pt_na->up.name);)
+
     n = parent->nm_rxsync(kring, flags);
 
     return n;
@@ -917,7 +925,7 @@ ptnetmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
     *txd = na->num_tx_desc = parent->num_tx_desc;
     *rxd = na->num_rx_desc = parent->num_rx_desc;
 
-    D("rxr: %d txr: %d txd: %d rxd: %d", *rxr, *txr, *txd, *rxd);
+    DBG(D("rxr: %d txr: %d txd: %d rxd: %d", *rxr, *txr, *txd, *rxd);)
 
     return error;
 }
@@ -931,7 +939,7 @@ ptnetmap_krings_create(struct netmap_adapter *na)
     struct netmap_adapter *parent = pt_na->parent;
     int error;
 
-    D("%s", na->name);
+    DBG(D("%s", pt_na->up.name);)
 
     /* create the parent krings */
     error = parent->nm_krings_create(parent);
@@ -954,7 +962,7 @@ ptnetmap_krings_delete(struct netmap_adapter *na)
         (struct netmap_passthrough_adapter *)na;
     struct netmap_adapter *parent = pt_na->parent;
 
-    D("%s", na->name);
+    DBG(D("%s", pt_na->up.name);)
 
     parent->nm_krings_delete(parent);
 
@@ -969,7 +977,7 @@ ptnetmap_register(struct netmap_adapter *na, int onoff)
         (struct netmap_passthrough_adapter *)na;
     struct netmap_adapter *parent = pt_na->parent;
     int error;
-    D("%p: onoff %d", na, onoff);
+    DBG(D("%s onoff %d", pt_na->up.name, onoff);)
 
     if (onoff) {
         /* netmap_do_regif has been called on the
@@ -1005,7 +1013,7 @@ ptnetmap_dtor(struct netmap_adapter *na)
         (struct netmap_passthrough_adapter *)na;
     struct netmap_adapter *parent = pt_na->parent;
 
-    D("%p", na);
+    DBG(D("%s", pt_na->up.name);)
 
     parent->na_flags &= ~NAF_BUSY;
 
@@ -1030,7 +1038,7 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
 
     pt_na = malloc(sizeof(*pt_na), M_DEVBUF, M_NOWAIT | M_ZERO);
     if (pt_na == NULL) {
-        D("memory error");
+        D("ERROR malloc");
         return ENOMEM;
     }
 
@@ -1045,7 +1053,7 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
         D("parent lookup failed: %d", error);
         goto put_out_noputparent;
     }
-    D("found parent: %s", parent->name);
+    DBG(D("found parent: %s", parent->name);)
 
     /* make sure the interface is not already in use */
     if (NETMAP_OWNED_BY_ANY(parent)) {
@@ -1077,7 +1085,7 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     pt_na->up.nm_mem = parent->nm_mem;
     error = netmap_attach_common(&pt_na->up);
     if (error) {
-        D("attach_common error");
+        D("ERROR netmap_attach_common()");
         goto put_out;
     }
 
@@ -1096,7 +1104,7 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
     strncpy(pt_na->up.name, parent->name, sizeof(pt_na->up.name));
     strcat(pt_na->up.name, "-PTN");
 
-    D("passthrough request DONE");
+    DBG(D("%s passthrough request DONE", pt_na->up.name);)
 
     return 0;
 
