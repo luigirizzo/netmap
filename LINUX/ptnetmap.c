@@ -704,7 +704,7 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
         return EFAULT;
     }
 
-    pts = kzalloc(sizeof *pts, GFP_KERNEL);
+    pts = malloc(sizeof(*pts), M_DEVBUF, M_NOWAIT | M_ZERO);
     if (!pts)
         return ENOMEM;
     pts->configured = false;
@@ -716,7 +716,7 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
         ret = EINVAL;
         goto err;
     }
-    if (copy_from_user(&pts->config, buf, sizeof(struct ptn_cfg))) {
+    if (copyin(buf, &pts->config, sizeof(struct ptn_cfg))) {
         D("ERROR copy_from_user()");
         ret = EFAULT;
         goto err;
@@ -757,7 +757,7 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
     return 0;
 
 err:
-    kfree(pts);
+    free(pts, M_DEVBUF);
     return ret;
 }
 
@@ -783,7 +783,7 @@ ptnetmap_delete(struct netmap_passthrough_adapter *pt_na)
 
     IFRATE(del_timer(&pts->rate_ctx.timer));
 
-    kfree(pts);
+    free(pts, M_DEVBUF);
 
     pt_na->ptn_state = NULL;
 
