@@ -124,43 +124,30 @@ struct ptnetmap_state {
     IFRATE(struct rate_context rate_ctx);
 };
 
-#define CSB_READ(csb, field, r) \
-    do { \
-        if (get_user(r, &csb->field)) { \
-            D("get_user ERROR"); \
-            r = -EFAULT; \
-        } \
-    } while (0)
-
-#define CSB_WRITE(csb, field, v) \
-    do { \
-        if (put_user(v, &csb->field)) { \
-            D("put_user ERROR"); \
-            v = -EFAULT; \
-        } \
-    } while (0)
+#define CSB_READ(csb, field, r) (get_user(r, &csb->field))
+#define CSB_WRITE(csb, field, v) (put_user(v, &csb->field))
 
 static inline void
 ptnetmap_read_kring_csb(struct pt_ring __user *ptr, uint32_t *g_head,
         uint32_t *g_cur, uint32_t *g_flags)
 {
-    get_user(*g_head, &ptr->head);
+    CSB_READ(ptr, head, *g_head);
 
     smp_mb();
 
-    get_user(*g_cur, &ptr->cur);
-    get_user(*g_flags, &ptr->sync_flags);
+    CSB_READ(ptr, cur, *g_cur);
+    CSB_READ(ptr, sync_flags, *g_flags);
 }
 
 static inline void
 ptnetmap_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
         uint32_t hwtail)
 {
-    put_user(hwcur, &ptr->hwcur);
+    CSB_WRITE(ptr, hwcur, hwcur);
 
     smp_mb();
 
-    put_user(hwtail, &ptr->hwtail);
+    CSB_WRITE(ptr, hwtail, hwtail);
 }
 
 static inline void
@@ -186,22 +173,22 @@ ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur
     ptnetmap_kring_dump("kring reinit", kring);
 }
 
-static inline void ptnetmap_tx_set_hostkick(struct ptnetmap_state *pts, uint32_t val)
+static inline void ptnetmap_tx_set_hostkick(struct paravirt_csb __user *csb, uint32_t val)
 {
-    CSB_WRITE(pts->csb, host_need_txkick, val);
+    CSB_WRITE(csb, host_need_txkick, val);
 }
 
-static inline uint32_t ptnetmap_tx_get_guestkick(struct ptnetmap_state *pts)
+static inline uint32_t ptnetmap_tx_get_guestkick(struct paravirt_csb __user *csb)
 {
     uint32_t v;
 
-    CSB_READ(pts->csb, guest_need_txkick, v);
+    CSB_READ(csb, guest_need_txkick, v);
 
     return v;
 }
-static inline void ptnetmap_tx_set_guestkick(struct ptnetmap_state *pts, uint32_t val)
+static inline void ptnetmap_tx_set_guestkick(struct paravirt_csb __user *csb, uint32_t val)
 {
-    CSB_WRITE(pts->csb, guest_need_txkick, val);
+    CSB_WRITE(csb, guest_need_txkick, val);
 }
 
 /*
@@ -211,6 +198,7 @@ static void ptnetmap_tx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
+    struct paravirt_csb __user *csb;
     struct pt_ring __user *csb_ring;
     uint32_t g_cur = 0, g_head = 0, g_flags = 0; /* guest variables; init for compiler */
     bool work = false;
@@ -221,8 +209,6 @@ static void ptnetmap_tx_handler(void *data)
         D("backend netmap is not configured");
         return;
     }
-
-    csb_ring = &pts->csb->tx_ring; /* netmap TX pointers in CSB */
 
     if (unlikely(!pts->pt_na || pts->stopped || !pts->configured)) {
         D("backend netmap is not configured");
@@ -236,8 +222,11 @@ static void ptnetmap_tx_handler(void *data)
         goto leave_kr_put;
     }
 
+    csb = pts->csb;
+    csb_ring = &csb->tx_ring; /* netmap TX pointers in CSB */
+
     /* Disable notifications. */
-    ptnetmap_tx_set_hostkick(pts, 0);
+    ptnetmap_tx_set_hostkick(csb, 0);
 
     ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
 
@@ -265,7 +254,7 @@ static void ptnetmap_tx_handler(void *data)
                 >= kring->nkr_num_slots) {
             ptnetmap_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(pts, 1);
+            ptnetmap_tx_set_hostkick(csb, 1);
             break;
         }
 
@@ -283,7 +272,7 @@ static void ptnetmap_tx_handler(void *data)
             }
         } else {
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(pts, 1);
+            ptnetmap_tx_set_hostkick(csb, 1);
             D("nm_sync error");
             goto leave_kr_put;
         }
@@ -295,8 +284,8 @@ static void ptnetmap_tx_handler(void *data)
 
 //#define BUSY_WAIT
 #ifndef BUSY_WAIT
-        if (work && ptnetmap_tx_get_guestkick(pts)) {
-            ptnetmap_tx_set_guestkick(pts, 0);
+        if (work && ptnetmap_tx_get_guestkick(csb)) {
+            ptnetmap_tx_set_guestkick(csb, 0);
             ptn_kthread_send_irq(pts->ptk_tx);
             IFRATE(pts->rate_ctx.new.htxk++);
             work = false;
@@ -308,11 +297,11 @@ static void ptnetmap_tx_handler(void *data)
         if (g_head == kring->rhead) {
             usleep_range(1,1);
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(pts, 1);
+            ptnetmap_tx_set_hostkick(csb, 1);
             /* Doublecheck. */
             ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
             if (unlikely(g_head != kring->rhead)) {
-                ptnetmap_tx_set_hostkick(pts, 0);
+                ptnetmap_tx_set_hostkick(csb, 0);
                 continue;
             } else
                 break;
@@ -334,8 +323,8 @@ leave_kr_put:
     nm_kr_put(kring);
 
 leave:
-    if (work && ptnetmap_tx_get_guestkick(pts)) {
-        ptnetmap_tx_set_guestkick(pts, 0);
+    if (work && ptnetmap_tx_get_guestkick(csb)) {
+        ptnetmap_tx_set_guestkick(csb, 0);
         ptn_kthread_send_irq(pts->ptk_tx);
         IFRATE(pts->rate_ctx.new.htxk++);
     }
@@ -343,23 +332,22 @@ leave:
     return;
 }
 
-static inline void ptnetmap_rx_set_hostkick(struct ptnetmap_state *pts, uint32_t val)
+static inline void ptnetmap_rx_set_hostkick(struct paravirt_csb __user *csb, uint32_t val)
 {
-    smp_mb();
-    CSB_WRITE(pts->csb, host_need_rxkick, val);
+    CSB_WRITE(csb, host_need_rxkick, val);
 }
 
-static inline uint32_t ptnetmap_rx_get_guestkick(struct ptnetmap_state *pts)
+static inline uint32_t ptnetmap_rx_get_guestkick(struct paravirt_csb __user *csb)
 {
     uint32_t v;
 
-    CSB_READ(pts->csb, guest_need_rxkick, v);
+    CSB_READ(csb, guest_need_rxkick, v);
 
     return v;
 }
-static inline void ptnetmap_rx_set_guestkick(struct ptnetmap_state *pts, uint32_t val)
+static inline void ptnetmap_rx_set_guestkick(struct paravirt_csb __user *csb, uint32_t val)
 {
-    CSB_WRITE(pts->csb, guest_need_rxkick, val);
+    CSB_WRITE(csb, guest_need_rxkick, val);
 }
 
 /*
@@ -382,6 +370,7 @@ static void ptnetmap_rx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
+    struct paravirt_csb __user *csb;
     struct pt_ring __user *csb_ring;
     uint32_t g_cur = 0, g_head = 0, g_flags = 0; /* guest variables; init for compiler */
     int cicle_nowork = 0;
@@ -392,8 +381,6 @@ static void ptnetmap_rx_handler(void *data)
         D("backend netmap is not configured");
         return;
     }
-
-    csb_ring = &pts->csb->rx_ring; /* netmap RX pointers in CSB */
 
     if (unlikely(!pts->pt_na || pts->stopped || !pts->configured)) {
         D("backend netmap is not configured");
@@ -407,8 +394,11 @@ static void ptnetmap_rx_handler(void *data)
         goto leave;
     }
 
+    csb = pts->csb;
+    csb_ring = &csb->rx_ring; /* netmap RX pointers in CSB */
+
     /* Disable notifications. */
-    ptnetmap_rx_set_hostkick(pts, 0);
+    ptnetmap_rx_set_hostkick(csb, 0);
 
     ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
 
@@ -418,7 +408,7 @@ static void ptnetmap_rx_handler(void *data)
                 >= kring->nkr_num_slots) {
             ptnetmap_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(pts, 1);
+            ptnetmap_rx_set_hostkick(csb, 1);
             break;
         }
 
@@ -439,7 +429,7 @@ static void ptnetmap_rx_handler(void *data)
             }
         } else {
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(pts, 1);
+            ptnetmap_rx_set_hostkick(csb, 1);
             D("nm_sync error");
             goto leave_kr_put;
         }
@@ -450,8 +440,8 @@ static void ptnetmap_rx_handler(void *data)
             ptnetmap_kring_dump("post rxsync", kring);
 
 #ifndef BUSY_WAIT
-        if (work && ptnetmap_rx_get_guestkick(pts)) {
-            ptnetmap_rx_set_guestkick(pts, 0);
+        if (work && ptnetmap_rx_get_guestkick(csb)) {
+            ptnetmap_rx_set_guestkick(csb, 0);
             ptn_kthread_send_irq(pts->ptk_rx);
             IFRATE(pts->rate_ctx.new.hrxk++);
             work = false;
@@ -463,11 +453,11 @@ static void ptnetmap_rx_handler(void *data)
         if (nm_kr_rxfull(kring, g_head)) {
             usleep_range(1,1);
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(pts, 1);
+            ptnetmap_rx_set_hostkick(csb, 1);
             /* Doublecheck. */
             ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
             if (unlikely(!nm_kr_rxfull(kring, g_head))) {
-                ptnetmap_rx_set_hostkick(pts, 0);
+                ptnetmap_rx_set_hostkick(csb, 0);
                 continue;
             } else
                 break;
@@ -489,8 +479,8 @@ leave_kr_put:
     nm_kr_put(kring);
 
 leave:
-    if (work && ptnetmap_rx_get_guestkick(pts)) {
-        ptnetmap_rx_set_guestkick(pts, 0);
+    if (work && ptnetmap_rx_get_guestkick(csb)) {
+        ptnetmap_rx_set_guestkick(csb, 0);
         ptn_kthread_send_irq(pts->ptk_rx);
         IFRATE(pts->rate_ctx.new.hrxk++);
     }
@@ -556,19 +546,19 @@ err:
 }
 
 static int
-ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *pt_ring)
+ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *ptr)
 {
-    if(put_user(kring->rhead, &pt_ring->head))
+    if(CSB_WRITE(ptr, head, kring->rhead))
         goto err;
-    if(put_user(kring->rcur, &pt_ring->cur))
-        goto err;
-
-    if(put_user(kring->nr_hwcur, &pt_ring->hwcur))
-        goto err;
-    if(put_user(kring->nr_hwtail, &pt_ring->hwtail))
+    if(CSB_WRITE(ptr, cur, kring->rcur))
         goto err;
 
-    ptnetmap_kring_dump("", kring);
+    if(CSB_WRITE(ptr, hwcur, kring->nr_hwcur))
+        goto err;
+    if(CSB_WRITE(ptr, hwtail, kring->nr_hwtail))
+        goto err;
+
+    ptnetmap_kring_dump("ptnetmap_kring_snapshot", kring);
 
     return 0;
 err:
