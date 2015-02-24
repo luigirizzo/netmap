@@ -817,6 +817,7 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
     }
     pt_na = (struct netmap_passthrough_adapter *)na;
 
+    NMG_LOCK();
     switch (cmd) {
         case NETMAP_PT_CREATE:          /* create kthreads and switch in pt mode */
             nmr_read_buf(nmr, &buf, &buf_len);
@@ -842,6 +843,7 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
             error = EINVAL;
             break;
     }
+    NMG_UNLOCK();
 
 done:
     return error;
