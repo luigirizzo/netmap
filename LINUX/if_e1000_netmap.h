@@ -370,6 +370,7 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
 	{
 		bool send_kick = false;
+                /* Disable notifications */
 		csb->guest_need_txkick = 0;
 
 		/*
@@ -378,12 +379,13 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwcur = csb->tx_ring.hwcur;
 		if (kring->rhead != kring->nr_hwcur) {
 			csb->tx_ring.cur = kring->rcur;
+			smp_mb();
 			csb->tx_ring.head = kring->rhead;
 			send_kick = true;
                 }
 
-
-		if ((send_kick && csb->host_need_txkick) || (flags & NAF_FORCE_RECLAIM)) {
+                /* Send kick to the host if it needs them */
+		if ((send_kick && ACCESS_ONCE(csb->host_need_txkick)) || (flags & NAF_FORCE_RECLAIM)) {
 			csb->tx_ring.sync_flags = flags;
 			IFRATE(adapter->rate_ctx.new.tx_kick++);
 			writel(0, adapter->hw.hw_addr + txr->tdt);
@@ -393,14 +395,24 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 		 * Second part: reclaim buffers for completed transmissions.
 		 */
 	        if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+	            smp_mb();
 		    kring->nr_hwtail = csb->tx_ring.hwtail;
 		}
 
-		if (nm_kr_txempty(kring) ) {
+                /*
+                 * Ring full. The user thread will go to sleep and
+                 * we need a notification (interrupt) from the NIC,
+                 * whene there is free space.
+                 */
+		if (kring->rcur == kring->nr_hwtail) {
+		        /* Reenable notifications. */
 			csb->guest_need_txkick = 1;
                         /* Double check */
+		        kring->nr_hwcur = csb->tx_ring.hwcur;
+		        smp_mb();
 			kring->nr_hwtail = csb->tx_ring.hwtail;
-			if (!nm_kr_txempty(kring)) {
+                        /* If there is new free space, disable notifications */
+			if (kring->rcur != kring->nr_hwtail) {
 				csb->guest_need_txkick = 0;
 			}
 		}
@@ -439,37 +451,48 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
 	{
 		int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
-
+                /* Disable notifications */
 		csb->guest_need_rxkick = 0;
+                /* We must read hwcur before hwtail for sync reason (ref. ptnetmap.c) */
+		kring->nr_hwcur = csb->rx_ring.hwcur;
+
 		/*
 		 * First part: import newly received packets.
 		 */
 		if (netmap_no_pendintr || force_update) {
+		        smp_mb();
 			kring->nr_hwtail = csb->rx_ring.hwtail;
 			kring->nr_kflags &= ~NKR_PENDINTR;
 		}
 
-
 		/*
 		 * Second part: skip past packets that userspace has released.
 		 */
-		kring->nr_hwcur = csb->rx_ring.hwcur;
 		if (kring->rhead != kring->nr_hwcur) {
 			csb->rx_ring.cur = kring->rcur;
+			smp_mb();
 			csb->rx_ring.head = kring->rhead;
 			csb->rx_ring.sync_flags = flags;
-
-			if (csb->host_need_rxkick) {
+                        /* Send kick to the host if it needs them */
+			if (ACCESS_ONCE(csb->host_need_rxkick)) {
 				IFRATE(adapter->rate_ctx.new.rx_kick++);
 				writel(0, hw->hw_addr + rxr->rdt);
 			}
 		}
 
-                /* empty ring */
+                /*
+                 * Ring empty. The user thread will go to sleep and
+                 * we need a notification (interrupt) from the NIC,
+                 * whene there are new packets.
+                 */
                 if (kring->rcur == kring->nr_hwtail) {
+		    /* Reenable notifications. */
                     csb->guest_need_rxkick = 1;
                     /* Double check */
+		    kring->nr_hwcur = csb->rx_ring.hwcur;
+		    smp_mb();
                     kring->nr_hwtail = csb->rx_ring.hwtail;
+                    /* If there are new packets, disable notifications */
                     if (unlikely(kring->rcur != kring->nr_hwtail)) {
                         csb->guest_need_rxkick = 0;
                     }
@@ -489,33 +512,6 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	return 0;
 }
-
-inline bool
-e1000_paravirt_rx_disable_kick(struct SOFTC_T *adapter, int ring)
-{
-    struct ifnet *ifp = adapter->netdev;
-    struct netmap_adapter* na = NA(ifp);
-    struct netmap_kring *kring = na->rx_rings + ring;
-    struct paravirt_csb *csb = adapter->csb;
-
-    /* empty ring */
-    if (csb->rx_ring.hwtail == kring->nr_hwtail) {
-        csb->guest_need_rxkick = 1;
-        mb();
-        /* Double check */
-        if (csb->rx_ring.hwtail != kring->nr_hwtail) {
-            csb->guest_need_rxkick = 0;
-            mb();
-            return false;
-        }
-        return true;
-    }
-    return false;
-}
-
-
-
-
 
 static int
 e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)

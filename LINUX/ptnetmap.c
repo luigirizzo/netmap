@@ -154,11 +154,17 @@ static inline void
 ptnetmap_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
         uint32_t hwtail)
 {
-    CSB_WRITE(ptr, hwcur, hwcur);
+    /*
+     * We must first write hwtail and then hwcur with a barrier in the
+     * middle, because hwtail can exceed hwcur, but not vice versa.
+     *
+     * The guest must first read hwcur and then hwtail with a barrier.
+     */
+    CSB_WRITE(ptr, hwtail, hwtail);
 
     smp_mb();
 
-    CSB_WRITE(ptr, hwtail, hwtail);
+    CSB_WRITE(ptr, hwcur, hwcur);
 }
 
 static inline void
@@ -178,7 +184,7 @@ ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur
     //XXX: trust guest?
     ring->head = g_head;
     ring->cur = g_cur;
-    ring->tail = kring->nr_hwtail;
+    ring->tail = ACCESS_ONCE(kring->nr_hwtail);
 
     netmap_ring_reinit(kring);
     ptnetmap_kring_dump("kring reinit", kring);
@@ -291,9 +297,9 @@ ptnetmap_tx_handler(void *data)
              * Finalize
              * Copy host hwcur and hwtail into the CSB for the guest sync()
              */
-            ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, kring->nr_hwtail);
-            if (kring->rtail != kring->nr_hwtail) {
-                kring->rtail = kring->nr_hwtail;
+            ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, ACCESS_ONCE(kring->nr_hwtail));
+            if (kring->rtail != ACCESS_ONCE(kring->nr_hwtail)) {
+                kring->rtail = ACCESS_ONCE(kring->nr_hwtail);
                 work = true;
             }
         } else {
@@ -322,15 +328,19 @@ ptnetmap_tx_handler(void *data)
         /* We read the CSB before deciding to continue or stop. */
         ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
 #ifndef BUSY_WAIT
-        /* Nothing to transmit */
+        /*
+         * Ring empty, nothing to transmit. We enable notification and
+         * go to sleep. We need a notification when the guest has
+         * new slots to transmit.
+         */
         if (g_head == kring->rhead) {
             usleep_range(1,1);
             /* Reenable notifications. */
             ptnetmap_tx_set_hostkick(csb, 1);
             /* Doublecheck. */
             ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
-            if (unlikely(g_head != kring->rhead)) {
-                /* Disable notifications and redo new sync() */
+            /* If there are new packets, disable notifications and redo new sync() */
+            if (g_head != kring->rhead) {
                 ptnetmap_tx_set_hostkick(csb, 0);
                 continue;
             } else
@@ -341,7 +351,7 @@ ptnetmap_tx_handler(void *data)
          * Ring full. We stop without reenable notification
          * because we await the BE.
          */
-        if (kring->nr_hwtail == kring->rhead) {
+        if (ACCESS_ONCE(kring->nr_hwtail) == kring->rhead) {
             ND(1, "TX ring FULL");
             break;
         }
@@ -466,9 +476,9 @@ ptnetmap_rx_handler(void *data)
              * Finalize
              * Copy host hwcur and hwtail into the CSB for the guest sync()
              */
-            ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, kring->nr_hwtail);
-            if (kring->rtail != kring->nr_hwtail) {
-                kring->rtail = kring->nr_hwtail;
+            ptnetmap_write_kring_csb(csb_ring, kring->nr_hwcur, ACCESS_ONCE(kring->nr_hwtail));
+            if (kring->rtail != ACCESS_ONCE(kring->nr_hwtail)) {
+                kring->rtail = ACCESS_ONCE(kring->nr_hwtail);
                 work = true;
                 cicle_nowork = 0;
             } else {
@@ -499,15 +509,19 @@ ptnetmap_rx_handler(void *data)
         /* We read the CSB before deciding to continue or stop. */
         ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
 #ifndef BUSY_WAIT
-        /* No space to receive */
+        /*
+         * Ring full. No space to receive. We enable notification and
+         * go to sleep. We need a notification when the guest has
+         * new free slots.
+         */
         if (ptnetmap_kr_rxfull(kring, g_head)) {
             usleep_range(1,1);
             /* Reenable notifications. */
             ptnetmap_rx_set_hostkick(csb, 1);
             /* Doublecheck. */
             ptnetmap_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags);
-            if (unlikely(!ptnetmap_kr_rxfull(kring, g_head))) {
-                /* Disable notifications and redo new sync() */
+            /* If there are new free slots, disable notifications and redo new sync() */
+            if (!ptnetmap_kr_rxfull(kring, g_head)) {
                 ptnetmap_rx_set_hostkick(csb, 0);
                 continue;
             } else
@@ -518,8 +532,8 @@ ptnetmap_rx_handler(void *data)
          * Ring empty. We stop without reenable notification
          * because we await the BE.
          */
-        if (kring->nr_hwtail == kring->rhead || cicle_nowork >= PTN_RX_NOWORK_CYCLE) {
-            ND(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d", kring->nr_hwtail, kring->rhead, cicle_nowork);
+        if (ACCESS_ONCE(kring->nr_hwtail) == kring->rhead || cicle_nowork >= PTN_RX_NOWORK_CYCLE) {
+            ND(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d", ACCESS_ONCE(kring->nr_hwtail), kring->rhead, cicle_nowork);
             break;
         }
 #endif
@@ -581,7 +595,7 @@ ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *ptr)
 
     if(CSB_WRITE(ptr, hwcur, kring->nr_hwcur))
         goto err;
-    if(CSB_WRITE(ptr, hwtail, kring->nr_hwtail))
+    if(CSB_WRITE(ptr, hwtail, ACCESS_ONCE(kring->nr_hwtail)))
         goto err;
 
     DBG(ptnetmap_kring_dump("ptnetmap_kring_snapshot", kring);)

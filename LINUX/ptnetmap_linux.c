@@ -47,7 +47,7 @@ struct ptn_kthread {
 void inline
 ptn_kthread_wakeup_worker(struct ptn_kthread *ptk)
 {
-    unsigned long flags;
+    //unsigned long flags;
 
     //spin_lock_irqsave(&ptk->worker_lock, flags);
     /*
