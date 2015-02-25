@@ -1,5 +1,5 @@
 diff --git a/igb/igb_main.c b/igb/igb_main.c
-index 94be6c3..e549e7b 100644
+index 94be6c3..5592a0b 100644
 --- a/igb/igb_main.c
 +++ b/igb/igb_main.c
 @@ -236,6 +236,10 @@ MODULE_DESCRIPTION("Intel(R) Gigabit Ethernet Network Driver");
