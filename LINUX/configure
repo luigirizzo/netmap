@@ -202,11 +202,17 @@ Available options:
   --no-drivers=                do not compile the given drivers (comma sep.)
   --drivers=                   only compile the given drivers (comma sep.)
   --mod-name=		       netmap module name [$MODNAME]
-  --{enable,disable}-vale      enable/disable the VALE switch
-  --{enable,disable}-pipe      enable/disable the netmap pipes
-  --{enable,disable}-monitor   enable/disable the nemtap monitors
-  --{enable,disable}-generic   enable/disable the generic netmap adapter
-  --{enable,disable}-v1000     enable/disable the v1000 backend for
+  --enable-vale      	       enable the VALE switch
+  --disable-vale      	       disable the VALE switch
+  --enable-pipe      	       enable the netmap pipes
+  --disable-pipe      	       disable the netmap pipes
+  --enable-monitor   	       enable the nemtap monitors
+  --disable-monitor   	       disable the nemtap monitors
+  --enable-generic   	       enable the generic netmap adapter
+  --disable-generic   	       disable the generic netmap adapter
+  --enable-v1000     	       enable the v1000 backend for
+                               the e1000-paravirt driver
+  --disable-v1000     	       disable the v1000 backend for
                                the e1000-paravirt driver
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
