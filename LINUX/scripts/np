@@ -517,10 +517,9 @@ function forall()
 {
 	local cmd=$1
 	shift
-	local driver_srcs="ixgbe/ e1000e/ e1000/ igb/ r8169.c forcedeth.c virtio_net.c veth.c"
 
 	local driver
-	for driver in $driver_srcs; do
+	for driver in $(./configure --show-drivers); do
 		$cmd $(basename $driver) "$@"
 	done
 }

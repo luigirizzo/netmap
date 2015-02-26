@@ -220,6 +220,8 @@ Available options:
   --ld=                        linker for the examples [$ld]
   --prefix=                    install path for the examples [$prefix]
   --destir=                    destination dir for the examples [$DESTDIR]
+
+  --show-drivers	       print the list of available drivers and exit
 	EOF
 }
 
@@ -395,6 +397,10 @@ for opt do
 	;;
 	--help)
 		print_help
+		exit
+	;;
+	--show-drivers)
+		drv print
 		exit
 	;;
 	*)
