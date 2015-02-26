@@ -339,22 +339,6 @@ have() {
 }
 
 
-####################################################################
-################### START OF PROCESSING ############################
-####################################################################
-
-rm -f config.log
-{
-	echo "# netmap configure log $(date)"
-	echo "# Configured with:"
-	printf " '%s'" "$0" "$@"
-	echo
-	echo "#"
-} > config.log
-
-exec 2>> config.log
-set -x
-
 ############################
 # parse options
 ############################
@@ -418,6 +402,22 @@ for opt do
 	;;
 	esac
 done
+
+####################################################################
+################### START OF PROCESSING ############################
+####################################################################
+
+rm -f config.log
+{
+	echo "# netmap configure log $(date)"
+	echo "# Configured with:"
+	printf " '%s'" "$0" "$@"
+	echo
+	echo "#"
+} > config.log
+
+exec 2>> config.log
+set -x
 
 ################################
 # check for sane configuration
