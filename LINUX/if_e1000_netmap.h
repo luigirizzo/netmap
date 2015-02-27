@@ -34,6 +34,7 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
+#include "ptnetmap.h" //XXX: to remove
 
 #define SOFTC_T	e1000_adapter
 
@@ -377,26 +378,23 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 		 * First part: process new packets to send.
 		 */
 		kring->nr_hwcur = csb->tx_ring.hwcur;
+		ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
 		if (kring->rhead != kring->nr_hwcur) {
-			csb->tx_ring.cur = kring->rcur;
-			smp_mb();
-			csb->tx_ring.head = kring->rhead;
 			send_kick = true;
                 }
 
                 /* Send kick to the host if it needs them */
 		if ((send_kick && ACCESS_ONCE(csb->host_need_txkick)) || (flags & NAF_FORCE_RECLAIM)) {
 			csb->tx_ring.sync_flags = flags;
-			IFRATE(adapter->rate_ctx.new.tx_kick++);
 			writel(0, adapter->hw.hw_addr + txr->tdt);
+			IFRATE(adapter->rate_ctx.new.tx_kick++);
 		}
 
 		/*
 		 * Second part: reclaim buffers for completed transmissions.
 		 */
 	        if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
-	            smp_mb();
-		    kring->nr_hwtail = csb->tx_ring.hwtail;
+                    ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
 		}
 
                 /*
@@ -408,9 +406,7 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 		        /* Reenable notifications. */
 			csb->guest_need_txkick = 1;
                         /* Double check */
-		        kring->nr_hwcur = csb->tx_ring.hwcur;
-		        smp_mb();
-			kring->nr_hwtail = csb->tx_ring.hwtail;
+                        ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
                         /* If there is new free space, disable notifications */
 			if (kring->rcur != kring->nr_hwtail) {
 				csb->guest_need_txkick = 0;
@@ -451,32 +447,31 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
 	{
 		int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
+		uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
                 /* Disable notifications */
 		csb->guest_need_rxkick = 0;
-                /* We must read hwcur before hwtail for sync reason (ref. ptnetmap.c) */
-		kring->nr_hwcur = csb->rx_ring.hwcur;
+
+                ptnetmap_guest_read_kring_csb(&csb->rx_ring, &h_hwcur, &h_hwtail, kring->nkr_num_slots);
 
 		/*
 		 * First part: import newly received packets.
 		 */
 		if (netmap_no_pendintr || force_update) {
-		        smp_mb();
-			kring->nr_hwtail = csb->rx_ring.hwtail;
+			kring->nr_hwtail = h_hwtail;
 			kring->nr_kflags &= ~NKR_PENDINTR;
 		}
 
 		/*
 		 * Second part: skip past packets that userspace has released.
 		 */
+		kring->nr_hwcur = h_hwcur;
 		if (kring->rhead != kring->nr_hwcur) {
-			csb->rx_ring.cur = kring->rcur;
-			smp_mb();
-			csb->rx_ring.head = kring->rhead;
-			csb->rx_ring.sync_flags = flags;
+		        ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur, kring->rhead);
                         /* Send kick to the host if it needs them */
 			if (ACCESS_ONCE(csb->host_need_rxkick)) {
-				IFRATE(adapter->rate_ctx.new.rx_kick++);
+			        csb->rx_ring.sync_flags = flags;
 				writel(0, hw->hw_addr + rxr->rdt);
+				IFRATE(adapter->rate_ctx.new.rx_kick++);
 			}
 		}
 
@@ -489,9 +484,7 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 		    /* Reenable notifications. */
                     csb->guest_need_rxkick = 1;
                     /* Double check */
-		    kring->nr_hwcur = csb->rx_ring.hwcur;
-		    smp_mb();
-                    kring->nr_hwtail = csb->rx_ring.hwtail;
+                    ptnetmap_guest_read_kring_csb(&csb->rx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
                     /* If there are new packets, disable notifications */
                     if (unlikely(kring->rcur != kring->nr_hwtail)) {
                         csb->guest_need_rxkick = 0;
