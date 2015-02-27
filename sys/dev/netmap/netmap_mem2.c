@@ -1971,14 +1971,6 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 		kring->ring = (struct netmap_ring *)
 			((char *)nifp + nifp->ring_ofs[i]);
 		kring->nr_kflags |= NKR_PASSTHROUGH;
-
-		/* copy values from kring and init csb fields */
-		csb->tx_ring.head = kring->ring->head = kring->rhead;
-		csb->tx_ring.cur = kring->ring->cur = kring->rcur;
-		kring->ring->tail = kring->rtail;
-		csb->tx_ring.hwcur = kring->nr_hwcur;
-		csb->tx_ring.hwtail = kring->nr_hwtail;
-		csb->tx_ring.sync_flags = 0;
 	}
 	for (i = 0; i <= na->num_rx_rings; i++) {
 		struct netmap_kring *kring = na->rx_rings + i;
@@ -1988,14 +1980,6 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 			((char *)nifp +
 			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
 		kring->nr_kflags |= NKR_PASSTHROUGH;
-
-		/* copy values from kring */
-		csb->rx_ring.head = kring->ring->head = kring->rhead;
-		csb->rx_ring.cur = kring->ring->cur = kring->rcur;
-		kring->ring->tail = kring->rtail;
-		csb->rx_ring.hwcur = kring->nr_hwcur;
-		csb->rx_ring.hwtail = kring->nr_hwtail;
-		csb->rx_ring.sync_flags = 0;
 	}
 
 	//error = pv_na->ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
