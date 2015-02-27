@@ -14,6 +14,7 @@ remoteobjs-$(CONFIG_NETMAP_VALE)    += netmap_vale.o netmap_offloadings.o
 remoteobjs-$(CONFIG_NETMAP_PIPE)    += netmap_pipe.o
 remoteobjs-$(CONFIG_NETMAP_MONITOR) += netmap_monitor.o
 remoteobjs-$(CONFIG_NETMAP_GENERIC) += netmap_generic.o
+remoteobjs-$(CONFIG_NETMAP_PASSTHROUGH) += ptnetmap.o
 
 define remote_template
 $$(obj)/$(1): %.o: $$(SRCDIR)/../sys/dev/netmap/$(2) FORCE
@@ -25,7 +26,7 @@ $(foreach o,$(remoteobjs-y),$(eval $(call remote_template,$(o),$(o:.o=.c))))
 $(eval $(call remote_template,netmap_common.o,netmap.c))
 
 localobjs-y := netmap_linux.o
-localobjs-$(CONFIG_NETMAP_PASSTHROUGH) += ptnetmap.o ptnetmap_linux.o
+localobjs-$(CONFIG_NETMAP_PASSTHROUGH) += ptnetmap_linux.o
 
 define local_template
 $$(obj)/$(1): %.o: $$(SRCDIR)/$(2) FORCE

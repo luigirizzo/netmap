@@ -10,8 +10,6 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 #include <dev/netmap/paravirt.h>
-#include "ptnetmap.h"
-
 
 struct ptn_kthread_ctx {
     /* files to echange notifications */

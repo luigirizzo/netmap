@@ -7,8 +7,7 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 #include <dev/netmap/paravirt.h>
-
-#include "ptnetmap.h"
+#include <dev/netmap/paravirt_ptnetmap.h>
 
 #ifdef WITH_PASSTHROUGH
 
