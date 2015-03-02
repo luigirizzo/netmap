@@ -623,7 +623,12 @@ static struct netmap_pt_guest_ops e1000_ptnetmap_ops = {
 	.nm_getcsb = e1000_netmap_getcsb,
 	.nm_ptctl = e1000_netmap_ptctl,
 };
-
+#elif defined (CONFIG_E1000_NETMAP_PT)
+#warning "e1000 supports ptnetmap but netmap does not support it"
+#warning "(configure netmap with passthrough support)"
+#elif defined (WITH_PASSTHROUGH)
+#warning "netmap supports ptnetmap but e1000 does not support it"
+#warning "(configure e1000 with passthrough support)"
 #endif /* CONFIG_E1000_NETMAP_PT && WITH_PASSTHROUGH */
 
 static void
