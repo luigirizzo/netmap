@@ -277,12 +277,14 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 
 
 /* accessor functions */
-static void
+static int
 netmap_mem2_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 {
 	lut->lut = nmd->pools[NETMAP_BUF_POOL].lut;
 	lut->objtotal = nmd->pools[NETMAP_BUF_POOL].objtotal;
 	lut->objsize = nmd->pools[NETMAP_BUF_POOL]._objsize;
+
+	return 0;
 }
 
 struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
@@ -1654,6 +1656,7 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 	.nmd_rings_delete = netmap_mem2_rings_delete
 };
 
+#ifdef WITH_PASSTHROUGH
 /* paravirtual allocator */
 #include "paravirt.h"
 struct netmap_mem_pv_na {
@@ -1788,7 +1791,7 @@ netmap_mem_paravirt_config(struct netmap_mem_d *nmd)
 	return 0;
 }
 
-static int 
+static int
 netmap_mem_paravirt_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
@@ -2083,4 +2086,4 @@ netmap_mem_paravirt_new(struct ifnet *ifp,
 
 	return mem;
 }
-
+#endif /* WITH_PASSTHROUGH */

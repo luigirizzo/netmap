@@ -1570,13 +1570,13 @@ struct netmap_passthrough_adapter { //TODO-ste: refact to netmap_host_pt_adapter
 	void *ptn_state;
 };
 
-#endif /* WITH_PASSTHROUGH */
-
 struct netmap_guest_pt_adapter {
 	struct netmap_hw_adapter hwup;
 
 	struct netmap_paravirt_ops *pv_ops;
 };
+
+#endif /* WITH_PASSTHROUGH */
 
 #ifdef WITH_GENERIC
 /*
@@ -1729,6 +1729,7 @@ int nm_vi_persist(const char *, struct ifnet **);
 void nm_vi_detach(struct ifnet *);
 void nm_vi_init_index(void);
 
+#ifdef WITH_PASSTHROUGH
 /* paravirtual operations */
 
 struct netmap_paravirt_ops {
@@ -1739,7 +1740,7 @@ struct netmap_paravirt_ops {
 int netmap_paravirt_attach(struct netmap_adapter *, struct netmap_paravirt_ops *);
 
 /* ptnetmap operations */
-#ifdef WITH_PASSTHROUGH
+
 /* ptnetmap kthread type */
 enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 };
 

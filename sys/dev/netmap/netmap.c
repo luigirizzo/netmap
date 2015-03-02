@@ -1460,10 +1460,6 @@ nm_txsync_prologue(struct netmap_kring *kring, uint32_t head, uint32_t cur, uint
 	    kring->rtail >= n ||  kring->nr_hwtail >= n)
 		goto error;
 #endif /* kernel sanity checks */
-#if 0
-	if (kring->nr_kflags & NKR_PASSTHROUGH)
-		return kring->nr_hwcur;
-#endif
 	/*
 	 * user sanity checks. We only use 'cur',
 	 * A, B, ... are possible positions for cur:
@@ -2801,6 +2797,7 @@ netmap_attach(struct netmap_adapter *arg)
 }
 
 
+#ifdef WITH_PASSTHROUGH
 int
 netmap_paravirt_attach(struct netmap_adapter *arg,
 		struct netmap_paravirt_ops *pv_ops)
@@ -2824,6 +2821,7 @@ netmap_paravirt_attach(struct netmap_adapter *arg,
 
 	return 0;
 }
+#endif /* WITH_PASSTHROUGH */
 
 
 void

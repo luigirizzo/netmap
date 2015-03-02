@@ -324,7 +324,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	}
 	return 1;
 }
-#ifdef CONFIG_E1000_NETMAP_PT
+#if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PASSTHROUGH)
 
 static uint32_t e1000_netmap_ptctl(struct net_device *, uint32_t);
 static int
@@ -624,7 +624,7 @@ static struct netmap_paravirt_ops e1000_netmap_paravirt_ops = {
 	.nm_ptctl = e1000_netmap_ptctl,
 };
 
-#endif
+#endif /* CONFIG_E1000_NETMAP_PT && WITH_PASSTHROUGH */
 
 static void
 e1000_netmap_attach(struct SOFTC_T *adapter)
@@ -642,7 +642,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;
 
-#ifdef CONFIG_E1000_NETMAP_PT
+#if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PASSTHROUGH)
         D("e1000 passthrough");
 	na.nm_config = e1000_paravirt_netmap_config;
 	na.nm_register = e1000_paravirt_netmap_reg;
