@@ -328,7 +328,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 
 static uint32_t e1000_netmap_ptctl(struct net_device *, uint32_t);
 static int
-e1000_paravirt_netmap_config(struct netmap_adapter *na,
+e1000_ptnetmap_config(struct netmap_adapter *na,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
 {
 	struct e1000_adapter *adapter = netdev_priv(na->ifp);
@@ -353,7 +353,7 @@ e1000_paravirt_netmap_config(struct netmap_adapter *na,
 }
 
 static int
-e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
+e1000_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	//u_int ring_nr = kring->ring_id;
@@ -430,7 +430,7 @@ e1000_paravirt_netmap_txsync(struct netmap_kring *kring, int flags)
 }
 
 static int
-e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
+e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	//u_int ring_nr = kring->ring_id;
@@ -507,7 +507,7 @@ e1000_paravirt_netmap_rxsync(struct netmap_kring *kring, int flags)
 }
 
 static int
-e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)
+e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct e1000_adapter *adapter = netdev_priv(na->ifp);
 	struct paravirt_csb *csb = adapter->csb;
@@ -553,7 +553,7 @@ e1000_paravirt_netmap_reg(struct netmap_adapter *na, int onoff)
 }
 
 static int
-e1000_paravirt_netmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
+e1000_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 {
 	return EOPNOTSUPP;
 }
@@ -619,7 +619,7 @@ static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
 	return ret;
 }
 
-static struct netmap_paravirt_ops e1000_netmap_paravirt_ops = {
+static struct netmap_pt_guest_ops e1000_ptnetmap_ops = {
 	.nm_getcsb = e1000_netmap_getcsb,
 	.nm_ptctl = e1000_netmap_ptctl,
 };
@@ -644,12 +644,12 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 
 #if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PASSTHROUGH)
         D("e1000 passthrough");
-	na.nm_config = e1000_paravirt_netmap_config;
-	na.nm_register = e1000_paravirt_netmap_reg;
-	na.nm_txsync = e1000_paravirt_netmap_txsync;
-	na.nm_rxsync = e1000_paravirt_netmap_rxsync;
-	na.nm_bdg_attach = e1000_paravirt_netmap_bdg_attach; /* XXX: maybe only for PT BASE */
-	netmap_paravirt_attach(&na, &e1000_netmap_paravirt_ops);
+	na.nm_config = e1000_ptnetmap_config;
+	na.nm_register = e1000_ptnetmap_reg;
+	na.nm_txsync = e1000_ptnetmap_txsync;
+	na.nm_rxsync = e1000_ptnetmap_rxsync;
+	na.nm_bdg_attach = e1000_ptnetmap_bdg_attach; /* XXX: maybe only for PT BASE */
+	netmap_pt_guest_attach(&na, &e1000_ptnetmap_ops);
 #else
 	netmap_attach(&na);
 #endif

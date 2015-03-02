@@ -158,8 +158,8 @@ void netmap_mem_put(struct netmap_mem_d *);
 #endif /* !NM_DEBUG_PUTGET */
 
 #ifdef WITH_PASSTHROUGH
-struct netmap_mem_d* netmap_mem_paravirt_new(struct ifnet *ifp,
-		struct netmap_paravirt_ops *pv_ops);
+struct netmap_mem_d* netmap_mem_pt_guest_new(struct ifnet *ifp,
+		struct netmap_pt_guest_ops *pv_ops);
 #endif /* WITH_PASSTHROUGH */
 
 #define NETMAP_MEM_PRIVATE	0x2	/* allocator uses private address space */

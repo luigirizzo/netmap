@@ -1381,7 +1381,7 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	 */
 
 	/* try to see if this is a passthrough port */
-	error = netmap_get_passthrough_na(nmr, na, create);
+	error = netmap_get_pt_host_na(nmr, na, create);
 	if (error || *na != NULL)
 		return error;
 
@@ -2153,7 +2153,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				|| i == NETMAP_BDG_DELIF) {
 			error = netmap_bdg_ctl(nmr, NULL);
 			break;
-		} else if (i == NETMAP_PT_CREATE || i == NETMAP_PT_DELETE) {
+		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
 			error = ptnetmap_ctl(nmr, priv->np_na);
 			break;
 		} else if (i != 0) {
@@ -2799,24 +2799,24 @@ netmap_attach(struct netmap_adapter *arg)
 
 #ifdef WITH_PASSTHROUGH
 int
-netmap_paravirt_attach(struct netmap_adapter *arg,
-		struct netmap_paravirt_ops *pv_ops)
+netmap_pt_guest_attach(struct netmap_adapter *arg,
+		struct netmap_pt_guest_ops *pv_ops)
 {
-	struct netmap_guest_pt_adapter *ptna;
+	struct netmap_pt_guest_adapter *ptna;
 	struct ifnet *ifp = arg ? arg->ifp : NULL;
 	int error;
 
 	/* get allocator */
-	arg->nm_mem = netmap_mem_paravirt_new(ifp, pv_ops);
+	arg->nm_mem = netmap_mem_pt_guest_new(ifp, pv_ops);
 	if (arg->nm_mem == NULL)
 		return ENOMEM;
 	arg->na_flags |= NAF_MEM_OWNER;
-	error = _netmap_attach(arg, sizeof(struct netmap_guest_pt_adapter));
+	error = _netmap_attach(arg, sizeof(struct netmap_pt_guest_adapter));
 	if (error)
 		return error;
 
-	/* get the netmap_guest_pt_adapter */
-	ptna = (struct netmap_guest_pt_adapter *) NA(ifp);
+	/* get the netmap_pt_guest_adapter */
+	ptna = (struct netmap_pt_guest_adapter *) NA(ifp);
 	ptna->pv_ops = pv_ops;
 
 	return 0;

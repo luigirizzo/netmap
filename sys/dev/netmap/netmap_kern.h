@@ -516,7 +516,7 @@ struct netmap_adapter {
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
-#define NAF_PASSTHROUGH_FULL 256/* the adapter supports passthrough */
+#define NAF_PASSTHROUGH_HOST 256/* the adapter supports passthrough in the host */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
 				  */
@@ -829,10 +829,6 @@ struct netmap_bwrap_adapter {
 	struct netmap_vp_adapter up;
 	struct netmap_vp_adapter host;  /* for host rings */
 	struct netmap_adapter *hwna;	/* the underlying device */
-
-	/* backup of the hwna notify callback */
-	int (*save_notify)(struct netmap_adapter *,
-			u_int ring, enum txrx, int flags);
 
 	/*
 	 * When we attach a physical interface to the bridge, we
@@ -1189,21 +1185,6 @@ void netmap_monitor_stop(struct netmap_adapter *na);
 	((nmr)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
 #endif
 
-#ifdef WITH_PASSTHROUGH
-int netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
-int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
-static inline int
-nm_passthrough_on(struct netmap_adapter *na)
-{
-	return na && na->na_flags & NAF_PASSTHROUGH_FULL;
-}
-#else /* !WITH_PASSTHROUGH */
-#define netmap_get_passthrough_na(nmr, _2, _3) \
-	((nmr)->nr_flags & (NR_PASSTHROUGH_FULL) ? EOPNOTSUPP : 0)
-#define ptnetmap_ctl(_1, _2)   EINVAL
-#define nm_passthrough_on(_1)   EINVAL
-#endif /* WITH_PASSTHROUGH */
-
 #ifdef CONFIG_NET_NS
 struct net *netmap_bns_get(void);
 void netmap_bns_put(struct net *);
@@ -1558,26 +1539,6 @@ struct netmap_monitor_adapter {
 
 #endif /* WITH_MONITOR */
 
-#ifdef WITH_PASSTHROUGH
-
-struct netmap_passthrough_adapter { //TODO-ste: refact to netmap_host_pt_adapter
-	struct netmap_adapter up;
-
-	struct netmap_adapter *parent;
-	int (*parent_nm_notify)(struct netmap_adapter *,
-		u_int ring, enum txrx, int flags);
-
-	void *ptn_state;
-};
-
-struct netmap_guest_pt_adapter {
-	struct netmap_hw_adapter hwup;
-
-	struct netmap_paravirt_ops *pv_ops;
-};
-
-#endif /* WITH_PASSTHROUGH */
-
 #ifdef WITH_GENERIC
 /*
  * generic netmap emulation for devices that do not have
@@ -1730,25 +1691,32 @@ void nm_vi_detach(struct ifnet *);
 void nm_vi_init_index(void);
 
 #ifdef WITH_PASSTHROUGH
-/* paravirtual operations */
+/*
+ * netmap adapter for passthrough ports
+ */
+struct netmap_pt_host_adapter {
+	struct netmap_adapter up;
 
-struct netmap_paravirt_ops {
-	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
-	struct paravirt_csb *(*nm_getcsb)(struct ifnet *);
+	struct netmap_adapter *parent;
+	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
+
+	void *ptn_state;
 };
 
-int netmap_paravirt_attach(struct netmap_adapter *, struct netmap_paravirt_ops *);
+struct netmap_pt_guest_adapter {
+	struct netmap_hw_adapter hwup;
 
-/* ptnetmap operations */
+	struct netmap_pt_guest_ops *pv_ops;
+};
 
-/* ptnetmap kthread type */
-enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 };
+/*
+ * ptnetmap support routines (guest, host, and kthread)
+ */
 
-/* ptnetmap kthread - opaque */
-struct ptn_kthread;
-
+/* ptnetmap kernel thread routines */
+enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
+struct ptn_kthread; /* ptnetmap kthread - opaque */
 typedef void (*ptn_kthread_worker_fn_t)(void *data);
-
 /* ptnetmap kthread configuration */
 struct ptn_kthread_cfg {
     enum ptn_kthread_t type;            /* kthread TX or RX */
@@ -1756,14 +1724,33 @@ struct ptn_kthread_cfg {
     ptn_kthread_worker_fn_t worker_fn;  /* worker function */
     void *worker_private;               /* worker parameter */
 };
-
 struct ptn_kthread *ptn_kthread_create(struct ptn_kthread_cfg *);
 int ptn_kthread_start(struct ptn_kthread *);
 void ptn_kthread_stop(struct ptn_kthread *);
 void ptn_kthread_delete(struct ptn_kthread *);
-
 void ptn_kthread_wakeup_worker(struct ptn_kthread *ptk);
 void ptn_kthread_send_irq(struct ptn_kthread *);
+
+/* ptnetmap GUEST routines */
+struct netmap_pt_guest_ops {
+	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
+	struct paravirt_csb *(*nm_getcsb)(struct ifnet *);
+};
+int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
+
+/* ptnetmap HOST routines */
+int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
+int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
+static inline int
+nm_passthrough_host_on(struct netmap_adapter *na)
+{
+	return na && na->na_flags & NAF_PASSTHROUGH_HOST;
+}
+#else /* !WITH_PASSTHROUGH */
+#define netmap_get_pt_host_na(nmr, _2, _3) \
+	((nmr)->nr_flags & (NR_PASSTHROUGH_HOST) ? EOPNOTSUPP : 0)
+#define ptnetmap_ctl(_1, _2)   EINVAL
+#define nm_passthrough_host_on(_1)   EINVAL
 #endif /* WITH_PASSTHROUGH */
 
 #endif /* _NET_NETMAP_KERN_H_ */

@@ -120,7 +120,7 @@ struct ptnetmap_state {
     bool configured;
     bool stopped;
 
-    struct netmap_passthrough_adapter *pt_na;   /* netmap adapter of the backend */
+    struct netmap_pt_host_adapter *pth_na;   /* netmap adapter of the backend */
 
     IFRATE(struct rate_context rate_ctx;)
 };
@@ -198,12 +198,12 @@ ptnetmap_tx_handler(void *data)
         return;
     }
 
-    if (unlikely(!pts->pt_na || pts->stopped || !pts->configured)) {
+    if (unlikely(!pts->pth_na || pts->stopped || !pts->configured)) {
         D("backend netmap is not configured or stopped");
         goto leave;
     }
 
-    kring = &pts->pt_na->parent->tx_rings[0];
+    kring = &pts->pth_na->parent->tx_rings[0];
 
     if (nm_kr_tryget(kring)) {
         D("ERROR nm_kr_tryget()");
@@ -400,12 +400,12 @@ ptnetmap_rx_handler(void *data)
         return;
     }
 
-    if (unlikely(!pts->pt_na || pts->stopped || !pts->configured)) {
+    if (unlikely(!pts->pth_na || pts->stopped || !pts->configured)) {
         D("backend netmap is not configured or stopped");
         goto leave;
     }
 
-    kring = &pts->pt_na->parent->rx_rings[0];
+    kring = &pts->pth_na->parent->rx_rings[0];
 
     if (nm_kr_tryget(kring)) {
         D("ERROR nm_kr_tryget()");
@@ -574,16 +574,16 @@ err:
 }
 
 static int
-ptnetmap_krings_snapshot(struct ptnetmap_state *pts, struct netmap_passthrough_adapter *pt_na)
+ptnetmap_krings_snapshot(struct ptnetmap_state *pts, struct netmap_pt_host_adapter *pth_na)
 {
     struct netmap_kring *kring;
     int error = 0;
 
-    kring = &pt_na->parent->tx_rings[0];
+    kring = &pth_na->parent->tx_rings[0];
     if((error = ptnetmap_kring_snapshot(kring, &pts->csb->tx_ring)))
         goto err;
 
-    kring = &pt_na->parent->rx_rings[0];
+    kring = &pth_na->parent->rx_rings[0];
     error = ptnetmap_kring_snapshot(kring, &pts->csb->rx_ring);
 
 err:
@@ -671,17 +671,18 @@ ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
     ptn_kthread_stop(pts->ptk_rx);
 }
 
-static int ptnetmap_notify(struct netmap_adapter *, u_int, enum txrx, int);
+static int nm_pt_host_notify(struct netmap_kring *, int);
+
 
 /* Switch adapter in passthrough mode and create kthreads */
 static int
-ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf, uint16_t buf_len)
+ptnetmap_create(struct netmap_pt_host_adapter *pth_na, const void __user *buf, uint16_t buf_len)
 {
     struct ptnetmap_state *pts;
     int ret;
 
     /* check if already in pt mode */
-    if (pt_na->ptn_state) {
+    if (pth_na->ptn_state) {
         D("ERROR adapter already in netmap passthrough mode");
         return EFAULT;
     }
@@ -712,19 +713,19 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
         goto err;
     }
     /* Copy krings state into the CSB for the guest initialization */
-    if ((ret = ptnetmap_krings_snapshot(pts, pt_na))) {
+    if ((ret = ptnetmap_krings_snapshot(pts, pth_na))) {
         D("ERROR ptnetmap_krings_snapshot()");
         goto err;
     }
 
     pts->configured = true;
-    pt_na->ptn_state = pts;
-    pts->pt_na = pt_na;
+    pth_na->ptn_state = pts;
+    pts->pth_na = pth_na;
 
     /* overwrite parent nm_notify callback */
-    pt_na->parent_nm_notify = pt_na->parent->nm_notify;
-    pt_na->parent->nm_notify = ptnetmap_notify;
-    pt_na->parent->na_private = pt_na;
+    pth_na->parent_nm_notify = pth_na->parent->nm_notify;
+    pth_na->parent->nm_notify = nm_pt_host_notify;
+    pth_na->parent->na_private = pth_na;
 
 #ifdef RATE
     memset(&pts->rate_ctx, 0, sizeof(pts->rate_ctx));
@@ -734,7 +735,7 @@ ptnetmap_create(struct netmap_passthrough_adapter *pt_na, const void __user *buf
         D("[ptn] Error: mod_timer()\n");
 #endif
 
-    DBG(D("[%s] ptnetmap configuration DONE", pt_na->up.name));
+    DBG(D("[%s] ptnetmap configuration DONE", pth_na->up.name));
 
     return 0;
 
@@ -745,9 +746,9 @@ err:
 
 /* Switch adapter in normal netmap mode and delete kthreads */
 static void
-ptnetmap_delete(struct netmap_passthrough_adapter *pt_na)
+ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
 {
-    struct ptnetmap_state *pts = pt_na->ptn_state;
+    struct ptnetmap_state *pts = pth_na->ptn_state;
 
     /* check if ptnetmap is configured */
     if (!pts)
@@ -760,16 +761,16 @@ ptnetmap_delete(struct netmap_passthrough_adapter *pt_na)
     ptn_kthread_delete(pts->ptk_rx);
 
     /* restore parent adapter callbacks */
-    pt_na->parent->nm_notify = pt_na->parent_nm_notify;
-    pt_na->parent->na_private = NULL;
+    pth_na->parent->nm_notify = pth_na->parent_nm_notify;
+    pth_na->parent->na_private = NULL;
 
     IFRATE(del_timer(&pts->rate_ctx.timer));
 
     free(pts, M_DEVBUF);
 
-    pt_na->ptn_state = NULL;
+    pth_na->ptn_state = NULL;
 
-    DBG(D("[%s] ptnetmap deleted", pt_na->up.name));
+    DBG(D("[%s] ptnetmap deleted", pth_na->up.name));
 }
 
 /*
@@ -781,7 +782,7 @@ ptnetmap_delete(struct netmap_passthrough_adapter *pt_na)
 int
 ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
 {
-    struct netmap_passthrough_adapter *pt_na;
+    struct netmap_pt_host_adapter *pth_na;
     char *name;
     int cmd, error = 0;
     void __user *buf;
@@ -792,33 +793,33 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
 
     DBG(D("name: %s", name);)
 
-    if (!nm_passthrough_on(na)) {
+    if (!nm_passthrough_host_on(na)) {
         D("ERROR interface not support passthrough mode. na = %p", na);
         error = ENXIO;
         goto done;
     }
-    pt_na = (struct netmap_passthrough_adapter *)na;
+    pth_na = (struct netmap_pt_host_adapter *)na;
 
     NMG_LOCK();
     switch (cmd) {
-        case NETMAP_PT_CREATE:          /* create kthreads and switch in pt mode */
+        case NETMAP_PT_HOST_CREATE:     /* create kthreads and switch in pt mode */
             nmr_read_buf(nmr, &buf, &buf_len);
 
             /* create kthreads */
-            error = ptnetmap_create(pt_na, buf, buf_len);
+            error = ptnetmap_create(pth_na, buf, buf_len);
             if (error)
                 break;
             /* start kthreads */
-            error = ptnetmap_start_kthreads(pt_na->ptn_state);
+            error = ptnetmap_start_kthreads(pth_na->ptn_state);
             if (error)
-                ptnetmap_delete(pt_na);
+                ptnetmap_delete(pth_na);
 
             break;
-        case NETMAP_PT_DELETE:          /* delete kthreads and restore parent adapter */
+        case NETMAP_PT_HOST_DELETE:     /* delete kthreads and restore parent adapter */
             /* stop kthreads */
-            ptnetmap_stop_kthreads(pt_na->ptn_state);
+            ptnetmap_stop_kthreads(pth_na->ptn_state);
             /* delete kthreads */
-            ptnetmap_delete(pt_na);
+            ptnetmap_delete(pth_na);
             break;
         default:
             D("ERROR invalid cmd (nmr->nr_cmd) (0x%x)", cmd);
@@ -833,40 +834,41 @@ done:
 
 /* nm_notify callback for passthrough */
 static int
-ptnetmap_notify(struct netmap_adapter *na, u_int n_ring,
-        enum txrx tx, int flags)
+nm_pt_host_notify(struct netmap_kring *kring, int flags)
 {
-    struct netmap_passthrough_adapter *pt_na = na->na_private;
-    struct ptnetmap_state *pts = pt_na->ptn_state;
+    struct netmap_adapter *na = kring->na;
+    struct netmap_pt_host_adapter *pth_na = na->na_private;
+    struct ptnetmap_state *pts = pth_na->ptn_state;
+    enum txrx t = kring->tx;
 
-    if (tx == NR_TX) {
+    /* TODO-ste: avoid if with array on pt_host_adapter */
+    if (t == NR_TX) {
         ptnetmap_tx_notify(pts);
-        /* optimization: avoid a wake up on the global
-         * queue if nobody has registered for more
-         * than one ring
-         */
-        if (na->tx_si_users > 0)
-            OS_selwakeup(&na->tx_si, PI_NET);
     } else {
         ptnetmap_rx_notify(pts);
-        /* optimization: same as above */
-        if (na->rx_si_users > 0)
-            OS_selwakeup(&na->rx_si, PI_NET);
     }
+
+    OS_selwakeup(&kring->si, PI_NET);
+    /* optimization: avoid a wake up on the global
+     * queue if nobody has registered for more
+     * than one ring
+     */
+    if (na->si_users[t] > 0)
+	OS_selwakeup(&na->si[t], PI_NET);
     return 0;
 }
 
 //XXX maybe is unnecessary redefine the *xsync
 /* nm_txsync callback for passthrough */
 static int
-ptnetmap_txsync(struct netmap_kring *kring, int flags)
+nm_pt_host_txsync(struct netmap_kring *kring, int flags)
 {
-    struct netmap_passthrough_adapter *pt_na =
-        (struct netmap_passthrough_adapter *)kring->na;
-    struct netmap_adapter *parent = pt_na->parent;
+    struct netmap_pt_host_adapter *pth_na =
+        (struct netmap_pt_host_adapter *)kring->na;
+    struct netmap_adapter *parent = pth_na->parent;
     int n;
 
-    DBG(D("%s", pt_na->up.name);)
+    DBG(D("%s", pth_na->up.name);)
 
     n = parent->nm_txsync(kring, flags);
 
@@ -875,14 +877,14 @@ ptnetmap_txsync(struct netmap_kring *kring, int flags)
 
 /* nm_rxsync callback for passthrough */
 static int
-ptnetmap_rxsync(struct netmap_kring *kring, int flags)
+nm_pt_host_rxsync(struct netmap_kring *kring, int flags)
 {
-    struct netmap_passthrough_adapter *pt_na =
-        (struct netmap_passthrough_adapter *)kring->na;
-    struct netmap_adapter *parent = pt_na->parent;
+    struct netmap_pt_host_adapter *pth_na =
+        (struct netmap_pt_host_adapter *)kring->na;
+    struct netmap_adapter *parent = pth_na->parent;
     int n;
 
-    DBG(D("%s", pt_na->up.name);)
+    DBG(D("%s", pth_na->up.name);)
 
     n = parent->nm_rxsync(kring, flags);
 
@@ -891,12 +893,12 @@ ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 
 /* nm_config callback for bwrap */
 static int
-ptnetmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
+nm_pt_host_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
         u_int *rxr, u_int *rxd)
 {
-    struct netmap_passthrough_adapter *pt_na =
-        (struct netmap_passthrough_adapter *)na;
-    struct netmap_adapter *parent = pt_na->parent;
+    struct netmap_pt_host_adapter *pth_na =
+        (struct netmap_pt_host_adapter *)na;
+    struct netmap_adapter *parent = pth_na->parent;
     int error;
 
     //XXX: maybe call parent->nm_config is better
@@ -916,14 +918,14 @@ ptnetmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 
 /* nm_krings_create callback for passthrough */
 static int
-ptnetmap_krings_create(struct netmap_adapter *na)
+nm_pt_host_krings_create(struct netmap_adapter *na)
 {
-    struct netmap_passthrough_adapter *pt_na =
-        (struct netmap_passthrough_adapter *)na;
-    struct netmap_adapter *parent = pt_na->parent;
+    struct netmap_pt_host_adapter *pth_na =
+        (struct netmap_pt_host_adapter *)na;
+    struct netmap_adapter *parent = pth_na->parent;
     int error;
 
-    DBG(D("%s", pt_na->up.name);)
+    DBG(D("%s", pth_na->up.name);)
 
     /* create the parent krings */
     error = parent->nm_krings_create(parent);
@@ -940,13 +942,13 @@ ptnetmap_krings_create(struct netmap_adapter *na)
 
 /* nm_krings_delete callback for passthrough */
 static void
-ptnetmap_krings_delete(struct netmap_adapter *na)
+nm_pt_host_krings_delete(struct netmap_adapter *na)
 {
-    struct netmap_passthrough_adapter *pt_na =
-        (struct netmap_passthrough_adapter *)na;
-    struct netmap_adapter *parent = pt_na->parent;
+    struct netmap_pt_host_adapter *pth_na =
+        (struct netmap_pt_host_adapter *)na;
+    struct netmap_adapter *parent = pth_na->parent;
 
-    DBG(D("%s", pt_na->up.name);)
+    DBG(D("%s", pth_na->up.name);)
 
     parent->nm_krings_delete(parent);
 
@@ -955,13 +957,13 @@ ptnetmap_krings_delete(struct netmap_adapter *na)
 
 /* nm_register callback */
 static int
-ptnetmap_register(struct netmap_adapter *na, int onoff)
+nm_pt_host_register(struct netmap_adapter *na, int onoff)
 {
-    struct netmap_passthrough_adapter *pt_na =
-        (struct netmap_passthrough_adapter *)na;
-    struct netmap_adapter *parent = pt_na->parent;
+    struct netmap_pt_host_adapter *pth_na =
+        (struct netmap_pt_host_adapter *)na;
+    struct netmap_adapter *parent = pth_na->parent;
     int error;
-    DBG(D("%s onoff %d", pt_na->up.name, onoff);)
+    DBG(D("%s onoff %d", pth_na->up.name, onoff);)
 
     if (onoff) {
         /* netmap_do_regif has been called on the
@@ -980,10 +982,10 @@ ptnetmap_register(struct netmap_adapter *na, int onoff)
 
 
     if (onoff) {
-        na->na_flags |= NAF_NETMAP_ON | NAF_PASSTHROUGH_FULL;
+        na->na_flags |= NAF_NETMAP_ON | NAF_PASSTHROUGH_HOST;
     } else {
-        ptnetmap_delete(pt_na);
-        na->na_flags &= ~(NAF_NETMAP_ON | NAF_PASSTHROUGH_FULL);
+        ptnetmap_delete(pth_na);
+        na->na_flags &= ~(NAF_NETMAP_ON | NAF_PASSTHROUGH_HOST);
     }
 
     return 0;
@@ -991,37 +993,37 @@ ptnetmap_register(struct netmap_adapter *na, int onoff)
 
 /* nm_dtor callback */
 static void
-ptnetmap_dtor(struct netmap_adapter *na)
+nm_pt_host_dtor(struct netmap_adapter *na)
 {
-    struct netmap_passthrough_adapter *pt_na =
-        (struct netmap_passthrough_adapter *)na;
-    struct netmap_adapter *parent = pt_na->parent;
+    struct netmap_pt_host_adapter *pth_na =
+        (struct netmap_pt_host_adapter *)na;
+    struct netmap_adapter *parent = pth_na->parent;
 
-    DBG(D("%s", pt_na->up.name);)
+    DBG(D("%s", pth_na->up.name);)
 
     parent->na_flags &= ~NAF_BUSY;
 
-    netmap_adapter_put(pt_na->parent);
-    pt_na->parent = NULL;
+    netmap_adapter_put(pth_na->parent);
+    pth_na->parent = NULL;
 }
 
 /* check if nmr is a request for a passthrough adapter that we can satisfy */
 int
-netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
+netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 {
     struct nmreq parent_nmr;
     struct netmap_adapter *parent; /* target adapter */
-    struct netmap_passthrough_adapter *pt_na;
+    struct netmap_pt_host_adapter *pth_na;
     int error;
 
     /* Check if it is a request for a passthrough adapter */
-    if ((nmr->nr_flags & (NR_PASSTHROUGH_FULL)) == 0) {
+    if ((nmr->nr_flags & (NR_PASSTHROUGH_HOST)) == 0) {
         D("not a passthrough");
         return 0;
     }
 
-    pt_na = malloc(sizeof(*pt_na), M_DEVBUF, M_NOWAIT | M_ZERO);
-    if (pt_na == NULL) {
+    pth_na = malloc(sizeof(*pth_na), M_DEVBUF, M_NOWAIT | M_ZERO);
+    if (pth_na == NULL) {
         D("ERROR malloc");
         return ENOMEM;
     }
@@ -1031,7 +1033,7 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
      * In this way we can potentially passthrough everything netmap understands.
      */
     memcpy(&parent_nmr, nmr, sizeof(parent_nmr));
-    parent_nmr.nr_flags &= ~(NR_PASSTHROUGH_FULL);
+    parent_nmr.nr_flags &= ~(NR_PASSTHROUGH_HOST);
     error = netmap_get_na(&parent_nmr, &parent, create);
     if (error) {
         D("parent lookup failed: %d", error);
@@ -1046,56 +1048,56 @@ netmap_get_passthrough_na(struct nmreq *nmr, struct netmap_adapter **na, int cre
         goto put_out;
     }
 
-    pt_na->parent = parent;
+    pth_na->parent = parent;
 
-    //XXX pt_na->up.na_flags = parent->na_flags;
-    pt_na->up.num_rx_rings = parent->num_rx_rings;
-    pt_na->up.num_tx_rings = parent->num_tx_rings;
-    pt_na->up.num_tx_desc = parent->num_tx_desc;
-    pt_na->up.num_rx_desc = parent->num_rx_desc;
+    //XXX pth_na->up.na_flags = parent->na_flags;
+    pth_na->up.num_rx_rings = parent->num_rx_rings;
+    pth_na->up.num_tx_rings = parent->num_tx_rings;
+    pth_na->up.num_tx_desc = parent->num_tx_desc;
+    pth_na->up.num_rx_desc = parent->num_rx_desc;
 
-    pt_na->up.nm_dtor = ptnetmap_dtor;
-    pt_na->up.nm_register = ptnetmap_register;
+    pth_na->up.nm_dtor = nm_pt_host_dtor;
+    pth_na->up.nm_register = nm_pt_host_register;
 
     //XXX maybe is unnecessary redefine the *xsync
-    pt_na->up.nm_txsync = ptnetmap_txsync;
-    pt_na->up.nm_rxsync = ptnetmap_rxsync;
+    pth_na->up.nm_txsync = nm_pt_host_txsync;
+    pth_na->up.nm_rxsync = nm_pt_host_rxsync;
 
-    pt_na->up.nm_krings_create = ptnetmap_krings_create;
-    pt_na->up.nm_krings_delete = ptnetmap_krings_delete;
-    pt_na->up.nm_config = ptnetmap_config;
-    pt_na->up.nm_notify = ptnetmap_notify;
+    pth_na->up.nm_krings_create = nm_pt_host_krings_create;
+    pth_na->up.nm_krings_delete = nm_pt_host_krings_delete;
+    pth_na->up.nm_config = nm_pt_host_config;
+    pth_na->up.nm_notify = nm_pt_host_notify;
 
-    pt_na->up.nm_mem = parent->nm_mem;
-    error = netmap_attach_common(&pt_na->up);
+    pth_na->up.nm_mem = parent->nm_mem;
+    error = netmap_attach_common(&pth_na->up);
     if (error) {
         D("ERROR netmap_attach_common()");
         goto put_out;
     }
 
-    *na = &pt_na->up;
+    *na = &pth_na->up;
     netmap_adapter_get(*na);
 
     /* write the configuration back */
-    nmr->nr_tx_rings = pt_na->up.num_tx_rings;
-    nmr->nr_rx_rings = pt_na->up.num_rx_rings;
-    nmr->nr_tx_slots = pt_na->up.num_tx_desc;
-    nmr->nr_rx_slots = pt_na->up.num_rx_desc;
+    nmr->nr_tx_rings = pth_na->up.num_tx_rings;
+    nmr->nr_rx_rings = pth_na->up.num_rx_rings;
+    nmr->nr_tx_slots = pth_na->up.num_tx_desc;
+    nmr->nr_rx_slots = pth_na->up.num_rx_desc;
 
     /* set parent busy, because attached for passthrough */
     parent->na_flags |= NAF_BUSY;
 
-    strncpy(pt_na->up.name, parent->name, sizeof(pt_na->up.name));
-    strcat(pt_na->up.name, "-PTN");
+    strncpy(pth_na->up.name, parent->name, sizeof(pth_na->up.name));
+    strcat(pth_na->up.name, "-PTN");
 
-    DBG(D("%s passthrough request DONE", pt_na->up.name);)
+    DBG(D("%s passthrough request DONE", pth_na->up.name);)
 
     return 0;
 
 put_out:
     netmap_adapter_put(parent);
 put_out_noputparent:
-    free(pt_na, M_DEVBUF);
+    free(pth_na, M_DEVBUF);
     return error;
 }
 #endif /* WITH_PASSTHROUGH */

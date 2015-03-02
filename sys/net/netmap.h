@@ -496,8 +496,8 @@ struct nmreq {
 #define NETMAP_BDG_OFFSET	NETMAP_BDG_VNET_HDR	/* deprecated alias */
 #define NETMAP_BDG_NEWIF	6	/* create a virtual port */
 #define NETMAP_BDG_DELIF	7	/* destroy a virtual port */
-#define NETMAP_PT_CREATE	8	/* create netmap-pt kthread */
-#define NETMAP_PT_DELETE	9	/* delete netmap-pt kthread */
+#define NETMAP_PT_HOST_CREATE	8	/* create ptnetmap kthreads */
+#define NETMAP_PT_HOST_DELETE	9	/* delete ptnetmap kthreads */
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
 #define NETMAP_BDG_HOST		1	/* attach the host stack on ATTACH */
 
@@ -524,7 +524,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 /* request exclusive access to the selected rings */
 #define NR_EXCLUSIVE	0x800
 /* request netmap passthrough full support */
-#define NR_PASSTHROUGH_FULL	0x1000
+#define NR_PASSTHROUGH_HOST	0x1000
 
 /*
  * Functions to write or read buffer in struct nmreq.
