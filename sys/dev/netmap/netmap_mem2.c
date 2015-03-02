@@ -1670,13 +1670,8 @@ struct netmap_mem_pv {
 	struct lut_entry *lut;
 
 	nm_memid_t nm_host_id;       /* allocator identifier in the host */
-	TAILQ_HEAD(, netmap_mem_pv_na) active_na;
-
-	TAILQ_ENTRY(netmap_mem_pv) next;
+	TAILQ_HEAD(, netmap_mem_pv_na) active_na; /* XXX: to remove */
 };
-
-TAILQ_HEAD(, netmap_mem_pv) nm_mem_pv_head =
-	TAILQ_HEAD_INITIALIZER(nm_mem_pv_head);
 
 static int
 netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
@@ -1734,7 +1729,7 @@ netmap_mem_paravirt_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 	return 0;
 }
 
-static int  
+static int
 netmap_mem_paravirt_get_info(struct netmap_mem_d *nmd, u_int *size, u_int *memflags, uint16_t *id)
 {
 	int error = 0;
@@ -1757,7 +1752,7 @@ out:
 	return error;
 }
 
-static vm_paddr_t 
+static vm_paddr_t
 netmap_mem_paravirt_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
@@ -1769,7 +1764,7 @@ netmap_mem_paravirt_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
 	return paddr;
 }
 
-static int 
+static int
 netmap_mem_paravirt_config(struct netmap_mem_d *nmd)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
@@ -1840,7 +1835,7 @@ err:
 	return error;
 }
 
-static void 
+static void
 netmap_mem_paravirt_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
@@ -1877,7 +1872,7 @@ netmap_mem_paravirt_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	NMA_UNLOCK(nmd);
 }
 
-static ssize_t  
+static ssize_t
 netmap_mem_paravirt_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
@@ -1897,8 +1892,6 @@ netmap_mem_paravirt_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
 static void
 netmap_mem_paravirt_delete(struct netmap_mem_d *nmd)
 {
-	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)nmd;
-
 	D("");
 	if (nmd == NULL)
 		return;
@@ -1910,11 +1903,6 @@ netmap_mem_paravirt_delete(struct netmap_mem_d *nmd)
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
 	NMA_LOCK_DESTROY(nmd);
-
-	NMA_LOCK(&nm_mem);
-	TAILQ_REMOVE(&nm_mem_pv_head, pv, next);
-	NMA_UNLOCK(&nm_mem);
-
 	free(nmd, M_DEVBUF);
 }
 
@@ -1937,13 +1925,13 @@ netmap_mem_paravirt_if_new(struct netmap_adapter *na)
 	return (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
 }
 
-static void 
+static void
 netmap_mem_paravirt_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 {
 	D("");
 }
 
-static int  
+static int
 netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)na->nm_mem;
@@ -1987,7 +1975,7 @@ netmap_mem_paravirt_rings_create(struct netmap_adapter *na)
 	return error;
 }
 
-static void 
+static void
 netmap_mem_paravirt_rings_delete(struct netmap_adapter *na)
 {
 	struct netmap_mem_pv *pv = (struct netmap_mem_pv *)na->nm_mem;
@@ -2021,18 +2009,21 @@ struct netmap_mem_ops netmap_mem_paravirt_ops = {
 static struct netmap_mem_d *
 netmap_mem_paravirt_find_hostid(nm_memid_t host_id)
 {
-	struct netmap_mem_pv *pv = NULL;
+	struct netmap_mem_d *mem = NULL;
+	struct netmap_mem_d *scan = netmap_last_mem_d;
 
 	NMA_LOCK(&nm_mem);
-	TAILQ_FOREACH(pv, &nm_mem_pv_head, next) {
-		if (pv->nm_host_id == host_id) {
-			NMA_UNLOCK(&nm_mem);
-			return &pv->up;
+	do {
+		/* check paravirt allocator */
+		if (scan->ops->nmd_deref == netmap_mem_paravirt_deref &&
+			((struct netmap_mem_pv *)(scan))->nm_host_id == host_id) {
+			mem = scan;
+			break;
 		}
-	}
+	} while (scan != netmap_last_mem_d);
 	NMA_UNLOCK(&nm_mem);
 
-	return NULL;
+	return mem;
 }
 
 static struct netmap_mem_d *
@@ -2062,10 +2053,6 @@ netmap_mem_paravirt_create(nm_memid_t host_id)
 
 	NMA_LOCK_INIT(&pv->up);
 	TAILQ_INIT(&pv->active_na);
-
-	NMA_LOCK(&nm_mem);
-	TAILQ_INSERT_HEAD(&nm_mem_pv_head, pv, next);
-	NMA_UNLOCK(&nm_mem);
 
 	return &pv->up;
 error:
