@@ -163,6 +163,9 @@ struct paravirt_csb {
 #define NET_PARAVIRT_CSB_SIZE   4096
 #define NET_PARAVIRT_NONE   (~((uint32_t)0))
 
+#define NET_PTN_FEATURES_BASE            1
+#define NET_PTN_FEATURES_FULL            2
+
 /* passthrough commands */
 #define NET_PARAVIRT_PTCTL_CONFIG	1
 #define NET_PARAVIRT_PTCTL_FINALIZE	2

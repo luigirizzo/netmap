@@ -367,7 +367,7 @@ e1000_ptnetmap_txsync(struct netmap_kring *kring, int flags)
         IFRATE(adapter->rate_ctx.new.tx_sync++);
 
 	//XXX-ste: temporary - maybe is better to change the txsync pointer func
-	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
+	if (adapter->netmap_pt_features & NET_PTN_FEATURES_FULL)
 	{
 		bool send_kick = false;
                 /* Disable notifications */
@@ -443,7 +443,7 @@ e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 
         IFRATE(adapter->rate_ctx.new.rx_sync++);
 
-	if (adapter->netmap_pt_features & NETMAP_PT_FULL)
+	if (adapter->netmap_pt_features & NET_PTN_FEATURES_FULL)
 	{
 		int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 		uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
