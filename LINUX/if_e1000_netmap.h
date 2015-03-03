@@ -467,7 +467,7 @@ e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
                 /* Double check */
                 ptnetmap_guest_read_kring_csb(&csb->rx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
                 /* If there are new packets, disable notifications */
-                if (unlikely(kring->rcur != kring->nr_hwtail)) {
+                if (kring->rcur != kring->nr_hwtail) {
                         csb->guest_need_rxkick = 0;
                 }
         }

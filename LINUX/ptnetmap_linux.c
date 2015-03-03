@@ -109,7 +109,7 @@ ptn_kthread_worker(void *data)
         //spin_unlock_irq(&ptk->worker_lock);
 
         /* checks if there is a pending notification */
-        if (new_scheduled != old_scheduled) {
+        if (likely(new_scheduled != old_scheduled)) {
             old_scheduled = new_scheduled;
             __set_current_state(TASK_RUNNING);
             ctx->worker_fn(ctx->worker_private); /* worker body */

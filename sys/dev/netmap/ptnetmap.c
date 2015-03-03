@@ -204,7 +204,7 @@ ptnetmap_tx_handler(void *data)
 
     kring = &pts->pth_na->parent->tx_rings[0];
 
-    if (nm_kr_tryget(kring)) {
+    if (unlikely(nm_kr_tryget(kring))) {
         D("ERROR nm_kr_tryget()");
         goto leave_kr_put;
     }
@@ -241,15 +241,15 @@ ptnetmap_tx_handler(void *data)
             g_flags |= NAF_FORCE_RECLAIM;
         }
         /* Netmap prologue */
-        if (nm_txsync_prologue(kring, g_head, g_cur, NULL)
-                >= nkr_num_slots) {
+        if (unlikely(nm_txsync_prologue(kring, g_head, g_cur, NULL)
+                >= nkr_num_slots)) {
             ptnetmap_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
             ptnetmap_tx_set_hostkick(csb, 1);
             break;
         }
 
-        if (netmap_verbose & NM_VERB_TXSYNC)
+        if (unlikely(netmap_verbose & NM_VERB_TXSYNC))
             ptnetmap_kring_dump("pre txsync", kring);
 
         IFRATE(pre_tail = kring->rtail;)
@@ -273,7 +273,7 @@ ptnetmap_tx_handler(void *data)
 
         IFRATE(rate_batch_info_update(&pts->rate_ctx.new.bf_tx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
-        if (netmap_verbose & NM_VERB_TXSYNC)
+        if (unlikely(netmap_verbose & NM_VERB_TXSYNC))
             ptnetmap_kring_dump("post txsync", kring);
 
 //#define BUSY_WAIT
@@ -406,7 +406,7 @@ ptnetmap_rx_handler(void *data)
 
     kring = &pts->pth_na->parent->rx_rings[0];
 
-    if (nm_kr_tryget(kring)) {
+    if (unlikely(nm_kr_tryget(kring))) {
         D("ERROR nm_kr_tryget()");
         goto leave;
     }
@@ -425,20 +425,20 @@ ptnetmap_rx_handler(void *data)
 
     for (;;) {
         /* Netmap prologue */
-        if (nm_rxsync_prologue(kring, g_head, g_cur, NULL)
-                >= nkr_num_slots) {
+        if (unlikely(nm_rxsync_prologue(kring, g_head, g_cur, NULL)
+                >= nkr_num_slots)) {
             ptnetmap_ring_reinit(kring, g_head, g_cur);
             /* Reenable notifications. */
             ptnetmap_rx_set_hostkick(csb, 1);
             break;
         }
 
-        if (netmap_verbose & NM_VERB_RXSYNC)
+        if (unlikely(netmap_verbose & NM_VERB_RXSYNC))
             ptnetmap_kring_dump("pre rxsync", kring);
 
         IFRATE(pre_tail = kring->rtail;)
 
-        if (kring->nm_sync(kring, g_flags) == 0) {
+        if (likely(kring->nm_sync(kring, g_flags) == 0)) {
             /*
              * Finalize
              * Copy host hwcur and hwtail into the CSB for the guest sync()
@@ -460,7 +460,7 @@ ptnetmap_rx_handler(void *data)
 
         IFRATE(rate_batch_info_update(&pts->rate_ctx.new.bf_rx, pre_tail, kring->rtail, kring->nkr_num_slots);)
 
-        if (netmap_verbose & NM_VERB_RXSYNC)
+        if (unlikely(netmap_verbose & NM_VERB_RXSYNC))
             ptnetmap_kring_dump("post rxsync", kring);
 
 #ifndef BUSY_WAIT
@@ -525,12 +525,18 @@ leave:
 /* Notify kthreads (wake up if needed) */
 static void inline
 ptnetmap_tx_notify(struct ptnetmap_state *pts) {
+    if (unlikely(!pts))
+        return;
+
     ptn_kthread_wakeup_worker(pts->ptk_tx);
     IFRATE(pts->rate_ctx.new.btxwu++);
 }
 
 static void inline
 ptnetmap_rx_notify(struct ptnetmap_state *pts) {
+    if (unlikely(!pts))
+        return;
+
     ptn_kthread_wakeup_worker(pts->ptk_rx);
     IFRATE(pts->rate_ctx.new.brxwu++);
 }
