@@ -739,9 +739,9 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, const void __user *buf, u
     pts->pth_na = pth_na;
 
     /* overwrite parent nm_notify callback */
+    pth_na->parent->na_private = pth_na;
     pth_na->parent_nm_notify = pth_na->parent->nm_notify;
     pth_na->parent->nm_notify = nm_pt_host_notify;
-    pth_na->parent->na_private = pth_na;
 
 #ifdef RATE
     memset(&pts->rate_ctx, 0, sizeof(pts->rate_ctx));
@@ -770,15 +770,15 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     if (!pts)
         return;
 
+    /* restore parent adapter callbacks */
+    pth_na->parent->nm_notify = pth_na->parent_nm_notify;
+    pth_na->parent->na_private = NULL;
+
     pts->configured = false;
 
     /* delete kthreads */
     ptn_kthread_delete(pts->ptk_tx);
     ptn_kthread_delete(pts->ptk_rx);
-
-    /* restore parent adapter callbacks */
-    pth_na->parent->nm_notify = pth_na->parent_nm_notify;
-    pth_na->parent->na_private = NULL;
 
     IFRATE(del_timer(&pts->rate_ctx.timer));
 
@@ -853,15 +853,17 @@ static int
 nm_pt_host_notify(struct netmap_kring *kring, int flags)
 {
     struct netmap_adapter *na = kring->na;
-    struct netmap_pt_host_adapter *pth_na = na->na_private;
-    struct ptnetmap_state *pts = pth_na->ptn_state;
+    struct netmap_pt_host_adapter *pth_na =
+        (struct netmap_pt_host_adapter *)na->na_private;
     enum txrx t = kring->tx;
 
     /* TODO-ste: avoid if with array on pt_host_adapter */
-    if (t == NR_TX) {
-        ptnetmap_tx_notify(pts);
-    } else {
-        ptnetmap_rx_notify(pts);
+    if (likely(pth_na)) {
+        if (t == NR_TX) {
+                ptnetmap_tx_notify(pth_na->ptn_state);
+        } else {
+                ptnetmap_rx_notify(pth_na->ptn_state);
+        }
     }
 
     OS_selwakeup(&kring->si, PI_NET);
