@@ -13,6 +13,8 @@
 #define PTN_RX_NOWORK_CYCLE   10                               /* RX cycle without receive any packets */
 #define PTN_TX_BATCH_LIM      ((nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
 
+//#define PTN_AVOID_NM_PROLOGUE /* XXX: avoid nm_*sync_prologue() /*
+
 #define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
 #define DBG(x) x
@@ -240,6 +242,7 @@ ptnetmap_tx_handler(void *data)
         if (nm_kr_txspace(kring) <= (nkr_num_slots >> 1)) {
             g_flags |= NAF_FORCE_RECLAIM;
         }
+#ifndef PTN_AVOID_NM_PROLOGUE
         /* Netmap prologue */
         if (unlikely(nm_txsync_prologue(kring, g_head, g_cur, NULL)
                 >= nkr_num_slots)) {
@@ -248,7 +251,10 @@ ptnetmap_tx_handler(void *data)
             ptnetmap_tx_set_hostkick(csb, 1);
             break;
         }
-
+#else /* PTN_AVOID_NM_PROLOGUE */
+        kring->rhead = g_head;
+        kring->rcur = g_cur;
+#endif /* !PTN_AVOID_NM_PROLOGUE */
         if (unlikely(netmap_verbose & NM_VERB_TXSYNC))
             ptnetmap_kring_dump("pre txsync", kring);
 
@@ -424,6 +430,7 @@ ptnetmap_rx_handler(void *data)
     ptnetmap_host_read_kring_csb(csb_ring, &g_head, &g_cur, &g_flags, nkr_num_slots);
 
     for (;;) {
+#ifndef PTN_AVOID_NM_PROLOGUE
         /* Netmap prologue */
         if (unlikely(nm_rxsync_prologue(kring, g_head, g_cur, NULL)
                 >= nkr_num_slots)) {
@@ -432,6 +439,10 @@ ptnetmap_rx_handler(void *data)
             ptnetmap_rx_set_hostkick(csb, 1);
             break;
         }
+#else /* PTN_AVOID_NM_PROLOGUE */
+        kring->rhead = g_head;
+        kring->rcur = g_cur;
+#endif /* !PTN_AVOID_NM_PROLOGUE */
 
         if (unlikely(netmap_verbose & NM_VERB_RXSYNC))
             ptnetmap_kring_dump("pre rxsync", kring);
