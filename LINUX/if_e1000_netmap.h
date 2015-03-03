@@ -358,72 +358,57 @@ e1000_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	//u_int ring_nr = kring->ring_id;
 	struct ifnet *ifp = na->ifp;
 	struct e1000_adapter *adapter = netdev_priv(ifp);
-	struct e1000_hw *hw = &adapter->hw;
 	struct e1000_tx_ring* txr = &adapter->tx_ring[0];
 	struct paravirt_csb *csb = adapter->csb;
-
-	ND("");
+	bool send_kick = false;
 
         IFRATE(adapter->rate_ctx.new.tx_sync++);
 
-	//XXX-ste: temporary - maybe is better to change the txsync pointer func
-	if (adapter->netmap_pt_features & NET_PTN_FEATURES_FULL)
-	{
-		bool send_kick = false;
-                /* Disable notifications */
-		csb->guest_need_txkick = 0;
+	/* Disable notifications */
+	csb->guest_need_txkick = 0;
 
-		/*
-		 * First part: process new packets to send.
-		 */
-		kring->nr_hwcur = csb->tx_ring.hwcur;
-		ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
-		if (kring->rhead != kring->nr_hwcur) {
-			send_kick = true;
-                }
-
-                /* Send kick to the host if it needs them */
-		if ((send_kick && ACCESS_ONCE(csb->host_need_txkick)) || (flags & NAF_FORCE_RECLAIM)) {
-			csb->tx_ring.sync_flags = flags;
-			writel(0, adapter->hw.hw_addr + txr->tdt);
-			IFRATE(adapter->rate_ctx.new.tx_kick++);
-		}
-
-		/*
-		 * Second part: reclaim buffers for completed transmissions.
-		 */
-	        if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
-                    ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
-		}
-
-                /*
-                 * Ring full. The user thread will go to sleep and
-                 * we need a notification (interrupt) from the NIC,
-                 * whene there is free space.
-                 */
-		if (kring->rcur == kring->nr_hwtail) {
-		        /* Reenable notifications. */
-			csb->guest_need_txkick = 1;
-                        /* Double check */
-                        ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
-                        /* If there is new free space, disable notifications */
-			if (kring->rcur != kring->nr_hwtail) {
-				csb->guest_need_txkick = 0;
-			}
-		}
-
-
-		ND("TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
-		    csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail, kring->rhead, kring->rcur);
-	} else {
-		ew32(PTCTL, NET_PARAVIRT_PTCTL_TXSYNC);
-		kring->rcur = kring->ring->cur;
-		kring->rhead = kring->ring->head;
-		kring->rtail = kring->ring->tail;
-
-		kring->nr_hwcur = kring->ring->cur;
-		kring->nr_hwtail = kring->ring->tail;
+	/*
+ 	 * First part: process new packets to send.
+ 	 */
+	kring->nr_hwcur = csb->tx_ring.hwcur;
+	ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
+	if (kring->rhead != kring->nr_hwcur) {
+		send_kick = true;
 	}
+
+        /* Send kick to the host if it needs them */
+	if ((send_kick && ACCESS_ONCE(csb->host_need_txkick)) || (flags & NAF_FORCE_RECLAIM)) {
+		csb->tx_ring.sync_flags = flags;
+		writel(0, adapter->hw.hw_addr + txr->tdt);
+		IFRATE(adapter->rate_ctx.new.tx_kick++);
+	}
+
+	/*
+	 * Second part: reclaim buffers for completed transmissions.
+	 */
+	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+                ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
+	}
+
+        /*
+         * Ring full. The user thread will go to sleep and
+         * we need a notification (interrupt) from the NIC,
+         * whene there is free space.
+         */
+	if (kring->rcur == kring->nr_hwtail) {
+		/* Reenable notifications. */
+		csb->guest_need_txkick = 1;
+                /* Double check */
+                ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
+                /* If there is new free space, disable notifications */
+		if (kring->rcur != kring->nr_hwtail) {
+			csb->guest_need_txkick = 0;
+		}
+	}
+
+
+	ND("TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
+			csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail, kring->rhead, kring->rcur);
 
 	return 0;
 }
@@ -439,68 +424,56 @@ e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	struct e1000_rx_ring *rxr = &adapter->rx_ring[0];
 	struct paravirt_csb *csb = adapter->csb;
 
-	ND("");
+	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
+	uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
 
         IFRATE(adapter->rate_ctx.new.rx_sync++);
 
-	if (adapter->netmap_pt_features & NET_PTN_FEATURES_FULL)
-	{
-		int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
-		uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
-                /* Disable notifications */
-		csb->guest_need_rxkick = 0;
+        /* Disable notifications */
+	csb->guest_need_rxkick = 0;
 
-                ptnetmap_guest_read_kring_csb(&csb->rx_ring, &h_hwcur, &h_hwtail, kring->nkr_num_slots);
+        ptnetmap_guest_read_kring_csb(&csb->rx_ring, &h_hwcur, &h_hwtail, kring->nkr_num_slots);
 
-		/*
-		 * First part: import newly received packets.
-		 */
-		if (netmap_no_pendintr || force_update) {
-			kring->nr_hwtail = h_hwtail;
-			kring->nr_kflags &= ~NKR_PENDINTR;
-		}
-
-		/*
-		 * Second part: skip past packets that userspace has released.
-		 */
-		kring->nr_hwcur = h_hwcur;
-		if (kring->rhead != kring->nr_hwcur) {
-		        ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur, kring->rhead);
-                        /* Send kick to the host if it needs them */
-			if (ACCESS_ONCE(csb->host_need_rxkick)) {
-			        csb->rx_ring.sync_flags = flags;
-				writel(0, hw->hw_addr + rxr->rdt);
-				IFRATE(adapter->rate_ctx.new.rx_kick++);
-			}
-		}
-
-                /*
-                 * Ring empty. The user thread will go to sleep and
-                 * we need a notification (interrupt) from the NIC,
-                 * whene there are new packets.
-                 */
-                if (kring->rcur == kring->nr_hwtail) {
-		    /* Reenable notifications. */
-                    csb->guest_need_rxkick = 1;
-                    /* Double check */
-                    ptnetmap_guest_read_kring_csb(&csb->rx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
-                    /* If there are new packets, disable notifications */
-                    if (unlikely(kring->rcur != kring->nr_hwtail)) {
-                        csb->guest_need_rxkick = 0;
-                    }
-                }
-
-		ND("RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
-			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail, kring->rhead, kring->rcur);
-	} else {
-		ew32(PTCTL, NET_PARAVIRT_PTCTL_RXSYNC);
-		kring->rcur = kring->ring->cur;
-		kring->rhead = kring->ring->head;
-		kring->rtail = kring->ring->tail;
-
-		kring->nr_hwcur = kring->ring->cur;
-		kring->nr_hwtail = kring->ring->tail;
+	/*
+	 * First part: import newly received packets.
+	 */
+	if (netmap_no_pendintr || force_update) {
+		kring->nr_hwtail = h_hwtail;
+		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
+
+	/*
+	 * Second part: skip past packets that userspace has released.
+	 */
+	kring->nr_hwcur = h_hwcur;
+	if (kring->rhead != kring->nr_hwcur) {
+		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur, kring->rhead);
+                /* Send kick to the host if it needs them */
+		if (ACCESS_ONCE(csb->host_need_rxkick)) {
+			csb->rx_ring.sync_flags = flags;
+			writel(0, hw->hw_addr + rxr->rdt);
+			IFRATE(adapter->rate_ctx.new.rx_kick++);
+		}
+	}
+
+        /*
+         * Ring empty. The user thread will go to sleep and
+         * we need a notification (interrupt) from the NIC,
+         * whene there are new packets.
+         */
+        if (kring->rcur == kring->nr_hwtail) {
+		/* Reenable notifications. */
+                csb->guest_need_rxkick = 1;
+                /* Double check */
+                ptnetmap_guest_read_kring_csb(&csb->rx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
+                /* If there are new packets, disable notifications */
+                if (unlikely(kring->rcur != kring->nr_hwtail)) {
+                        csb->guest_need_rxkick = 0;
+                }
+        }
+
+	ND("RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
+			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail, kring->rhead, kring->rcur);
 
 	return 0;
 }
@@ -519,7 +492,7 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 			return ret;
 
 		na->na_flags |= NAF_NETMAP_ON;
-		adapter->passthrough = 1;
+		adapter->ptnetmap_enabled = 1;
 		/*
 		 * Init ring and kring pointers
 		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
@@ -544,7 +517,7 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
-		adapter->passthrough = 0;
+		adapter->ptnetmap_enabled = 0;
 		ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 
@@ -557,14 +530,16 @@ e1000_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
-static struct paravirt_csb * e1000_netmap_getcsb(struct net_device *netdev)
+static struct paravirt_csb *
+e1000_netmap_getcsb(struct net_device *netdev)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
 
 	return adapter->csb;
 }
 
-static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
+static uint32_t
+e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
 	struct e1000_hw *hw = &adapter->hw;
@@ -618,6 +593,22 @@ static uint32_t e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
 	return ret;
 }
 
+static uint32_t
+e1000_ptnetmap_features(struct SOFTC_T *adapter)
+{
+	struct e1000_hw *hw = &adapter->hw;
+	struct net_device *netdev = adapter->netdev;
+	uint32_t features;
+	/* tell the device the features we support */
+	ew32(PTFEAT, NET_PTN_FEATURES_BASE); /* we are cheating for now */
+	/* get back the acknowledged features */
+	features = er32(PTFEAT);
+	pr_info("%s netmap passthrough: %s\n", netdev->name,
+			(features & NET_PTN_FEATURES_BASE) ? "base" :
+			"none");
+	return features;
+}
+
 static struct netmap_pt_guest_ops e1000_ptnetmap_ops = {
 	.nm_getcsb = e1000_netmap_getcsb,
 	.nm_ptctl = e1000_netmap_ptctl,
@@ -647,16 +638,16 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_rxsync = e1000_netmap_rxsync;
 
 #if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PASSTHROUGH)
-        D("e1000 passthrough");
-	na.nm_config = e1000_ptnetmap_config;
-	na.nm_register = e1000_ptnetmap_reg;
-	na.nm_txsync = e1000_ptnetmap_txsync;
-	na.nm_rxsync = e1000_ptnetmap_rxsync;
-	na.nm_bdg_attach = e1000_ptnetmap_bdg_attach; /* XXX: maybe only for PT BASE */
-	netmap_pt_guest_attach(&na, &e1000_ptnetmap_ops);
-#else
+	if (e1000_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE) {
+		na.nm_config = e1000_ptnetmap_config;
+		na.nm_register = e1000_ptnetmap_reg;
+		na.nm_txsync = e1000_ptnetmap_txsync;
+		na.nm_rxsync = e1000_ptnetmap_rxsync;
+		na.nm_bdg_attach = e1000_ptnetmap_bdg_attach; /* XXX */
+		netmap_pt_guest_attach(&na, &e1000_ptnetmap_ops);
+	} else
+#endif /* CONFIG_E1000_NETMAP_PT && WITH_PASSTHROUGH */
 	netmap_attach(&na);
-#endif
 }
 
 /* end of file */

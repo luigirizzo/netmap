@@ -1913,42 +1913,41 @@ static struct netmap_if *
 netmap_mem_pt_guest_if_new(struct netmap_adapter *na)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)na->nm_mem;
-	struct netmap_mem_ptg_na *pv_na = TAILQ_FIRST(&pv->active_na);
-	struct ifnet *ifp;
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
+	struct ifnet *ifp = ptna->hwup.up.ifp;
 	struct paravirt_csb *csb;
 	D("");
-	if (pv_na == NULL)
-		return NULL;
-	ifp = pv_na->ptna->hwup.up.ifp;
 	/* if na is our owner return the backend ifp, otherwise NULL */
 	//return NULL;
-	csb = pv_na->ptna->pv_ops->nm_getcsb(ifp);
+	csb = ptna->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL)
 		return NULL;
+
+	ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_IFNEW);
+
 	return (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
 }
 
 static void
 netmap_mem_pt_guest_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 {
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
+	struct ifnet *ifp = ptna->hwup.up.ifp;
 	D("");
+	ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_IFDELETE);
 }
 
 static int
 netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)na->nm_mem;
-	struct netmap_mem_ptg_na *pv_na = TAILQ_FIRST(&pv->active_na);
-	struct ifnet *ifp;
-	struct paravirt_csb *csb;
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
+	struct ifnet *ifp = ptna->hwup.up.ifp;
+	struct paravirt_csb *csb = ptna->pv_ops->nm_getcsb(ifp);
 	struct netmap_if *nifp;
 	int i, error = 0;
 
 	D("");
-	if (pv_na == NULL)
-		return EINVAL;
-	ifp = pv_na->ptna->hwup.up.ifp;
-	csb = pv_na->ptna->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL)
 		return EINVAL;
 	/* if na is our owner, point each kring to the
@@ -1973,7 +1972,7 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 		kring->nr_kflags |= NKR_PASSTHROUGH;
 	}
 
-	//error = pv_na->ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
+	//error = ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
 
 	return error;
 }
@@ -1981,14 +1980,12 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 static void
 netmap_mem_pt_guest_rings_delete(struct netmap_adapter *na)
 {
+	/*
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)na->nm_mem;
-	struct netmap_mem_ptg_na *pv_na = TAILQ_FIRST(&pv->active_na);
-	struct ifnet *ifp;
-
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
+	struct ifnet *ifp = ptna->hwup.up.ifp;
+	*/
 	D("");
-	if (pv_na == NULL)
-		return;
-	ifp = pv_na->ptna->hwup.up.ifp;
 	//pv_na->na->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSDELETE);
 }
 
