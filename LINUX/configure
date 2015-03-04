@@ -759,13 +759,14 @@ add_test 'have GET_RINGPARAM' <<-EOF
 	}
 EOF
 
-# ethtool set_channels
+# ethtool set/get_channels
 add_test 'have SET_CHANNELS' <<-EOF
 	#include <linux/netdevice.h>
 	#include <linux/ethtool.h>
 
 	int
 	dummy(struct net_device *net, struct ethtool_channels *c) {
+		net->ethtool_ops->get_channels(net, c);
 		return net->ethtool_ops->set_channels(net, c);
 	}
 EOF
