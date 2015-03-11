@@ -866,7 +866,6 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 				break;
 			}
 
-			name = name + b->bdg_namelen + 1;
 			error = ENOENT;
 			for (j = 0; j < b->bdg_active_ports; j++) {
 				i = b->bdg_port_index[j];
