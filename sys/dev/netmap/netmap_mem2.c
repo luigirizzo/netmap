@@ -257,7 +257,7 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	if (nm_mem_assign_group(nmd, na->pdev) < 0) {
 		return ENOMEM;
 	} else {
-		nmd->ops->nmd_finalize(nmd, na);
+		nmd->lasterr = nmd->ops->nmd_finalize(nmd, na);
 	}
 
 	if (!nmd->lasterr && na->pdev)
