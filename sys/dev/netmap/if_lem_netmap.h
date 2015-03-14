@@ -470,6 +470,294 @@ ring_reset:
 	return netmap_ring_reinit(kring);
 }
 
+#if defined (NIC_PTNETMAP) && defined (WITH_PASSTHROUGH)
+static uint32_t lem_netmap_ptctl(struct ifnet *, uint32_t);
+
+static int
+lem_ptnetmap_config(struct netmap_adapter *na,
+		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
+{
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+	struct paravirt_csb *csb = adapter->csb;
+	int ret;
+
+	if (csb == NULL)
+		return EINVAL;
+
+	ret = lem_netmap_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	if (ret)
+		return ret;
+
+	*txr = 1; //*txr = csb->num_tx_rings;
+	*rxr = 1; //*rxr = csb->num_rx_rings;
+	*txd = csb->num_tx_slots;
+	*rxd = csb->num_rx_slots;
+
+	D("txr %u rxr %u txd %u rxd %u",
+			*txr, *rxr, *txd, *rxd);
+
+	return 0;
+}
+
+static int
+lem_ptnetmap_txsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	//u_int ring_nr = kring->ring_id;
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+	struct paravirt_csb *csb = adapter->csb;
+	bool send_kick = false;
+
+	/* Disable notifications */
+	csb->guest_need_txkick = 0;
+
+	/*
+	 * First part: process new packets to send.
+	 */
+	kring->nr_hwcur = csb->tx_ring.hwcur;
+	ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
+	if (kring->rhead != kring->nr_hwcur) {
+		send_kick = true;
+	}
+
+	/* Send kick to the host if it needs them */
+	if ((send_kick && ACCESS_ONCE(csb->host_need_txkick)) || (flags & NAF_FORCE_RECLAIM)) {
+		csb->tx_ring.sync_flags = flags;
+		E1000_WRITE_REG(&adapter->hw, E1000_TDT(0), 0);
+	}
+
+	/*
+	 * Second part: reclaim buffers for completed transmissions.
+	 */
+	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+		ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
+	}
+
+	/*
+	 * Ring full. The user thread will go to sleep and
+	 * we need a notification (interrupt) from the NIC,
+	 * whene there is free space.
+	 */
+	if (kring->rcur == kring->nr_hwtail) {
+		/* Reenable notifications. */
+		csb->guest_need_txkick = 1;
+		/* Double check */
+		ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
+		/* If there is new free space, disable notifications */
+		if (kring->rcur != kring->nr_hwtail) {
+			csb->guest_need_txkick = 0;
+		}
+	}
+
+	ND("TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
+			csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail, kring->rhead, kring->rcur);
+
+	return 0;
+}
+
+static int
+lem_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	//u_int ring_nr = kring->ring_id;
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+	struct paravirt_csb *csb = adapter->csb;
+
+	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
+	uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
+
+	/* Disable notifications */
+	csb->guest_need_rxkick = 0;
+
+	ptnetmap_guest_read_kring_csb(&csb->rx_ring, &h_hwcur, &h_hwtail, kring->nkr_num_slots);
+
+	/*
+	 * First part: import newly received packets.
+	 */
+	if (netmap_no_pendintr || force_update) {
+		kring->nr_hwtail = h_hwtail;
+		kring->nr_kflags &= ~NKR_PENDINTR;
+	}
+
+	/*
+	 * Second part: skip past packets that userspace has released.
+	 */
+	kring->nr_hwcur = h_hwcur;
+	if (kring->rhead != kring->nr_hwcur) {
+		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur, kring->rhead);
+		/* Send kick to the host if it needs them */
+		if (ACCESS_ONCE(csb->host_need_rxkick)) {
+			csb->rx_ring.sync_flags = flags;
+			E1000_WRITE_REG(&adapter->hw, E1000_RDT(0), 0);
+		}
+	}
+
+	/*
+	 * Ring empty. The user thread will go to sleep and
+	 * we need a notification (interrupt) from the NIC,
+	 * whene there are new packets.
+	 */
+	if (kring->rcur == kring->nr_hwtail) {
+		/* Reenable notifications. */
+		csb->guest_need_rxkick = 1;
+		/* Double check */
+		ptnetmap_guest_read_kring_csb(&csb->rx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
+		/* If there are new packets, disable notifications */
+		if (kring->rcur != kring->nr_hwtail) {
+			csb->guest_need_rxkick = 0;
+		}
+	}
+
+	ND("RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
+			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail, kring->rhead, kring->rcur);
+
+	return 0;
+
+
+}
+
+static int
+lem_ptnetmap_reg(struct netmap_adapter *na, int onoff)
+{
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+	struct paravirt_csb *csb = adapter->csb;
+	struct netmap_kring *kring;
+	int ret;
+
+	if (onoff) {
+		ret = lem_netmap_ptctl(ifp, NET_PARAVIRT_PTCTL_REGIF);
+		if (ret)
+			return ret;
+
+		na->na_flags |= NAF_NETMAP_ON;
+		adapter->ptnetmap_enabled = 1;
+		/*
+		 * Init ring and kring pointers
+		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
+		 * host kring pointers.
+		 * XXX This initialization is required, because we don't close the
+		 * host port on UNREGIF.
+		 */
+
+		// Init rx ring
+		kring = na->rx_rings;
+		kring->rhead = kring->ring->head = csb->rx_ring.head;
+		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
+		kring->nr_hwcur = csb->rx_ring.hwcur;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->rx_ring.hwtail;
+
+		// Init tx ring
+		kring = na->tx_rings;
+		kring->rhead = kring->ring->head = csb->tx_ring.head;
+		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
+		kring->nr_hwcur = csb->tx_ring.hwcur;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
+	} else {
+		na->na_flags &= ~NAF_NETMAP_ON;
+		adapter->ptnetmap_enabled = 0;
+		ret = lem_netmap_ptctl(ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+	}
+
+	return lem_netmap_reg(na, onoff);
+}
+
+
+static int
+lem_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
+{
+	return EOPNOTSUPP;
+}
+
+static struct paravirt_csb *
+lem_netmap_getcsb(struct ifnet *ifp)
+{
+	struct adapter *adapter = ifp->if_softc;
+
+	return adapter->csb;
+}
+
+static uint32_t
+lem_netmap_ptctl(struct ifnet *ifp, uint32_t val)
+{
+	struct adapter *adapter = ifp->if_softc;
+	device_t dev = adapter->dev;
+	struct paravirt_csb *csb = adapter->csb;
+	uint32_t ret;
+
+	E1000_WRITE_REG(&adapter->hw, E1000_PTCTL, val);
+	ret = E1000_READ_REG(&adapter->hw, E1000_PTSTS);
+	D("PTSTS = %u", ret);
+	if (ret) {
+		return ret;
+	}
+	switch(val) {
+	case NET_PARAVIRT_PTCTL_FINALIZE:
+		D("NET_PARAVIRT_PTCTL_FINALIZE");
+		D("csb: %p, pci_bar: %d, memsize: %d", csb, csb->pci_bar, csb->memsize);
+		adapter->ptnetmap_res_id = PCIR_BAR(csb->pci_bar);
+		adapter->ptnetmap_res = bus_alloc_resource(dev, SYS_RES_MEMORY,
+									&adapter->ptnetmap_res_id, 0, ~0,
+									csb->memsize, RF_ACTIVE);
+		if (adapter->ptnetmap_res == NULL) {
+			D("error map ptnetmap PCIBAR");
+			ret = ENOMEM;
+			break;
+		}
+		D("ptnetmap PCIBAR mapped");
+		csb->base_paddr = (uint64_t)rman_get_start(adapter->ptnetmap_res);
+		csb->base_addr = (uint64_t)rman_get_virtual(adapter->ptnetmap_res);
+		D("BAR %d start %llx len %llx at %llx (%s)", csb->pci_bar,
+				csb->base_paddr,
+				rman_get_size(adapter->ptnetmap_res),
+				csb->base_addr,
+				((struct netmap_if*)csb->base_addr)->ni_name);
+		break;
+	case NET_PARAVIRT_PTCTL_DEREF:
+		D("NET_PARAVIRT_PTCTL_DEREF");
+		if (adapter->ptnetmap_res != NULL) {
+			bus_release_resource(dev, SYS_RES_MEMORY,
+					adapter->ptnetmap_res_id,
+					adapter->ptnetmap_res);
+			adapter->ptnetmap_res = NULL;
+		}
+		break;
+	default:
+		break;
+	}
+	return ret;
+}
+
+
+
+static uint32_t
+lem_ptnetmap_features(struct adapter *adapter)
+{
+	uint32_t features;
+	/* tell the device the features we support */
+	E1000_WRITE_REG(&adapter->hw, E1000_PTFEAT, NET_PTN_FEATURES_BASE);
+	/* get back the acknowledged features */
+	features = E1000_READ_REG(&adapter->hw, E1000_PTFEAT);
+	device_printf(adapter->dev, "netmap passthrough: %s\n",
+			(features & NET_PTN_FEATURES_BASE) ? "base" :
+			"none");
+	return features;
+}
+
+static struct netmap_pt_guest_ops lem_ptnetmap_ops = {
+	.nm_getcsb = lem_netmap_getcsb,
+	.nm_ptctl = lem_netmap_ptctl,
+};
+#elif defined (NIC_PTNETMAP)
+#warning "if_lem supports ptnetmap but netmap does not support it"
+#warning "(configure netmap with passthrough support)"
+#elif defined (WITH_PASSTHROUGH)
+#warning "netmap supports ptnetmap but e1000 does not support it"
+#warning "(configure if_lem with passthrough support)"
+#endif /* NIC_PTNETMAP && WITH_PASSTHROUGH */
 
 static void
 lem_netmap_attach(struct adapter *adapter)
@@ -486,6 +774,16 @@ lem_netmap_attach(struct adapter *adapter)
 	na.nm_rxsync = lem_netmap_rxsync;
 	na.nm_register = lem_netmap_reg;
 	na.num_tx_rings = na.num_rx_rings = 1;
+#if defined (NIC_PTNETMAP) && defined (WITH_PASSTHROUGH)
+if (lem_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE) {
+	na.nm_config = lem_ptnetmap_config;
+	na.nm_register = lem_ptnetmap_reg;
+	na.nm_txsync = lem_ptnetmap_txsync;
+	na.nm_rxsync = lem_ptnetmap_rxsync;
+	na.nm_bdg_attach = lem_ptnetmap_bdg_attach; /* XXX */
+	netmap_pt_guest_attach(&na, &lem_ptnetmap_ops);
+} else
+#endif /* NIC_PTNETMAP && defined WITH_PASSTHROUGH */
 	netmap_attach(&na);
 }
 
