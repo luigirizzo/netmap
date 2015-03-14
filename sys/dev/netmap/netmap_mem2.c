@@ -1866,8 +1866,13 @@ netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 			if (ifp && NA(ifp) && (csb = ptna->pv_ops->nm_getcsb(ifp))) {
 				csb->base_addr = pv->nm_addr;
 				ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_DEREF);
-			} else
-				iounmap((void*)pv->nm_addr);//XXX
+			}
+#if 0
+			 else
+				iounmap((void*)pv->nm_addr); 	/* XXX: linux specific!
+												 * in freebsd we need a res pointer to unmap the reagion
+												 */
+#endif
 			pv->nm_addr = 0;
 			pv->nm_paddr = 0;
 		}

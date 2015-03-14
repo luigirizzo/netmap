@@ -69,6 +69,8 @@
 
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
+#define __user				/* XXX: temp */
+#define ACCESS_ONCE(x) (x) 	/* XXX: temp */
 
 #define	NM_LOCK_T	struct mtx	/* low level spinlock, used to protect queues */
 
