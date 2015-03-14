@@ -1881,6 +1881,14 @@ ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
     }
 }
 
+/* ptnetmap GUEST routines */
+struct netmap_pt_guest_ops {
+	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
+	struct paravirt_csb *(*nm_getcsb)(struct ifnet *);
+};
+int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
+
+#ifdef WITH_PT_HOST /* XXX: split PT_HOST and PT_GUEST define */
 /* ptnetmap HOST routines */
 int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
@@ -1890,18 +1898,12 @@ nm_passthrough_host_on(struct netmap_adapter *na)
 	return na && na->na_flags & NAF_PASSTHROUGH_HOST;
 }
 
-/* ptnetmap GUEST routines */
-struct netmap_pt_guest_ops {
-	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
-	struct paravirt_csb *(*nm_getcsb)(struct ifnet *);
-};
-int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
-
-#else /* !WITH_PASSTHROUGH */
+#else /* !WITH_PT_HOST */
 #define netmap_get_pt_host_na(nmr, _2, _3) \
 	((nmr)->nr_flags & (NR_PASSTHROUGH_HOST) ? EOPNOTSUPP : 0)
 #define ptnetmap_ctl(_1, _2)   EINVAL
 #define nm_passthrough_host_on(_1)   EINVAL
+#endif /* WITH_PT_HOST */
 #endif /* WITH_PASSTHROUGH */
 
 #endif /* _NET_NETMAP_KERN_H_ */
