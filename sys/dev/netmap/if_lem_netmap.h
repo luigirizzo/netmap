@@ -470,7 +470,7 @@ ring_reset:
 	return netmap_ring_reinit(kring);
 }
 
-#if defined (NIC_PTNETMAP) && defined (WITH_PASSTHROUGH)
+#if defined (NIC_PTNETMAP) && defined (WITH_PTNETMAP_GUEST)
 static uint32_t lem_netmap_ptctl(struct ifnet *, uint32_t);
 
 static int
@@ -754,10 +754,10 @@ static struct netmap_pt_guest_ops lem_ptnetmap_ops = {
 #elif defined (NIC_PTNETMAP)
 #warning "if_lem supports ptnetmap but netmap does not support it"
 #warning "(configure netmap with passthrough support)"
-#elif defined (WITH_PASSTHROUGH)
+#elif defined (WITH_PTNETMAP_GUEST)
 #warning "netmap supports ptnetmap but e1000 does not support it"
 #warning "(configure if_lem with passthrough support)"
-#endif /* NIC_PTNETMAP && WITH_PASSTHROUGH */
+#endif /* NIC_PTNETMAP && WITH_PTNETMAP_GUEST */
 
 static void
 lem_netmap_attach(struct adapter *adapter)
@@ -774,7 +774,7 @@ lem_netmap_attach(struct adapter *adapter)
 	na.nm_rxsync = lem_netmap_rxsync;
 	na.nm_register = lem_netmap_reg;
 	na.num_tx_rings = na.num_rx_rings = 1;
-#if defined (NIC_PTNETMAP) && defined (WITH_PASSTHROUGH)
+#if defined (NIC_PTNETMAP) && defined (WITH_PTNETMAP_GUEST)
 if (lem_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE) {
 	na.nm_config = lem_ptnetmap_config;
 	na.nm_register = lem_ptnetmap_reg;
@@ -783,7 +783,7 @@ if (lem_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE) {
 	na.nm_bdg_attach = lem_ptnetmap_bdg_attach; /* XXX */
 	netmap_pt_guest_attach(&na, &lem_ptnetmap_ops);
 } else
-#endif /* NIC_PTNETMAP && defined WITH_PASSTHROUGH */
+#endif /* NIC_PTNETMAP && defined WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);
 }
 

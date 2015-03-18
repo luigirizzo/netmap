@@ -2797,7 +2797,7 @@ netmap_attach(struct netmap_adapter *arg)
 }
 
 
-#ifdef WITH_PASSTHROUGH
+#ifdef WITH_PTNETMAP_GUEST
 int
 netmap_pt_guest_attach(struct netmap_adapter *arg,
 		struct netmap_pt_guest_ops *pv_ops)
@@ -2821,7 +2821,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 
 	return 0;
 }
-#endif /* WITH_PASSTHROUGH */
+#endif /* WITH_PTNETMAP_GUEST */
 
 
 void

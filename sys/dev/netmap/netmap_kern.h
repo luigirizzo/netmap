@@ -52,7 +52,8 @@
 #define WITH_V1000
 #endif
 #if defined(CONFIG_NETMAP_PASSTHROUGH)
-#define WITH_PASSTHROUGH
+#define WITH_PTNETMAP_HOST
+#define WITH_PTNETMAP_GUEST
 #endif
 
 #else /* not linux */
@@ -61,7 +62,8 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
-#define WITH_PASSTHROUGH
+//#define WITH_PTNETMAP_HOST /* ptnetmap host not supported in FreeBSD */
+#define WITH_PTNETMAP_GUEST
 
 #endif
 
@@ -1692,10 +1694,22 @@ int nm_vi_persist(const char *, struct ifnet **);
 void nm_vi_detach(struct ifnet *);
 void nm_vi_init_index(void);
 
-#ifdef WITH_PASSTHROUGH
+#if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
 #include "paravirt.h"
+static inline uint32_t
+ptn_sub(uint32_t l_elem, uint32_t r_elem, uint32_t num_slots)
+{
+    int64_t res;
+
+    res = (int64_t)(l_elem) - r_elem;
+
+    return (res < 0) ? res + num_slots : res;
+}
+#endif /* WITH_PTNETMAP_HOST || WITH_PTNETMAP_GUEST */
+
+#ifdef WITH_PTNETMAP_HOST /* XXX: split PT_HOST and PT_GUEST define */
 /*
- * netmap adapter for passthrough ports
+ * netmap adapter for host passthrough ports
  */
 struct netmap_pt_host_adapter {
 	struct netmap_adapter up;
@@ -1706,15 +1720,14 @@ struct netmap_pt_host_adapter {
 	void *ptn_state;
 };
 
-struct netmap_pt_guest_adapter {
-	struct netmap_hw_adapter hwup;
-
-	struct netmap_pt_guest_ops *pv_ops;
-};
-
-/*
- * ptnetmap support routines (guest, host, and kthread)
- */
+/* ptnetmap HOST routines */
+int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
+int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
+static inline int
+nm_passthrough_host_on(struct netmap_adapter *na)
+{
+	return na && na->na_flags & NAF_PASSTHROUGH_HOST;
+}
 
 /* ptnetmap kernel thread routines */
 enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
@@ -1742,17 +1755,6 @@ void ptn_kthread_send_irq(struct ptn_kthread *);
 #define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
 #define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
 #endif /* linux */
-
-
-static inline uint32_t
-ptn_sub(uint32_t l_elem, uint32_t r_elem, uint32_t num_slots)
-{
-    int64_t res;
-
-    res = (int64_t)(l_elem) - r_elem;
-
-    return (res < 0) ? res + num_slots : res;
-}
 
 /*
  * HOST read/write kring pointers from/in CSB
@@ -1816,6 +1818,22 @@ ptnetmap_host_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
 
     //mb(); /* Force memory complete before send notification */
 }
+#else /* !WITH_PTNETMAP_HOST */
+#define netmap_get_pt_host_na(nmr, _2, _3) \
+	((nmr)->nr_flags & (NR_PASSTHROUGH_HOST) ? EOPNOTSUPP : 0)
+#define ptnetmap_ctl(_1, _2)   EINVAL
+#define nm_passthrough_host_on(_1)   EINVAL
+#endif /* WITH_PTNETMAP_HOST */
+
+#ifdef WITH_PTNETMAP_GUEST
+/*
+ * netmap adapter for guest passthrough ports
+ */
+struct netmap_pt_guest_adapter {
+	struct netmap_hw_adapter hwup;
+
+	struct netmap_pt_guest_ops *pv_ops;
+};
 
 /*
  * GUEST read/write kring pointers from/in CSB.
@@ -1887,23 +1905,6 @@ struct netmap_pt_guest_ops {
 	struct paravirt_csb *(*nm_getcsb)(struct ifnet *);
 };
 int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
-
-#ifdef WITH_PT_HOST /* XXX: split PT_HOST and PT_GUEST define */
-/* ptnetmap HOST routines */
-int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
-int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
-static inline int
-nm_passthrough_host_on(struct netmap_adapter *na)
-{
-	return na && na->na_flags & NAF_PASSTHROUGH_HOST;
-}
-
-#else /* !WITH_PT_HOST */
-#define netmap_get_pt_host_na(nmr, _2, _3) \
-	((nmr)->nr_flags & (NR_PASSTHROUGH_HOST) ? EOPNOTSUPP : 0)
-#define ptnetmap_ctl(_1, _2)   EINVAL
-#define nm_passthrough_host_on(_1)   EINVAL
-#endif /* WITH_PT_HOST */
-#endif /* WITH_PASSTHROUGH */
+#endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */

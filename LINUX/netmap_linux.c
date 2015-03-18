@@ -1602,9 +1602,9 @@ module_exit(linux_netmap_fini);
 
 /* export certain symbols to other modules */
 EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
-#ifdef WITH_PASSTHROUGH
+#ifdef WITH_PTNETMAP_GUEST
 EXPORT_SYMBOL(netmap_pt_guest_attach);	/* passthrough driver attach routines */
-#endif /* WITH_PASSTHROUGH */
+#endif /* WITH_PTNETMAP_GUEST */
 EXPORT_SYMBOL(netmap_detach);		/* driver detach routines */
 EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */
 EXPORT_SYMBOL(netmap_reset);		/* ring init routines */

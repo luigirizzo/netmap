@@ -1656,7 +1656,7 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 	.nmd_rings_delete = netmap_mem2_rings_delete
 };
 
-#ifdef WITH_PASSTHROUGH
+#ifdef WITH_PTNETMAP_GUEST
 /* passthrough allocator */
 #include "paravirt.h"
 struct netmap_mem_ptg_na {
@@ -2088,4 +2088,4 @@ netmap_mem_pt_guest_new(struct ifnet *ifp,
 
 	return mem;
 }
-#endif /* WITH_PASSTHROUGH */
+#endif /* WITH_PTNETMAP_GUEST */

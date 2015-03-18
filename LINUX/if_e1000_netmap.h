@@ -323,8 +323,8 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	}
 	return 1;
 }
-#if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PASSTHROUGH)
 
+#if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
 static uint32_t e1000_netmap_ptctl(struct net_device *, uint32_t);
 static int
 e1000_ptnetmap_config(struct netmap_adapter *na,
@@ -616,10 +616,10 @@ static struct netmap_pt_guest_ops e1000_ptnetmap_ops = {
 #elif defined (CONFIG_E1000_NETMAP_PT)
 #warning "e1000 supports ptnetmap but netmap does not support it"
 #warning "(configure netmap with passthrough support)"
-#elif defined (WITH_PASSTHROUGH)
+#elif defined (WITH_PTNETMAP_GUEST)
 #warning "netmap supports ptnetmap but e1000 does not support it"
 #warning "(configure e1000 with passthrough support)"
-#endif /* CONFIG_E1000_NETMAP_PT && WITH_PASSTHROUGH */
+#endif /* CONFIG_E1000_NETMAP_PT && WITH_PTNETMAP_GUEST */
 
 static void
 e1000_netmap_attach(struct SOFTC_T *adapter)
@@ -637,7 +637,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;
 
-#if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PASSTHROUGH)
+#if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
 	if (e1000_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE) {
 		na.nm_config = e1000_ptnetmap_config;
 		na.nm_register = e1000_ptnetmap_reg;
@@ -646,7 +646,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 		na.nm_bdg_attach = e1000_ptnetmap_bdg_attach; /* XXX */
 		netmap_pt_guest_attach(&na, &e1000_ptnetmap_ops);
 	} else
-#endif /* CONFIG_E1000_NETMAP_PT && WITH_PASSTHROUGH */
+#endif /* CONFIG_E1000_NETMAP_PT && WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);
 }
 

@@ -8,7 +8,7 @@
 #include <dev/netmap/netmap_mem2.h>
 #include <dev/netmap/paravirt.h>
 
-#ifdef WITH_PASSTHROUGH
+#ifdef WITH_PTNETMAP_HOST
 
 #define PTN_RX_NOWORK_CYCLE   10                               /* RX cycle without receive any packets */
 #define PTN_TX_BATCH_LIM      ((nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
@@ -1118,4 +1118,4 @@ put_out_noputparent:
     free(pth_na, M_DEVBUF);
     return error;
 }
-#endif /* WITH_PASSTHROUGH */
+#endif /* WITH_PTNETMAP_HOST */
