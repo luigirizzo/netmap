@@ -155,7 +155,6 @@ struct paravirt_csb {
     uint16_t num_tx_slots;
     uint16_t num_rx_slots;
 
-    /* passthrough full */
     struct pt_ring tx_ring;
     struct pt_ring rx_ring;
 };
