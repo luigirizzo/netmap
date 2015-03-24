@@ -620,12 +620,10 @@ struct netmap_adapter {
 	 */
 	void *na_private;
 
-#ifdef WITH_PIPES
 	/* array of pipes that have this adapter as a parent */
 	struct netmap_pipe_adapter **na_pipes;
 	int na_next_pipe;	/* next free slot in the array */
 	int na_max_pipes;	/* size of the array */
-#endif /* WITH_PIPES */
 
 	char name[64];
 };
