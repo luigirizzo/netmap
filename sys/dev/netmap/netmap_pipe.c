@@ -172,8 +172,10 @@ netmap_pipe_remove(struct netmap_adapter *parent, struct netmap_pipe_adapter *na
 	u_int n;
 	n = --parent->na_next_pipe;
 	if (n != na->parent_slot) {
-		parent->na_pipes[na->parent_slot] =
-			parent->na_pipes[n];
+		struct netmap_pipe_adapter **p =
+			&parent->na_pipes[na->parent_slot];
+		*p = parent->na_pipes[n];
+		(*p)->parent_slot = na->parent_slot;
 	}
 	parent->na_pipes[n] = NULL;
 }
