@@ -1141,8 +1141,6 @@ int netmap_bdg_config(struct nmreq *nmr);
 #ifdef WITH_PIPES
 /* max number of pipes per device */
 #define NM_MAXPIPES	64	/* XXX how many? */
-/* in case of no error, returns the actual number of pipes in nmr->nr_arg1 */
-int netmap_pipe_alloc(struct netmap_adapter *, struct nmreq *nmr);
 void netmap_pipe_dealloc(struct netmap_adapter *);
 int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 #else /* !WITH_PIPES */

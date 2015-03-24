@@ -1434,7 +1434,7 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		return error;
 
 	if (*na != NULL) /* valid match in netmap_get_bdg_na() */
-		goto pipes;
+		goto out;
 
 	/*
 	 * This must be a hardware na, lookup the name in the system.
@@ -1453,14 +1453,6 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
 	*na = ret;
 	netmap_adapter_get(ret);
-
-pipes:
-	/*
-	 * If we are opening a pipe whose parent was not in netmap mode,
-	 * we have to allocate the pipe array now.
-	 * XXX get rid of this clumsiness (2014-03-15)
-	 */
-	error = netmap_pipe_alloc(*na, nmr);
 
 out:
 	if (error && ret != NULL)

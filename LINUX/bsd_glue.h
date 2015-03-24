@@ -305,6 +305,9 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 #define malloc(_size, type, flags)                      \
         ({ volatile int _v = _size; kmalloc(_v, GFP_ATOMIC | __GFP_ZERO); })
 
+#define realloc(addr, _size, type, flags)		\
+	({ volatile int _v = _size; krealloc(addr, _v, GFP_ATOMIC | __GFP_ZERO); })
+
 #define free(a, t)	kfree(a)
 
 // XXX do we need GPF_ZERO ?

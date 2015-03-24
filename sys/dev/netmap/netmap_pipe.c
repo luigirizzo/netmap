@@ -77,46 +77,25 @@ SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, default_pipes, CTLFLAG_RW, &netmap_default_pipes, 0 , "");
 
 /* allocate the pipe array in the parent adapter */
-int
-netmap_pipe_alloc(struct netmap_adapter *na, struct nmreq *nmr)
+static int
+nm_pipe_alloc(struct netmap_adapter *na, u_int npipes)
 {
 	size_t len;
-	int mode = nmr->nr_flags & NR_REG_MASK;
-	u_int npipes;
+	struct netmap_pipe_adapter **npa;
 
-	if (mode == NR_REG_PIPE_MASTER || mode == NR_REG_PIPE_SLAVE) {
-		/* this is for our parent, not for us */
+	if (npipes <= na->na_max_pipes)
 		return 0;
-	}
+	
+	if (npipes < na->na_next_pipe || npipes > NM_MAXPIPES)
+		return EINVAL;
 
-	/* TODO: we can resize the array if the new
-         * request can accomodate the already existing pipes
-         */
-	if (na->na_pipes) {
-		nmr->nr_arg1 = na->na_max_pipes;
-		return 0;
-	}
-
-	npipes = nmr->nr_arg1;
-	if (npipes == 0)
-		npipes = netmap_default_pipes;
-	nm_bound_var(&npipes, 0, 0, NM_MAXPIPES, NULL);
-
-	if (npipes == 0) {
-		/* really zero, nothing to alloc */
-		goto out;
-	}
-
-	len = sizeof(struct netmap_pipe_adapter *) * npipes;
-	na->na_pipes = malloc(len, M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (na->na_pipes == NULL)
+        len = sizeof(struct netmap_pipe_adapter *) * npipes;
+	npa = realloc(na->na_pipes, len, M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (npa == NULL)
 		return ENOMEM;
 
+	na->na_pipes = npa;
 	na->na_max_pipes = npipes;
-	na->na_next_pipe = 0;
-
-out:
-	nmr->nr_arg1 = npipes;
 
 	return 0;
 }
@@ -155,8 +134,10 @@ static int
 netmap_pipe_add(struct netmap_adapter *parent, struct netmap_pipe_adapter *na)
 {
 	if (parent->na_next_pipe >= parent->na_max_pipes) {
-		D("%s: no space left for pipes", parent->name);
-		return ENOMEM;
+		u_int npipes = parent->na_max_pipes ?  2*parent->na_max_pipes : 2;
+		int error = nm_pipe_alloc(parent, npipes);
+		if (error)
+			return error;
 	}
 
 	parent->na_pipes[parent->na_next_pipe] = na;
