@@ -72,7 +72,7 @@
 
 #define NM_PIPE_MAXSLOTS	4096
 
-int netmap_default_pipes = 0; /* default number of pipes for each nic */
+int netmap_default_pipes = 0; /* ignored, kept for compatibility */
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, default_pipes, CTLFLAG_RW, &netmap_default_pipes, 0 , "");
 
@@ -84,6 +84,7 @@ nm_pipe_alloc(struct netmap_adapter *na, u_int npipes)
 	struct netmap_pipe_adapter **npa;
 
 	if (npipes <= na->na_max_pipes)
+		/* we already have more entries that requested */
 		return 0;
 	
 	if (npipes < na->na_next_pipe || npipes > NM_MAXPIPES)
@@ -105,7 +106,10 @@ void
 netmap_pipe_dealloc(struct netmap_adapter *na)
 {
 	if (na->na_pipes) {
-		ND("freeing pipes for %s", na->name);
+		if (na->na_next_pipe > 0) {
+			D("freeing not empty pipe array for %s (%d dangling pipes)!", na->name,
+					na->na_next_pipe);
+		}
 		free(na->na_pipes, M_DEVBUF);
 		na->na_pipes = NULL;
 		na->na_max_pipes = 0;
