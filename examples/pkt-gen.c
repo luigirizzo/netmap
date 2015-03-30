@@ -206,7 +206,6 @@ struct glob_arg {
 	char *nmr_config;
 	int dummy_send;
 	int virt_header;	/* send also the virt_header */
-	int extra_pipes;	/* goes in nr_arg1 */
 	int extra_bufs;		/* goes in nr_arg3 */
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
@@ -1854,7 +1853,7 @@ main(int arc, char **argv)
 			g.extra_bufs = atoi(optarg);
 			break;
 		case 'E':
-			g.extra_pipes = atoi(optarg);
+			/* ignored */
 			break;
 		case 'm':
 			/* ignored */
@@ -1941,9 +1940,6 @@ D("running on %d cpus (have %d)", g.cpus, i);
 	parse_nmr_config(g.nmr_config, &base_nmd);
 	if (g.extra_bufs) {
 		base_nmd.nr_arg3 = g.extra_bufs;
-	}
-	if (g.extra_pipes) {
-	    base_nmd.nr_arg1 = g.extra_pipes;
 	}
 
 	/*
