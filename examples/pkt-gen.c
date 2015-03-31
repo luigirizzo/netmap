@@ -762,7 +762,7 @@ pinger_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &last_print);
 	now = last_print;
-	while (n == 0 || (int)sent < n) {
+	while (!targ->cancel && (n == 0 || (int)sent < n)) {
 		struct netmap_ring *ring = NETMAP_TXRING(nifp, 0);
 		struct netmap_slot *slot;
 		char *p;
@@ -812,7 +812,7 @@ pinger_body(void *data)
 					ts.tv_nsec += 1000000000;
 					ts.tv_sec--;
 				}
-				if (1) D("seq %d/%d delta %d.%09d", seq, sent,
+				if (0) D("seq %d/%d delta %d.%09d", seq, sent,
 					(int)ts.tv_sec, (int)ts.tv_nsec);
 				if (ts.tv_nsec < (int)min)
 					min = ts.tv_nsec;
@@ -839,6 +839,10 @@ pinger_body(void *data)
 			last_print = now;
 		}
 	}
+
+	/* reset the ``used`` flag. */
+	targ->used = 0;
+
 	return NULL;
 }
 
@@ -860,7 +864,7 @@ ponger_body(void *data)
 		return NULL;
 	}
 	D("understood ponger %d but don't know how to do it", n);
-	while (n == 0 || sent < n) {
+	while (!targ->cancel && (n == 0 || sent < n)) {
 		uint32_t txcur, txavail;
 //#define BUSYWAIT
 #ifdef BUSYWAIT
@@ -915,6 +919,10 @@ ponger_body(void *data)
 #endif
 		//D("tx %d rx %d", sent, rx);
 	}
+
+	/* reset the ``used`` flag. */
+	targ->used = 0;
+
 	return NULL;
 }
 
