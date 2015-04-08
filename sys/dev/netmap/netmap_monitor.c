@@ -110,29 +110,38 @@
  * have collected them here
  */
 static int
-netmap_monitor_parent_sync(struct netmap_kring *kring, int flags, u_int* ringptr)
+netmap_monitor_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
 {
 	struct netmap_monitor_adapter *mna = kring->monitor;
 	struct netmap_kring *mkring = &mna->up.rx_rings[kring->ring_id];
 	struct netmap_ring *ring = kring->ring, *mring = mkring->ring;
-	int error;
-	int rel_slots, free_slots, busy;
+	int error = 0;
+	int rel_slots, free_slots, busy, sent = 0;
 	u_int beg, end, i;
 	u_int lim = kring->nkr_num_slots - 1,
 	      mlim = mkring->nkr_num_slots - 1;
 
 	/* get the relased slots (rel_slots) */
-	beg = *ringptr;
-	error = kring->save_sync(kring, flags);
-	if (error)
-		return error;
-	end = *ringptr;
+	if (tx == NR_TX) {
+		beg = kring->nr_hwtail;
+		error = kring->save_sync(kring, flags);
+		if (error)
+			return error;
+		end = kring->nr_hwtail;
+	} else { /* NR_RX */
+		beg = kring->nr_hwcur;
+		end = kring->rhead;
+	}
+
 	rel_slots = end - beg;
 	if (rel_slots < 0)
 		rel_slots += kring->nkr_num_slots;
 
 	if (!rel_slots) {
-		return 0;
+		/* no released slots, but we still need
+		 * to call rxsync if this is a rx ring
+		 */
+		goto out_rxsync;
 	}
 
 	/* we need to lock the monitor receive ring, since it
@@ -147,19 +156,18 @@ netmap_monitor_parent_sync(struct netmap_kring *kring, int flags, u_int* ringptr
 		busy += mkring->nkr_num_slots;
 	free_slots = mlim - busy;
 
-	if (!free_slots) {
-		mtx_unlock(&mkring->q_lock);
-		return 0;
-	}
+	if (!free_slots)
+		goto out;
 
 	/* swap min(free_slots, rel_slots) slots */
 	if (free_slots < rel_slots) {
 		beg += (rel_slots - free_slots);
-		if (beg > lim)
-			beg = 0;
+		if (beg >= kring->nkr_num_slots)
+			beg -= kring->nkr_num_slots;
 		rel_slots = free_slots;
 	}
 
+	sent = rel_slots;
 	for ( ; rel_slots; rel_slots--) {
 		struct netmap_slot *s = &ring->slot[beg];
 		struct netmap_slot *ms = &mring->slot[i];
@@ -168,6 +176,7 @@ netmap_monitor_parent_sync(struct netmap_kring *kring, int flags, u_int* ringptr
 		tmp = ms->buf_idx;
 		ms->buf_idx = s->buf_idx;
 		s->buf_idx = tmp;
+		RD(5, "beg %d buf_idx %d", beg, tmp);
 
 		tmp = ms->len;
 		ms->len = s->len;
@@ -182,10 +191,19 @@ netmap_monitor_parent_sync(struct netmap_kring *kring, int flags, u_int* ringptr
 	mb();
 	mkring->nr_hwtail = i;
 
+out:
 	mtx_unlock(&mkring->q_lock);
-	/* notify the new frames to the monitor */
-	mna->up.nm_notify(&mna->up, mkring->ring_id, NR_RX, 0);
-	return 0;
+
+	if (sent) {
+		/* notify the new frames to the monitor */
+		mna->up.nm_notify(&mna->up, mkring->ring_id, NR_RX, 0);
+	}
+
+out_rxsync:
+	if (tx == NR_RX)
+		error = kring->save_sync(kring, flags);
+
+	return error;
 }
 
 /* callback used to replace the nm_sync callback in the monitored tx rings */
@@ -193,7 +211,7 @@ static int
 netmap_monitor_parent_txsync(struct netmap_kring *kring, int flags)
 {
         ND("%s %x", kring->name, flags);
-        return netmap_monitor_parent_sync(kring, flags, &kring->nr_hwtail);
+        return netmap_monitor_parent_sync(kring, flags, NR_TX);
 }
 
 /* callback used to replace the nm_sync callback in the monitored rx rings */
@@ -201,7 +219,7 @@ static int
 netmap_monitor_parent_rxsync(struct netmap_kring *kring, int flags)
 {
         ND("%s %x", kring->name, flags);
-        return netmap_monitor_parent_sync(kring, flags, &kring->rcur);
+        return netmap_monitor_parent_sync(kring, flags, NR_RX);
 }
 
 /* nm_sync callback for the monitor's own tx rings.
