@@ -176,7 +176,7 @@ netmap_monitor_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
 		tmp = ms->buf_idx;
 		ms->buf_idx = s->buf_idx;
 		s->buf_idx = tmp;
-		RD(5, "beg %d buf_idx %d", beg, tmp);
+		ND(5, "beg %d buf_idx %d", beg, tmp);
 
 		tmp = ms->len;
 		ms->len = s->len;

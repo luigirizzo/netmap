@@ -1572,7 +1572,7 @@ nm_rxsync_prologue(struct netmap_kring *kring)
 	uint32_t const n = kring->nkr_num_slots;
 	uint32_t head, cur;
 
-	RD(5,"%s kc %d kt %d h %d c %d t %d",
+	ND(5,"%s kc %d kt %d h %d c %d t %d",
 		kring->name,
 		kring->nr_hwcur, kring->nr_hwtail,
 		ring->head, ring->cur, ring->tail);
