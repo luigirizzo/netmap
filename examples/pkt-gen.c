@@ -181,6 +181,7 @@ struct glob_arg {
 #define OPT_DUMP	64	/* dump rx/tx traffic */
 #define OPT_MONITOR_TX  128
 #define OPT_MONITOR_RX  256
+#define OPT_RUBBISH	512	/* send wathever the buffers contain */
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -699,7 +700,9 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		int buf_changed = slot->flags & NS_BUF_CHANGED;
 
 		slot->flags = 0;
-		if (options & OPT_INDIRECT) {
+		if (options & OPT_RUBBISH) {
+			/* do nothing */
+		} else if (options & OPT_INDIRECT) {
 			slot->flags |= NS_INDIRECT;
 			slot->ptr = (uint64_t)((uintptr_t)frame);
 		} else if ((options & OPT_COPY) || buf_changed) {
@@ -1359,6 +1362,7 @@ usage(void)
 		"\t-X			dump payload\n"
 		"\t-H len			add empty virtio-net-header with size 'len'\n"
 		"\t-E pipes		allocate extra space for a number of pipes\n"
+		"\t-r			do not touch the buffers (send rubbish)\n"
 		"",
 		cmd);
 
@@ -1642,7 +1646,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:r")) != -1) {
 		struct sf *fn;
 
 		switch(ch) {
@@ -1787,6 +1791,9 @@ main(int arc, char **argv)
 			} else {
 				D("unrecognized monitor mode %s", optarg);
 			}
+			break;
+		case 'r':
+			g.options |= OPT_RUBBISH;
 			break;
 		}
 	}
@@ -1941,12 +1948,13 @@ out:
 
 
 	if (g.options) {
-		D("--- SPECIAL OPTIONS:%s%s%s%s%s\n",
+		D("--- SPECIAL OPTIONS:%s%s%s%s%s%s\n",
 			g.options & OPT_PREFETCH ? " prefetch" : "",
 			g.options & OPT_ACCESS ? " access" : "",
 			g.options & OPT_MEMCPY ? " memcpy" : "",
 			g.options & OPT_INDIRECT ? " indirect" : "",
-			g.options & OPT_COPY ? " copy" : "");
+			g.options & OPT_COPY ? " copy" : "",
+			g.options & OPT_RUBBISH ? " rubbish " : "");
 	}
 
 	g.tx_period.tv_sec = g.tx_period.tv_nsec = 0;
