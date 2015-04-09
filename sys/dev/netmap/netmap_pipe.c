@@ -223,7 +223,9 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
                 *rs = *ts;
                 *ts = tmp;
 
-                /* no need to report the buffer change */
+                /* report the buffer change */
+		ts->flags |= NS_BUF_CHANGED;
+		rs->flags |= NS_BUF_CHANGED;
 
                 j = nm_next(j, lim_rx);
                 k = nm_next(k, lim_tx);

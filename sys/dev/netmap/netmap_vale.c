@@ -1079,6 +1079,9 @@ nm_bdg_preflush(struct netmap_kring *kring, u_int end)
 		ft[ft_i].ft_flags = slot->flags;
 
 		ND("flags is 0x%x", slot->flags);
+		/* we do not use the buf changed flag, but we still need to reset it */
+		slot->flags &= ~NS_BUF_CHANGED;
+
 		/* this slot goes into a list so initialize the link field */
 		ft[ft_i].ft_next = NM_FT_NULL;
 		buf = ft[ft_i].ft_buf = (slot->flags & NS_INDIRECT) ?

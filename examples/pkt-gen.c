@@ -696,12 +696,13 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 	for (fcnt = nfrags, sent = 0; sent < count; sent++) {
 		struct netmap_slot *slot = &ring->slot[cur];
 		char *p = NETMAP_BUF(ring, slot->buf_idx);
+		int buf_changed = slot->flags & NS_BUF_CHANGED;
 
 		slot->flags = 0;
 		if (options & OPT_INDIRECT) {
 			slot->flags |= NS_INDIRECT;
 			slot->ptr = (uint64_t)((uintptr_t)frame);
-		} else if (options & OPT_COPY) {
+		} else if ((options & OPT_COPY) || buf_changed) {
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == nfrags)
 				update_addresses(pkt, g);

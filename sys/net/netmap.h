@@ -157,6 +157,11 @@ struct netmap_slot {
 	/*
 	 * must be set whenever buf_idx is changed (as it might be
 	 * necessary to recompute the physical address and mapping)
+	 *
+	 * It is also set by the kernel whenever the buf_idx is
+	 * changed internally (e.g., by pipes). Applications may
+	 * use this information to know when they can reuse the
+	 * contents of previously prepared buffers.
 	 */
 
 #define	NS_REPORT	0x0002	/* ask the hardware to report results */
