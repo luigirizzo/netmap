@@ -638,7 +638,9 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_rxsync = e1000_netmap_rxsync;
 
 #if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
-	if (e1000_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE) {
+        /* XXX: check if the device support ptnetmap (now we use PARAVIRT_SUBDEV) */
+	if (paravirtual && (adapter->pdev->subsystem_device == E1000_PARAVIRT_SUBDEV) &&
+	        (e1000_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE)) {
 		na.nm_config = e1000_ptnetmap_config;
 		na.nm_register = e1000_ptnetmap_reg;
 		na.nm_txsync = e1000_ptnetmap_txsync;
