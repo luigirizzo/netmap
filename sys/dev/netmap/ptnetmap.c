@@ -13,7 +13,7 @@
 #define PTN_RX_NOWORK_CYCLE   10                               /* RX cycle without receive any packets */
 #define PTN_TX_BATCH_LIM      ((nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
 
-//#define PTN_AVOID_NM_PROLOGUE /* XXX: avoid nm_*sync_prologue() /*
+#define PTN_AVOID_NM_PROLOGUE /* XXX: avoid nm_*sync_prologue() */
 
 #define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
@@ -319,7 +319,7 @@ ptnetmap_tx_handler(void *data)
          * Ring full. We stop without reenable notification
          * because we await the BE.
          */
-        if (ACCESS_ONCE(kring->nr_hwtail) == kring->rhead) {
+        if (unlikely(ACCESS_ONCE(kring->nr_hwtail) == kring->rhead)) {
             ND(1, "TX ring FULL");
             break;
         }
@@ -510,7 +510,8 @@ ptnetmap_rx_handler(void *data)
          * Ring empty. We stop without reenable notification
          * because we await the BE.
          */
-        if (ACCESS_ONCE(kring->nr_hwtail) == kring->rhead || cicle_nowork >= PTN_RX_NOWORK_CYCLE) {
+        if (unlikely(ACCESS_ONCE(kring->nr_hwtail) == kring->rhead
+                    || cicle_nowork >= PTN_RX_NOWORK_CYCLE)) {
             ND(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d", ACCESS_ONCE(kring->nr_hwtail), kring->rhead, cicle_nowork);
             break;
         }
