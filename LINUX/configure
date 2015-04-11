@@ -309,12 +309,18 @@ run_tests() {
 		ifneq (\$(KERNELRELEASE),)
 		obj-m := $TESTOBJS
 		else
-		all: $get_drivers
+		all: $(drv print|sed 's/[a-zA-Z0-9_.]*/get-&/g')
 		$t	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
 		-include $TOPDIR/drivers.mak
-		endif
 	EOF
+	for d in $(drv print); do
+		cat >> $TMPDIR/Makefile <<-EOF
+			get-$d:
+			$t	[ -z "\$($d-src)" ] || cp -Rp \$($d-src) .
+		EOF
+	done
+	echo endif >> $TMPDIR/Makefile
 	(
 		cd $TMPDIR
 		make -k -j $(grep -c processor /proc/cpuinfo)
@@ -595,51 +601,21 @@ Alternatively, you can pass a --driver-suffix= option to configure.
 	}
 	mod_list="$drv_conf=m $mod_list"
 	# add the driver related targets to drivers.mak
-	t=	# prevent -EOF to eat the make TAB
 	cat >> drivers.mak <<-EOF
-		get-$d:
-		$t	cp -Rp $s .
-		$t	if [ -f patches/$p ]; then patch --posix --quiet --force -p1 < patches/$p; fi
+		$d-src := $s
+		$d-patch := patches/$p
 	EOF
-	if [ -d $s ]; then
-		bs=$(basename $s)
-		cat >> drivers.mak <<-EOF
-			$t	if [ -f drv-subdir.mak ]; then mv $bs/Makefile $bs/orig.mak; cp drv-subdir.mak $bs/Makefile; fi
-		EOF
-	fi
-	cat >> drivers.mak <<-EOF
-		$t	touch get-$d
-
-		clean-$d:
-		$t	rm -rf $d get-$d
-
-	EOF
-	get_drivers="get-$d $get_drivers"
-	clean_drivers="clean-$d $clean_drivers"
+	s_drivers="$d $s_drivers"
 done
-s_drivers="$(drv print)"
 
 # add v1000 if enabled
 if subsys enabled v1000; then
-	t=
 	cat >> drivers.mak <<-EOF
-		get-v1000:
-		$t	cp -r $SRCDIR/vhost-port v1000
-		$t	touch get-v1000
-
-		clean-v1000:
-		$t	rm -rf v1000	
+		v1000-src := $SRCDIR/vhost-port
 	EOF
 	s_drivers="v1000 $s_drivers"
-	get_drivers="get-v1000 $get_drivers"
-	clean_drivers="clean-v1000"
 fi
-# add some convenience cumulative targets
-cat >> drivers.mak <<-EOF
-	.PHONY: get-drivers clean-drivers
-	get-drivers: $get_drivers
-	clean-drivers: $clean_drivers
-EOF
+s_drivers=$(drv print)
 
 # create netmap.mak and Kbuild
 for f in $SRCDIR/*.in; do
