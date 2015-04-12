@@ -141,13 +141,9 @@ report() {
 		print_realpath "$src"
 		echo "drivers                     $(drv print)"
 		echo
-		if [ -n "$(echo $patches)" ]; then
-			echo "Candidate patches for this kernel:"
-			echo
-			local p
-			for p in $patches; do
-				echo "   $p"
-			done
+		if [ -f "drivers.mak" ]; then
+			echo "Contents of the drivers.mak file:"
+			cat drivers.mak
 		fi
 	fi
 }
@@ -214,6 +210,7 @@ Available options:
                                the e1000-paravirt driver
   --disable-v1000     	       disable the v1000 backend for
                                the e1000-paravirt driver
+  --override=		       use override file, see OVERRIDE below
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
   --cc=                        C compiler for the examples [$cc]
@@ -222,6 +219,19 @@ Available options:
   --destir=                    destination dir for the examples [$DESTDIR]
 
   --show-drivers	       print the list of available drivers and exit
+
+
+  OVERRIDE:
+
+  The script tries to automatically determine the source files and the
+  appropriate patch for each driver. If this does not work as expected,
+  or you need to do something non standard, you can provide an
+  'override' file containing a set of GNU make variables such as
+
+  DRIVER-src := ...
+  DRIVER-patch := ...
+
+  where DRIVER is one of the drivers displayed by '--show-drivers'.
 	EOF
 }
 
@@ -356,6 +366,7 @@ kopts=
 modpath=
 drvsuffix=
 cache=
+override=
 for opt do
 	optarg=${opt#*=}
 	case "$opt" in
@@ -400,6 +411,8 @@ for opt do
 		subsys enable "${opt#--enable-}"
 	;;
 	--cache=*) cache="$optarg"
+	;;
+	--override=*) override="$optarg"
 	;;
 	--help)
 		print_help
@@ -488,15 +501,25 @@ You may need to issue the following or equivalent commands:
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
+# if the user has provided an override file, check that it exists
+if [ -n "$override" ]; then
+	[ -f "$override" ] || error <<-EOF
+		Cannot access '$override'
+	EOF
+fi
+
 # if the user has asked for the patched drivers, we also need the
 # full kernel sources. Since we may have put $src=$ksrc, and $ksrc
 # may only contain header files, we check that $src/drivers actually
 # contains some .c file
+# Note: if we have an override file the test is not fatal, since the
+# intended driver sources location may be found there
 if ! drv is-empty; then
 	if [ ! -d "$src" ] ||
 	   [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
-		drv disable-all
-		error <<-EOF
+		if [ -z "$override"]; then
+			drv disable-all
+			error <<-EOF
 Cannot find full kernel sources.
 
 We need the full kernel sources to build the netmap-enabled drivers.
@@ -511,7 +534,13 @@ option.
 If you are only interested in VALE and pipes, you can rerun the script
 now with the '--no-drivers' option. Hardware devices will then be accessed
 via a generic adapter at reduced performance."
-		EOF
+			EOF
+		else
+			warning <<-EOF
+Cannot find full kernel sources. We assume that the drivers sources'
+location has been provided in the override file.
+			EOF
+		fi
 	fi
 fi
 src=$(cd $src; pwd)
@@ -560,6 +589,11 @@ if ! drv is-empty; then
 fi
 
 rm -f drivers.mak
+cat > drivers.mak <<-EOF
+	########################################
+	#  configure generated values          #
+	########################################
+EOF
 # read in all the kernel .config, we use it below
 . $ksrc/.config
 for p in $patches; do
@@ -569,11 +603,14 @@ for p in $patches; do
 	drv enabled $d || continue
 	# find the driver sources
 	s=$(find $src/drivers/ -name "$d" -print -quit)
-	[ -n "$s" ] || { 
-		echo "$d sources not found" | warning
+	if [ -z "$s" ] && [ -z "$override" ]; then
+		warning <<-EOF
+'$d' sources not found ad no override provided.
+Disabling driver.
+		EOF
 		drv disable $d
 		continue
-	}
+	fi
 	# check that the original driver had been compiled as a module, otherwise
 	# skip this driver
 	# (we do this mainly to be sure that any module dependency has already
@@ -600,7 +637,7 @@ Alternatively, you can pass a --driver-suffix= option to configure.
 		EOF
 	}
 	mod_list="$drv_conf=m $mod_list"
-	# add the driver related targets to drivers.mak
+	# add the driver related variables to drivers.mak
 	cat >> drivers.mak <<-EOF
 		$d-src := $s
 		$d-patch := patches/$p
@@ -616,6 +653,16 @@ if subsys enabled v1000; then
 	s_drivers="v1000 $s_drivers"
 fi
 s_drivers=$(drv print)
+
+if [ -n "$override" ]; then
+	cat >> drivers.mak <<-EOF
+		########################################
+		# ovverride from
+		# $override
+		########################################
+	EOF
+	cat "$override" >> drivers.mak
+fi
 
 # create netmap.mak and Kbuild
 for f in $SRCDIR/*.in; do
