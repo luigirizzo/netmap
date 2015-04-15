@@ -11,10 +11,16 @@
 ##
 ## Available operations:
 
-sub badversion
+sub checkversion
 {
 	my $v = shift;
-	die "Bad version $v";
+	my ($may, $min, $sub) = split /\./, $v;
+
+	if ($may < 2 || $min < 0 || $sub < 0 ||
+	   ($may == 2 && $min != 6 && !($sub >= 32 && !$sub <= 39)) ||
+           ($may == 3 && $min > 19)) {
+		die "Bad version $v";
+	}
 }
 
 sub conv
@@ -41,24 +47,17 @@ sub next
 	my $v = shift;
 	my ($may, $min, $sub) = split /\./, $v;
 
-	if ($may < 2 || ($may == 2 && $min != 6)) {
-		&badversion($v);
-	}
 	if ($may == 2) {
 	       	if ($sub < 39) {
 			return "2.6." . ($sub + 1);
-		} elsif ($sub == 39) {
-			return "3.0";
 		} else {
-			&badversion($v);
+			return "3.0";
 		}
 	} elsif ($may == 3) {
 		if ($min < 19) {
 			return "3." . ($min + 1);
-		} elsif ($min == 19) {
-			return "4.0";
 		} else {
-			&badversion($v);
+			return "4.0";
 		}
 	} else {
 		return "$may." . ($min + 1);
@@ -79,6 +78,7 @@ for (@ARGV) {
 ##  -c	(unary) convert from dot to fixed notation
 	/^-c$/	&& do {
 		$v = pop @stack;
+		&checkversion($v);
 		push @stack, &conv($v);
 		next;
 	};
@@ -94,6 +94,7 @@ for (@ARGV) {
 ##	(must be in dot notation)
 	/^-i$/ && do {
 		$v = pop @stack;
+		&checkversion($v);
 		push @stack, &next($v);
 		next;
 	};
@@ -138,6 +139,8 @@ for (@ARGV) {
 		$v1 = pop @stack;
 		$v2 = pop @stack;
 		/^-L$/ && do {
+			&checkversion($v1);
+			&checkversion($v2);
 			$v1 = &conv($v1);
 			$v2 = &conv($v2);
 		};
