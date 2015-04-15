@@ -64,6 +64,32 @@ sub next
 	}
 }
 
+sub prev
+{
+	my $v = shift;
+	my ($may, $min, $sub) = split /\./, $v;
+
+	if ($min == 0) {
+		if ($may == 3) {
+			return "2.6.39";
+		} elsif ($may == 4) {
+			return "3.19";
+		} else {
+			die "Unknown version: $v";
+		}
+	} else {
+		if ($may == 2) {
+			if ($sub == 32) {
+				die "Out of range: prev($v)";
+			} else {
+				return "2.6." . ($sub - 1);
+			}
+		} else {
+			return "$may." . ($min - 1);
+		}
+	}
+}
+
 @ARGV or do { system("scripts/help $0"); exit 1; };
 
 for (@ARGV) {
@@ -96,6 +122,15 @@ for (@ARGV) {
 		$v = pop @stack;
 		&checkversion($v);
 		push @stack, &next($v);
+		next;
+	};
+##
+##  -d	(unary) decrement version number
+##	(must be in dot notation)
+	/^-d$/ && do {
+		$v = pop @stack;
+		&checkversion($v);
+		push @stack, &prev($v);
 		next;
 	};
 ##
