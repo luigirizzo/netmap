@@ -319,7 +319,8 @@ run_tests() {
 		ifneq (\$(KERNELRELEASE),)
 		obj-m := $TESTOBJS
 		else
-		all: $(drv print|sed 's/[a-zA-Z0-9_.]*/get-&/g')
+		S_DRIVERS := $(drv print)
+		all: $(S_DRIVERS:%=get-%)
 		$t	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
 		-include $TOPDIR/drivers.mak

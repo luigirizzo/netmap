@@ -48,10 +48,7 @@ clean-$(1):
 endef
 
 
-get-drivers: $(S_DRIVERS:%=get-%)
-clean-drivers: $(S_DRIVERS:%=clean-%)
-
-all: get-drivers
+all: $(S_DRIVERS:%=get-%)
 	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)" \
 		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
 
@@ -72,7 +69,7 @@ test:
 	@echo "patches $(PATCHES)"
 	@echo "drivers $(DRIVERS)"
 
-clean: clean-drivers
+clean: $(S_DRIVERS:%=clean-%)
 	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
 	-@ $(MAKE) -C build-apps clean
 	-@ rm -f *.orig *.rej *.ko *.o .*.d 		\
