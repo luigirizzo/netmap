@@ -1421,7 +1421,7 @@ main_thread(struct glob_arg *g)
 	gettimeofday(&toc, NULL);
 	for (;;) {
 		struct timeval now, delta;
-		uint64_t pps, usec, my_count, npkts;
+		uint64_t pps, usec, my_count, npkts, bandwidth;
 		int done = 0;
 
 		delta.tv_sec = g->report_interval/1000;
@@ -1440,8 +1440,10 @@ main_thread(struct glob_arg *g)
 			continue;
 		npkts = my_count - prev;
 		pps = (npkts*1000000 + usec/2) / usec;
-		D("%llu pps (%llu pkts in %llu usec)",
+		bandwidth = pps * g->pkt_size * 8;
+		D("%llu pps / %llu bps (%llu pkts in %llu usec)",
 			(unsigned long long)pps,
+                        (unsigned long long)bandwidth,
 			(unsigned long long)npkts,
 			(unsigned long long)usec);
 		prev = my_count;
