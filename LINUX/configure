@@ -328,7 +328,7 @@ run_tests() {
 	for d in $(drv print); do
 		cat >> $TMPDIR/Makefile <<-EOF
 			get-$d:
-			$t	[ -z "\$($d-src)" ] || cp -Rp \$($d-src) .
+			$t	[ -z "\$($d-src)" ] || cp -Rp \$($d-src) \$(if \$($d-dst),\$($d-dst),.)
 		EOF
 	done
 	echo endif >> $TMPDIR/Makefile
