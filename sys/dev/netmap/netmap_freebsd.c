@@ -601,8 +601,18 @@ err_unlock:
 	return error;
 }
 
-
-// XXX can we remove this ?
+/*
+ * netmap_close() is called on every close(), but we do not need to do
+ * anything at that moment, since the process may have other open file
+ * descriptors for /dev/netmap. Instead, we pass netmap_dtor() to
+ * devfs_set_cdevpriv() on open(). The FreeBSD kernel will call the destructor
+ * when the last fd pointing to the device is closed. 
+ *
+ * Unfortunately, FreeBSD does not automatically track active mmap()s on an fd,
+ * so we have to track them by ourselvesi (see above). The result is that
+ * netmap_dtor() is called when the process has no open fds and no active
+ * memory maps on /dev/netmap, as in linux.
+ */
 static int
 netmap_close(struct cdev *dev, int fflag, int devtype, struct thread *td)
 {
