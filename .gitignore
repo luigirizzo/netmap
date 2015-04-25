@@ -32,6 +32,8 @@ LINUX/get-*
 LINUX/netmap-tmpdir
 LINUX/netmap_linux_config.h
 LINUX/netmap-tmp.c
+LINUX/i40e
+LINUX/failed-patches
 examples/bridge
 examples/pkt-gen
 examples/test_select
@@ -42,3 +44,4 @@ examples/vale-ctl
 build*/
 LINUX/tmp-patches
 LINUX/veth.c
+*.gcno
