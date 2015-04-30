@@ -890,6 +890,7 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
  */
 /* call with NMG_LOCK held */
 static void netmap_unset_ringid(struct netmap_priv_d *);
+static void netmap_rel_exclusive(struct netmap_priv_d *);
 static void
 netmap_do_unregif(struct netmap_priv_d *priv)
 {
@@ -897,6 +898,8 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 
 	NMG_LOCK_ASSERT();
 	na->active_fds--;
+	/* release exclusive use if it was requested on regif */
+	netmap_rel_exclusive(priv);
 	if (na->active_fds <= 0) {	/* last instance */
 
 		if (netmap_verbose)
@@ -1760,6 +1763,103 @@ netmap_unset_ringid(struct netmap_priv_d *priv)
 	priv->np_txpoll = 0;
 }
 
+
+/* check that the rings we want to bind are not exclusively owned by a previous
+ * bind.  If exclusive ownership has been requested, we also mark the rings.
+ */
+static int
+netmap_get_exclusive(struct netmap_priv_d *priv)
+{
+	struct netmap_adapter *na = priv->np_na;
+	u_int i;
+	struct netmap_kring *kring;
+	int excl = (priv->np_flags & NR_EXCLUSIVE);
+
+	ND("%s: grabbing tx [%d, %d) rx [%d, %d)",
+			na->name,
+			priv->np_txqfirst,
+			priv->np_txqlast,
+			priv->np_rxqfirst,
+			priv->np_rxqlast);
+
+	/* first round: check that all the requested rings
+	 * are neither alread exclusively owned, nor we
+	 * want exclusive ownership when they are already in use
+	 */
+	for (i = priv->np_txqfirst; i < priv->np_txqlast; i++) {
+		kring = &na->tx_rings[i];
+		if ((kring->nr_kflags & NKR_EXCLUSIVE) ||
+		    (kring->users && excl))
+		{
+			ND("ring %s busy", kring->name);
+			return EBUSY;
+		}
+	}
+
+	for (i = priv->np_rxqfirst; i < priv->np_rxqlast; i++) {
+		kring = &na->rx_rings[i];
+		if ((kring->nr_kflags & NKR_EXCLUSIVE) ||
+		    (kring->users && excl))
+		{
+			ND("ring %s busy", kring->name);
+			return EBUSY;
+		}
+	}
+
+	/* second round: increment usage cound and possibly
+	 * mark as exclusive
+	 */
+
+	for (i = priv->np_txqfirst; i < priv->np_txqlast; i++) {
+		kring = &na->tx_rings[i];
+		kring->users++;
+		if (excl)
+			kring->nr_kflags |= NKR_EXCLUSIVE;
+	}
+
+	for (i = priv->np_rxqfirst; i < priv->np_rxqlast; i++) {
+		kring = &na->rx_rings[i];
+		kring->users++;
+		if (excl)
+			kring->nr_kflags |= NKR_EXCLUSIVE;
+	}
+
+	return 0;
+
+}
+
+/* undo netmap_get_ownership() */
+static void
+netmap_rel_exclusive(struct netmap_priv_d *priv)
+{
+	struct netmap_adapter *na = priv->np_na;
+	u_int i;
+	struct netmap_kring *kring;
+	int excl = (priv->np_flags & NR_EXCLUSIVE);
+
+	ND("%s: releasing tx [%d, %d) rx [%d, %d)",
+			na->name,
+			priv->np_txqfirst,
+			priv->np_txqlast,
+			priv->np_rxqfirst,
+			priv->np_rxqlast);
+
+
+	for (i = priv->np_txqfirst; i < priv->np_txqlast; i++) {
+		kring = &na->tx_rings[i];
+		if (excl)
+			kring->nr_kflags &= ~NKR_EXCLUSIVE;
+		kring->users--;
+	}
+
+	for (i = priv->np_rxqfirst; i < priv->np_rxqlast; i++) {
+		kring = &na->rx_rings[i];
+		if (excl)
+			kring->nr_kflags &= ~NKR_EXCLUSIVE;
+		kring->users--;
+	}
+}
+
 /*
  * possibly move the interface to netmap-mode.
  * If success it returns a pointer to netmap_if, otherwise NULL.
@@ -1870,11 +1970,18 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 			goto err_del_krings;
 	}
 
+	/* now the kring must exist and we can check whether some
+	 * previous bind has exclusive ownership on them
+	 */
+	error = netmap_get_exclusive(priv);
+	if (error)
+		goto err_del_rings;
+
 	/* in all cases, create a new netmap if */
 	nifp = netmap_mem_if_new(na);
 	if (nifp == NULL) {
 		error = ENOMEM;
-		goto err_del_rings;
+		goto err_rel_excl;
 	}
 
 	na->active_fds++;
@@ -1908,6 +2015,8 @@ err_del_if:
 	na->na_lut_objsize = 0;
 	na->active_fds--;
 	netmap_mem_if_delete(na, nifp);
+err_rel_excl:
+	netmap_rel_exclusive(priv);
 err_del_rings:
 	if (na->active_fds == 0)
 		netmap_mem_rings_delete(na);

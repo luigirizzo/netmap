@@ -660,6 +660,9 @@ do_nmr_dump()
 	if (curr_nmr.nr_flags & NR_MONITOR_RX) {
 		printf(", MONITOR_RX");
 	}
+	if (curr_nmr.nr_flags & NR_EXCLUSIVE) {
+		printf(", EXCLUSIVE");
+	}
 	printf("]\n");
 	printf("spare2[0]: %x\n", curr_nmr.spare2[0]);
 }
@@ -749,6 +752,9 @@ do_nmr_flags()
 		} else if (strcmp(arg, "nic-sw") == 0) {
 			flags &= ~NR_REG_MASK;
 			flags |= NR_REG_NIC_SW;
+		} else if (strcmp(arg, "one-nic") == 0) {
+			flags &= ~NR_REG_MASK;
+			flags |= NR_REG_ONE_NIC;
 		} else if (strcmp(arg, "pipe-master") == 0) {
 			flags &= ~NR_REG_MASK;
 			flags |= NR_REG_PIPE_MASTER;
@@ -759,6 +765,8 @@ do_nmr_flags()
 			flags |= NR_MONITOR_TX;
 		} else if (strcmp(arg, "monitor-rx") == 0) {
 			flags |= NR_MONITOR_RX;
+		} else if (strcmp(arg, "exclusive") == 0) {
+			flags |= NR_EXCLUSIVE;
 		} else if (strcmp(arg, "default") == 0) {
 			flags = 0;
 		} 

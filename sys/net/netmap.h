@@ -519,6 +519,8 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NR_MONITOR_TX	0x100
 #define NR_MONITOR_RX	0x200
 #define NR_ZCOPY_MON	0x400
+/* request exclusive access to the selected rings */
+#define NR_EXCLUSIVE	0x800
 
 
 /*

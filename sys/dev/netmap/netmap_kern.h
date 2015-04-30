@@ -297,6 +297,7 @@ struct netmap_kring {
 
 	uint32_t	nr_kflags;	/* private driver flags */
 #define NKR_PENDINTR	0x1		// Pending interrupt.
+#define NKR_EXCLUSIVE	0x2		/* exclusive binding */
 	uint32_t	nkr_num_slots;
 
 	/*
@@ -345,6 +346,8 @@ struct netmap_kring {
 	struct mbuf **tx_pool;
 	// u_int nr_ntc;		/* Emulation of a next-to-clean RX ring pointer. */
 	struct mbq rx_queue;            /* intercepted rx mbufs. */
+
+	uint32_t	users;		/* existing bindings for this ring */
 
 	uint32_t	ring_id;	/* debugging */
 	enum txrx	tx;		/* kind of ring (tx or rx) */
