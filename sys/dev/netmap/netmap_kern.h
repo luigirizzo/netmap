@@ -436,7 +436,21 @@ tail->|                 |<-hwtail    |                 |<-hwlease
 
 
 
-enum txrx { NR_RX = 0, NR_TX = 1 };
+enum txrx { NR_RX = 0, NR_TX = 1, NR_TXRX };
+
+static __inline const char*
+nm_txrx2str(enum txrx t)
+{
+	return (t== NR_RX ? "RX" : "TX");
+}
+
+static __inline enum txrx
+nm_txrx_swap(enum txrx t)
+{
+	return (t== NR_RX ? NR_TX : NR_RX);
+}
+
+#define for_rx_tx(t)	for ((t) = 0; (t) < NR_TXRX; (t)++)
 
 struct netmap_vp_adapter; // forward
 
@@ -628,6 +642,41 @@ struct netmap_adapter {
 	char name[64];
 };
 
+static __inline u_int
+nma_get_ndesc(struct netmap_adapter *na, enum txrx t)
+{
+	return (t == NR_TX ? na->num_tx_desc : na->num_rx_desc);
+}
+
+static __inline void
+nma_set_ndesc(struct netmap_adapter *na, enum txrx t, u_int v)
+{
+	if (t == NR_TX)
+		na->num_tx_desc = v;
+	else
+		na->num_rx_desc = v;
+}
+
+static __inline u_int
+nma_get_nrings(struct netmap_adapter *na, enum txrx t)
+{
+	return (t == NR_TX ? na->num_tx_rings : na->num_rx_rings);
+}
+
+static __inline void
+nma_set_nrings(struct netmap_adapter *na, enum txrx t, u_int v)
+{
+	if (t == NR_TX)
+		na->num_tx_rings = v;
+	else
+		na->num_rx_rings = v;
+}
+
+static __inline struct netmap_kring*
+NMR(struct netmap_adapter *na, enum txrx t)
+{
+	return (t == NR_TX ? na->tx_rings : na->rx_rings);
+}
 
 /*
  * If the NIC is owned by the kernel
@@ -714,6 +763,14 @@ netmap_real_rx_rings(struct netmap_adapter *na)
 {
 	return na->num_rx_rings + !!(na->na_flags & NAF_HOST_RINGS);
 }
+
+static __inline int
+netmap_real_rings(struct netmap_adapter *na, enum txrx t)
+{
+	return (t == NR_RX ? netmap_real_rx_rings(na) :
+			netmap_real_tx_rings(na));
+}
+
 
 #ifdef WITH_VALE
 
