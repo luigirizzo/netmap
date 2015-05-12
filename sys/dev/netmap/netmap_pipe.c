@@ -304,6 +304,8 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 		(struct netmap_pipe_adapter *)na;
 	struct netmap_adapter *ona = &pna->peer->up;
 	int error = 0;
+	enum txrx t;
+
 	if (pna->peer_ref) {
 		int i;
 
@@ -324,10 +326,10 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 			goto del_krings1;
 
 		/* update our hidden ring pointers */
-		for (i = 0; i < na->num_tx_rings + 1; i++)
-			na->tx_rings[i].save_ring = na->tx_rings[i].ring;
-		for (i = 0; i < na->num_rx_rings + 1; i++)
-			na->rx_rings[i].save_ring = na->rx_rings[i].ring;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++)
+				NMR(na, t)[i].save_ring = NMR(na, t)[i].ring;
+		}
 
 		/* now, create krings and rings of the other end */
 		error = netmap_krings_create(ona, 0);
@@ -338,27 +340,28 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 		if (error)
 			goto del_krings2;
 
-		for (i = 0; i < ona->num_tx_rings + 1; i++)
-			ona->tx_rings[i].save_ring = ona->tx_rings[i].ring;
-		for (i = 0; i < ona->num_rx_rings + 1; i++)
-			ona->rx_rings[i].save_ring = ona->rx_rings[i].ring;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(ona, t) + 1; i++)
+				NMR(ona, t)[i].save_ring = NMR(ona, t)[i].ring;
+		}
 
 		/* cross link the krings */
-		for (i = 0; i < na->num_tx_rings; i++) {
-			na->tx_rings[i].pipe = pna->peer->up.rx_rings + i;
-			na->rx_rings[i].pipe = pna->peer->up.tx_rings + i;
-			pna->peer->up.tx_rings[i].pipe = na->rx_rings + i;
-			pna->peer->up.rx_rings[i].pipe = na->tx_rings + i;
+		for_rx_tx(t) {
+			enum txrx r= nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
+				NMR(na, t)[i].pipe = NMR(&pna->peer->up, r) + i;
+				NMR(&pna->peer->up, r)[i].pipe = NMR(na, t) + i;
+			}
 		}
 	} else {
 		int i;
 		/* case 2) above */
 		/* recover the hidden rings */
 		ND("%p: case 2, hidden rings", na);
-		for (i = 0; i < na->num_tx_rings + 1; i++)
-			na->tx_rings[i].ring = na->tx_rings[i].save_ring;
-		for (i = 0; i < na->num_rx_rings + 1; i++)
-			na->rx_rings[i].ring = na->rx_rings[i].save_ring;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++)
+				NMR(na, t)[i].ring = NMR(na, t)[i].save_ring;
+		}
 	}
 	return 0;
 
@@ -409,6 +412,8 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_pipe_adapter *pna =
 		(struct netmap_pipe_adapter *)na;
+	enum txrx t;
+
 	ND("%p: onoff %d", na, onoff);
 	if (onoff) {
 		na->na_flags |= NAF_NETMAP_ON;
@@ -429,11 +434,10 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 		netmap_adapter_get(na);
 		pna->peer->peer_ref = 1;
 		/* hide our rings from netmap_mem_rings_delete */
-		for (i = 0; i < na->num_tx_rings + 1; i++) {
-			na->tx_rings[i].ring = NULL;
-		}
-		for (i = 0; i < na->num_rx_rings + 1; i++) {
-			na->rx_rings[i].ring = NULL;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				NMR(na, t)[i].ring = NULL;
+			}
 		}
 	}
 	return 0;
@@ -467,6 +471,7 @@ netmap_pipe_krings_delete(struct netmap_adapter *na)
 		(struct netmap_pipe_adapter *)na;
 	struct netmap_adapter *ona; /* na of the other end */
 	int i;
+	enum txrx t;
 
 	if (!pna->peer_ref) {
 		ND("%p: case 2, kept alive by peer",  na);
@@ -482,10 +487,10 @@ netmap_pipe_krings_delete(struct netmap_adapter *na)
                  * cleanup-after-error path */
 		return;
 	}
-	for (i = 0; i < ona->num_tx_rings + 1; i++)
-		ona->tx_rings[i].ring = ona->tx_rings[i].save_ring;
-	for (i = 0; i < ona->num_rx_rings + 1; i++)
-		ona->rx_rings[i].ring = ona->rx_rings[i].save_ring;
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(ona, t) + 1; i++)
+			NMR(ona, t)[i].ring = NMR(ona, t)[i].save_ring;
+	}
 	netmap_mem_rings_delete(ona);
 	netmap_krings_delete(ona);
 }
