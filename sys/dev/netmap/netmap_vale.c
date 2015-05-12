@@ -383,7 +383,7 @@ nm_alloc_bdgfwd(struct netmap_adapter *na)
 	l += sizeof(struct nm_bdg_q) * num_dstq;
 	l += sizeof(uint16_t) * NM_BDG_BATCH_MAX;
 
-	nrings = netmap_real_tx_rings(na);
+	nrings = netmap_real_rings(na, NR_TX);
 	kring = na->tx_rings;
 	for (i = 0; i < nrings; i++) {
 		struct nm_bdg_fwd *ft;
@@ -997,7 +997,7 @@ netmap_vp_krings_create(struct netmap_adapter *na)
 	u_int tailroom;
 	int error, i;
 	uint32_t *leases;
-	u_int nrx = netmap_real_rx_rings(na);
+	u_int nrx = netmap_real_rings(na, NR_RX);
 
 	/*
 	 * Leases are attached to RX rings on vale ports
@@ -2015,6 +2015,7 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 	struct netmap_adapter *hwna = bna->hwna;
 	struct netmap_vp_adapter *hostna = &bna->host;
 	int error;
+	enum txrx t;
 
 	ND("%s %s", na->name, onoff ? "on" : "off");
 
@@ -2046,13 +2047,12 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 		 * We need to do this now, after the initialization
 		 * of the kring->ring pointers
 		 */
-		for (i = 0; i < na->num_rx_rings + 1; i++) {
-			hwna->tx_rings[i].nkr_num_slots = na->rx_rings[i].nkr_num_slots;
-			hwna->tx_rings[i].ring = na->rx_rings[i].ring;
-		}
-		for (i = 0; i < na->num_tx_rings + 1; i++) {
-			hwna->rx_rings[i].nkr_num_slots = na->tx_rings[i].nkr_num_slots;
-			hwna->rx_rings[i].ring = na->tx_rings[i].ring;
+		for_rx_tx(t) {
+			enum txrx r= nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
+			for (i = 0; i < nma_get_nrings(na, r) + 1; i++) {
+				NMR(hwna, t)[i].nkr_num_slots = NMR(na, r)[i].nkr_num_slots;
+				NMR(hwna, t)[i].ring = NMR(na, r)[i].ring;
+			}
 		}
 	}
 
@@ -2134,9 +2134,9 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 		 * The corresponding krings must point back to the
 		 * hostna
 		 */
-		hostna->tx_rings = na->tx_rings + na->num_tx_rings;
+		hostna->tx_rings = &na->tx_rings[na->num_tx_rings];
 		hostna->tx_rings[0].na = hostna;
-		hostna->rx_rings = na->rx_rings + na->num_rx_rings;
+		hostna->rx_rings = &na->rx_rings[na->num_rx_rings];
 		hostna->rx_rings[0].na = hostna;
 	}
 
@@ -2301,6 +2301,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	struct netmap_adapter *na = NULL;
 	struct netmap_adapter *hostna = NULL;
 	int error = 0;
+	enum txrx t;
 
 	/* make sure the NIC is not already in use */
 	if (NETMAP_OWNED_BY_ANY(hwna)) {
@@ -2319,10 +2320,11 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	 * swapped. The real cross-linking will be done during register,
 	 * when all the krings will have been created.
 	 */
-	na->num_rx_rings = hwna->num_tx_rings;
-	na->num_tx_rings = hwna->num_rx_rings;
-	na->num_tx_desc = hwna->num_rx_desc;
-	na->num_rx_desc = hwna->num_tx_desc;
+	for_rx_tx(t) {
+		enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
+		nma_set_nrings(na, t, nma_get_nrings(hwna, r));
+		nma_set_ndesc(na, t, nma_get_ndesc(hwna, r));
+	}
 	na->nm_dtor = netmap_bwrap_dtor;
 	na->nm_register = netmap_bwrap_register;
 	// na->nm_txsync = netmap_bwrap_txsync;
@@ -2354,10 +2356,11 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		hostna = &bna->host.up;
 		snprintf(hostna->name, sizeof(hostna->name), "%s^", nr_name);
 		hostna->ifp = hwna->ifp;
-		hostna->num_tx_rings = 1;
-		hostna->num_tx_desc = hwna->num_rx_desc;
-		hostna->num_rx_rings = 1;
-		hostna->num_rx_desc = hwna->num_tx_desc;
+		for_rx_tx(t) {
+			enum txrx r = nm_txrx_swap(t);
+			nma_set_nrings(hostna, t, 1);
+			nma_set_ndesc(hostna, t, nma_get_ndesc(hwna, r));
+		}
 		// hostna->nm_txsync = netmap_bwrap_host_txsync;
 		// hostna->nm_rxsync = netmap_bwrap_host_rxsync;
 		hostna->nm_notify = netmap_bwrap_host_notify;
