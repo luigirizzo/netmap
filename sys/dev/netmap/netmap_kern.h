@@ -504,7 +504,7 @@ struct netmap_adapter {
 	u_int num_rx_rings; /* number of adapter receive rings */
 	u_int num_tx_rings; /* number of adapter transmit rings */
 
-	u_int num_tx_desc; /* number of descriptor in each queue */
+	u_int num_tx_desc;  /* number of descriptor in each queue */
 	u_int num_rx_desc;
 
 	/* tx_rings and rx_rings are private but allocated
@@ -518,10 +518,10 @@ struct netmap_adapter {
 				       /* (used for leases) */
 
 
-	NM_SELINFO_T tx_si, rx_si;	/* global wait queues */
+	NM_SELINFO_T si[NR_TXRX];	/* global wait queues */
 
 	/* count users of the global wait queues */
-	int tx_si_users, rx_si_users;
+	int si_users[NR_TXRX];
 
 	void *pdev; /* used to store pci device */
 
@@ -688,7 +688,6 @@ NMR(struct netmap_adapter *na, enum txrx t)
 #define NETMAP_OWNED_BY_ANY(na) \
 	(NETMAP_OWNED_BY_KERN(na) || ((na)->active_fds > 0))
 
-
 /*
  * derived netmap adapters for various types of ports
  */
@@ -753,24 +752,10 @@ struct netmap_generic_adapter {	/* emulated device */
 #endif  /* WITH_GENERIC */
 
 static __inline int
-netmap_real_tx_rings(struct netmap_adapter *na)
-{
-	return na->num_tx_rings + !!(na->na_flags & NAF_HOST_RINGS);
-}
-
-static __inline int
-netmap_real_rx_rings(struct netmap_adapter *na)
-{
-	return na->num_rx_rings + !!(na->na_flags & NAF_HOST_RINGS);
-}
-
-static __inline int
 netmap_real_rings(struct netmap_adapter *na, enum txrx t)
 {
-	return (t == NR_RX ? netmap_real_rx_rings(na) :
-			netmap_real_tx_rings(na));
+	return nma_get_nrings(na, t) + !!(na->na_flags & NAF_HOST_RINGS);
 }
-
 
 #ifdef WITH_VALE
 
@@ -1129,8 +1114,7 @@ int netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *
  * terminate. The status change is then notified using the na nm_notify
  * callback.
  */
-void netmap_set_txring(struct netmap_adapter *, u_int ring_id, int stopped);
-void netmap_set_rxring(struct netmap_adapter *, u_int ring_id, int stopped);
+void netmap_set_ring(struct netmap_adapter *, u_int ring_id, enum txrx, int stopped);
 /* set the stopped/enabled status of all rings of the adapter. */
 void netmap_set_all_rings(struct netmap_adapter *, int stopped);
 /* convenience wrappers for netmap_set_all_rings, used in drivers */
@@ -1561,8 +1545,8 @@ struct netmap_priv_d {
 
 	struct netmap_adapter	*np_na;
 	uint32_t	np_flags;	/* from the ioctl */
-	u_int		np_txqfirst, np_txqlast; /* range of tx rings to scan */
-	u_int		np_rxqfirst, np_rxqlast; /* range of rx rings to scan */
+	u_int		np_qfirst[NR_TXRX], 
+			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
 	uint16_t	np_txpoll;	/* XXX and also np_rxpoll ? */
 
 	/* np_refcount is only used on FreeBSD */
@@ -1572,7 +1556,7 @@ struct netmap_priv_d {
 	 * Either the local or the global one depending on the
 	 * number of rings.
 	 */
-	NM_SELINFO_T *np_rxsi, *np_txsi;
+	NM_SELINFO_T *np_si[NR_TXRX];
 	struct thread	*np_td;		/* kqueue, just debugging */
 };
 
