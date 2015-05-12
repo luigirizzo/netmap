@@ -1283,25 +1283,20 @@ netmap_mem_fini(void)
 static void
 netmap_free_rings(struct netmap_adapter *na)
 {
-	struct netmap_kring *kring;
-	struct netmap_ring *ring;
-	if (!na->tx_rings)
-		return;
-	for (kring = na->tx_rings; kring != na->rx_rings; kring++) {
-		ring = kring->ring;
-		if (ring == NULL)
-			continue;
-		netmap_free_bufs(na->nm_mem, ring->slot, kring->nkr_num_slots);
-		netmap_ring_free(na->nm_mem, ring);
-		kring->ring = NULL;
-	}
-	for (/* cont'd from above */; kring != na->tailroom; kring++) {
-		ring = kring->ring;
-		if (ring == NULL)
-			continue;
-		netmap_free_bufs(na->nm_mem, ring->slot, kring->nkr_num_slots);
-		netmap_ring_free(na->nm_mem, ring);
-		kring->ring = NULL;
+	enum txrx t;
+
+	for_rx_tx(t) {
+		u_int i;
+		for (i = 0; i < netmap_real_rings(na, t); i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_ring *ring = kring->ring;
+
+			if (ring == NULL)
+				continue;
+			netmap_free_bufs(na->nm_mem, ring->slot, kring->nkr_num_slots);
+			netmap_ring_free(na->nm_mem, ring);
+			kring->ring = NULL;
+		}
 	}
 }
 
@@ -1315,96 +1310,57 @@ netmap_free_rings(struct netmap_adapter *na)
 int
 netmap_mem_rings_create(struct netmap_adapter *na)
 {
-	struct netmap_ring *ring;
-	u_int len, ndesc;
-	struct netmap_kring *kring;
-	u_int i;
+	enum txrx t;
 
 	NMA_LOCK(na->nm_mem);
 
-        /* transmit rings */
-	for (i =0, kring = na->tx_rings; kring != na->rx_rings; kring++, i++) {
-		if (kring->ring) {
-			ND("%s %ld already created", kring->name, kring - na->tx_rings);
-			continue; /* already created by somebody else */
-		}
-		ndesc = kring->nkr_num_slots;
-		len = sizeof(struct netmap_ring) +
-			  ndesc * sizeof(struct netmap_slot);
-		ring = netmap_ring_malloc(na->nm_mem, len);
-		if (ring == NULL) {
-			D("Cannot allocate tx_ring");
-			goto cleanup;
-		}
-		ND("txring at %p", ring);
-		kring->ring = ring;
-		*(uint32_t *)(uintptr_t)&ring->num_slots = ndesc;
-		*(int64_t *)(uintptr_t)&ring->buf_ofs =
-		    (na->nm_mem->pools[NETMAP_IF_POOL].memtotal +
-			na->nm_mem->pools[NETMAP_RING_POOL].memtotal) -
-			netmap_ring_offset(na->nm_mem, ring);
+	for_rx_tx(t) {
+		u_int i;
 
-		/* copy values from kring */
-		ring->head = kring->rhead;
-		ring->cur = kring->rcur;
-		ring->tail = kring->rtail;
-		*(uint16_t *)(uintptr_t)&ring->nr_buf_size =
-			netmap_mem_bufsize(na->nm_mem);
-		ND("%s h %d c %d t %d", kring->name,
-			ring->head, ring->cur, ring->tail);
-		ND("initializing slots for txring");
-		if (i != na->num_tx_rings || (na->na_flags & NAF_HOST_RINGS)) {
-			/* this is a real ring */
-			if (netmap_new_bufs(na->nm_mem, ring->slot, ndesc)) {
-				D("Cannot allocate buffers for tx_ring");
+		for (i = 0; i <= nma_get_nrings(na, t); i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_ring *ring = kring->ring;
+			u_int len, ndesc;
+
+			if (ring) {
+				ND("%s already created", kring->name);
+				continue; /* already created by somebody else */
+			}
+			ndesc = kring->nkr_num_slots;
+			len = sizeof(struct netmap_ring) +
+				  ndesc * sizeof(struct netmap_slot);
+			ring = netmap_ring_malloc(na->nm_mem, len);
+			if (ring == NULL) {
+				D("Cannot allocate %s_ring", nm_txrx2str(t));
 				goto cleanup;
 			}
-		} else {
-			/* this is a fake tx ring, set all indices to 0 */
-			netmap_mem_set_ring(na->nm_mem, ring->slot, ndesc, 0);
-		}
-	}
+			ND("txring at %p", ring);
+			kring->ring = ring;
+			*(uint32_t *)(uintptr_t)&ring->num_slots = ndesc;
+			*(int64_t *)(uintptr_t)&ring->buf_ofs =
+			    (na->nm_mem->pools[NETMAP_IF_POOL].memtotal +
+				na->nm_mem->pools[NETMAP_RING_POOL].memtotal) -
+				netmap_ring_offset(na->nm_mem, ring);
 
-	/* receive rings */
-	for ( i = 0 /* kring cont'd from above */ ; kring != na->tailroom; kring++, i++) {
-		if (kring->ring) {
-			ND("%s %ld already created", kring->name, kring - na->rx_rings);
-			continue; /* already created by somebody else */
-		}
-		ndesc = kring->nkr_num_slots;
-		len = sizeof(struct netmap_ring) +
-			  ndesc * sizeof(struct netmap_slot);
-		ring = netmap_ring_malloc(na->nm_mem, len);
-		if (ring == NULL) {
-			D("Cannot allocate rx_ring");
-			goto cleanup;
-		}
-		ND("rxring at %p", ring);
-		kring->ring = ring;
-		*(uint32_t *)(uintptr_t)&ring->num_slots = ndesc;
-		*(int64_t *)(uintptr_t)&ring->buf_ofs =
-		    (na->nm_mem->pools[NETMAP_IF_POOL].memtotal +
-		        na->nm_mem->pools[NETMAP_RING_POOL].memtotal) -
-			netmap_ring_offset(na->nm_mem, ring);
-
-		/* copy values from kring */
-		ring->head = kring->rhead;
-		ring->cur = kring->rcur;
-		ring->tail = kring->rtail;
-		*(int *)(uintptr_t)&ring->nr_buf_size =
-			netmap_mem_bufsize(na->nm_mem);
-		ND("%s h %d c %d t %d", kring->name,
-			ring->head, ring->cur, ring->tail);
-		ND("initializing slots for rxring %p", ring);
-		if (i != na->num_rx_rings || (na->na_flags & NAF_HOST_RINGS)) {
-			/* this is a real ring */
-			if (netmap_new_bufs(na->nm_mem, ring->slot, ndesc)) {
-				D("Cannot allocate buffers for rx_ring");
-				goto cleanup;
+			/* copy values from kring */
+			ring->head = kring->rhead;
+			ring->cur = kring->rcur;
+			ring->tail = kring->rtail;
+			*(uint16_t *)(uintptr_t)&ring->nr_buf_size =
+				netmap_mem_bufsize(na->nm_mem);
+			ND("%s h %d c %d t %d", kring->name,
+				ring->head, ring->cur, ring->tail);
+			ND("initializing slots for %s_ring", nm_txrx2str(txrx));
+			if (i != nma_get_nrings(na, t) || (na->na_flags & NAF_HOST_RINGS)) {
+				/* this is a real ring */
+				if (netmap_new_bufs(na->nm_mem, ring->slot, ndesc)) {
+					D("Cannot allocate buffers for %s_ring", nm_txrx2str(t));
+					goto cleanup;
+				}
+			} else {
+				/* this is a fake ring, set all indices to 0 */
+				netmap_mem_set_ring(na->nm_mem, ring->slot, ndesc, 0);
 			}
-		} else {
-			/* this is a fake rx ring, set all indices to 1 */
-			netmap_mem_set_ring(na->nm_mem, ring->slot, ndesc, 1);
 		}
 	}
 
@@ -1445,11 +1401,15 @@ netmap_mem_if_new(struct netmap_adapter *na)
 {
 	struct netmap_if *nifp;
 	ssize_t base; /* handy for relative offsets between rings and nifp */
-	u_int i, len, ntx, nrx;
+	u_int i, len, n[NR_TXRX], ntot;
+	enum txrx t;
 
-	/* account for the (eventually fake) host rings */
-	ntx = na->num_tx_rings + 1;
-	nrx = na->num_rx_rings + 1;
+	ntot = 0;
+	for_rx_tx(t) {
+		/* account for the (eventually fake) host rings */
+		n[t] = nma_get_nrings(na, t) + 1;
+		ntot += n[t];
+	}
 	/*
 	 * the descriptor is followed inline by an array of offsets
 	 * to the tx and rx rings in the shared memory region.
@@ -1457,7 +1417,7 @@ netmap_mem_if_new(struct netmap_adapter *na)
 
 	NMA_LOCK(na->nm_mem);
 
-	len = sizeof(struct netmap_if) + (nrx + ntx) * sizeof(ssize_t);
+	len = sizeof(struct netmap_if) + (ntot * sizeof(ssize_t));
 	nifp = netmap_if_malloc(na->nm_mem, len);
 	if (nifp == NULL) {
 		NMA_UNLOCK(na->nm_mem);
@@ -1475,12 +1435,12 @@ netmap_mem_if_new(struct netmap_adapter *na)
 	 * userspace to reach the ring from the nifp.
 	 */
 	base = netmap_if_offset(na->nm_mem, nifp);
-	for (i = 0; i < ntx; i++) {
+	for (i = 0; i < n[NR_TX]; i++) {
 		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i] =
 			netmap_ring_offset(na->nm_mem, na->tx_rings[i].ring) - base;
 	}
-	for (i = 0; i < nrx; i++) {
-		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i+ntx] =
+	for (i = 0; i < n[NR_RX]; i++) {
+		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i+n[NR_TX]] =
 			netmap_ring_offset(na->nm_mem, na->rx_rings[i].ring) - base;
 	}
 
