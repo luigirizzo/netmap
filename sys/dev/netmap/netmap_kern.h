@@ -373,6 +373,10 @@ struct netmap_kring {
 					 */
 #endif /* WITH_PIPES */
 
+#ifdef WITH_VALE
+	int (*save_notify)(struct netmap_kring *kring, int flags);
+#endif
+
 #ifdef WITH_MONITOR
 	/* pointer to the adapter that is monitoring this kring (if any)
 	 */
@@ -810,9 +814,6 @@ struct netmap_bwrap_adapter {
 	struct netmap_vp_adapter host;  /* for host rings */
 	struct netmap_adapter *hwna;	/* the underlying device */
 
-	/* backup of the hwna notify callback */
-	int (*save_notify)(struct netmap_adapter *,
-			u_int ring, enum txrx, int flags);
 	/* backup of the hwna memory allocator */
 	struct netmap_mem_d *save_nmd;
 

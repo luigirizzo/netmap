@@ -1926,43 +1926,28 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
  * The bridge wrapper then sends the packets through the bridge.
  */
 static int
-netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx, int flags)
+netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 {
+	struct netmap_adapter *na = kring->na;
 	struct netmap_bwrap_adapter *bna = na->na_private;
-	struct netmap_vp_adapter *hostna = &bna->host;
-	struct netmap_kring *kring, *bkring;
+	struct netmap_kring *bkring;
 	struct netmap_ring *ring;
-	int is_host_ring = ring_nr == na->num_rx_rings;
 	struct netmap_vp_adapter *vpna = &bna->up;
+	u_int ring_nr = kring->ring_id;
 	int error = 0;
 
 	if (netmap_verbose)
-	    D("%s %s%d 0x%x", na->name,
-		(tx == NR_TX ? "TX" : "RX"), ring_nr, flags);
+	    D("%s %s 0x%x", na->name, kring->name, flags);
 
 	if (!nm_netmap_on(na))
 		return 0;
 
-	/* we only care about receive interrupts */
-	if (tx == NR_TX)
-		return 0;
-
-	kring = &na->rx_rings[ring_nr];
 	bkring = &vpna->up.tx_rings[ring_nr];
 	ring = kring->ring; /* == kbkring->ring */
 
 	/* make sure the ring is not disabled */
 	if (nm_kr_tryget(kring))
 		return 0;
-
-	/* if the notifications comes from the host stack
-	 * and the host ring is not attached to the bridge,
-	 * just call the original notify()
-	 */
-	if (is_host_ring && hostna->na_bdg == NULL) {
-		error = bna->save_notify(na, ring_nr, tx, flags);
-		goto put_out;
-	}
 
 	if (netmap_verbose)
 	    D("%s head %d cur %d tail %d",  na->name,
@@ -1991,14 +1976,7 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 	/* mark all buffers as released on this ring */
 	kring->rhead = kring->rcur = kring->rtail = kring->nr_hwtail;
 	/* another call to actually release the buffers */
-	if (!is_host_ring) {
-		error = kring->nm_sync(kring, 0);
-	} else {
-		/* mark all packets as released, as in the
-		 * second part of netmap_rxsync_from_host()
-		 */
-		kring->nr_hwcur = kring->nr_hwtail;
-	}
+	error = kring->nm_sync(kring, 0);
 
 put_out:
 	nm_kr_put(kring);
@@ -2067,11 +2045,26 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 		netmap_vp_reg(&hostna->up, onoff);
 
 	if (onoff) {
-		/* intercept the hwna nm_nofify callback */
-		bna->save_notify = hwna->nm_notify;
-		hwna->nm_notify = netmap_bwrap_intr_notify;
+		u_int i;
+		/* intercept the hwna nm_nofify callback on the hw rings */
+		for (i = 0; i < hwna->num_rx_rings; i++) {
+			hwna->rx_rings[i].save_notify = hwna->rx_rings[i].nm_notify;
+			hwna->rx_rings[i].nm_notify = netmap_bwrap_intr_notify;
+		}
+		i = hwna->num_rx_rings; /* for safety */
+		/* save the host ring notify unconditionally */
+		hwna->rx_rings[i].save_notify = hwna->rx_rings[i].nm_notify;
+		if (hostna->na_bdg) {
+			/* also intercept the host ring notify */
+			hwna->rx_rings[i].nm_notify = netmap_bwrap_intr_notify;
+		}
 	} else {
-		hwna->nm_notify = bna->save_notify;
+		u_int i;
+		/* reset all notify callbacks (including host ring) */
+		for (i = 0; i <= hwna->num_rx_rings; i++) {
+			hwna->rx_rings[i].nm_notify = hwna->rx_rings[i].save_notify;
+			hwna->rx_rings[i].save_notify = NULL;
+		}
 		hwna->na_lut = NULL;
 		hwna->na_lut_objtotal = 0;
 		hwna->na_lut_objsize = 0;
@@ -2160,23 +2153,21 @@ netmap_bwrap_krings_delete(struct netmap_adapter *na)
 
 /* notify method for the bridge-->hwna direction */
 static int
-netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int flags)
+netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 {
-	struct netmap_bwrap_adapter *bna =
-		(struct netmap_bwrap_adapter *)na;
+	struct netmap_adapter *na = kring->na;
+	struct netmap_bwrap_adapter *bna = na->na_private;
 	struct netmap_adapter *hwna = bna->hwna;
-	struct netmap_kring *kring, *hw_kring;
-	struct netmap_ring *ring;
-	u_int lim;
+	u_int ring_n = kring->ring_id;
+	u_int lim = kring->nkr_num_slots - 1;
+	struct netmap_kring *hw_kring;
 	int error = 0;
 
-	if (tx == NR_TX)
-	        return EINVAL;
-
-	kring = &na->rx_rings[ring_n];
+	ND("%s: na %s hwna %s", 
+			(kring ? kring->name : "NULL!"),
+			(na ? na->name : "NULL!"),
+			(hwna ? hwna->name : "NULL!"));
 	hw_kring = &hwna->tx_rings[ring_n];
-	ring = kring->ring;
-	lim = kring->nkr_num_slots - 1;
 
 	if (nm_kr_tryget(hw_kring))
 		return 0;
@@ -2212,18 +2203,6 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 out:
 	nm_kr_put(hw_kring);
 	return error;
-}
-
-
-/* notify method for the bridge-->host-rings path */
-static int
-netmap_bwrap_host_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int flags)
-{
-	struct netmap_bwrap_adapter *bna = na->na_private;
-	struct netmap_adapter *port_na = &bna->up.up;
-	if (tx == NR_TX || ring_n != 0)
-		return EINVAL;
-	return netmap_bwrap_notify(port_na, port_na->num_rx_rings, NR_RX, flags);
 }
 
 
@@ -2315,6 +2294,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	}
 
 	na = &bna->up.up;
+	na->na_private = bna;
 	strncpy(na->name, nr_name, sizeof(na->name));
 	/* fill the ring data for the bwrap adapter with rx/tx meanings
 	 * swapped. The real cross-linking will be done during register,
@@ -2363,7 +2343,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		}
 		// hostna->nm_txsync = netmap_bwrap_host_txsync;
 		// hostna->nm_rxsync = netmap_bwrap_host_rxsync;
-		hostna->nm_notify = netmap_bwrap_host_notify;
+		hostna->nm_notify = netmap_bwrap_notify;
 		hostna->nm_mem = na->nm_mem;
 		hostna->na_private = bna;
 		hostna->na_vp = &bna->up;
