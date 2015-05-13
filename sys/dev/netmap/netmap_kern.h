@@ -206,6 +206,23 @@ const char *nm_dump_buf(char *p, int len, int lim, char *dst);
 
 extern NMG_LOCK_T	netmap_global_lock;
 
+enum txrx { NR_RX = 0, NR_TX = 1, NR_TXRX };
+
+static __inline const char*
+nm_txrx2str(enum txrx t)
+{
+	return (t== NR_RX ? "RX" : "TX");
+}
+
+static __inline enum txrx
+nm_txrx_swap(enum txrx t)
+{
+	return (t== NR_RX ? NR_TX : NR_RX);
+}
+
+#define for_rx_tx(t)	for ((t) = 0; (t) < NR_TXRX; (t)++)
+
+
 /*
  * private, kernel view of a ring. Keeps track of the status of
  * a ring across system calls.
@@ -330,6 +347,7 @@ struct netmap_kring {
 	struct mbq rx_queue;            /* intercepted rx mbufs. */
 
 	uint32_t	ring_id;	/* debugging */
+	enum txrx	tx;		/* kind of ring (tx or rx) */
 	char name[64];			/* diagnostic */
 
 	/* [tx]sync callback for this kring.
@@ -344,6 +362,7 @@ struct netmap_kring {
 	 * any of the nm_krings_create callbacks.
 	 */
 	int (*nm_sync)(struct netmap_kring *kring, int flags);
+	int (*nm_notify)(struct netmap_kring *kring, int flags);
 
 #ifdef WITH_PIPES
 	struct netmap_kring *pipe;	/* if this is a pipe ring,
@@ -435,22 +454,6 @@ tail->|                 |<-hwtail    |                 |<-hwlease
  */
 
 
-
-enum txrx { NR_RX = 0, NR_TX = 1, NR_TXRX };
-
-static __inline const char*
-nm_txrx2str(enum txrx t)
-{
-	return (t== NR_RX ? "RX" : "TX");
-}
-
-static __inline enum txrx
-nm_txrx_swap(enum txrx t)
-{
-	return (t== NR_RX ? NR_TX : NR_RX);
-}
-
-#define for_rx_tx(t)	for ((t) = 0; (t) < NR_TXRX; (t)++)
 
 struct netmap_vp_adapter; // forward
 
@@ -579,6 +582,7 @@ struct netmap_adapter {
 
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
+	int (*nm_notify)(struct netmap_kring *kring, int flags);
 #define NAF_FORCE_READ    1
 #define NAF_FORCE_RECLAIM 2
 	/* return configuration information */
@@ -586,8 +590,6 @@ struct netmap_adapter {
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd);
 	int (*nm_krings_create)(struct netmap_adapter *);
 	void (*nm_krings_delete)(struct netmap_adapter *);
-	int (*nm_notify)(struct netmap_adapter *,
-		u_int ring, enum txrx, int flags);
 #ifdef WITH_VALE
 	/*
 	 * nm_bdg_attach() initializes the na_vp field to point

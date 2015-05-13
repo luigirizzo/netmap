@@ -812,6 +812,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 			bzero(kring, sizeof(*kring));
 			kring->na = na;
 			kring->ring_id = i;
+			kring->tx = t;
 			kring->nkr_num_slots = ndesc;
 			if (i < nma_get_nrings(na, t)) {
 				kring->nm_sync = (t == NR_TX ? na->nm_txsync : na->nm_rxsync);
@@ -820,6 +821,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 						netmap_txsync_to_host_compat :
 						netmap_rxsync_from_host_compat);
 			}
+			kring->nm_notify = na->nm_notify;
 			kring->rhead = kring->rcur = kring->nr_hwcur = 0;
 			/*
 			 * IMPORTANT: Always keep one slot empty.
@@ -2357,7 +2359,7 @@ flush_tx:
 			if (found) { /* notify other listeners */
 				revents |= want_tx;
 				want_tx = 0;
-				na->nm_notify(na, i, NR_TX, 0);
+				kring->nm_notify(kring, 0);
 			}
 		}
 		if (want_tx && retry_tx && !is_kevent) {
@@ -2419,7 +2421,7 @@ do_retry_rx:
 			if (found) {
 				revents |= want_rx;
 				retry_rx = 0;
-				na->nm_notify(na, i, NR_RX, 0);
+				kring->nm_notify(kring, 0);
 			}
 		}
 
@@ -2475,10 +2477,10 @@ static int netmap_hw_krings_create(struct netmap_adapter *);
 
 /* default notify callback */
 static int
-netmap_notify(struct netmap_adapter *na, u_int n_ring,
-	enum txrx t, int flags)
+netmap_notify(struct netmap_kring *kring, int flags)
 {
-	struct netmap_kring *kring = NMR(na, t) + n_ring;
+	struct netmap_adapter *na = kring->na;
+	enum txrx t = kring->tx;
 
 	OS_selwakeup(&kring->si, PI_NET);
 	/* optimization: avoid a wake up on the global
@@ -2755,6 +2757,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct mbq *q;
 	int space;
 
+	kring = &na->rx_rings[na->num_rx_rings];
 	// XXX [Linux] we do not need this lock
 	// if we follow the down/configure/up protocol -gl
 	// mtx_lock(&na->core_lock);
@@ -2765,7 +2768,6 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 		goto done;
 	}
 
-	kring = &na->rx_rings[na->num_rx_rings];
 	q = &kring->rx_queue;
 
 	// XXX reconsider long packets if we handle fragments
@@ -2803,7 +2805,7 @@ done:
 	if (m)
 		m_freem(m);
 	/* unconditionally wake up listeners */
-	na->nm_notify(na, na->num_rx_rings, NR_RX, 0);
+	kring->nm_notify(kring, 0);
 	/* this is normally netmap_notify(), but for nics
 	 * connected to a bridge it is netmap_bwrap_intr_notify(),
 	 * that possibly forwards the frames through the switch
@@ -2884,7 +2886,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 	 * We do the wakeup here, but the ring is not yet reconfigured.
 	 * However, we are under lock so there are no races.
 	 */
-	na->nm_notify(na, n, tx, 0);
+	kring->nm_notify(kring, 0);
 	return kring->ring->slot;
 }
 
@@ -2925,7 +2927,7 @@ netmap_common_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 		kring->nr_kflags |= NKR_PENDINTR;	// XXX atomic ?
 		*work_done = 1; /* do not fire napi again */
 	}
-	na->nm_notify(na, q, t, 0);
+	kring->nm_notify(kring, 0);
 }
 
 

@@ -1491,7 +1491,7 @@ retry:
 
 		if (dst_na->retry && retry) {
 			/* try to get some free slot from the previous run */
-			dst_na->up.nm_notify(&dst_na->up, dst_nr, NR_RX, 0);
+			kring->nm_notify(kring, 0);
 			/* actually useful only for bwraps, since there
 			 * the notify will trigger a txsync on the hwna. VALE ports
 			 * have dst_na->retry == 0
@@ -1632,7 +1632,7 @@ retry:
 				kring->nr_hwtail = j;
 				still_locked = 0;
 				mtx_unlock(&kring->q_lock);
-				dst_na->up.nm_notify(&dst_na->up, dst_nr, NR_RX, 0);
+				kring->nm_notify(kring, 0);
 				/* this is netmap_notify for VALE ports and
 				 * netmap_bwrap_notify for bwrap. The latter will
 				 * trigger a txsync on the underlying hwna
