@@ -485,7 +485,7 @@ release_out:
 	D("monitor error");
 	for_rx_tx(t) {
 		for (i = mna->priv.np_qfirst[t]; i < mna->priv.np_qlast[t]; i++) {
-			if (pna->tx_rings[i].monitor == mna)
+			if (NMR(pna, t)[i].monitor == mna)
 				NMR(pna, t)[i].monitor = NULL;
 		}
 	}
