@@ -112,7 +112,7 @@
 static int
 netmap_zmon_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
 {
-	struct netmap_kring *mkring = kring->monitor;
+	struct netmap_kring *mkring = kring->next_monitor[tx];
 	struct netmap_ring *ring = kring->ring, *mring;
 	int error = 0;
 	int rel_slots, free_slots, busy, sent = 0;
@@ -130,7 +130,7 @@ netmap_zmon_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
 	/* get the relased slots (rel_slots) */
 	if (tx == NR_TX) {
 		beg = kring->nr_hwtail;
-		error = kring->save_sync(kring, flags);
+		error = kring->mon_sync(kring, flags);
 		if (error)
 			return error;
 		end = kring->nr_hwtail;
@@ -207,7 +207,7 @@ out:
 
 out_rxsync:
 	if (tx == NR_RX)
-		error = kring->save_sync(kring, flags);
+		error = kring->mon_sync(kring, flags);
 
 	return error;
 }
@@ -234,7 +234,7 @@ netmap_zmon_parent_rxsync(struct netmap_kring *kring, int flags)
 static int
 netmap_monitor_txsync(struct netmap_kring *kring, int flags)
 {
-        D("%s %x", kring->name, flags);
+        RD(1, "%s %x", kring->name, flags);
 	return EIO;
 }
 
@@ -279,7 +279,7 @@ nm_txrx2flag(enum txrx t)
  * On de-registration, restore the original callbacks. We need to
  * stop traffic while we are doing this, since the monitored adapter may
  * have already started executing a netmap_zmon_parent_sync
- * and may not like the kring->save_sync pointer to become NULL.
+ * and may not like the kring->mon_sync pointer to become NULL.
  */
 static int
 netmap_zmon_reg(struct netmap_adapter *na, int onoff)
@@ -302,8 +302,9 @@ netmap_zmon_reg(struct netmap_adapter *na, int onoff)
 			if (mna->flags & nm_txrx2flag(t)) {
 				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
 					kring = &NMR(pna, t)[i];
-					kring->monitor = &na->rx_rings[i];
-					kring->save_sync = kring->nm_sync;
+					kring->next_monitor[t] = &na->rx_rings[i];
+					kring->prev_monitor[t] = NULL;
+					kring->mon_sync = kring->nm_sync;
 					kring->nm_sync = (t == NR_RX ? 
 							netmap_zmon_parent_rxsync :
 							netmap_zmon_parent_txsync);
@@ -322,9 +323,9 @@ netmap_zmon_reg(struct netmap_adapter *na, int onoff)
 				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
 					netmap_set_ring(pna, i, t, 1 /* stopped */);
 					kring = &NMR(pna, t)[i];
-					kring->nm_sync = kring->save_sync;
-					kring->save_sync = NULL;
-					kring->monitor = NULL;
+					kring->nm_sync = kring->mon_sync;
+					kring->mon_sync = NULL;
+					kring->next_monitor[t] = NULL;
 					netmap_set_ring(pna, i, t, 0 /* enabled */);
 				}
 			}
@@ -343,6 +344,138 @@ netmap_monitor_krings_delete(struct netmap_adapter *na)
 /* nm_dtor callback for monitors */
 static void
 netmap_zmon_dtor(struct netmap_adapter *na)
+{
+	struct netmap_monitor_adapter *mna =
+		(struct netmap_monitor_adapter *)na;
+	struct netmap_priv_d *priv = &mna->priv;
+	struct netmap_adapter *pna = priv->np_na;
+
+	netmap_adapter_put(pna);
+}
+
+/* callback used to replace the nm_sync callback in the monitored tx rings */
+static int
+netmap_monitor_parent_txsync(struct netmap_kring *kring, int flags)
+{
+        RD(1, "%s %x", kring->name, flags);
+	/* copy new packets to all monitors */
+        return kring->mon_sync(kring, flags);
+}
+
+/* callback used to replace the nm_sync callback in the monitored rx rings */
+static int
+netmap_monitor_parent_rxsync(struct netmap_kring *kring, int flags)
+{
+        RD(1, "%s %x", kring->name, flags);
+        return kring->mon_sync(kring, flags);
+}
+
+static int
+netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
+{
+        RD(1, "%s %x", kring->name, flags);
+        return kring->mon_notify(kring, flags);
+}
+
+
+static void
+netmap_monitor_add(struct netmap_adapter *na, struct netmap_kring *kring)
+{
+	u_int ring_n = kring->ring_id;
+	struct netmap_kring *mkring = &na->rx_rings[ring_n];
+	enum txrx t = kring->tx;
+
+	nm_kr_get(kring);
+	if (kring->next_monitor[t] == NULL) {
+		/* this is the first monitor, intercept callbacks */
+		D("%s: intercept callbacks", na->name);
+		kring->mon_sync = kring->nm_sync;
+		if (t == NR_TX) {
+			kring->nm_sync = netmap_monitor_parent_txsync;
+		} else {
+			kring->nm_sync = netmap_monitor_parent_rxsync;
+			/* also intercept notify */
+			kring->mon_notify = kring->nm_notify;
+			kring->nm_notify = netmap_monitor_parent_notify;
+		}
+	}
+	/* front insert */
+	mkring->prev_monitor[t] = kring;
+	mkring->next_monitor[t] = kring->next_monitor[t];
+	kring->next_monitor[t] = mkring;
+	if (mkring->next_monitor[t])
+		mkring->next_monitor[t]->prev_monitor[t] = mkring;
+	nm_kr_put(kring);
+}
+
+static void
+netmap_monitor_del(struct netmap_adapter *na, struct netmap_kring *kring)
+{
+	u_int ring_n = kring->ring_id;
+	struct netmap_kring *mkring = &na->rx_rings[ring_n];
+	enum txrx t = kring->tx;
+
+	nm_kr_get(kring);
+	/* remove from list */
+	mkring->prev_monitor[t]->next_monitor[t] = mkring->next_monitor[t];
+	if (mkring->next_monitor[t])
+		mkring->next_monitor[t]->prev_monitor[t] = mkring->prev_monitor[t];
+	if (kring->next_monitor[t] == NULL) {
+		/* this was the last monitor, restore callbacks */
+		D("restoring sync %p", kring->mon_sync);
+		kring->nm_sync = kring->mon_sync;
+		kring->mon_sync = NULL;
+		if (kring->tx == NR_RX) {
+			D("restoring notify %p", kring->mon_notify);
+			kring->nm_notify = kring->mon_notify;
+			kring->mon_notify = NULL;
+		}
+	}
+	/* for safety */
+	mkring->next_monitor[t] = NULL;
+	mkring->prev_monitor[t] = NULL;
+	nm_kr_put(kring);
+}
+
+static int
+netmap_monitor_reg(struct netmap_adapter *na, int onoff)
+{
+	struct netmap_monitor_adapter *mna =
+		(struct netmap_monitor_adapter *)na;
+	struct netmap_priv_d *priv = &mna->priv;
+	struct netmap_adapter *pna = priv->np_na;
+	struct netmap_kring *kring;
+	int i;
+	enum txrx t;
+
+	D("%p: onoff %d", na, onoff);
+	for_rx_tx(t) {
+		if (! (mna->flags & nm_txrx2flag(t)))
+			continue;
+		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
+			kring = &NMR(pna, t)[i];
+			if (onoff)
+				netmap_monitor_add(na, kring);
+			else
+				netmap_monitor_del(na, kring);
+		}
+	}
+	if (onoff)
+		na->na_flags |= NAF_NETMAP_ON;
+	else
+		na->na_flags &= ~NAF_NETMAP_ON;	
+	return 0;
+}
+
+static int
+netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
+{
+        RD(1, "%s %x", kring->name, flags);
+        return 0;
+}
+
+static void
+netmap_monitor_dtor(struct netmap_adapter *na)
 {
 	struct netmap_monitor_adapter *mna =
 		(struct netmap_monitor_adapter *)na;
@@ -418,7 +551,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 				continue;
 			for (i = mna->priv.np_qfirst[t]; i < mna->priv.np_qlast[t]; i++) {
 				struct netmap_kring *kring = &NMR(pna, t)[i];
-				if (kring->monitor) {
+				if (kring->next_monitor) {
 					error = EBUSY;
 					D("ring busy");
 					goto put_out;
@@ -436,9 +569,24 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		mna->up.na_lut_objtotal = pna->na_lut_objtotal;
 		mna->up.na_lut_objsize = pna->na_lut_objsize;
 	} else {
-		D("uninmplemented yet");
-		error = EOPNOTSUPP;
-		goto put_out;
+		/* normal monitors are incompatible with zero copy ones */
+		for_rx_tx(t) {
+			if (! (nmr->nr_flags & nm_txrx2flag(t)))
+				continue;
+			for (i = mna->priv.np_qfirst[t]; i < mna->priv.np_qlast[t]; i++) {
+				struct netmap_kring *kring = &NMR(pna, t)[i];
+				if (kring->next_monitor[t] &&
+				    kring->next_monitor[t]->na->nm_register == netmap_zmon_reg)
+				{
+					error = EBUSY;
+					D("ring busy");
+					goto put_out;
+				}
+			}
+		}
+		mna->up.nm_rxsync = netmap_monitor_rxsync;
+		mna->up.nm_register = netmap_monitor_reg;
+		mna->up.nm_dtor = netmap_monitor_dtor;
 	}
 
 	/* the monitor supports the host rings iff the parent does */

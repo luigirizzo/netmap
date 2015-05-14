@@ -378,16 +378,17 @@ struct netmap_kring {
 #endif
 
 #ifdef WITH_MONITOR
-	/* pointer to the kring that is monitoring this kring (if any)
+	/* doubly linked list of krings that are monitoring this kring
 	 */
-	struct netmap_kring *monitor;
+	struct netmap_kring *next_monitor[NR_TXRX];
+	struct netmap_kring *prev_monitor[NR_TXRX];
 	/*
-	 * Monitors work by intercepting the txsync and/or rxsync of the
-	 * monitored krings. This is implemented by replacing
-	 * the nm_sync pointer above and saving the previous
-	 * one in save_sync below.
+	 * Monitors work by intercepting the sync and notify callbacks of the
+	 * monitored krings. This is implemented by replacing the pointers
+	 * above and saving the previous ones in mon_* pointers below
 	 */
-	int (*save_sync)(struct netmap_kring *kring, int flags);
+	int (*mon_sync)(struct netmap_kring *kring, int flags);
+	int (*mon_notify)(struct netmap_kring *kring, int flags);
 #endif
 } __attribute__((__aligned__(64)));
 
@@ -906,6 +907,14 @@ static __inline int nm_kr_tryget(struct netmap_kring *kr)
 	}
 	return 0;
 }
+
+static __inline void nm_kr_get(struct netmap_kring *kr)
+{
+	while (NM_ATOMIC_TEST_AND_SET(&kr->nr_busy))
+		tsleep(kr, 0, "NM_KR_GET", 4);
+}
+
+
 
 
 /*

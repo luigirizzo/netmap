@@ -543,15 +543,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW, &netmap_generic_rin
 
 NMG_LOCK_T	netmap_global_lock;
 
-
-static void
-nm_kr_get(struct netmap_kring *kr)
-{
-	while (NM_ATOMIC_TEST_AND_SET(&kr->nr_busy))
-		tsleep(kr, 0, "NM_KR_GET", 4);
-}
-
-
 /*
  * mark the ring as stopped, and run through the locks
  * to make sure other users get to see it.
