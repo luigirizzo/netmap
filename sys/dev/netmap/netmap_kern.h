@@ -389,6 +389,8 @@ struct netmap_kring {
 	 */
 	int (*mon_sync)(struct netmap_kring *kring, int flags);
 	int (*mon_notify)(struct netmap_kring *kring, int flags);
+
+	uint32_t mon_tail;  /* last seen slot on rx */
 #endif
 } __attribute__((__aligned__(64)));
 

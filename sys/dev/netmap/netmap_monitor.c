@@ -353,25 +353,13 @@ netmap_zmon_dtor(struct netmap_adapter *na)
 	netmap_adapter_put(pna);
 }
 
-/* callback used to replace the nm_sync callback in the monitored tx rings */
-static int
-netmap_monitor_parent_txsync(struct netmap_kring *kring, int flags)
+static void
+netmap_monitor_parent_sync(struct netmap_kring *kring, u_int first_new, int new_slots)
 {
 	struct netmap_kring *mkring;
-	int new_slots;
-	u_int first_new;
+	enum txrx t = kring->tx;
 
-	/* get the new slots */
-	first_new = kring->nr_hwcur;
-        new_slots = kring->rhead - first_new;
-        if (new_slots < 0)
-                new_slots += kring->nkr_num_slots;
-
-	if (!new_slots) {
-		goto out_txsync;
-	}
-
-	for (mkring = kring->next_monitor[NR_TX]; mkring; mkring = mkring->next_monitor[NR_TX]) {
+	for (mkring = kring->next_monitor[t]; mkring; mkring = mkring->next_monitor[t]) {
 		u_int i, mlim, beg;
 		int free_slots, busy, sent = 0, m;
 		u_int lim = kring->nkr_num_slots - 1;
@@ -435,8 +423,22 @@ netmap_monitor_parent_txsync(struct netmap_kring *kring, int flags)
 			mkring->nm_notify(mkring, 0);
 		}
 	}
+}
 
-out_txsync:
+/* callback used to replace the nm_sync callback in the monitored tx rings */
+static int
+netmap_monitor_parent_txsync(struct netmap_kring *kring, int flags)
+{
+	u_int first_new;
+	int new_slots;
+
+	/* get the new slots */
+	first_new = kring->nr_hwcur;
+        new_slots = kring->rhead - first_new;
+        if (new_slots < 0)
+                new_slots += kring->nkr_num_slots;
+	if (new_slots)
+		netmap_monitor_parent_sync(kring, first_new, new_slots);
 	return kring->mon_sync(kring, flags);
 }
 
@@ -444,14 +446,32 @@ out_txsync:
 static int
 netmap_monitor_parent_rxsync(struct netmap_kring *kring, int flags)
 {
-        RD(1, "%s %x", kring->name, flags);
-        return kring->mon_sync(kring, flags);
+	u_int first_new;
+	int new_slots, error;
+
+	/* get the new slots */
+	error =  kring->mon_sync(kring, flags);
+	if (error)
+		return error;
+	first_new = kring->mon_tail;
+        new_slots = kring->nr_hwtail - first_new;
+        if (new_slots < 0)
+                new_slots += kring->nkr_num_slots;
+	if (new_slots)
+		netmap_monitor_parent_sync(kring, first_new, new_slots);
+	kring->mon_tail = kring->nr_hwtail;
+	return 0;
 }
 
 static int
 netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 {
-        RD(1, "%s %x", kring->name, flags);
+	RD(5, "%s %x", kring->name, flags);
+	if (nm_kr_tryget(kring))
+		goto out;
+	netmap_monitor_parent_rxsync(kring, NAF_FORCE_READ);
+	nm_kr_put(kring);
+out:
         return kring->mon_notify(kring, flags);
 }
 
@@ -475,6 +495,7 @@ netmap_monitor_add(struct netmap_adapter *na, struct netmap_kring *kring)
 			/* also intercept notify */
 			kring->mon_notify = kring->nm_notify;
 			kring->nm_notify = netmap_monitor_parent_notify;
+			kring->mon_tail = kring->nr_hwtail;
 		}
 	}
 	/* front insert */
