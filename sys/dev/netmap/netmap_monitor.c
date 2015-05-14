@@ -245,7 +245,7 @@ netmap_monitor_txsync(struct netmap_kring *kring, int flags)
  * and readers (i.e., netmap_zmon_rxsync) relies on memory barriers.
  */
 static int
-netmap_zmon_rxsync(struct netmap_kring *kring, int flags)
+netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
 {
         ND("%s %x", kring->name, flags);
 	kring->nr_hwcur = kring->rcur;
@@ -357,9 +357,87 @@ netmap_zmon_dtor(struct netmap_adapter *na)
 static int
 netmap_monitor_parent_txsync(struct netmap_kring *kring, int flags)
 {
-        RD(1, "%s %x", kring->name, flags);
-	/* copy new packets to all monitors */
-        return kring->mon_sync(kring, flags);
+	struct netmap_kring *mkring;
+	int new_slots;
+	u_int first_new;
+
+	/* get the new slots */
+	first_new = kring->nr_hwcur;
+        new_slots = kring->rhead - first_new;
+        if (new_slots < 0)
+                new_slots += kring->nkr_num_slots;
+
+	if (!new_slots) {
+		goto out_txsync;
+	}
+
+	for (mkring = kring->next_monitor[NR_TX]; mkring; mkring = mkring->next_monitor[NR_TX]) {
+		u_int i, mlim, beg;
+		int free_slots, busy, sent = 0, m;
+		u_int lim = kring->nkr_num_slots - 1;
+		struct netmap_ring *ring = kring->ring, *mring = mkring->ring;
+		u_int max_len = NETMAP_BUF_SIZE(mkring->na);
+
+		mlim = mkring->nkr_num_slots - 1;
+
+		/* we need to lock the monitor receive ring, since it
+		 * is the target of bot tx and rx traffic from the monitored
+		 * adapter
+		 */
+		mtx_lock(&mkring->q_lock);
+		/* get the free slots available on the monitor ring */
+		i = mkring->nr_hwtail;
+		busy = i - mkring->nr_hwcur;
+		if (busy < 0)
+			busy += mkring->nkr_num_slots;
+		free_slots = mlim - busy;
+
+		if (!free_slots)
+			goto out;
+
+		/* copy min(free_slots, new_slots) slots */
+		m = new_slots;
+		beg = first_new;
+		if (free_slots < m) {
+			beg += (m - free_slots);
+			if (beg >= kring->nkr_num_slots)
+				beg -= kring->nkr_num_slots;
+			m = free_slots;
+		}
+
+		for ( ; m; m--) {
+			struct netmap_slot *s = &ring->slot[beg];
+			struct netmap_slot *ms = &mring->slot[i];
+			u_int copy_len = s->len;
+			char *src = NMB(kring->na, s),
+			     *dst = NMB(mkring->na, ms);
+
+			if (unlikely(copy_len > max_len)) {
+				RD(5, "%s->%s: truncating %d to %d", kring->name,
+						mkring->name, copy_len, max_len);
+				copy_len = max_len;
+			}
+
+			memcpy(dst, src, copy_len);
+			ms->len = copy_len;
+			sent++;
+
+			beg = nm_next(beg, lim);
+			i = nm_next(i, mlim);
+		}
+		mb();
+		mkring->nr_hwtail = i;
+	out:
+		mtx_unlock(&mkring->q_lock);
+
+		if (sent) {
+			/* notify the new frames to the monitor */
+			mkring->nm_notify(mkring, 0);
+		}
+	}
+
+out_txsync:
+	return kring->mon_sync(kring, flags);
 }
 
 /* callback used to replace the nm_sync callback in the monitored rx rings */
@@ -467,13 +545,6 @@ netmap_monitor_reg(struct netmap_adapter *na, int onoff)
 	return 0;
 }
 
-static int
-netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
-{
-        RD(1, "%s %x", kring->name, flags);
-        return 0;
-}
-
 static void
 netmap_monitor_dtor(struct netmap_adapter *na)
 {
@@ -558,7 +629,6 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 				}
 			}
 		}
-		mna->up.nm_rxsync = netmap_zmon_rxsync;
 		mna->up.nm_register = netmap_zmon_reg;
 		mna->up.nm_dtor = netmap_zmon_dtor;
 		/* to have zero copy, we need to use the same memory allocator
@@ -593,6 +663,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	mna->up.na_flags = (pna->na_flags & NAF_HOST_RINGS);
 	/* a do-nothing txsync: monitors cannot be used to inject packets */
 	mna->up.nm_txsync = netmap_monitor_txsync;
+	mna->up.nm_rxsync = netmap_monitor_rxsync;
 	mna->up.nm_krings_create = netmap_monitor_krings_create;
 	mna->up.nm_krings_delete = netmap_monitor_krings_delete;
 	mna->up.num_tx_rings = 1; // XXX we don't need it, but field can't be zero
