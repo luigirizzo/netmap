@@ -24,7 +24,7 @@
  */
 
 /*
- * $FreeBSD: head/sys/dev/netmap/netmap_monitor.c 270063 2014-08-16 15:00:01Z luigi $
+ * $FreeBSD: head/sys/dev/netmap/netmap_zmon.c 270063 2014-08-16 15:00:01Z luigi $
  *
  * Monitors
  *
@@ -110,7 +110,7 @@
  * have collected them here
  */
 static int
-netmap_monitor_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
+netmap_zmon_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
 {
 	struct netmap_kring *mkring = kring->monitor;
 	struct netmap_ring *ring = kring->ring, *mring;
@@ -214,18 +214,18 @@ out_rxsync:
 
 /* callback used to replace the nm_sync callback in the monitored tx rings */
 static int
-netmap_monitor_parent_txsync(struct netmap_kring *kring, int flags)
+netmap_zmon_parent_txsync(struct netmap_kring *kring, int flags)
 {
         ND("%s %x", kring->name, flags);
-        return netmap_monitor_parent_sync(kring, flags, NR_TX);
+        return netmap_zmon_parent_sync(kring, flags, NR_TX);
 }
 
 /* callback used to replace the nm_sync callback in the monitored rx rings */
 static int
-netmap_monitor_parent_rxsync(struct netmap_kring *kring, int flags)
+netmap_zmon_parent_rxsync(struct netmap_kring *kring, int flags)
 {
         ND("%s %x", kring->name, flags);
-        return netmap_monitor_parent_sync(kring, flags, NR_RX);
+        return netmap_zmon_parent_sync(kring, flags, NR_RX);
 }
 
 /* nm_sync callback for the monitor's own tx rings.
@@ -239,13 +239,13 @@ netmap_monitor_txsync(struct netmap_kring *kring, int flags)
 }
 
 /* nm_sync callback for the monitor's own rx rings.
- * Note that the lock in netmap_monitor_parent_sync only protects
+ * Note that the lock in netmap_zmon_parent_sync only protects
  * writers among themselves. Synchronization between writers
- * (i.e., netmap_monitor_parent_txsync and netmap_monitor_parent_rxsync)
- * and readers (i.e., netmap_monitor_rxsync) relies on memory barriers.
+ * (i.e., netmap_zmon_parent_txsync and netmap_zmon_parent_rxsync)
+ * and readers (i.e., netmap_zmon_rxsync) relies on memory barriers.
  */
 static int
-netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
+netmap_zmon_rxsync(struct netmap_kring *kring, int flags)
 {
         ND("%s %x", kring->name, flags);
 	kring->nr_hwcur = kring->rcur;
@@ -254,7 +254,7 @@ netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
 }
 
 /* nm_krings_create callbacks for monitors.
- * We could use the default netmap_hw_krings_monitor, but
+ * We could use the default netmap_hw_krings_zmon, but
  * we don't need the mbq.
  */
 static int
@@ -274,15 +274,15 @@ nm_txrx2flag(enum txrx t)
  *
  * On registration, replace the nm_sync callbacks in the monitored
  * rings with our own, saving the previous ones in the monitored
- * rings themselves, where they are used by netmap_monitor_parent_sync.
+ * rings themselves, where they are used by netmap_zmon_parent_sync.
  *
  * On de-registration, restore the original callbacks. We need to
  * stop traffic while we are doing this, since the monitored adapter may
- * have already started executing a netmap_monitor_parent_sync
+ * have already started executing a netmap_zmon_parent_sync
  * and may not like the kring->save_sync pointer to become NULL.
  */
 static int
-netmap_monitor_reg(struct netmap_adapter *na, int onoff)
+netmap_zmon_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_monitor_adapter *mna =
 		(struct netmap_monitor_adapter *)na;
@@ -305,8 +305,8 @@ netmap_monitor_reg(struct netmap_adapter *na, int onoff)
 					kring->monitor = &na->rx_rings[i];
 					kring->save_sync = kring->nm_sync;
 					kring->nm_sync = (t == NR_RX ? 
-							netmap_monitor_parent_rxsync :
-							netmap_monitor_parent_txsync);
+							netmap_zmon_parent_rxsync :
+							netmap_zmon_parent_txsync);
 				}
 			}
 		}
@@ -342,7 +342,7 @@ netmap_monitor_krings_delete(struct netmap_adapter *na)
 
 /* nm_dtor callback for monitors */
 static void
-netmap_monitor_dtor(struct netmap_adapter *na)
+netmap_zmon_dtor(struct netmap_adapter *na)
 {
 	struct netmap_monitor_adapter *mna =
 		(struct netmap_monitor_adapter *)na;
@@ -362,6 +362,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	struct netmap_monitor_adapter *mna;
 	int i, error;
 	enum txrx t;
+	int zcopy = (nmr->nr_flags & NR_ZCOPY_MON);
 
 	if ((nmr->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX)) == 0) {
 		ND("not a monitor");
@@ -409,8 +410,12 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		goto put_out;
 	}
 	snprintf(mna->up.name, sizeof(mna->up.name), "mon:%s", pna->name);
-	for_rx_tx(t) {
-		if (nmr->nr_flags & nm_txrx2flag(t)) {
+
+	if (zcopy) {
+		/* zero copy monitors need exclusive access to the monitored rings */
+		for_rx_tx(t) {
+			if (! (nmr->nr_flags & nm_txrx2flag(t)))
+				continue;
 			for (i = mna->priv.np_qfirst[t]; i < mna->priv.np_qlast[t]; i++) {
 				struct netmap_kring *kring = &NMR(pna, t)[i];
 				if (kring->monitor) {
@@ -420,21 +425,28 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 				}
 			}
 		}
+		mna->up.nm_rxsync = netmap_zmon_rxsync;
+		mna->up.nm_register = netmap_zmon_reg;
+		mna->up.nm_dtor = netmap_zmon_dtor;
+		/* to have zero copy, we need to use the same memory allocator
+		 * as the monitored port
+		 */
+		mna->up.nm_mem = pna->nm_mem;
+		mna->up.na_lut = pna->na_lut;
+		mna->up.na_lut_objtotal = pna->na_lut_objtotal;
+		mna->up.na_lut_objsize = pna->na_lut_objsize;
+	} else {
+		D("uninmplemented yet");
+		error = EOPNOTSUPP;
+		goto put_out;
 	}
 
 	/* the monitor supports the host rings iff the parent does */
 	mna->up.na_flags = (pna->na_flags & NAF_HOST_RINGS);
+	/* a do-nothing txsync: monitors cannot be used to inject packets */
 	mna->up.nm_txsync = netmap_monitor_txsync;
-	mna->up.nm_rxsync = netmap_monitor_rxsync;
-	mna->up.nm_register = netmap_monitor_reg;
-	mna->up.nm_dtor = netmap_monitor_dtor;
 	mna->up.nm_krings_create = netmap_monitor_krings_create;
 	mna->up.nm_krings_delete = netmap_monitor_krings_delete;
-	mna->up.nm_mem = pna->nm_mem;
-	mna->up.na_lut = pna->na_lut;
-	mna->up.na_lut_objtotal = pna->na_lut_objtotal;
-	mna->up.na_lut_objsize = pna->na_lut_objsize;
-
 	mna->up.num_tx_rings = 1; // XXX we don't need it, but field can't be zero
 	/* we set the number of our rx_rings to be max(num_rx_rings, num_rx_rings)
 	 * in the parent

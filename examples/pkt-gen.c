@@ -182,6 +182,7 @@ struct glob_arg {
 #define OPT_MONITOR_TX  128
 #define OPT_MONITOR_RX  256
 #define OPT_RUBBISH	512	/* send wathever the buffers contain */
+#define OPT_ZCOPY_MON	1024	/* zero copy monitor */
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -1408,6 +1409,8 @@ start_threads(struct glob_arg *g)
 			nmd.req.nr_flags |= NR_MONITOR_TX;
 		if (g->options & OPT_MONITOR_RX)
 			nmd.req.nr_flags |= NR_MONITOR_RX;
+		if (g->options & OPT_ZCOPY_MON)
+			nmd.req.nr_flags |= NR_ZCOPY_MON;
 
 		t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
 			NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
@@ -1646,7 +1649,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:r")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rz")) != -1) {
 		struct sf *fn;
 
 		switch(ch) {
@@ -1794,6 +1797,9 @@ main(int arc, char **argv)
 			break;
 		case 'r':
 			g.options |= OPT_RUBBISH;
+			break;
+		case 'z':
+			g.options |= OPT_ZCOPY_MON;
 			break;
 		}
 	}

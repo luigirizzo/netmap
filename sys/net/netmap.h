@@ -518,6 +518,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 /* monitor uses the NR_REG to select the rings to monitor */
 #define NR_MONITOR_TX	0x100
 #define NR_MONITOR_RX	0x200
+#define NR_ZCOPY_MON	0x400
 
 
 /*
