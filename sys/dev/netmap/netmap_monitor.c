@@ -112,14 +112,20 @@
 static int
 netmap_monitor_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
 {
-	struct netmap_monitor_adapter *mna = kring->monitor;
-	struct netmap_kring *mkring = &mna->up.rx_rings[kring->ring_id];
-	struct netmap_ring *ring = kring->ring, *mring = mkring->ring;
+	struct netmap_kring *mkring = kring->monitor;
+	struct netmap_ring *ring = kring->ring, *mring;
 	int error = 0;
 	int rel_slots, free_slots, busy, sent = 0;
 	u_int beg, end, i;
 	u_int lim = kring->nkr_num_slots - 1,
-	      mlim = mkring->nkr_num_slots - 1;
+	      mlim; // = mkring->nkr_num_slots - 1;
+
+	if (mkring == NULL) {
+		RD(5, "NULL monitor on %s", kring->name);
+		return 0;
+	}
+	mring = mkring->ring;
+	mlim = mkring->nkr_num_slots - 1;
 
 	/* get the relased slots (rel_slots) */
 	if (tx == NR_TX) {
@@ -296,6 +302,7 @@ netmap_monitor_reg(struct netmap_adapter *na, int onoff)
 			if (mna->flags & nm_txrx2flag(t)) {
 				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
 					kring = &NMR(pna, t)[i];
+					kring->monitor = &na->rx_rings[i];
 					kring->save_sync = kring->nm_sync;
 					kring->nm_sync = (t == NR_RX ? 
 							netmap_monitor_parent_rxsync :
@@ -317,6 +324,7 @@ netmap_monitor_reg(struct netmap_adapter *na, int onoff)
 					kring = &NMR(pna, t)[i];
 					kring->nm_sync = kring->save_sync;
 					kring->save_sync = NULL;
+					kring->monitor = NULL;
 					netmap_set_ring(pna, i, t, 0 /* enabled */);
 				}
 			}
@@ -340,20 +348,7 @@ netmap_monitor_dtor(struct netmap_adapter *na)
 		(struct netmap_monitor_adapter *)na;
 	struct netmap_priv_d *priv = &mna->priv;
 	struct netmap_adapter *pna = priv->np_na;
-	int i;
-	enum txrx t;
 
-	ND("%p", na);
-	if (nm_netmap_on(pna)) {
-		/* parent still in netmap mode, mark its krings as free */
-		for_rx_tx(t) {
-			if (mna->flags & nm_txrx2flag(t)) {
-				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-					pna->tx_rings[i].monitor = NULL;
-				}
-			}
-		}
-	}
 	netmap_adapter_put(pna);
 }
 
@@ -413,6 +408,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		D("ringid error");
 		goto put_out;
 	}
+	snprintf(mna->up.name, sizeof(mna->up.name), "mon:%s", pna->name);
 	for_rx_tx(t) {
 		if (nmr->nr_flags & nm_txrx2flag(t)) {
 			for (i = mna->priv.np_qfirst[t]; i < mna->priv.np_qlast[t]; i++) {
@@ -420,13 +416,11 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 				if (kring->monitor) {
 					error = EBUSY;
 					D("ring busy");
-					goto release_out;
+					goto put_out;
 				}
-				kring->monitor = mna;
 			}
 		}
 	}
-	snprintf(mna->up.name, sizeof(mna->up.name), "mon:%s", pna->name);
 
 	/* the monitor supports the host rings iff the parent does */
 	mna->up.na_flags = (pna->na_flags & NAF_HOST_RINGS);
@@ -461,7 +455,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	error = netmap_attach_common(&mna->up);
 	if (error) {
 		D("attach_common error");
-		goto release_out;
+		goto put_out;
 	}
 
 	/* remember the traffic directions we have to monitor */
@@ -481,14 +475,6 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
 	return 0;
 
-release_out:
-	D("monitor error");
-	for_rx_tx(t) {
-		for (i = mna->priv.np_qfirst[t]; i < mna->priv.np_qlast[t]; i++) {
-			if (NMR(pna, t)[i].monitor == mna)
-				NMR(pna, t)[i].monitor = NULL;
-		}
-	}
 put_out:
 	netmap_adapter_put(pna);
 	free(mna, M_DEVBUF);

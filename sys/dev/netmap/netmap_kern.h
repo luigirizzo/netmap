@@ -378,9 +378,9 @@ struct netmap_kring {
 #endif
 
 #ifdef WITH_MONITOR
-	/* pointer to the adapter that is monitoring this kring (if any)
+	/* pointer to the kring that is monitoring this kring (if any)
 	 */
-	struct netmap_monitor_adapter *monitor;
+	struct netmap_kring *monitor;
 	/*
 	 * Monitors work by intercepting the txsync and/or rxsync of the
 	 * monitored krings. This is implemented by replacing
