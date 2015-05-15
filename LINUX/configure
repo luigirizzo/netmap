@@ -320,7 +320,7 @@ run_tests() {
 		obj-m := $TESTOBJS
 		else
 		S_DRIVERS := $(drv print)
-		all: $(S_DRIVERS:%=get-%)
+		all: \$(S_DRIVERS:%=get-%)
 		$t	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
 		-include $TOPDIR/drivers.mak
