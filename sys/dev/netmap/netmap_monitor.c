@@ -466,7 +466,7 @@ netmap_monitor_parent_rxsync(struct netmap_kring *kring, int flags)
 static int
 netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 {
-	RD(5, "%s %x", kring->name, flags);
+	ND(5, "%s %x", kring->name, flags);
 	if (nm_kr_tryget(kring))
 		goto out;
 	netmap_monitor_parent_rxsync(kring, NAF_FORCE_READ);
