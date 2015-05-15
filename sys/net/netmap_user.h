@@ -461,7 +461,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		snprintf(errmsg, MAXERRMSG, "unexpected end of port name");
 		goto fail;
 	}
-	D("flags: %s %s %s %s",
+	ND("flags: %s %s %s %s",
 			(nr_flags & NR_EXCLUSIVE) ? "EXCLUSIVE" : "",
 			(nr_flags & NR_ZCOPY_MON) ? "ZCOPY_MON" : "",
 			(nr_flags & NR_MONITOR_TX) ? "MONITOR_TX" : "",
