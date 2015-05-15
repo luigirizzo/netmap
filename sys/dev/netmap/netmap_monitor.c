@@ -643,9 +643,10 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 				continue;
 			for (i = mna->priv.np_qfirst[t]; i < mna->priv.np_qlast[t]; i++) {
 				struct netmap_kring *kring = &NMR(pna, t)[i];
-				if (kring->next_monitor) {
+				if (kring->next_monitor[t]) {
 					error = EBUSY;
-					D("ring busy");
+					D("ring %s already monitored by %s", kring->name,
+							kring->next_monitor[t]->name);
 					goto put_out;
 				}
 			}
