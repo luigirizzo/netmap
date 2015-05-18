@@ -325,10 +325,11 @@ sigint_h(int sig)
 	int i;
 
 	(void)sig;	/* UNUSED */
+	D("");
 	for (i = 0; i < global_nthreads; i++) {
 		targs[i].cancel = 1;
 	}
-	signal(SIGINT, SIG_DFL);
+	//signal(SIGINT, SIG_DFL);
 }
 
 /* sysctl wrapper to return the number of active CPUs */
@@ -1083,6 +1084,9 @@ sender_body(void *data)
 		/*
 		 * wait for available room in the send queue(s)
 		 */
+#ifdef BUSYWAIT
+		ioctl(pfd.fd, NIOCTXSYNC);
+#else
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
@@ -1094,6 +1098,7 @@ sender_body(void *data)
 			D("poll error");
 			goto quit;
 		}
+#endif
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1238,6 +1243,9 @@ receiver_body(void *data)
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
+#ifdef BUSYWAIT
+		ioctl(pfd.fd, NIOCRXSYNC, NULL);
+#else
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -1248,6 +1256,7 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
+#endif
 
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
@@ -1268,7 +1277,9 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
+#ifndef BUSYWAIT
 out:
+#endif
 	targ->completed = 1;
 	targ->count = received;
 	targ->count_event = event;
