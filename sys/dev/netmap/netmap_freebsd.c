@@ -686,7 +686,7 @@ static void
 netmap_knrdetach(struct knote *kn)
 {
 	struct netmap_priv_d *priv = (struct netmap_priv_d *)kn->kn_hook;
-	struct selinfo *si = &priv->np_rxsi->si;
+	struct selinfo *si = &priv->np_si[NR_RX]->si;
 
 	D("remove selinfo %p", si);
 	knlist_remove(&si->si_note, kn, 0);
@@ -696,7 +696,7 @@ static void
 netmap_knwdetach(struct knote *kn)
 {
 	struct netmap_priv_d *priv = (struct netmap_priv_d *)kn->kn_hook;
-	struct selinfo *si = &priv->np_txsi->si;
+	struct selinfo *si = &priv->np_si[NR_TX]->si;
 
 	D("remove selinfo %p", si);
 	knlist_remove(&si->si_note, kn, 0);
@@ -786,7 +786,7 @@ netmap_kqfilter(struct cdev *dev, struct knote *kn)
 		return 1;
 	}
 	/* the si is indicated in the priv */
-	si = (ev == EVFILT_WRITE) ? priv->np_txsi : priv->np_rxsi;
+	si = priv->np_si[(ev == EVFILT_WRITE) ? NR_TX : NR_RX];
 	// XXX lock(priv) ?
 	kn->kn_fop = (ev == EVFILT_WRITE) ?
 		&netmap_wfiltops : &netmap_rfiltops;

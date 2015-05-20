@@ -931,8 +931,8 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		 * XXX The wake up now must happen during *_down(), when
 		 * we order all activities to stop. -gl
 		 */
-		netmap_knlist_destroy(&na->tx_si);
-		netmap_knlist_destroy(&na->rx_si);
+		netmap_knlist_destroy(&na->si[NR_TX]);
+		netmap_knlist_destroy(&na->si[NR_RX]);
 
 		/* delete rings and buffers */
 		netmap_mem_rings_delete(na);
