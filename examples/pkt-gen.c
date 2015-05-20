@@ -1092,7 +1092,8 @@ sender_body(void *data)
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
-			D("poll error");
+			D("poll error on %d ring %d-%d", pfd.fd,
+				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
 #endif
@@ -1400,25 +1401,28 @@ start_threads(struct glob_arg *g)
 		uint64_t nmd_flags = 0;
 		nmd.self = &nmd;
 
-		if (g->nthreads > 1) {
-			if (nmd.req.nr_flags != NR_REG_ALL_NIC) {
-				D("invalid nthreads mode %d", nmd.req.nr_flags);
+		if (i > 0) {
+			/* the first thread uses the fd opened by the main
+			 * thread, the other threads re-open /dev/netmap
+			 */
+			if (g->nthreads > 1) {
+				nmd.req.nr_flags = NR_REG_ONE_NIC;
+				nmd.req.nr_ringid = i;
+			}
+			/* Only touch one of the rings (rx is already ok) */
+			if (g->td_body == receiver_body)
+				nmd_flags |= NETMAP_NO_TX_POLL;
+
+			/* register interface. Override ifname and ringid etc. */
+			t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
+				NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
+			if (t->nmd == NULL) {
+				D("Unable to open %s: %s",
+					t->g->ifname, strerror(errno));
 				continue;
 			}
-			nmd.req.nr_flags = NR_REG_ONE_NIC;
-			nmd.req.nr_ringid = i;
-		}
-		/* Only touch one of the rings (rx is already ok) */
-		if (g->td_body == receiver_body)
-			nmd_flags |= NETMAP_NO_TX_POLL;
-
-		/* register interface. Override ifname and ringid etc. */
-		t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
-			NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
-		if (t->nmd == NULL) {
-			D("Unable to open %s: %s",
-				t->g->ifname, strerror(errno));
-			continue;
+		} else {
+			t->nmd = g->nmd;
 		}
 		t->fd = t->nmd->fd;
 
@@ -1887,6 +1891,19 @@ main(int arc, char **argv)
 	if (g.nmd == NULL) {
 		D("Unable to open %s: %s", g.ifname, strerror(errno));
 		goto out;
+	}
+	if (g.nthreads > 1) {
+		struct nm_desc saved_desc = *g.nmd;
+		saved_desc.self = &saved_desc;
+		saved_desc.mem = NULL;
+		nm_close(g.nmd);
+		saved_desc.req.nr_flags = NR_REG_ONE_NIC;
+		saved_desc.req.nr_ringid = 0;
+		g.nmd = nm_open(g.ifname, &base_nmd, NM_OPEN_IFNAME, &saved_desc);
+		if (g.nmd == NULL) {
+			D("Unable to open %s: %s", g.ifname, strerror(errno));
+			goto out;
+		}
 	}
 	g.main_fd = g.nmd->fd;
 	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
