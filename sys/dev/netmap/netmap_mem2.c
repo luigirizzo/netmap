@@ -125,9 +125,9 @@ struct netmap_mem_d {
 	/* the three allocators */
 	struct netmap_obj_pool pools[NETMAP_POOLS_NR];
 
-	netmap_mem_config_t   config;
-	netmap_mem_finalize_t finalize;
-	netmap_mem_deref_t    deref;
+	netmap_mem_config_t   config;	/* called with NMA_LOCK held */
+	netmap_mem_finalize_t finalize;	/* called with NMA_LOCK held */
+	netmap_mem_deref_t    deref;	/* called with NMA_LOCK held */
 
 	nm_memid_t nm_id;	/* allocator identifier */
 	int nm_grp;	/* iommu groupd id */
@@ -739,6 +739,12 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 		u_int i;
 		size_t sz = p->_clustsize;
 
+		/*
+		 * Free each cluster allocated in
+		 * netmap_finalize_obj_allocator().  The cluster start
+		 * addresses are stored at multiples of p->_clusterentries
+		 * in the lut.
+		 */
 		for (i = 0; i < p->objtotal; i += p->_clustentries) {
 			if (p->lut[i].vaddr)
 				contigfree(p->lut[i].vaddr, sz, M_NETMAP);
@@ -917,6 +923,7 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 				if (i % p->_clustentries == 0 && p->lut[i].vaddr)
 					contigfree(p->lut[i].vaddr,
 						n, M_NETMAP);
+				p->lut[i].vaddr = NULL;
 			}
 		out:
 			p->objtotal = i;
@@ -924,6 +931,17 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 			p->numclusters = (i + p->_clustentries - 1) / p->_clustentries;
 			break;
 		}
+		/*
+		 * Set bitmap and lut state for all buffers in the current
+		 * cluster.
+		 *
+		 * [i, lim) is the set of buffer indexes that cover the
+		 * current cluster.
+		 *
+		 * 'clust' is really the address of the current buffer in
+		 * the current cluster as we index through it with a stride
+		 * of p->_objsize.
+		 */
 		for (; i < lim; i++, clust += p->_objsize) {
 			p->bitmap[ (i>>5) ] |=  ( 1 << (i & 31) );
 			p->lut[i].vaddr = clust;
@@ -1080,10 +1098,8 @@ static int
 netmap_mem_private_finalize(struct netmap_mem_d *nmd)
 {
 	int err;
-	NMA_LOCK(nmd);
 	nmd->refcount++;
 	err = netmap_mem_finalize_all(nmd);
-	NMA_UNLOCK(nmd);
 	return err;
 
 }
@@ -1091,10 +1107,8 @@ netmap_mem_private_finalize(struct netmap_mem_d *nmd)
 static void
 netmap_mem_private_deref(struct netmap_mem_d *nmd)
 {
-	NMA_LOCK(nmd);
 	if (--nmd->refcount <= 0)
 		netmap_mem_reset_all(nmd);
-	NMA_UNLOCK(nmd);
 }
 
 
@@ -1230,10 +1244,7 @@ static int
 netmap_mem_global_finalize(struct netmap_mem_d *nmd)
 {
 	int err;
-
-	NMA_LOCK(nmd);
-
-
+		
 	/* update configuration if changed */
 	if (netmap_mem_global_config(nmd))
 		goto out;
@@ -1255,8 +1266,6 @@ out:
 	if (nmd->lasterr)
 		nmd->refcount--;
 	err = nmd->lasterr;
-
-	NMA_UNLOCK(nmd);
 
 	return err;
 
@@ -1466,7 +1475,6 @@ netmap_mem_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 static void
 netmap_mem_global_deref(struct netmap_mem_d *nmd)
 {
-	NMA_LOCK(nmd);
 
 	nmd->refcount--;
 	if (!nmd->refcount)
@@ -1474,7 +1482,6 @@ netmap_mem_global_deref(struct netmap_mem_d *nmd)
 	if (netmap_verbose)
 		D("refcount = %d", nmd->refcount);
 
-	NMA_UNLOCK(nmd);
 }
 
 int
@@ -1483,7 +1490,9 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	if (nm_mem_assign_group(nmd, na->pdev) < 0) {
 		return ENOMEM;
 	} else {
+		NMA_LOCK(nmd);
 		nmd->finalize(nmd);
+		NMA_UNLOCK(nmd);
 	}
 
 	if (!nmd->lasterr && na->pdev)
@@ -1497,6 +1506,48 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	NMA_LOCK(nmd);
 	netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
+	if (nmd->refcount == 1) {
+		u_int i;
+
+		/*
+		 * Reset the allocator when it falls out of use so that any
+		 * pool resources leaked by unclean application exits are
+		 * reclaimed.
+		 */
+		for (i = 0; i < NETMAP_POOLS_NR; i++) {
+			struct netmap_obj_pool *p;
+			u_int j;
+			
+			p = &nmd->pools[i];
+			p->objfree = p->objtotal;
+			/*
+			 * Reproduce the net effect of the M_ZERO malloc()
+			 * and marking of free entries in the bitmap that
+			 * occur in finalize_obj_allocator()
+			 */
+			memset(p->bitmap,
+			    '\0',
+			    sizeof(uint32_t) * ((p->objtotal + 31) / 32));
+			
+			/*
+			 * Set all the bits in the bitmap that have
+			 * corresponding buffers to 1 to indicate they are
+			 * free.
+			 */
+			for (j = 0; j < p->objtotal; j++) {
+				if (p->lut[j].vaddr != NULL) {
+					p->bitmap[ (j>>5) ] |=  ( 1 << (j & 31) );
+				}
+			}
+		}
+
+		/*
+		 * Per netmap_mem_finalize_all(),
+		 * buffers 0 and 1 are reserved
+		 */
+		nmd->pools[NETMAP_BUF_POOL].objfree -= 2;
+		nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
+	}
+	nmd->deref(nmd);
 	NMA_UNLOCK(nmd);
-	return nmd->deref(nmd);
 }
