@@ -179,10 +179,7 @@ struct glob_arg {
 #define OPT_TS		16	/* add a timestamp */
 #define OPT_INDIRECT	32	/* use indirect buffers, tx only */
 #define OPT_DUMP	64	/* dump rx/tx traffic */
-#define OPT_MONITOR_TX  128
-#define OPT_MONITOR_RX  256
 #define OPT_RUBBISH	512	/* send wathever the buffers contain */
-#define OPT_ZCOPY_MON	1024	/* zero copy monitor */
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -1416,13 +1413,6 @@ start_threads(struct glob_arg *g)
 			nmd_flags |= NETMAP_NO_TX_POLL;
 
 		/* register interface. Override ifname and ringid etc. */
-		if (g->options & OPT_MONITOR_TX)
-			nmd.req.nr_flags |= NR_MONITOR_TX;
-		if (g->options & OPT_MONITOR_RX)
-			nmd.req.nr_flags |= NR_MONITOR_RX;
-		if (g->options & OPT_ZCOPY_MON)
-			nmd.req.nr_flags |= NR_ZCOPY_MON;
-
 		t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
 			NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
 		if (t->nmd == NULL) {
@@ -1660,7 +1650,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rz")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:r")) != -1) {
 		struct sf *fn;
 
 		switch(ch) {
@@ -1798,19 +1788,10 @@ main(int arc, char **argv)
 			g.extra_pipes = atoi(optarg);
 			break;
 		case 'm':
-			if (strcmp(optarg, "tx") == 0) {
-				g.options |= OPT_MONITOR_TX;
-			} else if (strcmp(optarg, "rx") == 0) {
-				g.options |= OPT_MONITOR_RX;
-			} else {
-				D("unrecognized monitor mode %s", optarg);
-			}
+			/* ignored */
 			break;
 		case 'r':
 			g.options |= OPT_RUBBISH;
-			break;
-		case 'z':
-			g.options |= OPT_ZCOPY_MON;
 			break;
 		}
 	}
