@@ -329,7 +329,7 @@ sigint_h(int sig)
 	for (i = 0; i < global_nthreads; i++) {
 		targs[i].cancel = 1;
 	}
-	//signal(SIGINT, SIG_DFL);
+	signal(SIGINT, SIG_DFL);
 }
 
 /* sysctl wrapper to return the number of active CPUs */
