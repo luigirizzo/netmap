@@ -381,10 +381,10 @@ struct netmap_kring {
 #endif
 
 #ifdef WITH_MONITOR
-	/* doubly linked list of krings that are monitoring this kring
-	 */
-	struct netmap_kring *next_monitor[NR_TXRX];
-	struct netmap_kring *prev_monitor[NR_TXRX];
+	/* array of krings that are monitoring this kring */
+	struct netmap_kring **monitors;
+	uint32_t max_monitors; /* current size of the monitors array */
+	uint32_t n_monitors;	/* next unused entry in the monitor array */
 	/*
 	 * Monitors work by intercepting the sync and notify callbacks of the
 	 * monitored krings. This is implemented by replacing the pointers
@@ -394,6 +394,7 @@ struct netmap_kring {
 	int (*mon_notify)(struct netmap_kring *kring, int flags);
 
 	uint32_t mon_tail;  /* last seen slot on rx */
+	uint32_t mon_pos;   /* index of this ring in the monitored ring array */
 #endif
 } __attribute__((__aligned__(64)));
 
@@ -1213,6 +1214,7 @@ int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create
 
 #ifdef WITH_MONITOR
 int netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
+void netmap_monitor_stop(struct netmap_adapter *na);
 #else
 #define netmap_get_monitor_na(nmr, _2, _3) \
 	((nmr)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)

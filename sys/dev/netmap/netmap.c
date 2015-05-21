@@ -904,6 +904,13 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 
 		if (netmap_verbose)
 			D("deleting last instance for %s", na->name);
+
+#ifdef	WITH_MONITOR
+		/* walk through all the rings and tell any monitor
+		 * that the port is going to exit netmap mode
+		 */
+		netmap_monitor_stop(na);
+#endif
 		/*
 		 * (TO CHECK) This function is only called
 		 * when the last reference to this file descriptor goes
