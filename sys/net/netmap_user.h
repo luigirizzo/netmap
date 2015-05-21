@@ -357,7 +357,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 	struct nm_desc *d = NULL;
 	const struct nm_desc *parent = arg;
 	u_int namelen;
-	uint32_t nr_ringid = 0, nr_flags;
+	uint32_t nr_ringid = 0, nr_flags, nr_reg;
 	const char *port = NULL;
 #define MAXERRMSG 80
 	char errmsg[MAXERRMSG] = "";
@@ -555,20 +555,22 @@ nm_open(const char *ifname, const struct nmreq *req,
 			(char *)d->mem + d->memsize;
 	}
 
-	if (d->req.nr_flags ==  NR_REG_SW) { /* host stack */
+	nr_reg = d->req.nr_flags & NR_REG_MASK;
+
+	if (nr_reg ==  NR_REG_SW) { /* host stack */
 		d->first_tx_ring = d->last_tx_ring = d->req.nr_tx_rings;
 		d->first_rx_ring = d->last_rx_ring = d->req.nr_rx_rings;
-	} else if (d->req.nr_flags ==  NR_REG_ALL_NIC) { /* only nic */
+	} else if (nr_reg ==  NR_REG_ALL_NIC) { /* only nic */
 		d->first_tx_ring = 0;
 		d->first_rx_ring = 0;
 		d->last_tx_ring = d->req.nr_tx_rings - 1;
 		d->last_rx_ring = d->req.nr_rx_rings - 1;
-	} else if (d->req.nr_flags ==  NR_REG_NIC_SW) {
+	} else if (nr_reg ==  NR_REG_NIC_SW) {
 		d->first_tx_ring = 0;
 		d->first_rx_ring = 0;
 		d->last_tx_ring = d->req.nr_tx_rings;
 		d->last_rx_ring = d->req.nr_rx_rings;
-	} else if (d->req.nr_flags == NR_REG_ONE_NIC) {
+	} else if (nr_reg == NR_REG_ONE_NIC) {
 		/* XXX check validity */
 		d->first_tx_ring = d->last_tx_ring =
 		d->first_rx_ring = d->last_rx_ring = d->req.nr_ringid & NETMAP_RING_MASK;
