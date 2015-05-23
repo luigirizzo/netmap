@@ -136,6 +136,36 @@ struct netmap_mem_ops {
 
 typedef uint16_t nm_memid_t;
 
+/*
+ * Shared info for netmap allocator
+ *
+ * Each allocator contains this structur as first netmap_if.
+ * In this way, we can share same details about allocator to the
+ * VM.
+ * Used in ptnetmap.
+ */
+struct netmap_mem_shared_info {
+        struct netmap_if up;
+        uint64_t version_or_feat; /* XXX-ste */
+#define NMS_FEAT_BUF_POOL_INFO          0x0001
+#define NMS_FEAT_MEMSIZE_INFO          0x0002
+
+        uint32_t buf_pool_offset;
+        uint32_t buf_pool_objtotal;
+        uint32_t buf_pool_objsize;
+        uint32_t totalsize;
+};
+
+#define NMS_NAME        "nms_info"
+#define NMS_VERSION     1
+const struct netmap_if nms_if_blueprint = {
+    .ni_name = NMS_NAME,
+    .ni_version = NMS_VERSION,
+    .ni_tx_rings = 0,
+    .ni_rx_rings = 0
+};
+
+
 struct netmap_mem_d {
 	NMA_LOCK_T nm_mtx;  /* protect the allocator */
 	u_int nm_totalsize; /* shorthand */
@@ -305,7 +335,7 @@ struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
 struct netmap_obj_params netmap_min_priv_params[NETMAP_POOLS_NR] = {
 	[NETMAP_IF_POOL] = {
 		.size = 1024,
-		.num  = 1,
+		.num  = 2,
 	},
 	[NETMAP_RING_POOL] = {
 		.size = 5*PAGE_SIZE,
@@ -1161,6 +1191,30 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 }
 
 static int
+netmap_mem_init_shared_info(struct netmap_mem_d *nmd)
+{
+	struct netmap_mem_shared_info *nms_info;
+	ssize_t base;
+
+        /* Use the first slot in IF_POOL */
+	nms_info = netmap_if_malloc(nmd, sizeof(*nms_info));
+	if (nms_info == NULL) {
+	    return ENOMEM;
+	}
+
+	base = netmap_if_offset(nmd, nms_info);
+
+        memcpy(&nms_info->up, &nms_if_blueprint, sizeof(nms_if_blueprint));
+
+	nms_info->buf_pool_offset = nmd->pools[NETMAP_IF_POOL].memtotal + nmd->pools[NETMAP_RING_POOL].memtotal;
+	nms_info->buf_pool_objtotal = nmd->pools[NETMAP_BUF_POOL].objtotal;
+	nms_info->buf_pool_objsize = nmd->pools[NETMAP_BUF_POOL]._objsize;
+	nms_info->totalsize = nmd->nm_totalsize;
+
+	return 0;
+}
+
+static int
 netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 {
 	int i;
@@ -1178,6 +1232,11 @@ netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 	nmd->pools[NETMAP_BUF_POOL].objfree -= 2;
 	nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
 	nmd->flags |= NETMAP_MEM_FINALIZED;
+
+	/* expose info to the ptnetmap guest */
+	nmd->lasterr = netmap_mem_init_shared_info(nmd);
+	if (nmd->lasterr)
+	        goto error;
 
 	if (netmap_verbose)
 		D("interfaces %d KB, rings %d KB, buffers %d MB",
