@@ -1905,6 +1905,14 @@ struct netmap_pt_guest_ops {
 	struct paravirt_csb *(*nm_getcsb)(struct ifnet *);
 };
 int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
+struct ptnetmap_memdev;
+int netmap_pt_memdev_init(void);
+void netmap_pt_memdev_uninit(void);
+int netmap_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
+void netmap_pt_memdev_iounmap(struct ptnetmap_memdev *);
+#else /* !WITH_PTNETMAP_GUEST */
+#define netmap_pt_memdev_init() 0
+#define netmap_pt_memdev_uninit()
 #endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */

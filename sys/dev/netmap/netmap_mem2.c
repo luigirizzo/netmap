@@ -25,7 +25,6 @@
 
 #ifdef linux
 #include "bsd_glue.h"
-#include "bsd_queue.h"
 #endif /* linux */
 
 #ifdef __APPLE__
@@ -1718,76 +1717,76 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 #ifdef WITH_PTNETMAP_GUEST
 /* passthrough allocator */
 #include "paravirt.h"
-struct netmap_mem_ptg_na {
-	struct netmap_pt_guest_adapter *ptna;
-
-	TAILQ_ENTRY(netmap_mem_ptg_na) next;
-};
 
 struct netmap_mem_ptg {
 	struct netmap_mem_d up;
 
-	vm_paddr_t nm_paddr;
-	uint64_t nm_addr;
-	struct lut_entry *lut;
-
-	nm_memid_t nm_host_id;       /* allocator identifier in the host */
-	TAILQ_HEAD(, netmap_mem_ptg_na) active_na; /* XXX: to remove */
+	vm_paddr_t nm_paddr;            /* physical address in the guest */
+	void *nm_addr;                  /* virtual address in the guest */
+	struct netmap_lut buf_lut;      /* lookup table for BUF pool in the guest */
+	nm_memid_t nm_host_id;          /* allocator identifier in the host */
+	struct ptnetmap_memdev *ptn_dev;
 };
 
+/* Read allocator info from the first netmap_if */
 static int
-netmap_mem_pt_guest_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
+netmap_mem_pt_guest_read_shared_info(struct netmap_mem_d *nmd)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
-	struct netmap_mem_ptg_na *pv_na = TAILQ_FIRST(&pv->active_na);
-	struct paravirt_csb *csb;
-	struct netmap_if *nifp;
-	struct netmap_ring *ring;
+	struct netmap_mem_shared_info *nms_info;
+	uint32_t bufsize;
+	uint32_t nbuffers;
 	char *vaddr;
 	vm_paddr_t paddr;
-	uint32_t bufsize;
 	int i;
 
-	D("");
-	if (!(nmd->flags & NETMAP_MEM_FINALIZED)) {
-		return EINVAL;
-	}
+        nms_info = (struct netmap_mem_shared_info *)pv->nm_addr;
+        if (strncmp(nms_info->up.ni_name, NMS_NAME, sizeof(NMS_NAME)) != 0) {
+            D("error, the first slot does not contain shared info");
+            return EINVAL;
+        }
+        /* TODO-ste: check version or feat of mem_shared info */
 
-	if (pv_na == NULL)
-		return EINVAL;
+        bufsize = nms_info->buf_pool_objsize;
+        nbuffers = nms_info->buf_pool_objtotal;
 
-	csb = pv_na->ptna->pv_ops->nm_getcsb(pv_na->ptna->hwup.up.ifp);
-	if (csb == NULL)
-		return EINVAL;
-
-	if (pv->lut == NULL) {
+	if (pv->buf_lut.lut == NULL) {
 		D("allocating lut");
-		pv->lut = nm_alloc_lut(csb->nbuffers);
-		if (pv->lut == NULL) {
+		pv->buf_lut.lut = nm_alloc_lut(nbuffers);
+		if (pv->buf_lut.lut == NULL) {
 			D("lut allocation failed");
 			return ENOMEM;
 		}
 	}
 
-	/* XXX check that the pointers are within the mapped area */
+        vaddr = (char *)(pv->nm_addr + nms_info->buf_pool_offset);
+	paddr = pv->nm_paddr + nms_info->buf_pool_offset;
 
-	nifp = (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
-	ring = (struct netmap_ring *)((char *)nifp + nifp->ring_ofs[0]);
-	vaddr = (void *)((char *)ring + ring->buf_ofs);
-	D("vaddr %p", vaddr);
-	paddr = pv->nm_addr + nifp->ring_ofs[0] + ring->buf_ofs;
-	bufsize = ring->nr_buf_size;
-	for (i = 0; i < csb->nbuffers; i++) {
-		pv->lut[i].vaddr = vaddr;
-		pv->lut[i].paddr = paddr;
+	for (i = 0; i < nbuffers; i++) {
+		pv->buf_lut.lut[i].vaddr = vaddr;
+		pv->buf_lut.lut[i].paddr = paddr;
 		vaddr += bufsize;
 		paddr += bufsize;
 	}
 
-	lut->lut = pv->lut;
-	lut->objtotal = csb->nbuffers;
-	lut->objsize = bufsize;
+	pv->buf_lut.objtotal = nbuffers;
+	pv->buf_lut.objsize = bufsize;
 
+        nmd->nm_totalsize = nms_info->totalsize;
+
+        return 0;
+}
+
+static int
+netmap_mem_pt_guest_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
+{
+	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
+
+	if (!(nmd->flags & NETMAP_MEM_FINALIZED)) {
+		return EINVAL;
+	}
+
+	*lut = pv->buf_lut;
 	return 0;
 }
 
@@ -1819,7 +1818,6 @@ netmap_mem_pt_guest_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
 	vm_paddr_t paddr;
-	ND("");
 	/* if the offset is valid, just return csb->base_addr + off */
 	paddr = (vm_paddr_t)(pv->nm_paddr + off);
 	ND("off %lx padr %lx", off, (unsigned long)paddr);
@@ -1829,24 +1827,9 @@ netmap_mem_pt_guest_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
 static int
 netmap_mem_pt_guest_config(struct netmap_mem_d *nmd)
 {
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
-	struct netmap_mem_ptg_na *pv_na = TAILQ_FIRST(&pv->active_na);
-	struct ifnet *ifp;
-	struct paravirt_csb *csb;
-	int error;
-
-	D("");
-	if (pv_na == NULL)
-		return EINVAL;
-	ifp = pv_na->ptna->hwup.up.ifp;
-
-	csb = pv_na->ptna->pv_ops->nm_getcsb(ifp);
-	if (csb == NULL)
-		return EINVAL;
-	error = pv_na->ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
-	if (error)
-		return error;
-	nmd->nm_totalsize = csb->memsize;
+	/* nothing to do, we are configured on creation
+ 	 * and configuration never changes thereafter
+ 	 */
 	return 0;
 }
 
@@ -1854,44 +1837,29 @@ static int
 netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
-	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
-	struct netmap_mem_ptg_na *pv_na;
-	struct ifnet *ifp = ptna->hwup.up.ifp;
-	struct paravirt_csb *csb;
 	int error = 0;
-
-	D("");
-
-	if (ptna->pv_ops == NULL)
-		return EINVAL;
 
 	NMA_LOCK(nmd);
 	nmd->active++;
-	pv_na = malloc(sizeof(struct netmap_mem_ptg_na),
-			M_DEVBUF, M_NOWAIT | M_ZERO);
-	pv_na->ptna = ptna;
-	TAILQ_INSERT_HEAD(&pv->active_na, pv_na, next);
+
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		goto out;
 
-	csb = ptna->pv_ops->nm_getcsb(ifp);
-	if (csb == NULL) {
-		error = EINVAL;
-		goto err;
-	}
-	error = ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_FINALIZE);
+	/* map memory through ptnemtap-memdev BAR */
+	error = netmap_pt_memdev_iomap(pv->ptn_dev, &pv->nm_paddr, &pv->nm_addr);
 	if (error)
 		goto err;
-	nmd->nm_totalsize = csb->memsize;
-	pv->nm_paddr = csb->base_paddr;
-	pv->nm_addr = csb->base_addr;
+
+        /* read allcator info and create lut*/
+	error = netmap_mem_pt_guest_read_shared_info(nmd);
+	if (error)
+		goto err;
+
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 out:
 	NMA_UNLOCK(nmd);
 	return 0;
 err:
-	TAILQ_REMOVE(&pv->active_na, pv_na, next);
-	free(pv_na, M_DEVBUF);
 	nmd->active--;
 	NMA_UNLOCK(nmd);
 	return error;
@@ -1901,40 +1869,17 @@ static void
 netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
-	struct netmap_pt_guest_adapter *ptna = NULL;
-	struct netmap_mem_ptg_na *pv_na, *pv_na_tmp;
-	struct ifnet *ifp = na->ifp;
-	struct paravirt_csb *csb;
-
 
 	NMA_LOCK(nmd);
-	TAILQ_FOREACH_SAFE(pv_na, &pv->active_na, next, pv_na_tmp) {
-		if (pv_na->ptna == (struct netmap_pt_guest_adapter *) na) {
-			TAILQ_REMOVE(&pv->active_na, pv_na, next);
-			ptna = pv_na->ptna;
-			free(pv_na, M_DEVBUF);
-			break;
-		}
-	}
-	if (ptna) {
-		nmd->active--;
-		if (nmd->active <= 0 &&
-	   			(nmd->flags & NETMAP_MEM_FINALIZED))
-		{
-			nmd->flags  &= ~NETMAP_MEM_FINALIZED;
-			if (ifp && NA(ifp) && (csb = ptna->pv_ops->nm_getcsb(ifp))) {
-				csb->base_addr = pv->nm_addr;
-				ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_DEREF);
-			}
-#if 0
-			 else
-				iounmap((void*)pv->nm_addr); 	/* XXX: linux specific!
-												 * in freebsd we need a res pointer to unmap the reagion
-												 */
-#endif
-			pv->nm_addr = 0;
-			pv->nm_paddr = 0;
-		}
+	nmd->active--;
+	if (nmd->active <= 0 &&
+	   	(nmd->flags & NETMAP_MEM_FINALIZED))
+	{
+	    nmd->flags  &= ~NETMAP_MEM_FINALIZED;
+	    /* unmap ptnetmap-memdev memory */
+	    netmap_pt_memdev_iounmap(pv->ptn_dev);
+	    pv->nm_addr = 0;
+	    pv->nm_paddr = 0;
 	}
 	NMA_UNLOCK(nmd);
 }
@@ -1943,23 +1888,13 @@ static ssize_t
 netmap_mem_pt_guest_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
-	struct netmap_mem_ptg_na *pv_na = TAILQ_FIRST(&pv->active_na);
-	struct ifnet *ifp;
-	struct paravirt_csb *csb;
-	D("");
-	if (pv_na == NULL)
-		return EINVAL;
-	ifp = pv_na->ptna->hwup.up.ifp;
-	csb = pv_na->ptna->pv_ops->nm_getcsb(ifp);
-	if (csb == NULL)
-		return EINVAL;
-	return csb->nifp_offset;
+
+	return vaddr - pv->nm_addr;
 }
 
 static void
 netmap_mem_pt_guest_delete(struct netmap_mem_d *nmd)
 {
-	D("");
 	if (nmd == NULL)
 		return;
 	if (netmap_verbose)
@@ -1980,14 +1915,10 @@ netmap_mem_pt_guest_if_new(struct netmap_adapter *na)
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
 	struct ifnet *ifp = ptna->hwup.up.ifp;
 	struct paravirt_csb *csb;
-	D("");
-	/* if na is our owner return the backend ifp, otherwise NULL */
-	//return NULL;
+
 	csb = ptna->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL)
 		return NULL;
-
-	ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_IFNEW);
 
 	return (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
 }
@@ -1995,9 +1926,10 @@ netmap_mem_pt_guest_if_new(struct netmap_adapter *na)
 static void
 netmap_mem_pt_guest_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 {
+        /* TODO-ste remove?? */
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
 	struct ifnet *ifp = ptna->hwup.up.ifp;
-	D("");
+
 	ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_IFDELETE);
 }
 
@@ -2011,12 +1943,12 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 	struct netmap_if *nifp;
 	int i, error = 0;
 
-	D("");
 	if (csb == NULL)
 		return EINVAL;
-	/* if na is our owner, point each kring to the
-	 * corresponding backend ring, otherwise ENOMEM
-	 */
+
+	NMA_LOCK(na->nm_mem);
+
+	/* point each kring to the corresponding backend ring */
 	nifp = (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
 	for (i = 0; i <= na->num_tx_rings; i++) {
 		struct netmap_kring *kring = na->tx_rings + i;
@@ -2035,8 +1967,9 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
 		kring->nr_kflags |= NKR_PASSTHROUGH;
 	}
-
 	//error = ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
+
+	NMA_UNLOCK(na->nm_mem);
 
 	return error;
 }
@@ -2044,13 +1977,13 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 static void
 netmap_mem_pt_guest_rings_delete(struct netmap_adapter *na)
 {
+        /* TODO-ste remove?? */
 	/*
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)na->nm_mem;
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
 	struct ifnet *ifp = ptna->hwup.up.ifp;
 	*/
 	D("");
-	//pv_na->na->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSDELETE);
 }
 
 
@@ -2084,14 +2017,18 @@ netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 			mem = scan;
 			break;
 		}
+		scan = scan->next;
 	} while (scan != netmap_last_mem_d);
 	NMA_UNLOCK(&nm_mem);
 
 	return mem;
 }
 
-static struct netmap_mem_d *
-netmap_mem_pt_guest_create(nm_memid_t host_id)
+/*
+ * Called when ptnetmap_memdev is probed, to create a new allocator in the guest
+ */
+struct netmap_mem_d *
+netmap_mem_pt_guest_create(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 {
 	struct netmap_mem_ptg *pv;
 	int err = 0;
@@ -2105,9 +2042,9 @@ netmap_mem_pt_guest_create(nm_memid_t host_id)
 
 	pv->up.ops = &netmap_mem_pt_guest_ops;
 	pv->nm_host_id = host_id;
-	//pv->ifp = na->ifp;
-	//pv->pv_ops = ops;
+	pv->ptn_dev = ptn_dev;
 
+        /* Assign new id in the guest */
 	err = nm_mem_assign_id(&pv->up);
 	if (err)
 		goto error;
@@ -2116,7 +2053,6 @@ netmap_mem_pt_guest_create(nm_memid_t host_id)
 	pv->up.flags |= NETMAP_MEM_IO;
 
 	NMA_LOCK_INIT(&pv->up);
-	TAILQ_INIT(&pv->active_na);
 
 	return &pv->up;
 error:
@@ -2128,23 +2064,17 @@ struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
 		struct netmap_pt_guest_ops *pv_ops)
 {
-	struct netmap_mem_d *mem;
 	nm_memid_t host_id;
 
 	if (ifp == NULL || pv_ops == NULL)
 		return NULL;
 
 	/* get the host id allocator */
+        /* TODO-ste: put in the csb */
 	host_id = pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_HOSTMEMID);
 
 	/* find host id in guest allocators */
-	mem = netmap_mem_pt_guest_find_hostid(host_id);
-	if (mem)
-		return mem;
-
-	/* create new guest allocator */
-	mem = netmap_mem_pt_guest_create(host_id);
-
-	return mem;
+	return netmap_mem_pt_guest_find_hostid(host_id);
 }
+
 #endif /* WITH_PTNETMAP_GUEST */

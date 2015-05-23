@@ -311,3 +311,230 @@ ptn_kthread_delete(struct ptn_kthread *ptk)
 
     kfree(ptk);
 }
+
+/* ptnetmap mem device
+ *
+ * Used to expose host memory to the guest
+ */
+
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/pci.h>
+
+/* XXX: move */
+#define PTN_MEMDEV_NAME "ptnetmap-memdev"
+
+/* XXX: move to pci_ids.h */
+#define PCI_VENDOR_ID_PTNETMAP  0x3333
+#define PCI_DEVICE_ID_PTNETMAP  0x0001
+
+/* XXX: move */
+#define PTNETMAP_IO_PCI_BAR         0
+#define PTNETMAP_MEM_PCI_BAR        1
+
+/* register XXX: move */
+
+/* 32 bit r/o */
+#define PTNETMAP_IO_PCI_FEATURES        0
+
+/* 32 bit r/o */
+#define PTNETMAP_IO_PCI_MEMSIZE         4
+
+/* 16 bit r/o */
+#define PTNETMAP_IO_PCI_HOSTID          8
+
+#define PTNEMTAP_IO_SIZE                10
+
+/*
+ * PCI Device ID Table
+ * list of (VendorID,DeviceID) supported by this driver
+ */
+static struct pci_device_id ptn_memdev_ids[] = {
+    { PCI_DEVICE(PCI_VENDOR_ID_PTNETMAP, PCI_DEVICE_ID_PTNETMAP), },
+    { 0, }
+};
+
+MODULE_DEVICE_TABLE(pci, ptn_memdev_ids);
+
+/*
+ * ptnetmap_memdev private data structure
+ */
+struct ptnetmap_memdev
+{
+    struct pci_dev *pdev;
+    void __iomem *io_addr;
+    void __iomem *mem_addr;
+    struct netmap_mem_d *nm_mem;
+    int bars;
+};
+
+/*
+ * map netmap allocator through PCI-BAR in the guest OS
+ */
+int
+netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
+{
+    struct pci_dev *pdev = ptn_dev->pdev;
+    uint32_t mem_size;
+    phys_addr_t mem_paddr;
+    int err = 0;
+
+    mem_size = ioread32(ptn_dev->io_addr + PTNETMAP_IO_PCI_MEMSIZE);
+
+    D("=== BAR %d start %llx len %llx mem_size %x ===",
+            PTNETMAP_MEM_PCI_BAR,
+            pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
+            pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
+            mem_size);
+
+    /* map memory allocator */
+    mem_paddr = pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR);
+    ptn_dev->mem_addr = *nm_addr = ioremap_cache(mem_paddr, mem_size);
+    if (ptn_dev->mem_addr == NULL) {
+        err = -ENOMEM;
+    }
+    *nm_paddr = mem_paddr;
+
+    return err;
+}
+
+/*
+ * unmap PCI-BAR
+ */
+void
+netmap_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
+{
+    if (ptn_dev->mem_addr) {
+        iounmap(ptn_dev->mem_addr);
+        ptn_dev->mem_addr = NULL;
+    }
+}
+
+/*
+ * Device Initialization Routine
+ *
+ * Returns 0 on success, negative on failure
+ */
+static int
+ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+{
+    struct ptnetmap_memdev *ptn_dev;
+    int bars, err;
+    uint16_t mem_id;
+
+    ND("ptn_memdev_driver probe");
+
+    /* allocate our structure and fill it out */
+    ptn_dev = kzalloc(sizeof(*ptn_dev), GFP_KERNEL);
+    if (ptn_dev == NULL)
+        return -ENOMEM;
+
+    ptn_dev->pdev = pdev;
+    bars = pci_select_bars(pdev, IORESOURCE_MEM | IORESOURCE_IO);
+    /* enable the device */
+    err = pci_enable_device(pdev); /* XXX-ste: device_mem() */
+    if (err)
+        goto err;
+
+    err = pci_request_selected_regions(pdev, bars, PTN_MEMDEV_NAME);
+    if (err)
+        goto err_pci_reg;
+
+    ptn_dev->io_addr = pci_iomap(pdev, PTNETMAP_IO_PCI_BAR, 0);
+    if (ptn_dev->io_addr == NULL) {
+        err = -ENOMEM;
+        goto err_iomap;
+    }
+    pci_set_drvdata(pdev, ptn_dev);
+    pci_set_master(pdev); /* XXX-ste: is needed??? */
+
+    ptn_dev->bars = bars;
+    mem_id = ioread16(ptn_dev->io_addr + PTNETMAP_IO_PCI_HOSTID);
+
+    /* Create guest allocator */
+    ptn_dev->nm_mem = netmap_mem_pt_guest_create(ptn_dev, mem_id);
+    if (ptn_dev->nm_mem == NULL) {
+        err = -ENOMEM;
+        goto err_nmd_create;
+    }
+    netmap_mem_get(ptn_dev->nm_mem);
+
+    ND("ptn_memdev_driver probe OK");
+
+    return 0;
+
+err_nmd_create:
+    pci_set_drvdata(pdev, NULL);
+    iounmap(ptn_dev->io_addr);
+err_iomap:
+    pci_release_selected_regions(pdev, bars);
+err_pci_reg:
+    pci_disable_device(pdev);
+err:
+    kfree(ptn_dev);
+    return err;
+}
+
+/*
+ * Device Removal Routine
+ */
+static void
+ptn_memdev_remove(struct pci_dev *pdev)
+{
+    struct ptnetmap_memdev *ptn_dev = pci_get_drvdata(pdev);
+
+    ND("ptn_memdev_driver remove");
+    if (ptn_dev->nm_mem) {
+        netmap_mem_put(ptn_dev->nm_mem);
+    }
+    if (ptn_dev->mem_addr) {
+        iounmap(ptn_dev->mem_addr);
+    }
+    pci_set_drvdata(pdev, NULL);
+    iounmap(ptn_dev->io_addr);
+    pci_release_selected_regions(pdev, ptn_dev->bars);
+    pci_disable_device(pdev);
+    kfree(ptn_dev);
+}
+
+/*
+ * pci driver information
+ */
+static struct pci_driver ptn_memdev_driver = {
+    .name       = PTN_MEMDEV_NAME,
+    .id_table   = ptn_memdev_ids,
+    .probe      = ptn_memdev_probe,
+    .remove     = ptn_memdev_remove,
+};
+
+/*
+ * Driver Registration Routine
+ *
+ * Returns 0 on success, negative on failure
+ */
+int
+netmap_pt_memdev_init(void)
+{
+    int ret;
+
+    /* register pci driver */
+    ret = pci_register_driver(&ptn_memdev_driver);
+    if (ret < 0) {
+        D("ptn-driver register error");
+        return ret;
+    }
+    return 0;
+}
+
+/*
+ * Driver Exit Cleanup Routine
+ */
+void
+netmap_pt_memdev_uninit(void)
+{
+    /* unregister pci driver */
+    pci_unregister_driver(&ptn_memdev_driver);
+
+    D("ptn_memdev_driver exit");
+}

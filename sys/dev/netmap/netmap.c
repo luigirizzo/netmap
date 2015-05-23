@@ -3151,6 +3151,7 @@ extern struct cdevsw netmap_cdevsw;
 void
 netmap_fini(void)
 {
+	netmap_pt_memdev_uninit();
 	netmap_uninit_bridges();
 	if (netmap_dev)
 		destroy_dev(netmap_dev);
@@ -3182,6 +3183,10 @@ netmap_init(void)
 		goto fail;
 
 	error = netmap_init_bridges();
+	if (error)
+		goto fail;
+
+	error = netmap_pt_memdev_init();
 	if (error)
 		goto fail;
 

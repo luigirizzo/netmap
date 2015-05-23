@@ -144,12 +144,13 @@ struct paravirt_csb {
     uint32_t vnet_ring_low;	/* Vnet ring physical address low. */
 
     /* passthrough */
-    uint32_t memsize;              /* size of the shared memory */
-    uint32_t pci_bar;              /* pci bar of the shared memory in the device */
+    uint32_t memsize;              /* size of the shared memory */ /* XXX: REMOVE */
+    uint32_t pci_bar;              /* pci bar of the shared memory in the device */ /* XXX: REMOVE */
     uint32_t nifp_offset;          /* offset of the netmap_if in the shared memory */
-    uint32_t nbuffers;		   /* number of preallocated buffers */
-    uint64_t base_addr;		   /* guest kernel-virtual base address */
-    uint64_t base_paddr;	   /* guest kernel-physical base address */
+    uint32_t nbuffers;		   /* number of preallocated buffers *//* XXX: REMOVE */
+    uint64_t base_addr;		   /* guest kernel-virtual base address *//* XXX: REMOVE */
+    uint64_t base_paddr;	   /* guest kernel-physical base address *//* XXX: REMOVE */
+    /* uint16_t host_mem_id; */
     uint16_t num_tx_rings;
     uint16_t num_rx_rings;
     uint16_t num_tx_slots;
