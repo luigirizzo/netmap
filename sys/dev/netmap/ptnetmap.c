@@ -696,7 +696,7 @@ static int
 ptnetmap_create(struct netmap_pt_host_adapter *pth_na, const void __user *buf, uint16_t buf_len)
 {
     struct ptnetmap_state *pts;
-    int ret;
+    int ret, i;
 
     /* check if already in pt mode */
     if (pth_na->ptn_state) {
@@ -744,6 +744,15 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, const void __user *buf, u
     pth_na->parent_nm_notify = pth_na->parent->nm_notify;
     pth_na->parent->nm_notify = nm_pt_host_notify;
 
+    for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
+        pth_na->parent->rx_rings[i].save_notify = pth_na->parent->rx_rings[i].nm_notify;
+        pth_na->parent->rx_rings[i].nm_notify = nm_pt_host_notify;
+    }
+    for (i = 0; i < pth_na->parent->num_tx_rings; i++) {
+        pth_na->parent->tx_rings[i].save_notify = pth_na->parent->tx_rings[i].nm_notify;
+        pth_na->parent->tx_rings[i].nm_notify = nm_pt_host_notify;
+    }
+
 #ifdef RATE
     memset(&pts->rate_ctx, 0, sizeof(pts->rate_ctx));
     setup_timer(&pts->rate_ctx.timer, &rate_callback,
@@ -766,6 +775,7 @@ static void
 ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
 {
     struct ptnetmap_state *pts = pth_na->ptn_state;
+    int i;
 
     /* check if ptnetmap is configured */
     if (!pts)
@@ -774,6 +784,15 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     /* restore parent adapter callbacks */
     pth_na->parent->nm_notify = pth_na->parent_nm_notify;
     pth_na->parent->na_private = NULL;
+
+    for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
+        pth_na->parent->rx_rings[i].nm_notify = pth_na->parent->rx_rings[i].save_notify;
+        pth_na->parent->rx_rings[i].save_notify = NULL;
+    }
+    for (i = 0; i < pth_na->parent->num_tx_rings; i++) {
+        pth_na->parent->tx_rings[i].nm_notify = pth_na->parent->tx_rings[i].save_notify;
+        pth_na->parent->tx_rings[i].save_notify = NULL;
+    }
 
     pts->configured = false;
 
