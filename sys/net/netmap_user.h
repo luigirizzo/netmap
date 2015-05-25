@@ -431,6 +431,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 						num, NETMAP_RING_MASK);
 				goto fail;
 			}
+			nr_ringid = num & NETMAP_RING_MASK;
 			p_state = P_RNGSFXOK;
 			break;
 		case P_FLAGS:
