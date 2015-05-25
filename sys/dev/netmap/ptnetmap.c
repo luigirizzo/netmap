@@ -689,6 +689,8 @@ ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
 }
 
 static int nm_pt_host_notify(struct netmap_kring *, int);
+static int nm_pt_host_notify_tx(struct netmap_kring *, int);
+static int nm_pt_host_notify_rx(struct netmap_kring *, int);
 
 
 /* Switch adapter in passthrough mode and create kthreads */
@@ -746,11 +748,11 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, const void __user *buf, u
 
     for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
         pth_na->parent->rx_rings[i].save_notify = pth_na->parent->rx_rings[i].nm_notify;
-        pth_na->parent->rx_rings[i].nm_notify = nm_pt_host_notify;
+        pth_na->parent->rx_rings[i].nm_notify = nm_pt_host_notify_rx;
     }
     for (i = 0; i < pth_na->parent->num_tx_rings; i++) {
         pth_na->parent->tx_rings[i].save_notify = pth_na->parent->tx_rings[i].nm_notify;
-        pth_na->parent->tx_rings[i].nm_notify = nm_pt_host_notify;
+        pth_na->parent->tx_rings[i].nm_notify = nm_pt_host_notify_tx;
     }
 
 #ifdef RATE
@@ -868,31 +870,52 @@ done:
     return error;
 }
 
-/* nm_notify callback for passthrough */
+/* nm_notify callbacks for passthrough */
 static int
-nm_pt_host_notify(struct netmap_kring *kring, int flags)
+nm_pt_host_notify_tx(struct netmap_kring *kring, int flags)
 {
     struct netmap_adapter *na = kring->na;
     struct netmap_pt_host_adapter *pth_na =
         (struct netmap_pt_host_adapter *)na->na_private;
-    enum txrx t = kring->tx;
 
-    /* TODO-ste: avoid if with array on pt_host_adapter */
     if (likely(pth_na)) {
-        if (t == NR_TX) {
-                ptnetmap_tx_notify(pth_na->ptn_state);
-        } else {
-                ptnetmap_rx_notify(pth_na->ptn_state);
-        }
+        ptnetmap_tx_notify(pth_na->ptn_state);
     }
 
-    OS_selwakeup(&kring->si, PI_NET);
-    /* optimization: avoid a wake up on the global
-     * queue if nobody has registered for more
-     * than one ring
-     */
-    if (na->si_users[t] > 0)
-	OS_selwakeup(&na->si[t], PI_NET);
+    /* XXX-ste: is needed? */
+    //netmap_notify(kring, flags);
+
+    return 0;
+}
+
+static int
+nm_pt_host_notify_rx(struct netmap_kring *kring, int flags)
+{
+    struct netmap_adapter *na = kring->na;
+    struct netmap_pt_host_adapter *pth_na =
+        (struct netmap_pt_host_adapter *)na->na_private;
+
+    if (likely(pth_na)) {
+        ptnetmap_rx_notify(pth_na->ptn_state);
+    }
+
+    /* XXX-ste: is needed? */
+    //netmap_notify(kring, flags);
+
+    return 0;
+}
+
+static int
+nm_pt_host_notify(struct netmap_kring *kring, int flags)
+{
+    enum txrx t = kring->tx;
+
+    if (t == NR_TX) {
+        nm_pt_host_notify_tx(kring, flags);
+    } else {
+        nm_pt_host_notify_rx(kring, flags);
+    }
+
     return 0;
 }
 
