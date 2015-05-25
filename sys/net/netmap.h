@@ -604,6 +604,7 @@ struct ptn_cfg_ring {
 };
 
 struct ptn_cfg {
+        /* XXX-ste: add version or features? */
 	struct ptn_cfg_ring tx_ring;
 	struct ptn_cfg_ring rx_ring;
 	void *csb;   /* CSB */

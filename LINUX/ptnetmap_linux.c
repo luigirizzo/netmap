@@ -1,18 +1,23 @@
-#include <linux/eventfd.h>
-#include <linux/mm.h>
-#include <linux/mmu_context.h>
-#include <linux/poll.h>
-#include <linux/kthread.h>
-#include <linux/file.h>
-
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 #include <dev/netmap/paravirt.h>
 
+#ifdef WITH_PTNETMAP_HOST
+#include <linux/eventfd.h>
+#include <linux/mm.h>
+#include <linux/mmu_context.h>
+#include <linux/poll.h>
+#include <linux/kthread.h>
+#include <linux/file.h>
+/*
+ * ptnetmap kthreads linux implementation
+ */
+
+/* kthread context */
 struct ptn_kthread_ctx {
-    /* files to echange notifications */
+    /* files to exchange notifications */
     struct file *ioevent_file;          /* notification from guest */
     struct file *irq_file;              /* notification to guest (interrupt) */
     struct eventfd_ctx  *irq_ctx;
@@ -311,40 +316,17 @@ ptn_kthread_delete(struct ptn_kthread *ptk)
 
     kfree(ptk);
 }
+#endif /* WITH_PTNETMAP_HOST */
 
-/* ptnetmap mem device
- *
- * Used to expose host memory to the guest
+#ifdef WITH_PTNETMAP_GUEST
+/*
+ * ptnetmap memory device (memdev)
+ * Used to expose host memory to the guest through PCI-BAR
  */
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/pci.h>
-
-/* XXX: move */
-#define PTN_MEMDEV_NAME "ptnetmap-memdev"
-
-/* XXX: move to pci_ids.h */
-#define PCI_VENDOR_ID_PTNETMAP  0x3333
-#define PCI_DEVICE_ID_PTNETMAP  0x0001
-
-/* XXX: move */
-#define PTNETMAP_IO_PCI_BAR         0
-#define PTNETMAP_MEM_PCI_BAR        1
-
-/* register XXX: move */
-
-/* 32 bit r/o */
-#define PTNETMAP_IO_PCI_FEATURES        0
-
-/* 32 bit r/o */
-#define PTNETMAP_IO_PCI_MEMSIZE         4
-
-/* 16 bit r/o */
-#define PTNETMAP_IO_PCI_HOSTID          8
-
-#define PTNEMTAP_IO_SIZE                10
 
 /*
  * PCI Device ID Table
@@ -358,7 +340,7 @@ static struct pci_device_id ptn_memdev_ids[] = {
 MODULE_DEVICE_TABLE(pci, ptn_memdev_ids);
 
 /*
- * ptnetmap_memdev private data structure
+ * ptnetmap memdev private data structure
  */
 struct ptnetmap_memdev
 {
@@ -370,7 +352,10 @@ struct ptnetmap_memdev
 };
 
 /*
- * map netmap allocator through PCI-BAR in the guest OS
+ * map host netmap memory through PCI-BAR in the guest OS
+ *
+ * return physical (nm_paddr) and virtual (nm_addr) addresses
+ * of the netmap memory mapped in the guest.
  */
 int
 netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
@@ -452,7 +437,7 @@ ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     ptn_dev->bars = bars;
     mem_id = ioread16(ptn_dev->io_addr + PTNETMAP_IO_PCI_HOSTID);
 
-    /* Create guest allocator */
+    /* create guest allocator */
     ptn_dev->nm_mem = netmap_mem_pt_guest_create(ptn_dev, mem_id);
     if (ptn_dev->nm_mem == NULL) {
         err = -ENOMEM;
@@ -487,9 +472,11 @@ ptn_memdev_remove(struct pci_dev *pdev)
     ND("ptn_memdev_driver remove");
     if (ptn_dev->nm_mem) {
         netmap_mem_put(ptn_dev->nm_mem);
+        ptn_dev->nm_mem = NULL;
     }
     if (ptn_dev->mem_addr) {
         iounmap(ptn_dev->mem_addr);
+        ptn_dev->mem_addr = NULL;
     }
     pci_set_drvdata(pdev, NULL);
     iounmap(ptn_dev->io_addr);
@@ -538,3 +525,4 @@ netmap_pt_memdev_uninit(void)
 
     D("ptn_memdev_driver exit");
 }
+#endif /* WITH_PTNETMAP_GUEST */

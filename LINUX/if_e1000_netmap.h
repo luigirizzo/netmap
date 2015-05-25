@@ -632,10 +632,10 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.pdev = &adapter->pdev->dev;
 	na.num_tx_desc = adapter->tx_ring[0].count;
 	na.num_rx_desc = adapter->rx_ring[0].count;
-	na.num_tx_rings = na.num_rx_rings = 1;
 	na.nm_register = e1000_netmap_reg;
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;
+	na.num_tx_rings = na.num_rx_rings = 1;
 
 #if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
         /* XXX: check if the device support ptnetmap (now we use PARAVIRT_SUBDEV) */

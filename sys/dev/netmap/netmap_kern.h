@@ -1905,11 +1905,30 @@ struct netmap_pt_guest_ops {
 	struct paravirt_csb *(*nm_getcsb)(struct ifnet *);
 };
 int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
+
+/* ptnetmap memdev routines */
 struct ptnetmap_memdev;
 int netmap_pt_memdev_init(void);
 void netmap_pt_memdev_uninit(void);
 int netmap_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
 void netmap_pt_memdev_iounmap(struct ptnetmap_memdev *);
+
+/* ptnetmap memdev PCI-ID and PCI-BARS */
+#define PTN_MEMDEV_NAME "ptnetmap-memdev"
+#define PCI_VENDOR_ID_PTNETMAP  0x3333
+#define PCI_DEVICE_ID_PTNETMAP  0x0001
+#define PTNETMAP_IO_PCI_BAR         0
+#define PTNETMAP_MEM_PCI_BAR        1
+
+/* ptnetmap memdev register */
+/* 32 bit r/o */
+#define PTNETMAP_IO_PCI_FEATURES        0
+/* 32 bit r/o */
+#define PTNETMAP_IO_PCI_MEMSIZE         4
+/* 16 bit r/o */
+#define PTNETMAP_IO_PCI_HOSTID          8
+#define PTNEMTAP_IO_SIZE                10
+
 #else /* !WITH_PTNETMAP_GUEST */
 #define netmap_pt_memdev_init() 0
 #define netmap_pt_memdev_uninit()

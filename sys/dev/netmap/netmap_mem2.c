@@ -48,7 +48,6 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 241723 2012-10-19 09:41:45Z gle
 #include <net/if_var.h>
 #include <net/vnet.h>
 #include <machine/bus.h>	/* bus_dmamap_* */
-#include <sys/queue.h>
 
 /* M_NETMAP only used in here */
 MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
@@ -76,7 +75,6 @@ struct netmap_obj_params {
 	u_int size;
 	u_int num;
 };
-
 struct netmap_obj_pool {
 	char name[NETMAP_POOL_MAX_NAMSZ];	/* name of the allocator */
 
