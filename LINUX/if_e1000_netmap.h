@@ -543,53 +543,12 @@ e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
 	struct e1000_hw *hw = &adapter->hw;
-	struct paravirt_csb *csb = adapter->csb;
-	void *base_addr;
 	uint32_t ret;
 
 	ew32(PTCTL, val);
 	ret = er32(PTSTS);
 	D("PTSTS = %u", ret);
-	if (ret) {
-		return ret;
-	}
-	switch (val) {
-	case NET_PARAVIRT_PTCTL_FINALIZE:
-		D("=== BAR %d start %llx len %llx actual %x ===",
-				csb->pci_bar,
-				pci_resource_start(adapter->pdev, csb->pci_bar),
-				pci_resource_len(adapter->pdev, csb->pci_bar),
-				csb->memsize);
-		base_addr = ioremap_cache(
-				pci_resource_start(adapter->pdev, csb->pci_bar),
-				csb->memsize);
-		if (base_addr == NULL) {
-			ret = ENOMEM;
-			break;
-		}
-		csb->base_addr = (uint64_t)base_addr;
-		csb->base_paddr = (uint64_t)pci_resource_start(
-				adapter->pdev, csb->pci_bar);
-		D("BAR %d start %llx len %llx at %llx (%s)", csb->pci_bar,
-				csb->base_paddr,
-				pci_resource_len(adapter->pdev, csb->pci_bar),
-				csb->base_addr,
-				((struct netmap_if*)base_addr)->ni_name);
-		ND("name %s", name);
-		break;
-	case NET_PARAVIRT_PTCTL_DEREF:
-                D("NET_PARAVIRT_PTCTL_DEREF");
-		base_addr = (void*)csb->base_addr;
-		if (base_addr != NULL) {
-			//pci_iounmap(adapter->pdev, base_addr);
-			iounmap(base_addr);
-		} else {
-			D("base_addr NULL");
-		}
-		break;
-	default:
-		break;
-	}
+
 	return ret;
 }
 

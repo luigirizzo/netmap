@@ -684,50 +684,12 @@ static uint32_t
 lem_netmap_ptctl(struct ifnet *ifp, uint32_t val)
 {
 	struct adapter *adapter = ifp->if_softc;
-	device_t dev = adapter->dev;
-	struct paravirt_csb *csb = adapter->csb;
 	uint32_t ret;
 
 	E1000_WRITE_REG(&adapter->hw, E1000_PTCTL, val);
 	ret = E1000_READ_REG(&adapter->hw, E1000_PTSTS);
 	D("PTSTS = %u", ret);
-	if (ret) {
-		return ret;
-	}
-	switch(val) {
-	case NET_PARAVIRT_PTCTL_FINALIZE:
-		D("NET_PARAVIRT_PTCTL_FINALIZE");
-		D("csb: %p, pci_bar: %d, memsize: %d", csb, csb->pci_bar, csb->memsize);
-		adapter->ptnetmap_res_id = PCIR_BAR(csb->pci_bar);
-		adapter->ptnetmap_res = bus_alloc_resource(dev, SYS_RES_MEMORY,
-									&adapter->ptnetmap_res_id, 0, ~0,
-									csb->memsize, RF_ACTIVE);
-		if (adapter->ptnetmap_res == NULL) {
-			D("error map ptnetmap PCIBAR");
-			ret = ENOMEM;
-			break;
-		}
-		D("ptnetmap PCIBAR mapped");
-		csb->base_paddr = (uint64_t)rman_get_start(adapter->ptnetmap_res);
-		csb->base_addr = (uint64_t)rman_get_virtual(adapter->ptnetmap_res);
-		D("BAR %d start %llx len %llx at %llx (%s)", csb->pci_bar,
-				csb->base_paddr,
-				rman_get_size(adapter->ptnetmap_res),
-				csb->base_addr,
-				((struct netmap_if*)csb->base_addr)->ni_name);
-		break;
-	case NET_PARAVIRT_PTCTL_DEREF:
-		D("NET_PARAVIRT_PTCTL_DEREF");
-		if (adapter->ptnetmap_res != NULL) {
-			bus_release_resource(dev, SYS_RES_MEMORY,
-					adapter->ptnetmap_res_id,
-					adapter->ptnetmap_res);
-			adapter->ptnetmap_res = NULL;
-		}
-		break;
-	default:
-		break;
-	}
+
 	return ret;
 }
 
