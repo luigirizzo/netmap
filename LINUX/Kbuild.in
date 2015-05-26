@@ -26,7 +26,6 @@ $(foreach o,$(remoteobjs-y),$(eval $(call remote_template,$(o),$(o:.o=.c))))
 $(eval $(call remote_template,netmap_common.o,netmap.c))
 
 localobjs-y := netmap_linux.o
-localobjs-$(CONFIG_NETMAP_PASSTHROUGH) += ptnetmap_linux.o
 
 define local_template
 $$(obj)/$(1): %.o: $$(SRCDIR)/$(2) FORCE
