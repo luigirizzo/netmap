@@ -1843,6 +1843,11 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		goto out;
 
+	if (pv->ptn_dev == NULL) {
+		D("ptnetmap memdev not attached");
+		error = ENOMEM;
+		goto err;
+	}
 	/* map memory through ptnemtap-memdev BAR */
 	error = netmap_pt_memdev_iomap(pv->ptn_dev, &pv->nm_paddr, &pv->nm_addr);
 	if (error)
@@ -1875,7 +1880,9 @@ netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	{
 	    nmd->flags  &= ~NETMAP_MEM_FINALIZED;
 	    /* unmap ptnetmap-memdev memory */
-	    netmap_pt_memdev_iounmap(pv->ptn_dev);
+	    if (pv->ptn_dev) {
+		netmap_pt_memdev_iounmap(pv->ptn_dev);
+	    }
 	    pv->nm_addr = 0;
 	    pv->nm_paddr = 0;
 	}
@@ -2007,7 +2014,6 @@ netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 	struct netmap_mem_d *mem = NULL;
 	struct netmap_mem_d *scan = netmap_last_mem_d;
 
-	NMA_LOCK(&nm_mem);
 	do {
 		/* check passthrough allocator */
 		if (scan->ops->nmd_deref == netmap_mem_pt_guest_deref &&
@@ -2017,16 +2023,12 @@ netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 		}
 		scan = scan->next;
 	} while (scan != netmap_last_mem_d);
-	NMA_UNLOCK(&nm_mem);
 
 	return mem;
 }
 
-/*
- * Called when ptnetmap_memdev is probed, to create a new allocator in the guest
- */
-struct netmap_mem_d *
-netmap_mem_pt_guest_create(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
+static struct netmap_mem_d *
+netmap_mem_pt_guest_create(nm_memid_t host_id)
 {
 	struct netmap_mem_ptg *pv;
 	int err = 0;
@@ -2040,7 +2042,6 @@ netmap_mem_pt_guest_create(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 
 	pv->up.ops = &netmap_mem_pt_guest_ops;
 	pv->nm_host_id = host_id;
-	pv->ptn_dev = ptn_dev;
 
         /* Assign new id in the guest */
 	err = nm_mem_assign_id(&pv->up);
@@ -2058,10 +2059,36 @@ error:
 	return NULL;
 }
 
+/*
+ * Called when ptnetmap_memdev is probed, to attach a new allocator in the guest
+ */
+struct netmap_mem_d *
+netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
+{
+	struct netmap_mem_d *nmd;
+	struct netmap_mem_ptg *pv;
+
+
+	NMA_LOCK(&nm_mem);
+	nmd = netmap_mem_pt_guest_find_hostid(host_id);
+	if (nmd == NULL) {
+		nmd = netmap_mem_pt_guest_create(host_id);
+	}
+	NMA_UNLOCK(&nm_mem);
+
+	if (nmd) {
+		pv = (struct netmap_mem_ptg *)nmd;
+		pv->ptn_dev = ptn_dev;
+	}
+
+	return nmd;
+}
+
 struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
 		struct netmap_pt_guest_ops *pv_ops)
 {
+	struct netmap_mem_d *nmd;
 	nm_memid_t host_id;
 
 	if (ifp == NULL || pv_ops == NULL)
@@ -2071,8 +2098,15 @@ netmap_mem_pt_guest_new(struct ifnet *ifp,
         /* TODO-ste: put in the csb */
 	host_id = pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_HOSTMEMID);
 
+	NMA_LOCK(&nm_mem);
+	nmd = netmap_mem_pt_guest_find_hostid(host_id);
+	if (nmd == NULL) {
+		nmd = netmap_mem_pt_guest_create(host_id);
+	}
+	NMA_UNLOCK(&nm_mem);
+
 	/* find host id in guest allocators */
-	return netmap_mem_pt_guest_find_hostid(host_id);
+	return nmd;
 }
 
 #endif /* WITH_PTNETMAP_GUEST */

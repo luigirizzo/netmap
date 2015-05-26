@@ -438,10 +438,10 @@ ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     mem_id = ioread16(ptn_dev->pci_io + PTNETMAP_IO_PCI_HOSTID);
 
     /* create guest allocator */
-    ptn_dev->nm_mem = netmap_mem_pt_guest_create(ptn_dev, mem_id);
+    ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
     if (ptn_dev->nm_mem == NULL) {
         err = -ENOMEM;
-        goto err_nmd_create;
+        goto err_nmd_attach;
     }
     netmap_mem_get(ptn_dev->nm_mem);
 
@@ -449,7 +449,7 @@ ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
     return 0;
 
-err_nmd_create:
+err_nmd_attach:
     pci_set_drvdata(pdev, NULL);
     iounmap(ptn_dev->pci_io);
 err_iomap:

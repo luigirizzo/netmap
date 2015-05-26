@@ -160,7 +160,7 @@ void netmap_mem_put(struct netmap_mem_d *);
 #ifdef WITH_PTNETMAP_GUEST
 struct netmap_mem_d* netmap_mem_pt_guest_new(struct ifnet *,
 		struct netmap_pt_guest_ops *);
-struct netmap_mem_d* netmap_mem_pt_guest_create(struct ptnetmap_memdev *, uint16_t);
+struct netmap_mem_d* netmap_mem_pt_guest_attach(struct ptnetmap_memdev *, uint16_t);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #define NETMAP_MEM_PRIVATE	0x2	/* allocator uses private address space */

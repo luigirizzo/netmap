@@ -186,7 +186,7 @@ ptn_memdev_attach(device_t dev)
 	mem_id = ptn_ioread16(ptn_dev, PTNETMAP_IO_PCI_HOSTID);
 
 	/* create guest allocator */
-	ptn_dev->nm_mem = netmap_mem_pt_guest_create(ptn_dev, mem_id);
+	ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
 	if (ptn_dev->nm_mem == NULL) {
 		ptn_memdev_detach(dev);
 	        return (ENOMEM);
