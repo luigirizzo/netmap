@@ -2249,6 +2249,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 
 		for (i = qfirst; i < qlast; i++) {
 			struct netmap_kring *kring = krings + i;
+			struct netmap_ring *ring = kring->ring;
 			if (nm_kr_tryget(kring)) {
 				error = EBUSY;
 				goto out;
@@ -2256,26 +2257,26 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 			if (cmd == NIOCTXSYNC) {
 				if (netmap_verbose & NM_VERB_TXSYNC)
 					D("pre txsync ring %d cur %d hwcur %d",
-					    i, kring->ring->cur,
+					    i, ring->cur,
 					    kring->nr_hwcur);
-				if (nm_txsync_prologue(kring, kring->ring->head, kring->ring->cur,
-                                            &kring->ring->tail) >= kring->nkr_num_slots) {
+				if (nm_txsync_prologue(kring, ring->head, ring->cur,
+                                            &ring->tail) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
 				} else if (kring->nm_sync(kring, NAF_FORCE_RECLAIM) == 0) {
 					nm_txsync_finalize(kring);
 				}
 				if (netmap_verbose & NM_VERB_TXSYNC)
 					D("post txsync ring %d cur %d hwcur %d",
-					    i, kring->ring->cur,
+					    i, ring->cur,
 					    kring->nr_hwcur);
 			} else {
-				if (nm_rxsync_prologue(kring, kring->ring->head, kring->ring->cur,
-                                            &kring->ring->tail) >= kring->nkr_num_slots) {
+				if (nm_rxsync_prologue(kring, ring->head, ring->cur,
+                                            &ring->tail) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
 				} else if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
 					nm_rxsync_finalize(kring);
 				}
-				microtime(&na->rx_rings[i].ring->ts);
+				microtime(&ring->ts);
 			}
 			nm_kr_put(kring);
 		}
@@ -2349,6 +2350,7 @@ netmap_poll(struct cdev *dev, int events, struct thread *td)
 	struct netmap_priv_d *priv = NULL;
 	struct netmap_adapter *na;
 	struct netmap_kring *kring;
+	struct netmap_ring *ring;
 	u_int i, check_all_tx, check_all_rx, want[NR_TXRX], revents = 0;
 #define want_tx want[NR_TX]
 #define want_rx want[NR_RX]
@@ -2449,7 +2451,9 @@ flush_tx:
 			int found = 0;
 
 			kring = &na->tx_rings[i];
-			if (!want_tx && kring->ring->cur == kring->nr_hwcur)
+			ring = kring->ring;
+
+			if (!want_tx && ring->cur == kring->nr_hwcur)
 				continue;
 			/* only one thread does txsync */
 			if (nm_kr_tryget(kring)) {
@@ -2463,8 +2467,8 @@ flush_tx:
 					    priv, i);
 				continue;
 			}
-			if (nm_txsync_prologue(kring, kring->ring->head, kring->ring->cur,
-                                    &kring->ring->tail) >= kring->nkr_num_slots) {
+			if (nm_txsync_prologue(kring, ring->head, ring->cur,
+                                    &ring->tail) >= kring->nkr_num_slots) {
 				netmap_ring_reinit(kring);
 				revents |= POLLERR;
 			} else {
@@ -2508,6 +2512,7 @@ do_retry_rx:
 			int found = 0;
 
 			kring = &na->rx_rings[i];
+			ring = kring->ring;
 
 			if (nm_kr_tryget(kring)) {
 				if (netmap_verbose)
@@ -2516,8 +2521,8 @@ do_retry_rx:
 				continue;
 			}
 
-			if (nm_rxsync_prologue(kring, kring->ring->head, kring->ring->cur,
-                                    &kring->ring->tail) >= kring->nkr_num_slots) {
+			if (nm_rxsync_prologue(kring, ring->head, ring->cur,
+                                    &ring->tail) >= kring->nkr_num_slots) {
 				netmap_ring_reinit(kring);
 				revents |= POLLERR;
 			}
@@ -2529,9 +2534,9 @@ do_retry_rx:
 			 * XXX NR_FORWARD should only be read on
 			 * physical or NIC ports
 			 */
-			if (netmap_fwd ||kring->ring->flags & NR_FORWARD) {
+			if (netmap_fwd || ring->flags & NR_FORWARD) {
 				ND(10, "forwarding some buffers up %d to %d",
-				    kring->nr_hwcur, kring->ring->cur);
+				    kring->nr_hwcur, ring->cur);
 				netmap_grab_packets(kring, &q, netmap_fwd);
 			}
 
@@ -2540,8 +2545,8 @@ do_retry_rx:
 			else
 				nm_rxsync_finalize(kring);
 			if (netmap_no_timestamp == 0 ||
-					kring->ring->flags & NR_TIMESTAMP) {
-				microtime(&kring->ring->ts);
+					ring->flags & NR_TIMESTAMP) {
+				microtime(&ring->ts);
 			}
 			found = kring->rcur != kring->rtail;
 			nm_kr_put(kring);
@@ -2554,13 +2559,13 @@ do_retry_rx:
 
 		/* transparent mode XXX only during first pass ? */
 		if (na->na_flags & NAF_HOST_RINGS) {
-			kring = &na->rx_rings[na->num_rx_rings];
+			ring = na->rx_rings[na->num_rx_rings].ring;
 			if (check_all_rx
-			    && (netmap_fwd || kring->ring->flags & NR_FORWARD)) {
+			    && (netmap_fwd || ring->flags & NR_FORWARD)) {
 				/* XXX fix to use kring fields */
-				if (nm_ring_empty(kring->ring))
+				if (nm_ring_empty(ring))
 					send_down = netmap_rxsync_from_host(na, td, dev);
-				if (!nm_ring_empty(kring->ring))
+				if (!nm_ring_empty(ring))
 					revents |= want_rx;
 			}
 		}
