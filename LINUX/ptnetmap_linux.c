@@ -333,7 +333,7 @@ ptn_kthread_delete(struct ptn_kthread *ptk)
  * list of (VendorID,DeviceID) supported by this driver
  */
 static struct pci_device_id ptn_memdev_ids[] = {
-    { PCI_DEVICE(PCI_VENDOR_ID_PTNETMAP, PCI_DEVICE_ID_PTNETMAP), },
+    { PCI_DEVICE(PTNETMAP_PCI_VENDOR_ID, PTNETMAP_PCI_DEVICE_ID), },
     { 0, }
 };
 

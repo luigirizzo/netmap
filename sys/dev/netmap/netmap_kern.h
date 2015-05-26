@@ -1915,8 +1915,8 @@ void netmap_pt_memdev_iounmap(struct ptnetmap_memdev *);
 
 /* ptnetmap memdev PCI-ID and PCI-BARS */
 #define PTN_MEMDEV_NAME "ptnetmap-memdev"
-#define PCI_VENDOR_ID_PTNETMAP  0x3333
-#define PCI_DEVICE_ID_PTNETMAP  0x0001
+#define PTNETMAP_PCI_VENDOR_ID  0x3333  /* XXX-ste: set vendor_id */
+#define PTNETMAP_PCI_DEVICE_ID  0x0001
 #define PTNETMAP_IO_PCI_BAR         0
 #define PTNETMAP_MEM_PCI_BAR        1
 
