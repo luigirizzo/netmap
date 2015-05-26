@@ -56,6 +56,7 @@ MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
+#include "netmap_virt.h"
 #include "netmap_mem2.h"
 
 #define NETMAP_BUF_MAX_NUM	20*4096*2	/* large machine */
@@ -1714,7 +1715,6 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 
 #ifdef WITH_PTNETMAP_GUEST
 /* passthrough allocator */
-#include "paravirt.h"
 
 struct netmap_mem_ptg {
 	struct netmap_mem_d up;

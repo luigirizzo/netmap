@@ -5,8 +5,8 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
+#include <dev/netmap/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
-#include <dev/netmap/paravirt.h>
 
 #ifdef WITH_PTNETMAP_HOST
 
@@ -115,7 +115,7 @@ rate_batch_info_update(struct rate_batch_info *bf, uint32_t pre_tail, uint32_t a
 struct ptnetmap_state {
     struct ptn_kthread *ptk_tx, *ptk_rx;        /* kthreads pointers */
 
-    struct ptn_cfg config;                      /* rings configuration */
+    struct ptnetmap_cfg config;                      /* rings configuration */
     struct paravirt_csb __user *csb;            /* shared page with the guest */
 
     bool configured;
@@ -557,7 +557,7 @@ ptnetmap_rx_notify(struct ptnetmap_state *pts) {
 static void
 ptnetmap_print_configuration(struct ptnetmap_state *pts)
 {
-    struct ptn_cfg *cfg = &pts->config;
+    struct ptnetmap_cfg *cfg = &pts->config;
 
     D("[PTN] configuration:");
     D("TX: iofd=%u, irqfd=%u",
@@ -695,7 +695,7 @@ static int nm_pt_host_notify_rx(struct netmap_kring *, int);
 
 /* Switch adapter in passthrough mode and create kthreads */
 static int
-ptnetmap_create(struct netmap_pt_host_adapter *pth_na, const void __user *buf, uint16_t buf_len)
+ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
 {
     struct ptnetmap_state *pts;
     int ret, i;
@@ -713,16 +713,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, const void __user *buf, u
     pts->stopped = true;
 
     /* Read the configuration from userspace. */
-    if (buf_len != sizeof(struct ptn_cfg)) {
-        D("ERROR - buf_len %d, expected %d", (int)buf_len, (int)sizeof(struct ptn_cfg));
-        ret = EINVAL;
-        goto err;
-    }
-    if (copyin(buf, &pts->config, sizeof(struct ptn_cfg))) {
-        D("ERROR copy_from_user()");
-        ret = EFAULT;
-        goto err;
-    }
+    memcpy(&pts->config, cfg, sizeof(struct ptnetmap_cfg));
     pts->csb = pts->config.csb;
     DBG(ptnetmap_print_configuration(pts);)
 
@@ -821,10 +812,9 @@ int
 ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
 {
     struct netmap_pt_host_adapter *pth_na;
+    struct ptnetmap_cfg cfg;
     char *name;
     int cmd, error = 0;
-    void __user *buf;
-    uint16_t buf_len;
 
     name = nmr->nr_name;
     cmd = nmr->nr_cmd;
@@ -841,10 +831,10 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
     NMG_LOCK();
     switch (cmd) {
         case NETMAP_PT_HOST_CREATE:     /* create kthreads and switch in pt mode */
-            nmr_read_buf(nmr, &buf, &buf_len);
+            ptnetmap_read_cfg(nmr, &cfg);
 
             /* create kthreads */
-            error = ptnetmap_create(pth_na, buf, buf_len);
+            error = ptnetmap_create(pth_na, &cfg);
             if (error)
                 break;
             /* start kthreads */

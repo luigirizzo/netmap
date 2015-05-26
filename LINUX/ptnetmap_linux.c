@@ -1,8 +1,8 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
+#include <dev/netmap/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
-#include <dev/netmap/paravirt.h>
 
 #ifdef WITH_PTNETMAP_HOST
 #include <linux/eventfd.h>
@@ -139,7 +139,7 @@ ptn_kthread_send_irq(struct ptn_kthread *ptk)
 }
 
 static int
-ptn_kthread_open_files(struct ptn_kthread *ptk, struct ptn_cfg_ring *ring_cfg)
+ptn_kthread_open_files(struct ptn_kthread *ptk, struct ptnetmap_cfg_ring *ring_cfg)
 {
     struct file *file;
     struct ptn_kthread_ctx *wctx = &ptk->worker_ctx;

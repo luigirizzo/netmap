@@ -527,37 +527,6 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NR_PASSTHROUGH_HOST	0x1000
 
 /*
- * Functions to write or read buffer in struct nmreq.
- * These functions use the fields from nr_arg1 to store
- * the pointer to a buffer and the length.
- */
-static inline void
-nmr_write_buf(struct nmreq *nmr, void *buf, uint16_t buf_len)
-{
-	uintptr_t *nmr_buf;
-	uint16_t *nmr_buf_len;
-
-	nmr_buf = (uintptr_t *)&nmr->nr_arg1;
-	nmr_buf_len = (uint16_t *)(nmr_buf + 1);
-
-	*nmr_buf = (uintptr_t)buf;
-	*nmr_buf_len = buf_len;
-}
-
-static inline void
-nmr_read_buf(struct nmreq *nmr, void **buf, uint16_t *buf_len)
-{
-	uintptr_t *nmr_buf;
-	uint16_t *nmr_buf_len;
-
-	nmr_buf = (uintptr_t *)&nmr->nr_arg1;
-	nmr_buf_len = (uint16_t *)(nmr_buf + 1);
-
-	*buf = (void *)*nmr_buf;
-	*buf_len = *nmr_buf_len;
-}
-
-/*
  * FreeBSD uses the size value embedded in the _IOWR to determine
  * how much to copy in/out. So we need it to match the actual
  * data structure we pass. We put some spares in the structure
@@ -594,20 +563,4 @@ struct nm_ifreq {
 	char nifr_name[IFNAMSIZ];
 	char data[NM_IFRDATA_LEN];
 };
-
-/*
- * Structures used for ptnetmap configuration
- */
-struct ptn_cfg_ring {
-	uint32_t ioeventfd;
-	uint32_t irqfd;
-};
-
-struct ptn_cfg {
-        /* XXX-ste: add version or features? */
-	struct ptn_cfg_ring tx_ring;
-	struct ptn_cfg_ring rx_ring;
-	void *csb;   /* CSB */
-};
-
 #endif /* _NET_NETMAP_H_ */

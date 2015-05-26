@@ -160,6 +160,7 @@ void netmap_mem_put(struct netmap_mem_d *);
 #ifdef WITH_PTNETMAP_GUEST
 struct netmap_mem_d* netmap_mem_pt_guest_new(struct ifnet *,
 		struct netmap_pt_guest_ops *);
+struct ptnetmap_memdev;
 struct netmap_mem_d* netmap_mem_pt_guest_attach(struct ptnetmap_memdev *, uint16_t);
 #endif /* WITH_PTNETMAP_GUEST */
 
