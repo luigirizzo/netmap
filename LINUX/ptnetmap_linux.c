@@ -320,7 +320,7 @@ ptn_kthread_delete(struct ptn_kthread *ptk)
 
 #ifdef WITH_PTNETMAP_GUEST
 /*
- * ptnetmap memory device (memdev)
+ * ptnetmap memory device (memdev) for linux guest
  * Used to expose host memory to the guest through PCI-BAR
  */
 #include <linux/kernel.h>
@@ -345,8 +345,8 @@ MODULE_DEVICE_TABLE(pci, ptn_memdev_ids);
 struct ptnetmap_memdev
 {
     struct pci_dev *pdev;
-    void __iomem *io_addr;
-    void __iomem *mem_addr;
+    void __iomem *pci_io;
+    void __iomem *pci_mem;
     struct netmap_mem_d *nm_mem;
     int bars;
 };
@@ -365,7 +365,7 @@ netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, vo
     phys_addr_t mem_paddr;
     int err = 0;
 
-    mem_size = ioread32(ptn_dev->io_addr + PTNETMAP_IO_PCI_MEMSIZE);
+    mem_size = ioread32(ptn_dev->pci_io + PTNETMAP_IO_PCI_MEMSIZE);
 
     D("=== BAR %d start %llx len %llx mem_size %x ===",
             PTNETMAP_MEM_PCI_BAR,
@@ -375,8 +375,8 @@ netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, vo
 
     /* map memory allocator */
     mem_paddr = pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR);
-    ptn_dev->mem_addr = *nm_addr = ioremap_cache(mem_paddr, mem_size);
-    if (ptn_dev->mem_addr == NULL) {
+    ptn_dev->pci_mem = *nm_addr = ioremap_cache(mem_paddr, mem_size);
+    if (ptn_dev->pci_mem == NULL) {
         err = -ENOMEM;
     }
     *nm_paddr = mem_paddr;
@@ -390,9 +390,9 @@ netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, vo
 void
 netmap_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
 {
-    if (ptn_dev->mem_addr) {
-        iounmap(ptn_dev->mem_addr);
-        ptn_dev->mem_addr = NULL;
+    if (ptn_dev->pci_mem) {
+        iounmap(ptn_dev->pci_mem);
+        ptn_dev->pci_mem = NULL;
     }
 }
 
@@ -426,8 +426,8 @@ ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     if (err)
         goto err_pci_reg;
 
-    ptn_dev->io_addr = pci_iomap(pdev, PTNETMAP_IO_PCI_BAR, 0);
-    if (ptn_dev->io_addr == NULL) {
+    ptn_dev->pci_io = pci_iomap(pdev, PTNETMAP_IO_PCI_BAR, 0);
+    if (ptn_dev->pci_io == NULL) {
         err = -ENOMEM;
         goto err_iomap;
     }
@@ -435,7 +435,7 @@ ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     pci_set_master(pdev); /* XXX-ste: is needed??? */
 
     ptn_dev->bars = bars;
-    mem_id = ioread16(ptn_dev->io_addr + PTNETMAP_IO_PCI_HOSTID);
+    mem_id = ioread16(ptn_dev->pci_io + PTNETMAP_IO_PCI_HOSTID);
 
     /* create guest allocator */
     ptn_dev->nm_mem = netmap_mem_pt_guest_create(ptn_dev, mem_id);
@@ -451,7 +451,7 @@ ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 err_nmd_create:
     pci_set_drvdata(pdev, NULL);
-    iounmap(ptn_dev->io_addr);
+    iounmap(ptn_dev->pci_io);
 err_iomap:
     pci_release_selected_regions(pdev, bars);
 err_pci_reg:
@@ -474,12 +474,12 @@ ptn_memdev_remove(struct pci_dev *pdev)
         netmap_mem_put(ptn_dev->nm_mem);
         ptn_dev->nm_mem = NULL;
     }
-    if (ptn_dev->mem_addr) {
-        iounmap(ptn_dev->mem_addr);
-        ptn_dev->mem_addr = NULL;
+    if (ptn_dev->pci_mem) {
+        iounmap(ptn_dev->pci_mem);
+        ptn_dev->pci_mem = NULL;
     }
     pci_set_drvdata(pdev, NULL);
-    iounmap(ptn_dev->io_addr);
+    iounmap(ptn_dev->pci_io);
     pci_release_selected_regions(pdev, ptn_dev->bars);
     pci_disable_device(pdev);
     kfree(ptn_dev);
