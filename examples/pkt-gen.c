@@ -1506,10 +1506,10 @@ main_thread(struct glob_arg *g)
 		pps = (x.pkts*1000000 + usec/2) / usec;
 		abs = (x.events > 0) ? (x.pkts / (double) x.events) : 0;
 
-		D("%s pps (%s pkts %s bytes in %llu usec) %.2f avg_batch",
+		D("%spps (%spkts %sbps in %llu usec) %.2f avg_batch",
 			norm(b1,pps),
 			norm(b2, (double)x.pkts),
-			norm(b3, (double)x.bytes),
+			norm(b3, (double)x.bytes*8),
 			(unsigned long long)usec,
 			abs);
 		prev = cur;
