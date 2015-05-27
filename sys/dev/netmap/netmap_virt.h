@@ -176,6 +176,20 @@ struct paravirt_csb {
 #define NET_PARAVIRT_PTCTL_UNREGIF      11
 #define NET_PARAVIRT_PTCTL_HOSTMEMID	12
 
+/*
+ * Structures used for ptnetmap configuration
+ */
+struct ptnetmap_cfg_ring {
+	uint16_t ioeventfd;
+	uint16_t irqfd;
+};
+
+struct ptnetmap_cfg {
+	struct ptnetmap_cfg_ring tx_ring;
+	struct ptnetmap_cfg_ring rx_ring;
+        void *csb;   /* CSB */
+};
+
 #ifdef	QEMU_PCI_H
 
 /*
@@ -192,25 +206,12 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 #if defined(NETMAP_API) && !defined(NETMAP_VIRT_PTNETMAP)
 #define NETMAP_VIRT_PTNETMAP
 
-#if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
-/*
- * Structures used for ptnetmap configuration
- */
-struct ptnetmap_cfg_ring {
-	uint32_t ioeventfd;
-	uint32_t irqfd;
-};
-
-struct ptnetmap_cfg {
-        /* XXX-ste: add version or features? */
-	struct ptnetmap_cfg_ring tx_ring;
-	struct ptnetmap_cfg_ring rx_ring;
-	void *csb;   /* CSB */
-};
-
 #ifndef CTASSERT
-#define CTASSERT(x) static_assert((x), "assert failed")
-#endif
+#ifndef BUILD_BUG_ON_ZERO
+#define BUILD_BUG_ON_ZERO(e) (sizeof(struct { int:-!!(e); }))
+#endif /* BUILD_BUG_ON_ZERO */
+#define CTASSERT(e) ((void)BUILD_BUG_ON_ZERO(!(e)))
+#endif /* CTASSERT */
 
 /*
  * Functions used to read/write ptnetmap_cfg in the nmreq,
@@ -220,8 +221,7 @@ static inline void
 ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 {
 #ifdef CTASSERT
-	/* XXX: check ctassert */
-//CTASSERT(sizeof(struct ptnetmap_cfg) <= (offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset)));
+CTASSERT(sizeof(struct ptnetmap_cfg) <= (offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset)));
 #endif
     memcpy(&nmr->nr_offset, cfg, sizeof(*cfg));
 }
@@ -232,6 +232,7 @@ ptnetmap_read_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
     memcpy(cfg, &nmr->nr_offset, sizeof(*cfg));
 }
 
+#if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
 static inline uint32_t
 ptn_sub(uint32_t l_elem, uint32_t r_elem, uint32_t num_slots)
 {
