@@ -38,6 +38,7 @@
 #include <vm/vm.h>
 #include <vm/pmap.h>    /* vtophys ? */
 #include <dev/netmap/netmap_kern.h>
+#include <dev/netmap/netmap_virt.h>
 
 extern int netmap_adaptive_io;
 
