@@ -170,7 +170,9 @@ struct glob_arg {
 	int npackets;	/* total packets to send */
 	int frags;	/* fragments per packet */
 	int nthreads;
-	int cpus;
+	int cpus;	/* cpus used for running */
+	int system_cpus;	/* cpus on the system */
+
 	int options;	/* testing */
 #define OPT_PREFETCH	1
 #define OPT_ACCESS	2
@@ -465,6 +467,7 @@ setaffinity(pthread_t me, int i)
 	if (i == -1)
 		return 0;
 
+D("setting affinity to core %d", i);
 	/* Set thread affinity affinity.*/
 	CPU_ZERO(&cpumask);
 	CPU_SET(i, &cpumask);
@@ -1431,11 +1434,9 @@ start_threads(struct glob_arg *g)
 	    }
 		t->used = 1;
 		t->me = i;
+		/* set the affinity for the thread. XXX revise */
 		if (g->affinity >= 0) {
-			if (g->affinity < g->cpus)
-				t->affinity = g->affinity;
-			else
-				t->affinity = i % g->cpus;
+			t->affinity = (g->affinity + i) % g->system_cpus;
 		} else {
 			t->affinity = -1;
 		}
@@ -1646,7 +1647,7 @@ main(int arc, char **argv)
 	g.pkt_size = 60;
 	g.burst = 512;		// default
 	g.nthreads = 1;
-	g.cpus = 1;
+	g.cpus = 1;		// default
 	g.forever = 1;
 	g.tx_rate = 0;
 	g.frags = 1;
@@ -1805,11 +1806,12 @@ main(int arc, char **argv)
 		usage();
 	}
 
-	i = system_ncpus();
+	g.system_cpus = i = system_ncpus();
 	if (g.cpus < 0 || g.cpus > i) {
 		D("%d cpus is too high, have only %d cpus", g.cpus, i);
 		usage();
 	}
+D("running on %d cpus (have %d)", g.cpus, i);
 	if (g.cpus == 0)
 		g.cpus = i;
 
