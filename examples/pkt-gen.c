@@ -1338,7 +1338,14 @@ tx_output(struct my_ctrs *cur, double delta, const char *msg)
 {
 	double bw, raw_bw, pps, abs;
 	char b1[40], b2[80], b3[80];
-	int size = (int)(cur->bytes / cur->pkts);
+	int size;
+
+	if (cur->pkts == 0) {
+		printf("%s nothing.\n", msg);
+		return;
+	}
+
+	size = (int)(cur->bytes / cur->pkts);
 
 	printf("%s %llu packets %llu bytes %llu events %d bytes each in %.2f seconds.\n",
 		msg,
