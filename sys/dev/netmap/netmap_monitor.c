@@ -329,6 +329,12 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 		/* this is the first monitor, intercept callbacks */
 		D("%s: intercept callbacks on %s", mkring->name, kring->name);
 		kring->mon_sync = kring->nm_sync;
+		/* zcopy monitors do not override nm_notify(), but
+		 * we save the original one regardless, so that
+		 * netmap_monitor_del() does not need to know the
+		 * monitor type
+		 */
+		kring->mon_notify = kring->nm_notify;
 		if (kring->tx == NR_TX) {
 			kring->nm_sync = (zcopy ? netmap_zmon_parent_txsync :
 						  netmap_monitor_parent_txsync);
@@ -337,7 +343,6 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 						  netmap_monitor_parent_rxsync);
 			if (!zcopy) {
 				/* also intercept notify */
-				kring->mon_notify = kring->nm_notify;
 				kring->nm_notify = netmap_monitor_parent_notify;
 				kring->mon_tail = kring->nr_hwtail;
 			}
