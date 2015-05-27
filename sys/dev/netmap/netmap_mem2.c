@@ -448,13 +448,11 @@ DECLARE_SYSCTLS(NETMAP_RING_POOL, ring);
 DECLARE_SYSCTLS(NETMAP_BUF_POOL, buf);
 
 static int
-nm_mem_assign_id(struct netmap_mem_d *nmd)
+_nm_mem_assign_id(struct netmap_mem_d *nmd)
 {
 	nm_memid_t id;
 	struct netmap_mem_d *scan = netmap_last_mem_d;
 	int error = ENOMEM;
-
-	NMA_LOCK(&nm_mem);
 
 	do {
 		/* we rely on unsigned wrap around */
@@ -474,8 +472,19 @@ nm_mem_assign_id(struct netmap_mem_d *nmd)
 		}
 	} while (scan != netmap_last_mem_d);
 
-	NMA_UNLOCK(&nm_mem);
 	return error;
+}
+
+static int
+nm_mem_assign_id(struct netmap_mem_d *nmd)
+{
+        int ret;
+
+	NMA_LOCK(&nm_mem);
+        ret = _nm_mem_assign_id(nmd);
+	NMA_UNLOCK(&nm_mem);
+
+	return ret;
 }
 
 static void
@@ -2008,6 +2017,7 @@ struct netmap_mem_ops netmap_mem_pt_guest_ops = {
 	.nmd_rings_delete = netmap_mem_pt_guest_rings_delete
 };
 
+/* call with lock held */
 static struct netmap_mem_d *
 netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 {
@@ -2027,6 +2037,7 @@ netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 	return mem;
 }
 
+/* call with lock held */
 static struct netmap_mem_d *
 netmap_mem_pt_guest_create(nm_memid_t host_id)
 {
@@ -2043,8 +2054,8 @@ netmap_mem_pt_guest_create(nm_memid_t host_id)
 	pv->up.ops = &netmap_mem_pt_guest_ops;
 	pv->nm_host_id = host_id;
 
-        /* Assign new id in the guest */
-	err = nm_mem_assign_id(&pv->up);
+        /* Assign new id in the guest. We have the lock. */
+	err = _nm_mem_assign_id(&pv->up);
 	if (err)
 		goto error;
 
