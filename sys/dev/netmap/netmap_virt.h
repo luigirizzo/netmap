@@ -23,9 +23,6 @@
  * SUCH DAMAGE.
  */
 
-#ifndef NETMAP_VIRT_H
-#define NETMAP_VIRT_H
-
 /*
  Support for virtio-like communication between host (H) and guest (G) NICs.
 
@@ -107,6 +104,10 @@
 	would free only a few buffers at a time.
 
  */
+
+#if !defined(NETMAP_VIRT_CSB) /*&& !defined(NET_PARAVIRT_CSB_SIZE) XXX: NET_PARAVIRT_CSB_SIZE to avoid oldest CSB */
+#define NETMAP_VIRT_CSB
+
 struct pt_ring {
     uint32_t head;
     uint32_t cur;
@@ -186,8 +187,12 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 
 #endif /* QEMU_PCI_H */
 
-#ifdef NETMAP_API
+#endif /* NETMAP_VIRT_CSB */
 
+#if defined(NETMAP_API) && !defined(NETMAP_VIRT_PTNETMAP)
+#define NETMAP_VIRT_PTNETMAP
+
+#if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
 /*
  * Structures used for ptnetmap configuration
  */
@@ -204,7 +209,7 @@ struct ptnetmap_cfg {
 };
 
 #ifndef CTASSERT
-#define CTASSERT(x) compiletime_assert((x), "assert failed")
+#define CTASSERT(x) static_assert((x), "assert failed")
 #endif
 
 /*
@@ -215,7 +220,8 @@ static inline void
 ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 {
 #ifdef CTASSERT
-CTASSERT(sizeof(struct ptnetmap_cfg) <= offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset));
+	/* XXX: check ctassert */
+//CTASSERT(sizeof(struct ptnetmap_cfg) <= (offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset)));
 #endif
     memcpy(&nmr->nr_offset, cfg, sizeof(*cfg));
 }
@@ -226,7 +232,6 @@ ptnetmap_read_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
     memcpy(cfg, &nmr->nr_offset, sizeof(*cfg));
 }
 
-#if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
 static inline uint32_t
 ptn_sub(uint32_t l_elem, uint32_t r_elem, uint32_t num_slots)
 {
@@ -420,8 +425,5 @@ void netmap_pt_memdev_iounmap(struct ptnetmap_memdev *);
 #define PTNETMAP_IO_PCI_HOSTID          8
 #define PTNEMTAP_IO_SIZE                10
 #endif /* WITH_PTNETMAP_GUEST */
-#else
-#warning "no netmap api"
-#endif /* NETMAP_API */
 
-#endif /* NETMAP_VIRT_H */
+#endif /* NETMAP_VIRT_PTNETMAP */
