@@ -1447,10 +1447,7 @@ start_threads(struct glob_arg *g)
 		t->used = 1;
 		t->me = i;
 		if (g->affinity >= 0) {
-			if (g->affinity < g->cpus)
-				t->affinity = g->affinity;
-			else
-				t->affinity = i % g->cpus;
+			t->affinity = (g->affinity + i) % g->system_cpus;
 		} else {
 			t->affinity = -1;
 		}
