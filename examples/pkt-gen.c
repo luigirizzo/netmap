@@ -155,6 +155,12 @@ struct tstamp {
 	uint32_t nsec;
 };
 
+/* counters to accumulate statistics */
+struct my_ctrs {
+	uint64_t pkts, bytes, events;
+	struct timeval t;
+};
+
 /*
  * global arguments for all threads
  */
@@ -217,8 +223,11 @@ struct targ {
 	int cancel;
 	int fd;
 	struct nm_desc *nmd;
-	volatile uint64_t count;
-	volatile uint64_t count_event;
+	/* these ought to be volatile, but they are
+	 * only sampled and errors should not accumulate
+	 */
+	struct my_ctrs ctr;
+
 	struct timespec tic, toc;
 	int me;
 	pthread_t thread;
@@ -467,7 +476,6 @@ setaffinity(pthread_t me, int i)
 	if (i == -1)
 		return 0;
 
-D("setting affinity to core %d", i);
 	/* Set thread affinity affinity.*/
 	CPU_ZERO(&cpumask);
 	CPU_SET(i, &cpumask);
@@ -919,7 +927,7 @@ ponger_body(void *data)
 			}
 		}
 		txring->head = txring->cur = txcur;
-		targ->count = sent;
+		targ->ctr.pkts = sent;
 #ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #endif
@@ -1048,8 +1056,9 @@ sender_body(void *data)
 			sent++;
 		update_addresses(pkt, targ->g);
 		if (i > 10000) {
-			targ->count = sent;
-			targ->count_event = sent;
+			targ->ctr.pkts = sent;
+			targ->ctr.bytes = sent*size;
+			targ->ctr.events = sent;
 			i = 0;
 		}
 	    }
@@ -1062,8 +1071,9 @@ sender_body(void *data)
 			sent++;
 		update_addresses(pkt, targ->g);
 		if (i > 10000) {
-			targ->count = sent;
-			targ->count_event = sent;
+			targ->ctr.pkts = sent;
+			targ->ctr.bytes = sent*size;
+			targ->ctr.events = sent;
 			i = 0;
 		}
 	    }
@@ -1124,8 +1134,9 @@ sender_body(void *data)
 			sent += m;
 			if (m > 0) //XXX-ste: can m be 0?
 				event++;
-			targ->count = sent;
-			targ->count_event = event;
+			targ->ctr.pkts = sent;
+			targ->ctr.bytes = sent*size;
+			targ->ctr.events = event;
 			if (rate_limit) {
 				tosend -= m;
 				if (tosend <= 0)
@@ -1148,8 +1159,9 @@ sender_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 	targ->completed = 1;
-	targ->count = sent;
-	targ->count_event = event;
+	targ->ctr.pkts = sent;
+	targ->ctr.bytes = sent*size;
+	targ->ctr.events = event;
 quit:
 	/* reset the ``used`` flag. */
 	targ->used = 0;
@@ -1170,10 +1182,15 @@ receive_pcap(u_char *user, const struct pcap_pkthdr * h,
 }
 #endif /* !NO_PCAP */
 
+
 static int
-receive_packets(struct netmap_ring *ring, u_int limit, int dump)
+receive_packets(struct netmap_ring *ring, u_int limit, int dump, uint64_t *bytes)
 {
 	u_int cur, rx, n;
+	uint64_t b = 0;
+
+	if (bytes == NULL)
+		bytes = &b;
 
 	cur = ring->cur;
 	n = nm_ring_space(ring);
@@ -1183,6 +1200,7 @@ receive_packets(struct netmap_ring *ring, u_int limit, int dump)
 		struct netmap_slot *slot = &ring->slot[cur];
 		char *p = NETMAP_BUF(ring, slot->buf_idx);
 
+		*bytes += slot->len;
 		if (dump)
 			dump_payload(p, slot->len, ring, cur);
 
@@ -1201,8 +1219,9 @@ receiver_body(void *data)
 	struct netmap_if *nifp;
 	struct netmap_ring *rxring;
 	int i;
-	uint64_t received = 0;
-	uint64_t event = 0;
+	struct my_ctrs cur;
+
+	cur.pkts = cur.bytes = cur.events = 0;
 
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
@@ -1223,9 +1242,11 @@ receiver_body(void *data)
 	while (!targ->cancel) {
 		char buf[MAX_BODYSIZE];
 		/* XXX should we poll ? */
-		if (read(targ->g->main_fd, buf, sizeof(buf)) > 0) {
-			targ->count++;
-			targ->count_event++;
+		i = read(targ->g->main_fd, buf, sizeof(buf));
+		if (i > 0) {
+			targ->ctr.pkts++;
+			targ->ctr.bytes += i;
+			targ->ctr.events++;
 		}
 	}
 #ifndef NO_PCAP
@@ -1261,18 +1282,18 @@ receiver_body(void *data)
 
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
+			
 
 			rxring = NETMAP_RXRING(nifp, i);
 			if (nm_ring_empty(rxring))
 				continue;
 
-			m = receive_packets(rxring, targ->g->burst, dump);
-			received += m;
+			m = receive_packets(rxring, targ->g->burst, dump, &cur.bytes);
+			cur.pkts += m;
 			if (m > 0) //XXX-ste: can m be 0?
-				event++;
+				cur.events++;
 		}
-		targ->count = received;
-		targ->count_event = event;
+		targ->ctr = cur;
 	}
     }
 
@@ -1282,8 +1303,7 @@ receiver_body(void *data)
 out:
 #endif
 	targ->completed = 1;
-	targ->count = received;
-	targ->count_event = event;
+	targ->ctr = cur;
 
 quit:
 	/* reset the ``used`` flag. */
@@ -1295,56 +1315,48 @@ quit:
 /* very crude code to print a number in normalized form.
  * Caller has to make sure that the buffer is large enough.
  */
-static const char *
-norm(char *buf, double val)
+const char *
+norm2(char *buf, double val, char *fmt)
 {
 	char *units[] = { "", "K", "M", "G", "T" };
 	u_int i;
 
 	for (i = 0; val >=1000 && i < sizeof(units)/sizeof(char *) - 1; i++)
 		val /= 1000;
-	sprintf(buf, "%.2f %s", val, units[i]);
+	sprintf(buf, fmt, val, units[i]);
 	return buf;
 }
 
+const char *
+norm(char *buf, double val)
+{
+	return norm2(buf, val, "%.3f %s");
+}
+
 static void
-tx_output(uint64_t sent, int size, uint64_t events, double delta)
+tx_output(struct my_ctrs *cur, double delta, const char *msg)
 {
 	double bw, raw_bw, pps, abs;
 	char b1[40], b2[80], b3[80];
+	int size = (int)(cur->bytes / cur->pkts);
 
-	printf("Sent %llu packets, %d bytes each, in %.2f seconds.\n",
-	       (unsigned long long)sent, size, delta);
+	printf("%s %llu packets %llu bytes %llu events %d bytes each in %.2f seconds.\n",
+		msg,
+		(unsigned long long)cur->pkts,
+		(unsigned long long)cur->bytes,
+		(unsigned long long)cur->events, size, delta);
 	if (delta == 0)
 		delta = 1e-6;
 	if (size < 60)		/* correct for min packet size */
 		size = 60;
-	pps = sent / delta;
-	bw = (8.0 * size * sent) / delta;
+	pps = cur->pkts / delta;
+	bw = (8.0 * cur->bytes) / delta;
 	/* raw packets have4 bytes crc + 20 bytes framing */
-	raw_bw = (8.0 * (size + 24) * sent) / delta;
-	abs = sent / (double)(events);
+	raw_bw = (8.0 * (cur->pkts * 24 + cur->bytes)) / delta;
+	abs = cur->pkts / (double)(cur->events);
 
 	printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
 		norm(b1, pps), norm(b2, bw), norm(b3, raw_bw), abs);
-}
-
-
-static void
-rx_output(uint64_t received, uint64_t events, double delta)
-{
-	double pps, abs;
-	char b1[40];
-
-	printf("Received %llu packets, in %.2f seconds.\n",
-		(unsigned long long) received, delta);
-
-	if (delta == 0)
-		delta = 1e-6;
-	pps = received / delta;
-	abs = received / (double)(events);
-
-	printf("Speed: %spps. Average batch: %.2f pkts\n", norm(b1, pps), abs);
 }
 
 static void
@@ -1434,9 +1446,11 @@ start_threads(struct glob_arg *g)
 	    }
 		t->used = 1;
 		t->me = i;
-		/* set the affinity for the thread. XXX revise */
 		if (g->affinity >= 0) {
-			t->affinity = (g->affinity + i) % g->system_cpus;
+			if (g->affinity < g->cpus)
+				t->affinity = g->affinity;
+			else
+				t->affinity = i % g->cpus;
 		} else {
 			t->affinity = -1;
 		}
@@ -1455,56 +1469,58 @@ main_thread(struct glob_arg *g)
 {
 	int i;
 
-	uint64_t prev = 0;
-	uint64_t prev_e = 0;
-	uint64_t count = 0;
-	uint64_t events = 0;
+	struct my_ctrs prev, cur;
 	double delta_t;
 	struct timeval tic, toc;
 
-	gettimeofday(&toc, NULL);
+	prev.pkts = prev.bytes = prev.events = 0;
+	gettimeofday(&prev.t, NULL);
 	for (;;) {
-		struct timeval now, delta;
-		uint64_t pps, usec, my_count, npkts;
-		uint64_t my_count_e, nevents;
+		char b1[40], b2[40], b3[40];
+		struct timeval delta;
+		uint64_t pps, usec;
+		struct my_ctrs x;
 		double abs;
 		int done = 0;
 
 		delta.tv_sec = g->report_interval/1000;
 		delta.tv_usec = (g->report_interval%1000)*1000;
 		select(0, NULL, NULL, NULL, &delta);
-		gettimeofday(&now, NULL);
-		timersub(&now, &toc, &toc);
-		my_count = 0;
-		my_count_e = 0;
+		cur.pkts = cur.bytes = cur.events = 0;
+		gettimeofday(&cur.t, NULL);
+		timersub(&cur.t, &prev.t, &delta);
+		usec = delta.tv_sec* 1000000 + delta.tv_usec;
+		if (usec < 10000) /* too short to be meaningful */
+			continue;
+		/* accumulate counts for all threads */
 		for (i = 0; i < g->nthreads; i++) {
-			my_count += targs[i].count;
-			my_count_e += targs[i].count_event;
+			cur.pkts += targs[i].ctr.pkts;
+			cur.bytes += targs[i].ctr.bytes;
+			cur.events += targs[i].ctr.events;
 			if (targs[i].used == 0)
 				done++;
 		}
-		usec = toc.tv_sec* 1000000 + toc.tv_usec;
-		if (usec < 10000)
-			continue;
-		npkts = my_count - prev;
-		nevents = my_count_e - prev_e;
-		pps = (npkts*1000000 + usec/2) / usec;
-		abs = (nevents > 0) ? (npkts / (double) nevents) : 0;
+		x.pkts = cur.pkts - prev.pkts;
+		x.bytes = cur.bytes - prev.bytes;
+		x.events = cur.events - prev.events;
+		pps = (x.pkts*1000000 + usec/2) / usec;
+		abs = (x.events > 0) ? (x.pkts / (double) x.events) : 0;
 
-		D("%llu pps (%llu pkts in %llu usec) %.2f avg_batch",
-			(unsigned long long)pps,
-			(unsigned long long)npkts,
+		D("%s pps (%s pkts %s bytes in %llu usec) %.2f avg_batch",
+			norm(b1,pps),
+			norm(b2, (double)x.pkts),
+			norm(b3, (double)x.bytes),
 			(unsigned long long)usec,
 			abs);
-		prev = my_count;
-		prev_e = my_count_e;
-		toc = now;
+		prev = cur;
 		if (done == g->nthreads)
 			break;
 	}
 
 	timerclear(&tic);
 	timerclear(&toc);
+	cur.pkts = cur.bytes = cur.events = 0;
+	/* final round */
 	for (i = 0; i < g->nthreads; i++) {
 		struct timespec t_tic, t_toc;
 		/*
@@ -1512,7 +1528,7 @@ main_thread(struct glob_arg *g)
 		 * file descriptors.
 		 */
 		if (targs[i].used)
-			pthread_join(targs[i].thread, NULL);
+			pthread_join(targs[i].thread, NULL); /* blocking */
 		close(targs[i].fd);
 
 		if (targs[i].completed == 0)
@@ -1522,8 +1538,13 @@ main_thread(struct glob_arg *g)
 		 * Collect threads output and extract information about
 		 * how long it took to send all the packets.
 		 */
-		count += targs[i].count;
-		events += targs[i].count_event;
+		cur.pkts += targs[i].ctr.pkts;
+		cur.bytes += targs[i].ctr.bytes;
+		cur.events += targs[i].ctr.events;
+		/* collect the largest start (tic) and end (toc) times,
+		 * XXX maybe we should do the earliest tic, or do a weighted
+		 * average ?
+		 */
 		t_tic = timeval2spec(&tic);
 		t_toc = timeval2spec(&toc);
 		if (!timerisset(&tic) || timespec_ge(&targs[i].tic, &t_tic))
@@ -1536,9 +1557,9 @@ main_thread(struct glob_arg *g)
 	timersub(&toc, &tic, &toc);
 	delta_t = toc.tv_sec + 1e-6* toc.tv_usec;
 	if (g->td_body == sender_body)
-		tx_output(count, g->pkt_size, events, delta_t);
+		tx_output(&cur, delta_t, "Sent");
 	else
-		rx_output(count, events, delta_t);
+		tx_output(&cur, delta_t, "Received");
 
 	if (g->dev_type == DEV_NETMAP) {
 		munmap(g->nmd->mem, g->nmd->req.nr_memsize);
