@@ -1,5 +1,5 @@
 diff --git a/e1000e/netdev.c b/e1000e/netdev.c
-index 2198e61..caf2767 100644
+index 2198e61..daee7db 100644
 --- a/e1000e/netdev.c
 +++ b/e1000e/netdev.c
 @@ -452,6 +452,10 @@ static int e1000_desc_unused(struct e1000_ring *ring)
@@ -46,7 +46,18 @@ index 2198e61..caf2767 100644
  	adapter->alloc_rx_buf(adapter, e1000_desc_unused(adapter->rx_ring),
  			      GFP_KERNEL);
  }
-@@ -3468,6 +3484,10 @@ void e1000e_down(struct e1000_adapter *adapter)
+@@ -3422,6 +3438,10 @@ int e1000e_up(struct e1000_adapter *adapter)
+ 
+ 	netif_start_queue(adapter->netdev);
+ 
++#ifdef DEV_NETMAP
++	netmap_enable_all_rings(adapter->netdev);
++#endif /* DEV_NETMAP */
++
+ 	/* fire a link change interrupt to start the watchdog */
+ 	if (adapter->msix_entries)
+ 		ew32(ICS, E1000_ICS_LSC | E1000_ICR_OTHER);
+@@ -3468,6 +3488,10 @@ void e1000e_down(struct e1000_adapter *adapter)
  
  	netif_stop_queue(netdev);
  
@@ -57,7 +68,7 @@ index 2198e61..caf2767 100644
  	/* disable transmits in the hardware */
  	tctl = er32(TCTL);
  	tctl &= ~E1000_TCTL_EN;
-@@ -3755,6 +3775,10 @@ static int e1000_open(struct net_device *netdev)
+@@ -3755,6 +3779,10 @@ static int e1000_open(struct net_device *netdev)
  
  	netif_start_queue(netdev);
  
@@ -68,7 +79,7 @@ index 2198e61..caf2767 100644
  	adapter->idle_check = true;
  	pm_runtime_put(&pdev->dev);
  
-@@ -6147,6 +6171,9 @@ static int __devinit e1000_probe(struct pci_dev *pdev,
+@@ -6147,6 +6175,9 @@ static int __devinit e1000_probe(struct pci_dev *pdev,
  	if (err)
  		goto err_register;
  
@@ -78,7 +89,7 @@ index 2198e61..caf2767 100644
  	/* carrier off reporting is important to ethtool even BEFORE open */
  	netif_carrier_off(netdev);
  
-@@ -6234,6 +6261,10 @@ static void __devexit e1000_remove(struct pci_dev *pdev)
+@@ -6234,6 +6265,10 @@ static void __devexit e1000_remove(struct pci_dev *pdev)
  	kfree(adapter->tx_ring);
  	kfree(adapter->rx_ring);
  
