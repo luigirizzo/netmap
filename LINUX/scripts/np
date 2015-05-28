@@ -440,7 +440,7 @@ function check-patch()
 			cp $p single-patch
 			ok=false
 			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX \
-				--cache=$cache >>$log
+				--drivers=$driver --cache=$cache >>$log
 			(make get-$driver && make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
 			grep -q warning: $log && { warn=true; echo $warn > $cwarn; }
 			cat config.log >>$log
