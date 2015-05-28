@@ -853,6 +853,10 @@ void
 netmap_krings_delete(struct netmap_adapter *na)
 {
 	struct netmap_kring *kring = na->tx_rings;
+	enum txrx t;
+
+	for_rx_tx(t)
+		netmap_knlist_destroy(&na->si[t]);
 
 	/* we rely on the krings layout described above */
 	for ( ; kring != na->tailroom; kring++) {
@@ -931,9 +935,6 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		 * XXX The wake up now must happen during *_down(), when
 		 * we order all activities to stop. -gl
 		 */
-		netmap_knlist_destroy(&na->si[NR_TX]);
-		netmap_knlist_destroy(&na->si[NR_RX]);
-
 		/* delete rings and buffers */
 		netmap_mem_rings_delete(na);
 		na->nm_krings_delete(na);
