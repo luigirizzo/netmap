@@ -90,6 +90,8 @@ driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
 	e1000 e1000e igb ixgbe"
 # enabled drivers (bitfield)
 driver=
+driver_np_avail=$driver_avail
+driver_np=
 
 drv()
 {
@@ -97,6 +99,11 @@ drv()
 }
 
 drv enable-all
+
+drv_np()
+{
+	setop driver_np "$@"
+}
 
 prefix=/usr/local
 cc=cc
@@ -205,6 +212,7 @@ Available options:
   --no-drivers                 do not compile any driver
   --no-drivers=                do not compile the given drivers (comma sep.)
   --drivers=                   only compile the given drivers (comma sep.)
+  --drivers-no-patch=          do not patch the given drivers (comma sep.)
   --mod-name=		       netmap module name [$MODNAME]
   --enable-vale      	       enable the VALE switch
   --disable-vale      	       disable the VALE switch
@@ -443,6 +451,12 @@ for opt do
 		drv disable-all
 		for d in $(echo "$optarg" | sed 's/,/ /g'); do
 			drv enable "$d"
+		done
+	;;
+	--drivers-no-patch=*)
+		drv_np disable-all
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			drv_np enable "$d"
 		done
 	;;
 	--cc=*) cc="$optarg"
