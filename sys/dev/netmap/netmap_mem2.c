@@ -144,9 +144,9 @@ typedef uint16_t nm_memid_t;
  */
 struct netmap_mem_shared_info {
         struct netmap_if up;
-        uint64_t version_or_feat; /* XXX-ste */
-#define NMS_FEAT_BUF_POOL_INFO          0x0001
-#define NMS_FEAT_MEMSIZE_INFO          0x0002
+        uint64_t features;
+#define NMS_FEAT_BUF_POOL          0x0001
+#define NMS_FEAT_MEMSIZE           0x0002
 
         uint32_t buf_pool_offset;
         uint32_t buf_pool_objtotal;
@@ -1212,11 +1212,11 @@ netmap_mem_init_shared_info(struct netmap_mem_d *nmd)
 	base = netmap_if_offset(nmd, nms_info);
 
         memcpy(&nms_info->up, &nms_if_blueprint, sizeof(nms_if_blueprint));
-
 	nms_info->buf_pool_offset = nmd->pools[NETMAP_IF_POOL].memtotal + nmd->pools[NETMAP_RING_POOL].memtotal;
 	nms_info->buf_pool_objtotal = nmd->pools[NETMAP_BUF_POOL].objtotal;
 	nms_info->buf_pool_objsize = nmd->pools[NETMAP_BUF_POOL]._objsize;
 	nms_info->totalsize = nmd->nm_totalsize;
+	nms_info->features = NMS_FEAT_BUF_POOL | NMS_FEAT_MEMSIZE;
 
 	return 0;
 }
@@ -1752,7 +1752,12 @@ netmap_mem_pt_guest_read_shared_info(struct netmap_mem_d *nmd)
             D("error, the first slot does not contain shared info");
             return EINVAL;
         }
-        /* TODO-ste: check version or feat of mem_shared info */
+        /* check features mem_shared info */
+        if ((nms_info->features & (NMS_FEAT_BUF_POOL | NMS_FEAT_MEMSIZE)) !=
+               (NMS_FEAT_BUF_POOL | NMS_FEAT_MEMSIZE)) {
+            D("error, the shared info does not contain BUF_POOL and MEMSIZE");
+            return EINVAL;
+        }
 
         bufsize = nms_info->buf_pool_objsize;
         nbuffers = nms_info->buf_pool_objtotal;
