@@ -1445,6 +1445,7 @@ out:
 u_int
 nm_txsync_prologue(struct netmap_kring *kring)
 {
+#define NM_ASSERT(t) if (t) { D("fail " #t); goto error; }
 	struct netmap_ring *ring = kring->ring;
 	u_int head = ring->head; /* read only once */
 	u_int cur = ring->cur; /* read only once */
@@ -1470,25 +1471,20 @@ nm_txsync_prologue(struct netmap_kring *kring)
 	 */
 	if (kring->rtail >= kring->rhead) {
 		/* want rhead <= head <= rtail */
-		if (head < kring->rhead || head > kring->rtail)
-			goto error;
+		NM_ASSERT(head < kring->rhead || head > kring->rtail);
 		/* and also head <= cur <= rtail */
-		if (cur < head || cur > kring->rtail)
-			goto error;
+		NM_ASSERT(cur < head || cur > kring->rtail);
 	} else { /* here rtail < rhead */
 		/* we need head outside rtail .. rhead */
-		if (head > kring->rtail && head < kring->rhead)
-			goto error;
+		NM_ASSERT(head > kring->rtail && head < kring->rhead);
 
 		/* two cases now: head <= rtail or head >= rhead  */
 		if (head <= kring->rtail) {
 			/* want head <= cur <= rtail */
-			if (cur < head || cur > kring->rtail)
-				goto error;
+			NM_ASSERT(cur < head || cur > kring->rtail);
 		} else { /* head >= rhead */
 			/* cur must be outside rtail..head */
-			if (cur > kring->rtail && cur < head)
-				goto error;
+			NM_ASSERT(cur > kring->rtail && cur < head);
 		}
 	}
 	if (ring->tail != kring->rtail) {
@@ -1501,12 +1497,13 @@ nm_txsync_prologue(struct netmap_kring *kring)
 	return head;
 
 error:
-	RD(5, "%s kring error: hwcur %d rcur %d hwtail %d cur %d tail %d",
+	RD(5, "%s kring error: head %d cur %d tail %d rhead %d rcur %d rtail %d hwcur %d hwtail %d",
 		kring->name,
-		kring->nr_hwcur,
-		kring->rcur, kring->nr_hwtail,
-		cur, ring->tail);
+		head, cur, ring->tail,
+		kring->rhead, kring->rcur, kring->rtail,
+		kring->nr_hwcur, kring->nr_hwtail);
 	return n;
+#undef NM_ASSERT
 }
 
 
