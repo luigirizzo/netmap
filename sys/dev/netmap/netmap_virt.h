@@ -180,13 +180,25 @@ struct paravirt_csb {
  * Structures used for ptnetmap configuration
  */
 struct ptnetmap_cfg_ring {
-	uint16_t ioeventfd;
-	uint16_t irqfd;
+	uint32_t ioeventfd;
+	uint32_t irqfd;
 };
 
+/*
+ * struct ptnetmap_cfg overlaps struct nmreq
+ * from nr_offset field, but nr_cmd is required in netmap_ioctl()
+ * For this reason this condition must be true:
+ * offsetof(struct ptnetmap_cfg, nr_cmd) ==
+ * (offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset))
+ */
 struct ptnetmap_cfg {
+        uint32_t features;
+#define PTNETMAP_CFG_FEAT_CSB           0x0001
+#define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
 	struct ptnetmap_cfg_ring tx_ring;
 	struct ptnetmap_cfg_ring rx_ring;
+	uint8_t pad[2];                 /* padding to overlap strct nmreq */
+	uint16_t nr_cmd;                /* needed in netmap_ioctl() */
         void *csb;   /* CSB */
 };
 
@@ -221,7 +233,8 @@ static inline void
 ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 {
 #ifdef CTASSERT
-CTASSERT(sizeof(struct ptnetmap_cfg) <= (offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset)));
+CTASSERT(offsetof(struct ptnetmap_cfg, nr_cmd) == (offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset)));
+CTASSERT(sizeof(struct ptnetmap_cfg) <= sizeof(struct nmreq) - offsetof(struct nmreq , nr_offset));
 #endif
     memcpy(&nmr->nr_offset, cfg, sizeof(*cfg));
 }

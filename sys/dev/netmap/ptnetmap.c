@@ -712,7 +712,13 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
     pts->configured = false;
     pts->stopped = true;
 
-    /* Read the configuration from userspace. */
+    /* Read the configuration */
+    if ((cfg->features & (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD)) !=
+            (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD)) {
+        D("ERROR ptnetmap_cfg does not contain CSB and EVENTFD");
+        ret = EFAULT;
+        goto err;
+    }
     memcpy(&pts->config, cfg, sizeof(struct ptnetmap_cfg));
     pts->csb = pts->config.csb;
     DBG(ptnetmap_print_configuration(pts);)
