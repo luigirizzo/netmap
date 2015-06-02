@@ -641,6 +641,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	int i, error;
 	enum txrx t;
 	int zcopy = (nmr->nr_flags & NR_ZCOPY_MON);
+	char monsuff[10] = "";
 
 	if ((nmr->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX)) == 0) {
 		ND("not a monitor");
@@ -687,7 +688,14 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		D("ringid error");
 		goto put_out;
 	}
-	snprintf(mna->up.name, sizeof(mna->up.name), "mon:%s", pna->name);
+	if (mna->priv.np_qlast[NR_TX] - mna->priv.np_qfirst[NR_TX] == 1) {
+		snprintf(monsuff, 10, "-%d", mna->priv.np_qfirst[NR_TX]);
+	}
+	snprintf(mna->up.name, sizeof(mna->up.name), "%s%s/%s%s%s", pna->name,
+			monsuff,
+			zcopy ? "z" : "",
+			(nmr->nr_flags & NR_MONITOR_RX) ? "r" : "",
+			(nmr->nr_flags & NR_MONITOR_TX) ? "t" : "");
 
 	if (zcopy) {
 		/* zero copy monitors need exclusive access to the monitored rings */
