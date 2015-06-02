@@ -1428,7 +1428,9 @@ start_threads(struct glob_arg *g)
 			 * thread, the other threads re-open /dev/netmap
 			 */
 			if (g->nthreads > 1) {
-				nmd.req.nr_flags = NR_REG_ONE_NIC;
+				nmd.req.nr_flags =
+					g->nmd->req.nr_flags & ~NR_REG_MASK;
+				nmd.req.nr_flags |= NR_REG_ONE_NIC;
 				nmd.req.nr_ringid = i;
 			}
 			/* Only touch one of the rings (rx is already ok) */
@@ -1924,7 +1926,8 @@ D("running on %d cpus (have %d)", g.cpus, i);
 		saved_desc.self = &saved_desc;
 		saved_desc.mem = NULL;
 		nm_close(g.nmd);
-		saved_desc.req.nr_flags = NR_REG_ONE_NIC;
+		saved_desc.req.nr_flags &= ~NR_REG_MASK;
+		saved_desc.req.nr_flags |= NR_REG_ONE_NIC;
 		saved_desc.req.nr_ringid = 0;
 		g.nmd = nm_open(g.ifname, &base_nmd, NM_OPEN_IFNAME, &saved_desc);
 		if (g.nmd == NULL) {
