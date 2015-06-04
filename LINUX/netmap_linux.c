@@ -233,15 +233,16 @@ static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
  * the packets incoming from the interface attached to 'na'.
  */
 int
-netmap_catch_rx(struct netmap_adapter *na, int intercept)
+netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
 #ifndef NETMAP_LINUX_HAVE_RX_REGISTER
     return 0;
 #else /* HAVE_RX_REGISTER */
-    struct ifnet *ifp = na->ifp;
+    struct netmap_adapter *na = &gna->up.up;
+    struct ifnet *ifp = netmap_generic_getifp(gna);
 
     if (intercept) {
-        return -netdev_rx_handler_register(na->ifp,
+        return -netdev_rx_handler_register(ifp,
                 &linux_generic_rx_handler, na);
     } else {
         netdev_rx_handler_unregister(ifp);
@@ -289,7 +290,7 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 void netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
     struct netmap_adapter *na = &gna->up.up;
-    struct ifnet *ifp = na->ifp;
+    struct ifnet *ifp = netmap_generic_getifp(gna);
 
     if (enable) {
         /*

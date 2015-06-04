@@ -305,7 +305,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 		rtnl_lock();
 		/* Prepare to intercept incoming traffic. */
-		error = netmap_catch_rx(na, 1);
+		error = netmap_catch_rx(gna, 1);
 		if (error) {
 			D("netdev_rx_handler_register() failed (%d)", error);
 			goto register_handler;
@@ -342,7 +342,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		netmap_catch_tx(gna, 0);
 
 		/* Do not intercept packets on the rx path. */
-		netmap_catch_rx(na, 0);
+		netmap_catch_rx(gna, 0);
 
 		rtnl_unlock();
 
@@ -780,20 +780,25 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 static void
 generic_netmap_dtor(struct netmap_adapter *na)
 {
-	struct ifnet *ifp = na->ifp;
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter*)na;
+	struct ifnet *ifp = netmap_generic_getifp(gna);
 	struct netmap_adapter *prev_na = gna->prev;
 
 	if (prev_na != NULL) {
 		D("Released generic NA %p", gna);
-		if_rele(na->ifp);
+		if_rele(ifp);
 		netmap_adapter_put(prev_na);
+		if (na->ifp == NULL) {
+		        /*
+		         * The driver has been removed without releasing
+		         * the reference so we need to do it here.
+		         */
+		        netmap_adapter_put(prev_na);
+		}
 	}
-	if (ifp != NULL) {
-		WNA(ifp) = prev_na;
-		D("Restored native NA %p", prev_na);
-		na->ifp = NULL;
-	}
+	WNA(ifp) = prev_na;
+	D("Restored native NA %p", prev_na);
+	na->ifp = NULL;
 }
 
 /*

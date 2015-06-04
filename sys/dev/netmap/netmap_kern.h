@@ -1597,12 +1597,20 @@ struct netmap_monitor_adapter {
  */
 int generic_netmap_attach(struct ifnet *ifp);
 
-int netmap_catch_rx(struct netmap_adapter *na, int intercept);
+int netmap_catch_rx(struct netmap_generic_adapter *na, int intercept);
 void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 void netmap_catch_tx(struct netmap_generic_adapter *na, int enable);
 int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
 int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
+static inline struct ifnet*
+netmap_generic_getifp(struct netmap_generic_adapter *gna)
+{
+        if (gna->prev)
+            return gna->prev->ifp;
+
+        return gna->up.up.ifp;
+}
 
 //#define RATE_GENERIC  /* Enables communication statistics for generic. */
 #ifdef RATE_GENERIC

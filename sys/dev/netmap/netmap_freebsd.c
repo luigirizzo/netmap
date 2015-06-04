@@ -185,7 +185,7 @@ void
 netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
 	struct netmap_adapter *na = &gna->up.up;
-	struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = netmap_generic_getifp(gna);
 
 	if (enable) {
 		na->if_transmit = ifp->if_transmit;

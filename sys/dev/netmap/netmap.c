@@ -2824,16 +2824,19 @@ netmap_detach(struct ifnet *ifp)
 
 	NMG_LOCK();
 	netmap_disable_all_rings(ifp);
-	if (!netmap_adapter_put(na)) {
-		/* someone is still using the adapter,
-		 * tell them that the interface is gone
-		 */
-		na->ifp = NULL;
-		// XXX also clear NAF_NATIVE_ON ?
-		na->na_flags &= ~NAF_NETMAP_ON;
-		/* give them a chance to notice */
-		netmap_enable_all_rings(ifp);
+	na->ifp = NULL;
+	na->na_flags &= ~NAF_NETMAP_ON;
+	/*
+	 * if the netmap adapter is not native, somebody
+	 * changed it, so we can not release it here.
+	 * The NULL na->ifp will notify the new owner that
+	 * the driver is gone.
+	 */
+	if (na->na_flags & NAF_NATIVE) {
+	        netmap_adapter_put(na);
 	}
+	/* give them a chance to notice */
+	netmap_enable_all_rings(ifp);
 	NMG_UNLOCK();
 }
 
