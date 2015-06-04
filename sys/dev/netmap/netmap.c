@@ -2722,7 +2722,7 @@ netmap_attach(struct netmap_adapter *arg)
 	if (hwna == NULL)
 		goto fail;
 	hwna->up = *arg;
-	hwna->up.na_flags |= NAF_HOST_RINGS;
+	hwna->up.na_flags |= NAF_HOST_RINGS | NAF_NATIVE;
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
 	hwna->nm_hw_register = hwna->up.nm_register;
 	hwna->up.nm_register = netmap_hw_register;

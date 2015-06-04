@@ -497,8 +497,7 @@ struct netmap_adapter {
 #define NAF_MEM_OWNER	8	/* the adapter is responsible for the
 				 * deallocation of the memory allocator
 				 */
-#define NAF_NATIVE_ON   16      /* the adapter is native and the attached
-				 * interface is in netmap mode.
+#define NAF_NATIVE      16      /* the adapter is native.
 				 * Virtual ports (vale, pipe, monitor...)
 				 * should never use this flag.
 				 */
@@ -971,15 +970,15 @@ const char *netmap_bdg_name(struct netmap_vp_adapter *);
 #endif /* WITH_VALE */
 
 static inline int
-nm_native_on(struct netmap_adapter *na)
-{
-	return na && na->na_flags & NAF_NATIVE_ON;
-}
-
-static inline int
 nm_netmap_on(struct netmap_adapter *na)
 {
 	return na && na->na_flags & NAF_NETMAP_ON;
+}
+
+static inline int
+nm_native_on(struct netmap_adapter *na)
+{
+	return nm_netmap_on(na) && (na->na_flags & NAF_NATIVE);
 }
 
 /* set/clear native flags and if_transmit/netdev_ops */
@@ -988,7 +987,7 @@ nm_set_native_flags(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
 
-	na->na_flags |= (NAF_NATIVE_ON | NAF_NETMAP_ON);
+	na->na_flags |= NAF_NETMAP_ON;
 #ifdef IFCAP_NETMAP /* or FreeBSD ? */
 	ifp->if_capenable |= IFCAP_NETMAP;
 #endif
@@ -1015,7 +1014,7 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	ifp->netdev_ops = (void *)na->if_transmit;
 	ifp->ethtool_ops = ((struct netmap_hw_adapter*)na)->save_ethtool;
 #endif
-	na->na_flags &= ~(NAF_NATIVE_ON | NAF_NETMAP_ON);
+	na->na_flags &= ~NAF_NETMAP_ON;
 #ifdef IFCAP_NETMAP /* or FreeBSD ? */
 	ifp->if_capenable &= ~IFCAP_NETMAP;
 #endif
