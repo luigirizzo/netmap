@@ -277,7 +277,11 @@ struct netmap_ring {
 	struct timeval	ts;		/* (k) time of last *sync() */
 
 	/* opaque room for a mutex or similar object */
+	#ifndef _MSC_VER
 	uint8_t		sem[128] __attribute__((__aligned__(NM_CACHE_ALIGN)));
+	#else
+	__declspec(align(NM_CACHE_ALIGN)) uint8_t		sem[128];
+	#endif //_MSC_VER ----used for MSVC compiler that doesn't know __attribute__....
 
 	/* the slots follow. This struct has variable size */
 	struct netmap_slot slot[0];	/* array of slots. */
@@ -522,18 +526,54 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 /* request exclusive access to the selected rings */
 #define NR_EXCLUSIVE	0x800
 
-
 /*
  * FreeBSD uses the size value embedded in the _IOWR to determine
  * how much to copy in/out. So we need it to match the actual
  * data structure we pass. We put some spares in the structure
  * to ease compatibility with other versions
  */
+#ifndef _WIN32
 #define NIOCGINFO	_IOWR('i', 145, struct nmreq) /* return IF info */
 #define NIOCREGIF	_IOWR('i', 146, struct nmreq) /* interface register */
 #define NIOCTXSYNC	_IO('i', 148) /* sync tx queues */
 #define NIOCRXSYNC	_IO('i', 149) /* sync rx queues */
 #define NIOCCONFIG	_IOWR('i',150, struct nm_ifreq) /* for ext. modules */
+#else
+	/*
+	Definitions of windows IOCTLs signatures; for windows uses values under 0x800 as
+	system reserved, we must use numbers beyond that limit
+	There's no way to pass here the type/width of the data structure that will be
+	passed in a DeviceIoControl so the structure and it's size will be passed
+	directly in the IOCTL request
+	*/
+#define IOCTL_TYPE 40000	
+
+#define NETMAP_SETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x840, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_GETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x841, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+
+#define NIOCGINFO CTL_CODE( IOCTL_TYPE, 0x945, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NIOCREGIF CTL_CODE( IOCTL_TYPE, 0x946, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NIOCTXSYNC CTL_CODE( IOCTL_TYPE, 0x948, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NIOCRXSYNC CTL_CODE( IOCTL_TYPE, 0x949, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NIOCCONFIG CTL_CODE( IOCTL_TYPE, 0x950, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_MMAP CTL_CODE( IOCTL_TYPE, 0x960, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
+#define NETMAP_POLL CTL_CODE( IOCTL_TYPE, 0x962, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
+
+
+#define DRIVER_FUNC_INSTALL     0x01
+#define DRIVER_FUNC_REMOVE      0x02
+
+#define DRIVER_NAME				"netmap"
+
+#define NT_DEVICE_NAME			L"\\Device\\NETMAP"
+#define DOS_DEVICE_NAME			L"\\DosDevices\\netmap"
+
+//Definition of a structure used to pass a virtual address within an IOCTL
+typedef struct _MEMORY_ENTRY
+{
+	PVOID       pUsermodeVirtualAddress;
+} MEMORY_ENTRY, *PMEMORY_ENTRY;
+#endif //_WIN32
 #endif /* !NIOCREGIF */
 
 

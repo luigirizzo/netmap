@@ -42,8 +42,12 @@ examples/testcsum
 examples/testlock
 examples/testmmap
 examples/vale-ctl
+examples/cygwin1.dll
+examples/pkt-gen.exe
+examples/pkt-gen.exe.stackdump
 build*/
 LINUX/tmp-patches
 LINUX/veth.c
 *.gcno
 *.core
+*.suo

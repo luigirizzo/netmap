@@ -478,6 +478,8 @@ ports attached to the switch)
 #warning OSX support is only partial
 #include "osx_glue.h"
 
+#elif defined (_WIN32)
+#include "win_glue.h"
 #else
 
 #error	Unsupported platform
@@ -491,48 +493,49 @@ ports attached to the switch)
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 
-
 MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
 
 /* user-controlled variables */
 int netmap_verbose;
 
 static int netmap_no_timestamp; /* don't timestamp on rxsync */
-
-SYSCTL_NODE(_dev, OID_AUTO, netmap, CTLFLAG_RW, 0, "Netmap args");
-SYSCTL_INT(_dev_netmap, OID_AUTO, verbose,
-    CTLFLAG_RW, &netmap_verbose, 0, "Verbose mode");
-SYSCTL_INT(_dev_netmap, OID_AUTO, no_timestamp,
-    CTLFLAG_RW, &netmap_no_timestamp, 0, "no_timestamp");
 int netmap_mitigate = 1;
-SYSCTL_INT(_dev_netmap, OID_AUTO, mitigate, CTLFLAG_RW, &netmap_mitigate, 0, "");
 int netmap_no_pendintr = 1;
-SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr,
-    CTLFLAG_RW, &netmap_no_pendintr, 0, "Always look for new received packets.");
 int netmap_txsync_retry = 2;
-SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
-    &netmap_txsync_retry, 0 , "Number of txsync loops in bridge's flush.");
-
 int netmap_adaptive_io = 0;
-SYSCTL_INT(_dev_netmap, OID_AUTO, adaptive_io, CTLFLAG_RW,
-    &netmap_adaptive_io, 0 , "Adaptive I/O on paravirt");
 
 int netmap_flags = 0;	/* debug flags */
 int netmap_fwd = 0;	/* force transparent mode */
 
 /*
- * netmap_admode selects the netmap mode to use.
- * Invalid values are reset to NETMAP_ADMODE_BEST
- */
-enum { NETMAP_ADMODE_BEST = 0,	/* use native, fallback to generic */
+* netmap_admode selects the netmap mode to use.
+* Invalid values are reset to NETMAP_ADMODE_BEST
+*/
+enum {
+	NETMAP_ADMODE_BEST = 0,	/* use native, fallback to generic */
 	NETMAP_ADMODE_NATIVE,	/* either native or none */
 	NETMAP_ADMODE_GENERIC,	/* force generic */
-	NETMAP_ADMODE_LAST };
+	NETMAP_ADMODE_LAST
+};
 static int netmap_admode = NETMAP_ADMODE_BEST;
 
-int netmap_generic_mit = 100*1000;   /* Generic mitigation interval in nanoseconds. */
+int netmap_generic_mit = 100 * 1000;   /* Generic mitigation interval in nanoseconds. */
 int netmap_generic_ringsize = 1024;   /* Generic ringsize. */
 int netmap_generic_rings = 1;   /* number of queues in generic. */
+
+SYSBEGIN(main_init);
+SYSCTL_NODE(_dev, OID_AUTO, netmap, CTLFLAG_RW, 0, "Netmap args");
+SYSCTL_INT(_dev_netmap, OID_AUTO, verbose,
+    CTLFLAG_RW, &netmap_verbose, 0, "Verbose mode");
+SYSCTL_INT(_dev_netmap, OID_AUTO, no_timestamp,
+    CTLFLAG_RW, &netmap_no_timestamp, 0, "no_timestamp");
+SYSCTL_INT(_dev_netmap, OID_AUTO, mitigate, CTLFLAG_RW, &netmap_mitigate, 0, "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr,
+    CTLFLAG_RW, &netmap_no_pendintr, 0, "Always look for new received packets.");
+SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
+    &netmap_txsync_retry, 0 , "Number of txsync loops in bridge's flush.");
+SYSCTL_INT(_dev_netmap, OID_AUTO, adaptive_io, CTLFLAG_RW,
+    &netmap_adaptive_io, 0 , "Adaptive I/O on paravirt");
 
 SYSCTL_INT(_dev_netmap, OID_AUTO, flags, CTLFLAG_RW, &netmap_flags, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0 , "");
@@ -540,6 +543,7 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_ringsize, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW, &netmap_generic_rings, 0 , "");
+SYSEND;
 
 NMG_LOCK_T	netmap_global_lock;
 int netmap_use_count = 0; /* number of active netmap instances */
@@ -996,7 +1000,6 @@ netmap_dtor(void *data)
 {
 	struct netmap_priv_d *priv = data;
 	int last_instance;
-
 	NMG_LOCK();
 	last_instance = netmap_dtor_locked(priv);
 	NMG_UNLOCK();
@@ -2086,7 +2089,6 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 
 	(void)dev;	/* UNUSED */
 	(void)fflag;	/* UNUSED */
-
 	if (cmd == NIOCGINFO || cmd == NIOCREGIF) {
 		/* truncate name */
 		nmr->nr_name[sizeof(nmr->nr_name) - 1] = '\0';
@@ -2102,7 +2104,6 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		}
 	}
 	CURVNET_SET(TD_TO_VNET(td));
-
 	error = devfs_get_cdevpriv((void **)&priv);
 	if (error) {
 		CURVNET_RESTORE();
@@ -2110,7 +2111,6 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		 * is now created in the open */
 		return (error == ENOENT ? ENXIO : error);
 	}
-
 	switch (cmd) {
 	case NIOCGINFO:		/* return capabilities etc */
 		if (nmr->nr_cmd == NETMAP_BDG_LIST) {
@@ -2169,13 +2169,14 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		NMG_LOCK();
 		do {
 			u_int memflags;
-
+			D("");
 			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
 				break;
 			}
 			/* find the interface and a reference */
 			error = netmap_get_na(nmr, &na, 1 /* create */); /* keep reference */
+			D("");
 			if (error)
 				break;
 			if (NETMAP_OWNED_BY_KERN(na)) {
@@ -2183,11 +2184,13 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				error = EBUSY;
 				break;
 			}
+			D("");
 			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
 			if (error) {    /* reg. failed, release priv and ref */
 				netmap_adapter_put(na);
 				break;
 			}
+			D("");
 			nifp = priv->np_nifp;
 			priv->np_td = td; // XXX kqueue, debugging only
 
@@ -2203,6 +2206,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				netmap_adapter_put(na);
 				break;
 			}
+			D("");
 			if (memflags & NETMAP_MEM_PRIVATE) {
 				*(uint32_t *)(uintptr_t)&nifp->ni_flags |= NI_PRIV_MEM;
 			}
@@ -2218,6 +2222,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				D("got %d extra buffers", nmr->nr_arg3);
 			}
 			nmr->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
+			D("");
 		} while (0);
 		NMG_UNLOCK();
 		break;
@@ -3136,6 +3141,7 @@ netmap_init(void)
 	error = netmap_mem_init();
 	if (error != 0)
 		goto fail;
+#ifndef _WIN32
 	/*
 	 * MAKEDEV_ETERNAL_KLD avoids an expensive check on syscalls
 	 * when the module is compiled in.
@@ -3146,7 +3152,7 @@ netmap_init(void)
 			      "netmap");
 	if (!netmap_dev)
 		goto fail;
-
+#endif
 	error = netmap_init_bridges();
 	if (error)
 		goto fail;

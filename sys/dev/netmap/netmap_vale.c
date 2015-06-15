@@ -101,6 +101,9 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
 #warning OSX support is only partial
 #include "osx_glue.h"
 
+#elif defined(_WIN32)
+#include "win_glue.h"
+
 #else
 
 #error	Unsupported platform
@@ -153,9 +156,10 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
  * last packet in the block may overflow the size.
  */
 int bridge_batch = NM_BDG_BATCH; /* bridge batch size */
+SYSBEGIN(vars_vale);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0 , "");
-
+SYSEND;
 
 static int netmap_vp_create(struct nmreq *, struct ifnet *, struct netmap_vp_adapter **);
 static int netmap_vp_reg(struct netmap_adapter *na, int onoff);
@@ -302,6 +306,7 @@ nm_find_bridge(const char *name, int create)
 		D("invalid bridge name %s", name ? name : NULL);
 		return NULL;
 	}
+
 	for (i = namelen + 1; i < l; i++) {
 		if (name[i] == ':') {
 			namelen = i;
@@ -327,6 +332,7 @@ nm_find_bridge(const char *name, int create)
 			break;
 		}
 	}
+
 	if (i == num_bridges && b) { /* name not found, can create entry */
 		/* initialize the bridge */
 		strncpy(b->bdg_basename, name, namelen);

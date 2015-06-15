@@ -119,6 +119,10 @@ extern struct netmap_mem_d nm_mem;
 
 void	   netmap_mem_get_lut(struct netmap_mem_d *, struct netmap_lut *);
 vm_paddr_t netmap_mem_ofstophys(struct netmap_mem_d *, vm_ooffset_t);
+#ifdef _WIN32
+void* win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t offset);
+void win32_build_virtual_memory_for_userspace(PMDL mainMdl, struct netmap_mem_d* nmd);
+#endif
 int	   netmap_mem_finalize(struct netmap_mem_d *, struct netmap_adapter *);
 int 	   netmap_mem_init(void);
 void 	   netmap_mem_fini(void);

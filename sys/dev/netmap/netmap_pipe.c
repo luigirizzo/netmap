@@ -54,6 +54,9 @@
 #warning OSX support is only partial
 #include "osx_glue.h"
 
+#elif defined(_WIN32)
+#include "win_glue.h"
+
 #else
 
 #error	Unsupported platform
@@ -73,13 +76,16 @@
 #define NM_PIPE_MAXSLOTS	4096
 
 int netmap_default_pipes = 0; /* ignored, kept for compatibility */
+SYSBEGIN(vars_pipes);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, default_pipes, CTLFLAG_RW, &netmap_default_pipes, 0 , "");
+SYSEND;
 
 /* allocate the pipe array in the parent adapter */
 static int
 nm_pipe_alloc(struct netmap_adapter *na, u_int npipes)
 {
+	D("\nCalling nm_pipe_alloc\n");
 	size_t len;
 	struct netmap_pipe_adapter **npa;
 
@@ -91,7 +97,11 @@ nm_pipe_alloc(struct netmap_adapter *na, u_int npipes)
 		return EINVAL;
 
         len = sizeof(struct netmap_pipe_adapter *) * npipes;
+#ifndef _WIN32
 	npa = realloc(na->na_pipes, len, M_DEVBUF, M_NOWAIT | M_ZERO);
+#else
+	npa = realloc(na->na_pipes, len, sizeof(struct netmap_pipe_adapter *)*na->na_max_pipes);
+#endif
 	if (npa == NULL)
 		return ENOMEM;
 

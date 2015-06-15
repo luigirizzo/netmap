@@ -65,9 +65,25 @@
 #ifndef _NET_NETMAP_USER_H_
 #define _NET_NETMAP_USER_H_
 
+#ifdef __CYGWIN__
+#ifndef _WIN32
+#define _WIN32
+#endif	//_WIN32
+#endif	//__CYGWIN__
+
+#ifdef _WIN32
+#include <windows.h>
+#include <WinDef.h>
+#include <sys/cygwin.h>
+//#include <netioapi.h>
+//#include <winsock.h>
+//#define	IFNAMSIZ 256
+#endif
+
 #include <stdint.h>
 #include <sys/socket.h>		/* apple needs sockaddr */
 #include <net/if.h>		/* IFNAMSIZ */
+
 
 #ifndef likely
 #define likely(x)	__builtin_expect(!!(x), 1)
@@ -338,6 +354,27 @@ static int nm_inject(struct nm_desc *, const void *, size_t);
 static int nm_dispatch(struct nm_desc *, int, nm_cb_t, u_char *);
 static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
+#ifdef _WIN32
+static void* win32_mmap_emulated(int fd)
+{
+	DWORD bRetur  = 0;
+	BOOL transactionResult = FALSE;
+	void* sharedMem = NULL;
+	sharedMem = malloc(sizeof(void*));
+	HANDLE hDevice = IntToPtr(_get_osfhandle(fd));
+	
+	transactionResult = DeviceIoControl ( hDevice,
+						(DWORD) NETMAP_MMAP,
+						NULL,
+						0,
+						sharedMem,
+						sizeof(void*),
+						&bRetur,
+						NULL
+						);
+	return ((MEMORY_ENTRY*)sharedMem)->pUsermodeVirtualAddress;
+}
+#endif 
 
 /*
  * Try to open, return descriptor if successful, NULL otherwise.
@@ -363,7 +400,9 @@ nm_open(const char *ifname, const struct nmreq *req,
 	char errmsg[MAXERRMSG] = "";
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK } p_state;
 	long num;
-
+#ifdef _WIN32
+	DWORD win32_return_lenght = 0;
+#endif	
 	if (strncmp(ifname, "netmap:", 7) && strncmp(ifname, "vale", 4)) {
 		errno = 0; /* name not recognised, not an error */
 		return NULL;
@@ -474,12 +513,16 @@ nm_open(const char *ifname, const struct nmreq *req,
 		return NULL;
 	}
 	d->self = d;	/* set this early so nm_close() works */
+	#ifndef _WIN32
 	d->fd = open("/dev/netmap", O_RDWR);
+	#else
+	d->fd = open("/proc/sys/DosDevices/Global/netmap", O_RDWR);
+	#endif
 	if (d->fd < 0) {
 		snprintf(errmsg, MAXERRMSG, "cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;
 	}
-
+	
 	if (req)
 		d->req = *req;
 	d->req.nr_version = NETMAP_API;
@@ -523,11 +566,26 @@ nm_open(const char *ifname, const struct nmreq *req,
 	}
 	/* add the *XPOLL flags */
 	d->req.nr_ringid |= new_flags & (NETMAP_NO_TX_POLL | NETMAP_DO_RX_POLL);
-
+	
+	#ifndef _WIN32
 	if (ioctl(d->fd, NIOCREGIF, &d->req)) {
 		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
 		goto fail;
 	}
+	#else
+	if (!DeviceIoControl(IntToPtr(_get_osfhandle(d->fd)), 
+						(DWORD) NIOCREGIF, 
+						&d->req,
+						sizeof(struct nmreq),
+						&d->req,
+						sizeof(struct nmreq),
+						&win32_return_lenght,
+						NULL)) {
+		errmsg = "NIOCREGIF failed";
+		goto fail;
+	}
+	
+	#endif
 
 	if (IS_NETMAP_DESC(parent) && parent->mem &&
 	    parent->req.nr_arg2 == d->req.nr_arg2) {
@@ -537,8 +595,12 @@ nm_open(const char *ifname, const struct nmreq *req,
 	} else {
 		/* XXX TODO: check if memsize is too large (or there is overflow) */
 		d->memsize = d->req.nr_memsize;
+		#ifndef _WIN32
 		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
 				d->fd, 0);
+		#else
+		d->mem = win32_mmap_emulated(d->fd);
+		#endif
 		if (d->mem == MAP_FAILED) {
 			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
 			goto fail;

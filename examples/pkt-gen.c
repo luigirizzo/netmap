@@ -47,9 +47,11 @@
 #include <unistd.h>	// sysconf()
 #include <sys/poll.h>
 #include <arpa/inet.h>	/* ntohs */
+#ifndef _WIN32
 #include <sys/sysctl.h>	/* sysctl */
-#include <ifaddrs.h>	/* getifaddrs */
+#endif
 #include <net/ethernet.h>
+#include <ifaddrs.h>	/* getifaddrs */
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
@@ -59,6 +61,72 @@
 #ifndef NO_PCAP
 #include <pcap/pcap.h>
 #endif
+
+#ifdef _WIN32
+#define cpuset_t        uint64_t
+static inline void CPU_ZERO(cpuset_t *p)
+{
+        *p = 0;
+}
+
+static inline void CPU_SET(uint32_t i, cpuset_t *p)
+{
+        *p |= 1<< (i & 0x3f);
+}
+
+#define pthread_setaffinity_np(a, b, c) ((void)a, 0)
+#define TAP_CLONEDEV	"/dev/tap"
+#define AF_LINK	18	//defined in winsocks.h
+#define CLOCK_REALTIME_PRECISE CLOCK_REALTIME
+#include <net/if_dl.h>
+
+/*
+ * Convert an ASCII representation of an ethernet address to
+ * binary form.
+ */
+struct
+ether_addr *ether_aton(a)
+	const char *a;
+{
+        int i;
+	static struct ether_addr o;
+	unsigned int o0, o1, o2, o3, o4, o5;
+
+        i = sscanf(a, "%x:%x:%x:%x:%x:%x", &o0, &o1, &o2, &o3, &o4, &o5);
+
+        if (i != 6)
+                return (NULL);
+
+        o.octet[0]=o0;
+	o.octet[1]=o1;
+	o.octet[2]=o2;
+	o.octet[3]=o3;
+	o.octet[4]=o4;
+	o.octet[5]=o5;
+
+        return ((struct ether_addr *)&o);
+}
+
+/*
+ * Convert a binary representation of an ethernet address to
+ * an ASCII string.
+ */
+char
+*ether_ntoa(n)
+	const struct ether_addr *n;
+{
+        int i;
+	static char a[18];
+
+        i = sprintf(a, "%02x:%02x:%02x:%02x:%02x:%02x",
+	    n->octet[0], n->octet[1], n->octet[2],
+	    n->octet[3], n->octet[4], n->octet[5]);
+        if (i < 17)
+                return (NULL);
+        return ((char *)&a);
+}
+
+#endif //_WIN32
 
 #ifdef linux
 
@@ -1067,6 +1135,7 @@ sender_body(void *data)
 	struct pkt *pkt = &targ->pkt;
 	void *frame;
 	int size;
+	DWORD bRetur = 0;
 
 	frame = pkt;
 	frame += sizeof(pkt->vh) - targ->g->virt_header;
@@ -1131,7 +1200,19 @@ sender_body(void *data)
 		 * wait for available room in the send queue(s)
 		 */
 #ifdef BUSYWAIT
+#ifndef _WIN32
 		ioctl(pfd.fd, NIOCTXSYNC);
+#else
+		DeviceIoControl (IntToPtr(_get_osfhandle(pfd.fd)),
+						(DWORD) NIOCTXSYNC,
+						NULL,
+						0,
+						NULL,
+						0,
+						&bRetur,
+						NULL
+						);
+#endif //_WIN32
 #else
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
@@ -1181,13 +1262,36 @@ sender_body(void *data)
 		}
 	}
 	/* flush any remaining packets */
+#ifndef _WIN32
 	ioctl(pfd.fd, NIOCTXSYNC, NULL);
-
+#else
+	DeviceIoControl ( IntToPtr(_get_osfhandle(pfd.fd)),
+						(DWORD) NIOCTXSYNC,
+						NULL,
+						0,
+						NULL,
+						0,
+						&bRetur,
+						NULL
+						);
+#endif	//_WIN32
 	/* final part: wait all the TX queues to be empty. */
 	for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
 		txring = NETMAP_TXRING(nifp, i);
 		while (nm_tx_pending(txring)) {
+			#ifndef _WIN32
 			ioctl(pfd.fd, NIOCTXSYNC, NULL);
+			#else
+			DeviceIoControl (IntToPtr(_get_osfhandle(pfd.fd)),
+					(DWORD) NIOCTXSYNC,
+					NULL,
+					0,
+					NULL,
+					0,
+					&bRetur,
+					NULL
+					);
+			#endif	//_WIN32
 			usleep(1); /* wait 1 tick */
 		}
 	}
@@ -1259,6 +1363,10 @@ receiver_body(void *data)
 
 	cur.pkts = cur.bytes = cur.events = 0;
 
+#ifdef _WIN32
+	DWORD bRetur = 0;
+#endif
+
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
 
@@ -1302,7 +1410,19 @@ receiver_body(void *data)
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
 #ifdef BUSYWAIT
+#ifndef _WIN32
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
+#else
+		DeviceIoControl (IntToPtr(_get_osfhandle(pfd.fd)),
+						(DWORD) NIOCRXSYNC,
+						NULL,
+						0,
+						NULL,
+						0,
+						&bRetur,
+						NULL
+						);
+#endif //_WIN32
 #else
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
@@ -1315,7 +1435,6 @@ receiver_body(void *data)
 			goto quit;
 		}
 #endif
-
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
 			

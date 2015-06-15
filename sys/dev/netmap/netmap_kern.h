@@ -52,13 +52,16 @@
 #define WITH_V1000
 #endif
 
-#else /* not linux */
+#elif defined (_WIN32) 
+#define WITH_VALE	// comment out to disable VALE support
+#define WITH_PIPES
+#define WITH_MONITOR
 
+#else	/* not linux neither windows */
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
-
 #endif
 
 #if defined(__FreeBSD__)
@@ -160,11 +163,47 @@ struct hrtimer {
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
 #define	NM_SEND_UP(ifp, m)	((ifp)->if_input)(ifp, m)
 
+#elif defined (_WIN32)
+#include <win_glue.h>
+#define	NM_SELINFO_T	KQUEUE
+#define	NM_LOCK_T	win_spinlock_t	// see win_glue.h
+#define NM_MTX_T	KGUARDED_MUTEX	/* OS-specific mutex (sleepable) */
+
+#define NM_MTX_INIT(m)		KeInitializeGuardedMutex(&m);     
+#define NM_MTX_DESTROY(m)	do { (void)(m); } while (0)
+#define NM_MTX_LOCK(m)		KeAcquireGuardedMutex(&(m))
+#define NM_MTX_UNLOCK(m)	KeReleaseGuardedMutex(&(m))
+#define NM_MTX_ASSERT(m)	assert(&m.Count>0)							
+
+//Empty data structures are not permitted by MSVC compiler
+//XXX_ale, try to solve this mess
+struct net_device_ops{
+	char data[1];
+};
+typedef struct ethtool_ops{
+	char data[1];
+};
+typedef struct hrtimer{
+	char data[1];
+};
+	///XXX_ale TODO, check if can be built
+	#ifdef _MSC_VER  //MSVC compiler doesn't has (un)likely support
+		#define likely(x)	(x)
+		#define unlikely(x)	(x)
+	#else
+		#define likely(x)	__builtin_expect((long)!!(x), 1L)
+		#define unlikely(x)	__builtin_expect((long)!!(x), 0L)
+	#endif //_MSC_VER
 #else
 
 #error unsupported platform
 
 #endif /* end - platform-specific code */
+
+#ifndef _WIN32
+#define SYSBEGIN(x)
+#define SYSEND
+#endif
 
 #define	NMG_LOCK_T		NM_MTX_T
 #define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock)
@@ -280,7 +319,11 @@ nm_txrx_swap(enum txrx t)
  * RX rings attached to the VALE switch are accessed by both senders
  * and receiver. They are protected through the q_lock on the RX ring.
  */
+#ifndef _MSC_VER
+__declspec(align(64)) struct netmap_kring {
+#else
 struct netmap_kring {
+#endif
 	struct netmap_ring	*ring;
 
 	uint32_t	nr_hwcur;
@@ -396,7 +439,11 @@ struct netmap_kring {
 	uint32_t mon_tail;  /* last seen slot on rx */
 	uint32_t mon_pos;   /* index of this ring in the monitored ring array */
 #endif
+#ifndef _MSC_VER
 } __attribute__((__aligned__(64)));
+#else
+};
+#endif //_MSCVER
 
 
 /* return the next index, with wraparound */
@@ -998,6 +1045,10 @@ nm_set_native_flags(struct netmap_adapter *na)
 #ifdef __FreeBSD__
 	na->if_transmit = ifp->if_transmit;
 	ifp->if_transmit = netmap_transmit;
+#elif defined (_WIN32)
+	//XXX_ale can we just comment those?
+	//na->if_transmit = ifp->if_transmit;
+	//ifp->if_transmit = netmap_transmit;
 #else
 	na->if_transmit = (void *)ifp->netdev_ops;
 	ifp->netdev_ops = &((struct netmap_hw_adapter *)na)->nm_ndo;
@@ -1014,6 +1065,9 @@ nm_clear_native_flags(struct netmap_adapter *na)
 
 #ifdef __FreeBSD__
 	ifp->if_transmit = na->if_transmit;
+#elif _WIN32
+	//XXX_ale can we just comment those?
+	//ifp->if_transmit = na->if_transmit;
 #else
 	ifp->netdev_ops = (void *)na->if_transmit;
 	ifp->ethtool_ops = ((struct netmap_hw_adapter*)na)->save_ethtool;
@@ -1330,6 +1384,8 @@ netmap_reload_map(struct netmap_adapter *na,
 	}
 }
 
+#elif _WIN32
+
 #else /* linux */
 
 int nm_iommu_group_id(bus_dma_tag_t dev);
@@ -1472,7 +1528,11 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 	struct lut_entry *lut = na->na_lut.lut;
 	void *ret = (i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr;
 
+	#ifndef _WIN32
 	*pp = (i >= na->na_lut.objtotal) ? lut[0].paddr : lut[i].paddr;
+	#else
+	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)lut[0].paddr.QuadPart : (uint64_t)lut[i].paddr.QuadPart;	
+	#endif
 	return ret;
 }
 

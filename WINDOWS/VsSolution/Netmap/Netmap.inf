@@ -1,0 +1,32 @@
+;
+; Netmap.inf
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=
+ClassGuid={9BF68A6C-4C18-4FB4-A2FD-0E54B36F9252}
+Provider=
+DriverVer=05/18/2015,0.0.1.1
+CatalogFile=Netmap.cat
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT$ARCH$
+
+[Standard.NT$ARCH$]
+
+
+[Strings]
+ManufacturerName="University of Pisa"
+ClassName="University of Pisa NETMAP Driver"
+DiskName="Netmap Source Disk"

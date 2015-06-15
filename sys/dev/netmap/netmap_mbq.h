@@ -40,6 +40,8 @@
 /* XXX probably rely on a previous definition of SPINLOCK_T */
 #ifdef linux
 #define SPINLOCK_T  safe_spinlock_t
+#elif defined (_WIN32)
+#define SPINLOCK_T 	win_spinlock_t
 #else
 #define SPINLOCK_T  struct mtx
 #endif
