@@ -1735,6 +1735,7 @@ struct netmap_pt_guest_adapter {
 	struct netmap_hw_adapter hwup;
 
 	struct netmap_pt_guest_ops *pv_ops;
+	struct paravirt_csb *csb;
 };
 int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
 #endif /* WITH_PTNETMAP_GUEST */
