@@ -26,6 +26,7 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
+#include <netmap/netmap_virt.h>
 
 
 #define SOFTC_T	virtnet_info
@@ -530,8 +531,10 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 
 	return 0;
 }
-#if defined (CONFIG_VIRTIO_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
 
+#define CONFIG_VIRTIO_NETMAP_PT
+
+#if defined (CONFIG_VIRTIO_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
 /* ptnetmap virtio register */
 #define PTNETMAP_VIRTIO_IO_BASE         sizeof(struct virtio_net_config)
 /* 32 bit r/w */
@@ -547,13 +550,17 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 
 #define PTNEMTAP_VIRTIO_IO_SIZE         20
 
+#ifndef VIRTIO_NET_F_PTNETMAP
+#define VIRTIO_NET_F_PTNETMAP   24
+#endif /* VIRTIO_NET_F_PTNETMAP */
+
 static void inline
 virtio_ptnetmap_iowrite32(struct virtio_device *vdev, uint32_t addr, uint32_t val)
 {
     int i;
     /* virtio_pci config_set use multiple iowrite8, we need to split the call and reverse the order */
     for (i = 3; i >= 0; i--) {
-        vdev->config->set(vdev, PTNETMAP_VIRTIO_IO_BASE + addr + i, ((uint8_t*)&val)[i], sizeof(uint8_t));
+        vdev->config->set(vdev, PTNETMAP_VIRTIO_IO_BASE + addr + i, ((uint8_t *)&val) + i, sizeof(uint8_t));
     }
 }
 
@@ -563,8 +570,8 @@ virtio_ptnetmap_ioread32(struct virtio_device *vdev, uint32_t addr)
     uint32_t val;
     int i;
 
-    for (i = 0; i <= 3, i++) {
-        vdev->config->get(vdev, PTNETMAP_VIRTIO_IO_BASE + addr + i, ((uint8_t*)&val)[i], sizeof(uint8_t));
+    for (i = 0; i <= 3; i++) {
+        vdev->config->get(vdev, PTNETMAP_VIRTIO_IO_BASE + addr + i, ((uint8_t *)&val) + i, sizeof(uint8_t));
     }
 
     return val;
@@ -583,19 +590,19 @@ virtio_ptnetmap_alloc_csb(struct SOFTC_T *vi)
         return 0;
 
     ptna->csb = kmalloc(NET_PARAVIRT_CSB_SIZE, GFP_KERNEL | __GFP_ZERO);
-    if (!adapter->csb) {
+    if (!ptna->csb) {
         D("Communication Status Block allocation failed!");
-        return -1
+        return -1;
     }
     csb_phyaddr = virt_to_phys(ptna->csb);
 
-    //adapter->msix_enabled = ?
-    adapter->csb->guest_csb_on = 1;
+    //ptna->msix_enabled = ?
+    ptna->csb->guest_csb_on = 1;
 
 
     /* Tell the device the CSB physical address. */
-    virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAH, (adapter->csb_phyaddr >> 32));
-    virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAL, (adapter->csb_phyaddr & 0x00000000ffffffffULL));
+    virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAH, (csb_phyaddr >> 32));
+    virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAL, (csb_phyaddr & 0x00000000ffffffffULL));
 
     return 0;
 }
@@ -649,7 +656,6 @@ virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	struct netmap_adapter *na = kring->na;
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
         struct ifnet *ifp = na->ifp;
-	struct netmap_ring *ring = kring->ring;
 	u_int ring_nr = kring->ring_id;
 
 	/* device-specific */
@@ -657,8 +663,6 @@ virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	struct virtqueue *vq = GET_RX_VQ(vi, ring_nr);
 	struct paravirt_csb *csb = ptna->csb;
 	bool send_kick = false;
-
-        IFRATE(adapter->rate_ctx.new.tx_sync++);
 
 	/* Disable notifications */
 	csb->guest_need_txkick = 0;
@@ -676,7 +680,6 @@ virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	if ((send_kick && ACCESS_ONCE(csb->host_need_txkick)) || (flags & NAF_FORCE_RECLAIM)) {
 		csb->tx_ring.sync_flags = flags;
 		virtqueue_notify(vq);
-		IFRATE(adapter->rate_ctx.new.tx_kick++);
 	}
 
 	/*
@@ -715,7 +718,6 @@ virtio_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	struct netmap_adapter *na = kring->na;
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
         struct ifnet *ifp = na->ifp;
-	struct netmap_ring *ring = kring->ring;
 	u_int ring_nr = kring->ring_id;
 
 	/* device-specific */
@@ -725,8 +727,6 @@ virtio_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 	uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
-
-        IFRATE(adapter->rate_ctx.new.rx_sync++);
 
         /* Disable notifications */
 	csb->guest_need_rxkick = 0;
@@ -751,7 +751,6 @@ virtio_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 		if (ACCESS_ONCE(csb->host_need_rxkick)) {
 			csb->rx_ring.sync_flags = flags;
 			virtqueue_notify(vq);
-			IFRATE(adapter->rate_ctx.new.rx_kick++);
 		}
 	}
 
@@ -781,10 +780,8 @@ static int
 virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
-        struct ifnet *ifp = na->ifp;
 
 	/* device-specific */
-	struct SOFTC_T *vi = netdev_priv(ifp);
 	struct paravirt_csb *csb = ptna->csb;
 	struct netmap_kring *kring;
 	int ret = 0;
@@ -795,7 +792,6 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 			return ret;
 
 		na->na_flags |= NAF_NETMAP_ON;
-		adapter->ptnetmap_enabled = 1;
 		/*
 		 * Init ring and kring pointers
 		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
@@ -820,7 +816,6 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
-		adapter->ptnetmap_enabled = 0;
 		ret = virtio_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 
@@ -873,7 +868,6 @@ virtio_ptnetmap_features(struct SOFTC_T *vi)
 static void
 virtio_ptnetmap_dtor(struct netmap_adapter *na)
 {
-	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
         struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *vi = netdev_priv(ifp);
 
@@ -903,7 +897,6 @@ static void
 virtio_netmap_attach(struct SOFTC_T *vi)
 {
 	struct netmap_adapter na;
-	struct virtio_device *vdev = vi->vdev;
 
 	bzero(&na, sizeof(na));
 
@@ -916,8 +909,8 @@ virtio_netmap_attach(struct SOFTC_T *vi)
 	na.nm_config = virtio_netmap_config;
 	na.num_tx_rings = na.num_rx_rings = 1;
 #if defined (CONFIG_VIRTIO_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
-        if (virtio_has_feature(vdev, VIRTIO_NET_F_PTNETMAP) &&
-                (virtio_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE)) {
+        if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
+                (virtio_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
             na.nm_config = virtio_ptnetmap_config;
             na.nm_register = virtio_ptnetmap_reg;
             na.nm_txsync = virtio_ptnetmap_txsync;
