@@ -720,6 +720,8 @@ struct netmap_vp_adapter {	/* VALE software port */
 	u_int virt_hdr_len;
 	/* Maximum Frame Size, used in bdg_mismatch_datapath() */
 	u_int mfs;
+	/* Last source MAC on this port */
+	uint64_t last_smac;
 };
 
 
@@ -1162,7 +1164,7 @@ int netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na);
  * XXX in practice "unknown" might be handled same as broadcast.
  */
 typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
-		const struct netmap_vp_adapter *);
+		struct netmap_vp_adapter *);
 typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
 typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
 struct netmap_bdg_ops {
@@ -1172,7 +1174,7 @@ struct netmap_bdg_ops {
 };
 
 u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
-		const struct netmap_vp_adapter *);
+		struct netmap_vp_adapter *);
 
 #define	NM_BDG_MAXPORTS		254	/* up to 254 */
 #define	NM_BDG_BROADCAST	NM_BDG_MAXPORTS

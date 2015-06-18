@@ -1196,7 +1196,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
  */
 u_int
 netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
-		const struct netmap_vp_adapter *na)
+		struct netmap_vp_adapter *na)
 {
 	uint8_t *buf = ft->ft_buf;
 	u_int buf_len = ft->ft_len;
@@ -1227,11 +1227,11 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	 * The hash is somewhat expensive, there might be some
 	 * worthwhile optimizations here.
 	 */
-	if ((buf[6] & 1) == 0) { /* valid src */
+	if (((buf[6] & 1) == 0) && (na->last_smac != smac)) { /* valid src */
 		uint8_t *s = buf+6;
 		sh = nm_bridge_rthash(s); // XXX hash of source
 		/* update source port forwarding entry */
-		ht[sh].mac = smac;	/* XXX expire ? */
+		na->last_smac = ht[sh].mac = smac;	/* XXX expire ? */
 		ht[sh].ports = mysrc;
 		if (netmap_verbose)
 		    D("src %02x:%02x:%02x:%02x:%02x:%02x on port %d",
@@ -1817,6 +1817,7 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 	na->num_rx_desc = nmr->nr_rx_slots;
 	vpna->virt_hdr_len = 0;
 	vpna->mfs = 1514;
+	vpna->last_smac = ~0llu;
 	/*if (vpna->mfs > netmap_buf_size)  TODO netmap_buf_size is zero??
 		vpna->mfs = netmap_buf_size; */
         if (netmap_verbose)
