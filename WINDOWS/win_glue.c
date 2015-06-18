@@ -24,7 +24,6 @@
 */
 
 #include <win_glue.h>
-#include "win_dict.h"
 
 /*********************************************************
 *       TIME FUNCTIONS (COPIED FROM DUMMYNET)     		 *
