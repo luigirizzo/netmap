@@ -745,6 +745,21 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 }
 
 /*
+ * Index of the highest bit set
+ */
+uint32_t
+msb64(uint64_t x)
+{
+	uint64_t m = 1ULL << 63;
+	int i;
+
+	for (i = 63; i >= 0; i--, m >>=1)
+		if (m & x)
+			return i;
+	return 0;
+}
+
+/*
  * Send a packet, and wait for a response.
  * The payload (after UDP header, ofs 42) has a 4-byte sequence
  * followed by a struct timeval (or bintime?)
@@ -762,7 +777,8 @@ pinger_body(void *data)
 	int size;
 	uint32_t sent = 0;
 	struct timespec ts, now, last_print;
-	uint32_t count = 0, min = 1000000000, av = 0;
+	uint64_t count = 0, t_cur, t_min = ~0, av = 0;
+	uint64_t buckets[64];	/* bins for delays, ns */
 
 	frame = &targ->pkt;
 	frame += sizeof(targ->pkt.vh) - targ->g->virt_header;
@@ -774,6 +790,7 @@ pinger_body(void *data)
 		return NULL;
 	}
 
+	bzero(&buckets, sizeof(buckets));
 	clock_gettime(CLOCK_REALTIME_PRECISE, &last_print);
 	now = last_print;
 	while (!targ->cancel && (n == 0 || (int)sent < n)) {
@@ -812,6 +829,8 @@ pinger_body(void *data)
 			while (!nm_ring_empty(ring)) {
 				uint32_t seq;
 				struct tstamp *tp;
+				int pos;
+
 				slot = &ring->slot[ring->cur];
 				p = NETMAP_BUF(ring, slot->buf_idx);
 
@@ -828,10 +847,14 @@ pinger_body(void *data)
 				}
 				if (0) D("seq %d/%d delta %d.%09d", seq, sent,
 					(int)ts.tv_sec, (int)ts.tv_nsec);
-				if (ts.tv_nsec < (int)min)
-					min = ts.tv_nsec;
+				t_cur = ts.tv_sec * 1000000000UL + ts.tv_nsec;
+				if (t_cur < t_min)
+					t_min = t_cur;
 				count ++;
-				av += ts.tv_nsec;
+				av += t_cur;
+				pos = msb64(t_cur);
+				buckets[pos]++;
+				/* now store it in a bucket */
 				ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 				rx++;
 			}
@@ -845,11 +868,25 @@ pinger_body(void *data)
 			ts.tv_sec--;
 		}
 		if (ts.tv_sec >= 1) {
-			D("count %d min %d av %d",
-				count, min, av/count);
+			D("count %d RTT: min %d av %d ns",
+				(int)count, (int)t_min, (int)(av/count));
+			int k, j, kmin;
+			char buf[512];
+
+			for (kmin = 0; kmin < 64; kmin ++)
+				if (buckets[kmin])
+					break;
+			for (k = 63; k >= kmin; k--) 
+				if (buckets[k])
+					break;
+			buf[0] = '\0';
+			for (j = kmin; j <= k; j++)
+				sprintf(buf, "%s %5d", buf, (int)buckets[j]);
+			D("k: %d .. %d\n\t%s", 1<<kmin, 1<<k, buf);
+			bzero(&buckets, sizeof(buckets));
 			count = 0;
 			av = 0;
-			min = 100000000;
+			t_min = ~0;
 			last_print = now;
 		}
 	}
