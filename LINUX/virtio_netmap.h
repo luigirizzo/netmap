@@ -544,18 +544,6 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 #ifdef WITH_PTNETMAP_GUEST
 /* ptnetmap virtio register BASE */
 #define PTNETMAP_VIRTIO_IO_BASE         sizeof(struct virtio_net_config)
-/* 32 bit r/w */
-#define PTNETMAP_VIRTIO_IO_PTFEAT       0 /* passthrough features */
-/* 32 bit w/o */
-#define PTNETMAP_VIRTIO_IO_PTCTL        4 /* passthrough control */
-/* 32 bit r/o */
-#define PTNETMAP_VIRTIO_IO_PTSTS        8 /* passthrough status */
-/* 32 bit w/o */
-#define PTNETMAP_VIRTIO_IO_CSBBAH       12 /* CSB Base Address High */
-/* 32 bit w/o */
-#define PTNETMAP_VIRTIO_IO_CSBBAL       16 /* CSB Base Address Low */
-
-#define PTNEMTAP_VIRTIO_IO_SIZE         20
 
 #ifndef VIRTIO_NET_F_PTNETMAP
 #define VIRTIO_NET_F_PTNETMAP   24
