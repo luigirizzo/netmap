@@ -539,7 +539,7 @@ static void inline
 ptnetmap_tx_notify(struct ptnetmap_state *pts) {
     if (unlikely(!pts))
         return;
-
+    ND("TX notify");
     ptn_kthread_wakeup_worker(pts->ptk_tx);
     IFRATE(pts->rate_ctx.new.btxwu++);
 }
@@ -548,7 +548,7 @@ static void inline
 ptnetmap_rx_notify(struct ptnetmap_state *pts) {
     if (unlikely(!pts))
         return;
-
+    ND("RX notify");
     ptn_kthread_wakeup_worker(pts->ptk_rx);
     IFRATE(pts->rate_ctx.new.brxwu++);
 }

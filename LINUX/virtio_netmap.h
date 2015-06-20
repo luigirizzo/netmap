@@ -26,7 +26,13 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
+#ifdef WITH_PTNETMAP_GUEST
 #include <netmap/netmap_virt.h>
+static int virtio_ptnetmap_reg(struct netmap_adapter *, int);
+#define VIRTIO_PTNETMAP_ON(_na)        ((_na)->nm_register = virtio_ptnetmap_reg)
+#else   /* !WITH_PTNETMAP_GUEST */
+#define VIRTIO_PTNETMAP_ON(_na)        0
+#endif  /* WITH_PTNETMAP_GUEST */
 
 
 #define SOFTC_T	virtnet_info
@@ -467,6 +473,9 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
 	struct netmap_adapter* na = NA(ifp);
 	unsigned int r;
 
+	/* if ptnetmap is enabled we must not init netmap buffers */
+	if (VIRTIO_PTNETMAP_ON(na))
+	        return 1;
 	if (!nm_native_on(na))
 		return 0;
 	for (r = 0; r < na->num_rx_rings; r++) {
@@ -532,10 +541,8 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 	return 0;
 }
 
-#define CONFIG_VIRTIO_NETMAP_PT
-
-#if defined (CONFIG_VIRTIO_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
-/* ptnetmap virtio register */
+#ifdef WITH_PTNETMAP_GUEST
+/* ptnetmap virtio register BASE */
 #define PTNETMAP_VIRTIO_IO_BASE         sizeof(struct virtio_net_config)
 /* 32 bit r/w */
 #define PTNETMAP_VIRTIO_IO_PTFEAT       0 /* passthrough features */
@@ -599,7 +606,6 @@ virtio_ptnetmap_alloc_csb(struct SOFTC_T *vi)
     //ptna->msix_enabled = ?
     ptna->csb->guest_csb_on = 1;
 
-
     /* Tell the device the CSB physical address. */
     virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAH, (csb_phyaddr >> 32));
     virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAL, (csb_phyaddr & 0x00000000ffffffffULL));
@@ -660,7 +666,7 @@ virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 
 	/* device-specific */
 	struct SOFTC_T *vi = netdev_priv(ifp);
-	struct virtqueue *vq = GET_RX_VQ(vi, ring_nr);
+	struct virtqueue *vq = GET_TX_VQ(vi, ring_nr);
 	struct paravirt_csb *csb = ptna->csb;
 	bool send_kick = false;
 
@@ -708,6 +714,7 @@ virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 
 	ND("TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
 			csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail, kring->rhead, kring->rcur);
+	ND("TX - vq_index: %d", vq->index);
 
 	return 0;
 }
@@ -772,6 +779,7 @@ virtio_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 
 	ND("RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
 			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail, kring->rhead, kring->rcur);
+	ND("RX - vq_index: %d", vq->index);
 
 	return 0;
 }
@@ -782,15 +790,30 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
 
 	/* device-specific */
+	struct ifnet *ifp = na->ifp;
 	struct paravirt_csb *csb = ptna->csb;
 	struct netmap_kring *kring;
 	int ret = 0;
+
+	if (na == NULL)
+		return EINVAL;
+
+	/* It's important to deny the registration if the interface is
+	   not up, otherwise the virtnet_close() is not matched by a
+	   virtnet_open(), and so a napi_disable() is not matched by
+	   a napi_enable(), which results in a deadlock. */
+	if (!netif_running(ifp))
+		return EBUSY;
+
+	rtnl_lock();
+
+	/* Down the interface. This also disables napi. */
+	virtnet_close(ifp);
 
 	if (onoff) {
 		ret = virtio_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
 		if (ret)
 			return ret;
-
 		na->na_flags |= NAF_NETMAP_ON;
 		/*
 		 * Init ring and kring pointers
@@ -799,7 +822,6 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		 * XXX This initialization is required, because we don't close the
 		 * host port on UNREGIF.
 		 */
-
 		// Init rx ring
 		kring = na->rx_rings;
 		kring->rhead = kring->ring->head = csb->rx_ring.head;
@@ -813,11 +835,15 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
 		kring->nr_hwcur = csb->tx_ring.hwcur;
 		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
-
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 		ret = virtio_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
+
+	/* Up the interface. This also enables the napi. */
+	virtnet_open(ifp);
+
+	rtnl_unlock();
 
 	return ret;
 }
@@ -843,6 +869,7 @@ virtio_netmap_ptctl(struct net_device *dev, uint32_t val)
 	struct virtio_device *vdev = vi->vdev;
 	uint32_t ret;
 
+        D("PTCTL = %u", val);
 	virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_PTCTL, val);
         ret = virtio_ptnetmap_ioread32(vdev, PTNETMAP_VIRTIO_IO_PTSTS);
 	D("PTSTS = %u", ret);
@@ -874,24 +901,11 @@ virtio_ptnetmap_dtor(struct netmap_adapter *na)
         virtio_ptnetmap_free_csb(vi);
 }
 
-#if 0
-struct virtnet_info *vi = netdev_priv(dev);
-         struct virtio_device *vdev = vi->vdev;
-virtqueue_notify(struct virtqueue *_vq)
-#endif
-
 static struct netmap_pt_guest_ops virtio_ptnetmap_ops = {
     .nm_getcsb = virtio_netmap_getcsb, /* TODO: remove */
     .nm_ptctl = virtio_netmap_ptctl,
 };
-
-#elif defined (CONFIG_VIRTIO_NETMAP_PT)
-#warning "virtio supports ptnetmap but netmap does not support it"
-#warning "(configure netmap with passthrough support)"
-#elif defined (WITH_PTNETMAP_GUEST)
-#warning "netmap supports ptnetmap but virtio does not support it"
-#warning "(configure virtio with passthrough support)"
-#endif /* CONFIG_VIRTIO_NETMAP_PT && WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP_GUEST */
 
 static void
 virtio_netmap_attach(struct SOFTC_T *vi)
@@ -908,9 +922,11 @@ virtio_netmap_attach(struct SOFTC_T *vi)
 	na.nm_rxsync = virtio_netmap_rxsync;
 	na.nm_config = virtio_netmap_config;
 	na.num_tx_rings = na.num_rx_rings = 1;
-#if defined (CONFIG_VIRTIO_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
+#ifdef WITH_PTNETMAP_GUEST
+        D("check ptnetmap support");
         if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
                 (virtio_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
+            D("ptnetmap supported");
             na.nm_config = virtio_ptnetmap_config;
             na.nm_register = virtio_ptnetmap_reg;
             na.nm_txsync = virtio_ptnetmap_txsync;
@@ -919,11 +935,10 @@ virtio_netmap_attach(struct SOFTC_T *vi)
             na.nm_bdg_attach = virtio_ptnetmap_bdg_attach; /* XXX */
 
             netmap_pt_guest_attach(&na, &virtio_ptnetmap_ops);
-            /* TODO-ste: alloc CSB */
             virtio_ptnetmap_alloc_csb(vi);
         } else
 
-#endif /* CONFIG_VIRTIO_NETMAP_PT && defined WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);
 
         D("virtio attached txq=%d, txd=%d rxq=%d, rxd=%d",

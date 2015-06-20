@@ -1547,7 +1547,6 @@ ptn_kthread_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
     struct ptn_kthread_ctx *ctx;
 
     ctx = container_of(wq, struct ptn_kthread_ctx, waitq);
-
     ptn_kthread_wakeup_worker(ctx->ptk);
     return 0;
 }
@@ -1871,7 +1870,7 @@ ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     int bars, err;
     uint16_t mem_id;
 
-    ND("ptn_memdev_driver probe");
+    ND("ptn_memdev_driver probe START");
 
     /* allocate our structure and fill it out */
     ptn_dev = kzalloc(sizeof(*ptn_dev), GFP_KERNEL);
@@ -1908,7 +1907,7 @@ ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     }
     netmap_mem_get(ptn_dev->nm_mem);
 
-    ND("ptn_memdev_driver probe OK");
+    ND("ptn_memdev_driver mem_id: %d probe OK", mem_id);
 
     return 0;
 
