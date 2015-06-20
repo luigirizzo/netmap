@@ -360,12 +360,15 @@ void do_poll()
 	}
 	while ( (arg = nextarg()) ) {
 		if (nfds >= allocated_fds) {
+			struct pollfd *new_fds;
 			allocated_fds *= 2;
-			fds = realloc(fds, allocated_fds * sizeof(struct pollfd));
-			if (fds == NULL) {
+			new_fds = realloc(fds, allocated_fds * sizeof(struct pollfd));
+			if (new_fds == NULL) {
+				free(fds);
 				output_err(-1, "out of memory");
 				return;
 			}
+			fds = new_fds;
 		}
 		fds[nfds].fd = atoi(arg);
 		fds[nfds].events = POLLIN;
