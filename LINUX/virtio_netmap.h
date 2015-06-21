@@ -28,8 +28,8 @@
 #include <netmap/netmap_kern.h>
 #ifdef WITH_PTNETMAP_GUEST
 #include <netmap/netmap_virt.h>
-static int virtio_ptnetmap_reg(struct netmap_adapter *, int);
-#define VIRTIO_PTNETMAP_ON(_na)        ((_na)->nm_register = virtio_ptnetmap_reg)
+static int virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags);
+#define VIRTIO_PTNETMAP_ON(_na)        ((nm_netmap_on(_na)) && ((_na)->nm_txsync == virtio_ptnetmap_txsync))
 #else   /* !WITH_PTNETMAP_GUEST */
 #define VIRTIO_PTNETMAP_ON(_na)        0
 #endif  /* WITH_PTNETMAP_GUEST */
@@ -700,8 +700,8 @@ virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	}
 
 
-	ND("TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
-			csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail, kring->rhead, kring->rcur);
+	ND(1,"TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u tail: %u",
+			csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail, kring->rhead, kring->rcur, kring->nr_hwtail);
 	ND("TX - vq_index: %d", vq->index);
 
 	return 0;
@@ -799,10 +799,34 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	virtnet_close(ifp);
 
 	if (onoff) {
+	        struct SOFTC_T *vi = netdev_priv(ifp);
+	        int i;
+
+		//na->na_flags |= NAF_NETMAP_ON;
+		nm_set_native_flags(na);
+
+                /* push fake-elem in the tx queues to enable interrupts */
+                for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+                    struct virtqueue *vq = GET_TX_VQ(vi, i);
+                    struct scatterlist sg;
+	            struct sk_buff *skb;
+	            int num_sg;
+
+                    skb = netdev_alloc_skb_ip_align(vi->dev, GOOD_COPY_LEN);
+                    skb_put(skb, 64);
+                    sg_set_buf(&sg, skb->cb, 64);
+                    num_sg = skb_to_sgvec(skb, &sg, 0, skb->len);
+                    if (skb) {
+		        virtqueue_add_outbuf(vq, &sg, num_sg, skb, GFP_ATOMIC);
+		    }
+		}
+
 		ret = virtio_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
-		if (ret)
-			return ret;
-		na->na_flags |= NAF_NETMAP_ON;
+		if (ret) {
+		    //na->na_flags &= ~NAF_NETMAP_ON;
+		    nm_clear_native_flags(na);
+		    goto out;
+		}
 		/*
 		 * Init ring and kring pointers
 		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
@@ -824,10 +848,11 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		kring->nr_hwcur = csb->tx_ring.hwcur;
 		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
 	} else {
-		na->na_flags &= ~NAF_NETMAP_ON;
+		//na->na_flags &= ~NAF_NETMAP_ON;
+		nm_clear_native_flags(na);
 		ret = virtio_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
-
+out:
 	/* Up the interface. This also enables the napi. */
 	virtnet_open(ifp);
 
