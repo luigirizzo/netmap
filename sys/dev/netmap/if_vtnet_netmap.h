@@ -32,6 +32,13 @@
 #include <vm/vm.h>
 #include <vm/pmap.h>    /* vtophys ? */
 #include <dev/netmap/netmap_kern.h>
+#ifdef WITH_PTNETMAP_GUEST
+#include <netmap/netmap_virt.h>
+static int vtnet_ptnetmap_txsync(struct netmap_kring *kring, int flags);
+#define VTNET_PTNETMAP_ON(_na)        ((nm_netmap_on(_na)) && ((_na)->nm_txsync == vtnet_ptnetmap_txsync))
+#else   /* !WITH_PTNETMAP_GUEST */
+#define VTNET_PTNETMAP_ON(_na)        0
+#endif  /* WITH_PTNETMAP_GUEST */
 
 
 #define SOFTC_T	vtnet_softc
@@ -353,6 +360,9 @@ vtnet_netmap_init_rx_buffers(struct SOFTC_T *sc)
 	struct netmap_adapter* na = NA(ifp);
 	unsigned int r;
 
+	/* if ptnetmap is enabled we must not init netmap buffers */
+	if (VTNET_PTNETMAP_ON(na))
+		return 1;
 	if (!nm_native_on(na))
 		return 0;
 	for (r = 0; r < na->num_rx_rings; r++) {
@@ -403,6 +413,357 @@ vtnet_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 	return 0;
 }
 
+#ifdef WITH_PTNETMAP_GUEST
+/* ptnetmap virtio register BASE */
+#define PTNETMAP_VIRTIO_IO_BASE         sizeof(struct virtio_net_config)
+
+#ifndef VIRTIO_NET_F_PTNETMAP
+#define VIRTIO_NET_F_PTNETMAP   0x1000000  /* linux/qeum  24 */
+#endif /* VIRTIO_NET_F_PTNETMAP */
+
+static void inline
+vtnet_ptnetmap_iowrite4(device_t dev, uint32_t addr, uint32_t val)
+{
+	virtio_write_dev_config_4(dev, PTNETMAP_VIRTIO_IO_BASE + addr, val);
+}
+
+static uint32_t inline
+vtnet_ptnetmap_ioread4(device_t dev, uint32_t addr)
+{
+	return virtio_read_dev_config_4(dev, PTNETMAP_VIRTIO_IO_BASE + addr);
+}
+
+static int
+vtnet_ptnetmap_alloc_csb(struct SOFTC_T *sc)
+{
+	device_t dev = sc->vtnet_dev;
+	struct ifnet *ifp = sc->vtnet_ifp;
+	struct netmap_pt_guest_adapter* ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
+
+	vm_paddr_t csb_phyaddr;
+
+	if (ptna->csb)
+		return 0;
+
+	ptna->csb = contigmalloc(NET_PARAVIRT_CSB_SIZE, M_DEVBUF, M_NOWAIT | M_ZERO,
+			(size_t)0, -1UL, PAGE_SIZE, 0);
+	if (!ptna->csb) {
+		D("Communication Status Block allocation failed!");
+		return ENOMEM;
+	}
+
+	csb_phyaddr = vtophys(ptna->csb);
+
+	ptna->csb->guest_csb_on = 1;
+
+	/* Tell the device the CSB physical address. */
+	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAH, (csb_phyaddr >> 32));
+	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAL, (csb_phyaddr & 0x00000000ffffffffULL));
+
+	return 0;
+}
+
+static void
+vtnet_ptnetmap_free_csb(struct SOFTC_T *sc)
+{
+	device_t dev = sc->vtnet_dev;
+	struct ifnet *ifp = sc->vtnet_ifp;
+	struct netmap_pt_guest_adapter* ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
+
+	if (ptna->csb) {
+		/* CSB deallocation protocol. */
+		vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAH, 0x0ULL);
+		vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAL, 0x0ULL);
+
+		contigfree(ptna->csb, NET_PARAVIRT_CSB_SIZE, M_DEVBUF);
+		ptna->csb = NULL;
+	}
+}
+
+static uint32_t vtnet_netmap_ptctl(struct ifnet *, uint32_t);
+static int
+vtnet_ptnetmap_config(struct netmap_adapter *na,
+		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
+{
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
+	struct paravirt_csb *csb = ptna->csb;
+	int ret;
+
+	if (csb == NULL)
+		return EINVAL;
+
+	ret = vtnet_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	if (ret)
+		return ret;
+
+	*txr = 1; //*txr = csb->num_tx_rings;
+	*rxr = 1; //*rxr = csb->num_rx_rings;
+	*txd = csb->num_tx_slots;
+	*rxd = csb->num_rx_slots;
+
+	D("txr %u rxr %u txd %u rxd %u",
+			*txr, *rxr, *txd, *rxd);
+	return 0;
+}
+
+static int
+vtnet_ptnetmap_txsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
+        struct ifnet *ifp = na->ifp;
+	u_int ring_nr = kring->ring_id;
+
+	/* device-specific */
+	struct SOFTC_T *sc = ifp->if_softc;
+	struct vtnet_txq *txq = &sc->vtnet_txqs[ring_nr];
+	struct virtqueue *vq = txq->vtntx_vq;
+	struct paravirt_csb *csb = ptna->csb;
+	bool send_kick = false;
+
+	/* Disable notifications */
+	csb->guest_need_txkick = 0;
+
+	/*
+	 * First part: process new packets to send.
+	 */
+	kring->nr_hwcur = csb->tx_ring.hwcur;
+	ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
+	if (kring->rhead != kring->nr_hwcur) {
+		send_kick = true;
+	}
+
+        /* Send kick to the host if it needs them */
+	if ((send_kick && ACCESS_ONCE(csb->host_need_txkick)) || (flags & NAF_FORCE_RECLAIM)) {
+		csb->tx_ring.sync_flags = flags;
+		virtqueue_notify(vq);
+	}
+
+	/*
+	 * Second part: reclaim buffers for completed transmissions.
+	 */
+	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+                ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
+	}
+
+        /*
+         * Ring full. The user thread will go to sleep and
+         * we need a notification (interrupt) from the NIC,
+         * whene there is free space.
+         */
+	if (kring->rcur == kring->nr_hwtail) {
+		/* Reenable notifications. */
+		csb->guest_need_txkick = 1;
+                /* Double check */
+                ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
+                /* If there is new free space, disable notifications */
+		if (kring->rcur != kring->nr_hwtail) {
+			csb->guest_need_txkick = 0;
+		}
+	}
+
+
+	ND(1,"TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u tail: %u",
+			csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail, kring->rhead, kring->rcur, kring->nr_hwtail);
+	ND("TX - vq_index: %d", vq->index);
+
+	return 0;
+}
+
+static int
+vtnet_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
+        struct ifnet *ifp = na->ifp;
+	u_int ring_nr = kring->ring_id;
+
+	/* device-specific */
+	struct SOFTC_T *sc = ifp->if_softc;
+	struct vtnet_rxq *rxq = &sc->vtnet_rxqs[ring_nr];
+	struct virtqueue *vq = rxq->vtnrx_vq;
+	struct paravirt_csb *csb = ptna->csb;
+
+	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
+	uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
+
+        /* Disable notifications */
+	csb->guest_need_rxkick = 0;
+
+        ptnetmap_guest_read_kring_csb(&csb->rx_ring, &h_hwcur, &h_hwtail, kring->nkr_num_slots);
+
+	/*
+	 * First part: import newly received packets.
+	 */
+	if (netmap_no_pendintr || force_update) {
+		kring->nr_hwtail = h_hwtail;
+		kring->nr_kflags &= ~NKR_PENDINTR;
+	}
+
+	/*
+	 * Second part: skip past packets that userspace has released.
+	 */
+	kring->nr_hwcur = h_hwcur;
+	if (kring->rhead != kring->nr_hwcur) {
+		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur, kring->rhead);
+                /* Send kick to the host if it needs them */
+		if (ACCESS_ONCE(csb->host_need_rxkick)) {
+			csb->rx_ring.sync_flags = flags;
+			virtqueue_notify(vq);
+		}
+	}
+
+        /*
+         * Ring empty. The user thread will go to sleep and
+         * we need a notification (interrupt) from the NIC,
+         * whene there are new packets.
+         */
+        if (kring->rcur == kring->nr_hwtail) {
+		/* Reenable notifications. */
+                csb->guest_need_rxkick = 1;
+                /* Double check */
+                ptnetmap_guest_read_kring_csb(&csb->rx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
+                /* If there are new packets, disable notifications */
+                if (kring->rcur != kring->nr_hwtail) {
+                        csb->guest_need_rxkick = 0;
+                }
+        }
+
+	ND("RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
+			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail, kring->rhead, kring->rcur);
+	ND("RX - vq_index: %d", vq->index);
+
+	return 0;
+}
+
+static int
+vtnet_netmap_reg(struct netmap_adapter *na, int onoff)
+{
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
+
+	/* device-specific */
+        struct ifnet *ifp = na->ifp;
+	struct SOFTC_T *sc = ifp->if_softc;
+	struct paravirt_csb *csb = ptna->csb;
+	struct netmap_kring *kring;
+	int ret = 0;
+
+	if (na == NULL)
+		return EINVAL;
+
+	VTNET_CORE_LOCK(sc);
+	ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
+	/* enable or disable flags and callbacks in na and ifp */
+	if (onoff) {
+	        int i;
+		nm_set_native_flags(na);
+                /* push fake-elem in the tx queues to enable interrupts */
+                for (i = 0; i < sc->vtnet_max_vq_pairs; i++) {
+			struct vtnet_txq *txq = &sc->vtnet_txqs[i];
+			struct mbuf *m0;
+			m0 = m_getjcl(M_NOWAIT, MT_DATA, M_PKTHDR, 64);
+			m0->len = 64;
+
+			if (m0) {
+				vtnet_txq_encap(txq, &m0);
+			}
+		}
+		ret = vtnet_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+		if (ret) {
+			//na->na_flags &= ~NAF_NETMAP_ON;
+			nm_clear_native_flags(na);
+			goto out;
+		}
+		/*
+		 * Init ring and kring pointers
+		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
+		 * host kring pointers.
+		 * XXX This initialization is required, because we don't close the
+		 * host port on UNREGIF.
+		 */
+		// Init rx ring
+		kring = na->rx_rings;
+		kring->rhead = kring->ring->head = csb->rx_ring.head;
+		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
+		kring->nr_hwcur = csb->rx_ring.hwcur;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->rx_ring.hwtail;
+
+		// Init tx ring
+		kring = na->tx_rings;
+		kring->rhead = kring->ring->head = csb->tx_ring.head;
+		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
+		kring->nr_hwcur = csb->tx_ring.hwcur;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
+	} else {
+		//na->na_flags &= ~NAF_NETMAP_ON;
+		nm_clear_native_flags(na);
+		ret = vtnet_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+	}
+out:
+        vtnet_init_locked(sc);       /* also enable intr */
+        VTNET_CORE_UNLOCK(sc);
+        return (ifp->if_drv_flags & IFF_DRV_RUNNING ? ret : 1);
+}
+
+static int
+vtnet_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
+{
+	return EOPNOTSUPP;
+}
+
+static struct paravirt_csb *
+vtnet_netmap_getcsb(struct ifnet *ifp)
+{
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
+
+	return ptna->csb;
+}
+
+static uint32_t
+vtnet_netmap_ptctl(struct ifnet *ifp, uint32_t val)
+{
+	struct SOFTC_T *sc = ifp->if_softc;
+	device_t dev = sc->vtnet_dev;
+	uint32_t ret;
+
+        D("PTCTL = %u", val);
+	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_PTCTL, val);
+        ret = vtnet_ptnetmap_ioread4(dev, PTNETMAP_VIRTIO_IO_PTSTS);
+	D("PTSTS = %u", ret);
+
+	return ret;
+}
+
+static uint32_t
+vtnet_ptnetmap_features(struct SOFTC_T *sc)
+{
+	device_t dev = sc->vtnet_dev;
+	uint32_t features;
+	/* tell the device the features we support */
+	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_PTFEAT, NET_PTN_FEATURES_BASE);
+	/* get back the acknowledged features */
+	features = vtnet_ptnetmap_ioread4(dev, PTNETMAP_VIRTIO_IO_PTFEAT);
+	pr_info("netmap passthrough: %s\n",
+			(features & NET_PTN_FEATURES_BASE) ? "base" :
+			"none");
+	return features;
+}
+
+static void
+vtnet_ptnetmap_dtor(struct netmap_adapter *na)
+{
+        struct ifnet *ifp = na->ifp;
+	struct SOFTC_T *sc = ifp->if_softc;
+
+        vtnet_ptnetmap_free_csb(sc);
+}
+
+static struct netmap_pt_guest_ops vtnet_ptnetmap_ops = {
+    .nm_getcsb = vtnet_netmap_getcsb, /* TODO: remove */
+    .nm_ptctl = vtnet_netmap_ptctl,
+};
+#endif /* WITH_PTNETMAP_GUEST */
+
 static void
 vtnet_netmap_attach(struct SOFTC_T *sc)
 {
@@ -419,6 +780,21 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 	na.nm_config = vtnet_netmap_config;
 	na.num_tx_rings = na.num_rx_rings = sc->vtnet_max_vq_pairs;
 	D("max rings %d", sc->vtnet_max_vq_pairs);
+#ifdef WITH_PTNETMAP_GUEST
+	D("check ptnetmap support");
+	if (virtio_with_feature(sc->vtnet_dev, VIRTIO_NET_F_PTNETMAP) &&
+			(vtnet_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
+		D("ptnetmap supported");
+		na.nm_config = vtnet_ptnetmap_config;
+		na.nm_register = vtnet_ptnetmap_reg;
+		na.nm_txsync = vtnet_ptnetmap_txsync;
+		na.nm_rxsync = vtnet_ptnetmap_rxsync;
+		na.nm_dtor = vtnet_ptnetmap_dtor;
+		na.nm_bdg_attach = vtnet_ptnetmap_bdg_attach; /* XXX */
+		netmap_pt_guest_attach(&na, &vtnet_ptnetmap_ops);
+		vtnet_ptnetmap_alloc_csb(vi);
+	} else
+#endif /* WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);
 
         D("virtio attached txq=%d, txd=%d rxq=%d, rxd=%d",
