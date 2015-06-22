@@ -550,7 +550,7 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 #endif /* VIRTIO_NET_F_PTNETMAP */
 
 static void inline
-virtio_ptnetmap_iowrite32(struct virtio_device *vdev, uint32_t addr, uint32_t val)
+virtio_ptnetmap_iowrite4(struct virtio_device *vdev, uint32_t addr, uint32_t val)
 {
     int i;
     /* virtio_pci config_set use multiple iowrite8, we need to split the call and reverse the order */
@@ -560,7 +560,7 @@ virtio_ptnetmap_iowrite32(struct virtio_device *vdev, uint32_t addr, uint32_t va
 }
 
 static uint32_t inline
-virtio_ptnetmap_ioread32(struct virtio_device *vdev, uint32_t addr)
+virtio_ptnetmap_ioread4(struct virtio_device *vdev, uint32_t addr)
 {
     uint32_t val;
     int i;
@@ -587,7 +587,7 @@ virtio_ptnetmap_alloc_csb(struct SOFTC_T *vi)
     ptna->csb = kmalloc(NET_PARAVIRT_CSB_SIZE, GFP_KERNEL | __GFP_ZERO);
     if (!ptna->csb) {
         D("Communication Status Block allocation failed!");
-        return -1;
+        return -ENOMEM;
     }
     csb_phyaddr = virt_to_phys(ptna->csb);
 
@@ -595,8 +595,8 @@ virtio_ptnetmap_alloc_csb(struct SOFTC_T *vi)
     ptna->csb->guest_csb_on = 1;
 
     /* Tell the device the CSB physical address. */
-    virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAH, (csb_phyaddr >> 32));
-    virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAL, (csb_phyaddr & 0x00000000ffffffffULL));
+    virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAH, (csb_phyaddr >> 32));
+    virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAL, (csb_phyaddr & 0x00000000ffffffffULL));
 
     return 0;
 }
@@ -610,8 +610,8 @@ virtio_ptnetmap_free_csb(struct SOFTC_T *vi)
 
     if (ptna->csb) {
         /* CSB deallocation protocol. */
-        virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAH, 0x0ULL);
-        virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_CSBBAL, 0x0ULL);
+        virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAH, 0x0ULL);
+        virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAL, 0x0ULL);
 
         kfree(ptna->csb);
         ptna->csb = NULL;
@@ -878,13 +878,13 @@ virtio_netmap_getcsb(struct net_device *dev)
 static uint32_t
 virtio_netmap_ptctl(struct net_device *dev, uint32_t val)
 {
-	struct virtnet_info *vi = netdev_priv(dev);
+	struct SOFTC_T *vi = netdev_priv(dev);
 	struct virtio_device *vdev = vi->vdev;
 	uint32_t ret;
 
         D("PTCTL = %u", val);
-	virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_PTCTL, val);
-        ret = virtio_ptnetmap_ioread32(vdev, PTNETMAP_VIRTIO_IO_PTSTS);
+	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_PTCTL, val);
+        ret = virtio_ptnetmap_ioread4(vdev, PTNETMAP_VIRTIO_IO_PTSTS);
 	D("PTSTS = %u", ret);
 
 	return ret;
@@ -896,9 +896,9 @@ virtio_ptnetmap_features(struct SOFTC_T *vi)
 	struct virtio_device *vdev = vi->vdev;
 	uint32_t features;
 	/* tell the device the features we support */
-	virtio_ptnetmap_iowrite32(vdev, PTNETMAP_VIRTIO_IO_PTFEAT, NET_PTN_FEATURES_BASE);
+	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_PTFEAT, NET_PTN_FEATURES_BASE);
 	/* get back the acknowledged features */
-	features = virtio_ptnetmap_ioread32(vdev, PTNETMAP_VIRTIO_IO_PTFEAT);
+	features = virtio_ptnetmap_ioread4(vdev, PTNETMAP_VIRTIO_IO_PTFEAT);
 	pr_info("netmap passthrough: %s\n",
 			(features & NET_PTN_FEATURES_BASE) ? "base" :
 			"none");
