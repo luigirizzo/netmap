@@ -161,10 +161,57 @@ static inline void mtx_unlock(win_spinlock_t *m)
 #define BDG_FREE(p)				free(p)
 //--------------------------------------------------------
 
-#define init_waitqueue_head(x) KeInitializeQueue((x), KeQueryMaximumProcessorCount())
-#define netmap_knlist_destroy(x)
+typedef struct {
+	PKEVENT	waitingEvent;
+	LIST_ENTRY SingleListEntry;
+} POLL_WAIT_ENTRY;
 
-#define mb						MemoryBarrier
+
+struct events_notifications
+{
+	PKEVENT TX_EVENT;
+	HANDLE hTx_Event;
+	PKEVENT RX_EVENT;
+	HANDLE hRx_Event;
+};
+
+
+
+static void win_init_waitqueue_head(PKEVENT ev)
+{
+	//HANDLE temp;
+	//ev = ExAllocatePoolWithTag(NonPagedPool, sizeof(KEVENT), PRIV_MEMORY_POOL_TAG);
+	//RtlZeroMemory(ev, sizeof(KEVENT));
+	KeInitializeEvent(ev, NotificationEvent, TRUE);
+	//ev = IoCreateNotificationEvent(NULL, &temp);
+	//ObReferenceObject(ev);
+}
+
+static void win_OS_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
+{
+	LARGE_INTEGER tout;
+	int requiredTimeOut = irpSp->FileObject->FsContext2;
+	tout.QuadPart = (requiredTimeOut * 1000 * 10);
+	KeClearEvent(ev);
+	DbgPrint("Sleeping on 0x%p", ev);
+	KeWaitForSingleObject(ev, UserRequest, KernelMode, TRUE, &tout);
+	DbgPrint("Waked up on 0x%p", ev);
+}
+
+static void win_OS_selwakeup(PKEVENT ev, long priority)
+{
+	DbgPrint("Waking up on 0x%p", ev);
+	KeSetEvent(ev, priority, FALSE);
+}
+
+#define PI_NET								16
+#define init_waitqueue_head(x)				win_init_waitqueue_head(x) //InitializeListHead(x)	//KeInitializeQueue((x), KeQueryMaximumProcessorCount())
+#define netmap_knlist_destroy(x)
+#define OS_selwakeup(queue, priority)		win_OS_selwakeup(queue, priority)				
+#pragma warning(disable:4702)	//
+#define OS_selrecord(thread, queue)		    win_OS_selrecord(thread, queue)
+
+#define mb						KeMemoryBarrier
 //From here netmap.c stuff
 
 void do_gettimeofday(struct timeval *tv);
@@ -256,6 +303,24 @@ static void* win_kernel_malloc(size_t size)
 #define copyin(src, dst, copy_len)					RtlCopyBytes(&dst, src, copy_len)
 #define m_copydata(source, offset, length, dst)		RtlCopyBytes(dst, source, length) //XXX_Ale: todo must set the offset someway
 
+static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
+{
+	ASSERT(result != NULL);
+	if (result == NULL || size == 0)
+		return STATUS_INVALID_PARAMETER;
+
+	result->Buffer = ExAllocatePoolWithTag(NonPagedPool, size, 'rtsM');
+	result->Length = 0;
+	result->MaximumLength = size;
+
+	if (result->Buffer)
+		RtlZeroMemory(result->Buffer, size);
+	else
+		return STATUS_NO_MEMORY;
+
+	return STATUS_SUCCESS;
+}
+
 /*********************************************************
 *        		GENERIC/HW SPECIFIC STRUCTURES     		 *
 **********************************************************/
@@ -279,13 +344,10 @@ typedef struct my_packet
 };
 
 #define ifnet	net_device
-#define PI_NET														HIGH_PRIORITY_CLASS
 #define	mbuf														my_packet
 #define	MBUF_LEN(m)													sizeof(m)
 #define m_devget(slot_addr, slot_len, offset, dev, fn)				NULL
-#define m_freem(packet)													//NdisFreePacket(packet)
-#define OS_selwakeup(queue, priority)								
-#define OS_selrecord(thread, queue)		
+#define m_freem(packet)													//NdisFreePacket(packet)	
 
 
 #define le64toh(x)		_byteswap_uint64(x)	//defined in intrin.h
@@ -489,36 +551,36 @@ int do_cmd(int optname, void *optval, uintptr_t optlen);
 *			POLL VALUES DEFINITIONS						 *
 **********************************************************/
 #ifndef POLLRDNORM
-#define POLLRDNORM  0x0100
+#define POLLRDNORM  0x0040
 #endif
 #ifndef POLLRDBAND
-#define POLLRDBAND  0x0200
+#define POLLRDBAND  0x0080
 #endif
 #ifndef POLLIN
-#define POLLIN		0x0300
+#define POLLIN		0x0001
 #endif
 #ifndef POLLPRI
-#define POLLPRI     0x0400
+#define POLLPRI     0x0002
 #endif
 
 #ifndef POLLWRNORM
-#define POLLWRNORM  0x0010
+#define POLLWRNORM  0x0100
 #endif
 #ifndef POLLOUT
-#define POLLOUT		0x0100
+#define POLLOUT		0x0004
 #endif
 #ifndef POLLWRBAND
-#define POLLWRBAND  0x0020
+#define POLLWRBAND  0x0200
 #endif
 
 #ifndef POLLERR
-#define POLLERR     0x0001
+#define POLLERR     0x0008
 #endif
 #ifndef POLLHUP
-#define POLLHUP     0x0002
+#define POLLHUP     0x0010
 #endif
 #ifndef POLLNVAL
-#define POLLNVAL    0x0004
+#define POLLNVAL    0x0020
 #endif
 
 #define ENOBUFS		STATUS_DEVICE_INSUFFICIENT_RESOURCES	

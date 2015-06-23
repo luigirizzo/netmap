@@ -1186,7 +1186,13 @@ sender_body(void *data)
     } else {
 	int tosend = 0;
 	int frags = targ->g->frags;
-
+#ifdef _WIN32
+	DWORD resultWait = 0;
+	//char eventName[256] = "Global\\Netmap_TX_";
+	//strcat(eventName, targ->g->ifname);
+	//HANDLE writeEvent = OpenEvent(SYNCHRONIZE, FALSE, eventName);
+	//HANDLE writeEvent = CreateEvent(NULL, TRUE, TRUE, eventName);
+#endif //_WIN32
         nifp = targ->nmd->nifp;
 	while (!targ->cancel && (n == 0 || sent < n)) {
 
@@ -1214,6 +1220,31 @@ sender_body(void *data)
 						);
 #endif //_WIN32
 #else
+#ifdef _WIN32	
+		{
+			POLL_REQUEST_DATA prd;
+			prd.timeout = 2000;
+			prd.events = POLLOUT;
+			DeviceIoControl (IntToPtr(_get_osfhandle(pfd.fd)),
+						(DWORD) NETMAP_POLL,
+						&prd,
+						sizeof(prd),
+						NULL,
+						0,
+						&bRetur,
+						NULL
+						);
+		}
+		//WriteFile(IntToPtr(_get_osfhandle(pfd.fd)), NULL,0, 0, NULL);	
+		/*while ((resultWait = WaitForSingleObject(writeEvent, 2000)) != WAIT_OBJECT_0)
+		{
+			if (targ->cancel)
+				break;
+			//D("poll error/timeout on queue %d: %s", targ->me,
+				//strerror(errno));
+			WriteFile(IntToPtr(_get_osfhandle(pfd.fd)), NULL,0, 0, NULL);	
+		};*/
+#else
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
@@ -1226,7 +1257,8 @@ sender_body(void *data)
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
-#endif
+#endif //_WIN32
+#endif //BUSYWAIT
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1404,7 +1436,12 @@ receiver_body(void *data)
 #endif /* !NO_PCAP */
     } else {
 	int dump = targ->g->options & OPT_DUMP;
-
+#ifdef _WIN32
+	//char eventName[256] = "Global\\Netmap_RX_";
+	//strcat(eventName, targ->g->ifname);
+	//HANDLE readEvent = OpenEvent(SYNCHRONIZE, FALSE, eventName);
+	//HANDLE readEvent = CreateEvent(NULL, TRUE, TRUE, eventName);
+#endif //_WIN32
         nifp = targ->nmd->nifp;
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
@@ -1424,6 +1461,29 @@ receiver_body(void *data)
 						);
 #endif //_WIN32
 #else
+#ifdef _WIN32
+		{
+			POLL_REQUEST_DATA prd;
+			prd.timeout = 1000;
+			prd.events = POLLIN;
+			DeviceIoControl (IntToPtr(_get_osfhandle(pfd.fd)),
+						(DWORD) NETMAP_POLL,
+						&prd,
+						sizeof(prd),
+						NULL,
+						0,
+						&bRetur,
+						NULL
+						);
+		}
+		//ReadFile(IntToPtr(_get_osfhandle(pfd.fd)), NULL,0, 0, NULL);
+		/*while (WaitForSingleObject(readEvent, 1000) != WAIT_OBJECT_0)
+		{
+			if (targ->cancel)
+				break;
+			ReadFile(IntToPtr(_get_osfhandle(pfd.fd)), NULL,0, 0, NULL);
+		};*/
+#else
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -1434,7 +1494,8 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
-#endif
+#endif //_WIN32
+#endif //BUSYWAIT
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
 			

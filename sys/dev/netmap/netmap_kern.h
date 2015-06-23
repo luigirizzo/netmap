@@ -165,9 +165,9 @@ struct hrtimer {
 
 #elif defined (_WIN32)
 #include <win_glue.h>
-#define	NM_SELINFO_T	KQUEUE
-#define	NM_LOCK_T	win_spinlock_t	// see win_glue.h
-#define NM_MTX_T	KGUARDED_MUTEX	/* OS-specific mutex (sleepable) */
+#define	NM_SELINFO_T		KEVENT			//KQUEUE
+#define	NM_LOCK_T			win_spinlock_t	// see win_glue.h
+#define NM_MTX_T			KGUARDED_MUTEX	/* OS-specific mutex (sleepable) */
 
 #define NM_MTX_INIT(m)		KeInitializeGuardedMutex(&m);     
 #define NM_MTX_DESTROY(m)	do { (void)(m); } while (0)

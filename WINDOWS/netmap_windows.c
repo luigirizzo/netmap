@@ -24,6 +24,7 @@
  */
 
 #include "win_glue.h"
+#include "Ntstrsafe.h"
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
@@ -54,17 +55,15 @@ NTSTATUS copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
 #pragma alloc_text( INIT, DriverEntry)
 #endif // ALLOC_PRAGMA
 
+struct events_notifications *notes = NULL;
 
 NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	//Inserting the private structure for the calling process
-	//in a dictionary to be retrieved in a fast way
 	//As stated in https://support.microsoft.com/en-us/kb/120170
 	//irpSp->FileObject is the same for every call from a certain
-	//handle so we can use it as an uid
-	//Unfortunately we cannot use the structure itself to keep the data
-	//because it is cleared between calls
+	//handle so we can use it
+	//We can use the structure itself to keep the data
 	//[EXTRACT] { Because I/O requests with the same handle have the same file object, 
 	//a driver can use the file-object pointer to identify the I/O operations that belong 
 	//to one open instantiation of a device or file. }
@@ -73,7 +72,6 @@ NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	irpSp = IoGetCurrentIrpStackLocation(Irp);
 	NMG_LOCK();
 	priv = irpSp->FileObject->FsContext;
-
 	if (priv == NULL)
 	{
 		priv = ExAllocatePoolWithTag(NonPagedPool,
@@ -93,7 +91,6 @@ NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		priv->np_refcount += 1;
 		D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refcount);
 	}
-	
 	NMG_UNLOCK();
 	//--------------------------------------------------------
 	//D("Netmap.sys: Pid %i attached: memory allocated @%p", currentProcId, priv);
@@ -226,7 +223,14 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
 		return NtStatus;
 	case NETMAP_POLL:
-		//DbgPrint("Netmap.sys: NETMAP_POLL");
+		{
+			POLL_REQUEST_DATA *pollData = data;
+			irpSp->FileObject->FsContext2 = pollData->timeout;
+			netmap_poll(NULL, pollData->events, irpSp);
+		}
+		Irp->IoStatus.Status = NtStatus;
+		IoCompleteRequest(Irp, IO_NO_INCREMENT);
+		return NtStatus;
 	default:
 		//bail out if unknown request issued
 		DbgPrint("Netmap.sys: wrong request issued! (%i)", irpSp->Parameters.DeviceIoControl.IoControlCode);
@@ -266,6 +270,37 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		}
 	}
 
+#if 0
+	if (irpSp->Parameters.DeviceIoControl.IoControlCode == NIOCREGIF)
+	{
+		NTSTATUS currentStatus;
+		UNICODE_STRING      resultTX = { 0 };
+		UNICODE_STRING      resultRX = { 0 };
+		UNICODE_STRING		nameStr = { 0 };
+		char* name = arg.nmr.nr_name;
+		ANSI_STRING temp;
+		RtlInitAnsiString(&temp, name);
+		RtlAnsiStringToUnicodeString(&nameStr, &temp, TRUE);
+
+		SafeAllocateString(&resultRX, 256);
+		SafeAllocateString(&resultTX, 256);
+
+		currentStatus = RtlUnicodeStringCatString(&resultTX, L"\\BaseNamedObjects\\Netmap_TX_");
+		currentStatus = RtlUnicodeStringCatString(&resultRX, L"\\BaseNamedObjects\\Netmap_RX_");
+		currentStatus = RtlUnicodeStringCat(&resultTX, &nameStr);
+		currentStatus = RtlUnicodeStringCat(&resultRX, &nameStr);
+		struct events_notifications *notes = NULL;
+		notes = ExAllocatePoolWithTag(NonPagedPool,
+			sizeof(struct events_notifications),
+			PRIV_MEMORY_POOL_TAG);
+		RtlZeroMemory(notes, sizeof(struct events_notifications));		
+		notes->RX_EVENT = IoCreateNotificationEvent(&resultRX, &notes->hRx_Event);
+		notes->TX_EVENT = IoCreateNotificationEvent(&resultTX, &notes->hTx_Event);
+		ObReferenceObject(notes->TX_EVENT);
+		ObReferenceObject(notes->RX_EVENT);
+		irpSp->FileObject->FsContext2 = notes;
+	}
+#endif
 	Irp->IoStatus.Status = NtStatus;
 	IoCompleteRequest( Irp, IO_NO_INCREMENT );
 	return NtStatus;
@@ -379,14 +414,44 @@ int copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
 }
 
 
-NTSTATUS dummy(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS ReadSync(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-	DbgPrint("Netmap.sys: Dummy invoked\n");
+	PIO_STACK_LOCATION  irpSp;
+	KPRIORITY increment = 0;
+	int events = POLLIN;
+	//KeResetEvent(notes->RX_EVENT);
+	irpSp = IoGetCurrentIrpStackLocation(Irp); 
+	//struct events_notifications *notes = irpSp->FileObject->FsContext2;
+	netmap_poll(NULL, events, irpSp);
+	/*{
+		KeSetEvent(notes->TX_EVENT, increment, FALSE);	
+	}*/
+	
+
+	//DbgPrint("Netmap.sys: ReadSync invoked\n");
 	NTSTATUS NtStatus = STATUS_SUCCESS;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return NtStatus;
 }
+NTSTATUS WriteSync(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+{
+	PIO_STACK_LOCATION  irpSp;
+	KPRIORITY increment = 0;
+	//KeResetEvent(notes->TX_EVENT);
+	int events = POLLOUT;
+	irpSp = IoGetCurrentIrpStackLocation(Irp);
+	//struct events_notifications *notes = irpSp->FileObject->FsContext2;
+	netmap_poll(NULL, events, irpSp);
+	/*{
+		KeSetEvent(notes->RX_EVENT, increment, FALSE);	
+	}*/
+	
 
+	//DbgPrint("Netmap.sys: WriteSync invoked\n");
+	NTSTATUS NtStatus = STATUS_SUCCESS;
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	return NtStatus;
+}
  /*
  * Kernel driver entry point.
  *
@@ -394,7 +459,7 @@ NTSTATUS dummy(PDEVICE_OBJECT DeviceObject, PIRP Irp)
  *
  * Return STATUS_SUCCESS on success, errno on failure.
  */
- 
+
 NTSTATUS DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING RegistryPath)
 {
     NTSTATUS        		ntStatus;
@@ -428,8 +493,8 @@ NTSTATUS DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING Regi
     DriverObject->MajorFunction[IRP_MJ_CREATE] = ioctlCreate;
     DriverObject->MajorFunction[IRP_MJ_CLOSE] = ioctlClose;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = ioctlDeviceControl;
-	DriverObject->MajorFunction[IRP_MJ_READ] = dummy;
-	DriverObject->MajorFunction[IRP_MJ_WRITE] = dummy;
+	DriverObject->MajorFunction[IRP_MJ_READ] = ReadSync;
+	DriverObject->MajorFunction[IRP_MJ_WRITE] = WriteSync;
     DriverObject->DriverUnload = ioctlUnloadDriver;
 
     // Initialize a Unicode String containing the Win32 name
@@ -452,7 +517,36 @@ NTSTATUS DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING Regi
 		keinit_GST();
 		deviceObject->Flags |= DO_DIRECT_IO;
 	}
-	
+#if 0
+	{
+		UNICODE_STRING      resultTX = { 0 };
+		UNICODE_STRING      resultRX = { 0 };
+		UNICODE_STRING		nameStr = { 0 };
+		//char* name = arg.nmr.nr_name;
+		//ANSI_STRING temp;
+		//RtlInitAnsiString(&temp, name);
+		//RtlAnsiStringToUnicodeString(&nameStr, &temp, TRUE);
+
+		SafeAllocateString(&resultRX, 256);
+		SafeAllocateString(&resultTX, 256);
+
+		RtlUnicodeStringCatString(&resultTX, L"\\BaseNamedObjects\\Netmap_TX_");
+		RtlUnicodeStringCatString(&resultRX, L"\\BaseNamedObjects\\Netmap_RX_");
+		//currentStatus = RtlUnicodeStringCat(&resultTX, &nameStr);
+		//currentStatus = RtlUnicodeStringCat(&resultRX, &nameStr);
+		notes = ExAllocatePoolWithTag(NonPagedPool,
+			sizeof(struct events_notifications),
+			PRIV_MEMORY_POOL_TAG);
+		RtlZeroMemory(notes, sizeof(struct events_notifications));
+		notes->RX_EVENT = IoCreateNotificationEvent(&resultRX, &notes->hRx_Event); //IoCreateSynchronizationEvent
+		notes->TX_EVENT = IoCreateNotificationEvent(&resultTX, &notes->hTx_Event);
+		ObReferenceObject(notes->TX_EVENT);
+		ObReferenceObject(notes->RX_EVENT);
+		//->FileObject->FsContext2 = notes;
+		//KeSetEvent(notes->TX_EVENT, 0, TRUE);
+		//KeSetEvent(notes->RX_EVENT, 0, TRUE);
+	}
+#endif
     return ntStatus;
 }
 

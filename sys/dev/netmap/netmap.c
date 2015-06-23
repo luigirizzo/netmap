@@ -480,6 +480,7 @@ ports attached to the switch)
 
 #elif defined (_WIN32)
 #include "win_glue.h"
+extern struct events_notifications *notes;
 #else
 
 #error	Unsupported platform
@@ -2495,8 +2496,19 @@ flush_tx:
 			}
 		}
 		if (want_tx && retry_tx && !is_kevent) {
+#ifndef _WIN32
 			OS_selrecord(td, check_all_tx ?
 			    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
+#else
+		{
+			if (check_all_tx)
+			{
+				OS_selrecord(td, &na->si[NR_TX]);
+			}else{
+				OS_selrecord(td, &na->tx_rings[priv->np_qfirst[NR_TX]].si);
+			}
+		}
+#endif
 			retry_tx = 0;
 			goto flush_tx;
 		}
@@ -2571,8 +2583,19 @@ do_retry_rx:
 		}
 
 		if (retry_rx && !is_kevent)
+#ifndef _WIN32
 			OS_selrecord(td, check_all_rx ?
 			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
+#else
+		{
+			if (check_all_rx)
+			{
+				OS_selrecord(td, &na->si[NR_RX]);
+			}else{
+				OS_selrecord(td, &na->rx_rings[priv->np_qfirst[NR_RX]].si);
+			}
+		}
+#endif
 		if (send_down > 0 || retry_rx) {
 			retry_rx = 0;
 			if (send_down)
@@ -2624,7 +2647,21 @@ netmap_notify(struct netmap_kring *kring, int flags)
 
 	return 0;
 }
-
+#if 0
+static int
+netmap_notify(struct netmap_adapter *na, u_int n_ring,
+enum txrx tx, int flags)
+{
+	if (tx == NR_TX) {
+		KeSetEvent(notes->TX_EVENT, 0, FALSE);
+	}
+	else
+	{
+		KeSetEvent(notes->RX_EVENT, 0, FALSE);
+	}
+	return 0;
+}
+#endif
 
 /* called by all routines that create netmap_adapters.
  * Attach na to the ifp (if any) and provide defaults
