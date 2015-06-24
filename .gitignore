@@ -36,6 +36,7 @@ LINUX/i40e
 LINUX/failed-patches
 examples/bridge
 examples/pkt-gen
+examples/pkt-gen-b
 examples/test_select
 examples/testcsum
 examples/testlock
