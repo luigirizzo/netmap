@@ -662,7 +662,6 @@ vtnet_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		return EINVAL;
 
 	VTNET_CORE_LOCK(sc);
-	ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
 	/* enable or disable flags and callbacks in na and ifp */
 	if (onoff) {
 	        int i;
@@ -675,7 +674,7 @@ vtnet_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 			m0->m_len = 64;
 
 			if (m0) {
-				vtnet_txq_encap(txq, &m0);
+				ret = vtnet_txq_encap(txq, &m0);
 			}
 		}
 		ret = vtnet_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
@@ -705,12 +704,13 @@ vtnet_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		kring->nr_hwcur = csb->tx_ring.hwcur;
 		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
 	} else {
+		ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
 		//na->na_flags &= ~NAF_NETMAP_ON;
 		nm_clear_native_flags(na);
 		ret = vtnet_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		vtnet_init_locked(sc);       /* also enable intr */
 	}
 out:
-        vtnet_init_locked(sc);       /* also enable intr */
         VTNET_CORE_UNLOCK(sc);
         return (ifp->if_drv_flags & IFF_DRV_RUNNING ? ret : 1);
 }
