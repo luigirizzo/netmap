@@ -225,8 +225,20 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	case NETMAP_POLL:
 		{
 			POLL_REQUEST_DATA *pollData = data;
-			irpSp->FileObject->FsContext2 = pollData->timeout;
-			netmap_poll(NULL, pollData->events, irpSp);
+			LARGE_INTEGER tout;
+			long requiredTimeOut = -(int)(pollData->timeout) * 1000 * 10;
+			tout = RtlConvertLongToLargeInteger(requiredTimeOut);
+			//irpSp->FileObject->FsContext2 = pollData->timeout;
+			irpSp->FileObject->FsContext2 = NULL;
+			pollData->revents = netmap_poll(NULL, pollData->events, irpSp);
+			while ((irpSp->FileObject->FsContext2 != NULL) && (pollData->revents == 0))
+			{
+				NTSTATUS waitResult = KeWaitForSingleObject((irpSp->FileObject->FsContext2), UserRequest, KernelMode, FALSE, &tout);
+				if (waitResult == STATUS_TIMEOUT)
+					break;
+				pollData->revents = netmap_poll(NULL, pollData->events, irpSp);
+			}	
+			copy_to_user((void*)data, &arg, sizeof(POLL_REQUEST_DATA), Irp);
 		}
 		Irp->IoStatus.Status = NtStatus;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);

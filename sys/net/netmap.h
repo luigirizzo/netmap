@@ -578,6 +578,7 @@ typedef struct _POLL_REQUEST_DATA
 {
 	int events;
 	int timeout;
+	int revents;
 } POLL_REQUEST_DATA;
 
 #endif //_WIN32

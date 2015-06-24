@@ -168,11 +168,12 @@ static void win_init_waitqueue_head(PKEVENT ev)
 
 static void win_OS_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
 {
-	LARGE_INTEGER tout;
-	long requiredTimeOut = -(int)(irpSp->FileObject->FsContext2) * 1000 * 10;
-	tout = RtlConvertLongToLargeInteger(requiredTimeOut);
+	//LARGE_INTEGER tout;
+	//long requiredTimeOut = -(int)(irpSp->FileObject->FsContext2) * 1000 * 10;
+	//tout = RtlConvertLongToLargeInteger(requiredTimeOut);
 	
-	KeWaitForSingleObject(ev, UserRequest, KernelMode, FALSE, &tout);
+	//KeWaitForSingleObject(ev, UserRequest, KernelMode, FALSE, &tout);
+	irpSp->FileObject->FsContext2 = ev;
 	KeClearEvent(ev);
 }
 
