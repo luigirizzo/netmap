@@ -43,7 +43,10 @@
 ## Replaces the right-end applicability of all final patches for driver
 ## from v2 to infty (99999).
 ##
-## 
+## Note: 'scripts/np auto driver' will perform all steps 1-4, guessing
+## the values of v1 and v2 from the available netmap-* branches.
+## './scripts/np auto-all' will do the same for all known drivers.
+##
 
 PROGNAME=$0
 
@@ -194,8 +197,6 @@ function get-range()
 ##	copies the original sources of the given <driver>,
 ##	from the given kernel <version> to the given <dest>
 ##	directory.
-##	It uses a local cache to minimize the expensive
-##	checkouts in GITDIR.
 function get-src()
 {
 	get-params "driver version dest" "$@"
@@ -343,8 +344,10 @@ function get-kernel()
 ##	prepare the linux tree for <version> to be ready
 ##	for external modules compilation.
 ##	The tree is put in $LINUX_SOURCES/linux-<version> and the
-##	configuration is obtained from $LINUX_CONFIGS/config-<version>
-##	(or $LINUX_CONFIGS/config-all by default).
+##	configuration is obtained from $LINUX_CONFIGS/config-<version>,
+##	if available, otherwise $LINUX_CONFIGS/config-all is used
+##	as a default; if also the latter does not exist, the kernel is
+##	configure using 'allmodconfig'.
 ##	Errors are logged to $LINUX_CONFIGS/linux-<version>.log.
 ##	If $LINUX_SOURCES/linux-<version> already exists,
 ##	nothing is done.
@@ -532,6 +535,9 @@ mkdir -p tmp-patches
 
 COMMAND=$1; shift
 case $COMMAND in
+##
+##  <cmd>-all [args...]
+##	same as: forall <cmd> [args...]
 *-all)
 	forall ${COMMAND%-all} "$@"
 	;;
