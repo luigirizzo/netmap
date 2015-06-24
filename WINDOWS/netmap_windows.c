@@ -270,37 +270,6 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		}
 	}
 
-#if 0
-	if (irpSp->Parameters.DeviceIoControl.IoControlCode == NIOCREGIF)
-	{
-		NTSTATUS currentStatus;
-		UNICODE_STRING      resultTX = { 0 };
-		UNICODE_STRING      resultRX = { 0 };
-		UNICODE_STRING		nameStr = { 0 };
-		char* name = arg.nmr.nr_name;
-		ANSI_STRING temp;
-		RtlInitAnsiString(&temp, name);
-		RtlAnsiStringToUnicodeString(&nameStr, &temp, TRUE);
-
-		SafeAllocateString(&resultRX, 256);
-		SafeAllocateString(&resultTX, 256);
-
-		currentStatus = RtlUnicodeStringCatString(&resultTX, L"\\BaseNamedObjects\\Netmap_TX_");
-		currentStatus = RtlUnicodeStringCatString(&resultRX, L"\\BaseNamedObjects\\Netmap_RX_");
-		currentStatus = RtlUnicodeStringCat(&resultTX, &nameStr);
-		currentStatus = RtlUnicodeStringCat(&resultRX, &nameStr);
-		struct events_notifications *notes = NULL;
-		notes = ExAllocatePoolWithTag(NonPagedPool,
-			sizeof(struct events_notifications),
-			PRIV_MEMORY_POOL_TAG);
-		RtlZeroMemory(notes, sizeof(struct events_notifications));		
-		notes->RX_EVENT = IoCreateNotificationEvent(&resultRX, &notes->hRx_Event);
-		notes->TX_EVENT = IoCreateNotificationEvent(&resultTX, &notes->hTx_Event);
-		ObReferenceObject(notes->TX_EVENT);
-		ObReferenceObject(notes->RX_EVENT);
-		irpSp->FileObject->FsContext2 = notes;
-	}
-#endif
 	Irp->IoStatus.Status = NtStatus;
 	IoCompleteRequest( Irp, IO_NO_INCREMENT );
 	return NtStatus;
@@ -517,36 +486,6 @@ NTSTATUS DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING Regi
 		keinit_GST();
 		deviceObject->Flags |= DO_DIRECT_IO;
 	}
-#if 0
-	{
-		UNICODE_STRING      resultTX = { 0 };
-		UNICODE_STRING      resultRX = { 0 };
-		UNICODE_STRING		nameStr = { 0 };
-		//char* name = arg.nmr.nr_name;
-		//ANSI_STRING temp;
-		//RtlInitAnsiString(&temp, name);
-		//RtlAnsiStringToUnicodeString(&nameStr, &temp, TRUE);
-
-		SafeAllocateString(&resultRX, 256);
-		SafeAllocateString(&resultTX, 256);
-
-		RtlUnicodeStringCatString(&resultTX, L"\\BaseNamedObjects\\Netmap_TX_");
-		RtlUnicodeStringCatString(&resultRX, L"\\BaseNamedObjects\\Netmap_RX_");
-		//currentStatus = RtlUnicodeStringCat(&resultTX, &nameStr);
-		//currentStatus = RtlUnicodeStringCat(&resultRX, &nameStr);
-		notes = ExAllocatePoolWithTag(NonPagedPool,
-			sizeof(struct events_notifications),
-			PRIV_MEMORY_POOL_TAG);
-		RtlZeroMemory(notes, sizeof(struct events_notifications));
-		notes->RX_EVENT = IoCreateNotificationEvent(&resultRX, &notes->hRx_Event); //IoCreateSynchronizationEvent
-		notes->TX_EVENT = IoCreateNotificationEvent(&resultTX, &notes->hTx_Event);
-		ObReferenceObject(notes->TX_EVENT);
-		ObReferenceObject(notes->RX_EVENT);
-		//->FileObject->FsContext2 = notes;
-		//KeSetEvent(notes->TX_EVENT, 0, TRUE);
-		//KeSetEvent(notes->RX_EVENT, 0, TRUE);
-	}
-#endif
     return ntStatus;
 }
 

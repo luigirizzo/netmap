@@ -2500,14 +2500,12 @@ flush_tx:
 			OS_selrecord(td, check_all_tx ?
 			    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
 #else
-		{
 			if (check_all_tx)
 			{
 				OS_selrecord(td, &na->si[NR_TX]);
 			}else{
 				OS_selrecord(td, &na->tx_rings[priv->np_qfirst[NR_TX]].si);
 			}
-		}
 #endif
 			retry_tx = 0;
 			goto flush_tx;
@@ -2560,7 +2558,7 @@ do_retry_rx:
 					kring->ring->flags & NR_TIMESTAMP) {
 				microtime(&kring->ring->ts);
 			}
-			found = kring->rcur != kring->rtail;
+			found = (kring->rcur != kring->rtail);
 			nm_kr_put(kring);
 			if (found) {
 				revents |= want_rx;

@@ -1623,6 +1623,7 @@ retry:
 			 * means there are new buffers to report
 			 */
 			if (likely(j != my_start)) {
+				D("Netmap Vale notify %s\n", &dst_na->up.name);
 				kring->nr_hwtail = j;
 				still_locked = 0;
 				mtx_unlock(&kring->q_lock);

@@ -86,7 +86,7 @@ typedef unsigned __int32 uint32_t;
 typedef __int64 int64_t;
 typedef unsigned __int64 uint64_t;
 typedef SSIZE_T ssize_t;
-typedef UINT u_int;
+typedef uint32_t u_int;
 typedef ULONG u_long;
 typedef struct timeval {
   LONGLONG tv_sec;
@@ -161,46 +161,24 @@ static inline void mtx_unlock(win_spinlock_t *m)
 #define BDG_FREE(p)				free(p)
 //--------------------------------------------------------
 
-typedef struct {
-	PKEVENT	waitingEvent;
-	LIST_ENTRY SingleListEntry;
-} POLL_WAIT_ENTRY;
-
-
-struct events_notifications
-{
-	PKEVENT TX_EVENT;
-	HANDLE hTx_Event;
-	PKEVENT RX_EVENT;
-	HANDLE hRx_Event;
-};
-
-
-
 static void win_init_waitqueue_head(PKEVENT ev)
 {
-	//HANDLE temp;
-	//ev = ExAllocatePoolWithTag(NonPagedPool, sizeof(KEVENT), PRIV_MEMORY_POOL_TAG);
-	//RtlZeroMemory(ev, sizeof(KEVENT));
 	KeInitializeEvent(ev, NotificationEvent, TRUE);
-	//ev = IoCreateNotificationEvent(NULL, &temp);
-	//ObReferenceObject(ev);
 }
 
 static void win_OS_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
 {
 	LARGE_INTEGER tout;
-	int requiredTimeOut = irpSp->FileObject->FsContext2;
-	tout.QuadPart = (requiredTimeOut * 1000 * 10);
+	long requiredTimeOut = -(int)(irpSp->FileObject->FsContext2) * 1000 * 10;
+	tout = RtlConvertLongToLargeInteger(requiredTimeOut);
+	
+	KeWaitForSingleObject(ev, UserRequest, KernelMode, FALSE, &tout);
 	KeClearEvent(ev);
-	DbgPrint("Sleeping on 0x%p", ev);
-	KeWaitForSingleObject(ev, UserRequest, KernelMode, TRUE, &tout);
-	DbgPrint("Waked up on 0x%p", ev);
 }
 
 static void win_OS_selwakeup(PKEVENT ev, long priority)
 {
-	DbgPrint("Waking up on 0x%p", ev);
+	//DbgPrint("Waking up on 0x%p\n", ev);
 	KeSetEvent(ev, priority, FALSE);
 }
 
