@@ -424,13 +424,23 @@ vtnet_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 static void inline
 vtnet_ptnetmap_iowrite4(device_t dev, uint32_t addr, uint32_t val)
 {
-	virtio_write_dev_config_4(dev, PTNETMAP_VIRTIO_IO_BASE + addr, val);
+	int i;
+	/* virtio_pci config_set use multiple iowrite8, we need to split the call and reverse the order */
+	for (i = 3; i >= 0; i--) {
+		virtio_write_dev_config_1(dev, PTNETMAP_VIRTIO_IO_BASE + addr + i, *(((uint8_t *)&val) + i));
+	}
 }
 
 static uint32_t inline
 vtnet_ptnetmap_ioread4(device_t dev, uint32_t addr)
 {
-	return virtio_read_dev_config_4(dev, PTNETMAP_VIRTIO_IO_BASE + addr);
+	uint32_t val;
+	int i;
+
+	for (i = 0; i <= 3; i++) {
+		*(((uint8_t *)&val) + i) = virtio_read_dev_config_1(dev, PTNETMAP_VIRTIO_IO_BASE + addr + i);
+	}
+	return val;
 }
 
 static int
@@ -457,8 +467,8 @@ vtnet_ptnetmap_alloc_csb(struct SOFTC_T *sc)
 	ptna->csb->guest_csb_on = 1;
 
 	/* Tell the device the CSB physical address. */
-	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAH, (csb_phyaddr >> 32));
-	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAL, (csb_phyaddr & 0x00000000ffffffffULL));
+	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAH, (uint32_t)(csb_phyaddr >> 32));
+	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAL, (uint32_t)(csb_phyaddr));
 
 	return 0;
 }
@@ -661,7 +671,7 @@ vtnet_ptnetmap_reg(struct netmap_adapter *na, int onoff)
                 for (i = 0; i < sc->vtnet_max_vq_pairs; i++) {
 			struct vtnet_txq *txq = &sc->vtnet_txqs[i];
 			struct mbuf *m0;
-			m0 = m_getjcl(M_NOWAIT, MT_DATA, M_PKTHDR, 64);
+			m0 = m_gethdr(M_NOWAIT, MT_DATA);
 			m0->m_len = 64;
 
 			if (m0) {
