@@ -482,10 +482,11 @@ function build-check()
 MINVERS=2.6.32
 MAXVERS=
 NEXTVERS=
+##
 ##  auto <driver>
-##      do all the steps of the typical workflow for <driver>.
-##      The linux versions are obtained automatically from the
-##      available netmap-* branches in GITDIR
+##	do all the steps of the typical workflow for <driver>.
+##	The linux versions are obtained automatically from the
+##	available netmap-* branches in GITDIR
 function auto()
 {
 	get-params "driver" "$@"
