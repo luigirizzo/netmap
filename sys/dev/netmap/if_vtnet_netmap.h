@@ -33,7 +33,7 @@
 #include <vm/pmap.h>    /* vtophys ? */
 #include <dev/netmap/netmap_kern.h>
 #ifdef WITH_PTNETMAP_GUEST
-#include <netmap/netmap_virt.h>
+#include <dev/netmap/netmap_virt.h>
 static int vtnet_ptnetmap_txsync(struct netmap_kring *kring, int flags);
 #define VTNET_PTNETMAP_ON(_na)        ((nm_netmap_on(_na)) && ((_na)->nm_txsync == vtnet_ptnetmap_txsync))
 #else   /* !WITH_PTNETMAP_GUEST */
@@ -480,7 +480,7 @@ vtnet_ptnetmap_free_csb(struct SOFTC_T *sc)
 	}
 }
 
-static uint32_t vtnet_netmap_ptctl(struct ifnet *, uint32_t);
+static uint32_t vtnet_ptnetmap_ptctl(struct ifnet *, uint32_t);
 static int
 vtnet_ptnetmap_config(struct netmap_adapter *na,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
@@ -492,7 +492,7 @@ vtnet_ptnetmap_config(struct netmap_adapter *na,
 	if (csb == NULL)
 		return EINVAL;
 
-	ret = vtnet_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	ret = vtnet_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
 	if (ret)
 		return ret;
 
@@ -637,7 +637,7 @@ vtnet_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 }
 
 static int
-vtnet_netmap_reg(struct netmap_adapter *na, int onoff)
+vtnet_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
 
@@ -662,13 +662,13 @@ vtnet_netmap_reg(struct netmap_adapter *na, int onoff)
 			struct vtnet_txq *txq = &sc->vtnet_txqs[i];
 			struct mbuf *m0;
 			m0 = m_getjcl(M_NOWAIT, MT_DATA, M_PKTHDR, 64);
-			m0->len = 64;
+			m0->m_len = 64;
 
 			if (m0) {
 				vtnet_txq_encap(txq, &m0);
 			}
 		}
-		ret = vtnet_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+		ret = vtnet_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
 		if (ret) {
 			//na->na_flags &= ~NAF_NETMAP_ON;
 			nm_clear_native_flags(na);
@@ -697,7 +697,7 @@ vtnet_netmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		//na->na_flags &= ~NAF_NETMAP_ON;
 		nm_clear_native_flags(na);
-		ret = vtnet_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		ret = vtnet_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 out:
         vtnet_init_locked(sc);       /* also enable intr */
@@ -712,7 +712,7 @@ vtnet_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 }
 
 static struct paravirt_csb *
-vtnet_netmap_getcsb(struct ifnet *ifp)
+vtnet_ptnetmap_getcsb(struct ifnet *ifp)
 {
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
 
@@ -720,7 +720,7 @@ vtnet_netmap_getcsb(struct ifnet *ifp)
 }
 
 static uint32_t
-vtnet_netmap_ptctl(struct ifnet *ifp, uint32_t val)
+vtnet_ptnetmap_ptctl(struct ifnet *ifp, uint32_t val)
 {
 	struct SOFTC_T *sc = ifp->if_softc;
 	device_t dev = sc->vtnet_dev;
@@ -743,7 +743,7 @@ vtnet_ptnetmap_features(struct SOFTC_T *sc)
 	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_PTFEAT, NET_PTN_FEATURES_BASE);
 	/* get back the acknowledged features */
 	features = vtnet_ptnetmap_ioread4(dev, PTNETMAP_VIRTIO_IO_PTFEAT);
-	pr_info("netmap passthrough: %s\n",
+	D("netmap passthrough: %s\n",
 			(features & NET_PTN_FEATURES_BASE) ? "base" :
 			"none");
 	return features;
@@ -759,8 +759,8 @@ vtnet_ptnetmap_dtor(struct netmap_adapter *na)
 }
 
 static struct netmap_pt_guest_ops vtnet_ptnetmap_ops = {
-    .nm_getcsb = vtnet_netmap_getcsb, /* TODO: remove */
-    .nm_ptctl = vtnet_netmap_ptctl,
+    .nm_getcsb = vtnet_ptnetmap_getcsb, /* TODO: remove */
+    .nm_ptctl = vtnet_ptnetmap_ptctl,
 };
 #endif /* WITH_PTNETMAP_GUEST */
 
@@ -783,7 +783,7 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 #ifdef WITH_PTNETMAP_GUEST
 	D("check ptnetmap support");
 	if (virtio_with_feature(sc->vtnet_dev, VIRTIO_NET_F_PTNETMAP) &&
-			(vtnet_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
+			(vtnet_ptnetmap_features(sc) & NET_PTN_FEATURES_BASE)) {
 		D("ptnetmap supported");
 		na.nm_config = vtnet_ptnetmap_config;
 		na.nm_register = vtnet_ptnetmap_reg;
@@ -792,7 +792,7 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 		na.nm_dtor = vtnet_ptnetmap_dtor;
 		na.nm_bdg_attach = vtnet_ptnetmap_bdg_attach; /* XXX */
 		netmap_pt_guest_attach(&na, &vtnet_ptnetmap_ops);
-		vtnet_ptnetmap_alloc_csb(vi);
+		vtnet_ptnetmap_alloc_csb(sc);
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);
