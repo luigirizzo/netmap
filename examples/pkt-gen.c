@@ -1186,14 +1186,7 @@ sender_body(void *data)
     } else {
 	int tosend = 0;
 	int frags = targ->g->frags;
-#ifdef _WIN32
-	DWORD resultWait = 0;
-	//char eventName[256] = "Global\\Netmap_TX_";
-	//strcat(eventName, targ->g->ifname);
-	//HANDLE writeEvent = OpenEvent(SYNCHRONIZE, FALSE, eventName);
-	//HANDLE writeEvent = CreateEvent(NULL, TRUE, TRUE, eventName);
-#endif //_WIN32
-        nifp = targ->nmd->nifp;
+    nifp = targ->nmd->nifp;
 	while (!targ->cancel && (n == 0 || sent < n)) {
 
 		if (rate_limit && tosend <= 0) {
@@ -1234,16 +1227,7 @@ sender_body(void *data)
 						&bRetur,
 						NULL
 						);
-		}
-		//WriteFile(IntToPtr(_get_osfhandle(pfd.fd)), NULL,0, 0, NULL);	
-		/*while ((resultWait = WaitForSingleObject(writeEvent, 2000)) != WAIT_OBJECT_0)
-		{
-			if (targ->cancel)
-				break;
-			//D("poll error/timeout on queue %d: %s", targ->me,
-				//strerror(errno));
-			WriteFile(IntToPtr(_get_osfhandle(pfd.fd)), NULL,0, 0, NULL);	
-		};*/
+		}	
 #else
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
@@ -1436,13 +1420,7 @@ receiver_body(void *data)
 #endif /* !NO_PCAP */
     } else {
 	int dump = targ->g->options & OPT_DUMP;
-#ifdef _WIN32
-	//char eventName[256] = "Global\\Netmap_RX_";
-	//strcat(eventName, targ->g->ifname);
-	//HANDLE readEvent = OpenEvent(SYNCHRONIZE, FALSE, eventName);
-	//HANDLE readEvent = CreateEvent(NULL, TRUE, TRUE, eventName);
-#endif //_WIN32
-        nifp = targ->nmd->nifp;
+    nifp = targ->nmd->nifp;
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
@@ -1476,13 +1454,6 @@ receiver_body(void *data)
 						NULL
 						);
 		}
-		//ReadFile(IntToPtr(_get_osfhandle(pfd.fd)), NULL,0, 0, NULL);
-		/*while (WaitForSingleObject(readEvent, 1000) != WAIT_OBJECT_0)
-		{
-			if (targ->cancel)
-				break;
-			ReadFile(IntToPtr(_get_osfhandle(pfd.fd)), NULL,0, 0, NULL);
-		};*/
 #else
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
