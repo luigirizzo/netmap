@@ -618,7 +618,7 @@ virtio_ptnetmap_free_csb(struct SOFTC_T *vi)
     }
 }
 
-static uint32_t virtio_netmap_ptctl(struct net_device *, uint32_t);
+static uint32_t virtio_ptnetmap_ptctl(struct net_device *, uint32_t);
 static int
 virtio_ptnetmap_config(struct netmap_adapter *na,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
@@ -630,7 +630,7 @@ virtio_ptnetmap_config(struct netmap_adapter *na,
 	if (csb == NULL)
 		return EINVAL;
 
-	ret = virtio_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
 	if (ret)
 		return ret;
 
@@ -821,7 +821,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		    }
 		}
 
-		ret = virtio_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
 		if (ret) {
 		    //na->na_flags &= ~NAF_NETMAP_ON;
 		    nm_clear_native_flags(na);
@@ -850,7 +850,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		//na->na_flags &= ~NAF_NETMAP_ON;
 		nm_clear_native_flags(na);
-		ret = virtio_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 out:
 	/* Up the interface. This also enables the napi. */
@@ -868,7 +868,7 @@ virtio_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 }
 
 static struct paravirt_csb *
-virtio_netmap_getcsb(struct net_device *dev)
+virtio_ptnetmap_getcsb(struct net_device *dev)
 {
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)NA(dev);
 
@@ -876,7 +876,7 @@ virtio_netmap_getcsb(struct net_device *dev)
 }
 
 static uint32_t
-virtio_netmap_ptctl(struct net_device *dev, uint32_t val)
+virtio_ptnetmap_ptctl(struct net_device *dev, uint32_t val)
 {
 	struct SOFTC_T *vi = netdev_priv(dev);
 	struct virtio_device *vdev = vi->vdev;
@@ -915,8 +915,8 @@ virtio_ptnetmap_dtor(struct netmap_adapter *na)
 }
 
 static struct netmap_pt_guest_ops virtio_ptnetmap_ops = {
-    .nm_getcsb = virtio_netmap_getcsb, /* TODO: remove */
-    .nm_ptctl = virtio_netmap_ptctl,
+    .nm_getcsb = virtio_ptnetmap_getcsb, /* TODO: remove */
+    .nm_ptctl = virtio_ptnetmap_ptctl,
 };
 #endif /* WITH_PTNETMAP_GUEST */
 
