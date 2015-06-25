@@ -1186,10 +1186,12 @@ netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwai
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	int ret = 0;
-	struct mbq *q = &kring->rx_queue;
+	struct mbq *q = &kring->rx_queue, fq;
 
 	(void)pwait;	/* disable unused warnings */
 	(void)td;
+
+	mbq_init(&fq); /* fq holds packets to be freed */
 
 	mbq_lock(q);
 
@@ -1213,7 +1215,7 @@ netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwai
 			slot->len = len;
 			slot->flags = kring->nkr_slot_flags;
 			nm_i = nm_next(nm_i, lim);
-			m_freem(m);
+			mbq_enqueue(&fq, m);
 		}
 		kring->nr_hwtail = nm_i;
 	}
@@ -1233,6 +1235,10 @@ netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwai
 		OS_selrecord(td, &kring->si);
 
 	mbq_unlock(q);
+
+	mbq_purge(&fq);
+	mbq_destroy(&fq);
+
 	return ret;
 }
 
