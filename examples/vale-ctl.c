@@ -117,8 +117,11 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config)
 		break;
 	case NETMAP_BDG_ATTACH:
 	case NETMAP_BDG_DETACH:
-		if (nr_arg && nr_arg != NETMAP_BDG_HOST)
+		nmr.nr_flags = NR_REG_ALL_NIC;
+		if (nr_arg && nr_arg != NETMAP_BDG_HOST) {
+			nmr.nr_flags = NR_REG_NIC_SW;
 			nr_arg = 0;
+		}
 		nmr.nr_arg1 = nr_arg;
 		error = ioctl(fd, NIOCREGIF, &nmr);
 		if (error == -1) {
