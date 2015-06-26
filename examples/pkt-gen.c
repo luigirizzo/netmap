@@ -1222,8 +1222,8 @@ sender_body(void *data)
 						(DWORD) NETMAP_POLL,
 						&prd,
 						sizeof(prd),
-						NULL,
-						0,
+						&prd,
+						sizeof(prd),
 						&bRetur,
 						NULL
 						);
@@ -1448,8 +1448,8 @@ receiver_body(void *data)
 						(DWORD) NETMAP_POLL,
 						&prd,
 						sizeof(prd),
-						NULL,
-						0,
+						&prd,
+						sizeof(prd),
 						&bRetur,
 						NULL
 						);

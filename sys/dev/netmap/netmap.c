@@ -480,7 +480,6 @@ ports attached to the switch)
 
 #elif defined (_WIN32)
 #include "win_glue.h"
-extern struct events_notifications *notes;
 #else
 
 #error	Unsupported platform

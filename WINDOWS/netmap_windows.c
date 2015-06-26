@@ -24,7 +24,6 @@
  */
 
 #include "win_glue.h"
-#include "Ntstrsafe.h"
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
@@ -46,16 +45,16 @@ DRIVER_DISPATCH ioctlDeviceControl;
 DRIVER_UNLOAD ioctlUnloadDriver;
 
 //--------------------------------END Device driver routines
-static NTSTATUS windows_netmap_mmap(HANDLE pid, PIRP Irp);
+static NTSTATUS windows_netmap_mmap(PIRP Irp);
 NTSTATUS copy_from_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
 NTSTATUS copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
 
 //Allocate the pageable routines and the init routine
+//These routines will be unloaded from the memory as soon as
+//they've returned
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text( INIT, DriverEntry)
 #endif // ALLOC_PRAGMA
-
-struct events_notifications *notes = NULL;
 
 NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
@@ -80,8 +79,7 @@ NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		if (priv == NULL)
 		{
 			status = STATUS_INSUFFICIENT_RESOURCES;
-		}
-		else{
+		}else{
 			RtlZeroMemory(priv, sizeof(struct netmap_priv_d));
 			priv->np_refcount = 1;
 			D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refcount);
@@ -163,12 +161,14 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	case NIOCREGIF:
 		DbgPrint("Netmap.sys: NIOCREGIF");
 		argsize = sizeof(arg.nmr);
+#if 0
 		struct nmreq* test = (struct nmreq*) Irp->AssociatedIrp.SystemBuffer;
 		DbgPrint("IFNAMSIZ: %i , sizeof(nmreq): %i\n", IFNAMSIZ, sizeof(struct nmreq));
 		DbgPrint("nr_version: %i , nr_ringid: %i\n", test->nr_version, test->nr_ringid);
 		DbgPrint("nr_cmd: %i , nr_name: %s\n", test->nr_cmd, test->nr_name);
 		DbgPrint("nr_tx_rings: %i , nr_tx_slots: %i\n", test->nr_tx_rings, test->nr_tx_slots);
 		DbgPrint("nr_offset: %i , nr_flags: %s\n", test->nr_offset, test->nr_flags);
+#endif
 		break;
 	case NIOCTXSYNC:
 		//DbgPrint("Netmap.sys: NIOCTXSYNC");
@@ -182,8 +182,7 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		break;
 	case NETMAP_MMAP:
 		DbgPrint("Netmap.sys: NETMAP_MMAP");
-		HANDLE deviceUid = (void*)irpSp->FileObject;
-		NtStatus = windows_netmap_mmap(deviceUid, Irp);
+		NtStatus = windows_netmap_mmap(Irp);
 		Irp->IoStatus.Status = NtStatus;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
 		return NtStatus;
@@ -228,14 +227,21 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 			LARGE_INTEGER tout;
 			long requiredTimeOut = -(int)(pollData->timeout) * 1000 * 10;
 			tout = RtlConvertLongToLargeInteger(requiredTimeOut);
-			//irpSp->FileObject->FsContext2 = pollData->timeout;
 			irpSp->FileObject->FsContext2 = NULL;
 			pollData->revents = netmap_poll(NULL, pollData->events, irpSp);
 			while ((irpSp->FileObject->FsContext2 != NULL) && (pollData->revents == 0))
 			{
-				NTSTATUS waitResult = KeWaitForSingleObject((irpSp->FileObject->FsContext2), UserRequest, KernelMode, FALSE, &tout);
+				NTSTATUS waitResult = KeWaitForSingleObject(irpSp->FileObject->FsContext2, 
+															UserRequest, 
+															KernelMode, 
+															FALSE, 
+															&tout);
 				if (waitResult == STATUS_TIMEOUT)
+				{
+					pollData->revents = STATUS_TIMEOUT;
+					NtStatus = STATUS_TIMEOUT;
 					break;
+				}
 				pollData->revents = netmap_poll(NULL, pollData->events, irpSp);
 			}	
 			copy_to_user((void*)data, &arg, sizeof(POLL_REQUEST_DATA), Irp);
@@ -287,7 +293,7 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	return NtStatus;
 }
 
-static NTSTATUS windows_netmap_mmap(HANDLE pid, PIRP Irp)
+static NTSTATUS windows_netmap_mmap(PIRP Irp)
 {
 	PVOID       		buffer = NULL;
 	MEMORY_ENTRY		returnedValue;

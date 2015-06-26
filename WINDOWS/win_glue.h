@@ -56,7 +56,6 @@
 
 #define WIN32_LEAN_AND_MEAN 1
 
-#include <Ntifs.h>			// Definition of KQUEUE
 #include <ndis.h>
 #include <string.h>
 #include <stdio.h>
@@ -67,7 +66,9 @@
 #include <errno.h>
 #include <intrin.h>			//machine specific code (for example le64toh)
 
-#define PRIV_MEMORY_POOL_TAG	'memP'
+#define PRIV_MEMORY_POOL_TAG				'memP'
+#define PIPES_POOL_TAG						'epiP'
+#define RINGS_POOL_TAG						'gniR'
 
 //Originally defined in LINUX\IF.H
 #define	IFNAMSIZ 44//IF_NAMESIZE //defined in netioapi.h, is 256
@@ -97,12 +98,23 @@ typedef char* caddr_t;
 typedef PHYSICAL_ADDRESS 	vm_paddr_t;
 typedef uint32_t			vm_offset_t;
 typedef ULONG 				vm_ooffset_t; 
+
+#define thread PIO_STACK_LOCATION
 //--------------------------------------------------------
 
 /*********************************************************
-*        		  	ERRNO DEFINITIONS             		 *  
+*      		  	ERRNO->NTSTATUS TRANSLATION				 *  
 **********************************************************/
-
+#define ENOBUFS		STATUS_DEVICE_INSUFFICIENT_RESOURCES	
+#define EOPNOTSUPP	STATUS_INVALID_DEVICE_REQUEST
+/*********************************************************
+*        		  	NO USE IN WINDOWS CODE         		 *
+**********************************************************/
+#define destroy_dev(a)
+#define CURVNET_SET(x)
+#define CURVNET_RESTORE()
+#define __user
+#define	nm_iommu_group_id(dev)	0
 /*********************************************************
 * TRANSLATION OF GCC COMPILER ATTRIBUTES TO MSVC COMPILER*
 **********************************************************/
@@ -111,6 +123,14 @@ typedef ULONG 				vm_ooffset_t;
 #define inline __inline
 #define	__builtin_prefetch(x)	_mm_prefetch(x,_MM_HINT_T2)
 #endif //_MSC_VER
+
+static void panic(const char *fmt, ...)
+{
+	NT_ASSERT(1);
+}
+#define __assert	NT_ASSERT
+#define assert	NT_ASSERT
+
 
 /*********************************************************
 *        			SPINLOCKS DEFINITION        		 *  
@@ -161,38 +181,29 @@ static inline void mtx_unlock(win_spinlock_t *m)
 #define BDG_FREE(p)				free(p)
 //--------------------------------------------------------
 
-static void win_init_waitqueue_head(PKEVENT ev)
+/*********************************************************
+*        			SLEEP/WAKEUP THREADS        		 *
+**********************************************************/
+static void win_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
 {
-	KeInitializeEvent(ev, NotificationEvent, TRUE);
-}
-
-static void win_OS_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
-{
-	//LARGE_INTEGER tout;
-	//long requiredTimeOut = -(int)(irpSp->FileObject->FsContext2) * 1000 * 10;
-	//tout = RtlConvertLongToLargeInteger(requiredTimeOut);
-	
-	//KeWaitForSingleObject(ev, UserRequest, KernelMode, FALSE, &tout);
 	irpSp->FileObject->FsContext2 = ev;
 	KeClearEvent(ev);
 }
 
-static void win_OS_selwakeup(PKEVENT ev, long priority)
-{
-	//DbgPrint("Waking up on 0x%p\n", ev);
-	KeSetEvent(ev, priority, FALSE);
-}
-
 #define PI_NET								16
-#define init_waitqueue_head(x)				win_init_waitqueue_head(x) //InitializeListHead(x)	//KeInitializeQueue((x), KeQueryMaximumProcessorCount())
+#define init_waitqueue_head(x)				KeInitializeEvent(x, NotificationEvent, TRUE);
 #define netmap_knlist_destroy(x)
-#define OS_selwakeup(queue, priority)		win_OS_selwakeup(queue, priority)				
+#define OS_selwakeup(queue, priority)		KeSetEvent(queue, priority, FALSE);			
 #pragma warning(disable:4702)	//
-#define OS_selrecord(thread, queue)		    win_OS_selrecord(thread, queue)
+#define OS_selrecord(thread, queue)		    win_selrecord(thread, queue)
+#define tsleep(ident, priority, wmesg, time)	KeDelayExecutionThread(KernelMode, FALSE, (PLARGE_INTEGER)time)	
+//--------------------------------------------------------
 
 #define mb						KeMemoryBarrier
-//From here netmap.c stuff
 
+/*********************************************************
+*        			TIME FUNCTIONS		        		 *
+**********************************************************/
 void do_gettimeofday(struct timeval *tv);
 static int time_uptime_w32()
 {
@@ -203,81 +214,12 @@ static int time_uptime_w32()
 	return ret;
 }
 
-#define destroy_dev(a)
-
 #define microtime		do_gettimeofday
 #define time_second		time_uptime_w32
 //--------------------------------------------------------
 
-#define PIPES_POOL_TAG						'epiP'
-#define RINGS_POOL_TAG						'gniR'
-
-static inline PVOID win_reallocate(void* src, size_t size, size_t oldSize)
-{
-	DbgPrint("Netmap.sys: win_reallocate(%p, %i, %i)", src, size, oldSize);
-	PVOID newBuff = NULL;
-	if (src == NULL)
-	{
-		if (size == 0)
-		{
-			return NULL;
-		}else{
-			newBuff = ExAllocatePoolWithTag(NonPagedPool, size, PIPES_POOL_TAG);
-			if (newBuff == NULL)
-			{
-				return NULL;
-			}
-			RtlZeroMemory(newBuff, size);
-		}
-	}else{
-		if (size == 0)
-		{
-			ExFreePoolWithTag(src, PIPES_POOL_TAG);
-		}else{
-			if (size != oldSize)
-			{
-				newBuff = ExAllocatePoolWithTag(NonPagedPool, size, PIPES_POOL_TAG);
-				if (newBuff == NULL)
-				{
-					return NULL;
-				}
-				RtlZeroMemory(newBuff, size);
-				if (size > oldSize)
-				{
-					RtlCopyMemory(newBuff, src, oldSize);
-				}
-				else{
-					RtlCopyMemory(newBuff, src, size);
-				}
-				ExFreePoolWithTag(src, PIPES_POOL_TAG);
-			}else{
-				newBuff = src;
-			}
-		}
-	}
-	return newBuff;
-}
-
-static void* win_kernel_malloc(size_t size)
-{
-	void* mem = ExAllocatePoolWithTag(NonPagedPool, size, RINGS_POOL_TAG);
-	if (mem != NULL)
-	{
-		RtlZeroMemory(mem, size);
-	}
-	return mem;
-}
-
-#define bcopy(_s, _d, _l)					RtlCopyMemory(_d, _s, _l)
-#define bzero(addr, size)					RtlZeroMemory(addr, size)
 #define snprintf 							_snprintf
 #define printf								DbgPrint
-#define malloc(size, structType, flags)		win_kernel_malloc(size)
-#define free(addr, structType)				ExFreePoolWithTag(addr, RINGS_POOL_TAG)
-#define realloc(src, len, old_len)			win_reallocate(src, len, old_len)
-#define CURVNET_SET(x)
-#define CURVNET_RESTORE()
-#define tsleep(ident, priority, wmesg, time)	KeDelayExecutionThread(KernelMode, FALSE, (PLARGE_INTEGER)time)	
 
 #define copyin(src, dst, copy_len)					RtlCopyBytes(&dst, src, copy_len)
 #define m_copydata(source, offset, length, dst)		RtlCopyBytes(dst, source, length) //XXX_Ale: todo must set the offset someway
@@ -345,14 +287,6 @@ return s;												\
 })*/
 
 
-static void panic(const char *fmt, ...)
-{
-	NT_ASSERT(1);
-}
-#define __assert	NT_ASSERT
-#define assert	NT_ASSERT
-#define __user
-
 /*********************************************************
 *                   ATOMIC OPERATIONS     		         *  
 **********************************************************/
@@ -377,6 +311,71 @@ static inline int roundup_pow_of_two(int sz);
 char* win_contigMalloc(int sz, int page_size);
 void win_ContigFree(void* virtualAddress);
 
+#define bcopy(_s, _d, _l)					RtlCopyMemory(_d, _s, _l)
+#define bzero(addr, size)					RtlZeroMemory(addr, size)
+#define malloc(size, structType, flags)		win_kernel_malloc(size)
+#define free(addr, structType)				ExFreePoolWithTag(addr, RINGS_POOL_TAG)
+#define realloc(src, len, old_len)			win_reallocate(src, len, old_len)
+
+static inline PVOID win_reallocate(void* src, size_t size, size_t oldSize)
+{
+	//DbgPrint("Netmap.sys: win_reallocate(%p, %i, %i)", src, size, oldSize);
+	PVOID newBuff = NULL;
+	if (src == NULL)
+	{
+		if (size == 0)
+		{
+			return NULL;
+		}
+		else{
+			newBuff = ExAllocatePoolWithTag(NonPagedPool, size, PIPES_POOL_TAG);
+			if (newBuff == NULL)
+			{
+				return NULL;
+			}
+			RtlZeroMemory(newBuff, size);
+		}
+	}
+	else{
+		if (size == 0)
+		{
+			ExFreePoolWithTag(src, PIPES_POOL_TAG);
+		}
+		else{
+			if (size != oldSize)
+			{
+				newBuff = ExAllocatePoolWithTag(NonPagedPool, size, PIPES_POOL_TAG);
+				if (newBuff == NULL)
+				{
+					return NULL;
+				}
+				RtlZeroMemory(newBuff, size);
+				if (size > oldSize)
+				{
+					RtlCopyMemory(newBuff, src, oldSize);
+				}
+				else{
+					RtlCopyMemory(newBuff, src, size);
+				}
+				ExFreePoolWithTag(src, PIPES_POOL_TAG);
+			}
+			else{
+				newBuff = src;
+			}
+		}
+	}
+	return newBuff;
+}
+
+static void* win_kernel_malloc(size_t size)
+{
+	void* mem = ExAllocatePoolWithTag(NonPagedPool, size, RINGS_POOL_TAG);
+	if (mem != NULL)
+	{
+		RtlZeroMemory(mem, size);
+	}
+	return mem;
+}
 
 #define contigmalloc(sz, ty, flags, a, b, pgsz, c)  win_contigMalloc(sz,pgsz)					
 #define contigfree(va, sz, ty)						win_ContigFree(va)	
@@ -391,13 +390,6 @@ void win_ContigFree(void* virtualAddress);
 int do_netmap_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len);
 int do_netmap_get_ctl(struct sock *sk, int cmd, void __user *user, int *len);
 
-#define thread PIO_STACK_LOCATION
-/*
-struct thread {
-	void *sopt_td;
-	void *td_ucred;
-};
-*/
 enum sopt_dir { SOPT_GET, SOPT_SET };
 
 struct  sockopt {
@@ -561,22 +553,6 @@ int do_cmd(int optname, void *optval, uintptr_t optlen);
 #ifndef POLLNVAL
 #define POLLNVAL    0x0020
 #endif
-
-#define ENOBUFS		STATUS_DEVICE_INSUFFICIENT_RESOURCES	
-#define EOPNOTSUPP	STATUS_INVALID_DEVICE_REQUEST
-
-//netmap_mem2.c stuff
-
-#define	nm_iommu_group_id(dev)	0
-/*
-int nm_iommu_group_id(struct device *dev)
-{
-	return 0;
-}
-*/
-
-
-
 
 
 #endif //_WIN_GLUE_H
