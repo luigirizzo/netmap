@@ -150,9 +150,9 @@ nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
  * Second argument is non-zero to intercept, 0 to restore
  */
 int
-netmap_catch_rx(struct netmap_adapter *na, int intercept)
+netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
-	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
+	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = na->ifp;
 
 	if (intercept) {
@@ -185,7 +185,7 @@ void
 netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
 	struct netmap_adapter *na = &gna->up.up;
-	struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = netmap_generic_getifp(gna);
 
 	if (enable) {
 		na->if_transmit = ifp->if_transmit;
@@ -206,7 +206,7 @@ netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
  * of the transmission does not consume resources.
  *
  * On FreeBSD, and on multiqueue cards, we can force the queue using
- *      if ((m->m_flags & M_FLOWID) != 0)
+ *      if (M_HASHTYPE_GET(m) != M_HASHTYPE_NONE)
  *              i = m->m_pkthdr.flowid % adapter->num_queues;
  *      else
  *              i = curcpu % adapter->num_queues;
@@ -242,7 +242,7 @@ generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	m->m_len = m->m_pkthdr.len = len;
 	// inc refcount. All ours, we could skip the atomic
 	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
-	m->m_flags |= M_FLOWID;
+	M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
 	m->m_pkthdr.flowid = ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */
 	ret = NA(ifp)->if_transmit(ifp, m);
@@ -601,8 +601,18 @@ err_unlock:
 	return error;
 }
 
-
-// XXX can we remove this ?
+/*
+ * netmap_close() is called on every close(), but we do not need to do
+ * anything at that moment, since the process may have other open file
+ * descriptors for /dev/netmap. Instead, we pass netmap_dtor() to
+ * devfs_set_cdevpriv() on open(). The FreeBSD kernel will call the destructor
+ * when the last fd pointing to the device is closed. 
+ *
+ * Unfortunately, FreeBSD does not automatically track active mmap()s on an fd,
+ * so we have to track them by ourselvesi (see above). The result is that
+ * netmap_dtor() is called when the process has no open fds and no active
+ * memory maps on /dev/netmap, as in linux.
+ */
 static int
 netmap_close(struct cdev *dev, int fflag, int devtype, struct thread *td)
 {
@@ -676,7 +686,7 @@ static void
 netmap_knrdetach(struct knote *kn)
 {
 	struct netmap_priv_d *priv = (struct netmap_priv_d *)kn->kn_hook;
-	struct selinfo *si = &priv->np_rxsi->si;
+	struct selinfo *si = &priv->np_si[NR_RX]->si;
 
 	D("remove selinfo %p", si);
 	knlist_remove(&si->si_note, kn, 0);
@@ -686,7 +696,7 @@ static void
 netmap_knwdetach(struct knote *kn)
 {
 	struct netmap_priv_d *priv = (struct netmap_priv_d *)kn->kn_hook;
-	struct selinfo *si = &priv->np_txsi->si;
+	struct selinfo *si = &priv->np_si[NR_TX]->si;
 
 	D("remove selinfo %p", si);
 	knlist_remove(&si->si_note, kn, 0);
@@ -776,7 +786,7 @@ netmap_kqfilter(struct cdev *dev, struct knote *kn)
 		return 1;
 	}
 	/* the si is indicated in the priv */
-	si = (ev == EVFILT_WRITE) ? priv->np_txsi : priv->np_rxsi;
+	si = priv->np_si[(ev == EVFILT_WRITE) ? NR_TX : NR_RX];
 	// XXX lock(priv) ?
 	kn->kn_fop = (ev == EVFILT_WRITE) ?
 		&netmap_wfiltops : &netmap_rfiltops;
@@ -833,3 +843,4 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 
 
 DEV_MODULE(netmap, netmap_loader, NULL);
+MODULE_VERSION(netmap, 1);

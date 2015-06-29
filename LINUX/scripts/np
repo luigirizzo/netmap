@@ -43,7 +43,10 @@
 ## Replaces the right-end applicability of all final patches for driver
 ## from v2 to infty (99999).
 ##
-## 
+## Note: 'scripts/np auto driver' will perform all steps 1-4, guessing
+## the values of v1 and v2 from the available netmap-* branches.
+## './scripts/np auto-all' will do the same for all known drivers.
+##
 
 PROGNAME=$0
 
@@ -60,16 +63,6 @@ PROGNAME=$0
 ##
 
 [ -f scripts/conf ] && source scripts/conf
-
-## The following enviroment variables must be set:
-##
-##  GITDIR: the absolute path of the netmap linux
-## 	git repository, containing all the required netmap-*
-## 	branches.
-[ -n "$GITDIR" -a -d "$GITDIR/.git" ] || {
-	echo "GITDIR not set or not valid" >&2
-	exit 1
-}
 
 NETMAP_BRANCH=${NETMAP_BRANCH:-master}
 PARALLEL_MAKE=${PARALLEL_MAKE:-$(grep -c processor /proc/cpuinfo)}
@@ -92,17 +85,30 @@ function get-params {
 	[[ -n "$@" ]] && error "$err_msg"
 }
 
+function need {
+	eval "local v=\${$1}"
+	[ -n "$v" -a -d "$v${2:+/$2}" ] || error "Variable $1 not set or not valid"
+}
+
+## The following enviroment variables must be set:
+##
+##  GITDIR: the absolute path of the netmap linux
+## 	git repository, containing all the required netmap-*
+## 	branches.
+need GITDIR .git
 ##
 ##  LINUX_SOURCES: the absolute path of a
 ## 	directory used to store all required linux-* source trees
 ## 	(The script will extract linux-x.y.z from GITDIR if it needs
 ## 	it and $LINUX_SOURCES does not already contain it).
 ##
+need LINUX_SOURCES
 ##  LINUX_CONFIGS: the absolute path of a
 ## 	directory containing the configuration files for 
 ## 	the linux kernel. The file for version x must be named
 ## 	config-x. config-all can be used as a default.
 ##
+need LINUX_CONFIGS
 ## The configuration variables can be put in scripts/conf.
 ##
 
@@ -191,8 +197,6 @@ function get-range()
 ##	copies the original sources of the given <driver>,
 ##	from the given kernel <version> to the given <dest>
 ##	directory.
-##	It uses a local cache to minimize the expensive
-##	checkouts in GITDIR.
 function get-src()
 {
 	get-params "driver version dest" "$@"
@@ -340,8 +344,10 @@ function get-kernel()
 ##	prepare the linux tree for <version> to be ready
 ##	for external modules compilation.
 ##	The tree is put in $LINUX_SOURCES/linux-<version> and the
-##	configuration is obtained from $LINUX_CONFIGS/config-<version>
-##	(or $LINUX_CONFIGS/config-all by default).
+##	configuration is obtained from $LINUX_CONFIGS/config-<version>,
+##	if available, otherwise $LINUX_CONFIGS/config-all is used
+##	as a default; if also the latter does not exist, the kernel is
+##	configure using 'allmodconfig'.
 ##	Errors are logged to $LINUX_CONFIGS/linux-<version>.log.
 ##	If $LINUX_SOURCES/linux-<version> already exists,
 ##	nothing is done.
@@ -437,7 +443,7 @@ function check-patch()
 			cp $p single-patch
 			ok=false
 			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX \
-				--cache=$cache >>$log
+				--drivers=$driver --cache=$cache >>$log
 			(make get-$driver && make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
 			grep -q warning: $log && { warn=true; echo $warn > $cwarn; }
 			cat config.log >>$log
@@ -479,10 +485,11 @@ function build-check()
 MINVERS=2.6.32
 MAXVERS=
 NEXTVERS=
+##
 ##  auto <driver>
-##      do all the steps of the typical workflow for <driver>.
-##      The linux versions are obtained automatically from the
-##      available netmap-* branches in GITDIR
+##	do all the steps of the typical workflow for <driver>.
+##	The linux versions are obtained automatically from the
+##	available netmap-* branches in GITDIR
 function auto()
 {
 	get-params "driver" "$@"
@@ -517,10 +524,9 @@ function forall()
 {
 	local cmd=$1
 	shift
-	local driver_srcs="ixgbe/ e1000e/ e1000/ igb/ r8169.c forcedeth.c virtio_net.c veth.c"
 
 	local driver
-	for driver in $driver_srcs; do
+	for driver in $(./configure --show-drivers); do
 		$cmd $(basename $driver) "$@"
 	done
 }
@@ -529,6 +535,9 @@ mkdir -p tmp-patches
 
 COMMAND=$1; shift
 case $COMMAND in
+##
+##  <cmd>-all [args...]
+##	same as: forall <cmd> [args...]
 *-all)
 	forall ${COMMAND%-all} "$@"
 	;;

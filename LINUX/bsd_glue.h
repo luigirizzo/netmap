@@ -305,6 +305,9 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 #define malloc(_size, type, flags)                      \
         ({ volatile int _v = _size; kmalloc(_v, GFP_ATOMIC | __GFP_ZERO); })
 
+#define realloc(addr, _size, type, flags)		\
+	({ volatile int _v = _size; krealloc(addr, _v, GFP_ATOMIC | __GFP_ZERO); })
+
 #define free(a, t)	kfree(a)
 
 // XXX do we need GPF_ZERO ?
@@ -470,5 +473,7 @@ void netmap_bns_unregister(void);
 #define NM_BNS_GET(b)	do { (void)(b); } while (0)
 #define NM_BNS_PUT(b)   do { (void)(b); } while (0)
 #endif
+
+#define if_printf(ifp, fmt, ...)  dev_info(&(ifp)->dev, fmt, ##__VA_ARGS__)
 
 #endif /* _BSD_GLUE_H */

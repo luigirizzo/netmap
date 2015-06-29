@@ -31,18 +31,30 @@ MOD_LIST := @MOD_LIST@
 PATCHES = @PATCHES@
 S_DRIVERS = @S_DRIVERS@
 DRVSUFFIX = @DRVSUFFIX@
-GET_DRIVERS = $(S_DRIVERS:%=get-%)
 
 # actual drivers after copy and patch
 DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
 
 COMMON_OPTS=-C $(KSRC) M=$(PWD) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
 
-all: get-drivers
+define driver_target
+get-$(1):
+	$(if $($(1)-src),cp -Rp $($(1)-src) $(if $($(1)-dst),$($(1)-dst),.),@true)
+	$(foreach p,$($(1)-patch),patch --posix --quiet --force -p1 < $(p);)
+	$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,@true)
+	touch get-$(1)
+clean-$(1):
+	rm -rf $(1) get-$(1)
+endef
+
+
+all: $(S_DRIVERS:%=get-%)
 	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)" \
 		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
 
 include drivers.mak
+
+$(foreach d,$(S_DRIVERS),$(eval $(call driver_target,$(d))))
 
 install:
 	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
@@ -57,7 +69,7 @@ test:
 	@echo "patches $(PATCHES)"
 	@echo "drivers $(DRIVERS)"
 
-clean: clean-drivers
+clean: $(S_DRIVERS:%=clean-%)
 	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
 	-@ $(MAKE) -C build-apps clean
 	-@ rm -f *.orig *.rej *.ko *.o .*.d 		\

@@ -206,6 +206,23 @@ const char *nm_dump_buf(char *p, int len, int lim, char *dst);
 
 extern NMG_LOCK_T	netmap_global_lock;
 
+enum txrx { NR_RX = 0, NR_TX = 1, NR_TXRX };
+
+static __inline const char*
+nm_txrx2str(enum txrx t)
+{
+	return (t== NR_RX ? "RX" : "TX");
+}
+
+static __inline enum txrx
+nm_txrx_swap(enum txrx t)
+{
+	return (t== NR_RX ? NR_TX : NR_RX);
+}
+
+#define for_rx_tx(t)	for ((t) = 0; (t) < NR_TXRX; (t)++)
+
+
 /*
  * private, kernel view of a ring. Keeps track of the status of
  * a ring across system calls.
@@ -280,6 +297,7 @@ struct netmap_kring {
 
 	uint32_t	nr_kflags;	/* private driver flags */
 #define NKR_PENDINTR	0x1		// Pending interrupt.
+#define NKR_EXCLUSIVE	0x2		/* exclusive binding */
 	uint32_t	nkr_num_slots;
 
 	/*
@@ -329,7 +347,10 @@ struct netmap_kring {
 	// u_int nr_ntc;		/* Emulation of a next-to-clean RX ring pointer. */
 	struct mbq rx_queue;            /* intercepted rx mbufs. */
 
+	uint32_t	users;		/* existing bindings for this ring */
+
 	uint32_t	ring_id;	/* debugging */
+	enum txrx	tx;		/* kind of ring (tx or rx) */
 	char name[64];			/* diagnostic */
 
 	/* [tx]sync callback for this kring.
@@ -344,6 +365,7 @@ struct netmap_kring {
 	 * any of the nm_krings_create callbacks.
 	 */
 	int (*nm_sync)(struct netmap_kring *kring, int flags);
+	int (*nm_notify)(struct netmap_kring *kring, int flags);
 
 #ifdef WITH_PIPES
 	struct netmap_kring *pipe;	/* if this is a pipe ring,
@@ -354,17 +376,25 @@ struct netmap_kring {
 					 */
 #endif /* WITH_PIPES */
 
+#ifdef WITH_VALE
+	int (*save_notify)(struct netmap_kring *kring, int flags);
+#endif
+
 #ifdef WITH_MONITOR
-	/* pointer to the adapter that is monitoring this kring (if any)
-	 */
-	struct netmap_monitor_adapter *monitor;
+	/* array of krings that are monitoring this kring */
+	struct netmap_kring **monitors;
+	uint32_t max_monitors; /* current size of the monitors array */
+	uint32_t n_monitors;	/* next unused entry in the monitor array */
 	/*
-	 * Monitors work by intercepting the txsync and/or rxsync of the
-	 * monitored krings. This is implemented by replacing
-	 * the nm_sync pointer above and saving the previous
-	 * one in save_sync below.
+	 * Monitors work by intercepting the sync and notify callbacks of the
+	 * monitored krings. This is implemented by replacing the pointers
+	 * above and saving the previous ones in mon_* pointers below
 	 */
-	int (*save_sync)(struct netmap_kring *kring, int flags);
+	int (*mon_sync)(struct netmap_kring *kring, int flags);
+	int (*mon_notify)(struct netmap_kring *kring, int flags);
+
+	uint32_t mon_tail;  /* last seen slot on rx */
+	uint32_t mon_pos;   /* index of this ring in the monitored ring array */
 #endif
 } __attribute__((__aligned__(64)));
 
@@ -436,8 +466,6 @@ tail->|                 |<-hwtail    |                 |<-hwlease
 
 
 
-enum txrx { NR_RX = 0, NR_TX = 1 };
-
 struct netmap_vp_adapter; // forward
 
 /*
@@ -469,8 +497,7 @@ struct netmap_adapter {
 #define NAF_MEM_OWNER	8	/* the adapter is responsible for the
 				 * deallocation of the memory allocator
 				 */
-#define NAF_NATIVE_ON   16      /* the adapter is native and the attached
-				 * interface is in netmap mode.
+#define NAF_NATIVE      16      /* the adapter is native.
 				 * Virtual ports (vale, pipe, monitor...)
 				 * should never use this flag.
 				 */
@@ -490,7 +517,7 @@ struct netmap_adapter {
 	u_int num_rx_rings; /* number of adapter receive rings */
 	u_int num_tx_rings; /* number of adapter transmit rings */
 
-	u_int num_tx_desc; /* number of descriptor in each queue */
+	u_int num_tx_desc;  /* number of descriptor in each queue */
 	u_int num_rx_desc;
 
 	/* tx_rings and rx_rings are private but allocated
@@ -504,10 +531,10 @@ struct netmap_adapter {
 				       /* (used for leases) */
 
 
-	NM_SELINFO_T tx_si, rx_si;	/* global wait queues */
+	NM_SELINFO_T si[NR_TXRX];	/* global wait queues */
 
 	/* count users of the global wait queues */
-	int tx_si_users, rx_si_users;
+	int si_users[NR_TXRX];
 
 	void *pdev; /* used to store pci device */
 
@@ -565,6 +592,7 @@ struct netmap_adapter {
 
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
+	int (*nm_notify)(struct netmap_kring *kring, int flags);
 #define NAF_FORCE_READ    1
 #define NAF_FORCE_RECLAIM 2
 	/* return configuration information */
@@ -572,8 +600,6 @@ struct netmap_adapter {
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd);
 	int (*nm_krings_create)(struct netmap_adapter *);
 	void (*nm_krings_delete)(struct netmap_adapter *);
-	int (*nm_notify)(struct netmap_adapter *,
-		u_int ring, enum txrx, int flags);
 #ifdef WITH_VALE
 	/*
 	 * nm_bdg_attach() initializes the na_vp field to point
@@ -620,16 +646,49 @@ struct netmap_adapter {
 	 */
 	void *na_private;
 
-#ifdef WITH_PIPES
 	/* array of pipes that have this adapter as a parent */
 	struct netmap_pipe_adapter **na_pipes;
 	int na_next_pipe;	/* next free slot in the array */
 	int na_max_pipes;	/* size of the array */
-#endif /* WITH_PIPES */
 
 	char name[64];
 };
 
+static __inline u_int
+nma_get_ndesc(struct netmap_adapter *na, enum txrx t)
+{
+	return (t == NR_TX ? na->num_tx_desc : na->num_rx_desc);
+}
+
+static __inline void
+nma_set_ndesc(struct netmap_adapter *na, enum txrx t, u_int v)
+{
+	if (t == NR_TX)
+		na->num_tx_desc = v;
+	else
+		na->num_rx_desc = v;
+}
+
+static __inline u_int
+nma_get_nrings(struct netmap_adapter *na, enum txrx t)
+{
+	return (t == NR_TX ? na->num_tx_rings : na->num_rx_rings);
+}
+
+static __inline void
+nma_set_nrings(struct netmap_adapter *na, enum txrx t, u_int v)
+{
+	if (t == NR_TX)
+		na->num_tx_rings = v;
+	else
+		na->num_rx_rings = v;
+}
+
+static __inline struct netmap_kring*
+NMR(struct netmap_adapter *na, enum txrx t)
+{
+	return (t == NR_TX ? na->tx_rings : na->rx_rings);
+}
 
 /*
  * If the NIC is owned by the kernel
@@ -640,7 +699,6 @@ struct netmap_adapter {
 #define NETMAP_OWNED_BY_KERN(na)	((na)->na_flags & NAF_BUSY)
 #define NETMAP_OWNED_BY_ANY(na) \
 	(NETMAP_OWNED_BY_KERN(na) || ((na)->active_fds > 0))
-
 
 /*
  * derived netmap adapters for various types of ports
@@ -662,6 +720,8 @@ struct netmap_vp_adapter {	/* VALE software port */
 	u_int virt_hdr_len;
 	/* Maximum Frame Size, used in bdg_mismatch_datapath() */
 	u_int mfs;
+	/* Last source MAC on this port */
+	uint64_t last_smac;
 };
 
 
@@ -706,15 +766,9 @@ struct netmap_generic_adapter {	/* emulated device */
 #endif  /* WITH_GENERIC */
 
 static __inline int
-netmap_real_tx_rings(struct netmap_adapter *na)
+netmap_real_rings(struct netmap_adapter *na, enum txrx t)
 {
-	return na->num_tx_rings + !!(na->na_flags & NAF_HOST_RINGS);
-}
-
-static __inline int
-netmap_real_rx_rings(struct netmap_adapter *na)
-{
-	return na->num_rx_rings + !!(na->na_flags & NAF_HOST_RINGS);
+	return nma_get_nrings(na, t) + !!(na->na_flags & NAF_HOST_RINGS);
 }
 
 #ifdef WITH_VALE
@@ -768,9 +822,6 @@ struct netmap_bwrap_adapter {
 	struct netmap_vp_adapter host;  /* for host rings */
 	struct netmap_adapter *hwna;	/* the underlying device */
 
-	/* backup of the hwna notify callback */
-	int (*save_notify)(struct netmap_adapter *,
-			u_int ring, enum txrx, int flags);
 	/* backup of the hwna memory allocator */
 	struct netmap_mem_d *save_nmd;
 
@@ -864,6 +915,14 @@ static __inline int nm_kr_tryget(struct netmap_kring *kr)
 	return 0;
 }
 
+static __inline void nm_kr_get(struct netmap_kring *kr)
+{
+	while (NM_ATOMIC_TEST_AND_SET(&kr->nr_busy))
+		tsleep(kr, 0, "NM_KR_GET", 4);
+}
+
+
+
 
 /*
  * The following functions are used by individual drivers to
@@ -913,15 +972,15 @@ const char *netmap_bdg_name(struct netmap_vp_adapter *);
 #endif /* WITH_VALE */
 
 static inline int
-nm_native_on(struct netmap_adapter *na)
-{
-	return na && na->na_flags & NAF_NATIVE_ON;
-}
-
-static inline int
 nm_netmap_on(struct netmap_adapter *na)
 {
 	return na && na->na_flags & NAF_NETMAP_ON;
+}
+
+static inline int
+nm_native_on(struct netmap_adapter *na)
+{
+	return nm_netmap_on(na) && (na->na_flags & NAF_NATIVE);
 }
 
 /* set/clear native flags and if_transmit/netdev_ops */
@@ -930,7 +989,7 @@ nm_set_native_flags(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
 
-	na->na_flags |= (NAF_NATIVE_ON | NAF_NETMAP_ON);
+	na->na_flags |= NAF_NETMAP_ON;
 #ifdef IFCAP_NETMAP /* or FreeBSD ? */
 	ifp->if_capenable |= IFCAP_NETMAP;
 #endif
@@ -957,7 +1016,7 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	ifp->netdev_ops = (void *)na->if_transmit;
 	ifp->ethtool_ops = ((struct netmap_hw_adapter*)na)->save_ethtool;
 #endif
-	na->na_flags &= ~(NAF_NATIVE_ON | NAF_NETMAP_ON);
+	na->na_flags &= ~NAF_NETMAP_ON;
 #ifdef IFCAP_NETMAP /* or FreeBSD ? */
 	ifp->if_capenable &= ~IFCAP_NETMAP;
 #endif
@@ -1074,8 +1133,7 @@ int netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *
  * terminate. The status change is then notified using the na nm_notify
  * callback.
  */
-void netmap_set_txring(struct netmap_adapter *, u_int ring_id, int stopped);
-void netmap_set_rxring(struct netmap_adapter *, u_int ring_id, int stopped);
+void netmap_set_ring(struct netmap_adapter *, u_int ring_id, enum txrx, int stopped);
 /* set the stopped/enabled status of all rings of the adapter. */
 void netmap_set_all_rings(struct netmap_adapter *, int stopped);
 /* convenience wrappers for netmap_set_all_rings, used in drivers */
@@ -1106,7 +1164,7 @@ int netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na);
  * XXX in practice "unknown" might be handled same as broadcast.
  */
 typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
-		const struct netmap_vp_adapter *);
+		struct netmap_vp_adapter *);
 typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
 typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
 struct netmap_bdg_ops {
@@ -1116,7 +1174,7 @@ struct netmap_bdg_ops {
 };
 
 u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
-		const struct netmap_vp_adapter *);
+		struct netmap_vp_adapter *);
 
 #define	NM_BDG_MAXPORTS		254	/* up to 254 */
 #define	NM_BDG_BROADCAST	NM_BDG_MAXPORTS
@@ -1143,8 +1201,6 @@ int netmap_bdg_config(struct nmreq *nmr);
 #ifdef WITH_PIPES
 /* max number of pipes per device */
 #define NM_MAXPIPES	64	/* XXX how many? */
-/* in case of no error, returns the actual number of pipes in nmr->nr_arg1 */
-int netmap_pipe_alloc(struct netmap_adapter *, struct nmreq *nmr);
 void netmap_pipe_dealloc(struct netmap_adapter *);
 int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 #else /* !WITH_PIPES */
@@ -1159,6 +1215,7 @@ int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create
 
 #ifdef WITH_MONITOR
 int netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
+void netmap_monitor_stop(struct netmap_adapter *na);
 #else
 #define netmap_get_monitor_na(nmr, _2, _3) \
 	((nmr)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
@@ -1508,8 +1565,8 @@ struct netmap_priv_d {
 
 	struct netmap_adapter	*np_na;
 	uint32_t	np_flags;	/* from the ioctl */
-	u_int		np_txqfirst, np_txqlast; /* range of tx rings to scan */
-	u_int		np_rxqfirst, np_rxqlast; /* range of rx rings to scan */
+	u_int		np_qfirst[NR_TXRX], 
+			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
 	uint16_t	np_txpoll;	/* XXX and also np_rxpoll ? */
 
 	/* np_refcount is only used on FreeBSD */
@@ -1519,7 +1576,7 @@ struct netmap_priv_d {
 	 * Either the local or the global one depending on the
 	 * number of rings.
 	 */
-	NM_SELINFO_T *np_rxsi, *np_txsi;
+	NM_SELINFO_T *np_si[NR_TXRX];
 	struct thread	*np_td;		/* kqueue, just debugging */
 };
 
@@ -1542,12 +1599,20 @@ struct netmap_monitor_adapter {
  */
 int generic_netmap_attach(struct ifnet *ifp);
 
-int netmap_catch_rx(struct netmap_adapter *na, int intercept);
+int netmap_catch_rx(struct netmap_generic_adapter *na, int intercept);
 void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 void netmap_catch_tx(struct netmap_generic_adapter *na, int enable);
 int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
 int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
+static inline struct ifnet*
+netmap_generic_getifp(struct netmap_generic_adapter *gna)
+{
+        if (gna->prev)
+            return gna->prev->ifp;
+
+        return gna->up.up.ifp;
+}
 
 //#define RATE_GENERIC  /* Enables communication statistics for generic. */
 #ifdef RATE_GENERIC

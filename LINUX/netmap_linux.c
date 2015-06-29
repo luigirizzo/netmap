@@ -233,15 +233,16 @@ static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
  * the packets incoming from the interface attached to 'na'.
  */
 int
-netmap_catch_rx(struct netmap_adapter *na, int intercept)
+netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
 #ifndef NETMAP_LINUX_HAVE_RX_REGISTER
     return 0;
 #else /* HAVE_RX_REGISTER */
-    struct ifnet *ifp = na->ifp;
+    struct netmap_adapter *na = &gna->up.up;
+    struct ifnet *ifp = netmap_generic_getifp(gna);
 
     if (intercept) {
-        return -netdev_rx_handler_register(na->ifp,
+        return -netdev_rx_handler_register(ifp,
                 &linux_generic_rx_handler, na);
     } else {
         netdev_rx_handler_unregister(ifp);
@@ -289,7 +290,7 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 void netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
     struct netmap_adapter *na = &gna->up.up;
-    struct ifnet *ifp = na->ifp;
+    struct ifnet *ifp = netmap_generic_getifp(gna);
 
     if (enable) {
         /*
@@ -375,13 +376,24 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 void
 generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
-#ifdef NETMAP_LINUX_HAVE_NUM_QUEUES
-    *txq = ifp->real_num_tx_queues;
-    *rxq = ifp->real_num_rx_queues;
+#ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
+    struct ethtool_channels ch;
+    memset(&ch, 0, sizeof(ch));
+    if (ifp->ethtool_ops && ifp->ethtool_ops->get_channels) {
+	    ifp->ethtool_ops->get_channels(ifp, &ch);
+	    *txq = ch.tx_count ? ch.tx_count : ch.combined_count;
+	    *rxq = ch.rx_count ? ch.rx_count : ch.combined_count;
+    } else
+#endif /* HAVE_SET_CHANNELS */
+    {
+#if defined(NETMAP_LINUX_HAVE_NUM_QUEUES)
+    	*txq = ifp->real_num_tx_queues;
+    	*rxq = ifp->real_num_rx_queues;
 #else
-    *txq = 1;
-    *rxq = 1; /* TODO ifp->real_num_rx_queues */
+    	*txq = 1;
+    	*rxq = 1; /* TODO ifp->real_num_rx_queues */
 #endif /* HAVE_NUM_QUEUES */
+    }
 }
 
 int

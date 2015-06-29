@@ -1,8 +1,8 @@
 diff --git a/e1000e/netdev.c b/e1000e/netdev.c
-index 2198e61..daee7db 100644
+index 1e8c40f..0574bc9 100644
 --- a/e1000e/netdev.c
 +++ b/e1000e/netdev.c
-@@ -452,6 +452,10 @@ static int e1000_desc_unused(struct e1000_ring *ring)
+@@ -493,6 +493,10 @@ static int e1000_desc_unused(struct e1000_ring *ring)
  	return ring->count + ring->next_to_clean - ring->next_to_use - 1;
  }
  
@@ -11,10 +11,10 @@ index 2198e61..daee7db 100644
 +#endif
 +
  /**
-  * e1000_receive_skb - helper function to handle Rx indications
+  * e1000e_systim_to_hwtstamp - convert system time value to hw time stamp
   * @adapter: board private structure
-@@ -849,6 +853,10 @@ static bool e1000_clean_rx_irq(struct e1000_adapter *adapter,
- 	bool cleaned = 0;
+@@ -935,6 +939,10 @@ static bool e1000_clean_rx_irq(struct e1000_ring *rx_ring, int *work_done,
+ 	bool cleaned = false;
  	unsigned int total_rx_bytes = 0, total_rx_packets = 0;
  
 +#ifdef DEV_NETMAP
@@ -22,11 +22,11 @@ index 2198e61..daee7db 100644
 +		return 1; /* seems to be ignored */
 +#endif /* DEV_NETMAP */
  	i = rx_ring->next_to_clean;
- 	rx_desc = E1000_RX_DESC(*rx_ring, i);
- 	buffer_info = &rx_ring->buffer_info[i];
-@@ -1066,6 +1074,10 @@ static bool e1000_clean_tx_irq(struct e1000_adapter *adapter)
- 	unsigned int count = 0;
+ 	rx_desc = E1000_RX_DESC_EXT(*rx_ring, i);
+ 	staterr = le32_to_cpu(rx_desc->wb.upper.status_error);
+@@ -1223,6 +1231,10 @@ static bool e1000_clean_tx_irq(struct e1000_ring *tx_ring)
  	unsigned int total_tx_bytes = 0, total_tx_packets = 0;
+ 	unsigned int bytes_compl = 0, pkts_compl = 0;
  
 +#ifdef DEV_NETMAP
 +	if (netmap_tx_irq(netdev, 0))
@@ -35,29 +35,18 @@ index 2198e61..daee7db 100644
  	i = tx_ring->next_to_clean;
  	eop = tx_ring->buffer_info[i].next_to_watch;
  	eop_desc = E1000_TX_DESC(*tx_ring, eop);
-@@ -3177,6 +3189,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
- 	e1000_configure_tx(adapter);
+@@ -3733,6 +3745,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
+ 		e1000e_setup_rss_hash(adapter);
  	e1000_setup_rctl(adapter);
  	e1000_configure_rx(adapter);
 +#ifdef DEV_NETMAP
 +	if (e1000e_netmap_init_buffers(adapter))
 +		return;
 +#endif /* DEV_NETMAP */
- 	adapter->alloc_rx_buf(adapter, e1000_desc_unused(adapter->rx_ring),
- 			      GFP_KERNEL);
+ 	adapter->alloc_rx_buf(rx_ring, e1000_desc_unused(rx_ring), GFP_KERNEL);
  }
-@@ -3422,6 +3438,10 @@ int e1000e_up(struct e1000_adapter *adapter)
  
- 	netif_start_queue(adapter->netdev);
- 
-+#ifdef DEV_NETMAP
-+	netmap_enable_all_rings(adapter->netdev);
-+#endif /* DEV_NETMAP */
-+
- 	/* fire a link change interrupt to start the watchdog */
- 	if (adapter->msix_entries)
- 		ew32(ICS, E1000_ICS_LSC | E1000_ICR_OTHER);
-@@ -3468,6 +3488,10 @@ void e1000e_down(struct e1000_adapter *adapter)
+@@ -4068,6 +4084,10 @@ void e1000e_down(struct e1000_adapter *adapter, bool reset)
  
  	netif_stop_queue(netdev);
  
@@ -68,18 +57,18 @@ index 2198e61..daee7db 100644
  	/* disable transmits in the hardware */
  	tctl = er32(TCTL);
  	tctl &= ~E1000_TCTL_EN;
-@@ -3755,6 +3779,10 @@ static int e1000_open(struct net_device *netdev)
- 
+@@ -4415,6 +4435,10 @@ static int e1000_open(struct net_device *netdev)
+ 	adapter->tx_hang_recheck = false;
  	netif_start_queue(netdev);
  
 +#ifdef DEV_NETMAP
 +	netmap_enable_all_rings(netdev);
 +#endif /* DEV_NETMAP */
 +
- 	adapter->idle_check = true;
+ 	hw->mac.get_link_status = true;
  	pm_runtime_put(&pdev->dev);
  
-@@ -6147,6 +6175,9 @@ static int __devinit e1000_probe(struct pci_dev *pdev,
+@@ -7020,6 +7044,9 @@ static int e1000_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
  	if (err)
  		goto err_register;
  
@@ -89,7 +78,7 @@ index 2198e61..daee7db 100644
  	/* carrier off reporting is important to ethtool even BEFORE open */
  	netif_carrier_off(netdev);
  
-@@ -6234,6 +6265,10 @@ static void __devexit e1000_remove(struct pci_dev *pdev)
+@@ -7115,6 +7142,10 @@ static void e1000_remove(struct pci_dev *pdev)
  	kfree(adapter->tx_ring);
  	kfree(adapter->rx_ring);
  

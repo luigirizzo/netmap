@@ -150,7 +150,7 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 		if (kring->nr_hwtail > lim)
 			kring->nr_hwtail -= lim + 1;
 
-		peer_na->nm_notify(peer_na, ring_nr, NR_RX, 0);
+		peer_kring->nm_notify(peer_kring, 0);
 	}
 out:
 	rcu_read_unlock();
@@ -169,6 +169,7 @@ veth_netmap_rxsync(struct netmap_kring *kring, int flags)
 	struct ifnet *ifp = na->ifp;
 	u_int ring_nr = kring->ring_id;
 	u_int const head = kring->rhead;
+	struct netmap_kring *peer_kring;
 
 	/* device-specific */
 	struct veth_priv *priv = netdev_priv(ifp);
@@ -204,7 +205,8 @@ veth_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	if (oldhwcur != head) {
 		mb();  /* for writing kring->nr_hwcur */
-		peer_na->nm_notify(peer_na, ring_nr, NR_TX, 0);
+		peer_kring = &peer_na->tx_rings[ring_nr];
+		peer_kring->nm_notify(peer_kring, 0);
 	}
 out:
 	rcu_read_unlock();
