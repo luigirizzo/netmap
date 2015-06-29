@@ -1785,35 +1785,28 @@ netmap_get_exclusive(struct netmap_priv_d *priv)
 	u_int i;
 	struct netmap_kring *kring;
 	int excl = (priv->np_flags & NR_EXCLUSIVE);
+	enum txrx t;
 
 	ND("%s: grabbing tx [%d, %d) rx [%d, %d)",
 			na->name,
-			priv->np_txqfirst,
-			priv->np_txqlast,
-			priv->np_rxqfirst,
-			priv->np_rxqlast);
+			priv->np_qfirst[NR_TX],
+			priv->np_qlast[NR_TX],
+			priv->np_qfirst[NR_RX],
+			priv->np_qlast[NR_RX]);
 
 	/* first round: check that all the requested rings
 	 * are neither alread exclusively owned, nor we
 	 * want exclusive ownership when they are already in use
 	 */
-	for (i = priv->np_txqfirst; i < priv->np_txqlast; i++) {
-		kring = &na->tx_rings[i];
-		if ((kring->nr_kflags & NKR_EXCLUSIVE) ||
-		    (kring->users && excl))
-		{
-			ND("ring %s busy", kring->name);
-			return EBUSY;
-		}
-	}
-
-	for (i = priv->np_rxqfirst; i < priv->np_rxqlast; i++) {
-		kring = &na->rx_rings[i];
-		if ((kring->nr_kflags & NKR_EXCLUSIVE) ||
-		    (kring->users && excl))
-		{
-			ND("ring %s busy", kring->name);
-			return EBUSY;
+	for_rx_tx(t) {
+		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
+			kring = &NMR(na, t)[i];
+			if ((kring->nr_kflags & NKR_EXCLUSIVE) ||
+			    (kring->users && excl))
+			{
+				ND("ring %s busy", kring->name);
+				return EBUSY;
+			}
 		}
 	}
 
@@ -1821,18 +1814,13 @@ netmap_get_exclusive(struct netmap_priv_d *priv)
 	 * mark as exclusive
 	 */
 
-	for (i = priv->np_txqfirst; i < priv->np_txqlast; i++) {
-		kring = &na->tx_rings[i];
-		kring->users++;
-		if (excl)
-			kring->nr_kflags |= NKR_EXCLUSIVE;
-	}
-
-	for (i = priv->np_rxqfirst; i < priv->np_rxqlast; i++) {
-		kring = &na->rx_rings[i];
-		kring->users++;
-		if (excl)
-			kring->nr_kflags |= NKR_EXCLUSIVE;
+	for_rx_tx(t) {
+		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
+			kring = &NMR(na, t)[i];
+			kring->users++;
+			if (excl)
+				kring->nr_kflags |= NKR_EXCLUSIVE;
+		}
 	}
 
 	return 0;
@@ -1847,27 +1835,23 @@ netmap_rel_exclusive(struct netmap_priv_d *priv)
 	u_int i;
 	struct netmap_kring *kring;
 	int excl = (priv->np_flags & NR_EXCLUSIVE);
+	enum txrx t;
 
 	ND("%s: releasing tx [%d, %d) rx [%d, %d)",
 			na->name,
-			priv->np_txqfirst,
-			priv->np_txqlast,
-			priv->np_rxqfirst,
-			priv->np_rxqlast);
+			priv->np_qfirst[NR_TX],
+			priv->np_qlast[NR_TX],
+			priv->np_qfirst[NR_RX],
+			priv->np_qlast[MR_RX]);
 
 
-	for (i = priv->np_txqfirst; i < priv->np_txqlast; i++) {
-		kring = &na->tx_rings[i];
-		if (excl)
-			kring->nr_kflags &= ~NKR_EXCLUSIVE;
-		kring->users--;
-	}
-
-	for (i = priv->np_rxqfirst; i < priv->np_rxqlast; i++) {
-		kring = &na->rx_rings[i];
-		if (excl)
-			kring->nr_kflags &= ~NKR_EXCLUSIVE;
-		kring->users--;
+	for_rx_tx(t) {
+		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
+			kring = &NMR(na, t)[i];
+			if (excl)
+				kring->nr_kflags &= ~NKR_EXCLUSIVE;
+			kring->users--;
+		}
 	}
 }
 
