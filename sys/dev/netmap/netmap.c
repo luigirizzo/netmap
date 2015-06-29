@@ -494,15 +494,6 @@ ports attached to the switch)
 
 MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
 
-/*
- * The following variables are used by the drivers and replicate
- * fields in the global memory pool. They only refer to buffers
- * used by physical interfaces.
- */
-u_int netmap_total_buffers;
-u_int netmap_buf_size;
-char *netmap_buffer_base;	/* also address of an invalid buffer */
-
 /* user-controlled variables */
 int netmap_verbose;
 
@@ -528,7 +519,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, adaptive_io, CTLFLAG_RW,
 
 int netmap_flags = 0;	/* debug flags */
 int netmap_fwd = 0;	/* force transparent mode */
-int netmap_mmap_unreg = 0; /* allow mmap of unregistered fds */
 
 /*
  * netmap_admode selects the netmap mode to use.
@@ -546,7 +536,6 @@ int netmap_generic_rings = 1;   /* number of queues in generic. */
 
 SYSCTL_INT(_dev_netmap, OID_AUTO, flags, CTLFLAG_RW, &netmap_flags, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, mmap_unreg, CTLFLAG_RW, &netmap_mmap_unreg, 0, "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_ringsize, 0 , "");
@@ -1103,7 +1092,7 @@ static void
 netmap_grab_packets(struct netmap_kring *kring, struct mbq *q, int force)
 {
 	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const head = kring->ring->head;
+	u_int const head = kring->rhead;
 	u_int n;
 	struct netmap_adapter *na = kring->na;
 
@@ -1190,7 +1179,6 @@ void
 netmap_txsync_to_host(struct netmap_adapter *na)
 {
 	struct netmap_kring *kring = &na->tx_rings[na->num_tx_rings];
-	struct netmap_ring *ring = kring->ring;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	struct mbq q;
@@ -1201,14 +1189,12 @@ netmap_txsync_to_host(struct netmap_adapter *na)
 	 * the queue is drained in all cases.
 	 */
 	mbq_init(&q);
-	ring->cur = head;
 	netmap_grab_packets(kring, &q, 1 /* force */);
 	ND("have %d pkts in queue", mbq_len(&q));
 	kring->nr_hwcur = head;
 	kring->nr_hwtail = head + lim;
 	if (kring->nr_hwtail > lim)
 		kring->nr_hwtail -= lim + 1;
-	nm_txsync_finalize(kring);
 
 	netmap_send_up(na->ifp, &q);
 }
@@ -1277,8 +1263,6 @@ netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwai
 			ret = netmap_sw_to_nic(na);
 		kring->nr_hwcur = head;
 	}
-
-	nm_rxsync_finalize(kring);
 
 	/* access copies of cur,tail in the kring */
 	if (kring->rcur == kring->rtail && td) /* no bufs available */
@@ -1588,7 +1572,7 @@ nm_rxsync_prologue(struct netmap_kring *kring)
 	uint32_t const n = kring->nkr_num_slots;
 	uint32_t head, cur;
 
-	ND("%s kc %d kt %d h %d c %d t %d",
+	RD(5,"%s kc %d kt %d h %d c %d t %d",
 		kring->name,
 		kring->nr_hwcur, kring->nr_hwtail,
 		ring->head, ring->cur, ring->tail);
@@ -1680,7 +1664,7 @@ netmap_ring_reinit(struct netmap_kring *kring)
 	for (i = 0; i <= lim; i++) {
 		u_int idx = ring->slot[i].buf_idx;
 		u_int len = ring->slot[i].len;
-		if (idx < 2 || idx >= netmap_total_buffers) {
+		if (idx < 2 || idx >= kring->na->na_lut_objtotal) {
 			RD(5, "bad index at slot %d idx %d len %d ", i, idx, len);
 			ring->slot[i].buf_idx = 0;
 			ring->slot[i].len = 0;
@@ -1989,8 +1973,8 @@ err_del_krings:
 		na->nm_krings_delete(na);
 err_drop_mem:
 	netmap_mem_deref(na->nm_mem, na);
-	priv->np_na = NULL;
 err:
+	priv->np_na = NULL;
 	return error;
 }
 
@@ -2204,15 +2188,19 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 					    kring->nr_hwcur);
 				if (nm_txsync_prologue(kring) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
-				} else {
-					kring->nm_sync(kring, NAF_FORCE_RECLAIM);
+				} else if (kring->nm_sync(kring, NAF_FORCE_RECLAIM) == 0) {
+					nm_txsync_finalize(kring);
 				}
 				if (netmap_verbose & NM_VERB_TXSYNC)
 					D("post txsync ring %d cur %d hwcur %d",
 					    i, kring->ring->cur,
 					    kring->nr_hwcur);
 			} else {
-				kring->nm_sync(kring, NAF_FORCE_READ);
+				if (nm_rxsync_prologue(kring) >= kring->nkr_num_slots) {
+					netmap_ring_reinit(kring);
+				} else if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
+					nm_rxsync_finalize(kring);
+				}
 				microtime(&na->rx_rings[i].ring->ts);
 			}
 			nm_kr_put(kring);
@@ -2411,6 +2399,8 @@ flush_tx:
 			} else {
 				if (kring->nm_sync(kring, 0))
 					revents |= POLLERR;
+				else
+					nm_txsync_finalize(kring);
 			}
 
 			/*
@@ -2455,6 +2445,12 @@ do_retry_rx:
 				continue;
 			}
 
+			if (nm_rxsync_prologue(kring) >= kring->nkr_num_slots) {
+				netmap_ring_reinit(kring);
+				revents |= POLLERR;
+			}
+			/* now we can use kring->rcur, rtail */
+
 			/*
 			 * transparent mode support: collect packets
 			 * from the rxring(s).
@@ -2469,11 +2465,12 @@ do_retry_rx:
 
 			if (kring->nm_sync(kring, 0))
 				revents |= POLLERR;
+			else
+				nm_rxsync_finalize(kring);
 			if (netmap_no_timestamp == 0 ||
 					kring->ring->flags & NR_TIMESTAMP) {
 				microtime(&kring->ring->ts);
 			}
-			/* after an rxsync we can use kring->rcur, rtail */
 			found = kring->rcur != kring->rtail;
 			nm_kr_put(kring);
 			if (found) {

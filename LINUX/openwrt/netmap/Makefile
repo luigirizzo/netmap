@@ -25,8 +25,8 @@ define KernelPackage/netmap
   TITLE:=Netmap
   SECTION:=kernel
   SUBMENU:=Other modules
-  FILES:=$(PKG_BUILD_DIR)/LINUX/netmap_lin.ko
-  AUTOLOAD:=$(call AutoLoad,80,netmap_lin)
+  FILES:=$(PKG_BUILD_DIR)/LINUX/netmap.ko
+  AUTOLOAD:=$(call AutoLoad,80,netmap)
 endef
 
 define KernelPackage/r8169-netmap

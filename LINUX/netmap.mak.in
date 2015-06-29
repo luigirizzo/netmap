@@ -33,21 +33,16 @@ S_DRIVERS = @S_DRIVERS@
 DRVSUFFIX = @DRVSUFFIX@
 GET_DRIVERS = $(S_DRIVERS:%=get-%)
 
-all: netmap $(if $(S_DRIVERS),drivers,)
-
-include drivers.mak
-
 # actual drivers after copy and patch
 DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
 
 COMMON_OPTS=-C $(KSRC) M=$(PWD) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
 
-netmap:
-	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m
-
-drivers: get-drivers
-	$(MAKE) $(COMMON_OPTS) $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)" \
+all: get-drivers
+	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)" \
 		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
+
+include drivers.mak
 
 install:
 	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
@@ -102,5 +97,5 @@ distclean: clean
 		patches drivers.mak Kbuild netmap.mak
 	rm -rf netmap-tmpdir
 	if [ -L Makefile ]; then rm Makefile; fi
-	rm -f build-apps/Makefile
-	rmdir build-apps
+	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
+	rm -rf build-apps

@@ -199,6 +199,7 @@ struct glob_arg {
 	char *nmr_config;
 	int dummy_send;
 	int virt_header;	/* send also the virt_header */
+	int extra_pipes;	/* goes in nr_arg1 */
 	int extra_bufs;		/* goes in nr_arg3 */
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
@@ -1327,9 +1328,10 @@ usage(void)
 		"\t-T report_ms		milliseconds between reports\n"
 		"\t-P			use libpcap instead of netmap\n"
 		"\t-w wait_for_link_time	in seconds\n"
-		"\t-R rate		in packets per second\n"
+		"\t-R rate			in packets per second\n"
 		"\t-X			dump payload\n"
-		"\t-H len		add empty virtio-net-header with size 'len'\n"
+		"\t-H len			add empty virtio-net-header with size 'len'\n"
+		"\t-E pipes		allocate extra space for a number of pipes\n"
 		"",
 		cmd);
 
@@ -1601,7 +1603,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:m:")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:")) != -1) {
 		struct sf *fn;
 
 		switch(ch) {
@@ -1735,6 +1737,9 @@ main(int arc, char **argv)
 		case 'e': /* extra bufs */
 			g.extra_bufs = atoi(optarg);
 			break;
+		case 'E':
+			g.extra_pipes = atoi(optarg);
+			break;
 		case 'm':
 			if (strcmp(optarg, "tx") == 0) {
 				g.options |= OPT_MONITOR_TX;
@@ -1822,6 +1827,9 @@ main(int arc, char **argv)
 	parse_nmr_config(g.nmr_config, &base_nmd);
 	if (g.extra_bufs) {
 		base_nmd.nr_arg3 = g.extra_bufs;
+	}
+	if (g.extra_pipes) {
+	    base_nmd.nr_arg1 = g.extra_pipes;
 	}
 
 	/*

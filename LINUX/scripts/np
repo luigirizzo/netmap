@@ -476,6 +476,40 @@ function build-check()
 	done
 }
 
+MINVERS=2.6.32
+MAXVERS=
+NEXTVERS=
+##  auto <driver>
+##      do all the steps of the typical workflow for <driver>.
+##      The linux versions are obtained automatically from the
+##      available netmap-* branches in GITDIR
+function auto()
+{
+	get-params "driver" "$@"
+
+	if [ -z "$MAXVERS" ]; then 
+		# get the latest netmap-* branch
+		local branches=$(
+			cd $GITDIR;
+			git for-each-ref refs/heads/netmap-[0-9]* --format='%(refname:short)'
+		)
+		MAXVERS=$MINVERS
+		local b
+		for b in $branches; do
+			local v=${b#netmap-}
+			if scripts/vers -b $MAXVERS $v -L; then
+				MAXVERS=$v
+			fi
+		done
+		echo "Latest netmap linux branch: $MAXVERS"
+		NEXTVERS=$(scripts/vers $MAXVERS -i)
+	fi
+	get-range $driver $MINVERS $NEXTVERS
+	build-check $driver
+	minimize $driver
+	infty $driver $NEXTVERS
+}
+
 ##
 ##  forall <cmd> [args...]
 ##	exec <cmd> <driver> [args...] for all known drivers.
@@ -483,7 +517,7 @@ function forall()
 {
 	local cmd=$1
 	shift
-	local driver_srcs="ixgbe/ e1000e/ e1000/ igb/ r8169.c forcedeth.c virtio_net.c"
+	local driver_srcs="ixgbe/ e1000e/ e1000/ igb/ r8169.c forcedeth.c virtio_net.c veth.c"
 
 	local driver
 	for driver in $driver_srcs; do

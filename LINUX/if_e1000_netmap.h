@@ -160,7 +160,6 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 out:
-	nm_txsync_finalize(kring);
 
 	return 0;
 }
@@ -180,7 +179,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int nic_i;	/* index into the NIC ring */
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const head = nm_rxsync_prologue(kring);
+	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	/* device-specific */
@@ -257,8 +256,6 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 		writel(nic_i, adapter->hw.hw_addr + rxr->rdt);
 	}
 out:
-	/* tell userspace that there might be new packets */
-	nm_rxsync_finalize(kring);
 
 	return 0;
 
@@ -301,13 +298,8 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		rxr = &adapter->rx_ring[r];
 
 		for (i = 0; i < rxr->count; i++) {
-			// XXX the skb check and cleanup can go away
-			struct e1000_buffer *bi = &rxr->buffer_info[i];
 			si = netmap_idx_n2k(&na->rx_rings[r], i);
 			PNMB(na, slot + si, &paddr);
-			if (bi->skb)
-				D("rx buf %d was set", i);
-			bi->skb = NULL;
 			// netmap_load_map(...)
 			E1000_RX_DESC(*rxr, i)->buffer_addr = htole64(paddr);
 		}

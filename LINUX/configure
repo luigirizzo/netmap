@@ -86,7 +86,7 @@ subsys enable monitor
 subsys enable generic
 
 # available drivers
-driver_avail="r8169.c virtio_net.c forcedeth.c \
+driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
 	e1000 e1000e igb ixgbe"
 # enabled drivers (bitfield)
 driver=
@@ -229,8 +229,6 @@ Available options:
 
 # TMPDIR is where we build all the tests
 TMPDIR=netmap-tmpdir
-rm -rf $TMPDIR
-mkdir $TMPDIR
 
 # tests are first accumulated using add_named_test and add_test, then
 # run by run_tests. This setup amortizes the cost of going
@@ -286,6 +284,15 @@ add_test() {
 	NEXTTEST=$(($NEXTTEST+1))
 }
 
+reset_tests() {
+	rm -rf $TMPDIR
+	mkdir $TMPDIR
+
+	TESTOBJS=
+	TESTPOSTPROC=
+	NEXTTEST=1
+}
+
 # run_tests: run all accumulated tests and exec the pertinent
 #   success/failure actions for each one.
 run_tests() {
@@ -295,7 +302,7 @@ run_tests() {
 		obj-m := $TESTOBJS
 		else
 		all: $get_drivers
-		$t	\$(MAKE) -C $ksrc M=\$\$PWD
+		$t	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
 		-include $TOPDIR/drivers.mak
 		endif
@@ -442,6 +449,7 @@ Otherwise, check that the 'build' symlink in
 is not broken.
 	EOF
 fi
+ksrc=$(cd $ksrc; pwd)
 
 # check that ksrc has been prepared for external modules compilation
 # It should contain a version.h file (in one of two possible places,
@@ -488,7 +496,18 @@ via a generic adapter at reduced performance."
 		EOF
 	fi
 fi
+src=$(cd $src; pwd)
 
+broken_buildsystem() {
+	error <<-EOF
+It looks like we are not able to build kernel modules for the current
+configuration. Please check 'config.log' for possible clues.
+	EOF
+}
+
+reset_tests
+add_test true broken_buildsystem < /dev/null
+run_tests
 
 drvname2config() {
 	local name=$1
@@ -632,9 +651,10 @@ for f in $SRCDIR/*.in; do
 		$f > $(basename $f .in)
 done
 
-# if we are not in SRCDIR this will fail, since
+# if we are in SRCDIR this will fail, since
 # Makefile already exists
 ln -s $SRCDIR/Makefile || true
+ln -s $SRCDIR/drv-subdir.mak || true
 
 
 #################################################
@@ -646,6 +666,7 @@ if [ -d "$cache" ] && [ -f "$cache/netmap_linux_config.h" ]; then
 else
 
 # BEGIN_TESTS
+reset_tests
 
 # iommu support
 add_test 'have IOMMU' <<-EOF

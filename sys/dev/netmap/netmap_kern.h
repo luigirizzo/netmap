@@ -1328,15 +1328,14 @@ netmap_reload_map(struct netmap_adapter *na,
 #else /* linux */
 
 int nm_iommu_group_id(bus_dma_tag_t dev);
-extern size_t     netmap_mem_get_bufsize(struct netmap_mem_d *);
 #include <linux/dma-mapping.h>
 
 static inline void
 netmap_load_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
-	if (map) {
-		*map = dma_map_single(na->pdev, buf, netmap_mem_get_bufsize(na->nm_mem),
+	if (0 && map) {
+		*map = dma_map_single(na->pdev, buf, na->na_lut_objsize,
 				DMA_BIDIRECTIONAL);
 	}
 }
@@ -1345,7 +1344,7 @@ static inline void
 netmap_unload_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map)
 {
-	u_int sz = netmap_mem_get_bufsize(na->nm_mem);
+	u_int sz = na->na_lut_objsize;
 
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,
@@ -1357,7 +1356,7 @@ static inline void
 netmap_reload_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
-	u_int sz = netmap_mem_get_bufsize(na->nm_mem);
+	u_int sz = na->na_lut_objsize;
 
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,

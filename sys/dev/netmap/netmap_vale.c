@@ -1663,29 +1663,28 @@ netmap_vp_txsync(struct netmap_kring *kring, int flags)
 		(struct netmap_vp_adapter *)kring->na;
 	u_int done;
 	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const cur = kring->rcur;
+	u_int const head = kring->rhead;
 
 	if (bridge_batch <= 0) { /* testing only */
-		done = cur; // used all
+		done = head; // used all
 		goto done;
 	}
 	if (!na->na_bdg) {
-		done = cur;
+		done = head;
 		goto done;
 	}
 	if (bridge_batch > NM_BDG_BATCH)
 		bridge_batch = NM_BDG_BATCH;
 
-	done = nm_bdg_preflush(kring, cur);
+	done = nm_bdg_preflush(kring, head);
 done:
-	if (done != cur)
-		D("early break at %d/ %d, tail %d", done, cur, kring->nr_hwtail);
+	if (done != head)
+		D("early break at %d/ %d, tail %d", done, head, kring->nr_hwtail);
 	/*
 	 * packets between 'done' and 'cur' are left unsent.
 	 */
 	kring->nr_hwcur = done;
 	kring->nr_hwtail = nm_prev(done, lim);
-	nm_txsync_finalize(kring);
 	if (netmap_verbose)
 		D("%s ring %d flags %d", na->up.name, kring->ring_id, flags);
 	return 0;
@@ -1701,7 +1700,7 @@ netmap_vp_rxsync_locked(struct netmap_kring *kring, int flags)
 	struct netmap_adapter *na = kring->na;
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i, lim = kring->nkr_num_slots - 1;
-	u_int head = nm_rxsync_prologue(kring);
+	u_int head = kring->rhead;
 	int n;
 
 	if (head > lim) {
@@ -1731,8 +1730,6 @@ netmap_vp_rxsync_locked(struct netmap_kring *kring, int flags)
 		kring->nr_hwcur = head;
 	}
 
-	/* tell userspace that there are new packets */
-	nm_rxsync_finalize(kring);
 	n = 0;
 done:
 	return n;
@@ -1949,39 +1946,28 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 		return 0;
 
 	kring = &na->rx_rings[ring_nr];
-	ring = kring->ring;
+	bkring = &vpna->up.tx_rings[ring_nr];
+	ring = kring->ring; /* == kbkring->ring */
 
 	/* make sure the ring is not disabled */
 	if (nm_kr_tryget(kring))
 		return 0;
 
+	/* if the notifications comes from the host stack
+	 * and the host ring is not attached to the bridge,
+	 * just call the original notify()
+	 */
 	if (is_host_ring && hostna->na_bdg == NULL) {
 		error = bna->save_notify(na, ring_nr, tx, flags);
 		goto put_out;
 	}
 
-	/* Here we expect ring->head = ring->cur = ring->tail
-	 * because everything has been released from the previous round.
-	 * However the ring is shared and we might have info from
-	 * the wrong side (the tx ring). Hence we overwrite with
-	 * the info from the rx kring.
-	 */
 	if (netmap_verbose)
-	    D("%s head %d cur %d tail %d (kring %d %d %d)",  na->name,
-		ring->head, ring->cur, ring->tail,
+	    D("%s head %d cur %d tail %d",  na->name,
 		kring->rhead, kring->rcur, kring->rtail);
 
-	ring->head = kring->rhead;
-	ring->cur = kring->rcur;
-	ring->tail = kring->rtail;
-
-	if (is_host_ring) {
-		vpna = hostna;
-		ring_nr = 0;
-	}
-	/* simulate a user wakeup on the rx ring */
-	/* fetch packets that have arrived.
-	 * XXX maybe do this in a loop ?
+	/* simulate a user wakeup on the rx ring
+	 * fetch packets that have arrived.
 	 */
 	error = kring->nm_sync(kring, 0);
 	if (error)
@@ -1992,23 +1978,16 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 		goto put_out;
 	}
 
-	/* new packets are ring->cur to ring->tail, and the bkring
-	 * had hwcur == ring->cur. So advance ring->cur to ring->tail
+	/* new packets are kring->rcur to kring->nr_hwtail, and the bkring
+	 * had hwcur == bkring->rhead. So advance bkring->rhead to kring->nr_hwtail
 	 * to push all packets out.
 	 */
-	ring->head = ring->cur = ring->tail;
+	bkring->rhead = bkring->rcur = kring->nr_hwtail;
 
-	/* also set tail to what the bwrap expects */
-	bkring = &vpna->up.tx_rings[ring_nr];
-	ring->tail = bkring->nr_hwtail; // rtail too ?
-
-	/* pass packets to the switch */
-	nm_txsync_prologue(bkring); // XXX error checking ?
 	netmap_vp_txsync(bkring, flags);
 
 	/* mark all buffers as released on this ring */
-	ring->head = ring->cur = kring->nr_hwtail;
-	ring->tail = kring->rtail;
+	kring->rhead = kring->rcur = kring->rtail = kring->nr_hwtail;
 	/* another call to actually release the buffers */
 	if (!is_host_ring) {
 		error = kring->nm_sync(kring, 0);
@@ -2017,7 +1996,6 @@ netmap_bwrap_intr_notify(struct netmap_adapter *na, u_int ring_nr, enum txrx tx,
 		 * second part of netmap_rxsync_from_host()
 		 */
 		kring->nr_hwcur = kring->nr_hwtail;
-		nm_rxsync_finalize(kring);
 	}
 
 put_out:
@@ -2210,29 +2188,26 @@ netmap_bwrap_notify(struct netmap_adapter *na, u_int ring_n, enum txrx tx, int f
 		kring->nr_hwcur, kring->nr_hwtail, kring->nkr_hwlease,
 		ring->head, ring->cur, ring->tail,
 		hw_kring->nr_hwcur, hw_kring->nr_hwtail, hw_ring->rtail);
-	/* second step: the simulated user consumes all new packets */
-	ring->head = ring->cur = ring->tail;
-
-	/* third step: the new packets are sent on the tx ring
+	/* second step: the new packets are sent on the tx ring
 	 * (which is actually the same ring)
 	 */
-	/* set tail to what the hw expects */
-	ring->tail = hw_kring->rtail;
-	nm_txsync_prologue(&hwna->tx_rings[ring_n]); // XXX error checking ?
+	hw_kring->rhead = hw_kring->rcur = kring->nr_hwtail;
 	error = hw_kring->nm_sync(hw_kring, flags);
+	if (error)
+		goto out;
 
-	/* fourth step: now we are back the rx ring */
+	/* third step: now we are back the rx ring */
 	/* claim ownership on all hw owned bufs */
-	ring->head = nm_next(ring->tail, lim); /* skip past reserved slot */
-	ring->tail = kring->rtail; /* restore saved value of tail, for safety */
+	kring->rhead = kring->rcur = nm_next(hw_kring->nr_hwtail, lim); /* skip past reserved slot */
 
-	/* fifth step: the user goes to sleep again, causing another rxsync */
+	/* fourth step: the user goes to sleep again, causing another rxsync */
 	netmap_vp_rxsync(kring, flags);
 	ND("%s[%d] PST rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",
 		na->name, ring_n,
 		kring->nr_hwcur, kring->nr_hwtail, kring->nkr_hwlease,
 		ring->head, ring->cur, ring->tail,
 		hw_kring->nr_hwcur, hw_kring->nr_hwtail, hw_kring->rtail);
+out:
 	nm_kr_put(hw_kring);
 	return error;
 }

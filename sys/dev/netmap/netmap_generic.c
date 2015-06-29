@@ -645,8 +645,6 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	generic_netmap_tx_clean(kring);
 
-	nm_txsync_finalize(kring);
-
 	return 0;
 }
 
@@ -711,7 +709,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int nm_i;	/* index into the netmap ring */ //j,
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const head = nm_rxsync_prologue(kring);
+	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	if (head > lim)
@@ -774,8 +772,6 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		}
 		kring->nr_hwcur = head;
 	}
-	/* tell userspace that there might be new packets. */
-	nm_rxsync_finalize(kring);
 	IFRATE(rate_ctx.new.rxsync++);
 
 	return 0;
