@@ -468,6 +468,110 @@ do_vars()
 	}
 }
 
+struct netmap_if *
+get_if()
+{
+	void *mmap_addr;
+	uint32_t off;
+	char *arg;
+
+	/* defaults */
+	off = curr_nmr.nr_offset;
+	mmap_addr = last_mmap_addr;
+
+	/* first arg: if offset */
+	arg = nextarg();
+	if (!arg) {
+		goto doit;
+	}
+	off = strtoul(arg, NULL, 0);
+	/* second arg: mmap address */
+	arg = nextarg();
+	if (!arg) {
+		goto doit;
+	}
+	mmap_addr = (void*)strtoul(arg, NULL, 0);
+doit:
+	return NETMAP_IF(mmap_addr, off);
+}
+
+void
+do_if()
+{
+	struct netmap_if *nifp;
+	unsigned int i;
+
+	nifp = get_if();
+
+	printf("name       %s\n", nifp->ni_name);
+	printf("version    %u\n", nifp->ni_version);
+	printf("flags      %x\n", nifp->ni_flags);
+	printf("tx_rings   %u\n", nifp->ni_tx_rings);
+	printf("rx_rings   %u\n", nifp->ni_rx_rings);
+	printf("bufs_head  %u\n", nifp->ni_bufs_head);
+	for (i = 0; i < 5; i++)
+		printf("spare1[%d]  %u\n", i, nifp->ni_spare1[i]);
+	for (i = 0; i < (nifp->ni_tx_rings + nifp->ni_rx_rings + 2); i++)
+		printf("ring_ofs[%d] %ld\n", i, nifp->ring_ofs[i]);
+}
+
+struct netmap_ring *
+get_ring()
+{
+	struct netmap_if *nifp;
+	char *arg;
+	unsigned int ringid;
+
+	/* defaults */
+	ringid = 0;
+
+	/* first arg: ring number */
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	ringid = strtoul(arg, NULL, 0);
+doit:
+	nifp = get_if();
+	return NETMAP_TXRING(nifp, ringid);
+}
+
+
+void
+do_ring()
+{
+	struct netmap_ring *ring;
+
+	ring = get_ring();
+
+	printf("buf_ofs     %"PRId64"\n", ring->buf_ofs);
+	printf("num_slots   %u\n", ring->num_slots);
+	printf("nr_buf_size %u\n", ring->nr_buf_size);
+	printf("ringid      %d\n", ring->ringid);
+	printf("dir         %s\n", (ring->dir ? "rx" : "tx"));
+	printf("head        %u\n", ring->head);
+	printf("cur         %u\n", ring->head);
+	printf("tail        %u\n", ring->head);
+	printf("flags       %x [", ring->flags);
+	if (ring->flags & NR_TIMESTAMP) {
+		printf(" NR_TIMESTAMP");
+	}
+	if (ring->flags & NR_FORWARD) {
+		printf(" NR_FORWARD");
+	}
+	printf(" ]\n");
+	printf("ts         %ld:%ld\n",
+			(long int)ring->ts.tv_sec, (long int)ring->ts.tv_usec);
+}
+
+void
+do_slot()
+{
+}
+
+void
+do_buf()
+{
+}
 
 struct cmd_def {
 	const char *name;
@@ -865,6 +969,10 @@ struct cmd_def commands[] = {
 	{ "expr",	do_expr,	},
 	{ "echo",	do_echo,	},
 	{ "vars",	do_vars,	},
+	{ "if",         do_if,          },
+	{ "ring",       do_ring,        },
+	{ "slot",       do_slot,        },
+	{ "buf",        do_buf,         },
 	{ "nmr",	do_nmr,		}
 };
 
