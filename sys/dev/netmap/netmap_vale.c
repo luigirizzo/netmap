@@ -1245,7 +1245,6 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		}
 		/* XXX otherwise return NM_BDG_UNKNOWN ? */
 	}
-	*dst_ring = 0;
 	return dst;
 }
 
