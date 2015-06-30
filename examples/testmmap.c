@@ -506,7 +506,15 @@ do_if()
 
 	printf("name       %s\n", nifp->ni_name);
 	printf("version    %u\n", nifp->ni_version);
-	printf("flags      %x\n", nifp->ni_flags);
+	printf("flags      %x", nifp->ni_flags);
+	if (nifp->ni_flags) {
+		printf(" [");
+		if (nifp->ni_flags & NI_PRIV_MEM) {
+			printf(" PRIV_MEM");
+		}
+		printf(" ]");
+	}
+	printf("\n");
 	printf("tx_rings   %u\n", nifp->ni_tx_rings);
 	printf("rx_rings   %u\n", nifp->ni_rx_rings);
 	printf("bufs_head  %u\n", nifp->ni_bufs_head);
