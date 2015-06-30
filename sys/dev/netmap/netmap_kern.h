@@ -499,8 +499,8 @@ struct netmap_adapter {
 				 * forwarding packets coming from this
 				 * interface
 				 */
-#define NAF_MEM_OWNER	8	/* the adapter is responsible for the
-				 * deallocation of the memory allocator
+#define NAF_MEM_OWNER	8	/* the adapter uses its own memory area
+				 * that cannot be changed
 				 */
 #define NAF_NATIVE      16      /* the adapter is native.
 				 * Virtual ports (vale, pipe, monitor...)

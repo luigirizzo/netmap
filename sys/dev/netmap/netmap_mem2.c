@@ -137,7 +137,8 @@ struct netmap_mem_d {
 	u_int flags;
 #define NETMAP_MEM_FINALIZED	0x1	/* preallocation done */
 	int lasterr;		/* last error for curr config */
-	int refcount;		/* existing priv structures */
+	int active;		/* active users */
+	int refcount;
 	/* the three allocators */
 	struct netmap_obj_pool pools[NETMAP_POOLS_NR];
 
@@ -205,6 +206,25 @@ static int nm_mem_assign_group(struct netmap_mem_d *, struct device *);
 #define NMA_LOCK_DESTROY(n)	NM_MTX_DESTROY((n)->nm_mtx)
 #define NMA_LOCK(n)		NM_MTX_LOCK((n)->nm_mtx)
 #define NMA_UNLOCK(n)		NM_MTX_UNLOCK((n)->nm_mtx)
+
+void
+netmap_mem_get(struct netmap_mem_d *nmd)
+{
+	NMA_LOCK(nmd);
+	nmd->refcount++;
+	NMA_UNLOCK(nmd);
+}
+
+void
+netmap_mem_put(struct netmap_mem_d *nmd)
+{
+	int count;
+	NMA_LOCK(nmd);
+	count = --nmd->refcount;
+	NMA_UNLOCK(nmd);
+	if (count == 0)
+		netmap_mem_delete(nmd);
+}
 
 int
 netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
@@ -1149,8 +1169,8 @@ netmap_mem_private_delete(struct netmap_mem_d *nmd)
 		return;
 	if (netmap_verbose)
 		D("deleting %p", nmd);
-	if (nmd->refcount > 0)
-		D("bug: deleting mem allocator with refcount=%d!", nmd->refcount);
+	if (nmd->active > 0)
+		D("bug: deleting mem allocator with active=%d!", nmd->active);
 	nm_mem_release_id(nmd);
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
@@ -1171,8 +1191,10 @@ static int
 netmap_mem_private_finalize(struct netmap_mem_d *nmd)
 {
 	int err;
-	nmd->refcount++;
+	NMA_LOCK(nmd);
+	nmd->active++;
 	err = netmap_mem_finalize_all(nmd);
+	NMA_UNLOCK(nmd);
 	return err;
 
 }
@@ -1180,8 +1202,10 @@ netmap_mem_private_finalize(struct netmap_mem_d *nmd)
 static void
 netmap_mem_private_deref(struct netmap_mem_d *nmd)
 {
-	if (--nmd->refcount <= 0)
+	NMA_LOCK(nmd);
+	if (--nmd->active <= 0)
 		netmap_mem_reset_all(nmd);
+	NMA_UNLOCK(nmd);
 }
 
 
@@ -1284,7 +1308,7 @@ netmap_mem_global_config(struct netmap_mem_d *nmd)
 {
 	int i;
 
-	if (nmd->refcount)
+	if (nmd->active)
 		/* already in use, we cannot change the configuration */
 		goto out;
 
@@ -1322,7 +1346,7 @@ netmap_mem_global_finalize(struct netmap_mem_d *nmd)
 	if (netmap_mem_global_config(nmd))
 		goto out;
 
-	nmd->refcount++;
+	nmd->active++;
 
 	if (nmd->flags & NETMAP_MEM_FINALIZED) {
 		/* may happen if config is not changed */
@@ -1337,29 +1361,37 @@ netmap_mem_global_finalize(struct netmap_mem_d *nmd)
 
 out:
 	if (nmd->lasterr)
-		nmd->refcount--;
+		nmd->active--;
 	err = nmd->lasterr;
 
 	return err;
 
 }
 
-int
-netmap_mem_init(void)
-{
-	NMA_LOCK_INIT(&nm_mem);
-	return (0);
-}
-
 void
-netmap_mem_fini(void)
+netmap_mem_global_delete(struct netmap_mem_d *nmd)
 {
 	int i;
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 	    netmap_destroy_obj_allocator(&nm_mem.pools[i]);
 	}
+
 	NMA_LOCK_DESTROY(&nm_mem);
+}
+
+int
+netmap_mem_init(void)
+{
+	NMA_LOCK_INIT(&nm_mem);
+	netmap_mem_get(&nm_mem);
+	return (0);
+}
+
+void
+netmap_mem_fini(void)
+{
+	netmap_mem_put(&nm_mem);
 }
 
 static void
@@ -1552,11 +1584,11 @@ static void
 netmap_mem_global_deref(struct netmap_mem_d *nmd)
 {
 
-	nmd->refcount--;
-	if (!nmd->refcount)
+	nmd->active--;
+	if (!nmd->active)
 		nmd->nm_grp = -1;
 	if (netmap_verbose)
-		D("refcount = %d", nmd->refcount);
+		D("active = %d", nmd->active);
 
 }
 
@@ -1567,6 +1599,7 @@ struct netmap_mem_ops netmap_mem_global_ops = {
 	.nmd_config = netmap_mem_global_config,
 	.nmd_finalize = netmap_mem_global_finalize,
 	.nmd_deref = netmap_mem_global_deref,
+	.nmd_delete = netmap_mem_global_delete,
 	.nmd_if_offset = netmap_mem2_if_offset,
 	.nmd_if_new = netmap_mem2_if_new,
 	.nmd_if_delete = netmap_mem2_if_delete,

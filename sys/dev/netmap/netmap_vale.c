@@ -1823,7 +1823,7 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
         if (netmap_verbose)
 		D("max frame size %u", vpna->mfs);
 
-	na->na_flags |= NAF_BDG_MAYSLEEP | NAF_MEM_OWNER;
+	na->na_flags |= NAF_BDG_MAYSLEEP;
 	na->nm_txsync = netmap_vp_txsync;
 	na->nm_rxsync = netmap_vp_rxsync;
 	na->nm_register = netmap_vp_reg;

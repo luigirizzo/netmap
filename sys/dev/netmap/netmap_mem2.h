@@ -133,11 +133,12 @@ struct netmap_mem_d* netmap_mem_private_new(const char *name,
 	u_int txr, u_int txd, u_int rxr, u_int rxd, u_int extra_bufs, u_int npipes,
 	int* error);
 void	   netmap_mem_delete(struct netmap_mem_d *);
+void 	netmap_mem_get(struct netmap_mem_d *);
+void 	netmap_mem_put(struct netmap_mem_d *);
 
 #define NETMAP_MEM_PRIVATE	0x2	/* allocator uses private address space */
 #define NETMAP_MEM_IO		0x4	/* the underlying memory is mmapped I/O */
 
 uint32_t netmap_extra_alloc(struct netmap_adapter *, uint32_t *, uint32_t n);
-
 
 #endif

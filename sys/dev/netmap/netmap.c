@@ -2633,6 +2633,7 @@ netmap_attach_common(struct netmap_adapter *na)
 	if (na->nm_mem == NULL)
 		/* use the global allocator */
 		na->nm_mem = &nm_mem;
+	netmap_mem_get(na->nm_mem);
 #ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
 		/* no special nm_bdg_attach callback. On VALE
@@ -2656,8 +2657,8 @@ netmap_detach_common(struct netmap_adapter *na)
 		na->nm_krings_delete(na);
 	}
 	netmap_pipe_dealloc(na);
-	if (na->na_flags & NAF_MEM_OWNER)
-		netmap_mem_delete(na->nm_mem);
+	if (na->nm_mem)
+		netmap_mem_put(na->nm_mem);
 	bzero(na, sizeof(*na));
 	free(na, M_DEVBUF);
 }
