@@ -208,22 +208,37 @@ static int nm_mem_assign_group(struct netmap_mem_d *, struct device *);
 #define NMA_LOCK(n)		NM_MTX_LOCK((n)->nm_mtx)
 #define NMA_UNLOCK(n)		NM_MTX_UNLOCK((n)->nm_mtx)
 
-void
-netmap_mem_get(struct netmap_mem_d *nmd)
+#ifdef NM_DEBUG_MEM_PUTGET
+#define NM_DBG_REFC(nmd, func, line)	\
+	printf("%s:%d mem[%d] -> %d\n", func, line, (nmd)->nm_id, (nmd)->refcount);
+#else
+#define NM_DBG_REFC(nmd, func, line)
+#endif
+
+#ifdef NM_DEBUG_MEM_PUTGET
+void __netmap_mem_get(struct netmap_mem_d *nmd, const char *func, int line)
+#else
+void netmap_mem_get(struct netmap_mem_d *nmd)
+#endif
 {
 	NMA_LOCK(nmd);
 	nmd->refcount++;
+	NM_DBG_REFC(nmd, func, line);
 	NMA_UNLOCK(nmd);
 }
 
-void
-netmap_mem_put(struct netmap_mem_d *nmd)
+#ifdef NM_DEBUG_MEM_PUTGET
+void __netmap_mem_put(struct netmap_mem_d *nmd, const char *func, int line)
+#else
+void netmap_mem_put(struct netmap_mem_d *nmd)
+#endif
 {
-	int count;
+	int last;
 	NMA_LOCK(nmd);
-	count = --nmd->refcount;
+	last = (--nmd->refcount == 0);
+	NM_DBG_REFC(nmd, func, line);
 	NMA_UNLOCK(nmd);
-	if (count == 0)
+	if (last)
 		netmap_mem_delete(nmd);
 }
 
