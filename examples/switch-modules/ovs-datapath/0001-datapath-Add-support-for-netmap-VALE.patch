@@ -1,0 +1,791 @@
+From 15640420669b0a2e2471f586c6cfdef232a42277 Mon Sep 17 00:00:00 2001
+From: Michio Honda <micchie@sfc.wide.ad.jp>
+Date: Fri, 22 Aug 2014 17:25:29 +0200
+Subject: [PATCH] datapath: Add support for netmap/VALE
+
+This patch implements a datapath that exploits a VALE software
+switch at packet I/O and switching.
+
+This is tested with packet forwarding between two native netmap-mode
+NICs and it accelerates packet forwarding rates by approx. 3 times.
+---
+ INSTALL.NETMAP                       |  47 ++++++++
+ Makefile.am                          |   1 +
+ acinclude.m4                         |  18 +++
+ configure.ac                         |   1 +
+ datapath/Modules.mk                  |   3 +-
+ datapath/dp-vale.c                   | 222 +++++++++++++++++++++++++++++++++++
+ datapath/dp-vale.h                   |  67 +++++++++++
+ datapath/linux/Kbuild.in             |   7 ++
+ datapath/vport-internal_dev.c        |  30 ++++-
+ datapath/vport-internal_dev_netmap.h |  97 +++++++++++++++
+ datapath/vport-netdev.c              |  21 ++++
+ datapath/vport-vxlan.c               |   7 ++
+ datapath/vport.c                     |  12 ++
+ utilities/ovs-dev.py                 |   5 +
+ 14 files changed, 536 insertions(+), 2 deletions(-)
+ create mode 100644 INSTALL.NETMAP
+ create mode 100644 datapath/dp-vale.c
+ create mode 100644 datapath/dp-vale.h
+ create mode 100644 datapath/vport-internal_dev_netmap.h
+
+diff --git a/INSTALL.NETMAP b/INSTALL.NETMAP
+new file mode 100644
+index 0000000..b59e4b5
+--- /dev/null
++++ b/INSTALL.NETMAP
+@@ -0,0 +1,47 @@
++                   Using Open vSwitch with netmap (VALE)
++                   ============================
++
++Open vSwitch can use VALE, a software switch that runs in a kernel
++ to accelerate its datapath.
++Thanks to efficient packet I/O based on netmap API and a novel
++packet forwarding algorithm, VALE accelerates Open vSwitch datapath
++by three times when forwarding short packets between 10 Gbps NICs.
++This file explains how to install and use the Open vSwitch with VALE.
++
++The VALE support of Open vSwitch is experimental.
++It has not been throughly tested.
++It currently supports only netdev (including internal one) and VXLAN
++ vport types.
++
++HOW TO BUILD CODE
++-----------------
++This patch is created against commit 
++532e1463fcfb71738316a86420ae4fcb07b56ac3 (Open vSwitch 2.4.90) at
++Open vSwitch's repository (https://github.com/openvswitch/ovs.git).
++
++We assume that up-to-date version of netmap
++(http://info.iet.unipi.it/~luigi/netmap/) is already installed.
++
++Installation steps are same with INSTALL, except for specifying
++a path to netmap source in configure like:
++
++* `./configure --with-netmap=/home/micchie/netmap`
++
++This is because Open vswitch datapath (kernel module) leverages
++utility functions provided by netmap (defined in
++sys/dev/netmap/netmap_kern.h, sys/net/netmap.h etc.),
++and refers to symbols exported from netmap kernel module
++(LINUX/Module.symvers).
++
++Thus, you need to have compiled netmap kernel module but don't need
++to have loaded it.
++
++To quickly build and run, ovs-dev.py script can also be used like:
++
++* `python utilities/ovs-dev.py env && python utilities/ovs-dev.py conf \
++	--with-netmap=/home/micchie/netmap make`
++
++See ovs-dev.py itself for detailed information.
++
++To use netmap API 4, pass -DNETMAP_API_4 to EXTRA_CFLAGS
++in datapath/linux/Kbuild.in
+diff --git a/Makefile.am b/Makefile.am
+index a659814..87e3a21 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -83,6 +83,7 @@ docs = \
+ 	INSTALL.XenServer.md \
+ 	INSTALL.userspace.md \
+ 	INSTALL.Windows.md \
++	INSTALL.NETMAP \
+ 	IntegrationGuide.md \
+ 	OPENFLOW-1.1+.md \
+ 	PORTING.md \
+diff --git a/acinclude.m4 b/acinclude.m4
+index 20391ec..14cf20e 100644
+--- a/acinclude.m4
++++ b/acinclude.m4
+@@ -159,6 +159,24 @@ AC_DEFUN([OVS_CHECK_LINUX], [
+   AM_CONDITIONAL(LINUX_ENABLED, test -n "$KBUILD")
+ ])
+ 
++dnl OVS_CHECK_NETMAP
++dnl
++dnl Configure NETMAP source tree
++AC_DEFUN([OVS_CHECK_NETMAP], [
++  AC_ARG_WITH([netmap],
++              [AC_HELP_STRING([--with-netmap=/path/to/netmap],
++                              [Specify the netmap build directory])])
++  if test X"$with_netmap" != X; then
++    NETMAP_DIR=$with_netmap
++    AC_DEFINE([DEV_NETMAP], [1], [System uses the netmap module.])
++  else
++    NETMAP_DIR=
++  fi
++  AC_SUBST([NETMAP_DIR])
++
++  AM_CONDITIONAL([DEV_NETMAP], test -n "$NETMAP_DIR")
++])
++
+ dnl OVS_CHECK_DPDK
+ dnl
+ dnl Configure DPDK source tree
+diff --git a/configure.ac b/configure.ac
+index 36387a1..3a94ea9 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -164,6 +164,7 @@ AC_ARG_VAR(KARCH, [Kernel Architecture String])
+ AC_SUBST(KARCH)
+ OVS_CHECK_LINUX
+ OVS_CHECK_DPDK
++OVS_CHECK_NETMAP
+ OVS_CHECK_PRAGMA_MESSAGE
+ AC_SUBST([OVS_CFLAGS])
+ AC_SUBST([OVS_LDFLAGS])
+diff --git a/datapath/Modules.mk b/datapath/Modules.mk
+index 8dc3415..f5d4a26 100644
+--- a/datapath/Modules.mk
++++ b/datapath/Modules.mk
+@@ -25,7 +25,8 @@ openvswitch_sources = \
+ 	flow_table.c \
+ 	vport.c \
+ 	vport-internal_dev.c \
+-	vport-netdev.c
++	vport-netdev.c \
++	dp-vale.c
+ 
+ vport_geneve_sources = vport-geneve.c
+ vport_vxlan_sources = vport-vxlan.c
+diff --git a/datapath/dp-vale.c b/datapath/dp-vale.c
+new file mode 100644
+index 0000000..13b4076
+--- /dev/null
++++ b/datapath/dp-vale.c
+@@ -0,0 +1,222 @@
++/*
++ * Copyright (c) 2014 NEC Europe Ltd.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of version 2 of the GNU General Public
++ * License as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
++ * 02110-1301, USA
++ */
++
++#ifdef DEV_NETMAP
++#include "dp-vale.h"
++
++/*
++ * We cannot simply register OVS datapath to the VALE switch
++ * at datapath initialization, because it requires at least
++ * one port. We thus do this when the first port is attached.
++ */
++static int vale_dp_initialized = 0;
++
++/**
++ * Equivalent of netdev_frame_hook().
++ * XXX skb is always private, so we use _skb_refdst to store the destination
++ */
++static unsigned int ovs_vale_lookup(struct nm_bdg_fwd *ft, u8 *dst_ring,
++#ifdef NETMAP_API_4
++		const struct netmap_adapter *na)
++#else
++		struct netmap_vp_adapter *na)
++#endif
++{
++#ifdef NETMAP_API_4
++	struct net_device *dev = na->ifp;
++#else
++	struct net_device *dev;
++#endif
++	struct vport *vport;
++	struct sk_buff *skb;
++	struct sk_buff sskb;
++	struct ovs_vale_dst dst = {1, NM_BDG_NOPORT};
++	u_int shlen = SKB_DATA_ALIGN( sizeof(struct skb_shared_info) -
++		sizeof(skb_frag_t) * MAX_SKB_FRAGS ); /* XXX no multi frags */
++	u_int buf_len = ft->ft_len;
++	uint8_t *buf = ft->ft_buf;
++
++#ifndef NETMAP_API_4
++	dev = netmap_vp_to_ifp(na);
++	if (buf_len == na->virt_hdr_len) {
++		ft++;
++		buf = ft->ft_buf;
++		buf_len = ft->ft_len;
++	} else {
++		buf += na->virt_hdr_len;
++		buf_len -= na->virt_hdr_len;
++	}
++#endif
++	if (ovs_is_internal_dev(dev))
++		vport = ovs_internal_dev_get_vport(dev);
++	else
++		vport = ovs_netdev_get_vport(dev);
++	if (unlikely(!vport))
++		return NM_BDG_NOPORT;
++
++	/* We use the last bytes of buf for skb_shared_info with no
++	 * frags.
++	 * So, make sure that there is no other fragments and GSO
++	 * processing is not applied.
++	 */
++	bzero(&sskb, sizeof(sskb));
++	sskb.dev = dev;
++	sskb.len += buf_len;
++#ifdef NETMAP_API_4
++	sskb.truesize = NETMAP_BUF_SIZE - shlen;
++#else
++	sskb.truesize = NETMAP_BUF_SIZE(&na->up) - shlen;
++#endif
++	sskb.head_frag = 1;
++	sskb.data = sskb.head = (unsigned char *)buf;
++	skb_reset_tail_pointer(&sskb);
++	/* Ensure sskb.end points shinfo */
++#ifdef NETMAP_API_4
++	sskb.end = sskb.tail + NETMAP_BUF_SIZE - shlen;
++#else
++	sskb.end = sskb.tail + NETMAP_BUF_SIZE(&na->up) - shlen;
++#endif
++	sskb.mac_header = (typeof(sskb.mac_header))~0U;
++	sskb.transport_header = (typeof(skb->transport_header))~0U;
++
++	sskb.protocol = eth_type_trans(&sskb, dev);
++	atomic_set(&sskb.users, 2); /* not to be real-freed */
++
++	bzero(skb_shinfo(&sskb), shlen);
++	atomic_set(&skb_shinfo(&sskb)->dataref, 1);
++	skb = &sskb;
++
++	OVCB_SET(skb, &dst);
++
++	skb_push(skb, ETH_HLEN);
++	ovs_skb_postpush_rcsum(skb, skb->data, ETH_HLEN);
++	rcu_read_lock();
++	ovs_vport_receive(vport, skb, NULL /* no tunnel key */);
++	rcu_read_unlock();
++	OVCB_SET(skb, NULL);
++	*dst_ring = 0;
++	return dst.port;
++}
++
++#define OVS_VALE_PREFIX "vale0:"
++
++static struct netmap_bdg_ops ovs_vale_ops = {
++	.lookup = ovs_vale_lookup,
++	.config = NULL,
++	.dtor = NULL,
++};
++
++
++/*
++ * we pass indication of an internal device as argument because
++ * is_internal_dev() does not work until the datapath is fully
++ * initialized
++ */
++int ovs_vale_ctl(const char *name, int internal, int onoff)
++{
++	struct nmreq nmr;
++	int error;
++
++	memset(&nmr, 0, sizeof(nmr));
++
++	/* create request string */
++	strncpy(nmr.nr_name, OVS_VALE_PREFIX, sizeof(nmr.nr_name));
++	if (strlen(nmr.nr_name) + strlen(name) + 1 >= IFNAMSIZ)
++		return EINVAL;
++	strcat(nmr.nr_name, name);
++
++	nmr.nr_cmd = onoff ? NETMAP_BDG_ATTACH : NETMAP_BDG_DETACH;
++	if (onoff && internal)
++		nmr.nr_arg1 = NETMAP_BDG_HOST;
++	error = netmap_bdg_ctl(&nmr, NULL);
++	if (error) {
++		D("failed to %s %s (internal:%d)",
++		    onoff?"attach":"detach", name, internal);
++		return error;
++	}
++
++	if (onoff && !vale_dp_initialized) {
++		/* reuse nr_name */
++		nmr.nr_cmd = NETMAP_BDG_REGOPS;
++		error = netmap_bdg_ctl(&nmr, &ovs_vale_ops);
++		if (error) {
++			nmr.nr_cmd = NETMAP_BDG_DETACH;
++			if (netmap_bdg_ctl(&nmr, NULL)) /* XXX handle error... */
++				D("error on BDG_DETACH after BDG_REGOPS failure");
++		} else {
++			vale_dp_initialized = 1;
++			D("datapath is registered to %s", OVS_VALE_PREFIX);
++		}
++
++	} else if (!onoff && vale_dp_initialized) { /* last interface? */
++		nmr.nr_cmd = NETMAP_BDG_LIST;
++		memset(nmr.nr_name, 0, sizeof(nmr.nr_name));
++		strncpy(nmr.nr_name, OVS_VALE_PREFIX, sizeof(nmr.nr_name));
++		if (netmap_bdg_ctl(&nmr, NULL) == ENOENT) {
++			vale_dp_initialized = 0;
++			D("%s is destroyed", OVS_VALE_PREFIX);
++		}
++	}
++	return error;
++}
++
++int ovs_vale_send(struct net_device *dev, struct sk_buff *skb)
++{
++	struct ovs_vale_dst *dst = OVCB(skb)->dst;
++#ifndef NETMAP_API_4
++	struct netmap_vp_adapter *vpna;
++#endif
++	u_int dport;
++
++	if (!skb_owned_by_vale(skb))
++		return 0;
++#ifdef NETMAP_API_4
++	if (unlikely(!(dev->priv_flags & IFCAP_NETMAP))) { /* e.g., VALE port */
++#else
++	if (netmap_ifp_to_vp(dev) == NULL) { /* Not a VALE port */
++#endif
++		dst->port = NM_BDG_NOPORT;
++		goto consumed;
++	}
++	/* set the destination index of the bridge.
++	 * XXX If it is already set, we broadcast this packet
++	 */
++#ifdef NETMAP_API_4
++	dport = ovs_is_internal_dev(dev) ? SWNA(dev)->bdg_port :
++					NA(dev)->bdg_port;
++#else
++	vpna = ovs_is_internal_dev(dev) ? netmap_ifp_to_host_vp(dev) :
++		netmap_ifp_to_vp(dev);
++	if (unlikely(!vpna)) {
++		D("%s is not attached to the bridge", dev->name);
++		return 0;
++	}
++	dport = vpna->bdg_port;
++#endif
++	if (dst->port == NM_BDG_NOPORT)
++		dst->port = dport;
++	else if (likely(dst->port != dport))
++		dst->port = NM_BDG_BROADCAST;
++	/* destroyed if this is cloned in action's loop, otherwise
++	 * drops the extra refcount
++	 */
++consumed:
++	kfree_skb(skb);
++	return 1;
++}
++#endif /* DEV_NETMAP */
+diff --git a/datapath/dp-vale.h b/datapath/dp-vale.h
+new file mode 100644
+index 0000000..3ace110
+--- /dev/null
++++ b/datapath/dp-vale.h
+@@ -0,0 +1,67 @@
++/*
++ * Copyright (c) 2014 NEC Europe Ltd.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of version 2 of the GNU General Public
++ * License as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
++ * 02110-1301, USA
++ */
++
++#include "datapath.h"
++#include "vport-netdev.h"
++#include "vport-internal_dev.h"
++#include <bsd_glue.h>
++#include <net/netmap.h>
++#include <netmap/netmap_kern.h>
++
++struct ovs_vale_dst {
++	unsigned char active;
++	unsigned char port;
++};
++struct ovs_vale_cb {
++	struct ovs_vale_dst *dst;
++};
++#define OVCB(skb)	((struct ovs_vale_cb *)(((skb)->cb + sizeof(struct ovs_skb_cb))))
++#define OVCB_SET(skb, p)	OVCB((skb))->dst = (p)
++
++static inline int skb_owned_by_vale(const struct sk_buff *skb)
++{
++	return OVCB(skb)->dst && OVCB(skb)->dst->active;
++}
++
++static inline struct sk_buff *convert_to_real(struct sk_buff *fake)
++{
++	struct sk_buff *skb = skb_copy(fake, GFP_ATOMIC);
++
++	return skb;
++}
++
++/* This is stupid as this should be done using ovs_dp_name().
++ * However, it only works after completion of initiation of the datapath...
++ */
++/*
++static inline const char *ovs_vale_prefix(const struct vport *vport)
++{
++	if (vport->port_no == OVSP_LOCAL)
++		return vport->ops->get_name(vport);
++	else
++		return ovs_dp_name(vport->dp);
++}
++*/
++
++static inline int vale_prefix(const char *name)
++{
++	return !strncmp(NM_NAME, name, strlen(NM_NAME));
++}
++
++int ovs_vale_ctl(const char *, int, int);
++int ovs_vale_send(struct net_device *, struct sk_buff *skb);
+diff --git a/datapath/linux/Kbuild.in b/datapath/linux/Kbuild.in
+index 9e3259f..c5ab75a 100644
+--- a/datapath/linux/Kbuild.in
++++ b/datapath/linux/Kbuild.in
+@@ -13,6 +13,13 @@ ccflags-y += -I$(builddir)/..
+ ccflags-y += -g
+ ccflags-y += -include $(builddir)/kcompat.h
+ 
++ifneq (@NETMAP_DIR@,)
++NETMAP_DIR := @NETMAP_DIR@
++EXTRA_CFLAGS += -I$(NETMAP_DIR)/LINUX -I$(NETMAP_DIR)/sys -I$(NETMAP_DIR)/sys/dev -DDEV_NETMAP -DWITH_VALE
++#EXTRA_CFLAGS += -I$(NETMAP_DIR)/LINUX -I$(NETMAP_DIR)/sys -I$(NETMAP_DIR)/sys/dev -DDEV_NETMAP -DNETMAP_API_4
++KBUILD_EXTRA_SYMBOLS = $(NETMAP_DIR)/LINUX/Module.symvers
++endif
++
+ # These include directories have to go before -I$(KSRC)/include.
+ # NOSTDINC_FLAGS just happens to be a variable that goes in the
+ # right place, even though it's conceptually incorrect.
+diff --git a/datapath/vport-internal_dev.c b/datapath/vport-internal_dev.c
+index f38f9be..778aa99 100644
+--- a/datapath/vport-internal_dev.c
++++ b/datapath/vport-internal_dev.c
+@@ -33,10 +33,16 @@
+ #include "vlan.h"
+ #include "vport-internal_dev.h"
+ #include "vport-netdev.h"
++#ifdef DEV_NETMAP
++#include "dp-vale.h"
++#endif
+ 
+ struct internal_dev {
+ 	struct vport *vport;
+ };
++#ifdef DEV_NETMAP
++#include "vport-internal_dev_netmap.h"
++#endif
+ 
+ static struct vport_ops ovs_internal_vport_ops;
+ 
+@@ -129,6 +135,9 @@ static void internal_dev_destructor(struct net_device *dev)
+ 	struct vport *vport = ovs_internal_dev_get_vport(dev);
+ 
+ 	ovs_vport_free(vport);
++#ifdef DEV_NETMAP
++	netmap_detach(dev);
++#endif
+ 	free_netdev(dev);
+ }
+ 
+@@ -215,9 +224,21 @@ static struct vport *internal_dev_create(const struct vport_parms *parms)
+ 	err = register_netdevice(netdev_vport->dev);
+ 	if (err)
+ 		goto error_free_netdev;
++#ifdef DEV_NETMAP
++	/* don't attach (useless) datapath itself */
++	if (parms->port_no != OVSP_LOCAL)
++		vport_internal_netmap_attach(internal_dev);
++#endif
+ 
+ 	dev_set_promiscuity(netdev_vport->dev, 1);
+ 	rtnl_unlock();
++#ifdef DEV_NETMAP
++	if (parms->port_no != OVSP_LOCAL) {
++		err = ovs_vale_ctl(parms->name, 1, 1);
++		if (err)
++			goto error_free_netdev;
++	}
++#endif
+ 	netif_start_queue(netdev_vport->dev);
+ 
+ 	return vport;
+@@ -238,6 +259,9 @@ static void internal_dev_destroy(struct vport *vport)
+ 	netif_stop_queue(netdev_vport->dev);
+ 	rtnl_lock();
+ 	dev_set_promiscuity(netdev_vport->dev, -1);
++#ifdef DEV_NETMAP
++	ovs_vale_ctl(netdev_vport->dev->name, 1, 0);
++#endif
+ 
+ 	/* unregister_netdevice() waits for an RCU grace period. */
+ 	unregister_netdevice(netdev_vport->dev);
+@@ -272,6 +296,10 @@ static int internal_dev_recv(struct vport *vport, struct sk_buff *skb)
+ #endif
+ 
+ 	len = skb->len;
++#ifdef DEV_NETMAP
++	if (ovs_vale_send(netdev, skb))
++		return len;
++#endif /* DEV_NETMAP */
+ 
+ 	skb_dst_drop(skb);
+ 	nf_reset(skb);
+@@ -297,7 +325,7 @@ static struct vport_ops ovs_internal_vport_ops = {
+ 
+ int ovs_is_internal_dev(const struct net_device *netdev)
+ {
+-	return netdev->netdev_ops == &internal_dev_netdev_ops;
++	return netdev->netdev_ops->ndo_get_stats64 == internal_dev_get_stats;
+ }
+ 
+ struct vport *ovs_internal_dev_get_vport(struct net_device *netdev)
+diff --git a/datapath/vport-internal_dev_netmap.h b/datapath/vport-internal_dev_netmap.h
+new file mode 100644
+index 0000000..4314275
+--- /dev/null
++++ b/datapath/vport-internal_dev_netmap.h
+@@ -0,0 +1,97 @@
++#include <net/netmap.h>
++#include <netmap/netmap_kern.h>
++
++#define SOFTC_T internal_dev
++
++#define VPORT_INTERNAL_TX_DESC 128
++#define VPORT_INTERNAL_RX_DESC 128
++
++static struct internal_dev *internal_dev_priv(struct net_device *netdev);
++
++static int
++#ifdef NETMAP_API_4
++vport_internal_netmap_reg(struct net_device *dev, int onoff)
++#else
++vport_internal_netmap_reg(struct netmap_adapter *na, int onoff)
++#endif
++{
++#ifdef NETMAP_API_4
++	struct netmap_adapter *na = NA(dev);
++#else
++	struct net_device *dev = na->ifp;
++#endif
++	int error = 0;
++
++	if (!(dev)->flags & IFF_UP) {
++		D("Interface is down!");
++		return EINVAL;
++	}
++	if (na == NULL)
++		return EINVAL;
++	if (onoff) {
++#ifdef NETMAP_API_4
++		dev->priv_flags |= IFCAP_NETMAP;
++		na->if_transmit = (void *)dev->netdev_ops;
++		dev->netdev_ops = &na->nm_ndo;
++#else
++		nm_set_native_flags(na);
++#endif
++		/* XXX do we need to store dev->features ? */
++	} else {
++#ifdef NETMAP_API_4
++		dev->priv_flags &= ~IFCAP_NETMAP;
++		dev->netdev_ops = (void *)na->if_transmit;
++#else
++		nm_clear_native_flags(na);
++#endif
++	}
++	return error;
++}
++static struct rtnl_link_stats64 *internal_dev_get_stats(struct net_device *,
++							struct rtnl_link_stats64 *);
++static int internal_dev_change_mtu(struct net_device *, int);
++
++#ifndef NETMAP_API_4
++static int
++vport_internal_update_config(struct netmap_adapter *na, u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
++{
++	*txr = na->num_tx_rings;
++	*txd = na->num_tx_desc;
++	*rxr = na->num_rx_rings;
++	*rxd = na->num_rx_desc;
++	return 0;
++}
++#endif /* NETMAP_API_4 */
++
++static struct device_driver dummy = {.owner = THIS_MODULE};
++static void
++vport_internal_netmap_attach(struct SOFTC_T *sc)
++{
++	struct netmap_adapter na;
++
++	bzero(&na, sizeof(na));
++
++	na.ifp = netdev_vport_priv((const struct vport *)sc->vport)->dev;
++	na.ifp->dev.driver = &dummy;
++	na.num_tx_desc = VPORT_INTERNAL_TX_DESC;
++	na.num_rx_desc = VPORT_INTERNAL_RX_DESC;
++	na.nm_txsync = na.nm_rxsync = NULL;
++	na.nm_register = vport_internal_netmap_reg;
++	na.na_flags |= NAF_SW_ONLY;
++#ifdef NETMAP_API_4
++	netmap_attach(&na, 4);
++	/* indicator of internal_dev */
++	NA(na.ifp)->nm_ndo.ndo_get_stats64 = internal_dev_get_stats;
++#else
++	na.num_tx_rings = na.num_rx_rings = 1;
++	na.nm_config = vport_internal_update_config;
++	netmap_attach(&na);
++	((struct netmap_hw_adapter *)NA(na.ifp))->nm_ndo.ndo_get_stats64 =
++		internal_dev_get_stats;
++#endif
++	/* do we need these ?*/
++#ifdef NETMAP_API_4
++	NA(na.ifp)->nm_ndo.ndo_change_mtu = internal_dev_change_mtu;
++	NA(na.ifp)->nm_ndo.ndo_set_mac_address = eth_mac_addr;
++#endif
++}
+diff --git a/datapath/vport-netdev.c b/datapath/vport-netdev.c
+index 05ad0b4..689ea08 100644
+--- a/datapath/vport-netdev.c
++++ b/datapath/vport-netdev.c
+@@ -34,6 +34,9 @@
+ #include "vlan.h"
+ #include "vport-internal_dev.h"
+ #include "vport-netdev.h"
++#ifdef DEV_NETMAP
++#include "dp-vale.h"
++#endif
+ 
+ static struct vport_ops ovs_netdev_vport_ops;
+ static void netdev_port_receive(struct vport *vport, struct sk_buff *skb);
+@@ -116,6 +119,17 @@ static struct vport *netdev_create(const struct vport_parms *parms)
+ 		goto error_free_vport;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	/* don't attach a non-netmap interface to a vale datapath */
++	if (!NETMAP_CAPABLE(netdev_vport->dev)) {
++		err = -EINVAL;
++		goto error_put;
++	}
++	err = ovs_vale_ctl(parms->name, 0, 1);
++	if (err)
++		goto error_put;
++#endif
++
+ 	if (netdev_vport->dev->flags & IFF_LOOPBACK ||
+ 	    netdev_vport->dev->type != ARPHRD_ETHER ||
+ 	    ovs_is_internal_dev(netdev_vport->dev)) {
+@@ -181,6 +195,9 @@ static void netdev_destroy(struct vport *vport)
+ 	if (ovs_netdev_get_vport(netdev_vport->dev))
+ 		ovs_netdev_detach_dev(vport);
+ 	rtnl_unlock();
++#ifdef DEV_NETMAP
++	ovs_vale_ctl(netdev_vport->dev->name, 0, 0);
++#endif
+ 
+ 	call_rcu(&netdev_vport->rcu, free_port_rcu);
+ }
+@@ -244,6 +261,10 @@ static int netdev_send(struct vport *vport, struct sk_buff *skb)
+ 
+ 	skb->dev = netdev_vport->dev;
+ 	len = skb->len;
++#ifdef DEV_NETMAP
++	if (ovs_vale_send(skb->dev, skb))
++		return len;
++#endif /* DEV_NETMAP */
+ 	dev_queue_xmit(skb);
+ 
+ 	return len;
+diff --git a/datapath/vport-vxlan.c b/datapath/vport-vxlan.c
+index eff7ca2..87d087c 100644
+--- a/datapath/vport-vxlan.c
++++ b/datapath/vport-vxlan.c
+@@ -43,6 +43,9 @@
+ #include "datapath.h"
+ #include "vport.h"
+ #include "vport-vxlan.h"
++#ifdef DEV_NETMAP
++#include "dp-vale.h"
++#endif
+ 
+ /**
+  * struct vxlan_port - Keeps track of open UDP ports
+@@ -239,6 +242,10 @@ static int vxlan_tnl_send(struct vport *vport, struct sk_buff *skb)
+ 	}
+ 
+ 	tun_key = &OVS_CB(skb)->egress_tun_info->tunnel;
++#ifdef DEV_NETMAP
++	if (skb_owned_by_vale(skb)) /* skb is fake */
++		skb = convert_to_real(skb);
++#endif
+ 
+ 	/* Route lookup */
+ 	saddr = tun_key->ipv4_src;
+diff --git a/datapath/vport.c b/datapath/vport.c
+index 4486d06..86fc1de 100644
+--- a/datapath/vport.c
++++ b/datapath/vport.c
+@@ -35,7 +35,10 @@
+ #include "datapath.h"
+ #include "gso.h"
+ #include "vport.h"
++#ifdef DEV_NETMAP
++#include "dp-vale.h"
+ #include "vport-internal_dev.h"
++#endif
+ 
+ static void ovs_vport_record_error(struct vport *,
+ 				   enum vport_err_type err_type);
+@@ -212,6 +215,15 @@ struct vport *ovs_vport_add(const struct vport_parms *parms)
+ 	struct vport_ops *ops;
+ 	struct vport *vport;
+ 
++#ifdef DEV_NETMAP
++	/* filter out unsupported vport type */
++	if (parms->type != OVS_VPORT_TYPE_INTERNAL &&
++	    vale_prefix(ovs_dp_name(parms->dp))) {
++	       if (parms->type != OVS_VPORT_TYPE_NETDEV &&
++		   parms->type != OVS_VPORT_TYPE_VXLAN)
++		       return ERR_PTR(-EAFNOSUPPORT) /* XXX */;
++	}
++#endif
+ 	ops = ovs_vport_lookup(parms);
+ 	if (ops) {
+ 		struct hlist_head *bucket;
+diff --git a/utilities/ovs-dev.py b/utilities/ovs-dev.py
+index 8128b08..34f8944 100755
+--- a/utilities/ovs-dev.py
++++ b/utilities/ovs-dev.py
+@@ -79,6 +79,9 @@ def conf():
+         configure.append("--with-dpdk=" + options.with_dpdk)
+         cflags += " -Wno-cast-align -Wno-bad-function-cast" # DPDK warnings.
+ 
++    if options.with_netmap:
++        configure.append("--with-netmap=" + options.with_netmap)
++
+     if options.optimize is None:
+         options.optimize = 0
+ 
+@@ -371,6 +374,8 @@ def main():
+                      help="configure the man documentation install directory")
+     group.add_option("--with-dpdk", dest="with_dpdk", metavar="DPDK_BUILD",
+                      help="built with dpdk libraries located at DPDK_BUILD");
++    group.add_option("--with-netmap", dest="with_netmap", metavar="NETMAP_BUILD",
++                     help="built with netmap libraries located at NETMAP_BUILD");
+     parser.add_option_group(group)
+ 
+     group = optparse.OptionGroup(parser, "Optimization Flags")
+-- 
+2.3.2 (Apple Git-55)
+
