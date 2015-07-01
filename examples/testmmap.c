@@ -620,7 +620,7 @@ doit:
 		printf(" ]");
 	}
 	printf("\n");
-	printf("ptr           %lx\n", slot->ptr);
+	printf("ptr           %lx\n", (long)slot->ptr);
 }
 
 static void
