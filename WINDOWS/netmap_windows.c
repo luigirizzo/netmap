@@ -244,6 +244,7 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 				}
 				pollData->revents = netmap_poll(NULL, pollData->events, irpSp);
 			}	
+			irpSp->FileObject->FsContext2 = NULL;
 			copy_to_user((void*)data, &arg, sizeof(POLL_REQUEST_DATA), Irp);
 		}
 		Irp->IoStatus.Status = NtStatus;
@@ -527,8 +528,9 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 
 struct net_device * ifunit_ref(const char *name)
 {
-	return NULL;
-	/*
+#ifdef _WIN32
+	return NULL; //dev_get_by_name(name);
+#else
 #ifndef NETMAP_LINUX_HAVE_INIT_NET
 	return dev_get_by_name(name);
 #else
@@ -538,7 +540,7 @@ struct net_device * ifunit_ref(const char *name)
 #endif
 	return dev_get_by_name(ns, name);
 #endif
-	*/
+#endif //_WIN32
 }
 
 void if_rele(struct net_device *ifp)

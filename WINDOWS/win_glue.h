@@ -199,7 +199,7 @@ static void win_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
 #define tsleep(ident, priority, wmesg, time)	KeDelayExecutionThread(KernelMode, FALSE, (PLARGE_INTEGER)time)	
 //--------------------------------------------------------
 
-#define mb						KeMemoryBarrier
+#define mb									KeMemoryBarrier
 
 /*********************************************************
 *        			TIME FUNCTIONS		        		 *
@@ -258,15 +258,31 @@ struct net_device {
 };
 
 //XXX_ale:	todo use the right structures for generic or hardware devices
-typedef struct my_packet
+/*typedef struct my_packet
 {
 	NDIS_PACKET		curr;
 	NDIS_PACKET*	m_nextpkt;
-};
+};*/
 
 #define ifnet	net_device
-#define	mbuf														my_packet
-#define	MBUF_LEN(m)													sizeof(m)
+struct mbuf {
+	struct mbuf *m_next;
+	struct mbuf *m_nextpkt;
+	char *m_data; // XXX was void *
+	int m_len;	/* length in this mbuf */
+	int m_flags;
+	int		direction;	/* could go in rcvif */
+	NDIS_HANDLE	context;	/* replaces queue_entry or skb ?*/
+	PNDIS_PACKET	pkt;
+	struct sk_buff *m_skb;
+	struct {
+		struct ifnet *rcvif;
+		int len;	/* total packet len */
+		//SLIST_HEAD(packet_tags, m_tag) tags;
+	} m_pkthdr;
+};
+//#define	mbuf														my_packet
+#define	MBUF_LEN(m)													m->m_len
 #define m_devget(slot_addr, slot_len, offset, dev, fn)				NULL
 #define m_freem(packet)													//NdisFreePacket(packet)	
 
@@ -285,7 +301,7 @@ void if_rele(struct net_device *ifp);
 NET_BUFFER s = NdisAllocateNetBuffer(_dev, _len);		\
 return s;												\
 })*/
-
+int netmap_get_mbuf();
 
 /*********************************************************
 *                   ATOMIC OPERATIONS     		         *  
@@ -553,6 +569,5 @@ int do_cmd(int optname, void *optval, uintptr_t optlen);
 #ifndef POLLNVAL
 #define POLLNVAL    0x0020
 #endif
-
 
 #endif //_WIN_GLUE_H

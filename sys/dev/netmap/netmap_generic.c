@@ -139,7 +139,15 @@ netmap_get_mbuf(int len)
 	return m;
 }
 
+#elif defined _WIN32
 
+#include "win_glue.h"
+
+#define rtnl_lock()	ND("rtnl_lock called")
+#define rtnl_unlock()	ND("rtnl_unlock called")
+#define MBUF_TXQ(m)	((m)->m_pkthdr.flowid)
+#define MBUF_RXQ(m)	((m)->m_pkthdr.flowid)
+#define smp_mb()
 
 #else /* linux */
 
