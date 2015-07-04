@@ -260,6 +260,15 @@ TESTOBJS=
 # end of 'run_tests'.
 TESTPOSTPROC=
 
+# add_file_exists_check <file-name> <on success> [<on failure>]
+add_file_exists_check()
+{
+	cmd="if [ -f "$TMPDIR/$1" ]; then $2"
+	[ -n "$3" ] && cmd="$cmd; else $3"
+	cmd="$cmd; fi"
+	TESTPOSTPROC="$cmd; $TESTPOSTPROC"
+}
+
 # add_named_test <test-name> [<on success> [<on failure>]]:
 #     the test code is read from stdin, completed with
 #     some standard modules boiler plate and put in
@@ -285,10 +294,7 @@ add_named_test() {
 	TESTOBJS="$1.o $TESTOBJS"
 	# add the postprocess script for this test
 	if [ -n "$2" ]; then
-		cmd="if [ -f $TMPDIR/$1.o ]; then $2"
-		[ -n "$3" ] && cmd="$cmd; else $3"
-		cmd="$cmd; fi"
-		TESTPOSTPROC="$cmd; $TESTPOSTPROC"
+		add_file_exists_check "$1.o" "$2" "$3"
 	fi
 }
 
@@ -329,6 +335,7 @@ run_tests() {
 		cat >> $TMPDIR/Makefile <<-EOF
 			get-$d:
 			$t	[ -z "\$($d-src)" ] || cp -Rp \$($d-src) \$(if \$($d-dst),\$($d-dst),.)
+			$t	touch get-$d
 		EOF
 	done
 	echo endif >> $TMPDIR/Makefile
@@ -703,6 +710,25 @@ else
 
 # BEGIN_TESTS
 reset_tests
+
+# check that we can actually find the sources for each
+# configured driver
+drv_source_error()
+{
+	error <<-EOF
+We were unable copy the sources of driver $1.
+
+If you need this driver, please check that the $1-src variable 
+points to the correct path contaning the driver sources.
+
+If you are not interested in this driver, please disable it
+by rerunning configure with the additional --no-drivers=$1 option.
+	EOF
+}
+
+for d in $(drv print); do
+	add_file_exists_check get-$d true "drv_source_error $d"
+done
 
 # iommu support
 add_test 'have IOMMU' <<-EOF
