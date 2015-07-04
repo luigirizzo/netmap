@@ -139,10 +139,18 @@ report() {
 	else
 		echo "kernel sources              $src"
 		print_realpath "$src"
-		echo "drivers                     $(drv print)"
+		echo "requested drivers           $(drv print)"
 		echo
 		if [ -f "drivers.mak" ]; then
-			echo "Contents of the drivers.mak file:"
+			cat <<-EOF
+Contents of the drivers.mak file:
+
+  Note: only drivers for which both the <driver>-src and the
+  <driver>-patch variable are set may be used in native mode (assuming
+  we can actually patch the sources). Other NICs will be accessed using
+  the generic driver, at reduced performance.
+
+			EOF
 			cat drivers.mak
 		fi
 	fi
