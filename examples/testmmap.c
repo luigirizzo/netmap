@@ -145,7 +145,7 @@ void do_close()
 #include <ifaddrs.h>
 #include <net/netmap_user.h>
 
-struct nmreq curr_nmr = { .nr_flags = NR_REG_ALL_NIC, };
+struct nmreq curr_nmr = { .nr_version = NETMAP_API, .nr_flags = NR_REG_ALL_NIC, };
 char nmr_name[64];
 
 void parse_nmr_config(char* w, struct nmreq *nmr)
@@ -226,6 +226,7 @@ void do_regif()
 
 	bzero(&curr_nmr, sizeof(curr_nmr));
 	curr_nmr.nr_version = NETMAP_API;
+	curr_nmr.nr_flags = NR_REG_ALL_NIC;
 	strncpy(curr_nmr.nr_name, name, sizeof(curr_nmr.nr_name));
 
 	arg = nextarg();
