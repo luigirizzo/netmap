@@ -518,7 +518,7 @@ fi
 if ! drv is-empty; then
 	if [ ! -d "$src" ] ||
 	   [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
-		if [ -z "$override"]; then
+		if [ -z "$override" ]; then
 			drv disable-all
 			error <<-EOF
 Cannot find full kernel sources.
