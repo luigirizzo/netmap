@@ -588,22 +588,16 @@ drvname2config() {
 # main Makefile. The Makefile is obtained from Makefile.in
 # with some values replaced in (mainly the kernel directory).
 # The final Makefile will include drivers.mak, which is also
-# created here. drivers.mak will contain a get-driver and
-# clear-driver target for each of the available drivers.
-# The get-driver target is responsible for the copying and
-# patching of the driver sources.
+# created here. drivers.mak will contain a <driver>-src
+# and <driver>-patch variable each of the available drivers.
 
-patches=
-s_drivers=
-get_drivers=
-clean_drivers=
 mod_list=
 if ! drv is-empty; then
 	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s $SRCDIR/final-patches patches; }
-	# XXX the selection is based only on the kernel version
-	patches=$(cd patches; ls diff--* | awk -v v=$lin_ver -F -- '($3 <= v"") && (v"" < $4)')
 fi
+
+s_drivers=$(drv print)
 
 rm -f drivers.mak
 cat > drivers.mak <<-EOF
@@ -613,16 +607,23 @@ cat > drivers.mak <<-EOF
 EOF
 # read in all the kernel .config, we use it below
 . $ksrc/.config
-for p in $patches; do
-	# extract the driver name
-	d=$(echo $p | awk -F -- '{ print $2 }')
-	# skip this driver if the user does not want it
-	drv enabled $d || continue
+for d in $s_drivers; do
+	# check that we have a patch for this driver
+	# XXX the selection is based only on the kernel version
+	p=$(cd patches; ls diff--$d--* | awk -v v=$lin_ver -F -- '($3 != "*") && ($3 <= v"") && (v"" < $4)')
+	if [ -z "$p" ] && [ -z "$override" ]; then
+		warning <<-EOF
+'$d': no applicable patch found and no override file provided.
+Disabling driver.
+		EOF
+		drv disable $d
+		continue
+	fi
 	# find the driver sources
 	s=$(find $src/drivers/ -name "$d" -print -quit)
 	if [ -z "$s" ] && [ -z "$override" ]; then
 		warning <<-EOF
-'$d' sources not found ad no override provided.
+'$d': sources not found ad no override provided.
 Disabling driver.
 		EOF
 		drv disable $d
@@ -658,9 +659,10 @@ Alternatively, you can pass a --driver-suffix= option to configure.
 	cat >> drivers.mak <<-EOF
 		$d-src := $s
 		$d-patch := patches/$p
+		$d-dst := $d
 	EOF
-	s_drivers="$d $s_drivers"
 done
+
 
 # add v1000 if enabled
 if subsys enabled v1000; then
@@ -669,7 +671,6 @@ if subsys enabled v1000; then
 	EOF
 	s_drivers="v1000 $s_drivers"
 fi
-s_drivers=$(drv print)
 
 if [ -n "$override" ]; then
 	cat >> drivers.mak <<-EOF
@@ -725,7 +726,7 @@ reset_tests
 drv_source_error()
 {
 	error <<-EOF
-We were unable copy the sources of driver $1.
+There were problems copying the sources of driver $1.
 
 If you need this driver, please check that the $1-src variable 
 points to the correct path contaning the driver sources.
@@ -1027,9 +1028,15 @@ add_test 'define ALLOC_NETDEV_4ARGS' <<-EOF
 	}
 EOF
 
+#####################################################
+# checks related to drivers                         #
+#####################################################
 
 # e1000e
 if drv enabled e1000e; then
+
+add_file_exists_check e1000e/e1000.h true "drv_source_error e1000e"
+
 add_test 'have E1000E_HWADDR' <<-EOF
 	#include "e1000e/e1000.h"
 
@@ -1055,6 +1062,9 @@ fi # e1000e
 
 # rtl8169
 if drv enabled r8169.c; then
+
+add_file_exists_check r8619.c true "drv_source_error r8169"
+
 add_test 'define RTL_OPEN rtl8169_open' 'define RTL_OPEN rtl_open' <<-EOF
 	#include "r8169.c"
 
@@ -1074,6 +1084,9 @@ fi # r8169.c
 
 # ixgbe
 if drv enabled ixgbe; then
+
+add_file_exists_check ixgbe/ixgbe.h true "drv_source_error ixgbe"
+
 # different versions of IXGBE_?X_DESC
 add_test 'define IXGBE_DESC 1' <<-EOF
 	#include "ixgbe/ixgbe.h"
