@@ -122,8 +122,6 @@ int last_fd = -1;
 size_t last_memsize = 0;
 void* last_mmap_addr = NULL;
 char* last_access_addr = NULL;
-struct nmreq curr_nmr;
-char nmr_name[64];
 
 
 void do_open()
@@ -146,6 +144,9 @@ void do_close()
 #include <sys/socket.h>
 #include <ifaddrs.h>
 #include <net/netmap_user.h>
+
+struct nmreq curr_nmr = { .nr_flags = NR_REG_ALL_NIC, };
+char nmr_name[64];
 
 void parse_nmr_config(char* w, struct nmreq *nmr)
 {
