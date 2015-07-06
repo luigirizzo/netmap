@@ -787,6 +787,9 @@ do_nmr_dump()
 	if (curr_nmr.nr_ringid & NETMAP_NO_TX_POLL) {
 		printf(", no tx poll");
 	}
+	if (curr_nmr.nr_ringid & NETMAP_DO_RX_POLL) {
+		printf(", do rx poll");
+	}
 	printf(", region %d", curr_nmr.nr_arg2);
 	printf("]\n");
 	printf("cmd:       %d", curr_nmr.nr_cmd);
@@ -864,6 +867,9 @@ do_nmr_dump()
 	}
 	if (curr_nmr.nr_flags & NR_MONITOR_RX) {
 		printf(", MONITOR_RX");
+	}
+	if (curr_nmr.nr_flags & NR_ZCOPY_MON) {
+		printf(", ZCOPY_MON");
 	}
 	if (curr_nmr.nr_flags & NR_EXCLUSIVE) {
 		printf(", EXCLUSIVE");
@@ -970,6 +976,8 @@ do_nmr_flags()
 			flags |= NR_MONITOR_TX;
 		} else if (strcmp(arg, "monitor-rx") == 0) {
 			flags |= NR_MONITOR_RX;
+		} else if (strcmp(arg, "zcopy-mon") == 0) {
+			flags |= NR_ZCOPY_MON;
 		} else if (strcmp(arg, "exclusive") == 0) {
 			flags |= NR_EXCLUSIVE;
 		} else if (strcmp(arg, "default") == 0) {
