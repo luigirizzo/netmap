@@ -200,6 +200,7 @@ static void win_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
 //--------------------------------------------------------
 
 #define mb									KeMemoryBarrier
+#define rmb									KeMemoryBarrier //XXX_ale: doesn't seems to exist just a read barrier
 
 /*********************************************************
 *        			TIME FUNCTIONS		        		 *
@@ -251,6 +252,8 @@ struct ifnet {
 	char    if_xname[IFNAMSIZ];     	/* external name (name + unit) */
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter* na;
+
+	int* netmap_generic_rx_handler;
 };
 struct net_device {
 	char    if_xname[IFNAMSIZ];			// external name (name + unit) 
@@ -264,7 +267,7 @@ struct net_device {
 	NDIS_PACKET*	m_nextpkt;
 };*/
 
-#define ifnet	net_device
+//#define ifnet	net_device
 struct mbuf {
 	struct mbuf *m_next;
 	struct mbuf *m_nextpkt;
@@ -273,7 +276,7 @@ struct mbuf {
 	int m_flags;
 	int		direction;	/* could go in rcvif */
 	NDIS_HANDLE	context;	/* replaces queue_entry or skb ?*/
-	PNDIS_PACKET	pkt;
+	PNET_BUFFER	pkt;
 	struct sk_buff *m_skb;
 	struct {
 		struct ifnet *rcvif;
@@ -281,7 +284,100 @@ struct mbuf {
 		//SLIST_HEAD(packet_tags, m_tag) tags;
 	} m_pkthdr;
 };
-//#define	mbuf														my_packet
+
+//XXX_ale To be correctly redefined
+#define GET_MBUF_REFCNT(a)				1
+#define	SET_MBUF_DESTRUCTOR(a,b)		
+#define MBUF_IFP(a)						NULL
+
+static int
+netmap_catch_rx(struct netmap_adapter *na, int intercept)
+{
+	return 0;
+}
+
+static void netmap_catch_tx(struct netmap_generic_adapter *na, int enable)
+{
+
+}
+static int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr)
+{
+	return 0;
+}
+static int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
+{
+	return 0;
+}
+static void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
+{
+}
+
+static void
+generic_timer_handler(struct hrtimer *t)
+{
+#if 0
+	struct nm_generic_mit *mit =
+		container_of(t, struct nm_generic_mit, mit_timer);
+	u_int work_done;
+
+	if (!mit->mit_pending) {
+		return HRTIMER_NORESTART;
+	}
+
+	/* Some work arrived while the timer was counting down:
+	* Reset the pending work flag, restart the timer and send
+	* a notification.
+	*/
+	mit->mit_pending = 0;
+	/* below is a variation of netmap_generic_irq  XXX revise */
+	if (nm_netmap_on(mit->mit_na)) {
+		netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
+		generic_rate(0, 0, 0, 0, 0, 1);
+	}
+	netmap_mitigation_restart(mit);
+	return HRTIMER_RESTART;
+#endif
+	return 0;
+}
+
+static void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
+struct netmap_adapter *na)
+{
+	/*hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	mit->mit_timer.function = &generic_timer_handler;
+	mit->mit_pending = 0;
+	mit->mit_ring_idx = idx;
+	mit->mit_na = na;*/
+}
+
+static void netmap_mitigation_start(struct nm_generic_mit *mit)
+{
+	//hrtimer_start(&mit->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
+}
+
+static void netmap_mitigation_restart(struct nm_generic_mit *mit)
+{
+	//hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
+}
+
+static int netmap_mitigation_active(struct nm_generic_mit *mit)
+{
+	return 1;
+	//return hrtimer_active(&mit->mit_timer);
+}
+
+static void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
+{
+	//hrtimer_cancel(&mit->mit_timer);
+}
+
+static int netmap_get_mbuf(uint32_t buf_size)
+{
+	return 0;
+}
+
+//#define	mbuf													my_packet
+
 #define	MBUF_LEN(m)													m->m_len
 #define m_devget(slot_addr, slot_len, offset, dev, fn)				NULL
 #define m_freem(packet)													//NdisFreePacket(packet)	
@@ -301,7 +397,6 @@ void if_rele(struct net_device *ifp);
 NET_BUFFER s = NdisAllocateNetBuffer(_dev, _len);		\
 return s;												\
 })*/
-int netmap_get_mbuf();
 
 /*********************************************************
 *                   ATOMIC OPERATIONS     		         *  

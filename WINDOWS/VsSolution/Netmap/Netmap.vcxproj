@@ -226,10 +226,11 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>_X86_=1;i386=1;STD_CALL;%(PreprocessorDefinitions);IS_KERNEL</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_X86_=1;i386=1;STD_CALL;%(PreprocessorDefinitions);IS_KERNEL;NDIS60=1;</PreprocessorDefinitions>
       <Optimization>Disabled</Optimization>
       <InlineFunctionExpansion>Default</InlineFunctionExpansion>
       <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
     </ClCompile>
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)\ntoskrnl.lib;$(DDK_LIB_PATH)\hal.lib;$(DDK_LIB_PATH)\wmilib.lib;</AdditionalDependencies>
@@ -322,6 +323,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\sys\dev\netmap\netmap.c" />
+    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_generic.c" />
     <ClCompile Include="..\..\..\sys\dev\netmap\netmap_mbq.c" />
     <ClCompile Include="..\..\..\sys\dev\netmap\netmap_mem2.c" />
     <ClCompile Include="..\..\..\sys\dev\netmap\netmap_monitor.c" />

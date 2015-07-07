@@ -559,15 +559,28 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NETMAP_MMAP CTL_CODE( IOCTL_TYPE, 0x960, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
 #define NETMAP_POLL CTL_CODE( IOCTL_TYPE, 0x962, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 
+	//Definition of internal driver-to-driver ioctl codes
+#define NETMAP_KERNEL_XCHANGE_POINTERS CTL_CODE( IOCTL_TYPE, 0x980, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_KERNEL_GET_DEV_BY_NAME CTL_CODE( IOCTL_TYPE, 0x981, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 
 #define DRIVER_FUNC_INSTALL     0x01
 #define DRIVER_FUNC_REMOVE      0x02
 
 #define DRIVER_NAME				"netmap"
 
+//This linknames are for the Netmap Core Driver
 #define NT_DEVICE_NAME			L"\\Device\\NETMAP"
 #define DOS_DEVICE_NAME			L"\\DosDevices\\netmap"
 
+//This linknames are for the NDIS driver
+#define NETMAP_NDIS_LINKNAME_STRING             L"\\DosDevices\\NMAPNDIS"//L"\\DosDevices\\NDISLWF"
+#define NETMAP_NDIS_NTDEVICE_STRING             L"\\Device\\NMAPNDIS"//L"\\Device\\NDISLWF"
+
+typedef struct _FUNCTION_POINTER_XCHANGE
+{
+	PVOID       pTxPointer;
+	int(*pRxPointer)(int);
+} FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
 //Definition of a structure used to pass a virtual address within an IOCTL
 typedef struct _MEMORY_ENTRY
 {

@@ -54,6 +54,9 @@
     <ClCompile Include="..\..\..\sys\dev\netmap\netmap_monitor.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_generic.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\win_glue.h">

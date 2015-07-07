@@ -42,6 +42,10 @@ DRIVER_DISPATCH ioctlClose;
 __drv_dispatchType(IRP_MJ_DEVICE_CONTROL)
 DRIVER_DISPATCH ioctlDeviceControl;
 
+__drv_dispatchType(IRP_MJ_INTERNAL_DEVICE_CONTROL)
+DRIVER_DISPATCH ioctlInternalDeviceControl;
+
+
 DRIVER_UNLOAD ioctlUnloadDriver;
 
 //--------------------------------END Device driver routines
@@ -294,6 +298,66 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	return NtStatus;
 }
 
+int testCallFunctionFromRemote(int value)
+{
+	DbgPrint("Netmap.sys: called right function\n");
+	return 1;
+}
+
+static struct net_device* dev_get_by_name(const char* name)
+{
+	OBJECT_ATTRIBUTES   objectAttributes;
+	UNICODE_STRING      ObjectName;
+	IO_STATUS_BLOCK		iosb;
+	PFILE_OBJECT		pFileObject = NULL;
+	PDEVICE_OBJECT		pNdisObj;
+	NTSTATUS Status;
+	RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
+	InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+	Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &pNdisObj);
+	if (NT_SUCCESS(Status))
+	{
+		PIRP pIrp = NULL;
+		pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_GET_DEV_BY_NAME,
+			pNdisObj,
+			NULL,
+			0,
+			NULL,
+			0,
+			TRUE,
+			NULL,
+			&iosb);
+		IoCallDriver(pNdisObj, pIrp);
+	}
+	return NULL;
+}
+
+NTSTATUS ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+{
+	NTSTATUS NtStatus = STATUS_SUCCESS;
+	PIO_STACK_LOCATION irpSp = IoGetCurrentIrpStackLocation(Irp);
+	FUNCTION_POINTER_XCHANGE *data;
+	switch (irpSp->Parameters.DeviceIoControl.IoControlCode)
+	{
+		case NETMAP_KERNEL_XCHANGE_POINTERS:
+			data = Irp->AssociatedIrp.SystemBuffer;
+			data->pRxPointer = &testCallFunctionFromRemote;
+			RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, data, sizeof(FUNCTION_POINTER_XCHANGE));
+			Irp->IoStatus.Information = sizeof(FUNCTION_POINTER_XCHANGE);
+#if 0
+			DbgPrint("Netmap.sys: NETMAP_KERNEL_XCHANGE_POINTERS - Internal device control called successfully (0x%p)\n", &testCallFunctionFromRemote);
+			DbgPrint("Netmap.sys: Data->pRxPointer (0x%p) &(0x%p)\n", data->pRxPointer, &data->pRxPointer);
+#endif
+			break;
+		default:
+			DbgPrint("Netmap.sys: wrong request issued! (%i)", irpSp->Parameters.DeviceIoControl.IoControlCode);
+			NtStatus = STATUS_INVALID_DEVICE_REQUEST;
+	}	
+	Irp->IoStatus.Status = NtStatus;
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	return NtStatus;
+}
+
 static NTSTATUS windows_netmap_mmap(PIRP Irp)
 {
 	PVOID       		buffer = NULL;
@@ -404,38 +468,14 @@ int copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
 
 NTSTATUS ReadSync(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-	PIO_STACK_LOCATION  irpSp;
-	KPRIORITY increment = 0;
-	int events = POLLIN;
-	//KeResetEvent(notes->RX_EVENT);
-	irpSp = IoGetCurrentIrpStackLocation(Irp); 
-	//struct events_notifications *notes = irpSp->FileObject->FsContext2;
-	netmap_poll(NULL, events, irpSp);
-	/*{
-		KeSetEvent(notes->TX_EVENT, increment, FALSE);	
-	}*/
-	
-
-	//DbgPrint("Netmap.sys: ReadSync invoked\n");
+	DbgPrint("Netmap.sys: ReadSync invoked\n");
 	NTSTATUS NtStatus = STATUS_SUCCESS;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return NtStatus;
 }
 NTSTATUS WriteSync(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-	PIO_STACK_LOCATION  irpSp;
-	KPRIORITY increment = 0;
-	//KeResetEvent(notes->TX_EVENT);
-	int events = POLLOUT;
-	irpSp = IoGetCurrentIrpStackLocation(Irp);
-	//struct events_notifications *notes = irpSp->FileObject->FsContext2;
-	netmap_poll(NULL, events, irpSp);
-	/*{
-		KeSetEvent(notes->RX_EVENT, increment, FALSE);	
-	}*/
-	
-
-	//DbgPrint("Netmap.sys: WriteSync invoked\n");
+	DbgPrint("Netmap.sys: WriteSync invoked\n");
 	NTSTATUS NtStatus = STATUS_SUCCESS;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return NtStatus;
@@ -481,6 +521,7 @@ NTSTATUS DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING Regi
     DriverObject->MajorFunction[IRP_MJ_CREATE] = ioctlCreate;
     DriverObject->MajorFunction[IRP_MJ_CLOSE] = ioctlClose;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = ioctlDeviceControl;
+	DriverObject->MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL] = ioctlInternalDeviceControl;
 	DriverObject->MajorFunction[IRP_MJ_READ] = ReadSync;
 	DriverObject->MajorFunction[IRP_MJ_WRITE] = WriteSync;
     DriverObject->DriverUnload = ioctlUnloadDriver;
@@ -529,7 +570,8 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 struct net_device * ifunit_ref(const char *name)
 {
 #ifdef _WIN32
-	return NULL; //dev_get_by_name(name);
+	return dev_get_by_name(name);
+	//NdisSendNetBufferLists()
 #else
 #ifndef NETMAP_LINUX_HAVE_INIT_NET
 	return dev_get_by_name(name);
