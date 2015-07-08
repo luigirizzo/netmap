@@ -1493,7 +1493,7 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 			}
 		        /* ring info */
 		        *(uint16_t *)(uintptr_t)&ring->ringid = kring->ring_id;
-		        *(uint16_t *)(uintptr_t)&ring->dir = 0;
+		        *(uint16_t *)(uintptr_t)&ring->dir = kring->tx;
 		}
 	}
 

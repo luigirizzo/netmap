@@ -558,7 +558,19 @@ do_ring()
 	printf("num_slots   %u\n", ring->num_slots);
 	printf("nr_buf_size %u\n", ring->nr_buf_size);
 	printf("ringid      %d\n", ring->ringid);
-	printf("dir         %s\n", (ring->dir ? "rx" : "tx"));
+	printf("dir         %d [", ring->dir);
+	switch (ring->dir) {
+	case 1:
+		printf("rx");
+		break;
+	case 0:
+		printf("tx");
+		break;
+	default:
+		printf("??");
+		break;
+	}
+	printf("]\n");
 	printf("head        %u\n", ring->head);
 	printf("cur         %u\n", ring->head);
 	printf("tail        %u\n", ring->head);
