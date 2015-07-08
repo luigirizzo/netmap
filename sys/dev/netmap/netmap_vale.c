@@ -643,7 +643,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		i = b->bdg_port_index[j];
 		vpna = b->bdg_ports[i];
 		// KASSERT(na != NULL);
-		D("checking %s", vpna->up.name);
+		ND("checking %s", vpna->up.name);
 		if (!strcmp(vpna->up.name, nr_name)) {
 			netmap_adapter_get(&vpna->up);
 			ND("found existing if %s refs %d", nr_name)

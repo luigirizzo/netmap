@@ -1331,7 +1331,7 @@ netmap_mem_global_config(struct netmap_mem_d *nmd)
 	if (!netmap_memory_config_changed(nmd))
 		goto out;
 
-	D("reconfiguring");
+	ND("reconfiguring");
 
 	if (nmd->flags & NETMAP_MEM_FINALIZED) {
 		/* reset previous allocation */

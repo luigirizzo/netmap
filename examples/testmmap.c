@@ -1344,6 +1344,7 @@ main(int argc, char **argv)
 {
 	(void) argc;
 	(void) argv;
+	printf("testmmap\n");
 	cmd_loop();
 	return 0;
 }

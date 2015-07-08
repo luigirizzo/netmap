@@ -310,7 +310,7 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 		int i;
 
 		/* case 1) above */
-		D("%p: case 1, create everything", na);
+		ND("%p: case 1, create everything", na);
 		error = netmap_krings_create(na, 0);
 		if (error)
 			goto err;
