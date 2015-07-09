@@ -179,10 +179,6 @@ struct paravirt_csb {
 /*
  * Structures used for ptnetmap configuration
  */
-struct ptnetmap_cfg_ring {
-	uint32_t ioeventfd;
-	uint32_t irqfd;
-};
 
 /*
  * struct ptnetmap_cfg overlaps struct nmreq
@@ -195,8 +191,8 @@ struct ptnetmap_cfg {
         uint32_t features;
 #define PTNETMAP_CFG_FEAT_CSB           0x0001
 #define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
-	struct ptnetmap_cfg_ring tx_ring;
-	struct ptnetmap_cfg_ring rx_ring;
+	struct nm_eventfd_cfg_ring tx_ring;
+	struct nm_eventfd_cfg_ring rx_ring;
 	uint8_t pad[2];                 /* padding to overlap strct nmreq */
 	uint16_t nr_cmd;                /* needed in netmap_ioctl() */
         void *csb;   /* CSB */
@@ -275,21 +271,6 @@ ptn_sub(uint32_t l_elem, uint32_t r_elem, uint32_t num_slots)
 #ifdef WITH_PTNETMAP_HOST
 /* ptnetmap kernel thread routines */
 enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
-struct ptn_kthread; /* ptnetmap kthread - opaque */
-typedef void (*ptn_kthread_worker_fn_t)(void *data);
-/* ptnetmap kthread configuration */
-struct ptn_kthread_cfg {
-    enum ptn_kthread_t type;            /* kthread TX or RX */
-    struct ptnetmap_cfg_ring ring;      /* ring event fd */
-    ptn_kthread_worker_fn_t worker_fn;  /* worker function */
-    void *worker_private;               /* worker parameter */
-};
-struct ptn_kthread *ptn_kthread_create(struct ptn_kthread_cfg *);
-int ptn_kthread_start(struct ptn_kthread *);
-void ptn_kthread_stop(struct ptn_kthread *);
-void ptn_kthread_delete(struct ptn_kthread *);
-void ptn_kthread_wakeup_worker(struct ptn_kthread *ptk);
-void ptn_kthread_send_irq(struct ptn_kthread *);
 
 /* Functions to read and write CSB fields in the host */
 #if defined (linux)

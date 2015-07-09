@@ -1694,6 +1694,29 @@ int nm_vi_persist(const char *, struct ifnet **);
 void nm_vi_detach(struct ifnet *);
 void nm_vi_init_index(void);
 
+/*
+ * kernel thread routines
+ */
+struct nm_eventfd_cfg_ring {
+	uint32_t ioeventfd;
+	uint32_t irqfd;
+};
+struct nm_kthread; /* OS-specific kthread - opaque */
+typedef void (*nm_kthread_worker_fn_t)(void *data);
+/* kthread configuration */
+struct nm_kthread_cfg {
+	long type;				/* kthread type */
+	struct nm_eventfd_cfg_ring ring;	/* ring event fd */
+	nm_kthread_worker_fn_t worker_fn;	/* worker function */
+	void *worker_private;			/* worker parameter */
+};
+/* kthread configuration */
+struct nm_kthread *nm_kthread_create(struct nm_kthread_cfg *cfg);
+int nm_kthread_start(struct nm_kthread *);
+void nm_kthread_stop(struct nm_kthread *);
+void nm_kthread_delete(struct nm_kthread *);
+void nm_kthread_wakeup_worker(struct nm_kthread *nmk);
+void nm_kthread_send_irq(struct nm_kthread *);
 
 #ifdef WITH_PTNETMAP_HOST
 /*

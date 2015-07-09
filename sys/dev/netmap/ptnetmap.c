@@ -113,7 +113,7 @@ rate_batch_info_update(struct rate_batch_info *bf, uint32_t pre_tail, uint32_t a
 #endif /* RATE */
 
 struct ptnetmap_state {
-    struct ptn_kthread *ptk_tx, *ptk_rx;        /* kthreads pointers */
+    struct nm_kthread *ptk_tx, *ptk_rx;        /* kthreads pointers */
 
     struct ptnetmap_cfg config;                      /* rings configuration */
     struct paravirt_csb __user *csb;            /* shared page with the guest */
@@ -288,7 +288,7 @@ ptnetmap_tx_handler(void *data)
         if (work && ptnetmap_tx_get_guestkick(csb)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptnetmap_tx_set_guestkick(csb, 0);
-            ptn_kthread_send_irq(pts->ptk_tx);
+            nm_kthread_send_irq(pts->ptk_tx);
             IFRATE(pts->rate_ctx.new.htxk++);
             work = false;
         }
@@ -337,7 +337,7 @@ leave:
     /* Send kick to the guest if it needs them */
     if (work && ptnetmap_tx_get_guestkick(csb)) {
         ptnetmap_tx_set_guestkick(csb, 0);
-        ptn_kthread_send_irq(pts->ptk_tx);
+        nm_kthread_send_irq(pts->ptk_tx);
         IFRATE(pts->rate_ctx.new.htxk++);
     }
 }
@@ -479,7 +479,7 @@ ptnetmap_rx_handler(void *data)
         if (work && ptnetmap_rx_get_guestkick(csb)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptnetmap_rx_set_guestkick(csb, 0);
-            ptn_kthread_send_irq(pts->ptk_rx);
+            nm_kthread_send_irq(pts->ptk_rx);
             IFRATE(pts->rate_ctx.new.hrxk++);
             work = false;
         }
@@ -529,7 +529,7 @@ leave:
     /* Send kick to the guest if it needs them */
     if (work && ptnetmap_rx_get_guestkick(csb)) {
         ptnetmap_rx_set_guestkick(csb, 0);
-        ptn_kthread_send_irq(pts->ptk_rx);
+        nm_kthread_send_irq(pts->ptk_rx);
         IFRATE(pts->rate_ctx.new.hrxk++);
     }
 }
@@ -540,7 +540,7 @@ ptnetmap_tx_notify(struct ptnetmap_state *pts) {
     if (unlikely(!pts))
         return;
     ND("TX notify");
-    ptn_kthread_wakeup_worker(pts->ptk_tx);
+    nm_kthread_wakeup_worker(pts->ptk_tx);
     IFRATE(pts->rate_ctx.new.btxwu++);
 }
 
@@ -549,7 +549,7 @@ ptnetmap_rx_notify(struct ptnetmap_state *pts) {
     if (unlikely(!pts))
         return;
     ND("RX notify");
-    ptn_kthread_wakeup_worker(pts->ptk_rx);
+    nm_kthread_wakeup_worker(pts->ptk_rx);
     IFRATE(pts->rate_ctx.new.brxwu++);
 }
 
@@ -614,24 +614,24 @@ err:
 static int
 ptnetmap_create_kthreads(struct ptnetmap_state *pts)
 {
-    struct ptn_kthread_cfg ptk_cfg;
+    struct nm_kthread_cfg nmk_cfg;
 
-    ptk_cfg.worker_private = pts;
+    nmk_cfg.worker_private = pts;
 
     /* TX kthread */
-    ptk_cfg.type = PTK_TX;
-    ptk_cfg.ring = pts->config.tx_ring;
-    ptk_cfg.worker_fn = ptnetmap_tx_handler;
-    pts->ptk_tx = ptn_kthread_create(&ptk_cfg);
+    nmk_cfg.type = PTK_TX;
+    nmk_cfg.ring = pts->config.tx_ring;
+    nmk_cfg.worker_fn = ptnetmap_tx_handler;
+    pts->ptk_tx = nm_kthread_create(&nmk_cfg);
     if (pts->ptk_tx == NULL) {
         goto err;
     }
 
     /* RX kthread */
-    ptk_cfg.type = PTK_RX;
-    ptk_cfg.ring = pts->config.rx_ring;
-    ptk_cfg.worker_fn = ptnetmap_rx_handler;
-    pts->ptk_rx = ptn_kthread_create(&ptk_cfg);
+    nmk_cfg.type = PTK_RX;
+    nmk_cfg.ring = pts->config.rx_ring;
+    nmk_cfg.worker_fn = ptnetmap_rx_handler;
+    pts->ptk_rx = nm_kthread_create(&nmk_cfg);
     if (pts->ptk_rx == NULL) {
         goto err;
     }
@@ -639,7 +639,7 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts)
     return 0;
 err:
     if (pts->ptk_tx) {
-        ptn_kthread_delete(pts->ptk_tx);
+        nm_kthread_delete(pts->ptk_tx);
         pts->ptk_tx = NULL;
     }
     return EFAULT;
@@ -659,14 +659,14 @@ ptnetmap_start_kthreads(struct ptnetmap_state *pts)
     pts->stopped = false;
 
     /* TX kthread */
-    error = ptn_kthread_start(pts->ptk_tx);
+    error = nm_kthread_start(pts->ptk_tx);
     if (error) {
         return error;
     }
     /* RX kthread */
-    error = ptn_kthread_start(pts->ptk_rx);
+    error = nm_kthread_start(pts->ptk_rx);
     if (error) {
-        ptn_kthread_stop(pts->ptk_tx);
+        nm_kthread_stop(pts->ptk_tx);
         return error;
     }
 
@@ -683,9 +683,9 @@ ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
     pts->stopped = true;
 
     /* TX kthread */
-    ptn_kthread_stop(pts->ptk_tx);
+    nm_kthread_stop(pts->ptk_tx);
     /* RX kthread */
-    ptn_kthread_stop(pts->ptk_rx);
+    nm_kthread_stop(pts->ptk_rx);
 }
 
 static int nm_pt_host_notify(struct netmap_kring *, int);
@@ -796,8 +796,8 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     pts->configured = false;
 
     /* delete kthreads */
-    ptn_kthread_delete(pts->ptk_tx);
-    ptn_kthread_delete(pts->ptk_rx);
+    nm_kthread_delete(pts->ptk_tx);
+    nm_kthread_delete(pts->ptk_rx);
 
     IFRATE(del_timer(&pts->rate_ctx.timer));
 
