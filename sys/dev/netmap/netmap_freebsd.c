@@ -539,7 +539,7 @@ netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, vo
 	*nm_paddr = rman_get_start(ptn_dev->pci_mem);
 	*nm_addr = rman_get_virtual(ptn_dev->pci_mem);
 
-	D("=== BAR %d start %llx len %llx mem_size %x ===",
+	D("=== BAR %d start %lx len %lx mem_size %x ===",
 			PTNETMAP_MEM_PCI_BAR,
 			*nm_paddr,
 			rman_get_size(ptn_dev->pci_mem),

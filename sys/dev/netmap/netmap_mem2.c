@@ -1771,7 +1771,7 @@ netmap_mem_pt_guest_read_shared_info(struct netmap_mem_d *nmd)
 		}
 	}
 
-        vaddr = (char *)(pv->nm_addr + nms_info->buf_pool_offset);
+        vaddr = (char *)(pv->nm_addr) + nms_info->buf_pool_offset;
 	paddr = pv->nm_paddr + nms_info->buf_pool_offset;
 
 	for (i = 0; i < nbuffers; i++) {
@@ -1908,7 +1908,7 @@ netmap_mem_pt_guest_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
 
-	return vaddr - pv->nm_addr;
+	return (const char *)(vaddr) - (char *)(pv->nm_addr);
 }
 
 static void
@@ -1939,7 +1939,7 @@ netmap_mem_pt_guest_if_new(struct netmap_adapter *na)
 	if (csb == NULL)
 		return NULL;
 
-	return (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
+	return (struct netmap_if *)((char *)(pv->nm_addr) + csb->nifp_offset);
 }
 
 static void
@@ -1968,7 +1968,7 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 	NMA_LOCK(na->nm_mem);
 
 	/* point each kring to the corresponding backend ring */
-	nifp = (struct netmap_if *)(pv->nm_addr + csb->nifp_offset);
+	nifp = (struct netmap_if *)((char *)pv->nm_addr + csb->nifp_offset);
 	for (i = 0; i <= na->num_tx_rings; i++) {
 		struct netmap_kring *kring = na->tx_rings + i;
 		if (kring->ring)
