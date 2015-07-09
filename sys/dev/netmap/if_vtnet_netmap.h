@@ -214,8 +214,6 @@ vtnet_netmap_txsync(struct netmap_kring *kring, int flags)
 		virtqueue_postpone_intr(vq, VQ_POSTPONE_SHORT);
 	}
 
-//out:
-
         return 0;
 }
 
@@ -338,7 +336,6 @@ vtnet_netmap_rxsync(struct netmap_kring *kring, int flags)
 		/* After draining the queue may need an intr from the hypervisor */
         	vtnet_rxq_enable_intr(rxq);
 	}
-
 
         ND("[C] h %d c %d t %d hwcur %d hwtail %d",
 		ring->head, ring->cur, ring->tail,

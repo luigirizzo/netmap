@@ -302,7 +302,6 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 
-
 	return 0;
 }
 
@@ -464,7 +463,6 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 #endif /* NIC_PARAVIRT */
 		E1000_WRITE_REG(&adapter->hw, E1000_RDT(0), nic_i);
 	}
-
 
 	return 0;
 
