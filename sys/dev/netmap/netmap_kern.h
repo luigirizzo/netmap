@@ -1717,6 +1717,7 @@ void nm_kthread_stop(struct nm_kthread *);
 void nm_kthread_delete(struct nm_kthread *);
 void nm_kthread_wakeup_worker(struct nm_kthread *nmk);
 void nm_kthread_send_irq(struct nm_kthread *);
+void nm_kthread_set_affinity(struct nm_kthread *, int);
 
 #ifdef WITH_PTNETMAP_HOST
 /*

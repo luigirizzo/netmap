@@ -50,6 +50,10 @@
 #include <sys/malloc.h>
 #include <sys/socket.h> /* sockaddrs */
 #include <sys/selinfo.h>
+#include <sys/kthread.h> /* kthread_add() */
+#include <sys/proc.h> /* PROC_LOCK() */
+#include <sys/unistd.h> /* RFNOWAIT */
+#include <sys/sched.h> /* sched_bind() */
 #include <net/if.h>
 #include <net/if_var.h>
 #include <net/if_types.h> /* IFT_ETHER */
@@ -891,6 +895,199 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 		NMG_UNLOCK();
 	}
 	return error;
+}
+
+/******************** kthread wrapper ****************/
+struct nm_kthread_ctx {
+	void *ioevent_file;
+	void *irq_file;
+#if 0 /* to be dane after eventfd implementation */
+	/* files to exchange notifications */
+	struct file *ioevent_file;          /* notification from guest */
+	struct file *irq_file;              /* notification to guest (interrupt) */
+	struct eventfd_ctx  *irq_ctx;
+
+	/* poll ioeventfd to receive notification from the guest */
+	poll_table poll_table;
+	wait_queue_head_t *waitq_head;
+	wait_queue_t waitq;
+#endif /* 0 */
+
+	/* worker function and parameter */
+	nm_kthread_worker_fn_t worker_fn;
+	void *worker_private;
+
+	struct nm_kthread *nmk;
+
+	/* integer to manage multiple worker contexts (e.g., RX or TX on ptnetmap) */
+	long type;
+};
+
+struct nm_kthread {
+	//struct mm_struct *mm;
+	struct thread *worker;
+	struct mtx worker_lock;
+	uint64_t scheduled; /* currently not used */
+	struct nm_kthread_ctx worker_ctx;
+	int affinity;
+};
+
+static
+int is_suspended(void)
+{
+	struct proc *p;
+	struct thread *td;
+	int ret = 0;
+
+	td = curthread;
+	p = td->td_proc;
+
+	if ((td->td_pflags & TDP_KTHREAD) == 0)
+		panic("%s: curthread is not a valid kthread", __func__);
+	PROC_LOCK(p);
+	while (td->td_flags & TDF_KTH_SUSP) {
+		wakeup(&td->td_flags);
+		msleep(&td->td_flags, &p->p_mtx, PPAUSE, "ktsusp", 0);
+		ret = 1;
+	}
+	PROC_UNLOCK(p);
+	return ret;
+}
+
+static void
+nm_kthread_worker(void *data)
+{
+	struct nm_kthread *nmk = data;
+	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
+
+	thread_lock(curthread);
+	sched_bind(curthread, nmk->affinity);
+	thread_unlock(curthread);
+	for (; !is_suspended();) {
+		ctx->worker_fn(ctx->worker_private); /* worker_body */
+	}
+	kthread_exit();
+}
+
+static int
+nm_kthread_open_files(struct nm_kthread *nmk, struct nm_eventfd_cfg_ring *ring_cfg)
+{
+	(void)nmk;
+	(void)ring_cfg;
+	return 0;
+}
+
+static void
+nm_kthread_close_files(struct nm_kthread *nmk)
+{
+	(void)nmk;
+}
+
+static void
+nm_kthread_init_poll(struct nm_kthread *nmk, struct nm_kthread_ctx *ctx)
+{
+	(void)nmk;
+	(void)ctx;
+	return;
+}
+
+static int
+nm_kthread_start_poll(struct nm_kthread_ctx *ctx, void *file)
+{
+	(void)ctx;
+	(void)file;
+	return 0;
+}
+
+static void
+nm_kthread_stop_poll(struct nm_kthread_ctx *ctx)
+{
+	(void)ctx;
+}
+
+void
+nm_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
+{
+	nmk->affinity = affinity;
+}
+
+struct nm_kthread *
+nm_kthread_create(struct nm_kthread_cfg *cfg)
+{
+	struct nm_kthread *nmk = NULL;
+	int error;
+
+	nmk = malloc(sizeof(*nmk),  M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (!nmk)
+		return NULL;
+
+	mtx_init(&nmk->worker_lock, "nm_kthread lock", NULL, MTX_DEF);
+	nmk->worker_ctx.worker_fn = cfg->worker_fn;
+	nmk->worker_ctx.worker_private = cfg->worker_private;
+	nmk->worker_ctx.type = cfg->type;
+
+	/* open event fd */
+	error = nm_kthread_open_files(nmk, &cfg->ring);
+	if (error)
+		goto err;
+	nm_kthread_init_poll(nmk, &nmk->worker_ctx);
+
+	return nmk;
+err:
+	free(nmk, M_DEVBUF);
+	return NULL;
+}
+
+int
+nm_kthread_start(struct nm_kthread *nmk)
+{
+	int error = 0;
+
+	if (nmk->worker) {
+		return EBUSY;
+	}
+
+	error = kthread_add(nm_kthread_worker, nmk, NULL,
+			&nmk->worker, RFNOWAIT /* to be checked */, 0, "nm-kthread-%ld",
+			nmk->worker_ctx.type);
+	if (error)
+		goto err;
+	D("started td 0x%p", nmk->worker);
+
+	error = nm_kthread_start_poll(&nmk->worker_ctx, nmk->worker_ctx.ioevent_file);
+	if (error)
+		goto err_kstop;
+	return 0;
+err_kstop:
+	kthread_suspend(nmk->worker, 0);
+err:
+	nmk->worker = NULL;
+	return error;
+}
+
+void
+nm_kthread_stop(struct nm_kthread *nmk)
+{
+	if (!nmk->worker) {
+		return;
+	}
+	nm_kthread_stop_poll(&nmk->worker_ctx);
+	kthread_suspend(nmk->worker, 0);
+	nmk->worker = NULL;
+}
+
+void
+nm_kthread_delete(struct nm_kthread *nmk)
+{
+	if (!nmk)
+		return;
+	if (nmk->worker) {
+		nm_kthread_stop(nmk);
+	}
+
+	nm_kthread_close_files(nmk);
+
+	free(nmk, M_DEVBUF);
 }
 
 /******************** kqueue support ****************/
