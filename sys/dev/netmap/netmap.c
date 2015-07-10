@@ -1448,7 +1448,7 @@ out:
  *
  * hwcur, rhead, rtail and hwtail are reliable
  */
-u_int
+static u_int
 nm_txsync_prologue(struct netmap_kring *kring)
 {
 #define NM_ASSERT(t) if (t) { D("fail " #t); goto error; }
@@ -1524,7 +1524,7 @@ error:
  * hwcur and hwtail are reliable.
  *
  */
-u_int
+static u_int
 nm_rxsync_prologue(struct netmap_kring *kring)
 {
 	struct netmap_ring *ring = kring->ring;
@@ -2019,6 +2019,41 @@ err_drop_mem:
 err:
 	priv->np_na = NULL;
 	return error;
+}
+
+
+/*
+ * update kring and ring at the end of txsync.
+ */
+static inline void
+nm_txsync_finalize(struct netmap_kring *kring)
+{
+	/* update ring tail to what the kernel knows */
+	kring->ring->tail = kring->rtail = kring->nr_hwtail;
+
+	/* note, head/rhead/hwcur might be behind cur/rcur
+	 * if no carrier
+	 */
+	ND(5, "%s now hwcur %d hwtail %d head %d cur %d tail %d",
+		kring->name, kring->nr_hwcur, kring->nr_hwtail,
+		kring->rhead, kring->rcur, kring->rtail);
+}
+
+
+/*
+ * update kring and ring at the end of rxsync
+ */
+static inline void
+nm_rxsync_finalize(struct netmap_kring *kring)
+{
+	/* tell userspace that there might be new packets */
+	//struct netmap_ring *ring = kring->ring;
+	ND("head %d cur %d tail %d -> %d", ring->head, ring->cur, ring->tail,
+		kring->nr_hwtail);
+	kring->ring->tail = kring->rtail = kring->nr_hwtail;
+	/* make a copy of the state for next round */
+	kring->rhead = kring->ring->head;
+	kring->rcur = kring->ring->cur;
 }
 
 

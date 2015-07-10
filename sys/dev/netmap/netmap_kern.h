@@ -1026,55 +1026,6 @@ nm_clear_native_flags(struct netmap_adapter *na)
 }
 
 
-/*
- * validates parameters in the ring/kring, returns a value for head
- * If any error, returns ring_size to force a reinit.
- */
-uint32_t nm_txsync_prologue(struct netmap_kring *);
-
-
-/*
- * validates parameters in the ring/kring, returns a value for head
- * If any error, returns ring_size lim to force a reinit.
- */
-uint32_t nm_rxsync_prologue(struct netmap_kring *);
-
-
-/*
- * update kring and ring at the end of txsync.
- */
-static inline void
-nm_txsync_finalize(struct netmap_kring *kring)
-{
-	/* update ring tail to what the kernel knows */
-	kring->ring->tail = kring->rtail = kring->nr_hwtail;
-
-	/* note, head/rhead/hwcur might be behind cur/rcur
-	 * if no carrier
-	 */
-	ND(5, "%s now hwcur %d hwtail %d head %d cur %d tail %d",
-		kring->name, kring->nr_hwcur, kring->nr_hwtail,
-		kring->rhead, kring->rcur, kring->rtail);
-}
-
-
-/*
- * update kring and ring at the end of rxsync
- */
-static inline void
-nm_rxsync_finalize(struct netmap_kring *kring)
-{
-	/* tell userspace that there might be new packets */
-	//struct netmap_ring *ring = kring->ring;
-	ND("head %d cur %d tail %d -> %d", ring->head, ring->cur, ring->tail,
-		kring->nr_hwtail);
-	kring->ring->tail = kring->rtail = kring->nr_hwtail;
-	/* make a copy of the state for next round */
-	kring->rhead = kring->ring->head;
-	kring->rcur = kring->ring->cur;
-}
-
-
 /* check/fix address and len in tx rings */
 #if 1 /* debug version */
 #define	NM_CHECK_ADDR_LEN(_na, _a, _l)	do {				\
