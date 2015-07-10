@@ -635,7 +635,7 @@ linux_netmap_open(struct inode *inode, struct file *file)
 			      M_NOWAIT | M_ZERO);
 	if (priv == NULL)
 		return -ENOMEM;
-
+	priv->np_refs = 1;
 	file->private_data = priv;
 
 	return (0);
