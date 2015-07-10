@@ -283,6 +283,20 @@ void do_access()
 	tmp1 = *p;
 }
 
+void do_dup()
+{
+	char *arg = nextarg();
+	int fd = last_fd;
+	int ret;
+
+	if (arg) {
+		fd = atoi(arg);
+	}
+	ret = dup(fd);
+	output_err(ret, "dup(%d)=%d", fd, ret);
+
+}
+
 void do_mmap()
 {
 	size_t memsize;
@@ -1081,6 +1095,7 @@ struct cmd_def commands[] = {
 	{ "txsync",	do_txsync,	},
 	{ "rxsync",	do_rxsync,	},
 #endif /* TEST_NETMAP */
+	{ "dup",	do_dup,		},
 	{ "mmap",	do_mmap,	},
 	{ "access",	do_access,	},
 	{ "munmap",	do_munmap,	},
