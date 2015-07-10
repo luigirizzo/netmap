@@ -1483,7 +1483,7 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
  *
  * np_refs counts the number of references to the structure: one for the fd,
  * plus (on FreeBSD) one for each active mmap which we track ourselves
- * (they are not unmapped on close(), unlike linux).
+ * (linux automatically tracks them, but FreeBSD does not).
  * np_refs is protected by NMG_LOCK.
  *
  * Read access to the structure is lock free, because ni_nifp once set

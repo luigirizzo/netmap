@@ -975,8 +975,7 @@ netmap_dtor_locked(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
 
-	/* number of active mmaps on this fd (FreeBSD only) */
-	D("priv->np_refs %d", priv->np_refs);
+	/* number of active references to this fd */
 	if (--priv->np_refs > 0) {
 		return 0;
 	}
