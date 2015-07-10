@@ -663,6 +663,8 @@ Alternatively, you can pass a --driver-suffix= option to configure.
 	EOF
 done
 
+# get the drivers that are still enabled
+s_drivers=$(drv print)
 
 # add v1000 if enabled
 if subsys enabled v1000; then
