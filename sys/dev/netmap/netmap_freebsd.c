@@ -836,8 +836,8 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 		 * then the module can not be unloaded.
 		 */
 		if (netmap_use_count) {
-			D("netmap module can not be unloaded -
-					netmap_use_count: %d", netmap_use_count);
+			D("netmap module can not be unloaded - netmap_use_count: %d",
+					netmap_use_count);
 			error = EBUSY;
 			break;
 		}
