@@ -1697,10 +1697,6 @@ void nm_vi_init_index(void);
 /*
  * kernel thread routines
  */
-struct nm_eventfd_cfg_ring {
-	uint32_t ioeventfd;
-	uint32_t irqfd;
-};
 struct nm_kthread; /* OS-specific kthread - opaque */
 typedef void (*nm_kthread_worker_fn_t)(void *data);
 /* kthread configuration */

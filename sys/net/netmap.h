@@ -563,4 +563,12 @@ struct nm_ifreq {
 	char nifr_name[IFNAMSIZ];
 	char data[NM_IFRDATA_LEN];
 };
+
+/*
+ * kernel thread config
+ */
+struct nm_eventfd_cfg_ring {
+	uint32_t ioeventfd;
+	uint32_t irqfd;
+};
 #endif /* _NET_NETMAP_H_ */

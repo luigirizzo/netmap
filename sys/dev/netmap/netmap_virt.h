@@ -179,7 +179,6 @@ struct paravirt_csb {
 /*
  * Structures used for ptnetmap configuration
  */
-
 /*
  * struct ptnetmap_cfg overlaps struct nmreq
  * from nr_offset field, but nr_cmd is required in netmap_ioctl()
