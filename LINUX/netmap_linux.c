@@ -637,6 +637,9 @@ linux_netmap_open(struct inode *inode, struct file *file)
 		return -ENOMEM;
 	priv->np_refs = 1;
 	file->private_data = priv;
+	NMG_LOCK();
+	netmap_use_count++;
+	NMG_UNLOCK();
 
 	return (0);
 }
