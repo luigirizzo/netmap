@@ -503,8 +503,9 @@ struct netmap_adapter {
 				 * that cannot be changed
 				 */
 #define NAF_NATIVE      16      /* the adapter is native.
-				 * Virtual ports (vale, pipe, monitor...)
-				 * should never use this flag.
+				 * Virtual ports (non persistent vale ports,
+				 * pipes, monitors...) should never use
+				 * this flag.
 				 */
 #define	NAF_NETMAP_ON	32	/* netmap is active (either native or
 				 * emulated). Where possible (e.g. FreeBSD)
