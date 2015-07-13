@@ -196,7 +196,7 @@
     <TargetName>ndislwf</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
     <TargetName>ndislwf</TargetName>

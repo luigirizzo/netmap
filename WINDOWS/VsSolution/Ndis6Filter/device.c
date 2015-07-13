@@ -9,7 +9,6 @@
 
 #pragma NDIS_INIT_FUNCTION(FilterRegisterDevice)
 
-
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NDIS_STATUS
 FilterRegisterDevice(
@@ -66,7 +65,6 @@ FilterRegisterDevice(
         FilterDeviceExtension->Handle = FilterDriverHandle;
     }
 
-
     DEBUGP(DL_TRACE, "<==FilterRegisterDevice: %x\n", Status);
 
     return (Status);
@@ -102,7 +100,6 @@ FilterDispatch(
     UNREFERENCED_PARAMETER(DeviceObject);
 
     IrpStack = IoGetCurrentIrpStackLocation(Irp);
-
     switch (IrpStack->MajorFunction)
     {
         case IRP_MJ_CREATE:
@@ -124,6 +121,82 @@ FilterDispatch(
     return Status;
 }
 
+
+void pingPacketInsertionTest()
+{
+	int counter = 0;
+	FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
+	PLIST_ENTRY             Link = FilterModuleList.Flink;
+	PMS_FILTER              pFilter = NULL;
+	NDIS_HANDLE				moduleHandle = NULL;
+
+	NDIS_HANDLE				pool;
+
+	PVOID					buffer = NULL;
+	PMDL					pMdl = NULL;
+	PNET_BUFFER_LIST		pBufList = NULL;
+	PNET_BUFFER				pFirst = NULL;
+	PVOID					pNdisPacketMemory = NULL;
+	int						txSize = 74;
+
+	while (Link != NULL && counter<FilterModulesCount)
+	{
+		pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
+		DbgPrint("IfIndex: %i, NDIS_HANDLE: %p\n", pFilter->MiniportIfIndex, pFilter->FilterHandle);
+		Link = Link->Flink;
+		counter += 1;
+		moduleHandle = pFilter->FilterHandle;
+		break;
+	}
+	FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
+
+	buffer = NdisAllocateMemoryWithTagPriority(FilterDriverHandle, txSize, 'TAGT', HighPoolPriority);
+	RtlZeroMemory(buffer, txSize);
+	pMdl = NdisAllocateMdl(FilterDriverHandle, buffer, txSize);
+	if (pMdl == NULL)
+	{
+		DbgPrint("Error allocating MDL!\n");
+		return;
+	}
+	pMdl->Next = NULL;
+
+	pBufList = NdisAllocateNetBufferAndNetBufferList(pFilter->UserSendNetBufferListPool, 
+		0, 0, 
+		pMdl, 0, 
+		txSize);
+	if (pBufList == NULL)
+	{
+		DbgPrint("Error allocating NdisAllocateNetBufferAndNetBufferList!\n");
+		return;
+	}
+	pFirst = NET_BUFFER_LIST_FIRST_NB(pBufList);
+	pNdisPacketMemory = NdisGetDataBuffer(pFirst, txSize, NULL, sizeof(UINT8), 0);
+	if (pNdisPacketMemory == NULL)
+	{
+		DbgPrint("Error allocating pNdisPacketMemory!\n");
+		return;
+	}
+	unsigned char ethPingPacket[74] =
+	  { 0x08, 0x62, 0x66, 0x27, 0xb3, 0x47, 0x00, 0x15,
+		0x5d, 0xc4, 0x37, 0x00, 0x08, 0x00, 0x45, 0x00,
+		0x00, 0x3c, 0x37, 0x3e, 0x00, 0x00, 0x80, 0x01,
+		0xea, 0x6b, 0x0a, 0xd8, 0x01, 0x9a, 0x0a, 0xd8,
+		0x01, 0xce, 0x08, 0x00, 0x4d, 0x5a, 0x00, 0x01,
+		0x00, 0x01, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+		0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e,
+		0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76,
+		0x77, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67,
+		0x68, 0x69 };
+
+	NdisMoveMemory(pNdisPacketMemory, ethPingPacket, 74);
+
+	pBufList->SourceHandle = pFilter->FilterHandle;
+	NdisFSendNetBufferLists(moduleHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0); // Send Flags );
+
+	NdisFreeMdl(pMdl);
+	NdisFreeMemoryWithTagPriority(FilterDriverHandle, buffer, 'TAGT');
+}
+
 _Use_decl_annotations_
 NTSTATUS
 FilterInternalDeviceIoControl(
@@ -139,6 +212,10 @@ PIRP                  Irp
 	{
 		case NETMAP_KERNEL_GET_DEV_BY_NAME:
 			DbgPrint("ndislwf.sys: NETMAP_KERNEL_GET_DEV_BY_NAME recvd\n");
+			break;
+		case NETMAP_KERNEL_TEST_INJECT_PING:
+			DbgPrint("ndislwf.sys: NETMAP_KERNEL_TEST_INJECT_PING recvd\n");
+			pingPacketInsertionTest();
 			break;
 		default:
 			DbgPrint("Netmap.sys: wrong request issued! (%i)", IrpSp->Parameters.DeviceIoControl.IoControlCode);
@@ -170,7 +247,7 @@ FilterDeviceIoControl(
 
 
     UNREFERENCED_PARAMETER(DeviceObject);
-
+	DbgPrint("------------------FilterDeviceIoControl!\n");
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
@@ -256,8 +333,12 @@ FilterDeviceIoControl(
             }
             break;
 
-
+		case NETMAP_KERNEL_TEST_INJECT_PING:
+			DbgPrint("NETMAP_KERNEL_TEST_INJECT_PING request received!\n");
+			pingPacketInsertionTest();
+			break;
         default:
+			DbgPrint("WRONG request received!\n");
             break;
     }
 

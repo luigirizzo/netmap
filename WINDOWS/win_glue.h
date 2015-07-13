@@ -248,26 +248,24 @@ static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 **********************************************************/
 //XXX_ale: I'm sure that somewhere in windows definitions there's a structure like the original
 struct netmap_adapter;
+#if 0
 struct ifnet {
-	char    if_xname[IFNAMSIZ];     	/* external name (name + unit) */
+	char    if_xname[IFNAMSIZ];     		/* external name (name + unit) */
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter* na;
 
 	int* netmap_generic_rx_handler;
 };
+#endif
 struct net_device {
 	char    if_xname[IFNAMSIZ];			// external name (name + unit) 
+	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter* na;
+
+	int(*netmap_generic_rx_handler)(int);
 };
 
-//XXX_ale:	todo use the right structures for generic or hardware devices
-/*typedef struct my_packet
-{
-	NDIS_PACKET		curr;
-	NDIS_PACKET*	m_nextpkt;
-};*/
-
-//#define ifnet	net_device
+#define ifnet		net_device
 struct mbuf {
 	struct mbuf *m_next;
 	struct mbuf *m_nextpkt;
@@ -290,8 +288,7 @@ struct mbuf {
 #define	SET_MBUF_DESTRUCTOR(a,b)		
 #define MBUF_IFP(a)						NULL
 
-static int
-netmap_catch_rx(struct netmap_adapter *na, int intercept)
+static int netmap_catch_rx(struct netmap_adapter *na, int intercept)
 {
 	return 0;
 }

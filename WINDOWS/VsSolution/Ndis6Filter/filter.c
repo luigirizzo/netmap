@@ -310,11 +310,11 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
 
 --*/
 {
-    PMS_FILTER              pFilter = NULL;
-    NDIS_STATUS             Status = NDIS_STATUS_SUCCESS;
-    NDIS_FILTER_ATTRIBUTES  FilterAttributes;
-    ULONG                   Size;
-    BOOLEAN               bFalse = FALSE;
+    PMS_FILTER						pFilter = NULL;
+    NDIS_STATUS						Status = NDIS_STATUS_SUCCESS;
+    NDIS_FILTER_ATTRIBUTES			FilterAttributes;
+    ULONG							Size;
+    BOOLEAN							bFalse = FALSE;
 
     DEBUGP(DL_TRACE, "===>FilterAttach: NdisFilterHandle %p\n", NdisFilterHandle);
 
@@ -326,12 +326,14 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
             Status = NDIS_STATUS_INVALID_PARAMETER;
             break;
         }
+#if 0
 		DbgPrint("IfIndex: %i - Name: %s\n", AttachParameters->LowerIfIndex, AttachParameters->BaseMiniportInstanceName);
 		DbgPrint("IfIndex: %i", AttachParameters->BaseMiniportIfIndex); //<----------------------------------
 		DbgPrint("Luid: %i - BaseLuid %i\n", AttachParameters->NetLuid, AttachParameters->BaseMiniportNetLuid);
 		DbgPrint("Handle: %p\n",FilterDriverContext);
 		DbgPrint("Handle: %p\n", FilterDriverObject);
 		DbgPrint("NdisFilterHandle: %p\n", NdisFilterHandle);  //<-----------------------------------------------------
+#endif
         // Verify the media type is supported.  This is a last resort; the
         // the filter should never have been bound to an unsupported miniport
         // to begin with.  If this driver is marked as a Mandatory filter (which
@@ -414,6 +416,24 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
             break;
         }
 
+		NdisZeroMemory(&pFilter->PoolParameters, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
+
+		pFilter->PoolParameters.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
+		pFilter->PoolParameters.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
+		pFilter->PoolParameters.Header.Size = sizeof(pFilter->PoolParameters);
+		pFilter->PoolParameters.ProtocolId = NDIS_PROTOCOL_ID_DEFAULT;
+		pFilter->PoolParameters.fAllocateNetBuffer = TRUE;
+		pFilter->PoolParameters.ContextSize = 0;
+		pFilter->PoolParameters.PoolTag = 'SIDN';
+		pFilter->PoolParameters.DataSize = 0;
+
+		pFilter->UserSendNetBufferListPool = NdisAllocateNetBufferListPool(pFilter->FilterHandle, &pFilter->PoolParameters);
+
+		if (pFilter->UserSendNetBufferListPool == NULL) 
+		{ 
+			DEBUGP(DL_ERROR, "Failed to allocate send net buffer list pool.\n"); 
+			Status = NDIS_STATUS_RESOURCES; break; 
+		}
 
         pFilter->State = FilterPaused;
 
@@ -719,6 +739,12 @@ NOTE: Called at PASSIVE_LEVEL and the filter is in paused state
     {
         FILTER_FREE_MEM(pFilter->FilterName.Buffer);
     }
+
+	if (pFilter->UserSendNetBufferListPool != NULL)
+	{
+		NdisFreeNetBufferListPool(pFilter->UserSendNetBufferListPool);
+		pFilter->UserSendNetBufferListPool = NULL;
+	}
 
 
     FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
@@ -1305,8 +1331,22 @@ Return Value:
     // Send complete the NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
 
-    NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
-
+	if (NetBufferLists != NULL)
+	{
+		PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
+		if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
+		{
+			while (CurrNetBuffer) 
+			{ 
+				PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
+				PMDL pCurrMdl = NULL;
+				CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer); 
+			}
+			NdisFreeNetBufferList(NetBufferLists);
+		}else{
+			NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
+		}   
+	}
     DEBUGP(DL_TRACE, "<===SendNBLComplete.\n");
 }
 
@@ -1495,7 +1535,6 @@ Arguments:
 
 }
 
-
 _Use_decl_annotations_
 VOID
 FilterReceiveNetBufferLists(
@@ -1630,6 +1669,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 				DbgPrint("Called: result= %i", result);
 				DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
 			}
+#if 0		//cycling all the interfaces
 			{
 				int counter = 0;
 				FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
@@ -1644,6 +1684,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 				}
 				FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
 			}
+#endif
 		}
 		else{
 			NdisFIndicateReceiveNetBufferLists(

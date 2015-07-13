@@ -107,6 +107,24 @@
     <ClInclude Include="filteruser.h" />
     <ClInclude Include="flt_dbg.h" />
     <ClInclude Include="precomp.h" />
+    <ClInclude Include="filter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="filteruser.h" />
+    <ClInclude Include="flt_dbg.h" />
+    <ClInclude Include="precomp.h" />
+    <ClInclude Include="filter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="filteruser.h" />
+    <ClInclude Include="flt_dbg.h" />
+    <ClInclude Include="precomp.h" />
+    <ClInclude Include="filter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="filteruser.h" />
+    <ClInclude Include="flt_dbg.h" />
+    <ClInclude Include="precomp.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="filter.rc">

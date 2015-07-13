@@ -15,6 +15,7 @@
     <DebugDeployment>True</DebugDeployment>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
-    <TestCertificate>CN="WDKTestCert alessio,130785681154639178" | 363CBCBE5DD75B8626D7EE7C672C5A88DD479982</TestCertificate>
+    <TestCertificate>
+    </TestCertificate>
   </PropertyGroup>
 </Project>

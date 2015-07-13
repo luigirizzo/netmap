@@ -562,6 +562,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 	//Definition of internal driver-to-driver ioctl codes
 #define NETMAP_KERNEL_XCHANGE_POINTERS CTL_CODE( IOCTL_TYPE, 0x980, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NETMAP_KERNEL_GET_DEV_BY_NAME CTL_CODE( IOCTL_TYPE, 0x981, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_KERNEL_TEST_INJECT_PING CTL_CODE( IOCTL_TYPE, 0x982, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 
 #define DRIVER_FUNC_INSTALL     0x01
 #define DRIVER_FUNC_REMOVE      0x02
@@ -581,6 +582,13 @@ typedef struct _FUNCTION_POINTER_XCHANGE
 	PVOID       pTxPointer;
 	int(*pRxPointer)(int);
 } FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
+
+typedef struct _NDIS_GET_DEVICE_HANDLER
+{
+	int			deviceIfIndex;
+	NDIS_HANDLE	deviceHandle;
+} NDIS_GET_DEVICE_HANDLER, *PNDIS_GET_DEVICE_HANDLER;
+
 //Definition of a structure used to pass a virtual address within an IOCTL
 typedef struct _MEMORY_ENTRY
 {

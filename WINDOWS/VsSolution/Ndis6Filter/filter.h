@@ -59,7 +59,7 @@ extern PDEVICE_OBJECT      DeviceObject;
 
 extern FILTER_LOCK         FilterListLock;
 extern LIST_ENTRY          FilterModuleList;
-
+extern int				   FilterModulesCount;
 
 
 
@@ -337,6 +337,9 @@ typedef struct _MS_FILTER
     ULONG                           CallsRestart;
     BOOLEAN                         TrackReceives;
     BOOLEAN                         TrackSends;
+
+	NDIS_HANDLE						UserSendNetBufferListPool;
+	NET_BUFFER_LIST_POOL_PARAMETERS PoolParameters;
 #if DBG
     BOOLEAN                         bIndicating;
 #endif

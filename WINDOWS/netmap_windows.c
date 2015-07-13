@@ -138,6 +138,34 @@ VOID ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 	}	
 	return;
 }
+
+void sendPingInternal()
+{
+	OBJECT_ATTRIBUTES   objectAttributes;
+	UNICODE_STRING      ObjectName;
+	IO_STATUS_BLOCK		iosb;
+	PFILE_OBJECT		pFileObject = NULL;
+	PDEVICE_OBJECT		pNdisObj;
+	NTSTATUS Status;
+	RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
+	InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+	Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &pNdisObj);
+	if (NT_SUCCESS(Status))
+	{
+		PIRP pIrp = NULL;
+		pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_TEST_INJECT_PING,
+			pNdisObj,
+			NULL,
+			0,
+			NULL,
+			0,
+			TRUE,
+			NULL,
+			&iosb);
+		IoCallDriver(pNdisObj, pIrp);
+	}
+}
+
 NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
 	PIO_STACK_LOCATION  irpSp;
@@ -254,6 +282,12 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		Irp->IoStatus.Status = NtStatus;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
 		return NtStatus;
+	case NETMAP_KERNEL_TEST_INJECT_PING:
+		DbgPrint("Netmap.sys: NETMAP_KERNEL_TEST_INJECT_PING\n");
+		sendPingInternal();
+		Irp->IoStatus.Status = NtStatus;
+		IoCompleteRequest(Irp, IO_NO_INCREMENT);
+		return NtStatus;
 	default:
 		//bail out if unknown request issued
 		DbgPrint("Netmap.sys: wrong request issued! (%i)", irpSp->Parameters.DeviceIoControl.IoControlCode);
@@ -304,26 +338,29 @@ int testCallFunctionFromRemote(int value)
 	return 1;
 }
 
-static struct net_device* dev_get_by_name(const char* name)
+struct net_device* dev_get_by_name(const char* name)
 {
 	OBJECT_ATTRIBUTES   objectAttributes;
 	UNICODE_STRING      ObjectName;
 	IO_STATUS_BLOCK		iosb;
 	PFILE_OBJECT		pFileObject = NULL;
 	PDEVICE_OBJECT		pNdisObj;
-	NTSTATUS Status;
+	NTSTATUS			Status;
+	NDIS_GET_DEVICE_HANDLER exchangeBuffer;
+
 	RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
 	InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 	Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &pNdisObj);
+
+
 	if (NT_SUCCESS(Status))
 	{
-		PIRP pIrp = NULL;
-		pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_GET_DEV_BY_NAME,
+		PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_GET_DEV_BY_NAME,
 			pNdisObj,
-			NULL,
-			0,
-			NULL,
-			0,
+			&exchangeBuffer,
+			sizeof(exchangeBuffer),
+			&exchangeBuffer,
+			sizeof(exchangeBuffer),
 			TRUE,
 			NULL,
 			&iosb);
@@ -571,7 +608,6 @@ struct net_device * ifunit_ref(const char *name)
 {
 #ifdef _WIN32
 	return dev_get_by_name(name);
-	//NdisSendNetBufferLists()
 #else
 #ifndef NETMAP_LINUX_HAVE_INIT_NET
 	return dev_get_by_name(name);
