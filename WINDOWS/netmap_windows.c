@@ -52,6 +52,7 @@ DRIVER_UNLOAD ioctlUnloadDriver;
 static NTSTATUS windows_netmap_mmap(PIRP Irp);
 NTSTATUS copy_from_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
 NTSTATUS copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
+FUNCTION_POINTER_XCHANGE g_functionAddresses;
 
 //Allocate the pageable routines and the init routine
 //These routines will be unloaded from the memory as soon as
@@ -139,8 +140,89 @@ VOID ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 	return;
 }
 
+/* #################### GENERIC ADAPTER SUPPORT ################### */
+
+int netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInterface)
+{
+	OBJECT_ATTRIBUTES   objectAttributes;
+	UNICODE_STRING      ObjectName;
+	IO_STATUS_BLOCK		iosb;
+	PFILE_OBJECT		pFileObject = NULL;
+	PDEVICE_OBJECT		pNdisObj;
+	NTSTATUS			NtStatus;
+	RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
+	InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+	NtStatus = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &pNdisObj);
+	if (NT_SUCCESS(NtStatus))
+	{
+		MEMORY_ENTRY memEntry;
+		memEntry.pUsermodeVirtualAddress = ifp;
+		ULONG ctlCode = NETMAP_KERNEL_DEVICE_RX_REGISTER;
+		if (!amIRegisteringTheInterface)
+		{
+			ctlCode = NETMAP_KERNEL_DEVICE_RX_UNREGISTER;
+		}
+		PIRP pIrp = NULL;
+		pIrp = IoBuildDeviceIoControlRequest(ctlCode,
+			pNdisObj,
+			&memEntry,
+			sizeof(MEMORY_ENTRY),
+			NULL,
+			0,
+			TRUE,
+			NULL,
+			&iosb);
+		NtStatus = IoCallDriver(pNdisObj, pIrp);
+		if NT_SUCCESS(NtStatus)
+		{
+			return 0;
+		}
+	}
+	return NtStatus;
+}
+
+struct NET_BUFFER* windows_generic_rx_handler(struct mbuf *m)
+{
+	generic_rx_handler(m->dev, m);
+	return NULL;
+}
+int netmap_catch_rx(struct netmap_adapter *na, int intercept)
+{
+	if (intercept) {
+		return netdev_rx_handler_register(na->ifp, TRUE);
+	}
+	else {
+		netdev_rx_handler_register(na->ifp, FALSE);
+		return 0;
+	}
+}
+
+void netmap_catch_tx(struct netmap_generic_adapter *na, int enable)
+{
+
+}
+int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr)
+{
+	return 0;
+}
+int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
+{
+	//XXX_ale: find where the rings are descripted (OID query)
+	*tx = 256;
+	*rx = 256;
+	return 0;
+}
+void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
+{
+	//XXX_ale: for a generic device is enough? need to find were this info is
+	*txq = 1;
+	*rxq = 1;
+}
+//
+
 void sendPingInternal()
 {
+#if 0
 	OBJECT_ATTRIBUTES   objectAttributes;
 	UNICODE_STRING      ObjectName;
 	IO_STATUS_BLOCK		iosb;
@@ -163,7 +245,11 @@ void sendPingInternal()
 			NULL,
 			&iosb);
 		IoCallDriver(pNdisObj, pIrp);
+		ObDereferenceObject(pFileObject);
+		//ObDereferenceObject(pNdisObj);
 	}
+#endif
+	g_functionAddresses.pingPacketInsertionTest();
 }
 
 NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
@@ -283,7 +369,7 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
 		return NtStatus;
 	case NETMAP_KERNEL_TEST_INJECT_PING:
-		DbgPrint("Netmap.sys: NETMAP_KERNEL_TEST_INJECT_PING\n");
+		//DbgPrint("Netmap.sys: NETMAP_KERNEL_TEST_INJECT_PING\n");
 		sendPingInternal();
 		Irp->IoStatus.Status = NtStatus;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -332,40 +418,72 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	return NtStatus;
 }
 
-int testCallFunctionFromRemote(int value)
+int getDeviceIfIndex(const char* name)
 {
-	DbgPrint("Netmap.sys: called right function\n");
-	return 1;
+	int found = FALSE;
+	int result = 0;
+	int i = 0;
+	while (name[i] != '\0' && name[i]!=' ')
+	{
+		if (name[i] >= '0' && name[i] <= '9')
+		{
+			found = TRUE;
+			result = result * 10;
+			result += (name[i] - '0');
+		}
+		i++;
+	}
+	if (!found)
+	{
+		result = -1;
+	}
+	DbgPrint("Netmap.sys: Requested interface ifIndex: %i", result);
+	return result;
 }
 
 struct net_device* dev_get_by_name(const char* name)
 {
-	OBJECT_ATTRIBUTES   objectAttributes;
-	UNICODE_STRING      ObjectName;
-	IO_STATUS_BLOCK		iosb;
-	PFILE_OBJECT		pFileObject = NULL;
-	PDEVICE_OBJECT		pNdisObj;
-	NTSTATUS			Status;
-	NDIS_GET_DEVICE_HANDLER exchangeBuffer;
+	OBJECT_ATTRIBUTES				objectAttributes;
+	UNICODE_STRING					ObjectName;
+	IO_STATUS_BLOCK					iosb;
+	PFILE_OBJECT					pFileObject = NULL;
+	PDEVICE_OBJECT					pNdisObj;
+	NTSTATUS						Status;
+	NDIS_INTERNAL_DEVICE_HANDLER	exchangeBuffer;
+	struct net_device*				nd = NULL;
 
-	RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
-	InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-	Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &pNdisObj);
+	exchangeBuffer.deviceHandle = NULL;
+	exchangeBuffer.deviceIfIndex = getDeviceIfIndex(name);
 
-
-	if (NT_SUCCESS(Status))
+	if (exchangeBuffer.deviceIfIndex > -1)
 	{
-		PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_GET_DEV_BY_NAME,
-			pNdisObj,
-			&exchangeBuffer,
-			sizeof(exchangeBuffer),
-			&exchangeBuffer,
-			sizeof(exchangeBuffer),
-			TRUE,
-			NULL,
-			&iosb);
-		IoCallDriver(pNdisObj, pIrp);
-	}
+		RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
+		InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+		Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &pNdisObj);
+
+		if (NT_SUCCESS(Status))
+		{
+			PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_GET_DEV_BY_NAME,
+				pNdisObj,
+				&exchangeBuffer,
+				sizeof(NDIS_INTERNAL_DEVICE_HANDLER),
+				&exchangeBuffer,
+				sizeof(NDIS_INTERNAL_DEVICE_HANDLER),
+				TRUE,
+				NULL,
+				&iosb);
+			Status = IoCallDriver(pNdisObj, pIrp);
+			if (NT_SUCCESS(Status))
+			{
+				nd = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct net_device), 'NDEV');
+				RtlZeroMemory(nd, sizeof(struct net_device));
+				RtlCopyMemory(nd->if_xname, name, IFNAMSIZ);
+				nd->deviceHandle = exchangeBuffer.deviceHandle;
+				nd->ifIndex = exchangeBuffer.deviceIfIndex;
+				return nd;
+			}
+		}
+	}		
 	return NULL;
 }
 
@@ -378,7 +496,10 @@ NTSTATUS ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	{
 		case NETMAP_KERNEL_XCHANGE_POINTERS:
 			data = Irp->AssociatedIrp.SystemBuffer;
-			data->pRxPointer = &testCallFunctionFromRemote;
+			data->windows_generic_rx_handler = &windows_generic_rx_handler;
+
+			g_functionAddresses.pingPacketInsertionTest = data->pingPacketInsertionTest;
+
 			RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, data, sizeof(FUNCTION_POINTER_XCHANGE));
 			Irp->IoStatus.Information = sizeof(FUNCTION_POINTER_XCHANGE);
 #if 0

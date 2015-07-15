@@ -65,6 +65,7 @@
 #include <ntddk.h>          // various NT definitions
 #include <errno.h>
 #include <intrin.h>			//machine specific code (for example le64toh)
+#include <Ntstrsafe.h>
 
 #define PRIV_MEMORY_POOL_TAG				'memP'
 #define PIPES_POOL_TAG						'epiP'
@@ -258,56 +259,27 @@ struct ifnet {
 };
 #endif
 struct net_device {
-	char    if_xname[IFNAMSIZ];			// external name (name + unit) 
+	char					if_xname[IFNAMSIZ];			// external name (name + unit) 
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
-	struct netmap_adapter* na;
-
-	int(*netmap_generic_rx_handler)(int);
+	struct netmap_adapter*	na;
+	NDIS_HANDLE				deviceHandle;
+	int						ifIndex;
 };
 
 #define ifnet		net_device
 struct mbuf {
-	struct mbuf *m_next;
-	struct mbuf *m_nextpkt;
-	char *m_data; // XXX was void *
-	int m_len;	/* length in this mbuf */
-	int m_flags;
-	int		direction;	/* could go in rcvif */
-	NDIS_HANDLE	context;	/* replaces queue_entry or skb ?*/
-	PNET_BUFFER	pkt;
-	struct sk_buff *m_skb;
-	struct {
-		struct ifnet *rcvif;
-		int len;	/* total packet len */
-		//SLIST_HEAD(packet_tags, m_tag) tags;
-	} m_pkthdr;
+	struct mbuf			*m_next;
+	struct mbuf			*m_nextpkt;
+	uint32_t			m_len;
+	struct net_device	*dev;
+	PNET_BUFFER			pkt;
+	void*(*netmap_default_mbuf_destructor)(struct mbuf *m);
 };
 
 //XXX_ale To be correctly redefined
 #define GET_MBUF_REFCNT(a)				1
 #define	SET_MBUF_DESTRUCTOR(a,b)		
 #define MBUF_IFP(a)						NULL
-
-static int netmap_catch_rx(struct netmap_adapter *na, int intercept)
-{
-	return 0;
-}
-
-static void netmap_catch_tx(struct netmap_generic_adapter *na, int enable)
-{
-
-}
-static int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr)
-{
-	return 0;
-}
-static int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
-{
-	return 0;
-}
-static void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
-{
-}
 
 static void
 generic_timer_handler(struct hrtimer *t)
@@ -368,9 +340,21 @@ static void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
 	//hrtimer_cancel(&mit->mit_timer);
 }
 
+static void
+netmap_default_mbuf_destructor(struct mbuf *m)
+{
+	ExFreePoolWithTag(m, 'MBUF');
+}
+
 static int netmap_get_mbuf(uint32_t buf_size)
 {
-	return 0;
+	struct mbuf *m;
+	m = ExAllocatePoolWithTag(NonPagedPool, buf_size, 'MBUF');
+	if (m) {
+		m->netmap_default_mbuf_destructor = &netmap_default_mbuf_destructor;
+		//ND(5, "create m %p refcnt %d", m, GET_MBUF_REFCNT(m));
+	}
+	return m;
 }
 
 //#define	mbuf													my_packet

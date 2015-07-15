@@ -38,7 +38,6 @@ FILTER_LOCK         FilterListLock;
 LIST_ENTRY          FilterModuleList;
 int					FilterModulesCount = 0;
 
-int dropper = 0;
 
 NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
 { 0, 0, 0},
@@ -50,6 +49,7 @@ NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
       FilterReturnNetBufferLists
 };
 
+extern void pingPacketInsertionTest(void);
 
 _Use_decl_annotations_
 NTSTATUS
@@ -196,8 +196,8 @@ Return Value:
 #endif
 		{
 			PFILE_OBJECT pFileObject = NULL;
-			g_functionAddresses.pRxPointer = NULL;
-			g_functionAddresses.pTxPointer = NULL;
+			g_functionAddresses.windows_generic_rx_handler = NULL;
+			g_functionAddresses.pingPacketInsertionTest = &pingPacketInsertionTest;
 			Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &g_pNetmapDeviceObject);
 			if (NT_SUCCESS(Status))
 			{
@@ -744,11 +744,13 @@ NOTE: Called at PASSIVE_LEVEL and the filter is in paused state
 	{
 		NdisFreeNetBufferListPool(pFilter->UserSendNetBufferListPool);
 		pFilter->UserSendNetBufferListPool = NULL;
+		NdisZeroMemory(&pFilter->PoolParameters, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
 	}
 
 
     FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
     RemoveEntryList(&pFilter->FilterModuleLink);
+	FilterModulesCount--;
 	FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
 
     //
@@ -1339,7 +1341,8 @@ Return Value:
 			while (CurrNetBuffer) 
 			{ 
 				PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
-				PMDL pCurrMdl = NULL;
+				PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
+				NdisFreeMdl(pCurrMdl);
 				CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer); 
 			}
 			NdisFreeNetBufferList(NetBufferLists);
@@ -1516,7 +1519,21 @@ Arguments:
     // Return the received NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
 
-    NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
+	PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
+	if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
+	{
+		while (CurrNetBuffer)
+		{
+			PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
+			PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
+			NdisFreeMdl(pCurrMdl);
+			CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
+		}
+		NdisFreeNetBufferList(NetBufferLists);
+	}
+	else{
+		NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
+	}
 
     if (pFilter->TrackReceives)
     {
@@ -1657,34 +1674,21 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
             FILTER_RELEASE_LOCK(&pFilter->Lock, DispatchLevel);
         }
 
-		if (dropper == 1)
-		{
-			NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReceiveFlags);
-			dropper = 0;
-			DbgPrint("Dropping packet...\n");
-			if (g_functionAddresses.pRxPointer != NULL)
+		if (pFilter->ifp != NULL)
+		{		
+			//DbgPrint("Dropping packet...\n");
+			if (g_functionAddresses.windows_generic_rx_handler != NULL)
 			{
 				int result = -1;
-				result = g_functionAddresses.pRxPointer(2);
-				DbgPrint("Called: result= %i", result);
-				DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
+				struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
+				temp->dev = pFilter->ifp;
+				temp->pkt = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
+				temp->m_len = temp->pkt->DataLength;
+				result = g_functionAddresses.windows_generic_rx_handler(temp);
+				//DbgPrint("Called: result= %i", result);
+				//DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
 			}
-#if 0		//cycling all the interfaces
-			{
-				int counter = 0;
-				FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
-				PLIST_ENTRY             Link = FilterModuleList.Flink;
-				PMS_FILTER              pFilter;
-				while (Link != NULL && counter<FilterModulesCount)
-				{
-					pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
-					DbgPrint("IfIndex: %i, NDIS_HANDLE: %p\n", pFilter->MiniportIfIndex, pFilter->FilterHandle);
-					Link = Link->Flink;
-					counter += 1;
-				}
-				FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
-			}
-#endif
+			NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReceiveFlags);
 		}
 		else{
 			NdisFIndicateReceiveNetBufferLists(
@@ -1693,8 +1697,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 				PortNumber,
 				NumberOfNetBufferLists,
 				ReceiveFlags);
-			DbgPrint("Letting go packet...\n");
-			dropper = 1;
+			//DbgPrint("Letting go packet...\n");
 		}
 
         if (NDIS_TEST_RECEIVE_CANNOT_PEND(ReceiveFlags) &&

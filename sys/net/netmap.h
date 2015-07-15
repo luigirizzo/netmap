@@ -548,9 +548,9 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 	*/
 #define IOCTL_TYPE 40000	
 
+//Definition of external userspace-to-kernel ioctl codes
 #define NETMAP_SETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x840, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NETMAP_GETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x841, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-
 #define NIOCGINFO CTL_CODE( IOCTL_TYPE, 0x945, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NIOCREGIF CTL_CODE( IOCTL_TYPE, 0x946, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NIOCTXSYNC CTL_CODE( IOCTL_TYPE, 0x948, METHOD_BUFFERED, FILE_ANY_ACCESS  )
@@ -559,35 +559,41 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NETMAP_MMAP CTL_CODE( IOCTL_TYPE, 0x960, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
 #define NETMAP_POLL CTL_CODE( IOCTL_TYPE, 0x962, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 
-	//Definition of internal driver-to-driver ioctl codes
+//Definition of internal driver-to-driver ioctl codes
 #define NETMAP_KERNEL_XCHANGE_POINTERS CTL_CODE( IOCTL_TYPE, 0x980, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NETMAP_KERNEL_GET_DEV_BY_NAME CTL_CODE( IOCTL_TYPE, 0x981, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NETMAP_KERNEL_TEST_INJECT_PING CTL_CODE( IOCTL_TYPE, 0x982, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_KERNEL_GET_DEV_BY_NAME CTL_CODE( IOCTL_TYPE, 0x990, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
+#define NETMAP_KERNEL_DEVICE_RX_REGISTER CTL_CODE( IOCTL_TYPE, 0x992, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_KERNEL_DEVICE_RX_UNREGISTER CTL_CODE( IOCTL_TYPE, 0x993, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL CTL_CODE( IOCTL_TYPE, 0x995, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
+
 
 #define DRIVER_FUNC_INSTALL     0x01
 #define DRIVER_FUNC_REMOVE      0x02
 
 #define DRIVER_NAME				"netmap"
 
-//This linknames are for the Netmap Core Driver
+//These linknames are for the Netmap Core Driver
 #define NT_DEVICE_NAME			L"\\Device\\NETMAP"
 #define DOS_DEVICE_NAME			L"\\DosDevices\\netmap"
 
-//This linknames are for the NDIS driver
+//These linknames are for the NDIS driver
 #define NETMAP_NDIS_LINKNAME_STRING             L"\\DosDevices\\NMAPNDIS"//L"\\DosDevices\\NDISLWF"
 #define NETMAP_NDIS_NTDEVICE_STRING             L"\\Device\\NMAPNDIS"//L"\\Device\\NDISLWF"
 
 typedef struct _FUNCTION_POINTER_XCHANGE
 {
-	PVOID       pTxPointer;
-	int(*pRxPointer)(int);
+	PVOID(*pingPacketInsertionTest)(void);
+	//int(*pRxPointer)(int);
+
+	struct NET_BUFFER*(*windows_generic_rx_handler)(struct mbuf *m);
 } FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
 
-typedef struct _NDIS_GET_DEVICE_HANDLER
+typedef struct _NDIS_INTERNAL_DEVICE_HANDLER
 {
 	int			deviceIfIndex;
 	NDIS_HANDLE	deviceHandle;
-} NDIS_GET_DEVICE_HANDLER, *PNDIS_GET_DEVICE_HANDLER;
+} NDIS_INTERNAL_DEVICE_HANDLER, *PNDIS_INTERNAL_DEVICE_HANDLER;
 
 //Definition of a structure used to pass a virtual address within an IOCTL
 typedef struct _MEMORY_ENTRY
