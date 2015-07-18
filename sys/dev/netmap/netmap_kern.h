@@ -62,8 +62,8 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
-//#define WITH_PTNETMAP_HOST /* ptnetmap host not supported in FreeBSD */
-#define WITH_PTNETMAP_GUEST
+#define WITH_PTNETMAP_HOST	/* ptnetmap host support */
+#define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
 
 #endif
 

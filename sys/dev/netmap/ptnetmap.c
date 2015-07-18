@@ -1,8 +1,23 @@
 /*
  * common headers
  */
+#if defined(__FreeBSD__)
+#include <sys/cdefs.h>
+#include <sys/param.h>
+#include <sys/kernel.h>
+#include <sys/types.h>
+#include <sys/selinfo.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <net/if_var.h>
+#include <machine/bus.h>
 
+#define usleep_range(_1, _2)
+
+#elif defined(linux)
 #include <bsd_glue.h>
+#endif
+
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_virt.h>
@@ -14,6 +29,7 @@
 #define PTN_TX_BATCH_LIM      ((nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
 
 #define PTN_AVOID_NM_PROLOGUE /* XXX: avoid nm_*sync_prologue() */
+#define BUSY_WAIT
 
 #define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
@@ -135,6 +151,7 @@ ptnetmap_kring_dump(const char *title, const struct netmap_kring *kring)
             kring->ring->head, kring->ring->cur, kring->ring->tail);
 }
 
+#if 0
 static inline void
 ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur)
 {
@@ -148,7 +165,7 @@ ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur
     netmap_ring_reinit(kring);
     ptnetmap_kring_dump("kring reinit", kring);
 }
-
+#endif
 
 /*
  * TX functions to set/get and to handle host/guest kick.
@@ -282,7 +299,6 @@ ptnetmap_tx_handler(void *data)
         if (unlikely(netmap_verbose & NM_VERB_TXSYNC))
             ptnetmap_kring_dump("post txsync", kring);
 
-//#define BUSY_WAIT
 #ifndef BUSY_WAIT
         /* Send kick to the guest if it needs them */
         if (work && ptnetmap_tx_get_guestkick(csb)) {
@@ -380,11 +396,13 @@ ptnetmap_rx_set_guestkick(struct paravirt_csb __user *csb, uint32_t val)
  *       ring is full
  *       We need to wait that the guest gets some packets from the ring and then it notifies us.
  */
+#ifndef BUSY_WAIT
 static inline int
 ptnetmap_kr_rxfull(struct netmap_kring *kring, uint32_t g_head)
 {
     return (ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_head, kring->nkr_num_slots - 1));
 }
+#endif /* !BUSY_WAIT */
 
 /* Handle RX events: from the guest or from the backend */
 static void

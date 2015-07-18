@@ -932,6 +932,18 @@ struct nm_kthread {
 	int affinity;
 };
 
+void inline
+nm_kthread_wakeup_worker(struct nm_kthread *nmk)
+{
+	(void)nmk;
+}
+
+void inline
+nm_kthread_send_irq(struct nm_kthread *nmk)
+{
+	(void)nmk;
+}
+
 static
 int is_suspended(void)
 {
