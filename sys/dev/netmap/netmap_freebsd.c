@@ -973,9 +973,12 @@ nm_kthread_worker(void *data)
 	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
 
 	thread_lock(curthread);
-	sched_bind(curthread, nmk->affinity);
+	if (nmk->affinity >= 0)
+		sched_bind(curthread, nmk->affinity);
 	thread_unlock(curthread);
 	for (; !is_suspended();) {
+		if (nmk->worker == NULL)
+			break;
 		ctx->worker_fn(ctx->worker_private); /* worker_body */
 	}
 	kthread_exit();
@@ -1037,6 +1040,7 @@ nm_kthread_create(struct nm_kthread_cfg *cfg)
 	nmk->worker_ctx.worker_fn = cfg->worker_fn;
 	nmk->worker_ctx.worker_private = cfg->worker_private;
 	nmk->worker_ctx.type = cfg->type;
+	nmk->affinity = -1;
 
 	/* open event fd */
 	error = nm_kthread_open_files(nmk, &cfg->ring);
