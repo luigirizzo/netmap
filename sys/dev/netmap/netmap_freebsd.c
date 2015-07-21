@@ -1063,7 +1063,7 @@ nm_kthread_start(struct nm_kthread *nmk)
 		return EBUSY;
 	}
 
-	error = kthread_add(nm_kthread_worker, nmk, NULL,
+	error = kthread_add(nm_kthread_worker, nmk, curproc,
 			&nmk->worker, RFNOWAIT /* to be checked */, 0, "nm-kthread-%ld",
 			nmk->worker_ctx.type);
 	if (error)
