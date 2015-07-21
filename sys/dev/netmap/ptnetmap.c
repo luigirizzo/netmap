@@ -12,7 +12,7 @@
 #include <net/if_var.h>
 #include <machine/bus.h>
 
-#define usleep_range(_1, _2)
+#define usleep_range(_1, _2)	pause("ptnetmap-sleep", _1 * hz / 1000000)
 
 #elif defined(linux)
 #include <bsd_glue.h>
@@ -26,7 +26,7 @@
 #ifdef WITH_PTNETMAP_HOST
 
 #define PTN_RX_NOWORK_CYCLE   10                               /* RX cycle without receive any packets */
-#define PTN_TX_BATCH_LIM      ((nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
+//#define PTN_TX_BATCH_LIM      ((nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
 
 #define PTN_AVOID_NM_PROLOGUE /* XXX: avoid nm_*sync_prologue() */
 #define BUSY_WAIT
@@ -145,7 +145,7 @@ struct ptnetmap_state {
 static inline void
 ptnetmap_kring_dump(const char *title, const struct netmap_kring *kring)
 {
-    D("%s - name: %s hwcur: %d hwtail: %d rhead: %d rcur: %d rtail: %d head: %d cur: %d tail: %d",
+    RD(1, "%s - name: %s hwcur: %d hwtail: %d rhead: %d rcur: %d rtail: %d head: %d cur: %d tail: %d",
             title, kring->name, kring->nr_hwcur,
             kring->nr_hwtail, kring->rhead, kring->rcur, kring->rtail,
             kring->ring->head, kring->ring->cur, kring->ring->tail);
@@ -208,7 +208,9 @@ ptnetmap_tx_handler(void *data)
     uint32_t g_cur, g_head, g_flags = 0; /* guest variables; init for compiler */
     uint32_t nkr_num_slots;
     bool work = false;
+#ifdef PTN_TX_BATCH_LIM
     int batch;
+#endif
     IFRATE(uint32_t pre_tail;)
 
     if (unlikely(!pts)) {
@@ -217,7 +219,7 @@ ptnetmap_tx_handler(void *data)
     }
 
     if (unlikely(!pts->pth_na || pts->stopped || !pts->configured)) {
-        D("backend netmap is not configured or stopped");
+        RD(1, "backend netmap is not configured or stopped");
         goto leave;
     }
 
@@ -424,7 +426,7 @@ ptnetmap_rx_handler(void *data)
     }
 
     if (unlikely(!pts->pth_na || pts->stopped || !pts->configured)) {
-        D("backend netmap is not configured or stopped");
+        RD(1, "backend netmap is not configured or stopped");
         goto leave;
     }
 
@@ -677,11 +679,13 @@ ptnetmap_start_kthreads(struct ptnetmap_state *pts)
     pts->stopped = false;
 
     /* TX kthread */
+    //nm_kthread_set_affinity(pts->ptk_tx, 2);
     error = nm_kthread_start(pts->ptk_tx);
     if (error) {
         return error;
     }
     /* RX kthread */
+    //nm_kthread_set_affinity(pts->ptk_tx, 3);
     error = nm_kthread_start(pts->ptk_rx);
     if (error) {
         nm_kthread_stop(pts->ptk_tx);
