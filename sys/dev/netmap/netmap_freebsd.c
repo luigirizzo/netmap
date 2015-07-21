@@ -957,9 +957,9 @@ int is_suspended(void)
 	if ((td->td_pflags & TDP_KTHREAD) == 0)
 		panic("%s: curthread is not a valid kthread", __func__);
 	PROC_LOCK(p);
-	while (td->td_flags & TDF_KTH_SUSP) {
+	if (td->td_flags & TDF_KTH_SUSP) {
 		wakeup(&td->td_flags);
-		msleep(&td->td_flags, &p->p_mtx, PPAUSE, "ktsusp", 0);
+		//msleep(&td->td_flags, &p->p_mtx, PPAUSE, "ktsusp", 0);
 		ret = 1;
 	}
 	PROC_UNLOCK(p);
@@ -1088,7 +1088,7 @@ nm_kthread_stop(struct nm_kthread *nmk)
 		return;
 	}
 	nm_kthread_stop_poll(&nmk->worker_ctx);
-	kthread_suspend(nmk->worker, 0);
+	kthread_suspend(nmk->worker, 100);
 	nmk->worker = NULL;
 }
 
