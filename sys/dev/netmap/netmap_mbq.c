@@ -65,6 +65,7 @@ void mbq_init(struct mbq *q)
 
 static inline void __mbq_enqueue(struct mbq *q, struct mbuf *m)
 {
+#if 0// _WIN32 
     m->m_nextpkt = NULL;
     if (q->tail) {
         q->tail->m_nextpkt = m;
@@ -72,6 +73,7 @@ static inline void __mbq_enqueue(struct mbq *q, struct mbuf *m)
     } else {
         q->head = q->tail = m;
     }
+#endif
     q->count++;
 }
 
@@ -92,6 +94,17 @@ void mbq_enqueue(struct mbq *q, struct mbuf *m)
 
 static inline struct mbuf *__mbq_dequeue(struct mbq *q)
 {
+#ifdef _WIN32
+	static struct mbuf foo;
+	foo.m_len = 60;
+	if (q->count > 0) {
+		q->count--;
+		return &foo;
+	}
+	else {
+		return NULL;
+	}
+#else
     struct mbuf *ret = NULL;
 
     if (q->head) {
@@ -105,6 +118,7 @@ static inline struct mbuf *__mbq_dequeue(struct mbq *q)
     }
 
     return ret;
+#endif
 }
 
 

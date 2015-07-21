@@ -341,6 +341,7 @@ typedef struct _MS_FILTER
 	NDIS_HANDLE						UserSendNetBufferListPool;
 	NET_BUFFER_LIST_POOL_PARAMETERS PoolParameters;
 	struct net_device				*ifp;
+	BOOLEAN							readyToUse;
 #if DBG
     BOOLEAN                         bIndicating;
 #endif

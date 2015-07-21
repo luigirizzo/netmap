@@ -78,6 +78,7 @@ FilterDeregisterDevice(
     )
 
 {
+	DbgPrint("NmNDIS.sys: FilterDeregisterDevice\n");
     if (NdisFilterDeviceHandle != NULL)
     {
         NdisDeregisterDeviceEx(NdisFilterDeviceHandle);
@@ -164,14 +165,18 @@ void pingPacketInsertionTest()
 			break;
 		}
 		FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
-	}
-	else{
+	}else{
 		moduleHandle = pFilterPing->FilterHandle;
 	}
 	
 
 	//buffer = NdisAllocateMemoryWithTagPriority(FilterDriverHandle, txSize, 'TAGT', HighPoolPriority);
 	buffer = ExAllocatePoolWithTag(NonPagedPool, txSize, 'NDIS');
+	if (buffer == NULL)
+	{
+		DbgPrint("Error allocating buffer!\n");
+		return;
+	}
 	RtlZeroMemory(buffer, txSize);
 	pMdl = NdisAllocateMdl(FilterDriverHandle, buffer, txSize);
 	if (pMdl == NULL)
@@ -258,9 +263,15 @@ void set_ifp_in_device_handle(struct net_device *ifp, BOOLEAN amISettingTheHandl
 			if (amISettingTheHandler)
 			{
 				pFilter->ifp = ifp;
+				pFilter->readyToUse = TRUE;
 			}
 			else{
+				//LARGE_INTEGER delay;
+				//delay.QuadPart = -2;
+				pFilter->readyToUse = FALSE;
 				pFilter->ifp = NULL;
+				
+				//KeDelayExecutionThread(KernelMode, FALSE, &delay);
 			}
 			break;
 		}
@@ -303,7 +314,8 @@ PIRP                  Irp
 			break;
 		case NETMAP_KERNEL_TEST_INJECT_PING:
 			//DbgPrint("ndislwf.sys: NETMAP_KERNEL_TEST_INJECT_PING recvd\n");
-			pingPacketInsertionTest();
+			//pingPacketInsertionTest();
+			//Irp->IoStatus.Information = 0;
 			break;
 		case NETMAP_KERNEL_DEVICE_RX_REGISTER:
 			DbgPrint("ndislwf.sys: NETMAP_KERNEL_DEVICE_RX_REGISTER recvd\n");
@@ -314,7 +326,8 @@ PIRP                  Irp
 			break;
 		case NETMAP_KERNEL_DEVICE_RX_UNREGISTER:
 			DbgPrint("ndislwf.sys: NETMAP_KERNEL_DEVICE_RX_UNREGISTER recvd\n");
-			ifp = Irp->AssociatedIrp.SystemBuffer;
+			memEntry = Irp->AssociatedIrp.SystemBuffer;
+			ifp = memEntry->pUsermodeVirtualAddress;
 			set_ifp_in_device_handle(ifp, FALSE);
 			Irp->IoStatus.Information = 0;
 			break;

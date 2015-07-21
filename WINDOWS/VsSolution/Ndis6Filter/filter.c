@@ -38,6 +38,7 @@ FILTER_LOCK         FilterListLock;
 LIST_ENTRY          FilterModuleList;
 int					FilterModulesCount = 0;
 
+int					packets = 0;
 
 NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
 { 0, 0, 0},
@@ -50,6 +51,8 @@ NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
 };
 
 extern void pingPacketInsertionTest(void);
+extern void set_ifp_in_device_handle(struct net_device *, BOOLEAN);
+extern NDIS_HANDLE get_device_handle_by_ifindex(PNDIS_INTERNAL_DEVICE_HANDLER);
 
 _Use_decl_annotations_
 NTSTATUS
@@ -198,6 +201,8 @@ Return Value:
 			PFILE_OBJECT pFileObject = NULL;
 			g_functionAddresses.windows_generic_rx_handler = NULL;
 			g_functionAddresses.pingPacketInsertionTest = &pingPacketInsertionTest;
+			g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
+			g_functionAddresses.set_ifp_in_device_handle = &set_ifp_in_device_handle;
 			Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &g_pNetmapDeviceObject);
 			if (NT_SUCCESS(Status))
 			{
@@ -213,6 +218,7 @@ Return Value:
 					NULL,
 					&iosb);
 				IoCallDriver(g_pNetmapDeviceObject, pIrp);
+				ObDereferenceObject(pFileObject);
 				//DbgPrint("Address of rxFunction: 0x%p\n", g_functionAddresses.pRxPointer);
 				//DbgPrint("Address of txFunction: 0x%p\n", g_functionAddresses.pTxPointer);
 			} else{
@@ -390,6 +396,8 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
                         pFilter->MiniportName.Length);
 
         pFilter->MiniportIfIndex = AttachParameters->BaseMiniportIfIndex;
+
+		pFilter->readyToUse = FALSE;
         //
         // The filter should initialize TrackReceives and TrackSends properly. For this
         // driver, since its default characteristic has both a send and a receive handler,
@@ -1597,12 +1605,15 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
     ULONG               ReturnFlags;
 #endif
 
+	static int			maxBatch = 0;
+	int					qBatch = 0;
+
     DEBUGP(DL_TRACE, "===>ReceiveNetBufferList: NetBufferLists = %p.\n", NetBufferLists);
     do
     {
 
         DispatchLevel = NDIS_TEST_RECEIVE_AT_DISPATCH_LEVEL(ReceiveFlags);
-#if DBG
+#if 0
         FILTER_ACQUIRE_LOCK(&pFilter->Lock, DispatchLevel);
 
         if (pFilter->State != FilterRunning)
@@ -1674,23 +1685,53 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
             FILTER_RELEASE_LOCK(&pFilter->Lock, DispatchLevel);
         }
 
-		if (pFilter->ifp != NULL)
-		{		
-			//DbgPrint("Dropping packet...\n");
-			if (g_functionAddresses.windows_generic_rx_handler != NULL)
+		//if (pFilter->ifp != NULL)
+		if (g_functionAddresses.windows_generic_rx_handler != NULL && pFilter->readyToUse)
+		{	
+			//struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
+#if 1
+			//DbgPrint("Dropping packets... size: %i\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
+			packets += 1;
+			if (packets == 100000)
+			{
+				DbgPrint("Recv 100k (%i)\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
+				packets = 0;
+			}
+#endif
+			//if (temp != NULL)
 			{
 				int result = -1;
-				struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
-				temp->dev = pFilter->ifp;
-				temp->pkt = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
-				temp->m_len = temp->pkt->DataLength;
-				result = g_functionAddresses.windows_generic_rx_handler(temp);
-				//DbgPrint("Called: result= %i", result);
-				//DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
+				
+				PNET_BUFFER pkt = NULL;
+				PNET_BUFFER_LIST current_list = NetBufferLists;
+				while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list)) ) )
+				{
+					qBatch++;
+					//temp->dev = pFilter->ifp;
+					//temp->pkt = pkt; // NET_BUFFER_LIST_FIRST_NB(NetBufferLists);
+					//temp->m_len = temp->pkt->DataLength;
+					//PVOID buffer;
+					//buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
+					result = g_functionAddresses.windows_generic_rx_handler(pFilter->ifp, pkt->DataLength, NULL);
+					//ExFreePoolWithTag(temp, 'XCHG');
+					//DbgPrint("Called: result= %i", result);
+					//DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
+					
+					pkt = pkt->Next;
+					if (pkt == NULL)
+					{
+						current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
+					}
+				}
+				//ExFreePoolWithTag(temp, 'XCHG');
+			}
+			if (qBatch > maxBatch)
+			{
+				maxBatch = qBatch;
+				DbgPrint("MaxBatch: %i", maxBatch);
 			}
 			NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReceiveFlags);
-		}
-		else{
+		}else{
 			NdisFIndicateReceiveNetBufferLists(
 				pFilter->FilterHandle,
 				NetBufferLists,

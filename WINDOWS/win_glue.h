@@ -224,7 +224,7 @@ static int time_uptime_w32()
 #define printf								DbgPrint
 
 #define copyin(src, dst, copy_len)					RtlCopyBytes(&dst, src, copy_len)
-#define m_copydata(source, offset, length, dst)		RtlCopyBytes(dst, source, length) //XXX_Ale: todo must set the offset someway
+#define m_copydata(source, offset, length, dst)		do {} while(0) //RtlCopyBytes(dst, source, length)// //XXX_Ale: todo must set the offset someway
 
 static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 {
@@ -272,7 +272,8 @@ struct mbuf {
 	struct mbuf			*m_nextpkt;
 	uint32_t			m_len;
 	struct net_device	*dev;
-	PNET_BUFFER			pkt;
+	//PNET_BUFFER			pkt;
+	PVOID				pkt;
 	void*(*netmap_default_mbuf_destructor)(struct mbuf *m);
 };
 
@@ -361,7 +362,7 @@ static int netmap_get_mbuf(uint32_t buf_size)
 
 #define	MBUF_LEN(m)													m->m_len
 #define m_devget(slot_addr, slot_len, offset, dev, fn)				NULL
-#define m_freem(packet)													//NdisFreePacket(packet)	
+#define m_freem(mbuf)												//ExFreePoolWithTag(mbuf->pkt,'test');	//NdisFreePacket(packet)	
 
 
 #define le64toh(x)		_byteswap_uint64(x)	//defined in intrin.h

@@ -676,7 +676,14 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	if (rr >= na->num_rx_rings) {
 		rr = rr % na->num_rx_rings; // XXX expensive...
 	}
-
+#if 0 // windows
+	lock queue
+		locate kring->tail
+		copy payload
+		copy metadata into slot
+		unlock ring
+		netmap_generic_irq(na->ifp, rr, &work_done);
+#else
 	/* limit the size of the queue */
 	if (unlikely(mbq_len(&na->rx_rings[rr].rx_queue) > 1024)) {
 		m_freem(m);
@@ -701,6 +708,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 			netmap_mitigation_start(&gna->mit[rr]);
 		}
 	}
+#endif
 }
 
 /*
