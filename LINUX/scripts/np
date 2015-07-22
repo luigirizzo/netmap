@@ -369,7 +369,6 @@ function build-prep()
 			yes '' | make oldconfig
 		else
 			make allmodconfig
-			cp .config $LINUX_CONFIGS/config-$v1
 		fi
 		make modules_prepare
 	)
