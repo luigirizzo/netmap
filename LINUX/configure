@@ -274,6 +274,11 @@ add_file_exists_check()
 	cmd="if [ -f "$TMPDIR/$1" ]; then $2"
 	[ -n "$3" ] && cmd="$cmd; else $3"
 	cmd="$cmd; fi"
+	cat >> config.log <<-EOF
+##############################################################################
+## cmd: $cmd
+##############################################################################
+	EOF
 	TESTPOSTPROC="$cmd; $TESTPOSTPROC"
 }
 
@@ -331,6 +336,11 @@ reset_tests() {
 	TESTOBJS=
 	TESTPOSTPROC=
 	NEXTTEST=1
+	cat >> config.log <<-EOF
+##############################################################################
+##		NEW TESTS
+##############################################################################
+	EOF
 }
 
 # run_tests: run all accumulated tests and exec the pertinent
@@ -355,11 +365,28 @@ run_tests() {
 		EOF
 	done
 	echo endif >> $TMPDIR/Makefile
+	{
+		cat <<-EOF
+##############################################################################
+## BEGIN RUNNING TESTS: $(date)
+##############################################################################
+## Makefile:
+		EOF
+		cat $TMPDIR/Makefile
+		cat <<-EOF
+##############################################################################
+		EOF
+	} >> config.log
 	(
 		cd $TMPDIR
 		make -k -j $(grep -c processor /proc/cpuinfo)
 	) >> config.log
 	eval "$TESTPOSTPROC"
+	cat >> config.log <<-EOF
+##############################################################################
+## END RUNNING TESTS: $(date)
+##############################################################################
+	EOF
 }
 
 configh=netmap_linux_config.h
