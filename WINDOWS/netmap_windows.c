@@ -131,7 +131,7 @@ VOID ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 	netmap_fini();
 	keexit_GST();
 
-	RtlInitUnicodeString(&uniWin32NameString, DOS_DEVICE_NAME);
+	RtlInitUnicodeString(&uniWin32NameString, NETMAP_DOS_DEVICE_NAME);
 
 	// Delete the link from our device name to a name in the Win32 namespace.
 	IoDeleteSymbolicLink(&uniWin32NameString);
@@ -514,102 +514,28 @@ int getDeviceIfIndex(const char* name)
 
 struct net_device* dev_get_by_name(const char* name)
 {
-	NDIS_INTERNAL_DEVICE_HANDLER	exchangeBuffer;
+	int								deviceIfIndex = -1;
 	NDIS_HANDLE						temp = NULL;
 	struct net_device*				nd = NULL;
-	exchangeBuffer.deviceHandle = NULL;
-	exchangeBuffer.deviceIfIndex = getDeviceIfIndex(name);
+
+	deviceIfIndex = getDeviceIfIndex(name);
 
 	if (g_functionAddresses.get_device_handle_by_ifindex != NULL)
 	{
-		temp = g_functionAddresses.get_device_handle_by_ifindex(&exchangeBuffer);
+		temp = g_functionAddresses.get_device_handle_by_ifindex(deviceIfIndex);
 		if (temp != NULL)
 		{
 			nd = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct net_device), 'NDEV');
 			RtlZeroMemory(nd, sizeof(struct net_device));
 			RtlCopyMemory(nd->if_xname, name, IFNAMSIZ);
 			nd->deviceHandle = temp; // exchangeBuffer.deviceHandle;
-			nd->ifIndex = exchangeBuffer.deviceIfIndex;
+			nd->ifIndex = deviceIfIndex;
 			return nd;
 		}else{
 			return NULL;
 		}
-		
 	}
-	else{
-		return NULL;
-	}
-#if 0
-	OBJECT_ATTRIBUTES				objectAttributes;
-	UNICODE_STRING					ObjectName;
-	IO_STATUS_BLOCK					iosb;
-	PFILE_OBJECT					pFileObject = NULL;
-	PDEVICE_OBJECT					pNdisObj	= NULL;
-	NTSTATUS						Status;
-	
-
-	KIRQL FirstIrql = KeGetCurrentIrql();
-	
-		
-	exchangeBuffer.deviceHandle = NULL;
-	exchangeBuffer.deviceIfIndex = getDeviceIfIndex(name);
-
-	if (exchangeBuffer.deviceIfIndex > -1)
-	{	
-		RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
-		InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-		if (FirstIrql > PASSIVE_LEVEL)
-		{
-			KeLowerIrql(PASSIVE_LEVEL);
-		}
-		Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &pNdisObj);
-		if (KeGetCurrentIrql() != FirstIrql)
-		{
-			KeRaiseIrql(FirstIrql, &FirstIrql);
-		}
-		//Status = SetNDISDeviceReferences();
-		if (NT_SUCCESS(Status))
-		{
-			PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_GET_DEV_BY_NAME,
-				pNdisObj,
-				&exchangeBuffer,
-				sizeof(NDIS_INTERNAL_DEVICE_HANDLER),
-				&exchangeBuffer,
-				sizeof(NDIS_INTERNAL_DEVICE_HANDLER),
-				TRUE,
-				NULL,
-				&iosb);
-			FirstIrql = KeGetCurrentIrql();
-			if (FirstIrql > PASSIVE_LEVEL)
-			{
-				KeLowerIrql(PASSIVE_LEVEL);
-			}
-			Status = IoCallDriver(pNdisObj, pIrp);
-			if (KeGetCurrentIrql() != FirstIrql)
-			{
-				KeRaiseIrql(FirstIrql, &FirstIrql);
-			}
-
-			ObDereferenceObject(pFileObject);
-
-			//ObDereferenceObject(pFileObject);
-			//ObDereferenceObject(pNdisObj);
-			if (NT_SUCCESS(Status))
-			{
-				nd = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct net_device), 'NDEV');
-				if (nd != NULL)
-				{
-					RtlZeroMemory(nd, sizeof(struct net_device));
-					RtlCopyMemory(nd->if_xname, name, IFNAMSIZ);
-					nd->deviceHandle = exchangeBuffer.deviceHandle;
-					nd->ifIndex = exchangeBuffer.deviceIfIndex;
-					return nd;
-				}			
-			}
-		}
-	}		
 	return NULL;
-#endif
 }
 
 NTSTATUS ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
@@ -621,7 +547,7 @@ NTSTATUS ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	{
 		case NETMAP_KERNEL_XCHANGE_POINTERS:
 			data = Irp->AssociatedIrp.SystemBuffer;
-			data->windows_generic_rx_handler = &windows_generic_rx_handler;
+			data->netmap_catch_rx = &windows_generic_rx_handler;
 
 			g_functionAddresses.pingPacketInsertionTest = data->pingPacketInsertionTest;
 			g_functionAddresses.get_device_handle_by_ifindex = data->get_device_handle_by_ifindex;
@@ -765,22 +691,6 @@ int copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
 	}
 }
 
-#if 0
-NTSTATUS ReadSync(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-	DbgPrint("Netmap.sys: ReadSync invoked\n");
-	NTSTATUS NtStatus = STATUS_SUCCESS;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	return NtStatus;
-}
-NTSTATUS WriteSync(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-	DbgPrint("Netmap.sys: WriteSync invoked\n");
-	NTSTATUS NtStatus = STATUS_SUCCESS;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	return NtStatus;
-}
-#endif
  /*
  * Kernel driver entry point.
  *
@@ -800,7 +710,7 @@ NTSTATUS DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING Regi
     UNREFERENCED_PARAMETER(RegistryPath);
     UNREFERENCED_PARAMETER(deviceObject);
 		
-    RtlInitUnicodeString( &ntUnicodeString, NT_DEVICE_NAME );
+	RtlInitUnicodeString(&ntUnicodeString, NETMAP_NT_DEVICE_NAME);
 
     ntStatus = IoCreateDevice(
         DriverObject,                   // The Driver Object
@@ -829,7 +739,7 @@ NTSTATUS DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING Regi
 
     // Initialize a Unicode String containing the Win32 name
     // for our device.
-    RtlInitUnicodeString( &ntWin32NameString, DOS_DEVICE_NAME );
+	RtlInitUnicodeString(&ntWin32NameString, NETMAP_DOS_DEVICE_NAME);
 
     // Symlink creation
     ntStatus = IoCreateSymbolicLink(&ntWin32NameString, &ntUnicodeString );

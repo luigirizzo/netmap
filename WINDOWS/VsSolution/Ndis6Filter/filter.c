@@ -32,6 +32,7 @@ PDEVICE_OBJECT      DeviceObject = NULL;
 
 //Link with Netmap IOCTL driver used to send internals IOCTLs
 static PDEVICE_OBJECT		g_pNetmapDeviceObject = NULL;
+PFILE_OBJECT pNetmapDeviceFileObject = NULL;
 FUNCTION_POINTER_XCHANGE g_functionAddresses;
 
 FILTER_LOCK         FilterListLock;
@@ -51,7 +52,7 @@ NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
 
 extern void pingPacketInsertionTest(void);
 extern void set_ifp_in_device_handle(struct net_device *, BOOLEAN);
-extern NDIS_HANDLE get_device_handle_by_ifindex(PNDIS_INTERNAL_DEVICE_HANDLER);
+extern NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex);
 extern NTSTATUS injectPacket(NDIS_HANDLE device, PVOID data);
 
 _Use_decl_annotations_
@@ -172,43 +173,53 @@ Return Value:
             break;
         }
 
+		{
+			OBJECT_ATTRIBUTES   objectAttributes;
+			UNICODE_STRING      ObjectName;
+			IO_STATUS_BLOCK		iosb;
 
+			//Getting pointer to netmap IOCTL device
+			RtlInitUnicodeString(&ObjectName, NETMAP_DOS_DEVICE_NAME);
+			InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+			Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pNetmapDeviceFileObject, &g_pNetmapDeviceObject);
+			if (Status != NDIS_STATUS_SUCCESS)
+			{
+				NdisFDeregisterFilterDriver(FilterDriverHandle);
+				DEBUGP(DL_WARN, "Cannot find netmap driver\n");
+				break;
+			}
+			g_functionAddresses.netmap_catch_rx = NULL;		//parameter returned by netmap IOCTL driver
+			g_functionAddresses.pingPacketInsertionTest = &pingPacketInsertionTest;
+			g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
+			g_functionAddresses.set_ifp_in_device_handle = &set_ifp_in_device_handle;
+			g_functionAddresses.injectPacket = &injectPacket;
+			//DbgPrint("DevObj 0x%p", g_pNetmapDeviceObject);
+			PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS,
+				g_pNetmapDeviceObject,
+				&g_functionAddresses,				//input arg
+				sizeof(FUNCTION_POINTER_XCHANGE),	
+				&g_functionAddresses,				//output arg
+				sizeof(FUNCTION_POINTER_XCHANGE),
+				TRUE,								//internal IOCTL
+				NULL,
+				&iosb);								//status of the call for async calls
+			if (pIrp != NULL)
+			{
+				Status = IoCallDriver(g_pNetmapDeviceObject, pIrp);
+			}else{
+				Status = STATUS_DEVICE_DOES_NOT_EXIST;	//XXX_ale
+			}
+			
+			if (Status != NDIS_STATUS_SUCCESS)
+			{
+				//Release the netmap IOCTL file reference
+				ObDereferenceObject(pNetmapDeviceFileObject);
+				NdisFDeregisterFilterDriver(FilterDriverHandle);
+				DEBUGP(DL_WARN, "Error during IoCallDriver to Netmap driver\n");
+			}	
+		}
     }
     while(bFalse);
-	{
-		OBJECT_ATTRIBUTES   objectAttributes;
-		UNICODE_STRING      ObjectName;
-		IO_STATUS_BLOCK		iosb;
-		PFILE_OBJECT pFileObject = NULL;
-
-		RtlInitUnicodeString(&ObjectName, DOS_DEVICE_NAME);
-		InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-		g_functionAddresses.windows_generic_rx_handler = NULL;
-		g_functionAddresses.pingPacketInsertionTest = &pingPacketInsertionTest;
-		g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
-		g_functionAddresses.set_ifp_in_device_handle = &set_ifp_in_device_handle;
-		g_functionAddresses.injectPacket = &injectPacket;
-		Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &g_pNetmapDeviceObject);
-		if (NT_SUCCESS(Status))
-		{
-			//DbgPrint("DevObj 0x%p", g_pNetmapDeviceObject);
-			PIRP pIrp = NULL;
-			pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS,
-				g_pNetmapDeviceObject,
-				&g_functionAddresses,
-				sizeof(FUNCTION_POINTER_XCHANGE),
-				&g_functionAddresses,
-				sizeof(FUNCTION_POINTER_XCHANGE),
-				TRUE,
-				NULL,
-				&iosb);
-			IoCallDriver(g_pNetmapDeviceObject, pIrp);
-			ObDereferenceObject(pFileObject);
-		} else{
-			NdisFDeregisterFilterDriver(FilterDriverHandle);
-			DEBUGP(DL_WARN, "Cannot find netmap driver\n");
-		}
-	}
 
     DEBUGP(DL_TRACE, "<===DriverEntry, Status = %8x\n", Status);
     return Status;
@@ -796,6 +807,11 @@ Return Value:
     FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
 
 #endif
+
+	if (pNetmapDeviceFileObject != NULL)
+	{
+		ObDereferenceObject(pNetmapDeviceFileObject);
+	}
 
     FILTER_FREE_LOCK(&FilterListLock);
 
@@ -1663,7 +1679,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
         }
 
 		//if (pFilter->ifp != NULL)
-		if (g_functionAddresses.windows_generic_rx_handler != NULL && pFilter->readyToUse)
+		if (g_functionAddresses.netmap_catch_rx != NULL && pFilter->readyToUse)
 		{	
 			//struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
 #if 1
@@ -1690,7 +1706,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 					//temp->m_len = temp->pkt->DataLength;
 					//PVOID buffer;
 					//buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
-					result = g_functionAddresses.windows_generic_rx_handler(pFilter->ifp, pkt->DataLength, NULL);
+					result = g_functionAddresses.netmap_catch_rx(pFilter->ifp, pkt->DataLength, NULL);
 					//ExFreePoolWithTag(temp, 'XCHG');
 					//DbgPrint("Called: result= %i", result);
 					//DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);

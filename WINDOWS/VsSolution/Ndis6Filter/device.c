@@ -134,7 +134,6 @@ FilterInternalDeviceIoControl(
 {
 	PIO_STACK_LOCATION				IrpSp;
 	NTSTATUS						NtStatus = STATUS_SUCCESS;
-	PNDIS_INTERNAL_DEVICE_HANDLER	data;
 	PVOID							pOutBuff = NULL;
 	MEMORY_ENTRY					*memEntry = NULL;
 	struct net_device				*ifp = NULL;
@@ -143,38 +142,6 @@ FilterInternalDeviceIoControl(
 
 	switch (IrpSp->Parameters.DeviceIoControl.IoControlCode)
 	{
-#if 0
-		case NETMAP_KERNEL_GET_DEV_BY_NAME:
-			data = Irp->AssociatedIrp.SystemBuffer;
-			data->deviceHandle = get_device_handle_by_ifindex(data);
-			pOutBuff = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
-			RtlCopyMemory(pOutBuff, data, sizeof(NDIS_INTERNAL_DEVICE_HANDLER));
-			Irp->IoStatus.Information = sizeof(NDIS_INTERNAL_DEVICE_HANDLER);
-			if (data->deviceHandle == NULL)
-			{
-				NtStatus = STATUS_DEVICE_DOES_NOT_EXIST;
-			}
-			break;
-		case NETMAP_KERNEL_TEST_INJECT_PING:
-			//DbgPrint("ndislwf.sys: NETMAP_KERNEL_TEST_INJECT_PING recvd\n");
-			//pingPacketInsertionTest();
-			//Irp->IoStatus.Information = 0;
-			break;
-		case NETMAP_KERNEL_DEVICE_RX_REGISTER:
-			DbgPrint("ndislwf.sys: NETMAP_KERNEL_DEVICE_RX_REGISTER recvd\n");
-			memEntry = Irp->AssociatedIrp.SystemBuffer;
-			ifp = memEntry->pUsermodeVirtualAddress;
-			set_ifp_in_device_handle(ifp, TRUE);
-			Irp->IoStatus.Information = 0;
-			break;
-		case NETMAP_KERNEL_DEVICE_RX_UNREGISTER:
-			DbgPrint("ndislwf.sys: NETMAP_KERNEL_DEVICE_RX_UNREGISTER recvd\n");
-			memEntry = Irp->AssociatedIrp.SystemBuffer;
-			ifp = memEntry->pUsermodeVirtualAddress;
-			set_ifp_in_device_handle(ifp, FALSE);
-			Irp->IoStatus.Information = 0;
-			break;
-#endif
 		default:
 			DbgPrint("Netmap.sys: wrong request issued! (%i)", IrpSp->Parameters.DeviceIoControl.IoControlCode);
 			NtStatus = STATUS_INVALID_DEVICE_REQUEST;
@@ -447,7 +414,7 @@ void pingPacketInsertionTest()
 	ExFreePoolWithTag(buffer, 'NDIS');
 }
 
-NDIS_HANDLE get_device_handle_by_ifindex(PNDIS_INTERNAL_DEVICE_HANDLER ngdh)
+NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex)
 {
 	NTSTATUS				NtStatus = STATUS_SUCCESS;
 	PLIST_ENTRY             Link = NULL;
@@ -455,13 +422,12 @@ NDIS_HANDLE get_device_handle_by_ifindex(PNDIS_INTERNAL_DEVICE_HANDLER ngdh)
 	int						counter = 0;
 
 	FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
-	ngdh->deviceHandle = NULL;
 	Link = FilterModuleList.Flink;
 	while (Link != NULL && counter<FilterModulesCount)
 	{
 		pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
 		//DbgPrint("IfIndex: %i, NDIS_HANDLE: %p\n", pFilter->MiniportIfIndex, pFilter->FilterHandle);
-		if (pFilter->MiniportIfIndex == ngdh->deviceIfIndex)
+		if (pFilter->MiniportIfIndex == deviceIfIndex)
 		{
 			FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
 			return pFilter->FilterHandle;

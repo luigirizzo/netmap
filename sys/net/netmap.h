@@ -574,8 +574,8 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define DRIVER_NAME				"netmap"
 
 //These linknames are for the Netmap Core Driver
-#define NT_DEVICE_NAME			L"\\Device\\NETMAP"
-#define DOS_DEVICE_NAME			L"\\DosDevices\\netmap"
+#define NETMAP_NT_DEVICE_NAME			L"\\Device\\NETMAP"
+#define NETMAP_DOS_DEVICE_NAME			L"\\DosDevices\\netmap"
 
 //These linknames are for the NDIS driver
 #define NETMAP_NDIS_LINKNAME_STRING             L"\\DosDevices\\NMAPNDIS"//L"\\DosDevices\\NDISLWF"

@@ -247,17 +247,11 @@ static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 *        		GENERIC/HW SPECIFIC STRUCTURES     		 *
 **********************************************************/
 
-typedef struct _NDIS_INTERNAL_DEVICE_HANDLER
-{
-	int			deviceIfIndex;
-	NDIS_HANDLE	deviceHandle;
-} NDIS_INTERNAL_DEVICE_HANDLER, *PNDIS_INTERNAL_DEVICE_HANDLER;
-
 typedef struct _FUNCTION_POINTER_XCHANGE
 {
-	PVOID(*pingPacketInsertionTest)(void);
-	struct NET_BUFFER*(*windows_generic_rx_handler)(struct net_device*, uint32_t length, const char* data);
-	NDIS_HANDLE(*get_device_handle_by_ifindex)(PNDIS_INTERNAL_DEVICE_HANDLER);
+	PVOID(*pingPacketInsertionTest)(void);			//test function
+	struct NET_BUFFER*(*netmap_catch_rx)(struct net_device*, uint32_t length, const char* data);
+	NDIS_HANDLE(*get_device_handle_by_ifindex)(int ifIndex);
 	void(*set_ifp_in_device_handle)(struct net_device*, BOOLEAN);
 	NTSTATUS(*injectPacket)(NDIS_HANDLE device, PVOID data);
 } FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
