@@ -95,7 +95,7 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #endif  /* < 3.0 */
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 2, 0)
+#ifndef NETMAP_LINUX_VIRTIO_GET_VRSIZE
 /* Not yet found a way to find out virtqueue length in these
    kernel series. Use the virtio default value. */
 #define virtqueue_get_vring_size(_vq)	({ (void)(_vq); 256; })

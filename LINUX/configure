@@ -1144,6 +1144,15 @@ add_test 'define VIRTIO_CB_DELAYED' <<-EOF
 	}
 EOF
 
+add_test 'define VIRTIO_GET_VRSIZE' <<-EOF
+	#include <linux/virtio.h>
+
+	unsigned int
+	dummy(struct virtqueue *vq) {
+		return virtqueue_get_vring_size(vq);
+	}
+EOF
+
 fi
 
 # END_TESTS
