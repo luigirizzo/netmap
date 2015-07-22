@@ -298,6 +298,14 @@ add_named_test() {
 		EOF
 		cat	# output the test code read from stdin
 	} > $TMPDIR/$1.c
+	{
+		cat <<-EOF
+##############################################################################
+##            TEST:  $1
+##############################################################################
+		EOF
+		cat $TMPDIR/$1.c
+	} >> config.log
 	# add the module to the running list
 	TESTOBJS="$1.o $TESTOBJS"
 	# add the postprocess script for this test
@@ -458,7 +466,6 @@ rm -f config.log
 } > config.log
 
 exec 2>> config.log
-set -x
 
 ################################
 # check for sane configuration
