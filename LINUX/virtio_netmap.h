@@ -56,7 +56,18 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #endif  /* >= 2.6.35 */
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
+#ifdef NETMAP_LINUX_VIRTIO_FUNCTIONS
+
+#ifdef NETMAP_LINUX_VIRTIO_ADD_BUF
+/* Some simple renaming due to virtio interface changes. */
+#define virtqueue_add_inbuf(_vq, _sg, _num, _tok, _gfp)	\
+		NETMAP_LINUX_VIRTIO_ADD_BUF(_vq, _sg, 0, _num, _tok, _gfp)
+#define virtqueue_add_outbuf(_vq, _sg, _num, _tok, _gfp) \
+		NETMAP_LINUX_VIRTIO_ADD_BUF(_vq, _sg, _num, 0, _tok, _gfp)
+#endif /* NETMAP_LINUX_VIRTIO_ADD_BUF */
+
+#else /* !NETMAP_LINUX_VIRTIO_FUNCTIONS */
+
 /* Before 2.6.35, the virtio interface was not exported with functions,
    but using virtqueue callbacks. */
 #define virtqueue_detach_unused_buf(_vq) \
@@ -72,21 +83,7 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #define virtqueue_enable_cb(_vq) \
 		(_vq)->vq_ops->enable_cb(_vq)
 
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 3, 0)
-/* Some simple renaming due to virtio interface changes. */
-#define virtqueue_add_inbuf(_vq, _sg, _num, _tok, _gfp)	\
-		virtqueue_add_buf_gfp(_vq, _sg, 0, _num, _tok, _gfp)
-#define virtqueue_add_outbuf(_vq, _sg, _num, _tok, _gfp) \
-		virtqueue_add_buf_gfp(_vq, _sg, _num, 0, _tok, _gfp)
-
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0)
-/* Some simple renaming due to virtio interface changes. */
-#define virtqueue_add_inbuf(_vq, _sg, _num, _tok, _gfp)	\
-		virtqueue_add_buf(_vq, _sg, 0, _num, _tok, _gfp)
-#define virtqueue_add_outbuf(_vq, _sg, _num, _tok, _gfp) \
-		virtqueue_add_buf(_vq, _sg, _num, 0, _tok, _gfp)
-
-#endif  /* 3.3 <= VER < 3.10.0 */
+#endif  /* NETMAP_LINUX_VIRTIO_FUNCTIONS */
 
 
 #ifndef NETMAP_LINUX_VIRTIO_CB_DELAYED

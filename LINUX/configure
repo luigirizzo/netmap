@@ -1164,6 +1164,30 @@ add_test 'define VIRTIO_FREE_PAGES' <<-EOF
 	}
 EOF
 
+add_test 'define VIRTIO_FUNCTIONS' <<-EOF
+	#include <linux/virtio.h>
+
+	void
+	dummy(struct virtqueue *vq) {
+		(void)virtqueue_kick(vq);
+	}
+EOF
+
+for s in "" _gfp; do
+	f="virtqueue_add_buf$s"
+	add_test "define VIRTIO_ADD_BUF $f" <<-EOF
+		#include <linux/virtio.h>
+
+		int
+		dummy(struct virtqueue *vq, struct scatterlist sg[],
+			unsigned int out_num, unsigned int in_num,
+			void *data, gfp_t gfp)
+		{
+			return $f(vq, sg, out_num, in_num, data, gfp);
+		}
+	EOF
+done
+
 fi
 
 # END_TESTS
