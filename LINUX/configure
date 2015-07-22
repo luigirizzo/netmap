@@ -1133,6 +1133,19 @@ add_test 'define IXGBE_PTR_ARRAY' <<-EOF
 EOF
 fi # ixgbe
 
+if drv enabled virtio_net.c; then
+
+add_test 'define VIRTIO_CB_DELAYED' <<-EOF
+	#include <linux/virtio.h>
+
+	bool
+	dummy(struct virtqueue *vq) {
+		return virtqueue_enable_cb_delayed(vq);
+	}
+EOF
+
+fi
+
 # END_TESTS
 
 # now we actually create the file

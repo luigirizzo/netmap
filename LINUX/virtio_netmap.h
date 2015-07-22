@@ -89,7 +89,7 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #endif  /* 3.3 <= VER < 3.10.0 */
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 0, 0)
+#ifndef NETMAP_LINUX_VIRTIO_CB_DELAYED
 /* The delayed optimization did not exists before version 3.0. */
 #define virtqueue_enable_cb_delayed(_vq)	virtqueue_enable_cb(_vq)
 #endif  /* < 3.0 */
