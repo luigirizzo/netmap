@@ -581,22 +581,6 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NETMAP_NDIS_LINKNAME_STRING             L"\\DosDevices\\NMAPNDIS"//L"\\DosDevices\\NDISLWF"
 #define NETMAP_NDIS_NTDEVICE_STRING             L"\\Device\\NMAPNDIS"//L"\\Device\\NDISLWF"
 
-#ifdef _KERNEL
-typedef struct _NDIS_INTERNAL_DEVICE_HANDLER
-{
-	int			deviceIfIndex;
-	NDIS_HANDLE	deviceHandle;
-} NDIS_INTERNAL_DEVICE_HANDLER, *PNDIS_INTERNAL_DEVICE_HANDLER;
-
-typedef struct _FUNCTION_POINTER_XCHANGE
-{
-	PVOID(*pingPacketInsertionTest)(void);
-	struct NET_BUFFER*(*windows_generic_rx_handler)(struct net_device*, uint32_t length, const char* data);
-	NDIS_HANDLE(*get_device_handle_by_ifindex)(PNDIS_INTERNAL_DEVICE_HANDLER);
-	void(*set_ifp_in_device_handle)(struct net_device*, BOOLEAN);
-	NTSTATUS(*injectPacket)(NDIS_HANDLE device, PVOID data);
-} FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
-#endif
 //Definition of a structure used to pass a virtual address within an IOCTL
 typedef struct _MEMORY_ENTRY
 {

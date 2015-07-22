@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2015 Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2015 Universita` di Pisa. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -58,7 +58,6 @@
 
 #include <ndis.h>
 #include <string.h>
-#include <stdio.h>
 #include <WinDef.h>
 //#include <Iptypes.h>		// definition of IP_ADAPTER_INFO
 #include <netioapi.h>		// definition of IF_NAMESIZE
@@ -247,6 +246,22 @@ static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 /*********************************************************
 *        		GENERIC/HW SPECIFIC STRUCTURES     		 *
 **********************************************************/
+
+typedef struct _NDIS_INTERNAL_DEVICE_HANDLER
+{
+	int			deviceIfIndex;
+	NDIS_HANDLE	deviceHandle;
+} NDIS_INTERNAL_DEVICE_HANDLER, *PNDIS_INTERNAL_DEVICE_HANDLER;
+
+typedef struct _FUNCTION_POINTER_XCHANGE
+{
+	PVOID(*pingPacketInsertionTest)(void);
+	struct NET_BUFFER*(*windows_generic_rx_handler)(struct net_device*, uint32_t length, const char* data);
+	NDIS_HANDLE(*get_device_handle_by_ifindex)(PNDIS_INTERNAL_DEVICE_HANDLER);
+	void(*set_ifp_in_device_handle)(struct net_device*, BOOLEAN);
+	NTSTATUS(*injectPacket)(NDIS_HANDLE device, PVOID data);
+} FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
+
 //XXX_ale: I'm sure that somewhere in windows definitions there's a structure like the original
 struct netmap_adapter;
 #if 0
@@ -646,5 +661,6 @@ int do_cmd(int optname, void *optval, uintptr_t optlen);
 #ifndef POLLNVAL
 #define POLLNVAL    0x0020
 #endif
+
 
 #endif //_WIN_GLUE_H

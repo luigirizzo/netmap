@@ -30,8 +30,8 @@ NDIS_HANDLE         FilterDriverObject;
 NDIS_HANDLE         NdisFilterDeviceHandle = NULL;
 PDEVICE_OBJECT      DeviceObject = NULL;
 
-HANDLE				g_NetmapDriverHandle = NULL;
-PDEVICE_OBJECT		g_pNetmapDeviceObject = NULL;
+//Link with Netmap IOCTL driver used to send internals IOCTLs
+static PDEVICE_OBJECT		g_pNetmapDeviceObject = NULL;
 FUNCTION_POINTER_XCHANGE g_functionAddresses;
 
 FILTER_LOCK         FilterListLock;
@@ -175,40 +175,38 @@ Return Value:
 
     }
     while(bFalse);
-
 	{
 		OBJECT_ATTRIBUTES   objectAttributes;
 		UNICODE_STRING      ObjectName;
 		IO_STATUS_BLOCK		iosb;
+		PFILE_OBJECT pFileObject = NULL;
+
 		RtlInitUnicodeString(&ObjectName, DOS_DEVICE_NAME);
 		InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+		g_functionAddresses.windows_generic_rx_handler = NULL;
+		g_functionAddresses.pingPacketInsertionTest = &pingPacketInsertionTest;
+		g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
+		g_functionAddresses.set_ifp_in_device_handle = &set_ifp_in_device_handle;
+		g_functionAddresses.injectPacket = &injectPacket;
+		Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &g_pNetmapDeviceObject);
+		if (NT_SUCCESS(Status))
 		{
-			PFILE_OBJECT pFileObject = NULL;
-			g_functionAddresses.windows_generic_rx_handler = NULL;
-			g_functionAddresses.pingPacketInsertionTest = &pingPacketInsertionTest;
-			g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
-			g_functionAddresses.set_ifp_in_device_handle = &set_ifp_in_device_handle;
-			g_functionAddresses.injectPacket = &injectPacket;
-			Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &g_pNetmapDeviceObject);
-			if (NT_SUCCESS(Status))
-			{
-				//DbgPrint("DevObj 0x%p", g_pNetmapDeviceObject);
-				PIRP pIrp = NULL;
-				pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS,
-					g_pNetmapDeviceObject,
-					&g_functionAddresses,
-					sizeof(FUNCTION_POINTER_XCHANGE),
-					&g_functionAddresses,
-					sizeof(FUNCTION_POINTER_XCHANGE),
-					TRUE,
-					NULL,
-					&iosb);
-				IoCallDriver(g_pNetmapDeviceObject, pIrp);
-				ObDereferenceObject(pFileObject);
-			} else{
-				NdisFDeregisterFilterDriver(FilterDriverHandle);
-				DEBUGP(DL_WARN, "Cannot find netmap driver\n");
-			}
+			//DbgPrint("DevObj 0x%p", g_pNetmapDeviceObject);
+			PIRP pIrp = NULL;
+			pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS,
+				g_pNetmapDeviceObject,
+				&g_functionAddresses,
+				sizeof(FUNCTION_POINTER_XCHANGE),
+				&g_functionAddresses,
+				sizeof(FUNCTION_POINTER_XCHANGE),
+				TRUE,
+				NULL,
+				&iosb);
+			IoCallDriver(g_pNetmapDeviceObject, pIrp);
+			ObDereferenceObject(pFileObject);
+		} else{
+			NdisFDeregisterFilterDriver(FilterDriverHandle);
+			DEBUGP(DL_WARN, "Cannot find netmap driver\n");
 		}
 	}
 
@@ -797,13 +795,6 @@ Return Value:
 
     FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
 
-#endif
-
-#if 0
-	if (g_NetmapDriverHandle != NULL)
-	{
-		ZwClose(g_NetmapDriverHandle);
-	}
 #endif
 
     FILTER_FREE_LOCK(&FilterListLock);
