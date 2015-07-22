@@ -35,24 +35,24 @@ static int virtnet_open(struct ifnet *ifp);
 static void free_receive_bufs(struct virtnet_info *vi);
 static void free_unused_bufs(struct virtnet_info *vi);
 
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
+#ifdef NETMAP_LINUX_HAVE_NUM_QUEUES
+#define DEV_NUM_RX_QUEUES(_netdev)	(_netdev)->num_rx_queues
+#define DEV_NUM_TX_QUEUES(_netdev)	(_netdev)->num_tx_queues
+#else
 /* Before 2.6.35 there was no net_device.num_rx_queues, so we assume 1. */
 #define DEV_NUM_RX_QUEUES(_netdev)	1
 #define DEV_NUM_TX_QUEUES(_netdev)	1
+#endif /* NETMAP_LINUX_HAVE_NUM_QUEUES */
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
 /* A scatterlist struct is needed by functions that invoke
    virtqueue_add_buf() methods, but before 2.6.35 these struct were
    not part of virtio-net data structures, but were defined in those
    function. This macro does this definition, which is not necessary
    for subsequent versions. */
 #define COMPAT_DECL_SG			struct scatterlist _compat_sg;
-
 #else  /* >= 2.6.35 */
-
-#define DEV_NUM_RX_QUEUES(_netdev)	(_netdev)->num_rx_queues
-#define DEV_NUM_TX_QUEUES(_netdev)	(_netdev)->num_tx_queues
 #define COMPAT_DECL_SG
-
 #endif  /* >= 2.6.35 */
 
 
