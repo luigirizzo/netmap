@@ -9,6 +9,7 @@
 
 #pragma NDIS_INIT_FUNCTION(FilterRegisterDevice)
 
+
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NDIS_STATUS
 FilterRegisterDevice(
@@ -30,10 +31,10 @@ FilterRegisterDevice(
     DispatchTable[IRP_MJ_CLEANUP] = FilterDispatch;
     DispatchTable[IRP_MJ_CLOSE] = FilterDispatch;
     DispatchTable[IRP_MJ_DEVICE_CONTROL] = FilterDeviceIoControl;
-	DispatchTable[IRP_MJ_INTERNAL_DEVICE_CONTROL] = FilterInternalDeviceIoControl;
+    DispatchTable[IRP_MJ_INTERNAL_DEVICE_CONTROL] = FilterInternalDeviceIoControl;
 
-	NdisInitUnicodeString(&DeviceName, NETMAP_NDIS_NTDEVICE_STRING);
-	NdisInitUnicodeString(&DeviceLinkUnicodeString, NETMAP_NDIS_LINKNAME_STRING);
+    NdisInitUnicodeString(&DeviceName, NETMAP_NDIS_NTDEVICE_STRING);
+    NdisInitUnicodeString(&DeviceLinkUnicodeString, NETMAP_NDIS_LINKNAME_STRING);
 
     //
     // Create a device object and register our dispatch handlers
@@ -65,6 +66,7 @@ FilterRegisterDevice(
         FilterDeviceExtension->Handle = FilterDriverHandle;
     }
 
+
     DEBUGP(DL_TRACE, "<==FilterRegisterDevice: %x\n", Status);
 
     return (Status);
@@ -78,7 +80,7 @@ FilterDeregisterDevice(
     )
 
 {
-	DbgPrint("NmNDIS.sys: FilterDeregisterDevice\n");
+    DbgPrint("NmNDIS.sys: FilterDeregisterDevice\n");
     if (NdisFilterDeviceHandle != NULL)
     {
         NdisDeregisterDeviceEx(NdisFilterDeviceHandle);
@@ -101,6 +103,7 @@ FilterDispatch(
     UNREFERENCED_PARAMETER(DeviceObject);
 
     IrpStack = IoGetCurrentIrpStackLocation(Irp);
+
     switch (IrpStack->MajorFunction)
     {
         case IRP_MJ_CREATE:
@@ -125,9 +128,9 @@ FilterDispatch(
 _Use_decl_annotations_
 NTSTATUS
 FilterInternalDeviceIoControl(
-PDEVICE_OBJECT        DeviceObject,
-PIRP                  Irp
-)
+    PDEVICE_OBJECT        DeviceObject,
+    PIRP                  Irp
+    )
 {
 	PIO_STACK_LOCATION				IrpSp;
 	NTSTATUS						NtStatus = STATUS_SUCCESS;
@@ -202,7 +205,8 @@ FilterDeviceIoControl(
 
 
     UNREFERENCED_PARAMETER(DeviceObject);
-	DbgPrint("------------------FilterDeviceIoControl!\n");
+
+    DbgPrint("------------------FilterDeviceIoControl!\n");
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
@@ -287,8 +291,10 @@ FilterDeviceIoControl(
                 Status = STATUS_BUFFER_TOO_SMALL;
             }
             break;
+
+
         default:
-			DbgPrint("WRONG request received!\n");
+	    DbgPrint("WRONG request received!\n");
             break;
     }
 

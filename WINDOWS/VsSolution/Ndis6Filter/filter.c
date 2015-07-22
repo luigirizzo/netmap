@@ -36,9 +36,8 @@ FUNCTION_POINTER_XCHANGE g_functionAddresses;
 
 FILTER_LOCK         FilterListLock;
 LIST_ENTRY          FilterModuleList;
-int					FilterModulesCount = 0;
+int			FilterModulesCount = 0;
 
-int					packets = 0;
 
 NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
 { 0, 0, 0},
@@ -301,11 +300,11 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
 
 --*/
 {
-    PMS_FILTER						pFilter = NULL;
-    NDIS_STATUS						Status = NDIS_STATUS_SUCCESS;
-    NDIS_FILTER_ATTRIBUTES			FilterAttributes;
-    ULONG							Size;
-    BOOLEAN							bFalse = FALSE;
+    PMS_FILTER			pFilter = NULL;
+    NDIS_STATUS			Status = NDIS_STATUS_SUCCESS;
+    NDIS_FILTER_ATTRIBUTES	FilterAttributes;
+    ULONG			Size;
+    BOOLEAN			bFalse = FALSE;
 
     DEBUGP(DL_TRACE, "===>FilterAttach: NdisFilterHandle %p\n", NdisFilterHandle);
 
@@ -743,8 +742,9 @@ NOTE: Called at PASSIVE_LEVEL and the filter is in paused state
 
     FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
     RemoveEntryList(&pFilter->FilterModuleLink);
-	FilterModulesCount--;
-	FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
+    FilterModulesCount--;
+    FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
+
 
     //
     // Free the memory allocated
@@ -1545,6 +1545,7 @@ Arguments:
 
 }
 
+
 _Use_decl_annotations_
 VOID
 FilterReceiveNetBufferLists(
@@ -1675,6 +1676,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 		{	
 			//struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
 #if 1
+			static int packets = 0; /* debugging */
 			//DbgPrint("Dropping packets... size: %i\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
 			packets += 1;
 			if (packets == 100000)
