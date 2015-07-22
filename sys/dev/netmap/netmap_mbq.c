@@ -65,7 +65,7 @@ void mbq_init(struct mbq *q)
 
 static inline void __mbq_enqueue(struct mbq *q, struct mbuf *m)
 {
-#if 0// _WIN32 
+#ifndef _WIN32 
     m->m_nextpkt = NULL;
     if (q->tail) {
         q->tail->m_nextpkt = m;

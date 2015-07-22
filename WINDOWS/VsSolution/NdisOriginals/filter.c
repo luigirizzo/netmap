@@ -30,15 +30,8 @@ NDIS_HANDLE         FilterDriverObject;
 NDIS_HANDLE         NdisFilterDeviceHandle = NULL;
 PDEVICE_OBJECT      DeviceObject = NULL;
 
-HANDLE				g_NetmapDriverHandle = NULL;
-PDEVICE_OBJECT		g_pNetmapDeviceObject = NULL;
-FUNCTION_POINTER_XCHANGE g_functionAddresses;
-
 FILTER_LOCK         FilterListLock;
 LIST_ENTRY          FilterModuleList;
-int					FilterModulesCount = 0;
-
-int					packets = 0;
 
 NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
 { 0, 0, 0},
@@ -50,10 +43,6 @@ NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
       FilterReturnNetBufferLists
 };
 
-extern void pingPacketInsertionTest(void);
-extern void set_ifp_in_device_handle(struct net_device *, BOOLEAN);
-extern NDIS_HANDLE get_device_handle_by_ifindex(PNDIS_INTERNAL_DEVICE_HANDLER);
-extern NTSTATUS injectPacket(NDIS_HANDLE device, PVOID data);
 
 _Use_decl_annotations_
 NTSTATUS
@@ -177,41 +166,6 @@ Return Value:
     }
     while(bFalse);
 
-	{
-		OBJECT_ATTRIBUTES   objectAttributes;
-		UNICODE_STRING      ObjectName;
-		IO_STATUS_BLOCK		iosb;
-		RtlInitUnicodeString(&ObjectName, DOS_DEVICE_NAME);
-		InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-		{
-			PFILE_OBJECT pFileObject = NULL;
-			g_functionAddresses.windows_generic_rx_handler = NULL;
-			g_functionAddresses.pingPacketInsertionTest = &pingPacketInsertionTest;
-			g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
-			g_functionAddresses.set_ifp_in_device_handle = &set_ifp_in_device_handle;
-			g_functionAddresses.injectPacket = &injectPacket;
-			Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &g_pNetmapDeviceObject);
-			if (NT_SUCCESS(Status))
-			{
-				//DbgPrint("DevObj 0x%p", g_pNetmapDeviceObject);
-				PIRP pIrp = NULL;
-				pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS,
-					g_pNetmapDeviceObject,
-					&g_functionAddresses,
-					sizeof(FUNCTION_POINTER_XCHANGE),
-					&g_functionAddresses,
-					sizeof(FUNCTION_POINTER_XCHANGE),
-					TRUE,
-					NULL,
-					&iosb);
-				IoCallDriver(g_pNetmapDeviceObject, pIrp);
-				ObDereferenceObject(pFileObject);
-			} else{
-				NdisFDeregisterFilterDriver(FilterDriverHandle);
-				DEBUGP(DL_WARN, "Cannot find netmap driver\n");
-			}
-		}
-	}
 
     DEBUGP(DL_TRACE, "<===DriverEntry, Status = %8x\n", Status);
     return Status;
@@ -301,11 +255,11 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
 
 --*/
 {
-    PMS_FILTER						pFilter = NULL;
-    NDIS_STATUS						Status = NDIS_STATUS_SUCCESS;
-    NDIS_FILTER_ATTRIBUTES			FilterAttributes;
-    ULONG							Size;
-    BOOLEAN							bFalse = FALSE;
+    PMS_FILTER              pFilter = NULL;
+    NDIS_STATUS             Status = NDIS_STATUS_SUCCESS;
+    NDIS_FILTER_ATTRIBUTES  FilterAttributes;
+    ULONG                   Size;
+    BOOLEAN               bFalse = FALSE;
 
     DEBUGP(DL_TRACE, "===>FilterAttach: NdisFilterHandle %p\n", NdisFilterHandle);
 
@@ -317,14 +271,7 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
             Status = NDIS_STATUS_INVALID_PARAMETER;
             break;
         }
-#if 0
-		DbgPrint("IfIndex: %i - Name: %s\n", AttachParameters->LowerIfIndex, AttachParameters->BaseMiniportInstanceName);
-		DbgPrint("IfIndex: %i", AttachParameters->BaseMiniportIfIndex); //<----------------------------------
-		DbgPrint("Luid: %i - BaseLuid %i\n", AttachParameters->NetLuid, AttachParameters->BaseMiniportNetLuid);
-		DbgPrint("Handle: %p\n",FilterDriverContext);
-		DbgPrint("Handle: %p\n", FilterDriverObject);
-		DbgPrint("NdisFilterHandle: %p\n", NdisFilterHandle);  //<-----------------------------------------------------
-#endif
+
         // Verify the media type is supported.  This is a last resort; the
         // the filter should never have been bound to an unsupported miniport
         // to begin with.  If this driver is marked as a Mandatory filter (which
@@ -381,8 +328,6 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
                         pFilter->MiniportName.Length);
 
         pFilter->MiniportIfIndex = AttachParameters->BaseMiniportIfIndex;
-
-		pFilter->readyToUse = FALSE;
         //
         // The filter should initialize TrackReceives and TrackSends properly. For this
         // driver, since its default characteristic has both a send and a receive handler,
@@ -409,30 +354,11 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
             break;
         }
 
-		NdisZeroMemory(&pFilter->PoolParameters, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
-
-		pFilter->PoolParameters.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
-		pFilter->PoolParameters.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
-		pFilter->PoolParameters.Header.Size = sizeof(pFilter->PoolParameters);
-		pFilter->PoolParameters.ProtocolId = NDIS_PROTOCOL_ID_DEFAULT;
-		pFilter->PoolParameters.fAllocateNetBuffer = TRUE;
-		pFilter->PoolParameters.ContextSize = 0;
-		pFilter->PoolParameters.PoolTag = 'SIDN';
-		pFilter->PoolParameters.DataSize = 0;
-
-		pFilter->UserSendNetBufferListPool = NdisAllocateNetBufferListPool(pFilter->FilterHandle, &pFilter->PoolParameters);
-
-		if (pFilter->UserSendNetBufferListPool == NULL) 
-		{ 
-			DEBUGP(DL_ERROR, "Failed to allocate send net buffer list pool.\n"); 
-			Status = NDIS_STATUS_RESOURCES; break; 
-		}
 
         pFilter->State = FilterPaused;
 
         FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
         InsertHeadList(&FilterModuleList, &pFilter->FilterModuleLink);
-		FilterModulesCount++;
         FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
 
     }
@@ -733,18 +659,11 @@ NOTE: Called at PASSIVE_LEVEL and the filter is in paused state
         FILTER_FREE_MEM(pFilter->FilterName.Buffer);
     }
 
-	if (pFilter->UserSendNetBufferListPool != NULL)
-	{
-		NdisFreeNetBufferListPool(pFilter->UserSendNetBufferListPool);
-		pFilter->UserSendNetBufferListPool = NULL;
-		NdisZeroMemory(&pFilter->PoolParameters, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
-	}
-
 
     FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
     RemoveEntryList(&pFilter->FilterModuleLink);
-	FilterModulesCount--;
-	FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
+    FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
+
 
     //
     // Free the memory allocated
@@ -797,13 +716,6 @@ Return Value:
 
     FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
 
-#endif
-
-#if 0
-	if (g_NetmapDriverHandle != NULL)
-	{
-		ZwClose(g_NetmapDriverHandle);
-	}
 #endif
 
     FILTER_FREE_LOCK(&FilterListLock);
@@ -1326,23 +1238,8 @@ Return Value:
     // Send complete the NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
 
-	if (NetBufferLists != NULL)
-	{
-		PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
-		if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
-		{
-			while (CurrNetBuffer) 
-			{ 
-				PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
-				PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
-				NdisFreeMdl(pCurrMdl);
-				CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer); 
-			}
-			NdisFreeNetBufferList(NetBufferLists);
-		}else{
-			NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
-		}   
-	}
+    NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
+
     DEBUGP(DL_TRACE, "<===SendNBLComplete.\n");
 }
 
@@ -1512,21 +1409,7 @@ Arguments:
     // Return the received NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
 
-	PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
-	if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
-	{
-		while (CurrNetBuffer)
-		{
-			PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
-			PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
-			NdisFreeMdl(pCurrMdl);
-			CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
-		}
-		NdisFreeNetBufferList(NetBufferLists);
-	}
-	else{
-		NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
-	}
+    NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
 
     if (pFilter->TrackReceives)
     {
@@ -1544,6 +1427,7 @@ Arguments:
 
 
 }
+
 
 _Use_decl_annotations_
 VOID
@@ -1590,15 +1474,12 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
     ULONG               ReturnFlags;
 #endif
 
-	static int			maxBatch = 0;
-	int					qBatch = 0;
-
     DEBUGP(DL_TRACE, "===>ReceiveNetBufferList: NetBufferLists = %p.\n", NetBufferLists);
     do
     {
 
         DispatchLevel = NDIS_TEST_RECEIVE_AT_DISPATCH_LEVEL(ReceiveFlags);
-#if 0
+#if DBG
         FILTER_ACQUIRE_LOCK(&pFilter->Lock, DispatchLevel);
 
         if (pFilter->State != FilterRunning)
@@ -1670,61 +1551,13 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
             FILTER_RELEASE_LOCK(&pFilter->Lock, DispatchLevel);
         }
 
-		//if (pFilter->ifp != NULL)
-		if (g_functionAddresses.windows_generic_rx_handler != NULL && pFilter->readyToUse)
-		{	
-			//struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
-#if 1
-			//DbgPrint("Dropping packets... size: %i\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
-			packets += 1;
-			if (packets == 100000)
-			{
-				DbgPrint("Recv 100k (%i)\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
-				packets = 0;
-			}
-#endif
-			//if (temp != NULL)
-			{
-				int result = -1;
-				
-				PNET_BUFFER pkt = NULL;
-				PNET_BUFFER_LIST current_list = NetBufferLists;
-				while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list)) ) )
-				{
-					qBatch++;
-					//temp->dev = pFilter->ifp;
-					//temp->pkt = pkt; // NET_BUFFER_LIST_FIRST_NB(NetBufferLists);
-					//temp->m_len = temp->pkt->DataLength;
-					//PVOID buffer;
-					//buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
-					result = g_functionAddresses.windows_generic_rx_handler(pFilter->ifp, pkt->DataLength, NULL);
-					//ExFreePoolWithTag(temp, 'XCHG');
-					//DbgPrint("Called: result= %i", result);
-					//DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
-					
-					pkt = pkt->Next;
-					if (pkt == NULL)
-					{
-						current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
-					}
-				}
-				//ExFreePoolWithTag(temp, 'XCHG');
-			}
-			if (qBatch > maxBatch)
-			{
-				maxBatch = qBatch;
-				DbgPrint("MaxBatch: %i", maxBatch);
-			}
-			NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReceiveFlags);
-		}else{
-			NdisFIndicateReceiveNetBufferLists(
-				pFilter->FilterHandle,
-				NetBufferLists,
-				PortNumber,
-				NumberOfNetBufferLists,
-				ReceiveFlags);
-			//DbgPrint("Letting go packet...\n");
-		}
+        NdisFIndicateReceiveNetBufferLists(
+                   pFilter->FilterHandle,
+                   NetBufferLists,
+                   PortNumber,
+                   NumberOfNetBufferLists,
+                   ReceiveFlags);
+
 
         if (NDIS_TEST_RECEIVE_CANNOT_PEND(ReceiveFlags) &&
             pFilter->TrackReceives)

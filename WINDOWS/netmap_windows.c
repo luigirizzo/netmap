@@ -302,8 +302,8 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
 {
 	//XXX_ale: find where the rings are descripted (OID query)
-	*tx = 256;
-	*rx = 256;
+	*tx = 1024;
+	*rx = 1024;
 	return 0;
 }
 void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
@@ -314,36 +314,13 @@ void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 }
 //
 
+//Just calling a shared function with NDIS module to test inject a ping packet
 void sendPingInternal()
 {
-#if 0
-	OBJECT_ATTRIBUTES   objectAttributes;
-	UNICODE_STRING      ObjectName;
-	IO_STATUS_BLOCK		iosb;
-	PFILE_OBJECT		pFileObject = NULL;
-	PDEVICE_OBJECT		pNdisObj;
-	NTSTATUS Status;
-	RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
-	InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-	Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &pNdisObj);
-	if (NT_SUCCESS(Status))
+	if (g_functionAddresses.pingPacketInsertionTest != NULL)
 	{
-		PIRP pIrp = NULL;
-		pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_TEST_INJECT_PING,
-			pNdisObj,
-			NULL,
-			0,
-			NULL,
-			0,
-			TRUE,
-			NULL,
-			&iosb);
-		IoCallDriver(pNdisObj, pIrp);
-		ObDereferenceObject(pFileObject);
-		//ObDereferenceObject(pNdisObj);
-	}
-#endif
-	g_functionAddresses.pingPacketInsertionTest();
+		g_functionAddresses.pingPacketInsertionTest();
+	}	
 }
 
 NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
@@ -649,6 +626,7 @@ NTSTATUS ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 			g_functionAddresses.pingPacketInsertionTest = data->pingPacketInsertionTest;
 			g_functionAddresses.get_device_handle_by_ifindex = data->get_device_handle_by_ifindex;
 			g_functionAddresses.set_ifp_in_device_handle = data->set_ifp_in_device_handle;
+			g_functionAddresses.injectPacket = data->injectPacket;
 
 			RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, data, sizeof(FUNCTION_POINTER_XCHANGE));
 			Irp->IoStatus.Information = sizeof(FUNCTION_POINTER_XCHANGE);

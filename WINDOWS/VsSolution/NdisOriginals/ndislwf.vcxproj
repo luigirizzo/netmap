@@ -56,7 +56,6 @@
     <Configuration Condition="'$(Configuration)' == ''">Win8.1 Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">Win32</Platform>
     <SampleGuid>{47A52D61-9E9E-4FEA-9033-C1434C5F8870}</SampleGuid>
-    <ProjectName>NetmapNdis</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
@@ -183,9 +182,7 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
   </ImportGroup>
-  <ItemGroup Label="WrappedTaskItems">
-    <Inf Include="nmndis.inf" />
-  </ItemGroup>
+  <ItemGroup Label="WrappedTaskItems" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <TargetName>ndislwf</TargetName>
   </PropertyGroup>
@@ -196,7 +193,7 @@
     <TargetName>ndislwf</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
-    <TargetName>nmNdis</TargetName>
+    <TargetName>ndislwf</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
     <TargetName>ndislwf</TargetName>
@@ -205,7 +202,7 @@
     <TargetName>ndislwf</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
-    <TargetName>nmNdis</TargetName>
+    <TargetName>ndislwf</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
     <TargetName>ndislwf</TargetName>
@@ -214,7 +211,7 @@
     <TargetName>ndislwf</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
-    <TargetName>nmNdis</TargetName>
+    <TargetName>ndislwf</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
     <TargetName>ndislwf</TargetName>
@@ -318,7 +315,7 @@
       <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDIS_WDM=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1;_KERNEL=1;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
       <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
     </ClCompile>
     <ResourceCompile>
@@ -492,7 +489,7 @@
       <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDIS_WDM=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1;_KERNEL=1;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
       <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
     </ClCompile>
     <ResourceCompile>
@@ -604,10 +601,6 @@
     <ClCompile>
       <ExceptionHandling>
       </ExceptionHandling>
-      <Optimization>MaxSpeed</Optimization>
-      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
-      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
@@ -662,11 +655,6 @@
     <ClCompile>
       <ExceptionHandling>
       </ExceptionHandling>
-      <Optimization>MaxSpeed</Optimization>
-      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
-      <IntrinsicFunctions>false</IntrinsicFunctions>
-      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
@@ -715,9 +703,11 @@
     <ResourceCompile Include="filter.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Inf Exclude="@(Inf)" Include="*.inf" />
     <FilesToPackage Include="$(TargetPath)" Condition="'$(ConfigurationType)'=='Driver' or '$(ConfigurationType)'=='DynamicLibrary'" />
   </ItemGroup>
   <ItemGroup>
+    <None Exclude="@(None)" Include="*.txt;*.htm;*.html" />
     <None Exclude="@(None)" Include="*.ico;*.cur;*.bmp;*.dlg;*.rct;*.gif;*.jpg;*.jpeg;*.wav;*.jpe;*.tiff;*.tif;*.png;*.rc2" />
     <None Exclude="@(None)" Include="*.def;*.bat;*.hpj;*.asmx" />
   </ItemGroup>

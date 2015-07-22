@@ -12,14 +12,13 @@
 Signature       = "$Windows NT$"
 Class           = NetService
 ClassGUID       = {4D36E974-E325-11CE-BFC1-08002BE10318}
-CatalogFile     = nmNdis.cat
-;CatalogFile     = netlwf.cat
+CatalogFile     = netlwf.cat
 
 ; TODO: Customize this string for your company name
 Provider        = %Msft%
 
 ; TODO: Customize this string for the driver version
-DriverVer       = 22/07/2015,0.0.90.0
+DriverVer       = 10/01/2002,6.0.5019.0
 
 
 ; TODO: Include each architecture for which your driver package contains a
@@ -61,7 +60,7 @@ Copyfiles = ndislwf.copyfiles.sys
 [SourceDisksFiles]
 ; TODO: Customize the name of your binary here.
 ; Also include any related files that should be installed with your driver.
-nmndis.sys=1
+ndislwf.sys=1
 
 [DestinationDirs]
 DefaultDestDir=12
@@ -69,7 +68,7 @@ ndislwf.copyfiles.sys=12
 
 [ndislwf.copyfiles.sys]
 ; TODO: Customize the name of your binary here.
-nmndis.sys,,,2
+ndislwf.sys,,,2
 
 
 ;-------------------------------------------------------------------------
@@ -78,10 +77,10 @@ nmndis.sys,,,2
 [Inst_Ndi]
 ; TODO: Customize the name of the NT service that will start your driver.
 ; Then, update FILTER_SERVICE_NAME in filter.h.
-HKR, Ndi,Service,,"NetmapNdis"
+HKR, Ndi,Service,,"NdisLwf"
 ; TODO: Repeat the NT service name above here.  Optionally, you may control
 ; other services alongside the primary service.
-HKR, Ndi,CoServices,0x00010000,"NetmapNdis"
+HKR, Ndi,CoServices,0x00010000,"NdisLwf"
 HKR, Ndi,HelpText,,%NdisLwf_HelpText%
 ; TODO: Set the FilterClass here.  The FilterClass controls the order in which
 ; filters are bound to the underlying miniport.  Possible options include:
@@ -143,7 +142,7 @@ HKR, Ndi,FilterRunType,0x00010001, 1 ; Mandatory filter
 ; TODO: Customize the name of your NT service here.
 ; You may also want to add the SPSVCINST_STARTSERVICE flag, like this:
 ;     AddService=NdisLwf,0x800,NdisLwf_Service_Inst ; SPSVCINST_STARTSERVICE
-AddService=NetmapNdis,,NdisLwf_Service_Inst
+AddService=NdisLwf,,NdisLwf_Service_Inst
 
 [NdisLwf_Service_Inst]
 DisplayName     = %NdisLwf_Desc%
@@ -153,7 +152,7 @@ ServiceType     = 1 ;SERVICE_KERNEL_DRIVER
 StartType       = 1 ;SERVICE_SYSTEM_START
 ErrorControl    = 1 ;SERVICE_ERROR_NORMAL
 ; TODO: Customize this to your binary's filename.
-ServiceBinary   = %12%\nmndis.sys
+ServiceBinary   = %12%\ndislwf.sys
 LoadOrderGroup  = NDIS
 Description     = %NdisLwf_Desc%
 AddReg          = Common.Params.reg, NdisImPlatformBindingOptions.reg
@@ -162,7 +161,7 @@ AddReg          = Common.Params.reg, NdisImPlatformBindingOptions.reg
 ; TODO: Customize the name of your NT service here.
 ; The SPSVCINST_STOPSERVICE flag instructs SCM to stop the NT service
 ; before uninstalling the driver.
-DelService=NetmapNdis,0x200 ; SPSVCINST_STOPSERVICE
+DelService=NdisLwf,0x200 ; SPSVCINST_STOPSERVICE
 
 [Common.Params.reg]
 ; TODO: You can add any sort of NDIS parameters here.  Filter drivers
@@ -194,9 +193,9 @@ HKR, Parameters, NdisImPlatformBindingOptions,0x00010001,0 ; Subscribe to defaul
 
 [Strings]
 ; TODO: Customize these strings.
-Msft = "University of Pisa"
-NdisLwf_Desc = "Netmap NDIS LightWeight Filter"
-NdisLwf_HelpText = "NDIS Generic LightWeight Filters for Netmap"
+Msft = "Microsoft"
+NdisLwf_Desc = "NDIS Sample LightWeight Filter"
+NdisLwf_HelpText = "Sample to demonstrate NDIS LightWeight Filters"
 
 
 
