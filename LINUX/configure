@@ -1206,6 +1206,15 @@ add_test 'define VIRTIO_RQ_NUM' <<-EOF
 	}
 EOF
 
+add_test 'define VIRTIO_SG' <<-EOF
+	#include "virtio_net.c"
+
+	struct scatterlist *
+	dummy(struct virtnet_info *vi) {
+		return vi->rx_sg;
+	}
+EOF
+
 fi
 
 # END_TESTS

@@ -44,16 +44,6 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #define DEV_NUM_TX_QUEUES(_netdev)	1
 #endif /* NETMAP_LINUX_HAVE_NUM_QUEUES */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
-/* A scatterlist struct is needed by functions that invoke
-   virtqueue_add_buf() methods, but before 2.6.35 these struct were
-   not part of virtio-net data structures, but were defined in those
-   function. This macro does this definition, which is not necessary
-   for subsequent versions. */
-#define COMPAT_DECL_SG			struct scatterlist _compat_sg;
-#else  /* >= 2.6.35 */
-#define COMPAT_DECL_SG
-#endif  /* >= 2.6.35 */
 
 
 #ifdef NETMAP_LINUX_VIRTIO_FUNCTIONS
@@ -110,43 +100,44 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 #endif /* NETMAP_LINUX_VIRTIO_FREE_PAGES */
 
 #ifdef NETMAP_LINUX_VIRTIO_MULTI_QUEUE
-/* Before 3.8.0 virtio did not have multiple queues, and therefore
-   it did not have per-queue data structures. We then abstract the
-   way data structure are accessed, ignoring the queue indexes. */
 #define GET_RX_VQ(_vi, _i)		(_vi)->rq[_i].vq
 #define GET_TX_VQ(_vi, _i)		(_vi)->sq[_i].vq
 #define VQ_FULL(_vq, _err)		({ (void)(_err); (_vq)->num_free == 0; })
+#define GET_RX_SG(_vi, _i)		(_vi)->rq[_i].sg
+#define GET_TX_SG(_vi, _i)		(_vi)->sq[_i].sg
+#define COMPAT_DECL_SG
 #ifdef NETMAP_LINUX_VIRTIO_RQ_NUM
+/* multi queue, num field exists */
 #define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
-#else /* MULTI_QUEUE && ! RQ_NUM */
+#else 
+/* multi queue, but num field has been removed */
 #define DECR_NUM(_vi, _i)		({ (void)(_vi); (void)(_i); })
 #endif /* NETMAP_LINUX_VIRTIO_RQ_NUM */
 #else /* !MULTI_QUEUE */
+/* Before 3.8.0 virtio did not have multiple queues, and therefore
+   it did not have per-queue data structures. We then abstract the
+   way data structure are accessed, ignoring the queue indexes. */
 #define GET_RX_VQ(_vi, _i)		({ (void)(_i); (_vi)->rvq; })
 #define GET_TX_VQ(_vi, _i)		({ (void)(_i); (_vi)->svq; })
 #define VQ_FULL(_vq, _err)		({ (void)(_vq); (_err) > 0; })
 #define DECR_NUM(_vi, _i)		({ (void)(_i); --(_vi)->num; })
-#endif /* NETMAP_LINUX_VIRTIO_MULTI_QUEUE */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 35)
-/* Use the scatterlist struct defined in the current function
-   (see above). */
-#define GET_RX_SG(_vi, _i)	&_compat_sg
-#define GET_TX_SG(_vi, _i)	&_compat_sg
-
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
-/* Also here we create an abstraction because of multiqueue support
-   (see above). */
+#ifdef NETMAP_LINUX_VIRTIO_SG
+/* single queue, scatterlist in the vi */
 #define GET_RX_SG(_vi, _i)		(_vi)->rx_sg
 #define GET_TX_SG(_vi, _i)		(_vi)->tx_sg
-
-#else   /* >= 3.8.0 */
-
-#define GET_RX_SG(_vi, _i)		(_vi)->rq[_i].sg
-#define GET_TX_SG(_vi, _i)		(_vi)->sq[_i].sg
-
-#endif  /* >= 3.8.0 */
-
+#define COMPAT_DECL_SG
+#else /* !MULTI_QUEUE && !SG */
+/* A scatterlist struct is needed by functions that invoke
+   virtqueue_add_buf() methods, but before 2.6.35 these struct were
+   not part of virtio-net data structures, but were defined in those
+   function. This macro does this definition, which is not necessary
+   for subsequent versions. */
+#define COMPAT_DECL_SG			struct scatterlist _compat_sg;
+/* Use the scatterlist struct defined in the current function */
+#define GET_RX_SG(_vi, _i)	&_compat_sg
+#define GET_TX_SG(_vi, _i)	&_compat_sg
+#endif  /* NETMAP_LINUX_VIRTIO_SG */
+#endif /* NETMAP_LINUX_VIRTIO_MULTI_QUEUE */
 
 static void
 virtio_netmap_clean_used_rings(struct netmap_adapter *na, struct SOFTC_T *vi)
