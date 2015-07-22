@@ -1188,6 +1188,24 @@ for s in "" _gfp; do
 	EOF
 done
 
+add_test 'define VIRTIO_MULTI_QUEUE' <<-EOF
+	#include "virtio_net.c"
+
+	struct virtqueue *
+	dummy(struct virtnet_info *vi) {
+		return vi->rq[0].vq;
+	}
+EOF
+
+add_test 'define VIRTIO_RQ_NUM' <<-EOF
+	#include "virtio_net.c"
+
+	int
+	dummy(struct virtnet_info *vi) {
+		return vi->rq[0].num;
+	}
+EOF
+
 fi
 
 # END_TESTS
