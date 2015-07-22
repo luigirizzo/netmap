@@ -1135,6 +1135,8 @@ fi # ixgbe
 
 if drv enabled virtio_net.c; then
 
+add_file_exists_check virtio_net.c true "drv_source_error virtio_net.c"
+
 add_test 'define VIRTIO_CB_DELAYED' <<-EOF
 	#include <linux/virtio.h>
 
@@ -1150,6 +1152,15 @@ add_test 'define VIRTIO_GET_VRSIZE' <<-EOF
 	unsigned int
 	dummy(struct virtqueue *vq) {
 		return virtqueue_get_vring_size(vq);
+	}
+EOF
+
+add_test 'define VIRTIO_FREE_PAGES' <<-EOF
+	#include "virtio_net.c"
+
+	void
+	dummy(struct virtnet_info *vi) {
+		free_receive_bufs(vi);
 	}
 EOF
 

@@ -101,6 +101,16 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #define virtqueue_get_vring_size(_vq)	({ (void)(_vq); 256; })
 #endif  /* < 3.2 */
 
+#ifndef NETMAP_LINUX_VIRTIO_FREE_PAGES
+static struct page *get_a_page(struct SOFTC_T *vi, gfp_t gfp_mask);
+
+/* This function did not exists, there was just the code. */
+static void free_receive_bufs(struct SOFTC_T *vi)
+{
+	while (vi->pages)
+		__free_pages(get_a_page(vi, GFP_KERNEL), 0);
+}
+#endif /* NETMAP_LINUX_VIRTIO_FREE_PAGES */
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
 /* Before 3.8.0 virtio did not have multiple queues, and therefore
@@ -110,15 +120,6 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #define GET_RX_VQ(_vi, _i)		({ (void)(_i); (_vi)->rvq; })
 #define GET_TX_VQ(_vi, _i)		({ (void)(_i); (_vi)->svq; })
 #define VQ_FULL(_vq, _err)		({ (void)(_vq); (_err) > 0; })
-
-static struct page *get_a_page(struct SOFTC_T *vi, gfp_t gfp_mask);
-
-/* This function did not exists, there was just the code. */
-static void free_receive_bufs(struct SOFTC_T *vi)
-{
-	while (vi->pages)
-		__free_pages(get_a_page(vi, GFP_KERNEL), 0);
-}
 
 #else   /* >= 3.8.0 */
 
