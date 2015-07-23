@@ -319,17 +319,44 @@ filterFindFilterModule(
 *        	FUNCTIONS CALLED BY NETMAP DRIVER   		 *
 **********************************************************/
 
-const unsigned char ethPingPacket[74] =
-{ 0x08, 0x62, 0x66, 0x27, 0xb3, 0x47, 0x00, 0x15,
+void DumpPayload(char* p, uint32_t len)
+{
+	char buf[128];
+	int i ,j,i0;
+	DbgPrint("p: 0x%p - len: %i", p, len);
+	for (i = 0; i < len;) {
+		memset(buf, sizeof(buf), ' ');
+		sprintf(buf, "%5d: ", i);
+		i0 = i;
+		for (j = 0; j < 16 && i < len; i++, j++)
+			sprintf(buf + 7 + j * 3, "%02x ", (uint8_t)(p[i]));
+		i = i0;
+		for (j = 0; j < 16 && i < len; i++, j++)
+			sprintf(buf + 7 + j + 48, "%c", (p[i] >= 32 && p[i]<=127) ? p[i] : '.');
+		DbgPrint("%s\n", buf);
+	}
+}
+
+unsigned char ethPingPacket[74] =
+{ 0x00, 0x1b, 0x21, 0x44, 0x25, 0x34, 0x00, 0x15,
 0x5d, 0xc4, 0x37, 0x00, 0x08, 0x00, 0x45, 0x00,
-0x00, 0x3c, 0x37, 0x3e, 0x00, 0x00, 0x80, 0x01,
-0xea, 0x6b, 0x0a, 0xd8, 0x01, 0x9a, 0x0a, 0xd8,
-0x01, 0xce, 0x08, 0x00, 0x4d, 0x5a, 0x00, 0x01,
-0x00, 0x01, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+0x00, 0x3c, 0x0d, 0x48, 0x00, 0x00, 0x80, 0x01,
+0x00, 0x00, 0x0a, 0xd8, 0x01, 0x9a, 0x0a, 0xd8,
+0x01, 0x68, 0x08, 0x00, 0x4d, 0x46, 0x00, 0x01,
+0x00, 0x15, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e,
 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76,
 0x77, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67,
 0x68, 0x69 };
+/*unsigned char ethPingPacket[62] =
+{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x15,
+0x5d, 0xc4, 0x37, 0x03, 0x08, 0x00, 0x45, 0x00,
+0x00, 0x30, 0x65, 0x91, 0x00, 0x00, 0x80, 0x11,
+0x50, 0xdb, 0xc0, 0xa8, 0x01, 0x01, 0xc0, 0xa8,
+0x01, 0xff, 0x32, 0xed, 0x32, 0xd6, 0x00, 0x1c,
+0xa4, 0x83, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x46, 0x94, 0x13, 0x8a, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/
 PMS_FILTER              pFilterPing = NULL;
 
 void pingPacketInsertionTest()
@@ -400,7 +427,7 @@ void pingPacketInsertionTest()
 		return;
 	}
 
-	NdisMoveMemory(pNdisPacketMemory, ethPingPacket, 74);
+	NdisMoveMemory(pNdisPacketMemory, ethPingPacket, txSize);
 
 	pBufList->SourceHandle = pFilterPing->FilterHandle;
 	//This send down to the miniport
@@ -414,7 +441,14 @@ void pingPacketInsertionTest()
 	ExFreePoolWithTag(buffer, 'NDIS');
 }
 
-NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex)
+/*get_device_handle_by_ifindex - get the necessary structures to catch/inject packets from/into a generic interface
+
+Return:	NDIS_HANDLE									//handle of the required network adapter
+
+_IN_	int deviceIfIndex							//ifIndex of the network adapter (visible with Get-NetAdapter under powershell)
+_OUT_	PNDIS_HANDLE	UserSendNetBufferListPool	//handle of the transmission pool
+*/
+NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE UserSendNetBufferListPool)
 {
 	NTSTATUS				NtStatus = STATUS_SUCCESS;
 	PLIST_ENTRY             Link = NULL;
@@ -430,6 +464,7 @@ NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex)
 		if (pFilter->MiniportIfIndex == deviceIfIndex)
 		{
 			FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
+			*UserSendNetBufferListPool = pFilter->UserSendNetBufferListPool;
 			return pFilter->FilterHandle;
 		}
 		else{
@@ -441,6 +476,15 @@ NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex)
 	return NULL;
 }
 
+/*set_ifp_in_device_handle - called from Netmap driver to start to intercept 
+							packets and detach a network adapter from the network stack
+
+Return:	nothing
+
+_IN_	net_device *ifp						//pointer to the descriptor of the network adapter
+_IN_	BOOLEAN amISettingTheHandler		//TRUE start to catch packets, FALSE stops
+
+*/
 void set_ifp_in_device_handle(struct net_device *ifp, BOOLEAN amISettingTheHandler)
 {
 	NTSTATUS				NtStatus = STATUS_SUCCESS;
@@ -474,8 +518,87 @@ void set_ifp_in_device_handle(struct net_device *ifp, BOOLEAN amISettingTheHandl
 	FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
 }
 
-NTSTATUS injectPacket(NDIS_HANDLE device, PVOID data)
+/*injectPacket - called from Netmap driver to inject a packet
+
+Return: NTSTATUS - STATUS_SUCCESS packet injected, other value error
+
+_IN_ NDIS_HANDLE deviceHandle,					//handle of the network adapter
+_IN_ NDIS_HANDLE UserSendNetBufferListPool,		//handle of the transmission pool
+_IN_ PVOID data,								//data to be injected
+_IN_ uint32_t length							//length of the data to be injected
+_IN_ BOOLEAN sendToMiniport						//TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
+*/
+NTSTATUS injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
 {
-	NTSTATUS NtStatus = STATUS_SUCCESS;
-	return NtStatus;
+	PVOID					buffer = NULL;
+	PMDL					pMdl = NULL;
+	PNET_BUFFER_LIST		pBufList = NULL;
+	PNET_BUFFER				pFirst = NULL;
+	PVOID					pNdisPacketMemory = NULL;
+	NTSTATUS				status = STATUS_SUCCESS;
+
+	//length = 74;
+	//data = ethPingPacket;
+
+	do
+	{
+		buffer = ExAllocatePoolWithTag(NonPagedPool, length, 'NDIS');
+		if (buffer == NULL)
+		{
+			DbgPrint("Error allocating buffer!\n");
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		RtlZeroMemory(buffer, length);
+		pMdl = NdisAllocateMdl(deviceHandle, buffer, length);
+		if (pMdl == NULL)
+		{
+			DbgPrint("nmNdis.sys: Error allocating MDL!\n");
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		pMdl->Next = NULL;
+
+		pBufList = NdisAllocateNetBufferAndNetBufferList(UserSendNetBufferListPool,
+			0, 0,
+			pMdl, 0,
+			length);
+		if (pBufList == NULL)
+		{
+			NdisFreeMdl(pMdl);
+			DbgPrint("nmNdis.sys: Error allocating NdisAllocateNetBufferAndNetBufferList!\n");
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		pFirst = NET_BUFFER_LIST_FIRST_NB(pBufList);
+		pNdisPacketMemory = NdisGetDataBuffer(pFirst, length, NULL, sizeof(UINT8), 0);
+		if (pNdisPacketMemory == NULL)
+		{
+			NdisFreeNetBufferList(pBufList);
+			NdisFreeMdl(pMdl);
+			DbgPrint("nmNdis.sys: Error allocating pNdisPacketMemory!\n");
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+
+		NdisMoveMemory(pNdisPacketMemory, data, length);
+
+		//DumpPayload(pNdisPacketMemory, length);
+
+		pBufList->SourceHandle = deviceHandle;
+		if (sendToMiniport)
+		{
+			//This send down to the miniport
+			NdisFSendNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
+		}
+		else{
+			//This one send up to the OS
+			NdisFIndicateReceiveNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
+		}	
+	} while (FALSE);
+	if (buffer != NULL)
+	{
+		ExFreePoolWithTag(buffer, 'NDIS');
+	}
+	return status;
 }

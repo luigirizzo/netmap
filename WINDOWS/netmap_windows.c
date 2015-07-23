@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2015 Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2015 Universita` di Pisa. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -48,8 +48,6 @@ DRIVER_DISPATCH ioctlInternalDeviceControl;
 
 DRIVER_UNLOAD ioctlUnloadDriver;
 
-//PFILE_OBJECT		pNdisFileObject = NULL;
-//PDEVICE_OBJECT		pNdisDeviceObj = NULL;
 
 //--------------------------------END Device driver routines
 static NTSTATUS windows_netmap_mmap(PIRP Irp);
@@ -106,8 +104,6 @@ NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 }
 NTSTATUS ioctlClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-	//Remove the private memory from the dictionary and free the memory
-	//that was previously allocated from the structure itself	
 	struct netmap_priv_d *priv = NULL;
 	PIO_STACK_LOCATION  irpSp;
 	irpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -116,7 +112,7 @@ NTSTATUS ioctlClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	{
 		netmap_dtor(priv);
 	}	
-	//--------------------------------------------------------
+
 	Irp->IoStatus.Status = STATUS_SUCCESS;
 	IoCompleteRequest( Irp, IO_NO_INCREMENT );
 	return Irp->IoStatus.Status;	
@@ -145,108 +141,14 @@ VOID ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 
 /* #################### GENERIC ADAPTER SUPPORT ################### */
 
-/*NTSTATUS SetNDISDeviceReferences()
-{
-	OBJECT_ATTRIBUTES   objectAttributes;
-	UNICODE_STRING      ObjectName;
-	NTSTATUS			NtStatus;
-	KIRQL Irql = KeGetCurrentIrql();
-	ASSERT(Irql == PASSIVE_LEVEL);
-
-	if (pNdisDeviceObj == NULL)
-	{
-		RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
-		InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-		return IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pNdisFileObject, &pNdisDeviceObj);
-	}
-	else{
-		return STATUS_SUCCESS;
-	}
-}*/
-
 int netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInterface)
 {
 	if (g_functionAddresses.set_ifp_in_device_handle != NULL)
 	{
 		g_functionAddresses.set_ifp_in_device_handle(ifp, amIRegisteringTheInterface);
 		return STATUS_SUCCESS;
-	}else{
-		return STATUS_DEVICE_NOT_CONNECTED;
 	}
-#if 0		
-	OBJECT_ATTRIBUTES   objectAttributes;
-	UNICODE_STRING      ObjectName;
-	IO_STATUS_BLOCK		iosb;
-	PFILE_OBJECT		pFileObject = NULL;
-	PDEVICE_OBJECT		pNdisObj;
-	NTSTATUS			NtStatus;
-	KIRQL FirstIrql = KeGetCurrentIrql();
-
-	RtlInitUnicodeString(&ObjectName, NETMAP_NDIS_LINKNAME_STRING);
-	InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-	
-	if (FirstIrql > PASSIVE_LEVEL)
-	{
-		KeLowerIrql(PASSIVE_LEVEL);
-	}
-	NtStatus = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pFileObject, &pNdisObj);
-	if (KeGetCurrentIrql() != FirstIrql)
-	{
-		KeRaiseIrql(FirstIrql, &FirstIrql);
-	}
-
-	//NtStatus = SetNDISDeviceReferences();
-	if (NT_SUCCESS(NtStatus))
-	{
-		PMEMORY_ENTRY memEntry;
-		memEntry = ExAllocatePoolWithTag(NonPagedPool, sizeof(MEMORY_ENTRY), 'MENT');
-		memEntry->pUsermodeVirtualAddress = ifp;
-		//ULONG ctlCode = NETMAP_KERNEL_TEST_INJECT_PING;
-		/*ULONG ctlCode = NETMAP_KERNEL_DEVICE_RX_REGISTER;
-		if (!amIRegisteringTheInterface)
-		{
-			ctlCode = NETMAP_KERNEL_DEVICE_RX_UNREGISTER;
-		}*/
-		PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_TEST_INJECT_PING,
-				pNdisObj, //pNdisObj,
-				NULL,
-				0,
-				NULL,
-				0,
-				TRUE,
-				NULL,
-				&iosb);
-		
-		/*PIRP pIrp = IoBuildDeviceIoControlRequest(ctlCode,
-			pNdisObj,
-			memEntry,
-			sizeof(MEMORY_ENTRY),
-			NULL,
-			0,
-			TRUE,
-			NULL,
-			&iosb);*/
-		FirstIrql = KeGetCurrentIrql();
-		if (FirstIrql > PASSIVE_LEVEL)
-		{
-			KeLowerIrql(PASSIVE_LEVEL);
-		}
-		NtStatus = IoCallDriver(pNdisObj, pIrp);	
-		if (KeGetCurrentIrql() != FirstIrql)
-		{
-			KeRaiseIrql(FirstIrql, &FirstIrql);
-		}
-		
-		ExFreePoolWithTag(memEntry, 'MENT');
-		//ObDereferenceObject(pNdisObj);
-		ObDereferenceObject(pFileObject);
-		if NT_SUCCESS(NtStatus)
-		{
-			return STATUS_SUCCESS;
-		}
-	}
-	return NtStatus;
-#endif
+	return STATUS_DEVICE_NOT_CONNECTED;
 }
 
 struct NET_BUFFER* windows_generic_rx_handler(struct net_device* nd, uint32_t length, const char* data)
@@ -288,20 +190,17 @@ and -1 on error (which may be packet drops or other errors). */
 int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
-	NTSTATUS NtStatus = STATUS_SUCCESS;
 
-	if (NT_SUCCESS(NtStatus)) {
-		return 0;
-	}else{
-		/* If something goes wrong in the TX path, there is nothing
-		intelligent we can do (for now) apart from error reporting. */
-		return -1;
+	if (g_functionAddresses.injectPacket != NULL)
+	{
+		return g_functionAddresses.injectPacket(ifp->deviceHandle, ifp->UserSendNetBufferListPool, addr, len, TRUE);
 	}
+	return STATUS_DEVICE_NOT_CONNECTED;
 }
 
 int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
 {
-	//XXX_ale: find where the rings are descripted (OID query)
+	//XXX_ale: find where the rings are descripted (OID query probably)
 	*tx = 1024;
 	*rx = 1024;
 	return 0;
@@ -516,19 +415,21 @@ struct net_device* dev_get_by_name(const char* name)
 {
 	int								deviceIfIndex = -1;
 	NDIS_HANDLE						temp = NULL;
+	NDIS_HANDLE						UserSendNetBufferListPool = NULL;
 	struct net_device*				nd = NULL;
 
 	deviceIfIndex = getDeviceIfIndex(name);
 
 	if (g_functionAddresses.get_device_handle_by_ifindex != NULL)
 	{
-		temp = g_functionAddresses.get_device_handle_by_ifindex(deviceIfIndex);
+		temp = g_functionAddresses.get_device_handle_by_ifindex(deviceIfIndex, &UserSendNetBufferListPool);
 		if (temp != NULL)
 		{
 			nd = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct net_device), 'NDEV');
 			RtlZeroMemory(nd, sizeof(struct net_device));
 			RtlCopyMemory(nd->if_xname, name, IFNAMSIZ);
 			nd->deviceHandle = temp; // exchangeBuffer.deviceHandle;
+			nd->UserSendNetBufferListPool = UserSendNetBufferListPool;
 			nd->ifIndex = deviceIfIndex;
 			return nd;
 		}else{

@@ -37,7 +37,7 @@ FUNCTION_POINTER_XCHANGE g_functionAddresses;
 
 FILTER_LOCK         FilterListLock;
 LIST_ENTRY          FilterModuleList;
-int			FilterModulesCount = 0;
+int			FilterModulesCount = 0;		//Number of net adapters where the filter is currently attached
 
 
 NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
@@ -52,8 +52,8 @@ NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
 
 extern void pingPacketInsertionTest(void);
 extern void set_ifp_in_device_handle(struct net_device *, BOOLEAN);
-extern NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex);
-extern NTSTATUS injectPacket(NDIS_HANDLE device, PVOID data);
+extern NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE	UserSendNetBufferListPool);
+extern NTSTATUS injectPacket(NDIS_HANDLE device, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
 
 _Use_decl_annotations_
 NTSTATUS
@@ -1530,8 +1530,7 @@ Arguments:
 			CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
 		}
 		NdisFreeNetBufferList(NetBufferLists);
-	}
-	else{
+	}else{
 		NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
 	}
 

@@ -251,9 +251,9 @@ typedef struct _FUNCTION_POINTER_XCHANGE
 {
 	PVOID(*pingPacketInsertionTest)(void);			//test function
 	struct NET_BUFFER*(*netmap_catch_rx)(struct net_device*, uint32_t length, const char* data);
-	NDIS_HANDLE(*get_device_handle_by_ifindex)(int ifIndex);
+	NDIS_HANDLE(*get_device_handle_by_ifindex)(int ifIndex, PNDIS_HANDLE UserSendNetBufferListPool); //UserSendNetBufferListPool is returned from the call
 	void(*set_ifp_in_device_handle)(struct net_device*, BOOLEAN);
-	NTSTATUS(*injectPacket)(NDIS_HANDLE device, PVOID data);
+	NTSTATUS(*injectPacket)(NDIS_HANDLE device, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
 } FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
 
 //XXX_ale: I'm sure that somewhere in windows definitions there's a structure like the original
@@ -272,6 +272,7 @@ struct net_device {
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter*	na;
 	NDIS_HANDLE				deviceHandle;
+	NDIS_HANDLE				UserSendNetBufferListPool;
 	int						ifIndex;
 };
 
@@ -356,7 +357,7 @@ netmap_default_mbuf_destructor(struct mbuf *m)
 	ExFreePoolWithTag(m, 'MBUF');
 }
 
-static int netmap_get_mbuf(uint32_t buf_size)
+static struct mbuf* netmap_get_mbuf(uint32_t buf_size)
 {
 	struct mbuf *m;
 	m = ExAllocatePoolWithTag(NonPagedPool, buf_size, 'MBUF');
