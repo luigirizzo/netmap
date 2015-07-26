@@ -179,6 +179,16 @@ struct paravirt_csb {
 /*
  * Structures used for ptnetmap configuration
  */
+struct ptn_vmm_ioctl_msix {
+	uint64_t        msg;
+	uint64_t        addr;
+}
+
+struct ptn_vmm_ioctl {
+	u_long				com;
+	struct ptn_vmm_ioctl_msix	data;
+}
+
 /*
  * struct ptnetmap_cfg overlaps struct nmreq
  * from nr_offset field, but nr_cmd is required in netmap_ioctl()
@@ -190,11 +200,14 @@ struct ptnetmap_cfg {
         uint32_t features;
 #define PTNETMAP_CFG_FEAT_CSB           0x0001
 #define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
+#define PTNETMAP_CFG_FEAT_IOCTL		0x0004
 	struct nm_eventfd_cfg_ring tx_ring;
 	struct nm_eventfd_cfg_ring rx_ring;
 	uint8_t pad[2];                 /* padding to overlap strct nmreq */
 	uint16_t nr_cmd;                /* needed in netmap_ioctl() */
-        void *csb;   /* CSB */
+        void *csb;			/* CSB */
+        struct ptn_vmm_ioctl tx_ioctl;	/* ioctl parameter to send irq (bhyve) */
+        struct ptn_vmm_ioctl rx_ioctl;	/* ioctl parameter to send irq (bhyve) */
 };
 
 #ifdef	QEMU_PCI_H

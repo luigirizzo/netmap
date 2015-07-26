@@ -912,6 +912,8 @@ struct nm_kthread_ctx {
 	wait_queue_head_t *waitq_head;
 	wait_queue_t waitq;
 #endif /* 0 */
+	struct thread *user_td;
+	struct ioctl_args irq_ioctl;
 
 	/* worker function and parameter */
 	nm_kthread_worker_fn_t worker_fn;
@@ -924,7 +926,7 @@ struct nm_kthread_ctx {
 };
 
 struct nm_kthread {
-	//struct mm_struct *mm;
+	//struct mm_struct *mm; /* TODO: remove */
 	struct thread *worker;
 	struct mtx worker_lock;
 	uint64_t scheduled; /* currently not used */
@@ -941,7 +943,15 @@ nm_kthread_wakeup_worker(struct nm_kthread *nmk)
 void inline
 nm_kthread_send_irq(struct nm_kthread *nmk)
 {
-	(void)nmk;
+	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
+	int err;
+
+	if (ctx->irq_ioctl.fd > 0) {
+		err = sys_ioctl(ctx->user_td, &ctx->irq_ioctl);
+		if (err) {
+			D("sys_ioctl error: %d", err);
+		}
+	}
 }
 
 static
@@ -1037,12 +1047,14 @@ nm_kthread_create(struct nm_kthread_cfg *cfg)
 		return NULL;
 
 	mtx_init(&nmk->worker_lock, "nm_kthread lock", NULL, MTX_DEF);
+	nmk->worker_ctx.user_td = curthread;
 	nmk->worker_ctx.worker_fn = cfg->worker_fn;
 	nmk->worker_ctx.worker_private = cfg->worker_private;
 	nmk->worker_ctx.type = cfg->type;
 	nmk->affinity = -1;
 
 	/* open event fd */
+	nmk->worker_ctx.irq_ioctl = cfg->ioctl; /* XXX put in open_files */
 	error = nm_kthread_open_files(nmk, &cfg->ring);
 	if (error)
 		goto err;
