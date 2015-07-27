@@ -119,7 +119,10 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+  </PropertyGroup>
   <PropertyGroup>
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
     <EnableDeployment>False</EnableDeployment>
@@ -136,6 +139,50 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|Win32'">
+    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
   </ItemDefinitionGroup>

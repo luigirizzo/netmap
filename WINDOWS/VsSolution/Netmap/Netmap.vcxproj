@@ -180,7 +180,7 @@
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
     <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
     <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(ConfigurationName)\</IntDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X86\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -216,7 +216,7 @@
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
     <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
     <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(ConfigurationName)\</IntDir>
+    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X64\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>

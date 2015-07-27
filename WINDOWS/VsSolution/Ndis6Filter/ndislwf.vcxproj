@@ -145,7 +145,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <OutDir>$(IntDir)</OutDir>
+    <OutDir>$(SolutionDir)\Output\nmNdis$(ConfigurationName)\</OutDir>
   </PropertyGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
@@ -187,40 +187,52 @@
     <Inf Include="nmndis.inf" />
   </ItemGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X64\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X64\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X64\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
     <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X64\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X64\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X64\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
     <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X86\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X86\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|Win32'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X86\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
     <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X86\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X86\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'">
-    <TargetName>ndislwf</TargetName>
+    <TargetName>nmNdis</TargetName>
+    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdis$(ConfigurationName)-X86\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <ClCompile>
@@ -318,7 +330,7 @@
       <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDIS_WDM=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1;_KERNEL=1;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1;</PreprocessorDefinitions>
       <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
     </ClCompile>
     <ResourceCompile>
@@ -595,6 +607,10 @@
     <ClCompile>
       <ExceptionHandling>
       </ExceptionHandling>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
@@ -644,6 +660,10 @@
     <ClCompile>
       <ExceptionHandling>
       </ExceptionHandling>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|Win32'">
@@ -653,6 +673,10 @@
     <ClCompile>
       <ExceptionHandling>
       </ExceptionHandling>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
