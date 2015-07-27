@@ -1,0 +1,2 @@
+gcc ../../examples/pkt-gen.c -I ../../sys -I ../includes -DNO_PCAP -o ../../examples/pkt-gen.exe -g -O2
+gcc ../../examples/pkt-gen.c -I ../../sys -I ../includes -DNO_PCAP -DBUSYWAIT -o ../../examples/pkt-gen-b.exe -O2
