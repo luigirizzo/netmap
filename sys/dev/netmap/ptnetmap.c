@@ -644,7 +644,7 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts)
     if (pts->config.features & PTNETMAP_CFG_FEAT_IOCTL) {
 	nmk_cfg.ioctl.fd = pts->config.tx_ring.irqfd;
 	nmk_cfg.ioctl.com = pts->config.tx_ioctl.com;
-	nmk_cfg.ioctl.data = &pts->config.tx_ioctl.data;
+	nmk_cfg.ioctl.data = (caddr_t)&pts->config.tx_ioctl.data;
     }
     nmk_cfg.worker_fn = ptnetmap_tx_handler;
     pts->ptk_tx = nm_kthread_create(&nmk_cfg);
@@ -658,7 +658,7 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts)
     if (pts->config.features & PTNETMAP_CFG_FEAT_IOCTL) {
 	nmk_cfg.ioctl.fd = pts->config.rx_ring.irqfd;
 	nmk_cfg.ioctl.com = pts->config.rx_ioctl.com;
-	nmk_cfg.ioctl.data = &pts->config.rx_ioctl.data;
+	nmk_cfg.ioctl.data = (caddr_t)&pts->config.rx_ioctl.data;
     }
     nmk_cfg.worker_fn = ptnetmap_rx_handler;
     pts->ptk_rx = nm_kthread_create(&nmk_cfg);

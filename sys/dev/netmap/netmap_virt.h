@@ -179,15 +179,16 @@ struct paravirt_csb {
 /*
  * Structures used for ptnetmap configuration
  */
+#define PTN_CFG_USER_BUF
 struct ptn_vmm_ioctl_msix {
 	uint64_t        msg;
 	uint64_t        addr;
-}
+};
 
 struct ptn_vmm_ioctl {
 	u_long				com;
 	struct ptn_vmm_ioctl_msix	data;
-}
+};
 
 /*
  * struct ptnetmap_cfg overlaps struct nmreq
@@ -203,8 +204,10 @@ struct ptnetmap_cfg {
 #define PTNETMAP_CFG_FEAT_IOCTL		0x0004
 	struct nm_eventfd_cfg_ring tx_ring;
 	struct nm_eventfd_cfg_ring rx_ring;
+#ifndef PTN_CFG_USER_BUF
 	uint8_t pad[2];                 /* padding to overlap strct nmreq */
 	uint16_t nr_cmd;                /* needed in netmap_ioctl() */
+#endif /* PTN_CFG_USER_BUF */
         void *csb;			/* CSB */
         struct ptn_vmm_ioctl tx_ioctl;	/* ioctl parameter to send irq (bhyve) */
         struct ptn_vmm_ioctl rx_ioctl;	/* ioctl parameter to send irq (bhyve) */
@@ -255,17 +258,16 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 static inline void
 ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 {
+#ifdef PTN_CFG_USER_BUF
+    uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
+    *nmr_ptncfg = (uintptr_t)cfg;
+#else /* !PTN_CFG_USER_BUF */
 #ifdef CTASSERT
 CTASSERT(offsetof(struct ptnetmap_cfg, nr_cmd) == (offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset)));
 CTASSERT(sizeof(struct ptnetmap_cfg) <= sizeof(struct nmreq) - offsetof(struct nmreq , nr_offset));
 #endif
     memcpy(&nmr->nr_offset, cfg, sizeof(*cfg));
-}
-
-static inline void
-ptnetmap_read_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
-{
-    memcpy(cfg, &nmr->nr_offset, sizeof(*cfg));
+#endif /* PTN_CFG_USER_BUF */
 }
 
 #if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
@@ -283,6 +285,17 @@ ptn_sub(uint32_t l_elem, uint32_t r_elem, uint32_t num_slots)
 #ifdef WITH_PTNETMAP_HOST
 /* ptnetmap kernel thread routines */
 enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
+
+static inline void
+ptnetmap_read_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
+{
+#ifdef PTN_CFG_USER_BUF
+    uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
+    copyin(nmr_ptncfg, cfg, sizeof(*cfg));
+#else /* !PTN_CFG_USER_BUF */
+    memcpy(cfg, &nmr->nr_offset, sizeof(*cfg));
+#endif /* PTN_CFG_USER_BUF */
+}
 
 /* Functions to read and write CSB fields in the host */
 #if defined (linux)

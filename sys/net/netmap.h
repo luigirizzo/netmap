@@ -568,7 +568,7 @@ struct nm_ifreq {
  * kernel thread config
  */
 struct nm_eventfd_cfg_ring {
-	uint32_t ioeventfd;
-	uint32_t irqfd;
+	uint16_t ioeventfd;
+	uint16_t irqfd;
 };
 #endif /* _NET_NETMAP_H_ */
