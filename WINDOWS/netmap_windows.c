@@ -87,13 +87,13 @@ NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 			status = STATUS_INSUFFICIENT_RESOURCES;
 		}else{
 			RtlZeroMemory(priv, sizeof(struct netmap_priv_d));
-			priv->np_refcount = 1;
-			D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refcount);
+			priv->np_refs = 1;
+			D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refs);
 			irpSp->FileObject->FsContext = priv;
 		}
 	}else{
-		priv->np_refcount += 1;
-		D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refcount);
+		priv->np_refs += 1;
+		D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refs);
 	}
 	NMG_UNLOCK();
 	//--------------------------------------------------------
@@ -164,8 +164,9 @@ struct NET_BUFFER* windows_generic_rx_handler(struct net_device* nd, uint32_t le
 	return NULL;
 }
 
-int netmap_catch_rx(struct netmap_adapter *na, int intercept)
+int netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
+	struct netmap_adapter *na = &gna->up.up;
 	if (intercept) {
 		return netdev_rx_handler_register(na->ifp, TRUE);
 	}

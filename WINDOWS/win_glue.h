@@ -115,6 +115,7 @@ typedef ULONG 				vm_ooffset_t;
 #define CURVNET_RESTORE()
 #define __user
 #define	nm_iommu_group_id(dev)	0
+#define if_printf
 /*********************************************************
 * TRANSLATION OF GCC COMPILER ATTRIBUTES TO MSVC COMPILER*
 **********************************************************/

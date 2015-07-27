@@ -581,7 +581,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 						sizeof(struct nmreq),
 						&win32_return_lenght,
 						NULL)) {
-		errmsg = "NIOCREGIF failed";
+		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
 		goto fail;
 	}
 	
