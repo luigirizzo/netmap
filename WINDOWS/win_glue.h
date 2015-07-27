@@ -223,7 +223,6 @@ static int time_uptime_w32()
 #define printf								DbgPrint
 
 #define copyin(src, dst, copy_len)					RtlCopyBytes(&dst, src, copy_len)
-#define m_copydata(source, offset, length, dst)		do {} while(0) //RtlCopyBytes(dst, source, length)// //XXX_Ale: todo must set the offset someway
 
 static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 {
@@ -290,7 +289,7 @@ struct mbuf {
 //XXX_ale To be correctly redefined
 #define GET_MBUF_REFCNT(a)				1
 #define	SET_MBUF_DESTRUCTOR(a,b)		
-#define MBUF_IFP(a)						NULL
+#define MBUF_IFP(m)						m->dev	
 
 static void
 generic_timer_handler(struct hrtimer *t)
@@ -354,7 +353,13 @@ static void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
 static void
 netmap_default_mbuf_destructor(struct mbuf *m)
 {
+	if (m->pkt != NULL)
+	{
+		ExFreePoolWithTag(m->pkt, 'pBUF');
+		m->pkt = NULL;
+	}
 	ExFreePoolWithTag(m, 'MBUF');
+	m = NULL;
 }
 
 static struct mbuf* netmap_get_mbuf(uint32_t buf_size)
@@ -362,17 +367,31 @@ static struct mbuf* netmap_get_mbuf(uint32_t buf_size)
 	struct mbuf *m;
 	m = ExAllocatePoolWithTag(NonPagedPool, buf_size, 'MBUF');
 	if (m) {
+		RtlZeroMemory(m, buf_size);
 		m->netmap_default_mbuf_destructor = &netmap_default_mbuf_destructor;
 		//ND(5, "create m %p refcnt %d", m, GET_MBUF_REFCNT(m));
 	}
 	return m;
 }
 
-//#define	mbuf													my_packet
+static inline void win32_ndis_packet_freem(struct mbuf* m)
+{
+	if (m->pkt != NULL)
+	{
+		ExFreePoolWithTag(m->pkt, 'pubm');
+		m->pkt = NULL;
+	}
+	if (m != NULL)
+	{
+		ExFreePoolWithTag(m, 'fubm');
+		m = NULL;
+	}	
+}
 
-#define	MBUF_LEN(m)													m->m_len
-#define m_devget(slot_addr, slot_len, offset, dev, fn)				NULL
-#define m_freem(mbuf)												//ExFreePoolWithTag(mbuf->pkt,'test');	//NdisFreePacket(packet)	
+#define	MBUF_LEN(m)											m->m_len
+#define m_devget(slot_addr, slot_len, offset, dev, fn)		NULL
+#define m_freem(mbuf)										win32_ndis_packet_freem(mbuf);
+#define m_copydata(source, offset, length, dst)				RtlCopyMemory(dst, source->pkt, length)
 
 
 #define le64toh(x)		_byteswap_uint64(x)	//defined in intrin.h
@@ -384,11 +403,6 @@ void if_rele(struct net_device *ifp);
 #define NM_BNS_GET(b)	do { (void)(b); } while (0)
 #define NM_BNS_PUT(b)   do { (void)(b); } while (0)
 #define NM_SEND_UP
-
-/*#define	m_devget(_buf, _len, _ofs, _dev, _fn)	( {		\
-NET_BUFFER s = NdisAllocateNetBuffer(_dev, _len);		\
-return s;												\
-})*/
 
 /*********************************************************
 *                   ATOMIC OPERATIONS     		         *  
@@ -457,12 +471,14 @@ static inline PVOID win_reallocate(void* src, size_t size, size_t oldSize)
 				{
 					RtlCopyMemory(newBuff, src, oldSize);
 				}
-				else{
+				else
+				{
 					RtlCopyMemory(newBuff, src, size);
 				}
 				ExFreePoolWithTag(src, PIPES_POOL_TAG);
 			}
-			else{
+			else
+			{
 				newBuff = src;
 			}
 		}

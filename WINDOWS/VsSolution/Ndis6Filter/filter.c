@@ -1680,7 +1680,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 		if (g_functionAddresses.netmap_catch_rx != NULL && pFilter->readyToUse)
 		{	
 			//struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
-#if 1
+#if 0
 			static int packets = 0; /* debugging */
 			//DbgPrint("Dropping packets... size: %i\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
 			packets += 1;
@@ -1690,7 +1690,6 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 				packets = 0;
 			}
 #endif
-			//if (temp != NULL)
 			{
 				int result = -1;
 				
@@ -1702,9 +1701,8 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 					//temp->dev = pFilter->ifp;
 					//temp->pkt = pkt; // NET_BUFFER_LIST_FIRST_NB(NetBufferLists);
 					//temp->m_len = temp->pkt->DataLength;
-					//PVOID buffer;
-					//buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
-					result = g_functionAddresses.netmap_catch_rx(pFilter->ifp, pkt->DataLength, NULL);
+					PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
+					result = g_functionAddresses.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
 					//ExFreePoolWithTag(temp, 'XCHG');
 					//DbgPrint("Called: result= %i", result);
 					//DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
@@ -1717,11 +1715,13 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 				}
 				//ExFreePoolWithTag(temp, 'XCHG');
 			}
+#if 0
 			if (qBatch > maxBatch)
 			{
 				maxBatch = qBatch;
 				DbgPrint("MaxBatch: %i", maxBatch);
 			}
+#endif
 			NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReceiveFlags);
 		}
 		else

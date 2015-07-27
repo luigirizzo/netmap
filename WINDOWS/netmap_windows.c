@@ -153,12 +153,14 @@ int netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringThe
 
 struct NET_BUFFER* windows_generic_rx_handler(struct net_device* nd, uint32_t length, const char* data)
 {
-	struct mbuf m;	
-	m.m_len = length;
-	m.pkt = NULL; //ExAllocatePoolWithTag(NonPagedPool, length, 'test');
-	m.dev = nd;
-	//RtlCopyBytes(m.pkt, data, length);
-	generic_rx_handler(nd, &m);
+	struct mbuf *m = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'fubm');
+	RtlZeroMemory(m, sizeof(struct mbuf));
+	m->m_len = length;
+	m->pkt = ExAllocatePoolWithTag(NonPagedPool,  length, 'pubm');// m + sizeof(struct mbuf);
+	RtlZeroMemory(m->pkt, length);
+	m->dev = nd;
+	RtlCopyMemory(m->pkt, data, length);
+	generic_rx_handler(nd, m);
 	return NULL;
 }
 
@@ -190,10 +192,11 @@ and -1 on error (which may be packet drops or other errors). */
 int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
-
+	NTSTATUS status;
 	if (g_functionAddresses.injectPacket != NULL)
 	{
-		return g_functionAddresses.injectPacket(ifp->deviceHandle, ifp->UserSendNetBufferListPool, addr, len, TRUE);
+		status = g_functionAddresses.injectPacket(ifp->deviceHandle, ifp->UserSendNetBufferListPool, addr, len, TRUE);
+		return status;
 	}
 	return STATUS_DEVICE_NOT_CONNECTED;
 }

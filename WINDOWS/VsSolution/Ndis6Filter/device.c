@@ -348,15 +348,6 @@ unsigned char ethPingPacket[74] =
 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76,
 0x77, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67,
 0x68, 0x69 };
-/*unsigned char ethPingPacket[62] =
-{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x15,
-0x5d, 0xc4, 0x37, 0x03, 0x08, 0x00, 0x45, 0x00,
-0x00, 0x30, 0x65, 0x91, 0x00, 0x00, 0x80, 0x11,
-0x50, 0xdb, 0xc0, 0xa8, 0x01, 0x01, 0xc0, 0xa8,
-0x01, 0xff, 0x32, 0xed, 0x32, 0xd6, 0x00, 0x1c,
-0xa4, 0x83, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00,
-0x00, 0x00, 0x46, 0x94, 0x13, 0x8a, 0x00, 0x00,
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/
 PMS_FILTER              pFilterPing = NULL;
 
 void pingPacketInsertionTest()
@@ -390,11 +381,11 @@ void pingPacketInsertionTest()
 		}
 		FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
 	}
-	else{
+	else
+	{
 		moduleHandle = pFilterPing->FilterHandle;
 	}
 
-	//buffer = NdisAllocateMemoryWithTagPriority(FilterDriverHandle, txSize, 'TAGT', HighPoolPriority);
 	buffer = ExAllocatePoolWithTag(NonPagedPool, txSize, 'NDIS');
 	if (buffer == NULL)
 	{
@@ -537,9 +528,6 @@ NTSTATUS injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferLis
 	PVOID					pNdisPacketMemory = NULL;
 	NTSTATUS				status = STATUS_SUCCESS;
 
-	//length = 74;
-	//data = ethPingPacket;
-
 	do
 	{
 		buffer = ExAllocatePoolWithTag(NonPagedPool, length, 'NDIS');
@@ -582,16 +570,17 @@ NTSTATUS injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferLis
 		}
 
 		NdisMoveMemory(pNdisPacketMemory, data, length);
-
-		//DumpPayload(pNdisPacketMemory, length);
-
+#if 0
+		DumpPayload(pNdisPacketMemory, length);
+#endif
 		pBufList->SourceHandle = deviceHandle;
 		if (sendToMiniport)
 		{
 			//This send down to the miniport
 			NdisFSendNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
 		}
-		else{
+		else
+		{
 			//This one send up to the OS
 			NdisFIndicateReceiveNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
 		}	
