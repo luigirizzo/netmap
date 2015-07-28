@@ -35,6 +35,7 @@
 #include <sys/kernel.h> /* types used in module initialization */
 #include <sys/conf.h>	/* DEV_MODULE */
 #include <sys/endian.h>
+#include <sys/syscallsubr.h> /* kern_ioctl() */
 
 #include <sys/rwlock.h>
 
@@ -947,9 +948,11 @@ nm_kthread_send_irq(struct nm_kthread *nmk)
 	int err;
 
 	if (ctx->irq_ioctl.fd > 0) {
-		err = sys_ioctl(ctx->user_td, &ctx->irq_ioctl);
+		err = kern_ioctl(ctx->user_td, ctx->irq_ioctl.fd, ctx->irq_ioctl.com, ctx->irq_ioctl.data);
 		if (err) {
-			D("sys_ioctl error: %d", err);
+			D("kern_ioctl error: %d", err);
+			D("ioctl parameters: fd %d com %lu data %p", ctx->irq_ioctl.fd, ctx->irq_ioctl.com,
+					ctx->irq_ioctl.data);
 		}
 	}
 }
