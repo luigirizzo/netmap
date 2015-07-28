@@ -306,7 +306,6 @@ nm_find_bridge(const char *name, int create)
 		D("invalid bridge name %s", name ? name : NULL);
 		return NULL;
 	}
-
 	for (i = namelen + 1; i < l; i++) {
 		if (name[i] == ':') {
 			namelen = i;
@@ -332,7 +331,6 @@ nm_find_bridge(const char *name, int create)
 			break;
 		}
 	}
-
 	if (i == num_bridges && b) { /* name not found, can create entry */
 		/* initialize the bridge */
 		strncpy(b->bdg_basename, name, namelen);

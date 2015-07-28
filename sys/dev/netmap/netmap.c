@@ -493,6 +493,7 @@ ports attached to the switch)
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 
+
 MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
 
 /* user-controlled variables */
@@ -508,18 +509,17 @@ int netmap_flags = 0;	/* debug flags */
 int netmap_fwd = 0;	/* force transparent mode */
 
 /*
-* netmap_admode selects the netmap mode to use.
-* Invalid values are reset to NETMAP_ADMODE_BEST
-*/
+ * netmap_admode selects the netmap mode to use.
+ * Invalid values are reset to NETMAP_ADMODE_BEST
+ */
 enum {
 	NETMAP_ADMODE_BEST = 0,	/* use native, fallback to generic */
 	NETMAP_ADMODE_NATIVE,	/* either native or none */
 	NETMAP_ADMODE_GENERIC,	/* force generic */
-	NETMAP_ADMODE_LAST
-};
+	NETMAP_ADMODE_LAST };
 static int netmap_admode = NETMAP_ADMODE_BEST;
 
-int netmap_generic_mit = 100 * 1000;   /* Generic mitigation interval in nanoseconds. */
+int netmap_generic_mit = 100*1000;   /* Generic mitigation interval in nanoseconds. */
 int netmap_generic_ringsize = 1024;   /* Generic ringsize. */
 int netmap_generic_rings = 1;   /* number of queues in generic. */
 
@@ -1000,6 +1000,7 @@ netmap_dtor(void *data)
 {
 	struct netmap_priv_d *priv = data;
 	int last_instance;
+
 	NMG_LOCK();
 	last_instance = netmap_dtor_locked(priv);
 	NMG_UNLOCK();
@@ -2089,6 +2090,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 
 	(void)dev;	/* UNUSED */
 	(void)fflag;	/* UNUSED */
+
 	if (cmd == NIOCGINFO || cmd == NIOCREGIF) {
 		/* truncate name */
 		nmr->nr_name[sizeof(nmr->nr_name) - 1] = '\0';
@@ -2104,6 +2106,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		}
 	}
 	CURVNET_SET(TD_TO_VNET(td));
+
 	error = devfs_get_cdevpriv((void **)&priv);
 	if (error) {
 		CURVNET_RESTORE();
@@ -2111,6 +2114,7 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		 * is now created in the open */
 		return (error == ENOENT ? ENXIO : error);
 	}
+
 	switch (cmd) {
 	case NIOCGINFO:		/* return capabilities etc */
 		if (nmr->nr_cmd == NETMAP_BDG_LIST) {

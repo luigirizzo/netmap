@@ -84,7 +84,6 @@
 #include <sys/socket.h>		/* apple needs sockaddr */
 #include <net/if.h>		/* IFNAMSIZ */
 
-
 #ifndef likely
 #define likely(x)	__builtin_expect(!!(x), 1)
 #define unlikely(x)	__builtin_expect(!!(x), 0)
@@ -403,6 +402,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 #ifdef _WIN32
 	DWORD win32_return_lenght = 0;
 #endif	
+
 	if (strncmp(ifname, "netmap:", 7) && strncmp(ifname, "vale", 4)) {
 		errno = 0; /* name not recognised, not an error */
 		return NULL;
@@ -522,7 +522,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		snprintf(errmsg, MAXERRMSG, "cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;
 	}
-	
+
 	if (req)
 		d->req = *req;
 	d->req.nr_version = NETMAP_API;
@@ -566,13 +566,13 @@ nm_open(const char *ifname, const struct nmreq *req,
 	}
 	/* add the *XPOLL flags */
 	d->req.nr_ringid |= new_flags & (NETMAP_NO_TX_POLL | NETMAP_DO_RX_POLL);
-	
-	#ifndef _WIN32
+
+#ifndef _WIN32
 	if (ioctl(d->fd, NIOCREGIF, &d->req)) {
 		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
 		goto fail;
 	}
-	#else
+#else
 	if (!DeviceIoControl(IntToPtr(_get_osfhandle(d->fd)), 
 						(DWORD) NIOCREGIF, 
 						&d->req,
@@ -585,7 +585,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 	
-	#endif
+#endif
 
 	if (IS_NETMAP_DESC(parent) && parent->mem &&
 	    parent->req.nr_arg2 == d->req.nr_arg2) {
@@ -595,12 +595,12 @@ nm_open(const char *ifname, const struct nmreq *req,
 	} else {
 		/* XXX TODO: check if memsize is too large (or there is overflow) */
 		d->memsize = d->req.nr_memsize;
-		#ifndef _WIN32
+#ifndef _WIN32
 		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
 				d->fd, 0);
-		#else
+#else
 		d->mem = win32_mmap_emulated(d->fd);
-		#endif
+#endif
 		if (d->mem == MAP_FAILED) {
 			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
 			goto fail;

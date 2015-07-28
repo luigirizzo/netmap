@@ -187,14 +187,16 @@ typedef struct ethtool_ops{
 typedef struct hrtimer{
 	char data[1];
 };
-	///XXX_ale TODO, check if can be built
-	#ifdef _MSC_VER  //MSVC compiler doesn't has (un)likely support
-		#define likely(x)	(x)
-		#define unlikely(x)	(x)
-	#else
-		#define likely(x)	__builtin_expect((long)!!(x), 1L)
-		#define unlikely(x)	__builtin_expect((long)!!(x), 0L)
-	#endif //_MSC_VER
+
+///XXX_ale TODO, check if can be built
+#ifdef _MSC_VER  //MSVC compiler doesn't has (un)likely support
+#define likely(x)	(x)
+#define unlikely(x)	(x)
+#else
+#define likely(x)	__builtin_expect((long)!!(x), 1L)
+#define unlikely(x)	__builtin_expect((long)!!(x), 0L)
+#endif //_MSC_VER
+
 #else
 
 #error unsupported platform
@@ -1529,11 +1531,11 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 	struct lut_entry *lut = na->na_lut.lut;
 	void *ret = (i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr;
 
-	#ifndef _WIN32
+#ifndef _WIN32
 	*pp = (i >= na->na_lut.objtotal) ? lut[0].paddr : lut[i].paddr;
-	#else
+#else
 	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)lut[0].paddr.QuadPart : (uint64_t)lut[i].paddr.QuadPart;	
-	#endif
+#endif
 	return ret;
 }
 
