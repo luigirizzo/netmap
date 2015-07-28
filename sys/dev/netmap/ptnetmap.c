@@ -747,7 +747,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
     /* Read the configuration */
     if ((cfg->features & (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD)) !=
             (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD)) {
-        D("ERROR ptnetmap_cfg does not contain CSB and EVENTFD");
+        D("ERROR ptnetmap_cfg(%x) does not contain CSB and EVENTFD", cfg->features);
         ret = EFAULT;
         goto err;
     }

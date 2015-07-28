@@ -291,7 +291,7 @@ ptnetmap_read_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 {
 #ifdef PTN_CFG_USER_BUF
     uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
-    copyin(nmr_ptncfg, cfg, sizeof(*cfg));
+    copyin((const void *)*nmr_ptncfg, cfg, sizeof(*cfg));
 #else /* !PTN_CFG_USER_BUF */
     memcpy(cfg, &nmr->nr_offset, sizeof(*cfg));
 #endif /* PTN_CFG_USER_BUF */
