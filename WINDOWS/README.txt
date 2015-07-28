@@ -25,10 +25,10 @@ loaded at boot time with other kernel modules.
 
 a) DINAMICALLY LOAD: 
     - Open a CMD window with administrative privileges
-    - Change into the directory containig Netmap.sys and Netmaploader.exe
-    - Execute the command “NetmapLoader L”; if the module has been loaded a successful message will be written on the console window, 
+    - Change into the directory containing Netmap.sys and Netmaploader.exe
+    - Execute the command "NetmapLoader L"; if the module has been loaded a successful message will be written on the console window, 
 	otherwise an error code will be written.
-    - To dinamically unload the module just execute the command “Netmaploader U”
+    - To dinamically unload the module just execute the command "Netmaploader U"
 
 b) INSTALL MODULE
     - Open the folder containing Netmap.sys/.inf/.cat
@@ -39,7 +39,7 @@ b) INSTALL MODULE
     - right click on an adapter then click Properties
     - click on Install->Service->Add
     - click on 'Driver Disk' and select nmNdis.inf' in this folder
-    - select ‘Netmap NDIS' which is the only service you should see
+    - select 'Netmap NDIS' which is the only service you should see
     - click accept on the warnings for the installation of an unsigned
       	driver (roughly twice per existing network card)
 
@@ -59,7 +59,7 @@ Requirements:
 a) Build by using the Visual studio GUI
     - Open the <root directory>\WINDOWS\VsSolution\Netmap.sln solution
     - Select on the build type combobox the kind of operative system (Win7/8/8.1) and the kind of build needed (Debug/Release)
-    - Click on “Compile”, then “Compile solution”
+    - Click on "Compile", then "Compile solution"
     - The output will be found under <root directory>\WINDOWS\VsSolution\Output\<choosen build type>\
 
 b) Build by using the command line and MsBuild.exe
@@ -67,7 +67,7 @@ b) Build by using the command line and MsBuild.exe
 	On 32-bit machines they can be found in: C:\Program Files\MSBuild\12.0\bin
 	On 64-bit machines the 32-bit tools will be under: C:\Program Files (x86)\MSBuild\12.0\bin
 		and the 64-bit tools under: C:\Program Files (x86)\MSBuild\12.0\bin\amd64
-    - Execute the command “ MsBuild <netmap project dir>\WINDOWS\VsSolution\Netmap.sln /t:Build /p:Configuration=Release;Platform=Win32 ”
+    - Execute the command " MsBuild <netmap project dir>\WINDOWS\VsSolution\Netmap.sln /t:Build /p:Configuration=Release;Platform=Win32 "
       where Configuration and Platform parameter depends on what kind of build is needed.
     - The output will be found under <root directory>\WINDOWS\VsSolution\Output\<choosen build type>\
 
@@ -89,5 +89,5 @@ To build the pkt-gen example the following steps are required:
 ------------ GENERAL TIPS -----------------------------------
 To use pkt-gen under Hyper-V with a physical device (generic) two precautions are needed
 - Always specify the MAC address of the sender
-- Go into the configuration of the VM and under "setting-NIC-Advanced Features" enable "Mac Spoofing" or else the packets will be discarded by the 
+- Go into the configuration of the VM and under "setting->NIC->Advanced Features" enable "Mac Spoofing" or else the packets will be discarded by the 
      Hyper-V virtual switch
