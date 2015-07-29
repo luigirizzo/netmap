@@ -50,8 +50,8 @@
 #ifndef _WIN32
 #include <sys/sysctl.h>	/* sysctl */
 #endif
-#include <net/ethernet.h>
 #include <ifaddrs.h>	/* getifaddrs */
+#include <net/ethernet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>

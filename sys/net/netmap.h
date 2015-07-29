@@ -526,6 +526,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 /* request exclusive access to the selected rings */
 #define NR_EXCLUSIVE	0x800
 
+
 /*
  * FreeBSD uses the size value embedded in the _IOWR to determine
  * how much to copy in/out. So we need it to match the actual
@@ -538,19 +539,17 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NIOCTXSYNC	_IO('i', 148) /* sync tx queues */
 #define NIOCRXSYNC	_IO('i', 149) /* sync rx queues */
 #define NIOCCONFIG	_IOWR('i',150, struct nm_ifreq) /* for ext. modules */
-#else
-	/*
-	Definitions of windows IOCTLs signatures; for windows uses values under 0x800 as
-	system reserved, we must use numbers beyond that limit
-	There's no way to pass here the type/width of the data structure that will be
-	passed in a DeviceIoControl so the structure and it's size will be passed
-	directly in the IOCTL request
-	*/
+#else /*_WIN32 */
+/*
+ * Definitions of windows IOCTLs signatures; for windows uses values under 0x800 as
+ * system reserved, we must use numbers beyond that limit
+ * There's no way to pass here the type/width of the data structure that will be
+ * passed in a DeviceIoControl so the structure and it's size will be passed
+ * directly in the IOCTL request
+ */
 #define IOCTL_TYPE 40000	
 
 //Definition of external userspace-to-kernel ioctl codes
-#define NETMAP_SETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x840, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NETMAP_GETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x841, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NIOCGINFO CTL_CODE( IOCTL_TYPE, 0x945, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NIOCREGIF CTL_CODE( IOCTL_TYPE, 0x946, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NIOCTXSYNC CTL_CODE( IOCTL_TYPE, 0x948, METHOD_BUFFERED, FILE_ANY_ACCESS  )
@@ -558,7 +557,9 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NIOCCONFIG CTL_CODE( IOCTL_TYPE, 0x950, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NETMAP_MMAP CTL_CODE( IOCTL_TYPE, 0x960, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
 #define NETMAP_POLL CTL_CODE( IOCTL_TYPE, 0x962, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-
+//Definition of IOCTLs used for sysctl emulation
+#define NETMAP_SETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x840, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_GETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x841, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 //Definition of internal driver-to-driver ioctl codes
 #define NETMAP_KERNEL_XCHANGE_POINTERS CTL_CODE( IOCTL_TYPE, 0x980, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NETMAP_KERNEL_TEST_INJECT_PING CTL_CODE( IOCTL_TYPE, 0x982, METHOD_BUFFERED, FILE_ANY_ACCESS  )
@@ -579,19 +580,18 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NETMAP_NDIS_NTDEVICE_STRING             L"\\Device\\NMAPNDIS"//L"\\Device\\NDISLWF"
 
 //Definition of a structure used to pass a virtual address within an IOCTL
-typedef struct _MEMORY_ENTRY
-{
+typedef struct _MEMORY_ENTRY {
 	PVOID       pUsermodeVirtualAddress;
 } MEMORY_ENTRY, *PMEMORY_ENTRY;
 
-typedef struct _POLL_REQUEST_DATA
-{
+typedef struct _POLL_REQUEST_DATA {
 	int events;
 	int timeout;
 	int revents;
 } POLL_REQUEST_DATA;
 
-#endif //_WIN32
+#endif /* _WIN32 */
+
 #endif /* !NIOCREGIF */
 
 

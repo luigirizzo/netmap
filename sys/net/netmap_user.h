@@ -65,13 +65,21 @@
 #ifndef _NET_NETMAP_USER_H_
 #define _NET_NETMAP_USER_H_
 
+#define NETMAP_DEVICE_NAME "/dev/netmap"
 #ifdef __CYGWIN__
+/*
+ * we can compile userspace apps with either cygwin or msvc,
+ * and we use _WIN32 to identify windows specific code
+ */
 #ifndef _WIN32
 #define _WIN32
-#endif	//_WIN32
-#endif	//__CYGWIN__
+#endif	/* _WIN32 */
+
+#endif	/* __CYGWIN__ */
 
 #ifdef _WIN32
+#undef NETMAP_DEVICE_NAME
+#define NETMAP_DEVICE_NAME "/proc/sys/DosDevices/Global/netmap"
 #include <windows.h>
 #include <WinDef.h>
 #include <sys/cygwin.h>
@@ -354,7 +362,12 @@ static int nm_dispatch(struct nm_desc *, int, nm_cb_t, u_char *);
 static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
 #ifdef _WIN32
-static void* win32_mmap_emulated(int fd)
+/*
+ * we cannot use the native mmap on windows
+ * XXX_ try to use the same arguments as MMAP
+ */
+static void * 
+win32_mmap_emulated(int fd)
 {
 	DWORD bRetur  = 0;
 	BOOL transactionResult = FALSE;
@@ -400,7 +413,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK } p_state;
 	long num;
 #ifdef _WIN32
-	DWORD win32_return_lenght = 0;
+	int32_t win32_return_lenght = 0;
 #endif	
 
 	if (strncmp(ifname, "netmap:", 7) && strncmp(ifname, "vale", 4)) {
@@ -513,11 +526,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		return NULL;
 	}
 	d->self = d;	/* set this early so nm_close() works */
-	#ifndef _WIN32
-	d->fd = open("/dev/netmap", O_RDWR);
-	#else
-	d->fd = open("/proc/sys/DosDevices/Global/netmap", O_RDWR);
-	#endif
+	d->fd = open(NETMAP_DEVICE_NAME, O_RDWR);
 	if (d->fd < 0) {
 		snprintf(errmsg, MAXERRMSG, "cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;
