@@ -581,9 +581,9 @@ ptnetmap_print_configuration(struct ptnetmap_state *pts)
     struct ptnetmap_cfg *cfg = &pts->config;
 
     D("[PTN] configuration:");
-    D("TX: iofd=%u, irqfd=%u",
+    D("TX: iofd=%lu, irqfd=%lu",
             cfg->tx_ring.ioeventfd, cfg->tx_ring.irqfd);
-    D("RX: iofd=%u, irqfd=%u",
+    D("RX: iofd=%lu, irqfd=%lu",
             cfg->rx_ring.ioeventfd, cfg->rx_ring.irqfd);
     D("CSB: csb_addr=%p", cfg->csb);
 
