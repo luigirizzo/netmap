@@ -102,6 +102,7 @@ b) Build with command line tools and MsBuild.exe
 
     - In the WINDOWS/VsSolution directory run the command
 	 " MsBuild Netmap.sln /t:Build /p:Configuration=Release;Platform=Win32 "
+/cygdrive/c/Program\ Files\ \(x86\)/MSBuild/12.0/Bin/MSBuild.exe /t:Build /p:Configuration=Release;Platform=Win32
       where Configuration and Platform parameter depends on what kind of build is needed.
 
     - The output will be found in the directory ./Output/<choosen build type>
