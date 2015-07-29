@@ -362,6 +362,45 @@ static int nm_dispatch(struct nm_desc *, int, nm_cb_t, u_char *);
 static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
 #ifdef _WIN32
+
+static int
+win_nm_ioctl(void * handle, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
+{
+	int32_t bReturn = 0, szIn, szOut;
+	BOOL ioctlReturnStatus;
+	switch (ctlCode) {
+	case NETMAP_POLL:
+		szIn = sizeof(POLL_REQUEST_DATA);
+		szOut = sizeof(POLL_REQUEST_DATA);
+		break;
+	case NETMAP_MMAP:
+		szIn = 0;
+		szOut = sizeof(void*);
+		break;
+	case NIOCTXSYNC:
+	case NIOCRXSYNC:
+		szIn = 0;
+		szOut = 0;
+		break;
+	case NIOCREGIF:
+		szIn = sizeof(struct nmreq);
+		szOut = sizeof(struct nmreq);
+		break;
+	default:
+		return 0;
+	}
+	ioctlReturnStatus = DeviceIoControl(handle,
+		ctlCode,
+		inParam,
+		szIn,
+		outParam,
+		szOut,
+		&bReturn,
+		NULL
+		);
+	return ioctlReturnStatus;
+}
+
 /*
  * we cannot use the native mmap on windows
  * XXX_ try to use the same arguments as MMAP
@@ -369,21 +408,12 @@ static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 static void * 
 win32_mmap_emulated(int fd)
 {
-	DWORD bRetur  = 0;
 	BOOL transactionResult = FALSE;
 	void* sharedMem = NULL;
 	sharedMem = malloc(sizeof(void*));
 	HANDLE hDevice = IntToPtr(_get_osfhandle(fd));
 	
-	transactionResult = DeviceIoControl ( hDevice,
-						(DWORD) NETMAP_MMAP,
-						NULL,
-						0,
-						sharedMem,
-						sizeof(void*),
-						&bRetur,
-						NULL
-						);
+	transactionResult = win_nm_ioctl(hDevice, NETMAP_MMAP, NULL, sharedMem);
 	return ((MEMORY_ENTRY*)sharedMem)->pUsermodeVirtualAddress;
 }
 #endif 
@@ -412,9 +442,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 	char errmsg[MAXERRMSG] = "";
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK } p_state;
 	long num;
-#ifdef _WIN32
-	int32_t win32_return_lenght = 0;
-#endif	
 
 	if (strncmp(ifname, "netmap:", 7) && strncmp(ifname, "vale", 4)) {
 		errno = 0; /* name not recognised, not an error */
@@ -582,14 +609,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 #else
-	if (!DeviceIoControl(IntToPtr(_get_osfhandle(d->fd)), 
-						(DWORD) NIOCREGIF, 
-						&d->req,
-						sizeof(struct nmreq),
-						&d->req,
-						sizeof(struct nmreq),
-						&win32_return_lenght,
-						NULL)) {
+	if (!win_nm_ioctl(IntToPtr(_get_osfhandle(d->fd)), NIOCREGIF, &d->req, &d->req)) {
 		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
 		goto fail;
 	}
