@@ -12,7 +12,8 @@
 #include <net/if_var.h>
 #include <machine/bus.h>
 
-#define usleep_range(_1, _2)	pause("ptnetmap-sleep", _1 * hz / 1000000)
+//#define usleep_range(_1, _2)	pause("ptnetmap-sleep", _1 * hz / 1000000)
+#define usleep_range(_1, _2) pause_sbt("ptnetmap-sleep", SBT_1US * _2, SBT_1US, C_ABSOLUTE)
 
 #elif defined(linux)
 #include <bsd_glue.h>
@@ -29,7 +30,7 @@
 //#define PTN_TX_BATCH_LIM      ((nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
 
 #define PTN_AVOID_NM_PROLOGUE /* XXX: avoid nm_*sync_prologue() */
-#define BUSY_WAIT
+//#define BUSY_WAIT
 
 #define DEBUG  /* Enables communication debugging. */
 #ifdef DEBUG
