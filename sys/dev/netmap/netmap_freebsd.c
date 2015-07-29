@@ -930,7 +930,7 @@ struct nm_kthread {
 	//struct mm_struct *mm; /* TODO: remove */
 	struct thread *worker;
 	struct mtx worker_lock;
-	uint64_t scheduled; /* currently not used */
+	uint64_t scheduled; /* pending wake_up request */
 	struct nm_kthread_ctx worker_ctx;
 	int affinity;
 };
@@ -938,7 +938,10 @@ struct nm_kthread {
 void inline
 nm_kthread_wakeup_worker(struct nm_kthread *nmk)
 {
-	(void)nmk;
+	nmk->scheduled++;
+	if (nmk->worker_ctx.ioevent_file) {
+		wakeup(nmk->worker_ctx.ioevent_file);
+	}
 }
 
 void inline
@@ -984,6 +987,7 @@ nm_kthread_worker(void *data)
 {
 	struct nm_kthread *nmk = data;
 	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
+	uint64_t old_scheduled = 0, new_scheduled = 0;
 
 	thread_lock(curthread);
 	if (nmk->affinity >= 0)
@@ -992,7 +996,18 @@ nm_kthread_worker(void *data)
 	for (; !is_suspended();) {
 		if (nmk->worker == NULL)
 			break;
-		ctx->worker_fn(ctx->worker_private); /* worker_body */
+
+		new_scheduled = nmk->scheduled;
+		if (likely(new_scheduled != old_scheduled)) {
+			old_scheduled = new_scheduled;
+			ctx->worker_fn(ctx->worker_private); /* worker_body */
+		} else {
+			if (ctx->ioevent_file) {
+				/* XXX-ste: set timeout? */
+				tsleep(ctx->ioevent_file, PPAUSE, "nmk_event", 0);
+				nmk->scheduled++;
+			}
+		}
 	}
 	kthread_exit();
 }
@@ -1058,6 +1073,7 @@ nm_kthread_create(struct nm_kthread_cfg *cfg)
 
 	/* open event fd */
 	nmk->worker_ctx.irq_ioctl = cfg->ioctl; /* XXX put in open_files */
+	nmk->worker_ctx.ioevent_file = (void *)cfg->ring.ioeventfd;
 	error = nm_kthread_open_files(nmk, &cfg->ring);
 	if (error)
 		goto err;
@@ -1105,6 +1121,7 @@ nm_kthread_stop(struct nm_kthread *nmk)
 	nm_kthread_stop_poll(&nmk->worker_ctx);
 	kthread_suspend(nmk->worker, 100);
 	nmk->worker = NULL;
+	nm_kthread_wakeup_worker(nmk);
 }
 
 void
