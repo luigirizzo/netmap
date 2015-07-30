@@ -1596,7 +1596,7 @@ nm_kthread_send_irq(struct nm_kthread *nmk)
 }
 
 static int
-nm_kthread_open_files(struct nm_kthread *nmk, struct nm_eventfd_cfg_ring *ring_cfg)
+nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kth_eventfd_ring *ring_cfg)
 {
     struct file *file;
     struct nm_kthread_ctx *wctx = &nmk->worker_ctx;

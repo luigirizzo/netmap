@@ -996,7 +996,9 @@ nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kthread_cfg *cfg)
 	/* send irq through ioctl to bhyve (vmm.ko) */
 	nmk->worker_ctx.irq_ioctl = cfg->ioctl;
 	/* ring.ioeventfd contains the chan where do tsleep to wait events */
-	nmk->worker_ctx.ioevent_file = (void *)cfg->ring.ioeventfd;
+	if (cfg->ring.ioeventfd) {
+		nmk->worker_ctx.ioevent_file = (void *)cfg->ring.ioeventfd;
+	}
 
 	return 0;
 }

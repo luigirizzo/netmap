@@ -1703,7 +1703,7 @@ typedef void (*nm_kthread_worker_fn_t)(void *data);
 #include <sys/sysproto.h> /* struct ioctl_args */
 struct nm_kthread_cfg {
 	long type;				/* kthread type */
-	struct nm_eventfd_cfg_ring ring;	/* ring event fd */
+	struct nm_kth_eventfd_ring ring;	/* ring event fd */
 	struct ioctl_args ioctl;		/* ioctl args to send irq (bhyve) */
 	nm_kthread_worker_fn_t worker_fn;	/* worker function */
 	void *worker_private;			/* worker parameter */

@@ -202,8 +202,8 @@ struct ptnetmap_cfg {
 #define PTNETMAP_CFG_FEAT_CSB           0x0001
 #define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
 #define PTNETMAP_CFG_FEAT_IOCTL		0x0004
-	struct nm_eventfd_cfg_ring tx_ring;
-	struct nm_eventfd_cfg_ring rx_ring;
+	struct nm_kth_eventfd_ring tx_ring;
+	struct nm_kth_eventfd_ring rx_ring;
 #ifndef PTN_CFG_USER_BUF
 	uint8_t pad[2];                 /* padding to overlap strct nmreq */
 	uint16_t nr_cmd;                /* needed in netmap_ioctl() */

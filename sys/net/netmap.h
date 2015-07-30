@@ -567,7 +567,7 @@ struct nm_ifreq {
 /*
  * kernel thread config
  */
-struct nm_eventfd_cfg_ring {
+struct nm_kth_eventfd_ring {
 	uint64_t ioeventfd;
 	uint64_t irqfd;
 };
