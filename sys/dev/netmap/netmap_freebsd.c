@@ -980,8 +980,8 @@ nm_kthread_worker(void *data)
 			ctx->worker_fn(ctx->worker_private); /* worker_body */
 		} else if (nmk->run) {
 			if (ctx->ioevent_file) {
-				/* XXX-ste: set timeout? */
-				tsleep(ctx->ioevent_file, PPAUSE, "nmk_event", 0);
+				/* wait on event with timetout 1 second */
+				tsleep_sbt(ctx->ioevent_file, PPAUSE, "nmk_event", SBT_1S, SBT_1MS, C_ABSOLUTE);
 				nmk->scheduled++;
 			}
 		}

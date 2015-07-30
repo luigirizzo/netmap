@@ -12,8 +12,8 @@
 #include <net/if_var.h>
 #include <machine/bus.h>
 
-//#define usleep_range(_1, _2)	pause("ptnetmap-sleep", _1 * hz / 1000000)
-#define usleep_range(_1, _2) pause_sbt("ptnetmap-sleep", SBT_1US * _2, SBT_1US, C_ABSOLUTE)
+//#define usleep_range(_1, _2)
+#define usleep_range(_1, _2) pause_sbt("ptnetmap-sleep", SBT_1US * _1, SBT_1US * 1, C_ABSOLUTE)
 
 #elif defined(linux)
 #include <bsd_glue.h>
@@ -26,8 +26,8 @@
 
 #ifdef WITH_PTNETMAP_HOST
 
-#define PTN_RX_NOWORK_CYCLE   10                               /* RX cycle without receive any packets */
-//#define PTN_TX_BATCH_LIM      ((nkr_num_slots >> 1))     /* Limit Batch TX to half ring */
+#define PTN_RX_NOWORK_CYCLE   10			/* RX cycle without receive any packets */
+#define PTN_TX_BATCH_LIM      ((nkr_num_slots >> 1))	/* Limit Batch TX to half ring */
 
 #define PTN_AVOID_NM_PROLOGUE /* XXX: avoid nm_*sync_prologue() */
 //#define BUSY_WAIT

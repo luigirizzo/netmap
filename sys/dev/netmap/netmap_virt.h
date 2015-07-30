@@ -442,7 +442,7 @@ int netmap_pt_memdev_init(void);
 void netmap_pt_memdev_uninit(void);
 int netmap_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
 void netmap_pt_memdev_iounmap(struct ptnetmap_memdev *);
-
+#endif /* WITH_PTNETMAP_GUEST */
 
 /* ptnetmap memdev PCI-ID and PCI-BARS */
 #define PTN_MEMDEV_NAME                 "ptnetmap-memdev"
@@ -459,6 +459,5 @@ void netmap_pt_memdev_iounmap(struct ptnetmap_memdev *);
 /* 16 bit r/o */
 #define PTNETMAP_IO_PCI_HOSTID          8
 #define PTNEMTAP_IO_SIZE                10
-#endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* NETMAP_VIRT_PTNETMAP */
