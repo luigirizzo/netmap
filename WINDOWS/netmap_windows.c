@@ -228,15 +228,6 @@ void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 }
 //
 
-//Just calling a shared function with NDIS module to test inject a ping packet
-void sendPingInternal()
-{
-	if (g_functionAddresses.pingPacketInsertionTest != NULL)
-	{
-		g_functionAddresses.pingPacketInsertionTest();
-	}	
-}
-
 NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
 	PIO_STACK_LOCATION  irpSp;
@@ -353,12 +344,6 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		Irp->IoStatus.Status = NtStatus;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
 		return NtStatus;
-	case NETMAP_KERNEL_TEST_INJECT_PING:
-		//DbgPrint("Netmap.sys: NETMAP_KERNEL_TEST_INJECT_PING\n");
-		sendPingInternal();
-		Irp->IoStatus.Status = NtStatus;
-		IoCompleteRequest(Irp, IO_NO_INCREMENT);
-		return NtStatus;
 	default:
 		//bail out if unknown request issued
 		DbgPrint("Netmap.sys: wrong request issued! (%i)", irpSp->Parameters.DeviceIoControl.IoControlCode);
@@ -465,7 +450,6 @@ NTSTATUS ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 			data = Irp->AssociatedIrp.SystemBuffer;
 			data->netmap_catch_rx = &windows_generic_rx_handler;
 
-			g_functionAddresses.pingPacketInsertionTest = data->pingPacketInsertionTest;
 			g_functionAddresses.get_device_handle_by_ifindex = data->get_device_handle_by_ifindex;
 			g_functionAddresses.set_ifp_in_device_handle = data->set_ifp_in_device_handle;
 			g_functionAddresses.injectPacket = data->injectPacket;

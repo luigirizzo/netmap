@@ -40,7 +40,6 @@ FUNCTION_POINTER_XCHANGE g_functionAddresses;
 
 int		    FilterModulesCount = 0;		//Number of net adapters where the filter is currently attached
 
-extern void pingPacketInsertionTest(void);
 extern void set_ifp_in_device_handle(struct net_device *, BOOLEAN);
 extern NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE	UserSendNetBufferListPool);
 extern NTSTATUS injectPacket(NDIS_HANDLE device, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
@@ -190,7 +189,6 @@ Return Value:
 				break;
 			}
 			g_functionAddresses.netmap_catch_rx = NULL;		//parameter returned by netmap IOCTL driver
-			g_functionAddresses.pingPacketInsertionTest = &pingPacketInsertionTest;
 			g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
 			g_functionAddresses.set_ifp_in_device_handle = &set_ifp_in_device_handle;
 			g_functionAddresses.injectPacket = &injectPacket;

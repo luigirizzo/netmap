@@ -256,7 +256,6 @@ static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 
 typedef struct _FUNCTION_POINTER_XCHANGE
 {
-	PVOID(*pingPacketInsertionTest)(void);			//test function
 	struct NET_BUFFER*(*netmap_catch_rx)(struct net_device*, uint32_t length, const char* data);
 	NDIS_HANDLE(*get_device_handle_by_ifindex)(int ifIndex, PNDIS_HANDLE UserSendNetBufferListPool); //UserSendNetBufferListPool is returned from the call
 	void(*set_ifp_in_device_handle)(struct net_device*, BOOLEAN);
