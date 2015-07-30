@@ -1437,33 +1437,34 @@ Arguments:
         //
         
         //NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
-		if (g_functionAddresses.netmap_catch_tx != NULL && pFilter->readyToUse)
-		{
-			{
-				int result = -1;
+        if (g_functionAddresses.netmap_catch_tx != NULL && pFilter->readyToUse)
+        {
+            {
+                int result = -1;
 
-				PNET_BUFFER pkt = NULL;
-				PNET_BUFFER_LIST current_list = NetBufferLists;
-				while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list))))
-				{
-					PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
+                PNET_BUFFER pkt = NULL;
+                PNET_BUFFER_LIST current_list = NetBufferLists;
+                while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list))))
+                {
+                    PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
 
-					if (buffer != NULL)
-					{
-						result = g_functionAddresses.netmap_catch_tx(pFilter->ifp, pkt->DataLength, buffer);
-					}
-					pkt = pkt->Next;
-					if (pkt == NULL)
-					{
-						current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
-					}
-				}
-			}
-			//NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, SendFlags);
-		}
-		else {
-			NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
-		}
+                    if (buffer != NULL)
+                    {
+                        //result = g_functionAddresses.netmap_catch_tx(pFilter->ifp, pkt->DataLength, buffer);
+                    }
+                    pkt = pkt->Next;
+                    if (pkt == NULL)
+                    {
+                        current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
+                    }
+                }
+            }
+            //NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, SendFlags);
+        }
+        else
+        {
+            NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
+        }
 
     }
     while (bFalse);

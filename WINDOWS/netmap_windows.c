@@ -180,9 +180,19 @@ struct NET_BUFFER* windows_generic_rx_handler(struct net_device* nd, uint32_t le
     // XXX see if we can do a single allocation
     struct mbuf *m = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'fubm');
 
+    if (m == NULL)
+    {
+        DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
+        return NULL;
+    }
     RtlZeroMemory(m, sizeof(struct mbuf));
     m->m_len = length;
     m->pkt = ExAllocatePoolWithTag(NonPagedPool,  length, 'pubm');// m + sizeof(struct mbuf);
+    if (m->pkt == NULL)
+    {
+        DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf packet!!!");
+        return NULL;
+    }
     // RtlZeroMemory(m->pkt, length); // XXX not needed, we copy everything
     m->dev = nd;
     RtlCopyMemory(m->pkt, data, length);
@@ -196,17 +206,27 @@ struct NET_BUFFER* windows_generic_rx_handler(struct net_device* nd, uint32_t le
 */
 struct NET_BUFFER* windows_generic_tx_handler(struct net_device* nd, uint32_t length, const char* data)
 {
-	// XXX see if we can do a single allocation
-	struct mbuf *m = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'fubm');
+    // XXX see if we can do a single allocation
+    struct mbuf *m = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'fubm');
 
-	RtlZeroMemory(m, sizeof(struct mbuf));
-	m->m_len = length;
-	m->pkt = ExAllocatePoolWithTag(NonPagedPool, length, 'pubm');// m + sizeof(struct mbuf);
-	// RtlZeroMemory(m->pkt, length); // XXX not needed, we copy everything
-	m->dev = nd;
-	RtlCopyMemory(m->pkt, data, length);
-	netmap_transmit(nd, m);
-	return NULL;
+    if (m == NULL)
+    {
+        DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
+        return NULL;
+    }
+    RtlZeroMemory(m, sizeof(struct mbuf));
+    m->m_len = length;
+    m->pkt = ExAllocatePoolWithTag(NonPagedPool, length, 'pubm');// m + sizeof(struct mbuf);
+    if (m->pkt == NULL)
+    {
+        DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf packet!!!");
+        return NULL;
+    }
+    // RtlZeroMemory(m->pkt, length); // XXX not needed, we copy everything
+    m->dev = nd;
+    RtlCopyMemory(m->pkt, data, length);
+    netmap_transmit(nd, m);
+    return NULL;
 }
 
 int netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
