@@ -364,7 +364,7 @@ static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 #ifdef _WIN32
 
 static int
-win_nm_ioctl(void * handle, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
+win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 {
 	int32_t bReturn = 0, szIn, szOut;
 	BOOL ioctlReturnStatus;
@@ -387,36 +387,39 @@ win_nm_ioctl(void * handle, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 		szOut = sizeof(struct nmreq);
 		break;
 	default:
-		return 0;
+		return -1;
 	}
-	ioctlReturnStatus = DeviceIoControl(handle,
-		ctlCode,
-		inParam,
-		szIn,
-		outParam,
-		szOut,
-		&bReturn,
-		NULL
-		);
+	/* XXX_ale: cache somewhere the result of IntToPtr(_get_osfhandle(fd))
+	 * this call alone seems to waste between 46 to 58 ns
+	*/
+	ioctlReturnStatus = DeviceIoControl(IntToPtr(_get_osfhandle(fd)),
+										ctlCode,
+										inParam,
+										szIn,
+										outParam,
+										szOut,
+										&bReturn,
+										NULL
+										);
 	return ioctlReturnStatus;
 }
 
 /*
- * we cannot use the native mmap on windows
- * XXX_ try to use the same arguments as MMAP
+ * We cannot use the native mmap on windows
+ * The only parameter used is "fd", the other ones are just declared to
+ * make this signature comparable to the FreeBSD/Linux one
  */
 static void * 
-win32_mmap_emulated(int fd)
+win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int32_t offset)
 {
 	BOOL transactionResult = FALSE;
 	void* sharedMem = NULL;
 	sharedMem = malloc(sizeof(void*));
-	HANDLE hDevice = IntToPtr(_get_osfhandle(fd));
 	
-	transactionResult = win_nm_ioctl(hDevice, NETMAP_MMAP, NULL, sharedMem);
+	transactionResult = win_nm_ioctl(fd, NETMAP_MMAP, NULL, sharedMem);
 	return ((MEMORY_ENTRY*)sharedMem)->pUsermodeVirtualAddress;
 }
-#endif 
+#endif /* _WIN32 */
 
 /*
  * Try to open, return descriptor if successful, NULL otherwise.
@@ -609,12 +612,12 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 #else
-	if (!win_nm_ioctl(IntToPtr(_get_osfhandle(d->fd)), NIOCREGIF, &d->req, &d->req)) {
+	if (!win_nm_ioctl(d->fd, NIOCREGIF, &d->req, &d->req)) {
 		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
 		goto fail;
 	}
 	
-#endif
+#endif /* _WIN32 */
 
 	if (IS_NETMAP_DESC(parent) && parent->mem &&
 	    parent->req.nr_arg2 == d->req.nr_arg2) {
@@ -628,8 +631,8 @@ nm_open(const char *ifname, const struct nmreq *req,
 		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
 				d->fd, 0);
 #else
-		d->mem = win32_mmap_emulated(d->fd);
-#endif
+		d->mem = win32_mmap_emulated(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED, d->fd, 0);
+#endif /* _WIN32 */
 		if (d->mem == MAP_FAILED) {
 			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
 			goto fail;

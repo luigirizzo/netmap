@@ -66,13 +66,11 @@ and before unloading the Netmap Core Module.
 
 ------------ NETMAP BUILD INSTRUCTIONS ----------
 Requirements:
-  - Visual Studio 2013 (any version)
+To build the module you need to install (in this order):
+  - Visual Studio 2013 (express is enough)
 	https://www.visualstudio.com/downloads/download-visual-studio-vs
       Note, you can reach the 2013 version from the
 	'Download older versions' link
-
-     VS is used to build the kernelspace modules in conjunction with WDK8.1
-     and to build the NetmapLoader userspace program
 
   - Windows Driver Kit (WDK) version 8.1 update
 	https://msdn.microsoft.com/en-us/windows/hardware/gg454513.aspx

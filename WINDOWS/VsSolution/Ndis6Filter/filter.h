@@ -18,6 +18,7 @@ Notes:
 
 #include "..\win_glue.h"
 #include "..\..\sys\net\netmap.h"
+#include "..\..\sys\dev\netmap\netmap_kern.h"
 
 #pragma warning(disable:28930) // Unused assignment of pointer, by design in samples
 #pragma warning(disable:28931) // Unused assignment of variable, by design in samples

@@ -319,7 +319,8 @@ filterFindFilterModule(
 *        	FUNCTIONS CALLED BY NETMAP DRIVER   		 *
 **********************************************************/
 
-void DumpPayload(char* p, uint32_t len)
+void 
+DumpPayload(char* p, uint32_t len)
 {
 	char buf[128];
 	int i ,j,i0;
@@ -350,7 +351,8 @@ unsigned char ethPingPacket[74] =
 0x68, 0x69 };
 PMS_FILTER              pFilterPing = NULL;
 
-void pingPacketInsertionTest()
+void 
+pingPacketInsertionTest()
 {
 	int counter = 0;
 	PLIST_ENTRY             Link = NULL;
@@ -433,13 +435,14 @@ void pingPacketInsertionTest()
 }
 
 /*get_device_handle_by_ifindex - get the necessary structures to catch/inject packets from/into a generic interface
-
-Return:	NDIS_HANDLE									//handle of the required network adapter
-
-_IN_	int deviceIfIndex							//ifIndex of the network adapter (visible with Get-NetAdapter under powershell)
-_OUT_	PNDIS_HANDLE	UserSendNetBufferListPool	//handle of the transmission pool
-*/
-NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE UserSendNetBufferListPool)
+ *
+ * Return:	NDIS_HANDLE									//handle of the required network adapter
+ *
+ * _IN_	int deviceIfIndex							//ifIndex of the network adapter (visible with Get-NetAdapter under powershell)
+ * _OUT_	PNDIS_HANDLE	UserSendNetBufferListPool	//handle of the transmission pool
+ */
+NDIS_HANDLE 
+get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE UserSendNetBufferListPool)
 {
 	NTSTATUS				NtStatus = STATUS_SUCCESS;
 	PLIST_ENTRY             Link = NULL;
@@ -468,15 +471,15 @@ NDIS_HANDLE get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE UserSen
 }
 
 /*set_ifp_in_device_handle - called from Netmap driver to start to intercept 
-							packets and detach a network adapter from the network stack
-
-Return:	nothing
-
-_IN_	net_device *ifp						//pointer to the descriptor of the network adapter
-_IN_	BOOLEAN amISettingTheHandler		//TRUE start to catch packets, FALSE stops
-
-*/
-void set_ifp_in_device_handle(struct net_device *ifp, BOOLEAN amISettingTheHandler)
+ *								packets and detach a network adapter from the network stack
+ *
+ * Return:	nothing
+ *
+ * _IN_	net_device *ifp						//pointer to the descriptor of the network adapter
+ * _IN_	BOOLEAN amISettingTheHandler		//TRUE start to catch packets, FALSE stops
+ */
+void 
+set_ifp_in_device_handle(struct net_device *ifp, BOOLEAN amISettingTheHandler)
 {
 	NTSTATUS				NtStatus = STATUS_SUCCESS;
 	PLIST_ENTRY             Link = NULL;
@@ -510,16 +513,17 @@ void set_ifp_in_device_handle(struct net_device *ifp, BOOLEAN amISettingTheHandl
 }
 
 /*injectPacket - called from Netmap driver to inject a packet
-
-Return: NTSTATUS - STATUS_SUCCESS packet injected, other value error
-
-_IN_ NDIS_HANDLE deviceHandle,					//handle of the network adapter
-_IN_ NDIS_HANDLE UserSendNetBufferListPool,		//handle of the transmission pool
-_IN_ PVOID data,								//data to be injected
-_IN_ uint32_t length							//length of the data to be injected
-_IN_ BOOLEAN sendToMiniport						//TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
-*/
-NTSTATUS injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
+ *
+ * Return: NTSTATUS - STATUS_SUCCESS packet injected, other value error
+ *
+ * _IN_ NDIS_HANDLE deviceHandle,					//handle of the network adapter
+ * _IN_ NDIS_HANDLE UserSendNetBufferListPool,		//handle of the transmission pool
+ * _IN_ PVOID data,									//data to be injected
+ * _IN_ uint32_t length								//length of the data to be injected
+ * _IN_ BOOLEAN sendToMiniport						//TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
+ */
+NTSTATUS 
+injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
 {
 	PVOID					buffer = NULL;
 	PMDL					pMdl = NULL;

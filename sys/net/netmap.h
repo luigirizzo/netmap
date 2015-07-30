@@ -560,11 +560,6 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 //Definition of IOCTLs used for sysctl emulation
 #define NETMAP_SETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x840, METHOD_BUFFERED, FILE_ANY_ACCESS  )
 #define NETMAP_GETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x841, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-//Definition of internal driver-to-driver ioctl codes
-#define NETMAP_KERNEL_XCHANGE_POINTERS CTL_CODE( IOCTL_TYPE, 0x980, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NETMAP_KERNEL_TEST_INJECT_PING CTL_CODE( IOCTL_TYPE, 0x982, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL CTL_CODE( IOCTL_TYPE, 0x995, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
-
 
 #define DRIVER_FUNC_INSTALL     0x01
 #define DRIVER_FUNC_REMOVE      0x02
@@ -574,10 +569,6 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 //These linknames are for the Netmap Core Driver
 #define NETMAP_NT_DEVICE_NAME			L"\\Device\\NETMAP"
 #define NETMAP_DOS_DEVICE_NAME			L"\\DosDevices\\netmap"
-
-//These linknames are for the NDIS driver
-#define NETMAP_NDIS_LINKNAME_STRING             L"\\DosDevices\\NMAPNDIS"//L"\\DosDevices\\NDISLWF"
-#define NETMAP_NDIS_NTDEVICE_STRING             L"\\Device\\NMAPNDIS"//L"\\Device\\NDISLWF"
 
 //Definition of a structure used to pass a virtual address within an IOCTL
 typedef struct _MEMORY_ENTRY {

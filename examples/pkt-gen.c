@@ -126,7 +126,7 @@ char
         return ((char *)&a);
 }
 
-#endif //_WIN32
+#endif /* _WIN32 */
 
 #ifdef linux
 
@@ -1199,7 +1199,7 @@ sender_body(void *data)
 		 */
 #ifdef BUSYWAIT
 #ifdef _WIN32
-		win_nm_ioctl(IntToPtr(_get_osfhandle(pfd.fd)), NIOCTXSYNC, NULL, NULL);
+		win_nm_ioctl(pfd.fd, NIOCTXSYNC, NULL, NULL);
 #else
 		ioctl(pfd.fd, NIOCTXSYNC);
 #endif /* _WIN32 */
@@ -1211,7 +1211,7 @@ sender_body(void *data)
 			POLL_REQUEST_DATA prd;
 			prd.timeout = 2000;
 			prd.events = POLLOUT;
-			win_nm_ioctl(IntToPtr(_get_osfhandle(pfd.fd)), NETMAP_POLL, &prd, &prd);
+			win_nm_ioctl(pfd.fd, NETMAP_POLL, &prd, &prd);
 		}	
 #else
 		if (poll(&pfd, 1, 2000) <= 0) {
@@ -1226,8 +1226,9 @@ sender_body(void *data)
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
-#endif //_WIN32
-#endif //BUSYWAIT
+#endif /* _WIN32 */
+
+#endif /* BUSYWAIT */
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1266,7 +1267,7 @@ sender_body(void *data)
 #ifndef _WIN32
 	ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #else
-	win_nm_ioctl(IntToPtr(_get_osfhandle(pfd.fd)), NIOCTXSYNC, NULL, NULL);
+	win_nm_ioctl(pfd.fd, NIOCTXSYNC, NULL, NULL);
 #endif	/* _WIN32 */
 
 	/* final part: wait all the TX queues to be empty. */
@@ -1276,7 +1277,7 @@ sender_body(void *data)
 #ifndef _WIN32
 			ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #else /* !_WIN32 */
-			win_nm_ioctl(IntToPtr(_get_osfhandle(pfd.fd)), NIOCTXSYNC, NULL, NULL);
+			win_nm_ioctl(pfd.fd, NIOCTXSYNC, NULL, NULL);
 #endif	/* _WIN32 */
 			usleep(1); /* wait 1 tick */
 		}
@@ -1392,7 +1393,7 @@ receiver_body(void *data)
 		   before quitting. */
 #ifdef BUSYWAIT
 #ifdef _WIN32
-		win_nm_ioctl(IntToPtr(_get_osfhandle(pfd.fd)), NIOCRXSYNC, NULL, NULL);
+		win_nm_ioctl(pfd.fd, NIOCRXSYNC, NULL, NULL);
 #else
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
 #endif /* _WIN32 */
@@ -1402,7 +1403,7 @@ receiver_body(void *data)
 			POLL_REQUEST_DATA prd;
 			prd.timeout = 1000;
 			prd.events = POLLIN;
-			win_nm_ioctl(IntToPtr(_get_osfhandle(pfd.fd)), NETMAP_POLL, &prd, &prd);
+			win_nm_ioctl(pfd.fd, NETMAP_POLL, &prd, &prd);
 		}
 #else  /* !_WIN32 */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {

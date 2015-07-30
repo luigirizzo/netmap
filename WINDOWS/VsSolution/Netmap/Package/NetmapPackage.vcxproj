@@ -358,7 +358,7 @@
     <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Netmap\Netmap.vcxproj">
+    <ProjectReference Include="..\Netmap.vcxproj">
       <Project>{789055e4-2677-413d-a638-3e2aed7c7427}</Project>
     </ProjectReference>
   </ItemGroup>

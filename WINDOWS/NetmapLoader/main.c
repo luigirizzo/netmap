@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2013-2015 Universita` di Pisa. All rights reserved.
+* Copyright (C) 2015 Universita` di Pisa. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions
@@ -111,8 +111,11 @@ void BringDriverDown()
 	}
 	else{
 		errNum = GetLastError();
-		printf("Failed to unload driver: %i", errNum);
-
+		if (errNum != 0)
+		{
+			printf("Failed to unload driver: %i", errNum);
+		}
+			
 		if (!SetupDriverName(driverLocation, sizeof(driverLocation))) {
 			return;
 		}
@@ -131,11 +134,11 @@ int _cdecl main(int argc, CHAR* argv[])
 		PrintHelp();
 	}
 	else{
-		if (argv[1][0] == 'l')
+		if ((argv[1][0] == 'l') || (argv[1][0] == 'L'))
 		{
 			GetDriverUp();
 		}
-		else if (argv[1][0] == 'u')
+		else if ((argv[1][0] == 'u') || (argv[1][0] == 'U'))
 		{
 			BringDriverDown();
 		}

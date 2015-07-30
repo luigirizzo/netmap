@@ -48,7 +48,7 @@
 #pragma warning(disable:4245)	//conversion from int to uint_32t: corrispondence error between signed and unsigned
 #pragma warning(disable:4389)	//wrong corrispondence between signed and unsigned
 
-#pragma warning(disable:4267)	//
+#pragma warning(disable:4267)	//conversion from 'size_t' to <type>. possible loss of data
 
 /*#define FILTER_MAJOR_NDIS_VERSION   NDIS_SUPPORT_NDIS6
 #define FILTER_MINOR_NDIS_VERSION   NDIS_SUPPORT_NDIS6
@@ -56,6 +56,7 @@
 
 #define WIN32_LEAN_AND_MEAN 1
 
+#ifndef IS_USERSPACE
 #include <ndis.h>
 #include <string.h>
 #include <WinDef.h>
@@ -65,6 +66,7 @@
 #include <errno.h>
 #include <intrin.h>			//machine specific code (for example le64toh)
 #include <Ntstrsafe.h>
+#endif //IS_USERSPACE
 
 #define PRIV_MEMORY_POOL_TAG				'memP'
 #define PIPES_POOL_TAG						'epiP'
@@ -78,6 +80,7 @@
 *   REDEFINITION OF UNCOMMON STRUCTURES FOR WINDOWS		 *
 **********************************************************/
 
+// From inttypes.h
 typedef __int8 int8_t;
 typedef unsigned __int8 uint8_t;
 typedef __int16 int16_t;
@@ -86,9 +89,12 @@ typedef __int32 int32_t;
 typedef unsigned __int32 uint32_t;
 typedef __int64 int64_t;
 typedef unsigned __int64 uint64_t;
-typedef SSIZE_T ssize_t;
 typedef uint32_t u_int;
 typedef ULONG u_long;
+typedef SSIZE_T ssize_t;
+
+
+#ifndef IS_USERSPACE
 typedef struct timeval {
   LONGLONG tv_sec;
   LONGLONG tv_usec;
@@ -100,6 +106,7 @@ typedef uint32_t			vm_offset_t;
 typedef ULONG 				vm_ooffset_t; 
 
 #define thread PIO_STACK_LOCATION
+#endif //IS_USERSPACE
 //--------------------------------------------------------
 
 /*********************************************************
@@ -114,7 +121,7 @@ typedef ULONG 				vm_ooffset_t;
 #define CURVNET_SET(x)
 #define CURVNET_RESTORE()
 #define __user
-#define	nm_iommu_group_id(dev)	0
+#define nm_iommu_group_id(dev)	0
 #define if_printf
 /*********************************************************
 * TRANSLATION OF GCC COMPILER ATTRIBUTES TO MSVC COMPILER*
@@ -122,16 +129,16 @@ typedef ULONG 				vm_ooffset_t;
 
 #ifdef _MSC_VER
 #define inline __inline
-#define	__builtin_prefetch(x)	_mm_prefetch(x,_MM_HINT_T2)
+#define __builtin_prefetch(x)	_mm_prefetch(x,_MM_HINT_T2)
 #endif //_MSC_VER
 
+#ifndef IS_USERSPACE
 static void panic(const char *fmt, ...)
 {
 	NT_ASSERT(1);
 }
 #define __assert	NT_ASSERT
 #define assert	NT_ASSERT
-
 
 /*********************************************************
 *        			SPINLOCKS DEFINITION        		 *  
@@ -195,7 +202,7 @@ static void win_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
 #define init_waitqueue_head(x)				KeInitializeEvent(x, NotificationEvent, TRUE);
 #define netmap_knlist_destroy(x)
 #define OS_selwakeup(queue, priority)		KeSetEvent(queue, priority, FALSE);			
-#pragma warning(disable:4702)	//
+#pragma warning(disable:4702)	//unreachable code
 #define OS_selrecord(thread, queue)		    win_selrecord(thread, queue)
 #define tsleep(ident, priority, wmesg, time)	KeDelayExecutionThread(KernelMode, FALSE, (PLARGE_INTEGER)time)	
 //--------------------------------------------------------
@@ -256,7 +263,7 @@ typedef struct _FUNCTION_POINTER_XCHANGE
 	NTSTATUS(*injectPacket)(NDIS_HANDLE device, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
 } FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
 
-//XXX_ale: I'm sure that somewhere in windows definitions there's a structure like the original
+
 struct netmap_adapter;
 #if 0
 struct ifnet {
@@ -282,7 +289,6 @@ struct mbuf {
 	struct mbuf			*m_nextpkt;
 	uint32_t			m_len;
 	struct net_device	*dev;
-	//PNET_BUFFER			pkt;
 	PVOID				pkt;
 	void*(*netmap_default_mbuf_destructor)(struct mbuf *m);
 };
@@ -363,7 +369,8 @@ netmap_default_mbuf_destructor(struct mbuf *m)
 	m = NULL;
 }
 
-static struct mbuf* netmap_get_mbuf(uint32_t buf_size)
+static struct mbuf * 
+netmap_get_mbuf(uint32_t buf_size)
 {
 	struct mbuf *m;
 	m = ExAllocatePoolWithTag(NonPagedPool, buf_size, 'MBUF');
@@ -375,7 +382,8 @@ static struct mbuf* netmap_get_mbuf(uint32_t buf_size)
 	return m;
 }
 
-static inline void win32_ndis_packet_freem(struct mbuf* m)
+static inline void 
+win32_ndis_packet_freem(struct mbuf* m)
 {
 	if (m->pkt != NULL)
 	{
@@ -389,7 +397,7 @@ static inline void win32_ndis_packet_freem(struct mbuf* m)
 	}	
 }
 
-#define	MBUF_LEN(m)											m->m_len
+#define MBUF_LEN(m)											m->m_len
 #define m_devget(slot_addr, slot_len, offset, dev, fn)		NULL
 #define m_freem(mbuf)										win32_ndis_packet_freem(mbuf);
 #define m_copydata(source, offset, length, dst)				RtlCopyMemory(dst, source->pkt, length)
@@ -400,10 +408,12 @@ static inline void win32_ndis_packet_freem(struct mbuf* m)
 struct net_device* ifunit_ref(const char *name);
 void if_rele(struct net_device *ifp);
 
+extern int send_up_to_stack(struct ifnet *ifp, struct mbuf *m);
+
 #define WNA(_ifp)		_ifp->na
 #define NM_BNS_GET(b)	do { (void)(b); } while (0)
 #define NM_BNS_PUT(b)   do { (void)(b); } while (0)
-#define NM_SEND_UP
+#define NM_SEND_UP(dst, m)		send_up_to_stack(dst->na, m)
 
 /*********************************************************
 *                   ATOMIC OPERATIONS     		         *  
@@ -497,13 +507,14 @@ static void* win_kernel_malloc(size_t size)
 	return mem;
 }
 
-#define contigmalloc(sz, ty, flags, a, b, pgsz, c)  win_contigMalloc(sz,pgsz)					
-#define contigfree(va, sz, ty)						win_ContigFree(va)	
+#define contigmalloc(sz, ty, flags, a, b, pgsz, c)  win_contigMalloc(sz,pgsz)
+#define contigfree(va, sz, ty)						win_ContigFree(va)
 
 #define vtophys										MmGetPhysicalAddress
 #define devfs_get_cdevpriv(mem)						win32_devfs_get_cdevpriv(mem, td)
 #define MALLOC_DEFINE(a,b,c)
 //--------------------------------------------------------
+#endif //IS_USERSPACE
 /*********************************************************
 * SYSCTL emulation (copied from dummynet\glue.h)		 *
 **********************************************************/

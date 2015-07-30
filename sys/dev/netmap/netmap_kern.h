@@ -165,16 +165,25 @@ struct hrtimer {
 #define	NM_SEND_UP(ifp, m)	((ifp)->if_input)(ifp, m)
 
 #elif defined (_WIN32)
-#include <win_glue.h>
+#include "..\..\..\WINDOWS\win_glue.h"
 #define	NM_SELINFO_T		KEVENT			//KQUEUE
 #define	NM_LOCK_T			win_spinlock_t	// see win_glue.h
 #define NM_MTX_T			KGUARDED_MUTEX	/* OS-specific mutex (sleepable) */
 
-#define NM_MTX_INIT(m)		KeInitializeGuardedMutex(&m);     
+#define NM_MTX_INIT(m)		KeInitializeGuardedMutex(&m);
 #define NM_MTX_DESTROY(m)	do { (void)(m); } while (0)
 #define NM_MTX_LOCK(m)		KeAcquireGuardedMutex(&(m))
 #define NM_MTX_UNLOCK(m)	KeReleaseGuardedMutex(&(m))
-#define NM_MTX_ASSERT(m)	assert(&m.Count>0)							
+#define NM_MTX_ASSERT(m)	assert(&m.Count>0)
+
+//These linknames are for the NDIS driver
+#define NETMAP_NDIS_LINKNAME_STRING             L"\\DosDevices\\NMAPNDIS"
+#define NETMAP_NDIS_NTDEVICE_STRING             L"\\Device\\NMAPNDIS"
+
+//Definition of internal driver-to-driver ioctl codes
+#define NETMAP_KERNEL_XCHANGE_POINTERS CTL_CODE( IOCTL_TYPE, 0x980, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_KERNEL_TEST_INJECT_PING CTL_CODE( IOCTL_TYPE, 0x982, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL CTL_CODE( IOCTL_TYPE, 0x995, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
 
 //Empty data structures are not permitted by MSVC compiler
 //XXX_ale, try to solve this mess

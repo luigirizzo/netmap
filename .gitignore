@@ -45,9 +45,13 @@ examples/vale-ctl
 examples/cygwin1.dll
 examples/pkt-gen.exe
 examples/pkt-gen.exe.stackdump
+examples/pkt-gen-b.exe
+examples/pkt-gen-b.exe.stackdump
 build*/
 LINUX/tmp-patches
 LINUX/veth.c
 *.gcno
 *.core
 *.suo
+*.sdf
+*.opensdf

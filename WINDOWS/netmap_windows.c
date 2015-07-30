@@ -188,8 +188,19 @@ void netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 	}
 }
 
+int send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
+{
+	NTSTATUS status;
+	if (g_functionAddresses.injectPacket != NULL)
+	{
+		status = g_functionAddresses.injectPacket(ifp->deviceHandle, ifp->UserSendNetBufferListPool, m->pkt, m->m_len, FALSE);
+		return status;
+	}
+	return STATUS_DEVICE_NOT_CONNECTED;
+}
+
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
-and -1 on error (which may be packet drops or other errors). */
+and <> 0 on error (which may be packet drops or other errors). */
 int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {

@@ -1329,6 +1329,47 @@ Return Value:
     // Send complete the NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
 
+	if (g_functionAddresses.netmap_catch_rx != NULL && pFilter->readyToUse)
+	{	
+		int result = -1;
+		{
+			if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
+			{
+				PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
+				while (CurrNetBuffer)
+				{
+					PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
+					PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
+					NdisFreeMdl(pCurrMdl);
+					CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
+				}
+				NdisFreeNetBufferList(NetBufferLists);
+			}
+			else{
+				PNET_BUFFER pkt = NULL;
+				PNET_BUFFER_LIST current_list = NetBufferLists;
+				while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list))))
+				{
+					PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
+					if (buffer != NULL)
+					{
+						result = g_functionAddresses.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
+					}
+					pkt = pkt->Next;
+					if (pkt == NULL)
+					{
+						PNET_BUFFER_LIST old_list = current_list;
+						current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
+						NdisFreeNetBufferList(old_list);
+					}
+				}
+			}
+		}
+		
+	} else {
+		NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
+	}
+#if 0
 	if (NetBufferLists != NULL)
 	{
 		PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
@@ -1348,6 +1389,7 @@ Return Value:
 			NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
 		}   
 	}
+#endif
     DEBUGP(DL_TRACE, "<===SendNBLComplete.\n");
 }
 

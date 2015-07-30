@@ -18,4 +18,7 @@
     <TestCertificate>
     </TestCertificate>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
+    <SignMode>TestSign</SignMode>
+  </PropertyGroup>
 </Project>
