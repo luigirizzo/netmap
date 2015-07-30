@@ -163,19 +163,17 @@ VOID ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
  */
 int netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInterface)
 {
-    if (g_functionAddresses.set_ifp_in_device_handle != NULL)
-    {
-	g_functionAddresses.set_ifp_in_device_handle(ifp, amIRegisteringTheInterface);
-	return STATUS_SUCCESS;
-    }
+	if (ifp->ndis_pFilter_readyToUse != NULL)
+	{
+		*ifp->ndis_pFilter_readyToUse = amIRegisteringTheInterface;
+		return STATUS_SUCCESS;
+	}
     return STATUS_DEVICE_NOT_CONNECTED;
 }
 
-
 /*
- * intercept packet coming from up and down,
+ * intercept packet coming from down,
  * and pass them to netmap
- * XXX we still need the info on the source
  */
 struct NET_BUFFER* windows_generic_rx_handler(struct net_device* nd, uint32_t length, const char* data)
 {
@@ -192,6 +190,24 @@ struct NET_BUFFER* windows_generic_rx_handler(struct net_device* nd, uint32_t le
     return NULL;
 }
 
+/*
+* intercept packet coming from up,
+* and pass them to netmap
+*/
+struct NET_BUFFER* windows_generic_tx_handler(struct net_device* nd, uint32_t length, const char* data)
+{
+	// XXX see if we can do a single allocation
+	struct mbuf *m = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'fubm');
+
+	RtlZeroMemory(m, sizeof(struct mbuf));
+	m->m_len = length;
+	m->pkt = ExAllocatePoolWithTag(NonPagedPool, length, 'pubm');// m + sizeof(struct mbuf);
+	// RtlZeroMemory(m->pkt, length); // XXX not needed, we copy everything
+	m->dev = nd;
+	RtlCopyMemory(m->pkt, data, length);
+	netmap_transmit(nd, m);
+	return NULL;
+}
 
 int netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
@@ -217,8 +233,7 @@ int send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
 
     if (g_functionAddresses.injectPacket != NULL)
     {
-	status = g_functionAddresses.injectPacket(ifp->deviceHandle,
-		ifp->UserSendNetBufferListPool, m->pkt, m->m_len, FALSE);
+	status = g_functionAddresses.injectPacket(ifp ->ndis_pFilter_reference, m->pkt, m->m_len, FALSE);
 	return status;
     }
     return STATUS_DEVICE_NOT_CONNECTED;
@@ -232,7 +247,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     NTSTATUS status;
     if (g_functionAddresses.injectPacket != NULL)
     {
-	status = g_functionAddresses.injectPacket(ifp->deviceHandle, ifp->UserSendNetBufferListPool, addr, len, TRUE);
+	status = g_functionAddresses.injectPacket(ifp->ndis_pFilter_reference, addr, len, TRUE);
 	return status;
     }
     return STATUS_DEVICE_NOT_CONNECTED;
@@ -422,8 +437,9 @@ int getDeviceIfIndex(const char* name)
 {
     int i, result = 0;
 
-    for (i = 0; i < 6 && name[i] >= '0 && name[i] <=9; i++) {
-	result = result * 10 += (name[i] - '0');
+    for (i = 0; i < 6 && name[i] >= '0' && name[i] <='9'; i++) {
+	result = result * 10;
+	result += (name[i] - '0');
     }
     if (i == 0 || i >= 6) {
 	result = -1;
@@ -439,7 +455,6 @@ int getDeviceIfIndex(const char* name)
 struct net_device* ifunit_ref(const char* name)
 {
     int			deviceIfIndex = -1;
-    NDIS_HANDLE		temp = NULL;
     NDIS_HANDLE		UserSendNetBufferListPool = NULL;
     struct net_device*	nd = NULL;
 
@@ -459,15 +474,12 @@ struct net_device* ifunit_ref(const char* name)
     nd->ifIndex = deviceIfIndex;
 
     // XXX pass nd to get_device* so it stores all results there
-    temp = g_functionAddresses.get_device_handle_by_ifindex(deviceIfIndex, &UserSendNetBufferListPool);
-    if (temp == NULL) {
+	if (g_functionAddresses.get_device_handle_by_ifindex(deviceIfIndex, nd) != STATUS_SUCCESS)
+	{
 	ExFreePoolWithTag(nd, 'NDEV');
 	return NULL; /* not found */
     }
 
-    nd->deviceHandle = temp; // exchangeBuffer.deviceHandle;
-    nd->UserSendNetBufferListPool = UserSendNetBufferListPool;
-    // nd->pFilter = pFilter; returned by get_device*
     return nd;
 }
 
@@ -483,16 +495,16 @@ NTSTATUS ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	    data = Irp->AssociatedIrp.SystemBuffer;
 	    /* tell ndis whom to call when a packet arrives */
 	    data->netmap_catch_rx = &windows_generic_rx_handler;
+	    data->netmap_catch_tx = &windows_generic_tx_handler;
 
 	    /* function(s) to access interface parameters */
 	    g_functionAddresses.get_device_handle_by_ifindex = data->get_device_handle_by_ifindex;
-	    g_functionAddresses.set_ifp_in_device_handle = data->set_ifp_in_device_handle;
 
 	    /* function to inject packets into the nic or the stack */
 	    g_functionAddresses.injectPacket = data->injectPacket;
 
 	    /* copy back the results. XXX why do we need to do that ? */
-	    RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, data, sizeof(FUNCTION_POINTER_XCHANGE));
+	    //RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, data, sizeof(FUNCTION_POINTER_XCHANGE));
 	    Irp->IoStatus.Information = sizeof(FUNCTION_POINTER_XCHANGE);
 #if 0
 	    DbgPrint("Netmap.sys: NETMAP_KERNEL_XCHANGE_POINTERS - Internal device control called successfully (0x%p)\n", &testCallFunctionFromRemote);

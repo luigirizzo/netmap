@@ -366,19 +366,17 @@ DumpPayload(const char* p, uint32_t len)
  stores in ifp the following fields:
 	- pFilter
 	- &pFilter->readyToUse so we can enable/disable it while keeping pfilter opaque
-	- userSendNetBufferListPool (not necessary, we can retrive it from pFilter)
-	- FilterHandle (as above, pFilter suffices)
 
  * It does not matter if the call is expensive, it is only done when
  * during a NIOCREGIF
  *
- * Return:	NDIS_HANDLE	handle of the required network adapter
+ * Returns: NTSTATUS - STATUS_SUCCESS interface found, other value error
  *
  * _IN_	int	deviceIfIndex	ifIndex of the network adapter (visible with Get-NetAdapter under powershell)
- * _OUT_ PNDIS_HANDLE	UserSendNetBufferListPool	handle of the transmission pool
+ * _OUT_ net_device* 	ifp	netmap structure referring the adapter
  */
-NDIS_HANDLE 
-get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE UserSendNetBufferListPool)
+NTSTATUS 
+get_device_handle_by_ifindex(int deviceIfIndex, struct net_device *ifp)
 {
     PLIST_ENTRY         Link;
     int			counter = 0;
@@ -395,9 +393,11 @@ get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE UserSendNetBufferLi
 	{
 	    // XXX should increment pFilter->RefCount before release
 	    // and decrement on release
+		ifp->ndis_pFilter_reference = pFilter;  
+		ifp->ndis_pFilter_readyToUse = &pFilter->readyToUse;
+		pFilter->ifp = ifp;
 	    FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
-	    *UserSendNetBufferListPool = pFilter->UserSendNetBufferListPool;
-	    return pFilter->FilterHandle;
+	    return STATUS_SUCCESS;
 	}
 	else
 	{
@@ -406,65 +406,20 @@ get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE UserSendNetBufferLi
 	}
     }
     FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
-    return NULL;
-}
-
-/*
- * set_ifp_in_device_handle - called from Netmap driver to start to intercept 
- * packets and detach a network adapter from the network stack
- *
- * Return:	nothing
- *
- * _IN_	net_device *ifp			pointer to the descriptor of the network adapter
- * _IN_	BOOLEAN amISettingTheHandler	TRUE start to catch packets, FALSE stops
- */
-void 
-set_ifp_in_device_handle(struct net_device *ifp, BOOLEAN amISettingTheHandler)
-{
-    NTSTATUS		NtStatus = STATUS_SUCCESS;
-    PLIST_ENTRY         Link = NULL;
-    PMS_FILTER          pFilter = NULL;
-    int			counter = 0;
-
-    FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
-    Link = FilterModuleList.Flink;
-    while (Link != NULL && counter<FilterModulesCount)
-    {
-	pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
-	if (pFilter->MiniportIfIndex == ifp->ifIndex)
-	{
-	    if (amISettingTheHandler)
-	    {
-		pFilter->ifp = ifp;
-		pFilter->readyToUse = TRUE;
-	    }
-	    else
-	    {
-		pFilter->readyToUse = FALSE;
-		pFilter->ifp = NULL;
-	    }
-	    break;
-	}
-	else{
-	    Link = Link->Flink;
-	    counter += 1;
-	}
-    }
-    FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
+    return STATUS_DEVICE_DOES_NOT_EXIST;
 }
 
 /*injectPacket - called from Netmap driver to inject a packet
  *
  * Return: NTSTATUS - STATUS_SUCCESS packet injected, other value error
  *
- * _IN_ NDIS_HANDLE deviceHandle,					//handle of the network adapter
- * _IN_ NDIS_HANDLE UserSendNetBufferListPool,		//handle of the transmission pool
+ * _IN_ PVOID ndis_pFilter_reference,				//pointer to the MS_FILTER structure of the network adapter
  * _IN_ PVOID data,									//data to be injected
  * _IN_ uint32_t length								//length of the data to be injected
  * _IN_ BOOLEAN sendToMiniport						//TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
  */
 NTSTATUS 
-injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
+injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
 {
     PVOID					buffer = NULL;
     PMDL					pMdl = NULL;
@@ -472,7 +427,7 @@ injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferListPool, PV
     PNET_BUFFER				pFirst = NULL;
     PVOID					pNdisPacketMemory = NULL;
     NTSTATUS				status = STATUS_SUCCESS;
-
+	PMS_FILTER				SelectedDeviceFilter = (PMS_FILTER)ndis_pFilter_reference;
     do
     {
 	buffer = ExAllocatePoolWithTag(NonPagedPool, length, 'NDIS');
@@ -483,7 +438,7 @@ injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferListPool, PV
 	    break;
 	}
 	RtlZeroMemory(buffer, length);
-	pMdl = NdisAllocateMdl(deviceHandle, buffer, length);
+	pMdl = NdisAllocateMdl(SelectedDeviceFilter->FilterHandle, buffer, length);
 	if (pMdl == NULL)
 	{
 	    DbgPrint("nmNdis.sys: Error allocating MDL!\n");
@@ -492,7 +447,7 @@ injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferListPool, PV
 	}
 	pMdl->Next = NULL;
 
-	pBufList = NdisAllocateNetBufferAndNetBufferList(UserSendNetBufferListPool,
+	pBufList = NdisAllocateNetBufferAndNetBufferList(SelectedDeviceFilter->UserSendNetBufferListPool,
 		    0, 0,
 		    pMdl, 0,
 		    length);
@@ -518,16 +473,16 @@ injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferListPool, PV
 #if 0
 	DumpPayload(pNdisPacketMemory, length);
 #endif
-	pBufList->SourceHandle = deviceHandle;
+	pBufList->SourceHandle = SelectedDeviceFilter->FilterHandle;
 	if (sendToMiniport)
 	{
 	    //This send down to the miniport
-	    NdisFSendNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
+		NdisFSendNetBufferLists(SelectedDeviceFilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
 	}
 	else
 	{
 	    //This one send up to the OS
-	    NdisFIndicateReceiveNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
+		NdisFIndicateReceiveNetBufferLists(SelectedDeviceFilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
 	}	
     } while (FALSE);
     if (buffer != NULL)

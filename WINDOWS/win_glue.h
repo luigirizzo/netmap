@@ -257,9 +257,9 @@ static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 typedef struct _FUNCTION_POINTER_XCHANGE
 {
 	struct NET_BUFFER*(*netmap_catch_rx)(struct net_device*, uint32_t length, const char* data);
-	NDIS_HANDLE(*get_device_handle_by_ifindex)(int ifIndex, PNDIS_HANDLE UserSendNetBufferListPool); //UserSendNetBufferListPool is returned from the call
-	void(*set_ifp_in_device_handle)(struct net_device*, BOOLEAN);
-	NTSTATUS(*injectPacket)(NDIS_HANDLE device, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
+	struct NET_BUFFER*(*netmap_catch_tx)(struct net_device*, uint32_t length, const char* data);
+	NTSTATUS(*get_device_handle_by_ifindex)(int ifIndex, struct net_device *ifp);
+	NTSTATUS(*injectPacket)(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
 } FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
 
 
@@ -274,12 +274,14 @@ struct ifnet {
 };
 #endif
 struct net_device {
-	char					if_xname[IFNAMSIZ];			// external name (name + unit) 
+	char	if_xname[IFNAMSIZ];			// external name (name + unit) 
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter*	na;
-	NDIS_HANDLE				deviceHandle;
-	NDIS_HANDLE				UserSendNetBufferListPool;
-	int						ifIndex;
+	PVOID	ndis_pFilter_reference;
+	BOOL*	ndis_pFilter_readyToUse;
+	//NDIS_HANDLE				deviceHandle;
+	//NDIS_HANDLE				UserSendNetBufferListPool;
+	int		ifIndex;
 };
 
 #define ifnet		net_device
