@@ -900,21 +900,9 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 
 /******************** kthread wrapper ****************/
 struct nm_kthread_ctx {
-	void *ioevent_file;
-	void *irq_file;
-#if 0 /* to be dane after eventfd implementation */
-	/* files to exchange notifications */
-	struct file *ioevent_file;          /* notification from guest */
-	struct file *irq_file;              /* notification to guest (interrupt) */
-	struct eventfd_ctx  *irq_ctx;
-
-	/* poll ioeventfd to receive notification from the guest */
-	poll_table poll_table;
-	wait_queue_head_t *waitq_head;
-	wait_queue_t waitq;
-#endif /* 0 */
-	struct thread *user_td;
-	struct ioctl_args irq_ioctl;
+	struct thread *user_td;		/* thread user-space (kthread creator) to send ioctl */
+	struct ioctl_args irq_ioctl;	/* notification to guest (interrupt) */
+	void *ioevent_file; 		/* notification from guest */
 
 	/* worker function and parameter */
 	nm_kthread_worker_fn_t worker_fn;
@@ -927,17 +915,26 @@ struct nm_kthread_ctx {
 };
 
 struct nm_kthread {
-	//struct mm_struct *mm; /* TODO: remove */
 	struct thread *worker;
 	struct mtx worker_lock;
-	uint64_t scheduled; /* pending wake_up request */
+	uint64_t scheduled; 		/* pending wake_up request */
 	struct nm_kthread_ctx worker_ctx;
+	int run;			/* used to stop kthread */
 	int affinity;
 };
 
 void inline
 nm_kthread_wakeup_worker(struct nm_kthread *nmk)
 {
+	/*
+	 * There may be a race between FE and BE,
+	 * which call both this function, and worker kthread,
+	 * that reads nmk->scheduled.
+	 *
+	 * For us it is not important the counter value,
+	 * but simply that it has changed since the last
+	 * time the kthread saw it.
+	 */
 	nmk->scheduled++;
 	if (nmk->worker_ctx.ioevent_file) {
 		wakeup(nmk->worker_ctx.ioevent_file);
@@ -953,33 +950,10 @@ nm_kthread_send_irq(struct nm_kthread *nmk)
 	if (ctx->irq_ioctl.fd > 0) {
 		err = kern_ioctl(ctx->user_td, ctx->irq_ioctl.fd, ctx->irq_ioctl.com, ctx->irq_ioctl.data);
 		if (err) {
-			D("kern_ioctl error: %d", err);
-			D("ioctl parameters: fd %d com %lu data %p", ctx->irq_ioctl.fd, ctx->irq_ioctl.com,
-					ctx->irq_ioctl.data);
+			D("kern_ioctl error: %d ioctl parameters: fd %d com %lu data %p",
+				err, ctx->irq_ioctl.fd, ctx->irq_ioctl.com, ctx->irq_ioctl.data);
 		}
 	}
-}
-
-static
-int is_suspended(void)
-{
-	struct proc *p;
-	struct thread *td;
-	int ret = 0;
-
-	td = curthread;
-	p = td->td_proc;
-
-	if ((td->td_pflags & TDP_KTHREAD) == 0)
-		panic("%s: curthread is not a valid kthread", __func__);
-	PROC_LOCK(p);
-	if (td->td_flags & TDF_KTH_SUSP) {
-		wakeup(&td->td_flags);
-		//msleep(&td->td_flags, &p->p_mtx, PPAUSE, "ktsusp", 0);
-		ret = 1;
-	}
-	PROC_UNLOCK(p);
-	return ret;
 }
 
 static void
@@ -990,18 +964,21 @@ nm_kthread_worker(void *data)
 	uint64_t old_scheduled = 0, new_scheduled = 0;
 
 	thread_lock(curthread);
-	if (nmk->affinity >= 0)
+	if (nmk->affinity >= 0) {
 		sched_bind(curthread, nmk->affinity);
+	}
 	thread_unlock(curthread);
-	for (; !is_suspended();) {
-		if (nmk->worker == NULL)
-			break;
+
+	while (nmk->run) {
+		kthread_suspend_check();
 
 		new_scheduled = nmk->scheduled;
+
+		/* checks if there is a pending notification */
 		if (likely(new_scheduled != old_scheduled)) {
 			old_scheduled = new_scheduled;
 			ctx->worker_fn(ctx->worker_private); /* worker_body */
-		} else {
+		} else if (nmk->run) {
 			if (ctx->ioevent_file) {
 				/* XXX-ste: set timeout? */
 				tsleep(ctx->ioevent_file, PPAUSE, "nmk_event", 0);
@@ -1009,43 +986,26 @@ nm_kthread_worker(void *data)
 			}
 		}
 	}
+
 	kthread_exit();
 }
 
 static int
-nm_kthread_open_files(struct nm_kthread *nmk, struct nm_eventfd_cfg_ring *ring_cfg)
+nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kthread_cfg *cfg)
 {
-	(void)nmk;
-	(void)ring_cfg;
+	/* send irq through ioctl to bhyve (vmm.ko) */
+	nmk->worker_ctx.irq_ioctl = cfg->ioctl;
+	/* ring.ioeventfd contains the chan where do tsleep to wait events */
+	nmk->worker_ctx.ioevent_file = (void *)cfg->ring.ioeventfd;
+
 	return 0;
 }
 
 static void
 nm_kthread_close_files(struct nm_kthread *nmk)
 {
-	(void)nmk;
-}
-
-static void
-nm_kthread_init_poll(struct nm_kthread *nmk, struct nm_kthread_ctx *ctx)
-{
-	(void)nmk;
-	(void)ctx;
-	return;
-}
-
-static int
-nm_kthread_start_poll(struct nm_kthread_ctx *ctx, void *file)
-{
-	(void)ctx;
-	(void)file;
-	return 0;
-}
-
-static void
-nm_kthread_stop_poll(struct nm_kthread_ctx *ctx)
-{
-	(void)ctx;
+	nmk->worker_ctx.irq_ioctl.fd = 0;
+	nmk->worker_ctx.ioevent_file = NULL;
 }
 
 void
@@ -1072,12 +1032,9 @@ nm_kthread_create(struct nm_kthread_cfg *cfg)
 	nmk->affinity = -1;
 
 	/* open event fd */
-	nmk->worker_ctx.irq_ioctl = cfg->ioctl; /* XXX put in open_files */
-	nmk->worker_ctx.ioevent_file = (void *)cfg->ring.ioeventfd;
-	error = nm_kthread_open_files(nmk, &cfg->ring);
+	error = nm_kthread_open_files(nmk, cfg);
 	if (error)
 		goto err;
-	nm_kthread_init_poll(nmk, &nmk->worker_ctx);
 
 	return nmk;
 err:
@@ -1093,21 +1050,20 @@ nm_kthread_start(struct nm_kthread *nmk)
 	if (nmk->worker) {
 		return EBUSY;
 	}
-
-	error = kthread_add(nm_kthread_worker, nmk, curproc,
+	/* enable kthread main loop */
+	nmk->run = 1;
+	/* create kthread */
+	if((error = kthread_add(nm_kthread_worker, nmk, curproc,
 			&nmk->worker, RFNOWAIT /* to be checked */, 0, "nm-kthread-%ld",
-			nmk->worker_ctx.type);
-	if (error)
+			nmk->worker_ctx.type))) {
 		goto err;
-	D("started td 0x%p", nmk->worker);
+	}
 
-	error = nm_kthread_start_poll(&nmk->worker_ctx, nmk->worker_ctx.ioevent_file);
-	if (error)
-		goto err_kstop;
+	D("nm_kthread started td 0x%p", nmk->worker);
+
 	return 0;
-err_kstop:
-	kthread_suspend(nmk->worker, 0);
 err:
+	D("nm_kthread start failed err %d", error);
 	nmk->worker = NULL;
 	return error;
 }
@@ -1118,10 +1074,14 @@ nm_kthread_stop(struct nm_kthread *nmk)
 	if (!nmk->worker) {
 		return;
 	}
-	nm_kthread_stop_poll(&nmk->worker_ctx);
-	kthread_suspend(nmk->worker, 100);
-	nmk->worker = NULL;
+	/* tell to kthread to exit from main loop */
+	nmk->run = 0;
+
+	/* wake up kthread if it sleeps */
+	kthread_resume(nmk->worker);
 	nm_kthread_wakeup_worker(nmk);
+
+	nmk->worker = NULL;
 }
 
 void
