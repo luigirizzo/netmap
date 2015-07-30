@@ -125,6 +125,12 @@ FilterDispatch(
     return Status;
 }
 
+
+/*
+ * We use an internal ioctl to make modules communicate with each other
+ * within the kernel.
+ * At the moment we do not have any supported function
+ */
 _Use_decl_annotations_
 NTSTATUS
 FilterInternalDeviceIoControl(
@@ -132,24 +138,25 @@ FilterInternalDeviceIoControl(
     PIRP                  Irp
     )
 {
-	PIO_STACK_LOCATION				IrpSp;
-	NTSTATUS						NtStatus = STATUS_SUCCESS;
-	PVOID							pOutBuff = NULL;
-	MEMORY_ENTRY					*memEntry = NULL;
-	struct net_device				*ifp = NULL;
+    PIO_STACK_LOCATION		IrpSp;
+    NTSTATUS			NtStatus = STATUS_SUCCESS;
+    PVOID			pOutBuff = NULL;
+    MEMORY_ENTRY		*memEntry = NULL;
+    struct net_device		*ifp = NULL;
 
-	IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-	switch (IrpSp->Parameters.DeviceIoControl.IoControlCode)
-	{
-		default:
-			DbgPrint("Netmap.sys: wrong request issued! (%i)", IrpSp->Parameters.DeviceIoControl.IoControlCode);
-			NtStatus = STATUS_INVALID_DEVICE_REQUEST;
-	}
-	Irp->IoStatus.Status = NtStatus;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	return NtStatus;
+    switch (IrpSp->Parameters.DeviceIoControl.IoControlCode)
+    {
+	default:
+	    DbgPrint("Netmap.sys: wrong request issued! (%i)", IrpSp->Parameters.DeviceIoControl.IoControlCode);
+	    NtStatus = STATUS_INVALID_DEVICE_REQUEST;
+    }
+    Irp->IoStatus.Status = NtStatus;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    return NtStatus;
 }
+
 
 _Use_decl_annotations_
 NTSTATUS
@@ -315,105 +322,135 @@ filterFindFilterModule(
 
 
 
-/*********************************************************
-*        	FUNCTIONS CALLED BY NETMAP DRIVER   		 *
-**********************************************************/
+/*
+ *  FUNCTIONS CALLED BY NETMAP DRIVER
+ */
 
+
+/*
+ * helper function mostly used for debugging, hexump of a block of memory
+ */
 void 
-DumpPayload(char* p, uint32_t len)
+DumpPayload(const char* p, uint32_t len)
 {
-	char buf[128];
-	int i ,j,i0;
-	DbgPrint("p: 0x%p - len: %i", p, len);
-	for (i = 0; i < len;) {
-		memset(buf, sizeof(buf), ' ');
-		sprintf(buf, "%5d: ", i);
-		i0 = i;
-		for (j = 0; j < 16 && i < len; i++, j++)
-			sprintf(buf + 7 + j * 3, "%02x ", (uint8_t)(p[i]));
-		i = i0;
-		for (j = 0; j < 16 && i < len; i++, j++)
-			sprintf(buf + 7 + j + 48, "%c", (p[i] >= 32 && p[i]<=127) ? p[i] : '.');
-		DbgPrint("%s\n", buf);
-	}
+    char buf[128];
+    int i ,j,i0;
+
+    DbgPrint("p: 0x%p - len: %i", p, len);
+
+    for (i = 0; i < len;) {
+	memset(buf, sizeof(buf), ' ');
+	sprintf(buf, "%5d: ", i);
+	i0 = i; /* save source offset */
+	for (j = 0; j < 16 && i < len; i++, j++)
+	    sprintf(buf + 7 + j * 3, "%02x ", (uint8_t)(p[i]));
+	i = i0; /* restore source offset */
+	for (j = 0; j < 16 && i < len; i++, j++)
+	    sprintf(buf + 7 + j + 48, "%c", (p[i] >= 32 && p[i]<=127) ? p[i] : '.');
+	DbgPrint("%s\n", buf);
+    }
 }
 
-/*get_device_handle_by_ifindex - get the necessary structures to catch/inject packets from/into a generic interface
+
+/*
+ * get_device_handle_by_ifindex
  *
- * Return:	NDIS_HANDLE									//handle of the required network adapter
+ * In netmap we identify interfaces by ifindex, this function translates
+ * it to the parameter required by NDIS calls and the buffer pool to
+ * be used for transmissions XXX
  *
- * _IN_	int deviceIfIndex							//ifIndex of the network adapter (visible with Get-NetAdapter under powershell)
- * _OUT_	PNDIS_HANDLE	UserSendNetBufferListPool	//handle of the transmission pool
+ * XXX change as follows:
+ the function receives the net_device pointer,
+ looks up the device (by index/string/whatever)
+ grabs a reference
+ stores in ifp the following fields:
+	- pFilter
+	- &pFilter->readyToUse so we can enable/disable it while keeping pfilter opaque
+	- userSendNetBufferListPool (not necessary, we can retrive it from pFilter)
+	- FilterHandle (as above, pFilter suffices)
+
+ * It does not matter if the call is expensive, it is only done when
+ * during a NIOCREGIF
+ *
+ * Return:	NDIS_HANDLE	handle of the required network adapter
+ *
+ * _IN_	int	deviceIfIndex	ifIndex of the network adapter (visible with Get-NetAdapter under powershell)
+ * _OUT_ PNDIS_HANDLE	UserSendNetBufferListPool	handle of the transmission pool
  */
 NDIS_HANDLE 
 get_device_handle_by_ifindex(int deviceIfIndex, PNDIS_HANDLE UserSendNetBufferListPool)
 {
-	NTSTATUS				NtStatus = STATUS_SUCCESS;
-	PLIST_ENTRY             Link = NULL;
-	PMS_FILTER              pFilter = NULL;
-	int						counter = 0;
+    PLIST_ENTRY         Link;
+    int			counter = 0;
+    // XXX check whether we need counter. If the list is bidirectional
+    // but not circular we should not need it.
 
-	FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
-	Link = FilterModuleList.Flink;
-	while (Link != NULL && counter<FilterModulesCount)
+    FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
+    Link = FilterModuleList.Flink;
+    while (Link != NULL && counter < FilterModulesCount)
+    {
+	PMS_FILTER pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
+	//DbgPrint("IfIndex: %i, NDIS_HANDLE: %p\n", pFilter->MiniportIfIndex, pFilter->FilterHandle);
+	if (pFilter->MiniportIfIndex == deviceIfIndex)
 	{
-		pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
-		//DbgPrint("IfIndex: %i, NDIS_HANDLE: %p\n", pFilter->MiniportIfIndex, pFilter->FilterHandle);
-		if (pFilter->MiniportIfIndex == deviceIfIndex)
-		{
-			FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
-			*UserSendNetBufferListPool = pFilter->UserSendNetBufferListPool;
-			return pFilter->FilterHandle;
-		}
-		else{
-			Link = Link->Flink;
-			counter += 1;
-		}
+	    // XXX should increment pFilter->RefCount before release
+	    // and decrement on release
+	    FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
+	    *UserSendNetBufferListPool = pFilter->UserSendNetBufferListPool;
+	    return pFilter->FilterHandle;
 	}
-	FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
-	return NULL;
+	else
+	{
+	    Link = Link->Flink;
+	    counter += 1;
+	}
+    }
+    FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
+    return NULL;
 }
 
-/*set_ifp_in_device_handle - called from Netmap driver to start to intercept 
- *								packets and detach a network adapter from the network stack
+/*
+ * set_ifp_in_device_handle - called from Netmap driver to start to intercept 
+ * packets and detach a network adapter from the network stack
  *
  * Return:	nothing
  *
- * _IN_	net_device *ifp						//pointer to the descriptor of the network adapter
- * _IN_	BOOLEAN amISettingTheHandler		//TRUE start to catch packets, FALSE stops
+ * _IN_	net_device *ifp			pointer to the descriptor of the network adapter
+ * _IN_	BOOLEAN amISettingTheHandler	TRUE start to catch packets, FALSE stops
  */
 void 
 set_ifp_in_device_handle(struct net_device *ifp, BOOLEAN amISettingTheHandler)
 {
-	NTSTATUS				NtStatus = STATUS_SUCCESS;
-	PLIST_ENTRY             Link = NULL;
-	PMS_FILTER              pFilter = NULL;
-	int						counter = 0;
+    NTSTATUS		NtStatus = STATUS_SUCCESS;
+    PLIST_ENTRY         Link = NULL;
+    PMS_FILTER          pFilter = NULL;
+    int			counter = 0;
 
-	FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
-	Link = FilterModuleList.Flink;
-	while (Link != NULL && counter<FilterModulesCount)
+    FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
+    Link = FilterModuleList.Flink;
+    while (Link != NULL && counter<FilterModulesCount)
+    {
+	pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
+	if (pFilter->MiniportIfIndex == ifp->ifIndex)
 	{
-		pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
-		if (pFilter->MiniportIfIndex == ifp->ifIndex)
-		{
-			if (amISettingTheHandler)
-			{
-				pFilter->ifp = ifp;
-				pFilter->readyToUse = TRUE;
-			}
-			else{
-				pFilter->readyToUse = FALSE;
-				pFilter->ifp = NULL;
-			}
-			break;
-		}
-		else{
-			Link = Link->Flink;
-			counter += 1;
-		}
+	    if (amISettingTheHandler)
+	    {
+		pFilter->ifp = ifp;
+		pFilter->readyToUse = TRUE;
+	    }
+	    else
+	    {
+		pFilter->readyToUse = FALSE;
+		pFilter->ifp = NULL;
+	    }
+	    break;
 	}
-	FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
+	else{
+	    Link = Link->Flink;
+	    counter += 1;
+	}
+    }
+    FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
 }
 
 /*injectPacket - called from Netmap driver to inject a packet
@@ -429,73 +466,73 @@ set_ifp_in_device_handle(struct net_device *ifp, BOOLEAN amISettingTheHandler)
 NTSTATUS 
 injectPacket(NDIS_HANDLE deviceHandle, NDIS_HANDLE UserSendNetBufferListPool, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
 {
-	PVOID					buffer = NULL;
-	PMDL					pMdl = NULL;
-	PNET_BUFFER_LIST		pBufList = NULL;
-	PNET_BUFFER				pFirst = NULL;
-	PVOID					pNdisPacketMemory = NULL;
-	NTSTATUS				status = STATUS_SUCCESS;
+    PVOID					buffer = NULL;
+    PMDL					pMdl = NULL;
+    PNET_BUFFER_LIST		pBufList = NULL;
+    PNET_BUFFER				pFirst = NULL;
+    PVOID					pNdisPacketMemory = NULL;
+    NTSTATUS				status = STATUS_SUCCESS;
 
-	do
+    do
+    {
+	buffer = ExAllocatePoolWithTag(NonPagedPool, length, 'NDIS');
+	if (buffer == NULL)
 	{
-		buffer = ExAllocatePoolWithTag(NonPagedPool, length, 'NDIS');
-		if (buffer == NULL)
-		{
-			DbgPrint("Error allocating buffer!\n");
-			status = STATUS_INSUFFICIENT_RESOURCES;
-			break;
-		}
-		RtlZeroMemory(buffer, length);
-		pMdl = NdisAllocateMdl(deviceHandle, buffer, length);
-		if (pMdl == NULL)
-		{
-			DbgPrint("nmNdis.sys: Error allocating MDL!\n");
-			status = STATUS_INSUFFICIENT_RESOURCES;
-			break;
-		}
-		pMdl->Next = NULL;
-
-		pBufList = NdisAllocateNetBufferAndNetBufferList(UserSendNetBufferListPool,
-			0, 0,
-			pMdl, 0,
-			length);
-		if (pBufList == NULL)
-		{
-			NdisFreeMdl(pMdl);
-			DbgPrint("nmNdis.sys: Error allocating NdisAllocateNetBufferAndNetBufferList!\n");
-			status = STATUS_INSUFFICIENT_RESOURCES;
-			break;
-		}
-		pFirst = NET_BUFFER_LIST_FIRST_NB(pBufList);
-		pNdisPacketMemory = NdisGetDataBuffer(pFirst, length, NULL, sizeof(UINT8), 0);
-		if (pNdisPacketMemory == NULL)
-		{
-			NdisFreeNetBufferList(pBufList);
-			NdisFreeMdl(pMdl);
-			DbgPrint("nmNdis.sys: Error allocating pNdisPacketMemory!\n");
-			status = STATUS_INSUFFICIENT_RESOURCES;
-			break;
-		}
-
-		NdisMoveMemory(pNdisPacketMemory, data, length);
-#if 0
-		DumpPayload(pNdisPacketMemory, length);
-#endif
-		pBufList->SourceHandle = deviceHandle;
-		if (sendToMiniport)
-		{
-			//This send down to the miniport
-			NdisFSendNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
-		}
-		else
-		{
-			//This one send up to the OS
-			NdisFIndicateReceiveNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
-		}	
-	} while (FALSE);
-	if (buffer != NULL)
-	{
-		ExFreePoolWithTag(buffer, 'NDIS');
+	    DbgPrint("Error allocating buffer!\n");
+	    status = STATUS_INSUFFICIENT_RESOURCES;
+	    break;
 	}
-	return status;
+	RtlZeroMemory(buffer, length);
+	pMdl = NdisAllocateMdl(deviceHandle, buffer, length);
+	if (pMdl == NULL)
+	{
+	    DbgPrint("nmNdis.sys: Error allocating MDL!\n");
+	    status = STATUS_INSUFFICIENT_RESOURCES;
+	    break;
+	}
+	pMdl->Next = NULL;
+
+	pBufList = NdisAllocateNetBufferAndNetBufferList(UserSendNetBufferListPool,
+		    0, 0,
+		    pMdl, 0,
+		    length);
+	if (pBufList == NULL)
+	{
+	    NdisFreeMdl(pMdl);
+	    DbgPrint("nmNdis.sys: Error allocating NdisAllocateNetBufferAndNetBufferList!\n");
+	    status = STATUS_INSUFFICIENT_RESOURCES;
+	    break;
+	}
+	pFirst = NET_BUFFER_LIST_FIRST_NB(pBufList);
+	pNdisPacketMemory = NdisGetDataBuffer(pFirst, length, NULL, sizeof(UINT8), 0);
+	if (pNdisPacketMemory == NULL)
+	{
+	    NdisFreeNetBufferList(pBufList);
+	    NdisFreeMdl(pMdl);
+	    DbgPrint("nmNdis.sys: Error allocating pNdisPacketMemory!\n");
+	    status = STATUS_INSUFFICIENT_RESOURCES;
+	    break;
+	}
+
+	NdisMoveMemory(pNdisPacketMemory, data, length);
+#if 0
+	DumpPayload(pNdisPacketMemory, length);
+#endif
+	pBufList->SourceHandle = deviceHandle;
+	if (sendToMiniport)
+	{
+	    //This send down to the miniport
+	    NdisFSendNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
+	}
+	else
+	{
+	    //This one send up to the OS
+	    NdisFIndicateReceiveNetBufferLists(deviceHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
+	}	
+    } while (FALSE);
+    if (buffer != NULL)
+    {
+	ExFreePoolWithTag(buffer, 'NDIS');
+    }
+    return status;
 }
