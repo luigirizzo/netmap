@@ -187,40 +187,40 @@
     <ClCompile Include="..\..\NetmapLoader\sysinstall.c" />
   </ItemGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IncludePath>$(ProjectDir);$(IncludePath);$(SolutionDir)\..\;$(SolutionDir)\..\..\sys\</IncludePath>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|Win32'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
@@ -228,11 +228,11 @@
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'">
-    <TargetName>\NetmapLoader</TargetName>
+    <TargetName>NetmapLoader</TargetName>
     <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
