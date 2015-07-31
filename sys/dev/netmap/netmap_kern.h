@@ -1351,7 +1351,6 @@ int netmap_init(void);
 void netmap_fini(void);
 int netmap_get_memory(struct netmap_priv_d* p);
 void netmap_dtor(void *data);
-int netmap_dtor_locked(struct netmap_priv_d *priv);
 
 int netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *);
 
@@ -1684,6 +1683,9 @@ struct netmap_priv_d {
 	NM_SELINFO_T *np_si[NR_TXRX];
 	struct thread	*np_td;		/* kqueue, just debugging */
 };
+
+struct netmap_priv_d *netmap_priv_new(void);
+void netmap_priv_delete(struct netmap_priv_d *);
 
 #ifdef WITH_MONITOR
 

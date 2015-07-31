@@ -973,6 +973,20 @@ nm_si_user(struct netmap_priv_d *priv, enum txrx t)
 		(priv->np_qlast[t] - priv->np_qfirst[t] > 1));
 }
 
+struct netmap_priv_d*
+netmap_priv_new(void)
+{
+	struct netmap_priv_d *priv;
+
+	priv = malloc(sizeof(struct netmap_priv_d), M_DEVBUF,
+			      M_NOWAIT | M_ZERO);
+	if (priv == NULL)
+		return NULL;
+	priv->np_refs = 1;
+	netmap_use_count++;
+	return priv;
+}
+
 /*
  * Destructor of the netmap_priv_d, called when the fd is closed
  * Action: undo all the things done by NIOCREGIF,
@@ -982,26 +996,26 @@ nm_si_user(struct netmap_priv_d *priv, enum txrx t)
  *
  */
 /* call with NMG_LOCK held */
-int
-netmap_dtor_locked(struct netmap_priv_d *priv)
+void
+netmap_priv_delete(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
-	struct ifnet *ifp;
 
 	/* number of active references to this fd */
 	if (--priv->np_refs > 0) {
-		return 0;
+		return;
 	}
 	netmap_use_count--;
-	if (!na) {
-		return 1;
+	if (na) {
+		struct ifnet *ifp = na->ifp;
+
+		netmap_do_unregif(priv);
+		netmap_adapter_put(na);
+		if (ifp)
+			if_rele(ifp);
 	}
-	ifp = na->ifp;
-	netmap_do_unregif(priv);
-	netmap_adapter_put(na);
-	if (ifp)
-		if_rele(ifp);
-	return 1;
+	bzero(priv, sizeof(*priv));	/* for safety */
+	free(priv, M_DEVBUF);
 }
 
 
@@ -1010,15 +1024,10 @@ void
 netmap_dtor(void *data)
 {
 	struct netmap_priv_d *priv = data;
-	int last_instance;
 
 	NMG_LOCK();
-	last_instance = netmap_dtor_locked(priv);
+	netmap_priv_delete(priv);
 	NMG_UNLOCK();
-	if (last_instance) {
-		bzero(priv, sizeof(*priv));	/* for safety */
-		free(priv, M_DEVBUF);
-	}
 }
 
 

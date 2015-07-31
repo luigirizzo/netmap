@@ -932,19 +932,18 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 	(void)devtype;
 	(void)td;
 
-	priv = malloc(sizeof(struct netmap_priv_d), M_DEVBUF,
-			      M_NOWAIT | M_ZERO);
-	if (priv == NULL)
-		return ENOMEM;
-	priv->np_refs = 1;
+	NMG_LOCK();
+	priv = netmap_priv_new();
+	if (priv == NULL) {
+		error = ENOMEM;
+		goto out;
+	}
 	error = devfs_set_cdevpriv(priv, netmap_dtor);
 	if (error) {
-		free(priv, M_DEVBUF);
-	} else {
-		NMG_LOCK();
-		netmap_use_count++;
-		NMG_UNLOCK();
+		netmap_priv_delete(priv);
 	}
+out:
+	NMG_UNLOCK();
 	return error;
 }
 

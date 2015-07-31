@@ -706,16 +706,17 @@ static int
 linux_netmap_open(struct inode *inode, struct file *file)
 {
 	struct netmap_priv_d *priv;
+	int error;
 	(void)inode;	/* UNUSED */
 
-	priv = malloc(sizeof(struct netmap_priv_d), M_DEVBUF,
-			      M_NOWAIT | M_ZERO);
-	if (priv == NULL)
-		return -ENOMEM;
-	priv->np_refs = 1;
-	file->private_data = priv;
 	NMG_LOCK();
-	netmap_use_count++;
+	priv = netmap_priv_new();
+	if (priv == NULL) {
+		error = -ENOMEM;
+		goto out;
+	}
+	file->private_data = priv;
+out:
 	NMG_UNLOCK();
 
 	return (0);

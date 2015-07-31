@@ -2227,35 +2227,22 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 			/* nothing to do */
 			return 0;
 		}
-		npriv = malloc(sizeof(*npriv), M_DEVBUF, M_NOWAIT|M_ZERO);
+		npriv = netmap_priv_new();
 		if (npriv == NULL)
 			return ENOMEM;
 		error = netmap_do_regif(npriv, na, nmr->nr_ringid, nmr->nr_flags);
 		if (error) {
-			bzero(npriv, sizeof(*npriv));
-			free(npriv, M_DEVBUF);
+			netmap_priv_delete(npriv);
 			return error;
 		}
 		bna->na_kpriv = npriv;
 		na->na_flags |= NAF_BUSY;
 	} else {
-		int last_instance;
-
 		if (na->active_fds == 0) /* not registered */
 			return EINVAL;
-		last_instance = netmap_dtor_locked(bna->na_kpriv);
-		if (!last_instance) {
-			D("--- error, trying to detach an entry with active mmaps");
-			error = EINVAL;
-		} else {
-			npriv = bna->na_kpriv;
-			bna->na_kpriv = NULL;
-			D("deleting priv");
-
-			bzero(npriv, sizeof(*npriv));
-			free(npriv, M_DEVBUF);
-			na->na_flags &= ~NAF_BUSY;
-		}
+		netmap_priv_delete(bna->na_kpriv);
+		bna->na_kpriv = NULL;
+		na->na_flags &= ~NAF_BUSY;
 	}
 	return error;
 
