@@ -1885,6 +1885,13 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 {
 	struct netmap_bwrap_adapter *bna = (struct netmap_bwrap_adapter*)na;
 	struct netmap_adapter *hwna = bna->hwna;
+	struct nm_bridge *b = bna->up.na_bdg,
+		*bh = bna->host.na_bdg;
+
+	if (b) {
+		netmap_bdg_detach_common(b, bna->up.bdg_port,
+			    (bh ? bna->host.bdg_port : -1));
+	}
 
 	ND("na %p", na);
 	/* drop reference to hwna->ifp.
@@ -2241,21 +2248,12 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 			D("--- error, trying to detach an entry with active mmaps");
 			error = EINVAL;
 		} else {
-			struct nm_bridge *b = bna->up.na_bdg,
-				*bh = bna->host.na_bdg;
 			npriv = bna->na_kpriv;
 			bna->na_kpriv = NULL;
 			D("deleting priv");
 
 			bzero(npriv, sizeof(*npriv));
 			free(npriv, M_DEVBUF);
-			if (b) {
-				/* XXX the bwrap dtor should take care
-				 * of this (2014-06-16)
-				 */
-				netmap_bdg_detach_common(b, bna->up.bdg_port,
-				    (bh ? bna->host.bdg_port : -1));
-			}
 			na->na_flags &= ~NAF_BUSY;
 		}
 	}
