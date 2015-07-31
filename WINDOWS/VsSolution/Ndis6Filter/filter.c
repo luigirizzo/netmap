@@ -33,15 +33,19 @@ PDEVICE_OBJECT      DeviceObject = NULL;	// used in device.c, not here
 FILTER_LOCK         FilterListLock;
 LIST_ENTRY          FilterModuleList;
 
-//Link with Netmap IOCTL driver used to send internals IOCTLs
-static PDEVICE_OBJECT		g_pNetmapDeviceObject = NULL;
-static PFILE_OBJECT pNetmapDeviceFileObject = NULL;
+/*
+ * Link with Netmap IOCTL driver used to send internal IOCTLs
+ * We grab a reference to the netmap fp (and corresponding netmap_dev, used
+ * for sending commands), once done we release the reference to the netmap_fp
+ */
+static PDEVICE_OBJECT	netmap_dev = NULL; // argument for internal ioctl calls
+static PFILE_OBJECT netmap_fp = NULL;
 
 static FUNCTION_POINTER_XCHANGE netmap_hooks;
 
 int		    FilterModulesCount = 0;		//Number of net adapters where the filter is currently attached
 
-NTSTATUS get_device_handle_by_ifindex(int deviceIfIndex, struct net_device *ifp);
+NTSTATUS ndis_update_ifp(int deviceIfIndex, struct net_device *ifp);
 NTSTATUS injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
 
 NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
@@ -174,36 +178,39 @@ Return Value:
         }
 
 	{
-	    OBJECT_ATTRIBUTES   objectAttributes;
-	    UNICODE_STRING      ObjectName;
-	    IO_STATUS_BLOCK		iosb;
+	    OBJECT_ATTRIBUTES   attr;
+	    UNICODE_STRING      name;
+	    IO_STATUS_BLOCK	iosb;
+	    PIRP pIrp;
+
 
 	    //Getting pointer to netmap IOCTL device
-	    RtlInitUnicodeString(&ObjectName, NETMAP_DOS_DEVICE_NAME);
-	    InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-	    Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pNetmapDeviceFileObject, &g_pNetmapDeviceObject);
+	    RtlInitUnicodeString(&name, NETMAP_DOS_DEVICE_NAME);
+	    // XXX do we need to set attributes ?
+	    InitializeObjectAttributes(&attr, &name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+	    Status = IoGetDeviceObjectPointer(&name, FILE_ALL_ACCESS, &netmap_fp, &netmap_dev);
 	    if (Status != NDIS_STATUS_SUCCESS)
 	    {
 		NdisFDeregisterFilterDriver(FilterDriverHandle);
 		DEBUGP(DL_WARN, "Cannot find netmap driver\n");
 		break;
 	    }
-	    netmap_hooks.netmap_catch_rx = NULL;		//parameter returned by netmap IOCTL driver
-	    netmap_hooks.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
+	    // prepare input parameters returned by the netmap ioctl
+	    netmap_hooks.netmap_catch_tx = NULL;
+	    netmap_hooks.netmap_catch_rx = NULL;
+	    // and output parameters that we pass to it
+	    netmap_hooks.ndis_update_ifp = &ndis_update_ifp;
 	    netmap_hooks.injectPacket = &injectPacket;
-	    //DbgPrint("DevObj 0x%p", g_pNetmapDeviceObject);
-	    PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS,
-		    g_pNetmapDeviceObject,
-		    &netmap_hooks,				//input arg
-		    sizeof(FUNCTION_POINTER_XCHANGE),	
-		    &netmap_hooks,				//output arg
-		    sizeof(FUNCTION_POINTER_XCHANGE),
-		    TRUE,								//internal IOCTL
+	    //DbgPrint("DevObj 0x%p", netmap_dev);
+	    pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS, netmap_dev,
+		    &netmap_hooks, sizeof(FUNCTION_POINTER_XCHANGE),	// return values
+		    &netmap_hooks, sizeof(FUNCTION_POINTER_XCHANGE),	// output
+		    TRUE,						//internal IOCTL
 		    NULL,
-		    &iosb);								//status of the call for async calls
+		    &iosb);						//status of the call for async calls
 	    if (pIrp != NULL)
 	    {
-		Status = IoCallDriver(g_pNetmapDeviceObject, pIrp);
+		Status = IoCallDriver(netmap_dev, pIrp);
 	    }
 	    else
 	    {
@@ -213,7 +220,8 @@ Return Value:
 	    if (Status != NDIS_STATUS_SUCCESS)
 	    {
 		//Release the netmap IOCTL file reference
-		ObDereferenceObject(pNetmapDeviceFileObject);
+		ObDereferenceObject(netmap_fp);
+		netmap_fp = NULL;
 		NdisFDeregisterFilterDriver(FilterDriverHandle);
 		DEBUGP(DL_WARN, "Error during IoCallDriver to Netmap driver\n");
 	    }	
@@ -801,9 +809,9 @@ Return Value:
 
 #endif
 
-    if (pNetmapDeviceFileObject != NULL)
+    if (netmap_fp != NULL)
     {
-	ObDereferenceObject(pNetmapDeviceFileObject);
+	ObDereferenceObject(netmap_fp);
     }
 
     FILTER_FREE_LOCK(&FilterListLock);

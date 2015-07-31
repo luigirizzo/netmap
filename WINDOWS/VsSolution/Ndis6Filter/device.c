@@ -324,6 +324,8 @@ filterFindFilterModule(
 
 /*
  *  FUNCTIONS CALLED BY NETMAP DRIVER
+ *
+ * These are written using the netmap code style
  */
 
 
@@ -353,7 +355,7 @@ DumpPayload(const char* p, uint32_t len)
 
 
 /*
- * get_device_handle_by_ifindex
+ * ndis_update_ifp
  *
  * In netmap we identify interfaces by ifindex, this function translates
  * it to the parameter required by NDIS calls and the buffer pool to
@@ -376,37 +378,33 @@ DumpPayload(const char* p, uint32_t len)
  * _OUT_ net_device* 	ifp	netmap structure referring the adapter
  */
 NTSTATUS 
-get_device_handle_by_ifindex(int deviceIfIndex, struct net_device *ifp)
+ndis_update_ifp(int deviceIfIndex, struct net_device *ifp)
 {
     PLIST_ENTRY         Link;
     int			counter = 0;
+    NTSTATUS	status = STATUS_DEVICE_DOES_NOT_EXIST; // default return value
+
     // XXX check whether we need counter. If the list is bidirectional
     // but not circular we should not need it.
 
     FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
-    Link = FilterModuleList.Flink;
-    while (Link != NULL && counter < FilterModulesCount)
-    {
+    for (Link = FilterModuleList.Flink; (Link != NULL && counter < FilterModulesCount);
+	    counter++, Link = Link->Flink) {
 	PMS_FILTER pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
+
 	//DbgPrint("IfIndex: %i, NDIS_HANDLE: %p\n", pFilter->MiniportIfIndex, pFilter->FilterHandle);
-	if (pFilter->MiniportIfIndex == deviceIfIndex)
-	{
+	if (pFilter->MiniportIfIndex == deviceIfIndex) {
 	    // XXX should increment pFilter->RefCount before release
 	    // and decrement on release
 	    ifp->pfilter = pFilter;  
 	    ifp->pfilter_ready = &pFilter->readyToUse;
 	    pFilter->ifp = ifp;
-	    FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
-	    return STATUS_SUCCESS;
-	}
-	else
-	{
-	    Link = Link->Flink;
-	    counter += 1;
+	    status = STATUS_SUCCESS;
+	    break;
 	}
     }
     FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
-    return STATUS_DEVICE_DOES_NOT_EXIST;
+    return status;
 }
 
 /*
@@ -430,31 +428,28 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
     NTSTATUS			status = STATUS_SUCCESS;
     PMS_FILTER			pfilter = (PMS_FILTER)_pfilter;
 
-    do
-    {
+    do {
 	buffer = ExAllocatePoolWithTag(NonPagedPool, length, 'NDIS');
-	if (buffer == NULL)
-	{
+	if (buffer == NULL) {
 	    DbgPrint("Error allocating buffer!\n");
 	    status = STATUS_INSUFFICIENT_RESOURCES;
 	    break;
 	}
 	RtlZeroMemory(buffer, length);
 	pMdl = NdisAllocateMdl(pfilter->FilterHandle, buffer, length);
-	if (pMdl == NULL)
-	{
+	if (pMdl == NULL) {
 	    DbgPrint("nmNdis.sys: Error allocating MDL!\n");
 	    status = STATUS_INSUFFICIENT_RESOURCES;
 	    break;
 	}
+
 	pMdl->Next = NULL;
 
 	pBufList = NdisAllocateNetBufferAndNetBufferList(pfilter->UserSendNetBufferListPool,
 		    0, 0,
 		    pMdl, 0,
 		    length);
-	if (pBufList == NULL)
-	{
+	if (pBufList == NULL) {
 	    NdisFreeMdl(pMdl);
 	    DbgPrint("nmNdis.sys: Error allocating NdisAllocateNetBufferAndNetBufferList!\n");
 	    status = STATUS_INSUFFICIENT_RESOURCES;
@@ -463,8 +458,7 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 	pFirst = NET_BUFFER_LIST_FIRST_NB(pBufList);
 	pNdisPacketMemory = NdisGetDataBuffer(pFirst, length, NULL, sizeof(UINT8), 0);
 	// XXX is this the same as buffer ?
-	if (pNdisPacketMemory == NULL)
-	{
+	if (pNdisPacketMemory == NULL) {
 	    NdisFreeNetBufferList(pBufList);
 	    NdisFreeMdl(pMdl);
 	    DbgPrint("nmNdis.sys: Error allocating pNdisPacketMemory!\n");
@@ -477,20 +471,18 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 	DumpPayload(pNdisPacketMemory, length);
 #endif
 	pBufList->SourceHandle = pfilter->FilterHandle;
-	if (sendToMiniport)
-	{
+	if (sendToMiniport) {
 	    //This send down to the miniport
 	    NdisFSendNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
-	}
-	else
-	{
+	} else {
 	    //This one send up to the OS
 	    NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
 	}	
     } while (FALSE);
 
-    if (buffer != NULL)
-    {
+    // XXX not sure if we can free the buffer with regular returns.
+    // if so, what is the buffer for ?
+    if (buffer != NULL) {
 	ExFreePoolWithTag(buffer, 'NDIS');
     }
     return status;

@@ -66,7 +66,8 @@ FUNCTION_POINTER_XCHANGE ndis_hooks;
 /*
  * XXX this is the open call for the device
  */
-NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS
+ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS status = STATUS_SUCCESS;
     // As stated in https://support.microsoft.com/en-us/kb/120170
@@ -83,24 +84,18 @@ NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     irpSp = IoGetCurrentIrpStackLocation(Irp);
     NMG_LOCK();
     priv = irpSp->FileObject->FsContext;
-    if (priv == NULL)
-    {
+    if (priv == NULL) {
 	priv = ExAllocatePoolWithTag(NonPagedPool,
 		    sizeof(struct netmap_priv_d), PRIV_MEMORY_POOL_TAG);
-	if (priv == NULL)
-	{
+	if (priv == NULL) {
 	    status = STATUS_INSUFFICIENT_RESOURCES;
-	}
-	else
-	{
+	} else {
 	    RtlZeroMemory(priv, sizeof(struct netmap_priv_d));
 	    priv->np_refs = 1;
 	    D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refs);
 	    irpSp->FileObject->FsContext = priv;
 	}
-    }
-    else
-    {
+    } else {
 	priv->np_refs += 1;
 	D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refs);
     }
@@ -115,15 +110,15 @@ NTSTATUS ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 }
 
 
-NTSTATUS ioctlClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS
+ioctlClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     struct netmap_priv_d *priv = NULL;
     PIO_STACK_LOCATION  irpSp;
 
     irpSp = IoGetCurrentIrpStackLocation(Irp);
     priv = irpSp->FileObject->FsContext;
-    if (priv != NULL)
-    {
+    if (priv != NULL) {
 	netmap_dtor(priv);
     }	
 
@@ -133,7 +128,8 @@ NTSTATUS ioctlClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 }
 
 
-VOID ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
+VOID
+ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 {
     PDEVICE_OBJECT deviceObject = DriverObject->DeviceObject;
 
@@ -148,8 +144,7 @@ VOID ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
     // Delete the link from our device name to a name in the Win32 namespace.
     IoDeleteSymbolicLink(&uniWin32NameString);
 
-    if (deviceObject != NULL)
-    {
+    if (deviceObject != NULL) {
 	IoDeleteDevice(deviceObject);
     }	
     return;
@@ -161,10 +156,10 @@ VOID ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 /*
  * called to enable/disable intercepting packets with netmap
  */
-int netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInterface)
+int
+netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInterface)
 {
-    if (ifp->pfilter_ready != NULL)
-    {
+    if (ifp->pfilter_ready != NULL) {
 	*ifp->pfilter_ready = amIRegisteringTheInterface;
 	return STATUS_SUCCESS;
     }
@@ -175,28 +170,27 @@ int netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringThe
  * intercept packet coming from down,
  * and pass them to netmap
  */
-struct NET_BUFFER* windows_generic_rx_handler(struct net_device* nd, uint32_t length, const char* data)
+struct NET_BUFFER *
+windows_generic_rx_handler(struct net_device *ifp, uint32_t length, const char *data)
 {
     // XXX see if we can do a single allocation
     struct mbuf *m = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'fubm');
 
-    if (m == NULL)
-    {
+    if (m == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
         return NULL;
     }
     RtlZeroMemory(m, sizeof(struct mbuf));
     m->m_len = length;
     m->pkt = ExAllocatePoolWithTag(NonPagedPool,  length, 'pubm');// m + sizeof(struct mbuf);
-    if (m->pkt == NULL)
-    {
+    if (m->pkt == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf packet!!!");
         return NULL;
     }
     // RtlZeroMemory(m->pkt, length); // XXX not needed, we copy everything
-    m->dev = nd;
+    m->dev = ifp;
     RtlCopyMemory(m->pkt, data, length);
-    generic_rx_handler(nd, m);
+    generic_rx_handler(ifp, m);
     return NULL;
 }
 
@@ -204,32 +198,31 @@ struct NET_BUFFER* windows_generic_rx_handler(struct net_device* nd, uint32_t le
 * intercept packet coming from up,
 * and pass them to netmap
 */
-struct NET_BUFFER* windows_generic_tx_handler(struct net_device* nd, uint32_t length, const char* data)
+struct NET_BUFFER* windows_generic_tx_handler(struct net_device *ifp, uint32_t length, const char *data)
 {
     // XXX see if we can do a single allocation
     struct mbuf *m = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'fubm');
 
-    if (m == NULL)
-    {
+    if (m == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
         return NULL;
     }
     RtlZeroMemory(m, sizeof(struct mbuf));
     m->m_len = length;
     m->pkt = ExAllocatePoolWithTag(NonPagedPool, length, 'pubm');// m + sizeof(struct mbuf);
-    if (m->pkt == NULL)
-    {
+    if (m->pkt == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf packet!!!");
         return NULL;
     }
     // RtlZeroMemory(m->pkt, length); // XXX not needed, we copy everything
-    m->dev = nd;
+    m->dev = ifp;
     RtlCopyMemory(m->pkt, data, length);
-    netmap_transmit(nd, m);
+    netmap_transmit(ifp, m);
     return NULL;
 }
 
-int netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
+int
+netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
     struct netmap_adapter *na = &gna->up.up;
 
@@ -237,22 +230,20 @@ int netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 }
 
 /* We don't need to do anything here */
-void netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
+void
+netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
     if (enable) {
-	    
-    }
-    else {
-		
+    } else {
     }
 }
 
-int send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
+int
+send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
 {
     NTSTATUS status;
 
-    if (ndis_hooks.injectPacket != NULL)
-    {
+    if (ndis_hooks.injectPacket != NULL) {
 	status = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE);
 	return status;
     }
@@ -261,14 +252,12 @@ int send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
 
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
 and <> 0 on error (which may be packet drops or other errors). */
-int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
+int
+generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
-    NTSTATUS status;
-    if (ndis_hooks.injectPacket != NULL)
-    {
-	status = ndis_hooks.injectPacket(ifp->pfilter, addr, len, TRUE);
-	return status;
+    if (ndis_hooks.injectPacket != NULL) {
+	return ndis_hooks.injectPacket(ifp->pfilter, addr, len, TRUE);
     }
     return STATUS_DEVICE_NOT_CONNECTED;
 }
@@ -276,7 +265,8 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 /*
  * XXX We do not know how many descriptors and rings we have yet
  */
-int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
+int
+generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
 {
     //XXX_ale: find where the rings are descripted (OID query probably)
     *tx = 1024;
@@ -284,7 +274,8 @@ int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
     return 0;
 }
 
-void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
+void
+generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
     //XXX_ale: for a generic device is enough? need to find where this info is
     *txq = 1;
@@ -292,7 +283,8 @@ void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 }
 //
 
-NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS
+ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
 	PIO_STACK_LOCATION  irpSp;
 	NTSTATUS            NtStatus = STATUS_SUCCESS;
@@ -301,6 +293,7 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		struct nm_ifreq ifr;
 		struct nmreq nmr;
 	} arg;
+
 	size_t			argsize = 0;
 	PVOID			data;
 	struct sockopt	*sopt;
@@ -453,7 +446,8 @@ NTSTATUS ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 }
 
 /* basically atoi() -- the name is confusing */
-int getDeviceIfIndex(const char* name)
+int
+getDeviceIfIndex(const char* name)
 {
     int i, result = 0;
 
@@ -472,76 +466,75 @@ int getDeviceIfIndex(const char* name)
  * grab a reference to the device, and all pointers
  * we need to operate on it.
  */
-struct net_device* ifunit_ref(const char* name)
+struct net_device *
+ifunit_ref(const char* name)
 {
     int			deviceIfIndex = -1;
     NDIS_HANDLE		UserSendNetBufferListPool = NULL;
-    struct net_device*	nd = NULL;
+    struct net_device *	ifp = NULL;
 
-
-    if (ndis_hooks.get_device_handle_by_ifindex == NULL)
+    if (ndis_hooks.ndis_update_ifp == NULL)
 	return NULL; /* function not available yet */
 
     deviceIfIndex = getDeviceIfIndex(name);
     if (deviceIfIndex < 0)
 	return NULL;
-    nd = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct net_device), 'NDEV');
-    if (nd == NULL)
+    ifp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct net_device), 'NDEV');
+    if (ifp == NULL)
 	return NULL;
 
-    RtlZeroMemory(nd, sizeof(struct net_device));
-    RtlCopyMemory(nd->if_xname, name, IFNAMSIZ);
-    nd->ifIndex = deviceIfIndex;
+    RtlZeroMemory(ifp, sizeof(struct net_device));
+    RtlCopyMemory(ifp->if_xname, name, IFNAMSIZ);
+    ifp->ifIndex = deviceIfIndex;
 
-    // XXX pass nd to get_device* so it stores all results there
-	if (ndis_hooks.get_device_handle_by_ifindex(deviceIfIndex, nd) != STATUS_SUCCESS)
-	{
-	ExFreePoolWithTag(nd, 'NDEV');
+    if (ndis_hooks.ndis_update_ifp(deviceIfIndex, ifp) != STATUS_SUCCESS) {
+	ExFreePoolWithTag(ifp, 'NDEV');
 	return NULL; /* not found */
     }
 
-    return nd;
+    return ifp;
 }
 
-NTSTATUS ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS
+ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS NtStatus = STATUS_SUCCESS;
     PIO_STACK_LOCATION irpSp = IoGetCurrentIrpStackLocation(Irp);
     FUNCTION_POINTER_XCHANGE *data;
 
-    switch (irpSp->Parameters.DeviceIoControl.IoControlCode)
-    {
-	case NETMAP_KERNEL_XCHANGE_POINTERS: /* the NDIS module registers with us */
-	    data = Irp->AssociatedIrp.SystemBuffer;
-	    /* tell ndis whom to call when a packet arrives */
-	    data->netmap_catch_rx = &windows_generic_rx_handler;
-	    data->netmap_catch_tx = &windows_generic_tx_handler;
+    switch (irpSp->Parameters.DeviceIoControl.IoControlCode) {
+    case NETMAP_KERNEL_XCHANGE_POINTERS: /* the NDIS module registers with us */
+	data = Irp->AssociatedIrp.SystemBuffer;
+	/* tell ndis whom to call when a packet arrives */
+	data->netmap_catch_rx = &windows_generic_rx_handler;
+	data->netmap_catch_tx = &windows_generic_tx_handler;
 
-	    /* function(s) to access interface parameters */
-	    ndis_hooks.get_device_handle_by_ifindex = data->get_device_handle_by_ifindex;
+	/* function(s) to access interface parameters */
+	ndis_hooks.ndis_update_ifp = data->ndis_update_ifp;
 
-	    /* function to inject packets into the nic or the stack */
-	    ndis_hooks.injectPacket = data->injectPacket;
+	/* function to inject packets into the nic or the stack */
+	ndis_hooks.injectPacket = data->injectPacket;
 
-	    /* copy back the results. XXX why do we need to do that ? */
-	    //RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, data, sizeof(FUNCTION_POINTER_XCHANGE));
-	    Irp->IoStatus.Information = sizeof(FUNCTION_POINTER_XCHANGE);
+	/* copy back the results. XXX why do we need to do that ? */
+	//RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, data, sizeof(FUNCTION_POINTER_XCHANGE));
+	Irp->IoStatus.Information = sizeof(FUNCTION_POINTER_XCHANGE);
 #if 0
-	    DbgPrint("Netmap.sys: NETMAP_KERNEL_XCHANGE_POINTERS - Internal device control called successfully (0x%p)\n", &testCallFunctionFromRemote);
-	    DbgPrint("Netmap.sys: Data->pRxPointer (0x%p) &(0x%p)\n", data->pRxPointer, &data->pRxPointer);
+	DbgPrint("Netmap.sys: NETMAP_KERNEL_XCHANGE_POINTERS - Internal device control called successfully (0x%p)\n", &testCallFunctionFromRemote);
+	DbgPrint("Netmap.sys: Data->pRxPointer (0x%p) &(0x%p)\n", data->pRxPointer, &data->pRxPointer);
 #endif
-	    break;
+	break;
 
-	default:
-	    DbgPrint("Netmap.sys: wrong request issued! (%i)", irpSp->Parameters.DeviceIoControl.IoControlCode);
-	    NtStatus = STATUS_INVALID_DEVICE_REQUEST;
+    default:
+	DbgPrint("Netmap.sys: wrong request issued! (%i)", irpSp->Parameters.DeviceIoControl.IoControlCode);
+	NtStatus = STATUS_INVALID_DEVICE_REQUEST;
     }	
     Irp->IoStatus.Status = NtStatus;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     return NtStatus;
 }
 
-static NTSTATUS windows_netmap_mmap(PIRP Irp)
+static NTSTATUS
+windows_netmap_mmap(PIRP Irp)
 {
 	PVOID       		buffer = NULL;
 	MEMORY_ENTRY		returnedValue;
@@ -554,8 +547,8 @@ static NTSTATUS windows_netmap_mmap(PIRP Irp)
 	u_int memsize, memflags;
 	irpSp = IoGetCurrentIrpStackLocation(Irp);
 	struct netmap_priv_d *priv = irpSp->FileObject->FsContext;
-	if (priv == NULL)
-	{
+
+	if (priv == NULL) {
 		DbgPrint("Netmap.sys: priv!!!!!");
 		return STATUS_DEVICE_DATA_ERROR;
 	}
@@ -571,22 +564,18 @@ static NTSTATUS windows_netmap_mmap(PIRP Irp)
 #ifdef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
 	void* addressToShare;
 	addressToShare = win32_netmap_mem_getVirtualAddress(na->nm_mem, 0);
-	if (addressToShare == NULL)
-	{
+	if (addressToShare == NULL) {
 		return STATUS_DEVICE_DATA_ERROR;
 	}
 	vm_paddr_t temp;
 	temp = vtophys(priv->np_nifp);
-	if (temp.QuadPart == NULL)
-	{
+	if (temp.QuadPart == NULL) {
 		return STATUS_DEVICE_DATA_ERROR;
 	}
 #endif
-	try
-	{
+	try { // XXX see if we can do without exceptions
 		buffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
-		if (buffer == NULL)
-		{
+		if (buffer == NULL) {
 			Irp->IoStatus.Information = 0;
 			DbgPrint("Netmap.sys: Failed to allocate memory!!!!!");
 			return STATUS_DEVICE_DATA_ERROR;
@@ -613,8 +602,7 @@ static NTSTATUS windows_netmap_mmap(PIRP Irp)
 			NULL,
 			FALSE,
 			NormalPagePriority);
-		if (UserVirtualAddress != NULL)
-		{
+		if (UserVirtualAddress != NULL) {
 			returnedValue.pUsermodeVirtualAddress = UserVirtualAddress;
 			RtlCopyMemory(buffer,
 				&returnedValue,
@@ -623,27 +611,27 @@ static NTSTATUS windows_netmap_mmap(PIRP Irp)
 			Irp->IoStatus.Information = sizeof(void*);
 			DbgPrint("Netmap.sys: Memory allocated to user process");
 			return STATUS_SUCCESS;
-		}
-		else{
+		} else {
 			Irp->IoStatus.Information = 0;
 			DbgPrint("Netmap.sys: Failed to allocate memory!!!!!");
 			return STATUS_INSUFFICIENT_RESOURCES;
 		}
-	}except(EXCEPTION_EXECUTE_HANDLER)
-	{
+	} except(EXCEPTION_EXECUTE_HANDLER) {
 		Irp->IoStatus.Information = 0;
 		DbgPrint("Netmap.sys: Failed to allocate memory!!!!!");
 		return STATUS_INSUFFICIENT_RESOURCES;
 	}
 }
 
-int copy_from_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
+int
+copy_from_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
 {
 	RtlCopyMemory(dst, src, len);
 	return STATUS_SUCCESS;
 }
 
-int copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
+int
+copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
 {
     PVOID       buffer = NULL;
     ULONG		outBufLength = 0;
@@ -651,14 +639,11 @@ int copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
 
     irpSp = IoGetCurrentIrpStackLocation(Irp);
     outBufLength = irpSp->Parameters.DeviceIoControl.OutputBufferLength;
-    if (outBufLength >= len)
-    {
+    if (outBufLength >= len) {
 	RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, src, len);
 	Irp->IoStatus.Information = len;
 	return STATUS_SUCCESS;
-    }
-    else
-    {
+    } else {
 	return STATUS_INSUFFICIENT_RESOURCES;
     }
 }
@@ -671,7 +656,8 @@ int copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
  * Return STATUS_SUCCESS on success, errno on failure.
  */
 
-NTSTATUS DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING RegistryPath)
+NTSTATUS
+DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING RegistryPath)
 {
     NTSTATUS        		ntStatus;
     UNICODE_STRING  		ntUnicodeString;    
@@ -693,57 +679,57 @@ NTSTATUS DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING Regi
         FALSE,                          // Not exclusive
         &deviceObject );                // Returned pointer to the device
 
-    if ( !NT_SUCCESS( ntStatus ) )
-    {
+    if ( !NT_SUCCESS( ntStatus ) ) {
         DbgPrint("NETMAP.SYS: Couldn't create the device object\n");
         return ntStatus;
     }
-	DbgPrint("NETMAP.SYS: Driver loaded at address 0x%p \n",&deviceObject);
+    DbgPrint("NETMAP.SYS: Driver loaded at address 0x%p \n",&deviceObject);
 	
     // Init function pointers to major driver functions
     DriverObject->MajorFunction[IRP_MJ_CREATE] = ioctlCreate;
     DriverObject->MajorFunction[IRP_MJ_CLOSE] = ioctlClose;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = ioctlDeviceControl;
-	DriverObject->MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL] = ioctlInternalDeviceControl;
-	//DriverObject->MajorFunction[IRP_MJ_READ] = ReadSync;
-	//DriverObject->MajorFunction[IRP_MJ_WRITE] = WriteSync;
+    DriverObject->MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL] = ioctlInternalDeviceControl;
+    //DriverObject->MajorFunction[IRP_MJ_READ] = ReadSync;
+    //DriverObject->MajorFunction[IRP_MJ_WRITE] = WriteSync;
     DriverObject->DriverUnload = ioctlUnloadDriver;
 
     // Initialize a Unicode String containing the Win32 name
     // for our device.
-	RtlInitUnicodeString(&ntWin32NameString, NETMAP_DOS_DEVICE_NAME);
+    RtlInitUnicodeString(&ntWin32NameString, NETMAP_DOS_DEVICE_NAME);
 
     // Symlink creation
     ntStatus = IoCreateSymbolicLink(&ntWin32NameString, &ntUnicodeString );
-	if (netmap_init() != 0)
-	{
-		DbgPrint("NETMAP.SYS: Netmap init FAILED!!!\n");
-		ntStatus = STATUS_DEVICE_INSUFFICIENT_RESOURCES;
-	}
-    if ( !NT_SUCCESS( ntStatus ) )
-    {
-		//Clear all in case of not success
+    if (netmap_init() != 0) {
+	DbgPrint("NETMAP.SYS: Netmap init FAILED!!!\n");
+	ntStatus = STATUS_DEVICE_INSUFFICIENT_RESOURCES;
+    }
+    if ( !NT_SUCCESS( ntStatus ) ) {
+	//Clear all in case of not success
         DbgPrint("NETMAP.SYS: Couldn't create driver\n");
         IoDeleteDevice( deviceObject );
-	}else{
-		keinit_GST();
-		deviceObject->Flags |= DO_DIRECT_IO;
-	}
+    } else {
+	keinit_GST();
+	deviceObject->Flags |= DO_DIRECT_IO;
+    }
     return ntStatus;
 }
 
-void nm_vi_detach(struct ifnet *ifp)
+void
+nm_vi_detach(struct ifnet *ifp)
 {
     DbgPrint("nm_vi_detach unimplemented!!!\n");
 }
 
-int nm_vi_persist(const char *name, struct ifnet **ret)
+int
+nm_vi_persist(const char *name, struct ifnet **ret)
 {
     DbgPrint("nm_vi_persist unimplemented!!!\n");
     return ENOMEM;
 }
 
-void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
+void
+bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 	struct netmap_vp_adapter *dst_na,
 	struct nm_bdg_fwd *ft_p, struct netmap_ring *ring,
 	u_int *j, u_int lim, u_int *howmany)
@@ -751,7 +737,8 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
     DbgPrint("bdg_mismatch_datapath unimplemented!!!\n");
 }
 
-void if_rele(struct net_device *ifp)
+void
+if_rele(struct net_device *ifp)
 {
     DbgPrint("if_rele unimplemented!!!\n");
     // XXX release the reference we got with ifunit_ref
