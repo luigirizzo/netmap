@@ -54,7 +54,7 @@ DRIVER_UNLOAD ioctlUnloadDriver;
 static NTSTATUS windows_netmap_mmap(PIRP Irp);
 NTSTATUS copy_from_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
 NTSTATUS copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
-FUNCTION_POINTER_XCHANGE g_functionAddresses;
+FUNCTION_POINTER_XCHANGE ndis_hooks;
 
 //Allocate the pageable routines and the init routine
 //These routines will be unloaded from the memory as soon as
@@ -163,11 +163,11 @@ VOID ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
  */
 int netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInterface)
 {
-	if (ifp->ndis_pFilter_readyToUse != NULL)
-	{
-		*ifp->ndis_pFilter_readyToUse = amIRegisteringTheInterface;
-		return STATUS_SUCCESS;
-	}
+    if (ifp->pfilter_ready != NULL)
+    {
+	*ifp->pfilter_ready = amIRegisteringTheInterface;
+	return STATUS_SUCCESS;
+    }
     return STATUS_DEVICE_NOT_CONNECTED;
 }
 
@@ -251,9 +251,9 @@ int send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
 {
     NTSTATUS status;
 
-    if (g_functionAddresses.injectPacket != NULL)
+    if (ndis_hooks.injectPacket != NULL)
     {
-	status = g_functionAddresses.injectPacket(ifp ->ndis_pFilter_reference, m->pkt, m->m_len, FALSE);
+	status = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE);
 	return status;
     }
     return STATUS_DEVICE_NOT_CONNECTED;
@@ -265,9 +265,9 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
     NTSTATUS status;
-    if (g_functionAddresses.injectPacket != NULL)
+    if (ndis_hooks.injectPacket != NULL)
     {
-	status = g_functionAddresses.injectPacket(ifp->ndis_pFilter_reference, addr, len, TRUE);
+	status = ndis_hooks.injectPacket(ifp->pfilter, addr, len, TRUE);
 	return status;
     }
     return STATUS_DEVICE_NOT_CONNECTED;
@@ -479,7 +479,7 @@ struct net_device* ifunit_ref(const char* name)
     struct net_device*	nd = NULL;
 
 
-    if (g_functionAddresses.get_device_handle_by_ifindex == NULL)
+    if (ndis_hooks.get_device_handle_by_ifindex == NULL)
 	return NULL; /* function not available yet */
 
     deviceIfIndex = getDeviceIfIndex(name);
@@ -494,7 +494,7 @@ struct net_device* ifunit_ref(const char* name)
     nd->ifIndex = deviceIfIndex;
 
     // XXX pass nd to get_device* so it stores all results there
-	if (g_functionAddresses.get_device_handle_by_ifindex(deviceIfIndex, nd) != STATUS_SUCCESS)
+	if (ndis_hooks.get_device_handle_by_ifindex(deviceIfIndex, nd) != STATUS_SUCCESS)
 	{
 	ExFreePoolWithTag(nd, 'NDEV');
 	return NULL; /* not found */
@@ -518,10 +518,10 @@ NTSTATUS ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	    data->netmap_catch_tx = &windows_generic_tx_handler;
 
 	    /* function(s) to access interface parameters */
-	    g_functionAddresses.get_device_handle_by_ifindex = data->get_device_handle_by_ifindex;
+	    ndis_hooks.get_device_handle_by_ifindex = data->get_device_handle_by_ifindex;
 
 	    /* function to inject packets into the nic or the stack */
-	    g_functionAddresses.injectPacket = data->injectPacket;
+	    ndis_hooks.injectPacket = data->injectPacket;
 
 	    /* copy back the results. XXX why do we need to do that ? */
 	    //RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, data, sizeof(FUNCTION_POINTER_XCHANGE));

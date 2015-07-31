@@ -393,8 +393,8 @@ get_device_handle_by_ifindex(int deviceIfIndex, struct net_device *ifp)
 	{
 	    // XXX should increment pFilter->RefCount before release
 	    // and decrement on release
-	    ifp->ndis_pFilter_reference = pFilter;  
-	    ifp->ndis_pFilter_readyToUse = &pFilter->readyToUse;
+	    ifp->pfilter = pFilter;  
+	    ifp->pfilter_ready = &pFilter->readyToUse;
 	    pFilter->ifp = ifp;
 	    FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
 	    return STATUS_SUCCESS;
@@ -414,13 +414,13 @@ get_device_handle_by_ifindex(int deviceIfIndex, struct net_device *ifp)
  *
  * Return: NTSTATUS - STATUS_SUCCESS packet injected, other value error
  *
- * _IN_ PVOID ndis_pFilter_reference,		pointer to the MS_FILTER structure of the network adapter
- * _IN_ PVOID data,				data to be injected
- * _IN_ uint32_t length				length of the data to be injected
- * _IN_ BOOLEAN sendToMiniport			TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
+ * _IN_ PVOID _pfilter			pointer to the MS_FILTER structure of the network adapter
+ * _IN_ PVOID data,			data to be injected
+ * _IN_ uint32_t length			length of the data to be injected
+ * _IN_ BOOLEAN sendToMiniport		TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
  */
 NTSTATUS 
-injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
+injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
 {
     PVOID			buffer = NULL;
     PMDL			pMdl = NULL;
@@ -428,7 +428,7 @@ injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN 
     PNET_BUFFER			pFirst = NULL;
     PVOID			pNdisPacketMemory = NULL;
     NTSTATUS			status = STATUS_SUCCESS;
-    PMS_FILTER			SelectedDeviceFilter = (PMS_FILTER)ndis_pFilter_reference;
+    PMS_FILTER			pfilter = (PMS_FILTER)_pfilter;
 
     do
     {
@@ -440,7 +440,7 @@ injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN 
 	    break;
 	}
 	RtlZeroMemory(buffer, length);
-	pMdl = NdisAllocateMdl(SelectedDeviceFilter->FilterHandle, buffer, length);
+	pMdl = NdisAllocateMdl(pfilter->FilterHandle, buffer, length);
 	if (pMdl == NULL)
 	{
 	    DbgPrint("nmNdis.sys: Error allocating MDL!\n");
@@ -449,7 +449,7 @@ injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN 
 	}
 	pMdl->Next = NULL;
 
-	pBufList = NdisAllocateNetBufferAndNetBufferList(SelectedDeviceFilter->UserSendNetBufferListPool,
+	pBufList = NdisAllocateNetBufferAndNetBufferList(pfilter->UserSendNetBufferListPool,
 		    0, 0,
 		    pMdl, 0,
 		    length);
@@ -476,16 +476,16 @@ injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN 
 #if 0
 	DumpPayload(pNdisPacketMemory, length);
 #endif
-	pBufList->SourceHandle = SelectedDeviceFilter->FilterHandle;
+	pBufList->SourceHandle = pfilter->FilterHandle;
 	if (sendToMiniport)
 	{
 	    //This send down to the miniport
-		NdisFSendNetBufferLists(SelectedDeviceFilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
+	    NdisFSendNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
 	}
 	else
 	{
 	    //This one send up to the OS
-		NdisFIndicateReceiveNetBufferLists(SelectedDeviceFilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
+	    NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
 	}	
     } while (FALSE);
 

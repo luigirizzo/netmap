@@ -28,20 +28,21 @@ Abstract:
 NDIS_HANDLE         FilterDriverHandle; // NDIS handle for filter driver
 NDIS_HANDLE         FilterDriverObject;
 NDIS_HANDLE         NdisFilterDeviceHandle = NULL;
-PDEVICE_OBJECT      DeviceObject = NULL;
+PDEVICE_OBJECT      DeviceObject = NULL;	// used in device.c, not here
 
 FILTER_LOCK         FilterListLock;
 LIST_ENTRY          FilterModuleList;
 
 //Link with Netmap IOCTL driver used to send internals IOCTLs
 static PDEVICE_OBJECT		g_pNetmapDeviceObject = NULL;
-PFILE_OBJECT pNetmapDeviceFileObject = NULL;
-FUNCTION_POINTER_XCHANGE g_functionAddresses;
+static PFILE_OBJECT pNetmapDeviceFileObject = NULL;
+
+static FUNCTION_POINTER_XCHANGE netmap_hooks;
 
 int		    FilterModulesCount = 0;		//Number of net adapters where the filter is currently attached
 
-extern NTSTATUS get_device_handle_by_ifindex(int deviceIfIndex, struct net_device *ifp);
-extern NTSTATUS injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
+NTSTATUS get_device_handle_by_ifindex(int deviceIfIndex, struct net_device *ifp);
+NTSTATUS injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
 
 NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
 { 0, 0, 0},
@@ -187,15 +188,15 @@ Return Value:
 		DEBUGP(DL_WARN, "Cannot find netmap driver\n");
 		break;
 	    }
-	    g_functionAddresses.netmap_catch_rx = NULL;		//parameter returned by netmap IOCTL driver
-	    g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
-	    g_functionAddresses.injectPacket = &injectPacket;
+	    netmap_hooks.netmap_catch_rx = NULL;		//parameter returned by netmap IOCTL driver
+	    netmap_hooks.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
+	    netmap_hooks.injectPacket = &injectPacket;
 	    //DbgPrint("DevObj 0x%p", g_pNetmapDeviceObject);
 	    PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS,
 		    g_pNetmapDeviceObject,
-		    &g_functionAddresses,				//input arg
+		    &netmap_hooks,				//input arg
 		    sizeof(FUNCTION_POINTER_XCHANGE),	
-		    &g_functionAddresses,				//output arg
+		    &netmap_hooks,				//output arg
 		    sizeof(FUNCTION_POINTER_XCHANGE),
 		    TRUE,								//internal IOCTL
 		    NULL,
@@ -800,10 +801,10 @@ Return Value:
 
 #endif
 
-	if (pNetmapDeviceFileObject != NULL)
-	{
-		ObDereferenceObject(pNetmapDeviceFileObject);
-	}
+    if (pNetmapDeviceFileObject != NULL)
+    {
+	ObDereferenceObject(pNetmapDeviceFileObject);
+    }
 
     FILTER_FREE_LOCK(&FilterListLock);
 
@@ -1439,7 +1440,7 @@ Arguments:
         //
         
         //NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
-        if (g_functionAddresses.netmap_catch_tx != NULL && pFilter->readyToUse)
+        if (netmap_hooks.netmap_catch_tx != NULL && pFilter->readyToUse)
         {
 	    int result = -1;
 	    PNET_BUFFER pkt = NULL;
@@ -1451,7 +1452,7 @@ Arguments:
 
 		if (buffer != NULL)
 		{
-		    //result = g_functionAddresses.netmap_catch_tx(pFilter->ifp, pkt->DataLength, buffer);
+		    //result = netmap_hooks.netmap_catch_tx(pFilter->ifp, pkt->DataLength, buffer);
 		}
 		pkt = pkt->Next;
 		if (pkt == NULL)
@@ -1699,7 +1700,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
             FILTER_RELEASE_LOCK(&pFilter->Lock, DispatchLevel);
         }
 
-	if (g_functionAddresses.netmap_catch_rx != NULL && pFilter->readyToUse)
+	if (netmap_hooks.netmap_catch_rx != NULL && pFilter->readyToUse)
 	{	
 	    //struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
 #if 0
@@ -1723,10 +1724,10 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 		    PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
 		    if (buffer != NULL)
 		    {
-			result = g_functionAddresses.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
+			result = netmap_hooks.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
 		    }
 		    //DbgPrint("Called: result= %i", result);
-		    //DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
+		    //DbgPrint("Data->pRxPointer: 0x%p &0x%p", netmap_hooks.pRxPointer, &netmap_hooks.pRxPointer);
 
 		    pkt = pkt->Next;
 		    if (pkt == NULL)

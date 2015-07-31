@@ -254,13 +254,18 @@ static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 *        		GENERIC/HW SPECIFIC STRUCTURES     		 *
 **********************************************************/
 
-typedef struct _FUNCTION_POINTER_XCHANGE
-{
-	struct NET_BUFFER*(*netmap_catch_rx)(struct net_device*, uint32_t length, const char* data);
-	struct NET_BUFFER*(*netmap_catch_tx)(struct net_device*, uint32_t length, const char* data);
-	NTSTATUS(*get_device_handle_by_ifindex)(int ifIndex, struct net_device *ifp);
-	NTSTATUS(*injectPacket)(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
-} FUNCTION_POINTER_XCHANGE, *PFUNCTION_POINTER_XCHANGE;
+/*
+ * the following structure is used to hook ndis with netmap.
+ */
+typedef struct _FUNCTION_POINTER_XCHANGE {
+	/* ndis -> netmap calls */
+	struct NET_BUFFER* (*netmap_catch_rx)(struct net_device*, uint32_t length, const char* data);
+	struct NET_BUFFER* (*netmap_catch_tx)(struct net_device*, uint32_t length, const char* data);
+
+	/* netmap -> ndis calls */
+	NTSTATUS (*get_device_handle_by_ifindex)(int ifIndex, struct net_device *ifp);
+	NTSTATUS (*injectPacket)(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
+} FUNCTION_POINTER_XCHANGE; // , *PFUNCTION_POINTER_XCHANGE;
 
 
 struct netmap_adapter;
@@ -277,8 +282,8 @@ struct net_device {
 	char	if_xname[IFNAMSIZ];			// external name (name + unit) 
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter*	na;
-	PVOID	ndis_pFilter_reference;
-	BOOL*	ndis_pFilter_readyToUse;
+	PVOID	pfilter;
+	BOOL*	pfilter_ready;
 	//NDIS_HANDLE				deviceHandle;
 	//NDIS_HANDLE				UserSendNetBufferListPool;
 	int		ifIndex;
