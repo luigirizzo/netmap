@@ -895,29 +895,29 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
 
     NMG_LOCK();
     switch (cmd) {
-        case NETMAP_PT_HOST_CREATE:     /* create kthreads and switch in pt mode */
-            ptnetmap_read_cfg(nmr, &cfg);
+    case NETMAP_PT_HOST_CREATE:     /* create kthreads and switch in pt mode */
+        ptnetmap_read_cfg(nmr, &cfg);
 
-            /* create kthreads */
-            error = ptnetmap_create(pth_na, &cfg);
-            if (error)
-                break;
-            /* start kthreads */
-            error = ptnetmap_start_kthreads(pth_na->ptn_state);
-            if (error)
-                ptnetmap_delete(pth_na);
-
+        /* create kthreads */
+        error = ptnetmap_create(pth_na, &cfg);
+        if (error)
             break;
-        case NETMAP_PT_HOST_DELETE:     /* delete kthreads and restore parent adapter */
-            /* stop kthreads */
-            ptnetmap_stop_kthreads(pth_na->ptn_state);
-            /* delete kthreads */
+        /* start kthreads */
+        error = ptnetmap_start_kthreads(pth_na->ptn_state);
+        if (error)
             ptnetmap_delete(pth_na);
-            break;
-        default:
-            D("ERROR invalid cmd (nmr->nr_cmd) (0x%x)", cmd);
-            error = EINVAL;
-            break;
+
+        break;
+    case NETMAP_PT_HOST_DELETE:     /* delete kthreads and restore parent adapter */
+        /* stop kthreads */
+        ptnetmap_stop_kthreads(pth_na->ptn_state);
+        /* delete kthreads */
+        ptnetmap_delete(pth_na);
+        break;
+    default:
+        D("ERROR invalid cmd (nmr->nr_cmd) (0x%x)", cmd);
+        error = EINVAL;
+        break;
     }
     NMG_UNLOCK();
 
