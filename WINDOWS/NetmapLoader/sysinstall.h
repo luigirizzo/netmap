@@ -28,7 +28,7 @@
 #define DRIVER_FUNC_INSTALL     0x01
 #define DRIVER_FUNC_REMOVE      0x02
 
-#define DRIVER_NAME       "NetMap"
+#define DRIVER_NAME       "netmap"
 
 #define NT_DEVICE_NAME      L"\\Device\\NETMAP"
 #define DOS_DEVICE_NAME     L"\\DosDevices\\NetMap"
