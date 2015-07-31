@@ -19,7 +19,8 @@ CatalogFile     = nmNdis.cat
 Provider        = %Msft%
 
 ; TODO: Customize this string for the driver version
-DriverVer       = 22/07/2015,0.0.90.0
+; XXX note, the date is in USA format ?
+DriverVer       = 05/31/2015,0.0.90.0
 
 
 ; TODO: Include each architecture for which your driver package contains a
