@@ -172,51 +172,51 @@ Return Value:
             break;
         }
 
-		{
-			OBJECT_ATTRIBUTES   objectAttributes;
-			UNICODE_STRING      ObjectName;
-			IO_STATUS_BLOCK		iosb;
+	{
+	    OBJECT_ATTRIBUTES   objectAttributes;
+	    UNICODE_STRING      ObjectName;
+	    IO_STATUS_BLOCK		iosb;
 
-			//Getting pointer to netmap IOCTL device
-			RtlInitUnicodeString(&ObjectName, NETMAP_DOS_DEVICE_NAME);
-			InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-			Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pNetmapDeviceFileObject, &g_pNetmapDeviceObject);
-			if (Status != NDIS_STATUS_SUCCESS)
-			{
-				NdisFDeregisterFilterDriver(FilterDriverHandle);
-				DEBUGP(DL_WARN, "Cannot find netmap driver\n");
-				break;
-			}
-			g_functionAddresses.netmap_catch_rx = NULL;		//parameter returned by netmap IOCTL driver
-			g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
-			g_functionAddresses.injectPacket = &injectPacket;
-			//DbgPrint("DevObj 0x%p", g_pNetmapDeviceObject);
-			PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS,
-				g_pNetmapDeviceObject,
-				&g_functionAddresses,				//input arg
-				sizeof(FUNCTION_POINTER_XCHANGE),	
-				&g_functionAddresses,				//output arg
-				sizeof(FUNCTION_POINTER_XCHANGE),
-				TRUE,								//internal IOCTL
-				NULL,
-				&iosb);								//status of the call for async calls
-			if (pIrp != NULL)
-			{
-				Status = IoCallDriver(g_pNetmapDeviceObject, pIrp);
-			}
-			else
-			{
-				Status = STATUS_DEVICE_DOES_NOT_EXIST;	//XXX_ale
-			}
-			
-			if (Status != NDIS_STATUS_SUCCESS)
-			{
-				//Release the netmap IOCTL file reference
-				ObDereferenceObject(pNetmapDeviceFileObject);
-				NdisFDeregisterFilterDriver(FilterDriverHandle);
-				DEBUGP(DL_WARN, "Error during IoCallDriver to Netmap driver\n");
-			}	
-		}
+	    //Getting pointer to netmap IOCTL device
+	    RtlInitUnicodeString(&ObjectName, NETMAP_DOS_DEVICE_NAME);
+	    InitializeObjectAttributes(&objectAttributes, &ObjectName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+	    Status = IoGetDeviceObjectPointer(&ObjectName, FILE_ALL_ACCESS, &pNetmapDeviceFileObject, &g_pNetmapDeviceObject);
+	    if (Status != NDIS_STATUS_SUCCESS)
+	    {
+		NdisFDeregisterFilterDriver(FilterDriverHandle);
+		DEBUGP(DL_WARN, "Cannot find netmap driver\n");
+		break;
+	    }
+	    g_functionAddresses.netmap_catch_rx = NULL;		//parameter returned by netmap IOCTL driver
+	    g_functionAddresses.get_device_handle_by_ifindex = &get_device_handle_by_ifindex;
+	    g_functionAddresses.injectPacket = &injectPacket;
+	    //DbgPrint("DevObj 0x%p", g_pNetmapDeviceObject);
+	    PIRP pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS,
+		    g_pNetmapDeviceObject,
+		    &g_functionAddresses,				//input arg
+		    sizeof(FUNCTION_POINTER_XCHANGE),	
+		    &g_functionAddresses,				//output arg
+		    sizeof(FUNCTION_POINTER_XCHANGE),
+		    TRUE,								//internal IOCTL
+		    NULL,
+		    &iosb);								//status of the call for async calls
+	    if (pIrp != NULL)
+	    {
+		Status = IoCallDriver(g_pNetmapDeviceObject, pIrp);
+	    }
+	    else
+	    {
+		Status = STATUS_DEVICE_DOES_NOT_EXIST;	//XXX_ale
+	    }
+	    
+	    if (Status != NDIS_STATUS_SUCCESS)
+	    {
+		//Release the netmap IOCTL file reference
+		ObDereferenceObject(pNetmapDeviceFileObject);
+		NdisFDeregisterFilterDriver(FilterDriverHandle);
+		DEBUGP(DL_WARN, "Error during IoCallDriver to Netmap driver\n");
+	    }	
+	}
     }
     while(bFalse);
 
@@ -1324,25 +1324,27 @@ Return Value:
 
     // Send complete the NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
-	if (NetBufferLists != NULL)
+    if (NetBufferLists != NULL)
+    {
+	PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
+
+	if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
 	{
-		PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
-		if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
-		{
-			while (CurrNetBuffer) 
-			{ 
-				PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
-				PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
-				NdisFreeMdl(pCurrMdl);
-				CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer); 
-			}
-			NdisFreeNetBufferList(NetBufferLists);
-		}
-		else
-		{
-			NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
-		}   
+	    while (CurrNetBuffer) 
+	    { 
+		PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
+		PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
+
+		NdisFreeMdl(pCurrMdl);
+		CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer); 
+	    }
+	    NdisFreeNetBufferList(NetBufferLists);
 	}
+	else
+	{
+	    NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
+	}   
+    }
     DEBUGP(DL_TRACE, "<===SendNBLComplete.\n");
 }
 
@@ -1439,26 +1441,24 @@ Arguments:
         //NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
         if (g_functionAddresses.netmap_catch_tx != NULL && pFilter->readyToUse)
         {
-            {
-                int result = -1;
+	    int result = -1;
+	    PNET_BUFFER pkt = NULL;
+	    PNET_BUFFER_LIST current_list = NetBufferLists;
 
-                PNET_BUFFER pkt = NULL;
-                PNET_BUFFER_LIST current_list = NetBufferLists;
-                while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list))))
-                {
-                    PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
+	    while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list))))
+	    {
+		PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
 
-                    if (buffer != NULL)
-                    {
-                        //result = g_functionAddresses.netmap_catch_tx(pFilter->ifp, pkt->DataLength, buffer);
-                    }
-                    pkt = pkt->Next;
-                    if (pkt == NULL)
-                    {
-                        current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
-                    }
-                }
-            }
+		if (buffer != NULL)
+		{
+		    //result = g_functionAddresses.netmap_catch_tx(pFilter->ifp, pkt->DataLength, buffer);
+		}
+		pkt = pkt->Next;
+		if (pkt == NULL)
+		{
+		    current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
+		}
+	    }
             //NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, SendFlags);
         }
         else
@@ -1539,22 +1539,22 @@ Arguments:
     // Return the received NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
 
-	PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
-	if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
+    PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
+    if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
+    {
+	while (CurrNetBuffer)
 	{
-		while (CurrNetBuffer)
-		{
-			PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
-			PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
-			NdisFreeMdl(pCurrMdl);
-			CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
-		}
-		NdisFreeNetBufferList(NetBufferLists);
+	    PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
+	    PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
+	    NdisFreeMdl(pCurrMdl);
+	    CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
 	}
-	else
-	{
-		NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
-	}
+	NdisFreeNetBufferList(NetBufferLists);
+    }
+    else
+    {
+	NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
+    }
 
     if (pFilter->TrackReceives)
     {
@@ -1619,8 +1619,8 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
     ULONG               ReturnFlags;
 #endif
 
-	static int			maxBatch = 0;
-	int					qBatch = 0;
+    static int		maxBatch = 0;
+    int			qBatch = 0;
 
     DEBUGP(DL_TRACE, "===>ReceiveNetBufferList: NetBufferLists = %p.\n", NetBufferLists);
     do
@@ -1699,61 +1699,61 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
             FILTER_RELEASE_LOCK(&pFilter->Lock, DispatchLevel);
         }
 
-		if (g_functionAddresses.netmap_catch_rx != NULL && pFilter->readyToUse)
-		{	
-			//struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
+	if (g_functionAddresses.netmap_catch_rx != NULL && pFilter->readyToUse)
+	{	
+	    //struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
 #if 0
-			static int packets = 0; /* debugging */
-			//DbgPrint("Dropping packets... size: %i\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
-			packets += 1;
-			if (packets == 100000)
-			{
-				DbgPrint("Recv 100k (%i)\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
-				packets = 0;
-			}
+	    static int packets = 0; /* debugging */
+	    //DbgPrint("Dropping packets... size: %i\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
+	    packets += 1;
+	    if (packets == 100000)
+	    {
+		DbgPrint("Recv 100k (%i)\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
+		packets = 0;
+	    }
 #endif
-			{
-				int result = -1;
-				
-				PNET_BUFFER pkt = NULL;
-				PNET_BUFFER_LIST current_list = NetBufferLists;
-				while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list)) ) )
-				{
-					qBatch++;
-					PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
-					if (buffer != NULL)
-					{
-						result = g_functionAddresses.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
-					}
-					//DbgPrint("Called: result= %i", result);
-					//DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
-					
-					pkt = pkt->Next;
-					if (pkt == NULL)
-					{
-						current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
-					}
-				}
-			}
-#if 0
-			if (qBatch > maxBatch)
-			{
-				maxBatch = qBatch;
-				DbgPrint("MaxBatch: %i", maxBatch);
-			}
-#endif
-			NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReceiveFlags);
-		}
-		else
+	    {
+		int result = -1;
+		PNET_BUFFER pkt = NULL;
+		PNET_BUFFER_LIST current_list = NetBufferLists;
+
+		while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list)) ) )
 		{
-			NdisFIndicateReceiveNetBufferLists(
+		    qBatch++;
+		    PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
+		    if (buffer != NULL)
+		    {
+			result = g_functionAddresses.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
+		    }
+		    //DbgPrint("Called: result= %i", result);
+		    //DbgPrint("Data->pRxPointer: 0x%p &0x%p", g_functionAddresses.pRxPointer, &g_functionAddresses.pRxPointer);
+
+		    pkt = pkt->Next;
+		    if (pkt == NULL)
+		    {
+			current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
+		    }
+		}
+	    }
+#if 0
+	    if (qBatch > maxBatch)
+	    {
+		maxBatch = qBatch;
+		DbgPrint("MaxBatch: %i", maxBatch);
+	    }
+#endif
+	    NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReceiveFlags);
+	}
+	else
+	{
+	    NdisFIndicateReceiveNetBufferLists(
 				pFilter->FilterHandle,
 				NetBufferLists,
 				PortNumber,
 				NumberOfNetBufferLists,
 				ReceiveFlags);
-			//DbgPrint("Letting go packet...\n");
-		}
+	    //DbgPrint("Letting go packet...\n");
+	}
 
         if (NDIS_TEST_RECEIVE_CANNOT_PEND(ReceiveFlags) &&
             pFilter->TrackReceives)
