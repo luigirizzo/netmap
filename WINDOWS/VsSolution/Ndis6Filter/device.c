@@ -393,9 +393,9 @@ get_device_handle_by_ifindex(int deviceIfIndex, struct net_device *ifp)
 	{
 	    // XXX should increment pFilter->RefCount before release
 	    // and decrement on release
-		ifp->ndis_pFilter_reference = pFilter;  
-		ifp->ndis_pFilter_readyToUse = &pFilter->readyToUse;
-		pFilter->ifp = ifp;
+	    ifp->ndis_pFilter_reference = pFilter;  
+	    ifp->ndis_pFilter_readyToUse = &pFilter->readyToUse;
+	    pFilter->ifp = ifp;
 	    FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
 	    return STATUS_SUCCESS;
 	}
@@ -409,25 +409,27 @@ get_device_handle_by_ifindex(int deviceIfIndex, struct net_device *ifp)
     return STATUS_DEVICE_DOES_NOT_EXIST;
 }
 
-/*injectPacket - called from Netmap driver to inject a packet
+/*
+ * injectPacket - called from Netmap driver to inject a packet
  *
  * Return: NTSTATUS - STATUS_SUCCESS packet injected, other value error
  *
- * _IN_ PVOID ndis_pFilter_reference,				//pointer to the MS_FILTER structure of the network adapter
- * _IN_ PVOID data,									//data to be injected
- * _IN_ uint32_t length								//length of the data to be injected
- * _IN_ BOOLEAN sendToMiniport						//TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
+ * _IN_ PVOID ndis_pFilter_reference,		pointer to the MS_FILTER structure of the network adapter
+ * _IN_ PVOID data,				data to be injected
+ * _IN_ uint32_t length				length of the data to be injected
+ * _IN_ BOOLEAN sendToMiniport			TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
  */
 NTSTATUS 
 injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
 {
-    PVOID					buffer = NULL;
-    PMDL					pMdl = NULL;
+    PVOID			buffer = NULL;
+    PMDL			pMdl = NULL;
     PNET_BUFFER_LIST		pBufList = NULL;
-    PNET_BUFFER				pFirst = NULL;
-    PVOID					pNdisPacketMemory = NULL;
-    NTSTATUS				status = STATUS_SUCCESS;
-	PMS_FILTER				SelectedDeviceFilter = (PMS_FILTER)ndis_pFilter_reference;
+    PNET_BUFFER			pFirst = NULL;
+    PVOID			pNdisPacketMemory = NULL;
+    NTSTATUS			status = STATUS_SUCCESS;
+    PMS_FILTER			SelectedDeviceFilter = (PMS_FILTER)ndis_pFilter_reference;
+
     do
     {
 	buffer = ExAllocatePoolWithTag(NonPagedPool, length, 'NDIS');
@@ -460,6 +462,7 @@ injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN 
 	}
 	pFirst = NET_BUFFER_LIST_FIRST_NB(pBufList);
 	pNdisPacketMemory = NdisGetDataBuffer(pFirst, length, NULL, sizeof(UINT8), 0);
+	// XXX is this the same as buffer ?
 	if (pNdisPacketMemory == NULL)
 	{
 	    NdisFreeNetBufferList(pBufList);
@@ -485,6 +488,7 @@ injectPacket(PVOID ndis_pFilter_reference, PVOID data, uint32_t length, BOOLEAN 
 		NdisFIndicateReceiveNetBufferLists(SelectedDeviceFilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
 	}	
     } while (FALSE);
+
     if (buffer != NULL)
     {
 	ExFreePoolWithTag(buffer, 'NDIS');
