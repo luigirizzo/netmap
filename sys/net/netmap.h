@@ -277,7 +277,7 @@ struct netmap_ring {
 	struct timeval	ts;		/* (k) time of last *sync() */
 
 	/* opaque room for a mutex or similar object */
-	uint8_t		sem[128] __attribute__((__aligned__(NM_CACHE_ALIGN)));
+	uint8_t		__attribute__((__aligned__(NM_CACHE_ALIGN))) em[128];
 
 	/* the slots follow. This struct has variable size */
 	struct netmap_slot slot[0];	/* array of slots. */
