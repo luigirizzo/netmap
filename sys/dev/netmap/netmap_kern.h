@@ -110,8 +110,6 @@ struct netmap_adapter *netmap_getna(if_t ifp);
 #define PNT_MBUF_REFCNT(m)      ((m)->m_ext.ref_cnt)
 #endif
 
-MALLOC_DECLARE(M_NETMAP);
-
 struct nm_selinfo {
 	struct selinfo si;
 	struct mtx m;

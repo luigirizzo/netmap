@@ -37,6 +37,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 241723 2012-10-19 09:41:45Z gle
 
 #include <sys/types.h>
 #include <sys/malloc.h>
+#include <sys/kernel.h>		/* MALLOC_DEFINE */
 #include <sys/proc.h>
 #include <vm/vm.h>	/* vtophys */
 #include <vm/pmap.h>	/* vtophys */
@@ -47,6 +48,10 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 241723 2012-10-19 09:41:45Z gle
 #include <net/if_var.h>
 #include <net/vnet.h>
 #include <machine/bus.h>	/* bus_dmamap_* */
+
+/* M_NETMAP only used in here */
+MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
+
 #endif /* __FreeBSD__ */
 
 #ifdef _WIN32
