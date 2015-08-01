@@ -31,6 +31,9 @@ _not_working:
 	@echo "--- the makefile is not working yet, use msbuild ---"
 	(cd VsSolution; sh go)
 
+clean:
+	rm -rf VsSolution/Output
+
 all: pre-build do-build
 
 pre-build:
