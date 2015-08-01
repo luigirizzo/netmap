@@ -1710,7 +1710,6 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 
 	if (netmap_hooks.netmap_catch_rx != NULL && pFilter->readyToUse)
 	{	
-	    //struct mbuf* temp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'XCHG');
 #if 0
 	    static int packets = 0; /* debugging */
 	    //DbgPrint("Dropping packets... size: %i\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);

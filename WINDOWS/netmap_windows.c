@@ -87,12 +87,10 @@ ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     if (priv == NULL) {
 	// XXX watch out, this is freed with a different tag.
 	// we just use M_DEVBUF for other OSes
-	priv = ExAllocatePoolWithTag(NonPagedPool,
-		    sizeof(struct netmap_priv_d), PRIV_MEMORY_POOL_TAG);
+	priv = malloc(sizeof (*priv), M_DEVBUF, M_NOWAIT | M_ZERO); // could wait
 	if (priv == NULL) {
 	    status = STATUS_INSUFFICIENT_RESOURCES;
 	} else {
-	    RtlZeroMemory(priv, sizeof(struct netmap_priv_d));
 	    priv->np_refs = 1;
 	    D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refs);
 	    irpSp->FileObject->FsContext = priv;
@@ -169,30 +167,43 @@ netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInte
 }
 
 /*
- * intercept packet coming from down,
- * and pass them to netmap
+ * For packets coming from the generic adapter, netmap expects
+ * an mbuf with a persistent copy of the data.
+ * For the time being we construct a brand new mbuf and
+ * pass it to the handler.
+ * We use this routine also in a way similar to m_getcl(),
+ * passing a NULL pointer does not initialize the buffer (we need the length).
  */
-struct NET_BUFFER *
-windows_generic_rx_handler(struct net_device *ifp, uint32_t length, const char *data)
+struct mbuf *
+win_make_mbuf(struct net_device *ifp, uint32_t length, const char *data)
 {
     // XXX see if we can do a single allocation
-    struct mbuf *m = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'fubm');
+    struct mbuf *m = malloc(sizeof(struct mbuf), M_DEVBUF, M_NOWAIT | M_ZERO);
 
     if (m == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
         return NULL;
     }
-    RtlZeroMemory(m, sizeof(struct mbuf));
     m->m_len = length;
-    m->pkt = ExAllocatePoolWithTag(NonPagedPool,  length, 'pubm');// m + sizeof(struct mbuf);
+    m->pkt = malloc(length, M_DEVBUF, M_NOWAIT | M_ZERO);
     if (m->pkt == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf packet!!!");
+	free(m, M_DEVBUF);
         return NULL;
     }
-    // RtlZeroMemory(m->pkt, length); // XXX not needed, we copy everything
     m->dev = ifp;
-    RtlCopyMemory(m->pkt, data, length);
-    generic_rx_handler(ifp, m);
+    if (data)
+	RtlCopyMemory(m->pkt, data, length);
+    return m;
+}
+
+struct NET_BUFFER *
+windows_generic_rx_handler(struct net_device *ifp, uint32_t length, const char *data)
+{
+    struct mbuf *m = win_make_mbuf(ifp, length, data);
+
+    if (m)
+	generic_rx_handler(ifp, m);
     return NULL;
 }
 
@@ -200,26 +211,13 @@ windows_generic_rx_handler(struct net_device *ifp, uint32_t length, const char *
 * intercept packet coming from up,
 * and pass them to netmap
 */
-struct NET_BUFFER* windows_generic_tx_handler(struct net_device *ifp, uint32_t length, const char *data)
+struct NET_BUFFER *
+windows_generic_tx_handler(struct net_device *ifp, uint32_t length, const char *data)
 {
-    // XXX see if we can do a single allocation
-    struct mbuf *m = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct mbuf), 'fubm');
+    struct mbuf *m = win_make_mbuf(ifp, length, data);
 
-    if (m == NULL) {
-        DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
-        return NULL;
-    }
-    RtlZeroMemory(m, sizeof(struct mbuf));
-    m->m_len = length;
-    m->pkt = ExAllocatePoolWithTag(NonPagedPool, length, 'pubm');// m + sizeof(struct mbuf);
-    if (m->pkt == NULL) {
-        DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf packet!!!");
-        return NULL;
-    }
-    // RtlZeroMemory(m->pkt, length); // XXX not needed, we copy everything
-    m->dev = ifp;
-    RtlCopyMemory(m->pkt, data, length);
-    netmap_transmit(ifp, m);
+    if (m)
+	netmap_transmit(ifp, m);
     return NULL;
 }
 
@@ -481,16 +479,15 @@ ifunit_ref(const char* name)
     deviceIfIndex = getDeviceIfIndex(name);
     if (deviceIfIndex < 0)
 	return NULL;
-    ifp = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct net_device), 'NDEV');
+    ifp = malloc(sizeof(struct net_device), M_DEVBUF, M_NOWAIT | M_ZERO);
     if (ifp == NULL)
 	return NULL;
 
-    RtlZeroMemory(ifp, sizeof(struct net_device));
     RtlCopyMemory(ifp->if_xname, name, IFNAMSIZ);
     ifp->ifIndex = deviceIfIndex;
 
     if (ndis_hooks.ndis_update_ifp(deviceIfIndex, ifp) != STATUS_SUCCESS) {
-	ExFreePoolWithTag(ifp, 'NDEV');
+	free(ifp, M_DEVBUF);
 	return NULL; /* not found */
     }
 

@@ -68,9 +68,16 @@
 #include <Ntstrsafe.h>
 #endif //IS_USERSPACE
 
+#define	M_DEVBUF		'nmDb'	/* netmap pool for memory allocation */
+#define	M_NETMAP		'nmBm'	/* bitmap pool for netmap_mem2.c */
+#define	M_NOWAIT		1	/* flags for malloc etc */
+#define	M_ZERO			2	/* flags for malloc etc */
+
+#if 0
 #define PRIV_MEMORY_POOL_TAG				'memP'
 #define PIPES_POOL_TAG						'epiP'
 #define RINGS_POOL_TAG						'gniR'
+#endif //
 
 //Originally defined in LINUX\IF.H
 #define	IFNAMSIZ 44//IF_NAMESIZE //defined in netioapi.h, is 256
@@ -232,6 +239,7 @@ static int time_uptime_w32()
 
 #define copyin(src, dst, copy_len)					RtlCopyBytes(&dst, src, copy_len)
 
+#if 0
 static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 {
 	ASSERT(result != NULL);
@@ -249,6 +257,7 @@ static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 
 	return STATUS_SUCCESS;
 }
+#endif /* UNUSED */
 
 /*********************************************************
 *        		GENERIC/HW SPECIFIC STRUCTURES     		 *
@@ -364,43 +373,96 @@ static void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
 }
 
 
-/*
- * mbuf allocation and free
+int win32_devfs_get_cdevpriv(struct netmap_priv_d **mem, PIO_STACK_LOCATION td);
+static inline int ilog2(uint64_t n);
+static inline int roundup_pow_of_two(int sz);
+
+/*-------------------------------------------
+ *      KERNEL MEMORY ALLOCATION and management
  */
+
+char* win_contigMalloc(int sz, int page_size);
+void win_ContigFree(void* virtualAddress);
+
+#define bcopy(_s, _d, _l)			RtlCopyMemory(_d, _s, _l)
+#define bzero(addr, size)			RtlZeroMemory(addr, size)
+#define malloc(size, _ty, flags)		win_kernel_malloc(size, _ty, flags)
+#define free(addr, _type)			ExFreePoolWithTag(addr, _type)
+#define realloc(src, len, old_len)		win_reallocate(src, len, old_len)
+
+/*
+ * we default to always allocating and zeroing
+ */
+static void *
+win_kernel_malloc(size_t size, int32_t ty, int flags)
+{
+	void* mem = ExAllocatePoolWithTag(NonPagedPool, size, ty);
+
+	if (mem != NULL) { // && flags * M_ZERO
+		RtlZeroMemory(mem, size);
+	}
+	return mem;
+}
+
+static inline PVOID
+win_reallocate(void* src, size_t size, size_t oldSize)
+{
+	//DbgPrint("Netmap.sys: win_reallocate(%p, %i, %i)", src, size, oldSize);
+	PVOID newBuff = NULL; /* default return value */
+
+	if (src == NULL) { /* if size > 0, this is a malloc */
+		if (size > 0) {
+			newBuff = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
+		}
+	} else if (size == 0) {
+		free(src, M_DEVBUF);
+	} else if (size == oldSize) {
+		newBuff = src;
+	} else { /* realloc -- XXX later maybe ignore shrink ? */
+		newBuff = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
+		if (newBuff != NULL) {
+			if (size <= oldSize) { /* shrink, just copy back part of the data */
+				RtlCopyMemory(newBuff, src, size);
+			} else {
+				RtlCopyMemory(newBuff, src, oldSize);
+			}
+		}
+	}
+	return newBuff;
+}
+
+/*
+ * mbuf allocation and free.
+ * XXX These are used in the generic code and must be verified.
+ */
+#if 0
 static void
 netmap_default_mbuf_destructor(struct mbuf *m)
 {
 	if (m->pkt != NULL) {
-		ExFreePoolWithTag(m->pkt, 'pBUF');
+		free(m->pkt, M_DEVBUF);
 		m->pkt = NULL;
 	}
-	ExFreePoolWithTag(m, 'MBUF');
+	free(m, M_DEVBUF);
 	m = NULL;
 }
+#endif
 
-static struct mbuf * 
-netmap_get_mbuf(uint32_t buf_size)
-{
-	struct mbuf *m;
-	m = ExAllocatePoolWithTag(NonPagedPool, buf_size, 'MBUF');
-	if (m) {
-		RtlZeroMemory(m, buf_size);
-		m->netmap_default_mbuf_destructor = &netmap_default_mbuf_destructor;
-		//ND(5, "create m %p refcnt %d", m, GET_MBUF_REFCNT(m));
-	}
-	return m;
-}
+struct mbuf *win_make_mbuf(struct net_device *, uint32_t, const char *);
+
+#define netmap_get_mbuf(_l)	win_make_mbuf(NULL, _l, NULL)
+	// XXX do we also need the netmap_default_mbuf_destructor ?
+
 
 static inline void 
 win32_ndis_packet_freem(struct mbuf* m)
 {
 	if (m != NULL) {
 		if (m->pkt != NULL) {
-			ExFreePoolWithTag(m->pkt, 'pubm');
+			free(m->pkt, M_DEVBUF);
 			m->pkt = NULL;
 		}
-		ExFreePoolWithTag(m, 'fubm');
-		m = NULL;
+		free(m, M_DEVBUF);
 	}	
 }
 
@@ -436,61 +498,6 @@ int send_up_to_stack(struct ifnet *ifp, struct mbuf *m);
 #define NM_ATOMIC_READ_AND_CLEAR(p)     InterlockedExchange(p, 0)
 #define NM_ATOMIC_READ(p)               InterlockedExchangeAdd(p, 0)
 
-//--------------------------------------------------------
-/*********************************************************
-*                   KERNEL MEMORY ALLOCATION	         *  
-**********************************************************/
-
-int win32_devfs_get_cdevpriv(struct netmap_priv_d **mem, PIO_STACK_LOCATION td);
-static inline int ilog2(uint64_t n);
-static inline int roundup_pow_of_two(int sz);
-char* win_contigMalloc(int sz, int page_size);
-void win_ContigFree(void* virtualAddress);
-
-#define bcopy(_s, _d, _l)			RtlCopyMemory(_d, _s, _l)
-#define bzero(addr, size)			RtlZeroMemory(addr, size)
-#define malloc(size, structType, flags)		win_kernel_malloc(size)
-#define free(addr, structType)			ExFreePoolWithTag(addr, RINGS_POOL_TAG)
-#define realloc(src, len, old_len)		win_reallocate(src, len, old_len)
-
-static void *
-win_kernel_malloc(size_t size)
-{
-	void* mem = ExAllocatePoolWithTag(NonPagedPool, size, RINGS_POOL_TAG);
-
-	if (mem != NULL) {
-		RtlZeroMemory(mem, size);
-	}
-	return mem;
-}
-
-static inline PVOID
-win_reallocate(void* src, size_t size, size_t oldSize)
-{
-	//DbgPrint("Netmap.sys: win_reallocate(%p, %i, %i)", src, size, oldSize);
-	PVOID newBuff = NULL; /* default return value */
-
-	if (src == NULL) { /* if size > 0, this is a malloc */
-		if (size > 0) {
-			newBuff = win_kernel_malloc(size);
-		}
-	} else if (size == 0) {
-		ExFreePoolWithTag(src, PIPES_POOL_TAG);
-	} else if (size == oldSize) {
-		newBuff = src;
-	} else { /* realloc -- XXX later maybe ignore shrink ? */
-		newBuff = ExAllocatePoolWithTag(NonPagedPool, size, PIPES_POOL_TAG);
-		if (newBuff != NULL) {
-			if (size <= oldSize) { /* shrink, just copy back part of the data */
-				RtlCopyMemory(newBuff, src, size);
-			} else {
-				RtlCopyMemory(newBuff, src, oldSize);
-				RtlZeroMemory((char *)newBuff + oldSize, size - oldSize);
-			}
-		}
-	}
-	return newBuff;
-}
 
 #define make_dev_credf(_a, _b, ...)	((void *)1)	// non-null
 
