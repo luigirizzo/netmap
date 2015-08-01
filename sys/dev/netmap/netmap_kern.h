@@ -51,9 +51,13 @@
 #if defined(CONFIG_NETMAP_V1000)
 #define WITH_V1000
 #endif
-#if defined(CONFIG_NETMAP_PTNETMAP)
-#define WITH_PTNETMAP_HOST
+#if defined(CONFIG_NETMAP_PTNETMAP) || defined(CONFIG_NETMAP_PTNETMAP_GUEST)
 #define WITH_PTNETMAP_GUEST
+#pragma "guest"
+#endif
+#if defined(CONFIG_NETMAP_PTNETMAP) || defined(CONFIG_NETMAP_PTNETMAP_HOST)
+#define WITH_PTNETMAP_HOST
+#pragma "host"
 #endif
 
 #else /* not linux */
