@@ -899,6 +899,8 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 }
 
 /******************** kthread wrapper ****************/
+#include <sys/sysproto.h>
+
 struct nm_kthread_ctx {
 	struct thread *user_td;		/* thread user-space (kthread creator) to send ioctl */
 	struct ioctl_args irq_ioctl;	/* notification to guest (interrupt) */
@@ -994,7 +996,11 @@ static int
 nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kthread_cfg *cfg)
 {
 	/* send irq through ioctl to bhyve (vmm.ko) */
-	nmk->worker_ctx.irq_ioctl = cfg->ioctl;
+	if (cfg->ring.irqfd) {
+		nmk->worker_ctx.irq_ioctl.fd = cfg->ring.irqfd;
+		nmk->worker_ctx.irq_ioctl.com = cfg->ioctl.com;
+		nmk->worker_ctx.irq_ioctl.data = (caddr_t)cfg->ioctl.data;
+	}
 	/* ring.ioeventfd contains the chan where do tsleep to wait events */
 	if (cfg->ring.ioeventfd) {
 		nmk->worker_ctx.ioevent_file = (void *)cfg->ring.ioeventfd;
