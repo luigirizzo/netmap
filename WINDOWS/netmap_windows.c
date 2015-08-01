@@ -85,6 +85,8 @@ ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     NMG_LOCK();
     priv = irpSp->FileObject->FsContext;
     if (priv == NULL) {
+	// XXX watch out, this is freed with a different tag.
+	// we just use M_DEVBUF for other OSes
 	priv = ExAllocatePoolWithTag(NonPagedPool,
 		    sizeof(struct netmap_priv_d), PRIV_MEMORY_POOL_TAG);
 	if (priv == NULL) {
