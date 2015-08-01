@@ -363,11 +363,14 @@ static void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
 	//hrtimer_cancel(&mit->mit_timer);
 }
 
+
+/*
+ * mbuf allocation and free
+ */
 static void
 netmap_default_mbuf_destructor(struct mbuf *m)
 {
-	if (m->pkt != NULL)
-	{
+	if (m->pkt != NULL) {
 		ExFreePoolWithTag(m->pkt, 'pBUF');
 		m->pkt = NULL;
 	}
@@ -391,22 +394,20 @@ netmap_get_mbuf(uint32_t buf_size)
 static inline void 
 win32_ndis_packet_freem(struct mbuf* m)
 {
-	if (m->pkt != NULL)
-	{
-		ExFreePoolWithTag(m->pkt, 'pubm');
-		m->pkt = NULL;
-	}
-	if (m != NULL)
-	{
+	if (m != NULL) {
+		if (m->pkt != NULL) {
+			ExFreePoolWithTag(m->pkt, 'pubm');
+			m->pkt = NULL;
+		}
 		ExFreePoolWithTag(m, 'fubm');
 		m = NULL;
 	}	
 }
 
-#define MBUF_LEN(m)											m->m_len
+#define MBUF_LEN(m)						((m)->m_len)
 #define m_devget(slot_addr, slot_len, offset, dev, fn)		NULL
-#define m_freem(mbuf)										win32_ndis_packet_freem(mbuf);
-#define m_copydata(source, offset, length, dst)				RtlCopyMemory(dst, source->pkt, length)
+#define m_freem(mbuf)						win32_ndis_packet_freem(mbuf);
+#define m_copydata(source, offset, length, dst)			RtlCopyMemory(dst, source->pkt, length)
 
 
 #define le64toh(x)		_byteswap_uint64(x)	//defined in intrin.h
@@ -414,7 +415,7 @@ win32_ndis_packet_freem(struct mbuf* m)
 struct net_device* ifunit_ref(const char *name);
 void if_rele(struct net_device *ifp);
 
-extern int send_up_to_stack(struct ifnet *ifp, struct mbuf *m);
+int send_up_to_stack(struct ifnet *ifp, struct mbuf *m);
 
 #define WNA(_ifp)		_ifp->na
 #define NM_BNS_GET(b)	do { (void)(b); } while (0)
@@ -434,6 +435,7 @@ extern int send_up_to_stack(struct ifnet *ifp, struct mbuf *m);
 #define NM_ATOMIC_INC(p)                InterlockedIncrement(p)
 #define NM_ATOMIC_READ_AND_CLEAR(p)     InterlockedExchange(p, 0)
 #define NM_ATOMIC_READ(p)               InterlockedExchangeAdd(p, 0)
+
 //--------------------------------------------------------
 /*********************************************************
 *                   KERNEL MEMORY ALLOCATION	         *  
@@ -445,84 +447,64 @@ static inline int roundup_pow_of_two(int sz);
 char* win_contigMalloc(int sz, int page_size);
 void win_ContigFree(void* virtualAddress);
 
-#define bcopy(_s, _d, _l)					RtlCopyMemory(_d, _s, _l)
-#define bzero(addr, size)					RtlZeroMemory(addr, size)
+#define bcopy(_s, _d, _l)			RtlCopyMemory(_d, _s, _l)
+#define bzero(addr, size)			RtlZeroMemory(addr, size)
 #define malloc(size, structType, flags)		win_kernel_malloc(size)
-#define free(addr, structType)				ExFreePoolWithTag(addr, RINGS_POOL_TAG)
-#define realloc(src, len, old_len)			win_reallocate(src, len, old_len)
+#define free(addr, structType)			ExFreePoolWithTag(addr, RINGS_POOL_TAG)
+#define realloc(src, len, old_len)		win_reallocate(src, len, old_len)
 
-static inline PVOID win_reallocate(void* src, size_t size, size_t oldSize)
+static void *
+win_kernel_malloc(size_t size)
+{
+	void* mem = ExAllocatePoolWithTag(NonPagedPool, size, RINGS_POOL_TAG);
+
+	if (mem != NULL) {
+		RtlZeroMemory(mem, size);
+	}
+	return mem;
+}
+
+static inline PVOID
+win_reallocate(void* src, size_t size, size_t oldSize)
 {
 	//DbgPrint("Netmap.sys: win_reallocate(%p, %i, %i)", src, size, oldSize);
-	PVOID newBuff = NULL;
-	if (src == NULL)
-	{
-		if (size == 0)
-		{
-			return NULL;
+	PVOID newBuff = NULL; /* default return value */
+
+	if (src == NULL) { /* if size > 0, this is a malloc */
+		if (size > 0) {
+			newBuff = win_kernel_malloc(size);
 		}
-		else{
-			newBuff = ExAllocatePoolWithTag(NonPagedPool, size, PIPES_POOL_TAG);
-			if (newBuff == NULL)
-			{
-				return NULL;
-			}
-			RtlZeroMemory(newBuff, size);
-		}
-	}
-	else{
-		if (size == 0)
-		{
-			ExFreePoolWithTag(src, PIPES_POOL_TAG);
-		}
-		else{
-			if (size != oldSize)
-			{
-				newBuff = ExAllocatePoolWithTag(NonPagedPool, size, PIPES_POOL_TAG);
-				if (newBuff == NULL)
-				{
-					return NULL;
-				}
-				RtlZeroMemory(newBuff, size);
-				if (size > oldSize)
-				{
-					RtlCopyMemory(newBuff, src, oldSize);
-				}
-				else
-				{
-					RtlCopyMemory(newBuff, src, size);
-				}
-				ExFreePoolWithTag(src, PIPES_POOL_TAG);
-			}
-			else
-			{
-				newBuff = src;
+	} else if (size == 0) {
+		ExFreePoolWithTag(src, PIPES_POOL_TAG);
+	} else if (size == oldSize) {
+		newBuff = src;
+	} else { /* realloc -- XXX later maybe ignore shrink ? */
+		newBuff = ExAllocatePoolWithTag(NonPagedPool, size, PIPES_POOL_TAG);
+		if (newBuff != NULL) {
+			if (size <= oldSize) { /* shrink, just copy back part of the data */
+				RtlCopyMemory(newBuff, src, size);
+			} else {
+				RtlCopyMemory(newBuff, src, oldSize);
+				RtlZeroMemory((char *)newBuff + oldSize, size - oldSize);
 			}
 		}
 	}
 	return newBuff;
 }
 
-static void* win_kernel_malloc(size_t size)
-{
-	void* mem = ExAllocatePoolWithTag(NonPagedPool, size, RINGS_POOL_TAG);
-	if (mem != NULL)
-	{
-		RtlZeroMemory(mem, size);
-	}
-	return mem;
-}
+#define make_dev_credf(_a, _b, ...)	((void *)1)	// non-null
 
-#define contigmalloc(sz, ty, flags, a, b, pgsz, c)  win_contigMalloc(sz,pgsz)
-#define contigfree(va, sz, ty)						win_ContigFree(va)
+#define contigmalloc(sz, ty, flags, a, b, pgsz, c)	win_contigMalloc(sz,pgsz)
+#define contigfree(va, sz, ty)				win_ContigFree(va)
 
-#define vtophys										MmGetPhysicalAddress
-#define devfs_get_cdevpriv(mem)						win32_devfs_get_cdevpriv(mem, td)
+#define vtophys						MmGetPhysicalAddress
+#define devfs_get_cdevpriv(mem)				win32_devfs_get_cdevpriv(mem, td)
 #define MALLOC_DEFINE(a,b,c)
 //--------------------------------------------------------
 #endif //IS_USERSPACE
+
 /*********************************************************
-* SYSCTL emulation (copied from dummynet\glue.h)		 *
+* SYSCTL emulation (copied from dummynet/glue.h)		 *
 **********************************************************/
 int do_netmap_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len);
 int do_netmap_get_ctl(struct sock *sk, int cmd, void __user *user, int *len);

@@ -187,7 +187,7 @@ nm_monitor_alloc(struct netmap_kring *kring, u_int n)
 		/* we already have more entries that requested */
 		return 0;
 	
-        len = sizeof(struct netmap_kring *) * n;	
+        len = sizeof(struct netmap_kring *) * n;
 #ifndef _WIN32
 		nm = realloc(kring->monitors, len, M_DEVBUF, M_NOWAIT | M_ZERO);
 #else

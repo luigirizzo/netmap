@@ -510,8 +510,7 @@ int netmap_fwd = 0;	/* force transparent mode */
  * netmap_admode selects the netmap mode to use.
  * Invalid values are reset to NETMAP_ADMODE_BEST
  */
-enum {
-	NETMAP_ADMODE_BEST = 0,	/* use native, fallback to generic */
+enum {	NETMAP_ADMODE_BEST = 0,	/* use native, fallback to generic */
 	NETMAP_ADMODE_NATIVE,	/* either native or none */
 	NETMAP_ADMODE_GENERIC,	/* force generic */
 	NETMAP_ADMODE_LAST };
@@ -2497,17 +2496,8 @@ flush_tx:
 			}
 		}
 		if (want_tx && retry_tx && !is_kevent) {
-#ifndef _WIN32
 			OS_selrecord(td, check_all_tx ?
 			    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
-#else
-			if (check_all_tx)
-			{
-				OS_selrecord(td, &na->si[NR_TX]);
-			}else{
-				OS_selrecord(td, &na->tx_rings[priv->np_qfirst[NR_TX]].si);
-			}
-#endif
 			retry_tx = 0;
 			goto flush_tx;
 		}
@@ -2582,19 +2572,8 @@ do_retry_rx:
 		}
 
 		if (retry_rx && !is_kevent)
-#ifndef _WIN32
 			OS_selrecord(td, check_all_rx ?
 			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
-#else
-		{
-			if (check_all_rx)
-			{
-				OS_selrecord(td, &na->si[NR_RX]);
-			}else{
-				OS_selrecord(td, &na->rx_rings[priv->np_qfirst[NR_RX]].si);
-			}
-		}
-#endif
 		if (send_down > 0 || retry_rx) {
 			retry_rx = 0;
 			if (send_down)
@@ -3177,7 +3156,6 @@ netmap_init(void)
 	error = netmap_mem_init();
 	if (error != 0)
 		goto fail;
-#ifndef _WIN32
 	/*
 	 * MAKEDEV_ETERNAL_KLD avoids an expensive check on syscalls
 	 * when the module is compiled in.
@@ -3188,7 +3166,7 @@ netmap_init(void)
 			      "netmap");
 	if (!netmap_dev)
 		goto fail;
-#endif
+
 	error = netmap_init_bridges();
 	if (error)
 		goto fail;
