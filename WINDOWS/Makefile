@@ -26,10 +26,12 @@ SRCS	+= netmap_offloadings.c
 SRCS	+= netmap_pipe.c
 SRCS	+= netmap_monitor.c
 SRCS	+= opt_inet.h opt_inet6.h
+MSBUILD	="/cygdrive/c/Program Files (x86)/MSBuild/12.0/Bin/MSBuild.exe"
 
 _not_working:
 	@echo "--- the makefile is not working yet, use msbuild ---"
-	(cd VsSolution; sh go)
+	rm -rf VsSolution/Output
+	(cd VsSolution; $(MSBUILD) /t:Build /p:Configuration="Win8.1 Release";Platform=x64 )
 
 clean:
 	rm -rf VsSolution/Output
