@@ -705,7 +705,7 @@ lem_ptnetmap_features(struct adapter *adapter)
 	E1000_WRITE_REG(&adapter->hw, E1000_PTFEAT, NET_PTN_FEATURES_BASE);
 	/* get back the acknowledged features */
 	features = E1000_READ_REG(&adapter->hw, E1000_PTFEAT);
-	device_printf(adapter->dev, "netmap passthrough: %s\n",
+	device_printf(adapter->dev, "ptnetmap support: %s\n",
 			(features & NET_PTN_FEATURES_BASE) ? "base" :
 			"none");
 	return features;
@@ -716,10 +716,10 @@ static struct netmap_pt_guest_ops lem_ptnetmap_ops = {
 };
 #elif defined (NIC_PTNETMAP)
 #warning "if_lem supports ptnetmap but netmap does not support it"
-#warning "(configure netmap with passthrough support)"
+#warning "(configure netmap with ptnetmap support)"
 #elif defined (WITH_PTNETMAP_GUEST)
 #warning "netmap supports ptnetmap but e1000 does not support it"
-#warning "(configure if_lem with passthrough support)"
+#warning "(configure if_lem with ptnetmap support)"
 #endif /* NIC_PTNETMAP && WITH_PTNETMAP_GUEST */
 
 static void

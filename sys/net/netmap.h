@@ -523,8 +523,9 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NR_ZCOPY_MON	0x400
 /* request exclusive access to the selected rings */
 #define NR_EXCLUSIVE	0x800
-/* request netmap passthrough full support */
-#define NR_PASSTHROUGH_HOST	0x1000
+/* request ptnetmap host support */
+#define NR_PASSTHROUGH_HOST	NR_PTNETMAP_HOST /* deprecated */
+#define NR_PTNETMAP_HOST	0x1000
 
 /*
  * FreeBSD uses the size value embedded in the _IOWR to determine

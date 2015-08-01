@@ -750,7 +750,7 @@ static int nm_pt_host_notify_tx(struct netmap_kring *, int);
 static int nm_pt_host_notify_rx(struct netmap_kring *, int);
 
 
-/* Switch adapter in passthrough mode and create kthreads */
+/* Switch adapter in ptnetmap mode and create kthreads */
 static int
 ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
 {
@@ -759,7 +759,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
 
     /* check if already in pt mode */
     if (pth_na->ptn_state) {
-        D("ERROR adapter already in netmap passthrough mode");
+        D("ERROR adapter already in netmap ptnetmap mode");
         return EFAULT;
     }
 
@@ -884,8 +884,8 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
 
     DBG(D("name: %s", name);)
 
-    if (!nm_passthrough_host_on(na)) {
-        D("ERROR interface not support passthrough mode. na = %p", na);
+    if (!nm_ptnetmap_host_on(na)) {
+        D("ERROR interface not support ptnetmap mode. na = %p", na);
         error = ENXIO;
         goto done;
     }
@@ -923,7 +923,7 @@ done:
     return error;
 }
 
-/* nm_notify callbacks for passthrough */
+/* nm_notify callbacks for ptnetmap */
 static int
 nm_pt_host_notify_tx(struct netmap_kring *kring, int flags)
 {
@@ -973,7 +973,7 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 }
 
 //XXX maybe is unnecessary redefine the *xsync
-/* nm_txsync callback for passthrough */
+/* nm_txsync callback for ptnetmap */
 static int
 nm_pt_host_txsync(struct netmap_kring *kring, int flags)
 {
@@ -989,7 +989,7 @@ nm_pt_host_txsync(struct netmap_kring *kring, int flags)
     return n;
 }
 
-/* nm_rxsync callback for passthrough */
+/* nm_rxsync callback for ptnetmap */
 static int
 nm_pt_host_rxsync(struct netmap_kring *kring, int flags)
 {
@@ -1030,7 +1030,7 @@ nm_pt_host_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
     return error;
 }
 
-/* nm_krings_create callback for passthrough */
+/* nm_krings_create callback for ptnetmap */
 static int
 nm_pt_host_krings_create(struct netmap_adapter *na)
 {
@@ -1054,7 +1054,7 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
     return 0;
 }
 
-/* nm_krings_delete callback for passthrough */
+/* nm_krings_delete callback for ptnetmap */
 static void
 nm_pt_host_krings_delete(struct netmap_adapter *na)
 {
@@ -1080,8 +1080,7 @@ nm_pt_host_register(struct netmap_adapter *na, int onoff)
     DBG(D("%s onoff %d", pth_na->up.name, onoff);)
 
     if (onoff) {
-        /* netmap_do_regif has been called on the
-         * passthrough na.
+        /* netmap_do_regif has been called on the ptnetmap na.
          * We need to pass the information about the
          * memory allocator to the parent before
          * putting it in netmap mode
@@ -1096,10 +1095,10 @@ nm_pt_host_register(struct netmap_adapter *na, int onoff)
 
 
     if (onoff) {
-        na->na_flags |= NAF_NETMAP_ON | NAF_PASSTHROUGH_HOST;
+        na->na_flags |= NAF_NETMAP_ON | NAF_PTNETMAP_HOST;
     } else {
         ptnetmap_delete(pth_na);
-        na->na_flags &= ~(NAF_NETMAP_ON | NAF_PASSTHROUGH_HOST);
+        na->na_flags &= ~(NAF_NETMAP_ON | NAF_PTNETMAP_HOST);
     }
 
     return 0;
@@ -1121,7 +1120,7 @@ nm_pt_host_dtor(struct netmap_adapter *na)
     pth_na->parent = NULL;
 }
 
-/* check if nmr is a request for a passthrough adapter that we can satisfy */
+/* check if nmr is a request for a ptnetmap adapter that we can satisfy */
 int
 netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 {
@@ -1130,9 +1129,9 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     struct netmap_pt_host_adapter *pth_na;
     int error;
 
-    /* Check if it is a request for a passthrough adapter */
-    if ((nmr->nr_flags & (NR_PASSTHROUGH_HOST)) == 0) {
-        D("not a passthrough");
+    /* Check if it is a request for a ptnetmap adapter */
+    if ((nmr->nr_flags & (NR_PTNETMAP_HOST)) == 0) {
+        D("not a ptnetmap");
         return 0;
     }
 
@@ -1143,11 +1142,11 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     }
 
     /* first, try to find the adapter that we want to passthrough
-     * We use the same nmr, after we have turned off the passthrough flag.
+     * We use the same nmr, after we have turned off the ptnetmap flag.
      * In this way we can potentially passthrough everything netmap understands.
      */
     memcpy(&parent_nmr, nmr, sizeof(parent_nmr));
-    parent_nmr.nr_flags &= ~(NR_PASSTHROUGH_HOST);
+    parent_nmr.nr_flags &= ~(NR_PTNETMAP_HOST);
     error = netmap_get_na(&parent_nmr, &parent, create);
     if (error) {
         D("parent lookup failed: %d", error);
@@ -1157,7 +1156,7 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
     /* make sure the interface is not already in use */
     if (NETMAP_OWNED_BY_ANY(parent)) {
-        D("NIC %s busy, cannot passthrough", parent->name);
+        D("NIC %s busy, cannot ptnetmap", parent->name);
         error = EBUSY;
         goto put_out;
     }
@@ -1198,13 +1197,13 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     nmr->nr_tx_slots = pth_na->up.num_tx_desc;
     nmr->nr_rx_slots = pth_na->up.num_rx_desc;
 
-    /* set parent busy, because attached for passthrough */
+    /* set parent busy, because attached for ptnetmap */
     parent->na_flags |= NAF_BUSY;
 
     strncpy(pth_na->up.name, parent->name, sizeof(pth_na->up.name));
     strcat(pth_na->up.name, "-PTN");
 
-    DBG(D("%s passthrough request DONE", pth_na->up.name);)
+    DBG(D("%s ptnetmap request DONE", pth_na->up.name);)
 
     return 0;
 

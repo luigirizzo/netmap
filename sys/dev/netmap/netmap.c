@@ -1380,7 +1380,7 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	 *  !0    !NULL		impossible
 	 */
 
-	/* try to see if this is a passthrough port */
+	/* try to see if this is a ptnetmap port */
 	error = netmap_get_pt_host_na(nmr, na, create);
 	if (error || *na != NULL)
 		return error;

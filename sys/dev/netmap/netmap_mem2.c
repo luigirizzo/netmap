@@ -1723,8 +1723,7 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 };
 
 #ifdef WITH_PTNETMAP_GUEST
-/* passthrough allocator */
-
+/* ptnetmap allocator */
 struct netmap_mem_ptg {
 	struct netmap_mem_d up;
 
@@ -2025,7 +2024,7 @@ netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 	struct netmap_mem_d *scan = netmap_last_mem_d;
 
 	do {
-		/* check passthrough allocator */
+		/* check ptnetmap allocator */
 		if (scan->ops->nmd_deref == netmap_mem_pt_guest_deref &&
 			((struct netmap_mem_ptg *)(scan))->nm_host_id == host_id) {
 			mem = scan;

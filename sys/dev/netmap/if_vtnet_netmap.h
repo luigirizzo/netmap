@@ -745,7 +745,7 @@ vtnet_ptnetmap_features(struct SOFTC_T *sc)
 	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_PTFEAT, NET_PTN_FEATURES_BASE);
 	/* get back the acknowledged features */
 	features = vtnet_ptnetmap_ioread4(dev, PTNETMAP_VIRTIO_IO_PTFEAT);
-	D("netmap passthrough: %s\n",
+	D("ptnetmap support: %s\n",
 			(features & NET_PTN_FEATURES_BASE) ? "base" :
 			"none");
 	return features;

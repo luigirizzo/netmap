@@ -144,7 +144,7 @@ struct paravirt_csb {
     uint32_t vnet_ring_high;	/* Vnet ring physical address high. */
     uint32_t vnet_ring_low;	/* Vnet ring physical address low. */
 
-    /* passthrough */
+    /* ptnetmap */
     uint32_t nifp_offset;          /* offset of the netmap_if in the shared memory */
     /* uint16_t host_mem_id; */
     uint16_t num_tx_rings;
@@ -162,7 +162,7 @@ struct paravirt_csb {
 #define NET_PTN_FEATURES_BASE            1
 #define NET_PTN_FEATURES_FULL            2
 
-/* passthrough commands */
+/* ptnetmap commands */
 #define NET_PARAVIRT_PTCTL_CONFIG	1
 #define NET_PARAVIRT_PTCTL_FINALIZE	2
 #define NET_PARAVIRT_PTCTL_IFNEW	3
@@ -226,11 +226,11 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 
 /* ptnetmap virtio register */
 /* 32 bit r/w */
-#define PTNETMAP_VIRTIO_IO_PTFEAT       0 /* passthrough features */
+#define PTNETMAP_VIRTIO_IO_PTFEAT       0 /* ptnetmap features */
 /* 32 bit w/o */
-#define PTNETMAP_VIRTIO_IO_PTCTL        4 /* passthrough control */
+#define PTNETMAP_VIRTIO_IO_PTCTL        4 /* ptnetmap control */
 /* 32 bit r/o */
-#define PTNETMAP_VIRTIO_IO_PTSTS        8 /* passthrough status */
+#define PTNETMAP_VIRTIO_IO_PTSTS        8 /* ptnetmap status */
 /* 32 bit w/o */
 #define PTNETMAP_VIRTIO_IO_CSBBAH       12 /* CSB Base Address High */
 /* 32 bit w/o */

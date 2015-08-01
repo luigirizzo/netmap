@@ -564,7 +564,7 @@ e1000_ptnetmap_features(struct SOFTC_T *adapter)
 	ew32(PTFEAT, NET_PTN_FEATURES_BASE); /* we are cheating for now */
 	/* get back the acknowledged features */
 	features = er32(PTFEAT);
-	pr_info("%s netmap passthrough: %s\n", netdev->name,
+	pr_info("%s ptnetmap support: %s\n", netdev->name,
 			(features & NET_PTN_FEATURES_BASE) ? "base" :
 			"none");
 	return features;
@@ -575,10 +575,10 @@ static struct netmap_pt_guest_ops e1000_ptnetmap_ops = {
 };
 #elif defined (CONFIG_E1000_NETMAP_PT)
 #warning "e1000 supports ptnetmap but netmap does not support it"
-#warning "(configure netmap with passthrough support)"
+#warning "(configure netmap with ptnetmap support)"
 #elif defined (WITH_PTNETMAP_GUEST)
 #warning "netmap supports ptnetmap but e1000 does not support it"
-#warning "(configure e1000 with passthrough support)"
+#warning "(configure e1000 with ptnetmap support)"
 #endif /* CONFIG_E1000_NETMAP_PT && WITH_PTNETMAP_GUEST */
 
 static void

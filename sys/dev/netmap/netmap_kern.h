@@ -51,7 +51,7 @@
 #if defined(CONFIG_NETMAP_V1000)
 #define WITH_V1000
 #endif
-#if defined(CONFIG_NETMAP_PASSTHROUGH)
+#if defined(CONFIG_NETMAP_PTNETMAP)
 #define WITH_PTNETMAP_HOST
 #define WITH_PTNETMAP_GUEST
 #endif
@@ -519,7 +519,7 @@ struct netmap_adapter {
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
-#define NAF_PASSTHROUGH_HOST 256/* the adapter supports passthrough in the host */
+#define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
 				  */
@@ -1718,7 +1718,7 @@ void nm_kthread_set_affinity(struct nm_kthread *, int);
 
 #ifdef WITH_PTNETMAP_HOST
 /*
- * netmap adapter for host passthrough ports
+ * netmap adapter for host ptnetmap ports
  */
 struct netmap_pt_host_adapter {
 	struct netmap_adapter up;
@@ -1732,15 +1732,15 @@ struct netmap_pt_host_adapter {
 int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
 static inline int
-nm_passthrough_host_on(struct netmap_adapter *na)
+nm_ptnetmap_host_on(struct netmap_adapter *na)
 {
-	return na && na->na_flags & NAF_PASSTHROUGH_HOST;
+	return na && na->na_flags & NAF_PTNETMAP_HOST;
 }
 #else /* !WITH_PTNETMAP_HOST */
 #define netmap_get_pt_host_na(nmr, _2, _3) \
-	((nmr)->nr_flags & (NR_PASSTHROUGH_HOST) ? EOPNOTSUPP : 0)
+	((nmr)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
 #define ptnetmap_ctl(_1, _2)   EINVAL
-#define nm_passthrough_host_on(_1)   EINVAL
+#define nm_ptnetmap_host_on(_1)   EINVAL
 #endif /* WITH_PTNETMAP_HOST */
 
 #ifdef WITH_PTNETMAP_GUEST
@@ -1749,7 +1749,7 @@ struct netmap_pt_guest_ops {
 	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
 };
 /*
- * netmap adapter for guest passthrough ports
+ * netmap adapter for guest ptnetmap ports
  */
 struct netmap_pt_guest_adapter {
 	struct netmap_hw_adapter hwup;

@@ -891,7 +891,7 @@ virtio_ptnetmap_features(struct SOFTC_T *vi)
 	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_PTFEAT, NET_PTN_FEATURES_BASE);
 	/* get back the acknowledged features */
 	features = virtio_ptnetmap_ioread4(vdev, PTNETMAP_VIRTIO_IO_PTFEAT);
-	pr_info("netmap passthrough: %s\n",
+	pr_info("ptnetmap support: %s\n",
 			(features & NET_PTN_FEATURES_BASE) ? "base" :
 			"none");
 	return features;
