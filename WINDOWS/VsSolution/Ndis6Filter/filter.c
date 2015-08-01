@@ -1343,7 +1343,7 @@ Return Value:
 	    { 
 		PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
 		PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
-#if 1
+#if 0  //raises an assertion fault after some time (not sure why)
 		PVOID pDataBuffer = NULL;
 		int  ulDataLength = 0;
 		NdisQueryMdl(pCurrMdl, (PVOID *)&pDataBuffer, &ulDataLength, NormalPagePriority);
