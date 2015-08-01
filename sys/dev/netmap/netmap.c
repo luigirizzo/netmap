@@ -492,8 +492,6 @@ ports attached to the switch)
 #include <dev/netmap/netmap_mem2.h>
 
 
-MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
-
 /* user-controlled variables */
 int netmap_verbose;
 
