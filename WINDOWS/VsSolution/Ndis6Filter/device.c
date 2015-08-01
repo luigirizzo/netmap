@@ -482,8 +482,10 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 
     // XXX not sure if we can free the buffer with regular returns.
     // if so, what is the buffer for ?
+#if 0
     if (buffer != NULL) {
 	ExFreePoolWithTag(buffer, 'NDIS');
     }
+#endif
     return status;
 }

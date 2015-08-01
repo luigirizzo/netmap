@@ -1343,7 +1343,14 @@ Return Value:
 	    { 
 		PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
 		PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
-
+#if 1
+		PVOID pDataBuffer = NULL;
+		int  ulDataLength = 0;
+		NdisQueryMdl(pCurrMdl, (PVOID *)&pDataBuffer, &ulDataLength, NormalPagePriority);
+		if (pDataBuffer != NULL) {
+			ExFreePoolWithTag(pDataBuffer, 'NDIS');
+		}
+#endif
 		NdisFreeMdl(pCurrMdl);
 		CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer); 
 	    }
