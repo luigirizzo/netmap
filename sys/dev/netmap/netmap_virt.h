@@ -312,10 +312,10 @@ ptnetmap_read_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 
 /* Host: Read kring pointers (head, cur, sync_flags) from CSB */
 static inline void
-ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr, uint32_t *g_head,
-        uint32_t *g_cur, uint32_t *g_flags, uint32_t num_slots)
+ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr, struct netmap_ring *g_ring,
+        uint32_t num_slots)
 {
-    uint32_t old_head = *g_head, old_cur = *g_cur;
+    uint32_t old_head = g_ring->head, old_cur = g_ring->cur;
     uint32_t d, inc_h, inc_c;
 
     //mb(); /* Force memory complete before read CSB */
@@ -336,22 +336,22 @@ ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr, uint32_t *g_head,
      * This approach ensures that every head that we read is
      * associated with the correct cur. In this way head can not exceed cur.
      */
-    CSB_READ(ptr, head, *g_head);
+    CSB_READ(ptr, head, g_ring->head);
     mb();
-    CSB_READ(ptr, cur, *g_cur);
-    CSB_READ(ptr, sync_flags, *g_flags);
+    CSB_READ(ptr, cur, g_ring->cur);
+    CSB_READ(ptr, sync_flags, g_ring->flags);
     /*
      * The previous barrier does not avoid to read an update cur and an old
      * head. For this reason, we have to check that the new cur not overtaking head.
      */
     d = ptn_sub(old_cur, old_head, num_slots);     /* previous distance */
-    inc_c = ptn_sub(*g_cur, old_cur, num_slots);   /* increase of cur */
-    inc_h = ptn_sub(*g_head, old_head, num_slots); /* increase of head */
+    inc_c = ptn_sub(g_ring->cur, old_cur, num_slots);   /* increase of cur */
+    inc_h = ptn_sub(g_ring->head, old_head, num_slots); /* increase of head */
 
     if (unlikely(inc_c > num_slots - d + inc_h)) { /* cur overtakes head */
         ND(1,"ERROR cur overtakes head - old_cur: %u cur: %u old_head: %u head: %u",
-                old_cur, *g_cur, old_head, *g_head);
-        *g_cur = nm_prev(*g_head, num_slots - 1);
+                old_cur, g_ring->cur, old_head, g_ring->head);
+        g_ring->cur = nm_prev(g_ring->head, num_slots - 1);
         //*g_cur = *g_head;
     }
 }

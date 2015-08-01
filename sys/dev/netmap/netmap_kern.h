@@ -1035,14 +1035,14 @@ nm_clear_native_flags(struct netmap_adapter *na)
  * validates parameters in the ring/kring, returns a value for head
  * If any error, returns ring_size to force a reinit.
  */
-uint32_t nm_txsync_prologue(struct netmap_kring *, uint32_t, uint32_t, uint32_t *);
+uint32_t nm_txsync_prologue(struct netmap_kring *, struct netmap_ring *);
 
 
 /*
  * validates parameters in the ring/kring, returns a value for head
  * If any error, returns ring_size lim to force a reinit.
  */
-uint32_t nm_rxsync_prologue(struct netmap_kring *, uint32_t, uint32_t, uint32_t *);
+uint32_t nm_rxsync_prologue(struct netmap_kring *, struct netmap_ring *);
 
 
 /* check/fix address and len in tx rings */
