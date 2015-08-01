@@ -27,8 +27,13 @@
 #define _WIN_GLUE_H_
 
 #ifdef __CYGWIN__
-#define _WIN32
-#endif //__CYGWIN__
+/* we have __attribute__
+#define _WIN32	/* we use _WIN32 throughout the code */
+#else /* some MSC pragmas etc. */
+
+#define __attribute__(x) __declspec(align(64))
+// #define __aligned__	align
+
 //Disabling unuseful warnings
 #pragma warning(disable:4018)	//wrong corrispondence between signed and unsigned
 #pragma warning(disable:4047)	//!= <type> differs from <2nd type> in the levels of indirect reference
@@ -49,6 +54,8 @@
 #pragma warning(disable:4389)	//wrong corrispondence between signed and unsigned
 
 #pragma warning(disable:4267)	//conversion from 'size_t' to <type>. possible loss of data
+
+#endif //__CYGWIN__
 
 /*#define FILTER_MAJOR_NDIS_VERSION   NDIS_SUPPORT_NDIS6
 #define FILTER_MINOR_NDIS_VERSION   NDIS_SUPPORT_NDIS6
