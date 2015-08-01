@@ -1,5 +1,11 @@
 This directory contains a port of netmap to Windows.
 
+For installation instructions see below
+
+When using netmap with Windows NICs, the name to be
+specified for the interface is the 'interface index'
+which is the first number visible with the "route print" command
+
 ------------ BRIEF DESCRIPTION ----------
 
 The solution Netmap.sln contains 5 different projects:
