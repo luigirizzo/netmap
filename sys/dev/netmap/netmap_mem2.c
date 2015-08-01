@@ -1975,7 +1975,6 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 			continue;
 		kring->ring = (struct netmap_ring *)
 			((char *)nifp + nifp->ring_ofs[i]);
-		kring->nr_kflags |= NKR_PASSTHROUGH;
 	}
 	for (i = 0; i <= na->num_rx_rings; i++) {
 		struct netmap_kring *kring = na->rx_rings + i;
@@ -1984,7 +1983,6 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 		kring->ring = (struct netmap_ring *)
 			((char *)nifp +
 			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
-		kring->nr_kflags |= NKR_PASSTHROUGH;
 	}
 	//error = ptna->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
 
