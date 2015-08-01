@@ -673,16 +673,17 @@ lem_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
-static struct paravirt_csb *
-lem_netmap_getcsb(struct ifnet *ifp)
+static void
+lem_ptnetmap_setup_csb(struct adapter *adapter)
 {
-	struct adapter *adapter = ifp->if_softc;
+	struct ifnet *ifp = adapter->ifp;
+	struct netmap_pt_guest_adapter* ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
 
-	return adapter->csb;
+	ptna->csb = adapter->csb;
 }
 
 static uint32_t
-lem_netmap_ptctl(struct ifnet *ifp, uint32_t val)
+lem_ptnetmap_ptctl(struct ifnet *ifp, uint32_t val)
 {
 	struct adapter *adapter = ifp->if_softc;
 	uint32_t ret;
@@ -711,8 +712,7 @@ lem_ptnetmap_features(struct adapter *adapter)
 }
 
 static struct netmap_pt_guest_ops lem_ptnetmap_ops = {
-	.nm_getcsb = lem_netmap_getcsb,
-	.nm_ptctl = lem_netmap_ptctl,
+	.nm_ptctl = lem_ptnetmap_ptctl,
 };
 #elif defined (NIC_PTNETMAP)
 #warning "if_lem supports ptnetmap but netmap does not support it"
@@ -747,6 +747,7 @@ lem_netmap_attach(struct adapter *adapter)
 		na.nm_rxsync = lem_ptnetmap_rxsync;
 		na.nm_bdg_attach = lem_ptnetmap_bdg_attach; /* XXX */
 		netmap_pt_guest_attach(&na, &lem_ptnetmap_ops);
+		lem_ptnetmap_setup_csb(adapter);
 	} else
 #endif /* NIC_PTNETMAP && defined WITH_PTNETMAP_GUEST */
 		netmap_attach(&na);

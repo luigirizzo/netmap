@@ -867,14 +867,6 @@ virtio_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
-static struct paravirt_csb *
-virtio_ptnetmap_getcsb(struct net_device *dev)
-{
-	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)NA(dev);
-
-	return ptna->csb;
-}
-
 static uint32_t
 virtio_ptnetmap_ptctl(struct net_device *dev, uint32_t val)
 {
@@ -915,7 +907,6 @@ virtio_ptnetmap_dtor(struct netmap_adapter *na)
 }
 
 static struct netmap_pt_guest_ops virtio_ptnetmap_ops = {
-    .nm_getcsb = virtio_ptnetmap_getcsb, /* TODO: remove */
     .nm_ptctl = virtio_ptnetmap_ptctl,
 };
 #endif /* WITH_PTNETMAP_GUEST */

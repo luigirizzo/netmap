@@ -721,14 +721,6 @@ vtnet_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
-static struct paravirt_csb *
-vtnet_ptnetmap_getcsb(struct ifnet *ifp)
-{
-	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
-
-	return ptna->csb;
-}
-
 static uint32_t
 vtnet_ptnetmap_ptctl(struct ifnet *ifp, uint32_t val)
 {
@@ -769,7 +761,6 @@ vtnet_ptnetmap_dtor(struct netmap_adapter *na)
 }
 
 static struct netmap_pt_guest_ops vtnet_ptnetmap_ops = {
-    .nm_getcsb = vtnet_ptnetmap_getcsb, /* TODO: remove */
     .nm_ptctl = vtnet_ptnetmap_ptctl,
 };
 #endif /* WITH_PTNETMAP_GUEST */

@@ -531,16 +531,17 @@ e1000_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
-static struct paravirt_csb *
-e1000_netmap_getcsb(struct net_device *netdev)
+static void
+e1000_ptnetmap_setup_csb(struct SOFTC_T *adapter)
 {
-	struct e1000_adapter *adapter = netdev_priv(netdev);
+	struct ifnet *ifp = adapter->netdev;
+	struct netmap_pt_guest_adapter* ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
 
-	return adapter->csb;
+	ptna->csb = adapter->csb;
 }
 
 static uint32_t
-e1000_netmap_ptctl(struct net_device *netdev, uint32_t val)
+e1000_ptnetmap_ptctl(struct net_device *netdev, uint32_t val)
 {
 	struct e1000_adapter *adapter = netdev_priv(netdev);
 	struct e1000_hw *hw = &adapter->hw;
@@ -570,8 +571,7 @@ e1000_ptnetmap_features(struct SOFTC_T *adapter)
 }
 
 static struct netmap_pt_guest_ops e1000_ptnetmap_ops = {
-	.nm_getcsb = e1000_netmap_getcsb,
-	.nm_ptctl = e1000_netmap_ptctl,
+	.nm_ptctl = e1000_ptnetmap_ptctl,
 };
 #elif defined (CONFIG_E1000_NETMAP_PT)
 #warning "e1000 supports ptnetmap but netmap does not support it"
@@ -607,6 +607,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 		na.nm_rxsync = e1000_ptnetmap_rxsync;
 		na.nm_bdg_attach = e1000_ptnetmap_bdg_attach; /* XXX */
 		netmap_pt_guest_attach(&na, &e1000_ptnetmap_ops);
+		e1000_ptnetmap_setup_csb(adapter);
 	} else
 #endif /* CONFIG_E1000_NETMAP_PT && WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);

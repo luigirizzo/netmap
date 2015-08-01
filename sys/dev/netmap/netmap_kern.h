@@ -1747,7 +1747,6 @@ nm_passthrough_host_on(struct netmap_adapter *na)
 /* ptnetmap GUEST routines */
 struct netmap_pt_guest_ops {
 	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
-	struct paravirt_csb *(*nm_getcsb)(struct ifnet *);
 };
 /*
  * netmap adapter for guest passthrough ports

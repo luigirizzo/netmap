@@ -1932,10 +1932,8 @@ netmap_mem_pt_guest_if_new(struct netmap_adapter *na)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)na->nm_mem;
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
-	struct ifnet *ifp = ptna->hwup.up.ifp;
-	struct paravirt_csb *csb;
+	struct paravirt_csb *csb = ptna->csb;
 
-	csb = ptna->pv_ops->nm_getcsb(ifp);
 	if (csb == NULL)
 		return NULL;
 
@@ -1957,8 +1955,7 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)na->nm_mem;
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *) na;
-	struct ifnet *ifp = ptna->hwup.up.ifp;
-	struct paravirt_csb *csb = ptna->pv_ops->nm_getcsb(ifp);
+	struct paravirt_csb *csb = ptna->csb;
 	struct netmap_if *nifp;
 	int i, error = 0;
 
