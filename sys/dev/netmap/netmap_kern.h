@@ -328,7 +328,6 @@ nm_txrx_swap(enum txrx t)
  * RX rings attached to the VALE switch are accessed by both senders
  * and receiver. They are protected through the q_lock on the RX ring.
  */
-
 struct netmap_kring {
 	struct netmap_ring	*ring;
 

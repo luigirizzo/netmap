@@ -409,13 +409,12 @@ win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
  * The only parameter used is "fd", the other ones are just declared to
  * make this signature comparable to the FreeBSD/Linux one
  */
-static void * 
+static void *
 win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int32_t offset)
 {
 	BOOL transactionResult = FALSE;
-	void* sharedMem = NULL;
-	sharedMem = malloc(sizeof(void*));
-	
+	void* sharedMem = malloc(sizeof(void*));
+
 	transactionResult = win_nm_ioctl(fd, NETMAP_MMAP, NULL, sharedMem);
 	return ((MEMORY_ENTRY*)sharedMem)->pUsermodeVirtualAddress;
 }

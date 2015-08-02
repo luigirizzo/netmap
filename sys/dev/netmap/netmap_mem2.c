@@ -515,7 +515,7 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 #else
 		pa = vtophys(p[i].lut[offset / p[i]._objsize].vaddr);
 		pa.QuadPart += offset % p[i]._objsize;
-#endif		
+#endif
 		NMA_UNLOCK(nmd);
 		return pa;
 	}
@@ -534,11 +534,12 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 	vm_paddr_t res;
 	res.QuadPart = 0;
 	return res;
-#endif	
+#endif
 }
 
 #ifdef _WIN32
-void* win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t offset)
+void *
+win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 {
 	void* addr = NULL;
 	vm_ooffset_t o = offset;
@@ -548,10 +549,12 @@ void* win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t 
 	p = nmd->pools;
 	addr = nmd->pools[0].lut->vaddr;
 	NMA_UNLOCK(nmd);
-	return addr;	
+	return addr;
 }
 
-/* win32_build_virtual_memory_for_userspace 
+/*
+ * win32_build_virtual_memory_for_userspace
+ *
  * This function get all the object making part of the pools and maps
  * a contiguous virtual memory space for the userspace
  * It works this way
@@ -559,7 +562,7 @@ void* win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t 
  *		of the memory needed for the pools
  * 2 - cycle all the objects in every pool and for every object do
  *
- *		2a - cycle all the objects in every pool, get the list 
+ *		2a - cycle all the objects in every pool, get the list
  *				of the physical address descriptors
  *		2b - calculate the offset in the array of pages desciptor in the
  *				main MDL
@@ -570,21 +573,20 @@ void* win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t 
  * In this way we will have an MDL that describes all the memory for the
  * objects in a single object
 */
-void win32_build_virtual_memory_for_userspace(PMDL mainMdl, struct netmap_mem_d* nmd)
+void
+win32_build_virtual_memory_for_userspace(PMDL mainMdl, struct netmap_mem_d* nmd)
 {
 	int i = 0;
 	int j = 0;
 	int currentOffset = 0;
+
 	NMA_LOCK(nmd);
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		struct netmap_obj_pool *p = &nmd->pools[i];
-		for (j = 0; j < p->objtotal; j++)
-		{
+
+		for (j = 0; j < p->objtotal; j++) {
 			PMDL tempMdl = IoAllocateMdl(p->lut[j].vaddr,
-										p->_objsize,
-										FALSE,
-										FALSE,
-										NULL);
+					p->_objsize, FALSE, FALSE, NULL);
 			MmBuildMdlForNonPagedPool(tempMdl);
 			PPFN_NUMBER pSrc = MmGetMdlPfnArray(tempMdl);
 			PPFN_NUMBER pDst = &MmGetMdlPfnArray(mainMdl)[BYTES_TO_PAGES(currentOffset)];
@@ -596,7 +598,7 @@ void win32_build_virtual_memory_for_userspace(PMDL mainMdl, struct netmap_mem_d*
 	}
 	NMA_UNLOCK(nmd);
 }
-#endif //_WIN32
+#endif /* _WIN32 */
 
 static int
 netmap_mem2_get_info(struct netmap_mem_d* nmd, u_int* size, u_int *memflags,
@@ -1239,31 +1241,34 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	return 0;
 }
 
-static int find_clusters_total_size(struct netmap_mem_d *nmd)
+
+#ifdef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
+static int
+find_clusters_total_size(struct netmap_mem_d *nmd)
 {
-	int totalSize = 0;
-	int i = 0;
+	int totalSize = 0, numClust, clustSize, i;
+
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
-		int numClust = (&nmd->pools[i])->_numclusters;
-		int clustSize = (&nmd->pools[i])->_clustsize;
+		numClust = (&nmd->pools[i])->_numclusters;
+		clustSize = (&nmd->pools[i])->_clustsize;
 		totalSize += (numClust * clustSize);
 	}
 	return totalSize;
 }
+#endif /* _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER */
 
 static int
 netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 {
+	int i;
+	void *baseAddress = NULL;
+
 #ifdef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
-	void* baseAddress = malloc(find_clusters_total_size(nmd), M_NETMAP, M_NOWAIT | M_ZERO);
-	if (baseAddress == NULL)
-	{
+	baseAddress = malloc(find_clusters_total_size(nmd), M_NETMAP, M_NOWAIT | M_ZERO);
+	if (baseAddress == NULL) {
 		return STATUS_INSUFFICIENT_RESOURCES;
 	}
-#else
-	void* baseAddress = NULL;
 #endif
-	int i;
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		return 0;
 	nmd->lasterr = 0;
