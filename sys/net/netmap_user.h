@@ -365,6 +365,7 @@ static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
 intptr_t _get_osfhandle(int); /* defined in io.h in windows */
 
+/* same as ioctl, returns 0 on success and -1 on error */
 static int
 win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 {
@@ -398,7 +399,9 @@ win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 				ctlCode, inParam, szIn,
 				outParam, szOut,
 				&bReturn, NULL);
-	return ioctlReturnStatus;
+	// XXX note windows returns 0 on error or async call, 1 on success
+	// we could call GetLastError() to figure out what happened
+	return ioctlReturnStatus ? 0 : -1;
 }
 
 /*
@@ -409,11 +412,10 @@ win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 static void *
 win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int32_t offset)
 {
-	BOOL result;
-	MEMORY_ENTRY *ret;
+	MEMORY_ENTRY ret;
 
-	result = win_nm_ioctl(fd, NETMAP_MMAP, NULL, &ret);
-	return result ? ret->pUsermodeVirtualAddress : NULL;
+	return win_nm_ioctl(fd, NETMAP_MMAP, NULL, &ret) ?
+		NULL : ret.pUsermodeVirtualAddress;
 }
 #endif /* _WIN32 */
 
@@ -608,7 +610,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 #else
-	if (!win_nm_ioctl(d->fd, NIOCREGIF, &d->req, &d->req)) {
+	if (win_nm_ioctl(d->fd, NIOCREGIF, &d->req, &d->req)) {
 		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
 		goto fail;
 	}
