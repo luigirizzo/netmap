@@ -363,10 +363,12 @@ static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
 #ifdef _WIN32
 
+intptr_t _get_osfhandle(int); /* defined in io.h in windows */
+
 static int
 win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 {
-	int32_t bReturn = 0, szIn, szOut;
+	uint32_t bReturn = 0, szIn, szOut;
 	BOOL ioctlReturnStatus;
 	switch (ctlCode) {
 	case NETMAP_POLL:
@@ -393,14 +395,9 @@ win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 	 * this call alone seems to waste between 46 to 58 ns
 	*/
 	ioctlReturnStatus = DeviceIoControl(IntToPtr(_get_osfhandle(fd)),
-										ctlCode,
-										inParam,
-										szIn,
-										outParam,
-										szOut,
-										&bReturn,
-										NULL
-										);
+				ctlCode, inParam, szIn,
+				outParam, szOut,
+				&bReturn, NULL);
 	return ioctlReturnStatus;
 }
 

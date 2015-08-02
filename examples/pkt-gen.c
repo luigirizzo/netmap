@@ -591,10 +591,11 @@ wrapsum(u_int32_t sum)
  * Look for consecutive ascii representations of the size of the packet.
  */
 static void
-dump_payload(char *p, int len, struct netmap_ring *ring, int cur)
+dump_payload(const char *_p, int len, struct netmap_ring *ring, int cur)
 {
 	char buf[128];
 	int i, j, i0;
+	const unsigned char *p = (const unsigned char *)_p;
 
 	/* get the length in ASCII of the length of the packet. */
 
@@ -1438,7 +1439,7 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#ifndef BUSYWAIT
+#if !defined(BUSYWAIT) && !defined(_WIN32)
 out:
 #endif
 	targ->completed = 1;

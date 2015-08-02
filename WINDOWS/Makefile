@@ -15,7 +15,6 @@ DDK ?= c:/WinDDK/7600.16385.1
 
 APP_CFLAGS = -I../sys -Iincludes -DNO_PCAP
 APP_CFLAGS += -g -O2 -Wall -Werror
-APP_CFLAGS += -Wno-char-subscripts -Wno-unused-label
 
 KMOD	= netmap
 SRCS	= device_if.h bus_if.h opt_netmap.h
