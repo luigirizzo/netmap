@@ -222,9 +222,10 @@ Return Value:
 	NdisFDeregisterFilterDriver(FilterDriverHandle);
 	FILTER_FREE_LOCK(&FilterListLock);
 	DEBUGP(DL_WARN, "Register device for the filter driver failed.\n");
+	Status = NDIS_STATUS_FAILURE; /* force this */
     }
 
-    DEBUGP(DL_TRACE, "<===DriverEntry, Status = %8x\n", Status);
+    DEBUGP(DL_WARN, "<===DriverEntry, Status = %8x\n", Status);
     return Status;
 
 }
