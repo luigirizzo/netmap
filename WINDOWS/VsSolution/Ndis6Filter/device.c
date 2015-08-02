@@ -378,7 +378,7 @@ DumpPayload(const char* p, uint32_t len)
  * _OUT_ net_device* 	ifp	netmap structure referring the adapter
  */
 NTSTATUS 
-ndis_update_ifp(int deviceIfIndex, struct net_device *ifp)
+ndis_update_ifp(unsigned int deviceIfIndex, struct net_device *ifp)
 {
     PLIST_ENTRY         Link;
     int			counter = 0;
