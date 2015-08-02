@@ -27,7 +27,7 @@
 #define _WIN_GLUE_H_
 
 #ifdef __CYGWIN__
-/* we have __attribute__
+/* we have __attribute__ */
 #define _WIN32	/* we use _WIN32 throughout the code */
 #else /* some MSC pragmas etc. */
 
@@ -80,11 +80,6 @@
 #define	M_NOWAIT		1	/* flags for malloc etc */
 #define	M_ZERO			2	/* flags for malloc etc */
 
-#if 0
-#define PRIV_MEMORY_POOL_TAG				'memP'
-#define PIPES_POOL_TAG						'epiP'
-#define RINGS_POOL_TAG						'gniR'
-#endif //
 
 //Originally defined in LINUX\IF.H
 #define	IFNAMSIZ 44//IF_NAMESIZE //defined in netioapi.h, is 256
