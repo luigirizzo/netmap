@@ -236,6 +236,9 @@ netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
     }
 }
 
+/*
+ * XXX the mbuf must be consumed
+ */
 int
 send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
 {

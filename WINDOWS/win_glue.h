@@ -295,8 +295,6 @@ struct net_device {
 	struct netmap_adapter*	na;
 	PVOID	pfilter;
 	BOOL*	pfilter_ready;
-	//NDIS_HANDLE				deviceHandle;
-	//NDIS_HANDLE				UserSendNetBufferListPool;
 	int		ifIndex;
 };
 
