@@ -413,7 +413,6 @@ static void *
 win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int32_t offset)
 {
 	BOOL result;
-	void* sharedMem = malloc(sizeof(void*));
 	MEMORY_ENTRY *ret;
 
 	result = win_nm_ioctl(fd, NETMAP_MMAP, NULL, &ret);

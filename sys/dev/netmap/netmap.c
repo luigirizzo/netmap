@@ -2549,7 +2549,7 @@ do_retry_rx:
 					kring->ring->flags & NR_TIMESTAMP) {
 				microtime(&kring->ring->ts);
 			}
-			found = (kring->rcur != kring->rtail);
+			found = kring->rcur != kring->rtail;
 			nm_kr_put(kring);
 			if (found) {
 				revents |= want_rx;
