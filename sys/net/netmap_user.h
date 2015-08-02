@@ -612,7 +612,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
 		goto fail;
 	}
-	
 #endif /* _WIN32 */
 
 	if (IS_NETMAP_DESC(parent) && parent->mem &&
