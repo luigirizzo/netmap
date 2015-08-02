@@ -444,7 +444,7 @@ struct netmap_kring {
 	uint32_t mon_tail;  /* last seen slot on rx */
 	uint32_t mon_pos;   /* index of this ring in the monitored ring array */
 #endif
-} __attribute__((__aligned__(64)));
+} __declspec(align(64)); // __attribute__((__aligned__(64)));
 
 
 /* return the next index, with wraparound */

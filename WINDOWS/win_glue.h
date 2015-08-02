@@ -31,7 +31,7 @@
 #define _WIN32	/* we use _WIN32 throughout the code */
 #else /* some MSC pragmas etc. */
 
-#define __attribute__(x) __declspec(align(64))
+// #define __attribute__(x) __declspec(align(64))
 // #define __aligned__	align
 
 //Disabling unuseful warnings
