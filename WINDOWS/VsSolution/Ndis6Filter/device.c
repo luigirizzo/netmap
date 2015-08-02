@@ -415,13 +415,17 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
     PMS_FILTER			pfilter = (PMS_FILTER)_pfilter;
 
     do {
-	buffer = ExAllocatePoolWithTag(NonPagedPool, length, 'NDIS');
+	/*
+	 * we construct a pool+packet+mdl from the data we receive from above
+	 */
+	buffer = ExAllocatePoolWithTag(NonPagedPool, length, M_DEVBUF);
 	if (buffer == NULL) {
 	    DbgPrint("Error allocating buffer!\n");
 	    status = STATUS_INSUFFICIENT_RESOURCES;
 	    break;
 	}
-	RtlZeroMemory(buffer, length);
+	// RtlZeroMemory(buffer, length); // we copy data, anyways
+	/* attach the buffer to a newly allocated mdl */
 	pMdl = NdisAllocateMdl(pfilter->FilterHandle, buffer, length);
 	if (pMdl == NULL) {
 	    DbgPrint("nmNdis.sys: Error allocating MDL!\n");
@@ -431,23 +435,21 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 
 	pMdl->Next = NULL;
 
-	pBufList = NdisAllocateNetBufferAndNetBufferList(pfilter->UserSendNetBufferListPool,
+	/* allocate a buffer list */
+	pBufList = NdisAllocateNetBufferAndNetBufferList(pfilter->netmap_pool,
 		    0, 0,
 		    pMdl, 0,
 		    length);
 	if (pBufList == NULL) {
-	    NdisFreeMdl(pMdl);
 	    DbgPrint("nmNdis.sys: Error allocating NdisAllocateNetBufferAndNetBufferList!\n");
 	    status = STATUS_INSUFFICIENT_RESOURCES;
 	    break;
 	}
 	pFirst = NET_BUFFER_LIST_FIRST_NB(pBufList);
 	pNdisPacketMemory = NdisGetDataBuffer(pFirst, length, NULL, sizeof(UINT8), 0);
-	// XXX is this the same as buffer ?
+	// pNdisPacketMemory is the same as buffer
 	if (pNdisPacketMemory == NULL) {
-	    NdisFreeNetBufferList(pBufList);
-	    NdisFreeMdl(pMdl);
-	    DbgPrint("nmNdis.sys: Error allocating pNdisPacketMemory!\n");
+	    DbgPrint("nmNdis.sys: weird, bad pNdisPacketMemory!\n");
 	    status = STATUS_INSUFFICIENT_RESOURCES;
 	    break;
 	}
@@ -465,6 +467,14 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 	    NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
 	}
     } while (FALSE);
+    if (status != STATUS_SUCCESS) {
+	if (pBufList)
+	    NdisFreeNetBufferList(pBufList);
+	if (pMdl)
+	    NdisFreeMdl(pMdl);
+	if (buffer)
+	    ExFreePoolWithTag(buffer, M_DEVBUF);
+    }
 
     return status;
 }

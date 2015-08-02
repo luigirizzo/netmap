@@ -425,9 +425,9 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
 	pFilter->PoolParameters.PoolTag = 'SIDN';
 	pFilter->PoolParameters.DataSize = 0;
 
-	pFilter->UserSendNetBufferListPool = NdisAllocateNetBufferListPool(pFilter->FilterHandle, &pFilter->PoolParameters);
+	pFilter->netmap_pool = NdisAllocateNetBufferListPool(pFilter->FilterHandle, &pFilter->PoolParameters);
 
-	if (pFilter->UserSendNetBufferListPool == NULL)
+	if (pFilter->netmap_pool == NULL)
 	{
 		DEBUGP(DL_ERROR, "Failed to allocate send net buffer list pool.\n");
 		Status = NDIS_STATUS_RESOURCES; break;
@@ -737,10 +737,10 @@ NOTE: Called at PASSIVE_LEVEL and the filter is in paused state
         FILTER_FREE_MEM(pFilter->FilterName.Buffer);
     }
 
-    if (pFilter->UserSendNetBufferListPool != NULL)
+    if (pFilter->netmap_pool != NULL)
     {
-	NdisFreeNetBufferListPool(pFilter->UserSendNetBufferListPool);
-	pFilter->UserSendNetBufferListPool = NULL;
+	NdisFreeNetBufferListPool(pFilter->netmap_pool);
+	pFilter->netmap_pool = NULL;
 	NdisZeroMemory(&pFilter->PoolParameters, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
     }
 
@@ -1332,7 +1332,7 @@ Return Value:
     {
 	PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
 
-	if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
+	if (NetBufferLists->NdisPoolHandle == pFilter->netmap_pool)
 	{
 	    while (CurrNetBuffer) 
 	    { 
@@ -1354,7 +1354,7 @@ Return Value:
 	while (pCurrNBL != NULL) {
 		PNET_BUFFER_LIST pNextNBL = NET_BUFFER_LIST_NEXT_NBL(pCurrNBL);
 		NET_BUFFER_LIST_NEXT_NBL(pCurrNBL) = NULL;  
-		if (pCurrNBL->NdisPoolHandle == pFilter->UserSendNetBufferListPool) { 
+		if (pCurrNBL->NdisPoolHandle == pFilter->netmap_pool) { 
 			/* This is a custom packet, we need free it */
 			PNET_BUFFER pCurrNB = NET_BUFFER_LIST_FIRST_NB(pCurrNBL);
 			while( pCurrNB != NULL ) { 
@@ -1573,20 +1573,19 @@ Arguments:
     // Return the received NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
 #if 1
-    PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
-    if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
-    {
-	while (CurrNetBuffer)
-	{
+
+    if (NetBufferLists->NdisPoolHandle == pFilter->netmap_pool) {
+	PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
+
+	while (CurrNetBuffer) {
 	    PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
 	    PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
 	    NdisFreeMdl(pCurrMdl);
+	    // XXX must free buffer
 	    CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
 	}
 	NdisFreeNetBufferList(NetBufferLists);
-    }
-    else
-    {
+    } else {
 	NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
     }
 #endif
@@ -1595,7 +1594,7 @@ Arguments:
 	while (pCurrNBL != NULL) {
 		PNET_BUFFER_LIST pNextNBL = NET_BUFFER_LIST_NEXT_NBL(pCurrNBL);
 		NET_BUFFER_LIST_NEXT_NBL(pCurrNBL) = NULL;
-		if (pCurrNBL->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
+		if (pCurrNBL->NdisPoolHandle == pFilter->netmap_pool)
 		{ // This is a custom packet, we need free it
 			PNET_BUFFER pCurrNB = NET_BUFFER_LIST_FIRST_NB(pCurrNBL);
 			while (pCurrNB != NULL)

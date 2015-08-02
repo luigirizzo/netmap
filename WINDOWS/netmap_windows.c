@@ -460,7 +460,6 @@ struct net_device *
 ifunit_ref(const char* name)
 {
     int			deviceIfIndex = -1;
-    NDIS_HANDLE		UserSendNetBufferListPool = NULL;
     struct net_device *	ifp = NULL;
 
     if (ndis_hooks.ndis_update_ifp == NULL)
