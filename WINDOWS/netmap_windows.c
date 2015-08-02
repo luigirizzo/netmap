@@ -56,9 +56,9 @@ NTSTATUS copy_from_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
 NTSTATUS copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
 FUNCTION_POINTER_XCHANGE ndis_hooks;
 
-//Allocate the pageable routines and the init routine
-//These routines will be unloaded from the memory as soon as
-//they've returned
+// Allocate the pageable routines and the init routine
+// These routines will be unloaded from the memory as soon as
+// they've returned
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text( INIT, DriverEntry)
 #endif // ALLOC_PRAGMA
@@ -294,21 +294,21 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		struct nmreq nmr;
 	} arg;
 
-	size_t			argsize = 0;
-	PVOID			data;
+	size_t	argsize = 0;
+	PVOID	data;
 	struct sockopt	*sopt;
-	int				len = 0;
+	int	space, len = 0;
 
 	irpSp = IoGetCurrentIrpStackLocation(Irp);
 	argsize = irpSp->Parameters.DeviceIoControl.InputBufferLength;
 	data = Irp->AssociatedIrp.SystemBuffer;
 
-	switch (irpSp->Parameters.DeviceIoControl.IoControlCode)
-	{
+	switch (irpSp->Parameters.DeviceIoControl.IoControlCode) {
 	case NIOCGINFO:
 		DbgPrint("Netmap.sys: NIOCGINFO");
 		argsize = sizeof(arg.nmr);
 		break;
+
 	case NIOCREGIF:
 		DbgPrint("Netmap.sys: NIOCREGIF");
 		argsize = sizeof(arg.nmr);
@@ -321,27 +321,31 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		DbgPrint("nr_offset: %i , nr_flags: %s\n", test->nr_offset, test->nr_flags);
 #endif
 		break;
+
 	case NIOCTXSYNC:
 		//DbgPrint("Netmap.sys: NIOCTXSYNC");
 		break;
+
 	case NIOCRXSYNC:
 		//DbgPrint("Netmap.sys: NIOCRXSYNC");
 		break;
+
 	case NIOCCONFIG:
 		DbgPrint("Netmap.sys: NIOCCONFIG");
 		argsize = sizeof(arg.ifr);
 		break;
+
 	case NETMAP_MMAP:
 		DbgPrint("Netmap.sys: NETMAP_MMAP");
 		NtStatus = windows_netmap_mmap(Irp);
 		Irp->IoStatus.Status = NtStatus;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
 		return NtStatus;
+
 	case NETMAP_GETSOCKOPT:
 	case NETMAP_SETSOCKOPT:
 		DbgPrint("Netmap.sys: NETMAP_SET/GET-SOCKOPT (Common code)");
-		if (argsize < sizeof(struct sockopt))
-		{
+		if (argsize < sizeof(struct sockopt)) {
 			NtStatus = STATUS_BAD_DATA;
 			Irp->IoStatus.Status = NtStatus;
 			IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -349,46 +353,39 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		}
 		sopt = Irp->AssociatedIrp.SystemBuffer;
 		len = sopt->sopt_valsize;
-		if (irpSp->Parameters.DeviceIoControl.IoControlCode == NETMAP_SETSOCKOPT)
-		{
+		if (irpSp->Parameters.DeviceIoControl.IoControlCode == NETMAP_SETSOCKOPT) {
 			DbgPrint("Netmap.sys: NETMAP_SETSOCKOPT");
 			NtStatus = do_netmap_set_ctl(NULL, sopt->sopt_name, sopt + 1, len);
 			Irp->IoStatus.Information = 0;
-		}
-		else{
+		} else {
 			DbgPrint("Netmap.sys: NETMAP_GETSOCKOPT");
 			NtStatus = do_netmap_get_ctl(NULL, sopt->sopt_name, sopt + 1, &len);
 			sopt->sopt_valsize = len;
-			//sanity check on len
-			if (len + sizeof(struct sockopt) <= irpSp->Parameters.DeviceIoControl.InputBufferLength)
-			{
+			// XXX should we use OutputBufferLength ?
+			space = irpSp->Parameters.DeviceIoControl.InputBufferLength;
+			if (len + sizeof(struct sockopt) <= space) {
 				Irp->IoStatus.Information = len + sizeof(struct sockopt);
-			}
-			else
-			{
-				Irp->IoStatus.Information = irpSp->Parameters.DeviceIoControl.InputBufferLength;
+			} else {
+				Irp->IoStatus.Information = space;
 			}
 		}
 		Irp->IoStatus.Status = NtStatus;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
 		return NtStatus;
+
 	case NETMAP_POLL:
 		{
 			POLL_REQUEST_DATA *pollData = data;
-			LARGE_INTEGER tout;
 			long requiredTimeOut = -(int)(pollData->timeout) * 1000 * 10;
-			tout = RtlConvertLongToLargeInteger(requiredTimeOut);
+			LARGE_INTEGER tout = RtlConvertLongToLargeInteger(requiredTimeOut);
+
 			irpSp->FileObject->FsContext2 = NULL;
 			pollData->revents = netmap_poll(NULL, pollData->events, irpSp);
-			while ((irpSp->FileObject->FsContext2 != NULL) && (pollData->revents == 0))
-			{
+			while ((irpSp->FileObject->FsContext2 != NULL) && (pollData->revents == 0)) {
 				NTSTATUS waitResult = KeWaitForSingleObject(irpSp->FileObject->FsContext2, 
-															UserRequest, 
-															KernelMode, 
-															FALSE, 
-															&tout);
-				if (waitResult == STATUS_TIMEOUT)
-				{
+								UserRequest, KernelMode, 
+								FALSE, &tout);
+				if (waitResult == STATUS_TIMEOUT) {
 					pollData->revents = STATUS_TIMEOUT;
 					NtStatus = STATUS_TIMEOUT;
 					break;
@@ -401,6 +398,7 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		Irp->IoStatus.Status = NtStatus;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
 		return NtStatus;
+
 	default:
 		//bail out if unknown request issued
 		DbgPrint("Netmap.sys: wrong request issued! (%i)", irpSp->Parameters.DeviceIoControl.IoControlCode);
@@ -410,31 +408,25 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	}
 
 	if (argsize) {
-		if (!data)
-		{
+		if (!data) {
 			NtStatus = STATUS_DATA_ERROR;
-		}
-		else{
+		} else {
 			bzero(&arg, argsize);
-			if (!NT_SUCCESS(copy_from_user(&arg, (void *)data, argsize, Irp)))
-			{
+			if (!NT_SUCCESS(copy_from_user(&arg, (void *)data, argsize, Irp))) {
 				NtStatus = STATUS_DATA_ERROR;
 			}	
 		}	
 	}
 
-	if (NT_SUCCESS(NtStatus))
-	{
+	if (NT_SUCCESS(NtStatus)) {
 		ret = netmap_ioctl(NULL, irpSp->Parameters.DeviceIoControl.IoControlCode,
 			(caddr_t)&arg, 0, irpSp);
-		if (NT_SUCCESS(ret))
-		{
-			if (data && !NT_SUCCESS(copy_to_user((void*)data, &arg, argsize, Irp)))
-			{
+		if (NT_SUCCESS(ret)) {
+			if (data && !NT_SUCCESS(copy_to_user((void*)data, &arg, argsize, Irp))) {
 				DbgPrint("Netmap.sys: ioctl failure/cannot copy data to user");
 				NtStatus = STATUS_DATA_ERROR;
 			}
-		}else{
+		} else {
 			DbgPrint("Netmap.sys: ioctl failure (%i)", ret);
 			NtStatus = STATUS_BAD_DATA;
 		}
@@ -579,21 +571,17 @@ windows_netmap_mmap(PIRP Irp)
 			DbgPrint("Netmap.sys: Failed to allocate memory!!!!!");
 			return STATUS_DEVICE_DATA_ERROR;
 		}
+
 #ifdef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
 		mdl = IoAllocateMdl(addressToShare,
-			memsize,
-			FALSE,
-			FALSE,
-			NULL);
+			memsize, FALSE, FALSE, NULL);
 		MmBuildMdlForNonPagedPool(mdl);
 #else
 		mdl = IoAllocateMdl(NULL,
-			memsize,
-			FALSE,
-			FALSE,
-			NULL);
+			memsize, FALSE, FALSE, NULL);
 		win32_build_virtual_memory_for_userspace(mdl, na->nm_mem);
 #endif	//_WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
+
 		UserVirtualAddress = MmMapLockedPagesSpecifyCache(
 			mdl,
 			UserMode,
@@ -603,9 +591,7 @@ windows_netmap_mmap(PIRP Irp)
 			NormalPagePriority);
 		if (UserVirtualAddress != NULL) {
 			returnedValue.pUsermodeVirtualAddress = UserVirtualAddress;
-			RtlCopyMemory(buffer,
-				&returnedValue,
-				sizeof(PVOID));
+			RtlCopyMemory(buffer, &returnedValue, sizeof(PVOID));
 			IoFreeMdl(mdl);
 			Irp->IoStatus.Information = sizeof(void*);
 			DbgPrint("Netmap.sys: Memory allocated to user process");
@@ -662,12 +648,12 @@ DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING RegistryPath)
     UNICODE_STRING  		ntUnicodeString;    
     UNICODE_STRING  		ntWin32NameString;    
     PDEVICE_OBJECT  		deviceObject = NULL;    // pointer to the instanced device object
-	PDEVICE_DESCRIPTION 	devDes;
+    PDEVICE_DESCRIPTION 	devDes;
 
     UNREFERENCED_PARAMETER(RegistryPath);
     UNREFERENCED_PARAMETER(deviceObject);
 		
-	RtlInitUnicodeString(&ntUnicodeString, NETMAP_NT_DEVICE_NAME);
+    RtlInitUnicodeString(&ntUnicodeString, NETMAP_NT_DEVICE_NAME);
 
     ntStatus = IoCreateDevice(
         DriverObject,                   // The Driver Object

@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2013-2015 Universita` di Pisa. All rights reserved.
+* Copyright (C) 2015 Universita` di Pisa. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions
@@ -28,7 +28,8 @@
 /*********************************************************
 *       TIME FUNCTIONS (COPIED FROM DUMMYNET)     		 *
 **********************************************************/
-void do_gettimeofday(struct timeval *tv)
+void
+do_gettimeofday(struct timeval *tv)
 {
 	static LARGE_INTEGER prevtime; //system time in 100-nsec resolution
 	static LARGE_INTEGER prevcount; //RTC counter value
@@ -40,8 +41,7 @@ void do_gettimeofday(struct timeval *tv)
 		KeQuerySystemTime(&prevtime);
 		prevcount = KeQueryPerformanceCounter(&freq);
 		currtime.QuadPart = prevtime.QuadPart;
-	}
-	else {
+	} else {
 		KeQuerySystemTime(&currtime);
 		currcount = KeQueryPerformanceCounter(&freq);
 		if (currtime.QuadPart == prevtime.QuadPart) {
@@ -53,8 +53,7 @@ void do_gettimeofday(struct timeval *tv)
 			diffcount *= 10000000;
 			difftime = diffcount / freq.QuadPart;
 			currtime.QuadPart += difftime;
-		}
-		else {
+		} else {
 			//time has changed, update and return SystemTime
 			//printf("time has changed\n");
 			prevtime.QuadPart = currtime.QuadPart;
@@ -73,17 +72,18 @@ void do_gettimeofday(struct timeval *tv)
 **********************************************************/
 extern struct dictionary_box dict_box;
 
-int win32_devfs_get_cdevpriv(struct netmap_priv_d **mem, PIO_STACK_LOCATION td)
+int
+win32_devfs_get_cdevpriv(struct netmap_priv_d **mem, PIO_STACK_LOCATION td)
 {
 	*mem =  td->FileObject->FsContext;
-	if (*mem == NULL)
-	{
+	if (*mem == NULL) {
 		return STATUS_DEVICE_DATA_ERROR;
 	}
 	return STATUS_SUCCESS;
 }
 
-static inline int ilog2(uint64_t n)
+static inline int
+ilog2(uint64_t n)
 {
 	uint64_t k = 1ULL << 63;
 	int i;
@@ -92,40 +92,43 @@ static inline int ilog2(uint64_t n)
 	return i;
 }
 
-#define roundup_pow_of_two(n)     (n == 1) ? 1 : (1UL << (ilog2((n) - 1) + 1))                                       
- 
-char* win_contigMalloc(int sz, int page_size)
+#define roundup_pow_of_two(n)     (n == 1) ? 1 : (1UL << (ilog2((n) - 1) + 1))
+
+char *
+win_contigMalloc(int sz, int page_size)
 {
 	PHYSICAL_ADDRESS LowAddress;
 	PHYSICAL_ADDRESS HighestAcceptable;
 	PHYSICAL_ADDRESS SkipAddress;
+	PVOID p_;
+
 	LowAddress.QuadPart = 0;
 	HighestAcceptable.QuadPart = -1;
 	SkipAddress.QuadPart = 0;
 	//If needed lowest address can be used MmAllocateContiguousMemorySpecifyCache
-	PVOID p_ = MmAllocateContiguousMemory(sz, HighestAcceptable);
-	/*PVOID p_ = MmAllocateContiguousMemorySpecifyCache(sz, 
-													LowAddress,
-													HighestAcceptable,
-													SkipAddress,
-													MmNonCached);*/
+	p_ = MmAllocateContiguousMemory(sz, HighestAcceptable);
+
+	/*PVOID p_ = MmAllocateContiguousMemorySpecifyCache(sz,
+						LowAddress,
+						HighestAcceptable,
+						SkipAddress,
+						MmNonCached);*/
 #if 0
 	PMDL pMdl = MmAllocatePagesForMdlEx(LowAddress,
-										HighestAcceptable,
-										SkipAddress, 
-										sz,
-										MmNonCached, 
-										MM_ALLOCATE_REQUIRE_CONTIGUOUS_CHUNKS
-										);
-	PVOID p_ = MmMapLockedPagesSpecifyCache(pMdl, 
-											KernelMode, 
-											MmNonCached, 
-											NULL, 
-											FALSE, 
-											NormalPagePriority);
+						HighestAcceptable,
+						SkipAddress,
+						sz,
+						MmNonCached,
+						MM_ALLOCATE_REQUIRE_CONTIGUOUS_CHUNKS
+						);
+	PVOID p_ = MmMapLockedPagesSpecifyCache(pMdl,
+						KernelMode,
+						MmNonCached,
+						NULL,
+						FALSE,
+						NormalPagePriority);
 #endif
-	if (p_ != NULL)
-	{
+	if (p_ != NULL) {
 		RtlZeroMemory(p_, sz);
 	}
 #if 0
@@ -134,7 +137,8 @@ char* win_contigMalloc(int sz, int page_size)
 	return (p_ != NULL ? (char*)p_ : NULL);
 }
 
-void win_ContigFree(void* virtualAddress)
+void
+win_ContigFree(void *virtualAddress)
 {
 	MmFreeContiguousMemory(virtualAddress);
 }
@@ -152,8 +156,10 @@ static struct sysctltable GST;
 void sysctl_addgroup_main_init();
 void sysctl_addgroup_vars_pipes();
 void sysctl_addgroup_vars_vale();
-/*
-int kesysctl_emu_get(struct sockopt* sopt)
+
+#if 0
+int
+kesysctl_emu_get(struct sockopt* sopt)
 {
 	struct dn_id* oid = sopt->sopt_val;
 	struct sysctlhead* entry;
@@ -225,7 +231,7 @@ kesysctl_emu_set(void* p, int l)
 	printf("%s: match not found\n", __FUNCTION__);
 	return 0;
 }
-*/
+#endif /* not complete yet */
 
 /* convert all _ to . until the first . */
 static void
@@ -236,7 +242,8 @@ underscoretopoint(char* s)
 			*s = '.';
 }
 
-static int formatnames()
+static int
+formatnames(void)
 {
 	int i;
 	int size = 0;
@@ -257,7 +264,8 @@ static int formatnames()
 	return 0;
 }
 
-static void dumpGST()
+static void
+dumpGST(void)
 {
 	int i;
 
@@ -274,7 +282,8 @@ static void dumpGST()
 	}
 }
 
-void keinit_GST()
+void
+keinit_GST(void)
 {
 	int ret;
 	int i = 0;
@@ -288,20 +297,21 @@ void keinit_GST()
 	//dumpGST();
 	printf("*** Global Sysctl Table entries = %i, total size = %i ***\n",
 		GST.count, GST.totalsize);
-	for (i = 0; i < GST.count; i++)
-	{
+	for (i = 0; i < GST.count; i++) {
 		printf("*** GST[%i]: %s\n", i, GST.entry[i].name);
 	}
 }
 
-void keexit_GST()
+void
+keexit_GST()
 {
 	if (GST.namebuffer != NULL)
 		free(GST.namebuffer, 0);
 	bzero(&GST, sizeof(GST));
 }
 
-void sysctl_pushback(char* name, int flags, int datalen, void* data)
+void
+sysctl_pushback(char* name, int flags, int datalen, void* data)
 {
 	if (GST.count >= GST_HARD_LIMIT) {
 		printf("WARNING: global sysctl table full, this entry will not be added,"
@@ -320,7 +330,8 @@ void sysctl_pushback(char* name, int flags, int datalen, void* data)
 	GST.count++;
 }
 
-static NTSTATUS netmap_ctl_h(struct sockopt *s, int cmd, int dir, int len, void __user *user)
+static NTSTATUS
+netmap_ctl_h(struct sockopt *s, int cmd, int dir, int len, void __user *user)
 {
 	thread t;
 	NTSTATUS ret = STATUS_DEVICE_CONFIGURATION_ERROR;
@@ -340,19 +351,24 @@ static NTSTATUS netmap_ctl_h(struct sockopt *s, int cmd, int dir, int len, void 
 
 	return ret;
 }
+
+
 /*
-* setsockopt hook has no return value other than the error code.
-*/
-NTSTATUS do_netmap_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
+ * setsockopt hook has no return value other than the error code.
+ */
+NTSTATUS
+do_netmap_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
 {
 	struct sockopt s;	/* pass arguments */
 	(void)sk;		/* UNUSED */
 	return netmap_ctl_h(&s, cmd, SOPT_SET, len, user);
 }
+
 /*
-* getsockopt can can return a block of data in response.
-*/
-NTSTATUS do_netmap_get_ctl(struct sock *sk, int cmd, void __user *user, int *len)
+ * getsockopt can can return a block of data in response.
+ */
+NTSTATUS
+do_netmap_get_ctl(struct sock *sk, int cmd, void __user *user, int *len)
 {
 	struct sockopt s;	/* pass arguments */
 	NTSTATUS ret = netmap_ctl_h(&s, cmd, SOPT_GET, *len, user);
