@@ -92,7 +92,7 @@ all: _msbuild _apps
 _msbuild:
 	@echo "--- the makefile is not working yet, use msbuild ---"
 	rm -rf VsSolution/Output
-	(cd VsSolution; $(MSBUILD) /t:Build /p:Configuration="Win8.1 Release";Platform=x64 )
+	(cd VsSolution; $(MSBUILD) -t:Build -p:Configuration="Win8.1 Release" -p:Platform=x64 )
 
 _apps:
 	gcc $(APP_CFLAGS) ../examples/pkt-gen.c  -o ../examples/pkt-gen.exe
