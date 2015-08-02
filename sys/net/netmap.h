@@ -524,38 +524,29 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 
 
 /*
- * FreeBSD uses the size value embedded in the _IOWR to determine
- * how much to copy in/out. So we need it to match the actual
- * data structure we pass. We put some spares in the structure
- * to ease compatibility with other versions
+ * Windows does not have _IOWR(). _IO(), _IOW() and _IOR() are defined
+ * in ws2def.h but not sure if they are in the form we need.
+ * XXX so we redefine them
+ * in a convenient way to use for DeviceIoControl signatures
  */
-#ifndef _WIN32
-#define NIOCGINFO	_IOWR('i', 145, struct nmreq) /* return IF info */
-#define NIOCREGIF	_IOWR('i', 146, struct nmreq) /* interface register */
-#define NIOCTXSYNC	_IO('i', 148) /* sync tx queues */
-#define NIOCRXSYNC	_IO('i', 149) /* sync rx queues */
-#define NIOCCONFIG	_IOWR('i',150, struct nm_ifreq) /* for ext. modules */
-#else /*_WIN32 */
-/*
- * Definitions of windows IOCTLs signatures; for windows uses values under 0x800 as
- * system reserved, we must use numbers beyond that limit
- * There's no way to pass here the type/width of the data structure that will be
- * passed in a DeviceIoControl so the structure and it's size will be passed
- * directly in the IOCTL request
- */
-#define IOCTL_TYPE 40000	
+#ifdef _WIN32
+#undef _IO	// ws2def.h
+#define _WIN_NM_IOCTL_TYPE 40000
+#define _IO(_c, _n)	CTL_CODE(_WIN_NM_IOCTL_TYPE, ((_n) + 0x800) , \
+		METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define _IO_direct(_c, _n)	CTL_CODE(_WIN_NM_IOCTL_TYPE, ((_n) + 0x800) , \
+		METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
 
-//Definition of external userspace-to-kernel ioctl codes
-#define NIOCGINFO CTL_CODE( IOCTL_TYPE, 0x945, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NIOCREGIF CTL_CODE( IOCTL_TYPE, 0x946, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NIOCTXSYNC CTL_CODE( IOCTL_TYPE, 0x948, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NIOCRXSYNC CTL_CODE( IOCTL_TYPE, 0x949, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NIOCCONFIG CTL_CODE( IOCTL_TYPE, 0x950, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NETMAP_MMAP CTL_CODE( IOCTL_TYPE, 0x960, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
-#define NETMAP_POLL CTL_CODE( IOCTL_TYPE, 0x962, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-//Definition of IOCTLs used for sysctl emulation
-#define NETMAP_SETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x840, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NETMAP_GETSOCKOPT CTL_CODE( IOCTL_TYPE, 0x841, METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define _IOWR(_c, _n, _s)	_IO(_c, _n)
+
+/* We havesome internal sysctl in addition to the externally visible ones */
+#define NETMAP_MMAP _IO_direct('i', 160)	// note METHOD_OUT_DIRECT
+#define NETMAP_POLL _IO('i', 162)
+
+/* and also two setsockopt for sysctl emulation */
+#define NETMAP_SETSOCKOPT _IO('i', 140)
+#define NETMAP_GETSOCKOPT _IO('i', 141)
+
 
 #define DRIVER_FUNC_INSTALL     0x01
 #define DRIVER_FUNC_REMOVE      0x02
@@ -578,6 +569,18 @@ typedef struct _POLL_REQUEST_DATA {
 } POLL_REQUEST_DATA;
 
 #endif /* _WIN32 */
+
+/*
+ * FreeBSD uses the size value embedded in the _IOWR to determine
+ * how much to copy in/out. So we need it to match the actual
+ * data structure we pass. We put some spares in the structure
+ * to ease compatibility with other versions
+ */
+#define NIOCGINFO	_IOWR('i', 145, struct nmreq) /* return IF info */
+#define NIOCREGIF	_IOWR('i', 146, struct nmreq) /* interface register */
+#define NIOCTXSYNC	_IO('i', 148) /* sync tx queues */
+#define NIOCRXSYNC	_IO('i', 149) /* sync rx queues */
+#define NIOCCONFIG	_IOWR('i',150, struct nm_ifreq) /* for ext. modules */
 
 #endif /* !NIOCREGIF */
 

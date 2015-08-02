@@ -179,8 +179,8 @@ struct hrtimer {
 #define NETMAP_NDIS_NTDEVICE_STRING             L"\\Device\\NMAPNDIS"
 
 //Definition of internal driver-to-driver ioctl codes
-#define NETMAP_KERNEL_XCHANGE_POINTERS CTL_CODE( IOCTL_TYPE, 0x980, METHOD_BUFFERED, FILE_ANY_ACCESS  )
-#define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL CTL_CODE( IOCTL_TYPE, 0x995, METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
+#define NETMAP_KERNEL_XCHANGE_POINTERS		_IO('i', 180)
+#define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL	_IO_direct('i', 195)
 
 //Empty data structures are not permitted by MSVC compiler
 //XXX_ale, try to solve this mess
