@@ -502,8 +502,8 @@ ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     case NETMAP_KERNEL_XCHANGE_POINTERS: /* the NDIS module registers with us */
 	data = Irp->AssociatedIrp.SystemBuffer;
 	/* tell ndis whom to call when a packet arrives */
-	data->netmap_catch_rx = &windows_generic_rx_handler;
-	data->netmap_catch_tx = &windows_generic_tx_handler;
+	data->handle_rx = &windows_generic_rx_handler;
+	data->handle_tx = &windows_generic_tx_handler;
 
 	/* function(s) to access interface parameters */
 	ndis_hooks.ndis_update_ifp = data->ndis_update_ifp;

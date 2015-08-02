@@ -271,8 +271,8 @@ static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
  */
 typedef struct _FUNCTION_POINTER_XCHANGE {
 	/* ndis -> netmap calls */
-	struct NET_BUFFER* (*netmap_catch_rx)(struct net_device*, uint32_t length, const char* data);
-	struct NET_BUFFER* (*netmap_catch_tx)(struct net_device*, uint32_t length, const char* data);
+	struct NET_BUFFER* (*handle_rx)(struct net_device*, uint32_t length, const char* data);
+	struct NET_BUFFER* (*handle_tx)(struct net_device*, uint32_t length, const char* data);
 
 	/* netmap -> ndis calls */
 	NTSTATUS (*ndis_update_ifp)(int ifIndex, struct net_device *ifp);

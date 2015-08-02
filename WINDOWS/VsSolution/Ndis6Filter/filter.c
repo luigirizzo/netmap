@@ -183,8 +183,8 @@ Return Value:
 		break;
 	    }
 	    // prepare input parameters returned by the netmap ioctl
-	    netmap_hooks.netmap_catch_tx = NULL;
-	    netmap_hooks.netmap_catch_rx = NULL;
+	    netmap_hooks.handle_tx = NULL;
+	    netmap_hooks.handle_rx = NULL;
 	    // and output parameters that we pass to it
 	    netmap_hooks.ndis_update_ifp = &ndis_update_ifp;
 	    netmap_hooks.injectPacket = &injectPacket;
@@ -1480,11 +1480,11 @@ Arguments:
 	 * handler for packets coming from the stack.
 	 * Unless SendFlags says so, the packet stays alive and we can queue the packet
 	 * until we send the completion. For netmap, this is useful because we
-	 * can write the catch_tx as a function that queues the packets in an mbq
+	 * can write the handle_tx as a function that queues the packets in an mbq
 	 * XXX at the moment, however, just make a deep copy
 	 */
         //NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
-        if (netmap_hooks.netmap_catch_tx != NULL && (pFilter->intercept & NM_WIN_CATCH_TX) && 0)
+        if (netmap_hooks.handle_tx != NULL && (pFilter->intercept & NM_WIN_CATCH_TX) && 0)
         {
 	    int result = -1;
 	    PNET_BUFFER pkt = NULL;
@@ -1496,7 +1496,7 @@ Arguments:
 
 		if (buffer != NULL)
 		{
-		    result = netmap_hooks.netmap_catch_tx(pFilter->ifp, pkt->DataLength, buffer);
+		    result = netmap_hooks.handle_tx(pFilter->ifp, pkt->DataLength, buffer);
 		}
 		pkt = pkt->Next;
 		if (pkt == NULL)
@@ -1784,7 +1784,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 	/*
 	 * path for packets from the NIC going to a netmap ring
 	 */
-	if (netmap_hooks.netmap_catch_rx != NULL && (pFilter->intercept & NM_WIN_CATCH_RX))
+	if (netmap_hooks.handle_rx != NULL && (pFilter->intercept & NM_WIN_CATCH_RX))
 	{
 #if 0
 	    static int packets = 0; /* debugging */
@@ -1807,7 +1807,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 		    PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
 		    if (buffer != NULL)
 		    {
-			  result = netmap_hooks.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
+			  result = netmap_hooks.handle_rx(pFilter->ifp, pkt->DataLength, buffer);
 			  /* windows_generic_rx_handler() win_make_mbuf()  and generic_rx_handler()
 			   * enqueues on an mbq and notifies
 			   */
