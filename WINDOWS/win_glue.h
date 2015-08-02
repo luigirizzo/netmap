@@ -293,8 +293,10 @@ struct net_device {
 	char	if_xname[IFNAMSIZ];			// external name (name + unit) 
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter*	na;
-	PVOID	pfilter;
-	BOOL*	pfilter_ready;
+	void *	pfilter;
+	int *	intercept;	// bit 0: enable rx, bit 1 enable tx
+#define NM_WIN_CATCH_RX	1
+#define NM_WIN_CATCH_TX	2
 	int		ifIndex;
 };
 

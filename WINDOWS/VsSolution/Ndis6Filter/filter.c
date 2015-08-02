@@ -412,7 +412,7 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
             break;
         }
 
-	pFilter->readyToUse = FALSE;	// netmap not attached yet
+	pFilter->intercept = 0;	// do not intercept either tx or rx
 
 	NdisZeroMemory(&pFilter->PoolParameters, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
 
@@ -1327,6 +1327,10 @@ Return Value:
 
     // Send complete the NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
+
+    /*
+     * callback when transmit packets have been completed
+     */
 #if 0
     if (NetBufferLists != NULL)
     {
@@ -1472,8 +1476,15 @@ Arguments:
         // deep copy, and complete the original NBL.
         //
         
+	/*
+	 * handler for packets coming from the stack.
+	 * Unless SendFlags says so, the packet stays alive and we can queue the packet
+	 * until we send the completion. For netmap, this is useful because we
+	 * can write the catch_tx as a function that queues the packets in an mbq
+	 * XXX at the moment, however, just make a deep copy
+	 */
         //NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
-        if (netmap_hooks.netmap_catch_tx != NULL && pFilter->readyToUse && FALSE)
+        if (netmap_hooks.netmap_catch_tx != NULL && (pFilter->intercept & NM_WIN_CATCH_TX) && 0)
         {
 	    int result = -1;
 	    PNET_BUFFER pkt = NULL;
@@ -1493,6 +1504,9 @@ Arguments:
 		    current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
 		}
 	    }
+	    /* we are done with the packets */
+	    NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendFlags);
+
             //NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, SendFlags);
         }
         else
@@ -1767,7 +1781,10 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
             FILTER_RELEASE_LOCK(&pFilter->Lock, DispatchLevel);
         }
 
-	if (netmap_hooks.netmap_catch_rx != NULL && pFilter->readyToUse)
+	/*
+	 * path for packets from the NIC going to a netmap ring
+	 */
+	if (netmap_hooks.netmap_catch_rx != NULL && (pFilter->intercept & NM_WIN_CATCH_RX))
 	{
 #if 0
 	    static int packets = 0; /* debugging */
@@ -1791,6 +1808,9 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 		    if (buffer != NULL)
 		    {
 			  result = netmap_hooks.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
+			  /* windows_generic_rx_handler() win_make_mbuf()  and generic_rx_handler()
+			   * enqueues on an mbq and notifies
+			   */
 		    }
 		    //DbgPrint("Called: result= %i", result);
 		    //DbgPrint("Data->pRxPointer: 0x%p &0x%p", netmap_hooks.pRxPointer, &netmap_hooks.pRxPointer);

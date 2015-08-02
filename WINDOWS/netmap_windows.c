@@ -151,18 +151,6 @@ ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 
 /* #################### GENERIC ADAPTER SUPPORT ################### */
 
-/*
- * called to enable/disable intercepting packets with netmap
- */
-static int
-win_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInterface)
-{
-    if (ifp->pfilter_ready != NULL) {
-	*ifp->pfilter_ready = amIRegisteringTheInterface;
-	return STATUS_SUCCESS;
-    }
-    return STATUS_DEVICE_NOT_CONNECTED;
-}
 
 /*
  * For packets coming from the generic adapter, netmap expects
@@ -220,20 +208,30 @@ windows_generic_tx_handler(struct net_device *ifp, uint32_t length, const char *
 }
 
 int
-netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
+netmap_catch_rx(struct netmap_generic_adapter *gna, int enable)
 {
     struct netmap_adapter *na = &gna->up.up;
+    int *p = na->ifp->intercept;
 
-    return win_rx_handler_register(na->ifp, intercept ? TRUE : FALSE);
+    if (p != NULL) {
+	*p = enable ? (*p | NM_WIN_CATCH_RX) : (*p & ~NM_WIN_CATCH_RX);
+	return STATUS_SUCCESS;
+    }
+    return STATUS_DEVICE_NOT_CONNECTED;
 }
 
-/* We don't need to do anything here */
+
 void
 netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
-    if (enable) {
-    } else {
+    struct netmap_adapter *na = &gna->up.up;
+    int *p = na->ifp->intercept;
+
+    if (p != NULL) {
+	*p = enable ? (*p | NM_WIN_CATCH_TX) : (*p & ~NM_WIN_CATCH_TX);
+	return STATUS_SUCCESS;
     }
+    return STATUS_DEVICE_NOT_CONNECTED;
 }
 
 /*

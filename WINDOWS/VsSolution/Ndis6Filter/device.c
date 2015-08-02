@@ -383,7 +383,7 @@ ndis_update_ifp(unsigned int deviceIfIndex, struct net_device *ifp)
 	    // XXX should increment pFilter->RefCount before release
 	    // and decrement on release
 	    ifp->pfilter = pFilter;  
-	    ifp->pfilter_ready = &pFilter->readyToUse;
+	    ifp->intercept = &pFilter->intercept;
 	    pFilter->ifp = ifp;
 	    status = STATUS_SUCCESS;
 	    break;
@@ -460,10 +460,14 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 #endif
 	pBufList->SourceHandle = pfilter->FilterHandle;
 	if (sendToMiniport) {
-	    //This send down to the miniport
+	    // This send down to the NIC (miniport)
+	    // eventually triggering the callback FilterSendNetBufferListsComplete()
+	    // XXX check ownership of the packet. By default the packet stays alive until
+	    // we receive the callback
 	    NdisFSendNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
 	} else {
-	    //This one send up to the OS
+	    // This one sends up to the OS, again eventually triggering
+	    // FilterReturnNetBufferLists()
 	    NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
 	}
     } while (FALSE);
