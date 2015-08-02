@@ -1202,13 +1202,13 @@ sender_body(void *data)
 
 #else /* !BUSYWAIT */
 
-#ifdef _WIN32	
+#ifdef _WIN32
 		{
 			POLL_REQUEST_DATA prd;
 			prd.timeout = 2000;
 			prd.events = POLLOUT;
 			win_nm_ioctl(pfd.fd, NETMAP_POLL, &prd, &prd);
-		}	
+		}
 #else
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
@@ -1417,7 +1417,6 @@ receiver_body(void *data)
 #endif /* BUSYWAIT */
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
-			
 
 			rxring = NETMAP_RXRING(nifp, i);
 			if (nm_ring_empty(rxring))
