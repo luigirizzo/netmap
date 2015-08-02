@@ -412,11 +412,12 @@ win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 static void *
 win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int32_t offset)
 {
-	BOOL transactionResult = FALSE;
+	BOOL result;
 	void* sharedMem = malloc(sizeof(void*));
+	MEMORY_ENTRY *ret;
 
-	transactionResult = win_nm_ioctl(fd, NETMAP_MMAP, NULL, sharedMem);
-	return ((MEMORY_ENTRY*)sharedMem)->pUsermodeVirtualAddress;
+	result = win_nm_ioctl(fd, NETMAP_MMAP, NULL, &ret);
+	return result ? ret->pUsermodeVirtualAddress : NULL;
 }
 #endif /* _WIN32 */
 
