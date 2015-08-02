@@ -131,7 +131,7 @@ typedef ULONG 				vm_ooffset_t;
 #define CURVNET_RESTORE()
 #define __user
 #define nm_iommu_group_id(dev)	0
-#define if_printf
+#define if_printf	DbgPrint
 /*********************************************************
 * TRANSLATION OF GCC COMPILER ATTRIBUTES TO MSVC COMPILER*
 **********************************************************/
@@ -240,8 +240,10 @@ static int time_uptime_w32()
 #define snprintf 							_snprintf
 #define printf								DbgPrint
 
-/* XXX copyin used in vale (indirect bufs) and netmap_offloadings.c */
-#define copyin(src, dst, copy_len)		RtlCopyBytes(&dst, src, copy_len)
+/* XXX copyin used in vale (indirect bufs) and netmap_offloadings.c
+ * Is it ok to use RtlCopyMemory for user buffers ?
+ */
+#define copyin(src, dst, copy_len)		RtlCopyMemory(dst, src, copy_len)
 
 #if 0
 static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
