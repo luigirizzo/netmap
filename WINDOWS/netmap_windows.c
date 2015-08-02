@@ -85,8 +85,6 @@ ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     NMG_LOCK();
     priv = irpSp->FileObject->FsContext;
     if (priv == NULL) {
-	// XXX watch out, this is freed with a different tag.
-	// we just use M_DEVBUF for other OSes
 	priv = malloc(sizeof (*priv), M_DEVBUF, M_NOWAIT | M_ZERO); // could wait
 	if (priv == NULL) {
 	    status = STATUS_INSUFFICIENT_RESOURCES;
@@ -156,8 +154,8 @@ ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 /*
  * called to enable/disable intercepting packets with netmap
  */
-int
-netdev_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInterface)
+static int
+win_rx_handler_register(struct net_device *ifp, BOOLEAN amIRegisteringTheInterface)
 {
     if (ifp->pfilter_ready != NULL) {
 	*ifp->pfilter_ready = amIRegisteringTheInterface;
@@ -226,7 +224,7 @@ netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
     struct netmap_adapter *na = &gna->up.up;
 
-    return netdev_rx_handler_register(na->ifp, intercept ? TRUE : FALSE);
+    return win_rx_handler_register(na->ifp, intercept ? TRUE : FALSE);
 }
 
 /* We don't need to do anything here */
