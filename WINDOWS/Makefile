@@ -45,7 +45,7 @@ _apps:
 clean:
 	rm -rf VsSolution/Output
 
-all: pre-build do-build
+_old_all: pre-build do-build
 
 pre-build:
 	-rm -rf win-build
