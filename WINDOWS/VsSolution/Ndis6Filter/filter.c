@@ -35,15 +35,12 @@ LIST_ENTRY          FilterModuleList;
 
 /*
  * Link with Netmap IOCTL driver used to send internal IOCTLs
- * We grab a reference to the netmap fp (and corresponding netmap_dev, used
- * for sending commands), once done we release the reference to the netmap_fp
+ * We keep a reference to the netmap fp while the module is active.
  */
-static PDEVICE_OBJECT	netmap_dev = NULL; // argument for internal ioctl calls
 static PFILE_OBJECT netmap_fp = NULL;
 
 static FUNCTION_POINTER_XCHANGE netmap_hooks;
 
-int		    FilterModulesCount = 0;		//Number of net adapters where the filter is currently attached
 
 NTSTATUS ndis_update_ifp(int deviceIfIndex, struct net_device *ifp);
 NTSTATUS injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
@@ -167,32 +164,21 @@ Return Value:
             break;
         }
 
-        Status = FilterRegisterDevice();
-
-        if (Status != NDIS_STATUS_SUCCESS)
-        {
-            NdisFDeregisterFilterDriver(FilterDriverHandle);
-            FILTER_FREE_LOCK(&FilterListLock);
-            DEBUGP(DL_WARN, "Register device for the filter driver failed.\n");
-            break;
-        }
-
-
+	/* attach to the netmap module */
 	{
 	    OBJECT_ATTRIBUTES   attr;
 	    UNICODE_STRING      name;
 	    IO_STATUS_BLOCK	iosb;
 	    PIRP pIrp;
+	    PDEVICE_OBJECT	netmap_dev; // argument for internal ioctl calls
 
-
-	    //Getting pointer to netmap IOCTL device
+	    // Getting pointer to netmap IOCTL device
 	    RtlInitUnicodeString(&name, NETMAP_DOS_DEVICE_NAME);
 	    // XXX do we need to set attributes ?
 	    InitializeObjectAttributes(&attr, &name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 	    Status = IoGetDeviceObjectPointer(&name, FILE_ALL_ACCESS, &netmap_fp, &netmap_dev);
 	    if (Status != NDIS_STATUS_SUCCESS)
 	    {
-		NdisFDeregisterFilterDriver(FilterDriverHandle);
 		DEBUGP(DL_WARN, "Cannot find netmap driver\n");
 		break;
 	    }
@@ -220,16 +206,23 @@ Return Value:
 
 	    if (Status != NDIS_STATUS_SUCCESS)
 	    {
+		DEBUGP(DL_WARN, "Error during IoCallDriver to Netmap driver\n");
 		//Release the netmap IOCTL file reference
 		ObDereferenceObject(netmap_fp);
 		netmap_fp = NULL;
-		NdisFDeregisterFilterDriver(FilterDriverHandle);
-		DEBUGP(DL_WARN, "Error during IoCallDriver to Netmap driver\n");
+                break;
 	    }
 	}
+
+        Status = FilterRegisterDevice(); /* errors handled later */
     }
     while(bFalse);
 
+    if (Status != NDIS_STATUS_SUCCESS && FilterDriverHandle != NULL) {
+	NdisFDeregisterFilterDriver(FilterDriverHandle);
+	FILTER_FREE_LOCK(&FilterListLock);
+	DEBUGP(DL_WARN, "Register device for the filter driver failed.\n");
+    }
 
     DEBUGP(DL_TRACE, "<===DriverEntry, Status = %8x\n", Status);
     return Status;
@@ -443,7 +436,6 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
 
         FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
         InsertHeadList(&FilterModuleList, &pFilter->FilterModuleLink);
-	FilterModulesCount++;
         FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
 
     }
@@ -753,7 +745,6 @@ NOTE: Called at PASSIVE_LEVEL and the filter is in paused state
 
     FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
     RemoveEntryList(&pFilter->FilterModuleLink);
-    FilterModulesCount--;
     FILTER_RELEASE_LOCK(&FilterListLock, bFalse);
 
 
@@ -813,6 +804,7 @@ Return Value:
     if (netmap_fp != NULL)
     {
 	ObDereferenceObject(netmap_fp);
+	netmap_fp = NULL;
     }
 
     FILTER_FREE_LOCK(&FilterListLock);

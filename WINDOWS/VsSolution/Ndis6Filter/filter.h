@@ -44,12 +44,6 @@ Notes:
 #define FILTER_MAJOR_NDIS_VERSION   NDIS_FILTER_MAJOR_VERSION
 #define FILTER_MINOR_NDIS_VERSION   NDIS_FILTER_MINOR_VERSION
 
-// XXX remove ?
-typedef struct _ATTACHED_INTERFACE
-{
-	NDIS_HANDLE NdisFilterHandle;
-	NET_IFINDEX BaseMiniportIfIndex;
-} ATTACHED_INTERFACE, *PATTACHED_INTERFACE;
 
 //
 // Global variables
@@ -61,7 +55,7 @@ extern PDEVICE_OBJECT      DeviceObject;
 
 extern FILTER_LOCK         FilterListLock;
 extern LIST_ENTRY          FilterModuleList;
-extern int				   FilterModulesCount;
+
 
 
 
