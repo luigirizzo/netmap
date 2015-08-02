@@ -177,6 +177,7 @@ Return Value:
             break;
         }
 
+
 	{
 	    OBJECT_ATTRIBUTES   attr;
 	    UNICODE_STRING      name;
@@ -216,7 +217,7 @@ Return Value:
 	    {
 		Status = STATUS_DEVICE_DOES_NOT_EXIST;	//XXX_ale
 	    }
-	    
+
 	    if (Status != NDIS_STATUS_SUCCESS)
 	    {
 		//Release the netmap IOCTL file reference
@@ -224,7 +225,7 @@ Return Value:
 		netmap_fp = NULL;
 		NdisFDeregisterFilterDriver(FilterDriverHandle);
 		DEBUGP(DL_WARN, "Error during IoCallDriver to Netmap driver\n");
-	    }	
+	    }
 	}
     }
     while(bFalse);
@@ -318,11 +319,11 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
 
 --*/
 {
-    PMS_FILTER			pFilter = NULL;
-    NDIS_STATUS			Status = NDIS_STATUS_SUCCESS;
-    NDIS_FILTER_ATTRIBUTES	FilterAttributes;
-    ULONG			Size;
-    BOOLEAN			bFalse = FALSE;
+    PMS_FILTER              pFilter = NULL;
+    NDIS_STATUS             Status = NDIS_STATUS_SUCCESS;
+    NDIS_FILTER_ATTRIBUTES  FilterAttributes;
+    ULONG                   Size;
+    BOOLEAN               bFalse = FALSE;
 
     DEBUGP(DL_TRACE, "===>FilterAttach: NdisFilterHandle %p\n", NdisFilterHandle);
 
@@ -432,10 +433,10 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
 
 	pFilter->UserSendNetBufferListPool = NdisAllocateNetBufferListPool(pFilter->FilterHandle, &pFilter->PoolParameters);
 
-	if (pFilter->UserSendNetBufferListPool == NULL) 
-	{ 
-		DEBUGP(DL_ERROR, "Failed to allocate send net buffer list pool.\n"); 
-		Status = NDIS_STATUS_RESOURCES; break; 
+	if (pFilter->UserSendNetBufferListPool == NULL)
+	{
+		DEBUGP(DL_ERROR, "Failed to allocate send net buffer list pool.\n");
+		Status = NDIS_STATUS_RESOURCES; break;
 	}
 
         pFilter->State = FilterPaused;
@@ -1775,7 +1776,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
         }
 
 	if (netmap_hooks.netmap_catch_rx != NULL && pFilter->readyToUse)
-	{	
+	{
 #if 0
 	    static int packets = 0; /* debugging */
 	    //DbgPrint("Dropping packets... size: %i\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
