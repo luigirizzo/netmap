@@ -548,11 +548,6 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NETMAP_GETSOCKOPT _IO('i', 141)
 
 
-#define DRIVER_FUNC_INSTALL     0x01
-#define DRIVER_FUNC_REMOVE      0x02
-
-#define DRIVER_NAME				"netmap"
-
 //These linknames are for the Netmap Core Driver
 #define NETMAP_NT_DEVICE_NAME			L"\\Device\\NETMAP"
 #define NETMAP_DOS_DEVICE_NAME			L"\\DosDevices\\netmap"
