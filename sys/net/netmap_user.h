@@ -369,7 +369,7 @@ intptr_t _get_osfhandle(int); /* defined in io.h in windows */
 static int
 win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 {
-	uint32_t bReturn = 0, szIn, szOut;
+	DWORD bReturn = 0, szIn, szOut;
 	BOOL ioctlReturnStatus;
 	switch (ctlCode) {
 	case NETMAP_POLL:
