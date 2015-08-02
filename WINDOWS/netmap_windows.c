@@ -177,7 +177,7 @@ win_make_mbuf(struct net_device *ifp, uint32_t length, const char *data)
 {
     // XXX see if we can do a single allocation
     struct mbuf *m = malloc(sizeof(struct mbuf), M_DEVBUF, M_NOWAIT | M_ZERO);
-
+	DbgPrint("win_make_mbuf - Data: %p - length: %i", data, length);
     if (m == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
         return NULL;
@@ -245,6 +245,7 @@ send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
     NTSTATUS status;
 
     if (ndis_hooks.injectPacket != NULL) {
+		DbgPrint("send_up_to_stack!");
 	status = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE);
 	return status;
     }
