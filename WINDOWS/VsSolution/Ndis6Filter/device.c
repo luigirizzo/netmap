@@ -357,43 +357,29 @@ DumpPayload(const char* p, uint32_t len)
 /*
  * ndis_update_ifp
  *
- * In netmap we identify interfaces by ifindex, this function translates
- * it to the parameter required by NDIS calls and the buffer pool to
- * be used for transmissions XXX
- *
- * XXX change as follows:
- the function receives the net_device pointer,
- looks up the device (by index/string/whatever)
- grabs a reference
- stores in ifp the following fields:
-	- pFilter
-	- &pFilter->readyToUse so we can enable/disable it while keeping pfilter opaque
-
+ * In netmap we identify interfaces by ifindex, this function writes
+ * in the ifp the pointers to the filter and to the variable
+ * used to enable/disable the filter.
  * It does not matter if the call is expensive, it is only done when
  * during a NIOCREGIF
  *
  * Returns: NTSTATUS - STATUS_SUCCESS interface found, other value error
- *
- * _IN_	int	deviceIfIndex	ifIndex of the network adapter (visible with Get-NetAdapter under powershell)
- * _OUT_ net_device* 	ifp	netmap structure referring the adapter
  */
 NTSTATUS 
 ndis_update_ifp(unsigned int deviceIfIndex, struct net_device *ifp)
 {
     PLIST_ENTRY         Link;
-    int			counter = 0;
     NTSTATUS	status = STATUS_DEVICE_DOES_NOT_EXIST; // default return value
 
-    // XXX check whether we need counter. If the list is bidirectional
-    // but not circular we should not need it.
+    /* the list is bidirectional and circular */
 
     FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
-    for (Link = FilterModuleList.Flink; (Link != NULL && counter < FilterModulesCount);
-	    counter++, Link = Link->Flink) {
+    for (Link = FilterModuleList.Flink; Link != &FilterModuleList; Link = Link->Flink) {
 	PMS_FILTER pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
 
 	//DbgPrint("IfIndex: %i, NDIS_HANDLE: %p\n", pFilter->MiniportIfIndex, pFilter->FilterHandle);
 	if (pFilter->MiniportIfIndex == deviceIfIndex) {
+	    DbgPrint("pfilter %p refcount %d\n", pFilter, pFilter->RefCount);
 	    // XXX should increment pFilter->RefCount before release
 	    // and decrement on release
 	    ifp->pfilter = pFilter;  
