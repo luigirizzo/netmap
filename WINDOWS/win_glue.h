@@ -208,17 +208,17 @@ static void win_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
 	KeClearEvent(ev);
 }
 
-#define PI_NET								16
-#define init_waitqueue_head(x)				KeInitializeEvent(x, NotificationEvent, TRUE);
+#define PI_NET					16
+#define init_waitqueue_head(x)			KeInitializeEvent(x, NotificationEvent, TRUE);
 #define netmap_knlist_destroy(x)
 #define OS_selwakeup(queue, priority)		KeSetEvent(queue, priority, FALSE);			
-#pragma warning(disable:4702)	//unreachable code
-#define OS_selrecord(thread, queue)		    win_selrecord(thread, queue)
+#pragma warning(disable:4702)			//unreachable code
+#define OS_selrecord(thread, queue)		win_selrecord(thread, queue)
 #define tsleep(ident, priority, wmesg, time)	KeDelayExecutionThread(KernelMode, FALSE, (PLARGE_INTEGER)time)	
 //--------------------------------------------------------
 
-#define mb									KeMemoryBarrier
-#define rmb									KeMemoryBarrier //XXX_ale: doesn't seems to exist just a read barrier
+#define mb				KeMemoryBarrier
+#define rmb				KeMemoryBarrier //XXX_ale: doesn't seems to exist just a read barrier
 
 /*********************************************************
 *        			TIME FUNCTIONS		        		 *
@@ -240,7 +240,8 @@ static int time_uptime_w32()
 #define snprintf 							_snprintf
 #define printf								DbgPrint
 
-#define copyin(src, dst, copy_len)					RtlCopyBytes(&dst, src, copy_len)
+/* XXX copyin used in vale (indirect bufs) and netmap_offloadings.c */
+#define copyin(src, dst, copy_len)		RtlCopyBytes(&dst, src, copy_len)
 
 #if 0
 static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
