@@ -581,7 +581,6 @@ typedef struct _POLL_REQUEST_DATA {
 #define NIOCTXSYNC	_IO('i', 148) /* sync tx queues */
 #define NIOCRXSYNC	_IO('i', 149) /* sync rx queues */
 #define NIOCCONFIG	_IOWR('i',150, struct nm_ifreq) /* for ext. modules */
-
 #endif /* !NIOCREGIF */
 
 
