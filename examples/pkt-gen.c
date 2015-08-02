@@ -84,48 +84,43 @@ static inline void CPU_SET(uint32_t i, cpuset_t *p)
  * Convert an ASCII representation of an ethernet address to
  * binary form.
  */
-struct
-ether_addr *ether_aton(a)
-	const char *a;
+struct ether_addr *
+ether_aton(const char *a)
 {
-        int i;
+	int i;
 	static struct ether_addr o;
 	unsigned int o0, o1, o2, o3, o4, o5;
 
-        i = sscanf(a, "%x:%x:%x:%x:%x:%x", &o0, &o1, &o2, &o3, &o4, &o5);
+	i = sscanf(a, "%x:%x:%x:%x:%x:%x", &o0, &o1, &o2, &o3, &o4, &o5);
 
-        if (i != 6)
-                return (NULL);
+	if (i != 6)
+		return (NULL);
 
-        o.octet[0]=o0;
+	o.octet[0]=o0;
 	o.octet[1]=o1;
 	o.octet[2]=o2;
 	o.octet[3]=o3;
 	o.octet[4]=o4;
 	o.octet[5]=o5;
 
-        return ((struct ether_addr *)&o);
+	return ((struct ether_addr *)&o);
 }
 
 /*
  * Convert a binary representation of an ethernet address to
  * an ASCII string.
  */
-char
-*ether_ntoa(n)
-	const struct ether_addr *n;
+char *
+ether_ntoa(const struct ether_addr *n)
 {
-        int i;
+	int i;
 	static char a[18];
 
-        i = sprintf(a, "%02x:%02x:%02x:%02x:%02x:%02x",
+	i = sprintf(a, "%02x:%02x:%02x:%02x:%02x:%02x",
 	    n->octet[0], n->octet[1], n->octet[2],
 	    n->octet[3], n->octet[4], n->octet[5]);
-        if (i < 17)
-                return (NULL);
-        return ((char *)&a);
+	return (i < 17 ? NULL : (char *)&a);
 }
-
 #endif /* _WIN32 */
 
 #ifdef linux
