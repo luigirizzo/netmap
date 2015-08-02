@@ -466,10 +466,13 @@ win32_ndis_packet_freem(struct mbuf* m)
 	}	
 }
 
-#define MBUF_LEN(m)						((m)->m_len)
+#define MBUF_LEN(m)					((m)->m_len)
+/*
+ * m_devget() is used to construct an mbuf from a host ring to the host stack
+ */
 #define m_devget(data, len, offset, dev, fn)		win_make_mbuf(dev, len, data)
-#define m_freem(mbuf)						win32_ndis_packet_freem(mbuf);
-#define m_copydata(source, offset, length, dst)			RtlCopyMemory(dst, source->pkt, length)
+#define m_freem(mbuf)					win32_ndis_packet_freem(mbuf);
+#define m_copydata(source, offset, length, dst)		RtlCopyMemory(dst, source->pkt, length)
 
 
 #define le64toh(x)		_byteswap_uint64(x)	//defined in intrin.h

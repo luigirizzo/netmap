@@ -247,6 +247,7 @@ send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
     if (ndis_hooks.injectPacket != NULL) {
 		DbgPrint("send_up_to_stack!");
 	status = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE);
+	m_freem(m);
 	return status;
     }
     return STATUS_DEVICE_NOT_CONNECTED;
