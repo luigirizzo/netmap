@@ -13,6 +13,10 @@ CFLAGS += -I${.CURDIR}/../../sys -include win_glue.h
 CFLAGS += -DAMD64=1
 DDK ?= c:/WinDDK/7600.16385.1
 
+APP_CFLAGS = -I../sys -Iincludes -DNO_PCAP
+APP_CFLAGS += -g -O2 -Wall -Werror
+APP_CFLAGS += -Wno-char-subscripts -Wno-unused-label
+
 KMOD	= netmap
 SRCS	= device_if.h bus_if.h opt_netmap.h
 SRCS	+= netmap.c
@@ -28,10 +32,16 @@ SRCS	+= netmap_monitor.c
 SRCS	+= opt_inet.h opt_inet6.h
 MSBUILD	="/cygdrive/c/Program Files (x86)/MSBuild/12.0/Bin/MSBuild.exe"
 
-_not_working:
+all: _msbuild _apps
+
+_msbuild:
 	@echo "--- the makefile is not working yet, use msbuild ---"
 	rm -rf VsSolution/Output
 	(cd VsSolution; $(MSBUILD) /t:Build /p:Configuration="Win8.1 Release";Platform=x64 )
+
+_apps:
+	gcc $(APP_CFLAGS) ../examples/pkt-gen.c  -o ../examples/pkt-gen.exe
+	gcc $(APP_CFLAGS) ../examples/pkt-gen.c -DBUSYWAIT -o ../examples/pkt-gen-b.exe
 
 clean:
 	rm -rf VsSolution/Output
