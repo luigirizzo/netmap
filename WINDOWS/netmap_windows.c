@@ -208,13 +208,13 @@ windows_generic_tx_handler(struct net_device *ifp, uint32_t length, const char *
 }
 
 int
-netmap_catch_rx(struct netmap_generic_adapter *gna, int enable)
+netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
     struct netmap_adapter *na = &gna->up.up;
     int *p = na->ifp->intercept;
 
     if (p != NULL) {
-	*p = enable ? (*p | NM_WIN_CATCH_RX) : (*p & ~NM_WIN_CATCH_RX);
+	*p = intercept ? (*p | NM_WIN_CATCH_RX) : (*p & ~NM_WIN_CATCH_RX);
 	return STATUS_SUCCESS;
     }
     return STATUS_DEVICE_NOT_CONNECTED;
@@ -229,9 +229,7 @@ netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 
     if (p != NULL) {
 	*p = enable ? (*p | NM_WIN_CATCH_TX) : (*p & ~NM_WIN_CATCH_TX);
-	return STATUS_SUCCESS;
     }
-    return STATUS_DEVICE_NOT_CONNECTED;
 }
 
 /*
@@ -257,6 +255,8 @@ int
 generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
+    (void)ring_nr;
+    (void)m;	/* we do not need m here at the moment */
     if (ndis_hooks.injectPacket != NULL) {
 	return ndis_hooks.injectPacket(ifp->pfilter, addr, len, TRUE);
     }
@@ -295,10 +295,13 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		struct nmreq nmr;
 	} arg;
 
+
 	size_t	argsize = 0;
 	PVOID	data;
 	struct sockopt	*sopt;
 	int	space, len = 0;
+
+	(void)DeviceObject; // XXX
 
 	irpSp = IoGetCurrentIrpStackLocation(Irp);
 	argsize = irpSp->Parameters.DeviceIoControl.InputBufferLength;
@@ -493,6 +496,8 @@ ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     PIO_STACK_LOCATION irpSp = IoGetCurrentIrpStackLocation(Irp);
     FUNCTION_POINTER_XCHANGE *data;
 
+    (void)DeviceObject; // XXX
+
     switch (irpSp->Parameters.DeviceIoControl.IoControlCode) {
     case NETMAP_KERNEL_XCHANGE_POINTERS: /* the NDIS module registers with us */
 	data = Irp->AssociatedIrp.SystemBuffer;
@@ -534,7 +539,7 @@ windows_netmap_mmap(PIRP Irp)
 
 	PIO_STACK_LOCATION  irpSp;
 	int error = 0;
-	unsigned long off;
+	// unsigned long off;
 	u_int memsize, memflags;
 	irpSp = IoGetCurrentIrpStackLocation(Irp);
 	struct netmap_priv_d *priv = irpSp->FileObject->FsContext;
@@ -611,6 +616,7 @@ windows_netmap_mmap(PIRP Irp)
 int
 copy_from_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
 {
+	// XXX should we use Irp to check for the length ?
 	RtlCopyMemory(dst, src, len);
 	return STATUS_SUCCESS;
 }
@@ -648,7 +654,7 @@ DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING RegistryPath)
     UNICODE_STRING  		ntUnicodeString;    
     UNICODE_STRING  		ntWin32NameString;    
     PDEVICE_OBJECT  		deviceObject = NULL;    // pointer to the instanced device object
-    PDEVICE_DESCRIPTION 	devDes;
+    // PDEVICE_DESCRIPTION 	devDes;
 
     UNREFERENCED_PARAMETER(RegistryPath);
     UNREFERENCED_PARAMETER(deviceObject);

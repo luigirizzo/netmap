@@ -35,12 +35,12 @@
 // #define __aligned__	align
 
 //Disabling unuseful warnings
-#pragma warning(disable:4018)	//wrong corrispondence between signed and unsigned
-#pragma warning(disable:4047)	//!= <type> differs from <2nd type> in the levels of indirect reference
-#pragma warning(disable:4098)	//void function returns a value
+#pragma warning(disable:4018)	// expression: signed/unsigned mismatch
+#pragma warning(disable:4047)	// operator: different levels of indirection
+#pragma warning(disable:4098)	// void function returning a value - netmap_mem2.c
+#pragma warning(disable:4100)	// unreferenced formal parameter
+// #pragma warning(disable:4101)	// unreferenced local variable
 #pragma warning(disable:4118)	//error in between signed and unsigned
-#pragma warning(disable:4100)	//formal parameter without references
-#pragma warning(disable:4101)	//local variable without references
 #pragma warning(disable:4115)	//definition of type between parenthesis
 #pragma warning(disable:4127)	//constant conditional expression
 #pragma warning(disable:4133)	//warning: uncompatible types: From <1> to <2>
@@ -144,6 +144,7 @@ typedef ULONG 				vm_ooffset_t;
 #ifndef IS_USERSPACE
 static void panic(const char *fmt, ...)
 {
+	DbgPrint(fmt);
 	NT_ASSERT(1);
 }
 #define __assert	NT_ASSERT
@@ -175,7 +176,7 @@ static inline void mtx_unlock(win_spinlock_t *m)
 }
 
 #define mtx_init(a, b, c, d)	spin_lock_init(a)
-#define mtx_destroy(a)		// XXX spin_lock_destroy(a)
+#define mtx_destroy(a)		(void)(a)	// XXX spin_lock_destroy(a)
 
 #define mtx_lock_spin(a)	mtx_lock(a)
 #define mtx_unlock_spin(a)	mtx_unlock(a)
@@ -318,6 +319,7 @@ struct mbuf {
 static void
 generic_timer_handler(struct hrtimer *t)
 {
+	DbgPrint("unimplemented %p\n", t);
 #if 0
 	struct nm_generic_mit *mit =
 		container_of(t, struct nm_generic_mit, mit_timer);
@@ -340,37 +342,43 @@ generic_timer_handler(struct hrtimer *t)
 	netmap_mitigation_restart(mit);
 	return HRTIMER_RESTART;
 #endif
-	return 0;
 }
 
 static void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
-struct netmap_adapter *na)
+	struct netmap_adapter *na)
 {
-	/*hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	DbgPrint("unimplemented %p idx %d na %p\n", mit, idx, na);
+#if 0
+	hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	mit->mit_timer.function = &generic_timer_handler;
 	mit->mit_pending = 0;
 	mit->mit_ring_idx = idx;
-	mit->mit_na = na;*/
+	mit->mit_na = na;
+#endif
 }
 
 static void netmap_mitigation_start(struct nm_generic_mit *mit)
 {
+	DbgPrint("unimplemented %p\n", mit);
 	//hrtimer_start(&mit->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
 }
 
 static void netmap_mitigation_restart(struct nm_generic_mit *mit)
 {
+	DbgPrint("unimplemented %p\n", mit);
 	//hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
 }
 
 static int netmap_mitigation_active(struct nm_generic_mit *mit)
 {
+	DbgPrint("unimplemented %p\n", mit);
 	return 1;
 	//return hrtimer_active(&mit->mit_timer);
 }
 
 static void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
 {
+	DbgPrint("unimplemented %p\n", mit);
 	//hrtimer_cancel(&mit->mit_timer);
 }
 
@@ -400,7 +408,9 @@ win_kernel_malloc(size_t size, int32_t ty, int flags)
 {
 	void* mem = ExAllocatePoolWithTag(NonPagedPool, size, ty);
 
-	if (mem != NULL) { // && flags * M_ZERO
+	(void)flags;
+
+	if (mem != NULL) { // && flags & M_ZERO XXX todo
 		RtlZeroMemory(mem, size);
 	}
 	return mem;

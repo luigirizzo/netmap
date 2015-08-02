@@ -102,6 +102,8 @@ win_contigMalloc(int sz, int page_size)
 	PHYSICAL_ADDRESS SkipAddress;
 	PVOID p_;
 
+	(void)page_size; // XXX
+
 	LowAddress.QuadPart = 0;
 	HighestAcceptable.QuadPart = -1;
 	SkipAddress.QuadPart = 0;

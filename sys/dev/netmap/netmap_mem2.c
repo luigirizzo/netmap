@@ -163,6 +163,9 @@ struct netmap_mem_d {
 	struct netmap_mem_ops *ops;
 };
 
+/*
+ * XXX need to fix the case of t0 == void
+ */
 #define NMD_DEFCB(t0, name) \
 t0 \
 netmap_mem_##name(struct netmap_mem_d *nmd) \
