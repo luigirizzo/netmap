@@ -204,13 +204,8 @@
       <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <Inf Include="Netmap.inf" />
-  </ItemGroup>
-  <ItemGroup>
-    <FilesToPackage Include="$(TargetPath)" />
-    <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />
-  </ItemGroup>
+
+
   <ItemGroup>
     <ClCompile Include="..\sys\dev\netmap\netmap.c" />
     <ClCompile Include="..\sys\dev\netmap\netmap_generic.c" />
