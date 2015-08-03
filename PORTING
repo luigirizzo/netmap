@@ -156,6 +156,13 @@ packets injected in the host ring e.g. netmap:eth0^ go through the following pat
   - calls netmap.c :: netmap_send_up() which dequeues each packet
     and sends each through NM_SEND_UP() which is redefined on each architecture
     XXX netmap_send_up() could be made OS-specific to handle batches
+ On windows:
+    m_devget() is win_make_mbuf() we could probably create a new NDIS packet
+	instead and save the second copy later.
+
+    NM_SEND_UP is netmap_windows.c :: send_up_to_stack()
+	calls injectPacket which only uses the payload and frees the mbuf
+	(the filter is not involved, only provides injectPacket)
 
 Datapath from host stack to netmap host ring
 ---------------------------------------------
