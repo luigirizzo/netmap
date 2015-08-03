@@ -58,6 +58,7 @@
     <Configuration>Win8.1 Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">Win32</Platform>
     <RootNamespace>Netmap_Package</RootNamespace>
+    <ProjectName>netmap-pkg</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'" Label="Configuration">
@@ -176,8 +177,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -191,8 +192,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -206,8 +207,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -221,8 +222,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -236,8 +237,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -251,8 +252,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -266,8 +267,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -281,8 +282,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -296,8 +297,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -311,8 +312,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -326,8 +327,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -341,8 +342,8 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output\NetmapPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
     <Midl>
@@ -358,7 +359,7 @@
     <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Netmap.vcxproj">
+    <ProjectReference Include="Netmap.vcxproj">
       <Project>{789055e4-2677-413d-a638-3e2aed7c7427}</Project>
     </ProjectReference>
   </ItemGroup>

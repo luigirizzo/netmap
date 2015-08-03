@@ -154,75 +154,75 @@
   <PropertyGroup />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X86\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X86\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X86\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X86\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X86\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X86\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X64\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X64\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X64\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X64\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X64\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <IncludePath>$(SolutionDir)\..\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
-    <OutDir>$(SolutionDir)\Output\Netmap$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\$(ConfigurationName)-X64\</IntDir>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-tmp\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
     <ClCompile>
@@ -365,25 +365,25 @@
     <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap.c" />
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_generic.c" />
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_mbq.c" />
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_mem2.c" />
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_monitor.c" />
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_pipe.c" />
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_vale.c" />
-    <ClCompile Include="..\..\netmap_windows.c" />
-    <ClCompile Include="..\..\win_glue.c" />
+    <ClCompile Include="..\sys\dev\netmap\netmap.c" />
+    <ClCompile Include="..\sys\dev\netmap\netmap_generic.c" />
+    <ClCompile Include="..\sys\dev\netmap\netmap_mbq.c" />
+    <ClCompile Include="..\sys\dev\netmap\netmap_mem2.c" />
+    <ClCompile Include="..\sys\dev\netmap\netmap_monitor.c" />
+    <ClCompile Include="..\sys\dev\netmap\netmap_pipe.c" />
+    <ClCompile Include="..\sys\dev\netmap\netmap_vale.c" />
+    <ClCompile Include="netmap_windows.c" />
+    <ClCompile Include="win_glue.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\sys\dev\netmap\netmap_kern.h" />
-    <ClInclude Include="..\..\..\sys\dev\netmap\netmap_mbq.h" />
-    <ClInclude Include="..\..\..\sys\dev\netmap\netmap_mem2.h" />
-    <ClInclude Include="..\..\..\sys\net\netmap.h" />
-    <ClInclude Include="..\..\win_glue.h" />
+    <ClInclude Include="..\sys\dev\netmap\netmap_kern.h" />
+    <ClInclude Include="..\sys\dev\netmap\netmap_mbq.h" />
+    <ClInclude Include="..\sys\dev\netmap\netmap_mem2.h" />
+    <ClInclude Include="..\sys\net\netmap.h" />
+    <ClInclude Include="win_glue.h" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\..\netmap_windows.rc" />
+    <ResourceCompile Include="netmap_windows.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

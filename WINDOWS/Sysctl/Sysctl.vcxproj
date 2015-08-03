@@ -22,6 +22,7 @@
     <ProjectGuid>{C315D4A0-BBDC-46C4-973A-DE631517FA48}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>NetmapSysctl</RootNamespace>
+    <ProjectName>sysctl</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -68,27 +69,27 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>$(SolutionDir)\Output\NetmapSysctl$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\Netmap$(ConfigurationName)\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\sysctl-tmp\</IntDir>
     <TargetName>nmSysctl</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <TargetName>nmSysctl</TargetName>
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>$(SolutionDir)\Output\NetmapSysctl$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\Netmap$(ConfigurationName)\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\sysctl-tmp\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>$(SolutionDir)\Output\NetmapSysctl$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapSysctl$(ConfigurationName)\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\sysctl-tmp\</IntDir>
     <TargetName>nmSysctl</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetName>nmSysctl</TargetName>
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>$(SolutionDir)\Output\NetmapSysctl$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\NetmapSysctl$(ConfigurationName)\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\sysctl-tmp\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

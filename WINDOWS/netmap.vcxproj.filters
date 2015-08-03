@@ -30,53 +30,53 @@
     </Inf>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\netmap_windows.c">
+    <ClCompile Include="..\sys\dev\netmap\netmap.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\sys\dev\netmap\netmap_generic.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\sys\dev\netmap\netmap_mbq.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\sys\dev\netmap\netmap_mem2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\sys\dev\netmap\netmap_monitor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\sys\dev\netmap\netmap_pipe.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\sys\dev\netmap\netmap_vale.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="netmap_windows.c">
       <Filter>Source Files\Windows Specific</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\win_glue.c">
+    <ClCompile Include="win_glue.c">
       <Filter>Source Files\Windows Specific</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_mbq.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_mem2.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_vale.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_pipe.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_monitor.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\sys\dev\netmap\netmap_generic.c">
-      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\win_glue.h">
+    <ClInclude Include="..\sys\dev\netmap\netmap_kern.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sys\dev\netmap\netmap_mbq.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sys\dev\netmap\netmap_mem2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\sys\net\netmap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="win_glue.h">
       <Filter>Header Files\Windows Specific</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\sys\net\netmap.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\sys\dev\netmap\netmap_kern.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\sys\dev\netmap\netmap_mbq.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\sys\dev\netmap\netmap_mem2.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\..\netmap_windows.rc">
+    <ResourceCompile Include="netmap_windows.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>

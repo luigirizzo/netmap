@@ -8,9 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strsafe.h>
-#include "..\..\NetmapLoader\sysinstall.h"
-#include "..\..\win_glue.h"
-#include "..\..\..\sys\net\netmap.h"
+#include "..\Loader\sysinstall.h"
+#include "..\win_glue.h"
+#include "..\..\sys\net\netmap.h"
 
 
 BOOLEAN ManageDriver(__in LPCTSTR  DriverName, __in LPCTSTR  ServiceName, __in USHORT   Function);
