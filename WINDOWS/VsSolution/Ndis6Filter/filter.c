@@ -1333,6 +1333,7 @@ Return Value:
 
     // Send complete the NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
+#if 0
     if (NetBufferLists != NULL)
     {
 	PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
@@ -1343,14 +1344,6 @@ Return Value:
 	    { 
 		PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
 		PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
-#if 0  //raises an assertion fault after some time (not sure why)
-		PVOID pDataBuffer = NULL;
-		int  ulDataLength = 0;
-		NdisQueryMdl(pCurrMdl, (PVOID *)&pDataBuffer, &ulDataLength, NormalPagePriority);
-		if (pDataBuffer != NULL) {
-			ExFreePoolWithTag(pDataBuffer, 'NDIS');
-		}
-#endif
 		NdisFreeMdl(pCurrMdl);
 		CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer); 
 	    }
@@ -1361,6 +1354,37 @@ Return Value:
 	    NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
 	}   
     }
+#endif
+	/* Free the entire buffer list */
+	PNET_BUFFER_LIST pCurrNBL = NetBufferLists;
+	while (pCurrNBL != NULL) {
+		PNET_BUFFER_LIST pNextNBL = NET_BUFFER_LIST_NEXT_NBL(pCurrNBL);
+		NET_BUFFER_LIST_NEXT_NBL(pCurrNBL) = NULL;  
+		if (pCurrNBL->NdisPoolHandle == pFilter->UserSendNetBufferListPool) { 
+			/* This is a custom packet, we need free it */
+			PNET_BUFFER pCurrNB = NET_BUFFER_LIST_FIRST_NB(pCurrNBL);
+			while( pCurrNB != NULL ) { 
+				PNET_BUFFER pNextNB = NET_BUFFER_NEXT_NB(pCurrNB); 
+				PMDL pCurrMDL = NET_BUFFER_FIRST_MDL(pCurrNB); 
+				while( pCurrMDL != NULL ) { 
+					PVOID pDataBuffer = NULL; 
+					uint32_t ulDataLength = 0; 
+					PMDL pNextMDL = NDIS_MDL_LINKAGE(pCurrMDL);
+					NdisQueryMdl(pCurrMDL, (PVOID *)&pDataBuffer, &ulDataLength, NormalPagePriority); 
+					NdisFreeMdl(pCurrMDL);
+					if( pDataBuffer != NULL ) {
+						NdisFreeMemory(pDataBuffer, 0, 0);
+					} 
+					pCurrMDL = pNextMDL;
+				} 
+				pCurrNB = pNextNB;
+			} 
+			NdisFreeNetBufferList(pCurrNBL); 
+		} else {
+			NdisFSendNetBufferListsComplete(pFilter->FilterHandle, pCurrNBL, SendCompleteFlags); 
+		} 
+		pCurrNBL = pNextNBL;
+	}
     DEBUGP(DL_TRACE, "<===SendNBLComplete.\n");
 }
 
@@ -1455,7 +1479,7 @@ Arguments:
         //
         
         //NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
-        if (netmap_hooks.netmap_catch_tx != NULL && pFilter->readyToUse)
+        if (netmap_hooks.netmap_catch_tx != NULL && pFilter->readyToUse && FALSE)
         {
 	    int result = -1;
 	    PNET_BUFFER pkt = NULL;
@@ -1554,7 +1578,7 @@ Arguments:
     
     // Return the received NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
-
+#if 1
     PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
     if (NetBufferLists->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
     {
@@ -1571,7 +1595,42 @@ Arguments:
     {
 	NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
     }
-
+#endif
+#if 0
+	PNET_BUFFER_LIST pCurrNBL = NetBufferLists;
+	while (pCurrNBL != NULL) {
+		PNET_BUFFER_LIST pNextNBL = NET_BUFFER_LIST_NEXT_NBL(pCurrNBL);
+		NET_BUFFER_LIST_NEXT_NBL(pCurrNBL) = NULL;
+		if (pCurrNBL->NdisPoolHandle == pFilter->UserSendNetBufferListPool)
+		{ // This is a custom packet, we need free it
+			PNET_BUFFER pCurrNB = NET_BUFFER_LIST_FIRST_NB(pCurrNBL);
+			while (pCurrNB != NULL)
+			{
+				PNET_BUFFER pNextNB = NET_BUFFER_NEXT_NB(pCurrNB);
+				PMDL pCurrMDL = NET_BUFFER_FIRST_MDL(pCurrNB);
+				while (pCurrMDL != NULL)
+				{
+					PVOID pDataBuffer = NULL;
+					uint32_t ulDataLength = 0;
+					PMDL pNextMDL = NDIS_MDL_LINKAGE(pCurrMDL);
+					NdisQueryMdl(pCurrMDL, (PVOID *)&pDataBuffer, &ulDataLength, NormalPagePriority);
+					NdisFreeMdl(pCurrMDL);
+					if (pDataBuffer != NULL)
+					{
+						NdisFreeMemory(pDataBuffer, 0, 0);
+					}
+					pCurrMDL = pNextMDL;
+				}
+				pCurrNB = pNextNB;
+			}
+			NdisFreeNetBufferList(pCurrNBL);
+		}
+		else {
+			NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
+		}
+		pCurrNBL = pNextNBL;
+	}
+#endif
     if (pFilter->TrackReceives)
     {
         DispatchLevel = NDIS_TEST_RETURN_AT_DISPATCH_LEVEL(ReturnFlags);
@@ -1738,7 +1797,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 		    PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
 		    if (buffer != NULL)
 		    {
-			result = netmap_hooks.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
+			  result = netmap_hooks.netmap_catch_rx(pFilter->ifp, pkt->DataLength, buffer);
 		    }
 		    //DbgPrint("Called: result= %i", result);
 		    //DbgPrint("Data->pRxPointer: 0x%p &0x%p", netmap_hooks.pRxPointer, &netmap_hooks.pRxPointer);

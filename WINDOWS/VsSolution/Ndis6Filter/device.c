@@ -477,15 +477,8 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 	} else {
 	    //This one send up to the OS
 	    NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
-	}	
+	}
     } while (FALSE);
 
-    // XXX not sure if we can free the buffer with regular returns.
-    // if so, what is the buffer for ?
-#if 1
-    if (buffer != NULL) {
-	ExFreePoolWithTag(buffer, 'NDIS');
-    }
-#endif
     return status;
 }
