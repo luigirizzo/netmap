@@ -485,7 +485,7 @@ int send_up_to_stack(struct ifnet *ifp, struct mbuf *m);
 #define WNA(_ifp)		_ifp->na
 #define NM_BNS_GET(b)	do { (void)(b); } while (0)
 #define NM_BNS_PUT(b)   do { (void)(b); } while (0)
-#define NM_SEND_UP(dst, m)		send_up_to_stack(dst->na, m)
+#define NM_SEND_UP(dst, m)		send_up_to_stack(dst, m)
 
 /*********************************************************
 *                   ATOMIC OPERATIONS     		         *  
