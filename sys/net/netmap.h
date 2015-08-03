@@ -502,7 +502,6 @@ struct nmreq {
 #define NETMAP_BDG_DELIF	7	/* destroy a virtual port */
 #define NETMAP_PT_HOST_CREATE	8	/* create ptnetmap kthreads */
 #define NETMAP_PT_HOST_DELETE	9	/* delete ptnetmap kthreads */
-
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
 #define NETMAP_BDG_HOST		1	/* attach the host stack on ATTACH */
 
@@ -613,4 +612,27 @@ struct nm_ifreq {
 	char data[NM_IFRDATA_LEN];
 };
 
+/*
+ * netmap kernel thread configuration
+ */
+/* bhyve/vmm.ko MSIX paramenters for IOCTL */
+struct ptn_vmm_ioctl_msix {
+	uint64_t        msg;
+	uint64_t        addr;
+};
+
+/* IOCTL parameters */
+struct nm_kth_ioctl {
+	u_long				com;
+	/* TODO: use union */
+	union {
+		struct ptn_vmm_ioctl_msix msix;
+	} data;
+};
+/* event configuration */
+struct nm_kth_event_cfg {
+	uint64_t ioeventfd;		/* eventfd in linux, tsleep() parameter in FreeBSD */
+	uint64_t irqfd;			/* eventfd in linux, ioctl fd in FreeBSD */
+	struct nm_kth_ioctl ioctl;	/* ioctl parameter to send irq (only used in bhyve/FreeBSD) */
+};
 #endif /* _NET_NETMAP_H_ */
