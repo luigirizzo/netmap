@@ -102,7 +102,7 @@
     <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="nmndis.vcxproj">
+    <ProjectReference Include="nm-ndis.vcxproj">
       <Project>{86BB0F88-ECD9-4E2C-AD47-AE4071D1DE10}</Project>
     </ProjectReference>
   </ItemGroup>

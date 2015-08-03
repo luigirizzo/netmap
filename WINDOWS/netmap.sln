@@ -5,7 +5,7 @@ VisualStudioVersion = 12.0.30501.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "netmap", "netmap.vcxproj", "{789055E4-2677-413D-A638-3E2AED7C7427}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "netmap-pkg", "netmapPackage.vcxproj", "{72648F4C-6AAA-4E69-99C9-66D9D6400EE9}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "netmap-pkg", "netmap-pkg.vcxproj", "{72648F4C-6AAA-4E69-99C9-66D9D6400EE9}"
 	ProjectSection(ProjectDependencies) = postProject
 		{789055E4-2677-413D-A638-3E2AED7C7427} = {789055E4-2677-413D-A638-3E2AED7C7427}
 	EndProjectSection
@@ -16,9 +16,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ndis6", "ndis6", "{D93B3836
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "core", "core", "{84E0C4A9-E647-4ECB-B7B6-76D908925A15}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "nmndis", "nm-ndis\nmndis.vcxproj", "{86BB0F88-ECD9-4E2C-AD47-AE4071D1DE10}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "nmndis", "nm-ndis\nm-ndis.vcxproj", "{86BB0F88-ECD9-4E2C-AD47-AE4071D1DE10}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "nmndis-pkg", "nm-ndis\package.vcxproj", "{F54EA0D4-064F-4AD9-AA21-8F9F3B90AC8E}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "nmndis-pkg", "nm-ndis\nm-ndis-pkg.vcxproj", "{F54EA0D4-064F-4AD9-AA21-8F9F3B90AC8E}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sysctl", "Sysctl\Sysctl.vcxproj", "{C315D4A0-BBDC-46C4-973A-DE631517FA48}"
 EndProject

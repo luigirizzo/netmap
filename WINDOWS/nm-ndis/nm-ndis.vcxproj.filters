@@ -276,6 +276,6 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="nmndis.inf" />
+    <Inf Include="nm-ndis.inf" />
   </ItemGroup>
 </Project>
