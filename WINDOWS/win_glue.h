@@ -469,7 +469,7 @@ win32_ndis_packet_freem(struct mbuf* m)
 }
 
 #define MBUF_LEN(m)						((m)->m_len)
-#define m_devget(slot_addr, slot_len, offset, dev, fn)		NULL
+#define m_devget(data, len, offset, dev, fn)		win_make_mbuf(dev, len, data)
 #define m_freem(mbuf)						win32_ndis_packet_freem(mbuf);
 #define m_copydata(source, offset, length, dst)			RtlCopyMemory(dst, source->pkt, length)
 
