@@ -9,8 +9,12 @@
     <Platform Condition="'$(Platform)' == ''">Win32</Platform>
 
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
+<!-- IntDir seems that we must set it later
     <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\$(ProjectName)-tmp\</IntDir>
+-->
+
   </PropertyGroup>
+
 
   <!-- common properties for netmap projects -->
   <ItemGroup Label="ProjectConfigurations">

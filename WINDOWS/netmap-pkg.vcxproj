@@ -40,10 +40,7 @@
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
     <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-<!--
     <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
--->
-
   </PropertyGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
