@@ -306,7 +306,7 @@ ports attached to the switch)
  *             kring->nm_sync() == netmap_txsync_to_host_compat
  *               netmap_txsync_to_host(na)
  *                 NM_SEND_UP()
- *                   FreeBSD: na->if_input() == ?? XXX
+ *                   FreeBSD: na->if_input() == ether_input()
  *                   linux: netif_rx() with NM_MAGIC_PRIORITY_RX
  *
  *
@@ -333,7 +333,7 @@ ports attached to the switch)
  *               generic_rx_handler()
  *                   mbq_safe_enqueue()
  *                   na->nm_notify() == netmap_notify()
- *    - rx from host stack:
+ *    - rx from host stack (XXX why different from native?):
  *        concurrently:
  *           1) host stack
  *               linux: generic_ndo_start_xmit()
@@ -344,13 +344,7 @@ ports attached to the switch)
  *           2) ioctl(NIOCRXSYNC)/netmap_poll() in process context
  *                kring->nm_sync() == netmap_rxsync_from_host_compat
  *                  netmap_rxsync_from_host(na, NULL, NULL)
- *    - tx to host stack:
- *           ioctl(NIOCTXSYNC)/netmap_poll() in process context
- *             kring->nm_sync() == netmap_txsync_to_host_compat
- *               netmap_txsync_to_host(na)
- *                 NM_SEND_UP()
- *                   FreeBSD: na->if_input() == ??? XXX
- *                   linux: netif_rx() with NM_MAGIC_PRIORITY_RX
+ *    - tx to host stack (same as native):
  *
  *
  *                           -= VALE =-
