@@ -1,10 +1,11 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <PropertyGroup Label="xConfiguration">
-    <ConfigurationType>Driver</ConfigurationType> <!-- this only in the drivers -->
-    <DriverType>WDM</DriverType> <!-- this only in the drivers -->
+  <PropertyGroup Label="PropertySheets"> <!-- does the label matter ? -->
     <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+    <ConfigurationType>Utility</ConfigurationType>
+    <DriverType>Package</DriverType>
+    <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
   </PropertyGroup>
 
   <Import Project="../my-project-cfg.props" />
@@ -16,9 +17,6 @@
     <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
     <Configuration>Win8.1 Debug</Configuration>
   </PropertyGroup>
-<!--
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
--->
 
   <PropertyGroup Label="Globals">
     <ProjectGuid>{F54EA0D4-064F-4AD9-AA21-8F9F3B90AC8E}</ProjectGuid>
@@ -27,9 +25,6 @@
     <ProjectName>nm-ndis-pkg</ProjectName>
   </PropertyGroup>
 
-<!--
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
--->
 
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -38,7 +33,6 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
 
-  <PropertyGroup Label="UserMacros" />
 
   <PropertyGroup>
     <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
@@ -65,6 +59,7 @@
 
   <ItemDefinitionGroup>
   </ItemDefinitionGroup>
+
   <ItemGroup>
     <!--Inf Include="DriverInf.inv" /-->
     <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />

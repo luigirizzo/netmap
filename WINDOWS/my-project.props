@@ -28,7 +28,7 @@
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
     <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
     <TargetName>$(ProjectName)</TargetName>
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\$(ProiectName)-unsigned\</OutDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\$(ProjectName)-unsigned\</OutDir>
     <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\$(ProjectName)-tmp\</IntDir>
   </PropertyGroup>
 
