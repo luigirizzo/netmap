@@ -1590,14 +1590,14 @@ struct netmap_monitor_adapter {
  * native netmap support.
  */
 int generic_netmap_attach(struct ifnet *ifp);
-
-int netmap_catch_rx(struct netmap_generic_adapter *na, int intercept);
 void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
+
+int nm_os_catch_rx(struct netmap_generic_adapter *na, int intercept);
 /* XXX why the type/argument name disparity with netmap_catch_rx ? */
-void netmap_catch_tx(struct netmap_generic_adapter *na, int enable);
-PVOID generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
-int generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
-void generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
+void nm_os_catch_tx(struct netmap_generic_adapter *na, int enable);
+PVOID nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
+int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
+void nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
 static inline struct ifnet*
 netmap_generic_getifp(struct netmap_generic_adapter *gna)
 {
@@ -1619,12 +1619,12 @@ void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi);
  * to reduce the number of interrupt requests/selwakeup
  * to clients on incoming packets.
  */
-void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
+void nm_os_mitigation_init(struct nm_generic_mit *mit, int idx,
                                 struct netmap_adapter *na);
-void netmap_mitigation_start(struct nm_generic_mit *mit);
-void netmap_mitigation_restart(struct nm_generic_mit *mit);
-int netmap_mitigation_active(struct nm_generic_mit *mit);
-void netmap_mitigation_cleanup(struct nm_generic_mit *mit);
+void nm_os_mitigation_start(struct nm_generic_mit *mit);
+void nm_os_mitigation_restart(struct nm_generic_mit *mit);
+int nm_os_mitigation_active(struct nm_generic_mit *mit);
+void nm_os_mitigation_cleanup(struct nm_generic_mit *mit);
 #endif /* WITH_GENERIC */
 
 
@@ -1717,13 +1717,13 @@ struct nm_ipv6hdr {
  */
 #define rawsum_t uint32_t
 
-rawsum_t nm_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum);
-uint16_t nm_csum_ipv4(struct nm_iphdr *iph);
-void nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
+rawsum_t nm_os_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum);
+uint16_t nm_os_csum_ipv4(struct nm_iphdr *iph);
+void nm_os_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 		      size_t datalen, uint16_t *check);
-void nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
+void nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 		      size_t datalen, uint16_t *check);
-uint16_t nm_csum_fold(rawsum_t cur_sum);
+uint16_t nm_os_csum_fold(rawsum_t cur_sum);
 
 void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 			   struct netmap_vp_adapter *dst_na,
@@ -1731,8 +1731,8 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 			   u_int *j, u_int lim, u_int *howmany);
 
 /* persistent virtual port routines */
-int nm_vi_persist(const char *, struct ifnet **);
-void nm_vi_detach(struct ifnet *);
-void nm_vi_init_index(void);
+int nm_os_vi_persist(const char *, struct ifnet **);
+void nm_os_vi_detach(struct ifnet *);
+void nm_os_vi_init_index(void);
 
 #endif /* _NET_NETMAP_KERN_H_ */

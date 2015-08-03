@@ -280,7 +280,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			netmap_mitigation_init(&gna->mit[r], r, na);
 
 		/* Initialize the rx queue, as generic_rx_handler() can
-		 * be called as soon as netmap_catch_rx() returns.
+		 * be called as soon as nm_os_catch_rx() returns.
 		 */
 		for (r=0; r<na->num_rx_rings; r++) {
 			mbq_safe_init(&na->rx_rings[r].rx_queue);
@@ -313,7 +313,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 		rtnl_lock();
 		/* Prepare to intercept incoming traffic. */
-		error = netmap_catch_rx(gna, 1);
+		error = nm_os_catch_rx(gna, 1);
 		if (error) {
 			D("netdev_rx_handler_register() failed (%d)", error);
 			goto register_handler;
@@ -321,7 +321,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		na->na_flags |= NAF_NETMAP_ON;
 
 		/* Make netmap control the packet steering. */
-		netmap_catch_tx(gna, 1);
+		nm_os_catch_tx(gna, 1);
 
 		rtnl_unlock();
 
@@ -347,10 +347,10 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		na->na_flags &= ~NAF_NETMAP_ON;
 
 		/* Release packet steering control. */
-		netmap_catch_tx(gna, 0);
+		nm_os_catch_tx(gna, 0);
 
 		/* Do not intercept packets on the rx path. */
-		netmap_catch_rx(gna, 0);
+		nm_os_catch_rx(gna, 0);
 
 		rtnl_unlock();
 
@@ -606,7 +606,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * break on failures and set notifications when
 			 * ring->cur == ring->tail || nm_i != cur
 			 */
-			xPrev = generic_xmit_frame(ifp, (PVOID)xPrev, addr, len, ring_nr);
+			xPrev = nm_os_generic_xmit_frame(ifp, (PVOID)xPrev, addr, len, ring_nr);
 			if (xHead == NULL)
 				xHead = xPrev;
 			if (unlikely(xPrev == NULL)) {
@@ -638,7 +638,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			IFRATE(rate_ctx.new.txpkt ++);
 		}
 		if (xHead != NULL)
-			generic_xmit_frame(ifp, (PVOID)xHead, NULL, 0, ring_nr);
+			nm_os_generic_xmit_frame(ifp, (PVOID)xHead, NULL, 0, ring_nr);
 
 		/* Update hwcur to the next slot to transmit. */
 		kring->nr_hwcur = nm_i; /* not head, we could break early */
@@ -664,7 +664,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 
 
 /*
- * This handler is registered (through netmap_catch_rx())
+ * This handler is registered (through nm_os_catch_rx())
  * within the attached network interface
  * in the RX subsystem, so that every mbuf passed up by
  * the driver can be stolen to the network stack.
@@ -844,7 +844,7 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	num_tx_desc = num_rx_desc = netmap_generic_ringsize; /* starting point */
 
-	generic_find_num_desc(ifp, &num_tx_desc, &num_rx_desc); /* ignore errors */
+	nm_os_generic_find_num_desc(ifp, &num_tx_desc, &num_rx_desc); /* ignore errors */
 	ND("Netmap ring size: TX = %d, RX = %d", num_tx_desc, num_rx_desc);
 	if (num_tx_desc == 0 || num_rx_desc == 0) {
 		D("Device has no hw slots (tx %u, rx %u)", num_tx_desc, num_rx_desc);
@@ -876,7 +876,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	ND("[GNA] num_rx_queues(%d), real_num_rx_queues(%d)",
 			ifp->num_rx_queues, ifp->real_num_rx_queues);
 
-	generic_find_num_queues(ifp, &na->num_tx_rings, &na->num_rx_rings);
+	nm_os_generic_find_num_queues(ifp, &na->num_tx_rings, &na->num_rx_rings);
 
 	retval = netmap_attach_common(na);
 	if (retval) {

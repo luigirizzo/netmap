@@ -211,7 +211,7 @@ windows_generic_tx_handler(struct net_device *ifp, uint32_t length, const char *
 }
 
 int
-netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
+nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
     struct netmap_adapter *na = &gna->up.up;
     int *p = na->ifp->intercept;
@@ -225,7 +225,7 @@ netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 
 
 void
-netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
     struct netmap_adapter *na = &gna->up.up;
     int *p = na->ifp->intercept;
@@ -253,7 +253,7 @@ send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
 and <> 0 on error (which may be packet drops or other errors). */
 PVOID
-generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
+nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
 	PVOID prev = m;
@@ -269,7 +269,7 @@ generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
  * XXX We do not know how many descriptors and rings we have yet
  */
 int
-generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
+nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
 {
     //XXX_ale: find where the rings are descripted (OID query probably)
     *tx = 1024;
@@ -278,7 +278,7 @@ generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx)
 }
 
 void
-generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
+nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
     //XXX_ale: for a generic device is enough? need to find where this info is
     *txq = 1;
@@ -715,13 +715,13 @@ DriverEntry(__in PDRIVER_OBJECT DriverObject, __in PUNICODE_STRING RegistryPath)
 }
 
 void
-nm_vi_detach(struct ifnet *ifp)
+nm_os_vi_detach(struct ifnet *ifp)
 {
     DbgPrint("nm_vi_detach unimplemented!!!\n");
 }
 
 int
-nm_vi_persist(const char *name, struct ifnet **ret)
+nm_os_vi_persist(const char *name, struct ifnet **ret)
 {
     DbgPrint("nm_vi_persist unimplemented!!!\n");
     return ENOMEM;
