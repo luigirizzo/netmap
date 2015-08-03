@@ -71,13 +71,14 @@
 #define WITH_GENERIC
 #define WITH_PTNETMAP_HOST	/* ptnetmap host support */
 #define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
+
 #endif
 
 #if defined(__FreeBSD__)
 
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
-#define __user$
+#define __user
 #define ACCESS_ONCE(x) (x) 	/* XXX */
 
 #define	NM_LOCK_T	struct mtx	/* low level spinlock, used to protect queues */
@@ -258,6 +259,8 @@ struct nm_bridge;
 struct netmap_priv_d;
 
 const char *nm_dump_buf(char *p, int len, int lim, char *dst);
+
+void nm_os_selwakeup(NM_SELINFO_T *si);
 
 #include "netmap_mbq.h"
 
@@ -570,6 +573,7 @@ struct netmap_adapter {
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
+#define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
 				  */
@@ -703,7 +707,7 @@ struct netmap_adapter {
 
 	/* additional information attached to this adapter
 	 * by other netmap subsystems. Currently used by
-	 * bwrap and LINUX/v1000 and ptnetmap
+	 * bwrap, LINUX/v1000 and ptnetmap
 	 */
 	void *na_private;
 
@@ -932,6 +936,9 @@ nm_kr_rxspace(struct netmap_kring *k)
 	return space;
 }
 
+/* return slots reserved to tx clients */
+#define nm_kr_txspace(_k) nm_kr_rxspace(_k)
+
 
 /* True if no space in the tx ring. only valid after txsync_prologue */
 static inline int
@@ -1087,6 +1094,28 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	ifp->if_capenable &= ~IFCAP_NETMAP;
 #endif
 }
+
+/*
+ * nm_*sync_prologue() functions are used in ioctl/poll and ptnetmap
+ * kthreads.
+ * We need netmap_ring* parameter, because in ptnetmap it is decoupled
+ * from host kring.
+ * The user-space ring pointers (head/cur/tail) are shared through
+ * CSB between host and guest.
+ */
+
+/*
+ * validates parameters in the ring/kring, returns a value for head
+ * If any error, returns ring_size to force a reinit.
+ */
+uint32_t nm_txsync_prologue(struct netmap_kring *, struct netmap_ring *);
+
+
+/*
+ * validates parameters in the ring/kring, returns a value for head
+ * If any error, returns ring_size lim to force a reinit.
+ */
+uint32_t nm_rxsync_prologue(struct netmap_kring *, struct netmap_ring *);
 
 
 /* check/fix address and len in tx rings */
@@ -1743,5 +1772,75 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 int nm_os_vi_persist(const char *, struct ifnet **);
 void nm_os_vi_detach(struct ifnet *);
 void nm_os_vi_init_index(void);
+
+/*
+ * kernel thread routines
+ */
+struct nm_kthread; /* OS-specific kthread - opaque */
+typedef void (*nm_kthread_worker_fn_t)(void *data);
+
+/* kthread configuration */
+struct nm_kthread_cfg {
+	long				type;		/* kthread type */
+	struct nm_kth_event_cfg		event;		/* event/ioctl fd */
+	nm_kthread_worker_fn_t		worker_fn;	/* worker function */
+	void				*worker_private;/* worker parameter */
+	int				attach_user;	/* attach kthread to user process */
+};
+/* kthread configuration */
+struct nm_kthread *nm_os_kthread_create(struct nm_kthread_cfg *cfg);
+int nm_os_kthread_start(struct nm_kthread *);
+void nm_os_kthread_stop(struct nm_kthread *);
+void nm_os_kthread_delete(struct nm_kthread *);
+void nm_os_kthread_wakeup_worker(struct nm_kthread *nmk);
+void nm_os_kthread_send_irq(struct nm_kthread *);
+void nm_os_kthread_set_affinity(struct nm_kthread *, int);
+
+#ifdef WITH_PTNETMAP_HOST
+/*
+ * netmap adapter for host ptnetmap ports
+ */
+struct netmap_pt_host_adapter {
+	struct netmap_adapter up;
+
+	struct netmap_adapter *parent;
+	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
+
+	void *ptn_state;
+};
+/* ptnetmap HOST routines */
+int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
+int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
+static inline int
+nm_ptnetmap_host_on(struct netmap_adapter *na)
+{
+	return na && na->na_flags & NAF_PTNETMAP_HOST;
+}
+#else /* !WITH_PTNETMAP_HOST */
+#define netmap_get_pt_host_na(nmr, _2, _3) \
+	((nmr)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
+#define ptnetmap_ctl(_1, _2)   EINVAL
+#define nm_ptnetmap_host_on(_1)   EINVAL
+#endif /* WITH_PTNETMAP_HOST */
+
+#ifdef WITH_PTNETMAP_GUEST
+/* ptnetmap GUEST routines */
+struct netmap_pt_guest_ops {
+	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
+};
+/*
+ * netmap adapter for guest ptnetmap ports
+ */
+struct netmap_pt_guest_adapter {
+	struct netmap_hw_adapter hwup;
+
+	struct netmap_pt_guest_ops *pv_ops;
+	struct paravirt_csb *csb;
+};
+
+int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
+int netmap_pt_guest_txsync(struct netmap_kring *kring, int flags, int *notify);
+int netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags, int *notify);
+#endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */

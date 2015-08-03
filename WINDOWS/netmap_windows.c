@@ -720,6 +720,12 @@ nm_os_vi_detach(struct ifnet *ifp)
     DbgPrint("nm_vi_detach unimplemented!!!\n");
 }
 
+void
+nm_os_selwakeup(NM_SELINFO_T *queue)
+{
+	KeSetEvent(queue, PI_NET, FALSE);
+}
+
 int
 nm_os_vi_persist(const char *name, struct ifnet **ret)
 {
