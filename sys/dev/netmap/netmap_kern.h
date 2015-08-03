@@ -51,6 +51,12 @@
 #if defined(CONFIG_NETMAP_V1000)
 #define WITH_V1000
 #endif
+#if defined(CONFIG_NETMAP_PTNETMAP_GUEST)
+#define WITH_PTNETMAP_GUEST
+#endif
+#if defined(CONFIG_NETMAP_PTNETMAP_HOST)
+#define WITH_PTNETMAP_HOST
+#endif
 
 #elif defined (_WIN32) 
 #define WITH_VALE	// comment out to disable VALE support
@@ -63,12 +69,16 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
+#define WITH_PTNETMAP_HOST	/* ptnetmap host support */
+#define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
 #endif
 
 #if defined(__FreeBSD__)
 
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
+#define __user$
+#define ACCESS_ONCE(x) (x) 	/* XXX */
 
 #define	NM_LOCK_T	struct mtx	/* low level spinlock, used to protect queues */
 
@@ -115,7 +125,6 @@ struct nm_selinfo {
 	struct mtx m;
 };
 
-void freebsd_selwakeup(struct nm_selinfo *si, int pri);
 
 // XXX linux struct, not used in FreeBSD
 struct net_device_ops {
@@ -694,7 +703,7 @@ struct netmap_adapter {
 
 	/* additional information attached to this adapter
 	 * by other netmap subsystems. Currently used by
-	 * bwrap and LINUX/v1000.
+	 * bwrap and LINUX/v1000 and ptnetmap
 	 */
 	void *na_private;
 
