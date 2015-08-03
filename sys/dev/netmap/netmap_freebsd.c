@@ -35,6 +35,7 @@
 #include <sys/kernel.h> /* types used in module initialization */
 #include <sys/conf.h>	/* DEV_MODULE */
 #include <sys/endian.h>
+#include <sys/syscallsubr.h> /* kern_ioctl() */
 
 #include <sys/rwlock.h>
 
@@ -50,6 +51,10 @@
 #include <sys/malloc.h>
 #include <sys/socket.h> /* sockaddrs */
 #include <sys/selinfo.h>
+#include <sys/kthread.h> /* kthread_add() */
+#include <sys/proc.h> /* PROC_LOCK() */
+#include <sys/unistd.h> /* RFNOWAIT */
+#include <sys/sched.h> /* sched_bind() */
 #include <net/if.h>
 #include <net/if_var.h>
 #include <net/if_types.h> /* IFT_ETHER */
@@ -62,12 +67,13 @@
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
+#include <dev/netmap/netmap_virt.h>
 
 
 /* ======================== FREEBSD-SPECIFIC ROUTINES ================== */
 
 rawsum_t
-nm_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
+nm_os_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
 {
 	/* TODO XXX please use the FreeBSD implementation for this. */
 	uint16_t *words = (uint16_t *)data;
@@ -87,7 +93,7 @@ nm_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
  * return value is in network byte order.
  */
 uint16_t
-nm_csum_fold(rawsum_t cur_sum)
+nm_os_csum_fold(rawsum_t cur_sum)
 {
 	/* TODO XXX please use the FreeBSD implementation for this. */
 	while (cur_sum >> 16)
@@ -96,17 +102,17 @@ nm_csum_fold(rawsum_t cur_sum)
 	return htobe16((~cur_sum) & 0xFFFF);
 }
 
-uint16_t nm_csum_ipv4(struct nm_iphdr *iph)
+uint16_t nm_os_csum_ipv4(struct nm_iphdr *iph)
 {
 #if 0
 	return in_cksum_hdr((void *)iph);
 #else
-	return nm_csum_fold(nm_csum_raw((uint8_t*)iph, sizeof(struct nm_iphdr), 0));
+	return nm_os_csum_fold(nm_os_csum_raw((uint8_t*)iph, sizeof(struct nm_iphdr), 0));
 #endif
 }
 
 void
-nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
+nm_os_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 					size_t datalen, uint16_t *check)
 {
 #ifdef INET
@@ -118,7 +124,7 @@ nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 	/* Compute the checksum on TCP/UDP header + payload
 	 * (includes the pseudo-header).
 	 */
-	*check = nm_csum_fold(nm_csum_raw(data, datalen, 0));
+	*check = nm_os_csum_fold(nm_csum_raw(data, datalen, 0));
 #else
 	static int notsupported = 0;
 	if (!notsupported) {
@@ -129,12 +135,12 @@ nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 }
 
 void
-nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
+nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 					size_t datalen, uint16_t *check)
 {
 #ifdef INET6
 	*check = in6_cksum_pseudo((void*)ip6h, datalen, ip6h->nexthdr, 0);
-	*check = nm_csum_fold(nm_csum_raw(data, datalen, 0));
+	*check = nm_os_csum_fold(nm_csum_raw(data, datalen, 0));
 #else
 	static int notsupported = 0;
 	if (!notsupported) {
@@ -150,7 +156,7 @@ nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
  * Second argument is non-zero to intercept, 0 to restore
  */
 int
-netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
+nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = na->ifp;
@@ -182,7 +188,7 @@ netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
  * On freebsd we just intercept if_transmit.
  */
 void
-netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = netmap_generic_getifp(gna);
@@ -213,7 +219,7 @@ netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
  *
  */
 int
-generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
+nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
 	int ret;
@@ -263,7 +269,7 @@ netmap_getna(if_t ifp)
  * way to extract the info from the ifp
  */
 int
-generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
+nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
 	D("called, in tx %d rx %d", *tx, *rx);
 	return 0;
@@ -271,7 +277,7 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 
 
 void
-generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
+nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
 	D("called, in txq %d rxq %d", *txq, *rxq);
 	*txq = netmap_generic_rings;
@@ -280,7 +286,7 @@ generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 
 
 void
-netmap_mitigation_init(struct nm_generic_mit *mit, int idx, struct netmap_adapter *na)
+nm_os_mitigation_init(struct nm_generic_mit *mit, int idx, struct netmap_adapter *na)
 {
 	ND("called");
 	mit->mit_pending = 0;
@@ -290,21 +296,21 @@ netmap_mitigation_init(struct nm_generic_mit *mit, int idx, struct netmap_adapte
 
 
 void
-netmap_mitigation_start(struct nm_generic_mit *mit)
+nm_os_mitigation_start(struct nm_generic_mit *mit)
 {
 	ND("called");
 }
 
 
 void
-netmap_mitigation_restart(struct nm_generic_mit *mit)
+nm_os_mitigation_restart(struct nm_generic_mit *mit)
 {
 	ND("called");
 }
 
 
 int
-netmap_mitigation_active(struct nm_generic_mit *mit)
+nm_os_mitigation_active(struct nm_generic_mit *mit)
 {
 	ND("called");
 	return 0;
@@ -312,7 +318,7 @@ netmap_mitigation_active(struct nm_generic_mit *mit)
 
 
 void
-netmap_mitigation_cleanup(struct nm_generic_mit *mit)
+nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 {
 	ND("called");
 }
@@ -342,7 +348,7 @@ static struct {
 } nm_vi_indices;
 
 void
-nm_vi_init_index(void)
+nm_os_vi_init_index(void)
 {
 	int i;
 	for (i = 0; i < NM_VI_MAX; i++)
@@ -398,7 +404,7 @@ nm_vi_free_index(uint8_t val)
  * increment this refcount on if_attach().
  */
 int
-nm_vi_persist(const char *name, struct ifnet **ret)
+nm_os_vi_persist(const char *name, struct ifnet **ret)
 {
 	struct ifnet *ifp;
 	u_short macaddr_hi;
@@ -438,14 +444,256 @@ nm_vi_persist(const char *name, struct ifnet **ret)
 	*ret = ifp;
 	return 0;
 }
+
 /* unregister from the system and drop the final refcount */
 void
-nm_vi_detach(struct ifnet *ifp)
+nm_os_vi_detach(struct ifnet *ifp)
 {
 	nm_vi_free_index(((char *)IF_LLADDR(ifp))[5]);
 	ether_ifdetach(ifp);
 	if_free(ifp);
 }
+
+/* ======================== PTNETMAP SUPPORT ========================== */
+
+#ifdef WITH_PTNETMAP_GUEST
+#include <sys/bus.h>
+#include <sys/rman.h>
+#include <machine/bus.h>        /* bus_dmamap_* */
+#include <machine/resource.h>
+#include <dev/pci/pcivar.h>
+#include <dev/pci/pcireg.h>
+/*
+ * ptnetmap memory device (memdev) for freebsd guest
+ * Used to expose host memory to the guest through PCI-BAR
+ */
+
+/*
+ * ptnetmap memdev private data structure
+ */
+struct ptnetmap_memdev {
+	device_t dev;
+	struct resource *pci_io;
+	struct resource *pci_mem;
+	struct netmap_mem_d *nm_mem;
+};
+
+static int	ptn_memdev_probe(device_t);
+static int	ptn_memdev_attach(device_t);
+static int	ptn_memdev_detach(device_t);
+static int	ptn_memdev_shutdown(device_t);
+
+static device_method_t ptn_memdev_methods[] = {
+	/* Device interface */
+	DEVMETHOD(device_probe, ptn_memdev_probe),
+	DEVMETHOD(device_attach, ptn_memdev_attach),
+	DEVMETHOD(device_detach, ptn_memdev_detach),
+	DEVMETHOD(device_shutdown, ptn_memdev_shutdown),
+	DEVMETHOD_END
+};
+
+static driver_t ptn_memdev_driver = {
+	PTN_MEMDEV_NAME, ptn_memdev_methods, sizeof(struct ptnetmap_memdev),
+};
+
+devclass_t ptnetmap_devclass;
+DRIVER_MODULE(netmap, pci, ptn_memdev_driver, ptnetmap_devclass, 0, 0);
+
+MODULE_DEPEND(netmap, pci, 1, 1, 1);
+
+/*
+ * I/O port read/write wrappers.
+ */
+#define ptn_ioread8(ptn_dev, reg)		bus_read_1((ptn_dev)->pci_io, (reg))
+#define ptn_ioread16(ptn_dev, reg)		bus_read_2((ptn_dev)->pci_io, (reg))
+#define ptn_ioread32(ptn_dev, reg)		bus_read_4((ptn_dev)->pci_io, (reg))
+#define ptn_iowrite8(ptn_dev, reg, val)		bus_write_1((ptn_dev)->pci_io, (reg), (val))
+#define ptn_iowrite16(ptn_dev, reg, val)	bus_write_2((ptn_dev)->pci_io, (reg), (val))
+#define ptn_iowrite32(ptn_dev, reg, val)	bus_write_4((ptn_dev)->pci_io, (reg), (val))
+
+/*
+ * map host netmap memory through PCI-BAR in the guest OS
+ *
+ * return physical (nm_paddr) and virtual (nm_addr) addresses
+ * of the netmap memory mapped in the guest.
+ */
+int
+nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
+{
+	uint32_t mem_size;
+	int rid;
+
+	D("ptn_memdev_driver iomap");
+
+	rid = PCIR_BAR(PTNETMAP_MEM_PCI_BAR);
+	mem_size = ptn_ioread32(ptn_dev, PTNETMAP_IO_PCI_MEMSIZE);
+
+	/* map memory allocator */
+	ptn_dev->pci_mem = bus_alloc_resource(ptn_dev->dev, SYS_RES_MEMORY,
+			&rid, 0, ~0, mem_size, RF_ACTIVE);
+	if (ptn_dev->pci_mem == NULL) {
+		*nm_paddr = 0;
+		*nm_addr = 0;
+		return ENOMEM;
+	}
+
+	*nm_paddr = rman_get_start(ptn_dev->pci_mem);
+	*nm_addr = rman_get_virtual(ptn_dev->pci_mem);
+
+	D("=== BAR %d start %lx len %lx mem_size %x ===",
+			PTNETMAP_MEM_PCI_BAR,
+			*nm_paddr,
+			rman_get_size(ptn_dev->pci_mem),
+			mem_size);
+	return (0);
+}
+
+/*
+ * unmap PCI-BAR
+ */
+void
+nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
+{
+	D("ptn_memdev_driver iounmap");
+
+	if (ptn_dev->pci_mem) {
+		bus_release_resource(ptn_dev->dev, SYS_RES_MEMORY,
+			PCIR_BAR(PTNETMAP_MEM_PCI_BAR), ptn_dev->pci_mem);
+		ptn_dev->pci_mem = NULL;
+	}
+}
+
+/*********************************************************************
+ *  Device identification routine
+ *
+ *  ixgbe_probe determines if the driver should be loaded on
+ *  adapter based on PCI vendor/device id of the adapter.
+ *
+ *  return BUS_PROBE_DEFAULT on success, positive on failure
+ *********************************************************************/
+static int
+ptn_memdev_probe(device_t dev)
+{
+	char desc[256];
+
+	if (pci_get_vendor(dev) != PTNETMAP_PCI_VENDOR_ID)
+		return (ENXIO);
+	if (pci_get_device(dev) != PTNETMAP_PCI_DEVICE_ID)
+		return (ENXIO);
+
+	D("ptn_memdev_driver probe");
+	snprintf(desc, sizeof(desc), "%s PCI adapter",
+			PTN_MEMDEV_NAME);
+	device_set_desc_copy(dev, desc);
+
+	return (BUS_PROBE_DEFAULT);
+}
+
+/*********************************************************************
+ *  Device initialization routine
+ *
+ *  The attach entry point is called when the driver is being loaded.
+ *  This routine identifies the type of hardware, allocates all resources
+ *  and initializes the hardware.
+ *
+ *  return 0 on success, positive on failure
+ *********************************************************************/
+static int
+ptn_memdev_attach(device_t dev)
+{
+	struct ptnetmap_memdev *ptn_dev;
+	int rid;
+	uint16_t mem_id;
+
+	D("ptn_memdev_driver attach");
+
+	ptn_dev = device_get_softc(dev);
+	ptn_dev->dev = dev;
+
+	pci_enable_busmaster(dev);
+
+	rid = PCIR_BAR(PTNETMAP_IO_PCI_BAR);
+	ptn_dev->pci_io = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
+			RF_ACTIVE);
+	if (ptn_dev->pci_io == NULL) {
+	        device_printf(dev, "cannot map I/O space\n");
+	        return (ENXIO);
+	}
+
+	mem_id = ptn_ioread16(ptn_dev, PTNETMAP_IO_PCI_HOSTID);
+
+	/* create guest allocator */
+	ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
+	if (ptn_dev->nm_mem == NULL) {
+		ptn_memdev_detach(dev);
+	        return (ENOMEM);
+	}
+	netmap_mem_get(ptn_dev->nm_mem);
+
+	D("ptn_memdev_driver probe OK - host_id: %d", mem_id);
+
+	return (0);
+}
+
+/*********************************************************************
+ *  Device removal routine
+ *
+ *  The detach entry point is called when the driver is being removed.
+ *  This routine stops the adapter and deallocates all the resources
+ *  that were allocated for driver operation.
+ *
+ *  return 0 on success, positive on failure
+ *********************************************************************/
+static int
+ptn_memdev_detach(device_t dev)
+{
+	struct ptnetmap_memdev *ptn_dev;
+
+	D("ptn_memdev_driver detach");
+	ptn_dev = device_get_softc(dev);
+
+	if (ptn_dev->nm_mem) {
+		netmap_mem_put(ptn_dev->nm_mem);
+		ptn_dev->nm_mem = NULL;
+	}
+	if (ptn_dev->pci_mem) {
+		bus_release_resource(dev, SYS_RES_MEMORY,
+			PCIR_BAR(PTNETMAP_MEM_PCI_BAR), ptn_dev->pci_mem);
+		ptn_dev->pci_mem = NULL;
+	}
+	if (ptn_dev->pci_io) {
+		bus_release_resource(dev, SYS_RES_IOPORT,
+			PCIR_BAR(PTNETMAP_IO_PCI_BAR), ptn_dev->pci_io);
+		ptn_dev->pci_io = NULL;
+	}
+
+	return (0);
+}
+
+/*********************************************************************
+ *
+ *  Shutdown entry point
+ *
+ **********************************************************************/
+static int
+ptn_memdev_shutdown(device_t dev)
+{
+	D("ptn_memdev_driver shutsown");
+	return bus_generic_shutdown(dev);
+}
+
+int
+nm_os_pt_memdev_init(void)
+{
+	return 0;
+}
+
+void
+nm_os_pt_memdev_uninit(void)
+{
+
+}
+#endif /* WITH_PTNETMAP_GUEST */
 
 /*
  * In order to track whether pages are still mapped, we hook into
@@ -650,10 +898,249 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 	return error;
 }
 
+/******************** kthread wrapper ****************/
+#include <sys/sysproto.h>
+
+struct nm_kthread_ctx {
+	struct thread *user_td;		/* thread user-space (kthread creator) to send ioctl */
+	/* notification to guest (interrupt) */
+	int irq_fd;		/* ioctl fd */
+	struct nm_kth_ioctl irq_ioctl;	/* ioctl arguments */
+
+	/* notification from guest */
+	void *ioevent_file; 		/* tsleep() argument */
+
+	/* worker function and parameter */
+	nm_kthread_worker_fn_t worker_fn;
+	void *worker_private;
+
+	struct nm_kthread *nmk;
+
+	/* integer to manage multiple worker contexts (e.g., RX or TX on ptnetmap) */
+	long type;
+};
+
+struct nm_kthread {
+	struct thread *worker;
+	struct mtx worker_lock;
+	uint64_t scheduled; 		/* pending wake_up request */
+	struct nm_kthread_ctx worker_ctx;
+	int run;			/* used to stop kthread */
+	int attach_user;		/* kthread attached to user_process */
+	int affinity;
+};
+
+void inline
+nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
+{
+	/*
+	 * There may be a race between FE and BE,
+	 * which call both this function, and worker kthread,
+	 * that reads nmk->scheduled.
+	 *
+	 * For us it is not important the counter value,
+	 * but simply that it has changed since the last
+	 * time the kthread saw it.
+	 */
+	mtx_lock(&nmk->worker_lock);
+	nmk->scheduled++;
+	if (nmk->worker_ctx.ioevent_file) {
+		wakeup(nmk->worker_ctx.ioevent_file);
+	}
+	mtx_unlock(&nmk->worker_lock);
+}
+
+void inline
+nm_os_kthread_send_irq(struct nm_kthread *nmk)
+{
+	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
+	int err;
+
+	if (ctx->user_td && ctx->irq_fd > 0) {
+		err = kern_ioctl(ctx->user_td, ctx->irq_fd, ctx->irq_ioctl.com, (caddr_t)&ctx->irq_ioctl.data.msix);
+		if (err) {
+			D("kern_ioctl error: %d ioctl parameters: fd %d com %lu data %p",
+				err, ctx->irq_fd, ctx->irq_ioctl.com, &ctx->irq_ioctl.data);
+		}
+	}
+}
+
+static void
+nm_kthread_worker(void *data)
+{
+	struct nm_kthread *nmk = data;
+	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
+	uint64_t old_scheduled = nmk->scheduled;
+
+	thread_lock(curthread);
+	if (nmk->affinity >= 0) {
+		sched_bind(curthread, nmk->affinity);
+	}
+	thread_unlock(curthread);
+
+	while (nmk->run) {
+		/*
+		 * check if the parent process dies
+		 * (when kthread is attached to user process)
+		 */
+		if (ctx->user_td) {
+			PROC_LOCK(curproc);
+			thread_suspend_check(0);
+			PROC_UNLOCK(curproc);
+		} else {
+			kthread_suspend_check();
+		}
+
+		/* checks if there is a pending notification */
+		mtx_lock(&nmk->worker_lock);
+		if (likely(nmk->scheduled != old_scheduled)) {
+			old_scheduled = nmk->scheduled;
+			mtx_unlock(&nmk->worker_lock);
+
+			ctx->worker_fn(ctx->worker_private); /* worker_body */
+
+			continue;
+		} else if (nmk->run) {
+			if (ctx->ioevent_file) {
+				/* wait on event with timetout 1 second */
+				msleep_spin_sbt(ctx->ioevent_file, &nmk->worker_lock,
+						"nmk_event", SBT_1S, SBT_1S, C_ABSOLUTE);
+				nmk->scheduled++;
+			}
+		}
+		mtx_unlock(&nmk->worker_lock);
+	}
+
+	kthread_exit();
+}
+
+static int
+nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kthread_cfg *cfg)
+{
+	/* send irq through ioctl to bhyve (vmm.ko) */
+	if (cfg->event.irqfd) {
+		nmk->worker_ctx.irq_fd = cfg->event.irqfd;
+		nmk->worker_ctx.irq_ioctl = cfg->event.ioctl;
+	}
+	/* ring.ioeventfd contains the chan where do tsleep to wait events */
+	if (cfg->event.ioeventfd) {
+		nmk->worker_ctx.ioevent_file = (void *)cfg->event.ioeventfd;
+	}
+
+	return 0;
+}
+
+static void
+nm_kthread_close_files(struct nm_kthread *nmk)
+{
+	nmk->worker_ctx.irq_fd = 0;
+	nmk->worker_ctx.ioevent_file = NULL;
+}
+
+void
+nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
+{
+	nmk->affinity = affinity;
+}
+
+struct nm_kthread *
+nm_os_kthread_create(struct nm_kthread_cfg *cfg)
+{
+	struct nm_kthread *nmk = NULL;
+	int error;
+
+	nmk = malloc(sizeof(*nmk),  M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (!nmk)
+		return NULL;
+
+	mtx_init(&nmk->worker_lock, "nm_kthread lock", NULL, MTX_SPIN);
+	nmk->worker_ctx.worker_fn = cfg->worker_fn;
+	nmk->worker_ctx.worker_private = cfg->worker_private;
+	nmk->worker_ctx.type = cfg->type;
+	nmk->affinity = -1;
+
+	/* attach kthread to user process (ptnetmap) */
+	nmk->attach_user = cfg->attach_user;
+
+	/* open event fd */
+	error = nm_kthread_open_files(nmk, cfg);
+	if (error)
+		goto err;
+
+	return nmk;
+err:
+	free(nmk, M_DEVBUF);
+	return NULL;
+}
+
+int
+nm_os_kthread_start(struct nm_kthread *nmk)
+{
+	struct proc *p = NULL;
+	int error = 0;
+
+	if (nmk->worker) {
+		return EBUSY;
+	}
+
+	/* check if we want to attach kthread to user process */
+	if (nmk->attach_user) {
+		nmk->worker_ctx.user_td = curthread;
+		p = curthread->td_proc;
+	}
+
+	/* enable kthread main loop */
+	nmk->run = 1;
+	/* create kthread */
+	if((error = kthread_add(nm_kthread_worker, nmk, p,
+			&nmk->worker, RFNOWAIT /* to be checked */, 0, "nm-kthread-%ld",
+			nmk->worker_ctx.type))) {
+		goto err;
+	}
+
+	D("nm_kthread started td 0x%p", nmk->worker);
+
+	return 0;
+err:
+	D("nm_kthread start failed err %d", error);
+	nmk->worker = NULL;
+	return error;
+}
+
+void
+nm_os_kthread_stop(struct nm_kthread *nmk)
+{
+	if (!nmk->worker) {
+		return;
+	}
+	/* tell to kthread to exit from main loop */
+	nmk->run = 0;
+
+	/* wake up kthread if it sleeps */
+	kthread_resume(nmk->worker);
+	nm_os_kthread_wakeup_worker(nmk);
+
+	nmk->worker = NULL;
+}
+
+void
+nm_os_kthread_delete(struct nm_kthread *nmk)
+{
+	if (!nmk)
+		return;
+	if (nmk->worker) {
+		nm_os_kthread_stop(nmk);
+	}
+
+	nm_kthread_close_files(nmk);
+
+	free(nmk, M_DEVBUF);
+}
+
 /******************** kqueue support ****************/
 
 /*
- * The OS_selwakeup also needs to issue a KNOTE_UNLOCKED.
+ * nm_os_selwakeup also needs to issue a KNOTE_UNLOCKED.
  * We use a non-zero argument to distinguish the call from the one
  * in kevent_scan() which instead also needs to run netmap_poll().
  * The knote uses a global mutex for the time being. We might
@@ -672,11 +1159,11 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 
 
 void
-freebsd_selwakeup(struct nm_selinfo *si, int pri)
+nm_os_selwakeup(struct nm_selinfo *si)
 {
 	if (netmap_verbose)
 		D("on knote %p", &si->si.si_note);
-	selwakeuppri(&si->si, pri);
+	selwakeuppri(&si->si, PI_NET);
 	/* use a non-zero hint to tell the notification from the
 	 * call done in kqueue_scan() which uses 0
 	 */
