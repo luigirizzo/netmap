@@ -71,7 +71,7 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic v1000"
+subsystem_avail="vale pipe monitor generic v1000 ptnetmap-guest ptnetmap-host"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -214,6 +214,12 @@ Available options:
   --disable-monitor   	       disable the nemtap monitors
   --enable-generic   	       enable the generic netmap adapter
   --disable-generic   	       disable the generic netmap adapter
+  --enable-ptnetmap-guest      enable ptnetmap for guest kernel
+  --disable-ptnetmap-guest     disable ptnetmap for guest kernel
+  --enable-ptnetmap-host       enable ptnetmap for host kernel
+  --disable-ptnetmap-host      disable ptnetmap for host kernel
+  --enable-ptnetmap            enable ptnetmap (both guest and host)
+  --disable-ptnetmap           disable ptnetmap (both guest and host)
   --enable-v1000     	       enable the v1000 backend for
                                the e1000-paravirt driver
   --disable-v1000     	       disable the v1000 backend for
@@ -455,6 +461,14 @@ for opt do
 	;;
 	--mod-name=*) MODNAME="$optarg"
 	;;
+	--enable-ptnetmap)
+		subsys enable ptnetmap-guest
+		subsys enable ptnetmap-host
+	;;
+	--disable-ptnetmap)
+		subsys disable ptnetmap-guest
+		subsys disable ptnetmap-host
+	;;
 	--disable-*)
 		subsys disable "${opt#--disable-}"
 	;;
@@ -668,7 +682,7 @@ Disabling driver.
 	# (we do this mainly to be sure that any module dependency has already
 	#  been taken care of)
 	# XXX maybe add a (per driver?) flag to force compilation anyway
-	drv_conf="CONFIG_$(basename $d .c | tr a-z A-Z)"
+	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
 	m="$(eval echo \$$drv_conf)"
 	[ -n "$m" ] || {
 		echo "$drv_conf not set in $ksrc/.config, skipping $d" | warning
