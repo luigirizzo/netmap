@@ -58,7 +58,7 @@
 #define WITH_PTNETMAP_HOST
 #endif
 
-#elif defined (_WIN32) 
+#elif defined (_WIN32)
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
@@ -1601,7 +1601,7 @@ struct netmap_priv_d {
 
 	struct netmap_adapter	*np_na;
 	uint32_t	np_flags;	/* from the ioctl */
-	u_int		np_qfirst[NR_TXRX], 
+	u_int		np_qfirst[NR_TXRX],
 			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
 	uint16_t	np_txpoll;	/* XXX and also np_rxpoll ? */
 
