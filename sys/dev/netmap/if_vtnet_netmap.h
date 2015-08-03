@@ -418,7 +418,7 @@ vtnet_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 #define PTNETMAP_VIRTIO_IO_BASE         sizeof(struct virtio_net_config)
 
 #ifndef VIRTIO_NET_F_PTNETMAP
-#define VIRTIO_NET_F_PTNETMAP   0x1000000  /* linux/qeum  24 */
+#define VIRTIO_NET_F_PTNETMAP   0x2000000  /* linux/qeum  25 */
 #endif /* VIRTIO_NET_F_PTNETMAP */
 
 static void inline
