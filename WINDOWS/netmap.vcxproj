@@ -6,6 +6,7 @@
     <RootNamespace>netmap</RootNamespace>
   </PropertyGroup>
 
+  <Import Project="my-project-cfg.props" />
   <Import Project="my-project.props" />
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'" Label="Configuration">

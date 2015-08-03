@@ -64,7 +64,7 @@ extern LIST_ENTRY          FilterModuleList;
 // TODO: Customize this to match the GUID in the INF
 #define FILTER_UNIQUE_NAME          L"{5cbf81bd-5055-47cd-9055-a76b2b4e3697}" //unique name, quid name
 // TODO: Customize this to match the service name in the INF
-#define FILTER_SERVICE_NAME         L"NetmapNdis"//L"NDISLWF"
+#define FILTER_SERVICE_NAME         L"NetmapNdis"
 //
 // The filter needs to handle IOCTLs
 //
