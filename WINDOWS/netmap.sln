@@ -18,7 +18,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "core", "core", "{84E0C4A9-E
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ndis", "Ndis6\ndislwf.vcxproj", "{86BB0F88-ECD9-4E2C-AD47-AE4071D1DE10}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ndis-pkg", "Ndis6\package.VcxProj", "{F54EA0D4-064F-4AD9-AA21-8F9F3B90AC8E}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ndis-pkg", "Ndis6\package.vcxproj", "{F54EA0D4-064F-4AD9-AA21-8F9F3B90AC8E}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sysctl", "Sysctl\Sysctl.vcxproj", "{C315D4A0-BBDC-46C4-973A-DE631517FA48}"
 EndProject
