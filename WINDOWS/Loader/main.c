@@ -28,23 +28,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strsafe.h>
-#include "sysinstall.h"
 
 #define DRIVER_NAME "netmap"	// default
 
-
 #include <windows.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strsafe.h>
-#include "sysinstall.h"
 
 
 BOOLEAN RemoveDriver(_In_ SC_HANDLE  SchSCManager, _In_ LPCTSTR    name);
-
 BOOLEAN StartDriver( _In_ SC_HANDLE  SchSCManager, _In_ LPCTSTR    name);
-
 BOOLEAN StopDriver( _In_ SC_HANDLE  SchSCManager, _In_ LPCTSTR    name);
 
 BOOLEAN
@@ -79,11 +70,14 @@ InstallDriver(_In_ SC_HANDLE  SchSCManager, _In_ LPCTSTR    name, _In_ LPCTSTR  
     if (schService == NULL) {
         err = GetLastError();
         if (err == ERROR_SERVICE_EXISTS) {
+            fprintf(stderr, "CreateService %s: Service exists\n", name);
             return TRUE; // Ignore this error.
         } else {
-            printf("CreateService failed!  Error = %d \n", err );
+            fprintf(stderr, "CreateService %s failed!  Error = %d\n", name, err );
             return  FALSE;
         }
+    } else {
+	fprintf(stderr, "CreateService %s success\n", name);
     }
     CloseServiceHandle(schService);
     return TRUE;
@@ -114,7 +108,7 @@ ManageDriver( _In_ LPCTSTR  name, _In_ LPCTSTR  path, _In_ USHORT fn)
                                  );
 
     if (!schSCManager) {
-        printf("Open SC Manager failed! Error = %d \n", GetLastError());
+        fprintf(stderr, "Open SC Manager failed! Error = %d \n", GetLastError());
         return FALSE;
     }
 
@@ -130,7 +124,9 @@ ManageDriver( _In_ LPCTSTR  name, _In_ LPCTSTR  path, _In_ USHORT fn)
             } else {
                 rCode = FALSE; // Indicate an error.
             }
-            break;
+	    if (rCode == TRUE)
+                break;
+	    /* else fallthrough to undo */
 
         case 'r':
         case 'u':
@@ -142,7 +138,7 @@ ManageDriver( _In_ LPCTSTR  name, _In_ LPCTSTR  path, _In_ USHORT fn)
             break;
 
         default:
-            printf("Unknown ManageDriver() function. \n");
+            fprintf(stderr, "Unknown ManageDriver() function. \n");
             rCode = FALSE;
             break;
     }
@@ -157,59 +153,27 @@ BOOLEAN
 RemoveDriver( _In_ SC_HANDLE    SchSCManager, _In_ LPCTSTR      name)
 {
     SC_HANDLE   schService;
-    BOOLEAN     rCode;
-
-    //
-    // Open the handle to the existing service.
-    //
+    BOOLEAN     rCode = TRUE;
 
     schService = OpenService(SchSCManager, name, SERVICE_ALL_ACCESS);
 
     if (schService == NULL) {
-
-        printf("OpenService failed!  Error = %d \n", GetLastError());
-
-        //
-        // Indicate error.
-        //
-
-        return FALSE;
+        fprintf(stderr, "OpenService failed!  Error = %d \n", GetLastError());
+        return FALSE; // Indicate error.
     }
 
-    //
     // Mark the service for deletion from the service control manager database.
-    //
 
     if (DeleteService(schService)) {
-
-        //
-        // Indicate success.
-        //
-
+        fprintf(stderr, "%s %s success\n", __FUNCTION__, name);
         rCode = TRUE;
-
     } else {
-
-        printf("DeleteService failed!  Error = %d \n", GetLastError());
-
-        //
-        // Indicate failure.  Fall through to properly close the service handle.
-        //
-
+        fprintf(stderr, "DeleteService failed!  Error = %d \n", GetLastError());
         rCode = FALSE;
     }
-
-    //
-    // Close the service object.
-    //
-
-    if (schService) {
-
-        CloseServiceHandle(schService);
-    }
+    CloseServiceHandle(schService);
 
     return rCode;
-
 }   // RemoveDriver
 
 
@@ -224,7 +188,7 @@ StartDriver( _In_ SC_HANDLE    SchSCManager, _In_ LPCTSTR      name)
     schService = OpenService(SchSCManager, name, SERVICE_ALL_ACCESS);
 
     if (schService == NULL) {
-        printf("OpenService failed!  Error = %d \n", GetLastError());
+        fprintf(stderr, "OpenService failed!  Error = %d \n", GetLastError());
         return FALSE; // Indicate failure.
     }
 
@@ -239,6 +203,7 @@ StartDriver( _In_ SC_HANDLE    SchSCManager, _In_ LPCTSTR      name)
             fprintf(stderr, "service %s already running\n", name);
             rCode = TRUE; // Ignore this error.
         } else {
+		// 123 is ERROR_INVALID_NAME - should not be returned!
             fprintf(stderr, "StartService failure! Error = %d \n", err );
             rCode = FALSE;
         }
@@ -307,33 +272,30 @@ SetupDriverName(const TCHAR *name, const TCHAR *dir,
     if (fileHandle == INVALID_HANDLE_VALUE) {
         fprintf(stderr, "%s.sys is not loaded.\n", name);
         return FALSE;
-    } else {
-        fprintf(stderr, "file %s found.\n", s);
-    }
-
-    if (fileHandle) {
-        CloseHandle(fileHandle);
-    }
+    } 
+    fprintf(stderr, "file %s found.\n", s);
+    CloseHandle(fileHandle);
+    _fullpath(s, s, len); // XXX overwrites...
     return TRUE;
 }   // SetupDriverName
 
-void PrintHelp(void)
+static void PrintHelp(void)
 {
 	fprintf(stderr, ".sys Loader helper - Arguments list\n");
-	fprintf(stderr, "l [driver name] Load the driver\n");
-	fprintf(stderr, "u [driver name] Unload the driver\n");
+	fprintf(stderr, "l [drivername [dir]] Load the driver\n");
+	fprintf(stderr, "u [drivername] Unload the driver\n");
 	exit(0);
 };
 
-void GetDriverUp(const char *name, const char *dir)
+static void GetDriverUp(const char *name, const char *dir)
 {
-	int errNum = 0;
+	int errNum;
 	HANDLE hDevice;
 	TCHAR s[MAX_PATH];
 
 	fprintf(stderr, "load driver for %s\n", name);
 
-	if (FAILED(StringCbPrintf(s, sizeof(s), "//./%s.sys", name)) ) {
+	if (FAILED(StringCbPrintf(s, sizeof(s), "//./%s", name)) ) {
 		fprintf(stderr, "invalid name %s\n", name);
 		PrintHelp();
 	}
@@ -358,41 +320,40 @@ void GetDriverUp(const char *name, const char *dir)
 
 	if (!ManageDriver(name, s, 'i')) {
 		fprintf(stderr, "Unable to install driver. \n");
-		ManageDriver(name, s, 'r');
+		// ManageDriver(name, s, 'r');
 		return;
 	}
-	fprintf(stderr, "Driver %s correctly loaded\n", s);
+	fprintf(stderr, "Driver %s correctly loaded\n", name);
 }
 
-void BringDriverDown(const char *name, const char *dir)
+static void BringDriverDown(const char *name)
 {
-	int errNum = 0;
 	HANDLE hDevice;
 	TCHAR s[MAX_PATH];
 
-	if (FAILED(StringCbPrintf(s, sizeof(s), "//./%s.sys", name)) ) {
-		fprintf(stderr, "invalid name %s\n", name);
+	if (FAILED(StringCbPrintf(s, sizeof(s), "//./%s", name)) ) {
+		fprintf(stderr, "%s: invalid name %s\n", __FUNCTION__, name);
 		PrintHelp();
 	}
-
-	fprintf(stderr, "Trying to unload the driver %s...\n", name);
 
 	hDevice = CreateFile(s, GENERIC_READ | GENERIC_WRITE,
 		0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hDevice != INVALID_HANDLE_VALUE) {
 		CloseHandle(hDevice);
-		fprintf(stderr, "Unloading driver...:\n");
 		ManageDriver(name, s, 'u');
 	} else {
-		errNum = GetLastError();
+		fprintf(stderr, "%s %s failed, Invalid Handle\n", __FUNCTION__, s);
+#if 0 /* this part does not make sense */
+		int errNum = GetLastError();
 		if (errNum != 0) {
 			fprintf(stderr, "Failed to unload driver: error %i\n", errNum);
 		}
 
-		if (!SetupDriverName(name, dir, s, sizeof(s))) {
+		if (!SetupDriverName(name, NULL, s, sizeof(s))) {
 			return;
 		}
 		ManageDriver(name, s, 'r');
+#endif
 		return;
 	}
 }
@@ -412,7 +373,9 @@ int _cdecl main(int argc, CHAR* argv[])
 	if (c == 'l' || c == 'L') {
 		GetDriverUp(what, where);
 	} else if (c == 'u' || c == 'U') {
-		BringDriverDown(what, where);
+		if (where != NULL)
+			PrintHelp();
+		BringDriverDown(what);
 	} else {
 		PrintHelp();
 	}
