@@ -14,7 +14,7 @@ Class           = NetService
 ClassGUID       = {4D36E974-E325-11CE-BFC1-08002BE10318}
 CatalogFile     = nm-ndis.cat
 
-; TODO: Customize this string for your company name
+; TODO: Customize this string for your company name XXX unipi
 Provider        = %Msft%
 
 ; TODO: Customize this string for the driver version
@@ -87,6 +87,7 @@ HKR, Ndi,HelpText,,%NdisLwf_HelpText%
 ; filters are bound to the underlying miniport.  Possible options include:
 ;     Custom, Diagnostic, Failover, Loadbalance, Vpn, Compression, Encryption, Scheduler
 ; See MSDN for a description of each.
+; XXX was Compression, see if we can change to Custom
 HKR, Ndi,FilterClass,, compression
 ; TODO: Specify whether you have a Modifying or Monitoring filter.
 ; For a Monitoring filter, use this:
@@ -102,12 +103,15 @@ HKR, Ndi\Interfaces,LowerRange,,"nolower"
 ; native WWAN stacks, but you must be prepared to handle the packet framing.
 ; Possible values are listed on MSDN, but common values include:
 ;     ethernet, wan, ppip, wlan
-HKR, Ndi\Interfaces, FilterMediaTypes,,"ethernet, wan, ppip"
+HKR, Ndi\Interfaces, FilterMediaTypes,,"ethernet"
 ; TODO: Specify whether you have a Mandatory or Optional filter.
 ; For a Mandatory filter, use this:
 ;     HKR, Ndi,FilterRunType,0x00010001, 1 ; Mandatory filter
 ; For an Optional filter, use this:
 ;     HKR, Ndi,FilterRunType,0x00010001, 2 ; Optional filter
+;
+; XXX make it Optional
+;
 HKR, Ndi,FilterRunType,0x00010001, 1 ; Mandatory filter
 
 ; By default, Mandatory filters unbind all protocols when they are
@@ -194,10 +198,8 @@ HKR, Parameters, NdisImPlatformBindingOptions,0x00010001,0 ; Subscribe to defaul
 
 [Strings]
 ; TODO: Customize these strings.
-Msft = "University of Pisa"
+Msft = "Universita` di Pisa"
 NdisLwf_Desc = "Netmap NDIS LightWeight Filter"
 NdisLwf_HelpText = "NDIS Generic LightWeight Filters for Netmap"
 
-
-
-
+;-------- end of file -----------

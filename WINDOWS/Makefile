@@ -115,6 +115,12 @@ pre-build:
 _loader:
 	$(MSBUILD) Loader/loader.vcxproj /t:Build /p:Configuration="Win8.1 Release" -p:Platform=x64
 
+_netmap: clean
+	$(MSBUILD) netmap.vcxproj -t:Build -p:Configuration="Win8.1 Release" -p:Platform=x64
+
+_nm-ndis: clean
+	$(MSBUILD) nm-ndis/nm-ndis.vcxproj -t:Build -p:Configuration="Win8.1 Release" -p:Platform=x64
+
 do-build:
 	cd win-build; make body
 
