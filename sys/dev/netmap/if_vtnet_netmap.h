@@ -546,7 +546,7 @@ vtnet_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	struct virtqueue *vq = sc->vtnet_rxqs[ring_nr].vtnrx_vq;
 	int ret, notify = 0;
 
-	ret = ptnetmap_txsync(kring, flags, &notify);
+	ret = ptnetmap_rxsync(kring, flags, &notify);
 
 	if (notify)
 		virtqueue_notify(vq);
