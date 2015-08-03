@@ -6,45 +6,25 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{72648F4C-6AAA-4E69-99C9-66D9D6400EE9}</ProjectGuid>
     <TemplateGuid>{4605da2c-74a5-4865-98e1-152ef136825f}</TemplateGuid>
+<!--
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <MinimumVisualStudioVersion>11.0</MinimumVisualStudioVersion>
-    <Configuration>Win8.1 Debug</Configuration>
+    <Configuration Condition="'$(Configuration) == ''">Win8.1 Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">Win32</Platform>
     <RootNamespace>Netmap_Package</RootNamespace>
+-->
     <ProjectName>netmap-pkg</ProjectName>
   </PropertyGroup>
+
+<!--
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+-->
 
   <PropertyGroup Label="Configuration">
     <ConfigurationType>Utility</ConfigurationType>
     <DriverType>Package</DriverType>
     <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
     <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)'=='Win8.1 Debug'" Label="Configuration">
-    <TargetVersion>WindowsV6.3</TargetVersion>
-    <UseDebugLibraries>true</UseDebugLibraries>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)'=='Win8.1 Release'" Label="Configuration">
-    <TargetVersion>WindowsV6.3</TargetVersion>
-    <UseDebugLibraries>false</UseDebugLibraries>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)'=='Win8 Debug'" Label="Configuration">
-    <TargetVersion>Windows8</TargetVersion>
-    <UseDebugLibraries>true</UseDebugLibraries>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)'=='Win8 Release'" Label="Configuration">
-    <TargetVersion>Windows8</TargetVersion>
-    <UseDebugLibraries>false</UseDebugLibraries>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)'=='Win7 Debug'" Label="Configuration">
-    <TargetVersion>Windows7</TargetVersion>
-    <UseDebugLibraries>true</UseDebugLibraries>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)'=='Win7 Release'" Label="Configuration">
-    <TargetVersion>Windows7</TargetVersion>
-    <UseDebugLibraries>false</UseDebugLibraries>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
