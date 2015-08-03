@@ -12,22 +12,11 @@
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
   </PropertyGroup>
 
-<!--
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
--->
-
   <!-- customization -->
-  <PropertyGroup Label="Configuration">
-    <ConfigurationType>Driver</ConfigurationType> <!-- this only in the drivers -->
-    <DriverType>WDM</DriverType> <!-- this only in the drivers -->
-    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
-  </PropertyGroup>
-
-
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
 
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
+
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -46,6 +35,7 @@
   <ItemGroup> <!-- Label="WrappedTaskItems" -->
     <Inf Include="$(ProjectName).inf" />
   </ItemGroup>
+
   <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" />
     <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />

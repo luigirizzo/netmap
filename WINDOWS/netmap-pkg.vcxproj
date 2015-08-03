@@ -1,25 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <Import Project="my-project-cfg.props" />
-
-  <PropertyGroup Label="Globals">
-    <ProjectGuid>{72648F4C-6AAA-4E69-99C9-66D9D6400EE9}</ProjectGuid>
-    <TemplateGuid>{4605da2c-74a5-4865-98e1-152ef136825f}</TemplateGuid>
-<!--
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
-    <MinimumVisualStudioVersion>11.0</MinimumVisualStudioVersion>
-    <Configuration Condition="'$(Configuration) == ''">Win8.1 Debug</Configuration>
-    <Platform Condition="'$(Platform)' == ''">Win32</Platform>
-    <RootNamespace>Netmap_Package</RootNamespace>
--->
-    <ProjectName>netmap-pkg</ProjectName>
-  </PropertyGroup>
-
-<!--
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
--->
-
   <PropertyGroup Label="Configuration">
     <ConfigurationType>Utility</ConfigurationType>
     <DriverType>Package</DriverType>
@@ -27,7 +8,14 @@
     <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
   </PropertyGroup>
 
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{72648F4C-6AAA-4E69-99C9-66D9D6400EE9}</ProjectGuid>
+    <TemplateGuid>{4605da2c-74a5-4865-98e1-152ef136825f}</TemplateGuid>
+    <ProjectName>netmap-pkg</ProjectName>
+  </PropertyGroup>
+
+  <Import Project="my-project-cfg.props" />
 
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -58,11 +46,6 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
     <Midl>
       <WarningLevel>4</WarningLevel>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
-    <Midl>
       <WarnAsError>true</WarnAsError>
     </Midl>
   </ItemDefinitionGroup>

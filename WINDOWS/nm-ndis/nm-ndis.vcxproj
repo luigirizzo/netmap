@@ -8,6 +8,12 @@
     <ProjectName>nm-ndis</ProjectName>
   </PropertyGroup>
 
+  <PropertyGroup Label="xConfiguration">
+    <ConfigurationType>Driver</ConfigurationType> <!-- this only in the drivers -->
+    <DriverType>WDM</DriverType> <!-- this only in the drivers -->
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+
   <Import Project="../my-project-cfg.props" />
   <Import Project="../my-project.props" />
 
