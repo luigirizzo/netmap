@@ -1496,7 +1496,7 @@ Arguments:
 
 		if (buffer != NULL)
 		{
-		    //result = netmap_hooks.netmap_catch_tx(pFilter->ifp, pkt->DataLength, buffer);
+		    result = netmap_hooks.netmap_catch_tx(pFilter->ifp, pkt->DataLength, buffer);
 		}
 		pkt = pkt->Next;
 		if (pkt == NULL)
