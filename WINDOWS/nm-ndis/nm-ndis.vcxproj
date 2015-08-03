@@ -26,7 +26,11 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..;.</AdditionalIncludeDirectories>
+      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
       <PreprocessorDefinitions Condition="$(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)">%(PreprocessorDefinitions);NDIS60=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDIS_WDM=1</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
       <WarningLevel>Level4</WarningLevel>
@@ -34,253 +38,27 @@
     <ResourceCompile>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..;.</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="$(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)">%(PreprocessorDefinitions);NDIS60=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDIS_WDM=1</PreprocessorDefinitions>
     </ResourceCompile>
 
     <Midl>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..;.</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="$(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)">%(PreprocessorDefinitions);NDIS60=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDIS_WDM=1</PreprocessorDefinitions>
     </Midl>
 
   </ItemDefinitionGroup>
 
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1;</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|Win32'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1;_KERNEL=1;</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);_KERNEL=1;</PreprocessorDefinitions>
     </ClCompile>
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
-  </ItemDefinitionGroup>
-
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'">
-    <ClCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-      <DisableSpecificWarnings>%(DisableSpecificWarnings);4201;4214</DisableSpecificWarnings>
-    </ClCompile>
-    <ResourceCompile>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </ResourceCompile>
-    <Midl>
-      <PreprocessorDefinitions Condition="($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)))">%(PreprocessorDefinitions);NDIS620=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
-    </Midl>
   </ItemDefinitionGroup>
 
   <!-- linker definitions -->
