@@ -15,25 +15,32 @@ NetmapNdis
 NetmapNdis Package
 NetmapLoader
 
-Netmap
-    the core of the Netmap kernel module, can be used by itself to
+netmap
+    the core of the netmap kernel module, can be used by itself to
     create VALE ports and netmap pipes
 
-Netmap package
-    a Test signed version of Netmap to be used on a 64 bit version
+netmap-pkg
+    a Test signed version of netmap module to be used on a 64 bit version
     of Windows with Test Sign mode activated
 
-NetmapNdis
+nm-ndis
     a kernel module to attach the netmap core to a
     physical network devices through NDIS hooks
 
-NetmapNdis Package
+nm-ndis-pkg
     a Test signed version of the above, again for use on 64 bit versions
     of Windows with Test Sign mode activated
 
-NetmapLoader
+loader
     a userspace program to dynamically load and unload the Netmap kernel
     module without the need to install it and load it at OS startup.
+
+sysctl
+    (not complete) a tool to manipulate the sysctl variables in the netmap module.
+
+Projects are visual studio files, .vcxprj . The format is defined
+
+http://blog.bfitz.us/?p=922
 
 The directory ../examples contains pkt-gen, a userspace program
 used to test the speed of a link between two netmap interfaces.
