@@ -346,12 +346,12 @@ generic_timer_handler(struct hrtimer *t)
 		netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
 		generic_rate(0, 0, 0, 0, 0, 1);
 	}
-	netmap_mitigation_restart(mit);
+	nm_os_mitigation_restart(mit);
 	return HRTIMER_RESTART;
 #endif
 }
 
-static void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
+static void nm_os_mitigation_init(struct nm_generic_mit *mit, int idx,
 	struct netmap_adapter *na)
 {
 	DbgPrint("unimplemented %p idx %d na %p\n", mit, idx, na);
@@ -364,26 +364,26 @@ static void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
 #endif
 }
 
-static void netmap_mitigation_start(struct nm_generic_mit *mit)
+static void nm_os_mitigation_start(struct nm_generic_mit *mit)
 {
 	DbgPrint("unimplemented %p\n", mit);
 	//hrtimer_start(&mit->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
 }
 
-static void netmap_mitigation_restart(struct nm_generic_mit *mit)
+static void nm_os_mitigation_restart(struct nm_generic_mit *mit)
 {
 	DbgPrint("unimplemented %p\n", mit);
 	//hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
 }
 
-static int netmap_mitigation_active(struct nm_generic_mit *mit)
+static int nm_os_mitigation_active(struct nm_generic_mit *mit)
 {
 	DbgPrint("unimplemented %p\n", mit);
 	return 1;
 	//return hrtimer_active(&mit->mit_timer);
 }
 
-static void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
+static void nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 {
 	DbgPrint("unimplemented %p\n", mit);
 	//hrtimer_cancel(&mit->mit_timer);

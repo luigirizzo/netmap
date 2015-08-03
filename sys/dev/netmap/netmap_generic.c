@@ -277,7 +277,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			goto out;
 		}
 		for (r=0; r<na->num_rx_rings; r++)
-			netmap_mitigation_init(&gna->mit[r], r, na);
+			nm_os_mitigation_init(&gna->mit[r], r, na);
 
 		/* Initialize the rx queue, as generic_rx_handler() can
 		 * be called as soon as nm_os_catch_rx() returns.
@@ -361,7 +361,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 
 		for (r=0; r<na->num_rx_rings; r++)
-			netmap_mitigation_cleanup(&gna->mit[r]);
+			nm_os_mitigation_cleanup(&gna->mit[r]);
 		free(gna->mit, M_DEVBUF);
 
 		for (r=0; r<na->num_tx_rings; r++) {
@@ -401,7 +401,7 @@ free_tx_pools:
 		na->tx_rings[r].tx_pool = NULL;
 	}
 	for (r=0; r<na->num_rx_rings; r++) {
-		netmap_mitigation_cleanup(&gna->mit[r]);
+		nm_os_mitigation_cleanup(&gna->mit[r]);
 		mbq_safe_destroy(&na->rx_rings[r].rx_queue);
 	}
 	free(gna->mit, M_DEVBUF);
@@ -705,13 +705,13 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 		/* same as send combining, filter notification if there is a
 		 * pending timer, otherwise pass it up and start a timer.
 		 */
-		if (likely(netmap_mitigation_active(&gna->mit[rr]))) {
+		if (likely(nm_os_mitigation_active(&gna->mit[rr]))) {
 			/* Record that there is some pending work. */
 			gna->mit[rr].mit_pending = 1;
 		} else {
 			netmap_generic_irq(na->ifp, rr, &work_done);
 			IFRATE(rate_ctx.new.rxirq++);
-			netmap_mitigation_start(&gna->mit[rr]);
+			nm_os_mitigation_start(&gna->mit[rr]);
 		}
 	}
 #endif
