@@ -326,7 +326,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 }
 
 #if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
-static uint32_t e1000_netmap_ptctl(struct net_device *, uint32_t);
+static uint32_t e1000_ptnetmap_ptctl(struct net_device *, uint32_t);
 static int
 e1000_ptnetmap_config(struct netmap_adapter *na,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
@@ -338,7 +338,7 @@ e1000_ptnetmap_config(struct netmap_adapter *na,
 	if (csb == NULL)
 		return EINVAL;
 
-	ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	ret = e1000_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
 	if (ret)
 		return ret;
 
@@ -488,7 +488,7 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	int ret = 0;
 
 	if (onoff) {
-		ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+		ret = e1000_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
 		if (ret)
 			return ret;
 
@@ -519,7 +519,7 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 		adapter->ptnetmap_enabled = 0;
-		ret = e1000_netmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		ret = e1000_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 
 	return ret;
