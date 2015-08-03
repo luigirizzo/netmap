@@ -31,12 +31,12 @@
 				VFT2_DRV_COMM
 */
 
-#define VER_INTERNALNAME_STR        "nmNdis.SYS"
-#define VER_ORIGINALFILENAME_STR    "nmNdis.SYS"
+#define VER_INTERNALNAME_STR        "nm-ndis.sys"
+#define VER_ORIGINALFILENAME_STR    "nm-ndis.sys"
 #define VER_LANGNEUTRAL
 
-#define VER_COMPANYNAME_STR         "University of Pisa"
-#define VER_PRODUCTNAME_STR         "University of Pisa NETMAP Driver"
+#define VER_COMPANYNAME_STR         "Universita` di Pisa"
+#define VER_PRODUCTNAME_STR         "Ndis NETMAP Driver"
 #define VER_FILEDESCRIPTION_STR     "NETMAP NDIS6.0 LightWeight Filter Driver"
 
 #ifndef VER_PRODUCTVERSION

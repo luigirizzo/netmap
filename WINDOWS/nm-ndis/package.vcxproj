@@ -62,7 +62,7 @@
     <ProjectGuid>{F54EA0D4-064F-4AD9-AA21-8F9F3B90AC8E}</ProjectGuid>
     <SampleGuid>{EA453FB1-F3EF-493B-B384-DD83BAB817D3}</SampleGuid>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
-    <ProjectName>ndis-pkg</ProjectName>
+    <ProjectName>nm-ndis-pkg</ProjectName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'" Label="Configuration">
     <TargetVersion>WindowsV6.3</TargetVersion>
@@ -119,10 +119,12 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
+
+  <PropertyGroup>
     <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\$(ProjectName)\</IntDir>
   </PropertyGroup>
+
   <PropertyGroup>
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
     <EnableDeployment>False</EnableDeployment>
@@ -140,50 +142,7 @@
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|Win32'">
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
-  </PropertyGroup>
+
   <ItemDefinitionGroup>
   </ItemDefinitionGroup>
   <ItemGroup>
