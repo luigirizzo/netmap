@@ -112,6 +112,9 @@ pre-build:
 	cp -p Makefile win-build
 	(cd win-build; touch opt_inet.h opt_inet6.h opt_netmap.h device_if.h bus_if.h)
 
+_loader:
+	(cd Loader; $(MSBUILD) loader.vcxproj /t:Build /p:Configuration="Win8.1 Release" -p:Platform=x64 )
+
 do-build:
 	cd win-build; make body
 

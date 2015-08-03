@@ -476,11 +476,14 @@ StopDriver(
 
 BOOLEAN
 SetupDriverName(
+    const TCHAR *name, const TCHAR *dir,
     _Inout_updates_bytes_all_(BufferLength) PCHAR DriverLocation,
     _In_ ULONG BufferLength
     )
 {
     HANDLE fileHandle;
+
+ if (dir == NULL) {
     DWORD driverLocLen = 0;
 
     //
@@ -497,11 +500,19 @@ SetupDriverName(
 
         return FALSE;
     }
+ } else {
+    DriverLocation[0] = '\0'; /* init to empty string */
+    if (FAILED( StringCbCat(DriverLocation, BufferLength, dir) )) {
+	return FALSE;
+    }
+ }
 
     //
     // Setup path name to driver file.
     //
-    if (FAILED( StringCbCat(DriverLocation, BufferLength, "\\"DRIVER_NAME".sys") )) {
+    if (FAILED( StringCbCat(DriverLocation, BufferLength, "\\") ) ||
+        FAILED( StringCbCat(DriverLocation, BufferLength, name ) ) ||
+        FAILED( StringCbCat(DriverLocation, BufferLength, ".sys" ) ) ) {
         return FALSE;
     }
 
@@ -519,7 +530,7 @@ SetupDriverName(
                                  )) == INVALID_HANDLE_VALUE) {
 
 
-        printf("%s.sys is not loaded.\n", DRIVER_NAME);
+        printf("%s.sys is not loaded.\n", name);
 
         //
         // Indicate failure.

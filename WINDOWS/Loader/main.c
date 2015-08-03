@@ -33,93 +33,88 @@
 BOOLEAN ManageDriver(__in LPCTSTR  DriverName, __in LPCTSTR  ServiceName, __in USHORT   Function);
 BOOLEAN SetupDriverName(__inout_bcount_full(BufferLength) PCHAR DriverLocation,__in ULONG BufferLength);
 
-void PrintHelp()
+void PrintHelp(void)
 {
-	printf("Netmap .sys Loader helper - Arguments list\n");
-	printf("l Load the driver\n");
-	printf("u Unload the driver\n");
+	printf(".sys Loader helper - Arguments list\n");
+	printf("l [driver name] Load the driver\n");
+	printf("u [driver name] Unload the driver\n");
+	exit(0);
 };
 
-void GetDriverUp()
+void GetDriverUp(const char *name)
 {
 	int errNum = 0;
 	HANDLE hDevice;
 	TCHAR driverLocation[MAX_PATH];
+
 	memset(driverLocation, 0, sizeof(TCHAR)* MAX_PATH);
 
-	if ((hDevice = CreateFile("\\\\.\\NetMap",
+	fprintf(stderr, "about to do CreateFile %s\n", name);
+	hDevice = CreateFile("//./netmap",
 		GENERIC_READ | GENERIC_WRITE,
 		0,
 		NULL,
 		CREATE_ALWAYS,
 		FILE_ATTRIBUTE_NORMAL,
-		NULL)) == INVALID_HANDLE_VALUE) {
-
-		errNum = GetLastError();
-
-		if (errNum != ERROR_FILE_NOT_FOUND) {
-			printf("CreateFile failed!  ERROR_FILE_NOT_FOUND = %d\n", errNum);
-			return;
-		}
-		else{
-			printf("CreateFile ok!\n");
-		}
-
-		if (!SetupDriverName(driverLocation, sizeof(driverLocation))) {
-			printf("SetupDriverName FAILED! (%s)\n", driverLocation);
-			return;
-		}
-
-		if (!ManageDriver(DRIVER_NAME,
-			driverLocation,
-			DRIVER_FUNC_INSTALL
-			)) {
-			printf("Unable to install driver. \n");
-			ManageDriver(DRIVER_NAME,
-				driverLocation,
-				DRIVER_FUNC_REMOVE
-				);
-			return;
-		}
-		printf("Driver correctly loaded\n");
+		NULL);
+	fprintf(stderr, "CreateFile returns %p\n", hDevice);
+	if (hDevice != INVALID_HANDLE_VALUE) {
+		printf("module %s already loaded\n", name);
+		return;
 	}
+	errNum = GetLastError();
+
+	if (errNum != ERROR_FILE_NOT_FOUND) {
+		printf("CreateFile failed!  error is not FILE_NOT_FOUND = %d\n", errNum);
+		return;
+	}
+
+	if (!SetupDriverName(driverLocation, sizeof(driverLocation))) {
+		printf("SetupDriverName FAILED! (%s)\n", driverLocation);
+		return;
+	}
+
+	if (!ManageDriver(name, driverLocation, DRIVER_FUNC_INSTALL)) {
+		printf("Unable to install driver. \n");
+		ManageDriver(name, driverLocation, DRIVER_FUNC_REMOVE);
+		return;
+	}
+	printf("Driver correctly loaded\n");
 }
 
-void BringDriverDown()
+void BringDriverDown(const char *name)
 {
 	int errNum = 0;
 	HANDLE hDevice;
 	TCHAR driverLocation[MAX_PATH];
 
-	printf("Trying to unload the driver...\n");
+	printf("Trying to unload the driver %s...\n", name);
 
-	if ((hDevice = CreateFile("\\\\.\\NetMap",
+	hDevice = CreateFile("\\\\.\\netmap",
 		GENERIC_READ | GENERIC_WRITE,
 		0,
 		NULL,
 		OPEN_EXISTING,
 		FILE_ATTRIBUTE_NORMAL,
-		NULL)) == INVALID_HANDLE_VALUE)
-	{
+		NULL);
+	if (hDevice == INVALID_HANDLE_VALUE) {
 		printf("Closing handle...:\n");
 		CloseHandle(hDevice);
 		printf("Unloading driver...:\n");
-		ManageDriver(DRIVER_NAME,
+		ManageDriver(name,
 			driverLocation,
 			DRIVER_FUNC_REMOVE
 			);
-	}
-	else{
+	} else {
 		errNum = GetLastError();
-		if (errNum != 0)
-		{
+		if (errNum != 0) {
 			printf("Failed to unload driver: %i", errNum);
 		}
 			
 		if (!SetupDriverName(driverLocation, sizeof(driverLocation))) {
 			return;
 		}
-		ManageDriver(DRIVER_NAME,
+		ManageDriver(name,
 			driverLocation,
 			DRIVER_FUNC_REMOVE
 			);
@@ -129,21 +124,20 @@ void BringDriverDown()
 
 int _cdecl main(int argc, CHAR* argv[])
 {
-	if (argc < 2)
-	{
+	char c;
+	char *what = DRIVER_NAME;
+
+	if (argc < 2 || argc > 3)
+		PrintHelp();
+	c = argv[1][0];
+	if (argc == 3)
+		what = argv[2];
+	if (c == 'l' || c == 'L') {
+		GetDriverUp(what);
+	} else if (c == 'u' || c == 'U') {
+		BringDriverDown(what);
+	} else {
 		PrintHelp();
 	}
-	else{
-		if ((argv[1][0] == 'l') || (argv[1][0] == 'L'))
-		{
-			GetDriverUp();
-		}
-		else if ((argv[1][0] == 'u') || (argv[1][0] == 'U'))
-		{
-			BringDriverDown();
-		}
-		else {
-			PrintHelp();
-		}
-	}
+	return 0;
 }
