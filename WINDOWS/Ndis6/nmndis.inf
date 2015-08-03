@@ -54,7 +54,7 @@ Characteristics=0x40000
 ; have {curly braces}.
 NetCfgInstanceId="{5cbf81bd-5055-47cd-9055-a76b2b4e3697}"
 
-Copyfiles = ndislwf.copyfiles.sys
+Copyfiles = nmndis.copyfiles.sys
 
 [SourceDisksNames]
 1=%NdisLwf_Desc%,"",,
@@ -66,9 +66,9 @@ nmndis.sys=1
 
 [DestinationDirs]
 DefaultDestDir=12
-ndislwf.copyfiles.sys=12
+nmndis.copyfiles.sys=12
 
-[ndislwf.copyfiles.sys]
+[nmndis.copyfiles.sys]
 ; TODO: Customize the name of your binary here.
 nmndis.sys,,,2
 
