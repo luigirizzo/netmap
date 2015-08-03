@@ -469,7 +469,7 @@ netmap_default_mbuf_destructor(struct mbuf *m)
 
 struct mbuf *win_make_mbuf(struct net_device *, uint32_t, const char *);
 
-#define netmap_get_mbuf(ifp, _l)	win_make_mbuf(ifp, _l, NULL)
+#define nm_os_get_mbuf(ifp, _l)	win_make_mbuf(ifp, _l, NULL)
 	// XXX do we also need the netmap_default_mbuf_destructor ?
 
 
