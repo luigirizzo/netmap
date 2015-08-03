@@ -3,3 +3,5 @@
     nmndis.inf :
 	make the filter Optionsl (do not unbind protocols
 	StartType: 3;SERVICE_DEMAND_START
+
+    see how to use netcfg.exe to load the netmap-ndis module

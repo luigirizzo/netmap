@@ -185,7 +185,6 @@
   </ImportGroup>
   <ItemGroup Label="WrappedTaskItems">
     <ClCompile Include="main.c" />
-    <ClCompile Include="sysinstall.c" />
   </ItemGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <TargetName>NetmapLoader</TargetName>
