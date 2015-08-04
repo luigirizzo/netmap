@@ -1531,7 +1531,7 @@ retry:
 				RD(5, "rx %d frags to %d", cnt, j);
 			ft_end = ft_p + cnt;
 			if (unlikely(virt_hdr_mismatch)) {
-				//bdg_mismatch_datapath(na, dst_na, ft_p, ring, &j, lim, &howmany);
+				bdg_mismatch_datapath(na, dst_na, ft_p, ring, &j, lim, &howmany);
 			} else {
 				howmany -= cnt;
 				do {
@@ -1540,7 +1540,6 @@ retry:
 
 					slot = &ring->slot[j];
 					dst = NMB(&dst_na->up, slot);
-					ND("send to buf %d at %p", slot->buf_idx, dst);
 
 					ND("send [%d] %d(%d) bytes at %s:%d",
 							i, (int)copy_len, (int)dst_len,
@@ -1935,7 +1934,6 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 	if (!nm_netmap_on(na))
 		return 0;
 
-
 	bkring = &vpna->up.tx_rings[ring_nr];
 
 	/* make sure the ring is not disabled */
@@ -2167,7 +2165,6 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 
 	if (!nm_netmap_on(hwna))
 		return 0;
-	ND("sending to %s", hw_kring->name);
 	/* first step: simulate a user wakeup on the rx ring */
 	netmap_vp_rxsync(kring, flags);
 	ND("%s[%d] PRE rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",

@@ -73,8 +73,8 @@
 
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
-#define __user				/* XXX: temp */
-#define ACCESS_ONCE(x) (x) 	/* XXX: temp */
+#define __user
+#define ACCESS_ONCE(x) (x) 	/* XXX */
 
 #define	NM_LOCK_T	struct mtx	/* low level spinlock, used to protect queues */
 
@@ -880,6 +880,7 @@ nm_kr_rxspace(struct netmap_kring *k)
 
 	return space;
 }
+
 /* return slots reserved to tx clients */
 #define nm_kr_txspace(_k) nm_kr_rxspace(_k)
 
@@ -1543,6 +1544,7 @@ struct netmap_monitor_adapter {
 };
 
 #endif /* WITH_MONITOR */
+
 
 #ifdef WITH_GENERIC
 /*

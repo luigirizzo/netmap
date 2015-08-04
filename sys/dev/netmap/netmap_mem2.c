@@ -139,8 +139,8 @@ typedef uint16_t nm_memid_t;
  * Shared info for netmap allocator
  *
  * Each allocator contains this structur as first netmap_if.
- * In this way, we can share same details about allocator to the
- * VM.
+ * In this way, we can share same details about allocator
+ * to the VM.
  * Used in ptnetmap.
  */
 struct netmap_mem_shared_info {
@@ -163,7 +163,6 @@ const struct netmap_if nms_if_blueprint = {
     .ni_tx_rings = 0,
     .ni_rx_rings = 0
 };
-
 
 struct netmap_mem_d {
 	NMA_LOCK_T nm_mtx;  /* protect the allocator */
@@ -1736,7 +1735,7 @@ struct netmap_mem_ptg {
 	struct ptnetmap_memdev *ptn_dev;
 };
 
-/* Read allocator info from the first netmap_if */
+/* Read allocator info from the first netmap_if (only on finalize) */
 static int
 netmap_mem_pt_guest_read_shared_info(struct netmap_mem_d *nmd)
 {
