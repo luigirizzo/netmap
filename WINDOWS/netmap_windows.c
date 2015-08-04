@@ -431,7 +431,7 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 					NtStatus = STATUS_TIMEOUT;
 					break;
 				}
-				pollData->revents = netmap_poll(NULL, pollData->events, irpSp);
+				pollData->revents = netmap_poll(priv, pollData->events, irpSp);
 			}	
 			irpSp->FileObject->FsContext2 = NULL;
 			copy_to_user((void*)data, &arg, sizeof(POLL_REQUEST_DATA), Irp);
