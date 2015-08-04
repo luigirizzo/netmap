@@ -1793,7 +1793,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 		    if (buffer != NULL)
 		    {
 			  result = netmap_hooks.handle_rx(pFilter->ifp, pkt->DataLength, buffer);
-			  /* windows_generic_rx_handler() win_make_mbuf()  and generic_rx_handler()
+			  /* handle_rx() calls win_make_mbuf()  and generic_rx_handler()
 			   * enqueues on an mbq and notifies
 			   */
 		    }

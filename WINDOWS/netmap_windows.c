@@ -159,55 +159,64 @@ ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
  * pass it to the handler.
  * We use this routine also in a way similar to m_getcl(),
  * passing a NULL pointer does not initialize the buffer (we need the length).
+ * We have two pools, one for the mbuf and one for the cluster.
+ * XXX we could do with a single allocation.
  */
 struct mbuf *
 win_make_mbuf(struct net_device *ifp, uint32_t length, const char *data)
 {
-    // XXX see if we can do a single allocation
-    //struct mbuf *m = malloc(sizeof(struct mbuf), M_DEVBUF, M_NOWAIT | M_ZERO);
 	struct mbuf *m = ExAllocateFromNPagedLookasideList(&ifp->mbuf_pool);
 	//DbgPrint("win_make_mbuf - Data: %p - length: %i", data, length);
-    if (m == NULL) {
-        DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
-        return NULL;
-    }
-    m->m_len = length;
-    //m->pkt = malloc(length, M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (m == NULL) {
+		DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
+		return NULL;
+	}
+	m->m_len = length;
 	m->pkt = ExAllocateFromNPagedLookasideList(&ifp->mbuf_packets_pool);
-    if (m->pkt == NULL) {
-        DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf packet!!!");
-	//free(m, M_DEVBUF);
+	if (m->pkt == NULL) {
+		DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf packet!!!");
 		ExFreeToNPagedLookasideList(&ifp->mbuf_pool, m);
-        return NULL;
-    }
-    m->dev = ifp;
-    if (data)
-	RtlCopyMemory(m->pkt, data, length);
-    return m;
-}
-
-struct NET_BUFFER *
-windows_generic_rx_handler(struct net_device *ifp, uint32_t length, const char *data)
-{
-    struct mbuf *m = win_make_mbuf(ifp, length, data);
-
-    if (m)
-	generic_rx_handler(ifp, m);
-    return NULL;
+		return NULL;
+	}
+	m->dev = ifp;
+	if (data) // XXX otherwise zero memory ?
+		RtlCopyMemory(m->pkt, data, length);
+	return m;
 }
 
 /*
-* intercept packet coming from up,
-* and pass them to netmap
-*/
+ * windows_handle_rx is called by the nm-ndis module on an incoming packet
+ * from the NIC (miniport driver). After encapsulating into a buffer,
+ * we pass it to the generic rx handler in netmap_generic.c to be queued
+ * on the NIC rx ring.
+ * XXX in the future we could avoid the allocation by passing up the NDIS
+ * packet, and setting a callback to generate the notification when the
+ * netmap receiver eventually calls rxsync. However the savings from the
+ * extra allocation and copy are probably modest at least until we
+ * have a relatively slow NIC.
+ */
 struct NET_BUFFER *
-windows_generic_tx_handler(struct net_device *ifp, uint32_t length, const char *data)
+windows_handle_rx(struct net_device *ifp, uint32_t length, const char *data)
 {
-    struct mbuf *m = win_make_mbuf(ifp, length, data);
+	struct mbuf *m = win_make_mbuf(ifp, length, data);
 
-    if (m)
-	netmap_transmit(ifp, m);
-    return NULL;
+	if (m)
+		generic_rx_handler(ifp, m);
+	return NULL;
+}
+
+/*
+ * Same as above for packets coming from the host stack and passed to the
+ * host rx ring of netmap.
+ */
+struct NET_BUFFER *
+windows_handle_tx(struct net_device *ifp, uint32_t length, const char *data)
+{
+	struct mbuf *m = win_make_mbuf(ifp, length, data);
+
+	if (m)
+		netmap_transmit(ifp, m);
+	return NULL;
 }
 
 //nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si)
@@ -536,8 +545,8 @@ ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     case NETMAP_KERNEL_XCHANGE_POINTERS: /* the NDIS module registers with us */
 	data = Irp->AssociatedIrp.SystemBuffer;
 	/* tell ndis whom to call when a packet arrives */
-	data->handle_rx = &windows_generic_rx_handler;
-	data->handle_tx = &windows_generic_tx_handler;
+	data->handle_rx = &windows_handle_rx;
+	data->handle_tx = &windows_handle_tx;
 
 	/* function(s) to access interface parameters */
 	ndis_hooks.ndis_regif = data->ndis_regif;
