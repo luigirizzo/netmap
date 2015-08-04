@@ -565,18 +565,6 @@ windows_netmap_mmap(PIRP Irp)
 
 	error = netmap_mem_get_info(na->nm_mem, &memsize, &memflags, NULL);
 
-#ifdef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
-	void* addressToShare;
-	addressToShare = win32_netmap_mem_getVirtualAddress(na->nm_mem, 0);
-	if (addressToShare == NULL) {
-		return STATUS_DEVICE_DATA_ERROR;
-	}
-	vm_paddr_t temp;
-	temp = vtophys(priv->np_nifp);
-	if (temp.QuadPart == NULL) {
-		return STATUS_DEVICE_DATA_ERROR;
-	}
-#endif
 	try { // XXX see if we can do without exceptions
 		buffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
 		if (buffer == NULL) {
@@ -585,15 +573,9 @@ windows_netmap_mmap(PIRP Irp)
 			return STATUS_DEVICE_DATA_ERROR;
 		}
 
-#ifdef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
-		mdl = IoAllocateMdl(addressToShare,
-			memsize, FALSE, FALSE, NULL);
-		MmBuildMdlForNonPagedPool(mdl);
-#else
 		mdl = IoAllocateMdl(NULL,
 			memsize, FALSE, FALSE, NULL);
 		win32_build_virtual_memory_for_userspace(mdl, na->nm_mem);
-#endif	//_WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
 
 		UserVirtualAddress = MmMapLockedPagesSpecifyCache(
 			mdl,

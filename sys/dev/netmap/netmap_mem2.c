@@ -1108,12 +1108,8 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p, void* base)
 		int lim = i + p->_clustentries;
 		char *clust;
 
-#ifndef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
 		clust = contigmalloc(n, M_NETMAP, M_NOWAIT | M_ZERO,
 		    (size_t)0, -1UL, PAGE_SIZE, 0);
-#else
-		clust = ((char*)base + (i * p->_objsize));
-#endif //_WIN32
 		if (clust == NULL) {
 			/*
 			 * If we get here, there is a severe memory shortage,
@@ -1246,33 +1242,12 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 }
 
 
-#ifdef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
-static int
-find_clusters_total_size(struct netmap_mem_d *nmd)
-{
-	int totalSize = 0, numClust, clustSize, i;
-
-	for (i = 0; i < NETMAP_POOLS_NR; i++) {
-		numClust = (&nmd->pools[i])->_numclusters;
-		clustSize = (&nmd->pools[i])->_clustsize;
-		totalSize += (numClust * clustSize);
-	}
-	return totalSize;
-}
-#endif /* _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER */
-
 static int
 netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 {
 	int i;
 	void *baseAddress = NULL;
 
-#ifdef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
-	baseAddress = malloc(find_clusters_total_size(nmd), M_NETMAP, M_NOWAIT | M_ZERO);
-	if (baseAddress == NULL) {
-		return STATUS_INSUFFICIENT_RESOURCES;
-	}
-#endif
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		return 0;
 	nmd->lasterr = 0;
