@@ -445,6 +445,7 @@ ptnetmap_txsync(struct netmap_kring *kring, int flags, int *notify)
 	struct netmap_adapter *na = kring->na;
 	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
 	struct paravirt_csb *csb = ptna->csb;
+	bool send_kick = false;
 
 	/* Disable notifications */
 	csb->guest_need_txkick = 0;
@@ -528,7 +529,7 @@ ptnetmap_rxsync(struct netmap_kring *kring, int flags, int *notify)
                 /* Send kick to the host if it needs them */
 		if (ACCESS_ONCE(csb->host_need_rxkick)) {
 			csb->rx_ring.sync_flags = flags;
-			virtqueue_notify(vq);
+			*notify = 1;
 		}
 	}
 
