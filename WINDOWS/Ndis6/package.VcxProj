@@ -62,7 +62,7 @@
     <ProjectGuid>{F54EA0D4-064F-4AD9-AA21-8F9F3B90AC8E}</ProjectGuid>
     <SampleGuid>{EA453FB1-F3EF-493B-B384-DD83BAB817D3}</SampleGuid>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
-    <ProjectName>NetmapNdis Package</ProjectName>
+    <ProjectName>ndis-pkg</ProjectName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'" Label="Configuration">
     <TargetVersion>WindowsV6.3</TargetVersion>
@@ -120,8 +120,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup>
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -141,48 +141,48 @@
     <VerifyFlags>133563</VerifyFlags>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X64\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X64\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|Win32'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|Win32'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|Win32'">
-    <OutDir>$(SolutionDir)\Output\nmNdisPackage$(ConfigurationName)-X86\</OutDir>
-    <IntDir>$(SolutionDir)\Output\Intermediate\nmNdisPackage$(ConfigurationName)-X86\</IntDir>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\ndis-pkg\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
   </ItemDefinitionGroup>
@@ -191,7 +191,7 @@
     <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\ndislwf.vcxproj">
+    <ProjectReference Include="ndislwf.vcxproj">
       <Project>{86BB0F88-ECD9-4E2C-AD47-AE4071D1DE10}</Project>
     </ProjectReference>
   </ItemGroup>
