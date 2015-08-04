@@ -1382,6 +1382,11 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	 *  !0    !NULL		impossible
 	 */
 
+	/* try to see if this is a ptnetmap port */
+	error = netmap_get_pt_host_na(nmr, na, create);
+	if (error || *na != NULL)
+		return error;
+
 	/* try to see if this is a monitor port */
 	error = netmap_get_monitor_na(nmr, na, create);
 	if (error || *na != NULL)
@@ -2149,6 +2154,9 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				|| i == NETMAP_BDG_NEWIF
 				|| i == NETMAP_BDG_DELIF) {
 			error = netmap_bdg_ctl(nmr, NULL);
+			break;
+		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
+			error = ptnetmap_ctl(nmr, priv->np_na);
 			break;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);
