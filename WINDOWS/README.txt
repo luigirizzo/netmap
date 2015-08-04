@@ -8,12 +8,7 @@ which is the first number visible with the "route print" command
 
 ------------ BRIEF DESCRIPTION ----------
 
-The solution Netmap.sln contains 5 different projects:
-Netmap
-Netmap Package
-NetmapNdis
-NetmapNdis Package
-NetmapLoader
+The solution Netmap.sln contains the following projects:
 
 netmap
     the core of the netmap kernel module, can be used by itself to
@@ -38,7 +33,7 @@ loader
 sysctl
     (not complete) a tool to manipulate the sysctl variables in the netmap module.
 
-Projects are visual studio files, .vcxprj . The format is defined
+Projects are visual studio files, .vcxprj . The format is defined in
 
 http://blog.bfitz.us/?p=922
 
@@ -52,14 +47,18 @@ and loaded at boot time.
 
 a) DYNAMIC LOAD: 
     - Open a "cmd" window with administrative privileges
-    - Change into the directory containing Netmap.sys and Netmaploader.exe
-    - To load the module, run "NetmapLoader L"; a message on the console window will
-      report the success or failure of the operation
+    - Change into the directory containing netmap.sys< typically
+		WINDOWS/Output-Win8.1Release/netmap-pkg
 
-    - To unload the module run "Netmaploader U"
+    - To load the module, run
+		../nm-loader l
+      a message on the console window will report the success or failure of the operation
+
+    - To unload the module run
+		../nm-loader u
 
 b) PERSISTENT INSTALL MODULE
-    - Open the folder containing Netmap.{sys|inf|cat}
+    - Open the folder containing netmap.{sys|inf|cat} , same as above
     - Right click on the .inf file and select -INSTALL- from the
       context menu; after a reboot the module will be correctly loaded
 
@@ -68,14 +67,15 @@ b) PERSISTENT INSTALL MODULE
        " Control panel -> network and sharing center -> Change adapter settings "
     - right click on an adapter then click on " Properties "
     - click on " Install -> Service -> Add "
-    - click on 'Driver Disk' and select 'nmNdis.inf' in this folder
-    - select 'Netmap NDIS' which is the only service you should see
+    - click on 'Driver Disk' and select the folder
+		WINDOWS/Output-Win8.1Release/nm-ndis-pkg
+    - select the service "Netmap NDIS LightWeight Filter"
     - click accept on the warnings for the installation of an unsigned
-      driver (roughly twice per existing network card)
+      or test-signed driver
 
-If the Netmap kernel module has been installed in a dynamic way,
-remember to deinstall the NDIS module before a shutdown/reboot
-and before unloading the Netmap Core Module.
+If the netmap core module has been installed in a dynamic way,
+remember to deinstall the nm-ndis module before a shutdown/reboot
+and before unloading the netmap core module.
 
 ------------ NETMAP BUILD INSTRUCTIONS ----------
 Requirements:
@@ -100,45 +100,62 @@ a) Build with the Visual studio GUI
       and the type of build (Debug/Release)
     - Click on "Compile", then "Compile solution"
     - The output will be found under
-	<root directory>\WINDOWS\VsSolution\Output\<chosen-build-type>\
+	<root directory>\WINDOWS\Output-<chosen-build-type>\
 
 b) Build with command line tools and MsBuild.exe
-    - Select one of these directories, depending on the architecture
+   We have a makefile which builds everything, just run
+	make		# will build all projects and pkt-gen
+	make clean	# will clean output directories
 
-	32-bit host, 32-bit tools	C:\Program Files\MSBuild\12.0\bin
-	64-bit host, 32-bit tools	C:\Program Files (x86)\MSBuild\12.0\bin
-	64-bit host, 64-bit tools	C:\Program Files (x86)\MSBuild\12.0\bin\amd64
+   The output will be found in the directory ./Output-<choosen build type>
 
-      (you can add it to the path or prepend the path to the MSBuild command below)
-
-    - In the WINDOWS/VsSolution directory run the command
-	 " MsBuild Netmap.sln /t:Build /p:Configuration=Release;Platform=Win32 "
-/cygdrive/c/Program\ Files\ \(x86\)/MSBuild/12.0/Bin/MSBuild.exe /t:Build /p:Configuration=Release;Platform=Win32
-      where Configuration and Platform parameter depends on what kind of build is needed.
-
-    - The output will be found in the directory ./Output/<choosen build type>
-
-       Using as configuration the keywords Debug/Release will
-       automatically switch the selected configuration to "Current
-       OS"-Debug/Release.
-
-	If a build for a certain OS is needed valid options are
-    		- "Win7 Debug" or "Win7 Release"
-    		- "Win8 Debug" or "Win8 Release"
-    		- "Win8.1 Debug" or "Win8.1 Release"
-
------------- PKT-GEN example building INSTRUCTIONS ----------
-To build the pkt-gen example the following steps are required:
-    - Open an instance of Cygwin Terminal
-    - Change into the directory <netmap root dir>/WINDOWS/VsSolution
-    - Execute the command ./bpgen.bat
-    - The output will be found under <netmap root dir>/examples
-    (pkt-gen.exe and pkt-gen-b.exe)
+   Please look at the makefile to select different configurations
 
 
 
 ------------ GENERAL TIPS -----------------------------------
-To use pkt-gen under Hyper-V with a physical device (generic) two precautions are needed
+Performance testing requires a bit of attention to make sure
+that processes do not move between different cores, that the
+CPU clock speed does not change, and that the switch does not
+drop packets because of unrecognised MAC addresses.
+
+--- Configuration of the software switch (Hyper-V) ---
 - Always specify the MAC address of the sender
-- Go into the configuration of the VM and under "setting->NIC->Advanced Features" enable "Mac Spoofing" or else the packets will be discarded by the 
-     Hyper-V virtual switch
+- By default, Hyper-V drops packets with MAC addresses not associated
+  to the given port. To allow any traffic,
+	Go into the configuration of the VM
+	under "setting->NIC->Advanced Features"
+	enable "Mac Spoofing"
+
+--- Pinning cores (Hyper-V) ---
+	Go into the configuration of the VM
+	under settings->Processor
+		Virtual machine reserve (percentage)	100
+		(not clear if there is a way to pin the thread)
+
+--- PERFORMANCE ---
+
+The typical experiment involve one netmap sender and one netmap receiver
+
+	pkt-gen-b -i <interface-name> -f tx ...
+	pkt-gen-b -i <interface-name> -f rx ...
+
+this version of pkt-gen uses busy-wait. The interface name can be a VALE port
+or a NIC or host port using the nm-ndis module (emulating the netmap API,
+so not as fast as the drivers using native netmap mode available on FreeBSD
+and Linux).
+
+VALE port:
+	pkt-gen-b -i vale0:a -f tx
+	pkt-gen-b -i vale0:b -f rx
+
+NETMAP pipe
+	pkt-gen-b -i vale0:a}1 -f tx
+	pkt-gen-b -i vale0:a{1 -f rx
+
+NETMAP to NIC ring
+	pkt-gen-b -i netmap:1 -f tx	# on one vm
+	pkt-gen-b -i netmap:1 -f rx	# on another vm
+
+
+
