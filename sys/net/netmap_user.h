@@ -424,7 +424,7 @@ win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int3
  * An invalid netmap name will return errno = 0;
  * You can pass a pointer to a pre-filled nm_desc to add special
  * parameters. Flags is used as follows
- * NM_OPEN_NO_MMAP	use the memory from arg, only
+ * NM_OPEN_NO_MMAP	use the memory from arg, only XXX avoid mmap
  *			if the nr_arg2 (memory block) matches.
  * NM_OPEN_ARG1		use req.nr_arg1 from arg
  * NM_OPEN_ARG2		use req.nr_arg2 from arg
@@ -567,7 +567,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	/* these fields are overridden by ifname and flags processing */
 	d->req.nr_ringid |= nr_ringid;
-	d->req.nr_flags = nr_flags;
+	d->req.nr_flags |= nr_flags;
 	memcpy(d->req.nr_name, ifname, namelen);
 	d->req.nr_name[namelen] = '\0';
 	/* optionally import info from parent */
