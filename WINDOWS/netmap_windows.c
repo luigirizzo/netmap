@@ -254,38 +254,44 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
 
 /*
  * XXX the mbuf must be consumed
+ * this is NM_SEND_UP which builds a batch of packets and then
+ * sends them up on the last call with a NULL data.
+ * XXX at the moment packets are copied from the netmap buffer into mbufs
+ * and then again into NDIS packets. We could save one allocation and one
+ * copy, eventually.
  */
 PVOID
 send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head)
 {
-    PVOID result = NULL;
-    if (ndis_hooks.injectPacket != NULL) {
+	PVOID result = NULL;
+	if (ndis_hooks.injectPacket != NULL) {
         //DbgPrint("send_up_to_stack!");
 		if (m != NULL) {
 			result = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE, head);
 			m_freem(m);
-		}
-		else {
+		} else {
 			ndis_hooks.injectPacket(ifp->pfilter, NULL, 0, FALSE, head);
 		}
 		
-    }
-    return result;
+	}
+	return result;
 }
 
-/* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
-and <> 0 on error (which may be packet drops or other errors). */
+/*
+ * Transmit routine used by generic_netmap_txsync(). Returns 0 on success
+ * and <> 0 on error (which may be packet drops or other errors).
+*/
 PVOID
 nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
 	PVOID prev = m;
-    (void)ring_nr;
-    (void)m;	/* we do not need m here at the moment */
-    if (ndis_hooks.injectPacket != NULL) {
+	(void)ring_nr;
+	(void)m;	/* we do not need m here at the moment */
+	if (ndis_hooks.injectPacket != NULL) {
 		return ndis_hooks.injectPacket(ifp->pfilter, addr, len, TRUE, prev);
-    }
-    return NULL;
+	}
+	return NULL;
 }
 
 /*
