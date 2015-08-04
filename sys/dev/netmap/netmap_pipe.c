@@ -85,7 +85,6 @@ SYSEND;
 static int
 nm_pipe_alloc(struct netmap_adapter *na, u_int npipes)
 {
-	D("\nCalling nm_pipe_alloc\n");
 	size_t len;
 	struct netmap_pipe_adapter **npa;
 
