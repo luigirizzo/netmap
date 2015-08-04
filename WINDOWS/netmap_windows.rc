@@ -20,8 +20,8 @@
 #define VER_PRIVATE                 0
 #endif
 
-#define VER_COMPANYNAME_STR         "University of Pisa"
-#define VER_PRODUCTNAME_STR         "University of Pisa NETMAP Driver"
+#define VER_COMPANYNAME_STR         "Universita` di Pisa"
+#define VER_PRODUCTNAME_STR         "Universita` di Pisa netmap core"
 #define VER_FILEFLAGSMASK           VS_FFI_FILEFLAGSMASK
 #define VER_FILEOS                  VOS_NT_WINDOWS32
 #define VER_FILEFLAGS               (VER_PRERELEASE|VER_DEBUG|VER_PRIVATE)
