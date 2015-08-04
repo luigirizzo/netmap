@@ -133,13 +133,12 @@ ports attached to the switch)
  * >    select()able file descriptor on which events are reported.
  *
  *  	Internally, we allocate a netmap_priv_d structure, that will be
- *  	initialized on ioctl(NIOCREGIF).
+ *  	initialized on ioctl(NIOCREGIF). There is one netmap_priv_d
+ *  	structure for each open().
  *
  *      os-specific:
- *  	    FreeBSD: netmap_open (netmap_freebsd.c). The priv is
- *  		     per-thread.
- *  	    linux:   linux_netmap_open (netmap_linux.c). The priv is
- *  		     per-open.
+ *  	    FreeBSD: see netmap_open() (netmap_freebsd.c)
+ *  	    linux:   see linux_netmap_open() (netmap_linux.c)
  *
  * > 2. on each descriptor, the process issues an ioctl() to identify
  * >    the interface that should report events to the file descriptor.

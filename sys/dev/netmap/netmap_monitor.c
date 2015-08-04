@@ -189,9 +189,9 @@ nm_monitor_alloc(struct netmap_kring *kring, u_int n)
 	
         len = sizeof(struct netmap_kring *) * n;
 #ifndef _WIN32
-		nm = realloc(kring->monitors, len, M_DEVBUF, M_NOWAIT | M_ZERO);
+	nm = realloc(kring->monitors, len, M_DEVBUF, M_NOWAIT | M_ZERO);
 #else
-		nm = realloc(kring->monitors, len, sizeof(struct netmap_kring *)*kring->max_monitors);
+	nm = realloc(kring->monitors, len, sizeof(struct netmap_kring *)*kring->max_monitors);
 #endif
 	if (nm == NULL)
 		return ENOMEM;

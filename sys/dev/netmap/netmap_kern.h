@@ -64,7 +64,7 @@
 #define WITH_MONITOR
 #define WITH_GENERIC
 
-#else	/* not linux neither windows */
+#else	/* neither linux nor windows */
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
@@ -173,10 +173,10 @@ struct hrtimer {
 #define	NM_SEND_UP(ifp, m)	((ifp)->if_input)(ifp, m)
 
 #elif defined (_WIN32)
-#include "..\..\..\WINDOWS\win_glue.h"
-#define	NM_SELINFO_T		KEVENT			//KQUEUE
-#define	NM_LOCK_T			win_spinlock_t	// see win_glue.h
-#define NM_MTX_T			KGUARDED_MUTEX	/* OS-specific mutex (sleepable) */
+#include "../../../WINDOWS/win_glue.h"
+#define NM_SELINFO_T		KEVENT			//KQUEUE
+#define NM_LOCK_T		win_spinlock_t	// see win_glue.h
+#define NM_MTX_T		KGUARDED_MUTEX	/* OS-specific mutex (sleepable) */
 
 #define NM_MTX_INIT(m)		KeInitializeGuardedMutex(&m);
 #define NM_MTX_DESTROY(m)	do { (void)(m); } while (0)
@@ -193,7 +193,7 @@ struct hrtimer {
 #define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL	_IO_direct('i', 195)
 
 //Empty data structures are not permitted by MSVC compiler
-//XXX_ale, try to solve this mess
+//XXX_ale, try to solve this problem
 struct net_device_ops{
 	char data[1];
 };
@@ -204,8 +204,8 @@ typedef struct hrtimer{
 	char data[1];
 };
 
-///XXX_ale TODO, check if can be built
-#ifdef _MSC_VER  //MSVC compiler doesn't has (un)likely support
+/* MSVC does not have likely/unlikely support */
+#ifdef _MSC_VER
 #define likely(x)	(x)
 #define unlikely(x)	(x)
 #else
@@ -219,10 +219,10 @@ typedef struct hrtimer{
 
 #endif /* end - platform-specific code */
 
-#ifndef _WIN32
+#ifndef _WIN32 /* support for emulated sysctl */
 #define SYSBEGIN(x)
 #define SYSEND
-#endif
+#endif /* _WIN32 */
 
 #define	NMG_LOCK_T		NM_MTX_T
 #define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock)
@@ -1575,7 +1575,7 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 #ifndef _WIN32
 	*pp = (i >= na->na_lut.objtotal) ? lut[0].paddr : lut[i].paddr;
 #else
-	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)lut[0].paddr.QuadPart : (uint64_t)lut[i].paddr.QuadPart;	
+	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)lut[0].paddr.QuadPart : (uint64_t)lut[i].paddr.QuadPart;
 #endif
 	return ret;
 }
