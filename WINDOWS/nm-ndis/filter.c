@@ -1368,28 +1368,6 @@ Return Value:
     /*
      * callback when transmit packets have been completed
      */
-#if 0
-    if (NetBufferLists != NULL)
-    {
-	PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
-
-	if (NetBufferLists->NdisPoolHandle == pFilter->netmap_pool)
-	{
-	    while (CurrNetBuffer) 
-	    { 
-		PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
-		PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
-		NdisFreeMdl(pCurrMdl);
-		CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer); 
-	    }
-	    NdisFreeNetBufferList(NetBufferLists);
-	}
-	else
-	{
-	    NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendCompleteFlags);
-	}   
-    }
-#endif
 	/* Free the entire buffer list */
 	PNET_BUFFER_LIST pCurrNBL = NetBufferLists;
 	while (pCurrNBL != NULL) {
@@ -1624,32 +1602,6 @@ Arguments:
     
     // Return the received NBLs.  If you removed any NBLs from the chain, make
     // sure the chain isn't empty (i.e., NetBufferLists!=NULL).
-#if 1
-
-    if (NetBufferLists->NdisPoolHandle == pFilter->netmap_pool) {
-	PNET_BUFFER CurrNetBuffer = (NET_BUFFER_LIST_FIRST_NB(NetBufferLists));
-
-	while (CurrNetBuffer) {
-	    PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
-	    PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
-		PVOID pDataBuffer = NULL;
-		uint32_t ulDataLength = 0;
-		NdisQueryMdl(pCurrMdl, (PVOID *)&pDataBuffer, &ulDataLength, NormalPagePriority);
-	    NdisFreeMdl(pCurrMdl);
-	    // XXX must free buffer
-		if (pDataBuffer != NULL)
-		{
-			//NdisFreeMemory(pDataBuffer, 0, 0);
-			ExFreeToNPagedLookasideList(&pFilter->netmap_injected_packets_pool, pDataBuffer);
-		}
-	    CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
-	}
-	NdisFreeNetBufferList(NetBufferLists);
-    } else {
-	NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
-    }
-#endif
-#if 0
 	PNET_BUFFER_LIST pCurrNBL = NetBufferLists;
 	while (pCurrNBL != NULL) {
 		PNET_BUFFER_LIST pNextNBL = NET_BUFFER_LIST_NEXT_NBL(pCurrNBL);
@@ -1679,11 +1631,11 @@ Arguments:
 			NdisFreeNetBufferList(pCurrNBL);
 		}
 		else {
-			NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReturnFlags);
+			NdisFReturnNetBufferLists(pFilter->FilterHandle, pCurrNBL, ReturnFlags);
 		}
 		pCurrNBL = pNextNBL;
 	}
-#endif
+
     if (pFilter->TrackReceives)
     {
         DispatchLevel = NDIS_TEST_RETURN_AT_DISPATCH_LEVEL(ReturnFlags);
