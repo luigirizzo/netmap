@@ -2160,14 +2160,13 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		NMG_LOCK();
 		do {
 			u_int memflags;
-			D("");
+
 			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
 				break;
 			}
 			/* find the interface and a reference */
 			error = netmap_get_na(nmr, &na, 1 /* create */); /* keep reference */
-			D("");
 			if (error)
 				break;
 			if (NETMAP_OWNED_BY_KERN(na)) {
@@ -2175,13 +2174,11 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				error = EBUSY;
 				break;
 			}
-			D("");
 			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
 			if (error) {    /* reg. failed, release priv and ref */
 				netmap_adapter_put(na);
 				break;
 			}
-			D("");
 			nifp = priv->np_nifp;
 			priv->np_td = td; // XXX kqueue, debugging only
 
@@ -2197,7 +2194,6 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				netmap_adapter_put(na);
 				break;
 			}
-			D("");
 			if (memflags & NETMAP_MEM_PRIVATE) {
 				*(uint32_t *)(uintptr_t)&nifp->ni_flags |= NI_PRIV_MEM;
 			}
@@ -2213,7 +2209,6 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 				D("got %d extra buffers", nmr->nr_arg3);
 			}
 			nmr->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
-			D("");
 		} while (0);
 		NMG_UNLOCK();
 		break;
