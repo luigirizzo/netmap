@@ -145,17 +145,20 @@ or a NIC or host port using the nm-ndis module (emulating the netmap API,
 so not as fast as the drivers using native netmap mode available on FreeBSD
 and Linux).
 
-VALE port:
+VALE port:	30Mpps with broadcast frames
+
 	pkt-gen-b -i vale0:a -f tx
 	pkt-gen-b -i vale0:b -f rx
 
-NETMAP pipe
+NETMAP pipe	up to 180 Mpps
+
 	pkt-gen-b -i vale0:a}1 -f tx
 	pkt-gen-b -i vale0:a{1 -f rx
 
-NETMAP to NIC ring
+NETMAP to HOST ring	about 2.3 Mpps if dropped, 1.8Mpps to windump
+	pkt-gen-b -i netmap:1^ -f tx	# on one vm
+
+NETMAP to NIC ring	about 1Mpps VM-to-VM
 	pkt-gen-b -i netmap:1 -f tx	# on one vm
 	pkt-gen-b -i netmap:1 -f rx	# on another vm
-
-
 
