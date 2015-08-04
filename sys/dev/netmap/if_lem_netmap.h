@@ -472,7 +472,7 @@ ring_reset:
 }
 
 #if defined (NIC_PTNETMAP) && defined (WITH_PTNETMAP_GUEST)
-static uint32_t lem_netmap_ptctl(struct ifnet *, uint32_t);
+static uint32_t lem_ptnetmap_ptctl(struct ifnet *, uint32_t);
 
 static int
 lem_ptnetmap_config(struct netmap_adapter *na,
@@ -486,7 +486,7 @@ lem_ptnetmap_config(struct netmap_adapter *na,
 	if (csb == NULL)
 		return EINVAL;
 
-	ret = lem_netmap_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	ret = lem_ptnetmap_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
 	if (ret)
 		return ret;
 
@@ -630,7 +630,7 @@ lem_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	int ret;
 
 	if (onoff) {
-		ret = lem_netmap_ptctl(ifp, NET_PARAVIRT_PTCTL_REGIF);
+		ret = lem_ptnetmap_ptctl(ifp, NET_PARAVIRT_PTCTL_REGIF);
 		if (ret)
 			return ret;
 
@@ -660,7 +660,7 @@ lem_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 		adapter->ptnetmap_enabled = 0;
-		ret = lem_netmap_ptctl(ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		ret = lem_ptnetmap_ptctl(ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 
 	return lem_netmap_reg(na, onoff);
