@@ -1645,6 +1645,7 @@ void nm_os_catch_tx(struct netmap_generic_adapter *na, int enable);
 void *nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
+
 static inline struct ifnet*
 netmap_generic_getifp(struct netmap_generic_adapter *gna)
 {
