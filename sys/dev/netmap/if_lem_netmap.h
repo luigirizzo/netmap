@@ -508,54 +508,14 @@ lem_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	//u_int ring_nr = kring->ring_id;
 	struct ifnet *ifp = na->ifp;
 	struct adapter *adapter = ifp->if_softc;
-	struct paravirt_csb *csb = adapter->csb;
-	bool send_kick = false;
+	int ret, notify = 0;
 
-	/* Disable notifications */
-	csb->guest_need_txkick = 0;
+	ret = ptnetmap_txsync(kring, flags, &notify);
 
-	/*
-	 * First part: process new packets to send.
-	 */
-	kring->nr_hwcur = csb->tx_ring.hwcur;
-	ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
-	if (kring->rhead != kring->nr_hwcur) {
-		send_kick = true;
-	}
-
-	/* Send kick to the host if it needs them */
-	if ((send_kick && ACCESS_ONCE(csb->host_need_txkick)) || (flags & NAF_FORCE_RECLAIM)) {
-		csb->tx_ring.sync_flags = flags;
+	if (notify)
 		E1000_WRITE_REG(&adapter->hw, E1000_TDT(0), 0);
-	}
 
-	/*
-	 * Second part: reclaim buffers for completed transmissions.
-	 */
-	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
-		ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
-	}
-
-	/*
-	 * Ring full. The user thread will go to sleep and
-	 * we need a notification (interrupt) from the NIC,
-	 * whene there is free space.
-	 */
-	if (kring->rcur == kring->nr_hwtail) {
-		/* Reenable notifications. */
-		csb->guest_need_txkick = 1;
-		/* Double check */
-		ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
-		/* If there is new free space, disable notifications */
-		if (kring->rcur != kring->nr_hwtail) {
-			csb->guest_need_txkick = 0;
-		}
-	}
-
-	ND("TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
-			csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail, kring->rhead, kring->rcur);
-
-	return 0;
+	return ret;
 }
 
 static int
@@ -565,59 +525,14 @@ lem_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	//u_int ring_nr = kring->ring_id;
 	struct ifnet *ifp = na->ifp;
 	struct adapter *adapter = ifp->if_softc;
-	struct paravirt_csb *csb = adapter->csb;
+	int ret, notify = 0;
 
-	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
-	uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
+	ret = ptnetmap_rxsync(kring, flags, &notify);
 
-	/* Disable notifications */
-	csb->guest_need_rxkick = 0;
+	if (notify)
+		E1000_WRITE_REG(&adapter->hw, E1000_RDT(0), 0);
 
-	ptnetmap_guest_read_kring_csb(&csb->rx_ring, &h_hwcur, &h_hwtail, kring->nkr_num_slots);
-
-	/*
-	 * First part: import newly received packets.
-	 */
-	if (netmap_no_pendintr || force_update) {
-		kring->nr_hwtail = h_hwtail;
-		kring->nr_kflags &= ~NKR_PENDINTR;
-	}
-
-	/*
-	 * Second part: skip past packets that userspace has released.
-	 */
-	kring->nr_hwcur = h_hwcur;
-	if (kring->rhead != kring->nr_hwcur) {
-		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur, kring->rhead);
-		/* Send kick to the host if it needs them */
-		if (ACCESS_ONCE(csb->host_need_rxkick)) {
-			csb->rx_ring.sync_flags = flags;
-			E1000_WRITE_REG(&adapter->hw, E1000_RDT(0), 0);
-		}
-	}
-
-	/*
-	 * Ring empty. The user thread will go to sleep and
-	 * we need a notification (interrupt) from the NIC,
-	 * whene there are new packets.
-	 */
-	if (kring->rcur == kring->nr_hwtail) {
-		/* Reenable notifications. */
-		csb->guest_need_rxkick = 1;
-		/* Double check */
-		ptnetmap_guest_read_kring_csb(&csb->rx_ring, &kring->nr_hwcur, &kring->nr_hwtail, kring->nkr_num_slots);
-		/* If there are new packets, disable notifications */
-		if (kring->rcur != kring->nr_hwtail) {
-			csb->guest_need_rxkick = 0;
-		}
-	}
-
-	ND("RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
-			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail, kring->rhead, kring->rcur);
-
-	return 0;
-
-
+	return ret;
 }
 
 static int
