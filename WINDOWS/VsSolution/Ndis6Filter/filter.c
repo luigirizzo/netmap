@@ -1594,8 +1594,15 @@ Arguments:
 	while (CurrNetBuffer) {
 	    PNET_BUFFER PrevNetBuffer = CurrNetBuffer;
 	    PMDL pCurrMdl = NET_BUFFER_CURRENT_MDL(CurrNetBuffer);
+		PVOID pDataBuffer = NULL;
+		uint32_t ulDataLength = 0;
+		NdisQueryMdl(pCurrMdl, (PVOID *)&pDataBuffer, &ulDataLength, NormalPagePriority);
 	    NdisFreeMdl(pCurrMdl);
 	    // XXX must free buffer
+		if (pDataBuffer != NULL)
+		{
+			NdisFreeMemory(pDataBuffer, 0, 0);
+		}
 	    CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
 	}
 	NdisFreeNetBufferList(NetBufferLists);
