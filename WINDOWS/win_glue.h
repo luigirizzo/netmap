@@ -278,7 +278,8 @@ typedef struct _FUNCTION_POINTER_XCHANGE {
 	struct NET_BUFFER* (*handle_tx)(struct net_device*, uint32_t length, const char* data);
 
 	/* netmap -> ndis calls */
-	NTSTATUS (*ndis_update_ifp)(int ifIndex, struct net_device *ifp);
+	NTSTATUS (*ndis_regif)(struct net_device *ifp);
+	NTSTATUS (*ndis_rele)(struct net_device *ifp);
 	NTSTATUS (*injectPacket)(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
 } FUNCTION_POINTER_XCHANGE; // , *PFUNCTION_POINTER_XCHANGE;
 

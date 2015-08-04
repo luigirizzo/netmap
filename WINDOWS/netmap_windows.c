@@ -54,7 +54,7 @@ DRIVER_UNLOAD ioctlUnloadDriver;
 static NTSTATUS windows_netmap_mmap(PIRP Irp);
 NTSTATUS copy_from_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
 NTSTATUS copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp);
-FUNCTION_POINTER_XCHANGE ndis_hooks;
+static FUNCTION_POINTER_XCHANGE ndis_hooks;
 
 // Allocate the pageable routines and the init routine
 // These routines will be unloaded from the memory as soon as
@@ -165,7 +165,7 @@ win_make_mbuf(struct net_device *ifp, uint32_t length, const char *data)
 {
     // XXX see if we can do a single allocation
     struct mbuf *m = malloc(sizeof(struct mbuf), M_DEVBUF, M_NOWAIT | M_ZERO);
-	DbgPrint("win_make_mbuf - Data: %p - length: %i", data, length);
+	//DbgPrint("win_make_mbuf - Data: %p - length: %i", data, length);
     if (m == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
         return NULL;
@@ -241,7 +241,7 @@ send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
     NTSTATUS status;
 
     if (ndis_hooks.injectPacket != NULL) {
-		DbgPrint("send_up_to_stack!");
+		//DbgPrint("send_up_to_stack!");
 	status = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE);
 	m_freem(m);
 	return status;
@@ -468,7 +468,7 @@ ifunit_ref(const char* name)
     int			deviceIfIndex = -1;
     struct net_device *	ifp = NULL;
 
-    if (ndis_hooks.ndis_update_ifp == NULL)
+	if (ndis_hooks.ndis_regif == NULL)
 	return NULL; /* function not available yet */
 
     deviceIfIndex = getDeviceIfIndex(name);
@@ -481,7 +481,7 @@ ifunit_ref(const char* name)
     RtlCopyMemory(ifp->if_xname, name, IFNAMSIZ);
     ifp->ifIndex = deviceIfIndex;
 
-    if (ndis_hooks.ndis_update_ifp(deviceIfIndex, ifp) != STATUS_SUCCESS) {
+	if (ndis_hooks.ndis_regif(ifp) != STATUS_SUCCESS) {
 	free(ifp, M_DEVBUF);
 	return NULL; /* not found */
     }
@@ -506,7 +506,9 @@ ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	data->handle_tx = &windows_generic_tx_handler;
 
 	/* function(s) to access interface parameters */
-	ndis_hooks.ndis_update_ifp = data->ndis_update_ifp;
+	ndis_hooks.ndis_regif = data->ndis_regif;
+
+	ndis_hooks.ndis_rele = data->ndis_rele;
 
 	/* function to inject packets into the nic or the stack */
 	ndis_hooks.injectPacket = data->injectPacket;
@@ -731,6 +733,8 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 void
 if_rele(struct net_device *ifp)
 {
-    DbgPrint("if_rele unimplemented!!!\n");
-    // XXX release the reference we got with ifunit_ref
+	if (ndis_hooks.ndis_rele != NULL)
+	{
+		ndis_hooks.ndis_rele(ifp);
+	}
 }

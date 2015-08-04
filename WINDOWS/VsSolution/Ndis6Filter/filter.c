@@ -38,11 +38,13 @@ LIST_ENTRY          FilterModuleList;
  * We keep a reference to the netmap fp while the module is active.
  */
 static PFILE_OBJECT netmap_fp = NULL;
+static PDEVICE_OBJECT netmap_dev; // argument for internal ioctl calls
 
 static FUNCTION_POINTER_XCHANGE netmap_hooks;
 
 
-NTSTATUS ndis_update_ifp(int deviceIfIndex, struct net_device *ifp);
+NTSTATUS ndis_regif(struct net_device *ifp);
+NTSTATUS ndis_rele(struct net_device *ifp);
 NTSTATUS injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
 
 NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
@@ -170,7 +172,6 @@ Return Value:
 	    UNICODE_STRING      name;
 	    IO_STATUS_BLOCK	iosb;
 	    PIRP pIrp;
-	    PDEVICE_OBJECT	netmap_dev; // argument for internal ioctl calls
 
 	    // Getting pointer to netmap IOCTL device
 	    RtlInitUnicodeString(&name, NETMAP_DOS_DEVICE_NAME);
@@ -186,7 +187,8 @@ Return Value:
 	    netmap_hooks.handle_tx = NULL;
 	    netmap_hooks.handle_rx = NULL;
 	    // and output parameters that we pass to it
-	    netmap_hooks.ndis_update_ifp = &ndis_update_ifp;
+		netmap_hooks.ndis_regif = &ndis_regif;
+		netmap_hooks.ndis_rele = &ndis_rele;
 	    netmap_hooks.injectPacket = &injectPacket;
 	    //DbgPrint("DevObj 0x%p", netmap_dev);
 	    pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS, netmap_dev,
@@ -802,11 +804,38 @@ Return Value:
 
 #endif
 
-    if (netmap_fp != NULL)
-    {
-	ObDereferenceObject(netmap_fp);
-	netmap_fp = NULL;
-    }
+	if (netmap_fp != NULL)
+	{
+		PIRP pIrp;
+		NTSTATUS Status;
+		IO_STATUS_BLOCK iosb;
+
+		// prepare input parameters returned by the netmap ioctl
+		netmap_hooks.handle_tx = NULL;
+		netmap_hooks.handle_rx = NULL;
+		// telle netmap module we are unloading
+		netmap_hooks.ndis_regif = NULL;
+		netmap_hooks.ndis_rele = NULL;
+		netmap_hooks.injectPacket = NULL;
+		//DbgPrint("DevObj 0x%p", netmap_dev);
+		pIrp = IoBuildDeviceIoControlRequest(NETMAP_KERNEL_XCHANGE_POINTERS, netmap_dev,
+			&netmap_hooks, sizeof(FUNCTION_POINTER_XCHANGE),	// return values
+			&netmap_hooks, sizeof(FUNCTION_POINTER_XCHANGE),	// output
+			TRUE,						//internal IOCTL
+			NULL,
+			&iosb);						//status of the call for async calls
+		if (pIrp != NULL)
+		{
+			Status = IoCallDriver(netmap_dev, pIrp);
+		}
+		else
+		{
+			Status = STATUS_DEVICE_DOES_NOT_EXIST;	//XXX_ale
+		}
+		ObDereferenceObject(netmap_fp);
+		netmap_fp = NULL;
+		netmap_dev = NULL;
+	}
 
     FILTER_FREE_LOCK(&FilterListLock);
 

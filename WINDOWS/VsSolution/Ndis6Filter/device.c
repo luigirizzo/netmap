@@ -355,7 +355,7 @@ DumpPayload(const char* p, uint32_t len)
 
 
 /*
- * ndis_update_ifp
+ * ndis_regif
  *
  * In netmap we identify interfaces by ifindex, this function writes
  * in the ifp the pointers to the filter and to the variable
@@ -366,7 +366,7 @@ DumpPayload(const char* p, uint32_t len)
  * Returns: NTSTATUS - STATUS_SUCCESS interface found, other value error
  */
 NTSTATUS 
-ndis_update_ifp(unsigned int deviceIfIndex, struct net_device *ifp)
+ndis_regif(struct net_device *ifp)
 {
     PLIST_ENTRY         Link;
     NTSTATUS	status = STATUS_DEVICE_DOES_NOT_EXIST; // default return value
@@ -378,10 +378,9 @@ ndis_update_ifp(unsigned int deviceIfIndex, struct net_device *ifp)
 	PMS_FILTER pFilter = CONTAINING_RECORD(Link, MS_FILTER, FilterModuleLink);
 
 	//DbgPrint("IfIndex: %i, NDIS_HANDLE: %p\n", pFilter->MiniportIfIndex, pFilter->FilterHandle);
-	if (pFilter->MiniportIfIndex == deviceIfIndex) {
+	if (pFilter->MiniportIfIndex == ifp->ifIndex) {
+	    pFilter->RefCount++;
 	    DbgPrint("pfilter %p refcount %d\n", pFilter, pFilter->RefCount);
-	    // XXX should increment pFilter->RefCount before release
-	    // and decrement on release
 	    ifp->pfilter = pFilter;  
 	    ifp->intercept = &pFilter->intercept;
 	    pFilter->ifp = ifp;
@@ -391,6 +390,17 @@ ndis_update_ifp(unsigned int deviceIfIndex, struct net_device *ifp)
     }
     FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
     return status;
+}
+
+NTSTATUS
+ndis_rele(struct net_device *ifp)
+{
+	PMS_FILTER pFilter = ifp->pfilter;
+	FILTER_ACQUIRE_LOCK(&FilterListLock, FALSE);
+	pFilter->RefCount--;
+	DbgPrint("pfilter %p refcount %d\n", pFilter, pFilter->RefCount);
+	FILTER_RELEASE_LOCK(&FilterListLock, FALSE);
+	return STATUS_SUCCESS;
 }
 
 /*
