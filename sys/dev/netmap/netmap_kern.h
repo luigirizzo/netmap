@@ -1089,9 +1089,9 @@ nm_clear_native_flags(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__)
 	ifp->if_transmit = na->if_transmit;
-#elif _WIN32
+#elif defined(_WIN32)
 	//XXX_ale can we just comment those?
 	//ifp->if_transmit = na->if_transmit;
 #else
