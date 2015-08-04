@@ -246,16 +246,22 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
 /*
  * XXX the mbuf must be consumed
  */
-int
-send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
+PVOID
+send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head)
 {
+    PVOID result = NULL;
     if (ndis_hooks.injectPacket != NULL) {
-		//DbgPrint("send_up_to_stack!");
-	ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE, NULL);
-	m_freem(m);
-	return STATUS_SUCCESS;
+        //DbgPrint("send_up_to_stack!");
+		if (m != NULL) {
+			result = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE, head);
+			m_freem(m);
+		}
+		else {
+			ndis_hooks.injectPacket(ifp->pfilter, NULL, 0, FALSE, head);
+		}
+		
     }
-    return STATUS_DEVICE_NOT_CONNECTED;
+    return result;
 }
 
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success

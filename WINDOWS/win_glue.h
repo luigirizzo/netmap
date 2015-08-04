@@ -499,12 +499,12 @@ win32_ndis_packet_freem(struct mbuf* m)
 struct net_device* ifunit_ref(const char *name);
 void if_rele(struct net_device *ifp);
 
-int send_up_to_stack(struct ifnet *ifp, struct mbuf *m);
+PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 
 #define WNA(_ifp)		_ifp->na
 #define NM_BNS_GET(b)	do { (void)(b); } while (0)
 #define NM_BNS_PUT(b)   do { (void)(b); } while (0)
-#define NM_SEND_UP(dst, m)		send_up_to_stack(dst, m)
+#define NM_SEND_UP(dst, m, head)		send_up_to_stack(dst, m, head)
 
 /*********************************************************
 *                   ATOMIC OPERATIONS     		         *  

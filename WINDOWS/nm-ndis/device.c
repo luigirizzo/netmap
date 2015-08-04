@@ -414,7 +414,7 @@ ndis_rele(struct net_device *ifp)
  * _IN_ BOOLEAN sendToMiniport		TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
  *
  * XXX TODO
- * if data == NULL prev indicates the ist of packets to send out
+ * if data == NULL prev indicates the list of packets to send out
  *		returns prev on success, NULL on failure
  *
  * if data != NULL creates a packet, appends to prev,
@@ -499,8 +499,13 @@ sendOut:
 	} else {
 	    // This one sends up to the OS, again eventually triggering
 	    // FilterReturnNetBufferLists()
-		//XXX we need to count the lists
-	    NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
+		int nblNumber = 1;
+		PNET_BUFFER_LIST temp = prev;
+		while (temp->Next != NULL) {
+			temp = temp->Next;
+			nblNumber++;
+		}
+		NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, nblNumber, 0);
 	}
     } while (FALSE);
     if (status != STATUS_SUCCESS) {
