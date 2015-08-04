@@ -60,6 +60,7 @@ MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
+#include "netmap_virt.h"
 #include "netmap_mem2.h"
 
 #ifdef _WIN32
