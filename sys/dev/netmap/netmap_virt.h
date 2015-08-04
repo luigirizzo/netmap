@@ -176,43 +176,6 @@ struct paravirt_csb {
 #define NET_PARAVIRT_PTCTL_UNREGIF      11
 #define NET_PARAVIRT_PTCTL_HOSTMEMID	12
 
-/*
- * Structures used for ptnetmap configuration
- */
-#define PTN_CFG_USER_BUF
-struct ptn_vmm_ioctl_msix {
-	uint64_t        msg;
-	uint64_t        addr;
-};
-
-struct ptn_vmm_ioctl {
-	u_long				com;
-	struct ptn_vmm_ioctl_msix	data;
-};
-
-/*
- * struct ptnetmap_cfg overlaps struct nmreq
- * from nr_offset field, but nr_cmd is required in netmap_ioctl()
- * For this reason this condition must be true:
- * offsetof(struct ptnetmap_cfg, nr_cmd) ==
- * (offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset))
- */
-struct ptnetmap_cfg {
-        uint32_t features;
-#define PTNETMAP_CFG_FEAT_CSB           0x0001
-#define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
-#define PTNETMAP_CFG_FEAT_IOCTL		0x0004
-	struct nm_kth_eventfd_ring tx_ring;
-	struct nm_kth_eventfd_ring rx_ring;
-#ifndef PTN_CFG_USER_BUF
-	uint8_t pad[2];                 /* padding to overlap strct nmreq */
-	uint16_t nr_cmd;                /* needed in netmap_ioctl() */
-#endif /* PTN_CFG_USER_BUF */
-        void *csb;			/* CSB */
-        struct ptn_vmm_ioctl tx_ioctl;	/* ioctl parameter to send irq (bhyve) */
-        struct ptn_vmm_ioctl rx_ioctl;	/* ioctl parameter to send irq (bhyve) */
-};
-
 #ifdef	QEMU_PCI_H
 
 /*
@@ -251,6 +214,42 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 #define CTASSERT(e) ((void)BUILD_BUG_ON_ZERO(!(e)))
 #endif /* CTASSERT */
 
+/*
+ * Structures used for ptnetmap configuration
+ */
+#define PTN_CFG_USER_BUF
+struct ptn_vmm_ioctl_msix {
+	uint64_t        msg;
+	uint64_t        addr;
+};
+
+struct ptn_vmm_ioctl {
+	u_long				com;
+	struct ptn_vmm_ioctl_msix	data;
+};
+
+/*
+ * struct ptnetmap_cfg overlaps struct nmreq
+ * from nr_offset field, but nr_cmd is required in netmap_ioctl()
+ * For this reason this condition must be true:
+ * offsetof(struct ptnetmap_cfg, nr_cmd) ==
+ * (offsetof(struct nmreq, nr_cmd) - offsetof(struct nmreq , nr_offset))
+ */
+struct ptnetmap_cfg {
+        uint32_t features;
+#define PTNETMAP_CFG_FEAT_CSB           0x0001
+#define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
+#define PTNETMAP_CFG_FEAT_IOCTL		0x0004
+	struct nm_kth_eventfd_ring tx_ring;
+	struct nm_kth_eventfd_ring rx_ring;
+#ifndef PTN_CFG_USER_BUF
+	uint8_t pad[2];                 /* padding to overlap strct nmreq */
+	uint16_t nr_cmd;                /* needed in netmap_ioctl() */
+#endif /* PTN_CFG_USER_BUF */
+        void *csb;			/* CSB */
+        struct ptn_vmm_ioctl tx_ioctl;	/* ioctl parameter to send irq (bhyve) */
+        struct ptn_vmm_ioctl rx_ioctl;	/* ioctl parameter to send irq (bhyve) */
+};
 /*
  * Functions used to read/write ptnetmap_cfg in the nmreq,
  * between the fields nm_offset and nr_cmd.
