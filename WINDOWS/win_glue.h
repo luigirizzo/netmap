@@ -127,8 +127,6 @@ typedef ULONG 				vm_ooffset_t;
 *        		  	NO USE IN WINDOWS CODE         		 *
 **********************************************************/
 #define destroy_dev(a)
-#define CURVNET_SET(x)
-#define CURVNET_RESTORE()
 #define __user
 #define nm_iommu_group_id(dev)	0
 #define if_printf	DbgPrint
@@ -390,7 +388,6 @@ static void nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 }
 
 
-int win32_devfs_get_cdevpriv(struct netmap_priv_d **mem, PIO_STACK_LOCATION td);
 static inline int ilog2(uint64_t n);
 static inline int roundup_pow_of_two(int sz);
 
@@ -530,7 +527,6 @@ int send_up_to_stack(struct ifnet *ifp, struct mbuf *m);
 #define contigfree(va, sz, ty)				win_ContigFree(va)
 
 #define vtophys						MmGetPhysicalAddress
-#define devfs_get_cdevpriv(mem)				win32_devfs_get_cdevpriv(mem, td)
 #define MALLOC_DEFINE(a,b,c)
 //--------------------------------------------------------
 #endif //IS_USERSPACE

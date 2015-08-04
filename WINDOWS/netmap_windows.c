@@ -210,6 +210,14 @@ windows_generic_tx_handler(struct net_device *ifp, uint32_t length, const char *
     return NULL;
 }
 
+//nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si)
+void
+nm_os_selrecord(IO_STACK_LOCATION *irpSp, KEVENT *ev)
+{
+        irpSp->FileObject->FsContext2 = ev;
+        KeClearEvent(ev);
+}
+
 int
 nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
@@ -384,9 +392,15 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 			POLL_REQUEST_DATA *pollData = data;
 			long requiredTimeOut = -(int)(pollData->timeout) * 1000 * 10;
 			LARGE_INTEGER tout = RtlConvertLongToLargeInteger(requiredTimeOut);
+			struct netmap_priv_d *priv = irpSp->FileObject->FsContext;
+
+			if (priv == NULL) {
+				NtStatus = STATUS_DEVICE_DATA_ERROR;
+				goto done;
+			}
 
 			irpSp->FileObject->FsContext2 = NULL;
-			pollData->revents = netmap_poll(NULL, pollData->events, irpSp);
+			pollData->revents = netmap_poll(priv, pollData->events, irpSp);
 			while ((irpSp->FileObject->FsContext2 != NULL) && (pollData->revents == 0)) {
 				NTSTATUS waitResult = KeWaitForSingleObject(irpSp->FileObject->FsContext2, 
 								UserRequest, KernelMode, 
@@ -425,8 +439,15 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	}
 
 	if (NT_SUCCESS(NtStatus)) {
-		ret = netmap_ioctl(NULL, irpSp->Parameters.DeviceIoControl.IoControlCode,
-			(caddr_t)&arg, 0, irpSp);
+		struct netmap_priv_d *priv = irpSp->FileObject->FsContext;
+
+		if (priv == NULL) {
+			NtStatus = STATUS_DEVICE_DATA_ERROR;
+			goto done;
+		}
+
+		ret = netmap_ioctl(priv, irpSp->Parameters.DeviceIoControl.IoControlCode,
+			(caddr_t)&arg, NULL);
 		if (NT_SUCCESS(ret)) {
 			if (data && !NT_SUCCESS(copy_to_user((void*)data, &arg, argsize, Irp))) {
 				DbgPrint("Netmap.sys: ioctl failure/cannot copy data to user");
@@ -438,6 +459,7 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		}
 	}
 
+done:
 	Irp->IoStatus.Status = NtStatus;
 	IoCompleteRequest( Irp, IO_NO_INCREMENT );
 	return NtStatus;

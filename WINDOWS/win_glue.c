@@ -72,15 +72,6 @@ do_gettimeofday(struct timeval *tv)
 **********************************************************/
 extern struct dictionary_box dict_box;
 
-int
-win32_devfs_get_cdevpriv(struct netmap_priv_d **mem, PIO_STACK_LOCATION td)
-{
-	*mem =  td->FileObject->FsContext;
-	if (*mem == NULL) {
-		return STATUS_DEVICE_DATA_ERROR;
-	}
-	return STATUS_SUCCESS;
-}
 
 static inline int
 ilog2(uint64_t n)
