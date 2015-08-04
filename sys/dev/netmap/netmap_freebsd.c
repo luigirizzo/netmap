@@ -972,7 +972,13 @@ nm_kthread_worker(void *data)
 	thread_unlock(curthread);
 
 	while (nmk->run) {
+		/* check if the parent process dies */
+		PROC_LOCK(curproc);
+		thread_suspend_check(0);
+		PROC_UNLOCK(curproc);
+#if 0
 		kthread_suspend_check();
+#endif
 
 		new_scheduled = nmk->scheduled;
 
@@ -983,7 +989,7 @@ nm_kthread_worker(void *data)
 		} else if (nmk->run) {
 			if (ctx->ioevent_file) {
 				/* wait on event with timetout 1 second */
-				tsleep_sbt(ctx->ioevent_file, PPAUSE, "nmk_event", SBT_1S, SBT_1MS, C_ABSOLUTE);
+				tsleep_sbt(ctx->ioevent_file, PPAUSE, "nmk_event", SBT_1S, SBT_1S, C_ABSOLUTE);
 				nmk->scheduled++;
 			}
 		}
