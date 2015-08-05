@@ -1245,7 +1245,6 @@ static int
 netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 {
 	int i;
-	void *baseAddress = NULL;
 
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		return 0;
