@@ -230,7 +230,7 @@ ptnetmap_tx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
-    struct paravirt_csb __user *csb;
+    struct paravirt_csb __user *csb = NULL; /* XXX check error */
     struct pt_ring __user *csb_ring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t nkr_num_slots;
@@ -438,7 +438,7 @@ ptnetmap_rx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
-    struct paravirt_csb __user *csb;
+    struct paravirt_csb __user *csb = NULL; /* XXX check error */
     struct pt_ring __user *csb_ring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t nkr_num_slots;

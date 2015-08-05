@@ -504,20 +504,23 @@ static driver_t ptn_memdev_driver = {
 	PTN_MEMDEV_NAME, ptn_memdev_methods, sizeof(struct ptnetmap_memdev),
 };
 
-devclass_t ptnetmap_devclass;
+static devclass_t ptnetmap_devclass;
 DRIVER_MODULE(netmap, pci, ptn_memdev_driver, ptnetmap_devclass, 0, 0);
 
 MODULE_DEPEND(netmap, pci, 1, 1, 1);
 
 /*
  * I/O port read/write wrappers.
+ * Some are not used, so we keep them commented out until needed
  */
-#define ptn_ioread8(ptn_dev, reg)		bus_read_1((ptn_dev)->pci_io, (reg))
 #define ptn_ioread16(ptn_dev, reg)		bus_read_2((ptn_dev)->pci_io, (reg))
 #define ptn_ioread32(ptn_dev, reg)		bus_read_4((ptn_dev)->pci_io, (reg))
+#if 0
+#define ptn_ioread8(ptn_dev, reg)		bus_read_1((ptn_dev)->pci_io, (reg))
 #define ptn_iowrite8(ptn_dev, reg, val)		bus_write_1((ptn_dev)->pci_io, (reg), (val))
 #define ptn_iowrite16(ptn_dev, reg, val)	bus_write_2((ptn_dev)->pci_io, (reg), (val))
 #define ptn_iowrite32(ptn_dev, reg, val)	bus_write_4((ptn_dev)->pci_io, (reg), (val))
+#endif /* unused */
 
 /*
  * map host netmap memory through PCI-BAR in the guest OS
@@ -1335,6 +1338,7 @@ out:
 	return error;
 }
 
+extern struct cdevsw netmap_cdevsw; /* XXX used in netmap.c, should go elsewhere */
 struct cdevsw netmap_cdevsw = {
 	.d_version = D_VERSION,
 	.d_name = "netmap",

@@ -155,7 +155,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
  * used in the bridge. The actual value may be larger as the
  * last packet in the block may overflow the size.
  */
-int bridge_batch = NM_BDG_BATCH; /* bridge batch size */
+static int bridge_batch = NM_BDG_BATCH; /* bridge batch size */
 SYSBEGIN(vars_vale);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0 , "");
@@ -248,7 +248,7 @@ netmap_bdg_name(struct netmap_vp_adapter *vp)
  * Right now we have a static array and deletions are protected
  * by an exclusive lock.
  */
-struct nm_bridge *nm_bridges;
+static struct nm_bridge *nm_bridges;
 #endif /* !CONFIG_NET_NS */
 
 
@@ -1326,7 +1326,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 	struct nm_bdg_q *dst_ents, *brddst;
 	uint16_t num_dsts = 0, *dsts;
 	struct nm_bridge *b = na->na_bdg;
-	u_int i, j, me = na->bdg_port;
+	u_int i, me = na->bdg_port;
 
 	/*
 	 * The work area (pointed by ft) is followed by an array of
@@ -1387,6 +1387,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 	 */
 	brddst = dst_ents + NM_BDG_BROADCAST * NM_BDG_MAXRINGS;
 	if (brddst->bq_head != NM_FT_NULL) {
+		u_int j;
 		for (j = 0; likely(j < b->bdg_active_ports); j++) {
 			uint16_t d_i;
 			i = b->bdg_port_index[j];

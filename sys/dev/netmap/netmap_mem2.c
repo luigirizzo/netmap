@@ -50,6 +50,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 241723 2012-10-19 09:41:45Z gle
 #include <machine/bus.h>	/* bus_dmamap_* */
 
 /* M_NETMAP only used in here */
+MALLOC_DECLARE(M_NETMAP);
 MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
 
 #endif /* __FreeBSD__ */
@@ -152,8 +153,11 @@ typedef uint16_t nm_memid_t;
  * Used in ptnetmap.
  */
 struct netmap_mem_shared_info {
-	char up[sizeof(struct netmap_if)]; // cannot use the struct, ends with 0-sized array */
-//        struct netmap_if up;	/* XXX ends with a zero-sized array */
+#ifndef _WIN32
+        struct netmap_if up;	/* ends with a 0-sized array, which VSC does not like */
+#else /* !_WIN32 */
+	char up[sizeof(struct netmap_if)];
+#endif /* !_WIN32 */
         uint64_t features;
 #define NMS_FEAT_BUF_POOL          0x0001
 #define NMS_FEAT_MEMSIZE           0x0002
@@ -166,7 +170,7 @@ struct netmap_mem_shared_info {
 
 #define NMS_NAME        "nms_info"
 #define NMS_VERSION     1
-const struct netmap_if nms_if_blueprint = {
+static const struct netmap_if nms_if_blueprint = {
     .ni_name = NMS_NAME,
     .ni_version = NMS_VERSION,
     .ni_tx_rings = 0,
@@ -324,7 +328,7 @@ netmap_mem2_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 	return 0;
 }
 
-struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
+static struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
 	[NETMAP_IF_POOL] = {
 		.size = 1024,
 		.num  = 100,
@@ -339,7 +343,7 @@ struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
 	},
 };
 
-struct netmap_obj_params netmap_min_priv_params[NETMAP_POOLS_NR] = {
+static struct netmap_obj_params netmap_min_priv_params[NETMAP_POOLS_NR] = {
 	[NETMAP_IF_POOL] = {
 		.size = 1024,
 		.num  = 2,
@@ -396,11 +400,12 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 };
 
 
-struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
+static struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
 
 /* blueprint for the private memory allocators */
 extern struct netmap_mem_ops netmap_mem_private_ops; /* forward */
-const struct netmap_mem_d nm_blueprint = {
+/* XXX clang is not happy about using name as a print format */
+static const struct netmap_mem_d nm_blueprint = {
 	.pools = {
 		[NETMAP_IF_POOL] = {
 			.name 	= "%s_if",
@@ -747,10 +752,12 @@ netmap_obj_offset(struct netmap_obj_pool *p, const void *vaddr)
     ((n)->pools[NETMAP_IF_POOL].memtotal + 			\
 	netmap_obj_offset(&(n)->pools[NETMAP_RING_POOL], (v)))
 
+#if 0 /* unused */
 #define netmap_buf_offset(n, v)					\
     ((n)->pools[NETMAP_IF_POOL].memtotal +			\
 	(n)->pools[NETMAP_RING_POOL].memtotal +		\
 	netmap_obj_offset(&(n)->pools[NETMAP_BUF_POOL], (v)))
+#endif /* unused */
 
 
 static ssize_t
@@ -2125,7 +2132,7 @@ netmap_mem_pt_guest_rings_delete(struct netmap_adapter *na)
 	*/
 }
 
-struct netmap_mem_ops netmap_mem_pt_guest_ops = {
+static struct netmap_mem_ops netmap_mem_pt_guest_ops = {
 	.nmd_get_lut = netmap_mem_pt_guest_get_lut,
 	.nmd_get_info = netmap_mem_pt_guest_get_info,
 	.nmd_ofstophys = netmap_mem_pt_guest_ofstophys,

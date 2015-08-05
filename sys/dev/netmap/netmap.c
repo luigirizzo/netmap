@@ -457,13 +457,9 @@ ports attached to the switch)
 	knlist_init_mtx(&(x)->si.si_note, m);		\
     } while (0)
 
-#define NM_SELRECORD_T	struct thread
-
 #elif defined(linux)
 
 #include "bsd_glue.h"
-
-
 
 #elif defined(__APPLE__)
 
@@ -471,7 +467,9 @@ ports attached to the switch)
 #include "osx_glue.h"
 
 #elif defined (_WIN32)
+
 #include "win_glue.h"
+
 #else
 
 #error	Unsupported platform
@@ -495,7 +493,7 @@ int netmap_no_pendintr = 1;
 int netmap_txsync_retry = 2;
 int netmap_adaptive_io = 0;
 int netmap_flags = 0;	/* debug flags */
-int netmap_fwd = 0;	/* force transparent mode */
+static int netmap_fwd = 0;	/* force transparent mode */
 
 /*
  * netmap_admode selects the netmap mode to use.
@@ -517,6 +515,7 @@ int netmap_generic_rings = 1;   /* number of queues in generic. */
  */
 SYSBEGIN(main_init);
 
+SYSCTL_DECL(_dev_netmap);
 SYSCTL_NODE(_dev, OID_AUTO, netmap, CTLFLAG_RW, 0, "Netmap args");
 SYSCTL_INT(_dev_netmap, OID_AUTO, verbose,
     CTLFLAG_RW, &netmap_verbose, 0, "Verbose mode");
