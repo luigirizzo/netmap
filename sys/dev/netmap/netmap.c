@@ -1989,8 +1989,11 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		 * and make it use the shared buffers.
 		 */
 		/* cache the allocator info in the na */
-		netmap_mem_get_lut(na->nm_mem, &na->na_lut);
-		ND("%p->na_lut == %p", na, na->na_lut.lut);
+		error = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
+		if (error)
+			goto err_del_if;
+		D("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
+				na->na_lut.objsize);
 		error = na->nm_register(na, 1); /* mode on */
 		if (error) 
 			goto err_del_if;

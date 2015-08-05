@@ -124,7 +124,7 @@ struct netmap_obj_pool {
 
 
 struct netmap_mem_ops {
-	void (*nmd_get_lut)(struct netmap_mem_d *, struct netmap_lut*);
+	int (*nmd_get_lut)(struct netmap_mem_d *, struct netmap_lut*);
 	int  (*nmd_get_info)(struct netmap_mem_d *, u_int *size,
 			u_int *memflags, uint16_t *id);
 
@@ -202,7 +202,7 @@ netmap_mem_##name(struct netmap_adapter *na, t1 a1) \
 	return na->nm_mem->ops->nmd_##name(na, a1); \
 }
 
-NMD_DEFCB1(void, get_lut, struct netmap_lut *);
+NMD_DEFCB1(int, get_lut, struct netmap_lut *);
 NMD_DEFCB3(int, get_info, u_int *, u_int *, uint16_t *);
 NMD_DEFCB1(vm_paddr_t, ofstophys, vm_ooffset_t);
 static int netmap_mem_config(struct netmap_mem_d *);
@@ -264,7 +264,7 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	if (nm_mem_assign_group(nmd, na->pdev) < 0) {
 		return ENOMEM;
 	} else {
-		nmd->ops->nmd_finalize(nmd);
+		nmd->lasterr = nmd->ops->nmd_finalize(nmd);
 	}
 
 	if (!nmd->lasterr && na->pdev)
@@ -284,12 +284,14 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 
 
 /* accessor functions */
-static void
+static int
 netmap_mem2_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 {
 	lut->lut = nmd->pools[NETMAP_BUF_POOL].lut;
 	lut->objtotal = nmd->pools[NETMAP_BUF_POOL].objtotal;
 	lut->objsize = nmd->pools[NETMAP_BUF_POOL]._objsize;
+
+	return 0;
 }
 
 struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
@@ -426,14 +428,13 @@ DECLARE_SYSCTLS(NETMAP_IF_POOL, if);
 DECLARE_SYSCTLS(NETMAP_RING_POOL, ring);
 DECLARE_SYSCTLS(NETMAP_BUF_POOL, buf);
 
+/* call with NMA_LOCK(&nm_mem) held */
 static int
-nm_mem_assign_id(struct netmap_mem_d *nmd)
+nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
 {
 	nm_memid_t id;
 	struct netmap_mem_d *scan = netmap_last_mem_d;
 	int error = ENOMEM;
-
-	NMA_LOCK(&nm_mem);
 
 	do {
 		/* we rely on unsigned wrap around */
@@ -453,8 +454,20 @@ nm_mem_assign_id(struct netmap_mem_d *nmd)
 		}
 	} while (scan != netmap_last_mem_d);
 
-	NMA_UNLOCK(&nm_mem);
 	return error;
+}
+
+/* call with NMA_LOCK(&nm_mem) *not* held */
+static int
+nm_mem_assign_id(struct netmap_mem_d *nmd)
+{
+        int ret;
+
+	NMA_LOCK(&nm_mem);
+        ret = nm_mem_assign_id_locked(nmd);
+	NMA_UNLOCK(&nm_mem);
+
+	return ret;
 }
 
 static void
@@ -1065,6 +1078,18 @@ netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int obj
 	return 0;
 }
 
+static struct lut_entry *
+nm_alloc_lut(u_int nobj)
+{
+	size_t n = sizeof(struct lut_entry) * nobj;
+	struct lut_entry *lut;
+#ifdef linux
+	lut = vmalloc(n);
+#else
+	lut = malloc(n, M_NETMAP, M_NOWAIT | M_ZERO);
+#endif
+	return lut;
+}
 
 /* call with NMA_LOCK held */
 static int
@@ -1077,14 +1102,9 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 	p->numclusters = p->_numclusters;
 	p->objtotal = p->_objtotal;
 
-	n = sizeof(struct lut_entry) * p->objtotal;
-#ifdef linux
-	p->lut = vmalloc(n);
-#else
-	p->lut = malloc(n, M_NETMAP, M_NOWAIT | M_ZERO);
-#endif
+	p->lut = nm_alloc_lut(p->objtotal);
 	if (p->lut == NULL) {
-		D("Unable to create lookup table (%d bytes) for '%s'", (int)n, p->name);
+		D("Unable to create lookup table for '%s'", p->name);
 		goto clean;
 	}
 
