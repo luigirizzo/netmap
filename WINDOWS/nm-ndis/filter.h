@@ -62,7 +62,7 @@ extern LIST_ENTRY          FilterModuleList;
 #if NDISLWF
 #define FILTER_FRIENDLY_NAME        L"Netmap NDIS LightWeight Filter"
 // TODO: Customize this to match the GUID in the INF
-#define FILTER_UNIQUE_NAME          L"{5cbf81bd-5055-47cd-9055-a76b2b4e3697}" //unique name, quid name
+#define FILTER_UNIQUE_NAME          L"{A9D42231-0768-44F9-ABA0-2FD73FE44481}" //unique name, quid name
 // TODO: Customize this to match the service name in the INF
 #define FILTER_SERVICE_NAME         L"NetmapNdis"
 //

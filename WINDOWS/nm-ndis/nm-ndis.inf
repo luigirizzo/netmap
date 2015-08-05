@@ -51,7 +51,7 @@ Characteristics=0x40000
 ; TODO: You must generate your own random GUID and insert it here.  Then, update
 ; FILTER_UNIQUE_NAME in filter.h to match this GUID identically.  Both should
 ; have {curly braces}.
-NetCfgInstanceId="{5cbf81bd-5055-47cd-9055-a76b2b4e3697}"
+NetCfgInstanceId="{A9D42231-0768-44F9-ABA0-2FD73FE44481}"
 
 Copyfiles = nmndis.copyfiles.sys
 
