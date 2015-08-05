@@ -234,7 +234,7 @@ main(int argc, char **argv)
 		return (1);
 	}
 	// XXX use a single mmap ?
-	pb = nm_open(ifb, NULL, 0, pa);
+	pb = nm_open(ifb, NULL, NM_OPEN_NO_MMAP, pa);
 	if (pb == NULL) {
 		D("cannot open %s", ifb);
 		nm_close(pa);
