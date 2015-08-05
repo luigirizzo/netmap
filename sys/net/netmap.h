@@ -566,10 +566,26 @@ struct nm_ifreq {
 };
 
 /*
- * kernel thread config
+ * netmap kernel thread ring configuration
  */
-struct nm_kth_eventfd_ring {
-	uint64_t ioeventfd;
-	uint64_t irqfd;
+
+/* bhyve/vmm.ko MSIX paramenters for IOCTL */
+struct ptn_vmm_ioctl_msix {
+	uint64_t        msg;
+	uint64_t        addr;
+};
+
+/* IOCTL parameters */
+struct nm_kth_ioctl {
+	u_long				com;
+	/* TODO: use union */
+	union {
+		struct ptn_vmm_ioctl_msix msix;
+	} data;
+};
+struct nm_kth_ring_cfg {
+	uint64_t ioeventfd;		/* eventfd in linux, tsleep() parameter in FreeBSD */
+	uint64_t irqfd;			/* eventfd in linux, ioctl fd in FreeBSD */
+	struct nm_kth_ioctl ioctl;	/* ioctl parameter to send irq (only used in bhyve/FreeBSD) */
 };
 #endif /* _NET_NETMAP_H_ */
