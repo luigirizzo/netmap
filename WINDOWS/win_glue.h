@@ -48,6 +48,7 @@
 #pragma warning(disable:4189)	//local variable initialized but without references
 #pragma warning(disable:4200)	//non-standard extension: matrix of zero dimension in struct/union
 #pragma warning(disable:4201)	//nameless structure
+#pragma warning(disable:4229)	// zero-size arrays // XXX
 #pragma warning(disable:4242)	//possible loss of data in conversion
 #pragma warning(disable:4244)	//possible loss of data in conversion
 #pragma warning(disable:4245)	//conversion from int to uint_32t: corrispondence error between signed and unsigned

@@ -1897,7 +1897,6 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	 */
 	bna->host.up.ifp = NULL;
 
-	hwna->nm_mem = bna->save_nmd;
 	hwna->na_private = NULL;
 	hwna->na_vp = hwna->na_hostvp = NULL;
 	hwna->na_flags &= ~NAF_BUSY;
@@ -1990,13 +1989,10 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 	struct netmap_adapter *hwna = bna->hwna;
 	struct netmap_vp_adapter *hostna = &bna->host;
 	int error;
-	enum txrx t;
 
 	ND("%s %s", na->name, onoff ? "on" : "off");
 
 	if (onoff) {
-		int i;
-
 		/* netmap_do_regif has been called on the bwrap na.
 		 * We need to pass the information about the
 		 * memory allocator down to the hwna before
@@ -2012,19 +2008,6 @@ netmap_bwrap_register(struct netmap_adapter *na, int onoff)
 			hostna->up.na_lut = na->na_lut;
 		}
 
-		/* cross-link the netmap rings
-		 * The original number of rings comes from hwna,
-		 * rx rings on one side equals tx rings on the other.
-		 * We need to do this now, after the initialization
-		 * of the kring->ring pointers
-		 */
-		for_rx_tx(t) {
-			enum txrx r= nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
-			for (i = 0; i < nma_get_nrings(na, r) + 1; i++) {
-				NMR(hwna, t)[i].nkr_num_slots = NMR(na, r)[i].nkr_num_slots;
-				NMR(hwna, t)[i].ring = NMR(na, r)[i].ring;
-			}
-		}
 	}
 
 	/* forward the request to the hwna */
@@ -2095,7 +2078,8 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 		(struct netmap_bwrap_adapter *)na;
 	struct netmap_adapter *hwna = bna->hwna;
 	struct netmap_adapter *hostna = &bna->host.up;
-	int error;
+	int i, error = 0;
+	enum txrx t;
 
 	ND("%s", na->name);
 
@@ -2107,13 +2091,25 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	/* also create the hwna krings */
 	error = hwna->nm_krings_create(hwna);
 	if (error) {
-		netmap_vp_krings_delete(na);
-		return error;
+		goto err_del_vp_rings;
 	}
-	/* the connection between the bwrap krings and the hwna krings
-	 * will be perfomed later, in the nm_register callback, since
-	 * now the kring->ring pointers have not been initialized yet
+	/* and the actual rings */
+	error = netmap_mem_rings_create(hwna);
+	if (error) {
+		goto err_del_hw_rings;
+	}
+
+	/* cross-link the netmap rings
+	 * The original number of rings comes from hwna,
+	 * rx rings on one side equals tx rings on the other.
 	 */
+        for_rx_tx(t) {
+                enum txrx r= nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
+                for (i = 0; i < nma_get_nrings(na, r) + 1; i++) {
+                        NMR(hwna, t)[i].nkr_num_slots = NMR(na, r)[i].nkr_num_slots;
+                        NMR(hwna, t)[i].ring = NMR(na, r)[i].ring;
+                }
+        }
 
 	if (na->na_flags & NAF_HOST_RINGS) {
 		/* the hostna rings are the host rings of the bwrap.
@@ -2127,6 +2123,13 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	}
 
 	return 0;
+
+err_del_hw_rings:
+	hwna->nm_krings_delete(hwna);
+err_del_vp_rings:
+	netmap_vp_krings_delete(na);
+
+	return error;
 }
 
 
@@ -2308,13 +2311,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->nm_notify = netmap_bwrap_notify;
 	na->nm_bdg_ctl = netmap_bwrap_bdg_ctl;
 	na->pdev = hwna->pdev;
-	na->nm_mem = netmap_mem_private_new(na->name,
-			na->num_tx_rings, na->num_tx_desc,
-			na->num_rx_rings, na->num_rx_desc,
-			0, 0, &error);
-	na->na_flags |= NAF_MEM_OWNER;
-	if (na->nm_mem == NULL)
-		goto err_put;
+	na->nm_mem = hwna->nm_mem;
 	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
 
 	bna->hwna = hwna;
@@ -2362,16 +2359,9 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	 */
 	na->ifp = hwna->ifp;
 	hwna->na_flags |= NAF_BUSY;
-	/* make hwna point to the allocator we are actually using,
-	 * so that monitors will be able to find it
-	 */
-	bna->save_nmd = hwna->nm_mem;
-	hwna->nm_mem = na->nm_mem;
 	return 0;
 
 err_free:
-	netmap_mem_delete(na->nm_mem);
-err_put:
 	hwna->na_vp = hwna->na_hostvp = NULL;
 	netmap_adapter_put(hwna);
 	free(bna, M_DEVBUF);
