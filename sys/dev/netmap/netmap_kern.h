@@ -1033,6 +1033,14 @@ nm_clear_native_flags(struct netmap_adapter *na)
 #endif
 }
 
+/*
+ * nm_*sync_prologue() functions are used in ioctl/poll and ptnetmap
+ * kthreads.
+ * We need netmap_ring* parameter, because in ptnetmap it is decoupled
+ * from host kring.
+ * The user-space ring pointers (head/cur/tail) are shared through
+ * CSB between host and guest.
+ */
 
 /*
  * validates parameters in the ring/kring, returns a value for head
