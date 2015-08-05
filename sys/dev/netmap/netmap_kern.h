@@ -1718,7 +1718,7 @@ struct nm_kthread_ioctl {
 };
 struct nm_kthread_cfg {
 	long				type;		/* kthread type */
-	struct nm_kth_eventfd_ring	ring;		/* ring event fd */
+	struct nm_kth_event_cfg		event;		/* event/ioctl fd */
 	struct nm_kthread_ioctl		ioctl;		/* ioctl args to send irq (bhyve) */
 	nm_kthread_worker_fn_t		worker_fn;	/* worker function */
 	void				*worker_private;/* worker parameter */

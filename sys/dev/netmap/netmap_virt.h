@@ -254,8 +254,8 @@ struct ptnetmap_cfg {
 #define PTNETMAP_CFG_FEAT_CSB           0x0001
 #define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
 #define PTNETMAP_CFG_FEAT_IOCTL		0x0004
-	struct nm_kth_eventfd_ring tx_ring;	/* TX eventfds */
-	struct nm_kth_eventfd_ring rx_ring;	/* RX eventfds */
+	struct nm_kth_event_cfg tx_ring;	/* TX eventfds/ioctl */
+	struct nm_kth_event_cfg rx_ring;	/* RX eventfds/ioctl */
         void *csb;				/* CSB */
 };
 /*
@@ -270,14 +270,14 @@ ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
     uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
     *nmr_ptncfg = (uintptr_t)cfg;
 }
-
+#if defined (WITH_PTNETMAP_HOST)
 static inline void
 ptnetmap_read_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 {
     uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
     copyin((const void *)*nmr_ptncfg, cfg, sizeof(*cfg));
 }
-
+#endif /* WITH_PTNETMAP_HOST */
 
 #if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
 

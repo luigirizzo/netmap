@@ -1002,14 +1002,14 @@ static int
 nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kthread_cfg *cfg)
 {
 	/* send irq through ioctl to bhyve (vmm.ko) */
-	if (cfg->ring.irqfd) {
-		nmk->worker_ctx.irq_ioctl.fd = cfg->ring.irqfd;
+	if (cfg->event.irqfd) {
+		nmk->worker_ctx.irq_ioctl.fd = cfg->event.irqfd;
 		nmk->worker_ctx.irq_ioctl.com = cfg->ioctl.com;
 		nmk->worker_ctx.irq_ioctl.data = (caddr_t)cfg->ioctl.data;
 	}
 	/* ring.ioeventfd contains the chan where do tsleep to wait events */
-	if (cfg->ring.ioeventfd) {
-		nmk->worker_ctx.ioevent_file = (void *)cfg->ring.ioeventfd;
+	if (cfg->event.ioeventfd) {
+		nmk->worker_ctx.ioevent_file = (void *)cfg->event.ioeventfd;
 	}
 
 	return 0;
