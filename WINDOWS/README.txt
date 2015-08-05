@@ -4,6 +4,9 @@ For installation instructions see below
 
 When using netmap with Windows NICs, the name to be
 specified for the interface is the 'interface index'
+which you can show with the command
+	netsh int ipv4 show interfaces
+
 which is the first number visible with the "route print" command
 
 ------------ BRIEF DESCRIPTION ----------
