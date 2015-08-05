@@ -364,7 +364,7 @@ e1000_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 
         IFRATE(adapter->rate_ctx.new.tx_sync++);
 
-	ret = ptnetmap_txsync(kring, flags, &notify);
+	ret = netmap_pt_guest_txsync(kring, flags, &notify);
 
 	if (notify)
 		writel(0, adapter->hw.hw_addr + txr->tdt);
@@ -385,7 +385,7 @@ e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
         IFRATE(adapter->rate_ctx.new.rx_sync++);
 	int ret, notify = 0;
 
-	ret = ptnetmap_rxsync(kring, flags, &notify);
+	ret = netmap_pt_guest_rxsync(kring, flags, &notify);
 
 	if (notify)
 		writel(0, hw->hw_addr + rxr->rdt);

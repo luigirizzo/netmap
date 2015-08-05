@@ -1773,7 +1773,10 @@ struct netmap_pt_guest_adapter {
 	struct netmap_pt_guest_ops *pv_ops;
 	struct paravirt_csb *csb;
 };
+
 int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
+int netmap_pt_guest_txsync(struct netmap_kring *kring, int flags, int *notify);
+int netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags, int *notify);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */

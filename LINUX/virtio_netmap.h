@@ -654,7 +654,7 @@ virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	struct virtqueue *vq = GET_TX_VQ(vi, ring_nr);
 	int ret, notify = 0;
 
-	ret = ptnetmap_txsync(kring, flags, &notify);
+	ret = netmap_pt_guest_txsync(kring, flags, &notify);
 
 	if (notify)
 		virtqueue_notify(vq);
@@ -674,7 +674,7 @@ virtio_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	struct virtqueue *vq = GET_RX_VQ(vi, ring_nr);
 	int ret, notify = 0;
 
-	ret = ptnetmap_rxsync(kring, flags, &notify);
+	ret = netmap_pt_guest_rxsync(kring, flags, &notify);
 
 	if (notify)
 		virtqueue_notify(vq);
