@@ -533,10 +533,14 @@ ifunit_ref(const char* name)
     int			deviceIfIndex = -1;
     struct net_device *	ifp = NULL;
 
+    if (strlen(name) < 4 || _strnicmp(name, "eth", 3) != 0) {
+	D("not a NIC");
+	return NULL;
+    }
 	if (ndis_hooks.ndis_regif == NULL)
 	return NULL; /* function not available yet */
 
-    deviceIfIndex = getDeviceIfIndex(name);
+    deviceIfIndex = getDeviceIfIndex(name+3);
     if (deviceIfIndex < 0)
 	return NULL;
     ifp = malloc(sizeof(struct net_device), M_DEVBUF, M_NOWAIT | M_ZERO);
