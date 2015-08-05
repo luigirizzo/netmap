@@ -352,6 +352,13 @@ enum {
 static int nm_close(struct nm_desc *);
 
 /*
+ * nm_mmap()    do mmap or inherit from parent if the nr_arg2
+ *              (memory block) matches.
+ */
+
+//static int nm_mmap(struct nm_desc *, const struct nm_desc *);
+
+/*
  * nm_inject() is the same as pcap_inject()
  * nm_dispatch() is the same as pcap_dispatch()
  * nm_nextpkt() is the same as pcap_next()
@@ -365,12 +372,18 @@ static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
 intptr_t _get_osfhandle(int); /* defined in io.h in windows */
 
+/*
+ * we need to wrap ioctl and mmap, at least for the netmap file descriptors
+ */
+
 /* same as ioctl, returns 0 on success and -1 on error */
 static int
-win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
+win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
 {
 	DWORD bReturn = 0, szIn, szOut;
 	BOOL ioctlReturnStatus;
+	void *inParam = arg, *outParam = arg;
+
 	switch (ctlCode) {
 	case NETMAP_POLL:
 		szIn = sizeof(POLL_REQUEST_DATA);
@@ -379,6 +392,7 @@ win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 	case NETMAP_MMAP:
 		szIn = 0;
 		szOut = sizeof(void*);
+		inParam = NULL; /* nothing on input */
 		break;
 	case NIOCTXSYNC:
 	case NIOCRXSYNC:
@@ -389,8 +403,12 @@ win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 		szIn = sizeof(struct nmreq);
 		szOut = sizeof(struct nmreq);
 		break;
-	default:
+	case NIOCCONFIG:
+		D("unsupported NIOCCONFIG!");
 		return -1;
+
+	default: /* a regular ioctl */
+		return ioctl(fd, ctlCode, arg);
 	}
 	/* XXX_ale: cache somewhere the result of IntToPtr(_get_osfhandle(fd))
 	 * this call alone seems to waste between 46 to 58 ns
@@ -404,6 +422,8 @@ win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
 	return ioctlReturnStatus ? 0 : -1;
 }
 
+#define ioctl win_nm_ioctl /* from now on, within this file ... */
+
 /*
  * We cannot use the native mmap on windows
  * The only parameter used is "fd", the other ones are just declared to
@@ -414,9 +434,12 @@ win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int3
 {
 	MEMORY_ENTRY ret;
 
-	return win_nm_ioctl(fd, NETMAP_MMAP, NULL, &ret) ?
+	return win_nm_ioctl(fd, NETMAP_MMAP, &ret) ?
 		NULL : ret.pUsermodeVirtualAddress;
 }
+
+#define mmap win32_mmap_emulated
+
 #endif /* _WIN32 */
 
 /*
@@ -604,17 +627,10 @@ nm_open(const char *ifname, const struct nmreq *req,
 	/* add the *XPOLL flags */
 	d->req.nr_ringid |= new_flags & (NETMAP_NO_TX_POLL | NETMAP_DO_RX_POLL);
 
-#ifndef _WIN32
 	if (ioctl(d->fd, NIOCREGIF, &d->req)) {
 		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
 		goto fail;
 	}
-#else
-	if (win_nm_ioctl(d->fd, NIOCREGIF, &d->req, &d->req)) {
-		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
-		goto fail;
-	}
-#endif /* _WIN32 */
 
 	if (IS_NETMAP_DESC(parent) && parent->mem &&
 	    parent->req.nr_arg2 == d->req.nr_arg2) {
@@ -624,12 +640,8 @@ nm_open(const char *ifname, const struct nmreq *req,
 	} else {
 		/* XXX TODO: check if memsize is too large (or there is overflow) */
 		d->memsize = d->req.nr_memsize;
-#ifndef _WIN32
 		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
 				d->fd, 0);
-#else
-		d->mem = win32_mmap_emulated(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED, d->fd, 0);
-#endif /* _WIN32 */
 		if (d->mem == MAP_FAILED) {
 			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
 			goto fail;

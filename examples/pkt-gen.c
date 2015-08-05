@@ -1194,12 +1194,7 @@ sender_body(void *data)
 		 * wait for available room in the send queue(s)
 		 */
 #ifdef BUSYWAIT
-#ifdef _WIN32
-		win_nm_ioctl(pfd.fd, NIOCTXSYNC, NULL, NULL);
-#else
-		ioctl(pfd.fd, NIOCTXSYNC);
-#endif /* _WIN32 */
-
+		ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #else /* !BUSYWAIT */
 
 #ifdef _WIN32
@@ -1207,7 +1202,7 @@ sender_body(void *data)
 			POLL_REQUEST_DATA prd;
 			prd.timeout = 2000;
 			prd.events = POLLOUT;
-			win_nm_ioctl(pfd.fd, NETMAP_POLL, &prd, &prd);
+			win_nm_ioctl(pfd.fd, NETMAP_POLL, &prd);
 		}
 #else
 		if (poll(&pfd, 1, 2000) <= 0) {
@@ -1260,21 +1255,13 @@ sender_body(void *data)
 		}
 	}
 	/* flush any remaining packets */
-#ifndef _WIN32
 	ioctl(pfd.fd, NIOCTXSYNC, NULL);
-#else
-	win_nm_ioctl(pfd.fd, NIOCTXSYNC, NULL, NULL);
-#endif	/* _WIN32 */
 
 	/* final part: wait all the TX queues to be empty. */
 	for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
 		txring = NETMAP_TXRING(nifp, i);
 		while (nm_tx_pending(txring)) {
-#ifndef _WIN32
 			ioctl(pfd.fd, NIOCTXSYNC, NULL);
-#else /* !_WIN32 */
-			win_nm_ioctl(pfd.fd, NIOCTXSYNC, NULL, NULL);
-#endif	/* _WIN32 */
 			usleep(1); /* wait 1 tick */
 		}
 	}
@@ -1388,18 +1375,14 @@ receiver_body(void *data)
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
 #ifdef BUSYWAIT
-#ifdef _WIN32
-		win_nm_ioctl(pfd.fd, NIOCRXSYNC, NULL, NULL);
-#else
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
-#endif /* _WIN32 */
 #else
 #ifdef _WIN32
 		{
 			POLL_REQUEST_DATA prd;
 			prd.timeout = 1000;
 			prd.events = POLLIN;
-			win_nm_ioctl(pfd.fd, NETMAP_POLL, &prd, &prd);
+			win_nm_ioctl(pfd.fd, NETMAP_POLL, &prd);
 		}
 #else  /* !_WIN32 */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
