@@ -599,11 +599,10 @@ static NTSTATUS
 windows_netmap_mmap(PIRP Irp)
 {
 	PIO_STACK_LOCATION	irpSp;
-	int			error;
-	// unsigned long off;
-	u_int			memsize, memflags;
 	struct netmap_priv_d	*priv;
 	struct netmap_adapter	*na;
+	PMDL mdl;
+	NTSTATUS		ret = STATUS_SUCCESS;
 
 	irpSp = IoGetCurrentIrpStackLocation(Irp);
 	priv = irpSp->FileObject->FsContext;
@@ -619,15 +618,14 @@ windows_netmap_mmap(PIRP Irp)
 	}
 	mb(); /* XXX really ? */
 
-	error = netmap_mem_get_info(na->nm_mem, &memsize, &memflags, NULL);
-	if (error) {
-		D("memory not initialized yet");
+	mdl = win32_build_user_vm_map(na->nm_mem);
+	if (mdl == NULL) {
+		D("failed building memory map");
 		return STATUS_DEVICE_DATA_ERROR;
 	}
 
 	try { // XXX see if we can do without exceptions
 		void *UserVirtualAddress;
-		PMDL mdl;
 		PVOID buffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
 
 		if (buffer == NULL) {
@@ -635,9 +633,6 @@ windows_netmap_mmap(PIRP Irp)
 			DbgPrint("Netmap.sys: Failed to allocate memory!!!!!");
 			return STATUS_DEVICE_DATA_ERROR;
 		}
-
-		mdl = IoAllocateMdl(NULL, memsize, FALSE, FALSE, NULL);
-		win32_build_virtual_memory_for_userspace(mdl, na->nm_mem);
 
 		UserVirtualAddress = MmMapLockedPagesSpecifyCache(
 			mdl,
@@ -651,21 +646,21 @@ windows_netmap_mmap(PIRP Irp)
 
 			returnedValue.pUsermodeVirtualAddress = UserVirtualAddress;
 			RtlCopyMemory(buffer, &returnedValue, sizeof(PVOID));
-			IoFreeMdl(mdl);
 			Irp->IoStatus.Information = sizeof(void*);
 			DbgPrint("Netmap.sys: Memory allocated to user process");
-			return STATUS_SUCCESS;
 		} else {
 			Irp->IoStatus.Information = 0;
 			DbgPrint("Netmap.sys: Failed to allocate memory!!!!!");
 			// XXX do we need to free the mdl ?
-			return STATUS_INSUFFICIENT_RESOURCES;
+			ret = STATUS_INSUFFICIENT_RESOURCES;
 		}
 	} except(EXCEPTION_EXECUTE_HANDLER) {
 		Irp->IoStatus.Information = 0;
 		DbgPrint("Netmap.sys: Failed to allocate memory!!!!!");
-		return STATUS_INSUFFICIENT_RESOURCES;
+		ret = STATUS_INSUFFICIENT_RESOURCES;
 	}
+	IoFreeMdl(mdl);
+	return ret;
 }
 
 int

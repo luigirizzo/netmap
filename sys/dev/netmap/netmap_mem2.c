@@ -585,22 +585,6 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 
 #ifdef _WIN32
 
-#if 0 /* XXX this code seems unused */
-void *
-win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t offset)
-{
-	void* addr = NULL;
-	vm_ooffset_t o = offset;
-	struct netmap_obj_pool *p;
-
-	NMA_LOCK(nmd);
-	p = nmd->pools;
-	addr = nmd->pools[0].lut->vaddr;
-	NMA_UNLOCK(nmd);
-	return addr;
-}
-#endif /* UNUSED */
-
 /*
  * win32_build_virtual_memory_for_userspace
  *
@@ -623,37 +607,78 @@ win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t offset
  * objects in a single object
 */
 
-void
-win32_build_virtual_memory_for_userspace(PMDL mainMdl, struct netmap_mem_d* nmd)
+PMDL
+win32_build_user_vm_map(struct netmap_mem_d* nmd)
 {
-	int i, j, ofs = 0;
+	int i, j;
+	u_int memsize, memflags, ofs = 0;
+	PMDL mainMdl, tempMdl;
+
+	if (netmap_mem_get_info(nmd, &memsize, &memflags, NULL)) {
+		D("memory not finalised yet");
+		return NULL;
+	}
+
+	mainMdl = IoAllocateMdl(NULL, memsize, FALSE, FALSE, NULL);
+	if (mainMdl == NULL) {
+		D("failed to allocate mdl");
+		return NULL;
+	}
 
 	NMA_LOCK(nmd);
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		struct netmap_obj_pool *p = &nmd->pools[i];
-		int sz = p->_objsize;
-		int len = sizeof(PFN_NUMBER) * BYTES_TO_PAGES(sz);
+		int clsz = p->_clustsize;
+		int clobjs = p->_clustentries; /* objects per cluster */
+		int mdl_len = sizeof(PFN_NUMBER) * BYTES_TO_PAGES(clsz);
+		PPFN_NUMBER pSrc, pDst;
 
-		/* each pool has a different size so we need to reallocate */
-		PMDL tempMdl = IoAllocateMdl(p->lut[0].vaddr, sz, FALSE, FALSE, NULL);
-		/* XXX fail if tempMdl == NULL */
-		PPFN_NUMBER pSrc = MmGetMdlPfnArray(tempMdl);
-		D("pool %d objsize %d objtotal %d clustsize %d",
-			i, sz, p->objtotal, p->_clustsize);
-		for (j = 0; j < p->objtotal; j++, ofs += sz) {
-			PPFN_NUMBER pDst = &MmGetMdlPfnArray(mainMdl)[BYTES_TO_PAGES(ofs)];
-
-			MmInitializeMdl(tempMdl, p->lut[j].vaddr, sz);
+		/* each pool has a different cluster size so we need to reallocate */
+		tempMdl = IoAllocateMdl(p->lut[0].vaddr, clsz, FALSE, FALSE, NULL);
+		if (tempMdl == NULL) {
+			NMA_UNLOCK(nmd);
+			D("fail to allocate tempMdl");
+			IoFreeMdl(mainMdl);
+			return NULL;
+		}
+		pSrc = MmGetMdlPfnArray(tempMdl);
+		/* create one entry per cluster, the lut[] has one entry per object */
+		for (j = 0; j < p->numclusters; j++, ofs += clsz) {
+			pDst = &MmGetMdlPfnArray(mainMdl)[BYTES_TO_PAGES(ofs)];
+			MmInitializeMdl(tempMdl, p->lut[j*clobjs].vaddr, clsz);
 			MmBuildMdlForNonPagedPool(tempMdl); /* compute physical page addresses */
-			RtlCopyMemory(pDst, pSrc, len); /* copy the page descriptors */
+			RtlCopyMemory(pDst, pSrc, mdl_len); /* copy the page descriptors */
 			mainMdl->MdlFlags = tempMdl->MdlFlags; /* XXX what is in here ? */
 		}
 		IoFreeMdl(tempMdl);
 	}
 	NMA_UNLOCK(nmd);
+	return mainMdl;
 }
 
 #endif /* _WIN32 */
+
+/*
+ * helper function for OS-specific mmap routines (currently only windows).
+ * Given an nmd and a pool index, returns the cluster size and number of clusters.
+ * Returns 0 if memory is finalised and the pool is valid, otherwise 1.
+ * It should be called under NMA_LOCK(nmd) otherwise the underlying info can change.
+ */
+
+int
+netmap_mem2_get_pool_info(struct netmap_mem_d* nmd, u_int pool, u_int *clustsize, u_int *numclusters)
+{
+	if (!nmd || !clustsize || !numclusters || pool >= NETMAP_POOLS_NR)
+		return 1; /* invalid arguments */
+	// NMA_LOCK_ASSERT(nmd);
+	if (!(nmd->flags & NETMAP_MEM_FINALIZED)) {
+		*clustsize = *numclusters = 0;
+		return 1; /* not ready yet */
+	}
+	*clustsize = nmd->pools[pool]._clustsize;
+	*numclusters = nmd->pools[pool].numclusters;
+	return 0; /* success */
+}
 
 static int
 netmap_mem2_get_info(struct netmap_mem_d* nmd, u_int* size, u_int *memflags,
