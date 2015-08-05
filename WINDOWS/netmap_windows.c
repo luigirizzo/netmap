@@ -598,41 +598,45 @@ ioctlInternalDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 static NTSTATUS
 windows_netmap_mmap(PIRP Irp)
 {
-	PVOID       		buffer = NULL;
-	MEMORY_ENTRY		returnedValue;
-	void* 				UserVirtualAddress = NULL;
-	PMDL 				mdl = NULL;
-
-	PIO_STACK_LOCATION  irpSp;
-	int error = 0;
+	PIO_STACK_LOCATION	irpSp;
+	int			error;
 	// unsigned long off;
-	u_int memsize, memflags;
+	u_int			memsize, memflags;
+	struct netmap_priv_d	*priv;
+	struct netmap_adapter	*na;
+
 	irpSp = IoGetCurrentIrpStackLocation(Irp);
-	struct netmap_priv_d *priv = irpSp->FileObject->FsContext;
+	priv = irpSp->FileObject->FsContext;
 
 	if (priv == NULL) {
-		DbgPrint("Netmap.sys: priv!!!!!");
+		D("no priv");
 		return STATUS_DEVICE_DATA_ERROR;
 	}
-	struct netmap_adapter *na = priv->np_na;
-	if (priv->np_nifp == NULL) {
-		DbgPrint("Netmap.sys: priv->np_nifp!!!!!");
+	na = priv->np_na;
+	if (na == NULL) {
+		D("na not attached");
 		return STATUS_DEVICE_DATA_ERROR;
 	}
-	mb();
+	mb(); /* XXX really ? */
 
 	error = netmap_mem_get_info(na->nm_mem, &memsize, &memflags, NULL);
+	if (error) {
+		D("memory not initialized yet");
+		return STATUS_DEVICE_DATA_ERROR;
+	}
 
 	try { // XXX see if we can do without exceptions
-		buffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+		void *UserVirtualAddress;
+		PMDL mdl;
+		PVOID buffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+
 		if (buffer == NULL) {
 			Irp->IoStatus.Information = 0;
 			DbgPrint("Netmap.sys: Failed to allocate memory!!!!!");
 			return STATUS_DEVICE_DATA_ERROR;
 		}
 
-		mdl = IoAllocateMdl(NULL,
-			memsize, FALSE, FALSE, NULL);
+		mdl = IoAllocateMdl(NULL, memsize, FALSE, FALSE, NULL);
 		win32_build_virtual_memory_for_userspace(mdl, na->nm_mem);
 
 		UserVirtualAddress = MmMapLockedPagesSpecifyCache(
@@ -643,6 +647,8 @@ windows_netmap_mmap(PIRP Irp)
 			FALSE,
 			NormalPagePriority);
 		if (UserVirtualAddress != NULL) {
+			MEMORY_ENTRY		returnedValue;
+
 			returnedValue.pUsermodeVirtualAddress = UserVirtualAddress;
 			RtlCopyMemory(buffer, &returnedValue, sizeof(PVOID));
 			IoFreeMdl(mdl);
@@ -652,6 +658,7 @@ windows_netmap_mmap(PIRP Irp)
 		} else {
 			Irp->IoStatus.Information = 0;
 			DbgPrint("Netmap.sys: Failed to allocate memory!!!!!");
+			// XXX do we need to free the mdl ?
 			return STATUS_INSUFFICIENT_RESOURCES;
 		}
 	} except(EXCEPTION_EXECUTE_HANDLER) {

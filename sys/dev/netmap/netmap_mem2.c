@@ -584,6 +584,8 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 }
 
 #ifdef _WIN32
+
+#if 0 /* XXX this code seems unused */
 void *
 win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 {
@@ -597,6 +599,7 @@ win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t offset
 	NMA_UNLOCK(nmd);
 	return addr;
 }
+#endif /* UNUSED */
 
 /*
  * win32_build_virtual_memory_for_userspace
@@ -619,31 +622,37 @@ win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t offset
  * In this way we will have an MDL that describes all the memory for the
  * objects in a single object
 */
+
 void
 win32_build_virtual_memory_for_userspace(PMDL mainMdl, struct netmap_mem_d* nmd)
 {
-	int i = 0;
-	int j = 0;
-	int currentOffset = 0;
+	int i, j, ofs = 0;
 
 	NMA_LOCK(nmd);
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		struct netmap_obj_pool *p = &nmd->pools[i];
+		int sz = p->_objsize;
+		int len = sizeof(PFN_NUMBER) * BYTES_TO_PAGES(sz);
 
-		for (j = 0; j < p->objtotal; j++) {
-			PMDL tempMdl = IoAllocateMdl(p->lut[j].vaddr,
-					p->_objsize, FALSE, FALSE, NULL);
-			MmBuildMdlForNonPagedPool(tempMdl);
-			PPFN_NUMBER pSrc = MmGetMdlPfnArray(tempMdl);
-			PPFN_NUMBER pDst = &MmGetMdlPfnArray(mainMdl)[BYTES_TO_PAGES(currentOffset)];
-			RtlCopyMemory(pDst, pSrc, sizeof(PFN_NUMBER) * BYTES_TO_PAGES(p->_objsize));
-			mainMdl->MdlFlags = tempMdl->MdlFlags;
-			currentOffset += p->_objsize;
-			IoFreeMdl(tempMdl);
+		/* each pool has a different size so we need to reallocate */
+		PMDL tempMdl = IoAllocateMdl(p->lut[0].vaddr, sz, FALSE, FALSE, NULL);
+		/* XXX fail if tempMdl == NULL */
+		PPFN_NUMBER pSrc = MmGetMdlPfnArray(tempMdl);
+		D("pool %d objsize %d objtotal %d clustsize %d",
+			i, sz, p->objtotal, p->_clustsize);
+		for (j = 0; j < p->objtotal; j++, ofs += sz) {
+			PPFN_NUMBER pDst = &MmGetMdlPfnArray(mainMdl)[BYTES_TO_PAGES(ofs)];
+
+			MmInitializeMdl(tempMdl, p->lut[j].vaddr, sz);
+			MmBuildMdlForNonPagedPool(tempMdl); /* compute physical page addresses */
+			RtlCopyMemory(pDst, pSrc, len); /* copy the page descriptors */
+			mainMdl->MdlFlags = tempMdl->MdlFlags; /* XXX what is in here ? */
 		}
+		IoFreeMdl(tempMdl);
 	}
 	NMA_UNLOCK(nmd);
 }
+
 #endif /* _WIN32 */
 
 static int
