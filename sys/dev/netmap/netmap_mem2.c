@@ -404,6 +404,8 @@ const struct netmap_mem_d nm_blueprint = {
 
 
 #define DECLARE_SYSCTLS(id, name) \
+	SYSBEGIN(mem2_ ## name); \
+	SYSCTL_DECL(_dev_netmap); /* leave it here, easier for porting */ \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_size, \
 	    CTLFLAG_RW, &netmap_params[id].size, 0, "Requested size of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_size, \
@@ -417,15 +419,12 @@ const struct netmap_mem_d nm_blueprint = {
 	    "Default size of private netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, priv_##name##_num, \
 	    CTLFLAG_RW, &netmap_min_priv_params[id].num, 0, \
-	    "Default number of private netmap " STRINGIFY(name) "s")
+	    "Default number of private netmap " STRINGIFY(name) "s");	\
+	SYSEND
 
-SYSCTL_DECL(_dev_netmap);
-
-#ifndef _WIN32	//XXX_ale,	try to make this work
 DECLARE_SYSCTLS(NETMAP_IF_POOL, if);
 DECLARE_SYSCTLS(NETMAP_RING_POOL, ring);
 DECLARE_SYSCTLS(NETMAP_BUF_POOL, buf);
-#endif
 
 static int
 nm_mem_assign_id(struct netmap_mem_d *nmd)
