@@ -1501,6 +1501,7 @@ struct nm_kthread {
 
     spinlock_t worker_lock;     /* XXX: unused */
     uint64_t scheduled;         /* pending wake_up request */
+    int attach_user;            /* kthread attached to user_process */
 
     struct nm_kthread_ctx worker_ctx;
 };
@@ -1554,8 +1555,10 @@ nm_kthread_worker(void *data)
     uint64_t old_scheduled = 0, new_scheduled = 0;
     mm_segment_t oldfs = get_fs();
 
-    set_fs(USER_DS);
-    use_mm(nmk->mm);
+    if (nmk->mm) {
+        set_fs(USER_DS);
+        use_mm(nmk->mm);
+    }
 
     while (!kthread_should_stop()) {
         /*
@@ -1584,7 +1587,10 @@ nm_kthread_worker(void *data)
 
     __set_current_state(TASK_RUNNING);
 
-    unuse_mm(nmk->mm);
+    if (nmk->mm) {
+        unuse_mm(nmk->mm);
+    }
+
     set_fs(oldfs);
     return 0;
 }
@@ -1596,7 +1602,7 @@ nm_kthread_send_irq(struct nm_kthread *nmk)
 }
 
 static int
-nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kth_eventfd_ring *ring_cfg)
+nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kth_event_cfg *ring_cfg)
 {
     struct file *file;
     struct nm_kthread_ctx *wctx = &nmk->worker_ctx;
@@ -1692,8 +1698,11 @@ nm_kthread_create(struct nm_kthread_cfg *cfg)
     nmk->worker_ctx.worker_private = cfg->worker_private;
     nmk->worker_ctx.type = cfg->type;
 
+    /* attach kthread to user process (ptnetmap) */
+    nmk->attach_user = cfg->attach_user;
+
     /* open event fd */
-    error = nm_kthread_open_files(nmk, &cfg->ring);
+    error = nm_kthread_open_files(nmk, &cfg->event);
     if (error)
         goto err;
 
@@ -1715,7 +1724,11 @@ nm_kthread_start(struct nm_kthread *nmk)
         return EBUSY;
     }
 
-    nmk->mm = get_task_mm(current);
+    /* check if we want to attach kthread to user process */
+    if (nmk->attach_user) {
+        nmk->mm = get_task_mm(current);
+    }
+
     nmk->worker = kthread_run(nm_kthread_worker, nmk, "nm_kthread-%ld-%d",
             nmk->worker_ctx.type, current->pid);
     if (IS_ERR(nmk->worker)) {

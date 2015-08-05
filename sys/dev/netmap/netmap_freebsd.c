@@ -903,8 +903,12 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 
 struct nm_kthread_ctx {
 	struct thread *user_td;		/* thread user-space (kthread creator) to send ioctl */
-	struct ioctl_args irq_ioctl;	/* notification to guest (interrupt) */
-	void *ioevent_file; 		/* notification from guest */
+	/* notification to guest (interrupt) */
+	int irq_fd;		/* ioctl fd */
+	struct nm_kth_ioctl irq_ioctl;	/* ioctl arguments */
+
+	/* notification from guest */
+	void *ioevent_file; 		/* tsleep() argument */
 
 	/* worker function and parameter */
 	nm_kthread_worker_fn_t worker_fn;
@@ -922,6 +926,7 @@ struct nm_kthread {
 	uint64_t scheduled; 		/* pending wake_up request */
 	struct nm_kthread_ctx worker_ctx;
 	int run;			/* used to stop kthread */
+	int attach_user;		/* kthread attached to user_process */
 	int affinity;
 };
 
@@ -949,11 +954,11 @@ nm_kthread_send_irq(struct nm_kthread *nmk)
 	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
 	int err;
 
-	if (ctx->irq_ioctl.fd > 0) {
-		err = kern_ioctl(ctx->user_td, ctx->irq_ioctl.fd, ctx->irq_ioctl.com, ctx->irq_ioctl.data);
+	if (ctx->user_td && ctx->irq_fd > 0) {
+		err = kern_ioctl(ctx->user_td, ctx->irq_fd, ctx->irq_ioctl.com, (caddr_t)&ctx->irq_ioctl.data.msix);
 		if (err) {
 			D("kern_ioctl error: %d ioctl parameters: fd %d com %lu data %p",
-				err, ctx->irq_ioctl.fd, ctx->irq_ioctl.com, ctx->irq_ioctl.data);
+				err, ctx->irq_fd, ctx->irq_ioctl.com, &ctx->irq_ioctl.data);
 		}
 	}
 }
@@ -972,13 +977,17 @@ nm_kthread_worker(void *data)
 	thread_unlock(curthread);
 
 	while (nmk->run) {
-		/* check if the parent process dies */
-		PROC_LOCK(curproc);
-		thread_suspend_check(0);
-		PROC_UNLOCK(curproc);
-#if 0
-		kthread_suspend_check();
-#endif
+		/*
+		 * check if the parent process dies
+		 * (when kthread is attached to user process)
+		 */
+		if (ctx->user_td) {
+			PROC_LOCK(curproc);
+			thread_suspend_check(0);
+			PROC_UNLOCK(curproc);
+		} else {
+			kthread_suspend_check();
+		}
 
 		new_scheduled = nmk->scheduled;
 
@@ -1003,9 +1012,8 @@ nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kthread_cfg *cfg)
 {
 	/* send irq through ioctl to bhyve (vmm.ko) */
 	if (cfg->event.irqfd) {
-		nmk->worker_ctx.irq_ioctl.fd = cfg->event.irqfd;
-		nmk->worker_ctx.irq_ioctl.com = cfg->ioctl.com;
-		nmk->worker_ctx.irq_ioctl.data = (caddr_t)cfg->ioctl.data;
+		nmk->worker_ctx.irq_fd = cfg->event.irqfd;
+		nmk->worker_ctx.irq_ioctl = cfg->event.ioctl;
 	}
 	/* ring.ioeventfd contains the chan where do tsleep to wait events */
 	if (cfg->event.ioeventfd) {
@@ -1018,7 +1026,7 @@ nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kthread_cfg *cfg)
 static void
 nm_kthread_close_files(struct nm_kthread *nmk)
 {
-	nmk->worker_ctx.irq_ioctl.fd = 0;
+	nmk->worker_ctx.irq_fd = 0;
 	nmk->worker_ctx.ioevent_file = NULL;
 }
 
@@ -1039,11 +1047,13 @@ nm_kthread_create(struct nm_kthread_cfg *cfg)
 		return NULL;
 
 	mtx_init(&nmk->worker_lock, "nm_kthread lock", NULL, MTX_DEF);
-	nmk->worker_ctx.user_td = curthread;
 	nmk->worker_ctx.worker_fn = cfg->worker_fn;
 	nmk->worker_ctx.worker_private = cfg->worker_private;
 	nmk->worker_ctx.type = cfg->type;
 	nmk->affinity = -1;
+
+	/* attach kthread to user process (ptnetmap) */
+	nmk->attach_user = cfg->attach_user;
 
 	/* open event fd */
 	error = nm_kthread_open_files(nmk, cfg);
@@ -1059,15 +1069,23 @@ err:
 int
 nm_kthread_start(struct nm_kthread *nmk)
 {
+	struct proc *p = NULL;
 	int error = 0;
 
 	if (nmk->worker) {
 		return EBUSY;
 	}
+
+	/* check if we want to attach kthread to user process */
+	if (nmk->attach_user) {
+		nmk->worker_ctx.user_td = curthread;
+		p = curthread->td_proc;
+	}
+
 	/* enable kthread main loop */
 	nmk->run = 1;
 	/* create kthread */
-	if((error = kthread_add(nm_kthread_worker, nmk, curproc,
+	if((error = kthread_add(nm_kthread_worker, nmk, p,
 			&nmk->worker, RFNOWAIT /* to be checked */, 0, "nm-kthread-%ld",
 			nmk->worker_ctx.type))) {
 		goto err;

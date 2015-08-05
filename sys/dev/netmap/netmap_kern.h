@@ -1712,16 +1712,12 @@ struct nm_kthread; /* OS-specific kthread - opaque */
 typedef void (*nm_kthread_worker_fn_t)(void *data);
 
 /* kthread configuration */
-struct nm_kthread_ioctl {
-	uint64_t	com;
-	uint64_t	data;
-};
 struct nm_kthread_cfg {
 	long				type;		/* kthread type */
 	struct nm_kth_event_cfg		event;		/* event/ioctl fd */
-	struct nm_kthread_ioctl		ioctl;		/* ioctl args to send irq (bhyve) */
 	nm_kthread_worker_fn_t		worker_fn;	/* worker function */
 	void				*worker_private;/* worker parameter */
+	int				attach_user;	/* attach kthread to user process */
 };
 /* kthread configuration */
 struct nm_kthread *nm_kthread_create(struct nm_kthread_cfg *cfg);
