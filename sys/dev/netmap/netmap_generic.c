@@ -566,8 +566,6 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	u_int ring_nr = kring->ring_id;
-	PVOID xHead = NULL;
-	PVOID xPrev = NULL;
 
 	IFRATE(rate_ctx.new.txsync++);
 

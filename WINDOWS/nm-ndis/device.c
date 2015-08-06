@@ -140,9 +140,6 @@ FilterInternalDeviceIoControl(
 {
     PIO_STACK_LOCATION		IrpSp;
     NTSTATUS			NtStatus = STATUS_SUCCESS;
-    PVOID			pOutBuff = NULL;
-    MEMORY_ENTRY		*memEntry = NULL;
-    struct net_device		*ifp = NULL;
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 

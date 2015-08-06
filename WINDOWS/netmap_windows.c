@@ -673,7 +673,6 @@ copy_from_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
 int
 copy_to_user(PVOID dst, PVOID src, size_t len, PIRP Irp)
 {
-    PVOID       buffer = NULL;
     ULONG		outBufLength = 0;
     PIO_STACK_LOCATION  irpSp;
 

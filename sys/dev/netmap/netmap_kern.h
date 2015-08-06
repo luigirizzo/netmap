@@ -1069,6 +1069,7 @@ nm_set_native_flags(struct netmap_adapter *na)
 	na->if_transmit = ifp->if_transmit;
 	ifp->if_transmit = netmap_transmit;
 #elif defined (_WIN32)
+	(void)ifp; /* prevent a warning */
 	//XXX_ale can we just comment those?
 	//na->if_transmit = ifp->if_transmit;
 	//ifp->if_transmit = netmap_transmit;
@@ -1089,6 +1090,7 @@ nm_clear_native_flags(struct netmap_adapter *na)
 #if defined(__FreeBSD__)
 	ifp->if_transmit = na->if_transmit;
 #elif defined(_WIN32)
+	(void)ifp; /* prevent a warning */
 	//XXX_ale can we just comment those?
 	//ifp->if_transmit = na->if_transmit;
 #else

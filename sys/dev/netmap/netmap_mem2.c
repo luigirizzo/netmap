@@ -1022,7 +1022,6 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 	p->bitmap = NULL;
 	if (p->lut) {
 		u_int i;
-		size_t sz = p->_clustsize;
 
 		/*
 		 * Free each cluster allocated in

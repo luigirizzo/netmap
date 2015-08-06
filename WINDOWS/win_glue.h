@@ -41,11 +41,11 @@
 #pragma warning(disable:4100)	// unreferenced formal parameter
 // #pragma warning(disable:4101)	// unreferenced local variable
 #pragma warning(disable:4118)	//error in between signed and unsigned
-#pragma warning(disable:4115)	//definition of type between parenthesis
+//#pragma warning(disable:4115)	//definition of type between parenthesis
 #pragma warning(disable:4127)	//constant conditional expression
 #pragma warning(disable:4133)	//warning: uncompatible types: From <1> to <2>
 #pragma warning(disable:4142)	//benign type redefinition
-#pragma warning(disable:4189)	//local variable initialized but without references
+// #pragma warning(disable:4189)	//local variable initialized but without references
 #pragma warning(disable:4200)	//non-standard extension: matrix of zero dimension in struct/union
 #pragma warning(disable:4201)	//nameless structure
 #pragma warning(disable:4229)	// zero-size arrays // XXX
@@ -260,20 +260,6 @@ static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
 *        		GENERIC/HW SPECIFIC STRUCTURES     		 *
 **********************************************************/
 
-/*
- * the following structure is used to hook ndis with netmap.
- */
-typedef struct _FUNCTION_POINTER_XCHANGE {
-	/* ndis -> netmap calls */
-	struct NET_BUFFER* (*handle_rx)(struct net_device*, uint32_t length, const char* data);
-	struct NET_BUFFER* (*handle_tx)(struct net_device*, uint32_t length, const char* data);
-
-	/* netmap -> ndis calls */
-	NTSTATUS (*ndis_regif)(struct net_device *ifp);
-	NTSTATUS (*ndis_rele)(struct net_device *ifp);
-	PVOID (*injectPacket)(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport, PNET_BUFFER_LIST prev);
-} FUNCTION_POINTER_XCHANGE; // , *PFUNCTION_POINTER_XCHANGE;
-
 
 struct netmap_adapter;
 #if 0
@@ -285,6 +271,7 @@ struct ifnet {
 	int* netmap_generic_rx_handler;
 };
 #endif
+
 struct net_device {
 	char	if_xname[IFNAMSIZ];			// external name (name + unit) 
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
@@ -310,13 +297,31 @@ struct mbuf {
 	void*(*netmap_default_mbuf_destructor)(struct mbuf *m);
 };
 
+/*
+ * the following structure is used to hook ndis with netmap.
+ */
+typedef struct _FUNCTION_POINTER_XCHANGE {
+	/* ndis -> netmap calls */
+	struct NET_BUFFER* (*handle_rx)(struct net_device*, uint32_t length, const char* data);
+	struct NET_BUFFER* (*handle_tx)(struct net_device*, uint32_t length, const char* data);
+
+	/* netmap -> ndis calls */
+	NTSTATUS (*ndis_regif)(struct net_device *ifp);
+	NTSTATUS (*ndis_rele)(struct net_device *ifp);
+	PVOID (*injectPacket)(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport, PNET_BUFFER_LIST prev);
+} FUNCTION_POINTER_XCHANGE; // , *PFUNCTION_POINTER_XCHANGE;
+
 //XXX_ale To be correctly redefined
 #define GET_MBUF_REFCNT(a)				1
 #define	SET_MBUF_DESTRUCTOR(a,b)		// XXX must be set to enable tx notifications
 #define MBUF_IFP(m)						m->dev	
 
-extern void win32_init_lookaside_buffers(struct net_device *ifp);
-extern void win32_clear_lookaside_buffers(struct net_device *ifp);
+void win32_init_lookaside_buffers(struct net_device *ifp);
+void win32_clear_lookaside_buffers(struct net_device *ifp);
+
+struct hrtimer;	// XXX unused, from generic
+struct nm_generic_mit;	// XXX unused, from generic
+struct device;	// XXX unused, in some place in netmap_mem2.c
 
 static void
 generic_timer_handler(struct hrtimer *t)
@@ -530,6 +535,8 @@ PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 /*********************************************************
 * SYSCTL emulation (copied from dummynet/glue.h)		 *
 **********************************************************/
+struct sock; // XXX unused
+
 int do_netmap_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len);
 int do_netmap_get_ctl(struct sock *sk, int cmd, void __user *user, int *len);
 
