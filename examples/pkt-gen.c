@@ -269,6 +269,7 @@ struct glob_arg {
 	char *nmr_config;
 	int dummy_send;
 	int virt_header;	/* send also the virt_header */
+	int extra_pipes;	/* goes in nr_arg1 */
 	int extra_bufs;		/* goes in nr_arg3 */
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
@@ -1209,7 +1210,6 @@ sender_body(void *data)
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
-
 #endif /* !BUSYWAIT */
 		/*
 		 * scan our queues and send on those with room
@@ -1379,8 +1379,8 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
-
 #endif /* !BUSYWAIT */
+
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
 
@@ -1399,7 +1399,7 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#if !defined(BUSYWAIT) //&& !defined(_WIN32)
+#if !defined(BUSYWAIT)
 out:
 #endif
 	targ->completed = 1;
@@ -1917,7 +1917,7 @@ main(int arc, char **argv)
 			g.extra_bufs = atoi(optarg);
 			break;
 		case 'E':
-			/* ignored */
+			g.extra_pipes = atoi(optarg);
 			break;
 		case 'm':
 			/* ignored */
@@ -2004,6 +2004,9 @@ D("running on %d cpus (have %d)", g.cpus, i);
 	parse_nmr_config(g.nmr_config, &base_nmd);
 	if (g.extra_bufs) {
 		base_nmd.nr_arg3 = g.extra_bufs;
+	}
+	if (g.extra_pipes) {
+	    base_nmd.nr_arg1 = g.extra_pipes;
 	}
 
 	/*
