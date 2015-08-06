@@ -605,6 +605,7 @@ static long
 linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 #endif
 {
+	struct netmap_priv_d *priv = file->private_data;
 	int ret = 0;
 	union {
 		struct nm_ifreq ifr;
@@ -630,7 +631,7 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 		if (copy_from_user(&arg, (void *)data, argsize) != 0)
 			return -EFAULT;
 	}
-	ret = netmap_ioctl(NULL, cmd, (caddr_t)&arg, 0, (void *)file);
+	ret = netmap_ioctl(priv, cmd, (caddr_t)&arg, NULL);
 	if (data && copy_to_user((void*)data, &arg, argsize) != 0)
 		return -EFAULT;
 	return -ret;

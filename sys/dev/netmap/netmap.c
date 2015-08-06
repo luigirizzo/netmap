@@ -2065,20 +2065,15 @@ nm_rxsync_finalize(struct netmap_kring *kring)
  * Return 0 on success, errno otherwise.
  */
 int
-netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
-	int fflag, struct thread *td)
+netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *td)
 {
-	struct netmap_priv_d *priv = NULL;
 	struct nmreq *nmr = (struct nmreq *) data;
 	struct netmap_adapter *na = NULL;
-	int error;
+	int error = 0;
 	u_int i, qfirst, qlast;
 	struct netmap_if *nifp;
 	struct netmap_kring *krings;
 	enum txrx t;
-
-	(void)dev;	/* UNUSED */
-	(void)fflag;	/* UNUSED */
 
 	if (cmd == NIOCGINFO || cmd == NIOCREGIF) {
 		/* truncate name */
@@ -2093,15 +2088,6 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 		    nmr->nr_version > NETMAP_MAX_API) {
 			return EINVAL;
 		}
-	}
-	CURVNET_SET(TD_TO_VNET(td));
-
-	error = devfs_get_cdevpriv((void **)&priv);
-	if (error) {
-		CURVNET_RESTORE();
-		/* XXX ENOENT should be impossible, since the priv
-		 * is now created in the open */
-		return (error == ENOENT ? ENXIO : error);
 	}
 
 	switch (cmd) {
@@ -2322,7 +2308,6 @@ netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data,
 	}
 out:
 
-	CURVNET_RESTORE();
 	return (error);
 }
 
