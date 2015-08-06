@@ -26,13 +26,15 @@
 #ifndef _WIN_GLUE_H_
 #define _WIN_GLUE_H_
 
+/*
+ * This header is used to compile the kernel components of netmap for Windows.
+ * Its purpose is to remap common FreeBSD/Linux kernel data structures and
+ * functions into compatible Windows ones.
+ */
+
 #ifdef __CYGWIN__
-/* we have __attribute__ */
 #define _WIN32	/* we use _WIN32 throughout the code */
 #else /* some MSC pragmas etc. */
-
-// #define __attribute__(x) __declspec(align(64))
-// #define __aligned__	align
 
 //Disabling unuseful warnings
 #pragma warning(disable:4018)	// expression: signed/unsigned mismatch
@@ -56,25 +58,22 @@
 
 #pragma warning(disable:4267)	//conversion from 'size_t' to <type>. possible loss of data
 
-#endif //__CYGWIN__
+#endif /* !__CYGWIN__ */
 
-/*#define FILTER_MAJOR_NDIS_VERSION   NDIS_SUPPORT_NDIS6
-#define FILTER_MINOR_NDIS_VERSION   NDIS_SUPPORT_NDIS6*/
-#define NDIS_SUPPORT_NDIS6			1	//gives support for NDIS NET_BUFFERs
+#define NDIS_SUPPORT_NDIS6	1	//gives support for NDIS NET_BUFFERs
 
-#define WIN32_LEAN_AND_MEAN 1
+#define WIN32_LEAN_AND_MEAN	1
 
-#ifndef IS_USERSPACE
 #include <ndis.h>
 #include <string.h>
 #include <WinDef.h>
 //#include <Iptypes.h>		// definition of IP_ADAPTER_INFO
 #include <netioapi.h>		// definition of IF_NAMESIZE
-#include <ntddk.h>          // various NT definitions
+#include <ntddk.h>		// various NT definitions
 #include <errno.h>
-#include <intrin.h>			//machine specific code (for example le64toh)
+#include <intrin.h>		//machine specific code (for example le64toh)
 #include <Ntstrsafe.h>
-#endif //IS_USERSPACE
+
 
 #define	M_DEVBUF		'nmDb'	/* netmap pool for memory allocation */
 #define	M_NETMAP		'nmBm'	/* bitmap pool for netmap_mem2.c */
@@ -86,72 +85,76 @@
 #define	IFNAMSIZ 44//IF_NAMESIZE //defined in netioapi.h, is 256
 //XXX_ale	must set the same here and in userspace somehow
 
-/*********************************************************
-*   REDEFINITION OF UNCOMMON STRUCTURES FOR WINDOWS		 *
-**********************************************************/
+/*
+ *   C types and structs missing on Windows
+ */
 
 // From inttypes.h
-typedef __int8 int8_t;
-typedef unsigned __int8 uint8_t;
-typedef __int16 int16_t;
-typedef unsigned __int16 uint16_t;
-typedef __int32 int32_t;
-typedef unsigned __int32 uint32_t;
-typedef __int64 int64_t;
-typedef unsigned __int64 uint64_t;
-typedef uint32_t u_int;
-typedef ULONG u_long;
-typedef SSIZE_T ssize_t;
+typedef __int8			int8_t;
+typedef unsigned __int8		uint8_t;
+typedef __int16			int16_t;
+typedef unsigned __int16 	uint16_t;
+typedef __int32			int32_t;
+typedef unsigned __int32	uint32_t;
+typedef __int64			int64_t;
+typedef unsigned __int64	uint64_t;
+typedef uint32_t		u_int;
+typedef ULONG			u_long;
+typedef SSIZE_T			ssize_t;
 
 
-#ifndef IS_USERSPACE
-typedef struct timeval {
-  LONGLONG tv_sec;
-  LONGLONG tv_usec;
-} timeval;
-typedef char* caddr_t;
+struct timeval {
+	LONGLONG tv_sec;
+	LONGLONG tv_usec;
+};
+
+typedef char *			caddr_t;
 
 typedef PHYSICAL_ADDRESS 	vm_paddr_t;
-typedef uint32_t			vm_offset_t;
-typedef ULONG 				vm_ooffset_t; 
+typedef uint32_t		vm_offset_t;
+typedef ULONG 			vm_ooffset_t; 
 
 #define thread PIO_STACK_LOCATION
-#endif //IS_USERSPACE
+
+
 //--------------------------------------------------------
 
-/*********************************************************
-*      		  	ERRNO->NTSTATUS TRANSLATION				 *  
-**********************************************************/
+/*
+ *	ERRNO -> NTSTATUS TRANSLATION
+ */
 #define ENOBUFS		STATUS_DEVICE_INSUFFICIENT_RESOURCES	
 #define EOPNOTSUPP	STATUS_INVALID_DEVICE_REQUEST
-/*********************************************************
-*        		  	NO USE IN WINDOWS CODE         		 *
-**********************************************************/
+
+/*
+ *	NO USE IN WINDOWS CODE
+ */
 #define destroy_dev(a)
 #define __user
 #define nm_iommu_group_id(dev)	0
-#define if_printf	DbgPrint
-/*********************************************************
-* TRANSLATION OF GCC COMPILER ATTRIBUTES TO MSVC COMPILER*
-**********************************************************/
+
+
+/*
+ * TRANSLATION OF GCC COMPILER ATTRIBUTES TO MSVC COMPILER
+ */
 
 #ifdef _MSC_VER
-#define inline __inline
-#define __builtin_prefetch(x)	_mm_prefetch(x,_MM_HINT_T2)
+#define inline			__inline
+#define __builtin_prefetch(x)	_mm_prefetch(x, _MM_HINT_T2)
 #endif //_MSC_VER
 
-#ifndef IS_USERSPACE
 static void panic(const char *fmt, ...)
 {
 	DbgPrint(fmt);
 	NT_ASSERT(1);
 }
-#define __assert	NT_ASSERT
-#define assert	NT_ASSERT
 
-/*********************************************************
-*        			SPINLOCKS DEFINITION        		 *  
-**********************************************************/
+#define if_printf	DbgPrint
+#define __assert	NT_ASSERT
+#define assert		NT_ASSERT
+
+/*
+ *	SPINLOCKS DEFINITION
+ */
 typedef struct {
         KSPIN_LOCK      sl;
         KIRQL          irql;
@@ -162,16 +165,16 @@ static inline void spin_lock_init(win_spinlock_t *m)
 	KeInitializeSpinLock(&(m->sl));
 }
 
-//Acquires the spinlock and saves the current IRQL level
+/* Acquire the spinlock and saves the current IRQL level */
 static inline void mtx_lock(win_spinlock_t *m)
 {
-    KeAcquireSpinLock(&(m->sl), &(m->irql));
+	KeAcquireSpinLock(&(m->sl), &(m->irql));
 }
 
-//Release the spinlock and restore the old IRQL level
+/* Release the spinlock and restore the old IRQL level */
 static inline void mtx_unlock(win_spinlock_t *m)
 {
-    KeReleaseSpinLock(&(m->sl), (m->irql));
+	KeReleaseSpinLock(&(m->sl), (m->irql));
 }
 
 #define mtx_init(a, b, c, d)	spin_lock_init(a)
@@ -179,11 +182,11 @@ static inline void mtx_unlock(win_spinlock_t *m)
 
 #define mtx_lock_spin(a)	mtx_lock(a)
 #define mtx_unlock_spin(a)	mtx_unlock(a)
-//--------------------------------------------------------
 
-/*********************************************************
-*        		READ/WRITE LOCKS DEFINITION        		 *
-**********************************************************/
+
+/*
+ *	READ/WRITE LOCKS DEFINITION
+ */
 
 #define BDG_RWLOCK_T			ERESOURCE
 #define BDG_RWINIT(b)			ExInitializeResourceLite(b.bdg_lock)
@@ -196,24 +199,24 @@ static inline void mtx_unlock(win_spinlock_t *m)
 #define BDG_SET_VAR(lval, p)	((lval) = (p))
 #define BDG_GET_VAR(lval)		(lval)
 #define BDG_FREE(p)				free(p)
-//--------------------------------------------------------
 
-/*********************************************************
-*        			SLEEP/WAKEUP THREADS        		 *
-**********************************************************/
+
+/*
+ *	SLEEP/WAKEUP THREADS
+ */
 
 #define PI_NET					16
 #define init_waitqueue_head(x)			KeInitializeEvent(x, NotificationEvent, TRUE);
 #define netmap_knlist_destroy(x)
 #define tsleep(ident, priority, wmesg, time)	KeDelayExecutionThread(KernelMode, FALSE, (PLARGE_INTEGER)time)	
-//--------------------------------------------------------
+
 
 #define mb				KeMemoryBarrier
 #define rmb				KeMemoryBarrier //XXX_ale: doesn't seems to exist just a read barrier
 
-/*********************************************************
-*        			TIME FUNCTIONS		        		 *
-**********************************************************/
+/*
+ *	TIME FUNCTIONS
+ */
 void do_gettimeofday(struct timeval *tv);
 static int time_uptime_w32()
 {
@@ -226,51 +229,23 @@ static int time_uptime_w32()
 
 #define microtime		do_gettimeofday
 #define time_second		time_uptime_w32
+
 //--------------------------------------------------------
 
-#define snprintf 							_snprintf
-#define printf								DbgPrint
+#define snprintf 			_snprintf
+#define printf				DbgPrint
 
 /* XXX copyin used in vale (indirect bufs) and netmap_offloadings.c
  * Is it ok to use RtlCopyMemory for user buffers ?
  */
 #define copyin(src, dst, copy_len)		RtlCopyMemory(dst, src, copy_len)
 
-#if 0
-static NTSTATUS SafeAllocateString(OUT PUNICODE_STRING result, IN USHORT size)
-{
-	ASSERT(result != NULL);
-	if (result == NULL || size == 0)
-		return STATUS_INVALID_PARAMETER;
 
-	result->Buffer = ExAllocatePoolWithTag(NonPagedPool, size, 'rtsM');
-	result->Length = 0;
-	result->MaximumLength = size;
-
-	if (result->Buffer)
-		RtlZeroMemory(result->Buffer, size);
-	else
-		return STATUS_NO_MEMORY;
-
-	return STATUS_SUCCESS;
-}
-#endif /* UNUSED */
-
-/*********************************************************
-*        		GENERIC/HW SPECIFIC STRUCTURES     		 *
-**********************************************************/
-
+/*
+ *	GENERIC/HW SPECIFIC STRUCTURES
+ */
 
 struct netmap_adapter;
-#if 0
-struct ifnet {
-	char    if_xname[IFNAMSIZ];     		/* external name (name + unit) */
-	//        struct ifaltq if_snd;         /* output queue (includes altq) */
-	struct netmap_adapter* na;
-
-	int* netmap_generic_rx_handler;
-};
-#endif
 
 struct net_device {
 	char	if_xname[IFNAMSIZ];			// external name (name + unit) 
@@ -288,12 +263,13 @@ struct net_device {
 };
 
 #define ifnet		net_device
+
 struct mbuf {
-	struct mbuf			*m_next;
-	struct mbuf			*m_nextpkt;
-	uint32_t			m_len;
+	struct mbuf		*m_next;
+	struct mbuf		*m_nextpkt;
+	uint32_t		m_len;
 	struct net_device	*dev;
-	PVOID				pkt;
+	PVOID			pkt;
 	void*(*netmap_default_mbuf_destructor)(struct mbuf *m);
 };
 
@@ -390,8 +366,6 @@ static void nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 }
 
 
-static inline int ilog2(uint64_t n);
-static inline int roundup_pow_of_two(int sz);
 
 /*-------------------------------------------
  *      KERNEL MEMORY ALLOCATION and management
@@ -524,13 +498,22 @@ PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 
 #define make_dev_credf(_a, _b, ...)	((void *)1)	// non-null
 
-#define contigmalloc(sz, ty, flags, a, b, pgsz, c)	win_contigMalloc(sz,pgsz)
-#define contigfree(va, sz, ty)				win_ContigFree(va)
+/*
+ * At the moment we can just do regular malloc on Windows.
+ * The only use for contigmalloc would be for netmap buffers
+ * for NICs using native netmap support.
+ *
+ * MmAllocatePagesForMdlEx() and MmMapLockedPagesSpecifyCache()
+ * would work for that, but they are incredibly slow.
+ */
+#define contigmalloc(sz, ty, flags, a, b, pgsz, c)	\
+					ExAllocatePoolWithTag(NonPagedPool, sz, M_NETMAP)
+#define contigfree(va, sz, ty)		ExFreePoolWithTag(va, M_NETMAP)
 
-#define vtophys						MmGetPhysicalAddress
+#define vtophys				MmGetPhysicalAddress
 #define MALLOC_DEFINE(a,b,c)
+
 //--------------------------------------------------------
-#endif //IS_USERSPACE
 
 /*********************************************************
 * SYSCTL emulation (copied from dummynet/glue.h)		 *
@@ -664,22 +647,25 @@ int kesysctl_emu_get(struct sockopt* sopt);
 void sysctl_pushback(char* name, int flags, int datalen, void* data);
 int sysctlbyname(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
 
-int do_cmd(int optname, void *optval, uintptr_t optlen);
+// int do_cmd(int optname, void *optval, uintptr_t optlen);
 
 //--------------------------------------------------------
 
-/*********************************************************
-*			POLL VALUES DEFINITIONS						 *
-**********************************************************/
+/*
+ *	POLL VALUES DEFINITIONS
+ */
 #ifndef POLLRDNORM
 #define POLLRDNORM  0x0040
 #endif
+
 #ifndef POLLRDBAND
 #define POLLRDBAND  0x0080
 #endif
+
 #ifndef POLLIN
 #define POLLIN		0x0001
 #endif
+
 #ifndef POLLPRI
 #define POLLPRI     0x0002
 #endif
@@ -687,9 +673,11 @@ int do_cmd(int optname, void *optval, uintptr_t optlen);
 #ifndef POLLWRNORM
 #define POLLWRNORM  0x0100
 #endif
+
 #ifndef POLLOUT
 #define POLLOUT		0x0004
 #endif
+
 #ifndef POLLWRBAND
 #define POLLWRBAND  0x0200
 #endif
@@ -697,9 +685,11 @@ int do_cmd(int optname, void *optval, uintptr_t optlen);
 #ifndef POLLERR
 #define POLLERR     0x0008
 #endif
+
 #ifndef POLLHUP
 #define POLLHUP     0x0010
 #endif
+
 #ifndef POLLNVAL
 #define POLLNVAL    0x0020
 #endif
