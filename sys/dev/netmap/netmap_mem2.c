@@ -1197,6 +1197,13 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 		int lim = i + p->_clustentries;
 		char *clust;
 
+		/*
+		 * XXX Note, we only need contigmalloc() for buffers attached
+		 * to native interfaces. In all other cases (nifp, netmap rings
+		 * and even buffers for VALE ports or emulated interfaces) we
+		 * can live with standard malloc, because the hardware will not
+		 * access the pages directly.
+		 */
 		clust = contigmalloc(n, M_NETMAP, M_NOWAIT | M_ZERO,
 		    (size_t)0, -1UL, PAGE_SIZE, 0);
 		if (clust == NULL) {
