@@ -348,7 +348,8 @@ static inline int ilog2(uint64_t n)
 #define vtophys		virt_to_phys
 
 /*--- selrecord and friends ---*/
-#define OS_selrecord(x, y)		poll_wait((struct file *)x, y, pwait)
+struct nm_linux_selrecord_t;
+#define NM_SELRECORD_T	struct nm_linux_selrecord_t
 
 #define netmap_knlist_destroy(x)	// XXX todo
 

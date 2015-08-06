@@ -1170,6 +1170,12 @@ nm_os_selwakeup(struct nm_selinfo *si)
 	KNOTE_UNLOCKED(&si->si.si_note, 0x100 /* notification */);
 }
 
+void
+nm_os_selrecord(struct thread *td, struct nm_selinfo *si)
+{
+	selrecord(td, &si->si);
+}
+
 static void
 netmap_knrdetach(struct knote *kn)
 {
@@ -1215,7 +1221,7 @@ netmap_knrw(struct knote *kn, long hint, int events)
 		RD(5, "curthread changed %p %p", curthread, priv->np_td);
 		return 1;
 	} else {
-		revents = netmap_poll((void *)priv, events, curthread);
+		revents = netmap_poll(priv, events, NULL);
 		return (events & revents) ? 1 : 0;
 	}
 }
@@ -1288,13 +1294,23 @@ netmap_kqfilter(struct cdev *dev, struct knote *kn)
 	return 0;
 }
 
+static int
+freebsd_netmap_poll(struct cdev *cdev, int events, struct thread *td)
+{
+	struct netmap_priv_d *priv;
+	if (devfs_get_cdevpriv((void **)&priv)) {
+		return POLLERR;
+	}
+	return netmap_poll(priv, events, td);
+}
+
 struct cdevsw netmap_cdevsw = {
 	.d_version = D_VERSION,
 	.d_name = "netmap",
 	.d_open = netmap_open,
 	.d_mmap_single = netmap_mmap_single,
 	.d_ioctl = netmap_ioctl,
-	.d_poll = netmap_poll,
+	.d_poll = freebsd_netmap_poll,
 	.d_kqfilter = netmap_kqfilter,
 	.d_close = netmap_close,
 };
