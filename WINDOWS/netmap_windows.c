@@ -293,17 +293,20 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
  * Transmit routine used by generic_netmap_txsync(). Returns 0 on success
  * and <> 0 on error (which may be packet drops or other errors).
 */
-PVOID
-nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
-	void *addr, u_int len, u_int ring_nr)
+int
+nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
-	PVOID prev = m;
-	(void)ring_nr;
-	(void)m;	/* we do not need m here at the moment */
-	if (ndis_hooks.injectPacket != NULL) {
-		return ndis_hooks.injectPacket(ifp->pfilter, addr, len, TRUE, prev);
+	void *cur;
+	if (ndis_hooks.injectPacket == NULL) { /* silently drop ? */
+		return 0;
 	}
-	return NULL;
+	cur = ndis_hooks.injectPacket(a->ifp->pfilter, a->addr, a->len, TRUE, a->tail);
+	if (cur) {
+		a->tail = cur;
+		if (a->head == NULL)
+			a->head = cur;
+	}
+	return  0;
 }
 
 /*

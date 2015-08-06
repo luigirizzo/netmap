@@ -580,14 +580,19 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 	 */
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
+		struct nm_os_gen_arg a;
+
+		a.ifp = ifp;
+		a.ring_nr = ring_nr;
+		a.head = a.tail = NULL;
+
 		while (nm_i != head) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			void *addr = NMB(na, slot);
-
 			/* device-specific */
 			struct mbuf *m;
-			//int tx_ret;
+			int tx_ret;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
@@ -601,6 +606,9 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 					break;
 				}
 			}
+			a.m = m;
+			a.addr = addr;
+			a.len = len;
 			/* XXX we should ask notifications when NS_REPORT is set,
 			 * or roughly every half frame. We can optimize this
 			 * by lazily requesting notifications only when a
@@ -608,10 +616,8 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * break on failures and set notifications when
 			 * ring->cur == ring->tail || nm_i != cur
 			 */
-			xPrev = nm_os_generic_xmit_frame(ifp, (PVOID)xPrev, addr, len, ring_nr);
-			if (xHead == NULL)
-				xHead = xPrev;
-			if (unlikely(xPrev == NULL)) {
+			tx_ret = nm_os_generic_xmit_frame(&a);
+			if (unlikely(tx_ret)) {
 				ND(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
 						tx_ret, nm_i, head, kring->nr_hwtail);
 				/*
@@ -639,9 +645,10 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			nm_i = nm_next(nm_i, lim);
 			IFRATE(rate_ctx.new.txpkt ++);
 		}
-		if (xHead != NULL)
-			nm_os_generic_xmit_frame(ifp, (PVOID)xHead, NULL, 0, ring_nr);
-
+		if (a.head != NULL) {
+			a.addr = NULL;
+			nm_os_generic_xmit_frame(&a);
+		}
 		/* Update hwcur to the next slot to transmit. */
 		kring->nr_hwcur = nm_i; /* not head, we could break early */
 	}
