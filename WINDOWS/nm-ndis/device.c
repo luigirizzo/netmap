@@ -412,9 +412,16 @@ ndis_rele(struct net_device *ifp)
  * _IN_ PVOID data,			data to be injected
  * _IN_ uint32_t length			length of the data to be injected
  * _IN_ BOOLEAN sendToMiniport		TRUE send to miniport driver, FALSE send to OS stack (protocol driver)
+ *
+ * XXX TODO
+ * if data == NULL prev indicates the ist of packets to send out
+ *		returns prev on success, NULL on failure
+ *
+ * if data != NULL creates a packet, appends to prev,
+ *		returns packet on success, NULL on failure
  */
-NTSTATUS 
-injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport)
+PVOID 
+injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport, PNET_BUFFER_LIST prev)
 {
     PVOID			buffer = NULL;
     PMDL			pMdl = NULL;
@@ -425,15 +432,22 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
     PMS_FILTER			pfilter = (PMS_FILTER)_pfilter;
 
     do {
+		if (data == NULL && prev != NULL) {
+			pBufList = prev;
+			goto sendOut;
+		}
+		if (data == NULL)
+			return NULL;
 	/*
 	 * we construct a pool+packet+mdl from the data we receive from above
 	 */
-	buffer = ExAllocatePoolWithTag(NonPagedPool, length, M_DEVBUF);
+	buffer = ExAllocateFromNPagedLookasideList(&pfilter->netmap_injected_packets_pool);
 	if (buffer == NULL) {
-	    DbgPrint("Error allocating buffer!\n");
-	    status = STATUS_INSUFFICIENT_RESOURCES;
-	    break;
+		DbgPrint("Error allocating buffer!\n");
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		break;
 	}
+
 	// RtlZeroMemory(buffer, length); // we copy data, anyways
 	/* attach the buffer to a newly allocated mdl */
 	pMdl = NdisAllocateMdl(pfilter->FilterHandle, buffer, length);
@@ -455,6 +469,7 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 	    status = STATUS_INSUFFICIENT_RESOURCES;
 	    break;
 	}
+
 	pFirst = NET_BUFFER_LIST_FIRST_NB(pBufList);
 	pNdisPacketMemory = NdisGetDataBuffer(pFirst, length, NULL, sizeof(UINT8), 0);
 	// pNdisPacketMemory is the same as buffer
@@ -469,6 +484,12 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 	DumpPayload(pNdisPacketMemory, length);
 #endif
 	pBufList->SourceHandle = pfilter->FilterHandle;
+	if (prev != NULL) {
+		prev->Next = pBufList;
+	}
+	return pBufList;
+
+sendOut:
 	if (sendToMiniport) {
 	    // This send down to the NIC (miniport)
 	    // eventually triggering the callback FilterSendNetBufferListsComplete()
@@ -478,6 +499,7 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 	} else {
 	    // This one sends up to the OS, again eventually triggering
 	    // FilterReturnNetBufferLists()
+		//XXX we need to count the lists
 	    NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 1, 0);
 	}
     } while (FALSE);
@@ -487,8 +509,9 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 	if (pMdl)
 	    NdisFreeMdl(pMdl);
 	if (buffer)
-	    ExFreePoolWithTag(buffer, M_DEVBUF);
+		ExFreeToNPagedLookasideList(&pfilter->netmap_injected_packets_pool, buffer);
+	return NULL;
     }
 
-    return status;
+	return pBufList;
 }

@@ -45,7 +45,7 @@ static FUNCTION_POINTER_XCHANGE netmap_hooks;
 
 NTSTATUS ndis_regif(struct net_device *ifp);
 NTSTATUS ndis_rele(struct net_device *ifp);
-NTSTATUS injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
+PVOID injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport, PNET_BUFFER_LIST prev);
 
 NDIS_FILTER_PARTIAL_CHARACTERISTICS DefaultChars = {
 { 0, 0, 0},
@@ -435,6 +435,9 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
 		Status = NDIS_STATUS_RESOURCES; break;
 	}
 
+	ExInitializeNPagedLookasideList(&pFilter->netmap_injected_packets_pool,
+		NULL, NULL, 0, 2048, M_DEVBUF, 0);
+
         pFilter->State = FilterPaused;
 
         FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
@@ -745,6 +748,11 @@ NOTE: Called at PASSIVE_LEVEL and the filter is in paused state
 	pFilter->netmap_pool = NULL;
 	NdisZeroMemory(&pFilter->PoolParameters, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
     }
+
+	if (&pFilter->netmap_injected_packets_pool != NULL)
+	{
+		ExDeleteNPagedLookasideList(&pFilter->netmap_injected_packets_pool);
+	}
 
     FILTER_ACQUIRE_LOCK(&FilterListLock, bFalse);
     RemoveEntryList(&pFilter->FilterModuleLink);
@@ -1400,7 +1408,8 @@ Return Value:
 					NdisQueryMdl(pCurrMDL, (PVOID *)&pDataBuffer, &ulDataLength, NormalPagePriority); 
 					NdisFreeMdl(pCurrMDL);
 					if( pDataBuffer != NULL ) {
-						NdisFreeMemory(pDataBuffer, 0, 0);
+						//NdisFreeMemory(pDataBuffer, 0, 0);
+						ExFreeToNPagedLookasideList(&pFilter->netmap_injected_packets_pool, pDataBuffer);
 					} 
 					pCurrMDL = pNextMDL;
 				} 
@@ -1630,7 +1639,8 @@ Arguments:
 	    // XXX must free buffer
 		if (pDataBuffer != NULL)
 		{
-			NdisFreeMemory(pDataBuffer, 0, 0);
+			//NdisFreeMemory(pDataBuffer, 0, 0);
+			ExFreeToNPagedLookasideList(&pFilter->netmap_injected_packets_pool, pDataBuffer);
 		}
 	    CurrNetBuffer = NET_BUFFER_NEXT_NB(CurrNetBuffer);
 	}

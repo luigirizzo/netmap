@@ -58,8 +58,8 @@
 #endif //__CYGWIN__
 
 /*#define FILTER_MAJOR_NDIS_VERSION   NDIS_SUPPORT_NDIS6
-#define FILTER_MINOR_NDIS_VERSION   NDIS_SUPPORT_NDIS6
-#define NDIS_SUPPORT_NDIS6			1	//gives support for NDIS NET_BUFFERs*/
+#define FILTER_MINOR_NDIS_VERSION   NDIS_SUPPORT_NDIS6*/
+#define NDIS_SUPPORT_NDIS6			1	//gives support for NDIS NET_BUFFERs
 
 #define WIN32_LEAN_AND_MEAN 1
 
@@ -280,7 +280,7 @@ typedef struct _FUNCTION_POINTER_XCHANGE {
 	/* netmap -> ndis calls */
 	NTSTATUS (*ndis_regif)(struct net_device *ifp);
 	NTSTATUS (*ndis_rele)(struct net_device *ifp);
-	NTSTATUS (*injectPacket)(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport);
+	PVOID (*injectPacket)(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport, PNET_BUFFER_LIST prev);
 } FUNCTION_POINTER_XCHANGE; // , *PFUNCTION_POINTER_XCHANGE;
 
 
@@ -317,7 +317,7 @@ struct mbuf {
 
 //XXX_ale To be correctly redefined
 #define GET_MBUF_REFCNT(a)				1
-#define	SET_MBUF_DESTRUCTOR(a,b)		
+#define	SET_MBUF_DESTRUCTOR(a,b)		// XXX must be set to enable tx notifications
 #define MBUF_IFP(m)						m->dev	
 
 static void

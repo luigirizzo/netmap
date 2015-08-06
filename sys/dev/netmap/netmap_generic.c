@@ -564,6 +564,8 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	u_int ring_nr = kring->ring_id;
+	PVOID xHead = NULL;
+	PVOID xPrev = NULL;
 
 	IFRATE(rate_ctx.new.txsync++);
 
@@ -583,7 +585,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* device-specific */
 			struct mbuf *m;
-			int tx_ret;
+			//int tx_ret;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
@@ -604,8 +606,10 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * break on failures and set notifications when
 			 * ring->cur == ring->tail || nm_i != cur
 			 */
-			tx_ret = generic_xmit_frame(ifp, m, addr, len, ring_nr);
-			if (unlikely(tx_ret)) {
+			xPrev = generic_xmit_frame(ifp, (PVOID)xPrev, addr, len, ring_nr);
+			if (xHead == NULL)
+				xHead = xPrev;
+			if (unlikely(xPrev == NULL)) {
 				ND(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
 						tx_ret, nm_i, head, kring->nr_hwtail);
 				/*
@@ -633,6 +637,8 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			nm_i = nm_next(nm_i, lim);
 			IFRATE(rate_ctx.new.txpkt ++);
 		}
+		if (xHead != NULL)
+			generic_xmit_frame(ifp, (PVOID)xHead, NULL, 0, ring_nr);
 
 		/* Update hwcur to the next slot to transmit. */
 		kring->nr_hwcur = nm_i; /* not head, we could break early */

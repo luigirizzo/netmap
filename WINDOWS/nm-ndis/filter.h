@@ -339,6 +339,7 @@ typedef struct _MS_FILTER
     NET_BUFFER_LIST_POOL_PARAMETERS PoolParameters;		// ... and its parameters
     struct net_device		    *ifp;			// set during the regif XXX maybe unused ?
     int				    intercept;			// two flags, see win_glue.h
+	NPAGED_LOOKASIDE_LIST	netmap_injected_packets_pool;
 #if DBG
     BOOLEAN                         bIndicating;
 #endif

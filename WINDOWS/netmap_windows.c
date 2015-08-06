@@ -238,29 +238,28 @@ netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 int
 send_up_to_stack(struct ifnet *ifp, struct mbuf *m)
 {
-    NTSTATUS status;
-
     if (ndis_hooks.injectPacket != NULL) {
 		//DbgPrint("send_up_to_stack!");
-	status = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE);
+	ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE, NULL);
 	m_freem(m);
-	return status;
+	return STATUS_SUCCESS;
     }
     return STATUS_DEVICE_NOT_CONNECTED;
 }
 
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
 and <> 0 on error (which may be packet drops or other errors). */
-int
+PVOID
 generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
+	PVOID prev = m;
     (void)ring_nr;
     (void)m;	/* we do not need m here at the moment */
     if (ndis_hooks.injectPacket != NULL) {
-	return ndis_hooks.injectPacket(ifp->pfilter, addr, len, TRUE);
+		return ndis_hooks.injectPacket(ifp->pfilter, addr, len, TRUE, prev);
     }
-    return STATUS_DEVICE_NOT_CONNECTED;
+    return NULL;
 }
 
 /*
