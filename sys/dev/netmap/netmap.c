@@ -457,7 +457,7 @@ ports attached to the switch)
 	knlist_init_mtx(&(x)->si.si_note, m);		\
     } while (0)
 
-#define OS_selrecord(a, b)	selrecord(a, &((b)->si))
+#define NM_SELRECORD_T	struct thread
 
 #elif defined(linux)
 
@@ -721,7 +721,7 @@ netmap_update_config(struct netmap_adapter *na)
 }
 
 static void netmap_txsync_to_host(struct netmap_adapter *na);
-static int netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwait);
+static int netmap_rxsync_from_host(struct netmap_adapter *na, NM_SELRECORD_T *);
 
 /* kring->nm_sync callback for the host tx ring */
 static int
@@ -737,7 +737,7 @@ static int
 netmap_rxsync_from_host_compat(struct netmap_kring *kring, int flags)
 {
 	(void)flags; /* unused */
-	netmap_rxsync_from_host(kring->na, NULL, NULL);
+	netmap_rxsync_from_host(kring->na, NULL);
 	return 0;
 }
 
@@ -1172,7 +1172,7 @@ netmap_txsync_to_host(struct netmap_adapter *na)
  * transparent mode, or a negative value if error
  */
 static int
-netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwait)
+netmap_rxsync_from_host(struct netmap_adapter *na, NM_SELRECORD_T *sr)
 {
 	struct netmap_kring *kring = &na->rx_rings[na->num_rx_rings];
 	struct netmap_ring *ring = kring->ring;
@@ -1181,9 +1181,6 @@ netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwai
 	u_int const head = kring->rhead;
 	int ret = 0;
 	struct mbq *q = &kring->rx_queue, fq;
-
-	(void)pwait;	/* disable unused warnings */
-	(void)td;
 
 	mbq_init(&fq); /* fq holds packets to be freed */
 
@@ -1225,8 +1222,8 @@ netmap_rxsync_from_host(struct netmap_adapter *na, struct thread *td, void *pwai
 	}
 
 	/* access copies of cur,tail in the kring */
-	if (kring->rcur == kring->rtail && td) /* no bufs available */
-		OS_selrecord(td, &kring->si);
+	if (kring->rcur == kring->rtail && sr) /* no bufs available */
+		nm_os_selrecord(sr, &kring->si);
 
 	mbq_unlock(q);
 
@@ -2345,9 +2342,8 @@ out:
  * hidden argument.
  */
 int
-netmap_poll(struct cdev *dev, int events, struct thread *td)
+netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 {
-	struct netmap_priv_d *priv = NULL;
 	struct netmap_adapter *na;
 	struct netmap_kring *kring;
 	struct netmap_ring *ring;
@@ -2355,8 +2351,6 @@ netmap_poll(struct cdev *dev, int events, struct thread *td)
 #define want_tx want[NR_TX]
 #define want_rx want[NR_RX]
 	struct mbq q;		/* packets from hw queues to host stack */
-	void *pwait = dev;	/* linux compatibility */
-	int is_kevent = 0;
 	enum txrx t;
 
 	/*
@@ -2366,23 +2360,7 @@ netmap_poll(struct cdev *dev, int events, struct thread *td)
 	 */
 	int retry_tx = 1, retry_rx = 1;
 
-	(void)pwait;
 	mbq_init(&q);
-
-	/*
-	 * XXX kevent has curthread->tp_fop == NULL,
-	 * so devfs_get_cdevpriv() fails. We circumvent this by passing
-	 * priv as the first argument, which is also useful to avoid
-	 * the selrecord() which are not necessary in that case.
-	 */
-	if (devfs_get_cdevpriv((void **)&priv) != 0) {
-		is_kevent = 1;
-		if (netmap_verbose)
-			D("called from kevent");
-		priv = (struct netmap_priv_d *)dev;
-	}
-	if (priv == NULL)
-		return POLLERR;
 
 	if (priv->np_nifp == NULL) {
 		D("No if registered");
@@ -2491,8 +2469,8 @@ flush_tx:
 				kring->nm_notify(kring, 0);
 			}
 		}
-		if (want_tx && retry_tx && !is_kevent) {
-			OS_selrecord(td, check_all_tx ?
+		if (want_tx && retry_tx && sr) {
+			nm_os_selrecord(sr, check_all_tx ?
 			    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
 			retry_tx = 0;
 			goto flush_tx;
@@ -2562,14 +2540,14 @@ do_retry_rx:
 			    && (netmap_fwd || ring->flags & NR_FORWARD)) {
 				/* XXX fix to use kring fields */
 				if (nm_ring_empty(ring))
-					send_down = netmap_rxsync_from_host(na, td, dev);
+					send_down = netmap_rxsync_from_host(na, sr);
 				if (!nm_ring_empty(ring))
 					revents |= want_rx;
 			}
 		}
 
-		if (retry_rx && !is_kevent)
-			OS_selrecord(td, check_all_rx ?
+		if (retry_rx && sr)
+			nm_os_selrecord(sr, check_all_rx ?
 			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
 		if (send_down > 0 || retry_rx) {
 			retry_rx = 0;

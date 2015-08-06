@@ -457,7 +457,10 @@ void if_rele(struct net_device *ifp)
 	dev_put(ifp);
 }
 
-
+struct nm_linux_selrecord_t {
+	struct file *file;
+	struct poll_table_struct *pwait;
+};
 
 /*
  * Remap linux arguments into the FreeBSD call.
@@ -477,7 +480,12 @@ linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 #else
 	int events = POLLIN | POLLOUT; /* XXX maybe... */
 #endif /* PWAIT_KEY */
-	return netmap_poll((void *)pwait, events, (void *)file);
+	struct nm_linux_selrecord_t sr = {
+		.file = file,
+		.pwait = pwait
+	};
+	struct netmap_priv_d *priv = file->private_data;
+	return netmap_poll(priv, events, &sr);
 }
 
 static int
@@ -2152,6 +2160,12 @@ nm_os_selwakeup(NM_SELINFO_T *si)
 	/* We use wake_up_interruptible() since select() and poll()
 	 * sleep in an interruptbile way. */
 	wake_up_interruptible(si);
+}
+
+void
+nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si)
+{
+	poll_wait(sr->file, si, sr->pwait);
 }
 
 module_init(linux_netmap_init);
