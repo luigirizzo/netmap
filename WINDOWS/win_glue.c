@@ -1,33 +1,37 @@
 /*
-* Copyright (C) 2015 Universita` di Pisa. All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions
-* are met:
-*   1. Redistributions of source code must retain the above copyright
-*      notice, this list of conditions and the following disclaimer.
-*   2. Redistributions in binary form must reproduce the above copyright
-*      notice, this list of conditions and the following disclaimer in the
-*      documentation and/or other materials provided with the distribution.
-*
-* THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
-* ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-* ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
-* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-* OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-* HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-* LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
-* OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
-* SUCH DAMAGE.
-*/
+ * Copyright (C) 2015 Universita` di Pisa. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *   1. Redistributions of source code must retain the above copyright
+ *      notice, this list of conditions and the following disclaimer.
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *      documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
 
 #include <win_glue.h>
 
-/*********************************************************
-*       TIME FUNCTIONS (COPIED FROM DUMMYNET)     		 *
-**********************************************************/
+/*
+ * reimplementation of some FreeBSD/Linux kernel functions used in netmap.
+ */
+
+/*
+ *	TIME FUNCTIONS (COPIED FROM DUMMYNET)
+ */
 void
 do_gettimeofday(struct timeval *tv)
 {
@@ -67,85 +71,14 @@ do_gettimeofday(struct timeval *tv)
 }
 
 
-/*********************************************************
-*                   KERNEL MEMORY ALLOCATION	         *
-**********************************************************/
-extern struct dictionary_box dict_box;
 
-
-static inline int
-ilog2(uint64_t n)
-{
-	uint64_t k = 1ULL << 63;
-	int i;
-	for (i = 63; i >= 0 && !(n &k); i--, k >>= 1)
-		;
-	return i;
-}
-
-#define roundup_pow_of_two(n)     (n == 1) ? 1 : (1UL << (ilog2((n) - 1) + 1))
-
-char *
-win_contigMalloc(int sz, int page_size)
-{
-	PHYSICAL_ADDRESS LowAddress;
-	PHYSICAL_ADDRESS HighestAcceptable;
-	PHYSICAL_ADDRESS SkipAddress;
-	PVOID p_;
-
-	(void)page_size; // XXX
-
-	LowAddress.QuadPart = 0;
-	HighestAcceptable.QuadPart = -1;
-	SkipAddress.QuadPart = 0;
-	//If needed lowest address can be used MmAllocateContiguousMemorySpecifyCache
-	//p_ = MmAllocateContiguousMemory(sz, HighestAcceptable);
-	p_ = ExAllocatePoolWithTag(NonPagedPool, sz, M_NETMAP);
-
-	/*PVOID p_ = MmAllocateContiguousMemorySpecifyCache(sz,
-						LowAddress,
-						HighestAcceptable,
-						SkipAddress,
-						MmNonCached);*/
-#if 0
-	PMDL pMdl = MmAllocatePagesForMdlEx(LowAddress,
-						HighestAcceptable,
-						SkipAddress,
-						sz,
-						MmNonCached,
-						MM_ALLOCATE_REQUIRE_CONTIGUOUS_CHUNKS
-						);
-	PVOID p_ = MmMapLockedPagesSpecifyCache(pMdl,
-						KernelMode,
-						MmNonCached,
-						NULL,
-						FALSE,
-						NormalPagePriority);
-#endif
-	if (p_ != NULL) {
-		RtlZeroMemory(p_, sz);
-	}
-#if 0
-	IoFreeMdl(pMdl);
-#endif
-	return (p_ != NULL ? (char*)p_ : NULL);
-}
-
-void
-win_ContigFree(void *virtualAddress)
-{
-	//MmFreeContiguousMemory(virtualAddress);
-	ExFreePoolWithTag(virtualAddress, M_NETMAP);
-}
-
-/*********************************************************
-*			Hardware/generic functions					 *
-**********************************************************/
-
-
-/*********************************************************
-* SYSCTL emulation (copied from dummynet\glue.h)		 *
-**********************************************************/
+/*
+ *	SYSCTL emulation (copied from dummynet/glue.h)
+ *
+ * This was a mechanism used in dummynet (and early netmap versions)
+ * to configure parameters. It is being replaced by other mechansism
+ * so the following block of code will likely go away.
+ */
 static struct sysctltable GST;
 
 void sysctl_addgroup_main_init();
