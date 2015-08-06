@@ -1159,11 +1159,11 @@ nm_os_kthread_delete(struct nm_kthread *nmk)
 
 
 void
-nm_os_selwakeup(struct nm_selinfo *si, int pri)
+nm_os_selwakeup(struct nm_selinfo *si)
 {
 	if (netmap_verbose)
 		D("on knote %p", &si->si.si_note);
-	selwakeuppri(&si->si, pri);
+	selwakeuppri(&si->si, PI_NET);
 	/* use a non-zero hint to tell the notification from the
 	 * call done in kqueue_scan() which uses 0
 	 */
