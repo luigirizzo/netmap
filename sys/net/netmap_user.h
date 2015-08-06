@@ -372,11 +372,15 @@ static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
 intptr_t _get_osfhandle(int); /* defined in io.h in windows */
 
-struct win_netmap_fd_list
-{
+/*
+ * In windows we do not have yet native poll support, so we keep track
+ * of file descriptors associated to netmap ports to emulate poll on
+ * them and fall back on regular poll on other file descriptors.
+ */
+struct win_netmap_fd_list {
+	struct win_netmap_fd_list *next;
 	int win_netmap_fd;
 	HANDLE win_netmap_handle;
-	struct win_netmap_fd_list *next;
 };
 
 /* 
@@ -385,28 +389,21 @@ struct win_netmap_fd_list
  */
 static struct win_netmap_fd_list *win_netmap_fd_list_head;
 
-void
+static void
 win_insert_fd_record(int fd)
 {
-	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
-	struct win_netmap_fd_list *prev = NULL;
-	while (curr != NULL) {
+	struct win_netmap_fd_list *curr;
+
+	for (curr = win_netmap_fd_list_head; curr; curr = curr->next) {
 		if (fd == curr->win_netmap_fd) {
 			return;
 		}
-		prev = curr;
-		curr = curr->next;
 	}
-	if (prev == curr) {
-		win_netmap_fd_list_head = malloc(sizeof(struct win_netmap_fd_list));
-		curr = win_netmap_fd_list_head;
-	} else {
-		prev->next = malloc(sizeof(struct win_netmap_fd_list));
-		curr = prev->next;
-	}
+	curr = calloc(1, sizeof(*curr));
+	curr->next = win_netmap_fd_list_head;
 	curr->win_netmap_fd = fd;
 	curr->win_netmap_handle = IntToPtr(_get_osfhandle(fd));
-	curr->next = NULL;
+	win_netmap_fd_list_head = curr;
 }
 
 void
@@ -414,49 +411,30 @@ win_remove_fd_record(int fd)
 {
 	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
 	struct win_netmap_fd_list *prev = NULL;
-	while (curr != NULL) {
-		if (fd != curr->win_netmap_fd) {
-			prev = curr;
-			curr = curr->next;
+	for (; curr ; prev = curr, curr = curr->next) {
+		if (fd != curr->win_netmap_fd)
+			continue;
+		/* found the entry */
+		if (prev == NULL) { /* we are freeing the first entry */
+			win_netmap_fd_list_head = curr->next;
 		} else {
-			if (prev != NULL) {
-				prev->next = curr->next;
-			}
-			if (curr == win_netmap_fd_list_head) {
-				prev = win_netmap_fd_list_head->next;
-				free(win_netmap_fd_list_head);
-				win_netmap_fd_list_head = prev;
-			} else {
-				free(curr);
-				curr = NULL;
-			}
-			return;
+			prev->next = curr->next;
 		}
+		free(curr);
+		break;
 	}
 }
 
-BOOLEAN 
-win_contains_fd_record(int fd)
-{
-	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
-	while (curr != NULL) {
-		if (fd == curr->win_netmap_fd) {
-			return TRUE;
-		}
-		curr = curr->next;
-	}
-	return FALSE;
-}
 
 HANDLE
-win_get_handle_record(int fd)
+win_get_netmap_handle(int fd)
 {
-	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
-	while (curr != NULL) {
+	struct win_netmap_fd_list *curr;
+
+	for (curr = win_netmap_fd_list_head; curr; curr = curr->next) {
 		if (fd == curr->win_netmap_fd) {
 			return curr->win_netmap_handle;
 		}
-		curr = curr->next;
 	}
 	return NULL;
 }
@@ -470,7 +448,7 @@ win_get_handle_record(int fd)
  * same as ioctl, returns 0 on success and -1 on error 
  */
 static int
-win_nm_ioctl_internal(int fd, int32_t ctlCode, void *arg)
+win_nm_ioctl_internal(HANDLE h, int32_t ctlCode, void *arg)
 {
 	DWORD bReturn = 0, szIn, szOut;
 	BOOL ioctlReturnStatus;
@@ -500,10 +478,11 @@ win_nm_ioctl_internal(int fd, int32_t ctlCode, void *arg)
 		return -1;
 
 	default: /* a regular ioctl */
-		return ioctl(fd, ctlCode, arg);
+		D("invalid ioctl %x on netmap fd", ctlCode);
+		return -1;
 	}
 
-	ioctlReturnStatus = DeviceIoControl(win_get_handle_record(fd),
+	ioctlReturnStatus = DeviceIoControl(h,
 				ctlCode, inParam, szIn,
 				outParam, szOut,
 				&bReturn, NULL);
@@ -519,17 +498,17 @@ win_nm_ioctl_internal(int fd, int32_t ctlCode, void *arg)
 static int
 win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
 {
-	if (!win_contains_fd_record(fd)){
+	HANDLE h = win_get_netmap_handle(fd);
+
+	if (h == NULL) {
 		return ioctl(fd, ctlCode, arg);
-	}
-	else {
-		return win_nm_ioctl_internal(fd, ctlCode, arg);
+	} else {
+		return win_nm_ioctl_internal(h, ctlCode, arg);
 	}
 }
 
 #define ioctl win_nm_ioctl /* from now on, within this file ... */
 
-#define  posix_mmap mmap
 /*
  * We cannot use the native mmap on windows
  * The only parameter used is "fd", the other ones are just declared to
@@ -538,32 +517,36 @@ win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
 static void *
 win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int32_t offset)
 {
-	if (!win_contains_fd_record(fd)){
-		return posix_mmap(addr, length, prot, flags, fd, offset);
-	}
-	else {
+	HANDLE h = win_get_netmap_handle(fd);
+
+	if (h == NULL) {
+		return mmap(addr, length, prot, flags, fd, offset);
+	} else {
 		MEMORY_ENTRY ret;
 
-		return win_nm_ioctl_internal(fd, NETMAP_MMAP, &ret) ?
-		NULL : ret.pUsermodeVirtualAddress;
+		return win_nm_ioctl_internal(h, NETMAP_MMAP, &ret) ?
+			NULL : ret.pUsermodeVirtualAddress;
 	}
 }
 
 #define mmap win32_mmap_emulated
 
 #include <sys/poll.h> /* XXX needed to use the structure pollfd */
-#define posix_poll poll
 
 static int 
 win_nm_poll(struct pollfd *fds, int nfds, int timeout)
 {
-	if (!win_contains_fd_record(fds->fd)){
-		return posix_poll(fds, nfds, timeout);
-	} else{
+	HANDLE h;
+
+	if (nfds != 1 || fds == NULL || (h = win_get_netmap_handle(fds->fd)) == NULL) {;
+		return poll(fds, nfds, timeout);
+	} else {
 		POLL_REQUEST_DATA prd;
+
 		prd.timeout = timeout;
 		prd.events = fds->events;
-		win_nm_ioctl_internal(fds->fd, NETMAP_POLL, &prd);
+
+		win_nm_ioctl_internal(h, NETMAP_POLL, &prd);
 		if ((prd.revents == POLLERR) || (prd.revents == STATUS_TIMEOUT)) {
 			return -1;
 		}
