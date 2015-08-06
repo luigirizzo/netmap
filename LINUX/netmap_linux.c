@@ -2003,8 +2003,8 @@ nm_os_pt_memdev_uninit(void)
     D("ptn_memdev_driver exit");
 }
 #else /* !WITH_PTNETMAP_GUEST */
-#define netmap_pt_memdev_init()        0
-#define netmap_pt_memdev_uninit()
+#define nm_os_pt_memdev_init()        0
+#define nm_os_pt_memdev_uninit()
 #endif /* WITH_PTNETMAP_GUEST */
 
 
