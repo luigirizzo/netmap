@@ -942,10 +942,12 @@ nm_kthread_wakeup_worker(struct nm_kthread *nmk)
 	 * but simply that it has changed since the last
 	 * time the kthread saw it.
 	 */
+	mtx_lock(&nmk->worker_lock);
 	nmk->scheduled++;
 	if (nmk->worker_ctx.ioevent_file) {
 		wakeup(nmk->worker_ctx.ioevent_file);
 	}
+	mtx_unlock(&nmk->worker_lock);
 }
 
 void inline
@@ -968,7 +970,7 @@ nm_kthread_worker(void *data)
 {
 	struct nm_kthread *nmk = data;
 	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
-	uint64_t old_scheduled = 0, new_scheduled = 0;
+	uint64_t old_scheduled = nmk->scheduled;
 
 	thread_lock(curthread);
 	if (nmk->affinity >= 0) {
@@ -989,19 +991,24 @@ nm_kthread_worker(void *data)
 			kthread_suspend_check();
 		}
 
-		new_scheduled = nmk->scheduled;
-
 		/* checks if there is a pending notification */
-		if (likely(new_scheduled != old_scheduled)) {
-			old_scheduled = new_scheduled;
+		mtx_lock(&nmk->worker_lock);
+		if (likely(nmk->scheduled != old_scheduled)) {
+			old_scheduled = nmk->scheduled;
+			mtx_unlock(&nmk->worker_lock);
+
 			ctx->worker_fn(ctx->worker_private); /* worker_body */
+
+			continue;
 		} else if (nmk->run) {
 			if (ctx->ioevent_file) {
 				/* wait on event with timetout 1 second */
-				tsleep_sbt(ctx->ioevent_file, PPAUSE, "nmk_event", SBT_1S, SBT_1S, C_ABSOLUTE);
+				msleep_spin_sbt(ctx->ioevent_file, &nmk->worker_lock,
+						"nmk_event", SBT_1S, SBT_1S, C_ABSOLUTE);
 				nmk->scheduled++;
 			}
 		}
+		mtx_unlock(&nmk->worker_lock);
 	}
 
 	kthread_exit();
@@ -1046,7 +1053,7 @@ nm_kthread_create(struct nm_kthread_cfg *cfg)
 	if (!nmk)
 		return NULL;
 
-	mtx_init(&nmk->worker_lock, "nm_kthread lock", NULL, MTX_DEF);
+	mtx_init(&nmk->worker_lock, "nm_kthread lock", NULL, MTX_SPIN);
 	nmk->worker_ctx.worker_fn = cfg->worker_fn;
 	nmk->worker_ctx.worker_private = cfg->worker_private;
 	nmk->worker_ctx.type = cfg->type;
