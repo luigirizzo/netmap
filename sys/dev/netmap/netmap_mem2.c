@@ -1031,7 +1031,7 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 		 */
 		for (i = 0; i < p->objtotal; i += p->_clustentries) {
 			if (p->lut[i].vaddr)
-				contigfree(p->lut[i].vaddr, sz, M_NETMAP);
+				contigfree(p->lut[i].vaddr, p->_clustsize, M_NETMAP);
 		}
 		bzero(p->lut, sizeof(struct lut_entry) * p->objtotal);
 #ifdef linux
