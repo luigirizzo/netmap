@@ -70,7 +70,8 @@ int nm_iommu_group_id(struct device *dev)
  * as initial value. Both 'cur_sum' and the return value are in host
  * byte order.
  */
-rawsum_t nm_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
+rawsum_t
+nm_os_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
 {
 	return csum_partial(data, len, cur_sum);
 }
@@ -79,7 +80,8 @@ rawsum_t nm_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
  * and 'len' is the IPv4 header length. Return value is in network byte
  * order.
  */
-uint16_t nm_csum_ipv4(struct nm_iphdr *iph)
+uint16_t
+nm_os_csum_ipv4(struct nm_iphdr *iph)
 {
 	return ip_compute_csum((void*)iph, sizeof(struct nm_iphdr));
 }
@@ -88,7 +90,8 @@ uint16_t nm_csum_ipv4(struct nm_iphdr *iph)
  * header, 'data' points to the TCP/UDP header, 'datalen' is the lenght of
  * TCP/UDP header + payload.
  */
-void nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
+void
+nm_os_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 		      size_t datalen, uint16_t *check)
 {
 	*check = csum_tcpudp_magic(iph->saddr, iph->daddr,
@@ -100,7 +103,8 @@ void nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
  * header, 'data' points to the TCP/UDP header, 'datalen' is the lenght of
  * TCP/UDP header + payload.
  */
-void nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
+void
+nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 		      size_t datalen, uint16_t *check)
 {
 	*check = csum_ipv6_magic((void *)&ip6h->saddr, (void*)&ip6h->daddr,
@@ -108,7 +112,8 @@ void nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 				csum_partial(data, datalen, 0));
 }
 
-uint16_t nm_csum_fold(rawsum_t cur_sum)
+uint16_t
+nm_os_csum_fold(rawsum_t cur_sum)
 {
 	return csum_fold(cur_sum);
 }
@@ -128,7 +133,7 @@ uint16_t nm_csum_fold(rawsum_t cur_sum)
  * - when the timer expires and there are pending packets,
  *   a notification is sent up and the timer is restarted.
  */
-NETMAP_LINUX_TIMER_RTYPE
+static NETMAP_LINUX_TIMER_RTYPE
 generic_timer_handler(struct hrtimer *t)
 {
     struct nm_generic_mit *mit =
@@ -149,13 +154,14 @@ generic_timer_handler(struct hrtimer *t)
         netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
         generic_rate(0, 0, 0, 0, 0, 1);
     }
-    netmap_mitigation_restart(mit);
+    nm_os_mitigation_restart(mit);
 
     return HRTIMER_RESTART;
 }
 
 
-void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
+void
+nm_os_mitigation_init(struct nm_generic_mit *mit, int idx,
                                 struct netmap_adapter *na)
 {
     hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -166,22 +172,26 @@ void netmap_mitigation_init(struct nm_generic_mit *mit, int idx,
 }
 
 
-void netmap_mitigation_start(struct nm_generic_mit *mit)
+void
+nm_os_mitigation_start(struct nm_generic_mit *mit)
 {
     hrtimer_start(&mit->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
 }
 
-void netmap_mitigation_restart(struct nm_generic_mit *mit)
+void
+nm_os_mitigation_restart(struct nm_generic_mit *mit)
 {
     hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
 }
 
-int netmap_mitigation_active(struct nm_generic_mit *mit)
+int
+nm_os_mitigation_active(struct nm_generic_mit *mit)
 {
     return hrtimer_active(&mit->mit_timer);
 }
 
-void netmap_mitigation_cleanup(struct nm_generic_mit *mit)
+void
+nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 {
     hrtimer_cancel(&mit->mit_timer);
 }
@@ -234,7 +244,7 @@ static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
  * the packets incoming from the interface attached to 'na'.
  */
 int
-netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
+nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
 #ifndef NETMAP_LINUX_HAVE_RX_REGISTER
     return 0;
@@ -253,7 +263,8 @@ netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 }
 
 #ifdef NETMAP_LINUX_SELECT_QUEUE
-u16 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m
+static u16
+generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m
 #if NETMAP_LINUX_SELECT_QUEUE >= 3
                                 , void *accel_priv
 #if NETMAP_LINUX_SELECT_QUEUE >= 4
@@ -288,7 +299,8 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 }
 
 /* Must be called under rtnl. */
-void netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
+void
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
     struct netmap_adapter *na = &gna->up.up;
     struct ifnet *ifp = netmap_generic_getifp(gna);
@@ -321,7 +333,8 @@ void netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
    and -1 on error (which may be packet drops or other errors). */
-int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
+int
+nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
     netdev_tx_t ret;
@@ -357,7 +370,7 @@ int generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
    rings can have the same lengths. */
 int
-generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
+nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
     int error = EOPNOTSUPP;
 #ifdef NETMAP_LINUX_HAVE_GET_RINGPARAM
@@ -375,7 +388,7 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 
 /* Fills in the output arguments with the number of hardware TX/RX queues. */
 void
-generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
+nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
 #ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
     struct ethtool_channels ch;
@@ -411,10 +424,10 @@ netmap_linux_config(struct netmap_adapter *na,
 		error = ENXIO;
 		goto out;
 	}
-	error = generic_find_num_desc(ifp, txd, rxd);
+	error = nm_os_generic_find_num_desc(ifp, txd, rxd);
 	if (error)
 		goto out;
-	generic_find_num_queues(ifp, txr, rxr);
+	nm_os_generic_find_num_queues(ifp, txr, rxr);
 
 out:
 	rtnl_unlock();
@@ -467,7 +480,7 @@ linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 	return netmap_poll((void *)pwait, events, (void *)file);
 }
 
-int
+static int
 linux_netmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct netmap_priv_d *priv = vma->vm_private_data;
@@ -576,11 +589,11 @@ linux_netmap_set_channels(struct net_device *dev,
 
 #ifndef NETMAP_LINUX_HAVE_UNLOCKED_IOCTL
 #define LIN_IOCTL_NAME	.ioctl
-int
+static int
 linux_netmap_ioctl(struct inode *inode, struct file *file, u_int cmd, u_long data /* arg */)
 #else
 #define LIN_IOCTL_NAME	.unlocked_ioctl
-long
+static long
 linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 #endif
 {
@@ -1346,7 +1359,7 @@ struct netmap_bns {
 };
 
 #ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
-int
+static int
 nm_bns_create(struct net *net, struct netmap_bns **ns)
 {
 	*ns = net_generic(net, netmap_bns_id);
@@ -1354,7 +1367,7 @@ nm_bns_create(struct net *net, struct netmap_bns **ns)
 }
 #define nm_bns_destroy(_1, _2)
 #else
-int
+static int
 nm_bns_create(struct net *net, struct netmap_bns **ns)
 {
 	int error = 0;
@@ -1506,7 +1519,7 @@ struct nm_kthread {
 };
 
 void inline
-nm_kthread_wakeup_worker(struct nm_kthread *nmk)
+nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
 {
     /*
      * There may be a race between FE and BE,
@@ -1538,7 +1551,7 @@ nm_kthread_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
     struct nm_kthread_ctx *ctx;
 
     ctx = container_of(wq, struct nm_kthread_ctx, waitq);
-    nm_kthread_wakeup_worker(ctx->nmk);
+    nm_os_kthread_wakeup_worker(ctx->nmk);
     return 0;
 }
 
@@ -1590,7 +1603,7 @@ nm_kthread_worker(void *data)
 }
 
 void inline
-nm_kthread_send_irq(struct nm_kthread *nmk)
+nm_os_kthread_send_irq(struct nm_kthread *nmk)
 {
     eventfd_signal(nmk->worker_ctx.irq_ctx, 1);
 }
@@ -1678,7 +1691,7 @@ nm_kthread_stop_poll(struct nm_kthread_ctx *ctx)
 }
 
 struct nm_kthread *
-nm_kthread_create(struct nm_kthread_cfg *cfg)
+nm_os_kthread_create(struct nm_kthread_cfg *cfg)
 {
     struct nm_kthread *nmk = NULL;
     int error;
@@ -1710,7 +1723,7 @@ err:
 }
 
 int
-nm_kthread_start(struct nm_kthread *nmk)
+nm_os_kthread_start(struct nm_kthread *nmk)
 {
     int error = 0;
 
@@ -1747,7 +1760,7 @@ err:
 }
 
 void
-nm_kthread_stop(struct nm_kthread *nmk)
+nm_os_kthread_stop(struct nm_kthread *nmk)
 {
     if (!nmk->worker) {
         return;
@@ -1767,13 +1780,13 @@ nm_kthread_stop(struct nm_kthread *nmk)
 }
 
 void
-nm_kthread_delete(struct nm_kthread *nmk)
+nm_os_kthread_delete(struct nm_kthread *nmk)
 {
     if (!nmk)
         return;
 
     if (nmk->worker) {
-        nm_kthread_stop(nmk);
+        nm_os_kthread_stop(nmk);
     }
 
     nm_kthread_close_files(nmk);
@@ -1822,7 +1835,7 @@ struct ptnetmap_memdev
  * of the netmap memory mapped in the guest.
  */
 int
-netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
+nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
 {
     struct pci_dev *pdev = ptn_dev->pdev;
     uint32_t mem_size;
@@ -1852,7 +1865,7 @@ netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, vo
  * unmap PCI-BAR
  */
 void
-netmap_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
+nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
 {
     if (ptn_dev->pci_mem) {
         iounmap(ptn_dev->pci_mem);
@@ -1965,7 +1978,7 @@ static struct pci_driver ptn_memdev_driver = {
  * Returns 0 on success, negative on failure
  */
 int
-netmap_pt_memdev_init(void)
+nm_os_pt_memdev_init(void)
 {
     int ret;
 
@@ -1982,7 +1995,7 @@ netmap_pt_memdev_init(void)
  * Driver Exit Cleanup Routine
  */
 void
-netmap_pt_memdev_uninit(void)
+nm_os_pt_memdev_uninit(void)
 {
     /* unregister pci driver */
     pci_unregister_driver(&ptn_memdev_driver);
@@ -2013,13 +2026,13 @@ static int linux_netmap_init(void)
         if (err)
             return err;
 
-	return netmap_pt_memdev_init();
+	return nm_os_pt_memdev_init();
 }
 
 
 static void linux_netmap_fini(void)
 {
-        netmap_pt_memdev_uninit();
+        nm_os_pt_memdev_uninit();
         netmap_fini();
 }
 
@@ -2101,7 +2114,7 @@ linux_nm_vi_setup(struct ifnet *dev)
 }
 
 int
-nm_vi_persist(const char *name, struct ifnet **ret)
+nm_os_vi_persist(const char *name, struct ifnet **ret)
 {
 	struct ifnet *ifp;
 
@@ -2126,11 +2139,19 @@ nm_vi_persist(const char *name, struct ifnet **ret)
 }
 
 void
-nm_vi_detach(struct ifnet *ifp)
+nm_os_vi_detach(struct ifnet *ifp)
 {
 	netif_stop_queue(ifp);
 	unregister_netdev(ifp);
 	module_put(linux_dummy_drv.owner);
+}
+
+void
+nm_os_selwakeup(NM_SELINFO_T *si)
+{
+	/* We use wake_up_interruptible() since select() and poll()
+	 * sleep in an interruptbile way. */
+	wake_up_interruptible(si);
 }
 
 module_init(linux_netmap_init);

@@ -1865,7 +1865,7 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 		goto err;
 	}
 	/* map memory through ptnemtap-memdev BAR */
-	error = netmap_pt_memdev_iomap(pv->ptn_dev, &pv->nm_paddr, &pv->nm_addr);
+	error = nm_os_pt_memdev_iomap(pv->ptn_dev, &pv->nm_paddr, &pv->nm_addr);
 	if (error)
 		goto err;
 
@@ -1896,7 +1896,7 @@ netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd)
 	    nmd->flags  &= ~NETMAP_MEM_FINALIZED;
 	    /* unmap ptnetmap-memdev memory */
 	    if (pv->ptn_dev) {
-		netmap_pt_memdev_iounmap(pv->ptn_dev);
+		nm_os_pt_memdev_iounmap(pv->ptn_dev);
 	    }
 	    pv->nm_addr = 0;
 	    pv->nm_paddr = 0;

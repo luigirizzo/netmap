@@ -535,7 +535,7 @@ nm_vi_destroy(const char *name)
 	 */
 	if_rele(ifp);
 	netmap_detach(ifp);
-	nm_vi_detach(ifp);
+	nm_os_vi_detach(ifp);
 	return 0;
 
 err:
@@ -563,7 +563,7 @@ nm_vi_create(struct nmreq *nmr)
 		if_rele(ifp);
 		return EEXIST;
 	}
-	error = nm_vi_persist(nmr->nr_name, &ifp);
+	error = nm_os_vi_persist(nmr->nr_name, &ifp);
 	if (error)
 		return error;
 
@@ -572,7 +572,7 @@ nm_vi_create(struct nmreq *nmr)
 	error = netmap_vp_create(nmr, ifp, &vpna);
 	if (error) {
 		D("error %d", error);
-		nm_vi_detach(ifp);
+		nm_os_vi_detach(ifp);
 		return error;
 	}
 	/* persist-specific routines */

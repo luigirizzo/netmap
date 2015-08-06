@@ -269,7 +269,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			goto out;
 		}
 		for (r=0; r<na->num_rx_rings; r++)
-			netmap_mitigation_init(&gna->mit[r], r, na);
+			nm_os_mitigation_init(&gna->mit[r], r, na);
 
 		/* Initialize the rx queue, as generic_rx_handler() can
 		 * be called as soon as netmap_catch_rx() returns.
@@ -305,7 +305,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 		rtnl_lock();
 		/* Prepare to intercept incoming traffic. */
-		error = netmap_catch_rx(gna, 1);
+		error = nm_os_catch_rx(gna, 1);
 		if (error) {
 			D("netdev_rx_handler_register() failed (%d)", error);
 			goto register_handler;
@@ -313,7 +313,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		na->na_flags |= NAF_NETMAP_ON;
 
 		/* Make netmap control the packet steering. */
-		netmap_catch_tx(gna, 1);
+		nm_os_catch_tx(gna, 1);
 
 		rtnl_unlock();
 
@@ -339,10 +339,10 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		na->na_flags &= ~NAF_NETMAP_ON;
 
 		/* Release packet steering control. */
-		netmap_catch_tx(gna, 0);
+		nm_os_catch_tx(gna, 0);
 
 		/* Do not intercept packets on the rx path. */
-		netmap_catch_rx(gna, 0);
+		nm_os_catch_rx(gna, 0);
 
 		rtnl_unlock();
 
@@ -353,7 +353,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 
 		for (r=0; r<na->num_rx_rings; r++)
-			netmap_mitigation_cleanup(&gna->mit[r]);
+			nm_os_mitigation_cleanup(&gna->mit[r]);
 		free(gna->mit, M_DEVBUF);
 
 		for (r=0; r<na->num_tx_rings; r++) {
@@ -393,7 +393,7 @@ free_tx_pools:
 		na->tx_rings[r].tx_pool = NULL;
 	}
 	for (r=0; r<na->num_rx_rings; r++) {
-		netmap_mitigation_cleanup(&gna->mit[r]);
+		nm_os_mitigation_cleanup(&gna->mit[r]);
 		mbq_safe_destroy(&na->rx_rings[r].rx_queue);
 	}
 	free(gna->mit, M_DEVBUF);
@@ -596,7 +596,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * break on failures and set notifications when
 			 * ring->cur == ring->tail || nm_i != cur
 			 */
-			tx_ret = generic_xmit_frame(ifp, m, addr, len, ring_nr);
+			tx_ret = nm_os_generic_xmit_frame(ifp, m, addr, len, ring_nr);
 			if (unlikely(tx_ret)) {
 				ND(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
 						tx_ret, nm_i, head, kring->nr_hwtail);
@@ -684,13 +684,13 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 		/* same as send combining, filter notification if there is a
 		 * pending timer, otherwise pass it up and start a timer.
 		 */
-		if (likely(netmap_mitigation_active(&gna->mit[rr]))) {
+		if (likely(nm_os_mitigation_active(&gna->mit[rr]))) {
 			/* Record that there is some pending work. */
 			gna->mit[rr].mit_pending = 1;
 		} else {
 			netmap_generic_irq(na->ifp, rr, &work_done);
 			IFRATE(rate_ctx.new.rxirq++);
-			netmap_mitigation_start(&gna->mit[rr]);
+			nm_os_mitigation_start(&gna->mit[rr]);
 		}
 	}
 }
@@ -822,7 +822,7 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	num_tx_desc = num_rx_desc = netmap_generic_ringsize; /* starting point */
 
-	generic_find_num_desc(ifp, &num_tx_desc, &num_rx_desc); /* ignore errors */
+	nm_os_generic_find_num_desc(ifp, &num_tx_desc, &num_rx_desc); /* ignore errors */
 	ND("Netmap ring size: TX = %d, RX = %d", num_tx_desc, num_rx_desc);
 	if (num_tx_desc == 0 || num_rx_desc == 0) {
 		D("Device has no hw slots (tx %u, rx %u)", num_tx_desc, num_rx_desc);
@@ -854,7 +854,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	ND("[GNA] num_rx_queues(%d), real_num_rx_queues(%d)",
 			ifp->num_rx_queues, ifp->real_num_rx_queues);
 
-	generic_find_num_queues(ifp, &na->num_tx_rings, &na->num_rx_rings);
+	nm_os_generic_find_num_queues(ifp, &na->num_tx_rings, &na->num_rx_rings);
 
 	retval = netmap_attach_common(na);
 	if (retval) {
