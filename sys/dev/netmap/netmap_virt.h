@@ -271,11 +271,11 @@ ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
     *nmr_ptncfg = (uintptr_t)cfg;
 }
 #if defined (WITH_PTNETMAP_HOST)
-static inline void
+static inline int
 ptnetmap_read_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 {
     uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
-    copyin((const void *)*nmr_ptncfg, cfg, sizeof(*cfg));
+    return copyin((const void *)*nmr_ptncfg, cfg, sizeof(*cfg));
 }
 #endif /* WITH_PTNETMAP_HOST */
 

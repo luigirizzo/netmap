@@ -888,8 +888,9 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
     NMG_LOCK();
     switch (cmd) {
     case NETMAP_PT_HOST_CREATE:     /* create kthreads and switch in pt mode */
-        ptnetmap_read_cfg(nmr, &cfg);
-
+        error = ptnetmap_read_cfg(nmr, &cfg);
+        if (error)
+            break;
         /* create kthreads */
         error = ptnetmap_create(pth_na, &cfg);
         if (error)
