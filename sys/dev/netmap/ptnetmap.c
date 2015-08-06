@@ -332,7 +332,7 @@ ptnetmap_tx_handler(void *data)
         if (work && ptnetmap_tx_get_guestkick(csb)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptnetmap_tx_set_guestkick(csb, 0);
-            nm_kthread_send_irq(pts->ptk_tx);
+            nm_os_kthread_send_irq(pts->ptk_tx);
             IFRATE(pts->rate_ctx.new.htxk++);
             work = false;
         }
@@ -381,7 +381,7 @@ leave:
     /* Send kick to the guest if it needs them */
     if (work && ptnetmap_tx_get_guestkick(csb)) {
         ptnetmap_tx_set_guestkick(csb, 0);
-        nm_kthread_send_irq(pts->ptk_tx);
+        nm_os_kthread_send_irq(pts->ptk_tx);
         IFRATE(pts->rate_ctx.new.htxk++);
     }
 }
@@ -524,7 +524,7 @@ ptnetmap_rx_handler(void *data)
         if (work && ptnetmap_rx_get_guestkick(csb)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptnetmap_rx_set_guestkick(csb, 0);
-            nm_kthread_send_irq(pts->ptk_rx);
+            nm_os_kthread_send_irq(pts->ptk_rx);
             IFRATE(pts->rate_ctx.new.hrxk++);
             work = false;
         }
@@ -574,7 +574,7 @@ leave:
     /* Send kick to the guest if it needs them */
     if (work && ptnetmap_rx_get_guestkick(csb)) {
         ptnetmap_rx_set_guestkick(csb, 0);
-        nm_kthread_send_irq(pts->ptk_rx);
+        nm_os_kthread_send_irq(pts->ptk_rx);
         IFRATE(pts->rate_ctx.new.hrxk++);
     }
 }
@@ -585,7 +585,7 @@ ptnetmap_tx_notify(struct ptnetmap_state *pts) {
     if (unlikely(!pts))
         return;
     ND("TX notify");
-    nm_kthread_wakeup_worker(pts->ptk_tx);
+    nm_os_kthread_wakeup_worker(pts->ptk_tx);
     IFRATE(pts->rate_ctx.new.btxwu++);
 }
 
@@ -594,7 +594,7 @@ ptnetmap_rx_notify(struct ptnetmap_state *pts) {
     if (unlikely(!pts))
         return;
     ND("RX notify");
-    nm_kthread_wakeup_worker(pts->ptk_rx);
+    nm_os_kthread_wakeup_worker(pts->ptk_rx);
     IFRATE(pts->rate_ctx.new.brxwu++);
 }
 
@@ -670,7 +670,7 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts)
     nmk_cfg.event = pts->config.tx_ring;
     nmk_cfg.worker_fn = ptnetmap_tx_handler;
     nmk_cfg.attach_user = 1; /* attach kthread to user process */
-    pts->ptk_tx = nm_kthread_create(&nmk_cfg);
+    pts->ptk_tx = nm_os_kthread_create(&nmk_cfg);
     if (pts->ptk_tx == NULL) {
         goto err;
     }
@@ -680,7 +680,7 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts)
     nmk_cfg.event = pts->config.rx_ring;
     nmk_cfg.worker_fn = ptnetmap_rx_handler;
     nmk_cfg.attach_user = 1; /* attach kthread to user process */
-    pts->ptk_rx = nm_kthread_create(&nmk_cfg);
+    pts->ptk_rx = nm_os_kthread_create(&nmk_cfg);
     if (pts->ptk_rx == NULL) {
         goto err;
     }
@@ -688,7 +688,7 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts)
     return 0;
 err:
     if (pts->ptk_tx) {
-        nm_kthread_delete(pts->ptk_tx);
+        nm_os_kthread_delete(pts->ptk_tx);
         pts->ptk_tx = NULL;
     }
     return EFAULT;
@@ -709,15 +709,15 @@ ptnetmap_start_kthreads(struct ptnetmap_state *pts)
 
     /* TX kthread */
     //nm_kthread_set_affinity(pts->ptk_tx, 2);
-    error = nm_kthread_start(pts->ptk_tx);
+    error = nm_os_kthread_start(pts->ptk_tx);
     if (error) {
         return error;
     }
     /* RX kthread */
     //nm_kthread_set_affinity(pts->ptk_tx, 3);
-    error = nm_kthread_start(pts->ptk_rx);
+    error = nm_os_kthread_start(pts->ptk_rx);
     if (error) {
-        nm_kthread_stop(pts->ptk_tx);
+        nm_os_kthread_stop(pts->ptk_tx);
         return error;
     }
 
@@ -734,9 +734,9 @@ ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
     pts->stopped = true;
 
     /* TX kthread */
-    nm_kthread_stop(pts->ptk_tx);
+    nm_os_kthread_stop(pts->ptk_tx);
     /* RX kthread */
-    nm_kthread_stop(pts->ptk_rx);
+    nm_os_kthread_stop(pts->ptk_rx);
 }
 
 static int nm_pt_host_notify(struct netmap_kring *, int);
@@ -847,8 +847,8 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     pts->configured = false;
 
     /* delete kthreads */
-    nm_kthread_delete(pts->ptk_tx);
-    nm_kthread_delete(pts->ptk_rx);
+    nm_os_kthread_delete(pts->ptk_tx);
+    nm_os_kthread_delete(pts->ptk_rx);
 
     IFRATE(del_timer(&pts->rate_ctx.timer));
 

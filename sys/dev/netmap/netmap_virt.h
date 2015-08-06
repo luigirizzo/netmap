@@ -440,10 +440,10 @@ ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
 
 /* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
 struct ptnetmap_memdev;
-int netmap_pt_memdev_init(void);
-void netmap_pt_memdev_uninit(void);
-int netmap_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
-void netmap_pt_memdev_iounmap(struct ptnetmap_memdev *);
+int nm_os_pt_memdev_init(void);
+void nm_os_pt_memdev_uninit(void);
+int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
+void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* NETMAP_VIRT_PTNETMAP */

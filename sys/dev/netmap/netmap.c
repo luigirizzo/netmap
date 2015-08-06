@@ -458,7 +458,6 @@ ports attached to the switch)
     } while (0)
 
 #define OS_selrecord(a, b)	selrecord(a, &((b)->si))
-#define OS_selwakeup(a, b)	freebsd_selwakeup(a, b)
 
 #elif defined(linux)
 
@@ -2613,13 +2612,13 @@ netmap_notify(struct netmap_kring *kring, int flags)
 	struct netmap_adapter *na = kring->na;
 	enum txrx t = kring->tx;
 
-	OS_selwakeup(&kring->si, PI_NET);
+	nm_os_selwakeup(&kring->si);
 	/* optimization: avoid a wake up on the global
 	 * queue if nobody has registered for more
 	 * than one ring
 	 */
 	if (na->si_users[t] > 0)
-		OS_selwakeup(&na->si[t], PI_NET);
+		nm_os_selwakeup(&na->si[t]);
 
 	return 0;
 }
@@ -3190,7 +3189,7 @@ netmap_init(void)
 		goto fail;
 
 #ifdef __FreeBSD__
-	nm_vi_init_index();
+	nm_os_vi_init_index();
 #endif
 
 	printf("netmap: loaded module\n");

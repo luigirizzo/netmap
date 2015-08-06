@@ -86,7 +86,7 @@ static void gso_fix_segment(uint8_t *buf, size_t len, u_int idx,
 
 		/* Compute and insert the IPv4 header checksum. */
 		iph->check = 0;
-		iph->check = nm_csum_ipv4(iph);
+		iph->check = nm_os_csum_ipv4(iph);
 		ND("IP csum %x", be16toh(iph->check));
 	} else {/* if (iphlen == 40) */
 		/* Set the IPv6 "Payload Len" field. */
@@ -121,9 +121,9 @@ static void gso_fix_segment(uint8_t *buf, size_t len, u_int idx,
 	/* Compute and insert TCP/UDP checksum. */
 	*check = 0;
 	if (iphlen == 20)
-		nm_csum_tcpudp_ipv4(iph, check_data, len-14-iphlen, check);
+		nm_os_csum_tcpudp_ipv4(iph, check_data, len-14-iphlen, check);
 	else
-		nm_csum_tcpudp_ipv6(ip6h, check_data, len-14-iphlen, check);
+		nm_os_csum_tcpudp_ipv6(ip6h, check_data, len-14-iphlen, check);
 
 	ND("TCP/UDP csum %x", be16toh(*check));
 }
@@ -341,10 +341,10 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 			/* Init/update the packet checksum if needed. */
 			if (vh && (vh->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM)) {
 				if (!dst_slots)
-					csum = nm_csum_raw(src + vh->csum_start,
+					csum = nm_os_csum_raw(src + vh->csum_start,
 								src_len - vh->csum_start, 0);
 				else
-					csum = nm_csum_raw(src, src_len, csum);
+					csum = nm_os_csum_raw(src, src_len, csum);
 			}
 
 			/* Round to a multiple of 64 */
@@ -376,7 +376,7 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 
 		/* Finalize (fold) the checksum if needed. */
 		if (check && vh && (vh->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM)) {
-			*check = nm_csum_fold(csum);
+			*check = nm_os_csum_fold(csum);
 		}
 		ND(3, "using %u dst_slots", dst_slots);
 

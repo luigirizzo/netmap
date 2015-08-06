@@ -73,7 +73,7 @@
 /* ======================== FREEBSD-SPECIFIC ROUTINES ================== */
 
 rawsum_t
-nm_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
+nm_os_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
 {
 	/* TODO XXX please use the FreeBSD implementation for this. */
 	uint16_t *words = (uint16_t *)data;
@@ -93,7 +93,7 @@ nm_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
  * return value is in network byte order.
  */
 uint16_t
-nm_csum_fold(rawsum_t cur_sum)
+nm_os_csum_fold(rawsum_t cur_sum)
 {
 	/* TODO XXX please use the FreeBSD implementation for this. */
 	while (cur_sum >> 16)
@@ -102,17 +102,17 @@ nm_csum_fold(rawsum_t cur_sum)
 	return htobe16((~cur_sum) & 0xFFFF);
 }
 
-uint16_t nm_csum_ipv4(struct nm_iphdr *iph)
+uint16_t nm_os_csum_ipv4(struct nm_iphdr *iph)
 {
 #if 0
 	return in_cksum_hdr((void *)iph);
 #else
-	return nm_csum_fold(nm_csum_raw((uint8_t*)iph, sizeof(struct nm_iphdr), 0));
+	return nm_os_csum_fold(nm_os_csum_raw((uint8_t*)iph, sizeof(struct nm_iphdr), 0));
 #endif
 }
 
 void
-nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
+nm_os_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 					size_t datalen, uint16_t *check)
 {
 #ifdef INET
@@ -124,7 +124,7 @@ nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 	/* Compute the checksum on TCP/UDP header + payload
 	 * (includes the pseudo-header).
 	 */
-	*check = nm_csum_fold(nm_csum_raw(data, datalen, 0));
+	*check = nm_os_csum_fold(nm_csum_raw(data, datalen, 0));
 #else
 	static int notsupported = 0;
 	if (!notsupported) {
@@ -135,12 +135,12 @@ nm_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 }
 
 void
-nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
+nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 					size_t datalen, uint16_t *check)
 {
 #ifdef INET6
 	*check = in6_cksum_pseudo((void*)ip6h, datalen, ip6h->nexthdr, 0);
-	*check = nm_csum_fold(nm_csum_raw(data, datalen, 0));
+	*check = nm_os_csum_fold(nm_csum_raw(data, datalen, 0));
 #else
 	static int notsupported = 0;
 	if (!notsupported) {
@@ -156,7 +156,7 @@ nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
  * Second argument is non-zero to intercept, 0 to restore
  */
 int
-netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
+nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = na->ifp;
@@ -188,7 +188,7 @@ netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
  * On freebsd we just intercept if_transmit.
  */
 void
-netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = netmap_generic_getifp(gna);
@@ -219,7 +219,7 @@ netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
  *
  */
 int
-generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
+nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	void *addr, u_int len, u_int ring_nr)
 {
 	int ret;
@@ -269,7 +269,7 @@ netmap_getna(if_t ifp)
  * way to extract the info from the ifp
  */
 int
-generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
+nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
 	D("called, in tx %d rx %d", *tx, *rx);
 	return 0;
@@ -277,7 +277,7 @@ generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 
 
 void
-generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
+nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
 	D("called, in txq %d rxq %d", *txq, *rxq);
 	*txq = netmap_generic_rings;
@@ -286,7 +286,7 @@ generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 
 
 void
-netmap_mitigation_init(struct nm_generic_mit *mit, int idx, struct netmap_adapter *na)
+nm_os_mitigation_init(struct nm_generic_mit *mit, int idx, struct netmap_adapter *na)
 {
 	ND("called");
 	mit->mit_pending = 0;
@@ -296,21 +296,21 @@ netmap_mitigation_init(struct nm_generic_mit *mit, int idx, struct netmap_adapte
 
 
 void
-netmap_mitigation_start(struct nm_generic_mit *mit)
+nm_os_mitigation_start(struct nm_generic_mit *mit)
 {
 	ND("called");
 }
 
 
 void
-netmap_mitigation_restart(struct nm_generic_mit *mit)
+nm_os_mitigation_restart(struct nm_generic_mit *mit)
 {
 	ND("called");
 }
 
 
 int
-netmap_mitigation_active(struct nm_generic_mit *mit)
+nm_os_mitigation_active(struct nm_generic_mit *mit)
 {
 	ND("called");
 	return 0;
@@ -318,7 +318,7 @@ netmap_mitigation_active(struct nm_generic_mit *mit)
 
 
 void
-netmap_mitigation_cleanup(struct nm_generic_mit *mit)
+nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 {
 	ND("called");
 }
@@ -348,7 +348,7 @@ static struct {
 } nm_vi_indices;
 
 void
-nm_vi_init_index(void)
+nm_os_vi_init_index(void)
 {
 	int i;
 	for (i = 0; i < NM_VI_MAX; i++)
@@ -404,7 +404,7 @@ nm_vi_free_index(uint8_t val)
  * increment this refcount on if_attach().
  */
 int
-nm_vi_persist(const char *name, struct ifnet **ret)
+nm_os_vi_persist(const char *name, struct ifnet **ret)
 {
 	struct ifnet *ifp;
 	u_short macaddr_hi;
@@ -444,9 +444,10 @@ nm_vi_persist(const char *name, struct ifnet **ret)
 	*ret = ifp;
 	return 0;
 }
+
 /* unregister from the system and drop the final refcount */
 void
-nm_vi_detach(struct ifnet *ifp)
+nm_os_vi_detach(struct ifnet *ifp)
 {
 	nm_vi_free_index(((char *)IF_LLADDR(ifp))[5]);
 	ether_ifdetach(ifp);
@@ -470,8 +471,7 @@ nm_vi_detach(struct ifnet *ifp)
 /*
  * ptnetmap memdev private data structure
  */
-struct ptnetmap_memdev
-{
+struct ptnetmap_memdev {
 	device_t dev;
 	struct resource *pci_io;
 	struct resource *pci_mem;
@@ -518,7 +518,7 @@ MODULE_DEPEND(netmap, pci, 1, 1, 1);
  * of the netmap memory mapped in the guest.
  */
 int
-netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
+nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
 {
 	uint32_t mem_size;
 	int rid;
@@ -552,7 +552,7 @@ netmap_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, vo
  * unmap PCI-BAR
  */
 void
-netmap_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
+nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
 {
 	D("ptn_memdev_driver iounmap");
 
@@ -683,13 +683,13 @@ ptn_memdev_shutdown(device_t dev)
 }
 
 int
-netmap_pt_memdev_init(void)
+nm_os_pt_memdev_init(void)
 {
 	return 0;
 }
 
 void
-netmap_pt_memdev_uninit(void)
+nm_os_pt_memdev_uninit(void)
 {
 
 }
@@ -931,7 +931,7 @@ struct nm_kthread {
 };
 
 void inline
-nm_kthread_wakeup_worker(struct nm_kthread *nmk)
+nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
 {
 	/*
 	 * There may be a race between FE and BE,
@@ -951,7 +951,7 @@ nm_kthread_wakeup_worker(struct nm_kthread *nmk)
 }
 
 void inline
-nm_kthread_send_irq(struct nm_kthread *nmk)
+nm_os_kthread_send_irq(struct nm_kthread *nmk)
 {
 	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
 	int err;
@@ -1038,13 +1038,13 @@ nm_kthread_close_files(struct nm_kthread *nmk)
 }
 
 void
-nm_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
+nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
 {
 	nmk->affinity = affinity;
 }
 
 struct nm_kthread *
-nm_kthread_create(struct nm_kthread_cfg *cfg)
+nm_os_kthread_create(struct nm_kthread_cfg *cfg)
 {
 	struct nm_kthread *nmk = NULL;
 	int error;
@@ -1074,7 +1074,7 @@ err:
 }
 
 int
-nm_kthread_start(struct nm_kthread *nmk)
+nm_os_kthread_start(struct nm_kthread *nmk)
 {
 	struct proc *p = NULL;
 	int error = 0;
@@ -1108,7 +1108,7 @@ err:
 }
 
 void
-nm_kthread_stop(struct nm_kthread *nmk)
+nm_os_kthread_stop(struct nm_kthread *nmk)
 {
 	if (!nmk->worker) {
 		return;
@@ -1118,18 +1118,18 @@ nm_kthread_stop(struct nm_kthread *nmk)
 
 	/* wake up kthread if it sleeps */
 	kthread_resume(nmk->worker);
-	nm_kthread_wakeup_worker(nmk);
+	nm_os_kthread_wakeup_worker(nmk);
 
 	nmk->worker = NULL;
 }
 
 void
-nm_kthread_delete(struct nm_kthread *nmk)
+nm_os_kthread_delete(struct nm_kthread *nmk)
 {
 	if (!nmk)
 		return;
 	if (nmk->worker) {
-		nm_kthread_stop(nmk);
+		nm_os_kthread_stop(nmk);
 	}
 
 	nm_kthread_close_files(nmk);
@@ -1140,7 +1140,7 @@ nm_kthread_delete(struct nm_kthread *nmk)
 /******************** kqueue support ****************/
 
 /*
- * The OS_selwakeup also needs to issue a KNOTE_UNLOCKED.
+ * nm_os_selwakeup also needs to issue a KNOTE_UNLOCKED.
  * We use a non-zero argument to distinguish the call from the one
  * in kevent_scan() which instead also needs to run netmap_poll().
  * The knote uses a global mutex for the time being. We might
@@ -1159,7 +1159,7 @@ nm_kthread_delete(struct nm_kthread *nmk)
 
 
 void
-freebsd_selwakeup(struct nm_selinfo *si, int pri)
+nm_os_selwakeup(struct nm_selinfo *si, int pri)
 {
 	if (netmap_verbose)
 		D("on knote %p", &si->si.si_note);
