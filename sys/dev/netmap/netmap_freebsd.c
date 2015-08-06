@@ -1295,7 +1295,7 @@ netmap_kqfilter(struct cdev *dev, struct knote *kn)
 }
 
 static int
-freebsd_netmap_poll(struct cdev *cdev, int events, struct thread *td)
+freebsd_netmap_poll(struct cdev *cdevi __unused, int events, struct thread *td)
 {
 	struct netmap_priv_d *priv;
 	if (devfs_get_cdevpriv((void **)&priv)) {
@@ -1304,12 +1304,35 @@ freebsd_netmap_poll(struct cdev *cdev, int events, struct thread *td)
 	return netmap_poll(priv, events, td);
 }
 
+static int
+freebsd_netmap_ioctl(struct cdev *dev __unused, u_long cmd, caddr_t data,
+        int ffla __unused, struct thread *td)
+{
+	int error;
+	struct netmap_priv_d *priv;
+
+	CURVNET_SET(TD_TO_VNET(rd));
+	error = devfs_get_cdevpriv((void **)&priv);
+	if (error) {
+		/* XXX ENOENT should be impossible, since the priv
+		 * is now created in the open */
+		if (error == ENOENT)
+			error = ENXIO;
+		goto out;
+	}
+	error = netmap_ioctl(priv, cmd, data, td);
+out:
+	CURVNET_RESTORE();
+
+	return error;
+}
+
 struct cdevsw netmap_cdevsw = {
 	.d_version = D_VERSION,
 	.d_name = "netmap",
 	.d_open = netmap_open,
 	.d_mmap_single = netmap_mmap_single,
-	.d_ioctl = netmap_ioctl,
+	.d_ioctl = freebsd_netmap_ioctl,
 	.d_poll = freebsd_netmap_poll,
 	.d_kqfilter = netmap_kqfilter,
 	.d_close = netmap_close,
