@@ -1499,8 +1499,7 @@ struct nm_kthread {
     struct mm_struct *mm;
     struct task_struct *worker;
 
-    spinlock_t worker_lock;     /* XXX: unused */
-    uint64_t scheduled;         /* pending wake_up request */
+    atomic_t scheduled;         /* pending wake_up request */
     int attach_user;            /* kthread attached to user_process */
 
     struct nm_kthread_ctx worker_ctx;
@@ -1509,9 +1508,6 @@ struct nm_kthread {
 void inline
 nm_kthread_wakeup_worker(struct nm_kthread *nmk)
 {
-    //unsigned long flags;
-
-    //spin_lock_irqsave(&ptk->worker_lock, flags);
     /*
      * There may be a race between FE and BE,
      * which call both this function, and worker kthread,
@@ -1521,9 +1517,8 @@ nm_kthread_wakeup_worker(struct nm_kthread *nmk)
      * but simply that it has changed since the last
      * time the kthread saw it.
      */
-    nmk->scheduled++;
+    atomic_inc(&nmk->scheduled);
     wake_up_process(nmk->worker);
-    //spin_unlock_irqrestore(&ptk->worker_lock, flags);
 }
 
 
@@ -1552,7 +1547,8 @@ nm_kthread_worker(void *data)
 {
     struct nm_kthread *nmk = data;
     struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
-    uint64_t old_scheduled = 0, new_scheduled = 0;
+    int old_scheduled = atomic_read(&nmk->scheduled);
+    int new_scheduled = old_scheduled;
     mm_segment_t oldfs = get_fs();
 
     if (nmk->mm) {
@@ -1569,9 +1565,7 @@ nm_kthread_worker(void *data)
          */
         set_current_state(TASK_INTERRUPTIBLE);
 
-        //spin_lock_irq(&ptk->worker_lock);
-        new_scheduled = nmk->scheduled;
-        //spin_unlock_irq(&ptk->worker_lock);
+        new_scheduled = atomic_read(&nmk->scheduled);
 
         /* checks if there is a pending notification */
         if (likely(new_scheduled != old_scheduled)) {
@@ -1693,10 +1687,10 @@ nm_kthread_create(struct nm_kthread_cfg *cfg)
     if (!nmk)
         return NULL;
 
-    spin_lock_init(&nmk->worker_lock);
     nmk->worker_ctx.worker_fn = cfg->worker_fn;
     nmk->worker_ctx.worker_private = cfg->worker_private;
     nmk->worker_ctx.type = cfg->type;
+    atomic_set(&nmk->scheduled, 0);
 
     /* attach kthread to user process (ptnetmap) */
     nmk->attach_user = cfg->attach_user;
