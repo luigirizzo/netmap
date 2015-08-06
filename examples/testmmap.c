@@ -13,6 +13,7 @@
 #include <fcntl.h>	/* O_RDWR */
 #include <pthread.h>
 #include <signal.h>
+#include <ctype.h>
 
 
 #define MAX_VARS 100
@@ -121,8 +122,6 @@ int last_fd = -1;
 size_t last_memsize = 0;
 void* last_mmap_addr = NULL;
 char* last_access_addr = NULL;
-struct nmreq curr_nmr;
-char nmr_name[64];
 
 
 void do_open()
@@ -145,6 +144,9 @@ void do_close()
 #include <sys/socket.h>
 #include <ifaddrs.h>
 #include <net/netmap_user.h>
+
+struct nmreq curr_nmr = { .nr_version = NETMAP_API, .nr_flags = NR_REG_ALL_NIC, };
+char nmr_name[64];
 
 void parse_nmr_config(char* w, struct nmreq *nmr)
 {
@@ -224,6 +226,7 @@ void do_regif()
 
 	bzero(&curr_nmr, sizeof(curr_nmr));
 	curr_nmr.nr_version = NETMAP_API;
+	curr_nmr.nr_flags = NR_REG_ALL_NIC;
 	strncpy(curr_nmr.nr_name, name, sizeof(curr_nmr.nr_name));
 
 	arg = nextarg();
@@ -278,6 +281,20 @@ void do_access()
 	}
 	last_access_addr = p + 4096;
 	tmp1 = *p;
+}
+
+void do_dup()
+{
+	char *arg = nextarg();
+	int fd = last_fd;
+	int ret;
+
+	if (arg) {
+		fd = atoi(arg);
+	}
+	ret = dup(fd);
+	output_err(ret, "dup(%d)=%d", fd, ret);
+
 }
 
 void do_mmap()
@@ -468,6 +485,218 @@ do_vars()
 	}
 }
 
+struct netmap_if *
+get_if()
+{
+	void *mmap_addr;
+	uint32_t off;
+	char *arg;
+
+	/* defaults */
+	off = curr_nmr.nr_offset;
+	mmap_addr = last_mmap_addr;
+
+	/* first arg: if offset */
+	arg = nextarg();
+	if (!arg) {
+		goto doit;
+	}
+	off = strtoul(arg, NULL, 0);
+	/* second arg: mmap address */
+	arg = nextarg();
+	if (!arg) {
+		goto doit;
+	}
+	mmap_addr = (void*)strtoul(arg, NULL, 0);
+doit:
+	return NETMAP_IF(mmap_addr, off);
+}
+
+void
+do_if()
+{
+	struct netmap_if *nifp;
+	unsigned int i;
+
+	nifp = get_if();
+
+	printf("name       %s\n", nifp->ni_name);
+	printf("version    %u\n", nifp->ni_version);
+	printf("flags      %x", nifp->ni_flags);
+	if (nifp->ni_flags) {
+		printf(" [");
+		if (nifp->ni_flags & NI_PRIV_MEM) {
+			printf(" PRIV_MEM");
+		}
+		printf(" ]");
+	}
+	printf("\n");
+	printf("tx_rings   %u\n", nifp->ni_tx_rings);
+	printf("rx_rings   %u\n", nifp->ni_rx_rings);
+	printf("bufs_head  %u\n", nifp->ni_bufs_head);
+	for (i = 0; i < 5; i++)
+		printf("spare1[%d]  %u\n", i, nifp->ni_spare1[i]);
+	for (i = 0; i < (nifp->ni_tx_rings + nifp->ni_rx_rings + 2); i++)
+		printf("ring_ofs[%d] %ld\n", i, nifp->ring_ofs[i]);
+}
+
+struct netmap_ring *
+get_ring()
+{
+	struct netmap_if *nifp;
+	char *arg;
+	unsigned int ringid;
+
+	/* defaults */
+	ringid = 0;
+
+	/* first arg: ring number */
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	ringid = strtoul(arg, NULL, 0);
+doit:
+	nifp = get_if();
+	return NETMAP_TXRING(nifp, ringid);
+}
+
+
+void
+do_ring()
+{
+	struct netmap_ring *ring;
+
+	ring = get_ring();
+
+	printf("buf_ofs     %"PRId64"\n", ring->buf_ofs);
+	printf("num_slots   %u\n", ring->num_slots);
+	printf("nr_buf_size %u\n", ring->nr_buf_size);
+	printf("ringid      %d\n", ring->ringid);
+	printf("dir         %d [", ring->dir);
+	switch (ring->dir) {
+	case 1:
+		printf("rx");
+		break;
+	case 0:
+		printf("tx");
+		break;
+	default:
+		printf("??");
+		break;
+	}
+	printf("]\n");
+	printf("head        %u\n", ring->head);
+	printf("cur         %u\n", ring->head);
+	printf("tail        %u\n", ring->head);
+	printf("flags       %x", ring->flags);
+	if (ring->flags) {
+		printf(" [");
+		if (ring->flags & NR_TIMESTAMP) {
+			printf(" TIMESTAMP");
+		}
+		if (ring->flags & NR_FORWARD) {
+			printf(" FORWARD");
+		}
+		printf(" ]");
+	}
+	printf("\n");
+	printf("ts          %ld:%ld\n",
+			(long int)ring->ts.tv_sec, (long int)ring->ts.tv_usec);
+}
+
+void
+do_slot()
+{
+	struct netmap_ring *ring;
+	struct netmap_slot *slot;
+	long int index;
+	char *arg;
+
+	/* defaults */
+	index = 0;
+
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	index = strtoll(arg, NULL, 0);
+doit:
+	ring = get_ring();
+	slot = ring->slot + index;
+	printf("buf_idx       %u\n", slot->buf_idx);
+	printf("len           %u\n", slot->len);
+	printf("flags         %x", slot->flags);
+	if (slot->flags) {
+		printf(" [");
+		if (slot->flags & NS_BUF_CHANGED) {
+			printf(" BUF_CHANGED");
+		}
+		if (slot->flags & NS_REPORT) {
+			printf(" REPORT");
+		}     
+		if (slot->flags & NS_FORWARD) {
+			printf(" FORWARD");
+		}    
+		if (slot->flags & NS_NO_LEARN) {
+			printf(" NO_LEARN");
+		}   
+		if (slot->flags & NS_INDIRECT) {
+			printf(" INDIRECT");
+		}   
+		if (slot->flags & NS_MOREFRAG) {
+			printf(" MOREFRAG");
+		}   
+		printf(" ]");
+	}
+	printf("\n");
+	printf("ptr           %lx\n", (long)slot->ptr);
+}
+
+static void
+dump_payload(char *p, int len)
+{
+	char buf[128];
+	int i, j, i0;
+
+	/* hexdump routine */
+	for (i = 0; i < len; ) {
+		memset(buf, sizeof(buf), ' ');
+		sprintf(buf, "%5d: ", i);
+		i0 = i;
+		for (j=0; j < 16 && i < len; i++, j++)
+			sprintf(buf+7+j*3, "%02x ", (uint8_t)(p[i]));
+		i = i0;
+		for (j=0; j < 16 && i < len; i++, j++)
+			sprintf(buf+7+j + 48, "%c",
+				isprint(p[i]) ? p[i] : '.');
+		printf("%s\n", buf);
+	}
+}
+
+void
+do_buf()
+{
+	struct netmap_ring *ring;
+	long int buf_idx, len;
+	char *buf, *arg;
+
+	/* defaults */
+	buf_idx = 2;
+	len = 64;
+
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	buf_idx = strtoll(arg, NULL, 0);
+	
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	len = strtoll(arg, NULL, 0);
+doit:
+	ring = get_ring();
+	buf = NETMAP_BUF(ring, buf_idx);
+	dump_payload(buf, len);
+}
 
 struct cmd_def {
 	const char *name;
@@ -585,6 +814,9 @@ do_nmr_dump()
 	if (curr_nmr.nr_ringid & NETMAP_NO_TX_POLL) {
 		printf(", no tx poll");
 	}
+	if (curr_nmr.nr_ringid & NETMAP_DO_RX_POLL) {
+		printf(", do rx poll");
+	}
 	printf(", region %d", curr_nmr.nr_arg2);
 	printf("]\n");
 	printf("cmd:       %d", curr_nmr.nr_cmd);
@@ -662,6 +894,9 @@ do_nmr_dump()
 	}
 	if (curr_nmr.nr_flags & NR_MONITOR_RX) {
 		printf(", MONITOR_RX");
+	}
+	if (curr_nmr.nr_flags & NR_ZCOPY_MON) {
+		printf(", ZCOPY_MON");
 	}
 	if (curr_nmr.nr_flags & NR_EXCLUSIVE) {
 		printf(", EXCLUSIVE");
@@ -768,6 +1003,8 @@ do_nmr_flags()
 			flags |= NR_MONITOR_TX;
 		} else if (strcmp(arg, "monitor-rx") == 0) {
 			flags |= NR_MONITOR_RX;
+		} else if (strcmp(arg, "zcopy-mon") == 0) {
+			flags |= NR_ZCOPY_MON;
 		} else if (strcmp(arg, "exclusive") == 0) {
 			flags |= NR_EXCLUSIVE;
 		} else if (strcmp(arg, "default") == 0) {
@@ -858,6 +1095,7 @@ struct cmd_def commands[] = {
 	{ "txsync",	do_txsync,	},
 	{ "rxsync",	do_rxsync,	},
 #endif /* TEST_NETMAP */
+	{ "dup",	do_dup,		},
 	{ "mmap",	do_mmap,	},
 	{ "access",	do_access,	},
 	{ "munmap",	do_munmap,	},
@@ -865,6 +1103,10 @@ struct cmd_def commands[] = {
 	{ "expr",	do_expr,	},
 	{ "echo",	do_echo,	},
 	{ "vars",	do_vars,	},
+	{ "if",         do_if,          },
+	{ "ring",       do_ring,        },
+	{ "slot",       do_slot,        },
+	{ "buf",        do_buf,         },
 	{ "nmr",	do_nmr,		}
 };
 
@@ -1117,6 +1359,7 @@ main(int argc, char **argv)
 {
 	(void) argc;
 	(void) argv;
+	printf("testmmap\n");
 	cmd_loop();
 	return 0;
 }

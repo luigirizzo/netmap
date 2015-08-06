@@ -310,7 +310,7 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 		int i;
 
 		/* case 1) above */
-		D("%p: case 1, create everything", na);
+		ND("%p: case 1, create everything", na);
 		error = netmap_krings_create(na, 0);
 		if (error)
 			goto err;
@@ -595,8 +595,6 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	mna->up.nm_krings_delete = netmap_pipe_krings_delete;
 	mna->up.nm_mem = pna->nm_mem;
 	mna->up.na_lut = pna->na_lut;
-	mna->up.na_lut_objtotal = pna->na_lut_objtotal;
-	mna->up.na_lut_objsize = pna->na_lut_objsize;
 
 	mna->up.num_tx_rings = 1;
 	mna->up.num_rx_rings = 1;
@@ -618,7 +616,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	sna = malloc(sizeof(*mna), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (sna == NULL) {
 		error = ENOMEM;
-		goto free_mna;
+		goto unregister_mna;
 	}
 	/* most fields are the same, copy from master and then fix */
 	*sna = *mna;
@@ -668,6 +666,8 @@ found:
 
 free_sna:
 	free(sna, M_DEVBUF);
+unregister_mna:
+	netmap_pipe_remove(pna, mna);
 free_mna:
 	free(mna, M_DEVBUF);
 put_out:

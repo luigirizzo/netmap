@@ -38,6 +38,7 @@
 #include <vm/vm.h>
 #include <vm/pmap.h>    /* vtophys ? */
 #include <dev/netmap/netmap_kern.h>
+#include <dev/netmap/netmap_virt.h>
 
 extern int netmap_adaptive_io;
 
@@ -302,7 +303,6 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 
-
 	return 0;
 }
 
@@ -465,13 +465,177 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 		E1000_WRITE_REG(&adapter->hw, E1000_RDT(0), nic_i);
 	}
 
-
 	return 0;
 
 ring_reset:
 	return netmap_ring_reinit(kring);
 }
 
+#if defined (NIC_PTNETMAP) && defined (WITH_PTNETMAP_GUEST)
+static uint32_t lem_ptnetmap_ptctl(struct ifnet *, uint32_t);
+
+static int
+lem_ptnetmap_config(struct netmap_adapter *na,
+		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
+{
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+	struct paravirt_csb *csb = adapter->csb;
+	int ret;
+
+	if (csb == NULL)
+		return EINVAL;
+
+	ret = lem_ptnetmap_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	if (ret)
+		return ret;
+
+	*txr = 1; //*txr = csb->num_tx_rings;
+	*rxr = 1; //*rxr = csb->num_rx_rings;
+	*txd = csb->num_tx_slots;
+	*rxd = csb->num_rx_slots;
+
+	D("txr %u rxr %u txd %u rxd %u",
+			*txr, *rxr, *txd, *rxd);
+
+	return 0;
+}
+
+static int
+lem_ptnetmap_txsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	//u_int ring_nr = kring->ring_id;
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+	int ret, notify = 0;
+
+	ret = netmap_pt_guest_txsync(kring, flags, &notify);
+
+	if (notify)
+		E1000_WRITE_REG(&adapter->hw, E1000_TDT(0), 0);
+
+	return ret;
+}
+
+static int
+lem_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	//u_int ring_nr = kring->ring_id;
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+	int ret, notify = 0;
+
+	ret = netmap_pt_guest_rxsync(kring, flags, &notify);
+
+	if (notify)
+		E1000_WRITE_REG(&adapter->hw, E1000_RDT(0), 0);
+
+	return ret;
+}
+
+static int
+lem_ptnetmap_reg(struct netmap_adapter *na, int onoff)
+{
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+	struct paravirt_csb *csb = adapter->csb;
+	struct netmap_kring *kring;
+	int ret;
+
+	if (onoff) {
+		ret = lem_ptnetmap_ptctl(ifp, NET_PARAVIRT_PTCTL_REGIF);
+		if (ret)
+			return ret;
+
+		na->na_flags |= NAF_NETMAP_ON;
+		adapter->ptnetmap_enabled = 1;
+		/*
+		 * Init ring and kring pointers
+		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
+		 * host kring pointers.
+		 * XXX This initialization is required, because we don't close the
+		 * host port on UNREGIF.
+		 */
+
+		// Init rx ring
+		kring = na->rx_rings;
+		kring->rhead = kring->ring->head = csb->rx_ring.head;
+		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
+		kring->nr_hwcur = csb->rx_ring.hwcur;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->rx_ring.hwtail;
+
+		// Init tx ring
+		kring = na->tx_rings;
+		kring->rhead = kring->ring->head = csb->tx_ring.head;
+		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
+		kring->nr_hwcur = csb->tx_ring.hwcur;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
+	} else {
+		na->na_flags &= ~NAF_NETMAP_ON;
+		adapter->ptnetmap_enabled = 0;
+		ret = lem_ptnetmap_ptctl(ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+	}
+
+	return lem_netmap_reg(na, onoff);
+}
+
+
+static int
+lem_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
+{
+	return EOPNOTSUPP;
+}
+
+static void
+lem_ptnetmap_setup_csb(struct adapter *adapter)
+{
+	struct ifnet *ifp = adapter->ifp;
+	struct netmap_pt_guest_adapter* ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
+
+	ptna->csb = adapter->csb;
+}
+
+static uint32_t
+lem_ptnetmap_ptctl(struct ifnet *ifp, uint32_t val)
+{
+	struct adapter *adapter = ifp->if_softc;
+	uint32_t ret;
+
+	E1000_WRITE_REG(&adapter->hw, E1000_PTCTL, val);
+	ret = E1000_READ_REG(&adapter->hw, E1000_PTSTS);
+	D("PTSTS = %u", ret);
+
+	return ret;
+}
+
+
+
+static uint32_t
+lem_ptnetmap_features(struct adapter *adapter)
+{
+	uint32_t features;
+	/* tell the device the features we support */
+	E1000_WRITE_REG(&adapter->hw, E1000_PTFEAT, NET_PTN_FEATURES_BASE);
+	/* get back the acknowledged features */
+	features = E1000_READ_REG(&adapter->hw, E1000_PTFEAT);
+	device_printf(adapter->dev, "ptnetmap support: %s\n",
+			(features & NET_PTN_FEATURES_BASE) ? "base" :
+			"none");
+	return features;
+}
+
+static struct netmap_pt_guest_ops lem_ptnetmap_ops = {
+	.nm_ptctl = lem_ptnetmap_ptctl,
+};
+#elif defined (NIC_PTNETMAP)
+#warning "if_lem supports ptnetmap but netmap does not support it"
+#warning "(configure netmap with ptnetmap support)"
+#elif defined (WITH_PTNETMAP_GUEST)
+#warning "netmap supports ptnetmap but e1000 does not support it"
+#warning "(configure if_lem with ptnetmap support)"
+#endif /* NIC_PTNETMAP && WITH_PTNETMAP_GUEST */
 
 static void
 lem_netmap_attach(struct adapter *adapter)
@@ -488,7 +652,20 @@ lem_netmap_attach(struct adapter *adapter)
 	na.nm_rxsync = lem_netmap_rxsync;
 	na.nm_register = lem_netmap_reg;
 	na.num_tx_rings = na.num_rx_rings = 1;
-	netmap_attach(&na);
+#if defined (NIC_PTNETMAP) && defined (WITH_PTNETMAP_GUEST)
+        /* XXX: check if the device support ptnetmap (now we use PARA_SUBDEV) */
+	if ((adapter->hw.subsystem_device_id == E1000_PARA_SUBDEV) &&
+		(lem_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE)) {
+		na.nm_config = lem_ptnetmap_config;
+		na.nm_register = lem_ptnetmap_reg;
+		na.nm_txsync = lem_ptnetmap_txsync;
+		na.nm_rxsync = lem_ptnetmap_rxsync;
+		na.nm_bdg_attach = lem_ptnetmap_bdg_attach; /* XXX */
+		netmap_pt_guest_attach(&na, &lem_ptnetmap_ops);
+		lem_ptnetmap_setup_csb(adapter);
+	} else
+#endif /* NIC_PTNETMAP && defined WITH_PTNETMAP_GUEST */
+		netmap_attach(&na);
 }
 
 /* end of file */

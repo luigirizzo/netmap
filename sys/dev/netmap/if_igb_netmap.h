@@ -180,7 +180,6 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 
-
 	return 0;
 }
 
@@ -281,7 +280,6 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 		nic_i = nm_prev(nic_i, lim);
 		E1000_WRITE_REG(&adapter->hw, E1000_RDT(rxr->me), nic_i);
 	}
-
 
 	return 0;
 

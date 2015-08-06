@@ -329,6 +329,13 @@ enum {
 static int nm_close(struct nm_desc *);
 
 /*
+ * nm_mmap()    do mmap or inherit from parent if the nr_arg2
+ *              (memory block) matches.
+ */
+
+static int nm_mmap(struct nm_desc *, const struct nm_desc *);
+
+/*
  * nm_inject() is the same as pcap_inject()
  * nm_dispatch() is the same as pcap_dispatch()
  * nm_nextpkt() is the same as pcap_next()
@@ -344,7 +351,8 @@ static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
  * An invalid netmap name will return errno = 0;
  * You can pass a pointer to a pre-filled nm_desc to add special
  * parameters. Flags is used as follows
- * NM_OPEN_NO_MMAP	use the memory from arg, only
+ * NM_OPEN_NO_MMAP	XXX: avoid mmap
+ *                      use the memory from arg, only
  *			if the nr_arg2 (memory block) matches.
  * NM_OPEN_ARG1		use req.nr_arg1 from arg
  * NM_OPEN_ARG2		use req.nr_arg2 from arg
@@ -487,7 +495,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	/* these fields are overridden by ifname and flags processing */
 	d->req.nr_ringid |= nr_ringid;
-	d->req.nr_flags = nr_flags;
+	d->req.nr_flags |= nr_flags;
 	memcpy(d->req.nr_name, ifname, namelen);
 	d->req.nr_name[namelen] = '\0';
 	/* optionally import info from parent */
@@ -529,31 +537,9 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
-	if (IS_NETMAP_DESC(parent) && parent->mem &&
-	    parent->req.nr_arg2 == d->req.nr_arg2) {
-		/* do not mmap, inherit from parent */
-		d->memsize = parent->memsize;
-		d->mem = parent->mem;
-	} else {
-		/* XXX TODO: check if memsize is too large (or there is overflow) */
-		d->memsize = d->req.nr_memsize;
-		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
-				d->fd, 0);
-		if (d->mem == MAP_FAILED) {
-			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
-			goto fail;
-		}
-		d->done_mmap = 1;
-	}
-	{
-		struct netmap_if *nifp = NETMAP_IF(d->mem, d->req.nr_offset);
-		struct netmap_ring *r = NETMAP_RXRING(nifp, );
-
-		*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
-		*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
-		*(void **)(uintptr_t)&d->buf_start = NETMAP_BUF(r, 0);
-		*(void **)(uintptr_t)&d->buf_end =
-			(char *)d->mem + d->memsize;
+	if (!(new_flags & NM_OPEN_NO_MMAP) && nm_mmap(d, parent)) {
+	        snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
+		goto fail;
 	}
 
 	nr_reg = d->req.nr_flags & NR_REG_MASK;
@@ -633,6 +619,44 @@ nm_close(struct nm_desc *d)
 	return 0;
 }
 
+
+static int
+nm_mmap(struct nm_desc *d, const struct nm_desc *parent)
+{
+	//XXX TODO: check if mmap is already done
+
+	if (IS_NETMAP_DESC(parent) && parent->mem &&
+	    parent->req.nr_arg2 == d->req.nr_arg2) {
+		/* do not mmap, inherit from parent */
+		D("do not mmap, inherit from parent");
+		d->memsize = parent->memsize;
+		d->mem = parent->mem;
+	} else {
+		/* XXX TODO: check if memsize is too large (or there is overflow) */
+		d->memsize = d->req.nr_memsize;
+		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
+				d->fd, 0);
+		if (d->mem == MAP_FAILED) {
+			goto fail;
+		}
+		d->done_mmap = 1;
+	}
+	{
+		struct netmap_if *nifp = NETMAP_IF(d->mem, d->req.nr_offset);
+		struct netmap_ring *r = NETMAP_RXRING(nifp, );
+
+		*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
+		*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
+		*(void **)(uintptr_t)&d->buf_start = NETMAP_BUF(r, 0);
+		*(void **)(uintptr_t)&d->buf_end =
+			(char *)d->mem + d->memsize;
+	}
+
+	return 0;
+
+fail:
+	return EINVAL;
+}
 
 /*
  * Same prototype as pcap_inject(), only need to cast.

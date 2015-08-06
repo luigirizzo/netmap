@@ -159,7 +159,6 @@ re_netmap_txsync(struct netmap_kring *kring, int flags)
 		}
 	}
 
-
 	return 0;
 }
 
@@ -271,7 +270,6 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 		    sc->rl_ldata.rl_rx_list_map,
 		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 	}
-
 
 	return 0;
 

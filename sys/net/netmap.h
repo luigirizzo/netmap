@@ -277,7 +277,7 @@ struct netmap_ring {
 	struct timeval	ts;		/* (k) time of last *sync() */
 
 	/* opaque room for a mutex or similar object */
-	uint8_t		sem[128] __attribute__((__aligned__(NM_CACHE_ALIGN)));
+	uint8_t	 __attribute__((__aligned__(NM_CACHE_ALIGN))) em[128];
 
 	/* the slots follow. This struct has variable size */
 	struct netmap_slot slot[0];	/* array of slots. */
@@ -496,6 +496,8 @@ struct nmreq {
 #define NETMAP_BDG_OFFSET	NETMAP_BDG_VNET_HDR	/* deprecated alias */
 #define NETMAP_BDG_NEWIF	6	/* create a virtual port */
 #define NETMAP_BDG_DELIF	7	/* destroy a virtual port */
+#define NETMAP_PT_HOST_CREATE	8	/* create ptnetmap kthreads */
+#define NETMAP_PT_HOST_DELETE	9	/* delete ptnetmap kthreads */
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
 #define NETMAP_BDG_HOST		1	/* attach the host stack on ATTACH */
 
@@ -521,7 +523,9 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NR_ZCOPY_MON	0x400
 /* request exclusive access to the selected rings */
 #define NR_EXCLUSIVE	0x800
-
+/* request ptnetmap host support */
+#define NR_PASSTHROUGH_HOST	NR_PTNETMAP_HOST /* deprecated */
+#define NR_PTNETMAP_HOST	0x1000
 
 /*
  * FreeBSD uses the size value embedded in the _IOWR to determine
@@ -561,4 +565,27 @@ struct nm_ifreq {
 	char data[NM_IFRDATA_LEN];
 };
 
+/*
+ * netmap kernel thread configuration
+ */
+/* bhyve/vmm.ko MSIX paramenters for IOCTL */
+struct ptn_vmm_ioctl_msix {
+	uint64_t        msg;
+	uint64_t        addr;
+};
+
+/* IOCTL parameters */
+struct nm_kth_ioctl {
+	u_long				com;
+	/* TODO: use union */
+	union {
+		struct ptn_vmm_ioctl_msix msix;
+	} data;
+};
+/* event configuration */
+struct nm_kth_event_cfg {
+	uint64_t ioeventfd;		/* eventfd in linux, tsleep() parameter in FreeBSD */
+	uint64_t irqfd;			/* eventfd in linux, ioctl fd in FreeBSD */
+	struct nm_kth_ioctl ioctl;	/* ioctl parameter to send irq (only used in bhyve/FreeBSD) */
+};
 #endif /* _NET_NETMAP_H_ */

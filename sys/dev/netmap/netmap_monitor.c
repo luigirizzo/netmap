@@ -326,6 +326,7 @@ netmap_monitor_stop(struct netmap_adapter *na)
 				struct netmap_monitor_adapter *mna =
 					(struct netmap_monitor_adapter *)mkring->na;
 				/* forget about this adapter */
+				netmap_adapter_put(mna->priv.np_na);
 				mna->priv.np_na = NULL;
 			}
 		}
@@ -771,8 +772,6 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		 */
 		mna->up.nm_mem = pna->nm_mem;
 		mna->up.na_lut = pna->na_lut;
-		mna->up.na_lut_objtotal = pna->na_lut_objtotal;
-		mna->up.na_lut_objsize = pna->na_lut_objsize;
 	} else {
 		/* normal monitors are incompatible with zero copy ones */
 		for_rx_tx(t) {

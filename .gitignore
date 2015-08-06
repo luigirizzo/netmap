@@ -46,3 +46,4 @@ build*/
 LINUX/tmp-patches
 LINUX/veth.c
 *.gcno
+*.core
