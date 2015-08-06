@@ -305,6 +305,7 @@ struct net_device {
 	int		ifIndex;
 
 	NPAGED_LOOKASIDE_LIST	mbuf_pool;
+	NPAGED_LOOKASIDE_LIST	mbuf_packets_pool;
 };
 
 #define ifnet		net_device
@@ -477,7 +478,8 @@ win32_ndis_packet_freem(struct mbuf* m)
 {
 	if (m != NULL) {
 		if (m->pkt != NULL) {
-			free(m->pkt, M_DEVBUF);
+			//free(m->pkt, M_DEVBUF);
+			ExFreeToNPagedLookasideList(&m->dev->mbuf_packets_pool, m->pkt);
 			m->pkt = NULL;
 		}
 		ExFreeToNPagedLookasideList(&m->dev->mbuf_pool, m);
