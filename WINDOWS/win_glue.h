@@ -303,6 +303,8 @@ struct net_device {
 #define NM_WIN_CATCH_RX	1
 #define NM_WIN_CATCH_TX	2
 	int		ifIndex;
+
+	NPAGED_LOOKASIDE_LIST	mbuf_pool;
 };
 
 #define ifnet		net_device
@@ -466,7 +468,7 @@ netmap_default_mbuf_destructor(struct mbuf *m)
 
 struct mbuf *win_make_mbuf(struct net_device *, uint32_t, const char *);
 
-#define netmap_get_mbuf(_l)	win_make_mbuf(NULL, _l, NULL)
+#define netmap_get_mbuf(ifp, _l)	win_make_mbuf(ifp, _l, NULL)
 	// XXX do we also need the netmap_default_mbuf_destructor ?
 
 
@@ -478,7 +480,9 @@ win32_ndis_packet_freem(struct mbuf* m)
 			free(m->pkt, M_DEVBUF);
 			m->pkt = NULL;
 		}
-		free(m, M_DEVBUF);
+		ExFreeToNPagedLookasideList(&m->dev->mbuf_pool, m);
+		//free(m, M_DEVBUF);
+
 	}	
 }
 

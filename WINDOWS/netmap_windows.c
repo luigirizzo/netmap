@@ -164,7 +164,8 @@ struct mbuf *
 win_make_mbuf(struct net_device *ifp, uint32_t length, const char *data)
 {
     // XXX see if we can do a single allocation
-    struct mbuf *m = malloc(sizeof(struct mbuf), M_DEVBUF, M_NOWAIT | M_ZERO);
+    //struct mbuf *m = malloc(sizeof(struct mbuf), M_DEVBUF, M_NOWAIT | M_ZERO);
+	struct mbuf *m = ExAllocateFromNPagedLookasideList(&ifp->mbuf_pool);
 	//DbgPrint("win_make_mbuf - Data: %p - length: %i", data, length);
     if (m == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf!!!");
@@ -174,7 +175,8 @@ win_make_mbuf(struct net_device *ifp, uint32_t length, const char *data)
     m->pkt = malloc(length, M_DEVBUF, M_NOWAIT | M_ZERO);
     if (m->pkt == NULL) {
         DbgPrint("Netmap.sys: Failed to allocate memory from the mbuf packet!!!");
-	free(m, M_DEVBUF);
+	//free(m, M_DEVBUF);
+		ExFreeToNPagedLookasideList(&ifp->mbuf_pool, m);
         return NULL;
     }
     m->dev = ifp;
@@ -476,6 +478,9 @@ ifunit_ref(const char* name)
     ifp = malloc(sizeof(struct net_device), M_DEVBUF, M_NOWAIT | M_ZERO);
     if (ifp == NULL)
 	return NULL;
+
+	/* XXX remember to deallocate the lookaside list on device destroy */
+	ExInitializeNPagedLookasideList(&ifp->mbuf_pool, NULL, NULL, 0, sizeof(struct mbuf), M_DEVBUF, 0); 
 
     RtlCopyMemory(ifp->if_xname, name, IFNAMSIZ);
     ifp->ifIndex = deviceIfIndex;
