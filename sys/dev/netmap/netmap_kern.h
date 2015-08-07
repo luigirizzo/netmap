@@ -1063,7 +1063,7 @@ nm_set_native_flags(struct netmap_adapter *na)
 #ifdef IFCAP_NETMAP /* or FreeBSD ? */
 	ifp->if_capenable |= IFCAP_NETMAP;
 #endif
-#ifdef __FreeBSD__
+#if defined (__FreeBSD__)
 	na->if_transmit = ifp->if_transmit;
 	ifp->if_transmit = netmap_transmit;
 #elif defined (_WIN32)
@@ -1086,7 +1086,7 @@ nm_clear_native_flags(struct netmap_adapter *na)
 
 #ifdef __FreeBSD__
 	ifp->if_transmit = na->if_transmit;
-#elif _WIN32
+#elif defined(_WIN32)
 	//XXX_ale can we just comment those?
 	//ifp->if_transmit = na->if_transmit;
 #else
@@ -1383,7 +1383,7 @@ extern int netmap_use_count;
 
 #endif	/* linux */
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__)
 
 /* Assigns the device IOMMU domain to an allocator.
  * Returns -ENOMEM in case the domain is different */
@@ -1427,7 +1427,7 @@ netmap_reload_map(struct netmap_adapter *na,
 	}
 }
 
-#elif _WIN32
+#elif defined(_WIN32)
 
 #else /* linux */
 

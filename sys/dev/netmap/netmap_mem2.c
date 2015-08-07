@@ -1251,12 +1251,12 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	if (na->pdev == NULL)
 		return 0;
 
-#ifdef __FreeBSD__
+#if defined( __FreeBSD__)
 	(void)i;
 	(void)lim;
 	D("unsupported on FreeBSD");
 
-#elif _WIN32
+#elif defined(_WIN32)
 	(void)i;
 	(void)lim;
 	D("unsupported on Windows");	//XXX_ale, really?
@@ -1272,9 +1272,9 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 static int
 netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__)
 	D("unsupported on FreeBSD");
-#elif _WIN32
+#elif defined(_WIN32)
 	D("unsupported on Windows");	//XXX_ale, really?
 #else /* linux */
 	int i, lim = p->_objtotal;
