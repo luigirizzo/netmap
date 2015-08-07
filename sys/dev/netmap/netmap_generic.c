@@ -126,9 +126,11 @@ netmap_default_mbuf_destructor(struct mbuf *m)
 }
 
 static inline struct mbuf *
-netmap_get_mbuf(int len)
+nm_os_get_mbuf(struct ifnet *ifp, int len)
 {
 	struct mbuf *m;
+
+	(void)ifp;
 	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR | M_NOFREE);
 	if (m) {
 		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
@@ -294,7 +296,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			for (i=0; i<na->num_tx_desc; i++)
 				na->tx_rings[r].tx_pool[i] = NULL;
 			for (i=0; i<na->num_tx_desc; i++) {
-				m = netmap_get_mbuf(NETMAP_BUF_SIZE(na));
+				m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
 				if (!m) {
 					D("tx_pool[%d] allocation failed", i);
 					error = ENOMEM;
@@ -440,7 +442,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring)
 
 		if (unlikely(m == NULL)) {
 			/* this is done, try to replenish the entry */
-			tx_pool[nm_i] = m = netmap_get_mbuf(NETMAP_BUF_SIZE(kring->na));
+			tx_pool[nm_i] = m = nm_os_get_mbuf(kring->na->ifp, NETMAP_BUF_SIZE(kring->na));
 			if (unlikely(m == NULL)) {
 				D("mbuf allocation failed, XXX error");
 				// XXX how do we proceed ? break ?
@@ -583,7 +585,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			m = kring->tx_pool[nm_i];
 			if (unlikely(!m)) {
 				RD(5, "This should never happen");
-				kring->tx_pool[nm_i] = m = netmap_get_mbuf(NETMAP_BUF_SIZE(na));
+				kring->tx_pool[nm_i] = m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
 				if (unlikely(m == NULL)) {
 					D("mbuf allocation failed");
 					break;
