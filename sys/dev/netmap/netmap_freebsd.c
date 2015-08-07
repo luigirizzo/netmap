@@ -154,7 +154,7 @@ nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 void *
 nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 {
-	
+
 	NA(ifp)->if_input(ifp, m);
 	return NULL;
 }
@@ -862,7 +862,7 @@ err_unlock:
  * the device (/dev/netmap) so we cannot do anything useful.
  * To track close() on individual file descriptors we pass netmap_dtor() to
  * devfs_set_cdevpriv() on open(). The FreeBSD kernel will call the destructor
- * when the last fd pointing to the device is closed. 
+ * when the last fd pointing to the device is closed.
  *
  * Note that FreeBSD does not even munmap() on close() so we also have
  * to track mmap() ourselves, and postpone the call to
