@@ -251,9 +251,6 @@ int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *);
 int linux_netmap_set_channels(struct net_device *, struct ethtool_channels *);
 #endif
 
-#define CURVNET_SET(x)
-#define CURVNET_RESTORE(x)
-
 #define refcount_acquire(_a)    atomic_add(1, (atomic_t *)_a)
 #define refcount_release(_a)    atomic_dec_and_test((atomic_t *)_a)
 
@@ -348,7 +345,8 @@ static inline int ilog2(uint64_t n)
 #define vtophys		virt_to_phys
 
 /*--- selrecord and friends ---*/
-#define OS_selrecord(x, y)		poll_wait((struct file *)x, y, pwait)
+struct nm_linux_selrecord_t;
+#define NM_SELRECORD_T	struct nm_linux_selrecord_t
 
 #define netmap_knlist_destroy(x)	// XXX todo
 
@@ -446,19 +444,6 @@ int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 
 #define MALLOC_DECLARE(a)
 #define MALLOC_DEFINE(a, b, c)
-
-#define devfs_get_cdevpriv(pp)				\
-	({ *(struct netmap_priv_d **)pp = ((struct file *)td)->private_data; 	\
-		(*pp ? 0 : ENOENT); })
-
-/* devfs_set_cdevpriv cannot fail on linux */
-#define devfs_set_cdevpriv(p, fn)				\
-	({ ((struct file *)td)->private_data = p; (p ? 0 : EINVAL); })
-
-
-#define devfs_clear_cdevpriv()	do {				\
-		netmap_dtor(priv); ((struct file *)td)->private_data = 0;	\
-	} while (0)
 
 struct netmap_adapter;
 int netmap_linux_config(struct netmap_adapter *na, 

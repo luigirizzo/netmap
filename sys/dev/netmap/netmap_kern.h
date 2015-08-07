@@ -91,6 +91,7 @@
 #define NM_MTX_ASSERT(m)	sx_assert(&(m), SA_XLOCKED)
 
 #define	NM_SELINFO_T	struct nm_selinfo
+#define NM_SELRECORD_T	struct thread
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
 #define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
 #define	NM_SEND_UP(ifp, m)	((NA(ifp))->if_input)(ifp, m)
@@ -261,6 +262,7 @@ struct netmap_priv_d;
 const char *nm_dump_buf(char *p, int len, int lim, char *dst);
 
 void nm_os_selwakeup(NM_SELINFO_T *si);
+void nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si);
 
 #include "netmap_mbq.h"
 
@@ -1275,14 +1277,14 @@ void netmap_bns_getbridges(struct nm_bridge **, u_int *);
 #endif
 
 /* Various prototypes */
-int netmap_poll(struct cdev *dev, int events, struct thread *td);
+int netmap_poll(struct netmap_priv_d *, int events, NM_SELRECORD_T *td);
 int netmap_init(void);
 void netmap_fini(void);
 int netmap_get_memory(struct netmap_priv_d* p);
 void netmap_dtor(void *data);
 int netmap_dtor_locked(struct netmap_priv_d *priv);
 
-int netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread *td);
+int netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *);
 
 /* netmap_adapter creation/destruction */
 

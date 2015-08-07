@@ -457,7 +457,10 @@ void if_rele(struct net_device *ifp)
 	dev_put(ifp);
 }
 
-
+struct nm_linux_selrecord_t {
+	struct file *file;
+	struct poll_table_struct *pwait;
+};
 
 /*
  * Remap linux arguments into the FreeBSD call.
@@ -477,7 +480,12 @@ linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 #else
 	int events = POLLIN | POLLOUT; /* XXX maybe... */
 #endif /* PWAIT_KEY */
-	return netmap_poll((void *)pwait, events, (void *)file);
+	struct nm_linux_selrecord_t sr = {
+		.file = file,
+		.pwait = pwait
+	};
+	struct netmap_priv_d *priv = file->private_data;
+	return netmap_poll(priv, events, &sr);
 }
 
 static int
@@ -597,6 +605,7 @@ static long
 linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 #endif
 {
+	struct netmap_priv_d *priv = file->private_data;
 	int ret = 0;
 	union {
 		struct nm_ifreq ifr;
@@ -622,7 +631,7 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 		if (copy_from_user(&arg, (void *)data, argsize) != 0)
 			return -EFAULT;
 	}
-	ret = netmap_ioctl(NULL, cmd, (caddr_t)&arg, 0, (void *)file);
+	ret = netmap_ioctl(priv, cmd, (caddr_t)&arg, NULL);
 	if (data && copy_to_user((void*)data, &arg, argsize) != 0)
 		return -EFAULT;
 	return -ret;
@@ -2003,8 +2012,8 @@ nm_os_pt_memdev_uninit(void)
     D("ptn_memdev_driver exit");
 }
 #else /* !WITH_PTNETMAP_GUEST */
-#define netmap_pt_memdev_init()        0
-#define netmap_pt_memdev_uninit()
+#define nm_os_pt_memdev_init()        0
+#define nm_os_pt_memdev_uninit()
 #endif /* WITH_PTNETMAP_GUEST */
 
 
@@ -2152,6 +2161,12 @@ nm_os_selwakeup(NM_SELINFO_T *si)
 	/* We use wake_up_interruptible() since select() and poll()
 	 * sleep in an interruptbile way. */
 	wake_up_interruptible(si);
+}
+
+void
+nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si)
+{
+	poll_wait(sr->file, si, sr->pwait);
 }
 
 module_init(linux_netmap_init);
