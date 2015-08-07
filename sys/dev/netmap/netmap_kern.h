@@ -94,7 +94,6 @@
 #define NM_SELRECORD_T	struct thread
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
 #define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
-// #define	NM_SEND_UP(ifp, m)	((NA(ifp))->if_input)(ifp, m)
 
 #define NM_ATOMIC_T	volatile int	// XXX ?
 /* atomic operations */
@@ -144,13 +143,6 @@ struct hrtimer {
 #define	NM_SELINFO_T	wait_queue_head_t
 #define	MBUF_LEN(m)	((m)->len)
 #define	MBUF_IFP(m)	((m)->dev)
-#if 0
-#define	NM_SEND_UP(ifp, m)  \
-                        do { \
-                            m->priority = NM_MAGIC_PRIORITY_RX; \
-                            netif_rx(m); \
-                        } while (0)
-#endif
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
@@ -173,7 +165,6 @@ struct hrtimer {
 #define	NM_LOCK_T	IOLock *
 #define	NM_SELINFO_T	struct selinfo
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
-#define	NM_SEND_UP(ifp, m)	((ifp)->if_input)(ifp, m)
 
 #elif defined (_WIN32)
 #include "../../../WINDOWS/win_glue.h"
