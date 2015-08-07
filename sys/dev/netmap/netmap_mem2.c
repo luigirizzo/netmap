@@ -54,12 +54,20 @@ MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
 
 #endif /* __FreeBSD__ */
 
+#ifdef _WIN32
+#include <win_glue.h>
+#endif
+
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include "netmap_virt.h"
 #include "netmap_mem2.h"
 
-#define NETMAP_BUF_MAX_NUM	20*4096*2	/* large machine */
+#ifdef _WIN32
+#define NETMAP_BUF_MAX_NUM  8*4096      /* if too big takes too much time to allocate */
+#else
+#define NETMAP_BUF_MAX_NUM 20*4096*2	/* large machine */
+#endif
 
 #define NETMAP_POOL_MAX_NAMSZ	32
 
@@ -544,8 +552,13 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 		if (offset >= p[i].memtotal)
 			continue;
 		// now lookup the cluster's address
+#ifndef _WIN32
 		pa = vtophys(p[i].lut[offset / p[i]._objsize].vaddr) +
 			offset % p[i]._objsize;
+#else
+		pa = vtophys(p[i].lut[offset / p[i]._objsize].vaddr);
+		pa.QuadPart += offset % p[i]._objsize;
+#endif
 		NMA_UNLOCK(nmd);
 		return pa;
 	}
@@ -558,8 +571,77 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 			+ p[NETMAP_RING_POOL].memtotal
 			+ p[NETMAP_BUF_POOL].memtotal);
 	NMA_UNLOCK(nmd);
+#ifndef _WIN32
 	return 0;	// XXX bad address
+#else
+	vm_paddr_t res;
+	res.QuadPart = 0;
+	return res;
+#endif
 }
+
+#ifdef _WIN32
+void *
+win32_netmap_mem_getVirtualAddress(struct netmap_mem_d* nmd, vm_ooffset_t offset)
+{
+	void* addr = NULL;
+	vm_ooffset_t o = offset;
+	struct netmap_obj_pool *p;
+
+	NMA_LOCK(nmd);
+	p = nmd->pools;
+	addr = nmd->pools[0].lut->vaddr;
+	NMA_UNLOCK(nmd);
+	return addr;
+}
+
+/*
+ * win32_build_virtual_memory_for_userspace
+ *
+ * This function get all the object making part of the pools and maps
+ * a contiguous virtual memory space for the userspace
+ * It works this way
+ * 1 - allocate a Memory Descriptor List wide as the sum
+ *		of the memory needed for the pools
+ * 2 - cycle all the objects in every pool and for every object do
+ *
+ *		2a - cycle all the objects in every pool, get the list
+ *				of the physical address descriptors
+ *		2b - calculate the offset in the array of pages desciptor in the
+ *				main MDL
+ *		2c - copy the descriptors of the object in the main MDL
+ *
+ * 3 - return the resulting MDL that needs to be mapped in userland
+ *
+ * In this way we will have an MDL that describes all the memory for the
+ * objects in a single object
+*/
+void
+win32_build_virtual_memory_for_userspace(PMDL mainMdl, struct netmap_mem_d* nmd)
+{
+	int i = 0;
+	int j = 0;
+	int currentOffset = 0;
+
+	NMA_LOCK(nmd);
+	for (i = 0; i < NETMAP_POOLS_NR; i++) {
+		struct netmap_obj_pool *p = &nmd->pools[i];
+
+		for (j = 0; j < p->objtotal; j++) {
+			PMDL tempMdl = IoAllocateMdl(p->lut[j].vaddr,
+					p->_objsize, FALSE, FALSE, NULL);
+			MmBuildMdlForNonPagedPool(tempMdl);
+			PPFN_NUMBER pSrc = MmGetMdlPfnArray(tempMdl);
+			PPFN_NUMBER pDst = &MmGetMdlPfnArray(mainMdl)[BYTES_TO_PAGES(currentOffset)];
+			RtlCopyMemory(pDst, pSrc, sizeof(PFN_NUMBER) * BYTES_TO_PAGES(p->_objsize));
+			mainMdl->MdlFlags = tempMdl->MdlFlags;
+			currentOffset += p->_objsize;
+			IoFreeMdl(tempMdl);
+		}
+	}
+	NMA_UNLOCK(nmd);
+}
+#endif /* _WIN32 */
 
 static int
 netmap_mem2_get_info(struct netmap_mem_d* nmd, u_int* size, u_int *memflags,
@@ -1072,8 +1154,12 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 		int lim = i + p->_clustentries;
 		char *clust;
 
+#ifndef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
 		clust = contigmalloc(n, M_NETMAP, M_NOWAIT | M_ZERO,
 		    (size_t)0, -1UL, PAGE_SIZE, 0);
+#else
+		clust = ((char*)base + (i * p->_objsize));
+#endif //_WIN32
 		if (clust == NULL) {
 			/*
 			 * If we get here, there is a severe memory shortage,
@@ -1169,6 +1255,11 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	(void)i;
 	(void)lim;
 	D("unsupported on FreeBSD");
+
+#elif _WIN32
+	(void)i;
+	(void)lim;
+	D("unsupported on Windows");	//XXX_ale, really?
 #else /* linux */
 	for (i = 2; i < lim; i++) {
 		netmap_unload_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr);
@@ -1183,6 +1274,8 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
 #ifdef __FreeBSD__
 	D("unsupported on FreeBSD");
+#elif _WIN32
+	D("unsupported on Windows");	//XXX_ale, really?
 #else /* linux */
 	int i, lim = p->_objtotal;
 

@@ -141,7 +141,15 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 	return m;
 }
 
+#elif defined _WIN32
 
+#include "win_glue.h"
+
+#define rtnl_lock()	ND("rtnl_lock called")
+#define rtnl_unlock()	ND("rtnl_unlock called")
+#define MBUF_TXQ(m) 	0//((m)->m_pkthdr.flowid)
+#define MBUF_RXQ(m)	    0//((m)->m_pkthdr.flowid)
+#define smp_mb()
 
 #else /* linux */
 
@@ -274,7 +282,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			nm_os_mitigation_init(&gna->mit[r], r, na);
 
 		/* Initialize the rx queue, as generic_rx_handler() can
-		 * be called as soon as netmap_catch_rx() returns.
+		 * be called as soon as nm_os_catch_rx() returns.
 		 */
 		for (r=0; r<na->num_rx_rings; r++) {
 			mbq_safe_init(&na->rx_rings[r].rx_queue);
@@ -652,7 +660,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 
 
 /*
- * This handler is registered (through netmap_catch_rx())
+ * This handler is registered (through nm_os_catch_rx())
  * within the attached network interface
  * in the RX subsystem, so that every mbuf passed up by
  * the driver can be stolen to the network stack.

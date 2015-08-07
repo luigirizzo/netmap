@@ -101,6 +101,8 @@
 #warning OSX support is only partial
 #include "osx_glue.h"
 
+#elif defined(_WIN32)
+#include "win_glue.h"
 #else
 
 #error	Unsupported platform
@@ -186,7 +188,11 @@ nm_monitor_alloc(struct netmap_kring *kring, u_int n)
 		return 0;
 	
         len = sizeof(struct netmap_kring *) * n;
+#ifndef _WIN32
 	nm = realloc(kring->monitors, len, M_DEVBUF, M_NOWAIT | M_ZERO);
+#else
+	nm = realloc(kring->monitors, len, sizeof(struct netmap_kring *)*kring->max_monitors);
+#endif
 	if (nm == NULL)
 		return ENOMEM;
 

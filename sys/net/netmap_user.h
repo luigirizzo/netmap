@@ -65,6 +65,29 @@
 #ifndef _NET_NETMAP_USER_H_
 #define _NET_NETMAP_USER_H_
 
+#define NETMAP_DEVICE_NAME "/dev/netmap"
+#ifdef __CYGWIN__
+/*
+ * we can compile userspace apps with either cygwin or msvc,
+ * and we use _WIN32 to identify windows specific code
+ */
+#ifndef _WIN32
+#define _WIN32
+#endif	/* _WIN32 */
+
+#endif	/* __CYGWIN__ */
+
+#ifdef _WIN32
+#undef NETMAP_DEVICE_NAME
+#define NETMAP_DEVICE_NAME "/proc/sys/DosDevices/Global/netmap"
+#include <windows.h>
+#include <WinDef.h>
+#include <sys/cygwin.h>
+//#include <netioapi.h>
+//#include <winsock.h>
+//#define	IFNAMSIZ 256
+#endif
+
 #include <stdint.h>
 #include <sys/socket.h>		/* apple needs sockaddr */
 #include <net/if.h>		/* IFNAMSIZ */
@@ -345,14 +368,70 @@ static int nm_inject(struct nm_desc *, const void *, size_t);
 static int nm_dispatch(struct nm_desc *, int, nm_cb_t, u_char *);
 static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
+#ifdef _WIN32
+
+intptr_t _get_osfhandle(int); /* defined in io.h in windows */
+
+/* same as ioctl, returns 0 on success and -1 on error */
+static int
+win_nm_ioctl(int fd, int32_t ctlCode, LPVOID inParam, LPVOID outParam)
+{
+	DWORD bReturn = 0, szIn, szOut;
+	BOOL ioctlReturnStatus;
+	switch (ctlCode) {
+	case NETMAP_POLL:
+		szIn = sizeof(POLL_REQUEST_DATA);
+		szOut = sizeof(POLL_REQUEST_DATA);
+		break;
+	case NETMAP_MMAP:
+		szIn = 0;
+		szOut = sizeof(void*);
+		break;
+	case NIOCTXSYNC:
+	case NIOCRXSYNC:
+		szIn = 0;
+		szOut = 0;
+		break;
+	case NIOCREGIF:
+		szIn = sizeof(struct nmreq);
+		szOut = sizeof(struct nmreq);
+		break;
+	default:
+		return -1;
+	}
+	/* XXX_ale: cache somewhere the result of IntToPtr(_get_osfhandle(fd))
+	 * this call alone seems to waste between 46 to 58 ns
+	*/
+	ioctlReturnStatus = DeviceIoControl(IntToPtr(_get_osfhandle(fd)),
+				ctlCode, inParam, szIn,
+				outParam, szOut,
+				&bReturn, NULL);
+	// XXX note windows returns 0 on error or async call, 1 on success
+	// we could call GetLastError() to figure out what happened
+	return ioctlReturnStatus ? 0 : -1;
+}
+
+/*
+ * We cannot use the native mmap on windows
+ * The only parameter used is "fd", the other ones are just declared to
+ * make this signature comparable to the FreeBSD/Linux one
+ */
+static void *
+win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int32_t offset)
+{
+	MEMORY_ENTRY ret;
+
+	return win_nm_ioctl(fd, NETMAP_MMAP, NULL, &ret) ?
+		NULL : ret.pUsermodeVirtualAddress;
+}
+#endif /* _WIN32 */
 
 /*
  * Try to open, return descriptor if successful, NULL otherwise.
  * An invalid netmap name will return errno = 0;
  * You can pass a pointer to a pre-filled nm_desc to add special
  * parameters. Flags is used as follows
- * NM_OPEN_NO_MMAP	XXX: avoid mmap
- *                      use the memory from arg, only
+ * NM_OPEN_NO_MMAP	use the memory from arg, only XXX avoid mmap
  *			if the nr_arg2 (memory block) matches.
  * NM_OPEN_ARG1		use req.nr_arg1 from arg
  * NM_OPEN_ARG2		use req.nr_arg2 from arg
@@ -482,7 +561,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		return NULL;
 	}
 	d->self = d;	/* set this early so nm_close() works */
-	d->fd = open("/dev/netmap", O_RDWR);
+	d->fd = open(NETMAP_DEVICE_NAME, O_RDWR);
 	if (d->fd < 0) {
 		snprintf(errmsg, MAXERRMSG, "cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;

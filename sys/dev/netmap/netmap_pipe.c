@@ -54,6 +54,9 @@
 #warning OSX support is only partial
 #include "osx_glue.h"
 
+#elif defined(_WIN32)
+#include "win_glue.h"
+
 #else
 
 #error	Unsupported platform
@@ -91,7 +94,11 @@ nm_pipe_alloc(struct netmap_adapter *na, u_int npipes)
 		return EINVAL;
 
         len = sizeof(struct netmap_pipe_adapter *) * npipes;
+#ifndef _WIN32
 	npa = realloc(na->na_pipes, len, M_DEVBUF, M_NOWAIT | M_ZERO);
+#else
+	npa = realloc(na->na_pipes, len, sizeof(struct netmap_pipe_adapter *)*na->na_max_pipes);
+#endif
 	if (npa == NULL)
 		return ENOMEM;
 

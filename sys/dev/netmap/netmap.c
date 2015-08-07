@@ -470,6 +470,8 @@ ports attached to the switch)
 #warning OSX support is only partial
 #include "osx_glue.h"
 
+#elif defined (_WIN32)
+#include "win_glue.h"
 #else
 
 #error	Unsupported platform
