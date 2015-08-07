@@ -456,7 +456,12 @@ struct netmap_kring {
 	uint32_t mon_tail;  /* last seen slot on rx */
 	uint32_t mon_pos;   /* index of this ring in the monitored ring array */
 #endif
-} __declspec(align(64)); // __attribute__((__aligned__(64)));
+}
+#ifdef _WIN32
+__declspec(align(64));
+#else
+__attribute__((__aligned__(64)));
+#endif
 
 
 /* return the next index, with wraparound */
@@ -1633,7 +1638,7 @@ void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 int nm_os_catch_rx(struct netmap_generic_adapter *na, int intercept);
 /* XXX why the type/argument name disparity with netmap_catch_rx ? */
 void nm_os_catch_tx(struct netmap_generic_adapter *na, int enable);
-PVOID nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
+void *nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
 static inline struct ifnet*
