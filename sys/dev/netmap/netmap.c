@@ -1028,13 +1028,18 @@ static void
 netmap_send_up(struct ifnet *dst, struct mbq *q)
 {
 	struct mbuf *m;
+	struct mbuf *head = NULL, *prev = NULL;
 
 	/* send packets up, outside the lock */
 	while ((m = mbq_dequeue(q)) != NULL) {
 		if (netmap_verbose & NM_VERB_HOST)
 			D("sending up pkt %p size %d", m, MBUF_LEN(m));
-		NM_SEND_UP(dst, m);
+		prev = nm_os_send_up(dst, m, prev);
+		if (head == NULL)
+			head = prev;
 	}
+	if (head)
+		nm_os_send_up(dst, NULL, head);
 	mbq_destroy(q);
 }
 

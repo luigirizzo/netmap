@@ -150,6 +150,14 @@ nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 #endif
 }
 
+/* on FreeBSD we send up one packet at a time */
+void *
+nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
+{
+	
+	NA(ifp)->if_input(ifp, m);
+	return NULL;
+}
 
 /*
  * Intercept the rx routine in the standard device driver.
