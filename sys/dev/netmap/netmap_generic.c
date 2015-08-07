@@ -302,7 +302,11 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			for (i=0; i<na->num_tx_desc; i++)
 				na->tx_rings[r].tx_pool[i] = NULL;
 			for (i=0; i<na->num_tx_desc; i++) {
+#ifdef _WIN32
 				m = netmap_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
+#else
+				m = netmap_get_mbuf(NETMAP_BUF_SIZE(na));
+#endif
 				if (!m) {
 					D("tx_pool[%d] allocation failed", i);
 					error = ENOMEM;
@@ -448,7 +452,11 @@ generic_netmap_tx_clean(struct netmap_kring *kring)
 
 		if (unlikely(m == NULL)) {
 			/* this is done, try to replenish the entry */
+#ifdef _WIN32
 			tx_pool[nm_i] = m = netmap_get_mbuf(kring->na->ifp, NETMAP_BUF_SIZE(kring->na));
+#else
+			tx_pool[nm_i] = m = netmap_get_mbuf(NETMAP_BUF_SIZE(kring->na));
+#endif
 			if (unlikely(m == NULL)) {
 				D("mbuf allocation failed, XXX error");
 				// XXX how do we proceed ? break ?
@@ -593,7 +601,11 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			m = kring->tx_pool[nm_i];
 			if (unlikely(!m)) {
 				RD(5, "This should never happen");
+#ifdef _WIN32
 				kring->tx_pool[nm_i] = m = netmap_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
+#else
+				kring->tx_pool[nm_i] = m = netmap_get_mbuf(NETMAP_BUF_SIZE(na));
+#endif
 				if (unlikely(m == NULL)) {
 					D("mbuf allocation failed");
 					break;
