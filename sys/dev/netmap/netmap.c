@@ -1029,7 +1029,7 @@ static void
 netmap_send_up(struct ifnet *dst, struct mbq *q)
 {
 	struct mbuf *m;
-	struct mbuf *head, *prev;
+	struct mbuf *head = NULL, *prev = NULL;
 
 	/* send packets up, outside the lock */
 	while ((m = mbq_dequeue(q)) != NULL) {
@@ -1039,7 +1039,7 @@ netmap_send_up(struct ifnet *dst, struct mbq *q)
 		if (head == NULL)
 			head = prev;
 	}
-	if (head != NULL)
+	if (head)
 		nm_os_send_up(dst, NULL, head);
 	mbq_destroy(q);
 }
