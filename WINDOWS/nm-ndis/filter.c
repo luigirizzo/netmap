@@ -1499,37 +1499,28 @@ Arguments:
 	 * can write the handle_tx as a function that queues the packets in an mbq
 	 * XXX at the moment, however, just make a deep copy
 	 */
-        //NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
-        if (netmap_hooks.handle_tx != NULL && (pFilter->intercept & NM_WIN_CATCH_TX) && 0)
-        {
+        if (netmap_hooks.handle_tx != NULL && (pFilter->intercept & NM_WIN_CATCH_TX) && 0) {
 	    int result = -1;
 	    PNET_BUFFER pkt = NULL;
 	    PNET_BUFFER_LIST current_list = NetBufferLists;
 
-	    while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list))))
-	    {
+	    while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list)))) {
 		PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
 
-		if (buffer != NULL)
-		{
+		if (buffer != NULL) {
 		    result = netmap_hooks.handle_tx(pFilter->ifp, pkt->DataLength, buffer);
 		}
 		pkt = pkt->Next;
-		if (pkt == NULL)
-		{
+		if (pkt == NULL) {
 		    current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
 		}
 	    }
 	    /* we are done with the packets */
 	    NdisFSendNetBufferListsComplete(pFilter->FilterHandle, NetBufferLists, SendFlags);
-
-            //NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, SendFlags);
         }
-        else
-        {
+        else {
             NdisFSendNetBufferLists(pFilter->FilterHandle, NetBufferLists, PortNumber, SendFlags);
         }
-
     }
     while (bFalse);
 
@@ -1606,23 +1597,19 @@ Arguments:
 	while (pCurrNBL != NULL) {
 		PNET_BUFFER_LIST pNextNBL = NET_BUFFER_LIST_NEXT_NBL(pCurrNBL);
 		NET_BUFFER_LIST_NEXT_NBL(pCurrNBL) = NULL;
-		if (pCurrNBL->NdisPoolHandle == pFilter->netmap_pool)
-		{ // This is a custom packet, we need free it
+		if (pCurrNBL->NdisPoolHandle == pFilter->netmap_pool){ // This is a custom packet, we need free it
 			PNET_BUFFER pCurrNB = NET_BUFFER_LIST_FIRST_NB(pCurrNBL);
-			while (pCurrNB != NULL)
-			{
+			while (pCurrNB != NULL) {
 				PNET_BUFFER pNextNB = NET_BUFFER_NEXT_NB(pCurrNB);
 				PMDL pCurrMDL = NET_BUFFER_FIRST_MDL(pCurrNB);
-				while (pCurrMDL != NULL)
-				{
+				while (pCurrMDL != NULL) {
 					PVOID pDataBuffer = NULL;
 					uint32_t ulDataLength = 0;
 					PMDL pNextMDL = NDIS_MDL_LINKAGE(pCurrMDL);
 					NdisQueryMdl(pCurrMDL, (PVOID *)&pDataBuffer, &ulDataLength, NormalPagePriority);
 					NdisFreeMdl(pCurrMDL);
-					if (pDataBuffer != NULL)
-					{
-						NdisFreeMemory(pDataBuffer, 0, 0);
+					if (pDataBuffer != NULL) {
+						ExFreeToNPagedLookasideList(&pFilter->netmap_injected_packets_pool, pDataBuffer);
 					}
 					pCurrMDL = pNextMDL;
 				}
