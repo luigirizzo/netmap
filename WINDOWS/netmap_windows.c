@@ -523,16 +523,17 @@ ifunit_ref(const char* name)
     if (ifp == NULL)
 	return NULL;
 
-	/* XXX remember to deallocate the lookaside list on device destroy */
-	ExInitializeNPagedLookasideList(&ifp->mbuf_pool, NULL, NULL, 0, sizeof(struct mbuf), M_DEVBUF, 0); 
-	ExInitializeNPagedLookasideList(&ifp->mbuf_packets_pool, NULL, NULL, 0, 2048, M_DEVBUF, 0);
-
     RtlCopyMemory(ifp->if_xname, name, IFNAMSIZ);
     ifp->ifIndex = deviceIfIndex;
 
 	if (ndis_hooks.ndis_regif(ifp) != STATUS_SUCCESS) {
 	free(ifp, M_DEVBUF);
 	return NULL; /* not found */
+
+	/* XXX remember to deallocate the lookaside list on device destroy */
+	ExInitializeNPagedLookasideList(&ifp->mbuf_pool, NULL, NULL, 0, sizeof(struct mbuf), M_DEVBUF, 0);
+	/* XXX set in another point using NETMAP_BUF_SIZE(ifp->na) */
+	ExInitializeNPagedLookasideList(&ifp->mbuf_packets_pool, NULL, NULL, 0, 2048, M_DEVBUF, 0);
     }
 
     return ifp;
