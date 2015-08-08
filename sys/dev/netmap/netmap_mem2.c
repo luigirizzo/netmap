@@ -1154,12 +1154,8 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 		int lim = i + p->_clustentries;
 		char *clust;
 
-#ifndef _WIN32_ALLOCATE_ONE_CONTIGUOUS_CLUSTER
 		clust = contigmalloc(n, M_NETMAP, M_NOWAIT | M_ZERO,
 		    (size_t)0, -1UL, PAGE_SIZE, 0);
-#else
-		clust = ((char*)base + (i * p->_objsize));
-#endif //_WIN32
 		if (clust == NULL) {
 			/*
 			 * If we get here, there is a severe memory shortage,

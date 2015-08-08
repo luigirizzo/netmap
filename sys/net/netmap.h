@@ -277,7 +277,7 @@ struct netmap_ring {
 	struct timeval	ts;		/* (k) time of last *sync() */
 
 	/* opaque room for a mutex or similar object */
-#ifndef _WIN32
+#if !defined(_WIN32) || defined(__CYGWIN__)
 	uint8_t	__attribute__((__aligned__(NM_CACHE_ALIGN))) sem[128];
 #else
 	uint8_t	__declspec(align(NM_CACHE_ALIGN)) sem[128];
