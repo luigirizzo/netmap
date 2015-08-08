@@ -94,7 +94,6 @@
 #define NM_SELRECORD_T	struct thread
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
 #define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
-#define	NM_SEND_UP(ifp, m)	((NA(ifp))->if_input)(ifp, m)
 
 #define NM_ATOMIC_T	volatile int	// XXX ?
 /* atomic operations */
@@ -144,11 +143,6 @@ struct hrtimer {
 #define	NM_SELINFO_T	wait_queue_head_t
 #define	MBUF_LEN(m)	((m)->len)
 #define	MBUF_IFP(m)	((m)->dev)
-#define	NM_SEND_UP(ifp, m)  \
-                        do { \
-                            m->priority = NM_MAGIC_PRIORITY_RX; \
-                            netif_rx(m); \
-                        } while (0)
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
@@ -171,7 +165,6 @@ struct hrtimer {
 #define	NM_LOCK_T	IOLock *
 #define	NM_SELINFO_T	struct selinfo
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
-#define	NM_SEND_UP(ifp, m)	((ifp)->if_input)(ifp, m)
 
 #elif defined (_WIN32)
 #include "../../../WINDOWS/win_glue.h"
@@ -263,6 +256,14 @@ const char *nm_dump_buf(char *p, int len, int lim, char *dst);
 
 void nm_os_selwakeup(NM_SELINFO_T *si);
 void nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si);
+
+/* passes a packet up to the host stack.
+ * If the packet is sent (or dropped) immediately it returns NULL,
+ * otherwise it links the packet to prev and returns m.
+ * In this case, a final call with m=NULL and prev != NULL will send up
+ * the entire chain to the host stack.
+ */
+void *nm_os_send_up(struct ifnet *, struct mbuf *m, struct mbuf *prev);
 
 #include "netmap_mbq.h"
 

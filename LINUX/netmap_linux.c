@@ -118,6 +118,16 @@ nm_os_csum_fold(rawsum_t cur_sum)
 	return csum_fold(cur_sum);
 }
 
+/* on linux we send up one packet at a time */
+void *
+nm_os_send_up(struct net_device *ifp, struct mbuf *m, void *prev)
+{
+	(void)ifp;
+	(void)prev;
+	m->priority = NM_MAGIC_PRIORITY_RX; /* do not reinject to netmap */
+	netif_rx(m);
+	return NULL;
+}
 
 #ifdef WITH_GENERIC
 /* ####################### MITIGATION SUPPORT ###################### */
