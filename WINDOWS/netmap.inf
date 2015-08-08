@@ -53,6 +53,6 @@ ServiceBinary  = %12%\netmap.sys
 
 [Strings]
 SPSVCINST_ASSOCSERVICE= 0x00000002
-ManufacturerName="University of Pisa"
-ClassName="University of Pisa NETMAP Driver"
+ManufacturerName="Universita` di Pisa"
+ClassName="Universita` di Pisa netmap core"
 DiskName="Netmap Source Disk"

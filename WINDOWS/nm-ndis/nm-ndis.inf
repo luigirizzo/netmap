@@ -15,7 +15,7 @@ ClassGUID       = {4D36E974-E325-11CE-BFC1-08002BE10318}
 CatalogFile     = nm-ndis.cat
 
 ; TODO: Customize this string for your company name XXX unipi
-Provider        = %Msft%
+Provider        = %Unipi%
 
 ; TODO: Customize this string for the driver version
 ; XXX note, the date is in USA format ?
@@ -26,18 +26,14 @@ DriverVer       = 05/31/2015,0.0.90.0
 ; compiled binary.  If you do not supply a driver compiled for ia64, delete the
 ; NTia64 section.
 [Manufacturer]
-%Msft%=MSFT,NTx86,NTia64,NTamd64
+%Unipi%=UNIPI,NTx86,NTamd64
 
-; TODO: Change the "MS_NdisLwf" name below to identify your component.
-; This name can be used with netcfg.exe to install/uninstall the driver.
-[MSFT.NTx86]
-%NdisLwf_Desc%=Install, MS_NdisLwf
+; The nm_ndis name can be used with netcfg.exe to install/uninstall the driver.
+[UNIPI.NTx86]
+%nm_ndis_Desc%=Install, nm_ndis
 
-[MSFT.NTia64]
-%NdisLwf_Desc%=Install, MS_NdisLwf
-
-[MSFT.NTamd64]
-%NdisLwf_Desc%=Install, MS_NdisLwf
+[UNIPI.NTamd64]
+%nm_ndis_Desc%=Install, nm_ndis
 
 ;-------------------------------------------------------------------------
 ; Installation Section
@@ -56,7 +52,7 @@ NetCfgInstanceId="{A9D42231-0768-44F9-ABA0-2FD73FE44481}"
 Copyfiles = nmndis.copyfiles.sys
 
 [SourceDisksNames]
-1=%NdisLwf_Desc%,"",,
+1=%nm_ndis_Desc%,"",,
 
 [SourceDisksFiles]
 ; TODO: Customize the name of your binary here.
@@ -82,7 +78,7 @@ HKR, Ndi,Service,,"NetmapNdis"
 ; TODO: Repeat the NT service name above here.  Optionally, you may control
 ; other services alongside the primary service.
 HKR, Ndi,CoServices,0x00010000,"NetmapNdis"
-HKR, Ndi,HelpText,,%NdisLwf_HelpText%
+HKR, Ndi,HelpText,,%nm_ndis_HelpText%
 ; TODO: Set the FilterClass here.  The FilterClass controls the order in which
 ; filters are bound to the underlying miniport.  Possible options include:
 ;     Custom, Diagnostic, Failover, Loadbalance, Vpn, Compression, Encryption, Scheduler
@@ -150,7 +146,7 @@ HKR, Ndi,FilterRunType,0x00010001, 1 ; Mandatory filter
 AddService=NetmapNdis,,NdisLwf_Service_Inst
 
 [NdisLwf_Service_Inst]
-DisplayName     = %NdisLwf_Desc%
+DisplayName     = %nm_ndis_Desc%
 ServiceType     = 1 ;SERVICE_KERNEL_DRIVER
 ; Typically you will want your filter driver to start with SERVICE_SYSTEM_START.
 ; If it is an Optional filter, you may also use 3;SERVICE_DEMAND_START.
@@ -159,7 +155,7 @@ ErrorControl    = 1 ;SERVICE_ERROR_NORMAL
 ; TODO: Customize this to your binary's filename.
 ServiceBinary   = %12%\nm-ndis.sys
 LoadOrderGroup  = NDIS
-Description     = %NdisLwf_Desc%
+Description     = %nm_ndis_Desc%
 AddReg          = Common.Params.reg, NdisImPlatformBindingOptions.reg
 
 [Install.Remove.Services]
@@ -198,8 +194,8 @@ HKR, Parameters, NdisImPlatformBindingOptions,0x00010001,0 ; Subscribe to defaul
 
 [Strings]
 ; TODO: Customize these strings.
-Msft = "Universita` di Pisa"
-NdisLwf_Desc = "Netmap NDIS LightWeight Filter"
-NdisLwf_HelpText = "NDIS Generic LightWeight Filters for Netmap"
+Unipi = "Universita` di Pisa"
+nm_ndis_Desc = "Netmap NDIS LightWeight Filter"
+nm_ndis_HelpText = "NDIS Generic LightWeight Filters for Netmap"
 
 ;-------- end of file -----------

@@ -260,21 +260,23 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
  * and then again into NDIS packets. We could save one allocation and one
  * copy, eventually.
  */
-PVOID
-send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head)
+void *
+nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 {
-	PVOID result = NULL;
+	void *head = NULL;
 	if (ndis_hooks.injectPacket != NULL) {
-        //DbgPrint("send_up_to_stack!");
+		//DbgPrint("send_up_to_stack!");
 		if (m != NULL) {
-			result = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE, head);
+			head = ndis_hooks.injectPacket(ifp->pfilter, m->pkt, m->m_len, FALSE, prev);
 			m_freem(m);
 		} else {
-			ndis_hooks.injectPacket(ifp->pfilter, NULL, 0, FALSE, head);
+			ndis_hooks.injectPacket(ifp->pfilter, NULL, 0, FALSE, prev);
 		}
-		
+	} else { /* we should not get here */
+		if (m != NULL)
+			m_freem(m);
 	}
-	return result;
+	return head;
 }
 
 /*

@@ -41,9 +41,10 @@ The directory ../examples contains pkt-gen, a userspace program
 used to test the speed of a link between two netmap interfaces.
 
 
------------- NETMAP INSTALL INSTRUCTIONS (core)------------
-Netmap modules can be loaded dynamically, or installed as a service
-and loaded at boot time.
+------------ INSTALL INSTRUCTIONS (netmap core)------------
+The netmap core module implements the basic netmap API, the VALE
+software switch and pipes.
+It can be loaded dynamically, or installed as a service and loaded at boot time.
 
 a) DYNAMIC LOAD: 
     - Open a "cmd" window with administrative privileges
@@ -62,7 +63,11 @@ b) PERSISTENT INSTALL MODULE
     - Right click on the .inf file and select -INSTALL- from the
       context menu; after a reboot the module will be correctly loaded
 
------------- NETMAP INSTALL INSTRUCTIONS (NDIS module)------------
+------------ INSTALL INSTRUCTIONS (nm-ndis module)------------
+The nm-ndis module implement communication with NDIS adapters and the host stack.
+It implements a lightweight filter that runs as a service on an adapter
+
+netcfg
     - open the configuration panel for the network card in use
        " Control panel -> network and sharing center -> Change adapter settings "
     - right click on an adapter then click on " Properties "
@@ -145,17 +150,20 @@ or a NIC or host port using the nm-ndis module (emulating the netmap API,
 so not as fast as the drivers using native netmap mode available on FreeBSD
 and Linux).
 
-VALE port:
+VALE port:	30Mpps with broadcast frames
+
 	pkt-gen-b -i vale0:a -f tx
 	pkt-gen-b -i vale0:b -f rx
 
-NETMAP pipe
+NETMAP pipe	up to 180 Mpps
+
 	pkt-gen-b -i vale0:a}1 -f tx
 	pkt-gen-b -i vale0:a{1 -f rx
 
-NETMAP to NIC ring
+NETMAP to HOST ring	about 2.3 Mpps if dropped, 1.8Mpps to windump
+	pkt-gen-b -i netmap:1^ -f tx	# on one vm
+
+NETMAP to NIC ring	about 1Mpps VM-to-VM
 	pkt-gen-b -i netmap:1 -f tx	# on one vm
 	pkt-gen-b -i netmap:1 -f rx	# on another vm
-
-
 
