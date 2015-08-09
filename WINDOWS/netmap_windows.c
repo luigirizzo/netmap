@@ -150,11 +150,11 @@ ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 
 
 /* #################### GENERIC ADAPTER SUPPORT ################### */
-
+//XXX: use NETMAP_BUF_SIZE(ifp->na), for virtual interfaces gives BSOD
 void win32_init_lookaside_buffers(struct net_device *ifp){
 	if (!ifp->lookasideListsAlreadyAllocated) {
 		ExInitializeNPagedLookasideList(&ifp->mbuf_pool, NULL, NULL, 0, sizeof(struct mbuf), M_DEVBUF, 0);
-		ExInitializeNPagedLookasideList(&ifp->mbuf_packets_pool, NULL, NULL, 0, NETMAP_BUF_SIZE(ifp->na), M_DEVBUF, 0);
+		ExInitializeNPagedLookasideList(&ifp->mbuf_packets_pool, NULL, NULL, 0, 65535, M_DEVBUF, 0);
 		ifp->lookasideListsAlreadyAllocated = TRUE;
 	}
 }
