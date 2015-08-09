@@ -435,7 +435,7 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
 		Status = NDIS_STATUS_RESOURCES; break;
 	}
 
-	//XXX: set the buffer size to be compitible with the netmap core one
+	/* XXX: set the buffer size to be compatible with the netmap core one */
 	ExInitializeNPagedLookasideList(&pFilter->netmap_injected_packets_pool,
 		NULL, NULL, 0, 2048, M_DEVBUF, 0);
 
