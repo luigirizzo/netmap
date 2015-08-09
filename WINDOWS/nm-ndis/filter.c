@@ -340,9 +340,9 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
         //
         // Your setup/install code should not bind the filter to unsupported
         // media types.
-        if ((AttachParameters->MiniportMediaType != NdisMedium802_3)
-                && (AttachParameters->MiniportMediaType != NdisMediumWan)
-                && (AttachParameters->MiniportMediaType != NdisMediumWirelessWan))
+        if ((AttachParameters->MiniportMediaType != NdisMedium802_3))
+                //&& (AttachParameters->MiniportMediaType != NdisMediumWan)
+                //&& (AttachParameters->MiniportMediaType != NdisMediumWirelessWan))
         {
            DEBUGP(DL_ERROR, "Unsupported media type.\n");
 
