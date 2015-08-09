@@ -150,20 +150,23 @@ ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 
 
 /* #################### GENERIC ADAPTER SUPPORT ################### */
-//XXX: use NETMAP_BUF_SIZE(ifp->na), for virtual interfaces gives BSOD
+/*XXX: use NETMAP_BUF_SIZE(ifp->na), for virtual interfaces gives BSOD
+ * remember to set the same value in filter.c :: FilterAttach() when 
+ *  doing ExInitializeNPagedLookasideList()
+*/
 void win32_init_lookaside_buffers(struct net_device *ifp){
 	if (!ifp->lookasideListsAlreadyAllocated) {
-		ExInitializeNPagedLookasideList(&ifp->mbuf_pool, NULL, NULL, 0, sizeof(struct mbuf), M_DEVBUF, 0);
-		ExInitializeNPagedLookasideList(&ifp->mbuf_packets_pool, NULL, NULL, 0, 65535, M_DEVBUF, 0);
 		ifp->lookasideListsAlreadyAllocated = TRUE;
+		ExInitializeNPagedLookasideList(&ifp->mbuf_pool, NULL, NULL, 0, sizeof(struct mbuf), M_DEVBUF, 0);
+		ExInitializeNPagedLookasideList(&ifp->mbuf_packets_pool, NULL, NULL, 0, 2048, M_DEVBUF, 0);
 	}
 }
 
 void win32_clear_lookaside_buffers(struct net_device *ifp){
 	if (ifp->lookasideListsAlreadyAllocated) {
+		ifp->lookasideListsAlreadyAllocated = FALSE;
 		ExDeleteNPagedLookasideList(&ifp->mbuf_packets_pool);
 		ExDeleteNPagedLookasideList(&ifp->mbuf_pool);
-		ifp->lookasideListsAlreadyAllocated = FALSE;
 	}
 }
 
