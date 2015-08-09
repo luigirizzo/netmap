@@ -151,6 +151,21 @@ ioctlUnloadDriver(__in PDRIVER_OBJECT DriverObject)
 
 /* #################### GENERIC ADAPTER SUPPORT ################### */
 
+void win32_init_lookaside_buffers(struct net_device *ifp){
+	if (!ifp->lookasideListsAlreadyAllocated) {
+		ExInitializeNPagedLookasideList(&ifp->mbuf_pool, NULL, NULL, 0, sizeof(struct mbuf), M_DEVBUF, 0);
+		ExInitializeNPagedLookasideList(&ifp->mbuf_packets_pool, NULL, NULL, 0, NETMAP_BUF_SIZE(ifp->na), M_DEVBUF, 0);
+		ifp->lookasideListsAlreadyAllocated = TRUE;
+	}
+}
+
+void win32_clear_lookaside_buffers(struct net_device *ifp){
+	if (ifp->lookasideListsAlreadyAllocated) {
+		ExDeleteNPagedLookasideList(&ifp->mbuf_packets_pool);
+		ExDeleteNPagedLookasideList(&ifp->mbuf_pool);
+		ifp->lookasideListsAlreadyAllocated = FALSE;
+	}
+}
 
 /*
  * For packets coming from the generic adapter, netmap expects
@@ -532,12 +547,6 @@ ifunit_ref(const char* name)
 	free(ifp, M_DEVBUF);
 	return NULL; /* not found */
     }
-
-	/* XXX remember to deallocate the lookaside list on device destroy */
-	ExInitializeNPagedLookasideList(&ifp->mbuf_pool, NULL, NULL, 0, sizeof(struct mbuf), M_DEVBUF, 0);
-	/* XXX set in another point using NETMAP_BUF_SIZE(ifp->na) */
-	ExInitializeNPagedLookasideList(&ifp->mbuf_packets_pool, NULL, NULL, 0, 2048, M_DEVBUF, 0);
-
     return ifp;
 }
 

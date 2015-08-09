@@ -800,6 +800,9 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 	struct netmap_adapter *prev_na = gna->prev;
 
+#ifdef _WIN32
+	win32_clear_lookaside_buffers(ifp);
+#endif
 	if (prev_na != NULL) {
 		D("Released generic NA %p", gna);
 		if_rele(ifp);
@@ -876,6 +879,8 @@ generic_netmap_attach(struct ifnet *ifp)
 	if (retval) {
 		free(gna, M_DEVBUF);
 	}
-
+#ifdef _WIN32
+	win32_init_lookaside_buffers(ifp);
+#endif
 	return retval;
 }

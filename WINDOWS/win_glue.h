@@ -304,6 +304,7 @@ struct net_device {
 
 	NPAGED_LOOKASIDE_LIST	mbuf_pool;
 	NPAGED_LOOKASIDE_LIST	mbuf_packets_pool;
+	BOOLEAN	lookasideListsAlreadyAllocated;
 };
 
 #define ifnet		net_device
@@ -320,6 +321,9 @@ struct mbuf {
 #define GET_MBUF_REFCNT(a)				1
 #define	SET_MBUF_DESTRUCTOR(a,b)		// XXX must be set to enable tx notifications
 #define MBUF_IFP(m)						m->dev	
+
+extern void win32_init_lookaside_buffers(struct net_device *ifp);
+extern void win32_clear_lookaside_buffers(struct net_device *ifp);
 
 static void
 generic_timer_handler(struct hrtimer *t)
@@ -513,7 +517,7 @@ PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 #define NM_ATOMIC_TEST_AND_SET(p)       (!InterlockedBitTestAndSet(p,0))
 #define NM_ATOMIC_CLEAR(p)              InterlockedBitTestAndReset(p,0)
 #define refcount_acquire(_a)    		InterlockedExchangeAdd((atomic_t *)_a, 1)
-#define refcount_release(_a)    		(InterlockedDecrement((atomic_t *)_a) < 0)
+#define refcount_release(_a)    		(InterlockedDecrement((atomic_t *)_a) <= 0)
 #define NM_ATOMIC_SET(p, v)             InterlockedExchange(p, v)
 #define NM_ATOMIC_INC(p)                InterlockedIncrement(p)
 #define NM_ATOMIC_READ_AND_CLEAR(p)     InterlockedExchange(p, 0)
