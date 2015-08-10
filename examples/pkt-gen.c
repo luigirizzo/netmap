@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo. All rights reserved.
- * Copyright (C) 2013-2014 Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2013-2015 Universita` di Pisa. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -524,10 +524,11 @@ wrapsum(u_int32_t sum)
  * Look for consecutive ascii representations of the size of the packet.
  */
 static void
-dump_payload(char *p, int len, struct netmap_ring *ring, int cur)
+dump_payload(const char *_p, int len, struct netmap_ring *ring, int cur)
 {
 	char buf[128];
 	int i, j, i0;
+	const unsigned char *p = (const unsigned char *)_p;
 
 	/* get the length in ASCII of the length of the packet. */
 
@@ -876,7 +877,7 @@ pinger_body(void *data)
 			for (kmin = 0; kmin < 64; kmin ++)
 				if (buckets[kmin])
 					break;
-			for (k = 63; k >= kmin; k--) 
+			for (k = 63; k >= kmin; k--)
 				if (buckets[k])
 					break;
 			buf[0] = '\0';
@@ -1119,7 +1120,7 @@ sender_body(void *data)
 	int tosend = 0;
 	int frags = targ->g->frags;
 
-        nifp = targ->nmd->nifp;
+	nifp = targ->nmd->nifp;
 	while (!targ->cancel && (n == 0 || sent < n)) {
 
 		if (rate_limit && tosend <= 0) {
@@ -1132,8 +1133,8 @@ sender_body(void *data)
 		 * wait for available room in the send queue(s)
 		 */
 #ifdef BUSYWAIT
-		ioctl(pfd.fd, NIOCTXSYNC);
-#else
+		ioctl(pfd.fd, NIOCTXSYNC, NULL);
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
@@ -1146,7 +1147,7 @@ sender_body(void *data)
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
-#endif
+#endif /* !BUSYWAIT */
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1319,7 +1320,6 @@ receiver_body(void *data)
 
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
-			
 
 			rxring = NETMAP_RXRING(nifp, i);
 			if (nm_ring_empty(rxring))
@@ -1975,10 +1975,10 @@ D("running on %d cpus (have %d)", g.cpus, i);
 	g.main_fd = g.nmd->fd;
 	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
-	/* get num of queues in tx or rx */ 
+	/* get num of queues in tx or rx */
 	if (g.td_body == sender_body)
 		devqueues = g.nmd->req.nr_tx_rings;
-	else 
+	else
 		devqueues = g.nmd->req.nr_rx_rings;
 
 	/* validate provided nthreads. */
