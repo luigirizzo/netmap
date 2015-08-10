@@ -47,7 +47,9 @@
 #include <unistd.h>	// sysconf()
 #include <sys/poll.h>
 #include <arpa/inet.h>	/* ntohs */
+#ifndef _WIN32
 #include <sys/sysctl.h>	/* sysctl */
+#endif
 #include <ifaddrs.h>	/* getifaddrs */
 #include <net/ethernet.h>
 #include <netinet/in.h>
@@ -1299,13 +1301,13 @@ receiver_body(void *data)
     } else {
 	int dump = targ->g->options & OPT_DUMP;
 
-        nifp = targ->nmd->nifp;
+	nifp = targ->nmd->nifp;
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
 #ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
-#else
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -1316,7 +1318,7 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
-#endif
+#endif /* !BUSYWAIT */
 
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
@@ -1336,7 +1338,7 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#ifndef BUSYWAIT
+#if !defined(BUSYWAIT) && !defined(_WIN32)
 out:
 #endif
 	targ->completed = 1;
