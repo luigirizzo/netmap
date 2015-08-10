@@ -450,7 +450,7 @@ const struct netmap_mem_d nm_blueprint = {
 	    "Default size of private netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, priv_##name##_num, \
 	    CTLFLAG_RW, &netmap_min_priv_params[id].num, 0, \
-	    "Default number of private netmap " STRINGIFY(name) "s")	\
+	    "Default number of private netmap " STRINGIFY(name) "s");	\
 	SYSEND
 
 DECLARE_SYSCTLS(NETMAP_IF_POOL, if);
