@@ -490,25 +490,10 @@ ports attached to the switch)
 int netmap_verbose;
 
 static int netmap_no_timestamp; /* don't timestamp on rxsync */
-
-SYSCTL_NODE(_dev, OID_AUTO, netmap, CTLFLAG_RW, 0, "Netmap args");
-SYSCTL_INT(_dev_netmap, OID_AUTO, verbose,
-    CTLFLAG_RW, &netmap_verbose, 0, "Verbose mode");
-SYSCTL_INT(_dev_netmap, OID_AUTO, no_timestamp,
-    CTLFLAG_RW, &netmap_no_timestamp, 0, "no_timestamp");
 int netmap_mitigate = 1;
-SYSCTL_INT(_dev_netmap, OID_AUTO, mitigate, CTLFLAG_RW, &netmap_mitigate, 0, "");
 int netmap_no_pendintr = 1;
-SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr,
-    CTLFLAG_RW, &netmap_no_pendintr, 0, "Always look for new received packets.");
 int netmap_txsync_retry = 2;
-SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
-    &netmap_txsync_retry, 0 , "Number of txsync loops in bridge's flush.");
-
 int netmap_adaptive_io = 0;
-SYSCTL_INT(_dev_netmap, OID_AUTO, adaptive_io, CTLFLAG_RW,
-    &netmap_adaptive_io, 0 , "Adaptive I/O on paravirt");
-
 int netmap_flags = 0;	/* debug flags */
 int netmap_fwd = 0;	/* force transparent mode */
 
@@ -526,12 +511,33 @@ int netmap_generic_mit = 100*1000;   /* Generic mitigation interval in nanosecon
 int netmap_generic_ringsize = 1024;   /* Generic ringsize. */
 int netmap_generic_rings = 1;   /* number of queues in generic. */
 
+/*
+ * SYSCTL calls are grouped between SYSBEGIN and SYSEND to be emulated
+ * in some other operating systems
+ */
+SYSBEGIN(main_init);
+
+SYSCTL_NODE(_dev, OID_AUTO, netmap, CTLFLAG_RW, 0, "Netmap args");
+SYSCTL_INT(_dev_netmap, OID_AUTO, verbose,
+    CTLFLAG_RW, &netmap_verbose, 0, "Verbose mode");
+SYSCTL_INT(_dev_netmap, OID_AUTO, no_timestamp,
+    CTLFLAG_RW, &netmap_no_timestamp, 0, "no_timestamp");
+SYSCTL_INT(_dev_netmap, OID_AUTO, mitigate, CTLFLAG_RW, &netmap_mitigate, 0, "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr,
+    CTLFLAG_RW, &netmap_no_pendintr, 0, "Always look for new received packets.");
+SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
+    &netmap_txsync_retry, 0 , "Number of txsync loops in bridge's flush.");
+SYSCTL_INT(_dev_netmap, OID_AUTO, adaptive_io, CTLFLAG_RW,
+    &netmap_adaptive_io, 0 , "Adaptive I/O on paravirt");
+
 SYSCTL_INT(_dev_netmap, OID_AUTO, flags, CTLFLAG_RW, &netmap_flags, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_ringsize, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW, &netmap_generic_rings, 0 , "");
+
+SYSEND;
 
 NMG_LOCK_T	netmap_global_lock;
 int netmap_use_count = 0; /* number of active netmap instances */

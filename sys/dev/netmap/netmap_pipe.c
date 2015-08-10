@@ -76,8 +76,10 @@
 #define NM_PIPE_MAXSLOTS	4096
 
 int netmap_default_pipes = 0; /* ignored, kept for compatibility */
+SYSBEGIN(vars_pipes);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, default_pipes, CTLFLAG_RW, &netmap_default_pipes, 0 , "");
+SYSEND;
 
 /* allocate the pipe array in the parent adapter */
 static int
