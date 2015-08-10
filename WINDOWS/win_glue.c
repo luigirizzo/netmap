@@ -99,7 +99,8 @@ win_contigMalloc(int sz, int page_size)
 	HighestAcceptable.QuadPart = -1;
 	SkipAddress.QuadPart = 0;
 	//If needed lowest address can be used MmAllocateContiguousMemorySpecifyCache
-	p_ = MmAllocateContiguousMemory(sz, HighestAcceptable);
+	//p_ = MmAllocateContiguousMemory(sz, HighestAcceptable);
+	p_ = ExAllocatePoolWithTag(NonPagedPool, sz, M_NETMAP);
 
 	/*PVOID p_ = MmAllocateContiguousMemorySpecifyCache(sz,
 						LowAddress,
@@ -133,7 +134,8 @@ win_contigMalloc(int sz, int page_size)
 void
 win_ContigFree(void *virtualAddress)
 {
-	MmFreeContiguousMemory(virtualAddress);
+	//MmFreeContiguousMemory(virtualAddress);
+	ExFreePoolWithTag(virtualAddress, M_NETMAP);
 }
 
 /*********************************************************
