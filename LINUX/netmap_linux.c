@@ -120,7 +120,7 @@ nm_os_csum_fold(rawsum_t cur_sum)
 
 /* on linux we send up one packet at a time */
 void *
-nm_os_send_up(struct net_device *ifp, struct mbuf *m, void *prev)
+nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 {
 	(void)ifp;
 	(void)prev;
