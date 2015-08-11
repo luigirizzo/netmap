@@ -457,13 +457,9 @@ ports attached to the switch)
 	knlist_init_mtx(&(x)->si.si_note, m);		\
     } while (0)
 
-#define NM_SELRECORD_T	struct thread
-
 #elif defined(linux)
 
 #include "bsd_glue.h"
-
-
 
 #elif defined(__APPLE__)
 
@@ -471,7 +467,9 @@ ports attached to the switch)
 #include "osx_glue.h"
 
 #elif defined (_WIN32)
+
 #include "win_glue.h"
+
 #else
 
 #error	Unsupported platform
