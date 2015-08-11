@@ -1325,7 +1325,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 	struct nm_bdg_q *dst_ents, *brddst;
 	uint16_t num_dsts = 0, *dsts;
 	struct nm_bridge *b = na->na_bdg;
-	u_int i, j, me = na->bdg_port;
+	u_int i, me = na->bdg_port;
 
 	/*
 	 * The work area (pointed by ft) is followed by an array of
@@ -1386,6 +1386,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 	 */
 	brddst = dst_ents + NM_BDG_BROADCAST * NM_BDG_MAXRINGS;
 	if (brddst->bq_head != NM_FT_NULL) {
+		u_int j;
 		for (j = 0; likely(j < b->bdg_active_ports); j++) {
 			uint16_t d_i;
 			i = b->bdg_port_index[j];
