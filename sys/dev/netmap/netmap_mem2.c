@@ -152,7 +152,11 @@ typedef uint16_t nm_memid_t;
  * Used in ptnetmap.
  */
 struct netmap_mem_shared_info {
-        struct netmap_if up;
+#ifndef _WIN32
+        struct netmap_if up;	/* ends with a 0-sized array, which VSC does not like */
+#else /* !_WIN32 */
+	char up[sizeof(struct netmap_if)];
+#endif /* !_WIN32 */
         uint64_t features;
 #define NMS_FEAT_BUF_POOL          0x0001
 #define NMS_FEAT_MEMSIZE           0x0002
@@ -399,6 +403,7 @@ struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
 
 /* blueprint for the private memory allocators */
 extern struct netmap_mem_ops netmap_mem_private_ops; /* forward */
+/* XXX clang is not happy about using name as a print format */
 const struct netmap_mem_d nm_blueprint = {
 	.pools = {
 		[NETMAP_IF_POOL] = {
