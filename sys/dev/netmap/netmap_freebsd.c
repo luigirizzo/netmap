@@ -504,7 +504,7 @@ static driver_t ptn_memdev_driver = {
 	PTN_MEMDEV_NAME, ptn_memdev_methods, sizeof(struct ptnetmap_memdev),
 };
 
-devclass_t ptnetmap_devclass;
+static devclass_t ptnetmap_devclass;
 DRIVER_MODULE(netmap, pci, ptn_memdev_driver, ptnetmap_devclass, 0, 0);
 
 MODULE_DEPEND(netmap, pci, 1, 1, 1);
@@ -1335,6 +1335,7 @@ out:
 	return error;
 }
 
+extern struct cdevsw netmap_cdevsw; /* XXX used in netmap.c, should go elsewhere */
 struct cdevsw netmap_cdevsw = {
 	.d_version = D_VERSION,
 	.d_name = "netmap",

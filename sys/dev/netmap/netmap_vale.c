@@ -155,7 +155,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
  * used in the bridge. The actual value may be larger as the
  * last packet in the block may overflow the size.
  */
-int bridge_batch = NM_BDG_BATCH; /* bridge batch size */
+static int bridge_batch = NM_BDG_BATCH; /* bridge batch size */
 SYSBEGIN(vars_vale);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0 , "");
@@ -248,7 +248,7 @@ netmap_bdg_name(struct netmap_vp_adapter *vp)
  * Right now we have a static array and deletions are protected
  * by an exclusive lock.
  */
-struct nm_bridge *nm_bridges;
+static struct nm_bridge *nm_bridges;
 #endif /* !CONFIG_NET_NS */
 
 
