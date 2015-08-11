@@ -2186,6 +2186,8 @@ module_exit(linux_netmap_fini);
 EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
 #ifdef WITH_PTNETMAP_GUEST
 EXPORT_SYMBOL(netmap_pt_guest_attach);	/* ptnetmap driver attach routines */
+EXPORT_SYMBOL(netmap_pt_guest_rxsync);	/* ptnetmap generic rxsync */
+EXPORT_SYMBOL(netmap_pt_guest_txsync);	/* ptnetmap generic txsync */
 #endif /* WITH_PTNETMAP_GUEST */
 EXPORT_SYMBOL(netmap_detach);		/* driver detach routines */
 EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */
