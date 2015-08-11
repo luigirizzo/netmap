@@ -495,7 +495,7 @@ int netmap_no_pendintr = 1;
 int netmap_txsync_retry = 2;
 int netmap_adaptive_io = 0;
 int netmap_flags = 0;	/* debug flags */
-int netmap_fwd = 0;	/* force transparent mode */
+static int netmap_fwd = 0;	/* force transparent mode */
 
 /*
  * netmap_admode selects the netmap mode to use.
