@@ -440,6 +440,22 @@ win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int3
 
 #define mmap win32_mmap_emulated
 
+#include <sys/poll.h> /* XXX needed to use the structure pollfd */
+static int 
+win_nm_poll(struct pollfd *fds, int nfds, int timeout)
+{
+	POLL_REQUEST_DATA prd;
+	prd.timeout = timeout;
+	prd.events = fds->events;
+	win_nm_ioctl(fds->fd, NETMAP_POLL, &prd);
+	if ((prd.revents == POLLERR) || (prd.revents == STATUS_TIMEOUT)) {
+		return -1;
+	}
+	return 1;
+}
+
+#define poll win_nm_poll
+
 #endif /* _WIN32 */
 
 /*

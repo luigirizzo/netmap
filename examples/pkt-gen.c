@@ -1197,15 +1197,6 @@ sender_body(void *data)
 #ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #else /* !BUSYWAIT */
-
-#ifdef _WIN32
-		{
-			POLL_REQUEST_DATA prd;
-			prd.timeout = 2000;
-			prd.events = POLLOUT;
-			win_nm_ioctl(pfd.fd, NETMAP_POLL, &prd);
-		}
-#else /* !_WIN32 */
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
@@ -1218,7 +1209,6 @@ sender_body(void *data)
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
-#endif /* !_WIN32 */
 
 #endif /* !BUSYWAIT */
 		/*
@@ -1379,14 +1369,6 @@ receiver_body(void *data)
 #ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
 #else /* !BUSYWAIT */
-#ifdef _WIN32
-		{
-			POLL_REQUEST_DATA prd;
-			prd.timeout = 1000;
-			prd.events = POLLIN;
-			win_nm_ioctl(pfd.fd, NETMAP_POLL, &prd);
-		}
-#else  /* !_WIN32 */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -1397,7 +1379,6 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
-#endif /* !_WIN32 */
 
 #endif /* !BUSYWAIT */
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
@@ -1418,7 +1399,7 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#if !defined(BUSYWAIT) && !defined(_WIN32)
+#if !defined(BUSYWAIT) //&& !defined(_WIN32)
 out:
 #endif
 	targ->completed = 1;
