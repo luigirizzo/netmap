@@ -372,6 +372,10 @@ static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
 intptr_t _get_osfhandle(int); /* defined in io.h in windows */
 
+/* XXX_ale make this a list? anyway find a better way*/
+static int win_netmap_fd = -1;
+static HANDLE win_netmap_handle;
+
 /*
  * we need to wrap ioctl and mmap, at least for the netmap file descriptors
  */
@@ -413,7 +417,7 @@ win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
 	/* XXX_ale: cache somewhere the result of IntToPtr(_get_osfhandle(fd))
 	 * this call alone seems to waste between 46 to 58 ns
 	*/
-	ioctlReturnStatus = DeviceIoControl(IntToPtr(_get_osfhandle(fd)),
+	ioctlReturnStatus = DeviceIoControl(win_netmap_handle,  //IntToPtr(_get_osfhandle(fd)),
 				ctlCode, inParam, szIn,
 				outParam, szOut,
 				&bReturn, NULL);
@@ -424,6 +428,7 @@ win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
 
 #define ioctl win_nm_ioctl /* from now on, within this file ... */
 
+#define  posix_mmap mmap
 /*
  * We cannot use the native mmap on windows
  * The only parameter used is "fd", the other ones are just declared to
@@ -432,26 +437,37 @@ win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
 static void *
 win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int32_t offset)
 {
-	MEMORY_ENTRY ret;
+	if (fd != win_netmap_fd){
+		return posix_mmap(addr, length, prot, flags, fd, offset);
+	}
+	else {
+		MEMORY_ENTRY ret;
 
-	return win_nm_ioctl(fd, NETMAP_MMAP, &ret) ?
+		return win_nm_ioctl(fd, NETMAP_MMAP, &ret) ?
 		NULL : ret.pUsermodeVirtualAddress;
+	}
 }
 
 #define mmap win32_mmap_emulated
 
 #include <sys/poll.h> /* XXX needed to use the structure pollfd */
+#define posix_poll poll
+
 static int 
 win_nm_poll(struct pollfd *fds, int nfds, int timeout)
 {
-	POLL_REQUEST_DATA prd;
-	prd.timeout = timeout;
-	prd.events = fds->events;
-	win_nm_ioctl(fds->fd, NETMAP_POLL, &prd);
-	if ((prd.revents == POLLERR) || (prd.revents == STATUS_TIMEOUT)) {
-		return -1;
+	if (fds->fd != win_netmap_fd){
+		return posix_poll(fds, nfds, timeout);
+	} else{
+		POLL_REQUEST_DATA prd;
+		prd.timeout = timeout;
+		prd.events = fds->events;
+		win_nm_ioctl(fds->fd, NETMAP_POLL, &prd);
+		if ((prd.revents == POLLERR) || (prd.revents == STATUS_TIMEOUT)) {
+			return -1;
+		}
+		return 1;
 	}
-	return 1;
 }
 
 #define poll win_nm_poll
@@ -599,6 +615,10 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
+#ifdef _WIN32
+	win_netmap_fd = d->fd;
+	win_netmap_handle = IntToPtr(_get_osfhandle(d->fd));
+#endif
 	if (req)
 		d->req = *req;
 	d->req.nr_version = NETMAP_API;
@@ -723,8 +743,14 @@ nm_close(struct nm_desc *d)
 		return EINVAL;
 	if (d->done_mmap && d->mem)
 		munmap(d->mem, d->memsize);
-	if (d->fd != -1)
+	if (d->fd != -1){
 		close(d->fd);
+#ifdef _WIN32		
+		win_netmap_fd = -1;
+		win_netmap_handle = NULL;
+#endif
+	}
+		
 	bzero(d, sizeof(*d));
 	free(d);
 	return 0;
