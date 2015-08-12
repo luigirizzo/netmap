@@ -35,7 +35,8 @@
 #ifdef WITH_PTNETMAP_GUEST
 #include <dev/netmap/netmap_virt.h>
 static int vtnet_ptnetmap_txsync(struct netmap_kring *kring, int flags);
-#define VTNET_PTNETMAP_ON(_na)        ((nm_netmap_on(_na)) && ((_na)->nm_txsync == vtnet_ptnetmap_txsync))
+#define VTNET_PTNETMAP_ON(_na) \
+	((nm_netmap_on(_na)) && ((_na)->nm_txsync == vtnet_ptnetmap_txsync))
 #else   /* !WITH_PTNETMAP_GUEST */
 #define VTNET_PTNETMAP_ON(_na)        0
 #endif  /* WITH_PTNETMAP_GUEST */
@@ -414,9 +415,20 @@ vtnet_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 }
 
 #ifdef WITH_PTNETMAP_GUEST
+/*
+ * ptnetmap support for: virtio-net (FreeBSD version)
+ *
+ * this part od this file is meant to be a reference on how to implement
+ * ptnetmap support for a network driver.
+ * this file contains code but only static or inline functions used
+ * by a single driver.
+ */
+
+/*
+ * virtio-specific macro and fucntions
+ */
 /* ptnetmap virtio register BASE */
 #define PTNETMAP_VIRTIO_IO_BASE         sizeof(struct virtio_net_config)
-
 #ifndef VIRTIO_NET_F_PTNETMAP
 #define VIRTIO_NET_F_PTNETMAP   0x2000000  /* linux/qeum  25 */
 #endif /* VIRTIO_NET_F_PTNETMAP */
@@ -425,9 +437,13 @@ static void inline
 vtnet_ptnetmap_iowrite4(device_t dev, uint32_t addr, uint32_t val)
 {
 	int i;
-	/* virtio_pci config_set use multiple iowrite8, we need to split the call and reverse the order */
+	/*
+	 * virtio_pci config_set use multiple iowrite8, we need to split the
+	 * call and reverse the order
+	 */
 	for (i = 3; i >= 0; i--) {
-		virtio_write_dev_config_1(dev, PTNETMAP_VIRTIO_IO_BASE + addr + i, *(((uint8_t *)&val) + i));
+		virtio_write_dev_config_1(dev, PTNETMAP_VIRTIO_IO_BASE + addr + i,
+			*(((uint8_t *)&val) + i));
 	}
 }
 
@@ -438,25 +454,35 @@ vtnet_ptnetmap_ioread4(device_t dev, uint32_t addr)
 	int i;
 
 	for (i = 0; i <= 3; i++) {
-		*(((uint8_t *)&val) + i) = virtio_read_dev_config_1(dev, PTNETMAP_VIRTIO_IO_BASE + addr + i);
+		*(((uint8_t *)&val) + i) = virtio_read_dev_config_1(dev,
+				PTNETMAP_VIRTIO_IO_BASE + addr + i);
 	}
 	return val;
 }
 
+/*
+ * CSB (Communication Status Block) allocation.
+ * CSB is the shared memory used by the netmap instance running in the guest
+ * and the ptnetmap kthreads in the host.
+ * The CSBBAH/CSBBAL registers must be added to the virtio-net device.
+ *
+ * Only called after netmap_pt_guest_attach().
+ */
 static int
 vtnet_ptnetmap_alloc_csb(struct SOFTC_T *sc)
 {
 	device_t dev = sc->vtnet_dev;
 	struct ifnet *ifp = sc->vtnet_ifp;
-	struct netmap_pt_guest_adapter* ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
+	struct netmap_pt_guest_adapter* ptna =
+		(struct netmap_pt_guest_adapter *)NA(ifp);
 
 	vm_paddr_t csb_phyaddr;
 
 	if (ptna->csb)
 		return 0;
 
-	ptna->csb = contigmalloc(NET_PARAVIRT_CSB_SIZE, M_DEVBUF, M_NOWAIT | M_ZERO,
-			(size_t)0, -1UL, PAGE_SIZE, 0);
+	ptna->csb = contigmalloc(NET_PARAVIRT_CSB_SIZE, M_DEVBUF,
+			M_NOWAIT | M_ZERO, (size_t)0, -1UL, PAGE_SIZE, 0);
 	if (!ptna->csb) {
 		D("Communication Status Block allocation failed!");
 		return ENOMEM;
@@ -467,18 +493,24 @@ vtnet_ptnetmap_alloc_csb(struct SOFTC_T *sc)
 	ptna->csb->guest_csb_on = 1;
 
 	/* Tell the device the CSB physical address. */
-	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAH, (uint32_t)(csb_phyaddr >> 32));
-	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAL, (uint32_t)(csb_phyaddr));
+	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAH,
+			(uint32_t)(csb_phyaddr >> 32));
+	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAL,
+			(uint32_t)(csb_phyaddr));
 
 	return 0;
 }
 
+/*
+ * CSB (Communication Status Block) deallocation.
+ */
 static void
 vtnet_ptnetmap_free_csb(struct SOFTC_T *sc)
 {
 	device_t dev = sc->vtnet_dev;
 	struct ifnet *ifp = sc->vtnet_ifp;
-	struct netmap_pt_guest_adapter* ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
+	struct netmap_pt_guest_adapter* ptna =
+		(struct netmap_pt_guest_adapter *)NA(ifp);
 
 	if (ptna->csb) {
 		/* CSB deallocation protocol. */
@@ -491,11 +523,19 @@ vtnet_ptnetmap_free_csb(struct SOFTC_T *sc)
 }
 
 static uint32_t vtnet_ptnetmap_ptctl(struct ifnet *, uint32_t);
+
+/*
+ * Returns device configuration from the CSB, after sending the PTCTL_CONFIG
+ * command to the host (hypervisor virtio fronted).
+ * The host reads the configuration from the netmap port (opened in the host)
+ * and it stores the values in the CSB.
+ */
 static int
 vtnet_ptnetmap_config(struct netmap_adapter *na,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
 {
-	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
+	struct netmap_pt_guest_adapter *ptna =
+		(struct netmap_pt_guest_adapter *)na;
 	struct paravirt_csb *csb = ptna->csb;
 	int ret;
 
@@ -511,11 +551,16 @@ vtnet_ptnetmap_config(struct netmap_adapter *na,
 	*txd = csb->num_tx_slots;
 	*rxd = csb->num_rx_slots;
 
-	D("txr %u rxr %u txd %u rxd %u",
+	ND("txr %u rxr %u txd %u rxd %u",
 			*txr, *rxr, *txd, *rxd);
 	return 0;
 }
 
+/*
+ * Reconcile host and guest view of the transmit ring.
+ * Use generic netmap_pt_guest_txsync().
+ * Only the notification to the host is device-specific.
+ */
 static int
 vtnet_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 {
@@ -536,6 +581,11 @@ vtnet_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	return ret;
 }
 
+/*
+ * Reconcile host and guest view of the receive ring.
+ * Use generic netmap_pt_guest_rxsync().
+ * Only the notification to the host is device-specific.
+ */
 static int
 vtnet_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 {
@@ -556,10 +606,15 @@ vtnet_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	return ret;
 }
 
+/*
+ * Register/unregister. We are already under netmap lock.
+ * Only called on the first register or the last unregister.
+ */
 static int
 vtnet_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 {
-	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
+	struct netmap_pt_guest_adapter *ptna =
+		(struct netmap_pt_guest_adapter *)na;
 
 	/* device-specific */
         struct ifnet *ifp = na->ifp;
@@ -597,22 +652,24 @@ vtnet_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		 * Init ring and kring pointers
 		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
 		 * host kring pointers.
-		 * XXX This initialization is required, because we don't close the
-		 * host port on UNREGIF.
+		 * XXX This initialization is required, because we don't close
+		 * the host port on UNREGIF.
 		 */
 		// Init rx ring
 		kring = na->rx_rings;
 		kring->rhead = kring->ring->head = csb->rx_ring.head;
 		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
 		kring->nr_hwcur = csb->rx_ring.hwcur;
-		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->rx_ring.hwtail;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail =
+			csb->rx_ring.hwtail;
 
 		// Init tx ring
 		kring = na->tx_rings;
 		kring->rhead = kring->ring->head = csb->tx_ring.head;
 		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
 		kring->nr_hwcur = csb->tx_ring.hwcur;
-		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail =
+			csb->tx_ring.hwtail;
 	} else {
 		ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
 		//na->na_flags &= ~NAF_NETMAP_ON;
@@ -631,6 +688,10 @@ vtnet_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
+/*
+ * Send command to the host (hypervisor virtio fronted) through PTCTL register.
+ * The PTCTL register must be added to the virtio-net device.
+ */
 static uint32_t
 vtnet_ptnetmap_ptctl(struct ifnet *ifp, uint32_t val)
 {
@@ -646,13 +707,19 @@ vtnet_ptnetmap_ptctl(struct ifnet *ifp, uint32_t val)
 	return ret;
 }
 
+/*
+ * Features negotiation with the host (hypervisor virtio fronted) through PTFEAT
+ * register.
+ * The PTFEAT register must be added to the virtio-net device.
+ */
 static uint32_t
 vtnet_ptnetmap_features(struct SOFTC_T *sc)
 {
 	device_t dev = sc->vtnet_dev;
 	uint32_t features;
 	/* tell the device the features we support */
-	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_PTFEAT, NET_PTN_FEATURES_BASE);
+	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_PTFEAT,
+			NET_PTN_FEATURES_BASE);
 	/* get back the acknowledged features */
 	features = vtnet_ptnetmap_ioread4(dev, PTNETMAP_VIRTIO_IO_PTFEAT);
 	D("ptnetmap support: %s\n",
@@ -692,9 +759,9 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 	na.num_tx_rings = na.num_rx_rings = sc->vtnet_max_vq_pairs;
 	D("max rings %d", sc->vtnet_max_vq_pairs);
 #ifdef WITH_PTNETMAP_GUEST
-	D("check ptnetmap support");
+	/* check if virtio-net (guest and host) supports ptnetmap */
 	if (virtio_with_feature(sc->vtnet_dev, VIRTIO_NET_F_PTNETMAP) &&
-			(vtnet_ptnetmap_features(sc) & NET_PTN_FEATURES_BASE)) {
+		(vtnet_ptnetmap_features(sc) & NET_PTN_FEATURES_BASE)) {
 		D("ptnetmap supported");
 		na.nm_config = vtnet_ptnetmap_config;
 		na.nm_register = vtnet_ptnetmap_reg;
