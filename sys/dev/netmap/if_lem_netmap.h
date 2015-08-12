@@ -472,8 +472,14 @@ ring_reset:
 }
 
 #if defined (NIC_PTNETMAP) && defined (WITH_PTNETMAP_GUEST)
+/*
+ * ptnetmap support for: lem (FreeBSD version)
+ *
+ * For details on ptnetmap support please see if_vtnet_netmap.h
+ */
 static uint32_t lem_ptnetmap_ptctl(struct ifnet *, uint32_t);
 
+/* Returns device configuration from the CSB */
 static int
 lem_ptnetmap_config(struct netmap_adapter *na,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
@@ -501,6 +507,7 @@ lem_ptnetmap_config(struct netmap_adapter *na,
 	return 0;
 }
 
+/* Reconcile host and guest view of the transmit ring. */
 static int
 lem_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 {
@@ -518,6 +525,7 @@ lem_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	return ret;
 }
 
+/* Reconcile host and guest view of the receive ring. */
 static int
 lem_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 {
@@ -535,6 +543,7 @@ lem_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	return ret;
 }
 
+/* Register/unregister. We are already under netmap lock. */
 static int
 lem_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 {
@@ -555,8 +564,8 @@ lem_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		 * Init ring and kring pointers
 		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
 		 * host kring pointers.
-		 * XXX This initialization is required, because we don't close the
-		 * host port on UNREGIF.
+		 * XXX This initialization is required, because we don't close
+		 * the host port on UNREGIF.
 		 */
 
 		// Init rx ring
@@ -564,14 +573,16 @@ lem_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		kring->rhead = kring->ring->head = csb->rx_ring.head;
 		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
 		kring->nr_hwcur = csb->rx_ring.hwcur;
-		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->rx_ring.hwtail;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail =
+			csb->rx_ring.hwtail;
 
 		// Init tx ring
 		kring = na->tx_rings;
 		kring->rhead = kring->ring->head = csb->tx_ring.head;
 		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
 		kring->nr_hwcur = csb->tx_ring.hwcur;
-		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail =
+			csb->tx_ring.hwtail;
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 		adapter->ptnetmap_enabled = 0;
@@ -588,15 +599,21 @@ lem_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
+/*
+ * CSB (Communication Status Block) setup
+ * CSB is already allocated in if_lem (paravirt).
+ */
 static void
 lem_ptnetmap_setup_csb(struct adapter *adapter)
 {
 	struct ifnet *ifp = adapter->ifp;
-	struct netmap_pt_guest_adapter* ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
+	struct netmap_pt_guest_adapter* ptna =
+		(struct netmap_pt_guest_adapter *)NA(ifp);
 
 	ptna->csb = adapter->csb;
 }
 
+/* Send command to the host through PTCTL register. */
 static uint32_t
 lem_ptnetmap_ptctl(struct ifnet *ifp, uint32_t val)
 {
@@ -610,8 +627,7 @@ lem_ptnetmap_ptctl(struct ifnet *ifp, uint32_t val)
 	return ret;
 }
 
-
-
+/* Features negotiation with the host through PTFEAT */
 static uint32_t
 lem_ptnetmap_features(struct adapter *adapter)
 {

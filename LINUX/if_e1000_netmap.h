@@ -326,7 +326,14 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 }
 
 #if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
+/*
+ * ptnetmap support for: e1000 (linux version)
+ *
+ * For details on ptnetmap support please see virtio_netmap.h
+ */
 static uint32_t e1000_ptnetmap_ptctl(struct net_device *, uint32_t);
+
+/* Returns device configuration from the CSB */
 static int
 e1000_ptnetmap_config(struct netmap_adapter *na,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
@@ -352,6 +359,7 @@ e1000_ptnetmap_config(struct netmap_adapter *na,
 	return 0;
 }
 
+/* Reconcile host and guest view of the transmit ring. */
 static int
 e1000_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 {
@@ -372,6 +380,7 @@ e1000_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	return ret;
 }
 
+/* Reconcile host and guest view of the receive ring. */
 static int
 e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 {
@@ -393,6 +402,7 @@ e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	return ret;
 }
 
+/* Register/unregister. We are already under netmap lock. */
 static int
 e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 {
@@ -412,8 +422,8 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		 * Init ring and kring pointers
 		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
 		 * host kring pointers.
-		 * XXX This initialization is required, because we don't close the
-		 * host port on UNREGIF.
+		 * XXX This initialization is required, because we don't close
+		 * the host port on UNREGIF.
 		 */
 
 		// Init rx ring
@@ -421,14 +431,16 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		kring->rhead = kring->ring->head = csb->rx_ring.head;
 		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
 		kring->nr_hwcur = csb->rx_ring.hwcur;
-		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->rx_ring.hwtail;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail =
+			csb->rx_ring.hwtail;
 
 		// Init tx ring
 		kring = na->tx_rings;
 		kring->rhead = kring->ring->head = csb->tx_ring.head;
 		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
 		kring->nr_hwcur = csb->tx_ring.hwcur;
-		kring->nr_hwtail = kring->rtail = kring->ring->tail = csb->tx_ring.hwtail;
+		kring->nr_hwtail = kring->rtail = kring->ring->tail =
+			csb->tx_ring.hwtail;
 
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
@@ -445,15 +457,21 @@ e1000_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
+/*
+ * CSB (Communication Status Block) setup
+ * CSB is already allocated in e1000 (paravirt).
+ */
 static void
 e1000_ptnetmap_setup_csb(struct SOFTC_T *adapter)
 {
 	struct ifnet *ifp = adapter->netdev;
-	struct netmap_pt_guest_adapter* ptna = (struct netmap_pt_guest_adapter *)NA(ifp);
+	struct netmap_pt_guest_adapter* ptna =
+		(struct netmap_pt_guest_adapter *)NA(ifp);
 
 	ptna->csb = adapter->csb;
 }
 
+/* Send command to the host through PTCTL register. */
 static uint32_t
 e1000_ptnetmap_ptctl(struct net_device *netdev, uint32_t val)
 {
@@ -468,6 +486,7 @@ e1000_ptnetmap_ptctl(struct net_device *netdev, uint32_t val)
 	return ret;
 }
 
+/* Features negotiation with the host through PTFEAT */
 static uint32_t
 e1000_ptnetmap_features(struct SOFTC_T *adapter)
 {
@@ -512,8 +531,9 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.num_tx_rings = na.num_rx_rings = 1;
 
 #if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
-        /* XXX: check if the device support ptnetmap (now we use PARAVIRT_SUBDEV) */
-	if (paravirtual && (adapter->pdev->subsystem_device == E1000_PARAVIRT_SUBDEV) &&
+        /* XXX:check device ptnetmap support (now we use PARAVIRT_SUBDEV) */
+	if (paravirtual &&
+		(adapter->pdev->subsystem_device == E1000_PARAVIRT_SUBDEV) &&
 	        (e1000_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE)) {
 		na.nm_config = e1000_ptnetmap_config;
 		na.nm_register = e1000_ptnetmap_reg;
