@@ -447,6 +447,10 @@ DECLARE_SYSCTLS(NETMAP_IF_POOL, if);
 DECLARE_SYSCTLS(NETMAP_RING_POOL, ring);
 DECLARE_SYSCTLS(NETMAP_BUF_POOL, buf);
 
+u_int minclsize;
+
+SYSCTL_UINT(_dev_netmap, OID_AUTO, minclustersize, CTLFLAG_RW, &minclsize, 0, "minimum size of mem clusters");
+
 /* call with NMA_LOCK(&nm_mem) held */
 static int
 nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
@@ -952,6 +956,7 @@ netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int obj
 	int i;
 	u_int clustsize;	/* the cluster size, multiple of page size */
 	u_int clustentries;	/* how many objects per entry */
+	u_int minentries;	/* won't make clusters with less then this many objects */
 
 	/* we store the current request, so we can
 	 * detect configuration changes later */
@@ -987,7 +992,8 @@ netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int obj
 	 * we try to fill it with objects keeping track of the
 	 * wasted space to the next page boundary.
 	 */
-	for (clustentries = 0, i = 1;; i++) {
+	minentries = max(minclsize / objsize, 1U);
+	for (clustentries = 0, i = minentries;; i++) {
 		u_int delta, used = i * objsize;
 		if (used > MAX_CLUSTSIZE)
 			break;
