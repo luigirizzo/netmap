@@ -235,7 +235,7 @@ ptnetmap_tx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
-    struct paravirt_csb __user *csb = NULL; /* XXX check error */
+    struct paravirt_csb __user *csb = NULL;
     struct pt_ring __user *csb_ring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t nkr_num_slots;
@@ -387,7 +387,7 @@ leave_kr_put:
 
 leave:
     /* Send kick to the guest if it needs them */
-    if (work && ptnetmap_tx_get_guestkick(csb)) {
+    if (csb && work && ptnetmap_tx_get_guestkick(csb)) {
         ptnetmap_tx_set_guestkick(csb, 0);
         nm_os_kthread_send_irq(pts->ptk_tx);
         IFRATE(pts->rate_ctx.new.htxk++);
@@ -448,7 +448,7 @@ ptnetmap_rx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
-    struct paravirt_csb __user *csb = NULL; /* XXX check error */
+    struct paravirt_csb __user *csb = NULL;
     struct pt_ring __user *csb_ring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t nkr_num_slots;
@@ -585,7 +585,7 @@ leave_kr_put:
 
 leave:
     /* Send kick to the guest if it needs them */
-    if (work && ptnetmap_rx_get_guestkick(csb)) {
+    if (csb && work && ptnetmap_rx_get_guestkick(csb)) {
         ptnetmap_rx_set_guestkick(csb, 0);
         nm_os_kthread_send_irq(pts->ptk_rx);
         IFRATE(pts->rate_ctx.new.hrxk++);
