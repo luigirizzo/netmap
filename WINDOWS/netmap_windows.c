@@ -762,10 +762,10 @@ nm_os_vi_detach(struct ifnet *ifp)
 void
 nm_os_selrecord(IO_STACK_LOCATION *irpSp, KEVENT *ev)
 {
-    if (!KeReadStateEvent(ev)){
+   // if (!KeReadStateEvent(ev)){
         irpSp->FileObject->FsContext2 = ev;
         KeClearEvent(ev);
-    }
+    //}
 }
 
 void
