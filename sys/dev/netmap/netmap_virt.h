@@ -211,8 +211,8 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 /* 32 bit w/o */
 #define PTNETMAP_VIRTIO_IO_CSBBAL       16 /* CSB Base Address Low */
 
-#define PTNEMTAP_VIRTIO_IO_SIZE         20
-#define PTNEMTAP_VIRTIO_IO_SIZE_32      5
+#define PTNETMAP_VIRTIO_IO_SIZE         20
+#define PTNETMAP_VIRTIO_IO_SIZE_32      5
 
 #endif /* NETMAP_VIRT_CSB */
 
@@ -242,7 +242,7 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 						 */
 /* 16 bit r/o */
 #define PTNETMAP_IO_PCI_HOSTID          8	/* memory allocator ID in netmap host */
-#define PTNEMTAP_IO_SIZE                10
+#define PTNETMAP_IO_SIZE                10
 
 /*
  * ptnetmap configuration
