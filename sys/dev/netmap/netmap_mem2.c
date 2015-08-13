@@ -1997,7 +1997,7 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 		error = ENOMEM;
 		goto err;
 	}
-	/* map memory through ptnemtap-memdev BAR */
+	/* map memory through ptnetmap-memdev BAR */
 	error = nm_os_pt_memdev_iomap(pv->ptn_dev, &pv->nm_paddr, &pv->nm_addr);
 	if (error)
 		goto err;
