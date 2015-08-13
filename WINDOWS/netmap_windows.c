@@ -237,14 +237,6 @@ windows_handle_tx(struct net_device *ifp, uint32_t length, const char *data)
 	return NULL;
 }
 
-//nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si)
-void
-nm_os_selrecord(IO_STACK_LOCATION *irpSp, KEVENT *ev)
-{
-        irpSp->FileObject->FsContext2 = ev;
-        KeClearEvent(ev);
-}
-
 int
 nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
@@ -766,10 +758,20 @@ nm_os_vi_detach(struct ifnet *ifp)
     DbgPrint("nm_vi_detach unimplemented!!!\n");
 }
 
+//nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si)
+void
+nm_os_selrecord(IO_STACK_LOCATION *irpSp, KEVENT *ev)
+{
+    if (!KeReadStateEvent(ev)){
+        irpSp->FileObject->FsContext2 = ev;
+        KeClearEvent(ev);
+    }
+}
+
 void
 nm_os_selwakeup(NM_SELINFO_T *queue)
 {
-	KeSetEvent(queue, PI_NET, FALSE);
+    KeSetEvent(queue, PI_NET, FALSE);
 }
 
 int

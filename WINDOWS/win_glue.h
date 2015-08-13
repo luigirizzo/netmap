@@ -201,18 +201,10 @@ static inline void mtx_unlock(win_spinlock_t *m)
 /*********************************************************
 *        			SLEEP/WAKEUP THREADS        		 *
 **********************************************************/
-static void win_selrecord(PIO_STACK_LOCATION irpSp, PKEVENT ev)
-{
-	irpSp->FileObject->FsContext2 = ev;
-	KeClearEvent(ev);
-}
 
 #define PI_NET					16
 #define init_waitqueue_head(x)			KeInitializeEvent(x, NotificationEvent, TRUE);
 #define netmap_knlist_destroy(x)
-#define OS_selwakeup(queue, priority)		KeSetEvent(queue, priority, FALSE);			
-#pragma warning(disable:4702)			//unreachable code
-#define OS_selrecord(thread, queue)		win_selrecord(thread, queue)
 #define tsleep(ident, priority, wmesg, time)	KeDelayExecutionThread(KernelMode, FALSE, (PLARGE_INTEGER)time)	
 //--------------------------------------------------------
 
