@@ -372,9 +372,105 @@ static u_char *nm_nextpkt(struct nm_desc *, struct nm_pkthdr *);
 
 intptr_t _get_osfhandle(int); /* defined in io.h in windows */
 
-/* XXX_ale make this a list? anyway find a better way*/
-static int win_netmap_fd = -1;
-static HANDLE win_netmap_handle;
+struct win_netmap_fd_list
+{
+	int win_netmap_fd;
+	HANDLE win_netmap_handle;
+	struct win_netmap_fd_list *next;
+};
+
+static struct win_netmap_fd_list *win_netmap_fd_list_head;
+
+void
+win_insert_fd_record(int fd)
+{
+	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
+	struct win_netmap_fd_list *prev = NULL;
+	while (curr != NULL) {
+		if (fd == curr->win_netmap_fd) {
+			return;
+		}
+		prev = curr;
+		curr = curr->next;
+	}
+	if (prev == curr) {
+		win_netmap_fd_list_head = malloc(sizeof(struct win_netmap_fd_list));
+		curr = win_netmap_fd_list_head;
+	} else {
+		prev->next = malloc(sizeof(struct win_netmap_fd_list));
+		curr = prev->next;
+	}
+	curr->win_netmap_fd = fd;
+	curr->win_netmap_handle = IntToPtr(_get_osfhandle(fd));
+	curr->next = NULL;
+}
+
+void
+win_remove_fd_record(int fd)
+{
+	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
+	struct win_netmap_fd_list *prev = NULL;
+	while (curr != NULL) {
+		if (fd != curr->win_netmap_fd) {
+			prev = curr;
+			curr = curr->next;
+		} else {
+			if (prev != NULL) {
+				prev->next = curr->next;
+			}
+			if (curr == win_netmap_fd_list_head) {
+				prev = win_netmap_fd_list_head->next;
+				free(win_netmap_fd_list_head);
+				win_netmap_fd_list_head = prev;
+			} else {
+				free(curr);
+				curr = NULL;
+			}
+			return;
+		}
+	}
+}
+
+int
+win_search_fd_record(int fd)
+{
+	int index = 0;
+	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
+	while (curr != NULL) {
+		if (fd == curr->win_netmap_fd) {
+			return index;
+		}
+		curr = curr->next;
+		index++;
+	}
+	return -1;
+}
+
+BOOLEAN 
+win_contains_fd_record(int fd)
+{
+	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
+	while (curr != NULL) {
+		if (fd == curr->win_netmap_fd) {
+			return TRUE;
+		}
+		curr = curr->next;
+	}
+	return FALSE;
+}
+
+HANDLE
+win_get_handle_record(int fd)
+{
+	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
+	while (curr != NULL) {
+		if (fd == curr->win_netmap_fd) {
+			return curr->win_netmap_handle;
+		}
+		curr = curr->next;
+	}
+	return NULL;
+}
 
 /*
  * we need to wrap ioctl and mmap, at least for the netmap file descriptors
@@ -382,7 +478,7 @@ static HANDLE win_netmap_handle;
 
 /* same as ioctl, returns 0 on success and -1 on error */
 static int
-win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
+win_nm_ioctl_internal(int fd, int32_t ctlCode, void *arg)
 {
 	DWORD bReturn = 0, szIn, szOut;
 	BOOL ioctlReturnStatus;
@@ -417,13 +513,24 @@ win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
 	/* XXX_ale: cache somewhere the result of IntToPtr(_get_osfhandle(fd))
 	 * this call alone seems to waste between 46 to 58 ns
 	*/
-	ioctlReturnStatus = DeviceIoControl(win_netmap_handle,  //IntToPtr(_get_osfhandle(fd)),
+	ioctlReturnStatus = DeviceIoControl(win_get_handle_record(fd),  //IntToPtr(_get_osfhandle(fd)),
 				ctlCode, inParam, szIn,
 				outParam, szOut,
 				&bReturn, NULL);
 	// XXX note windows returns 0 on error or async call, 1 on success
 	// we could call GetLastError() to figure out what happened
 	return ioctlReturnStatus ? 0 : -1;
+}
+
+static int
+win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
+{
+	if (!win_contains_fd_record(fd)){
+		return ioctl(fd, ctlCode, arg);
+	}
+	else {
+		return win_nm_ioctl_internal(fd, ctlCode, arg);
+	}
 }
 
 #define ioctl win_nm_ioctl /* from now on, within this file ... */
@@ -437,13 +544,13 @@ win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
 static void *
 win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int32_t offset)
 {
-	if (fd != win_netmap_fd){
+	if (!win_contains_fd_record(fd)){
 		return posix_mmap(addr, length, prot, flags, fd, offset);
 	}
 	else {
 		MEMORY_ENTRY ret;
 
-		return win_nm_ioctl(fd, NETMAP_MMAP, &ret) ?
+		return win_nm_ioctl_internal(fd, NETMAP_MMAP, &ret) ?
 		NULL : ret.pUsermodeVirtualAddress;
 	}
 }
@@ -456,13 +563,13 @@ win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int3
 static int 
 win_nm_poll(struct pollfd *fds, int nfds, int timeout)
 {
-	if (fds->fd != win_netmap_fd){
+	if (!win_contains_fd_record(fds->fd)){
 		return posix_poll(fds, nfds, timeout);
 	} else{
 		POLL_REQUEST_DATA prd;
 		prd.timeout = timeout;
 		prd.events = fds->events;
-		win_nm_ioctl(fds->fd, NETMAP_POLL, &prd);
+		win_nm_ioctl_internal(fds->fd, NETMAP_POLL, &prd);
 		if ((prd.revents == POLLERR) || (prd.revents == STATUS_TIMEOUT)) {
 			return -1;
 		}
@@ -616,8 +723,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 	}
 
 #ifdef _WIN32
-	win_netmap_fd = d->fd;
-	win_netmap_handle = IntToPtr(_get_osfhandle(d->fd));
+	win_insert_fd_record(d->fd);
 #endif
 	if (req)
 		d->req = *req;
@@ -746,8 +852,7 @@ nm_close(struct nm_desc *d)
 	if (d->fd != -1){
 		close(d->fd);
 #ifdef _WIN32		
-		win_netmap_fd = -1;
-		win_netmap_handle = NULL;
+		win_remove_fd_record(d->fd);
 #endif
 	}
 		
