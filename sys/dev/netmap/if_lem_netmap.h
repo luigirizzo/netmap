@@ -645,12 +645,14 @@ lem_ptnetmap_features(struct adapter *adapter)
 static struct netmap_pt_guest_ops lem_ptnetmap_ops = {
 	.nm_ptctl = lem_ptnetmap_ptctl,
 };
+/* XXX: these warning affect the proper kernel compilation
 #elif defined (NIC_PTNETMAP)
 #warning "if_lem supports ptnetmap but netmap does not support it"
 #warning "(configure netmap with ptnetmap support)"
 #elif defined (WITH_PTNETMAP_GUEST)
 #warning "netmap supports ptnetmap but e1000 does not support it"
 #warning "(configure if_lem with ptnetmap support)"
+*/
 #endif /* NIC_PTNETMAP && WITH_PTNETMAP_GUEST */
 
 static void
