@@ -379,6 +379,10 @@ struct win_netmap_fd_list
 	struct win_netmap_fd_list *next;
 };
 
+/* 
+ * list head containing all the netmap opened fd and their 
+ * windows HANDLE counterparts
+ */
 static struct win_netmap_fd_list *win_netmap_fd_list_head;
 
 void
@@ -431,21 +435,6 @@ win_remove_fd_record(int fd)
 	}
 }
 
-int
-win_search_fd_record(int fd)
-{
-	int index = 0;
-	struct win_netmap_fd_list *curr = win_netmap_fd_list_head;
-	while (curr != NULL) {
-		if (fd == curr->win_netmap_fd) {
-			return index;
-		}
-		curr = curr->next;
-		index++;
-	}
-	return -1;
-}
-
 BOOLEAN 
 win_contains_fd_record(int fd)
 {
@@ -476,7 +465,10 @@ win_get_handle_record(int fd)
  * we need to wrap ioctl and mmap, at least for the netmap file descriptors
  */
 
-/* same as ioctl, returns 0 on success and -1 on error */
+/*
+ * use this function only from netmap_user.h internal functions
+ * same as ioctl, returns 0 on success and -1 on error 
+ */
 static int
 win_nm_ioctl_internal(int fd, int32_t ctlCode, void *arg)
 {
@@ -510,10 +502,8 @@ win_nm_ioctl_internal(int fd, int32_t ctlCode, void *arg)
 	default: /* a regular ioctl */
 		return ioctl(fd, ctlCode, arg);
 	}
-	/* XXX_ale: cache somewhere the result of IntToPtr(_get_osfhandle(fd))
-	 * this call alone seems to waste between 46 to 58 ns
-	*/
-	ioctlReturnStatus = DeviceIoControl(win_get_handle_record(fd),  //IntToPtr(_get_osfhandle(fd)),
+
+	ioctlReturnStatus = DeviceIoControl(win_get_handle_record(fd),
 				ctlCode, inParam, szIn,
 				outParam, szOut,
 				&bReturn, NULL);
@@ -522,6 +512,10 @@ win_nm_ioctl_internal(int fd, int32_t ctlCode, void *arg)
 	return ioctlReturnStatus ? 0 : -1;
 }
 
+/* 
+ * this function is what must be called from user-space programs
+ * same as ioctl, returns 0 on success and -1 on error 
+ */
 static int
 win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
 {
