@@ -227,10 +227,12 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
  *
  */
 int
-nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
-	void *addr, u_int len, u_int ring_nr)
+nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
 	int ret;
+	u_int len = a->len;
+	struct ifnet *ifp = a->ifp;
+	struct mbuf *m = a->m;
 
 	/*
 	 * The mbuf should be a cluster from our special pool,
@@ -249,15 +251,15 @@ nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 		len = m->m_ext.ext_size;
 	}
 	if (0) { /* XXX seems to have negligible benefits */
-		m->m_ext.ext_buf = m->m_data = addr;
+		m->m_ext.ext_buf = m->m_data = a->addr;
 	} else {
-		bcopy(addr, m->m_data, len);
+		bcopy(a->addr, m->m_data, len);
 	}
 	m->m_len = m->m_pkthdr.len = len;
 	// inc refcount. All ours, we could skip the atomic
 	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
 	M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
-	m->m_pkthdr.flowid = ring_nr;
+	m->m_pkthdr.flowid = a->ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */
 	ret = NA(ifp)->if_transmit(ifp, m);
 	return ret;

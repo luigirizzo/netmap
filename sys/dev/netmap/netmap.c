@@ -2598,6 +2598,21 @@ netmap_notify(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
+#if 0
+static int
+netmap_notify(struct netmap_adapter *na, u_int n_ring,
+enum txrx tx, int flags)
+{
+	if (tx == NR_TX) {
+		KeSetEvent(notes->TX_EVENT, 0, FALSE);
+	}
+	else
+	{
+		KeSetEvent(notes->RX_EVENT, 0, FALSE);
+	}
+	return 0;
+}
+#endif
 
 /* called by all routines that create netmap_adapters.
  * Attach na to the ifp (if any) and provide defaults

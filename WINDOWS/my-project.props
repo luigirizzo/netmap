@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- common properties for netmap projects -->
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- we have a set of default configurations -->
+
+  <PropertyGroup Label="Globals">
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <MinimumVisualStudioVersion>11.0</MinimumVisualStudioVersion>
+    <!-- our build defaults -->
+    <Configuration>Win8.1 Debug</Configuration>
+    <Platform Condition="'$(Platform)' == ''">Win32</Platform>
+    <RootNamespace>$(MSBuildProjectName)</RootNamespace>
+  </PropertyGroup>
+
+  <!-- customization -->
+
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup />
+
+  <PropertyGroup>
+    <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
+    <IncludePath>$(SolutionDir)\..\sys;$(SolutionDir)\..;$(IncludePath)</IncludePath>
+    <TargetName>$(ProjectName)</TargetName>
+    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\$(ProjectName)-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\$(ProjectName)-tmp\</IntDir>
+  </PropertyGroup>
+
+  <ItemGroup> <!-- Label="WrappedTaskItems" -->
+    <Inf Include="$(ProjectName).inf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FilesToPackage Include="$(TargetPath)" />
+    <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />
+  </ItemGroup>
+
+</Project>

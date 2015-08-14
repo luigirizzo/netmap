@@ -1643,7 +1643,26 @@ void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 int nm_os_catch_rx(struct netmap_generic_adapter *na, int intercept);
 /* XXX why the type/argument name disparity with netmap_catch_rx ? */
 void nm_os_catch_tx(struct netmap_generic_adapter *na, int enable);
-int nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
+
+/*
+ * the generic transmit routine is passed a structure to optionally
+ * build a queue of descriptors, in an OS-specific way.
+ * The payload is at addr, if non-null, and the routine should send or queue
+ * the packet, returning 0 if successful, 1 on failure.
+ *
+ * At the end, if head is non-null, there will be an additional call
+ * to the function with addr = NULL; this should tell the OS-specific
+ * routine to send the queue and free any resources. Failure is ignored.
+ */
+struct nm_os_gen_arg {
+	struct ifnet *ifp;
+	void *m;	/* os-specific mbuf-like object */
+	void *head, *tail; /* tailq, if the OS-specific routine needs to build one */
+	void *addr;	/* payload of current packet */
+	u_int len;	/* packet length */
+	u_int ring_nr;	/* packet length */
+};
+int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
 
