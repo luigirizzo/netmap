@@ -1338,7 +1338,7 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#if !defined(BUSYWAIT) && !defined(_WIN32)
+#if !defined(BUSYWAIT)
 out:
 #endif
 	targ->completed = 1;
