@@ -390,9 +390,9 @@ e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	struct e1000_adapter *adapter = netdev_priv(ifp);
 	struct e1000_hw *hw = &adapter->hw;
 	struct e1000_rx_ring *rxr = &adapter->rx_ring[0];
+	int ret, notify = 0;
 
         IFRATE(adapter->rate_ctx.new.rx_sync++);
-	int ret, notify = 0;
 
 	ret = netmap_pt_guest_rxsync(kring, flags, &notify);
 

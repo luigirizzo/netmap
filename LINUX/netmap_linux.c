@@ -120,7 +120,7 @@ nm_os_csum_fold(rawsum_t cur_sum)
 
 /* on linux we send up one packet at a time */
 void *
-nm_os_send_up(struct net_device *ifp, struct mbuf *m, void *prev)
+nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 {
 	(void)ifp;
 	(void)prev;
@@ -2187,6 +2187,8 @@ module_exit(linux_netmap_fini);
 EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
 #ifdef WITH_PTNETMAP_GUEST
 EXPORT_SYMBOL(netmap_pt_guest_attach);	/* ptnetmap driver attach routines */
+EXPORT_SYMBOL(netmap_pt_guest_rxsync);	/* ptnetmap generic rxsync */
+EXPORT_SYMBOL(netmap_pt_guest_txsync);	/* ptnetmap generic txsync */
 #endif /* WITH_PTNETMAP_GUEST */
 EXPORT_SYMBOL(netmap_detach);		/* driver detach routines */
 EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */
