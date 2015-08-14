@@ -58,8 +58,13 @@
 #define WITH_PTNETMAP_HOST
 #endif
 
-#else /* not linux */
+#elif defined (_WIN32)
+#define WITH_VALE	// comment out to disable VALE support
+#define WITH_PIPES
+#define WITH_MONITOR
+#define WITH_GENERIC
 
+#else	/* neither linux nor windows */
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
@@ -86,9 +91,9 @@
 #define NM_MTX_ASSERT(m)	sx_assert(&(m), SA_XLOCKED)
 
 #define	NM_SELINFO_T	struct nm_selinfo
+#define NM_SELRECORD_T	struct thread
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
 #define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
-#define	NM_SEND_UP(ifp, m)	((NA(ifp))->if_input)(ifp, m)
 
 #define NM_ATOMIC_T	volatile int	// XXX ?
 /* atomic operations */
@@ -138,11 +143,6 @@ struct hrtimer {
 #define	NM_SELINFO_T	wait_queue_head_t
 #define	MBUF_LEN(m)	((m)->len)
 #define	MBUF_IFP(m)	((m)->dev)
-#define	NM_SEND_UP(ifp, m)  \
-                        do { \
-                            m->priority = NM_MAGIC_PRIORITY_RX; \
-                            netif_rx(m); \
-                        } while (0)
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
@@ -165,13 +165,59 @@ struct hrtimer {
 #define	NM_LOCK_T	IOLock *
 #define	NM_SELINFO_T	struct selinfo
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
-#define	NM_SEND_UP(ifp, m)	((ifp)->if_input)(ifp, m)
+
+#elif defined (_WIN32)
+#include "../../../WINDOWS/win_glue.h"
+#define NM_SELRECORD_T		IO_STACK_LOCATION
+#define NM_SELINFO_T		KEVENT			//KQUEUE
+#define NM_LOCK_T		win_spinlock_t	// see win_glue.h
+#define NM_MTX_T		KGUARDED_MUTEX	/* OS-specific mutex (sleepable) */
+
+#define NM_MTX_INIT(m)		KeInitializeGuardedMutex(&m);
+#define NM_MTX_DESTROY(m)	do { (void)(m); } while (0)
+#define NM_MTX_LOCK(m)		KeAcquireGuardedMutex(&(m))
+#define NM_MTX_UNLOCK(m)	KeReleaseGuardedMutex(&(m))
+#define NM_MTX_ASSERT(m)	assert(&m.Count>0)
+
+//These linknames are for the NDIS driver
+#define NETMAP_NDIS_LINKNAME_STRING             L"\\DosDevices\\NMAPNDIS"
+#define NETMAP_NDIS_NTDEVICE_STRING             L"\\Device\\NMAPNDIS"
+
+//Definition of internal driver-to-driver ioctl codes
+#define NETMAP_KERNEL_XCHANGE_POINTERS		_IO('i', 180)
+#define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL	_IO_direct('i', 195)
+
+//Empty data structures are not permitted by MSVC compiler
+//XXX_ale, try to solve this problem
+struct net_device_ops{
+	char data[1];
+};
+typedef struct ethtool_ops{
+	char data[1];
+};
+typedef struct hrtimer{
+	char data[1];
+};
+
+/* MSVC does not have likely/unlikely support */
+#ifdef _MSC_VER
+#define likely(x)	(x)
+#define unlikely(x)	(x)
+#else
+#define likely(x)	__builtin_expect((long)!!(x), 1L)
+#define unlikely(x)	__builtin_expect((long)!!(x), 0L)
+#endif //_MSC_VER
 
 #else
 
 #error unsupported platform
 
 #endif /* end - platform-specific code */
+
+#ifndef _WIN32 /* support for emulated sysctl */
+#define SYSBEGIN(x)
+#define SYSEND
+#endif /* _WIN32 */
 
 #define	NMG_LOCK_T		NM_MTX_T
 #define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock)
@@ -210,6 +256,15 @@ struct netmap_priv_d;
 const char *nm_dump_buf(char *p, int len, int lim, char *dst);
 
 void nm_os_selwakeup(NM_SELINFO_T *si);
+void nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si);
+
+/* passes a packet up to the host stack.
+ * If the packet is sent (or dropped) immediately it returns NULL,
+ * otherwise it links the packet to prev and returns m.
+ * In this case, a final call with m=NULL and prev != NULL will send up
+ * the entire chain to the host stack.
+ */
+void *nm_os_send_up(struct ifnet *, struct mbuf *m, struct mbuf *prev);
 
 #include "netmap_mbq.h"
 
@@ -405,7 +460,12 @@ struct netmap_kring {
 	uint32_t mon_tail;  /* last seen slot on rx */
 	uint32_t mon_pos;   /* index of this ring in the monitored ring array */
 #endif
-} __attribute__((__aligned__(64)));
+}
+#ifdef _WIN32
+__declspec(align(64));
+#else
+__attribute__((__aligned__(64)));
+#endif
 
 
 /* return the next index, with wraparound */
@@ -1005,9 +1065,14 @@ nm_set_native_flags(struct netmap_adapter *na)
 #ifdef IFCAP_NETMAP /* or FreeBSD ? */
 	ifp->if_capenable |= IFCAP_NETMAP;
 #endif
-#ifdef __FreeBSD__
+#if defined (__FreeBSD__)
 	na->if_transmit = ifp->if_transmit;
 	ifp->if_transmit = netmap_transmit;
+#elif defined (_WIN32)
+	(void)ifp; /* prevent a warning */
+	//XXX_ale can we just comment those?
+	//na->if_transmit = ifp->if_transmit;
+	//ifp->if_transmit = netmap_transmit;
 #else
 	na->if_transmit = (void *)ifp->netdev_ops;
 	ifp->netdev_ops = &((struct netmap_hw_adapter *)na)->nm_ndo;
@@ -1022,8 +1087,12 @@ nm_clear_native_flags(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__)
 	ifp->if_transmit = na->if_transmit;
+#elif defined(_WIN32)
+	(void)ifp; /* prevent a warning */
+	//XXX_ale can we just comment those?
+	//ifp->if_transmit = na->if_transmit;
 #else
 	ifp->netdev_ops = (void *)na->if_transmit;
 	ifp->ethtool_ops = ((struct netmap_hw_adapter*)na)->save_ethtool;
@@ -1212,14 +1281,14 @@ void netmap_bns_getbridges(struct nm_bridge **, u_int *);
 #endif
 
 /* Various prototypes */
-int netmap_poll(struct cdev *dev, int events, struct thread *td);
+int netmap_poll(struct netmap_priv_d *, int events, NM_SELRECORD_T *td);
 int netmap_init(void);
 void netmap_fini(void);
 int netmap_get_memory(struct netmap_priv_d* p);
 void netmap_dtor(void *data);
 int netmap_dtor_locked(struct netmap_priv_d *priv);
 
-int netmap_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread *td);
+int netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *);
 
 /* netmap_adapter creation/destruction */
 
@@ -1276,6 +1345,8 @@ enum {                                  /* verbose flags */
 };
 
 extern int netmap_txsync_retry;
+extern int netmap_adaptive_io;
+extern int netmap_flags;
 extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
 extern int netmap_generic_rings;
@@ -1318,7 +1389,7 @@ extern int netmap_use_count;
 
 #endif	/* linux */
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__)
 
 /* Assigns the device IOMMU domain to an allocator.
  * Returns -ENOMEM in case the domain is different */
@@ -1361,6 +1432,8 @@ netmap_reload_map(struct netmap_adapter *na,
 		    netmap_dmamap_cb, NULL, BUS_DMA_NOWAIT);
 	}
 }
+
+#elif defined(_WIN32)
 
 #else /* linux */
 
@@ -1504,7 +1577,11 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 	struct lut_entry *lut = na->na_lut.lut;
 	void *ret = (i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr;
 
+#ifndef _WIN32
 	*pp = (i >= na->na_lut.objtotal) ? lut[0].paddr : lut[i].paddr;
+#else
+	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)lut[0].paddr.QuadPart : (uint64_t)lut[i].paddr.QuadPart;
+#endif
 	return ret;
 }
 
@@ -1529,7 +1606,7 @@ struct netmap_priv_d {
 
 	struct netmap_adapter	*np_na;
 	uint32_t	np_flags;	/* from the ioctl */
-	u_int		np_qfirst[NR_TXRX], 
+	u_int		np_qfirst[NR_TXRX],
 			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
 	uint16_t	np_txpoll;	/* XXX and also np_rxpoll ? */
 
@@ -1566,7 +1643,26 @@ void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 int nm_os_catch_rx(struct netmap_generic_adapter *na, int intercept);
 /* XXX why the type/argument name disparity with netmap_catch_rx ? */
 void nm_os_catch_tx(struct netmap_generic_adapter *na, int enable);
-int nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m, void *addr, u_int len, u_int ring_nr);
+
+/*
+ * the generic transmit routine is passed a structure to optionally
+ * build a queue of descriptors, in an OS-specific way.
+ * The payload is at addr, if non-null, and the routine should send or queue
+ * the packet, returning 0 if successful, 1 on failure.
+ *
+ * At the end, if head is non-null, there will be an additional call
+ * to the function with addr = NULL; this should tell the OS-specific
+ * routine to send the queue and free any resources. Failure is ignored.
+ */
+struct nm_os_gen_arg {
+	struct ifnet *ifp;
+	void *m;	/* os-specific mbuf-like object */
+	void *head, *tail; /* tailq, if the OS-specific routine needs to build one */
+	void *addr;	/* payload of current packet */
+	u_int len;	/* packet length */
+	u_int ring_nr;	/* packet length */
+};
+int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
 

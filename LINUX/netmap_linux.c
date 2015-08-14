@@ -118,6 +118,16 @@ nm_os_csum_fold(rawsum_t cur_sum)
 	return csum_fold(cur_sum);
 }
 
+/* on linux we send up one packet at a time */
+void *
+nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
+{
+	(void)ifp;
+	(void)prev;
+	m->priority = NM_MAGIC_PRIORITY_RX; /* do not reinject to netmap */
+	netif_rx(m);
+	return NULL;
+}
 
 #ifdef WITH_GENERIC
 /* ####################### MITIGATION SUPPORT ###################### */
@@ -334,10 +344,11 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
    and -1 on error (which may be packet drops or other errors). */
 int
-nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
-	void *addr, u_int len, u_int ring_nr)
+nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
     netdev_tx_t ret;
+    struct sk_buff *m = a->m;
+    u_int len = a->len;
 
     /* Empty the sk_buff. */
     if (unlikely(skb_headroom(m)))
@@ -345,13 +356,13 @@ nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
     skb_trim(m, 0);
 
     /* TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
-    skb_copy_to_linear_data(m, addr, len); // skb_store_bits(m, 0, addr, len);
+    skb_copy_to_linear_data(m, a->addr, len); // skb_store_bits(m, 0, addr, len);
     skb_put(m, len);
     NM_ATOMIC_INC(&m->users);
-    m->dev = ifp;
+    m->dev = a->ifp;
     /* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
     m->priority = NM_MAGIC_PRIORITY_TX;
-    skb_set_queue_mapping(m, ring_nr);
+    skb_set_queue_mapping(m, a->ring_nr);
 
     ret = dev_queue_xmit(m);
 
@@ -457,7 +468,10 @@ void if_rele(struct net_device *ifp)
 	dev_put(ifp);
 }
 
-
+struct nm_linux_selrecord_t {
+	struct file *file;
+	struct poll_table_struct *pwait;
+};
 
 /*
  * Remap linux arguments into the FreeBSD call.
@@ -477,7 +491,12 @@ linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 #else
 	int events = POLLIN | POLLOUT; /* XXX maybe... */
 #endif /* PWAIT_KEY */
-	return netmap_poll((void *)pwait, events, (void *)file);
+	struct nm_linux_selrecord_t sr = {
+		.file = file,
+		.pwait = pwait
+	};
+	struct netmap_priv_d *priv = file->private_data;
+	return netmap_poll(priv, events, &sr);
 }
 
 static int
@@ -597,6 +616,7 @@ static long
 linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 #endif
 {
+	struct netmap_priv_d *priv = file->private_data;
 	int ret = 0;
 	union {
 		struct nm_ifreq ifr;
@@ -622,7 +642,7 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 		if (copy_from_user(&arg, (void *)data, argsize) != 0)
 			return -EFAULT;
 	}
-	ret = netmap_ioctl(NULL, cmd, (caddr_t)&arg, 0, (void *)file);
+	ret = netmap_ioctl(priv, cmd, (caddr_t)&arg, NULL);
 	if (data && copy_to_user((void*)data, &arg, argsize) != 0)
 		return -EFAULT;
 	return -ret;
@@ -2154,6 +2174,12 @@ nm_os_selwakeup(NM_SELINFO_T *si)
 	wake_up_interruptible(si);
 }
 
+void
+nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si)
+{
+	poll_wait(sr->file, si, sr->pwait);
+}
+
 module_init(linux_netmap_init);
 module_exit(linux_netmap_fini);
 
@@ -2161,6 +2187,8 @@ module_exit(linux_netmap_fini);
 EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
 #ifdef WITH_PTNETMAP_GUEST
 EXPORT_SYMBOL(netmap_pt_guest_attach);	/* ptnetmap driver attach routines */
+EXPORT_SYMBOL(netmap_pt_guest_rxsync);	/* ptnetmap generic rxsync */
+EXPORT_SYMBOL(netmap_pt_guest_txsync);	/* ptnetmap generic txsync */
 #endif /* WITH_PTNETMAP_GUEST */
 EXPORT_SYMBOL(netmap_detach);		/* driver detach routines */
 EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */

@@ -30,6 +30,8 @@
 
 #ifdef linux
 #include "bsd_glue.h"
+#elif defined (_WIN32)
+#include "win_glue.h"
 #else   /* __FreeBSD__ */
 #include <sys/param.h>
 #include <sys/lock.h>

@@ -126,9 +126,11 @@ netmap_default_mbuf_destructor(struct mbuf *m)
 }
 
 static inline struct mbuf *
-netmap_get_mbuf(int len)
+nm_os_get_mbuf(struct ifnet *ifp, int len)
 {
 	struct mbuf *m;
+
+	(void)ifp;
 	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR | M_NOFREE);
 	if (m) {
 		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
@@ -139,7 +141,15 @@ netmap_get_mbuf(int len)
 	return m;
 }
 
+#elif defined _WIN32
 
+#include "win_glue.h"
+
+#define rtnl_lock()	ND("rtnl_lock called")
+#define rtnl_unlock()	ND("rtnl_unlock called")
+#define MBUF_TXQ(m) 	0//((m)->m_pkthdr.flowid)
+#define MBUF_RXQ(m)	    0//((m)->m_pkthdr.flowid)
+#define smp_mb()
 
 #else /* linux */
 
@@ -272,7 +282,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			nm_os_mitigation_init(&gna->mit[r], r, na);
 
 		/* Initialize the rx queue, as generic_rx_handler() can
-		 * be called as soon as netmap_catch_rx() returns.
+		 * be called as soon as nm_os_catch_rx() returns.
 		 */
 		for (r=0; r<na->num_rx_rings; r++) {
 			mbq_safe_init(&na->rx_rings[r].rx_queue);
@@ -294,7 +304,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			for (i=0; i<na->num_tx_desc; i++)
 				na->tx_rings[r].tx_pool[i] = NULL;
 			for (i=0; i<na->num_tx_desc; i++) {
-				m = netmap_get_mbuf(NETMAP_BUF_SIZE(na));
+				m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
 				if (!m) {
 					D("tx_pool[%d] allocation failed", i);
 					error = ENOMEM;
@@ -440,7 +450,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring)
 
 		if (unlikely(m == NULL)) {
 			/* this is done, try to replenish the entry */
-			tx_pool[nm_i] = m = netmap_get_mbuf(NETMAP_BUF_SIZE(kring->na));
+			tx_pool[nm_i] = m = nm_os_get_mbuf(kring->na->ifp, NETMAP_BUF_SIZE(kring->na));
 			if (unlikely(m == NULL)) {
 				D("mbuf allocation failed, XXX error");
 				// XXX how do we proceed ? break ?
@@ -568,11 +578,16 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 	 */
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
+		struct nm_os_gen_arg a;
+
+		a.ifp = ifp;
+		a.ring_nr = ring_nr;
+		a.head = a.tail = NULL;
+
 		while (nm_i != head) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			void *addr = NMB(na, slot);
-
 			/* device-specific */
 			struct mbuf *m;
 			int tx_ret;
@@ -583,12 +598,15 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			m = kring->tx_pool[nm_i];
 			if (unlikely(!m)) {
 				RD(5, "This should never happen");
-				kring->tx_pool[nm_i] = m = netmap_get_mbuf(NETMAP_BUF_SIZE(na));
+				kring->tx_pool[nm_i] = m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
 				if (unlikely(m == NULL)) {
 					D("mbuf allocation failed");
 					break;
 				}
 			}
+			a.m = m;
+			a.addr = addr;
+			a.len = len;
 			/* XXX we should ask notifications when NS_REPORT is set,
 			 * or roughly every half frame. We can optimize this
 			 * by lazily requesting notifications only when a
@@ -596,7 +614,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * break on failures and set notifications when
 			 * ring->cur == ring->tail || nm_i != cur
 			 */
-			tx_ret = nm_os_generic_xmit_frame(ifp, m, addr, len, ring_nr);
+			tx_ret = nm_os_generic_xmit_frame(&a);
 			if (unlikely(tx_ret)) {
 				ND(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
 						tx_ret, nm_i, head, kring->nr_hwtail);
@@ -625,7 +643,10 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			nm_i = nm_next(nm_i, lim);
 			IFRATE(rate_ctx.new.txpkt ++);
 		}
-
+		if (a.head != NULL) {
+			a.addr = NULL;
+			nm_os_generic_xmit_frame(&a);
+		}
 		/* Update hwcur to the next slot to transmit. */
 		kring->nr_hwcur = nm_i; /* not head, we could break early */
 	}
@@ -650,7 +671,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 
 
 /*
- * This handler is registered (through netmap_catch_rx())
+ * This handler is registered (through nm_os_catch_rx())
  * within the attached network interface
  * in the RX subsystem, so that every mbuf passed up by
  * the driver can be stolen to the network stack.
@@ -784,6 +805,9 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 	struct netmap_adapter *prev_na = gna->prev;
 
+#ifdef _WIN32
+	win32_clear_lookaside_buffers(ifp);
+#endif
 	if (prev_na != NULL) {
 		D("Released generic NA %p", gna);
 		if_rele(ifp);
@@ -860,6 +884,8 @@ generic_netmap_attach(struct ifnet *ifp)
 	if (retval) {
 		free(gna, M_DEVBUF);
 	}
-
+#ifdef _WIN32
+	win32_init_lookaside_buffers(ifp);
+#endif
 	return retval;
 }

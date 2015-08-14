@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo. All rights reserved.
- * Copyright (C) 2013-2014 Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2013-2015 Universita` di Pisa. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -47,7 +47,9 @@
 #include <unistd.h>	// sysconf()
 #include <sys/poll.h>
 #include <arpa/inet.h>	/* ntohs */
+#ifndef _WIN32
 #include <sys/sysctl.h>	/* sysctl */
+#endif
 #include <ifaddrs.h>	/* getifaddrs */
 #include <net/ethernet.h>
 #include <netinet/in.h>
@@ -59,6 +61,67 @@
 #ifndef NO_PCAP
 #include <pcap/pcap.h>
 #endif
+
+#ifdef _WIN32
+#define cpuset_t        DWORD_PTR   //uint64_t
+static inline void CPU_ZERO(cpuset_t *p)
+{
+        *p = 0;
+}
+
+static inline void CPU_SET(uint32_t i, cpuset_t *p)
+{
+        *p |= 1<< (i & 0x3f);
+}
+
+#define pthread_setaffinity_np(a, b, c) SetThreadAffinityMask(GetCurrentThread(), *c)    //((void)a, 0)
+#define TAP_CLONEDEV	"/dev/tap"
+#define AF_LINK	18	//defined in winsocks.h
+#define CLOCK_REALTIME_PRECISE CLOCK_REALTIME
+#include <net/if_dl.h>
+
+/*
+ * Convert an ASCII representation of an ethernet address to
+ * binary form.
+ */
+struct ether_addr *
+ether_aton(const char *a)
+{
+	int i;
+	static struct ether_addr o;
+	unsigned int o0, o1, o2, o3, o4, o5;
+
+	i = sscanf(a, "%x:%x:%x:%x:%x:%x", &o0, &o1, &o2, &o3, &o4, &o5);
+
+	if (i != 6)
+		return (NULL);
+
+	o.octet[0]=o0;
+	o.octet[1]=o1;
+	o.octet[2]=o2;
+	o.octet[3]=o3;
+	o.octet[4]=o4;
+	o.octet[5]=o5;
+
+	return ((struct ether_addr *)&o);
+}
+
+/*
+ * Convert a binary representation of an ethernet address to
+ * an ASCII string.
+ */
+char *
+ether_ntoa(const struct ether_addr *n)
+{
+	int i;
+	static char a[18];
+
+	i = sprintf(a, "%02x:%02x:%02x:%02x:%02x:%02x",
+	    n->octet[0], n->octet[1], n->octet[2],
+	    n->octet[3], n->octet[4], n->octet[5]);
+	return (i < 17 ? NULL : (char *)&a);
+}
+#endif /* _WIN32 */
 
 #ifdef linux
 
@@ -524,10 +587,11 @@ wrapsum(u_int32_t sum)
  * Look for consecutive ascii representations of the size of the packet.
  */
 static void
-dump_payload(char *p, int len, struct netmap_ring *ring, int cur)
+dump_payload(const char *_p, int len, struct netmap_ring *ring, int cur)
 {
 	char buf[128];
 	int i, j, i0;
+	const unsigned char *p = (const unsigned char *)_p;
 
 	/* get the length in ASCII of the length of the packet. */
 
@@ -876,7 +940,7 @@ pinger_body(void *data)
 			for (kmin = 0; kmin < 64; kmin ++)
 				if (buckets[kmin])
 					break;
-			for (k = 63; k >= kmin; k--) 
+			for (k = 63; k >= kmin; k--)
 				if (buckets[k])
 					break;
 			buf[0] = '\0';
@@ -1119,7 +1183,7 @@ sender_body(void *data)
 	int tosend = 0;
 	int frags = targ->g->frags;
 
-        nifp = targ->nmd->nifp;
+	nifp = targ->nmd->nifp;
 	while (!targ->cancel && (n == 0 || sent < n)) {
 
 		if (rate_limit && tosend <= 0) {
@@ -1132,8 +1196,8 @@ sender_body(void *data)
 		 * wait for available room in the send queue(s)
 		 */
 #ifdef BUSYWAIT
-		ioctl(pfd.fd, NIOCTXSYNC);
-#else
+		ioctl(pfd.fd, NIOCTXSYNC, NULL);
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
@@ -1146,7 +1210,7 @@ sender_body(void *data)
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
-#endif
+#endif /* !BUSYWAIT */
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1298,13 +1362,13 @@ receiver_body(void *data)
     } else {
 	int dump = targ->g->options & OPT_DUMP;
 
-        nifp = targ->nmd->nifp;
+	nifp = targ->nmd->nifp;
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
 #ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
-#else
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -1315,11 +1379,10 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
-#endif
+#endif /* !BUSYWAIT */
 
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
-			
 
 			rxring = NETMAP_RXRING(nifp, i);
 			if (nm_ring_empty(rxring))
@@ -1336,7 +1399,7 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#ifndef BUSYWAIT
+#if !defined(BUSYWAIT)
 out:
 #endif
 	targ->completed = 1;
@@ -1975,10 +2038,10 @@ D("running on %d cpus (have %d)", g.cpus, i);
 	g.main_fd = g.nmd->fd;
 	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
-	/* get num of queues in tx or rx */ 
+	/* get num of queues in tx or rx */
 	if (g.td_body == sender_body)
 		devqueues = g.nmd->req.nr_tx_rings;
-	else 
+	else
 		devqueues = g.nmd->req.nr_rx_rings;
 
 	/* validate provided nthreads. */

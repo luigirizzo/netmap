@@ -150,6 +150,14 @@ nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 #endif
 }
 
+/* on FreeBSD we send up one packet at a time */
+void *
+nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
+{
+
+	NA(ifp)->if_input(ifp, m);
+	return NULL;
+}
 
 /*
  * Intercept the rx routine in the standard device driver.
@@ -219,10 +227,12 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
  *
  */
 int
-nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
-	void *addr, u_int len, u_int ring_nr)
+nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
 	int ret;
+	u_int len = a->len;
+	struct ifnet *ifp = a->ifp;
+	struct mbuf *m = a->m;
 
 	/*
 	 * The mbuf should be a cluster from our special pool,
@@ -241,15 +251,15 @@ nm_os_generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 		len = m->m_ext.ext_size;
 	}
 	if (0) { /* XXX seems to have negligible benefits */
-		m->m_ext.ext_buf = m->m_data = addr;
+		m->m_ext.ext_buf = m->m_data = a->addr;
 	} else {
-		bcopy(addr, m->m_data, len);
+		bcopy(a->addr, m->m_data, len);
 	}
 	m->m_len = m->m_pkthdr.len = len;
 	// inc refcount. All ours, we could skip the atomic
 	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
 	M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
-	m->m_pkthdr.flowid = ring_nr;
+	m->m_pkthdr.flowid = a->ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */
 	ret = NA(ifp)->if_transmit(ifp, m);
 	return ret;
@@ -496,20 +506,23 @@ static driver_t ptn_memdev_driver = {
 	PTN_MEMDEV_NAME, ptn_memdev_methods, sizeof(struct ptnetmap_memdev),
 };
 
-devclass_t ptnetmap_devclass;
+static devclass_t ptnetmap_devclass;
 DRIVER_MODULE(netmap, pci, ptn_memdev_driver, ptnetmap_devclass, 0, 0);
 
 MODULE_DEPEND(netmap, pci, 1, 1, 1);
 
 /*
  * I/O port read/write wrappers.
+ * Some are not used, so we keep them commented out until needed
  */
-#define ptn_ioread8(ptn_dev, reg)		bus_read_1((ptn_dev)->pci_io, (reg))
 #define ptn_ioread16(ptn_dev, reg)		bus_read_2((ptn_dev)->pci_io, (reg))
 #define ptn_ioread32(ptn_dev, reg)		bus_read_4((ptn_dev)->pci_io, (reg))
+#if 0
+#define ptn_ioread8(ptn_dev, reg)		bus_read_1((ptn_dev)->pci_io, (reg))
 #define ptn_iowrite8(ptn_dev, reg, val)		bus_write_1((ptn_dev)->pci_io, (reg), (val))
 #define ptn_iowrite16(ptn_dev, reg, val)	bus_write_2((ptn_dev)->pci_io, (reg), (val))
 #define ptn_iowrite32(ptn_dev, reg, val)	bus_write_4((ptn_dev)->pci_io, (reg), (val))
+#endif /* unused */
 
 /*
  * map host netmap memory through PCI-BAR in the guest OS
@@ -854,7 +867,7 @@ err_unlock:
  * the device (/dev/netmap) so we cannot do anything useful.
  * To track close() on individual file descriptors we pass netmap_dtor() to
  * devfs_set_cdevpriv() on open(). The FreeBSD kernel will call the destructor
- * when the last fd pointing to the device is closed. 
+ * when the last fd pointing to the device is closed.
  *
  * Note that FreeBSD does not even munmap() on close() so we also have
  * to track mmap() ourselves, and postpone the call to
@@ -1170,6 +1183,12 @@ nm_os_selwakeup(struct nm_selinfo *si)
 	KNOTE_UNLOCKED(&si->si.si_note, 0x100 /* notification */);
 }
 
+void
+nm_os_selrecord(struct thread *td, struct nm_selinfo *si)
+{
+	selrecord(td, &si->si);
+}
+
 static void
 netmap_knrdetach(struct knote *kn)
 {
@@ -1215,7 +1234,7 @@ netmap_knrw(struct knote *kn, long hint, int events)
 		RD(5, "curthread changed %p %p", curthread, priv->np_td);
 		return 1;
 	} else {
-		revents = netmap_poll((void *)priv, events, curthread);
+		revents = netmap_poll(priv, events, NULL);
 		return (events & revents) ? 1 : 0;
 	}
 }
@@ -1288,13 +1307,47 @@ netmap_kqfilter(struct cdev *dev, struct knote *kn)
 	return 0;
 }
 
+static int
+freebsd_netmap_poll(struct cdev *cdevi __unused, int events, struct thread *td)
+{
+	struct netmap_priv_d *priv;
+	if (devfs_get_cdevpriv((void **)&priv)) {
+		return POLLERR;
+	}
+	return netmap_poll(priv, events, td);
+}
+
+static int
+freebsd_netmap_ioctl(struct cdev *dev __unused, u_long cmd, caddr_t data,
+        int ffla __unused, struct thread *td)
+{
+	int error;
+	struct netmap_priv_d *priv;
+
+	CURVNET_SET(TD_TO_VNET(rd));
+	error = devfs_get_cdevpriv((void **)&priv);
+	if (error) {
+		/* XXX ENOENT should be impossible, since the priv
+		 * is now created in the open */
+		if (error == ENOENT)
+			error = ENXIO;
+		goto out;
+	}
+	error = netmap_ioctl(priv, cmd, data, td);
+out:
+	CURVNET_RESTORE();
+
+	return error;
+}
+
+extern struct cdevsw netmap_cdevsw; /* XXX used in netmap.c, should go elsewhere */
 struct cdevsw netmap_cdevsw = {
 	.d_version = D_VERSION,
 	.d_name = "netmap",
 	.d_open = netmap_open,
 	.d_mmap_single = netmap_mmap_single,
-	.d_ioctl = netmap_ioctl,
-	.d_poll = netmap_poll,
+	.d_ioctl = freebsd_netmap_ioctl,
+	.d_poll = freebsd_netmap_poll,
 	.d_kqfilter = netmap_kqfilter,
 	.d_close = netmap_close,
 };

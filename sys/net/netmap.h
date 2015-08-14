@@ -277,7 +277,11 @@ struct netmap_ring {
 	struct timeval	ts;		/* (k) time of last *sync() */
 
 	/* opaque room for a mutex or similar object */
-	uint8_t	 __attribute__((__aligned__(NM_CACHE_ALIGN))) em[128];
+#if !defined(_WIN32) || defined(__CYGWIN__)
+	uint8_t	__attribute__((__aligned__(NM_CACHE_ALIGN))) sem[128];
+#else
+	uint8_t	__declspec(align(NM_CACHE_ALIGN)) sem[128];
+#endif
 
 	/* the slots follow. This struct has variable size */
 	struct netmap_slot slot[0];	/* array of slots. */
@@ -526,6 +530,49 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 /* request ptnetmap host support */
 #define NR_PASSTHROUGH_HOST	NR_PTNETMAP_HOST /* deprecated */
 #define NR_PTNETMAP_HOST	0x1000
+
+
+/*
+ * Windows does not have _IOWR(). _IO(), _IOW() and _IOR() are defined
+ * in ws2def.h but not sure if they are in the form we need.
+ * XXX so we redefine them
+ * in a convenient way to use for DeviceIoControl signatures
+ */
+#ifdef _WIN32
+#undef _IO	// ws2def.h
+#define _WIN_NM_IOCTL_TYPE 40000
+#define _IO(_c, _n)	CTL_CODE(_WIN_NM_IOCTL_TYPE, ((_n) + 0x800) , \
+		METHOD_BUFFERED, FILE_ANY_ACCESS  )
+#define _IO_direct(_c, _n)	CTL_CODE(_WIN_NM_IOCTL_TYPE, ((_n) + 0x800) , \
+		METHOD_OUT_DIRECT, FILE_ANY_ACCESS  )
+
+#define _IOWR(_c, _n, _s)	_IO(_c, _n)
+
+/* We havesome internal sysctl in addition to the externally visible ones */
+#define NETMAP_MMAP _IO_direct('i', 160)	// note METHOD_OUT_DIRECT
+#define NETMAP_POLL _IO('i', 162)
+
+/* and also two setsockopt for sysctl emulation */
+#define NETMAP_SETSOCKOPT _IO('i', 140)
+#define NETMAP_GETSOCKOPT _IO('i', 141)
+
+
+//These linknames are for the Netmap Core Driver
+#define NETMAP_NT_DEVICE_NAME			L"\\Device\\NETMAP"
+#define NETMAP_DOS_DEVICE_NAME			L"\\DosDevices\\netmap"
+
+//Definition of a structure used to pass a virtual address within an IOCTL
+typedef struct _MEMORY_ENTRY {
+	PVOID       pUsermodeVirtualAddress;
+} MEMORY_ENTRY, *PMEMORY_ENTRY;
+
+typedef struct _POLL_REQUEST_DATA {
+	int events;
+	int timeout;
+	int revents;
+} POLL_REQUEST_DATA;
+
+#endif /* _WIN32 */
 
 /*
  * FreeBSD uses the size value embedded in the _IOWR to determine

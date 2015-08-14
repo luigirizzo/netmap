@@ -50,16 +50,25 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 241723 2012-10-19 09:41:45Z gle
 #include <machine/bus.h>	/* bus_dmamap_* */
 
 /* M_NETMAP only used in here */
+MALLOC_DECLARE(M_NETMAP);
 MALLOC_DEFINE(M_NETMAP, "netmap", "Network memory map");
 
 #endif /* __FreeBSD__ */
+
+#ifdef _WIN32
+#include <win_glue.h>
+#endif
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include "netmap_virt.h"
 #include "netmap_mem2.h"
 
-#define NETMAP_BUF_MAX_NUM	20*4096*2	/* large machine */
+#ifdef _WIN32_USE_SMALL_GENERIC_DEVICES_MEMORY
+#define NETMAP_BUF_MAX_NUM  8*4096      /* if too big takes too much time to allocate */
+#else
+#define NETMAP_BUF_MAX_NUM 20*4096*2	/* large machine */
+#endif
 
 #define NETMAP_POOL_MAX_NAMSZ	32
 
@@ -144,7 +153,11 @@ typedef uint16_t nm_memid_t;
  * Used in ptnetmap.
  */
 struct netmap_mem_shared_info {
-        struct netmap_if up;
+#ifndef _WIN32
+        struct netmap_if up;	/* ends with a 0-sized array, which VSC does not like */
+#else /* !_WIN32 */
+	char up[sizeof(struct netmap_if)];
+#endif /* !_WIN32 */
         uint64_t features;
 #define NMS_FEAT_BUF_POOL          0x0001
 #define NMS_FEAT_MEMSIZE           0x0002
@@ -157,7 +170,7 @@ struct netmap_mem_shared_info {
 
 #define NMS_NAME        "nms_info"
 #define NMS_VERSION     1
-const struct netmap_if nms_if_blueprint = {
+static const struct netmap_if nms_if_blueprint = {
     .ni_name = NMS_NAME,
     .ni_version = NMS_VERSION,
     .ni_tx_rings = 0,
@@ -315,7 +328,7 @@ netmap_mem2_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 	return 0;
 }
 
-struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
+static struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
 	[NETMAP_IF_POOL] = {
 		.size = 1024,
 		.num  = 100,
@@ -330,7 +343,7 @@ struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
 	},
 };
 
-struct netmap_obj_params netmap_min_priv_params[NETMAP_POOLS_NR] = {
+static struct netmap_obj_params netmap_min_priv_params[NETMAP_POOLS_NR] = {
 	[NETMAP_IF_POOL] = {
 		.size = 1024,
 		.num  = 2,
@@ -387,11 +400,12 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 };
 
 
-struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
+static struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
 
 /* blueprint for the private memory allocators */
 extern struct netmap_mem_ops netmap_mem_private_ops; /* forward */
-const struct netmap_mem_d nm_blueprint = {
+/* XXX clang is not happy about using name as a print format */
+static const struct netmap_mem_d nm_blueprint = {
 	.pools = {
 		[NETMAP_IF_POOL] = {
 			.name 	= "%s_if",
@@ -427,6 +441,8 @@ const struct netmap_mem_d nm_blueprint = {
 
 
 #define DECLARE_SYSCTLS(id, name) \
+	SYSBEGIN(mem2_ ## name); \
+	SYSCTL_DECL(_dev_netmap); /* leave it here, easier for porting */ \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_size, \
 	    CTLFLAG_RW, &netmap_params[id].size, 0, "Requested size of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_size, \
@@ -440,9 +456,9 @@ const struct netmap_mem_d nm_blueprint = {
 	    "Default size of private netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, priv_##name##_num, \
 	    CTLFLAG_RW, &netmap_min_priv_params[id].num, 0, \
-	    "Default number of private netmap " STRINGIFY(name) "s")
+	    "Default number of private netmap " STRINGIFY(name) "s");	\
+	SYSEND
 
-SYSCTL_DECL(_dev_netmap);
 DECLARE_SYSCTLS(NETMAP_IF_POOL, if);
 DECLARE_SYSCTLS(NETMAP_RING_POOL, ring);
 DECLARE_SYSCTLS(NETMAP_BUF_POOL, buf);
@@ -544,8 +560,13 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 		if (offset >= p[i].memtotal)
 			continue;
 		// now lookup the cluster's address
+#ifndef _WIN32
 		pa = vtophys(p[i].lut[offset / p[i]._objsize].vaddr) +
 			offset % p[i]._objsize;
+#else
+		pa = vtophys(p[i].lut[offset / p[i]._objsize].vaddr);
+		pa.QuadPart += offset % p[i]._objsize;
+#endif
 		NMA_UNLOCK(nmd);
 		return pa;
 	}
@@ -558,7 +579,110 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 			+ p[NETMAP_RING_POOL].memtotal
 			+ p[NETMAP_BUF_POOL].memtotal);
 	NMA_UNLOCK(nmd);
+#ifndef _WIN32
 	return 0;	// XXX bad address
+#else
+	vm_paddr_t res;
+	res.QuadPart = 0;
+	return res;
+#endif
+}
+
+#ifdef _WIN32
+
+/*
+ * win32_build_virtual_memory_for_userspace
+ *
+ * This function get all the object making part of the pools and maps
+ * a contiguous virtual memory space for the userspace
+ * It works this way
+ * 1 - allocate a Memory Descriptor List wide as the sum
+ *		of the memory needed for the pools
+ * 2 - cycle all the objects in every pool and for every object do
+ *
+ *		2a - cycle all the objects in every pool, get the list
+ *				of the physical address descriptors
+ *		2b - calculate the offset in the array of pages desciptor in the
+ *				main MDL
+ *		2c - copy the descriptors of the object in the main MDL
+ *
+ * 3 - return the resulting MDL that needs to be mapped in userland
+ *
+ * In this way we will have an MDL that describes all the memory for the
+ * objects in a single object
+*/
+
+PMDL
+win32_build_user_vm_map(struct netmap_mem_d* nmd)
+{
+	int i, j;
+	u_int memsize, memflags, ofs = 0;
+	PMDL mainMdl, tempMdl;
+
+	if (netmap_mem_get_info(nmd, &memsize, &memflags, NULL)) {
+		D("memory not finalised yet");
+		return NULL;
+	}
+
+	mainMdl = IoAllocateMdl(NULL, memsize, FALSE, FALSE, NULL);
+	if (mainMdl == NULL) {
+		D("failed to allocate mdl");
+		return NULL;
+	}
+
+	NMA_LOCK(nmd);
+	for (i = 0; i < NETMAP_POOLS_NR; i++) {
+		struct netmap_obj_pool *p = &nmd->pools[i];
+		int clsz = p->_clustsize;
+		int clobjs = p->_clustentries; /* objects per cluster */
+		int mdl_len = sizeof(PFN_NUMBER) * BYTES_TO_PAGES(clsz);
+		PPFN_NUMBER pSrc, pDst;
+
+		/* each pool has a different cluster size so we need to reallocate */
+		tempMdl = IoAllocateMdl(p->lut[0].vaddr, clsz, FALSE, FALSE, NULL);
+		if (tempMdl == NULL) {
+			NMA_UNLOCK(nmd);
+			D("fail to allocate tempMdl");
+			IoFreeMdl(mainMdl);
+			return NULL;
+		}
+		pSrc = MmGetMdlPfnArray(tempMdl);
+		/* create one entry per cluster, the lut[] has one entry per object */
+		for (j = 0; j < p->numclusters; j++, ofs += clsz) {
+			pDst = &MmGetMdlPfnArray(mainMdl)[BYTES_TO_PAGES(ofs)];
+			MmInitializeMdl(tempMdl, p->lut[j*clobjs].vaddr, clsz);
+			MmBuildMdlForNonPagedPool(tempMdl); /* compute physical page addresses */
+			RtlCopyMemory(pDst, pSrc, mdl_len); /* copy the page descriptors */
+			mainMdl->MdlFlags = tempMdl->MdlFlags; /* XXX what is in here ? */
+		}
+		IoFreeMdl(tempMdl);
+	}
+	NMA_UNLOCK(nmd);
+	return mainMdl;
+}
+
+#endif /* _WIN32 */
+
+/*
+ * helper function for OS-specific mmap routines (currently only windows).
+ * Given an nmd and a pool index, returns the cluster size and number of clusters.
+ * Returns 0 if memory is finalised and the pool is valid, otherwise 1.
+ * It should be called under NMA_LOCK(nmd) otherwise the underlying info can change.
+ */
+
+int
+netmap_mem2_get_pool_info(struct netmap_mem_d* nmd, u_int pool, u_int *clustsize, u_int *numclusters)
+{
+	if (!nmd || !clustsize || !numclusters || pool >= NETMAP_POOLS_NR)
+		return 1; /* invalid arguments */
+	// NMA_LOCK_ASSERT(nmd);
+	if (!(nmd->flags & NETMAP_MEM_FINALIZED)) {
+		*clustsize = *numclusters = 0;
+		return 1; /* not ready yet */
+	}
+	*clustsize = nmd->pools[pool]._clustsize;
+	*numclusters = nmd->pools[pool].numclusters;
+	return 0; /* success */
 }
 
 static int
@@ -628,10 +752,12 @@ netmap_obj_offset(struct netmap_obj_pool *p, const void *vaddr)
     ((n)->pools[NETMAP_IF_POOL].memtotal + 			\
 	netmap_obj_offset(&(n)->pools[NETMAP_RING_POOL], (v)))
 
+#if 0 /* unused */
 #define netmap_buf_offset(n, v)					\
     ((n)->pools[NETMAP_IF_POOL].memtotal +			\
 	(n)->pools[NETMAP_RING_POOL].memtotal +		\
 	netmap_obj_offset(&(n)->pools[NETMAP_BUF_POOL], (v)))
+#endif /* unused */
 
 
 static ssize_t
@@ -896,7 +1022,6 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 	p->bitmap = NULL;
 	if (p->lut) {
 		u_int i;
-		size_t sz = p->_clustsize;
 
 		/*
 		 * Free each cluster allocated in
@@ -906,7 +1031,7 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 		 */
 		for (i = 0; i < p->objtotal; i += p->_clustentries) {
 			if (p->lut[i].vaddr)
-				contigfree(p->lut[i].vaddr, sz, M_NETMAP);
+				contigfree(p->lut[i].vaddr, p->_clustsize, M_NETMAP);
 		}
 		bzero(p->lut, sizeof(struct lut_entry) * p->objtotal);
 #ifdef linux
@@ -1165,10 +1290,15 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	if (na->pdev == NULL)
 		return 0;
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__)
 	(void)i;
 	(void)lim;
 	D("unsupported on FreeBSD");
+
+#elif defined(_WIN32)
+	(void)i;
+	(void)lim;
+	D("unsupported on Windows");	//XXX_ale, really?
 #else /* linux */
 	for (i = 2; i < lim; i++) {
 		netmap_unload_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr);
@@ -1181,8 +1311,10 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 static int
 netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__)
 	D("unsupported on FreeBSD");
+#elif defined(_WIN32)
+	D("unsupported on Windows");	//XXX_ale, really?
 #else /* linux */
 	int i, lim = p->_objtotal;
 
@@ -1864,7 +1996,7 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 		error = ENOMEM;
 		goto err;
 	}
-	/* map memory through ptnemtap-memdev BAR */
+	/* map memory through ptnetmap-memdev BAR */
 	error = nm_os_pt_memdev_iomap(pv->ptn_dev, &pv->nm_paddr, &pv->nm_addr);
 	if (error)
 		goto err;
@@ -1999,7 +2131,7 @@ netmap_mem_pt_guest_rings_delete(struct netmap_adapter *na)
 	*/
 }
 
-struct netmap_mem_ops netmap_mem_pt_guest_ops = {
+static struct netmap_mem_ops netmap_mem_pt_guest_ops = {
 	.nmd_get_lut = netmap_mem_pt_guest_get_lut,
 	.nmd_get_info = netmap_mem_pt_guest_get_info,
 	.nmd_ofstophys = netmap_mem_pt_guest_ofstophys,

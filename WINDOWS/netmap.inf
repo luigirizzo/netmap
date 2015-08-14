@@ -1,0 +1,58 @@
+;
+; Netmap.inf
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=System
+ClassGuid={9BF68A6C-4C18-4FB4-A2FD-0E54B36F9252}
+Provider=%ManufacturerName%
+DriverVer=05/18/2015,0.0.1.1
+CatalogFile=Netmap.cat
+
+
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+netmap.sys  = 1
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+;[Manufacturer]
+;%ManufacturerName%=Standard,NT$ARCH$
+
+[Standard.NT$ARCH$]
+
+;-------------- Installation
+
+[DefaultInstall]
+Copyfiles =@netmap.sys
+
+;-------------- Service installation
+
+[DefaultInstall.Services]
+AddService = netmap,%SPSVCINST_ASSOCSERVICE%, Netmap_Service_Inst
+
+[Install.Remove.Services]
+; TODO: Customize the name of your NT service here.
+; The SPSVCINST_STOPSERVICE flag instructs SCM to stop the NT service
+; before uninstalling the driver.
+DelService=netmap,0x200 ; SPSVCINST_STOPSERVICE
+
+; -------------- Netmap driver install sections
+[Netmap_Service_Inst]
+DisplayName    = %ClassName%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 2               ; SERVICE_AUTO_START 
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\netmap.sys
+;LoadOrderGroup = Extended Base
+
+[Strings]
+SPSVCINST_ASSOCSERVICE= 0x00000002
+ManufacturerName="Universita` di Pisa"
+ClassName="Universita` di Pisa netmap core"
+DiskName="Netmap Source Disk"
