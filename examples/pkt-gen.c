@@ -62,6 +62,67 @@
 #include <pcap/pcap.h>
 #endif
 
+#ifdef _WIN32
+#define cpuset_t        DWORD_PTR   //uint64_t
+static inline void CPU_ZERO(cpuset_t *p)
+{
+        *p = 0;
+}
+
+static inline void CPU_SET(uint32_t i, cpuset_t *p)
+{
+        *p |= 1<< (i & 0x3f);
+}
+
+#define pthread_setaffinity_np(a, b, c) SetThreadAffinityMask(GetCurrentThread(), *c)    //((void)a, 0)
+#define TAP_CLONEDEV	"/dev/tap"
+#define AF_LINK	18	//defined in winsocks.h
+#define CLOCK_REALTIME_PRECISE CLOCK_REALTIME
+#include <net/if_dl.h>
+
+/*
+ * Convert an ASCII representation of an ethernet address to
+ * binary form.
+ */
+struct ether_addr *
+ether_aton(const char *a)
+{
+	int i;
+	static struct ether_addr o;
+	unsigned int o0, o1, o2, o3, o4, o5;
+
+	i = sscanf(a, "%x:%x:%x:%x:%x:%x", &o0, &o1, &o2, &o3, &o4, &o5);
+
+	if (i != 6)
+		return (NULL);
+
+	o.octet[0]=o0;
+	o.octet[1]=o1;
+	o.octet[2]=o2;
+	o.octet[3]=o3;
+	o.octet[4]=o4;
+	o.octet[5]=o5;
+
+	return ((struct ether_addr *)&o);
+}
+
+/*
+ * Convert a binary representation of an ethernet address to
+ * an ASCII string.
+ */
+char *
+ether_ntoa(const struct ether_addr *n)
+{
+	int i;
+	static char a[18];
+
+	i = sprintf(a, "%02x:%02x:%02x:%02x:%02x:%02x",
+	    n->octet[0], n->octet[1], n->octet[2],
+	    n->octet[3], n->octet[4], n->octet[5]);
+	return (i < 17 ? NULL : (char *)&a);
+}
+#endif /* _WIN32 */
+
 #ifdef linux
 
 #define cpuset_t        cpu_set_t
