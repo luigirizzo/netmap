@@ -1,9 +1,9 @@
-This directory contains Windows version of netmap, developed by
+This directory contains the Windows version of netmap, developed by
 Alessio Faina as part of his MS thesis at the Universita` di Pisa.
 
-This version is made of two kernel modules, that you should build
-as indicated in the "BUILD INSTRUCTIONS" section below.
-A test program, pkt-gen, is also supplied.
+This version is made of two kernel modules, that should be built
+as indicated in the "BUILD INSTRUCTIONS" section below,
+which also build the standard netmap test program, pkt-gen.
 
     netmap.sys
 	implements the netmap API, VALE switch, netmap pipes, monitor
@@ -27,8 +27,8 @@ A test program, pkt-gen, is also supplied.
 
     nm-ndis.sys
 	implements access to the NIC and the host stack using native
-	Windows NIC drivers. Though faster than sockets, speed is
-	limited by the device drivers, in the 1-2Mpps range.
+	Windows NIC drivers. Though faster than sockets, speed is only
+	1-2 Mpps, limited by the standard device drivers.
 
 	The module must be installed as a network service (see
 	"INSTALL NM-NDIS" below) after which you can send or receive
@@ -42,8 +42,8 @@ A test program, pkt-gen, is also supplied.
 		netsh int ipv4 show interfaces
 
 Note that on 64-bit platforms kernel modules should be signed.
-The build script we supply do a Test-sign of the modules, and to
-load them you should run the Operating System in Test-mode.
+The build script does a Test-sign of the modules, and to load them one
+should run the Operating System in Test-mode.
 
 -------------------- BUILD INSTRUCTIONS --------------------
 
