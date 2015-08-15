@@ -1687,9 +1687,6 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
     ULONG               ReturnFlags;
 #endif
 
-    static int		maxBatch = 0;
-    int			qBatch = 0;
-
     DEBUGP(DL_TRACE, "===>ReceiveNetBufferList: NetBufferLists = %p.\n", NetBufferLists);
     do
     {
@@ -1772,24 +1769,12 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 	 */
 	if (netmap_hooks.handle_rx != NULL && (pFilter->intercept & NM_WIN_CATCH_RX))
 	{
-#if 0
-	    static int packets = 0; /* debugging */
-	    //DbgPrint("Dropping packets... size: %i\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
-	    packets += 1;
-	    if (packets == 100000)
-	    {
-		DbgPrint("Recv 100k (%i)\n", (NET_BUFFER_LIST_FIRST_NB(NetBufferLists))->DataLength);
-		packets = 0;
-	    }
-#endif
-	    {
 		int result = -1;
 		PNET_BUFFER pkt = NULL;
 		PNET_BUFFER_LIST current_list = NetBufferLists;
 
 		while (current_list && (pkt || NULL != (pkt = NET_BUFFER_LIST_FIRST_NB(current_list)) ) )
 		{
-		    qBatch++;
 		    PVOID buffer = NdisGetDataBuffer(pkt, pkt->DataLength, NULL, 1, 0);
 		    if (buffer != NULL)
 		    {
@@ -1798,8 +1783,6 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 			   * enqueues on an mbq and notifies
 			   */
 		    }
-		    //DbgPrint("Called: result= %i", result);
-		    //DbgPrint("Data->pRxPointer: 0x%p &0x%p", netmap_hooks.pRxPointer, &netmap_hooks.pRxPointer);
 
 		    pkt = pkt->Next;
 		    if (pkt == NULL)
@@ -1807,15 +1790,7 @@ N.B.: It is important to check the ReceiveFlags in NDIS_TEST_RECEIVE_CANNOT_PEND
 			current_list = NET_BUFFER_LIST_NEXT_NBL(current_list);
 		    }
 		}
-	    }
-#if 0
-	    if (qBatch > maxBatch)
-	    {
-		maxBatch = qBatch;
-		DbgPrint("MaxBatch: %i", maxBatch);
-	    }
-#endif
-	    NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReceiveFlags);
+		NdisFReturnNetBufferLists(pFilter->FilterHandle, NetBufferLists, ReceiveFlags);
 	}
 	else
 	{

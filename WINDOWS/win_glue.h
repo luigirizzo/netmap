@@ -36,7 +36,7 @@
 #define _WIN32	/* we use _WIN32 throughout the code */
 #else /* some MSC pragmas etc. */
 
-//Disabling unuseful warnings
+/* Disabling some warnings */
 #pragma warning(disable:4018)	// expression: signed/unsigned mismatch
 #pragma warning(disable:4047)	// operator: different levels of indirection
 #pragma warning(disable:4098)	// void function returning a value - netmap_mem2.c
@@ -81,7 +81,7 @@
 #define	M_ZERO			2	/* flags for malloc etc */
 
 
-//Originally defined in LINUX\IF.H
+/* Originally defined in linux/if.h */
 #define	IFNAMSIZ 44//IF_NAMESIZE //defined in netioapi.h, is 256
 //XXX_ale	must set the same here and in userspace somehow
 
@@ -140,7 +140,7 @@ typedef ULONG 			vm_ooffset_t;
 #ifdef _MSC_VER
 #define inline			__inline
 #define __builtin_prefetch(x)	_mm_prefetch(x, _MM_HINT_T2)
-#endif //_MSC_VER
+#endif /* _MSC_VER */
 
 static void panic(const char *fmt, ...)
 {
@@ -196,9 +196,9 @@ static inline void mtx_unlock(win_spinlock_t *m)
 #define BDG_RLOCK(b)			ExAcquireResourceSharedLite(&b->bdg_lock,TRUE)
 #define BDG_RUNLOCK(b)			ExReleaseResourceLite(&b->bdg_lock)
 #define BDG_RTRYLOCK(b)			ExAcquireResourceExclusiveLite(&b->bdg_lock, FALSE)
-#define BDG_SET_VAR(lval, p)	((lval) = (p))
+#define BDG_SET_VAR(lval, p)		((lval) = (p))
 #define BDG_GET_VAR(lval)		(lval)
-#define BDG_FREE(p)				free(p)
+#define BDG_FREE(p)			free(p)
 
 
 /*
@@ -250,12 +250,12 @@ struct netmap_adapter;
 struct net_device {
 	char	if_xname[IFNAMSIZ];			// external name (name + unit) 
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
-	struct netmap_adapter*	na;
-	void *	pfilter;
-	int *	intercept;	// bit 0: enable rx, bit 1 enable tx
+	struct netmap_adapter	*na;
+	void	*pfilter;
+	int	*intercept;	// bit 0: enable rx, bit 1 enable tx
 #define NM_WIN_CATCH_RX	1
 #define NM_WIN_CATCH_TX	2
-	int		ifIndex;
+	int	ifIndex;
 
 	NPAGED_LOOKASIDE_LIST	mbuf_pool;
 	NPAGED_LOOKASIDE_LIST	mbuf_packets_pool;
@@ -481,15 +481,15 @@ PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 #define NM_BNS_GET(b)	do { (void)(b); } while (0)
 #define NM_BNS_PUT(b)   do { (void)(b); } while (0)
 
-/*********************************************************
-*                   ATOMIC OPERATIONS     		         *  
-**********************************************************/
-#define NM_ATOMIC_T 					volatile long
-#define atomic_t						NM_ATOMIC_T
+/*
+ *	ATOMIC OPERATIONS
+ */
+#define NM_ATOMIC_T 			volatile long
+#define atomic_t			NM_ATOMIC_T
 #define NM_ATOMIC_TEST_AND_SET(p)       (!InterlockedBitTestAndSet(p,0))
 #define NM_ATOMIC_CLEAR(p)              InterlockedBitTestAndReset(p,0)
-#define refcount_acquire(_a)    		InterlockedExchangeAdd((atomic_t *)_a, 1)
-#define refcount_release(_a)    		(InterlockedDecrement((atomic_t *)_a) <= 0)
+#define refcount_acquire(_a)    	InterlockedExchangeAdd((atomic_t *)_a, 1)
+#define refcount_release(_a)    	(InterlockedDecrement((atomic_t *)_a) <= 0)
 #define NM_ATOMIC_SET(p, v)             InterlockedExchange(p, v)
 #define NM_ATOMIC_INC(p)                InterlockedIncrement(p)
 #define NM_ATOMIC_READ_AND_CLEAR(p)     InterlockedExchange(p, 0)
@@ -515,9 +515,9 @@ PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 
 //--------------------------------------------------------
 
-/*********************************************************
-* SYSCTL emulation (copied from dummynet/glue.h)		 *
-**********************************************************/
+/*
+ *	SYSCTL emulation (from dummynet/glue.h)
+ */
 struct sock; // XXX unused
 
 int do_netmap_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len);
@@ -578,12 +578,12 @@ struct sysctlhead {
 #define GST_HARD_LIMIT 100
 
 /* In the module, GST is implemented as an array of
-* sysctlentry, but while passing data to the userland
-* pointers are useless, the buffer is actually made of:
-* - sysctlhead (fixed size, containing lengths)
-* - data (typically 32 bit)
-* - name (zero-terminated and padded to mod4)
-*/
+ * sysctlentry, but while passing data to the userland
+ * pointers are useless, the buffer is actually made of:
+ * - sysctlhead (fixed size, containing lengths)
+ * - data (typically 32 bit)
+ * - name (zero-terminated and padded to mod4)
+ */
 
 struct sysctlentry {
 	struct sysctlhead head;
@@ -695,4 +695,4 @@ int sysctlbyname(const char *name, void *oldp, size_t *oldlenp, void *newp, size
 #endif
 
 
-#endif //_WIN_GLUE_H
+#endif /* _WIN_GLUE_H */
