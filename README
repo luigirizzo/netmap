@@ -4,18 +4,17 @@
 
 NETMAP is a framework for very fast packet I/O from userspace.
 VALE is an equally fast in-kernel software switch using the netmap API.
-Both are implemented as a single kernel module for FreeBSD and Linux,
-and can deal with line rate on real or emulated 10 Gbit ports.
+Both are implemented as a single kernel module for FreeBSD, Linux and
+since summer 2015, also for Windows.
+Netmap/VALE can handle tens of millions of packets per second, matching
+the speed of 10G and 40G ports even with minimum sized frames.
 See details at
 
 	http://info.iet.unipi.it/~luigi/netmap/
 
-In this directory you can find source code (BSD-Copyright) for FreeBSD
-and Linux. Note that recent FreeBSD distributions already include both
-NETMAP and VALE.
-
-For more details please look at the manpage (netmap.4) and
-netmap home page above.
+This repository, hosted at https://github.com/luigirizzo/netmap , contains
+source code (BSD-Copyright) for FreeBSD, Linux and Windows.
+Note that recent FreeBSD distributions already include both NETMAP and VALE.
 
 
 What is this good for
@@ -24,11 +23,27 @@ Netmap is mostly useful for userspace applications that must deal with raw
 packets: traffic generators, sinks, monitors, loggers, software switches
 and routers, generic middleboxes, interconnection of virtual machines.
 
-In this distribution you will find some example userspace code to build
-a generator, a sink, and a simple bridge. The kernel module implements a
-learning ethernet bridge. We also include patches for some applications
-(noticeably libpcap) so you can run any libpcap client on top of netmap
-hopefully at a higher speed.
+The example/ directory includes pkt-gen.c (a fast traffic generator/receiver)
+and bridge.c, a simple bidirectional interconnect between two ports.
+The kernel module itself implements a learning ethernet bridge.
+
+More resources are hosted on other repositories. For example
+
+  https://github.com/luigirizzo/netmap-libpcap
+
+    contains a netmap-enabled version of libpcap (which is also
+    included in FreeBSD distribution) so you can run any libpcap client
+    on top of netmap at much higher speeds than using bpf.
+
+  https://github.com/luigirizzo/netmap-ipfw
+
+    is a userspace version of ipfw and dummynet which can handle several
+    million packets per second in a single thread
+
+Qemu/kvm has native netmap support, so it can interconnect VMs at high speed
+through netmap ports. There is experimental netmap support in the FreeBSD's
+bhyve hypervisor.
+
 
 Netmap alone DOES NOT accelerate your TCP. For that you need to implement
 your own tcp/ip stack probably using some of the techniques indicated
@@ -55,21 +70,19 @@ descriptors. Device drivers are completely in the kernel, and the system
 does not rely on IOMMU or other special mechanisms.
 
 
-
 Installation instructions 
 -------------------------
-A kernel module (netmap.ko or netmap_lin.ko) implements the core
-NETMAP routines and the VALE switch.
-Netmap-aware device drivers are needed to use netmap on ethernet ports.
-To date, we have support for Intel ixgbe (10G), e1000/e1000e/igb (1G),
-Realtek 8169 (1G) and Nvidia (1G).
+A single kernel module implements the core NETMAP functions, including
+the VALE switch and access to physical NICS using unmodified device drivers
+(at the price of much lower performance than netmap-aware drivers).
 
-If you do not have a supported device, you can still try out netmap
-(with reduced performance) because the main kernel module emulates
-the netmap API on top of standard device drivers.
+Netmap-aware device drivers are needed to use netmap at high speed
+on ethernet ports.  To date, we have support for Intel ixgbe (10G),
+ixl (10/40G), e1000/e1000e/igb (1G), Realtek 8169 (1G) and Nvidia (1G).
+FreeBSD has also native netmap support in the Chelsio 10/40G cards.
 
-  FreeBSD instructions:
-  ---------------------
+  FreeBSD
+  -------
   Since recent FreeBSD distributions already include netmap, you only
   need build the new kernel or modules as below:
 
@@ -80,8 +93,8 @@ the netmap API on top of standard device drivers.
   + sample applications are in the examples/ directory in this archive,
     or in src/tools/tools/netmap/ in FreeBSD distributions
 
-  Linux instructions:
-  -------------------
+  Linux
+  -----
   On Linux, netmap is an out-of-tree module, so you need to compile it
   from these sources. The Makefile in the LINUX/ directory will also
   let you patch device driver sources and build some netmap-enabled
@@ -106,6 +119,10 @@ the netmap API on top of standard device drivers.
 
         make SRC=/a/b/c/linux-sources-A.B/ KSRC=/a/b/c/linux-headers-A.B/
   
+   WINDOWS
+   -------
+   Netmap has been ported to Windows in summer 2015 by Alessio Faina as part of
+   his Master thesis. Please look at WINDOWS/README.txt for details.
 
 Applications
 ------------
@@ -209,7 +226,7 @@ Credits
 NETMAP and VALE are projects of the Universita` di Pisa,
 partially supported by various entities including:
 Intel Research Berkeley, EU FP7 projects CHANGE and OPENLAB,
-Netapp/Silicon Valley Community Foundation, ICSI
+Netapp/Silicon Valley Community Foundation, ICSI, 
 
 Author:		Luigi Rizzo
 Contributors:
@@ -219,6 +236,8 @@ Contributors:
 		Gaetano Catalli
 		Matteo Landi
 		Vincenzo Maffione
+		Stefano Garzarella
+		Alessio Faina
 
 References
 ----------
@@ -244,3 +263,7 @@ You can find the papers at http://info.iet.unipi.it/~luigi/research.html
 + Luigi Rizzo, Giuseppe Lettieri, Vincenzo Maffione,
 	Speeding up packet I/O in virtual machines,
 	IEEE/ACM ANCS 2013, San Jose, Oct. 2013
+
++ Stefano Garzarella, Giuseppe Lettieri, Luigi Rizzo,
+	Virtual device passthrough for high speed VM networking
+	IEEE/ACM ANCS 2015, Oakland, May 2015
