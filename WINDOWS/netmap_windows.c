@@ -297,10 +297,11 @@ int
 nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
 	void *cur;
+	PVOID toSend = (a->addr == NULL) ? a->head : a->tail;
 	if (ndis_hooks.injectPacket == NULL) { /* silently drop ? */
 		return 0;
 	}
-	cur = ndis_hooks.injectPacket(a->ifp->pfilter, a->addr, a->len, TRUE, a->tail);
+	cur = ndis_hooks.injectPacket(a->ifp->pfilter, a->addr, a->len, TRUE, toSend);
 	if (cur) {
 		a->tail = cur;
 		if (a->head == NULL)
