@@ -1500,7 +1500,7 @@ Arguments:
 	 * can write the handle_tx as a function that queues the packets in an mbq
 	 * XXX at the moment, however, just make a deep copy
 	 */
-        if (netmap_hooks.handle_tx != NULL && (pFilter->intercept & NM_WIN_CATCH_TX) && 0) {
+        if (netmap_hooks.handle_tx != NULL && (pFilter->intercept & NM_WIN_CATCH_TX)) {
 	    int result = -1;
 	    PNET_BUFFER pkt = NULL;
 	    PNET_BUFFER_LIST current_list = NetBufferLists;
