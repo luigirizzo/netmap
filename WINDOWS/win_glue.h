@@ -371,9 +371,6 @@ static void nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
  *      KERNEL MEMORY ALLOCATION and management
  */
 
-char* win_contigMalloc(int sz, int page_size);
-void win_ContigFree(void* virtualAddress);
-
 #define bcopy(_s, _d, _l)			RtlCopyMemory(_d, _s, _l)
 #define bzero(addr, size)			RtlZeroMemory(addr, size)
 #define malloc(size, _ty, flags)		win_kernel_malloc(size, _ty, flags)
@@ -498,6 +495,17 @@ PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 
 #define make_dev_credf(_a, _b, ...)	((void *)1)	// non-null
 
+static char *
+win_contigmalloc(int sz, int page_size)
+{
+	char* p = ExAllocatePoolWithTag(NonPagedPool, sz, M_NETMAP);
+
+	if (p != NULL) { /* we rely on this memory to be zero-ed */
+		RtlZeroMemory(p, sz);
+	}
+	return p;
+}
+
 /*
  * At the moment we can just do regular malloc on Windows.
  * The only use for contigmalloc would be for netmap buffers
@@ -507,7 +515,7 @@ PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
  * would work for that, but they are incredibly slow.
  */
 #define contigmalloc(sz, ty, flags, a, b, pgsz, c)	\
-					ExAllocatePoolWithTag(NonPagedPool, sz, M_NETMAP)
+					win_contigmalloc(sz, M_NETMAP)
 #define contigfree(va, sz, ty)		ExFreePoolWithTag(va, M_NETMAP)
 
 #define vtophys				MmGetPhysicalAddress
