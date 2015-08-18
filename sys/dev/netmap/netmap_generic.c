@@ -149,7 +149,7 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 #define rtnl_unlock()	ND("rtnl_unlock called")
 #define MBUF_TXQ(m) 	0//((m)->m_pkthdr.flowid)
 #define MBUF_RXQ(m)	    0//((m)->m_pkthdr.flowid)
-#define smp_mb()
+#define smp_mb()		//XXX: to be correctly defined
 
 #else /* linux */
 

@@ -168,8 +168,9 @@ struct hrtimer {
 
 #elif defined (_WIN32)
 #include "../../../WINDOWS/win_glue.h"
+
 #define NM_SELRECORD_T		IO_STACK_LOCATION
-#define NM_SELINFO_T		KEVENT			//KQUEUE
+#define NM_SELINFO_T		win_SELINFO		// see win_glue.h
 #define NM_LOCK_T		win_spinlock_t	// see win_glue.h
 #define NM_MTX_T		KGUARDED_MUTEX	/* OS-specific mutex (sleepable) */
 
