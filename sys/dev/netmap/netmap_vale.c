@@ -688,7 +688,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	} else {
 		struct netmap_adapter *hw;
 
-		error = netmap_get_hw_na(ifp, &hw);
+		error = netmap_get_hw_na(nmr, ifp, &hw);
 		if (error || hw == NULL)
 			goto out;
 
