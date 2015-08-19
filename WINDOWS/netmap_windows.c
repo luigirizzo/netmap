@@ -297,10 +297,11 @@ int
 nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
 	void *cur;
+	PVOID toSend = (a->addr == NULL) ? a->head : a->tail;
 	if (ndis_hooks.injectPacket == NULL) { /* silently drop ? */
 		return 0;
 	}
-	cur = ndis_hooks.injectPacket(a->ifp->pfilter, a->addr, a->len, TRUE, a->tail);
+	cur = ndis_hooks.injectPacket(a->ifp->pfilter, a->addr, a->len, TRUE, toSend);
 	if (cur) {
 		a->tail = cur;
 		if (a->head == NULL)
@@ -425,9 +426,10 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 	case NETMAP_POLL:
 		{
+			//DbgPrint("%i: Requested call to POLL \n", PsGetCurrentThreadId());
 			POLL_REQUEST_DATA *pollData = data;
-			long requiredTimeOut = -(int)(pollData->timeout) * 1000 * 10;
-			LARGE_INTEGER tout = RtlConvertLongToLargeInteger(requiredTimeOut);
+			LARGE_INTEGER tout;
+			tout.QuadPart = -(int)(pollData->timeout) * 1000 * 10;
 			struct netmap_priv_d *priv = irpSp->FileObject->FsContext;
 
 			if (priv == NULL) {
@@ -438,10 +440,11 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 			irpSp->FileObject->FsContext2 = NULL;
 			pollData->revents = netmap_poll(priv, pollData->events, irpSp);
 			while ((irpSp->FileObject->FsContext2 != NULL) && (pollData->revents == 0)) {
-				NTSTATUS waitResult = KeWaitForSingleObject(irpSp->FileObject->FsContext2, 
+				NTSTATUS waitResult = KeWaitForSingleObject(&((win_SELINFO*)irpSp->FileObject->FsContext2)->queue,
 								UserRequest, KernelMode, 
 								FALSE, &tout);
 				if (waitResult == STATUS_TIMEOUT) {
+					DbgPrint("%i: Timeout on 0x%p \n", PsGetCurrentThreadId(), irpSp->FileObject->FsContext2);
 					pollData->revents = STATUS_TIMEOUT;
 					NtStatus = STATUS_TIMEOUT;
 					break;
@@ -762,18 +765,24 @@ nm_os_vi_detach(struct ifnet *ifp)
 
 //nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si)
 void
-nm_os_selrecord(IO_STACK_LOCATION *irpSp, KEVENT *ev)
+nm_os_selrecord(IO_STACK_LOCATION *irpSp, win_SELINFO *ev)
 {
-   // if (!KeReadStateEvent(ev)){
-        irpSp->FileObject->FsContext2 = ev;
-        KeClearEvent(ev);
-    //}
+	if (irpSp->FileObject->FsContext2 == NULL) {
+		//DbgPrint("%i: nm_selrecord on 0x%p", PsGetCurrentThreadId(), &ev->queue);
+		KeAcquireGuardedMutex(&ev->mutex);
+		irpSp->FileObject->FsContext2 = ev;
+		KeClearEvent(&ev->queue);
+		KeReleaseGuardedMutex(&ev->mutex);
+	}
 }
 
 void
 nm_os_selwakeup(NM_SELINFO_T *queue)
 {
-    KeSetEvent(queue, PI_NET, FALSE);
+	//DbgPrint("%i: nm_selwakeup on 0x%p",PsGetCurrentThreadId(), &queue->queue);
+	KeAcquireGuardedMutex(&queue->mutex);
+	KeSetEvent(&queue->queue, PI_NET, FALSE);
+	KeReleaseGuardedMutex(&queue->mutex);
 }
 
 int

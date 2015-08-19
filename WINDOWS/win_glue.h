@@ -205,8 +205,21 @@ static inline void mtx_unlock(win_spinlock_t *m)
  *	SLEEP/WAKEUP THREADS
  */
 
+typedef struct _win_SELINFO
+{
+	KEVENT queue;
+	KGUARDED_MUTEX mutex;
+} win_SELINFO;
+
+static void 
+win_initialize_waitqueue(win_SELINFO* queue)
+{
+	KeInitializeEvent(&queue->queue, NotificationEvent, TRUE);
+	KeInitializeGuardedMutex(&queue->mutex);
+}
+
 #define PI_NET					16
-#define init_waitqueue_head(x)			KeInitializeEvent(x, NotificationEvent, TRUE);
+#define init_waitqueue_head(x)			win_initialize_waitqueue(x);
 #define netmap_knlist_destroy(x)
 #define tsleep(ident, priority, wmesg, time)	KeDelayExecutionThread(KernelMode, FALSE, (PLARGE_INTEGER)time)	
 
@@ -420,23 +433,6 @@ win_reallocate(void* src, size_t size, size_t oldSize)
 	return newBuff;
 }
 
-/*
- * mbuf allocation and free.
- * XXX These are used in the generic code and must be verified.
- */
-#if 0
-static void
-netmap_default_mbuf_destructor(struct mbuf *m)
-{
-	if (m->pkt != NULL) {
-		free(m->pkt, M_DEVBUF);
-		m->pkt = NULL;
-	}
-	free(m, M_DEVBUF);
-	m = NULL;
-}
-#endif
-
 struct mbuf *win_make_mbuf(struct net_device *, uint32_t, const char *);
 
 #define nm_os_get_mbuf(ifp, _l)	win_make_mbuf(ifp, _l, NULL)
@@ -483,7 +479,7 @@ PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
  */
 #define NM_ATOMIC_T 			volatile long
 #define atomic_t			NM_ATOMIC_T
-#define NM_ATOMIC_TEST_AND_SET(p)       (!InterlockedBitTestAndSet(p,0))
+#define NM_ATOMIC_TEST_AND_SET(p)       InterlockedBitTestAndSet(p,0)
 #define NM_ATOMIC_CLEAR(p)              InterlockedBitTestAndReset(p,0)
 #define refcount_acquire(_a)    	InterlockedExchangeAdd((atomic_t *)_a, 1)
 #define refcount_release(_a)    	(InterlockedDecrement((atomic_t *)_a) <= 0)
