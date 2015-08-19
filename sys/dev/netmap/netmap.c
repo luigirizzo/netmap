@@ -2717,7 +2717,7 @@ void
 netmap_detach_common(struct netmap_adapter *na)
 {
 	if (na->ifp != NULL)
-		WNA(na->ifp) = NULL; /* XXX do we need this? */
+		WNA(na->ifp) = NULL;
 
 	if (na->tx_rings) { /* XXX should not happen */
 		D("freeing leftover tx_rings");
@@ -2746,7 +2746,7 @@ netmap_hw_register(struct netmap_adapter *na, int onoff)
 	struct netmap_hw_adapter *hwna =
 		(struct netmap_hw_adapter*)na;
 
-	if (na->ifp == NULL)
+	if (nm_iszombie(na))
 		return onoff ? ENXIO : 0;
 
 	return hwna->nm_hw_register(na, onoff);
@@ -2912,12 +2912,11 @@ netmap_detach(struct ifnet *ifp)
 
 	NMG_LOCK();
 	netmap_disable_all_rings(ifp);
-	na->ifp = NULL;
 	na->na_flags |= NAF_ZOMBIE;
 	/*
 	 * if the netmap adapter is not native, somebody
 	 * changed it, so we can not release it here.
-	 * The NULL na->ifp will notify the new owner that
+	 * The NAF_ZOMBIE flag will notify the new owner that
 	 * the driver is gone.
 	 */
 	if (na->na_flags & NAF_NATIVE) {

@@ -812,7 +812,7 @@ generic_netmap_dtor(struct netmap_adapter *na)
 		D("Released generic NA %p", gna);
 		if_rele(ifp);
 		netmap_adapter_put(prev_na);
-		if (na->ifp == NULL) {
+		if (nm_iszombie(na)) {
 		        /*
 		         * The driver has been removed without releasing
 		         * the reference so we need to do it here.
