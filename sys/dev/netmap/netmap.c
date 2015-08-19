@@ -1336,7 +1336,6 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	gna = (struct netmap_generic_adapter*)NA(ifp);
 	gna->prev = prev_na; /* save old na */
 	if (prev_na != NULL) {
-		ifunit_ref(ifp->if_xname);
 		// XXX add a refcount ?
 		netmap_adapter_get(prev_na);
 	}
