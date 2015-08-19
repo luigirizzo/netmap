@@ -822,7 +822,6 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	}
 	WNA(ifp) = prev_na;
 	D("Restored native NA %p", prev_na);
-	na->ifp = NULL;
 }
 
 /*
