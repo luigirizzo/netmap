@@ -584,6 +584,7 @@ struct netmap_adapter {
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
 #define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
+#define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
 				  */
@@ -1054,6 +1055,12 @@ static inline int
 nm_native_on(struct netmap_adapter *na)
 {
 	return nm_netmap_on(na) && (na->na_flags & NAF_NATIVE);
+}
+
+static inline int
+nm_iszombie(struct netmap_adapter *na)
+{
+	return na == NULL || (na->na_flags & NAF_ZOMBIE);
 }
 
 /* set/clear native flags and if_transmit/netdev_ops */

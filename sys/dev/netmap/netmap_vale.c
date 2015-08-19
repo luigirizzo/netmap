@@ -1937,14 +1937,16 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 	if (netmap_verbose)
 	    D("%s %s 0x%x", na->name, kring->name, flags);
 
-	if (!nm_netmap_on(na))
-		return 0;
-
 	bkring = &vpna->up.tx_rings[ring_nr];
 
 	/* make sure the ring is not disabled */
 	if (nm_kr_tryget(kring))
 		return 0;
+
+	if (!nm_iszombie(na)) {
+		error = ENXIO;
+		goto put_out;
+	}
 
 	if (netmap_verbose)
 	    D("%s head %d cur %d tail %d",  na->name,
@@ -2169,8 +2171,11 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 	if (nm_kr_tryget(hw_kring))
 		return 0;
 
-	if (!nm_netmap_on(hwna))
-		return 0;
+	if (nm_iszombie(hwna)) {
+		error = ENXIO;
+		goto out;
+	}
+
 	/* first step: simulate a user wakeup on the rx ring */
 	netmap_vp_rxsync(kring, flags);
 	ND("%s[%d] PRE rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",
