@@ -2105,10 +2105,10 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	 * rx rings on one side equals tx rings on the other.
 	 */
         for_rx_tx(t) {
-                enum txrx r= nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
-                for (i = 0; i < nma_get_nrings(na, r) + 1; i++) {
-                        NMR(hwna, t)[i].nkr_num_slots = NMR(na, r)[i].nkr_num_slots;
-                        NMR(hwna, t)[i].ring = NMR(na, r)[i].ring;
+                enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
+                for (i = 0; i < nma_get_nrings(hwna, r) + 1; i++) {
+                        NMR(na, t)[i].nkr_num_slots = NMR(hwna, r)[i].nkr_num_slots;
+                        NMR(na, t)[i].ring = NMR(hwna, r)[i].ring;
                 }
         }
 
