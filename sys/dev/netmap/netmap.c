@@ -2234,11 +2234,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			break;
 		}
 
-		if (!nm_netmap_on(na)) {
-			error = ENXIO;
-			break;
-		}
-
 		t = (cmd == NIOCTXSYNC ? NR_TX : NR_RX);
 		krings = NMR(na, t);
 		qfirst = priv->np_qfirst[t];
@@ -2247,10 +2242,32 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		for (i = qfirst; i < qlast; i++) {
 			struct netmap_kring *kring = krings + i;
 			struct netmap_ring *ring = kring->ring;
-			if (nm_kr_tryget(kring)) {
-				error = EBUSY;
-				goto out;
+
+		retry:
+			switch (nm_kr_tryget(kring)) {
+			case NM_KR_BUSY:
+				/* bening, some other thread is taking care of this ring */
+				continue;
+			case NM_KR_STOPPED:
+				/* either a driver unload, or just a netmap_monitor
+				 * trying to attach to this ring. We need to
+				 * wait until the ring is no longer stopped to know
+				 * how to proceed.
+				 */
+				RD(2, "%s stopped, retry", kring->name);
+				tsleep(kring, 0, "NM_IOCTL", 4);
+				goto retry;
+			default:
+				break;
 			}
+
+			if (unlikely(nm_iszombie(na))) {
+				/* the driver has been unloaded, fatal error */
+				error = ENXIO;
+				nm_kr_put(kring);
+				break;
+			}
+
 			if (cmd == NIOCTXSYNC) {
 				if (netmap_verbose & NM_VERB_TXSYNC)
 					D("pre txsync ring %d cur %d hwcur %d",
@@ -2318,7 +2335,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		error = EOPNOTSUPP;
 #endif /* linux */
 	}
-out:
 
 	return (error);
 }
@@ -2430,18 +2446,27 @@ flush_tx:
 
 			if (!want_tx && ring->cur == kring->nr_hwcur)
 				continue;
-			/* only one thread does txsync */
-			if (nm_kr_tryget(kring)) {
-				/* either busy or stopped
-				 * XXX if the ring is stopped, sleeping would
-				 * be better. In current code, however, we only
-				 * stop the rings for brief intervals (2014-03-14)
-				 */
+
+		retry_txk_get:
+			switch (nm_kr_tryget(kring)) {
+			case NM_KR_BUSY:
 				if (netmap_verbose)
 					RD(2, "%p lost race on txring %d, ok",
 					    priv, i);
 				continue;
+			case NM_KR_STOPPED:
+				tsleep(kring, 0, "NM_POLL", 4);
+				goto retry_txk_get;
+			default:
+				break;
 			}
+
+			if (nm_iszombie(na)) {
+				/* fatal error, stop everything */
+				nm_kr_put(kring);
+				return POLLERR;
+			}
+
 			if (nm_txsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 				netmap_ring_reinit(kring);
 				revents |= POLLERR;
@@ -2488,11 +2513,24 @@ do_retry_rx:
 			kring = &na->rx_rings[i];
 			ring = kring->ring;
 
-			if (nm_kr_tryget(kring)) {
+		retry_rxk_get:
+			switch (nm_kr_tryget(kring)) {
+			case NM_KR_BUSY:
 				if (netmap_verbose)
-					RD(2, "%p lost race on rxring %d, ok",
+					RD(2, "%p lost race on txring %d, ok",
 					    priv, i);
 				continue;
+			case NM_KR_STOPPED:
+				tsleep(kring, 0, "NM_POLL", 4);
+				goto retry_rxk_get;
+			default:
+				break;
+			}
+
+			if (nm_iszombie(na)) {
+				/* fatal error, stop everything */
+				nm_kr_put(kring);
+				return POLLERR;
 			}
 
 			if (nm_rxsync_prologue(kring, ring) >= kring->nkr_num_slots) {
@@ -2875,7 +2913,7 @@ netmap_detach(struct ifnet *ifp)
 	NMG_LOCK();
 	netmap_disable_all_rings(ifp);
 	na->ifp = NULL;
-	na->na_flags &= ~NAF_NETMAP_ON;
+	na->na_flags |= NAF_ZOMBIE;
 	/*
 	 * if the netmap adapter is not native, somebody
 	 * changed it, so we can not release it here.
@@ -2885,7 +2923,12 @@ netmap_detach(struct ifnet *ifp)
 	if (na->na_flags & NAF_NATIVE) {
 	        netmap_adapter_put(na);
 	}
-	/* give them a chance to notice */
+	/* give active users a chance to notice that NAF_ZOMBIE has been
+	 * turned on, so that they can stop and return an error to userspace.
+	 * Note that this becomes a NOP if there are no active users and,
+	 * therefore, the put() above has deleted the na, since now NA(ifp) is
+	 * NULL.
+	 */
 	netmap_enable_all_rings(ifp);
 	NMG_UNLOCK();
 }

@@ -663,9 +663,15 @@ netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 	 * (NIOCREGIF and poll()), but here we have to call it
 	 * by ourself
 	 */
-	if (nm_kr_tryget(kring))
+	if (nm_kr_tryget(kring)) {
+		/* either busy or stopped, just skip the sync */
 		goto out;
+	}
+	if (nm_iszombie(kring->na)) {
+		goto put_out;
+	}
 	netmap_monitor_parent_rxsync(kring, NAF_FORCE_READ);
+put_out:
 	nm_kr_put(kring);
 out:
         return kring->mon_notify(kring, flags);
