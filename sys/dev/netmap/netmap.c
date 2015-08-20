@@ -550,6 +550,7 @@ netmap_disable_ring(struct netmap_kring *kr)
 {
 	kr->nkr_stopped = 1;
 	nm_kr_get(kr);
+	// XXX check if nm_kr_get is sufficient
 	mtx_lock(&kr->q_lock);
 	mtx_unlock(&kr->q_lock);
 	nm_kr_put(kr);

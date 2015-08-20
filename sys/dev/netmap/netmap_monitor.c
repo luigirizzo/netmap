@@ -238,6 +238,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 	int error = 0;
 
 	/* sinchronize with concurrently running nm_sync()s */
+	kring->nkr_stopped = 1;
 	nm_kr_get(kring);
 	/* make sure the monitor array exists and is big enough */
 	error = nm_monitor_alloc(kring, kring->n_monitors + 1);
@@ -272,6 +273,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 
 out:
 	nm_kr_put(kring);
+	kring->nkr_stopped = 0;
 	return error;
 }
 
