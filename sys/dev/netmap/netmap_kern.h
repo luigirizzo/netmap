@@ -973,24 +973,26 @@ static __inline void nm_kr_put(struct netmap_kring *kr)
 
 static __inline int nm_kr_tryget(struct netmap_kring *kr)
 {
-	int busy;
+	int busy, stopped;
 	/* check a first time without taking the lock
 	 * to avoid starvation for nm_kr_get()
 	 */
-	if (unlikely(kr->nkr_stopped)) {
-		ND("ring %p stopped (%d)", kr, kr->nkr_stopped);
-		return kr->nkr_stopped;
+	stopped = kr->nkr_stopped;
+	if (unlikely(stopped)) {
+		ND("ring %p stopped (%d)", kr, stopped);
+		return stopped;
 	}
 	busy = NM_ATOMIC_TEST_AND_SET(&kr->nr_busy);
 	/* we should not return NM_KR_BUSY if the ring was
 	 * actually stopped, so check another time after
 	 * the barrier provided by the atomic operation
 	 */
-	if (unlikely(kr->nkr_stopped)) {
-		ND("ring %p stopped (%d)", kr, kr->nkr_stopped);
+	stopped = kr->nkr_stopped;
+	if (unlikely(stopped)) {
+		ND("ring %p stopped (%d)", kr, stopped);
 		if (!busy)
 			nm_kr_put(kr);
-		return kr->nkr_stopped;
+		return stopped;
 	}
 	return unlikely(busy) ? NM_KR_BUSY : 0;
 }
