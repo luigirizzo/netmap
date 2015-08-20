@@ -958,11 +958,11 @@ nm_kr_txempty(struct netmap_kring *kring)
 
 /*
  * protect against multiple threads using the same ring.
- * also check that the ring has not been stopped.
- * We only care for 0 or !=0 as a return code.
+ * also check that the ring has not been stopped or locked
  */
-#define NM_KR_BUSY	1
-#define NM_KR_STOPPED	2
+#define NM_KR_BUSY	1	/* some other thread is syncing the ring */
+#define NM_KR_STOPPED	2	/* unbounded stop (ifconfig down) */
+#define NM_KR_LOCKED	3	/* bounded, brief stop for mutual exclusion */
 
 
 static __inline void nm_kr_put(struct netmap_kring *kr)
@@ -979,7 +979,7 @@ static __inline int nm_kr_tryget(struct netmap_kring *kr)
 	 */
 	if (unlikely(kr->nkr_stopped)) {
 		ND("ring %p stopped (%d)", kr, kr->nkr_stopped);
-		return NM_KR_STOPPED;
+		return kr->nkr_stopped;
 	}
 	busy = NM_ATOMIC_TEST_AND_SET(&kr->nr_busy);
 	/* we should not return NM_KR_BUSY if the ring was
@@ -990,12 +990,14 @@ static __inline int nm_kr_tryget(struct netmap_kring *kr)
 		ND("ring %p stopped (%d)", kr, kr->nkr_stopped);
 		if (!busy)
 			nm_kr_put(kr);
-		return NM_KR_STOPPED;
+		return kr->nkr_stopped;
 	}
 	return unlikely(busy) ? NM_KR_BUSY : 0;
 }
 
-/* only call this after setting the kr->nkr_stopped state to non zero */
+/* only call this after setting the kr->nkr_stopped state to non zero
+ * (either NM_KR_STOPPED or NM_KR_LOCKED)
+ */
 static __inline void nm_kr_get(struct netmap_kring *kr)
 {
 	while (NM_ATOMIC_TEST_AND_SET(&kr->nr_busy))

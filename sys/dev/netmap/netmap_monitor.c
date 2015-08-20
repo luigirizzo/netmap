@@ -238,7 +238,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 	int error = 0;
 
 	/* sinchronize with concurrently running nm_sync()s */
-	kring->nkr_stopped = 1;
+	kring->nkr_stopped = NM_KR_LOCKED;
 	nm_kr_get(kring);
 	/* make sure the monitor array exists and is big enough */
 	error = nm_monitor_alloc(kring, kring->n_monitors + 1);
@@ -666,7 +666,7 @@ netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 	 * by ourself
 	 */
 	if (nm_kr_tryget(kring)) {
-		/* either busy or stopped, just skip the sync */
+		/* in all cases, just skip the sync */
 		goto out;
 	}
 	if (nm_iszombie(kring->na)) {

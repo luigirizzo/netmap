@@ -544,11 +544,13 @@ int netmap_use_count = 0; /* number of active netmap instances */
 /*
  * mark the ring as stopped, and run through the locks
  * to make sure other users get to see it.
+ * stopped must be either NR_KR_STOPPED (for unbounded stop)
+ * of NR_KR_LOCKED (brief stop for mutual exclusion purposes)
  */
 static void
-netmap_disable_ring(struct netmap_kring *kr)
+netmap_disable_ring(struct netmap_kring *kr, int stopped)
 {
-	kr->nkr_stopped = 1;
+	kr->nkr_stopped = stopped;
 	nm_kr_get(kr);
 	// XXX check if nm_kr_get is sufficient
 	mtx_lock(&kr->q_lock);
@@ -561,7 +563,7 @@ void
 netmap_set_ring(struct netmap_adapter *na, u_int ring_id, enum txrx t, int stopped)
 {
 	if (stopped)
-		netmap_disable_ring(NMR(na, t) + ring_id);
+		netmap_disable_ring(NMR(na, t) + ring_id, stopped);
 	else
 		NMR(na, t)[ring_id].nkr_stopped = 0;
 }
@@ -594,7 +596,7 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
 void
 netmap_disable_all_rings(struct ifnet *ifp)
 {
-	netmap_set_all_rings(NA(ifp), 1 /* stopped */);
+	netmap_set_all_rings(NA(ifp), NM_KR_STOPPED);
 }
 
 /*
@@ -2246,9 +2248,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		retry:
 			switch (nm_kr_tryget(kring)) {
 			case NM_KR_BUSY:
-				/* bening, some other thread is taking care of this ring */
+				/* benign, some other thread is taking care of this ring */
 				continue;
 			case NM_KR_STOPPED:
+				/* the interface went down */
+				return EIO;
+			case NM_KR_LOCKED:
 				/* either a driver unload, or just a netmap_monitor
 				 * trying to attach to this ring. We need to
 				 * wait until the ring is no longer stopped to know
@@ -2455,6 +2460,10 @@ flush_tx:
 					    priv, i);
 				continue;
 			case NM_KR_STOPPED:
+				revents |= POLLERR;
+				continue;
+			case NM_KR_LOCKED:
+				RD(1, "%s stopped, retry", kring->name);
 				tsleep(kring, 0, "NM_POLL", 4);
 				goto retry_txk_get;
 			default:
@@ -2521,6 +2530,9 @@ do_retry_rx:
 					    priv, i);
 				continue;
 			case NM_KR_STOPPED:
+				revents |= POLLERR;
+				continue;
+			case NM_KR_LOCKED:
 				tsleep(kring, 0, "NM_POLL", 4);
 				goto retry_rxk_get;
 			default:
@@ -2911,7 +2923,7 @@ netmap_detach(struct ifnet *ifp)
 		return;
 
 	NMG_LOCK();
-	netmap_disable_all_rings(ifp);
+	netmap_set_all_rings(na, NM_KR_LOCKED);
 	na->na_flags |= NAF_ZOMBIE;
 	/*
 	 * if the netmap adapter is not native, somebody
