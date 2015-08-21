@@ -1113,7 +1113,7 @@ fi # e1000e
 # rtl8169
 if drv enabled r8169.c; then
 
-add_file_exists_check r8619.c true "drv_source_error r8169"
+add_file_exists_check r8169.c true "drv_source_error r8169.c"
 
 add_test 'define RTL_OPEN rtl8169_open' 'define RTL_OPEN rtl_open' <<-EOF
 	#include "r8169.c"
