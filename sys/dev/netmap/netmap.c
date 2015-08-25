@@ -1173,10 +1173,8 @@ netmap_txsync_to_host(struct netmap_adapter *na)
  * We protect access to the kring using kring->rx_queue.lock
  *
  * This routine also does the selrecord if called from the poll handler
- * (we know because td != NULL).
+ * (we know because sr != NULL).
  *
- * NOTE: on linux, selrecord() is defined as a macro and uses pwait
- *     as an additional hidden argument.
  * returns the number of packets delivered to tx queues in
  * transparent mode, or a negative value if error
  */
