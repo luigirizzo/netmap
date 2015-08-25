@@ -124,7 +124,7 @@ nm_os_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 	/* Compute the checksum on TCP/UDP header + payload
 	 * (includes the pseudo-header).
 	 */
-	*check = nm_os_csum_fold(nm_csum_raw(data, datalen, 0));
+	*check = nm_os_csum_fold(nm_os_csum_raw(data, datalen, 0));
 #else
 	static int notsupported = 0;
 	if (!notsupported) {
@@ -140,7 +140,7 @@ nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 {
 #ifdef INET6
 	*check = in6_cksum_pseudo((void*)ip6h, datalen, ip6h->nexthdr, 0);
-	*check = nm_os_csum_fold(nm_csum_raw(data, datalen, 0));
+	*check = nm_os_csum_fold(nm_os_csum_raw(data, datalen, 0));
 #else
 	static int notsupported = 0;
 	if (!notsupported) {
