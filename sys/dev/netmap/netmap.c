@@ -2063,6 +2063,42 @@ nm_rxsync_finalize(struct netmap_kring *kring)
 }
 
 
+/* returns 1 if the ring should be skipped, 0 otherwise. */
+static inline int
+nm_kr_access(struct netmap_kring *kring, int *error)
+{
+retry:
+	switch (nm_kr_tryget(kring)) {
+	case NM_KR_BUSY:
+		/* benign, some other thread is taking care of this ring */
+		return 1;
+	case NM_KR_STOPPED:
+		/* the interface went down */
+		*error |= POLLERR;
+		return 1;
+	case NM_KR_LOCKED:
+		/* either a driver unload, or just a netmap_monitor
+		 * trying to attach to this ring. We need to
+		 * wait until the ring is no longer stopped to know
+		 * how to proceed.
+		 */
+		RD(2, "%s stopped, retry", kring->name);
+		tsleep(kring, 0, "NM_IOCTL", 4);
+		goto retry;
+	default:
+		break;
+	}
+
+	if (unlikely(nm_iszombie(kring->na))) {
+		nm_kr_put(kring);
+		*error |= POLLERR;
+		return 1;
+	}
+
+	return 0;
+}
+
+
 
 /*
  * ioctl(2) support for the "netmap" device.
@@ -2243,32 +2279,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			struct netmap_kring *kring = krings + i;
 			struct netmap_ring *ring = kring->ring;
 
-		retry:
-			switch (nm_kr_tryget(kring)) {
-			case NM_KR_BUSY:
-				/* benign, some other thread is taking care of this ring */
+			if (unlikely(nm_kr_access(kring, &error))) {
+				error = (error ? EIO : 0);
 				continue;
-			case NM_KR_STOPPED:
-				/* the interface went down */
-				return EIO;
-			case NM_KR_LOCKED:
-				/* either a driver unload, or just a netmap_monitor
-				 * trying to attach to this ring. We need to
-				 * wait until the ring is no longer stopped to know
-				 * how to proceed.
-				 */
-				RD(2, "%s stopped, retry", kring->name);
-				tsleep(kring, 0, "NM_IOCTL", 4);
-				goto retry;
-			default:
-				break;
-			}
-
-			if (unlikely(nm_iszombie(na))) {
-				/* the driver has been unloaded, fatal error */
-				error = ENXIO;
-				nm_kr_put(kring);
-				break;
 			}
 
 			if (cmd == NIOCTXSYNC) {
@@ -2450,29 +2463,8 @@ flush_tx:
 			if (!want_tx && ring->cur == kring->nr_hwcur)
 				continue;
 
-		retry_txk_get:
-			switch (nm_kr_tryget(kring)) {
-			case NM_KR_BUSY:
-				if (netmap_verbose)
-					RD(2, "%p lost race on txring %d, ok",
-					    priv, i);
+			if (nm_kr_access(kring, &revents))
 				continue;
-			case NM_KR_STOPPED:
-				revents |= POLLERR;
-				continue;
-			case NM_KR_LOCKED:
-				RD(1, "%s stopped, retry", kring->name);
-				tsleep(kring, 0, "NM_POLL", 4);
-				goto retry_txk_get;
-			default:
-				break;
-			}
-
-			if (nm_iszombie(na)) {
-				/* fatal error, stop everything */
-				nm_kr_put(kring);
-				return POLLERR;
-			}
 
 			if (nm_txsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 				netmap_ring_reinit(kring);
@@ -2520,28 +2512,8 @@ do_retry_rx:
 			kring = &na->rx_rings[i];
 			ring = kring->ring;
 
-		retry_rxk_get:
-			switch (nm_kr_tryget(kring)) {
-			case NM_KR_BUSY:
-				if (netmap_verbose)
-					RD(2, "%p lost race on txring %d, ok",
-					    priv, i);
+			if (unlikely(nm_kr_access(kring, &revents)))
 				continue;
-			case NM_KR_STOPPED:
-				revents |= POLLERR;
-				continue;
-			case NM_KR_LOCKED:
-				tsleep(kring, 0, "NM_POLL", 4);
-				goto retry_rxk_get;
-			default:
-				break;
-			}
-
-			if (nm_iszombie(na)) {
-				/* fatal error, stop everything */
-				nm_kr_put(kring);
-				return POLLERR;
-			}
 
 			if (nm_rxsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 				netmap_ring_reinit(kring);
@@ -2615,7 +2587,7 @@ do_retry_rx:
  	 * rings to a single file descriptor.
 	 */
 
-	if (q.head && na->ifp != NULL)
+	if (q.head && !nm_kr_access(&na->tx_rings[na->num_tx_rings], &revents))
 		netmap_send_up(na->ifp, &q);
 
 	return (revents);
