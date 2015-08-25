@@ -72,6 +72,43 @@
 
 /* ======================== FREEBSD-SPECIFIC ROUTINES ================== */
 
+void
+nm_os_ifnet_lock(void)
+{
+	IFNET_WLOCK();
+}
+
+void
+nm_os_ifnet_unlock(void)
+{
+	IFNET_WUNLOCK();
+}
+
+static void
+netmap_ifnet_departure_handler(void *arg __unused, struct ifnet *ifp)
+{
+        netmap_make_zombie(ifp);
+}
+
+static eventhandler_tag nm_ifnet_dh_tag;
+
+int
+nm_os_ifnet_init(void)
+{
+        nm_ifnet_dh_tag =
+                EVENTHANDLER_REGISTER(ifnet_departure_event,
+                        netmap_ifnet_departure_handler,
+                        NULL, EVENTHANDLER_PRI_ANY);
+        return 0;
+}
+
+void
+nm_os_ifnet_fini(void)
+{
+        EVENTHANDLER_DEREGISTER(ifnet_departure_event,
+                nm_ifnet_dh_tag);
+}
+
 rawsum_t
 nm_os_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
 {
