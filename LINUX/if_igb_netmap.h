@@ -72,7 +72,6 @@ igb_netmap_reg(struct netmap_adapter *na, int onoff)
 	while (test_and_set_bit(__IGB_RESETTING, &adapter->state))
 		usleep_range(1000, 2000);
 
-	rtnl_lock();
 	if (netif_running(adapter->netdev))
 		igb_down(adapter);
 
@@ -86,8 +85,6 @@ igb_netmap_reg(struct netmap_adapter *na, int onoff)
 		igb_up(adapter);
 	else
 		igb_reset(adapter); // XXX is it needed ?
-
-	rtnl_unlock();
 
 	clear_bit(__IGB_RESETTING, &adapter->state);
 	return (0);

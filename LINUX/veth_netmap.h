@@ -40,8 +40,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct ifnet *ifp = na->ifp;
 	bool was_up = false;
 
-	rtnl_lock();
-
 	if (netif_running(ifp)) {
 		/* The interface is up. Close it while (un)registering. */
 		was_up = true;
@@ -57,8 +55,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (was_up)
 		veth_open(ifp);
-
-	rtnl_unlock();
 
 	return (0);
 }

@@ -610,6 +610,18 @@ netmap_enable_all_rings(struct ifnet *ifp)
 	netmap_set_all_rings(NA(ifp), 0 /* enabled */);
 }
 
+void
+netmap_make_zombie(struct ifnet *ifp)
+{
+	struct netmap_adapter *na = NA(ifp);
+
+	if (na) {
+		netmap_set_all_rings(na, NM_KR_LOCKED);
+		na->na_flags |= NAF_ZOMBIE;
+		netmap_set_all_rings(na, 0);
+	}
+}
+
 
 /*
  * generic bound_checking function
@@ -2727,11 +2739,25 @@ netmap_hw_register(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_hw_adapter *hwna =
 		(struct netmap_hw_adapter*)na;
+	int error = 0;
 
-	if (nm_iszombie(na))
-		return onoff ? ENXIO : 0;
+	nm_os_ifnet_lock();
 
-	return hwna->nm_hw_register(na, onoff);
+	if (nm_iszombie(na)) {
+		if (onoff) {
+			error = ENXIO;
+		} else if (na != NULL) {
+			na->na_flags &= ~NAF_NETMAP_ON;
+		}
+		goto out;
+	}
+
+	error = hwna->nm_hw_register(na, onoff);
+
+out:
+	nm_os_ifnet_unlock();
+
+	return error;
 }
 
 

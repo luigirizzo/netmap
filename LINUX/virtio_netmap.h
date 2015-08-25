@@ -200,8 +200,6 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	if (!netif_running(ifp))
 		return EBUSY;
 
-	rtnl_lock();
-
 	/* Down the interface. This also disables napi. */
 	virtnet_close(ifp);
 
@@ -266,8 +264,6 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	/* Up the interface. This also enables the napi. */
 	virtnet_open(ifp);
-
-	rtnl_unlock();
 
 	return (error);
 }
@@ -760,8 +756,6 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	if (!netif_running(ifp))
 		return EBUSY;
 
-	rtnl_lock();
-
 	/* Down the interface. This also disables napi. */
 	virtnet_close(ifp);
 
@@ -824,8 +818,6 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 out:
 	/* Up the interface. This also enables the napi. */
 	virtnet_open(ifp);
-
-	rtnl_unlock();
 
 	return ret;
 }

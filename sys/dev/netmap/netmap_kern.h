@@ -259,6 +259,13 @@ const char *nm_dump_buf(char *p, int len, int lim, char *dst);
 void nm_os_selwakeup(NM_SELINFO_T *si);
 void nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si);
 
+int nm_os_ifnet_init(void);
+void nm_os_ifnet_fini(void);
+void nm_os_ifnet_lock(void);
+void nm_os_ifnet_unlock(void);
+
+void netmap_make_zombie(struct ifnet *);
+
 /* passes a packet up to the host stack.
  * If the packet is sent (or dropped) immediately it returns NULL,
  * otherwise it links the packet to prev and returns m.

@@ -38,6 +38,49 @@
 #ifdef NETMAP_LINUX_HAVE_IOMMU
 #include <linux/iommu.h>
 
+void
+nm_os_ifnet_lock(void)
+{
+	rtnl_lock();
+}
+
+void
+nm_os_ifnet_unlock(void)
+{
+	rtnl_unlock();
+}
+
+/* Register for a notification on device removal */
+static int
+linux_netmap_notifier_cb(struct notifier_block *b,
+		unsigned long val, void *v)
+{
+	struct ifnet *ifp = netdev_notifier_info_to_dev(v);
+
+	if (val != NETDEV_UNREGISTER)
+		return NOTIFY_OK;
+
+	/* linux calls us while holding rntl_lock() */
+	netmap_make_zombie(ifp);
+	return NOTIFY_OK;
+}
+
+static struct notifier_block linux_netmap_netdev_notifier = {
+	.notifier_call = linux_netmap_notifier_cb,
+};
+
+int
+nm_os_ifnet_init(void)
+{
+	return register_netdevice_notifier(&linux_netmap_netdev_notifier);
+}
+
+void
+nm_os_ifnet_fini(void)
+{
+	unregister_netdevice_notifier(&linux_netmap_netdev_notifier);
+}
+
 /* #################### IOMMU ################## */
 /*
  * Returns the IOMMU domain id that the device belongs to.
