@@ -325,10 +325,15 @@ static inline int ilog2(uint64_t n)
 }
 #endif /* ilog2 */
 
+/* 
+ * TODO: ugly hack: abuse that contigmalloc() is only called from
+ * netmap_finalize_obj_allocator(), and numanode exists in that
+ * context.
+ */
 #define contigmalloc(sz, ty, flags, a, b, pgsz, c) ({		\
 	unsigned int order_ =					\
 		ilog2(roundup_pow_of_two(sz)/PAGE_SIZE);	\
-	struct page *p_ = alloc_pages(GFP_ATOMIC | __GFP_ZERO,  \
+	struct page *p_ = alloc_pages_node(numanode, GFP_ATOMIC | __GFP_ZERO, \
 		order_);					\
 	if (p_ != NULL) 					\
 		split_page(p_, order_);				\
