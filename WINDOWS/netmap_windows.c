@@ -545,6 +545,8 @@ ifunit_ref(const char* name)
     if (ifp == NULL)
 	return NULL;
 
+    win32_init_lookaside_buffers(ifp);
+
     RtlCopyMemory(ifp->if_xname, name, IFNAMSIZ);
     ifp->ifIndex = deviceIfIndex;
 
@@ -804,6 +806,8 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 void
 if_rele(struct net_device *ifp)
 {
+	win32_clear_lookaside_buffers(ifp);
+
 	if (ndis_hooks.ndis_rele != NULL)
 	{
 		ndis_hooks.ndis_rele(ifp);

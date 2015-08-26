@@ -987,6 +987,7 @@ int
 netmap_dtor_locked(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
+	struct ifnet *ifp;
 
 	/* number of active references to this fd */
 	if (--priv->np_refs > 0) {
@@ -994,10 +995,13 @@ netmap_dtor_locked(struct netmap_priv_d *priv)
 	}
 	netmap_use_count--;
 	if (!na) {
-		return 1; //XXX is it correct?
+		return 1;
 	}
+	ifp = na->ifp;
 	netmap_do_unregif(priv);
 	netmap_adapter_put(na);
+	if (ifp)
+		if_rele(ifp);
 	return 1;
 }
 
@@ -1442,11 +1446,12 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	netmap_adapter_get(ret);
 
 out:
-	if (error && ret != NULL)
-		netmap_adapter_put(ret);
-
-	if (ifp)
-		if_rele(ifp); /* allow live unloading of drivers modules */
+	if (error) {
+		if (ret)
+			netmap_adapter_put(ret);
+		if (ifp)
+			if_rele(ifp);
+	}
 
 	return error;
 }

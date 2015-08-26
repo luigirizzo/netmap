@@ -805,13 +805,10 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 	struct netmap_adapter *prev_na = gna->prev;
 
-#ifdef _WIN32
-	win32_clear_lookaside_buffers(ifp);
-#endif
 	if (prev_na != NULL) {
 		D("Released generic NA %p", gna);
 		netmap_adapter_put(prev_na);
-		if (nm_iszombie(na)) { // XXX can't happen now
+		if (nm_iszombie(na)) {
 		        /*
 		         * The driver has been removed without releasing
 		         * the reference so we need to do it here.
@@ -821,7 +818,6 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	}
 	WNA(ifp) = prev_na;
 	D("Restored native NA %p", prev_na);
-	if_rele(ifp);
 }
 
 /*
@@ -884,10 +880,5 @@ generic_netmap_attach(struct ifnet *ifp)
 		free(gna, M_DEVBUF);
 	}
 
-	ifunit_ref(ifp->if_xname);
-
-#ifdef _WIN32
-	win32_init_lookaside_buffers(ifp);
-#endif
 	return retval;
 }

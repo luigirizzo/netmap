@@ -698,7 +698,6 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 			goto out;
 		vpna = hw->na_vp;
 		hostna = hw->na_hostvp;
-		if_rele(ifp);
 		if (nmr->nr_arg1 != NETMAP_BDG_HOST)
 			hostna = NULL;
 	}
