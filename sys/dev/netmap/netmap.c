@@ -1340,6 +1340,16 @@ netmap_get_hw_na(struct nmreq *nmr, struct ifnet *ifp, struct netmap_adapter **n
 	}
 	ND("Created generic NA %p (prev %p)", gna, gna->prev);
 
+	if( nmr->nr_arg2 ){
+		int poolno = nmr->nr_arg2 - 1;
+		struct netmap_mem_d *old = (*na)->nm_mem;
+		struct netmap_mem_d *new = netmap_mem_get_allocator( poolno );
+		netmap_mem_put(old);
+		netmap_mem_get(new);
+		(*na)->nm_mem = new;
+		ND("force mempool #%d for %s: %p -> %p", poolno, ifp->if_xname, old, new);
+	}
+
 	return 0;
 #else /* !WITH_GENERIC */
 	return EOPNOTSUPP;
