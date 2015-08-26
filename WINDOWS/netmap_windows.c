@@ -550,8 +550,11 @@ ifunit_ref(const char* name)
     RtlCopyMemory(ifp->if_xname, name, IFNAMSIZ);
     ifp->ifIndex = deviceIfIndex;
 
+	win32_init_lookaside_buffers(ifp);
+
 	if (ndis_hooks.ndis_regif(ifp) != STATUS_SUCCESS) {
 	free(ifp, M_DEVBUF);
+	win32_clear_lookaside_buffers(ifp);
 	return NULL; /* not found */
     }
     return ifp;
@@ -813,3 +816,12 @@ if_rele(struct net_device *ifp)
 		ndis_hooks.ndis_rele(ifp);
 	}
 }
+
+void 
+nm_os_ifnet_unlock(void){
+};
+
+void 
+nm_os_ifnet_lock(void){
+
+};
