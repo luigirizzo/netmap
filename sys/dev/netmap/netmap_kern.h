@@ -978,16 +978,17 @@ static __inline void nm_kr_put(struct netmap_kring *kr)
 }
 
 
-static __inline int nm_kr_tryget(struct netmap_kring *kr)
+static inline int nm_iszombie(struct netmap_adapter *na);
+static __inline int nm_kr_tryget(struct netmap_kring *kr, int can_sleep, int *error)
 {
-	int busy, stopped;
+	int busy = 1, stopped;
 	/* check a first time without taking the lock
 	 * to avoid starvation for nm_kr_get()
 	 */
+retry:
 	stopped = kr->nkr_stopped;
 	if (unlikely(stopped)) {
-		ND("ring %p stopped (%d)", kr, stopped);
-		return stopped;
+		goto stop;
 	}
 	busy = NM_ATOMIC_TEST_AND_SET(&kr->nr_busy);
 	/* we should not return NM_KR_BUSY if the ring was
@@ -996,12 +997,24 @@ static __inline int nm_kr_tryget(struct netmap_kring *kr)
 	 */
 	stopped = kr->nkr_stopped;
 	if (unlikely(stopped)) {
-		ND("ring %p stopped (%d)", kr, stopped);
-		if (!busy)
-			nm_kr_put(kr);
-		return stopped;
+		goto stop;
 	}
+
+	if (unlikely(nm_iszombie(kr->na))) {
+		stopped = NM_KR_STOPPED;
+		goto stop;
+	}
+
 	return unlikely(busy) ? NM_KR_BUSY : 0;
+
+stop:
+	if (!busy)
+		nm_kr_put(kr);
+	if (stopped == NM_KR_STOPPED)
+		*error |= POLLERR;
+	else if (can_sleep)
+		goto retry;
+	return stopped;
 }
 
 /* only call this after setting the kr->nkr_stopped state to non zero

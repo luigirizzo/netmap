@@ -2075,43 +2075,6 @@ nm_rxsync_finalize(struct netmap_kring *kring)
 }
 
 
-/* returns 1 if the ring should be skipped, 0 otherwise. */
-static inline int
-nm_kr_access(struct netmap_kring *kring, int *error)
-{
-retry:
-	switch (nm_kr_tryget(kring)) {
-	case NM_KR_BUSY:
-		/* benign, some other thread is taking care of this ring */
-		return 1;
-	case NM_KR_STOPPED:
-		/* the interface went down */
-		*error |= POLLERR;
-		return 1;
-	case NM_KR_LOCKED:
-		/* either a driver unload, or just a netmap_monitor
-		 * trying to attach to this ring. We need to
-		 * wait until the ring is no longer stopped to know
-		 * how to proceed.
-		 */
-		RD(2, "%s stopped, retry", kring->name);
-		tsleep(kring, 0, "NM_IOCTL", 4);
-		goto retry;
-	default:
-		break;
-	}
-
-	if (unlikely(nm_iszombie(kring->na))) {
-		nm_kr_put(kring);
-		*error |= POLLERR;
-		return 1;
-	}
-
-	return 0;
-}
-
-
-
 /*
  * ioctl(2) support for the "netmap" device.
  *
@@ -2291,7 +2254,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			struct netmap_kring *kring = krings + i;
 			struct netmap_ring *ring = kring->ring;
 
-			if (unlikely(nm_kr_access(kring, &error))) {
+			if (unlikely(nm_kr_tryget(kring, 1, &error))) {
 				error = (error ? EIO : 0);
 				continue;
 			}
@@ -2475,7 +2438,7 @@ flush_tx:
 			if (!want_tx && ring->cur == kring->nr_hwcur)
 				continue;
 
-			if (nm_kr_access(kring, &revents))
+			if (nm_kr_tryget(kring, 1, &revents))
 				continue;
 
 			if (nm_txsync_prologue(kring, ring) >= kring->nkr_num_slots) {
@@ -2524,7 +2487,7 @@ do_retry_rx:
 			kring = &na->rx_rings[i];
 			ring = kring->ring;
 
-			if (unlikely(nm_kr_access(kring, &revents)))
+			if (unlikely(nm_kr_tryget(kring, 1, &revents)))
 				continue;
 
 			if (nm_rxsync_prologue(kring, ring) >= kring->nkr_num_slots) {
@@ -2599,7 +2562,7 @@ do_retry_rx:
  	 * rings to a single file descriptor.
 	 */
 
-	if (q.head && !nm_kr_access(&na->tx_rings[na->num_tx_rings], &revents))
+	if (q.head && !nm_kr_tryget(&na->tx_rings[na->num_tx_rings], 1, &revents))
 		netmap_send_up(na->ifp, &q);
 
 	return (revents);

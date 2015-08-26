@@ -660,23 +660,21 @@ netmap_monitor_parent_rxsync(struct netmap_kring *kring, int flags)
 static int
 netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 {
+	int error = 0;
 	ND(5, "%s %x", kring->name, flags);
 	/* ?xsync callbacks have tryget called by their callers
 	 * (NIOCREGIF and poll()), but here we have to call it
 	 * by ourself
 	 */
-	if (nm_kr_tryget(kring)) {
+	if (nm_kr_tryget(kring, 0, &error)) {
 		/* in all cases, just skip the sync */
 		goto out;
 	}
-	if (nm_iszombie(kring->na)) {
-		goto put_out;
-	}
 	netmap_monitor_parent_rxsync(kring, NAF_FORCE_READ);
-put_out:
+
 	nm_kr_put(kring);
 out:
-        return kring->mon_notify(kring, flags);
+        return (error ? EIO : kring->mon_notify(kring, flags));
 }
 
 
