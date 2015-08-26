@@ -1266,7 +1266,7 @@ netmap_rxsync_from_host(struct netmap_adapter *na, NM_SELRECORD_T *sr)
  */
 
 int
-netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
+netmap_get_hw_na(struct nmreq *nmr, struct ifnet *ifp, struct netmap_adapter **na)
 {
 	/* generic support */
 	int i = netmap_admode;	/* Take a snapshot. */
@@ -1339,6 +1339,16 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 		netmap_adapter_get(prev_na);
 	}
 	ND("Created generic NA %p (prev %p)", gna, gna->prev);
+
+	if( nmr->nr_arg2 ){
+		int poolno = nmr->nr_arg2 - 1;
+		struct netmap_mem_d *old = (*na)->nm_mem;
+		struct netmap_mem_d *new = netmap_mem_get_allocator( poolno );
+		netmap_mem_put(old);
+		netmap_mem_get(new);
+		(*na)->nm_mem = new;
+		ND("force mempool #%d for %s: %p -> %p", poolno, ifp->if_xname, old, new);
+	}
 
 	return 0;
 #else /* !WITH_GENERIC */
@@ -1420,7 +1430,7 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	        return ENXIO;
 	}
 
-	error = netmap_get_hw_na(ifp, &ret);
+	error = netmap_get_hw_na(nmr, ifp, &ret);
 	if (error)
 		goto out;
 
@@ -2110,7 +2120,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		NMG_LOCK();
 		do {
 			/* memsize is always valid */
-			struct netmap_mem_d *nmd = &nm_mem;
+			struct netmap_mem_d *nmd = netmap_mem_get_allocator(0);
 			u_int memflags;
 
 			if (nmr->nr_name[0] != '\0') {
@@ -2659,7 +2669,7 @@ netmap_attach_common(struct netmap_adapter *na)
 
 	if (na->nm_mem == NULL)
 		/* use the global allocator */
-		na->nm_mem = &nm_mem;
+		na->nm_mem = netmap_mem_get_allocator(0);
 	netmap_mem_get(na->nm_mem);
 #ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
