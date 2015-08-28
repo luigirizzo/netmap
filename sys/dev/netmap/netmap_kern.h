@@ -968,17 +968,35 @@ nm_kr_txempty(struct netmap_kring *kring)
  * also check that the ring has not been stopped or locked
  */
 #define NM_KR_BUSY	1	/* some other thread is syncing the ring */
-#define NM_KR_STOPPED	2	/* unbounded stop (ifconfig down) */
+#define NM_KR_STOPPED	2	/* unbounded stop (ifconfig down or driver unload) */
 #define NM_KR_LOCKED	3	/* bounded, brief stop for mutual exclusion */
 
 
+/* release the previously acquired right to use the *sync() methods of the ring */
 static __inline void nm_kr_put(struct netmap_kring *kr)
 {
 	NM_ATOMIC_CLEAR(&kr->nr_busy);
 }
 
 
+/* true if the ifp that backed the adapter has disappeared (e.g., the
+ * driver has been unloaded)
+ */
 static inline int nm_iszombie(struct netmap_adapter *na);
+
+/* try to obtain exclusive right to issue the *sync() operations on the ring.
+ * The right is obtained and must be later relinquished via nm_kr_put() if and
+ * only if nm_kr_tryget() returns 0.
+ * If can_sleep is 1 there are only two other possible outcomes:
+ * - the function returns NM_KR_BUSY
+ * - the function returns NM_KR_STOPPED and sets the POLLERR bit in *perr
+ *   (if non-null)
+ * In both cases the caller will typically skip the ring, possibly collecting
+ * errors along the way.
+ * If the calling context does not allow sleeping, the caller must pass 0 in can_sleep.
+ * In the latter case, the function may also return NM_KR_LOCKED and leave *perr
+ * untouched: ideally, the caller should try again at a later time.
+ */
 static __inline int nm_kr_tryget(struct netmap_kring *kr, int can_sleep, int *perr)
 {
 	int busy = 1, stopped;
@@ -1020,13 +1038,20 @@ stop:
 	return stopped;
 }
 
-/* only call this after setting the kr->nkr_stopped state to non zero
- * (either NM_KR_STOPPED or NM_KR_LOCKED)
+/* put the ring in the 'stopped' state and wait for the current user (if any) to
+ * notice. stopped must be either NM_KR_STOPPED or NM_KR_LOCKED
  */
-static __inline void nm_kr_get(struct netmap_kring *kr)
+static __inline void nm_kr_stop(struct netmap_kring *kr, int nm_kr_stopped)
 {
 	while (NM_ATOMIC_TEST_AND_SET(&kr->nr_busy))
 		tsleep(kr, 0, "NM_KR_GET", 4);
+}
+
+/* restart a ring after a stop */
+static __inline void nm_kr_start(struct netmap_kring *kr)
+{
+	kr->nkr_stopped = 0;
+	nm_kr_put(kr);
 }
 
 

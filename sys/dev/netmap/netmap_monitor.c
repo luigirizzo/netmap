@@ -238,8 +238,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 	int error = 0;
 
 	/* sinchronize with concurrently running nm_sync()s */
-	kring->nkr_stopped = NM_KR_LOCKED;
-	nm_kr_get(kring);
+	nm_kr_stop(kring, NM_KR_LOCKED);
 	/* make sure the monitor array exists and is big enough */
 	error = nm_monitor_alloc(kring, kring->n_monitors + 1);
 	if (error)
@@ -272,8 +271,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 	}
 
 out:
-	nm_kr_put(kring);
-	kring->nkr_stopped = 0;
+	nm_kr_start(kring);
 	return error;
 }
 
@@ -285,7 +283,7 @@ static void
 netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring)
 {
 	/* sinchronize with concurrently running nm_sync()s */
-	nm_kr_get(kring);
+	nm_kr_stop(kring, NM_KR_LOCKED);
 	kring->n_monitors--;
 	if (mkring->mon_pos != kring->n_monitors) {
 		kring->monitors[mkring->mon_pos] = kring->monitors[kring->n_monitors];
@@ -305,7 +303,7 @@ netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring)
 		}
 		nm_monitor_dealloc(kring);
 	}
-	nm_kr_put(kring);
+	nm_kr_start(kring);
 }
 
 

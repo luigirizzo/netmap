@@ -550,9 +550,8 @@ int netmap_use_count = 0; /* number of active netmap instances */
 static void
 netmap_disable_ring(struct netmap_kring *kr, int stopped)
 {
-	kr->nkr_stopped = stopped;
-	nm_kr_get(kr);
-	// XXX check if nm_kr_get is sufficient
+	nm_kr_stop(kr, stopped);
+	// XXX check if nm_kr_stop is sufficient
 	mtx_lock(&kr->q_lock);
 	mtx_unlock(&kr->q_lock);
 	nm_kr_put(kr);
