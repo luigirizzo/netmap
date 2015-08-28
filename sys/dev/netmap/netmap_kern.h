@@ -1014,6 +1014,7 @@ stop:
 		if (perr)
 			*perr |= POLLERR;
 	} else if (can_sleep) {
+		tsleep(kr, 0, "NM_KR_TRYGET", 4);
 		goto retry;
 	}
 	return stopped;
