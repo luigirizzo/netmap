@@ -1041,8 +1041,9 @@ stop:
 /* put the ring in the 'stopped' state and wait for the current user (if any) to
  * notice. stopped must be either NM_KR_STOPPED or NM_KR_LOCKED
  */
-static __inline void nm_kr_stop(struct netmap_kring *kr, int nm_kr_stopped)
+static __inline void nm_kr_stop(struct netmap_kring *kr, int stopped)
 {
+	kr->nkr_stopped = stopped;
 	while (NM_ATOMIC_TEST_AND_SET(&kr->nr_busy))
 		tsleep(kr, 0, "NM_KR_GET", 4);
 }
