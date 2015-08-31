@@ -1078,6 +1078,17 @@ add_test 'define ALLOC_NETDEV_4ARGS' <<-EOF
 	}
 EOF
 
+# netdev_notifier_info_to_dev
+add_test 'have NNITD' <<-EOF
+	#include <linux/netdevice.h>
+
+	struct net_device *
+	dummy(void *ptr)
+	{
+		return netdev_notifier_info_to_dev(ptr);
+	}
+EOF
+
 #####################################################
 # checks related to drivers                         #
 #####################################################

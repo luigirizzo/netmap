@@ -134,6 +134,10 @@ struct net_device_ops {
 	} while (0)
 #endif /* HAVE_SPLIT_PAGE */
 
+#ifndef NETMAP_LINUX_HAVE_NNITD
+#define netdev_notifier_info_to_dev(ptr)	(ptr)
+#endif /* HAVE_NNITD */
+
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 
 /* Type redefinitions. XXX check them */
