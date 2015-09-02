@@ -37,6 +37,25 @@
 
 #include "netmap_linux_config.h"
 
+void *
+nm_os_malloc(size_t size)
+{
+	return kmalloc(size, GFP_ATOMIC | __GFP_ZERO);
+}
+
+void *
+nm_os_realloc(void *addr, size_t new_size, size_t old_size)
+{
+	(void)old_size;
+
+	return krealloc(addr, new_size, GFP_ATOMIC | __GFP_ZERO);
+}
+
+void
+nm_os_free(void *addr){
+	kfree(addr);
+}
+
 void
 nm_os_selinfo_init(NM_SELINFO_T *si)
 {

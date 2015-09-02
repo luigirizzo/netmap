@@ -1032,7 +1032,7 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 	if (p == NULL)
 		return;
 	if (p->bitmap)
-		free(p->bitmap, M_NETMAP);
+		nm_os_free(p->bitmap);
 	p->bitmap = NULL;
 	if (p->lut) {
 		u_int i;
@@ -1170,7 +1170,7 @@ nm_alloc_lut(u_int nobj)
 #ifdef linux
 	lut = vmalloc(n);
 #else
-	lut = malloc(n, M_NETMAP, M_NOWAIT | M_ZERO);
+	lut = nm_os_malloc(n);
 #endif
 	return lut;
 }
@@ -1194,7 +1194,7 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 
 	/* Allocate the bitmap */
 	n = (p->objtotal + 31) / 32;
-	p->bitmap = malloc(sizeof(uint32_t) * n, M_NETMAP, M_NOWAIT | M_ZERO);
+	p->bitmap = nm_os_malloc(sizeof(uint32_t) * n);
 	if (p->bitmap == NULL) {
 		D("Unable to create bitmap (%d entries) for allocator '%s'", (int)n,
 		    p->name);
@@ -1401,7 +1401,7 @@ netmap_mem_private_delete(struct netmap_mem_d *nmd)
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
 	NMA_LOCK_DESTROY(nmd);
-	free(nmd, M_DEVBUF);
+	nm_os_free(nmd);
 }
 
 static int
@@ -1444,8 +1444,7 @@ netmap_mem_private_new(const char *name, u_int txr, u_int txd,
 	int i, err;
 	u_int v, maxd;
 
-	d = malloc(sizeof(struct netmap_mem_d),
-		   M_DEVBUF, M_NOWAIT | M_ZERO);
+	d = nm_os_malloc(sizeof(struct netmap_mem_d));
 	if (d == NULL) {
 		err = ENOMEM;
 		goto error;
@@ -1929,8 +1928,7 @@ netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 			    unsigned int nifp_offset)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
-	struct mem_pt_if *ptif = malloc(sizeof(*ptif), M_NETMAP,
-					M_NOWAIT | M_ZERO);
+	struct mem_pt_if *ptif = nm_os_malloc(sizeof(*ptif));
 
 	if (!ptif) {
 		return ENOMEM;
@@ -1989,7 +1987,7 @@ netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *nmd, struct ifnet *ifp)
 			}
 			D("removed (ifp=%p,nifp_offset=%u)",
 			  curr->ifp, curr->nifp_offset);
-			free(curr, M_NETMAP);
+			nm_os_free(curr);
 			ret = 0;
 			break;
 		}
@@ -2169,7 +2167,7 @@ netmap_mem_pt_guest_delete(struct netmap_mem_d *nmd)
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
 	NMA_LOCK_DESTROY(nmd);
-	free(nmd, M_DEVBUF);
+	nm_os_free(nmd);
 }
 
 static struct netmap_if *
@@ -2302,8 +2300,7 @@ netmap_mem_pt_guest_create(nm_memid_t mem_id)
 	struct netmap_mem_ptg *ptnmd;
 	int err = 0;
 
-	ptnmd = malloc(sizeof(struct netmap_mem_ptg),
-			M_DEVBUF, M_NOWAIT | M_ZERO);
+	ptnmd = nm_os_malloc(sizeof(struct netmap_mem_ptg));
 	if (ptnmd == NULL) {
 		err = ENOMEM;
 		goto error;

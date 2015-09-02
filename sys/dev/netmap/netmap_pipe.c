@@ -86,7 +86,7 @@ SYSEND;
 static int
 nm_pipe_alloc(struct netmap_adapter *na, u_int npipes)
 {
-	size_t len;
+	size_t old_len, len;
 	struct netmap_pipe_adapter **npa;
 
 	if (npipes <= na->na_max_pipes)
@@ -96,12 +96,9 @@ nm_pipe_alloc(struct netmap_adapter *na, u_int npipes)
 	if (npipes < na->na_next_pipe || npipes > NM_MAXPIPES)
 		return EINVAL;
 
+	old_len = sizeof(struct netmap_pipe_adapter *)*na->na_max_pipes;
         len = sizeof(struct netmap_pipe_adapter *) * npipes;
-#ifndef _WIN32
-	npa = realloc(na->na_pipes, len, M_DEVBUF, M_NOWAIT | M_ZERO);
-#else
-	npa = realloc(na->na_pipes, len, sizeof(struct netmap_pipe_adapter *)*na->na_max_pipes);
-#endif
+	npa = nm_os_realloc(na->na_pipes, len, old_len);
 	if (npa == NULL)
 		return ENOMEM;
 
@@ -120,7 +117,7 @@ netmap_pipe_dealloc(struct netmap_adapter *na)
 			D("freeing not empty pipe array for %s (%d dangling pipes)!", na->name,
 					na->na_next_pipe);
 		}
-		free(na->na_pipes, M_DEVBUF);
+		nm_os_free(na->na_pipes);
 		na->na_pipes = NULL;
 		na->na_max_pipes = 0;
 		na->na_next_pipe = 0;
@@ -587,7 +584,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
          * The endpoint we were asked for holds a reference to
          * the other one.
          */
-	mna = malloc(sizeof(*mna), M_DEVBUF, M_NOWAIT | M_ZERO);
+	mna = nm_os_malloc(sizeof(*mna));
 	if (mna == NULL) {
 		error = ENOMEM;
 		goto put_out;
@@ -624,7 +621,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		goto free_mna;
 
 	/* create the slave */
-	sna = malloc(sizeof(*mna), M_DEVBUF, M_NOWAIT | M_ZERO);
+	sna = nm_os_malloc(sizeof(*mna));
 	if (sna == NULL) {
 		error = ENOMEM;
 		goto unregister_mna;
@@ -675,11 +672,11 @@ found:
 	return 0;
 
 free_sna:
-	free(sna, M_DEVBUF);
+	nm_os_free(sna);
 unregister_mna:
 	netmap_pipe_remove(pna, mna);
 free_mna:
-	free(mna, M_DEVBUF);
+	nm_os_free(mna);
 put_out:
 	netmap_unget_na(pna, ifp);
 	return error;

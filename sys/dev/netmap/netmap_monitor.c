@@ -185,19 +185,16 @@ nm_txrx2flag(enum txrx t)
 static int
 nm_monitor_alloc(struct netmap_kring *kring, u_int n)
 {
-	size_t len;
+	size_t old_len, len;
 	struct netmap_kring **nm;
 
 	if (n <= kring->max_monitors)
 		/* we already have more entries that requested */
 		return 0;
-
+	
+	old_len = sizeof(struct netmap_kring *)*kring->max_monitors;
         len = sizeof(struct netmap_kring *) * n;
-#ifndef _WIN32
-	nm = realloc(kring->monitors, len, M_DEVBUF, M_NOWAIT | M_ZERO);
-#else
-	nm = realloc(kring->monitors, len, sizeof(struct netmap_kring *)*kring->max_monitors);
-#endif
+	nm = nm_os_realloc(kring->monitors, len, old_len);
 	if (nm == NULL)
 		return ENOMEM;
 
@@ -216,7 +213,7 @@ nm_monitor_dealloc(struct netmap_kring *kring)
 			D("freeing not empty monitor array for %s (%d dangling monitors)!", kring->name,
 					kring->n_monitors);
 		}
-		free(kring->monitors, M_DEVBUF);
+		nm_os_free(kring->monitors);
 		kring->monitors = NULL;
 		kring->max_monitors = 0;
 		kring->n_monitors = 0;
@@ -741,7 +738,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
 	ND("flags %x", nmr->nr_flags);
 
-	mna = malloc(sizeof(*mna), M_DEVBUF, M_NOWAIT | M_ZERO);
+	mna = nm_os_malloc(sizeof(*mna));
 	if (mna == NULL) {
 		D("memory error");
 		return ENOMEM;
@@ -757,7 +754,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	error = netmap_get_na(&pnmr, &pna, &ifp, create);
 	if (error) {
 		D("parent lookup failed: %d", error);
-		free(mna, M_DEVBUF);
+		nm_os_free(mna);
 		return error;
 	}
 	ND("found parent: %s", pna->name);
@@ -878,7 +875,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
 put_out:
 	netmap_unget_na(pna, ifp);
-	free(mna, M_DEVBUF);
+	nm_os_free(mna);
 	return error;
 }
 
