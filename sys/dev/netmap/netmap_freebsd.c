@@ -89,6 +89,24 @@ nm_os_selinfo_uninit(NM_SELINFO_T *si)
 	mtx_destroy(&si->m);
 }
 
+void *
+nm_os_malloc(size_t size)
+{
+	return malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
+}
+
+void *
+nm_os_realloc(void *addr, size_t new_size, size_t old_size __unused)
+{
+	return realloc(addr, new_size, M_DEVBUF, M_NOWAIT | M_ZERO);	
+}
+
+void
+nm_os_free(void *addr)
+{
+	free(addr, M_DEVBUF);
+}
+
 void
 nm_os_ifnet_lock(void)
 {

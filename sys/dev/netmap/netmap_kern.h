@@ -287,6 +287,11 @@ void nm_os_put_module(void);
 void netmap_make_zombie(struct ifnet *);
 void netmap_undo_zombie(struct ifnet *);
 
+/* os independent alloc/realloc/free */
+void *nm_os_malloc(size_t);
+void *nm_os_realloc(void *, size_t new_size, size_t old_size);
+void nm_os_free(void *);
+
 /* passes a packet up to the host stack.
  * If the packet is sent (or dropped) immediately it returns NULL,
  * otherwise it links the packet to prev and returns m.
