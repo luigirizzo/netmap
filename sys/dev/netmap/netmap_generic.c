@@ -817,6 +817,11 @@ generic_netmap_dtor(struct netmap_adapter *na)
 		}
 	}
 	WNA(ifp) = prev_na;
+	/*
+	 * netmap_detach_common(), that it's called after this function,
+	 * overrides WNA(ifp) if na->ifp is not NULL.
+	 */
+	na->ifp = NULL;
 	D("Restored native NA %p", prev_na);
 }
 
