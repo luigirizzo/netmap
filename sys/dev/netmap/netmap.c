@@ -1295,10 +1295,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	/* generic support */
 	int i = netmap_admode;	/* Take a snapshot. */
 	struct netmap_adapter *prev_na;
-#ifdef WITH_GENERIC
-	struct netmap_generic_adapter *gna;
 	int error = 0;
-#endif
 
 	*na = NULL; /* default */
 
@@ -1334,7 +1331,6 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	if (!NETMAP_CAPABLE(ifp) && i == NETMAP_ADMODE_NATIVE)
 		return EOPNOTSUPP;
 
-#ifdef WITH_GENERIC
 	/* Otherwise, create a generic adapter and return it,
 	 * saving the previously used netmap adapter, if any.
 	 *
@@ -1349,24 +1345,12 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	 * the branches above. This ensures that we never override
 	 * a generic adapter with another generic adapter.
 	 */
-	prev_na = NA(ifp);
 	error = generic_netmap_attach(ifp);
 	if (error)
 		return error;
 
 	*na = NA(ifp);
-	gna = (struct netmap_generic_adapter*)NA(ifp);
-	gna->prev = prev_na; /* save old na */
-	if (prev_na != NULL) {
-		// XXX add a refcount ?
-		netmap_adapter_get(prev_na);
-	}
-	ND("Created generic NA %p (prev %p)", gna, gna->prev);
-
 	return 0;
-#else /* !WITH_GENERIC */
-	return EOPNOTSUPP;
-#endif
 }
 
 
@@ -2620,37 +2604,28 @@ enum txrx tx, int flags)
 #endif
 
 /* called by all routines that create netmap_adapters.
- * Attach na to the ifp (if any) and provide defaults
- * for optional callbacks. Defaults assume that we
- * are creating an hardware netmap_adapter.
+ * provide some defaults and get a reference to the
+ * memory allocator
  */
 int
 netmap_attach_common(struct netmap_adapter *na)
 {
-	struct ifnet *ifp = na->ifp;
-
 	if (na->num_tx_rings == 0 || na->num_rx_rings == 0) {
 		D("%s: invalid rings tx %d rx %d",
 			na->name, na->num_tx_rings, na->num_rx_rings);
 		return EINVAL;
 	}
-	/* ifp is NULL for virtual adapters (bwrap, non-persistent VALE ports,
-	 * pipes, monitors). For bwrap we actually have a non-null ifp for
-	 * use by the external modules, but that is set after this
-	 * function has been called.
-	 * XXX this is ugly, maybe split this function in two (2014-03-14)
-	 */
-	if (ifp != NULL) {
-		WNA(ifp) = na;
 
-	/* the following is only needed for na that use the host port.
-	 * XXX do we have something similar for linux ?
-	 */
+	if (na->na_flags & NAF_HOST_RINGS) {
+		if (na->ifp == NULL) {
+			D("adapter %s has host rings but no ifp!", na->name);
+			return EINVAL;
+		}
 #ifdef __FreeBSD__
 		na->if_input = ifp->if_input; /* for netmap_send_up */
 #endif /* __FreeBSD__ */
 
-		NETMAP_SET_CAPABLE(ifp);
+		NETMAP_SET_CAPABLE(na->ifp);
 	}
 	if (na->nm_krings_create == NULL) {
 		/* we assume that we have been called by a driver,
@@ -2683,9 +2658,6 @@ netmap_attach_common(struct netmap_adapter *na)
 void
 netmap_detach_common(struct netmap_adapter *na)
 {
-	if (na->ifp != NULL)
-		WNA(na->ifp) = NULL;
-
 	if (na->tx_rings) { /* XXX should not happen */
 		D("freeing leftover tx_rings");
 		na->nm_krings_delete(na);
@@ -2733,6 +2705,15 @@ out:
 	return error;
 }
 
+static void
+netmap_hw_dtor(struct netmap_adapter *na)
+{
+	if (na->ifp == NULL)
+		return;
+
+	WNA(na->ifp) = NULL;
+}
+
 
 /*
  * Initialize a ``netmap_adapter`` object created by driver on attach.
@@ -2748,11 +2729,11 @@ static int
 _netmap_attach(struct netmap_adapter *arg, size_t size)
 {
 	struct netmap_hw_adapter *hwna = NULL;
-	// XXX when is arg == NULL ?
-	struct ifnet *ifp = arg ? arg->ifp : NULL;
+	struct ifnet *ifp = NULL;
 
-	if (arg == NULL || ifp == NULL)
+	if (arg == NULL || arg->ifp == NULL)
 		goto fail;
+	ifp = arg->ifp;
 	hwna = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (hwna == NULL)
 		goto fail;
@@ -2767,6 +2748,9 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	}
 	netmap_adapter_get(&hwna->up);
 
+	WNA(ifp) = &hwna->up;
+	NETMAP_SET_CAPABLE(ifp);
+
 #ifdef linux
 	if (ifp->netdev_ops) {
 		/* prepare a clone of the netdev ops */
@@ -2774,7 +2758,7 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 		hwna->nm_ndo.ndo_start_xmit = ifp->netdev_ops;
 #else
 		hwna->nm_ndo = *ifp->netdev_ops;
-#endif
+#endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
 	}
 	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;
 	if (ifp->ethtool_ops) {
@@ -2783,11 +2767,14 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	hwna->nm_eto.set_ringparam = linux_netmap_set_ringparam;
 #ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
 	hwna->nm_eto.set_channels = linux_netmap_set_channels;
-#endif
+#endif /* NETMAP_LINUX_HAVE_SET_CHANNELS */
 	if (arg->nm_config == NULL) {
 		hwna->up.nm_config = netmap_linux_config;
 	}
 #endif /* linux */
+	if (arg->nm_dtor == NULL) {
+		hwna->up.nm_dtor = netmap_hw_dtor;
+	}
 
 	if_printf(ifp, "netmap queues/slots: TX %d/%d, RX %d/%d\n",
 	    hwna->up.num_tx_rings, hwna->up.num_tx_desc,
@@ -2796,8 +2783,6 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 
 fail:
 	D("fail, arg %p ifp %p na %p", arg, ifp, hwna);
-	if (ifp)
-		netmap_detach(ifp);
 	return (hwna ? EINVAL : ENOMEM);
 }
 

@@ -1894,16 +1894,8 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	}
 
 	ND("na %p", na);
-	/* drop reference to hwna->ifp.
-	 * If we don't do this, netmap_detach_common(na)
-	 * will think it has set NA(na->ifp) to NULL
-	 */
 	na->ifp = NULL;
-	/* for safety, also drop the possible reference
-	 * in the hostna
-	 */
 	bna->host.up.ifp = NULL;
-
 	hwna->na_private = NULL;
 	hwna->na_vp = hwna->na_hostvp = NULL;
 	hwna->na_flags &= ~NAF_BUSY;
@@ -2270,6 +2262,8 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	}
 
 	na = &bna->up.up;
+	/* make bwrap ifp point to the real ifp */
+	na->ifp = hwna->ifp;
 	na->na_private = bna;
 	strncpy(na->name, nr_name, sizeof(na->name));
 	/* fill the ring data for the bwrap adapter with rx/tx meanings
@@ -2331,13 +2325,6 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	if (error) {
 		goto err_free;
 	}
-	/* make bwrap ifp point to the real ifp
-	 * NOTE: netmap_attach_common() interprets a non-NULL na->ifp
-	 * as a request to make the ifp point to the na. Since we
-	 * do not want to change the na already pointed to by hwna->ifp,
-	 * the following assignment has to be delayed until now
-	 */
-	na->ifp = hwna->ifp;
 	hwna->na_flags |= NAF_BUSY;
 	return 0;
 

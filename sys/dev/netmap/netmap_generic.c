@@ -883,7 +883,16 @@ generic_netmap_attach(struct ifnet *ifp)
 	retval = netmap_attach_common(na);
 	if (retval) {
 		free(gna, M_DEVBUF);
+		return retval;
 	}
+
+	gna->prev = NA(ifp); /* save old na */
+	if (gna->prev != NULL) {
+		netmap_adapter_get(gna->prev);
+	}
+	WNA(ifp) = na;
+
+	ND("Created generic NA %p (prev %p)", gna, gna->prev);
 
 	return retval;
 }

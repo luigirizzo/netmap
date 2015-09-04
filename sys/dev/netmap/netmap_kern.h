@@ -1766,9 +1766,9 @@ void nm_os_mitigation_start(struct nm_generic_mit *mit);
 void nm_os_mitigation_restart(struct nm_generic_mit *mit);
 int nm_os_mitigation_active(struct nm_generic_mit *mit);
 void nm_os_mitigation_cleanup(struct nm_generic_mit *mit);
+#else /* !WITH_GENERIC */
+#define generic_netmap_attach(ifp)	(EOPNOTSUPP)
 #endif /* WITH_GENERIC */
-
-
 
 /* Shared declarations for the VALE switch. */
 
