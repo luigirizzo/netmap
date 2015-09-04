@@ -558,18 +558,18 @@ win_nm_poll(struct pollfd *fds, int nfds, int timeout)
 
 static int 
 win_nm_open(char* pathname, int flags){
-	printf("Qui ci sono");
+
 	if (strcmp(pathname, NETMAP_DEVICE_NAME) == 0){
 		int fd = open(NETMAP_DEVICE_NAME, O_RDWR);
 		if (fd < 0) {
 			return -1;
 		}
-		printf("Qui ci sono");
+
 		win_insert_fd_record(fd);
 		return fd;
 	}
 	else {
-		printf("Qui non va");
+
 		return open(pathname, flags);
 	}
 }

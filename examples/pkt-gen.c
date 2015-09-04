@@ -414,6 +414,12 @@ system_ncpus(void)
 	sysctl(mib, 2, &ncpus, &len, NULL, 0);
 #elif defined(linux)
 	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+#elif defined(_WIN32)
+	{
+		SYSTEM_INFO sysinfo;
+		GetSystemInfo(&sysinfo);
+		ncpus = sysinfo.dwNumberOfProcessors;
+	}
 #else /* others */
 	ncpus = 1;
 #endif /* others */
