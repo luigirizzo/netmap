@@ -3170,9 +3170,10 @@ extern struct cdevsw netmap_cdevsw;
 void
 netmap_fini(void)
 {
-	netmap_uninit_bridges();
 	if (netmap_dev)
 		destroy_dev(netmap_dev);
+	/* we assume that there are no longer netmap users */
+	netmap_uninit_bridges();
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
 	printf("netmap: unloaded module.\n");
