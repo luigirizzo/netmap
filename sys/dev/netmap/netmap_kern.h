@@ -999,6 +999,11 @@ static inline int nm_iszombie(struct netmap_adapter *na);
  */
 static __inline int nm_kr_tryget(struct netmap_kring *kr, int can_sleep, int *perr)
 {
+#ifdef POLLERR
+#define NM_POLLERR POLLERR
+#else
+#define NM_POLLERR 1
+#endif /* POLLERR */
 	int busy = 1, stopped;
 	/* check a first time without taking the lock
 	 * to avoid starvation for nm_kr_get()
@@ -1030,7 +1035,7 @@ stop:
 		nm_kr_put(kr);
 	if (stopped == NM_KR_STOPPED) {
 		if (perr)
-			*perr |= POLLERR;
+			*perr |= NM_POLLERR;
 	} else if (can_sleep) {
 		tsleep(kr, 0, "NM_KR_TRYGET", 4);
 		goto retry;
