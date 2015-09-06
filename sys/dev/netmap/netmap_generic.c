@@ -880,17 +880,21 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	nm_os_generic_find_num_queues(ifp, &na->num_tx_rings, &na->num_rx_rings);
 
-	retval = netmap_attach_common(na);
-	if (retval) {
-		free(gna, M_DEVBUF);
-		return retval;
-	}
-
 	gna->prev = NA(ifp); /* save old na */
 	if (gna->prev != NULL) {
 		netmap_adapter_get(gna->prev);
 	}
+
 	WNA(ifp) = na;
+
+	retval = netmap_attach_common(na);
+	if (retval) {
+		WNA(ifp) = gna->prev;
+		netmap_adapter_put(gna->prev);
+		free(gna, M_DEVBUF);
+		return retval;
+	}
+
 
 	ND("Created generic NA %p (prev %p)", gna, gna->prev);
 

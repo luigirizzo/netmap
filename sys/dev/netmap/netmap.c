@@ -2617,8 +2617,11 @@ netmap_attach_common(struct netmap_adapter *na)
 	}
 
 	if (na->na_flags & NAF_HOST_RINGS) {
-		if (na->ifp == NULL) {
-			D("adapter %s has host rings but no ifp!", na->name);
+		struct ifnet *ifp = na->ifp;
+
+		if (ifp == NULL || NA(ifp) == NULL) {
+			D("adapter %s has host rings but %s is null!",
+				na->name, (ifp ? "ifp" : "NA(ifp)"));
 			return EINVAL;
 		}
 #ifdef __FreeBSD__
@@ -2742,14 +2745,13 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
 	hwna->nm_hw_register = hwna->up.nm_register;
 	hwna->up.nm_register = netmap_hw_register;
+	WNA(ifp) = &hwna->up;
 	if (netmap_attach_common(&hwna->up)) {
+		WNA(ifp) = NULL;
 		free(hwna, M_DEVBUF);
 		goto fail;
 	}
 	netmap_adapter_get(&hwna->up);
-
-	WNA(ifp) = &hwna->up;
-	NETMAP_SET_CAPABLE(ifp);
 
 #ifdef linux
 	if (ifp->netdev_ops) {
