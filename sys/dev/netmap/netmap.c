@@ -304,10 +304,9 @@ ports attached to the switch)
  *           ioctl(NIOCTXSYNC)/netmap_poll() in process context
  *             kring->nm_sync() == netmap_txsync_to_host_compat
  *               netmap_txsync_to_host(na)
- *                 NM_SEND_UP()
+ *                 nm_os_send_up()
  *                   FreeBSD: na->if_input() == ether_input()
  *                   linux: netif_rx() with NM_MAGIC_PRIORITY_RX
- *
  *
  *
  *               -= SYSTEM DEVICE WITH GENERIC SUPPORT =-
@@ -318,10 +317,11 @@ ports attached to the switch)
  *       concurrently:
  *           1) ioctl(NIOCTXSYNC)/netmap_poll() in process context
  *               kring->nm_sync() == generic_netmap_txsync()
- *                   linux:   dev_queue_xmit() with NM_MAGIC_PRIORITY_TX
- *                       generic_ndo_start_xmit()
- *                           orig. dev. start_xmit
- *                   FreeBSD: na->if_transmit() == orig. dev if_transmit
+ *                   nm_os_generic_xmit_frame()
+ *                       linux:   dev_queue_xmit() with NM_MAGIC_PRIORITY_TX
+ *                           ifp->ndo_start_xmit == generic_ndo_start_xmit()
+ *                               gna->save_start_xmit == orig. dev. start_xmit
+ *                       FreeBSD: na->if_transmit() == orig. dev if_transmit
  *           2) generic_mbuf_destructor()
  *                   na->nm_notify() == netmap_notify()
  *    - rx from netmap userspace:
@@ -332,17 +332,14 @@ ports attached to the switch)
  *               generic_rx_handler()
  *                   mbq_safe_enqueue()
  *                   na->nm_notify() == netmap_notify()
- *    - rx from host stack (XXX why different from native?):
- *        concurrently:
+ *    - rx from host stack
+ *        FreeBSD: same as native
+ *        Linux: same as native except:
  *           1) host stack
- *               linux: generic_ndo_start_xmit()
- *                   netmap_transmit()
- *               FreeBSD: ifp->if_input() == netmap_transmit
- *               both:
- *                       na->nm_notify() == netmap_notify()
- *           2) ioctl(NIOCRXSYNC)/netmap_poll() in process context
- *                kring->nm_sync() == netmap_rxsync_from_host_compat
- *                  netmap_rxsync_from_host(na, NULL, NULL)
+ *               dev_queue_xmit() without NM_MAGIC_PRIORITY_TX
+ *                   ifp->ndo_start_xmit == generic_ndo_start_xmit()
+ *                       netmap_transmit()
+ *                           na->nm_notify() == netmap_notify()
  *    - tx to host stack (same as native):
  *
  *
