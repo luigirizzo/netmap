@@ -414,6 +414,12 @@ system_ncpus(void)
 	sysctl(mib, 2, &ncpus, &len, NULL, 0);
 #elif defined(linux)
 	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+#elif defined(_WIN32)
+	{
+		SYSTEM_INFO sysinfo;
+		GetSystemInfo(&sysinfo);
+		ncpus = sysinfo.dwNumberOfProcessors;
+	}
 #else /* others */
 	ncpus = 1;
 #endif /* others */
@@ -1196,7 +1202,11 @@ sender_body(void *data)
 		 * wait for available room in the send queue(s)
 		 */
 #ifdef BUSYWAIT
-		ioctl(pfd.fd, NIOCTXSYNC, NULL);
+		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
+			D("ioctl error on queue %d: %s", targ->me,
+					strerror(errno));
+			goto quit;
+		}
 #else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
@@ -1367,7 +1377,11 @@ receiver_body(void *data)
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
 #ifdef BUSYWAIT
-		ioctl(pfd.fd, NIOCRXSYNC, NULL);
+		if (ioctl(pfd.fd, NIOCRXSYNC, NULL) < 0) {
+			D("ioctl error on queue %d: %s", targ->me,
+					strerror(errno));
+			goto quit;
+		}
 #else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);

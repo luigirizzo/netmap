@@ -805,14 +805,10 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 	struct netmap_adapter *prev_na = gna->prev;
 
-#ifdef _WIN32
-	win32_clear_lookaside_buffers(ifp);
-#endif
 	if (prev_na != NULL) {
 		D("Released generic NA %p", gna);
-		if_rele(ifp);
 		netmap_adapter_put(prev_na);
-		if (na->ifp == NULL) {
+		if (nm_iszombie(na)) {
 		        /*
 		         * The driver has been removed without releasing
 		         * the reference so we need to do it here.
@@ -821,8 +817,12 @@ generic_netmap_dtor(struct netmap_adapter *na)
 		}
 	}
 	WNA(ifp) = prev_na;
-	D("Restored native NA %p", prev_na);
+	/*
+	 * netmap_detach_common(), that it's called after this function,
+	 * overrides WNA(ifp) if na->ifp is not NULL.
+	 */
 	na->ifp = NULL;
+	D("Restored native NA %p", prev_na);
 }
 
 /*
@@ -880,12 +880,23 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	nm_os_generic_find_num_queues(ifp, &na->num_tx_rings, &na->num_rx_rings);
 
+	gna->prev = NA(ifp); /* save old na */
+	if (gna->prev != NULL) {
+		netmap_adapter_get(gna->prev);
+	}
+
+	WNA(ifp) = na;
+
 	retval = netmap_attach_common(na);
 	if (retval) {
+		WNA(ifp) = gna->prev;
+		netmap_adapter_put(gna->prev);
 		free(gna, M_DEVBUF);
+		return retval;
 	}
-#ifdef _WIN32
-	win32_init_lookaside_buffers(ifp);
-#endif
+
+
+	ND("Created generic NA %p (prev %p)", gna, gna->prev);
+
 	return retval;
 }

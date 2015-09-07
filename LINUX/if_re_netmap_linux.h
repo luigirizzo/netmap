@@ -62,7 +62,6 @@ re_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct ifnet *ifp = na->ifp;
 	int error = 0;
 
-	rtnl_lock();
 	NETMAP_LINUX_RTL_WFQ(ifp);
 	rtl8169_close(ifp);
 
@@ -79,7 +78,6 @@ fail:
 		nm_clear_native_flags(na);
 		error = NETMAP_LINUX_RTL_OPEN(ifp) ? EINVAL : 0;
 	}
-	rtnl_unlock();
 	return (error);
 }
 

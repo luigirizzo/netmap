@@ -304,10 +304,9 @@ ports attached to the switch)
  *           ioctl(NIOCTXSYNC)/netmap_poll() in process context
  *             kring->nm_sync() == netmap_txsync_to_host_compat
  *               netmap_txsync_to_host(na)
- *                 NM_SEND_UP()
+ *                 nm_os_send_up()
  *                   FreeBSD: na->if_input() == ether_input()
  *                   linux: netif_rx() with NM_MAGIC_PRIORITY_RX
- *
  *
  *
  *               -= SYSTEM DEVICE WITH GENERIC SUPPORT =-
@@ -318,10 +317,11 @@ ports attached to the switch)
  *       concurrently:
  *           1) ioctl(NIOCTXSYNC)/netmap_poll() in process context
  *               kring->nm_sync() == generic_netmap_txsync()
- *                   linux:   dev_queue_xmit() with NM_MAGIC_PRIORITY_TX
- *                       generic_ndo_start_xmit()
- *                           orig. dev. start_xmit
- *                   FreeBSD: na->if_transmit() == orig. dev if_transmit
+ *                   nm_os_generic_xmit_frame()
+ *                       linux:   dev_queue_xmit() with NM_MAGIC_PRIORITY_TX
+ *                           ifp->ndo_start_xmit == generic_ndo_start_xmit()
+ *                               gna->save_start_xmit == orig. dev. start_xmit
+ *                       FreeBSD: na->if_transmit() == orig. dev if_transmit
  *           2) generic_mbuf_destructor()
  *                   na->nm_notify() == netmap_notify()
  *    - rx from netmap userspace:
@@ -332,17 +332,14 @@ ports attached to the switch)
  *               generic_rx_handler()
  *                   mbq_safe_enqueue()
  *                   na->nm_notify() == netmap_notify()
- *    - rx from host stack (XXX why different from native?):
- *        concurrently:
+ *    - rx from host stack
+ *        FreeBSD: same as native
+ *        Linux: same as native except:
  *           1) host stack
- *               linux: generic_ndo_start_xmit()
- *                   netmap_transmit()
- *               FreeBSD: ifp->if_input() == netmap_transmit
- *               both:
- *                       na->nm_notify() == netmap_notify()
- *           2) ioctl(NIOCRXSYNC)/netmap_poll() in process context
- *                kring->nm_sync() == netmap_rxsync_from_host_compat
- *                  netmap_rxsync_from_host(na, NULL, NULL)
+ *               dev_queue_xmit() without NM_MAGIC_PRIORITY_TX
+ *                   ifp->ndo_start_xmit == generic_ndo_start_xmit()
+ *                       netmap_transmit()
+ *                           na->nm_notify() == netmap_notify()
  *    - tx to host stack (same as native):
  *
  *
@@ -544,12 +541,14 @@ int netmap_use_count = 0; /* number of active netmap instances */
 /*
  * mark the ring as stopped, and run through the locks
  * to make sure other users get to see it.
+ * stopped must be either NR_KR_STOPPED (for unbounded stop)
+ * of NR_KR_LOCKED (brief stop for mutual exclusion purposes)
  */
 static void
-netmap_disable_ring(struct netmap_kring *kr)
+netmap_disable_ring(struct netmap_kring *kr, int stopped)
 {
-	kr->nkr_stopped = 1;
-	nm_kr_get(kr);
+	nm_kr_stop(kr, stopped);
+	// XXX check if nm_kr_stop is sufficient
 	mtx_lock(&kr->q_lock);
 	mtx_unlock(&kr->q_lock);
 	nm_kr_put(kr);
@@ -560,7 +559,7 @@ void
 netmap_set_ring(struct netmap_adapter *na, u_int ring_id, enum txrx t, int stopped)
 {
 	if (stopped)
-		netmap_disable_ring(NMR(na, t) + ring_id);
+		netmap_disable_ring(NMR(na, t) + ring_id, stopped);
 	else
 		NMR(na, t)[ring_id].nkr_stopped = 0;
 }
@@ -593,7 +592,7 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
 void
 netmap_disable_all_rings(struct ifnet *ifp)
 {
-	netmap_set_all_rings(NA(ifp), 1 /* stopped */);
+	netmap_set_all_rings(NA(ifp), NM_KR_STOPPED);
 }
 
 /*
@@ -605,6 +604,18 @@ void
 netmap_enable_all_rings(struct ifnet *ifp)
 {
 	netmap_set_all_rings(NA(ifp), 0 /* enabled */);
+}
+
+void
+netmap_make_zombie(struct ifnet *ifp)
+{
+	struct netmap_adapter *na = NA(ifp);
+
+	if (na) {
+		netmap_set_all_rings(na, NM_KR_LOCKED);
+		na->na_flags |= NAF_ZOMBIE;
+		netmap_set_all_rings(na, 0);
+	}
 }
 
 
@@ -959,6 +970,20 @@ nm_si_user(struct netmap_priv_d *priv, enum txrx t)
 		(priv->np_qlast[t] - priv->np_qfirst[t] > 1));
 }
 
+struct netmap_priv_d*
+netmap_priv_new(void)
+{
+	struct netmap_priv_d *priv;
+
+	priv = malloc(sizeof(struct netmap_priv_d), M_DEVBUF,
+			      M_NOWAIT | M_ZERO);
+	if (priv == NULL)
+		return NULL;
+	priv->np_refs = 1;
+	netmap_use_count++;
+	return priv;
+}
+
 /*
  * Destructor of the netmap_priv_d, called when the fd is closed
  * Action: undo all the things done by NIOCREGIF,
@@ -968,22 +993,26 @@ nm_si_user(struct netmap_priv_d *priv, enum txrx t)
  *
  */
 /* call with NMG_LOCK held */
-int
-netmap_dtor_locked(struct netmap_priv_d *priv)
+void
+netmap_priv_delete(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
 
 	/* number of active references to this fd */
 	if (--priv->np_refs > 0) {
-		return 0;
+		return;
 	}
 	netmap_use_count--;
-	if (!na) {
-		return 1; //XXX is it correct?
+	if (na) {
+		struct ifnet *ifp = na->ifp;
+
+		netmap_do_unregif(priv);
+		netmap_adapter_put(na);
+		if (ifp)
+			if_rele(ifp);
 	}
-	netmap_do_unregif(priv);
-	netmap_adapter_put(na);
-	return 1;
+	bzero(priv, sizeof(*priv));	/* for safety */
+	free(priv, M_DEVBUF);
 }
 
 
@@ -992,15 +1021,10 @@ void
 netmap_dtor(void *data)
 {
 	struct netmap_priv_d *priv = data;
-	int last_instance;
 
 	NMG_LOCK();
-	last_instance = netmap_dtor_locked(priv);
+	netmap_priv_delete(priv);
 	NMG_UNLOCK();
-	if (last_instance) {
-		bzero(priv, sizeof(*priv));	/* for safety */
-		free(priv, M_DEVBUF);
-	}
 }
 
 
@@ -1271,10 +1295,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	/* generic support */
 	int i = netmap_admode;	/* Take a snapshot. */
 	struct netmap_adapter *prev_na;
-#ifdef WITH_GENERIC
-	struct netmap_generic_adapter *gna;
 	int error = 0;
-#endif
 
 	*na = NULL; /* default */
 
@@ -1310,7 +1331,6 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	if (!NETMAP_CAPABLE(ifp) && i == NETMAP_ADMODE_NATIVE)
 		return EOPNOTSUPP;
 
-#ifdef WITH_GENERIC
 	/* Otherwise, create a generic adapter and return it,
 	 * saving the previously used netmap adapter, if any.
 	 *
@@ -1325,25 +1345,12 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	 * the branches above. This ensures that we never override
 	 * a generic adapter with another generic adapter.
 	 */
-	prev_na = NA(ifp);
 	error = generic_netmap_attach(ifp);
 	if (error)
 		return error;
 
 	*na = NA(ifp);
-	gna = (struct netmap_generic_adapter*)NA(ifp);
-	gna->prev = prev_na; /* save old na */
-	if (prev_na != NULL) {
-		ifunit_ref(ifp->if_xname);
-		// XXX add a refcount ?
-		netmap_adapter_get(prev_na);
-	}
-	ND("Created generic NA %p (prev %p)", gna, gna->prev);
-
 	return 0;
-#else /* !WITH_GENERIC */
-	return EOPNOTSUPP;
-#endif
 }
 
 
@@ -1428,11 +1435,12 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	netmap_adapter_get(ret);
 
 out:
-	if (error && ret != NULL)
-		netmap_adapter_put(ret);
-
-	if (ifp)
-		if_rele(ifp); /* allow live unloading of drivers modules */
+	if (error) {
+		if (ret)
+			netmap_adapter_put(ret);
+		if (ifp)
+			if_rele(ifp);
+	}
 
 	return error;
 }
@@ -2061,7 +2069,6 @@ nm_rxsync_finalize(struct netmap_kring *kring)
 }
 
 
-
 /*
  * ioctl(2) support for the "netmap" device.
  *
@@ -2232,11 +2239,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			break;
 		}
 
-		if (!nm_netmap_on(na)) {
-			error = ENXIO;
-			break;
-		}
-
 		t = (cmd == NIOCTXSYNC ? NR_TX : NR_RX);
 		krings = NMR(na, t);
 		qfirst = priv->np_qfirst[t];
@@ -2245,10 +2247,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		for (i = qfirst; i < qlast; i++) {
 			struct netmap_kring *kring = krings + i;
 			struct netmap_ring *ring = kring->ring;
-			if (nm_kr_tryget(kring)) {
-				error = EBUSY;
-				goto out;
+
+			if (unlikely(nm_kr_tryget(kring, 1, &error))) {
+				error = (error ? EIO : 0);
+				continue;
 			}
+
 			if (cmd == NIOCTXSYNC) {
 				if (netmap_verbose & NM_VERB_TXSYNC)
 					D("pre txsync ring %d cur %d hwcur %d",
@@ -2316,7 +2320,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		error = EOPNOTSUPP;
 #endif /* linux */
 	}
-out:
 
 	return (error);
 }
@@ -2428,18 +2431,10 @@ flush_tx:
 
 			if (!want_tx && ring->cur == kring->nr_hwcur)
 				continue;
-			/* only one thread does txsync */
-			if (nm_kr_tryget(kring)) {
-				/* either busy or stopped
-				 * XXX if the ring is stopped, sleeping would
-				 * be better. In current code, however, we only
-				 * stop the rings for brief intervals (2014-03-14)
-				 */
-				if (netmap_verbose)
-					RD(2, "%p lost race on txring %d, ok",
-					    priv, i);
+
+			if (nm_kr_tryget(kring, 1, &revents))
 				continue;
-			}
+
 			if (nm_txsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 				netmap_ring_reinit(kring);
 				revents |= POLLERR;
@@ -2486,12 +2481,8 @@ do_retry_rx:
 			kring = &na->rx_rings[i];
 			ring = kring->ring;
 
-			if (nm_kr_tryget(kring)) {
-				if (netmap_verbose)
-					RD(2, "%p lost race on rxring %d, ok",
-					    priv, i);
+			if (unlikely(nm_kr_tryget(kring, 1, &revents)))
 				continue;
-			}
 
 			if (nm_rxsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 				netmap_ring_reinit(kring);
@@ -2565,7 +2556,7 @@ do_retry_rx:
  	 * rings to a single file descriptor.
 	 */
 
-	if (q.head && na->ifp != NULL)
+	if (q.head && !nm_kr_tryget(&na->tx_rings[na->num_tx_rings], 1, &revents))
 		netmap_send_up(na->ifp, &q);
 
 	return (revents);
@@ -2613,37 +2604,31 @@ enum txrx tx, int flags)
 #endif
 
 /* called by all routines that create netmap_adapters.
- * Attach na to the ifp (if any) and provide defaults
- * for optional callbacks. Defaults assume that we
- * are creating an hardware netmap_adapter.
+ * provide some defaults and get a reference to the
+ * memory allocator
  */
 int
 netmap_attach_common(struct netmap_adapter *na)
 {
-	struct ifnet *ifp = na->ifp;
-
 	if (na->num_tx_rings == 0 || na->num_rx_rings == 0) {
 		D("%s: invalid rings tx %d rx %d",
 			na->name, na->num_tx_rings, na->num_rx_rings);
 		return EINVAL;
 	}
-	/* ifp is NULL for virtual adapters (bwrap, non-persistent VALE ports,
-	 * pipes, monitors). For bwrap we actually have a non-null ifp for
-	 * use by the external modules, but that is set after this
-	 * function has been called.
-	 * XXX this is ugly, maybe split this function in two (2014-03-14)
-	 */
-	if (ifp != NULL) {
-		WNA(ifp) = na;
 
-	/* the following is only needed for na that use the host port.
-	 * XXX do we have something similar for linux ?
-	 */
+	if (na->na_flags & NAF_HOST_RINGS) {
+		struct ifnet *ifp = na->ifp;
+
+		if (ifp == NULL || NA(ifp) == NULL) {
+			D("adapter %s has host rings but %s is null!",
+				na->name, (ifp ? "ifp" : "NA(ifp)"));
+			return EINVAL;
+		}
 #ifdef __FreeBSD__
 		na->if_input = ifp->if_input; /* for netmap_send_up */
 #endif /* __FreeBSD__ */
 
-		NETMAP_SET_CAPABLE(ifp);
+		NETMAP_SET_CAPABLE(na->ifp);
 	}
 	if (na->nm_krings_create == NULL) {
 		/* we assume that we have been called by a driver,
@@ -2676,9 +2661,6 @@ netmap_attach_common(struct netmap_adapter *na)
 void
 netmap_detach_common(struct netmap_adapter *na)
 {
-	if (na->ifp != NULL)
-		WNA(na->ifp) = NULL; /* XXX do we need this? */
-
 	if (na->tx_rings) { /* XXX should not happen */
 		D("freeing leftover tx_rings");
 		na->nm_krings_delete(na);
@@ -2705,11 +2687,34 @@ netmap_hw_register(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_hw_adapter *hwna =
 		(struct netmap_hw_adapter*)na;
+	int error = 0;
 
-	if (na->ifp == NULL)
-		return onoff ? ENXIO : 0;
+	nm_os_ifnet_lock();
 
-	return hwna->nm_hw_register(na, onoff);
+	if (nm_iszombie(na)) {
+		if (onoff) {
+			error = ENXIO;
+		} else if (na != NULL) {
+			na->na_flags &= ~NAF_NETMAP_ON;
+		}
+		goto out;
+	}
+
+	error = hwna->nm_hw_register(na, onoff);
+
+out:
+	nm_os_ifnet_unlock();
+
+	return error;
+}
+
+static void
+netmap_hw_dtor(struct netmap_adapter *na)
+{
+	if (nm_iszombie(na) || na->ifp == NULL)
+		return;
+
+	WNA(na->ifp) = NULL;
 }
 
 
@@ -2727,11 +2732,11 @@ static int
 _netmap_attach(struct netmap_adapter *arg, size_t size)
 {
 	struct netmap_hw_adapter *hwna = NULL;
-	// XXX when is arg == NULL ?
-	struct ifnet *ifp = arg ? arg->ifp : NULL;
+	struct ifnet *ifp = NULL;
 
-	if (arg == NULL || ifp == NULL)
+	if (arg == NULL || arg->ifp == NULL)
 		goto fail;
+	ifp = arg->ifp;
 	hwna = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (hwna == NULL)
 		goto fail;
@@ -2740,7 +2745,9 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
 	hwna->nm_hw_register = hwna->up.nm_register;
 	hwna->up.nm_register = netmap_hw_register;
+	WNA(ifp) = &hwna->up;
 	if (netmap_attach_common(&hwna->up)) {
+		WNA(ifp) = NULL;
 		free(hwna, M_DEVBUF);
 		goto fail;
 	}
@@ -2753,7 +2760,7 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 		hwna->nm_ndo.ndo_start_xmit = ifp->netdev_ops;
 #else
 		hwna->nm_ndo = *ifp->netdev_ops;
-#endif
+#endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
 	}
 	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;
 	if (ifp->ethtool_ops) {
@@ -2762,11 +2769,14 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	hwna->nm_eto.set_ringparam = linux_netmap_set_ringparam;
 #ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
 	hwna->nm_eto.set_channels = linux_netmap_set_channels;
-#endif
+#endif /* NETMAP_LINUX_HAVE_SET_CHANNELS */
 	if (arg->nm_config == NULL) {
 		hwna->up.nm_config = netmap_linux_config;
 	}
 #endif /* linux */
+	if (arg->nm_dtor == NULL) {
+		hwna->up.nm_dtor = netmap_hw_dtor;
+	}
 
 	if_printf(ifp, "netmap queues/slots: TX %d/%d, RX %d/%d\n",
 	    hwna->up.num_tx_rings, hwna->up.num_tx_desc,
@@ -2775,8 +2785,6 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 
 fail:
 	D("fail, arg %p ifp %p na %p", arg, ifp, hwna);
-	if (ifp)
-		netmap_detach(ifp);
 	return (hwna ? EINVAL : ENOMEM);
 }
 
@@ -2871,19 +2879,23 @@ netmap_detach(struct ifnet *ifp)
 		return;
 
 	NMG_LOCK();
-	netmap_disable_all_rings(ifp);
-	na->ifp = NULL;
-	na->na_flags &= ~NAF_NETMAP_ON;
+	netmap_set_all_rings(na, NM_KR_LOCKED);
+	na->na_flags |= NAF_ZOMBIE;
 	/*
 	 * if the netmap adapter is not native, somebody
 	 * changed it, so we can not release it here.
-	 * The NULL na->ifp will notify the new owner that
+	 * The NAF_ZOMBIE flag will notify the new owner that
 	 * the driver is gone.
 	 */
 	if (na->na_flags & NAF_NATIVE) {
 	        netmap_adapter_put(na);
 	}
-	/* give them a chance to notice */
+	/* give active users a chance to notice that NAF_ZOMBIE has been
+	 * turned on, so that they can stop and return an error to userspace.
+	 * Note that this becomes a NOP if there are no active users and,
+	 * therefore, the put() above has deleted the na, since now NA(ifp) is
+	 * NULL.
+	 */
 	netmap_enable_all_rings(ifp);
 	NMG_UNLOCK();
 }
@@ -3142,9 +3154,11 @@ extern struct cdevsw netmap_cdevsw;
 void
 netmap_fini(void)
 {
-	netmap_uninit_bridges();
 	if (netmap_dev)
 		destroy_dev(netmap_dev);
+	/* we assume that there are no longer netmap users */
+	nm_os_ifnet_fini();
+	netmap_uninit_bridges();
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
 	printf("netmap: unloaded module.\n");
@@ -3179,6 +3193,10 @@ netmap_init(void)
 #ifdef __FreeBSD__
 	nm_os_vi_init_index();
 #endif
+
+	error = nm_os_ifnet_init();
+	if (error)
+		goto fail;
 
 	printf("netmap: loaded module\n");
 	return (0);

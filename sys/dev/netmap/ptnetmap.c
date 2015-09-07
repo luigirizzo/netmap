@@ -257,9 +257,9 @@ ptnetmap_tx_handler(void *data)
 
     kring = &pts->pth_na->parent->tx_rings[0];
 
-    if (unlikely(nm_kr_tryget(kring))) {
+    if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
         D("ERROR nm_kr_tryget()");
-        goto leave_kr_put;
+        goto leave;
     }
 
     csb = pts->csb;
@@ -468,7 +468,7 @@ ptnetmap_rx_handler(void *data)
 
     kring = &pts->pth_na->parent->rx_rings[0];
 
-    if (unlikely(nm_kr_tryget(kring))) {
+    if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
         D("ERROR nm_kr_tryget()");
         goto leave;
     }

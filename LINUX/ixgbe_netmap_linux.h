@@ -88,7 +88,6 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 	while (test_and_set_bit(__IXGBE_RESETTING, &adapter->state))
 		usleep_range(1000, 2000);
 
-	rtnl_lock();
 	if (netif_running(adapter->netdev))
 		ixgbe_down(adapter);
 
@@ -101,8 +100,6 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 	/* XXX SRIOV migth need another 2sec wait */
 	if (netif_running(adapter->netdev))
 		ixgbe_up(adapter);	/* also enables intr */
-	rtnl_unlock();
-
 	clear_bit(__IXGBE_RESETTING, &adapter->state);
 	return (0);
 }

@@ -259,6 +259,13 @@ const char *nm_dump_buf(char *p, int len, int lim, char *dst);
 void nm_os_selwakeup(NM_SELINFO_T *si);
 void nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si);
 
+int nm_os_ifnet_init(void);
+void nm_os_ifnet_fini(void);
+void nm_os_ifnet_lock(void);
+void nm_os_ifnet_unlock(void);
+
+void netmap_make_zombie(struct ifnet *);
+
 /* passes a packet up to the host stack.
  * If the packet is sent (or dropped) immediately it returns NULL,
  * otherwise it links the packet to prev and returns m.
@@ -584,6 +591,7 @@ struct netmap_adapter {
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
 #define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
+#define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
 				  */
@@ -957,43 +965,99 @@ nm_kr_txempty(struct netmap_kring *kring)
 
 /*
  * protect against multiple threads using the same ring.
- * also check that the ring has not been stopped.
- * We only care for 0 or !=0 as a return code.
+ * also check that the ring has not been stopped or locked
  */
-#define NM_KR_BUSY	1
-#define NM_KR_STOPPED	2
+#define NM_KR_BUSY	1	/* some other thread is syncing the ring */
+#define NM_KR_STOPPED	2	/* unbounded stop (ifconfig down or driver unload) */
+#define NM_KR_LOCKED	3	/* bounded, brief stop for mutual exclusion */
 
 
+/* release the previously acquired right to use the *sync() methods of the ring */
 static __inline void nm_kr_put(struct netmap_kring *kr)
 {
 	NM_ATOMIC_CLEAR(&kr->nr_busy);
 }
 
 
-static __inline int nm_kr_tryget(struct netmap_kring *kr)
+/* true if the ifp that backed the adapter has disappeared (e.g., the
+ * driver has been unloaded)
+ */
+static inline int nm_iszombie(struct netmap_adapter *na);
+
+/* try to obtain exclusive right to issue the *sync() operations on the ring.
+ * The right is obtained and must be later relinquished via nm_kr_put() if and
+ * only if nm_kr_tryget() returns 0.
+ * If can_sleep is 1 there are only two other possible outcomes:
+ * - the function returns NM_KR_BUSY
+ * - the function returns NM_KR_STOPPED and sets the POLLERR bit in *perr
+ *   (if non-null)
+ * In both cases the caller will typically skip the ring, possibly collecting
+ * errors along the way.
+ * If the calling context does not allow sleeping, the caller must pass 0 in can_sleep.
+ * In the latter case, the function may also return NM_KR_LOCKED and leave *perr
+ * untouched: ideally, the caller should try again at a later time.
+ */
+static __inline int nm_kr_tryget(struct netmap_kring *kr, int can_sleep, int *perr)
 {
+#ifdef POLLERR
+#define NM_POLLERR POLLERR
+#else
+#define NM_POLLERR 1
+#endif /* POLLERR */
+	int busy = 1, stopped;
 	/* check a first time without taking the lock
 	 * to avoid starvation for nm_kr_get()
 	 */
-	if (unlikely(kr->nkr_stopped)) {
-		ND("ring %p stopped (%d)", kr, kr->nkr_stopped);
-		return NM_KR_STOPPED;
+retry:
+	stopped = kr->nkr_stopped;
+	if (unlikely(stopped)) {
+		goto stop;
 	}
-	if (unlikely(NM_ATOMIC_TEST_AND_SET(&kr->nr_busy)))
-		return NM_KR_BUSY;
-	/* check a second time with lock held */
-	if (unlikely(kr->nkr_stopped)) {
-		ND("ring %p stopped (%d)", kr, kr->nkr_stopped);
+	busy = NM_ATOMIC_TEST_AND_SET(&kr->nr_busy);
+	/* we should not return NM_KR_BUSY if the ring was
+	 * actually stopped, so check another time after
+	 * the barrier provided by the atomic operation
+	 */
+	stopped = kr->nkr_stopped;
+	if (unlikely(stopped)) {
+		goto stop;
+	}
+
+	if (unlikely(nm_iszombie(kr->na))) {
+		stopped = NM_KR_STOPPED;
+		goto stop;
+	}
+
+	return unlikely(busy) ? NM_KR_BUSY : 0;
+
+stop:
+	if (!busy)
 		nm_kr_put(kr);
-		return NM_KR_STOPPED;
+	if (stopped == NM_KR_STOPPED) {
+		if (perr)
+			*perr |= NM_POLLERR;
+	} else if (can_sleep) {
+		tsleep(kr, 0, "NM_KR_TRYGET", 4);
+		goto retry;
 	}
-	return 0;
+	return stopped;
 }
 
-static __inline void nm_kr_get(struct netmap_kring *kr)
+/* put the ring in the 'stopped' state and wait for the current user (if any) to
+ * notice. stopped must be either NM_KR_STOPPED or NM_KR_LOCKED
+ */
+static __inline void nm_kr_stop(struct netmap_kring *kr, int stopped)
 {
+	kr->nkr_stopped = stopped;
 	while (NM_ATOMIC_TEST_AND_SET(&kr->nr_busy))
 		tsleep(kr, 0, "NM_KR_GET", 4);
+}
+
+/* restart a ring after a stop */
+static __inline void nm_kr_start(struct netmap_kring *kr)
+{
+	kr->nkr_stopped = 0;
+	nm_kr_put(kr);
 }
 
 
@@ -1054,6 +1118,12 @@ static inline int
 nm_native_on(struct netmap_adapter *na)
 {
 	return nm_netmap_on(na) && (na->na_flags & NAF_NATIVE);
+}
+
+static inline int
+nm_iszombie(struct netmap_adapter *na)
+{
+	return na == NULL || (na->na_flags & NAF_ZOMBIE);
 }
 
 /* set/clear native flags and if_transmit/netdev_ops */
@@ -1287,7 +1357,6 @@ int netmap_init(void);
 void netmap_fini(void);
 int netmap_get_memory(struct netmap_priv_d* p);
 void netmap_dtor(void *data);
-int netmap_dtor_locked(struct netmap_priv_d *priv);
 
 int netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *);
 
@@ -1621,6 +1690,9 @@ struct netmap_priv_d {
 	struct thread	*np_td;		/* kqueue, just debugging */
 };
 
+struct netmap_priv_d *netmap_priv_new(void);
+void netmap_priv_delete(struct netmap_priv_d *);
+
 #ifdef WITH_MONITOR
 
 struct netmap_monitor_adapter {
@@ -1694,9 +1766,9 @@ void nm_os_mitigation_start(struct nm_generic_mit *mit);
 void nm_os_mitigation_restart(struct nm_generic_mit *mit);
 int nm_os_mitigation_active(struct nm_generic_mit *mit);
 void nm_os_mitigation_cleanup(struct nm_generic_mit *mit);
+#else /* !WITH_GENERIC */
+#define generic_netmap_attach(ifp)	(EOPNOTSUPP)
 #endif /* WITH_GENERIC */
-
-
 
 /* Shared declarations for the VALE switch. */
 

@@ -55,3 +55,4 @@ LINUX/veth.c
 *.suo
 *.sdf
 *.opensdf
+*~

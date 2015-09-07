@@ -92,7 +92,6 @@ e1000_netmap_reg(struct netmap_adapter *na, int onoff)
 	while (test_and_set_bit(__E1000_RESETTING, &adapter->state))
 		usleep_range(1000, 2000);
 
-	rtnl_lock();
 	if (netif_running(adapter->netdev))
 		nm_e1000e_down(adapter);
 
@@ -107,8 +106,6 @@ e1000_netmap_reg(struct netmap_adapter *na, int onoff)
 		e1000e_up(adapter);
 	else
 		e1000e_reset(adapter);	// XXX is it needed ?
-
-	rtnl_unlock();
 
 	clear_bit(__E1000_RESETTING, &adapter->state);
 	return (0);

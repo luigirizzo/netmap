@@ -72,6 +72,43 @@
 
 /* ======================== FREEBSD-SPECIFIC ROUTINES ================== */
 
+void
+nm_os_ifnet_lock(void)
+{
+	IFNET_WLOCK();
+}
+
+void
+nm_os_ifnet_unlock(void)
+{
+	IFNET_WUNLOCK();
+}
+
+static void
+netmap_ifnet_departure_handler(void *arg __unused, struct ifnet *ifp)
+{
+        netmap_make_zombie(ifp);
+}
+
+static eventhandler_tag nm_ifnet_dh_tag;
+
+int
+nm_os_ifnet_init(void)
+{
+        nm_ifnet_dh_tag =
+                EVENTHANDLER_REGISTER(ifnet_departure_event,
+                        netmap_ifnet_departure_handler,
+                        NULL, EVENTHANDLER_PRI_ANY);
+        return 0;
+}
+
+void
+nm_os_ifnet_fini(void)
+{
+        EVENTHANDLER_DEREGISTER(ifnet_departure_event,
+                nm_ifnet_dh_tag);
+}
+
 rawsum_t
 nm_os_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
 {
@@ -124,7 +161,7 @@ nm_os_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 	/* Compute the checksum on TCP/UDP header + payload
 	 * (includes the pseudo-header).
 	 */
-	*check = nm_os_csum_fold(nm_csum_raw(data, datalen, 0));
+	*check = nm_os_csum_fold(nm_os_csum_raw(data, datalen, 0));
 #else
 	static int notsupported = 0;
 	if (!notsupported) {
@@ -140,7 +177,7 @@ nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 {
 #ifdef INET6
 	*check = in6_cksum_pseudo((void*)ip6h, datalen, ip6h->nexthdr, 0);
-	*check = nm_os_csum_fold(nm_csum_raw(data, datalen, 0));
+	*check = nm_os_csum_fold(nm_os_csum_raw(data, datalen, 0));
 #else
 	static int notsupported = 0;
 	if (!notsupported) {
@@ -895,19 +932,18 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 	(void)devtype;
 	(void)td;
 
-	priv = malloc(sizeof(struct netmap_priv_d), M_DEVBUF,
-			      M_NOWAIT | M_ZERO);
-	if (priv == NULL)
-		return ENOMEM;
-	priv->np_refs = 1;
+	NMG_LOCK();
+	priv = netmap_priv_new();
+	if (priv == NULL) {
+		error = ENOMEM;
+		goto out;
+	}
 	error = devfs_set_cdevpriv(priv, netmap_dtor);
 	if (error) {
-		free(priv, M_DEVBUF);
-	} else {
-		NMG_LOCK();
-		netmap_use_count++;
-		NMG_UNLOCK();
+		netmap_priv_delete(priv);
 	}
+out:
+	NMG_UNLOCK();
 	return error;
 }
 

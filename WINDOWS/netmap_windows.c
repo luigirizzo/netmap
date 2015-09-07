@@ -545,11 +545,16 @@ ifunit_ref(const char* name)
     if (ifp == NULL)
 	return NULL;
 
+    win32_init_lookaside_buffers(ifp);
+
     RtlCopyMemory(ifp->if_xname, name, IFNAMSIZ);
     ifp->ifIndex = deviceIfIndex;
 
+	win32_init_lookaside_buffers(ifp);
+
 	if (ndis_hooks.ndis_regif(ifp) != STATUS_SUCCESS) {
 	free(ifp, M_DEVBUF);
+	win32_clear_lookaside_buffers(ifp);
 	return NULL; /* not found */
     }
     return ifp;
@@ -804,8 +809,19 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 void
 if_rele(struct net_device *ifp)
 {
+	win32_clear_lookaside_buffers(ifp);
+
 	if (ndis_hooks.ndis_rele != NULL)
 	{
 		ndis_hooks.ndis_rele(ifp);
 	}
 }
+
+void 
+nm_os_ifnet_unlock(void){
+};
+
+void 
+nm_os_ifnet_lock(void){
+
+};

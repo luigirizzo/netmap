@@ -556,6 +556,39 @@ win_nm_poll(struct pollfd *fds, int nfds, int timeout)
 
 #define poll win_nm_poll
 
+static int 
+win_nm_open(char* pathname, int flags){
+
+	if (strcmp(pathname, NETMAP_DEVICE_NAME) == 0){
+		int fd = open(NETMAP_DEVICE_NAME, O_RDWR);
+		if (fd < 0) {
+			return -1;
+		}
+
+		win_insert_fd_record(fd);
+		return fd;
+	}
+	else {
+
+		return open(pathname, flags);
+	}
+}
+
+#define open win_nm_open
+
+static int 
+win_nm_close(int fd){
+	if (fd != -1){
+		close(fd);
+		if (win_get_netmap_handle(fd) != NULL){
+			win_remove_fd_record(fd);
+		}
+	}
+	return 0;
+}
+
+#define close win_nm_close
+
 #endif /* _WIN32 */
 
 /*
@@ -699,9 +732,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
-#ifdef _WIN32
-	win_insert_fd_record(d->fd);
-#endif
 	if (req)
 		d->req = *req;
 	d->req.nr_version = NETMAP_API;
@@ -828,9 +858,6 @@ nm_close(struct nm_desc *d)
 		munmap(d->mem, d->memsize);
 	if (d->fd != -1){
 		close(d->fd);
-#ifdef _WIN32		
-		win_remove_fd_record(d->fd);
-#endif
 	}
 		
 	bzero(d, sizeof(*d));

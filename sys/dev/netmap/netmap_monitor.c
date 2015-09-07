@@ -238,7 +238,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 	int error = 0;
 
 	/* sinchronize with concurrently running nm_sync()s */
-	nm_kr_get(kring);
+	nm_kr_stop(kring, NM_KR_LOCKED);
 	/* make sure the monitor array exists and is big enough */
 	error = nm_monitor_alloc(kring, kring->n_monitors + 1);
 	if (error)
@@ -271,7 +271,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 	}
 
 out:
-	nm_kr_put(kring);
+	nm_kr_start(kring);
 	return error;
 }
 
@@ -283,7 +283,7 @@ static void
 netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring)
 {
 	/* sinchronize with concurrently running nm_sync()s */
-	nm_kr_get(kring);
+	nm_kr_stop(kring, NM_KR_LOCKED);
 	kring->n_monitors--;
 	if (mkring->mon_pos != kring->n_monitors) {
 		kring->monitors[mkring->mon_pos] = kring->monitors[kring->n_monitors];
@@ -303,7 +303,7 @@ netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring)
 		}
 		nm_monitor_dealloc(kring);
 	}
-	nm_kr_put(kring);
+	nm_kr_start(kring);
 }
 
 
@@ -658,17 +658,21 @@ netmap_monitor_parent_rxsync(struct netmap_kring *kring, int flags)
 static int
 netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 {
+	int error = 0;
 	ND(5, "%s %x", kring->name, flags);
 	/* ?xsync callbacks have tryget called by their callers
 	 * (NIOCREGIF and poll()), but here we have to call it
 	 * by ourself
 	 */
-	if (nm_kr_tryget(kring))
+	if (nm_kr_tryget(kring, 0, &error)) {
+		/* in all cases, just skip the sync */
 		goto out;
+	}
 	netmap_monitor_parent_rxsync(kring, NAF_FORCE_READ);
+
 	nm_kr_put(kring);
 out:
-        return kring->mon_notify(kring, flags);
+        return (error ? EIO : kring->mon_notify(kring, flags));
 }
 
 

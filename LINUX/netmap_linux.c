@@ -38,6 +38,57 @@
 #ifdef NETMAP_LINUX_HAVE_IOMMU
 #include <linux/iommu.h>
 
+void
+nm_os_ifnet_lock(void)
+{
+	rtnl_lock();
+}
+
+void
+nm_os_ifnet_unlock(void)
+{
+	rtnl_unlock();
+}
+
+/* Register for a notification on device removal */
+static int
+linux_netmap_notifier_cb(struct notifier_block *b,
+		unsigned long val, void *v)
+{
+	struct ifnet *ifp = netdev_notifier_info_to_dev(v);
+
+	if (val != NETDEV_UNREGISTER)
+		return NOTIFY_OK;
+
+	/* linux calls us while holding rntl_lock() */
+	netmap_make_zombie(ifp);
+	return NOTIFY_OK;
+}
+
+static struct notifier_block linux_netmap_netdev_notifier = {
+	.notifier_call = linux_netmap_notifier_cb,
+};
+
+static int nm_os_ifnet_registered;
+
+int
+nm_os_ifnet_init(void)
+{
+	int error = register_netdevice_notifier(&linux_netmap_netdev_notifier);
+	if (!error)
+		nm_os_ifnet_registered = 1;
+	return error;
+}
+
+void
+nm_os_ifnet_fini(void)
+{
+	if (nm_os_ifnet_registered) {
+		unregister_netdevice_notifier(&linux_netmap_netdev_notifier);
+		nm_os_ifnet_registered = 0;
+	}
+}
+
 /* #################### IOMMU ################## */
 /*
  * Returns the IOMMU domain id that the device belongs to.
@@ -663,16 +714,17 @@ static int
 linux_netmap_open(struct inode *inode, struct file *file)
 {
 	struct netmap_priv_d *priv;
+	int error;
 	(void)inode;	/* UNUSED */
 
-	priv = malloc(sizeof(struct netmap_priv_d), M_DEVBUF,
-			      M_NOWAIT | M_ZERO);
-	if (priv == NULL)
-		return -ENOMEM;
-	priv->np_refs = 1;
-	file->private_data = priv;
 	NMG_LOCK();
-	netmap_use_count++;
+	priv = netmap_priv_new();
+	if (priv == NULL) {
+		error = -ENOMEM;
+		goto out;
+	}
+	file->private_data = priv;
+out:
 	NMG_UNLOCK();
 
 	return (0);

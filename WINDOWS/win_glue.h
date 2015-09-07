@@ -39,6 +39,7 @@
 /* Disabling some warnings */
 #pragma warning(disable:4018)	// expression: signed/unsigned mismatch
 #pragma warning(disable:4047)	// operator: different levels of indirection
+#pragma warning(disable:4057)	// 'int *' differs in indirection to slightly different base types from 'u_int *'
 #pragma warning(disable:4098)	// void function returning a value - netmap_mem2.c
 #pragma warning(disable:4100)	// unreferenced formal parameter
 // #pragma warning(disable:4101)	// unreferenced local variable
