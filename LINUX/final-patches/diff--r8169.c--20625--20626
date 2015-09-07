@@ -1,5 +1,5 @@
 diff --git a/r8169.c b/r8169.c
-index 53b13de..745a59d 100644
+index 53b13de..ced4849 100644
 --- a/r8169.c
 +++ b/r8169.c
 @@ -535,6 +535,10 @@ static int rtl8169_poll(struct napi_struct *napi, int budget);
@@ -35,18 +35,7 @@ index 53b13de..745a59d 100644
  	/* restore original MAC address */
  	rtl_rar_set(tp, dev->perm_addr);
  
-@@ -3303,6 +3315,10 @@ static int rtl8169_open(struct net_device *dev)
- 
- 	napi_enable(&tp->napi);
- 
-+#ifdef DEV_NETMAP
-+	netmap_enable_all_rings(dev);
-+#endif /* DEV_NETMAP */
-+
- 	rtl_hw_start(dev);
- 
- 	rtl8169_request_timer(dev);
-@@ -4018,6 +4034,11 @@ static inline void rtl8169_mark_as_last_descriptor(struct RxDesc *desc)
+@@ -4018,6 +4030,11 @@ static inline void rtl8169_mark_as_last_descriptor(struct RxDesc *desc)
  static int rtl8169_rx_fill(struct rtl8169_private *tp)
  {
  	unsigned int i;
@@ -58,27 +47,7 @@ index 53b13de..745a59d 100644
  
  	for (i = 0; i < NUM_RX_DESC; i++) {
  		void *data;
-@@ -4119,11 +4140,19 @@ static void rtl8169_wait_for_quiescence(struct net_device *dev)
- 	/* Wait for any pending NAPI task to complete */
- 	napi_disable(&tp->napi);
- 
-+#ifdef DEV_NETMAP
-+	netmap_disable_all_rings(dev);
-+#endif /* DEV_NETMAP */
-+
- 	rtl8169_irq_mask_and_ack(ioaddr);
- 
- 	tp->intr_mask = 0xffff;
- 	RTL_W16(IntrMask, tp->intr_event);
- 	napi_enable(&tp->napi);
-+
-+#ifdef DEV_NETMAP
-+	netmap_enable_all_rings(dev);
-+#endif /* DEV_NETMAP */
- }
- 
- static void rtl8169_reinit_task(struct work_struct *work)
-@@ -4395,6 +4424,11 @@ static void rtl8169_tx_interrupt(struct net_device *dev,
+@@ -4395,6 +4412,11 @@ static void rtl8169_tx_interrupt(struct net_device *dev,
  {
  	unsigned int dirty_tx, tx_left;
  
@@ -90,7 +59,7 @@ index 53b13de..745a59d 100644
  	dirty_tx = tp->dirty_tx;
  	smp_rmb();
  	tx_left = tp->cur_tx - dirty_tx;
-@@ -4490,6 +4524,11 @@ static int rtl8169_rx_interrupt(struct net_device *dev,
+@@ -4490,6 +4512,11 @@ static int rtl8169_rx_interrupt(struct net_device *dev,
  	unsigned int count;
  	int polling = (budget != ~(u32)0) ? 1 : 0;
  
@@ -102,14 +71,3 @@ index 53b13de..745a59d 100644
  	cur_rx = tp->cur_rx;
  	rx_left = NUM_RX_DESC + tp->dirty_rx - cur_rx;
  	rx_left = min(rx_left, budget);
-@@ -4691,6 +4730,10 @@ static void rtl8169_down(struct net_device *dev)
- 
- 	napi_disable(&tp->napi);
- 
-+#ifdef DEV_NETMAP
-+	netmap_disable_all_rings(dev);
-+#endif /* DEV_NETMAP */
-+
- 	spin_lock_irq(&tp->lock);
- 
- 	rtl8169_asic_down(ioaddr);

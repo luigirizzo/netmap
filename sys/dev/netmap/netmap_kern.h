@@ -1259,7 +1259,7 @@ void netmap_krings_delete(struct netmap_adapter *na);
 void netmap_set_ring(struct netmap_adapter *, u_int ring_id, enum txrx, int stopped);
 /* set the stopped/enabled status of all rings of the adapter. */
 void netmap_set_all_rings(struct netmap_adapter *, int stopped);
-/* convenience wrappers for netmap_set_all_rings, used in drivers */
+/* convenience wrappers for netmap_set_all_rings */
 void netmap_disable_all_rings(struct ifnet *);
 void netmap_enable_all_rings(struct ifnet *);
 

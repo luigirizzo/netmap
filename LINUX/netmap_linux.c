@@ -57,11 +57,21 @@ linux_netmap_notifier_cb(struct notifier_block *b,
 {
 	struct ifnet *ifp = netdev_notifier_info_to_dev(v);
 
-	if (val != NETDEV_UNREGISTER)
-		return NOTIFY_OK;
-
-	/* linux calls us while holding rntl_lock() */
-	netmap_make_zombie(ifp);
+	/* linux calls us while holding rtnl_lock() */
+	switch (val) {
+	case NETDEV_UNREGISTER:
+		netmap_make_zombie(ifp);
+		break;
+	case NETDEV_GOING_DOWN:
+		netmap_disable_all_rings(ifp);
+		break;
+	case NETDEV_PRE_UP:
+		netmap_enable_all_rings(ifp);
+		break;
+	default:
+		/* we don't care */
+		break;
+	}
 	return NOTIFY_OK;
 }
 
