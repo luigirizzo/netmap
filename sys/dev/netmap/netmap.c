@@ -3157,6 +3157,7 @@ netmap_fini(void)
 	if (netmap_dev)
 		destroy_dev(netmap_dev);
 	/* we assume that there are no longer netmap users */
+	nm_os_ifnet_fini();
 	netmap_uninit_bridges();
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
@@ -3192,6 +3193,10 @@ netmap_init(void)
 #ifdef __FreeBSD__
 	nm_os_vi_init_index();
 #endif
+
+	error = nm_os_ifnet_init();
+	if (error)
+		goto fail;
 
 	printf("netmap: loaded module\n");
 	return (0);
