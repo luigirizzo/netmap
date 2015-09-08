@@ -825,3 +825,15 @@ void
 nm_os_ifnet_lock(void){
 
 };
+
+int
+nm_os_ifnet_init(void)
+{
+	return 0;
+}
+
+void
+nm_os_ifnet_fini(void)
+{
+
+}
