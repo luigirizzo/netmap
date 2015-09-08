@@ -74,7 +74,7 @@ static inline void CPU_SET(uint32_t i, cpuset_t *p)
         *p |= 1<< (i & 0x3f);
 }
 
-#define pthread_setaffinity_np(a, b, c) !SetThreadAffinityMask(GetCurrentThread(), *c)    //((void)a, 0)
+#define pthread_setaffinity_np(a, b, c) !SetThreadAffinityMask(a, *c)    //((void)a, 0)
 #define TAP_CLONEDEV	"/dev/tap"
 #define AF_LINK	18	//defined in winsocks.h
 #define CLOCK_REALTIME_PRECISE CLOCK_REALTIME
