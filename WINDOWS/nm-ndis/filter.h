@@ -340,6 +340,8 @@ typedef struct _MS_FILTER
     struct net_device		    *ifp;			// set during the regif XXX maybe unused ?
     int				    intercept;			// two flags, see win_glue.h
 	NPAGED_LOOKASIDE_LIST	netmap_injected_packets_pool;
+
+	int current_tx_pending_packets;
 #if DBG
     BOOLEAN                         bIndicating;
 #endif

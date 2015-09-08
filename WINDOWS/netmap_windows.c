@@ -307,6 +307,9 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 		if (a->head == NULL)
 			a->head = cur;
 	}
+	else {
+		return NDIS_STATUS_BUFFER_OVERFLOW;
+	}
 	return  0;
 }
 
