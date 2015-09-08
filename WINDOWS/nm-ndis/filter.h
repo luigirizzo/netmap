@@ -341,7 +341,7 @@ typedef struct _MS_FILTER
     int				    intercept;			// two flags, see win_glue.h
 	NPAGED_LOOKASIDE_LIST	netmap_injected_packets_pool;
 
-	int current_tx_pending_packets;
+	int current_tx_pending_packets_to_miniport;
 #if DBG
     BOOLEAN                         bIndicating;
 #endif
