@@ -65,7 +65,7 @@ linux_netmap_notifier_cb(struct notifier_block *b,
 	case NETDEV_GOING_DOWN:
 		netmap_disable_all_rings(ifp);
 		break;
-	case NETDEV_PRE_UP:
+	case NETDEV_UP:
 		netmap_enable_all_rings(ifp);
 		break;
 	default:
