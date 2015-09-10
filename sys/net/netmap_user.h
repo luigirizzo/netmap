@@ -307,7 +307,7 @@ typedef void (*nm_cb_t)(u_char *, const struct nm_pkthdr *, const u_char *d);
  *		-NN		bind individual NIC ring pair
  *		{NN		bind master side of pipe NN
  *		}NN		bind slave side of pipe NN
- *		a suffix starting with + and the following flags,
+ *		a suffix starting with / and the following flags,
  *		in any order:
  *		x		exclusive access
  *		z		zero copy monitor
