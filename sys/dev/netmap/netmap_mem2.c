@@ -752,14 +752,6 @@ netmap_obj_offset(struct netmap_obj_pool *p, const void *vaddr)
     ((n)->pools[NETMAP_IF_POOL].memtotal + 			\
 	netmap_obj_offset(&(n)->pools[NETMAP_RING_POOL], (v)))
 
-#if 0 /* unused */
-#define netmap_buf_offset(n, v)					\
-    ((n)->pools[NETMAP_IF_POOL].memtotal +			\
-	(n)->pools[NETMAP_RING_POOL].memtotal +		\
-	netmap_obj_offset(&(n)->pools[NETMAP_BUF_POOL], (v)))
-#endif /* unused */
-
-
 static ssize_t
 netmap_mem2_if_offset(struct netmap_mem_d *nmd, const void *addr)
 {
