@@ -25,7 +25,7 @@
  */
 
 /*
- * $FreeBSD: head/tools/tools/netmap/pkt-gen.c 231198 2012-02-08 11:43:29Z luigi $
+ * $FreeBSD$
  * $Id: pkt-gen.c 12346 2013-06-12 17:36:25Z luigi $
  *
  * Example program to show how to build a multithreaded packet
@@ -74,7 +74,7 @@ static inline void CPU_SET(uint32_t i, cpuset_t *p)
         *p |= 1<< (i & 0x3f);
 }
 
-#define pthread_setaffinity_np(a, b, c) SetThreadAffinityMask(GetCurrentThread(), *c)    //((void)a, 0)
+#define pthread_setaffinity_np(a, b, c) !SetThreadAffinityMask(a, *c)    //((void)a, 0)
 #define TAP_CLONEDEV	"/dev/tap"
 #define AF_LINK	18	//defined in winsocks.h
 #define CLOCK_REALTIME_PRECISE CLOCK_REALTIME
@@ -250,7 +250,9 @@ struct glob_arg {
 #define OPT_TS		16	/* add a timestamp */
 #define OPT_INDIRECT	32	/* use indirect buffers, tx only */
 #define OPT_DUMP	64	/* dump rx/tx traffic */
-#define OPT_RUBBISH	512	/* send wathever the buffers contain */
+#define OPT_RUBBISH	256	/* send wathever the buffers contain */
+#define OPT_RANDOM_SRC  512
+#define OPT_RANDOM_DST  1024
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -269,8 +271,9 @@ struct glob_arg {
 	char *nmr_config;
 	int dummy_send;
 	int virt_header;	/* send also the virt_header */
-	int extra_pipes;	/* goes in nr_arg1 */
 	int extra_bufs;		/* goes in nr_arg3 */
+	int extra_pipes;	/* goes in nr_arg1 */
+	char *packet_file;	/* -P option */
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
 
@@ -297,6 +300,7 @@ struct targ {
 	int affinity;
 
 	struct pkt pkt;
+	void *frame;
 };
 
 
@@ -396,7 +400,7 @@ sigint_h(int sig)
 	int i;
 
 	(void)sig;	/* UNUSED */
-	D("");
+	D("received control-C on thread %p", (void *)pthread_self());
 	for (i = 0; i < global_nthreads; i++) {
 		targs[i].cancel = 1;
 	}
@@ -645,32 +649,44 @@ update_addresses(struct pkt *pkt, struct glob_arg *g)
 	struct udphdr *udp = &pkt->udp;
 
     do {
-	p = ntohs(udp->uh_sport);
-	if (p < g->src_ip.port1) { /* just inc, no wrap */
-		udp->uh_sport = htons(p + 1);
-		break;
-	}
-	udp->uh_sport = htons(g->src_ip.port0);
+    	/* XXX for now it doesn't handle non-random src, random dst */
+	if (g->options & OPT_RANDOM_SRC) {
+		udp->uh_sport = random();
+		ip->ip_src.s_addr = random();
+	} else {
+		p = ntohs(udp->uh_sport);
+		if (p < g->src_ip.port1) { /* just inc, no wrap */
+			udp->uh_sport = htons(p + 1);
+			break;
+		}
+		udp->uh_sport = htons(g->src_ip.port0);
 
-	a = ntohl(ip->ip_src.s_addr);
-	if (a < g->src_ip.end) { /* just inc, no wrap */
-		ip->ip_src.s_addr = htonl(a + 1);
-		break;
-	}
-	ip->ip_src.s_addr = htonl(g->src_ip.start);
+		a = ntohl(ip->ip_src.s_addr);
+		if (a < g->src_ip.end) { /* just inc, no wrap */
+			ip->ip_src.s_addr = htonl(a + 1);
+			break;
+		}
+		ip->ip_src.s_addr = htonl(g->src_ip.start);
 
-	udp->uh_sport = htons(g->src_ip.port0);
-	p = ntohs(udp->uh_dport);
-	if (p < g->dst_ip.port1) { /* just inc, no wrap */
-		udp->uh_dport = htons(p + 1);
-		break;
+		udp->uh_sport = htons(g->src_ip.port0);
 	}
-	udp->uh_dport = htons(g->dst_ip.port0);
 
-	a = ntohl(ip->ip_dst.s_addr);
-	if (a < g->dst_ip.end) { /* just inc, no wrap */
-		ip->ip_dst.s_addr = htonl(a + 1);
-		break;
+	if (g->options & OPT_RANDOM_DST) {
+		udp->uh_dport = random();
+		ip->ip_dst.s_addr = random();
+	} else {
+		p = ntohs(udp->uh_dport);
+		if (p < g->dst_ip.port1) { /* just inc, no wrap */
+			udp->uh_dport = htons(p + 1);
+			break;
+		}
+		udp->uh_dport = htons(g->dst_ip.port0);
+
+		a = ntohl(ip->ip_dst.s_addr);
+		if (a < g->dst_ip.end) { /* just inc, no wrap */
+			ip->ip_dst.s_addr = htonl(a + 1);
+			break;
+		}
 	}
 	ip->ip_dst.s_addr = htonl(g->dst_ip.start);
     } while (0);
@@ -692,6 +708,30 @@ initialize_packet(struct targ *targ)
 	const char *payload = targ->g->options & OPT_INDIRECT ?
 		indirect_payload : default_payload;
 	int i, l0 = strlen(payload);
+
+#ifndef NO_PCAP
+	char errbuf[PCAP_ERRBUF_SIZE];
+	pcap_t *file;
+	struct pcap_pkthdr *header;
+	const unsigned char *packet;
+	
+	/* Read a packet from a PCAP file if asked. */
+	if (targ->g->packet_file != NULL) {
+		if ((file = pcap_open_offline(targ->g->packet_file,
+			    errbuf)) == NULL)
+			D("failed to open pcap file %s",
+			    targ->g->packet_file);
+		if (pcap_next_ex(file, &header, &packet) < 0)
+			D("failed to read packet from %s",
+			    targ->g->packet_file);
+		if ((targ->frame = malloc(header->caplen)) == NULL)
+			D("out of memory");
+		bcopy(packet, (unsigned char *)targ->frame, header->caplen);
+		targ->g->pkt_size = header->caplen;
+		pcap_close(file);
+		return;
+	}
+#endif
 
 	/* create a nice NUL-terminated string */
 	for (i = 0; i < paylen; i += l0) {
@@ -740,6 +780,25 @@ initialize_packet(struct targ *targ)
 	// dump_payload((void *)pkt, targ->g->pkt_size, NULL, 0);
 }
 
+static void
+set_vnet_hdr_len(struct targ *t)
+{
+	int err, l = t->g->virt_header;
+	struct nmreq req;
+
+	if (l == 0)
+		return;
+
+	memset(&req, 0, sizeof(req));
+	bcopy(t->nmd->req.nr_name, req.nr_name, sizeof(req.nr_name));
+	req.nr_version = NETMAP_API;
+	req.nr_cmd = NETMAP_BDG_VNET_HDR;
+	req.nr_arg1 = l;
+	err = ioctl(t->fd, NIOCREGIF, &req);
+	if (err) {
+		D("Unable to set vnet header length %d", l);
+	}
+}
 
 
 /*
@@ -1128,7 +1187,7 @@ sender_body(void *data)
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
 	struct netmap_if *nifp;
-	struct netmap_ring *txring;
+	struct netmap_ring *txring = NULL;
 	int i, n = targ->g->npackets / targ->g->nthreads;
 	int64_t sent = 0;
 	uint64_t event = 0;
@@ -1139,10 +1198,15 @@ sender_body(void *data)
 	void *frame;
 	int size;
 
-	frame = pkt;
-	frame += sizeof(pkt->vh) - targ->g->virt_header;
-	size = targ->g->pkt_size + targ->g->virt_header;
-
+	if (targ->frame == NULL) {
+		frame = pkt;
+		frame += sizeof(pkt->vh) - targ->g->virt_header;
+		size = targ->g->pkt_size + targ->g->virt_header;
+	} else {
+		frame = targ->frame;
+		size = targ->g->pkt_size;
+	}
+	
 	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
@@ -1256,12 +1320,17 @@ sender_body(void *data)
 		}
 	}
 	/* flush any remaining packets */
+	D("flush tail %d head %d on thread %p",
+		txring->tail, txring->head,
+		(void *)pthread_self());
 	ioctl(pfd.fd, NIOCTXSYNC, NULL);
 
 	/* final part: wait all the TX queues to be empty. */
 	for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
 		txring = NETMAP_TXRING(nifp, i);
 		while (nm_tx_pending(txring)) {
+			RD(5, "pending tx tail %d head %d on ring %d",
+				txring->tail, txring->head, i);
 			ioctl(pfd.fd, NIOCTXSYNC, NULL);
 			usleep(1); /* wait 1 tick */
 		}
@@ -1429,7 +1498,7 @@ quit:
 /* very crude code to print a number in normalized form.
  * Caller has to make sure that the buffer is large enough.
  */
-const char *
+static const char *
 norm2(char *buf, double val, char *fmt)
 {
 	char *units[] = { "", "K", "M", "G", "T" };
@@ -1441,7 +1510,7 @@ norm2(char *buf, double val, char *fmt)
 	return buf;
 }
 
-const char *
+static const char *
 norm(char *buf, double val)
 {
 	return norm2(buf, val, "%.3f %s");
@@ -1504,11 +1573,14 @@ usage(void)
 		"\t-T report_ms		milliseconds between reports\n"
 		"\t-P			use libpcap instead of netmap\n"
 		"\t-w wait_for_link_time	in seconds\n"
-		"\t-R rate			in packets per second\n"
+		"\t-R rate		in packets per second\n"
 		"\t-X			dump payload\n"
-		"\t-H len			add empty virtio-net-header with size 'len'\n"
+		"\t-H len		add empty virtio-net-header with size 'len'\n"
 		"\t-E pipes		allocate extra space for a number of pipes\n"
 		"\t-r			do not touch the buffers (send rubbish)\n"
+	        "\t-P file		load packet from pcap file\n"
+		"\t-z			use random IPv4 src address/port\n"
+		"\t-Z			use random IPv4 dst address/port\n"
 		"",
 		cmd);
 
@@ -1563,6 +1635,7 @@ start_threads(struct glob_arg *g)
 			t->nmd = g->nmd;
 		}
 		t->fd = t->nmd->fd;
+		set_vnet_hdr_len(t);
 
 	    } else {
 		targs[i].fd = g->main_fd;
@@ -1796,7 +1869,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:r")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:r:P:zZ")) != -1) {
 		struct sf *fn;
 
 		switch(ch) {
@@ -1933,16 +2006,25 @@ main(int arc, char **argv)
 		case 'E':
 			g.extra_pipes = atoi(optarg);
 			break;
+		case 'P':
+			g.packet_file = strdup(optarg);
+			break;
 		case 'm':
 			/* ignored */
 			break;
 		case 'r':
 			g.options |= OPT_RUBBISH;
 			break;
+		case 'z':
+			g.options |= OPT_RANDOM_SRC;
+			break;
+		case 'Z':
+			g.options |= OPT_RANDOM_DST;
+			break;
 		}
 	}
 
-	if (g.ifname[0] == '\0') {
+	if (strlen(g.ifname) <=0 ) {
 		D("missing ifname");
 		usage();
 	}
@@ -2073,8 +2155,8 @@ D("running on %d cpus (have %d)", g.cpus, i);
 		    req->nr_arg2);
 		for (i = 0; i <= req->nr_tx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
-			D("   TX%d at 0x%p slots %d", i,
-			    (void *)((char *)ring - (char *)nifp), ring->num_slots);
+			D("   TX%d at 0x%lx slots %d", i,
+			    (char *)ring - (char *)nifp, ring->num_slots);
 		}
 		for (i = 0; i <= req->nr_rx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_RXRING(nifp, i);

@@ -428,6 +428,10 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
     NTSTATUS			status = STATUS_SUCCESS;
     PMS_FILTER			pfilter = (PMS_FILTER)_pfilter;
 
+	if (sendToMiniport && (pfilter->current_tx_pending_packets_to_miniport > 1024))
+	{
+		return NULL;
+	}
     do {
 		if (data == NULL && prev != NULL) {
 			pBufList = prev;
@@ -487,22 +491,30 @@ injectPacket(PVOID _pfilter, PVOID data, uint32_t length, BOOLEAN sendToMiniport
 	return pBufList;
 
 sendOut:
-	if (sendToMiniport) {
-	    // This send down to the NIC (miniport)
-	    // eventually triggering the callback FilterSendNetBufferListsComplete()
-	    // XXX check ownership of the packet. By default the packet stays alive until
-	    // we receive the callback
-	    NdisFSendNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
-	} else {
-	    // This one sends up to the OS, again eventually triggering
-	    // FilterReturnNetBufferLists()
-		int nblNumber = 1;
-		PNET_BUFFER_LIST temp = prev;
-		while (temp->Next != NULL) {
-			temp = temp->Next;
-			nblNumber++;
+	{
+		int nblNumber = 1; /*keep this for future differences between nbl number and packet number*/
+		int pckCount = 1;
+		{
+			PNET_BUFFER_LIST temp = prev;
+			while (temp->Next != NULL) {
+				temp = temp->Next;
+				nblNumber++;
+				pckCount++;
+			}
 		}
-		NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, nblNumber, 0);
+		if (sendToMiniport) {
+			// This send down to the NIC (miniport)
+			// eventually triggering the callback FilterSendNetBufferListsComplete()
+			// XXX check ownership of the packet. By default the packet stays alive until
+			// we receive the callback
+			NdisFSendNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, 0);
+			InterlockedAdd(&pfilter->current_tx_pending_packets_to_miniport, pckCount);
+		}
+		else {
+			// This one sends up to the OS, again eventually triggering
+			// FilterReturnNetBufferLists()
+			NdisFIndicateReceiveNetBufferLists(pfilter->FilterHandle, pBufList, NDIS_DEFAULT_PORT_NUMBER, nblNumber, 0);
+		}
 	}
     } while (FALSE);
     if (status != STATUS_SUCCESS) {

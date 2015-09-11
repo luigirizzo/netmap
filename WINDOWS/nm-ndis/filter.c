@@ -388,6 +388,7 @@ N.B.:  FILTER can use NdisRegisterDeviceEx to create a device, so the upper
                         pFilter->MiniportName.Length);
 
         pFilter->MiniportIfIndex = AttachParameters->BaseMiniportIfIndex;
+		pFilter->current_tx_pending_packets_to_miniport = 0;
         //
         // The filter should initialize TrackReceives and TrackSends properly. For this
         // driver, since its default characteristic has both a send and a receive handler,
@@ -1372,6 +1373,7 @@ Return Value:
 	/* Free the entire buffer list */
 	PNET_BUFFER_LIST pCurrNBL = NetBufferLists;
 	while (pCurrNBL != NULL) {
+		int pckCount = 0;
 		PNET_BUFFER_LIST pNextNBL = NET_BUFFER_LIST_NEXT_NBL(pCurrNBL);
 		NET_BUFFER_LIST_NEXT_NBL(pCurrNBL) = NULL;  
 		if (pCurrNBL->NdisPoolHandle == pFilter->netmap_pool) { 
@@ -1390,11 +1392,13 @@ Return Value:
 						//NdisFreeMemory(pDataBuffer, 0, 0);
 						ExFreeToNPagedLookasideList(&pFilter->netmap_injected_packets_pool, pDataBuffer);
 					} 
+					pckCount++;
 					pCurrMDL = pNextMDL;
 				} 
 				pCurrNB = pNextNB;
 			} 
 			NdisFreeNetBufferList(pCurrNBL); 
+			InterlockedAdd(&pFilter->current_tx_pending_packets_to_miniport, -pckCount);
 		} else {
 			NdisFSendNetBufferListsComplete(pFilter->FilterHandle, pCurrNBL, SendCompleteFlags); 
 		} 
@@ -1598,7 +1602,7 @@ Arguments:
 	while (pCurrNBL != NULL) {
 		PNET_BUFFER_LIST pNextNBL = NET_BUFFER_LIST_NEXT_NBL(pCurrNBL);
 		NET_BUFFER_LIST_NEXT_NBL(pCurrNBL) = NULL;
-		if (pCurrNBL->NdisPoolHandle == pFilter->netmap_pool){ // This is a custom packet, we need free it
+		if (pCurrNBL->NdisPoolHandle == pFilter->netmap_pool) { // This is a custom packet, we need free it
 			PNET_BUFFER pCurrNB = NET_BUFFER_LIST_FIRST_NB(pCurrNBL);
 			while (pCurrNB != NULL) {
 				PNET_BUFFER pNextNB = NET_BUFFER_NEXT_NB(pCurrNB);

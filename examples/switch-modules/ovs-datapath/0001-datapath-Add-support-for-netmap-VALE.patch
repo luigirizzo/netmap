@@ -1,4 +1,4 @@
-From 15640420669b0a2e2471f586c6cfdef232a42277 Mon Sep 17 00:00:00 2001
+From 97f5cf4f788940dfb06048aa090c420114ef80ca Mon Sep 17 00:00:00 2001
 From: Michio Honda <micchie@sfc.wide.ad.jp>
 Date: Fri, 22 Aug 2014 17:25:29 +0200
 Subject: [PATCH] datapath: Add support for netmap/VALE
@@ -9,7 +9,7 @@ switch at packet I/O and switching.
 This is tested with packet forwarding between two native netmap-mode
 NICs and it accelerates packet forwarding rates by approx. 3 times.
 ---
- INSTALL.NETMAP                       |  47 ++++++++
+ INSTALL.NETMAP                       |  46 ++++++++
  Makefile.am                          |   1 +
  acinclude.m4                         |  18 +++
  configure.ac                         |   1 +
@@ -23,7 +23,7 @@ NICs and it accelerates packet forwarding rates by approx. 3 times.
  datapath/vport-vxlan.c               |   7 ++
  datapath/vport.c                     |  12 ++
  utilities/ovs-dev.py                 |   5 +
- 14 files changed, 536 insertions(+), 2 deletions(-)
+ 14 files changed, 535 insertions(+), 2 deletions(-)
  create mode 100644 INSTALL.NETMAP
  create mode 100644 datapath/dp-vale.c
  create mode 100644 datapath/dp-vale.h
@@ -31,10 +31,10 @@ NICs and it accelerates packet forwarding rates by approx. 3 times.
 
 diff --git a/INSTALL.NETMAP b/INSTALL.NETMAP
 new file mode 100644
-index 0000000..b59e4b5
+index 0000000..b3e95c2
 --- /dev/null
 +++ b/INSTALL.NETMAP
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,46 @@
 +                   Using Open vSwitch with netmap (VALE)
 +                   ============================
 +
@@ -52,26 +52,25 @@ index 0000000..b59e4b5
 +
 +HOW TO BUILD CODE
 +-----------------
-+This patch is created against commit 
-+532e1463fcfb71738316a86420ae4fcb07b56ac3 (Open vSwitch 2.4.90) at
-+Open vSwitch's repository (https://github.com/openvswitch/ovs.git).
++This patch is created for Open vSwitch 2.4.0.
 +
-+We assume that up-to-date version of netmap
++We assume that an up-to-date version of netmap
 +(http://info.iet.unipi.it/~luigi/netmap/) is already installed.
 +
-+Installation steps are same with INSTALL, except for specifying
-+a path to netmap source in configure like:
++Installation steps are same with one written in a file INSTALL,
++ except for specifying a path to netmap source in configure process:
 +
 +* `./configure --with-netmap=/home/micchie/netmap`
 +
-+This is because Open vswitch datapath (kernel module) leverages
-+utility functions provided by netmap (defined in
++This is necessary because the VALE-accelerated version of
++Open vswitch datapath (kernel module) leverages utility functions
++ provided by netmap (defined in
 +sys/dev/netmap/netmap_kern.h, sys/net/netmap.h etc.),
-+and refers to symbols exported from netmap kernel module
++and refers to symbols exported from a netmap kernel module
 +(LINUX/Module.symvers).
 +
-+Thus, you need to have compiled netmap kernel module but don't need
-+to have loaded it.
++Thus, you need to have compiled the netmap kernel module but don't need
++to have loaded it before running the Open vSwitch.
 +
 +To quickly build and run, ovs-dev.py script can also be used like:
 +
@@ -83,10 +82,10 @@ index 0000000..b59e4b5
 +To use netmap API 4, pass -DNETMAP_API_4 to EXTRA_CFLAGS
 +in datapath/linux/Kbuild.in
 diff --git a/Makefile.am b/Makefile.am
-index a659814..87e3a21 100644
+index 59a1466..1f59e74 100644
 --- a/Makefile.am
 +++ b/Makefile.am
-@@ -83,6 +83,7 @@ docs = \
+@@ -87,6 +87,7 @@ docs = \
  	INSTALL.XenServer.md \
  	INSTALL.userspace.md \
  	INSTALL.Windows.md \
@@ -95,7 +94,7 @@ index a659814..87e3a21 100644
  	OPENFLOW-1.1+.md \
  	PORTING.md \
 diff --git a/acinclude.m4 b/acinclude.m4
-index 20391ec..14cf20e 100644
+index 45cfaf6..ef668f4 100644
 --- a/acinclude.m4
 +++ b/acinclude.m4
 @@ -159,6 +159,24 @@ AC_DEFUN([OVS_CHECK_LINUX], [
@@ -124,7 +123,7 @@ index 20391ec..14cf20e 100644
  dnl
  dnl Configure DPDK source tree
 diff --git a/configure.ac b/configure.ac
-index 36387a1..3a94ea9 100644
+index e6a23a6..8ff2397 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -164,6 +164,7 @@ AC_ARG_VAR(KARCH, [Kernel Architecture String])
@@ -655,7 +654,7 @@ index 0000000..4314275
 +#endif
 +}
 diff --git a/datapath/vport-netdev.c b/datapath/vport-netdev.c
-index 05ad0b4..689ea08 100644
+index de85087..d9857d0 100644
 --- a/datapath/vport-netdev.c
 +++ b/datapath/vport-netdev.c
 @@ -34,6 +34,9 @@
@@ -686,7 +685,7 @@ index 05ad0b4..689ea08 100644
  	if (netdev_vport->dev->flags & IFF_LOOPBACK ||
  	    netdev_vport->dev->type != ARPHRD_ETHER ||
  	    ovs_is_internal_dev(netdev_vport->dev)) {
-@@ -181,6 +195,9 @@ static void netdev_destroy(struct vport *vport)
+@@ -182,6 +196,9 @@ static void netdev_destroy(struct vport *vport)
  	if (ovs_netdev_get_vport(netdev_vport->dev))
  		ovs_netdev_detach_dev(vport);
  	rtnl_unlock();
@@ -696,7 +695,7 @@ index 05ad0b4..689ea08 100644
  
  	call_rcu(&netdev_vport->rcu, free_port_rcu);
  }
-@@ -244,6 +261,10 @@ static int netdev_send(struct vport *vport, struct sk_buff *skb)
+@@ -245,6 +262,10 @@ static int netdev_send(struct vport *vport, struct sk_buff *skb)
  
  	skb->dev = netdev_vport->dev;
  	len = skb->len;

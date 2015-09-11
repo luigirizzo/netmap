@@ -79,7 +79,6 @@
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
 #define __user
-#define ACCESS_ONCE(x) (x) 	/* XXX */
 
 #define	NM_LOCK_T	struct mtx	/* low level spinlock, used to protect queues */
 
@@ -219,6 +218,8 @@ typedef struct hrtimer{
 #define SYSBEGIN(x)
 #define SYSEND
 #endif /* _WIN32 */
+
+#define NM_ACCESS_ONCE(x)	(*(volatile typeof(x) *)&(x))
 
 #define	NMG_LOCK_T		NM_MTX_T
 #define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock)
@@ -999,11 +1000,6 @@ static inline int nm_iszombie(struct netmap_adapter *na);
  */
 static __inline int nm_kr_tryget(struct netmap_kring *kr, int can_sleep, int *perr)
 {
-#ifdef POLLERR
-#define NM_POLLERR POLLERR
-#else
-#define NM_POLLERR 1
-#endif /* POLLERR */
 	int busy = 1, stopped;
 	/* check a first time without taking the lock
 	 * to avoid starvation for nm_kr_get()
@@ -1034,8 +1030,17 @@ stop:
 	if (!busy)
 		nm_kr_put(kr);
 	if (stopped == NM_KR_STOPPED) {
+/* if POLLERR is defined we want to use it to simplify netmap_poll().
+ * Otherwise, any non-zero value will do.
+ */
+#ifdef POLLERR
+#define NM_POLLERR POLLERR
+#else
+#define NM_POLLERR 1
+#endif /* POLLERR */
 		if (perr)
 			*perr |= NM_POLLERR;
+#undef NM_POLLERR
 	} else if (can_sleep) {
 		tsleep(kr, 0, "NM_KR_TRYGET", 4);
 		goto retry;
@@ -1259,7 +1264,7 @@ void netmap_krings_delete(struct netmap_adapter *na);
 void netmap_set_ring(struct netmap_adapter *, u_int ring_id, enum txrx, int stopped);
 /* set the stopped/enabled status of all rings of the adapter. */
 void netmap_set_all_rings(struct netmap_adapter *, int stopped);
-/* convenience wrappers for netmap_set_all_rings, used in drivers */
+/* convenience wrappers for netmap_set_all_rings */
 void netmap_disable_all_rings(struct ifnet *);
 void netmap_enable_all_rings(struct ifnet *);
 

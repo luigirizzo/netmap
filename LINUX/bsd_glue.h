@@ -34,7 +34,6 @@
 
 /* a set of headers used in netmap */
 #include <linux/version.h>
-#include <linux/compiler.h>	// ACCESS_ONCE()
 
 #include <linux/if.h>
 #include <linux/list.h>
@@ -79,10 +78,6 @@
 #define skb_copy_to_linear_data(skb, from, copy)		\
 	memcpy((skb)->data, from, copy)
 #endif /* HAVE_SKB_COPY_LINEAR */
-
-#ifndef NETMAP_LINUX_HAVE_ACCESS_ONCE
-#define ACCESS_ONCE(x)	(x)
-#endif
 
 #ifndef NETMAP_LINUX_HAVE_UINTPTR
 #define uintptr_t	unsigned long

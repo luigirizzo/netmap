@@ -1,5 +1,5 @@
 diff --git a/igb/igb_main.c b/igb/igb_main.c
-index c881347..9a8b012 100644
+index c881347..a2af379 100644
 --- a/igb/igb_main.c
 +++ b/igb/igb_main.c
 @@ -226,6 +226,10 @@ char *igb_get_hw_dev_name(struct e1000_hw *hw)
@@ -13,29 +13,7 @@ index c881347..9a8b012 100644
  /**
   * igb_get_time_str - format current NIC and system time as string
   */
-@@ -1144,6 +1148,10 @@ int igb_up(struct igb_adapter *adapter)
- 
- 	netif_tx_start_all_queues(adapter->netdev);
- 
-+#ifdef DEV_NETMAP
-+	netmap_enable_all_rings(adapter->netdev);
-+#endif /* DEV_NETMAP */
-+
- 	/* start the watchdog. */
- 	hw->mac.get_link_status = 1;
- 	schedule_work(&adapter->watchdog_task);
-@@ -1167,6 +1175,10 @@ void igb_down(struct igb_adapter *adapter)
- 	wr32(E1000_RCTL, rctl & ~E1000_RCTL_EN);
- 	/* flush and sleep below */
- 
-+#ifdef DEV_NETMAP
-+	netmap_disable_all_rings(netdev);
-+#endif /* DEV_NETMAP */
-+
- 	netif_tx_stop_all_queues(netdev);
- 
- 	/* disable transmits in the hardware */
-@@ -1614,6 +1626,10 @@ static int __devinit igb_probe(struct pci_dev *pdev,
+@@ -1614,6 +1618,10 @@ static int __devinit igb_probe(struct pci_dev *pdev,
  	/* carrier off reporting is important to ethtool even BEFORE open */
  	netif_carrier_off(netdev);
  
@@ -46,7 +24,7 @@ index c881347..9a8b012 100644
  #ifdef CONFIG_IGB_DCA
  	if (dca_add_requester(&pdev->dev) == 0) {
  		adapter->flags |= IGB_FLAG_DCA_ENABLED;
-@@ -1699,6 +1715,10 @@ static void __devexit igb_remove(struct pci_dev *pdev)
+@@ -1699,6 +1707,10 @@ static void __devexit igb_remove(struct pci_dev *pdev)
  		wr32(E1000_DCA_CTRL, E1000_DCA_CTRL_DCA_MODE_DISABLE);
  	}
  #endif
@@ -57,18 +35,7 @@ index c881347..9a8b012 100644
  
  	/* Release control of h/w to f/w.  If f/w is AMT enabled, this
  	 * would have already happened in close and is redundant. */
-@@ -2018,6 +2038,10 @@ static int igb_open(struct net_device *netdev)
- 
- 	netif_tx_start_all_queues(netdev);
- 
-+#ifdef DEV_NETMAP
-+	netmap_enable_all_rings(netdev);
-+#endif /* DEV_NETMAP */
-+
- 	/* start the watchdog. */
- 	hw->mac.get_link_status = 1;
- 	schedule_work(&adapter->watchdog_task);
-@@ -2196,6 +2220,9 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
+@@ -2196,6 +2208,9 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
  
  	txdctl |= E1000_TXDCTL_QUEUE_ENABLE;
  	wr32(E1000_TXDCTL(reg_idx), txdctl);
@@ -78,7 +45,7 @@ index c881347..9a8b012 100644
  }
  
  /**
-@@ -4905,6 +4932,11 @@ static bool igb_clean_tx_irq(struct igb_q_vector *q_vector)
+@@ -4905,6 +4920,11 @@ static bool igb_clean_tx_irq(struct igb_q_vector *q_vector)
  	unsigned int i, eop, count = 0;
  	bool cleaned = false;
  
@@ -90,7 +57,7 @@ index c881347..9a8b012 100644
  	i = tx_ring->next_to_clean;
  	eop = tx_ring->buffer_info[i].next_to_watch;
  	eop_desc = E1000_TX_DESC_ADV(*tx_ring, eop);
-@@ -5109,6 +5141,11 @@ static bool igb_clean_rx_irq_adv(struct igb_q_vector *q_vector,
+@@ -5109,6 +5129,11 @@ static bool igb_clean_rx_irq_adv(struct igb_q_vector *q_vector,
  	u16 length;
  	u16 vlan_tag;
  
@@ -102,7 +69,7 @@ index c881347..9a8b012 100644
  	i = rx_ring->next_to_clean;
  	buffer_info = &rx_ring->buffer_info[i];
  	rx_desc = E1000_RX_DESC_ADV(*rx_ring, i);
-@@ -5236,6 +5273,10 @@ void igb_alloc_rx_buffers_adv(struct igb_ring *rx_ring, int cleaned_count)
+@@ -5236,6 +5261,10 @@ void igb_alloc_rx_buffers_adv(struct igb_ring *rx_ring, int cleaned_count)
  	unsigned int i;
  	int bufsz;
  

@@ -948,16 +948,6 @@ add_test 'have SKB_COPY_LINEAR' <<-EOF
 	}
 EOF
 
-# check for ACCESS_ONCE
-add_test 'have ACCESS_ONCE' <<-EOF
-	#include <linux/compiler.h>
-
-	int dummy(int *p)
-	{
-	        return ACCESS_ONCE(*p);
-	}
-EOF
-
 # check for uintptr_t
 add_test 'have UINTPTR' <<-EOF
 	uintptr_t dummy;

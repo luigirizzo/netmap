@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index eee0b29..0e7ce53 100644
+index eee0b29..f1cbeab 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -214,6 +214,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
@@ -77,29 +77,7 @@ index eee0b29..0e7ce53 100644
  	ixgbe_alloc_rx_buffers(adapter, ring, IXGBE_DESC_UNUSED(ring));
  }
  
-@@ -3614,6 +3654,10 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
- 	/* enable transmits */
- 	netif_tx_start_all_queues(adapter->netdev);
- 
-+#ifdef DEV_NETMAP
-+	netmap_enable_all_rings(adapter->netdev);
-+#endif
-+
- 	/* bring the link up in the watchdog, this could race with our first
- 	 * link up interrupt but shouldn't be a problem */
- 	adapter->flags |= IXGBE_FLAG_NEED_LINK_UPDATE;
-@@ -3863,6 +3907,10 @@ void ixgbe_down(struct ixgbe_adapter *adapter)
- 
- 	ixgbe_napi_disable_all(adapter);
- 
-+#ifdef DEV_NETMAP
-+	netmap_disable_all_rings(netdev);
-+#endif
-+
- 	/* Cleanup the affinity_hint CPU mask memory and callback */
- 	for (i = 0; i < num_q_vectors; i++) {
- 		struct ixgbe_q_vector *q_vector = adapter->q_vector[i];
-@@ -7048,6 +7096,11 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
+@@ -7048,6 +7088,11 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
  
  	e_dev_info("Intel(R) 10 Gigabit Network Connection\n");
  	cards_found++;
@@ -111,7 +89,7 @@ index eee0b29..0e7ce53 100644
  	return 0;
  
  err_register:
-@@ -7088,6 +7141,10 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
+@@ -7088,6 +7133,10 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
  	struct net_device *netdev = pci_get_drvdata(pdev);
  	struct ixgbe_adapter *adapter = netdev_priv(netdev);
  
