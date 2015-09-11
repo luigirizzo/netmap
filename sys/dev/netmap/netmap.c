@@ -2617,18 +2617,13 @@ netmap_attach_common(struct netmap_adapter *na)
 	}
 
 	if (na->na_flags & NAF_HOST_RINGS) {
-		struct ifnet *ifp = na->ifp;
-
-		if (ifp == NULL || NA(ifp) == NULL) {
-			D("adapter %s has host rings but %s is null!",
-				na->name, (ifp ? "ifp" : "NA(ifp)"));
+		if (na->ifp == NULL) {
+			D("adapter %s has host rings but no ifp!", na->name);
 			return EINVAL;
 		}
 #ifdef __FreeBSD__
 		na->if_input = ifp->if_input; /* for netmap_send_up */
 #endif /* __FreeBSD__ */
-
-		NETMAP_SET_CAPABLE(na->ifp);
 	}
 	if (na->nm_krings_create == NULL) {
 		/* we assume that we have been called by a driver,
@@ -2745,13 +2740,14 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
 	hwna->nm_hw_register = hwna->up.nm_register;
 	hwna->up.nm_register = netmap_hw_register;
-	WNA(ifp) = &hwna->up;
 	if (netmap_attach_common(&hwna->up)) {
-		WNA(ifp) = NULL;
 		free(hwna, M_DEVBUF);
 		goto fail;
 	}
 	netmap_adapter_get(&hwna->up);
+
+	WNA(ifp) = &hwna->up;
+	NETMAP_SET_CAPABLE(ifp);
 
 #ifdef linux
 	if (ifp->netdev_ops) {
