@@ -192,7 +192,7 @@ ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur
     //XXX: trust guest?
     ring->head = g_head;
     ring->cur = g_cur;
-    ring->tail = ACCESS_ONCE(kring->nr_hwtail);
+    ring->tail = NM_ACCESS_ONCE(kring->nr_hwtail);
 
     netmap_ring_reinit(kring);
     ptnetmap_kring_dump("kring reinit", kring);
@@ -317,9 +317,9 @@ ptnetmap_tx_handler(void *data)
              * Copy host hwcur and hwtail into the CSB for the guest sync()
              */
             ptnetmap_host_write_kring_csb(csb_ring, kring->nr_hwcur,
-            		    ACCESS_ONCE(kring->nr_hwtail));
-            if (kring->rtail != ACCESS_ONCE(kring->nr_hwtail)) {
-                kring->rtail = ACCESS_ONCE(kring->nr_hwtail);
+            		    NM_ACCESS_ONCE(kring->nr_hwtail));
+            if (kring->rtail != NM_ACCESS_ONCE(kring->nr_hwtail)) {
+                kring->rtail = NM_ACCESS_ONCE(kring->nr_hwtail);
                 work = true;
             }
         } else {
@@ -371,7 +371,7 @@ ptnetmap_tx_handler(void *data)
          * Ring full. We stop without reenable notification
          * because we await the BE.
          */
-        if (unlikely(ACCESS_ONCE(kring->nr_hwtail) == kring->rhead)) {
+        if (unlikely(NM_ACCESS_ONCE(kring->nr_hwtail) == kring->rhead)) {
             ND(1, "TX ring FULL");
             break;
         }
@@ -437,7 +437,7 @@ ptnetmap_rx_set_guestkick(struct paravirt_csb __user *csb, uint32_t val)
 static inline int
 ptnetmap_kr_rxfull(struct netmap_kring *kring, uint32_t g_head)
 {
-    return (ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_head,
+    return (NM_ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_head,
     			    kring->nkr_num_slots - 1));
 }
 #endif /* !BUSY_WAIT */
@@ -510,9 +510,9 @@ ptnetmap_rx_handler(void *data)
              * Copy host hwcur and hwtail into the CSB for the guest sync()
              */
             ptnetmap_host_write_kring_csb(csb_ring, kring->nr_hwcur,
-            		    ACCESS_ONCE(kring->nr_hwtail));
-            if (kring->rtail != ACCESS_ONCE(kring->nr_hwtail)) {
-                kring->rtail = ACCESS_ONCE(kring->nr_hwtail);
+            		    NM_ACCESS_ONCE(kring->nr_hwtail));
+            if (kring->rtail != NM_ACCESS_ONCE(kring->nr_hwtail)) {
+                kring->rtail = NM_ACCESS_ONCE(kring->nr_hwtail);
                 work = true;
                 cicle_nowork = 0;
             } else {
@@ -567,10 +567,10 @@ ptnetmap_rx_handler(void *data)
          * Ring empty. We stop without reenable notification
          * because we await the BE.
          */
-        if (unlikely(ACCESS_ONCE(kring->nr_hwtail) == kring->rhead
+        if (unlikely(NM_ACCESS_ONCE(kring->nr_hwtail) == kring->rhead
                     || cicle_nowork >= PTN_RX_NOWORK_CYCLE)) {
             ND(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d",
-            	ACCESS_ONCE(kring->nr_hwtail), kring->rhead, cicle_nowork);
+            	NM_ACCESS_ONCE(kring->nr_hwtail), kring->rhead, cicle_nowork);
             break;
         }
 #endif
@@ -640,7 +640,7 @@ ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *ptr)
 
     if(CSB_WRITE(ptr, hwcur, kring->nr_hwcur))
         goto err;
-    if(CSB_WRITE(ptr, hwtail, ACCESS_ONCE(kring->nr_hwtail)))
+    if(CSB_WRITE(ptr, hwtail, NM_ACCESS_ONCE(kring->nr_hwtail)))
         goto err;
 
     DBG(ptnetmap_kring_dump("ptnetmap_kring_snapshot", kring);)
@@ -1269,7 +1269,7 @@ netmap_pt_guest_txsync(struct netmap_kring *kring, int flags, int *notify)
 	}
 
         /* Send kick to the host if it needs them */
-	if ((send_kick && ACCESS_ONCE(csb->host_need_txkick)) ||
+	if ((send_kick && NM_ACCESS_ONCE(csb->host_need_txkick)) ||
 			(flags & NAF_FORCE_RECLAIM)) {
 		csb->tx_ring.sync_flags = flags;
 		*notify = 1;
@@ -1354,7 +1354,7 @@ netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags, int *notify)
 		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur,
 				kring->rhead);
                 /* Send kick to the host if it needs them */
-		if (ACCESS_ONCE(csb->host_need_rxkick)) {
+		if (NM_ACCESS_ONCE(csb->host_need_rxkick)) {
 			csb->rx_ring.sync_flags = flags;
 			*notify = 1;
 		}

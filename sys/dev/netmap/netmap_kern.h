@@ -79,7 +79,6 @@
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
 #define __user
-#define ACCESS_ONCE(x) (x) 	/* XXX */
 
 #define	NM_LOCK_T	struct mtx	/* low level spinlock, used to protect queues */
 
@@ -219,6 +218,8 @@ typedef struct hrtimer{
 #define SYSBEGIN(x)
 #define SYSEND
 #endif /* _WIN32 */
+
+#define NM_ACCESS_ONCE(x)	(*(volatile typeof(x) *)&(x))
 
 #define	NMG_LOCK_T		NM_MTX_T
 #define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock)
