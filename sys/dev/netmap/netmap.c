@@ -2556,8 +2556,10 @@ do_retry_rx:
  	 * rings to a single file descriptor.
 	 */
 
-	if (q.head && !nm_kr_tryget(&na->tx_rings[na->num_tx_rings], 1, &revents))
+	if (q.head && !nm_kr_tryget(&na->tx_rings[na->num_tx_rings], 1, &revents)) {
 		netmap_send_up(na->ifp, &q);
+		nm_kr_put(&na->tx_rings[na->num_tx_rings]);
+	}
 
 	return (revents);
 #undef want_tx
