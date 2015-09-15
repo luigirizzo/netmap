@@ -800,7 +800,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 			kring->nkr_num_slots = ndesc;
 			if (i < nma_get_nrings(na, t)) {
 				kring->nm_sync = (t == NR_TX ? na->nm_txsync : na->nm_rxsync);
-			} else if (i == na->num_tx_rings) {
+			} else {
 				kring->nm_sync = (t == NR_TX ?
 						netmap_txsync_to_host:
 						netmap_rxsync_from_host);
