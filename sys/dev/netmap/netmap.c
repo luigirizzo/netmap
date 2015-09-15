@@ -2619,7 +2619,7 @@ netmap_attach_common(struct netmap_adapter *na)
 			return EINVAL;
 		}
 #ifdef __FreeBSD__
-		na->if_input = ifp->if_input; /* for netmap_send_up */
+		na->if_input = na->ifp->if_input; /* for netmap_send_up */
 #endif /* __FreeBSD__ */
 	}
 	if (na->nm_krings_create == NULL) {

@@ -219,7 +219,7 @@ typedef struct hrtimer{
 #define SYSEND
 #endif /* _WIN32 */
 
-#define NM_ACCESS_ONCE(x)	(*(volatile typeof(x) *)&(x))
+#define NM_ACCESS_ONCE(x)	(*(volatile __typeof__(x) *)&(x))
 
 #define	NMG_LOCK_T		NM_MTX_T
 #define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock)
