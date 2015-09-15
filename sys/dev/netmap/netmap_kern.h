@@ -371,6 +371,9 @@ struct netmap_kring {
 	uint32_t	nr_kflags;	/* private driver flags */
 #define NKR_PENDINTR	0x1		// Pending interrupt.
 #define NKR_EXCLUSIVE	0x2		/* exclusive binding */
+#define NKR_FORWARD	0x4		/* (host ring only) there are
+					   packets to forward
+					 */
 	uint32_t	nkr_num_slots;
 
 	/*

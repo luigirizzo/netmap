@@ -298,11 +298,11 @@ ports attached to the switch)
  *                netmap_transmit()
  *                  na->nm_notify  == netmap_notify()
  *           2) ioctl(NIOCRXSYNC)/netmap_poll() in process context
- *                kring->nm_sync() == netmap_rxsync_from_host_compat
+ *                kring->nm_sync() == netmap_rxsync_from_host
  *                  netmap_rxsync_from_host(na, NULL, NULL)
  *    - tx to host stack
  *           ioctl(NIOCTXSYNC)/netmap_poll() in process context
- *             kring->nm_sync() == netmap_txsync_to_host_compat
+ *             kring->nm_sync() == netmap_txsync_to_host
  *               netmap_txsync_to_host(na)
  *                 nm_os_send_up()
  *                   FreeBSD: na->if_input() == ether_input()
@@ -361,7 +361,7 @@ ports attached to the switch)
  *         from host stack:
  *             netmap_transmit()
  *                na->nm_notify() == netmap_bwrap_intr_notify(ring_nr == host ring)
- *                     kring->nm_sync() == netmap_rxsync_from_host_compat()
+ *                     kring->nm_sync() == netmap_rxsync_from_host()
  *                     netmap_vp_txsync()
  *
  *      - system device with generic support:
@@ -374,7 +374,7 @@ ports attached to the switch)
  *         from host stack:
  *            netmap_transmit()
  *                na->nm_notify() == netmap_bwrap_intr_notify(ring_nr == host ring)
- *                     kring->nm_sync() == netmap_rxsync_from_host_compat()
+ *                     kring->nm_sync() == netmap_rxsync_from_host()
  *                     netmap_vp_txsync()
  *
  *   (all cases) --> nm_bdg_flush()
@@ -397,7 +397,7 @@ ports attached to the switch)
  *                 netmap_vp_rxsync()
  *          to host stack:
  *                 netmap_vp_rxsync()
- *                 kring->nm_sync() == netmap_txsync_to_host_compat
+ *                 kring->nm_sync() == netmap_txsync_to_host
  *                 netmap_vp_rxsync_locked()
  *
  *      - system device with generic adapter:
@@ -408,7 +408,7 @@ ports attached to the switch)
  *                 netmap_vp_rxsync()
  *          to host stack:
  *                 netmap_vp_rxsync()
- *                 kring->nm_sync() == netmap_txsync_to_host_compat
+ *                 kring->nm_sync() == netmap_txsync_to_host
  *                 netmap_vp_rxsync()
  *
  */
@@ -735,28 +735,9 @@ netmap_update_config(struct netmap_adapter *na)
 	return 1;
 }
 
-static void netmap_txsync_to_host(struct netmap_adapter *na);
-static int netmap_rxsync_from_host(struct netmap_adapter *na, NM_SELRECORD_T *);
-
-/* kring->nm_sync callback for the host tx ring */
-static int
-netmap_txsync_to_host_compat(struct netmap_kring *kring, int flags)
-{
-	(void)flags; /* unused */
-	netmap_txsync_to_host(kring->na);
-	return 0;
-}
-
-/* kring->nm_sync callback for the host rx ring */
-static int
-netmap_rxsync_from_host_compat(struct netmap_kring *kring, int flags)
-{
-	(void)flags; /* unused */
-	netmap_rxsync_from_host(kring->na, NULL);
-	return 0;
-}
-
-
+/* nm_sync callbacks for the host rings */
+static int netmap_txsync_to_host(struct netmap_kring *kring, int flags);
+static int netmap_rxsync_from_host(struct netmap_kring *kring, int flags);
 
 /* create the krings array and initialize the fields common to all adapters.
  * The array layout is this:
@@ -821,8 +802,8 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 				kring->nm_sync = (t == NR_TX ? na->nm_txsync : na->nm_rxsync);
 			} else if (i == na->num_tx_rings) {
 				kring->nm_sync = (t == NR_TX ?
-						netmap_txsync_to_host_compat :
-						netmap_rxsync_from_host_compat);
+						netmap_txsync_to_host:
+						netmap_rxsync_from_host);
 			}
 			kring->nm_notify = na->nm_notify;
 			kring->rhead = kring->rcur = kring->nr_hwcur = 0;
@@ -1107,6 +1088,27 @@ netmap_grab_packets(struct netmap_kring *kring, struct mbq *q, int force)
 	}
 }
 
+static inline int
+_nm_may_forward(struct netmap_kring *kring)
+{
+	return	((netmap_fwd || kring->ring->flags & NR_FORWARD) &&
+		 kring->na->na_flags & NAF_HOST_RINGS &&
+		 kring->tx == NR_RX);
+}
+
+static inline int
+nm_may_forward_up(struct netmap_kring *kring)
+{
+	return	_nm_may_forward(kring) &&
+		 kring->ring_id != kring->na->num_rx_rings;
+}
+
+static inline int
+nm_may_forward_down(struct netmap_kring *kring)
+{
+	return	_nm_may_forward(kring) &&
+		 kring->ring_id == kring->na->num_rx_rings;
+}
 
 /*
  * Send to the NIC rings packets marked NS_FORWARD between
@@ -1133,7 +1135,7 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 		for (; rxcur != head && !nm_ring_empty(rdst);
 		     rxcur = nm_next(rxcur, src_lim) ) {
 			struct netmap_slot *src, *dst, tmp;
-			u_int dst_cur = rdst->cur;
+			u_int dst_head = rdst->head;
 
 			src = &rxslot[rxcur];
 			if ((src->flags & NS_FORWARD) == 0 && !netmap_fwd)
@@ -1141,7 +1143,7 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 
 			sent++;
 
-			dst = &rdst->slot[dst_cur];
+			dst = &rdst->slot[dst_head];
 
 			tmp = *src;
 
@@ -1152,7 +1154,7 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 			dst->len = tmp.len;
 			dst->flags = NS_BUF_CHANGED;
 
-			rdst->cur = nm_next(dst_cur, dst_lim);
+			rdst->head = rdst->cur = nm_next(dst_head, dst_lim);
 		}
 		/* if (sent) XXX txsync ? */
 	}
@@ -1166,10 +1168,10 @@ netmap_sw_to_nic(struct netmap_adapter *na)
  * can be among multiple user threads erroneously calling
  * this routine concurrently.
  */
-static void
-netmap_txsync_to_host(struct netmap_adapter *na)
+static int
+netmap_txsync_to_host(struct netmap_kring *kring, int flags)
 {
-	struct netmap_kring *kring = &na->tx_rings[na->num_tx_rings];
+	struct netmap_adapter *na = kring->na;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	struct mbq q;
@@ -1188,6 +1190,7 @@ netmap_txsync_to_host(struct netmap_adapter *na)
 		kring->nr_hwtail -= lim + 1;
 
 	netmap_send_up(na->ifp, &q);
+	return 0;
 }
 
 
@@ -1203,9 +1206,9 @@ netmap_txsync_to_host(struct netmap_adapter *na)
  * transparent mode, or a negative value if error
  */
 static int
-netmap_rxsync_from_host(struct netmap_adapter *na, NM_SELRECORD_T *sr)
+netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 {
-	struct netmap_kring *kring = &na->rx_rings[na->num_rx_rings];
+	struct netmap_adapter *na = kring->na;
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i, n;
 	u_int const lim = kring->nkr_num_slots - 1;
@@ -1247,14 +1250,15 @@ netmap_rxsync_from_host(struct netmap_adapter *na, NM_SELRECORD_T *sr)
 	 */
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) { /* something was released */
-		if (netmap_fwd || kring->ring->flags & NR_FORWARD)
+		if (nm_may_forward_down(kring)) {
 			ret = netmap_sw_to_nic(na);
+			if (ret > 0) {
+				kring->nr_kflags |= NR_FORWARD;
+				ret = 0;
+			}
+		}
 		kring->nr_hwcur = head;
 	}
-
-	/* access copies of cur,tail in the kring */
-	if (kring->rcur == kring->rtail && sr) /* no bufs available */
-		nm_os_selrecord(sr, &kring->si);
 
 	mbq_unlock(q);
 
@@ -2324,7 +2328,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 	return (error);
 }
 
-
 /*
  * select(2) and poll(2) handlers for the "netmap" device.
  *
@@ -2357,6 +2360,12 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	 * retry_tx (and retry_rx, later) prevent looping forever.
 	 */
 	int retry_tx = 1, retry_rx = 1;
+
+	/* transparent mode: send_down is 1 if we have found some
+	 * packets to forward during the rx scan and we have not
+	 * sent them down to the nic yet
+	 */
+	int send_down = 0;
 
 	mbq_init(&q);
 
@@ -2429,7 +2438,7 @@ flush_tx:
 			kring = &na->tx_rings[i];
 			ring = kring->ring;
 
-			if (!want_tx && ring->cur == kring->nr_hwcur)
+			if (!send_down && !want_tx && ring->cur == kring->nr_hwcur)
 				continue;
 
 			if (nm_kr_tryget(kring, 1, &revents))
@@ -2459,6 +2468,8 @@ flush_tx:
 				kring->nm_notify(kring, 0);
 			}
 		}
+		/* if there were any packet to forward we must have handled them by now */
+		send_down = 0;
 		if (want_tx && retry_tx && sr) {
 			nm_os_selrecord(sr, check_all_tx ?
 			    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
@@ -2472,7 +2483,6 @@ flush_tx:
 	 * Do it on all rings because otherwise we starve.
 	 */
 	if (want_rx) {
-		int send_down = 0; /* transparent mode */
 		/* two rounds here for race avoidance */
 do_retry_rx:
 		for (i = priv->np_qfirst[NR_RX]; i < priv->np_qlast[NR_RX]; i++) {
@@ -2493,19 +2503,19 @@ do_retry_rx:
 			/*
 			 * transparent mode support: collect packets
 			 * from the rxring(s).
-			 * XXX NR_FORWARD should only be read on
-			 * physical or NIC ports
 			 */
-			if (netmap_fwd || ring->flags & NR_FORWARD) {
+			if (nm_may_forward_up(kring)) {
 				ND(10, "forwarding some buffers up %d to %d",
 				    kring->nr_hwcur, ring->cur);
 				netmap_grab_packets(kring, &q, netmap_fwd);
 			}
 
+			kring->nr_kflags &= ~NR_FORWARD;
 			if (kring->nm_sync(kring, 0))
 				revents |= POLLERR;
 			else
 				nm_rxsync_finalize(kring);
+			send_down |= (kring->nr_kflags & NR_FORWARD); /* host ring only */
 			if (netmap_no_timestamp == 0 ||
 					ring->flags & NR_TIMESTAMP) {
 				microtime(&ring->ts);
@@ -2519,22 +2529,10 @@ do_retry_rx:
 			}
 		}
 
-		/* transparent mode XXX only during first pass ? */
-		if (na->na_flags & NAF_HOST_RINGS) {
-			ring = na->rx_rings[na->num_rx_rings].ring;
-			if (check_all_rx
-			    && (netmap_fwd || ring->flags & NR_FORWARD)) {
-				/* XXX fix to use kring fields */
-				if (nm_ring_empty(ring))
-					send_down = netmap_rxsync_from_host(na, sr);
-				if (!nm_ring_empty(ring))
-					revents |= want_rx;
-			}
-		}
-
-		if (retry_rx && sr)
+		if (retry_rx && sr) {
 			nm_os_selrecord(sr, check_all_rx ?
 			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
+		}
 		if (send_down > 0 || retry_rx) {
 			retry_rx = 0;
 			if (send_down)
@@ -2549,10 +2547,7 @@ do_retry_rx:
 	 * kring->nr_hwcur and ring->head
 	 * are passed to the other endpoint.
 	 *
-	 * In this mode we also scan the sw rxring, which in
-	 * turn passes packets up.
-	 *
-	 * XXX Transparent mode at the moment requires to bind all
+	 * Transparent mode requires to bind all
  	 * rings to a single file descriptor.
 	 */
 
