@@ -219,7 +219,7 @@ typedef struct hrtimer{
 #define SYSEND
 #endif /* _WIN32 */
 
-#define NM_ACCESS_ONCE(x)	(*(volatile typeof(x) *)&(x))
+#define NM_ACCESS_ONCE(x)	(*(volatile __typeof__(x) *)&(x))
 
 #define	NMG_LOCK_T		NM_MTX_T
 #define	NMG_LOCK_INIT()		NM_MTX_INIT(netmap_global_lock)
@@ -371,6 +371,9 @@ struct netmap_kring {
 	uint32_t	nr_kflags;	/* private driver flags */
 #define NKR_PENDINTR	0x1		// Pending interrupt.
 #define NKR_EXCLUSIVE	0x2		/* exclusive binding */
+#define NKR_FORWARD	0x4		/* (host ring only) there are
+					   packets to forward
+					 */
 	uint32_t	nkr_num_slots;
 
 	/*
