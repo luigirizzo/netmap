@@ -781,7 +781,8 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
-	if (!(new_flags & NM_OPEN_NO_MMAP) && nm_mmap(d, parent)) {
+        /* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
+	if ((!(new_flags & NM_OPEN_NO_MMAP) || parent) && nm_mmap(d, parent)) {
 	        snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
 		goto fail;
 	}
