@@ -196,7 +196,9 @@ typedef struct ethtool_ops{
 	char data[1];
 };
 typedef struct hrtimer{
-	char data[1];
+	KTIMER timer;
+	BOOLEAN active;
+	KDPC deferred_proc;
 };
 
 /* MSVC does not have likely/unlikely support */

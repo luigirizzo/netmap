@@ -309,77 +309,7 @@ typedef struct _FUNCTION_POINTER_XCHANGE {
 void win32_init_lookaside_buffers(struct net_device *ifp);
 void win32_clear_lookaside_buffers(struct net_device *ifp);
 
-struct hrtimer;	// XXX unused, from generic
-struct nm_generic_mit;	// XXX unused, from generic
 struct device;	// XXX unused, in some place in netmap_mem2.c
-
-static void
-generic_timer_handler(struct hrtimer *t)
-{
-	DbgPrint("unimplemented %p\n", t);
-#if 0
-	struct nm_generic_mit *mit =
-		container_of(t, struct nm_generic_mit, mit_timer);
-	u_int work_done;
-
-	if (!mit->mit_pending) {
-		return HRTIMER_NORESTART;
-	}
-
-	/* Some work arrived while the timer was counting down:
-	* Reset the pending work flag, restart the timer and send
-	* a notification.
-	*/
-	mit->mit_pending = 0;
-	/* below is a variation of netmap_generic_irq  XXX revise */
-	if (nm_netmap_on(mit->mit_na)) {
-		netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
-		generic_rate(0, 0, 0, 0, 0, 1);
-	}
-	nm_os_mitigation_restart(mit);
-	return HRTIMER_RESTART;
-#endif
-}
-
-static void nm_os_mitigation_init(struct nm_generic_mit *mit, int idx,
-	struct netmap_adapter *na)
-{
-	DbgPrint("unimplemented %p idx %d na %p\n", mit, idx, na);
-#if 0
-	hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	mit->mit_timer.function = &generic_timer_handler;
-	mit->mit_pending = 0;
-	mit->mit_ring_idx = idx;
-	mit->mit_na = na;
-#endif
-}
-
-static void nm_os_mitigation_start(struct nm_generic_mit *mit)
-{
-	DbgPrint("unimplemented %p\n", mit);
-	//hrtimer_start(&mit->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
-}
-
-static void nm_os_mitigation_restart(struct nm_generic_mit *mit)
-{
-	DbgPrint("unimplemented %p\n", mit);
-	//hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
-}
-
-static int nm_os_mitigation_active(struct nm_generic_mit *mit)
-{
-	DbgPrint("unimplemented %p\n", mit);
-	return 1;
-	//return hrtimer_active(&mit->mit_timer);
-}
-
-static void nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
-{
-	DbgPrint("unimplemented %p\n", mit);
-	//hrtimer_cancel(&mit->mit_timer);
-}
-
-
 
 /*-------------------------------------------
  *      KERNEL MEMORY ALLOCATION and management

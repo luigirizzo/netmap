@@ -97,7 +97,9 @@ _msbuild:
 _apps:
 	gcc $(APP_CFLAGS) ../examples/pkt-gen.c  -o ../examples/pkt-gen.exe
 	gcc $(APP_CFLAGS) ../examples/pkt-gen.c -DBUSYWAIT -o ../examples/pkt-gen-b.exe
-
+	gcc $(APP_CFLAGS) ../examples/bridge.c -Wno-unused-function -o ../examples/bridge.exe
+	gcc $(APP_CFLAGS) ../examples/vale-ctl.c -Wno-unused-function -o ../examples/vale-ctl.exe
+	
 clean:
 	rm -rf Output*
 
