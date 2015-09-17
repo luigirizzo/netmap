@@ -1040,24 +1040,30 @@ nm_kthread_worker(void *data)
 			kthread_suspend_check();
 		}
 
-		/* checks if there is a pending notification */
-		mtx_lock(&nmk->worker_lock);
-		if (likely(nmk->scheduled != old_scheduled)) {
-			old_scheduled = nmk->scheduled;
-			mtx_unlock(&nmk->worker_lock);
-
+		/*
+		 * if ioevent_file is not defined, we don't have notification
+		 * mechanism and we continually execute worker_fn()
+		 */
+		if (!ctx->ioevent_file) {
 			ctx->worker_fn(ctx->worker_private); /* worker_body */
+		} else {
+			/* checks if there is a pending notification */
+			mtx_lock(&nmk->worker_lock);
+			if (likely(nmk->scheduled != old_scheduled)) {
+				old_scheduled = nmk->scheduled;
+				mtx_unlock(&nmk->worker_lock);
 
-			continue;
-		} else if (nmk->run) {
-			if (ctx->ioevent_file) {
+				ctx->worker_fn(ctx->worker_private); /* worker_body */
+
+				continue;
+			} else if (nmk->run) {
 				/* wait on event with timetout 1 second */
 				msleep_spin_sbt(ctx->ioevent_file, &nmk->worker_lock,
 						"nmk_event", SBT_1S, SBT_1S, C_ABSOLUTE);
 				nmk->scheduled++;
 			}
+			mtx_unlock(&nmk->worker_lock);
 		}
-		mtx_unlock(&nmk->worker_lock);
 	}
 
 	kthread_exit();
