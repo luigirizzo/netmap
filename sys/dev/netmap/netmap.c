@@ -1292,7 +1292,7 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
  *     0        NETMAP_ADMODE_GENERIC   GENERIC GENERIC
  *
  */
-
+static void netmap_hw_dtor(struct netmap_adapter *); /* needed by NM_IS_NATIVE() */
 int
 netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 {
@@ -1307,7 +1307,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	if (i < NETMAP_ADMODE_BEST || i >= NETMAP_ADMODE_LAST)
 		i = netmap_admode = NETMAP_ADMODE_BEST;
 
-	if (NETMAP_CAPABLE(ifp)) {
+	if (NM_NA_VALID(ifp)) {
 		prev_na = NA(ifp);
 		/* If an adapter already exists, return it if
 		 * there are active file descriptors or if
@@ -1332,7 +1332,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 	/* If there isn't native support and netmap is not allowed
 	 * to use generic adapters, we cannot satisfy the request.
 	 */
-	if (!NETMAP_CAPABLE(ifp) && i == NETMAP_ADMODE_NATIVE)
+	if (!NM_IS_NATIVE(ifp) && i == NETMAP_ADMODE_NATIVE)
 		return EOPNOTSUPP;
 
 	/* Otherwise, create a generic adapter and return it,
@@ -2743,8 +2743,7 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	}
 	netmap_adapter_get(&hwna->up);
 
-	WNA(ifp) = &hwna->up;
-	NETMAP_SET_CAPABLE(ifp);
+	NM_ATTACH_NA(ifp, &hwna->up);
 
 #ifdef linux
 	if (ifp->netdev_ops) {

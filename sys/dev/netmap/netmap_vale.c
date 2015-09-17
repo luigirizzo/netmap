@@ -523,7 +523,7 @@ nm_vi_destroy(const char *name)
 		return ENXIO;
 	NMG_LOCK();
 	/* make sure this is actually a VALE port */
-	if (!NETMAP_CAPABLE(ifp) || NA(ifp)->nm_register != netmap_vp_reg) {
+	if (!NM_NA_VALID(ifp) || NA(ifp)->nm_register != netmap_vp_reg) {
 		error = EINVAL;
 		goto err;
 	}
@@ -583,6 +583,7 @@ nm_vi_create(struct nmreq *nmr)
 	/* persist-specific routines */
 	vpna->up.nm_bdg_ctl = netmap_vp_bdg_ctl;
 	netmap_adapter_get(&vpna->up);
+	NM_ATTACH_NA(ifp, &vpna->up);
 	NMG_UNLOCK();
 	D("created %s", ifp->if_xname);
 	return 0;
