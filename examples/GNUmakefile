@@ -1,6 +1,6 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
-PROGS	=	pkt-gen pkt-gen-b bridge vale-ctl
+PROGS	=	pkt-gen pkt-gen-b bridge bridge-b vale-ctl
 #PROGS += pingd
 PROGS	+= test_select testmmap
 X86PROG = testlock testcsum
@@ -45,6 +45,8 @@ pkt-gen-b: pkt-gen-b.o
 	$(CC) $(CFLAGS) -DBUSYWAIT -c $^ -o $@
 
 bridge: bridge.o
+
+bridge-b: bridge-b.o
 
 vale-ctl: vale-ctl.o
 
