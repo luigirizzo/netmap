@@ -548,9 +548,9 @@ ksrc=$(cd $ksrc; pwd)
 
 # check that ksrc has been prepared for external modules compilation
 # It should contain a version.h file (in one of two possible places,
-# depending on kernel version, and a .config file
-version_hdr="$ksrc/include/linux/version.h"
-[ -f "$version_hdr" ] || version_hdr="$ksrc/include/generated/uapi/linux/version.h"
+# depending on kernel version, and a .config file)
+version_hdr="$ksrc/include/generated/uapi/linux/version.h"
+[ -f "$version_hdr" ] || version_hdr="$ksrc/include/linux/version.h"
 if [ ! -f "$ksrc/.config" ] || [ ! -f "$version_hdr" ]; then
 	error <<-EOF
 kernel not configured.
