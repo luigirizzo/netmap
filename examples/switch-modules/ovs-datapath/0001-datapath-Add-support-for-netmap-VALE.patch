@@ -673,7 +673,7 @@ index de85087..d9857d0 100644
  
 +#ifdef DEV_NETMAP
 +	/* don't attach a non-netmap interface to a vale datapath */
-+	if (!NETMAP_CAPABLE(netdev_vport->dev)) {
++	if (!NA_VALID(netdev_vport->dev)) {
 +		err = -EINVAL;
 +		goto error_put;
 +	}

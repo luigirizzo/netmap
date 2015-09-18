@@ -1437,35 +1437,25 @@ extern int netmap_use_count;
 #define	NA(_ifp)	((struct netmap_adapter *)WNA(_ifp))
 
 /*
- * Macros to determine if an interface is netmap capable or netmap enabled.
- * See the magic field in struct netmap_adapter.
- */
-#ifdef __FreeBSD__
-/*
- * on FreeBSD just use if_capabilities and if_capenable.
- */
-#define NETMAP_CAPABLE(ifp)	(NA(ifp) &&		\
-	(ifp)->if_capabilities & IFCAP_NETMAP )
-
-#define	NETMAP_SET_CAPABLE(ifp)				\
-	(ifp)->if_capabilities |= IFCAP_NETMAP
-
-#else	/* linux */
-
-/*
- * on linux:
- * we check if NA(ifp) is set and its first element has a related
+ * On old versions of FreeBSD, NA(ifp) is a pspare. On linux we
+ * overload another pointer in the netdev.
+ *
+ * We check if NA(ifp) is set and its first element has a related
  * magic value. The capenable is within the struct netmap_adapter.
  */
 #define	NETMAP_MAGIC	0x52697a7a
 
-#define NETMAP_CAPABLE(ifp)	(NA(ifp) &&		\
+#define NM_NA_VALID(ifp)	(NA(ifp) &&		\
 	((uint32_t)(uintptr_t)NA(ifp) ^ NA(ifp)->magic) == NETMAP_MAGIC )
 
-#define	NETMAP_SET_CAPABLE(ifp)				\
-	NA(ifp)->magic = ((uint32_t)(uintptr_t)NA(ifp)) ^ NETMAP_MAGIC
+#define	NM_ATTACH_NA(ifp, na) do {					\
+	WNA(ifp) = na;							\
+	if (NA(ifp))							\
+		NA(ifp)->magic = 					\
+			((uint32_t)(uintptr_t)NA(ifp)) ^ NETMAP_MAGIC;	\
+} while(0)
 
-#endif	/* linux */
+#define NM_IS_NATIVE(ifp)	(NM_NA_VALID(ifp) && NA(ifp)->nm_dtor == netmap_hw_dtor)
 
 #if defined(__FreeBSD__)
 
