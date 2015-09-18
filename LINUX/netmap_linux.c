@@ -1637,6 +1637,15 @@ nm_kthread_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
     return 0;
 }
 
+static void inline
+nm_kthread_worker_fn(struct nm_kthread_ctx *ctx)
+{
+    __set_current_state(TASK_RUNNING);
+    ctx->worker_fn(ctx->worker_private); /* worker body */
+    if (need_resched())
+        schedule();
+}
+
 static int
 nm_kthread_worker(void *data)
 {
@@ -1653,24 +1662,29 @@ nm_kthread_worker(void *data)
 
     while (!kthread_should_stop()) {
         /*
-         * Set INTERRUPTIBLE state before to check if there is work.
-         * if wake_up() is called, although we have not seen the new
-         * counter value, the kthread state is set to RUNNING and
-         * after schedule() it is not moved off run queue.
+         * if ioevent_file is not defined, we don't have notification
+         * mechanism and we continually execute worker_fn()
          */
-        set_current_state(TASK_INTERRUPTIBLE);
-
-        new_scheduled = atomic_read(&nmk->scheduled);
-
-        /* checks if there is a pending notification */
-        if (likely(new_scheduled != old_scheduled)) {
-            old_scheduled = new_scheduled;
-            __set_current_state(TASK_RUNNING);
-            ctx->worker_fn(ctx->worker_private); /* worker body */
-            if (need_resched())
-                schedule();
+        if (!ctx->ioevent_file) {
+            nm_kthread_worker_fn(ctx);
         } else {
-            schedule();
+            /*
+             * Set INTERRUPTIBLE state before to check if there is work.
+             * if wake_up() is called, although we have not seen the new
+             * counter value, the kthread state is set to RUNNING and
+             * after schedule() it is not moved off run queue.
+             */
+            set_current_state(TASK_INTERRUPTIBLE);
+
+            new_scheduled = atomic_read(&nmk->scheduled);
+
+            /* checks if there is a pending notification */
+            if (likely(new_scheduled != old_scheduled)) {
+                old_scheduled = new_scheduled;
+                nm_kthread_worker_fn(ctx);
+            } else {
+                schedule();
+            }
         }
     }
 
@@ -1687,7 +1701,8 @@ nm_kthread_worker(void *data)
 void inline
 nm_os_kthread_send_irq(struct nm_kthread *nmk)
 {
-    eventfd_signal(nmk->worker_ctx.irq_ctx, 1);
+    if (nmk->worker_ctx.irq_ctx)
+        eventfd_signal(nmk->worker_ctx.irq_ctx, 1);
 }
 
 static int
@@ -1696,17 +1711,20 @@ nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kth_event_cfg *ring_cfg)
     struct file *file;
     struct nm_kthread_ctx *wctx = &nmk->worker_ctx;
 
-    file = eventfd_fget(ring_cfg->ioeventfd);
-    if (IS_ERR(file))
-        return -PTR_ERR(file);
-    wctx->ioevent_file = file;
+    if (ring_cfg->ioeventfd) {
+	file = eventfd_fget(ring_cfg->ioeventfd);
+	if (IS_ERR(file))
+	    return -PTR_ERR(file);
+	wctx->ioevent_file = file;
+    }
 
-    file = eventfd_fget(ring_cfg->irqfd);
-    if (IS_ERR(file))
-        goto err;
-    wctx->irq_file = file;
-    wctx->irq_ctx = eventfd_ctx_fileget(file);
-
+    if (ring_cfg->irqfd) {
+	file = eventfd_fget(ring_cfg->irqfd);
+	if (IS_ERR(file))
+            goto err;
+	wctx->irq_file = file;
+	wctx->irq_ctx = eventfd_ctx_fileget(file);
+    }
 
     return 0;
 err:
@@ -1825,9 +1843,11 @@ nm_os_kthread_start(struct nm_kthread *nmk)
 	goto err;
     }
 
-    error = nm_kthread_start_poll(&nmk->worker_ctx, nmk->worker_ctx.ioevent_file);
-    if (error) {
-        goto err_kstop;
+    if (nmk->worker_ctx.ioevent_file) {
+	error = nm_kthread_start_poll(&nmk->worker_ctx, nmk->worker_ctx.ioevent_file);
+	if (error) {
+            goto err_kstop;
+	}
     }
 
     return 0;
