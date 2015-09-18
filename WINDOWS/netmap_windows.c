@@ -840,3 +840,81 @@ nm_os_ifnet_fini(void)
 {
 
 }
+
+/*
+ * Mitigation support
+ */
+
+void
+generic_timer_handler(struct hrtimer *t)
+{
+	DbgPrint("unimplemented generic_timer_handler %p\n", t);
+#if 0
+	struct nm_generic_mit *mit =
+		container_of(t, struct nm_generic_mit, mit_timer);
+	u_int work_done;
+
+	if (!mit->mit_pending) {
+		return HRTIMER_NORESTART;
+	}
+
+	/* Some work arrived while the timer was counting down:
+	* Reset the pending work flag, restart the timer and send
+	* a notification.
+	*/
+	mit->mit_pending = 0;
+	/* below is a variation of netmap_generic_irq  XXX revise */
+	if (nm_netmap_on(mit->mit_na)) {
+		netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
+		generic_rate(0, 0, 0, 0, 0, 1);
+	}
+	nm_os_mitigation_restart(mit);
+	return HRTIMER_RESTART;
+#endif
+}
+
+void nm_os_mitigation_init(struct nm_generic_mit *mit, int idx,
+struct netmap_adapter *na)
+{
+	DbgPrint("unimplemented generic_timer_handler %p\n");
+	//KeInitializeDpc(&mit->mit_timer.deferred_proc, &generic_timer_handler, NULL);
+	//KeInitializeTimer(&mit->mit_timer.timer);
+	//hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	//mit->mit_timer.function = &generic_timer_handler;
+	//mit->mit_pending = 0;
+	//mit->mit_ring_idx = idx;
+	//mit->mit_na = na;
+}
+
+void nm_os_mitigation_start(struct nm_generic_mit *mit)
+{
+	DbgPrint("unimplemented generic_timer_handler %p\n");
+	//LARGE_INTEGER test;
+	//KeSetTimerEx(&mit->mit_timer.timer, test, 1000, &mit->mit_timer.deferred_proc);
+	//mit->mit_timer.active = TRUE;
+	//hrtimer_start(&mit->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
+	
+}
+
+void nm_os_mitigation_restart(struct nm_generic_mit *mit)
+{
+	DbgPrint("unimplemented nm_os_mitigation_start %p\n");
+	//hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
+}
+
+int nm_os_mitigation_active(struct nm_generic_mit *mit)
+{
+	DbgPrint("unimplemented nm_os_mitigation_active %p\n");
+	return 0;
+	//return mit->mit_timer.active;
+	//return hrtimer_active(&mit->mit_timer);
+}
+
+void nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
+{
+	DbgPrint("unimplemented nm_os_mitigation_cleanup\n");
+	//mit->mit_timer.active = FALSE;
+	//KeCancelTimer(&mit->mit_timer.timer);
+	//hrtimer_cancel(&mit->mit_timer);
+}
+
