@@ -262,6 +262,23 @@ main(int argc, char **argv)
 		pollfd[0].revents = pollfd[1].revents = 0;
 		n0 = pkt_queued(pa, 0);
 		n1 = pkt_queued(pb, 0);
+#if defined(_WIN32) || defined(BUSYWAIT)
+		if (n0){
+			ioctl(pollfd[1].fd, NIOCTXSYNC, NULL);
+			pollfd[1].revents = POLLOUT;
+		}
+		else {
+			ioctl(pollfd[0].fd, NIOCRXSYNC, NULL);
+		}
+		if (n1){
+			ioctl(pollfd[0].fd, NIOCTXSYNC, NULL);
+			pollfd[0].revents = POLLOUT;
+		}
+		else {
+			ioctl(pollfd[1].fd, NIOCRXSYNC, NULL);
+		}
+		ret = 1;
+#else
 		if (n0)
 			pollfd[1].events |= POLLOUT;
 		else
@@ -271,6 +288,7 @@ main(int argc, char **argv)
 		else
 			pollfd[1].events |= POLLIN;
 		ret = poll(pollfd, 2, 2500);
+#endif //defined(_WIN32) || defined(BUSYWAIT)
 		if (ret <= 0 || verbose)
 		    D("poll %s [0] ev %x %x rx %d@%d tx %d,"
 			     " [1] ev %x %x rx %d@%d tx %d",
