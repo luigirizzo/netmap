@@ -806,6 +806,283 @@ unlock_exit:
 
 }
 
+struct nm_bdg_polling_state;
+struct
+nm_bdg_kthread {
+	struct nm_kthread *nmk;
+	u_int qfirst;
+	u_int qlast;
+	struct nm_bdg_polling_state *bps;
+};
+
+struct nm_bdg_polling_state {
+	bool configured;
+	bool stopped;
+	struct netmap_bwrap_adapter *bna;
+	u_int reg;
+	u_int qfirst;
+	u_int qlast;
+	u_int cpu_from;
+	u_int ncpus;
+	struct nm_bdg_kthread *kthreads;
+};
+
+static void
+netmap_bwrap_polling(void *data)
+{
+	struct nm_bdg_kthread *nbk = data;
+	struct netmap_bwrap_adapter *bna;
+	u_int qfirst, qlast, i;
+	struct netmap_kring *kring0, *kring;
+
+	if (!nbk)
+		return;
+	qfirst = nbk->qfirst;
+	qlast = nbk->qlast;
+	bna = nbk->bps->bna;
+	kring0 = NMR(bna->hwna, NR_RX);
+
+	for (i = qfirst; i < qlast; i++) {
+		kring = kring0 + i;
+		kring->nm_notify(kring, 0);
+	}
+}
+
+static int
+nm_bdg_create_kthreads(struct nm_bdg_polling_state *bps)
+{
+	struct nm_kthread_cfg kcfg;
+	int i, j;
+
+	bps->kthreads = malloc(sizeof(struct nm_bdg_kthread) * bps->ncpus,
+				M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (bps->kthreads == NULL)
+		return ENOMEM;
+
+	bzero(&kcfg, sizeof(kcfg));
+	kcfg.worker_fn = netmap_bwrap_polling;
+	for (i = 0; i < bps->ncpus; i++) {
+		struct nm_bdg_kthread *t = bps->kthreads + i;
+		int all = (bps->ncpus == 1 && bps->reg == NR_REG_ALL_NIC);
+		int affinity = bps->cpu_from + i;
+
+		t->bps = bps;
+		t->qfirst = all ? bps->qfirst /* must be 0 */: affinity; 
+		t->qlast = all ? bps->qlast : t->qfirst + 1;
+		D("kthread %d a:%u qf:%u ql:%u", i, affinity, t->qfirst,
+			t->qlast);
+
+		kcfg.type = i;
+		kcfg.worker_private = t;
+		t->nmk = nm_os_kthread_create(&kcfg);
+		if (t->nmk == NULL) {
+			goto cleanup;
+		}
+		nm_os_kthread_set_affinity(t->nmk, affinity);
+	}
+	return 0;
+
+cleanup:
+	for (j = 0; j < i; j++) {
+		struct nm_bdg_kthread *t = bps->kthreads + i;
+		nm_os_kthread_delete(t->nmk);
+	}
+	free(bps->kthreads, M_DEVBUF);
+	return EFAULT;
+}
+
+/* a version of ptnetmap_start_kthreads() */
+static int
+nm_bdg_polling_start_kthreads(struct nm_bdg_polling_state *bps)
+{
+	int error, i, j;
+
+	if (!bps) {
+		D("polling is not configured");
+		return EFAULT;
+	}
+	bps->stopped = false;
+
+	for (i = 0; i < bps->ncpus; i++) {
+		struct nm_bdg_kthread *t = bps->kthreads + i;
+		error = nm_os_kthread_start(t->nmk);
+		if (error) {
+			D("error in nm_kthread_start()");
+			goto cleanup;
+		}
+	}
+	return 0;
+
+cleanup:
+	for (j = 0; j < i; j++) {
+		struct nm_bdg_kthread *t = bps->kthreads + i;
+		nm_os_kthread_stop(t->nmk);
+	}
+	bps->stopped = true;
+	return error;
+}
+
+static void
+nm_bdg_polling_stop_delete_kthreads(struct nm_bdg_polling_state *bps)
+{
+	int i;
+
+	if (!bps)
+		return;
+
+	for (i = 0; i < bps->ncpus; i++) {
+		struct nm_bdg_kthread *t = bps->kthreads + i;
+		nm_os_kthread_stop(t->nmk);
+		nm_os_kthread_delete(t->nmk);
+	}
+	bps->stopped = true;
+}
+
+static int
+get_polling_cfg(struct nmreq *nmr, struct netmap_adapter *na,
+			struct nm_bdg_polling_state *bps)
+{
+	int req_cpus, avail_cpus, core_from;
+	u_int reg, i, qfirst, qlast;
+
+	avail_cpus = nm_os_ncpus();
+	req_cpus = nmr->nr_arg1;
+
+	if (req_cpus == 0) {
+		D("req_cpus must be > 0");
+		return EINVAL;
+	}
+	if (avail_cpus < 2) {
+		D("polling needs at least two CPU cores in the system");
+		return EINVAL;
+	}
+	/* flags & NR_REG_MASK indicates how to use cpu cores */
+	if (req_cpus > avail_cpus) {
+		return EINVAL;
+	}
+
+	reg = nmr->nr_flags & NR_REG_MASK;
+	i = nmr->nr_ringid & NETMAP_RING_MASK;
+	/*
+	 * ONE_NIC: takes care one ring specified
+	 * ALL_NIC:
+	 *   cores == 1:
+	 *  	 all the rings using a single core specified in RING_MASK
+	 *   cores  > 1:
+	 *   	 from the given ring to cores using one core per ring
+	 */
+	if (reg == NR_REG_ONE_NIC) {
+		if (req_cpus != 1) {
+			D("ncpus must be 1 not %d for REG_ONE_NIC", req_cpus);
+			return EINVAL;
+		} else if (i >= nma_get_nrings(na, NR_RX)) {
+			D("only %d rings exist (ring %u is given)",
+					nma_get_nrings(na, NR_RX), i);
+			return EINVAL;
+		}
+		qfirst = i;
+		qlast = i + 1;
+		core_from = qfirst;
+	} else if (reg == NR_REG_ALL_NIC) {
+		if (req_cpus == 1) { /* all the rings */
+			qfirst = 0;
+			qlast = nma_get_nrings(na, NR_RX);
+			core_from = i;
+		} else { /* 1 core for 1 ring from an index i */
+			if (i + req_cpus > nma_get_nrings(na, NR_RX)) {
+				D("requested ALL_NIC, ring %u and %d cpus but there is only %u rings",
+					i, req_cpus, nma_get_nrings(na, NR_RX));
+				return EINVAL;
+			}
+			qfirst = i;
+			qlast = qfirst + req_cpus;
+			core_from = qfirst;
+		}
+	} else {
+		D("reg must be ALL_NIC or ONE_NIC");
+		return EINVAL;
+	}
+
+	bps->reg = reg;
+	bps->qfirst = qfirst;
+	bps->qlast = qlast;
+	bps->cpu_from = core_from;
+	bps->ncpus = req_cpus /* validated */;
+	D("reg %s qfirst %u qlast %u cpu_from %u ncpus %u",
+		reg == NR_REG_ALL_NIC ? "ALL_NIC" : "ONE_NIC",
+		qfirst, qlast, core_from, req_cpus);
+	return 0;
+}
+
+static int
+nm_bdg_ctl_polling_start(struct nmreq *nmr, struct netmap_adapter *na)
+{
+	struct nm_bdg_polling_state *bps;
+	struct netmap_bwrap_adapter *bna;
+	int error;
+
+	bna = (struct netmap_bwrap_adapter *)na;
+	if (bna->na_polling_state) {
+		D("ERROR adapter already in polling mode");
+		return EFAULT;
+	}
+
+	bps = malloc(sizeof(*bps), M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (!bps)
+		return ENOMEM;
+	bps->configured = false;
+	bps->stopped = true;
+
+	if (get_polling_cfg(nmr, na, bps)) {
+		free(bps, M_DEVBUF);
+		return EINVAL;
+	}
+
+	if (nm_bdg_create_kthreads(bps)) {
+		free(bps, M_DEVBUF);
+		return EFAULT;
+	}
+
+	bps->configured = true;
+	bna->na_polling_state = bps;
+	bps->bna = bna;
+
+	/* disable interrupt if possible */
+	if (bna->hwna->nm_intr)
+		bna->hwna->nm_intr(bna->hwna, 0);
+	/* start kthread now */
+	error = nm_bdg_polling_start_kthreads(bps);
+	if (error) {
+		D("ERROR nm_bdg_polling_start_kthread()");
+		free(bps->kthreads, M_DEVBUF);
+		free(bps, M_DEVBUF);
+		bna->na_polling_state = NULL;
+		if (bna->hwna->nm_intr)
+			bna->hwna->nm_intr(bna->hwna, 1);
+	}
+	return error;
+}
+
+static int
+nm_bdg_ctl_polling_stop(struct nmreq *nmr, struct netmap_adapter *na)
+{
+	struct netmap_bwrap_adapter *bna = (struct netmap_bwrap_adapter *)na;
+	struct nm_bdg_polling_state *bps;
+
+	if (!bna->na_polling_state) {
+		D("ERROR adapter is not in polling mode");
+		return EFAULT;
+	}
+	bps = bna->na_polling_state;
+	nm_bdg_polling_stop_delete_kthreads(bna->na_polling_state);
+	bps->configured = false;
+	free(bps, M_DEVBUF);
+	bna->na_polling_state = NULL;
+	/* reenable interrupt */
+	if (bna->hwna->nm_intr)
+		bna->hwna->nm_intr(bna->hwna, 1);
+	return 0;
+}
 
 /* Called by either user's context (netmap_ioctl())
  * or external kernel modules (e.g., Openvswitch).
@@ -946,6 +1223,25 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 			if (vpna->virt_hdr_len)
 				vpna->mfs = NETMAP_BUF_SIZE(na);
 			D("Using vnet_hdr_len %d for %p", vpna->virt_hdr_len, vpna);
+			netmap_adapter_put(na);
+		}
+		NMG_UNLOCK();
+		break;
+
+	case NETMAP_BDG_POLLING_ON:
+	case NETMAP_BDG_POLLING_OFF:
+		NMG_LOCK();
+		error = netmap_get_bdg_na(nmr, &na, 0);
+		if (na && !error) {
+			if (cmd == NETMAP_BDG_POLLING_ON) {
+				error = nm_bdg_ctl_polling_start(nmr, na);
+				if (!error)
+					netmap_adapter_get(na);
+			} else {
+				error = nm_bdg_ctl_polling_stop(nmr, na);
+				if (!error)
+					netmap_adapter_put(na);
+			}
 			netmap_adapter_put(na);
 		}
 		NMG_UNLOCK();
@@ -1952,9 +2248,10 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 	error = kring->nm_sync(kring, 0);
 	if (error)
 		goto put_out;
-	if (kring->nr_hwcur == kring->nr_hwtail && netmap_verbose) {
-		D("how strange, interrupt with no packets on %s",
-			na->name);
+	if (kring->nr_hwcur == kring->nr_hwtail) {
+		if (netmap_verbose)
+			D("how strange, interrupt with no packets on %s",
+			    na->name);
 		goto put_out;
 	}
 

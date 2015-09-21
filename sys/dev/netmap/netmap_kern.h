@@ -862,7 +862,7 @@ netmap_real_rings(struct netmap_adapter *na, enum txrx t)
 }
 
 #ifdef WITH_VALE
-
+struct nm_bdg_polling_state;
 /*
  * Bridge wrapper for non VALE ports attached to a VALE switch.
  *
@@ -920,9 +920,9 @@ struct netmap_bwrap_adapter {
 	 * are attached to a bridge.
 	 */
 	struct netmap_priv_d *na_kpriv;
+	struct nm_bdg_polling_state *na_polling_state;
 };
 int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
-
 
 #endif /* WITH_VALE */
 

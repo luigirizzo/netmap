@@ -2172,7 +2172,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		if (i == NETMAP_BDG_ATTACH || i == NETMAP_BDG_DETACH
 				|| i == NETMAP_BDG_VNET_HDR
 				|| i == NETMAP_BDG_NEWIF
-				|| i == NETMAP_BDG_DELIF) {
+				|| i == NETMAP_BDG_DELIF
+				|| i == NETMAP_BDG_POLLING_ON
+				|| i == NETMAP_BDG_POLLING_OFF) {
 			error = netmap_bdg_ctl(nmr, NULL);
 			break;
 		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
