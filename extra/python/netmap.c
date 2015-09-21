@@ -237,6 +237,18 @@ static struct NetmapConst netmap_constants[] = {
         .name = "RegMonitorRx",
         .value = NR_MONITOR_RX,
     },
+    {
+        .name = "RegZcopyMon",
+        .value = NR_ZCOPY_MON,
+    },
+    {
+        .name = "RegExclusive",
+        .value = NR_EXCLUSIVE,
+    },
+    {
+        .name = "RegPTNetmapHost",
+        .value = NR_PTNETMAP_HOST,
+    },
     /* Add 'netmap_rings.flags' constants to the module. */
     {
         .name = "NrTimestamp",
@@ -271,7 +283,7 @@ static struct NetmapConst netmap_constants[] = {
         .name = "NsMorefrag",
         .value = NS_MOREFRAG,
     },
-    /* Add bridge management commands. */
+    /* Add bridge and passthrough management commands. */
     {
         .name = "BdgAttach",
         .value = NETMAP_BDG_ATTACH,
@@ -281,12 +293,32 @@ static struct NetmapConst netmap_constants[] = {
         .value = NETMAP_BDG_DETACH,
     },
     {
+        .name = "BdgRegOps",
+        .value = NETMAP_BDG_REGOPS,
+    },
+    {
         .name = "BdgList",
         .value = NETMAP_BDG_LIST,
     },
     {
         .name = "BdgVnetHdr",
         .value = NETMAP_BDG_VNET_HDR,
+    },
+    {
+        .name = "BdgNewIf",
+        .value = NETMAP_BDG_NEWIF,
+    },
+    {
+        .name = "BdgDelIf",
+        .value = NETMAP_BDG_DELIF,
+    },
+    {
+        .name = "PtHostCreate",
+        .value = NETMAP_PT_HOST_CREATE,
+    },
+    {
+        .name = "PtHostDelete",
+        .value = NETMAP_PT_HOST_DELETE,
     },
     {
         .name = "BdgHost",
