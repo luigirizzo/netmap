@@ -108,6 +108,20 @@ set_crcstrip(struct ixgbe_hw *hw, int onoff)
 	IXGBE_WRITE_REG(hw, IXGBE_RDRXCTL, rxc);
 }
 
+static void
+ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
+{
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+
+	IXGBE_CORE_LOCK(adapter);
+	if (onoff) {
+		ixgbe_enable_intr(adapter); // XXX maybe ixgbe_stop ?
+	} else {
+		ixgbe_disable_intr(adapter); // XXX maybe ixgbe_stop ?
+	}
+	IXGBE_CORE_UNLOCK(adapter);
+}
 
 /*
  * Register/unregister. We are already under netmap lock.
@@ -485,6 +499,7 @@ ixgbe_netmap_attach(struct adapter *adapter)
 	na.nm_rxsync = ixgbe_netmap_rxsync;
 	na.nm_register = ixgbe_netmap_reg;
 	na.num_tx_rings = na.num_rx_rings = adapter->num_queues;
+	na.nm_intr = ixgbe_netmap_intr;
 	netmap_attach(&na);
 }
 

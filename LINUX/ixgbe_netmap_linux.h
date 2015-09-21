@@ -104,6 +104,22 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (0);
 }
 
+static inline void ixgbe_irq_enable_queues(struct ixgbe_adapter *adapter,
+						u64 qmask);
+static inline void ixgbe_irq_disable_queues(struct ixgbe_adapter *adapter,
+						u64 qmask);
+static void
+ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
+{
+	struct ifnet *ifp = na->ifp;
+	struct SOFTC_T *adapter = netdev_priv(ifp);
+
+	if (onoff) {
+		ixgbe_irq_enable_queues(adapter, ~0);
+	} else {
+		ixgbe_irq_disable_queues(adapter, ~0);
+	}
+}
 
 /*
  * Reconcile kernel and user view of the transmit ring.
@@ -539,6 +555,7 @@ ixgbe_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_register = ixgbe_netmap_reg;
 	na.num_tx_rings = adapter->num_tx_queues;
 	na.num_rx_rings = adapter->num_rx_queues;
+	na.nm_intr = ixgbe_netmap_intr;
 	netmap_attach(&na);
 }
 

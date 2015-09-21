@@ -680,6 +680,7 @@ struct netmap_adapter {
 	void (*nm_dtor)(struct netmap_adapter *);
 
 	int (*nm_register)(struct netmap_adapter *, int onoff);
+	void (*nm_intr)(struct netmap_adapter *, int onoff);
 
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
