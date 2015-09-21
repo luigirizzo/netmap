@@ -151,6 +151,26 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config)
 
 		break;
 
+	case NETMAP_BDG_POLLING_ON:
+	case NETMAP_BDG_POLLING_OFF:
+		/* we reuse nr_tx_rings for qfirst, and nr_rx_rings for
+		 * qlast and nr_tx_slots for affinity */
+		nmr.nr_arg1 = nmr.nr_tx_slots; /* ncpus */
+		nmr.nr_flags |= nmr.nr_tx_rings ?
+			NR_REG_ONE_NIC : NR_REG_ALL_NIC;
+		nmr.nr_ringid = nmr.nr_rx_rings;
+
+		error = ioctl(fd, NIOCREGIF, &nmr);
+		if (!error)
+			D("polling on %s %s", nmr.nr_name,
+				nr_cmd == NETMAP_BDG_POLLING_ON ?
+				"started" : "stopped");
+		else
+			D("polling on %s %s (err %d)", nmr.nr_name,
+				nr_cmd == NETMAP_BDG_POLLING_ON ?
+				"couldn't start" : "couldn't stop", error);
+		break;
+
 	default: /* GINFO */
 		nmr.nr_cmd = nmr.nr_arg1 = nmr.nr_arg2 = 0;
 		error = ioctl(fd, NIOCGINFO, &nmr);
@@ -172,7 +192,7 @@ main(int argc, char *argv[])
 	const char *command = basename(argv[0]);
 	char *name = NULL, *nmr_config = NULL;
 
-	if (argc > 3) {
+	if (argc > 5) {
 usage:
 		fprintf(stderr,
 			"Usage:\n"
@@ -185,12 +205,15 @@ usage:
 			"\t-r interface	interface name to be deleted\n"
 			"\t-l list all or specified bridge's interfaces (default)\n"
 			"\t-C string ring/slot setting of an interface creating by -n\n"
+			"\t-p interface start polling with -C affinity,0,qfirst,qlast\n"
+			"\t-P interface stop polling\n"
 			"", command);
 		return 0;
 	}
 
-	while ((ch = getopt(argc, argv, "d:a:h:g:l:n:r:C:")) != -1) {
-		name = optarg; /* default */
+	while ((ch = getopt(argc, argv, "d:a:h:g:l:n:r:C:p:P:")) != -1) {
+		if (ch != 'C')
+			name = optarg; /* default */
 		switch (ch) {
 		default:
 			fprintf(stderr, "bad option %c %s", ch, optarg);
@@ -222,11 +245,17 @@ usage:
 		case 'C':
 			nmr_config = strdup(optarg);
 			break;
+		case 'p':
+			nr_cmd = NETMAP_BDG_POLLING_ON;
+			break;
+		case 'P':
+			nr_cmd = NETMAP_BDG_POLLING_OFF;
+			break;
 		}
-		if (optind != argc) {
-			// fprintf(stderr, "optind %d argc %d\n", optind, argc);
-			goto usage;
-		}
+	}
+	if (optind != argc) {
+		// fprintf(stderr, "optind %d argc %d\n", optind, argc);
+		goto usage;
 	}
 	if (argc == 1)
 		nr_cmd = NETMAP_BDG_LIST;
