@@ -214,7 +214,12 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 #define PTNETMAP_VIRTIO_IO_SIZE         20
 #define PTNETMAP_VIRTIO_IO_SIZE_32      5
 
-#define VIRTIO_NET_F_PTNETMAP		25 /* virtio feature */
+/* virtio feature */
+#if defined (linux)
+#define VIRTIO_NET_F_PTNETMAP		25
+#else /* not linux */
+#define VIRTIO_NET_F_PTNETMAP		0x2000000
+#endif
 
 #endif /* NETMAP_VIRT_CSB */
 
