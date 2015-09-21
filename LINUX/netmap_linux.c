@@ -1568,6 +1568,13 @@ netmap_bns_unregister(void)
 #include <linux/mmu_context.h>
 #include <linux/poll.h>
 #include <linux/kthread.h>
+#include <linux/cpumask.h> /* nr_cpu_ids */
+
+u_int
+nm_os_ncpus(void)
+{
+	return nr_cpu_ids;
+}
 
 /* kthread context */
 struct nm_kthread_ctx {

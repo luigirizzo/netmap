@@ -1902,6 +1902,7 @@ void nm_os_kthread_delete(struct nm_kthread *);
 void nm_os_kthread_wakeup_worker(struct nm_kthread *nmk);
 void nm_os_kthread_send_irq(struct nm_kthread *);
 void nm_os_kthread_set_affinity(struct nm_kthread *, int);
+u_int nm_os_ncpus(void);
 
 #ifdef WITH_PTNETMAP_HOST
 /*
