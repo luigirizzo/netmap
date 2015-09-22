@@ -3064,7 +3064,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
  * - for a nic connected to a switch, call the proper forwarding routine
  *   (see netmap_bwrap_intr_notify)
  */
-void
+int
 netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 {
 	struct netmap_kring *kring;
@@ -3077,7 +3077,7 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 	}
 
 	if (q >= nma_get_nrings(na, t))
-		return;	// not a physical queue
+		return 0; // not a physical queue
 
 	kring = NMR(na, t) + q;
 
@@ -3086,6 +3086,7 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 		*work_done = 1; /* do not fire napi again */
 	}
 	kring->nm_notify(kring, 0);
+	return 1;
 }
 
 
@@ -3124,8 +3125,7 @@ netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 		return 0;
 	}
 
-	netmap_common_irq(na, q, work_done);
-	return 1;
+	return netmap_common_irq(na, q, work_done);
 }
 
 
