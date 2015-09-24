@@ -1476,6 +1476,20 @@ netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp)
 }
 
 
+#define NM_FAIL_ON(t) do {						\
+	if (unlikely(t)) {						\
+		RD(5, "%s: fail '" #t "' "				\
+			"h %d c %d t %d "				\
+			"rh %d rc %d rt %d "				\
+			"hc %d ht %d",					\
+			kring->name,					\
+			head, cur, ring->tail,				\
+			kring->rhead, kring->rcur, kring->rtail,	\
+			kring->nr_hwcur, kring->nr_hwtail);		\
+		return kring->nkr_num_slots;				\
+	}								\
+} while (0)
+
 /*
  * validate parameters on entry for *_txsync()
  * Returns ring->cur if ok, or something >= kring->nkr_num_slots
@@ -1492,7 +1506,6 @@ netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp)
 u_int
 nm_txsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 {
-#define NM_FAIL_ON(t) if (t) { D("fail " #t); goto error; }
 	u_int head = ring->head; /* read only once */
 	u_int cur = ring->cur; /* read only once */
 	u_int n = kring->nkr_num_slots;
@@ -1502,9 +1515,8 @@ nm_txsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 		kring->nr_hwcur, kring->nr_hwtail,
 		ring->head, ring->cur, ring->tail);
 #if 1 /* kernel sanity checks; but we can trust the kring. */
-	if (kring->nr_hwcur >= n || kring->rhead >= n ||
-	    kring->rtail >= n ||  kring->nr_hwtail >= n)
-		goto error;
+	NM_FAIL_ON(kring->nr_hwcur >= n || kring->rhead >= n ||
+	    kring->rtail >= n ||  kring->nr_hwtail >= n);
 #endif /* kernel sanity checks */
 	/*
 	 * user sanity checks. We only use head,
@@ -1541,15 +1553,6 @@ nm_txsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 	kring->rhead = head;
 	kring->rcur = cur;
 	return head;
-
-error:
-	RD(5, "%s kring error: head %d cur %d tail %d rhead %d rcur %d rtail %d hwcur %d hwtail %d",
-		kring->name,
-		head, cur, ring->tail,
-		kring->rhead, kring->rcur, kring->rtail,
-		kring->nr_hwcur, kring->nr_hwtail);
-	return n;
-#undef NM_FAIL_ON
 }
 
 
@@ -1584,30 +1587,24 @@ nm_rxsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 	cur = kring->rcur = ring->cur;	/* read only once */
 	head = kring->rhead = ring->head;	/* read only once */
 #if 1 /* kernel sanity checks */
-	if (kring->nr_hwcur >= n || kring->nr_hwtail >= n)
-		goto error;
+	NM_FAIL_ON(kring->nr_hwcur >= n || kring->nr_hwtail >= n);
 #endif /* kernel sanity checks */
 	/* user sanity checks */
 	if (kring->nr_hwtail >= kring->nr_hwcur) {
 		/* want hwcur <= rhead <= hwtail */
-		if (head < kring->nr_hwcur || head > kring->nr_hwtail)
-			goto error;
+		NM_FAIL_ON(head < kring->nr_hwcur || head > kring->nr_hwtail);
 		/* and also rhead <= rcur <= hwtail */
-		if (cur < head || cur > kring->nr_hwtail)
-			goto error;
+		NM_FAIL_ON(cur < head || cur > kring->nr_hwtail);
 	} else {
 		/* we need rhead outside hwtail..hwcur */
-		if (head < kring->nr_hwcur && head > kring->nr_hwtail)
-			goto error;
+		NM_FAIL_ON(head < kring->nr_hwcur && head > kring->nr_hwtail);
 		/* two cases now: head <= hwtail or head >= hwcur  */
 		if (head <= kring->nr_hwtail) {
 			/* want head <= cur <= hwtail */
-			if (cur < head || cur > kring->nr_hwtail)
-				goto error;
+			NM_FAIL_ON(cur < head || cur > kring->nr_hwtail);
 		} else {
 			/* cur must be outside hwtail..head */
-			if (cur < head && cur > kring->nr_hwtail)
-				goto error;
+			NM_FAIL_ON(cur < head && cur > kring->nr_hwtail);
 		}
 	}
 	if (ring->tail != kring->rtail) {
@@ -1617,15 +1614,7 @@ nm_rxsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 		ring->tail = kring->rtail;
 	}
 	return head;
-
-error:
-	RD(5, "kring error: hwcur %d rcur %d hwtail %d head %d cur %d tail %d",
-		kring->nr_hwcur,
-		kring->rcur, kring->nr_hwtail,
-		kring->rhead, kring->rcur, ring->tail);
-	return n;
 }
-
 
 /*
  * Error routine called when txsync/rxsync detects an error.
