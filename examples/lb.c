@@ -2,6 +2,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <inttypes.h>
 
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
@@ -11,10 +12,10 @@
 #include <netinet/ip.h>
 #include <net/ethernet.h>	/* the L2 protocols */
 
-#include <lb.h>
+#include "lb.h"
 
 char iface[25];
-u_int OUTPUT_RINGS = 0;
+int OUTPUT_RINGS = 0;
 
 static int do_abort = 0;
 
@@ -28,7 +29,7 @@ static void sigint_h(int sig)
 	signal(SIGINT, SIG_DFL);
 }
 
-inline uint32_t ip_hasher(const u_char * buffer, const u_int16_t buffer_len)
+inline uint32_t ip_hasher(const char * buffer, const u_int16_t buffer_len)
 {
 	uint32_t l3_offset = sizeof(struct compact_eth_hdr);
 	uint16_t eth_type;
@@ -133,16 +134,11 @@ int main(int argc, char **argv)
 	struct netmap_ring *txrings[OUTPUT_RINGS];
 
 	struct netmap_ring *rxring = NULL;
-	struct netmap_ring *txring = NULL;
 
 	uint64_t ring_drops[OUTPUT_RINGS];
 	memset(&ring_drops, 0, sizeof(ring_drops));
 	uint64_t ring_forward[OUTPUT_RINGS];
 	memset(&ring_forward, 0, sizeof(ring_forward));
-
-	u_int received = 0;
-	u_int cur, rx, n;
-	int ret;
 
 	struct nmreq base_req;
 	memset(&base_req, 0, sizeof(base_req));
@@ -161,10 +157,10 @@ int main(int argc, char **argv)
 		    &base_nmd);
 
 	if (rxnmd == NULL) {
-		D("cannot open %s", rxnmd);
+		D("cannot open %s", iface);
 		return (1);
 	} else {
-		D("successfully opened %s (tx rings: %llu)", rxnmd,
+		D("successfully opened %s (tx rings: %u)", iface,
 		  rxnmd->req.nr_tx_slots);
 	}
 
@@ -180,7 +176,7 @@ int main(int argc, char **argv)
 		txnmds[i] = nm_open(interface, NULL, flags, rxnmd);
 
 		if (txnmds[i] == NULL) {
-			D("cannot open %s", txnmds[i]);
+			D("cannot open %s", interface);
 			return (1);
 		} else {
 			D("successfully opened pipe #%d %s (tx slots: %d)",
@@ -199,7 +195,6 @@ int main(int argc, char **argv)
 
 	signal(SIGINT, sigint_h);
 	while (!do_abort) {
-		u_int m = 0;
 		u_int polli = 0;
 
 		for (i = 0; i < OUTPUT_RINGS; ++i) {
@@ -232,7 +227,7 @@ int main(int argc, char **argv)
 				    &rxring->slot[rxring->cur];
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
-				const u_char *p =
+				const char *p =
 				    NETMAP_BUF(rxring, rs->buf_idx);
 				//__builtin_prefetch(p);
 				uint32_t output_port =
@@ -247,7 +242,7 @@ int main(int argc, char **argv)
 				rxring->head = rxring->cur =
 				    nm_ring_next(rxring, rxring->cur);
 				RD(1,
-				   "Forwarded Packets: %llu Dropped packets: %llu   Percent: %.2f",
+				   "Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64"   Percent: %.2f",
 				   forwarded, dropped,
 				   ((float)dropped / (float)forwarded * 100));
 			}
@@ -256,7 +251,7 @@ int main(int argc, char **argv)
 			for (j = 0; j < OUTPUT_RINGS; ++j) {
 				total_packets = ring_drops[j] + ring_forward[j];
 				RD(OUTPUT_RINGS,
-				   "Ring %d, Total Packets: %llu Forwarded Packets: %llu Dropped packets: %llu Percent: %.2f",
+				   "Ring %u, Total Packets: %"PRIu64" Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64" Percent: %.2f",
 				   j, total_packets, ring_forward[j],
 				   ring_drops[j],
 				   ((float)ring_drops[j] /
@@ -271,7 +266,7 @@ int main(int argc, char **argv)
 		nm_close(txnmds[i]);
 	}
 
-	printf("%llu packets forwarded.  %llu packets dropped.\n", forwarded,
+	printf("%"PRIu64" packets forwarded.  %"PRIu64" packets dropped.\n", forwarded,
 	       dropped);
 	return 0;
 }
