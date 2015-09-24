@@ -1,12 +1,11 @@
 struct compact_eth_hdr {
-	unsigned char   h_dest[ETH_ALEN];
-	unsigned char   h_source[ETH_ALEN];
-	u_int16_t       h_proto;
+	unsigned char h_dest[ETH_ALEN];
+	unsigned char h_source[ETH_ALEN];
+	u_int16_t h_proto;
 };
 
 struct compact_ip_hdr {
-	u_int8_t ihl:4,
-	         version:4;
+	u_int8_t ihl:4, version:4;
 	u_int8_t tos;
 	u_int16_t tot_len;
 	u_int16_t id;
@@ -19,8 +18,7 @@ struct compact_ip_hdr {
 };
 
 struct compact_ipv6_hdr {
-	u_int8_t priority:4,
-	         version:4;
+	u_int8_t priority:4, version:4;
 	u_int8_t flow_lbl[3];
 	u_int16_t payload_len;
 	u_int8_t nexthdr;
