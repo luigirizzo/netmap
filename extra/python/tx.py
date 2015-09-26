@@ -18,7 +18,7 @@ pkt = build_packet()
 nm = netmap.Netmap()
 nm.open()
 nfd = nm.getfd()
-nm.if_name = 'vale:2'
+nm.if_name = 'vale:1'
 nm.register()
 time.sleep(1)
 

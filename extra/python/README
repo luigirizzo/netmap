@@ -89,12 +89,12 @@ language.
 
     You can find some examples in extra/python:
 
-        (5.1) pktgen.py - A minimalistic packet generator using the Python netmap
-                bindings.
-
-        (5.2) pktman.py - A configurable packet generator/receiver. Run
+        (5.1) pktman.py - A configurable packet generator/receiver. Run
 
                     $ python pktman.py -h
 
                 to see the available options.
+
+        (5.2) tx.py - An example packet generator using the lower level
+                      Python netmap bindings.
 
