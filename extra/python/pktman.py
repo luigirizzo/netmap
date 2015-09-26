@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import netmap       # our module
 import time         # time measurements
 import select       # poll()
@@ -12,7 +14,7 @@ from scapy.all import Ether, IP, UDP  # packet forgery
 
 
 def help_quit(parser):
-    print ""
+    print("")
     parser.print_help()
     quit()
 
@@ -37,7 +39,7 @@ def build_packet(args, parser):
         # assembled
         ret = str(scap)
     except:
-        print "Packet parameters are invalid\n"
+        print("Packet parameters are invalid\n")
         help_quit(parser)
 
     if args.dump:
@@ -73,7 +75,7 @@ def transmit(idx, suffix, args, parser, queue):
         while 1:
             ready_list = poller.poll(2)
             if len(ready_list) == 0:
-                print "Timeout occurred"
+                print("Timeout occurred")
                 break;
             n = txr.tail - cur  # avail
             if n < 0:
@@ -121,7 +123,7 @@ def receive(idx, suffix, args, parser, queue):
         while 1:
             ready_list = poller.poll()
             if len(ready_list) == 0:
-                print "Timeout occurred"
+                print("Timeout occurred")
                 break;
             n = rxr.tail - cur  # avail
             if n < 0:
@@ -207,11 +209,11 @@ if __name__ == '__main__':
 
     # bound checking
     if args.length < 60:
-        print 'Invalid packet length\n'
+        print('Invalid packet length\n')
         help_quit(parser)
 
     if args.threads < 1:
-        print 'Invalid number of threads\n'
+        print('Invalid number of threads\n')
         help_quit(parser)
 
     try:
@@ -219,7 +221,7 @@ if __name__ == '__main__':
         # specified by the user
         ifname = netmap_remove_ifname_suffix(args.interface)
         if ifname == None:
-            print 'Invalid ifname "%s"' % (args.interface, )
+            print('Invalid ifname "%s"' % (args.interface, ))
             help_quit(parser)
 
         # compute 'max_couples', which is the number of tx/rx rings couples to be registered
@@ -236,10 +238,10 @@ if __name__ == '__main__':
             suffix_required = False
             ringid_offset = nr_ringid
         if args.threads > max_couples:
-            print 'You cannot use more than %s (tx,rx) rings couples with "%s"' % (max_couples, args.interface)
+            print('You cannot use more than %s (tx,rx) rings couples with "%s"' % (max_couples, args.interface))
             help_quit(parser)
     except netmap.error as e:
-        print e
+        print(e)
         quit()
 
     jobs = []    # array of worker processes
@@ -288,5 +290,5 @@ if __name__ == '__main__':
         else:
             rate = 0.001 * cnt / delta
             tot_rate += rate
-        print '[%d] Packets processed: %s, Avg rate %s Kpps' % (i, cnt, rate)
-    print 'Total rate: %s' % (tot_rate, )
+        print('[%d] Packets processed: %s, Avg rate %s Kpps' % (i, cnt, rate))
+    print('Total rate: %s' % (tot_rate, ))

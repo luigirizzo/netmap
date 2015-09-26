@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import netmap
 import time
 import struct
@@ -16,7 +18,7 @@ pkt = build_packet()
 nm = netmap.Netmap()
 nm.open()
 nfd = nm.getfd()
-nm.if_name = 'enp1s0f1'
+nm.if_name = 'vale:2'
 nm.register()
 time.sleep(1)
 
@@ -39,7 +41,7 @@ try:
     while 1:
         ready_list = poller.poll(2)
         if len(ready_list) == 0:
-            print "Timeout occurred"
+            print("Timeout occurred")
             break;
         n = txr.tail - cur  # avail
         if n < 0:
@@ -56,6 +58,6 @@ except KeyboardInterrupt:
     pass
 t_end = time.time()
 
-print "\nPackets sent: %s, Avg rate %s Kpps" % (cnt, 0.001 * cnt / (t_end - t_start))
+print("\nPackets sent: %s, Avg rate %s Kpps" % (cnt, 0.001 * cnt / (t_end - t_start)))
 
 nm.close()
