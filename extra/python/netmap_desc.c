@@ -47,7 +47,7 @@ NetmapDesc_init(NetmapDesc *self, PyObject *args, PyObject *kwds)
     PyObject *dev_name = NULL;
     static char *kwlist[] = {"ifname", "flags", NULL};
     const char *ifname;
-    unsigned long flags;
+    unsigned long flags = 0;
     int ret;
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|k", kwlist,
