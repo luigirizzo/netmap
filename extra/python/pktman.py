@@ -153,10 +153,16 @@ def netmap_max_rings(ifname):
 
 # extract the (nr_ringid, nr_flags) specified by the extended
 # interface name (nm_open() ifname)
-def netmap_get_ringid(ifname_ext):
-    nmd = netmap.NetmapDesc(ifname_ext)
+def netmap_get_ringid(ifname):
+    if ifname.startswith('netmap:'):
+        ifname = ifname[7:]
 
-    return nmd.getringid()
+    nm = netmap.Netmap()
+    nm.open()
+    nm.if_name = ifname
+    nm.getinfo()
+
+    return nm.ringid, nm.flags
 
 def netmap_remove_ifname_suffix(ifname_ext):
     m = re.match(r'\w+:\w+', ifname_ext)
