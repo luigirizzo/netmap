@@ -1,0 +1,100 @@
+========================= PYTHON BINDINGS FOR NETMAP ==========================
+
+The extra/python directory contains a C extension module that makes
+it possible to use netmap from the Python (2.7 versions) programming
+language.
+
+
+(1) **************************** How to compile it ****************************
+
+    cd extra/python
+    make
+
+
+(2) ************ How to (compile and) install it in your system ***************
+
+    cd extra/python
+    make install
+
+
+(3) How to use it with python
+
+        >>> import netmap
+        >>> # your code here
+        >>> ...
+
+
+(4) ************************ Python classes for netmap ************************
+
+        The netmap extension module exports three Python classes that represent
+        the netmap memory layout:
+            (4.1) netmap.NetmapInterface - represents a "netmap_if" struct
+            (4.2) netmap.NetmapRing - represents a "netmap_ring" struct
+            (4.3) netmap.NetmapSlot - represents a "netmap_slot" struct
+
+        The struct fields are **directly** read/write accessible (e.g. you are
+        accessing the real netmap memory) through the class members.
+
+        You can issue
+
+            >>> help(netmap.NetmapRing)
+
+        or
+
+            >>> help(r)  # "r" is a reference to a netmap.NetmapRing instance
+
+        to see the documentation (members and methods) of the specified class.
+
+        The other two classes available in the netmap extension module
+        (netmap.Netmap and netmap.NetmapDesc) are intended to create, manage
+        and contain the netmap memory layout representation.
+        Each instance of such classes is intended to manage a network
+        interface.
+
+            (4.5) netmap.Netmap - Apart from containing the netmap memory
+                    layout (once the NIOCREGIF is done), it is basically a
+                    wrapper for a "nmreq" struct, and can therefore be used
+                    to access the whole netmap API.
+                    Its constructor doesn't take any arguments, and allows the
+                    user to use the ioctl netmap interface (NIOCREGIF,
+                    NIOCGINFO, ...).
+
+                    Example:
+                    >>> import netmap
+                    >>> n=netmap.Netmap()
+                    >>> n.open()  # open the netmap device
+                    >>> n.if_name = 'eth0'
+                    >>> n.register()  # registers all the hw rings of "eth0"
+                    >>> # access n.interface, n.transmit_rings, n.receive_rings
+                    >>> n.close()
+
+                    See help(netmap.Netmap) for reference.
+
+            (4.6) netmap.NetmapDesc - This class is even simpler than
+                    netmap.Netmap(), in that you don't have to separately
+                    create the object, open the device and register, but you
+                    can do these three operation with the constructor only.
+                    Apart from this, you can use the nm_open() extended
+                    interface names to specify what kind of registration you
+                    desire (in fact the C backend for this class is nm_open()).
+
+                    Example:
+                    >>> import netmap
+                    >>> d=netmap.NetmapDesc('netmap:enp1s0f1*')
+                    >>> # access d.interface, d.transmit_rings, d.receive_rings
+
+
+
+(5) ****************************** More examples ******************************
+
+    You can find some examples in extra/python:
+
+        (5.1) pktman.py - A configurable packet generator/receiver. Run
+
+                    $ python pktman.py -h
+
+                to see the available options.
+
+        (5.2) tx.py - An example packet generator using the lower level
+                      Python netmap bindings.
+

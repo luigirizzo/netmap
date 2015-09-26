@@ -586,13 +586,14 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
  * Convenience function used in drivers.  Waits for current txsync()s/rxsync()s
  * to finish and prevents any new one from starting.  Call this before turning
  * netmap mode off, or before removing the harware rings (e.g., on module
- * onload).  As a rule of thumb for linux drivers, this should be placed near
- * each napi_disable().
+ * onload). 
  */
 void
 netmap_disable_all_rings(struct ifnet *ifp)
 {
-	netmap_set_all_rings(NA(ifp), NM_KR_STOPPED);
+	if (NM_NA_VALID(ifp)) {
+		netmap_set_all_rings(NA(ifp), NM_KR_STOPPED);
+	}
 }
 
 /*
@@ -603,15 +604,16 @@ netmap_disable_all_rings(struct ifnet *ifp)
 void
 netmap_enable_all_rings(struct ifnet *ifp)
 {
-	netmap_set_all_rings(NA(ifp), 0 /* enabled */);
+	if (NM_NA_VALID(ifp)) {
+		netmap_set_all_rings(NA(ifp), 0 /* enabled */);
+	}
 }
 
 void
 netmap_make_zombie(struct ifnet *ifp)
 {
-	struct netmap_adapter *na = NA(ifp);
-
-	if (na) {
+	if (NM_NA_VALID(ifp)) {
+		struct netmap_adapter *na = NA(ifp);
 		netmap_set_all_rings(na, NM_KR_LOCKED);
 		na->na_flags |= NAF_ZOMBIE;
 		netmap_set_all_rings(na, 0);
