@@ -181,8 +181,13 @@ NetmapDesc_getfd(NetmapDesc *self)
 static PyObject *
 NetmapDesc_getringid(NetmapDesc *self)
 {
-    return Py_BuildValue("kk", self->nmd->req.nr_ringid,
-                            self->nmd->req.nr_flags);
+    return Py_BuildValue("k", self->nmd->req.nr_ringid);
+}
+
+static PyObject *
+NetmapDesc_getflags(NetmapDesc *self)
+{
+    return Py_BuildValue("k", self->nmd->req.nr_flags);
 }
 
 /* A container for the netmap methods. */
@@ -197,7 +202,10 @@ static PyMethodDef NetmapDesc_methods[] = {
         "Get the file descriptor of the open netmap device"
     },
     {"getringid", (PyCFunction)NetmapDesc_getringid, METH_NOARGS,
-        "Get the nr_ringid and nr_flags of the registered interface"
+        "Get the nr_ringid of the registered interface"
+    },
+    {"getflags", (PyCFunction)NetmapDesc_getflags, METH_NOARGS,
+        "Get the nr_flags of the registered interface"
     },
     {NULL}  /* Sentinel */
 };
