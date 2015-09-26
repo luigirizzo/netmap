@@ -4,7 +4,8 @@ from distutils.core import setup, Extension
 
 netmap_bindings_module = Extension('netmap',
             include_dirs = ['../../sys'],
-            sources = glob.glob('*.c'))
+            sources = glob.glob('*.c'),
+            extra_compile_args = [])
 
 setup(name = 'NetmapBindings',
         version = '11.0',
