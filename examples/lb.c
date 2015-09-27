@@ -86,15 +86,13 @@ inline bool pkt_swap(struct netmap_slot * ts, struct netmap_ring * ring)
 	struct netmap_slot *rs;
 	rs = &ring->slot[ring->cur];
 
-	bool ret;
 	if (nm_ring_space(ring) == 0) {
 		//RD(5, "no room to transmit to %s (tx_slots %d - tx_slots_pending %d - nm_ring_space %d)!", 
 		//  d->req.nr_name, d->req.nr_tx_slots, nm_tx_pending(ring), nm_ring_space(ring));
 		++dropped;
-		ret = false;
+		return false;
 	} else {
 		++forwarded;
-		ret = true;
 	}
 
 	rs->len = ts->len;
@@ -105,7 +103,7 @@ inline bool pkt_swap(struct netmap_slot * ts, struct netmap_ring * ring)
 	ts->flags |= NS_BUF_CHANGED;
 	rs->flags |= NS_BUF_CHANGED;
 	ring->head = ring->cur = nm_ring_next(ring, ring->cur);
-	return ret;
+	return true;
 }
 
 void usage()
