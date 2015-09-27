@@ -141,18 +141,9 @@ int main(int argc, char **argv)
 	struct nmreq base_req;
 	memset(&base_req, 0, sizeof(base_req));
 
-	struct nm_desc base_nmd;
-	memset(&base_nmd, 0, sizeof(base_nmd));
-	base_nmd.req.nr_arg1 = 65535;
-	base_nmd.req.nr_arg3 = 65535;
-	base_nmd.req.nr_tx_rings = 65535;
-	base_nmd.req.nr_rx_rings = 65535;
-	base_nmd.req.nr_rx_slots = 65535;
-	base_nmd.req.nr_tx_slots = 65535;
+	base_req.nr_arg1 = OUTPUT_RINGS;
 
-	rxnmd =
-	    nm_open(iface, NULL, NM_OPEN_ARG1 | NM_OPEN_ARG3 | NM_OPEN_RING_CFG,
-		    &base_nmd);
+	rxnmd = nm_open(iface, &base_req, 0, NULL);
 
 	if (rxnmd == NULL) {
 		D("cannot open %s", iface);
@@ -169,9 +160,7 @@ int main(int argc, char **argv)
 		D("opening pipe named %s", interface);
 
 		//txnmds[i] = nm_open(interface, NULL, NM_OPEN_NO_MMAP | NM_OPEN_ARG3 | NM_OPEN_RING_CFG, rxnmd);
-		uint64_t flags =
-		    NM_OPEN_NO_MMAP | NM_OPEN_ARG3 | NM_OPEN_RING_CFG;
-		txnmds[i] = nm_open(interface, NULL, flags, rxnmd);
+		txnmds[i] = nm_open(interface, NULL, 0, rxnmd);
 
 		if (txnmds[i] == NULL) {
 			D("cannot open %s", interface);
