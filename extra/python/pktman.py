@@ -182,7 +182,7 @@ if __name__ == '__main__':
     handler['rx'] = receive
 
     # program arguments
-    parser = argparse.ArgumentParser(description = 'Send and receive packet using the netmap API')
+    parser = argparse.ArgumentParser(description = 'Send or receive packets using the netmap API')
     parser.add_argument('-i', '--interface', help = 'the interface to register with netmap; '
                         'can be in the form netmap:<OSNAME>[<EXT>] or <VALENAME>[<EXT>], where '
                         'OSNAME is the O.S. name for a network interface (e.g. "eth0"), '
