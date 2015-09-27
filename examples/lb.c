@@ -209,14 +209,18 @@ int main(int argc, char **argv)
 			rxring = NETMAP_RXRING(rxnmd->nifp, i);
 
 			//D("prepare to scan rings");
+			int next_cur = rxring->cur;
+			struct netmap_slot *next_slot = &rxring->slot[next_cur];
+			const char *next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 			while (!nm_ring_empty(rxring)) {
-				struct netmap_slot *rs =
-				    &rxring->slot[rxring->cur];
+				struct netmap_slot *rs = next_slot;
+				next_cur = nm_ring_next(rxring, next_cur);
+				next_slot = &rxring->slot[next_cur];
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
-				const char *p =
-				    NETMAP_BUF(rxring, rs->buf_idx);
-				//__builtin_prefetch(p);
+				const char *p = next_buf;
+				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
+				__builtin_prefetch(next_buf);
 				uint32_t output_port =
 				    ip_hasher(p, rs->len) % OUTPUT_RINGS;
 
@@ -226,8 +230,7 @@ int main(int argc, char **argv)
 				else
 					++ring_forward[output_port];
 
-				rxring->head = rxring->cur =
-				    nm_ring_next(rxring, rxring->cur);
+				rxring->head = rxring->cur = next_cur;
 				ND(1,
 				   "Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64"   Percent: %.2f",
 				   forwarded, dropped,
