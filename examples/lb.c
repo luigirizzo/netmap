@@ -162,7 +162,7 @@ int main(int argc, char **argv)
 		  rxnmd->req.nr_tx_slots);
 	}
 
-	int i, j;
+	int i;
 	for (i = 0; i < OUTPUT_RINGS; ++i) {
 		char interface[25];
 		sprintf(interface, "%s{%d", iface, i);
@@ -208,7 +208,7 @@ int main(int argc, char **argv)
 		++polli;
 
 		//RD(5, "polling %d file descriptors", polli+1);
-		i = poll(pollfd, polli + 1, 10);
+		i = poll(pollfd, polli, 10);
 		if (i <= 0) {
 			D("poll error/timeout  %s", strerror(errno));
 			continue;
@@ -239,12 +239,13 @@ int main(int argc, char **argv)
 
 				rxring->head = rxring->cur =
 				    nm_ring_next(rxring, rxring->cur);
-				RD(1,
+				ND(1,
 				   "Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64"   Percent: %.2f",
 				   forwarded, dropped,
 				   ((float)dropped / (float)forwarded * 100));
 			}
 
+#if 0
 			uint64_t total_packets;
 			for (j = 0; j < OUTPUT_RINGS; ++j) {
 				total_packets = ring_drops[j] + ring_forward[j];
@@ -256,6 +257,7 @@ int main(int argc, char **argv)
 				    (float)total_packets * 100));
 			}
 			//RD(1, "\n");
+#endif
 		}
 	}
 
