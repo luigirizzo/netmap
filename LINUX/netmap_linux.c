@@ -35,9 +35,6 @@
 
 #include "netmap_linux_config.h"
 
-#ifdef NETMAP_LINUX_HAVE_IOMMU
-#include <linux/iommu.h>
-
 void
 nm_os_ifnet_lock(void)
 {
@@ -98,6 +95,9 @@ nm_os_ifnet_fini(void)
 		nm_os_ifnet_registered = 0;
 	}
 }
+
+#ifdef NETMAP_LINUX_HAVE_IOMMU
+#include <linux/iommu.h>
 
 /* #################### IOMMU ################## */
 /*
