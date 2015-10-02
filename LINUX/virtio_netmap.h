@@ -114,6 +114,8 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 #define GET_RX_SG(_vi, _i)		(_vi)->rq[_i].sg
 #define GET_TX_SG(_vi, _i)		(_vi)->sq[_i].sg
 #define COMPAT_DECL_SG
+#define INIT_SGS(_vi)			virtio_netmap_init_sgs(_vi)
+#define SG_INIT_TABLE(_sgl, _n)
 #ifdef NETMAP_LINUX_VIRTIO_RQ_NUM
 /* multi queue, num field exists */
 #define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
@@ -141,6 +143,8 @@ static void free_receive_bufs(struct SOFTC_T *vi)
    function. This macro does this definition, which is not necessary
    for subsequent versions. */
 #define COMPAT_DECL_SG			struct scatterlist _compat_sg;
+#define INIT_SGS(_vi)
+#define SG_INIT_TABLE(_sgl, _n)		sg_init_table(_sgl, _n)
 /* Use the scatterlist struct defined in the current function */
 #define GET_RX_SG(_vi, _i)	&_compat_sg
 #define GET_TX_SG(_vi, _i)	&_compat_sg
@@ -181,6 +185,19 @@ virtio_netmap_clean_used_rings(struct netmap_adapter *na, struct SOFTC_T *vi)
 	}
 }
 
+static void
+virtio_netmap_init_sgs(struct SOFTC_T *vi)
+{
+	COMPAT_DECL_SG
+	int i;
+
+	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++)
+		sg_init_table(GET_TX_SG(vi, i), 1);
+
+	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++)
+		sg_init_table(GET_RX_SG(vi, i), 1);
+}
+
 /* Register and unregister. */
 static int
 virtio_netmap_reg(struct netmap_adapter *na, int onoff)
@@ -208,6 +225,11 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		 * before calling free_unused_bufs(), that uses
 		 * virtqueue_detach_unused_buf(). */
 		virtio_netmap_clean_used_rings(na, vi);
+
+		/* Initialize sg lists with single element.
+		 * We need this because host driver may use more than one buffer
+		 * per packet, whereas netmap uses single buffer per packet. */
+		INIT_SGS(vi);
 
 		/* We have to drain the RX virtqueues, otherwise the
 		 * virtio_netmap_init_buffer() called by the subsequent
@@ -330,6 +352,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
+			SG_INIT_TABLE(sg, 1);
                         sg_set_buf(sg, addr, len);
                         err = virtqueue_add_outbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -436,6 +459,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
+			SG_INIT_TABLE(sg, 1);
                         sg_set_buf(sg, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -499,6 +523,7 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
 
                         slot = &ring->slot[i];
                         addr = NMB(na, slot);
+			SG_INIT_TABLE(sg, 1);
                         sg_set_buf(sg, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -775,6 +800,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 
                     skb = netdev_alloc_skb_ip_align(vi->dev, GOOD_COPY_LEN);
                     skb_put(skb, 64);
+		    sg_init_table(sg, 1)
                     sg_set_buf(&sg, skb->cb, 64);
                     num_sg = skb_to_sgvec(skb, &sg, 0, skb->len);
                     if (skb) {
