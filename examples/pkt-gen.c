@@ -1402,6 +1402,8 @@ receiver_body(void *data)
 	struct my_ctrs cur;
 
 	cur.pkts = cur.bytes = cur.events = 0;
+	cur.t.tv_usec = 0;
+	cur.t.tv_sec = 0;
 
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
