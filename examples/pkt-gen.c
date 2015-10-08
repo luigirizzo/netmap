@@ -2155,7 +2155,7 @@ D("running on %d cpus (have %d)", g.cpus, i);
 		    req->nr_arg2);
 		for (i = 0; i <= req->nr_tx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
-			D("   TX%d at 0x%lx slots %d", i,
+			D("   TX%d at 0x%zx slots %d", i,
 			    (char *)ring - (char *)nifp, ring->num_slots);
 		}
 		for (i = 0; i <= req->nr_rx_rings; i++) {
