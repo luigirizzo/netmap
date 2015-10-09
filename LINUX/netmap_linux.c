@@ -450,9 +450,10 @@ nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *r
 
     if (ifp->ethtool_ops && ifp->ethtool_ops->get_ringparam) {
         ifp->ethtool_ops->get_ringparam(ifp, &rp);
-        *tx = rp.tx_pending;
-        *rx = rp.rx_pending;
-	error = 0;
+        *tx = rp.tx_pending ? rp.tx_pending : rp.tx_max_pending;
+        *rx = rp.rx_pending ? rp.rx_pending : rp.rx_max_pending;
+	if (*tx && *rx)
+		error = 0;
     }
 #endif /* HAVE_GET_RINGPARAM */
     return error;
