@@ -528,6 +528,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	struct nmreq pnmr;
 	struct netmap_adapter *pna; /* parent adapter */
 	struct netmap_pipe_adapter *mna, *sna, *req;
+	struct ifnet *ifp = NULL;
 	u_int pipe_id;
 	int role = nmr->nr_flags & NR_REG_MASK;
 	int error;
@@ -545,7 +546,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	memcpy(&pnmr.nr_name, nmr->nr_name, IFNAMSIZ);
 	/* pass to parent the requested number of pipes */
 	pnmr.nr_arg1 = nmr->nr_arg1;
-	error = netmap_get_na(&pnmr, &pna, create);
+	error = netmap_get_na(&pnmr, &pna, &ifp, create);
 	if (error) {
 		ND("parent lookup failed: %d", error);
 		return error;
@@ -681,6 +682,8 @@ free_mna:
 	free(mna, M_DEVBUF);
 put_out:
 	netmap_adapter_put(pna);
+	if (ifp)
+		if_rele(ifp);
 	return error;
 }
 

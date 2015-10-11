@@ -1374,17 +1374,18 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
  * could not be allocated.
  * If successful, hold a reference to the netmap adapter.
  *
- * No reference is kept on the real interface, which may then
- * disappear at any time.
+ * A reference is gotten only in the case of hw netmap adapters
+ * (native or generic).
  */
 int
-netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
+netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
+	      struct ifnet **ifp, int create)
 {
-	struct ifnet *ifp = NULL;
 	int error = 0;
 	struct netmap_adapter *ret = NULL;
 
 	*na = NULL;     /* default return value */
+	*ifp = NULL;
 
 	NMG_LOCK_ASSERT();
 
@@ -1428,12 +1429,12 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	 * This may still be a tap, a veth/epair, or even a
 	 * persistent VALE port.
 	 */
-	ifp = ifunit_ref(nmr->nr_name);
-	if (ifp == NULL) {
+	*ifp = ifunit_ref(nmr->nr_name);
+	if (*ifp == NULL) {
 	        return ENXIO;
 	}
 
-	error = netmap_get_hw_na(ifp, &ret);
+	error = netmap_get_hw_na(*ifp, &ret);
 	if (error)
 		goto out;
 
@@ -1444,8 +1445,10 @@ out:
 	if (error) {
 		if (ret)
 			netmap_adapter_put(ret);
-		if (ifp)
-			if_rele(ifp);
+		if (*ifp) {
+			if_rele(*ifp);
+			*ifp = NULL;
+		}
 	}
 
 	return error;
@@ -2127,10 +2130,15 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			u_int memflags;
 
 			if (nmr->nr_name[0] != '\0') {
+				struct ifnet *ifp;
+
 				/* get a refcount */
-				error = netmap_get_na(nmr, &na, 1 /* create */);
+				error = netmap_get_na(nmr, &na, &ifp, 1 /* create */);
 				if (error)
 					break;
+				if (ifp) {
+					if_rele(ifp);
+				}
 				nmd = na->nm_mem; /* get memory allocator */
 			}
 
@@ -2174,23 +2182,29 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		NMG_LOCK();
 		do {
 			u_int memflags;
+			struct ifnet *ifp;
 
 			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
 				break;
 			}
 			/* find the interface and a reference */
-			error = netmap_get_na(nmr, &na, 1 /* create */); /* keep reference */
+			error = netmap_get_na(nmr, &na, &ifp,
+					      1 /* create */); /* keep reference */
 			if (error)
 				break;
 			if (NETMAP_OWNED_BY_KERN(na)) {
 				netmap_adapter_put(na);
+				if (ifp)
+					if_rele(ifp);
 				error = EBUSY;
 				break;
 			}
 			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
 			if (error) {    /* reg. failed, release priv and ref */
 				netmap_adapter_put(na);
+				if (ifp)
+					if_rele(ifp);
 				break;
 			}
 			nifp = priv->np_nifp;
@@ -2206,6 +2220,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			if (error) {
 				netmap_do_unregif(priv);
 				netmap_adapter_put(na);
+				if (ifp)
+					if_rele(ifp);
 				break;
 			}
 			if (memflags & NETMAP_MEM_PRIVATE) {
