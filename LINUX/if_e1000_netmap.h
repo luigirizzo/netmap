@@ -72,22 +72,18 @@ e1000_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (0);
 }
 
+static void e1000_irq_enable(struct e1000_adapter *adapter);
+static void e1000_irq_disable(struct e1000_adapter *adapter);
 static void
 e1000_netmap_intr(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *adapter = netdev_priv(ifp);
-	struct e1000_hw *hw = &adapter->hw;
 
-	/* e1000_irq_disable/enable are not exported */
-	if (onoff) {
-		ew32(IMC, ~0);
-		E1000_WRITE_FLUSH();
-		synchronize_irq(adapter->pdev->irq);
-	} else {
-		ew32(IMS, IMS_ENABLE_MASK);
-		E1000_WRITE_FLUSH();
-	}
+	if (onoff)
+		e1000_irq_enable(adapter);
+	else
+		e1000_irq_disable(adapter);
 }
 
 /*
