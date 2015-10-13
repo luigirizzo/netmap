@@ -2634,15 +2634,11 @@ netmap_attach_common(struct netmap_adapter *na)
 		return EINVAL;
 	}
 
-	if (na->na_flags & NAF_HOST_RINGS) {
-		if (na->ifp == NULL) {
-			D("adapter %s has host rings but no ifp!", na->name);
-			return EINVAL;
-		}
 #ifdef __FreeBSD__
+	if (na->na_flags & NAF_HOST_RINGS && na->ifp) {
 		na->if_input = na->ifp->if_input; /* for netmap_send_up */
-#endif /* __FreeBSD__ */
 	}
+#endif /* __FreeBSD__ */
 	if (na->nm_krings_create == NULL) {
 		/* we assume that we have been called by a driver,
 		 * since other port types all provide their own

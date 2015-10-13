@@ -153,13 +153,17 @@ netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
 }
 
 /* nm_krings_create callbacks for monitors.
- * We could use the default netmap_hw_krings_zmon, but
- * we don't need the mbq.
  */
 static int
 netmap_monitor_krings_create(struct netmap_adapter *na)
 {
-	return netmap_krings_create(na, 0);
+	int error = netmap_krings_create(na, 0);
+	if (error)
+		return error;
+	/* override the host rings callbacks */
+	na->tx_rings[na->num_tx_rings].nm_sync = netmap_monitor_txsync;
+	na->rx_rings[na->num_rx_rings].nm_sync = netmap_monitor_rxsync;
+	return 0;
 }
 
 /* nm_krings_delete callback for monitors */
@@ -322,7 +326,7 @@ netmap_monitor_stop(struct netmap_adapter *na)
 	for_rx_tx(t) {
 		u_int i;
 
-		for (i = 0; i < nma_get_nrings(na, t); i++) {
+		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
 			struct netmap_kring *kring = &NMR(na, t)[i];
 			u_int j;
 
