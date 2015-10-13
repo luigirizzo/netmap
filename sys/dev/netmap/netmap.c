@@ -987,13 +987,9 @@ netmap_priv_delete(struct netmap_priv_d *priv)
 	}
 	netmap_use_count--;
 	if (na) {
-		struct ifnet *ifp = na->ifp;
-
 		netmap_do_unregif(priv);
-		netmap_adapter_put(na);
-		if (ifp)
-			if_rele(ifp);
 	}
+	netmap_unget_na(na, priv->np_ifp);
 	bzero(priv, sizeof(*priv));	/* for safety */
 	free(priv, M_DEVBUF);
 }
@@ -1374,17 +1370,18 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
  * could not be allocated.
  * If successful, hold a reference to the netmap adapter.
  *
- * No reference is kept on the real interface, which may then
- * disappear at any time.
+ * If the interface specified by nmr is a system one, also keep
+ * a reference to it and return a valid *ifp.
  */
 int
-netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
+netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
+	      struct ifnet **ifp, int create)
 {
-	struct ifnet *ifp = NULL;
 	int error = 0;
 	struct netmap_adapter *ret = NULL;
 
 	*na = NULL;     /* default return value */
+	*ifp = NULL;
 
 	NMG_LOCK_ASSERT();
 
@@ -1428,12 +1425,12 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	 * This may still be a tap, a veth/epair, or even a
 	 * persistent VALE port.
 	 */
-	ifp = ifunit_ref(nmr->nr_name);
-	if (ifp == NULL) {
+	*ifp = ifunit_ref(nmr->nr_name);
+	if (*ifp == NULL) {
 	        return ENXIO;
 	}
 
-	error = netmap_get_hw_na(ifp, &ret);
+	error = netmap_get_hw_na(*ifp, &ret);
 	if (error)
 		goto out;
 
@@ -1444,11 +1441,23 @@ out:
 	if (error) {
 		if (ret)
 			netmap_adapter_put(ret);
-		if (ifp)
-			if_rele(ifp);
+		if (*ifp) {
+			if_rele(*ifp);
+			*ifp = NULL;
+		}
 	}
 
 	return error;
+}
+
+/* undo netmap_get_na() */
+void
+netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp)
+{
+	if (ifp)
+		if_rele(ifp);
+	if (na)
+		netmap_adapter_put(na);
 }
 
 
@@ -2092,6 +2101,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 {
 	struct nmreq *nmr = (struct nmreq *) data;
 	struct netmap_adapter *na = NULL;
+	struct ifnet *ifp = NULL;
 	int error = 0;
 	u_int i, qfirst, qlast;
 	struct netmap_if *nifp;
@@ -2127,10 +2137,14 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			u_int memflags;
 
 			if (nmr->nr_name[0] != '\0') {
+
 				/* get a refcount */
-				error = netmap_get_na(nmr, &na, 1 /* create */);
-				if (error)
+				error = netmap_get_na(nmr, &na, &ifp, 1 /* create */);
+				if (error) {
+					na = NULL;
+					ifp = NULL;
 					break;
+				}
 				nmd = na->nm_mem; /* get memory allocator */
 			}
 
@@ -2147,8 +2161,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			nmr->nr_tx_rings = na->num_tx_rings;
 			nmr->nr_rx_slots = na->num_rx_desc;
 			nmr->nr_tx_slots = na->num_tx_desc;
-			netmap_adapter_put(na);
 		} while (0);
+		netmap_unget_na(na, ifp);
 		NMG_UNLOCK();
 		break;
 
@@ -2174,23 +2188,25 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		NMG_LOCK();
 		do {
 			u_int memflags;
+			struct ifnet *ifp;
 
 			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
 				break;
 			}
 			/* find the interface and a reference */
-			error = netmap_get_na(nmr, &na, 1 /* create */); /* keep reference */
+			error = netmap_get_na(nmr, &na, &ifp,
+					      1 /* create */); /* keep reference */
 			if (error)
 				break;
 			if (NETMAP_OWNED_BY_KERN(na)) {
-				netmap_adapter_put(na);
+				netmap_unget_na(na, ifp);
 				error = EBUSY;
 				break;
 			}
 			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
 			if (error) {    /* reg. failed, release priv and ref */
-				netmap_adapter_put(na);
+				netmap_unget_na(na, ifp);
 				break;
 			}
 			nifp = priv->np_nifp;
@@ -2205,7 +2221,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				&nmr->nr_arg2);
 			if (error) {
 				netmap_do_unregif(priv);
-				netmap_adapter_put(na);
+				netmap_unget_na(na, ifp);
 				break;
 			}
 			if (memflags & NETMAP_MEM_PRIVATE) {
@@ -2223,6 +2239,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				D("got %d extra buffers", nmr->nr_arg3);
 			}
 			nmr->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
+
+			/* store ifp reference so that priv destructor may release it */
+			priv->np_ifp = ifp;
 		} while (0);
 		NMG_UNLOCK();
 		break;
@@ -2666,15 +2685,12 @@ netmap_detach_common(struct netmap_adapter *na)
 	free(na, M_DEVBUF);
 }
 
-/* Wrapper for the register callback provided hardware drivers.
- * na->ifp == NULL means the the driver module has been
+/* Wrapper for the register callback provided netmap-enabled
+ * hardware drivers.
+ * nm_iszombie(na) means that the driver module has been
  * unloaded, so we cannot call into it.
- * Note that module unloading, in our patched linux drivers,
- * happens under NMG_LOCK and after having stopped all the
- * nic rings (see netmap_detach). This provides sufficient
- * protection for the other driver-provied callbacks
- * (i.e., nm_config and nm_*xsync), that therefore don't need
- * to wrapped.
+ * nm_os_ifnet_lock() must guarantee mutual exclusion with
+ * module unloading.
  */
 static int
 netmap_hw_register(struct netmap_adapter *na, int onoff)

@@ -701,6 +701,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	struct nmreq pnmr;
 	struct netmap_adapter *pna; /* parent adapter */
 	struct netmap_monitor_adapter *mna;
+	struct ifnet *ifp = NULL;
 	int i, error;
 	enum txrx t;
 	int zcopy = (nmr->nr_flags & NR_ZCOPY_MON);
@@ -727,7 +728,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	 */
 	memcpy(&pnmr, nmr, sizeof(pnmr));
 	pnmr.nr_flags &= ~(NR_MONITOR_TX | NR_MONITOR_RX);
-	error = netmap_get_na(&pnmr, &pna, create);
+	error = netmap_get_na(&pnmr, &pna, &ifp, create);
 	if (error) {
 		D("parent lookup failed: %d", error);
 		return error;
@@ -848,10 +849,14 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	/* keep the reference to the parent */
 	D("monitor ok");
 
+	/* drop the reference to the ifp, if any */
+	if (ifp)
+		if_rele(ifp);
+
 	return 0;
 
 put_out:
-	netmap_adapter_put(pna);
+	netmap_unget_na(pna, ifp);
 	free(mna, M_DEVBUF);
 	return error;
 }
