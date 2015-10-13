@@ -1374,8 +1374,8 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
  * could not be allocated.
  * If successful, hold a reference to the netmap adapter.
  *
- * No reference is kept on the real interface, which may then
- * disappear at any time.
+ * If the interface specified by nmr is a system one, also keep
+ * a reference to it.
  */
 int
 netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
@@ -2666,15 +2666,12 @@ netmap_detach_common(struct netmap_adapter *na)
 	free(na, M_DEVBUF);
 }
 
-/* Wrapper for the register callback provided hardware drivers.
- * na->ifp == NULL means the the driver module has been
+/* Wrapper for the register callback provided netmap-enabled
+ * hardware drivers.
+ * nm_iszombie(na) means that the driver module has been
  * unloaded, so we cannot call into it.
- * Note that module unloading, in our patched linux drivers,
- * happens under NMG_LOCK and after having stopped all the
- * nic rings (see netmap_detach). This provides sufficient
- * protection for the other driver-provied callbacks
- * (i.e., nm_config and nm_*xsync), that therefore don't need
- * to wrapped.
+ * nm_os_ifnet_lock() must guarantee mutual exclusion with
+ * module unloading.
  */
 static int
 netmap_hw_register(struct netmap_adapter *na, int onoff)
