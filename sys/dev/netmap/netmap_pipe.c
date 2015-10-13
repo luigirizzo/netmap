@@ -672,6 +672,11 @@ found:
          * It will be released by the req destructor
          */
 
+	/* drop the ifp reference, if any */
+	if (ifp) {
+		if_rele(ifp);
+	}
+
 	return 0;
 
 free_sna:
@@ -681,9 +686,7 @@ unregister_mna:
 free_mna:
 	free(mna, M_DEVBUF);
 put_out:
-	netmap_adapter_put(pna);
-	if (ifp)
-		if_rele(ifp);
+	netmap_unget_na(pna, ifp);
 	return error;
 }
 

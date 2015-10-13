@@ -849,12 +849,14 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	/* keep the reference to the parent */
 	D("monitor ok");
 
+	/* drop the reference to the ifp, if any */
+	if (ifp)
+		if_rele(ifp);
+
 	return 0;
 
 put_out:
-	netmap_adapter_put(pna);
-	if (ifp)
-		if_rele(ifp);
+	netmap_unget_na(pna, ifp);
 	free(mna, M_DEVBUF);
 	return error;
 }

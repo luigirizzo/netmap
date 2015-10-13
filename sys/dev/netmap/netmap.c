@@ -987,13 +987,9 @@ netmap_priv_delete(struct netmap_priv_d *priv)
 	}
 	netmap_use_count--;
 	if (na) {
-		struct ifnet *ifp = na->ifp;
-
 		netmap_do_unregif(priv);
-		netmap_adapter_put(na);
-		if (ifp)
-			if_rele(ifp);
 	}
+	netmap_unget_na(na, priv->np_ifp);
 	bzero(priv, sizeof(*priv));	/* for safety */
 	free(priv, M_DEVBUF);
 }
@@ -1452,6 +1448,16 @@ out:
 	}
 
 	return error;
+}
+
+/* undo netmap_get_na() */
+void
+netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp)
+{
+	if (ifp)
+		if_rele(ifp);
+	if (na)
+		netmap_adapter_put(na);
 }
 
 
@@ -2095,6 +2101,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 {
 	struct nmreq *nmr = (struct nmreq *) data;
 	struct netmap_adapter *na = NULL;
+	struct ifnet *ifp = NULL;
 	int error = 0;
 	u_int i, qfirst, qlast;
 	struct netmap_if *nifp;
@@ -2130,14 +2137,13 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			u_int memflags;
 
 			if (nmr->nr_name[0] != '\0') {
-				struct ifnet *ifp;
 
 				/* get a refcount */
 				error = netmap_get_na(nmr, &na, &ifp, 1 /* create */);
-				if (error)
+				if (error) {
+					na = NULL;
+					ifp = NULL;
 					break;
-				if (ifp) {
-					if_rele(ifp);
 				}
 				nmd = na->nm_mem; /* get memory allocator */
 			}
@@ -2155,8 +2161,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			nmr->nr_tx_rings = na->num_tx_rings;
 			nmr->nr_rx_slots = na->num_rx_desc;
 			nmr->nr_tx_slots = na->num_tx_desc;
-			netmap_adapter_put(na);
 		} while (0);
+		netmap_unget_na(na, ifp);
 		NMG_UNLOCK();
 		break;
 
@@ -2194,17 +2200,13 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			if (error)
 				break;
 			if (NETMAP_OWNED_BY_KERN(na)) {
-				netmap_adapter_put(na);
-				if (ifp)
-					if_rele(ifp);
+				netmap_unget_na(na, ifp);
 				error = EBUSY;
 				break;
 			}
 			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
 			if (error) {    /* reg. failed, release priv and ref */
-				netmap_adapter_put(na);
-				if (ifp)
-					if_rele(ifp);
+				netmap_unget_na(na, ifp);
 				break;
 			}
 			nifp = priv->np_nifp;
@@ -2219,9 +2221,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				&nmr->nr_arg2);
 			if (error) {
 				netmap_do_unregif(priv);
-				netmap_adapter_put(na);
-				if (ifp)
-					if_rele(ifp);
+				netmap_unget_na(na, ifp);
 				break;
 			}
 			if (memflags & NETMAP_MEM_PRIVATE) {
@@ -2239,6 +2239,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				D("got %d extra buffers", nmr->nr_arg3);
 			}
 			nmr->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
+
+			/* store ifp reference so that priv destructor may release it */
+			priv->np_ifp = ifp;
 		} while (0);
 		NMG_UNLOCK();
 		break;
