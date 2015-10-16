@@ -1084,6 +1084,12 @@ nm_bdg_ctl_polling_stop(struct nmreq *nmr, struct netmap_adapter *na)
 	return 0;
 }
 
+static inline int
+nm_is_bwrap(struct netmap_adapter *na)
+{
+	return na->nm_register == netmap_bwrap_register;
+}
+
 /* Called by either user's context (netmap_ioctl())
  * or external kernel modules (e.g., Openvswitch).
  * Operation is indicated in nmr->nr_cmd.
@@ -1233,7 +1239,9 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 		NMG_LOCK();
 		error = netmap_get_bdg_na(nmr, &na, 0);
 		if (na && !error) {
-			if (cmd == NETMAP_BDG_POLLING_ON) {
+			if (!nm_is_bwrap(na)) {
+				error = EOPNOTSUPP;
+			} else if (cmd == NETMAP_BDG_POLLING_ON) {
 				error = nm_bdg_ctl_polling_start(nmr, na);
 				if (!error)
 					netmap_adapter_get(na);
