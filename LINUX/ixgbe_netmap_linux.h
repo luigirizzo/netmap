@@ -204,14 +204,16 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 				/* buffer has changed, reload map */
 				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_addr, addr);
 			}
-			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+			if (!(slot->flags & NS_MOREFRAG))
+				flags |= IXGBE_TXD_CMD_EOP;
+			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
 
 			/* Fill the slot in the NIC ring. */
 			curr->read.buffer_addr = htole64(paddr);
 			curr->read.olinfo_status = htole32(len << IXGBE_ADVTXD_PAYLEN_SHIFT);
 			curr->read.cmd_type_len = htole32(len | flags |
 				IXGBE_ADVTXD_DTYP_DATA | IXGBE_ADVTXD_DCMD_DEXT |
-				IXGBE_ADVTXD_DCMD_IFCS | IXGBE_TXD_CMD_EOP);
+				IXGBE_ADVTXD_DCMD_IFCS);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
