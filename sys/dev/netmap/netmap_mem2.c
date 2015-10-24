@@ -298,7 +298,9 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	if (nm_mem_assign_group(nmd, na->pdev) < 0) {
 		return ENOMEM;
 	} else {
+		NMA_LOCK(nmd);
 		nmd->lasterr = nmd->ops->nmd_finalize(nmd);
+		NMA_UNLOCK(nmd);
 	}
 
 	if (!nmd->lasterr && na->pdev)
@@ -312,8 +314,51 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	NMA_LOCK(nmd);
 	netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
+	if (nmd->refcount == 1) {
+		u_int i;
+
+		/*
+		 * Reset the allocator when it falls out of use so that any
+		 * pool resources leaked by unclean application exits are
+		 * reclaimed.
+		 */
+		for (i = 0; i < NETMAP_POOLS_NR; i++) {
+			struct netmap_obj_pool *p;
+			u_int j;
+
+			p = &nmd->pools[i];
+			p->objfree = p->objtotal;
+			/*
+			 * Reproduce the net effect of the M_ZERO malloc()
+			 * and marking of free entries in the bitmap that
+			 * occur in finalize_obj_allocator()
+			 */
+			memset(p->bitmap,
+			    '\0',
+			    sizeof(uint32_t) * ((p->objtotal + 31) / 32));
+
+			/*
+			 * Set all the bits in the bitmap that have
+			 * corresponding buffers to 1 to indicate they are
+			 * free.
+			 */
+			for (j = 0; j < p->objtotal; j++) {
+				if (p->lut[j].vaddr != NULL) {
+					p->bitmap[ (j>>5) ] |=  ( 1 << (j & 31) );
+				}
+			}
+		}
+
+		/*
+		 * Per netmap_mem_finalize_all(),
+		 * buffers 0 and 1 are reserved
+		 */
+		nmd->pools[NETMAP_BUF_POOL].objfree -= 2;
+		nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
+	}
+	nmd->ops->nmd_deref(nmd);
+
 	NMA_UNLOCK(nmd);
-	return nmd->ops->nmd_deref(nmd);
 }
 
 
@@ -1424,10 +1469,8 @@ static int
 netmap_mem_private_finalize(struct netmap_mem_d *nmd)
 {
 	int err;
-	NMA_LOCK(nmd);
 	nmd->active++;
 	err = netmap_mem_finalize_all(nmd);
-	NMA_UNLOCK(nmd);
 	return err;
 
 }
@@ -1435,10 +1478,8 @@ netmap_mem_private_finalize(struct netmap_mem_d *nmd)
 static void
 netmap_mem_private_deref(struct netmap_mem_d *nmd)
 {
-	NMA_LOCK(nmd);
 	if (--nmd->active <= 0)
 		netmap_mem_reset_all(nmd);
-	NMA_UNLOCK(nmd);
 }
 
 
@@ -1574,7 +1615,7 @@ static int
 netmap_mem_global_finalize(struct netmap_mem_d *nmd)
 {
 	int err;
-		
+
 	/* update configuration if changed */
 	if (netmap_mem_global_config(nmd))
 		goto out;
@@ -1984,7 +2025,6 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
 	int error = 0;
 
-	NMA_LOCK(nmd);
 	nmd->active++;
 
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
@@ -2007,11 +2047,9 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 out:
-	NMA_UNLOCK(nmd);
 	return 0;
 err:
 	nmd->active--;
-	NMA_UNLOCK(nmd);
 	return error;
 }
 
@@ -2020,7 +2058,6 @@ netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd)
 {
 	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
 
-	NMA_LOCK(nmd);
 	nmd->active--;
 	if (nmd->active <= 0 &&
 		(nmd->flags & NETMAP_MEM_FINALIZED)) {
@@ -2032,7 +2069,6 @@ netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd)
 	    pv->nm_addr = 0;
 	    pv->nm_paddr = 0;
 	}
-	NMA_UNLOCK(nmd);
 }
 
 static ssize_t
