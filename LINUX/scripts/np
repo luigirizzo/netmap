@@ -363,6 +363,8 @@ function build-prep()
 
 	(
 		cd $dst
+		[ -e include/linux/compiler-gcc5.h ] ||
+			ln -s compiler-gcc4.h include/linux/compiler-gcc5.h
 		if [ -f $LINUX_CONFIGS/config-$v ]; then
 			cp $LINUX_CONFIGS/config-$v .config
 			yes '' | make oldconfig
