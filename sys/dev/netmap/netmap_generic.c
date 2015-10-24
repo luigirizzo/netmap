@@ -683,6 +683,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 {
 	struct netmap_adapter *na = NA(ifp);
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
+	struct netmap_kring *kring;
 	u_int work_done;
 	u_int rr = MBUF_RXQ(m); // receive ring number
 
@@ -690,11 +691,19 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 		rr = rr % na->num_rx_rings; // XXX expensive...
 	}
 
+	kring = &na->rx_rings[rr];
+
 	/* limit the size of the queue */
-	if (unlikely(mbq_len(&na->rx_rings[rr].rx_queue) > 1024)) {
+	if (unlikely(MBUF_LEN(m) > kring->ring->nr_buf_size)) {
+		/* This may happen when GRO/LRO features
+		 * are enabled for the NIC driver. */
+		RD(5, "Warning: driver pushed up big packet "
+				"(size=%d)", (int)MBUF_LEN(m));
+		m_freem(m);
+	} else if (unlikely(mbq_len(&kring->rx_queue) > 1024)) {
 		m_freem(m);
 	} else {
-		mbq_safe_enqueue(&na->rx_rings[rr].rx_queue, m);
+		mbq_safe_enqueue(&kring->rx_queue, m);
 	}
 
 	if (netmap_generic_mit < 32768) {

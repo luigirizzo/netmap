@@ -1870,7 +1870,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:r:P:zZ")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZ")) != -1) {
 		struct sf *fn;
 
 		switch(ch) {
