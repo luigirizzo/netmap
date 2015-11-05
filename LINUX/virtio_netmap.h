@@ -198,7 +198,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	   virtnet_open(), and so a napi_disable() is not matched by
 	   a napi_enable(), which results in a deadlock. */
 	if (!netif_running(ifp))
-		return EBUSY;
+		return ENETDOWN;
 
 	/* Down the interface. This also disables napi. */
 	virtnet_close(ifp);
