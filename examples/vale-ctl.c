@@ -153,12 +153,22 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config)
 
 	case NETMAP_BDG_POLLING_ON:
 	case NETMAP_BDG_POLLING_OFF:
-		/* we reuse nr_tx_rings for qfirst, and nr_rx_rings for
-		 * qlast and nr_tx_slots for affinity */
-		nmr.nr_arg1 = nmr.nr_tx_slots; /* ncpus */
-		nmr.nr_flags |= nmr.nr_tx_rings ?
+		/* We reuse nmreq fields as follows:
+		 *   nr_tx_slots: 0 and non-zero indicate REG_ALL_NIC
+		 *                REG_ONE_NIC, respectively.
+		 *   nr_rx_slots: CPU core index. This also indicates the
+		 *                first queue in the case of REG_ONE_NIC
+		 *   nr_tx_rings: (REG_ONE_NIC only) indicates the
+		 *                number of CPU cores or the last queue
+		 */
+		nmr.nr_flags |= nmr.nr_tx_slots ?
 			NR_REG_ONE_NIC : NR_REG_ALL_NIC;
-		nmr.nr_ringid = nmr.nr_rx_rings;
+		nmr.nr_ringid = nmr.nr_rx_slots;
+		/* number of cores/rings */
+		if (nmr.nr_flags == NR_REG_ALL_NIC)
+			nmr.nr_arg1 = 1;
+		else
+			nmr.nr_arg1 = nmr.nr_tx_rings;
 
 		error = ioctl(fd, NIOCREGIF, &nmr);
 		if (!error)
@@ -205,7 +215,7 @@ usage:
 			"\t-r interface	interface name to be deleted\n"
 			"\t-l list all or specified bridge's interfaces (default)\n"
 			"\t-C string ring/slot setting of an interface creating by -n\n"
-			"\t-p interface start polling with -C affinity,0,qfirst,qlast\n"
+			"\t-p interface start polling with -C is_ONE_NIC,qfirst,ncores/rings\n"
 			"\t-P interface stop polling\n"
 			"", command);
 		return 0;

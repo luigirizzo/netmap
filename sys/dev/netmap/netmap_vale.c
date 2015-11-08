@@ -951,53 +951,37 @@ get_polling_cfg(struct nmreq *nmr, struct netmap_adapter *na,
 	if (req_cpus == 0) {
 		D("req_cpus must be > 0");
 		return EINVAL;
-	}
-	if (avail_cpus < 2) {
-		D("polling needs at least two CPU cores in the system");
+	} else if (req_cpus >= avail_cpus) {
+		D("for safety, we need at least one core left in the system");
 		return EINVAL;
 	}
-	/* flags & NR_REG_MASK indicates how to use cpu cores */
-	if (req_cpus > avail_cpus) {
-		return EINVAL;
-	}
-
 	reg = nmr->nr_flags & NR_REG_MASK;
 	i = nmr->nr_ringid & NETMAP_RING_MASK;
 	/*
-	 * ONE_NIC: takes care one ring specified
-	 * ALL_NIC:
-	 *   cores == 1:
-	 *  	 all the rings using a single core specified in RING_MASK
-	 *   cores  > 1:
-	 *   	 from the given ring to cores using one core per ring
+	 * ONE_NIC: dedicate one core to one ring. If multiple cores
+	 *          are specified, consecutive rings are also polled.
+	 *          For example, if ringid=2 and 2 cores are given,
+	 *          ring 2 and 3 are polled by core 2 and 3, respectively.
+	 * ALL_NIC: poll all the rings using a core specified by ringid.
+	 *          the number of cores must be 1.
 	 */
 	if (reg == NR_REG_ONE_NIC) {
-		if (req_cpus != 1) {
-			D("ncpus must be 1 not %d for REG_ONE_NIC", req_cpus);
-			return EINVAL;
-		} else if (i >= nma_get_nrings(na, NR_RX)) {
-			D("only %d rings exist (ring %u is given)",
-					nma_get_nrings(na, NR_RX), i);
+		if (i + req_cpus > nma_get_nrings(na, NR_RX)) {
+			D("only %d rings exist (ring %u-%u is given)",
+				nma_get_nrings(na, NR_RX), i, i+req_cpus);
 			return EINVAL;
 		}
 		qfirst = i;
-		qlast = i + 1;
+		qlast = qfirst + req_cpus;
 		core_from = qfirst;
 	} else if (reg == NR_REG_ALL_NIC) {
-		if (req_cpus == 1) { /* all the rings */
-			qfirst = 0;
-			qlast = nma_get_nrings(na, NR_RX);
-			core_from = i;
-		} else { /* 1 core for 1 ring from an index i */
-			if (i + req_cpus > nma_get_nrings(na, NR_RX)) {
-				D("requested ALL_NIC, ring %u and %d cpus but there is only %u rings",
-					i, req_cpus, nma_get_nrings(na, NR_RX));
-				return EINVAL;
-			}
-			qfirst = i;
-			qlast = qfirst + req_cpus;
-			core_from = qfirst;
+		if (req_cpus != 1) {
+			D("ncpus must be 1 not %d for REG_ALL_NIC", req_cpus);
+			return EINVAL;
 		}
+		qfirst = 0;
+		qlast = nma_get_nrings(na, NR_RX);
+		core_from = i;
 	} else {
 		D("reg must be ALL_NIC or ONE_NIC");
 		return EINVAL;
@@ -1007,9 +991,9 @@ get_polling_cfg(struct nmreq *nmr, struct netmap_adapter *na,
 	bps->qfirst = qfirst;
 	bps->qlast = qlast;
 	bps->cpu_from = core_from;
-	bps->ncpus = req_cpus /* validated */;
-	D("reg %s qfirst %u qlast %u cpu_from %u ncpus %u",
-		reg == NR_REG_ALL_NIC ? "ALL_NIC" : "ONE_NIC",
+	bps->ncpus = req_cpus;
+	D("%s qfirst %u qlast %u cpu_from %u ncpus %u",
+		reg == NR_REG_ALL_NIC ? "REG_ALL_NIC" : "REG_ONE_NIC",
 		qfirst, qlast, core_from, req_cpus);
 	return 0;
 }
