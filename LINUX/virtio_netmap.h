@@ -187,6 +187,7 @@ virtio_netmap_clean_used_rings(struct netmap_adapter *na, struct SOFTC_T *vi)
 	}
 }
 
+#if defined(NETMAP_LINUX_VIRTIO_MULTI_QUEUE) || defined(NETMAP_LINUX_VIRTIO_SG)
 static void
 virtio_netmap_init_sgs(struct SOFTC_T *vi)
 {
@@ -198,6 +199,7 @@ virtio_netmap_init_sgs(struct SOFTC_T *vi)
 	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++)
 		sg_init_table(GET_RX_SG(vi, i), 1);
 }
+#endif
 
 /* Register and unregister. */
 static int
