@@ -114,8 +114,8 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 #define GET_RX_SG(_vi, _i)		(_vi)->rq[_i].sg
 #define GET_TX_SG(_vi, _i)		(_vi)->sq[_i].sg
 #define COMPAT_DECL_SG
+#define COMPAT_INIT_SG(_sgl)
 #define INIT_SGS(_vi)			virtio_netmap_init_sgs(_vi)
-#define SG_INIT_TABLE(_sgl, _n)
 #ifdef NETMAP_LINUX_VIRTIO_RQ_NUM
 /* multi queue, num field exists */
 #define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
@@ -136,6 +136,8 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 #define GET_RX_SG(_vi, _i)		(_vi)->rx_sg
 #define GET_TX_SG(_vi, _i)		(_vi)->tx_sg
 #define COMPAT_DECL_SG
+#define COMPAT_INIT_SG(_sgl)
+#define INIT_SGS(_vi)			virtio_netmap_init_sgs(_vi)
 #else /* !MULTI_QUEUE && !SG */
 /* A scatterlist struct is needed by functions that invoke
    virtqueue_add_buf() methods, but before 2.6.35 these struct were
@@ -143,8 +145,8 @@ static void free_receive_bufs(struct SOFTC_T *vi)
    function. This macro does this definition, which is not necessary
    for subsequent versions. */
 #define COMPAT_DECL_SG			struct scatterlist _compat_sg;
+#define COMPAT_INIT_SG(_sgl)		sg_init_table(_sgl, 1)
 #define INIT_SGS(_vi)
-#define SG_INIT_TABLE(_sgl, _n)		sg_init_table(_sgl, _n)
 /* Use the scatterlist struct defined in the current function */
 #define GET_RX_SG(_vi, _i)	&_compat_sg
 #define GET_TX_SG(_vi, _i)	&_compat_sg
@@ -188,7 +190,6 @@ virtio_netmap_clean_used_rings(struct netmap_adapter *na, struct SOFTC_T *vi)
 static void
 virtio_netmap_init_sgs(struct SOFTC_T *vi)
 {
-	COMPAT_DECL_SG
 	int i;
 
 	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++)
@@ -352,7 +353,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
-			SG_INIT_TABLE(sg, 1);
+			COMPAT_INIT_SG(sg);
                         sg_set_buf(sg, addr, len);
                         err = virtqueue_add_outbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -459,7 +460,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
-			SG_INIT_TABLE(sg, 1);
+			COMPAT_INIT_SG(sg);
                         sg_set_buf(sg, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -523,7 +524,7 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
 
                         slot = &ring->slot[i];
                         addr = NMB(na, slot);
-			SG_INIT_TABLE(sg, 1);
+			COMPAT_INIT_SG(sg);
                         sg_set_buf(sg, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -779,7 +780,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	   virtnet_open(), and so a napi_disable() is not matched by
 	   a napi_enable(), which results in a deadlock. */
 	if (!netif_running(ifp))
-		return EBUSY;
+		return ENETDOWN;
 
 	/* Down the interface. This also disables napi. */
 	virtnet_close(ifp);
