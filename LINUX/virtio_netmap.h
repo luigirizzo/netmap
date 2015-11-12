@@ -844,25 +844,35 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (onoff) {
 		struct SOFTC_T *vi = netdev_priv(ifp);
+		size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
+					sizeof(shared_tx_vnet_hdr) :
+					sizeof(shared_tx_vnet_hdr.hdr);
 		int i;
 
 		//na->na_flags |= NAF_NETMAP_ON;
 		nm_set_native_flags(na);
 
-		/* push fake-elem in the tx queues to enable interrupts */
+		/* Push fake requests in the TX virtqueue in order to keep
+		 * TX interrupts enabled. */
 		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+			COMPAT_DECL_SG
+			struct scatterlist *sg = GET_TX_SG(vi, i);
 			struct virtqueue *vq = GET_TX_VQ(vi, i);
-			struct scatterlist sg;
 			struct sk_buff *skb;
+			size_t space = GOOD_COPY_LEN;
 			int num_sg;
 
-			skb = netdev_alloc_skb_ip_align(vi->dev, GOOD_COPY_LEN);
-			skb_put(skb, 64);
-			sg_set_buf(&sg, skb->cb, 64);
-			num_sg = skb_to_sgvec(skb, &sg, 0, skb->len);
-			if (skb) {
-				virtqueue_add_outbuf(vq, &sg, num_sg, skb, GFP_ATOMIC);
+			skb = netdev_alloc_skb_ip_align(vi->dev, space);
+			if (!skb) {
+				D("Failed to allocate fake sk_buff");
+				ret = ENOMEM;
+				goto out;
 			}
+			space = skb_tailroom(skb);
+			memset(skb_put(skb, space), 0, space);
+			sg_set_buf(sg, skb->cb, vnet_hdr_len);
+			num_sg = skb_to_sgvec(skb, sg + 1, 0, skb->len) + 1;
+			virtqueue_add_outbuf(vq, sg, num_sg, skb, GFP_ATOMIC);
 		}
 
 		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
