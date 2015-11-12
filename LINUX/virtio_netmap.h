@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Vincenzo Maffione. All rights reserved.
+ * Copyright (C) 2014-2015 Vincenzo Maffione. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,14 +26,15 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
+
 #ifdef WITH_PTNETMAP_GUEST
 #include <netmap/netmap_virt.h>
 static int virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags);
 #define VIRTIO_PTNETMAP_ON(_na) \
 	((nm_netmap_on(_na)) && ((_na)->nm_txsync == virtio_ptnetmap_txsync))
-#else   /* !WITH_PTNETMAP_GUEST */
+#else  /* !WITH_PTNETMAP_GUEST */
 #define VIRTIO_PTNETMAP_ON(_na)        0
-#endif  /* WITH_PTNETMAP_GUEST */
+#endif /* !WITH_PTNETMAP_GUEST */
 
 
 #define SOFTC_T	virtnet_info
@@ -44,14 +45,17 @@ static void free_receive_bufs(struct virtnet_info *vi);
 static void free_unused_bufs(struct virtnet_info *vi);
 
 #ifdef NETMAP_LINUX_HAVE_NUM_QUEUES
+
 #define DEV_NUM_RX_QUEUES(_netdev)	(_netdev)->num_rx_queues
 #define DEV_NUM_TX_QUEUES(_netdev)	(_netdev)->num_tx_queues
-#else
+
+#else  /* !HAVE_NUM_QUEUES */
+
 /* Before 2.6.35 there was no net_device.num_rx_queues, so we assume 1. */
 #define DEV_NUM_RX_QUEUES(_netdev)	1
 #define DEV_NUM_TX_QUEUES(_netdev)	1
-#endif /* NETMAP_LINUX_HAVE_NUM_QUEUES */
 
+#endif /* !HAVE_NUM_QUEUES */
 
 
 #ifdef NETMAP_LINUX_VIRTIO_FUNCTIONS
@@ -62,9 +66,9 @@ static void free_unused_bufs(struct virtnet_info *vi);
 		NETMAP_LINUX_VIRTIO_ADD_BUF(_vq, _sg, 0, _num, _tok, _gfp)
 #define virtqueue_add_outbuf(_vq, _sg, _num, _tok, _gfp) \
 		NETMAP_LINUX_VIRTIO_ADD_BUF(_vq, _sg, _num, 0, _tok, _gfp)
-#endif /* NETMAP_LINUX_VIRTIO_ADD_BUF */
+#endif /* VIRTIO_ADD_BUF */
 
-#else /* !NETMAP_LINUX_VIRTIO_FUNCTIONS */
+#else  /* !VIRTIO_FUNCTIONS */
 
 /* Before 2.6.35, the virtio interface was not exported with functions,
    but using virtqueue callbacks. */
@@ -81,20 +85,21 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #define virtqueue_enable_cb(_vq) \
 		(_vq)->vq_ops->enable_cb(_vq)
 
-#endif  /* NETMAP_LINUX_VIRTIO_FUNCTIONS */
+#endif  /* !VIRTIO_FUNCTIONS */
 
 
 #ifndef NETMAP_LINUX_VIRTIO_CB_DELAYED
 /* The delayed optimization did not exists before version 3.0. */
 #define virtqueue_enable_cb_delayed(_vq)	virtqueue_enable_cb(_vq)
-#endif  /* < 3.0 */
+#endif  /* !VIRTIO_CB_DELAYED */
 
 
 #ifndef NETMAP_LINUX_VIRTIO_GET_VRSIZE
 /* Not yet found a way to find out virtqueue length in these
    kernel series. Use the virtio default value. */
 #define virtqueue_get_vring_size(_vq)	({ (void)(_vq); 256; })
-#endif  /* < 3.2 */
+#endif  /* !VIRTIO_GET_VRSIZE */
+
 
 #ifndef NETMAP_LINUX_VIRTIO_FREE_PAGES
 static struct page *get_a_page(struct SOFTC_T *vi, gfp_t gfp_mask);
@@ -105,23 +110,26 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 	while (vi->pages)
 		__free_pages(get_a_page(vi, GFP_KERNEL), 0);
 }
-#endif /* NETMAP_LINUX_VIRTIO_FREE_PAGES */
+#endif /* !VIRTIO_FREE_PAGES */
+
 
 #ifdef NETMAP_LINUX_VIRTIO_MULTI_QUEUE
+
 #define GET_RX_VQ(_vi, _i)		(_vi)->rq[_i].vq
 #define GET_TX_VQ(_vi, _i)		(_vi)->sq[_i].vq
 #define VQ_FULL(_vq, _err)		({ (void)(_err); (_vq)->num_free == 0; })
 #define GET_RX_SG(_vi, _i)		(_vi)->rq[_i].sg
 #define GET_TX_SG(_vi, _i)		(_vi)->sq[_i].sg
-#define COMPAT_DECL_SG
 #ifdef NETMAP_LINUX_VIRTIO_RQ_NUM
 /* multi queue, num field exists */
 #define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
-#else 
+#else  /* !VIRTIO_RQ_NUM */
 /* multi queue, but num field has been removed */
 #define DECR_NUM(_vi, _i)		({ (void)(_vi); (void)(_i); })
-#endif /* NETMAP_LINUX_VIRTIO_RQ_NUM */
-#else /* !MULTI_QUEUE */
+#endif /* !VIRTIO_RQ_NUM */
+
+#else  /* !MULTI_QUEUE */
+
 /* Before 3.8.0 virtio did not have multiple queues, and therefore
    it did not have per-queue data structures. We then abstract the
    way data structure are accessed, ignoring the queue indexes. */
@@ -129,23 +137,51 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 #define GET_TX_VQ(_vi, _i)		({ (void)(_i); (_vi)->svq; })
 #define VQ_FULL(_vq, _err)		({ (void)(_vq); (_err) > 0; })
 #define DECR_NUM(_vi, _i)		({ (void)(_i); --(_vi)->num; })
+
 #ifdef NETMAP_LINUX_VIRTIO_SG
 /* single queue, scatterlist in the vi */
 #define GET_RX_SG(_vi, _i)		(_vi)->rx_sg
 #define GET_TX_SG(_vi, _i)		(_vi)->tx_sg
+
+#else  /* !MULTI_QUEUE && !SG */
+
+/* Use the scatterlist struct defined in the current function (see below). */
+#define GET_RX_SG(_vi, _i)	&_compat_sg
+#define GET_TX_SG(_vi, _i)	&_compat_sg
+#endif /* !MULTI_QUEUE && !SG */
+
+#endif /* !MULTI_QUEUE */
+
+#if defined(NETMAP_LINUX_VIRTIO_MULTI_QUEUE) || defined(NETMAP_LINUX_VIRTIO_SG)
+
+/* The following macros are used only for kernels < 2.6.35, see below. */
 #define COMPAT_DECL_SG
-#else /* !MULTI_QUEUE && !SG */
+#define COMPAT_INIT_SG(_sgl)
+static void
+virtio_netmap_init_sgs(struct SOFTC_T *vi)
+{
+	int i;
+
+	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++)
+		sg_init_table(GET_TX_SG(vi, i), 1);
+
+	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++)
+		sg_init_table(GET_RX_SG(vi, i), 1);
+}
+
+#else  /* !MULTI_QUEUE && !SG */
+
 /* A scatterlist struct is needed by functions that invoke
    virtqueue_add_buf() methods, but before 2.6.35 these struct were
    not part of virtio-net data structures, but were defined in those
    function. This macro does this definition, which is not necessary
    for subsequent versions. */
 #define COMPAT_DECL_SG			struct scatterlist _compat_sg;
-/* Use the scatterlist struct defined in the current function */
-#define GET_RX_SG(_vi, _i)	&_compat_sg
-#define GET_TX_SG(_vi, _i)	&_compat_sg
-#endif  /* NETMAP_LINUX_VIRTIO_SG */
-#endif /* NETMAP_LINUX_VIRTIO_MULTI_QUEUE */
+#define COMPAT_INIT_SG(_sgl)		sg_init_table(_sgl, 1)
+#define virtio_netmap_init_sgs(_vi)
+
+#endif /* !MULTI_QUEUE && !SG */
+
 
 static void
 virtio_netmap_clean_used_rings(struct netmap_adapter *na, struct SOFTC_T *vi)
@@ -198,16 +234,24 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	   virtnet_open(), and so a napi_disable() is not matched by
 	   a napi_enable(), which results in a deadlock. */
 	if (!netif_running(ifp))
-		return EBUSY;
+		return ENETDOWN;
 
 	/* Down the interface. This also disables napi. */
 	virtnet_close(ifp);
 
 	if (onoff) {
-		/* Get and free any used buffer. This is necessary
+		/* Get and free any used buffers. This is necessary
 		 * before calling free_unused_bufs(), that uses
 		 * virtqueue_detach_unused_buf(). */
 		virtio_netmap_clean_used_rings(na, vi);
+
+		/* Initialize scatter-gather lists used to publish netmap
+		 * buffers through virtio descriptors, in such a way that each
+		 * each scatter-gather list contains exactly one descriptor
+		 * (which can point to a netmap buffer). This initialization is
+		 * necessary to prevent the virtio frontend (host) to think
+		 * we are using multi-descriptors scatter-gather lists. */
+		virtio_netmap_init_sgs(vi);
 
 		/* We have to drain the RX virtqueues, otherwise the
 		 * virtio_netmap_init_buffer() called by the subsequent
@@ -330,6 +374,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
+			COMPAT_INIT_SG(sg);
                         sg_set_buf(sg, addr, len);
                         err = virtqueue_add_outbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -436,6 +481,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
+			COMPAT_INIT_SG(sg);
                         sg_set_buf(sg, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -499,6 +545,7 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
 
                         slot = &ring->slot[i];
                         addr = NMB(na, slot);
+			COMPAT_INIT_SG(sg);
                         sg_set_buf(sg, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -754,7 +801,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	   virtnet_open(), and so a napi_disable() is not matched by
 	   a napi_enable(), which results in a deadlock. */
 	if (!netif_running(ifp))
-		return EBUSY;
+		return ENETDOWN;
 
 	/* Down the interface. This also disables napi. */
 	virtnet_close(ifp);
@@ -775,6 +822,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 
                     skb = netdev_alloc_skb_ip_align(vi->dev, GOOD_COPY_LEN);
                     skb_put(skb, 64);
+		    sg_init_table(sg, 1)
                     sg_set_buf(&sg, skb->cb, 64);
                     num_sg = skb_to_sgvec(skb, &sg, 0, skb->len);
                     if (skb) {
