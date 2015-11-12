@@ -829,17 +829,13 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	struct netmap_kring *kring;
 	int ret = 0;
 
+	/* Same prologue as virtio_netmap_reg. */
 	if (na == NULL)
 		return EINVAL;
 
-	/* It's important to deny the registration if the interface is
-	   not up, otherwise the virtnet_close() is not matched by a
-	   virtnet_open(), and so a napi_disable() is not matched by
-	   a napi_enable(), which results in a deadlock. */
 	if (!netif_running(ifp))
 		return ENETDOWN;
 
-	/* Down the interface. This also disables napi. */
 	virtnet_close(ifp);
 
 	if (onoff) {
@@ -849,7 +845,6 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 					sizeof(shared_tx_vnet_hdr.hdr);
 		int i;
 
-		//na->na_flags |= NAF_NETMAP_ON;
 		nm_set_native_flags(na);
 
 		/* Push fake requests in the TX virtqueue in order to keep
@@ -904,12 +899,10 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		kring->nr_hwtail = kring->rtail = kring->ring->tail =
 			csb->tx_ring.hwtail;
 	} else {
-		//na->na_flags &= ~NAF_NETMAP_ON;
 		nm_clear_native_flags(na);
 		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 out:
-	/* Up the interface. This also enables the napi. */
 	virtnet_open(ifp);
 
 	return ret;
@@ -922,8 +915,8 @@ virtio_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 }
 
 /*
- * Send command to the host (hypervisor virtio fronted) through PTCTL register.
- * The PTCTL register must be added to the virtio-net device.
+ * Send command to the host (hypervisor virtio frontend) through PTCTL
+ * register. The PTCTL register must be added to the virtio-net device.
  */
 static uint32_t
 virtio_ptnetmap_ptctl(struct net_device *dev, uint32_t val)
