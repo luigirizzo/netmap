@@ -105,7 +105,8 @@ static void free_unused_bufs(struct virtnet_info *vi);
 static struct page *get_a_page(struct SOFTC_T *vi, gfp_t gfp_mask);
 
 /* This function did not exists, there was just the code. */
-static void free_receive_bufs(struct SOFTC_T *vi)
+static void
+free_receive_bufs(struct SOFTC_T *vi)
 {
 	while (vi->pages)
 		__free_pages(get_a_page(vi, GFP_KERNEL), 0);
@@ -322,7 +323,7 @@ static int
 virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct netmap_ring *ring = kring->ring;
 	u_int ring_nr = kring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
@@ -339,21 +340,21 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
 				sizeof(shared_tx_vnet_hdr) :
 				sizeof(shared_tx_vnet_hdr.hdr);
-        struct netmap_adapter *token;
+	struct netmap_adapter *token;
 
 	// XXX invert the order
-        /* Free used slots. We only consider our own used buffers, recognized
+	/* Free used slots. We only consider our own used buffers, recognized
 	 * by the token we passed to virtqueue_add_outbuf.
 	 */
-        n = 0;
-        for (;;) {
-                token = virtqueue_get_buf(vq, &nic_i); /* dummy 2nd arg */
-                if (token == NULL)
-                        break;
-                if (likely(token == na))
-                        n++;
-        }
-        kring->nr_hwtail += n;
+	n = 0;
+	for (;;) {
+		token = virtqueue_get_buf(vq, &nic_i); /* dummy 2nd arg */
+		if (token == NULL)
+			break;
+		if (likely(token == na))
+			n++;
+	}
+	kring->nr_hwtail += n;
 	if (kring->nr_hwtail > lim)
 		kring->nr_hwtail -= lim + 1;
 
@@ -374,7 +375,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			void *addr = NMB(na, slot);
-                        int err;
+			int err;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
@@ -384,12 +385,12 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			 */
 			COMPAT_INIT_SG_TX(sg);
 			sg_set_buf(sg, &shared_tx_vnet_hdr, vnet_hdr_len);
-                        sg_set_buf(sg + 1, addr, len);
-                        err = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
-                        if (err < 0) {
-                                D("virtqueue_add_outbuf failed [%d]", err);
-                                break;
-                        }
+			sg_set_buf(sg + 1, addr, len);
+			err = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
+			if (err < 0) {
+				D("virtqueue_add_outbuf failed [%d]", err);
+				break;
+			}
 			virtqueue_kick(vq);
 
 			nm_i = nm_next(nm_i, lim);
@@ -407,7 +408,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 	}
 out:
 
-        return 0;
+	return 0;
 }
 
 
@@ -416,7 +417,7 @@ static int
 virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct netmap_ring *ring = kring->ring;
 	u_int ring_nr = kring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
@@ -450,40 +451,40 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	if (netmap_no_pendintr || force_update) {
 		uint16_t slot_flags = kring->nkr_slot_flags;
-                struct netmap_adapter *token;
+		struct netmap_adapter *token;
 
-                nm_i = kring->nr_hwtail;
-                n = 0;
+		nm_i = kring->nr_hwtail;
+		n = 0;
 		for (;;) {
 			int len;
-                        token = virtqueue_get_buf(vq, &len);
-                        if (token == NULL)
-                                break;
+			token = virtqueue_get_buf(vq, &len);
+			if (token == NULL)
+				break;
 
-                        if (unlikely(token != na)) {
-			    RD(5, "Received unexpected virtqueue token %p\n",
-                              token);
-                        } else {
-                            /* Skip the virtio-net header. */
-                            len -= vnet_hdr_len;
-                            if (unlikely(len < 0)) {
-                                RD(5, "Truncated virtio-net-header, missing %d"
-                                   " bytes", -len);
-                                len = 0;
-                            }
+			if (unlikely(token != na)) {
+				RD(5, "Received unexpected virtqueue token %p\n",
+						token);
+			} else {
+				/* Skip the virtio-net header. */
+				len -= vnet_hdr_len;
+				if (unlikely(len < 0)) {
+					RD(5, "Truncated virtio-net-header, missing %d"
+							" bytes", -len);
+					len = 0;
+				}
 
-                            ring->slot[nm_i].len = len;
-                            ring->slot[nm_i].flags = slot_flags;
-                            nm_i = nm_next(nm_i, lim);
-                            n++;
-                        }
+				ring->slot[nm_i].len = len;
+				ring->slot[nm_i].flags = slot_flags;
+				nm_i = nm_next(nm_i, lim);
+				n++;
+			}
 		}
 		kring->nr_hwtail = nm_i;
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
-        ND("[B] h %d c %d hwcur %d hwtail %d",
-		ring->head, ring->cur, kring->nr_hwcur,
-			      kring->nr_hwtail);
+	ND("[B] h %d c %d hwcur %d hwtail %d",
+			ring->head, ring->cur, kring->nr_hwcur,
+			kring->nr_hwtail);
 
 	/*
 	 * Second part: skip past packets that userspace has released.
@@ -493,7 +494,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			void *addr = NMB(na, slot);
-                        int err;
+			int err;
 
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				return netmap_ring_reinit(kring);
@@ -505,13 +506,13 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			 */
 			COMPAT_INIT_SG_RX(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
-                        sg_set_buf(sg + 1, addr, ring->nr_buf_size);
-                        err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
-                        if (err < 0) {
-                            D("virtqueue_add_inbuf failed");
-                            return err;
-                        }
-                        virtqueue_kick(vq);
+			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
+			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
+			if (err < 0) {
+				D("virtqueue_add_inbuf failed");
+				return err;
+			}
+			virtqueue_kick(vq);
 			nm_i = nm_next(nm_i, lim);
 		}
 		kring->nr_hwcur = head;
@@ -521,39 +522,40 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * the hypervisor to make a call when more used RX buffers will be
 	 * ready.
 	 */
-        virtqueue_enable_cb(vq);
+	virtqueue_enable_cb(vq);
 
 
-        ND("[C] h %d c %d t %d hwcur %d hwtail %d",
-		ring->head, ring->cur, ring->tail,
-		kring->nr_hwcur, kring->nr_hwtail);
+	ND("[C] h %d c %d t %d hwcur %d hwtail %d",
+			ring->head, ring->cur, ring->tail,
+			kring->nr_hwcur, kring->nr_hwtail);
 
 	return 0;
 }
 
 
 /* Make RX virtqueues buffers pointing to netmap buffers. */
-static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
+static int
+virtio_netmap_init_buffers(struct SOFTC_T *vi)
 {
 	struct ifnet *ifp = vi->dev;
 	struct netmap_adapter* na = NA(ifp);
 	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
-			        sizeof(shared_rx_vnet_hdr) :
+				sizeof(shared_rx_vnet_hdr) :
 				sizeof(shared_rx_vnet_hdr.hdr);
 	unsigned int r;
 
 	/* if ptnetmap is enabled we must not init netmap buffers */
 	if (VIRTIO_PTNETMAP_ON(na))
-	        return 1;
+		return 1;
 	if (!nm_native_on(na))
 		return 0;
 	for (r = 0; r < na->num_rx_rings; r++) {
 		COMPAT_DECL_SG
-                struct netmap_ring *ring = na->rx_rings[r].ring;
+		struct netmap_ring *ring = na->rx_rings[r].ring;
 		struct virtqueue *vq = GET_RX_VQ(vi, r);
 		struct scatterlist *sg = GET_RX_SG(vi, r);
-	        struct netmap_slot* slot;
-                unsigned int i;
+		struct netmap_slot* slot;
+		unsigned int i;
 		int err = 0;
 
 		slot = netmap_reset(na, NR_RX, r, 0);
@@ -567,19 +569,19 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
 		 * we can run into ring->cur/ring->tail wraparounds.
 		 */
 		for (i = 0; i < na->num_rx_desc-1; i++) {
-                        void *addr;
+			void *addr;
 
-                        slot = &ring->slot[i];
-                        addr = NMB(na, slot);
+			slot = &ring->slot[i];
+			addr = NMB(na, slot);
 			COMPAT_INIT_SG_RX(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
-                        sg_set_buf(sg + 1, addr, ring->nr_buf_size);
-                        err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
-                        if (err < 0) {
-                            D("virtqueue_add_inbuf failed");
+			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
+			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
+			if (err < 0) {
+				D("virtqueue_add_inbuf failed");
 
-                            return 0;
-                        }
+				return 0;
+			}
 			if (VQ_FULL(vq, err))
 				break;
 		}
@@ -597,7 +599,7 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
  */
 static int
 virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
-						u_int *rxr, u_int *rxd)
+		     u_int *rxr, u_int *rxd)
 {
 	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *vi = netdev_priv(ifp);
@@ -606,8 +608,8 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 	*txd = virtqueue_get_vring_size(GET_TX_VQ(vi, 0));
 	*rxr = 1;
 	*rxd = virtqueue_get_vring_size(GET_RX_VQ(vi, 0));
-        D("virtio config txq=%d, txd=%d rxq=%d, rxd=%d",
-					*txr, *txd, *rxr, *rxd);
+	D("virtio config txq=%d, txd=%d rxq=%d, rxd=%d",
+			*txr, *txd, *rxr, *rxd);
 
 	return 0;
 }
@@ -634,29 +636,29 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 static void inline
 virtio_ptnetmap_iowrite4(struct virtio_device *vdev, uint32_t addr, uint32_t val)
 {
-    int i;
-    /*
-     * virtio_pci config_set use multiple iowrite8,
-     * we need to split the call and reverse the order
-     */
-    for (i = 3; i >= 0; i--) {
-        vdev->config->set(vdev, PTNETMAP_VIRTIO_IO_BASE + addr + i,
-        		((uint8_t *)&val) + i, sizeof(uint8_t));
-    }
+	int i;
+	/*
+	 * virtio_pci config_set use multiple iowrite8,
+	 * we need to split the call and reverse the order
+	 */
+	for (i = 3; i >= 0; i--) {
+		vdev->config->set(vdev, PTNETMAP_VIRTIO_IO_BASE + addr + i,
+				  ((uint8_t *)&val) + i, sizeof(uint8_t));
+	}
 }
 
 static uint32_t inline
 virtio_ptnetmap_ioread4(struct virtio_device *vdev, uint32_t addr)
 {
-    uint32_t val;
-    int i;
+	uint32_t val;
+	int i;
 
-    for (i = 0; i <= 3; i++) {
-        vdev->config->get(vdev, PTNETMAP_VIRTIO_IO_BASE + addr + i,
-        		((uint8_t *)&val) + i, sizeof(uint8_t));
-    }
+	for (i = 0; i <= 3; i++) {
+		vdev->config->get(vdev, PTNETMAP_VIRTIO_IO_BASE + addr + i,
+				  ((uint8_t *)&val) + i, sizeof(uint8_t));
+	}
 
-    return val;
+	return val;
 }
 
 /*
@@ -670,33 +672,33 @@ virtio_ptnetmap_ioread4(struct virtio_device *vdev, uint32_t addr)
 static int
 virtio_ptnetmap_alloc_csb(struct SOFTC_T *vi)
 {
-    struct virtio_device *vdev = vi->vdev;
-    struct ifnet *ifp = vi->dev;
-    struct netmap_pt_guest_adapter* ptna =
-    	    (struct netmap_pt_guest_adapter *)NA(ifp);
+	struct virtio_device *vdev = vi->vdev;
+	struct ifnet *ifp = vi->dev;
+	struct netmap_pt_guest_adapter* ptna =
+		(struct netmap_pt_guest_adapter *)NA(ifp);
 
-    phys_addr_t csb_phyaddr;
+	phys_addr_t csb_phyaddr;
 
-    if (ptna->csb)
-        return 0;
+	if (ptna->csb)
+		return 0;
 
-    ptna->csb = kmalloc(NET_PARAVIRT_CSB_SIZE, GFP_KERNEL | __GFP_ZERO);
-    if (!ptna->csb) {
-        D("Communication Status Block allocation failed!");
-        return -ENOMEM;
-    }
-    csb_phyaddr = virt_to_phys(ptna->csb);
+	ptna->csb = kmalloc(NET_PARAVIRT_CSB_SIZE, GFP_KERNEL | __GFP_ZERO);
+	if (!ptna->csb) {
+		D("Communication Status Block allocation failed!");
+		return -ENOMEM;
+	}
+	csb_phyaddr = virt_to_phys(ptna->csb);
 
-    //ptna->msix_enabled = ?
-    ptna->csb->guest_csb_on = 1;
+	//ptna->msix_enabled = ?
+	ptna->csb->guest_csb_on = 1;
 
-    /* Tell the device the CSB physical address. */
-    virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAH,
-    		    (csb_phyaddr >> 32));
-    virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAL,
-    		    (csb_phyaddr & 0x00000000ffffffffULL));
+	/* Tell the device the CSB physical address. */
+	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAH,
+			(csb_phyaddr >> 32));
+	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAL,
+			(csb_phyaddr & 0x00000000ffffffffULL));
 
-    return 0;
+	return 0;
 }
 
 /*
@@ -705,19 +707,19 @@ virtio_ptnetmap_alloc_csb(struct SOFTC_T *vi)
 static void
 virtio_ptnetmap_free_csb(struct SOFTC_T *vi)
 {
-    struct virtio_device *vdev = vi->vdev;
-    struct ifnet *ifp = vi->dev;
-    struct netmap_pt_guest_adapter* ptna =
-    	    (struct netmap_pt_guest_adapter *)NA(ifp);
+	struct virtio_device *vdev = vi->vdev;
+	struct ifnet *ifp = vi->dev;
+	struct netmap_pt_guest_adapter* ptna =
+		(struct netmap_pt_guest_adapter *)NA(ifp);
 
-    if (ptna->csb) {
-        /* CSB deallocation protocol. */
-        virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAH, 0x0ULL);
-        virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAL, 0x0ULL);
+	if (ptna->csb) {
+		/* CSB deallocation protocol. */
+		virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAH, 0x0ULL);
+		virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAL, 0x0ULL);
 
-        kfree(ptna->csb);
-        ptna->csb = NULL;
-    }
+		kfree(ptna->csb);
+		ptna->csb = NULL;
+	}
 }
 
 static uint32_t virtio_ptnetmap_ptctl(struct net_device *, uint32_t);
@@ -730,7 +732,7 @@ static uint32_t virtio_ptnetmap_ptctl(struct net_device *, uint32_t);
  */
 static int
 virtio_ptnetmap_config(struct netmap_adapter *na,
-		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
+		       u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
 {
 	struct netmap_pt_guest_adapter *ptna =
 		(struct netmap_pt_guest_adapter *)na;
@@ -763,7 +765,7 @@ static int
 virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	u_int ring_nr = kring->ring_id;
 	struct SOFTC_T *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_TX_VQ(vi, ring_nr);
@@ -788,7 +790,7 @@ static int
 virtio_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	u_int ring_nr = kring->ring_id;
 	struct SOFTC_T *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_RX_VQ(vi, ring_nr);
@@ -834,33 +836,33 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	virtnet_close(ifp);
 
 	if (onoff) {
-	        struct SOFTC_T *vi = netdev_priv(ifp);
-	        int i;
+		struct SOFTC_T *vi = netdev_priv(ifp);
+		int i;
 
 		//na->na_flags |= NAF_NETMAP_ON;
 		nm_set_native_flags(na);
 
-                /* push fake-elem in the tx queues to enable interrupts */
-                for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
-                    struct virtqueue *vq = GET_TX_VQ(vi, i);
-                    struct scatterlist sg;
-	            struct sk_buff *skb;
-	            int num_sg;
+		/* push fake-elem in the tx queues to enable interrupts */
+		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+			struct virtqueue *vq = GET_TX_VQ(vi, i);
+			struct scatterlist sg;
+			struct sk_buff *skb;
+			int num_sg;
 
-                    skb = netdev_alloc_skb_ip_align(vi->dev, GOOD_COPY_LEN);
-                    skb_put(skb, 64);
-                    sg_set_buf(&sg, skb->cb, 64);
-                    num_sg = skb_to_sgvec(skb, &sg, 0, skb->len);
-                    if (skb) {
-		        virtqueue_add_outbuf(vq, &sg, num_sg, skb, GFP_ATOMIC);
-		    }
+			skb = netdev_alloc_skb_ip_align(vi->dev, GOOD_COPY_LEN);
+			skb_put(skb, 64);
+			sg_set_buf(&sg, skb->cb, 64);
+			num_sg = skb_to_sgvec(skb, &sg, 0, skb->len);
+			if (skb) {
+				virtqueue_add_outbuf(vq, &sg, num_sg, skb, GFP_ATOMIC);
+			}
 		}
 
 		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
 		if (ret) {
-		    //na->na_flags &= ~NAF_NETMAP_ON;
-		    nm_clear_native_flags(na);
-		    goto out;
+			//na->na_flags &= ~NAF_NETMAP_ON;
+			nm_clear_native_flags(na);
+			goto out;
 		}
 		/*
 		 * Init ring and kring pointers
@@ -913,9 +915,9 @@ virtio_ptnetmap_ptctl(struct net_device *dev, uint32_t val)
 	struct virtio_device *vdev = vi->vdev;
 	uint32_t ret;
 
-        D("PTCTL = %u", val);
+	D("PTCTL = %u", val);
 	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_PTCTL, val);
-        ret = virtio_ptnetmap_ioread4(vdev, PTNETMAP_VIRTIO_IO_PTSTS);
+	ret = virtio_ptnetmap_ioread4(vdev, PTNETMAP_VIRTIO_IO_PTSTS);
 	D("PTSTS = %u", ret);
 
 	return ret;
@@ -945,14 +947,14 @@ virtio_ptnetmap_features(struct SOFTC_T *vi)
 static void
 virtio_ptnetmap_dtor(struct netmap_adapter *na)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *vi = netdev_priv(ifp);
 
-        virtio_ptnetmap_free_csb(vi);
+	virtio_ptnetmap_free_csb(vi);
 }
 
 static struct netmap_pt_guest_ops virtio_ptnetmap_ops = {
-    .nm_ptctl = virtio_ptnetmap_ptctl,
+	.nm_ptctl = virtio_ptnetmap_ptctl,
 };
 #endif /* WITH_PTNETMAP_GUEST */
 
@@ -979,24 +981,23 @@ virtio_netmap_attach(struct SOFTC_T *vi)
 	na.num_tx_rings = na.num_rx_rings = 1;
 #ifdef WITH_PTNETMAP_GUEST
 	/* check if virtio-net (guest and host) supports ptnetmap */
-        if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
-                (virtio_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
-            D("ptnetmap supported");
-            na.nm_config = virtio_ptnetmap_config;
-            na.nm_register = virtio_ptnetmap_reg;
-            na.nm_txsync = virtio_ptnetmap_txsync;
-            na.nm_rxsync = virtio_ptnetmap_rxsync;
-            na.nm_dtor = virtio_ptnetmap_dtor;
-            na.nm_bdg_attach = virtio_ptnetmap_bdg_attach; /* XXX */
+	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
+			(virtio_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
+		D("ptnetmap supported");
+		na.nm_config = virtio_ptnetmap_config;
+		na.nm_register = virtio_ptnetmap_reg;
+		na.nm_txsync = virtio_ptnetmap_txsync;
+		na.nm_rxsync = virtio_ptnetmap_rxsync;
+		na.nm_dtor = virtio_ptnetmap_dtor;
+		na.nm_bdg_attach = virtio_ptnetmap_bdg_attach; /* XXX */
 
-            netmap_pt_guest_attach(&na, &virtio_ptnetmap_ops);
-            virtio_ptnetmap_alloc_csb(vi);
-        } else
-
+		netmap_pt_guest_attach(&na, &virtio_ptnetmap_ops);
+		virtio_ptnetmap_alloc_csb(vi);
+	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);
 
-        D("virtio attached txq=%d, txd=%d rxq=%d, rxd=%d",
+	D("virtio attached txq=%d, txd=%d rxq=%d, rxd=%d",
 			na.num_tx_rings, na.num_tx_desc,
 			na.num_tx_rings, na.num_rx_desc);
 }
