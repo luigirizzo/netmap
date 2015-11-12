@@ -205,6 +205,12 @@ LOWER SPEED THAN LINE RATE
   + check that your CPUs are running at the maximum clock rate
     and are not throttled down by the governor/powerd.
 
+	Linux:
+		lscpu # shows current cpu speed
+		# install cpufrequtils
+		# sudo apt-get install cpufrequtils
+
+
   + make sure that the sender/receiver interfaces and switch have
     flow control (FC) disabled (either via sysctl or ethtool).
 
