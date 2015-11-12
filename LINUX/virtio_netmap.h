@@ -336,6 +336,9 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 	struct SOFTC_T *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_TX_VQ(vi, ring_nr);
 	struct scatterlist *sg = GET_TX_SG(vi, ring_nr);
+	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
+				sizeof(shared_tx_vnet_hdr) :
+				sizeof(shared_tx_vnet_hdr.hdr);
         struct netmap_adapter *token;
 
 	// XXX invert the order
@@ -380,7 +383,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * and kick the hypervisor (if necessary).
 			 */
 			COMPAT_INIT_SG_TX(sg);
-			sg_set_buf(sg, &shared_tx_vnet_hdr, sizeof(shared_tx_vnet_hdr));
+			sg_set_buf(sg, &shared_tx_vnet_hdr, vnet_hdr_len);
                         sg_set_buf(sg + 1, addr, len);
                         err = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -428,6 +431,9 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	struct SOFTC_T *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_RX_VQ(vi, ring_nr);
 	struct scatterlist *sg = GET_RX_SG(vi, ring_nr);
+	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
+				sizeof(shared_rx_vnet_hdr) :
+				sizeof(shared_rx_vnet_hdr.hdr);
 
 	/* XXX netif_carrier_ok ? */
 
@@ -459,7 +465,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
                               token);
                         } else {
                             /* Skip the virtio-net header. */
-                            len -= sizeof(shared_rx_vnet_hdr);
+                            len -= vnet_hdr_len;
                             if (unlikely(len < 0)) {
                                 RD(5, "Truncated virtio-net-header, missing %d"
                                    " bytes", -len);
@@ -498,7 +504,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			 * and kick the hypervisor (if necessary).
 			 */
 			COMPAT_INIT_SG_RX(sg);
-			sg_set_buf(sg, &shared_rx_vnet_hdr, sizeof(shared_rx_vnet_hdr));
+			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
                         sg_set_buf(sg + 1, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
                         if (err < 0) {
@@ -531,6 +537,9 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
 {
 	struct ifnet *ifp = vi->dev;
 	struct netmap_adapter* na = NA(ifp);
+	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
+			        sizeof(shared_rx_vnet_hdr) :
+				sizeof(shared_rx_vnet_hdr.hdr);
 	unsigned int r;
 
 	/* if ptnetmap is enabled we must not init netmap buffers */
@@ -563,8 +572,7 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
                         slot = &ring->slot[i];
                         addr = NMB(na, slot);
 			COMPAT_INIT_SG_RX(sg);
-			sg_set_buf(sg, &shared_rx_vnet_hdr,
-				   sizeof(shared_rx_vnet_hdr));
+			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
                         sg_set_buf(sg + 1, addr, ring->nr_buf_size);
                         err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
                         if (err < 0) {
