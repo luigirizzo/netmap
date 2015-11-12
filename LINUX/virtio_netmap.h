@@ -157,8 +157,7 @@ free_receive_bufs(struct SOFTC_T *vi)
 
 /* The following macros are used only for kernels < 2.6.35, see below. */
 #define COMPAT_DECL_SG
-#define COMPAT_INIT_SG_RX(_sgl)
-#define COMPAT_INIT_SG_TX(_sgl)
+#define COMPAT_INIT_SG(_sgl)
 static void
 virtio_netmap_init_sgs(struct SOFTC_T *vi)
 {
@@ -179,8 +178,7 @@ virtio_netmap_init_sgs(struct SOFTC_T *vi)
    function. This macro does this definition, which is not necessary
    for subsequent versions. */
 #define COMPAT_DECL_SG		        struct scatterlist _compat_sg[2];
-#define COMPAT_INIT_SG_RX(_sgl)		sg_init_table(_sgl, 2)
-#define COMPAT_INIT_SG_TX(_sgl)	        sg_init_table(_sgl, 2)
+#define COMPAT_INIT_SG(_sgl)		sg_init_table(_sgl, 2)
 #define virtio_netmap_init_sgs(_vi)
 
 #endif /* !MULTI_QUEUE && !SG */
@@ -383,7 +381,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
-			COMPAT_INIT_SG_TX(sg);
+			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_tx_vnet_hdr, vnet_hdr_len);
 			sg_set_buf(sg + 1, addr, len);
 			err = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
@@ -504,7 +502,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
-			COMPAT_INIT_SG_RX(sg);
+			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
 			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
 			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
@@ -573,7 +571,7 @@ virtio_netmap_init_buffers(struct SOFTC_T *vi)
 
 			slot = &ring->slot[i];
 			addr = NMB(na, slot);
-			COMPAT_INIT_SG_RX(sg);
+			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
 			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
 			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
