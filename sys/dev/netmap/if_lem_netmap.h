@@ -81,6 +81,20 @@ lem_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (ifp->if_drv_flags & IFF_DRV_RUNNING ? 0 : 1);
 }
 
+static void
+lem_netmap_intr(struct netmap_adapter *na, int onoff)
+{
+	struct ifnet *ifp = na->ifp;
+	struct adapter *adapter = ifp->if_softc;
+
+	EM_CORE_LOCK(adapter);
+	if (onoff) {
+		lem_enable_intr(adapter);
+	} else {
+		lem_disable_intr(adapter);
+	}
+	EM_CORE_UNLOCK(adapter);
+}
 
 /*
  * Reconcile kernel and user view of the transmit ring.
@@ -670,6 +684,7 @@ lem_netmap_attach(struct adapter *adapter)
 	na.nm_rxsync = lem_netmap_rxsync;
 	na.nm_register = lem_netmap_reg;
 	na.num_tx_rings = na.num_rx_rings = 1;
+	na.nm_intr = lem_netmap_intr;
 #if defined (NIC_PTNETMAP) && defined (WITH_PTNETMAP_GUEST)
         /* XXX: check if the device support ptnetmap (now we use PARA_SUBDEV) */
 	if ((adapter->hw.subsystem_device_id == E1000_PARA_SUBDEV) &&

@@ -55,6 +55,7 @@
 #include <sys/proc.h> /* PROC_LOCK() */
 #include <sys/unistd.h> /* RFNOWAIT */
 #include <sys/sched.h> /* sched_bind() */
+#include <sys/smp.h> /* mp_maxid */
 #include <net/if.h>
 #include <net/if_var.h>
 #include <net/if_types.h> /* IFT_ETHER */
@@ -949,6 +950,11 @@ out:
 
 /******************** kthread wrapper ****************/
 #include <sys/sysproto.h>
+u_int
+nm_os_ncpus(void)
+{
+	return mp_maxid + 1;
+}
 
 struct nm_kthread_ctx {
 	struct thread *user_td;		/* thread user-space (kthread creator) to send ioctl */
