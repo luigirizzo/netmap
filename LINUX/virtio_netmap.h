@@ -849,7 +849,6 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 
                     skb = netdev_alloc_skb_ip_align(vi->dev, GOOD_COPY_LEN);
                     skb_put(skb, 64);
-		    sg_init_table(sg, 1)
                     sg_set_buf(&sg, skb->cb, 64);
                     num_sg = skb_to_sgvec(skb, &sg, 0, skb->len);
                     if (skb) {
