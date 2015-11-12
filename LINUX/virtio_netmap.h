@@ -156,17 +156,18 @@ static void free_receive_bufs(struct SOFTC_T *vi)
 
 /* The following macros are used only for kernels < 2.6.35, see below. */
 #define COMPAT_DECL_SG
-#define COMPAT_INIT_SG(_sgl)
+#define COMPAT_INIT_SG_RX(_sgl)
+#define COMPAT_INIT_SG_TX(_sgl)
 static void
 virtio_netmap_init_sgs(struct SOFTC_T *vi)
 {
 	int i;
 
 	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++)
-		sg_init_table(GET_TX_SG(vi, i), 1);
+		sg_init_table(GET_TX_SG(vi, i), 2);
 
 	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++)
-		sg_init_table(GET_RX_SG(vi, i), 1);
+		sg_init_table(GET_RX_SG(vi, i), 2);
 }
 
 #else  /* !MULTI_QUEUE && !SG */
@@ -176,8 +177,9 @@ virtio_netmap_init_sgs(struct SOFTC_T *vi)
    not part of virtio-net data structures, but were defined in those
    function. This macro does this definition, which is not necessary
    for subsequent versions. */
-#define COMPAT_DECL_SG			struct scatterlist _compat_sg;
-#define COMPAT_INIT_SG(_sgl)		sg_init_table(_sgl, 1)
+#define COMPAT_DECL_SG		        struct scatterlist _compat_sg;
+#define COMPAT_INIT_SG_RX(_sgl)		sg_init_table(_sgl, 2)
+#define COMPAT_INIT_SG_TX(_sgl)	        sg_init_table(_sgl, 2)
 #define virtio_netmap_init_sgs(_vi)
 
 #endif /* !MULTI_QUEUE && !SG */
@@ -312,6 +314,9 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (error);
 }
 
+static struct virtio_net_hdr_mrg_rxbuf shared_tx_vnet_hdr;
+static struct virtio_net_hdr_mrg_rxbuf shared_rx_vnet_hdr;
+
 /* Reconcile kernel and user view of the transmit ring. */
 static int
 virtio_netmap_txsync(struct netmap_kring *kring, int flags)
@@ -374,9 +379,10 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
-			COMPAT_INIT_SG(sg);
-                        sg_set_buf(sg, addr, len);
-                        err = virtqueue_add_outbuf(vq, sg, 1, na, GFP_ATOMIC);
+			COMPAT_INIT_SG_TX(sg);
+			sg_set_buf(sg, &shared_tx_vnet_hdr, sizeof(shared_tx_vnet_hdr));
+                        sg_set_buf(sg + 1, addr, len);
+                        err = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
                         if (err < 0) {
                                 D("virtqueue_add_outbuf failed [%d]", err);
                                 break;
@@ -447,13 +453,23 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
                         token = virtqueue_get_buf(vq, &len);
                         if (token == NULL)
                                 break;
-                        if (likely(token == na)) {
+
+                        if (unlikely(token != na)) {
+			    RD(5, "Received unexpected virtqueue token %p\n",
+                              token);
+                        } else {
+                            /* Skip the virtio-net header. */
+                            len -= sizeof(shared_rx_vnet_hdr);
+                            if (unlikely(len < 0)) {
+                                RD(5, "Truncated virtio-net-header, missing %d"
+                                   " bytes", -len);
+                                len = 0;
+                            }
+
                             ring->slot[nm_i].len = len;
                             ring->slot[nm_i].flags = slot_flags;
                             nm_i = nm_next(nm_i, lim);
                             n++;
-                        } else {
-			    D("This should not happen");
                         }
 		}
 		kring->nr_hwtail = nm_i;
@@ -481,9 +497,10 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			/* Initialize the scatterlist, expose it to the hypervisor,
 			 * and kick the hypervisor (if necessary).
 			 */
-			COMPAT_INIT_SG(sg);
-                        sg_set_buf(sg, addr, ring->nr_buf_size);
-                        err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
+			COMPAT_INIT_SG_RX(sg);
+			sg_set_buf(sg, &shared_rx_vnet_hdr, sizeof(shared_rx_vnet_hdr));
+                        sg_set_buf(sg + 1, addr, ring->nr_buf_size);
+                        err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
                         if (err < 0) {
                             D("virtqueue_add_inbuf failed");
                             return err;
@@ -545,9 +562,11 @@ static int virtio_netmap_init_buffers(struct SOFTC_T *vi)
 
                         slot = &ring->slot[i];
                         addr = NMB(na, slot);
-			COMPAT_INIT_SG(sg);
-                        sg_set_buf(sg, addr, ring->nr_buf_size);
-                        err = virtqueue_add_inbuf(vq, sg, 1, na, GFP_ATOMIC);
+			COMPAT_INIT_SG_RX(sg);
+			sg_set_buf(sg, &shared_rx_vnet_hdr,
+				   sizeof(shared_rx_vnet_hdr));
+                        sg_set_buf(sg + 1, addr, ring->nr_buf_size);
+                        err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
                         if (err < 0) {
                             D("virtqueue_add_inbuf failed");
 
@@ -934,6 +953,12 @@ static void
 virtio_netmap_attach(struct SOFTC_T *vi)
 {
 	struct netmap_adapter na;
+
+	/* TX shared virtio-net header must be zeroed because its
+	 * content is exposed to the host. RX shared virtio-net
+	 * header is zeroed only for security reasons. */
+	bzero(&shared_tx_vnet_hdr, sizeof(shared_tx_vnet_hdr));
+	bzero(&shared_rx_vnet_hdr, sizeof(shared_rx_vnet_hdr));
 
 	bzero(&na, sizeof(na));
 
