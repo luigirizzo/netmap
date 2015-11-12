@@ -147,8 +147,8 @@ free_receive_bufs(struct SOFTC_T *vi)
 #else  /* !MULTI_QUEUE && !SG */
 
 /* Use the scatterlist struct defined in the current function (see below). */
-#define GET_RX_SG(_vi, _i)	&_compat_sg
-#define GET_TX_SG(_vi, _i)	&_compat_sg
+#define GET_RX_SG(_vi, _i)	_compat_sg
+#define GET_TX_SG(_vi, _i)	_compat_sg
 #endif /* !MULTI_QUEUE && !SG */
 
 #endif /* !MULTI_QUEUE */
@@ -178,7 +178,7 @@ virtio_netmap_init_sgs(struct SOFTC_T *vi)
    not part of virtio-net data structures, but were defined in those
    function. This macro does this definition, which is not necessary
    for subsequent versions. */
-#define COMPAT_DECL_SG		        struct scatterlist _compat_sg;
+#define COMPAT_DECL_SG		        struct scatterlist _compat_sg[2];
 #define COMPAT_INIT_SG_RX(_sgl)		sg_init_table(_sgl, 2)
 #define COMPAT_INIT_SG_TX(_sgl)	        sg_init_table(_sgl, 2)
 #define virtio_netmap_init_sgs(_vi)
