@@ -66,9 +66,10 @@
  * of the original GSO packet). 'buf' points to the beginning (e.g.
  * the ethernet header) of the segment, and 'len' is its length.
  */
-static void gso_fix_segment(uint8_t *buf, size_t len, u_int idx,
-			    u_int segmented_bytes, u_int last_segment,
-			    u_int tcp, u_int iphlen)
+static void
+gso_fix_segment(uint8_t *buf, size_t len, u_int idx,
+		u_int segmented_bytes, u_int last_segment,
+		u_int tcp, u_int iphlen)
 {
 	struct nm_iphdr *iph = (struct nm_iphdr *)(buf + 14);
 	struct nm_ipv6hdr *ip6h = (struct nm_ipv6hdr *)(buf + 14);
@@ -128,12 +129,28 @@ static void gso_fix_segment(uint8_t *buf, size_t len, u_int idx,
 	ND("TCP/UDP csum %x", be16toh(*check));
 }
 
+static int
+vnet_hdr_is_bad(struct nm_vnet_hdr *vh)
+{
+	uint8_t gso_type = vh->gso_type & ~VIRTIO_NET_HDR_GSO_ECN;
+
+	return (
+		(gso_type != VIRTIO_NET_HDR_GSO_NONE &&
+		 gso_type != VIRTIO_NET_HDR_GSO_TCPV4 &&
+		 gso_type != VIRTIO_NET_HDR_GSO_UDP &&
+		 gso_type != VIRTIO_NET_HDR_GSO_TCPV6)
+		||
+		 (vh->flags & ~(VIRTIO_NET_HDR_F_NEEDS_CSUM
+			       | VIRTIO_NET_HDR_F_DATA_VALID))
+	       );
+}
 
 /* The VALE mismatch datapath implementation. */
-void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
-			   struct netmap_vp_adapter *dst_na,
-			   struct nm_bdg_fwd *ft_p, struct netmap_ring *ring,
-			   u_int *j, u_int lim, u_int *howmany)
+void
+bdg_mismatch_datapath(struct netmap_vp_adapter *na,
+		      struct netmap_vp_adapter *dst_na,
+		      struct nm_bdg_fwd *ft_p, struct netmap_ring *ring,
+		      u_int *j, u_int lim, u_int *howmany)
 {
 	struct netmap_slot *slot = NULL;
 	struct nm_vnet_hdr *vh = NULL;
@@ -153,6 +170,13 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 	 */
 	if (na->virt_hdr_len && !dst_na->virt_hdr_len) {
 		vh = (struct nm_vnet_hdr *)ft_p->ft_buf;
+		/* Initial sanity check on the source virtio-net header. If
+		 * something seems wrong, the virtio-net header will simply
+		 * be ignored. */
+		if (vnet_hdr_is_bad(vh)) {
+			RD(5, "Bad src vnet header");
+			vh = NULL;
+		}
 	}
 
 	/* Init source and dest pointers. */
@@ -380,7 +404,7 @@ void bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 		}
 		ND(3, "using %u dst_slots", dst_slots);
 
-		/* A second pass on the desitations slots to set the slot flags,
+		/* A second pass on the destination slots to set the slot flags,
 		 * using the right number of destination slots.
 		 */
 		while (j_start != *j) {
