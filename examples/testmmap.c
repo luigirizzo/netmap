@@ -898,7 +898,7 @@ do_nmr_dump()
 			arg_interp = nmr_arg_error;
 			break;
 		}
-		printf("]\n");
+		printf("]");
 	} else {
 		arg_interp = nmr_arg_extra;
 	}
@@ -942,6 +942,9 @@ do_nmr_dump()
 	}
 	if (curr_nmr.nr_flags & NR_EXCLUSIVE) {
 		printf(", EXCLUSIVE");
+	}
+	if (curr_nmr.nr_flags & NR_PTNETMAP_HOST) {
+		printf(", PTNETMAP_HOST");
 	}
 	printf("]\n");
 	printf("spare2[0]: %x\n", curr_nmr.spare2[0]);
@@ -1015,6 +1018,10 @@ do_nmr_cmd()
 		curr_nmr.nr_cmd = NETMAP_BDG_POLLING_ON;
 	} else if (strcmp(arg, "bdg-polling-off") == 0) {
 		curr_nmr.nr_cmd = NETMAP_BDG_POLLING_OFF;
+	} else if (strcmp(arg, "pt-host-create") == 0) {
+		curr_nmr.nr_cmd = NETMAP_PT_HOST_CREATE;
+	} else if (strcmp(arg, "pt-host-delete") == 0) {
+		curr_nmr.nr_cmd = NETMAP_PT_HOST_DELETE;
 	}
 out:
 	output("cmd=%x", curr_nmr.nr_cmd);
@@ -1053,6 +1060,8 @@ do_nmr_flags()
 			flags |= NR_ZCOPY_MON;
 		} else if (strcmp(arg, "exclusive") == 0) {
 			flags |= NR_EXCLUSIVE;
+		} else if (strcmp(arg, "ptnetmap-host") == 0) {
+			flags |= NR_PTNETMAP_HOST;
 		} else if (strcmp(arg, "default") == 0) {
 			flags = 0;
 		} 
