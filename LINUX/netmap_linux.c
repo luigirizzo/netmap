@@ -2554,7 +2554,7 @@ linux_nm_vi_setup(struct ifnet *dev)
 #ifdef NETMAP_LINUX_HAVE_HW_FEATURES
 	dev->hw_features = dev->features & ~NETIF_F_LLTX;
 #endif
-#ifdef NETMA_LINUX_HAVE_ADDR_RANDOM
+#ifdef NETMAP_LINUX_HAVE_ADDR_RANDOM
 	eth_hw_addr_random(dev);
 #endif
 }
