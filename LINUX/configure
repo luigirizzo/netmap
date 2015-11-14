@@ -87,7 +87,7 @@ subsys enable generic
 
 # available drivers
 driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
-	e1000 e1000e igb ixgbe"
+	e1000 e1000e igb ixgbe i40e"
 # enabled drivers (bitfield)
 driver=
 
@@ -1258,6 +1258,17 @@ add_test 'define VIRTIO_SG' <<-EOF
 EOF
 
 fi
+
+if drv enabled i40e; then
+add_test 'define I40E_PTR_ARRAY' <<-EOF
+	#include "i40e/i40e.h"
+
+	struct i40e_ring *
+	dummy(struct i40e_vsi *vsi) {
+		return vsi->tx_rings[0];
+	}
+EOF
+fi # i40e
 
 # END_TESTS
 
