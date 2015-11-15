@@ -747,17 +747,43 @@ nmr_arg_bdg_detach()
 void
 nmr_arg_bdg_list()
 {
+	if (!strlen(curr_nmr.nr_name)) {
+		nmr_arg_unexpected(1);
+		nmr_arg_unexpected(2);
+	} else {
+		printf("arg1:      %d [bridge]\n", curr_nmr.nr_arg1);
+		printf("arg2:      %d [port]\n", curr_nmr.nr_arg2);
+	}
+	nmr_arg_unexpected(3);
 }
 
 void
-nmr_arg_lookup_reg()
+nmr_arg_bdg_regops()
 {
 }
 
 void
 nmr_arg_vnet_hdr()
 {
-	printf("arg1:      %d [vnet hdr len]", curr_nmr.nr_arg1);
+	printf("arg1:      %d [vnet hdr len]\n", curr_nmr.nr_arg1);
+	nmr_arg_unexpected(2);
+	nmr_arg_unexpected(3);
+}
+
+void
+nmr_pt_host_create()
+{
+}
+
+void
+nmr_pt_host_delete()
+{
+}
+
+void
+nmr_bdg_polling_on()
+{
+	printf("arg1:      %d [nr cpus]\n", curr_nmr.nr_arg1);
 	nmr_arg_unexpected(2);
 	nmr_arg_unexpected(3);
 }
@@ -831,13 +857,13 @@ do_nmr_dump()
 			printf("BDG_DETACH");
 			arg_interp = nmr_arg_bdg_detach;
 			break;
+		case NETMAP_BDG_REGOPS:
+			printf("BDG_REGOPS");
+			arg_interp = nmr_arg_bdg_regops;
+			break;
 		case NETMAP_BDG_LIST:
 			printf("BDG_LIST");
 			arg_interp = nmr_arg_bdg_list;
-			break;
-		case NETMAP_BDG_REGOPS:
-			printf("BDG_LOOKUP_REG");
-			arg_interp = nmr_arg_lookup_reg;
 			break;
 		case NETMAP_BDG_VNET_HDR:
 			printf("BDG_VNET_HDR");
@@ -851,12 +877,28 @@ do_nmr_dump()
 			printf("BDG_DELIF");
 			arg_interp = nmr_arg_error;
 			break;
+		case NETMAP_PT_HOST_CREATE:
+			printf("PT_HOST_CREATE");
+			arg_interp = nmr_pt_host_create;
+			break;
+		case NETMAP_PT_HOST_DELETE:
+			printf("PT_HOST_DELETE");
+			arg_interp = nmr_pt_host_delete;
+			break;
+		case NETMAP_BDG_POLLING_ON:
+			printf("BDG_POLLING_ON");
+			arg_interp = nmr_bdg_polling_on;
+			break;
+		case NETMAP_BDG_POLLING_OFF:
+			printf("BDG_POLLING_OFF");
+			arg_interp = nmr_arg_error;
+			break;
 		default:
 			printf("???");
 			arg_interp = nmr_arg_error;
 			break;
 		}
-		printf("]\n");
+		printf("]");
 	} else {
 		arg_interp = nmr_arg_extra;
 	}
@@ -900,6 +942,9 @@ do_nmr_dump()
 	}
 	if (curr_nmr.nr_flags & NR_EXCLUSIVE) {
 		printf(", EXCLUSIVE");
+	}
+	if (curr_nmr.nr_flags & NR_PTNETMAP_HOST) {
+		printf(", PTNETMAP_HOST");
 	}
 	printf("]\n");
 	printf("spare2[0]: %x\n", curr_nmr.spare2[0]);
@@ -969,6 +1014,14 @@ do_nmr_cmd()
 		curr_nmr.nr_cmd = NETMAP_BDG_NEWIF;
 	} else if (strcmp(arg, "bdg-delif") == 0) {
 		curr_nmr.nr_cmd = NETMAP_BDG_DELIF;
+	} else if (strcmp(arg, "bdg-polling-on") == 0) {
+		curr_nmr.nr_cmd = NETMAP_BDG_POLLING_ON;
+	} else if (strcmp(arg, "bdg-polling-off") == 0) {
+		curr_nmr.nr_cmd = NETMAP_BDG_POLLING_OFF;
+	} else if (strcmp(arg, "pt-host-create") == 0) {
+		curr_nmr.nr_cmd = NETMAP_PT_HOST_CREATE;
+	} else if (strcmp(arg, "pt-host-delete") == 0) {
+		curr_nmr.nr_cmd = NETMAP_PT_HOST_DELETE;
 	}
 out:
 	output("cmd=%x", curr_nmr.nr_cmd);
@@ -1007,6 +1060,8 @@ do_nmr_flags()
 			flags |= NR_ZCOPY_MON;
 		} else if (strcmp(arg, "exclusive") == 0) {
 			flags |= NR_EXCLUSIVE;
+		} else if (strcmp(arg, "ptnetmap-host") == 0) {
+			flags |= NR_PTNETMAP_HOST;
 		} else if (strcmp(arg, "default") == 0) {
 			flags = 0;
 		} 

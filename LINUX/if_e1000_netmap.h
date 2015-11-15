@@ -72,6 +72,19 @@ e1000_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (0);
 }
 
+static void e1000_irq_enable(struct e1000_adapter *adapter);
+static void e1000_irq_disable(struct e1000_adapter *adapter);
+static void
+e1000_netmap_intr(struct netmap_adapter *na, int onoff)
+{
+	struct ifnet *ifp = na->ifp;
+	struct SOFTC_T *adapter = netdev_priv(ifp);
+
+	if (onoff)
+		e1000_irq_enable(adapter);
+	else
+		e1000_irq_disable(adapter);
+}
 
 /*
  * Reconcile kernel and user view of the transmit ring.
@@ -527,6 +540,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;
 	na.num_tx_rings = na.num_rx_rings = 1;
+	na.nm_intr = e1000_netmap_intr;
 
 #if defined (CONFIG_E1000_NETMAP_PT) && defined (WITH_PTNETMAP_GUEST)
         /* XXX:check device ptnetmap support (now we use PARAVIRT_SUBDEV) */

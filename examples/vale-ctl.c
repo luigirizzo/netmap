@@ -151,6 +151,36 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config)
 
 		break;
 
+	case NETMAP_BDG_POLLING_ON:
+	case NETMAP_BDG_POLLING_OFF:
+		/* We reuse nmreq fields as follows:
+		 *   nr_tx_slots: 0 and non-zero indicate REG_ALL_NIC
+		 *                REG_ONE_NIC, respectively.
+		 *   nr_rx_slots: CPU core index. This also indicates the
+		 *                first queue in the case of REG_ONE_NIC
+		 *   nr_tx_rings: (REG_ONE_NIC only) indicates the
+		 *                number of CPU cores or the last queue
+		 */
+		nmr.nr_flags |= nmr.nr_tx_slots ?
+			NR_REG_ONE_NIC : NR_REG_ALL_NIC;
+		nmr.nr_ringid = nmr.nr_rx_slots;
+		/* number of cores/rings */
+		if (nmr.nr_flags == NR_REG_ALL_NIC)
+			nmr.nr_arg1 = 1;
+		else
+			nmr.nr_arg1 = nmr.nr_tx_rings;
+
+		error = ioctl(fd, NIOCREGIF, &nmr);
+		if (!error)
+			D("polling on %s %s", nmr.nr_name,
+				nr_cmd == NETMAP_BDG_POLLING_ON ?
+				"started" : "stopped");
+		else
+			D("polling on %s %s (err %d)", nmr.nr_name,
+				nr_cmd == NETMAP_BDG_POLLING_ON ?
+				"couldn't start" : "couldn't stop", error);
+		break;
+
 	default: /* GINFO */
 		nmr.nr_cmd = nmr.nr_arg1 = nmr.nr_arg2 = 0;
 		error = ioctl(fd, NIOCGINFO, &nmr);
@@ -172,7 +202,7 @@ main(int argc, char *argv[])
 	const char *command = basename(argv[0]);
 	char *name = NULL, *nmr_config = NULL;
 
-	if (argc > 3) {
+	if (argc > 5) {
 usage:
 		fprintf(stderr,
 			"Usage:\n"
@@ -185,12 +215,15 @@ usage:
 			"\t-r interface	interface name to be deleted\n"
 			"\t-l list all or specified bridge's interfaces (default)\n"
 			"\t-C string ring/slot setting of an interface creating by -n\n"
+			"\t-p interface start polling with -C is_ONE_NIC,qfirst,ncores/rings\n"
+			"\t-P interface stop polling\n"
 			"", command);
 		return 0;
 	}
 
-	while ((ch = getopt(argc, argv, "d:a:h:g:l:n:r:C:")) != -1) {
-		name = optarg; /* default */
+	while ((ch = getopt(argc, argv, "d:a:h:g:l:n:r:C:p:P:")) != -1) {
+		if (ch != 'C')
+			name = optarg; /* default */
 		switch (ch) {
 		default:
 			fprintf(stderr, "bad option %c %s", ch, optarg);
@@ -222,11 +255,17 @@ usage:
 		case 'C':
 			nmr_config = strdup(optarg);
 			break;
+		case 'p':
+			nr_cmd = NETMAP_BDG_POLLING_ON;
+			break;
+		case 'P':
+			nr_cmd = NETMAP_BDG_POLLING_OFF;
+			break;
 		}
-		if (optind != argc) {
-			// fprintf(stderr, "optind %d argc %d\n", optind, argc);
-			goto usage;
-		}
+	}
+	if (optind != argc) {
+		// fprintf(stderr, "optind %d argc %d\n", optind, argc);
+		goto usage;
 	}
 	if (argc == 1)
 		nr_cmd = NETMAP_BDG_LIST;

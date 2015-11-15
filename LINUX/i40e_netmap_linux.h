@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo. All rights reserved.
+ * Copyright (C) 2015, Luigi Rizzo. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,31 +24,39 @@
  */
 
 /*
- * $FreeBSD: head/sys/dev/netmap/ixgbe_netmap.h 244514 2012-12-20 22:26:03Z luigi $
+ * $FreeBSD$
  *
- * netmap support for: ixgbe
+ * netmap support for: i40e (LINUX version)
  *
- * This file is meant to be a reference on how to implement
+ * derived from ixgbe
  * netmap support for a network driver.
  * This file contains code but only static or inline functions used
  * by a single driver. To avoid replication of code we just #include
  * it near the beginning of the standard driver.
+ *
+ * This is imported in two places, hence the conditional at the
+ * beginning.
  */
 
 
+#include <bsd_glue.h>
 #include <net/netmap.h>
-#include <sys/selinfo.h>
-/*
- * Some drivers may need the following headers. Others
- * already include them by default
-
-#include <vm/vm.h>
-#include <vm/pmap.h>
-
- */
 #include <dev/netmap/netmap_kern.h>
 
+int i40e_netmap_txsync(struct netmap_kring *kring, int flags);
+int i40e_netmap_rxsync(struct netmap_kring *kring, int flags);
 
+extern int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
+
+#ifdef NETMAP_LINUX_I40E_PTR_ARRAY
+#define NM_I40E_TX_RING(a, r)		((a)->tx_rings[(r)])
+#define NM_I40E_RX_RING(a, r)		((a)->rx_rings[(r)])
+#else
+#define NM_I40E_TX_RING(a, r)		(&(a)->tx_rings[(r)])
+#define NM_I40E_RX_RING(a, r)		(&(a)->rx_rings[(r)])
+#endif
+
+#ifdef NETMAP_I40E_MAIN
 /*
  * device-specific sysctl variables:
  *
@@ -61,8 +69,7 @@
  *	count packets that might be missed due to lost interrupts.
  */
 SYSCTL_DECL(_dev_netmap);
-static int ix_rx_miss, ix_rx_miss_bufs;
-int ix_crcstrip;
+int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_crcstrip,
     CTLFLAG_RW, &ix_crcstrip, 0, "strip CRC on rx frames");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss,
@@ -70,7 +77,7 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss,
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss_bufs,
     CTLFLAG_RW, &ix_rx_miss_bufs, 0, "potentially missed rx intr bufs");
 
-
+#if 0
 static void
 set_crcstrip(struct ixgbe_hw *hw, int onoff)
 {
@@ -107,20 +114,58 @@ set_crcstrip(struct ixgbe_hw *hw, int onoff)
 	IXGBE_WRITE_REG(hw, IXGBE_HLREG0, hl);
 	IXGBE_WRITE_REG(hw, IXGBE_RDRXCTL, rxc);
 }
+#endif /* unused */
 
 static void
-ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
+i40e_netmap_configure_tx_ring(struct i40e_ring *ring)
 {
-	struct ifnet *ifp = na->ifp;
-	struct adapter *adapter = ifp->if_softc;
+	struct netmap_adapter *na;
 
-	IXGBE_CORE_LOCK(adapter);
-	if (onoff) {
-		ixgbe_enable_intr(adapter); // XXX maybe ixgbe_stop ?
-	} else {
-		ixgbe_disable_intr(adapter); // XXX maybe ixgbe_stop ?
+	if (!ring->netdev) {
+		// XXX it this possible?
+		return;
 	}
-	IXGBE_CORE_UNLOCK(adapter);
+
+	na = NA(ring->netdev);
+	netmap_reset(na, NR_TX, ring->queue_index, 0);
+}
+
+static int
+i40e_netmap_configure_rx_ring(struct i40e_ring *ring)
+{
+	struct netmap_adapter *na;
+	struct netmap_slot *slot;
+	struct netmap_kring *kring;
+	int lim, i, ring_nr;
+
+	if (!ring->netdev) {
+		// XXX it this possible?
+		return 0;
+	}
+
+	na = NA(ring->netdev);
+	ring_nr = ring->queue_index;
+	kring = &na->rx_rings[ring_nr];
+
+	slot = netmap_reset(na, NR_RX, ring_nr, 0);
+	if (!slot)
+		return 0;	// not in native netmap mode
+
+	lim = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
+
+	for (i = 0; i < na->num_rx_desc; i++) {
+		int si = netmap_idx_n2k(kring, i);
+		uint64_t paddr;
+		union i40e_rx_desc *rx = I40E_RX_DESC(ring, i);
+		PNMB(na, slot + si, &paddr);
+
+		rx->read.pkt_addr = htole64(paddr);
+		rx->read.hdr_addr = 0;
+	}
+	ring->next_to_clean = netmap_idx_k2n(kring, 0);
+	wmb();
+	writel(lim, ring->tail);
+	return 1;
 }
 
 /*
@@ -128,29 +173,67 @@ ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
  * Only called on the first register or the last unregister.
  */
 static int
-ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
+i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
-	struct adapter *adapter = ifp->if_softc;
+	struct i40e_netdev_priv *np = netdev_priv(ifp);
+        struct i40e_vsi  *vsi = np->vsi;
+        struct i40e_pf   *pf = (struct i40e_pf *)vsi->back;
+	bool was_running;
 
-	IXGBE_CORE_LOCK(adapter);
-	ixgbe_disable_intr(adapter); // XXX maybe ixgbe_stop ?
+	while (test_and_set_bit(__I40E_CONFIG_BUSY, &pf->state))
+			usleep_range(1000, 2000);
 
-	/* Tell the stack that the interface is no longer active */
-	ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
+	rtnl_lock();
+	if ( (was_running = netif_running(vsi->netdev)) )
+		i40e_down(vsi);
 
-	set_crcstrip(&adapter->hw, onoff);
+	//set_crcstrip(&adapter->hw, onoff);
 	/* enable or disable flags and callbacks in na and ifp */
 	if (onoff) {
 		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
 	}
-	ixgbe_init_locked(adapter);	/* also enables intr */
-	set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
-	IXGBE_CORE_UNLOCK(adapter);
-	return (ifp->if_drv_flags & IFF_DRV_RUNNING ? 0 : 1);
+	if (was_running) {
+		i40e_up(vsi);
+	}
+	//set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
+	rtnl_unlock();
+
+	clear_bit(__I40E_CONFIG_BUSY, &pf->state);
+
+	return 0;
 }
+
+
+/*
+ * The attach routine, called near the end of i40e_attach(),
+ * fills the parameters for netmap_attach() and calls it.
+ * It cannot fail, in the worst case (such as no memory)
+ * netmap mode will be disabled and the driver will only
+ * operate in standard mode.
+ */
+static void
+i40e_netmap_attach(struct i40e_vsi *vsi)
+{
+	struct netmap_adapter na;
+
+	bzero(&na, sizeof(na));
+
+	na.ifp = vsi->netdev;
+	na.na_flags = NAF_BDG_MAYSLEEP;
+	// XXX check that queues is set.
+	na.num_tx_desc = NM_I40E_TX_RING(vsi, 0)->count;
+	na.num_rx_desc = NM_I40E_RX_RING(vsi, 0)->count;
+	na.nm_txsync = i40e_netmap_txsync;
+	na.nm_rxsync = i40e_netmap_rxsync;
+	na.nm_register = i40e_netmap_reg;
+	na.num_tx_rings = na.num_rx_rings = vsi->num_queue_pairs;
+	netmap_attach(&na);
+}
+
+#else /* NETMAP_I40E_MAIN */
 
 
 /*
@@ -167,8 +250,16 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
  * running at any time. Any interference with other driver
  * methods should be handled by the individual drivers.
  */
-static int
-ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
+
+static inline u_int
+i40e_netmap_read_hwtail(void *base, int nslots)
+{
+	struct i40e_tx_desc *desc = base;
+	return le32toh(*(volatile __le32 *)&desc[nslots]);
+}
+
+int
+i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
@@ -185,12 +276,18 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int report_frequency = kring->nkr_num_slots >> 1;
 
 	/* device-specific */
-	struct adapter *adapter = ifp->if_softc;
-	struct tx_ring *txr = &adapter->tx_rings[kring->ring_id];
-	int reclaim_tx;
+	struct i40e_netdev_priv *np = netdev_priv(ifp);
+	struct i40e_vsi *vsi = np->vsi;
+	struct i40e_ring *txr;
 
-	bus_dmamap_sync(txr->txdma.dma_tag, txr->txdma.dma_map,
-			BUS_DMASYNC_POSTREAD);
+	if (!netif_running(ifp))
+		return 0;
+
+	txr = NM_I40E_TX_RING(vsi, kring->ring_id);
+	if (!txr)
+		return ENXIO;
+	//bus_dmamap_sync(txr->dma.tag, txr->dma.map,
+	//		BUS_DMASYNC_POSTREAD);
 
 	/*
 	 * First part: process new packets to send.
@@ -232,7 +329,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		nic_i = netmap_idx_k2n(kring, nm_i);
 
 		__builtin_prefetch(&ring->slot[nm_i]);
-		__builtin_prefetch(&txr->tx_buffers[nic_i]);
+		__builtin_prefetch(I40E_TX_DESC(txr, nic_i));
 
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
@@ -241,34 +338,31 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
-			union ixgbe_adv_tx_desc *curr = &txr->tx_base[nic_i];
-			struct ixgbe_tx_buf *txbuf = &txr->tx_buffers[nic_i];
-			int flags = (slot->flags & NS_REPORT ||
+			struct i40e_tx_desc *curr = I40E_TX_DESC(txr, nic_i);
+			u64 flags = (slot->flags & NS_REPORT ||
 				nic_i == 0 || nic_i == report_frequency) ?
-				IXGBE_TXD_CMD_RS : 0;
+				((u64)I40E_TX_DESC_CMD_RS << I40E_TXD_QW1_CMD_SHIFT) : 0;
 
 			/* prefetch for next round */
 			__builtin_prefetch(&ring->slot[nm_i + 1]);
-			__builtin_prefetch(&txr->tx_buffers[nic_i + 1]);
+			__builtin_prefetch(I40E_TX_DESC(txr, nic_i));
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
-				netmap_reload_map(na, txr->txtag, txbuf->map, addr);
+				//netmap_reload_map(na, txr->dma.tag, txbuf->map, addr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 
 			/* Fill the slot in the NIC ring. */
 			/* Use legacy descriptor, they are faster? */
-			curr->read.buffer_addr = htole64(paddr);
-			curr->read.olinfo_status = 0;
-			curr->read.cmd_type_len = htole32(len | flags |
-				IXGBE_ADVTXD_DCMD_IFCS | IXGBE_TXD_CMD_EOP);
-
-			/* make sure changes to the buffer are synced */
-			bus_dmamap_sync(txr->txtag, txbuf->map,
-				BUS_DMASYNC_PREWRITE);
+			curr->buffer_addr = htole64(paddr);
+			curr->cmd_type_offset_bsz = htole64(
+			    ((u64)len << I40E_TXD_QW1_TX_BUF_SZ_SHIFT) |
+			    flags |
+			    ((u64)(I40E_TX_DESC_CMD_ICRC | I40E_TX_DESC_CMD_EOP) << I40E_TXD_QW1_CMD_SHIFT)
+			  ); // XXX more ?
 
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
@@ -276,64 +370,22 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwcur = head;
 
 		/* synchronize the NIC ring */
-		bus_dmamap_sync(txr->txdma.dma_tag, txr->txdma.dma_map,
-			BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
+		//bus_dmamap_sync(txr->dma.tag, txr->dma.map,
+		//	BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 		/* (re)start the tx unit up to slot nic_i (excluded) */
-		IXGBE_WRITE_REG(&adapter->hw, IXGBE_TDT(txr->me), nic_i);
+		wmb();
+		writel(nic_i, txr->tail);
 	}
 
 	/*
 	 * Second part: reclaim buffers for completed transmissions.
-	 * Because this is expensive (we read a NIC register etc.)
-	 * we only do it in specific cases (see below).
 	 */
-	if (flags & NAF_FORCE_RECLAIM) {
-		reclaim_tx = 1; /* forced reclaim */
-	} else if (!nm_kr_txempty(kring)) {
-		reclaim_tx = 0; /* have buffers, no reclaim */
-	} else {
-		/*
-		 * No buffers available. Locate previous slot with
-		 * REPORT_STATUS set.
-		 * If the slot has DD set, we can reclaim space,
-		 * otherwise wait for the next interrupt.
-		 * This enables interrupt moderation on the tx
-		 * side though it might reduce throughput.
-		 */
-		struct ixgbe_legacy_tx_desc *txd =
-		    (struct ixgbe_legacy_tx_desc *)txr->tx_base;
-
-		nic_i = txr->next_to_clean + report_frequency;
-		if (nic_i > lim)
-			nic_i -= lim + 1;
-		// round to the closest with dd set
-		nic_i = (nic_i < kring->nkr_num_slots / 4 ||
-			 nic_i >= kring->nkr_num_slots*3/4) ?
-			0 : report_frequency;
-		reclaim_tx = txd[nic_i].upper.fields.status & IXGBE_TXD_STAT_DD;	// XXX cpu_to_le32 ?
-	}
-	if (reclaim_tx) {
-		/*
-		 * Record completed transmissions.
-		 * We (re)use the driver's txr->next_to_clean to keep
-		 * track of the most recently completed transmission.
-		 *
-		 * The datasheet discourages the use of TDH to find
-		 * out the number of sent packets, but we only set
-		 * REPORT_STATUS in a few slots so TDH is the only
-		 * good way.
-		 */
-		nic_i = IXGBE_READ_REG(&adapter->hw, IXGBE_TDH(kring->ring_id));
-		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
-			D("TDH wrap %d", nic_i);
-			nic_i -= kring->nkr_num_slots;
-		}
-		if (nic_i != txr->next_to_clean) {
-			/* some tx completed, increment avail */
-			txr->next_to_clean = nic_i;
-			kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
-		}
+	nic_i = i40e_netmap_read_hwtail(txr->desc, kring->nkr_num_slots);
+	if (nic_i != txr->next_to_clean) {
+		/* some tx completed, increment avail */
+		txr->next_to_clean = nic_i;
+		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 
 	return 0;
@@ -353,8 +405,8 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
  * If (flags & NAF_FORCE_READ) also check for incoming packets irrespective
  * of whether or not we received an interrupt.
  */
-static int
-ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
+int
+i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
@@ -367,15 +419,25 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	/* device-specific */
-	struct adapter *adapter = ifp->if_softc;
-	struct rx_ring *rxr = &adapter->rx_rings[kring->ring_id];
+	struct i40e_netdev_priv *np = netdev_priv(ifp);
+	struct i40e_vsi *vsi = np->vsi;
+	struct i40e_ring *rxr;
+
+	if (!netif_running(ifp))
+		return 0;
+       
+	rxr = NM_I40E_RX_RING(vsi, kring->ring_id);
+	if (!rxr)
+		return ENXIO;
 
 	if (head > lim)
 		return netmap_ring_reinit(kring);
 
+	if (!rxr)
+		return ENXIO;
 	/* XXX check sync modes */
-	bus_dmamap_sync(rxr->rxdma.dma_tag, rxr->rxdma.dma_map,
-			BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
+	//bus_dmamap_sync(rxr->dma.tag, rxr->dma.map,
+	//		BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
 	/*
 	 * First part: import newly received packets.
@@ -385,30 +447,34 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * and they may differ in case if_init() has been called while
 	 * in netmap mode. For the receive ring we have
 	 *
-	 *	nic_i = rxr->next_to_check;
+	 *	nic_i = rxr->next_check;
 	 *	nm_i = kring->nr_hwtail (previous)
 	 * and
 	 *	nm_i == (nic_i + kring->nkr_hwofs) % ring_size
 	 *
-	 * rxr->next_to_check is set to 0 on a ring reinit
+	 * rxr->next_check is set to 0 on a ring reinit
 	 */
 	if (netmap_no_pendintr || force_update) {
 		int crclen = ix_crcstrip ? 0 : 4;
 		uint16_t slot_flags = kring->nkr_slot_flags;
 
-		nic_i = rxr->next_to_check; // or also k2n(kring->nr_hwtail)
+		nic_i = rxr->next_to_clean; // or also k2n(kring->nr_hwtail)
 		nm_i = netmap_idx_n2k(kring, nic_i);
 
 		for (n = 0; ; n++) {
-			union ixgbe_adv_rx_desc *curr = &rxr->rx_base[nic_i];
-			uint32_t staterr = le32toh(curr->wb.upper.status_error);
+			union i40e_rx_desc *curr = I40E_RX_DESC(rxr, nic_i);
+			uint64_t qword = le64toh(curr->wb.qword1.status_error_len);
+			uint32_t staterr = (qword & I40E_RXD_QW1_STATUS_MASK)
+				 >> I40E_RXD_QW1_STATUS_SHIFT;
 
-			if ((staterr & IXGBE_RXD_STAT_DD) == 0)
+			if ((staterr & (1<<I40E_RX_DESC_STATUS_DD_SHIFT)) == 0) {
 				break;
-			ring->slot[nm_i].len = le16toh(curr->wb.upper.length) - crclen;
+			}
+			ring->slot[nm_i].len = ((qword & I40E_RXD_QW1_LENGTH_PBUF_MASK)
+			    >> I40E_RXD_QW1_LENGTH_PBUF_SHIFT) - crclen;
 			ring->slot[nm_i].flags = slot_flags;
-			bus_dmamap_sync(rxr->ptag,
-			    rxr->rx_buffers[nic_i].pmap, BUS_DMASYNC_POSTREAD);
+			//bus_dmamap_sync(rxr->ptag,
+			//    rxr->buffers[nic_i].pmap, BUS_DMASYNC_POSTREAD);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -418,7 +484,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 				ix_rx_miss ++;
 				ix_rx_miss_bufs += n;
 			}
-			rxr->next_to_check = nic_i;
+			rxr->next_to_clean = nic_i;
 			kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
@@ -440,34 +506,34 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint64_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
-			union ixgbe_adv_rx_desc *curr = &rxr->rx_base[nic_i];
-			struct ixgbe_rx_buf *rxbuf = &rxr->rx_buffers[nic_i];
+			union i40e_32byte_rx_desc *curr = I40E_RX_DESC(rxr, nic_i);
 
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
-				netmap_reload_map(na, rxr->ptag, rxbuf->pmap, addr);
+				//netmap_reload_map(na, rxr->ptag, rxbuf->pmap, addr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
-			curr->wb.upper.status_error = 0;
 			curr->read.pkt_addr = htole64(paddr);
-			bus_dmamap_sync(rxr->ptag, rxbuf->pmap,
-			    BUS_DMASYNC_PREREAD);
+			curr->read.hdr_addr = 0; // XXX needed
+			//bus_dmamap_sync(rxr->ptag, rxbuf->pmap,
+			//    BUS_DMASYNC_PREREAD);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
 		kring->nr_hwcur = head;
 
-		bus_dmamap_sync(rxr->rxdma.dma_tag, rxr->rxdma.dma_map,
-		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
+		//bus_dmamap_sync(rxr->dma.tag, rxr->dma.map,
+		//    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 		/*
 		 * IMPORTANT: we must leave one free slot in the ring,
 		 * so move nic_i back by one unit
 		 */
 		nic_i = nm_prev(nic_i, lim);
-		IXGBE_WRITE_REG(&adapter->hw, IXGBE_RDT(rxr->me), nic_i);
+		wmb();
+		writel(nic_i, rxr->tail);
 	}
 
 	return 0;
@@ -476,31 +542,6 @@ ring_reset:
 	return netmap_ring_reinit(kring);
 }
 
-
-/*
- * The attach routine, called near the end of ixgbe_attach(),
- * fills the parameters for netmap_attach() and calls it.
- * It cannot fail, in the worst case (such as no memory)
- * netmap mode will be disabled and the driver will only
- * operate in standard mode.
- */
-static void
-ixgbe_netmap_attach(struct adapter *adapter)
-{
-	struct netmap_adapter na;
-
-	bzero(&na, sizeof(na));
-
-	na.ifp = adapter->ifp;
-	na.na_flags = NAF_BDG_MAYSLEEP;
-	na.num_tx_desc = adapter->num_tx_desc;
-	na.num_rx_desc = adapter->num_rx_desc;
-	na.nm_txsync = ixgbe_netmap_txsync;
-	na.nm_rxsync = ixgbe_netmap_rxsync;
-	na.nm_register = ixgbe_netmap_reg;
-	na.num_tx_rings = na.num_rx_rings = adapter->num_queues;
-	na.nm_intr = ixgbe_netmap_intr;
-	netmap_attach(&na);
-}
+#endif /* NETMAP_I40E_MAIN */
 
 /* end of file */

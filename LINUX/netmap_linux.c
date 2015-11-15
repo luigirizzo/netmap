@@ -1568,6 +1568,13 @@ netmap_bns_unregister(void)
 #include <linux/mmu_context.h>
 #include <linux/poll.h>
 #include <linux/kthread.h>
+#include <linux/cpumask.h> /* nr_cpu_ids */
+
+u_int
+nm_os_ncpus(void)
+{
+	return nr_cpu_ids;
+}
 
 /* kthread context */
 struct nm_kthread_ctx {
@@ -1599,6 +1606,7 @@ struct nm_kthread {
     int attach_user;            /* kthread attached to user_process */
 
     struct nm_kthread_ctx worker_ctx;
+    int affinity;
 };
 
 void inline
@@ -1791,6 +1799,12 @@ nm_kthread_stop_poll(struct nm_kthread_ctx *ctx)
     }
 }
 
+void
+nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
+{
+	nmk->affinity = affinity;
+}
+
 struct nm_kthread *
 nm_os_kthread_create(struct nm_kthread_cfg *cfg)
 {
@@ -1827,6 +1841,7 @@ int
 nm_os_kthread_start(struct nm_kthread *nmk)
 {
     int error = 0;
+    char name[16];
 
     if (nmk->worker) {
         return EBUSY;
@@ -1837,8 +1852,14 @@ nm_os_kthread_start(struct nm_kthread *nmk)
         nmk->mm = get_task_mm(current);
     }
 
-    nmk->worker = kthread_run(nm_kthread_worker, nmk, "nm_kthread-%ld-%d",
-            nmk->worker_ctx.type, current->pid);
+    /* ToDo Make this able to pass arbitrary string (e.g., for 'nm_') from nmk */
+    snprintf(name, sizeof(name), "nm_kthread-%ld-%d", nmk->worker_ctx.type, current->pid);
+    nmk->worker = kthread_create(nm_kthread_worker, nmk, name);
+    if (!IS_ERR(nmk->worker)) {
+	kthread_bind(nmk->worker, nmk->affinity);
+	wake_up_process(nmk->worker);
+    }
+
     if (IS_ERR(nmk->worker)) {
 	error = -PTR_ERR(nmk->worker);
 	goto err;

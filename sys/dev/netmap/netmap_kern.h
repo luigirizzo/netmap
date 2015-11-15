@@ -680,6 +680,7 @@ struct netmap_adapter {
 	void (*nm_dtor)(struct netmap_adapter *);
 
 	int (*nm_register)(struct netmap_adapter *, int onoff);
+	void (*nm_intr)(struct netmap_adapter *, int onoff);
 
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
@@ -861,7 +862,7 @@ netmap_real_rings(struct netmap_adapter *na, enum txrx t)
 }
 
 #ifdef WITH_VALE
-
+struct nm_bdg_polling_state;
 /*
  * Bridge wrapper for non VALE ports attached to a VALE switch.
  *
@@ -919,9 +920,9 @@ struct netmap_bwrap_adapter {
 	 * are attached to a bridge.
 	 */
 	struct netmap_priv_d *na_kpriv;
+	struct nm_bdg_polling_state *na_polling_state;
 };
 int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
-
 
 #endif /* WITH_VALE */
 
@@ -1901,6 +1902,7 @@ void nm_os_kthread_delete(struct nm_kthread *);
 void nm_os_kthread_wakeup_worker(struct nm_kthread *nmk);
 void nm_os_kthread_send_irq(struct nm_kthread *);
 void nm_os_kthread_set_affinity(struct nm_kthread *, int);
+u_int nm_os_ncpus(void);
 
 #ifdef WITH_PTNETMAP_HOST
 /*
