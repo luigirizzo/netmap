@@ -282,9 +282,13 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				}
 				switch (ethertype) {
 					case 0x0800:  /* IPv4 */
+					{
+						struct nm_iphdr *iph = (struct nm_iphdr *)
+									&gso_hdr[ethhlen];
 						ipv4 = 1;
-						iphlen = 20;
+						iphlen = 4 * (iph->version_ihl & 0x0F);
 						break;
+					}
 					case 0x86DD:  /* IPv6 */
 						ipv4 = 0;
 						iphlen = 40;
@@ -303,7 +307,8 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 					struct nm_tcphdr *tcph =
 						(struct nm_tcphdr *)&gso_hdr[ethhlen+iphlen];
 
-					gso_hdr_len = ethhlen + iphlen + 4*(tcph->doff >> 4);
+					gso_hdr_len = ethhlen + iphlen +
+						      4 * (tcph->doff >> 4);
 				} else {
 					gso_hdr_len = ethhlen + iphlen + 8; /* UDP */
 				}
