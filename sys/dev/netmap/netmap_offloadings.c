@@ -67,16 +67,15 @@
  * header of the segment, while 'len' is the length of the IP packet.
  */
 static void
-gso_fix_segment(uint8_t *pkt, size_t len, u_int idx,
-		u_int segmented_bytes, u_int last_segment,
-		u_int tcp, u_int iphlen)
+gso_fix_segment(uint8_t *pkt, size_t len, u_int ipv4, u_int iphlen, u_int tcp,
+		u_int idx, u_int segmented_bytes, u_int last_segment)
 {
 	struct nm_iphdr *iph = (struct nm_iphdr *)(pkt);
 	struct nm_ipv6hdr *ip6h = (struct nm_ipv6hdr *)(pkt);
 	uint16_t *check = NULL;
 	uint8_t *check_data = NULL;
 
-	if (iphlen == 20) {
+	if (ipv4) {
 		/* Set the IPv4 "Total Length" field. */
 		iph->tot_len = htobe16(len);
 		ND("ip total length %u", be16toh(ip->tot_len));
@@ -89,7 +88,7 @@ gso_fix_segment(uint8_t *pkt, size_t len, u_int idx,
 		iph->check = 0;
 		iph->check = nm_os_csum_ipv4(iph);
 		ND("IP csum %x", be16toh(iph->check));
-	} else {/* if (iphlen == 40) */
+	} else {
 		/* Set the IPv6 "Payload Len" field. */
 		ip6h->payload_len = htobe16(len-iphlen);
 	}
@@ -121,7 +120,7 @@ gso_fix_segment(uint8_t *pkt, size_t len, u_int idx,
 
 	/* Compute and insert TCP/UDP checksum. */
 	*check = 0;
-	if (iphlen == 20)
+	if (ipv4)
 		nm_os_csum_tcpudp_ipv4(iph, check_data, len-iphlen, check);
 	else
 		nm_os_csum_tcpudp_ipv6(ip6h, check_data, len-iphlen, check);
@@ -243,9 +242,11 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 		u_int gso_idx = 0;
 		/* Payload data bytes segmented so far (e.g. TCP data bytes). */
 		u_int segmented_bytes = 0;
+		/* Is this an IPv4 or IPv6 GSO packet? */
+		u_int ipv4;
 		/* Length of the IP header (20 if IPv4, 40 if IPv6). */
 		u_int iphlen;
-		/* Lenth of the Ethernet header (18 if 802.1q, otherwise 14). */
+		/* Length of the Ethernet header (18 if 802.1q, otherwise 14). */
 		u_int ethhlen;
 		/* Is this a TCP or an UDP GSO packet? */
 		u_int tcp = ((vh->gso_type & ~VIRTIO_NET_HDR_GSO_ECN)
@@ -281,9 +282,11 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				}
 				switch (ethertype) {
 					case 0x0800:  /* IPv4 */
+						ipv4 = 1;
 						iphlen = 20;
 						break;
 					case 0x86DD:  /* IPv6 */
+						ipv4 = 0;
 						iphlen = 40;
 						break;
 					default:
@@ -343,9 +346,9 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				 * fields and compute checksums, in a protocol dependent
 				 * way. */
 				gso_fix_segment(dst + ethhlen, gso_bytes - ethhlen,
+						ipv4, iphlen, tcp,
 						gso_idx, segmented_bytes,
-						src_len == 0 && ft_p + 1 == ft_end,
-						tcp, iphlen);
+						src_len == 0 && ft_p + 1 == ft_end);
 
 				ND("frame %u completed with %d bytes", gso_idx, (int)gso_bytes);
 				dst_slot->len = gso_bytes;
