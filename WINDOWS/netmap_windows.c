@@ -803,7 +803,7 @@ nm_os_vi_persist(const char *name, struct ifnet **ret)
 void
 bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 	struct netmap_vp_adapter *dst_na,
-	struct nm_bdg_fwd *ft_p, struct netmap_ring *ring,
+	const struct nm_bdg_fwd *ft_p, struct netmap_ring *dst_ring,
 	u_int *j, u_int lim, u_int *howmany)
 {
     DbgPrint("bdg_mismatch_datapath unimplemented!!!\n");
