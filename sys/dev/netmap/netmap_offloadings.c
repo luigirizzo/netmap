@@ -246,11 +246,11 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 		/* Payload data bytes segmented so far (e.g. TCP data bytes). */
 		u_int segmented_bytes = 0;
 		/* Is this an IPv4 or IPv6 GSO packet? */
-		u_int ipv4;
+		u_int ipv4 = 0;
 		/* Length of the IP header (20 if IPv4, 40 if IPv6). */
-		u_int iphlen;
+		u_int iphlen = 0;
 		/* Length of the Ethernet header (18 if 802.1q, otherwise 14). */
-		u_int ethhlen;
+		u_int ethhlen = 14;
 		/* Is this a TCP or an UDP GSO packet? */
 		u_int tcp = ((vh->gso_type & ~VIRTIO_NET_HDR_GSO_ECN)
 				== VIRTIO_NET_HDR_GSO_UDP) ? 0 : 1;
@@ -275,7 +275,6 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				/* Look at the 'Ethertype' field to see if this packet
 				 * is IPv4 or IPv6, taking into account VLAN
 				 * encapsulation. */
-				ethhlen = 14;
 				for (;;) {
 					if (src_len < ethhlen) {
 						RD(3, "Short GSO fragment [eth], dropping");
