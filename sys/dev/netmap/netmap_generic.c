@@ -694,9 +694,10 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	kring = &na->rx_rings[rr];
 
 	/* limit the size of the queue */
-	if (unlikely(MBUF_LEN(m) > kring->ring->nr_buf_size)) {
-		/* This may happen when GRO/LRO features
-		 * are enabled for the NIC driver. */
+	if (unlikely(!gna->gro && MBUF_LEN(m) > kring->ring->nr_buf_size)) {
+		/* This may happen when GRO/LRO features are enabled for
+		 * the NIC driver when the generic adapter does not
+		 * support GRO. */
 		RD(5, "Warning: driver pushed up big packet "
 				"(size=%d)", (int)MBUF_LEN(m));
 		m_freem(m);
@@ -900,6 +901,8 @@ generic_netmap_attach(struct ifnet *ifp)
 		netmap_adapter_get(gna->prev);
 	}
 	NM_ATTACH_NA(ifp, na);
+
+	gna->gro = 0;
 
 	ND("Created generic NA %p (prev %p)", gna, gna->prev);
 

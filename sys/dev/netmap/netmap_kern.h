@@ -852,6 +852,9 @@ struct netmap_generic_adapter {	/* emulated device */
 #ifdef linux
         netdev_tx_t (*save_start_xmit)(struct mbuf *, struct ifnet *);
 #endif
+	/* Does the adapter support generic receive offloadings for
+	 * packets pushed up by the driver? */
+	int gro;
 };
 #endif  /* WITH_GENERIC */
 
