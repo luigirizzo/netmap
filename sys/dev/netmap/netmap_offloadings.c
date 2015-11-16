@@ -149,20 +149,22 @@ vnet_hdr_is_bad(struct nm_vnet_hdr *vh)
 void
 bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 		      struct netmap_vp_adapter *dst_na,
-		      struct nm_bdg_fwd *ft_p, struct netmap_ring *ring,
+		      const struct nm_bdg_fwd *ft_p,
+		      struct netmap_ring *dst_ring,
 		      u_int *j, u_int lim, u_int *howmany)
 {
-	struct netmap_slot *slot = NULL;
+	struct netmap_slot *dst_slot = NULL;
 	struct nm_vnet_hdr *vh = NULL;
 	/* Number of source slots to process. */
 	u_int frags = ft_p->ft_frags;
-	struct nm_bdg_fwd *ft_end = ft_p + frags;
+	const struct nm_bdg_fwd *ft_end = ft_p + frags;
 
 	/* Source and destination pointers. */
 	uint8_t *dst, *src;
 	size_t src_len, dst_len;
 
 	u_int j_start = *j;
+	u_int j_cur = j_start;
 	u_int dst_slots = 0;
 
 	/* If the source port uses the offloadings, while destination doesn't,
@@ -182,8 +184,8 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 	/* Init source and dest pointers. */
 	src = ft_p->ft_buf;
 	src_len = ft_p->ft_len;
-	slot = &ring->slot[*j];
-	dst = NMB(&dst_na->up, slot);
+	dst_slot = &dst_ring->slot[j_cur];
+	dst = NMB(&dst_na->up, dst_slot);
 	dst_len = src_len;
 
 	/* We are processing the first input slot and there is a mismatch
@@ -318,16 +320,16 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 						tcp, iphlen);
 
 				ND("frame %u completed with %d bytes", gso_idx, (int)gso_bytes);
-				slot->len = gso_bytes;
-				slot->flags = 0;
+				dst_slot->len = gso_bytes;
+				dst_slot->flags = 0;
 				segmented_bytes += gso_bytes - gso_hdr_len;
 
 				dst_slots++;
 
 				/* Next destination slot. */
-				*j = nm_next(*j, lim);
-				slot = &ring->slot[*j];
-				dst = NMB(&dst_na->up, slot);
+				j_cur = nm_next(j_cur, lim);
+				dst_slot = &dst_ring->slot[j_cur];
+				dst = NMB(&dst_na->up, dst_slot);
 
 				gso_bytes = 0;
 				gso_idx++;
@@ -382,14 +384,14 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 			} else {
 				memcpy(dst, src, (int)src_len);
 			}
-			slot->len = dst_len;
+			dst_slot->len = dst_len;
 
 			dst_slots++;
 
 			/* Next destination slot. */
-			*j = nm_next(*j, lim);
-			slot = &ring->slot[*j];
-			dst = NMB(&dst_na->up, slot);
+			j_cur = nm_next(j_cur, lim);
+			dst_slot = &dst_ring->slot[j_cur];
+			dst = NMB(&dst_na->up, dst_slot);
 
 			/* Next source slot. */
 			ft_p++;
@@ -407,19 +409,20 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 		/* A second pass on the destination slots to set the slot flags,
 		 * using the right number of destination slots.
 		 */
-		while (j_start != *j) {
-			slot = &ring->slot[j_start];
-			slot->flags = (dst_slots << 8)| NS_MOREFRAG;
+		while (j_start != j_cur) {
+			dst_slot = &dst_ring->slot[j_start];
+			dst_slot->flags = (dst_slots << 8)| NS_MOREFRAG;
 			j_start = nm_next(j_start, lim);
 		}
 		/* Clear NS_MOREFRAG flag on last entry. */
-		slot->flags = (dst_slots << 8);
+		dst_slot->flags = (dst_slots << 8);
 	}
 
-	/* Update howmany. */
+	/* Update howmany and j. */
 	if (unlikely(dst_slots > *howmany)) {
 		dst_slots = *howmany;
 		D("Slot allocation error: Should never happen");
 	}
+	*j = j_cur;
 	*howmany -= dst_slots;
 }
