@@ -170,26 +170,29 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 		return;
 	}
 
-	/* If the source port uses the offloadings, while destination doesn't,
-	 * we grab the source virtio-net header and do the offloadings here.
-	 */
-	if (na->virt_hdr_len && !dst_na->virt_hdr_len) {
-		vh = (struct nm_vnet_hdr *)ft_p->ft_buf;
-		/* Initial sanity check on the source virtio-net header. If
-		 * something seems wrong, the virtio-net header will simply
-		 * be ignored. */
-		if (vnet_hdr_is_bad(vh)) {
-			RD(5, "Bad src vnet header");
-			vh = NULL;
-		}
-	}
-
 	/* Init source and dest pointers. */
 	src = ft_p->ft_buf;
 	src_len = ft_p->ft_len;
 	dst_slot = &dst_ring->slot[j_cur];
 	dst = NMB(&dst_na->up, dst_slot);
 	dst_len = src_len;
+
+	/* If the source port uses the offloadings, while destination doesn't,
+	 * we grab the source virtio-net header and do the offloadings here.
+	 */
+	if (na->virt_hdr_len && !dst_na->virt_hdr_len) {
+		vh = (struct nm_vnet_hdr *)src;
+		/* Initial sanity check on the source virtio-net header. If
+		 * something seems wrong, just drop the packet. */
+		if (src_len < na->virt_hdr_len) {
+			RD(3, "Short src vnet header, dropping");
+			return;
+		}
+		if (vnet_hdr_is_bad(vh)) {
+			RD(3, "Bad src vnet header, dropping");
+			return;
+		}
+	}
 
 	/* We are processing the first input slot and there is a mismatch
 	 * between source and destination virt_hdr_len (SHL and DHL).
@@ -259,7 +262,7 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 			if (dst_slots >= *howmany) {
 				/* We still have work to do, but we've run out of
 				 * dst slots, so we have to drop the packet. */
-				RD(5, "Not enough slots, dropping GSO packet");
+				RD(3, "Not enough slots, dropping GSO packet");
 				return;
 			}
 
@@ -274,6 +277,10 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				 * encapsulation. */
 				ethhlen = 14;
 				for (;;) {
+					if (src_len < ethhlen) {
+						RD(3, "Short GSO fragment [eth], dropping");
+						return;
+					}
 					ethertype = be16toh(*((uint16_t *)
 							    (gso_hdr + ethhlen - 2)));
 					if (ethertype != 0x8100) /* not 802.1q */
@@ -284,7 +291,13 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 					case 0x0800:  /* IPv4 */
 					{
 						struct nm_iphdr *iph = (struct nm_iphdr *)
-									&gso_hdr[ethhlen];
+									(gso_hdr + ethhlen);
+
+						if (src_len < ethhlen + 20) {
+							RD(3, "Short GSO fragment "
+							      "[IPv4], dropping");
+							return;
+						}
 						ipv4 = 1;
 						iphlen = 4 * (iph->version_ihl & 0x0F);
 						break;
@@ -300,21 +313,36 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				}
 				ND(3, "type=%04x", ethertype);
 
+				if (src_len < ethhlen + iphlen) {
+					RD(3, "Short GSO fragment [IP], dropping");
+					return;
+				}
+
 				/* Compute gso_hdr_len. For TCP we need to read the
 				 * content of the 'Data Offset' field.
 				 */
 				if (tcp) {
-					struct nm_tcphdr *tcph =
-						(struct nm_tcphdr *)&gso_hdr[ethhlen+iphlen];
+					struct nm_tcphdr *tcph = (struct nm_tcphdr *)
+								(gso_hdr + ethhlen + iphlen);
 
+					if (src_len < ethhlen + iphlen + 20) {
+						RD(3, "Short GSO fragment "
+								"[TCP], dropping");
+						return;
+					}
 					gso_hdr_len = ethhlen + iphlen +
 						      4 * (tcph->doff >> 4);
 				} else {
 					gso_hdr_len = ethhlen + iphlen + 8; /* UDP */
 				}
 
+				if (src_len < gso_hdr_len) {
+					RD(3, "Short GSO fragment [TCP/UDP], dropping");
+					return;
+				}
+
 				ND(3, "gso_hdr_len %u gso_mtu %d", gso_hdr_len,
-								dst_na->mfs);
+								   dst_na->mfs);
 
 				/* Advance source pointers. */
 				src += gso_hdr_len;
@@ -451,7 +479,8 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 		dst_slot->flags = (dst_slots << 8);
 	}
 
-	/* Update howmany and j. */
+	/* Update howmany and j. This is to commit the use of
+	 * those slots in the destination ring. */
 	if (unlikely(dst_slots > *howmany)) {
 		D("Slot allocation error: This is a bug");
 	}
