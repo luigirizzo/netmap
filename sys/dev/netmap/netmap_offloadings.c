@@ -63,22 +63,22 @@
 /* This routine is called by bdg_mismatch_datapath() when it finishes
  * accumulating bytes for a segment, in order to fix some fields in the
  * segment headers (which still contain the same content as the header
- * of the original GSO packet). 'buf' points to the beginning (e.g.
- * the ethernet header) of the segment, and 'len' is its length.
+ * of the original GSO packet). 'pkt' points to the beginning of the IP
+ * header of the segment, while 'len' is the length of the IP packet.
  */
 static void
-gso_fix_segment(uint8_t *buf, size_t len, u_int idx,
+gso_fix_segment(uint8_t *pkt, size_t len, u_int idx,
 		u_int segmented_bytes, u_int last_segment,
 		u_int tcp, u_int iphlen)
 {
-	struct nm_iphdr *iph = (struct nm_iphdr *)(buf + 14);
-	struct nm_ipv6hdr *ip6h = (struct nm_ipv6hdr *)(buf + 14);
+	struct nm_iphdr *iph = (struct nm_iphdr *)(pkt);
+	struct nm_ipv6hdr *ip6h = (struct nm_ipv6hdr *)(pkt);
 	uint16_t *check = NULL;
 	uint8_t *check_data = NULL;
 
 	if (iphlen == 20) {
 		/* Set the IPv4 "Total Length" field. */
-		iph->tot_len = htobe16(len-14);
+		iph->tot_len = htobe16(len);
 		ND("ip total length %u", be16toh(ip->tot_len));
 
 		/* Set the IPv4 "Identification" field. */
@@ -91,11 +91,11 @@ gso_fix_segment(uint8_t *buf, size_t len, u_int idx,
 		ND("IP csum %x", be16toh(iph->check));
 	} else {/* if (iphlen == 40) */
 		/* Set the IPv6 "Payload Len" field. */
-		ip6h->payload_len = htobe16(len-14-iphlen);
+		ip6h->payload_len = htobe16(len-iphlen);
 	}
 
 	if (tcp) {
-		struct nm_tcphdr *tcph = (struct nm_tcphdr *)(buf + 14 + iphlen);
+		struct nm_tcphdr *tcph = (struct nm_tcphdr *)(pkt + iphlen);
 
 		/* Set the TCP sequence number. */
 		tcph->seq = htobe32(be32toh(tcph->seq) + segmented_bytes);
@@ -110,10 +110,10 @@ gso_fix_segment(uint8_t *buf, size_t len, u_int idx,
 		check = &tcph->check;
 		check_data = (uint8_t *)tcph;
 	} else { /* UDP */
-		struct nm_udphdr *udph = (struct nm_udphdr *)(buf + 14 + iphlen);
+		struct nm_udphdr *udph = (struct nm_udphdr *)(pkt + iphlen);
 
 		/* Set the UDP 'Length' field. */
-		udph->len = htobe16(len-14-iphlen);
+		udph->len = htobe16(len-iphlen);
 
 		check = &udph->check;
 		check_data = (uint8_t *)udph;
@@ -122,9 +122,9 @@ gso_fix_segment(uint8_t *buf, size_t len, u_int idx,
 	/* Compute and insert TCP/UDP checksum. */
 	*check = 0;
 	if (iphlen == 20)
-		nm_os_csum_tcpudp_ipv4(iph, check_data, len-14-iphlen, check);
+		nm_os_csum_tcpudp_ipv4(iph, check_data, len-iphlen, check);
 	else
-		nm_os_csum_tcpudp_ipv6(ip6h, check_data, len-14-iphlen, check);
+		nm_os_csum_tcpudp_ipv6(ip6h, check_data, len-iphlen, check);
 
 	ND("TCP/UDP csum %x", be16toh(*check));
 }
@@ -244,7 +244,9 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 		/* Payload data bytes segmented so far (e.g. TCP data bytes). */
 		u_int segmented_bytes = 0;
 		/* Length of the IP header (20 if IPv4, 40 if IPv6). */
-		u_int iphlen = 0;
+		u_int iphlen;
+		/* Lenth of the Ethernet header (18 if 802.1q, otherwise 14). */
+		u_int ethhlen;
 		/* Is this a TCP or an UDP GSO packet? */
 		u_int tcp = ((vh->gso_type & ~VIRTIO_NET_HDR_GSO_ECN)
 				== VIRTIO_NET_HDR_GSO_UDP) ? 0 : 1;
@@ -267,13 +269,28 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				gso_hdr = src;
 
 				/* Look at the 'Ethertype' field to see if this packet
-				 * is IPv4 or IPv6.
-				 */
-				ethertype = be16toh(*((uint16_t *)(gso_hdr  + 12)));
-				if (ethertype == 0x0800)
-					iphlen = 20;
-				else /* if (ethertype == 0x86DD) */
-					iphlen = 40;
+				 * is IPv4 or IPv6, taking into account VLAN
+				 * encapsulation. */
+				ethhlen = 14;
+				for (;;) {
+					ethertype = be16toh(*((uint16_t *)
+							    (gso_hdr + ethhlen - 2)));
+					if (ethertype != 0x8100) /* not 802.1q */
+						break;
+					ethhlen += 4;
+				}
+				switch (ethertype) {
+					case 0x0800:  /* IPv4 */
+						iphlen = 20;
+						break;
+					case 0x86DD:  /* IPv6 */
+						iphlen = 40;
+						break;
+					default:
+						RD(3, "Unsupported ethertype, "
+						      "dropping GSO packet");
+						return;
+				}
 				ND(3, "type=%04x", ethertype);
 
 				/* Compute gso_hdr_len. For TCP we need to read the
@@ -281,11 +298,12 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				 */
 				if (tcp) {
 					struct nm_tcphdr *tcph =
-						(struct nm_tcphdr *)&gso_hdr[14+iphlen];
+						(struct nm_tcphdr *)&gso_hdr[ethhlen+iphlen];
 
-					gso_hdr_len = 14 + iphlen + 4*(tcph->doff >> 4);
-				} else
-					gso_hdr_len = 14 + iphlen + 8; /* UDP */
+					gso_hdr_len = ethhlen + iphlen + 4*(tcph->doff >> 4);
+				} else {
+					gso_hdr_len = ethhlen + iphlen + 8; /* UDP */
+				}
 
 				ND(3, "gso_hdr_len %u gso_mtu %d", gso_hdr_len,
 								dst_na->mfs);
@@ -324,8 +342,8 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				/* After raw segmentation, we must fix some header
 				 * fields and compute checksums, in a protocol dependent
 				 * way. */
-				gso_fix_segment(dst, gso_bytes, gso_idx,
-						segmented_bytes,
+				gso_fix_segment(dst + ethhlen, gso_bytes - ethhlen,
+						gso_idx, segmented_bytes,
 						src_len == 0 && ft_p + 1 == ft_end,
 						tcp, iphlen);
 
