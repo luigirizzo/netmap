@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Vincenzo Maffione. All rights reserved.
+ * Copyright (C) 2014-2015 Vincenzo Maffione. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -155,17 +155,21 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 {
 	struct netmap_slot *dst_slot = NULL;
 	struct nm_vnet_hdr *vh = NULL;
-	/* Number of source slots to process. */
-	u_int frags = ft_p->ft_frags;
-	const struct nm_bdg_fwd *ft_end = ft_p + frags;
+	const struct nm_bdg_fwd *ft_end = ft_p + ft_p->ft_frags;
 
 	/* Source and destination pointers. */
 	uint8_t *dst, *src;
 	size_t src_len, dst_len;
 
+	/* Indices and counters for the destination ring. */
 	u_int j_start = *j;
 	u_int j_cur = j_start;
 	u_int dst_slots = 0;
+
+	if (unlikely(ft_p == ft_end)) {
+		RD(3, "No source slots to process");
+		return;
+	}
 
 	/* If the source port uses the offloadings, while destination doesn't,
 	 * we grab the source virtio-net header and do the offloadings here.
@@ -246,8 +250,15 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				== VIRTIO_NET_HDR_GSO_UDP) ? 0 : 1;
 
 		/* Segment the GSO packet contained into the input slots (frags). */
-		while (ft_p != ft_end) {
+		for (;;) {
 			size_t copy;
+
+			if (dst_slots >= *howmany) {
+				/* We still have work to do, but we've run out of
+				 * dst slots, so we have to drop the packet. */
+				RD(5, "Not enough slots, dropping GSO packet");
+				return;
+			}
 
 			/* Grab the GSO header if we don't have it. */
 			if (!gso_hdr) {
@@ -288,7 +299,6 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 						break;
 					src = ft_p->ft_buf;
 					src_len = ft_p->ft_len;
-					continue;
 				}
 			}
 
@@ -322,17 +332,16 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				ND("frame %u completed with %d bytes", gso_idx, (int)gso_bytes);
 				dst_slot->len = gso_bytes;
 				dst_slot->flags = 0;
+				dst_slots++;
 				segmented_bytes += gso_bytes - gso_hdr_len;
 
-				dst_slots++;
+				gso_bytes = 0;
+				gso_idx++;
 
 				/* Next destination slot. */
 				j_cur = nm_next(j_cur, lim);
 				dst_slot = &dst_ring->slot[j_cur];
 				dst = NMB(&dst_na->up, dst_slot);
-
-				gso_bytes = 0;
-				gso_idx++;
 			}
 
 			/* Next input slot. */
@@ -385,7 +394,6 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 				memcpy(dst, src, (int)src_len);
 			}
 			dst_slot->len = dst_len;
-
 			dst_slots++;
 
 			/* Next destination slot. */
@@ -397,7 +405,6 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 			ft_p++;
 			src = ft_p->ft_buf;
 			dst_len = src_len = ft_p->ft_len;
-
 		}
 
 		/* Finalize (fold) the checksum if needed. */
@@ -420,8 +427,7 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 
 	/* Update howmany and j. */
 	if (unlikely(dst_slots > *howmany)) {
-		dst_slots = *howmany;
-		D("Slot allocation error: Should never happen");
+		D("Slot allocation error: This is a bug");
 	}
 	*j = j_cur;
 	*howmany -= dst_slots;
