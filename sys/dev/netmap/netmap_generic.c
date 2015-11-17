@@ -754,8 +754,12 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		 * slot before nr_hwcur (not including it)
 		 */
 		uint16_t slot_flags = kring->nkr_slot_flags;
-		int avail; /* in bytes */
 		u_int nm_buf_len = ring->nr_buf_size;
+		struct mbq tmpq;
+		struct mbuf *m;
+		int avail; /* in bytes */
+		int mlen;
+		int copy;
 
 		nm_i = kring->nr_hwtail; /* first empty slot in the receive ring */
 
@@ -764,44 +768,28 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 			avail += lim + 1;
 		avail *= nm_buf_len;
 
+		mbq_init(&tmpq);
+		mbq_lock(&kring->rx_queue);
 		for (n = 0;; n++) {
-			struct mbuf *m;
-			void *nmaddr;
-			int mlen;
-			int ofs = 0;
-			int copy;
-
-			/*
-			 * Call the locked version of the function.
-			 * XXX Ideally we could grab a batch of mbufs at once
-			 * and save some locking overhead.
-			 */
-			m = mbq_safe_dequeue(&kring->rx_queue);
-			if (!m)	{
+			m = mbq_peek(&kring->rx_queue);
+			if (!m) {
 				/* No more packets from the driver. */
 				break;
 			}
 
 			mlen = MBUF_LEN(m);
 			if (mlen > avail) {
-				/* Not enough space in the ring. */
+				/* No more space in the ring. */
 				break;
 			}
 
-			while (mlen) {
-				nmaddr = NMB(na, &ring->slot[nm_i]);
-				/* We only check the address here on generic rx rings. */
-				if (nmaddr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
-					m_freem(m);
-					return netmap_ring_reinit(kring);
-				}
+			mbq_dequeue(&kring->rx_queue);
 
+			while (mlen) {
 				copy = nm_buf_len;
 				if (mlen < copy) {
 					copy = mlen;
 				}
-				m_copydata(m, ofs, copy, nmaddr);
-				ofs += copy;
 				mlen -= copy;
 				avail -= nm_buf_len;
 
@@ -810,8 +798,44 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 				nm_i = nm_next(nm_i, lim);
 			}
 
+			mbq_enqueue(&tmpq, m);
+		}
+		mbq_unlock(&kring->rx_queue);
+
+		nm_i = kring->nr_hwtail;
+
+		for (;;) {
+			void *nmaddr;
+			int ofs = 0;
+			int morefrag;
+
+			m = mbq_dequeue(&tmpq);
+			if (!m)	{
+				break;
+			}
+
+			do {
+				nmaddr = NMB(na, &ring->slot[nm_i]);
+				/* We only check the address here on generic rx rings. */
+				if (nmaddr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
+					m_freem(m);
+					mbq_purge(&tmpq);
+					mbq_fini(&tmpq);
+					return netmap_ring_reinit(kring);
+				}
+
+				copy = ring->slot[nm_i].len;
+				m_copydata(m, ofs, copy, nmaddr);
+				ofs += copy;
+				morefrag = ring->slot[nm_i].flags & NS_MOREFRAG;
+				nm_i = nm_next(nm_i, lim);
+			} while (morefrag);
+
 			m_freem(m);
 		}
+
+		mbq_fini(&tmpq);
+
 		if (n) {
 			kring->nr_hwtail = nm_i;
 			IFRATE(rate_ctx.new.rxpkt += n);

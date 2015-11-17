@@ -125,7 +125,6 @@ struct mbuf *mbq_dequeue(struct mbq *q)
     return __mbq_dequeue(q);
 }
 
-
 /* XXX seems pointless to have a generic purge */
 static void __mbq_purge(struct mbq *q, int safe)
 {

@@ -63,6 +63,12 @@ void mbq_enqueue(struct mbq *q, struct mbuf *m);
 struct mbuf *mbq_dequeue(struct mbq *q);
 void mbq_purge(struct mbq *q);
 
+static inline struct mbuf *
+mbq_peek(struct mbq *q)
+{
+	return q->head ? q->head : NULL;
+}
+
 static inline void
 mbq_lock(struct mbq *q)
 {
