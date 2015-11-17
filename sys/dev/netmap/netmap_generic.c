@@ -747,7 +747,23 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		return netmap_ring_reinit(kring);
 
 	/*
-	 * First part: import newly received packets.
+	 * First part: skip past packets that userspace has released.
+	 * This can possibly make room for the second part.
+	 */
+	nm_i = kring->nr_hwcur;
+	if (nm_i != head) {
+		/* Userspace has released some packets. */
+		for (n = 0; nm_i != head; n++) {
+			struct netmap_slot *slot = &ring->slot[nm_i];
+
+			slot->flags &= ~NS_BUF_CHANGED;
+			nm_i = nm_next(nm_i, lim);
+		}
+		kring->nr_hwcur = head;
+	}
+
+	/*
+	 * Second part: import newly received packets.
 	 */
 	if (netmap_no_pendintr || force_update) {
 		/* extract buffers from the rx queue, stop at most one
@@ -843,21 +859,6 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
 
-	// XXX should we invert the order ?
-	/*
-	 * Second part: skip past packets that userspace has released.
-	 */
-	nm_i = kring->nr_hwcur;
-	if (nm_i != head) {
-		/* Userspace has released some packets. */
-		for (n = 0; nm_i != head; n++) {
-			struct netmap_slot *slot = &ring->slot[nm_i];
-
-			slot->flags &= ~NS_BUF_CHANGED;
-			nm_i = nm_next(nm_i, lim);
-		}
-		kring->nr_hwcur = head;
-	}
 	IFRATE(rate_ctx.new.rxsync++);
 
 	return 0;
