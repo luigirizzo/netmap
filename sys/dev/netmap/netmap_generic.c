@@ -792,6 +792,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 				nmaddr = NMB(na, &ring->slot[nm_i]);
 				/* We only check the address here on generic rx rings. */
 				if (nmaddr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
+					m_freem(m);
 					return netmap_ring_reinit(kring);
 				}
 
