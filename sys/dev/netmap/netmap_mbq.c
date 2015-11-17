@@ -154,12 +154,12 @@ void mbq_safe_purge(struct mbq *q)
 }
 
 
-void mbq_safe_destroy(struct mbq *q)
+void mbq_safe_fini(struct mbq *q)
 {
     mtx_destroy(&q->lock);
 }
 
 
-void mbq_destroy(struct mbq *q)
+void mbq_fini(struct mbq *q)
 {
 }

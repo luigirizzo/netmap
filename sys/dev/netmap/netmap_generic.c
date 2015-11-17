@@ -359,7 +359,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		/* Free the mbufs going to the netmap rings */
 		for (r=0; r<na->num_rx_rings; r++) {
 			mbq_safe_purge(&na->rx_rings[r].rx_queue);
-			mbq_safe_destroy(&na->rx_rings[r].rx_queue);
+			mbq_safe_fini(&na->rx_rings[r].rx_queue);
 		}
 
 		for (r=0; r<na->num_rx_rings; r++)
@@ -404,7 +404,7 @@ free_tx_pools:
 	}
 	for (r=0; r<na->num_rx_rings; r++) {
 		nm_os_mitigation_cleanup(&gna->mit[r]);
-		mbq_safe_destroy(&na->rx_rings[r].rx_queue);
+		mbq_safe_fini(&na->rx_rings[r].rx_queue);
 	}
 	free(gna->mit, M_DEVBUF);
 out:
