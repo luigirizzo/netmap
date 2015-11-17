@@ -5,6 +5,7 @@ COMMIT ORDER:
   + commit and push on gitlab:master
   + checkout github:master
   + merge from gitlab:master
+  + remove any file in private (git rm private/*)
   + commit and push on github:master
 
 The files in this directory should not go into github.
