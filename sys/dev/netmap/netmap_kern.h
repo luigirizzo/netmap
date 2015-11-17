@@ -852,9 +852,9 @@ struct netmap_generic_adapter {	/* emulated device */
 #ifdef linux
         netdev_tx_t (*save_start_xmit)(struct mbuf *, struct ifnet *);
 #endif
-	/* Does the adapter support generic receive offloadings for
-	 * packets pushed up by the driver? */
-	int gro;
+	/* Is the adapter able to use multiple RX slots to scatter
+	 * each packet pushed up by the driver? */
+	int rxsg;
 };
 #endif  /* WITH_GENERIC */
 
@@ -1745,7 +1745,7 @@ struct nm_os_gen_arg {
 int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
-int nm_os_generic_gro_supported(void);
+int nm_os_generic_rxsg_supported(void);
 
 static inline struct ifnet*
 netmap_generic_getifp(struct netmap_generic_adapter *gna)

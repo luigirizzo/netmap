@@ -694,7 +694,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	kring = &na->rx_rings[rr];
 
 	/* limit the size of the queue */
-	if (unlikely(!gna->gro && MBUF_LEN(m) > kring->ring->nr_buf_size)) {
+	if (unlikely(!gna->rxsg && MBUF_LEN(m) > kring->ring->nr_buf_size)) {
 		/* This may happen when GRO/LRO features are enabled for
 		 * the NIC driver when the generic adapter does not
 		 * support GRO. */
@@ -957,7 +957,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	}
 	NM_ATTACH_NA(ifp, na);
 
-	gna->gro = nm_os_generic_gro_supported();
+	gna->rxsg = nm_os_generic_rxsg_supported();
 
 	ND("Created generic NA %p (prev %p)", gna, gna->prev);
 

@@ -334,7 +334,7 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 }
 
 int
-nm_os_generic_gro_supported(void)
+nm_os_generic_rxsg_supported(void)
 {
 	return 0; /* No support for now. */
 }
