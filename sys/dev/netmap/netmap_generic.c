@@ -751,35 +751,65 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	if (netmap_no_pendintr || force_update) {
 		/* extract buffers from the rx queue, stop at most one
-		 * slot before nr_hwcur (stop_i)
+		 * slot before nr_hwcur (not including it)
 		 */
 		uint16_t slot_flags = kring->nkr_slot_flags;
-		u_int stop_i = nm_prev(kring->nr_hwcur, lim);
+		u_int avail; /* in bytes */
+		u_int nm_buf_len = ring->nr_buf_size;
 
 		nm_i = kring->nr_hwtail; /* first empty slot in the receive ring */
-		for (n = 0; nm_i != stop_i; n++) {
-			int len;
-			void *addr = NMB(na, &ring->slot[nm_i]);
-			struct mbuf *m;
 
-			/* we only check the address here on generic rx rings */
-			if (addr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
-				return netmap_ring_reinit(kring);
-			}
+		avail = nm_prev(kring->nr_hwcur, lim) - nm_i;
+		if (avail < 0)
+			avail += lim + 1;
+		avail *= nm_buf_len;
+
+		for (n = 0;; n++) {
+			struct mbuf *m;
+			void *nmaddr;
+			int mlen;
+			int ofs = 0;
+			int copy;
+
 			/*
 			 * Call the locked version of the function.
 			 * XXX Ideally we could grab a batch of mbufs at once
 			 * and save some locking overhead.
 			 */
 			m = mbq_safe_dequeue(&kring->rx_queue);
-			if (!m)	/* no more data */
+			if (!m)	{
+				/* No more packets from the driver. */
 				break;
-			len = MBUF_LEN(m);
-			m_copydata(m, 0, len, addr);
-			ring->slot[nm_i].len = len;
-			ring->slot[nm_i].flags = slot_flags;
+			}
+
+			mlen = MBUF_LEN(m);
+			if (mlen > avail) {
+				/* Not enough space in the ring. */
+				break;
+			}
+
+			while (mlen) {
+				nmaddr = NMB(na, &ring->slot[nm_i]);
+				/* We only check the address here on generic rx rings. */
+				if (nmaddr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
+					return netmap_ring_reinit(kring);
+				}
+
+				copy = nm_buf_len;
+				if (mlen < copy) {
+					copy = mlen;
+				}
+				m_copydata(m, ofs, copy, nmaddr);
+				ofs += copy;
+				mlen -= copy;
+				avail -= nm_buf_len;
+
+				ring->slot[nm_i].len = copy;
+				ring->slot[nm_i].flags = slot_flags | (mlen ? NS_MOREFRAG : 0);
+				nm_i = nm_next(nm_i, lim);
+			}
+
 			m_freem(m);
-			nm_i = nm_next(nm_i, lim);
 		}
 		if (n) {
 			kring->nr_hwtail = nm_i;
