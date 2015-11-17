@@ -1,4 +1,17 @@
-NOTE - THIS FILE IS PROBABLY OUTDATED
+--- IMPORTANT DEVELOPMENT NOTES FOR NETMAP ---
+
+COMMIT ORDER:
+- when producing code that must go upstream follow this sequence:
+  + commit and push on gitlab:master
+  + checkout github:master
+  + merge from gitlab:master
+  + commit and push on github:master
+
+The files in this directory should not go into github.
+
+===============
+
+OLDER NOTES
 
 20140128 -- generic on FreeBSD panics on lo0 when doing output
 
