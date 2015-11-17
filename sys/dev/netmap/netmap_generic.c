@@ -754,7 +754,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		 * slot before nr_hwcur (not including it)
 		 */
 		uint16_t slot_flags = kring->nkr_slot_flags;
-		u_int avail; /* in bytes */
+		int avail; /* in bytes */
 		u_int nm_buf_len = ring->nr_buf_size;
 
 		nm_i = kring->nr_hwtail; /* first empty slot in the receive ring */
