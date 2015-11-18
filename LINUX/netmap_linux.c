@@ -393,7 +393,7 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *attr)
 	qdisc->limit = 1024; /* qdisc_dev(qdisc)->tx_queue_len */
 	/* qdisc->flags |= TCQ_F_CAN_BYPASS; */
 
-	D("Generic qdisc initialized with max_len = %u", qdisc->limit);
+	D("Qdisc initialized with max_len = %u", qdisc->limit);
 
 	return 0;
 }
@@ -406,11 +406,9 @@ generic_qdisc_reset(struct Qdisc *qdisc)
 		return;
 	}
 
-	__qdisc_reset_queue(qdisc, &qdisc->q);
-	qdisc->qstats.backlog = 0;
-	qdisc->q.qlen = 0;
+	qdisc_reset_queue(qdisc);
 
-	D("generic qdisc reset");
+	D("Qdisc reset");
 }
 
 static int
@@ -432,7 +430,7 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 		/* or qdisc_reshape_fail() ? */
 	}
 
-	D("enqueuing mbuf, curr len %u", qdisc_qlen(qdisc));
+	D("Enqueuing mbuf, curr len %u", qdisc_qlen(qdisc));
 
 	return qdisc_enqueue_tail(m, qdisc);
 }
@@ -445,7 +443,7 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 		return NULL;
 	}
 
-	D("dequeuing mbuf, curr len %u", qdisc_qlen(qdisc));
+	D("Dequeuing mbuf, curr len %u", qdisc_qlen(qdisc));
 
 	return qdisc_dequeue_head(qdisc);
 }
