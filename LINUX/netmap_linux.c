@@ -390,7 +390,8 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *attr)
 		priv->unused = attr->nla_len;
 	}
 	skb_queue_head_init(&qdisc->q);
-	qdisc->limit = 1024;
+	qdisc->limit = 1024; /* qdisc_dev(qdisc)->tx_queue_len */
+	/* qdisc->flags |= TCQ_F_CAN_BYPASS; */
 
 	D("generic qdisc initialized with max_len = %u", qdisc->limit);
 
@@ -428,11 +429,12 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 	if (unlikely(qdisc_qlen(qdisc) >= qdisc->limit)) {
 		D("dropping mbuf, curr len %u", qdisc_qlen(qdisc));
 		return qdisc_drop(m, qdisc);
+		/* or qdisc_reshape_fail() ? */
 	}
 
 	D("enqueuing mbuf, curr len %u", qdisc_qlen(qdisc));
 
-	return __qdisc_enqueue_tail(m, qdisc, &qdisc->q);
+	return qdisc_enqueue_tail(m, qdisc);
 }
 
 static struct mbuf *
@@ -443,14 +445,9 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 		return NULL;
 	}
 
-	if (qdisc_qlen(qdisc) == 0) {
-		D("empty queue");
-		return NULL;
-	}
-
 	D("dequeuing mbuf, curr len %u", qdisc_qlen(qdisc));
 
-	return __qdisc_dequeue_head(qdisc, &qdisc->q);
+	return qdisc_dequeue_head(qdisc);
 }
 
 static struct mbuf *
@@ -466,6 +463,14 @@ generic_qdisc_peek(struct Qdisc *qdisc)
 	return skb_peek(&qdisc->q);
 }
 
+static unsigned int
+generic_qdisc_drop(struct Qdisc *qdisc)
+{
+	D("Dropping on purpose");
+
+	return qdisc_queue_drop(qdisc);
+}
+
 static struct Qdisc_ops
 generic_qdisc_ops __read_mostly = {
 	.id		= "netmap_generic",
@@ -475,6 +480,7 @@ generic_qdisc_ops __read_mostly = {
 	.enqueue	= generic_qdisc_enqueue,
 	.dequeue	= generic_qdisc_dequeue,
 	.peek		= generic_qdisc_peek,
+	.drop		= generic_qdisc_drop,
 	.dump		= NULL,
 	.owner		= THIS_MODULE,
 };
