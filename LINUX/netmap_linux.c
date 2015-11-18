@@ -32,6 +32,8 @@
 #include <dev/netmap/netmap_virt.h>
 #include <linux/rtnetlink.h>
 #include <linux/nsproxy.h>
+#include <net/pkt_sched.h>
+#include <net/sch_generic.h>
 
 #include "netmap_linux_config.h"
 
@@ -369,39 +371,224 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
     return linux_netmap_start_xmit(m, ifp);
 }
 
+struct nm_generic_qdisc {
+	unsigned int max_len;
+};
+
+static int
+generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *attr)
+{
+	struct nm_generic_qdisc *priv = NULL;
+
+	if (!qdisc) {
+		D("NULL qdisc");
+		return -1;
+	}
+
+	if (attr) {
+		priv = qdisc_priv(qdisc);
+		priv->max_len = attr->nla_len;
+	}
+	skb_queue_head_init(&qdisc->q);
+
+	D("generic qdisc initialized with max_len = %u", priv->max_len);
+
+	return 0;
+}
+
+static void
+generic_qdisc_reset(struct Qdisc *qdisc)
+{
+	if (!qdisc) {
+		D("NULL qdisc");
+		return;
+	}
+
+	__qdisc_reset_queue(qdisc, &qdisc->q);
+	qdisc->qstats.backlog = 0;
+	qdisc->q.qlen = 0;
+
+	D("generic qdisc reset");
+}
+
+static int
+generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
+{
+	struct nm_generic_qdisc *priv;
+
+	if (!m) {
+		D("NULL mbuf");
+		return -1;
+	}
+
+	if (!qdisc) {
+		D("NULL qdisc");
+		return -1;
+	}
+
+	priv = qdisc_priv(qdisc);
+
+	if (unlikely(qdisc_qlen(qdisc) >= priv->max_len)) {
+		D("dropping mbuf, curr len %u", qdisc_qlen(qdisc));
+		return qdisc_drop(m, qdisc);
+	}
+
+	D("enqueuing mbuf, curr len %u", qdisc_qlen(qdisc));
+
+	return __qdisc_enqueue_tail(m, qdisc, &qdisc->q);
+}
+
+static struct mbuf *
+generic_qdisc_dequeue(struct Qdisc *qdisc)
+{
+	if (!qdisc) {
+		D("NULL qdisc");
+		return NULL;
+	}
+
+	if (qdisc_qlen(qdisc) == 0) {
+		D("empty queue");
+		return NULL;
+	}
+
+	D("dequeuing mbuf, curr len %u", qdisc_qlen(qdisc));
+
+	return __qdisc_dequeue_head(qdisc, &qdisc->q);
+}
+
+static struct mbuf *
+generic_qdisc_peek(struct Qdisc *qdisc)
+{
+	if (!qdisc) {
+		D("NULL qdisc");
+		return NULL;
+	}
+
+	D("Peeking queue, curr len %u", qdisc_qlen(qdisc));
+
+	return skb_peek(&qdisc->q);
+}
+
+static struct Qdisc_ops
+generic_qdisc_ops __read_mostly = {
+	.id		= "netmap_generic",
+	.priv_size	= sizeof(struct nm_generic_qdisc),
+	.init		= generic_qdisc_init,
+	.reset		= generic_qdisc_reset,
+	.enqueue	= generic_qdisc_enqueue,
+	.dequeue	= generic_qdisc_dequeue,
+	.peek		= generic_qdisc_peek,
+	.dump		= NULL,
+	.owner		= THIS_MODULE,
+};
+
 /* Must be called under rtnl. */
 int
 nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 {
-    struct netmap_adapter *na = &gna->up.up;
-    struct ifnet *ifp = netmap_generic_getifp(gna);
+	struct netmap_adapter *na = &gna->up.up;
+	struct ifnet *ifp = netmap_generic_getifp(gna);
+	struct netdev_queue *txq;
+	int i;
 
-    if (intercept) {
-        /*
-         * Save the old pointer to the netdev_ops,
-         * create an updated netdev ops replacing the
-         * ndo_select_queue() and ndo_start_xmit() methods
-         * with our custom ones, and make the driver use it.
-         */
-        na->if_transmit = (void *)ifp->netdev_ops;
-        /* Save a redundant copy of ndo_start_xmit(). */
-        gna->save_start_xmit = ifp->netdev_ops->ndo_start_xmit;
+	if (intercept) {
+		/* Replace the current qdiscs with our own. */
+		for (i = 0; i < ifp->real_num_tx_queues; i++) {
+			struct Qdisc *nqdisc;
+			struct Qdisc *oqdisc;
+			struct nlattr attr = {
+				.nla_len = 1024,
+				.nla_type = 0,
+			};
+			int err;
 
-        gna->generic_ndo = *ifp->netdev_ops;  /* Copy all */
-        gna->generic_ndo.ndo_start_xmit = &generic_ndo_start_xmit;
+			txq = netdev_get_tx_queue(ifp, i);
+			/* This takes a refcount to netmap module, alloc the
+			 * qdisc and calls the init() op with NULL attr. */
+			nqdisc = qdisc_create_dflt(txq, &generic_qdisc_ops, 0);
+			if (!nqdisc) {
+				D("Failed to create qdisc");
+				goto qdisc_create;
+			}
+
+			/* Call the init() op again passing a valid attr. */
+			err = generic_qdisc_init(nqdisc, &attr);
+			if (err) {
+				D("Failed to init qdisc");
+				goto qdisc_create;
+			}
+
+			oqdisc = dev_graft_qdisc(txq, nqdisc);
+			if (oqdisc && oqdisc != &noop_qdisc) {
+				qdisc_destroy(oqdisc);
+			}
+		}
+
+		if (ifp->flags & IFF_UP) {
+			dev_deactivate(ifp);
+		}
+
+		txq = netdev_get_tx_queue(ifp, 0);
+		ifp->qdisc = txq->qdisc_sleeping;
+		atomic_inc(&ifp->qdisc->refcnt);
+
+		if (ifp->flags & IFF_UP) {
+			dev_activate(ifp);
+		}
+
+		/*
+		 * Save the old pointer to the netdev_ops,
+		 * create an updated netdev ops replacing the
+		 * ndo_select_queue() and ndo_start_xmit() methods
+		 * with our custom ones, and make the driver use it.
+		 */
+		na->if_transmit = (void *)ifp->netdev_ops;
+		/* Save a redundant copy of ndo_start_xmit(). */
+		gna->save_start_xmit = ifp->netdev_ops->ndo_start_xmit;
+
+		gna->generic_ndo = *ifp->netdev_ops;  /* Copy all */
+		gna->generic_ndo.ndo_start_xmit = &generic_ndo_start_xmit;
 #ifndef NETMAP_LINUX_SELECT_QUEUE
-	printk("%s: no packet steering support\n", __FUNCTION__);
+		D("No packet steering support");
 #else
-        gna->generic_ndo.ndo_select_queue = &generic_ndo_select_queue;
+		gna->generic_ndo.ndo_select_queue = &generic_ndo_select_queue;
 #endif
 
-        ifp->netdev_ops = &gna->generic_ndo;
-    } else {
-	/* Restore the original netdev_ops. */
-        ifp->netdev_ops = (void *)na->if_transmit;
-    }
+		ifp->netdev_ops = &gna->generic_ndo;
 
-    return 0;
+	} else {
+		/* Restore the original netdev_ops. */
+		ifp->netdev_ops = (void *)na->if_transmit;
+
+		/* Restore the original qdiscs. */
+		if (ifp->flags & IFF_UP) {
+			dev_deactivate(ifp);
+		}
+
+		for (i = 0; i < ifp->real_num_tx_queues; i++) {
+			struct Qdisc *qdisc;
+
+			txq = netdev_get_tx_queue(ifp, i);
+			qdisc = txq->qdisc_sleeping;
+			if (!qdisc) {
+				continue;
+			}
+
+			rcu_assign_pointer(txq->qdisc, &noop_qdisc);
+			txq->qdisc_sleeping = &noop_qdisc;
+			qdisc_destroy(qdisc);
+		}
+		ifp->qdisc = &noop_qdisc;
+
+		if (ifp->flags & IFF_UP) {
+			dev_activate(ifp);
+		}
+	}
+
+	return 0;
+
+qdisc_create:
+	return -1;
 }
 
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
