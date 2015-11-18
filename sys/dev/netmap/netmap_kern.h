@@ -1720,9 +1720,8 @@ struct netmap_monitor_adapter {
 int generic_netmap_attach(struct ifnet *ifp);
 void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 
-int nm_os_catch_rx(struct netmap_generic_adapter *na, int intercept);
-/* XXX why the type/argument name disparity with netmap_catch_rx ? */
-void nm_os_catch_tx(struct netmap_generic_adapter *na, int enable);
+int nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept);
+int nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept);
 
 /*
  * the generic transmit routine is passed a structure to optionally

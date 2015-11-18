@@ -313,19 +313,26 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 				na->tx_rings[r].tx_pool[i] = m;
 			}
 		}
+
 		rtnl_lock();
+
 		/* Prepare to intercept incoming traffic. */
 		error = nm_os_catch_rx(gna, 1);
 		if (error) {
-			D("netdev_rx_handler_register() failed (%d)", error);
+			D("nm_os_catch_rx(1) failed (%d)", error);
 			goto register_handler;
 		}
-		na->na_flags |= NAF_NETMAP_ON;
 
 		/* Make netmap control the packet steering. */
-		nm_os_catch_tx(gna, 1);
+		error = nm_os_catch_tx(gna, 1);
+		if (error) {
+			D("nm_os_catch_tx(1) failed (%d)", error);
+			goto catch_rx;
+		}
 
 		rtnl_unlock();
+
+		na->na_flags |= NAF_NETMAP_ON;
 
 #ifdef RATE_GENERIC
 		if (rate_ctx.refcount == 0) {
@@ -390,6 +397,8 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 
 	return 0;
 
+catch_rx:
+	nm_os_catch_rx(gna, 0);
 register_handler:
 	rtnl_unlock();
 free_tx_pools:

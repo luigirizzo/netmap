@@ -251,15 +251,17 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 }
 
 
-void
-nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
+int
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 {
     struct netmap_adapter *na = &gna->up.up;
     int *p = na->ifp->intercept;
 
     if (p != NULL) {
-	*p = enable ? (*p | NM_WIN_CATCH_TX) : (*p & ~NM_WIN_CATCH_TX);
+	*p = intercept ? (*p | NM_WIN_CATCH_TX) : (*p & ~NM_WIN_CATCH_TX);
     }
+
+    return 0;
 }
 
 /*

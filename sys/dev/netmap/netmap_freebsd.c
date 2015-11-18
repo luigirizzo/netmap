@@ -233,18 +233,20 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
  * Second argument is non-zero to intercept, 0 to restore.
  * On freebsd we just intercept if_transmit.
  */
-void
-nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
+int
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 {
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 
-	if (enable) {
+	if (intercept) {
 		na->if_transmit = ifp->if_transmit;
 		ifp->if_transmit = netmap_transmit;
 	} else {
 		ifp->if_transmit = na->if_transmit;
 	}
+
+	return 0;
 }
 
 

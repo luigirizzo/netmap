@@ -370,13 +370,13 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 }
 
 /* Must be called under rtnl. */
-void
-nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
+int
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 {
     struct netmap_adapter *na = &gna->up.up;
     struct ifnet *ifp = netmap_generic_getifp(gna);
 
-    if (enable) {
+    if (intercept) {
         /*
          * Save the old pointer to the netdev_ops,
          * create an updated netdev ops replacing the
@@ -400,6 +400,8 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
 	/* Restore the original netdev_ops. */
         ifp->netdev_ops = (void *)na->if_transmit;
     }
+
+    return 0;
 }
 
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
