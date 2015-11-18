@@ -386,14 +386,14 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *attr)
 	}
 
 	if (attr) {
+		D("change() op invoked");
 		priv = qdisc_priv(qdisc);
-		priv->unused = attr->nla_len;
+		priv->unused = ~0U;
 	}
-	skb_queue_head_init(&qdisc->q);
 	qdisc->limit = 1024; /* qdisc_dev(qdisc)->tx_queue_len */
 	/* qdisc->flags |= TCQ_F_CAN_BYPASS; */
 
-	D("generic qdisc initialized with max_len = %u", qdisc->limit);
+	D("Generic qdisc initialized with max_len = %u", qdisc->limit);
 
 	return 0;
 }
@@ -477,6 +477,7 @@ generic_qdisc_ops __read_mostly = {
 	.priv_size	= sizeof(struct nm_generic_qdisc),
 	.init		= generic_qdisc_init,
 	.reset		= generic_qdisc_reset,
+	.change		= generic_qdisc_init,
 	.enqueue	= generic_qdisc_enqueue,
 	.dequeue	= generic_qdisc_dequeue,
 	.peek		= generic_qdisc_peek,
@@ -500,7 +501,7 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 			struct Qdisc *nqdisc;
 			struct Qdisc *oqdisc;
 			struct nlattr attr = {
-				.nla_len = 1024,
+				.nla_len = 0,
 				.nla_type = 0,
 			};
 			int err;
@@ -514,8 +515,9 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 				goto qdisc_create;
 			}
 
-			/* Call the init() op again passing a valid attr. */
-			err = generic_qdisc_init(nqdisc, &attr);
+			/* Call the change() op passing a valid attr. For
+			 * now is not really used. could be in the future */
+			err = nqdisc->ops->change(nqdisc, &attr);
 			if (err) {
 				D("Failed to init qdisc");
 				goto qdisc_create;
