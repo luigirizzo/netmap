@@ -359,7 +359,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		/* Free the mbufs going to the netmap rings */
 		for (r=0; r<na->num_rx_rings; r++) {
 			mbq_safe_purge(&na->rx_rings[r].rx_queue);
-			mbq_safe_destroy(&na->rx_rings[r].rx_queue);
+			mbq_safe_fini(&na->rx_rings[r].rx_queue);
 		}
 
 		for (r=0; r<na->num_rx_rings; r++)
@@ -404,7 +404,7 @@ free_tx_pools:
 	}
 	for (r=0; r<na->num_rx_rings; r++) {
 		nm_os_mitigation_cleanup(&gna->mit[r]);
-		mbq_safe_destroy(&na->rx_rings[r].rx_queue);
+		mbq_safe_fini(&na->rx_rings[r].rx_queue);
 	}
 	free(gna->mit, M_DEVBUF);
 out:
@@ -694,9 +694,10 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	kring = &na->rx_rings[rr];
 
 	/* limit the size of the queue */
-	if (unlikely(MBUF_LEN(m) > kring->ring->nr_buf_size)) {
-		/* This may happen when GRO/LRO features
-		 * are enabled for the NIC driver. */
+	if (unlikely(!gna->rxsg && MBUF_LEN(m) > kring->ring->nr_buf_size)) {
+		/* This may happen when GRO/LRO features are enabled for
+		 * the NIC driver when the generic adapter does not
+		 * support RX scatter-gather. */
 		RD(5, "Warning: driver pushed up big packet "
 				"(size=%d)", (int)MBUF_LEN(m));
 		m_freem(m);
@@ -742,54 +743,23 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
+	/* Adapter-specific variables. */
+	uint16_t slot_flags = kring->nkr_slot_flags;
+	u_int nm_buf_len = ring->nr_buf_size;
+	struct mbq tmpq;
+	struct mbuf *m;
+	int avail; /* in bytes */
+	int mlen;
+	int copy;
+
 	if (head > lim)
 		return netmap_ring_reinit(kring);
 
+	IFRATE(rate_ctx.new.rxsync++);
+
 	/*
-	 * First part: import newly received packets.
-	 */
-	if (netmap_no_pendintr || force_update) {
-		/* extract buffers from the rx queue, stop at most one
-		 * slot before nr_hwcur (stop_i)
-		 */
-		uint16_t slot_flags = kring->nkr_slot_flags;
-		u_int stop_i = nm_prev(kring->nr_hwcur, lim);
-
-		nm_i = kring->nr_hwtail; /* first empty slot in the receive ring */
-		for (n = 0; nm_i != stop_i; n++) {
-			int len;
-			void *addr = NMB(na, &ring->slot[nm_i]);
-			struct mbuf *m;
-
-			/* we only check the address here on generic rx rings */
-			if (addr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
-				return netmap_ring_reinit(kring);
-			}
-			/*
-			 * Call the locked version of the function.
-			 * XXX Ideally we could grab a batch of mbufs at once
-			 * and save some locking overhead.
-			 */
-			m = mbq_safe_dequeue(&kring->rx_queue);
-			if (!m)	/* no more data */
-				break;
-			len = MBUF_LEN(m);
-			m_copydata(m, 0, len, addr);
-			ring->slot[nm_i].len = len;
-			ring->slot[nm_i].flags = slot_flags;
-			m_freem(m);
-			nm_i = nm_next(nm_i, lim);
-		}
-		if (n) {
-			kring->nr_hwtail = nm_i;
-			IFRATE(rate_ctx.new.rxpkt += n);
-		}
-		kring->nr_kflags &= ~NKR_PENDINTR;
-	}
-
-	// XXX should we invert the order ?
-	/*
-	 * Second part: skip past packets that userspace has released.
+	 * First part: skip past packets that userspace has released.
+	 * This can possibly make room for the second part.
 	 */
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {
@@ -802,7 +772,106 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		}
 		kring->nr_hwcur = head;
 	}
-	IFRATE(rate_ctx.new.rxsync++);
+
+	/*
+	 * Second part: import newly received packets.
+	 */
+	if (!netmap_no_pendintr && !force_update) {
+		return 0;
+	}
+
+	nm_i = kring->nr_hwtail; /* First empty slot in the receive ring. */
+
+	/* Compute the available space (in bytes) in this netmap ring.
+	 * The first slot that is not considered in is the one before
+	 * nr_hwcur. */
+
+	avail = nm_prev(kring->nr_hwcur, lim) - nm_i;
+	if (avail < 0)
+		avail += lim + 1;
+	avail *= nm_buf_len;
+
+	/* First pass: While holding the lock on the RX mbuf queue,
+	 * extract as many mbufs as they fit the available space,
+	 * and put them in a temporary queue.
+	 * To avoid performing a per-mbuf division (mlen / nm_buf_len) to
+	 * to update avail, we do the update in a while loop that we
+	 * also use to set the RX slots, but without performing the copy. */
+	mbq_init(&tmpq);
+	mbq_lock(&kring->rx_queue);
+	for (n = 0;; n++) {
+		m = mbq_peek(&kring->rx_queue);
+		if (!m) {
+			/* No more packets from the driver. */
+			break;
+		}
+
+		mlen = MBUF_LEN(m);
+		if (mlen > avail) {
+			/* No more space in the ring. */
+			break;
+		}
+
+		mbq_dequeue(&kring->rx_queue);
+
+		while (mlen) {
+			copy = nm_buf_len;
+			if (mlen < copy) {
+				copy = mlen;
+			}
+			mlen -= copy;
+			avail -= nm_buf_len;
+
+			ring->slot[nm_i].len = copy;
+			ring->slot[nm_i].flags = slot_flags | (mlen ? NS_MOREFRAG : 0);
+			nm_i = nm_next(nm_i, lim);
+		}
+
+		mbq_enqueue(&tmpq, m);
+	}
+	mbq_unlock(&kring->rx_queue);
+
+	/* Second pass: Drain the temporary queue, going over the used RX slots,
+	 * and perform the copy out of the RX queue lock. */
+	nm_i = kring->nr_hwtail;
+
+	for (;;) {
+		void *nmaddr;
+		int ofs = 0;
+		int morefrag;
+
+		m = mbq_dequeue(&tmpq);
+		if (!m)	{
+			break;
+		}
+
+		do {
+			nmaddr = NMB(na, &ring->slot[nm_i]);
+			/* We only check the address here on generic rx rings. */
+			if (nmaddr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
+				m_freem(m);
+				mbq_purge(&tmpq);
+				mbq_fini(&tmpq);
+				return netmap_ring_reinit(kring);
+			}
+
+			copy = ring->slot[nm_i].len;
+			m_copydata(m, ofs, copy, nmaddr);
+			ofs += copy;
+			morefrag = ring->slot[nm_i].flags & NS_MOREFRAG;
+			nm_i = nm_next(nm_i, lim);
+		} while (morefrag);
+
+		m_freem(m);
+	}
+
+	mbq_fini(&tmpq);
+
+	if (n) {
+		kring->nr_hwtail = nm_i;
+		IFRATE(rate_ctx.new.rxpkt += n);
+	}
+	kring->nr_kflags &= ~NKR_PENDINTR;
 
 	return 0;
 }
@@ -900,6 +969,8 @@ generic_netmap_attach(struct ifnet *ifp)
 		netmap_adapter_get(gna->prev);
 	}
 	NM_ATTACH_NA(ifp, na);
+
+	gna->rxsg = nm_os_generic_rxsg_supported();
 
 	ND("Created generic NA %p (prev %p)", gna, gna->prev);
 

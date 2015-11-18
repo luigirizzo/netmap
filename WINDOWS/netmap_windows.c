@@ -332,6 +332,12 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
     *txq = 1;
     *rxq = 1;
 }
+
+int
+nm_os_generic_rxsg_supported(void)
+{
+	return 0; /* No support for now. */
+}
 //
 
 NTSTATUS

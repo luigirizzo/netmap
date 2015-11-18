@@ -54,15 +54,20 @@ struct mbq {
     SPINLOCK_T lock;
 };
 
-/* XXX "destroy" does not match "init" as a name.
- * We should also clarify whether init can be used while
+/* We should clarify whether init can be used while
  * holding a lock, and whether mbq_safe_destroy() is a NOP.
  */
 void mbq_init(struct mbq *q);
-void mbq_destroy(struct mbq *q);
+void mbq_fini(struct mbq *q);
 void mbq_enqueue(struct mbq *q, struct mbuf *m);
 struct mbuf *mbq_dequeue(struct mbq *q);
 void mbq_purge(struct mbq *q);
+
+static inline struct mbuf *
+mbq_peek(struct mbq *q)
+{
+	return q->head ? q->head : NULL;
+}
 
 static inline void
 mbq_lock(struct mbq *q)
@@ -76,9 +81,8 @@ mbq_unlock(struct mbq *q)
 	mtx_unlock_spin(&q->lock);
 }
 
-
 void mbq_safe_init(struct mbq *q);
-void mbq_safe_destroy(struct mbq *q);
+void mbq_safe_fini(struct mbq *q);
 void mbq_safe_enqueue(struct mbq *q, struct mbuf *m);
 struct mbuf *mbq_safe_dequeue(struct mbq *q);
 void mbq_safe_purge(struct mbq *q);

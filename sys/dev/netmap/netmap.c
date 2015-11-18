@@ -876,7 +876,7 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 
 	ND("destroy sw mbq with len %d", mbq_len(q));
 	mbq_purge(q);
-	mbq_safe_destroy(q);
+	mbq_safe_fini(q);
 	netmap_krings_delete(na);
 }
 
@@ -1048,7 +1048,7 @@ netmap_send_up(struct ifnet *dst, struct mbq *q)
 	}
 	if (head)
 		nm_os_send_up(dst, NULL, head);
-	mbq_destroy(q);
+	mbq_fini(q);
 }
 
 
@@ -1261,7 +1261,7 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 	mbq_unlock(q);
 
 	mbq_purge(&fq);
-	mbq_destroy(&fq);
+	mbq_fini(&fq);
 
 	return ret;
 }

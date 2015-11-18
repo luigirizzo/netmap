@@ -484,6 +484,12 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 }
 
 int
+nm_os_generic_rxsg_supported(void)
+{
+	return 1; /* Supported through skb_copy_bits(). */
+}
+
+int
 netmap_linux_config(struct netmap_adapter *na,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
 {
