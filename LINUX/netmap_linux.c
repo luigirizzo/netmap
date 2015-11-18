@@ -372,7 +372,7 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 }
 
 struct nm_generic_qdisc {
-	unsigned int max_len;
+	unsigned int unused;
 };
 
 static int
@@ -387,11 +387,12 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *attr)
 
 	if (attr) {
 		priv = qdisc_priv(qdisc);
-		priv->max_len = attr->nla_len;
+		priv->unused = attr->nla_len;
 	}
 	skb_queue_head_init(&qdisc->q);
+	qdisc->limit = 1024;
 
-	D("generic qdisc initialized with max_len = %u", priv->max_len);
+	D("generic qdisc initialized with max_len = %u", qdisc->limit);
 
 	return 0;
 }
@@ -414,8 +415,6 @@ generic_qdisc_reset(struct Qdisc *qdisc)
 static int
 generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 {
-	struct nm_generic_qdisc *priv;
-
 	if (!m) {
 		D("NULL mbuf");
 		return -1;
@@ -426,9 +425,7 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 		return -1;
 	}
 
-	priv = qdisc_priv(qdisc);
-
-	if (unlikely(qdisc_qlen(qdisc) >= priv->max_len)) {
+	if (unlikely(qdisc_qlen(qdisc) >= qdisc->limit)) {
 		D("dropping mbuf, curr len %u", qdisc_qlen(qdisc));
 		return qdisc_drop(m, qdisc);
 	}
@@ -519,7 +516,11 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 			}
 
 			oqdisc = dev_graft_qdisc(txq, nqdisc);
-			if (oqdisc && oqdisc != &noop_qdisc) {
+			if (oqdisc) {
+				/* We can call this also with
+				 * odisc == &noop_qdisc, since the noop
+				 * qdisc has the TCQ_F_BUILTIN flag set,
+				 * and so qdisc_destroy will skip it. */
 				qdisc_destroy(oqdisc);
 			}
 		}
