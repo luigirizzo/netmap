@@ -507,7 +507,8 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 			txq = netdev_get_tx_queue(ifp, i);
 			/* This takes a refcount to netmap module, alloc the
 			 * qdisc and calls the init() op with NULL attr. */
-			nqdisc = qdisc_create_dflt(txq, &generic_qdisc_ops, 0);
+			nqdisc = qdisc_create_dflt(txq, &generic_qdisc_ops,
+						   TC_H_UNSPEC);
 			if (!nqdisc) {
 				D("Failed to create qdisc");
 				goto qdisc_create;
