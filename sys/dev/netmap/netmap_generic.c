@@ -697,7 +697,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	if (unlikely(!gna->rxsg && MBUF_LEN(m) > kring->ring->nr_buf_size)) {
 		/* This may happen when GRO/LRO features are enabled for
 		 * the NIC driver when the generic adapter does not
-		 * support GRO. */
+		 * support RX scatter-gather. */
 		RD(5, "Warning: driver pushed up big packet "
 				"(size=%d)", (int)MBUF_LEN(m));
 		m_freem(m);
@@ -780,11 +780,11 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		return 0;
 	}
 
-	nm_i = kring->nr_hwtail; /* first empty slot in the receive ring */
+	nm_i = kring->nr_hwtail; /* First empty slot in the receive ring. */
 
-	/* Compute the available space (in bytes) in this netmap
-	 * The first slot that is not considered in is the
-	 * one before nr_hwcur. */
+	/* Compute the available space (in bytes) in this netmap ring.
+	 * The first slot that is not considered in is the one before
+	 * nr_hwcur. */
 
 	avail = nm_prev(kring->nr_hwcur, lim) - nm_i;
 	if (avail < 0)
@@ -796,7 +796,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * and put them in a temporary queue.
 	 * To avoid performing a per-mbuf division (mlen / nm_buf_len) to
 	 * to update avail, we do the update in a while loop that we
-	 * also use to set the RX slots, but we don't perform the copy. */
+	 * also use to set the RX slots, but without performing the copy. */
 	mbq_init(&tmpq);
 	mbq_lock(&kring->rx_queue);
 	for (n = 0;; n++) {
