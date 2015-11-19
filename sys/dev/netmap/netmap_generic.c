@@ -624,7 +624,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * ring->cur == ring->tail || nm_i != cur
 			 */
 			tx_ret = nm_os_generic_xmit_frame(&a);
-			if (unlikely(tx_ret)) {
+			if (unlikely(tx_ret == -1)) {
 				ND(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
 						tx_ret, nm_i, head, kring->nr_hwtail);
 				/*
@@ -647,6 +647,13 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 				} else {
 					break;
 				}
+
+			} else if (unlikely(tx_ret == -2)) {
+				/* Device queue is full, but putting an event in a mbuf
+				 * destructor is not necessary, since a notification will
+				 * be sent by the queue as soon as enough packets are
+				 * drained. */
+				break;
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 			nm_i = nm_next(nm_i, lim);

@@ -658,8 +658,12 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
         /* If something goes wrong in the TX path, there is nothing
            intelligent we can do (for now) apart from error reporting. */
         RD(5, "dev_queue_xmit failed: HARD ERROR %d", ret);
+	return -1;
     }
-    return -1;
+
+    /* Tell the generic txsync() that device queue is full, and
+     * it can stop transmitting without using mbuf destructor events. */
+    return -2;
 }
 #endif /* WITH_GENERIC */
 
