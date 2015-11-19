@@ -384,11 +384,6 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 {
 	struct nm_generic_qdisc *priv = NULL;
 
-	if (!qdisc) {
-		D("NULL qdisc");
-		return -1;
-	}
-
 	priv = qdisc_priv(qdisc);
 	priv->qidx = 0;
 	priv->tail = 0;
@@ -419,13 +414,7 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 static void
 generic_qdisc_reset(struct Qdisc *qdisc)
 {
-	if (!qdisc) {
-		D("NULL qdisc");
-		return;
-	}
-
 	qdisc_reset_queue(qdisc);
-
 	D("Qdisc reset");
 }
 
@@ -434,11 +423,6 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 {
 	if (!m) {
 		D("NULL mbuf");
-		return -1;
-	}
-
-	if (!qdisc) {
-		D("NULL qdisc");
 		return -1;
 	}
 
@@ -456,26 +440,14 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 static struct mbuf *
 generic_qdisc_dequeue(struct Qdisc *qdisc)
 {
-	if (!qdisc) {
-		D("NULL qdisc");
-		return NULL;
-	}
-
 	D("Dequeuing mbuf, curr len %u", qdisc_qlen(qdisc));
-
 	return qdisc_dequeue_head(qdisc);
 }
 
 static struct mbuf *
 generic_qdisc_peek(struct Qdisc *qdisc)
 {
-	if (!qdisc) {
-		D("NULL qdisc");
-		return NULL;
-	}
-
 	D("Peeking queue, curr len %u", qdisc_qlen(qdisc));
-
 	return skb_peek(&qdisc->q);
 }
 
@@ -483,7 +455,6 @@ static unsigned int
 generic_qdisc_drop(struct Qdisc *qdisc)
 {
 	D("Dropping on purpose");
-
 	return qdisc_queue_drop(qdisc);
 }
 
