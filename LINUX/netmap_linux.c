@@ -434,7 +434,7 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 		priv->event = head;
 		priv->event += (priv->tail - head) / 2;
 
-		D("dropping mbuf, event set at %u", priv->event);
+		RD(5, "dropping mbuf, event set at %u", priv->event);
 
 		return qdisc_drop(m, qdisc);
 		/* or qdisc_reshape_fail() ? */
@@ -442,8 +442,8 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 
 	priv->tail++;
 
-	D("Enqueuing mbuf, h %u, t %u, len %u", priv->head,
-	  priv->tail, qdisc_qlen(qdisc));
+	RD(5, "Enqueuing mbuf, h %u, t %u, len %u", priv->head,
+	   priv->tail, qdisc_qlen(qdisc));
 
 	return qdisc_enqueue_tail(m, qdisc);
 }
@@ -452,17 +452,22 @@ static struct mbuf *
 generic_qdisc_dequeue(struct Qdisc *qdisc)
 {
 	struct nm_generic_qdisc *priv = qdisc_priv(qdisc);
+	struct mbuf *m = qdisc_dequeue_head(qdisc);
+
+	if (!m) {
+		return NULL;
+	}
 
 	priv->head++;
 	if (priv->head == priv->event) {
-		D("Event net, notify netmap TX client");
+		RD(5, "Event net, notify netmap TX client");
 		netmap_generic_irq(qdisc_dev(qdisc), priv->qidx, NULL);
 	}
 
-	D("Dequeuing mbuf, h %u, t %u, len %u", priv->head,
-	  priv->tail, qdisc_qlen(qdisc));
+	RD(5, "Dequeuing mbuf, h %u, t %u, len %u", priv->head,
+	   priv->tail, qdisc_qlen(qdisc));
 
-	return qdisc_dequeue_head(qdisc);
+	return m;
 }
 
 static struct mbuf *
