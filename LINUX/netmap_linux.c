@@ -372,11 +372,15 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 }
 
 struct nm_generic_qdisc {
-	unsigned int unused;
+	unsigned int qidx;
+	unsigned int limit;
+	unsigned int tail;
+	unsigned int head;
+	unsigned int event;
 };
 
 static int
-generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *attr)
+generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 {
 	struct nm_generic_qdisc *priv = NULL;
 
@@ -385,12 +389,26 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *attr)
 		return -1;
 	}
 
-	if (attr) {
-		D("change() op invoked");
-		priv = qdisc_priv(qdisc);
-		priv->unused = ~0U;
+	priv = qdisc_priv(qdisc);
+	priv->qidx = 0;
+	priv->tail = 0;
+	priv->head = 0;
+	priv->event = -1;
+	priv->limit = 1024;
+
+	if (opt) {
+		struct nm_generic_qdisc *qdiscopt = nla_data(opt);
+
+		if (nla_len(opt) < sizeof(*qdiscopt)) {
+			D("Invalid netlink attribute");
+			return EINVAL;
+		}
+
+		priv->qidx = qdiscopt->qidx;
+		priv->limit = qdiscopt->limit;
+		D("change() op on qidx %u", priv->qidx);
 	}
-	qdisc->limit = 1024; /* qdisc_dev(qdisc)->tx_queue_len */
+	qdisc->limit = priv->limit; /* qdisc_dev(qdisc)->tx_queue_len */
 	/* qdisc->flags |= TCQ_F_CAN_BYPASS; */
 
 	D("Qdisc initialized with max_len = %u", qdisc->limit);
@@ -491,17 +509,28 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 	struct netdev_queue *txq;
-	int i;
+	struct nlattr *nla = NULL;
+	unsigned int i;
 
 	if (intercept) {
+		struct nm_generic_qdisc *qdiscopt;
+
+		nla = kmalloc(nla_attr_size(sizeof(*qdiscopt)),
+			      GFP_KERNEL);
+		if (!nla) {
+			D("Failed to allocate netlink attribute");
+			return ENOMEM;
+		}
+		nla->nla_type = RTM_NEWQDISC;
+		nla->nla_len = nla_attr_size(sizeof(*qdiscopt));
+		qdiscopt = (struct nm_generic_qdisc *)nla_data(nla);
+		memset(qdiscopt, 0, sizeof(*qdiscopt));
+		qdiscopt->limit = 1024;
+
 		/* Replace the current qdiscs with our own. */
 		for (i = 0; i < ifp->real_num_tx_queues; i++) {
 			struct Qdisc *nqdisc;
 			struct Qdisc *oqdisc;
-			struct nlattr attr = {
-				.nla_len = 0,
-				.nla_type = 0,
-			};
 			int err;
 
 			txq = netdev_get_tx_queue(ifp, i);
@@ -514,9 +543,10 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 				goto qdisc_create;
 			}
 
-			/* Call the change() op passing a valid attr. For
-			 * now is not really used. could be in the future */
-			err = nqdisc->ops->change(nqdisc, &attr);
+			/* Call the change() op passing a valid netlink
+			 * attribute. This is used to set the queue idx. */
+			qdiscopt->qidx = i;
+			err = nqdisc->ops->change(nqdisc, nla);
 			if (err) {
 				D("Failed to init qdisc");
 				goto qdisc_create;
@@ -531,6 +561,8 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 				qdisc_destroy(oqdisc);
 			}
 		}
+
+		kfree(nla);
 
 		if (ifp->flags & IFF_UP) {
 			dev_deactivate(ifp);
@@ -596,6 +628,10 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 	return 0;
 
 qdisc_create:
+	if (nla) {
+		kfree(nla);
+	}
+
 	return -1;
 }
 
