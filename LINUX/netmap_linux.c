@@ -570,7 +570,6 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 
 		txq = netdev_get_tx_queue(ifp, 0);
 		ifp->qdisc = txq->qdisc_sleeping;
-		atomic_inc(&ifp->qdisc->refcnt);
 
 		if (ifp->flags & IFF_UP) {
 			dev_activate(ifp);
