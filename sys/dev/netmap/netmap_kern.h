@@ -1755,6 +1755,8 @@ netmap_generic_getifp(struct netmap_generic_adapter *gna)
         return gna->up.up.ifp;
 }
 
+void netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done);
+
 //#define RATE_GENERIC  /* Enables communication statistics for generic. */
 #ifdef RATE_GENERIC
 void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi);

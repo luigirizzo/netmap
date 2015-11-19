@@ -239,7 +239,7 @@ void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi)
  * the poller threads. Differently from netmap_rx_irq(), we check
  * only NAF_NETMAP_ON instead of NAF_NATIVE_ON to enable the irq.
  */
-static void
+void
 netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 {
 	struct netmap_adapter *na = NA(ifp);

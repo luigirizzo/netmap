@@ -456,6 +456,7 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 	priv->head++;
 	if (priv->head == priv->event) {
 		D("Event net, notify netmap TX client");
+		netmap_generic_irq(qdisc_dev(qdisc), priv->qidx, NULL);
 	}
 
 	D("Dequeuing mbuf, h %u, t %u, len %u", priv->head,
