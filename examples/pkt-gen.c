@@ -221,6 +221,7 @@ struct tstamp {
 /* counters to accumulate statistics */
 struct my_ctrs {
 	uint64_t pkts, bytes, events;
+	uint64_t min_space;
 	struct timeval t;
 };
 
@@ -1464,11 +1465,16 @@ receiver_body(void *data)
 			goto quit;
 		}
 #endif /* !BUSYWAIT */
-
+		uint64_t cur_space = 0;
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
 
 			rxring = NETMAP_RXRING(nifp, i);
+			/* compute free space in the ring */
+			m = rxring->head + rxring->num_slots - rxring->tail;
+			if (m >= (int) rxring->num_slots)
+				m -= rxring->num_slots;
+			cur_space += m;
 			if (nm_ring_empty(rxring))
 				continue;
 
@@ -1477,6 +1483,9 @@ receiver_body(void *data)
 			if (m > 0) //XXX-ste: can m be 0?
 				cur.events++;
 		}
+		cur.min_space = targ->ctr.min_space;
+		if (cur_space < cur.min_space)
+			cur.min_space = cur_space;
 		targ->ctr = cur;
 	}
     }
@@ -1681,6 +1690,7 @@ main_thread(struct glob_arg *g)
 		delta.tv_usec = (g->report_interval%1000)*1000;
 		select(0, NULL, NULL, NULL, &delta);
 		cur.pkts = cur.bytes = cur.events = 0;
+		cur.min_space = 0;
 		gettimeofday(&cur.t, NULL);
 		timersub(&cur.t, &prev.t, &delta);
 		usec = delta.tv_sec* 1000000 + delta.tv_usec;
@@ -1691,6 +1701,8 @@ main_thread(struct glob_arg *g)
 			cur.pkts += targs[i].ctr.pkts;
 			cur.bytes += targs[i].ctr.bytes;
 			cur.events += targs[i].ctr.events;
+			cur.min_space += targs[i].ctr.min_space;
+			targs[i].ctr.min_space = 99999;
 			if (targs[i].used == 0)
 				done++;
 		}
@@ -1700,12 +1712,12 @@ main_thread(struct glob_arg *g)
 		pps = (x.pkts*1000000 + usec/2) / usec;
 		abs = (x.events > 0) ? (x.pkts / (double) x.events) : 0;
 
-		D("%spps (%spkts %sbps in %llu usec) %.2f avg_batch",
+		D("%spps (%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
 			norm(b1,pps),
 			norm(b2, (double)x.pkts),
 			norm(b3, (double)x.bytes*8),
 			(unsigned long long)usec,
-			abs);
+			abs, (int)cur.min_space);
 		prev = cur;
 		if (done == g->nthreads)
 			break;
