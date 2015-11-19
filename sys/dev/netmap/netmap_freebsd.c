@@ -332,6 +332,11 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 	*rxq = netmap_generic_rings;
 }
 
+int
+nm_os_generic_rxsg_supported(void)
+{
+	return 1; /* Supported through m_copydata. */
+}
 
 void
 nm_os_mitigation_init(struct nm_generic_mit *mit, int idx, struct netmap_adapter *na)

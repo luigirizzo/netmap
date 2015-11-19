@@ -62,7 +62,7 @@ index 221aa47..4e61898 100644
  
  err_rings:
 diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
-index 49d2cfa..df45917 100644
+index 49d2cfa..4b27c76 100644
 --- a/i40e/i40e_txrx.c
 +++ b/i40e/i40e_txrx.c
 @@ -27,6 +27,10 @@
@@ -81,22 +81,21 @@ index 49d2cfa..df45917 100644
  	unsigned int total_bytes = 0;
  
 +#ifdef DEV_NETMAP
-+	if (tx_ring->netdev && netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index))
++	if (netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index))
 +		return true;
 +#endif /* DEV_NETMAP */
 +
  	tx_buf = &tx_ring->tx_bi[i];
  	tx_desc = I40E_TX_DESC(tx_ring, i);
  
-@@ -897,6 +906,15 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
+@@ -897,6 +906,14 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
  	u32 rx_error, rx_status;
  	u64 qword;
  
 +#ifdef DEV_NETMAP
 +	{
 +		int dummy;
-+		if (rx_ring->netdev &&
-+		    netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy))
++		if (netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy))
 +			return 1;
 +	}
 +#endif /* DEV_NETMAP */
