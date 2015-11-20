@@ -986,7 +986,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	}
 	NM_ATTACH_NA(ifp, na);
 
-	gna->rxsg = nm_os_generic_rxsg_supported();
+	nm_os_generic_set_features(gna);
 
 	ND("Created generic NA %p (prev %p)", gna, gna->prev);
 

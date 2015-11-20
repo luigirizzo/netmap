@@ -716,10 +716,11 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
     }
 }
 
-int
-nm_os_generic_rxsg_supported(void)
+void
+nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 {
-	return 1; /* Supported through skb_copy_bits(). */
+	gna->rxsg = 1; /* Supported through skb_copy_bits(). */
+	gna->txqdisc = 1;
 }
 
 int

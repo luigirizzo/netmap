@@ -855,6 +855,10 @@ struct netmap_generic_adapter {	/* emulated device */
 	/* Is the adapter able to use multiple RX slots to scatter
 	 * each packet pushed up by the driver? */
 	int rxsg;
+
+	/* Is the transmission path moderated by a queue (i.e. qdisc
+	 * on linux? */
+	int txqdisc;
 };
 #endif  /* WITH_GENERIC */
 
@@ -1744,7 +1748,7 @@ struct nm_os_gen_arg {
 int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
-int nm_os_generic_rxsg_supported(void);
+void nm_os_generic_set_features(struct netmap_generic_adapter *gna);
 
 static inline struct ifnet*
 netmap_generic_getifp(struct netmap_generic_adapter *gna)
