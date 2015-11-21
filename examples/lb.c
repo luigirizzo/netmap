@@ -14,8 +14,13 @@
 
 #include "lb.h"
 
-char iface[25];
-int OUTPUT_RINGS = 0;
+#define MAX_IFNAMELEN 64
+#define DEF_OUT_PIPES 2
+
+struct {
+	char ifname[MAX_IFNAMELEN];
+	int output_rings;
+} glob_arg;
 
 static int do_abort = 0;
 
@@ -81,7 +86,7 @@ inline uint32_t ip_hasher(const char * buffer, const u_int16_t buffer_len)
 	}
 }
 
-inline bool pkt_swap(struct netmap_slot * ts, struct netmap_ring * ring)
+static inline bool pkt_swap(struct netmap_slot * ts, struct netmap_ring * ring)
 {
 	struct netmap_slot *rs;
 	rs = &ring->slot[ring->cur];
@@ -108,55 +113,90 @@ inline bool pkt_swap(struct netmap_slot * ts, struct netmap_ring * ring)
 
 void usage()
 {
-	printf("usage: lb <iface> <balance-ports>\n");
+	printf("usage: lb [options]\n");
+	printf("where options are:\n");
+	printf("  -i iface        interface name (required)\n");
+	printf("  -p npipes       number of output pipes (default: %d)\n", DEF_OUT_PIPES);
 	exit(0);
 }
 
+
+
 int main(int argc, char **argv)
 {
-	if (argc != 3) {
-		usage();
-	} else {
-		char *ptr;
-		OUTPUT_RINGS = strtoul(argv[2], &ptr, 10);
-		sprintf(iface, "netmap:%s", argv[1]);
-	}
+	int ch;
 
-	if (OUTPUT_RINGS == 0) {
-		printf("You must output to more than 0 pipes\n");
+	glob_arg.ifname[0] = '\0';
+	glob_arg.output_rings = DEF_OUT_PIPES;
+
+	while ( (ch = getopt(argc, argv, "i:p:")) != -1) {
+		switch (ch) {
+		case 'i':
+			D("interface is %s", optarg);
+			if (strlen(optarg) > MAX_IFNAMELEN - 8) {
+				D("ifname too long %s", optarg);
+				return 1;
+			}
+			if (strncmp(optarg, "netmap:", 7) && strncmp(optarg, "vale", 4)) {
+				sprintf(glob_arg.ifname, "netmap:%s", optarg);
+			} else {
+				strcpy(glob_arg.ifname, optarg);
+			}
+			break;
+
+		case 'p':
+			glob_arg.output_rings = atoi(optarg);
+			if (glob_arg.output_rings < 1) {
+				D("you must output to at least one pipe");
+				usage();
+				return 1;
+			}
+			break;
+
+		default:
+			D("bad option %c %s", ch, optarg);
+			usage();
+			return 1;
+
+		}
+	}
+	
+	if (glob_arg.ifname[0] == '\0') {
+		D("missing interface name");
 		usage();
+		return 1;
 	}
 
 	struct nm_desc *rxnmd = NULL;
-	struct nm_desc *txnmds[OUTPUT_RINGS];
-	struct netmap_ring *txrings[OUTPUT_RINGS];
+	struct nm_desc *txnmds[glob_arg.output_rings];
+	struct netmap_ring *txrings[glob_arg.output_rings];
 
 	struct netmap_ring *rxring = NULL;
 
-	uint64_t ring_drops[OUTPUT_RINGS];
+	uint64_t ring_drops[glob_arg.output_rings];
 	memset(&ring_drops, 0, sizeof(ring_drops));
-	uint64_t ring_forward[OUTPUT_RINGS];
+	uint64_t ring_forward[glob_arg.output_rings];
 	memset(&ring_forward, 0, sizeof(ring_forward));
 
 	struct nmreq base_req;
 	memset(&base_req, 0, sizeof(base_req));
 
-	base_req.nr_arg1 = OUTPUT_RINGS;
+	base_req.nr_arg1 = glob_arg.output_rings;
 
-	rxnmd = nm_open(iface, &base_req, 0, NULL);
+	rxnmd = nm_open(glob_arg.ifname, &base_req, 0, NULL);
 
 	if (rxnmd == NULL) {
-		D("cannot open %s", iface);
+		D("cannot open %s", glob_arg.ifname);
 		return (1);
 	} else {
-		D("successfully opened %s (tx rings: %u)", iface,
+		D("successfully opened %s (tx rings: %u)", glob_arg.ifname,
 		  rxnmd->req.nr_tx_slots);
 	}
 
 	int i;
-	for (i = 0; i < OUTPUT_RINGS; ++i) {
+	for (i = 0; i < glob_arg.output_rings; ++i) {
 		char interface[25];
-		sprintf(interface, "%s{%d", iface, i);
+		sprintf(interface, "%s{%d", glob_arg.ifname, i);
 		D("opening pipe named %s", interface);
 
 		//txnmds[i] = nm_open(interface, NULL, NM_OPEN_NO_MMAP | NM_OPEN_ARG3 | NM_OPEN_RING_CFG, rxnmd);
@@ -177,14 +217,14 @@ int main(int argc, char **argv)
 
 	sleep(2);
 
-	struct pollfd pollfd[OUTPUT_RINGS + 1];
+	struct pollfd pollfd[glob_arg.output_rings + 1];
 	memset(&pollfd, 0, sizeof(pollfd));
 
 	signal(SIGINT, sigint_h);
 	while (!do_abort) {
 		u_int polli = 0;
 
-		for (i = 0; i < OUTPUT_RINGS; ++i) {
+		for (i = 0; i < glob_arg.output_rings; ++i) {
 			pollfd[polli].fd = txnmds[i]->fd;
 			pollfd[polli].events = POLLOUT;
 			pollfd[polli].revents = 0;
@@ -222,7 +262,7 @@ int main(int argc, char **argv)
 				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 				__builtin_prefetch(next_buf);
 				uint32_t output_port =
-				    ip_hasher(p, rs->len) % OUTPUT_RINGS;
+				    ip_hasher(p, rs->len) % glob_arg.output_rings;
 
 				// Move the packet to the output pipe.
 				if (!pkt_swap(rs, txrings[output_port]))
@@ -239,9 +279,9 @@ int main(int argc, char **argv)
 
 #if 0
 			uint64_t total_packets;
-			for (j = 0; j < OUTPUT_RINGS; ++j) {
+			for (j = 0; j < glob_arg.output_rings; ++j) {
 				total_packets = ring_drops[j] + ring_forward[j];
-				RD(OUTPUT_RINGS,
+				RD(glob_arg.output_rings,
 				   "Ring %u, Total Packets: %"PRIu64" Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64" Percent: %.2f",
 				   j, total_packets, ring_forward[j],
 				   ring_drops[j],
@@ -254,7 +294,7 @@ int main(int argc, char **argv)
 	}
 
 	nm_close(rxnmd);
-	for (i = 0; i < OUTPUT_RINGS; ++i) {
+	for (i = 0; i < glob_arg.output_rings; ++i) {
 		nm_close(txnmds[i]);
 	}
 
