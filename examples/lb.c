@@ -14,12 +14,14 @@
 
 #include "lb.h"
 
-#define MAX_IFNAMELEN 64
-#define DEF_OUT_PIPES 2
+#define MAX_IFNAMELEN 	64
+#define DEF_OUT_PIPES 	2
+#define DEF_EXTRA_BUFS 	0
 
 struct {
 	char ifname[MAX_IFNAMELEN];
-	int output_rings;
+	uint16_t output_rings;
+	uint32_t extra_bufs;
 } glob_arg;
 
 static int do_abort = 0;
@@ -117,6 +119,7 @@ void usage()
 	printf("where options are:\n");
 	printf("  -i iface        interface name (required)\n");
 	printf("  -p npipes       number of output pipes (default: %d)\n", DEF_OUT_PIPES);
+	printf("  -b nbufs        number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
 	exit(0);
 }
 
@@ -129,7 +132,7 @@ int main(int argc, char **argv)
 	glob_arg.ifname[0] = '\0';
 	glob_arg.output_rings = DEF_OUT_PIPES;
 
-	while ( (ch = getopt(argc, argv, "i:p:")) != -1) {
+	while ( (ch = getopt(argc, argv, "i:p:b:")) != -1) {
 		switch (ch) {
 		case 'i':
 			D("interface is %s", optarg);
@@ -151,6 +154,11 @@ int main(int argc, char **argv)
 				usage();
 				return 1;
 			}
+			break;
+
+		case 'b':
+			glob_arg.extra_bufs = atoi(optarg);
+			D("requested %d extra buffers", glob_arg.extra_bufs);
 			break;
 
 		default:
@@ -182,6 +190,7 @@ int main(int argc, char **argv)
 	memset(&base_req, 0, sizeof(base_req));
 
 	base_req.nr_arg1 = glob_arg.output_rings;
+	base_req.nr_arg3 = glob_arg.extra_bufs;
 
 	rxnmd = nm_open(glob_arg.ifname, &base_req, 0, NULL);
 
@@ -192,6 +201,9 @@ int main(int argc, char **argv)
 		D("successfully opened %s (tx rings: %u)", glob_arg.ifname,
 		  rxnmd->req.nr_tx_slots);
 	}
+
+	if (glob_arg.extra_bufs)
+		D("obtained %d extra buffers", rxnmd->req.nr_arg3);
 
 	int i;
 	for (i = 0; i < glob_arg.output_rings; ++i) {
