@@ -12,6 +12,8 @@
 #include <netinet/ip.h>
 #include <net/ethernet.h>	/* the L2 protocols */
 
+#include <pthread.h>
+
 #include "lb.h"
 
 #define MAX_IFNAMELEN 	64
@@ -67,6 +69,40 @@ static volatile int do_abort = 0;
 
 uint64_t dropped = 0;
 uint64_t forwarded = 0;
+
+struct pipe_stat {
+	uint64_t drop;
+	uint64_t forward;
+};
+
+struct pipe_stat *pipe_stats;
+
+
+static void *
+print_stats(void *arg)
+{
+	int npipes = glob_arg.output_rings;
+	(void)arg;
+
+	while (!do_abort) {
+		int j;
+		struct timeval delta;
+		uint64_t total_packets;
+
+		delta.tv_sec = 1;
+		delta.tv_usec = 0;
+		select(0, NULL, NULL, NULL, &delta);
+
+		for (j = 0; j < npipes; ++j) {
+			struct pipe_stat *p = &pipe_stats[j];
+
+			total_packets = p->drop + p->forward;
+			D("Ring %u, Total Packets: %"PRIu64" Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64" Percent: %.2f",
+			   j, total_packets, p->forward, p->drop, ((float)p->drop / (float)total_packets * 100));
+		}
+	}
+	return NULL;
+}
 
 static void sigint_h(int sig)
 {
@@ -189,23 +225,31 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	int npipes = glob_arg.output_rings;
 	struct nm_desc *rxnmd = NULL;
-	struct nm_desc *txnmds[glob_arg.output_rings];
-	struct netmap_ring *txrings[glob_arg.output_rings];
+	struct nm_desc *txnmds[npipes];
+	struct netmap_ring *txrings[npipes];
 
 	struct overflow_queue *freeq = NULL;
 
 	struct netmap_ring *rxring = NULL;
+	pthread_t stat_thread;
 
-	uint64_t ring_drops[glob_arg.output_rings];
-	memset(&ring_drops, 0, sizeof(ring_drops));
-	uint64_t ring_forward[glob_arg.output_rings];
-	memset(&ring_forward, 0, sizeof(ring_forward));
+	pipe_stats = calloc(sizeof(struct pipe_stat), npipes);
+	if (!pipe_stats) {
+		D("failed to allocate the stats array");
+		return 1;
+	}
+
+	if (pthread_create(&stat_thread, NULL, print_stats, NULL) == -1) {
+		D("unable to create the stats thread: %s", strerror(errno));
+		return 1;
+	}
 
 	struct nmreq base_req;
 	memset(&base_req, 0, sizeof(base_req));
 
-	base_req.nr_arg1 = glob_arg.output_rings;
+	base_req.nr_arg1 = npipes;
 	base_req.nr_arg3 = glob_arg.extra_bufs;
 
 	rxnmd = nm_open(glob_arg.ifname, &base_req, 0, NULL);
@@ -221,7 +265,6 @@ int main(int argc, char **argv)
 
 	int extra_bufs = rxnmd->req.nr_arg3;
 	struct overflow_queue *oq = NULL;
-	int npipes = glob_arg.output_rings;
 
 	if (!glob_arg.extra_bufs)
 		goto run;
@@ -315,7 +358,7 @@ run:
 
 	sleep(2);
 
-	struct pollfd pollfd[glob_arg.output_rings + 1];
+	struct pollfd pollfd[npipes + 1];
 	memset(&pollfd, 0, sizeof(pollfd));
 
 	signal(SIGINT, sigint_h);
@@ -352,6 +395,7 @@ run:
 				int j, lim;
 				struct netmap_ring *ring;
 				struct netmap_slot *slot;
+				struct pipe_stat *p = &pipe_stats[i];
 
 				if (!q->n)
 					continue;
@@ -371,6 +415,7 @@ run:
 				}
 				ring->head = ring->cur;
 				forwarded += lim;
+				p->forward++;
 			}
 		}
 
@@ -391,9 +436,10 @@ run:
 				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 				__builtin_prefetch(next_buf);
 				uint32_t output_port =
-				    ip_hasher(p, rs->len) % glob_arg.output_rings;
+				    ip_hasher(p, rs->len) % npipes;
 				struct netmap_ring *ring = txrings[output_port];
 				uint32_t free_buf;
+				struct pipe_stat *ps = &pipe_stats[output_port];
 
 				// Move the packet to the output pipe.
 				if (nm_ring_space(ring)) {
@@ -403,6 +449,7 @@ run:
 					ts->len = rs->len;
 					ts->flags |= NS_BUF_CHANGED;
 					ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+					ps->forward++;
 					forwarded++;
 				} else if (oq) {
 					/* out of ring space, use the overflow queue */
@@ -418,10 +465,12 @@ run:
 						 * for now, we just drop
 						 */
 						dropped++;
+						ps->drop++;
 						goto next;
 					}
 				} else {
 					dropped++;
+					ps->drop++;
 					goto next;
 				}
 				rs->buf_idx = free_buf;
@@ -435,21 +484,10 @@ run:
 				   ((float)dropped / (float)forwarded * 100));
 			}
 
-#if 0
-			uint64_t total_packets;
-			for (j = 0; j < glob_arg.output_rings; ++j) {
-				total_packets = ring_drops[j] + ring_forward[j];
-				RD(glob_arg.output_rings,
-				   "Ring %u, Total Packets: %"PRIu64" Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64" Percent: %.2f",
-				   j, total_packets, ring_forward[j],
-				   ring_drops[j],
-				   ((float)ring_drops[j] /
-				    (float)total_packets * 100));
-			}
-			//RD(1, "\n");
-#endif
 		}
 	}
+
+	pthread_join(stat_thread, NULL);
 
 	/* build a netmap free list with the buffers in all the overflow queues */
 	if (oq) {
@@ -471,7 +509,7 @@ run:
 	}
 
 	nm_close(rxnmd);
-	for (i = 0; i < glob_arg.output_rings; ++i) {
+	for (i = 0; i < npipes; ++i) {
 		nm_close(txnmds[i]);
 	}
 
