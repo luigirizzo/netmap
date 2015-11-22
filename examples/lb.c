@@ -24,7 +24,46 @@ struct {
 	uint32_t extra_bufs;
 } glob_arg;
 
-static int do_abort = 0;
+struct overflow_queue {
+	char name[MAX_IFNAMELEN];
+	struct netmap_slot *slots;
+	int head;
+	int tail;
+	int n;
+	int size;
+	struct netmap_ring *ring;
+};
+
+static inline void
+oq_enq(struct overflow_queue *q, const struct netmap_slot *s)
+{
+	if (unlikely(q->n >= q->size)) {
+		D("%s: queue full!", q->name);
+		abort();
+	}
+	q->slots[q->tail] = *s;
+	q->n++;
+	q->tail++;
+	if (q->tail >= q->size)
+		q->tail = 0;
+}
+
+static inline struct netmap_slot
+oq_deq(struct overflow_queue *q)
+{
+	struct netmap_slot s = q->slots[q->head];
+	if (unlikely(q->n <= 0)) {
+		D("%s: queue empty!", q->name);
+		abort();
+	}
+	q->n--;
+	q->head++;
+	if (q->head >= q->size)
+		q->head = 0;
+	return s;
+}
+
+static volatile int do_abort = 0;
 
 uint64_t dropped = 0;
 uint64_t forwarded = 0;
@@ -88,31 +127,6 @@ inline uint32_t ip_hasher(const char * buffer, const u_int16_t buffer_len)
 	}
 }
 
-static inline bool pkt_swap(struct netmap_slot * ts, struct netmap_ring * ring)
-{
-	struct netmap_slot *rs;
-	rs = &ring->slot[ring->cur];
-
-	if (nm_ring_space(ring) == 0) {
-		//RD(5, "no room to transmit to %s (tx_slots %d - tx_slots_pending %d - nm_ring_space %d)!", 
-		//  d->req.nr_name, d->req.nr_tx_slots, nm_tx_pending(ring), nm_ring_space(ring));
-		++dropped;
-		return false;
-	} else {
-		++forwarded;
-	}
-
-	rs->len = ts->len;
-	uint32_t pkt = ts->buf_idx;
-	ts->buf_idx = rs->buf_idx;
-	rs->buf_idx = pkt;
-	/* report the buffer change. */
-	ts->flags |= NS_BUF_CHANGED;
-	rs->flags |= NS_BUF_CHANGED;
-	ring->head = ring->cur = nm_ring_next(ring, ring->cur);
-	return true;
-}
-
 void usage()
 {
 	printf("usage: lb [options]\n");
@@ -127,7 +141,7 @@ void usage()
 
 int main(int argc, char **argv)
 {
-	int ch;
+	int ch, i;
 
 	glob_arg.ifname[0] = '\0';
 	glob_arg.output_rings = DEF_OUT_PIPES;
@@ -168,7 +182,7 @@ int main(int argc, char **argv)
 
 		}
 	}
-	
+
 	if (glob_arg.ifname[0] == '\0') {
 		D("missing interface name");
 		usage();
@@ -178,6 +192,8 @@ int main(int argc, char **argv)
 	struct nm_desc *rxnmd = NULL;
 	struct nm_desc *txnmds[glob_arg.output_rings];
 	struct netmap_ring *txrings[glob_arg.output_rings];
+
+	struct overflow_queue *freeq = NULL;
 
 	struct netmap_ring *rxring = NULL;
 
@@ -201,12 +217,57 @@ int main(int argc, char **argv)
 		D("successfully opened %s (tx rings: %u)", glob_arg.ifname,
 		  rxnmd->req.nr_tx_slots);
 	}
+	rxring = NETMAP_RXRING(rxnmd->nifp, 0);
 
-	if (glob_arg.extra_bufs)
-		D("obtained %d extra buffers", rxnmd->req.nr_arg3);
+	int extra_bufs = rxnmd->req.nr_arg3;
+	struct overflow_queue *oq = NULL;
+	int npipes = glob_arg.output_rings;
 
-	int i;
-	for (i = 0; i < glob_arg.output_rings; ++i) {
+	if (!glob_arg.extra_bufs)
+		goto run;
+
+	D("obtained %d extra buffers", extra_bufs);
+	if (!extra_bufs)
+		goto run;
+
+	/* one overflow queue for each output pipe, plus one for the
+	 * free extra buffers
+	 */
+	oq = calloc(sizeof(struct overflow_queue), npipes + 1);
+	if (!oq) {
+		D("failed to allocated overflow queues descriptors");
+		goto run;
+	}
+
+	freeq = &oq[npipes];
+
+	freeq->slots = calloc(sizeof(struct netmap_slot), extra_bufs);
+	if (!freeq->slots) {
+		D("failed to allocate the free list");
+	}
+	freeq->size = extra_bufs;
+	freeq->ring = rxring;
+	snprintf(freeq->name, MAX_IFNAMELEN, "free queue");
+
+	uint32_t scan;
+	for (scan = rxnmd->nifp->ni_bufs_head;
+	     scan;
+	     scan = *(uint32_t *)NETMAP_BUF(rxring, scan))
+	{
+		struct netmap_slot s;
+		s.buf_idx = scan;
+		ND("freeq <- %d", s.buf_idx);
+		oq_enq(freeq, &s);
+	}
+	if (freeq->n != extra_bufs) {
+		D("something went wrong: netmap reported %d extra_bufs, but the free list contained %d",
+				extra_bufs, freeq->n);
+		return 1;
+	}
+	rxnmd->nifp->ni_bufs_head = 0;
+
+run:
+	for (i = 0; i < npipes; ++i) {
 		char interface[25];
 		sprintf(interface, "%s{%d", glob_arg.ifname, i);
 		D("opening pipe named %s", interface);
@@ -225,6 +286,31 @@ int main(int argc, char **argv)
 		}
 		D("zerocopy %s",
 		  (rxnmd->mem == txnmds[i]->mem) ? "enabled" : "disabled");
+
+		if (extra_bufs) {
+			struct overflow_queue *q = &oq[i];
+			q->slots = calloc(sizeof(struct netmap_slot), extra_bufs);
+			if (!q->slots) {
+				D("failed to allocate overflow queue for pipe %d", i);
+				/* make all overflow queue management fail */
+				extra_bufs = 0;
+			}
+			q->ring = txrings[i];
+			q->size = extra_bufs;
+			snprintf(q->name, MAX_IFNAMELEN, "oq %d", i);
+		}
+	}
+
+	if (glob_arg.extra_bufs && !extra_bufs) {
+		if (oq) {
+			for (i = 0; i < npipes + 1; i++) {
+				free(oq[i].slots);
+				oq[i].slots = NULL;
+			}
+			free(oq);
+			oq = NULL;
+		}
+		D("*** overflow queues disabled ***");
 	}
 
 	sleep(2);
@@ -236,7 +322,7 @@ int main(int argc, char **argv)
 	while (!do_abort) {
 		u_int polli = 0;
 
-		for (i = 0; i < glob_arg.output_rings; ++i) {
+		for (i = 0; i < npipes; ++i) {
 			pollfd[polli].fd = txnmds[i]->fd;
 			pollfd[polli].events = POLLOUT;
 			pollfd[polli].revents = 0;
@@ -251,10 +337,41 @@ int main(int argc, char **argv)
 		//RD(5, "polling %d file descriptors", polli+1);
 		i = poll(pollfd, polli, 10);
 		if (i <= 0) {
-			D("poll error/timeout  %s", strerror(errno));
+			RD(1, "poll error %s", errno ? strerror(errno) : "timeout");
 			continue;
 		} else {
 			//RD(5, "Poll returned %d", i);
+		}
+
+		if (oq) {
+			/* try to push packets from the overflow queues
+			 * to the corresponding pipes
+			 */
+			for (i = 0; i < npipes; i++) {
+				struct overflow_queue *q = &oq[i];
+				int j, lim;
+				struct netmap_ring *ring;
+				struct netmap_slot *slot;
+
+				if (!q->n)
+					continue;
+				ring = q->ring;
+				lim = nm_ring_space(ring);
+				if (!lim)
+					continue;
+				if (q->n < lim)
+					lim = q->n;
+				for (j = 0; j < lim; j++) {
+					struct netmap_slot s = oq_deq(q);
+					slot = &ring->slot[ring->cur];
+					oq_enq(freeq, slot);
+					*slot = s;
+					slot->flags |= NS_BUF_CHANGED;
+					ring->cur = nm_ring_next(ring, ring->cur);
+				}
+				ring->head = ring->cur;
+				forwarded += lim;
+			}
 		}
 
 		for (i = rxnmd->first_rx_ring; i <= rxnmd->last_rx_ring; i++) {
@@ -275,13 +392,42 @@ int main(int argc, char **argv)
 				__builtin_prefetch(next_buf);
 				uint32_t output_port =
 				    ip_hasher(p, rs->len) % glob_arg.output_rings;
+				struct netmap_ring *ring = txrings[output_port];
+				uint32_t free_buf;
 
 				// Move the packet to the output pipe.
-				if (!pkt_swap(rs, txrings[output_port]))
-					++ring_drops[output_port];
-				else
-					++ring_forward[output_port];
+				if (nm_ring_space(ring)) {
+					struct netmap_slot *ts = &ring->slot[ring->cur];
+					free_buf = ts->buf_idx;
+					ts->buf_idx = rs->buf_idx;
+					ts->len = rs->len;
+					ts->flags |= NS_BUF_CHANGED;
+					ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+					forwarded++;
+				} else if (oq) {
+					/* out of ring space, use the overflow queue */
 
+					struct overflow_queue *q = &oq[output_port];
+					if (freeq->n) {
+						free_buf = oq_deq(freeq).buf_idx;
+						oq_enq(q, rs);
+						ND(1, "overflow on pipe %d", output_port);
+					} else {
+						/* here we should remove one buffer from the longest
+						 * overflow queue, unless that is our own.
+						 * for now, we just drop
+						 */
+						dropped++;
+						goto next;
+					}
+				} else {
+					dropped++;
+					goto next;
+				}
+				rs->buf_idx = free_buf;
+				rs->flags |= NS_BUF_CHANGED;
+
+			next:
 				rxring->head = rxring->cur = next_cur;
 				ND(1,
 				   "Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64"   Percent: %.2f",
@@ -303,6 +449,25 @@ int main(int argc, char **argv)
 			//RD(1, "\n");
 #endif
 		}
+	}
+
+	/* build a netmap free list with the buffers in all the overflow queues */
+	if (oq) {
+		int tot = 0;
+		for (i = 0; i < npipes + 1; i++) {
+			struct overflow_queue *q = &oq[i];
+
+			while (q->n) {
+				struct netmap_slot s = oq_deq(q);
+				uint32_t *b = (uint32_t *)NETMAP_BUF(q->ring, s.buf_idx);
+
+				*b = rxnmd->nifp->ni_bufs_head;
+				rxnmd->nifp->ni_bufs_head = s.buf_idx;
+				tot++;
+			}
+
+		}
+		D("added %d buffers to netmap free list", tot);
 	}
 
 	nm_close(rxnmd);
