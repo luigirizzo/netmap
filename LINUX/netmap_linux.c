@@ -504,6 +504,10 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 			memset(qdiscopt, 0, sizeof(*qdiscopt));
 			qdiscopt->limit = na->num_tx_desc;
 
+			if (ifp->flags & IFF_UP) {
+				dev_deactivate(ifp);
+			}
+
 			/* Replace the current qdiscs with our own. */
 			for (i = 0; i < ifp->real_num_tx_queues; i++) {
 				struct Qdisc *nqdisc;
@@ -543,13 +547,6 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 			}
 
 			kfree(nla);
-
-			if (ifp->flags & IFF_UP) {
-				dev_deactivate(ifp);
-			}
-
-			txq = netdev_get_tx_queue(ifp, 0);
-			ifp->qdisc = txq->qdisc_sleeping;
 
 			if (ifp->flags & IFF_UP) {
 				dev_activate(ifp);
@@ -593,7 +590,6 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 				oqdisc = dev_graft_qdisc(txq, NULL);
 				qdisc_destroy(oqdisc);
 			}
-			ifp->qdisc = &noop_qdisc;
 
 			if (ifp->flags & IFF_UP) {
 				dev_activate(ifp);
