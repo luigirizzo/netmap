@@ -502,9 +502,10 @@ enum {	NETMAP_ADMODE_BEST = 0,	/* use native, fallback to generic */
 	NETMAP_ADMODE_LAST };
 static int netmap_admode = NETMAP_ADMODE_BEST;
 
-int netmap_generic_mit = 100*1000;   /* Generic mitigation interval in nanoseconds. */
-int netmap_generic_ringsize = 1024;   /* Generic ringsize. */
-int netmap_generic_rings = 1;   /* number of queues in generic. */
+int netmap_generic_mit = 100*1000;  /* Generic mitigation interval in nanoseconds. */
+int netmap_generic_ringsize = 1024;  /* Generic ringsize. */
+int netmap_generic_rings = 1;  /* number of queues in generic. */
+int netmap_generic_txqdisc = 1;  /* try to use netmap-aware qdisc */
 
 /*
  * SYSCTL calls are grouped between SYSBEGIN and SYSEND to be emulated
@@ -532,6 +533,7 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_ringsize, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW, &netmap_generic_rings, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW, &netmap_generic_txqdisc, 0 , "");
 
 SYSEND;
 

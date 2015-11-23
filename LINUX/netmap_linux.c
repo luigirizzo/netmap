@@ -730,7 +730,7 @@ void
 nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 {
 	gna->rxsg = 1; /* Supported through skb_copy_bits(). */
-	gna->txqdisc = 1;
+	gna->txqdisc = netmap_generic_txqdisc;
 }
 
 int

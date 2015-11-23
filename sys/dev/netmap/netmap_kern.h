@@ -1440,6 +1440,7 @@ extern int netmap_flags;
 extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
 extern int netmap_generic_rings;
+extern int netmap_generic_txqdisc;
 extern int netmap_use_count;
 
 /*
