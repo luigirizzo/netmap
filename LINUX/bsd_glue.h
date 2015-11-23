@@ -210,6 +210,8 @@ struct thread;
 #define NM_MAGIC_PRIORITY_TXQE	0xad86d313U
 #define NM_MAGIC_PRIORITY_RX	0xad86d311U
 
+#define MBUF_QUEUED(m)		(m->priority != NM_MAGIC_PRIORITY_TX)
+
 /*
  * m_copydata() copies from mbuf to buffer following the mbuf chain.
  * skb_copy_bits() copies the skb headlen and all the fragments.

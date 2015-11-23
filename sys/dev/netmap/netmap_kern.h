@@ -120,6 +120,8 @@ struct netmap_adapter *netmap_getna(if_t ifp);
 #define PNT_MBUF_REFCNT(m)      ((m)->m_ext.ref_cnt)
 #endif
 
+#define MBUF_QUEUED(m)		1
+
 struct nm_selinfo {
 	struct selinfo si;
 	struct mtx m;

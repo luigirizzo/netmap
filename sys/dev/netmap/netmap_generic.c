@@ -459,8 +459,9 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 		int replenish = 0;
 
 		if (txqdisc) {
-			if (m->priority != NM_MAGIC_PRIORITY_TX) {
-				break; /* Still not dequeued. */
+			if (MBUF_QUEUED(m)) {
+				break; /* Not dequeued yet. */
+
 			} else if (MBUF_REFCNT(m) != 1) {
 				/* This mbuf has been dequeued but is still busy
 				 * (refcount is 2).
@@ -473,6 +474,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 			if (unlikely(m == NULL)) {
 				/* this is done, try to replenish the entry */
 				replenish = 1;
+
 			} else if (MBUF_REFCNT(m) != 1) {
 				break; /* This mbuf is still busy: its refcnt is 2. */
 			}
