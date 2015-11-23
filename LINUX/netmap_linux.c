@@ -512,64 +512,67 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 	if (intercept) {
 		struct nm_generic_qdisc *qdiscopt;
 
-		nla = kmalloc(nla_attr_size(sizeof(*qdiscopt)),
-			      GFP_KERNEL);
-		if (!nla) {
-			D("Failed to allocate netlink attribute");
-			return ENOMEM;
-		}
-		nla->nla_type = RTM_NEWQDISC;
-		nla->nla_len = nla_attr_size(sizeof(*qdiscopt));
-		qdiscopt = (struct nm_generic_qdisc *)nla_data(nla);
-		memset(qdiscopt, 0, sizeof(*qdiscopt));
-		qdiscopt->limit = 256;
+		if (gna->txqdisc) {
+			nla = kmalloc(nla_attr_size(sizeof(*qdiscopt)),
+				      GFP_KERNEL);
+			if (!nla) {
+				D("Failed to allocate netlink attribute");
+				return ENOMEM;
+			}
+			nla->nla_type = RTM_NEWQDISC;
+			nla->nla_len = nla_attr_size(sizeof(*qdiscopt));
+			qdiscopt = (struct nm_generic_qdisc *)nla_data(nla);
+			memset(qdiscopt, 0, sizeof(*qdiscopt));
+			qdiscopt->limit = 256;
 
-		/* Replace the current qdiscs with our own. */
-		for (i = 0; i < ifp->real_num_tx_queues; i++) {
-			struct Qdisc *nqdisc;
-			struct Qdisc *oqdisc;
-			int err;
+			/* Replace the current qdiscs with our own. */
+			for (i = 0; i < ifp->real_num_tx_queues; i++) {
+				struct Qdisc *nqdisc;
+				struct Qdisc *oqdisc;
+				int err;
 
-			txq = netdev_get_tx_queue(ifp, i);
-			/* This takes a refcount to netmap module, alloc the
-			 * qdisc and calls the init() op with NULL attr. */
-			nqdisc = qdisc_create_dflt(txq, &generic_qdisc_ops,
-						   TC_H_UNSPEC);
-			if (!nqdisc) {
-				D("Failed to create qdisc");
-				goto qdisc_create;
+				txq = netdev_get_tx_queue(ifp, i);
+				/* This takes a refcount to netmap module, alloc the
+				 * qdisc and calls the init() op with NULL netlink
+				 * attribute. */
+				nqdisc = qdisc_create_dflt(txq, &generic_qdisc_ops,
+							   TC_H_UNSPEC);
+				if (!nqdisc) {
+					D("Failed to create qdisc");
+					goto qdisc_create;
+				}
+
+				/* Call the change() op passing a valid netlink
+				 * attribute. This is used to set the queue idx. */
+				qdiscopt->qidx = i;
+				err = nqdisc->ops->change(nqdisc, nla);
+				if (err) {
+					D("Failed to init qdisc");
+					goto qdisc_create;
+				}
+
+				oqdisc = dev_graft_qdisc(txq, nqdisc);
+				if (oqdisc) {
+					/* We can call this also with
+					 * odisc == &noop_qdisc, since the noop
+					 * qdisc has the TCQ_F_BUILTIN flag set,
+					 * and so qdisc_destroy will skip it. */
+					qdisc_destroy(oqdisc);
+				}
 			}
 
-			/* Call the change() op passing a valid netlink
-			 * attribute. This is used to set the queue idx. */
-			qdiscopt->qidx = i;
-			err = nqdisc->ops->change(nqdisc, nla);
-			if (err) {
-				D("Failed to init qdisc");
-				goto qdisc_create;
+			kfree(nla);
+
+			if (ifp->flags & IFF_UP) {
+				dev_deactivate(ifp);
 			}
 
-			oqdisc = dev_graft_qdisc(txq, nqdisc);
-			if (oqdisc) {
-				/* We can call this also with
-				 * odisc == &noop_qdisc, since the noop
-				 * qdisc has the TCQ_F_BUILTIN flag set,
-				 * and so qdisc_destroy will skip it. */
-				qdisc_destroy(oqdisc);
+			txq = netdev_get_tx_queue(ifp, 0);
+			ifp->qdisc = txq->qdisc_sleeping;
+
+			if (ifp->flags & IFF_UP) {
+				dev_activate(ifp);
 			}
-		}
-
-		kfree(nla);
-
-		if (ifp->flags & IFF_UP) {
-			dev_deactivate(ifp);
-		}
-
-		txq = netdev_get_tx_queue(ifp, 0);
-		ifp->qdisc = txq->qdisc_sleeping;
-
-		if (ifp->flags & IFF_UP) {
-			dev_activate(ifp);
 		}
 
 		/*
@@ -596,28 +599,30 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 		/* Restore the original netdev_ops. */
 		ifp->netdev_ops = (void *)na->if_transmit;
 
-		/* Restore the original qdiscs. */
-		if (ifp->flags & IFF_UP) {
-			dev_deactivate(ifp);
-		}
-
-		for (i = 0; i < ifp->real_num_tx_queues; i++) {
-			struct Qdisc *qdisc;
-
-			txq = netdev_get_tx_queue(ifp, i);
-			qdisc = txq->qdisc_sleeping;
-			if (!qdisc) {
-				continue;
+		if (gna->txqdisc) {
+			/* Restore the original qdiscs. */
+			if (ifp->flags & IFF_UP) {
+				dev_deactivate(ifp);
 			}
 
-			rcu_assign_pointer(txq->qdisc, &noop_qdisc);
-			txq->qdisc_sleeping = &noop_qdisc;
-			qdisc_destroy(qdisc);
-		}
-		ifp->qdisc = &noop_qdisc;
+			for (i = 0; i < ifp->real_num_tx_queues; i++) {
+				struct Qdisc *qdisc;
 
-		if (ifp->flags & IFF_UP) {
-			dev_activate(ifp);
+				txq = netdev_get_tx_queue(ifp, i);
+				qdisc = txq->qdisc_sleeping;
+				if (!qdisc) {
+					continue;
+				}
+
+				rcu_assign_pointer(txq->qdisc, &noop_qdisc);
+				txq->qdisc_sleeping = &noop_qdisc;
+				qdisc_destroy(qdisc);
+			}
+			ifp->qdisc = &noop_qdisc;
+
+			if (ifp->flags & IFF_UP) {
+				dev_activate(ifp);
+			}
 		}
 	}
 
