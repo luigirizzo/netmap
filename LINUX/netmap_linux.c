@@ -531,13 +531,11 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 				}
 
 				oqdisc = dev_graft_qdisc(txq, nqdisc);
-				if (oqdisc) {
-					/* We can call this also with
-					 * odisc == &noop_qdisc, since the noop
-					 * qdisc has the TCQ_F_BUILTIN flag set,
-					 * and so qdisc_destroy will skip it. */
-					qdisc_destroy(oqdisc);
-				}
+				/* We can call this also with
+				 * odisc == &noop_qdisc, since the noop
+				 * qdisc has the TCQ_F_BUILTIN flag set,
+				 * and so qdisc_destroy will skip it. */
+				qdisc_destroy(oqdisc);
 			}
 
 			kfree(nla);
@@ -585,17 +583,11 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 			}
 
 			for (i = 0; i < ifp->real_num_tx_queues; i++) {
-				struct Qdisc *qdisc;
+				struct Qdisc *oqdisc;
 
 				txq = netdev_get_tx_queue(ifp, i);
-				qdisc = txq->qdisc_sleeping;
-				if (!qdisc) {
-					continue;
-				}
-
-				rcu_assign_pointer(txq->qdisc, &noop_qdisc);
-				txq->qdisc_sleeping = &noop_qdisc;
-				qdisc_destroy(qdisc);
+				oqdisc = dev_graft_qdisc(txq, NULL);
+				qdisc_destroy(oqdisc);
 			}
 			ifp->qdisc = &noop_qdisc;
 
