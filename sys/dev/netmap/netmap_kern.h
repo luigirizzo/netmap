@@ -1744,6 +1744,7 @@ struct nm_os_gen_arg {
 	void *addr;	/* payload of current packet */
 	u_int len;	/* packet length */
 	u_int ring_nr;	/* packet length */
+	u_int event;
 };
 int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);

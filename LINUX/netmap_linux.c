@@ -379,6 +379,9 @@ struct nm_generic_qdisc {
 	unsigned int event;
 };
 
+static void d1(struct mbuf *m) {}
+static void d2(struct mbuf *m) {}
+
 static int
 generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 {
@@ -429,12 +432,7 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 	}
 
 	if (unlikely(qdisc_qlen(qdisc) >= qdisc->limit)) {
-		unsigned int head = priv->head;
-
-		priv->event = head;
-		priv->event += (priv->tail - head) / 2;
-
-		RD(5, "dropping mbuf, event set at %u", priv->event);
+		RD(5, "dropping mbuf");
 
 		return qdisc_drop(m, qdisc);
 		/* or qdisc_reshape_fail() ? */
@@ -459,10 +457,12 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 	}
 
 	priv->head++;
-	if (priv->head == priv->event) {
-		RD(5, "Event net, notify netmap TX client");
+	if (m->destructor == d1) {
+		m->destructor = NULL;
+		RD(5, "Event met, notify %p", m);
 		netmap_generic_irq(qdisc_dev(qdisc), priv->qidx, NULL);
 	}
+	m->destructor = NULL;
 
 	RD(5, "Dequeuing mbuf, h %u, t %u, len %u", priv->head,
 	   priv->tail, qdisc_qlen(qdisc));
@@ -522,7 +522,7 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 		nla->nla_len = nla_attr_size(sizeof(*qdiscopt));
 		qdiscopt = (struct nm_generic_qdisc *)nla_data(nla);
 		memset(qdiscopt, 0, sizeof(*qdiscopt));
-		qdiscopt->limit = 1024;
+		qdiscopt->limit = 256;
 
 		/* Replace the current qdiscs with our own. */
 		for (i = 0; i < ifp->real_num_tx_queues; i++) {
@@ -653,6 +653,11 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
     /* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
     m->priority = NM_MAGIC_PRIORITY_TX;
     skb_set_queue_mapping(m, a->ring_nr);
+    if (a->event) {
+	SET_MBUF_DESTRUCTOR(m, d1);
+    } else {
+	SET_MBUF_DESTRUCTOR(m, d2);
+    }
 
     ret = dev_queue_xmit(m);
 

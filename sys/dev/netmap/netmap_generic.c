@@ -446,7 +446,7 @@ extern int netmap_adaptive_io;
  * nr_hwcur is the first unsent buffer.
  */
 static u_int
-generic_netmap_tx_clean(struct netmap_kring *kring)
+generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 {
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int nm_i = nm_next(kring->nr_hwtail, lim);
@@ -456,18 +456,36 @@ generic_netmap_tx_clean(struct netmap_kring *kring)
 
 	while (nm_i != hwcur) { /* buffers not completed */
 		struct mbuf *m = tx_pool[nm_i];
+		int replenish = 0;
 
-		if (unlikely(m == NULL)) {
-			/* this is done, try to replenish the entry */
-			tx_pool[nm_i] = m = nm_os_get_mbuf(kring->na->ifp, NETMAP_BUF_SIZE(kring->na));
+		if (txqdisc) {
+			if (m->destructor) {
+				break; /* Still not dequeued. */
+			} else if (GET_MBUF_REFCNT(m) != 1) {
+				/* This mbuf is still busy: its refcnt is 2. */
+				m_freem(m);
+				replenish = 1;
+			}
+
+		} else {
+			if (unlikely(m == NULL)) {
+				/* this is done, try to replenish the entry */
+				replenish = 1;
+			} else if (GET_MBUF_REFCNT(m) != 1) {
+				break; /* This mbuf is still busy: its refcnt is 2. */
+			}
+		}
+
+		if (replenish) {
+			tx_pool[nm_i] = m = nm_os_get_mbuf(kring->na->ifp,
+							   NETMAP_BUF_SIZE(kring->na));
 			if (unlikely(m == NULL)) {
 				D("mbuf allocation failed, XXX error");
 				// XXX how do we proceed ? break ?
 				return -ENOMEM;
 			}
-		} else if (GET_MBUF_REFCNT(m) != 1) {
-			break; /* This mbuf is still busy: its refcnt is 2. */
 		}
+
 		n++;
 		nm_i = nm_next(nm_i, lim);
 #if 0 /* rate adaptation */
@@ -495,22 +513,16 @@ generic_netmap_tx_clean(struct netmap_kring *kring)
 }
 
 
-/*
- * We have pending packets in the driver between nr_hwtail +1 and hwcur.
- * Compute a position in the middle, to be used to generate
- * a notification.
- */
 static inline u_int
-generic_tx_event_middle(struct netmap_kring *kring, u_int hwcur)
+generic_tx_event_middle(u_int inf, u_int sup, u_int lim)
 {
-	u_int n = kring->nkr_num_slots;
-	u_int ntc = nm_next(kring->nr_hwtail, n-1);
+	u_int n = lim + 1;
 	u_int e;
 
-	if (hwcur >= ntc) {
-		e = (hwcur + ntc) / 2;
+	if (sup >= inf) {
+		e = (sup + inf) / 2;
 	} else { /* wrap around */
-		e = (hwcur + n + ntc) / 2;
+		e = (sup + n + inf) / 2;
 		if (e >= n) {
 			e -= n;
 		}
@@ -533,13 +545,20 @@ generic_tx_event_middle(struct netmap_kring *kring, u_int hwcur)
 static void
 generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 {
+	u_int lim = kring->nkr_num_slots - 1;
 	struct mbuf *m;
 	u_int e;
 
-	if (nm_next(kring->nr_hwtail, kring->nkr_num_slots -1) == hwcur) {
+	if (nm_next(kring->nr_hwtail, lim) == hwcur) {
 		return; /* all buffers are free */
 	}
-	e = generic_tx_event_middle(kring, hwcur);
+
+	/*
+	 * We have pending packets in the driver between hwtail+1 and hwcur.
+	 * Compute a position in the middle, to be used to generate
+	 * a notification.
+	 */
+	e = generic_tx_event_middle(nm_next(kring->nr_hwtail, lim), hwcur, lim);
 
 	m = kring->tx_pool[e];
 	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? GET_MBUF_REFCNT(m) : -2 );
@@ -569,6 +588,7 @@ static int
 generic_netmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
+	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
 	struct ifnet *ifp = na->ifp;
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i;	/* index into the netmap ring */ // j
@@ -588,6 +608,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
 		struct nm_os_gen_arg a;
+		u_int event = generic_tx_event_middle(nm_i, kring->nr_hwtail, lim);
 
 		a.ifp = ifp;
 		a.ring_nr = ring_nr;
@@ -616,6 +637,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			a.m = m;
 			a.addr = addr;
 			a.len = len;
+			a.event = (nm_i == event);
 			/* XXX we should ask notifications when NS_REPORT is set,
 			 * or roughly every half frame. We can optimize this
 			 * by lazily requesting notifications only when a
@@ -624,7 +646,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * ring->cur == ring->tail || nm_i != cur
 			 */
 			tx_ret = nm_os_generic_xmit_frame(&a);
-			if (unlikely(tx_ret == -1)) {
+			if (unlikely(tx_ret == -1 && !gna->txqdisc)) {
 				ND(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
 						tx_ret, nm_i, head, kring->nr_hwtail);
 				/*
@@ -642,7 +664,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 				 * and we solve it there by dropping the excess packets.
 				 */
 				generic_set_tx_event(kring, nm_i);
-				if (generic_netmap_tx_clean(kring)) { /* space now available */
+				if (generic_netmap_tx_clean(kring, gna->txqdisc)) { /* space now available */
 					continue;
 				} else {
 					break;
@@ -670,7 +692,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 	/*
 	 * Second, reclaim completed buffers
 	 */
-	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+	if (!gna->txqdisc && (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring))) {
 		/* No more available slots? Set a notification event
 		 * on a netmap slot that will be cleaned in the future.
 		 * No doublecheck is performed, since txsync() will be
@@ -680,7 +702,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 	}
 	ND("tx #%d, hwtail = %d", n, kring->nr_hwtail);
 
-	generic_netmap_tx_clean(kring);
+	generic_netmap_tx_clean(kring, gna->txqdisc);
 
 	return 0;
 }
