@@ -386,7 +386,7 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 
 	priv = qdisc_priv(qdisc);
 	priv->qidx = 0;
-	priv->limit = 1024;
+	priv->limit = 1024; /* This is going to be overridden. */
 
 	if (opt) {
 		struct nm_generic_qdisc *qdiscopt = nla_data(opt);
@@ -498,7 +498,7 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 			nla->nla_len = nla_attr_size(sizeof(*qdiscopt));
 			qdiscopt = (struct nm_generic_qdisc *)nla_data(nla);
 			memset(qdiscopt, 0, sizeof(*qdiscopt));
-			qdiscopt->limit = 256;
+			qdiscopt->limit = na->num_tx_desc;
 
 			/* Replace the current qdiscs with our own. */
 			for (i = 0; i < ifp->real_num_tx_queues; i++) {
