@@ -247,6 +247,12 @@ netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 		return;
 
 	netmap_common_irq(ifp, q, work_done);
+#ifdef RATE_GENERIC
+	if (work_done)
+		rate_ctx.new.rxirq++;
+	else
+		rate_ctx.new.txirq++;
+#endif  /* RATE_GENERIC */
 }
 
 
@@ -435,7 +441,6 @@ generic_mbuf_destructor(struct mbuf *m)
 		RD(5, "Tx irq (%p) queue %d index %d" , m, MBUF_TXQ(m), (int)(uintptr_t)m->m_ext.ext_arg1);
 	netmap_default_mbuf_destructor(m);
 #endif /* __FreeBSD__ */
-	IFRATE(rate_ctx.new.txirq++);
 }
 
 extern int netmap_adaptive_io;
@@ -694,7 +699,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 			nm_i = nm_next(nm_i, lim);
-			IFRATE(rate_ctx.new.txpkt ++);
+			IFRATE(rate_ctx.new.txpkt++);
 		}
 		if (a.head != NULL) {
 			a.addr = NULL;
@@ -763,7 +768,6 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	if (netmap_generic_mit < 32768) {
 		/* no rx mitigation, pass notification up */
 		netmap_generic_irq(na->ifp, rr, &work_done);
-		IFRATE(rate_ctx.new.rxirq++);
 	} else {
 		/* same as send combining, filter notification if there is a
 		 * pending timer, otherwise pass it up and start a timer.
@@ -773,7 +777,6 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 			gna->mit[rr].mit_pending = 1;
 		} else {
 			netmap_generic_irq(na->ifp, rr, &work_done);
-			IFRATE(rate_ctx.new.rxirq++);
 			nm_os_mitigation_start(&gna->mit[rr]);
 		}
 	}
