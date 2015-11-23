@@ -374,9 +374,6 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 struct nm_generic_qdisc {
 	unsigned int qidx;
 	unsigned int limit;
-	unsigned int tail;
-	unsigned int head;
-	unsigned int event;
 };
 
 static void d1(struct mbuf *m) {}
@@ -389,9 +386,6 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 
 	priv = qdisc_priv(qdisc);
 	priv->qidx = 0;
-	priv->tail = 0;
-	priv->head = 0;
-	priv->event = -1;
 	priv->limit = 1024;
 
 	if (opt) {
@@ -414,23 +408,9 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 	return 0;
 }
 
-static void
-generic_qdisc_reset(struct Qdisc *qdisc)
-{
-	qdisc_reset_queue(qdisc);
-	D("Qdisc reset");
-}
-
 static int
 generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 {
-	struct nm_generic_qdisc *priv = qdisc_priv(qdisc);
-
-	if (!m) {
-		D("NULL mbuf");
-		return -1;
-	}
-
 	if (unlikely(qdisc_qlen(qdisc) >= qdisc->limit)) {
 		RD(5, "dropping mbuf");
 
@@ -438,10 +418,7 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 		/* or qdisc_reshape_fail() ? */
 	}
 
-	priv->tail++;
-
-	RD(5, "Enqueuing mbuf, h %u, t %u, len %u", priv->head,
-	   priv->tail, qdisc_qlen(qdisc));
+	RD(5, "Enqueuing mbuf, len %u", qdisc_qlen(qdisc));
 
 	return qdisc_enqueue_tail(m, qdisc);
 }
@@ -456,7 +433,6 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 		return NULL;
 	}
 
-	priv->head++;
 	if (m->destructor == d1) {
 		m->destructor = NULL;
 		RD(5, "Event met, notify %p", m);
@@ -464,8 +440,7 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 	}
 	m->destructor = NULL;
 
-	RD(5, "Dequeuing mbuf, h %u, t %u, len %u", priv->head,
-	   priv->tail, qdisc_qlen(qdisc));
+	RD(5, "Enqueuing mbuf, len %u", qdisc_qlen(qdisc));
 
 	return m;
 }
@@ -473,7 +448,7 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 static struct mbuf *
 generic_qdisc_peek(struct Qdisc *qdisc)
 {
-	D("Peeking queue, curr len %u", qdisc_qlen(qdisc));
+	RD(5, "Peeking queue, curr len %u", qdisc_qlen(qdisc));
 	return skb_peek(&qdisc->q);
 }
 
@@ -489,7 +464,7 @@ generic_qdisc_ops __read_mostly = {
 	.id		= "netmap_generic",
 	.priv_size	= sizeof(struct nm_generic_qdisc),
 	.init		= generic_qdisc_init,
-	.reset		= generic_qdisc_reset,
+	.reset		= qdisc_reset_queue,
 	.change		= generic_qdisc_init,
 	.enqueue	= generic_qdisc_enqueue,
 	.dequeue	= generic_qdisc_dequeue,
