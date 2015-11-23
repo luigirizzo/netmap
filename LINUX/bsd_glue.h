@@ -202,10 +202,13 @@ struct thread;
 #define SET_MBUF_DESTRUCTOR(m, f) m->destructor = (void *)&f
 
 /* Magic number for sk_buff.priority field, used to take decisions in
- * generic_ndo_start_xmit() and in linux_generic_rx_handler().
+ * generic_ndo_start_xmit(), linux_generic_rx_handler() and
+ * generic_qdisc_dequeue().
  */
-#define NM_MAGIC_PRIORITY_TX 0xad86d310U
-#define NM_MAGIC_PRIORITY_RX 0xad86d311U
+#define NM_MAGIC_PRIORITY_TX	0xad86d310U
+#define NM_MAGIC_PRIORITY_TXQ	0xad86d312U
+#define NM_MAGIC_PRIORITY_TXQE	0xad86d313U
+#define NM_MAGIC_PRIORITY_RX	0xad86d311U
 
 /*
  * m_copydata() copies from mbuf to buffer following the mbuf chain.

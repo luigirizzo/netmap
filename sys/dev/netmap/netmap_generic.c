@@ -459,10 +459,12 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 		int replenish = 0;
 
 		if (txqdisc) {
-			if (m->destructor) {
+			if (m->priority != NM_MAGIC_PRIORITY_TX) {
 				break; /* Still not dequeued. */
 			} else if (GET_MBUF_REFCNT(m) != 1) {
-				/* This mbuf is still busy: its refcnt is 2. */
+				/* This mbuf has been dequeued but is still busy
+				 * (refcount is 2).
+				 * Leave it to the driver and realloc. */
 				m_freem(m);
 				replenish = 1;
 			}
@@ -608,7 +610,13 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
 		struct nm_os_gen_arg a;
-		u_int event = generic_tx_event_middle(nm_i, kring->nr_hwtail, lim);
+		u_int xmit_mode = NM_GEN_XMIT_NORMAL;
+		u_int event = -1;
+
+		if (gna->txqdisc) {
+			xmit_mode = NM_GEN_XMIT_Q;
+			event = generic_tx_event_middle(nm_i, kring->nr_hwtail, lim);
+		}
 
 		a.ifp = ifp;
 		a.ring_nr = ring_nr;
@@ -637,7 +645,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			a.m = m;
 			a.addr = addr;
 			a.len = len;
-			a.event = (nm_i == event);
+			a.xmit_mode = (nm_i == event) ? NM_GEN_XMIT_Q_EVENT : xmit_mode;
 			/* XXX we should ask notifications when NS_REPORT is set,
 			 * or roughly every half frame. We can optimize this
 			 * by lazily requesting notifications only when a

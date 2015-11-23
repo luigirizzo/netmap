@@ -376,9 +376,6 @@ struct nm_generic_qdisc {
 	unsigned int limit;
 };
 
-static void d1(struct mbuf *m) {}
-static void d2(struct mbuf *m) {}
-
 static int
 generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 {
@@ -428,17 +425,19 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 {
 	struct nm_generic_qdisc *priv = qdisc_priv(qdisc);
 	struct mbuf *m = qdisc_dequeue_head(qdisc);
+	bool event;
 
 	if (!m) {
 		return NULL;
 	}
 
-	if (m->destructor == d1) {
-		m->destructor = NULL;
+	event = (m->priority == NM_MAGIC_PRIORITY_TXQE);
+	m->priority = NM_MAGIC_PRIORITY_TX;
+
+	if (event) {
 		RD(5, "Event met, notify %p", m);
 		netmap_generic_irq(qdisc_dev(qdisc), priv->qidx, NULL);
 	}
-	m->destructor = NULL;
 
 	RD(5, "Enqueuing mbuf, len %u", qdisc_qlen(qdisc));
 
@@ -631,13 +630,10 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	NM_ATOMIC_INC(&m->users);
 	m->dev = a->ifp;
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
-	m->priority = NM_MAGIC_PRIORITY_TX;
 	skb_set_queue_mapping(m, a->ring_nr);
-	if (a->event) {
-		SET_MBUF_DESTRUCTOR(m, d1);
-	} else {
-		SET_MBUF_DESTRUCTOR(m, d2);
-	}
+	m->priority = (a->xmit_mode == NM_GEN_XMIT_NORMAL) ? NM_MAGIC_PRIORITY_TX :
+		      ((a->xmit_mode == NM_GEN_XMIT_Q) ? NM_MAGIC_PRIORITY_TXQ
+						       : NM_MAGIC_PRIORITY_TXQE);
 
 	ret = dev_queue_xmit(m);
 
