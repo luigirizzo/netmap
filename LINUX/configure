@@ -1079,6 +1079,20 @@ add_test 'have NNITD' <<-EOF
 	}
 EOF
 
+# arguments of qdisc_create_dflt (either 3 or 4)
+add_test 'define QDISC_CREATE_DFLT_3ARGS' <<-EOF
+	#include <net/sch_generic.h>
+
+	struct Qdisc *
+	dummy(struct netdev_queue *dev_queue,
+	      struct Qdisc_ops* ops,
+	      unsigned int parent_id)
+	{
+		return qdisc_create_dflt(dev_queue,
+					 ops, parent_id);
+	}
+EOF
+
 #####################################################
 # checks related to drivers                         #
 #####################################################
