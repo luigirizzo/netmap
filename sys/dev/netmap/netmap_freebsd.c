@@ -280,9 +280,8 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	 * (and eventually, just reference the netmap buffer)
 	 */
 
-	if (GET_MBUF_REFCNT(m) != 1) {
-		D("invalid refcnt %d for %p",
-			GET_MBUF_REFCNT(m), m);
+	if (MBUF_REFCNT(m) != 1) {
+		D("invalid refcnt %d for %p", MBUF_REFCNT(m), m);
 		panic("in generic_xmit_frame");
 	}
 	// XXX the ext_size check is unnecessary if we link the netmap buf

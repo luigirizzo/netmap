@@ -120,7 +120,7 @@ netmap_default_mbuf_destructor(struct mbuf *m)
 	m->m_ext.ext_arg1 = NULL;
 	m->m_ext.ext_type = EXT_PACKET;
 	m->m_ext.ext_free = NULL;
-	if (GET_MBUF_REFCNT(m) == 0)
+	if (MBUF_REFCNT(m) == 0)
 		SET_MBUF_REFCNT(m, 1);
 	uma_zfree(zone_pack, m);
 }
@@ -136,7 +136,7 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
 		m->m_ext.ext_free = (void *)netmap_default_mbuf_destructor;
 		m->m_ext.ext_type = EXT_EXTREF;
-		ND(5, "create m %p refcnt %d", m, GET_MBUF_REFCNT(m));
+		ND(5, "create m %p refcnt %d", m, MBUF_REFCNT(m));
 	}
 	return m;
 }
@@ -461,7 +461,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 		if (txqdisc) {
 			if (m->priority != NM_MAGIC_PRIORITY_TX) {
 				break; /* Still not dequeued. */
-			} else if (GET_MBUF_REFCNT(m) != 1) {
+			} else if (MBUF_REFCNT(m) != 1) {
 				/* This mbuf has been dequeued but is still busy
 				 * (refcount is 2).
 				 * Leave it to the driver and realloc. */
@@ -473,7 +473,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 			if (unlikely(m == NULL)) {
 				/* this is done, try to replenish the entry */
 				replenish = 1;
-			} else if (GET_MBUF_REFCNT(m) != 1) {
+			} else if (MBUF_REFCNT(m) != 1) {
 				break; /* This mbuf is still busy: its refcnt is 2. */
 			}
 		}
@@ -563,7 +563,7 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 	e = generic_tx_event_middle(nm_next(kring->nr_hwtail, lim), hwcur, lim);
 
 	m = kring->tx_pool[e];
-	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? GET_MBUF_REFCNT(m) : -2 );
+	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? MBUF_REFCNT(m) : -2 );
 	if (m == NULL) {
 		/* This can happen if there is already an event on the netmap
 		   slot 'e': There is nothing to do. */

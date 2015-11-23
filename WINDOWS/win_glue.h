@@ -302,7 +302,7 @@ typedef struct _FUNCTION_POINTER_XCHANGE {
 } FUNCTION_POINTER_XCHANGE; // , *PFUNCTION_POINTER_XCHANGE;
 
 //XXX_ale To be correctly redefined
-#define GET_MBUF_REFCNT(a)				1
+#define MBUF_REFCNT(a)				1
 #define	SET_MBUF_DESTRUCTOR(a,b)		a->netmap_default_mbuf_destructor = b;// XXX must be set to enable tx notifications
 #define MBUF_IFP(m)						m->dev	
 
