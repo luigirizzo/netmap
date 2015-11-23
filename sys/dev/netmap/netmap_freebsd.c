@@ -302,7 +302,7 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	m->m_pkthdr.flowid = a->ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */
 	ret = NA(ifp)->if_transmit(ifp, m);
-	return ret;
+	return ret ? NM_GEN_TX_NOBUFS : NM_GEN_TX_SUCCESS;
 }
 
 

@@ -646,9 +646,15 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * ring->cur == ring->tail || nm_i != cur
 			 */
 			tx_ret = nm_os_generic_xmit_frame(&a);
-			if (unlikely(tx_ret == -1 && !gna->txqdisc)) {
-				ND(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
-						tx_ret, nm_i, head, kring->nr_hwtail);
+			if (unlikely(tx_ret == NM_GEN_TX_NOBUFS)) {
+				if (gna->txqdisc) {
+					/* Device queue is full, but putting an event
+					 * in a mbuf destructor is not necessary, since
+					 * a notification will be sent by the queue as
+					 * soon as enough packets are drained. */
+					break;
+				}
+
 				/*
 				 * No room for this mbuf in the device driver.
 				 * Request a notification FOR A PREVIOUS MBUF,
@@ -664,19 +670,18 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 				 * and we solve it there by dropping the excess packets.
 				 */
 				generic_set_tx_event(kring, nm_i);
-				if (generic_netmap_tx_clean(kring, gna->txqdisc)) { /* space now available */
+				if (generic_netmap_tx_clean(kring, gna->txqdisc)) {
+					/* space now available */
 					continue;
 				} else {
 					break;
 				}
 
-			} else if (unlikely(tx_ret == -2)) {
-				/* Device queue is full, but putting an event in a mbuf
-				 * destructor is not necessary, since a notification will
-				 * be sent by the queue as soon as enough packets are
-				 * drained. */
-				break;
+			} else if (unlikely(tx_ret != NM_GEN_TX_SUCCESS)) {
+				RD(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
+						tx_ret, nm_i, head, kring->nr_hwtail);
 			}
+
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 			nm_i = nm_next(nm_i, lim);
 			IFRATE(rate_ctx.new.txpkt ++);

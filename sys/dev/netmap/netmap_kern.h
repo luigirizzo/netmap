@@ -1746,6 +1746,9 @@ struct nm_os_gen_arg {
 	u_int ring_nr;	/* packet length */
 	u_int event;
 };
+
+enum {NM_GEN_TX_SUCCESS = 0, NM_GEN_TX_NOBUFS, NM_GEN_TX_ERR};
+
 int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);

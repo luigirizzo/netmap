@@ -641,44 +641,44 @@ qdisc_create:
 int
 nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
-    netdev_tx_t ret;
-    struct sk_buff *m = a->m;
-    u_int len = a->len;
+	struct sk_buff *m = a->m;
+	u_int len = a->len;
+	netdev_tx_t ret;
 
-    /* Empty the sk_buff. */
-    if (unlikely(skb_headroom(m)))
-	skb_push(m, skb_headroom(m));
-    skb_trim(m, 0);
+	/* Empty the sk_buff. */
+	if (unlikely(skb_headroom(m)))
+		skb_push(m, skb_headroom(m));
+	skb_trim(m, 0);
 
-    /* TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
-    skb_copy_to_linear_data(m, a->addr, len); // skb_store_bits(m, 0, addr, len);
-    skb_put(m, len);
-    NM_ATOMIC_INC(&m->users);
-    m->dev = a->ifp;
-    /* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
-    m->priority = NM_MAGIC_PRIORITY_TX;
-    skb_set_queue_mapping(m, a->ring_nr);
-    if (a->event) {
-	SET_MBUF_DESTRUCTOR(m, d1);
-    } else {
-	SET_MBUF_DESTRUCTOR(m, d2);
-    }
+	/* TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
+	skb_copy_to_linear_data(m, a->addr, len); // skb_store_bits(m, 0, addr, len);
+	skb_put(m, len);
+	NM_ATOMIC_INC(&m->users);
+	m->dev = a->ifp;
+	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
+	m->priority = NM_MAGIC_PRIORITY_TX;
+	skb_set_queue_mapping(m, a->ring_nr);
+	if (a->event) {
+		SET_MBUF_DESTRUCTOR(m, d1);
+	} else {
+		SET_MBUF_DESTRUCTOR(m, d2);
+	}
 
-    ret = dev_queue_xmit(m);
+	ret = dev_queue_xmit(m);
 
-    if (likely(ret == NET_XMIT_SUCCESS)) {
-        return 0;
-    }
-    if (unlikely(ret != NET_XMIT_DROP)) {
-        /* If something goes wrong in the TX path, there is nothing
-           intelligent we can do (for now) apart from error reporting. */
-        RD(5, "dev_queue_xmit failed: HARD ERROR %d", ret);
-	return -1;
-    }
+	if (unlikely(ret == NET_XMIT_DROP)) {
+		/* Qdisc queue is full. */
+		return NM_GEN_TX_NOBUFS;
+	}
 
-    /* Tell the generic txsync() that device queue is full, and
-     * it can stop transmitting without using mbuf destructor events. */
-    return -2;
+	if (unlikely(ret != NET_XMIT_SUCCESS)) {
+		/* If something goes wrong in the TX path, there is nothing
+		   intelligent we can do (for now) apart from error reporting. */
+		RD(5, "dev_queue_xmit failed: HARD ERROR %d", ret);
+		return NM_GEN_TX_ERR;
+	}
+
+	return NM_GEN_TX_SUCCESS;
 }
 #endif /* WITH_GENERIC */
 

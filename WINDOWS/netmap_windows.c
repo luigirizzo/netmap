@@ -301,18 +301,18 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	void *cur;
 	PVOID toSend = (a->addr == NULL) ? a->head : a->tail;
 	if (ndis_hooks.injectPacket == NULL) { /* silently drop ? */
-		return 0;
+		return NM_GEN_TX_SUCCESS;
 	}
 	cur = ndis_hooks.injectPacket(a->ifp->pfilter, a->addr, a->len, TRUE, toSend);
 	if (cur) {
 		a->tail = cur;
 		if (a->head == NULL)
 			a->head = cur;
+		return NM_GEN_TX_SUCCESS;
 	}
-	else {
-		return NDIS_STATUS_BUFFER_OVERFLOW;
-	}
-	return  0;
+
+	/* NDIS_STATUS_BUFFER_OVERFLOW */
+	return NM_GEN_TX_NOBUFS;
 }
 
 /*
