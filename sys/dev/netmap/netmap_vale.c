@@ -2519,6 +2519,7 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 		}
 		bna->na_kpriv = npriv;
 		na->na_flags |= NAF_BUSY;
+		npriv->np_ifp = na->ifp; /* let the priv destructor release the ref */
 	} else {
 		if (na->active_fds == 0) /* not registered */
 			return EINVAL;
