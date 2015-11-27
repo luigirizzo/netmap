@@ -3080,9 +3080,8 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
  *   (see netmap_bwrap_intr_notify)
  */
 void
-netmap_common_irq(struct ifnet *ifp, u_int q, u_int *work_done)
+netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 {
-	struct netmap_adapter *na = NA(ifp);
 	struct netmap_kring *kring;
 	enum txrx t = (work_done ? NR_RX : NR_TX);
 
@@ -3140,7 +3139,7 @@ netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 		return 0;
 	}
 
-	netmap_common_irq(ifp, q, work_done);
+	netmap_common_irq(na, q, work_done);
 	return 1;
 }
 

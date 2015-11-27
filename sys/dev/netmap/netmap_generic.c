@@ -246,7 +246,7 @@ netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 	if (unlikely(!nm_netmap_on(na)))
 		return;
 
-	netmap_common_irq(ifp, q, work_done);
+	netmap_common_irq(na, q, work_done);
 }
 
 
