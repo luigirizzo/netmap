@@ -19,6 +19,7 @@
 #define MAX_IFNAMELEN 	64
 #define DEF_OUT_PIPES 	2
 #define DEF_EXTRA_BUFS 	0
+#define BUF_REVOKE	100
 
 struct {
 	char ifname[MAX_IFNAMELEN];
@@ -73,6 +74,7 @@ uint64_t forwarded = 0;
 struct pipe_stat {
 	uint64_t drop;
 	uint64_t forward;
+	unsigned int last_sync;
 };
 
 struct pipe_stat *pipe_stats;
@@ -178,6 +180,7 @@ void usage()
 int main(int argc, char **argv)
 {
 	int ch, i;
+	unsigned int iter = 0;
 
 	glob_arg.ifname[0] = '\0';
 	glob_arg.output_rings = DEF_OUT_PIPES;
@@ -364,6 +367,7 @@ run:
 	signal(SIGINT, sigint_h);
 	while (!do_abort) {
 		u_int polli = 0;
+		iter++;
 
 		for (i = 0; i < npipes; ++i) {
 			pollfd[polli].fd = txnmds[i]->fd;
@@ -427,6 +431,7 @@ run:
 			struct netmap_slot *next_slot = &rxring->slot[next_cur];
 			const char *next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 			while (!nm_ring_empty(rxring)) {
+				struct overflow_queue *q;
 				struct netmap_slot *rs = next_slot;
 				next_cur = nm_ring_next(rxring, next_cur);
 				next_slot = &rxring->slot[next_cur];
@@ -442,6 +447,7 @@ run:
 				struct pipe_stat *ps = &pipe_stats[output_port];
 
 				// Move the packet to the output pipe.
+			retry:
 				if (nm_ring_space(ring)) {
 					struct netmap_slot *ts = &ring->slot[ring->cur];
 					free_buf = ts->buf_idx;
@@ -449,33 +455,61 @@ run:
 					ts->len = rs->len;
 					ts->flags |= NS_BUF_CHANGED;
 					ring->head = ring->cur = nm_ring_next(ring, ring->cur);
-					ps->forward++;
-					forwarded++;
-				} else if (oq) {
-					/* out of ring space, use the overflow queue */
+					goto forward;
+				}
 
-					struct overflow_queue *q = &oq[output_port];
-					if (freeq->n) {
-						free_buf = oq_deq(freeq).buf_idx;
-						oq_enq(q, rs);
-						ND(1, "overflow on pipe %d", output_port);
-					} else {
-						/* here we should remove one buffer from the longest
-						 * overflow queue, unless that is our own.
-						 * for now, we just drop
-						 */
-						dropped++;
-						ps->drop++;
-						goto next;
-					}
-				} else {
+				/* try to push packets down to free some space
+				 * in the pipe (no more than once per loop on
+				 * the same pipe, to make sure that there is a
+				 * reasonable amount of time between syncs)
+				 */
+				if (ps->last_sync != iter) {
+					ps->last_sync = iter;
+					ioctl(txnmds[output_port]->fd, NIOCTXSYNC, NULL);
+					goto retry;
+				}
+
+				/* use the overflow queue, if available */
+				if (!oq) {
 					dropped++;
 					ps->drop++;
 					goto next;
 				}
+
+				q = &oq[output_port];
+
+				if (!freeq->n) {
+					/* revoke some buffers from the longest overflow queue */
+					int j;
+					struct overflow_queue *lq = &oq[0];
+					int max = lq->n;
+
+					for (j = 1; j < npipes; j++) {
+						struct overflow_queue *cq = &oq[j];
+						if (cq->n > max) {
+							lq = cq;
+							max = lq->n;
+						}
+					}
+
+					for (j = 0; lq->n && j < BUF_REVOKE; j++) {
+						struct netmap_slot tmp = oq_deq(lq);
+						oq_enq(freeq, &tmp);
+					}
+
+					ND(1, "revoked %d buffers from %s", j, lq->name);
+					pipe_stats[lq - oq].drop += j;
+					dropped += j;
+				}
+
+				free_buf = oq_deq(freeq).buf_idx;
+				oq_enq(q, rs);
+
+			forward:
+				ps->forward++;
+				forwarded++;
 				rs->buf_idx = free_buf;
 				rs->flags |= NS_BUF_CHANGED;
-
 			next:
 				rxring->head = rxring->cur = next_cur;
 				ND(1,
