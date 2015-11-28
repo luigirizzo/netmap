@@ -34,7 +34,6 @@ struct overflow_queue {
 	int tail;
 	int n;
 	int size;
-	struct netmap_ring *ring;
 };
 
 static inline void
@@ -71,14 +70,16 @@ static volatile int do_abort = 0;
 uint64_t dropped = 0;
 uint64_t forwarded = 0;
 
-struct pipe_stat {
+struct port_des {
 	uint64_t drop;
 	uint64_t forward;
 	unsigned int last_sync;
+	struct overflow_queue *oq;
+	struct nm_desc *nmd;
+	struct netmap_ring *ring;
 };
 
-struct pipe_stat *pipe_stats;
-
+struct port_des *ports;
 
 static void *
 print_stats(void *arg)
@@ -96,7 +97,7 @@ print_stats(void *arg)
 		select(0, NULL, NULL, NULL, &delta);
 
 		for (j = 0; j < npipes; ++j) {
-			struct pipe_stat *p = &pipe_stats[j];
+			struct port_des *p = &ports[j];
 
 			total_packets = p->drop + p->forward;
 			D("Ring %u, Total Packets: %"PRIu64" Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64" Percent: %.2f",
@@ -229,20 +230,17 @@ int main(int argc, char **argv)
 	}
 
 	int npipes = glob_arg.output_rings;
-	struct nm_desc *rxnmd = NULL;
-	struct nm_desc *txnmds[npipes];
-	struct netmap_ring *txrings[npipes];
 
 	struct overflow_queue *freeq = NULL;
 
-	struct netmap_ring *rxring = NULL;
 	pthread_t stat_thread;
 
-	pipe_stats = calloc(sizeof(struct pipe_stat), npipes);
-	if (!pipe_stats) {
+	ports = calloc(sizeof(struct port_des), npipes + 1);
+	if (!ports) {
 		D("failed to allocate the stats array");
 		return 1;
 	}
+	struct port_des *rxport = &ports[npipes];
 
 	if (pthread_create(&stat_thread, NULL, print_stats, NULL) == -1) {
 		D("unable to create the stats thread: %s", strerror(errno));
@@ -255,19 +253,20 @@ int main(int argc, char **argv)
 	base_req.nr_arg1 = npipes;
 	base_req.nr_arg3 = glob_arg.extra_bufs;
 
-	rxnmd = nm_open(glob_arg.ifname, &base_req, 0, NULL);
+	rxport->nmd = nm_open(glob_arg.ifname, &base_req, 0, NULL);
 
-	if (rxnmd == NULL) {
+	if (rxport->nmd == NULL) {
 		D("cannot open %s", glob_arg.ifname);
 		return (1);
 	} else {
 		D("successfully opened %s (tx rings: %u)", glob_arg.ifname,
-		  rxnmd->req.nr_tx_slots);
+		  rxport->nmd->req.nr_tx_slots);
 	}
-	rxring = NETMAP_RXRING(rxnmd->nifp, 0);
 
-	int extra_bufs = rxnmd->req.nr_arg3;
+	int extra_bufs = rxport->nmd->req.nr_arg3;
 	struct overflow_queue *oq = NULL;
+	/* reference ring to access the buffers */
+	rxport->ring = NETMAP_RXRING(rxport->nmd->nifp, 0);
 
 	if (!glob_arg.extra_bufs)
 		goto run;
@@ -286,19 +285,19 @@ int main(int argc, char **argv)
 	}
 
 	freeq = &oq[npipes];
+	rxport->oq = freeq;
 
 	freeq->slots = calloc(sizeof(struct netmap_slot), extra_bufs);
 	if (!freeq->slots) {
 		D("failed to allocate the free list");
 	}
 	freeq->size = extra_bufs;
-	freeq->ring = rxring;
 	snprintf(freeq->name, MAX_IFNAMELEN, "free queue");
 
 	uint32_t scan;
-	for (scan = rxnmd->nifp->ni_bufs_head;
+	for (scan = rxport->nmd->nifp->ni_bufs_head;
 	     scan;
-	     scan = *(uint32_t *)NETMAP_BUF(rxring, scan))
+	     scan = *(uint32_t *)NETMAP_BUF(rxport->ring, scan))
 	{
 		struct netmap_slot s;
 		s.buf_idx = scan;
@@ -310,7 +309,7 @@ int main(int argc, char **argv)
 				extra_bufs, freeq->n);
 		return 1;
 	}
-	rxnmd->nifp->ni_bufs_head = 0;
+	rxport->nmd->nifp->ni_bufs_head = 0;
 
 run:
 	for (i = 0; i < npipes; ++i) {
@@ -318,20 +317,19 @@ run:
 		sprintf(interface, "%s{%d", glob_arg.ifname, i);
 		D("opening pipe named %s", interface);
 
-		//txnmds[i] = nm_open(interface, NULL, NM_OPEN_NO_MMAP | NM_OPEN_ARG3 | NM_OPEN_RING_CFG, rxnmd);
-		txnmds[i] = nm_open(interface, NULL, 0, rxnmd);
+		//ports[i].nmd = nm_open(interface, NULL, NM_OPEN_NO_MMAP | NM_OPEN_ARG3 | NM_OPEN_RING_CFG, rxport->nmd);
+		ports[i].nmd = nm_open(interface, NULL, 0, rxport->nmd);
 
-		if (txnmds[i] == NULL) {
+		if (ports[i].nmd == NULL) {
 			D("cannot open %s", interface);
 			return (1);
 		} else {
 			D("successfully opened pipe #%d %s (tx slots: %d)",
-			  i + 1, interface, txnmds[i]->req.nr_tx_slots);
-			// Is this right?  Do pipes only have one ring?
-			txrings[i] = NETMAP_TXRING(txnmds[i]->nifp, 0);
+			  i + 1, interface, ports[i].nmd->req.nr_tx_slots);
+			ports[i].ring = NETMAP_TXRING(ports[i].nmd->nifp, 0);
 		}
 		D("zerocopy %s",
-		  (rxnmd->mem == txnmds[i]->mem) ? "enabled" : "disabled");
+		  (rxport->nmd->mem == ports[i].nmd->mem) ? "enabled" : "disabled");
 
 		if (extra_bufs) {
 			struct overflow_queue *q = &oq[i];
@@ -341,9 +339,9 @@ run:
 				/* make all overflow queue management fail */
 				extra_bufs = 0;
 			}
-			q->ring = txrings[i];
 			q->size = extra_bufs;
 			snprintf(q->name, MAX_IFNAMELEN, "oq %d", i);
+			ports[i].oq = q;
 		}
 	}
 
@@ -370,13 +368,13 @@ run:
 		iter++;
 
 		for (i = 0; i < npipes; ++i) {
-			pollfd[polli].fd = txnmds[i]->fd;
+			pollfd[polli].fd = ports[i].nmd->fd;
 			pollfd[polli].events = POLLOUT;
 			pollfd[polli].revents = 0;
 			++polli;
 		}
 
-		pollfd[polli].fd = rxnmd->fd;
+		pollfd[polli].fd = rxport->nmd->fd;
 		pollfd[polli].events = POLLIN;
 		pollfd[polli].revents = 0;
 		++polli;
@@ -395,15 +393,15 @@ run:
 			 * to the corresponding pipes
 			 */
 			for (i = 0; i < npipes; i++) {
-				struct overflow_queue *q = &oq[i];
+				struct port_des *p = &ports[i];
+				struct overflow_queue *q = p->oq;
 				int j, lim;
 				struct netmap_ring *ring;
 				struct netmap_slot *slot;
-				struct pipe_stat *p = &pipe_stats[i];
 
 				if (!q->n)
 					continue;
-				ring = q->ring;
+				ring = p->ring;
 				lim = nm_ring_space(ring);
 				if (!lim)
 					continue;
@@ -423,8 +421,8 @@ run:
 			}
 		}
 
-		for (i = rxnmd->first_rx_ring; i <= rxnmd->last_rx_ring; i++) {
-			rxring = NETMAP_RXRING(rxnmd->nifp, i);
+		for (i = rxport->nmd->first_rx_ring; i <= rxport->nmd->last_rx_ring; i++) {
+			struct netmap_ring *rxring = NETMAP_RXRING(rxport->nmd->nifp, i);
 
 			//D("prepare to scan rings");
 			int next_cur = rxring->cur;
@@ -442,9 +440,9 @@ run:
 				__builtin_prefetch(next_buf);
 				uint32_t output_port =
 				    ip_hasher(p, rs->len) % npipes;
-				struct netmap_ring *ring = txrings[output_port];
+				struct port_des *port = &ports[output_port];
+				struct netmap_ring *ring = port->ring;
 				uint32_t free_buf;
-				struct pipe_stat *ps = &pipe_stats[output_port];
 
 				// Move the packet to the output pipe.
 			retry:
@@ -463,16 +461,16 @@ run:
 				 * the same pipe, to make sure that there is a
 				 * reasonable amount of time between syncs)
 				 */
-				if (ps->last_sync != iter) {
-					ps->last_sync = iter;
-					ioctl(txnmds[output_port]->fd, NIOCTXSYNC, NULL);
+				if (port->last_sync != iter) {
+					port->last_sync = iter;
+					ioctl(port->nmd->fd, NIOCTXSYNC, NULL);
 					goto retry;
 				}
 
 				/* use the overflow queue, if available */
 				if (!oq) {
 					dropped++;
-					ps->drop++;
+					port->drop++;
 					goto next;
 				}
 
@@ -481,24 +479,25 @@ run:
 				if (!freeq->n) {
 					/* revoke some buffers from the longest overflow queue */
 					int j;
-					struct overflow_queue *lq = &oq[0];
-					int max = lq->n;
+					struct port_des *lp = &ports[0];
+					int max = lp->oq->n;
 
 					for (j = 1; j < npipes; j++) {
-						struct overflow_queue *cq = &oq[j];
-						if (cq->n > max) {
-							lq = cq;
-							max = lq->n;
+						struct port_des *cp = &ports[j];
+						if (cp->oq->n > max) {
+							lp = cp;
+							max = cp->oq->n;
 						}
 					}
 
-					for (j = 0; lq->n && j < BUF_REVOKE; j++) {
-						struct netmap_slot tmp = oq_deq(lq);
+					// XXX optimize this cycle
+					for (j = 0; lp->oq->n && j < BUF_REVOKE; j++) {
+						struct netmap_slot tmp = oq_deq(lp->oq);
 						oq_enq(freeq, &tmp);
 					}
 
 					ND(1, "revoked %d buffers from %s", j, lq->name);
-					pipe_stats[lq - oq].drop += j;
+					lp->drop += j;
 					dropped += j;
 				}
 
@@ -506,7 +505,7 @@ run:
 				oq_enq(q, rs);
 
 			forward:
-				ps->forward++;
+				port->forward++;
 				forwarded++;
 				rs->buf_idx = free_buf;
 				rs->flags |= NS_BUF_CHANGED;
@@ -527,14 +526,15 @@ run:
 	if (oq) {
 		int tot = 0;
 		for (i = 0; i < npipes + 1; i++) {
-			struct overflow_queue *q = &oq[i];
+			struct port_des *cp = &ports[i];
+			struct overflow_queue *q = cp->oq;
 
 			while (q->n) {
 				struct netmap_slot s = oq_deq(q);
-				uint32_t *b = (uint32_t *)NETMAP_BUF(q->ring, s.buf_idx);
+				uint32_t *b = (uint32_t *)NETMAP_BUF(cp->ring, s.buf_idx);
 
-				*b = rxnmd->nifp->ni_bufs_head;
-				rxnmd->nifp->ni_bufs_head = s.buf_idx;
+				*b = rxport->nmd->nifp->ni_bufs_head;
+				rxport->nmd->nifp->ni_bufs_head = s.buf_idx;
 				tot++;
 			}
 
@@ -542,9 +542,9 @@ run:
 		D("added %d buffers to netmap free list", tot);
 	}
 
-	nm_close(rxnmd);
+	nm_close(rxport->nmd);
 	for (i = 0; i < npipes; ++i) {
-		nm_close(txnmds[i]);
+		nm_close(ports[i].nmd);
 	}
 
 	printf("%"PRIu64" packets forwarded.  %"PRIu64" packets dropped.\n", forwarded,
