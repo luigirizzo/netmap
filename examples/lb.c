@@ -19,12 +19,14 @@
 #define MAX_IFNAMELEN 	64
 #define DEF_OUT_PIPES 	2
 #define DEF_EXTRA_BUFS 	0
+#define DEF_BATCH	512
 #define BUF_REVOKE	100
 
 struct {
 	char ifname[MAX_IFNAMELEN];
 	uint16_t output_rings;
 	uint32_t extra_bufs;
+	uint16_t batch;
 } glob_arg;
 
 struct overflow_queue {
@@ -203,7 +205,8 @@ void usage()
 	printf("where options are:\n");
 	printf("  -i iface        interface name (required)\n");
 	printf("  -p npipes       number of output pipes (default: %d)\n", DEF_OUT_PIPES);
-	printf("  -b nbufs        number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
+	printf("  -B nbufs        number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
+	printf("  -b batch        batch size (default: %d)\n", DEF_BATCH);
 	exit(0);
 }
 
@@ -216,8 +219,9 @@ int main(int argc, char **argv)
 
 	glob_arg.ifname[0] = '\0';
 	glob_arg.output_rings = DEF_OUT_PIPES;
+	glob_arg.batch = DEF_BATCH;
 
-	while ( (ch = getopt(argc, argv, "i:p:b:")) != -1) {
+	while ( (ch = getopt(argc, argv, "i:p:b:B:")) != -1) {
 		switch (ch) {
 		case 'i':
 			D("interface is %s", optarg);
@@ -241,9 +245,14 @@ int main(int argc, char **argv)
 			}
 			break;
 
-		case 'b':
+		case 'B':
 			glob_arg.extra_bufs = atoi(optarg);
 			D("requested %d extra buffers", glob_arg.extra_bufs);
+			break;
+
+		case 'b':
+			glob_arg.batch = atoi(optarg);
+			D("batch is %d", glob_arg.batch);
 			break;
 
 		default:
@@ -455,6 +464,7 @@ run:
 			}
 		}
 
+		int batch = 0;
 		for (i = rxport->nmd->first_rx_ring; i <= rxport->nmd->last_rx_ring; i++) {
 			struct netmap_ring *rxring = NETMAP_RXRING(rxport->nmd->nifp, i);
 
@@ -545,6 +555,12 @@ run:
 				rs->flags |= NS_BUF_CHANGED;
 			next:
 				rxring->head = rxring->cur = next_cur;
+
+				batch++;
+				if (unlikely(batch >= glob_arg.batch)) {
+					ioctl(rxport->nmd->fd, NIOCRXSYNC, NULL);
+					batch = 0;
+				}
 				ND(1,
 				   "Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64"   Percent: %.2f",
 				   forwarded, dropped,
@@ -556,7 +572,7 @@ run:
 
 	pthread_join(stat_thread, NULL);
 
-	printf("%"PRIu64" packets forwarded.  %"PRIu64" packets dropped.\n", forwarded,
-	       dropped);
+	printf("%"PRIu64" packets forwarded.  %"PRIu64" packets dropped. Total %"PRIu64"\n", forwarded,
+	       dropped, forwarded + dropped);
 	return 0;
 }
