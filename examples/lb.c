@@ -107,6 +107,37 @@ print_stats(void *arg)
 	return NULL;
 }
 
+static void
+free_buffers(void)
+{
+	int i, tot = 0;
+	struct port_des *rxport = &ports[glob_arg.output_rings];
+
+	/* build a netmap free list with the buffers in all the overflow queues */
+	for (i = 0; i < glob_arg.output_rings + 1; i++) {
+		struct port_des *cp = &ports[i];
+		struct overflow_queue *q = cp->oq;
+
+		if (!q)
+			continue;
+
+		while (q->n) {
+			struct netmap_slot s = oq_deq(q);
+			uint32_t *b = (uint32_t *)NETMAP_BUF(cp->ring, s.buf_idx);
+
+			*b = rxport->nmd->nifp->ni_bufs_head;
+			rxport->nmd->nifp->ni_bufs_head = s.buf_idx;
+			tot++;
+		}
+	}
+	D("added %d buffers to netmap free list", tot);
+
+	for (i = 0; i < glob_arg.output_rings + 1; ++i) {
+		nm_close(ports[i].nmd);
+	}
+}
+
+
 static void sigint_h(int sig)
 {
 	(void)sig;		/* UNUSED */
@@ -304,6 +335,9 @@ int main(int argc, char **argv)
 		ND("freeq <- %d", s.buf_idx);
 		oq_enq(freeq, &s);
 	}
+
+	atexit(free_buffers);
+
 	if (freeq->n != extra_bufs) {
 		D("something went wrong: netmap reported %d extra_bufs, but the free list contained %d",
 				extra_bufs, freeq->n);
@@ -521,31 +555,6 @@ run:
 	}
 
 	pthread_join(stat_thread, NULL);
-
-	/* build a netmap free list with the buffers in all the overflow queues */
-	if (oq) {
-		int tot = 0;
-		for (i = 0; i < npipes + 1; i++) {
-			struct port_des *cp = &ports[i];
-			struct overflow_queue *q = cp->oq;
-
-			while (q->n) {
-				struct netmap_slot s = oq_deq(q);
-				uint32_t *b = (uint32_t *)NETMAP_BUF(cp->ring, s.buf_idx);
-
-				*b = rxport->nmd->nifp->ni_bufs_head;
-				rxport->nmd->nifp->ni_bufs_head = s.buf_idx;
-				tot++;
-			}
-
-		}
-		D("added %d buffers to netmap free list", tot);
-	}
-
-	nm_close(rxport->nmd);
-	for (i = 0; i < npipes; ++i) {
-		nm_close(ports[i].nmd);
-	}
 
 	printf("%"PRIu64" packets forwarded.  %"PRIu64" packets dropped.\n", forwarded,
 	       dropped);
