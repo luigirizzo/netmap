@@ -451,7 +451,7 @@ run:
 				}
 				ring->head = ring->cur;
 				forwarded += lim;
-				p->forward++;
+				p->forward += lim;
 			}
 		}
 
@@ -487,6 +487,8 @@ run:
 					ts->len = rs->len;
 					ts->flags |= NS_BUF_CHANGED;
 					ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+					port->forward++;
+					forwarded++;
 					goto forward;
 				}
 
@@ -539,8 +541,6 @@ run:
 				oq_enq(q, rs);
 
 			forward:
-				port->forward++;
-				forwarded++;
 				rs->buf_idx = free_buf;
 				rs->flags |= NS_BUF_CHANGED;
 			next:
