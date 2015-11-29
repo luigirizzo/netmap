@@ -1127,7 +1127,9 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 				break;
 			}
 
-			error = ENOENT;
+			error = 0;
+			nmr->nr_arg1 = b - bridges; /* bridge index */
+			nmr->nr_arg2 = NM_BDG_NOPORT;
 			for (j = 0; j < b->bdg_active_ports; j++) {
 				i = b->bdg_port_index[j];
 				vpna = b->bdg_ports[i];
@@ -1139,10 +1141,7 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 				 * virtual port and a NIC, respectively
 				 */
 				if (!strcmp(vpna->up.name, name)) {
-					/* bridge index */
-					nmr->nr_arg1 = b - bridges;
 					nmr->nr_arg2 = i; /* port index */
-					error = 0;
 					break;
 				}
 			}
