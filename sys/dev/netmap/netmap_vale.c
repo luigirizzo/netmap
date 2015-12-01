@@ -773,6 +773,11 @@ unlock_exit:
 	return error;
 }
 
+static inline int
+nm_is_bwrap(struct netmap_adapter *na)
+{
+	return na->nm_register == netmap_bwrap_register;
+}
 
 /* process NETMAP_BDG_DETACH */
 static int
@@ -790,8 +795,13 @@ nm_bdg_ctl_detach(struct nmreq *nmr)
 	if (na == NULL) { /* VALE prefix missing */
 		error = EINVAL;
 		goto unlock_exit;
+	} else if (nm_is_bwrap(na) &&
+		   ((struct netmap_bwrap_adapter *)na)->na_polling_state) {
+		/* Don't detach a NIC with polling */
+		error = EBUSY;
+		netmap_adapter_put(na);
+		goto unlock_exit;
 	}
-
 	if (na->nm_bdg_ctl) {
 		/* remove the port from bridge. The bwrap
 		 * also needs to put the hwna in normal mode
@@ -1066,12 +1076,6 @@ nm_bdg_ctl_polling_stop(struct nmreq *nmr, struct netmap_adapter *na)
 	if (bna->hwna->nm_intr)
 		bna->hwna->nm_intr(bna->hwna, 1);
 	return 0;
-}
-
-static inline int
-nm_is_bwrap(struct netmap_adapter *na)
-{
-	return na->nm_register == netmap_bwrap_register;
 }
 
 /* Called by either user's context (netmap_ioctl())
