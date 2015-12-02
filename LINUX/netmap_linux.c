@@ -444,7 +444,7 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 		netmap_generic_irq(qdisc_dev(qdisc), priv->qidx, NULL);
 	}
 
-	RD(5, "Enqueuing mbuf, len %u", qdisc_qlen(qdisc));
+	RD(5, "Dequeuing mbuf, len %u", qdisc_qlen(qdisc));
 
 	return m;
 }
