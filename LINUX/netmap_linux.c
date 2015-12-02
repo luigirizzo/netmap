@@ -383,6 +383,9 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 {
 	struct nm_generic_qdisc *priv = NULL;
 
+	/* Kernel < 2.6.39, do not have qdisc->limit, so we will
+	 * always use our priv->limit, for simplicity. */
+
 	priv = qdisc_priv(qdisc);
 	priv->qidx = 0;
 	priv->limit = 1024; /* This is going to be overridden. */
@@ -397,15 +400,12 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 
 		priv->qidx = qdiscopt->qidx;
 		priv->limit = qdiscopt->limit;
-		D("change() op on qidx %u", priv->qidx);
+		D("Qdisc #%d initialized with max_len = %u", priv->qidx,
+				                             priv->limit);
 	}
+
 	/* Qdisc bypassing is not an option for now.
 	qdisc->flags |= TCQ_F_CAN_BYPASS; */
-
-	/* Kernel < 2.6.39, do not have qdisc->limit, so we will
-	 * always use our priv->limit, for simplicity. */
-
-	D("Qdisc initialized with max_len = %u", priv->limit);
 
 	return 0;
 }
