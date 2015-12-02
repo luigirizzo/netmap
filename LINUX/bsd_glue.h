@@ -206,11 +206,10 @@ struct thread;
  * generic_qdisc_dequeue().
  */
 #define NM_MAGIC_PRIORITY_TX	0xad86d310U
-#define NM_MAGIC_PRIORITY_TXQ	0xad86d312U
-#define NM_MAGIC_PRIORITY_TXQE	0xad86d313U
-#define NM_MAGIC_PRIORITY_RX	0xad86d311U
+#define NM_MAGIC_PRIORITY_TXQE	0xad86d311U
+#define NM_MAGIC_PRIORITY_RX	0xad86d30fU
 
-#define MBUF_QUEUED(m)		(m->priority != NM_MAGIC_PRIORITY_TX)
+#define MBUF_QUEUED(m)		((m->priority & (~0x1)) == NM_MAGIC_PRIORITY_TX)
 
 /*
  * m_copydata() copies from mbuf to buffer following the mbuf chain.

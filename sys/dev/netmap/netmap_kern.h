@@ -1751,7 +1751,7 @@ struct nm_os_gen_arg {
 };
 
 enum {NM_GEN_TX_SUCCESS = 0, NM_GEN_TX_NOBUFS, NM_GEN_TX_ERR};
-enum {NM_GEN_XMIT_NORMAL = 0, NM_GEN_XMIT_Q, NM_GEN_XMIT_Q_EVENT};
+enum {NM_GEN_XMIT_NORMAL = 0, NM_GEN_XMIT_Q_EVENT};
 
 int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);

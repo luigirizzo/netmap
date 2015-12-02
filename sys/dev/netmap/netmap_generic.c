@@ -617,11 +617,9 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
 		struct nm_os_gen_arg a;
-		u_int xmit_mode = NM_GEN_XMIT_NORMAL;
 		u_int event = -1;
 
 		if (gna->txqdisc) {
-			xmit_mode = NM_GEN_XMIT_Q;
 			event = generic_tx_event_middle(nm_i, kring->nr_hwtail, lim);
 		}
 
@@ -652,7 +650,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			a.m = m;
 			a.addr = addr;
 			a.len = len;
-			a.xmit_mode = (nm_i == event) ? NM_GEN_XMIT_Q_EVENT : xmit_mode;
+			a.xmit_mode = (nm_i == event) ? NM_GEN_XMIT_Q_EVENT : NM_GEN_XMIT_NORMAL;
 			/* XXX we should ask notifications when NS_REPORT is set,
 			 * or roughly every half frame. We can optimize this
 			 * by lazily requesting notifications only when a

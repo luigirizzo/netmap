@@ -364,8 +364,10 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
     struct netmap_generic_adapter *gna =
                         (struct netmap_generic_adapter *)NA(ifp);
 
-    if (likely(m->priority == NM_MAGIC_PRIORITY_TX))
-        return gna->save_start_xmit(m, ifp); /* To the driver. */
+	if (likely(m->priority == NM_MAGIC_PRIORITY_TX)) {
+		m->priority = 0;
+		return gna->save_start_xmit(m, ifp); /* To the driver. */
+	}
 
     /* To a netmap RX ring. */
     return linux_netmap_start_xmit(m, ifp);
@@ -628,9 +630,8 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	m->dev = a->ifp;
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
 	skb_set_queue_mapping(m, a->ring_nr);
-	m->priority = (a->xmit_mode == NM_GEN_XMIT_NORMAL) ? NM_MAGIC_PRIORITY_TX :
-		      ((a->xmit_mode == NM_GEN_XMIT_Q) ? NM_MAGIC_PRIORITY_TXQ
-						       : NM_MAGIC_PRIORITY_TXQE);
+	m->priority = (a->xmit_mode == NM_GEN_XMIT_Q_EVENT) ? NM_MAGIC_PRIORITY_TXQE
+							    : NM_MAGIC_PRIORITY_TX;
 
 	ret = dev_queue_xmit(m);
 
