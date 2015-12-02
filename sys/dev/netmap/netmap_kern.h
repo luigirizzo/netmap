@@ -1747,11 +1747,10 @@ struct nm_os_gen_arg {
 	void *addr;	/* payload of current packet */
 	u_int len;	/* packet length */
 	u_int ring_nr;	/* packet length */
-	u_int xmit_mode;
+	u_int qevent;   /* in txqdisc mode, place an event on this mbuf */
 };
 
 enum {NM_GEN_TX_SUCCESS = 0, NM_GEN_TX_NOBUFS, NM_GEN_TX_ERR};
-enum {NM_GEN_XMIT_NORMAL = 0, NM_GEN_XMIT_Q_EVENT};
 
 int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);

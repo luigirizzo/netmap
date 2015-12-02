@@ -650,7 +650,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			a.m = m;
 			a.addr = addr;
 			a.len = len;
-			a.xmit_mode = (nm_i == event) ? NM_GEN_XMIT_Q_EVENT : NM_GEN_XMIT_NORMAL;
+			a.qevent = (nm_i == event);
 			/* XXX we should ask notifications when NS_REPORT is set,
 			 * or roughly every half frame. We can optimize this
 			 * by lazily requesting notifications only when a

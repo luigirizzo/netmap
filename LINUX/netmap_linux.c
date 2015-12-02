@@ -630,8 +630,7 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	m->dev = a->ifp;
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
 	skb_set_queue_mapping(m, a->ring_nr);
-	m->priority = (a->xmit_mode == NM_GEN_XMIT_Q_EVENT) ? NM_MAGIC_PRIORITY_TXQE
-							    : NM_MAGIC_PRIORITY_TX;
+	m->priority = a->qevent ? NM_MAGIC_PRIORITY_TXQE : NM_MAGIC_PRIORITY_TX;
 
 	ret = dev_queue_xmit(m);
 
