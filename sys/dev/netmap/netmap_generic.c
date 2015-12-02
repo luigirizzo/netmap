@@ -619,8 +619,10 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 		struct nm_os_gen_arg a;
 		u_int event = -1;
 
-		if (gna->txqdisc) {
-			event = generic_tx_event_middle(nm_i, kring->nr_hwtail, lim);
+		if (gna->txqdisc && nm_kr_txempty(kring)) {
+			event = generic_tx_event_middle(nm_i, head, lim);
+			RD(3,"hwcur %u event %u head %u hwtail %u (space %u)", nm_i, event, head, kring->nr_hwtail,
+			   nm_kr_rxspace(kring));
 		}
 
 		a.ifp = ifp;
@@ -718,7 +720,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 		 */
 		generic_set_tx_event(kring, nm_i);
 	}
-	ND("tx #%d, hwtail = %d", n, kring->nr_hwtail);
+	ND("hwcur = %d, hwtail = %d", kring->nr_hwcur, kring->nr_hwtail);
 
 	generic_netmap_tx_clean(kring, gna->txqdisc);
 
