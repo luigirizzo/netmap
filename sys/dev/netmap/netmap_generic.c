@@ -693,8 +693,10 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 				}
 
 			} else if (unlikely(tx_ret != NM_GEN_TX_SUCCESS)) {
-				RD(5, "start_xmit failed: err %d [nm_i %u, head %u, hwtail %u]",
-						tx_ret, nm_i, head, kring->nr_hwtail);
+				/* Packets are being dropped because something is
+				 * mistaken, there is nothing smart we can do.
+				 * Just let the packet be dropped. */
+				RD(3, "Warning: Error while transmitting, dropping");
 			}
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);

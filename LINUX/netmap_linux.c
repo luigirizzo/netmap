@@ -365,6 +365,8 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
                         (struct netmap_generic_adapter *)NA(ifp);
 
 	if (likely(m->priority == NM_MAGIC_PRIORITY_TX)) {
+		/* Reset priority, so that generic_netmap_tx_clean()
+		 * knows that it can reclaim this mbuf. */
 		m->priority = 0;
 		return gna->save_start_xmit(m, ifp); /* To the driver. */
 	}
@@ -651,14 +653,21 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	ret = dev_queue_xmit(m);
 
 	if (unlikely(ret == NET_XMIT_DROP)) {
-		/* Qdisc queue is full. */
+		/* Qdisc queue is full. Reset priority, so that
+		 * generic_netmap_tx_clean() can reclaim this
+		 * mbuf. */
+		m->priority = 0;
 		return NM_GEN_TX_NOBUFS;
 	}
 
 	if (unlikely(ret != NET_XMIT_SUCCESS)) {
-		/* If something goes wrong in the TX path, there is nothing
-		   intelligent we can do (for now) apart from error reporting. */
-		RD(5, "dev_queue_xmit failed: HARD ERROR %d", ret);
+		/* If there is no carrier, the generic qdisc is
+		 * not yet active (is pending in the qdisc_sleeping
+		 * field), and so the temporary noop qdisc enqueue
+		 * method will drop the packet and return NET_XMIT_CN.
+		 */
+		m->priority = 0;
+		ND(5, "dev_queue_xmit failed [err=%d]", ret);
 		return NM_GEN_TX_ERR;
 	}
 
