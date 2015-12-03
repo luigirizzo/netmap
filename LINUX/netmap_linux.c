@@ -487,8 +487,8 @@ nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 	struct nm_generic_qdisc *qdiscopt = NULL;
 	struct Qdisc *fqdisc = NULL;
-	struct netdev_queue *txq;
 	struct nlattr *nla = NULL;
+	struct netdev_queue *txq;
 	unsigned int i;
 
 	if (!gna->txqdisc) {
@@ -577,6 +577,8 @@ qdisc_create:
 	if (nla) {
 		kfree(nla);
 	}
+
+	nm_os_catch_qdisc(gna, 0);
 
 	return -1;
 }
