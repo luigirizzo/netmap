@@ -430,7 +430,6 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 static struct mbuf *
 generic_qdisc_dequeue(struct Qdisc *qdisc)
 {
-	struct nm_generic_qdisc *priv = qdisc_priv(qdisc);
 	struct mbuf *m = qdisc_dequeue_head(qdisc);
 	bool event;
 
@@ -443,7 +442,8 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 
 	if (event) {
 		RD(5, "Event met, notify %p", m);
-		netmap_generic_irq(qdisc_dev(qdisc), priv->qidx, NULL);
+		netmap_generic_irq(qdisc_dev(qdisc),
+				   skb_get_queue_mapping(m), NULL);
 	}
 
 	RD(5, "Dequeuing mbuf, len %u", qdisc_qlen(qdisc));
@@ -491,9 +491,10 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 	unsigned int i;
 
 	if (intercept) {
-		struct nm_generic_qdisc *qdiscopt;
-
 		if (gna->txqdisc) {
+			struct nm_generic_qdisc *qdiscopt;
+			struct Qdisc *fqdisc = NULL;
+
 			nla = kmalloc(nla_attr_size(sizeof(*qdiscopt)),
 				      GFP_KERNEL);
 			if (!nla) {
@@ -530,6 +531,7 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 					D("Failed to create qdisc");
 					goto qdisc_create;
 				}
+				fqdisc = fqdisc ?: nqdisc;
 
 				/* Call the change() op passing a valid netlink
 				 * attribute. This is used to set the queue idx. */
@@ -549,6 +551,12 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 			}
 
 			kfree(nla);
+
+			if (ifp->qdisc) {
+				qdisc_destroy(ifp->qdisc);
+			}
+			atomic_inc(&fqdisc->refcnt);
+			ifp->qdisc = fqdisc;
 
 			if (ifp->flags & IFF_UP) {
 				dev_activate(ifp);
@@ -592,6 +600,11 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 				oqdisc = dev_graft_qdisc(txq, NULL);
 				qdisc_destroy(oqdisc);
 			}
+
+			if (ifp->qdisc) {
+				qdisc_destroy(ifp->qdisc);
+			}
+			ifp->qdisc = &noop_qdisc;
 
 			if (ifp->flags & IFF_UP) {
 				dev_activate(ifp);
