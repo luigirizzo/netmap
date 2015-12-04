@@ -263,20 +263,20 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *vi = netdev_priv(ifp);
+	bool was_up = false;
 	int error = 0;
 
 	if (na == NULL)
 		return EINVAL;
 
-	/* It's important to deny the registration if the interface is
-	   not up, otherwise the virtnet_close() is not matched by a
-	   virtnet_open(), and so a napi_disable() is not matched by
-	   a napi_enable(), which results in a deadlock. */
-	if (!netif_running(ifp))
-		return ENETDOWN;
-
-	/* Down the interface. This also disables napi. */
-	virtnet_close(ifp);
+	/* It's important to make sure each virtnet_close() matches
+	 * a virtnet_open(), otherwise a napi_disable() is not matched by
+	 * a napi_enable(), which results in a deadlock. */
+	if (netif_running(ifp)) {
+		was_up = true;
+		/* Down the interface. This also disables napi. */
+		virtnet_close(ifp);
+	}
 
 	if (onoff) {
 		/* Get and free any used buffers. This is necessary
@@ -316,8 +316,10 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		virtio_netmap_reclaim_unused(vi);
 	}
 
-	/* Up the interface. This also enables the napi. */
-	virtnet_open(ifp);
+	if (was_up) {
+		/* Up the interface. This also enables the napi. */
+		virtnet_open(ifp);
+	}
 
 	return (error);
 }
@@ -370,7 +372,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 	 */
 	rmb();
 
-	if (!netif_carrier_ok(ifp)) {
+	if (!netif_running(ifp)) {
 		/* All the new slots are now unavailable. */
 		goto out;
 	}
@@ -827,16 +829,17 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	struct ifnet *ifp = na->ifp;
 	struct paravirt_csb *csb = ptna->csb;
 	struct netmap_kring *kring;
+	bool was_up = false;
 	int ret = 0;
 
 	/* Same prologue as virtio_netmap_reg. */
 	if (na == NULL)
 		return EINVAL;
 
-	if (!netif_running(ifp))
-		return ENETDOWN;
-
-	virtnet_close(ifp);
+	if (netif_running(ifp)) {
+		was_up = true;
+		virtnet_close(ifp);
+	}
 
 	if (onoff) {
 		struct SOFTC_T *vi = netdev_priv(ifp);
@@ -903,7 +906,9 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 out:
-	virtnet_open(ifp);
+	if (was_up) {
+		virtnet_open(ifp);
+	}
 
 	return ret;
 }
