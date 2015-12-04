@@ -179,6 +179,8 @@ struct rate_stats {
 	unsigned long txpkt;
 	unsigned long txsync;
 	unsigned long txirq;
+	unsigned long txrepl;
+	unsigned long txdrop;
 	unsigned long rxpkt;
 	unsigned long rxirq;
 	unsigned long rxsync;
@@ -203,6 +205,8 @@ static void rate_callback(unsigned long arg)
 	RATE_PRINTK(txpkt);
 	RATE_PRINTK(txsync);
 	RATE_PRINTK(txirq);
+	RATE_PRINTK(txrepl);
+	RATE_PRINTK(txdrop);
 	RATE_PRINTK(rxpkt);
 	RATE_PRINTK(rxsync);
 	RATE_PRINTK(rxirq);
@@ -495,6 +499,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 				// XXX how do we proceed ? break ?
 				return -ENOMEM;
 			}
+			IFRATE(rate_ctx.new.txrepl++);
 		}
 
 		n++;
@@ -705,6 +710,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 				 * being deactivated, or possibly for other
 				 * reasons. In these cases, we just let the
 				 * packet to be dropped. */
+				IFRATE(rate_ctx.new.txdrop++);
 			}
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
