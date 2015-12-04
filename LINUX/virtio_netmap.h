@@ -362,7 +362,8 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 				sizeof(shared_tx_vnet_hdr.hdr);
 	struct netmap_adapter *token;
 
-	// XXX invert the order
+	virtqueue_disable_cb(vq);
+
 	/* Free used slots. We only consider our own used buffers, recognized
 	 * by the token we passed to virtqueue_add_outbuf.
 	 */
@@ -408,7 +409,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			sg_set_buf(sg + 1, addr, len);
 			err = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (err < 0) {
-				D("virtqueue_add_outbuf failed [%d]", err);
+				RD(3, "virtqueue_add_outbuf failed [%d]", err);
 				break;
 			}
 			virtqueue_kick(vq);
@@ -423,8 +424,10 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 		 * possibly only when a considerable amount of work has been
 		 * done.
 		 */
-		if (nm_kr_txempty(kring))
+		if (nm_kr_txempty(kring)) {
+			RD(3, "Enabling");
 			virtqueue_enable_cb_delayed(vq);
+		}
 	}
 out:
 
