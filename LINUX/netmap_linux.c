@@ -424,7 +424,7 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
 		/* or qdisc_reshape_fail() ? */
 	}
 
-	RD(5, "Enqueuing mbuf, len %u", qdisc_qlen(qdisc));
+	ND(5, "Enqueuing mbuf, len %u", qdisc_qlen(qdisc));
 
 	return qdisc_enqueue_tail(m, qdisc);
 }
@@ -443,12 +443,12 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 	m->priority = NM_MAGIC_PRIORITY_TX;
 
 	if (event) {
-		RD(5, "Event met, notify %p", m);
+		ND(5, "Event met, notify %p", m);
 		netmap_generic_irq(qdisc_dev(qdisc),
 				   skb_get_queue_mapping(m), NULL);
 	}
 
-	RD(5, "Dequeuing mbuf, len %u", qdisc_qlen(qdisc));
+	ND(5, "Dequeuing mbuf, len %u", qdisc_qlen(qdisc));
 
 	return m;
 }
@@ -463,7 +463,7 @@ generic_qdisc_peek(struct Qdisc *qdisc)
 static unsigned int
 generic_qdisc_drop(struct Qdisc *qdisc)
 {
-	D("Dropping on purpose");
+	RD(5, "Dropping on purpose");
 	return qdisc_queue_drop(qdisc);
 }
 

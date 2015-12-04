@@ -631,9 +631,9 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * but only when cur == hwtail, which means that the
 			 * client is going to block. */
 			event = generic_tx_event_middle(nm_i, head, lim);
-			RD(3,"hwcur %u event %u head %u hwtail %u (space %u)",
-			      nm_i, event, head, kring->nr_hwtail,
-			      nm_kr_rxspace(kring));
+			ND(3, "Place txqdisc event (hwcur=%u,event=%u,"
+			      "head=%u,hwtail=%u)", nm_i, event, head,
+			      kring->nr_hwtail);
 		}
 
 		a.ifp = ifp;
