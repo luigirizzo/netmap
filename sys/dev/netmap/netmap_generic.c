@@ -668,47 +668,43 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * ring->cur == ring->tail || nm_i != cur
 			 */
 			tx_ret = nm_os_generic_xmit_frame(&a);
-			if (unlikely(tx_ret == NM_GEN_TX_NOBUFS)) {
-				if (gna->txqdisc) {
-					/* In txqdisc mode, the qdisc queue
-					 * has the same length as the number of
-					 * netmap slots (N). Since tail is advanced
-					 * only when packets are dequeued, qdisc
-					 * queue overrun cannot happen, and so
-					 * nm_os_generic_xmit_frame() cannot return
-					 * NM_GEN_TX_NOBUFS.
+			if (unlikely(tx_ret)) {
+				if (!gna->txqdisc) {
+					/*
+					 * No room for this mbuf in the device driver.
+					 * Request a notification FOR A PREVIOUS MBUF,
+					 * then call generic_netmap_tx_clean(kring) to do the
+					 * double check and see if we can free more buffers.
+					 * If there is space continue, else break;
+					 * NOTE: the double check is necessary if the problem
+					 * occurs in the txsync call after selrecord().
+					 * Also, we need some way to tell the caller that not
+					 * all buffers were queued onto the device (this was
+					 * not a problem with native netmap driver where space
+					 * is preallocated). The bridge has a similar problem
+					 * and we solve it there by dropping the excess packets.
 					 */
-					D("Bug: Qdisc overrun in txqdisc");
-					break;
+					generic_set_tx_event(kring, nm_i);
+					if (generic_netmap_tx_clean(kring, gna->txqdisc)) {
+						/* space now available */
+						continue;
+					} else {
+						break;
+					}
 				}
 
-				/*
-				 * No room for this mbuf in the device driver.
-				 * Request a notification FOR A PREVIOUS MBUF,
-				 * then call generic_netmap_tx_clean(kring) to do the
-				 * double check and see if we can free more buffers.
-				 * If there is space continue, else break;
-				 * NOTE: the double check is necessary if the problem
-				 * occurs in the txsync call after selrecord().
-				 * Also, we need some way to tell the caller that not
-				 * all buffers were queued onto the device (this was
-				 * not a problem with native netmap driver where space
-				 * is preallocated). The bridge has a similar problem
-				 * and we solve it there by dropping the excess packets.
-				 */
-				generic_set_tx_event(kring, nm_i);
-				if (generic_netmap_tx_clean(kring, gna->txqdisc)) {
-					/* space now available */
-					continue;
-				} else {
-					break;
-				}
-
-			} else if (unlikely(tx_ret != NM_GEN_TX_SUCCESS)) {
-				/* Packets are being dropped because something is
-				 * mistaken, there is nothing smart we can do.
-				 * Just let the packet be dropped. */
-				RD(3, "Warning: Error while transmitting, dropping");
+				/* In txqdisc mode, the netmap-aware qdisc
+				 * queue has the same length as the number of
+				 * netmap slots (N). Since tail is advanced
+				 * only when packets are dequeued, qdisc
+				 * queue overrun cannot happen, so
+				 * nm_os_generic_xmit_frame() did not fail
+				 * because of that.
+				 * However, packets can be dropped because
+				 * carrier is off, or because our qdisc is
+				 * being deactivated, or possibly for other
+				 * reasons. In these cases, we just let the
+				 * packet to be dropped. */
 			}
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);

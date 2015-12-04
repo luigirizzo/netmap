@@ -652,28 +652,27 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 
 	ret = dev_queue_xmit(m);
 
-	if (unlikely(ret == NET_XMIT_DROP)) {
-		/* Qdisc queue is full, or qdisc is being deactivated,
-		 * so that dev_queue_xmit() does not call the enqueue
-		 * method and returns NET_XMIT_DROP.
-		 * Reset priority, so that generic_netmap_tx_clean() can
+	if (unlikely(ret != NET_XMIT_SUCCESS)) {
+		/* Reset priority, so that generic_netmap_tx_clean() can
 		 * reclaim this mbuf. */
 		m->priority = 0;
-		return NM_GEN_TX_NOBUFS;
-	}
 
-	if (unlikely(ret != NET_XMIT_SUCCESS)) {
-		/* If there is no carrier, the generic qdisc is
+		/* Qdisc queue is full (this cannot happen with
+		 * the netmap-aware qdisc, see exaplanation in
+		 * netmap_generic_txsync), or qdisc is being
+		 * deactivated. In the latter case dev_queue_xmit()
+		 * does not call the enqueue method and returns
+		 * NET_XMIT_DROP.
+		 * If there is no carrier, the generic qdisc is
 		 * not yet active (is pending in the qdisc_sleeping
 		 * field), and so the temporary noop qdisc enqueue
 		 * method will drop the packet and return NET_XMIT_CN.
 		 */
-		m->priority = 0;
-		ND(5, "dev_queue_xmit failed [err=%d]", ret);
-		return NM_GEN_TX_ERR;
+		RD(3, "Warning: dev_queue_xmit() is dropping [%d]", ret);
+		return -1;
 	}
 
-	return NM_GEN_TX_SUCCESS;
+	return 0;
 }
 #endif /* WITH_GENERIC */
 
