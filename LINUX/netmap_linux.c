@@ -653,9 +653,11 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	ret = dev_queue_xmit(m);
 
 	if (unlikely(ret == NET_XMIT_DROP)) {
-		/* Qdisc queue is full. Reset priority, so that
-		 * generic_netmap_tx_clean() can reclaim this
-		 * mbuf. */
+		/* Qdisc queue is full, or qdisc is being deactivated,
+		 * so that dev_queue_xmit() does not call the enqueue
+		 * method and returns NET_XMIT_DROP.
+		 * Reset priority, so that generic_netmap_tx_clean() can
+		 * reclaim this mbuf. */
 		m->priority = 0;
 		return NM_GEN_TX_NOBUFS;
 	}

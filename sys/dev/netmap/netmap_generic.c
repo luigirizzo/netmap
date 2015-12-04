@@ -459,6 +459,8 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 	u_int n = 0;
 	struct mbuf **tx_pool = kring->tx_pool;
 
+	ND("hwcur = %d, hwtail = %d", kring->nr_hwcur, kring->nr_hwtail);
+
 	while (nm_i != hwcur) { /* buffers not completed */
 		struct mbuf *m = tx_pool[nm_i];
 		int replenish = 0;
@@ -620,9 +622,13 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 		u_int event = -1;
 
 		if (gna->txqdisc && nm_kr_txempty(kring)) {
+			/* In txqdisc mode, we ask for a delayed notification,
+			 * but only when cur == hwtail, which means that the
+			 * client is going to block. */
 			event = generic_tx_event_middle(nm_i, head, lim);
-			RD(3,"hwcur %u event %u head %u hwtail %u (space %u)", nm_i, event, head, kring->nr_hwtail,
-			   nm_kr_rxspace(kring));
+			RD(3,"hwcur %u event %u head %u hwtail %u (space %u)",
+			      nm_i, event, head, kring->nr_hwtail,
+			      nm_kr_rxspace(kring));
 		}
 
 		a.ifp = ifp;
@@ -653,8 +659,9 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			a.addr = addr;
 			a.len = len;
 			a.qevent = (nm_i == event);
-			/* XXX we should ask notifications when NS_REPORT is set,
-			 * or roughly every half frame. We can optimize this
+			/* XXX When not in txqdisc mode, we should ask
+			 * notifications when NS_REPORT is set,
+			 * or roughly every half ring. We can optimize this
 			 * by lazily requesting notifications only when a
 			 * transmission fails. Probably the best way is to
 			 * break on failures and set notifications when
@@ -663,10 +670,15 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			tx_ret = nm_os_generic_xmit_frame(&a);
 			if (unlikely(tx_ret == NM_GEN_TX_NOBUFS)) {
 				if (gna->txqdisc) {
-					/* Device queue is full, but putting an event
-					 * in a mbuf destructor is not necessary, since
-					 * a notification will be sent by the queue as
-					 * soon as enough packets are drained. */
+					/* In txqdisc mode, the qdisc queue
+					 * has the same length as the number of
+					 * netmap slots (N). Since tail is advanced
+					 * only when packets are dequeued, qdisc
+					 * queue overrun cannot happen, and so
+					 * nm_os_generic_xmit_frame() cannot return
+					 * NM_GEN_TX_NOBUFS.
+					 */
+					D("Bug: Qdisc overrun in txqdisc");
 					break;
 				}
 
@@ -722,7 +734,6 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 		 */
 		generic_set_tx_event(kring, nm_i);
 	}
-	ND("hwcur = %d, hwtail = %d", kring->nr_hwcur, kring->nr_hwtail);
 
 	generic_netmap_tx_clean(kring, gna->txqdisc);
 
