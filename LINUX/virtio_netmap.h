@@ -412,11 +412,13 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 				RD(3, "virtqueue_add_outbuf failed [%d]", err);
 				break;
 			}
-			virtqueue_kick(vq);
 
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
+
+		virtqueue_kick(vq);
+
 		/* Update hwcur depending on where we stopped. */
 		kring->nr_hwcur = nm_i; /* note we migth break early */
 
@@ -425,7 +427,6 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 		 * done.
 		 */
 		if (nm_kr_txempty(kring)) {
-			RD(3, "Enabling");
 			virtqueue_enable_cb_delayed(vq);
 		}
 	}
@@ -536,13 +537,13 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
 			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (err < 0) {
-				D("virtqueue_add_inbuf failed");
+				RD(3, "virtqueue_add_inbuf failed");
 				return err;
 			}
 			RXNUM_INC(vi, ring_nr);
-			virtqueue_kick(vq);
 			nm_i = nm_next(nm_i, lim);
 		}
+		virtqueue_kick(vq);
 		kring->nr_hwcur = head;
 	}
 
