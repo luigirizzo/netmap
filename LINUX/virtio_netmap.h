@@ -123,10 +123,12 @@ free_receive_bufs(struct SOFTC_T *vi)
 #define GET_TX_SG(_vi, _i)		(_vi)->sq[_i].sg
 #ifdef NETMAP_LINUX_VIRTIO_RQ_NUM
 /* multi queue, num field exists */
-#define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
+#define RXNUM_DEC(_vi, _i)		--(_vi)->rq[_i].num
+#define RXNUM_INC(_vi, _i)		++(_vi)->rq[_i].num
 #else  /* !VIRTIO_RQ_NUM */
 /* multi queue, but num field has been removed */
-#define DECR_NUM(_vi, _i)		({ (void)(_vi); (void)(_i); })
+#define RXNUM_DEC(_vi, _i)		({ (void)(_vi); (void)(_i); })
+#define RXNUM_INC(_vi, _i)		RXNUM_DEC(_vi, _i)
 #endif /* !VIRTIO_RQ_NUM */
 
 #else  /* !MULTI_QUEUE */
@@ -137,7 +139,8 @@ free_receive_bufs(struct SOFTC_T *vi)
 #define GET_RX_VQ(_vi, _i)		({ (void)(_i); (_vi)->rvq; })
 #define GET_TX_VQ(_vi, _i)		({ (void)(_i); (_vi)->svq; })
 #define VQ_FULL(_vq, _err)		({ (void)(_vq); (_err) > 0; })
-#define DECR_NUM(_vi, _i)		({ (void)(_i); --(_vi)->num; })
+#define RXNUM_DEC(_vi, _i)		({ (void)(_i); --(_vi)->num; })
+#define RXNUM_INC(_vi, _i)		({ (void)(_i); ++(_vi)->num; })
 
 #ifdef NETMAP_LINUX_VIRTIO_SG
 /* single queue, scatterlist in the vi */
@@ -213,8 +216,10 @@ virtio_netmap_clean_used_rings(struct SOFTC_T *vi,
 		void *token;
 		int n = 0;
 
-		while ((token = virtqueue_get_buf(vq, &wlen)) != NULL)
+		while ((token = virtqueue_get_buf(vq, &wlen)) != NULL) {
 			n++;
+			RXNUM_DEC(vi, i);
+		}
 		D("got %d used bufs on queue rx-%d", n, i);
 	}
 }
@@ -250,7 +255,7 @@ virtio_netmap_reclaim_unused(struct SOFTC_T *vi)
 		int n = 0;
 
 		while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
-			DECR_NUM(vi, i);
+			RXNUM_DEC(vi, i);
 			n++;
 		}
 		D("detached %d pending bufs on queue rx-%d", n, i);
@@ -470,6 +475,8 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if (token == NULL)
 				break;
 
+			RXNUM_DEC(vi, ring_nr);
+
 			if (unlikely(token != na)) {
 				RD(5, "Received unexpected virtqueue token %p\n",
 						token);
@@ -521,6 +528,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 				D("virtqueue_add_inbuf failed");
 				return err;
 			}
+			RXNUM_INC(vi, ring_nr);
 			virtqueue_kick(vq);
 			nm_i = nm_next(nm_i, lim);
 		}
@@ -591,6 +599,8 @@ virtio_netmap_init_buffers(struct SOFTC_T *vi)
 
 				return 0;
 			}
+			RXNUM_INC(vi, r);
+
 			if (VQ_FULL(vq, err))
 				break;
 		}
