@@ -26,6 +26,7 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
+#include <linux/virtio_ring.h>
 
 #ifdef WITH_PTNETMAP_GUEST
 #include <netmap/netmap_virt.h>
@@ -185,6 +186,11 @@ virtio_netmap_init_sgs(struct SOFTC_T *vi)
 #define virtio_netmap_init_sgs(_vi)
 
 #endif /* !MULTI_QUEUE && !SG */
+
+
+#ifndef NETMAP_LINUX_VIRTIO_NOTIFY
+#define virtqueue_notify(_vq)		virtqueue_kick(_vq)
+#endif /* VIRTIO_NOTIFY */
 
 
 static void
