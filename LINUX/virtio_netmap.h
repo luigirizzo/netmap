@@ -391,25 +391,26 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
+		int nospace = 0;
+
 		nic_i = netmap_idx_k2n(kring, nm_i);
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			void *addr = NMB(na, slot);
-			int err;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
-			/* Initialize the scatterlist, expose it to the hypervisor,
-			 * and kick the hypervisor (if necessary).
-			 */
+			/* Initialize the scatterlist and expose it to
+			 * the hypervisor. */
 			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_tx_vnet_hdr, vnet_hdr_len);
 			sg_set_buf(sg + 1, addr, len);
-			err = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
-			if (err < 0) {
-				RD(3, "virtqueue_add_outbuf failed [%d]", err);
+			nospace = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
+			if (nospace) {
+				RD(3, "virtqueue_add_outbuf failed [err=%d]",
+				   nospace);
 				break;
 			}
 
@@ -422,11 +423,11 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 		/* Update hwcur depending on where we stopped. */
 		kring->nr_hwcur = nm_i; /* note we migth break early */
 
-		/* No more free TX slots? Ask the hypervisor for notifications,
-		 * possibly only when a considerable amount of work has been
-		 * done.
+		/* No more free virtio descriptors or netmap slots? Ask the
+		 * hypervisor for notifications, possibly only when a
+		 * considerable amount of work has been done.
 		 */
-		if (nm_kr_txempty(kring)) {
+		if (nospace || nm_kr_txempty(kring)) {
 			virtqueue_enable_cb_delayed(vq);
 		}
 	}
@@ -519,26 +520,27 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	nm_i = kring->nr_hwcur; /* netmap ring index */
 	if (nm_i != head) {
+		int nospace = 0;
+
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			void *addr = NMB(na, slot);
-			int err;
 
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				return netmap_ring_reinit(kring);
 
 			slot->flags &= ~NS_BUF_CHANGED;
 
-			/* Initialize the scatterlist, expose it to the hypervisor,
-			 * and kick the hypervisor (if necessary).
-			 */
+			/* Initialize the scatterlist and expose it to
+			 * the hypervisor. */
 			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
 			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
-			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
-			if (err < 0) {
-				RD(3, "virtqueue_add_inbuf failed");
-				return err;
+			nospace = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
+			if (nospace) {
+				RD(3, "virtqueue_add_inbuf failed [err=%d]",
+				   nospace);
+				break;
 			}
 			RXNUM_INC(vi, ring_nr);
 			nm_i = nm_next(nm_i, lim);
