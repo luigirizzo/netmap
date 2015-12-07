@@ -1675,13 +1675,14 @@ netmap_free_rings(struct netmap_adapter *na)
 
 	for_rx_tx(t) {
 		u_int i;
-		for (i = 0; i < netmap_real_rings(na, t); i++) {
+		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
 			struct netmap_kring *kring = &NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 
 			if (ring == NULL)
 				continue;
-			netmap_free_bufs(na->nm_mem, ring->slot, kring->nkr_num_slots);
+			if (i != nma_get_nrings(na, t) || na->na_flags & NAF_HOST_RINGS)
+				netmap_free_bufs(na->nm_mem, ring->slot, kring->nkr_num_slots);
 			netmap_ring_free(na->nm_mem, ring);
 			kring->ring = NULL;
 		}

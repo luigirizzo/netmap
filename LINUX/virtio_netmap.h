@@ -185,7 +185,8 @@ virtio_netmap_init_sgs(struct SOFTC_T *vi)
 
 
 static void
-virtio_netmap_clean_used_rings(struct netmap_adapter *na, struct SOFTC_T *vi)
+virtio_netmap_clean_used_rings(struct SOFTC_T *vi,
+			       struct netmap_adapter *na)
 {
 	int i;
 
@@ -218,6 +219,44 @@ virtio_netmap_clean_used_rings(struct netmap_adapter *na, struct SOFTC_T *vi)
 	}
 }
 
+
+static void
+virtio_netmap_reclaim_unused(struct SOFTC_T *vi)
+{
+	int i;
+
+	/* Drain the RX/TX virtqueues, otherwise the driver will
+	 * interpret the netmap buffers currently linked to the
+	 * netmap ring as buffers allocated by the driver. This
+	 * would break the driver (and kernel panic/ooops).
+	 * We scan all the virtqueues, even those that have not been
+	 * activated (by 'ethtool --set-channels eth0 combined $N').
+	 */
+
+	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+		struct virtqueue *vq = GET_TX_VQ(vi, i);
+		void *token;
+		int n = 0;
+
+		while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
+			n++;
+		}
+		D("detached %d pending bufs on queue tx-%d", n, i);
+	}
+
+	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
+		struct virtqueue *vq = GET_RX_VQ(vi, i);
+		void *token;
+		int n = 0;
+
+		while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
+			DECR_NUM(vi, i);
+			n++;
+		}
+		D("detached %d pending bufs on queue rx-%d", n, i);
+	}
+}
+
 /* Register and unregister. */
 static int
 virtio_netmap_reg(struct netmap_adapter *na, int onoff)
@@ -225,7 +264,6 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *vi = netdev_priv(ifp);
 	int error = 0;
-	int i;
 
 	if (na == NULL)
 		return EINVAL;
@@ -244,7 +282,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		/* Get and free any used buffers. This is necessary
 		 * before calling free_unused_bufs(), that uses
 		 * virtqueue_detach_unused_buf(). */
-		virtio_netmap_clean_used_rings(na, vi);
+		virtio_netmap_clean_used_rings(vi, na);
 
 		/* Initialize scatter-gather lists used to publish netmap
 		 * buffers through virtio descriptors, in such a way that each
@@ -273,38 +311,9 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 
 		/* Get and free any used buffer. This is necessary
 		 * before calling virtqueue_detach_unused_buf(). */
-		virtio_netmap_clean_used_rings(na, vi);
+		virtio_netmap_clean_used_rings(vi, na);
 
-		/* Drain the RX/TX virtqueues, otherwise the driver will
-		 * interpret the netmap buffers currently linked to the
-		 * netmap ring as buffers allocated by the driver. This
-		 * would break the driver (and kernel panic/ooops).
-		 * We scan all the virtqueues, even those that have not been
-		 * activated (by 'ethtool --set-channels eth0 combined $N').
-		 */
-
-		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
-			struct virtqueue *vq = GET_TX_VQ(vi, i);
-			void *token;
-			int n = 0;
-
-			while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
-				n++;
-			}
-			D("detached %d pending bufs on queue tx-%d", n, i);
-		}
-
-		for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
-			struct virtqueue *vq = GET_RX_VQ(vi, i);
-			void *token;
-			int n = 0;
-
-			while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
-				DECR_NUM(vi, i);
-				n++;
-			}
-			D("detached %d pending bufs on queue rx-%d", n, i);
-		}
+		virtio_netmap_reclaim_unused(vi);
 	}
 
 	/* Up the interface. This also enables the napi. */

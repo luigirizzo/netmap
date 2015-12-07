@@ -224,7 +224,7 @@ generic_timer_handler(struct hrtimer *t)
     mit->mit_pending = 0;
     /* below is a variation of netmap_generic_irq  XXX revise */
     if (nm_netmap_on(mit->mit_na)) {
-        netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
+        netmap_common_irq(mit->mit_na, mit->mit_ring_idx, &work_done);
         generic_rate(0, 0, 0, 0, 0, 1);
     }
     nm_os_mitigation_restart(mit);
