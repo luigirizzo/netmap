@@ -14,6 +14,7 @@
 
 #include <pthread.h>
 
+#include "ctrs.h"
 #include "lb.h"
 
 #define MAX_IFNAMELEN 	64
@@ -73,8 +74,7 @@ uint64_t dropped = 0;
 uint64_t forwarded = 0;
 
 struct port_des {
-	uint64_t drop;
-	uint64_t forward;
+	struct my_ctrs ctr;
 	unsigned int last_sync;
 	struct overflow_queue *oq;
 	struct nm_desc *nmd;
@@ -88,23 +88,30 @@ print_stats(void *arg)
 {
 	int npipes = glob_arg.output_rings;
 	(void)arg;
+	struct my_ctrs cur, prev;
+	char b1[40], b2[40];
 
+	memset(&prev, 0, sizeof(prev));
+	gettimeofday(&prev.t, NULL);
 	while (!do_abort) {
 		int j;
-		struct timeval delta;
-		uint64_t total_packets;
+		uint64_t pps, dps, usec;
+		struct my_ctrs x;
 
-		delta.tv_sec = 1;
-		delta.tv_usec = 0;
-		select(0, NULL, NULL, NULL, &delta);
+		memset(&cur, 0, sizeof(cur));
+		usec = wait_for_next_report(&prev.t, &cur.t, 1000);
 
 		for (j = 0; j < npipes; ++j) {
 			struct port_des *p = &ports[j];
-
-			total_packets = p->drop + p->forward;
-			D("Ring %u, Total Packets: %"PRIu64" Forwarded Packets: %"PRIu64" Dropped packets: %"PRIu64" Percent: %.2f",
-			   j, total_packets, p->forward, p->drop, ((float)p->drop / (float)total_packets * 100));
+			cur.pkts += p->ctr.pkts;
+			cur.drop += p->ctr.drop;
 		}
+		x.pkts = cur.pkts - prev.pkts;
+		x.drop = cur.drop - prev.drop;
+		pps = (x.pkts*1000000 + usec/2) / usec;
+		dps = (x.drop*1000000 + usec/2) / usec;
+		D("%spps %sdps", norm(b1, pps), norm(b2, dps));
+		prev = cur;
 	}
 	return NULL;
 }
@@ -460,7 +467,7 @@ run:
 				}
 				ring->head = ring->cur;
 				forwarded += lim;
-				p->forward += lim;
+				p->ctr.pkts += lim;
 			}
 		}
 
@@ -497,7 +504,7 @@ run:
 					ts->len = rs->len;
 					ts->flags |= NS_BUF_CHANGED;
 					ring->head = ring->cur = nm_ring_next(ring, ring->cur);
-					port->forward++;
+					port->ctr.pkts++;
 					forwarded++;
 					goto forward;
 				}
@@ -516,7 +523,7 @@ run:
 				/* use the overflow queue, if available */
 				if (!oq) {
 					dropped++;
-					port->drop++;
+					port->ctr.drop++;
 					goto next;
 				}
 
@@ -543,7 +550,7 @@ run:
 					}
 
 					ND(1, "revoked %d buffers from %s", j, lq->name);
-					lp->drop += j;
+					lp->ctr.drop += j;
 					dropped += j;
 				}
 
