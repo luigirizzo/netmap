@@ -90,6 +90,13 @@ print_stats(void *arg)
 	(void)arg;
 	struct my_ctrs cur, prev;
 	char b1[40], b2[40];
+	struct my_ctrs *pipe_prev;
+
+	pipe_prev = calloc(npipes, sizeof(struct my_ctrs));
+	if (pipe_prev == NULL) {
+		D("out of memory");
+		exit(1);
+	}
 
 	memset(&prev, 0, sizeof(prev));
 	gettimeofday(&prev.t, NULL);
@@ -103,16 +110,28 @@ print_stats(void *arg)
 
 		for (j = 0; j < npipes; ++j) {
 			struct port_des *p = &ports[j];
+
 			cur.pkts += p->ctr.pkts;
 			cur.drop += p->ctr.drop;
+
+			x.pkts = p->ctr.pkts - pipe_prev[j].pkts;
+			x.drop = p->ctr.drop - pipe_prev[j].drop;
+			pps = (x.pkts*1000000 + usec/2) / usec;
+			dps = (x.drop*1000000 + usec/2) / usec;
+			printf("%s/%s|", norm(b1, pps), norm(b2, dps));
+			pipe_prev[j] = p->ctr;
 		}
+		printf("\n");
 		x.pkts = cur.pkts - prev.pkts;
 		x.drop = cur.drop - prev.drop;
 		pps = (x.pkts*1000000 + usec/2) / usec;
 		dps = (x.drop*1000000 + usec/2) / usec;
-		D("%spps %sdps", norm(b1, pps), norm(b2, dps));
+		printf("===> aggregate %spps %sdps\n", norm(b1, pps), norm(b2, dps));
 		prev = cur;
 	}
+
+	free(pipe_prev);
+
 	return NULL;
 }
 
