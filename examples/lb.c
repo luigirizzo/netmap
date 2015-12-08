@@ -282,7 +282,7 @@ int main(int argc, char **argv)
 
 	pthread_t stat_thread;
 
-	ports = calloc(sizeof(struct port_des), npipes + 1);
+	ports = calloc(npipes + 1, sizeof(struct port_des));
 	if (!ports) {
 		D("failed to allocate the stats array");
 		return 1;
@@ -325,7 +325,7 @@ int main(int argc, char **argv)
 	/* one overflow queue for each output pipe, plus one for the
 	 * free extra buffers
 	 */
-	oq = calloc(sizeof(struct overflow_queue), npipes + 1);
+	oq = calloc(npipes + 1, sizeof(struct overflow_queue));
 	if (!oq) {
 		D("failed to allocated overflow queues descriptors");
 		goto run;
@@ -334,7 +334,7 @@ int main(int argc, char **argv)
 	freeq = &oq[npipes];
 	rxport->oq = freeq;
 
-	freeq->slots = calloc(sizeof(struct netmap_slot), extra_bufs);
+	freeq->slots = calloc(extra_bufs, sizeof(struct netmap_slot));
 	if (!freeq->slots) {
 		D("failed to allocate the free list");
 	}
@@ -383,7 +383,7 @@ run:
 
 		if (extra_bufs) {
 			struct overflow_queue *q = &oq[i];
-			q->slots = calloc(sizeof(struct netmap_slot), extra_bufs);
+			q->slots = calloc(extra_bufs, sizeof(struct netmap_slot));
 			if (!q->slots) {
 				D("failed to allocate overflow queue for pipe %d", i);
 				/* make all overflow queue management fail */
