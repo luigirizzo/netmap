@@ -26,6 +26,7 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
+#include <linux/virtio_ring.h>
 
 #ifdef WITH_PTNETMAP_GUEST
 #include <netmap/netmap_virt.h>
@@ -84,6 +85,8 @@ static void free_unused_bufs(struct virtnet_info *vi);
 		(_vq)->vq_ops->kick(_vq)
 #define virtqueue_enable_cb(_vq) \
 		(_vq)->vq_ops->enable_cb(_vq)
+#define virtqueue_disable_cb(_vq) \
+		(_vq)->vq_ops->disable_cb(_vq)
 
 #endif  /* !VIRTIO_FUNCTIONS */
 
@@ -123,10 +126,12 @@ free_receive_bufs(struct SOFTC_T *vi)
 #define GET_TX_SG(_vi, _i)		(_vi)->sq[_i].sg
 #ifdef NETMAP_LINUX_VIRTIO_RQ_NUM
 /* multi queue, num field exists */
-#define DECR_NUM(_vi, _i)		--(_vi)->rq[_i].num
+#define RXNUM_DEC(_vi, _i)		--(_vi)->rq[_i].num
+#define RXNUM_INC(_vi, _i)		++(_vi)->rq[_i].num
 #else  /* !VIRTIO_RQ_NUM */
 /* multi queue, but num field has been removed */
-#define DECR_NUM(_vi, _i)		({ (void)(_vi); (void)(_i); })
+#define RXNUM_DEC(_vi, _i)		({ (void)(_vi); (void)(_i); })
+#define RXNUM_INC(_vi, _i)		RXNUM_DEC(_vi, _i)
 #endif /* !VIRTIO_RQ_NUM */
 
 #else  /* !MULTI_QUEUE */
@@ -137,7 +142,8 @@ free_receive_bufs(struct SOFTC_T *vi)
 #define GET_RX_VQ(_vi, _i)		({ (void)(_i); (_vi)->rvq; })
 #define GET_TX_VQ(_vi, _i)		({ (void)(_i); (_vi)->svq; })
 #define VQ_FULL(_vq, _err)		({ (void)(_vq); (_err) > 0; })
-#define DECR_NUM(_vi, _i)		({ (void)(_i); --(_vi)->num; })
+#define RXNUM_DEC(_vi, _i)		({ (void)(_i); --(_vi)->num; })
+#define RXNUM_INC(_vi, _i)		({ (void)(_i); ++(_vi)->num; })
 
 #ifdef NETMAP_LINUX_VIRTIO_SG
 /* single queue, scatterlist in the vi */
@@ -184,6 +190,11 @@ virtio_netmap_init_sgs(struct SOFTC_T *vi)
 #endif /* !MULTI_QUEUE && !SG */
 
 
+#ifndef NETMAP_LINUX_VIRTIO_NOTIFY
+#define virtqueue_notify(_vq)		virtqueue_kick(_vq)
+#endif /* VIRTIO_NOTIFY */
+
+
 static void
 virtio_netmap_clean_used_rings(struct SOFTC_T *vi,
 			       struct netmap_adapter *na)
@@ -213,8 +224,10 @@ virtio_netmap_clean_used_rings(struct SOFTC_T *vi,
 		void *token;
 		int n = 0;
 
-		while ((token = virtqueue_get_buf(vq, &wlen)) != NULL)
+		while ((token = virtqueue_get_buf(vq, &wlen)) != NULL) {
 			n++;
+			RXNUM_DEC(vi, i);
+		}
 		D("got %d used bufs on queue rx-%d", n, i);
 	}
 }
@@ -250,7 +263,7 @@ virtio_netmap_reclaim_unused(struct SOFTC_T *vi)
 		int n = 0;
 
 		while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
-			DECR_NUM(vi, i);
+			RXNUM_DEC(vi, i);
 			n++;
 		}
 		D("detached %d pending bufs on queue rx-%d", n, i);
@@ -263,20 +276,20 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *vi = netdev_priv(ifp);
+	bool was_up = false;
 	int error = 0;
 
 	if (na == NULL)
 		return EINVAL;
 
-	/* It's important to deny the registration if the interface is
-	   not up, otherwise the virtnet_close() is not matched by a
-	   virtnet_open(), and so a napi_disable() is not matched by
-	   a napi_enable(), which results in a deadlock. */
-	if (!netif_running(ifp))
-		return ENETDOWN;
-
-	/* Down the interface. This also disables napi. */
-	virtnet_close(ifp);
+	/* It's important to make sure each virtnet_close() matches
+	 * a virtnet_open(), otherwise a napi_disable() is not matched by
+	 * a napi_enable(), which results in a deadlock. */
+	if (netif_running(ifp)) {
+		was_up = true;
+		/* Down the interface. This also disables napi. */
+		virtnet_close(ifp);
+	}
 
 	if (onoff) {
 		/* Get and free any used buffers. This is necessary
@@ -316,8 +329,10 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		virtio_netmap_reclaim_unused(vi);
 	}
 
-	/* Up the interface. This also enables the napi. */
-	virtnet_open(ifp);
+	if (was_up) {
+		/* Up the interface. This also enables the napi. */
+		virtnet_open(ifp);
+	}
 
 	return (error);
 }
@@ -349,7 +364,8 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 				sizeof(shared_tx_vnet_hdr.hdr);
 	struct netmap_adapter *token;
 
-	// XXX invert the order
+	virtqueue_disable_cb(vq);
+
 	/* Free used slots. We only consider our own used buffers, recognized
 	 * by the token we passed to virtqueue_add_outbuf.
 	 */
@@ -370,48 +386,52 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 	 */
 	rmb();
 
-	if (!netif_carrier_ok(ifp)) {
+	if (!netif_running(ifp)) {
 		/* All the new slots are now unavailable. */
 		goto out;
 	}
 
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
+		int nospace = 0;
+
 		nic_i = netmap_idx_k2n(kring, nm_i);
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			void *addr = NMB(na, slot);
-			int err;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
-			/* Initialize the scatterlist, expose it to the hypervisor,
-			 * and kick the hypervisor (if necessary).
-			 */
+			/* Initialize the scatterlist and expose it to
+			 * the hypervisor. */
 			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_tx_vnet_hdr, vnet_hdr_len);
 			sg_set_buf(sg + 1, addr, len);
-			err = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
-			if (err < 0) {
-				D("virtqueue_add_outbuf failed [%d]", err);
+			nospace = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
+			if (nospace) {
+				RD(3, "virtqueue_add_outbuf failed [err=%d]",
+				   nospace);
 				break;
 			}
-			virtqueue_kick(vq);
 
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
+
+		virtqueue_kick(vq);
+
 		/* Update hwcur depending on where we stopped. */
 		kring->nr_hwcur = nm_i; /* note we migth break early */
 
-		/* No more free TX slots? Ask the hypervisor for notifications,
-		 * possibly only when a considerable amount of work has been
-		 * done.
+		/* No more free virtio descriptors or netmap slots? Ask the
+		 * hypervisor for notifications, possibly only when a
+		 * considerable amount of work has been done.
 		 */
-		if (nm_kr_txempty(kring))
+		if (nospace || nm_kr_txempty(kring)) {
 			virtqueue_enable_cb_delayed(vq);
+		}
 	}
 out:
 
@@ -448,6 +468,8 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	if (head > lim)
 		return netmap_ring_reinit(kring);
 
+	virtqueue_disable_cb(vq);
+
 	rmb();
 	/*
 	 * First part: import newly received packets.
@@ -467,6 +489,8 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			token = virtqueue_get_buf(vq, &len);
 			if (token == NULL)
 				break;
+
+			RXNUM_DEC(vi, ring_nr);
 
 			if (unlikely(token != na)) {
 				RD(5, "Received unexpected virtqueue token %p\n",
@@ -498,30 +522,32 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	nm_i = kring->nr_hwcur; /* netmap ring index */
 	if (nm_i != head) {
+		int nospace = 0;
+
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			void *addr = NMB(na, slot);
-			int err;
 
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				return netmap_ring_reinit(kring);
 
 			slot->flags &= ~NS_BUF_CHANGED;
 
-			/* Initialize the scatterlist, expose it to the hypervisor,
-			 * and kick the hypervisor (if necessary).
-			 */
+			/* Initialize the scatterlist and expose it to
+			 * the hypervisor. */
 			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
 			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
-			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
-			if (err < 0) {
-				D("virtqueue_add_inbuf failed");
-				return err;
+			nospace = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
+			if (nospace) {
+				RD(3, "virtqueue_add_inbuf failed [err=%d]",
+				   nospace);
+				break;
 			}
-			virtqueue_kick(vq);
+			RXNUM_INC(vi, ring_nr);
 			nm_i = nm_next(nm_i, lim);
 		}
+		virtqueue_kick(vq);
 		kring->nr_hwcur = head;
 	}
 
@@ -589,6 +615,8 @@ virtio_netmap_init_buffers(struct SOFTC_T *vi)
 
 				return 0;
 			}
+			RXNUM_INC(vi, r);
+
 			if (VQ_FULL(vq, err))
 				break;
 		}
@@ -827,42 +855,48 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	struct ifnet *ifp = na->ifp;
 	struct paravirt_csb *csb = ptna->csb;
 	struct netmap_kring *kring;
+	bool was_up = false;
 	int ret = 0;
 
+	/* Same prologue as virtio_netmap_reg. */
 	if (na == NULL)
 		return EINVAL;
 
-	/* It's important to deny the registration if the interface is
-	   not up, otherwise the virtnet_close() is not matched by a
-	   virtnet_open(), and so a napi_disable() is not matched by
-	   a napi_enable(), which results in a deadlock. */
-	if (!netif_running(ifp))
-		return ENETDOWN;
-
-	/* Down the interface. This also disables napi. */
-	virtnet_close(ifp);
+	if (netif_running(ifp)) {
+		was_up = true;
+		virtnet_close(ifp);
+	}
 
 	if (onoff) {
 		struct SOFTC_T *vi = netdev_priv(ifp);
+		size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
+					sizeof(shared_tx_vnet_hdr) :
+					sizeof(shared_tx_vnet_hdr.hdr);
 		int i;
 
-		//na->na_flags |= NAF_NETMAP_ON;
 		nm_set_native_flags(na);
 
-		/* push fake-elem in the tx queues to enable interrupts */
+		/* Push fake requests in the TX virtqueue in order to keep
+		 * TX interrupts enabled. */
 		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+			COMPAT_DECL_SG
+			struct scatterlist *sg = GET_TX_SG(vi, i);
 			struct virtqueue *vq = GET_TX_VQ(vi, i);
-			struct scatterlist sg;
 			struct sk_buff *skb;
+			size_t space = GOOD_COPY_LEN;
 			int num_sg;
 
-			skb = netdev_alloc_skb_ip_align(vi->dev, GOOD_COPY_LEN);
-			skb_put(skb, 64);
-			sg_set_buf(&sg, skb->cb, 64);
-			num_sg = skb_to_sgvec(skb, &sg, 0, skb->len);
-			if (skb) {
-				virtqueue_add_outbuf(vq, &sg, num_sg, skb, GFP_ATOMIC);
+			skb = netdev_alloc_skb_ip_align(vi->dev, space);
+			if (!skb) {
+				D("Failed to allocate fake sk_buff");
+				ret = ENOMEM;
+				goto out;
 			}
+			space = skb_tailroom(skb);
+			memset(skb_put(skb, space), 0, space);
+			sg_set_buf(sg, skb->cb, vnet_hdr_len);
+			num_sg = skb_to_sgvec(skb, sg + 1, 0, skb->len) + 1;
+			virtqueue_add_outbuf(vq, sg, num_sg, skb, GFP_ATOMIC);
 		}
 
 		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
@@ -894,13 +928,13 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		kring->nr_hwtail = kring->rtail = kring->ring->tail =
 			csb->tx_ring.hwtail;
 	} else {
-		//na->na_flags &= ~NAF_NETMAP_ON;
 		nm_clear_native_flags(na);
 		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 out:
-	/* Up the interface. This also enables the napi. */
-	virtnet_open(ifp);
+	if (was_up) {
+		virtnet_open(ifp);
+	}
 
 	return ret;
 }
@@ -912,8 +946,8 @@ virtio_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 }
 
 /*
- * Send command to the host (hypervisor virtio fronted) through PTCTL register.
- * The PTCTL register must be added to the virtio-net device.
+ * Send command to the host (hypervisor virtio frontend) through PTCTL
+ * register. The PTCTL register must be added to the virtio-net device.
  */
 static uint32_t
 virtio_ptnetmap_ptctl(struct net_device *dev, uint32_t val)

@@ -1257,7 +1257,16 @@ add_test 'define VIRTIO_SG' <<-EOF
 	}
 EOF
 
-fi
+add_test 'define VIRTIO_NOTIFY' <<-EOF
+	#include <linux/virtio.h>
+
+	void
+	dummy(struct virtqueue *_vq) {
+		(void)virtqueue_notify(_vq);
+	}
+EOF
+
+fi # virtio-net
 
 if drv enabled i40e; then
 add_test 'define I40E_PTR_ARRAY' <<-EOF
