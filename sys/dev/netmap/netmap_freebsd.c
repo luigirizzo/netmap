@@ -233,18 +233,20 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
  * Second argument is non-zero to intercept, 0 to restore.
  * On freebsd we just intercept if_transmit.
  */
-void
-nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
+int
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 {
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 
-	if (enable) {
+	if (intercept) {
 		na->if_transmit = ifp->if_transmit;
 		ifp->if_transmit = netmap_transmit;
 	} else {
 		ifp->if_transmit = na->if_transmit;
 	}
+
+	return 0;
 }
 
 
@@ -278,9 +280,8 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	 * (and eventually, just reference the netmap buffer)
 	 */
 
-	if (GET_MBUF_REFCNT(m) != 1) {
-		D("invalid refcnt %d for %p",
-			GET_MBUF_REFCNT(m), m);
+	if (MBUF_REFCNT(m) != 1) {
+		D("invalid refcnt %d for %p", MBUF_REFCNT(m), m);
 		panic("in generic_xmit_frame");
 	}
 	// XXX the ext_size check is unnecessary if we link the netmap buf
@@ -300,7 +301,7 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	m->m_pkthdr.flowid = a->ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */
 	ret = NA(ifp)->if_transmit(ifp, m);
-	return ret;
+	return ret ? -1 : 0;
 }
 
 
@@ -332,10 +333,12 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 	*rxq = netmap_generic_rings;
 }
 
-int
-nm_os_generic_rxsg_supported(void)
+void
+nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 {
-	return 1; /* Supported through m_copydata. */
+
+	gna->rxsg = 1; /* Supported through m_copydata. */
+	gna->txqdisc = 0; /* Not supported. */
 }
 
 void

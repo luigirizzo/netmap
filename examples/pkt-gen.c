@@ -1047,8 +1047,8 @@ ponger_body(void *data)
 	D("understood ponger %d but don't know how to do it", n);
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		uint32_t txcur, txavail;
-//#define BUSYWAIT
-#ifdef BUSYWAIT
+//#define BUSY_WAIT
+#ifdef BUSY_WAIT
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
 #else
 		if (poll(&pfd, 1, 1000) <= 0) {
@@ -1095,7 +1095,7 @@ ponger_body(void *data)
 		}
 		txring->head = txring->cur = txcur;
 		targ->ctr.pkts = sent;
-#ifdef BUSYWAIT
+#ifdef BUSY_WAIT
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #endif
 		//D("tx %d rx %d", sent, rx);
@@ -1266,13 +1266,13 @@ sender_body(void *data)
 		/*
 		 * wait for available room in the send queue(s)
 		 */
-#ifdef BUSYWAIT
+#ifdef BUSY_WAIT
 		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
-#else /* !BUSYWAIT */
+#else /* !BUSY_WAIT */
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
@@ -1285,7 +1285,7 @@ sender_body(void *data)
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
-#endif /* !BUSYWAIT */
+#endif /* !BUSY_WAIT */
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1447,13 +1447,13 @@ receiver_body(void *data)
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
-#ifdef BUSYWAIT
+#ifdef BUSY_WAIT
 		if (ioctl(pfd.fd, NIOCRXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
-#else /* !BUSYWAIT */
+#else /* !BUSY_WAIT */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -1464,7 +1464,7 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
-#endif /* !BUSYWAIT */
+#endif /* !BUSY_WAIT */
 		uint64_t cur_space = 0;
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
@@ -1492,7 +1492,7 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#if !defined(BUSYWAIT)
+#if !defined(BUSY_WAIT)
 out:
 #endif
 	targ->completed = 1;

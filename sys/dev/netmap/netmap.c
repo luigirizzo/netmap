@@ -502,9 +502,23 @@ enum {	NETMAP_ADMODE_BEST = 0,	/* use native, fallback to generic */
 	NETMAP_ADMODE_LAST };
 static int netmap_admode = NETMAP_ADMODE_BEST;
 
-int netmap_generic_mit = 100*1000;   /* Generic mitigation interval in nanoseconds. */
-int netmap_generic_ringsize = 1024;   /* Generic ringsize. */
-int netmap_generic_rings = 1;   /* number of queues in generic. */
+/* netmap_generic_mit controls mitigation of RX notifications for
+ * the generic netmap adapter. The value is a time interval in
+ * nanoseconds. */
+int netmap_generic_mit = 100*1000;
+
+/* For now we don't use by default netmap-aware qdiscs with
+ * generic netmap adapters, because of a slight performance hit.
+ * However, this should be done in the future, since the txqdisc
+ * feature prevents non-fifo qdiscs to break the TX notification
+ * scheme, which is based on mbuf destructors when txqdisc is
+ * not used.
+ */
+int netmap_generic_txqdisc = 0;
+
+/* Default number of slots and queues for generic adapters. */
+int netmap_generic_ringsize = 1024;
+int netmap_generic_rings = 1;
 
 /*
  * SYSCTL calls are grouped between SYSBEGIN and SYSEND to be emulated
@@ -532,6 +546,7 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_ringsize, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW, &netmap_generic_rings, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW, &netmap_generic_txqdisc, 0 , "");
 
 SYSEND;
 
@@ -3080,9 +3095,8 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
  *   (see netmap_bwrap_intr_notify)
  */
 void
-netmap_common_irq(struct ifnet *ifp, u_int q, u_int *work_done)
+netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 {
-	struct netmap_adapter *na = NA(ifp);
 	struct netmap_kring *kring;
 	enum txrx t = (work_done ? NR_RX : NR_TX);
 
@@ -3140,7 +3154,7 @@ netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 		return 0;
 	}
 
-	netmap_common_irq(ifp, q, work_done);
+	netmap_common_irq(na, q, work_done);
 	return 1;
 }
 
