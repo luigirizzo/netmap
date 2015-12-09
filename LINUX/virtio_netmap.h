@@ -85,6 +85,8 @@ static void free_unused_bufs(struct virtnet_info *vi);
 		(_vq)->vq_ops->kick(_vq)
 #define virtqueue_enable_cb(_vq) \
 		(_vq)->vq_ops->enable_cb(_vq)
+#define virtqueue_disable_cb(_vq) \
+		(_vq)->vq_ops->disable_cb(_vq)
 
 #endif  /* !VIRTIO_FUNCTIONS */
 
