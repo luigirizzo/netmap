@@ -550,9 +550,9 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 	return n;
 }
 
-
+/* Compute a slot index in the middle between inf and sup. */
 static inline u_int
-generic_tx_event_middle(u_int inf, u_int sup, u_int lim)
+ring_middle(u_int inf, u_int sup, u_int lim)
 {
 	u_int n = lim + 1;
 	u_int e;
@@ -574,20 +574,15 @@ generic_tx_event_middle(u_int inf, u_int sup, u_int lim)
 	return e;
 }
 
-/*
- * We have pending packets in the driver between nr_hwtail+1 and hwcur.
- * Schedule a notification approximately in the middle of the two.
- * There is a race but this is only called within txsync which does
- * a double check.
- */
 static void
 generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 {
 	u_int lim = kring->nkr_num_slots - 1;
 	struct mbuf *m;
 	u_int e;
+	u_int ntc = nm_next(kring->nr_hwtail, lim); /* next to clean */
 
-	if (nm_next(kring->nr_hwtail, lim) == hwcur) {
+	if (ntc == hwcur) {
 		return; /* all buffers are free */
 	}
 
@@ -596,11 +591,22 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 	}
 
 	/*
-	 * We have pending packets in the driver between hwtail+1 and hwcur.
-	 * Compute a position in the middle, to be used to generate
-	 * a notification.
+	 * We have pending packets in the driver between hwtail+1
+	 * and hwcur, and we have to chose one of these slot to
+	 * generate a notification.
+	 * There is a race but this is only called within txsync which
+	 * does a double check.
 	 */
-	e = generic_tx_event_middle(nm_next(kring->nr_hwtail, lim), hwcur, lim);
+#if 0
+	/* Choose a slot in the middle, so that we don't risk ending
+	 * up in a situation where the client continuously wake up,
+	 * fills one or a few TX slots and go to sleep again. */
+	e = ring_middle(nm_next(kring->nr_hwtail, lim), hwcur, lim);
+#else
+	/* Choose the first pending slot, to be safe against driver
+	 * reordering mbuf transmissions. */
+	e = ntc;
+#endif
 
 	m = kring->tx_pool[e];
 	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? MBUF_REFCNT(m) : -2 );
@@ -657,7 +663,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* In txqdisc mode, we ask for a delayed notification,
 			 * but only when cur == hwtail, which means that the
 			 * client is going to block. */
-			event = generic_tx_event_middle(nm_i, head, lim);
+			event = ring_middle(nm_i, head, lim);
 			ND(3, "Place txqdisc event (hwcur=%u,event=%u,"
 			      "head=%u,hwtail=%u)", nm_i, event, head,
 			      kring->nr_hwtail);
