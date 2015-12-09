@@ -338,7 +338,7 @@ nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 {
 
 	gna->rxsg = 1; /* Supported through m_copydata. */
-	gna->txqdisc = 0;
+	gna->txqdisc = 0; /* Not supported. */
 }
 
 void

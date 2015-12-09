@@ -858,8 +858,8 @@ struct netmap_generic_adapter {	/* emulated device */
 	 * each packet pushed up by the driver? */
 	int rxsg;
 
-	/* Is the transmission path moderated by a queue (i.e. qdisc
-	 * on linux? */
+	/* Is the transmission path controlled by a netmap-aware
+	 * device queue (i.e. qdisc on linux)? */
 	int txqdisc;
 };
 #endif  /* WITH_GENERIC */
