@@ -32,6 +32,8 @@
 #include <dev/netmap/netmap_virt.h>
 #include <linux/rtnetlink.h>
 #include <linux/nsproxy.h>
+#include <net/pkt_sched.h>
+#include <net/sch_generic.h>
 
 #include "netmap_linux_config.h"
 
@@ -362,44 +364,267 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
     struct netmap_generic_adapter *gna =
                         (struct netmap_generic_adapter *)NA(ifp);
 
-    if (likely(m->priority == NM_MAGIC_PRIORITY_TX))
-        return gna->save_start_xmit(m, ifp); /* To the driver. */
+	if (likely(m->priority == NM_MAGIC_PRIORITY_TX)) {
+		/* Reset priority, so that generic_netmap_tx_clean()
+		 * knows that it can reclaim this mbuf. */
+		m->priority = 0;
+		return gna->save_start_xmit(m, ifp); /* To the driver. */
+	}
 
     /* To a netmap RX ring. */
     return linux_netmap_start_xmit(m, ifp);
 }
 
-/* Must be called under rtnl. */
-void
-nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
+struct nm_generic_qdisc {
+	unsigned int qidx;
+	unsigned int limit;
+};
+
+static int
+generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 {
-    struct netmap_adapter *na = &gna->up.up;
-    struct ifnet *ifp = netmap_generic_getifp(gna);
+	struct nm_generic_qdisc *priv = NULL;
 
-    if (enable) {
-        /*
-         * Save the old pointer to the netdev_ops,
-         * create an updated netdev ops replacing the
-         * ndo_select_queue() and ndo_start_xmit() methods
-         * with our custom ones, and make the driver use it.
-         */
-        na->if_transmit = (void *)ifp->netdev_ops;
-        /* Save a redundant copy of ndo_start_xmit(). */
-        gna->save_start_xmit = ifp->netdev_ops->ndo_start_xmit;
+	/* Kernel < 2.6.39, do not have qdisc->limit, so we will
+	 * always use our priv->limit, for simplicity. */
 
-        gna->generic_ndo = *ifp->netdev_ops;  /* Copy all */
-        gna->generic_ndo.ndo_start_xmit = &generic_ndo_start_xmit;
+	priv = qdisc_priv(qdisc);
+	priv->qidx = 0;
+	priv->limit = 1024; /* This is going to be overridden. */
+
+	if (opt) {
+		struct nm_generic_qdisc *qdiscopt = nla_data(opt);
+
+		if (nla_len(opt) < sizeof(*qdiscopt)) {
+			D("Invalid netlink attribute");
+			return EINVAL;
+		}
+
+		priv->qidx = qdiscopt->qidx;
+		priv->limit = qdiscopt->limit;
+		D("Qdisc #%d initialized with max_len = %u", priv->qidx,
+				                             priv->limit);
+	}
+
+	/* Qdisc bypassing is not an option for now.
+	qdisc->flags |= TCQ_F_CAN_BYPASS; */
+
+	return 0;
+}
+
+static int
+generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
+{
+	struct nm_generic_qdisc *priv = qdisc_priv(qdisc);
+
+	if (unlikely(qdisc_qlen(qdisc) >= priv->limit)) {
+		RD(5, "dropping mbuf");
+
+		return qdisc_drop(m, qdisc);
+		/* or qdisc_reshape_fail() ? */
+	}
+
+	ND(5, "Enqueuing mbuf, len %u", qdisc_qlen(qdisc));
+
+	return qdisc_enqueue_tail(m, qdisc);
+}
+
+static struct mbuf *
+generic_qdisc_dequeue(struct Qdisc *qdisc)
+{
+	struct mbuf *m = qdisc_dequeue_head(qdisc);
+	bool event;
+
+	if (!m) {
+		return NULL;
+	}
+
+	event = (m->priority == NM_MAGIC_PRIORITY_TXQE);
+	m->priority = NM_MAGIC_PRIORITY_TX;
+
+	if (event) {
+		ND(5, "Event met, notify %p", m);
+		netmap_generic_irq(qdisc_dev(qdisc),
+				   skb_get_queue_mapping(m), NULL);
+	}
+
+	ND(5, "Dequeuing mbuf, len %u", qdisc_qlen(qdisc));
+
+	return m;
+}
+
+static struct mbuf *
+generic_qdisc_peek(struct Qdisc *qdisc)
+{
+	RD(5, "Peeking queue, curr len %u", qdisc_qlen(qdisc));
+	return skb_peek(&qdisc->q);
+}
+
+static unsigned int
+generic_qdisc_drop(struct Qdisc *qdisc)
+{
+	RD(5, "Dropping on purpose");
+	return qdisc_queue_drop(qdisc);
+}
+
+static struct Qdisc_ops
+generic_qdisc_ops __read_mostly = {
+	.id		= "netmap_generic",
+	.priv_size	= sizeof(struct nm_generic_qdisc),
+	.init		= generic_qdisc_init,
+	.reset		= qdisc_reset_queue,
+	.change		= generic_qdisc_init,
+	.enqueue	= generic_qdisc_enqueue,
+	.dequeue	= generic_qdisc_dequeue,
+	.peek		= generic_qdisc_peek,
+	.drop		= generic_qdisc_drop,
+	.dump		= NULL,
+	.owner		= THIS_MODULE,
+};
+
+static int
+nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
+{
+	struct netmap_adapter *na = &gna->up.up;
+	struct ifnet *ifp = netmap_generic_getifp(gna);
+	struct nm_generic_qdisc *qdiscopt = NULL;
+	struct Qdisc *fqdisc = NULL;
+	struct nlattr *nla = NULL;
+	struct netdev_queue *txq;
+	unsigned int i;
+
+	if (!gna->txqdisc) {
+		return 0;
+	}
+
+	if (intercept) {
+		nla = kmalloc(nla_attr_size(sizeof(*qdiscopt)),
+				GFP_KERNEL);
+		if (!nla) {
+			D("Failed to allocate netlink attribute");
+			return ENOMEM;
+		}
+		nla->nla_type = RTM_NEWQDISC;
+		nla->nla_len = nla_attr_size(sizeof(*qdiscopt));
+		qdiscopt = (struct nm_generic_qdisc *)nla_data(nla);
+		memset(qdiscopt, 0, sizeof(*qdiscopt));
+		qdiscopt->limit = na->num_tx_desc;
+	}
+
+	if (ifp->flags & IFF_UP) {
+		dev_deactivate(ifp);
+	}
+
+	/* Replace the current qdiscs with our own. */
+	for (i = 0; i < ifp->real_num_tx_queues; i++) {
+		struct Qdisc *nqdisc = NULL;
+		struct Qdisc *oqdisc;
+		int err;
+
+		txq = netdev_get_tx_queue(ifp, i);
+
+		if (intercept) {
+			/* This takes a refcount to netmap module, alloc the
+			 * qdisc and calls the init() op with NULL netlink
+			 * attribute. */
+			nqdisc = qdisc_create_dflt(
+#ifndef NETMAP_LINUX_QDISC_CREATE_DFLT_3ARGS
+					ifp,
+#endif  /* NETMAP_LINUX_QDISC_CREATE_DFLT_3ARGS */
+					txq, &generic_qdisc_ops,
+					TC_H_UNSPEC);
+			if (!nqdisc) {
+				D("Failed to create qdisc");
+				goto qdisc_create;
+			}
+			fqdisc = fqdisc ?: nqdisc;
+
+			/* Call the change() op passing a valid netlink
+			 * attribute. This is used to set the queue idx. */
+			qdiscopt->qidx = i;
+			err = nqdisc->ops->change(nqdisc, nla);
+			if (err) {
+				D("Failed to init qdisc");
+				goto qdisc_create;
+			}
+		}
+
+		oqdisc = dev_graft_qdisc(txq, nqdisc);
+		/* We can call this also with
+		 * odisc == &noop_qdisc, since the noop
+		 * qdisc has the TCQ_F_BUILTIN flag set,
+		 * and so qdisc_destroy will skip it. */
+		qdisc_destroy(oqdisc);
+	}
+
+	kfree(nla);
+
+	if (ifp->qdisc) {
+		qdisc_destroy(ifp->qdisc);
+	}
+	if (intercept) {
+		atomic_inc(&fqdisc->refcnt);
+		ifp->qdisc = fqdisc;
+	} else {
+		ifp->qdisc = &noop_qdisc;
+	}
+
+	if (ifp->flags & IFF_UP) {
+		dev_activate(ifp);
+	}
+
+	return 0;
+
+qdisc_create:
+	if (nla) {
+		kfree(nla);
+	}
+
+	nm_os_catch_qdisc(gna, 0);
+
+	return -1;
+}
+
+/* Must be called under rtnl. */
+int
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
+{
+	struct netmap_adapter *na = &gna->up.up;
+	struct ifnet *ifp = netmap_generic_getifp(gna);
+	int err;
+
+	err = nm_os_catch_qdisc(gna, intercept);
+	if (err) {
+		return err;
+	}
+
+	if (intercept) {
+		/*
+		 * Save the old pointer to the netdev_ops,
+		 * create an updated netdev ops replacing the
+		 * ndo_select_queue() and ndo_start_xmit() methods
+		 * with our custom ones, and make the driver use it.
+		 */
+		na->if_transmit = (void *)ifp->netdev_ops;
+		/* Save a redundant copy of ndo_start_xmit(). */
+		gna->save_start_xmit = ifp->netdev_ops->ndo_start_xmit;
+
+		gna->generic_ndo = *ifp->netdev_ops;  /* Copy all */
+		gna->generic_ndo.ndo_start_xmit = &generic_ndo_start_xmit;
 #ifndef NETMAP_LINUX_SELECT_QUEUE
-	printk("%s: no packet steering support\n", __FUNCTION__);
+		D("No packet steering support");
 #else
-        gna->generic_ndo.ndo_select_queue = &generic_ndo_select_queue;
+		gna->generic_ndo.ndo_select_queue = &generic_ndo_select_queue;
 #endif
 
-        ifp->netdev_ops = &gna->generic_ndo;
-    } else {
-	/* Restore the original netdev_ops. */
-        ifp->netdev_ops = (void *)na->if_transmit;
-    }
+		ifp->netdev_ops = &gna->generic_ndo;
+
+	} else {
+		/* Restore the original netdev_ops. */
+		ifp->netdev_ops = (void *)na->if_transmit;
+	}
+
+	return 0;
 }
 
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
@@ -407,35 +632,47 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
 int
 nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
-    netdev_tx_t ret;
-    struct sk_buff *m = a->m;
-    u_int len = a->len;
+	struct sk_buff *m = a->m;
+	u_int len = a->len;
+	netdev_tx_t ret;
 
-    /* Empty the sk_buff. */
-    if (unlikely(skb_headroom(m)))
-	skb_push(m, skb_headroom(m));
-    skb_trim(m, 0);
+	/* Empty the sk_buff. */
+	if (unlikely(skb_headroom(m)))
+		skb_push(m, skb_headroom(m));
+	skb_trim(m, 0);
 
-    /* TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
-    skb_copy_to_linear_data(m, a->addr, len); // skb_store_bits(m, 0, addr, len);
-    skb_put(m, len);
-    NM_ATOMIC_INC(&m->users);
-    m->dev = a->ifp;
-    /* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
-    m->priority = NM_MAGIC_PRIORITY_TX;
-    skb_set_queue_mapping(m, a->ring_nr);
+	/* TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
+	skb_copy_to_linear_data(m, a->addr, len); // skb_store_bits(m, 0, addr, len);
+	skb_put(m, len);
+	NM_ATOMIC_INC(&m->users);
+	m->dev = a->ifp;
+	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
+	skb_set_queue_mapping(m, a->ring_nr);
+	m->priority = a->qevent ? NM_MAGIC_PRIORITY_TXQE : NM_MAGIC_PRIORITY_TX;
 
-    ret = dev_queue_xmit(m);
+	ret = dev_queue_xmit(m);
 
-    if (likely(ret == NET_XMIT_SUCCESS)) {
-        return 0;
-    }
-    if (unlikely(ret != NET_XMIT_DROP)) {
-        /* If something goes wrong in the TX path, there is nothing
-           intelligent we can do (for now) apart from error reporting. */
-        RD(5, "dev_queue_xmit failed: HARD ERROR %d", ret);
-    }
-    return -1;
+	if (unlikely(ret != NET_XMIT_SUCCESS)) {
+		/* Reset priority, so that generic_netmap_tx_clean() can
+		 * reclaim this mbuf. */
+		m->priority = 0;
+
+		/* Qdisc queue is full (this cannot happen with
+		 * the netmap-aware qdisc, see exaplanation in
+		 * netmap_generic_txsync), or qdisc is being
+		 * deactivated. In the latter case dev_queue_xmit()
+		 * does not call the enqueue method and returns
+		 * NET_XMIT_DROP.
+		 * If there is no carrier, the generic qdisc is
+		 * not yet active (is pending in the qdisc_sleeping
+		 * field), and so the temporary noop qdisc enqueue
+		 * method will drop the packet and return NET_XMIT_CN.
+		 */
+		RD(3, "Warning: dev_queue_xmit() is dropping [%d]", ret);
+		return -1;
+	}
+
+	return 0;
 }
 #endif /* WITH_GENERIC */
 
@@ -483,10 +720,11 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
     }
 }
 
-int
-nm_os_generic_rxsg_supported(void)
+void
+nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 {
-	return 1; /* Supported through skb_copy_bits(). */
+	gna->rxsg = 1; /* Supported through skb_copy_bits(). */
+	gna->txqdisc = netmap_generic_txqdisc;
 }
 
 int

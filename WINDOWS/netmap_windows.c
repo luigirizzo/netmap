@@ -251,15 +251,17 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 }
 
 
-void
-nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
+int
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 {
     struct netmap_adapter *na = &gna->up.up;
     int *p = na->ifp->intercept;
 
     if (p != NULL) {
-	*p = enable ? (*p | NM_WIN_CATCH_TX) : (*p & ~NM_WIN_CATCH_TX);
+	*p = intercept ? (*p | NM_WIN_CATCH_TX) : (*p & ~NM_WIN_CATCH_TX);
     }
+
+    return 0;
 }
 
 /*
@@ -306,11 +308,11 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 		a->tail = cur;
 		if (a->head == NULL)
 			a->head = cur;
+		return 0;
 	}
-	else {
-		return NDIS_STATUS_BUFFER_OVERFLOW;
-	}
-	return  0;
+
+	/* NDIS_STATUS_BUFFER_OVERFLOW */
+	return -1;
 }
 
 /*
@@ -333,10 +335,12 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
     *rxq = 1;
 }
 
-int
-nm_os_generic_rxsg_supported(void)
+void
+nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 {
-	return 0; /* No support for now. */
+	/* No support for now. */
+	gna->rxsg = 0;
+	gna->txqdisc = 0;
 }
 //
 

@@ -111,14 +111,16 @@ struct netmap_adapter *netmap_getna(if_t ifp);
 #endif
 
 #if __FreeBSD_version >= 1100027
-#define GET_MBUF_REFCNT(m)      ((m)->m_ext.ext_cnt ? *((m)->m_ext.ext_cnt) : -1)
+#define MBUF_REFCNT(m)		((m)->m_ext.ext_cnt ? *((m)->m_ext.ext_cnt) : -1)
 #define SET_MBUF_REFCNT(m, x)   *((m)->m_ext.ext_cnt) = x
 #define PNT_MBUF_REFCNT(m)      ((m)->m_ext.ext_cnt)
 #else
-#define GET_MBUF_REFCNT(m)      ((m)->m_ext.ref_cnt ? *((m)->m_ext.ref_cnt) : -1)
+#define MBUF_REFCNT(m)		((m)->m_ext.ref_cnt ? *((m)->m_ext.ref_cnt) : -1)
 #define SET_MBUF_REFCNT(m, x)   *((m)->m_ext.ref_cnt) = x
 #define PNT_MBUF_REFCNT(m)      ((m)->m_ext.ref_cnt)
 #endif
+
+#define MBUF_QUEUED(m)		1
 
 struct nm_selinfo {
 	struct selinfo si;
@@ -855,6 +857,10 @@ struct netmap_generic_adapter {	/* emulated device */
 	/* Is the adapter able to use multiple RX slots to scatter
 	 * each packet pushed up by the driver? */
 	int rxsg;
+
+	/* Is the transmission path controlled by a netmap-aware
+	 * device queue (i.e. qdisc on linux)? */
+	int txqdisc;
 };
 #endif  /* WITH_GENERIC */
 
@@ -1436,6 +1442,7 @@ extern int netmap_flags;
 extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
 extern int netmap_generic_rings;
+extern int netmap_generic_txqdisc;
 extern int netmap_use_count;
 
 /*
@@ -1720,9 +1727,8 @@ struct netmap_monitor_adapter {
 int generic_netmap_attach(struct ifnet *ifp);
 void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 
-int nm_os_catch_rx(struct netmap_generic_adapter *na, int intercept);
-/* XXX why the type/argument name disparity with netmap_catch_rx ? */
-void nm_os_catch_tx(struct netmap_generic_adapter *na, int enable);
+int nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept);
+int nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept);
 
 /*
  * the generic transmit routine is passed a structure to optionally
@@ -1741,11 +1747,13 @@ struct nm_os_gen_arg {
 	void *addr;	/* payload of current packet */
 	u_int len;	/* packet length */
 	u_int ring_nr;	/* packet length */
+	u_int qevent;   /* in txqdisc mode, place an event on this mbuf */
 };
+
 int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
 int nm_os_generic_find_num_desc(struct ifnet *ifp, u_int *tx, u_int *rx);
 void nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq);
-int nm_os_generic_rxsg_supported(void);
+void nm_os_generic_set_features(struct netmap_generic_adapter *gna);
 
 static inline struct ifnet*
 netmap_generic_getifp(struct netmap_generic_adapter *gna)
@@ -1755,6 +1763,8 @@ netmap_generic_getifp(struct netmap_generic_adapter *gna)
 
         return gna->up.up.ifp;
 }
+
+void netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done);
 
 //#define RATE_GENERIC  /* Enables communication statistics for generic. */
 #ifdef RATE_GENERIC
