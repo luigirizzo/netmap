@@ -502,10 +502,23 @@ enum {	NETMAP_ADMODE_BEST = 0,	/* use native, fallback to generic */
 	NETMAP_ADMODE_LAST };
 static int netmap_admode = NETMAP_ADMODE_BEST;
 
-int netmap_generic_mit = 100*1000;  /* Generic mitigation interval in nanoseconds. */
-int netmap_generic_ringsize = 1024;  /* Generic ringsize. */
-int netmap_generic_rings = 1;  /* number of queues in generic. */
-int netmap_generic_txqdisc = 1;  /* try to use netmap-aware qdisc */
+/* netmap_generic_mit controls mitigation of RX notifications for
+ * the generic netmap adapter. The value is a time interval in
+ * nanoseconds. */
+int netmap_generic_mit = 100*1000;
+
+/* For now we don't use by default netmap-aware qdiscs with
+ * generic netmap adapters, because of a slight performance hit.
+ * However, this should be done in the future, since the txqdisc
+ * feature prevents non-fifo qdiscs to break the TX notification
+ * scheme, which is based on mbuf destructors when txqdisc is
+ * not used.
+ */
+int netmap_generic_txqdisc = 0;
+
+/* Default number of slots and queues for generic adapters. */
+int netmap_generic_ringsize = 1024;
+int netmap_generic_rings = 1;
 
 /*
  * SYSCTL calls are grouped between SYSBEGIN and SYSEND to be emulated
