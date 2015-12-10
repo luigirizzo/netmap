@@ -423,9 +423,10 @@ struct netmap_kring {
 	 * store incoming mbufs in a queue that is drained by
 	 * a rxsync.
 	 */
-	struct mbuf **tx_pool;
-	struct mbuf *tx_event;
-	struct mbq rx_queue;            /* intercepted rx mbufs. */
+	struct mbuf	**tx_pool;
+	struct mbuf	*tx_event;
+	NM_LOCK_T	tx_event_lock;
+	struct mbq	rx_queue;       /* intercepted rx mbufs. */
 
 	uint32_t	users;		/* existing bindings for this ring */
 

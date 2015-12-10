@@ -303,6 +303,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		 */
 		for (r=0; r<na->num_tx_rings; r++)
 			na->tx_rings[r].tx_pool = NULL;
+
 		for (r=0; r<na->num_tx_rings; r++) {
 			na->tx_rings[r].tx_pool = malloc(na->num_tx_desc * sizeof(struct mbuf *),
 					M_DEVBUF, M_NOWAIT | M_ZERO);
@@ -323,6 +324,8 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 				na->tx_rings[r].tx_pool[i] = m;
 			}
 			na->tx_rings[r].tx_event = NULL;
+			mtx_init(&na->tx_rings[r].tx_event_lock,
+				 "tx_event_lock", NULL, MTX_SPIN);
 		}
 
 		rtnl_lock();
@@ -394,10 +397,14 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			 * destructor (which invokes netmap code), since the
 			 * the netmap module may disappear before pending mbufs
 			 * are consumed. */
+			mtx_lock(&na->tx_rings[r].tx_event_lock);
 			m = na->tx_rings[r].tx_event;
 			if (m) {
 				SET_MBUF_DESTRUCTOR(m, NULL);
 			}
+			na->tx_rings[r].tx_event = NULL;
+			mtx_unlock(&na->tx_rings[r].tx_event_lock);
+			mtx_destroy(&na->tx_rings[r].tx_event_lock);
 
 			for (i=0; i<na->num_tx_desc; i++) {
 				m_freem(na->tx_rings[r].tx_pool[i]);
@@ -454,10 +461,25 @@ out:
 static void
 generic_mbuf_destructor(struct mbuf *m)
 {
-	netmap_generic_irq(MBUF_IFP(m), MBUF_TXQ(m), NULL);
+	struct netmap_adapter *na = NA(MBUF_IFP(m));
+	struct netmap_kring *kring;
+	unsigned int r = MBUF_TXQ(m);
+
+	if (unlikely(!nm_netmap_on(na)))
+		return;
+
+	/* First, clear the event. */
+	kring = &na->tx_rings[r];
+	mtx_lock(&kring->tx_event_lock);
+	kring->tx_event = NULL;
+	mtx_unlock(&kring->tx_event_lock);
+
+	/* Second, wake up clients, that will reclaim
+	 * the event through txsync. */
+	netmap_generic_irq(MBUF_IFP(m), r, NULL);
 #ifdef __FreeBSD__
 	if (netmap_verbose) {
-		RD(5, "Tx irq (%p) queue %d index %d" , m, MBUF_TXQ(m),
+		RD(5, "Tx irq (%p) queue %d index %d" , m, r,
 		   (int)(uintptr_t)m->m_ext.ext_arg1);
 	}
 	netmap_default_mbuf_destructor(m);
@@ -500,12 +522,17 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 
 		} else {
 			if (unlikely(m == NULL)) {
-				/* This slot has been used to place an event,
-				 * we have to clear the event and replenish
-				 * it. */
-				replenish = 1;
-				SET_MBUF_DESTRUCTOR(kring->tx_event, NULL);
-				kring->tx_event = NULL;
+				/* This slot has been used to place an event. */
+				mtx_lock(&kring->tx_event_lock);
+				replenish = (kring->tx_event == NULL);
+				mtx_unlock(&kring->tx_event_lock);
+				if (!replenish) {
+					/* The event has not been consumed yet,
+					 * still busy in the driver. */
+					break;
+				}
+				/* The event has been consumed, we have to
+				 * replenish it and go ahead. */
 
 			} else if (MBUF_REFCNT(m) != 1) {
 				/* This mbuf is still busy: its refcnt is 2. */
@@ -586,10 +613,6 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 		return; /* all buffers are free */
 	}
 
-	if (kring->tx_event) {
-		return; /* An event is already in place. */
-	}
-
 	/*
 	 * We have pending packets in the driver between hwtail+1
 	 * and hwcur, and we have to chose one of these slot to
@@ -609,18 +632,28 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 #endif
 
 	m = kring->tx_pool[e];
-	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? MBUF_REFCNT(m) : -2 );
 	if (m == NULL) {
-		/* This can happen if there is already an event on the netmap
-		   slot 'e': There is nothing to do. */
+		/* An event is already in place. */
 		return;
 	}
+
+	mtx_lock(&kring->tx_event_lock);
+	if (kring->tx_event) {
+		/* An event is already in place. */
+		mtx_unlock(&kring->tx_event_lock);
+		return;
+	}
+
 	SET_MBUF_DESTRUCTOR(m, generic_mbuf_destructor);
 	kring->tx_event = m;
+	mtx_unlock(&kring->tx_event_lock);
+
 	kring->tx_pool[e] = NULL;
 
-	// XXX wmb() ?
-	/* Decrement the refcount an free it if we have the last one. */
+	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? MBUF_REFCNT(m) : -2 );
+
+	/* Decrement the refcount. This will free it if we lose the race
+	 * with the driver. */
 	m_freem(m);
 	smp_mb();
 }
