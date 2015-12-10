@@ -601,7 +601,7 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 	/* Choose a slot in the middle, so that we don't risk ending
 	 * up in a situation where the client continuously wake up,
 	 * fills one or a few TX slots and go to sleep again. */
-	e = ring_middle(nm_next(kring->nr_hwtail, lim), hwcur, lim);
+	e = ring_middle(ntc, hwcur, lim);
 #else
 	/* Choose the first pending slot, to be safe against driver
 	 * reordering mbuf transmissions. */
