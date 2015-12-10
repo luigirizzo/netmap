@@ -359,8 +359,8 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 	} else if (na->tx_rings[0].tx_pool) {
 		/* Disable netmap mode. We enter here only if the previous
 		   generic_netmap_register(na, 1) was successfull.
-		   If it was not, na->tx_rings[0].tx_pool was set to NULL by the
-		   error handling code below. */
+		   If it was not, na->tx_rings[0].tx_pool was set to NULL
+		   by the error handling code below. */
 		rtnl_lock();
 
 		na->na_flags &= ~NAF_NETMAP_ON;
@@ -368,12 +368,13 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		/* Release packet steering control. */
 		nm_os_catch_tx(gna, 0);
 
-		/* Do not intercept packets on the rx path. */
+		/* Stop intercepting packets on the RX path. */
 		nm_os_catch_rx(gna, 0);
 
 		rtnl_unlock();
 
-		/* Free the mbufs going to the netmap rings */
+		/* Free the mbufs still pending in the RX queues, that
+		 * did not end up into the corresponding netmap RX rings. */
 		for (r=0; r<na->num_rx_rings; r++) {
 			mbq_safe_purge(&na->rx_rings[r].rx_queue);
 			mbq_safe_fini(&na->rx_rings[r].rx_queue);
@@ -383,9 +384,21 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			nm_os_mitigation_cleanup(&gna->mit[r]);
 		free(gna->mit, M_DEVBUF);
 
+		/* Decrement reference counter for the mbufs in the
+		 * TX pools. These mbufs can be still pending in drivers,
+		 * (e.g. this happens with virtio-net driver, which
+		 * does lazy reclaiming of transmitted mbufs).
+		 * Therefore it is necessary to remove the
+		 * destructor (which invokes netmap code), since the
+		 * the netmap module may disappear before pending mbufs
+		 * are consumed. */
 		for (r=0; r<na->num_tx_rings; r++) {
 			for (i=0; i<na->num_tx_desc; i++) {
-				m_freem(na->tx_rings[r].tx_pool[i]);
+				m = na->tx_rings[r].tx_pool[i];
+				if (m) {
+					SET_MBUF_DESTRUCTOR(m, NULL);
+					m_freem(m);
+				}
 			}
 			free(na->tx_rings[r].tx_pool, M_DEVBUF);
 		}

@@ -199,7 +199,7 @@ struct thread;
  */
 #define MBUF_TXQ(m)		skb_get_queue_mapping(m)
 #define MBUF_RXQ(m)		(skb_rx_queue_recorded(m) ? skb_get_rx_queue(m) : 0)
-#define SET_MBUF_DESTRUCTOR(m, f) m->destructor = (void *)&f
+#define SET_MBUF_DESTRUCTOR(m, f) m->destructor = (void *)f
 
 /* Magic number for sk_buff.priority field, used to take decisions in
  * generic_ndo_start_xmit(), linux_generic_rx_handler() and
