@@ -424,8 +424,8 @@ struct netmap_kring {
 	 * a rxsync.
 	 */
 	struct mbuf	**tx_pool;
-	struct mbuf	*tx_event;
-	NM_LOCK_T	tx_event_lock;
+	struct mbuf	*tx_event;	/* TX event used as a notification */
+	NM_LOCK_T	tx_event_lock;	/* protects the tx_event mbuf */
 	struct mbq	rx_queue;       /* intercepted rx mbufs. */
 
 	uint32_t	users;		/* existing bindings for this ring */

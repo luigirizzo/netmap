@@ -393,10 +393,10 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		 * (e.g. this happens with virtio-net driver, which
 		 * does lazy reclaiming of transmitted mbufs). */
 		for (r=0; r<na->num_tx_rings; r++) {
-			/* We must remove the destructor or on the TX event,
-			 * destructor (which invokes netmap code), since the
-			 * the netmap module may disappear before pending mbufs
-			 * are consumed. */
+			/* We must remove the destructor on the TX event,
+			 * because the destructor invokes netmap code, and
+			 * the netmap module may disappear before the
+			 * TX event is consumed. */
 			mtx_lock(&na->tx_rings[r].tx_event_lock);
 			m = na->tx_rings[r].tx_event;
 			if (m) {
