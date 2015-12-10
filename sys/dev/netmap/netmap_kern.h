@@ -424,7 +424,7 @@ struct netmap_kring {
 	 * a rxsync.
 	 */
 	struct mbuf **tx_pool;
-	// u_int nr_ntc;		/* Emulation of a next-to-clean RX ring pointer. */
+	struct mbuf *tx_event;
 	struct mbq rx_queue;            /* intercepted rx mbufs. */
 
 	uint32_t	users;		/* existing bindings for this ring */

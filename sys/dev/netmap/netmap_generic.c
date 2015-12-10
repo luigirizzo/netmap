@@ -322,6 +322,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 				}
 				na->tx_rings[r].tx_pool[i] = m;
 			}
+			na->tx_rings[r].tx_event = NULL;
 		}
 
 		rtnl_lock();
@@ -387,18 +388,19 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		/* Decrement reference counter for the mbufs in the
 		 * TX pools. These mbufs can be still pending in drivers,
 		 * (e.g. this happens with virtio-net driver, which
-		 * does lazy reclaiming of transmitted mbufs).
-		 * Therefore it is necessary to remove the
-		 * destructor (which invokes netmap code), since the
-		 * the netmap module may disappear before pending mbufs
-		 * are consumed. */
+		 * does lazy reclaiming of transmitted mbufs). */
 		for (r=0; r<na->num_tx_rings; r++) {
+			/* We must remove the destructor or on the TX event,
+			 * destructor (which invokes netmap code), since the
+			 * the netmap module may disappear before pending mbufs
+			 * are consumed. */
+			m = na->tx_rings[r].tx_event;
+			if (m) {
+				SET_MBUF_DESTRUCTOR(m, NULL);
+			}
+
 			for (i=0; i<na->num_tx_desc; i++) {
-				m = na->tx_rings[r].tx_pool[i];
-				if (m) {
-					SET_MBUF_DESTRUCTOR(m, NULL);
-					m_freem(m);
-				}
+				m_freem(na->tx_rings[r].tx_pool[i]);
 			}
 			free(na->tx_rings[r].tx_pool, M_DEVBUF);
 		}
@@ -454,8 +456,10 @@ generic_mbuf_destructor(struct mbuf *m)
 {
 	netmap_generic_irq(MBUF_IFP(m), MBUF_TXQ(m), NULL);
 #ifdef __FreeBSD__
-	if (netmap_verbose)
-		RD(5, "Tx irq (%p) queue %d index %d" , m, MBUF_TXQ(m), (int)(uintptr_t)m->m_ext.ext_arg1);
+	if (netmap_verbose) {
+		RD(5, "Tx irq (%p) queue %d index %d" , m, MBUF_TXQ(m),
+		   (int)(uintptr_t)m->m_ext.ext_arg1);
+	}
 	netmap_default_mbuf_destructor(m);
 #endif /* __FreeBSD__ */
 }
@@ -496,11 +500,16 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 
 		} else {
 			if (unlikely(m == NULL)) {
-				/* this is done, try to replenish the entry */
+				/* This slot has been used to place an event,
+				 * we have to clear the event and replenish
+				 * it. */
 				replenish = 1;
+				SET_MBUF_DESTRUCTOR(kring->tx_event, NULL);
+				kring->tx_event = NULL;
 
 			} else if (MBUF_REFCNT(m) != 1) {
-				break; /* This mbuf is still busy: its refcnt is 2. */
+				/* This mbuf is still busy: its refcnt is 2. */
+				break;
 			}
 		}
 
@@ -582,6 +591,10 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 		return; /* all buffers are free */
 	}
 
+	if (kring->tx_event) {
+		return; /* An event is already in place. */
+	}
+
 	/*
 	 * We have pending packets in the driver between hwtail+1 and hwcur.
 	 * Compute a position in the middle, to be used to generate
@@ -596,8 +609,9 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 		   slot 'e': There is nothing to do. */
 		return;
 	}
-	kring->tx_pool[e] = NULL;
 	SET_MBUF_DESTRUCTOR(m, generic_mbuf_destructor);
+	kring->tx_event = m;
+	kring->tx_pool[e] = NULL;
 
 	// XXX wmb() ?
 	/* Decrement the refcount an free it if we have the last one. */
