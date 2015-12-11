@@ -466,9 +466,9 @@ generic_mbuf_destructor(struct mbuf *m)
 
 	if (unlikely(!nm_netmap_on(na) || r >= na->num_tx_rings)) {
 		/* Unfortunately, certain drivers (like the linux bridge
-		 * driver) change the MBUF_IFP(m) that was set by
-		 * generic_xmit_frame, so that here we end up with a NULL
-		 * na, or a different na.
+		 * driver, or the linux veth driver) change the MBUF_IFP(m)
+		 * that was set by generic_xmit_frame, so that here we end
+		 * up with a NULL na, or a different na.
 		 */
 		RD(3, "Warning: driver modified MBUF_IFP(m)");
 		return;
