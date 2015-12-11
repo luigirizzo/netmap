@@ -264,6 +264,7 @@ static int
 generic_netmap_register(struct netmap_adapter *na, int enable)
 {
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
+	struct netmap_kring *kring;
 	struct mbuf *m;
 	int error;
 	int i, r;
@@ -281,7 +282,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 	if (enable) { /* Enable netmap mode. */
 		/* Init the mitigation support on all the rx queues. */
 		gna->mit = malloc(na->num_rx_rings * sizeof(struct nm_generic_mit),
-					M_DEVBUF, M_NOWAIT | M_ZERO);
+				  M_DEVBUF, M_NOWAIT | M_ZERO);
 		if (!gna->mit) {
 			D("mitigation allocation failed");
 			error = ENOMEM;
@@ -304,15 +305,16 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			na->tx_rings[r].tx_pool = NULL;
 
 		for (r=0; r<na->num_tx_rings; r++) {
-			na->tx_rings[r].tx_pool = malloc(na->num_tx_desc * sizeof(struct mbuf *),
-					M_DEVBUF, M_NOWAIT | M_ZERO);
-			if (!na->tx_rings[r].tx_pool) {
+			kring = &na->tx_rings[r];
+			kring->tx_pool = malloc(na->num_tx_desc * sizeof(struct mbuf *),
+					        M_DEVBUF, M_NOWAIT | M_ZERO);
+			if (!kring->tx_pool) {
 				D("tx_pool allocation failed");
 				error = ENOMEM;
 				goto free_tx_pools;
 			}
 			for (i=0; i<na->num_tx_desc; i++)
-				na->tx_rings[r].tx_pool[i] = NULL;
+				kring->tx_pool[i] = NULL;
 			for (i=0; i<na->num_tx_desc; i++) {
 				m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
 				if (!m) {
@@ -320,10 +322,10 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 					error = ENOMEM;
 					goto free_tx_pools;
 				}
-				na->tx_rings[r].tx_pool[i] = m;
+				kring->tx_pool[i] = m;
 			}
-			na->tx_rings[r].tx_event = NULL;
-			mtx_init(&na->tx_rings[r].tx_event_lock,
+			kring->tx_event = NULL;
+			mtx_init(&kring->tx_event_lock,
 				 "tx_event_lock", NULL, MTX_SPIN);
 		}
 
@@ -392,23 +394,23 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		 * (e.g. this happens with virtio-net driver, which
 		 * does lazy reclaiming of transmitted mbufs). */
 		for (r=0; r<na->num_tx_rings; r++) {
+			kring = &na->tx_rings[r];
 			/* We must remove the destructor on the TX event,
 			 * because the destructor invokes netmap code, and
 			 * the netmap module may disappear before the
 			 * TX event is consumed. */
-			mtx_lock(&na->tx_rings[r].tx_event_lock);
-			m = na->tx_rings[r].tx_event;
-			if (m) {
-				SET_MBUF_DESTRUCTOR(m, NULL);
+			mtx_lock(&kring->tx_event_lock);
+			if (kring->tx_event) {
+				SET_MBUF_DESTRUCTOR(kring->tx_event, NULL);
 			}
-			na->tx_rings[r].tx_event = NULL;
-			mtx_unlock(&na->tx_rings[r].tx_event_lock);
-			mtx_destroy(&na->tx_rings[r].tx_event_lock);
+			kring->tx_event = NULL;
+			mtx_unlock(&kring->tx_event_lock);
+			mtx_destroy(&kring->tx_event_lock);
 
 			for (i=0; i<na->num_tx_desc; i++) {
-				m_freem(na->tx_rings[r].tx_pool[i]);
+				m_freem(kring->tx_pool[i]);
 			}
-			free(na->tx_rings[r].tx_pool, M_DEVBUF);
+			free(kring->tx_pool, M_DEVBUF);
 		}
 
 #ifdef RATE_GENERIC
