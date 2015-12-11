@@ -244,9 +244,8 @@ void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi)
  * only NAF_NETMAP_ON instead of NAF_NATIVE_ON to enable the irq.
  */
 void
-netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done)
+netmap_generic_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 {
-	struct netmap_adapter *na = NA(ifp);
 	if (unlikely(!nm_netmap_on(na)))
 		return;
 
@@ -476,7 +475,7 @@ generic_mbuf_destructor(struct mbuf *m)
 
 	/* Second, wake up clients, that will reclaim
 	 * the event through txsync. */
-	netmap_generic_irq(MBUF_IFP(m), r, NULL);
+	netmap_generic_irq(na, r, NULL);
 #ifdef __FreeBSD__
 	if (netmap_verbose) {
 		RD(5, "Tx irq (%p) queue %d index %d" , m, r,
@@ -848,7 +847,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 
 	if (netmap_generic_mit < 32768) {
 		/* no rx mitigation, pass notification up */
-		netmap_generic_irq(na->ifp, rr, &work_done);
+		netmap_generic_irq(na, rr, &work_done);
 	} else {
 		/* same as send combining, filter notification if there is a
 		 * pending timer, otherwise pass it up and start a timer.
@@ -857,7 +856,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 			/* Record that there is some pending work. */
 			gna->mit[rr].mit_pending = 1;
 		} else {
-			netmap_generic_irq(na->ifp, rr, &work_done);
+			netmap_generic_irq(na, rr, &work_done);
 			nm_os_mitigation_start(&gna->mit[rr]);
 		}
 	}
