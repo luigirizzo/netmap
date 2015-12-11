@@ -724,8 +724,10 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 					RD(2, "Failed to replenish mbuf");
 					/* Here we could schedule a timer which
 					 * retries to replenish after a while,
-					 * and notifies the when it manages
-					 * to replenish some slots. */
+					 * and notifies the client when it
+					 * manages to replenish some slots. In
+					 * any case we break early to avoid
+					 * crashes. */
 					break;
 				}
 				IFRATE(rate_ctx.new.txrepl++);
@@ -735,13 +737,12 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			a.addr = addr;
 			a.len = len;
 			a.qevent = (nm_i == event);
-			/* XXX When not in txqdisc mode, we should ask
-			 * notifications when NS_REPORT is set,
-			 * or roughly every half ring. We can optimize this
-			 * by lazily requesting notifications only when a
-			 * transmission fails. Probably the best way is to
-			 * break on failures and set notifications when
-			 * ring->cur == ring->tail || nm_i != cur
+			/* When not in txqdisc mode, we should ask
+			 * notifications when NS_REPORT is set, or roughly
+			 * every half ring. To optimize this, we set a
+			 * notification event when the client runs out of
+			 * TX ring space, or when transmission fails. In
+			 * the latter case we also break early.
 			 */
 			tx_ret = nm_os_generic_xmit_frame(&a);
 			if (unlikely(tx_ret)) {
@@ -830,20 +831,20 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
 	struct netmap_kring *kring;
 	u_int work_done;
-	u_int rr = MBUF_RXQ(m); // receive ring number
+	u_int r = MBUF_RXQ(m); /* receive ring number */
 
-	if (rr >= na->num_rx_rings) {
-		rr = rr % na->num_rx_rings; // XXX expensive...
+	if (r >= na->num_rx_rings) {
+		r = r % na->num_rx_rings;
 	}
 
-	kring = &na->rx_rings[rr];
+	kring = &na->rx_rings[r];
 
 	/* limit the size of the queue */
 	if (unlikely(!gna->rxsg && MBUF_LEN(m) > kring->ring->nr_buf_size)) {
 		/* This may happen when GRO/LRO features are enabled for
 		 * the NIC driver when the generic adapter does not
 		 * support RX scatter-gather. */
-		RD(5, "Warning: driver pushed up big packet "
+		RD(2, "Warning: driver pushed up big packet "
 				"(size=%d)", (int)MBUF_LEN(m));
 		m_freem(m);
 	} else if (unlikely(mbq_len(&kring->rx_queue) > 1024)) {
@@ -854,17 +855,17 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 
 	if (netmap_generic_mit < 32768) {
 		/* no rx mitigation, pass notification up */
-		netmap_generic_irq(na, rr, &work_done);
+		netmap_generic_irq(na, r, &work_done);
 	} else {
 		/* same as send combining, filter notification if there is a
 		 * pending timer, otherwise pass it up and start a timer.
 		 */
-		if (likely(nm_os_mitigation_active(&gna->mit[rr]))) {
+		if (likely(nm_os_mitigation_active(&gna->mit[r]))) {
 			/* Record that there is some pending work. */
-			gna->mit[rr].mit_pending = 1;
+			gna->mit[r].mit_pending = 1;
 		} else {
-			netmap_generic_irq(na, rr, &work_done);
-			nm_os_mitigation_start(&gna->mit[rr]);
+			netmap_generic_irq(na, r, &work_done);
+			nm_os_mitigation_start(&gna->mit[r]);
 		}
 	}
 }
