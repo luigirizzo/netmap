@@ -444,7 +444,7 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 
 	if (event) {
 		ND(5, "Event met, notify %p", m);
-		netmap_generic_irq(qdisc_dev(qdisc),
+		netmap_generic_irq(NA(qdisc_dev(qdisc)),
 				   skb_get_queue_mapping(m), NULL);
 	}
 

@@ -423,9 +423,10 @@ struct netmap_kring {
 	 * store incoming mbufs in a queue that is drained by
 	 * a rxsync.
 	 */
-	struct mbuf **tx_pool;
-	// u_int nr_ntc;		/* Emulation of a next-to-clean RX ring pointer. */
-	struct mbq rx_queue;            /* intercepted rx mbufs. */
+	struct mbuf	**tx_pool;
+	struct mbuf	*tx_event;	/* TX event used as a notification */
+	NM_LOCK_T	tx_event_lock;	/* protects the tx_event mbuf */
+	struct mbq	rx_queue;       /* intercepted rx mbufs. */
 
 	uint32_t	users;		/* existing bindings for this ring */
 
@@ -1764,7 +1765,7 @@ netmap_generic_getifp(struct netmap_generic_adapter *gna)
         return gna->up.up.ifp;
 }
 
-void netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done);
+void netmap_generic_irq(struct netmap_adapter *na, u_int q, u_int *work_done);
 
 //#define RATE_GENERIC  /* Enables communication statistics for generic. */
 #ifdef RATE_GENERIC

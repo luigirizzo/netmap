@@ -244,9 +244,8 @@ void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi)
  * only NAF_NETMAP_ON instead of NAF_NATIVE_ON to enable the irq.
  */
 void
-netmap_generic_irq(struct ifnet *ifp, u_int q, u_int *work_done)
+netmap_generic_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 {
-	struct netmap_adapter *na = NA(ifp);
 	if (unlikely(!nm_netmap_on(na)))
 		return;
 
@@ -303,6 +302,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		 */
 		for (r=0; r<na->num_tx_rings; r++)
 			na->tx_rings[r].tx_pool = NULL;
+
 		for (r=0; r<na->num_tx_rings; r++) {
 			na->tx_rings[r].tx_pool = malloc(na->num_tx_desc * sizeof(struct mbuf *),
 					M_DEVBUF, M_NOWAIT | M_ZERO);
@@ -322,6 +322,9 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 				}
 				na->tx_rings[r].tx_pool[i] = m;
 			}
+			na->tx_rings[r].tx_event = NULL;
+			mtx_init(&na->tx_rings[r].tx_event_lock,
+				 "tx_event_lock", NULL, MTX_SPIN);
 		}
 
 		rtnl_lock();
@@ -387,18 +390,23 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		/* Decrement reference counter for the mbufs in the
 		 * TX pools. These mbufs can be still pending in drivers,
 		 * (e.g. this happens with virtio-net driver, which
-		 * does lazy reclaiming of transmitted mbufs).
-		 * Therefore it is necessary to remove the
-		 * destructor (which invokes netmap code), since the
-		 * the netmap module may disappear before pending mbufs
-		 * are consumed. */
+		 * does lazy reclaiming of transmitted mbufs). */
 		for (r=0; r<na->num_tx_rings; r++) {
+			/* We must remove the destructor on the TX event,
+			 * because the destructor invokes netmap code, and
+			 * the netmap module may disappear before the
+			 * TX event is consumed. */
+			mtx_lock(&na->tx_rings[r].tx_event_lock);
+			m = na->tx_rings[r].tx_event;
+			if (m) {
+				SET_MBUF_DESTRUCTOR(m, NULL);
+			}
+			na->tx_rings[r].tx_event = NULL;
+			mtx_unlock(&na->tx_rings[r].tx_event_lock);
+			mtx_destroy(&na->tx_rings[r].tx_event_lock);
+
 			for (i=0; i<na->num_tx_desc; i++) {
-				m = na->tx_rings[r].tx_pool[i];
-				if (m) {
-					SET_MBUF_DESTRUCTOR(m, NULL);
-					m_freem(m);
-				}
+				m_freem(na->tx_rings[r].tx_pool[i]);
 			}
 			free(na->tx_rings[r].tx_pool, M_DEVBUF);
 		}
@@ -452,10 +460,34 @@ out:
 static void
 generic_mbuf_destructor(struct mbuf *m)
 {
-	netmap_generic_irq(MBUF_IFP(m), MBUF_TXQ(m), NULL);
+	struct netmap_adapter *na = NA(MBUF_IFP(m));
+	struct netmap_kring *kring;
+	unsigned int r = MBUF_TXQ(m);
+
+	if (unlikely(!nm_netmap_on(na) || r >= na->num_tx_rings)) {
+		/* Unfortunately, certain drivers (like the linux bridge
+		 * driver, or the linux veth driver) change the MBUF_IFP(m)
+		 * that was set by generic_xmit_frame, so that here we end
+		 * up with a NULL na, or a different na.
+		 */
+		RD(3, "Warning: driver modified MBUF_IFP(m)");
+		return;
+	}
+
+	/* First, clear the event. */
+	kring = &na->tx_rings[r];
+	mtx_lock(&kring->tx_event_lock);
+	kring->tx_event = NULL;
+	mtx_unlock(&kring->tx_event_lock);
+
+	/* Second, wake up clients, that will reclaim
+	 * the event through txsync. */
+	netmap_generic_irq(na, r, NULL);
 #ifdef __FreeBSD__
-	if (netmap_verbose)
-		RD(5, "Tx irq (%p) queue %d index %d" , m, MBUF_TXQ(m), (int)(uintptr_t)m->m_ext.ext_arg1);
+	if (netmap_verbose) {
+		RD(5, "Tx irq (%p) queue %d index %d" , m, r,
+		   (int)(uintptr_t)m->m_ext.ext_arg1);
+	}
 	netmap_default_mbuf_destructor(m);
 #endif /* __FreeBSD__ */
 }
@@ -496,11 +528,21 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 
 		} else {
 			if (unlikely(m == NULL)) {
-				/* this is done, try to replenish the entry */
-				replenish = 1;
+				/* This slot has been used to place an event. */
+				mtx_lock(&kring->tx_event_lock);
+				replenish = (kring->tx_event == NULL);
+				mtx_unlock(&kring->tx_event_lock);
+				if (!replenish) {
+					/* The event has not been consumed yet,
+					 * still busy in the driver. */
+					break;
+				}
+				/* The event has been consumed, we have to
+				 * replenish it and go ahead. */
 
 			} else if (MBUF_REFCNT(m) != 1) {
-				break; /* This mbuf is still busy: its refcnt is 2. */
+				/* This mbuf is still busy: its refcnt is 2. */
+				break;
 			}
 		}
 
@@ -541,9 +583,9 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 	return n;
 }
 
-
+/* Compute a slot index in the middle between inf and sup. */
 static inline u_int
-generic_tx_event_middle(u_int inf, u_int sup, u_int lim)
+ring_middle(u_int inf, u_int sup, u_int lim)
 {
 	u_int n = lim + 1;
 	u_int e;
@@ -565,42 +607,59 @@ generic_tx_event_middle(u_int inf, u_int sup, u_int lim)
 	return e;
 }
 
-/*
- * We have pending packets in the driver between nr_hwtail+1 and hwcur.
- * Schedule a notification approximately in the middle of the two.
- * There is a race but this is only called within txsync which does
- * a double check.
- */
 static void
 generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 {
 	u_int lim = kring->nkr_num_slots - 1;
 	struct mbuf *m;
 	u_int e;
+	u_int ntc = nm_next(kring->nr_hwtail, lim); /* next to clean */
 
-	if (nm_next(kring->nr_hwtail, lim) == hwcur) {
+	if (ntc == hwcur) {
 		return; /* all buffers are free */
 	}
 
 	/*
-	 * We have pending packets in the driver between hwtail+1 and hwcur.
-	 * Compute a position in the middle, to be used to generate
-	 * a notification.
+	 * We have pending packets in the driver between hwtail+1
+	 * and hwcur, and we have to chose one of these slot to
+	 * generate a notification.
+	 * There is a race but this is only called within txsync which
+	 * does a double check.
 	 */
-	e = generic_tx_event_middle(nm_next(kring->nr_hwtail, lim), hwcur, lim);
+#if 0
+	/* Choose a slot in the middle, so that we don't risk ending
+	 * up in a situation where the client continuously wake up,
+	 * fills one or a few TX slots and go to sleep again. */
+	e = ring_middle(ntc, hwcur, lim);
+#else
+	/* Choose the first pending slot, to be safe against driver
+	 * reordering mbuf transmissions. */
+	e = ntc;
+#endif
 
 	m = kring->tx_pool[e];
-	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? MBUF_REFCNT(m) : -2 );
 	if (m == NULL) {
-		/* This can happen if there is already an event on the netmap
-		   slot 'e': There is nothing to do. */
+		/* An event is already in place. */
 		return;
 	}
-	kring->tx_pool[e] = NULL;
-	SET_MBUF_DESTRUCTOR(m, generic_mbuf_destructor);
 
-	// XXX wmb() ?
-	/* Decrement the refcount an free it if we have the last one. */
+	mtx_lock(&kring->tx_event_lock);
+	if (kring->tx_event) {
+		/* An event is already in place. */
+		mtx_unlock(&kring->tx_event_lock);
+		return;
+	}
+
+	SET_MBUF_DESTRUCTOR(m, generic_mbuf_destructor);
+	kring->tx_event = m;
+	mtx_unlock(&kring->tx_event_lock);
+
+	kring->tx_pool[e] = NULL;
+
+	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? MBUF_REFCNT(m) : -2 );
+
+	/* Decrement the refcount. This will free it if we lose the race
+	 * with the driver. */
 	m_freem(m);
 	smp_mb();
 }
@@ -643,7 +702,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* In txqdisc mode, we ask for a delayed notification,
 			 * but only when cur == hwtail, which means that the
 			 * client is going to block. */
-			event = generic_tx_event_middle(nm_i, head, lim);
+			event = ring_middle(nm_i, head, lim);
 			ND(3, "Place txqdisc event (hwcur=%u,event=%u,"
 			      "head=%u,hwtail=%u)", nm_i, event, head,
 			      kring->nr_hwtail);
@@ -795,7 +854,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 
 	if (netmap_generic_mit < 32768) {
 		/* no rx mitigation, pass notification up */
-		netmap_generic_irq(na->ifp, rr, &work_done);
+		netmap_generic_irq(na, rr, &work_done);
 	} else {
 		/* same as send combining, filter notification if there is a
 		 * pending timer, otherwise pass it up and start a timer.
@@ -804,7 +863,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 			/* Record that there is some pending work. */
 			gna->mit[rr].mit_pending = 1;
 		} else {
-			netmap_generic_irq(na->ifp, rr, &work_done);
+			netmap_generic_irq(na, rr, &work_done);
 			nm_os_mitigation_start(&gna->mit[rr]);
 		}
 	}
