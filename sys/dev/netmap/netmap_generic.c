@@ -512,49 +512,44 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 
 	while (nm_i != hwcur) { /* buffers not completed */
 		struct mbuf *m = tx_pool[nm_i];
-		int replenish = 0;
 
 		if (txqdisc) {
-			if (MBUF_QUEUED(m)) {
+			if (m == NULL) {
+				/* Nothing to do, this is going
+				 * to be replenished. */
+				RD(3, "Is this happening?");
+
+			} else if (MBUF_QUEUED(m)) {
 				break; /* Not dequeued yet. */
 
 			} else if (MBUF_REFCNT(m) != 1) {
 				/* This mbuf has been dequeued but is still busy
 				 * (refcount is 2).
-				 * Leave it to the driver and realloc. */
+				 * Leave it to the driver and replenish. */
 				m_freem(m);
-				replenish = 1;
+				tx_pool[nm_i] = NULL;
 			}
 
 		} else {
 			if (unlikely(m == NULL)) {
-				/* This slot has been used to place an event. */
+				int event_consumed;
+
+				/* This slot was used to place an event. */
 				mtx_lock(&kring->tx_event_lock);
-				replenish = (kring->tx_event == NULL);
+				event_consumed = (kring->tx_event == NULL);
 				mtx_unlock(&kring->tx_event_lock);
-				if (!replenish) {
+				if (!event_consumed) {
 					/* The event has not been consumed yet,
 					 * still busy in the driver. */
 					break;
 				}
-				/* The event has been consumed, we have to
-				 * replenish it and go ahead. */
+				/* The event has been consumed, we can go
+				 * ahead. */
 
 			} else if (MBUF_REFCNT(m) != 1) {
 				/* This mbuf is still busy: its refcnt is 2. */
 				break;
 			}
-		}
-
-		if (replenish) {
-			tx_pool[nm_i] = m = nm_os_get_mbuf(kring->na->ifp,
-							   NETMAP_BUF_SIZE(kring->na));
-			if (unlikely(m == NULL)) {
-				D("mbuf allocation failed, XXX error");
-				// XXX how do we proceed ? break ?
-				return -ENOMEM;
-			}
-			IFRATE(rate_ctx.new.txrepl++);
 		}
 
 		n++;
@@ -686,8 +681,6 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	IFRATE(rate_ctx.new.txsync++);
 
-	// TODO: handle the case of mbuf allocation failure
-
 	rmb();
 
 	/*
@@ -722,16 +715,23 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
-			/* Tale a mbuf from the tx pool and copy in the user packet. */
+			/* Tale a mbuf from the tx pool (replenishing the pool
+			 * entry if necessary) and copy in the user packet. */
 			m = kring->tx_pool[nm_i];
 			if (unlikely(!m)) {
-				RD(5, "This should never happen");
-				kring->tx_pool[nm_i] = m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
-				if (unlikely(m == NULL)) {
-					D("mbuf allocation failed");
+				kring->tx_pool[nm_i] = m =
+					nm_os_get_mbuf(ifp, NETMAP_BUF_SIZE(na));
+				if (m == NULL) {
+					RD(2, "Failed to replenish mbuf");
+					/* Here we could schedule a timer which
+					 * retries to replenish after a while,
+					 * and notifies the when it manages
+					 * to replenish some slots. */
 					break;
 				}
+				IFRATE(rate_ctx.new.txrepl++);
 			}
+
 			a.m = m;
 			a.addr = addr;
 			a.len = len;
@@ -793,8 +793,9 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			a.addr = NULL;
 			nm_os_generic_xmit_frame(&a);
 		}
-		/* Update hwcur to the next slot to transmit. */
-		kring->nr_hwcur = nm_i; /* not head, we could break early */
+		/* Update hwcur to the next slot to transmit. Here nm_i
+		 * is not necessarily head, we could break early. */
+		kring->nr_hwcur = nm_i;
 	}
 
 	/*
