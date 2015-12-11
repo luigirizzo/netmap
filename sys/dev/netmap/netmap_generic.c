@@ -265,7 +265,6 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 {
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
 	struct netmap_kring *kring;
-	struct mbuf *m;
 	int error;
 	int i, r;
 
@@ -288,8 +287,9 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			error = ENOMEM;
 			goto out;
 		}
-		for (r=0; r<na->num_rx_rings; r++)
+		for (r=0; r<na->num_rx_rings; r++) {
 			nm_os_mitigation_init(&gna->mit[r], r, na);
+		}
 
 		/* Initialize the rx queue, as generic_rx_handler() can
 		 * be called as soon as nm_os_catch_rx() returns.
@@ -299,10 +299,13 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 
 		/*
-		 * Preallocate packet buffers for the tx rings.
+		 * Prepare mbuf pools (parallel to the tx rings), for packet
+		 * transmission. Don't preallocate the mbufs here, it's simpler
+		 * to leave this task to txsync.
 		 */
-		for (r=0; r<na->num_tx_rings; r++)
+		for (r=0; r<na->num_tx_rings; r++) {
 			na->tx_rings[r].tx_pool = NULL;
+		}
 
 		for (r=0; r<na->num_tx_rings; r++) {
 			kring = &na->tx_rings[r];
@@ -313,17 +316,10 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 				error = ENOMEM;
 				goto free_tx_pools;
 			}
-			for (i=0; i<na->num_tx_desc; i++)
-				kring->tx_pool[i] = NULL;
 			for (i=0; i<na->num_tx_desc; i++) {
-				m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
-				if (!m) {
-					D("tx_pool[%d] allocation failed", i);
-					error = ENOMEM;
-					goto free_tx_pools;
-				}
-				kring->tx_pool[i] = m;
+				kring->tx_pool[i] = NULL;
 			}
+
 			kring->tx_event = NULL;
 			mtx_init(&kring->tx_event_lock,
 				 "tx_event_lock", NULL, MTX_SPIN);
@@ -385,8 +381,9 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			mbq_safe_fini(&na->rx_rings[r].rx_queue);
 		}
 
-		for (r=0; r<na->num_rx_rings; r++)
+		for (r=0; r<na->num_rx_rings; r++) {
 			nm_os_mitigation_cleanup(&gna->mit[r]);
+		}
 		free(gna->mit, M_DEVBUF);
 
 		/* Decrement reference counter for the mbufs in the
@@ -408,7 +405,9 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			mtx_destroy(&kring->tx_event_lock);
 
 			for (i=0; i<na->num_tx_desc; i++) {
-				m_freem(kring->tx_pool[i]);
+				if (kring->tx_pool[i]) {
+					m_freem(kring->tx_pool[i]);
+				}
 			}
 			free(kring->tx_pool, M_DEVBUF);
 		}
@@ -436,11 +435,9 @@ register_handler:
 	rtnl_unlock();
 free_tx_pools:
 	for (r=0; r<na->num_tx_rings; r++) {
-		if (na->tx_rings[r].tx_pool == NULL)
+		if (na->tx_rings[r].tx_pool == NULL) {
 			continue;
-		for (i=0; i<na->num_tx_desc; i++)
-			if (na->tx_rings[r].tx_pool[i])
-				m_freem(na->tx_rings[r].tx_pool[i]);
+		}
 		free(na->tx_rings[r].tx_pool, M_DEVBUF);
 		na->tx_rings[r].tx_pool = NULL;
 	}
@@ -720,7 +717,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* Tale a mbuf from the tx pool (replenishing the pool
 			 * entry if necessary) and copy in the user packet. */
 			m = kring->tx_pool[nm_i];
-			if (unlikely(!m)) {
+			if (unlikely(m == NULL)) {
 				kring->tx_pool[nm_i] = m =
 					nm_os_get_mbuf(ifp, NETMAP_BUF_SIZE(na));
 				if (m == NULL) {
