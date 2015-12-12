@@ -35,6 +35,7 @@ LINUX/netmap-tmp.c
 LINUX/i40e
 LINUX/failed-patches
 examples/bridge
+examples/bridge-b
 examples/pkt-gen
 examples/pkt-gen-b
 examples/test_select
