@@ -71,7 +71,7 @@ extern int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
 SYSCTL_DECL(_dev_netmap);
 int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_crcstrip,
-    CTLFLAG_RW, &ix_crcstrip, 0, "strip CRC on rx frames");
+    CTLFLAG_RW, &ix_crcstrip, 1, "strip CRC on rx frames");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss,
     CTLFLAG_RW, &ix_rx_miss, 0, "potentially missed rx intr");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss_bufs,
