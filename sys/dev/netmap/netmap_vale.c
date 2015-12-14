@@ -163,7 +163,7 @@ SYSEND;
 
 static int netmap_vp_create(struct nmreq *, struct ifnet *, struct netmap_vp_adapter **);
 static int netmap_vp_reg(struct netmap_adapter *na, int onoff);
-static int netmap_bwrap_register(struct netmap_adapter *, int onoff);
+static int netmap_bwrap_reg(struct netmap_adapter *, int onoff);
 
 /*
  * For each output interface, nm_bdg_q is used to construct a list.
@@ -776,7 +776,7 @@ unlock_exit:
 static inline int
 nm_is_bwrap(struct netmap_adapter *na)
 {
-	return na->nm_register == netmap_bwrap_register;
+	return na->nm_register == netmap_bwrap_reg;
 }
 
 /* process NETMAP_BDG_DETACH */
@@ -2271,7 +2271,7 @@ put_out:
 
 /* nm_register callback for bwrap */
 static int
-netmap_bwrap_register(struct netmap_adapter *na, int onoff)
+netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_bwrap_adapter *bna =
 		(struct netmap_bwrap_adapter *)na;
@@ -2570,7 +2570,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		nma_set_ndesc(na, t, nma_get_ndesc(hwna, r));
 	}
 	na->nm_dtor = netmap_bwrap_dtor;
-	na->nm_register = netmap_bwrap_register;
+	na->nm_register = netmap_bwrap_reg;
 	// na->nm_txsync = netmap_bwrap_txsync;
 	// na->nm_rxsync = netmap_bwrap_rxsync;
 	na->nm_config = netmap_bwrap_config;

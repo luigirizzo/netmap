@@ -1937,9 +1937,8 @@ netmap_rel_exclusive(struct netmap_priv_d *priv)
  * (put the adapter in netmap mode)
  *
  * 	This may be one of the following:
- * 	(XXX these should be either all *_register or all *_reg 2014-03-15)
  *
- * 	* netmap_hw_register				(hw ports)
+ * 	* netmap_hw_reg				        (hw ports)
  * 		checks that the ifp is still there, then calls
  * 		the hardware specific callback;
  *
@@ -1957,7 +1956,7 @@ netmap_rel_exclusive(struct netmap_priv_d *priv)
  *		intercept the sync callbacks of the monitored
  *		rings
  *
- *	* netmap_bwrap_register				(bwraps)
+ *	* netmap_bwrap_reg				(bwraps)
  *		cross-link the bwrap and hwna rings,
  *		forward the request to the hwna, override
  *		the hwna notify callback (to get the frames
@@ -2706,7 +2705,7 @@ netmap_detach_common(struct netmap_adapter *na)
  * module unloading.
  */
 static int
-netmap_hw_register(struct netmap_adapter *na, int onoff)
+netmap_hw_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_hw_adapter *hwna =
 		(struct netmap_hw_adapter*)na;
@@ -2767,7 +2766,7 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	hwna->up.na_flags |= NAF_HOST_RINGS | NAF_NATIVE;
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
 	hwna->nm_hw_register = hwna->up.nm_register;
-	hwna->up.nm_register = netmap_hw_register;
+	hwna->up.nm_register = netmap_hw_reg;
 	if (netmap_attach_common(&hwna->up)) {
 		free(hwna, M_DEVBUF);
 		goto fail;
