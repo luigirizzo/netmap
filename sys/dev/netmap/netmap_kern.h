@@ -378,6 +378,12 @@ struct netmap_kring {
 #define NKR_FORWARD	0x4		/* (host ring only) there are
 					   packets to forward
 					 */
+
+	uint32_t	nr_mode;
+	uint32_t	nr_pending_mode;
+#define NKR_NETMAP_OFF	0x0
+#define NKR_NETMAP_ON	0x1
+
 	uint32_t	nkr_num_slots;
 
 	/*
@@ -1153,6 +1159,10 @@ nm_set_native_flags(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
 
+	if (na->na_refcount > 2) {
+		return;
+	}
+
 	na->na_flags |= NAF_NETMAP_ON;
 #ifdef IFCAP_NETMAP /* or FreeBSD ? */
 	ifp->if_capenable |= IFCAP_NETMAP;
@@ -1707,6 +1717,57 @@ struct netmap_priv_d {
 
 struct netmap_priv_d *netmap_priv_new(void);
 void netmap_priv_delete(struct netmap_priv_d *);
+
+static inline void kring_get_netmap_mode(struct netmap_priv_d *np, enum txrx ring_txrx, int ring_nr)
+{
+	struct netmap_adapter *na = np->np_na;
+	struct netmap_kring *kring = &NMR(na, ring_txrx)[ring_nr];
+
+	kring->nr_pending_mode = NKR_NETMAP_ON;
+	if (kring->ring_id == nma_get_nrings(na, ring_txrx)) {
+		/*
+		 * If this is a sw ring, just set the mode on (no need to
+		 * wait for netmap_reset())
+		 */
+		kring->nr_mode = NKR_NETMAP_ON;
+	}
+}
+
+static inline void kring_rel_netmap_mode(struct netmap_priv_d *np, enum txrx ring_txrx, int ring_nr)
+{
+	struct netmap_adapter *na = np->np_na;
+	struct netmap_kring *kring = &NMR(na, ring_txrx)[ring_nr];
+
+	/*
+	 * try to release the ring (i.e. put it in normal mode).
+	 * The ring can actually be released only if there are no users
+	 * using it. (users counter is managed by netmap_get_exclusive and
+	 * netmap_rel_exclusive)
+	 */
+	if (kring->users == 0) {
+		kring->nr_pending_mode = NKR_NETMAP_OFF;
+		if (kring->ring_id == nma_get_nrings(na, ring_txrx)) {
+			kring->nr_mode = NKR_NETMAP_OFF;
+		}
+	}
+}
+
+static inline int kring_pending(struct netmap_priv_d *np)
+{
+	struct netmap_adapter *na = np->np_na;
+	enum txrx t;
+	int i;
+
+	for_rx_tx(t) {
+		for (i = np->np_qfirst[t]; i < np->np_qlast[t]; i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
+			if (kring->nr_mode != kring->nr_pending_mode) {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
 
 #ifdef WITH_MONITOR
 

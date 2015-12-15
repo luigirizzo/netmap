@@ -815,6 +815,8 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 			kring->ring_id = i;
 			kring->tx = t;
 			kring->nkr_num_slots = ndesc;
+			kring->nr_mode = NKR_NETMAP_OFF;
+			kring->nr_pending_mode = NKR_NETMAP_OFF;
 			if (i < nma_get_nrings(na, t)) {
 				kring->nm_sync = (t == NR_TX ? na->nm_txsync : na->nm_rxsync);
 			} else {
@@ -909,11 +911,20 @@ static void
 netmap_do_unregif(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
+	enum txrx t;
+	int i;
 
 	NMG_LOCK_ASSERT();
 	na->active_fds--;
 	/* release exclusive use if it was requested on regif */
 	netmap_rel_exclusive(priv);
+
+	for_rx_tx(t) {
+		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
+			kring_rel_netmap_mode(priv, t, i);
+		}
+	}
+
 	if (na->active_fds <= 0) {	/* last instance */
 
 		if (netmap_verbose)
@@ -948,6 +959,10 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		/* delete rings and buffers */
 		netmap_mem_rings_delete(na);
 		na->nm_krings_delete(na);
+	} else {
+		if (kring_pending(priv)) {
+			na->nm_register(na, 1);
+		}
 	}
 	/* possibily decrement counter of tx_si/rx_si users */
 	netmap_unset_ringid(priv);
@@ -1959,6 +1974,8 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 {
 	struct netmap_if *nifp = NULL;
 	int error;
+	enum txrx t;
+	int i;
 
 	NMG_LOCK_ASSERT();
 	/* ring configuration may have changed, fetch from the card */
@@ -1999,6 +2016,12 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	if (error)
 		goto err_del_rings;
 
+	for_rx_tx(t) {
+		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
+			kring_get_netmap_mode(priv, t, i);
+		}
+	}
+
 	/* in all cases, create a new netmap if */
 	nifp = netmap_mem_if_new(na);
 	if (nifp == NULL) {
@@ -2020,6 +2043,10 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		error = na->nm_register(na, 1); /* mode on */
 		if (error) 
 			goto err_del_if;
+	} else {
+		if (kring_pending(priv)) {
+			na->nm_register(na, 1);
+		}
 	}
 
 	/*
@@ -2038,6 +2065,12 @@ err_del_if:
 	netmap_mem_if_delete(na, nifp);
 err_rel_excl:
 	netmap_rel_exclusive(priv);
+
+	for_rx_tx(t) {
+		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
+			kring_rel_netmap_mode(priv, t, i);
+		}
+	}
 err_del_rings:
 	if (na->active_fds == 0)
 		netmap_mem_rings_delete(na);
@@ -2910,11 +2943,12 @@ int
 netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 {
 	struct netmap_adapter *na = NA(ifp);
-	struct netmap_kring *kring;
+	struct netmap_kring *kring, *tx_kring;
 	u_int len = MBUF_LEN(m);
 	u_int error = ENOBUFS;
 	struct mbq *q;
 	int space;
+	int txr;
 
 	kring = &na->rx_rings[na->num_rx_rings];
 	// XXX [Linux] we do not need this lock
@@ -2926,6 +2960,23 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 		error = ENXIO;
 		goto done;
 	}
+
+#if defined (__FreeBSD__)
+	txr = m->m_pkthdr.flowid;
+	tx_kring = &NMR(na, NR_TX)[txr];
+
+	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
+		return na->if_transmit(ifp, m);
+	}
+
+#elif defined (linux)
+	txr = m->queue_mapping;
+	tx_kring = &NMR(na, NR_TX)[txr];
+
+	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
+		return ((struct net_device_ops *) na->if_transmit)->ndo_start_xmit(m, ifp);
+	}
+#endif
 
 	q = &kring->rx_queue;
 
@@ -3002,13 +3053,26 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 	if (tx == NR_TX) {
 		if (n >= na->num_tx_rings)
 			return NULL;
+
 		kring = na->tx_rings + n;
+
+		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
+			kring->nr_mode = NKR_NETMAP_OFF;
+			return NULL;
+		}
+
 		// XXX check whether we should use hwcur or rcur
 		new_hwofs = kring->nr_hwcur - new_cur;
 	} else {
 		if (n >= na->num_rx_rings)
 			return NULL;
 		kring = na->rx_rings + n;
+
+		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
+			kring->nr_mode = NKR_NETMAP_OFF;
+			return NULL;
+		}
+
 		new_hwofs = kring->nr_hwtail - new_cur;
 	}
 	lim = kring->nkr_num_slots - 1;
@@ -3045,6 +3109,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 	 * We do the wakeup here, but the ring is not yet reconfigured.
 	 * However, we are under lock so there are no races.
 	 */
+	kring->nr_mode = NKR_NETMAP_ON;
 	kring->nm_notify(kring, 0);
 	return kring->ring->slot;
 }
@@ -3081,10 +3146,15 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 
 	kring = NMR(na, t) + q;
 
+	if (kring->nr_mode == NKR_NETMAP_OFF) {
+		return 0;
+	}
+
 	if (t == NR_RX) {
 		kring->nr_kflags |= NKR_PENDINTR;	// XXX atomic ?
 		*work_done = 1; /* do not fire napi again */
 	}
+
 	kring->nm_notify(kring, 0);
 	return 1;
 }
