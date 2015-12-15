@@ -1719,6 +1719,12 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 	case NR_REG_PIPE_MASTER:
 	case NR_REG_PIPE_SLAVE:
 		for_rx_tx(t) {
+			if ((t == NR_RX && (flags & NR_TX_RINGS_ONLY)) ||
+			    (t == NR_TX && (flags & NR_RX_RINGS_ONLY))) {
+				priv->np_qfirst[t] = priv->np_qlast[t] = 0;
+				continue;
+			}
+
 			priv->np_qfirst[t] = 0;
 			priv->np_qlast[t] = nma_get_nrings(na, t);
 		}
@@ -1732,6 +1738,18 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 			return EINVAL;
 		}
 		for_rx_tx(t) {
+			if ((t == NR_RX && (flags & NR_TX_RINGS_ONLY)) ||
+			    (t == NR_TX && (flags & NR_RX_RINGS_ONLY))) {
+				/*
+				 * NR_[TX|RX]_RINGS_ONLY affects only hw
+				 * rings, so keep sw rings on in any
+				 * case
+				 */
+				priv->np_qfirst[t] = nma_get_nrings(na, t);
+				priv->np_qlast[t] = nma_get_nrings(na, t) + 1;
+				continue;
+			}
+
 			priv->np_qfirst[t] = (reg == NR_REG_SW ?
 				nma_get_nrings(na, t) : 0);
 			priv->np_qlast[t] = nma_get_nrings(na, t) + 1;
@@ -1745,6 +1763,12 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 			return EINVAL;
 		}
 		for_rx_tx(t) {
+			if ((t == NR_RX && (flags & NR_TX_RINGS_ONLY)) ||
+			    (t == NR_TX && (flags & NR_RX_RINGS_ONLY))) {
+				priv->np_qfirst[t] = priv->np_qlast[t] = 0;
+				continue;
+			}
+
 			/* if not enough rings, use the first one */
 			j = i;
 			if (j >= nma_get_nrings(na, t))
