@@ -2051,41 +2051,23 @@ err:
 	return error;
 }
 
-
 /*
- * update kring and ring at the end of txsync.
+ * update kring and ring at the end of rxsync/txsync.
  */
 static inline void
-nm_txsync_finalize(struct netmap_kring *kring)
+nm_sync_finalize(struct netmap_kring *kring)
 {
-	/* update ring tail to what the kernel knows */
+	/*
+	 * Update ring tail to what the kernel knows
+	 * After txsync: head/rhead/hwcur might be behind cur/rcur
+	 * if no carrier.
+	 */
 	kring->ring->tail = kring->rtail = kring->nr_hwtail;
 
-	/* note, head/rhead/hwcur might be behind cur/rcur
-	 * if no carrier
-	 */
 	ND(5, "%s now hwcur %d hwtail %d head %d cur %d tail %d",
 		kring->name, kring->nr_hwcur, kring->nr_hwtail,
 		kring->rhead, kring->rcur, kring->rtail);
 }
-
-
-/*
- * update kring and ring at the end of rxsync
- */
-static inline void
-nm_rxsync_finalize(struct netmap_kring *kring)
-{
-	/* tell userspace that there might be new packets */
-	//struct netmap_ring *ring = kring->ring;
-	ND("head %d cur %d tail %d -> %d", ring->head, ring->cur, ring->tail,
-		kring->nr_hwtail);
-	kring->ring->tail = kring->rtail = kring->nr_hwtail;
-	/* make a copy of the state for next round */
-	kring->rhead = kring->ring->head;
-	kring->rcur = kring->ring->cur;
-}
-
 
 /*
  * ioctl(2) support for the "netmap" device.
@@ -2291,7 +2273,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				if (nm_txsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
 				} else if (kring->nm_sync(kring, NAF_FORCE_RECLAIM) == 0) {
-					nm_txsync_finalize(kring);
+					nm_sync_finalize(kring);
 				}
 				if (netmap_verbose & NM_VERB_TXSYNC)
 					D("post txsync ring %d cur %d hwcur %d",
@@ -2301,7 +2283,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				if (nm_rxsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
 				} else if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
-					nm_rxsync_finalize(kring);
+					nm_sync_finalize(kring);
 				}
 				microtime(&ring->ts);
 			}
@@ -2477,7 +2459,7 @@ flush_tx:
 				if (kring->nm_sync(kring, 0))
 					revents |= POLLERR;
 				else
-					nm_txsync_finalize(kring);
+					nm_sync_finalize(kring);
 			}
 
 			/*
@@ -2540,7 +2522,7 @@ do_retry_rx:
 			if (kring->nm_sync(kring, 0))
 				revents |= POLLERR;
 			else
-				nm_rxsync_finalize(kring);
+				nm_sync_finalize(kring);
 			send_down |= (kring->nr_kflags & NR_FORWARD); /* host ring only */
 			if (netmap_no_timestamp == 0 ||
 					ring->flags & NR_TIMESTAMP) {
