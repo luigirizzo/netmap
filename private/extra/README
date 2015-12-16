@@ -1,8 +1,0 @@
-Extra files related to netmap and qemu
-
-
-bsd-lem-mitigation.diff
-	extensions to the interrupt mitigation for qemu
-
-qemu-1.2.0-e1000-mitigation.diff
-	emulation of interrupt mitigation registers
