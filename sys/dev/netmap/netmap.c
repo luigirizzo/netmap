@@ -1701,6 +1701,7 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 	struct netmap_adapter *na = priv->np_na;
 	u_int j, i = ringid & NETMAP_RING_MASK;
 	u_int reg = flags & NR_REG_MASK;
+	int excluded_direction[] = { NR_TX_RINGS_ONLY, NR_RX_RINGS_ONLY };
 	enum txrx t;
 
 	if (reg == NR_REG_DEFAULT) {
@@ -1714,72 +1715,51 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 		}
 		D("deprecated API, old ringid 0x%x -> ringid %x reg %d", ringid, i, reg);
 	}
-	switch (reg) {
-	case NR_REG_ALL_NIC:
-	case NR_REG_PIPE_MASTER:
-	case NR_REG_PIPE_SLAVE:
-		for_rx_tx(t) {
-			if ((t == NR_RX && (flags & NR_TX_RINGS_ONLY)) ||
-			    (t == NR_TX && (flags & NR_RX_RINGS_ONLY))) {
-				priv->np_qfirst[t] = priv->np_qlast[t] = 0;
-				continue;
-			}
-
+	for_rx_tx(t) {
+		if (flags & excluded_direction[t]) {
+			priv->np_qfirst[t] = priv->np_qlast[t] = 0;
+			continue;
+		}
+		switch (reg) {
+		case NR_REG_ALL_NIC:
+		case NR_REG_PIPE_MASTER:
+		case NR_REG_PIPE_SLAVE:
 			priv->np_qfirst[t] = 0;
 			priv->np_qlast[t] = nma_get_nrings(na, t);
-		}
-		ND("%s %d %d", "ALL/PIPE",
-			priv->np_qfirst[NR_RX], priv->np_qlast[NR_RX]);
-		break;
-	case NR_REG_SW:
-	case NR_REG_NIC_SW:
-		if (!(na->na_flags & NAF_HOST_RINGS)) {
-			D("host rings not supported");
-			return EINVAL;
-		}
-		for_rx_tx(t) {
-			if ((t == NR_RX && (flags & NR_TX_RINGS_ONLY)) ||
-			    (t == NR_TX && (flags & NR_RX_RINGS_ONLY))) {
-				/*
-				 * NR_[TX|RX]_RINGS_ONLY affects only hw
-				 * rings, so keep sw rings on in any
-				 * case
-				 */
-				priv->np_qfirst[t] = nma_get_nrings(na, t);
-				priv->np_qlast[t] = nma_get_nrings(na, t) + 1;
-				continue;
+			ND("ALL/PIPE: %s %d %d", nm_txrx2str(t),
+				priv->np_qfirst[t], priv->np_qlast[t]);
+			break;
+		case NR_REG_SW:
+		case NR_REG_NIC_SW:
+			if (!(na->na_flags & NAF_HOST_RINGS)) {
+				D("host rings not supported");
+				return EINVAL;
 			}
-
 			priv->np_qfirst[t] = (reg == NR_REG_SW ?
 				nma_get_nrings(na, t) : 0);
 			priv->np_qlast[t] = nma_get_nrings(na, t) + 1;
-		}
-		ND("%s %d %d", reg == NR_REG_SW ? "SW" : "NIC+SW",
-			priv->np_qfirst[NR_RX], priv->np_qlast[NR_RX]);
-		break;
-	case NR_REG_ONE_NIC:
-		if (i >= na->num_tx_rings && i >= na->num_rx_rings) {
-			D("invalid ring id %d", i);
-			return EINVAL;
-		}
-		for_rx_tx(t) {
-			if ((t == NR_RX && (flags & NR_TX_RINGS_ONLY)) ||
-			    (t == NR_TX && (flags & NR_RX_RINGS_ONLY))) {
-				priv->np_qfirst[t] = priv->np_qlast[t] = 0;
-				continue;
+			ND("%s: %s %d %d", reg == NR_REG_SW ? "SW" : "NIC+SW",
+				nm_txrx2str(t),
+				priv->np_qfirst[t], priv->np_qlast[t]);
+			break;
+		case NR_REG_ONE_NIC:
+			if (i >= na->num_tx_rings && i >= na->num_rx_rings) {
+				D("invalid ring id %d", i);
+				return EINVAL;
 			}
-
 			/* if not enough rings, use the first one */
 			j = i;
 			if (j >= nma_get_nrings(na, t))
 				j = 0;
 			priv->np_qfirst[t] = j;
 			priv->np_qlast[t] = j + 1;
+			ND("ONE_NIC: %s %d %d", nm_txrx2str(t),
+				priv->np_qfirst[t], priv->np_qlast[t]);
+			break;
+		default:
+			D("invalid regif type %d", reg);
+			return EINVAL;
 		}
-		break;
-	default:
-		D("invalid regif type %d", reg);
-		return EINVAL;
 	}
 	priv->np_flags = (flags & ~NR_REG_MASK) | reg;
 
