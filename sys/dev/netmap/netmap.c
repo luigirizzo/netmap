@@ -2985,22 +2985,12 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 		goto done;
 	}
 
-#if defined (__FreeBSD__)
-	txr = m->m_pkthdr.flowid;
+	txr = MBUF_FLOWID(m);
 	tx_kring = &NMR(na, NR_TX)[txr];
 
 	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
-		return na->if_transmit(ifp, m);
+		return MBUF_TRANSMIT(na, ifp, m);
 	}
-
-#elif defined (linux)
-	txr = m->queue_mapping;
-	tx_kring = &NMR(na, NR_TX)[txr];
-
-	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
-		return ((struct net_device_ops *) na->if_transmit)->ndo_start_xmit(m, ifp);
-	}
-#endif
 
 	q = &kring->rx_queue;
 
