@@ -1164,7 +1164,9 @@ nm_set_native_flags(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
 
-	if (na->na_refcount > 2) {
+	/* We do the setup for intercepting packets only if we are the
+	 * first user of this adapapter. */
+	if (na->active_fds > 0) {
 		return;
 	}
 
@@ -1193,6 +1195,12 @@ static inline void
 nm_clear_native_flags(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
+
+	/* We undo the setup for intercepting packets only if we are the
+	 * last user of this adapapter. */
+	if (na->active_fds > 0) {
+		return;
+	}
 
 #if defined(__FreeBSD__)
 	ifp->if_transmit = na->if_transmit;

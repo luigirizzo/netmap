@@ -917,19 +917,24 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 	/* release exclusive use if it was requested on regif */
 	netmap_krings_put(priv);
 
-	if (na->active_fds <= 0) {	/* last instance */
-
-		if (netmap_verbose)
-			D("deleting last instance for %s", na->name);
-
 #ifdef	WITH_MONITOR
+	/* XXX check whether we have to do something with monitor
+	 * when rings change nr_mode. */
+	if (na->active_fds <= 0) {
 		/* walk through all the rings and tell any monitor
 		 * that the port is going to exit netmap mode
 		 */
 		netmap_monitor_stop(na);
+	}
 #endif
+
+	if (nm_kring_pending(priv)) {
+		na->nm_register(na, 0);
+	}
+
+	if (na->active_fds <= 0) {	/* last instance */
 		/*
-		 * (TO CHECK) This function is only called
+		 * (TO CHECK) We enter here
 		 * when the last reference to this file descriptor goes
 		 * away. This means we cannot have any pending poll()
 		 * or interrupt routine operating on the structure.
@@ -942,20 +947,14 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		 * happens if the close() occurs while a concurrent
 		 * syscall is running.
 		 */
-		na->nm_register(na, 0); /* off, clear flags */
-		/* Wake up any sleeping threads. netmap_poll will
-		 * then return POLLERR
-		 * XXX The wake up now must happen during *_down(), when
-		 * we order all activities to stop. -gl
-		 */
+		if (netmap_verbose)
+			D("deleting last instance for %s", na->name);
+
 		/* delete rings and buffers */
 		netmap_mem_rings_delete(na);
 		na->nm_krings_delete(na);
-	} else {
-		if (nm_kring_pending(priv)) {
-			na->nm_register(na, 1);
-		}
 	}
+
 	/* possibily decrement counter of tx_si/rx_si users */
 	netmap_unset_ringid(priv);
 	/* delete the nifp */
@@ -2020,7 +2019,6 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		goto err_rel_excl;
 	}
 
-	na->active_fds++;
 	if (!nm_netmap_on(na)) {
 		/* Netmap not active, set the card in netmap mode
 		 * and make it use the shared buffers.
@@ -2031,14 +2029,18 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 			goto err_del_if;
 		D("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
 				na->na_lut.objsize);
-		error = na->nm_register(na, 1); /* mode on */
+	}
+
+	if (nm_kring_pending(priv)) {
+		/* Some kring is switching mode, tell the adapter to
+		 * react on this. */
+		error = na->nm_register(na, 1);
 		if (error) 
 			goto err_del_if;
-	} else {
-		if (nm_kring_pending(priv)) {
-			na->nm_register(na, 1);
-		}
 	}
+
+	/* Commit the reference. */
+	na->active_fds++;
 
 	/*
 	 * advertise that the interface is ready by setting np_nifp.
@@ -2052,7 +2054,6 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 
 err_del_if:
 	memset(&na->na_lut, 0, sizeof(na->na_lut));
-	na->active_fds--;
 	netmap_mem_if_delete(na, nifp);
 err_rel_excl:
 	netmap_krings_put(priv);
