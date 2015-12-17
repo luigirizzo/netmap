@@ -2019,10 +2019,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		goto err_rel_excl;
 	}
 
-	if (!nm_netmap_on(na)) {
-		/* Netmap not active, set the card in netmap mode
-		 * and make it use the shared buffers.
-		 */
+	if (na->active_fds == 0) {
 		/* cache the allocator info in the na */
 		error = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
 		if (error)
@@ -2036,7 +2033,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		 * react on this. */
 		error = na->nm_register(na, 1);
 		if (error) 
-			goto err_del_if;
+			goto err_put_lut;
 	}
 
 	/* Commit the reference. */
@@ -2052,8 +2049,10 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 
 	return 0;
 
+err_put_lut:
+	if (na->active_fds == 0)
+		memset(&na->na_lut, 0, sizeof(na->na_lut));
 err_del_if:
-	memset(&na->na_lut, 0, sizeof(na->na_lut));
 	netmap_mem_if_delete(na, nifp);
 err_rel_excl:
 	netmap_krings_put(priv);
