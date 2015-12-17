@@ -286,23 +286,30 @@ nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 #ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
 static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 {
-    /* If we were called by NM_SEND_UP(), we want to pass the mbuf
-       to network stack. We detect this situation looking at the
-       priority field. */
-    if ((*pm)->priority == NM_MAGIC_PRIORITY_RX)
-            return RX_HANDLER_PASS;
+	int ret;
 
-    /* When we intercept a sk_buff coming from the driver, it happens that
-       skb->data points to the IP header, e.g. the ethernet header has
-       already been pulled. Since we want the netmap rings to contain the
-       full ethernet header, we push it back, so that the RX ring reader
-       can see it. */
-    skb_push(*pm, 14);
+	/* If we were called by NM_SEND_UP(), we want to pass the mbuf
+	   to network stack. We detect this situation looking at the
+	   priority field. */
+	if ((*pm)->priority == NM_MAGIC_PRIORITY_RX)
+		return RX_HANDLER_PASS;
 
-    /* Steal the mbuf and notify the pollers for a new RX packet. */
-    generic_rx_handler((*pm)->dev, *pm);
+	/* When we intercept a sk_buff coming from the driver, it happens that
+	   skb->data points to the IP header, e.g. the ethernet header has
+	   already been pulled. Since we want the netmap rings to contain the
+	   full ethernet header, we push it back, so that the RX ring reader
+	   can see it. */
+	skb_push(*pm, 14);
 
-    return RX_HANDLER_CONSUMED;
+	/* Possibly steal the mbuf and notify the pollers for a new RX
+	 * packet. */
+	ret = generic_rx_handler((*pm)->dev, *pm);
+	if (ret) {
+		skb_pull(*pm, 14);
+		return RX_HANDLER_PASS;
+	}
+
+	return RX_HANDLER_CONSUMED;
 }
 #else /* ! HAVE_RX_HANDLER_RESULT */
 static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
@@ -361,8 +368,8 @@ generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m
 static netdev_tx_t
 generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 {
-    struct netmap_generic_adapter *gna =
-                        (struct netmap_generic_adapter *)NA(ifp);
+	struct netmap_generic_adapter *gna =
+		(struct netmap_generic_adapter *)NA(ifp);
 
 	if (likely(m->priority == NM_MAGIC_PRIORITY_TX)) {
 		/* Reset priority, so that generic_netmap_tx_clean()
@@ -371,8 +378,8 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 		return gna->save_start_xmit(m, ifp); /* To the driver. */
 	}
 
-    /* To a netmap RX ring. */
-    return linux_netmap_start_xmit(m, ifp);
+	/* To a netmap RX ring. */
+	return linux_netmap_start_xmit(m, ifp);
 }
 
 struct nm_generic_qdisc {

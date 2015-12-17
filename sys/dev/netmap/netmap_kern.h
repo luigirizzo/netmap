@@ -147,8 +147,13 @@ struct hrtimer {
 #define	MBUF_LEN(m)	((m)->len)
 #define	MBUF_IFP(m)	((m)->dev)
 #define MBUF_FLOWID(m)	((m)->queue_mapping)
-#define MBUF_TRANSMIT(na, ifp, m)	\
-	(((struct net_device_ops *)(na)->if_transmit)->ndo_start_xmit(m, ifp))
+#define MBUF_TRANSMIT(na, ifp, m)							\
+	({										\
+		/* Avoid infinite recursion with generic. */				\
+		m->priority = NM_MAGIC_PRIORITY_TX;					\
+		(((struct net_device_ops *)(na)->if_transmit)->ndo_start_xmit(m, ifp));	\
+		0;									\
+	})
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
@@ -1781,7 +1786,7 @@ struct netmap_monitor_adapter {
  * native netmap support.
  */
 int generic_netmap_attach(struct ifnet *ifp);
-void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
+int generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 
 int nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept);
 int nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept);
