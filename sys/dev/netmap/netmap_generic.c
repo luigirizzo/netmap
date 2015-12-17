@@ -168,6 +168,14 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 #include <dev/netmap/netmap_mem2.h>
 
 
+#define for_each_tx_kring(_i, _k, _na)					\
+	for (_k=&(_na)->tx_rings[0], _i = 0;				\
+	     _i < (_na)->num_tx_rings; (_k)++, (_i)++)
+
+#define for_each_rx_kring(_i, _k, _na)					\
+	for (_k=&(_na)->rx_rings[0], _i = 0;				\
+	     _i < (_na)->num_rx_rings; (_k)++, (_i)++)
+
 
 /* ======================== PERFORMANCE STATISTICS =========================== */
 
@@ -278,9 +286,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 		rtnl_unlock();
 	}
 
-	for (r=0; r<na->num_rx_rings; r++) {
-		kring = &na->rx_rings[r];
-
+	for_each_rx_kring(r, kring, na) {
 		if (!nm_kring_pending_off(kring)) {
 			continue;
 		}
@@ -298,9 +304,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 	 * TX pools. These mbufs can be still pending in drivers,
 	 * (e.g. this happens with virtio-net driver, which
 	 * does lazy reclaiming of transmitted mbufs). */
-	for (r=0; r<na->num_tx_rings; r++) {
-		kring = &na->tx_rings[r];
-
+	for_each_tx_kring(r, kring, na) {
 		if (!nm_kring_pending_off(kring)) {
 			continue;
 		}
@@ -323,12 +327,11 @@ generic_netmap_unregister(struct netmap_adapter *na)
 	if (na->active_fds == 0) {
 		free(gna->mit, M_DEVBUF);
 
-		for (r=0; r<na->num_rx_rings; r++) {
-			mbq_safe_fini(&na->rx_rings[r].rx_queue);
+		for_each_rx_kring(r, kring, na) {
+			mbq_safe_fini(&kring->rx_queue);
 		}
 
-		for (r=0; r<na->num_tx_rings; r++) {
-			kring = &na->tx_rings[r];
+		for_each_tx_kring(r, kring, na) {
 			mtx_destroy(&kring->tx_event_lock);
 			if (kring->tx_pool == NULL) {
 				continue;
@@ -386,14 +389,14 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			goto out;
 		}
 
-		for (r=0; r<na->num_rx_rings; r++) {
+		for_each_rx_kring(r, kring, na) {
 			/* Init mitigation support. */
 			nm_os_mitigation_init(&gna->mit[r], r, na);
 
 			/* Initialize the rx queue, as generic_rx_handler() can
 			 * be called as soon as nm_os_catch_rx() returns.
 			 */
-			mbq_safe_init(&na->rx_rings[r].rx_queue);
+			mbq_safe_init(&kring->rx_queue);
 		}
 
 		/*
@@ -401,12 +404,11 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		 * transmission. Don't preallocate the mbufs here, it's simpler
 		 * to leave this task to txsync.
 		 */
-		for (r=0; r<na->num_tx_rings; r++) {
-			na->tx_rings[r].tx_pool = NULL;
+		for_each_tx_kring(r, kring, na) {
+			kring->tx_pool = NULL;
 		}
 
-		for (r=0; r<na->num_tx_rings; r++) {
-			kring = &na->tx_rings[r];
+		for_each_tx_kring(r, kring, na) {
 			kring->tx_pool =
 				malloc(na->num_tx_desc * sizeof(struct mbuf *),
 				       M_DEVBUF, M_NOWAIT | M_ZERO);
@@ -420,9 +422,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 	}
 
-	for (r=0; r<na->num_rx_rings; r++) {
-		kring = &na->rx_rings[r];
-
+	for_each_rx_kring(r, kring, na) {
 		if (!nm_kring_pending_on(kring)) {
 			continue;
 		}
@@ -431,9 +431,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		kring->nr_mode = NKR_NETMAP_ON;
 	}
 
-	for (r=0; r<na->num_tx_rings; r++) {
-		kring = &na->tx_rings[r];
-
+	for_each_tx_kring(r, kring, na) {
 		if (!nm_kring_pending_on(kring)) {
 			continue;
 		}
@@ -491,8 +489,7 @@ catch_rx:
 register_handler:
 	rtnl_unlock();
 free_tx_pools:
-	for (r=0; r<na->num_tx_rings; r++) {
-		kring = &na->tx_rings[r];
+	for_each_tx_kring(r, kring, na) {
 		mtx_destroy(&kring->tx_event_lock);
 		if (kring->tx_pool == NULL) {
 			continue;
@@ -500,8 +497,8 @@ free_tx_pools:
 		free(kring->tx_pool, M_DEVBUF);
 		kring->tx_pool = NULL;
 	}
-	for (r=0; r<na->num_rx_rings; r++) {
-		mbq_safe_fini(&na->rx_rings[r].rx_queue);
+	for_each_rx_kring(r, kring, na) {
+		mbq_safe_fini(&kring->rx_queue);
 	}
 	free(gna->mit, M_DEVBUF);
 out:
