@@ -93,7 +93,7 @@
 #define NM_SELRECORD_T	struct thread
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
 #define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
-#define MBUF_FLOWID(m)	((m)->m_pkthdr.flowid)
+#define MBUF_TXQ(m)	((m)->m_pkthdr.flowid)
 #define MBUF_TRANSMIT(na, ifp, m)	((na)->if_transmit(ifp, m))
 
 #define NM_ATOMIC_T	volatile int	// XXX ?
@@ -146,7 +146,6 @@ struct hrtimer {
 #define	NM_SELINFO_T	wait_queue_head_t
 #define	MBUF_LEN(m)	((m)->len)
 #define	MBUF_IFP(m)	((m)->dev)
-#define MBUF_FLOWID(m)	((m)->queue_mapping)
 #define MBUF_TRANSMIT(na, ifp, m)							\
 	({										\
 		/* Avoid infinite recursion with generic. */				\

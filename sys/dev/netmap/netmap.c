@@ -2949,7 +2949,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 		goto done;
 	}
 
-	txr = MBUF_FLOWID(m);
+	txr = MBUF_TXQ(m);
 	tx_kring = &NMR(na, NR_TX)[txr];
 
 	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
