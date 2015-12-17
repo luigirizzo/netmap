@@ -260,7 +260,7 @@ static int
 generic_netmap_unregister(struct netmap_adapter *na)
 {
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
-	struct netmap_kring *kring;
+	struct netmap_kring *kring = NULL;
 	int i, r;
 
 	if (na->active_fds == 0) {
@@ -317,14 +317,6 @@ generic_netmap_unregister(struct netmap_adapter *na)
 		kring->tx_event = NULL;
 		mtx_unlock(&kring->tx_event_lock);
 
-		if (kring->tx_pool) {
-			for (i=0; i<na->num_tx_desc; i++) {
-				if (kring->tx_pool[i]) {
-					m_freem(kring->tx_pool[i]);
-				}
-			}
-			free(kring->tx_pool, M_DEVBUF);
-		}
 		kring->nr_mode = NKR_NETMAP_OFF;
 	}
 
@@ -336,11 +328,19 @@ generic_netmap_unregister(struct netmap_adapter *na)
 		}
 
 		for (r=0; r<na->num_tx_rings; r++) {
+			kring = &na->tx_rings[r];
 			mtx_destroy(&kring->tx_event_lock);
-			if (na->tx_rings[r].tx_pool == NULL) {
+			if (kring->tx_pool == NULL) {
 				continue;
 			}
-			free(&na->tx_rings[r].tx_pool, M_DEVBUF);
+
+			for (i=0; i<na->num_tx_desc; i++) {
+				if (kring->tx_pool[i]) {
+					m_freem(kring->tx_pool[i]);
+				}
+			}
+			free(kring->tx_pool, M_DEVBUF);
+			kring->tx_pool = NULL;
 		}
 
 #ifdef RATE_GENERIC
@@ -359,7 +359,7 @@ static int
 generic_netmap_register(struct netmap_adapter *na, int enable)
 {
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
-	struct netmap_kring *kring;
+	struct netmap_kring *kring = NULL;
 	int error;
 	int i, r;
 
@@ -406,16 +406,17 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 
 		for (r=0; r<na->num_tx_rings; r++) {
-			na->tx_rings[r].tx_pool =
+			kring = &na->tx_rings[r];
+			kring->tx_pool =
 				malloc(na->num_tx_desc * sizeof(struct mbuf *),
 				       M_DEVBUF, M_NOWAIT | M_ZERO);
-			if (!na->tx_rings[r].tx_pool) {
+			if (!kring->tx_pool) {
 				D("tx_pool allocation failed");
 				error = ENOMEM;
 				goto free_tx_pools;
 			}
-			mtx_init(&na->tx_rings[r].tx_event_lock,
-				 "tx_event_lock", NULL, MTX_SPIN);
+			mtx_init(&kring->tx_event_lock, "tx_event_lock",
+				 NULL, MTX_SPIN);
 		}
 	}
 
@@ -491,12 +492,13 @@ register_handler:
 	rtnl_unlock();
 free_tx_pools:
 	for (r=0; r<na->num_tx_rings; r++) {
+		kring = &na->tx_rings[r];
 		mtx_destroy(&kring->tx_event_lock);
-		if (na->tx_rings[r].tx_pool == NULL) {
+		if (kring->tx_pool == NULL) {
 			continue;
 		}
-		free(na->tx_rings[r].tx_pool, M_DEVBUF);
-		na->tx_rings[r].tx_pool = NULL;
+		free(kring->tx_pool, M_DEVBUF);
+		kring->tx_pool = NULL;
 	}
 	for (r=0; r<na->num_rx_rings; r++) {
 		mbq_safe_fini(&na->rx_rings[r].rx_queue);
