@@ -881,6 +881,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
  * the driver can be stolen to the network stack.
  * Stolen packets are put in a queue where the
  * generic_netmap_rxsync() callback can extract them.
+ * Returns 1 if the packet was stolen, 0 otherwise.
  */
 int
 generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
@@ -899,7 +900,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 
 	if (kring->nr_mode == NKR_NETMAP_OFF) {
 		/* We must not intercept this mbuf. */
-		return 1;
+		return 0;
 	}
 
 	/* limit the size of the queue */
@@ -933,7 +934,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	/* We have intercepted the mbuf. */
-	return 0;
+	return 1;
 }
 
 /*

@@ -218,8 +218,15 @@ windows_handle_rx(struct net_device *ifp, uint32_t length, const char *data)
 {
 	struct mbuf *m = win_make_mbuf(ifp, length, data);
 
-	if (m)
-		generic_rx_handler(ifp, m);
+	if (m) {
+		int stolen = generic_rx_handler(ifp, m);
+
+		if (!stolen) {
+			m_freem(m);
+			/* XXX Should we return m instead of freeing it? */
+		}
+	}
+
 	return NULL;
 }
 

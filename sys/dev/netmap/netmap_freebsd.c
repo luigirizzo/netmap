@@ -200,11 +200,11 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 static void
 freebsd_generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 {
-	struct netmap_adapter *na = NA(ifp);
-	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
-	int ret = generic_rx_handler(ifp, m);
+	struct netmap_generic_adapter *gna =
+			(struct netmap_generic_adapter *)NA(ifp);
+	int stolen = generic_rx_handler(ifp, m);
 
-	if (ret) {
+	if (!stolen) {
 		gna->save_if_input(ifp, m);
 	}
 }

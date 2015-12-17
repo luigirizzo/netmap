@@ -286,7 +286,7 @@ nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 #ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
 static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 {
-	int ret;
+	int stolen;
 
 	/* If we were called by NM_SEND_UP(), we want to pass the mbuf
 	   to network stack. We detect this situation looking at the
@@ -303,19 +303,25 @@ static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 
 	/* Possibly steal the mbuf and notify the pollers for a new RX
 	 * packet. */
-	ret = generic_rx_handler((*pm)->dev, *pm);
-	if (ret) {
-		skb_pull(*pm, 14);
-		return RX_HANDLER_PASS;
+	stolen = generic_rx_handler((*pm)->dev, *pm);
+	if (stolen) {
+		return RX_HANDLER_CONSUMED;
 	}
 
-	return RX_HANDLER_CONSUMED;
+	skb_pull(*pm, 14);
+
+	return RX_HANDLER_PASS;
 }
 #else /* ! HAVE_RX_HANDLER_RESULT */
 static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
 {
-	generic_rx_handler(m->dev, m);
-	return NULL;
+	int stolen = generic_rx_handler(m->dev, m);
+
+	if (stolen) {
+		return NULL;
+	}
+
+	return m;
 }
 #endif /* HAVE_RX_HANDLER_RESULT */
 #endif /* HAVE_RX_REGISTER */
