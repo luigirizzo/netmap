@@ -914,7 +914,7 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 
 	NMG_LOCK_ASSERT();
 	na->active_fds--;
-	/* release exclusive use if it was requested on regif */
+	/* unset nr_pending_mode and possibly release exclusive mode */
 	netmap_krings_put(priv);
 
 #ifdef	WITH_MONITOR
@@ -1813,8 +1813,9 @@ netmap_unset_ringid(struct netmap_priv_d *priv)
 }
 
 
-/* check that the rings we want to bind are not exclusively owned by a previous
- * bind.  If exclusive ownership has been requested, we also mark the rings.
+/* Set the nr_pending_mode for the requested rings.
+ * If requested, also try to get exclusive access to the rings, provided
+ * the rings we want to bind are not exclusively owned by a previous bind.
  */
 static int
 netmap_krings_get(struct netmap_priv_d *priv)
@@ -1848,10 +1849,9 @@ netmap_krings_get(struct netmap_priv_d *priv)
 		}
 	}
 
-	/* second round: increment usage cound and possibly
-	 * mark as exclusive
+	/* second round: increment usage count (possibly marking them
+	 * as exclusive) and set the nr_pending_mode
 	 */
-
 	for_rx_tx(t) {
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
 			kring = &NMR(na, t)[i];
@@ -1866,7 +1866,9 @@ netmap_krings_get(struct netmap_priv_d *priv)
 
 }
 
-/* undo netmap_krings_get() */
+/* Undo netmap_krings_get(). This is done by clearing the exclusive mode
+ * if was asked on regif, and unset the nr_pending_mode if we are the
+ * last users of the involved rings. */
 static void
 netmap_krings_put(struct netmap_priv_d *priv)
 {
@@ -2006,7 +2008,8 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	}
 
 	/* now the kring must exist and we can check whether some
-	 * previous bind has exclusive ownership on them
+	 * previous bind has exclusive ownership on them, and set
+	 * nr_pending_mode
 	 */
 	error = netmap_krings_get(priv);
 	if (error)
