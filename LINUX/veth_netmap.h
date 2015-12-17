@@ -98,7 +98,15 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 	if (unlikely(!nm_netmap_on(peer_na)))
 		goto out;
 
+	/* XXX This is unsafe, we are accessing the peer whose krings
+	 * and rings may be disappearing beause peer_na->active_fds
+	 * the last user is doing unregif. Is it feasible to call
+	 * netamp_do_regif() on the peer in veth_netmap_reg()?. */
 	peer_kring = &peer_na->rx_rings[ring_nr];
+	if (!peer_kring) {
+		goto out;
+	}
+
 	peer_ring = peer_kring->ring;
 	lim_peer = peer_kring->nkr_num_slots - 1;
 
@@ -130,14 +138,14 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 		}
 		kring->nr_hwcur = nm_i;
 
-		mb();  /* for writing the slots */
+		smp_mb();  /* for writing the slots */
 
 		peer_kring->nr_hwtail = nm_j;
 		if (peer_kring->nr_hwtail > lim_peer) {
 			peer_kring->nr_hwtail -= lim_peer + 1;
 		}
 
-		mb();  /* for writing peer_kring->nr_hwtail */
+		smp_mb();  /* for writing peer_kring->nr_hwtail */
 
 		/*
 		 * Second part: reclaim buffers for completed transmissions.
