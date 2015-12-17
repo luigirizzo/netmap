@@ -1723,41 +1723,7 @@ struct netmap_priv_d {
 struct netmap_priv_d *netmap_priv_new(void);
 void netmap_priv_delete(struct netmap_priv_d *);
 
-static inline void kring_get_netmap_mode(struct netmap_priv_d *np, enum txrx ring_txrx, int ring_nr)
-{
-	struct netmap_adapter *na = np->np_na;
-	struct netmap_kring *kring = &NMR(na, ring_txrx)[ring_nr];
-
-	kring->nr_pending_mode = NKR_NETMAP_ON;
-	if (kring->ring_id == nma_get_nrings(na, ring_txrx)) {
-		/*
-		 * If this is a sw ring, just set the mode on (no need to
-		 * wait for netmap_reset())
-		 */
-		kring->nr_mode = NKR_NETMAP_ON;
-	}
-}
-
-static inline void kring_rel_netmap_mode(struct netmap_priv_d *np, enum txrx ring_txrx, int ring_nr)
-{
-	struct netmap_adapter *na = np->np_na;
-	struct netmap_kring *kring = &NMR(na, ring_txrx)[ring_nr];
-
-	/*
-	 * try to release the ring (i.e. put it in normal mode).
-	 * The ring can actually be released only if there are no users
-	 * using it. (users counter is managed by netmap_get_exclusive and
-	 * netmap_rel_exclusive)
-	 */
-	if (kring->users == 0) {
-		kring->nr_pending_mode = NKR_NETMAP_OFF;
-		if (kring->ring_id == nma_get_nrings(na, ring_txrx)) {
-			kring->nr_mode = NKR_NETMAP_OFF;
-		}
-	}
-}
-
-static inline int kring_pending(struct netmap_priv_d *np)
+static inline int nm_kring_pending(struct netmap_priv_d *np)
 {
 	struct netmap_adapter *na = np->np_na;
 	enum txrx t;

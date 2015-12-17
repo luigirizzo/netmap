@@ -906,24 +906,16 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
  */
 /* call with NMG_LOCK held */
 static void netmap_unset_ringid(struct netmap_priv_d *);
-static void netmap_rel_exclusive(struct netmap_priv_d *);
+static void netmap_krings_put(struct netmap_priv_d *);
 static void
 netmap_do_unregif(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
-	enum txrx t;
-	int i;
 
 	NMG_LOCK_ASSERT();
 	na->active_fds--;
 	/* release exclusive use if it was requested on regif */
-	netmap_rel_exclusive(priv);
-
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring_rel_netmap_mode(priv, t, i);
-		}
-	}
+	netmap_krings_put(priv);
 
 	if (na->active_fds <= 0) {	/* last instance */
 
@@ -960,7 +952,7 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		netmap_mem_rings_delete(na);
 		na->nm_krings_delete(na);
 	} else {
-		if (kring_pending(priv)) {
+		if (nm_kring_pending(priv)) {
 			na->nm_register(na, 1);
 		}
 	}
@@ -1826,7 +1818,7 @@ netmap_unset_ringid(struct netmap_priv_d *priv)
  * bind.  If exclusive ownership has been requested, we also mark the rings.
  */
 static int
-netmap_get_exclusive(struct netmap_priv_d *priv)
+netmap_krings_get(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
 	u_int i;
@@ -1867,6 +1859,7 @@ netmap_get_exclusive(struct netmap_priv_d *priv)
 			kring->users++;
 			if (excl)
 				kring->nr_kflags |= NKR_EXCLUSIVE;
+	                kring->nr_pending_mode = NKR_NETMAP_ON;
 		}
 	}
 
@@ -1874,9 +1867,9 @@ netmap_get_exclusive(struct netmap_priv_d *priv)
 
 }
 
-/* undo netmap_get_ownership() */
+/* undo netmap_krings_get() */
 static void
-netmap_rel_exclusive(struct netmap_priv_d *priv)
+netmap_krings_put(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
 	u_int i;
@@ -1898,6 +1891,8 @@ netmap_rel_exclusive(struct netmap_priv_d *priv)
 			if (excl)
 				kring->nr_kflags &= ~NKR_EXCLUSIVE;
 			kring->users--;
+			if (kring->users == 0)
+				kring->nr_pending_mode = NKR_NETMAP_OFF;
 		}
 	}
 }
@@ -1978,8 +1973,6 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 {
 	struct netmap_if *nifp = NULL;
 	int error;
-	enum txrx t;
-	int i;
 
 	NMG_LOCK_ASSERT();
 	/* ring configuration may have changed, fetch from the card */
@@ -2016,15 +2009,9 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	/* now the kring must exist and we can check whether some
 	 * previous bind has exclusive ownership on them
 	 */
-	error = netmap_get_exclusive(priv);
+	error = netmap_krings_get(priv);
 	if (error)
 		goto err_del_rings;
-
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring_get_netmap_mode(priv, t, i);
-		}
-	}
 
 	/* in all cases, create a new netmap if */
 	nifp = netmap_mem_if_new(na);
@@ -2048,7 +2035,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		if (error) 
 			goto err_del_if;
 	} else {
-		if (kring_pending(priv)) {
+		if (nm_kring_pending(priv)) {
 			na->nm_register(na, 1);
 		}
 	}
@@ -2068,13 +2055,7 @@ err_del_if:
 	na->active_fds--;
 	netmap_mem_if_delete(na, nifp);
 err_rel_excl:
-	netmap_rel_exclusive(priv);
-
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring_rel_netmap_mode(priv, t, i);
-		}
-	}
+	netmap_krings_put(priv);
 err_del_rings:
 	if (na->active_fds == 0)
 		netmap_mem_rings_delete(na);
