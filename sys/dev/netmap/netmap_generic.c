@@ -264,6 +264,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 	int i, r;
 
 	if (na->active_fds == 0) {
+		D("Generic adapter %p goes off", na);
 		rtnl_lock();
 
 		na->na_flags &= ~NAF_NETMAP_ON;
@@ -284,6 +285,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 			continue;
 		}
 
+		D("RX ring %d of generic adapter %p goes off", r, na);
 		/* Free the mbufs still pending in the RX queues,
 		 * that did not end up into the corresponding netmap
 		 * RX rings. */
@@ -303,6 +305,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 			continue;
 		}
 
+		D("TX ring %d of generic adapter %p goes off", r, na);
 		/* We must remove the destructor on the TX event,
 		 * because the destructor invokes netmap code, and
 		 * the netmap module may disappear before the
@@ -423,6 +426,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			continue;
 		}
 
+		D("RX ring %d of generic adapter %p goes on", r, na);
 		kring->nr_mode = NKR_NETMAP_ON;
 	}
 
@@ -434,7 +438,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 
 		/* Initialize tx_pool and tx_event. */
-		D("Ring %d of generic adapter %p goes on", r, na);
+		D("TX ring %d of generic adapter %p goes on", r, na);
 		for (i=0; i<na->num_tx_desc; i++) {
 			kring->tx_pool[i] = NULL;
 		}
