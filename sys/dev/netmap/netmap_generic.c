@@ -281,7 +281,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 	for (r=0; r<na->num_rx_rings; r++) {
 		kring = &na->rx_rings[r];
 
-		if (kring->nr_pending_mode == kring->nr_mode) {
+		if (!nm_kring_pending_off(kring)) {
 			continue;
 		}
 
@@ -301,7 +301,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 	for (r=0; r<na->num_tx_rings; r++) {
 		kring = &na->tx_rings[r];
 
-		if (kring->nr_pending_mode == kring->nr_mode) {
+		if (!nm_kring_pending_off(kring)) {
 			continue;
 		}
 
@@ -423,7 +423,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 	for (r=0; r<na->num_rx_rings; r++) {
 		kring = &na->rx_rings[r];
 
-		if (kring->nr_pending_mode == kring->nr_mode) {
+		if (!nm_kring_pending_on(kring)) {
 			continue;
 		}
 
@@ -434,7 +434,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 	for (r=0; r<na->num_tx_rings; r++) {
 		kring = &na->tx_rings[r];
 
-		if (kring->nr_pending_mode == kring->nr_mode) {
+		if (!nm_kring_pending_on(kring)) {
 			continue;
 		}
 
