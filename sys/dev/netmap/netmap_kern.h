@@ -495,6 +495,21 @@ __declspec(align(64));
 __attribute__((__aligned__(64)));
 #endif
 
+/* return 1 iff the kring needs to be turned on */
+static inline int
+nm_kring_pending_on(struct netmap_kring *kring)
+{
+	return kring->nr_pending_mode == NKR_NETMAP_ON &&
+	       kring->nr_mode == NKR_NETMAP_OFF;
+}
+
+/* return 1 iff the kring needs to be turned off */
+static inline int
+nm_kring_pending_off(struct netmap_kring *kring)
+{
+	return kring->nr_pending_mode == NKR_NETMAP_OFF &&
+	       kring->nr_mode == NKR_NETMAP_ON;
+}
 
 /* return the next index, with wraparound */
 static inline uint32_t
