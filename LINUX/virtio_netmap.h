@@ -270,6 +270,29 @@ virtio_netmap_reclaim_unused(struct SOFTC_T *vi)
 	}
 }
 
+/* Set or clear nr_pending_mode and nr_mode for all the rings, independently
+ * of the specific user request. This is necessary for now because the
+ * virtio-net driver patches do not support single-queue mode (modifications
+ * would be needed to free_unused_bufs() free_receive_bufs()).*/
+static void
+virtio_netmap_set_kring_mode(struct netmap_adapter *na, int mode)
+{
+	int i;
+
+	for (i = 0; i < DEV_NUM_TX_QUEUES(na->ifp); i++) {
+		struct netmap_kring *kring = &na->tx_rings[i];
+
+		kring->nr_pending_mode = kring->nr_mode = mode;
+	}
+
+	for (i = 0; i < DEV_NUM_RX_QUEUES(na->ifp); i++) {
+		struct netmap_kring *kring = &na->rx_rings[i];
+
+		kring->nr_pending_mode = kring->nr_mode = mode;
+	}
+
+}
+
 /* Register and unregister. */
 static int
 virtio_netmap_reg(struct netmap_adapter *na, int onoff)
@@ -281,6 +304,12 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (na == NULL)
 		return EINVAL;
+
+	if (na->active_fds > 0) {
+		/* virtio-net adapter currently does not support single-queue
+		 * mode. As a consequence, register (unregister) operations
+		 * only have effect with first (last) user.*/
+	}
 
 	/* It's important to make sure each virtnet_close() matches
 	 * a virtnet_open(), otherwise a napi_disable() is not matched by
@@ -318,9 +347,11 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		free_receive_bufs(vi);
 
 		/* enable netmap mode */
+		virtio_netmap_set_kring_mode(na, NKR_NETMAP_ON);
 		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
+		virtio_netmap_set_kring_mode(na, NKR_NETMAP_OFF);
 
 		/* Get and free any used buffer. This is necessary
 		 * before calling virtqueue_detach_unused_buf(). */
@@ -878,7 +909,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		if (na->active_fds == 0) {
 			/* Push fake requests in the TX virtqueue in order to keep
 			 * TX interrupts enabled. */
-			for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+			for (i = 0; i < DEV_NUM_TX_QUEUES(ifp); i++) {
 				COMPAT_DECL_SG
 				struct scatterlist *sg = GET_TX_SG(vi, i);
 				struct virtqueue *vq = GET_TX_VQ(vi, i);
