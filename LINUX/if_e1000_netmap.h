@@ -299,13 +299,14 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 
 	if (!nm_native_on(na))
 		return 0;
+
 	adapter->alloc_rx_buf = e1000_no_rx_alloc;
 	for (r = 0; r < na->num_rx_rings; r++) {
 		struct e1000_rx_ring *rxr;
 		slot = netmap_reset(na, NR_RX, r, 0);
 		if (!slot) {
-			D("strange, null netmap ring %d", r);
-			return 0;
+			D("Skipping RX ring %d, netmap mode not requested", r);
+			continue;
 		}
 		rxr = &adapter->rx_ring[r];
 
@@ -325,14 +326,23 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		wmb(); /* Force memory writes to complete */
 		writel(i, hw->hw_addr + rxr->rdt);
 	}
+
 	/* now initialize the tx ring(s) */
-	slot = netmap_reset(na, NR_TX, 0, 0);
-	for (i = 0; i < na->num_tx_desc; i++) {
-		si = netmap_idx_n2k(&na->tx_rings[0], i);
-		PNMB(na, slot + si, &paddr);
-		// netmap_load_map(...)
-		E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
+	for (r = 0; r < na->num_tx_rings; r++) {
+		slot = netmap_reset(na, NR_TX, r, 0);
+		if (!slot) {
+			D("Skipping TX ring %d, netmap mode not requested", r);
+			continue;
+		}
+
+		for (i = 0; i < na->num_tx_desc; i++) {
+			si = netmap_idx_n2k(&na->tx_rings[r], i);
+			PNMB(na, slot + si, &paddr);
+			// netmap_load_map(...)
+			E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
+		}
 	}
+
 	return 1;
 }
 
