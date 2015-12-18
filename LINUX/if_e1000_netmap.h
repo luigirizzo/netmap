@@ -429,7 +429,7 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct e1000_adapter *adapter = netdev_priv(na->ifp);
 	struct paravirt_csb *csb = adapter->csb;
-	struct netmap_kring *kring;
+	struct netmap_kring *kring = NULL;
 	int ret = 0;
 
 	if (onoff) {
@@ -437,8 +437,6 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		if (ret)
 			return ret;
 
-		na->na_flags |= NAF_NETMAP_ON;
-		adapter->ptnetmap_enabled = 1;
 		/*
 		 * Init ring and kring pointers
 		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
@@ -447,25 +445,39 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		 * the host port on UNREGIF.
 		 */
 
-		// Init rx ring
+		/* init rx kring */
 		kring = na->rx_rings;
 		kring->rhead = kring->ring->head = csb->rx_ring.head;
 		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
 		kring->nr_hwcur = csb->rx_ring.hwcur;
 		kring->nr_hwtail = kring->rtail = kring->ring->tail =
 			csb->rx_ring.hwtail;
+		/* Force modes on, independently of the user's request. */
+		kring->nr_pending_mode = kring->nr_mode = NKR_NETMAP_ON;
 
-		// Init tx ring
+		/* init tx kring */
 		kring = na->tx_rings;
 		kring->rhead = kring->ring->head = csb->tx_ring.head;
 		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
 		kring->nr_hwcur = csb->tx_ring.hwcur;
 		kring->nr_hwtail = kring->rtail = kring->ring->tail =
 			csb->tx_ring.hwtail;
+		/* Force modes on, independently of the user's request. */
+		kring->nr_pending_mode = kring->nr_mode = NKR_NETMAP_ON;
+
+		adapter->ptnetmap_enabled = 1;
+		na->na_flags |= NAF_NETMAP_ON;
 
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 		adapter->ptnetmap_enabled = 0;
+
+		/* Force modes off, independently of the user's request. */
+		kring = na->tx_rings;
+		kring->nr_pending_mode = kring->nr_mode = NKR_NETMAP_OFF;
+		kring = na->rx_rings;
+		kring->nr_pending_mode = kring->nr_mode = NKR_NETMAP_OFF;
+
 		ret = e1000_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 
