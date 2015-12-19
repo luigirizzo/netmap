@@ -78,7 +78,7 @@ providing high speed packet I/O between processes,
 virtual machines, NICs and the host stack.
 .Pp
 .Nm
-suports both non-blocking I/O through
+supports both non-blocking I/O through
 .Xr ioctls() ,
 synchronization and blocking I/O through a file descriptor
 and standard OS mechanisms such as
@@ -385,7 +385,7 @@ Below is an example of the evolution of a TX ring:
      TX  [..........aaaaaaaaaaa........]
 .Ed
 .Pp
-select() and poll() wlll block if there is no space in the ring, i.e.
+select() and poll() will block if there is no space in the ring, i.e.
 .Dl ring->cur == ring->tail
 and return when new slots have become available.
 .Pp
