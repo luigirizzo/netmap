@@ -217,7 +217,7 @@ struct nm_bridge {
 	 * forward this packet.  ring_nr is the source ring index, and the
 	 * function may overwrite this value to forward this packet to a
 	 * different ring index.
-	 * This function must be set by netmap_bdgctl().
+	 * This function must be set by netmap_bdg_ctl().
 	 */
 	struct netmap_bdg_ops bdg_ops;
 
