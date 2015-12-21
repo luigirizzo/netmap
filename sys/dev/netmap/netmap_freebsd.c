@@ -197,6 +197,18 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 	return NULL;
 }
 
+static void
+freebsd_generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
+{
+	struct netmap_generic_adapter *gna =
+			(struct netmap_generic_adapter *)NA(ifp);
+	int stolen = generic_rx_handler(ifp, m);
+
+	if (!stolen) {
+		gna->save_if_input(ifp, m);
+	}
+}
+
 /*
  * Intercept the rx routine in the standard device driver.
  * Second argument is non-zero to intercept, 0 to restore
@@ -213,7 +225,7 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 			return EINVAL; /* already set */
 		}
 		gna->save_if_input = ifp->if_input;
-		ifp->if_input = generic_rx_handler;
+		ifp->if_input = freebsd_generic_rx_handler;
 	} else {
 		if (!gna->save_if_input){
 			D("cannot restore");

@@ -299,13 +299,14 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 
 	if (!nm_native_on(na))
 		return 0;
+
 	adapter->alloc_rx_buf = e1000_no_rx_alloc;
 	for (r = 0; r < na->num_rx_rings; r++) {
 		struct e1000_rx_ring *rxr;
 		slot = netmap_reset(na, NR_RX, r, 0);
 		if (!slot) {
-			D("strange, null netmap ring %d", r);
-			return 0;
+			D("Skipping RX ring %d, netmap mode not requested", r);
+			continue;
 		}
 		rxr = &adapter->rx_ring[r];
 
@@ -325,14 +326,23 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		wmb(); /* Force memory writes to complete */
 		writel(i, hw->hw_addr + rxr->rdt);
 	}
+
 	/* now initialize the tx ring(s) */
-	slot = netmap_reset(na, NR_TX, 0, 0);
-	for (i = 0; i < na->num_tx_desc; i++) {
-		si = netmap_idx_n2k(&na->tx_rings[0], i);
-		PNMB(na, slot + si, &paddr);
-		// netmap_load_map(...)
-		E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
+	for (r = 0; r < na->num_tx_rings; r++) {
+		slot = netmap_reset(na, NR_TX, r, 0);
+		if (!slot) {
+			D("Skipping TX ring %d, netmap mode not requested", r);
+			continue;
+		}
+
+		for (i = 0; i < na->num_tx_desc; i++) {
+			si = netmap_idx_n2k(&na->tx_rings[r], i);
+			PNMB(na, slot + si, &paddr);
+			// netmap_load_map(...)
+			E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
+		}
 	}
+
 	return 1;
 }
 
@@ -419,7 +429,7 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct e1000_adapter *adapter = netdev_priv(na->ifp);
 	struct paravirt_csb *csb = adapter->csb;
-	struct netmap_kring *kring;
+	struct netmap_kring *kring = NULL;
 	int ret = 0;
 
 	if (onoff) {
@@ -427,8 +437,6 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		if (ret)
 			return ret;
 
-		na->na_flags |= NAF_NETMAP_ON;
-		adapter->ptnetmap_enabled = 1;
 		/*
 		 * Init ring and kring pointers
 		 * After PARAVIRT_PTCTL_REGIF, the csb contains a snapshot of a
@@ -437,25 +445,39 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		 * the host port on UNREGIF.
 		 */
 
-		// Init rx ring
+		/* init rx kring */
 		kring = na->rx_rings;
 		kring->rhead = kring->ring->head = csb->rx_ring.head;
 		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
 		kring->nr_hwcur = csb->rx_ring.hwcur;
 		kring->nr_hwtail = kring->rtail = kring->ring->tail =
 			csb->rx_ring.hwtail;
+		/* Force modes on, independently of the user's request. */
+		kring->nr_pending_mode = kring->nr_mode = NKR_NETMAP_ON;
 
-		// Init tx ring
+		/* init tx kring */
 		kring = na->tx_rings;
 		kring->rhead = kring->ring->head = csb->tx_ring.head;
 		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
 		kring->nr_hwcur = csb->tx_ring.hwcur;
 		kring->nr_hwtail = kring->rtail = kring->ring->tail =
 			csb->tx_ring.hwtail;
+		/* Force modes on, independently of the user's request. */
+		kring->nr_pending_mode = kring->nr_mode = NKR_NETMAP_ON;
+
+		adapter->ptnetmap_enabled = 1;
+		na->na_flags |= NAF_NETMAP_ON;
 
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 		adapter->ptnetmap_enabled = 0;
+
+		/* Force modes off, independently of the user's request. */
+		kring = na->tx_rings;
+		kring->nr_pending_mode = kring->nr_mode = NKR_NETMAP_OFF;
+		kring = na->rx_rings;
+		kring->nr_pending_mode = kring->nr_mode = NKR_NETMAP_OFF;
+
 		ret = e1000_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 

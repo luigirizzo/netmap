@@ -422,13 +422,38 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 	struct netmap_pipe_adapter *pna =
 		(struct netmap_pipe_adapter *)na;
 	enum txrx t;
+	int i;
 
 	ND("%p: onoff %d", na, onoff);
 	if (onoff) {
-		na->na_flags |= NAF_NETMAP_ON;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring))
+					kring->nr_mode = NKR_NETMAP_ON;
+			}
+		}
+		if (na->active_fds == 0)
+			na->na_flags |= NAF_NETMAP_ON;
 	} else {
-		na->na_flags &= ~NAF_NETMAP_ON;
+		if (na->active_fds == 0)
+			na->na_flags &= ~NAF_NETMAP_ON;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_off(kring))
+					kring->nr_mode = NKR_NETMAP_OFF;
+			}
+		}
 	}
+
+	if (na->active_fds) {
+		D("active_fds %d", na->active_fds);
+		return 0;
+	}
+
 	if (pna->peer_ref) {
 		ND("%p: case 1.a or 2.a, nothing to do", na);
 		return 0;
@@ -438,7 +463,6 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 		pna->peer->peer_ref = 0;
 		netmap_adapter_put(na);
 	} else {
-		int i;
 		ND("%p: case 2.b, grab peer", na);
 		netmap_adapter_get(na);
 		pna->peer->peer_ref = 1;

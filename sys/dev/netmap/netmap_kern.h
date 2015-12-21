@@ -93,7 +93,7 @@
 #define NM_SELRECORD_T	struct thread
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
 #define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
-#define MBUF_FLOWID(m)	((m)->m_pkthdr.flowid)
+#define MBUF_TXQ(m)	((m)->m_pkthdr.flowid)
 #define MBUF_TRANSMIT(na, ifp, m)	((na)->if_transmit(ifp, m))
 
 #define NM_ATOMIC_T	volatile int	// XXX ?
@@ -146,9 +146,13 @@ struct hrtimer {
 #define	NM_SELINFO_T	wait_queue_head_t
 #define	MBUF_LEN(m)	((m)->len)
 #define	MBUF_IFP(m)	((m)->dev)
-#define MBUF_FLOWID(m)	((m)->queue_mapping)
-#define MBUF_TRANSMIT(na, ifp, m)	\
-	(((struct net_device_ops *)(na)->if_transmit)->ndo_start_xmit(m, ifp))
+#define MBUF_TRANSMIT(na, ifp, m)							\
+	({										\
+		/* Avoid infinite recursion with generic. */				\
+		m->priority = NM_MAGIC_PRIORITY_TX;					\
+		(((struct net_device_ops *)(na)->if_transmit)->ndo_start_xmit(m, ifp));	\
+		0;									\
+	})
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
@@ -495,6 +499,21 @@ __declspec(align(64));
 __attribute__((__aligned__(64)));
 #endif
 
+/* return 1 iff the kring needs to be turned on */
+static inline int
+nm_kring_pending_on(struct netmap_kring *kring)
+{
+	return kring->nr_pending_mode == NKR_NETMAP_ON &&
+	       kring->nr_mode == NKR_NETMAP_OFF;
+}
+
+/* return 1 iff the kring needs to be turned off */
+static inline int
+nm_kring_pending_off(struct netmap_kring *kring)
+{
+	return kring->nr_pending_mode == NKR_NETMAP_OFF &&
+	       kring->nr_mode == NKR_NETMAP_ON;
+}
 
 /* return the next index, with wraparound */
 static inline uint32_t
@@ -1164,7 +1183,9 @@ nm_set_native_flags(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
 
-	if (na->na_refcount > 2) {
+	/* We do the setup for intercepting packets only if we are the
+	 * first user of this adapapter. */
+	if (na->active_fds > 0) {
 		return;
 	}
 
@@ -1193,6 +1214,12 @@ static inline void
 nm_clear_native_flags(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
+
+	/* We undo the setup for intercepting packets only if we are the
+	 * last user of this adapapter. */
+	if (na->active_fds > 0) {
+		return;
+	}
 
 #if defined(__FreeBSD__)
 	ifp->if_transmit = na->if_transmit;
@@ -1723,41 +1750,7 @@ struct netmap_priv_d {
 struct netmap_priv_d *netmap_priv_new(void);
 void netmap_priv_delete(struct netmap_priv_d *);
 
-static inline void kring_get_netmap_mode(struct netmap_priv_d *np, enum txrx ring_txrx, int ring_nr)
-{
-	struct netmap_adapter *na = np->np_na;
-	struct netmap_kring *kring = &NMR(na, ring_txrx)[ring_nr];
-
-	kring->nr_pending_mode = NKR_NETMAP_ON;
-	if (kring->ring_id == nma_get_nrings(na, ring_txrx)) {
-		/*
-		 * If this is a sw ring, just set the mode on (no need to
-		 * wait for netmap_reset())
-		 */
-		kring->nr_mode = NKR_NETMAP_ON;
-	}
-}
-
-static inline void kring_rel_netmap_mode(struct netmap_priv_d *np, enum txrx ring_txrx, int ring_nr)
-{
-	struct netmap_adapter *na = np->np_na;
-	struct netmap_kring *kring = &NMR(na, ring_txrx)[ring_nr];
-
-	/*
-	 * try to release the ring (i.e. put it in normal mode).
-	 * The ring can actually be released only if there are no users
-	 * using it. (users counter is managed by netmap_get_exclusive and
-	 * netmap_rel_exclusive)
-	 */
-	if (kring->users == 0) {
-		kring->nr_pending_mode = NKR_NETMAP_OFF;
-		if (kring->ring_id == nma_get_nrings(na, ring_txrx)) {
-			kring->nr_mode = NKR_NETMAP_OFF;
-		}
-	}
-}
-
-static inline int kring_pending(struct netmap_priv_d *np)
+static inline int nm_kring_pending(struct netmap_priv_d *np)
 {
 	struct netmap_adapter *na = np->np_na;
 	enum txrx t;
@@ -1792,7 +1785,7 @@ struct netmap_monitor_adapter {
  * native netmap support.
  */
 int generic_netmap_attach(struct ifnet *ifp);
-void generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
+int generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 
 int nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept);
 int nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept);

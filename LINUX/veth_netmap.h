@@ -39,6 +39,14 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
 	bool was_up = false;
+	enum txrx t;
+	int i;
+
+	if (na->active_fds > 0) {
+		/* No support for single-queue mode. Actually do something
+		 * only for first user and last user. */
+		return 0;
+	}
 
 	if (netif_running(ifp)) {
 		/* The interface is up. Close it while (un)registering. */
@@ -46,11 +54,21 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		veth_close(ifp);
 	}
 
-	/* enable or disable flags and callbacks in na and ifp */
+	/* Enable or disable flags and callbacks in na and ifp. */
 	if (onoff) {
 		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
+	}
+
+	/* Set or clear nr_pending_mode and nr_mode, independently of the
+	 * state of nr_pending_mode. */
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t); i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
+			kring->nr_mode = kring->nr_pending_mode =
+				onoff ? NKR_NETMAP_ON : NKR_NETMAP_OFF;
+		}
 	}
 
 	if (was_up)
@@ -98,7 +116,15 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 	if (unlikely(!nm_netmap_on(peer_na)))
 		goto out;
 
+	/* XXX This is unsafe, we are accessing the peer whose krings
+	 * and rings may be disappearing beause peer_na->active_fds
+	 * the last user is doing unregif. Is it feasible to call
+	 * netamp_do_regif() on the peer in veth_netmap_reg()?. */
 	peer_kring = &peer_na->rx_rings[ring_nr];
+	if (!peer_kring) {
+		goto out;
+	}
+
 	peer_ring = peer_kring->ring;
 	lim_peer = peer_kring->nkr_num_slots - 1;
 
@@ -130,14 +156,14 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 		}
 		kring->nr_hwcur = nm_i;
 
-		mb();  /* for writing the slots */
+		smp_mb();  /* for writing the slots */
 
 		peer_kring->nr_hwtail = nm_j;
 		if (peer_kring->nr_hwtail > lim_peer) {
 			peer_kring->nr_hwtail -= lim_peer + 1;
 		}
 
-		mb();  /* for writing peer_kring->nr_hwtail */
+		smp_mb();  /* for writing peer_kring->nr_hwtail */
 
 		/*
 		 * Second part: reclaim buffers for completed transmissions.

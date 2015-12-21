@@ -906,38 +906,35 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
  */
 /* call with NMG_LOCK held */
 static void netmap_unset_ringid(struct netmap_priv_d *);
-static void netmap_rel_exclusive(struct netmap_priv_d *);
+static void netmap_krings_put(struct netmap_priv_d *);
 static void
 netmap_do_unregif(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
-	enum txrx t;
-	int i;
 
 	NMG_LOCK_ASSERT();
 	na->active_fds--;
-	/* release exclusive use if it was requested on regif */
-	netmap_rel_exclusive(priv);
-
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring_rel_netmap_mode(priv, t, i);
-		}
-	}
-
-	if (na->active_fds <= 0) {	/* last instance */
-
-		if (netmap_verbose)
-			D("deleting last instance for %s", na->name);
+	/* unset nr_pending_mode and possibly release exclusive mode */
+	netmap_krings_put(priv);
 
 #ifdef	WITH_MONITOR
+	/* XXX check whether we have to do something with monitor
+	 * when rings change nr_mode. */
+	if (na->active_fds <= 0) {
 		/* walk through all the rings and tell any monitor
 		 * that the port is going to exit netmap mode
 		 */
 		netmap_monitor_stop(na);
+	}
 #endif
+
+	if (nm_kring_pending(priv)) {
+		na->nm_register(na, 0);
+	}
+
+	if (na->active_fds <= 0) {	/* last instance */
 		/*
-		 * (TO CHECK) This function is only called
+		 * (TO CHECK) We enter here
 		 * when the last reference to this file descriptor goes
 		 * away. This means we cannot have any pending poll()
 		 * or interrupt routine operating on the structure.
@@ -950,20 +947,14 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		 * happens if the close() occurs while a concurrent
 		 * syscall is running.
 		 */
-		na->nm_register(na, 0); /* off, clear flags */
-		/* Wake up any sleeping threads. netmap_poll will
-		 * then return POLLERR
-		 * XXX The wake up now must happen during *_down(), when
-		 * we order all activities to stop. -gl
-		 */
+		if (netmap_verbose)
+			D("deleting last instance for %s", na->name);
+
 		/* delete rings and buffers */
 		netmap_mem_rings_delete(na);
 		na->nm_krings_delete(na);
-	} else {
-		if (kring_pending(priv)) {
-			na->nm_register(na, 1);
-		}
 	}
+
 	/* possibily decrement counter of tx_si/rx_si users */
 	netmap_unset_ringid(priv);
 	/* delete the nifp */
@@ -1822,11 +1813,12 @@ netmap_unset_ringid(struct netmap_priv_d *priv)
 }
 
 
-/* check that the rings we want to bind are not exclusively owned by a previous
- * bind.  If exclusive ownership has been requested, we also mark the rings.
+/* Set the nr_pending_mode for the requested rings.
+ * If requested, also try to get exclusive access to the rings, provided
+ * the rings we want to bind are not exclusively owned by a previous bind.
  */
 static int
-netmap_get_exclusive(struct netmap_priv_d *priv)
+netmap_krings_get(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
 	u_int i;
@@ -1857,16 +1849,16 @@ netmap_get_exclusive(struct netmap_priv_d *priv)
 		}
 	}
 
-	/* second round: increment usage cound and possibly
-	 * mark as exclusive
+	/* second round: increment usage count (possibly marking them
+	 * as exclusive) and set the nr_pending_mode
 	 */
-
 	for_rx_tx(t) {
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
 			kring = &NMR(na, t)[i];
 			kring->users++;
 			if (excl)
 				kring->nr_kflags |= NKR_EXCLUSIVE;
+	                kring->nr_pending_mode = NKR_NETMAP_ON;
 		}
 	}
 
@@ -1874,9 +1866,11 @@ netmap_get_exclusive(struct netmap_priv_d *priv)
 
 }
 
-/* undo netmap_get_ownership() */
+/* Undo netmap_krings_get(). This is done by clearing the exclusive mode
+ * if was asked on regif, and unset the nr_pending_mode if we are the
+ * last users of the involved rings. */
 static void
-netmap_rel_exclusive(struct netmap_priv_d *priv)
+netmap_krings_put(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
 	u_int i;
@@ -1898,6 +1892,8 @@ netmap_rel_exclusive(struct netmap_priv_d *priv)
 			if (excl)
 				kring->nr_kflags &= ~NKR_EXCLUSIVE;
 			kring->users--;
+			if (kring->users == 0)
+				kring->nr_pending_mode = NKR_NETMAP_OFF;
 		}
 	}
 }
@@ -1978,8 +1974,6 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 {
 	struct netmap_if *nifp = NULL;
 	int error;
-	enum txrx t;
-	int i;
 
 	NMG_LOCK_ASSERT();
 	/* ring configuration may have changed, fetch from the card */
@@ -2014,17 +2008,12 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	}
 
 	/* now the kring must exist and we can check whether some
-	 * previous bind has exclusive ownership on them
+	 * previous bind has exclusive ownership on them, and set
+	 * nr_pending_mode
 	 */
-	error = netmap_get_exclusive(priv);
+	error = netmap_krings_get(priv);
 	if (error)
 		goto err_del_rings;
-
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring_get_netmap_mode(priv, t, i);
-		}
-	}
 
 	/* in all cases, create a new netmap if */
 	nifp = netmap_mem_if_new(na);
@@ -2033,25 +2022,25 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		goto err_rel_excl;
 	}
 
-	na->active_fds++;
-	if (!nm_netmap_on(na)) {
-		/* Netmap not active, set the card in netmap mode
-		 * and make it use the shared buffers.
-		 */
+	if (na->active_fds == 0) {
 		/* cache the allocator info in the na */
 		error = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
 		if (error)
 			goto err_del_if;
 		D("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
 				na->na_lut.objsize);
-		error = na->nm_register(na, 1); /* mode on */
-		if (error) 
-			goto err_del_if;
-	} else {
-		if (kring_pending(priv)) {
-			na->nm_register(na, 1);
-		}
 	}
+
+	if (nm_kring_pending(priv)) {
+		/* Some kring is switching mode, tell the adapter to
+		 * react on this. */
+		error = na->nm_register(na, 1);
+		if (error) 
+			goto err_put_lut;
+	}
+
+	/* Commit the reference. */
+	na->active_fds++;
 
 	/*
 	 * advertise that the interface is ready by setting np_nifp.
@@ -2063,18 +2052,13 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 
 	return 0;
 
+err_put_lut:
+	if (na->active_fds == 0)
+		memset(&na->na_lut, 0, sizeof(na->na_lut));
 err_del_if:
-	memset(&na->na_lut, 0, sizeof(na->na_lut));
-	na->active_fds--;
 	netmap_mem_if_delete(na, nifp);
 err_rel_excl:
-	netmap_rel_exclusive(priv);
-
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring_rel_netmap_mode(priv, t, i);
-		}
-	}
+	netmap_krings_put(priv);
 err_del_rings:
 	if (na->active_fds == 0)
 		netmap_mem_rings_delete(na);
@@ -2965,7 +2949,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 		goto done;
 	}
 
-	txr = MBUF_FLOWID(m);
+	txr = MBUF_TXQ(m);
 	tx_kring = &NMR(na, NR_TX)[txr];
 
 	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
@@ -3023,6 +3007,8 @@ done:
  * netmap_reset() is called by the driver routines when reinitializing
  * a ring. The driver is in charge of locking to protect the kring.
  * If native netmap mode is not set just return NULL.
+ * If native netmap mode is set, in particular, we have to set nr_mode to
+ * NKR_NETMAP_ON.
  */
 struct netmap_slot *
 netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,

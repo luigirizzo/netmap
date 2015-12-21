@@ -217,7 +217,7 @@ struct nm_bridge {
 	 * forward this packet.  ring_nr is the source ring index, and the
 	 * function may overwrite this value to forward this packet to a
 	 * different ring index.
-	 * This function must be set by netmap_bdgctl().
+	 * This function must be set by netmap_bdg_ctl().
 	 */
 	struct netmap_bdg_ops bdg_ops;
 
@@ -1453,6 +1453,8 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_vp_adapter *vpna =
 		(struct netmap_vp_adapter*)na;
+	enum txrx t;
+	int i;
 
 	/* persistent ports may be put in netmap mode
 	 * before being attached to a bridge
@@ -1460,12 +1462,30 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 	if (vpna->na_bdg)
 		BDG_WLOCK(vpna->na_bdg);
 	if (onoff) {
-		na->na_flags |= NAF_NETMAP_ON;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring))
+					kring->nr_mode = NKR_NETMAP_ON;
+			}
+		}
+		if (na->active_fds == 0)
+			na->na_flags |= NAF_NETMAP_ON;
 		 /* XXX on FreeBSD, persistent VALE ports should also
 		 * toggle IFCAP_NETMAP in na->ifp (2014-03-16)
 		 */
 	} else {
-		na->na_flags &= ~NAF_NETMAP_ON;
+		if (na->active_fds == 0)
+			na->na_flags &= ~NAF_NETMAP_ON;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_off(kring))
+					kring->nr_mode = NKR_NETMAP_OFF;
+			}
+		}
 	}
 	if (vpna->na_bdg)
 		BDG_WUNLOCK(vpna->na_bdg);
@@ -2277,7 +2297,8 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 		(struct netmap_bwrap_adapter *)na;
 	struct netmap_adapter *hwna = bna->hwna;
 	struct netmap_vp_adapter *hostna = &bna->host;
-	int error;
+	int error, i;
+	enum txrx t;
 
 	ND("%s %s", na->name, onoff ? "on" : "off");
 
@@ -2299,10 +2320,24 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 
 	}
 
+	/* pass down the pending ring state information */
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t) + 1; i++)
+			NMR(hwna, t)[i].nr_pending_mode =
+				NMR(na, t)[i].nr_pending_mode;
+	}
+
 	/* forward the request to the hwna */
 	error = hwna->nm_register(hwna, onoff);
 	if (error)
 		return error;
+
+	/* copy up the current ring state information */
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t) + 1; i++)
+			NMR(na, t)[i].nr_mode =
+				NMR(hwna, t)[i].nr_mode;
+	}
 
 	/* impersonate a netmap_vp_adapter */
 	netmap_vp_reg(na, onoff);
@@ -2323,8 +2358,14 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 			/* also intercept the host ring notify */
 			hwna->rx_rings[i].nm_notify = netmap_bwrap_intr_notify;
 		}
+		if (na->active_fds == 0)
+			na->na_flags |= NAF_NETMAP_ON;
 	} else {
 		u_int i;
+
+		if (na->active_fds == 0)
+			na->na_flags &= ~NAF_NETMAP_ON;
+
 		/* reset all notify callbacks (including host ring) */
 		for (i = 0; i <= hwna->num_rx_rings; i++) {
 			hwna->rx_rings[i].nm_notify = hwna->rx_rings[i].save_notify;

@@ -314,7 +314,7 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	NMA_LOCK(nmd);
 	netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
-	if (nmd->refcount == 1) {
+	if (nmd->active == 1) {
 		u_int i;
 
 		/*

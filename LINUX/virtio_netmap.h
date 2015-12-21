@@ -270,6 +270,29 @@ virtio_netmap_reclaim_unused(struct SOFTC_T *vi)
 	}
 }
 
+/* Set or clear nr_pending_mode and nr_mode for all the rings, independently
+ * of the specific user request. This is necessary for now because the
+ * virtio-net driver patches do not support single-queue mode (modifications
+ * would be needed to free_unused_bufs() free_receive_bufs()).*/
+static void
+virtio_netmap_set_kring_mode(struct netmap_adapter *na, int mode)
+{
+	int i;
+
+	for (i = 0; i < DEV_NUM_TX_QUEUES(na->ifp); i++) {
+		struct netmap_kring *kring = &na->tx_rings[i];
+
+		kring->nr_pending_mode = kring->nr_mode = mode;
+	}
+
+	for (i = 0; i < DEV_NUM_RX_QUEUES(na->ifp); i++) {
+		struct netmap_kring *kring = &na->rx_rings[i];
+
+		kring->nr_pending_mode = kring->nr_mode = mode;
+	}
+
+}
+
 /* Register and unregister. */
 static int
 virtio_netmap_reg(struct netmap_adapter *na, int onoff)
@@ -281,6 +304,12 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (na == NULL)
 		return EINVAL;
+
+	if (na->active_fds > 0) {
+		/* virtio-net adapter currently does not support single-queue
+		 * mode. As a consequence, register (unregister) operations
+		 * only have effect with first (last) user.*/
+	}
 
 	/* It's important to make sure each virtnet_close() matches
 	 * a virtnet_open(), otherwise a napi_disable() is not matched by
@@ -318,9 +347,11 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		free_receive_bufs(vi);
 
 		/* enable netmap mode */
+		virtio_netmap_set_kring_mode(na, NKR_NETMAP_ON);
 		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
+		virtio_netmap_set_kring_mode(na, NKR_NETMAP_OFF);
 
 		/* Get and free any used buffer. This is necessary
 		 * before calling virtqueue_detach_unused_buf(). */
@@ -854,9 +885,9 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	/* device-specific */
 	struct ifnet *ifp = na->ifp;
 	struct paravirt_csb *csb = ptna->csb;
-	struct netmap_kring *kring;
 	bool was_up = false;
-	int ret = 0;
+	int i, ret = 0;
+	enum txrx t;
 
 	/* Same prologue as virtio_netmap_reg. */
 	if (na == NULL)
@@ -872,38 +903,39 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
 					sizeof(shared_tx_vnet_hdr) :
 					sizeof(shared_tx_vnet_hdr.hdr);
-		int i;
 
 		nm_set_native_flags(na);
 
-		/* Push fake requests in the TX virtqueue in order to keep
-		 * TX interrupts enabled. */
-		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
-			COMPAT_DECL_SG
-			struct scatterlist *sg = GET_TX_SG(vi, i);
-			struct virtqueue *vq = GET_TX_VQ(vi, i);
-			struct sk_buff *skb;
-			size_t space = GOOD_COPY_LEN;
-			int num_sg;
+		if (na->active_fds == 0) {
+			/* Push fake requests in the TX virtqueue in order to keep
+			 * TX interrupts enabled. */
+			for (i = 0; i < DEV_NUM_TX_QUEUES(ifp); i++) {
+				COMPAT_DECL_SG
+				struct scatterlist *sg = GET_TX_SG(vi, i);
+				struct virtqueue *vq = GET_TX_VQ(vi, i);
+				struct sk_buff *skb;
+				size_t space = GOOD_COPY_LEN;
+				int num_sg;
 
-			skb = netdev_alloc_skb_ip_align(vi->dev, space);
-			if (!skb) {
-				D("Failed to allocate fake sk_buff");
-				ret = ENOMEM;
+				skb = netdev_alloc_skb_ip_align(vi->dev, space);
+				if (!skb) {
+					D("Failed to allocate fake sk_buff");
+					ret = ENOMEM;
+					goto out;
+				}
+				space = skb_tailroom(skb);
+				memset(skb_put(skb, space), 0, space);
+				sg_set_buf(sg, skb->cb, vnet_hdr_len);
+				num_sg = skb_to_sgvec(skb, sg + 1, 0, skb->len) + 1;
+				virtqueue_add_outbuf(vq, sg, num_sg, skb, GFP_ATOMIC);
+			}
+
+			ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+			if (ret) {
+				//na->na_flags &= ~NAF_NETMAP_ON;
+				nm_clear_native_flags(na);
 				goto out;
 			}
-			space = skb_tailroom(skb);
-			memset(skb_put(skb, space), 0, space);
-			sg_set_buf(sg, skb->cb, vnet_hdr_len);
-			num_sg = skb_to_sgvec(skb, sg + 1, 0, skb->len) + 1;
-			virtqueue_add_outbuf(vq, sg, num_sg, skb, GFP_ATOMIC);
-		}
-
-		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
-		if (ret) {
-			//na->na_flags &= ~NAF_NETMAP_ON;
-			nm_clear_native_flags(na);
-			goto out;
 		}
 		/*
 		 * Init ring and kring pointers
@@ -913,23 +945,50 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		 * the host port on UNREGIF.
 		 */
 		// Init rx ring
-		kring = na->rx_rings;
-		kring->rhead = kring->ring->head = csb->rx_ring.head;
-		kring->rcur = kring->ring->cur = csb->rx_ring.cur;
-		kring->nr_hwcur = csb->rx_ring.hwcur;
-		kring->nr_hwtail = kring->rtail = kring->ring->tail =
-			csb->rx_ring.hwtail;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+				struct pt_ring *ptr;
 
-		// Init tx ring
-		kring = na->tx_rings;
-		kring->rhead = kring->ring->head = csb->tx_ring.head;
-		kring->rcur = kring->ring->cur = csb->tx_ring.cur;
-		kring->nr_hwcur = csb->tx_ring.hwcur;
-		kring->nr_hwtail = kring->rtail = kring->ring->tail =
-			csb->tx_ring.hwtail;
+				if (!nm_kring_pending_on(kring))
+					continue;
+
+				if (i > 1) {
+					D("unsupported ring: %d", i);
+					continue;
+				}
+
+				ptr = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
+
+				kring->rhead = kring->ring->head = ptr->head;
+				kring->rcur = kring->ring->cur = ptr->cur;
+				kring->nr_hwcur = ptr->hwcur;
+				kring->nr_hwtail = kring->rtail = kring->ring->tail =
+					ptr->hwtail;
+				kring->nr_mode = NKR_NETMAP_ON;
+			}
+		}
 	} else {
 		nm_clear_native_flags(na);
-		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (!nm_kring_pending_off(kring))
+					continue;
+
+				if (i > 1) {
+					D("unsupported ring: %d", i);
+					continue;
+				}
+
+				kring->nr_mode = NKR_NETMAP_OFF;
+			}
+		}
+
+		if (na->active_fds == 0)
+			ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 out:
 	if (was_up) {
