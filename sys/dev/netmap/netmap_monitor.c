@@ -370,23 +370,32 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
 					kring = &NMR(pna, t)[i];
 					mkring = &na->rx_rings[i];
-					netmap_monitor_add(mkring, kring, zmon);
+					if (nm_kring_pending_on(mkring)) {
+						netmap_monitor_add(mkring, kring, zmon);
+						mkring->nr_mode = NKR_NETMAP_ON;
+					}
 				}
 			}
 		}
 		na->na_flags |= NAF_NETMAP_ON;
 	} else {
-		if (pna == NULL) {
-			D("%s: parent left netmap mode, nothing to restore", na->name);
-			return 0;
-		}
-		na->na_flags &= ~NAF_NETMAP_ON;
+		if (na->active_fds == 0)
+			na->na_flags &= ~NAF_NETMAP_ON;
 		for_rx_tx(t) {
 			if (mna->flags & nm_txrx2flag(t)) {
 				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-					kring = &NMR(pna, t)[i];
 					mkring = &na->rx_rings[i];
-					netmap_monitor_del(mkring, kring);
+					if (nm_kring_pending_off(mkring)) {
+						mkring->nr_mode = NKR_NETMAP_OFF;
+						/* we cannot access the parent krings if the parent
+						 * has left netmap mode. This is signaled by a NULL
+						 * pna pointer
+						 */
+						if (pna) {
+							kring = &NMR(pna, t)[i];
+							netmap_monitor_del(mkring, kring);
+						}
+					}
 				}
 			}
 		}
