@@ -1453,6 +1453,8 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_vp_adapter *vpna =
 		(struct netmap_vp_adapter*)na;
+	enum txrx t;
+	int i;
 
 	/* persistent ports may be put in netmap mode
 	 * before being attached to a bridge
@@ -1460,12 +1462,30 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 	if (vpna->na_bdg)
 		BDG_WLOCK(vpna->na_bdg);
 	if (onoff) {
-		na->na_flags |= NAF_NETMAP_ON;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring))
+					kring->nr_mode = NKR_NETMAP_ON;
+			}
+		}
+		if (na->active_fds == 0)
+			na->na_flags |= NAF_NETMAP_ON;
 		 /* XXX on FreeBSD, persistent VALE ports should also
 		 * toggle IFCAP_NETMAP in na->ifp (2014-03-16)
 		 */
 	} else {
-		na->na_flags &= ~NAF_NETMAP_ON;
+		if (na->active_fds == 0)
+			na->na_flags &= ~NAF_NETMAP_ON;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_off(kring))
+					kring->nr_mode = NKR_NETMAP_OFF;
+			}
+		}
 	}
 	if (vpna->na_bdg)
 		BDG_WUNLOCK(vpna->na_bdg);
