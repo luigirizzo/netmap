@@ -309,6 +309,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		/* virtio-net adapter currently does not support single-queue
 		 * mode. As a consequence, register (unregister) operations
 		 * only have effect with first (last) user.*/
+		return 0;
 	}
 
 	/* It's important to make sure each virtnet_close() matches
