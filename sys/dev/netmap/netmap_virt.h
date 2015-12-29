@@ -212,7 +212,7 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 #define PTNETMAP_VIRTIO_IO_CSBBAL       16 /* CSB Base Address Low */
 
 #define PTNETMAP_VIRTIO_IO_SIZE         20
-#define PTNETMAP_VIRTIO_IO_SIZE_32      5
+#define PTNETMAP_VIRTIO_IO_SIZE_32      (PTNETMAP_VIRTIO_IO_SIZE/4)
 
 /* virtio feature */
 #if defined (linux)

@@ -705,8 +705,8 @@ virtio_ptnetmap_iowrite4(struct virtio_device *vdev, uint32_t addr, uint32_t val
 {
 	int i;
 	/*
-	 * virtio_pci config_set use multiple iowrite8,
-	 * we need to split the call and reverse the order
+	 * The vp_set() function (in virtio-pci config ops) uses multiple
+	 * iowrite8, so we need to split the call and reverse the order.
 	 */
 	for (i = 3; i >= 0; i--) {
 		vdev->config->set(vdev, PTNETMAP_VIRTIO_IO_BASE + addr + i,
