@@ -253,8 +253,10 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 
 /*
  * ptnetmap configuration
- * the hypervisor (QEMU or bhyve) sent this struct to the netmap.ko
- * through IOCTL when it wants to start the ptnetmap kthreads
+ *
+ * The hypervisor (QEMU or bhyve) sends this struct to the host netmap
+ * module through an ioctl() command when it wants to start the ptnetmap
+ * kthreads
  */
 struct ptnetmap_cfg {
         uint32_t features;
@@ -268,8 +270,8 @@ struct ptnetmap_cfg {
 /*
  * Functions used to read/write ptnetmap_cfg in the nmreq.
  * The user-space application writes the pointer of ptnetmap_cfg
- * (user-space buffer) starting from nr_arg1 field, the kernel
- * use copyin to copy it in the kernel-space.
+ * (user-space buffer) starting from nr_arg1 field, so that the kernel
+ * can read it with copyin (copy_from_user).
  */
 static inline void
 ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
@@ -310,10 +312,10 @@ enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
 #if defined (linux)
 #define CSB_READ(csb, field, r) (get_user(r, &csb->field))
 #define CSB_WRITE(csb, field, v) (put_user(v, &csb->field))
-#else /* not linux */
+#else  /* ! linux */
 #define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
 #define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
-#endif /* linux */
+#endif /* ! linux */
 
 /*
  * HOST read/write kring pointers from/in CSB
@@ -349,9 +351,12 @@ ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr, struct netmap_ring *g_r
     mb();
     CSB_READ(ptr, cur, g_ring->cur);
     CSB_READ(ptr, sync_flags, g_ring->flags);
+
     /*
-     * The previous barrier does not avoid to read an update cur and an old
-     * head. For this reason, we have to check that the new cur not overtaking head.
+     * Even with the previous barrier, it is still possible that we read an
+     * updated cur and an old head.
+     * To detect this situation, we can check if the new cur overtakes
+     * the (apparently) new head.
      */
     d = ptn_sub(old_cur, old_head, num_slots);     /* previous distance */
     inc_c = ptn_sub(g_ring->cur, old_cur, num_slots);   /* increase of cur */
@@ -370,7 +375,7 @@ static inline void
 ptnetmap_host_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
         uint32_t hwtail)
 {
-    /* We must write hwtail before hwcur for sync reason. */
+    /* We must write hwtail before hwcur (see below). */
     CSB_WRITE(ptr, hwtail, hwtail);
     mb();
     CSB_WRITE(ptr, hwcur, hwcur);
@@ -389,9 +394,9 @@ ptnetmap_host_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
 /* Guest: Write kring pointers (cur, head) into the CSB */
 static inline void
 ptnetmap_guest_write_kring_csb(struct pt_ring *ptr, uint32_t cur,
-        uint32_t head)
+			       uint32_t head)
 {
-    /* We must write cur before head for sync reason (ref. ptnetmap.c) */
+    /* We must write cur before head for sync reason (see above) */
     ptr->cur = cur;
     mb();
     ptr->head = head;
@@ -423,15 +428,18 @@ ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
      *          STORE(hwcur)    LOAD(hwtail)
      *
      * This approach ensures that every hwcur that the guest reads is
-     * associated with the correct hwtail. In this way hwcur can not exceed hwtail.
+     * associated with the correct hwtail. In this way hwcur can not exceed
+     * hwtail.
      */
     *h_hwcur = ptr->hwcur;
     mb();
     *h_hwtail = ptr->hwtail;
 
     /*
-     * The previous barrier does not avoid to read an update hwtail and an old
-     * hwcur. For this reason, we have to check that the new hwtail not overtaking hwcur.
+     * Even with the previous barrier, it is still possible that we read an
+     * updated hwtail and an old hwcur.
+     * To detect this situation, we can check if the new hwtail overtakes
+     * the (apparently) new hwcur.
      */
     d = ptn_sub(old_hwtail, old_hwcur, num_slots);       /* previous distance */
     inc_ht = ptn_sub(*h_hwtail, old_hwtail, num_slots);  /* increase of hwtail */
