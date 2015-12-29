@@ -1237,8 +1237,9 @@ put_out_noputparent:
 
 #ifdef WITH_PTNETMAP_GUEST
 /*
- * GUEST ptnetmap generic txsync()/rxsync() used in e1000/virtio device driver
- * notify is set when we need to send notification to the host (driver-specific)
+ * GUEST ptnetmap generic txsync()/rxsync() used in e1000/virtio-net device
+ * driver notify is set when we need to send notification to the host
+ * (driver-specific)
  */
 
 /*
