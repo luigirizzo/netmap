@@ -683,16 +683,16 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 
 #ifdef WITH_PTNETMAP_GUEST
 /*
- * ptnetmap support for: virtio-net (linux version)
+ * ptnetmap support for virtio-net Linux driver
  *
- * this part od this file is meant to be a reference on how to implement
+ * This part of this file is meant to be a reference on how to implement
  * ptnetmap support for a network driver.
- * this file contains code but only static or inline functions used
+ * This code contains only static or inline functions to be used
  * by a single driver.
  */
 
 /*
- * virtio-specific macro and fucntions
+ * virtio-specific macro and functions
  */
 /* ptnetmap virtio register BASE */
 #define PTNETMAP_VIRTIO_IO_BASE         sizeof(struct virtio_net_config)
