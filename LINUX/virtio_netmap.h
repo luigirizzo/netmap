@@ -844,6 +844,11 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	if (na == NULL)
 		return EINVAL;
 
+	if (na->active_fds > 0) {
+		/* Nothing to do. */
+		return 0;
+	}
+
 	if (netif_running(ifp)) {
 		was_up = true;
 		virtnet_close(ifp);
@@ -855,37 +860,32 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 					sizeof(shared_tx_vnet_hdr) :
 					sizeof(shared_tx_vnet_hdr.hdr);
 
-		if (na->active_fds == 0) {
-			/* Push a fake request in each TX virtqueue in order
-			 * to keep TX interrupts enabled. */
-			for (i = 0; i < DEV_NUM_TX_QUEUES(ifp); i++) {
-				COMPAT_DECL_SG
-				struct scatterlist *sg = GET_TX_SG(vi, i);
-				struct virtqueue *vq = GET_TX_VQ(vi, i);
-				struct sk_buff *skb;
-				size_t space = GOOD_COPY_LEN;
-				int num_sg;
+		/* Push a fake request in each TX virtqueue in order
+		 * to keep TX interrupts enabled. */
+		for (i = 0; i < DEV_NUM_TX_QUEUES(ifp); i++) {
+			COMPAT_DECL_SG
+			struct scatterlist *sg = GET_TX_SG(vi, i);
+			struct virtqueue *vq = GET_TX_VQ(vi, i);
+			struct sk_buff *skb;
+			size_t space = GOOD_COPY_LEN;
+			int num_sg;
 
-				skb = netdev_alloc_skb_ip_align(vi->dev, space);
-				if (!skb) {
-					D("Failed to allocate fake sk_buff");
-					ret = ENOMEM;
-					goto out;
-				}
-				space = skb_tailroom(skb);
-				memset(skb_put(skb, space), 0, space);
-				sg_set_buf(sg, skb->cb, vnet_hdr_len);
-				num_sg = skb_to_sgvec(skb, sg + 1, 0, skb->len) + 1;
-				virtqueue_add_outbuf(vq, sg, num_sg, skb, GFP_ATOMIC);
-			}
-
-			nm_set_native_flags(na);
-
-			ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
-			if (ret) {
-				nm_clear_native_flags(na);
+			skb = netdev_alloc_skb_ip_align(vi->dev, space);
+			if (!skb) {
+				D("Failed to allocate fake sk_buff");
+				ret = ENOMEM;
 				goto out;
 			}
+			space = skb_tailroom(skb);
+			memset(skb_put(skb, space), 0, space);
+			sg_set_buf(sg, skb->cb, vnet_hdr_len);
+			num_sg = skb_to_sgvec(skb, sg + 1, 0, skb->len) + 1;
+			virtqueue_add_outbuf(vq, sg, num_sg, skb, GFP_ATOMIC);
+		}
+
+		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+		if (ret) {
+			goto out;
 		}
 
 		/*
@@ -918,6 +918,8 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 				kring->nr_mode = NKR_NETMAP_ON;
 			}
 		}
+
+		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
 
@@ -937,8 +939,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		if (na->active_fds == 0)
-			ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
 out:
 	if (was_up) {
