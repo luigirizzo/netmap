@@ -46,8 +46,6 @@ module_param(passthrough, int, 0444);
 #endif /* !WITH_PTNETMAP_GUEST */
 
 
-#define SOFTC_T	virtnet_info
-
 static int virtnet_close(struct ifnet *ifp);
 static int virtnet_open(struct ifnet *ifp);
 static void free_receive_bufs(struct virtnet_info *vi);
@@ -113,11 +111,11 @@ static void free_unused_bufs(struct virtnet_info *vi);
 
 
 #ifndef NETMAP_LINUX_VIRTIO_FREE_PAGES
-static struct page *get_a_page(struct SOFTC_T *vi, gfp_t gfp_mask);
+static struct page *get_a_page(struct virtnet_info *vi, gfp_t gfp_mask);
 
 /* This function did not exists, there was just the code. */
 static void
-free_receive_bufs(struct SOFTC_T *vi)
+free_receive_bufs(struct virtnet_info *vi)
 {
 	while (vi->pages)
 		__free_pages(get_a_page(vi, GFP_KERNEL), 0);
@@ -173,7 +171,7 @@ free_receive_bufs(struct SOFTC_T *vi)
 #define COMPAT_DECL_SG
 #define COMPAT_INIT_SG(_sgl)
 static void
-virtio_netmap_init_sgs(struct SOFTC_T *vi)
+virtio_netmap_init_sgs(struct virtnet_info *vi)
 {
 	int i;
 
@@ -204,7 +202,7 @@ virtio_netmap_init_sgs(struct SOFTC_T *vi)
 
 
 static void
-virtio_netmap_clean_used_rings(struct SOFTC_T *vi,
+virtio_netmap_clean_used_rings(struct virtnet_info *vi,
 			       struct netmap_adapter *na)
 {
 	int i;
@@ -242,7 +240,7 @@ virtio_netmap_clean_used_rings(struct SOFTC_T *vi,
 
 
 static void
-virtio_netmap_reclaim_unused(struct SOFTC_T *vi)
+virtio_netmap_reclaim_unused(struct virtnet_info *vi)
 {
 	int i;
 
@@ -306,7 +304,7 @@ static int
 virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
-	struct SOFTC_T *vi = netdev_priv(ifp);
+	struct virtnet_info *vi = netdev_priv(ifp);
 	bool was_up = false;
 	int error = 0;
 
@@ -396,7 +394,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	/* device-specific */
 	COMPAT_DECL_SG
-	struct SOFTC_T *vi = netdev_priv(ifp);
+	struct virtnet_info *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_TX_VQ(vi, ring_nr);
 	struct scatterlist *sg = GET_TX_SG(vi, ring_nr);
 	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
@@ -496,7 +494,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	/* device-specific */
 	COMPAT_DECL_SG
-	struct SOFTC_T *vi = netdev_priv(ifp);
+	struct virtnet_info *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_RX_VQ(vi, ring_nr);
 	struct scatterlist *sg = GET_RX_SG(vi, ring_nr);
 	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
@@ -608,7 +606,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 /* Make RX virtqueues buffers pointing to netmap buffers. */
 static int
-virtio_netmap_init_buffers(struct SOFTC_T *vi)
+virtio_netmap_init_buffers(struct virtnet_info *vi)
 {
 	struct ifnet *ifp = vi->dev;
 	struct netmap_adapter* na = NA(ifp);
@@ -677,7 +675,7 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 		     u_int *rxr, u_int *rxd)
 {
 	struct ifnet *ifp = na->ifp;
-	struct SOFTC_T *vi = netdev_priv(ifp);
+	struct virtnet_info *vi = netdev_priv(ifp);
 
 	*txr = ifp->real_num_tx_queues;
 	*txd = virtqueue_get_vring_size(GET_TX_VQ(vi, 0));
@@ -745,7 +743,7 @@ virtio_ptnetmap_ioread4(struct virtio_device *vdev, uint32_t addr)
  * Only called after netmap_pt_guest_attach().
  */
 static int
-virtio_ptnetmap_alloc_csb(struct SOFTC_T *vi)
+virtio_ptnetmap_alloc_csb(struct virtnet_info *vi)
 {
 	struct virtio_device *vdev = vi->vdev;
 	struct ifnet *ifp = vi->dev;
@@ -780,7 +778,7 @@ virtio_ptnetmap_alloc_csb(struct SOFTC_T *vi)
  * CSB (Communication Status Block) deallocation.
  */
 static void
-virtio_ptnetmap_free_csb(struct SOFTC_T *vi)
+virtio_ptnetmap_free_csb(struct virtnet_info *vi)
 {
 	struct virtio_device *vdev = vi->vdev;
 	struct ifnet *ifp = vi->dev;
@@ -863,7 +861,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	}
 
 	if (onoff) {
-		struct SOFTC_T *vi = netdev_priv(ifp);
+		struct virtnet_info *vi = netdev_priv(ifp);
 		size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
 					sizeof(shared_tx_vnet_hdr) :
 					sizeof(shared_tx_vnet_hdr.hdr);
@@ -966,7 +964,7 @@ virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
 	u_int ring_nr = kring->ring_id;
-	struct SOFTC_T *vi = netdev_priv(ifp);
+	struct virtnet_info *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_TX_VQ(vi, ring_nr);
 	int ret, notify = 0;
 
@@ -991,7 +989,7 @@ virtio_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
 	u_int ring_nr = kring->ring_id;
-	struct SOFTC_T *vi = netdev_priv(ifp);
+	struct virtnet_info *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_RX_VQ(vi, ring_nr);
 	int ret, notify = 0;
 
@@ -1018,7 +1016,7 @@ virtio_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 static uint32_t
 virtio_ptnetmap_ptctl(struct net_device *dev, uint32_t val)
 {
-	struct SOFTC_T *vi = netdev_priv(dev);
+	struct virtnet_info *vi = netdev_priv(dev);
 	struct virtio_device *vdev = vi->vdev;
 	uint32_t ret;
 
@@ -1036,18 +1034,17 @@ virtio_ptnetmap_ptctl(struct net_device *dev, uint32_t val)
  * The PTFEAT register must be added to the virtio-net device.
  */
 static uint32_t
-virtio_ptnetmap_features(struct SOFTC_T *vi)
+virtio_ptnetmap_features(struct virtnet_info *vi)
 {
 	struct virtio_device *vdev = vi->vdev;
 	uint32_t features;
 	/* tell the device the features we support */
 	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_PTFEAT,
-			NET_PTN_FEATURES_BASE);
+				 NET_PTN_FEATURES_BASE);
 	/* get back the acknowledged features */
 	features = virtio_ptnetmap_ioread4(vdev, PTNETMAP_VIRTIO_IO_PTFEAT);
 	pr_info("ptnetmap support: %s\n",
-			(features & NET_PTN_FEATURES_BASE) ? "base" :
-			"none");
+		(features & NET_PTN_FEATURES_BASE) ? "base" : "none");
 	return features;
 }
 
@@ -1055,7 +1052,7 @@ static void
 virtio_ptnetmap_dtor(struct netmap_adapter *na)
 {
 	struct ifnet *ifp = na->ifp;
-	struct SOFTC_T *vi = netdev_priv(ifp);
+	struct virtnet_info *vi = netdev_priv(ifp);
 
 	virtio_ptnetmap_free_csb(vi);
 }
@@ -1066,7 +1063,7 @@ static struct netmap_pt_guest_ops virtio_ptnetmap_ops = {
 #endif /* WITH_PTNETMAP_GUEST */
 
 static void
-virtio_netmap_attach(struct SOFTC_T *vi)
+virtio_netmap_attach(struct virtnet_info *vi)
 {
 	struct netmap_adapter na;
 
