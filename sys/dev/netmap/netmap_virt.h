@@ -407,7 +407,7 @@ ptnetmap_guest_write_kring_csb(struct pt_ring *ptr, uint32_t cur,
 /* Guest: Read kring pointers (hwcur, hwtail) from CSB */
 static inline void
 ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
-        uint32_t *h_hwtail, uint32_t num_slots)
+			      uint32_t *h_hwtail, uint32_t num_slots)
 {
     uint32_t old_hwcur = *h_hwcur, old_hwtail = *h_hwtail;
     uint32_t d, inc_hc, inc_ht;

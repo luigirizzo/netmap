@@ -389,16 +389,15 @@ e1000_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	struct ifnet *ifp = na->ifp;
 	struct e1000_adapter *adapter = netdev_priv(ifp);
 	struct e1000_tx_ring* txr = &adapter->tx_ring[0];
-	int ret, notify = 0;
+	bool notify;
 
         IFRATE(adapter->rate_ctx.new.tx_sync++);
 
-	ret = netmap_pt_guest_txsync(kring, flags, &notify);
-
+	notify = netmap_pt_guest_txsync(kring, flags);
 	if (notify)
 		writel(0, adapter->hw.hw_addr + txr->tdt);
 
-	return ret;
+	return 0;
 }
 
 /* Reconcile host and guest view of the receive ring. */

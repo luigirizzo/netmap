@@ -966,16 +966,15 @@ virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	u_int ring_nr = kring->ring_id;
 	struct virtnet_info *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_TX_VQ(vi, ring_nr);
-	int ret, notify = 0;
+	bool notify;
 
-	ret = netmap_pt_guest_txsync(kring, flags, &notify);
-
+	notify = netmap_pt_guest_txsync(kring, flags);
 	if (notify)
 		virtqueue_notify(vq);
 
 	ND("TX - vq_index: %d", vq->index);
 
-	return ret;
+	return 0;
 }
 
 /*

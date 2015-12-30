@@ -529,14 +529,13 @@ lem_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	//u_int ring_nr = kring->ring_id;
 	struct ifnet *ifp = na->ifp;
 	struct adapter *adapter = ifp->if_softc;
-	int ret, notify = 0;
+	bool notify;
 
-	ret = netmap_pt_guest_txsync(kring, flags, &notify);
-
+	notify = netmap_pt_guest_txsync(kring, flags);
 	if (notify)
 		E1000_WRITE_REG(&adapter->hw, E1000_TDT(0), 0);
 
-	return ret;
+	return 0;
 }
 
 /* Reconcile host and guest view of the receive ring. */

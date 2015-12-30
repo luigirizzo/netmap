@@ -1243,77 +1243,75 @@ put_out_noputparent:
  */
 
 /*
- * Reconcile host and guest view of the transmit ring.
+ * Reconcile host and guest views of the transmit ring.
  *
- * Userspace-guest wants to send packets up to the one before ring->head,
- * kernel-guest knows csb->tx_ring.hwcur is the first unsent packet in the
- * kernel-host.
+ * Guest user wants to transmit packets up to the one before ring->head,
+ * and guest kernel knows csb->tx_ring.hwcur is the first packet unsent
+ * by the host kernel.
  *
- * Here we push packets out (as many as possible), and possibly
+ * We push out as many packets as possible, and possibly
  * reclaim buffers from previously completed transmission.
  *
- * We enable notification from the host, only if the ring is full.
+ * Notifications from the host are enabled only if the user guest would
+ * block (no space in the ring).
  */
-int
-netmap_pt_guest_txsync(struct netmap_kring *kring, int flags, int *notify)
+bool
+netmap_pt_guest_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	struct netmap_pt_guest_adapter *ptna =
 		(struct netmap_pt_guest_adapter *)na;
 	struct paravirt_csb *csb = ptna->csb;
-	bool send_kick = false;
+	bool notify = false;
 
 	/* Disable notifications */
 	csb->guest_need_txkick = 0;
-	*notify = 0;
 
 	/*
-	 * First part: process new packets to send.
+	 * First part: tell the host (updating the CSB) to process the new
+	 * packets.
 	 */
 	kring->nr_hwcur = csb->tx_ring.hwcur;
 	ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
-	if (kring->rhead != kring->nr_hwcur) {
-		send_kick = true;
-	}
 
-        /* Send kick to the host if it needs them */
-	if ((send_kick && NM_ACCESS_ONCE(csb->host_need_txkick)) ||
+        /* Ask for a kick from a guest to the host if needed. */
+	if ((kring->rhead != kring->nr_hwcur &&
+		NM_ACCESS_ONCE(csb->host_need_txkick)) ||
 			(flags & NAF_FORCE_RECLAIM)) {
 		csb->tx_ring.sync_flags = flags;
-		*notify = 1;
+		notify = true;
 	}
 
 	/*
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
-	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+	if (nm_kr_txempty(kring) || (flags & NAF_FORCE_RECLAIM)) {
                 ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur,
-                		&kring->nr_hwtail, kring->nkr_num_slots);
+				&kring->nr_hwtail, kring->nkr_num_slots);
 	}
 
         /*
-         * Ring full. The user thread will go to sleep and
-         * we need a notification (interrupt) from the NIC,
-         * whene there is free space.
+         * No more room in the ring for new transmissions. The user thread will
+	 * go to sleep and we need to be notified by the host when more free
+	 * space is available.
          */
-	if (kring->rcur == kring->nr_hwtail) {
+	if (nm_kr_txempty(kring)) {
 		/* Reenable notifications. */
 		csb->guest_need_txkick = 1;
                 /* Double check */
                 ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur,
                 		&kring->nr_hwtail, kring->nkr_num_slots);
                 /* If there is new free space, disable notifications */
-		if (kring->rcur != kring->nr_hwtail) {
+		if (unlikely(!nm_kr_txempty(kring))) {
 			csb->guest_need_txkick = 0;
 		}
 	}
-
 
 	ND(1,"TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u tail: %u",
 			csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail,
 			kring->rhead, kring->rcur, kring->nr_hwtail);
 
-	return 0;
+	return notify;
 }
 
 /*

@@ -2022,7 +2022,7 @@ struct netmap_pt_guest_adapter {
 };
 
 int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
-int netmap_pt_guest_txsync(struct netmap_kring *kring, int flags, int *notify);
+bool netmap_pt_guest_txsync(struct netmap_kring *kring, int flags);
 int netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags, int *notify);
 #endif /* WITH_PTNETMAP_GUEST */
 
