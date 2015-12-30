@@ -875,20 +875,18 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 			struct scatterlist *sg = GET_TX_SG(vi, i);
 			struct virtqueue *vq = GET_TX_VQ(vi, i);
 			struct sk_buff *skb;
-			size_t space = GOOD_COPY_LEN;
-			int num_sg;
 
-			skb = netdev_alloc_skb_ip_align(vi->dev, space);
+			skb = netdev_alloc_skb_ip_align(vi->dev, 0);
 			if (!skb) {
 				D("Failed to allocate fake sk_buff");
 				ret = ENOMEM;
 				goto out;
 			}
-			space = skb_tailroom(skb);
-			memset(skb_put(skb, space), 0, space);
+			/* Just expose the control buffer. This can be cleaned
+			 * up safely by the the virtio-net driver when it
+			 * virtqueue_get_buf()s it. */
 			sg_set_buf(sg, skb->cb, vnet_hdr_len);
-			num_sg = skb_to_sgvec(skb, sg + 1, 0, skb->len) + 1;
-			virtqueue_add_outbuf(vq, sg, num_sg, skb, GFP_ATOMIC);
+			virtqueue_add_outbuf(vq, sg, 1, skb, GFP_ATOMIC);
 		}
 
 		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
