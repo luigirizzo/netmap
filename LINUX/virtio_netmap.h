@@ -29,10 +29,18 @@
 #include <linux/virtio_ring.h>
 
 #ifdef WITH_PTNETMAP_GUEST
+
 #include <netmap/netmap_virt.h>
+
 static int virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags);
+
 #define VIRTIO_PTNETMAP_ON(_na) \
 	((nm_netmap_on(_na)) && ((_na)->nm_txsync == virtio_ptnetmap_txsync))
+
+/* Decide whether to set virtio-net netmap adapter in passthrough. */
+static int passthrough = 0;
+module_param(passthrough, int, 0444);
+
 #else  /* !WITH_PTNETMAP_GUEST */
 #define VIRTIO_PTNETMAP_ON(_na)        0
 #endif /* !WITH_PTNETMAP_GUEST */
@@ -1075,14 +1083,12 @@ virtio_netmap_attach(struct SOFTC_T *vi)
 	na.ifp = vi->dev;
 	na.num_tx_desc = virtqueue_get_vring_size(GET_TX_VQ(vi, 0));
 	na.num_rx_desc = virtqueue_get_vring_size(GET_RX_VQ(vi, 0));
-	na.nm_register = virtio_netmap_reg;
-	na.nm_txsync = virtio_netmap_txsync;
-	na.nm_rxsync = virtio_netmap_rxsync;
-	na.nm_config = virtio_netmap_config;
 	na.num_tx_rings = na.num_rx_rings = 1;
+
 #ifdef WITH_PTNETMAP_GUEST
 	/* check if virtio-net (guest and host) supports ptnetmap */
-	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
+	if (passthrough &&
+		virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
 			(virtio_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
 		D("ptnetmap supported");
 		na.nm_register = virtio_ptnetmap_reg;
@@ -1096,7 +1102,13 @@ virtio_netmap_attach(struct SOFTC_T *vi)
 		virtio_ptnetmap_alloc_csb(vi);
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
-	netmap_attach(&na);
+	{
+		na.nm_register = virtio_netmap_reg;
+		na.nm_txsync = virtio_netmap_txsync;
+		na.nm_rxsync = virtio_netmap_rxsync;
+		na.nm_config = virtio_netmap_config;
+		netmap_attach(&na);
+	}
 
 	D("virtio attached txq=%d, txd=%d rxq=%d, rxd=%d",
 			na.num_tx_rings, na.num_tx_desc,
