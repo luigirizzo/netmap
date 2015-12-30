@@ -1002,13 +1002,16 @@ nm_kr_rxspace(struct netmap_kring *k)
 #define nm_kr_txspace(_k) nm_kr_rxspace(_k)
 
 
-/* True if no space in the tx ring. only valid after txsync_prologue */
+/* True if no space in the tx ring, only valid after txsync_prologue */
 static inline int
 nm_kr_txempty(struct netmap_kring *kring)
 {
 	return kring->rcur == kring->nr_hwtail;
 }
 
+/* True if no more completed slots in the rx ring, only valid after
+ * rxsync_prologue */
+#define nm_kr_rxempty(_k)	nm_kr_txempty(_k)
 
 /*
  * protect against multiple threads using the same ring.
@@ -2023,7 +2026,7 @@ struct netmap_pt_guest_adapter {
 
 int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
 bool netmap_pt_guest_txsync(struct netmap_kring *kring, int flags);
-int netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags, int *notify);
+bool netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */

@@ -990,16 +990,15 @@ virtio_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int ring_nr = kring->ring_id;
 	struct virtnet_info *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_RX_VQ(vi, ring_nr);
-	int ret, notify = 0;
+	bool notify;
 
-	ret = netmap_pt_guest_rxsync(kring, flags, &notify);
-
+	notify = netmap_pt_guest_rxsync(kring, flags);
 	if (notify)
 		virtqueue_notify(vq);
 
 	ND("RX - vq_index: %d", vq->index);
 
-	return ret;
+	return 0;
 }
 
 static int

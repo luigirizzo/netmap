@@ -1317,68 +1317,67 @@ netmap_pt_guest_txsync(struct netmap_kring *kring, int flags)
 /*
  * Reconcile host and guest view of the receive ring.
  *
- * When called, userspace-guest has released buffers up to ring->head
- * (last one excluded).
+ * Update hwcur/hwtail from host (reading from CSB).
  *
- * If (flags & NAF_FORCE_READ) also check for incoming packets irrespective
- * of whether or not we received an interrupt.
+ * If guest user has released buffers up to the one before ring->head, we
+ * also give them to the host.
  *
- * We enable notification from the host, only if the ring is empty.
+ * Notifications from the host are enabled only if the user guest would
+ * block (no more completed slots in the ring).
  */
-int
-netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags, int *notify)
+bool
+netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	struct netmap_pt_guest_adapter *ptna =
 		(struct netmap_pt_guest_adapter *)na;
 	struct paravirt_csb *csb = ptna->csb;
 
-	int force_update = (flags & NAF_FORCE_READ) ||
-		kring->nr_kflags & NKR_PENDINTR;
 	uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
+	bool notify = false;
 
         /* Disable notifications */
 	csb->guest_need_rxkick = 0;
-	*notify = 0;
 
+	/* Fetch the hwcur/hwtail known from the host. */
         ptnetmap_guest_read_kring_csb(&csb->rx_ring, &h_hwcur, &h_hwtail,
-        		kring->nkr_num_slots);
+				      kring->nkr_num_slots);
 
 	/*
-	 * First part: import newly received packets.
+	 * First part: import newly received packets, by updating the kring
+	 * hwtail to the hwtail known from the host (read from the CSB)
 	 */
-	if (netmap_no_pendintr || force_update) {
-		kring->nr_hwtail = h_hwtail;
-		kring->nr_kflags &= ~NKR_PENDINTR;
-	}
+	kring->nr_hwtail = h_hwtail;
+	kring->nr_kflags &= ~NKR_PENDINTR;
 
 	/*
-	 * Second part: skip past packets that userspace has released.
+	 * Second part: tell the host about the slots that guest user has
+	 * released, by updating cur and head in the CSB.
 	 */
 	kring->nr_hwcur = h_hwcur;
 	if (kring->rhead != kring->nr_hwcur) {
 		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur,
-				kring->rhead);
-                /* Send kick to the host if it needs them */
+					       kring->rhead);
+                /* Ask for a kick from the guest to the host if needed. */
 		if (NM_ACCESS_ONCE(csb->host_need_rxkick)) {
 			csb->rx_ring.sync_flags = flags;
-			*notify = 1;
+			notify = true;
 		}
 	}
 
         /*
-         * Ring empty. The user thread will go to sleep and
-         * we need a notification (interrupt) from the NIC,
-         * whene there are new packets.
+         * No more completed RX slots. The user thread will go to sleep and
+	 * we need to be notified by the host when more RX slots have been
+	 * completed.
          */
-        if (kring->rcur == kring->nr_hwtail) {
+	if (nm_kr_rxempty(kring)) {
 		/* Reenable notifications. */
                 csb->guest_need_rxkick = 1;
                 /* Double check */
                 ptnetmap_guest_read_kring_csb(&csb->rx_ring, &kring->nr_hwcur,
-                		&kring->nr_hwtail, kring->nkr_num_slots);
-                /* If there are new packets, disable notifications */
-                if (kring->rcur != kring->nr_hwtail) {
+					      &kring->nr_hwtail, kring->nkr_num_slots);
+                /* If there are new slots, disable notifications. */
+		if (!nm_kr_rxempty(kring)) {
                         csb->guest_need_rxkick = 0;
                 }
         }
@@ -1387,6 +1386,6 @@ netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags, int *notify)
 			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail,
 			kring->rhead, kring->rcur);
 
-	return 0;
+	return notify;
 }
 #endif /* WITH_PTNETMAP_GUEST */
