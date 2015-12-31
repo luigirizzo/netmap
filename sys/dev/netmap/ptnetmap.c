@@ -985,39 +985,6 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
     return 0;
 }
 
-//XXX maybe is unnecessary redefine the *xsync
-/* nm_txsync callback for ptnetmap */
-static int
-nm_pt_host_txsync(struct netmap_kring *kring, int flags)
-{
-    struct netmap_pt_host_adapter *pth_na =
-        (struct netmap_pt_host_adapter *)kring->na;
-    struct netmap_adapter *parent = pth_na->parent;
-    int n;
-
-    DBG(D("%s", pth_na->up.name);)
-
-    n = parent->nm_txsync(kring, flags);
-
-    return n;
-}
-
-/* nm_rxsync callback for ptnetmap */
-static int
-nm_pt_host_rxsync(struct netmap_kring *kring, int flags)
-{
-    struct netmap_pt_host_adapter *pth_na =
-        (struct netmap_pt_host_adapter *)kring->na;
-    struct netmap_adapter *parent = pth_na->parent;
-    int n;
-
-    DBG(D("%s", pth_na->up.name);)
-
-    n = parent->nm_rxsync(kring, flags);
-
-    return n;
-}
-
 /* nm_config callback for bwrap */
 static int
 nm_pt_host_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
@@ -1192,9 +1159,9 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     pth_na->up.nm_dtor = nm_pt_host_dtor;
     pth_na->up.nm_register = nm_pt_host_register;
 
-    //XXX maybe is unnecessary redefine the *xsync
-    pth_na->up.nm_txsync = nm_pt_host_txsync;
-    pth_na->up.nm_rxsync = nm_pt_host_rxsync;
+    /* Reuse parent's adapter txsync and rxsync methods. */
+    pth_na->up.nm_txsync = parent->nm_txsync;
+    pth_na->up.nm_rxsync = parent->nm_rxsync;
 
     pth_na->up.nm_krings_create = nm_pt_host_krings_create;
     pth_na->up.nm_krings_delete = nm_pt_host_krings_delete;
