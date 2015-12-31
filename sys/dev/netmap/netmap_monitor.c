@@ -853,12 +853,6 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	*na = &mna->up;
 	netmap_adapter_get(*na);
 
-	/* write the configuration back */
-	nmr->nr_tx_rings = mna->up.num_tx_rings;
-	nmr->nr_rx_rings = mna->up.num_rx_rings;
-	nmr->nr_tx_slots = mna->up.num_tx_desc;
-	nmr->nr_rx_slots = mna->up.num_rx_desc;
-
 	/* keep the reference to the parent */
 	D("monitor ok");
 
