@@ -592,25 +592,6 @@ leave:
     }
 }
 
-/* Notify kthreads (wake up if needed) */
-static void inline
-ptnetmap_tx_notify(struct ptnetmap_state *pts) {
-    if (unlikely(!pts))
-        return;
-    ND("TX notify");
-    nm_os_kthread_wakeup_worker(pts->ptk_tx);
-    IFRATE(pts->rate_ctx.new.btxwu++);
-}
-
-static void inline
-ptnetmap_rx_notify(struct ptnetmap_state *pts) {
-    if (unlikely(!pts))
-        return;
-    ND("RX notify");
-    nm_os_kthread_wakeup_worker(pts->ptk_rx);
-    IFRATE(pts->rate_ctx.new.brxwu++);
-}
-
 #ifdef DEBUG
 static void
 ptnetmap_print_configuration(struct ptnetmap_state *pts)
@@ -753,10 +734,8 @@ ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
     nm_os_kthread_stop(pts->ptk_rx);
 }
 
+static int nm_unused_notify(struct netmap_kring *, int);
 static int nm_pt_host_notify(struct netmap_kring *, int);
-static int nm_pt_host_notify_tx(struct netmap_kring *, int);
-static int nm_pt_host_notify_rx(struct netmap_kring *, int);
-
 
 /* Switch adapter in ptnetmap mode and create kthreads */
 static int
@@ -803,20 +782,20 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
     pth_na->ptn_state = pts;
     pts->pth_na = pth_na;
 
-    /* overwrite parent nm_notify callback */
+    /* Overwrite parent nm_notify krings callback. */
     pth_na->parent->na_private = pth_na;
     pth_na->parent_nm_notify = pth_na->parent->nm_notify;
-    pth_na->parent->nm_notify = nm_pt_host_notify;
+    pth_na->parent->nm_notify = nm_unused_notify;
 
     for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
         pth_na->parent->rx_rings[i].save_notify =
         	pth_na->parent->rx_rings[i].nm_notify;
-        pth_na->parent->rx_rings[i].nm_notify = nm_pt_host_notify_rx;
+        pth_na->parent->rx_rings[i].nm_notify = nm_pt_host_notify;
     }
     for (i = 0; i < pth_na->parent->num_tx_rings; i++) {
         pth_na->parent->tx_rings[i].save_notify =
         	pth_na->parent->tx_rings[i].nm_notify;
-        pth_na->parent->tx_rings[i].nm_notify = nm_pt_host_notify_tx;
+        pth_na->parent->tx_rings[i].nm_notify = nm_pt_host_notify;
     }
 
 #ifdef RATE
@@ -938,51 +917,45 @@ done:
 
 /* nm_notify callbacks for ptnetmap */
 static int
-nm_pt_host_notify_tx(struct netmap_kring *kring, int flags)
-{
-    struct netmap_adapter *na = kring->na;
-    struct netmap_pt_host_adapter *pth_na =
-        (struct netmap_pt_host_adapter *)na->na_private;
-
-    if (likely(pth_na)) {
-        ptnetmap_tx_notify(pth_na->ptn_state);
-    }
-
-    /* XXX-ste: is needed? */
-    //netmap_notify(kring, flags);
-
-    return 0;
-}
-
-static int
-nm_pt_host_notify_rx(struct netmap_kring *kring, int flags)
-{
-    struct netmap_adapter *na = kring->na;
-    struct netmap_pt_host_adapter *pth_na =
-        (struct netmap_pt_host_adapter *)na->na_private;
-
-    if (likely(pth_na)) {
-        ptnetmap_rx_notify(pth_na->ptn_state);
-    }
-
-    /* XXX-ste: is needed? */
-    //netmap_notify(kring, flags);
-
-    return 0;
-}
-
-static int
 nm_pt_host_notify(struct netmap_kring *kring, int flags)
 {
-    enum txrx t = kring->tx;
+	struct netmap_adapter *na = kring->na;
+	struct netmap_pt_host_adapter *pth_na =
+		(struct netmap_pt_host_adapter *)na->na_private;
+	struct ptnetmap_state *pts;
 
-    if (t == NR_TX) {
-        nm_pt_host_notify_tx(kring, flags);
-    } else {
-        nm_pt_host_notify_rx(kring, flags);
-    }
+	if (unlikely(!pth_na)) {
+		return 0;
+	}
 
-    return 0;
+	pts = pth_na->ptn_state;
+	if (unlikely(!pts)) {
+		return 0;
+	}
+
+	/* Notify kthreads (wake up if needed) */
+	if (kring->tx == NR_TX) {
+		ND(1, "TX notify");
+		nm_os_kthread_wakeup_worker(pts->ptk_tx);
+		IFRATE(pts->rate_ctx.new.btxwu++);
+
+	} else {
+		ND(1, "RX notify");
+		nm_os_kthread_wakeup_worker(pts->ptk_rx);
+		IFRATE(pts->rate_ctx.new.brxwu++);
+	}
+
+	/* XXX-ste: is needed? */
+	//netmap_notify(kring, flags);
+
+	return 0;
+}
+
+static int
+nm_unused_notify(struct netmap_kring *kring, int flags)
+{
+    D("BUG: this should never be called");
+    return -1;
 }
 
 /* nm_config callback for bwrap */
@@ -1166,7 +1139,12 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     pth_na->up.nm_krings_create = nm_pt_host_krings_create;
     pth_na->up.nm_krings_delete = nm_pt_host_krings_delete;
     pth_na->up.nm_config = nm_pt_host_config;
-    pth_na->up.nm_notify = nm_pt_host_notify;
+
+    /* Set the notify method only or convenience, it will never
+     * be used, since - differently from default krings_create - we
+     * ptnetmap krings_create callback inits kring->nm_notify
+     * directly. */
+    pth_na->up.nm_notify = nm_unused_notify;
 
     pth_na->up.nm_mem = parent->nm_mem;
     error = netmap_attach_common(&pth_na->up);

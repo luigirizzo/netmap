@@ -709,6 +709,8 @@ struct netmap_adapter {
 	 *	For hw devices this is typically a selwakeup(),
 	 *	but for NIC/host ports attached to a switch (or vice-versa)
 	 *	we also need to invoke the 'txsync' code downstream.
+	 *      This callback pointer is actually used only to initialize
+	 *      kring->nm_notify.
 	 */
 	void (*nm_dtor)(struct netmap_adapter *);
 
