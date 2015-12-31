@@ -2279,7 +2279,7 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 /* Called when ptnetmap device (virtio/e1000) is attaching */
 struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
-		struct netmap_pt_guest_ops *pv_ops)
+			struct netmap_pt_guest_ops *pv_ops)
 {
 	struct netmap_mem_d *nmd;
 	nm_memid_t host_id;

@@ -740,7 +740,8 @@ virtio_ptnetmap_ioread4(struct virtio_device *vdev, uint32_t addr)
  * and the ptnetmap kthreads in the host.
  * The CSBBAH/CSBBAL registers must be added to the virtio-net device.
  *
- * Only called after netmap_pt_guest_attach().
+ * Must be called after netmap_pt_guest_attach(), so that NA(ifp)
+ * points to the attached adapter.
  */
 static int
 virtio_ptnetmap_alloc_csb(struct virtnet_info *vi)
@@ -1063,7 +1064,7 @@ static struct netmap_pt_guest_ops virtio_ptnetmap_ops = {
 static void
 virtio_netmap_attach(struct virtnet_info *vi)
 {
-	struct netmap_adapter na;
+	struct netmap_adapter na; /* temporary container of methods */
 
 	/* TX shared virtio-net header must be zeroed because its
 	 * content is exposed to the host. RX shared virtio-net

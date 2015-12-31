@@ -2007,7 +2007,7 @@ nm_ptnetmap_host_on(struct netmap_adapter *na)
 	((nmr)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
 #define ptnetmap_ctl(_1, _2)   EINVAL
 #define nm_ptnetmap_host_on(_1)   EINVAL
-#endif /* WITH_PTNETMAP_HOST */
+#endif /* !WITH_PTNETMAP_HOST */
 
 #ifdef WITH_PTNETMAP_GUEST
 /* ptnetmap GUEST routines */

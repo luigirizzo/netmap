@@ -2733,7 +2733,8 @@ netmap_hw_dtor(struct netmap_adapter *na)
 
 
 /*
- * Initialize a ``netmap_adapter`` object created by driver on attach.
+ * Allocate a ``netmap_adapter`` object, and initialize it from the
+ * 'arg' passed by the driver on attach.
  * We allocate a block of memory with room for a struct netmap_adapter
  * plus two sets of N+2 struct netmap_kring (where N is the number
  * of hardware rings):

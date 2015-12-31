@@ -1060,6 +1060,8 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
         return error;
     }
 
+    /* ptnetmap host adapter uses the very same krings
+     * as the parent adapter */
     na->tx_rings = parent->tx_rings;
     na->rx_rings = parent->rx_rings;
     na->tailroom = parent->tailroom; //XXX
@@ -1145,9 +1147,10 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
     /* Check if it is a request for a ptnetmap adapter */
     if ((nmr->nr_flags & (NR_PTNETMAP_HOST)) == 0) {
-        D("not a ptnetmap");
         return 0;
     }
+
+    D("Requesting a ptnetmap host adapter");
 
     pth_na = malloc(sizeof(*pth_na), M_DEVBUF, M_NOWAIT | M_ZERO);
     if (pth_na == NULL) {
@@ -1177,6 +1180,9 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
     pth_na->parent = parent;
 
+    /* Follow netmap_attach()-like operations for the host
+     * ptnetmap adapter. */
+
     //XXX pth_na->up.na_flags = parent->na_flags;
     pth_na->up.num_rx_rings = parent->num_rx_rings;
     pth_na->up.num_tx_rings = parent->num_tx_rings;
@@ -1205,7 +1211,9 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     *na = &pth_na->up;
     netmap_adapter_get(*na);
 
-    /* write the configuration back */
+    /* write the configuration back
+     * XXX this should probably be removed, is done from
+     * the caller */
     nmr->nr_tx_rings = pth_na->up.num_tx_rings;
     nmr->nr_rx_rings = pth_na->up.num_rx_rings;
     nmr->nr_tx_slots = pth_na->up.num_tx_desc;
