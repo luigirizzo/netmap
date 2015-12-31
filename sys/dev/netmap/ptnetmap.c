@@ -1178,14 +1178,6 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     *na = &pth_na->up;
     netmap_adapter_get(*na);
 
-    /* write the configuration back
-     * XXX this should probably be removed, is done from
-     * the caller */
-    nmr->nr_tx_rings = pth_na->up.num_tx_rings;
-    nmr->nr_rx_rings = pth_na->up.num_rx_rings;
-    nmr->nr_tx_slots = pth_na->up.num_tx_desc;
-    nmr->nr_rx_slots = pth_na->up.num_rx_desc;
-
     /* set parent busy, because attached for ptnetmap */
     parent->na_flags |= NAF_BUSY;
 
