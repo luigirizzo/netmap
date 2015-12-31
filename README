@@ -96,28 +96,38 @@ FreeBSD has also native netmap support in the Chelsio 10/40G cards.
   Linux
   -----
   On Linux, netmap is an out-of-tree module, so you need to compile it
-  from these sources. The Makefile in the LINUX/ directory will also
-  let you patch device driver sources and build some netmap-enabled
-  device drivers.
+  from the Linux sources. The ./configure && make build system in the LINUX/
+  directory will also let you patch device driver sources and build
+  some netmap-enabled device drivers.
+  Please look at LINUX/README for details.
+
   + make sure you have kernel sources matching your installed kernel
     (headers only suffice, if you want NETMAP/VALE but no drivers)
 
+  + Enter LINUX directory and configure netmap.
+    To compile only NETMAP/VALE (using unmodified drivers):
+
+	./configure --no-drivers # only netmap
+
+    If kernel sources (prepared for out-of-tree compilation) are in
+    /a/b/c/linux-A.B.C/, and you want to compile netmap-enabled (patched)
+    drivers, then you should do
+
+	./configure --kernel-dir=/a/b/c/linux-A.B.C/ # netmap+device drivers
+
+    You can omit --kernel-dir if your kernel sources are in a standard place.
+
+    If you use distribution packages, full sources and headers  may be in
+    different places contain headers (e.g., on debian systems). Use
+
+        ./configure --kernel-sources=/a/b/c/linux-sources-A.B/ \
+		    --kernel-dir=/a/b/c/linux-headers-A.B/
+
   + build kernel modules and sample applications:
-    If kernel sources are in /foo//linux-A.B.C/ , then you should do
-
-	cd netmap/LINUX
 	# build kernel modules
-	make NODRIVERS=1 KSRC=/foo/linux-A.B.C/	# only netmap
-	make KSRC=/a/b/c/linux-A.B.C/		# netmap+device drivers
+	make
 	# build sample applications
-	make KSRC=/a/b/c/linux-A.B.C/ apps	# builds sample applications
-
-    You can omit KSRC if your kernel sources are in a standard place.
-
-  + if you use distribution packages, source may not contain headers (e.g., on
-    debian systems). Use
-
-        make SRC=/a/b/c/linux-sources-A.B/ KSRC=/a/b/c/linux-headers-A.B/
+	make apps
   
    WINDOWS
    -------
