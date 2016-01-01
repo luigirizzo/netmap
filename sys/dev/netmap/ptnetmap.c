@@ -737,17 +737,24 @@ ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
 static int nm_unused_notify(struct netmap_kring *, int);
 static int nm_pt_host_notify(struct netmap_kring *, int);
 
-/* Switch adapter in ptnetmap mode and create kthreads */
+/* Create ptnetmap state and switch parent adapter to ptnetmap mode. */
 static int
 ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
 {
     struct ptnetmap_state *pts;
     int ret, i;
+    unsigned ft_mask = (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD);
 
-    /* check if already in pt mode */
+    /* Check if ptnetmap state is already there. */
     if (pth_na->ptn_state) {
-        D("ERROR adapter already in netmap ptnetmap mode");
-        return EFAULT;
+        D("ERROR adapter %p already in ptnetmap mode", pth_na->parent);
+        return EINVAL;
+    }
+
+    if ((cfg->features & ft_mask) != ft_mask) {
+        D("ERROR ptnetmap_cfg(%x) does not contain CSB and EVENTFD",
+	  cfg->features);
+        return EINVAL;
     }
 
     pts = malloc(sizeof(*pts), M_DEVBUF, M_NOWAIT | M_ZERO);
@@ -756,13 +763,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
     pts->configured = false;
     pts->stopped = true;
 
-    /* Read the configuration */
-    if ((cfg->features & (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD)) !=
-            (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD)) {
-        D("ERROR ptnetmap_cfg(%x) does not contain CSB and EVENTFD", cfg->features);
-        ret = EFAULT;
-        goto err;
-    }
+    /* Store the ptnetmap configuration provided by the hypervisor. */
     memcpy(&pts->config, cfg, sizeof(struct ptnetmap_cfg));
     pts->csb = pts->config.csb;
     DBG(ptnetmap_print_configuration(pts);)
@@ -876,7 +877,7 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
     DBG(D("name: %s", name);)
 
     if (!nm_ptnetmap_host_on(na)) {
-        D("ERROR interface not support ptnetmap mode. na = %p", na);
+        D("ERROR Netmap adapter %p is not a ptnetmap host adapter", na);
         error = ENXIO;
         goto done;
     }
@@ -884,11 +885,13 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
 
     NMG_LOCK();
     switch (cmd) {
-    case NETMAP_PT_HOST_CREATE: /* create kthreads and switch in pt mode */
+    case NETMAP_PT_HOST_CREATE:
+	/* Read hypervisor configuration from userspace. */
         error = ptnetmap_read_cfg(nmr, &cfg);
         if (error)
             break;
-        /* create kthreads */
+        /* Create ptnetmap state (kthreads, ...) and switch parent
+	 * adapter to ptnetmap mode. */
         error = ptnetmap_create(pth_na, &cfg);
         if (error)
             break;
@@ -896,14 +899,16 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
         error = ptnetmap_start_kthreads(pth_na->ptn_state);
         if (error)
             ptnetmap_delete(pth_na);
-
         break;
-    case NETMAP_PT_HOST_DELETE: /* delete kthreads and restore parent adapter */
+
+    case NETMAP_PT_HOST_DELETE:
         /* stop kthreads */
         ptnetmap_stop_kthreads(pth_na->ptn_state);
-        /* delete kthreads */
+        /* Switch parent adapter back to normal mode and destroy
+	 * ptnetmap state (kthreads, ...). */
         ptnetmap_delete(pth_na);
         break;
+
     default:
         D("ERROR invalid cmd (nmr->nr_cmd) (0x%x)", cmd);
         error = EINVAL;
