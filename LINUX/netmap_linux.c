@@ -1973,37 +1973,6 @@ nm_os_kthread_send_irq(struct nm_kthread *nmk)
         eventfd_signal(nmk->worker_ctx.irq_ctx, 1);
 }
 
-static int
-nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kth_event_cfg *ring_cfg)
-{
-    struct file *file;
-    struct nm_kthread_ctx *wctx = &nmk->worker_ctx;
-
-    if (ring_cfg->ioeventfd) {
-	file = eventfd_fget(ring_cfg->ioeventfd);
-	if (IS_ERR(file))
-	    return -PTR_ERR(file);
-	wctx->ioevent_file = file;
-    }
-
-    if (ring_cfg->irqfd) {
-	file = eventfd_fget(ring_cfg->irqfd);
-	if (IS_ERR(file))
-            goto err;
-	wctx->irq_file = file;
-	wctx->irq_ctx = eventfd_ctx_fileget(file);
-    }
-
-    return 0;
-err:
-    if (wctx->ioevent_file) {
-        fput(wctx->ioevent_file);
-        wctx->ioevent_file = NULL;
-    }
-
-    return -PTR_ERR(file);
-}
-
 static void
 nm_kthread_close_files(struct nm_kthread *nmk)
 {
@@ -2020,6 +1989,37 @@ nm_kthread_close_files(struct nm_kthread *nmk)
         eventfd_ctx_put(wctx->irq_ctx);
         wctx->irq_ctx = NULL;
     }
+}
+
+static int
+nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kth_event_cfg *ring_cfg)
+{
+    struct file *file;
+    struct nm_kthread_ctx *wctx = &nmk->worker_ctx;
+
+    wctx->ioevent_file = NULL;
+    wctx->irq_file = NULL;
+
+    if (ring_cfg->ioeventfd) {
+	file = eventfd_fget(ring_cfg->ioeventfd);
+	if (IS_ERR(file))
+	    goto err;
+	wctx->ioevent_file = file;
+    }
+
+    if (ring_cfg->irqfd) {
+	file = eventfd_fget(ring_cfg->irqfd);
+	if (IS_ERR(file))
+            goto err;
+	wctx->irq_file = file;
+	wctx->irq_ctx = eventfd_ctx_fileget(file);
+    }
+
+    return 0;
+
+err:
+    nm_kthread_close_files(nmk);
+    return -PTR_ERR(file);
 }
 
 static void
