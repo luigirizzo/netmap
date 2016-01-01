@@ -160,15 +160,15 @@ rate_batch_info_update(struct rate_batch_info *bf, uint32_t pre_tail,
 #endif /* RATE */
 
 struct ptnetmap_state {
-    struct nm_kthread *ptk_tx, *ptk_rx;        /* kthreads pointers */
+    struct nm_kthread *ptk_tx, *ptk_rx;		/* kthreads pointers */
 
-    struct ptnetmap_cfg config;                      /* rings configuration */
-    struct paravirt_csb __user *csb;            /* shared page with the guest */
+    struct ptnetmap_cfg config;                 /* rings configuration */
+    struct paravirt_csb __user *csb;		/* shared page with the guest */
 
     bool configured;
     bool stopped;
 
-    struct netmap_pt_host_adapter *pth_na;   /* netmap adapter of the backend */
+    struct netmap_pt_host_adapter *pth_na;	/* backend netmap adapter */
 
     IFRATE(struct rate_context rate_ctx;)
 };
@@ -816,7 +816,8 @@ err:
     return ret;
 }
 
-/* Switch adapter in normal netmap mode and delete kthreads */
+/* Switch parent adapter back to normal mode and destroy
+ * ptnetmap state. */
 static void
 ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
 {

@@ -1838,7 +1838,7 @@ struct nm_kthread_ctx {
     /* files to exchange notifications */
     struct file *ioevent_file;          /* notification from guest */
     struct file *irq_file;              /* notification to guest (interrupt) */
-    struct eventfd_ctx  *irq_ctx;
+    struct eventfd_ctx *irq_ctx;
 
     /* poll ioeventfd to receive notification from the guest */
     poll_table poll_table;
@@ -1848,8 +1848,6 @@ struct nm_kthread_ctx {
     /* worker function and parameter */
     nm_kthread_worker_fn_t worker_fn;
     void *worker_private;
-
-    struct nm_kthread *nmk;
 
     /* integer to manage multiple worker contexts (e.g., RX or TX in ptnetmap) */
     long type;
@@ -1897,9 +1895,12 @@ static int
 nm_kthread_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
 {
     struct nm_kthread_ctx *ctx;
+    struct nm_kthread *nmk;
 
     ctx = container_of(wq, struct nm_kthread_ctx, waitq);
-    nm_os_kthread_wakeup_worker(ctx->nmk);
+    nmk = container_of(ctx, struct nm_kthread, worker_ctx);
+    nm_os_kthread_wakeup_worker(nmk);
+
     return 0;
 }
 
@@ -2025,7 +2026,6 @@ nm_kthread_init_poll(struct nm_kthread *nmk, struct nm_kthread_ctx *ctx)
 {
     init_waitqueue_func_entry(&ctx->waitq, nm_kthread_poll_wakeup);
     init_poll_funcptr(&ctx->poll_table, nm_kthread_poll_fn);
-    ctx->nmk = nmk;
 }
 
 static int
@@ -2080,7 +2080,7 @@ nm_os_kthread_create(struct nm_kthread_cfg *cfg)
     /* attach kthread to user process (ptnetmap) */
     nmk->attach_user = cfg->attach_user;
 
-    /* open event fd */
+    /* open event fds */
     error = nm_kthread_open_files(nmk, &cfg->event);
     if (error)
         goto err;
