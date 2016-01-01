@@ -165,7 +165,6 @@ struct ptnetmap_state {
     struct ptnetmap_cfg config;                 /* rings configuration */
     struct paravirt_csb __user *csb;		/* shared page with the guest */
 
-    bool configured;
     bool stopped;
 
     struct netmap_pt_host_adapter *pth_na;	/* backend netmap adapter */
@@ -245,13 +244,14 @@ ptnetmap_tx_handler(void *data)
 #endif
     IFRATE(uint32_t pre_tail;)
 
-    if (unlikely(!pts)) {
-        D("ptnetmap_state is NULL");
+    if (unlikely(!pts || !pts->pth_na)) {
+        D("ERROR ptnetmap state %p, ptnetmap host adapter %p", pts,
+	  pts ? pts->pth_na : NULL);
         return;
     }
 
-    if (unlikely(!pts->pth_na || pts->stopped || !pts->configured)) {
-        RD(1, "backend netmap is not configured or stopped");
+    if (unlikely(pts->stopped)) {
+        RD(1, "backend netmap is being stopped");
         goto leave;
     }
 
@@ -376,8 +376,8 @@ ptnetmap_tx_handler(void *data)
             break;
         }
 #endif
-        if (unlikely(pts->stopped || !pts->configured)) {
-            D("backend netmap is not configured or stopped");
+        if (unlikely(pts->stopped)) {
+            D("backend netmap is being stopped");
             break;
         }
     }
@@ -456,13 +456,14 @@ ptnetmap_rx_handler(void *data)
     bool work = false;
     IFRATE(uint32_t pre_tail;)
 
-    if (unlikely(!pts)) {
-        D("ptnetmap_state is NULL");
+    if (unlikely(!pts || !pts->pth_na)) {
+        D("ERROR ptnetmap state %p, ptnetmap host adapter %p", pts,
+	  pts ? pts->pth_na : NULL);
         return;
     }
 
-    if (unlikely(!pts->pth_na || pts->stopped || !pts->configured)) {
-        RD(1, "backend netmap is not configured or stopped");
+    if (unlikely(pts->stopped)) {
+        RD(1, "backend netmap is being stopped");
         goto leave;
     }
 
@@ -574,8 +575,8 @@ ptnetmap_rx_handler(void *data)
             break;
         }
 #endif
-        if (unlikely(pts->stopped || !pts->configured)) {
-            D("backend netmap is not configured or stopped");
+        if (unlikely(pts->stopped)) {
+            D("backend netmap is being stopped");
             break;
         }
     }
@@ -694,9 +695,8 @@ ptnetmap_start_kthreads(struct ptnetmap_state *pts)
 {
     int error;
 
-    /* check if ptnetmap is configured */
     if (!pts) {
-        D("ptnetmap is not configured");
+        D("BUG pts is NULL");
         return EFAULT;
     }
 
@@ -722,9 +722,10 @@ ptnetmap_start_kthreads(struct ptnetmap_state *pts)
 static void
 ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
 {
-    /* check if it is configured */
-    if (!pts)
+    if (!pts) {
+	/* Nothing to do. */
         return;
+    }
 
     pts->stopped = true;
 
@@ -760,7 +761,6 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
     pts = malloc(sizeof(*pts), M_DEVBUF, M_NOWAIT | M_ZERO);
     if (!pts)
         return ENOMEM;
-    pts->configured = false;
     pts->stopped = true;
 
     /* Store the ptnetmap configuration provided by the hypervisor. */
@@ -779,7 +779,6 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na, struct ptnetmap_cfg *cfg)
         goto err;
     }
 
-    pts->configured = true;
     pth_na->ptn_state = pts;
     pts->pth_na = pth_na;
 
@@ -824,9 +823,10 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     struct ptnetmap_state *pts = pth_na->ptn_state;
     int i;
 
-    /* check if ptnetmap is configured */
-    if (!pts)
+    if (!pts) {
+	/* Nothing to do. */
         return;
+    }
 
     /* restore parent adapter callbacks */
     pth_na->parent->nm_notify = pth_na->parent_nm_notify;
@@ -842,8 +842,6 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
         	pth_na->parent->tx_rings[i].save_notify;
         pth_na->parent->tx_rings[i].save_notify = NULL;
     }
-
-    pts->configured = false;
 
     /* delete kthreads */
     nm_os_kthread_delete(pts->ptk_tx);
@@ -960,7 +958,7 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 static int
 nm_unused_notify(struct netmap_kring *kring, int flags)
 {
-    D("BUG: this should never be called");
+    D("BUG this should never be called");
     return -1;
 }
 
