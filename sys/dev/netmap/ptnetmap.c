@@ -703,13 +703,13 @@ ptnetmap_start_kthreads(struct ptnetmap_state *pts)
     pts->stopped = false;
 
     /* TX kthread */
-    //nm_kthread_set_affinity(pts->ptk_tx, 2);
+    //nm_os_kthread_set_affinity(pts->ptk_tx, 2);
     error = nm_os_kthread_start(pts->ptk_tx);
     if (error) {
         return error;
     }
     /* RX kthread */
-    //nm_kthread_set_affinity(pts->ptk_tx, 3);
+    //nm_os_kthread_set_affinity(pts->ptk_tx, 3);
     error = nm_os_kthread_start(pts->ptk_rx);
     if (error) {
         nm_os_kthread_stop(pts->ptk_tx);

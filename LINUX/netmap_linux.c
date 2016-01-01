@@ -1908,7 +1908,7 @@ static void inline
 nm_kthread_worker_fn(struct nm_kthread_ctx *ctx)
 {
     __set_current_state(TASK_RUNNING);
-    ctx->worker_fn(ctx->worker_private); /* worker body */
+    ctx->worker_fn(ctx->worker_private); /* run payload */
     if (need_resched())
         schedule();
 }
@@ -1928,12 +1928,13 @@ nm_kthread_worker(void *data)
     }
 
     while (!kthread_should_stop()) {
-        /*
-         * if ioevent_file is not defined, we don't have notification
-         * mechanism and we continually execute worker_fn()
-         */
         if (!ctx->ioevent_file) {
+	    /*
+             * if ioevent_file is not defined, we don't have notification
+	     * mechanism and we continually execute worker_fn()
+	     */
             nm_kthread_worker_fn(ctx);
+
         } else {
             /*
              * Set INTERRUPTIBLE state before to check if there is work.
@@ -1945,7 +1946,7 @@ nm_kthread_worker(void *data)
 
             new_scheduled = atomic_read(&nmk->scheduled);
 
-            /* checks if there is a pending notification */
+            /* check if there is a pending notification */
             if (likely(new_scheduled != old_scheduled)) {
                 old_scheduled = new_scheduled;
                 nm_kthread_worker_fn(ctx);
@@ -2110,20 +2111,20 @@ nm_os_kthread_start(struct nm_kthread *nmk)
     }
 
     /* ToDo Make this able to pass arbitrary string (e.g., for 'nm_') from nmk */
-    snprintf(name, sizeof(name), "nm_kthread-%ld-%d", nmk->worker_ctx.type, current->pid);
+    snprintf(name, sizeof(name), "nm_kthread-%ld-%d", nmk->worker_ctx.type,
+	     current->pid);
     nmk->worker = kthread_create(nm_kthread_worker, nmk, name);
-    if (!IS_ERR(nmk->worker)) {
-	kthread_bind(nmk->worker, nmk->affinity);
-	wake_up_process(nmk->worker);
-    }
-
     if (IS_ERR(nmk->worker)) {
 	error = -PTR_ERR(nmk->worker);
 	goto err;
     }
 
+    kthread_bind(nmk->worker, nmk->affinity);
+    wake_up_process(nmk->worker);
+
     if (nmk->worker_ctx.ioevent_file) {
-	error = nm_kthread_start_poll(&nmk->worker_ctx, nmk->worker_ctx.ioevent_file);
+	error = nm_kthread_start_poll(&nmk->worker_ctx,
+				      nmk->worker_ctx.ioevent_file);
 	if (error) {
             goto err_kstop;
 	}
