@@ -88,9 +88,6 @@ struct rate_stats {
     unsigned long hrxk;     /* Host --> Guest Rx Kicks. */
     unsigned long btxwu;    /* Backend Tx wake-up. */
     unsigned long brxwu;    /* Backend Rx wake-up. */
-    unsigned long txpkts;   /* Transmitted packets. */
-    unsigned long rxpkts;   /* Received packets. */
-    unsigned long txfl;     /* TX flushes requests. */
     struct rate_batch_info bf_tx;
     struct rate_batch_info bf_rx;
 };
@@ -112,24 +109,31 @@ rate_callback(unsigned long arg)
     struct rate_batch_info *bf_tx_old = &ctx->old.bf_tx;
     struct rate_batch_info *bf_rx_old = &ctx->old.bf_rx;
     uint64_t tx_batch, rx_batch;
+    unsigned long txpkts, rxpkts;
     int r;
 
-    tx_batch = ((bf_tx->events - bf_tx_old->events) > 0) ?
-        (bf_tx->slots - bf_tx_old->slots) / (bf_tx->events - bf_tx_old->events): 0;
-    rx_batch = ((bf_rx->events - bf_rx_old->events) > 0) ?
-        (bf_rx->slots - bf_rx_old->slots) / (bf_rx->events - bf_rx_old->events): 0;
+    txpkts = bf_tx->slots - bf_tx_old->slots;
+    rxpkts = bf_rx->slots - bf_rx_old->slots;
 
-    printk("txp  = %lu Hz\n", (cur.txpkts - ctx->old.txpkts)/RATE_PERIOD);
-    printk("gtxk = %lu Hz\n", (cur.gtxk - ctx->old.gtxk)/RATE_PERIOD);
-    printk("htxk = %lu Hz\n", (cur.htxk - ctx->old.htxk)/RATE_PERIOD);
-    printk("btxw = %lu Hz\n", (cur.btxwu - ctx->old.btxwu)/RATE_PERIOD);
-    printk("rxp  = %lu Hz\n", (cur.rxpkts - ctx->old.rxpkts)/RATE_PERIOD);
-    printk("grxk = %lu Hz\n", (cur.grxk - ctx->old.grxk)/RATE_PERIOD);
-    printk("hrxk = %lu Hz\n", (cur.hrxk - ctx->old.hrxk)/RATE_PERIOD);
-    printk("brxw = %lu Hz\n", (cur.brxwu - ctx->old.brxwu)/RATE_PERIOD);
-    printk("txfl = %lu Hz\n", (cur.txfl - ctx->old.txfl)/RATE_PERIOD);
-    printk("tx_batch = %llu avg\n", tx_batch);
-    printk("rx_batch = %llu avg\n", rx_batch);
+    tx_batch = ((bf_tx->events - bf_tx_old->events) > 0) ?
+	       txpkts / (bf_tx->events - bf_tx_old->events): 0;
+    rx_batch = ((bf_rx->events - bf_rx_old->events) > 0) ?
+	       rxpkts / (bf_rx->events - bf_rx_old->events): 0;
+
+    /* Fix-up gtxk and grxk estimate. */
+    cur.gtxk -= cur.btxwu - ctx->old.btxwu;
+    cur.grxk -= cur.brxwu - ctx->old.brxwu;
+
+    printk("txpkts  = %lu Hz\n", txpkts/RATE_PERIOD);
+    printk("gtxk    = %lu Hz\n", (cur.gtxk - ctx->old.gtxk)/RATE_PERIOD);
+    printk("htxk    = %lu Hz\n", (cur.htxk - ctx->old.htxk)/RATE_PERIOD);
+    printk("btxw    = %lu Hz\n", (cur.btxwu - ctx->old.btxwu)/RATE_PERIOD);
+    printk("rxpkts  = %lu Hz\n", rxpkts/RATE_PERIOD);
+    printk("grxk    = %lu Hz\n", (cur.grxk - ctx->old.grxk)/RATE_PERIOD);
+    printk("hrxk    = %lu Hz\n", (cur.hrxk - ctx->old.hrxk)/RATE_PERIOD);
+    printk("brxw    = %lu Hz\n", (cur.brxwu - ctx->old.brxwu)/RATE_PERIOD);
+    printk("txbatch = %llu avg\n", tx_batch);
+    printk("rxbatch = %llu avg\n", rx_batch);
     printk("\n");
 
     ctx->old = cur;
@@ -141,7 +145,7 @@ rate_callback(unsigned long arg)
 
 static void
 rate_batch_info_update(struct rate_batch_info *bf, uint32_t pre_tail,
-		uint32_t act_tail, uint32_t lim)
+		       uint32_t act_tail, uint32_t lim)
 {
     int n_slots;
 
@@ -241,9 +245,7 @@ ptnetmap_tx_handler(void *data)
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t num_slots;
     bool more_txspace = false;
-#ifdef PTN_TX_BATCH_LIM
     int batch;
-#endif
     IFRATE(uint32_t pre_tail;)
 
     if (unlikely(!pts || !pts->pth_na)) {
@@ -264,6 +266,9 @@ ptnetmap_tx_handler(void *data)
         return;
     }
 
+    /* This is a guess, to be fixed in the rate callback. */
+    IFRATE(pts->rate_ctx.new.gtxk++);
+
     csb = pts->csb;
     csb_ring = &csb->tx_ring; /* netmap TX kring pointers in CSB */
     num_slots = kring->nkr_num_slots;
@@ -277,7 +282,6 @@ ptnetmap_tx_handler(void *data)
     ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
 
     for (;;) {
-#ifdef PTN_TX_BATCH_LIM
 	/* If guest moves ahead too fast, let's cut the move so
 	 * that we don't exceed our batch limit. */
         batch = g_ring.head - kring->nr_hwcur;
@@ -292,8 +296,8 @@ ptnetmap_tx_handler(void *data)
             ND(1, "batch: %d head: %d head_lim: %d", batch, g_ring.head,
 						     head_lim);
             g_ring.head = head_lim;
+	    batch = PTN_TX_BATCH_LIM(num_slots);
         }
-#endif /* PTN_TX_BATCH_LIM */
 
         if (nm_kr_txspace(kring) <= (num_slots >> 1)) {
             g_ring.flags |= NAF_FORCE_RECLAIM;
@@ -315,7 +319,6 @@ ptnetmap_tx_handler(void *data)
 	}
 
         IFRATE(pre_tail = kring->rtail);
-
         if (unlikely(kring->nm_sync(kring, g_ring.flags))) {
             /* Reenable notifications. */
             ptnetmap_tx_set_hostkick(csb, 1);
@@ -431,7 +434,7 @@ ptnetmap_rx_set_guestkick(struct paravirt_csb __user *csb, uint32_t val)
 }
 
 /*
- * We needs kick from the guest when:
+ * We need kicks from the guest when:
  *
  * - RX: tail == head - 1
  *       ring is full
@@ -478,6 +481,9 @@ ptnetmap_rx_handler(void *data)
         D("ERROR nm_kr_tryget()");
         goto leave;
     }
+
+    /* This is a guess, to be fixed in the rate callback. */
+    IFRATE(pts->rate_ctx.new.grxk++);
 
     csb = pts->csb;
     csb_ring = &csb->rx_ring; /* netmap RX kring pointers in CSB */
