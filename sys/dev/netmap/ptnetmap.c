@@ -75,10 +75,10 @@
 //#define RATE  /* Enables communication statistics. */
 #ifdef RATE
 #define IFRATE(x) x
-struct rate_batch_info {
-    uint64_t events;
-    uint64_t zero_events;
-    uint64_t slots;
+struct rate_batch_stats {
+    unsigned long sync;
+    unsigned long sync_dry;
+    unsigned long pkt;
 };
 
 struct rate_stats {
@@ -88,8 +88,8 @@ struct rate_stats {
     unsigned long hrxk;     /* Host --> Guest Rx Kicks. */
     unsigned long btxwu;    /* Backend Tx wake-up. */
     unsigned long brxwu;    /* Backend Rx wake-up. */
-    struct rate_batch_info bf_tx;
-    struct rate_batch_info bf_rx;
+    struct rate_batch_stats txbs;
+    struct rate_batch_stats rxbs;
 };
 
 struct rate_context {
@@ -104,21 +104,21 @@ rate_callback(unsigned long arg)
 {
     struct rate_context * ctx = (struct rate_context *)arg;
     struct rate_stats cur = ctx->new;
-    struct rate_batch_info *bf_tx = &cur.bf_tx;
-    struct rate_batch_info *bf_rx = &cur.bf_rx;
-    struct rate_batch_info *bf_tx_old = &ctx->old.bf_tx;
-    struct rate_batch_info *bf_rx_old = &ctx->old.bf_rx;
+    struct rate_batch_stats *txbs = &cur.txbs;
+    struct rate_batch_stats *rxbs = &cur.rxbs;
+    struct rate_batch_stats *txbs_old = &ctx->old.txbs;
+    struct rate_batch_stats *rxbs_old = &ctx->old.rxbs;
     uint64_t tx_batch, rx_batch;
     unsigned long txpkts, rxpkts;
     int r;
 
-    txpkts = bf_tx->slots - bf_tx_old->slots;
-    rxpkts = bf_rx->slots - bf_rx_old->slots;
+    txpkts = txbs->pkt - txbs_old->pkt;
+    rxpkts = rxbs->pkt - rxbs_old->pkt;
 
-    tx_batch = ((bf_tx->events - bf_tx_old->events) > 0) ?
-	       txpkts / (bf_tx->events - bf_tx_old->events): 0;
-    rx_batch = ((bf_rx->events - bf_rx_old->events) > 0) ?
-	       rxpkts / (bf_rx->events - bf_rx_old->events): 0;
+    tx_batch = ((txbs->sync - txbs_old->sync) > 0) ?
+	       txpkts / (txbs->sync - txbs_old->sync): 0;
+    rx_batch = ((rxbs->sync - rxbs_old->sync) > 0) ?
+	       rxpkts / (rxbs->sync - rxbs_old->sync): 0;
 
     /* Fix-up gtxk and grxk estimate. */
     cur.gtxk -= cur.btxwu - ctx->old.btxwu;
@@ -144,20 +144,19 @@ rate_callback(unsigned long arg)
 }
 
 static void
-rate_batch_info_update(struct rate_batch_info *bf, uint32_t pre_tail,
-		       uint32_t act_tail, uint32_t lim)
+rate_batch_stats_update(struct rate_batch_stats *bf, uint32_t pre_tail,
+		        uint32_t act_tail, uint32_t num_slots)
 {
-    int n_slots;
+    int n = (int)act_tail - pre_tail;
 
-    n_slots = (int)act_tail - pre_tail;
-    if (n_slots) {
-        if (n_slots < 0)
-            n_slots += lim;
+    if (n) {
+        if (n < 0)
+            n += num_slots;
 
-        bf->events++;
-        bf->slots += (uint64_t) n_slots;
+        bf->sync++;
+        bf->pkt += n;
     } else {
-        bf->zero_events++;
+        bf->sync_dry++;
     }
 }
 
@@ -339,7 +338,7 @@ ptnetmap_tx_handler(void *data)
 	    more_txspace = true;
         }
 
-        IFRATE(rate_batch_info_update(&pts->rate_ctx.new.bf_tx, pre_tail,
+        IFRATE(rate_batch_stats_update(&pts->rate_ctx.new.txbs, pre_tail,
 				      kring->rtail, num_slots));
 
         if (unlikely(netmap_verbose & NM_VERB_TXSYNC)) {
@@ -537,7 +536,7 @@ ptnetmap_rx_handler(void *data)
             goto leave_kr_put;
         }
 
-        IFRATE(rate_batch_info_update(&pts->rate_ctx.new.bf_rx, pre_tail,
+        IFRATE(rate_batch_stats_update(&pts->rate_ctx.new.rxbs, pre_tail,
 	                              kring->rtail, kring->nkr_num_slots));
 
         if (unlikely(netmap_verbose & NM_VERB_RXSYNC))
