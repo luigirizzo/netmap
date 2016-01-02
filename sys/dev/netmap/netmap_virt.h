@@ -323,8 +323,9 @@ enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
 
 /* Host: Read kring pointers (head, cur, sync_flags) from CSB */
 static inline void
-ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr, struct netmap_ring *g_ring,
-        uint32_t num_slots)
+ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr,
+			     struct netmap_ring *g_ring,
+			     uint32_t num_slots)
 {
     uint32_t old_head = g_ring->head, old_cur = g_ring->cur;
     uint32_t d, inc_h, inc_c;
