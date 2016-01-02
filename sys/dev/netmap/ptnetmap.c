@@ -240,7 +240,7 @@ ptnetmap_tx_handler(void *data)
     struct pt_ring __user *csb_ring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t num_slots;
-    bool work = false;
+    bool more_txspace = false;
 #ifdef PTN_TX_BATCH_LIM
     int batch;
 #endif
@@ -254,14 +254,14 @@ ptnetmap_tx_handler(void *data)
 
     if (unlikely(pts->stopped)) {
         RD(1, "backend netmap is being stopped");
-        goto leave;
+        return;
     }
 
     kring = &pts->pth_na->parent->tx_rings[0];
 
     if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
         D("ERROR nm_kr_tryget()");
-        goto leave;
+        return;
     }
 
     csb = pts->csb;
@@ -320,18 +320,20 @@ ptnetmap_tx_handler(void *data)
             /* Reenable notifications. */
             ptnetmap_tx_set_hostkick(csb, 1);
             D("ERROR txsync");
-            goto leave_kr_put;
+            goto leave;
         }
 
         /*
          * Finalize
-         * Copy host hwcur and hwtail into the CSB for the guest sync()
+         * Copy host hwcur and hwtail into the CSB for the guest sync(), and
+	 * do the nm_sync_finalize.
          */
         ptnetmap_host_write_kring_csb(csb_ring, kring->nr_hwcur,
-		                      NM_ACCESS_ONCE(kring->nr_hwtail));
-        if (kring->rtail != NM_ACCESS_ONCE(kring->nr_hwtail)) {
-	    kring->rtail = NM_ACCESS_ONCE(kring->nr_hwtail);
-	    work = true;
+				      kring->nr_hwtail);
+        if (kring->rtail != kring->nr_hwtail) {
+	    /* Some more room available in the parent adapter. */
+	    kring->rtail = kring->nr_hwtail;
+	    more_txspace = true;
         }
 
         IFRATE(rate_batch_info_update(&pts->rate_ctx.new.bf_tx, pre_tail,
@@ -342,43 +344,42 @@ ptnetmap_tx_handler(void *data)
 	}
 
 #ifndef BUSY_WAIT
-        /* Send kick to the guest if it needs them */
-        if (work && ptnetmap_tx_get_guestkick(csb)) {
+        /* Interrupt the guest if needed. */
+        if (more_txspace && ptnetmap_tx_get_guestkick(csb)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptnetmap_tx_set_guestkick(csb, 0);
             nm_os_kthread_send_irq(pts->ptk_tx);
             IFRATE(pts->rate_ctx.new.htxk++);
-            work = false;
+            more_txspace = false;
         }
 #endif
-        /* We read the CSB before deciding to continue or stop. */
+        /* Read CSB to see if there is more work to do. */
         ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
 #ifndef BUSY_WAIT
-        /*
-         * Ring empty, nothing to transmit. We enable notification and
-         * go to sleep. We need a notification when the guest has
-         * new slots to transmit.
-         */
         if (g_ring.head == kring->rhead) {
+            /*
+             * No more packets to transmit. We enable notifications and
+             * go to sleep, waiting for a kick from the guest when new
+             * new slots are ready for transmission.
+             */
             usleep_range(1,1);
             /* Reenable notifications. */
             ptnetmap_tx_set_hostkick(csb, 1);
             /* Doublecheck. */
             ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
-            /* If there are new packets, disable notifications and redo new sync() */
             if (g_ring.head != kring->rhead) {
-                ptnetmap_tx_set_hostkick(csb, 0);
-                continue;
-            } else
-                break;
+		/* We won the race condition, disable notification and
+		 * redo the cycle again. */
+		ptnetmap_tx_set_hostkick(csb, 0);
+		continue;
+	    }
+	    break;
         }
 
-        /*
-         * Ring full. We stop without reenable notification
-         * because we await the BE.
-         */
-        if (unlikely(NM_ACCESS_ONCE(kring->nr_hwtail) == kring->rhead)) {
-            ND(1, "TX ring FULL");
+	if (nm_kr_txempty(kring)) {
+	    /* No more available TX slots. We stop waiting for a notification
+	     * from the backend (netmap_tx_irq). */
+            ND(1, "TX ring");
             break;
         }
 #endif
@@ -388,12 +389,10 @@ ptnetmap_tx_handler(void *data)
         }
     }
 
-leave_kr_put:
+leave:
     nm_kr_put(kring);
 
-leave:
-    /* Send kick to the guest if it needs them */
-    if (csb && work && ptnetmap_tx_get_guestkick(csb)) {
+    if (more_txspace && ptnetmap_tx_get_guestkick(csb)) {
         ptnetmap_tx_set_guestkick(csb, 0);
         nm_os_kthread_send_irq(pts->ptk_tx);
         IFRATE(pts->rate_ctx.new.htxk++);
