@@ -370,8 +370,8 @@ ptnetmap_tx_handler(void *data)
             /* Doublecheck. */
             ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
             if (g_ring.head != kring->rhead) {
-		/* We won the race condition, disable notification and
-		 * redo the cycle again. */
+		/* We won the race condition, there are more packets to
+		 * transmit. Disable notifications and do another cycle */
 		ptnetmap_tx_set_hostkick(csb, 0);
 		continue;
 	    }
@@ -432,16 +432,12 @@ ptnetmap_rx_set_guestkick(struct paravirt_csb __user *csb, uint32_t val)
 }
 
 /*
- * We need kicks from the guest when:
- *
- * - RX: tail == head - 1
- *       ring is full
- *       We need to wait that the guest gets some packets from the ring and
- *       then it notifies us.
+ * We need RX kicks from the guest when (tail == head-1), where we wait
+ * for the guest to refill.
  */
 #ifndef BUSY_WAIT
 static inline int
-ptnetmap_kr_rxfull(struct netmap_kring *kring, uint32_t g_head)
+ptnetmap_norxslots(struct netmap_kring *kring, uint32_t g_head)
 {
     return (NM_ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_head,
     			    kring->nkr_num_slots - 1));
@@ -496,6 +492,8 @@ ptnetmap_rx_handler(void *data)
     ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
 
     for (;;) {
+	uint32_t hwtail;
+
 #ifndef PTN_AVOID_NM_PROLOGUE
         /* Netmap prologue */
         if (unlikely(nm_rxsync_prologue(kring, &g_ring) >= num_slots)) {
@@ -524,10 +522,10 @@ ptnetmap_rx_handler(void *data)
          * Finalize
          * Copy host hwcur and hwtail into the CSB for the guest sync()
          */
-        ptnetmap_host_write_kring_csb(csb_ring, kring->nr_hwcur,
-				      NM_ACCESS_ONCE(kring->nr_hwtail));
-        if (kring->rtail != NM_ACCESS_ONCE(kring->nr_hwtail)) {
-	    kring->rtail = NM_ACCESS_ONCE(kring->nr_hwtail);
+	hwtail = NM_ACCESS_ONCE(kring->nr_hwtail);
+        ptnetmap_host_write_kring_csb(csb_ring, kring->nr_hwcur, hwtail);
+        if (kring->rtail != hwtail) {
+	    kring->rtail = hwtail;
             some_recvd = true;
             dry_cycles = 0;
         } else {
@@ -535,7 +533,7 @@ ptnetmap_rx_handler(void *data)
         }
 
         IFRATE(rate_batch_stats_update(&pts->rate_ctx.new.rxbs, pre_tail,
-	                              kring->rtail, num_slots));
+	                               kring->rtail, num_slots));
 
         if (unlikely(netmap_verbose & NM_VERB_RXSYNC))
             ptnetmap_kring_dump("post rxsync", kring);
@@ -550,36 +548,36 @@ ptnetmap_rx_handler(void *data)
             some_recvd = false;
         }
 #endif
-        /* We read the CSB before deciding to continue or stop. */
+        /* Read CSB to see if there is more work to do. */
         ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
 #ifndef BUSY_WAIT
-        /*
-         * Ring full. No space to receive. We enable notification and
-         * go to sleep. We need a notification when the guest has
-         * new free slots.
-         */
-        if (ptnetmap_kr_rxfull(kring, g_ring.head)) {
+        if (ptnetmap_norxslots(kring, g_ring.head)) {
+            /*
+             * No more slots available for reception. We enable notification and
+             * go to sleep, waiting for a kick from the guest when new receive
+	     * slots are available.
+             */
             usleep_range(1,1);
             /* Reenable notifications. */
             ptnetmap_rx_set_hostkick(csb, 1);
             /* Doublecheck. */
             ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
-            /* If there are new free slots, disable notifications and redo new sync() */
-            if (!ptnetmap_kr_rxfull(kring, g_ring.head)) {
+            if (!ptnetmap_norxslots(kring, g_ring.head)) {
+		/* We won the race condition, more slots are available. Disable
+		 * notifications and do another cycle. */
                 ptnetmap_rx_set_hostkick(csb, 0);
                 continue;
-            } else
-                break;
+	    }
+            break;
         }
 
-        /*
-         * Ring empty. We stop without reenable notification
-         * because we await the BE.
-         */
-        if (unlikely(NM_ACCESS_ONCE(kring->nr_hwtail) == kring->rhead
-                    || dry_cycles >= PTN_RX_DRY_CYCLES_MAX)) {
+	hwtail = NM_ACCESS_ONCE(kring->nr_hwtail);
+        if (unlikely(hwtail == kring->rhead ||
+		     dry_cycles >= PTN_RX_DRY_CYCLES_MAX)) {
+	    /* No more packets to be read from the backend. We stop and
+	     * wait for a notification from the backend (netmap_rx_irq). */
             ND(1, "nr_hwtail: %d rhead: %d dry_cycles: %d",
-	       NM_ACCESS_ONCE(kring->nr_hwtail), kring->rhead, dry_cycles);
+	       hwtail, kring->rhead, dry_cycles);
             break;
         }
 #endif
