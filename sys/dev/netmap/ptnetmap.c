@@ -54,7 +54,7 @@
 #ifdef WITH_PTNETMAP_HOST
 
 /* RX cycle without receive any packets */
-#define PTN_RX_NOWORK_CYCLE	10
+#define PTN_RX_DRY_CYCLES_MAX	10
 /* Limit Batch TX to half ring */
 #define PTN_TX_BATCH_LIM(_n)	((_n >> 1))
 
@@ -459,8 +459,8 @@ ptnetmap_rx_handler(void *data)
     struct pt_ring __user *csb_ring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t nkr_num_slots;
-    int cicle_nowork = 0;
-    bool work = false;
+    int dry_cycles = 0;
+    bool some_recvd = false;
     IFRATE(uint32_t pre_tail);
 
     if (unlikely(!pts || !pts->pth_na)) {
@@ -471,14 +471,14 @@ ptnetmap_rx_handler(void *data)
 
     if (unlikely(pts->stopped)) {
         RD(1, "backend netmap is being stopped");
-        goto leave;
+	return;
     }
 
     kring = &pts->pth_na->parent->rx_rings[0];
 
     if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
         D("ERROR nm_kr_tryget()");
-        goto leave;
+	return;
     }
 
     /* This is a guess, to be fixed in the rate callback. */
@@ -515,25 +515,24 @@ ptnetmap_rx_handler(void *data)
 
         IFRATE(pre_tail = kring->rtail);
 
-        if (likely(kring->nm_sync(kring, g_ring.flags) == 0)) {
-            /*
-             * Finalize
-             * Copy host hwcur and hwtail into the CSB for the guest sync()
-             */
-            ptnetmap_host_write_kring_csb(csb_ring, kring->nr_hwcur,
-            		    NM_ACCESS_ONCE(kring->nr_hwtail));
-            if (kring->rtail != NM_ACCESS_ONCE(kring->nr_hwtail)) {
-                kring->rtail = NM_ACCESS_ONCE(kring->nr_hwtail);
-                work = true;
-                cicle_nowork = 0;
-            } else {
-                cicle_nowork++;
-            }
-        } else {
+        if (unlikely(kring->nm_sync(kring, g_ring.flags))) {
             /* Reenable notifications. */
             ptnetmap_rx_set_hostkick(csb, 1);
             D("ERROR rxsync()");
-            goto leave_kr_put;
+	    break;
+        }
+        /*
+         * Finalize
+         * Copy host hwcur and hwtail into the CSB for the guest sync()
+         */
+        ptnetmap_host_write_kring_csb(csb_ring, kring->nr_hwcur,
+				      NM_ACCESS_ONCE(kring->nr_hwtail));
+        if (kring->rtail != NM_ACCESS_ONCE(kring->nr_hwtail)) {
+	    kring->rtail = NM_ACCESS_ONCE(kring->nr_hwtail);
+            some_recvd = true;
+            dry_cycles = 0;
+        } else {
+            dry_cycles++;
         }
 
         IFRATE(rate_batch_stats_update(&pts->rate_ctx.new.rxbs, pre_tail,
@@ -543,13 +542,13 @@ ptnetmap_rx_handler(void *data)
             ptnetmap_kring_dump("post rxsync", kring);
 
 #ifndef BUSY_WAIT
-        /* Send kick to the guest if it needs them */
-        if (work && ptnetmap_rx_get_guestkick(csb)) {
+	/* Interrupt the guest if needed. */
+        if (some_recvd && ptnetmap_rx_get_guestkick(csb)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptnetmap_rx_set_guestkick(csb, 0);
             nm_os_kthread_send_irq(pts->ptk_rx);
             IFRATE(pts->rate_ctx.new.hrxk++);
-            work = false;
+            some_recvd = false;
         }
 #endif
         /* We read the CSB before deciding to continue or stop. */
@@ -579,9 +578,9 @@ ptnetmap_rx_handler(void *data)
          * because we await the BE.
          */
         if (unlikely(NM_ACCESS_ONCE(kring->nr_hwtail) == kring->rhead
-                    || cicle_nowork >= PTN_RX_NOWORK_CYCLE)) {
-            ND(1, "nr_hwtail: %d rhead: %d cicle_nowork: %d",
-            	NM_ACCESS_ONCE(kring->nr_hwtail), kring->rhead, cicle_nowork);
+                    || dry_cycles >= PTN_RX_DRY_CYCLES_MAX)) {
+            ND(1, "nr_hwtail: %d rhead: %d dry_cycles: %d",
+	       NM_ACCESS_ONCE(kring->nr_hwtail), kring->rhead, dry_cycles);
             break;
         }
 #endif
@@ -591,12 +590,10 @@ ptnetmap_rx_handler(void *data)
         }
     }
 
-leave_kr_put:
     nm_kr_put(kring);
 
-leave:
-    /* Send kick to the guest if it needs them */
-    if (csb && work && ptnetmap_rx_get_guestkick(csb)) {
+    /* Interrupt the guest if needed. */
+    if (some_recvd && ptnetmap_rx_get_guestkick(csb)) {
         ptnetmap_rx_set_guestkick(csb, 0);
         nm_os_kthread_send_irq(pts->ptk_rx);
         IFRATE(pts->rate_ctx.new.hrxk++);
