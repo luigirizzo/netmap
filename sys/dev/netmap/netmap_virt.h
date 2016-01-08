@@ -162,17 +162,6 @@ struct paravirt_csb {
 #define NET_PARAVIRT_CSB_SIZE   4096
 #define NET_PARAVIRT_NONE   (~((uint32_t)0))
 
-#ifdef	QEMU_PCI_H
-
-/*
- * API functions only available within QEMU
- */
-
-void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
-			uint32_t csbbah, QEMUBH* tx_bh, AddressSpace *as);
-
-#endif /* QEMU_PCI_H */
-
 /* ptnetmap features */
 #define NET_PTN_FEATURES_BASE            1
 #define NET_PTN_FEATURES_FULL            2 /* not used */
@@ -192,14 +181,8 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 #define NET_PARAVIRT_PTCTL_HOSTMEMID	12
 
 /*
- * ptnetmap register of the device used for notification (virtio/e1000)
- *
- * ptnetmap e1000 register is defined in if_lem.h (FreeBSD)
- * and e1000_hw.h (linux)
+ * ptnetmap registers added to the virtio-net configuration space
  */
-
-
-/* ptnetmap virtio register */
 /* 32 bit r/w */
 #define PTNETMAP_VIRTIO_IO_PTFEAT       0 /* ptnetmap features */
 /* 32 bit w/o */
@@ -221,7 +204,13 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 #define VIRTIO_NET_F_PTNETMAP		0x2000000
 #endif
 
+/*
+ * ptnetmap registers for e1000 are defined in if_lem.h for FreeBSD
+ * and e1000_hw.h for Linux
+ */
+
 #endif /* NETMAP_VIRT_CSB */
+
 
 #if defined(NETMAP_API) && !defined(NETMAP_VIRT_PTNETMAP)
 #define NETMAP_VIRT_PTNETMAP
@@ -229,24 +218,23 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 /*
  * ptnetmap_memdev: device used to expose memory into the guest VM
  *
- * macros used in the hypervisor frontend (QEMU, bhyve) and in the
- * guest device driver
+ * These macros are used in the hypervisor frontend (QEMU, bhyve) and in the
+ * guest device driver.
  */
 
-/* ptnetmap memdev PCI-ID and PCI-BARS */
+/* PCI identifiers and PCI BARs for the ptnetmap memdev */
 #define PTN_MEMDEV_NAME                 "ptnetmap-memdev"
 #define PTNETMAP_PCI_VENDOR_ID          0x3333  /* XXX-ste: change vendor_id */
 #define PTNETMAP_PCI_DEVICE_ID          0x0001
 #define PTNETMAP_IO_PCI_BAR             0
 #define PTNETMAP_MEM_PCI_BAR            1
 
-/* ptnetmap memdev register */
+/* Registers for the ptnetmap memdev */
 /* 32 bit r/o */
 #define PTNETMAP_IO_PCI_FEATURES        0	/* ptnetmap_memdev features */
 /* 32 bit r/o */
 #define PTNETMAP_IO_PCI_MEMSIZE         4	/* size of the netmap memory shared
-						 * between guest and host
-						 */
+						 * between guest and host */
 /* 16 bit r/o */
 #define PTNETMAP_IO_PCI_HOSTID          8	/* memory allocator ID in netmap host */
 #define PTNETMAP_IO_SIZE                10
@@ -256,7 +244,7 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
  *
  * The hypervisor (QEMU or bhyve) sends this struct to the host netmap
  * module through an ioctl() command when it wants to start the ptnetmap
- * kthreads
+ * kthreads.
  */
 struct ptnetmap_cfg {
         uint32_t features;
@@ -267,8 +255,9 @@ struct ptnetmap_cfg {
 	struct nm_kth_event_cfg rx_ring;	/* RX eventfds/ioctl */
         void *csb;				/* CSB */
 };
+
 /*
- * Functions used to read/write ptnetmap_cfg in the nmreq.
+ * Functions used to read/write ptnetmap_cfg from/to the nmreq.
  * The user-space application writes the pointer of ptnetmap_cfg
  * (user-space buffer) starting from nr_arg1 field, so that the kernel
  * can read it with copyin (copy_from_user).
