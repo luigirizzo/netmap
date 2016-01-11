@@ -1,5 +1,5 @@
 diff --git a/virtio_net.c b/virtio_net.c
-index b0577dd..7218649 100644
+index b0577dd..e4e2176 100644
 --- a/virtio_net.c
 +++ b/virtio_net.c
 @@ -64,6 +64,10 @@ struct virtnet_info
@@ -62,22 +62,17 @@ index b0577dd..7218649 100644
  	vi->status = VIRTIO_NET_S_LINK_UP;
  	virtnet_update_status(vi);
  	netif_carrier_on(dev);
-@@ -1027,7 +1051,14 @@ static void free_unused_bufs(struct virtnet_info *vi)
- static void __devexit virtnet_remove(struct virtio_device *vdev)
+@@ -1028,6 +1052,9 @@ static void __devexit virtnet_remove(struct virtio_device *vdev)
  {
  	struct virtnet_info *vi = vdev->priv;
-+#ifdef DEV_NETMAP
-+	/* Save the pointer, will go away after netmap_detach(). */
-+	struct netmap_adapter *token = NA(vi->dev);
  
++#ifdef DEV_NETMAP
 +	netmap_detach(vi->dev);
-+	virtio_netmap_clean_used_rings(vi, token);
-+	virtio_netmap_reclaim_unused(vi);
 +#endif
  	/* Stop all the virtqueues. */
  	vdev->config->reset(vdev);
  
-@@ -1059,6 +1090,9 @@ static unsigned int features[] = {
+@@ -1059,6 +1086,9 @@ static unsigned int features[] = {
  	VIRTIO_NET_F_GUEST_ECN, VIRTIO_NET_F_GUEST_UFO,
  	VIRTIO_NET_F_MRG_RXBUF, VIRTIO_NET_F_STATUS, VIRTIO_NET_F_CTRL_VQ,
  	VIRTIO_NET_F_CTRL_RX, VIRTIO_NET_F_CTRL_VLAN,
