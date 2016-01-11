@@ -2217,7 +2217,8 @@ struct ptnetmap_memdev
  * of the netmap memory mapped in the guest.
  */
 int
-nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
+nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
+                      void **nm_addr)
 {
     struct pci_dev *pdev = ptn_dev->pdev;
     uint32_t mem_size;
