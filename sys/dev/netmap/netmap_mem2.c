@@ -2245,7 +2245,7 @@ error:
  * by ptnetmap device (e1000/virtio), during the netmap_attach.
  *
  * The order is not important (we have different order in LINUX and FreeBSD).
- * The first one, creates the device, and the second one simply attach it.
+ * The first one, creates the device, and the second one simply attaches it.
  */
 
 /* Called when ptnetmap_memdev is attaching, to attach a new allocator in the guest */

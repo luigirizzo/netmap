@@ -2333,10 +2333,7 @@ ptn_memdev_remove(struct pci_dev *pdev)
         netmap_mem_put(ptn_dev->nm_mem);
         ptn_dev->nm_mem = NULL;
     }
-    if (ptn_dev->pci_mem) {
-        iounmap(ptn_dev->pci_mem);
-        ptn_dev->pci_mem = NULL;
-    }
+    nm_os_pt_memdev_iounmap(ptn_dev);
     pci_set_drvdata(pdev, NULL);
     iounmap(ptn_dev->pci_io);
     pci_release_selected_regions(pdev, ptn_dev->bars);
