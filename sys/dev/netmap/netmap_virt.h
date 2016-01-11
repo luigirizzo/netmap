@@ -231,7 +231,7 @@ struct paravirt_csb {
 
 /* Registers for the ptnetmap memdev */
 /* 32 bit r/o */
-#define PTNETMAP_IO_PCI_FEATURES        0	/* ptnetmap_memdev features */
+#define PTNETMAP_IO_PCI_FEATURES        0	/* XXX should be removed */
 /* 32 bit r/o */
 #define PTNETMAP_IO_PCI_MEMSIZE         4	/* size of the netmap memory shared
 						 * between guest and host */
