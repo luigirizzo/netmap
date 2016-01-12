@@ -686,12 +686,6 @@ found:
 	*na = &req->up;
 	netmap_adapter_get(*na);
 
-	/* write the configuration back */
-	nmr->nr_tx_rings = req->up.num_tx_rings;
-	nmr->nr_rx_rings = req->up.num_rx_rings;
-	nmr->nr_tx_slots = req->up.num_tx_desc;
-	nmr->nr_rx_slots = req->up.num_rx_desc;
-
 	/* keep the reference to the parent.
          * It will be released by the req destructor
          */

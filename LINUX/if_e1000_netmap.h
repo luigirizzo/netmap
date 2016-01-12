@@ -389,16 +389,15 @@ e1000_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	struct ifnet *ifp = na->ifp;
 	struct e1000_adapter *adapter = netdev_priv(ifp);
 	struct e1000_tx_ring* txr = &adapter->tx_ring[0];
-	int ret, notify = 0;
+	bool notify;
 
         IFRATE(adapter->rate_ctx.new.tx_sync++);
 
-	ret = netmap_pt_guest_txsync(kring, flags, &notify);
-
+	notify = netmap_pt_guest_txsync(kring, flags);
 	if (notify)
 		writel(0, adapter->hw.hw_addr + txr->tdt);
 
-	return ret;
+	return 0;
 }
 
 /* Reconcile host and guest view of the receive ring. */
@@ -411,16 +410,15 @@ e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	struct e1000_adapter *adapter = netdev_priv(ifp);
 	struct e1000_hw *hw = &adapter->hw;
 	struct e1000_rx_ring *rxr = &adapter->rx_ring[0];
-	int ret, notify = 0;
+	bool notify;
 
         IFRATE(adapter->rate_ctx.new.rx_sync++);
 
-	ret = netmap_pt_guest_rxsync(kring, flags, &notify);
-
+	notify = netmap_pt_guest_rxsync(kring, flags);
 	if (notify)
 		writel(0, hw->hw_addr + rxr->rdt);
 
-	return ret;
+	return 0;
 }
 
 /* Register/unregister. We are already under netmap lock. */

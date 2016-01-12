@@ -1838,7 +1838,7 @@ struct nm_kthread_ctx {
     /* files to exchange notifications */
     struct file *ioevent_file;          /* notification from guest */
     struct file *irq_file;              /* notification to guest (interrupt) */
-    struct eventfd_ctx  *irq_ctx;
+    struct eventfd_ctx *irq_ctx;
 
     /* poll ioeventfd to receive notification from the guest */
     poll_table poll_table;
@@ -1848,8 +1848,6 @@ struct nm_kthread_ctx {
     /* worker function and parameter */
     nm_kthread_worker_fn_t worker_fn;
     void *worker_private;
-
-    struct nm_kthread *nmk;
 
     /* integer to manage multiple worker contexts (e.g., RX or TX in ptnetmap) */
     long type;
@@ -1897,9 +1895,12 @@ static int
 nm_kthread_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
 {
     struct nm_kthread_ctx *ctx;
+    struct nm_kthread *nmk;
 
     ctx = container_of(wq, struct nm_kthread_ctx, waitq);
-    nm_os_kthread_wakeup_worker(ctx->nmk);
+    nmk = container_of(ctx, struct nm_kthread, worker_ctx);
+    nm_os_kthread_wakeup_worker(nmk);
+
     return 0;
 }
 
@@ -1907,7 +1908,7 @@ static void inline
 nm_kthread_worker_fn(struct nm_kthread_ctx *ctx)
 {
     __set_current_state(TASK_RUNNING);
-    ctx->worker_fn(ctx->worker_private); /* worker body */
+    ctx->worker_fn(ctx->worker_private); /* run payload */
     if (need_resched())
         schedule();
 }
@@ -1927,12 +1928,13 @@ nm_kthread_worker(void *data)
     }
 
     while (!kthread_should_stop()) {
-        /*
-         * if ioevent_file is not defined, we don't have notification
-         * mechanism and we continually execute worker_fn()
-         */
         if (!ctx->ioevent_file) {
+	    /*
+             * if ioevent_file is not defined, we don't have notification
+	     * mechanism and we continually execute worker_fn()
+	     */
             nm_kthread_worker_fn(ctx);
+
         } else {
             /*
              * Set INTERRUPTIBLE state before to check if there is work.
@@ -1944,7 +1946,7 @@ nm_kthread_worker(void *data)
 
             new_scheduled = atomic_read(&nmk->scheduled);
 
-            /* checks if there is a pending notification */
+            /* check if there is a pending notification */
             if (likely(new_scheduled != old_scheduled)) {
                 old_scheduled = new_scheduled;
                 nm_kthread_worker_fn(ctx);
@@ -1971,37 +1973,6 @@ nm_os_kthread_send_irq(struct nm_kthread *nmk)
         eventfd_signal(nmk->worker_ctx.irq_ctx, 1);
 }
 
-static int
-nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kth_event_cfg *ring_cfg)
-{
-    struct file *file;
-    struct nm_kthread_ctx *wctx = &nmk->worker_ctx;
-
-    if (ring_cfg->ioeventfd) {
-	file = eventfd_fget(ring_cfg->ioeventfd);
-	if (IS_ERR(file))
-	    return -PTR_ERR(file);
-	wctx->ioevent_file = file;
-    }
-
-    if (ring_cfg->irqfd) {
-	file = eventfd_fget(ring_cfg->irqfd);
-	if (IS_ERR(file))
-            goto err;
-	wctx->irq_file = file;
-	wctx->irq_ctx = eventfd_ctx_fileget(file);
-    }
-
-    return 0;
-err:
-    if (wctx->ioevent_file) {
-        fput(wctx->ioevent_file);
-        wctx->ioevent_file = NULL;
-    }
-
-    return -PTR_ERR(file);
-}
-
 static void
 nm_kthread_close_files(struct nm_kthread *nmk)
 {
@@ -2020,12 +1991,42 @@ nm_kthread_close_files(struct nm_kthread *nmk)
     }
 }
 
+static int
+nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kth_event_cfg *ring_cfg)
+{
+    struct file *file;
+    struct nm_kthread_ctx *wctx = &nmk->worker_ctx;
+
+    wctx->ioevent_file = NULL;
+    wctx->irq_file = NULL;
+
+    if (ring_cfg->ioeventfd) {
+	file = eventfd_fget(ring_cfg->ioeventfd);
+	if (IS_ERR(file))
+	    goto err;
+	wctx->ioevent_file = file;
+    }
+
+    if (ring_cfg->irqfd) {
+	file = eventfd_fget(ring_cfg->irqfd);
+	if (IS_ERR(file))
+            goto err;
+	wctx->irq_file = file;
+	wctx->irq_ctx = eventfd_ctx_fileget(file);
+    }
+
+    return 0;
+
+err:
+    nm_kthread_close_files(nmk);
+    return -PTR_ERR(file);
+}
+
 static void
 nm_kthread_init_poll(struct nm_kthread *nmk, struct nm_kthread_ctx *ctx)
 {
     init_waitqueue_func_entry(&ctx->waitq, nm_kthread_poll_wakeup);
     init_poll_funcptr(&ctx->poll_table, nm_kthread_poll_fn);
-    ctx->nmk = nmk;
 }
 
 static int
@@ -2080,7 +2081,7 @@ nm_os_kthread_create(struct nm_kthread_cfg *cfg)
     /* attach kthread to user process (ptnetmap) */
     nmk->attach_user = cfg->attach_user;
 
-    /* open event fd */
+    /* open event fds */
     error = nm_kthread_open_files(nmk, &cfg->event);
     if (error)
         goto err;
@@ -2110,20 +2111,20 @@ nm_os_kthread_start(struct nm_kthread *nmk)
     }
 
     /* ToDo Make this able to pass arbitrary string (e.g., for 'nm_') from nmk */
-    snprintf(name, sizeof(name), "nm_kthread-%ld-%d", nmk->worker_ctx.type, current->pid);
+    snprintf(name, sizeof(name), "nm_kthread-%ld-%d", nmk->worker_ctx.type,
+	     current->pid);
     nmk->worker = kthread_create(nm_kthread_worker, nmk, name);
-    if (!IS_ERR(nmk->worker)) {
-	kthread_bind(nmk->worker, nmk->affinity);
-	wake_up_process(nmk->worker);
-    }
-
     if (IS_ERR(nmk->worker)) {
 	error = -PTR_ERR(nmk->worker);
 	goto err;
     }
 
+    kthread_bind(nmk->worker, nmk->affinity);
+    wake_up_process(nmk->worker);
+
     if (nmk->worker_ctx.ioevent_file) {
-	error = nm_kthread_start_poll(&nmk->worker_ctx, nmk->worker_ctx.ioevent_file);
+	error = nm_kthread_start_poll(&nmk->worker_ctx,
+				      nmk->worker_ctx.ioevent_file);
 	if (error) {
             goto err_kstop;
 	}

@@ -709,6 +709,8 @@ struct netmap_adapter {
 	 *	For hw devices this is typically a selwakeup(),
 	 *	but for NIC/host ports attached to a switch (or vice-versa)
 	 *	we also need to invoke the 'txsync' code downstream.
+	 *      This callback pointer is actually used only to initialize
+	 *      kring->nm_notify.
 	 */
 	void (*nm_dtor)(struct netmap_adapter *);
 
@@ -1002,13 +1004,16 @@ nm_kr_rxspace(struct netmap_kring *k)
 #define nm_kr_txspace(_k) nm_kr_rxspace(_k)
 
 
-/* True if no space in the tx ring. only valid after txsync_prologue */
+/* True if no space in the tx ring, only valid after txsync_prologue */
 static inline int
 nm_kr_txempty(struct netmap_kring *kring)
 {
 	return kring->rcur == kring->nr_hwtail;
 }
 
+/* True if no more completed slots in the rx ring, only valid after
+ * rxsync_prologue */
+#define nm_kr_rxempty(_k)	nm_kr_txempty(_k)
 
 /*
  * protect against multiple threads using the same ring.
@@ -2004,7 +2009,7 @@ nm_ptnetmap_host_on(struct netmap_adapter *na)
 	((nmr)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
 #define ptnetmap_ctl(_1, _2)   EINVAL
 #define nm_ptnetmap_host_on(_1)   EINVAL
-#endif /* WITH_PTNETMAP_HOST */
+#endif /* !WITH_PTNETMAP_HOST */
 
 #ifdef WITH_PTNETMAP_GUEST
 /* ptnetmap GUEST routines */
@@ -2022,8 +2027,8 @@ struct netmap_pt_guest_adapter {
 };
 
 int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
-int netmap_pt_guest_txsync(struct netmap_kring *kring, int flags, int *notify);
-int netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags, int *notify);
+bool netmap_pt_guest_txsync(struct netmap_kring *kring, int flags);
+bool netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */

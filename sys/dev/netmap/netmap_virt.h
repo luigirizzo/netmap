@@ -162,17 +162,6 @@ struct paravirt_csb {
 #define NET_PARAVIRT_CSB_SIZE   4096
 #define NET_PARAVIRT_NONE   (~((uint32_t)0))
 
-#ifdef	QEMU_PCI_H
-
-/*
- * API functions only available within QEMU
- */
-
-void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
-			uint32_t csbbah, QEMUBH* tx_bh, AddressSpace *as);
-
-#endif /* QEMU_PCI_H */
-
 /* ptnetmap features */
 #define NET_PTN_FEATURES_BASE            1
 #define NET_PTN_FEATURES_FULL            2 /* not used */
@@ -192,14 +181,8 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 #define NET_PARAVIRT_PTCTL_HOSTMEMID	12
 
 /*
- * ptnetmap register of the device used for notification (virtio/e1000)
- *
- * ptnetmap e1000 register is defined in if_lem.h (FreeBSD)
- * and e1000_hw.h (linux)
+ * ptnetmap registers added to the virtio-net configuration space
  */
-
-
-/* ptnetmap virtio register */
 /* 32 bit r/w */
 #define PTNETMAP_VIRTIO_IO_PTFEAT       0 /* ptnetmap features */
 /* 32 bit w/o */
@@ -212,7 +195,7 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 #define PTNETMAP_VIRTIO_IO_CSBBAL       16 /* CSB Base Address Low */
 
 #define PTNETMAP_VIRTIO_IO_SIZE         20
-#define PTNETMAP_VIRTIO_IO_SIZE_32      5
+#define PTNETMAP_VIRTIO_IO_SIZE_32      (PTNETMAP_VIRTIO_IO_SIZE/4)
 
 /* virtio feature */
 #if defined (linux)
@@ -221,7 +204,13 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 #define VIRTIO_NET_F_PTNETMAP		0x2000000
 #endif
 
+/*
+ * ptnetmap registers for e1000 are defined in if_lem.h for FreeBSD
+ * and e1000_hw.h for Linux
+ */
+
 #endif /* NETMAP_VIRT_CSB */
+
 
 #if defined(NETMAP_API) && !defined(NETMAP_VIRT_PTNETMAP)
 #define NETMAP_VIRT_PTNETMAP
@@ -229,32 +218,33 @@ void paravirt_configure_csb(struct paravirt_csb** csb, uint32_t csbbal,
 /*
  * ptnetmap_memdev: device used to expose memory into the guest VM
  *
- * macros used in the hypervisor frontend (QEMU, bhyve) and in the
- * guest device driver
+ * These macros are used in the hypervisor frontend (QEMU, bhyve) and in the
+ * guest device driver.
  */
 
-/* ptnetmap memdev PCI-ID and PCI-BARS */
+/* PCI identifiers and PCI BARs for the ptnetmap memdev */
 #define PTN_MEMDEV_NAME                 "ptnetmap-memdev"
 #define PTNETMAP_PCI_VENDOR_ID          0x3333  /* XXX-ste: change vendor_id */
 #define PTNETMAP_PCI_DEVICE_ID          0x0001
 #define PTNETMAP_IO_PCI_BAR             0
 #define PTNETMAP_MEM_PCI_BAR            1
 
-/* ptnetmap memdev register */
+/* Registers for the ptnetmap memdev */
 /* 32 bit r/o */
 #define PTNETMAP_IO_PCI_FEATURES        0	/* ptnetmap_memdev features */
 /* 32 bit r/o */
 #define PTNETMAP_IO_PCI_MEMSIZE         4	/* size of the netmap memory shared
-						 * between guest and host
-						 */
+						 * between guest and host */
 /* 16 bit r/o */
 #define PTNETMAP_IO_PCI_HOSTID          8	/* memory allocator ID in netmap host */
 #define PTNETMAP_IO_SIZE                10
 
 /*
  * ptnetmap configuration
- * the hypervisor (QEMU or bhyve) sent this struct to the netmap.ko
- * through IOCTL when it wants to start the ptnetmap kthreads
+ *
+ * The hypervisor (QEMU or bhyve) sends this struct to the host netmap
+ * module through an ioctl() command when it wants to start the ptnetmap
+ * kthreads.
  */
 struct ptnetmap_cfg {
         uint32_t features;
@@ -265,11 +255,12 @@ struct ptnetmap_cfg {
 	struct nm_kth_event_cfg rx_ring;	/* RX eventfds/ioctl */
         void *csb;				/* CSB */
 };
+
 /*
- * Functions used to read/write ptnetmap_cfg in the nmreq.
+ * Functions used to read/write ptnetmap_cfg from/to the nmreq.
  * The user-space application writes the pointer of ptnetmap_cfg
- * (user-space buffer) starting from nr_arg1 field, the kernel
- * use copyin to copy it in the kernel-space.
+ * (user-space buffer) starting from nr_arg1 field, so that the kernel
+ * can read it with copyin (copy_from_user).
  */
 static inline void
 ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
@@ -310,10 +301,10 @@ enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
 #if defined (linux)
 #define CSB_READ(csb, field, r) (get_user(r, &csb->field))
 #define CSB_WRITE(csb, field, v) (put_user(v, &csb->field))
-#else /* not linux */
+#else  /* ! linux */
 #define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
 #define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
-#endif /* linux */
+#endif /* ! linux */
 
 /*
  * HOST read/write kring pointers from/in CSB
@@ -321,8 +312,9 @@ enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
 
 /* Host: Read kring pointers (head, cur, sync_flags) from CSB */
 static inline void
-ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr, struct netmap_ring *g_ring,
-        uint32_t num_slots)
+ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr,
+			     struct netmap_ring *g_ring,
+			     uint32_t num_slots)
 {
     uint32_t old_head = g_ring->head, old_cur = g_ring->cur;
     uint32_t d, inc_h, inc_c;
@@ -349,9 +341,12 @@ ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr, struct netmap_ring *g_r
     mb();
     CSB_READ(ptr, cur, g_ring->cur);
     CSB_READ(ptr, sync_flags, g_ring->flags);
+
     /*
-     * The previous barrier does not avoid to read an update cur and an old
-     * head. For this reason, we have to check that the new cur not overtaking head.
+     * Even with the previous barrier, it is still possible that we read an
+     * updated cur and an old head.
+     * To detect this situation, we can check if the new cur overtakes
+     * the (apparently) new head.
      */
     d = ptn_sub(old_cur, old_head, num_slots);     /* previous distance */
     inc_c = ptn_sub(g_ring->cur, old_cur, num_slots);   /* increase of cur */
@@ -370,7 +365,7 @@ static inline void
 ptnetmap_host_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
         uint32_t hwtail)
 {
-    /* We must write hwtail before hwcur for sync reason. */
+    /* We must write hwtail before hwcur (see below). */
     CSB_WRITE(ptr, hwtail, hwtail);
     mb();
     CSB_WRITE(ptr, hwcur, hwcur);
@@ -389,9 +384,9 @@ ptnetmap_host_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
 /* Guest: Write kring pointers (cur, head) into the CSB */
 static inline void
 ptnetmap_guest_write_kring_csb(struct pt_ring *ptr, uint32_t cur,
-        uint32_t head)
+			       uint32_t head)
 {
-    /* We must write cur before head for sync reason (ref. ptnetmap.c) */
+    /* We must write cur before head for sync reason (see above) */
     ptr->cur = cur;
     mb();
     ptr->head = head;
@@ -402,7 +397,7 @@ ptnetmap_guest_write_kring_csb(struct pt_ring *ptr, uint32_t cur,
 /* Guest: Read kring pointers (hwcur, hwtail) from CSB */
 static inline void
 ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
-        uint32_t *h_hwtail, uint32_t num_slots)
+			      uint32_t *h_hwtail, uint32_t num_slots)
 {
     uint32_t old_hwcur = *h_hwcur, old_hwtail = *h_hwtail;
     uint32_t d, inc_hc, inc_ht;
@@ -423,15 +418,18 @@ ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
      *          STORE(hwcur)    LOAD(hwtail)
      *
      * This approach ensures that every hwcur that the guest reads is
-     * associated with the correct hwtail. In this way hwcur can not exceed hwtail.
+     * associated with the correct hwtail. In this way hwcur can not exceed
+     * hwtail.
      */
     *h_hwcur = ptr->hwcur;
     mb();
     *h_hwtail = ptr->hwtail;
 
     /*
-     * The previous barrier does not avoid to read an update hwtail and an old
-     * hwcur. For this reason, we have to check that the new hwtail not overtaking hwcur.
+     * Even with the previous barrier, it is still possible that we read an
+     * updated hwtail and an old hwcur.
+     * To detect this situation, we can check if the new hwtail overtakes
+     * the (apparently) new hwcur.
      */
     d = ptn_sub(old_hwtail, old_hwcur, num_slots);       /* previous distance */
     inc_ht = ptn_sub(*h_hwtail, old_hwtail, num_slots);  /* increase of hwtail */

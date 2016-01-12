@@ -354,7 +354,12 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 		 * buffers 0 and 1 are reserved
 		 */
 		nmd->pools[NETMAP_BUF_POOL].objfree -= 2;
-		nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
+		if (nmd->pools[NETMAP_BUF_POOL].bitmap) {
+			/* XXX This check is a workaround that prevents a
+			 * NULL pointer crash which currently happens only
+			 * with ptnetmap guests. */
+			nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
+		}
 	}
 	nmd->ops->nmd_deref(nmd);
 
@@ -2274,7 +2279,7 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 /* Called when ptnetmap device (virtio/e1000) is attaching */
 struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
-		struct netmap_pt_guest_ops *pv_ops)
+			struct netmap_pt_guest_ops *pv_ops)
 {
 	struct netmap_mem_d *nmd;
 	nm_memid_t host_id;
