@@ -45,7 +45,7 @@ struct ptnet_info {
 
 	int bars;
 	u8* __iomem ioaddr;
-	u8* __iomem csb_hwaddr;
+	u8* __iomem csbaddr;
 
 	struct napi_struct napi;
 };
@@ -333,7 +333,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->bars = bars;
 
 	err = -EIO;
-	pr_info("IO BAR: start 0x%llx, len %llu, flags 0x%lx\n",
+	pr_info("IO BAR (registers): start 0x%llx, len %llu, flags 0x%lx\n",
 		pci_resource_start(pdev, PTNETMAP_IO_PCI_BAR),
 		pci_resource_len(pdev, PTNETMAP_IO_PCI_BAR),
 		pci_resource_flags(pdev, PTNETMAP_IO_PCI_BAR));
@@ -343,8 +343,13 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_dma;
 	}
 
-	pi->csb_hwaddr = pci_ioremap_bar(pdev, PTNETMAP_MEM_PCI_BAR);
-	if (!pi->csb_hwaddr)
+	pr_info("MEMORY BAR (CSB): start 0x%llx, len %llu, flags 0x%lx\n",
+		pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
+		pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
+		pci_resource_flags(pdev, PTNETMAP_MEM_PCI_BAR));
+	pi->csbaddr = ioremap_cache(pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
+				    pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR));
+	if (!pi->csbaddr)
 		goto err_ioremap;
 
 	/* useless, to be removed */
@@ -383,8 +388,9 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	pr_info("%s: failed\n", __func__);
 err_dma:
-	iounmap(pi->csb_hwaddr);
+	iounmap(pi->csbaddr);
 err_ioremap:
+	iounmap(pi->ioaddr);
 	free_netdev(netdev);
 err_alloc_etherdev:
 	pci_release_selected_regions(pdev, bars);
@@ -410,7 +416,7 @@ ptnet_remove(struct pci_dev *pdev)
 
 	unregister_netdev(netdev);
 	iounmap(pi->ioaddr);
-	iounmap(pi->csb_hwaddr);
+	iounmap(pi->csbaddr);
 	pci_release_selected_regions(pdev, pi->bars);
 	free_netdev(netdev);
 	pci_disable_device(pdev);
