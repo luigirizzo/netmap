@@ -39,7 +39,7 @@
 #define DRV_NAME "ptnet"
 #define DRV_VERSION "0.1"
 
-struct ptnet_adapter {
+struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
 
@@ -52,20 +52,20 @@ struct ptnet_adapter {
 
 /*
  * ptnet_irq_disable - Mask off interrupt generation on the NIC
- * @adapter: NIC private structure
+ * @pi: NIC private structure
  */
 static void
-ptnet_irq_disable(struct ptnet_adapter *adapter)
+ptnet_irq_disable(struct ptnet_info *pi)
 {
-	synchronize_irq(adapter->pdev->irq);
+	synchronize_irq(pi->pdev->irq);
 }
 
 /*
  * ptnet_irq_enable - Enable default interrupt generation settings
- * @adapter: NIC private structure
+ * @pi: NIC private structure
  */
 static void
-ptnet_irq_enable(struct ptnet_adapter *adapter)
+ptnet_irq_enable(struct ptnet_info *pi)
 {
 }
 
@@ -114,13 +114,13 @@ static irqreturn_t
 ptnet_intr(int irq, void *data)
 {
 	struct net_device *netdev = data;
-	struct ptnet_adapter *adapter = netdev_priv(netdev);
+	struct ptnet_info *pi = netdev_priv(netdev);
 
-	if (likely(napi_schedule_prep(&adapter->napi))) {
-		__napi_schedule(&adapter->napi);
+	if (likely(napi_schedule_prep(&pi->napi))) {
+		__napi_schedule(&pi->napi);
 	} else {
 		/* This should not happen, probably. */
-		ptnet_irq_enable(adapter);
+		ptnet_irq_enable(pi);
 	}
 
 	return IRQ_HANDLED;
@@ -128,27 +128,27 @@ ptnet_intr(int irq, void *data)
 
 /*
  * ptnet_clean - NAPI Rx polling callback
- * @adapter: NIC private structure
+ * @pi: NIC private structure
  */
 static int
 ptnet_clean(struct napi_struct *napi, int budget)
 {
-	struct ptnet_adapter *adapter = container_of(napi, struct ptnet_adapter,
+	struct ptnet_info *pi = container_of(napi, struct ptnet_info,
 						     napi);
 	int work_done = 0;
 
 	/* Clean TX. */
-	adapter->netdev->stats.tx_bytes += 0;
-	adapter->netdev->stats.tx_packets += 0;
+	pi->netdev->stats.tx_bytes += 0;
+	pi->netdev->stats.tx_packets += 0;
 
 	/* Clean RX. */
-	adapter->netdev->stats.rx_bytes += 0;
-	adapter->netdev->stats.rx_packets += 0;
+	pi->netdev->stats.rx_bytes += 0;
+	pi->netdev->stats.rx_packets += 0;
 
 	/* If budget not fully consumed, exit the polling mode */
 	if (work_done < budget) {
 		napi_complete(napi);
-		ptnet_irq_enable(adapter);
+		ptnet_irq_enable(pi);
 	}
 
 	return work_done;
@@ -162,23 +162,23 @@ ptnet_clean(struct napi_struct *napi, int budget)
 static void
 ptnet_netpoll(struct net_device *netdev)
 {
-	struct ptnet_adapter *adapter = netdev_priv(netdev);
+	struct ptnet_info *pi = netdev_priv(netdev);
 
-	disable_irq(adapter->pdev->irq);
-	ptnet_intr(adapter->pdev->irq, netdev);
-	enable_irq(adapter->pdev->irq);
+	disable_irq(pi->pdev->irq);
+	ptnet_intr(pi->pdev->irq, netdev);
+	enable_irq(pi->pdev->irq);
 }
 #endif
 
 static int
-ptnet_request_irq(struct ptnet_adapter *adapter)
+ptnet_request_irq(struct ptnet_info *pi)
 {
-	struct net_device *netdev = adapter->netdev;
+	struct net_device *netdev = pi->netdev;
 	irq_handler_t handler = ptnet_intr;
 	int irq_flags = IRQF_SHARED;
 	int err;
 
-	err = request_irq(adapter->pdev->irq, handler, irq_flags, netdev->name,
+	err = request_irq(pi->pdev->irq, handler, irq_flags, netdev->name,
 	                  netdev);
 	if (err) {
 		pr_err( "Unable to allocate interrupt Error: %d\n", err);
@@ -188,11 +188,11 @@ ptnet_request_irq(struct ptnet_adapter *adapter)
 }
 
 static void
-ptnet_free_irq(struct ptnet_adapter *adapter)
+ptnet_free_irq(struct ptnet_info *pi)
 {
-	struct net_device *netdev = adapter->netdev;
+	struct net_device *netdev = pi->netdev;
 
-	free_irq(adapter->pdev->irq, netdev);
+	free_irq(pi->pdev->irq, netdev);
 }
 
 /*
@@ -210,21 +210,21 @@ ptnet_free_irq(struct ptnet_adapter *adapter)
 static int
 ptnet_open(struct net_device *netdev)
 {
-	struct ptnet_adapter *adapter = netdev_priv(netdev);
+	struct ptnet_info *pi = netdev_priv(netdev);
 	int err;
 
 	netif_carrier_off(netdev);
 
-	err = ptnet_request_irq(adapter);
+	err = ptnet_request_irq(pi);
 	if (err) {
 		return err;
 	}
 
-	napi_enable(&adapter->napi);
-	ptnet_irq_enable(adapter);
+	napi_enable(&pi->napi);
+	ptnet_irq_enable(pi);
 	netif_start_queue(netdev);
 
-	pr_info("%s: %p\n", __func__, adapter);
+	pr_info("%s: %p\n", __func__, pi);
 
 	return 0;
 }
@@ -243,15 +243,15 @@ ptnet_open(struct net_device *netdev)
 static int
 ptnet_close(struct net_device *netdev)
 {
-	struct ptnet_adapter *adapter = netdev_priv(netdev);
+	struct ptnet_info *pi = netdev_priv(netdev);
 
 	netif_carrier_off(netdev);
 	netif_tx_disable(netdev);
-	napi_disable(&adapter->napi);
-	ptnet_irq_disable(adapter);
-	ptnet_free_irq(adapter);
+	napi_disable(&pi->napi);
+	ptnet_irq_disable(pi);
+	ptnet_free_irq(pi);
 
-	pr_info("%s: %p\n", __func__, adapter);
+	pr_info("%s: %p\n", __func__, pi);
 
 	return 0;
 }
@@ -274,15 +274,15 @@ static const struct net_device_ops ptnet_netdev_ops = {
  *
  * Returns 0 on success, negative on failure
  *
- * ptnet_probe initializes an adapter identified by a pci_dev structure.
- * The OS initialization, configuring of the adapter private structure,
+ * ptnet_probe initializes an pi identified by a pci_dev structure.
+ * The OS initialization, configuring of the pi private structure,
  * and a hardware reset occur.
  */
 static int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct net_device *netdev;
-	struct ptnet_adapter *adapter;
+	struct ptnet_info *pi;
 	int bars;
 	int err;
 
@@ -304,7 +304,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	err = -ENOMEM;
-	netdev = alloc_etherdev(sizeof(struct ptnet_adapter));
+	netdev = alloc_etherdev(sizeof(struct ptnet_info));
 	if (!netdev) {
 		goto err_alloc_etherdev;
 	}
@@ -312,19 +312,19 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Cross-link data structures. */
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	pci_set_drvdata(pdev, netdev);
-	adapter = netdev_priv(netdev);
-	adapter->netdev = netdev;
-	adapter->pdev = pdev;
-	adapter->bars = bars;
+	pi = netdev_priv(netdev);
+	pi->netdev = netdev;
+	pi->pdev = pdev;
+	pi->bars = bars;
 
 	err = -EIO;
-	adapter->csb_hwaddr = pci_ioremap_bar(pdev, PTNETMAP_MEM_PCI_BAR);
-	if (!adapter->csb_hwaddr)
+	pi->csb_hwaddr = pci_ioremap_bar(pdev, PTNETMAP_MEM_PCI_BAR);
+	if (!pi->csb_hwaddr)
 		goto err_ioremap;
 
 	if (pci_resource_len(pdev, PTNETMAP_IO_PCI_BAR) &&
 			pci_resource_flags(pdev, PTNETMAP_IO_PCI_BAR) & IORESOURCE_IO) {
-		adapter->io_base = pci_resource_start(pdev, PTNETMAP_IO_PCI_BAR);
+		pi->io_base = pci_resource_start(pdev, PTNETMAP_IO_PCI_BAR);
 	}
 
 	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
@@ -334,11 +334,11 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
 	netdev->ethtool_ops = NULL;
-	netif_napi_add(netdev, &adapter->napi, ptnet_clean, 64);
+	netif_napi_add(netdev, &pi->napi, ptnet_clean, 64);
 
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
 
-	synchronize_irq(adapter->pdev->irq);
+	synchronize_irq(pi->pdev->irq);
 
 	netdev->hw_features = NETIF_F_SG |
 			      NETIF_F_HW_CSUM |
@@ -348,7 +348,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 			      NETIF_F_RXFCS |
 			      NETIF_F_HIGHDMA;
 
-	device_set_wakeup_enable(&adapter->pdev->dev, 0);
+	device_set_wakeup_enable(&pi->pdev->dev, 0);
 
 	strcpy(netdev->name, "eth%d");
 	err = register_netdev(netdev);
@@ -357,12 +357,12 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	netif_carrier_off(netdev);
 
-	pr_info("%s: %p\n", __func__, adapter);
+	pr_info("%s: %p\n", __func__, pi);
 
 	return 0;
 
 err_dma:
-	iounmap(adapter->csb_hwaddr);
+	iounmap(pi->csb_hwaddr);
 err_ioremap:
 	free_netdev(netdev);
 err_alloc_etherdev:
@@ -385,15 +385,15 @@ static void
 ptnet_remove(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
-	struct ptnet_adapter *adapter = netdev_priv(netdev);
+	struct ptnet_info *pi = netdev_priv(netdev);
 
 	unregister_netdev(netdev);
-	iounmap(adapter->csb_hwaddr);
-	pci_release_selected_regions(pdev, adapter->bars);
+	iounmap(pi->csb_hwaddr);
+	pci_release_selected_regions(pdev, pi->bars);
 	free_netdev(netdev);
 	pci_disable_device(pdev);
 
-	pr_info("%s: %p\n", __func__, adapter);
+	pr_info("%s: %p\n", __func__, pi);
 }
 
 static void
