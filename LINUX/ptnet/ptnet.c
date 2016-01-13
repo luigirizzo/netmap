@@ -224,6 +224,8 @@ ptnet_open(struct net_device *netdev)
 	ptnet_irq_enable(adapter);
 	netif_start_queue(netdev);
 
+	pr_info("%s: %p\n", __func__, adapter);
+
 	return 0;
 }
 
@@ -248,6 +250,8 @@ ptnet_close(struct net_device *netdev)
 	napi_disable(&adapter->napi);
 	ptnet_irq_disable(adapter);
 	ptnet_free_irq(adapter);
+
+	pr_info("%s: %p\n", __func__, adapter);
 
 	return 0;
 }
@@ -353,6 +357,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	netif_carrier_off(netdev);
 
+	pr_info("%s: %p\n", __func__, adapter);
+
 	return 0;
 
 err_dma:
@@ -386,6 +392,8 @@ ptnet_remove(struct pci_dev *pdev)
 	pci_release_selected_regions(pdev, adapter->bars);
 	free_netdev(netdev);
 	pci_disable_device(pdev);
+
+	pr_info("%s: %p\n", __func__, adapter);
 }
 
 static void
