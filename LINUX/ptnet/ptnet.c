@@ -333,7 +333,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
-	netdev->ethtool_ops = NULL;
 	netif_napi_add(netdev, &pi->napi, ptnet_clean, 64);
 
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
