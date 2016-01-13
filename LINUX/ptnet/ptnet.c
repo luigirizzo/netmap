@@ -200,13 +200,20 @@ ptnet_free_irq(struct ptnet_info *pi)
 static void
 ptnet_ioregs_dump(struct ptnet_info *pi)
 {
-	uint32_t x, y, z;
+	char *regnames[PTNET_IO_END >> 2] = {
+		"PTFEAT",
+		"PTCTL",
+		"PTSTS",
+		"TXKICK",
+		"RXKICK",
+	}; // remove this ; to drive the compiler crazy !
+	uint32_t val;
+	int i;
 
-	x = ioread32(pi->ioaddr + 0);
-	y = ioread32(pi->ioaddr + 4);
-	z = ioread32(pi->ioaddr + 8);
-
-	pr_info("x=%u y=%u x=%u\n", x, y, z);
+	for (i=0; i<PTNET_IO_END; i+=4) {
+		val = ioread32(pi->ioaddr + i);
+		pr_info("PTNET_IO_%s = %u\n", regnames[i >> 2], val);
+	}
 }
 
 /*
@@ -240,7 +247,7 @@ ptnet_open(struct net_device *netdev)
 
 	pr_info("%s: %p\n", __func__, pi);
 
-	iowrite32(18, pi->ioaddr + 0);
+	iowrite32(18, pi->ioaddr + PTNET_IO_PTFEAT);
 	ptnet_ioregs_dump(pi);
 
 	pi->csb->guest_csb_on = 1;
@@ -294,8 +301,8 @@ ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int ret;
 
-	iowrite32(cmd, pi->ioaddr + 4);
-	ret = ioread32(pi->ioaddr + 8);
+	iowrite32(cmd, pi->ioaddr + PTNET_IO_PTCTL);
+	ret = ioread32(pi->ioaddr + PTNET_IO_PTSTS);
 	pr_info("PTCTL %u, ret %u\n", cmd, ret);
 
 	return ret;
@@ -431,7 +438,7 @@ ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 
 	notify = netmap_pt_guest_txsync(kring, flags);
 	if (notify) {
-		iowrite32(0, pi->ioaddr + 8);
+		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK);
 	}
 
 	return 0;
@@ -447,7 +454,7 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 
 	notify = netmap_pt_guest_rxsync(kring, flags);
 	if (notify) {
-		iowrite32(0, pi->ioaddr + 12);
+		iowrite32(0, pi->ioaddr + PTNET_IO_RXKICK);
 	}
 
 	return 0;
