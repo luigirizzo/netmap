@@ -343,6 +343,9 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_dma;
 	}
 
+	/* Map the CSB memory exposed by the device. We don't use
+	 * pci_ioremap_bar(), since we want the ioremap_cache() function
+	 * to be called internally, rather than ioremap_nocache(). */
 	pr_info("MEMORY BAR (CSB): start 0x%llx, len %llu, flags 0x%lx\n",
 		pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
 		pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
