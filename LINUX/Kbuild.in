@@ -42,3 +42,7 @@ ifdef NETMAP_DRIVER_SUFFIX
 else
 	obj-m += $(O_DRIVERS)
 endif
+
+ifdef CONFIG_NETMAP_PTNETMAP_GUEST
+	obj-m += ptnet/ptnet.o
+endif
