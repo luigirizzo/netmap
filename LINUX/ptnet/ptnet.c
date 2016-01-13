@@ -30,6 +30,7 @@
 #include <linux/interrupt.h>
 #include <linux/dma-mapping.h>
 
+#define WITH_PTNETMAP_GUEST
 #include "../bsd_glue.h"
 #include "net/netmap.h"
 #include "dev/netmap/netmap_kern.h"
@@ -46,6 +47,7 @@ struct ptnet_info {
 	int bars;
 	u8* __iomem ioaddr;
 	u8* __iomem csbaddr;
+	volatile struct paravirt_csb *csb;
 
 	struct napi_struct napi;
 };
@@ -241,6 +243,8 @@ ptnet_open(struct net_device *netdev)
 	iowrite32(18, pi->ioaddr + 0);
 	ptnet_ioregs_dump(pi);
 
+	pi->csb->guest_csb_on = 1;
+
 	return 0;
 }
 
@@ -259,6 +263,8 @@ static int
 ptnet_close(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
+
+	pi->csb->guest_csb_on = 0;
 
 	netif_carrier_off(netdev);
 	netif_tx_disable(netdev);
@@ -282,6 +288,182 @@ static const struct net_device_ops ptnet_netdev_ops = {
 #endif
 };
 
+static uint32_t
+ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
+{
+	struct ptnet_info *pi = netdev_priv(netdev);
+	int ret;
+
+	iowrite32(cmd, pi->ioaddr + 4);
+	ret = ioread32(pi->ioaddr + 8);
+	pr_info("PTCTL %u, ret %u\n", cmd, ret);
+
+	return ret;
+}
+
+static struct netmap_pt_guest_ops ptnet_nm_pt_guest_ops = {
+	.nm_ptctl = ptnet_nm_ptctl,
+};
+
+static int
+ptnet_nm_register(struct netmap_adapter *na, int onoff)
+{
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na;
+
+	/* device-specific */
+	struct net_device *netdev = na->ifp;
+	struct paravirt_csb *csb = ptna->csb;
+	bool was_up = false;
+	enum txrx t;
+	int ret = 0;
+	int i;
+
+	if (na->active_fds > 0) {
+		/* Nothing to do. */
+		return 0;
+	}
+
+	if (netif_running(netdev)) {
+		was_up = true;
+		ptnet_close(netdev);
+	}
+
+	if (onoff) {
+		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
+		if (ret) {
+			goto out;
+		}
+
+		for_rx_tx(t) {
+			for (i=0; i<nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+				struct pt_ring *ptring;
+
+				if (!nm_kring_pending_on(kring)) {
+					continue;
+				}
+
+				ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
+				kring->rhead = kring->ring->head = ptring->head;
+				kring->rcur = kring->ring->cur = ptring->cur;
+				kring->nr_hwcur = ptring->hwcur;
+				kring->nr_hwtail = kring->rtail =
+					kring->ring->tail = ptring->hwtail;
+				kring->nr_mode = NKR_NETMAP_ON;
+			}
+		}
+
+		if (1) {
+			nm_set_native_flags(na);
+		} else {
+			na->na_flags |= NAF_NETMAP_ON;
+		}
+	} else {
+		if (1) {
+			nm_clear_native_flags(na);
+		} else {
+			na->na_flags &= NAF_NETMAP_ON;
+		}
+
+		for_rx_tx(t) {
+			for (i=0; i<nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (!nm_kring_pending_off(kring)) {
+					continue;
+				}
+
+				kring->nr_mode = NKR_NETMAP_OFF;
+			}
+		}
+
+		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
+	}
+out:
+	if (was_up) {
+		ptnet_open(netdev);
+	}
+
+	return ret;
+}
+
+static int
+ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
+		unsigned *rxr, unsigned *rxd)
+{
+	struct netmap_pt_guest_adapter *ptna =
+		(struct netmap_pt_guest_adapter *)na;
+	int ret;
+
+	if (ptna->csb == NULL) {
+		pr_err("%s: NULL CSB pointer", __func__);
+		return EINVAL;
+	}
+
+	ret = ptnet_nm_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	if (ret) {
+		return ret;
+	}
+
+	*txr = ptna->csb->num_tx_rings;
+	*rxr = ptna->csb->num_rx_rings;
+#if 1
+	*txr = 1;
+	*rxr = 1;
+#endif
+	*txd = ptna->csb->num_tx_slots;
+	*rxd = ptna->csb->num_rx_slots;
+
+	pr_info("txr %u, rxr %u, txd %u, rxd %u\n",
+		*txr, *rxr, *txd, *rxd);
+
+	return 0;
+}
+
+static int
+ptnet_nm_txsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	struct net_device *netdev = na->ifp;
+	struct ptnet_info *pi = netdev_priv(netdev);
+	bool notify;
+
+	notify = netmap_pt_guest_txsync(kring, flags);
+	if (notify) {
+		iowrite32(0, pi->ioaddr + 8);
+	}
+
+	return 0;
+}
+
+static int
+ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	struct net_device *netdev = na->ifp;
+	struct ptnet_info *pi = netdev_priv(netdev);
+	bool notify;
+
+	notify = netmap_pt_guest_rxsync(kring, flags);
+	if (notify) {
+		iowrite32(0, pi->ioaddr + 12);
+	}
+
+	return 0;
+}
+
+static struct netmap_adapter ptnet_nm_ops = {
+	.num_tx_desc = 1024,
+	.num_rx_desc = 1024,
+	.num_tx_rings = 1,
+	.num_rx_rings = 1,
+	.nm_register = ptnet_nm_register,
+	.nm_config = ptnet_nm_config,
+	.nm_txsync = ptnet_nm_txsync,
+	.nm_rxsync = ptnet_nm_rxsync,
+};
+
 /*
  * ptnet_probe - Device Initialization Routine
  * @pdev: PCI device information struct
@@ -297,6 +479,7 @@ static int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct net_device *netdev;
+	struct netmap_adapter na_arg;
 	struct ptnet_info *pi;
 	int bars;
 	int err;
@@ -355,6 +538,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (!pi->csbaddr)
 		goto err_ioremap;
 
+	pi->csb = (struct paravirt_csb *)pi->csbaddr;
+
 	/* useless, to be removed */
 	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
 	if (err) {
@@ -384,6 +569,11 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_dma;
 
 	netif_carrier_off(netdev);
+
+	/* Attach a guest pass-through netmap adapter to this device. */
+	na_arg = ptnet_nm_ops;
+	na_arg.ifp = pi->netdev;
+	netmap_pt_guest_attach(&na_arg, &ptnet_nm_pt_guest_ops);
 
 	pr_info("%s: %p\n", __func__, pi);
 
