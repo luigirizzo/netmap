@@ -44,6 +44,8 @@ struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
 
+	uint32_t ptfeatures;
+
 	int bars;
 	u8* __iomem ioaddr;
 	u8* __iomem csbaddr;
@@ -533,6 +535,15 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_dma;
 	}
 
+	/* Check if we are supported by the hypervisor. If not,
+	 * bail out immediately. */
+	iowrite32(NET_PTN_FEATURES_BASE, pi->ioaddr + PTNET_IO_PTFEAT);
+	pi->ptfeatures = ioread32(pi->ioaddr + PTNET_IO_PTFEAT);
+	if (!(pi->ptfeatures & NET_PTN_FEATURES_BASE)) {
+		pr_err("Hypervisor doesn't support netmap passthrough");
+		goto err_ptfeat;
+	}
+
 	/* Map the CSB memory exposed by the device. We don't use
 	 * pci_ioremap_bar(), since we want the ioremap_cache() function
 	 * to be called internally, rather than ioremap_nocache(). */
@@ -543,7 +554,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->csbaddr = ioremap_cache(pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
 				    pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR));
 	if (!pi->csbaddr)
-		goto err_ioremap;
+		goto err_ptfeat;
 
 	pi->csb = (struct paravirt_csb *)pi->csbaddr;
 
@@ -589,7 +600,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pr_info("%s: failed\n", __func__);
 err_dma:
 	iounmap(pi->csbaddr);
-err_ioremap:
+err_ptfeat:
 	iounmap(pi->ioaddr);
 	free_netdev(netdev);
 err_alloc_etherdev:
