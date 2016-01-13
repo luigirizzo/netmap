@@ -36,11 +36,8 @@
 #include "dev/netmap/netmap_virt.h"
 
 
-char ptnet_driver_name[] = "ptnet";
-static char ptnet_driver_string[] = "Passthrough netmap interface driver";
+#define DRV_NAME "ptnet"
 #define DRV_VERSION "0.1"
-const char ptnet_driver_version[] = DRV_VERSION;
-static const char ptnet_copyright[] = "Copyright (c) 2015 Vincenzo Maffione";
 
 struct ptnet_adapter {
 	struct net_device *netdev;
@@ -291,7 +288,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return err;
 	}
 
-	err = pci_request_selected_regions(pdev, bars, ptnet_driver_name);
+	err = pci_request_selected_regions(pdev, bars, DRV_NAME);
 	if (err) {
 		goto err_pci_reg;
 	}
@@ -415,7 +412,7 @@ static const struct pci_device_id ptnet_pci_table[] = {
 MODULE_DEVICE_TABLE(pci, ptnet_pci_table);
 
 static struct pci_driver ptnet_driver = {
-	.name     = ptnet_driver_name,
+	.name     = DRV_NAME,
 	.id_table = ptnet_pci_table,
 	.probe    = ptnet_probe,
 	.remove   = ptnet_remove,
@@ -431,8 +428,9 @@ static struct pci_driver ptnet_driver = {
 static int __init
 ptnet_init_module(void)
 {
-	pr_info("%s - version %s\n", ptnet_driver_string, ptnet_driver_version);
-	pr_info("%s\n", ptnet_copyright);
+	pr_info("%s - version %s\n", "Passthrough netmap interface driver",
+		DRV_VERSION);
+	pr_info("%s\n", "Copyright (c) 2015 Vincenzo Maffione");
 
 	return pci_register_driver(&ptnet_driver);
 }
