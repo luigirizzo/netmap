@@ -236,13 +236,18 @@ struct paravirt_csb {
  * guest device driver.
  */
 
-/* PCI identifiers and PCI BARs for the ptnetmap memdev */
+/* PCI identifiers and PCI BARs for the ptnetmap memdev
+ * and ptnetmap network interface. */
 #define PTN_MEMDEV_NAME                 "ptnetmap-memdev"
 #define PTNETMAP_PCI_VENDOR_ID          0x3333  /* XXX-ste: change vendor_id */
 #define PTNETMAP_PCI_DEVICE_ID          0x0001  /* memory device */
 #define PTNETMAP_PCI_NETIF_ID           0x0002  /* network interface */
 #define PTNETMAP_IO_PCI_BAR             0
 #define PTNETMAP_MEM_PCI_BAR            1
+#define PTNETMAP_MSIX_PCI_BAR           2
+
+#define PTNETMAP_MSIX_VEC_TX            0
+#define PTNETMAP_MSIX_VEC_RX            1
 
 /* Registers for the ptnetmap memdev */
 /* 32 bit r/o */
