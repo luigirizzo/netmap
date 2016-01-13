@@ -195,6 +195,18 @@ ptnet_free_irq(struct ptnet_info *pi)
 	free_irq(pi->pdev->irq, netdev);
 }
 
+static void
+ptnet_ioregs_dump(struct ptnet_info *pi)
+{
+	uint32_t x, y, z;
+
+	x = ioread32(pi->ioaddr + 0);
+	y = ioread32(pi->ioaddr + 4);
+	z = ioread32(pi->ioaddr + 8);
+
+	pr_info("x=%u y=%u x=%u\n", x, y, z);
+}
+
 /*
  * ptnet_open - Called when a network interface is made active
  * @netdev: network interface device structure
@@ -225,6 +237,9 @@ ptnet_open(struct net_device *netdev)
 	netif_start_queue(netdev);
 
 	pr_info("%s: %p\n", __func__, pi);
+
+	iowrite32(18, pi->ioaddr + 0);
+	ptnet_ioregs_dump(pi);
 
 	return 0;
 }
