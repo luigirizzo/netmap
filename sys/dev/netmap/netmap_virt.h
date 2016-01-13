@@ -204,10 +204,24 @@ struct paravirt_csb {
 #define VIRTIO_NET_F_PTNETMAP		0x2000000
 #endif
 
+
 /*
  * ptnetmap registers for e1000 are defined in if_lem.h for FreeBSD
  * and e1000_hw.h for Linux
  */
+
+
+/*
+ * ptnetmap registers for ptnet device
+ */
+
+#define PTNET_IO_PTFEAT         0
+#define PTNET_IO_PTCTL          4
+#define PTNET_IO_PTSTS          8
+#define PTNET_IO_TXKICK		12
+#define PTNET_IO_RXKICK		16
+#define PTNET_IO_END            20
+#define PTNET_IO_MASK           0x1f
 
 #endif /* NETMAP_VIRT_CSB */
 
