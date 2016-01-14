@@ -211,7 +211,7 @@ ptnet_netpoll(struct net_device *netdev)
 #endif
 
 static int
-ptnet_request_irq(struct ptnet_info *pi)
+ptnet_irqs_init(struct ptnet_info *pi)
 {
 	char *names[PTNET_MSIX_VECTORS] = {"TX", "RX"};
 	irq_handler_t handlers[PTNET_MSIX_VECTORS] = {
@@ -268,7 +268,7 @@ err_masks:
 }
 
 static void
-ptnet_free_irq(struct ptnet_info *pi)
+ptnet_irqs_fini(struct ptnet_info *pi)
 {
 	int i;
 
@@ -300,6 +300,8 @@ ptnet_ioregs_dump(struct ptnet_info *pi)
 	}
 }
 
+static uint32_t
+ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd);
 /*
  * ptnet_open - Called when a network interface is made active
  * @netdev: network interface device structure
@@ -316,12 +318,6 @@ static int
 ptnet_open(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	int err;
-
-	err = ptnet_request_irq(pi);
-	if (err) {
-		return err;
-	}
 
 	napi_enable(&pi->napi);
 	ptnet_irq_enable(pi);
@@ -359,7 +355,6 @@ ptnet_close(struct net_device *netdev)
 	netif_tx_disable(netdev);
 	napi_disable(&pi->napi);
 	ptnet_irq_disable(pi);
-	ptnet_free_irq(pi);
 
 	pr_info("%s: %p\n", __func__, pi);
 
@@ -415,7 +410,6 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 
 	if (netif_running(netdev)) {
 		was_up = true;
-		ptnet_close(netdev);
 	}
 
 	if (onoff) {
@@ -471,7 +465,6 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	}
 out:
 	if (was_up) {
-		ptnet_open(netdev);
 	}
 
 	return ret;
@@ -612,7 +605,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	pi->ioaddr = pci_iomap(pdev, PTNETMAP_IO_PCI_BAR, 0);
 	if (!pi->ioaddr) {
-		goto err_dma;
+		goto err_ptfeat;
 	}
 
 	/* Check if we are supported by the hypervisor. If not,
@@ -641,7 +634,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* useless, to be removed */
 	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
 	if (err) {
-		goto err_dma;
+		goto err_irqs;
 	}
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
@@ -661,10 +654,16 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	device_set_wakeup_enable(&pi->pdev->dev, 0);
 
+	err = ptnet_irqs_init(pi);
+	if (err) {
+		goto err_irqs;
+	}
+	ptnet_nm_ptctl(netdev, 20);
+
 	strcpy(netdev->name, "eth%d");
 	err = register_netdev(netdev);
 	if (err)
-		goto err_dma;
+		goto err_netreg;
 
 	/* Attach a guest pass-through netmap adapter to this device. */
 	na_arg = ptnet_nm_ops;
@@ -683,7 +682,9 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return 0;
 
 	pr_info("%s: failed\n", __func__);
-err_dma:
+err_netreg:
+	ptnet_irqs_fini(pi);
+err_irqs:
 	iounmap(pi->csbaddr);
 err_ptfeat:
 	iounmap(pi->ioaddr);
@@ -711,6 +712,10 @@ ptnet_remove(struct pci_dev *pdev)
 	struct ptnet_info *pi = netdev_priv(netdev);
 
 	unregister_netdev(netdev);
+
+	ptnet_nm_ptctl(netdev, 21);
+	ptnet_irqs_fini(pi);
+
 	iounmap(pi->ioaddr);
 	iounmap(pi->csbaddr);
 	pci_release_selected_regions(pdev, pi->bars);
