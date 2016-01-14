@@ -40,6 +40,8 @@
 #define DRV_NAME "ptnet"
 #define DRV_VERSION "0.1"
 
+#define PTNET_MSIX_VECTORS	2
+
 struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
@@ -49,8 +51,12 @@ struct ptnet_info {
 	int bars;
 	u8* __iomem ioaddr;
 	u8* __iomem csbaddr;
-	volatile struct paravirt_csb *csb;
 
+	struct msix_entry msix_entries[PTNET_MSIX_VECTORS];
+	char msix_names[PTNET_MSIX_VECTORS][64];
+	cpumask_var_t msix_affinity_masks[PTNET_MSIX_VECTORS];
+
+	volatile struct paravirt_csb *csb;
 	struct napi_struct napi;
 };
 
@@ -61,7 +67,7 @@ struct ptnet_info {
 static void
 ptnet_irq_disable(struct ptnet_info *pi)
 {
-	synchronize_irq(pi->pdev->irq);
+	//synchronize_irq(pi->pdev->irq);
 }
 
 /*
@@ -177,26 +183,65 @@ ptnet_netpoll(struct net_device *netdev)
 static int
 ptnet_request_irq(struct ptnet_info *pi)
 {
-	struct net_device *netdev = pi->netdev;
-	irq_handler_t handler = ptnet_intr;
-	int irq_flags = IRQF_SHARED;
-	int err;
+	char *names[PTNET_MSIX_VECTORS] = {"TX", "RX"};
+	int ret;
+	int i;
 
-	err = request_irq(pi->pdev->irq, handler, irq_flags, netdev->name,
-	                  netdev);
-	if (err) {
-		pr_err( "Unable to allocate interrupt Error: %d\n", err);
+	memset(pi->msix_affinity_masks, 0, sizeof(pi->msix_affinity_masks));
+
+	for (i=0; i<PTNET_MSIX_VECTORS; i++) {
+		if (!alloc_cpumask_var(&pi->msix_affinity_masks[i],
+				       GFP_KERNEL)) {
+			goto err_masks;
+		}
+		pi->msix_entries[i].entry = i;
 	}
 
-	return err;
+	ret = pci_enable_msix_exact(pi->pdev, pi->msix_entries,
+				    PTNET_MSIX_VECTORS);
+	if (ret) {
+		pr_err("Failed to enable msix vectors (%d)\n", ret);
+		goto err_masks;
+	}
+
+	for (i=0; i<PTNET_MSIX_VECTORS; i++) {
+		snprintf(pi->msix_names[i], sizeof(pi->msix_names[i]),
+			 "ptnet-%s", names[i]);
+		ret = request_irq(pi->msix_entries[i].vector, ptnet_intr,
+				  0, pi->msix_names[i], pi->netdev);
+		if (ret) {
+			pr_err("Unable to allocate interrupt (%d)\n", ret);
+			goto err_irqs;
+		}
+	}
+
+	return 0;
+
+err_irqs:
+	for (; i>=0; i--) {
+		free_irq(pi->msix_entries[i].vector, pi->netdev);
+	}
+	i = PTNET_MSIX_VECTORS-1;
+err_masks:
+	for (; i>=0; i--) {
+		free_cpumask_var(pi->msix_affinity_masks[i]);
+	}
+
+	return ret;
 }
 
 static void
 ptnet_free_irq(struct ptnet_info *pi)
 {
-	struct net_device *netdev = pi->netdev;
+	int i;
 
-	free_irq(pi->pdev->irq, netdev);
+	for (i=0; i<PTNET_MSIX_VECTORS; i++) {
+		free_irq(pi->msix_entries[i].vector, pi->netdev);
+		if (pi->msix_affinity_masks[i]) {
+			free_cpumask_var(pi->msix_affinity_masks[i]);
+		}
+	}
+	pci_disable_msix(pi->pdev);
 }
 
 static void
