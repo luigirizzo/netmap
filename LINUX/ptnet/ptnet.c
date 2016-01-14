@@ -249,7 +249,6 @@ ptnet_open(struct net_device *netdev)
 
 	pr_info("%s: %p\n", __func__, pi);
 
-	iowrite32(18, pi->ioaddr + PTNET_IO_PTFEAT);
 	ptnet_ioregs_dump(pi);
 
 	pi->csb->guest_csb_on = 1;
@@ -406,7 +405,7 @@ ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 	int ret;
 
 	if (ptna->csb == NULL) {
-		pr_err("%s: NULL CSB pointer", __func__);
+		pr_err("%s: NULL CSB pointer\n", __func__);
 		return EINVAL;
 	}
 
@@ -540,7 +539,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	iowrite32(NET_PTN_FEATURES_BASE, pi->ioaddr + PTNET_IO_PTFEAT);
 	pi->ptfeatures = ioread32(pi->ioaddr + PTNET_IO_PTFEAT);
 	if (!(pi->ptfeatures & NET_PTN_FEATURES_BASE)) {
-		pr_err("Hypervisor doesn't support netmap passthrough");
+		pr_err("Hypervisor doesn't support netmap passthrough\n");
 		goto err_ptfeat;
 	}
 
@@ -592,6 +591,11 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	na_arg = ptnet_nm_ops;
 	na_arg.ifp = pi->netdev;
 	netmap_pt_guest_attach(&na_arg, &ptnet_nm_pt_guest_ops);
+	/* Now a netmap adapter for this device has been allocated, and it
+	 * can be accessed through NA(ifp). We have to initialize the CSB
+	 * pointer. */
+	((struct netmap_pt_guest_adapter *)NA(pi->netdev))->csb =
+			(struct paravirt_csb *)pi->csbaddr;
 
 	pr_info("%s: %p\n", __func__, pi);
 
