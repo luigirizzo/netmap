@@ -27,4 +27,4 @@ diff-r8:
 
 release:
 	D=`date +%Y%m%d` && tar cvzf /tmp/$${D}-netmap.tgz \
-		-s'/^./netmap-release/' $(RELEASE_EXCL) $(RELEASE_SRCS)
+		-s'/^./netmap/' $(RELEASE_EXCL) $(RELEASE_SRCS)

@@ -83,7 +83,7 @@ package() {
 
     # Install the netmap module into the extramodules-VERSION directory
     mkdir -p "$pkgdir/lib/modules/extramodules-${KVER2}"
-    cp "$srcdir/$_gitname/LINUX/netmap_lin.ko" "$pkgdir/lib/modules/extramodules-${KVER2}"
+    cp "$srcdir/$_gitname/LINUX/netmap.ko" "$pkgdir/lib/modules/extramodules-${KVER2}"
 
     # Install pkt-gen and valectl into /usr/bin
     mkdir -p "$pkgdir/usr/bin"
@@ -101,7 +101,7 @@ package() {
 
     #Find and install the modified NIC drivers
     cd "$srcdir/$_gitname/LINUX"
-    DRIVERS=$(find . -name "*.ko" -and ! -name "netmap_lin.ko")
+    DRIVERS=$(find . -name "*.ko" -and ! -name "netmap.ko")
     if [ -n "$DRIVERS" ]; then
         mkdir -p "$pkgdir/lib/modules/extramodules-${KVER2}/netmap-drivers"
         cp --parent $DRIVERS "$pkgdir/lib/modules/extramodules-${KVER2}/netmap-drivers"
