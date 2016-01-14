@@ -126,6 +126,12 @@ ptnet_tx_intr(int irq, void *data)
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
 
+	printk("%s", __func__);
+
+	if (netmap_tx_irq(netdev, 0)) {
+		return IRQ_HANDLED;
+	}
+
 	/* Clean TX. */
 	pi->netdev->stats.tx_bytes += 0;
 	pi->netdev->stats.tx_packets += 0;
@@ -144,6 +150,14 @@ ptnet_rx_intr(int irq, void *data)
 {
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
+	unsigned int unused;
+
+	printk("%s", __func__);
+
+	if (netmap_rx_irq(netdev, 0, &unused)) {
+		(void)unused;
+		return IRQ_HANDLED;
+	}
 
 	if (likely(napi_schedule_prep(&pi->napi))) {
 		__napi_schedule(&pi->napi);
