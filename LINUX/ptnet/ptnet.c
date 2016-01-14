@@ -248,6 +248,8 @@ ptnet_request_irq(struct ptnet_info *pi)
 			pr_err("Unable to allocate interrupt (%d)\n", ret);
 			goto err_irqs;
 		}
+		pr_info("IRQ for %s --> %u \n", names[i],
+			pi->msix_entries[i].vector);
 	}
 
 	return 0;
