@@ -3,13 +3,13 @@
 #set -x  # for debugging
 
 if [ -z "$NMSRC" ]; then
-    NMSRC=~/netmap-release
+    NMSRC=~/netmap
 fi
 DRIVER="ixgbe"
 #IF="eth0"  # force an interface
 
-if [ ! -f ${NMSRC}/LINUX/netmap_lin.ko ]; then
-    echo "LINUX/netmap_lin.ko missing. Please compile netmap."
+if [ ! -f ${NMSRC}/LINUX/netmap.ko ]; then
+    echo "LINUX/netmap.ko missing. Please compile netmap."
     exit 1
 fi
 
@@ -19,7 +19,7 @@ if [ ! -f ${NMSRC}/LINUX/${DRIVER}/${DRIVER}.ko ]; then
     exit 1
 fi
 
-NMLOADED=$(lsmod | grep netmap_lin | wc -l)
+NMLOADED=$(lsmod | grep netmap | wc -l)
 DRVLOADED=$(lsmod | grep "${DRIVER}" | wc -l)
 
 # Unload the driver
@@ -29,7 +29,7 @@ fi
 
 # Load netmap
 if [ $NMLOADED == "0" ]; then
-    sudo insmod ${NMSRC}/LINUX/netmap_lin.ko
+    sudo insmod ${NMSRC}/LINUX/netmap.ko
 fi
 
 if [ "$1" == "g" ]; then
