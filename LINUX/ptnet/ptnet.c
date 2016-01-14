@@ -301,7 +301,7 @@ ptnet_open(struct net_device *netdev)
 	napi_enable(&pi->napi);
 	netif_start_queue(netdev);
 
-	ptnet_ioregs_dump(pi);
+	if (0) ptnet_ioregs_dump(pi);
 
 	pi->csb->guest_csb_on = 1;
 	netif_carrier_on(netdev);
@@ -388,6 +388,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 
 	if (netif_running(netdev)) {
 		was_up = true;
+		ptnet_close(netdev);
 	}
 
 	if (onoff) {
@@ -443,6 +444,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	}
 out:
 	if (was_up) {
+		ptnet_open(netdev);
 	}
 
 	return ret;
