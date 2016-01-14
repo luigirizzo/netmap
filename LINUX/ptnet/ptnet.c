@@ -60,25 +60,6 @@ struct ptnet_info {
 	struct napi_struct napi;
 };
 
-/*
- * ptnet_irq_disable - Mask off interrupt generation on the NIC
- * @pi: NIC private structure
- */
-static void
-ptnet_irq_disable(struct ptnet_info *pi)
-{
-	//synchronize_irq(pi->pdev->irq);
-}
-
-/*
- * ptnet_irq_enable - Enable default interrupt generation settings
- * @pi: NIC private structure
- */
-static void
-ptnet_irq_enable(struct ptnet_info *pi)
-{
-}
-
 static netdev_tx_t
 ptnet_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 {
@@ -126,7 +107,7 @@ ptnet_tx_intr(int irq, void *data)
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
 
-	printk("%s\n", __func__);
+	//printk("%s\n", __func__);
 
 	if (netmap_tx_irq(netdev, 0)) {
 		return IRQ_HANDLED;
@@ -152,7 +133,7 @@ ptnet_rx_intr(int irq, void *data)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	unsigned int unused;
 
-	printk("%s\n", __func__);
+	//printk("%s\n", __func__);
 
 	if (netmap_rx_irq(netdev, 0, &unused)) {
 		(void)unused;
@@ -163,7 +144,6 @@ ptnet_rx_intr(int irq, void *data)
 		__napi_schedule(&pi->napi);
 	} else {
 		/* This should not happen, probably. */
-		ptnet_irq_enable(pi);
 	}
 
 	return IRQ_HANDLED;
@@ -187,7 +167,6 @@ ptnet_poll_rx(struct napi_struct *napi, int budget)
 	/* If budget not fully consumed, exit the polling mode */
 	if (work_done < budget) {
 		napi_complete(napi);
-		ptnet_irq_enable(pi);
 	}
 
 	return work_done;
@@ -320,7 +299,6 @@ ptnet_open(struct net_device *netdev)
 	struct ptnet_info *pi = netdev_priv(netdev);
 
 	napi_enable(&pi->napi);
-	ptnet_irq_enable(pi);
 	netif_start_queue(netdev);
 
 	ptnet_ioregs_dump(pi);
@@ -354,7 +332,7 @@ ptnet_close(struct net_device *netdev)
 	netif_carrier_off(netdev);
 	netif_tx_disable(netdev);
 	napi_disable(&pi->napi);
-	ptnet_irq_disable(pi);
+	//synchronize_irq(pi->pdev->irq);
 
 	pr_info("%s: %p\n", __func__, pi);
 
