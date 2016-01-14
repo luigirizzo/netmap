@@ -126,7 +126,7 @@ ptnet_tx_intr(int irq, void *data)
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
 
-	printk("%s", __func__);
+	printk("%s\n", __func__);
 
 	if (netmap_tx_irq(netdev, 0)) {
 		return IRQ_HANDLED;
@@ -152,7 +152,7 @@ ptnet_rx_intr(int irq, void *data)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	unsigned int unused;
 
-	printk("%s", __func__);
+	printk("%s\n", __func__);
 
 	if (netmap_rx_irq(netdev, 0, &unused)) {
 		(void)unused;
@@ -315,8 +315,6 @@ ptnet_open(struct net_device *netdev)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int err;
 
-	netif_carrier_off(netdev);
-
 	err = ptnet_request_irq(pi);
 	if (err) {
 		return err;
@@ -326,11 +324,12 @@ ptnet_open(struct net_device *netdev)
 	ptnet_irq_enable(pi);
 	netif_start_queue(netdev);
 
-	pr_info("%s: %p\n", __func__, pi);
-
 	ptnet_ioregs_dump(pi);
 
 	pi->csb->guest_csb_on = 1;
+	netif_carrier_on(netdev);
+
+	pr_info("%s: %p\n", __func__, pi);
 
 	return 0;
 }
@@ -664,8 +663,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err)
 		goto err_dma;
 
-	netif_carrier_off(netdev);
-
 	/* Attach a guest pass-through netmap adapter to this device. */
 	na_arg = ptnet_nm_ops;
 	na_arg.ifp = pi->netdev;
@@ -675,6 +672,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * pointer. */
 	((struct netmap_pt_guest_adapter *)NA(pi->netdev))->csb =
 			(struct paravirt_csb *)pi->csbaddr;
+
+	netif_carrier_off(netdev);
 
 	pr_info("%s: %p\n", __func__, pi);
 
