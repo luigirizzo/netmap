@@ -249,7 +249,6 @@ ptnet_open(struct net_device *netdev)
 
 	pr_info("%s: %p\n", __func__, pi);
 
-	iowrite32(18, pi->ioaddr + PTNET_IO_PTFEAT);
 	ptnet_ioregs_dump(pi);
 
 	pi->csb->guest_csb_on = 1;
@@ -406,7 +405,7 @@ ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 	int ret;
 
 	if (ptna->csb == NULL) {
-		pr_err("%s: NULL CSB pointer", __func__);
+		pr_err("%s: NULL CSB pointer\n", __func__);
 		return EINVAL;
 	}
 
@@ -540,7 +539,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	iowrite32(NET_PTN_FEATURES_BASE, pi->ioaddr + PTNET_IO_PTFEAT);
 	pi->ptfeatures = ioread32(pi->ioaddr + PTNET_IO_PTFEAT);
 	if (!(pi->ptfeatures & NET_PTN_FEATURES_BASE)) {
-		pr_err("Hypervisor doesn't support netmap passthrough");
+		pr_err("Hypervisor doesn't support netmap passthrough\n");
 		goto err_ptfeat;
 	}
 
