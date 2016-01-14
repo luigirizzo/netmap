@@ -116,12 +116,31 @@ ptnet_change_mtu(struct net_device *netdev, int new_mtu)
 }
 
 /*
- * ptnet_intr - Interrupt Handler
+ * ptnet_tx_intr - Interrupt Handler
  * @irq: interrupt number
  * @data: pointer to a network interface device structure
  */
 static irqreturn_t
-ptnet_intr(int irq, void *data)
+ptnet_tx_intr(int irq, void *data)
+{
+	struct net_device *netdev = data;
+	struct ptnet_info *pi = netdev_priv(netdev);
+
+	/* Clean TX. */
+	pi->netdev->stats.tx_bytes += 0;
+	pi->netdev->stats.tx_packets += 0;
+
+
+	return IRQ_HANDLED;
+}
+
+/*
+ * ptnet_rx_intr - Interrupt Handler
+ * @irq: interrupt number
+ * @data: pointer to a network interface device structure
+ */
+static irqreturn_t
+ptnet_rx_intr(int irq, void *data)
 {
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
@@ -137,19 +156,15 @@ ptnet_intr(int irq, void *data)
 }
 
 /*
- * ptnet_clean - NAPI Rx polling callback
+ * ptnet_poll_rx - NAPI Rx polling callback
  * @pi: NIC private structure
  */
 static int
-ptnet_clean(struct napi_struct *napi, int budget)
+ptnet_poll_rx(struct napi_struct *napi, int budget)
 {
 	struct ptnet_info *pi = container_of(napi, struct ptnet_info,
 						     napi);
 	int work_done = 0;
-
-	/* Clean TX. */
-	pi->netdev->stats.tx_bytes += 0;
-	pi->netdev->stats.tx_packets += 0;
 
 	/* Clean RX. */
 	pi->netdev->stats.rx_bytes += 0;
@@ -175,7 +190,8 @@ ptnet_netpoll(struct net_device *netdev)
 	struct ptnet_info *pi = netdev_priv(netdev);
 
 	disable_irq(pi->pdev->irq);
-	ptnet_intr(pi->pdev->irq, netdev);
+	ptnet_tx_intr(pi->msix_entries[0].vector, netdev);
+	ptnet_rx_intr(pi->msix_entries[1].vector, netdev);
 	enable_irq(pi->pdev->irq);
 }
 #endif
@@ -184,6 +200,10 @@ static int
 ptnet_request_irq(struct ptnet_info *pi)
 {
 	char *names[PTNET_MSIX_VECTORS] = {"TX", "RX"};
+	irq_handler_t handlers[PTNET_MSIX_VECTORS] = {
+		ptnet_tx_intr,
+		ptnet_rx_intr,
+	};
 	int ret;
 	int i;
 
@@ -207,7 +227,7 @@ ptnet_request_irq(struct ptnet_info *pi)
 	for (i=0; i<PTNET_MSIX_VECTORS; i++) {
 		snprintf(pi->msix_names[i], sizeof(pi->msix_names[i]),
 			 "ptnet-%s", names[i]);
-		ret = request_irq(pi->msix_entries[i].vector, ptnet_intr,
+		ret = request_irq(pi->msix_entries[i].vector, handlers[i],
 				  0, pi->msix_names[i], pi->netdev);
 		if (ret) {
 			pr_err("Unable to allocate interrupt (%d)\n", ret);
@@ -609,7 +629,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
-	netif_napi_add(netdev, &pi->napi, ptnet_clean, 64);
+	netif_napi_add(netdev, &pi->napi, ptnet_poll_rx, 64);
 
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
 
