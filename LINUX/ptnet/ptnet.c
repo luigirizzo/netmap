@@ -226,6 +226,7 @@ ptnet_request_irq(struct ptnet_info *pi)
 	for (i=0; i<PTNET_MSIX_VECTORS; i++) {
 		if (!alloc_cpumask_var(&pi->msix_affinity_masks[i],
 				       GFP_KERNEL)) {
+			pr_err("Failed to alloc cpumask var\n");
 			goto err_masks;
 		}
 		pi->msix_entries[i].entry = i;
