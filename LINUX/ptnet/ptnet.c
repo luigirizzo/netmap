@@ -46,12 +46,15 @@ struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
 
+	/* Mirrors PTFEAT register. */
 	uint32_t ptfeatures;
 
+	/* Access to device memory. */
 	int bars;
 	u8* __iomem ioaddr;
 	u8* __iomem csbaddr;
 
+	/* MSI-X interrupt data structures. */
 	struct msix_entry msix_entries[PTNET_MSIX_VECTORS];
 	char msix_names[PTNET_MSIX_VECTORS][64];
 	cpumask_var_t msix_affinity_masks[PTNET_MSIX_VECTORS];
@@ -200,6 +203,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	int ret;
 	int i;
 
+	/* Allocate the MSI-X interrupt vectors we need. */
 	memset(pi->msix_affinity_masks, 0, sizeof(pi->msix_affinity_masks));
 
 	for (i=0; i<PTNET_MSIX_VECTORS; i++) {
@@ -231,6 +235,10 @@ ptnet_irqs_init(struct ptnet_info *pi)
 			pi->msix_entries[i].vector);
 	}
 
+	/* Tell the hypervisor that we have allocated the MSI-X vectors,
+	 * so that it can do its own setup. */
+	iowrite32(PTNET_CTRL_IRQINIT, pi->ioaddr + PTNET_IO_CTRL);
+
 	return 0;
 
 err_irqs:
@@ -250,6 +258,10 @@ static void
 ptnet_irqs_fini(struct ptnet_info *pi)
 {
 	int i;
+
+	/* Tell the hypervisor that we are going to deallocate the
+	 * MSI-X vectors, so that it can do its own setup. */
+	iowrite32(PTNET_CTRL_IRQFINI, pi->ioaddr + PTNET_IO_CTRL);
 
 	for (i=0; i<PTNET_MSIX_VECTORS; i++) {
 		free_irq(pi->msix_entries[i].vector, pi->netdev);
@@ -638,7 +650,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err) {
 		goto err_irqs;
 	}
-	iowrite32(PTNET_CTRL_IRQINIT, pi->ioaddr + PTNET_IO_CTRL);
 
 	strcpy(netdev->name, "eth%d");
 	err = register_netdev(netdev);
@@ -693,7 +704,6 @@ ptnet_remove(struct pci_dev *pdev)
 
 	unregister_netdev(netdev);
 
-	iowrite32(PTNET_CTRL_IRQFINI, pi->ioaddr + PTNET_IO_CTRL);
 	ptnet_irqs_fini(pi);
 
 	iounmap(pi->ioaddr);
