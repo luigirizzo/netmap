@@ -638,7 +638,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err) {
 		goto err_irqs;
 	}
-	ptnet_nm_ptctl(netdev, 20);
+	iowrite32(PTNET_CTRL_IRQINIT, pi->ioaddr + PTNET_IO_CTRL);
 
 	strcpy(netdev->name, "eth%d");
 	err = register_netdev(netdev);
@@ -693,7 +693,7 @@ ptnet_remove(struct pci_dev *pdev)
 
 	unregister_netdev(netdev);
 
-	ptnet_nm_ptctl(netdev, 21);
+	iowrite32(PTNET_CTRL_IRQFINI, pi->ioaddr + PTNET_IO_CTRL);
 	ptnet_irqs_fini(pi);
 
 	iounmap(pi->ioaddr);

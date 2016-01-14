@@ -218,10 +218,19 @@ struct paravirt_csb {
 #define PTNET_IO_PTFEAT         0
 #define PTNET_IO_PTCTL          4
 #define PTNET_IO_PTSTS          8
-#define PTNET_IO_TXKICK		12
-#define PTNET_IO_RXKICK		16
-#define PTNET_IO_END            20
+#define PTNET_IO_CTRL           12
+#define PTNET_IO_TXKICK		16
+#define PTNET_IO_RXKICK		20
+#define PTNET_IO_END            24
 #define PTNET_IO_MASK           0x1f
+
+/* Tell the hypervisor that guest has allocated the MSI-X
+ * interrupts, so that it can setup the host --> guest
+ * notification system (e.g. irqfd). */
+#define PTNET_CTRL_IRQINIT	1
+/* Tell the hypervisor to tear down the host --> guest
+ * notification system, since guest has deallocated the MSI-X. */
+#define PTNET_CTRL_IRQFINI	2
 
 #endif /* NETMAP_VIRT_CSB */
 
