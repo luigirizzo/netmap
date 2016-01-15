@@ -91,7 +91,14 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	skb_copy_to_linear_data(skb, nmbuf, skb->len);
 	ring->head = ring->cur = nm_next(ring->head, lim);
 
+	/* nm_txsync_prologue */
+	kring->rcur = ring->cur;
+	kring->rhead = ring->head;
+
 	ptnet_nm_txsync(kring, NAF_FORCE_RECLAIM);
+
+	/* nm_sync_finalize */
+	ring->tail = kring->rtail = kring->nr_hwtail;
 
 	dev_kfree_skb_any(skb);
 
