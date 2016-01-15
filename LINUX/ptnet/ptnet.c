@@ -59,7 +59,12 @@ struct ptnet_info {
 	char msix_names[PTNET_MSIX_VECTORS][64];
 	cpumask_var_t msix_affinity_masks[PTNET_MSIX_VECTORS];
 
+	/* CSB memory exposed by the device. */
 	volatile struct paravirt_csb *csb;
+
+	struct netmap_priv_d *nm_priv;
+	struct netmap_pt_guest_adapter *ptna;
+
 	struct napi_struct napi;
 };
 
@@ -291,8 +296,9 @@ ptnet_ioregs_dump(struct ptnet_info *pi)
 	}
 }
 
-static uint32_t
-ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd);
+static int ptnet_nm_register_netif(struct netmap_adapter *na, int onoff);
+static int ptnet_nm_register(struct netmap_adapter *na, int onoff);
+
 /*
  * ptnet_open - Called when a network interface is made active
  * @netdev: network interface device structure
@@ -309,6 +315,31 @@ static int
 ptnet_open(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
+	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	int ret;
+
+	netmap_adapter_get(na);
+
+	pi->nm_priv = netmap_priv_new();
+	if (!pi->nm_priv) {
+		pr_err("Failed to alloc netmap priv\n");
+		return -ENOMEM;
+	}
+
+	NMG_LOCK();
+
+	/* Replace nm_register method on the fly. */
+	na->nm_register = ptnet_nm_register_netif;
+	ret = netmap_do_regif(pi->nm_priv, na, 0, NR_REG_ALL_NIC |
+			      NR_EXCLUSIVE);
+	if (ret) {
+		pr_err("netmap_do_regif() failed\n");
+		netmap_adapter_put(na);
+		NMG_UNLOCK();
+		return -ret;
+	}
+
+	NMG_UNLOCK();
 
 	napi_enable(&pi->napi);
 	netif_start_queue(netdev);
@@ -338,6 +369,7 @@ static int
 ptnet_close(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
+	struct netmap_adapter *na = &pi->ptna->hwup.up;
 
 	pi->csb->guest_csb_on = 0;
 
@@ -345,6 +377,15 @@ ptnet_close(struct net_device *netdev)
 	netif_tx_disable(netdev);
 	napi_disable(&pi->napi);
 	//synchronize_irq(pi->pdev->irq);
+
+	NMG_LOCK();
+	netmap_do_unregif(pi->nm_priv);
+	na->nm_register = ptnet_nm_register;
+	NMG_UNLOCK();
+
+	netmap_priv_delete(pi->nm_priv);
+	pi->nm_priv = NULL;
+	netmap_adapter_put(na);
 
 	pr_info("%s: %p\n", __func__, pi);
 
@@ -378,6 +419,77 @@ ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
 static struct netmap_pt_guest_ops ptnet_nm_pt_guest_ops = {
 	.nm_ptctl = ptnet_nm_ptctl,
 };
+
+static int
+ptnet_nm_register_netif(struct netmap_adapter *na, int onoff)
+{
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na;
+
+	/* device-specific */
+	struct net_device *netdev = na->ifp;
+	struct paravirt_csb *csb = ptna->csb;
+	enum txrx t;
+	int ret = 0;
+	int i;
+
+	if (na->active_fds > 0) {
+		pr_err("THIS CANNOT HAPPEN WE HAVE NR_EXCLUSIVE\n");
+		return 0;
+	}
+
+	if (onoff) {
+		/* Make sure the host adapter passed through is ready
+		 * for txsync/rxsync. This also initializes the CSB. */
+		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
+		if (ret) {
+			goto out;
+		}
+
+		for_rx_tx(t) {
+			for (i=0; i<nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+				struct pt_ring *ptring;
+
+				if (!nm_kring_pending_on(kring)) {
+					continue;
+				}
+
+				/* Sync krings from the host, reading from
+				 * CSB. */
+				ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
+				kring->rhead = kring->ring->head = ptring->head;
+				kring->rcur = kring->ring->cur = ptring->cur;
+				kring->nr_hwcur = ptring->hwcur;
+				kring->nr_hwtail = kring->rtail =
+					kring->ring->tail = ptring->hwtail;
+				kring->nr_mode = NKR_NETMAP_ON;
+			}
+		}
+
+		/* Don't call nm_set_native_flags, since we don't want to
+		 * replace ndo_start_xmit method. */
+		na->na_flags |= NAF_NETMAP_ON;
+	} else {
+		na->na_flags &= NAF_NETMAP_ON;
+
+		for_rx_tx(t) {
+			for (i=0; i<nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (!nm_kring_pending_off(kring)) {
+					continue;
+				}
+
+				kring->nr_mode = NKR_NETMAP_OFF;
+			}
+		}
+
+		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
+	}
+out:
+	return ret;
+}
 
 static int
 ptnet_nm_register(struct netmap_adapter *na, int onoff)
@@ -663,8 +775,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Now a netmap adapter for this device has been allocated, and it
 	 * can be accessed through NA(ifp). We have to initialize the CSB
 	 * pointer. */
-	((struct netmap_pt_guest_adapter *)NA(pi->netdev))->csb =
-			(struct paravirt_csb *)pi->csbaddr;
+	pi->ptna = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
+	pi->ptna->csb = (struct paravirt_csb *)pi->csbaddr;
 
 	netif_carrier_off(netdev);
 
@@ -747,13 +859,13 @@ static struct pci_driver ptnet_driver = {
 };
 
 /*
- * ptnet_init_module - Driver Registration Routine
+ * ptnet_init - Driver Registration Routine
  *
- * ptnet_init_module is the first routine called when the driver is
+ * ptnet_init is the first routine called when netmap is
  * loaded. All it does is register with the PCI subsystem.
  */
-static int __init
-ptnet_init_module(void)
+int
+ptnet_init(void)
 {
 	pr_info("%s - version %s\n", "Passthrough netmap interface driver",
 		DRV_VERSION);
@@ -763,21 +875,13 @@ ptnet_init_module(void)
 }
 
 /*
- * ptnet_exit_module - Driver Exit Cleanup Routine
+ * ptnet_exit - Driver Exit Cleanup Routine
  *
- * ptnet_exit_module is called just before the driver is removed
+ * ptnet_exit is called just before netmap module is removed
  * from memory.
  */
-static void __exit
-ptnet_exit_module(void)
+void
+ptnet_fini(void)
 {
 	pci_unregister_driver(&ptnet_driver);
 }
-
-module_init(ptnet_init_module);
-module_exit(ptnet_exit_module);
-
-MODULE_AUTHOR("Vincenzo Maffione, <v.maffione@gmail.com>");
-MODULE_DESCRIPTION("Passthrough netmap interface driver");
-MODULE_LICENSE("GPL");
-MODULE_VERSION(DRV_VERSION);
