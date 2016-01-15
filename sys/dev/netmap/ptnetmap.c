@@ -772,7 +772,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     /* Store the ptnetmap configuration provided by the hypervisor. */
     memcpy(&pts->config, cfg, sizeof(struct ptnetmap_cfg));
     pts->csb = pts->config.csb;
-    DBG(ptnetmap_print_configuration(pts);)
+    DBG(ptnetmap_print_configuration(pts));
 
     /* Create kthreads */
     if ((ret = ptnetmap_create_kthreads(pts))) {
@@ -879,7 +879,7 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
     name = nmr->nr_name;
     cmd = nmr->nr_cmd;
 
-    DBG(D("name: %s", name);)
+    DBG(D("name: %s", name));
 
     if (!nm_ptnetmap_host_on(na)) {
         D("ERROR Netmap adapter %p is not a ptnetmap host adapter", na);
@@ -985,7 +985,7 @@ nm_pt_host_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
     *txd = na->num_tx_desc = parent->num_tx_desc;
     *rxd = na->num_rx_desc = parent->num_rx_desc;
 
-    DBG(D("rxr: %d txr: %d txd: %d rxd: %d", *rxr, *txr, *txd, *rxd);)
+    DBG(D("rxr: %d txr: %d txd: %d rxd: %d", *rxr, *txr, *txd, *rxd));
 
     return error;
 }
@@ -999,7 +999,7 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
     struct netmap_adapter *parent = pth_na->parent;
     int error;
 
-    DBG(D("%s", pth_na->up.name);)
+    DBG(D("%s", pth_na->up.name));
 
     /* create the parent krings */
     error = parent->nm_krings_create(parent);
@@ -1025,7 +1025,7 @@ nm_pt_host_krings_delete(struct netmap_adapter *na)
         (struct netmap_pt_host_adapter *)na;
     struct netmap_adapter *parent = pth_na->parent;
 
-    DBG(D("%s", pth_na->up.name);)
+    DBG(D("%s", pth_na->up.name));
 
     parent->nm_krings_delete(parent);
 
@@ -1040,7 +1040,7 @@ nm_pt_host_register(struct netmap_adapter *na, int onoff)
         (struct netmap_pt_host_adapter *)na;
     struct netmap_adapter *parent = pth_na->parent;
     int error;
-    DBG(D("%s onoff %d", pth_na->up.name, onoff);)
+    DBG(D("%s onoff %d", pth_na->up.name, onoff));
 
     if (onoff) {
         /* netmap_do_regif has been called on the ptnetmap na.
@@ -1075,7 +1075,7 @@ nm_pt_host_dtor(struct netmap_adapter *na)
         (struct netmap_pt_host_adapter *)na;
     struct netmap_adapter *parent = pth_na->parent;
 
-    DBG(D("%s", pth_na->up.name);)
+    DBG(D("%s", pth_na->up.name));
 
     parent->na_flags &= ~NAF_BUSY;
 
@@ -1117,7 +1117,7 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
         D("parent lookup failed: %d", error);
         goto put_out_noputparent;
     }
-    DBG(D("found parent: %s", parent->name);)
+    DBG(D("found parent: %s", parent->name));
 
     /* make sure the interface is not already in use */
     if (NETMAP_OWNED_BY_ANY(parent)) {
@@ -1170,7 +1170,7 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     strncpy(pth_na->up.name, parent->name, sizeof(pth_na->up.name));
     strcat(pth_na->up.name, "-PTN");
 
-    DBG(D("%s ptnetmap request DONE", pth_na->up.name);)
+    DBG(D("%s ptnetmap request DONE", pth_na->up.name));
 
     /* drop the reference to the ifp, if any */
     if (ifp)
