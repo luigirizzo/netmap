@@ -37,6 +37,12 @@
 #include "dev/netmap/netmap_virt.h"
 
 
+#if 0  /* Switch to 1 to enable per-packet logs. */
+#define DBG D
+#else
+#define DBG ND
+#endif
+
 #define DRV_NAME "ptnet"
 #define DRV_VERSION "0.1"
 
@@ -83,7 +89,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	struct netmap_slot *slot;
 	void *nmbuf;
 
-	pr_info("TX skb len %d\n", skb->len);
+	DBG("TX skb len=%d", skb->len);
 
 	slot = &ring->slot[ring->head];
 	slot->flags = 0;
@@ -258,6 +264,8 @@ ptnet_poll_rx(struct napi_struct *napi, int budget)
 
 		skb->protocol = eth_type_trans(skb, pi->netdev);
 		napi_gro_receive(&pi->napi, skb);
+
+		DBG("RX SKB len=%d", skb->len);
 
 		work_done++;
 	}
