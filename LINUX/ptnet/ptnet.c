@@ -316,6 +316,7 @@ ptnet_open(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	enum txrx t;
 	int ret;
 
 	netmap_adapter_get(na);
@@ -330,6 +331,8 @@ ptnet_open(struct net_device *netdev)
 
 	/* Replace nm_register method on the fly. */
 	na->nm_register = ptnet_nm_register_netif;
+
+	/* Put the device in netmap mode. */
 	ret = netmap_do_regif(pi->nm_priv, na, 0, NR_REG_ALL_NIC |
 			      NR_EXCLUSIVE);
 	if (ret) {
@@ -340,6 +343,12 @@ ptnet_open(struct net_device *netdev)
 	}
 
 	NMG_UNLOCK();
+
+	/* Init np_si[t], this should have not effect on Linux. */
+	for_rx_tx(t) {
+		pi->nm_priv->np_si[t] = NULL;
+	}
+
 
 	napi_enable(&pi->napi);
 	netif_start_queue(netdev);
