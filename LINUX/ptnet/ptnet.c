@@ -69,6 +69,7 @@ struct ptnet_info {
 };
 
 static int ptnet_nm_txsync(struct netmap_kring *kring, int flags);
+static int ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
 
 static netdev_tx_t
 ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
@@ -153,9 +154,9 @@ ptnet_tx_intr(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
+	/* Cleanup completed transmissions. */
 	ptnet_nm_txsync(kring, NAF_FORCE_RECLAIM);
 
-	/* Clean TX. */
 	pi->netdev->stats.tx_bytes += 0;
 	pi->netdev->stats.tx_packets += 0;
 
@@ -182,13 +183,34 @@ ptnet_rx_intr(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
+	/* Disable interrupts and schedule NAPI. */
 	if (likely(napi_schedule_prep(&pi->napi))) {
+		/* It's good thing to reset guest_need_rxkick as soon as
+		 * possible. This is also done by ptnet_nm_rxsync,
+		 * afterwards. */
+		pi->csb->guest_need_rxkick = 0;
 		__napi_schedule(&pi->napi);
 	} else {
 		/* This should not happen, probably. */
+		pi->csb->guest_need_rxkick = 1;
 	}
 
 	return IRQ_HANDLED;
+}
+
+static void
+ptnet_user_rxsync(struct netmap_kring *kring)
+{
+	struct netmap_ring *ring = kring->ring;
+
+	/* nm_rxsync_prologue */
+	kring->rcur = ring->cur;
+	kring->rhead = ring->head;
+
+	ptnet_nm_rxsync(kring, NAF_FORCE_READ);
+
+	/* nm_sync_finalize */
+	ring->tail = kring->rtail = kring->nr_hwtail;
 }
 
 /*
@@ -199,17 +221,64 @@ static int
 ptnet_poll_rx(struct napi_struct *napi, int budget)
 {
 	struct ptnet_info *pi = container_of(napi, struct ptnet_info,
-						     napi);
+					     napi);
+	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_kring *kring = &na->tx_rings[0];
+	struct netmap_ring *ring = kring->ring;
+	unsigned int const lim = kring->nkr_num_slots - 1;
 	int work_done = 0;
 
-	/* Clean RX. */
-	pi->netdev->stats.rx_bytes += 0;
-	pi->netdev->stats.rx_packets += 0;
+	/* We call ptnet_user_rxsync() to get the updated ring->tail. */
+	ptnet_user_rxsync(kring);
 
-	/* If budget not fully consumed, exit the polling mode */
+	if (ring->head == ring->tail) {
+		/* No RX slots to process. */
+		return 0;
+	}
+
+	/* Import completed RX slots. */
+	while (work_done < budget && ring->head != ring->tail) {
+		struct netmap_slot *slot;
+		struct sk_buff *skb;
+		unsigned int len;
+		void *nmbuf;
+
+		slot = &ring->slot[ring->head];
+		ring->head = ring->cur = nm_next(ring->head, lim);
+
+		nmbuf = NMB(na, slot);
+		len = slot->len;
+
+		skb = napi_alloc_skb(&pi->napi, len);
+		if (!skb) {
+			pr_err("napi_alloc_skb() failed\n");
+			break;
+		}
+		memcpy(skb_put(skb, len), nmbuf, len);
+
+		skb->protocol = eth_type_trans(skb, pi->netdev);
+		napi_gro_receive(&pi->napi, skb);
+
+		work_done++;
+	}
+
+	if (work_done) {
+		/* Call ptnet_user_rxsync again, to update
+		 * the CSB with the updated ring->cur and
+		 * ring->head (RX buffer refill). */
+		ptnet_user_rxsync(kring);
+	}
+
 	if (work_done < budget) {
+		/* Budget was not fully consumed, we can exit
+		 * polling mode.
+		 * The guest_need_rxkick has been already set,
+		 * with doublecheck, by ptnet_nm_rxsync(). */
 		napi_complete(napi);
 	}
+
+	pi->netdev->stats.rx_bytes += 0;
+	pi->netdev->stats.rx_packets += 0;
 
 	return work_done;
 }
