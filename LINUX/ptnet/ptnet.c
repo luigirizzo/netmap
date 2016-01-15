@@ -331,7 +331,7 @@ ptnet_ioregs_dump(struct ptnet_info *pi)
 }
 
 static int ptnet_nm_register_netif(struct netmap_adapter *na, int onoff);
-static int ptnet_nm_register(struct netmap_adapter *na, int onoff);
+static int ptnet_nm_register_native(struct netmap_adapter *na, int onoff);
 
 /*
  * ptnet_open - Called when a network interface is made active
@@ -423,7 +423,7 @@ ptnet_close(struct net_device *netdev)
 
 	NMG_LOCK();
 	netmap_do_unregif(pi->nm_priv);
-	na->nm_register = ptnet_nm_register;
+	na->nm_register = ptnet_nm_register_native;
 	NMG_UNLOCK();
 
 	netmap_priv_delete(pi->nm_priv);
@@ -464,7 +464,8 @@ static struct netmap_pt_guest_ops ptnet_nm_pt_guest_ops = {
 };
 
 static int
-ptnet_nm_register_netif(struct netmap_adapter *na, int onoff)
+ptnet_nm_register_common(struct netmap_adapter *na, int onoff,
+			 int native)
 {
 	struct netmap_pt_guest_adapter *ptna =
 			(struct netmap_pt_guest_adapter *)na;
@@ -477,7 +478,10 @@ ptnet_nm_register_netif(struct netmap_adapter *na, int onoff)
 	int i;
 
 	if (na->active_fds > 0) {
-		pr_err("THIS CANNOT HAPPEN WE HAVE NR_EXCLUSIVE\n");
+		/* This cannot happen since we have NR_EXCLUSIVE. */
+		BUG_ON(!native);
+
+		/* Nothing to do. */
 		return 0;
 	}
 
@@ -486,7 +490,7 @@ ptnet_nm_register_netif(struct netmap_adapter *na, int onoff)
 		 * for txsync/rxsync. This also initializes the CSB. */
 		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
 		if (ret) {
-			goto out;
+			return ret;
 		}
 
 		for_rx_tx(t) {
@@ -510,11 +514,19 @@ ptnet_nm_register_netif(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		/* Don't call nm_set_native_flags, since we don't want to
-		 * replace ndo_start_xmit method. */
-		na->na_flags |= NAF_NETMAP_ON;
+		if (native) {
+			nm_set_native_flags(na);
+		} else {
+			/* Don't call nm_set_native_flags, since we don't want
+			 * to replace ndo_start_xmit method. */
+			na->na_flags |= NAF_NETMAP_ON;
+		}
 	} else {
-		na->na_flags &= NAF_NETMAP_ON;
+		if (native) {
+			nm_clear_native_flags(na);
+		} else {
+			na->na_flags &= NAF_NETMAP_ON;
+		}
 
 		for_rx_tx(t) {
 			for (i=0; i<nma_get_nrings(na, t); i++) {
@@ -530,83 +542,20 @@ ptnet_nm_register_netif(struct netmap_adapter *na, int onoff)
 
 		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
 	}
-out:
+
 	return ret;
 }
 
 static int
-ptnet_nm_register(struct netmap_adapter *na, int onoff)
+ptnet_nm_register_netif(struct netmap_adapter *na, int onoff)
 {
-	struct netmap_pt_guest_adapter *ptna =
-			(struct netmap_pt_guest_adapter *)na;
+	return ptnet_nm_register_common(na, onoff, 0);
+}
 
-	/* device-specific */
-	struct net_device *netdev = na->ifp;
-	struct paravirt_csb *csb = ptna->csb;
-	bool was_up = false;
-	enum txrx t;
-	int ret = 0;
-	int i;
-
-	if (na->active_fds > 0) {
-		/* Nothing to do. */
-		return 0;
-	}
-
-	if (netif_running(netdev)) {
-		was_up = true;
-		ptnet_close(netdev);
-	}
-
-	if (onoff) {
-		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
-		if (ret) {
-			goto out;
-		}
-
-		for_rx_tx(t) {
-			for (i=0; i<nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-				struct pt_ring *ptring;
-
-				if (!nm_kring_pending_on(kring)) {
-					continue;
-				}
-
-				ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
-				kring->rhead = kring->ring->head = ptring->head;
-				kring->rcur = kring->ring->cur = ptring->cur;
-				kring->nr_hwcur = ptring->hwcur;
-				kring->nr_hwtail = kring->rtail =
-					kring->ring->tail = ptring->hwtail;
-				kring->nr_mode = NKR_NETMAP_ON;
-			}
-		}
-
-		nm_set_native_flags(na);
-	} else {
-		nm_clear_native_flags(na);
-
-		for_rx_tx(t) {
-			for (i=0; i<nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-
-				if (!nm_kring_pending_off(kring)) {
-					continue;
-				}
-
-				kring->nr_mode = NKR_NETMAP_OFF;
-			}
-		}
-
-		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
-	}
-out:
-	if (was_up) {
-		ptnet_open(netdev);
-	}
-
-	return ret;
+static int
+ptnet_nm_register_native(struct netmap_adapter *na, int onoff)
+{
+	return ptnet_nm_register_common(na, onoff, 1);
 }
 
 static int
@@ -679,7 +628,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 	.num_rx_desc = 1024,
 	.num_tx_rings = 1,
 	.num_rx_rings = 1,
-	.nm_register = ptnet_nm_register,
+	.nm_register = ptnet_nm_register_native,
 	.nm_config = ptnet_nm_config,
 	.nm_txsync = ptnet_nm_txsync,
 	.nm_rxsync = ptnet_nm_rxsync,
