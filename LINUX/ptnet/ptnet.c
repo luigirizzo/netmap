@@ -68,10 +68,33 @@ struct ptnet_info {
 	struct napi_struct napi;
 };
 
+static int ptnet_nm_txsync(struct netmap_kring *kring, int flags);
+
 static netdev_tx_t
-ptnet_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
+ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
+	/* We could access na = NA(netdev) directly. */
+	struct ptnet_info *pi = netdev_priv(netdev);
+	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_kring *kring = &na->tx_rings[0];
+	struct netmap_ring *ring = kring->ring;
+	unsigned int const lim = kring->nkr_num_slots - 1;
+	struct netmap_slot *slot;
+	void *nmbuf;
+
+	pr_info("TX skb len %d\n", skb->len);
+
+	slot = &ring->slot[ring->head];
+	slot->flags = 0;
+	slot->len = skb->len;
+	nmbuf = NMB(na, slot);
+	skb_copy_to_linear_data(skb, nmbuf, skb->len);
+	ring->head = ring->cur = nm_next(ring->head, lim);
+
+	ptnet_nm_txsync(kring, NAF_FORCE_RECLAIM);
+
 	dev_kfree_skb_any(skb);
+
 	return NETDEV_TX_OK;
 }
 
@@ -114,12 +137,16 @@ ptnet_tx_intr(int irq, void *data)
 {
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
+	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_kring *kring = &na->tx_rings[0];
 
 	//printk("%s\n", __func__);
 
-	if (netmap_tx_irq(netdev, 0)) {
+	if (!pi->nm_priv && netmap_tx_irq(netdev, 0)) {
 		return IRQ_HANDLED;
 	}
+
+	ptnet_nm_txsync(kring, NAF_FORCE_RECLAIM);
 
 	/* Clean TX. */
 	pi->netdev->stats.tx_bytes += 0;
@@ -143,7 +170,7 @@ ptnet_rx_intr(int irq, void *data)
 
 	//printk("%s\n", __func__);
 
-	if (netmap_rx_irq(netdev, 0, &unused)) {
+	if (!pi->nm_priv && netmap_rx_irq(netdev, 0, &unused)) {
 		(void)unused;
 		return IRQ_HANDLED;
 	}
@@ -404,7 +431,7 @@ ptnet_close(struct net_device *netdev)
 static const struct net_device_ops ptnet_netdev_ops = {
 	.ndo_open		= ptnet_open,
 	.ndo_stop		= ptnet_close,
-	.ndo_start_xmit		= ptnet_xmit_frame,
+	.ndo_start_xmit		= ptnet_start_xmit,
 	.ndo_get_stats		= ptnet_get_stats,
 	.ndo_change_mtu		= ptnet_change_mtu,
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -786,6 +813,11 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * pointer. */
 	pi->ptna = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
 	pi->ptna->csb = (struct paravirt_csb *)pi->csbaddr;
+
+	/* This is not-NULL when the network interface is up, ready to be
+	 * used by the kernel stack. When NULL, the interface can be
+	 * opened in netmap mode. */
+	pi->nm_priv = NULL;
 
 	netif_carrier_off(netdev);
 
