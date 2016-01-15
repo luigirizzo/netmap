@@ -583,17 +583,9 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		if (1) {
-			nm_set_native_flags(na);
-		} else {
-			na->na_flags |= NAF_NETMAP_ON;
-		}
+		nm_set_native_flags(na);
 	} else {
-		if (1) {
-			nm_clear_native_flags(na);
-		} else {
-			na->na_flags &= NAF_NETMAP_ON;
-		}
+		nm_clear_native_flags(na);
 
 		for_rx_tx(t) {
 			for (i=0; i<nma_get_nrings(na, t); i++) {
