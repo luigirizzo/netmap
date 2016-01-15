@@ -143,10 +143,13 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config)
 
 		/* scan all the bridges and ports */
 		nmr.nr_arg1 = nmr.nr_arg2 = 0;
-		for (; !ioctl(fd, NIOCGINFO, &nmr); nmr.nr_arg2++) {
-			D("bridge:%d port:%d %s", nmr.nr_arg1, nmr.nr_arg2,
-			    nmr.nr_name);
-			nmr.nr_name[0] = '\0';
+		for (uint16_t nth_bridge = nmr.nr_arg1, nth_port = nmr.nr_arg2;
+				ioctl(fd, NIOCGINFO, &nmr) != 0;
+				nmr.nr_arg2 = nth_port, nmr.nr_name[0] = '\0') {
+			D("bridge:%d port:%d %s", nmr.nr_arg1, nmr.nr_arg2, nmr.nr_name);
+
+			nth_port = (nmr.nr_arg1 != nth_bridge) ? nmr.nr_arg2+1 : nth_port+1;
+			nth_bridge = nmr.nr_arg1;
 		}
 
 		break;
