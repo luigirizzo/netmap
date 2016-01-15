@@ -907,7 +907,7 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 /* call with NMG_LOCK held */
 static void netmap_unset_ringid(struct netmap_priv_d *);
 static void netmap_krings_put(struct netmap_priv_d *);
-static void
+void
 netmap_do_unregif(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;

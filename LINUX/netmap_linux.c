@@ -2382,6 +2382,10 @@ nm_os_pt_memdev_uninit(void)
 
     D("ptn_memdev_driver exit");
 }
+
+int ptnet_init(void);
+void ptnet_fini(void);
+
 #else /* !WITH_PTNETMAP_GUEST */
 #define nm_os_pt_memdev_init()        0
 #define nm_os_pt_memdev_uninit()
@@ -2400,18 +2404,31 @@ struct miscdevice netmap_cdevsw = { /* same name as FreeBSD */
 
 static int linux_netmap_init(void)
 {
-        int err;
-        /* Errors have negative values on linux. */
-        err = -netmap_init();
-        if (err)
-            return err;
+	int err;
+	/* Errors have negative values on linux. */
+	err = -netmap_init();
+	if (err) {
+		return err;
+	}
 
-	return nm_os_pt_memdev_init();
+	err = nm_os_pt_memdev_init();
+	if (err) {
+		return err;
+	}
+
+	err = ptnet_init();
+	if (err) {
+		nm_os_pt_memdev_uninit();
+		return err;
+	}
+
+	return 0;
 }
 
 
 static void linux_netmap_fini(void)
 {
+	ptnet_fini();
         nm_os_pt_memdev_uninit();
         netmap_fini();
 }

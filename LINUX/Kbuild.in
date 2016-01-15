@@ -33,6 +33,10 @@ $(obj)/netmap_linux.o: %.o: $(SRCDIR)/netmap_linux.c FORCE
 # all objects
 $(MODNAME)-objs := $(remoteobjs-y) netmap_common.o netmap_linux.o
 
+ifdef CONFIG_NETMAP_PTNETMAP_GUEST
+	$(MODNAME)-objs += ptnet/ptnet.o
+endif
+
 obj-$(CONFIG_NETMAP) = $(MODNAME).o
 
 ifdef NETMAP_DRIVER_SUFFIX
@@ -41,8 +45,4 @@ ifdef NETMAP_DRIVER_SUFFIX
   obj-m += $(O_DRIVERS:%.o=%$(NETMAP_DRIVER_SUFFIX).o)
 else
 	obj-m += $(O_DRIVERS)
-endif
-
-ifdef CONFIG_NETMAP_PTNETMAP_GUEST
-	obj-m += ptnet/ptnet.o
 endif

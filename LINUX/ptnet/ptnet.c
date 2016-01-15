@@ -747,13 +747,13 @@ static struct pci_driver ptnet_driver = {
 };
 
 /*
- * ptnet_init_module - Driver Registration Routine
+ * ptnet_init - Driver Registration Routine
  *
- * ptnet_init_module is the first routine called when the driver is
+ * ptnet_init is the first routine called when netmap is
  * loaded. All it does is register with the PCI subsystem.
  */
-static int __init
-ptnet_init_module(void)
+int
+ptnet_init(void)
 {
 	pr_info("%s - version %s\n", "Passthrough netmap interface driver",
 		DRV_VERSION);
@@ -763,21 +763,13 @@ ptnet_init_module(void)
 }
 
 /*
- * ptnet_exit_module - Driver Exit Cleanup Routine
+ * ptnet_exit - Driver Exit Cleanup Routine
  *
- * ptnet_exit_module is called just before the driver is removed
+ * ptnet_exit is called just before netmap module is removed
  * from memory.
  */
-static void __exit
-ptnet_exit_module(void)
+void
+ptnet_fini(void)
 {
 	pci_unregister_driver(&ptnet_driver);
 }
-
-module_init(ptnet_init_module);
-module_exit(ptnet_exit_module);
-
-MODULE_AUTHOR("Vincenzo Maffione, <v.maffione@gmail.com>");
-MODULE_DESCRIPTION("Passthrough netmap interface driver");
-MODULE_LICENSE("GPL");
-MODULE_VERSION(DRV_VERSION);
