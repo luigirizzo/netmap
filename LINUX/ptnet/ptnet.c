@@ -791,13 +791,16 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	synchronize_irq(pi->pdev->irq);
 
-	netdev->hw_features = NETIF_F_SG |
-			      NETIF_F_HW_CSUM |
-			      NETIF_F_TSO |
-			      NETIF_F_RXCSUM |
-			      NETIF_F_RXALL |
-			      NETIF_F_RXFCS |
-			      NETIF_F_HIGHDMA;
+	netdev->hw_features = NETIF_F_HIGHDMA |
+			      NETIF_F_RXALL;
+
+	if (0) {
+		/* No support for now. */
+		netdev->hw_features |=	NETIF_F_SG |
+					NETIF_F_HW_CSUM |
+					NETIF_F_TSO |
+					NETIF_F_RXCSUM;
+	}
 
 	device_set_wakeup_enable(&pi->pdev->dev, 0);
 
