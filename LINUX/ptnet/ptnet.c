@@ -223,7 +223,7 @@ ptnet_poll_rx(struct napi_struct *napi, int budget)
 	struct ptnet_info *pi = container_of(napi, struct ptnet_info,
 					     napi);
 	struct netmap_adapter *na = &pi->ptna->hwup.up;
-	struct netmap_kring *kring = &na->tx_rings[0];
+	struct netmap_kring *kring = &na->rx_rings[0];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	int work_done = 0;
