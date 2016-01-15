@@ -215,14 +215,16 @@ struct paravirt_csb {
  * ptnetmap registers for ptnet device
  */
 
-#define PTNET_IO_PTFEAT         0
-#define PTNET_IO_PTCTL          4
-#define PTNET_IO_PTSTS          8
-#define PTNET_IO_CTRL           12
-#define PTNET_IO_TXKICK		16
-#define PTNET_IO_RXKICK		20
-#define PTNET_IO_END            24
-#define PTNET_IO_MASK           0x1f
+#define PTNET_IO_PTFEAT		0
+#define PTNET_IO_PTCTL		4
+#define PTNET_IO_PTSTS		8
+#define PTNET_IO_CTRL		12
+#define PTNET_IO_MAC_LO		16
+#define PTNET_IO_MAC_HI		20
+#define PTNET_IO_TXKICK		24
+#define PTNET_IO_RXKICK		28
+#define PTNET_IO_END            64
+#define PTNET_IO_MASK           0x3f
 
 /* Tell the hypervisor that guest has allocated the MSI-X
  * interrupts, so that it can setup the host --> guest
