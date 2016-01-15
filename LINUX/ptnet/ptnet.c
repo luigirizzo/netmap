@@ -88,7 +88,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	slot->flags = 0;
 	slot->len = skb->len;
 	nmbuf = NMB(na, slot);
-	skb_copy_to_linear_data(skb, nmbuf, skb->len);
+	skb_copy_bits(skb, 0, nmbuf, skb->len);
 	ring->head = ring->cur = nm_next(ring->head, lim);
 
 	/* nm_txsync_prologue */
