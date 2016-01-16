@@ -223,7 +223,7 @@ struct paravirt_csb {
 #define PTNET_IO_MAC_HI		20
 #define PTNET_IO_TXKICK		24
 #define PTNET_IO_RXKICK		28
-#define PTNET_IO_END            64
+#define PTNET_IO_END            32
 #define PTNET_IO_MASK           0x3f
 
 /* Tell the hypervisor that guest has allocated the MSI-X
