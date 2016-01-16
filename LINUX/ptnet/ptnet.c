@@ -728,6 +728,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct net_device *netdev;
 	struct netmap_adapter na_arg;
 	struct ptnet_info *pi;
+	uint8_t macaddr[6];
+	uint32_t macreg;
 	int bars;
 	int err;
 
@@ -807,7 +809,16 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
 
-	synchronize_irq(pi->pdev->irq);
+	/* Read MAC address from device and put it into the netdev struct. */
+	macreg = ioread32(pi->ioaddr + PTNET_IO_MAC_HI);
+	macaddr[0] = (macreg >> 8) & 0xff;
+	macaddr[1] = macreg & 0xff;
+	macreg = ioread32(pi->ioaddr + PTNET_IO_MAC_LO);
+	macaddr[2] = (macreg >> 24) & 0xff;
+	macaddr[3] = (macreg >> 16) & 0xff;
+	macaddr[4] = (macreg >> 8) & 0xff;
+	macaddr[5] = macreg & 0xff;
+	memcpy(netdev->dev_addr, macaddr, netdev->addr_len);
 
 	netdev->hw_features = NETIF_F_HIGHDMA |
 			      NETIF_F_RXALL;
@@ -822,6 +833,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	device_set_wakeup_enable(&pi->pdev->dev, 0);
 
+	//synchronize_irq(pi->pdev->irq);
 	err = ptnet_irqs_init(pi);
 	if (err) {
 		goto err_irqs;
