@@ -467,7 +467,7 @@ ptnet_open(struct net_device *netdev)
 	napi_enable(&pi->napi);
 	netif_start_queue(netdev);
 
-	if (1) ptnet_ioregs_dump(pi);
+	if (0) ptnet_ioregs_dump(pi);
 
 	pi->csb->guest_csb_on = 1;
 	netif_carrier_on(netdev);
