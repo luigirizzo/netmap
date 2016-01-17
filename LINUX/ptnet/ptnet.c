@@ -241,7 +241,7 @@ ptnet_poll_rx(struct napi_struct *napi, int budget)
 		/* No RX slots to process. */
 		return 0;
 	}
-
+again:
 	/* Import completed RX slots. */
 	while (work_done < budget && ring->head != ring->tail) {
 		struct netmap_slot *slot;
@@ -278,6 +278,9 @@ ptnet_poll_rx(struct napi_struct *napi, int budget)
 	}
 
 	if (work_done < budget) {
+		if (ring->head != ring->tail) {
+			goto again;
+		}
 		/* Budget was not fully consumed, we can exit
 		 * polling mode.
 		 * The guest_need_rxkick has been already set,
