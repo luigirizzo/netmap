@@ -37,6 +37,9 @@
 #include "dev/netmap/netmap_virt.h"
 
 
+/* Enable to debug RX-side hangs */
+//#define HANGCTRL
+
 #if 0  /* Switch to 1 to enable per-packet logs. */
 #define DBG D
 #else
@@ -72,7 +75,32 @@ struct ptnet_info {
 	struct netmap_pt_guest_adapter *ptna;
 
 	struct napi_struct napi;
+
+#ifdef HANGCTRL
+#define HANG_INTVAL_MS		3000
+	struct timer_list hang_timer;
+#endif
 };
+
+#ifdef HANGCTRL
+static void
+hang_tmr_callback(unsigned long arg)
+{
+	struct ptnet_info *pi = (struct ptnet_info *)arg;
+	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_kring *kring = &na->rx_rings[0];
+	struct netmap_ring *ring = kring->ring;
+	volatile struct paravirt_csb *csb = pi->csb;
+
+	pr_info("HANG RX: h %u c %u t %u guest_need_rxkick %u\n",
+		ring->head, ring->cur, ring->tail, csb->guest_need_rxkick);
+
+	if (mod_timer(&pi->hang_timer,
+		      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
+		pr_err("%s: mod_timer() failed\n", __func__);
+	}
+}
+#endif
 
 static int ptnet_nm_txsync(struct netmap_kring *kring, int flags);
 static int ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
@@ -234,6 +262,10 @@ ptnet_poll_rx(struct napi_struct *napi, int budget)
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	int work_done = 0;
 
+#ifdef HANGCTRL
+	del_timer(&pi->hang_timer);
+#endif
+
 	/* We call ptnet_user_rxsync() to get the updated ring->tail. */
 	ptnet_user_rxsync(kring);
 
@@ -286,6 +318,12 @@ again:
 		 * The guest_need_rxkick has been already set,
 		 * with doublecheck, by ptnet_nm_rxsync(). */
 		napi_complete(napi);
+#ifdef HANGCTRL
+		if (mod_timer(&pi->hang_timer,
+			      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
+			pr_err("%s: mod_timer failed\n", __func__);
+		}
+#endif
 	}
 
 	pi->netdev->stats.rx_bytes += 0;
@@ -475,6 +513,14 @@ ptnet_open(struct net_device *netdev)
 	pi->csb->guest_csb_on = 1;
 	netif_carrier_on(netdev);
 
+#ifdef HANGCTRL
+	setup_timer(&pi->hang_timer, &hang_tmr_callback, (unsigned long)pi);
+	if (mod_timer(&pi->hang_timer,
+		      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
+		pr_err("%s: mod_timer failed\n", __func__);
+	}
+#endif
+
 	pr_info("%s: %p\n", __func__, pi);
 
 	return 0;
@@ -496,6 +542,10 @@ ptnet_close(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na = &pi->ptna->hwup.up;
+
+#ifdef HANGCTRL
+	del_timer(&pi->hang_timer);
+#endif
 
 	pi->csb->guest_csb_on = 0;
 
