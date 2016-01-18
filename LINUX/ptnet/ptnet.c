@@ -92,8 +92,9 @@ hang_tmr_callback(unsigned long arg)
 	struct netmap_ring *ring = kring->ring;
 	volatile struct paravirt_csb *csb = pi->csb;
 
-	pr_info("HANG RX: h %u c %u t %u guest_need_rxkick %u\n",
-		ring->head, ring->cur, ring->tail, csb->guest_need_rxkick);
+	pr_info("HANG RX: hwc %u h %u c %u hwt %u t %u guest_need_rxkick %u\n",
+		kring->nr_hwcur, ring->head, ring->cur,
+		kring->nr_hwtail, ring->tail, csb->guest_need_rxkick);
 
 	if (mod_timer(&pi->hang_timer,
 		      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
@@ -271,6 +272,7 @@ ptnet_poll_rx(struct napi_struct *napi, int budget)
 
 	if (ring->head == ring->tail) {
 		/* No RX slots to process. */
+		napi_complete(napi);
 		return 0;
 	}
 again:
