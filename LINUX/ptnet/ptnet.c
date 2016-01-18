@@ -272,7 +272,7 @@ ptnet_poll_rx(struct napi_struct *napi, int budget)
 
 	if (ring->head == ring->tail) {
 		/* No RX slots to process. */
-		napi_complete(napi);
+		napi_complete_done(napi, 0);
 		return 0;
 	}
 again:
@@ -319,7 +319,7 @@ again:
 		 * polling mode.
 		 * The guest_need_rxkick has been already set,
 		 * with doublecheck, by ptnet_nm_rxsync(). */
-		napi_complete(napi);
+		napi_complete_done(napi, work_done);
 #ifdef HANGCTRL
 		if (mod_timer(&pi->hang_timer,
 			      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
