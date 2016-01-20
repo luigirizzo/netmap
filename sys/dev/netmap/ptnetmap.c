@@ -110,6 +110,7 @@ rate_callback(unsigned long arg)
     struct rate_batch_stats *rxbs_old = &ctx->old.rxbs;
     uint64_t tx_batch, rx_batch;
     unsigned long txpkts, rxpkts;
+    unsigned long gtxk, grxk;
     int r;
 
     txpkts = txbs->pkt - txbs_old->pkt;
@@ -120,16 +121,16 @@ rate_callback(unsigned long arg)
     rx_batch = ((rxbs->sync - rxbs_old->sync) > 0) ?
 	       rxpkts / (rxbs->sync - rxbs_old->sync): 0;
 
-    /* Fix-up gtxk and grxk estimate. */
-    cur.gtxk -= cur.btxwu - ctx->old.btxwu;
-    cur.grxk -= cur.brxwu - ctx->old.brxwu;
+    /* Fix-up gtxk and grxk estimates. */
+    gtxk = (cur.gtxk - ctx->old.gtxk) - (cur.btxwu - ctx->old.btxwu);
+    grxk = (cur.grxk - ctx->old.grxk) - (cur.brxwu - ctx->old.brxwu);
 
     printk("txpkts  = %lu Hz\n", txpkts/RATE_PERIOD);
-    printk("gtxk    = %lu Hz\n", (cur.gtxk - ctx->old.gtxk)/RATE_PERIOD);
+    printk("gtxk    = %lu Hz\n", gtxk/RATE_PERIOD);
     printk("htxk    = %lu Hz\n", (cur.htxk - ctx->old.htxk)/RATE_PERIOD);
     printk("btxw    = %lu Hz\n", (cur.btxwu - ctx->old.btxwu)/RATE_PERIOD);
     printk("rxpkts  = %lu Hz\n", rxpkts/RATE_PERIOD);
-    printk("grxk    = %lu Hz\n", (cur.grxk - ctx->old.grxk)/RATE_PERIOD);
+    printk("grxk    = %lu Hz\n", grxk/RATE_PERIOD);
     printk("hrxk    = %lu Hz\n", (cur.hrxk - ctx->old.hrxk)/RATE_PERIOD);
     printk("brxw    = %lu Hz\n", (cur.brxwu - ctx->old.brxwu)/RATE_PERIOD);
     printk("txbatch = %llu avg\n", tx_batch);
