@@ -61,15 +61,18 @@ struct ptnet_info {
 	/* Access to device memory. */
 	int bars;
 	u8* __iomem ioaddr;
+#ifndef PTNET_CSB_ALLOC
 	u8* __iomem csbaddr;
+#endif  /* !PTNET_CSB_ALLOC */
 
 	/* MSI-X interrupt data structures. */
 	struct msix_entry msix_entries[PTNET_MSIX_VECTORS];
 	char msix_names[PTNET_MSIX_VECTORS][64];
 	cpumask_var_t msix_affinity_masks[PTNET_MSIX_VECTORS];
 
-	/* CSB memory exposed by the device. */
-	volatile struct paravirt_csb *csb;
+	/* CSB memory to be used for producer/consumer state
+	 * syncrhonization. */
+	struct paravirt_csb *csb;
 
 	struct netmap_priv_d *nm_priv;
 	struct netmap_pt_guest_adapter *ptna;
@@ -842,6 +845,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_ptfeat;
 	}
 
+#ifndef PTNET_CSB_ALLOC
 	/* Map the CSB memory exposed by the device. We don't use
 	 * pci_ioremap_bar(), since we want the ioremap_cache() function
 	 * to be called internally, rather than ioremap_nocache(). */
@@ -853,8 +857,27 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 				    pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR));
 	if (!pi->csbaddr)
 		goto err_ptfeat;
-
 	pi->csb = (struct paravirt_csb *)pi->csbaddr;
+
+#else  /* PTNET_CSB_ALLOC */
+
+	/* Alloc the CSB here and tell the hypervisor its physical address. */
+	pi->csb = kzalloc(sizeof(struct paravirt_csb), GFP_KERNEL);
+	if (!pi->csb) {
+		goto err_ptfeat;
+	}
+
+	{
+		phys_addr_t paddr = virt_to_phys(pi->csb);
+
+		/* CSB allocation protocol. Write CSBBAH first, then
+		 * CSBBAL. */
+		iowrite32((paddr >> 32) & 0xffffffff,
+			  pi->ioaddr + PTNET_IO_CSBBAH);
+		iowrite32(paddr & 0xffffffff,
+			  pi->ioaddr + PTNET_IO_CSBBAL);
+	}
+#endif /* PTNET_CSB_ALLOC */
 
 	/* useless, to be removed */
 	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
@@ -910,7 +933,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * can be accessed through NA(ifp). We have to initialize the CSB
 	 * pointer. */
 	pi->ptna = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
-	pi->ptna->csb = (struct paravirt_csb *)pi->csbaddr;
+	pi->ptna->csb = pi->csb;
 
 	/* This is not-NULL when the network interface is up, ready to be
 	 * used by the kernel stack. When NULL, the interface can be
@@ -927,7 +950,11 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 err_netreg:
 	ptnet_irqs_fini(pi);
 err_irqs:
+#ifndef  PTNET_CSB_ALLOC
 	iounmap(pi->csbaddr);
+#else  /* PTNET_CSB_ALLOC */
+	kfree(pi->csb);
+#endif /* PTNET_CSB_ALLOC */
 err_ptfeat:
 	iounmap(pi->ioaddr);
 	free_netdev(netdev);
@@ -958,7 +985,13 @@ ptnet_remove(struct pci_dev *pdev)
 	ptnet_irqs_fini(pi);
 
 	iounmap(pi->ioaddr);
+#ifndef  PTNET_CSB_ALLOC
 	iounmap(pi->csbaddr);
+#else  /* !PTNET_CSB_ALLOC */
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSBBAH);
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSBBAL);
+	kfree(pi->csb);
+#endif /* !PTNET_CSB_ALLOC */
 	pci_release_selected_regions(pdev, pi->bars);
 	free_netdev(netdev);
 	pci_disable_device(pdev);
