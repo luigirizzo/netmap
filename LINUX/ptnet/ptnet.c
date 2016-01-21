@@ -254,11 +254,11 @@ ptnet_user_rxsync(struct netmap_kring *kring)
 }
 
 /*
- * ptnet_poll_rx - NAPI Rx polling callback
+ * ptnet_rx_poll - NAPI Rx polling callback
  * @pi: NIC private structure
  */
 static int
-ptnet_poll_rx(struct napi_struct *napi, int budget)
+ptnet_rx_poll(struct napi_struct *napi, int budget)
 {
 	struct ptnet_info *pi = container_of(napi, struct ptnet_info,
 					     napi);
@@ -888,7 +888,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
-	netif_napi_add(netdev, &pi->napi, ptnet_poll_rx, 64);
+	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, 64);
 
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
 
