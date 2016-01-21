@@ -165,6 +165,7 @@ struct paravirt_csb {
 /* ptnetmap features */
 #define NET_PTN_FEATURES_BASE            1
 #define NET_PTN_FEATURES_FULL            2 /* not used */
+#define NET_PTN_FEATURES_VNET_HDR        4
 
 /* ptnetmap commands */
 #define NET_PARAVIRT_PTCTL_CONFIG	1
