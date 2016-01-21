@@ -182,10 +182,10 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		}
 	}
 
-	dev_kfree_skb_any(skb);
+	pi->netdev->stats.tx_bytes += skb->len;
+	pi->netdev->stats.tx_packets ++;
 
-	pi->netdev->stats.tx_bytes += 0;
-	pi->netdev->stats.tx_packets += 0;
+	dev_kfree_skb_any(skb);
 
 	return NETDEV_TX_OK;
 }
@@ -322,12 +322,16 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		}
 		memcpy(skb_put(skb, len), nmbuf, len);
 
-		skb->protocol = eth_type_trans(skb, pi->netdev);
-		napi_gro_receive(&pi->napi, skb);
-
 		DBG("RX SKB len=%d", skb->len);
 
-		work_done++;
+		skb->protocol = eth_type_trans(skb, pi->netdev);
+
+		pi->netdev->stats.rx_bytes += skb->len;
+		pi->netdev->stats.rx_packets ++;
+
+		napi_gro_receive(&pi->napi, skb);
+
+		work_done ++;
 	}
 
 	if (work_done < budget) {
@@ -367,9 +371,6 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			iowrite32(0, pi->ioaddr + PTNET_IO_RXKICK);
 		}
 	}
-
-	pi->netdev->stats.rx_bytes += 0;
-	pi->netdev->stats.rx_packets += 0;
 
 	return work_done;
 }
