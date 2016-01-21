@@ -226,8 +226,7 @@ ptnet_rx_intr(int irq, void *data)
 	/* Disable interrupts and schedule NAPI. */
 	if (likely(napi_schedule_prep(&pi->napi))) {
 		/* It's good thing to reset guest_need_rxkick as soon as
-		 * possible. This is also done by ptnet_nm_rxsync,
-		 * afterwards. */
+		 * possible. */
 		pi->csb->guest_need_rxkick = 0;
 		__napi_schedule(&pi->napi);
 	} else {
@@ -238,16 +237,12 @@ ptnet_rx_intr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static void
-ptnet_user_rxsync(struct netmap_kring *kring)
+static inline void
+ptnet_rxsync_tail(struct paravirt_csb *csb, struct netmap_kring *kring)
 {
 	struct netmap_ring *ring = kring->ring;
 
-	/* nm_rxsync_prologue */
-	kring->rcur = ring->cur;
-	kring->rhead = ring->head;
-
-	ptnet_nm_rxsync(kring, NAF_FORCE_READ);
+        ptnetmap_guest_read_kring_csb(&csb->rx_ring, kring);
 
 	/* nm_sync_finalize */
 	ring->tail = kring->rtail = kring->nr_hwtail;
@@ -266,21 +261,19 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	struct netmap_kring *kring = &na->rx_rings[0];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
+	struct paravirt_csb *csb = pi->csb;
 	int work_done = 0;
 
 #ifdef HANGCTRL
 	del_timer(&pi->hang_timer);
 #endif
 
-	/* We call ptnet_user_rxsync() to get the updated ring->tail. */
-	ptnet_user_rxsync(kring);
+	/* Update hwtail, rtail, tail and hwcur to what is known from the host,
+	 * reading from CSB. */
+	ptnet_rxsync_tail(csb, kring);
 
-	if (ring->head == ring->tail) {
-		/* No RX slots to process. */
-		napi_complete_done(napi, 0);
-		return 0;
-	}
-again:
+	kring->nr_kflags &= ~NKR_PENDINTR;
+
 	/* Import completed RX slots. */
 	while (work_done < budget && ring->head != ring->tail) {
 		struct netmap_slot *slot;
@@ -309,28 +302,42 @@ again:
 		work_done++;
 	}
 
-	if (work_done) {
-		/* Call ptnet_user_rxsync again, to update
-		 * the CSB with the updated ring->cur and
-		 * ring->head (RX buffer refill). */
-		ptnet_user_rxsync(kring);
-	}
-
 	if (work_done < budget) {
-		if (ring->head != ring->tail) {
-			goto again;
-		}
-		/* Budget was not fully consumed, we can exit
-		 * polling mode.
-		 * The guest_need_rxkick has been already set,
-		 * with doublecheck, by ptnet_nm_rxsync(). */
+		/* Budget was not fully consumed, since we have no more
+		 * completed RX slots. We can enable notifications and
+		 * exit polling mode. */
+                csb->guest_need_rxkick = 1;
 		napi_complete_done(napi, work_done);
+
+                /* Double check for more completed RX slots. */
+		ptnet_rxsync_tail(csb, kring);
+		if (ring->head != ring->tail && napi_schedule_prep(napi)) {
+			/* If there is more work to do, disable notifications
+			 * and go ahead. */
+                        csb->guest_need_rxkick = 0;
+			__napi_schedule(napi);
+                }
 #ifdef HANGCTRL
 		if (mod_timer(&pi->hang_timer,
 			      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
 			pr_err("%s: mod_timer failed\n", __func__);
 		}
 #endif
+	}
+
+	if (work_done) {
+		/* Tell the host (through the CSB) about the updated ring->cur and
+		 * ring->head (RX buffer refill).
+		 */
+		kring->rcur = ring->cur;
+		kring->rhead = ring->head;
+		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur,
+					       kring->rhead);
+		/* Kick the host if needed. */
+		if (NM_ACCESS_ONCE(csb->host_need_rxkick)) {
+			csb->rx_ring.sync_flags = NAF_FORCE_READ;
+			iowrite32(0, pi->ioaddr + PTNET_IO_RXKICK);
+		}
 	}
 
 	pi->netdev->stats.rx_bytes += 0;
