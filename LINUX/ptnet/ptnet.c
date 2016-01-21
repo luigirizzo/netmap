@@ -554,7 +554,6 @@ ptnet_open(struct net_device *netdev)
 	if (0) ptnet_ioregs_dump(pi);
 
 	pi->csb->guest_csb_on = 1;
-	netif_carrier_on(netdev);
 
 #ifdef HANGCTRL
 	setup_timer(&pi->hang_timer, &hang_tmr_callback, (unsigned long)pi);
@@ -592,7 +591,6 @@ ptnet_close(struct net_device *netdev)
 
 	pi->csb->guest_csb_on = 0;
 
-	netif_carrier_off(netdev);
 	netif_tx_disable(netdev);
 	napi_disable(&pi->napi);
 	//synchronize_irq(pi->pdev->irq);
@@ -978,7 +976,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * opened in netmap mode. */
 	pi->nm_priv = NULL;
 
-	netif_carrier_off(netdev);
+	netif_carrier_on(netdev);
 
 	pr_info("%s: %p\n", __func__, pi);
 
@@ -1017,6 +1015,8 @@ ptnet_remove(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct ptnet_info *pi = netdev_priv(netdev);
+
+	netif_carrier_off(netdev);
 
 	unregister_netdev(netdev);
 
