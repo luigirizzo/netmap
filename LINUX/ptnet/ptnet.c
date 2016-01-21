@@ -106,24 +106,45 @@ hang_tmr_callback(unsigned long arg)
 }
 #endif
 
-static int ptnet_nm_txsync(struct netmap_kring *kring, int flags);
-static int ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
+static inline void
+ptnet_sync_tail(struct pt_ring *ptring, struct netmap_kring *kring)
+{
+	struct netmap_ring *ring = kring->ring;
+
+	/* Update hwcur and hwtail as known by the host. */
+        ptnetmap_guest_read_kring_csb(ptring, kring);
+
+	/* nm_sync_finalize */
+	ring->tail = kring->rtail = kring->nr_hwtail;
+}
 
 static netdev_tx_t
 ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
+	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na = NA(netdev);
 	/* Alternative way:
-	 *	struct ptnet_info *pi = netdev_priv(netdev);
 	 *	struct netmap_adapter *na = &pi->ptna->hwup.up;
 	*/
 	struct netmap_kring *kring = &na->tx_rings[0];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
+	struct paravirt_csb *csb = pi->csb;
 	struct netmap_slot *slot;
 	void *nmbuf;
 
 	DBG("TX skb len=%d", skb->len);
+
+	/* Update hwcur and hwtail (completed TX slots) as known by the host,
+	 * by reading from CSB. */
+	ptnet_sync_tail(&csb->tx_ring, kring);
+
+	if (unlikely(ring->head == ring->tail)) {
+		RD(1, "TX ring unexpected overflow, dropping");
+		dev_kfree_skb_any(skb);
+
+		return NETDEV_TX_OK;
+	}
 
 	slot = &ring->slot[ring->head];
 	slot->flags = 0;
@@ -136,12 +157,35 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	kring->rcur = ring->cur;
 	kring->rhead = ring->head;
 
-	ptnet_nm_txsync(kring, NAF_FORCE_RECLAIM);
+	/* Tell the host to process the new packets, updating cur and head in
+	 * the CSB. */
+	ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
 
-	/* nm_sync_finalize */
-	ring->tail = kring->rtail = kring->nr_hwtail;
+        /* Ask for a kick from a guest to the host if needed. */
+	if (NM_ACCESS_ONCE(csb->host_need_txkick) && !skb->xmit_more) {
+		csb->tx_ring.sync_flags = NAF_FORCE_RECLAIM;
+		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK);
+	}
+
+        /* No more TX slots for further transmissions. We have to stop the
+	 * qdisc layer and enable notifications. */
+	if (ring->head == ring->tail) {
+		netif_stop_queue(netdev);
+		csb->guest_need_txkick = 1;
+
+                /* Double check. */
+		ptnet_sync_tail(&csb->tx_ring, kring);
+		if (unlikely(ring->head != ring->tail)) {
+			/* More TX space came in the meanwhile. */
+			netif_start_queue(netdev);
+			csb->guest_need_txkick = 0;
+		}
+	}
 
 	dev_kfree_skb_any(skb);
+
+	pi->netdev->stats.tx_bytes += 0;
+	pi->netdev->stats.tx_packets += 0;
 
 	return NETDEV_TX_OK;
 }
@@ -185,8 +229,6 @@ ptnet_tx_intr(int irq, void *data)
 {
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na = NA(netdev);
-	struct netmap_kring *kring = &na->tx_rings[0];
 
 	//printk("%s\n", __func__);
 
@@ -194,12 +236,9 @@ ptnet_tx_intr(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
-	/* Cleanup completed transmissions. */
-	ptnet_nm_txsync(kring, NAF_FORCE_RECLAIM);
-
-	pi->netdev->stats.tx_bytes += 0;
-	pi->netdev->stats.tx_packets += 0;
-
+	/* Just wake up the qdisc layer, it will flush pending transmissions,
+	 * with the side effect of reclaiming completed TX slots. */
+	netif_wake_queue(netdev);
 
 	return IRQ_HANDLED;
 }
@@ -237,17 +276,6 @@ ptnet_rx_intr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static inline void
-ptnet_rxsync_tail(struct paravirt_csb *csb, struct netmap_kring *kring)
-{
-	struct netmap_ring *ring = kring->ring;
-
-        ptnetmap_guest_read_kring_csb(&csb->rx_ring, kring);
-
-	/* nm_sync_finalize */
-	ring->tail = kring->rtail = kring->nr_hwtail;
-}
-
 /*
  * ptnet_rx_poll - NAPI Rx polling callback
  * @pi: NIC private structure
@@ -270,7 +298,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
 	/* Update hwtail, rtail, tail and hwcur to what is known from the host,
 	 * reading from CSB. */
-	ptnet_rxsync_tail(csb, kring);
+	ptnet_sync_tail(&csb->rx_ring, kring);
 
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
@@ -310,7 +338,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		napi_complete_done(napi, work_done);
 
                 /* Double check for more completed RX slots. */
-		ptnet_rxsync_tail(csb, kring);
+		ptnet_sync_tail(&csb->rx_ring, kring);
 		if (ring->head != ring->tail && napi_schedule_prep(napi)) {
 			/* If there is more work to do, disable notifications
 			 * and go ahead. */
