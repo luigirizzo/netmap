@@ -1018,6 +1018,8 @@ ptnet_remove(struct pci_dev *pdev)
 
 	netif_carrier_off(netdev);
 
+	netmap_detach(netdev);
+
 	unregister_netdev(netdev);
 
 	ptnet_irqs_fini(pi);
