@@ -432,10 +432,10 @@ ptnetmap_guest_write_kring_csb(struct pt_ring *ptr, uint32_t cur,
 
 /* Guest: Read kring pointers (hwcur, hwtail) from CSB */
 static inline void
-ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
-			      uint32_t *h_hwtail, uint32_t num_slots)
+ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, struct netmap_kring *kring)
 {
-    uint32_t old_hwcur = *h_hwcur, old_hwtail = *h_hwtail;
+    uint32_t old_hwcur = kring->nr_hwcur, old_hwtail = kring->nr_hwtail;
+    uint32_t num_slots = kring->nkr_num_slots;
     uint32_t d, inc_hc, inc_ht;
 
     //mb(); /* Force memory complete before read CSB */
@@ -457,9 +457,9 @@ ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
      * associated with the correct hwtail. In this way hwcur can not exceed
      * hwtail.
      */
-    *h_hwcur = ptr->hwcur;
+    kring->nr_hwcur = ptr->hwcur;
     mb();
-    *h_hwtail = ptr->hwtail;
+    kring->nr_hwtail = ptr->hwtail;
 
     /*
      * Even with the previous barrier, it is still possible that we read an
@@ -468,14 +468,14 @@ ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
      * the (apparently) new hwcur.
      */
     d = ptn_sub(old_hwtail, old_hwcur, num_slots);       /* previous distance */
-    inc_ht = ptn_sub(*h_hwtail, old_hwtail, num_slots);  /* increase of hwtail */
-    inc_hc = ptn_sub(*h_hwcur, old_hwcur, num_slots);    /* increase of hwcur */
+    inc_ht = ptn_sub(kring->nr_hwtail, old_hwtail, num_slots);  /* increase of hwtail */
+    inc_hc = ptn_sub(kring->nr_hwcur, old_hwcur, num_slots);    /* increase of hwcur */
 
     if (unlikely(inc_ht > num_slots - d + inc_hc)) {
         ND(1, "ERROR hwtail overtakes hwcur - old_hwtail: %u hwtail: %u old_hwcur: %u hwcur: %u",
-                old_hwtail, *h_hwtail, old_hwcur, *h_hwcur);
-        *h_hwtail = nm_prev(*h_hwcur, num_slots - 1);
-        //*h_hwtail = *h_hwcur;
+                old_hwtail, kring->nr_hwtail, old_hwcur, kring->nr_hwcur);
+        kring->nr_hwtail = nm_prev(kring->nr_hwcur, num_slots - 1);
+        //kring->nr_hwtail = kring->nr_hwcur;
     }
 }
 

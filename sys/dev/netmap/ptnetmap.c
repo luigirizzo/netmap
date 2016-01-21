@@ -1240,8 +1240,7 @@ netmap_pt_guest_txsync(struct netmap_kring *kring, int flags)
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
 	if (nm_kr_txempty(kring) || (flags & NAF_FORCE_RECLAIM)) {
-                ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur,
-				&kring->nr_hwtail, kring->nkr_num_slots);
+                ptnetmap_guest_read_kring_csb(&csb->tx_ring, kring);
 	}
 
         /*
@@ -1253,8 +1252,7 @@ netmap_pt_guest_txsync(struct netmap_kring *kring, int flags)
 		/* Reenable notifications. */
 		csb->guest_need_txkick = 1;
                 /* Double check */
-                ptnetmap_guest_read_kring_csb(&csb->tx_ring, &kring->nr_hwcur,
-                		&kring->nr_hwtail, kring->nkr_num_slots);
+                ptnetmap_guest_read_kring_csb(&csb->tx_ring, kring);
                 /* If there is new free space, disable notifications */
 		if (unlikely(!nm_kr_txempty(kring))) {
 			csb->guest_need_txkick = 0;
@@ -1286,29 +1284,23 @@ netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags)
 	struct netmap_pt_guest_adapter *ptna =
 		(struct netmap_pt_guest_adapter *)na;
 	struct paravirt_csb *csb = ptna->csb;
-
-	uint32_t h_hwcur = kring->nr_hwcur, h_hwtail = kring->nr_hwtail;
 	bool notify = false;
 
         /* Disable notifications */
 	csb->guest_need_rxkick = 0;
 
-	/* Fetch the hwcur/hwtail known from the host. */
-        ptnetmap_guest_read_kring_csb(&csb->rx_ring, &h_hwcur, &h_hwtail,
-				      kring->nkr_num_slots);
-
 	/*
 	 * First part: import newly received packets, by updating the kring
-	 * hwtail to the hwtail known from the host (read from the CSB)
+	 * hwtail to the hwtail known from the host (read from the CSB).
+	 * This also updates the kring hwcur.
 	 */
-	kring->nr_hwtail = h_hwtail;
+        ptnetmap_guest_read_kring_csb(&csb->rx_ring, kring);
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
 	/*
 	 * Second part: tell the host about the slots that guest user has
 	 * released, by updating cur and head in the CSB.
 	 */
-	kring->nr_hwcur = h_hwcur;
 	if (kring->rhead != kring->nr_hwcur) {
 		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur,
 					       kring->rhead);
@@ -1328,8 +1320,7 @@ netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags)
 		/* Reenable notifications. */
                 csb->guest_need_rxkick = 1;
                 /* Double check */
-                ptnetmap_guest_read_kring_csb(&csb->rx_ring, &kring->nr_hwcur,
-					      &kring->nr_hwtail, kring->nkr_num_slots);
+                ptnetmap_guest_read_kring_csb(&csb->rx_ring, kring);
                 /* If there are new slots, disable notifications. */
 		if (!nm_kr_rxempty(kring)) {
                         csb->guest_need_rxkick = 0;
