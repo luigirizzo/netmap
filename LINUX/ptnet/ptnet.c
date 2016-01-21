@@ -112,9 +112,11 @@ static int ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
 static netdev_tx_t
 ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
-	/* We could access na = NA(netdev) directly. */
-	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_adapter *na = NA(netdev);
+	/* Alternative way:
+	 *	struct ptnet_info *pi = netdev_priv(netdev);
+	 *	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	*/
 	struct netmap_kring *kring = &na->tx_rings[0];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
@@ -183,7 +185,7 @@ ptnet_tx_intr(int irq, void *data)
 {
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_adapter *na = NA(netdev);
 	struct netmap_kring *kring = &na->tx_rings[0];
 
 	//printk("%s\n", __func__);
@@ -475,7 +477,7 @@ static int
 ptnet_open(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_adapter *na = NA(netdev);
 	enum txrx t;
 	int ret;
 
@@ -546,7 +548,7 @@ static int
 ptnet_close(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_adapter *na = NA(netdev);
 
 #ifdef HANGCTRL
 	del_timer(&pi->hang_timer);
