@@ -130,9 +130,14 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	struct netmap_kring *kring = &na->tx_rings[0];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
+	int nfrags = skb_shinfo(skb)->nr_frags;
 	struct paravirt_csb *csb = pi->csb;
 	struct netmap_slot *slot;
+	int nmbuf_bytes;
+	int skbdata_len;
+	void *skbdata;
 	void *nmbuf;
+	int f;
 
 	DBG("TX skb len=%d", skb->len);
 
@@ -147,10 +152,13 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		return NETDEV_TX_OK;
 	}
 
+	/* Grab the next available TX slot. */
 	slot = &ring->slot[ring->head];
-	slot->flags = 0;
-	slot->len = skb->len;
 	nmbuf = NMB(na, slot);
+	nmbuf_bytes = 0;
+
+	/* First step: Setup the virtio-net header at the beginning of th
+	 *  first slot. */
 	if (pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
 		struct virtio_net_hdr_v1 *vh = nmbuf;
 
@@ -186,9 +194,77 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		vh->num_buffers = 0;
 
 		nmbuf += sizeof(*vh);
-		slot->len += sizeof(*vh);
+		nmbuf_bytes += sizeof(*vh);
 	}
-	skb_copy_bits(skb, 0, nmbuf, skb->len);
+
+	/* Second step: Copy in the linear part of the sk_buff. */
+
+	skbdata = skb->data;
+	skbdata_len = skb_headlen(skb);
+
+	for (;;) {
+		int copy = skbdata_len;
+
+		if (unlikely(copy > ring->nr_buf_size - nmbuf_bytes)) {
+			copy = ring->nr_buf_size - nmbuf_bytes;
+		}
+
+		memcpy(nmbuf, skbdata, copy);
+		skbdata += copy;
+		skbdata_len -= copy;
+		nmbuf += copy;
+		nmbuf_bytes += copy;
+
+		if (likely(!skbdata_len)) {
+			break;
+		}
+
+		slot->len = nmbuf_bytes;
+		slot->flags = NS_MOREFRAG;
+		ring->head = ring->cur = nm_next(ring->head, lim);
+		slot = &ring->slot[ring->head];
+		nmbuf = NMB(na, slot);
+		nmbuf_bytes = 0;
+	}
+
+	/* Third step: Copy in the sk_buffs frags. */
+
+	for (f = 0; f < nfrags; f++) {
+		const struct skb_frag_struct *frag;
+
+		frag = &skb_shinfo(skb)->frags[f];
+		skbdata = skb_frag_address(frag);
+		skbdata_len = skb_frag_size(frag);
+
+		for (;;) {
+			int copy = skbdata_len;
+
+			if (copy > ring->nr_buf_size - nmbuf_bytes) {
+				copy = ring->nr_buf_size - nmbuf_bytes;
+			}
+
+			memcpy(nmbuf, skbdata, copy);
+			skbdata += copy;
+			skbdata_len -= copy;
+			nmbuf += copy;
+			nmbuf_bytes += copy;
+
+			if (!skbdata_len) {
+				break;
+			}
+
+			slot->len = nmbuf_bytes;
+			slot->flags = NS_MOREFRAG;
+			ring->head = ring->cur = nm_next(ring->head, lim);
+			slot = &ring->slot[ring->head];
+			nmbuf = NMB(na, slot);
+			nmbuf_bytes = 0;
+		}
+	}
+
+	/* Prepare the last slot. */
+	slot->len = nmbuf_bytes;
+	slot->flags = 0;
 	ring->head = ring->cur = nm_next(ring->head, lim);
 
 	/* nm_txsync_prologue */
