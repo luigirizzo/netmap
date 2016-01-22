@@ -29,6 +29,7 @@
 #include <linux/in.h>
 #include <linux/interrupt.h>
 #include <linux/dma-mapping.h>
+#include <linux/virtio_net.h>
 
 #define WITH_PTNETMAP_GUEST
 #include "../bsd_glue.h"
@@ -150,6 +151,43 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	slot->flags = 0;
 	slot->len = skb->len;
 	nmbuf = NMB(na, slot);
+	if (pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+		struct virtio_net_hdr_v1 *vh = nmbuf;
+
+		if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
+			vh->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
+			vh->csum_start = skb_checksum_start_offset(skb);
+			vh->csum_offset = skb->csum_offset;
+		} else {
+			vh->flags = 0;
+			vh->csum_start = vh->csum_offset = 0;
+		}
+
+		if (skb_is_gso(skb)) {
+			vh->hdr_len = skb_headlen(skb);
+			vh->gso_size = skb_shinfo(skb)->gso_size;
+			if (skb_shinfo(skb)->gso_size & SKB_GSO_TCPV4) {
+				vh->gso_type = VIRTIO_NET_HDR_GSO_TCPV4;
+			} else if (skb_shinfo(skb)->gso_size & SKB_GSO_UDP) {
+				vh->gso_type = VIRTIO_NET_HDR_GSO_UDP;
+			} else if (skb_shinfo(skb)->gso_size & SKB_GSO_TCPV6) {
+				vh->gso_type = VIRTIO_NET_HDR_GSO_TCPV6;
+			}
+
+			if (skb_shinfo(skb)->gso_size & SKB_GSO_TCP_ECN) {
+				vh->gso_type |= VIRTIO_NET_HDR_GSO_ECN;
+			}
+
+		} else {
+			vh->hdr_len = vh->gso_size = 0;
+			vh->gso_type = VIRTIO_NET_HDR_GSO_NONE;
+		}
+
+		vh->num_buffers = 0;
+
+		nmbuf += sizeof(*vh);
+		slot->len += sizeof(*vh);
+	}
 	skb_copy_bits(skb, 0, nmbuf, skb->len);
 	ring->head = ring->cur = nm_next(ring->head, lim);
 
@@ -290,6 +328,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	struct paravirt_csb *csb = pi->csb;
+	bool have_vnet_hdr = pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR;
 	int work_done = 0;
 
 #ifdef HANGCTRL
@@ -304,6 +343,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
 	/* Import completed RX slots. */
 	while (work_done < budget && ring->head != ring->tail) {
+		struct virtio_net_hdr_v1 *vh;
 		struct netmap_slot *slot;
 		struct sk_buff *skb;
 		unsigned int len;
@@ -315,21 +355,65 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		nmbuf = NMB(na, slot);
 		len = slot->len;
 
-		skb = napi_alloc_skb(&pi->napi, len);
+		vh = nmbuf;
+		if (likely(have_vnet_hdr)) {
+			nmbuf += sizeof(*vh);
+			len -= sizeof(*vh);
+		}
+
+		skb = napi_alloc_skb(napi, len);
 		if (!skb) {
 			pr_err("napi_alloc_skb() failed\n");
 			break;
 		}
+
 		memcpy(skb_put(skb, len), nmbuf, len);
 
 		DBG("RX SKB len=%d", skb->len);
 
-		skb->protocol = eth_type_trans(skb, pi->netdev);
-
 		pi->netdev->stats.rx_bytes += skb->len;
 		pi->netdev->stats.rx_packets ++;
 
-		napi_gro_receive(&pi->napi, skb);
+		if (likely(have_vnet_hdr && (vh->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM))) {
+			if (unlikely(!skb_partial_csum_set(skb, vh->csum_start,
+							   vh->csum_offset))) {
+				dev_kfree_skb_any(skb);
+				work_done ++;
+				continue;
+			}
+
+		} else if (have_vnet_hdr && (vh->flags & VIRTIO_NET_HDR_F_DATA_VALID)) {
+			skb->ip_summed = CHECKSUM_UNNECESSARY;
+		}
+
+		skb->protocol = eth_type_trans(skb, pi->netdev);
+
+		if (likely(have_vnet_hdr && vh->gso_type != VIRTIO_NET_HDR_GSO_NONE)) {
+			switch (vh->gso_type & ~VIRTIO_NET_HDR_GSO_ECN) {
+
+			case VIRTIO_NET_HDR_GSO_TCPV4:
+				skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
+				break;
+
+			case VIRTIO_NET_HDR_GSO_UDP:
+				skb_shinfo(skb)->gso_type = SKB_GSO_UDP;
+				break;
+
+			case VIRTIO_NET_HDR_GSO_TCPV6:
+				skb_shinfo(skb)->gso_type = SKB_GSO_TCPV6;
+				break;
+			}
+
+			if (vh->gso_type & VIRTIO_NET_HDR_GSO_ECN) {
+				skb_shinfo(skb)->gso_type |= SKB_GSO_TCP_ECN;
+			}
+
+			skb_shinfo(skb)->gso_size = vh->gso_size;
+			skb_shinfo(skb)->gso_type |= SKB_GSO_DODGY;
+			skb_shinfo(skb)->gso_segs = 0;
+		}
+
+		napi_gro_receive(napi, skb);
 
 		work_done ++;
 	}
@@ -874,7 +958,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* Check if we are supported by the hypervisor. If not,
 	 * bail out immediately. */
-	iowrite32(NET_PTN_FEATURES_BASE, pi->ioaddr + PTNET_IO_PTFEAT);
+	iowrite32(NET_PTN_FEATURES_BASE | NET_PTN_FEATURES_VNET_HDR,
+		  pi->ioaddr + PTNET_IO_PTFEAT);
 	pi->ptfeatures = ioread32(pi->ioaddr + PTNET_IO_PTFEAT);
 	if (!(pi->ptfeatures & NET_PTN_FEATURES_BASE)) {
 		pr_err("Hypervisor doesn't support netmap passthrough\n");
@@ -922,7 +1007,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
-	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, 64);
+	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
 
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
 
@@ -937,15 +1022,18 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	macaddr[5] = macreg & 0xff;
 	memcpy(netdev->dev_addr, macaddr, netdev->addr_len);
 
-	netdev->hw_features = NETIF_F_HIGHDMA |
-			      NETIF_F_RXALL;
+	netdev->features = NETIF_F_HIGHDMA;
 
-	if (0) {
-		/* No support for now. */
-		netdev->hw_features |=	NETIF_F_SG |
-					NETIF_F_HW_CSUM |
-					NETIF_F_TSO |
-					NETIF_F_RXCSUM;
+	if (pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+		netdev->hw_features |= NETIF_F_HW_CSUM
+				       | NETIF_F_SG
+				       | NETIF_F_TSO
+				       | NETIF_F_UFO
+				       | NETIF_F_TSO_ECN
+				       | NETIF_F_TSO6;
+		netdev->features |= netdev->hw_features
+				    | NETIF_F_RXCSUM
+				    | NETIF_F_GSO_ROBUST;
 	}
 
 	device_set_wakeup_enable(&pi->pdev->dev, 0);
