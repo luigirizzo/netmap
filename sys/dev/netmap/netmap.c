@@ -2435,6 +2435,32 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	 * slots available. If this fails, then lock and call the sync
 	 * routines.
 	 */
+#if 1 /* new code- call rx if any of the ring needs to release or read buffers */
+	if (want_tx) {
+		t = NR_TX;
+		for (i = priv->np_qfirst[t]; want[t] && i < priv->np_qlast[t]; i++) {
+			kring = &NMR(na, t)[i];
+			/* XXX compare ring->cur and kring->tail */
+			if (!nm_ring_empty(kring->ring)) {
+				revents |= want[t];
+				want[t] = 0;	/* also breaks the loop */
+			}
+		}
+	}
+	if (want_rx) {
+		want_rx = 0; /* look for a reason to run the handlers */
+		t = NR_RX;
+		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
+			kring = &NMR(na, t)[i];
+			if (kring->ring->cur == kring->ring->tail /* try fetch new buffers */
+			    || kring->rhead != kring->ring->head /* release buffers */) {
+				want_rx = 1;
+			}
+		}
+		if (!want_rx)
+			revents |= want[t]; /* we have data */
+	}
+#else /* old code */
 	for_rx_tx(t) {
 		for (i = priv->np_qfirst[t]; want[t] && i < priv->np_qlast[t]; i++) {
 			kring = &NMR(na, t)[i];
@@ -2445,6 +2471,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 			}
 		}
 	}
+#endif /* old code */
 
 	/*
 	 * If we want to push packets out (priv->np_txpoll) or

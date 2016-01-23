@@ -233,7 +233,7 @@ main(int argc, char **argv)
 		D("cannot open %s", ifa);
 		return (1);
 	}
-	// XXX use a single mmap ?
+	/* try to reuse the mmap() of the first interface, if possible */
 	pb = nm_open(ifb, NULL, NM_OPEN_NO_MMAP, pa);
 	if (pb == NULL) {
 		D("cannot open %s", ifb);

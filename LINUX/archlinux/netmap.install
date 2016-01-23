@@ -1,5 +1,15 @@
 post_common() {
     depmod -a
+    KVER2=$(uname -r | sed 's/\.[0-9]\+-[0-9]\+//')
+    echo ">>> Netmap patched NIC drivers have been installed into"
+    echo ">>> /lib/modules/extramodules-${KVER2}/netmap-drivers, with"
+    echo ">>> a '_netmap.ko' suffix, so that they don't replace the"
+    echo ">>> official ones provided by the linux package."
+    echo ">>> You should therefore manually unload the official ones and"
+    echo ">>> load the patched ones."
+    echo ">>> Alternatively, you can use /etc/modules-load.d/ and"
+    echo ">>> /etc/modprobe.d/ to automatically load patched drivers and"
+    echo ">>> blacklist the official ones."
 }
 
 ## arg 1:  the new package version
