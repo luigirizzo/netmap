@@ -56,7 +56,7 @@ struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
 
-	/* Mirrors PTFEAT register. */
+	/* Mirrors PTFEAT register content. */
 	uint32_t ptfeatures;
 
 	/* Access to device memory. */
@@ -74,6 +74,8 @@ struct ptnet_info {
 	/* CSB memory to be used for producer/consumer state
 	 * syncrhonization. */
 	struct paravirt_csb *csb;
+
+	int min_tx_slots;
 
 	struct netmap_priv_d *nm_priv;
 	struct netmap_pt_guest_adapter *ptna;
@@ -119,6 +121,18 @@ ptnet_sync_tail(struct pt_ring *ptring, struct netmap_kring *kring)
 	ring->tail = kring->rtail = kring->nr_hwtail;
 }
 
+static inline int
+ptnet_tx_slots(struct netmap_ring *ring)
+{
+	int space = (int)ring->tail - ring->head;
+
+	if (space < 0) {
+		space += ring->num_slots;
+	}
+
+	return space;
+}
+
 static netdev_tx_t
 ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
@@ -145,7 +159,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	 * by reading from CSB. */
 	ptnet_sync_tail(&csb->tx_ring, kring);
 
-	if (unlikely(ring->head == ring->tail)) {
+	if (unlikely(ptnet_tx_slots(ring) < pi->min_tx_slots)) {
 		RD(1, "TX ring unexpected overflow, dropping");
 		dev_kfree_skb_any(skb);
 
@@ -283,13 +297,13 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
         /* No more TX slots for further transmissions. We have to stop the
 	 * qdisc layer and enable notifications. */
-	if (ring->head == ring->tail) {
+	if (ptnet_tx_slots(ring) < pi->min_tx_slots) {
 		netif_stop_queue(netdev);
 		csb->guest_need_txkick = 1;
 
                 /* Double check. */
 		ptnet_sync_tail(&csb->tx_ring, kring);
-		if (unlikely(ring->head != ring->tail)) {
+		if (unlikely(ptnet_tx_slots(ring) >= pi->min_tx_slots)) {
 			/* More TX space came in the meanwhile. */
 			netif_start_queue(netdev);
 			csb->guest_need_txkick = 0;
@@ -707,6 +721,13 @@ ptnet_open(struct net_device *netdev)
 		pi->nm_priv->np_si[t] = NULL;
 	}
 
+	{
+		unsigned int nm_buf_size = na->tx_rings[0].ring->nr_buf_size;
+
+		BUG_ON(nm_buf_size == 0);
+		pi->min_tx_slots = 65536 / nm_buf_size;
+		pr_info("%s: min_tx_slots = %u\n", __func__, pi->min_tx_slots);
+	}
 
 	napi_enable(&pi->napi);
 	netif_start_queue(netdev);
