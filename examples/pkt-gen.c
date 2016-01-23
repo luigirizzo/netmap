@@ -62,6 +62,8 @@
 #include <pcap/pcap.h>
 #endif
 
+#include "ctrs.h"
+
 #ifdef _WIN32
 #define cpuset_t        DWORD_PTR   //uint64_t
 static inline void CPU_ZERO(cpuset_t *p)
@@ -216,13 +218,6 @@ struct mac_range {
 struct tstamp {
 	uint32_t sec;
 	uint32_t nsec;
-};
-
-/* counters to accumulate statistics */
-struct my_ctrs {
-	uint64_t pkts, bytes, events;
-	uint64_t min_space;
-	struct timeval t;
 };
 
 /*
@@ -1107,62 +1102,6 @@ ponger_body(void *data)
 	return NULL;
 }
 
-static __inline int
-timespec_ge(const struct timespec *a, const struct timespec *b)
-{
-
-	if (a->tv_sec > b->tv_sec)
-		return (1);
-	if (a->tv_sec < b->tv_sec)
-		return (0);
-	if (a->tv_nsec >= b->tv_nsec)
-		return (1);
-	return (0);
-}
-
-static __inline struct timespec
-timeval2spec(const struct timeval *a)
-{
-	struct timespec ts = {
-		.tv_sec = a->tv_sec,
-		.tv_nsec = a->tv_usec * 1000
-	};
-	return ts;
-}
-
-static __inline struct timeval
-timespec2val(const struct timespec *a)
-{
-	struct timeval tv = {
-		.tv_sec = a->tv_sec,
-		.tv_usec = a->tv_nsec / 1000
-	};
-	return tv;
-}
-
-
-static __inline struct timespec
-timespec_add(struct timespec a, struct timespec b)
-{
-	struct timespec ret = { a.tv_sec + b.tv_sec, a.tv_nsec + b.tv_nsec };
-	if (ret.tv_nsec >= 1000000000) {
-		ret.tv_sec++;
-		ret.tv_nsec -= 1000000000;
-	}
-	return ret;
-}
-
-static __inline struct timespec
-timespec_sub(struct timespec a, struct timespec b)
-{
-	struct timespec ret = { a.tv_sec - b.tv_sec, a.tv_nsec - b.tv_nsec };
-	if (ret.tv_nsec < 0) {
-		ret.tv_sec--;
-		ret.tv_nsec += 1000000000;
-	}
-	return ret;
-}
-
 
 /*
  * wait until ts, either busy or sleeping if more than 1ms.
@@ -1505,27 +1444,6 @@ quit:
 	return (NULL);
 }
 
-/* very crude code to print a number in normalized form.
- * Caller has to make sure that the buffer is large enough.
- */
-static const char *
-norm2(char *buf, double val, char *fmt)
-{
-	char *units[] = { "", "K", "M", "G", "T" };
-	u_int i;
-
-	for (i = 0; val >=1000 && i < sizeof(units)/sizeof(char *) - 1; i++)
-		val /= 1000;
-	sprintf(buf, fmt, val, units[i]);
-	return buf;
-}
-
-static const char *
-norm(char *buf, double val)
-{
-	return norm2(buf, val, "%.3f %s");
-}
-
 static void
 tx_output(struct my_ctrs *cur, double delta, const char *msg)
 {
@@ -1680,20 +1598,16 @@ main_thread(struct glob_arg *g)
 	gettimeofday(&prev.t, NULL);
 	for (;;) {
 		char b1[40], b2[40], b3[40];
-		struct timeval delta;
 		uint64_t pps, usec;
 		struct my_ctrs x;
 		double abs;
 		int done = 0;
 
-		delta.tv_sec = g->report_interval/1000;
-		delta.tv_usec = (g->report_interval%1000)*1000;
-		select(0, NULL, NULL, NULL, &delta);
+		usec = wait_for_next_report(&prev.t, &cur.t,
+				g->report_interval);
+
 		cur.pkts = cur.bytes = cur.events = 0;
 		cur.min_space = 0;
-		gettimeofday(&cur.t, NULL);
-		timersub(&cur.t, &prev.t, &delta);
-		usec = delta.tv_sec* 1000000 + delta.tv_usec;
 		if (usec < 10000) /* too short to be meaningful */
 			continue;
 		/* accumulate counts for all threads */
