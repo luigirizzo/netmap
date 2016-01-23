@@ -451,6 +451,11 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			len -= sizeof(*vh);
 		}
 
+		if (slot->flags & NS_MOREFRAG) {
+			RD(1, "%s: NS_MOREFRAG not supported, dropping", __func__);
+			continue;
+		}
+
 		skb = napi_alloc_skb(napi, len);
 		if (!skb) {
 			pr_err("napi_alloc_skb() failed\n");
