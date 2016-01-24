@@ -809,7 +809,7 @@ ptnet_open(struct net_device *netdev)
 		unsigned int nm_buf_size = na->tx_rings[0].ring->nr_buf_size;
 
 		BUG_ON(nm_buf_size == 0);
-		pi->min_tx_slots = 65536 / nm_buf_size;
+		pi->min_tx_slots = 65536 / nm_buf_size + 1;
 		pr_info("%s: min_tx_slots = %u\n", __func__, pi->min_tx_slots);
 	}
 
