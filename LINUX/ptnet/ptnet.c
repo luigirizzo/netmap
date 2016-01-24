@@ -152,6 +152,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	void *skbdata;
 	void *nmbuf;
 	int f;
+	int nns = 0;
 
 	DBG("TX skb len=%d", skb->len);
 
@@ -241,6 +242,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		slot->len = nmbuf_bytes;
 		slot->flags = NS_MOREFRAG;
 		ring->head = ring->cur = nm_next(ring->head, lim);
+		nns++;
 		slot = &ring->slot[ring->head];
 		nmbuf = NMB(na, slot);
 		nmbuf_bytes = 0;
@@ -275,6 +277,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 			slot->len = nmbuf_bytes;
 			slot->flags = NS_MOREFRAG;
 			ring->head = ring->cur = nm_next(ring->head, lim);
+			nns++;
 			slot = &ring->slot[ring->head];
 			nmbuf = NMB(na, slot);
 			nmbuf_bytes = 0;
@@ -285,6 +288,15 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	slot->len = nmbuf_bytes;
 	slot->flags = 0;
 	ring->head = ring->cur = nm_next(ring->head, lim);
+	nns++;
+
+	if (skb_shinfo(skb)->nr_frags) {
+		RD(1, "TX frags #%u lfsz %u tsz %d nns %d", skb_shinfo(skb)->nr_frags,
+		skb_frag_size(&skb_shinfo(skb)->frags[skb_shinfo(skb)->nr_frags-1]), (int)skb->len,
+		nns);
+	}
+
+	BUG_ON(ring->slot[nm_prev(ring->head, lim)].flags & NS_MOREFRAG);
 
 	/* nm_txsync_prologue */
 	kring->rcur = ring->cur;
@@ -448,6 +460,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		int nmbuf_len;
 		void *nmbuf;
 		int copy;
+		int nns = 0;
 
 		slot = &ring->slot[head];
 		nmbuf = NMB(na, slot);
@@ -475,6 +488,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
 		while (slot->flags & NS_MOREFRAG) {
 			head = nm_next(head, lim);
+			nns++;
 			if (unlikely(head == ring->tail)) {
 				RD(1, "Truncated RX packet, dropping");
 				dev_kfree_skb_any(skb);
@@ -515,12 +529,13 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			} while (nmbuf_len);
 		}
 
+		nns++;
 		if (skbpage) {
 			skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
 					skbpage, 0, PAGE_SIZE - skbdata_avail,
 					PAGE_SIZE);
-			RD(1, "frags #%u lfsz %lu tsz %d", skb_shinfo(skb)->nr_frags,
-					PAGE_SIZE - skbdata_avail, (int)skb->len);
+			RD(1, "RX frags #%u lfsz %lu tsz %d nns %d", skb_shinfo(skb)->nr_frags,
+					PAGE_SIZE - skbdata_avail, (int)skb->len, nns);
 		}
 
 		head = nm_next(head, lim);
