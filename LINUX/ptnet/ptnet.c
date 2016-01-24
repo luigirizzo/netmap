@@ -419,6 +419,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	struct paravirt_csb *csb = pi->csb;
 	bool have_vnet_hdr = pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR;
+	unsigned int head = ring->head;
 	int work_done = 0;
 
 #ifdef HANGCTRL
@@ -432,37 +433,84 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
 	/* Import completed RX slots. */
-	while (work_done < budget && ring->head != ring->tail) {
+	while (work_done < budget && head != ring->tail) {
 		struct virtio_net_hdr_v1 *vh;
 		struct netmap_slot *slot;
 		struct sk_buff *skb;
-		unsigned int len;
+		int skbdata_avail = 0;
+		struct page *skbpage = NULL;
+		void *skbdata;
+		int nmbuf_len;
 		void *nmbuf;
+		int copy;
 
-		slot = &ring->slot[ring->head];
-		ring->head = ring->cur = nm_next(ring->head, lim);
-
+		slot = &ring->slot[head];
 		nmbuf = NMB(na, slot);
-		len = slot->len;
+		nmbuf_len = slot->len;
 
 		vh = nmbuf;
 		if (likely(have_vnet_hdr)) {
 			nmbuf += sizeof(*vh);
-			len -= sizeof(*vh);
+			nmbuf_len -= sizeof(*vh);
 		}
 
-		if (slot->flags & NS_MOREFRAG) {
-			RD(1, "%s: NS_MOREFRAG not supported, dropping", __func__);
-			continue;
-		}
-
-		skb = napi_alloc_skb(napi, len);
-		if (!skb) {
-			pr_err("napi_alloc_skb() failed\n");
+		skb = netdev_alloc_skb_ip_align(pi->netdev, nmbuf_len);
+		if (unlikely(!skb)) {
+			pr_err("%s: netdev_alloc_skb_ip_align() failed\n",
+			       __func__);
 			break;
 		}
 
-		memcpy(skb_put(skb, len), nmbuf, len);
+		memcpy(skb_put(skb, nmbuf_len), nmbuf, nmbuf_len);
+
+		while (slot->flags & NS_MOREFRAG) {
+			head = nm_next(head, lim);
+			if (unlikely(head == ring->tail)) {
+				RD(1, "Truncated RX packet, dropping");
+				break;
+			}
+			slot = &ring->slot[head];
+			nmbuf = NMB(na, slot);
+			nmbuf_len = slot->len;
+
+			do {
+				if (!skbdata_avail) {
+					if (skbpage) {
+						ND(1, "add f #%u fsz %lu tsz %d", skb_shinfo(skb)->nr_frags,
+								PAGE_SIZE - skbdata_avail, (int)skb->len);
+						skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
+								skbpage, 0, PAGE_SIZE - skbdata_avail,
+								PAGE_SIZE);
+					}
+
+					skbpage = alloc_page(GFP_ATOMIC);
+					if (unlikely(!skbpage)) {
+						pr_err("%s: alloc_page() failed\n",
+						       __func__);
+						break;
+					}
+					skbdata = page_address(skbpage);
+					skbdata_avail = PAGE_SIZE;
+				}
+
+				copy = min(nmbuf_len, skbdata_avail);
+				memcpy(skbdata, nmbuf, copy);
+				nmbuf += copy;
+				nmbuf_len -= copy;
+				skbdata += copy;
+				skbdata_avail -= copy;
+			} while (nmbuf_len);
+		}
+
+		if (skbpage) {
+			skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
+					skbpage, 0, PAGE_SIZE - skbdata_avail,
+					PAGE_SIZE);
+			RD(1, "frags #%u lfsz %lu tsz %d", skb_shinfo(skb)->nr_frags,
+					PAGE_SIZE - skbdata_avail, (int)skb->len);
+		}
+
+		head = nm_next(head, lim);
 
 		DBG("RX SKB len=%d", skb->len);
 
@@ -522,7 +570,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
                 /* Double check for more completed RX slots. */
 		ptnet_sync_tail(&csb->rx_ring, kring);
-		if (ring->head != ring->tail && napi_schedule_prep(napi)) {
+		if (head != ring->tail && napi_schedule_prep(napi)) {
 			/* If there is more work to do, disable notifications
 			 * and go ahead. */
                         csb->guest_need_rxkick = 0;
@@ -540,6 +588,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		/* Tell the host (through the CSB) about the updated ring->cur and
 		 * ring->head (RX buffer refill).
 		 */
+		ring->head = ring->cur = head;
 		kring->rcur = ring->cur;
 		kring->rhead = ring->head;
 		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur,
