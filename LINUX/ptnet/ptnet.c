@@ -146,6 +146,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	int nfrags = skb_shinfo(skb)->nr_frags;
 	struct paravirt_csb *csb = pi->csb;
+	unsigned int head = ring->head;
 	struct netmap_slot *slot;
 	int nmbuf_bytes;
 	int skbdata_len;
@@ -168,7 +169,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	}
 
 	/* Grab the next available TX slot. */
-	slot = &ring->slot[ring->head];
+	slot = &ring->slot[head];
 	nmbuf = NMB(na, slot);
 	nmbuf_bytes = 0;
 
@@ -241,9 +242,9 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 		slot->len = nmbuf_bytes;
 		slot->flags = NS_MOREFRAG;
-		ring->head = ring->cur = nm_next(ring->head, lim);
+		head = nm_next(head, lim);
 		nns++;
-		slot = &ring->slot[ring->head];
+		slot = &ring->slot[head];
 		nmbuf = NMB(na, slot);
 		nmbuf_bytes = 0;
 	}
@@ -276,9 +277,9 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 			slot->len = nmbuf_bytes;
 			slot->flags = NS_MOREFRAG;
-			ring->head = ring->cur = nm_next(ring->head, lim);
+			head = nm_next(head, lim);
 			nns++;
-			slot = &ring->slot[ring->head];
+			slot = &ring->slot[head];
 			nmbuf = NMB(na, slot);
 			nmbuf_bytes = 0;
 		}
@@ -287,7 +288,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	/* Prepare the last slot. */
 	slot->len = nmbuf_bytes;
 	slot->flags = 0;
-	ring->head = ring->cur = nm_next(ring->head, lim);
+	ring->head = ring->cur = nm_next(head, lim);
 	nns++;
 
 	if (skb_shinfo(skb)->nr_frags) {
@@ -296,7 +297,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		nns);
 	}
 
-	BUG_ON(ring->slot[nm_prev(ring->head, lim)].flags & NS_MOREFRAG);
+	BUG_ON(ring->slot[head].flags & NS_MOREFRAG);
 
 	/* nm_txsync_prologue */
 	kring->rcur = ring->cur;
