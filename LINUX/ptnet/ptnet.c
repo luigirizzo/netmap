@@ -366,7 +366,7 @@ ptnet_change_mtu(struct net_device *netdev, int new_mtu)
 }
 
 /*
- * ptnet_tx_intr - Interrupt Handler
+ * ptnet_tx_intr - Interrupt handler for TX queues
  * @irq: interrupt number
  * @data: pointer to a network interface device structure
  */
@@ -390,7 +390,7 @@ ptnet_tx_intr(int irq, void *data)
 }
 
 /*
- * ptnet_rx_intr - Interrupt Handler
+ * ptnet_rx_intr - Interrupt handler for RX queues
  * @irq: interrupt number
  * @data: pointer to a network interface device structure
  */
@@ -423,7 +423,7 @@ ptnet_rx_intr(int irq, void *data)
 }
 
 /*
- * ptnet_rx_poll - NAPI Rx polling callback
+ * ptnet_rx_poll - NAPI RX polling callback
  * @pi: NIC private structure
  */
 static int
@@ -648,10 +648,10 @@ ptnet_netpoll(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 
-	disable_irq(pi->pdev->irq);
+	/* disable_interrupts() */
 	ptnet_tx_intr(pi->msix_entries[0].vector, netdev);
 	ptnet_rx_intr(pi->msix_entries[1].vector, netdev);
-	enable_irq(pi->pdev->irq);
+	/* enable interrupts() */
 }
 #endif
 
@@ -767,11 +767,7 @@ static int ptnet_nm_register_native(struct netmap_adapter *na, int onoff);
  * Returns 0 on success, negative value on failure
  *
  * The open entry point is called when a network interface is made
- * active by the system (IFF_UP).  At this point all resources needed
- * for transmit and receive operations are allocated, the interrupt
- * handler is registered with the OS, the watchdog task is started,
- * and the stack is notified that the interface is ready.
- */
+ * active by the system (IFF_UP). */
 static int
 ptnet_open(struct net_device *netdev)
 {
@@ -845,9 +841,7 @@ ptnet_open(struct net_device *netdev)
  * Returns 0, this is not allowed to fail
  *
  * The close entry point is called when an interface is de-activated
- * by the OS.  The hardware is still under the drivers control, but
- * needs to be disabled.  A global MAC reset is issued to stop the
- * hardware, and all transmit and receive resources are freed.
+ * by the OS.
  */
 static int
 ptnet_close(struct net_device *netdev)
@@ -1085,9 +1079,9 @@ static struct netmap_adapter ptnet_nm_ops = {
  *
  * Returns 0 on success, negative on failure
  *
- * ptnet_probe initializes an pi identified by a pci_dev structure.
- * The OS initialization, configuring of the pi private structure,
- * and a hardware reset occur.
+ * ptnet_probe initializes a pi identified by a pci_dev structure.
+ * The OS initialization and configuration of the pi private structure
+ * occur.
  */
 static int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
@@ -1347,15 +1341,14 @@ static struct pci_driver ptnet_driver = {
 /*
  * ptnet_init - Driver Registration Routine
  *
- * ptnet_init is the first routine called when netmap is
- * loaded. All it does is register with the PCI subsystem.
+ * ptnet_init is called when netmap is loaded.
+ * All it does is register with the PCI subsystem.
  */
 int
 ptnet_init(void)
 {
 	pr_info("%s - version %s\n", "Passthrough netmap interface driver",
 		DRV_VERSION);
-	pr_info("%s\n", "Copyright (c) 2015 Vincenzo Maffione");
 
 	return pci_register_driver(&ptnet_driver);
 }
