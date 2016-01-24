@@ -188,15 +188,15 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		if (skb_is_gso(skb)) {
 			vh->hdr_len = skb_headlen(skb);
 			vh->gso_size = skb_shinfo(skb)->gso_size;
-			if (skb_shinfo(skb)->gso_size & SKB_GSO_TCPV4) {
+			if (skb_shinfo(skb)->gso_type & SKB_GSO_TCPV4) {
 				vh->gso_type = VIRTIO_NET_HDR_GSO_TCPV4;
-			} else if (skb_shinfo(skb)->gso_size & SKB_GSO_UDP) {
+			} else if (skb_shinfo(skb)->gso_type & SKB_GSO_UDP) {
 				vh->gso_type = VIRTIO_NET_HDR_GSO_UDP;
-			} else if (skb_shinfo(skb)->gso_size & SKB_GSO_TCPV6) {
+			} else if (skb_shinfo(skb)->gso_type & SKB_GSO_TCPV6) {
 				vh->gso_type = VIRTIO_NET_HDR_GSO_TCPV6;
 			}
 
-			if (skb_shinfo(skb)->gso_size & SKB_GSO_TCP_ECN) {
+			if (skb_shinfo(skb)->gso_type & SKB_GSO_TCP_ECN) {
 				vh->gso_type |= VIRTIO_NET_HDR_GSO_ECN;
 			}
 
