@@ -455,8 +455,9 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		struct virtio_net_hdr_v1 *vh;
 		struct netmap_slot *slot;
 		struct sk_buff *skb;
-		int skbdata_avail = 0;
+		unsigned int first = head;
 		struct page *skbpage = NULL;
+		int skbdata_avail = 0;
 		void *skbdata;
 		int nmbuf_len;
 		void *nmbuf;
@@ -491,10 +492,13 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			head = nm_next(head, lim);
 			nns++;
 			if (unlikely(head == ring->tail)) {
-				RD(1, "Truncated RX packet, dropping");
+				ND(1, "Warning: truncated packet, retrying");
 				dev_kfree_skb_any(skb);
 				work_done ++;
 				pi->netdev->stats.rx_frame_errors ++;
+				/* Reset head to the beginning of the
+				 * current packet. */
+				head = first;
 				goto out_of_slots;
 			}
 			slot = &ring->slot[head];
