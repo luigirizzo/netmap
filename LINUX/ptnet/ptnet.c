@@ -207,6 +207,11 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 		vh->num_buffers = 0;
 
+		ND(1, "%s: vnet hdr: flags %x csum_start %u csum_ofs %u hdr_len = "
+		      "%u gso_size %u gso_type %x", __func__, vh->flags,
+		      vh->csum_start, vh->csum_offset, vh->hdr_len, vh->gso_size,
+		      vh->gso_type);
+
 		nmbuf += sizeof(*vh);
 		nmbuf_bytes += sizeof(*vh);
 	}
@@ -450,6 +455,11 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
 		vh = nmbuf;
 		if (likely(have_vnet_hdr)) {
+			ND(1, "%s: vnet hdr: flags %x csum_start %u "
+			      "csum_ofs %u hdr_len = %u gso_size %u "
+			      "gso_type %x", __func__, vh->flags,
+			      vh->csum_start, vh->csum_offset, vh->hdr_len,
+			      vh->gso_size, vh->gso_type);
 			nmbuf += sizeof(*vh);
 			nmbuf_len -= sizeof(*vh);
 		}
