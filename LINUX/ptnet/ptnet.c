@@ -467,7 +467,10 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			head = nm_next(head, lim);
 			if (unlikely(head == ring->tail)) {
 				RD(1, "Truncated RX packet, dropping");
-				break;
+				dev_kfree_skb_any(skb);
+				work_done ++;
+				pi->netdev->stats.rx_frame_errors ++;
+				goto out_of_slots;
 			}
 			slot = &ring->slot[head];
 			nmbuf = NMB(na, slot);
@@ -522,6 +525,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 							   vh->csum_offset))) {
 				dev_kfree_skb_any(skb);
 				work_done ++;
+				pi->netdev->stats.rx_frame_errors ++;
 				continue;
 			}
 
@@ -561,6 +565,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		work_done ++;
 	}
 
+out_of_slots:
 	if (work_done < budget) {
 		/* Budget was not fully consumed, since we have no more
 		 * completed RX slots. We can enable notifications and
