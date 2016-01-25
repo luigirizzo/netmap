@@ -551,7 +551,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW, &netmap_generic_t
 SYSEND;
 
 NMG_LOCK_T	netmap_global_lock;
-int netmap_use_count = 0; /* number of active netmap instances */
 
 /*
  * mark the ring as stopped, and run through the locks
@@ -984,7 +983,7 @@ netmap_priv_new(void)
 	if (priv == NULL)
 		return NULL;
 	priv->np_refs = 1;
-	netmap_use_count++;
+	nm_os_get_module();
 	return priv;
 }
 
@@ -1006,7 +1005,7 @@ netmap_priv_delete(struct netmap_priv_d *priv)
 	if (--priv->np_refs > 0) {
 		return;
 	}
-	netmap_use_count--;
+	nm_os_put_module();
 	if (na) {
 		netmap_do_unregif(priv);
 	}

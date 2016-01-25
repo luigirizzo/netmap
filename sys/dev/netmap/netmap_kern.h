@@ -278,6 +278,9 @@ void nm_os_ifnet_fini(void);
 void nm_os_ifnet_lock(void);
 void nm_os_ifnet_unlock(void);
 
+void nm_os_get_module(void);
+void nm_os_put_module(void);
+
 void netmap_make_zombie(struct ifnet *);
 
 /* passes a packet up to the host stack.
@@ -1491,7 +1494,6 @@ extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
 extern int netmap_generic_rings;
 extern int netmap_generic_txqdisc;
-extern int netmap_use_count;
 
 /*
  * NA returns a pointer to the struct netmap adapter from the ifp,

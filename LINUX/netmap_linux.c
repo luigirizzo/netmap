@@ -49,6 +49,18 @@ nm_os_ifnet_unlock(void)
 	rtnl_unlock();
 }
 
+void
+nm_os_get_module(void)
+{
+	__module_get(THIS_MODULE);
+}
+
+void
+nm_os_put_module(void)
+{
+	module_put(THIS_MODULE);
+}
+
 /* Register for a notification on device removal */
 static int
 linux_netmap_notifier_cb(struct notifier_block *b,
