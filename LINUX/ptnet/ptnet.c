@@ -196,10 +196,9 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	ptnet_sync_tail(&csb->tx_ring, kring);
 
 	if (unlikely(ptnet_tx_slots(a.ring) < pi->min_tx_slots)) {
-		RD(1, "TX ring unexpected overflow, dropping");
-		dev_kfree_skb_any(skb);
+		RD(1, "TX ring unexpected overflow, requeuing");
 
-		return NETDEV_TX_OK;
+		return NETDEV_TX_BUSY;
 	}
 
 	/* Grab the next available TX slot. */
@@ -257,12 +256,10 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	ptnet_copy_to_ring(&a, skb->data, skb_headlen(skb));
 
 	/* Third step: Copy in the sk_buffs frags. */
-
 	for (f = 0; f < nfrags; f++) {
 		const struct skb_frag_struct *frag;
 
 		frag = &skb_shinfo(skb)->frags[f];
-
 		ptnet_copy_to_ring(&a, skb_frag_address(frag),
 				   skb_frag_size(frag));
 	}
@@ -358,8 +355,6 @@ ptnet_tx_intr(int irq, void *data)
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
 
-	//printk("%s\n", __func__);
-
 	if (!pi->nm_priv && netmap_tx_irq(netdev, 0)) {
 		return IRQ_HANDLED;
 	}
@@ -382,8 +377,6 @@ ptnet_rx_intr(int irq, void *data)
 	struct net_device *netdev = data;
 	struct ptnet_info *pi = netdev_priv(netdev);
 	unsigned int unused;
-
-	//printk("%s\n", __func__);
 
 	if (!pi->nm_priv && netmap_rx_irq(netdev, 0, &unused)) {
 		(void)unused;
