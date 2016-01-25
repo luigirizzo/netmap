@@ -133,54 +133,61 @@ ptnet_tx_slots(struct netmap_ring *ring)
 	return space;
 }
 
-static inline unsigned int
-ptnet_copy_to_ring(struct netmap_adapter *na, struct netmap_ring *ring,
-		   unsigned int head, unsigned int lim, struct netmap_slot **slot,
-		   void **nmbuf, int *nmbuf_bytes,
+struct xmit_copy_args
+{
+	struct netmap_adapter *na;
+	struct netmap_ring *ring;
+	unsigned int head;
+	unsigned int lim;
+	struct netmap_slot *slot;
+	void *nmbuf;
+	int nmbuf_bytes;
+};
+
+static inline void
+ptnet_copy_to_ring(struct xmit_copy_args *a,
 		   void *skbdata, int skbdata_len)
 {
 	for (;;) {
-		int copy = min(skbdata_len, (int)ring->nr_buf_size - *nmbuf_bytes);
+		int copy = min(skbdata_len,
+			       (int)a->ring->nr_buf_size - a->nmbuf_bytes);
 
-		memcpy(*nmbuf, skbdata, copy);
+		memcpy(a->nmbuf, skbdata, copy);
 		skbdata += copy;
 		skbdata_len -= copy;
-		*nmbuf += copy;
-		*nmbuf_bytes += copy;
+		a->nmbuf += copy;
+		a->nmbuf_bytes += copy;
 
 		if (likely(!skbdata_len)) {
 			break;
 		}
 
-		(*slot)->len = *nmbuf_bytes;
-		(*slot)->flags = NS_MOREFRAG;
-		head = nm_next(head, lim);
-		*slot = &ring->slot[head];
-		*nmbuf = NMB(na, *slot);
-		*nmbuf_bytes = 0;
+		a->slot->len = a->nmbuf_bytes;
+		a->slot->flags = NS_MOREFRAG;
+		a->head = nm_next(a->head, a->lim);
+		a->slot = &a->ring->slot[a->head];
+		a->nmbuf = NMB(a->na, a->slot);
+		a->nmbuf_bytes = 0;
 	}
-
-	return head;
 }
 
 static netdev_tx_t
 ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na = NA(netdev);
 	/* Alternative way:
 	 *	struct netmap_adapter *na = &pi->ptna->hwup.up;
 	*/
-	struct netmap_kring *kring = &na->tx_rings[0];
-	struct netmap_ring *ring = kring->ring;
-	unsigned int const lim = kring->nkr_num_slots - 1;
 	int nfrags = skb_shinfo(skb)->nr_frags;
 	struct paravirt_csb *csb = pi->csb;
-	unsigned int head = ring->head;
-	struct netmap_slot *slot;
-	int nmbuf_bytes;
-	void *nmbuf;
+	struct netmap_kring *kring;
+	struct xmit_copy_args a;
 	int f;
+
+	a.na = NA(netdev);
+	kring = &a.na->tx_rings[0];
+	a.ring = kring->ring;
+	a.lim = kring->nkr_num_slots - 1;
 
 	DBG("TX skb len=%d", skb->len);
 
@@ -188,7 +195,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	 * by reading from CSB. */
 	ptnet_sync_tail(&csb->tx_ring, kring);
 
-	if (unlikely(ptnet_tx_slots(ring) < pi->min_tx_slots)) {
+	if (unlikely(ptnet_tx_slots(a.ring) < pi->min_tx_slots)) {
 		RD(1, "TX ring unexpected overflow, dropping");
 		dev_kfree_skb_any(skb);
 
@@ -196,14 +203,15 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	}
 
 	/* Grab the next available TX slot. */
-	slot = &ring->slot[head];
-	nmbuf = NMB(na, slot);
-	nmbuf_bytes = 0;
+	a.head = a.ring->head;
+	a.slot = &a.ring->slot[a.head];
+	a.nmbuf = NMB(a.na, a.slot);
+	a.nmbuf_bytes = 0;
 
 	/* First step: Setup the virtio-net header at the beginning of th
 	 *  first slot. */
 	if (pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
-		struct virtio_net_hdr_v1 *vh = nmbuf;
+		struct virtio_net_hdr_v1 *vh = a.nmbuf;
 
 		if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
 			vh->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
@@ -241,14 +249,12 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		      vh->csum_start, vh->csum_offset, vh->hdr_len, vh->gso_size,
 		      vh->gso_type);
 
-		nmbuf += sizeof(*vh);
-		nmbuf_bytes += sizeof(*vh);
+		a.nmbuf += sizeof(*vh);
+		a.nmbuf_bytes += sizeof(*vh);
 	}
 
 	/* Second step: Copy in the linear part of the sk_buff. */
-
-	head = ptnet_copy_to_ring(na, ring, head, lim, &slot, &nmbuf,
-				  &nmbuf_bytes, skb->data, skb_headlen(skb));
+	ptnet_copy_to_ring(&a, skb->data, skb_headlen(skb));
 
 	/* Third step: Copy in the sk_buffs frags. */
 
@@ -257,15 +263,14 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 		frag = &skb_shinfo(skb)->frags[f];
 
-		head = ptnet_copy_to_ring(na, ring, head, lim, &slot, &nmbuf,
-					  &nmbuf_bytes, skb_frag_address(frag),
-					  skb_frag_size(frag));
+		ptnet_copy_to_ring(&a, skb_frag_address(frag),
+				   skb_frag_size(frag));
 	}
 
 	/* Prepare the last slot. */
-	slot->len = nmbuf_bytes;
-	slot->flags = 0;
-	ring->head = ring->cur = nm_next(head, lim);
+	a.slot->len = a.nmbuf_bytes;
+	a.slot->flags = 0;
+	a.ring->head = a.ring->cur = nm_next(a.head, a.lim);
 
 	if (skb_shinfo(skb)->nr_frags) {
 		RD(1, "TX frags #%u lfsz %u tsz %d", skb_shinfo(skb)->nr_frags,
@@ -273,15 +278,16 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		(int)skb->len);
 	}
 
-	BUG_ON(ring->slot[head].flags & NS_MOREFRAG);
+	BUG_ON(a.ring->slot[a.head].flags & NS_MOREFRAG);
 
 	/* nm_txsync_prologue */
-	kring->rcur = ring->cur;
-	kring->rhead = ring->head;
+	kring->rcur = a.ring->cur;
+	kring->rhead = a.ring->head;
 
 	/* Tell the host to process the new packets, updating cur and head in
 	 * the CSB. */
-	ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
+	ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur,
+				       kring->rhead);
 
         /* Ask for a kick from a guest to the host if needed. */
 	if (NM_ACCESS_ONCE(csb->host_need_txkick) && !skb->xmit_more) {
@@ -291,13 +297,13 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
         /* No more TX slots for further transmissions. We have to stop the
 	 * qdisc layer and enable notifications. */
-	if (ptnet_tx_slots(ring) < pi->min_tx_slots) {
+	if (ptnet_tx_slots(a.ring) < pi->min_tx_slots) {
 		netif_stop_queue(netdev);
 		csb->guest_need_txkick = 1;
 
                 /* Double check. */
 		ptnet_sync_tail(&csb->tx_ring, kring);
-		if (unlikely(ptnet_tx_slots(ring) >= pi->min_tx_slots)) {
+		if (unlikely(ptnet_tx_slots(a.ring) >= pi->min_tx_slots)) {
 			/* More TX space came in the meanwhile. */
 			netif_start_queue(netdev);
 			csb->guest_need_txkick = 0;
