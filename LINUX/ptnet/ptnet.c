@@ -133,6 +133,36 @@ ptnet_tx_slots(struct netmap_ring *ring)
 	return space;
 }
 
+static inline unsigned int
+ptnet_copy_to_ring(struct netmap_adapter *na, struct netmap_ring *ring,
+		   unsigned int head, unsigned int lim, struct netmap_slot **slot,
+		   void **nmbuf, int *nmbuf_bytes,
+		   void *skbdata, int skbdata_len)
+{
+	for (;;) {
+		int copy = min(skbdata_len, (int)ring->nr_buf_size - *nmbuf_bytes);
+
+		memcpy(*nmbuf, skbdata, copy);
+		skbdata += copy;
+		skbdata_len -= copy;
+		*nmbuf += copy;
+		*nmbuf_bytes += copy;
+
+		if (likely(!skbdata_len)) {
+			break;
+		}
+
+		(*slot)->len = *nmbuf_bytes;
+		(*slot)->flags = NS_MOREFRAG;
+		head = nm_next(head, lim);
+		*slot = &ring->slot[head];
+		*nmbuf = NMB(na, *slot);
+		*nmbuf_bytes = 0;
+	}
+
+	return head;
+}
+
 static netdev_tx_t
 ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
@@ -149,11 +179,8 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	unsigned int head = ring->head;
 	struct netmap_slot *slot;
 	int nmbuf_bytes;
-	int skbdata_len;
-	void *skbdata;
 	void *nmbuf;
 	int f;
-	int nns = 0;
 
 	DBG("TX skb len=%d", skb->len);
 
@@ -220,34 +247,8 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 	/* Second step: Copy in the linear part of the sk_buff. */
 
-	skbdata = skb->data;
-	skbdata_len = skb_headlen(skb);
-
-	for (;;) {
-		int copy = skbdata_len;
-
-		if (unlikely(copy > ring->nr_buf_size - nmbuf_bytes)) {
-			copy = ring->nr_buf_size - nmbuf_bytes;
-		}
-
-		memcpy(nmbuf, skbdata, copy);
-		skbdata += copy;
-		skbdata_len -= copy;
-		nmbuf += copy;
-		nmbuf_bytes += copy;
-
-		if (likely(!skbdata_len)) {
-			break;
-		}
-
-		slot->len = nmbuf_bytes;
-		slot->flags = NS_MOREFRAG;
-		head = nm_next(head, lim);
-		nns++;
-		slot = &ring->slot[head];
-		nmbuf = NMB(na, slot);
-		nmbuf_bytes = 0;
-	}
+	head = ptnet_copy_to_ring(na, ring, head, lim, &slot, &nmbuf,
+				  &nmbuf_bytes, skb->data, skb_headlen(skb));
 
 	/* Third step: Copy in the sk_buffs frags. */
 
@@ -255,46 +256,21 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		const struct skb_frag_struct *frag;
 
 		frag = &skb_shinfo(skb)->frags[f];
-		skbdata = skb_frag_address(frag);
-		skbdata_len = skb_frag_size(frag);
 
-		for (;;) {
-			int copy = skbdata_len;
-
-			if (copy > ring->nr_buf_size - nmbuf_bytes) {
-				copy = ring->nr_buf_size - nmbuf_bytes;
-			}
-
-			memcpy(nmbuf, skbdata, copy);
-			skbdata += copy;
-			skbdata_len -= copy;
-			nmbuf += copy;
-			nmbuf_bytes += copy;
-
-			if (!skbdata_len) {
-				break;
-			}
-
-			slot->len = nmbuf_bytes;
-			slot->flags = NS_MOREFRAG;
-			head = nm_next(head, lim);
-			nns++;
-			slot = &ring->slot[head];
-			nmbuf = NMB(na, slot);
-			nmbuf_bytes = 0;
-		}
+		head = ptnet_copy_to_ring(na, ring, head, lim, &slot, &nmbuf,
+					  &nmbuf_bytes, skb_frag_address(frag),
+					  skb_frag_size(frag));
 	}
 
 	/* Prepare the last slot. */
 	slot->len = nmbuf_bytes;
 	slot->flags = 0;
 	ring->head = ring->cur = nm_next(head, lim);
-	nns++;
 
 	if (skb_shinfo(skb)->nr_frags) {
-		RD(1, "TX frags #%u lfsz %u tsz %d nns %d", skb_shinfo(skb)->nr_frags,
-		skb_frag_size(&skb_shinfo(skb)->frags[skb_shinfo(skb)->nr_frags-1]), (int)skb->len,
-		nns);
+		RD(1, "TX frags #%u lfsz %u tsz %d", skb_shinfo(skb)->nr_frags,
+		skb_frag_size(&skb_shinfo(skb)->frags[skb_shinfo(skb)->nr_frags-1]),
+		(int)skb->len);
 	}
 
 	BUG_ON(ring->slot[head].flags & NS_MOREFRAG);
