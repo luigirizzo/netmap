@@ -1459,6 +1459,7 @@ txseq_body(void *data)
 	int rate_limit = targ->g->tx_rate;
 	struct pkt *pkt = &targ->pkt;
 	int frags = targ->g->frags;
+	uint16_t sequence = 0;
 	int tosend = 0;
 	void *frame;
 	int size;
@@ -1468,14 +1469,9 @@ txseq_body(void *data)
 		return NULL;
 	}
 
-	if (targ->frame == NULL) {
-		frame = pkt;
-		frame += sizeof(pkt->vh) - targ->g->virt_header;
-		size = targ->g->pkt_size + targ->g->virt_header;
-	} else {
-		frame = targ->frame;
-		size = targ->g->pkt_size;
-	}
+	frame = pkt;
+	frame += sizeof(pkt->vh) - targ->g->virt_header;
+	size = targ->g->pkt_size + targ->g->virt_header;
 
 	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
 	if (setaffinity(targ->thread, targ->affinity))
@@ -1537,18 +1533,24 @@ txseq_body(void *data)
 			limit = ((limit + frags - 1) / frags) * frags;
 		}
 
-		limit = sent + limit;
+		limit = sent + limit; /* Convert to absolute. */
 
-		for (fcnt = frags; sent < limit; sent++) {
+		for (fcnt = frags; sent < limit; sent++, sequence++) {
 			struct netmap_slot *slot = &ring->slot[ring->cur];
 			char *p = NETMAP_BUF(ring, slot->buf_idx);
 
 			slot->flags = 0;
+			pkt->body[0] = sequence >> 8;
+			pkt->body[1] = sequence & 0xff;
 			nm_pkt_copy(frame, p, size);
-			if (fcnt == frags)
+			if (fcnt == frags) {
 				update_addresses(pkt, targ->g);
-			if (options & OPT_DUMP)
+			}
+
+			if (options & OPT_DUMP) {
 				dump_payload(p, size, ring, ring->cur);
+			}
+
 			slot->len = size;
 			if (--fcnt > 0) {
 				slot->flags |= NS_MOREFRAG;
