@@ -901,7 +901,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	/* limit the size of the queue */
-	if (unlikely(!gna->rxsg && MBUF_LEN(m) > kring->ring->nr_buf_size)) {
+	if (unlikely(!gna->rxsg && MBUF_LEN(m) > na->na_lut.objsize)) {
 		/* This may happen when GRO/LRO features are enabled for
 		 * the NIC driver when the generic adapter does not
 		 * support RX scatter-gather. */
@@ -953,7 +953,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	/* Adapter-specific variables. */
 	uint16_t slot_flags = kring->nkr_slot_flags;
-	u_int nm_buf_len = ring->nr_buf_size;
+	u_int nm_buf_len = na->na_lut.objsize;
 	struct mbq tmpq;
 	struct mbuf *m;
 	int avail; /* in bytes */
