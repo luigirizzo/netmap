@@ -1187,7 +1187,7 @@ static int netmap_common_sendmsg(struct netmap_adapter *na, struct msghdr *m,
     /* Grab the netmap ring normally used from userspace. */
     kring = &na->tx_rings[0];
     ring = kring->ring;
-    nm_buf_size = na->na_lut.objsize;
+    nm_buf_size = NETMAP_BUF_SIZE(na);
 
     i = last = ring->cur;
     avail = ring->tail + ring->num_slots - ring->cur;

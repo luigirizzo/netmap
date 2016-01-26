@@ -1469,8 +1469,8 @@ int netmap_adapter_put(struct netmap_adapter *na);
 /*
  * module variables
  */
-#define NETMAP_BUF_BASE(na)	((na)->na_lut.lut[0].vaddr)
-#define NETMAP_BUF_SIZE(na)	((na)->na_lut.objsize)
+#define NETMAP_BUF_BASE(_na)	((_na)->na_lut.lut[0].vaddr)
+#define NETMAP_BUF_SIZE(_na)	((_na)->na_lut.objsize)
 extern int netmap_mitigate;	// XXX not really used
 extern int netmap_no_pendintr;
 extern int netmap_verbose;	// XXX debugging
@@ -1577,8 +1577,8 @@ netmap_load_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
 	if (0 && map) {
-		*map = dma_map_single(na->pdev, buf, na->na_lut.objsize,
-				DMA_BIDIRECTIONAL);
+		*map = dma_map_single(na->pdev, buf, NETMAP_BUF_SIZE(na),
+				      DMA_BIDIRECTIONAL);
 	}
 }
 
@@ -1586,11 +1586,11 @@ static inline void
 netmap_unload_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map)
 {
-	u_int sz = na->na_lut.objsize;
+	u_int sz = NETMAP_BUF_SIZE(na);
 
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,
-				DMA_BIDIRECTIONAL);
+				 DMA_BIDIRECTIONAL);
 	}
 }
 
@@ -1598,7 +1598,7 @@ static inline void
 netmap_reload_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
-	u_int sz = na->na_lut.objsize;
+	u_int sz = NETMAP_BUF_SIZE(na);
 
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,
