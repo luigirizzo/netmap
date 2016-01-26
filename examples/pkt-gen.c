@@ -262,6 +262,7 @@ struct glob_arg {
 	struct nm_desc *nmd;
 	int report_interval;		/* milliseconds between prints */
 	void *(*td_body)(void *);
+	int td_type;
 	void *mmap_addr;
 	char ifname[MAX_IFNAMELEN];
 	char *nmr_config;
@@ -1515,6 +1516,12 @@ usage(void)
 	exit(0);
 }
 
+enum {
+	TD_TYPE_SENDER = 1,
+	TD_TYPE_RECEIVER,
+	TD_TYPE_OTHER,
+};
+
 static void
 start_threads(struct glob_arg *g)
 {
@@ -1548,7 +1555,7 @@ start_threads(struct glob_arg *g)
 				nmd.req.nr_ringid = i;
 			}
 			/* Only touch one of the rings (rx is already ok) */
-			if (g->td_body == receiver_body)
+			if (g->td_type == TD_TYPE_RECEIVER)
 				nmd_flags |= NETMAP_NO_TX_POLL;
 
 			/* register interface. Override ifname and ringid etc. */
@@ -1676,7 +1683,7 @@ main_thread(struct glob_arg *g)
 	/* print output. */
 	timersub(&toc, &tic, &toc);
 	delta_t = toc.tv_sec + 1e-6* toc.tv_usec;
-	if (g->td_body == sender_body)
+	if (g->td_type == TD_TYPE_SENDER)
 		tx_output(&cur, delta_t, "Sent");
 	else
 		tx_output(&cur, delta_t, "Received");
@@ -1687,18 +1694,18 @@ main_thread(struct glob_arg *g)
 	}
 }
 
-
-struct sf {
+struct td_desc {
+	int ty;
 	char *key;
 	void *f;
 };
 
-static struct sf func[] = {
-	{ "tx",	sender_body },
-	{ "rx",	receiver_body },
-	{ "ping",	pinger_body },
-	{ "pong",	ponger_body },
-	{ NULL, NULL }
+static struct td_desc func[] = {
+	{ TD_TYPE_SENDER,	"tx",	sender_body },
+	{ TD_TYPE_RECEIVER,	"rx",	receiver_body },
+	{ TD_TYPE_OTHER,	"ping",	pinger_body },
+	{ TD_TYPE_OTHER,	"pong",	ponger_body },
+	{ 0,			NULL,	NULL }
 };
 
 static int
@@ -1778,6 +1785,7 @@ main(int arc, char **argv)
 
 	g.main_fd = -1;
 	g.td_body = receiver_body;
+	g.td_type = TD_TYPE_RECEIVER;
 	g.report_interval = 1000;	/* report interval */
 	g.affinity = -1;
 	/* ip addresses can also be a range x.x.x.x-x.x.x.y */
@@ -1797,7 +1805,7 @@ main(int arc, char **argv)
 
 	while ( (ch = getopt(arc, argv,
 			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZ")) != -1) {
-		struct sf *fn;
+		struct td_desc *fn;
 
 		switch(ch) {
 		default:
@@ -1823,10 +1831,12 @@ main(int arc, char **argv)
 				if (!strcmp(fn->key, optarg))
 					break;
 			}
-			if (fn->key)
+			if (fn->key) {
 				g.td_body = fn->f;
-			else
+				g.td_type = fn->ty;
+			} else {
 				D("unrecognised function %s", optarg);
+			}
 			break;
 
 		case 'o':	/* data generation options */
@@ -2062,7 +2072,7 @@ D("running on %d cpus (have %d)", g.cpus, i);
 	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
 	/* get num of queues in tx or rx */
-	if (g.td_body == sender_body)
+	if (g.td_type == TD_TYPE_SENDER)
 		devqueues = g.nmd->req.nr_tx_rings;
 	else
 		devqueues = g.nmd->req.nr_rx_rings;
@@ -2095,12 +2105,14 @@ D("running on %d cpus (have %d)", g.cpus, i);
 	/* Print some debug information. */
 	fprintf(stdout,
 		"%s %s: %d queues, %d threads and %d cpus.\n",
-		(g.td_body == sender_body) ? "Sending on" : "Receiving from",
+		(g.td_type == TD_TYPE_SENDER) ? "Sending on" :
+			((g.td_type == TD_TYPE_RECEIVER) ? "Receiving from" :
+			"Working on"),
 		g.ifname,
 		devqueues,
 		g.nthreads,
 		g.cpus);
-	if (g.td_body == sender_body) {
+	if (g.td_type == TD_TYPE_SENDER) {
 		fprintf(stdout, "%s -> %s (%s -> %s)\n",
 			g.src_ip.name, g.dst_ip.name,
 			g.src_mac.name, g.dst_mac.name);
@@ -2142,7 +2154,7 @@ out:
 		g.tx_period.tv_sec = g.tx_period.tv_nsec / 1000000000;
 		g.tx_period.tv_nsec = g.tx_period.tv_nsec % 1000000000;
 	}
-	if (g.td_body == sender_body)
+	if (g.td_type == TD_TYPE_SENDER)
 	    D("Sending %d packets every  %ld.%09ld s",
 			g.burst, g.tx_period.tv_sec, g.tx_period.tv_nsec);
 	/* Wait for PHY reset. */
