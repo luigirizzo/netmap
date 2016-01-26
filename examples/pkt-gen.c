@@ -1445,6 +1445,169 @@ quit:
 	return (NULL);
 }
 
+static void *
+txseq_body(void *data)
+{
+	struct targ *targ = (struct targ *) data;
+	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
+	struct netmap_ring *ring;
+	int n = targ->g->npackets;
+	int64_t sent = 0;
+	uint64_t event = 0;
+	int options = targ->g->options | OPT_COPY;
+	struct timespec nexttime = {0, 0};
+	int rate_limit = targ->g->tx_rate;
+	struct pkt *pkt = &targ->pkt;
+	int frags = targ->g->frags;
+	int tosend = 0;
+	void *frame;
+	int size;
+
+	if (targ->g->nthreads > 1) {
+		D("can only txseq ping with 1 thread");
+		return NULL;
+	}
+
+	if (targ->frame == NULL) {
+		frame = pkt;
+		frame += sizeof(pkt->vh) - targ->g->virt_header;
+		size = targ->g->pkt_size + targ->g->virt_header;
+	} else {
+		frame = targ->frame;
+		size = targ->g->pkt_size;
+	}
+
+	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
+	if (setaffinity(targ->thread, targ->affinity))
+		goto quit;
+
+	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
+	if (rate_limit) {
+		targ->tic = timespec_add(targ->tic, (struct timespec){2,0});
+		targ->tic.tv_nsec = 0;
+		wait_time(targ->tic);
+		nexttime = targ->tic;
+	}
+
+	/* Only use the first queue. */
+	ring = NETMAP_TXRING(targ->nmd->nifp, targ->nmd->first_tx_ring);
+
+	while (!targ->cancel && (n == 0 || sent < n)) {
+		uint32_t limit, space;
+		int fcnt;
+
+		if (rate_limit && tosend <= 0) {
+			tosend = targ->g->burst;
+			nexttime = timespec_add(nexttime, targ->g->tx_period);
+			wait_time(nexttime);
+		}
+
+		/* wait for available room in the send queue */
+		if (poll(&pfd, 1, 2000) <= 0) {
+			if (targ->cancel)
+				break;
+			D("poll error/timeout on queue %d: %s", targ->me,
+				strerror(errno));
+		}
+		if (pfd.revents & POLLERR) {
+			D("poll error on %d ring %d-%d", pfd.fd,
+				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
+			goto quit;
+		}
+
+		/* If no room poll() again. */
+		space = nm_ring_space(ring);
+		if (!space) {
+			continue;
+		}
+
+		limit = rate_limit ? tosend : targ->g->burst;
+
+		/* Don't send more than user asks for. */
+		if (n > 0 && n - sent < limit) {
+			limit = n - sent;
+		}
+
+		if (space < limit) {
+			limit = space;
+		}
+
+		/* Cut off ``limit`` to make sure is multiple of ``frags``. */
+		if (frags > 1) {
+			limit = ((limit + frags - 1) / frags) * frags;
+		}
+
+		limit = sent + limit;
+
+		for (fcnt = frags; sent < limit; sent++) {
+			struct netmap_slot *slot = &ring->slot[ring->cur];
+			char *p = NETMAP_BUF(ring, slot->buf_idx);
+
+			slot->flags = 0;
+			nm_pkt_copy(frame, p, size);
+			if (fcnt == frags)
+				update_addresses(pkt, targ->g);
+			if (options & OPT_DUMP)
+				dump_payload(p, size, ring, ring->cur);
+			slot->len = size;
+			if (--fcnt > 0) {
+				slot->flags |= NS_MOREFRAG;
+			} else {
+				fcnt = frags;
+			}
+			if (sent == limit - 1) {
+				slot->flags &= ~NS_MOREFRAG;
+				slot->flags |= NS_REPORT;
+			}
+			ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+			if (rate_limit) {
+				tosend--;
+			}
+		}
+
+		ND("limit %d tail %d frags %d sent %ld",
+			limit, ring->tail, frags);
+		event ++;
+		targ->ctr.pkts = sent;
+		targ->ctr.bytes = sent * size;
+		targ->ctr.events = event;
+	}
+
+	/* flush any remaining packets */
+	D("flush tail %d head %d on thread %p",
+		ring->tail, ring->head,
+		(void *)pthread_self());
+	ioctl(pfd.fd, NIOCTXSYNC, NULL);
+
+	/* final part: wait the TX queues to become empty. */
+	while (nm_tx_pending(ring)) {
+		RD(5, "pending tx tail %d head %d on ring %d",
+				ring->tail, ring->head, targ->nmd->first_tx_ring);
+		ioctl(pfd.fd, NIOCTXSYNC, NULL);
+		usleep(1); /* wait 1 tick */
+	}
+
+	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
+	targ->completed = 1;
+	targ->ctr.pkts = sent;
+	targ->ctr.bytes = sent*size;
+	targ->ctr.events = event;
+quit:
+	/* reset the ``used`` flag. */
+	targ->used = 0;
+
+	return (NULL);
+}
+
+
+static void *
+rxseq_body(void *data)
+{
+	(void)data;
+	return NULL;
+}
+
+
 static void
 tx_output(struct my_ctrs *cur, double delta, const char *msg)
 {
@@ -1701,10 +1864,12 @@ struct td_desc {
 };
 
 static struct td_desc func[] = {
-	{ TD_TYPE_SENDER,	"tx",	sender_body },
-	{ TD_TYPE_RECEIVER,	"rx",	receiver_body },
-	{ TD_TYPE_OTHER,	"ping",	pinger_body },
-	{ TD_TYPE_OTHER,	"pong",	ponger_body },
+	{ TD_TYPE_SENDER,	"tx",		sender_body },
+	{ TD_TYPE_RECEIVER,	"rx",		receiver_body },
+	{ TD_TYPE_OTHER,	"ping",		pinger_body },
+	{ TD_TYPE_OTHER,	"pong",		ponger_body },
+	{ TD_TYPE_SENDER,	"txseq",	txseq_body },
+	{ TD_TYPE_RECEIVER,	"rxseq",	rxseq_body },
 	{ 0,			NULL,	NULL }
 };
 
