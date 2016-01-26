@@ -1605,8 +1605,116 @@ quit:
 static void *
 rxseq_body(void *data)
 {
-	(void)data;
-	return NULL;
+	struct targ *targ = (struct targ *) data;
+	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
+	int dump = targ->g->options & OPT_DUMP;
+	struct netmap_ring *ring;
+	struct my_ctrs cur;
+	uint16_t seq_exp = 0;
+	uint16_t seq;
+	int first = 1;
+	int i;
+
+	cur.pkts = cur.bytes = cur.events = cur.min_space = 0;
+	cur.t.tv_usec = cur.t.tv_sec = 0; //  unused, just silence the compiler
+
+	if (setaffinity(targ->thread, targ->affinity))
+		goto quit;
+
+	D("reading from %s fd %d main_fd %d",
+		targ->g->ifname, targ->fd, targ->g->main_fd);
+	/* unbounded wait for the first packet. */
+	for (;!targ->cancel;) {
+		i = poll(&pfd, 1, 1000);
+		if (i > 0 && !(pfd.revents & POLLERR))
+			break;
+		RD(1, "waiting for initial packets, poll returns %d %d",
+			i, pfd.revents);
+	}
+
+	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
+
+	ring = NETMAP_RXRING(targ->nmd->nifp, targ->nmd->first_rx_ring);
+
+	while (!targ->cancel) {
+		int limit;
+
+		/* Once we started to receive packets, wait at most 1 seconds
+		   before quitting. */
+		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
+			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
+			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
+			goto out;
+		}
+
+		if (pfd.revents & POLLERR) {
+			D("poll err");
+			goto quit;
+		}
+
+		if (nm_ring_empty(ring))
+			continue;
+
+		limit = nm_ring_space(ring);
+		if (limit > targ->g->burst)
+			limit = targ->g->burst;
+
+		for (i = 0; i < limit; i++) {
+			struct netmap_slot *slot = &ring->slot[ring->cur];
+			char *p = NETMAP_BUF(ring, slot->buf_idx);
+			int len = slot->len;
+			struct pkt *pkt;
+
+			if (dump) {
+				dump_payload(p, slot->len, ring, ring->cur);
+			}
+
+			p -= sizeof(pkt->vh) - targ->g->virt_header;
+			len += sizeof(pkt->vh) - targ->g->virt_header;
+			pkt = (struct pkt *)p;
+
+			if ((char *)pkt + len < ((char *)pkt->body) + 2) {
+				RD(1, "%s: packet too small (len=%u)", __func__,
+				      slot->len);
+			} else {
+				seq = (pkt->body[0] << 8) | pkt->body[1];
+				if (first) {
+					/* Grab the first one, whatever it
+					   is. */
+					seq_exp = seq;
+					first = 0;
+				}
+				if (seq != seq_exp) {
+					RD(2, "Sequence mismatch exp %u found %u",
+					      seq_exp, seq);
+					seq_exp = seq;
+				}
+				seq_exp++;
+			}
+
+			cur.bytes += slot->len;
+			ring->cur = ring->head = nm_ring_next(ring, ring->cur);
+			cur.pkts++;
+		}
+
+		cur.events++;
+
+		targ->ctr = cur;
+	}
+
+	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
+
+#if !defined(BUSY_WAIT)
+out:
+#endif
+	targ->completed = 1;
+	targ->ctr = cur;
+
+quit:
+	/* reset the ``used`` flag. */
+	targ->used = 0;
+
+	return (NULL);
 }
 
 
