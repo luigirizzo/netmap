@@ -2027,7 +2027,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		if (error)
 			goto err_del_if;
 		D("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
-				na->na_lut.objsize);
+					    na->na_lut.objsize);
 	}
 
 	if (nm_kring_pending(priv)) {
