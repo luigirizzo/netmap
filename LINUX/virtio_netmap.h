@@ -575,7 +575,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			 * the hypervisor. */
 			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
-			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
+			sg_set_buf(sg + 1, addr, na->na_lut.objsize);
 			nospace = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (nospace) {
 				RD(3, "virtqueue_add_inbuf failed [err=%d]",
@@ -646,7 +646,7 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 			addr = NMB(na, slot);
 			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
-			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
+			sg_set_buf(sg + 1, addr, na->na_lut.objsize);
 			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (err < 0) {
 				D("virtqueue_add_inbuf failed");

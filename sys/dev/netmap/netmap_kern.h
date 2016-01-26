@@ -760,7 +760,7 @@ struct netmap_adapter {
 
 	/* memory allocator (opaque)
 	 * We also cache a pointer to the lut_entry for translating
-	 * buffer addresses, and the total number of buffers.
+	 * buffer addresses, the total number of buffers and the buffer size.
 	 */
  	struct netmap_mem_d *nm_mem;
 	struct netmap_lut na_lut;
