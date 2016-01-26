@@ -152,11 +152,11 @@ struct xmit_copy_args
 
 static inline void
 ptnet_copy_to_ring(struct xmit_copy_args *a,
-		   void *skbdata, int skbdata_len)
+		   void *skbdata, unsigned int skbdata_len)
 {
 	for (;;) {
 		int copy = min(skbdata_len,
-			       (int)a->ring->nr_buf_size - a->nmbuf_bytes);
+			       NETMAP_BUF_SIZE(a->na) - a->nmbuf_bytes);
 
 		memcpy(a->nmbuf, skbdata, copy);
 		skbdata += copy;
@@ -822,7 +822,7 @@ ptnet_open(struct net_device *netdev)
 	}
 
 	{
-		unsigned int nm_buf_size = na->tx_rings[0].ring->nr_buf_size;
+		unsigned int nm_buf_size = NETMAP_BUF_SIZE(na);
 
 		BUG_ON(nm_buf_size == 0);
 		pi->min_tx_slots = 65536 / nm_buf_size + 2;
