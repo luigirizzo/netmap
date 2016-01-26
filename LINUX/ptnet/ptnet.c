@@ -80,6 +80,9 @@ struct ptnet_info {
 
 	int min_tx_slots;
 
+	struct page *rx_pool;
+	int rx_pool_num;
+
 	struct netmap_priv_d *nm_priv;
 	struct netmap_pt_guest_adapter *ptna;
 
@@ -400,6 +403,38 @@ ptnet_rx_intr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static struct page *
+ptnet_alloc_page(struct ptnet_info *pi)
+{
+	struct page *p = pi->rx_pool;
+
+	if (p) {
+		pi->rx_pool = (struct page *)(p->private);
+		pi->rx_pool_num--;
+		p->private = (unsigned long)NULL;
+
+		return p;
+	}
+
+	return alloc_page(GFP_ATOMIC);
+}
+
+static inline void
+ptnet_rx_pool_refill(struct ptnet_info *pi)
+{
+	while (pi->rx_pool_num < 2 * MAX_SKB_FRAGS) {
+		struct page *p = alloc_page(GFP_ATOMIC);
+
+		if (!p) {
+			break;
+		}
+
+		p->private = (unsigned long)(pi->rx_pool);
+		pi->rx_pool = p;
+		pi->rx_pool_num ++;
+	}
+}
+
 /*
  * ptnet_rx_poll - NAPI RX polling callback
  * @pi: NIC private structure
@@ -493,9 +528,9 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 								PAGE_SIZE);
 					}
 
-					skbpage = alloc_page(GFP_ATOMIC);
+					skbpage = ptnet_alloc_page(pi);
 					if (unlikely(!skbpage)) {
-						pr_err("%s: alloc_page() failed\n",
+						pr_err("%s: pntet_alloc_page() failed\n",
 						       __func__);
 						break;
 					}
@@ -612,6 +647,8 @@ out_of_slots:
 			iowrite32(0, pi->ioaddr + PTNET_IO_RXKICK);
 		}
 	}
+
+	ptnet_rx_pool_refill(pi);
 
 	return work_done;
 }
@@ -791,6 +828,9 @@ ptnet_open(struct net_device *netdev)
 		pi->min_tx_slots = 65536 / nm_buf_size + 2;
 		pr_info("%s: min_tx_slots = %u\n", __func__, pi->min_tx_slots);
 	}
+
+	pi->rx_pool = NULL;
+	pi->rx_pool_num = 0;
 
 	napi_enable(&pi->napi);
 	netif_start_queue(netdev);
