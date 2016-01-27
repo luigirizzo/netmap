@@ -1642,6 +1642,7 @@ rxseq_body(void *data)
 	unsigned int frags_exp = 0;
 	uint16_t seq_exp = 0;
 	struct my_ctrs cur;
+	unsigned int frags = 0;
 	int first = 1;
 	int i;
 
@@ -1667,7 +1668,6 @@ rxseq_body(void *data)
 	ring = NETMAP_RXRING(targ->nmd->nifp, targ->nmd->first_rx_ring);
 
 	while (!targ->cancel) {
-		unsigned int frags;
 		unsigned int head;
 		uint16_t seq;
 		int limit;
@@ -1692,7 +1692,7 @@ rxseq_body(void *data)
 		if (limit > targ->g->burst)
 			limit = targ->g->burst;
 
-		for (head = ring->head, frags = 0, i = 0; i < limit; i++) {
+		for (head = ring->head, i = 0; i < limit; i++) {
 			struct netmap_slot *slot = &ring->slot[head];
 			char *p = NETMAP_BUF(ring, slot->buf_idx);
 			int len = slot->len;
