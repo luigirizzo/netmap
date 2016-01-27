@@ -1708,8 +1708,15 @@ rxseq_body(void *data)
 					first = 0;
 				}
 				if (seq != seq_exp) {
-					RD(2, "Sequence mismatch exp %u found %u",
-					      seq_exp, seq);
+					uint16_t delta = seq - seq_exp;
+
+					if (delta < (0xFFFF >> 1)) {
+						RD(2, "Sequence GAP: exp %u found %u",
+						      seq_exp, seq);
+					} else {
+						RD(2, "Sequence OUT OF ORDER: "
+						      "exp %u found %u", seq_exp, seq);
+					}
 					seq_exp = seq;
 				}
 				seq_exp++;
