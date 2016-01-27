@@ -1647,6 +1647,7 @@ rxseq_body(void *data)
 
 	while (!targ->cancel) {
 		unsigned int frags;
+		unsigned int head;
 		uint16_t seq;
 		int limit;
 
@@ -1670,14 +1671,14 @@ rxseq_body(void *data)
 		if (limit > targ->g->burst)
 			limit = targ->g->burst;
 
-		for (frags = 0, i = 0; i < limit; i++) {
-			struct netmap_slot *slot = &ring->slot[ring->cur];
+		for (head = ring->head, frags = 0, i = 0; i < limit; i++) {
+			struct netmap_slot *slot = &ring->slot[head];
 			char *p = NETMAP_BUF(ring, slot->buf_idx);
 			int len = slot->len;
 			struct pkt *pkt;
 
 			if (dump) {
-				dump_payload(p, slot->len, ring, ring->cur);
+				dump_payload(p, slot->len, ring, head);
 			}
 
 			frags++;
@@ -1723,12 +1724,13 @@ rxseq_body(void *data)
 			}
 
 			cur.bytes += slot->len;
-			ring->cur = ring->head = nm_ring_next(ring, ring->cur);
+			head = nm_ring_next(ring, head);
 			cur.pkts++;
 		}
 
-		cur.events++;
+		ring->cur = ring->head = head;
 
+		cur.events++;
 		targ->ctr = cur;
 	}
 
