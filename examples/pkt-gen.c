@@ -55,6 +55,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <assert.h>
 
 #include <pthread.h>
 
@@ -1493,6 +1494,7 @@ txseq_body(void *data)
 
 	while (!targ->cancel) {
 		uint32_t limit, space;
+		unsigned int head;
 		int fcnt;
 
 		if (!rate_limit) {
@@ -1536,8 +1538,9 @@ txseq_body(void *data)
 
 		limit = sent + limit; /* Convert to absolute. */
 
-		for (fcnt = frags; sent < limit; sent++, sequence++) {
-			struct netmap_slot *slot = &ring->slot[ring->cur];
+		for (fcnt = frags, head = ring->head;
+				sent < limit; sent++, sequence++) {
+			struct netmap_slot *slot = &ring->slot[head];
 			char *p = NETMAP_BUF(ring, slot->buf_idx);
 
 			slot->flags = 0;
@@ -1549,10 +1552,11 @@ txseq_body(void *data)
 			}
 
 			if (options & OPT_DUMP) {
-				dump_payload(p, size, ring, ring->cur);
+				dump_payload(p, size, ring, head);
 			}
 
 			slot->len = size;
+
 			if (--fcnt > 0) {
 				slot->flags |= NS_MOREFRAG;
 			} else {
@@ -1560,15 +1564,19 @@ txseq_body(void *data)
 			}
 
 			if (sent == limit - 1) {
-				slot->flags &= ~NS_MOREFRAG;
 				slot->flags |= NS_REPORT;
 			}
 
-			ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+			head = nm_ring_next(ring, head);
 			if (rate_limit) {
 				budget--;
 			}
 		}
+
+		/* Make sure we don't push an incomplete packet. */
+		assert(fcnt == frags);
+
+		ring->cur = ring->head = head;
 
 		event ++;
 		targ->ctr.pkts = sent;
