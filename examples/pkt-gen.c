@@ -1639,11 +1639,12 @@ rxseq_body(void *data)
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	int dump = targ->g->options & OPT_DUMP;
 	struct netmap_ring *ring;
-	unsigned int frags_exp = 0;
+	unsigned int frags_exp = 1;
 	uint16_t seq_exp = 0;
 	struct my_ctrs cur;
 	unsigned int frags = 0;
-	int first = 1;
+	int first_packet = 1;
+	int first_slot = 1;
 	int i;
 
 	cur.pkts = cur.bytes = cur.events = cur.min_space = 0;
@@ -1703,16 +1704,17 @@ rxseq_body(void *data)
 			}
 
 			frags++;
-			ND("[frag #%u] len %u, flags %x", frags, slot->len, slot->flags);
 			if (!(slot->flags & NS_MOREFRAG)) {
-				/* ``first`` will be reset below. */
-				if (!first && frags != frags_exp) {
+				if (first_packet) {
+					first_packet = 0;
+				} else if (frags != frags_exp) {
 					char prbuf[512];
 					RD(1, "Received packets with %u frags, "
 					      "expected %u, '%s'", frags, frags_exp,
 					      multi_slot_to_string(ring, head-frags+1, frags,
 								   prbuf, sizeof(prbuf)));
 				}
+				first_packet = 0;
 				frags_exp = frags;
 				frags = 0;
 			}
@@ -1726,13 +1728,12 @@ rxseq_body(void *data)
 				      slot->len);
 			} else {
 				seq = (pkt->body[0] << 8) | pkt->body[1];
-				if (first) {
+				if (first_slot) {
 					/* Grab the first one, whatever it
 					   is. */
 					seq_exp = seq;
-					first = 0;
-				}
-				if (seq != seq_exp) {
+					first_slot = 0;
+				} else if (seq != seq_exp) {
 					uint16_t delta = seq - seq_exp;
 
 					if (delta < (0xFFFF >> 1)) {
