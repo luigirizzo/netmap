@@ -1459,7 +1459,7 @@ txseq_body(void *data)
 	int rate_limit = targ->g->tx_rate;
 	struct pkt *pkt = &targ->pkt;
 	int frags = targ->g->frags;
-	uint16_t sequence = 0;
+	uint32_t sequence = 0;
 	int budget = 0;
 	void *frame;
 	int size;
@@ -1545,8 +1545,10 @@ txseq_body(void *data)
 			char *p = NETMAP_BUF(ring, slot->buf_idx);
 
 			slot->flags = 0;
-			pkt->body[0] = sequence >> 8;
-			pkt->body[1] = sequence & 0xff;
+			pkt->body[0] = sequence >> 24;
+			pkt->body[1] = (sequence >> 16) & 0xff;
+			pkt->body[2] = (sequence >> 8) & 0xff;
+			pkt->body[3] = sequence & 0xff;
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == frags) {
 				update_addresses(pkt, targ->g);
@@ -1641,7 +1643,7 @@ rxseq_body(void *data)
 	int dump = targ->g->options & OPT_DUMP;
 	struct netmap_ring *ring;
 	unsigned int frags_exp = 1;
-	uint16_t seq_exp = 0;
+	uint32_t seq_exp = 0;
 	struct my_ctrs cur;
 	unsigned int frags = 0;
 	int first_packet = 1;
@@ -1671,7 +1673,7 @@ rxseq_body(void *data)
 
 	while (!targ->cancel) {
 		unsigned int head;
-		uint16_t seq;
+		uint32_t seq;
 		int limit;
 
 		/* Once we started to receive packets, wait at most 1 seconds
@@ -1724,20 +1726,21 @@ rxseq_body(void *data)
 			len += sizeof(pkt->vh) - targ->g->virt_header;
 			pkt = (struct pkt *)p;
 
-			if ((char *)pkt + len < ((char *)pkt->body) + 2) {
+			if ((char *)pkt + len < ((char *)pkt->body) + sizeof(seq)) {
 				RD(1, "%s: packet too small (len=%u)", __func__,
 				      slot->len);
 			} else {
-				seq = (pkt->body[0] << 8) | pkt->body[1];
+				seq = (pkt->body[0] << 24) | (pkt->body[1] << 16)
+				      | (pkt->body[2] << 8) | pkt->body[3];
 				if (first_slot) {
 					/* Grab the first one, whatever it
 					   is. */
 					seq_exp = seq;
 					first_slot = 0;
 				} else if (seq != seq_exp) {
-					uint16_t delta = seq - seq_exp;
+					uint32_t delta = seq - seq_exp;
 
-					if (delta < (0xFFFF >> 1)) {
+					if (delta < (0xFFFFFFFF >> 1)) {
 						RD(2, "Sequence GAP: exp %u found %u",
 						      seq_exp, seq);
 					} else {
