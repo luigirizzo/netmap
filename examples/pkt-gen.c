@@ -1451,7 +1451,6 @@ txseq_body(void *data)
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
 	struct netmap_ring *ring;
-	int n = targ->g->npackets;
 	int64_t sent = 0;
 	uint64_t event = 0;
 	int options = targ->g->options | OPT_COPY;
@@ -1460,13 +1459,17 @@ txseq_body(void *data)
 	struct pkt *pkt = &targ->pkt;
 	int frags = targ->g->frags;
 	uint16_t sequence = 0;
-	int tosend = 0;
+	int budget = 0;
 	void *frame;
 	int size;
 
 	if (targ->g->nthreads > 1) {
 		D("can only txseq ping with 1 thread");
 		return NULL;
+	}
+
+	if (targ->g->npackets > 0) {
+		D("Ignoring -n argument");
 	}
 
 	frame = pkt;
@@ -1488,12 +1491,15 @@ txseq_body(void *data)
 	/* Only use the first queue. */
 	ring = NETMAP_TXRING(targ->nmd->nifp, targ->nmd->first_tx_ring);
 
-	while (!targ->cancel && (n == 0 || sent < n)) {
+	while (!targ->cancel) {
 		uint32_t limit, space;
 		int fcnt;
 
-		if (rate_limit && tosend <= 0) {
-			tosend = targ->g->burst;
+		if (!rate_limit) {
+			budget = targ->g->burst;
+
+		} else if (budget <= 0) {
+			budget = targ->g->burst;
 			nexttime = timespec_add(nexttime, targ->g->tx_period);
 			wait_time(nexttime);
 		}
@@ -1517,12 +1523,7 @@ txseq_body(void *data)
 			continue;
 		}
 
-		limit = rate_limit ? tosend : targ->g->burst;
-
-		/* Don't send more than user asks for. */
-		if (n > 0 && n - sent < limit) {
-			limit = n - sent;
-		}
+		limit = budget;
 
 		if (space < limit) {
 			limit = space;
@@ -1557,18 +1558,18 @@ txseq_body(void *data)
 			} else {
 				fcnt = frags;
 			}
+
 			if (sent == limit - 1) {
 				slot->flags &= ~NS_MOREFRAG;
 				slot->flags |= NS_REPORT;
 			}
+
 			ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 			if (rate_limit) {
-				tosend--;
+				budget--;
 			}
 		}
 
-		ND("limit %d tail %d frags %d sent %ld",
-			limit, ring->tail, frags);
 		event ++;
 		targ->ctr.pkts = sent;
 		targ->ctr.bytes = sent * size;
@@ -1592,7 +1593,7 @@ txseq_body(void *data)
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 	targ->completed = 1;
 	targ->ctr.pkts = sent;
-	targ->ctr.bytes = sent*size;
+	targ->ctr.bytes = sent * size;
 	targ->ctr.events = event;
 quit:
 	/* reset the ``used`` flag. */
@@ -1759,7 +1760,7 @@ usage(void)
 		"Usage:\n"
 		"%s arguments\n"
 		"\t-i interface		interface name\n"
-		"\t-f function		tx rx ping pong\n"
+		"\t-f function		tx rx ping pong txseq rxseq\n"
 		"\t-n count		number of iterations (can be 0)\n"
 		"\t-t pkts_to_send		also forces tx mode\n"
 		"\t-r pkts_to_receive	also forces rx mode\n"
