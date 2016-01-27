@@ -1611,6 +1611,27 @@ quit:
 }
 
 
+static char *
+multi_slot_to_string(struct netmap_ring *ring, unsigned int first,
+		     unsigned int nfrags, char *strbuf, size_t strbuflen)
+{
+	unsigned int f;
+	char *ret = strbuf;
+
+	for (f = 0; f < nfrags; f++) {
+		struct netmap_slot *slot = &ring->slot[first + f];
+		int m = snprintf(strbuf, strbuflen, "|%u,%x|", slot->len,
+				 slot->flags);
+		if (m >= (int)strbuflen) {
+			break;
+		}
+		strbuf += m;
+		strbuflen -= m;
+	}
+
+	return ret;
+}
+
 static void *
 rxseq_body(void *data)
 {
@@ -1686,8 +1707,11 @@ rxseq_body(void *data)
 			if (!(slot->flags & NS_MOREFRAG)) {
 				/* ``first`` will be reset below. */
 				if (!first && frags != frags_exp) {
+					char prbuf[512];
 					RD(1, "Received packets with %u frags, "
-					      "expected %u", frags, frags_exp);
+					      "expected %u, '%s'", frags, frags_exp,
+					      multi_slot_to_string(ring, head-frags+1, frags,
+								   prbuf, sizeof(prbuf)));
 				}
 				frags_exp = frags;
 				frags = 0;
