@@ -1762,7 +1762,7 @@ usage(void)
 		"\t-i interface		interface name\n"
 		"\t-f function		tx rx ping pong txseq rxseq\n"
 		"\t-n count		number of iterations (can be 0)\n"
-		"\t-t pkts_to_send		also forces tx mode\n"
+		"\t-t pkts_to_send	also forces tx mode\n"
 		"\t-r pkts_to_receive	also forces rx mode\n"
 		"\t-l pkt_size		in bytes excluding CRC\n"
 		"\t-d dst_ip[:port[-dst_ip:port]]   single or range\n"
@@ -1784,6 +1784,7 @@ usage(void)
 	        "\t-P file		load packet from pcap file\n"
 		"\t-z			use random IPv4 src address/port\n"
 		"\t-Z			use random IPv4 dst address/port\n"
+		"\t-F num_frags		send multi-slot packets\n"
 		"",
 		cmd);
 
