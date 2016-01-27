@@ -1615,14 +1615,14 @@ quit:
 
 
 static char *
-multi_slot_to_string(struct netmap_ring *ring, unsigned int first,
+multi_slot_to_string(struct netmap_ring *ring, unsigned int head,
 		     unsigned int nfrags, char *strbuf, size_t strbuflen)
 {
 	unsigned int f;
 	char *ret = strbuf;
 
 	for (f = 0; f < nfrags; f++) {
-		struct netmap_slot *slot = &ring->slot[first + f];
+		struct netmap_slot *slot = &ring->slot[head];
 		int m = snprintf(strbuf, strbuflen, "|%u,%x|", slot->len,
 				 slot->flags);
 		if (m >= (int)strbuflen) {
@@ -1630,6 +1630,8 @@ multi_slot_to_string(struct netmap_ring *ring, unsigned int first,
 		}
 		strbuf += m;
 		strbuflen -= m;
+
+		head = nm_ring_next(ring, head);
 	}
 
 	return ret;
