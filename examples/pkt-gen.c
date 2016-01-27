@@ -1531,7 +1531,7 @@ txseq_body(void *data)
 
 		/* Cut off ``limit`` to make sure is multiple of ``frags``. */
 		if (frags > 1) {
-			limit = ((limit + frags - 1) / frags) * frags;
+			limit = (limit / frags) * frags;
 		}
 
 		limit = sent + limit; /* Convert to absolute. */
