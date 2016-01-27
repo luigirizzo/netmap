@@ -1564,6 +1564,9 @@ txseq_body(void *data)
 			}
 
 			if (sent == limit - 1) {
+				/* Make sure we don't push an incomplete
+				 * packet. */
+				assert(!(slot->flags & NS_MOREFRAG));
 				slot->flags |= NS_REPORT;
 			}
 
@@ -1572,9 +1575,6 @@ txseq_body(void *data)
 				budget--;
 			}
 		}
-
-		/* Make sure we don't push an incomplete packet. */
-		assert(fcnt == frags);
 
 		ring->cur = ring->head = head;
 
@@ -1618,9 +1618,9 @@ rxseq_body(void *data)
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	int dump = targ->g->options & OPT_DUMP;
 	struct netmap_ring *ring;
-	struct my_ctrs cur;
+	unsigned int frags_exp = 0;
 	uint16_t seq_exp = 0;
-	uint16_t seq;
+	struct my_ctrs cur;
 	int first = 1;
 	int i;
 
@@ -1646,6 +1646,8 @@ rxseq_body(void *data)
 	ring = NETMAP_RXRING(targ->nmd->nifp, targ->nmd->first_rx_ring);
 
 	while (!targ->cancel) {
+		unsigned int frags;
+		uint16_t seq;
 		int limit;
 
 		/* Once we started to receive packets, wait at most 1 seconds
@@ -1668,7 +1670,7 @@ rxseq_body(void *data)
 		if (limit > targ->g->burst)
 			limit = targ->g->burst;
 
-		for (i = 0; i < limit; i++) {
+		for (frags = 0, i = 0; i < limit; i++) {
 			struct netmap_slot *slot = &ring->slot[ring->cur];
 			char *p = NETMAP_BUF(ring, slot->buf_idx);
 			int len = slot->len;
@@ -1676,6 +1678,18 @@ rxseq_body(void *data)
 
 			if (dump) {
 				dump_payload(p, slot->len, ring, ring->cur);
+			}
+
+			frags++;
+			ND("[frag #%u] len %u, flags %x", frags, slot->len, slot->flags);
+			if (!(slot->flags & NS_MOREFRAG)) {
+				/* ``first`` will be reset below. */
+				if (!first && frags != frags_exp) {
+					RD(1, "Received packets with %u frags, "
+					      "expected %u", frags, frags_exp);
+				}
+				frags_exp = frags;
+				frags = 0;
 			}
 
 			p -= sizeof(pkt->vh) - targ->g->virt_header;
