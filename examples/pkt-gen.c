@@ -1493,7 +1493,8 @@ txseq_body(void *data)
 	ring = NETMAP_TXRING(targ->nmd->nifp, targ->nmd->first_tx_ring);
 
 	while (!targ->cancel) {
-		uint32_t limit, space;
+		int64_t limit;
+		unsigned int space;
 		unsigned int head;
 		int fcnt;
 
