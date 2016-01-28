@@ -1698,6 +1698,26 @@ rxseq_body(void *data)
 		if (limit > targ->g->burst)
 			limit = targ->g->burst;
 
+#if 0
+		/* Enable this if
+		 *     1) we remove the early-return optimization from
+		 *        the netmap poll implementation, or
+		 *     2) pipes get NS_MOREFRAG support.
+		 * With the current netmap implementation, an experiment like
+		 *    pkt-gen -i vale:1{1 -f txseq -F 9
+		 *    pkt-gen -i vale:1}1 -f rxseq
+		 * would get stuck as soon as we find nm_ring_space(ring) < 9,
+		 * since here limit is rounded to 0 and
+		 * pipe rxsync is not called anymore by the poll() of this loop.
+		 */
+		if (frags_exp > 1) {
+			int o = limit;
+			/* Cut off to the closest smaller multiple. */
+			limit = (limit / frags_exp) * frags_exp;
+			RD(2, "LIMIT %d --> %d", o, limit);
+		}
+#endif
+
 		for (head = ring->head, i = 0; i < limit; i++) {
 			struct netmap_slot *slot = &ring->slot[head];
 			char *p = NETMAP_BUF(ring, slot->buf_idx);
