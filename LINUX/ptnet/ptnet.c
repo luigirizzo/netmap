@@ -247,7 +247,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 			vh->gso_type = VIRTIO_NET_HDR_GSO_NONE;
 		}
 
-		vh->num_buffers = 0;
+		vh->num_buffers = 0; /* unused */
 
 		ND(1, "%s: vnet hdr: flags %x csum_start %u csum_ofs %u hdr_len = "
 		      "%u gso_size %u gso_type %x", __func__, vh->flags,
@@ -276,9 +276,9 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	a.ring->head = a.ring->cur = nm_next(a.head, a.lim);
 
 	if (skb_shinfo(skb)->nr_frags) {
-		RD(1, "TX frags #%u lfsz %u tsz %d", skb_shinfo(skb)->nr_frags,
+		RD(1, "TX frags #%u lfsz %u tsz %d gso_segs %d gso_size %d", skb_shinfo(skb)->nr_frags,
 		skb_frag_size(&skb_shinfo(skb)->frags[skb_shinfo(skb)->nr_frags-1]),
-		(int)skb->len);
+		(int)skb->len, skb_shinfo(skb)->gso_segs, skb_shinfo(skb)->gso_size);
 	}
 
 	BUG_ON(a.ring->slot[a.head].flags & NS_MOREFRAG);
@@ -603,7 +603,35 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			skb_shinfo(skb)->gso_segs = 0;
 		}
 
-		napi_gro_receive(napi, skb);
+		/*
+		 * We should always use napi_gro_receive() in place of
+		 * netif_receive_skb(). However, currently we have an
+		 * issue (probably due this driver and/or netmap) such
+		 * that when virtio-net header is not null using
+		 * napi_gro_receive() causes sometimes reordering
+		 * of two consecutive sk_buffs. This reordering usually
+		 * causes the network stack to issue a TCP DUPACK, and
+		 * so a retransmission on the sender side. This bug
+		 * seems to disappear if we use netif_receive_skb(skb)
+		 * here.
+		 *
+		 * I've also noticed that when the reordering happens,
+		 * i.e.
+		 *
+		 *    skb1, skb2 --> napi_gro_receive() --> skb2, skb1
+		 *
+		 * then it is always true that
+		 *
+		 *    (skb1->len == MTU+14) && (skb2->len > skb1->len)
+		 *    && skb_is_gso(skb1) == 0 && skb_is_gso(skb2) != 0
+		 *
+		 * where usually MTU == 1500.
+		 */
+		if (have_vnet_hdr && vh->flags) {
+			netif_receive_skb(skb);
+		} else {
+			napi_gro_receive(napi, skb);
+		}
 
 		work_done ++;
 	}
