@@ -38,7 +38,7 @@
 #include "dev/netmap/netmap_virt.h"
 
 
-static bool ptnet_gso = false;
+static bool ptnet_gso = true;
 module_param(ptnet_gso, bool, 0444);
 
 /* Enable to debug RX-side hangs */
