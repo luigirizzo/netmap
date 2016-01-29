@@ -55,8 +55,11 @@
 
 /* RX cycle without receive any packets */
 #define PTN_RX_DRY_CYCLES_MAX	10
-/* Limit Batch TX to half ring */
-#define PTN_TX_BATCH_LIM(_n)	((_n >> 1))
+
+/* Limit Batch TX to half ring.
+ * Currently disabled, since it does not manage NS_MOREFRAG, which
+ * results in random drops in the VALE txsync. */
+//#define PTN_TX_BATCH_LIM(_n)	((_n >> 1))
 
 /* XXX: avoid nm_*sync_prologue(). XXX-vin: this should go away,
  *      we should never trust the guest. */
@@ -288,6 +291,7 @@ ptnetmap_tx_handler(void *data)
         if (batch < 0)
             batch += num_slots;
 
+#ifdef PTN_TX_BATCH_LIM
         if (batch > PTN_TX_BATCH_LIM(num_slots)) {
             uint32_t head_lim = kring->nr_hwcur + PTN_TX_BATCH_LIM(num_slots);
 
@@ -298,6 +302,7 @@ ptnetmap_tx_handler(void *data)
             g_ring.head = head_lim;
 	    batch = PTN_TX_BATCH_LIM(num_slots);
         }
+#endif /* PTN_TX_BATCH_LIM */
 
         if (nm_kr_txspace(kring) <= (num_slots >> 1)) {
             g_ring.flags |= NAF_FORCE_RECLAIM;
