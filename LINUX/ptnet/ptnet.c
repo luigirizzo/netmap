@@ -492,9 +492,9 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			nmbuf_len -= sizeof(*vh);
 		}
 
-		skb = netdev_alloc_skb_ip_align(pi->netdev, nmbuf_len);
+		skb = napi_alloc_skb(napi, nmbuf_len);
 		if (unlikely(!skb)) {
-			pr_err("%s: netdev_alloc_skb_ip_align() failed\n",
+			pr_err("%s: napi_alloc_skb() failed\n",
 			       __func__);
 			break;
 		}
