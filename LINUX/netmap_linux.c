@@ -2387,8 +2387,10 @@ int ptnet_init(void);
 void ptnet_fini(void);
 
 #else /* !WITH_PTNETMAP_GUEST */
-#define nm_os_pt_memdev_init()        0
+#define nm_os_pt_memdev_init()		0
 #define nm_os_pt_memdev_uninit()
+#define ptnet_init()			0
+#define ptnet_fini()
 #endif /* WITH_PTNETMAP_GUEST */
 
 
