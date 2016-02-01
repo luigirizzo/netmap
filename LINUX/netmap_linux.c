@@ -2229,7 +2229,8 @@ struct ptnetmap_memdev
  * of the netmap memory mapped in the guest.
  */
 int
-nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
+nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
+                      void **nm_addr)
 {
     struct pci_dev *pdev = ptn_dev->pdev;
     uint32_t mem_size;
@@ -2345,10 +2346,7 @@ ptn_memdev_remove(struct pci_dev *pdev)
         netmap_mem_put(ptn_dev->nm_mem);
         ptn_dev->nm_mem = NULL;
     }
-    if (ptn_dev->pci_mem) {
-        iounmap(ptn_dev->pci_mem);
-        ptn_dev->pci_mem = NULL;
-    }
+    nm_os_pt_memdev_iounmap(ptn_dev);
     pci_set_drvdata(pdev, NULL);
     iounmap(ptn_dev->pci_io);
     pci_release_selected_regions(pdev, ptn_dev->bars);
@@ -2396,9 +2394,15 @@ nm_os_pt_memdev_uninit(void)
 
     D("ptn_memdev_driver exit");
 }
+
+int ptnet_init(void);
+void ptnet_fini(void);
+
 #else /* !WITH_PTNETMAP_GUEST */
-#define nm_os_pt_memdev_init()        0
+#define nm_os_pt_memdev_init()		0
 #define nm_os_pt_memdev_uninit()
+#define ptnet_init()			0
+#define ptnet_fini()
 #endif /* WITH_PTNETMAP_GUEST */
 
 
@@ -2414,18 +2418,31 @@ struct miscdevice netmap_cdevsw = { /* same name as FreeBSD */
 
 static int linux_netmap_init(void)
 {
-        int err;
-        /* Errors have negative values on linux. */
-        err = -netmap_init();
-        if (err)
-            return err;
+	int err;
+	/* Errors have negative values on linux. */
+	err = -netmap_init();
+	if (err) {
+		return err;
+	}
 
-	return nm_os_pt_memdev_init();
+	err = nm_os_pt_memdev_init();
+	if (err) {
+		return err;
+	}
+
+	err = ptnet_init();
+	if (err) {
+		nm_os_pt_memdev_uninit();
+		return err;
+	}
+
+	return 0;
 }
 
 
 static void linux_netmap_fini(void)
 {
+	ptnet_fini();
         nm_os_pt_memdev_uninit();
         netmap_fini();
 }

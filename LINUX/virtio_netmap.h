@@ -867,8 +867,8 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 					sizeof(shared_tx_vnet_hdr) :
 					sizeof(shared_tx_vnet_hdr.hdr);
 
-		/* Push a fake request in each TX virtqueue in order
-		 * to keep TX interrupts enabled. */
+		/* Push a fake request in the avail ring of each TX VQ
+                 * in order to keep TX kicks enabled. */
 		for (i = 0; i < DEV_NUM_TX_QUEUES(ifp); i++) {
 			COMPAT_DECL_SG
 			struct scatterlist *sg = GET_TX_SG(vi, i);

@@ -2241,11 +2241,30 @@ error:
 }
 
 /*
+ * find host id in guest allocators and create guest allocator
+ * if it is not there
+ */
+static struct netmap_mem_d *
+netmap_mem_pt_guest_get(nm_memid_t host_id)
+{
+	struct netmap_mem_d *nmd;
+
+	NMA_LOCK(&nm_mem);
+	nmd = netmap_mem_pt_guest_find_hostid(host_id);
+	if (nmd == NULL) {
+		nmd = netmap_mem_pt_guest_create(host_id);
+	}
+	NMA_UNLOCK(&nm_mem);
+
+	return nmd;
+}
+
+/*
  * The guest allocator can be created by ptnetmap_memdev (during the device attach) or
  * by ptnetmap device (e1000/virtio), during the netmap_attach.
  *
  * The order is not important (we have different order in LINUX and FreeBSD).
- * The first one, creates the device, and the second one simply attach it.
+ * The first one, creates the device, and the second one simply attaches it.
  */
 
 /* Called when ptnetmap_memdev is attaching, to attach a new allocator in the guest */
@@ -2255,17 +2274,7 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 	struct netmap_mem_d *nmd;
 	struct netmap_mem_ptg *pv;
 
-
-	/*
-	 * find host id in guest allocators and create guest allocator
-	 * if it is not there
-	 */
-	NMA_LOCK(&nm_mem);
-	nmd = netmap_mem_pt_guest_find_hostid(host_id);
-	if (nmd == NULL) {
-		nmd = netmap_mem_pt_guest_create(host_id);
-	}
-	NMA_UNLOCK(&nm_mem);
+	nmd = netmap_mem_pt_guest_get(host_id);
 
 	/* assign this device to the guest allocator */
 	if (nmd) {
@@ -2281,7 +2290,6 @@ struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
 			struct netmap_pt_guest_ops *pv_ops)
 {
-	struct netmap_mem_d *nmd;
 	nm_memid_t host_id;
 
 	if (ifp == NULL || pv_ops == NULL)
@@ -2290,18 +2298,7 @@ netmap_mem_pt_guest_new(struct ifnet *ifp,
 	/* get the host id allocator */
 	host_id = pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_HOSTMEMID);
 
-	/*
-	 * find host id in guest allocators and create guest allocator
-	 * if it is not there
-	 */
-	NMA_LOCK(&nm_mem);
-	nmd = netmap_mem_pt_guest_find_hostid(host_id);
-	if (nmd == NULL) {
-		nmd = netmap_mem_pt_guest_create(host_id);
-	}
-	NMA_UNLOCK(&nm_mem);
-
-	return nmd;
+	return netmap_mem_pt_guest_get(host_id);
 }
 
 #endif /* WITH_PTNETMAP_GUEST */
