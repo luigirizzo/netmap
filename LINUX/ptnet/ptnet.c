@@ -32,10 +32,10 @@
 #include <linux/virtio_net.h>
 
 #define WITH_PTNETMAP_GUEST
-#include "../bsd_glue.h"
-#include "net/netmap.h"
-#include "dev/netmap/netmap_kern.h"
-#include "dev/netmap/netmap_virt.h"
+#include <bsd_glue.h>
+#include <net/netmap.h>
+#include <dev/netmap/netmap_kern.h>
+#include <dev/netmap/netmap_virt.h>
 
 
 static bool ptnet_gso = true;
