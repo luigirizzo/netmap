@@ -2457,7 +2457,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 			}
 		}
 		if (!want_rx)
-			revents |= want[t]; /* we have data */
+			revents |= events & (POLLIN | POLLRDNORM); /* we have data */
 	}
 #else /* old code */
 	for_rx_tx(t) {
