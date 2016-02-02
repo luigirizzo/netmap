@@ -28,7 +28,6 @@
 #include <linux/if_vlan.h>
 #include <linux/in.h>
 #include <linux/interrupt.h>
-#include <linux/dma-mapping.h>
 #include <linux/virtio_net.h>
 
 #include <bsd_glue.h>
@@ -1224,12 +1223,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 			  pi->ioaddr + PTNET_IO_CSBBAL);
 	}
 #endif /* PTNET_CSB_ALLOC */
-
-	/* useless, to be removed */
-	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
-	if (err) {
-		goto err_irqs;
-	}
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
 	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
