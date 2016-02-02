@@ -885,7 +885,7 @@ netmap_krings_delete(struct netmap_adapter *na)
  * them first.
  */
 /* call with NMG_LOCK held */
-static void
+void
 netmap_hw_krings_delete(struct netmap_adapter *na)
 {
 	struct mbq *q = &na->rx_rings[na->num_rx_rings].rx_queue;
@@ -2618,8 +2618,6 @@ do_retry_rx:
 
 
 /*-------------------- driver support routines -------------------*/
-
-static int netmap_hw_krings_create(struct netmap_adapter *);
 
 /* default notify callback */
 static int

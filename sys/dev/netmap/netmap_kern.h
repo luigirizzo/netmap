@@ -1322,6 +1322,9 @@ int netmap_krings_create(struct netmap_adapter *na, u_int tailroom);
  */
 void netmap_krings_delete(struct netmap_adapter *na);
 
+int netmap_hw_krings_create(struct netmap_adapter *na);
+void netmap_hw_krings_delete(struct netmap_adapter *na);
+
 /* set the stopped/enabled status of ring
  * When stopping, they also wait for all current activity on the ring to
  * terminate. The status change is then notified using the na nm_notify

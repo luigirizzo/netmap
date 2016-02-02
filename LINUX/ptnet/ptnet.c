@@ -928,6 +928,19 @@ static const struct net_device_ops ptnet_netdev_ops = {
 #endif
 };
 
+
+static int
+ptnet_nm_krings_create(struct netmap_adapter *na)
+{
+	return netmap_hw_krings_create(na);
+}
+
+static void
+ptnet_nm_krings_delete(struct netmap_adapter *na)
+{
+	netmap_hw_krings_delete(na);
+}
+
 static uint32_t
 ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
 {
@@ -1114,6 +1127,8 @@ static struct netmap_adapter ptnet_nm_ops = {
 	.nm_config = ptnet_nm_config,
 	.nm_txsync = ptnet_nm_txsync,
 	.nm_rxsync = ptnet_nm_rxsync,
+	.nm_krings_create = ptnet_nm_krings_create,
+	.nm_krings_delete = ptnet_nm_krings_delete,
 };
 
 /*
