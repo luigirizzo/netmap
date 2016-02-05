@@ -34,6 +34,7 @@
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_virt.h>
+#include <dev/netmap/netmap_mem2.h>
 
 
 static bool ptnet_gso = true;
@@ -81,7 +82,6 @@ struct ptnet_info {
 	struct page *rx_pool;
 	int rx_pool_num;
 
-	struct netmap_priv_d *nm_priv;
 	struct netmap_pt_guest_adapter *ptna;
 
 	struct napi_struct napi;
@@ -357,9 +357,8 @@ static irqreturn_t
 ptnet_tx_intr(int irq, void *data)
 {
 	struct net_device *netdev = data;
-	struct ptnet_info *pi = netdev_priv(netdev);
 
-	if (!pi->nm_priv && netmap_tx_irq(netdev, 0)) {
+	if (netmap_tx_irq(netdev, 0)) {
 		return IRQ_HANDLED;
 	}
 
@@ -382,7 +381,7 @@ ptnet_rx_intr(int irq, void *data)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	unsigned int unused;
 
-	if (!pi->nm_priv && netmap_rx_irq(netdev, 0, &unused)) {
+	if (netmap_rx_irq(netdev, 0, &unused)) {
 		(void)unused;
 		return IRQ_HANDLED;
 	}
@@ -798,9 +797,13 @@ ptnet_ioregs_dump(struct ptnet_info *pi)
 	}
 }
 
-static int ptnet_nm_register_netif(struct netmap_adapter *na, int onoff);
 static int ptnet_nm_register_native(struct netmap_adapter *na, int onoff);
 
+static int ptnet_nm_krings_create(struct netmap_adapter *na);
+static void ptnet_nm_krings_delete(struct netmap_adapter *na);
+
+static int ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
+				int native);
 /*
  * ptnet_open - Called when a network interface is made active
  * @netdev: network interface device structure
@@ -814,38 +817,46 @@ ptnet_open(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na = NA(netdev);
-	enum txrx t;
 	int ret;
+
+	D("%s: netif_running %u", __func__, netif_running(netdev));
 
 	netmap_adapter_get(na);
 
-	pi->nm_priv = netmap_priv_new();
-	if (!pi->nm_priv) {
-		pr_err("Failed to alloc netmap priv\n");
-		return -ENOMEM;
-	}
-
 	NMG_LOCK();
 
-	/* Replace nm_register method on the fly. */
-	na->nm_register = ptnet_nm_register_netif;
+	netmap_update_config(na);
 
-	/* Put the device in netmap mode. */
-	ret = netmap_do_regif(pi->nm_priv, na, 0, NR_REG_ALL_NIC |
-			      NR_EXCLUSIVE);
+	ret = netmap_mem_finalize(na->nm_mem, na);
 	if (ret) {
-		pr_err("netmap_do_regif() failed\n");
-		netmap_adapter_put(na);
-		NMG_UNLOCK();
-		return -ret;
+		pr_err("netmap_mem_finalize() failed\n");
+		goto err_mem_finalize;
+	}
+
+	ret = netmap_hw_krings_create(na);
+	if (ret) {
+		pr_err("ptnet_nm_krings_create() failed\n");
+		goto err_mem_finalize;
+	}
+
+	ret = netmap_mem_rings_create(na);
+	if (ret) {
+		pr_err("netmap_mem_rings_create() failed\n");
+		goto err_rings_create;
+	}
+
+	ret = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
+	if (ret) {
+		pr_err("netmap_mem_get_lut() failed\n");
+		goto err_get_lut;
+	}
+
+	ret = ptnet_do_nm_register(na, 1 /* on */,  0 /* not native */);
+	if (ret) {
+		goto err_register;
 	}
 
 	NMG_UNLOCK();
-
-	/* Init np_si[t], this should have not effect on Linux. */
-	for_rx_tx(t) {
-		pi->nm_priv->np_si[t] = NULL;
-	}
 
 	{
 		unsigned int nm_buf_size = NETMAP_BUF_SIZE(na);
@@ -876,6 +887,17 @@ ptnet_open(struct net_device *netdev)
 	pr_info("%s: %p\n", __func__, pi);
 
 	return 0;
+
+err_register:
+	memset(&na->na_lut, 0, sizeof(na->na_lut));
+err_get_lut:
+	netmap_mem_rings_delete(na);
+err_rings_create:
+	netmap_hw_krings_delete(na);
+err_mem_finalize:
+	netmap_adapter_put(na);
+	NMG_UNLOCK();
+	return -ret;
 }
 
 /*
@@ -893,6 +915,8 @@ ptnet_close(struct net_device *netdev)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na = NA(netdev);
 
+	D("%s: netif_running %u", __func__, netif_running(netdev));
+
 #ifdef HANGCTRL
 	del_timer(&pi->hang_timer);
 #endif
@@ -904,12 +928,14 @@ ptnet_close(struct net_device *netdev)
 	//synchronize_irq(pi->pdev->irq);
 
 	NMG_LOCK();
-	netmap_do_unregif(pi->nm_priv);
-	na->nm_register = ptnet_nm_register_native;
+
+	ptnet_do_nm_register(na, 0 /* off */,  0 /* not native */);
+	netmap_mem_rings_delete(na);
+	netmap_hw_krings_delete(na);
+	netmap_mem_deref(na->nm_mem, na);
+
 	NMG_UNLOCK();
 
-	netmap_priv_delete(pi->nm_priv);
-	pi->nm_priv = NULL;
 	netmap_adapter_put(na);
 
 	pr_info("%s: %p\n", __func__, pi);
@@ -932,13 +958,25 @@ static const struct net_device_ops ptnet_netdev_ops = {
 static int
 ptnet_nm_krings_create(struct netmap_adapter *na)
 {
-	return netmap_hw_krings_create(na);
+	int ret = 0;
+
+	rtnl_lock();
+	if (!netif_running(na->ifp)) {
+		ret = netmap_hw_krings_create(na);
+	}
+	rtnl_unlock();
+
+	return ret;
 }
 
 static void
 ptnet_nm_krings_delete(struct netmap_adapter *na)
 {
-	netmap_hw_krings_delete(na);
+	rtnl_lock();
+	if (!netif_running(na->ifp)) {
+		netmap_hw_krings_delete(na);
+	}
+	rtnl_unlock();
 }
 
 static uint32_t
@@ -959,8 +997,8 @@ static struct netmap_pt_guest_ops ptnet_nm_pt_guest_ops = {
 };
 
 static int
-ptnet_nm_register_common(struct netmap_adapter *na, int onoff,
-			 int native)
+ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
+		     int native)
 {
 	struct netmap_pt_guest_adapter *ptna =
 			(struct netmap_pt_guest_adapter *)na;
@@ -993,7 +1031,7 @@ ptnet_nm_register_common(struct netmap_adapter *na, int onoff,
 				struct netmap_kring *kring = &NMR(na, t)[i];
 				struct pt_ring *ptring;
 
-				if (!nm_kring_pending_on(kring)) {
+				if (native && !nm_kring_pending_on(kring)) {
 					continue;
 				}
 
@@ -1005,29 +1043,27 @@ ptnet_nm_register_common(struct netmap_adapter *na, int onoff,
 				kring->nr_hwcur = ptring->hwcur;
 				kring->nr_hwtail = kring->rtail =
 					kring->ring->tail = ptring->hwtail;
-				kring->nr_mode = NKR_NETMAP_ON;
+				if (native) {
+					kring->nr_mode = NKR_NETMAP_ON;
+				}
 			}
 		}
 
+		/* If not native, don't call nm_set_native_flags, since we don't want
+		 * to replace ndo_start_xmit method, nor set NAF_NETMAP_ON */
 		if (native) {
 			nm_set_native_flags(na);
-		} else {
-			/* Don't call nm_set_native_flags, since we don't want
-			 * to replace ndo_start_xmit method. */
-			na->na_flags |= NAF_NETMAP_ON;
 		}
 	} else {
 		if (native) {
 			nm_clear_native_flags(na);
-		} else {
-			na->na_flags &= NAF_NETMAP_ON;
 		}
 
 		for_rx_tx(t) {
 			for (i=0; i<nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = &NMR(na, t)[i];
 
-				if (!nm_kring_pending_off(kring)) {
+				if (!native || !nm_kring_pending_off(kring)) {
 					continue;
 				}
 
@@ -1042,15 +1078,9 @@ ptnet_nm_register_common(struct netmap_adapter *na, int onoff,
 }
 
 static int
-ptnet_nm_register_netif(struct netmap_adapter *na, int onoff)
-{
-	return ptnet_nm_register_common(na, onoff, 0);
-}
-
-static int
 ptnet_nm_register_native(struct netmap_adapter *na, int onoff)
 {
-	return ptnet_nm_register_common(na, onoff, 1);
+	return ptnet_do_nm_register(na, onoff, 1);
 }
 
 static int
@@ -1295,11 +1325,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * pointer. */
 	pi->ptna = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
 	pi->ptna->csb = pi->csb;
-
-	/* This is not-NULL when the network interface is up, ready to be
-	 * used by the kernel stack. When NULL, the interface can be
-	 * opened in netmap mode. */
-	pi->nm_priv = NULL;
 
 	netif_carrier_on(netdev);
 
