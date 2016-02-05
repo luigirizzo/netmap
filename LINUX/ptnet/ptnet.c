@@ -58,6 +58,8 @@ struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
 
+	int backend_regifs;
+
 	/* Mirrors PTFEAT register content. */
 	uint32_t ptfeatures;
 
@@ -797,8 +799,6 @@ ptnet_ioregs_dump(struct ptnet_info *pi)
 	}
 }
 
-static int ptnet_nm_register_native(struct netmap_adapter *na, int onoff);
-
 static int ptnet_nm_krings_create(struct netmap_adapter *na);
 static void ptnet_nm_krings_delete(struct netmap_adapter *na);
 
@@ -833,28 +833,32 @@ ptnet_open(struct net_device *netdev)
 		goto err_mem_finalize;
 	}
 
-	ret = netmap_hw_krings_create(na);
-	if (ret) {
-		pr_err("ptnet_nm_krings_create() failed\n");
-		goto err_mem_finalize;
-	}
+	if (pi->backend_regifs == 0) {
+		ret = ptnet_nm_krings_create(na);
+		if (ret) {
+			pr_err("ptnet_nm_krings_create() failed\n");
+			goto err_mem_finalize;
+		}
 
-	ret = netmap_mem_rings_create(na);
-	if (ret) {
-		pr_err("netmap_mem_rings_create() failed\n");
-		goto err_rings_create;
-	}
+		ret = netmap_mem_rings_create(na);
+		if (ret) {
+			pr_err("netmap_mem_rings_create() failed\n");
+			goto err_rings_create;
+		}
 
-	ret = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
-	if (ret) {
-		pr_err("netmap_mem_get_lut() failed\n");
-		goto err_get_lut;
+		ret = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
+		if (ret) {
+			pr_err("netmap_mem_get_lut() failed\n");
+			goto err_get_lut;
+		}
 	}
 
 	ret = ptnet_do_nm_register(na, 1 /* on */,  0 /* not native */);
 	if (ret) {
 		goto err_register;
 	}
+
+	pi->backend_regifs ++;
 
 	NMG_UNLOCK();
 
@@ -929,9 +933,14 @@ ptnet_close(struct net_device *netdev)
 
 	NMG_LOCK();
 
+	pi->backend_regifs --;
+
 	ptnet_do_nm_register(na, 0 /* off */,  0 /* not native */);
-	netmap_mem_rings_delete(na);
-	netmap_hw_krings_delete(na);
+
+	if (pi->backend_regifs == 0) {
+		netmap_mem_rings_delete(na);
+		ptnet_nm_krings_delete(na);
+	}
 	netmap_mem_deref(na->nm_mem, na);
 
 	NMG_UNLOCK();
@@ -958,13 +967,12 @@ static const struct net_device_ops ptnet_netdev_ops = {
 static int
 ptnet_nm_krings_create(struct netmap_adapter *na)
 {
+	struct ptnet_info *pi = netdev_priv(na->ifp);
 	int ret = 0;
 
-	rtnl_lock();
-	if (!netif_running(na->ifp)) {
+	if (pi->backend_regifs == 0) {
 		ret = netmap_hw_krings_create(na);
 	}
-	rtnl_unlock();
 
 	return ret;
 }
@@ -972,11 +980,11 @@ ptnet_nm_krings_create(struct netmap_adapter *na)
 static void
 ptnet_nm_krings_delete(struct netmap_adapter *na)
 {
-	rtnl_lock();
-	if (!netif_running(na->ifp)) {
+	struct ptnet_info *pi = netdev_priv(na->ifp);
+
+	if (pi->backend_regifs == 0) {
 		netmap_hw_krings_delete(na);
 	}
-	rtnl_unlock();
 }
 
 static uint32_t
@@ -1005,35 +1013,27 @@ ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 
 	/* device-specific */
 	struct net_device *netdev = na->ifp;
-	struct paravirt_csb *csb = ptna->csb;
+	struct ptnet_info *pi = netdev_priv(netdev);
 	enum txrx t;
 	int ret = 0;
 	int i;
 
-	if (na->active_fds > 0) {
-		/* This cannot happen since we have NR_EXCLUSIVE. */
-		BUG_ON(!native);
-
-		/* Nothing to do. */
-		return 0;
-	}
-
 	if (onoff) {
-		/* Make sure the host adapter passed through is ready
-		 * for txsync/rxsync. This also initializes the CSB. */
-		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
-		if (ret) {
-			return ret;
+		if (pi->backend_regifs == 0) {
+			/* Make sure the host adapter passed through is ready
+			 * for txsync/rxsync. This also initializes the CSB. */
+			ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
+			if (ret) {
+				goto out;
+			}
 		}
 
 		for_rx_tx(t) {
+			struct paravirt_csb *csb = ptna->csb;
+
 			for (i=0; i<nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = &NMR(na, t)[i];
 				struct pt_ring *ptring;
-
-				if (native && !nm_kring_pending_on(kring)) {
-					continue;
-				}
 
 				/* Sync krings from the host, reading from
 				 * CSB. */
@@ -1043,42 +1043,48 @@ ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 				kring->nr_hwcur = ptring->hwcur;
 				kring->nr_hwtail = kring->rtail =
 					kring->ring->tail = ptring->hwtail;
-				if (native) {
-					kring->nr_mode = NKR_NETMAP_ON;
-				}
 			}
 		}
 
 		/* If not native, don't call nm_set_native_flags, since we don't want
 		 * to replace ndo_start_xmit method, nor set NAF_NETMAP_ON */
 		if (native) {
+			for_rx_tx(t) {
+				for (i=0; i<nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = &NMR(na, t)[i];
+
+					if (nm_kring_pending_on(kring)) {
+						kring->nr_mode = NKR_NETMAP_ON;
+					}
+				}
+			}
 			nm_set_native_flags(na);
 		}
+
 	} else {
 		if (native) {
 			nm_clear_native_flags(na);
-		}
+			for_rx_tx(t) {
+				for (i=0; i<nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = &NMR(na, t)[i];
 
-		for_rx_tx(t) {
-			for (i=0; i<nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-
-				if (!native || !nm_kring_pending_off(kring)) {
-					continue;
+					if (nm_kring_pending_off(kring)) {
+						kring->nr_mode = NKR_NETMAP_OFF;
+					}
 				}
-
-				kring->nr_mode = NKR_NETMAP_OFF;
 			}
 		}
 
-		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
+		if (pi->backend_regifs == 0) {
+			ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
+		}
 	}
-
+out:
 	return ret;
 }
 
 static int
-ptnet_nm_register_native(struct netmap_adapter *na, int onoff)
+ptnet_nm_register(struct netmap_adapter *na, int onoff)
 {
 	return ptnet_do_nm_register(na, onoff, 1);
 }
@@ -1153,7 +1159,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 	.num_rx_desc = 1024,
 	.num_tx_rings = 1,
 	.num_rx_rings = 1,
-	.nm_register = ptnet_nm_register_native,
+	.nm_register = ptnet_nm_register,
 	.nm_config = ptnet_nm_config,
 	.nm_txsync = ptnet_nm_txsync,
 	.nm_rxsync = ptnet_nm_rxsync,
@@ -1325,6 +1331,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * pointer. */
 	pi->ptna = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
 	pi->ptna->csb = pi->csb;
+
+	pi->backend_regifs = 0;
 
 	netif_carrier_on(netdev);
 
