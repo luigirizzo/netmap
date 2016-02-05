@@ -1014,9 +1014,18 @@ ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 	/* device-specific */
 	struct net_device *netdev = na->ifp;
 	struct ptnet_info *pi = netdev_priv(netdev);
+	struct paravirt_csb *csb = ptna->csb;
 	enum txrx t;
 	int ret = 0;
 	int i;
+
+	/* If this is the last netmap client, guest interrupt enable flags may
+	 * be in arbitrary state. Since these flags are going to be used also
+	 * by the netdevice driver, we have to make sure to start with
+	 * notifications enabled. */
+	if (na->active_fds == 0) {
+		csb->guest_need_txkick = csb->guest_need_rxkick = 1;
+	}
 
 	if (onoff) {
 		if (pi->backend_regifs == 0) {
@@ -1028,8 +1037,6 @@ ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 			}
 
 			for_rx_tx(t) {
-				struct paravirt_csb *csb = ptna->csb;
-
 				for (i=0; i<nma_get_nrings(na, t); i++) {
 					struct netmap_kring *kring = &NMR(na, t)[i];
 					struct pt_ring *ptring;
