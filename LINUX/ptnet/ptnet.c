@@ -1026,23 +1026,23 @@ ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 			if (ret) {
 				goto out;
 			}
-		}
 
-		for_rx_tx(t) {
-			struct paravirt_csb *csb = ptna->csb;
+			for_rx_tx(t) {
+				struct paravirt_csb *csb = ptna->csb;
 
-			for (i=0; i<nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-				struct pt_ring *ptring;
+				for (i=0; i<nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = &NMR(na, t)[i];
+					struct pt_ring *ptring;
 
-				/* Sync krings from the host, reading from
-				 * CSB. */
-				ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
-				kring->rhead = kring->ring->head = ptring->head;
-				kring->rcur = kring->ring->cur = ptring->cur;
-				kring->nr_hwcur = ptring->hwcur;
-				kring->nr_hwtail = kring->rtail =
-					kring->ring->tail = ptring->hwtail;
+					/* Sync krings from the host, reading from
+					 * CSB. */
+					ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
+					kring->rhead = kring->ring->head = ptring->head;
+					kring->rcur = kring->ring->cur = ptring->cur;
+					kring->nr_hwcur = ptring->hwcur;
+					kring->nr_hwtail = kring->rtail =
+						kring->ring->tail = ptring->hwtail;
+				}
 			}
 		}
 
