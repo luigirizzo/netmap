@@ -1,6 +1,7 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
 PROGS	=	pkt-gen pkt-gen-b bridge bridge-b vale-ctl
+PROGS += tlem
 #PROGS += pingd
 PROGS	+= test_select testmmap lb
 X86PROG = testlock testcsum
@@ -57,6 +58,8 @@ clean:
 	-@rm -rf $(CLEANFILES)
 
 testlock: testlock.c
+
+tlem: LDLIBS += -lm
 
 .PHONY: install
 install: $(PROGS:%=install-%)
