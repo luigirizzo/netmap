@@ -323,7 +323,6 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 /*
  * ptnet_get_stats - Get System Network Statistics
- * @netdev: network interface device structure
  *
  * Returns the address of the device statistics structure.
  */
@@ -335,7 +334,6 @@ ptnet_get_stats(struct net_device *netdev)
 
 /*
  * ptnet_change_mtu - Change the Maximum Transfer Unit
- * @netdev: network interface device structure
  * @new_mtu: new value for maximum frame size
  *
  * Returns 0 on success, negative on failure
@@ -352,7 +350,6 @@ ptnet_change_mtu(struct net_device *netdev, int new_mtu)
 
 /*
  * ptnet_tx_intr - Interrupt handler for TX queues
- * @irq: interrupt number
  * @data: pointer to a network interface device structure
  */
 static irqreturn_t
@@ -389,7 +386,6 @@ ptnet_napi_schedule(struct ptnet_info *pi)
 
 /*
  * ptnet_rx_intr - Interrupt handler for RX queues
- * @irq: interrupt number
  * @data: pointer to a network interface device structure
  */
 static irqreturn_t
@@ -443,7 +439,6 @@ ptnet_rx_pool_refill(struct ptnet_info *pi)
 
 /*
  * ptnet_rx_poll - NAPI RX polling callback
- * @pi: NIC private structure
  */
 static int
 ptnet_rx_poll(struct napi_struct *napi, int budget)
@@ -696,10 +691,10 @@ ptnet_netpoll(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 
-	/* disable_interrupts() */
+	pi->csb->guest_need_txkick = pi->csb->guest_need_rxkick = 0;
 	ptnet_tx_intr(pi->msix_entries[0].vector, netdev);
 	ptnet_rx_intr(pi->msix_entries[1].vector, netdev);
-	/* enable interrupts() */
+	pi->csb->guest_need_txkick = pi->csb->guest_need_rxkick = 1;
 }
 #endif
 
@@ -812,10 +807,8 @@ static int ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 				int native);
 /*
  * ptnet_open - Called when a network interface is made active
- * @netdev: network interface device structure
  *
- * Returns 0 on success, negative value on failure
- *
+ * Returns 0 on success, negative value on failure.
  * The open entry point is called when a network interface is made
  * active by the system (IFF_UP). */
 static int
@@ -919,10 +912,8 @@ err_mem_finalize:
 
 /*
  * ptnet_close - Disables a network interface
- * @netdev: network interface device structure
  *
- * Returns 0, this is not allowed to fail
- *
+ * Returns 0, this is not allowed to fail.
  * The close entry point is called when an interface is de-activated
  * by the OS.
  */
@@ -1196,7 +1187,6 @@ static struct netmap_adapter ptnet_nm_ops = {
 
 /*
  * ptnet_probe - Device Initialization Routine
- * @pdev: PCI device information struct
  * @ent: entry in ptnet_pci_table
  *
  * Returns 0 on success, negative on failure
@@ -1388,7 +1378,6 @@ err_pci_reg:
 
 /*
  * ptnet_remove - Device Removal Routine
- * @pdev: PCI device information struct
  *
  * ptnet_remove is called by the PCI subsystem to alert the driver
  * that it should release a PCI device.  The could be caused by a
@@ -1455,12 +1444,6 @@ static struct pci_driver ptnet_driver = {
 	.shutdown = ptnet_shutdown,
 };
 
-/*
- * ptnet_init - Driver Registration Routine
- *
- * ptnet_init is called when netmap is loaded.
- * All it does is register with the PCI subsystem.
- */
 int
 ptnet_init(void)
 {
@@ -1470,12 +1453,6 @@ ptnet_init(void)
 	return pci_register_driver(&ptnet_driver);
 }
 
-/*
- * ptnet_exit - Driver Exit Cleanup Routine
- *
- * ptnet_exit is called just before netmap module is removed
- * from memory.
- */
 void
 ptnet_fini(void)
 {
