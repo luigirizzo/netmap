@@ -311,7 +311,7 @@ static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 	   already been pulled. Since we want the netmap rings to contain the
 	   full ethernet header, we push it back, so that the RX ring reader
 	   can see it. */
-	skb_push(*pm, 14);
+	skb_push(*pm, ETH_HLEN);
 
 	/* Possibly steal the mbuf and notify the pollers for a new RX
 	 * packet. */
@@ -320,7 +320,7 @@ static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
 		return RX_HANDLER_CONSUMED;
 	}
 
-	skb_pull(*pm, 14);
+	skb_pull(*pm, ETH_HLEN);
 
 	return RX_HANDLER_PASS;
 }
