@@ -654,7 +654,7 @@ out_of_slots:
 		ptnet_sync_tail(&csb->rx_ring, kring);
 		if (head != ring->tail) {
 			/* If there is more work to do, disable notifications
-			 * and go ahead. */
+			 * and reschedule. */
 			ptnet_napi_schedule(pi);
                 }
 #ifdef HANGCTRL
@@ -895,6 +895,13 @@ ptnet_open(struct net_device *netdev)
 #endif
 
 	pr_info("%s: %p\n", __func__, pi);
+
+	/* There may be pending packets received in netmap mode while the
+	 * interface was down. Schedule NAPI to flush packets that are
+	 * pending in the RX ring. We won't receive further interrupts until
+	 * the pending ones will be processed.  */
+	D("Schedule NAPI to flush RX ring");
+	ptnet_napi_schedule(pi);
 
 	return 0;
 
