@@ -84,7 +84,11 @@ struct ptnet_info {
 	struct page *rx_pool;
 	int rx_pool_num;
 
+	/* Pass-through netmap adapter used by netmap. */
 	struct netmap_pt_guest_adapter *ptna;
+
+	/* Pass-through netmap adapter used by this driver. */
+	struct netmap_pt_guest_adapter drna;
 
 	struct napi_struct napi;
 
@@ -99,7 +103,7 @@ static void
 hang_tmr_callback(unsigned long arg)
 {
 	struct ptnet_info *pi = (struct ptnet_info *)arg;
-	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_adapter *na = &pi->drna.hwup.up;
 	struct netmap_kring *kring = &na->rx_rings[0];
 	struct netmap_ring *ring = kring->ring;
 	volatile struct paravirt_csb *csb = pi->csb;
@@ -181,16 +185,13 @@ static netdev_tx_t
 ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	/* Alternative way:
-	 *	struct netmap_adapter *na = &pi->ptna->hwup.up;
-	*/
 	int nfrags = skb_shinfo(skb)->nr_frags;
 	struct paravirt_csb *csb = pi->csb;
 	struct netmap_kring *kring;
 	struct xmit_copy_args a;
 	int f;
 
-	a.na = NA(netdev);
+	a.na = &pi->drna.hwup.up;
 	kring = &a.na->tx_rings[0];
 	a.ring = kring->ring;
 	a.lim = kring->nkr_num_slots - 1;
@@ -445,7 +446,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 {
 	struct ptnet_info *pi = container_of(napi, struct ptnet_info,
 					     napi);
-	struct netmap_adapter *na = &pi->ptna->hwup.up;
+	struct netmap_adapter *na = &pi->drna.hwup.up;
 	struct netmap_kring *kring = &na->rx_rings[0];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
@@ -815,54 +816,49 @@ static int
 ptnet_open(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na = NA(netdev);
+	struct netmap_adapter *na_driver = &pi->drna.hwup.up;
 	int ret;
+
 
 	D("%s: netif_running %u", __func__, netif_running(netdev));
 
-	netmap_adapter_get(na);
+	netmap_update_config(na_driver);
 
-	NMG_LOCK();
-
-	netmap_update_config(na);
-
-	ret = netmap_mem_finalize(na->nm_mem, na);
+	ret = netmap_mem_finalize(na_driver->nm_mem, na_driver);
 	if (ret) {
 		pr_err("netmap_mem_finalize() failed\n");
 		goto err_mem_finalize;
 	}
 
 	if (pi->backend_regifs == 0) {
-		ret = ptnet_nm_krings_create(na);
+		ret = ptnet_nm_krings_create(na_driver);
 		if (ret) {
 			pr_err("ptnet_nm_krings_create() failed\n");
 			goto err_mem_finalize;
 		}
 
-		ret = netmap_mem_rings_create(na);
+		ret = netmap_mem_rings_create(na_driver);
 		if (ret) {
 			pr_err("netmap_mem_rings_create() failed\n");
 			goto err_rings_create;
 		}
 
-		ret = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
+		ret = netmap_mem_get_lut(na_driver->nm_mem, &na_driver->na_lut);
 		if (ret) {
 			pr_err("netmap_mem_get_lut() failed\n");
 			goto err_get_lut;
 		}
 	}
 
-	ret = ptnet_do_nm_register(na, 1 /* on */,  0 /* not native */);
+	ret = ptnet_do_nm_register(na_driver, 1 /* on */,  0 /* not native */);
 	if (ret) {
 		goto err_register;
 	}
 
 	pi->backend_regifs ++;
 
-	NMG_UNLOCK();
-
 	{
-		unsigned int nm_buf_size = NETMAP_BUF_SIZE(na);
+		unsigned int nm_buf_size = NETMAP_BUF_SIZE(na_driver);
 
 		BUG_ON(nm_buf_size == 0);
 		pi->min_tx_slots = 65536 / nm_buf_size + 2;
@@ -899,13 +895,12 @@ ptnet_open(struct net_device *netdev)
 	return 0;
 
 err_register:
-	memset(&na->na_lut, 0, sizeof(na->na_lut));
+	memset(&na_driver->na_lut, 0, sizeof(na_driver->na_lut));
 err_get_lut:
-	netmap_mem_rings_delete(na);
+	netmap_mem_rings_delete(na_driver);
 err_rings_create:
-	netmap_hw_krings_delete(na);
+	ptnet_nm_krings_delete(na_driver);
 err_mem_finalize:
-	netmap_adapter_put(na);
 	NMG_UNLOCK();
 	return -ret;
 }
@@ -921,7 +916,7 @@ static int
 ptnet_close(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na = NA(netdev);
+	struct netmap_adapter *na_driver = &pi->drna.hwup.up;
 
 	D("%s: netif_running %u", __func__, netif_running(netdev));
 
@@ -933,23 +928,16 @@ ptnet_close(struct net_device *netdev)
 
 	netif_tx_disable(netdev);
 	napi_disable(&pi->napi);
-	//synchronize_irq(pi->pdev->irq);
-
-	NMG_LOCK();
 
 	pi->backend_regifs --;
 
-	ptnet_do_nm_register(na, 0 /* off */,  0 /* not native */);
+	ptnet_do_nm_register(na_driver, 0 /* off */,  0 /* not native */);
 
 	if (pi->backend_regifs == 0) {
-		netmap_mem_rings_delete(na);
-		ptnet_nm_krings_delete(na);
+		netmap_mem_rings_delete(na_driver);
+		ptnet_nm_krings_delete(na_driver);
 	}
-	netmap_mem_deref(na->nm_mem, na);
-
-	NMG_UNLOCK();
-
-	netmap_adapter_put(na);
+	netmap_mem_deref(na_driver->nm_mem, na_driver);
 
 	pr_info("%s: %p\n", __func__, pi);
 
@@ -971,24 +959,45 @@ static const struct net_device_ops ptnet_netdev_ops = {
 static int
 ptnet_nm_krings_create(struct netmap_adapter *na)
 {
+	/* Here (na == &pi->ptna->hwup.up || na == &pi->drna.hwup.up). */
 	struct ptnet_info *pi = netdev_priv(na->ifp);
-	int ret = 0;
+	struct netmap_adapter *na_netmap = &pi->ptna->hwup.up;
+	struct netmap_adapter *na_driver = &pi->drna.hwup.up;
+	int ret;
 
-	if (pi->backend_regifs == 0) {
-		ret = netmap_hw_krings_create(na);
+	if (pi->backend_regifs) {
+		return 0;
 	}
 
-	return ret;
+	/* Create krings on the public netmap adapter. */
+	ret = netmap_hw_krings_create(na_netmap);
+	if (ret) {
+		return ret;
+	}
+
+	/* Copy krings into the netmap adapter private to the driver. */
+	na_driver->tx_rings = na_netmap->tx_rings;
+	na_driver->rx_rings = na_netmap->rx_rings;
+
+	return 0;
 }
 
 static void
 ptnet_nm_krings_delete(struct netmap_adapter *na)
 {
+	/* Here (na == &pi->ptna->hwup.up || na == &pi->drna.hwup.up). */
 	struct ptnet_info *pi = netdev_priv(na->ifp);
+	struct netmap_adapter *na_netmap = &pi->ptna->hwup.up;
+	struct netmap_adapter *na_driver = &pi->drna.hwup.up;
 
-	if (pi->backend_regifs == 0) {
-		netmap_hw_krings_delete(na);
+	if (pi->backend_regifs) {
+		return;
 	}
+
+	na_driver->tx_rings = NULL;
+	na_driver->rx_rings = NULL;
+
+	netmap_hw_krings_delete(na_netmap);
 }
 
 static uint32_t
@@ -1328,7 +1337,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	device_set_wakeup_enable(&pi->pdev->dev, 0);
 
-	//synchronize_irq(pi->pdev->irq);
 	err = ptnet_irqs_init(pi);
 	if (err) {
 		goto err_irqs;
@@ -1348,6 +1356,17 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * pointer. */
 	pi->ptna = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
 	pi->ptna->csb = pi->csb;
+
+	/* Initialize a separate pass-through netmap adapter that is going to
+	 * be used by this driver only, and so never exposed to netmap. We
+	 * only need a subset of the available fields. */
+	memset(&pi->drna, 0, sizeof(pi->drna));
+	pi->drna.hwup.up.ifp = pi->netdev;
+	pi->drna.hwup.up.nm_mem = pi->ptna->hwup.up.nm_mem;
+	netmap_mem_get(pi->drna.hwup.up.nm_mem);
+	pi->drna.hwup.up.nm_config = ptnet_nm_config;
+	pi->drna.pv_ops = pi->ptna->pv_ops;
+	pi->drna.csb = pi->csb;
 
 	pi->backend_regifs = 0;
 
@@ -1391,6 +1410,9 @@ ptnet_remove(struct pci_dev *pdev)
 	struct ptnet_info *pi = netdev_priv(netdev);
 
 	netif_carrier_off(netdev);
+
+	netmap_mem_put(pi->drna.hwup.up.nm_mem);
+	memset(&pi->drna, 0, sizeof(pi->drna));
 
 	netmap_detach(netdev);
 
