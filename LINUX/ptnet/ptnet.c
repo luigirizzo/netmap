@@ -804,8 +804,7 @@ ptnet_ioregs_dump(struct ptnet_info *pi)
 static int ptnet_nm_krings_create(struct netmap_adapter *na);
 static void ptnet_nm_krings_delete(struct netmap_adapter *na);
 
-static int ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
-				int native);
+static int ptnet_nm_register(struct netmap_adapter *na, int onoff);
 /*
  * ptnet_open - Called when a network interface is made active
  *
@@ -850,7 +849,7 @@ ptnet_open(struct net_device *netdev)
 		}
 	}
 
-	ret = ptnet_do_nm_register(na_driver, 1 /* on */,  0 /* not native */);
+	ret = ptnet_nm_register(na_driver, 1 /* on */);
 	if (ret) {
 		goto err_register;
 	}
@@ -931,7 +930,7 @@ ptnet_close(struct net_device *netdev)
 
 	pi->backend_regifs --;
 
-	ptnet_do_nm_register(na_driver, 0 /* off */,  0 /* not native */);
+	ptnet_nm_register(na_driver, 0 /* off */);
 
 	if (pi->backend_regifs == 0) {
 		netmap_mem_rings_delete(na_driver);
@@ -1018,8 +1017,7 @@ static struct netmap_pt_guest_ops ptnet_nm_pt_guest_ops = {
 };
 
 static int
-ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
-		     int native)
+ptnet_nm_register(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_pt_guest_adapter *ptna =
 			(struct netmap_pt_guest_adapter *)na;
@@ -1027,10 +1025,13 @@ ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 	/* device-specific */
 	struct net_device *netdev = na->ifp;
 	struct ptnet_info *pi = netdev_priv(netdev);
+	int native = (na == &pi->ptna->hwup.up);
 	struct paravirt_csb *csb = ptna->csb;
 	enum txrx t;
 	int ret = 0;
 	int i;
+
+	BUG_ON(!(na == &pi->ptna->hwup.up || na == &pi->drna.hwup.up));
 
 	/* If this is the last netmap client, guest interrupt enable flags may
 	 * be in arbitrary state. Since these flags are going to be used also
@@ -1038,7 +1039,7 @@ ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 	 * notifications enabled. Also, schedule NAPI to flush pending packets
 	 * in the RX rings, since we will not receive further interrupts
 	 * until these will be processed. */
-	if (na->active_fds == 0 && !onoff && native) {
+	if (native && !onoff && na->active_fds == 0) {
 		D("Exit netmap mode, re-enable interrupts");
 		csb->guest_need_txkick = csb->guest_need_rxkick = 1;
 		if (netif_running(netdev)) {
@@ -1108,12 +1109,6 @@ ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 	}
 out:
 	return ret;
-}
-
-static int
-ptnet_nm_register(struct netmap_adapter *na, int onoff)
-{
-	return ptnet_do_nm_register(na, onoff, 1);
 }
 
 static int
