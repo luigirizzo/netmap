@@ -371,6 +371,22 @@ ptnet_tx_intr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static inline void
+ptnet_napi_schedule(struct ptnet_info *pi)
+{
+	/* Disable RX interrupts and schedule NAPI. */
+
+	if (likely(napi_schedule_prep(&pi->napi))) {
+		/* It's good thing to reset guest_need_rxkick as soon as
+		 * possible. */
+		pi->csb->guest_need_rxkick = 0;
+		__napi_schedule(&pi->napi);
+	} else {
+		/* NAPI is already scheduled and we are ok with it. */
+		pi->csb->guest_need_rxkick = 1;
+	}
+}
+
 /*
  * ptnet_rx_intr - Interrupt handler for RX queues
  * @irq: interrupt number
@@ -388,16 +404,7 @@ ptnet_rx_intr(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
-	/* Disable interrupts and schedule NAPI. */
-	if (likely(napi_schedule_prep(&pi->napi))) {
-		/* It's good thing to reset guest_need_rxkick as soon as
-		 * possible. */
-		pi->csb->guest_need_rxkick = 0;
-		__napi_schedule(&pi->napi);
-	} else {
-		/* This should not happen, probably. */
-		pi->csb->guest_need_rxkick = 1;
-	}
+	ptnet_napi_schedule(pi);
 
 	return IRQ_HANDLED;
 }
@@ -645,11 +652,10 @@ out_of_slots:
 
                 /* Double check for more completed RX slots. */
 		ptnet_sync_tail(&csb->rx_ring, kring);
-		if (head != ring->tail && napi_schedule_prep(napi)) {
+		if (head != ring->tail) {
 			/* If there is more work to do, disable notifications
 			 * and go ahead. */
-                        csb->guest_need_rxkick = 0;
-			__napi_schedule(napi);
+			ptnet_napi_schedule(pi);
                 }
 #ifdef HANGCTRL
 		if (mod_timer(&pi->hang_timer,
@@ -1022,9 +1028,16 @@ ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
 	/* If this is the last netmap client, guest interrupt enable flags may
 	 * be in arbitrary state. Since these flags are going to be used also
 	 * by the netdevice driver, we have to make sure to start with
-	 * notifications enabled. */
-	if (na->active_fds == 0) {
+	 * notifications enabled. Also, schedule NAPI to flush pending packets
+	 * in the RX rings, since we will not receive further interrupts
+	 * until these will be processed. */
+	if (na->active_fds == 0 && !onoff && native) {
+		D("Exit netmap mode, re-enable interrupts");
 		csb->guest_need_txkick = csb->guest_need_rxkick = 1;
+		if (netif_running(netdev)) {
+			D("Exit netmap mode, schedule NAPI to flush RX ring");
+			ptnet_napi_schedule(pi);
+		}
 	}
 
 	if (onoff) {
