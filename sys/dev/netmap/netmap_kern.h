@@ -92,9 +92,9 @@
 #define	NM_SELINFO_T	struct nm_selinfo
 #define NM_SELRECORD_T	struct thread
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
-#define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
 #define MBUF_TXQ(m)	((m)->m_pkthdr.flowid)
 #define MBUF_TRANSMIT(na, ifp, m)	((na)->if_transmit(ifp, m))
+#define	GEN_TX_MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
 
 #define NM_ATOMIC_T	volatile int	// XXX ?
 /* atomic operations */
@@ -145,7 +145,6 @@ struct hrtimer {
 #define	NM_LOCK_T	safe_spinlock_t	// see bsd_glue.h
 #define	NM_SELINFO_T	wait_queue_head_t
 #define	MBUF_LEN(m)	((m)->len)
-#define	MBUF_IFP(m)	((m)->dev)
 #define MBUF_TRANSMIT(na, ifp, m)							\
 	({										\
 		/* Avoid infinite recursion with generic. */				\
@@ -153,6 +152,9 @@ struct hrtimer {
 		(((struct net_device_ops *)(na)->if_transmit)->ndo_start_xmit(m, ifp));	\
 		0;									\
 	})
+
+/* See explanation in nm_os_generic_xmit_frame. */
+#define	GEN_TX_MBUF_IFP(m)	((struct ifnet *)skb_shinfo(m)->destructor_arg)
 
 #define NM_ATOMIC_T	volatile long unsigned int
 

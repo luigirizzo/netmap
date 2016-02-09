@@ -688,7 +688,14 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	 * much as possible. */
 	NM_ATOMIC_INC(&m->users);
 
+	/* On linux m->dev is not reliable, since it can be changed by the
+	 * ndo_start_xmit() callback. This happens, for instance, with veth
+	 * and bridge drivers. For this reason, the nm_os_generic_xmit_frame()
+	 * implementation for linux stores a copy of m->dev into the
+	 * destructor_arg field. */
 	m->dev = a->ifp;
+	skb_shinfo(m)->destructor_arg = m->dev;
+
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
 	skb_set_queue_mapping(m, a->ring_nr);
 	m->priority = a->qevent ? NM_MAGIC_PRIORITY_TXQE : NM_MAGIC_PRIORITY_TX;

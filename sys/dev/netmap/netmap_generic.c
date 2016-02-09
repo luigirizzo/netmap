@@ -514,7 +514,7 @@ out:
 static void
 generic_mbuf_destructor(struct mbuf *m)
 {
-	struct netmap_adapter *na = NA(MBUF_IFP(m));
+	struct netmap_adapter *na = NA(GEN_TX_MBUF_IFP(m));
 	struct netmap_kring *kring;
 	unsigned int r = MBUF_TXQ(m);
 
