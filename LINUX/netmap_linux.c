@@ -670,19 +670,24 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 int
 nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
-	struct sk_buff *m = a->m;
+	struct mbuf *m = a->m;
 	u_int len = a->len;
 	netdev_tx_t ret;
 
-	/* Empty the sk_buff. */
+	/* Empty the mbuf. */
 	if (unlikely(skb_headroom(m)))
 		skb_push(m, skb_headroom(m));
 	skb_trim(m, 0);
 
-	/* TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
+	/* Copy a netmap buffer into the mbuf.
+	 * TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
 	skb_copy_to_linear_data(m, a->addr, len); // skb_store_bits(m, 0, addr, len);
 	skb_put(m, len);
+
+	/* Hold a reference on this, we are going to recycle mbufs as
+	 * much as possible. */
 	NM_ATOMIC_INC(&m->users);
+
 	m->dev = a->ifp;
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
 	skb_set_queue_mapping(m, a->ring_nr);
