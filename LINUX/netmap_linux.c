@@ -295,45 +295,58 @@ nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
  * stolen.
  */
 #ifdef NETMAP_LINUX_HAVE_RX_REGISTER
-#ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
-static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
+enum {
+	NM_RX_HANDLER_STOLEN,
+	NM_RX_HANDLER_PASS,
+};
+
+static inline int
+linux_generic_rx_handler_common(struct mbuf *m)
 {
 	int stolen;
 
 	/* If we were called by NM_SEND_UP(), we want to pass the mbuf
 	   to network stack. We detect this situation looking at the
 	   priority field. */
-	if ((*pm)->priority == NM_MAGIC_PRIORITY_RX)
-		return RX_HANDLER_PASS;
+	if (m->priority == NM_MAGIC_PRIORITY_RX) {
+		return NM_RX_HANDLER_PASS;
+	}
 
 	/* When we intercept a sk_buff coming from the driver, it happens that
 	   skb->data points to the IP header, e.g. the ethernet header has
 	   already been pulled. Since we want the netmap rings to contain the
 	   full ethernet header, we push it back, so that the RX ring reader
 	   can see it. */
-	skb_push(*pm, ETH_HLEN);
+	skb_push(m, ETH_HLEN);
 
 	/* Possibly steal the mbuf and notify the pollers for a new RX
 	 * packet. */
-	stolen = generic_rx_handler((*pm)->dev, *pm);
+	stolen = generic_rx_handler(m->dev, m);
 	if (stolen) {
-		return RX_HANDLER_CONSUMED;
+		return NM_RX_HANDLER_STOLEN;
 	}
 
-	skb_pull(*pm, ETH_HLEN);
+	skb_pull(m, ETH_HLEN);
 
-	return RX_HANDLER_PASS;
+	return NM_RX_HANDLER_PASS;
+}
+
+#ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
+static rx_handler_result_t
+linux_generic_rx_handler(struct mbuf **pm)
+{
+	int ret = linux_generic_rx_handler_common(*pm);
+
+	return likely(ret == NM_RX_HANDLER_STOLEN) ? RX_HANDLER_CONSUMED :
+						     RX_HANDLER_PASS;
 }
 #else /* ! HAVE_RX_HANDLER_RESULT */
-static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
+static struct sk_buff *
+linux_generic_rx_handler(struct mbuf *m)
 {
-	int stolen = generic_rx_handler(m->dev, m);
+	int ret = linux_generic_rx_handler_common(m);
 
-	if (stolen) {
-		return NULL;
-	}
-
-	return m;
+	return likely(ret == NM_RX_HANDLER_STOLEN) ? NULL : m;
 }
 #endif /* HAVE_RX_HANDLER_RESULT */
 #endif /* HAVE_RX_REGISTER */
