@@ -488,6 +488,12 @@ e1000_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
+static void
+e1000_ptnetmap_dtor(struct netmap_adapter *na)
+{
+	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
+}
+
 /*
  * CSB (Communication Status Block) setup
  * CSB is already allocated in e1000 (paravirt).
@@ -572,6 +578,8 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 		na.nm_txsync = e1000_ptnetmap_txsync;
 		na.nm_rxsync = e1000_ptnetmap_rxsync;
 		na.nm_bdg_attach = e1000_ptnetmap_bdg_attach; /* XXX */
+		na.nm_dtor = e1000_ptnetmap_dtor;
+
 		netmap_pt_guest_attach(&na, adapter->csb, &e1000_ptnetmap_ops);
 		e1000_ptnetmap_setup_csb(adapter);
 	} else

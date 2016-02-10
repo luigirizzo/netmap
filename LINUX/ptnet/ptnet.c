@@ -1176,6 +1176,12 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
+static void
+ptnet_nm_dtor(struct netmap_adapter *na)
+{
+	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
+}
+
 static struct netmap_adapter ptnet_nm_ops = {
 	.num_tx_desc = 1024,
 	.num_rx_desc = 1024,
@@ -1187,6 +1193,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 	.nm_rxsync = ptnet_nm_rxsync,
 	.nm_krings_create = ptnet_nm_krings_create,
 	.nm_krings_delete = ptnet_nm_krings_delete,
+	.nm_dtor = ptnet_nm_dtor,
 };
 
 /*

@@ -167,6 +167,7 @@ struct netmap_mem_d* netmap_mem_pt_guest_new(struct ifnet *,
 					     struct netmap_pt_guest_ops *);
 struct ptnetmap_memdev;
 struct netmap_mem_d* netmap_mem_pt_guest_attach(struct ptnetmap_memdev *, uint16_t);
+int netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *, struct ifnet *);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #define NETMAP_MEM_PRIVATE	0x2	/* allocator uses private address space */

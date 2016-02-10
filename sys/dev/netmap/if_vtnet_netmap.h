@@ -727,6 +727,7 @@ vtnet_ptnetmap_dtor(struct netmap_adapter *na)
         struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *sc = ifp->if_softc;
 
+	netmap_mem_pt_guest_ifp_del(na->nm_mem, ifp);
         vtnet_ptnetmap_free_csb(sc);
 }
 

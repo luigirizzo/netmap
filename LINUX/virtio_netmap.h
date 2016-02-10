@@ -26,6 +26,7 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
+#include <netmap/netmap_mem2.h>
 #include <linux/virtio_ring.h>
 
 #ifdef WITH_PTNETMAP_GUEST
@@ -1044,6 +1045,7 @@ virtio_ptnetmap_dtor(struct netmap_adapter *na)
 	struct ifnet *ifp = na->ifp;
 	struct virtnet_info *vi = netdev_priv(ifp);
 
+	netmap_mem_pt_guest_ifp_del(na->nm_mem, ifp);
 	virtio_ptnetmap_free_csb(vi);
 }
 
