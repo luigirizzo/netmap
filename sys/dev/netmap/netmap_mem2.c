@@ -2285,20 +2285,48 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 	return nmd;
 }
 
+
+static int
+netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
+			    unsigned int nifp_offset,
+			    struct netmap_pt_guest_ops *pv_ops)
+{
+	return ENOMEM;
+}
+
 /* Called when ptnetmap device (virtio/e1000) is attaching */
 struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
+			struct paravirt_csb *csb,
 			struct netmap_pt_guest_ops *pv_ops)
 {
+	struct netmap_mem_d *nmd;
 	nm_memid_t host_id;
+	int err;
 
-	if (ifp == NULL || pv_ops == NULL)
+	if (ifp == NULL || pv_ops == NULL) {
 		return NULL;
+	}
 
-	/* get the host id allocator */
+	/* Ask the device to fill in some configuration fields. Here we
+	 * just need nifp_offset. */
+	err = pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	if (err) {
+		D("Failed to get nifp_offset from passthrough device");
+		return NULL;
+	}
+
+	/* Get the host id allocator. */
 	host_id = pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_HOSTMEMID);
 
-	return netmap_mem_pt_guest_get(host_id);
+	nmd = netmap_mem_pt_guest_get(host_id);
+
+	if (nmd) {
+		netmap_mem_pt_guest_ifp_add(nmd, ifp, csb->nifp_offset,
+					    pv_ops);
+	}
+
+	return nmd;
 }
 
 #endif /* WITH_PTNETMAP_GUEST */

@@ -1345,7 +1345,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Attach a guest pass-through netmap adapter to this device. */
 	na_arg = ptnet_nm_ops;
 	na_arg.ifp = pi->netdev;
-	netmap_pt_guest_attach(&na_arg, &ptnet_nm_pt_guest_ops);
+	netmap_pt_guest_attach(&na_arg, pi->csb, &ptnet_nm_pt_guest_ops);
 	/* Now a netmap adapter for this device has been allocated, and it
 	 * can be accessed through NA(ifp). We have to initialize the CSB
 	 * pointer. */

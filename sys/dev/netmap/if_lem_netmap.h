@@ -692,7 +692,7 @@ lem_netmap_attach(struct adapter *adapter)
 		na.nm_txsync = lem_ptnetmap_txsync;
 		na.nm_rxsync = lem_ptnetmap_rxsync;
 		na.nm_bdg_attach = lem_ptnetmap_bdg_attach; /* XXX */
-		netmap_pt_guest_attach(&na, &lem_ptnetmap_ops);
+		netmap_pt_guest_attach(&na, adapter->csb, &lem_ptnetmap_ops);
 		lem_ptnetmap_setup_csb(adapter);
 	} else
 #endif /* NIC_PTNETMAP && defined WITH_PTNETMAP_GUEST */

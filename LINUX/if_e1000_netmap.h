@@ -572,7 +572,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 		na.nm_txsync = e1000_ptnetmap_txsync;
 		na.nm_rxsync = e1000_ptnetmap_rxsync;
 		na.nm_bdg_attach = e1000_ptnetmap_bdg_attach; /* XXX */
-		netmap_pt_guest_attach(&na, &e1000_ptnetmap_ops);
+		netmap_pt_guest_attach(&na, adapter->csb, &e1000_ptnetmap_ops);
 		e1000_ptnetmap_setup_csb(adapter);
 	} else
 #endif /* CONFIG_E1000_NETMAP_PT && WITH_PTNETMAP_GUEST */

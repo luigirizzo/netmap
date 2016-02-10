@@ -739,32 +739,23 @@ virtio_ptnetmap_ioread4(struct virtio_device *vdev, uint32_t addr)
  * CSB is the shared memory used by the netmap instance running in the guest
  * and the ptnetmap kthreads in the host.
  * The CSBBAH/CSBBAL registers must be added to the virtio-net device.
- *
- * Must be called after netmap_pt_guest_attach(), so that NA(ifp)
- * points to the attached adapter.
  */
-static int
+static struct paravirt_csb *
 virtio_ptnetmap_alloc_csb(struct virtnet_info *vi)
 {
 	struct virtio_device *vdev = vi->vdev;
-	struct ifnet *ifp = vi->dev;
-	struct netmap_pt_guest_adapter* ptna =
-		(struct netmap_pt_guest_adapter *)NA(ifp);
+	struct paravirt_csb *csb;
 
 	phys_addr_t csb_phyaddr;
 
-	if (ptna->csb)
-		return 0;
-
-	ptna->csb = kmalloc(NET_PARAVIRT_CSB_SIZE, GFP_KERNEL | __GFP_ZERO);
-	if (!ptna->csb) {
-		D("Communication Status Block allocation failed!");
-		return -ENOMEM;
+	csb = kmalloc(NET_PARAVIRT_CSB_SIZE, GFP_KERNEL | __GFP_ZERO);
+	if (!csb) {
+		D("Communication Status Block allocation failed");
+		return NULL;
 	}
-	csb_phyaddr = virt_to_phys(ptna->csb);
+	csb_phyaddr = virt_to_phys(csb);
 
-	//ptna->msix_enabled = ?
-	ptna->csb->guest_csb_on = 1;
+	csb->guest_csb_on = 1;
 
 	/* Tell the device the CSB physical address. */
 	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAH,
@@ -772,7 +763,7 @@ virtio_ptnetmap_alloc_csb(struct virtnet_info *vi)
 	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_CSBBAL,
 			(csb_phyaddr & 0x00000000ffffffffULL));
 
-	return 0;
+	return csb;
 }
 
 /*
@@ -1084,6 +1075,9 @@ virtio_netmap_attach(struct virtnet_info *vi)
 	if (passthrough &&
 		virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
 			(virtio_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
+		struct netmap_pt_guest_adapter* ptna;
+		struct paravirt_csb *csb;
+
 		D("ptnetmap supported");
 		na.nm_register = virtio_ptnetmap_reg;
 		na.nm_txsync = virtio_ptnetmap_txsync;
@@ -1092,8 +1086,14 @@ virtio_netmap_attach(struct virtnet_info *vi)
 		na.nm_dtor = virtio_ptnetmap_dtor;
 		na.nm_bdg_attach = virtio_ptnetmap_bdg_attach; /* XXX */
 
-		netmap_pt_guest_attach(&na, &virtio_ptnetmap_ops);
-		virtio_ptnetmap_alloc_csb(vi);
+		csb = virtio_ptnetmap_alloc_csb(vi);
+		if (!csb) {
+			return;
+		}
+
+		netmap_pt_guest_attach(&na, csb, &virtio_ptnetmap_ops);
+		ptna = (struct netmap_pt_guest_adapter *)NA(vi->dev);
+		ptna->csb = csb;
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	{
