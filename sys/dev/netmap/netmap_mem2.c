@@ -1918,7 +1918,7 @@ struct netmap_mem_ptg {
 	struct netmap_lut buf_lut;      /* lookup table for BUF pool in the guest */
 	nm_memid_t nm_host_id;          /* allocator identifier in the host */
 	struct ptnetmap_memdev *ptn_dev;
-	struct mem_pt_if *pt_ifs;		/* list of interfaces in passthrough */
+	struct mem_pt_if *pt_ifs;	/* list of interfaces in passthrough */
 };
 
 /* Link a passthrough interface to a passthrough netmap allocator. */
@@ -1997,7 +1997,7 @@ netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *nmd, struct ifnet *ifp)
 static int
 netmap_mem_pt_guest_read_shared_info(struct netmap_mem_d *nmd)
 {
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
+	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 	struct netmap_mem_shared_info *nms_info;
 	uint32_t bufsize;
 	uint32_t nbuffers;
@@ -2005,7 +2005,7 @@ netmap_mem_pt_guest_read_shared_info(struct netmap_mem_d *nmd)
 	vm_paddr_t paddr;
 	int i;
 
-        nms_info = (struct netmap_mem_shared_info *)pv->nm_addr;
+        nms_info = (struct netmap_mem_shared_info *)ptnmd->nm_addr;
         if (strncmp(nms_info->up.ni_name, NMS_NAME, sizeof(NMS_NAME)) != 0) {
             D("error, the first slot does not contain shared info");
             return EINVAL;
@@ -2021,28 +2021,28 @@ netmap_mem_pt_guest_read_shared_info(struct netmap_mem_d *nmd)
         nbuffers = nms_info->buf_pool_objtotal;
 
 	/* allocate the lut */
-	if (pv->buf_lut.lut == NULL) {
+	if (ptnmd->buf_lut.lut == NULL) {
 		D("allocating lut");
-		pv->buf_lut.lut = nm_alloc_lut(nbuffers);
-		if (pv->buf_lut.lut == NULL) {
+		ptnmd->buf_lut.lut = nm_alloc_lut(nbuffers);
+		if (ptnmd->buf_lut.lut == NULL) {
 			D("lut allocation failed");
 			return ENOMEM;
 		}
 	}
 
 	/* we have physically contiguous memory mapped through PCI BAR */
-        vaddr = (char *)(pv->nm_addr) + nms_info->buf_pool_offset;
-	paddr = pv->nm_paddr + nms_info->buf_pool_offset;
+        vaddr = (char *)(ptnmd->nm_addr) + nms_info->buf_pool_offset;
+	paddr = ptnmd->nm_paddr + nms_info->buf_pool_offset;
 
 	for (i = 0; i < nbuffers; i++) {
-		pv->buf_lut.lut[i].vaddr = vaddr;
-		pv->buf_lut.lut[i].paddr = paddr;
+		ptnmd->buf_lut.lut[i].vaddr = vaddr;
+		ptnmd->buf_lut.lut[i].paddr = paddr;
 		vaddr += bufsize;
 		paddr += bufsize;
 	}
 
-	pv->buf_lut.objtotal = nbuffers;
-	pv->buf_lut.objsize = bufsize;
+	ptnmd->buf_lut.objtotal = nbuffers;
+	ptnmd->buf_lut.objsize = bufsize;
 
         nmd->nm_totalsize = nms_info->totalsize;
 
@@ -2052,18 +2052,19 @@ netmap_mem_pt_guest_read_shared_info(struct netmap_mem_d *nmd)
 static int
 netmap_mem_pt_guest_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 {
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
+	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 
 	if (!(nmd->flags & NETMAP_MEM_FINALIZED)) {
 		return EINVAL;
 	}
 
-	*lut = pv->buf_lut;
+	*lut = ptnmd->buf_lut;
 	return 0;
 }
 
 static int
-netmap_mem_pt_guest_get_info(struct netmap_mem_d *nmd, u_int *size, u_int *memflags, uint16_t *id)
+netmap_mem_pt_guest_get_info(struct netmap_mem_d *nmd, u_int *size,
+			     u_int *memflags, uint16_t *id)
 {
 	int error = 0;
 
@@ -2089,10 +2090,10 @@ out:
 static vm_paddr_t
 netmap_mem_pt_guest_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
 {
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
+	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 	vm_paddr_t paddr;
 	/* if the offset is valid, just return csb->base_addr + off */
-	paddr = (vm_paddr_t)(pv->nm_paddr + off);
+	paddr = (vm_paddr_t)(ptnmd->nm_paddr + off);
 	ND("off %lx padr %lx", off, (unsigned long)paddr);
 	return paddr;
 }
@@ -2109,7 +2110,7 @@ netmap_mem_pt_guest_config(struct netmap_mem_d *nmd)
 static int
 netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 {
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
+	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 	int error = 0;
 
 	nmd->active++;
@@ -2117,13 +2118,14 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		goto out;
 
-	if (pv->ptn_dev == NULL) {
+	if (ptnmd->ptn_dev == NULL) {
 		D("ptnetmap memdev not attached");
 		error = ENOMEM;
 		goto err;
 	}
 	/* map memory through ptnetmap-memdev BAR */
-	error = nm_os_pt_memdev_iomap(pv->ptn_dev, &pv->nm_paddr, &pv->nm_addr);
+	error = nm_os_pt_memdev_iomap(ptnmd->ptn_dev, &ptnmd->nm_paddr,
+				      &ptnmd->nm_addr);
 	if (error)
 		goto err;
 
@@ -2143,27 +2145,27 @@ err:
 static void
 netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd)
 {
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
+	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 
 	nmd->active--;
 	if (nmd->active <= 0 &&
 		(nmd->flags & NETMAP_MEM_FINALIZED)) {
 	    nmd->flags  &= ~NETMAP_MEM_FINALIZED;
 	    /* unmap ptnetmap-memdev memory */
-	    if (pv->ptn_dev) {
-		nm_os_pt_memdev_iounmap(pv->ptn_dev);
+	    if (ptnmd->ptn_dev) {
+		nm_os_pt_memdev_iounmap(ptnmd->ptn_dev);
 	    }
-	    pv->nm_addr = 0;
-	    pv->nm_paddr = 0;
+	    ptnmd->nm_addr = 0;
+	    ptnmd->nm_paddr = 0;
 	}
 }
 
 static ssize_t
 netmap_mem_pt_guest_if_offset(struct netmap_mem_d *nmd, const void *vaddr)
 {
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)nmd;
+	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 
-	return (const char *)(vaddr) - (char *)(pv->nm_addr);
+	return (const char *)(vaddr) - (char *)(ptnmd->nm_addr);
 }
 
 static void
@@ -2185,22 +2187,24 @@ netmap_mem_pt_guest_delete(struct netmap_mem_d *nmd)
 static struct netmap_if *
 netmap_mem_pt_guest_if_new(struct netmap_adapter *na)
 {
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)na->nm_mem;
-	struct mem_pt_if *ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
+	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)na->nm_mem;
+	struct mem_pt_if *ptif;
 
+	ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
 	if (ptif == NULL) {
 		D("Error: interface %p is not in passthrough", na->ifp);
 		return NULL;
 	}
 
-	return (struct netmap_if *)((char *)(pv->nm_addr) + ptif->nifp_offset);
+	return (struct netmap_if *)((char *)(ptnmd->nm_addr) + ptif->nifp_offset);
 }
 
 static void
 netmap_mem_pt_guest_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 {
-	struct mem_pt_if *ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
+	struct mem_pt_if *ptif;
 
+	ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
 	if (ptif == NULL) {
 		D("Error: interface %p is not in passthrough", na->ifp);
 		return;
@@ -2212,7 +2216,7 @@ netmap_mem_pt_guest_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 static int
 netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 {
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)na->nm_mem;
+	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)na->nm_mem;
 	struct mem_pt_if *ptif;
 	struct netmap_if *nifp;
 	int i, error = -1;
@@ -2227,7 +2231,7 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 
 
 	/* point each kring to the corresponding backend ring */
-	nifp = (struct netmap_if *)((char *)pv->nm_addr + ptif->nifp_offset);
+	nifp = (struct netmap_if *)((char *)ptnmd->nm_addr + ptif->nifp_offset);
 	for (i = 0; i <= na->num_tx_rings; i++) {
 		struct netmap_kring *kring = na->tx_rings + i;
 		if (kring->ring)
@@ -2257,7 +2261,7 @@ netmap_mem_pt_guest_rings_delete(struct netmap_adapter *na)
 {
 	/* TODO: remove?? */
 #if 0
-	struct netmap_mem_ptg *pv = (struct netmap_mem_ptg *)na->nm_mem;
+	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)na->nm_mem;
 	struct mem_pt_if *ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem,
 								na->ifp);
 #endif
@@ -2302,33 +2306,33 @@ netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 static struct netmap_mem_d *
 netmap_mem_pt_guest_create(nm_memid_t host_id)
 {
-	struct netmap_mem_ptg *pv;
+	struct netmap_mem_ptg *ptnmd;
 	int err = 0;
 
-	pv = malloc(sizeof(struct netmap_mem_ptg),
+	ptnmd = malloc(sizeof(struct netmap_mem_ptg),
 			M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (pv == NULL) {
+	if (ptnmd == NULL) {
 		err = ENOMEM;
 		goto error;
 	}
 
-	pv->up.ops = &netmap_mem_pt_guest_ops;
-	pv->nm_host_id = host_id;
-	pv->pt_ifs = NULL;
+	ptnmd->up.ops = &netmap_mem_pt_guest_ops;
+	ptnmd->nm_host_id = host_id;
+	ptnmd->pt_ifs = NULL;
 
         /* Assign new id in the guest (We have the lock) */
-	err = nm_mem_assign_id_locked(&pv->up);
+	err = nm_mem_assign_id_locked(&ptnmd->up);
 	if (err)
 		goto error;
 
-	pv->up.flags &= ~NETMAP_MEM_FINALIZED;
-	pv->up.flags |= NETMAP_MEM_IO;
+	ptnmd->up.flags &= ~NETMAP_MEM_FINALIZED;
+	ptnmd->up.flags |= NETMAP_MEM_IO;
 
-	NMA_LOCK_INIT(&pv->up);
+	NMA_LOCK_INIT(&ptnmd->up);
 
-	return &pv->up;
+	return &ptnmd->up;
 error:
-	netmap_mem_pt_guest_delete(&pv->up);
+	netmap_mem_pt_guest_delete(&ptnmd->up);
 	return NULL;
 }
 
@@ -2352,26 +2356,27 @@ netmap_mem_pt_guest_get(nm_memid_t host_id)
 }
 
 /*
- * The guest allocator can be created by ptnetmap_memdev (during the device attach) or
- * by ptnetmap device (e1000/virtio), during the netmap_attach.
+ * The guest allocator can be created by ptnetmap_memdev (during the device
+ * attach) or by ptnetmap device (e1000/virtio), during the netmap_attach.
  *
  * The order is not important (we have different order in LINUX and FreeBSD).
  * The first one, creates the device, and the second one simply attaches it.
  */
 
-/* Called when ptnetmap_memdev is attaching, to attach a new allocator in the guest */
+/* Called when ptnetmap_memdev is attaching, to attach a new allocator in
+ * the guest */
 struct netmap_mem_d *
 netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 {
 	struct netmap_mem_d *nmd;
-	struct netmap_mem_ptg *pv;
+	struct netmap_mem_ptg *ptnmd;
 
 	nmd = netmap_mem_pt_guest_get(host_id);
 
 	/* assign this device to the guest allocator */
 	if (nmd) {
-		pv = (struct netmap_mem_ptg *)nmd;
-		pv->ptn_dev = ptn_dev;
+		ptnmd = (struct netmap_mem_ptg *)nmd;
+		ptnmd->ptn_dev = ptn_dev;
 	}
 
 	return nmd;
