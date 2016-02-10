@@ -1367,7 +1367,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->ptna_dr.hwup.up.nm_mem = pi->ptna_nm->hwup.up.nm_mem;
 	netmap_mem_get(pi->ptna_dr.hwup.up.nm_mem);
 	pi->ptna_dr.hwup.up.nm_config = ptnet_nm_config;
-	pi->ptna_dr.pv_ops = pi->ptna_nm->pv_ops;
 	pi->ptna_dr.csb = pi->csb;
 
 	pi->backend_regifs = 0;

@@ -2030,8 +2030,6 @@ struct netmap_pt_guest_ops {
  */
 struct netmap_pt_guest_adapter {
 	struct netmap_hw_adapter hwup;
-
-	struct netmap_pt_guest_ops *pv_ops;
 	struct paravirt_csb *csb;
 };
 

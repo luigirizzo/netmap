@@ -2876,7 +2876,6 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 	/* get the netmap_pt_guest_adapter */
 	ptna = (struct netmap_pt_guest_adapter *) NA(ifp);
 	ptna->csb = csb;
-	ptna->pv_ops = pv_ops;
 
 	return 0;
 }
