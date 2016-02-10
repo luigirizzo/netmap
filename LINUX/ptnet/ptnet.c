@@ -1015,14 +1015,11 @@ ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
 static int
 ptnet_nm_register(struct netmap_adapter *na, int onoff)
 {
-	struct netmap_pt_guest_adapter *ptna_nm =
-			(struct netmap_pt_guest_adapter *)na;
-
 	/* device-specific */
 	struct net_device *netdev = na->ifp;
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int native = (na == &pi->ptna_nm->hwup.up);
-	struct paravirt_csb *csb = ptna_nm->csb;
+	struct paravirt_csb *csb = pi->csb;
 	enum txrx t;
 	int ret = 0;
 	int i;
