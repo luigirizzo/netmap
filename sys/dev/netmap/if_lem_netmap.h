@@ -646,9 +646,6 @@ lem_ptnetmap_dtor(struct netmap_adapter *na)
 	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
 }
 
-static struct netmap_pt_guest_ops lem_ptnetmap_ops = {
-	.nm_ptctl = lem_ptnetmap_ptctl,
-};
 /* XXX: these warning affect proper kernel compilation
 #elif defined (NIC_PTNETMAP)
 #warning "if_lem supports ptnetmap but netmap does not support it"
@@ -686,7 +683,7 @@ lem_netmap_attach(struct adapter *adapter)
 		na.nm_bdg_attach = lem_ptnetmap_bdg_attach; /* XXX */
 		na.nm_dtor = lem_ptnetmap_dtor;
 
-		netmap_pt_guest_attach(&na, adapter->csb, &lem_ptnetmap_ops);
+		netmap_pt_guest_attach(&na, adapter->csb, lem_ptnetmap_ptctl);
 	} else
 #endif /* NIC_PTNETMAP && defined WITH_PTNETMAP_GUEST */
 		netmap_attach(&na);

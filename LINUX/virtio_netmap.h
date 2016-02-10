@@ -1049,9 +1049,6 @@ virtio_ptnetmap_dtor(struct netmap_adapter *na)
 	virtio_ptnetmap_free_csb(vi);
 }
 
-static struct netmap_pt_guest_ops virtio_ptnetmap_ops = {
-	.nm_ptctl = virtio_ptnetmap_ptctl,
-};
 #endif /* WITH_PTNETMAP_GUEST */
 
 static void
@@ -1092,7 +1089,7 @@ virtio_netmap_attach(struct virtnet_info *vi)
 			return;
 		}
 
-		netmap_pt_guest_attach(&na, csb, &virtio_ptnetmap_ops);
+		netmap_pt_guest_attach(&na, csb, virtio_ptnetmap_ptctl);
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	{

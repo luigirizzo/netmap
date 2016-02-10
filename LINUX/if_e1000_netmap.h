@@ -526,9 +526,6 @@ e1000_ptnetmap_features(struct SOFTC_T *adapter)
 	return features;
 }
 
-static struct netmap_pt_guest_ops e1000_ptnetmap_ops = {
-	.nm_ptctl = e1000_ptnetmap_ptctl,
-};
 #elif defined (CONFIG_E1000_NETMAP_PT)
 #warning "e1000 supports ptnetmap but netmap does not support it"
 #warning "(configure netmap with ptnetmap support)"
@@ -566,7 +563,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 		na.nm_bdg_attach = e1000_ptnetmap_bdg_attach; /* XXX */
 		na.nm_dtor = e1000_ptnetmap_dtor;
 
-		netmap_pt_guest_attach(&na, adapter->csb, &e1000_ptnetmap_ops);
+		netmap_pt_guest_attach(&na, adapter->csb, e1000_ptnetmap_ptctl);
 	} else
 #endif /* CONFIG_E1000_NETMAP_PT && WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);

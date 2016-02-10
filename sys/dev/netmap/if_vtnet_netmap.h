@@ -731,9 +731,6 @@ vtnet_ptnetmap_dtor(struct netmap_adapter *na)
         vtnet_ptnetmap_free_csb(sc);
 }
 
-static struct netmap_pt_guest_ops vtnet_ptnetmap_ops = {
-    .nm_ptctl = vtnet_ptnetmap_ptctl,
-};
 #endif /* WITH_PTNETMAP_GUEST */
 
 static void
@@ -771,7 +768,7 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 			return;
 		}
 
-		netmap_pt_guest_attach(&na, csb, &vtnet_ptnetmap_ops);
+		netmap_pt_guest_attach(&na, csb, vtnet_ptnetmap_ptctl);
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);

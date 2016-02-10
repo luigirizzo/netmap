@@ -1906,7 +1906,7 @@ struct mem_pt_if {
 	struct mem_pt_if *next;
 	struct ifnet *ifp;
 	unsigned int nifp_offset;
-	struct netmap_pt_guest_ops *pv_ops;
+	nm_pt_guest_ptctl_t ptctl;
 };
 
 /* Netmap allocator for ptnetmap guests. */
@@ -1925,7 +1925,7 @@ struct netmap_mem_ptg {
 static int
 netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 			    unsigned int nifp_offset,
-			    struct netmap_pt_guest_ops *pv_ops)
+			    nm_pt_guest_ptctl_t ptctl)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 	struct mem_pt_if *ptif = malloc(sizeof(*ptif), M_NETMAP,
@@ -1939,7 +1939,7 @@ netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 
 	ptif->ifp = ifp;
 	ptif->nifp_offset = nifp_offset;
-	ptif->pv_ops = pv_ops;
+	ptif->ptctl = ptctl;
 
 	if (ptnmd->pt_ifs) {
 		ptif->next = ptnmd->pt_ifs;
@@ -2227,7 +2227,7 @@ netmap_mem_pt_guest_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 		goto out;
 	}
 
-	ptif->pv_ops->nm_ptctl(na->ifp, NET_PARAVIRT_PTCTL_IFDELETE);
+	ptif->ptctl(na->ifp, NET_PARAVIRT_PTCTL_IFDELETE);
 out:
 	NMA_UNLOCK(na->nm_mem);
 }
@@ -2267,7 +2267,7 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
 	}
 
-	//error = ptif->pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
+	//error = ptif->ptctl->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
 	error = 0;
 out:
 	NMA_UNLOCK(na->nm_mem);
@@ -2405,32 +2405,32 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
 			struct paravirt_csb *csb,
-			struct netmap_pt_guest_ops *pv_ops)
+			nm_pt_guest_ptctl_t ptctl)
 {
 	struct netmap_mem_d *nmd;
 	nm_memid_t host_id;
 	int err;
 
-	if (ifp == NULL || pv_ops == NULL) {
+	if (ifp == NULL || ptctl == NULL) {
 		return NULL;
 	}
 
 	/* Ask the device to fill in some configuration fields. Here we
 	 * just need nifp_offset. */
-	err = pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	err = ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
 	if (err) {
 		D("Failed to get nifp_offset from passthrough device");
 		return NULL;
 	}
 
 	/* Get the host id allocator. */
-	host_id = pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_HOSTMEMID);
+	host_id = ptctl(ifp, NET_PARAVIRT_PTCTL_HOSTMEMID);
 
 	nmd = netmap_mem_pt_guest_get(host_id);
 
 	if (nmd) {
 		netmap_mem_pt_guest_ifp_add(nmd, ifp, csb->nifp_offset,
-					    pv_ops);
+					    ptctl);
 	}
 
 	return nmd;

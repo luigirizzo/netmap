@@ -2022,9 +2022,9 @@ nm_ptnetmap_host_on(struct netmap_adapter *na)
 
 #ifdef WITH_PTNETMAP_GUEST
 /* ptnetmap GUEST routines */
-struct netmap_pt_guest_ops {
-	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
-};
+
+typedef uint32_t (*nm_pt_guest_ptctl_t)(struct ifnet *, uint32_t);
+
 /*
  * netmap adapter for guest ptnetmap ports
  */
@@ -2034,7 +2034,7 @@ struct netmap_pt_guest_adapter {
 };
 
 int netmap_pt_guest_attach(struct netmap_adapter *, struct paravirt_csb *,
-			   struct netmap_pt_guest_ops *);
+			   nm_pt_guest_ptctl_t);
 bool netmap_pt_guest_txsync(struct netmap_kring *kring, int flags);
 bool netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags);
 #endif /* WITH_PTNETMAP_GUEST */
