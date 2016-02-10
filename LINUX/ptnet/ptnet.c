@@ -1405,12 +1405,16 @@ ptnet_remove(struct pci_dev *pdev)
 
 	netif_carrier_off(netdev);
 
+	/* When the netdev is unregistered, ptnet_close() is invoked
+	 * for the device. Therefore, the uninitialization of the the
+	 * two netmap adapter (ptna_dr, ptna_nm) must happen afterwards. */
+	unregister_netdev(netdev);
+
+	/* Uninitialize netmap adapters for this device. */
 	netmap_mem_put(pi->ptna_dr.hwup.up.nm_mem);
 	memset(&pi->ptna_dr, 0, sizeof(pi->ptna_dr));
 
 	netmap_detach(netdev);
-
-	unregister_netdev(netdev);
 
 	ptnet_irqs_fini(pi);
 
