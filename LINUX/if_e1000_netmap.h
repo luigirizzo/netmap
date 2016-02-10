@@ -494,20 +494,6 @@ e1000_ptnetmap_dtor(struct netmap_adapter *na)
 	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
 }
 
-/*
- * CSB (Communication Status Block) setup
- * CSB is already allocated in e1000 (paravirt).
- */
-static void
-e1000_ptnetmap_setup_csb(struct SOFTC_T *adapter)
-{
-	struct ifnet *ifp = adapter->netdev;
-	struct netmap_pt_guest_adapter* ptna =
-		(struct netmap_pt_guest_adapter *)NA(ifp);
-
-	ptna->csb = adapter->csb;
-}
-
 /* Send command to the host through PTCTL register. */
 static uint32_t
 e1000_ptnetmap_ptctl(struct net_device *netdev, uint32_t val)
@@ -581,7 +567,6 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 		na.nm_dtor = e1000_ptnetmap_dtor;
 
 		netmap_pt_guest_attach(&na, adapter->csb, &e1000_ptnetmap_ops);
-		e1000_ptnetmap_setup_csb(adapter);
 	} else
 #endif /* CONFIG_E1000_NETMAP_PT && WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);

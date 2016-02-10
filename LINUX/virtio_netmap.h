@@ -1077,7 +1077,6 @@ virtio_netmap_attach(struct virtnet_info *vi)
 	if (passthrough &&
 		virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
 			(virtio_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
-		struct netmap_pt_guest_adapter* ptna;
 		struct paravirt_csb *csb;
 
 		D("ptnetmap supported");
@@ -1094,8 +1093,6 @@ virtio_netmap_attach(struct virtnet_info *vi)
 		}
 
 		netmap_pt_guest_attach(&na, csb, &virtio_ptnetmap_ops);
-		ptna = (struct netmap_pt_guest_adapter *)NA(vi->dev);
-		ptna->csb = csb;
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	{

@@ -611,20 +611,6 @@ lem_ptnetmap_bdg_attach(const char *bdg_name, struct netmap_adapter *na)
 	return EOPNOTSUPP;
 }
 
-/*
- * CSB (Communication Status Block) setup
- * CSB is already allocated in if_lem (paravirt).
- */
-static void
-lem_ptnetmap_setup_csb(struct adapter *adapter)
-{
-	struct ifnet *ifp = adapter->ifp;
-	struct netmap_pt_guest_adapter* ptna =
-		(struct netmap_pt_guest_adapter *)NA(ifp);
-
-	ptna->csb = adapter->csb;
-}
-
 /* Send command to the host through PTCTL register. */
 static uint32_t
 lem_ptnetmap_ptctl(struct ifnet *ifp, uint32_t val)
@@ -699,8 +685,8 @@ lem_netmap_attach(struct adapter *adapter)
 		na.nm_rxsync = lem_ptnetmap_rxsync;
 		na.nm_bdg_attach = lem_ptnetmap_bdg_attach; /* XXX */
 		na.nm_dtor = lem_ptnetmap_dtor;
+
 		netmap_pt_guest_attach(&na, adapter->csb, &lem_ptnetmap_ops);
-		lem_ptnetmap_setup_csb(adapter);
 	} else
 #endif /* NIC_PTNETMAP && defined WITH_PTNETMAP_GUEST */
 		netmap_attach(&na);

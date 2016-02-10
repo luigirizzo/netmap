@@ -756,7 +756,6 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 	/* check if virtio-net (guest and host) supports ptnetmap */
 	if (virtio_with_feature(sc->vtnet_dev, VIRTIO_NET_F_PTNETMAP) &&
 		(vtnet_ptnetmap_features(sc) & NET_PTN_FEATURES_BASE)) {
-		struct netmap_pt_guest_adapter* ptna;
 		struct paravirt_csb *csb;
 
 		D("ptnetmap supported");
@@ -773,8 +772,6 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 		}
 
 		netmap_pt_guest_attach(&na, csb, &vtnet_ptnetmap_ops);
-		ptna = (struct netmap_pt_guest_adapter *)NA(sc->vtnet_ifp);
-		ptna->csb = csb;
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);
