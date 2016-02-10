@@ -1935,6 +1935,8 @@ netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 		return ENOMEM;
 	}
 
+	NMA_LOCK(nmd);
+
 	ptif->ifp = ifp;
 	ptif->nifp_offset = nifp_offset;
 	ptif->pv_ops = pv_ops;
@@ -1944,11 +1946,14 @@ netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 	}
 	ptnmd->pt_ifs = ptif;
 
+	NMA_UNLOCK(nmd);
+
 	D("added (ifp=%p,nifp_offset=%u)", ptif->ifp, ptif->nifp_offset);
 
 	return 0;
 }
 
+/* Called with NMA_LOCK(nmd) held. */
 static struct mem_pt_if *
 netmap_mem_pt_guest_ifp_lookup(struct netmap_mem_d *nmd, struct ifnet *ifp)
 {
@@ -1969,11 +1974,13 @@ int
 netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *nmd, struct ifnet *ifp)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
-	struct mem_pt_if *curr = ptnmd->pt_ifs;
 	struct mem_pt_if *prev = NULL;
+	struct mem_pt_if *curr;
 	int ret = -1;
 
-	while (curr) {
+	NMA_LOCK(nmd);
+
+	for (curr = ptnmd->pt_ifs; curr; curr = curr->next) {
 		if (curr->ifp == ifp) {
 			if (prev) {
 				prev->next = curr->next;
@@ -1987,8 +1994,9 @@ netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *nmd, struct ifnet *ifp)
 			break;
 		}
 		prev = curr;
-		curr = curr->next;
 	}
+
+	NMA_UNLOCK(nmd);
 
 	return ret;
 }
@@ -2189,14 +2197,21 @@ netmap_mem_pt_guest_if_new(struct netmap_adapter *na)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)na->nm_mem;
 	struct mem_pt_if *ptif;
+	struct netmap_if *nifp = NULL;
+
+	NMA_LOCK(na->nm_mem);
 
 	ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
 	if (ptif == NULL) {
 		D("Error: interface %p is not in passthrough", na->ifp);
-		return NULL;
+		goto out;
 	}
 
-	return (struct netmap_if *)((char *)(ptnmd->nm_addr) + ptif->nifp_offset);
+	nifp = (struct netmap_if *)((char *)(ptnmd->nm_addr) +
+				    ptif->nifp_offset);
+	NMA_UNLOCK(na->nm_mem);
+out:
+	return nifp;
 }
 
 static void
@@ -2204,13 +2219,17 @@ netmap_mem_pt_guest_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 {
 	struct mem_pt_if *ptif;
 
+	NMA_LOCK(na->nm_mem);
+
 	ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
 	if (ptif == NULL) {
 		D("Error: interface %p is not in passthrough", na->ifp);
-		return;
+		goto out;
 	}
 
 	ptif->pv_ops->nm_ptctl(na->ifp, NET_PARAVIRT_PTCTL_IFDELETE);
+out:
+	NMA_UNLOCK(na->nm_mem);
 }
 
 static int
@@ -2282,7 +2301,7 @@ static struct netmap_mem_ops netmap_mem_pt_guest_ops = {
 	.nmd_rings_delete = netmap_mem_pt_guest_rings_delete
 };
 
-/* call with NMA_LOCK(&nm_mem) held */
+/* Called with NMA_LOCK(&nm_mem) held. */
 static struct netmap_mem_d *
 netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 {
@@ -2302,7 +2321,7 @@ netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 	return mem;
 }
 
-/* call with NMA_LOCK(&nm_mem) held */
+/* Called with NMA_LOCK(&nm_mem) held. */
 static struct netmap_mem_d *
 netmap_mem_pt_guest_create(nm_memid_t host_id)
 {
