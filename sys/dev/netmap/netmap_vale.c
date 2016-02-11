@@ -2624,6 +2624,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->nm_bdg_ctl = netmap_bwrap_bdg_ctl;
 	na->pdev = hwna->pdev;
 	na->nm_mem = hwna->nm_mem;
+	na->virt_hdr_len = hwna->virt_hdr_len;
 	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
 
 	bna->hwna = hwna;
