@@ -165,6 +165,7 @@ struct paravirt_csb {
 /* ptnetmap features */
 #define NET_PTN_FEATURES_BASE            1
 #define NET_PTN_FEATURES_FULL            2 /* not used */
+#define NET_PTN_FEATURES_VNET_HDR        4
 
 /* ptnetmap commands */
 #define NET_PARAVIRT_PTCTL_CONFIG	1
@@ -204,10 +205,40 @@ struct paravirt_csb {
 #define VIRTIO_NET_F_PTNETMAP		0x2000000
 #endif
 
+
 /*
  * ptnetmap registers for e1000 are defined in if_lem.h for FreeBSD
  * and e1000_hw.h for Linux
  */
+
+
+/*
+ * ptnetmap registers for the ptnet device
+ */
+
+#define PTNET_IO_PTFEAT		0
+#define PTNET_IO_PTCTL		4
+#define PTNET_IO_PTSTS		8
+#define PTNET_IO_CTRL		12
+#define PTNET_IO_MAC_LO		16
+#define PTNET_IO_MAC_HI		20
+#define PTNET_IO_TXKICK		24
+#define PTNET_IO_RXKICK		28
+#define PTNET_IO_CSBBAH         32
+#define PTNET_IO_CSBBAL         36
+#define PTNET_IO_END            40
+#define PTNET_IO_MASK           0x3f
+
+/* If defined, CSB is allocated by the guest, not by the host. */
+#define PTNET_CSB_ALLOC
+
+/* Tell the hypervisor that guest has allocated the MSI-X
+ * interrupts, so that it can setup the host --> guest
+ * notification system (e.g. irqfd). */
+#define PTNET_CTRL_IRQINIT	1
+/* Tell the hypervisor to tear down the host --> guest
+ * notification system, since guest has deallocated the MSI-X. */
+#define PTNET_CTRL_IRQFINI	2
 
 #endif /* NETMAP_VIRT_CSB */
 
@@ -222,16 +253,22 @@ struct paravirt_csb {
  * guest device driver.
  */
 
-/* PCI identifiers and PCI BARs for the ptnetmap memdev */
+/* PCI identifiers and PCI BARs for the ptnetmap memdev
+ * and ptnetmap network interface. */
 #define PTN_MEMDEV_NAME                 "ptnetmap-memdev"
 #define PTNETMAP_PCI_VENDOR_ID          0x3333  /* XXX-ste: change vendor_id */
-#define PTNETMAP_PCI_DEVICE_ID          0x0001
+#define PTNETMAP_PCI_DEVICE_ID          0x0001  /* memory device */
+#define PTNETMAP_PCI_NETIF_ID           0x0002  /* network interface */
 #define PTNETMAP_IO_PCI_BAR             0
 #define PTNETMAP_MEM_PCI_BAR            1
+#define PTNETMAP_MSIX_PCI_BAR           2
+
+#define PTNETMAP_MSIX_VEC_TX            0
+#define PTNETMAP_MSIX_VEC_RX            1
 
 /* Registers for the ptnetmap memdev */
 /* 32 bit r/o */
-#define PTNETMAP_IO_PCI_FEATURES        0	/* ptnetmap_memdev features */
+#define PTNETMAP_IO_PCI_FEATURES        0	/* XXX should be removed */
 /* 32 bit r/o */
 #define PTNETMAP_IO_PCI_MEMSIZE         4	/* size of the netmap memory shared
 						 * between guest and host */
@@ -396,10 +433,10 @@ ptnetmap_guest_write_kring_csb(struct pt_ring *ptr, uint32_t cur,
 
 /* Guest: Read kring pointers (hwcur, hwtail) from CSB */
 static inline void
-ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
-			      uint32_t *h_hwtail, uint32_t num_slots)
+ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, struct netmap_kring *kring)
 {
-    uint32_t old_hwcur = *h_hwcur, old_hwtail = *h_hwtail;
+    uint32_t old_hwcur = kring->nr_hwcur, old_hwtail = kring->nr_hwtail;
+    uint32_t num_slots = kring->nkr_num_slots;
     uint32_t d, inc_hc, inc_ht;
 
     //mb(); /* Force memory complete before read CSB */
@@ -421,9 +458,9 @@ ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
      * associated with the correct hwtail. In this way hwcur can not exceed
      * hwtail.
      */
-    *h_hwcur = ptr->hwcur;
+    kring->nr_hwcur = ptr->hwcur;
     mb();
-    *h_hwtail = ptr->hwtail;
+    kring->nr_hwtail = ptr->hwtail;
 
     /*
      * Even with the previous barrier, it is still possible that we read an
@@ -432,14 +469,14 @@ ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, uint32_t *h_hwcur,
      * the (apparently) new hwcur.
      */
     d = ptn_sub(old_hwtail, old_hwcur, num_slots);       /* previous distance */
-    inc_ht = ptn_sub(*h_hwtail, old_hwtail, num_slots);  /* increase of hwtail */
-    inc_hc = ptn_sub(*h_hwcur, old_hwcur, num_slots);    /* increase of hwcur */
+    inc_ht = ptn_sub(kring->nr_hwtail, old_hwtail, num_slots);  /* increase of hwtail */
+    inc_hc = ptn_sub(kring->nr_hwcur, old_hwcur, num_slots);    /* increase of hwcur */
 
     if (unlikely(inc_ht > num_slots - d + inc_hc)) {
         ND(1, "ERROR hwtail overtakes hwcur - old_hwtail: %u hwtail: %u old_hwcur: %u hwcur: %u",
-                old_hwtail, *h_hwtail, old_hwcur, *h_hwcur);
-        *h_hwtail = nm_prev(*h_hwcur, num_slots - 1);
-        //*h_hwtail = *h_hwcur;
+                old_hwtail, kring->nr_hwtail, old_hwcur, kring->nr_hwcur);
+        kring->nr_hwtail = nm_prev(kring->nr_hwcur, num_slots - 1);
+        //kring->nr_hwtail = kring->nr_hwcur;
     }
 }
 

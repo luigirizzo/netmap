@@ -92,9 +92,9 @@
 #define	NM_SELINFO_T	struct nm_selinfo
 #define NM_SELRECORD_T	struct thread
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
-#define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
 #define MBUF_TXQ(m)	((m)->m_pkthdr.flowid)
 #define MBUF_TRANSMIT(na, ifp, m)	((na)->if_transmit(ifp, m))
+#define	GEN_TX_MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
 
 #define NM_ATOMIC_T	volatile int	// XXX ?
 /* atomic operations */
@@ -145,7 +145,6 @@ struct hrtimer {
 #define	NM_LOCK_T	safe_spinlock_t	// see bsd_glue.h
 #define	NM_SELINFO_T	wait_queue_head_t
 #define	MBUF_LEN(m)	((m)->len)
-#define	MBUF_IFP(m)	((m)->dev)
 #define MBUF_TRANSMIT(na, ifp, m)							\
 	({										\
 		/* Avoid infinite recursion with generic. */				\
@@ -153,6 +152,9 @@ struct hrtimer {
 		(((struct net_device_ops *)(na)->if_transmit)->ndo_start_xmit(m, ifp));	\
 		0;									\
 	})
+
+/* See explanation in nm_os_generic_xmit_frame. */
+#define	GEN_TX_MBUF_IFP(m)	((struct ifnet *)skb_shinfo(m)->destructor_arg)
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
@@ -277,6 +279,9 @@ int nm_os_ifnet_init(void);
 void nm_os_ifnet_fini(void);
 void nm_os_ifnet_lock(void);
 void nm_os_ifnet_unlock(void);
+
+void nm_os_get_module(void);
+void nm_os_put_module(void);
 
 void netmap_make_zombie(struct ifnet *);
 
@@ -760,7 +765,7 @@ struct netmap_adapter {
 
 	/* memory allocator (opaque)
 	 * We also cache a pointer to the lut_entry for translating
-	 * buffer addresses, and the total number of buffers.
+	 * buffer addresses, the total number of buffers and the buffer size.
 	 */
  	struct netmap_mem_d *nm_mem;
 	struct netmap_lut na_lut;
@@ -1319,6 +1324,9 @@ int netmap_krings_create(struct netmap_adapter *na, u_int tailroom);
  */
 void netmap_krings_delete(struct netmap_adapter *na);
 
+int netmap_hw_krings_create(struct netmap_adapter *na);
+void netmap_hw_krings_delete(struct netmap_adapter *na);
+
 /* set the stopped/enabled status of ring
  * When stopping, they also wait for all current activity on the ring to
  * terminate. The status change is then notified using the na nm_notify
@@ -1333,6 +1341,7 @@ void netmap_enable_all_rings(struct ifnet *);
 
 int netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	uint16_t ringid, uint32_t flags);
+void netmap_do_unregif(struct netmap_priv_d *priv);
 
 
 u_int nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg);
@@ -1468,8 +1477,8 @@ int netmap_adapter_put(struct netmap_adapter *na);
 /*
  * module variables
  */
-#define NETMAP_BUF_BASE(na)	((na)->na_lut.lut[0].vaddr)
-#define NETMAP_BUF_SIZE(na)	((na)->na_lut.objsize)
+#define NETMAP_BUF_BASE(_na)	((_na)->na_lut.lut[0].vaddr)
+#define NETMAP_BUF_SIZE(_na)	((_na)->na_lut.objsize)
 extern int netmap_mitigate;	// XXX not really used
 extern int netmap_no_pendintr;
 extern int netmap_verbose;	// XXX debugging
@@ -1491,7 +1500,6 @@ extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
 extern int netmap_generic_rings;
 extern int netmap_generic_txqdisc;
-extern int netmap_use_count;
 
 /*
  * NA returns a pointer to the struct netmap adapter from the ifp,
@@ -1576,8 +1584,8 @@ netmap_load_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
 	if (0 && map) {
-		*map = dma_map_single(na->pdev, buf, na->na_lut.objsize,
-				DMA_BIDIRECTIONAL);
+		*map = dma_map_single(na->pdev, buf, NETMAP_BUF_SIZE(na),
+				      DMA_BIDIRECTIONAL);
 	}
 }
 
@@ -1585,11 +1593,11 @@ static inline void
 netmap_unload_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map)
 {
-	u_int sz = na->na_lut.objsize;
+	u_int sz = NETMAP_BUF_SIZE(na);
 
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,
-				DMA_BIDIRECTIONAL);
+				 DMA_BIDIRECTIONAL);
 	}
 }
 
@@ -1597,7 +1605,7 @@ static inline void
 netmap_reload_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
-	u_int sz = na->na_lut.objsize;
+	u_int sz = NETMAP_BUF_SIZE(na);
 
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,

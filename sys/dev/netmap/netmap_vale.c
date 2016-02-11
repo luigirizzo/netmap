@@ -1393,10 +1393,12 @@ nm_bdg_preflush(struct netmap_kring *kring, u_int end)
 			ft_i = nm_bdg_flush(ft, ft_i, na, ring_nr);
 	}
 	if (frags > 1) {
-		D("truncate incomplete fragment at %d (%d frags)", ft_i, frags);
-		// ft_i > 0, ft[ft_i-1].flags has NS_MOREFRAG
-		ft[ft_i - 1].ft_frags &= ~NS_MOREFRAG;
-		ft[ft_i - frags].ft_frags = frags - 1;
+		/* Here ft_i > 0, ft[ft_i-1].flags has NS_MOREFRAG, and we
+		 * have to fix frags count. */
+		frags--;
+		ft[ft_i - 1].ft_flags &= ~NS_MOREFRAG;
+		ft[ft_i - frags].ft_frags = frags;
+		D("Truncate incomplete fragment at %d (%d frags)", ft_i, frags);
 	}
 	if (ft_i)
 		ft_i = nm_bdg_flush(ft, ft_i, na, ring_nr);

@@ -935,3 +935,14 @@ void nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 	//hrtimer_cancel(&mit->mit_timer);
 }
 
+void
+nm_os_get_module(void)
+{
+	// TODO
+}
+
+void
+nm_os_put_module(void)
+{
+	// TODO
+}

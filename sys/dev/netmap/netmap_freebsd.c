@@ -85,6 +85,20 @@ nm_os_ifnet_unlock(void)
 	IFNET_WUNLOCK();
 }
 
+static int netmap_use_count = 0;
+
+void
+nm_os_get_module(void)
+{
+	netmap_use_count++;
+}
+
+void
+nm_os_put_module(void)
+{
+	netmap_use_count--;
+}
+
 static void
 netmap_ifnet_departure_handler(void *arg __unused, struct ifnet *ifp)
 {

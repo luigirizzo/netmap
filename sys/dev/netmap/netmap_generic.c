@@ -514,17 +514,13 @@ out:
 static void
 generic_mbuf_destructor(struct mbuf *m)
 {
-	struct netmap_adapter *na = NA(MBUF_IFP(m));
+	struct netmap_adapter *na = NA(GEN_TX_MBUF_IFP(m));
 	struct netmap_kring *kring;
 	unsigned int r = MBUF_TXQ(m);
 
 	if (unlikely(!nm_netmap_on(na) || r >= na->num_tx_rings)) {
-		/* Unfortunately, certain drivers (like the linux bridge
-		 * driver, or the linux veth driver) change the MBUF_IFP(m)
-		 * that was set by generic_xmit_frame, so that here we end
-		 * up with a NULL na, or a different na.
-		 */
-		RD(3, "Warning: driver modified MBUF_IFP(m)");
+		D("Error: no netmap adapter on device %p",
+		  GEN_TX_MBUF_IFP(m));
 		return;
 	}
 
@@ -901,7 +897,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	/* limit the size of the queue */
-	if (unlikely(!gna->rxsg && MBUF_LEN(m) > kring->ring->nr_buf_size)) {
+	if (unlikely(!gna->rxsg && MBUF_LEN(m) > NETMAP_BUF_SIZE(na))) {
 		/* This may happen when GRO/LRO features are enabled for
 		 * the NIC driver when the generic adapter does not
 		 * support RX scatter-gather. */
@@ -953,7 +949,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	/* Adapter-specific variables. */
 	uint16_t slot_flags = kring->nkr_slot_flags;
-	u_int nm_buf_len = ring->nr_buf_size;
+	u_int nm_buf_len = NETMAP_BUF_SIZE(na);
 	struct mbq tmpq;
 	struct mbuf *m;
 	int avail; /* in bytes */

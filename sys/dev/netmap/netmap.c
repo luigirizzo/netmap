@@ -551,7 +551,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW, &netmap_generic_t
 SYSEND;
 
 NMG_LOCK_T	netmap_global_lock;
-int netmap_use_count = 0; /* number of active netmap instances */
 
 /*
  * mark the ring as stopped, and run through the locks
@@ -886,7 +885,7 @@ netmap_krings_delete(struct netmap_adapter *na)
  * them first.
  */
 /* call with NMG_LOCK held */
-static void
+void
 netmap_hw_krings_delete(struct netmap_adapter *na)
 {
 	struct mbq *q = &na->rx_rings[na->num_rx_rings].rx_queue;
@@ -907,7 +906,7 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 /* call with NMG_LOCK held */
 static void netmap_unset_ringid(struct netmap_priv_d *);
 static void netmap_krings_put(struct netmap_priv_d *);
-static void
+void
 netmap_do_unregif(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
@@ -984,7 +983,7 @@ netmap_priv_new(void)
 	if (priv == NULL)
 		return NULL;
 	priv->np_refs = 1;
-	netmap_use_count++;
+	nm_os_get_module();
 	return priv;
 }
 
@@ -1006,7 +1005,7 @@ netmap_priv_delete(struct netmap_priv_d *priv)
 	if (--priv->np_refs > 0) {
 		return;
 	}
-	netmap_use_count--;
+	nm_os_put_module();
 	if (na) {
 		netmap_do_unregif(priv);
 	}
@@ -2028,7 +2027,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		if (error)
 			goto err_del_if;
 		D("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
-				na->na_lut.objsize);
+					    na->na_lut.objsize);
 	}
 
 	if (nm_kring_pending(priv)) {
@@ -2458,7 +2457,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 			}
 		}
 		if (!want_rx)
-			revents |= want[t]; /* we have data */
+			revents |= events & (POLLIN | POLLRDNORM); /* we have data */
 	}
 #else /* old code */
 	for_rx_tx(t) {
@@ -2619,8 +2618,6 @@ do_retry_rx:
 
 
 /*-------------------- driver support routines -------------------*/
-
-static int netmap_hw_krings_create(struct netmap_adapter *);
 
 /* default notify callback */
 static int

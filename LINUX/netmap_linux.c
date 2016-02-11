@@ -49,6 +49,18 @@ nm_os_ifnet_unlock(void)
 	rtnl_unlock();
 }
 
+void
+nm_os_get_module(void)
+{
+	__module_get(THIS_MODULE);
+}
+
+void
+nm_os_put_module(void)
+{
+	module_put(THIS_MODULE);
+}
+
 /* Register for a notification on device removal */
 static int
 linux_netmap_notifier_cb(struct notifier_block *b,
@@ -283,45 +295,58 @@ nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
  * stolen.
  */
 #ifdef NETMAP_LINUX_HAVE_RX_REGISTER
-#ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
-static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
+enum {
+	NM_RX_HANDLER_STOLEN,
+	NM_RX_HANDLER_PASS,
+};
+
+static inline int
+linux_generic_rx_handler_common(struct mbuf *m)
 {
 	int stolen;
 
 	/* If we were called by NM_SEND_UP(), we want to pass the mbuf
 	   to network stack. We detect this situation looking at the
 	   priority field. */
-	if ((*pm)->priority == NM_MAGIC_PRIORITY_RX)
-		return RX_HANDLER_PASS;
+	if (m->priority == NM_MAGIC_PRIORITY_RX) {
+		return NM_RX_HANDLER_PASS;
+	}
 
 	/* When we intercept a sk_buff coming from the driver, it happens that
 	   skb->data points to the IP header, e.g. the ethernet header has
 	   already been pulled. Since we want the netmap rings to contain the
 	   full ethernet header, we push it back, so that the RX ring reader
 	   can see it. */
-	skb_push(*pm, 14);
+	skb_push(m, ETH_HLEN);
 
 	/* Possibly steal the mbuf and notify the pollers for a new RX
 	 * packet. */
-	stolen = generic_rx_handler((*pm)->dev, *pm);
+	stolen = generic_rx_handler(m->dev, m);
 	if (stolen) {
-		return RX_HANDLER_CONSUMED;
+		return NM_RX_HANDLER_STOLEN;
 	}
 
-	skb_pull(*pm, 14);
+	skb_pull(m, ETH_HLEN);
 
-	return RX_HANDLER_PASS;
+	return NM_RX_HANDLER_PASS;
+}
+
+#ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
+static rx_handler_result_t
+linux_generic_rx_handler(struct mbuf **pm)
+{
+	int ret = linux_generic_rx_handler_common(*pm);
+
+	return likely(ret == NM_RX_HANDLER_STOLEN) ? RX_HANDLER_CONSUMED :
+						     RX_HANDLER_PASS;
 }
 #else /* ! HAVE_RX_HANDLER_RESULT */
-static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
+static struct sk_buff *
+linux_generic_rx_handler(struct mbuf *m)
 {
-	int stolen = generic_rx_handler(m->dev, m);
+	int ret = linux_generic_rx_handler_common(m);
 
-	if (stolen) {
-		return NULL;
-	}
-
-	return m;
+	return likely(ret == NM_RX_HANDLER_STOLEN) ? NULL : m;
 }
 #endif /* HAVE_RX_HANDLER_RESULT */
 #endif /* HAVE_RX_REGISTER */
@@ -645,20 +670,32 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 int
 nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
-	struct sk_buff *m = a->m;
+	struct mbuf *m = a->m;
 	u_int len = a->len;
 	netdev_tx_t ret;
 
-	/* Empty the sk_buff. */
+	/* Empty the mbuf. */
 	if (unlikely(skb_headroom(m)))
 		skb_push(m, skb_headroom(m));
 	skb_trim(m, 0);
 
-	/* TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
+	/* Copy a netmap buffer into the mbuf.
+	 * TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
 	skb_copy_to_linear_data(m, a->addr, len); // skb_store_bits(m, 0, addr, len);
 	skb_put(m, len);
+
+	/* Hold a reference on this, we are going to recycle mbufs as
+	 * much as possible. */
 	NM_ATOMIC_INC(&m->users);
+
+	/* On linux m->dev is not reliable, since it can be changed by the
+	 * ndo_start_xmit() callback. This happens, for instance, with veth
+	 * and bridge drivers. For this reason, the nm_os_generic_xmit_frame()
+	 * implementation for linux stores a copy of m->dev into the
+	 * destructor_arg field. */
 	m->dev = a->ifp;
+	skb_shinfo(m)->destructor_arg = m->dev;
+
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
 	skb_set_queue_mapping(m, a->ring_nr);
 	m->priority = a->qevent ? NM_MAGIC_PRIORITY_TXQE : NM_MAGIC_PRIORITY_TX;
@@ -1187,7 +1224,7 @@ static int netmap_common_sendmsg(struct netmap_adapter *na, struct msghdr *m,
     /* Grab the netmap ring normally used from userspace. */
     kring = &na->tx_rings[0];
     ring = kring->ring;
-    nm_buf_size = ring->nr_buf_size;
+    nm_buf_size = NETMAP_BUF_SIZE(na);
 
     i = last = ring->cur;
     avail = ring->tail + ring->num_slots - ring->cur;
@@ -2217,7 +2254,8 @@ struct ptnetmap_memdev
  * of the netmap memory mapped in the guest.
  */
 int
-nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
+nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
+                      void **nm_addr)
 {
     struct pci_dev *pdev = ptn_dev->pdev;
     uint32_t mem_size;
@@ -2333,10 +2371,7 @@ ptn_memdev_remove(struct pci_dev *pdev)
         netmap_mem_put(ptn_dev->nm_mem);
         ptn_dev->nm_mem = NULL;
     }
-    if (ptn_dev->pci_mem) {
-        iounmap(ptn_dev->pci_mem);
-        ptn_dev->pci_mem = NULL;
-    }
+    nm_os_pt_memdev_iounmap(ptn_dev);
     pci_set_drvdata(pdev, NULL);
     iounmap(ptn_dev->pci_io);
     pci_release_selected_regions(pdev, ptn_dev->bars);
@@ -2384,9 +2419,15 @@ nm_os_pt_memdev_uninit(void)
 
     D("ptn_memdev_driver exit");
 }
+
+int ptnet_init(void);
+void ptnet_fini(void);
+
 #else /* !WITH_PTNETMAP_GUEST */
-#define nm_os_pt_memdev_init()        0
+#define nm_os_pt_memdev_init()		0
 #define nm_os_pt_memdev_uninit()
+#define ptnet_init()			0
+#define ptnet_fini()
 #endif /* WITH_PTNETMAP_GUEST */
 
 
@@ -2402,18 +2443,31 @@ struct miscdevice netmap_cdevsw = { /* same name as FreeBSD */
 
 static int linux_netmap_init(void)
 {
-        int err;
-        /* Errors have negative values on linux. */
-        err = -netmap_init();
-        if (err)
-            return err;
+	int err;
+	/* Errors have negative values on linux. */
+	err = -netmap_init();
+	if (err) {
+		return err;
+	}
 
-	return nm_os_pt_memdev_init();
+	err = nm_os_pt_memdev_init();
+	if (err) {
+		return err;
+	}
+
+	err = ptnet_init();
+	if (err) {
+		nm_os_pt_memdev_uninit();
+		return err;
+	}
+
+	return 0;
 }
 
 
 static void linux_netmap_fini(void)
 {
+	ptnet_fini();
         nm_os_pt_memdev_uninit();
         netmap_fini();
 }

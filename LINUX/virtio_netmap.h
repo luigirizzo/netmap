@@ -575,7 +575,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			 * the hypervisor. */
 			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
-			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
+			sg_set_buf(sg + 1, addr, NETMAP_BUF_SIZE(na));
 			nospace = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (nospace) {
 				RD(3, "virtqueue_add_inbuf failed [err=%d]",
@@ -646,7 +646,7 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 			addr = NMB(na, slot);
 			COMPAT_INIT_SG(sg);
 			sg_set_buf(sg, &shared_rx_vnet_hdr, vnet_hdr_len);
-			sg_set_buf(sg + 1, addr, ring->nr_buf_size);
+			sg_set_buf(sg + 1, addr, NETMAP_BUF_SIZE(na));
 			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (err < 0) {
 				D("virtqueue_add_inbuf failed");
@@ -867,8 +867,8 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 					sizeof(shared_tx_vnet_hdr) :
 					sizeof(shared_tx_vnet_hdr.hdr);
 
-		/* Push a fake request in each TX virtqueue in order
-		 * to keep TX interrupts enabled. */
+		/* Push a fake request in the avail ring of each TX VQ
+                 * in order to keep TX kicks enabled. */
 		for (i = 0; i < DEV_NUM_TX_QUEUES(ifp); i++) {
 			COMPAT_DECL_SG
 			struct scatterlist *sg = GET_TX_SG(vi, i);
