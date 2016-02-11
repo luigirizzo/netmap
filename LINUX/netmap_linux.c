@@ -1303,7 +1303,6 @@ EXPORT_SYMBOL(netmap_backend_sendmsg);
 static inline int netmap_common_peek_head_len(struct netmap_adapter *na)
 {
         /* Here we assume to have a virtual port. */
-        struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	struct netmap_kring *kring = &na->rx_rings[0];
         struct netmap_ring *ring = kring->ring;
 	u_int i;
@@ -1331,8 +1330,8 @@ static inline int netmap_common_peek_head_len(struct netmap_adapter *na)
 
         /* The v1000 frontend assumes that the peek_head_len() callback
            doesn't count the bytes of the virtio-net-header. */
-        if (likely(ret >= vpna->virt_hdr_len)) {
-            ret -= vpna->virt_hdr_len;
+        if (likely(ret >= na->virt_hdr_len)) {
+            ret -= na->virt_hdr_len;
         }
 
 	return ret;

@@ -2694,6 +2694,8 @@ netmap_attach_common(struct netmap_adapter *na)
 		 */
 		na->nm_bdg_attach = netmap_bwrap_attach;
 #endif
+	na->virt_hdr_len = 0;
+
 	return 0;
 }
 

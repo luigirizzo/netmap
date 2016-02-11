@@ -180,11 +180,11 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 	/* If the source port uses the offloadings, while destination doesn't,
 	 * we grab the source virtio-net header and do the offloadings here.
 	 */
-	if (na->virt_hdr_len && !dst_na->virt_hdr_len) {
+	if (na->up.virt_hdr_len && !dst_na->up.virt_hdr_len) {
 		vh = (struct nm_vnet_hdr *)src;
 		/* Initial sanity check on the source virtio-net header. If
 		 * something seems wrong, just drop the packet. */
-		if (src_len < na->virt_hdr_len) {
+		if (src_len < na->up.virt_hdr_len) {
 			RD(3, "Short src vnet header, dropping");
 			return;
 		}
@@ -216,14 +216,14 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 	 *  12 |   0 | doesn't exist
 	 *  12 |  10 | copied from the first 10 bytes of source header
 	 */
-	bzero(dst, dst_na->virt_hdr_len);
-	if (na->virt_hdr_len && dst_na->virt_hdr_len)
+	bzero(dst, dst_na->up.virt_hdr_len);
+	if (na->up.virt_hdr_len && dst_na->up.virt_hdr_len)
 		memcpy(dst, src, sizeof(struct nm_vnet_hdr));
 	/* Skip the virtio-net headers. */
-	src += na->virt_hdr_len;
-	src_len -= na->virt_hdr_len;
-	dst += dst_na->virt_hdr_len;
-	dst_len = dst_na->virt_hdr_len + src_len;
+	src += na->up.virt_hdr_len;
+	src_len -= na->up.virt_hdr_len;
+	dst += dst_na->up.virt_hdr_len;
+	dst_len = dst_na->up.virt_hdr_len + src_len;
 
 	/* Here it could be dst_len == 0 (which implies src_len == 0),
 	 * so we avoid passing a zero length fragment.

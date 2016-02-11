@@ -1212,10 +1212,11 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 		error = netmap_get_bdg_na(nmr, &na, 0);
 		if (na && !error) {
 			vpna = (struct netmap_vp_adapter *)na;
-			vpna->virt_hdr_len = nmr->nr_arg1;
-			if (vpna->virt_hdr_len)
+			na->virt_hdr_len = nmr->nr_arg1;
+			if (na->virt_hdr_len) {
 				vpna->mfs = NETMAP_BUF_SIZE(na);
-			D("Using vnet_hdr_len %d for %p", vpna->virt_hdr_len, vpna);
+			}
+			D("Using vnet_hdr_len %d for %p", na->virt_hdr_len, na);
 			netmap_adapter_put(na);
 		}
 		NMG_UNLOCK();
@@ -1513,11 +1514,11 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	uint64_t smac, dmac;
 
 	/* safety check, unfortunately we have many cases */
-	if (buf_len >= 14 + na->virt_hdr_len) {
+	if (buf_len >= 14 + na->up.virt_hdr_len) {
 		/* virthdr + mac_hdr in the same slot */
-		buf += na->virt_hdr_len;
-		buf_len -= na->virt_hdr_len;
-	} else if (buf_len == na->virt_hdr_len && ft->ft_flags & NS_MOREFRAG) {
+		buf += na->up.virt_hdr_len;
+		buf_len -= na->up.virt_hdr_len;
+	} else if (buf_len == na->up.virt_hdr_len && ft->ft_flags & NS_MOREFRAG) {
 		/* only header in first fragment */
 		ft++;
 		buf = ft->ft_buf;
@@ -1659,7 +1660,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		ND("slot %d frags %d", i, ft[i].ft_frags);
 		/* Drop the packet if the virtio-net header is not into the first
 		   fragment nor at the very beginning of the second. */
-		if (unlikely(na->virt_hdr_len > ft[i].ft_len))
+		if (unlikely(na->up.virt_hdr_len > ft[i].ft_len))
 			continue;
 		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na);
 		if (netmap_verbose > 255)
@@ -1760,8 +1761,9 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		 */
 		needed = d->bq_len + brddst->bq_len;
 
-		if (unlikely(dst_na->virt_hdr_len != na->virt_hdr_len)) {
-			RD(3, "virt_hdr_mismatch, src %d dst %d", na->virt_hdr_len, dst_na->virt_hdr_len);
+		if (unlikely(dst_na->up.virt_hdr_len != na->up.virt_hdr_len)) {
+			RD(3, "virt_hdr_mismatch, src %d dst %d", na->up.virt_hdr_len,
+			      dst_na->up.virt_hdr_len);
 			/* There is a virtio-net header/offloadings mismatch between
 			 * source and destination. The slower mismatch datapath will
 			 * be used to cope with all the mismatches.
@@ -2122,7 +2124,6 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 	nm_bound_var(&nmr->nr_arg3, 0, 0,
 			128*NM_BDG_MAXSLOTS, NULL);
 	na->num_rx_desc = nmr->nr_rx_slots;
-	vpna->virt_hdr_len = 0;
 	vpna->mfs = 1514;
 	vpna->last_smac = ~0llu;
 	/*if (vpna->mfs > netmap_buf_size)  TODO netmap_buf_size is zero??

@@ -781,6 +781,9 @@ struct netmap_adapter {
 	int na_next_pipe;	/* next free slot in the array */
 	int na_max_pipes;	/* size of the array */
 
+	/* Offset of ethernet header for each packet. */
+	u_int virt_hdr_len;
+
 	char name[64];
 };
 
@@ -846,8 +849,6 @@ struct netmap_vp_adapter {	/* VALE software port */
 	struct nm_bridge *na_bdg;
 	int retry;
 
-	/* Offset of ethernet header for each packet. */
-	u_int virt_hdr_len;
 	/* Maximum Frame Size, used in bdg_mismatch_datapath() */
 	u_int mfs;
 	/* Last source MAC on this port */
