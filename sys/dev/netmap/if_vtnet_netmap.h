@@ -569,16 +569,15 @@ vtnet_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	u_int ring_nr = kring->ring_id;
 	struct SOFTC_T *sc = ifp->if_softc;
 	struct virtqueue *vq = sc->vtnet_txqs[ring_nr].vtntx_vq;
-	int ret, notify = 0;
+	bool notify;
 
-	ret = netmap_pt_guest_txsync(kring, flags, &notify);
-
+	notify = netmap_pt_guest_txsync(kring, flags);
 	if (notify)
 		virtqueue_notify(vq);
 
 	ND("TX - vq_index: %d", vq->index);
 
-	return ret;
+	return 0;
 }
 
 /*
@@ -594,16 +593,15 @@ vtnet_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int ring_nr = kring->ring_id;
 	struct SOFTC_T *sc = ifp->if_softc;
 	struct virtqueue *vq = sc->vtnet_rxqs[ring_nr].vtnrx_vq;
-	int ret, notify = 0;
+	bool notify;
 
-	ret = netmap_pt_guest_rxsync(kring, flags, &notify);
-
+	notify = netmap_pt_guest_rxsync(kring, flags);
 	if (notify)
 		virtqueue_notify(vq);
 
 	ND("RX - vq_index: %d", vq->index);
 
-	return ret;
+	return 0;
 }
 
 /*

@@ -314,7 +314,7 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	NMA_LOCK(nmd);
 	netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
-	if (nmd->refcount == 1) {
+	if (nmd->active == 1) {
 		u_int i;
 
 		/*
@@ -354,7 +354,12 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 		 * buffers 0 and 1 are reserved
 		 */
 		nmd->pools[NETMAP_BUF_POOL].objfree -= 2;
-		nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
+		if (nmd->pools[NETMAP_BUF_POOL].bitmap) {
+			/* XXX This check is a workaround that prevents a
+			 * NULL pointer crash which currently happens only
+			 * with ptnetmap guests. */
+			nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
+		}
 	}
 	nmd->ops->nmd_deref(nmd);
 
@@ -1675,13 +1680,14 @@ netmap_free_rings(struct netmap_adapter *na)
 
 	for_rx_tx(t) {
 		u_int i;
-		for (i = 0; i < netmap_real_rings(na, t); i++) {
+		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
 			struct netmap_kring *kring = &NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 
 			if (ring == NULL)
 				continue;
-			netmap_free_bufs(na->nm_mem, ring->slot, kring->nkr_num_slots);
+			if (i != nma_get_nrings(na, t) || na->na_flags & NAF_HOST_RINGS)
+				netmap_free_bufs(na->nm_mem, ring->slot, kring->nkr_num_slots);
 			netmap_ring_free(na->nm_mem, ring);
 			kring->ring = NULL;
 		}
@@ -2235,11 +2241,30 @@ error:
 }
 
 /*
+ * find host id in guest allocators and create guest allocator
+ * if it is not there
+ */
+static struct netmap_mem_d *
+netmap_mem_pt_guest_get(nm_memid_t host_id)
+{
+	struct netmap_mem_d *nmd;
+
+	NMA_LOCK(&nm_mem);
+	nmd = netmap_mem_pt_guest_find_hostid(host_id);
+	if (nmd == NULL) {
+		nmd = netmap_mem_pt_guest_create(host_id);
+	}
+	NMA_UNLOCK(&nm_mem);
+
+	return nmd;
+}
+
+/*
  * The guest allocator can be created by ptnetmap_memdev (during the device attach) or
  * by ptnetmap device (e1000/virtio), during the netmap_attach.
  *
  * The order is not important (we have different order in LINUX and FreeBSD).
- * The first one, creates the device, and the second one simply attach it.
+ * The first one, creates the device, and the second one simply attaches it.
  */
 
 /* Called when ptnetmap_memdev is attaching, to attach a new allocator in the guest */
@@ -2249,17 +2274,7 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 	struct netmap_mem_d *nmd;
 	struct netmap_mem_ptg *pv;
 
-
-	/*
-	 * find host id in guest allocators and create guest allocator
-	 * if it is not there
-	 */
-	NMA_LOCK(&nm_mem);
-	nmd = netmap_mem_pt_guest_find_hostid(host_id);
-	if (nmd == NULL) {
-		nmd = netmap_mem_pt_guest_create(host_id);
-	}
-	NMA_UNLOCK(&nm_mem);
+	nmd = netmap_mem_pt_guest_get(host_id);
 
 	/* assign this device to the guest allocator */
 	if (nmd) {
@@ -2273,9 +2288,8 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 /* Called when ptnetmap device (virtio/e1000) is attaching */
 struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
-		struct netmap_pt_guest_ops *pv_ops)
+			struct netmap_pt_guest_ops *pv_ops)
 {
-	struct netmap_mem_d *nmd;
 	nm_memid_t host_id;
 
 	if (ifp == NULL || pv_ops == NULL)
@@ -2284,18 +2298,7 @@ netmap_mem_pt_guest_new(struct ifnet *ifp,
 	/* get the host id allocator */
 	host_id = pv_ops->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_HOSTMEMID);
 
-	/*
-	 * find host id in guest allocators and create guest allocator
-	 * if it is not there
-	 */
-	NMA_LOCK(&nm_mem);
-	nmd = netmap_mem_pt_guest_find_hostid(host_id);
-	if (nmd == NULL) {
-		nmd = netmap_mem_pt_guest_create(host_id);
-	}
-	NMA_UNLOCK(&nm_mem);
-
-	return nmd;
+	return netmap_mem_pt_guest_get(host_id);
 }
 
 #endif /* WITH_PTNETMAP_GUEST */

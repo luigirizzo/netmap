@@ -370,23 +370,32 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
 					kring = &NMR(pna, t)[i];
 					mkring = &na->rx_rings[i];
-					netmap_monitor_add(mkring, kring, zmon);
+					if (nm_kring_pending_on(mkring)) {
+						netmap_monitor_add(mkring, kring, zmon);
+						mkring->nr_mode = NKR_NETMAP_ON;
+					}
 				}
 			}
 		}
 		na->na_flags |= NAF_NETMAP_ON;
 	} else {
-		if (pna == NULL) {
-			D("%s: parent left netmap mode, nothing to restore", na->name);
-			return 0;
-		}
-		na->na_flags &= ~NAF_NETMAP_ON;
+		if (na->active_fds == 0)
+			na->na_flags &= ~NAF_NETMAP_ON;
 		for_rx_tx(t) {
 			if (mna->flags & nm_txrx2flag(t)) {
 				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-					kring = &NMR(pna, t)[i];
 					mkring = &na->rx_rings[i];
-					netmap_monitor_del(mkring, kring);
+					if (nm_kring_pending_off(mkring)) {
+						mkring->nr_mode = NKR_NETMAP_OFF;
+						/* we cannot access the parent krings if the parent
+						 * has left netmap mode. This is signaled by a NULL
+						 * pna pointer
+						 */
+						if (pna) {
+							kring = &NMR(pna, t)[i];
+							netmap_monitor_del(mkring, kring);
+						}
+					}
 				}
 			}
 		}
@@ -663,6 +672,7 @@ static int
 netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 {
 	int error = 0;
+	int (*notify)(struct netmap_kring*, int);
 	ND(5, "%s %x", kring->name, flags);
 	/* ?xsync callbacks have tryget called by their callers
 	 * (NIOCREGIF and poll()), but here we have to call it
@@ -670,13 +680,19 @@ netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 	 */
 	if (nm_kr_tryget(kring, 0, &error)) {
 		/* in all cases, just skip the sync */
-		goto out;
+		return error;
 	}
-	netmap_monitor_parent_rxsync(kring, NAF_FORCE_READ);
-
+	if (kring->n_monitors > 0) {
+		netmap_monitor_parent_rxsync(kring, NAF_FORCE_READ);
+		notify = kring->mon_notify;
+	} else {
+		/* we are no longer monitoring this ring, so both
+		 * mon_sync and mon_notify are NULL
+		 */
+		notify = kring->nm_notify;
+	}
 	nm_kr_put(kring);
-out:
-        return (error ? EIO : kring->mon_notify(kring, flags));
+        return notify(kring, flags);
 }
 
 
@@ -843,12 +859,6 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
 	*na = &mna->up;
 	netmap_adapter_get(*na);
-
-	/* write the configuration back */
-	nmr->nr_tx_rings = mna->up.num_tx_rings;
-	nmr->nr_rx_rings = mna->up.num_rx_rings;
-	nmr->nr_tx_slots = mna->up.num_tx_desc;
-	nmr->nr_rx_slots = mna->up.num_rx_desc;
 
 	/* keep the reference to the parent */
 	D("monitor ok");

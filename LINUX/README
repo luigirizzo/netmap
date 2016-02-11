@@ -20,7 +20,7 @@ and some test applications.
 
 This version supports r8169, ixgbe, igb, e1000, e1000e and forcedeth.
 
-Netmap relies on a kernel module (netmap_lin.ko) and slightly modified
+Netmap relies on a kernel module (netmap.ko) and slightly modified
 device drivers. Userspace programs can use the native API (documented
 in netmap.4) or a libpcap emulation library.
 
@@ -41,7 +41,7 @@ HOW TO BUILD THE CODE
 2. do the following
 	./configure
 	make
-   this produces ./netmap_lin.ko and other kernel modules.
+   this produces ./netmap.ko and other kernel modules.
    (If your kernel sources are not in standard places, follow the
     instructions in the errors output by ./configure)
 
@@ -72,7 +72,7 @@ TinyCore image, the following steps can be used for initial testing:
 	...
 
 2. load netmap and device driver module
-	sudo insmod ./netmap_lin.ko
+	sudo insmod ./netmap.ko
 	sudo insmod ./ixgbe/ixgbe.ko
 	sudo insmod ./e1000/e1000.ko
 	...

@@ -537,7 +537,7 @@ do_if()
 	for (i = 0; i < 5; i++)
 		printf("spare1[%d]  %u\n", i, nifp->ni_spare1[i]);
 	for (i = 0; i < (nifp->ni_tx_rings + nifp->ni_rx_rings + 2); i++)
-		printf("ring_ofs[%d] %ld\n", i, nifp->ring_ofs[i]);
+		printf("ring_ofs[%d] %zd\n", i, nifp->ring_ofs[i]);
 }
 
 struct netmap_ring *

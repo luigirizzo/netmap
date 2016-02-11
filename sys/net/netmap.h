@@ -532,6 +532,8 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 /* request ptnetmap host support */
 #define NR_PASSTHROUGH_HOST	NR_PTNETMAP_HOST /* deprecated */
 #define NR_PTNETMAP_HOST	0x1000
+#define NR_RX_RINGS_ONLY	0x2000
+#define NR_TX_RINGS_ONLY	0x4000
 
 
 /*

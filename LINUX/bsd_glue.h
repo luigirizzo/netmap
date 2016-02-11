@@ -190,7 +190,7 @@ struct thread;
 #define	m_nextpkt		next			// chain of mbufs
 #define m_freem(m)		dev_kfree_skb_any(m)	// free a sk_buff
 
-#define GET_MBUF_REFCNT(m)	NM_ATOMIC_READ(&((m)->users))
+#define MBUF_REFCNT(m)			NM_ATOMIC_READ(&((m)->users))
 #define nm_os_get_mbuf(ifp, size)	alloc_skb(size, GFP_ATOMIC)
 /*
  * on tx we force skb->queue_mapping = ring_nr,
@@ -199,13 +199,17 @@ struct thread;
  */
 #define MBUF_TXQ(m)		skb_get_queue_mapping(m)
 #define MBUF_RXQ(m)		(skb_rx_queue_recorded(m) ? skb_get_rx_queue(m) : 0)
-#define SET_MBUF_DESTRUCTOR(m, f) m->destructor = (void *)&f
+#define SET_MBUF_DESTRUCTOR(m, f) m->destructor = (void *)f
 
 /* Magic number for sk_buff.priority field, used to take decisions in
- * generic_ndo_start_xmit() and in linux_generic_rx_handler().
+ * generic_ndo_start_xmit(), linux_generic_rx_handler() and
+ * generic_qdisc_dequeue().
  */
-#define NM_MAGIC_PRIORITY_TX 0xad86d310U
-#define NM_MAGIC_PRIORITY_RX 0xad86d311U
+#define NM_MAGIC_PRIORITY_TX	0xad86d310U
+#define NM_MAGIC_PRIORITY_TXQE	0xad86d311U
+#define NM_MAGIC_PRIORITY_RX	0xad86d30fU
+
+#define MBUF_QUEUED(m)		((m->priority & (~0x1)) == NM_MAGIC_PRIORITY_TX)
 
 /*
  * m_copydata() copies from mbuf to buffer following the mbuf chain.

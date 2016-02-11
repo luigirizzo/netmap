@@ -218,8 +218,15 @@ windows_handle_rx(struct net_device *ifp, uint32_t length, const char *data)
 {
 	struct mbuf *m = win_make_mbuf(ifp, length, data);
 
-	if (m)
-		generic_rx_handler(ifp, m);
+	if (m) {
+		int stolen = generic_rx_handler(ifp, m);
+
+		if (!stolen) {
+			m_freem(m);
+			/* XXX Should we return m instead of freeing it? */
+		}
+	}
+
 	return NULL;
 }
 
@@ -251,15 +258,17 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 }
 
 
-void
-nm_os_catch_tx(struct netmap_generic_adapter *gna, int enable)
+int
+nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 {
     struct netmap_adapter *na = &gna->up.up;
     int *p = na->ifp->intercept;
 
     if (p != NULL) {
-	*p = enable ? (*p | NM_WIN_CATCH_TX) : (*p & ~NM_WIN_CATCH_TX);
+	*p = intercept ? (*p | NM_WIN_CATCH_TX) : (*p & ~NM_WIN_CATCH_TX);
     }
+
+    return 0;
 }
 
 /*
@@ -306,11 +315,11 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 		a->tail = cur;
 		if (a->head == NULL)
 			a->head = cur;
+		return 0;
 	}
-	else {
-		return NDIS_STATUS_BUFFER_OVERFLOW;
-	}
-	return  0;
+
+	/* NDIS_STATUS_BUFFER_OVERFLOW */
+	return -1;
 }
 
 /*
@@ -331,6 +340,14 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
     //XXX_ale: for a generic device is enough? need to find where this info is
     *txq = 1;
     *rxq = 1;
+}
+
+void
+nm_os_generic_set_features(struct netmap_generic_adapter *gna)
+{
+	/* No support for now. */
+	gna->rxsg = 0;
+	gna->txqdisc = 0;
 }
 //
 
@@ -865,7 +882,7 @@ generic_timer_handler(struct hrtimer *t)
 	mit->mit_pending = 0;
 	/* below is a variation of netmap_generic_irq  XXX revise */
 	if (nm_netmap_on(mit->mit_na)) {
-		netmap_common_irq(mit->mit_na->ifp, mit->mit_ring_idx, &work_done);
+		netmap_common_irq(mit->mit_na, mit->mit_ring_idx, &work_done);
 		generic_rate(0, 0, 0, 0, 0, 1);
 	}
 	nm_os_mitigation_restart(mit);
@@ -918,3 +935,14 @@ void nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 	//hrtimer_cancel(&mit->mit_timer);
 }
 
+void
+nm_os_get_module(void)
+{
+	// TODO
+}
+
+void
+nm_os_put_module(void)
+{
+	// TODO
+}

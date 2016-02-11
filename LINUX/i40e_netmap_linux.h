@@ -71,7 +71,7 @@ extern int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
 SYSCTL_DECL(_dev_netmap);
 int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_crcstrip,
-    CTLFLAG_RW, &ix_crcstrip, 0, "strip CRC on rx frames");
+    CTLFLAG_RW, &ix_crcstrip, 1, "strip CRC on rx frames");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss,
     CTLFLAG_RW, &ix_rx_miss, 0, "potentially missed rx intr");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss_bufs,
@@ -184,7 +184,6 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 	while (test_and_set_bit(__I40E_CONFIG_BUSY, &pf->state))
 			usleep_range(1000, 2000);
 
-	rtnl_lock();
 	if ( (was_running = netif_running(vsi->netdev)) )
 		i40e_down(vsi);
 
@@ -199,7 +198,6 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 		i40e_up(vsi);
 	}
 	//set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
-	rtnl_unlock();
 
 	clear_bit(__I40E_CONFIG_BUSY, &pf->state);
 
