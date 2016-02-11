@@ -1,0 +1,8 @@
+This directory contains TLEM, a high performance link emulator.
+
+To test the program you must run a source, sink and emulator
+
+	sudo ../../examples/pkt-gen -i vale0\{1 -f tx -l 1500
+	sudo ../../examples/pkt-gen -i vale0\}2
+
+	sudo ./tlem -i vale0\}1 -i vale0\{2 -D 20ms -C 2,3,4,5
