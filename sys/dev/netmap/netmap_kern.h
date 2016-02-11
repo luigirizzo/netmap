@@ -92,9 +92,9 @@
 #define	NM_SELINFO_T	struct nm_selinfo
 #define NM_SELRECORD_T	struct thread
 #define	MBUF_LEN(m)	((m)->m_pkthdr.len)
-#define	MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
 #define MBUF_TXQ(m)	((m)->m_pkthdr.flowid)
 #define MBUF_TRANSMIT(na, ifp, m)	((na)->if_transmit(ifp, m))
+#define	GEN_TX_MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
 
 #define NM_ATOMIC_T	volatile int	// XXX ?
 /* atomic operations */
@@ -145,7 +145,6 @@ struct hrtimer {
 #define	NM_LOCK_T	safe_spinlock_t	// see bsd_glue.h
 #define	NM_SELINFO_T	wait_queue_head_t
 #define	MBUF_LEN(m)	((m)->len)
-#define	MBUF_IFP(m)	((m)->dev)
 #define MBUF_TRANSMIT(na, ifp, m)							\
 	({										\
 		/* Avoid infinite recursion with generic. */				\
@@ -153,6 +152,9 @@ struct hrtimer {
 		(((struct net_device_ops *)(na)->if_transmit)->ndo_start_xmit(m, ifp));	\
 		0;									\
 	})
+
+/* See explanation in nm_os_generic_xmit_frame. */
+#define	GEN_TX_MBUF_IFP(m)	((struct ifnet *)skb_shinfo(m)->destructor_arg)
 
 #define NM_ATOMIC_T	volatile long unsigned int
 
@@ -779,6 +781,9 @@ struct netmap_adapter {
 	int na_next_pipe;	/* next free slot in the array */
 	int na_max_pipes;	/* size of the array */
 
+	/* Offset of ethernet header for each packet. */
+	u_int virt_hdr_len;
+
 	char name[64];
 };
 
@@ -844,8 +849,6 @@ struct netmap_vp_adapter {	/* VALE software port */
 	struct nm_bridge *na_bdg;
 	int retry;
 
-	/* Offset of ethernet header for each packet. */
-	u_int virt_hdr_len;
 	/* Maximum Frame Size, used in bdg_mismatch_datapath() */
 	u_int mfs;
 	/* Last source MAC on this port */
@@ -1321,6 +1324,9 @@ int netmap_krings_create(struct netmap_adapter *na, u_int tailroom);
  * been created using netmap_krings_create
  */
 void netmap_krings_delete(struct netmap_adapter *na);
+
+int netmap_hw_krings_create(struct netmap_adapter *na);
+void netmap_hw_krings_delete(struct netmap_adapter *na);
 
 /* set the stopped/enabled status of ring
  * When stopping, they also wait for all current activity on the ring to

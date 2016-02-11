@@ -779,22 +779,45 @@ initialize_packet(struct targ *targ)
 }
 
 static void
-set_vnet_hdr_len(struct targ *t)
+get_vnet_hdr_len(struct glob_arg *g)
 {
-	int err, l = t->g->virt_header;
+	struct nmreq req;
+	int err;
+
+	memset(&req, 0, sizeof(req));
+	bcopy(g->nmd->req.nr_name, req.nr_name, sizeof(req.nr_name));
+	req.nr_version = NETMAP_API;
+	req.nr_cmd = NETMAP_VNET_HDR_GET;
+	err = ioctl(g->main_fd, NIOCREGIF, &req);
+	if (err) {
+		D("Unable to get virtio-net header length");
+		return;
+	}
+
+	g->virt_header = req.nr_arg1;
+	if (g->virt_header) {
+		D("Port requires virtio-net header, length = %d",
+		  g->virt_header);
+	}
+}
+
+static void
+set_vnet_hdr_len(struct glob_arg *g)
+{
+	int err, l = g->virt_header;
 	struct nmreq req;
 
 	if (l == 0)
 		return;
 
 	memset(&req, 0, sizeof(req));
-	bcopy(t->nmd->req.nr_name, req.nr_name, sizeof(req.nr_name));
+	bcopy(g->nmd->req.nr_name, req.nr_name, sizeof(req.nr_name));
 	req.nr_version = NETMAP_API;
 	req.nr_cmd = NETMAP_BDG_VNET_HDR;
 	req.nr_arg1 = l;
-	err = ioctl(t->fd, NIOCREGIF, &req);
+	err = ioctl(g->main_fd, NIOCREGIF, &req);
 	if (err) {
-		D("Unable to set vnet header length %d", l);
+		D("Unable to set virtio-net header length %d", l);
 	}
 }
 
@@ -1927,7 +1950,6 @@ start_threads(struct glob_arg *g)
 			t->nmd = g->nmd;
 		}
 		t->fd = t->nmd->fd;
-		set_vnet_hdr_len(t);
 
 	    } else {
 		targs[i].fd = g->main_fd;
@@ -2401,6 +2423,8 @@ D("running on %d cpus (have %d)", g.cpus, i);
 	    base_nmd.nr_arg1 = g.extra_pipes;
 	}
 
+	base_nmd.nr_flags |= NR_ACCEPT_VNET_HDR;
+
 	/*
 	 * Open the netmap device using nm_open().
 	 *
@@ -2413,6 +2437,7 @@ D("running on %d cpus (have %d)", g.cpus, i);
 		D("Unable to open %s: %s", g.ifname, strerror(errno));
 		goto out;
 	}
+
 	if (g.nthreads > 1) {
 		struct nm_desc saved_desc = *g.nmd;
 		saved_desc.self = &saved_desc;
@@ -2429,6 +2454,16 @@ D("running on %d cpus (have %d)", g.cpus, i);
 	}
 	g.main_fd = g.nmd->fd;
 	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
+
+	if (g.virt_header) {
+		/* Set the virtio-net header length, since the user asked
+		 * for it explicitely. */
+		set_vnet_hdr_len(&g);
+	} else {
+		/* Check whether the netmap port we opened requires us to send
+		 * and receive frames with virtio-net header. */
+		get_vnet_hdr_len(&g);
+	}
 
 	/* get num of queues in tx or rx */
 	if (g.td_type == TD_TYPE_SENDER)

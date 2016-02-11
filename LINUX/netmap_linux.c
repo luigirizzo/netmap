@@ -295,45 +295,58 @@ nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
  * stolen.
  */
 #ifdef NETMAP_LINUX_HAVE_RX_REGISTER
-#ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
-static rx_handler_result_t linux_generic_rx_handler(struct mbuf **pm)
+enum {
+	NM_RX_HANDLER_STOLEN,
+	NM_RX_HANDLER_PASS,
+};
+
+static inline int
+linux_generic_rx_handler_common(struct mbuf *m)
 {
 	int stolen;
 
 	/* If we were called by NM_SEND_UP(), we want to pass the mbuf
 	   to network stack. We detect this situation looking at the
 	   priority field. */
-	if ((*pm)->priority == NM_MAGIC_PRIORITY_RX)
-		return RX_HANDLER_PASS;
+	if (m->priority == NM_MAGIC_PRIORITY_RX) {
+		return NM_RX_HANDLER_PASS;
+	}
 
 	/* When we intercept a sk_buff coming from the driver, it happens that
 	   skb->data points to the IP header, e.g. the ethernet header has
 	   already been pulled. Since we want the netmap rings to contain the
 	   full ethernet header, we push it back, so that the RX ring reader
 	   can see it. */
-	skb_push(*pm, 14);
+	skb_push(m, ETH_HLEN);
 
 	/* Possibly steal the mbuf and notify the pollers for a new RX
 	 * packet. */
-	stolen = generic_rx_handler((*pm)->dev, *pm);
+	stolen = generic_rx_handler(m->dev, m);
 	if (stolen) {
-		return RX_HANDLER_CONSUMED;
+		return NM_RX_HANDLER_STOLEN;
 	}
 
-	skb_pull(*pm, 14);
+	skb_pull(m, ETH_HLEN);
 
-	return RX_HANDLER_PASS;
+	return NM_RX_HANDLER_PASS;
+}
+
+#ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
+static rx_handler_result_t
+linux_generic_rx_handler(struct mbuf **pm)
+{
+	int ret = linux_generic_rx_handler_common(*pm);
+
+	return likely(ret == NM_RX_HANDLER_STOLEN) ? RX_HANDLER_CONSUMED :
+						     RX_HANDLER_PASS;
 }
 #else /* ! HAVE_RX_HANDLER_RESULT */
-static struct sk_buff *linux_generic_rx_handler(struct mbuf *m)
+static struct sk_buff *
+linux_generic_rx_handler(struct mbuf *m)
 {
-	int stolen = generic_rx_handler(m->dev, m);
+	int ret = linux_generic_rx_handler_common(m);
 
-	if (stolen) {
-		return NULL;
-	}
-
-	return m;
+	return likely(ret == NM_RX_HANDLER_STOLEN) ? NULL : m;
 }
 #endif /* HAVE_RX_HANDLER_RESULT */
 #endif /* HAVE_RX_REGISTER */
@@ -657,20 +670,32 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 int
 nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
-	struct sk_buff *m = a->m;
+	struct mbuf *m = a->m;
 	u_int len = a->len;
 	netdev_tx_t ret;
 
-	/* Empty the sk_buff. */
+	/* Empty the mbuf. */
 	if (unlikely(skb_headroom(m)))
 		skb_push(m, skb_headroom(m));
 	skb_trim(m, 0);
 
-	/* TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
+	/* Copy a netmap buffer into the mbuf.
+	 * TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
 	skb_copy_to_linear_data(m, a->addr, len); // skb_store_bits(m, 0, addr, len);
 	skb_put(m, len);
+
+	/* Hold a reference on this, we are going to recycle mbufs as
+	 * much as possible. */
 	NM_ATOMIC_INC(&m->users);
+
+	/* On linux m->dev is not reliable, since it can be changed by the
+	 * ndo_start_xmit() callback. This happens, for instance, with veth
+	 * and bridge drivers. For this reason, the nm_os_generic_xmit_frame()
+	 * implementation for linux stores a copy of m->dev into the
+	 * destructor_arg field. */
 	m->dev = a->ifp;
+	skb_shinfo(m)->destructor_arg = m->dev;
+
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
 	skb_set_queue_mapping(m, a->ring_nr);
 	m->priority = a->qevent ? NM_MAGIC_PRIORITY_TXQE : NM_MAGIC_PRIORITY_TX;
@@ -1278,7 +1303,6 @@ EXPORT_SYMBOL(netmap_backend_sendmsg);
 static inline int netmap_common_peek_head_len(struct netmap_adapter *na)
 {
         /* Here we assume to have a virtual port. */
-        struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	struct netmap_kring *kring = &na->rx_rings[0];
         struct netmap_ring *ring = kring->ring;
 	u_int i;
@@ -1306,8 +1330,8 @@ static inline int netmap_common_peek_head_len(struct netmap_adapter *na)
 
         /* The v1000 frontend assumes that the peek_head_len() callback
            doesn't count the bytes of the virtio-net-header. */
-        if (likely(ret >= vpna->virt_hdr_len)) {
-            ret -= vpna->virt_hdr_len;
+        if (likely(ret >= na->virt_hdr_len)) {
+            ret -= na->virt_hdr_len;
         }
 
 	return ret;

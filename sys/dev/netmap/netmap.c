@@ -885,7 +885,7 @@ netmap_krings_delete(struct netmap_adapter *na)
  * them first.
  */
 /* call with NMG_LOCK held */
-static void
+void
 netmap_hw_krings_delete(struct netmap_adapter *na)
 {
 	struct mbq *q = &na->rx_rings[na->num_rx_rings].rx_queue;
@@ -2185,6 +2185,17 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
 			error = ptnetmap_ctl(nmr, priv->np_na);
 			break;
+		} else if (i == NETMAP_VNET_HDR_GET) {
+			struct ifnet *ifp;
+
+			NMG_LOCK();
+			error = netmap_get_na(nmr, &na, &ifp, 0);
+			if (na && !error) {
+				nmr->nr_arg1 = na->virt_hdr_len;
+			}
+			netmap_unget_na(na, ifp);
+			NMG_UNLOCK();
+			break;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);
 			error = EINVAL;
@@ -2211,6 +2222,13 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				error = EBUSY;
 				break;
 			}
+
+			if (na->virt_hdr_len && !(nmr->nr_flags & NR_ACCEPT_VNET_HDR)) {
+				netmap_unget_na(na, ifp);
+				error = EIO;
+				break;
+			}
+
 			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
 			if (error) {    /* reg. failed, release priv and ref */
 				netmap_unget_na(na, ifp);
@@ -2619,8 +2637,6 @@ do_retry_rx:
 
 /*-------------------- driver support routines -------------------*/
 
-static int netmap_hw_krings_create(struct netmap_adapter *);
-
 /* default notify callback */
 static int
 netmap_notify(struct netmap_kring *kring, int flags)
@@ -2696,6 +2712,7 @@ netmap_attach_common(struct netmap_adapter *na)
 		 */
 		na->nm_bdg_attach = netmap_bwrap_attach;
 #endif
+
 	return 0;
 }
 

@@ -28,13 +28,13 @@
 #include <linux/if_vlan.h>
 #include <linux/in.h>
 #include <linux/interrupt.h>
-#include <linux/dma-mapping.h>
 #include <linux/virtio_net.h>
 
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_virt.h>
+#include <dev/netmap/netmap_mem2.h>
 
 
 static bool ptnet_gso = true;
@@ -57,6 +57,8 @@ module_param(ptnet_gso, bool, 0444);
 struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
+
+	int backend_regifs;
 
 	/* Mirrors PTFEAT register content. */
 	uint32_t ptfeatures;
@@ -82,7 +84,6 @@ struct ptnet_info {
 	struct page *rx_pool;
 	int rx_pool_num;
 
-	struct netmap_priv_d *nm_priv;
 	struct netmap_pt_guest_adapter *ptna;
 
 	struct napi_struct napi;
@@ -322,7 +323,6 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 /*
  * ptnet_get_stats - Get System Network Statistics
- * @netdev: network interface device structure
  *
  * Returns the address of the device statistics structure.
  */
@@ -334,7 +334,6 @@ ptnet_get_stats(struct net_device *netdev)
 
 /*
  * ptnet_change_mtu - Change the Maximum Transfer Unit
- * @netdev: network interface device structure
  * @new_mtu: new value for maximum frame size
  *
  * Returns 0 on success, negative on failure
@@ -351,16 +350,14 @@ ptnet_change_mtu(struct net_device *netdev, int new_mtu)
 
 /*
  * ptnet_tx_intr - Interrupt handler for TX queues
- * @irq: interrupt number
  * @data: pointer to a network interface device structure
  */
 static irqreturn_t
 ptnet_tx_intr(int irq, void *data)
 {
 	struct net_device *netdev = data;
-	struct ptnet_info *pi = netdev_priv(netdev);
 
-	if (!pi->nm_priv && netmap_tx_irq(netdev, 0)) {
+	if (netmap_tx_irq(netdev, 0)) {
 		return IRQ_HANDLED;
 	}
 
@@ -371,9 +368,24 @@ ptnet_tx_intr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static inline void
+ptnet_napi_schedule(struct ptnet_info *pi)
+{
+	/* Disable RX interrupts and schedule NAPI. */
+
+	if (likely(napi_schedule_prep(&pi->napi))) {
+		/* It's good thing to reset guest_need_rxkick as soon as
+		 * possible. */
+		pi->csb->guest_need_rxkick = 0;
+		__napi_schedule(&pi->napi);
+	} else {
+		/* NAPI is already scheduled and we are ok with it. */
+		pi->csb->guest_need_rxkick = 1;
+	}
+}
+
 /*
  * ptnet_rx_intr - Interrupt handler for RX queues
- * @irq: interrupt number
  * @data: pointer to a network interface device structure
  */
 static irqreturn_t
@@ -383,21 +395,12 @@ ptnet_rx_intr(int irq, void *data)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	unsigned int unused;
 
-	if (!pi->nm_priv && netmap_rx_irq(netdev, 0, &unused)) {
+	if (netmap_rx_irq(netdev, 0, &unused)) {
 		(void)unused;
 		return IRQ_HANDLED;
 	}
 
-	/* Disable interrupts and schedule NAPI. */
-	if (likely(napi_schedule_prep(&pi->napi))) {
-		/* It's good thing to reset guest_need_rxkick as soon as
-		 * possible. */
-		pi->csb->guest_need_rxkick = 0;
-		__napi_schedule(&pi->napi);
-	} else {
-		/* This should not happen, probably. */
-		pi->csb->guest_need_rxkick = 1;
-	}
+	ptnet_napi_schedule(pi);
 
 	return IRQ_HANDLED;
 }
@@ -436,7 +439,6 @@ ptnet_rx_pool_refill(struct ptnet_info *pi)
 
 /*
  * ptnet_rx_poll - NAPI RX polling callback
- * @pi: NIC private structure
  */
 static int
 ptnet_rx_poll(struct napi_struct *napi, int budget)
@@ -645,11 +647,10 @@ out_of_slots:
 
                 /* Double check for more completed RX slots. */
 		ptnet_sync_tail(&csb->rx_ring, kring);
-		if (head != ring->tail && napi_schedule_prep(napi)) {
+		if (head != ring->tail) {
 			/* If there is more work to do, disable notifications
-			 * and go ahead. */
-                        csb->guest_need_rxkick = 0;
-			__napi_schedule(napi);
+			 * and reschedule. */
+			ptnet_napi_schedule(pi);
                 }
 #ifdef HANGCTRL
 		if (mod_timer(&pi->hang_timer,
@@ -690,10 +691,10 @@ ptnet_netpoll(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 
-	/* disable_interrupts() */
+	pi->csb->guest_need_txkick = pi->csb->guest_need_rxkick = 0;
 	ptnet_tx_intr(pi->msix_entries[0].vector, netdev);
 	ptnet_rx_intr(pi->msix_entries[1].vector, netdev);
-	/* enable interrupts() */
+	pi->csb->guest_need_txkick = pi->csb->guest_need_rxkick = 1;
 }
 #endif
 
@@ -799,15 +800,15 @@ ptnet_ioregs_dump(struct ptnet_info *pi)
 	}
 }
 
-static int ptnet_nm_register_netif(struct netmap_adapter *na, int onoff);
-static int ptnet_nm_register_native(struct netmap_adapter *na, int onoff);
+static int ptnet_nm_krings_create(struct netmap_adapter *na);
+static void ptnet_nm_krings_delete(struct netmap_adapter *na);
 
+static int ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
+				int native);
 /*
  * ptnet_open - Called when a network interface is made active
- * @netdev: network interface device structure
  *
- * Returns 0 on success, negative value on failure
- *
+ * Returns 0 on success, negative value on failure.
  * The open entry point is called when a network interface is made
  * active by the system (IFF_UP). */
 static int
@@ -815,38 +816,50 @@ ptnet_open(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na = NA(netdev);
-	enum txrx t;
 	int ret;
+
+	D("%s: netif_running %u", __func__, netif_running(netdev));
 
 	netmap_adapter_get(na);
 
-	pi->nm_priv = netmap_priv_new();
-	if (!pi->nm_priv) {
-		pr_err("Failed to alloc netmap priv\n");
-		return -ENOMEM;
-	}
-
 	NMG_LOCK();
 
-	/* Replace nm_register method on the fly. */
-	na->nm_register = ptnet_nm_register_netif;
+	netmap_update_config(na);
 
-	/* Put the device in netmap mode. */
-	ret = netmap_do_regif(pi->nm_priv, na, 0, NR_REG_ALL_NIC |
-			      NR_EXCLUSIVE);
+	ret = netmap_mem_finalize(na->nm_mem, na);
 	if (ret) {
-		pr_err("netmap_do_regif() failed\n");
-		netmap_adapter_put(na);
-		NMG_UNLOCK();
-		return -ret;
+		pr_err("netmap_mem_finalize() failed\n");
+		goto err_mem_finalize;
 	}
+
+	if (pi->backend_regifs == 0) {
+		ret = ptnet_nm_krings_create(na);
+		if (ret) {
+			pr_err("ptnet_nm_krings_create() failed\n");
+			goto err_mem_finalize;
+		}
+
+		ret = netmap_mem_rings_create(na);
+		if (ret) {
+			pr_err("netmap_mem_rings_create() failed\n");
+			goto err_rings_create;
+		}
+
+		ret = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
+		if (ret) {
+			pr_err("netmap_mem_get_lut() failed\n");
+			goto err_get_lut;
+		}
+	}
+
+	ret = ptnet_do_nm_register(na, 1 /* on */,  0 /* not native */);
+	if (ret) {
+		goto err_register;
+	}
+
+	pi->backend_regifs ++;
 
 	NMG_UNLOCK();
-
-	/* Init np_si[t], this should have not effect on Linux. */
-	for_rx_tx(t) {
-		pi->nm_priv->np_si[t] = NULL;
-	}
 
 	{
 		unsigned int nm_buf_size = NETMAP_BUF_SIZE(na);
@@ -876,15 +889,31 @@ ptnet_open(struct net_device *netdev)
 
 	pr_info("%s: %p\n", __func__, pi);
 
+	/* There may be pending packets received in netmap mode while the
+	 * interface was down. Schedule NAPI to flush packets that are
+	 * pending in the RX ring. We won't receive further interrupts until
+	 * the pending ones will be processed.  */
+	D("Schedule NAPI to flush RX ring");
+	ptnet_napi_schedule(pi);
+
 	return 0;
+
+err_register:
+	memset(&na->na_lut, 0, sizeof(na->na_lut));
+err_get_lut:
+	netmap_mem_rings_delete(na);
+err_rings_create:
+	netmap_hw_krings_delete(na);
+err_mem_finalize:
+	netmap_adapter_put(na);
+	NMG_UNLOCK();
+	return -ret;
 }
 
 /*
  * ptnet_close - Disables a network interface
- * @netdev: network interface device structure
  *
- * Returns 0, this is not allowed to fail
- *
+ * Returns 0, this is not allowed to fail.
  * The close entry point is called when an interface is de-activated
  * by the OS.
  */
@@ -893,6 +922,8 @@ ptnet_close(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na = NA(netdev);
+
+	D("%s: netif_running %u", __func__, netif_running(netdev));
 
 #ifdef HANGCTRL
 	del_timer(&pi->hang_timer);
@@ -905,12 +936,19 @@ ptnet_close(struct net_device *netdev)
 	//synchronize_irq(pi->pdev->irq);
 
 	NMG_LOCK();
-	netmap_do_unregif(pi->nm_priv);
-	na->nm_register = ptnet_nm_register_native;
+
+	pi->backend_regifs --;
+
+	ptnet_do_nm_register(na, 0 /* off */,  0 /* not native */);
+
+	if (pi->backend_regifs == 0) {
+		netmap_mem_rings_delete(na);
+		ptnet_nm_krings_delete(na);
+	}
+	netmap_mem_deref(na->nm_mem, na);
+
 	NMG_UNLOCK();
 
-	netmap_priv_delete(pi->nm_priv);
-	pi->nm_priv = NULL;
 	netmap_adapter_put(na);
 
 	pr_info("%s: %p\n", __func__, pi);
@@ -928,6 +966,30 @@ static const struct net_device_ops ptnet_netdev_ops = {
 	.ndo_poll_controller	= ptnet_netpoll,
 #endif
 };
+
+
+static int
+ptnet_nm_krings_create(struct netmap_adapter *na)
+{
+	struct ptnet_info *pi = netdev_priv(na->ifp);
+	int ret = 0;
+
+	if (pi->backend_regifs == 0) {
+		ret = netmap_hw_krings_create(na);
+	}
+
+	return ret;
+}
+
+static void
+ptnet_nm_krings_delete(struct netmap_adapter *na)
+{
+	struct ptnet_info *pi = netdev_priv(na->ifp);
+
+	if (pi->backend_regifs == 0) {
+		netmap_hw_krings_delete(na);
+	}
+}
 
 static uint32_t
 ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
@@ -947,98 +1009,102 @@ static struct netmap_pt_guest_ops ptnet_nm_pt_guest_ops = {
 };
 
 static int
-ptnet_nm_register_common(struct netmap_adapter *na, int onoff,
-			 int native)
+ptnet_do_nm_register(struct netmap_adapter *na, int onoff,
+		     int native)
 {
 	struct netmap_pt_guest_adapter *ptna =
 			(struct netmap_pt_guest_adapter *)na;
 
 	/* device-specific */
 	struct net_device *netdev = na->ifp;
+	struct ptnet_info *pi = netdev_priv(netdev);
 	struct paravirt_csb *csb = ptna->csb;
 	enum txrx t;
 	int ret = 0;
 	int i;
 
-	if (na->active_fds > 0) {
-		/* This cannot happen since we have NR_EXCLUSIVE. */
-		BUG_ON(!native);
-
-		/* Nothing to do. */
-		return 0;
+	/* If this is the last netmap client, guest interrupt enable flags may
+	 * be in arbitrary state. Since these flags are going to be used also
+	 * by the netdevice driver, we have to make sure to start with
+	 * notifications enabled. Also, schedule NAPI to flush pending packets
+	 * in the RX rings, since we will not receive further interrupts
+	 * until these will be processed. */
+	if (na->active_fds == 0 && !onoff && native) {
+		D("Exit netmap mode, re-enable interrupts");
+		csb->guest_need_txkick = csb->guest_need_rxkick = 1;
+		if (netif_running(netdev)) {
+			D("Exit netmap mode, schedule NAPI to flush RX ring");
+			ptnet_napi_schedule(pi);
+		}
 	}
 
 	if (onoff) {
-		/* Make sure the host adapter passed through is ready
-		 * for txsync/rxsync. This also initializes the CSB. */
-		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
-		if (ret) {
-			return ret;
-		}
+		if (pi->backend_regifs == 0) {
+			/* Make sure the host adapter passed through is ready
+			 * for txsync/rxsync. This also initializes the CSB. */
+			ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
+			if (ret) {
+				goto out;
+			}
 
-		for_rx_tx(t) {
-			for (i=0; i<nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-				struct pt_ring *ptring;
+			for_rx_tx(t) {
+				for (i=0; i<nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = &NMR(na, t)[i];
+					struct pt_ring *ptring;
 
-				if (!nm_kring_pending_on(kring)) {
-					continue;
+					/* Sync krings from the host, reading from
+					 * CSB. */
+					ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
+					kring->rhead = kring->ring->head = ptring->head;
+					kring->rcur = kring->ring->cur = ptring->cur;
+					kring->nr_hwcur = ptring->hwcur;
+					kring->nr_hwtail = kring->rtail =
+						kring->ring->tail = ptring->hwtail;
 				}
-
-				/* Sync krings from the host, reading from
-				 * CSB. */
-				ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
-				kring->rhead = kring->ring->head = ptring->head;
-				kring->rcur = kring->ring->cur = ptring->cur;
-				kring->nr_hwcur = ptring->hwcur;
-				kring->nr_hwtail = kring->rtail =
-					kring->ring->tail = ptring->hwtail;
-				kring->nr_mode = NKR_NETMAP_ON;
 			}
 		}
 
+		/* If not native, don't call nm_set_native_flags, since we don't want
+		 * to replace ndo_start_xmit method, nor set NAF_NETMAP_ON */
 		if (native) {
+			for_rx_tx(t) {
+				for (i=0; i<nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = &NMR(na, t)[i];
+
+					if (nm_kring_pending_on(kring)) {
+						kring->nr_mode = NKR_NETMAP_ON;
+					}
+				}
+			}
 			nm_set_native_flags(na);
-		} else {
-			/* Don't call nm_set_native_flags, since we don't want
-			 * to replace ndo_start_xmit method. */
-			na->na_flags |= NAF_NETMAP_ON;
 		}
+
 	} else {
 		if (native) {
 			nm_clear_native_flags(na);
-		} else {
-			na->na_flags &= NAF_NETMAP_ON;
-		}
+			for_rx_tx(t) {
+				for (i=0; i<nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = &NMR(na, t)[i];
 
-		for_rx_tx(t) {
-			for (i=0; i<nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-
-				if (!nm_kring_pending_off(kring)) {
-					continue;
+					if (nm_kring_pending_off(kring)) {
+						kring->nr_mode = NKR_NETMAP_OFF;
+					}
 				}
-
-				kring->nr_mode = NKR_NETMAP_OFF;
 			}
 		}
 
-		ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
+		if (pi->backend_regifs == 0) {
+			ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
+		}
 	}
-
+out:
 	return ret;
 }
 
 static int
-ptnet_nm_register_netif(struct netmap_adapter *na, int onoff)
+ptnet_nm_register(struct netmap_adapter *na, int onoff)
 {
-	return ptnet_nm_register_common(na, onoff, 0);
-}
-
-static int
-ptnet_nm_register_native(struct netmap_adapter *na, int onoff)
-{
-	return ptnet_nm_register_common(na, onoff, 1);
+	return ptnet_do_nm_register(na, onoff, 1);
 }
 
 static int
@@ -1111,15 +1177,16 @@ static struct netmap_adapter ptnet_nm_ops = {
 	.num_rx_desc = 1024,
 	.num_tx_rings = 1,
 	.num_rx_rings = 1,
-	.nm_register = ptnet_nm_register_native,
+	.nm_register = ptnet_nm_register,
 	.nm_config = ptnet_nm_config,
 	.nm_txsync = ptnet_nm_txsync,
 	.nm_rxsync = ptnet_nm_rxsync,
+	.nm_krings_create = ptnet_nm_krings_create,
+	.nm_krings_delete = ptnet_nm_krings_delete,
 };
 
 /*
  * ptnet_probe - Device Initialization Routine
- * @pdev: PCI device information struct
  * @ent: entry in ptnet_pci_table
  *
  * Returns 0 on success, negative on failure
@@ -1225,12 +1292,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 #endif /* PTNET_CSB_ALLOC */
 
-	/* useless, to be removed */
-	err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
-	if (err) {
-		goto err_irqs;
-	}
-
 	netdev->netdev_ops = &ptnet_netdev_ops;
 	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
 
@@ -1288,10 +1349,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->ptna = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
 	pi->ptna->csb = pi->csb;
 
-	/* This is not-NULL when the network interface is up, ready to be
-	 * used by the kernel stack. When NULL, the interface can be
-	 * opened in netmap mode. */
-	pi->nm_priv = NULL;
+	pi->backend_regifs = 0;
 
 	netif_carrier_on(netdev);
 
@@ -1320,7 +1378,6 @@ err_pci_reg:
 
 /*
  * ptnet_remove - Device Removal Routine
- * @pdev: PCI device information struct
  *
  * ptnet_remove is called by the PCI subsystem to alert the driver
  * that it should release a PCI device.  The could be caused by a
@@ -1387,12 +1444,6 @@ static struct pci_driver ptnet_driver = {
 	.shutdown = ptnet_shutdown,
 };
 
-/*
- * ptnet_init - Driver Registration Routine
- *
- * ptnet_init is called when netmap is loaded.
- * All it does is register with the PCI subsystem.
- */
 int
 ptnet_init(void)
 {
@@ -1402,12 +1453,6 @@ ptnet_init(void)
 	return pci_register_driver(&ptnet_driver);
 }
 
-/*
- * ptnet_exit - Driver Exit Cleanup Routine
- *
- * ptnet_exit is called just before netmap module is removed
- * from memory.
- */
 void
 ptnet_fini(void)
 {
