@@ -25,7 +25,7 @@
 
 #if 0 /* COMMENT */
 
-This program implements a bandwidth and delay emulator between two
+This program implements TLEM, a bandwidth and delay emulator between two
 netmap ports. It is meant to be run from the command line and
 implemented with a main control thread, plus a couple of threads
 for each direction of the communication.
@@ -61,7 +61,7 @@ In order to get good and predictable performance, it is important
 that threads are pinned to a single core, and it is preferable that
 prod() and cons() for each direction share the cache as much as possible.
 Putting them on two hyperthreads of the same core seems to give
-good results byt that shoud be investigated further.
+good results but that shoud be investigated further.
 
 It also seems useful to use a scheduler (SCHED_FIFO or SCHED_RR)
 that gives more predictable cycles to the CPU, as well as try
@@ -855,7 +855,7 @@ cons(void *_pa)
  * then acts as a cons().
  */
 static void *
-prodcons_main(void *_a)
+tlem_main(void *_a)
 {
     struct pipe_args *a = _a;
     struct _qs *q = &a->q;
@@ -939,7 +939,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: prodcons [-v] [-D delay] [-B bps] [-L loss] [-Q qsize] \n"
+	    "usage: tlem [-v] [-D delay] [-B bps] [-L loss] [-Q qsize] \n"
 	    "\t[-b burst] [-w wait_time] -i ifa -i ifb\n");
 	exit(1);
 }
@@ -1052,7 +1052,7 @@ static uint64_t parse_bw(const char *arg);
 static uint64_t parse_qsize(const char *arg);
 
 /*
- * prodcons [options]
+ * tlem [options]
  * accept separate sets of arguments for the two directions
  *
  */
@@ -1244,8 +1244,8 @@ main(int argc, char **argv)
 		bp[1].q.qsize = 50000;
 	}
 
-	pthread_create(&bp[0].cons_tid, NULL, prodcons_main, (void*)&bp[0]);
-	pthread_create(&bp[1].cons_tid, NULL, prodcons_main, (void*)&bp[1]);
+	pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
+	pthread_create(&bp[1].cons_tid, NULL, tlem_main, (void*)&bp[1]);
 
 	signal(SIGINT, sigint_h);
 	sleep(1);
