@@ -25,6 +25,7 @@
 #ifndef RCAP_H_INCLUDED
 #define RCAP_H_INCLUDED
 
+#if 1
 
 /* This data structs need to be transfered in rpcap.c once debug is completed*/
 struct pcap_hdr {
@@ -105,7 +106,7 @@ struct pcaprec_hdr {
 /* Data needs to be transfered untill here*/
 
 
-
+#endif
 
 
 
