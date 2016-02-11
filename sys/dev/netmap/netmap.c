@@ -2185,6 +2185,17 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
 			error = ptnetmap_ctl(nmr, priv->np_na);
 			break;
+		} else if (i == NETMAP_VNET_HDR_GET) {
+			struct ifnet *ifp;
+
+			NMG_LOCK();
+			error = netmap_get_na(nmr, &na, &ifp, 0);
+			if (na && !error) {
+				nmr->nr_arg1 = na->virt_hdr_len;
+			}
+			netmap_unget_na(na, ifp);
+			NMG_UNLOCK();
+			break;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);
 			error = EINVAL;

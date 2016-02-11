@@ -504,6 +504,7 @@ struct nmreq {
 #define NETMAP_PT_HOST_DELETE	9	/* delete ptnetmap kthreads */
 #define NETMAP_BDG_POLLING_ON	10	/* delete polling kthread */
 #define NETMAP_BDG_POLLING_OFF	11	/* delete polling kthread */
+#define NETMAP_VNET_HDR_GET	12      /* get the port virtio-net-hdr length */
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
 #define NETMAP_BDG_HOST		1	/* attach the host stack on ATTACH */
 
