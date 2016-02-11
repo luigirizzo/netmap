@@ -535,6 +535,12 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NR_PTNETMAP_HOST	0x1000
 #define NR_RX_RINGS_ONLY	0x2000
 #define NR_TX_RINGS_ONLY	0x4000
+/* Applications set this flag if they are able to deal with virtio-net headers,
+ * that is send/receive frames that start with a virtio-net header.
+ * If not set, NIOCREGIF will fail with netmap ports that require applications
+ * to use those headers. If the flag is set, the application can use the
+ * NETMAP_VNET_HDR_GET command to figure out the header length. */
+#define NR_ACCEPT_VNET_HDR	0x8000
 
 
 /*
