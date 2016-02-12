@@ -463,88 +463,6 @@ pkt_at(struct _qs *q, uint64_t ofs)
     return (struct q_pkt *)(q->buf + ofs);
 }
 
-/*
- * q_reclaim() accounts for packets whose output time has expired,
- * return 1 if any has been reclaimed.
- * XXX if bw = 0, prod_queued does not need to be updated or prod_tail_1 handled
- */
-static int
-q_reclaim(struct _qs *q)
-{
-	struct q_pkt *p0, *p;
-
-	p = p0 = pkt_at(q, q->prod_tail_1);
-	/* always reclaim queued packets */
-	while (ts_cmp(p->pt_qout, q->prod_now) <= 0 && q->prod_queued > 0) {
-	    ND(1, "reclaim pkt at %ld len %d left %ld", q->prod_tail_1, p->pktlen, q->prod_queued);
-	    q->prod_queued -= p->pktlen;
-	    q->prod_tail_1 = p->next;
-	    p = pkt_at(q, q->prod_tail_1);
-	}
-	return p != p0;
-}
-
-/*
- * no_room() checks for room in the queue and delay line.
- *
- * For the queue, we check that the amount of queued bytes does
- * not exceed the space. We reclaim expired packets if needed.
- *
- * For the delay line and buffer, we make sure that a packet is never
- * split across a boundary. "need" is the amount of space we allocate,
- * padding as needed, so that new_t will become 0 if needed,
- * new_t > 0 if there is room in the remaining part of the buffer.
- *
- * enqueue a packet. Two cases:
- * A:	[     h......t    ]
- *	because of the padding, overflow if (h <= t && new_t == 0 && h == 0)
- *
- * B:	[...t     h ......]
- *	overflow if (h > t && (new_t == 0 || new_t >= h)
- *
- * Conditions to have space:
- * A
- * for another one, wrap tail to 0 to ease checks.
- */
-static int
-no_room(struct _qs *q)
-{
-    uint64_t h = q->prod_head;	/* shorthand */
-    uint64_t t = q->prod_tail;	/* shorthand */
-    struct q_pkt *p = pkt_at(q, t);
-    uint64_t need = pad(q->cur_len) + sizeof(*p); /* space for a packet */
-    uint64_t new_t = t + need;
-
-    if (q->buflen - new_t < MAX_PKT + sizeof(*p))
-	new_t = 0; /* further padding */
-
-    /* XXX let the queue overflow once, otherwise it is complex
-     * to deal with 0-sized queues
-     */
-    if (q->prod_queued > q->qsize) {
-	q_reclaim(q);
-	if (q->prod_queued > q->qsize) {
-	    q->prod_drop++;
-	    RD(1, "too many bytes queued %lu, drop %lu",
-		(_P64)q->prod_queued, (_P64)q->prod_drop);
-	    return 1;
-	}
-    }
-
-    if ((h <= t && new_t == 0 && h == 0) || (h > t && (new_t == 0 || new_t >= h)) ) {
-	h = q->prod_head = q->head; /* re-read head, just in case */
-	/* repeat the test */
-	if ((h <= t && new_t == 0 && h == 0) || (h > t && (new_t == 0 || new_t >= h)) ) {
-	    ND(1, "no room for insert h %ld t %ld new_t %ld",
-		(_P64)h, (_P64)t, (_P64)new_t);
-	    return 1; /* no room for insert */
-	}
-    }
-    p->next = new_t; /* prepare for queueing */
-    p->pktlen = 0;
-    return 0;
-}
-
 
 /*
  * we have already checked for room and prepared p->next
@@ -571,151 +489,6 @@ enq(struct _qs *q)
 }
 
 
-int
-rx_queued(struct nm_desc *d)
-{
-    u_int tot = 0, i;
-    for (i = d->first_rx_ring; i <= d->last_rx_ring; i++) {
-	struct netmap_ring *rxr = NETMAP_RXRING(d->nifp, i);
-
-	ND(5, "ring %d h %d cur %d tail %d", i,
-		rxr->head, rxr->cur, rxr->tail);
-	tot += nm_ring_space(rxr);
-    }
-    return tot;
-}
-
-/*
- * wait for packets, then compute a timestamp in 64-bit ns
- */
-static void
-wait_for_packets(struct _qs *q)
-{
-    int n0;
-    uint64_t prev = q->prod_now;
-
-    ioctl(q->src_port->fd, NIOCRXSYNC, 0); /* forced */
-    while (!do_abort) {
-
-	n0 = rx_queued(q->src_port);
-	if (n0 > (int)q->rx_qmax) {
-	    q->rx_qmax = n0;
-	}
-	if (n0)
-	    break;
-	prev = 0; /* we slept */
-	if (1) {
-	    usleep(5);
-	    ioctl(q->src_port->fd, NIOCRXSYNC, 0);
-	} else {
-	    struct pollfd pfd;
-	    struct netmap_ring *rx;
-	    int ret;
-
-	    pfd.fd = q->src_port->fd;
-	    pfd.revents = 0;
-	    pfd.events = POLLIN;
-	    ND(1, "prepare for poll on %s", q->prod_ifname);
-	    ret = poll(&pfd, 1, 10000);
-	    if (ret <= 0 || verbose) {
-		D("poll %s ev %x %x rx %d@%d",
-		    ret <= 0 ? "timeout" : "ok",
-		    pfd.events,
-		    pfd.revents,
-		    rx_queued(q->src_port),
-		    NETMAP_RXRING(q->src_port->nifp, q->src_port->first_rx_ring)->cur
-		);
-	    }
-	    if (pfd.revents & POLLERR) {
-		rx = NETMAP_RXRING(q->src_port->nifp, q->src_port->first_rx_ring);
-		D("error on fd0, rx [%d,%d,%d)",
-		    rx->head, rx->cur, rx->tail);
-		sleep(1);
-	    }
-	}
-    }
-    set_tns_now(&q->prod_now, q->t0);
-    if (ts_cmp(q->qt_qout, q->prod_now) < 0) {
-	q->qt_qout = q->prod_now;
-    }
-    if (prev > 0 && (prev = q->prod_now - prev) > q->prod_max_gap) {
-	q->prod_max_gap = prev;
-    }
-    ND(10, "%s %d queued packets at %ld ms",
-	q->prod_ifname, n0, (q->prod_now/1000000) % 10000);
-}
-
-/*
- * prefetch a packet 'pos' slots ahead of cur.
- * not very useful though
- */
-void
-prefetch_packet(struct netmap_ring *rxr, int pos)
-{
-    struct netmap_slot *rs;
-    uint32_t ofs = rxr->cur + pos;
-    uint32_t i, l;
-    const char *buf;
-
-    if (ofs >= rxr->num_slots)
-	return;
-    rs = &rxr->slot[ofs];
-    buf = NETMAP_BUF(rxr, rs->buf_idx);
-    l = rs->len;
-    for (i = 0; i < l; i += 64)
-	__builtin_prefetch(buf + i);
-}
-
-/*
- * initialize state variables to the first or next packet
- */
-static void
-scan_ring(struct _qs *q, int next /* bool */)
-{
-    struct netmap_slot *rs;
-    struct netmap_ring *rxr = q->rxring; /* invalid if next == 0 */
-    struct nm_desc *pa = q->src_port;
-
-    /* fast path for the first two */
-    if (likely(next != 0)) { /* current ring */
-	ND(10, "scan next");
-	/* advance */
-	rxr->head = rxr->cur = nm_ring_next(rxr, rxr->cur);
-	if (!nm_ring_empty(rxr)) /* good one */
-	    goto got_one;
-	q->si++;	/* otherwise update and fallthrough */
-    } else { /* scan from beginning */
-	q->si = pa->first_rx_ring;
-	ND(10, "scanning first ring %d", q->si);
-    }
-    while (q->si <= pa->last_rx_ring) {
-	q->rxring = rxr = NETMAP_RXRING(pa->nifp, q->si);
-	if (!nm_ring_empty(rxr))
-	    break;
-	q->si++;
-	continue;
-    }
-    if (q->si > pa->last_rx_ring) { /* no data, cur == tail */
-        ND(5, "no more pkts on %s", q->prod_ifname);
-	return;
-    }
-got_one:
-    rs = &rxr->slot[rxr->cur];
-    if (unlikely(rs->buf_idx < 2)) {
-	D("wrong index rx[%d] = %d", rxr->cur, rs->buf_idx);
-	sleep(2);
-    }
-    if (unlikely(rs->len > MAX_PKT)) { // XXX
-	D("wrong len rx[%d] len %d", rxr->cur, rs->len);
-	rs->len = 0;
-    }
-    q->cur_pkt = NETMAP_BUF(rxr, rs->buf_idx);
-    q->cur_len = rs->len;
-    //prefetch_packet(rxr, 1); not much better than prefetching q->cur_pkt, one line
-    __builtin_prefetch(q->cur_pkt);
-    __builtin_prefetch(rs+1); /* one row ahead ? */
-    ND(10, "-------- slot %d tail %d len %d buf %p", rxr->cur, rxr->tail, q->cur_len, q->cur_pkt);
-}
 
 /*
  * simple handler for parameters not supplied
@@ -729,65 +502,6 @@ null_run_fn(struct _qs *q, struct _cfg *cfg)
 }
 
 
-static int
-drop_after(struct _qs *q)
-{
-	(void)q; // XXX
-	return 0;
-}
-
-
-static void *
-prod(void *_pa)
-{
-    struct pipe_args *pa = _pa;
-    struct _qs *q = &pa->q;
-
-    setaffinity(pa->prod_core);
-    set_tns_now(&q->prod_now, q->t0);
-    q->qt_qout = q->qt_tx = q->prod_now;
-    ND("start times %ld", q->prod_now);
-    while (!do_abort) { /* producer, infinite */
-	int count;
-
-	wait_for_packets(q);	/* also updates prod_now */
-	// XXX optimize to flush frequently
-	for (count = 0, scan_ring(q, 0); count < q->burst && !nm_ring_empty(q->rxring);
-		count++, scan_ring(q, 1)) {
-	    // transmission time
-	    uint64_t t_tx, tt;	/* output and transmission time */
-
-	    if (q->cur_len < 60) {
-		RD(5, "short packet len %d", q->cur_len);
-		continue; // short frame
-	    }
-	    q->c_loss.run(q, &q->c_loss);
-	    if (q->cur_drop)
-		continue;
-	    if (no_room(q)) {
-		q->tail = q->prod_tail; /* notify */
-		usleep(1); // XXX give cons a chance to run ?
-		if (no_room(q)) /* try to run drop-free once */
-		    continue;
-	    }
-	    // XXX possibly implement c_tt for transmission time emulation
-	    q->c_bw.run(q, &q->c_bw);
-	    tt = q->cur_tt;
-	    q->qt_qout += tt;
-	    if (drop_after(q))
-		continue;
-	    q->c_delay.run(q, &q->c_delay); /* compute delay */
-	    t_tx = q->qt_qout + q->cur_delay;
-	    ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
-	    /* insure no reordering and spacing by transmission time */
-	    q->qt_tx = (t_tx >= q->qt_tx + tt) ? t_tx : q->qt_tx + tt;
-	    enq(q);
-	}
-	q->tail = q->prod_tail; /* notify */
-    }
-    D("exiting on abort");
-    return NULL;
-}
 #if 0
 static inline int
 enq_pcap (struct _qs* q)
@@ -979,13 +693,15 @@ cons(void *_pa)
  * phases. It first fill the queue and then starts the cons()
  */
 static void *
-pcap_prodcons_main(void *_a)
+nmreplay_main(void *_a)
 {
     struct pipe_args *a = _a;
     struct _qs *q = &a->q;
     const char *cap_fname = q->prod_ifname;
     FILE *fp = NULL;
 
+    setaffinity(a->cons_core);
+    set_tns_now(&q->t0, 0); /* starting reference */
     a->pb = nm_open(q->cons_ifname, NULL, 0, NULL);
     if (a->pb == NULL) {
 	ED("cannot open netmap on %s", q->cons_ifname);
@@ -1003,7 +719,7 @@ pcap_prodcons_main(void *_a)
     fclose(fp);
     fp = NULL;
     if (q->pcap == NULL){
-	ED("unable to open file %s", cap_fname);
+	ED("unable to parse file %s", cap_fname);
 	goto fail;
     }
     pcap_prod((void*)a);
@@ -1020,82 +736,6 @@ fail:
     }
     return NULL;
 }
-
-/*
- * main thread for each direction.
- * Allocates memory for the queues, creates the prod() thread,
- * then acts as a cons().
- * XXX in DO_PCAP_REPLAY read from a file instead of creating
- * a producer thread.
- */
-static void *
-prodcons_main(void *_a)
-{
-    struct pipe_args *a = _a;
-    struct _qs *q = &a->q;
-    uint64_t need;
-
-    setaffinity(a->cons_core);
-    set_tns_now(&q->t0, 0); /* starting reference */
-    if (q->c_pmode.parse) {
-		D("operating in pcap streaming mode ");
-		return pcap_prodcons_main(a);
-    }
-    a->pa = nm_open(q->prod_ifname, NULL, NETMAP_NO_TX_POLL, NULL);
-    if (a->pa == NULL) {
-	ED("cannot open %s", q->prod_ifname);
-	return NULL;
-    }
-    // XXX use a single mmap ?
-    a->pb = nm_open(q->cons_ifname, NULL, NM_OPEN_NO_MMAP, a->pa);
-    if (a->pb == NULL) {
-	ED("cannot open %s", q->cons_ifname);
-	nm_close(a->pa);
-	return NULL;
-    }
-    a->zerocopy = a->zerocopy && (a->pa->mem == a->pb->mem);
-    ND("------- zerocopy %ssupported", a->zerocopy ? "" : "NOT ");
-    /* allocate space for the queue:
-     * compute required bw*delay (adding 1ms for good measure),
-     * then add the queue size i bytes, then multiply by three due
-     * to the packet expansion for padding
-     */
-	need = q->max_bps ? q->max_bps : 10ULL*1000*1000*1000; /* default 10G */
-	need *= q->max_delay + 1000000;	/* delay is in nanoseconds */
-	need /= TIME_UNITS; /* total bits */
-	need /= 8; /* in bytes */
-	need += q->qsize; /* in bytes */
-	need += 3 * MAX_PKT; // safety
-	/*
-	 * This is the memory strictly for packets.
-	 * The size can increase a lot if we account for descriptors and
-	 * rounding.
-	 * In fact, the expansion factor can be up to a factor of 3
-	 * for particularly bad situations (65-byte packets)
-	 */
-	need *= 3; /* room for descriptors and padding */
-
-	q->buf = calloc(1, need);
-	if (q->buf == NULL) {
-	ED("alloc %ld bytes for queue failed, exiting", (_P64)need);
-	nm_close(a->pa);
-	nm_close(a->pb);
-	return(NULL);
-	}
-	q->buflen = need;
-	ED("----\n\t%s -> %s :  bps %ld delay %s loss %s queue %ld bytes"
-	"\n\tbuffer %lu bytes",
-	q->prod_ifname, q->cons_ifname,
-	(_P64)q->max_bps, q->c_delay.optarg, q->c_loss.optarg, (_P64)q->qsize,
-	(_P64)q->buflen);
-	q->src_port = a->pa;
-	pthread_create(&a->prod_tid, NULL, prod, (void*)a);
-    /* continue as cons() */
-    cons((void*)a);
-    D("exiting on abort");
-    return NULL;
-}
-
 
 
 static void
@@ -1432,10 +1072,7 @@ main(int argc, char **argv)
 		bp[1].q.qsize = 50000;
 	}
 
-	pthread_create(&bp[0].cons_tid, NULL, prodcons_main, (void*)&bp[0]);
-    // XXX do not run the second threads in replay mode
-    if (!bp[0].q.c_pmode.parse)
-	pthread_create(&bp[1].cons_tid, NULL, prodcons_main, (void*)&bp[1]);
+	pthread_create(&bp[0].cons_tid, NULL, nmreplay_main, (void*)&bp[0]);
 	signal(SIGINT, sigint_h);
 	sleep(1);
 	while (!do_abort) {

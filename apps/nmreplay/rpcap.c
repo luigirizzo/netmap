@@ -29,6 +29,9 @@
 #include <fcntl.h>
 #include "rpcap.h"
 
+#if 0
+Read a pcap file, create a memory structure with the expanded packets.
+#endif
 
 /*
  * a simple library to read from a pcap file into a list

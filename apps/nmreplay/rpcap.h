@@ -96,7 +96,6 @@ struct pcap_pkthdr {
 };
 /* Data needs to be transfered untill here*/
 
-typedef struct pcaprec_hdr pcaprec_hdr_t;
 
 struct pkt_list_element {
     struct pcap_pkthdr hdr;
