@@ -85,6 +85,7 @@ prod()
     be of use:
     	q->cur_pkt	points to the buffer containing the packet
 	q->cur_len	packet length, excluding CRC
+	q->cur_caplen	available packet length (may be shorter than cur_len)
 	q->prod_now	time at which the packet was received,
 			in nanoseconds. A batch of packets may
 			have the same value q->prod_now
@@ -274,11 +275,6 @@ struct nm_pcap_file {
     const char *cur;	/* running pointer */
     const char *lim;	/* data + file_len */
     int err;
-
-    /* packet currently being analysed */
-    uint64_t	cur_ts;
-    uint32_t	cur_len;
-    uint32_t	cur_caplen;
 };
 
 static struct nm_pcap_file *readpcap(const char *fn);
@@ -349,11 +345,14 @@ read_next_info(struct nm_pcap_file *pf, int size)
 /*
  * mmap the file, make sure timestamps are sorted, and count
  * packets and sizes
+ * Timestamps represent the receive time of the packets.
+ * We need to compute also the 'first_ts' which refers to a hypotetical
+ * packet right before the first one, see the code for details.
  */
 static struct nm_pcap_file *readpcap(const char *fn)
 {
     struct nm_pcap_file _f, *pf = &_f;
-    uint64_t prev_ts;
+    uint64_t prev_ts, first_pkt_time;
     uint32_t first_len = 0;
 
     bzero(pf, sizeof(*pf));
@@ -436,13 +435,25 @@ static struct nm_pcap_file *readpcap(const char *fn)
 	pf->tot_bytes_rounded += pad(len) + sizeof(struct q_pkt);
 	pf->cur += caplen;
     }
+    /*
+     * We determine that based on the
+     * average bandwidth of the trace, as follows
+     *   first_pkt_ts = p[0].len / avg_bw
+     * In turn avg_bw = (total_len - p[0].len)/(p[n-1].ts - p[0].ts)
+     * so 
+     *   first_ts =  p[0].ts - p[0].len * (p[n-1].ts - p[0].ts) / (total_len - p[0].len)
+     */
     pf->total_tx_time = prev_ts - pf->first_ts;
-    if (pf->tot_pkt == 1) {
+    if (pf->tot_bytes == first_len) {
 	/* cannot estimate bandwidth, so force 1 Gbit */
-	pf->total_tx_time += first_len * 8; /* * 10^9 / bw */
+	first_pkt_time = first_len * 8; /* * 10^9 / bw */
     } else {
-	pf->total_tx_time += pf->total_tx_time / (pf->tot_bytes - first_len);
+	first_pkt_time = pf->total_tx_time / (pf->tot_bytes - first_len);
     }
+    pf->total_tx_time += first_pkt_time;
+    pf->first_ts -= first_pkt_time;
+
+    D("--- first packet len %d time %d ns", first_len, (int)first_pkt_time);
 
     fprintf(stderr, "total %d packets\n", (int)pf->tot_pkt);
     pf = calloc(1, sizeof(*pf));
@@ -625,8 +636,9 @@ struct _qs { /* shared queue */
 		 */
 
 	/* producer's fields controlling the queueing */
-	char *		cur_pkt;	/* current packet being analysed */
+	const char *	cur_pkt;	/* current packet being analysed */
 	uint32_t	cur_len;	/* length of current packet */
+	uint32_t	cur_caplen;	/* captured length of current packet */
 
 	int		cur_drop;	/* 1 if current  packet should be dropped. */
 		/*
@@ -740,6 +752,29 @@ pkt_at(struct _qs *q, uint64_t ofs)
 }
 
 
+/*
+ * we have already checked for room and prepared p->next
+ */
+static inline int
+enq(struct _qs *q)
+{
+    struct q_pkt *p = pkt_at(q, q->prod_tail);
+
+    /* hopefully prefetch has been done ahead */
+    nm_pkt_copy(q->cur_pkt, (char *)(p+1), q->cur_caplen);
+    p->pktlen = q->cur_len;
+    p->pt_qout = q->qt_qout;
+    p->pt_tx = q->qt_tx;
+    ND(1, "enqueue len %d at %d new tail %ld qout %ld tx %ld",
+        q->cur_len, (int)q->prod_tail, p->next,
+        p->pt_qout, p->pt_tx);
+    q->prod_tail = p->next;
+    q->tx++;
+    if (q->max_bps)
+        q->prod_queued += p->pktlen;
+    /* XXX update timestamps ? */
+    return 0;
+}
 
 /*
  * simple handler for parameters not supplied
@@ -755,24 +790,32 @@ null_run_fn(struct _qs *q, struct _cfg *cfg)
 
 
 /*
- * put packet data into the buffer
+ * put packet data into the buffer.
+ * We read from the mmapped pcap file, construct header, copy
+ * the captured length of the packet and pad with zeroes.
  */
 static void *
 pcap_prod(void *_pa)
 {
     struct pipe_args *pa = _pa;
-    struct q_pkt *pkt = NULL;
     struct _qs *q = &pa->q;
-    double bw = q->c_pmode.d[0];	//This has been set by the parse function inside q->c_pmode
     struct nm_pcap_file *pf = q->pcap;	//this has been already open by cmd_apply
-    uint32_t loops = 0, repeat = 1; //number of copy of the same packets set in queue
-    uint64_t insert = 0; //packet counter
+    uint32_t loops, i, tot_pkts;
 
     /* data plus the loop record */
-    uint64_t need = repeat * pf->tot_bytes_rounded + sizeof(struct q_pkt);
+    uint64_t need;
+    uint64_t t_tx, tt, last_ts; /* last timestamp from trace */
+
+    /*
+     * For speed we make sure the trace is at least some 1000 packets,
+     * so we may need to loop the trace more than once (for short traces)
+     */
+    loops = pf->tot_pkt * (1 + 1000/ pf->tot_pkt);
+    tot_pkts = loops * pf->tot_pkt;
+    need = loops * pf->tot_bytes_rounded + sizeof(struct q_pkt);
     q->buf = calloc(1, need);
     if (q->buf == NULL) {
-	ED("alloc %ld bytes for queue failed, exiting",(_P64)need);
+	D("alloc %ld bytes for queue failed, exiting",(_P64)need);
 	goto fail;
     }
     q->prod_head = q->prod_tail = 0;
@@ -786,30 +829,34 @@ pcap_prod(void *_pa)
     pf->cur = pf->data + sizeof(struct pcap_file_header);
     pf->err = 0;
 
+    ED("--- start create %lu packets at tail %d",
+	(u_long)tot_pkts, (int)q->prod_tail);
+    last_ts = pf->first_ts; /* beginning of the trace */
 
-    ED("--- start create %d packets at tail %d",
-	(int)(repeat * pf->tot_pkt), (int)q->prod_tail);
-    while (insert < repeat * pf->tot_pkt && !do_abort) {
+    for (loops = 0, i = 0; i < tot_pkts && !do_abort; i++) {
 	const char *next_pkt; /* in the pcap buffer */
-	pf->cur_ts = read_next_info(pf, 4) * NS_SCALE +
-		read_next_info(pf, 4) * pf->resolution - pf->first_ts;
-	pf->cur_caplen = read_next_info(pf, 4);
-	pf->cur_len = read_next_info(pf, 4);
-	next_pkt = pf->cur + pf->cur_caplen;
+	uint64_t cur_ts;
 
-        pkt = pkt_at(q, q->prod_tail);
-	ND("add pkt len %d at %p", pf->cur_len, pkt);
+	/* read values from the pcap buffer */
+	cur_ts = read_next_info(pf, 4) * NS_SCALE +
+		read_next_info(pf, 4) * pf->resolution;
+	q->cur_caplen = read_next_info(pf, 4);
+	q->cur_len = read_next_info(pf, 4);
+	next_pkt = pf->cur + q->cur_caplen;
 
-	pkt->pktlen = pf->cur_len;
-	/* only copy the captured part */
-	memcpy((char*)(pkt+1), pf->cur, pf->cur_caplen);
-	need = pad(pkt->pktlen)+sizeof(*pkt);
-	pkt->next = q->prod_tail + need;
-	q->prod_tail = pkt->next;
+	/* prepare fields in q for the generator */
+	q->cur_pkt = pf->cur;
+	/* initial estimate of tx time */
+	q->cur_tt = cur_ts - pf->first_ts
+	    + loops * pf->total_tx_time - last_ts;
 
-	/*
-	 * compute the output timestamp.
-	 */
+	/* prepare for next iteration */
+	pf->cur = next_pkt;
+	if (next_pkt == pf->lim) {	//last pkt
+	    pf->cur = pf->data + sizeof(struct pcap_file_header);
+	    loops++;
+	}
+#if 0
 	switch (q->c_pmode.d[1]) { /* mode */
 	case PM_FAST:		/* easy, all same timestamp */
 	    pkt->pt_tx = 0;
@@ -833,11 +880,27 @@ pcap_prod(void *_pa)
 	    break;
 
 	}
-
+#endif
+	// XXX possibly implement c_tt for transmission time emulation
+	q->c_loss.run(q, &q->c_loss);
+	if (q->cur_drop)
+	    continue;
+	q->c_bw.run(q, &q->c_bw);
+	tt = q->cur_tt;
+	q->qt_qout += tt; /* XXX not really used here */
+#if 0
+	if (drop_after(q))
+	    continue;
+#endif
+	q->c_delay.run(q, &q->c_delay); /* compute delay */
+	t_tx = q->qt_qout + q->cur_delay;
+	ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
+	/* insure no reordering and spacing by transmission time */
+	q->qt_tx = (t_tx >= q->qt_tx + tt) ? t_tx : q->qt_tx + tt;
+	enq(q);
 	
 	q->tx++;
 	ND("ins %d q->prod_tail = %lu", (int)insert, (unsigned long)q->prod_tail);
-	insert++; /* statistics */
 	pf->cur = next_pkt;
 	if (next_pkt == pf->lim) {	//last pkt
 	    pf->cur = pf->data + sizeof(struct pcap_file_header);
@@ -1115,7 +1178,6 @@ main(int argc, char **argv)
 	const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS], *m[N_OPTS];
 	int cores[4] = { 2, 8, 4, 10 }; /* default values */
 
-
 	bzero(d, sizeof(d));
 	bzero(b, sizeof(b));
 	bzero(l, sizeof(l));
@@ -1277,33 +1339,24 @@ main(int argc, char **argv)
 
 	if (q[0] == NULL)
 		q[0] = "0";
-	if (q[1] == NULL)
-		q[1] = q[0];
 	bp[0].q.qsize = parse_qsize(q[0]);
-	bp[1].q.qsize = parse_qsize(q[1]);
 
 	if (bp[0].q.qsize == 0) {
 		ED("qsize= 0 is not valid, set to 50k");
 		bp[0].q.qsize = 50000;
-	}
-	if (bp[1].q.qsize == 0) {
-		ED("qsize= 0 is not valid, set to 50k");
-		bp[1].q.qsize = 50000;
 	}
 
 	pthread_create(&bp[0].cons_tid, NULL, nmreplay_main, (void*)&bp[0]);
 	signal(SIGINT, sigint_h);
 	sleep(1);
 	while (!do_abort) {
-	    struct _qs olda = bp[0].q, oldb = bp[1].q;
-	    struct _qs *q0 = &bp[0].q, *q1 = &bp[1].q;
+	    struct _qs olda = bp[0].q;
+	    struct _qs *q0 = &bp[0].q;
 
 	    sleep(1);
-	    ED("%ld -> %ld maxq %d round %ld, %ld <- %ld maxq %d round %ld",
+	    ED("%ld -> %ld maxq %d round %ld",
 		(_P64)(q0->rx - olda.rx), (_P64)(q0->tx - olda.tx),
-		q0->rx_qmax, (_P64)q0->prod_max_gap,
-		(_P64)(q1->rx - oldb.rx), (_P64)(q1->tx - oldb.tx),
-		q1->rx_qmax, (_P64)q1->prod_max_gap
+		q0->rx_qmax, (_P64)q0->prod_max_gap
 		);
 	    ED("plr nominal %le actual %le",
 		(double)(q0->c_loss.d[0])/(1<<24),
@@ -1758,12 +1811,20 @@ real_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	return 0;	/* success */
 }
 
+static int
+real_bw_run(struct _qs *q, struct _cfg *arg)
+{
+	uint64_t bps = arg->d[0];
+	q->cur_tt = bps ? 8ULL * TIME_UNITS * (q->cur_len + 24) / bps : 0 ;
+	return 0;
+}
+
 static struct _cfg bw_cfg[] = {
 	{ const_bw_parse, const_bw_run,
 		"constant,bps", _CFG_END },
 	{ ether_bw_parse, ether_bw_run,
 		"ether,bps", _CFG_END },
-	{ real_bw_parse, const_bw_run,
+	{ real_bw_parse, real_bw_run,
 		"ether,scale", _CFG_END },
 	{ NULL, NULL, NULL, _CFG_END }
 };
