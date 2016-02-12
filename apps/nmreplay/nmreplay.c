@@ -104,6 +104,7 @@ pcap_prod()
 /* WWW is for warnings, EEE is for errors */
 #define WWW(_fmt, ...)	ED("--WWW-- " _fmt, ##__VA_ARGS__)
 #define EEE(_fmt, ...)	ED("--EEE-- " _fmt, ##__VA_ARGS__)
+#define DDD(_fmt, ...)	ED("--DDD-- " _fmt, ##__VA_ARGS__)
 
 #define _GNU_SOURCE	// for CPU_SET() etc
 #include <stdio.h>
@@ -1016,7 +1017,7 @@ split_arg(const char *src, int *_ac)
 	}
     }
     for (i = 0; i < ac; i++) {
-	fprintf(stderr, "%d: <%s>\n", i, av[i]);
+	DDD("%d: <%s>", i, av[i]);
     }
     av[i++] = NULL;
     av[i++] = my;
