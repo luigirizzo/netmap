@@ -23,7 +23,6 @@
  * SUCH DAMAGE.
  */
 
-#define DO_PCAP_REPLAY /* enable code to do pcap replay */
 
 #if 0 /* COMMENT */
 
@@ -97,9 +96,9 @@ pcap_prod()
 	do {							\
 		struct timeval _t0;				\
 		gettimeofday(&_t0, NULL);			\
-		fprintf(stderr, "%03d.%03d [%5d] \t" _fmt "\n", \
+		fprintf(stderr, "%03d.%03d %-10.10s [%5d] \t" _fmt "\n", \
 		(int)(_t0.tv_sec % 1000), (int)_t0.tv_usec/1000, \
-		__LINE__, ##__VA_ARGS__);     \
+		__FUNCTION__, __LINE__, ##__VA_ARGS__);     \
 	} while (0)
 
 #define _GNU_SOURCE	// for CPU_SET() etc
@@ -251,7 +250,6 @@ static void destroy_pcap(struct nm_pcap_file *file);
 
 #define NS_SCALE 1000000000UL	/* nanoseconds in 1s */
 
-
 static void destroy_pcap(struct nm_pcap_file *pf)
 {
     if (!pf)
@@ -401,7 +399,7 @@ static struct nm_pcap_file *readpcap(const char *fn)
 	pf->cur += caplen;
     }
     pf->total_tx_time = prev_ts - pf->first_ts; /* excluding first packet */
-    D("tot_pkt %lu tot_bytes %lu tx_time %.6f s first_len %lu",
+    ED("tot_pkt %lu tot_bytes %lu tx_time %.6f s first_len %lu",
 	(u_long)pf->tot_pkt, (u_long)pf->tot_bytes,
 	1e-9*pf->total_tx_time, (u_long)first_len);
     /*
@@ -560,9 +558,7 @@ struct _qs { /* shared queue */
 	struct _cfg	c_delay;
 	struct _cfg	c_bw;
 	struct _cfg	c_loss;
-#ifdef DO_PCAP_REPLAY
 	struct _cfg	c_pmode;	//handler for pcap transmission mode
-#endif /* DO_PCAP_REPLAY */
 
 	/* producer's fields */
 	uint64_t	tx ALIGN_CACHE;	/* tx counter */
@@ -573,9 +569,7 @@ struct _qs { /* shared queue */
 	uint64_t	prod_drop;	/* drop packet count */
 	uint64_t	prod_max_gap;	/* rx round duration */
 
-#ifdef DO_PCAP_REPLAY
 	struct nm_pcap_file	*pcap;		/* the pcap struct */
-#endif /* DO_PCAP_REPLAY */
 
 	/* parameters for reading from the netmap port */
 	struct nm_desc *src_port;		/* netmap descriptor */
@@ -730,9 +724,10 @@ enq(struct _qs *q)
     p->pktlen = q->cur_len;
     p->pt_qout = q->qt_qout;
     p->pt_tx = q->qt_tx;
-    ND(1, "enqueue len %d at %d new tail %ld qout %ld tx %ld",
+    p->next = q->prod_tail + pad(q->cur_len) + sizeof(struct q_pkt);
+    ED("enqueue len %d at %d new tail %ld qout %.6f tx %.6f",
         q->cur_len, (int)q->prod_tail, p->next,
-        p->pt_qout, p->pt_tx);
+        1e-9*p->pt_qout, 1e-9*p->pt_tx);
     q->prod_tail = p->next;
     q->tx++;
     if (q->max_bps)
@@ -775,7 +770,7 @@ pcap_prod(void *_pa)
      * For speed we make sure the trace is at least some 1000 packets,
      * so we may need to loop the trace more than once (for short traces)
      */
-    loops = pf->tot_pkt * (1 + 1000/ pf->tot_pkt);
+    loops = (1 + 10000 / pf->tot_pkt);
     tot_pkts = loops * pf->tot_pkt;
     need = loops * pf->tot_bytes_rounded + sizeof(struct q_pkt);
     q->buf = calloc(1, need);
@@ -785,10 +780,6 @@ pcap_prod(void *_pa)
     }
     q->prod_head = q->prod_tail = 0;
     q->buflen = need;
-    /*
-     * Setting the pcap_prod starting time
-     */
-    ED("Starting at time %ld", (long)q->t0);
 
     pf->cur = pf->data + sizeof(struct pcap_file_header);
     pf->err = 0;
@@ -796,6 +787,8 @@ pcap_prod(void *_pa)
     ED("--- start create %lu packets at tail %d",
 	(u_long)tot_pkts, (int)q->prod_tail);
     last_ts = pf->first_ts; /* beginning of the trace */
+
+    q->qt_qout = 0; /* first packet out of the queue */
 
     for (loops = 0, i = 0; i < tot_pkts && !do_abort; i++) {
 	const char *next_pkt; /* in the pcap buffer */
@@ -811,13 +804,19 @@ pcap_prod(void *_pa)
 	/* prepare fields in q for the generator */
 	q->cur_pkt = pf->cur;
 	/* initial estimate of tx time */
-	q->cur_tt = cur_ts - pf->first_ts
-	    + loops * pf->total_tx_time - last_ts;
+	q->cur_tt = cur_ts - last_ts;
+	    // -pf->first_ts + loops * pf->total_tx_time - last_ts;
+
+	if ((i % pf->tot_pkt) == 0)
+	   ED("insert %5d len %lu cur_tt %.6f",
+		i, (u_long)q->cur_len, 1e-9*q->cur_tt);
 
 	/* prepare for next iteration */
 	pf->cur = next_pkt;
+	last_ts = cur_ts;
 	if (next_pkt == pf->lim) {	//last pkt
 	    pf->cur = pf->data + sizeof(struct pcap_file_header);
+    	    last_ts = pf->first_ts; /* beginning of the trace */
 	    loops++;
 	}
 #if 0
@@ -851,7 +850,7 @@ pcap_prod(void *_pa)
 	    continue;
 	q->c_bw.run(q, &q->c_bw);
 	tt = q->cur_tt;
-	q->qt_qout += tt; /* XXX not really used here */
+	q->qt_qout += tt;
 #if 0
 	if (drop_after(q))
 	    continue;
@@ -865,11 +864,6 @@ pcap_prod(void *_pa)
 	
 	q->tx++;
 	ND("ins %d q->prod_tail = %lu", (int)insert, (unsigned long)q->prod_tail);
-	pf->cur = next_pkt;
-	if (next_pkt == pf->lim) {	//last pkt
-	    pf->cur = pf->data + sizeof(struct pcap_file_header);
-	    loops++;
-	}
     }
     /* loop marker ? */
     ED("done q->prod_tail:%d",(int)q->prod_tail);
@@ -974,6 +968,7 @@ nmreplay_main(void *_a)
     a->pb = nm_open(q->cons_ifname, NULL, 0, NULL);
     if (a->pb == NULL) {
 	ED("cannot open netmap on %s", q->cons_ifname);
+	do_abort = 1; // XXX any better way ?
 	return NULL;
     }
     /* continue as cons() */
@@ -1770,6 +1765,7 @@ real_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 		if (err || scale < 0 || scale > 1000)
 			return 1;
 	}
+	ED("real -> scale is %.6f", scale);
 	dst->d[0] = scale * (1<<24); /* scale is 16m */
 	q->max_bps = 0;	/* bw used to determine queue size */
 	return 0;	/* success */
