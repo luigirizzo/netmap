@@ -1161,6 +1161,9 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     pth_na->up.nm_notify = nm_unused_notify;
 
     pth_na->up.nm_mem = parent->nm_mem;
+
+    pth_na->up.na_flags |= NAF_HOST_RINGS;
+
     error = netmap_attach_common(&pth_na->up);
     if (error) {
         D("ERROR netmap_attach_common()");
