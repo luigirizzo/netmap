@@ -2234,7 +2234,8 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
  * (part as a receive ring, part as a transmit ring).
  *
  * callback that overwrites the hwna notify callback.
- * Packets come from the outside or from the host stack and are put on an hwna rx ring.
+ * Packets come from the outside or from the host stack and are put on an
+ * hwna rx ring.
  * The bridge wrapper then sends the packets through the bridge.
  */
 static int
@@ -2246,6 +2247,7 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags, int *errp)
 	struct netmap_vp_adapter *vpna = &bna->up;
 	u_int ring_nr = kring->ring_id;
 	int error = 0;
+	int ret = NM_IRQ_COMPLETED;
 
 	if (netmap_verbose)
 	    D("%s %s 0x%x", na->name, kring->name, flags);
@@ -2288,6 +2290,11 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags, int *errp)
 	/* another call to actually release the buffers */
 	error = kring->nm_sync(kring, 0);
 
+	/* The second rxsync may have further advanced hwtail. If this happens,
+	 *  return NM_IRQ_RESCHED, otherwise just return NM_IRQ_COMPLETED. */
+	if (kring->rcur != kring->nr_hwtail) {
+		ret = NM_IRQ_RESCHED;
+	}
 put_out:
 	nm_kr_put(kring);
 out:
@@ -2295,7 +2302,7 @@ out:
 		*errp = error;
 	}
 
-	return NM_IRQ_COMPLETED;
+	return ret;
 }
 
 
