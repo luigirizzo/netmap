@@ -423,8 +423,11 @@ struct nm_pcap_file *readpcap(const char *fn)
 		(int)pf->tot_pkt);
 	}
 	prev_ts = cur_ts;
+	(void)base;
+#if 0
 	fprintf(stderr, "%5d: base 0x%x len %5d caplen %d ts 0x%llx\n",
 		(int)pf->tot_pkt, base, len, caplen, (unsigned long long)cur_ts);
+#endif
 	if (pf->tot_pkt == 0) {
 	    pf->first_ts = cur_ts;
 	    first_len = len;
@@ -741,6 +744,7 @@ pkt_at(struct _qs *q, uint64_t ofs)
 }
 
 
+#if 0
 /*
  * we have already checked for room and prepared p->next
  */
@@ -764,6 +768,7 @@ enq(struct _qs *q)
     /* XXX update timestamps ? */
     return 0;
 }
+#endif
 
 
 
@@ -819,6 +824,7 @@ pcap_prod(void *_pa)
 	ED("alloc %ld bytes for queue failed, exiting",(_P64)need);
 	goto fail;
     }
+    q->prod_head = q->prod_tail = 0;
     q->buflen = need;
     /*
      * Setting the pcap_prod starting time
@@ -829,15 +835,19 @@ pcap_prod(void *_pa)
     pf->cur = pf->data + sizeof(struct pcap_file_header);
     pf->err = 0;
 
-    pkt = (void *)q->prod_tail;
 
+    ED("--- start create %d packets at tail %d",
+	(int)(repeat * pf->tot_pkt), (int)q->prod_tail);
     while (insert < repeat * pf->tot_pkt && !do_abort) {
-	const char *next_pkt;
+	const char *next_pkt; /* in the pcap buffer */
 	pf->cur_ts = read_next_info(pf, 4) * NS_SCALE +
 		read_next_info(pf, 4) * pf->resolution - pf->first_ts;
 	pf->cur_caplen = read_next_info(pf, 4);
 	pf->cur_len = read_next_info(pf, 4);
 	next_pkt = pf->cur + pf->cur_caplen;
+
+        pkt = pkt_at(q, q->prod_tail);
+ED("add pkt len %d at %p", pf->cur_len, pkt);
 
 	pkt->pktlen = pf->cur_len;
 	/* only copy the captured part */
@@ -875,24 +885,25 @@ pcap_prod(void *_pa)
 
 	
 	q->tx++;
-	NED("q->prod_tail = %llu", q->prod_tail);
+	ED("ins %d q->prod_tail = %lu", (int)insert, (unsigned long)q->prod_tail);
 	insert++; /* statistics */
+	pf->cur = next_pkt;
 	if (next_pkt == pf->lim) {	//last pkt
 	    pf->cur = pf->data + sizeof(struct pcap_file_header);
 	    loops++;
 	}
     }
-	/* loop marker ? */
-	q->tail = q->prod_tail;	/* notify */
-	NED("q->tail:%d",(int)q->tail);
+    /* loop marker ? */
+    ED("done q->prod_tail:%d",(int)q->prod_tail);
+    q->tail = q->prod_tail; /* publish */
 
-	return NULL;
+    return NULL;
 fail:
-	if (q->buf != NULL) {
-		free(q->buf);
-	}
-	nm_close(pa->pb);
-	return (NULL);
+    if (q->buf != NULL) {
+	free(q->buf);
+    }
+    nm_close(pa->pb);
+    return (NULL);
 }
 
 
@@ -916,7 +927,7 @@ cons(void *_pa)
 	__builtin_prefetch (q->buf + p->next);
 
 	if (q->head == q->tail && q->c_pmode.parse) {	//reset record
-		ED("Transmission restarted");
+		ND("Transmission restarted");
 		/* The consumers restarts by simply recomputing a
 		 * correct time in t0 and restarting q->cons_now.
 		 */
@@ -937,7 +948,7 @@ cons(void *_pa)
 	    continue;
 	}
 	NED("Head: %ld", (long)q->head);
-	RD(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
+	ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
 		p->pktlen, q->cons_now, p->pt_tx, q->head, q->tail, p->next);
 	/* XXX inefficient but simple */
 	pending++;
@@ -972,11 +983,6 @@ nmreplay_main(void *_a)
 
     setaffinity(a->cons_core);
     set_tns_now(&q->t0, 0); /* starting reference */
-    a->pb = nm_open(q->cons_ifname, NULL, 0, NULL);
-    if (a->pb == NULL) {
-	ED("cannot open netmap on %s", q->cons_ifname);
-	return NULL;
-    }
     if (cap_fname == NULL) {
 	goto fail;
     }
@@ -987,6 +993,11 @@ nmreplay_main(void *_a)
     }
     pcap_prod((void*)a);
     destroy_pcap_list(q->pcap);
+    a->pb = nm_open(q->cons_ifname, NULL, 0, NULL);
+    if (a->pb == NULL) {
+	ED("cannot open netmap on %s", q->cons_ifname);
+	return NULL;
+    }
     /* continue as cons() */
     cons((void*)a);
     D("exiting on abort");
