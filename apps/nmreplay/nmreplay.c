@@ -1105,7 +1105,7 @@ D("apply %s to %s", av[0], errmsg);
 static struct _cfg delay_cfg[];
 static struct _cfg bw_cfg[];
 static struct _cfg loss_cfg[];
-static struct _cfg pmode_cfg[];	//pcap transmission mode
+// static struct _cfg pmode_cfg[];	//pcap transmission mode
 
 static uint64_t parse_bw(const char *arg);
 static uint64_t parse_qsize(const char *arg);
@@ -1293,7 +1293,7 @@ main(int argc, char **argv)
 		err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
 		err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
 		err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
-		err += cmd_apply(pmode_cfg, m[i], q, &q->c_pmode);	//pcap configuration
+//		err += cmd_apply(pmode_cfg, m[i], q, &q->c_pmode);	//pcap configuration
 	}
 
 	if (q[0] == NULL)
@@ -1695,7 +1695,7 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	uint64_t bw;
 
 	(void)q;
-	if (strncmp(av[0], "const", 5) != 0 && ac > 1)
+	if (strncmp(av[0], "const", 5) != 0)
 		return 2; /* unrecognised */
 	if (ac > 2)
 		return 1; /* error */
@@ -1785,7 +1785,7 @@ static struct _cfg bw_cfg[] = {
 	{ ether_bw_parse, ether_bw_run,
 		"ether,bps", _CFG_END },
 	{ real_bw_parse, real_bw_run,
-		"ether,scale", _CFG_END },
+		"real,scale", _CFG_END },
 	{ NULL, NULL, NULL, _CFG_END }
 };
 
@@ -1945,6 +1945,7 @@ fail:
 }
 #endif
 
+#if 0 // unused
 /* This is a default bandwidth to be used when no bandwidth computation
  * is possible; this is the case when the chosen mode is real and the
  * capture file contains one packet only.
@@ -1994,3 +1995,5 @@ static struct _cfg pmode_cfg[] = {
 	{ pmode_parse, NULL, "-m <mode>[,<value>]", _CFG_END },
 	{ NULL, NULL, NULL, _CFG_END }
 };
+
+#endif /* unused */
