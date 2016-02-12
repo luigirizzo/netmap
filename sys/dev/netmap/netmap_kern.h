@@ -466,7 +466,7 @@ struct netmap_kring {
 	 * any of the nm_krings_create callbacks.
 	 */
 	int (*nm_sync)(struct netmap_kring *kring, int flags);
-	int (*nm_notify)(struct netmap_kring *kring, int flags);
+	int (*nm_notify)(struct netmap_kring *kring, int flags, int *errp);
 
 #ifdef WITH_PIPES
 	struct netmap_kring *pipe;	/* if this is a pipe ring,
@@ -478,7 +478,7 @@ struct netmap_kring {
 #endif /* WITH_PIPES */
 
 #ifdef WITH_VALE
-	int (*save_notify)(struct netmap_kring *kring, int flags);
+	int (*save_notify)(struct netmap_kring *kring, int flags, int *errp);
 #endif
 
 #ifdef WITH_MONITOR
@@ -492,7 +492,7 @@ struct netmap_kring {
 	 * above and saving the previous ones in mon_* pointers below
 	 */
 	int (*mon_sync)(struct netmap_kring *kring, int flags);
-	int (*mon_notify)(struct netmap_kring *kring, int flags);
+	int (*mon_notify)(struct netmap_kring *kring, int flags, int *errp);
 
 	uint32_t mon_tail;  /* last seen slot on rx */
 	uint32_t mon_pos;   /* index of this ring in the monitored ring array */
@@ -725,7 +725,7 @@ struct netmap_adapter {
 
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
-	int (*nm_notify)(struct netmap_kring *kring, int flags);
+	int (*nm_notify)(struct netmap_kring *kring, int flags, int *errp);
 #define NAF_FORCE_READ    1
 #define NAF_FORCE_RECLAIM 2
 	/* return configuration information */
@@ -2018,8 +2018,8 @@ struct netmap_pt_host_adapter {
 	struct netmap_adapter up;
 
 	struct netmap_adapter *parent;
-	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
-
+	int (*parent_nm_notify)(struct netmap_kring *kring, int flags,
+				int *errp);
 	void *ptn_state;
 };
 /* ptnetmap HOST routines */

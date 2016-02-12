@@ -854,7 +854,7 @@ netmap_bwrap_polling(void *data)
 
 	for (i = qfirst; i < qlast; i++) {
 		kring = kring0 + i;
-		kring->nm_notify(kring, 0);
+		kring->nm_notify(kring, 0, NULL);
 	}
 }
 
@@ -1800,7 +1800,7 @@ retry:
 
 		if (dst_na->retry && retry) {
 			/* try to get some free slot from the previous run */
-			kring->nm_notify(kring, 0);
+			kring->nm_notify(kring, 0, NULL);
 			/* actually useful only for bwraps, since there
 			 * the notify will trigger a txsync on the hwna. VALE ports
 			 * have dst_na->retry == 0
@@ -1941,7 +1941,7 @@ retry:
 				kring->nr_hwtail = j;
 				still_locked = 0;
 				mtx_unlock(&kring->q_lock);
-				kring->nm_notify(kring, 0);
+				kring->nm_notify(kring, 0, NULL);
 				/* this is netmap_notify for VALE ports and
 				 * netmap_bwrap_notify for bwrap. The latter will
 				 * trigger a txsync on the underlying hwna
@@ -2238,7 +2238,7 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
  * The bridge wrapper then sends the packets through the bridge.
  */
 static int
-netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
+netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags, int *errp)
 {
 	struct netmap_adapter *na = kring->na;
 	struct netmap_bwrap_adapter *bna = na->na_private;
@@ -2253,8 +2253,10 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 	bkring = &vpna->up.tx_rings[ring_nr];
 
 	/* make sure the ring is not disabled */
-	if (nm_kr_tryget(kring, 0 /* can't sleep */, NULL))
-		return EIO;
+	if (nm_kr_tryget(kring, 0 /* can't sleep */, NULL)) {
+		error = EIO;
+		goto out;
+	}
 
 	if (netmap_verbose)
 	    D("%s head %d cur %d tail %d",  na->name,
@@ -2288,7 +2290,12 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 
 put_out:
 	nm_kr_put(kring);
-	return error ? error : NM_IRQ_COMPLETED;
+out:
+	if (errp) {
+		*errp = error;
+	}
+
+	return NM_IRQ_COMPLETED;
 }
 
 
@@ -2482,7 +2489,7 @@ netmap_bwrap_krings_delete(struct netmap_adapter *na)
 
 /* notify method for the bridge-->hwna direction */
 static int
-netmap_bwrap_notify(struct netmap_kring *kring, int flags)
+netmap_bwrap_notify(struct netmap_kring *kring, int flags, int *errp)
 {
 	struct netmap_adapter *na = kring->na;
 	struct netmap_bwrap_adapter *bna = na->na_private;
@@ -2498,8 +2505,10 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 			(hwna ? hwna->name : "NULL!"));
 	hw_kring = &hwna->tx_rings[ring_n];
 
-	if (nm_kr_tryget(hw_kring, 0, NULL))
-		return ENXIO;
+	if (nm_kr_tryget(hw_kring, 0, NULL)) {
+		error = ENXIO;
+		goto out;
+	}
 
 	/* first step: simulate a user wakeup on the rx ring */
 	netmap_vp_rxsync(kring, flags);
@@ -2514,7 +2523,7 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 	hw_kring->rhead = hw_kring->rcur = kring->nr_hwtail;
 	error = hw_kring->nm_sync(hw_kring, flags);
 	if (error)
-		goto out;
+		goto put_out;
 
 	/* third step: now we are back the rx ring */
 	/* claim ownership on all hw owned bufs */
@@ -2527,9 +2536,14 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 		kring->nr_hwcur, kring->nr_hwtail, kring->nkr_hwlease,
 		ring->head, ring->cur, ring->tail,
 		hw_kring->nr_hwcur, hw_kring->nr_hwtail, hw_kring->rtail);
-out:
+put_out:
 	nm_kr_put(hw_kring);
-	return error ? error : NM_IRQ_COMPLETED;
+out:
+	if (errp) {
+		*errp = error;
+	}
+
+	return NM_IRQ_COMPLETED;
 }
 
 

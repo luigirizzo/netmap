@@ -230,7 +230,7 @@ static int netmap_zmon_parent_txsync(struct netmap_kring *, int);
 static int netmap_zmon_parent_rxsync(struct netmap_kring *, int);
 static int netmap_monitor_parent_txsync(struct netmap_kring *, int);
 static int netmap_monitor_parent_rxsync(struct netmap_kring *, int);
-static int netmap_monitor_parent_notify(struct netmap_kring *, int);
+static int netmap_monitor_parent_notify(struct netmap_kring *, int, int *);
 
 
 /* add the monitor mkring to the list of monitors of kring.
@@ -506,7 +506,7 @@ out:
 
 	if (sent) {
 		/* notify the new frames to the monitor */
-		mkring->nm_notify(mkring, 0);
+		mkring->nm_notify(mkring, 0, NULL);
 	}
 
 out_rxsync:
@@ -624,7 +624,7 @@ netmap_monitor_parent_sync(struct netmap_kring *kring, u_int first_new, int new_
 
 		if (sent) {
 			/* notify the new frames to the monitor */
-			mkring->nm_notify(mkring, 0);
+			mkring->nm_notify(mkring, 0, NULL);
 		}
 	}
 }
@@ -669,9 +669,9 @@ netmap_monitor_parent_rxsync(struct netmap_kring *kring, int flags)
 
 /* callback used to replace the nm_notify() callback in the monitored rx rings */
 static int
-netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
+netmap_monitor_parent_notify(struct netmap_kring *kring, int flags, int *errp)
 {
-	int (*notify)(struct netmap_kring*, int);
+	int (*notify)(struct netmap_kring*, int, int *);
 	ND(5, "%s %x", kring->name, flags);
 	/* ?xsync callbacks have tryget called by their callers
 	 * (NIOCREGIF and poll()), but here we have to call it
@@ -691,7 +691,7 @@ netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 		notify = kring->nm_notify;
 	}
 	nm_kr_put(kring);
-        return notify(kring, flags);
+        return notify(kring, flags, errp);
 }
 
 

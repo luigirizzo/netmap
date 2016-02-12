@@ -745,8 +745,8 @@ ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
     nm_os_kthread_stop(pts->ptk_rx);
 }
 
-static int nm_unused_notify(struct netmap_kring *, int);
-static int nm_pt_host_notify(struct netmap_kring *, int);
+static int nm_unused_notify(struct netmap_kring *, int, int *);
+static int nm_pt_host_notify(struct netmap_kring *, int, int *);
 
 /* Create ptnetmap state and switch parent adapter to ptnetmap mode. */
 static int
@@ -933,7 +933,7 @@ done:
 
 /* nm_notify callbacks for ptnetmap */
 static int
-nm_pt_host_notify(struct netmap_kring *kring, int flags)
+nm_pt_host_notify(struct netmap_kring *kring, int flags, int *errp)
 {
 	struct netmap_adapter *na = kring->na;
 	struct netmap_pt_host_adapter *pth_na =
@@ -965,7 +965,7 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 }
 
 static int
-nm_unused_notify(struct netmap_kring *kring, int flags)
+nm_unused_notify(struct netmap_kring *kring, int flags, int *errp)
 {
     D("BUG this should never be called");
     return -1;
