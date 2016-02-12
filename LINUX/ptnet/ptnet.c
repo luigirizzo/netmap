@@ -393,15 +393,8 @@ static irqreturn_t
 ptnet_rx_intr(int irq, void *data)
 {
 	struct net_device *netdev = data;
-	struct ptnet_info *pi = netdev_priv(netdev);
-	unsigned int unused;
 
-	if (netmap_rx_irq(netdev, 0, &unused)) {
-		(void)unused;
-		return IRQ_HANDLED;
-	}
-
-	ptnet_napi_schedule(pi);
+	ptnet_napi_schedule(netdev_priv(netdev));
 
 	return IRQ_HANDLED;
 }
@@ -454,6 +447,11 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	bool have_vnet_hdr = pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR;
 	unsigned int head = ring->head;
 	int work_done = 0;
+
+	if (netmap_rx_irq(pi->netdev, 0, &work_done)) {
+		napi_complete(napi);
+		return 1;
+	}
 
 #ifdef HANGCTRL
 	del_timer(&pi->hang_timer);
