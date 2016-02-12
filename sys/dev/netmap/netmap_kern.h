@@ -1149,6 +1149,22 @@ struct netmap_slot *netmap_reset(struct netmap_adapter *na,
 	enum txrx tx, u_int n, u_int new_cur);
 int netmap_ring_reinit(struct netmap_kring *);
 
+/* Return codes for netmap_*x_irq. */
+enum {
+	/* Port is not in netmap mode, driver can do normal interrupt
+	 * processing. */
+	NM_IRQ_PASS = 0,
+	/* Port is in netmap mode, and the interrupt work has been
+	 * completed. The driver does not have to notify netmap
+	 * again before the next interrupt. */
+	NM_IRQ_COMPLETED,
+	/* Port is in netmap mode, but the interrupt work has not been
+	 * completed. The driver has to make sure netmap will be
+	 * notified again soon, even if no more interrupts come (e.g.
+	 * on Linux the driver should not call napi_complete()). */
+	NM_IRQ_RESCHED,
+};
+
 /* default functions to handle rx/tx interrupts */
 int netmap_rx_irq(struct ifnet *, u_int, u_int *);
 #define netmap_tx_irq(_n, _q) netmap_rx_irq(_n, _q, NULL)
