@@ -27,50 +27,24 @@
 
 #if 0 /* COMMENT */
 
-This program implements a bandwidth and delay emulator between two
-netmap ports. It is meant to be run from the command line and
-implemented with a main control thread, plus a couple of threads
-for each direction of the communication.
+This program implements NMREPLAY, a program to replay a pcap file
+enforcing the output rate and possibly random losses and delay
+distributions.
+It is meant to be run from the command line and implemented with a main
+control thread for monitoring, plus a thread to push packets out.
 
-The control thread parses command line arguments and then sits
+The control thread parses command line arguments, prepares a
+schedule for transmission in a memory buffer and then sits
 in a loop where it periodically reads traffic statistics from
 the other threads and prints them out on the console.
 
-The packet transfer in each direction is implemented by a "producer"
-thread prod() which reads from the input netmap port and puts packets
-into a queue (struct _qs) with appropriate metatada on when packets
-are due for release, and a "consumer" thread cons() which reads
-from the queue and transmits packets on the output port when their
-time has come.
+The transmit buffer contains headers and packets. Each header
+includes a timestamp that determines when the packet should be sent out.
+A "consumer" thread cons() reads from the queue and transmits packets
+on the output netmap port when their time has come.
 
-     netmap    thread      struct _qs     thread   netmap
-      port                                          port
-     {input}-->(prod)-->--[  queue  ]-->--(cons)-->{output}
-
-The producer can either wait for traffic using a blocking poll(),
-or periodically check the input around short usleep().
-The latter mechanism is the preferred one as it allows a controlled
-latency with a low interrupt load and a modest system load.
-
-The queue is sized so that overflows can occur only if the consumer
-is severely backlogged, hence the only appropriate option is drop
-traffic rather than wait for space.  The case of an empty queue is
-managed by having the consumer probe the queue around short usleep()
-calls. This mechanism gives controlled latency with moderate system
-load, so it is not worthwhile to optimize the CPU usage.
-
-In order to get good and predictable performance, it is important
-that threads are pinned to a single core, and it is preferable that
-prod() and cons() for each direction share the cache as much as possible.
-Putting them on two hyperthreads of the same core seems to give
-good results but that shoud be investigated further.
-
-It also seems useful to use a scheduler (SCHED_FIFO or SCHED_RR)
-that gives more predictable cycles to the CPU, as well as try
-to keep other system tasks away from the CPUs used for the four
-main threads.
 The program does CPU pinning and sets the scheduler and priority
-for the prod and cons threads. Externally one should do the
+for the "cons" threads. Externally one should do the
 assignment of other threads (e.g. interrupt handlers) and
 make sure that network interfaces are configured properly.
 
@@ -78,19 +52,18 @@ make sure that network interfaces are configured properly.
 within each function, q is used as a pointer to the queue holding
 packets and parameters.
 
-prod()
+pcap_prod()
 
-    waits for packets using the wait_for_packet() function.
-    After that, for each packet, the following information may
-    be of use:
+    reads from the pcap file and prepares packets to transmit.
+    After reading a packet from the pcap file, the following information
+    are extracted which can be used to determine the schedule:
+
     	q->cur_pkt	points to the buffer containing the packet
 	q->cur_len	packet length, excluding CRC
 	q->cur_caplen	available packet length (may be shorter than cur_len)
-	q->prod_now	time at which the packet was received,
-			in nanoseconds. A batch of packets may
-			have the same value q->prod_now
+	q->cur_tt	transmission time for the packet, computed from the trace.
 
-    Four functions are then called in sequence:
+    The following functions are then called in sequence:
 
     q->c_loss (set with the -L command line option) decides
     	whether the packet should be dropped before even queuing.
@@ -98,13 +71,8 @@ prod()
 	The function is supposed to set q->c_drop = 1 if the
 	packet should be dropped, or leave it to 0 otherwise.
 
-    no_room (not configurable) checks whether there is space
-    	in the queue, enforcing both the queue size set with -Q
-	and the space allocated for the delay line.
-	In case of no space the packet is dropped.
-
     q->c_bw (set with the -B command line option) is used to
-        enforce bandwidth limitation. The function must store
+        enforce the transmit bandwidth. The function must store
 	in q->cur_tt the transmission time (in nanoseconds) of
 	the packet, which is typically proportional to the length
 	of the packet, i.e. q->cur_tt = q->cur_len / <bandwidth>
@@ -119,7 +87,6 @@ prod()
 	delay the packet is subject to. The framework will take care of
 	computing the actual exit time of a packet so that there is no
 	reordering.
-
 
 
 #endif /* COMMENT */
@@ -158,7 +125,6 @@ For the packet descriptor we need the following:
 	One of the two can be packed to a 32bit value
 
 A convenient coding uses 32 bytes per packet.
-Even if we use a compact encoding it is difficult to go below 18 bytes
 
  */
 
@@ -172,7 +138,6 @@ struct q_pkt {
 
 /*
  * The header for a pcap file
- * This data structs need to be transfered in rpcap.c once debug is completed
  */
 struct pcap_file_header {
     uint32_t magic;
@@ -214,6 +179,7 @@ struct pcap_file_header {
         bpf_u_int32 snaplen;    /* max length saved portion of each pkt */
         bpf_u_int32 linktype;   /* data link type (LINKTYPE_*) */
 };
+
 struct pcap_pkthdr {
         struct timeval ts;      /* time stamp */
         bpf_u_int32 caplen;     /* length of portion present */
@@ -241,26 +207,20 @@ static inline int pad(int x)
 
 
 
-/* The pcap file structure has the following members:
-   - A global header which is struct pcap_file_header
-   - A list of packets with the following members:
-       + A packet header
-       + packet payload
-       + Pointer to the next packet
-   - A pointer to the last packet in the list
-*/
+/*
+ * wrapper around the pcap file.
+ * We mmap the file so it is easy to do multiple passes through it.
+ */
 struct nm_pcap_file {
-    struct pcap_file_header *ghdr;
-
     int fd;
     uint64_t filesize;
+    const char *data; /* mmapped file */
+
     uint64_t tot_pkt;
     uint64_t tot_bytes;
     uint64_t tot_bytes_rounded;	/* need hdr + pad(len) */
-    struct pcap_pkthdr *reorder; /* array of size tot_pkt for reordering */
     uint32_t resolution; /* 1000 for us, 1 for ns */
     int swap; /* need to swap fields ? */
-
 
     uint64_t first_ts;
     uint64_t total_tx_time;
@@ -271,7 +231,6 @@ struct nm_pcap_file {
 	 */
 
     uint64_t file_len;
-    const char *data; /* mmapped file */
     const char *cur;	/* running pointer */
     const char *lim;	/* data + file_len */
     int err;
@@ -353,18 +312,18 @@ static struct nm_pcap_file *readpcap(const char *fn)
 {
     struct nm_pcap_file _f, *pf = &_f;
     uint64_t prev_ts, first_pkt_time;
-    uint32_t first_len = 0;
+    uint32_t magic, first_len = 0;
 
     bzero(pf, sizeof(*pf));
     pf->fd = open(fn, O_RDONLY);
     if (pf->fd < 0) {
-	fprintf(stderr, "-- cannot open file %s, abort\n", fn);
+	ED("-- cannot open file %s, abort", fn);
 	return NULL;
     }
     /* compute length */
     pf->filesize = lseek(pf->fd, 0, SEEK_END);
     lseek(pf->fd, 0, SEEK_SET);
-    fprintf(stderr, "filesize is %d\n", (int)(pf->filesize));
+    ED("filesize is %lu", (u_long)(pf->filesize));
     if (pf->filesize < sizeof(struct pcap_file_header)) {
 	fprintf(stderr, "-- file too short %s, abort\n", fn);
 	close(pf->fd);
@@ -376,30 +335,36 @@ static struct nm_pcap_file *readpcap(const char *fn)
 	close(pf->fd);
 	return NULL;
     }
-    pf->ghdr = (void *)pf->data;
-    switch (pf->ghdr->magic) {
-        case 0xa1b2c3d4:
-            pf->swap = 0;
-            pf->resolution = 1000;
-            break;
-        case 0xd4c3b2a1:
-            pf->swap = 0;
-            pf->resolution = 1000;
-            break;
-        case 0xa1b23c4d:
-            pf->swap = 0;
-            pf->resolution = 1; /* nanoseconds */
-            break;
-        case 0x4d3cb2a1:
-            pf->swap = 1;
-            pf->resolution = 1; /* nanoseconds */
-            break;
-        default:
-	    fprintf(stderr, "unknown magic 0x%x\n", pf->ghdr->magic);
-            return NULL;
+    pf->cur = pf->data;
+    pf->lim = pf->data + pf->filesize;
+    pf->err = 0;
+    pf->swap = 0; /* default, same endianness when read magic */
+
+    magic = read_next_info(pf, 4);
+    ED("magic is 0x%x", magic);
+    switch (magic) {
+    case 0xa1b2c3d4: /* native, us resolution */
+	pf->swap = 0;
+	pf->resolution = 1000;
+	break;
+    case 0xd4c3b2a1: /* swapped, us resolution */
+	pf->swap = 1;
+	pf->resolution = 1000;
+	break;
+    case 0xa1b23c4d:	/* native, ns resolution */
+	pf->swap = 0;
+	pf->resolution = 1; /* nanoseconds */
+	break;
+    case 0x4d3cb2a1:	/* swapped, ns resolution */
+	pf->swap = 1;
+	pf->resolution = 1; /* nanoseconds */
+	break;
+    default:
+	ED("-- unknown magic 0x%x\n", magic);
+	return NULL;
     }
 
-    fprintf(stderr, "swap %d res %d\n", pf->swap, pf->resolution);
+    ED("swap %d res %d\n", pf->swap, pf->resolution);
     pf->cur = pf->data + sizeof(struct pcap_file_header);
     pf->lim = pf->data + pf->filesize;
     pf->err = 0;
@@ -435,6 +400,10 @@ static struct nm_pcap_file *readpcap(const char *fn)
 	pf->tot_bytes_rounded += pad(len) + sizeof(struct q_pkt);
 	pf->cur += caplen;
     }
+    pf->total_tx_time = prev_ts - pf->first_ts; /* excluding first packet */
+    D("tot_pkt %lu tot_bytes %lu tx_time %.6f s first_len %lu",
+	(u_long)pf->tot_pkt, (u_long)pf->tot_bytes,
+	1e-9*pf->total_tx_time, (u_long)first_len);
     /*
      * We determine that based on the
      * average bandwidth of the trace, as follows
@@ -443,25 +412,22 @@ static struct nm_pcap_file *readpcap(const char *fn)
      * so 
      *   first_ts =  p[0].ts - p[0].len * (p[n-1].ts - p[0].ts) / (total_len - p[0].len)
      */
-    pf->total_tx_time = prev_ts - pf->first_ts;
     if (pf->tot_bytes == first_len) {
 	/* cannot estimate bandwidth, so force 1 Gbit */
 	first_pkt_time = first_len * 8; /* * 10^9 / bw */
     } else {
-	first_pkt_time = pf->total_tx_time / (pf->tot_bytes - first_len);
+	first_pkt_time = pf->total_tx_time * first_len / (pf->tot_bytes - first_len);
     }
+    ED("first_pkt_time %.6f s", 1e-9*first_pkt_time);
     pf->total_tx_time += first_pkt_time;
     pf->first_ts -= first_pkt_time;
 
-    D("--- first packet len %d time %d ns", first_len, (int)first_pkt_time);
-
-    fprintf(stderr, "total %d packets\n", (int)pf->tot_pkt);
+    /* all correct, allocate a record and copy */
     pf = calloc(1, sizeof(*pf));
     *pf = _f;
     /* reset pointer to start */
     pf->cur = pf->data + sizeof(struct pcap_file_header);
     pf->err = 0;
-    prev_ts = 0;
     return pf;
 }
 
@@ -604,7 +570,6 @@ struct _qs { /* shared queue */
 	uint64_t	prod_queued;	/* queued bytes */
 	uint64_t	prod_head;	/* cached copy */
 	uint64_t	prod_tail;	/* cached copy */
-	uint64_t	prod_now;	/* most recent producer timestamp */
 	uint64_t	prod_drop;	/* drop packet count */
 	uint64_t	prod_max_gap;	/* rx round duration */
 
@@ -823,7 +788,6 @@ pcap_prod(void *_pa)
     /*
      * Setting the pcap_prod starting time
      */
-    set_tns_now(&q->prod_now, q->t0);
     ED("Starting at time %ld", (long)q->t0);
 
     pf->cur = pf->data + sizeof(struct pcap_file_header);
