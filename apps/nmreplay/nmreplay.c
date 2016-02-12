@@ -311,7 +311,8 @@ read_next_info(struct nm_pcap_file *pf, int size)
  * We need to compute also the 'first_ts' which refers to a hypotetical
  * packet right before the first one, see the code for details.
  */
-static struct nm_pcap_file *readpcap(const char *fn)
+static struct nm_pcap_file *
+readpcap(const char *fn)
 {
     struct nm_pcap_file _f, *pf = &_f;
     uint64_t prev_ts, first_pkt_time;
@@ -621,14 +622,14 @@ struct _qs { /* shared queue */
 	/* consumer's fields */
 	const char *		cons_ifname;
 	uint64_t rx ALIGN_CACHE;	/* rx counter */
-//	uint64_t	cons_head;	/* cached copy */
-//	uint64_t	cons_tail;	/* cached copy */
+	uint64_t	cons_head;	/* cached copy */
+	uint64_t	cons_tail;	/* cached copy */
 	uint64_t	cons_now;	/* most recent producer timestamp */
 	uint64_t	rx_wait;	/* stats */
 
 	/* shared fields */
-	volatile uint64_t tail ALIGN_CACHE ;	/* producer writes here */
-	volatile uint64_t head ALIGN_CACHE ;	/* consumer reads from here */
+	volatile uint64_t _tail ALIGN_CACHE ;	/* producer writes here */
+	volatile uint64_t _head ALIGN_CACHE ;	/* consumer reads from here */
 };
 
 struct pipe_args {
@@ -679,6 +680,9 @@ setaffinity(int i)
 }
 
 
+/*
+ * set the timestamp from the clock, subtract t0
+ */
 static inline void
 set_tns_now(uint64_t *now, uint64_t t0)
 {
@@ -720,7 +724,7 @@ enq(struct _qs *q)
     p->pt_qout = q->qt_qout;
     p->pt_tx = q->qt_tx;
     p->next = q->prod_tail + pad(q->cur_len) + sizeof(struct q_pkt);
-    ED("enqueue len %d at %d new tail %ld qout %.6f tx %.6f",
+    ND("enqueue len %d at %d new tail %ld qout %.6f tx %.6f",
         q->cur_len, (int)q->prod_tail, p->next,
         1e-9*p->pt_qout, 1e-9*p->pt_tx);
     q->prod_tail = p->next;
@@ -751,7 +755,7 @@ pcap_prod(void *_pa)
 {
     struct pipe_args *pa = _pa;
     struct _qs *q = &pa->q;
-    struct nm_pcap_file *pf = q->pcap;	/* already open by cmd_apply */
+    struct nm_pcap_file *pf = q->pcap;	/* already opened by readpcap */
     uint32_t loops, i, tot_pkts;
 
     /* data plus the loop record */
@@ -834,7 +838,7 @@ pcap_prod(void *_pa)
     }
     /* loop marker ? */
     ED("done q->prod_tail:%d",(int)q->prod_tail);
-    q->tail = q->prod_tail; /* publish */
+    q->_tail = q->prod_tail; /* publish */
 
     return NULL;
 fail:
@@ -855,55 +859,53 @@ cons(void *_pa)
 {
     struct pipe_args *pa = _pa;
     struct _qs *q = &pa->q;
-    int cycles = 0;
     int pending = 0;
+    uint64_t last_ts = 0;
 
-    (void)cycles; // XXX disable warning
+    /* read the start of times in q->t0 */
+    set_tns_now(&q->t0, 0);
+    /* set the time (cons_now) to clock - q->t0 */
     set_tns_now(&q->cons_now, q->t0);
+    q->cons_head = q->_head;
+    q->cons_tail = q->_tail;
     while (!do_abort) { /* consumer, infinite */
-	struct q_pkt *p = pkt_at(q, q->head);
+	struct q_pkt *p = pkt_at(q, q->cons_head);
 
 	__builtin_prefetch (q->buf + p->next);
 
-	if (q->head == q->tail) {	//reset record
+	if (q->cons_head == q->cons_tail) {	//reset record
 	    ND("Transmission restarted");
-		/* The consumers restarts by simply recomputing a
-		 * correct time in t0 and restarting q->cons_now.
-		 */
-		set_tns_now(&q->t0,0);
-		set_tns_now(&q->cons_now, q->t0);
-		q->head = 0;	//restart from beginning of the queue
-		continue;
+	    /*
+	     * add to q->t0 the time for the last packet
+	     */
+	    q->t0 += last_ts;
+	    q->cons_head = 0;	//restart from beginning of the queue
+	    continue;
 	}
-
-	if (q->head == q->tail || ts_cmp(p->pt_tx, q->cons_now) > 0) {
-	    ND(4, "                 >>>> TXSYNC, pkt not ready yet h %ld t %ld now %ld tx %ld",
-		q->head, q->tail, q->cons_now, p->pt_tx);
+	last_ts = p->pt_tx;
+	if (ts_cmp(p->pt_tx, q->cons_now) > 0) {
+	    // packet not ready
 	    q->rx_wait++;
+	    /* the ioctl should be conditional */
 	    ioctl(pa->pb->fd, NIOCTXSYNC, 0); // XXX just in case
 	    pending = 0;
-	    usleep(5);
+	    usleep(20);
 	    set_tns_now(&q->cons_now, q->t0);
 	    continue;
 	}
-	NED("Head: %ld", (long)q->head);
-	ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
-		p->pktlen, q->cons_now, p->pt_tx, q->head, q->tail, p->next);
-	/* XXX inefficient but simple */
+	/* XXX copy is inefficient but simple */
 	pending++;
 	if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0 ||
 		pending > q->burst) {
 	    RD(1, "inject failed len %d now %ld tx %ld h %ld t %ld next %ld",
-		(int)p->pktlen, q->cons_now, p->pt_tx, q->head, q->tail, p->next);
+		(int)p->pktlen, q->cons_now, p->pt_tx, q->_head, q->_tail, p->next);
 	    ioctl(pa->pb->fd, NIOCTXSYNC, 0);
 	    pending = 0;
 	    continue;
 	}
-
-	q->head = p->next;
+	q->cons_head = p->next;
 	/* drain packets from the queue */
 	q->rx++;
-	// XXX barrier
     }
     D("exiting on abort");
     return NULL;
@@ -932,6 +934,7 @@ nmreplay_main(void *_a)
     }
     pcap_prod((void*)a);
     destroy_pcap(q->pcap);
+    q->pcap = NULL;
     a->pb = nm_open(q->cons_ifname, NULL, 0, NULL);
     if (a->pb == NULL) {
 	EEE("cannot open netmap on %s", q->cons_ifname);
@@ -939,6 +942,8 @@ nmreplay_main(void *_a)
 	return NULL;
     }
     /* continue as cons() */
+    WWW("prepare to send packets");
+    usleep(1000);
     cons((void*)a);
     EEE("exiting on abort");
 fail:
@@ -1017,7 +1022,7 @@ split_arg(const char *src, int *_ac)
 	}
     }
     for (i = 0; i < ac; i++) {
-	DDD("%d: <%s>", i, av[i]);
+	NED("%d: <%s>", i, av[i]);
     }
     av[i++] = NULL;
     av[i++] = my;
@@ -1119,6 +1124,8 @@ main(int argc, char **argv)
 	/* set default values */
 	for (i = 0; i < N_OPTS; i++) {
 	    struct _qs *q = &bp[i].q;
+
+	    q->burst = 128;
 	    q->c_delay.optarg = "0";
 	    q->c_delay.run = null_run_fn;
 	    q->c_loss.optarg = "0";
@@ -1132,12 +1139,13 @@ main(int argc, char **argv)
 	// D	delay in seconds
 	// L	loss probability
 	// f	pcap file
-	// i	interface name (two mandatory)
-	// v	verbose
+	// i	interface name
+	// w	wait link
 	// b	batch size
-	// m	pcap transmission mode (real/fast/fixed)
+	// v	verbose
+	// C	cpu placement
 
-	while ( (ch = getopt(argc, argv, "B:C:D:L:b:f:i:vw:m:")) != -1) {
+	while ( (ch = getopt(argc, argv, "B:C:D:L:b:f:i:vw:")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -1199,9 +1207,6 @@ main(int argc, char **argv)
 			break;
 		case 'w':
 			bp[0].wait_link = atoi(optarg);
-			break;
-		case 'm':
-			add_to(m, N_OPTS, optarg, " -m too many times");
 			break;
 		}
 
