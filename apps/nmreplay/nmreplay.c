@@ -101,6 +101,10 @@ pcap_prod()
 		__FUNCTION__, __LINE__, ##__VA_ARGS__);     \
 	} while (0)
 
+/* WWW is for warnings, EEE is for errors */
+#define WWW(_fmt, ...)	ED("--WWW-- " _fmt, ##__VA_ARGS__)
+#define EEE(_fmt, ...)	ED("--EEE-- " _fmt, ##__VA_ARGS__)
+
 #define _GNU_SOURCE	// for CPU_SET() etc
 #include <stdio.h>
 #define NETMAP_WITH_LIBS
@@ -268,7 +272,7 @@ cvt(const void *src, int size, char swap)
 {
     uint32_t ret = 0;
     if (size != 2 && size != 4) {
-	fprintf(stderr, "Invalid size %d\n", size);
+	EEE("Invalid size %d\n", size);
 	exit(1);
     }
     memcpy(&ret, src, size);
@@ -315,7 +319,7 @@ static struct nm_pcap_file *readpcap(const char *fn)
     bzero(pf, sizeof(*pf));
     pf->fd = open(fn, O_RDONLY);
     if (pf->fd < 0) {
-	ED("-- cannot open file %s, abort", fn);
+	EEE("cannot open file %s", fn);
 	return NULL;
     }
     /* compute length */
@@ -323,13 +327,13 @@ static struct nm_pcap_file *readpcap(const char *fn)
     lseek(pf->fd, 0, SEEK_SET);
     ED("filesize is %lu", (u_long)(pf->filesize));
     if (pf->filesize < sizeof(struct pcap_file_header)) {
-	fprintf(stderr, "-- file too short %s, abort\n", fn);
+	EEE("file too short %s", fn);
 	close(pf->fd);
 	return NULL;
     }
     pf->data = mmap(NULL, pf->filesize, PROT_READ, MAP_SHARED, pf->fd, 0);
     if (pf->data == MAP_FAILED) {
-	fprintf(stderr, "-- cannot mmap file %s, abort\n", fn);
+	EEE("cannot mmap file %s", fn);
 	close(pf->fd);
 	return NULL;
     }
@@ -358,7 +362,7 @@ static struct nm_pcap_file *readpcap(const char *fn)
 	pf->resolution = 1; /* nanoseconds */
 	break;
     default:
-	ED("-- unknown magic 0x%x\n", magic);
+	EEE("unknown magic 0x%x", magic);
 	return NULL;
     }
 
@@ -375,20 +379,16 @@ static struct nm_pcap_file *readpcap(const char *fn)
 	uint32_t len = read_next_info(pf, 4);
 
 	if (pf->err) {
-	    fprintf(stderr, "end of pcap file after %d packets\n",
+	    WWW("end of pcap file after %d packets\n",
 		(int)pf->tot_pkt);
 	    break;
 	}
 	if  (cur_ts < prev_ts) {
-	    fprintf(stderr, "reordered packet %d\n",
+	    WWW("reordered packet %d\n",
 		(int)pf->tot_pkt);
 	}
 	prev_ts = cur_ts;
 	(void)base;
-#if 0
-	fprintf(stderr, "%5d: base 0x%x len %5d caplen %d ts 0x%llx\n",
-		(int)pf->tot_pkt, base, len, caplen, (unsigned long long)cur_ts);
-#endif
 	if (pf->tot_pkt == 0) {
 	    pf->first_ts = cur_ts;
 	    first_len = len;
@@ -498,6 +498,7 @@ struct _cfg {
     void *arg;		/* allocated memory if any */
     int arg_len;	/* size of *arg in case a realloc is needed */
     uint64_t d[16];	/* static storage for simple cases */
+    double f[4];	/* static storage for simple cases */
 };
 
 
@@ -549,21 +550,14 @@ struct _qs { /* shared queue */
 	uint64_t 	buflen;	/* queue length */
 	char *buf;
 
-	/* the queue has at least 1 empty position */
-	uint64_t	max_bps;	/* bits per second */
-	uint64_t	max_delay;	/* nanoseconds */
-	uint64_t	qsize;	/* queue size in bytes */
-
 	/* handlers for various options */
 	struct _cfg	c_delay;
 	struct _cfg	c_bw;
 	struct _cfg	c_loss;
-	struct _cfg	c_pmode;	//handler for pcap transmission mode
 
 	/* producer's fields */
 	uint64_t	tx ALIGN_CACHE;	/* tx counter */
 	uint64_t	prod_tail_1;	/* head of queue */
-	uint64_t	prod_queued;	/* queued bytes */
 	uint64_t	prod_head;	/* cached copy */
 	uint64_t	prod_tail;	/* cached copy */
 	uint64_t	prod_drop;	/* drop packet count */
@@ -669,16 +663,16 @@ setaffinity(int i)
         CPU_SET(i, &cpumask);
 
         if (pthread_setaffinity_np(pthread_self(), sizeof(cpuset_t), &cpumask) != 0) {
-                ED("Unable to set affinity: %s", strerror(errno));
+                WWW("Unable to set affinity: %s", strerror(errno));
         }
 	if (setpriority(PRIO_PROCESS, 0, -10)) {; // XXX not meaningful
-                ED("Unable to set priority: %s", strerror(errno));
+                WWW("Unable to set priority: %s", strerror(errno));
 	}
 	bzero(&p, sizeof(p));
 	p.sched_priority = 10; // 99 on linux ?
 	// use SCHED_RR or SCHED_FIFO
 	if (sched_setscheduler(0, SCHED_RR, &p)) {
-                ED("Unable to set scheduler: %s", strerror(errno));
+                WWW("Unable to set scheduler: %s", strerror(errno));
 	}
         return 0;
 }
@@ -730,9 +724,6 @@ enq(struct _qs *q)
         1e-9*p->pt_qout, 1e-9*p->pt_tx);
     q->prod_tail = p->next;
     q->tx++;
-    if (q->max_bps)
-        q->prod_queued += p->pktlen;
-    /* XXX update timestamps ? */
     return 0;
 }
 
@@ -759,7 +750,7 @@ pcap_prod(void *_pa)
 {
     struct pipe_args *pa = _pa;
     struct _qs *q = &pa->q;
-    struct nm_pcap_file *pf = q->pcap;	//this has been already open by cmd_apply
+    struct nm_pcap_file *pf = q->pcap;	/* already open by cmd_apply */
     uint32_t loops, i, tot_pkts;
 
     /* data plus the loop record */
@@ -819,32 +810,7 @@ pcap_prod(void *_pa)
     	    last_ts = pf->first_ts; /* beginning of the trace */
 	    loops++;
 	}
-#if 0
-	switch (q->c_pmode.d[1]) { /* mode */
-	case PM_FAST:		/* easy, all same timestamp */
-	    pkt->pt_tx = 0;
-	    break;
 
-	case PM_FIXED:	
-	    /*
-	     * also easy, use the bandwidth and size to compute
-	     * the delta from the previous packet
-	     */
-	    pkt->pt_tx = pkt->pktlen*8ULL*TIME_UNITS/bw + q->qt_tx;
-	    q->qt_tx = pkt->pt_tx;
-	    break;
-
-	case PM_REAL:
-	    /*
-	     * use the delta from the first packet, plus the total time
-	     * times iteration number
-	     */
-	    pkt->pt_tx = pf->cur_ts + loops * pf->total_tx_time;
-	    break;
-
-	}
-#endif
-	// XXX possibly implement c_tt for transmission time emulation
 	q->c_loss.run(q, &q->c_loss);
 	if (q->cur_drop)
 	    continue;
@@ -898,8 +864,8 @@ cons(void *_pa)
 
 	__builtin_prefetch (q->buf + p->next);
 
-	if (q->head == q->tail && q->c_pmode.parse) {	//reset record
-		ND("Transmission restarted");
+	if (q->head == q->tail) {	//reset record
+	    ND("Transmission restarted");
 		/* The consumers restarts by simply recomputing a
 		 * correct time in t0 and restarting q->cons_now.
 		 */
@@ -960,24 +926,25 @@ nmreplay_main(void *_a)
     }
     q->pcap = readpcap(cap_fname);
     if (q->pcap == NULL) {
-	ED("unable to read file %s", cap_fname);
+	EEE("unable to read file %s", cap_fname);
 	goto fail;
     }
     pcap_prod((void*)a);
     destroy_pcap(q->pcap);
     a->pb = nm_open(q->cons_ifname, NULL, 0, NULL);
     if (a->pb == NULL) {
-	ED("cannot open netmap on %s", q->cons_ifname);
+	EEE("cannot open netmap on %s", q->cons_ifname);
 	do_abort = 1; // XXX any better way ?
 	return NULL;
     }
     /* continue as cons() */
     cons((void*)a);
-    D("exiting on abort");
+    EEE("exiting on abort");
 fail:
     if (q->pcap != NULL) {
 	destroy_pcap(q->pcap);
     }
+    do_abort = 1;
     return NULL;
 }
 
@@ -996,7 +963,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: nmreplay [-v] [-D delay] [-B bps] [-L loss] [-Q qsize] \n"
+	    "usage: nmreplay [-v] [-D delay] [-B bps] [-L loss]\n"
 	    "\t[-b burst] [-m fast|real|fixed...] -i ifa-or-pcap-file -i ifb\n");
 	exit(1);
 }
@@ -1048,7 +1015,9 @@ split_arg(const char *src, int *_ac)
 	    break;
 	}
     }
-    for (i = 0; i < ac; i++) fprintf(stderr, "%d: <%s>\n", i, av[i]);
+    for (i = 0; i < ac; i++) {
+	fprintf(stderr, "%d: <%s>\n", i, av[i]);
+    }
     av[i++] = NULL;
     av[i++] = my;
     *_ac = ac;
@@ -1084,7 +1053,7 @@ cmd_apply(const struct _cfg *a, const char *arg, struct _qs *q, struct _cfg *dst
 		x.arg = NULL;
 		x.arg_len = 0;
 		bzero(&x.d, sizeof(x.d));
-D("apply %s to %s", av[0], errmsg);
+		ND("apply %s to %s", av[0], errmsg);
 		ret = x.parse(q, &x, ac, av);
 		if (ret == 2) /* not recognised */
 			continue;
@@ -1105,10 +1074,8 @@ D("apply %s to %s", av[0], errmsg);
 static struct _cfg delay_cfg[];
 static struct _cfg bw_cfg[];
 static struct _cfg loss_cfg[];
-// static struct _cfg pmode_cfg[];	//pcap transmission mode
 
 static uint64_t parse_bw(const char *arg);
-static uint64_t parse_qsize(const char *arg);
 
 /*
  * prodcons [options]
@@ -1132,23 +1099,23 @@ main(int argc, char **argv)
 {
 	int ch, i, err=0;
 
-#define	N_OPTS	2
+#define	N_OPTS	1
 	struct pipe_args bp[N_OPTS];
 	const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS], *m[N_OPTS];
+	const char *pcap_file[N_OPTS];
 	int cores[4] = { 2, 8, 4, 10 }; /* default values */
 
+	bzero(&bp, sizeof(bp));	/* all data initially go here */
 	bzero(d, sizeof(d));
 	bzero(b, sizeof(b));
 	bzero(l, sizeof(l));
 	bzero(q, sizeof(q));
 	bzero(m, sizeof(m));
 	bzero(ifname, sizeof(ifname));
+	bzero(pcap_file, sizeof(pcap_file));
 
 
-	fprintf(stderr, "%s built %s %s\n", argv[0], __DATE__, __TIME__);
-
-	bzero(&bp, sizeof(bp));	/* all data initially go here */
-
+	/* set default values */
 	for (i = 0; i < N_OPTS; i++) {
 	    struct _qs *q = &bp[i].q;
 	    q->c_delay.optarg = "0";
@@ -1157,21 +1124,19 @@ main(int argc, char **argv)
 	    q->c_loss.run = null_run_fn;
 	    q->c_bw.optarg = "0";
 	    q->c_bw.run = null_run_fn;
-	    q->c_pmode.optarg = "0";
-	    q->c_pmode.run = null_run_fn;
 	}
 
 	// Options:
 	// B	bandwidth in bps
 	// D	delay in seconds
-	// Q	qsize in bytes
 	// L	loss probability
+	// f	pcap file
 	// i	interface name (two mandatory)
 	// v	verbose
 	// b	batch size
 	// m	pcap transmission mode (real/fast/fixed)
 
-	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:b:i:vw:m:")) != -1) {
+	while ( (ch = getopt(argc, argv, "B:C:D:L:b:f:i:vw:m:")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -1214,10 +1179,6 @@ main(int argc, char **argv)
 			add_to(d, N_OPTS, optarg, "-D too many times");
 			break;
 
-		case 'Q': /* qsize in bytes */
-			add_to(q, N_OPTS, optarg, "-Q too many times");
-			break;
-
 		case 'L': /* loss probability */
 			add_to(l, N_OPTS, optarg, "-L too many times");
 			break;
@@ -1226,6 +1187,9 @@ main(int argc, char **argv)
 			bp[0].q.burst = atoi(optarg);
 			break;
 
+		case 'f':	/* pcap_file */
+			add_to(pcap_file, N_OPTS, optarg, "-f too many times");
+			break;
 		case 'i':	/* interface */
 			add_to(ifname, N_OPTS, optarg, "-i too many times");
 			break;
@@ -1249,16 +1213,16 @@ main(int argc, char **argv)
 	 * consistency checks for common arguments
 	 * if pcap file has been provided we need just one interface, two otherwise
 	 */
-	if (!ifname[0] || !ifname[1]) {
-		ED("missing interface(s)");
+	if (!pcap_file[0]) {
+		ED("missing pcap file");
 		usage();
 	}
-	if (strcmp(ifname[0], ifname[1]) == 0) {
-		ED("must specify two different interfaces %s %s", ifname[0], ifname[1]);
+	if (!ifname[0]) {
+		ED("missing interface");
 		usage();
 	}
 	if (bp[0].q.burst < 1 || bp[0].q.burst > 8192) {
-		ED("invalid burst %d, set to 1024", bp[0].q.burst);
+		WWW("invalid burst %d, set to 1024", bp[0].q.burst);
 		bp[0].q.burst = 1024; // XXX 128 is probably better
 	}
 	if (bp[0].wait_link > 100) {
@@ -1266,26 +1230,13 @@ main(int argc, char **argv)
 		bp[0].wait_link = 4;
 	}
 
-	bp[1] = bp[0]; /* copy parameters, but swap interfaces */
-	bp[0].q.prod_ifname = bp[1].q.cons_ifname = ifname[0];
-	bp[1].q.prod_ifname = bp[0].q.cons_ifname = ifname[1];
+	bp[0].q.prod_ifname = pcap_file[0];
+	bp[0].q.cons_ifname = ifname[0];
 
 	/* assign cores. prod and cons work better if on the same HT */
 	bp[0].cons_core = cores[0];
 	bp[0].prod_core = cores[1];
-	bp[1].cons_core = cores[2];
-	bp[1].prod_core = cores[3];
 	ED("running on cores %d %d %d %d", cores[0], cores[1], cores[2], cores[3]);
-
-	/* use same parameters for both directions if needed */
-	if (d[1] == NULL)
-		d[1] = d[0];
-	if (b[1] == NULL)
-		b[1] = b[0];
-	if (l[1] == NULL)
-		l[1] = l[0];
-	if (m[1] == NULL)
-		m[1] = m[0];
 
 	/* apply commands */
 	for (i = 0; i < N_OPTS; i++) { /* once per queue */
@@ -1293,16 +1244,6 @@ main(int argc, char **argv)
 		err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
 		err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
 		err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
-//		err += cmd_apply(pmode_cfg, m[i], q, &q->c_pmode);	//pcap configuration
-	}
-
-	if (q[0] == NULL)
-		q[0] = "0";
-	bp[0].q.qsize = parse_qsize(q[0]);
-
-	if (bp[0].q.qsize == 0) {
-		ED("qsize= 0 is not valid, set to 50k");
-		bp[0].q.qsize = 50000;
 	}
 
 	pthread_create(&bp[0].cons_tid, NULL, nmreplay_main, (void*)&bp[0]);
@@ -1323,8 +1264,6 @@ main(int argc, char **argv)
 		(double)(q0->c_loss.d[2])/q0->c_loss.d[1]);
 	    bp[0].q.rx_qmax = (bp[0].q.rx_qmax * 7)/8; // ewma
 	    bp[0].q.prod_max_gap = (bp[0].q.prod_max_gap * 7)/8; // ewma
-	    bp[1].q.rx_qmax = (bp[1].q.rx_qmax * 7)/8; // ewma
-	    bp[1].q.prod_max_gap = (bp[1].q.prod_max_gap * 7)/8; // ewma
 	}
 	D("exiting on abort");
 	sleep(1);
@@ -1415,19 +1354,6 @@ parse_bw(const char *arg)
     return err ? U_PARSE_ERR : ret;
 }
 
-/*
- * parse a queue size, returns value in bytes or U_PARSE_ERR if error.
- */
-static uint64_t
-parse_qsize(const char *arg)
-{
-    struct _sm a[] = {
-	{"", 1}, {"kK", 1024}, {"mM", 1024*1024}, {"gG", 1024*1024*1024}, {NULL, 0}
-    };
-    int err;
-    uint64_t ret = (uint64_t)parse_gen(arg, a, &err);
-    return err ? U_PARSE_ERR : ret;
-}
 
 /*
  * For some function we need random bits.
@@ -1493,10 +1419,6 @@ that contains all possible options.
 
 DELAY emulation		-D option_arguments
 
-    NOTE: The config function should store, in q->max_delay,
-    a reasonable estimate of the maximum delay applied to the packets
-    as this is needed to size the memory buffer used to store packets.
-
     If the option is not supplied, the system applies 0 extra delay
 
     The resolution for times is 1ns, the precision is load dependent and
@@ -1547,23 +1469,17 @@ BANDWIDTH emulation	-B option_arguments
 	m/M	mbits/s (10^6 bits/s)
 	g/G	gbits/s (10^9 bits/s)
 
-    The config function should store in q->max_bps the maximum
-    available bandwidth, which is used to determine how much space
-    is needed in the queue.
-
     Currently implemented options
 
     const,b		constant bw, excluding mac framing
     ether,b		constant bw, including ethernet framing
 			(20 bytes framing + 4 bytes crc)
+    real,[scale]	use real time, optionally with a scaling factor
 
 #endif /* end of comment block */
 
 /*
  * Configuration options for delay
- *
- * Must store a reasonable estimate of the max_delay in q->max_delay
- * as this is used to size the queue.
  */
 
 /* constant delay, also accepts just a number */
@@ -1572,6 +1488,7 @@ const_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
 	uint64_t delay;
 
+	(void)q;
 	if (strncmp(av[0], "const", 5) != 0 && ac > 1)
 		return 2; /* unrecognised */
 	if (ac > 2)
@@ -1580,7 +1497,6 @@ const_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	if (delay == U_PARSE_ERR)
 		return 1; /* error */
 	dst->d[0] = delay;
-	q->max_delay = delay;
 	return 0;	/* success */
 }
 
@@ -1610,7 +1526,6 @@ uniform_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	dst->d[0] = dmin;
 	dst->d[1] = dmax;
 	dst->d[2] = dmax - dmin;
-	q->max_delay = dmax;
 	return 0;
 }
 
@@ -1656,7 +1571,6 @@ exp_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	if (dst->arg == NULL)
 		return 1; /* no memory */
 	t = (uint64_t *)dst->arg;
-        q->max_delay = d_av * 4 + d_min; /* exp(-4) */
 	/* tabulate -ln(1-n)*delay  for n in 0..1 */
 	for (i = 0; i < PTS_D_EXP; i++) {
 		double d = -log2 ((double)(PTS_D_EXP - i) / PTS_D_EXP) * d_av + d_min;
@@ -1676,7 +1590,8 @@ exp_delay_run(struct _qs *q, struct _cfg *arg)
 }
 
 
-#define _CFG_END	NULL, 0, {0}
+/* unused arguments in configuration */
+#define _CFG_END	NULL, 0, {0}, {0}
 
 static struct _cfg delay_cfg[] = {
 	{ const_delay_parse, const_delay_run,
@@ -1695,15 +1610,15 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	uint64_t bw;
 
 	(void)q;
-	if (strncmp(av[0], "const", 5) != 0)
+	if (strncmp(av[0], "const", 5) != 0 && ac > 1)
 		return 2; /* unrecognised */
 	if (ac > 2)
 		return 1; /* error */
 	bw = parse_bw(av[ac - 1]);
-	if (bw == U_PARSE_ERR)
-		return 1; /* error */
+	if (bw == U_PARSE_ERR) {
+		return (ac == 2) ? 1 /* error */ : 2 /* unrecognised */;
+	}
 	dst->d[0] = bw;
-	q->max_bps = bw;	/* bw used to determine queue size */
 	return 0;	/* success */
 }
 
@@ -1732,7 +1647,6 @@ ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	if (bw == U_PARSE_ERR)
 		return 1; /* error */
 	dst->d[0] = bw;
-	q->max_bps = bw;	/* bw used to determine queue size */
 	return 0;	/* success */
 }
 
@@ -1766,16 +1680,14 @@ real_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 			return 1;
 	}
 	ED("real -> scale is %.6f", scale);
-	dst->d[0] = scale * (1<<24); /* scale is 16m */
-	q->max_bps = 0;	/* bw used to determine queue size */
+	dst->f[0] = scale;
 	return 0;	/* success */
 }
 
 static int
 real_bw_run(struct _qs *q, struct _cfg *arg)
 {
-	uint64_t bps = arg->d[0];
-	q->cur_tt = bps ? 8ULL * TIME_UNITS * (q->cur_len + 24) / bps : 0 ;
+	q->cur_tt *= arg->f[0];
 	return 0;
 }
 
@@ -1897,103 +1809,3 @@ static struct _cfg loss_cfg[] = {
 		"ber,prob # 0 <= prob <= 1", _CFG_END },
 	{ NULL, NULL, NULL, _CFG_END }
 };
-
-/*
- * support functions for tcpreplay operation.
- */
-
-#if 0
-/* This function set the correct values inside the pcap struct in the
- * queue. It returns the 0 if everything is ok; -1 otherwise.
- */
-static int
-set_pcap(struct _qs *q)
-{
-	int fd = 0;
-	const char *cap_fname = q->prod_ifname;
-	struct nm_pcap_file *pcap = NULL;
-
-	//here we have both ac = 1 and av[0] = "real"
-	/* Now we need to save the pcap struct in order to access it
-	 * during the following real_pmode_run() calls. This pcap is
-	 * saved in the arg field of the dst _cfg.
-	 */
-	if (cap_fname == NULL) {
-		goto fail;
-	}
-
-	fd = open(cap_fname, O_RDONLY);
-	if (fd < 0){
-		ED("unable to open file %s", cap_fname);
-		goto fail;
-	}
-	pcap = readpcap(fd);
-	if (pcap == NULL){
-		ED("unable to open file %s", cap_fname);
-		goto fail;
-	}
-	q->pcap = pcap;
-	return 0;
-fail:
-	if (fd != 0) {
-		close(fd);
-	}
-	if (pcap != NULL) {
-		destroy_pcap(pcap);
-	}
-	return -1;
-}
-#endif
-
-#if 0 // unused
-/* This is a default bandwidth to be used when no bandwidth computation
- * is possible; this is the case when the chosen mode is real and the
- * capture file contains one packet only.
- */
-#define DEFAULT_BW 1000000000ULL
-
-
-/*
- * We can run in three different modes:
- * fixed	fixed bandwidth, programmed with -B ...
- * real		use actual timestamps from the file,
- * fast		runs as fast as possible.
- */
-static int
-pmode_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
-{
-	uint64_t bw = DEFAULT_BW;
-	int mode = PM_NONE;
-
-	(void)q;
-	if (!strncmp(av[0], "fixed", 5)) {
-		mode = PM_FIXED;
-	} else if (!strncmp(av[0], "real", 4)) {
-		mode = PM_REAL;
-	} else if (!strncmp(av[0], "fast", 4)) {
-		mode = PM_FAST;
-	} else {
-		return 2; /* unrecognised */
-	}
-	D("mode is %s %s", av[0], av[1]);
-	if (ac > 1) {
-		if (mode != PM_FIXED)
-			return 1; /* error */
-		bw = parse_bw(av[ac - 1]);
-		if (bw == U_PARSE_ERR)
-			return 1; /* error */
-	}
-	dst->d[0] = bw;
-	dst->d[1] = mode;
-	return 0;
-}
-
-/*
- * The next struct contains all the possible mode for a cap transmission
- */
-static struct _cfg pmode_cfg[] = {
-	{ pmode_parse, NULL, "-m <mode>[,<value>]", _CFG_END },
-	{ NULL, NULL, NULL, _CFG_END }
-};
-
-#endif /* unused */
