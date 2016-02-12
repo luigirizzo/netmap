@@ -1113,7 +1113,7 @@ static int netmap_backend_nm_notify(struct netmap_adapter *na,
 					POLLRDNORM | POLLRDBAND);
 	}
 
-	return 0;
+	return NM_IRQ_COMPLETED;
 }
 
 /* Called by an external module (the v1000 frontend) which wants to
@@ -1599,7 +1599,7 @@ static int netmap_socket_nm_notify(struct netmap_adapter *na,
 					POLLRDNORM | POLLRDBAND);
 	}
 
-	return 0;
+	return NM_IRQ_COMPLETED;
 }
 
 static struct netmap_sock *netmap_sock_setup(struct netmap_adapter *na, struct file *filp)

@@ -941,12 +941,12 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 	struct ptnetmap_state *pts;
 
 	if (unlikely(!pth_na)) {
-		return 0;
+		return NM_IRQ_COMPLETED;
 	}
 
 	pts = pth_na->ptn_state;
 	if (unlikely(!pts)) {
-		return 0;
+		return NM_IRQ_COMPLETED;
 	}
 
 	/* Notify kthreads (wake up if needed) */
@@ -961,7 +961,7 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 		IFRATE(pts->rate_ctx.new.brxwu++);
 	}
 
-	return 0;
+	return NM_IRQ_COMPLETED;
 }
 
 static int

@@ -2652,7 +2652,7 @@ netmap_notify(struct netmap_kring *kring, int flags)
 	if (na->si_users[t] > 0)
 		nm_os_selwakeup(&na->si[t]);
 
-	return 0;
+	return NM_IRQ_COMPLETED;
 }
 
 #if 0
@@ -3167,12 +3167,12 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 	}
 
 	if (q >= nma_get_nrings(na, t))
-		return 0; // not a physical queue
+		return NM_IRQ_PASS; // not a physical queue
 
 	kring = NMR(na, t) + q;
 
 	if (kring->nr_mode == NKR_NETMAP_OFF) {
-		return 0;
+		return NM_IRQ_PASS;
 	}
 
 	if (t == NR_RX) {
@@ -3180,8 +3180,7 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 		*work_done = 1; /* do not fire napi again */
 	}
 
-	kring->nm_notify(kring, 0);
-	return 1;
+	return kring->nm_notify(kring, 0);
 }
 
 
@@ -3189,17 +3188,17 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
  * Default functions to handle rx/tx interrupts from a physical device.
  * "work_done" is non-null on the RX path, NULL for the TX path.
  *
- * If the card is not in netmap mode, simply return 0,
+ * If the card is not in netmap mode, simply return NM_IRQ_PASS,
  * so that the caller proceeds with regular processing.
- * Otherwise call netmap_common_irq() and return 1.
+ * Otherwise call netmap_common_irq().
  *
  * If the card is connected to a netmap file descriptor,
  * do a selwakeup on the individual queue, plus one on the global one
  * if needed (multiqueue card _and_ there are multiqueue listeners),
- * and return 1.
+ * and return NR_IRQ_COMPLETED.
  *
  * Finally, if called on rx from an interface connected to a switch,
- * calls the proper forwarding routine, and return 1.
+ * calls the proper forwarding routine.
  */
 int
 netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
@@ -3213,11 +3212,11 @@ netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 	 * nm_native_on() here.
 	 */
 	if (!nm_netmap_on(na))
-		return 0;
+		return NM_IRQ_PASS;
 
 	if (na->na_flags & NAF_SKIP_INTR) {
 		ND("use regular interrupt");
-		return 0;
+		return NM_IRQ_PASS;
 	}
 
 	return netmap_common_irq(na, q, work_done);

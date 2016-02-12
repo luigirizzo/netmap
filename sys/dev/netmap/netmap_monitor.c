@@ -239,7 +239,7 @@ static int netmap_monitor_parent_notify(struct netmap_kring *, int);
 static int
 netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int zcopy)
 {
-	int error = 0;
+	int error = NM_IRQ_COMPLETED;
 
 	/* sinchronize with concurrently running nm_sync()s */
 	nm_kr_stop(kring, NM_KR_LOCKED);
@@ -671,16 +671,15 @@ netmap_monitor_parent_rxsync(struct netmap_kring *kring, int flags)
 static int
 netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 {
-	int error = 0;
 	int (*notify)(struct netmap_kring*, int);
 	ND(5, "%s %x", kring->name, flags);
 	/* ?xsync callbacks have tryget called by their callers
 	 * (NIOCREGIF and poll()), but here we have to call it
 	 * by ourself
 	 */
-	if (nm_kr_tryget(kring, 0, &error)) {
+	if (nm_kr_tryget(kring, 0, NULL)) {
 		/* in all cases, just skip the sync */
-		return error;
+		return NM_IRQ_COMPLETED;
 	}
 	if (kring->n_monitors > 0) {
 		netmap_monitor_parent_rxsync(kring, NAF_FORCE_READ);

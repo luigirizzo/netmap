@@ -2253,8 +2253,8 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 	bkring = &vpna->up.tx_rings[ring_nr];
 
 	/* make sure the ring is not disabled */
-	if (nm_kr_tryget(kring, 0 /* can't sleep */, &error))
-		return (error ? EIO : 0);
+	if (nm_kr_tryget(kring, 0 /* can't sleep */, NULL))
+		return EIO;
 
 	if (netmap_verbose)
 	    D("%s head %d cur %d tail %d",  na->name,
@@ -2288,7 +2288,7 @@ netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 
 put_out:
 	nm_kr_put(kring);
-	return error;
+	return error ? error : NM_IRQ_COMPLETED;
 }
 
 
@@ -2490,7 +2490,7 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 	u_int ring_n = kring->ring_id;
 	u_int lim = kring->nkr_num_slots - 1;
 	struct netmap_kring *hw_kring;
-	int error = 0;
+	int error;
 
 	ND("%s: na %s hwna %s", 
 			(kring ? kring->name : "NULL!"),
@@ -2498,8 +2498,8 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 			(hwna ? hwna->name : "NULL!"));
 	hw_kring = &hwna->tx_rings[ring_n];
 
-	if (nm_kr_tryget(hw_kring, 0, &error))
-		return (error ? ENXIO : 0);
+	if (nm_kr_tryget(hw_kring, 0, NULL))
+		return ENXIO;
 
 	/* first step: simulate a user wakeup on the rx ring */
 	netmap_vp_rxsync(kring, flags);
@@ -2529,7 +2529,7 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 		hw_kring->nr_hwcur, hw_kring->nr_hwtail, hw_kring->rtail);
 out:
 	nm_kr_put(hw_kring);
-	return error;
+	return error ? error : NM_IRQ_COMPLETED;
 }
 
 

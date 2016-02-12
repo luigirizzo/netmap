@@ -716,6 +716,7 @@ struct netmap_adapter {
 	 *	we also need to invoke the 'txsync' code downstream.
 	 *      This callback pointer is actually used only to initialize
 	 *      kring->nm_notify.
+	 *      Return values are the same as for netmap_rx_irq().
 	 */
 	void (*nm_dtor)(struct netmap_adapter *);
 
@@ -1151,8 +1152,8 @@ int netmap_ring_reinit(struct netmap_kring *);
 
 /* Return codes for netmap_*x_irq. */
 enum {
-	/* Port is not in netmap mode, driver can do normal interrupt
-	 * processing. */
+	/* Driver should do normal interrupt processing, e.g. because
+	 * the interface is not in netmap mode. */
 	NM_IRQ_PASS = 0,
 	/* Port is in netmap mode, and the interrupt work has been
 	 * completed. The driver does not have to notify netmap
