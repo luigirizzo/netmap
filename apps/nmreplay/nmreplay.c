@@ -174,7 +174,7 @@ struct q_pkt {
  * This data structs need to be transfered in rpcap.c once debug is completed
  */
 struct pcap_file_header {
-    uint32_t magic_number;
+    uint32_t magic;
 	/*used to detect the file format itself and the byte
     ordering. The writing application writes 0xa1b2c3d4 with it's native byte
     ordering format into this field. The reading application will read either
@@ -281,8 +281,8 @@ struct nm_pcap_file {
     uint32_t	cur_caplen;
 };
 
-struct nm_pcap_file *readpcap(const char *fn);
-void destroy_pcap_list(struct nm_pcap_file *file);
+static struct nm_pcap_file *readpcap(const char *fn);
+static void destroy_pcap(struct nm_pcap_file *file);
 
 
 #include <stdio.h>
@@ -297,9 +297,8 @@ void destroy_pcap_list(struct nm_pcap_file *file);
 #define NS_SCALE 1000000000UL	/* nanoseconds in 1s */
 
 
-void destroy_pcap_list(struct nm_pcap_file *pf)
+static void destroy_pcap(struct nm_pcap_file *pf)
 {
-
     if (!pf)
 	return;
 
@@ -351,7 +350,7 @@ read_next_info(struct nm_pcap_file *pf, int size)
  * mmap the file, make sure timestamps are sorted, and count
  * packets and sizes
  */
-struct nm_pcap_file *readpcap(const char *fn)
+static struct nm_pcap_file *readpcap(const char *fn)
 {
     struct nm_pcap_file _f, *pf = &_f;
     uint64_t prev_ts;
@@ -379,7 +378,7 @@ struct nm_pcap_file *readpcap(const char *fn)
 	return NULL;
     }
     pf->ghdr = (void *)pf->data;
-    switch (pf->ghdr->magic_number) {
+    switch (pf->ghdr->magic) {
         case 0xa1b2c3d4:
             pf->swap = 0;
             pf->resolution = 1000;
@@ -397,7 +396,7 @@ struct nm_pcap_file *readpcap(const char *fn)
             pf->resolution = 1; /* nanoseconds */
             break;
         default:
-	    fprintf(stderr, "unknown magic 0x%x\n", pf->ghdr->magic_number);
+	    fprintf(stderr, "unknown magic 0x%x\n", pf->ghdr->magic);
             return NULL;
     }
 
@@ -659,7 +658,6 @@ struct _qs { /* shared queue */
 //	uint64_t	cons_head;	/* cached copy */
 //	uint64_t	cons_tail;	/* cached copy */
 	uint64_t	cons_now;	/* most recent producer timestamp */
-	uint64_t	cons_lag;	/* tail - head */
 	uint64_t	rx_wait;	/* stats */
 
 	/* shared fields */
@@ -668,7 +666,6 @@ struct _qs { /* shared queue */
 };
 
 struct pipe_args {
-	int		zerocopy;
 	int		wait_link;
 
 	pthread_t	cons_tid;	/* main thread */
@@ -686,7 +683,6 @@ struct pipe_args {
 
 #define NS_IN_S	(1000000000ULL)	// nanoseconds
 #define TIME_UNITS	NS_IN_S
-#define NS_IN_US (1000ULL)
 /* set the thread affinity. */
 static int
 setaffinity(int i)
@@ -744,33 +740,6 @@ pkt_at(struct _qs *q, uint64_t ofs)
 }
 
 
-#if 0
-/*
- * we have already checked for room and prepared p->next
- */
-static inline int
-enq(struct _qs *q)
-{
-    struct q_pkt *p = pkt_at(q, q->prod_tail);
-
-    /* hopefully prefetch has been done ahead */
-    nm_pkt_copy(q->cur_pkt, (char *)(p+1), q->cur_len);
-    p->pktlen = q->cur_len;
-    p->pt_qout = q->qt_qout;
-    p->pt_tx = q->qt_tx;
-    ND(1, "enqueue len %d at %d new tail %ld qout %ld tx %ld",
-	q->cur_len, (int)q->prod_tail, p->next,
-	p->pt_qout, p->pt_tx);
-    q->prod_tail = p->next;
-    q->tx++;
-    if (q->max_bps)
-	q->prod_queued += p->pktlen;
-    /* XXX update timestamps ? */
-    return 0;
-}
-#endif
-
-
 
 /*
  * simple handler for parameters not supplied
@@ -783,24 +752,6 @@ null_run_fn(struct _qs *q, struct _cfg *cfg)
     return 0;
 }
 
-
-#if 0
-static inline int
-enq_pcap (struct _qs* q)
-{
-	uint64_t need;
-	struct q_pkt *p = pkt_at(q, q->prod_tail);
-	p->pktlen = q->cur_len;
-	p->pt_qout = q->qt_qout;
-	p->pt_tx = q->qt_tx;
-	need = pad(q->cur_len)+sizeof(*p);
-	nm_pkt_copy(q->cur_pkt,(char*)(p+1),q->cur_len);
-	p->next = q->prod_tail + need;
-	q->prod_tail = p->next;
-	q->tx++;
-	return 0;
-}
-#endif
 
 
 /*
@@ -847,7 +798,7 @@ pcap_prod(void *_pa)
 	next_pkt = pf->cur + pf->cur_caplen;
 
         pkt = pkt_at(q, q->prod_tail);
-ED("add pkt len %d at %p", pf->cur_len, pkt);
+	ND("add pkt len %d at %p", pf->cur_len, pkt);
 
 	pkt->pktlen = pf->cur_len;
 	/* only copy the captured part */
@@ -885,7 +836,7 @@ ED("add pkt len %d at %p", pf->cur_len, pkt);
 
 	
 	q->tx++;
-	ED("ins %d q->prod_tail = %lu", (int)insert, (unsigned long)q->prod_tail);
+	ND("ins %d q->prod_tail = %lu", (int)insert, (unsigned long)q->prod_tail);
 	insert++; /* statistics */
 	pf->cur = next_pkt;
 	if (next_pkt == pf->lim) {	//last pkt
@@ -992,7 +943,7 @@ nmreplay_main(void *_a)
 	goto fail;
     }
     pcap_prod((void*)a);
-    destroy_pcap_list(q->pcap);
+    destroy_pcap(q->pcap);
     a->pb = nm_open(q->cons_ifname, NULL, 0, NULL);
     if (a->pb == NULL) {
 	ED("cannot open netmap on %s", q->cons_ifname);
@@ -1003,7 +954,7 @@ nmreplay_main(void *_a)
     D("exiting on abort");
 fail:
     if (q->pcap != NULL) {
-	destroy_pcap_list(q->pcap);
+	destroy_pcap(q->pcap);
     }
     return NULL;
 }
@@ -1199,7 +1150,7 @@ main(int argc, char **argv)
 	// b	batch size
 	// m	pcap transmission mode (real/fast/fixed)
 
-	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:b:ci:vw:m:")) != -1) {
+	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:b:i:vw:m:")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -1256,9 +1207,6 @@ main(int argc, char **argv)
 
 		case 'i':	/* interface */
 			add_to(ifname, N_OPTS, optarg, "-i too many times");
-			break;
-		case 'c':
-			bp[0].zerocopy = 0; /* do not zerocopy */
 			break;
 		case 'v':
 			verbose++;
@@ -1970,7 +1918,7 @@ fail:
 		close(fd);
 	}
 	if (pcap != NULL) {
-		destroy_pcap_file(pcap);
+		destroy_pcap(pcap);
 	}
 	return -1;
 }
