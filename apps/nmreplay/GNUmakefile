@@ -26,8 +26,6 @@ all: $(PROGS)
 testlock: testlock.c
 
 nmreplay: LDLIBS += -lm
-nmreplay: rpcap.o
-rpcap.o: rpcap.h
 
 clean:
 	-@rm -rf $(CLEANFILES)

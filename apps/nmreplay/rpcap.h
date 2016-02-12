@@ -95,9 +95,13 @@ struct pkt_list_element {
     struct pkt_list_element* p;
 };
 
+#define PKT_PAD         (32)    /* padding on packets */
 
+static inline int pad(int x)
+{
+        return ((x) + PKT_PAD - 1) & ~(PKT_PAD - 1) ;
+}
 
-typedef struct pkt_list_element packet_data;
 
 
 /* The pcap file structure has the following members:
@@ -110,18 +114,17 @@ typedef struct pkt_list_element packet_data;
 */
 struct nm_pcap_file {
     struct pcap_file_header *ghdr;
-    packet_data *list;
-    packet_data *end;
 
     int fd;
     uint64_t filesize;
     uint64_t tot_pkt;
     uint64_t tot_bytes;
-    uint64_t tot_bytes_rounded;
+    uint64_t tot_bytes_rounded;	/* need hdr + pad(len) */
     struct pcap_pkthdr *reorder; /* array of size tot_pkt for reordering */
     uint32_t resolution; /* 1000 for us, 1 for ns */
     int swap; /* need to swap fields ? */
 
+    uint64_t first_ts;
     uint64_t file_len;
     const char *data; /* mmapped file */
     const char *cur;	/* running pointer */
@@ -130,7 +133,7 @@ struct nm_pcap_file {
 };
 
 struct nm_pcap_file *readpcap(const char *fn);
-void destroy_pcap_list(struct nm_pcap_file **file);
+void destroy_pcap_list(struct nm_pcap_file *file);
 
 
 #endif // RCAP_H_INCLUDED

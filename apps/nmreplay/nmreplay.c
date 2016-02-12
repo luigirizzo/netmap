@@ -140,10 +140,319 @@ prod()
 #include <net/netmap_user.h>
 #include <sys/poll.h>
 
-#ifdef DO_PCAP_REPLAY
-#include "rpcap.h"
+
+/*
+ *
+A packet in the queue is q_pkt plus the payload.
+
+For the packet descriptor we need the following:
+
+    -	position of next packet in the queue (can go backwards).
+	We can reduce to 32 bits if we consider alignments,
+	or we just store the length to be added to the current
+	value and assume 0 as a special index.
+    -	actual packet length (16 bits may be ok)
+    -	queue output time, in nanoseconds (64 bits)
+    -	delay line output time, in nanoseconds
+	One of the two can be packed to a 32bit value
+
+A convenient coding uses 32 bytes per packet.
+Even if we use a compact encoding it is difficult to go below 18 bytes
+
+ */
+
+struct q_pkt {
+	uint64_t	next;		/* buffer index for next packet */
+	uint64_t	pktlen;		/* actual packet len */
+	uint64_t	pt_qout;	/* time of output from queue */
+	uint64_t	pt_tx;		/* transmit time */
+};
+
+
+/*
+ * The header for a pcap file
+ * This data structs need to be transfered in rpcap.c once debug is completed
+ */
+struct pcap_file_header {
+    uint32_t magic_number;
+	/*used to detect the file format itself and the byte
+    ordering. The writing application writes 0xa1b2c3d4 with it's native byte
+    ordering format into this field. The reading application will read either
+    0xa1b2c3d4 (identical) or 0xd4c3b2a1 (swapped). If the reading application
+    reads the swapped 0xd4c3b2a1 value, it knows that all the following fields
+    will have to be swapped too. For nanosecond-resolution files, the writing
+    application writes 0xa1b23c4d, with the two nibbles of the two lower-order
+    bytes swapped, and the reading application will read either 0xa1b23c4d
+    (identical) or 0x4d3cb2a1 (swapped)*/
+    uint16_t version_major;
+    uint16_t version_minor; /*the version number of this file format */
+    int32_t thiszone;
+	/*the correction time in seconds between GMT (UTC) and the
+    local timezone of the following packet header timestamps. Examples: If the
+    timestamps are in GMT (UTC), thiszone is simply 0. If the timestamps are in
+    Central European time (Amsterdam, Berlin, ...) which is GMT + 1:00, thiszone
+    must be -3600*/
+    uint32_t stampacc; /*the accuracy of time stamps in the capture*/
+    uint32_t snaplen;
+	/*the "snapshot length" for the capture (typically 65535
+    or even more, but might be limited by the user)*/
+    uint32_t network;
+	/*link-layer header type, specifying the type of headers
+    at the beginning of the packet (e.g. 1 for Ethernet); this can be various
+    types such as 802.11, 802.11 with various radio information, PPP, Token
+    Ring, FDDI, etc.*/
+};
+
+#if 0 /* from pcap.h */
+struct pcap_file_header {
+        bpf_u_int32 magic;
+        u_short version_major;
+        u_short version_minor;
+        bpf_int32 thiszone;     /* gmt to local correction */
+        bpf_u_int32 sigfigs;    /* accuracy of timestamps */
+        bpf_u_int32 snaplen;    /* max length saved portion of each pkt */
+        bpf_u_int32 linktype;   /* data link type (LINKTYPE_*) */
+};
+struct pcap_pkthdr {
+        struct timeval ts;      /* time stamp */
+        bpf_u_int32 caplen;     /* length of portion present */
+        bpf_u_int32 len;        /* length this packet (off wire) */
+};
+#endif /* from pcap.h */
+
+struct pcap_pkthdr {
+    uint32_t ts_sec; /* seconds from epoch */
+    uint32_t ts_frac; /* microseconds or nanoseconds depending on sigfigs */
+    uint32_t caplen;
+	/*the number of bytes of packet data actually captured
+    and saved in the file. This value should never become larger than orig_len
+    or the snaplen value of the global header*/
+    uint32_t len;	/* wire length */
+};
+
+
+#define PKT_PAD         (32)    /* padding on packets */
+
+static inline int pad(int x)
+{
+        return ((x) + PKT_PAD - 1) & ~(PKT_PAD - 1) ;
+}
+
+
+
+/* The pcap file structure has the following members:
+   - A global header which is struct pcap_file_header
+   - A list of packets with the following members:
+       + A packet header
+       + packet payload
+       + Pointer to the next packet
+   - A pointer to the last packet in the list
+*/
+struct nm_pcap_file {
+    struct pcap_file_header *ghdr;
+
+    int fd;
+    uint64_t filesize;
+    uint64_t tot_pkt;
+    uint64_t tot_bytes;
+    uint64_t tot_bytes_rounded;	/* need hdr + pad(len) */
+    struct pcap_pkthdr *reorder; /* array of size tot_pkt for reordering */
+    uint32_t resolution; /* 1000 for us, 1 for ns */
+    int swap; /* need to swap fields ? */
+
+
+    uint64_t first_ts;
+    uint64_t total_tx_time;
+	/*
+	 * total_tx_time is computed as last_ts - first_ts, plus the
+	 * transmission time for the first packet which in turn is
+	 * computed according to the average bandwidth
+	 */
+
+    uint64_t file_len;
+    const char *data; /* mmapped file */
+    const char *cur;	/* running pointer */
+    const char *lim;	/* data + file_len */
+    int err;
+
+    /* packet currently being analysed */
+    uint64_t	cur_ts;
+    uint32_t	cur_len;
+    uint32_t	cur_caplen;
+};
+
+struct nm_pcap_file *readpcap(const char *fn);
+void destroy_pcap_list(struct nm_pcap_file *file);
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h> /* memcpy */
+
+#include <sys/mman.h>
+
+#define NS_SCALE 1000000000UL	/* nanoseconds in 1s */
+
+
+void destroy_pcap_list(struct nm_pcap_file *pf)
+{
+
+    if (!pf)
+	return;
+
+    munmap((void *)(uintptr_t)pf->data, pf->filesize);
+    close(pf->fd);
+    bzero(pf, sizeof(*pf));
+    free(pf);
+    return;
+}
+
+// convert a field of given size if swap is needed.
+static uint32_t
+cvt(const void *src, int size, char swap)
+{
+    uint32_t ret = 0;
+    if (size != 2 && size != 4) {
+	fprintf(stderr, "Invalid size %d\n", size);
+	exit(1);
+    }
+    memcpy(&ret, src, size);
+    if (swap) {
+	unsigned char tmp, *data = (unsigned char *)&ret;
+	int i;
+        for (i = 0; i < size / 2; i++) {
+            tmp = data[i];
+            data[i] = data[size - (1 + i)];
+            data[size - (1 + i)] = tmp;
+        }
+    }
+    return ret;
+}
+
+static uint32_t
+read_next_info(struct nm_pcap_file *pf, int size)
+{
+    const char *end = pf->cur + size;
+    uint32_t ret;
+    if (end > pf->lim) {
+	pf->err = 1;
+	ret = 0;
+    } else {
+	ret = cvt(pf->cur, size, pf->swap);
+	pf->cur = end;
+    }
+    return ret;
+}
+
+/*
+ * mmap the file, make sure timestamps are sorted, and count
+ * packets and sizes
+ */
+struct nm_pcap_file *readpcap(const char *fn)
+{
+    struct nm_pcap_file _f, *pf = &_f;
+    uint64_t prev_ts;
+    uint32_t first_len = 0;
+
+    bzero(pf, sizeof(*pf));
+    pf->fd = open(fn, O_RDONLY);
+    if (pf->fd < 0) {
+	fprintf(stderr, "-- cannot open file %s, abort\n", fn);
+	return NULL;
+    }
+    /* compute length */
+    pf->filesize = lseek(pf->fd, 0, SEEK_END);
+    lseek(pf->fd, 0, SEEK_SET);
+    fprintf(stderr, "filesize is %d\n", (int)(pf->filesize));
+    if (pf->filesize < sizeof(struct pcap_file_header)) {
+	fprintf(stderr, "-- file too short %s, abort\n", fn);
+	close(pf->fd);
+	return NULL;
+    }
+    pf->data = mmap(NULL, pf->filesize, PROT_READ, MAP_SHARED, pf->fd, 0);
+    if (pf->data == MAP_FAILED) {
+	fprintf(stderr, "-- cannot mmap file %s, abort\n", fn);
+	close(pf->fd);
+	return NULL;
+    }
+    pf->ghdr = (void *)pf->data;
+    switch (pf->ghdr->magic_number) {
+        case 0xa1b2c3d4:
+            pf->swap = 0;
+            pf->resolution = 1000;
+            break;
+        case 0xd4c3b2a1:
+            pf->swap = 0;
+            pf->resolution = 1000;
+            break;
+        case 0xa1b23c4d:
+            pf->swap = 0;
+            pf->resolution = 1; /* nanoseconds */
+            break;
+        case 0x4d3cb2a1:
+            pf->swap = 1;
+            pf->resolution = 1; /* nanoseconds */
+            break;
+        default:
+	    fprintf(stderr, "unknown magic 0x%x\n", pf->ghdr->magic_number);
+            return NULL;
+    }
+
+    fprintf(stderr, "swap %d res %d\n", pf->swap, pf->resolution);
+    pf->cur = pf->data + sizeof(struct pcap_file_header);
+    pf->lim = pf->data + pf->filesize;
+    pf->err = 0;
+    prev_ts = 0;
+    while (pf->cur < pf->lim && pf->err == 0) {
+	uint32_t base = pf->cur - pf->data;
+	uint64_t cur_ts = read_next_info(pf, 4) * NS_SCALE +
+		read_next_info(pf, 4) * pf->resolution;
+	uint32_t caplen = read_next_info(pf, 4);
+	uint32_t len = read_next_info(pf, 4);
+
+	if (pf->err) {
+	    fprintf(stderr, "end of pcap file after %d packets\n",
+		(int)pf->tot_pkt);
+	    break;
+	}
+	if  (cur_ts < prev_ts) {
+	    fprintf(stderr, "reordered packet %d\n",
+		(int)pf->tot_pkt);
+	}
+	prev_ts = cur_ts;
+	fprintf(stderr, "%5d: base 0x%x len %5d caplen %d ts 0x%llx\n",
+		(int)pf->tot_pkt, base, len, caplen, (unsigned long long)cur_ts);
+	if (pf->tot_pkt == 0) {
+	    pf->first_ts = cur_ts;
+	    first_len = len;
+	}
+	pf->tot_pkt++;
+	pf->tot_bytes += len;
+	pf->tot_bytes_rounded += pad(len) + sizeof(struct q_pkt);
+	pf->cur += caplen;
+    }
+    pf->total_tx_time = prev_ts - pf->first_ts;
+    if (pf->tot_pkt == 1) {
+	/* cannot estimate bandwidth, so force 1 Gbit */
+	pf->total_tx_time += first_len * 8; /* * 10^9 / bw */
+    } else {
+	pf->total_tx_time += pf->total_tx_time / (pf->tot_bytes - first_len);
+    }
+
+    fprintf(stderr, "total %d packets\n", (int)pf->tot_pkt);
+    pf = calloc(1, sizeof(*pf));
+    *pf = _f;
+    /* reset pointer to start */
+    pf->cur = pf->data + sizeof(struct pcap_file_header);
+    pf->err = 0;
+    prev_ts = 0;
+    return pf;
+}
+
 enum my_pcap_mode { PM_NONE, PM_FAST, PM_FIXED, PM_REAL };
-#endif /* DO_PCAP_REPLAY */
 
 int verbose = 0;
 
@@ -214,33 +523,6 @@ struct _cfg {
     uint64_t d[16];	/* static storage for simple cases */
 };
 
-/*
- *
-A packet in the queue is q_pkt plus the payload.
-
-For the packet descriptor we need the following:
-
-    -	position of next packet in the queue (can go backwards).
-	We can reduce to 32 bits if we consider alignments,
-	or we just store the length to be added to the current
-	value and assume 0 as a special index.
-    -	actual packet length (16 bits may be ok)
-    -	queue output time, in nanoseconds (64 bits)
-    -	delay line output time, in nanoseconds
-	One of the two can be packed to a 32bit value
-
-A convenient coding uses 32 bytes per packet.
-Even if we use a compact encoding it is difficult to go below 18 bytes
-
- */
-
-struct q_pkt {
-	uint64_t	next;		/* buffer index for next packet */
-	uint64_t	pktlen;		/* actual packet len */
-	uint64_t	pt_qout;	/* time of output from queue */
-	uint64_t	pt_tx;		/* transmit time */
-};
-
 
 /*
  * communication occurs through this data structure, with fields
@@ -280,7 +562,6 @@ pointer, prod_tail_1, used to check for expired packets. This is done lazily.
  */
 #define INFINITE_BW	(200ULL*1000000*1000)
 #define	MY_CACHELINE	(128ULL)
-#define PKT_PAD		(32)	/* padding on packets */
 #define MAX_PKT		(9200)	/* max packet size */
 
 #define ALIGN_CACHE	__attribute__ ((aligned (MY_CACHELINE)))
@@ -444,10 +725,6 @@ set_tns_now(uint64_t *now, uint64_t t0)
 }
 
 
-static inline int pad(int x)
-{
-	return ((x) + PKT_PAD - 1) & ~(PKT_PAD - 1) ;
-}
 
 /* compare two timestamps */
 static inline int64_t
@@ -520,18 +797,6 @@ enq_pcap (struct _qs* q)
 }
 #endif
 
-/*
- * pcap timestamos can be in nanoseconds or microseconds, convert accordingly
- */
-static inline uint64_t
-convert_ts(char resolution, packet_data *aux)
-{
-	if (resolution == 'n') {
-		return (uint64_t)aux->hdr.ts_sec*NS_IN_S + (uint64_t)aux->hdr.ts_frac;
-	} else { //pcap resolution is 'm'
-		return (uint64_t)aux->hdr.ts_sec*NS_IN_S + (uint64_t)aux->hdr.ts_frac*NS_IN_US;
-	}
-}
 
 /*
  * put packet data into the buffer
@@ -539,78 +804,85 @@ convert_ts(char resolution, packet_data *aux)
 static void *
 pcap_prod(void *_pa)
 {
-	uint64_t need;
-	struct pipe_args *pa = _pa;
-	struct q_pkt *pkt = NULL;
-	struct _qs *q = &pa->q;
-	double bw = q->c_pmode.d[0];	//This has been set by the parse function inside q->c_pmode
-	struct nm_pcap_file *pcap = q->pcap;	//this has been already open by cmd_apply
-	uint64_t repeat = 1; //number of copy of the same packets set in queue
-	uint64_t insert = 0; //packet counter
-	packet_data *aux = NULL;
-	uint64_t pcap_start_t;
+    struct pipe_args *pa = _pa;
+    struct q_pkt *pkt = NULL;
+    struct _qs *q = &pa->q;
+    double bw = q->c_pmode.d[0];	//This has been set by the parse function inside q->c_pmode
+    struct nm_pcap_file *pf = q->pcap;	//this has been already open by cmd_apply
+    uint32_t loops = 0, repeat = 1; //number of copy of the same packets set in queue
+    uint64_t insert = 0; //packet counter
 
-	need = 2; // 2*(h->tot_len + h->tot_pkt*sizeof(struct q_pkt)); //FIXME to correct size
-	q->buf = calloc(1, need);
-	if(q->buf == NULL) {
-		ED("alloc %ld bytes for queue failed, exiting",(_P64)need);
-		goto fail;
-	}
-	q->buflen = need;
-	aux = pcap->list;
-	if(aux == NULL){
-		ED("pcap file is empty, exiting");
-		goto fail;
-	}
+    /* data plus the loop record */
+    uint64_t need = repeat * pf->tot_bytes_rounded + sizeof(struct q_pkt);
+    q->buf = calloc(1, need);
+    if (q->buf == NULL) {
+	ED("alloc %ld bytes for queue failed, exiting",(_P64)need);
+	goto fail;
+    }
+    q->buflen = need;
+    /*
+     * Setting the pcap_prod starting time
+     */
+    set_tns_now(&q->prod_now, q->t0);
+    ED("Starting at time %ld", (long)q->t0);
+
+    pf->cur = pf->data + sizeof(struct pcap_file_header);
+    pf->err = 0;
+
+    pkt = (void *)q->prod_tail;
+
+    while (insert < repeat * pf->tot_pkt && !do_abort) {
+	const char *next_pkt;
+	pf->cur_ts = read_next_info(pf, 4) * NS_SCALE +
+		read_next_info(pf, 4) * pf->resolution - pf->first_ts;
+	pf->cur_caplen = read_next_info(pf, 4);
+	pf->cur_len = read_next_info(pf, 4);
+	next_pkt = pf->cur + pf->cur_caplen;
+
+	pkt->pktlen = pf->cur_len;
+	/* only copy the captured part */
+	memcpy((char*)(pkt+1), pf->cur, pf->cur_caplen);
+	need = pad(pkt->pktlen)+sizeof(*pkt);
+	pkt->next = q->prod_tail + need;
+	q->prod_tail = pkt->next;
+
 	/*
-	 * Setting the pcap_prod starting time
+	 * compute the output timestamp.
 	 */
-	set_tns_now(&q->prod_now,q->t0);
-	ED("Starting at time %ld", (long)q->t0);
+	switch (q->c_pmode.d[1]) { /* mode */
+	case PM_FAST:		/* easy, all same timestamp */
+	    pkt->pt_tx = 0;
+	    break;
 
-	/* Saving the first pkt's timestamp */
-	pcap_start_t = convert_ts(pcap->resolution, aux);
+	case PM_FIXED:	
+	    /*
+	     * also easy, use the bandwidth and size to compute
+	     * the delta from the previous packet
+	     */
+	    pkt->pt_tx = pkt->pktlen*8ULL*TIME_UNITS/bw + q->qt_tx;
+	    q->qt_tx = pkt->pt_tx;
+	    break;
 
-	while (insert < repeat*pcap->tot_pkt && !do_abort){
-		pkt = pkt_at(q, q->prod_tail);
-		pkt->pktlen = aux->hdr.caplen;
+	case PM_REAL:
+	    /*
+	     * use the delta from the first packet, plus the total time
+	     * times iteration number
+	     */
+	    pkt->pt_tx = pf->cur_ts + loops * pf->total_tx_time;
+	    break;
 
-		switch (q->c_pmode.d[1]) { /* mode */
-		case PM_REAL:
-			/*
-			 * In real mode, the bandwidth used for computing the
-			 * transmission time for the last pkt is obtained with
-			 * an average on all the previous pkt sent.
-			 */
-			if(aux->p == NULL) {	//last pkt
-				NED("q->qt_tx%ld", (long)q->qt_tx);
-				bw = TIME_UNITS*(pcap->tot_bytes - aux->hdr.caplen)*8ULL/(q->qt_tx); /* average bps */
-				pkt->pt_tx = aux->hdr.caplen*8ULL*TIME_UNITS/bw + q->qt_tx;
-				break;
-			}
-			pkt->pt_tx = convert_ts(pcap->resolution, aux->p) - pcap_start_t;
-			q->qt_tx = pkt->pt_tx;
-		break;
-
-		case PM_FAST:
-			pkt->pt_tx = 0;
-			break;
-
-		case PM_FIXED:
-			pkt->pt_tx = aux->hdr.len*8ULL*TIME_UNITS/bw +q->qt_tx;
-			q->qt_tx = pkt->pt_tx;
-			break;
-		}
-		/* the same as in enq_pcap*/
-		need = pad(pkt->pktlen)+sizeof(*pkt);
-		nm_pkt_copy((char*)aux->data,(char*)(pkt+1),pkt->pktlen);
-		pkt->next = q->prod_tail + need;
-		q->tx++;
-		q->prod_tail = pkt->next;
-		NED("q->prod_tail = %llu", q->prod_tail);
-		insert++; /* statistics */
-		aux = aux->p;
 	}
+
+	
+	q->tx++;
+	NED("q->prod_tail = %llu", q->prod_tail);
+	insert++; /* statistics */
+	if (next_pkt == pf->lim) {	//last pkt
+	    pf->cur = pf->data + sizeof(struct pcap_file_header);
+	    loops++;
+	}
+    }
+	/* loop marker ? */
 	q->tail = q->prod_tail;	/* notify */
 	NED("q->tail:%d",(int)q->tail);
 
@@ -714,13 +986,13 @@ nmreplay_main(void *_a)
 	goto fail;
     }
     pcap_prod((void*)a);
-    destroy_pcap_list(&q->pcap);
+    destroy_pcap_list(q->pcap);
     /* continue as cons() */
     cons((void*)a);
     D("exiting on abort");
 fail:
     if (q->pcap != NULL) {
-	destroy_pcap_list(&q->pcap);
+	destroy_pcap_list(q->pcap);
     }
     return NULL;
 }
@@ -1687,7 +1959,7 @@ fail:
 		close(fd);
 	}
 	if (pcap != NULL) {
-		destroy_pcap_file(&pcap);
+		destroy_pcap_file(pcap);
 	}
 	return -1;
 }
@@ -1698,54 +1970,6 @@ fail:
  * capture file contains one packet only.
  */
 #define DEFAULT_BW 1000000000ULL
-
-/*
- * Now some functions and data structures for managing pcap
- * transmission.
- * The set of *_parse functions returns 1 on error (impossible
- * configuration), 2 on unrecognized configuration and 0 if the
- * configuration has been parsed without problems.
- * The set of *_run function instead set the correct timing values for
- * the pkt according to the chosen configuration.
- *
- * The parse functions set the correct pcap struct inside the queue.
- * After the parse, the pcap is correctly set and can be used in the
- * run and prod functions.
- */
-static int
-pmode_run(struct _qs *q, struct _cfg *arg)
-{
-	packet_data *aux = (packet_data*)arg->arg;
-	uint64_t bw = arg->d[0];
-
-    switch (arg->d[1]) { /* mode */
-    case PM_REAL:
-	/* in real mode, update the 'bw' according to the packet size.
-	 * XXX this is probably wrong and backwards.
-	 * XXX also should use the len, not caplen
-	 */
-	if(aux->p == NULL) { // XXX what is this ?
-		q->cur_tt = aux->hdr.caplen*8ULL*TIME_UNITS/bw;
-		break;
-	}
-	q->cur_tt = convert_ts(q->pcap->resolution, aux->p) - q->qt_qout - q->t0;
-	bw = aux->hdr.caplen*8ULL*TIME_UNITS/q->cur_tt;	//bps
-	arg->d[0] = bw;
-	// move on with next pkt
-	arg->arg = (void*)aux->p;
-	break;
-
-    case PM_FAST:
-	q->cur_tt = 0;
-	break;
-
-    case PM_FIXED:
-	q->cur_tt = aux->hdr.len*8ULL*TIME_UNITS/bw;
-	arg->arg = (void*)aux->p;
-	return 0;
-    }
-    return 0;
-}
 
 
 /*
@@ -1787,6 +2011,6 @@ pmode_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
  * The next struct contains all the possible mode for a cap transmission
  */
 static struct _cfg pmode_cfg[] = {
-	{ pmode_parse, pmode_run, "-m <mode>[,<value>]", _CFG_END },
+	{ pmode_parse, NULL, "-m <mode>[,<value>]", _CFG_END },
 	{ NULL, NULL, NULL, _CFG_END }
 };

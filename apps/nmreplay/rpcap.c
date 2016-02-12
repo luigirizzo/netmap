@@ -34,119 +34,21 @@
 
 #define NS_SCALE 1000000000UL	/* nanoseconds in 1s */
 
-#if 0
-Read a pcap file, create a memory structure with the expanded packets.
-#endif
 
-/*
- * a simple library to read from a pcap file into a list
- * of packets in memory.
- */
-#ifdef TEST_MODE
-
-
-int main(int argc, char *argv[])
+void destroy_pcap_list(struct nm_pcap_file *pf)
 {
-    int file = open("file.cap", O_RDONLY);
-    if (file < 0) {
-        fprintf(stderr, "Error opening file\n");
-    }
-    struct nm_pcap_file *fpc = readpcap(file);
-    printf("Hello world!\n");
-    destroy_pcap_list(&fpc);
-    return 0;
-}
 
-
-/* The packets are organized in a list inside the pcap file structure. Each list
-   element has the following members:
-   - A packet header
-   - packet payload
-   - Pointer to the next packet
-*/
-struct pkt_list_element {
-    struct pcap_pkthdr hdr;
-    unsigned char *data;
-    struct pkt_list_element* p;
-};
-
-#endif /* TEST_MODE */
-
-packet_data *new_packet_data(void)
-{
-    packet_data *pkt = (packet_data *)calloc(sizeof(packet_data), 1);
-    return pkt;
-}
-
-
-// Destroy a pcap list
-void destroy_pcap_list(struct nm_pcap_file **file)
-{
-    struct nm_pcap_file *f = file ? *file : NULL;
-    packet_data *tmp;
-
-    if (!f)
+    if (!pf)
 	return;
 
-    if (f->ghdr) {
-        free(f->ghdr);
-        f->ghdr = NULL;
-    }
-    while (f->list) {
-        tmp = f->list->p;
-        if (f->list->data) {
-            free(f->list->data);
-            f->list->data = NULL;
-        }
-        free(f->list);
-        f->list = tmp;
-    }
-    free(f);
-    *file = NULL;
-}
-
-// Insert a packet in the pcap file struct ordered by timestamp
-/*
- * XXX this is very inefficient.
- */
-void insert_pkt(struct nm_pcap_file *file, packet_data *pkt)
-{
-    packet_data *a, *b = NULL;
-
-    if (pkt == NULL)
-	return;
-    // Empty list
-    if (file->list == NULL) {
-        file->list = pkt;
-        file->end = pkt;
-        return;
-    }
-    a = file->list;
-    while (a && (pkt->hdr.ts_sec >= a->hdr.ts_sec ||
-    (pkt->hdr.ts_sec == a->hdr.ts_sec && pkt->hdr.ts_frac >= a->hdr.ts_frac))) {
-        b = a;
-        a = a->p;
-    }
-    // insert in head
-    if (a == file->list) {
-        pkt->p = file->list;
-        file->list = pkt;
-        return;
-    }
-    // insert at the end
-    if (a == NULL) {
-        file->end->p = pkt;
-        file->end = pkt;
-        return;
-    }
-    // insert in the middle
-    pkt->p = a;
-    b->p = pkt;
+    munmap((void *)(uintptr_t)pf->data, pf->filesize);
+    close(pf->fd);
+    bzero(pf, sizeof(*pf));
+    free(pf);
     return;
 }
 
-// Read file pcap's header info and swap the content if the file has a byte
-// ordering different than system byte ordering
+// convert a field of given size if swap is needed.
 static uint32_t
 cvt(const void *src, int size, char swap)
 {
@@ -260,9 +162,18 @@ struct nm_pcap_file *readpcap(const char *fn)
 	prev_ts = cur_ts;
 	fprintf(stderr, "%5d: base 0x%x len %5d caplen %d ts 0x%llx\n",
 		(int)pf->tot_pkt, base, len, caplen, (unsigned long long)cur_ts);
+	if (pf->tot_pkt == 0)
+	    pf->first_ts = cur_ts;
 	pf->tot_pkt++;
-	pf->tot_bytes += len;
+	pf->tot_bytes += pad(len) + sizeof(struct q_pkt);
 	pf->cur += caplen;
     }
-    return NULL;
+    fprintf(stderr, "total %d packets\n", (int)pf->tot_pkt);
+    pf = calloc(1, sizeof(*pf));
+    *pf = _f;
+    /* reset pointer to start */
+    pf->cur = pf->data + sizeof(struct pcap_file_header);
+    pf->err = 0;
+    prev_ts = 0;
+    return pf;
 }
