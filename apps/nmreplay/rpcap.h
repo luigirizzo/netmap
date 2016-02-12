@@ -49,9 +49,6 @@ struct pcap_file_header {
     timestamps are in GMT (UTC), thiszone is simply 0. If the timestamps are in
     Central European time (Amsterdam, Berlin, ...) which is GMT + 1:00, thiszone
     must be -3600*/
-    char resolution;
-	/*if it is 'n', ts_usec in packet header specifies
-    nanosecond-resolution, otherwise it is 'm' for microsecond-resolution*/
     uint32_t stampacc; /*the accuracy of time stamps in the capture*/
     uint32_t snaplen;
 	/*the "snapshot length" for the capture (typically 65535
@@ -61,11 +58,6 @@ struct pcap_file_header {
     at the beginning of the packet (e.g. 1 for Ethernet); this can be various
     types such as 802.11, 802.11 with various radio information, PPP, Token
     Ring, FDDI, etc.*/
-    
-    /* these are additional fields not included in the header on file */
-    //XXX
-    uint32_t tot_pkt;
-    uint64_t tot_len;
 };
 
 #if 0 /* from pcap.h */
@@ -77,7 +69,7 @@ struct pcap_file_header {
         bpf_u_int32 sigfigs;    /* accuracy of timestamps */
         bpf_u_int32 snaplen;    /* max length saved portion of each pkt */
         bpf_u_int32 linktype;   /* data link type (LINKTYPE_*) */
-};
+} __attribute((packed));
 struct pcap_pkthdr {
         struct timeval ts;      /* time stamp */
         bpf_u_int32 caplen;     /* length of portion present */
@@ -116,14 +108,29 @@ typedef struct pkt_list_element packet_data;
        + Pointer to the next packet
    - A pointer to the last packet in the list
 */
-struct pcap_file {
+struct nm_pcap_file {
     struct pcap_file_header *ghdr;
     packet_data *list;
     packet_data *end;
+
+    int fd;
+    uint64_t filesize;
+    uint64_t tot_pkt;
+    uint64_t tot_bytes;
+    uint64_t tot_bytes_rounded;
+    struct pcap_pkthdr *reorder; /* array of size tot_pkt for reordering */
+    uint32_t resolution; /* 1000 for us, 1 for ns */
+    int swap; /* need to swap fields ? */
+
+    uint64_t file_len;
+    const char *data; /* mmapped file */
+    const char *cur;	/* running pointer */
+    const char *lim;	/* data + file_len */
+    int err;
 };
 
-struct pcap_file *readpcap(FILE * file);
-void destroy_pcap_list(struct pcap_file **file);
+struct nm_pcap_file *readpcap(const char *fn);
+void destroy_pcap_list(struct nm_pcap_file **file);
 
 
 #endif // RCAP_H_INCLUDED

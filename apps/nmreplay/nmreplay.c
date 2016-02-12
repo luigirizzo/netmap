@@ -315,7 +315,7 @@ struct _qs { /* shared queue */
 	uint64_t	prod_max_gap;	/* rx round duration */
 
 #ifdef DO_PCAP_REPLAY
-	struct pcap_file	*pcap;		/* the pcap struct */
+	struct nm_pcap_file	*pcap;		/* the pcap struct */
 #endif /* DO_PCAP_REPLAY */
 
 	/* parameters for reading from the netmap port */
@@ -544,14 +544,13 @@ pcap_prod(void *_pa)
 	struct q_pkt *pkt = NULL;
 	struct _qs *q = &pa->q;
 	double bw = q->c_pmode.d[0];	//This has been set by the parse function inside q->c_pmode
-	struct pcap_file *pcap = q->pcap;	//this has been already open by cmd_apply
+	struct nm_pcap_file *pcap = q->pcap;	//this has been already open by cmd_apply
 	uint64_t repeat = 1; //number of copy of the same packets set in queue
 	uint64_t insert = 0; //packet counter
 	packet_data *aux = NULL;
-	struct pcap_file_header *h = pcap->ghdr;
 	uint64_t pcap_start_t;
 
-	need = 2*(h->tot_len + h->tot_pkt*sizeof(struct q_pkt)); //FIXME to correct size
+	need = 2; // 2*(h->tot_len + h->tot_pkt*sizeof(struct q_pkt)); //FIXME to correct size
 	q->buf = calloc(1, need);
 	if(q->buf == NULL) {
 		ED("alloc %ld bytes for queue failed, exiting",(_P64)need);
@@ -570,9 +569,9 @@ pcap_prod(void *_pa)
 	ED("Starting at time %ld", (long)q->t0);
 
 	/* Saving the first pkt's timestamp */
-	pcap_start_t = convert_ts(h->resolution, aux);
+	pcap_start_t = convert_ts(pcap->resolution, aux);
 
-	while (insert < repeat*h->tot_pkt && !do_abort){
+	while (insert < repeat*pcap->tot_pkt && !do_abort){
 		pkt = pkt_at(q, q->prod_tail);
 		pkt->pktlen = aux->hdr.caplen;
 
@@ -585,11 +584,11 @@ pcap_prod(void *_pa)
 			 */
 			if(aux->p == NULL) {	//last pkt
 				NED("q->qt_tx%ld", (long)q->qt_tx);
-				bw = TIME_UNITS*(h->tot_len - aux->hdr.caplen)*8ULL/(q->qt_tx); /* average bps */
+				bw = TIME_UNITS*(pcap->tot_bytes - aux->hdr.caplen)*8ULL/(q->qt_tx); /* average bps */
 				pkt->pt_tx = aux->hdr.caplen*8ULL*TIME_UNITS/bw + q->qt_tx;
 				break;
 			}
-			pkt->pt_tx = convert_ts(h->resolution, aux->p) - pcap_start_t;
+			pkt->pt_tx = convert_ts(pcap->resolution, aux->p) - pcap_start_t;
 			q->qt_tx = pkt->pt_tx;
 		break;
 
@@ -698,7 +697,6 @@ nmreplay_main(void *_a)
     struct pipe_args *a = _a;
     struct _qs *q = &a->q;
     const char *cap_fname = q->prod_ifname;
-    FILE *fp = NULL;
 
     setaffinity(a->cons_core);
     set_tns_now(&q->t0, 0); /* starting reference */
@@ -710,16 +708,9 @@ nmreplay_main(void *_a)
     if (cap_fname == NULL) {
 	goto fail;
     }
-    fp = fopen(cap_fname, "r");
-    if (!fp){
-	ED("unable to open file %s", cap_fname);
-	goto fail;
-    }
-    q->pcap = readpcap(fp);
-    fclose(fp);
-    fp = NULL;
-    if (q->pcap == NULL){
-	ED("unable to parse file %s", cap_fname);
+    q->pcap = readpcap(cap_fname);
+    if (q->pcap == NULL) {
+	ED("unable to read file %s", cap_fname);
 	goto fail;
     }
     pcap_prod((void*)a);
@@ -728,9 +719,6 @@ nmreplay_main(void *_a)
     cons((void*)a);
     D("exiting on abort");
 fail:
-    if (fp) {
-	    fclose(fp);
-    }
     if (q->pcap != NULL) {
 	destroy_pcap_list(&q->pcap);
     }
@@ -1671,7 +1659,7 @@ set_pcap(struct _qs *q)
 {
 	int fd = 0;
 	const char *cap_fname = q->prod_ifname;
-	struct pcap_file *pcap = NULL;
+	struct nm_pcap_file *pcap = NULL;
 
 	//here we have both ac = 1 and av[0] = "real"
 	/* Now we need to save the pcap struct in order to access it
@@ -1727,7 +1715,6 @@ fail:
 static int
 pmode_run(struct _qs *q, struct _cfg *arg)
 {
-	struct pcap_file_header *h = q->pcap->ghdr;
 	packet_data *aux = (packet_data*)arg->arg;
 	uint64_t bw = arg->d[0];
 
@@ -1741,7 +1728,7 @@ pmode_run(struct _qs *q, struct _cfg *arg)
 		q->cur_tt = aux->hdr.caplen*8ULL*TIME_UNITS/bw;
 		break;
 	}
-	q->cur_tt = convert_ts(h->resolution, aux->p) - q->qt_qout - q->t0;
+	q->cur_tt = convert_ts(q->pcap->resolution, aux->p) - q->qt_qout - q->t0;
 	bw = aux->hdr.caplen*8ULL*TIME_UNITS/q->cur_tt;	//bps
 	arg->d[0] = bw;
 	// move on with next pkt
