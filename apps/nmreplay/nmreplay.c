@@ -806,13 +806,16 @@ enq_pcap (struct _qs* q)
 }
 #endif
 
+/*
+ * pcap timestamos can be in nanoseconds or microseconds, convert accordingly
+ */
 static inline uint64_t
 convert_ts(char resolution, packet_data *aux)
 {
 	if (resolution == 'n') {
-		return (uint64_t)aux->hdr.ts_sec*NS_IN_S + (uint64_t)aux->hdr.ts_usec;
+		return (uint64_t)aux->hdr.ts_sec*NS_IN_S + (uint64_t)aux->hdr.ts_frac;
 	} else { //pcap resolution is 'm'
-		return (uint64_t)aux->hdr.ts_sec*NS_IN_S + (uint64_t)aux->hdr.ts_usec*NS_IN_US;
+		return (uint64_t)aux->hdr.ts_sec*NS_IN_S + (uint64_t)aux->hdr.ts_frac*NS_IN_US;
 	}
 }
 
@@ -831,7 +834,7 @@ pcap_prod(void *_pa)
 	uint64_t repeat = 1; //number of copy of the same packets set in queue
 	uint64_t insert = 0; //packet counter
 	packet_data *aux = NULL;
-	pcap_hdr_t *h = pcap->ghdr;
+	struct pcap_file_header *h = pcap->ghdr;
 	uint64_t pcap_start_t;
 
 	need = 2*(h->tot_len + h->tot_pkt*sizeof(struct q_pkt)); //FIXME to correct size
@@ -853,11 +856,11 @@ pcap_prod(void *_pa)
 	ED("Starting at time %ld", (long)q->t0);
 
 	/* Saving the first pkt's timestamp */
-	pcap_start_t = convert_ts(h->resolution,aux);
+	pcap_start_t = convert_ts(h->resolution, aux);
 
 	while (insert < repeat*h->tot_pkt && !do_abort){
 		pkt = pkt_at(q, q->prod_tail);
-		pkt->pktlen = aux->hdr.incl_len;
+		pkt->pktlen = aux->hdr.caplen;
 
 		switch (q->c_pmode.d[1]) { /* mode */
 		case PM_REAL:
@@ -868,8 +871,8 @@ pcap_prod(void *_pa)
 			 */
 			if(aux->p == NULL) {	//last pkt
 				NED("q->qt_tx%ld", (long)q->qt_tx);
-				bw = TIME_UNITS*(h->tot_len - aux->hdr.incl_len)*8ULL/(q->qt_tx); /* average bps */
-				pkt->pt_tx = aux->hdr.incl_len*8ULL*TIME_UNITS/bw + q->qt_tx;
+				bw = TIME_UNITS*(h->tot_len - aux->hdr.caplen)*8ULL/(q->qt_tx); /* average bps */
+				pkt->pt_tx = aux->hdr.caplen*8ULL*TIME_UNITS/bw + q->qt_tx;
 				break;
 			}
 			pkt->pt_tx = convert_ts(h->resolution, aux->p) - pcap_start_t;
@@ -881,7 +884,7 @@ pcap_prod(void *_pa)
 			break;
 
 		case PM_FIXED:
-			pkt->pt_tx = aux->hdr.orig_len*8ULL*TIME_UNITS/bw +q->qt_tx;
+			pkt->pt_tx = aux->hdr.len*8ULL*TIME_UNITS/bw +q->qt_tx;
 			q->qt_tx = pkt->pt_tx;
 			break;
 		}
@@ -2087,7 +2090,7 @@ fail:
 static int
 pmode_run(struct _qs *q, struct _cfg *arg)
 {
-	pcap_hdr_t *h = q->pcap->ghdr;
+	struct pcap_file_header *h = q->pcap->ghdr;
 	packet_data *aux = (packet_data*)arg->arg;
 	uint64_t bw = arg->d[0];
 
@@ -2095,13 +2098,14 @@ pmode_run(struct _qs *q, struct _cfg *arg)
     case PM_REAL:
 	/* in real mode, update the 'bw' according to the packet size.
 	 * XXX this is probably wrong and backwards.
+	 * XXX also should use the len, not caplen
 	 */
 	if(aux->p == NULL) { // XXX what is this ?
-		q->cur_tt = aux->hdr.incl_len*8ULL*TIME_UNITS/bw;
+		q->cur_tt = aux->hdr.caplen*8ULL*TIME_UNITS/bw;
 		break;
 	}
 	q->cur_tt = convert_ts(h->resolution, aux->p) - q->qt_qout - q->t0;
-	bw = aux->hdr.incl_len*8ULL*TIME_UNITS/q->cur_tt;	//bps
+	bw = aux->hdr.caplen*8ULL*TIME_UNITS/q->cur_tt;	//bps
 	arg->d[0] = bw;
 	// move on with next pkt
 	arg->arg = (void*)aux->p;
@@ -2112,7 +2116,7 @@ pmode_run(struct _qs *q, struct _cfg *arg)
 	break;
 
     case PM_FIXED:
-	q->cur_tt = aux->hdr.orig_len*8ULL*TIME_UNITS/bw;
+	q->cur_tt = aux->hdr.len*8ULL*TIME_UNITS/bw;
 	arg->arg = (void*)aux->p;
 	return 0;
     }

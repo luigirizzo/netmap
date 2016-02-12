@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
    - Pointer to the next packet
 */
 struct pkt_list_element {
-    pcaprec_hdr_t hdr;
+    struct pcap_pkthdr hdr;
     unsigned char *data;
     struct pkt_list_element* p;
 };
@@ -120,7 +120,7 @@ void insert_pkt(struct pcap_file *file, packet_data *pkt)
     }
     a = file->list;
     while (a && (pkt->hdr.ts_sec >= a->hdr.ts_sec ||
-    (pkt->hdr.ts_sec == a->hdr.ts_sec && pkt->hdr.ts_usec >= a->hdr.ts_usec))) {
+    (pkt->hdr.ts_sec == a->hdr.ts_sec && pkt->hdr.ts_frac >= a->hdr.ts_frac))) {
         b = a;
         a = a->p;
     }
@@ -172,12 +172,12 @@ struct pcap_file *readpcap(FILE *fp)
     int ret;
     // If the system's byte ordering is different than file's, swap = 1
     char swap;
-    pcap_hdr_t *h;
-    pcaprec_hdr_t *ph;
+    struct pcap_file_header *h;
+    struct pcap_pkthdr *ph;
     const int L4 = sizeof(uint32_t); /* four, for all practical purposes */
     const int L2 = sizeof(uint16_t); /* two, for all practical purposes */
 
-    h = filepcap->ghdr = (pcap_hdr_t *)calloc(1, sizeof(pcap_hdr_t));
+    h = filepcap->ghdr = calloc(1, sizeof(struct pcap_file_header));
 
     ret = fread(&(h->magic_number), 1, L4, fp);
     if (ret != L4) {
@@ -227,18 +227,18 @@ struct pcap_file *readpcap(FILE *fp)
             }
             goto fail;
         }
-        if (read_next_info(fp, &(ph->ts_usec), L4, swap) != L4 ||
-            read_next_info(fp, &(ph->incl_len), L4, swap) != L4 ||
-            read_next_info(fp, &(ph->orig_len), L4, swap) != L4) {
+        if (read_next_info(fp, &(ph->ts_frac), L4, swap) != L4 ||
+            read_next_info(fp, &(ph->caplen), L4, swap) != L4 ||
+            read_next_info(fp, &(ph->len), L4, swap) != L4) {
                 goto fail;
         }
 	/* XXX we only grab the captured length, but actual lenght might be higher */
-        pkt->data = (unsigned char *)malloc(ph->incl_len);
-        if (fread(pkt->data, 1, ph->incl_len, fp) < ph->incl_len) {
+        pkt->data = (unsigned char *)malloc(ph->caplen);
+        if (fread(pkt->data, 1, ph->caplen, fp) < ph->caplen) {
             goto fail;
         }
         insert_pkt(filepcap, pkt);
-        h->tot_len += pkt->hdr.incl_len;
+        h->tot_len += pkt->hdr.caplen;
         h->tot_pkt++;
     }
 

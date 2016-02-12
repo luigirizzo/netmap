@@ -25,10 +25,12 @@
 #ifndef RCAP_H_INCLUDED
 #define RCAP_H_INCLUDED
 
-#if 1
 
-/* This data structs need to be transfered in rpcap.c once debug is completed*/
-struct pcap_hdr {
+/*
+ * The header for a pcap file
+ * This data structs need to be transfered in rpcap.c once debug is completed
+ */
+struct pcap_file_header {
     uint32_t magic_number;
 	/*used to detect the file format itself and the byte
     ordering. The writing application writes 0xa1b2c3d4 with it's native byte
@@ -83,39 +85,21 @@ struct pcap_pkthdr {
 };
 #endif /* from pcap.h */
 
-struct pcaprec_hdr {
-    uint32_t ts_sec;
-	/*the date and time when this packet was captured. This
-    value is in seconds since January 1, 1970 00:00:00 GMT; this is also known
-    as a UN*X time_t. If this timestamp isn't based on GMT (UTC), use thiszone
-    from the global header for adjustments*/
-    uint32_t ts_usec;
-	/*in regular pcap files, the microseconds when this packet
-    was captured, as an offset to ts_sec. In nanosecond-resolution files, this
-    is, instead, the nanoseconds when the packet was captured, as an offset to
-    ts_sec*/
-    uint32_t incl_len;
+struct pcap_pkthdr {
+    uint32_t ts_sec; /* seconds from epoch */
+    uint32_t ts_frac; /* microseconds or nanoseconds depending on sigfigs */
+    uint32_t caplen;
 	/*the number of bytes of packet data actually captured
     and saved in the file. This value should never become larger than orig_len
     or the snaplen value of the global header*/
-    uint32_t orig_len;
-	/* the length of the packet as it appeared on the network
-    when it was captured. If incl_len and orig_len differ, the actually saved
-    packet size was limited by snaplen*/
+    uint32_t len;	/* wire length */
 };
 /* Data needs to be transfered untill here*/
-
-
-#endif
-
-
-
-typedef struct pcap_hdr pcap_hdr_t;
 
 typedef struct pcaprec_hdr pcaprec_hdr_t;
 
 struct pkt_list_element {
-    pcaprec_hdr_t hdr;
+    struct pcap_pkthdr hdr;
     unsigned char *data;
     struct pkt_list_element* p;
 };
@@ -126,7 +110,7 @@ typedef struct pkt_list_element packet_data;
 
 
 /* The pcap file structure has the following members:
-   - A global header which is pcap_hdr_t
+   - A global header which is struct pcap_file_header
    - A list of packets with the following members:
        + A packet header
        + packet payload
@@ -134,7 +118,7 @@ typedef struct pkt_list_element packet_data;
    - A pointer to the last packet in the list
 */
 struct pcap_file {
-    pcap_hdr_t *ghdr;
+    struct pcap_file_header *ghdr;
     packet_data *list;
     packet_data *end;
 };
