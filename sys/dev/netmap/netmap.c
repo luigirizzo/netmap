@@ -2538,7 +2538,7 @@ flush_tx:
 			if (found) { /* notify other listeners */
 				revents |= want_tx;
 				want_tx = 0;
-				kring->nm_notify(kring, 0, NULL);
+				kring->nm_notify(kring, 0);
 			}
 		}
 		/* if there were any packet to forward we must have handled them by now */
@@ -2598,7 +2598,7 @@ do_retry_rx:
 			if (found) {
 				revents |= want_rx;
 				retry_rx = 0;
-				kring->nm_notify(kring, 0, NULL);
+				kring->nm_notify(kring, 0);
 			}
 		}
 
@@ -2639,7 +2639,7 @@ do_retry_rx:
 
 /* default notify callback */
 static int
-netmap_notify(struct netmap_kring *kring, int flags, int *errp)
+netmap_notify(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	enum txrx t = kring->tx;
@@ -3038,7 +3038,7 @@ done:
 	if (m)
 		m_freem(m);
 	/* unconditionally wake up listeners */
-	kring->nm_notify(kring, 0, NULL);
+	kring->nm_notify(kring, 0);
 	/* this is normally netmap_notify(), but for nics
 	 * connected to a bridge it is netmap_bwrap_intr_notify(),
 	 * that possibly forwards the frames through the switch
@@ -3135,7 +3135,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 	 * However, we are under lock so there are no races.
 	 */
 	kring->nr_mode = NKR_NETMAP_ON;
-	kring->nm_notify(kring, 0, NULL);
+	kring->nm_notify(kring, 0);
 	return kring->ring->slot;
 }
 
@@ -3180,7 +3180,7 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 		*work_done = 1; /* do not fire napi again */
 	}
 
-	return kring->nm_notify(kring, 0, NULL);
+	return kring->nm_notify(kring, 0);
 }
 
 

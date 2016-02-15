@@ -234,7 +234,7 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
                 txkring->rcur, txkring->rhead, txkring->rtail, j);
 
         mb(); /* make sure rxkring->nr_hwtail is updated before notifying */
-        rxkring->nm_notify(rxkring, 0, NULL);
+        rxkring->nm_notify(rxkring, 0);
 
 	return 0;
 }
@@ -254,7 +254,7 @@ netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
 	if (oldhwcur != rxkring->nr_hwcur) {
 		/* we have released some slots, notify the other end */
 		mb(); /* make sure nr_hwcur is updated before notifying */
-		txkring->nm_notify(txkring, 0, NULL);
+		txkring->nm_notify(txkring, 0);
 	}
         return 0;
 }
