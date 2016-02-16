@@ -449,10 +449,16 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	bool have_vnet_hdr = pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR;
 	unsigned int head = ring->head;
 	int work_done = 0;
+	int nm_irq;
 
-	if (netmap_rx_irq(pi->netdev, 0, &work_done)) {
-		napi_complete(napi);
-		return 1;
+	nm_irq = netmap_rx_irq(pi->netdev, 0, &work_done);
+	if (nm_irq != NM_IRQ_PASS) {
+		if (nm_irq == NM_IRQ_COMPLETED) {
+			napi_complete(napi);
+			return 1;
+		} else {
+			return budget;
+		}
 	}
 
 #ifdef HANGCTRL
