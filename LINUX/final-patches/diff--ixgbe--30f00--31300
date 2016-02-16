@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index d62e7a2..9970ca4 100644
+index d62e7a2..dfd338d 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -417,6 +417,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
@@ -36,14 +36,14 @@ index d62e7a2..9970ca4 100644
 +	 * clients, which may be sleeping on individual rings
 +	 * or on a global resource for all rings.
 +	 */
-+	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index))
++	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
 +		return 1; /* seems to be ignored */
 +#endif /* DEV_NETMAP */
 +
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBE_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -2087,6 +2114,15 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+@@ -2087,6 +2114,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
  #endif /* IXGBE_FCOE */
  	u16 cleaned_count = ixgbe_desc_unused(rx_ring);
  
@@ -51,15 +51,16 @@ index d62e7a2..9970ca4 100644
 +	/*
 +	 * 	 Same as the txeof routine: only wakeup clients on intr.
 +	 */
-+	int dummy;
-+	if (netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy))
-+		return true; /* no more interrupts */
++	int dummy, nm_irq;
++	nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy);
++	if (nm_irq != NM_IRQ_PASS)
++		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
 +#endif /* DEV_NETMAP */
 +
  	while (likely(total_rx_packets < budget)) {
  		union ixgbe_adv_rx_desc *rx_desc;
  		struct sk_buff *skb;
-@@ -3131,6 +3167,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+@@ -3131,6 +3168,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  	} while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
  	if (!wait_loop)
  		e_err(drv, "Could not enable Tx Queue %d\n", reg_idx);
@@ -69,7 +70,7 @@ index d62e7a2..9970ca4 100644
  }
  
  static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
-@@ -3496,6 +3535,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+@@ -3496,6 +3536,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -80,7 +81,7 @@ index d62e7a2..9970ca4 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -4698,6 +4741,9 @@ static void ixgbe_up_complete(struct ixgbe_adapter *adapter)
+@@ -4698,6 +4742,9 @@ static void ixgbe_up_complete(struct ixgbe_adapter *adapter)
  			e_crit(drv, "Fan has stopped, replace the adapter\n");
  	}
  
@@ -90,7 +91,7 @@ index d62e7a2..9970ca4 100644
  	/* bring the link up in the watchdog, this could race with our first
  	 * link up interrupt but shouldn't be a problem */
  	adapter->flags |= IXGBE_FLAG_NEED_LINK_UPDATE;
-@@ -5503,6 +5549,7 @@ static int ixgbe_open(struct net_device *netdev)
+@@ -5503,6 +5550,7 @@ static int ixgbe_open(struct net_device *netdev)
  
  	ixgbe_up_complete(adapter);
  
@@ -98,7 +99,7 @@ index d62e7a2..9970ca4 100644
  	return 0;
  
  err_set_queues:
-@@ -8310,6 +8357,10 @@ skip_sriov:
+@@ -8310,6 +8358,10 @@ skip_sriov:
  			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
  			true);
  
@@ -109,7 +110,7 @@ index d62e7a2..9970ca4 100644
  	return 0;
  
  err_register:
-@@ -8345,6 +8396,10 @@ static void ixgbe_remove(struct pci_dev *pdev)
+@@ -8345,6 +8397,10 @@ static void ixgbe_remove(struct pci_dev *pdev)
  	struct ixgbe_adapter *adapter = pci_get_drvdata(pdev);
  	struct net_device *netdev = adapter->netdev;
  
