@@ -1350,6 +1350,13 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->ptna_nm = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
 	pi->ptna_nm->csb = pi->csb;
 
+	/* If virtio-net header was negotiated, set the virt_hdr_len field in
+	 * the netmap adapter, to inform users that this netmap adapter requires
+	 * the application to deal with the headers. */
+	if (pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+		pi->ptna_nm->hwup.up.virt_hdr_len = sizeof(struct virtio_net_hdr_v1);
+	}
+
 	/* Initialize a separate pass-through netmap adapter that is going to
 	 * be used by this driver only, and so never exposed to netmap. We
 	 * only need a subset of the available fields. */
