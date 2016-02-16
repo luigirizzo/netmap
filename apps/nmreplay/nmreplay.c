@@ -898,7 +898,8 @@ cons(void *_pa)
 	if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0 ||
 		pending > q->burst) {
 	    RD(1, "inject failed len %d now %ld tx %ld h %ld t %ld next %ld",
-		(int)p->pktlen, q->cons_now, p->pt_tx, q->_head, q->_tail, p->next);
+		(int)p->pktlen, (u_long)q->cons_now, (u_long)p->pt_tx,
+		(u_long)q->_head, (u_long)q->_tail, (u_long)p->next);
 	    ioctl(pa->pb->fd, NIOCTXSYNC, 0);
 	    pending = 0;
 	    continue;
