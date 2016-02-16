@@ -37,6 +37,8 @@
 #include <dev/netmap/netmap_mem2.h>
 
 
+static bool ptnet_vnet_hdr = true;
+module_param(ptnet_vnet_hdr, bool, 0444);
 static bool ptnet_gso = true;
 module_param(ptnet_gso, bool, 0444);
 
@@ -1200,6 +1202,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 static int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
+	uint32_t wanted_features = NET_PTN_FEATURES_BASE;
 	struct net_device *netdev;
 	struct netmap_adapter na_arg;
 	struct ptnet_info *pi;
@@ -1252,8 +1255,10 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* Check if we are supported by the hypervisor. If not,
 	 * bail out immediately. */
-	iowrite32(NET_PTN_FEATURES_BASE | NET_PTN_FEATURES_VNET_HDR,
-		  pi->ioaddr + PTNET_IO_PTFEAT);
+	if (ptnet_vnet_hdr) {
+		wanted_features |= NET_PTN_FEATURES_VNET_HDR;
+	}
+	iowrite32(wanted_features, pi->ioaddr + PTNET_IO_PTFEAT);
 	pi->ptfeatures = ioread32(pi->ioaddr + PTNET_IO_PTFEAT);
 	if (!(pi->ptfeatures & NET_PTN_FEATURES_BASE)) {
 		pr_err("Hypervisor doesn't support netmap passthrough\n");
