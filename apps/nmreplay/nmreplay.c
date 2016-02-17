@@ -1683,7 +1683,7 @@ real_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	} else {
 		int err = 0;
 		scale = parse_gen(av[ac-1], NULL, &err);
-		if (err || scale < 0 || scale > 1000)
+		if (err || scale <= 0 || scale > 1000)
 			return 1;
 	}
 	ED("real -> scale is %.6f", scale);
@@ -1694,7 +1694,7 @@ real_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 real_bw_run(struct _qs *q, struct _cfg *arg)
 {
-	q->cur_tt *= arg->f[0];
+	q->cur_tt /= arg->f[0];
 	return 0;
 }
 
