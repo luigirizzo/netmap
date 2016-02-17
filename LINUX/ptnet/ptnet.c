@@ -78,7 +78,7 @@ struct ptnet_info {
 	cpumask_var_t msix_affinity_masks[PTNET_MSIX_VECTORS];
 
 	/* CSB memory to be used for producer/consumer state
-	 * syncrhonization. */
+	 * synchronization. */
 	struct paravirt_csb *csb;
 
 	int min_tx_slots;
