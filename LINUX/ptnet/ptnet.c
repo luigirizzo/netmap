@@ -60,6 +60,10 @@ struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
 
+	/* Reference counter to track users of backend netmap port: the
+	 * network stack and netmap clients.
+	 * Used to decide when we need (de)allocate krings/rings and
+	 * start (stop) ptnetmap kthreads. */
 	int backend_regifs;
 
 	/* Mirrors PTFEAT register content. */
@@ -860,8 +864,6 @@ ptnet_open(struct net_device *netdev)
 		goto err_register;
 	}
 
-	pi->backend_regifs ++;
-
 	{
 		unsigned int nm_buf_size = NETMAP_BUF_SIZE(na_dr);
 
@@ -944,8 +946,6 @@ ptnet_close(struct net_device *netdev)
 	}
 	pi->rx_pool = NULL;
 	pi->rx_pool_num = 0;
-
-	pi->backend_regifs --;
 
 	ptnet_nm_register(na_dr, 0 /* off */);
 
@@ -1043,6 +1043,10 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 
 	BUG_ON(!(na == &pi->ptna_nm->hwup.up || na == &pi->ptna_dr.hwup.up));
 
+	if (!onoff) {
+		pi->backend_regifs--;
+	}
+
 	/* If this is the last netmap client, guest interrupt enable flags may
 	 * be in arbitrary state. Since these flags are going to be used also
 	 * by the netdevice driver, we have to make sure to start with
@@ -1064,7 +1068,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			 * for txsync/rxsync. This also initializes the CSB. */
 			ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
 			if (ret) {
-				goto out;
+				return ret;
 			}
 
 			for_rx_tx(t) {
@@ -1117,7 +1121,11 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
 		}
 	}
-out:
+
+	if (onoff) {
+		pi->backend_regifs++;
+	}
+
 	return ret;
 }
 
