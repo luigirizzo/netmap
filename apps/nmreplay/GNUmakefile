@@ -9,7 +9,7 @@ SRCDIR ?= ../..
 #VPATH = $(SRCDIR)/examples
 
 NO_MAN=
-CFLAGS = -O2 -pipe
+CFLAGS = -O2 -pipe -g
 CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I $(SRCDIR)/sys
 CFLAGS += -Wextra
@@ -26,8 +26,6 @@ all: $(PROGS)
 testlock: testlock.c
 
 nmreplay: LDLIBS += -lm
-nmreplay: rpcap.o
-rpcap.o: rpcap.h
 
 clean:
 	-@rm -rf $(CLEANFILES)
