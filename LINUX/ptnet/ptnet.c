@@ -934,6 +934,17 @@ ptnet_close(struct net_device *netdev)
 	netif_tx_disable(netdev);
 	napi_disable(&pi->napi);
 
+	/* Free RX pool. */
+	while (pi->rx_pool) {
+		struct page *p = pi->rx_pool;
+
+		pi->rx_pool = (struct page *)(p->private);
+		p->private = (unsigned long)NULL;
+		put_page(p);
+	}
+	pi->rx_pool = NULL;
+	pi->rx_pool_num = 0;
+
 	pi->backend_regifs --;
 
 	ptnet_nm_register(na_dr, 0 /* off */);
