@@ -1,4 +1,4 @@
-From 97f5cf4f788940dfb06048aa090c420114ef80ca Mon Sep 17 00:00:00 2001
+From 6e4cf6d3f2d096cefa7af66e511769b027979a51 Mon Sep 17 00:00:00 2001
 From: Michio Honda <micchie@sfc.wide.ad.jp>
 Date: Fri, 22 Aug 2014 17:25:29 +0200
 Subject: [PATCH] datapath: Add support for netmap/VALE
@@ -9,21 +9,21 @@ switch at packet I/O and switching.
 This is tested with packet forwarding between two native netmap-mode
 NICs and it accelerates packet forwarding rates by approx. 3 times.
 ---
- INSTALL.NETMAP                       |  46 ++++++++
+ INSTALL.NETMAP                       |  46 +++++++++
  Makefile.am                          |   1 +
- acinclude.m4                         |  18 +++
+ acinclude.m4                         |  18 ++++
  configure.ac                         |   1 +
  datapath/Modules.mk                  |   3 +-
- datapath/dp-vale.c                   | 222 +++++++++++++++++++++++++++++++++++
- datapath/dp-vale.h                   |  67 +++++++++++
+ datapath/dp-vale.c                   | 193 +++++++++++++++++++++++++++++++++++
+ datapath/dp-vale.h                   |  67 ++++++++++++
  datapath/linux/Kbuild.in             |   7 ++
- datapath/vport-internal_dev.c        |  30 ++++-
- datapath/vport-internal_dev_netmap.h |  97 +++++++++++++++
+ datapath/vport-internal_dev.c        |  33 +++++-
+ datapath/vport-internal_dev_netmap.h |  66 ++++++++++++
  datapath/vport-netdev.c              |  21 ++++
  datapath/vport-vxlan.c               |   7 ++
- datapath/vport.c                     |  12 ++
+ datapath/vport.c                     |  12 +++
  utilities/ovs-dev.py                 |   5 +
- 14 files changed, 535 insertions(+), 2 deletions(-)
+ 14 files changed, 477 insertions(+), 3 deletions(-)
  create mode 100644 INSTALL.NETMAP
  create mode 100644 datapath/dp-vale.c
  create mode 100644 datapath/dp-vale.h
@@ -150,10 +150,10 @@ index 8dc3415..f5d4a26 100644
  vport_vxlan_sources = vport-vxlan.c
 diff --git a/datapath/dp-vale.c b/datapath/dp-vale.c
 new file mode 100644
-index 0000000..13b4076
+index 0000000..41cb433
 --- /dev/null
 +++ b/datapath/dp-vale.c
-@@ -0,0 +1,222 @@
+@@ -0,0 +1,193 @@
 +/*
 + * Copyright (c) 2014 NEC Europe Ltd.
 + *
@@ -187,17 +187,9 @@ index 0000000..13b4076
 + * XXX skb is always private, so we use _skb_refdst to store the destination
 + */
 +static unsigned int ovs_vale_lookup(struct nm_bdg_fwd *ft, u8 *dst_ring,
-+#ifdef NETMAP_API_4
-+		const struct netmap_adapter *na)
-+#else
 +		struct netmap_vp_adapter *na)
-+#endif
 +{
-+#ifdef NETMAP_API_4
-+	struct net_device *dev = na->ifp;
-+#else
 +	struct net_device *dev;
-+#endif
 +	struct vport *vport;
 +	struct sk_buff *skb;
 +	struct sk_buff sskb;
@@ -207,17 +199,15 @@ index 0000000..13b4076
 +	u_int buf_len = ft->ft_len;
 +	uint8_t *buf = ft->ft_buf;
 +
-+#ifndef NETMAP_API_4
 +	dev = netmap_vp_to_ifp(na);
-+	if (buf_len == na->virt_hdr_len) {
++	if (buf_len == na->up.virt_hdr_len) {
 +		ft++;
 +		buf = ft->ft_buf;
 +		buf_len = ft->ft_len;
 +	} else {
-+		buf += na->virt_hdr_len;
-+		buf_len -= na->virt_hdr_len;
++		buf += na->up.virt_hdr_len;
++		buf_len -= na->up.virt_hdr_len;
 +	}
-+#endif
 +	if (ovs_is_internal_dev(dev))
 +		vport = ovs_internal_dev_get_vport(dev);
 +	else
@@ -233,20 +223,12 @@ index 0000000..13b4076
 +	bzero(&sskb, sizeof(sskb));
 +	sskb.dev = dev;
 +	sskb.len += buf_len;
-+#ifdef NETMAP_API_4
-+	sskb.truesize = NETMAP_BUF_SIZE - shlen;
-+#else
 +	sskb.truesize = NETMAP_BUF_SIZE(&na->up) - shlen;
-+#endif
 +	sskb.head_frag = 1;
 +	sskb.data = sskb.head = (unsigned char *)buf;
 +	skb_reset_tail_pointer(&sskb);
 +	/* Ensure sskb.end points shinfo */
-+#ifdef NETMAP_API_4
-+	sskb.end = sskb.tail + NETMAP_BUF_SIZE - shlen;
-+#else
 +	sskb.end = sskb.tail + NETMAP_BUF_SIZE(&na->up) - shlen;
-+#endif
 +	sskb.mac_header = (typeof(sskb.mac_header))~0U;
 +	sskb.transport_header = (typeof(skb->transport_header))~0U;
 +
@@ -334,28 +316,18 @@ index 0000000..13b4076
 +int ovs_vale_send(struct net_device *dev, struct sk_buff *skb)
 +{
 +	struct ovs_vale_dst *dst = OVCB(skb)->dst;
-+#ifndef NETMAP_API_4
 +	struct netmap_vp_adapter *vpna;
-+#endif
 +	u_int dport;
 +
 +	if (!skb_owned_by_vale(skb))
 +		return 0;
-+#ifdef NETMAP_API_4
-+	if (unlikely(!(dev->priv_flags & IFCAP_NETMAP))) { /* e.g., VALE port */
-+#else
 +	if (netmap_ifp_to_vp(dev) == NULL) { /* Not a VALE port */
-+#endif
 +		dst->port = NM_BDG_NOPORT;
 +		goto consumed;
 +	}
 +	/* set the destination index of the bridge.
 +	 * XXX If it is already set, we broadcast this packet
 +	 */
-+#ifdef NETMAP_API_4
-+	dport = ovs_is_internal_dev(dev) ? SWNA(dev)->bdg_port :
-+					NA(dev)->bdg_port;
-+#else
 +	vpna = ovs_is_internal_dev(dev) ? netmap_ifp_to_host_vp(dev) :
 +		netmap_ifp_to_vp(dev);
 +	if (unlikely(!vpna)) {
@@ -363,7 +335,6 @@ index 0000000..13b4076
 +		return 0;
 +	}
 +	dport = vpna->bdg_port;
-+#endif
 +	if (dst->port == NM_BDG_NOPORT)
 +		dst->port = dport;
 +	else if (likely(dst->port != dport))
@@ -372,7 +343,7 @@ index 0000000..13b4076
 +	 * drops the extra refcount
 +	 */
 +consumed:
-+	kfree_skb(skb);
++	//kfree_skb(skb);
 +	return 1;
 +}
 +#endif /* DEV_NETMAP */
@@ -468,7 +439,7 @@ index 9e3259f..c5ab75a 100644
  # NOSTDINC_FLAGS just happens to be a variable that goes in the
  # right place, even though it's conceptually incorrect.
 diff --git a/datapath/vport-internal_dev.c b/datapath/vport-internal_dev.c
-index f38f9be..778aa99 100644
+index f38f9be..f5b7915 100644
 --- a/datapath/vport-internal_dev.c
 +++ b/datapath/vport-internal_dev.c
 @@ -33,10 +33,16 @@
@@ -520,17 +491,22 @@ index f38f9be..778aa99 100644
  	netif_start_queue(netdev_vport->dev);
  
  	return vport;
-@@ -238,6 +259,9 @@ static void internal_dev_destroy(struct vport *vport)
+@@ -236,9 +257,13 @@ static void internal_dev_destroy(struct vport *vport)
+ 	struct netdev_vport *netdev_vport = netdev_vport_priv(vport);
+ 
  	netif_stop_queue(netdev_vport->dev);
++#ifdef DEV_NETMAP
++	if (vport->port_no != OVSP_LOCAL)
++		ovs_vale_ctl(netdev_vport->dev->name, 1, 0);
++#endif
++
  	rtnl_lock();
  	dev_set_promiscuity(netdev_vport->dev, -1);
-+#ifdef DEV_NETMAP
-+	ovs_vale_ctl(netdev_vport->dev->name, 1, 0);
-+#endif
- 
+-
  	/* unregister_netdevice() waits for an RCU grace period. */
  	unregister_netdevice(netdev_vport->dev);
-@@ -272,6 +296,10 @@ static int internal_dev_recv(struct vport *vport, struct sk_buff *skb)
+ 
+@@ -272,6 +297,10 @@ static int internal_dev_recv(struct vport *vport, struct sk_buff *skb)
  #endif
  
  	len = skb->len;
@@ -541,7 +517,7 @@ index f38f9be..778aa99 100644
  
  	skb_dst_drop(skb);
  	nf_reset(skb);
-@@ -297,7 +325,7 @@ static struct vport_ops ovs_internal_vport_ops = {
+@@ -297,7 +326,7 @@ static struct vport_ops ovs_internal_vport_ops = {
  
  int ovs_is_internal_dev(const struct net_device *netdev)
  {
@@ -552,10 +528,10 @@ index f38f9be..778aa99 100644
  struct vport *ovs_internal_dev_get_vport(struct net_device *netdev)
 diff --git a/datapath/vport-internal_dev_netmap.h b/datapath/vport-internal_dev_netmap.h
 new file mode 100644
-index 0000000..4314275
+index 0000000..bab25c7
 --- /dev/null
 +++ b/datapath/vport-internal_dev_netmap.h
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,66 @@
 +#include <net/netmap.h>
 +#include <netmap/netmap_kern.h>
 +
@@ -567,17 +543,9 @@ index 0000000..4314275
 +static struct internal_dev *internal_dev_priv(struct net_device *netdev);
 +
 +static int
-+#ifdef NETMAP_API_4
-+vport_internal_netmap_reg(struct net_device *dev, int onoff)
-+#else
 +vport_internal_netmap_reg(struct netmap_adapter *na, int onoff)
-+#endif
 +{
-+#ifdef NETMAP_API_4
-+	struct netmap_adapter *na = NA(dev);
-+#else
 +	struct net_device *dev = na->ifp;
-+#endif
 +	int error = 0;
 +
 +	if (!(dev)->flags & IFF_UP) {
@@ -587,21 +555,10 @@ index 0000000..4314275
 +	if (na == NULL)
 +		return EINVAL;
 +	if (onoff) {
-+#ifdef NETMAP_API_4
-+		dev->priv_flags |= IFCAP_NETMAP;
-+		na->if_transmit = (void *)dev->netdev_ops;
-+		dev->netdev_ops = &na->nm_ndo;
-+#else
 +		nm_set_native_flags(na);
-+#endif
 +		/* XXX do we need to store dev->features ? */
 +	} else {
-+#ifdef NETMAP_API_4
-+		dev->priv_flags &= ~IFCAP_NETMAP;
-+		dev->netdev_ops = (void *)na->if_transmit;
-+#else
 +		nm_clear_native_flags(na);
-+#endif
 +	}
 +	return error;
 +}
@@ -609,7 +566,6 @@ index 0000000..4314275
 +							struct rtnl_link_stats64 *);
 +static int internal_dev_change_mtu(struct net_device *, int);
 +
-+#ifndef NETMAP_API_4
 +static int
 +vport_internal_update_config(struct netmap_adapter *na, u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
 +{
@@ -619,7 +575,6 @@ index 0000000..4314275
 +	*rxd = na->num_rx_desc;
 +	return 0;
 +}
-+#endif /* NETMAP_API_4 */
 +
 +static struct device_driver dummy = {.owner = THIS_MODULE};
 +static void
@@ -636,25 +591,15 @@ index 0000000..4314275
 +	na.nm_txsync = na.nm_rxsync = NULL;
 +	na.nm_register = vport_internal_netmap_reg;
 +	na.na_flags |= NAF_SW_ONLY;
-+#ifdef NETMAP_API_4
-+	netmap_attach(&na, 4);
-+	/* indicator of internal_dev */
-+	NA(na.ifp)->nm_ndo.ndo_get_stats64 = internal_dev_get_stats;
-+#else
 +	na.num_tx_rings = na.num_rx_rings = 1;
 +	na.nm_config = vport_internal_update_config;
 +	netmap_attach(&na);
 +	((struct netmap_hw_adapter *)NA(na.ifp))->nm_ndo.ndo_get_stats64 =
 +		internal_dev_get_stats;
-+#endif
 +	/* do we need these ?*/
-+#ifdef NETMAP_API_4
-+	NA(na.ifp)->nm_ndo.ndo_change_mtu = internal_dev_change_mtu;
-+	NA(na.ifp)->nm_ndo.ndo_set_mac_address = eth_mac_addr;
-+#endif
 +}
 diff --git a/datapath/vport-netdev.c b/datapath/vport-netdev.c
-index de85087..d9857d0 100644
+index de85087..769e1cc 100644
 --- a/datapath/vport-netdev.c
 +++ b/datapath/vport-netdev.c
 @@ -34,6 +34,9 @@
@@ -673,7 +618,7 @@ index de85087..d9857d0 100644
  
 +#ifdef DEV_NETMAP
 +	/* don't attach a non-netmap interface to a vale datapath */
-+	if (!NA_VALID(netdev_vport->dev)) {
++	if (!NM_NA_VALID(netdev_vport->dev)) {
 +		err = -EINVAL;
 +		goto error_put;
 +	}
@@ -786,5 +731,5 @@ index 8128b08..34f8944 100755
  
      group = optparse.OptionGroup(parser, "Optimization Flags")
 -- 
-2.3.2 (Apple Git-55)
+2.5.4 (Apple Git-61)
 
