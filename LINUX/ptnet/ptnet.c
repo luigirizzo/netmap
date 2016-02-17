@@ -1029,6 +1029,45 @@ ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
 	return ret;
 }
 
+static void
+ptnet_sync_from_csb(struct paravirt_csb *csb, struct netmap_adapter *na)
+{
+	enum txrx t;
+	int i;
+
+	/* Sync krings from the host, reading from
+	 * CSB. */
+	for_rx_tx(t) {
+		for (i=0; i<nma_get_nrings(na, t); i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct pt_ring *ptring;
+
+			ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
+			kring->rhead = kring->ring->head = ptring->head;
+			kring->rcur = kring->ring->cur = ptring->cur;
+			kring->nr_hwcur = ptring->hwcur;
+			kring->nr_hwtail = kring->rtail =
+				kring->ring->tail = ptring->hwtail;
+		}
+	}
+
+	for_rx_tx(t) {
+		for (i=0; i<nma_get_nrings(na, t); i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct pt_ring *ptring;
+
+			ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
+			ND("%d: csb {hc %u h %u c %u ht %u}", t, ptring->hwcur,
+			  ptring->head, ptring->cur, ptring->hwtail);
+			ND("%d: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}", t,
+			  kring->nr_hwcur, kring->rhead, kring->rcur, kring->ring->head,
+			  kring->ring->cur, kring->nr_hwtail, kring->rtail,
+			  kring->ring->tail);
+			(void)ptring; (void)kring;
+		}
+	}
+}
+
 static int
 ptnet_nm_register(struct netmap_adapter *na, int onoff)
 {
@@ -1070,22 +1109,14 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			if (ret) {
 				return ret;
 			}
+		}
 
-			for_rx_tx(t) {
-				for (i=0; i<nma_get_nrings(na, t); i++) {
-					struct netmap_kring *kring = &NMR(na, t)[i];
-					struct pt_ring *ptring;
-
-					/* Sync krings from the host, reading from
-					 * CSB. */
-					ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
-					kring->rhead = kring->ring->head = ptring->head;
-					kring->rcur = kring->ring->cur = ptring->cur;
-					kring->nr_hwcur = ptring->hwcur;
-					kring->nr_hwtail = kring->rtail =
-						kring->ring->tail = ptring->hwtail;
-				}
-			}
+		/* Sync from CSB must be done after REGIF PTCTL. Skip this
+		 * step only if this is a netmap client and it is not the
+		 * first one. */
+		if ((!native && pi->backend_regifs == 0) ||
+				(native && na->active_fds == 0)) {
+			ptnet_sync_from_csb(csb, na);
 		}
 
 		/* If not native, don't call nm_set_native_flags, since we don't want
@@ -1115,6 +1146,12 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 					}
 				}
 			}
+		}
+
+		/* Sync from CSB must be done before UNREGIF PTCTL, on the last
+		 * netmap client. */
+		if (native && na->active_fds == 0) {
+			ptnet_sync_from_csb(csb, na);
 		}
 
 		if (pi->backend_regifs == 0) {
