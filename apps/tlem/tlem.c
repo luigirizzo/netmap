@@ -1638,13 +1638,14 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	uint64_t bw;
 
 	(void)q;
-	if (strncmp(av[0], "const", 5) != 0 && ac > 1)
+	if (strncmp(av[0], "const", 5) != 0)
 		return 2; /* unrecognised */
 	if (ac > 2)
 		return 1; /* error */
 	bw = parse_bw(av[ac - 1]);
-	if (bw == U_PARSE_ERR)
-		return 1; /* error */
+	if (bw == U_PARSE_ERR) {
+		return (ac == 2) ? 1 /* error */ : 2 /* unrecognised */;
+	}
 	dst->d[0] = bw;
 	q->max_bps = bw;	/* bw used to determine queue size */
 	return 0;	/* success */
