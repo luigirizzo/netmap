@@ -309,6 +309,8 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	return nmd->lasterr;
 }
 
+static int netmap_mem_init_shared_info(struct netmap_mem_d *nmd);
+
 void
 netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
@@ -360,6 +362,9 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 			 * with ptnetmap guests. */
 			nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
 		}
+
+		/* expose info to the ptnetmap guest */
+		netmap_mem_init_shared_info(nmd);
 	}
 	nmd->ops->nmd_deref(nmd);
 
@@ -820,7 +825,7 @@ static void *
 netmap_obj_malloc(struct netmap_obj_pool *p, u_int len, uint32_t *start, uint32_t *index)
 {
 	uint32_t i = 0;			/* index in the bitmap */
-	uint32_t mask, j;		/* slot counter */
+	uint32_t mask, j = 0;		/* slot counter */
 	void *vaddr = NULL;
 
 	if (len > p->_objsize) {
@@ -854,7 +859,7 @@ netmap_obj_malloc(struct netmap_obj_pool *p, u_int len, uint32_t *start, uint32_
 		if (index)
 			*index = i * 32 + j;
 	}
-	ND("%s allocator: allocated object @ [%d][%d]: vaddr %p", i, j, vaddr);
+	ND("%s allocator: allocated object @ [%d][%d]: vaddr %p",p->name, i, j, vaddr);
 
 	if (start)
 		*start = i;
