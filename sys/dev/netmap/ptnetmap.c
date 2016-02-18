@@ -1003,6 +1003,7 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
     struct netmap_pt_host_adapter *pth_na =
         (struct netmap_pt_host_adapter *)na;
     struct netmap_adapter *parent = pth_na->parent;
+    enum txrx t;
     int error;
 
     DBG(D("%s", pth_na->up.name));
@@ -1011,6 +1012,12 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
     error = parent->nm_krings_create(parent);
     if (error) {
         return error;
+    }
+
+    /* Parent's kring_create function will initialize
+     * its own na->si. We have to init our na->si here. */
+    for_rx_tx(t) {
+        init_waitqueue_head(&na->si[t]);
     }
 
     /* A ptnetmap host adapter points the very same krings
