@@ -1621,24 +1621,21 @@ netmap_mem_global_finalize(struct netmap_mem_d *nmd)
 {
 	int err;
 
+	nmd->lasterr = 0;
+
 	/* update configuration if changed */
 	if (netmap_mem_global_config(nmd))
-		goto out;
+		return nmd->lasterr;
 
 	nmd->active++;
 
 	if (nmd->flags & NETMAP_MEM_FINALIZED) {
 		/* may happen if config is not changed */
 		ND("nothing to do");
-		goto out;
+	} else {
+		netmap_mem_finalize_all(nmd);
 	}
 
-	if (netmap_mem_finalize_all(nmd))
-		goto out;
-
-	nmd->lasterr = 0;
-
-out:
 	if (nmd->lasterr)
 		nmd->active--;
 	err = nmd->lasterr;
