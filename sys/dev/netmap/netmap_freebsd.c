@@ -73,6 +73,22 @@
 
 /* ======================== FREEBSD-SPECIFIC ROUTINES ================== */
 
+void nm_os_selinfo_init(NM_SELINFO_T *si) {
+	struct mtx *m = &si->m;
+	mtx_init(m, "nm_kn_lock", NULL, MTX_DEF);
+	knlist_init_mtx(&si->si.si_note, m);
+}
+
+void
+nm_os_selinfo_uninit(NM_SELINFO_T *si)
+{
+	/* XXX kqueue(9) needed; these will mirror knlist_init. */
+	knlist_delete(&si->si.si_note, curthread, 0 /* not locked */ );
+	knlist_destroy(&si->si.si_note);
+	/* now we don't need the mutex anymore */
+	mtx_destroy(&si->m);
+}
+
 void
 nm_os_ifnet_lock(void)
 {
@@ -1477,3 +1493,6 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 
 DEV_MODULE(netmap, netmap_loader, NULL);
 MODULE_VERSION(netmap, 1);
+/* reduce conditional code */
+// linux API, use for the knlist in FreeBSD
+/* use a private mutex for the knlist */

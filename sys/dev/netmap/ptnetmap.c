@@ -1017,7 +1017,7 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
     /* Parent's kring_create function will initialize
      * its own na->si. We have to init our na->si here. */
     for_rx_tx(t) {
-        init_waitqueue_head(&na->si[t]);
+        nm_os_selinfo_init(&na->si[t]);
     }
 
     /* A ptnetmap host adapter points the very same krings
