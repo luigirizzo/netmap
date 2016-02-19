@@ -1628,7 +1628,7 @@ netmap_mem_global_finalize(struct netmap_mem_d *nmd)
 
 	/* update configuration if changed */
 	if (netmap_mem_global_config(nmd))
-		goto out;
+		return nmd->lasterr;
 
 	nmd->active++;
 
