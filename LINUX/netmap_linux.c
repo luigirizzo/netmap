@@ -1113,7 +1113,7 @@ static int netmap_backend_nm_notify(struct netmap_adapter *na,
 					POLLRDNORM | POLLRDBAND);
 	}
 
-	return 0;
+	return NM_IRQ_COMPLETED;
 }
 
 /* Called by an external module (the v1000 frontend) which wants to
@@ -1303,7 +1303,6 @@ EXPORT_SYMBOL(netmap_backend_sendmsg);
 static inline int netmap_common_peek_head_len(struct netmap_adapter *na)
 {
         /* Here we assume to have a virtual port. */
-        struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	struct netmap_kring *kring = &na->rx_rings[0];
         struct netmap_ring *ring = kring->ring;
 	u_int i;
@@ -1331,8 +1330,8 @@ static inline int netmap_common_peek_head_len(struct netmap_adapter *na)
 
         /* The v1000 frontend assumes that the peek_head_len() callback
            doesn't count the bytes of the virtio-net-header. */
-        if (likely(ret >= vpna->virt_hdr_len)) {
-            ret -= vpna->virt_hdr_len;
+        if (likely(ret >= na->virt_hdr_len)) {
+            ret -= na->virt_hdr_len;
         }
 
 	return ret;
@@ -1600,7 +1599,7 @@ static int netmap_socket_nm_notify(struct netmap_adapter *na,
 					POLLRDNORM | POLLRDBAND);
 	}
 
-	return 0;
+	return NM_IRQ_COMPLETED;
 }
 
 static struct netmap_sock *netmap_sock_setup(struct netmap_adapter *na, struct file *filp)
@@ -2605,6 +2604,7 @@ EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
 EXPORT_SYMBOL(netmap_pt_guest_attach);	/* ptnetmap driver attach routines */
 EXPORT_SYMBOL(netmap_pt_guest_rxsync);	/* ptnetmap generic rxsync */
 EXPORT_SYMBOL(netmap_pt_guest_txsync);	/* ptnetmap generic txsync */
+EXPORT_SYMBOL(netmap_mem_pt_guest_ifp_del); /* unlink passthrough interface */
 #endif /* WITH_PTNETMAP_GUEST */
 EXPORT_SYMBOL(netmap_detach);		/* driver detach routines */
 EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */

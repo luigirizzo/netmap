@@ -58,6 +58,8 @@ clean:
 
 testlock: testlock.c
 
+tlem: LDLIBS += -lm
+
 .PHONY: install
 install: $(PROGS:%=install-%)
 

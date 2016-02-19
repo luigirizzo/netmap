@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index a456578..16951f9 100644
+index a456578..eec58c8 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -337,6 +337,16 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
@@ -13,28 +13,32 @@ index a456578..16951f9 100644
 +	* clients, which may be sleeping on individual rings
 +	* or on a global resource for all rings.
 +	*/
-+	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index))
++	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
 +		return 1; /* seems to be ignored */
 +#endif /* DEV_NETMAP */
  	i = tx_ring->next_to_clean;
  	eop = tx_ring->tx_buffer_info[i].next_to_watch;
  	eop_desc = IXGBE_TX_DESC_ADV(*tx_ring, eop);
-@@ -778,6 +788,14 @@ static bool ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+@@ -778,6 +788,18 @@ static bool ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
  	int ddp_bytes = 0;
  #endif /* IXGBE_FCOE */
  
 +#ifdef DEV_NETMAP
++	int nm_irq;
 +	/*
-+	* Same as the txeof routine: only wakeup clients on intr.
-+	*/
-+	if (netmap_rx_irq(adapter->netdev, rx_ring->queue_index, work_done))
-+		return true; /* no more interrupts */
++	 * Same as the txeof routine: only wakeup clients on intr.
++	 */
++	nm_irq = netmap_rx_irq(adapter->netdev, rx_ring->queue_index, work_done);
++	if (nm_irq != NM_IRQ_PASS) {
++		*work_done = (nm_irq == NM_IRQ_RESCHED) ? work_to_do : 1;
++		return true;
++	}
 +#endif /* DEV_NETMAP */
 +
  	i = rx_ring->next_to_clean;
  	rx_desc = IXGBE_RX_DESC_ADV(*rx_ring, i);
  	staterr = le32_to_cpu(rx_desc->wb.upper.status_error);
-@@ -1008,6 +1026,24 @@ static void ixgbe_configure_msix(struct ixgbe_adapter *adapter)
+@@ -1008,6 +1030,24 @@ static void ixgbe_configure_msix(struct ixgbe_adapter *adapter)
  	IXGBE_WRITE_REG(&adapter->hw, IXGBE_EIAC, mask);
  }
  
@@ -59,7 +63,7 @@ index a456578..16951f9 100644
  enum latency_range {
  	lowest_latency = 0,
  	low_latency = 1,
-@@ -1044,7 +1080,6 @@ static u8 ixgbe_update_itr(struct ixgbe_adapter *adapter,
+@@ -1044,7 +1084,6 @@ static u8 ixgbe_update_itr(struct ixgbe_adapter *adapter,
  	if (packets == 0)
  		goto update_itr_done;
  
@@ -67,7 +71,7 @@ index a456578..16951f9 100644
  	/* simple throttlerate management
  	 *    0-20MB/s lowest (100000 ints/s)
  	 *   20-100MB/s low   (20000 ints/s)
-@@ -2568,6 +2603,12 @@ static void ixgbe_configure(struct ixgbe_adapter *adapter)
+@@ -2568,6 +2607,12 @@ static void ixgbe_configure(struct ixgbe_adapter *adapter)
  
  	ixgbe_configure_tx(adapter);
  	ixgbe_configure_rx(adapter);
@@ -80,7 +84,7 @@ index a456578..16951f9 100644
  	for (i = 0; i < adapter->num_rx_queues; i++)
  		ixgbe_alloc_rx_buffers(adapter, &adapter->rx_ring[i],
  		                       (adapter->rx_ring[i].count - 1));
-@@ -2753,6 +2794,11 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
+@@ -2753,6 +2798,11 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
  		txdctl = IXGBE_READ_REG(hw, IXGBE_TXDCTL(j));
  		txdctl |= IXGBE_TXDCTL_ENABLE;
  		IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(j), txdctl);
@@ -92,7 +96,7 @@ index a456578..16951f9 100644
  	}
  
  	for (i = 0; i < num_rx_rings; i++) {
-@@ -4290,6 +4336,9 @@ static int ixgbe_open(struct net_device *netdev)
+@@ -4290,6 +4340,9 @@ static int ixgbe_open(struct net_device *netdev)
  		goto err_up;
  
  	netif_tx_start_all_queues(netdev);
@@ -102,7 +106,7 @@ index a456578..16951f9 100644
  
  	return 0;
  
-@@ -5893,6 +5942,10 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
+@@ -5893,6 +5946,10 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
  	struct net_device *netdev = pci_get_drvdata(pdev);
  	struct ixgbe_adapter *adapter = netdev_priv(netdev);
  

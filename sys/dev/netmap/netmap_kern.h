@@ -716,6 +716,7 @@ struct netmap_adapter {
 	 *	we also need to invoke the 'txsync' code downstream.
 	 *      This callback pointer is actually used only to initialize
 	 *      kring->nm_notify.
+	 *      Return values are the same as for netmap_rx_irq().
 	 */
 	void (*nm_dtor)(struct netmap_adapter *);
 
@@ -780,6 +781,9 @@ struct netmap_adapter {
 	struct netmap_pipe_adapter **na_pipes;
 	int na_next_pipe;	/* next free slot in the array */
 	int na_max_pipes;	/* size of the array */
+
+	/* Offset of ethernet header for each packet. */
+	u_int virt_hdr_len;
 
 	char name[64];
 };
@@ -846,8 +850,6 @@ struct netmap_vp_adapter {	/* VALE software port */
 	struct nm_bridge *na_bdg;
 	int retry;
 
-	/* Offset of ethernet header for each packet. */
-	u_int virt_hdr_len;
 	/* Maximum Frame Size, used in bdg_mismatch_datapath() */
 	u_int mfs;
 	/* Last source MAC on this port */
@@ -1147,6 +1149,22 @@ int netmap_transmit(struct ifnet *, struct mbuf *);
 struct netmap_slot *netmap_reset(struct netmap_adapter *na,
 	enum txrx tx, u_int n, u_int new_cur);
 int netmap_ring_reinit(struct netmap_kring *);
+
+/* Return codes for netmap_*x_irq. */
+enum {
+	/* Driver should do normal interrupt processing, e.g. because
+	 * the interface is not in netmap mode. */
+	NM_IRQ_PASS = 0,
+	/* Port is in netmap mode, and the interrupt work has been
+	 * completed. The driver does not have to notify netmap
+	 * again before the next interrupt. */
+	NM_IRQ_COMPLETED = -1,
+	/* Port is in netmap mode, but the interrupt work has not been
+	 * completed. The driver has to make sure netmap will be
+	 * notified again soon, even if no more interrupts come (e.g.
+	 * on Linux the driver should not call napi_complete()). */
+	NM_IRQ_RESCHED = -2,
+};
 
 /* default functions to handle rx/tx interrupts */
 int netmap_rx_irq(struct ifnet *, u_int, u_int *);
@@ -2001,7 +2019,6 @@ struct netmap_pt_host_adapter {
 
 	struct netmap_adapter *parent;
 	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
-
 	void *ptn_state;
 };
 /* ptnetmap HOST routines */
@@ -2021,20 +2038,19 @@ nm_ptnetmap_host_on(struct netmap_adapter *na)
 
 #ifdef WITH_PTNETMAP_GUEST
 /* ptnetmap GUEST routines */
-struct netmap_pt_guest_ops {
-	uint32_t (*nm_ptctl)(struct ifnet *, uint32_t);
-};
+
+typedef uint32_t (*nm_pt_guest_ptctl_t)(struct ifnet *, uint32_t);
+
 /*
  * netmap adapter for guest ptnetmap ports
  */
 struct netmap_pt_guest_adapter {
 	struct netmap_hw_adapter hwup;
-
-	struct netmap_pt_guest_ops *pv_ops;
 	struct paravirt_csb *csb;
 };
 
-int netmap_pt_guest_attach(struct netmap_adapter *, struct netmap_pt_guest_ops *);
+int netmap_pt_guest_attach(struct netmap_adapter *, struct paravirt_csb *,
+			   nm_pt_guest_ptctl_t);
 bool netmap_pt_guest_txsync(struct netmap_kring *kring, int flags);
 bool netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags);
 #endif /* WITH_PTNETMAP_GUEST */

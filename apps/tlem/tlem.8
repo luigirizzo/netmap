@@ -1,0 +1,184 @@
+.\" Copyright (c) 2016 Luigi Rizzo, Universita` di Pisa
+.\" All rights reserved.
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" $FreeBSD$
+.\"
+.Dd February 16, 2016
+.Dt TLEM 1
+.Os
+.Sh NAME
+.Nm tlem
+.Nd high speed, netmap based link emulator (similar to dummynet)
+.Sh SYNOPSIS
+.Bk -words
+.Bl -tag -width "tlem"
+.It Nm
+.Op Fl i Ar port
+.Op Fl B Ar bandwidth
+.Op Fl D Ar delay
+.Op Fl L Ar loss
+.Op Fl Q Ar queue size
+.Op Fl C Ar cpu-placement
+.Op Fl b Ar batch size
+.Op Fl w Ar wait-link
+.Op Fl v
+.Sh DESCRIPTION
+.Nm
+implements a high speed bidirectional link emulator between netmap ports,
+capable of supporting rates up to 20 Mpps / 40 Gbit in each direction.
+.Nm
+use two threads per direction to achieve high speed while maintaining
+packet ordering, and can enforce queue size and rate limitation,
+introduce deterministic or random delays and packet losses,
+in a way similar to the popular
+.Xr dummynet 4
+emulator.
+.Pp
+.Nm
+differs from
+.Nm dummynet
+in the following ways:
+.Bl -bullet -compact
+.It
+.Nm
+only connects netmap ports, whereas
+.Nm dummynet
+sits between the IP layer and the network interface;
+.It
+.Nm
+does not provide packet filtering, whereas
+.Nm dummynet
+selects traffic using the
+.Nm ipfw
+firewall;
+.It
+.Nm
+is 20-40 times faster than the in-kernel
+.Nm dummynet ;
+.It
+.Nm
+runs entirely in userspace, hence it is much easier to modify and extend.
+.El
+.Pp
+Command line options are listed below. The
+.Fl B, D, L, Q
+options can omitted (in which case default values are used),
+specified once (in which case they affect both directions),
+or twice (once per direction).
+.Bl -tag -width Ds
+.It Fl i Ar port
+Name of the netmap port. It must be supplied exactly twice to indentify
+the two ports that must be interconnected.
+Any netmap port type (physical interface, VALE switch, pipe, monitor port...)
+can be used.
+.It Fl B Ar bps | Cm constant, Ns Ar bps | Cm ether, Ns Ar bps
+Desired bandwidth, default to 0 (which means infinite) if not specified.
+.Ar bps
+is a floating point number optionally follow by a character
+(k, K, m, M, g, G) that multiplies the value by 10^3, 10^6 and 10^9
+respectively.
+.Cm constant
+(can be omitted) means that the bandwidth will be computed
+with reference to the actual packet size (excluding CRC and framing).
+.Cm ether
+indicates that the ethernet framing (160 bits) and CRC (32 bits)
+will be included in the computation of the packet size.
+.It Fl D Ar dt | Cm constant, Ns Ar dt | Cm uniform, Ns Ar dmin,dmax | Cm exp, Ar dmin,davg
+Additional delay in transmission, with
+constant, uniform or exponential distribution, defaults to 0.
+.Ar dt, dmin, dmax, avg
+are times expressed as floating point numbers optionally followed
+by a character (s, m, u, n) to indicate seconds, milliseconds,
+microseconds, nanoseconds.
+The delay is adjusted so that there is never packet reordering.
+.It Fl L Ar x | Cm plr, Ns Ar x | Cm ber, Ns Ar x
+Optional packet or bit error rate, defaults to 0.
+Simulates packet or bit errors, causing offending packets to be dropped.
+.Ar x
+is a floating point number indicating the packet or bit error rate.
+.It Fl Q Ar size
+Queue size,
+.Ar size
+is a number optionally folllowed by k, K, m, M, g, G to specify
+the queue size in bytes, Kilobytes, Megabytes, Gigabytes.
+The queue is used to buffer incoming packets before bandwidth
+limitations are applied.
+.It Fl C Ar a Ns Op , Ns Ar b Ns Op , Ns Ar c,d
+Indicates the cores on which the four threads should be placed.
+One, two or four values can be specified.
+.It Fl w Ar wait-link
+indicates the number of seconds to wait before transmitting.
+It defaults to 2, and may be useful when talking to physical
+ports to let link negotiation complete before starting transmission.
+.It Fl v
+Enable verbose mode
+.It Fl b Ar batch-size
+Maximum batch size to use during transmissions.
+.Nm
+normally transmits packets one at a time, but it may use
+larger batches, up to the value specified with this option,
+when running at high rates.
+.El
+.Sh OPERATION
+.Nm
+creates two threads per direction, binds them to specific cores,
+and uses them to read and write to the netmap ports.
+A fifth thread is used to periodically display the amount
+of traffic flowing in each of the two directions.
+.Pp
+The input thread reads from a netmap port, and for each packet
+computes the time when it should exit the transmit queue
+according to the emulated bandwidth; drops the packet if
+the queue is full; further applies random drops according
+to the loss probability specified; and finally
+computes the transmit time applying the additional delay.
+Packets annotated with their transmit time are copied in
+a large in-memory buffer. The output thread spins on the buffer,
+doing short sleeps, until packets reach their transmit time.
+.Sh PERFORMANCE
+We have measured speeds in excess of 20 Mpps and 40 Gbit/s per
+direction on a modern i7 CPU with 4 cores.  The accuracy in delays
+is in the order of 30-50us provided that C states higher than C1
+are disabled, and the CPU clock is set to the maximum speed.
+Performance depends heavily on memory speed and suitable
+NICs with native netmap drivers. See the paper below for more details.
+of good network interf
+.Sh SEE ALSO
+.Pa http://info.iet.unipi.it/~luigi/netmap/
+.Pp
+Luigi Rizzo, Giuseppe Lettieri,
+TLEM, very high speed link emulation,
+AsiaBSDCon 2016, Tokyo, March 2016
+http://info.iet.unipi.it/~luigi/research.html
+.Pp
+.Sh AUTHORS
+.An -nosplit
+.Nm
+has been written by
+.An Luigi Rizzo
+at the Universita` di Pisa, Italy.
+.Pp
+This work has received funding from the European
+Union's Horizon 2020 research and innovation programme
+2014-2018 under grant agreement No. 644866.

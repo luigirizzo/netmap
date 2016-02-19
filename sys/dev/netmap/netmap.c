@@ -2185,6 +2185,17 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
 			error = ptnetmap_ctl(nmr, priv->np_na);
 			break;
+		} else if (i == NETMAP_VNET_HDR_GET) {
+			struct ifnet *ifp;
+
+			NMG_LOCK();
+			error = netmap_get_na(nmr, &na, &ifp, 0);
+			if (na && !error) {
+				nmr->nr_arg1 = na->virt_hdr_len;
+			}
+			netmap_unget_na(na, ifp);
+			NMG_UNLOCK();
+			break;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);
 			error = EINVAL;
@@ -2211,6 +2222,13 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				error = EBUSY;
 				break;
 			}
+
+			if (na->virt_hdr_len && !(nmr->nr_flags & NR_ACCEPT_VNET_HDR)) {
+				netmap_unget_na(na, ifp);
+				error = EIO;
+				break;
+			}
+
 			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
 			if (error) {    /* reg. failed, release priv and ref */
 				netmap_unget_na(na, ifp);
@@ -2634,7 +2652,7 @@ netmap_notify(struct netmap_kring *kring, int flags)
 	if (na->si_users[t] > 0)
 		nm_os_selwakeup(&na->si[t]);
 
-	return 0;
+	return NM_IRQ_COMPLETED;
 }
 
 #if 0
@@ -2694,6 +2712,7 @@ netmap_attach_common(struct netmap_adapter *na)
 		 */
 		na->nm_bdg_attach = netmap_bwrap_attach;
 #endif
+
 	return 0;
 }
 
@@ -2838,14 +2857,15 @@ netmap_attach(struct netmap_adapter *arg)
 #ifdef WITH_PTNETMAP_GUEST
 int
 netmap_pt_guest_attach(struct netmap_adapter *arg,
-		struct netmap_pt_guest_ops *pv_ops)
+		       struct paravirt_csb *csb,
+		       nm_pt_guest_ptctl_t ptctl)
 {
 	struct netmap_pt_guest_adapter *ptna;
 	struct ifnet *ifp = arg ? arg->ifp : NULL;
 	int error;
 
 	/* get allocator */
-	arg->nm_mem = netmap_mem_pt_guest_new(ifp, pv_ops);
+	arg->nm_mem = netmap_mem_pt_guest_new(ifp, csb, ptctl);
 	if (arg->nm_mem == NULL)
 		return ENOMEM;
 	arg->na_flags |= NAF_MEM_OWNER;
@@ -2855,7 +2875,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 
 	/* get the netmap_pt_guest_adapter */
 	ptna = (struct netmap_pt_guest_adapter *) NA(ifp);
-	ptna->pv_ops = pv_ops;
+	ptna->csb = csb;
 
 	return 0;
 }
@@ -3147,12 +3167,12 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 	}
 
 	if (q >= nma_get_nrings(na, t))
-		return 0; // not a physical queue
+		return NM_IRQ_PASS; // not a physical queue
 
 	kring = NMR(na, t) + q;
 
 	if (kring->nr_mode == NKR_NETMAP_OFF) {
-		return 0;
+		return NM_IRQ_PASS;
 	}
 
 	if (t == NR_RX) {
@@ -3160,8 +3180,7 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 		*work_done = 1; /* do not fire napi again */
 	}
 
-	kring->nm_notify(kring, 0);
-	return 1;
+	return kring->nm_notify(kring, 0);
 }
 
 
@@ -3169,17 +3188,17 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
  * Default functions to handle rx/tx interrupts from a physical device.
  * "work_done" is non-null on the RX path, NULL for the TX path.
  *
- * If the card is not in netmap mode, simply return 0,
+ * If the card is not in netmap mode, simply return NM_IRQ_PASS,
  * so that the caller proceeds with regular processing.
- * Otherwise call netmap_common_irq() and return 1.
+ * Otherwise call netmap_common_irq().
  *
  * If the card is connected to a netmap file descriptor,
  * do a selwakeup on the individual queue, plus one on the global one
  * if needed (multiqueue card _and_ there are multiqueue listeners),
- * and return 1.
+ * and return NR_IRQ_COMPLETED.
  *
  * Finally, if called on rx from an interface connected to a switch,
- * calls the proper forwarding routine, and return 1.
+ * calls the proper forwarding routine.
  */
 int
 netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
@@ -3193,11 +3212,11 @@ netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 	 * nm_native_on() here.
 	 */
 	if (!nm_netmap_on(na))
-		return 0;
+		return NM_IRQ_PASS;
 
 	if (na->na_flags & NAF_SKIP_INTR) {
 		ND("use regular interrupt");
-		return 0;
+		return NM_IRQ_PASS;
 	}
 
 	return netmap_common_irq(na, q, work_done);

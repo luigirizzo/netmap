@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 30f9ccf..d4c3628 100644
+index 30f9ccf..e570fce 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -221,6 +221,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
@@ -36,27 +36,31 @@ index 30f9ccf..d4c3628 100644
 +	 * clients, which may be sleeping on individual rings
 +	 * or on a global resource for all rings.
 +	 */
-+	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index))
++	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
 +		return 1; /* seems to be ignored */
 +#endif /* DEV_NETMAP */
  	i = tx_ring->next_to_clean;
  	eop = tx_ring->tx_buffer_info[i].next_to_watch;
  	eop_desc = IXGBE_TX_DESC_ADV(tx_ring, eop);
-@@ -1308,6 +1334,13 @@ static void ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+@@ -1308,6 +1334,17 @@ static void ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
  	u16 cleaned_count = 0;
  	bool pkt_is_rsc = false;
  
 +#ifdef DEV_NETMAP
++	int nm_irq;
 +	/*
 +	 * Same as the txeof routine: only wakeup clients on intr.
 +	 */
-+	if (netmap_rx_irq(adapter->netdev, rx_ring->queue_index, work_done))
++	nm_irq = netmap_rx_irq(adapter->netdev, rx_ring->queue_index, work_done);
++	if (nm_irq != NM_IRQ_PASS) {
++		*work_done = (nm_irq == NM_IRQ_RESCHED) ? work_to_do : 1;
 +		return;
++	}
 +#endif /* DEV_NETMAP */
  	i = rx_ring->next_to_clean;
  	rx_desc = IXGBE_RX_DESC_ADV(rx_ring, i);
  	staterr = le32_to_cpu(rx_desc->wb.upper.status_error);
-@@ -2730,6 +2763,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+@@ -2730,6 +2767,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  	} while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
  	if (!wait_loop)
  		e_err(drv, "Could not enable Tx Queue %d\n", reg_idx);
@@ -66,7 +70,7 @@ index 30f9ccf..d4c3628 100644
  }
  
  static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
-@@ -3094,6 +3130,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+@@ -3094,6 +3134,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -77,7 +81,7 @@ index 30f9ccf..d4c3628 100644
  	ixgbe_alloc_rx_buffers(ring, IXGBE_DESC_UNUSED(ring));
  }
  
-@@ -7450,6 +7490,11 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
+@@ -7450,6 +7494,11 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
  
  	e_dev_info("Intel(R) 10 Gigabit Network Connection\n");
  	cards_found++;
@@ -89,7 +93,7 @@ index 30f9ccf..d4c3628 100644
  	return 0;
  
  err_register:
-@@ -7490,6 +7535,10 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
+@@ -7490,6 +7539,10 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
  	struct ixgbe_adapter *adapter = pci_get_drvdata(pdev);
  	struct net_device *netdev = adapter->netdev;
  

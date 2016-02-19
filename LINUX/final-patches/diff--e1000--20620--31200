@@ -1,5 +1,5 @@
 diff --git a/e1000/e1000_main.c b/e1000/e1000_main.c
-index bcd192c..2b45088 100644
+index bcd192c..2b33eba 100644
 --- a/e1000/e1000_main.c
 +++ b/e1000/e1000_main.c
 @@ -213,6 +213,10 @@ static int debug = NETIF_MSG_DRV | NETIF_MSG_PROBE;
@@ -51,20 +51,24 @@ index bcd192c..2b45088 100644
  	unsigned int total_tx_bytes=0, total_tx_packets=0;
  
 +#ifdef DEV_NETMAP
-+	if (netmap_tx_irq(netdev, 0))
++	if (netmap_tx_irq(netdev, 0) != NM_IRQ_PASS)
 +		return 1; /* cleaned ok */
 +#endif /* DEV_NETMAP */
  	i = tx_ring->next_to_clean;
  	eop = tx_ring->buffer_info[i].next_to_watch;
  	eop_desc = E1000_TX_DESC(*tx_ring, eop);
-@@ -3795,6 +3815,11 @@ static bool e1000_clean_rx_irq(struct e1000_adapter *adapter,
+@@ -3795,6 +3815,15 @@ static bool e1000_clean_rx_irq(struct e1000_adapter *adapter,
  	bool cleaned = false;
  	unsigned int total_rx_bytes=0, total_rx_packets=0;
  
 +#ifdef DEV_NETMAP
-+	ND("calling netmap_rx_irq");
-+	if (netmap_rx_irq(netdev, 0, work_done))
-+		return 1; /* seems to be ignored */
++       int nm_irq = netmap_rx_irq(netdev, 0, work_done);
++       if (nm_irq != NM_IRQ_PASS) {
++               if (nm_irq == NM_IRQ_RESCHED) {
++                       *work_done = work_to_do;
++               }
++               return 1;
++       }
 +#endif /* DEV_NETMAP */
  	i = rx_ring->next_to_clean;
  	rx_desc = E1000_RX_DESC(*rx_ring, i);

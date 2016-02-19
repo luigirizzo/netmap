@@ -941,12 +941,12 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 	struct ptnetmap_state *pts;
 
 	if (unlikely(!pth_na)) {
-		return 0;
+		return NM_IRQ_COMPLETED;
 	}
 
 	pts = pth_na->ptn_state;
 	if (unlikely(!pts)) {
-		return 0;
+		return NM_IRQ_COMPLETED;
 	}
 
 	/* Notify kthreads (wake up if needed) */
@@ -961,14 +961,14 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 		IFRATE(pts->rate_ctx.new.brxwu++);
 	}
 
-	return 0;
+	return NM_IRQ_COMPLETED;
 }
 
 static int
 nm_unused_notify(struct netmap_kring *kring, int flags)
 {
     D("BUG this should never be called");
-    return -1;
+    return ENXIO;
 }
 
 /* nm_config callback for bwrap */
@@ -1003,6 +1003,7 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
     struct netmap_pt_host_adapter *pth_na =
         (struct netmap_pt_host_adapter *)na;
     struct netmap_adapter *parent = pth_na->parent;
+    enum txrx t;
     int error;
 
     DBG(D("%s", pth_na->up.name));
@@ -1011,6 +1012,12 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
     error = parent->nm_krings_create(parent);
     if (error) {
         return error;
+    }
+
+    /* Parent's kring_create function will initialize
+     * its own na->si. We have to init our na->si here. */
+    for_rx_tx(t) {
+        init_waitqueue_head(&na->si[t]);
     }
 
     /* A ptnetmap host adapter points the very same krings
@@ -1161,6 +1168,9 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
     pth_na->up.nm_notify = nm_unused_notify;
 
     pth_na->up.nm_mem = parent->nm_mem;
+
+    pth_na->up.na_flags |= NAF_HOST_RINGS;
+
     error = netmap_attach_common(&pth_na->up);
     if (error) {
         D("ERROR netmap_attach_common()");

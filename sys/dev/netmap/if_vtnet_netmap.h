@@ -468,29 +468,24 @@ vtnet_ptnetmap_ioread4(device_t dev, uint32_t addr)
  *
  * Only called after netmap_pt_guest_attach().
  */
-static int
+static struct paravirt_csb *
 vtnet_ptnetmap_alloc_csb(struct SOFTC_T *sc)
 {
 	device_t dev = sc->vtnet_dev;
-	struct ifnet *ifp = sc->vtnet_ifp;
-	struct netmap_pt_guest_adapter* ptna =
-		(struct netmap_pt_guest_adapter *)NA(ifp);
+	struct paravirt_csb *csb;
 
 	vm_paddr_t csb_phyaddr;
 
-	if (ptna->csb)
-		return 0;
-
-	ptna->csb = contigmalloc(NET_PARAVIRT_CSB_SIZE, M_DEVBUF,
+	csb = contigmalloc(NET_PARAVIRT_CSB_SIZE, M_DEVBUF,
 			M_NOWAIT | M_ZERO, (size_t)0, -1UL, PAGE_SIZE, 0);
-	if (!ptna->csb) {
+	if (!csb) {
 		D("Communication Status Block allocation failed!");
-		return ENOMEM;
+		return NULL;
 	}
 
-	csb_phyaddr = vtophys(ptna->csb);
+	csb_phyaddr = vtophys(csb);
 
-	ptna->csb->guest_csb_on = 1;
+	csb->guest_csb_on = 1;
 
 	/* Tell the device the CSB physical address. */
 	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAH,
@@ -498,7 +493,7 @@ vtnet_ptnetmap_alloc_csb(struct SOFTC_T *sc)
 	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAL,
 			(uint32_t)(csb_phyaddr));
 
-	return 0;
+	return csb;
 }
 
 /*
@@ -732,12 +727,10 @@ vtnet_ptnetmap_dtor(struct netmap_adapter *na)
         struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *sc = ifp->if_softc;
 
+	netmap_mem_pt_guest_ifp_del(na->nm_mem, ifp);
         vtnet_ptnetmap_free_csb(sc);
 }
 
-static struct netmap_pt_guest_ops vtnet_ptnetmap_ops = {
-    .nm_ptctl = vtnet_ptnetmap_ptctl,
-};
 #endif /* WITH_PTNETMAP_GUEST */
 
 static void
@@ -760,6 +753,8 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 	/* check if virtio-net (guest and host) supports ptnetmap */
 	if (virtio_with_feature(sc->vtnet_dev, VIRTIO_NET_F_PTNETMAP) &&
 		(vtnet_ptnetmap_features(sc) & NET_PTN_FEATURES_BASE)) {
+		struct paravirt_csb *csb;
+
 		D("ptnetmap supported");
 		na.nm_config = vtnet_ptnetmap_config;
 		na.nm_register = vtnet_ptnetmap_reg;
@@ -767,8 +762,13 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 		na.nm_rxsync = vtnet_ptnetmap_rxsync;
 		na.nm_dtor = vtnet_ptnetmap_dtor;
 		na.nm_bdg_attach = vtnet_ptnetmap_bdg_attach; /* XXX */
-		netmap_pt_guest_attach(&na, &vtnet_ptnetmap_ops);
-		vtnet_ptnetmap_alloc_csb(sc);
+
+		csb = vtnet_ptnetmap_alloc_csb(sc);
+		if (csb == NULL) {
+			return;
+		}
+
+		netmap_pt_guest_attach(&na, csb, vtnet_ptnetmap_ptctl);
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);
