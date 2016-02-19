@@ -213,15 +213,15 @@ typedef struct _win_SELINFO
 } win_SELINFO;
 
 static void 
-win_initialize_waitqueue(win_SELINFO* queue)
+nm_os_selinfo_init(win_SELINFO* queue)
 {
 	KeInitializeEvent(&queue->queue, NotificationEvent, TRUE);
 	KeInitializeGuardedMutex(&queue->mutex);
 }
 
+static void nm_os_selinfo_uninit(win_SELINFO *queue) { /* XXX nothing to do here? */ }
+
 #define PI_NET					16
-#define init_waitqueue_head(x)			win_initialize_waitqueue(x);
-#define netmap_knlist_destroy(x)
 #define tsleep(ident, priority, wmesg, time)	KeDelayExecutionThread(KernelMode, FALSE, (PLARGE_INTEGER)time)	
 
 

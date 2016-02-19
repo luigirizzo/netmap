@@ -445,15 +445,6 @@ ports attached to the switch)
 #include <sys/refcount.h>
 
 
-/* reduce conditional code */
-// linux API, use for the knlist in FreeBSD
-/* use a private mutex for the knlist */
-#define init_waitqueue_head(x) do {			\
-	struct mtx *m = &(x)->m;			\
-	mtx_init(m, "nm_kn_lock", NULL, MTX_DEF);	\
-	knlist_init_mtx(&(x)->si.si_note, m);		\
-    } while (0)
-
 #elif defined(linux)
 
 #include "bsd_glue.h"
@@ -834,28 +825,15 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 			ND("ktx %s h %d c %d t %d",
 				kring->name, kring->rhead, kring->rcur, kring->rtail);
 			mtx_init(&kring->q_lock, (t == NR_TX ? "nm_txq_lock" : "nm_rxq_lock"), NULL, MTX_DEF);
-			init_waitqueue_head(&kring->si);
+			nm_os_selinfo_init(&kring->si);
 		}
-		init_waitqueue_head(&na->si[t]);
+		nm_os_selinfo_init(&na->si[t]);
 	}
 
 	na->tailroom = na->rx_rings + n[NR_RX];
 
 	return 0;
 }
-
-
-#ifdef __FreeBSD__
-static void
-netmap_knlist_destroy(NM_SELINFO_T *si)
-{
-	/* XXX kqueue(9) needed; these will mirror knlist_init. */
-	knlist_delete(&si->si.si_note, curthread, 0 /* not locked */ );
-	knlist_destroy(&si->si.si_note);
-	/* now we don't need the mutex anymore */
-	mtx_destroy(&si->m);
-}
-#endif /* __FreeBSD__ */
 
 
 /* undo the actions performed by netmap_krings_create */
@@ -867,12 +845,12 @@ netmap_krings_delete(struct netmap_adapter *na)
 	enum txrx t;
 
 	for_rx_tx(t)
-		netmap_knlist_destroy(&na->si[t]);
+		nm_os_selinfo_uninit(&na->si[t]);
 
 	/* we rely on the krings layout described above */
 	for ( ; kring != na->tailroom; kring++) {
 		mtx_destroy(&kring->q_lock);
-		netmap_knlist_destroy(&kring->si);
+		nm_os_selinfo_uninit(&kring->si);
 	}
 	free(na->tx_rings, M_DEVBUF);
 	na->tx_rings = na->rx_rings = na->tailroom = NULL;

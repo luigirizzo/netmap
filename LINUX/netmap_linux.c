@@ -38,6 +38,17 @@
 #include "netmap_linux_config.h"
 
 void
+nm_os_selinfo_init(NM_SELINFO_T *si)
+{
+	init_waitqueue_head(si);
+}
+
+void
+nm_os_selinfo_uninit(NM_SELINFO_T *si)
+{
+}
+
+void
 nm_os_ifnet_lock(void)
 {
 	rtnl_lock();

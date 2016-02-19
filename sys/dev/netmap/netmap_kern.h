@@ -270,6 +270,10 @@ struct nm_bdg_fwd;
 struct nm_bridge;
 struct netmap_priv_d;
 
+/* os-specific NM_SELINFO_T initialzation/destruction functions */
+void nm_os_selinfo_init(NM_SELINFO_T *);
+void nm_os_selinfo_uninit(NM_SELINFO_T *);
+
 const char *nm_dump_buf(char *p, int len, int lim, char *dst);
 
 void nm_os_selwakeup(NM_SELINFO_T *si);
