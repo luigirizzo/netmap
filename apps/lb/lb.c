@@ -1,3 +1,28 @@
+/*
+ * Copyright (C) 2016 Broala and Universita` di Pisa. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *   1. Redistributions of source code must retain the above copyright
+ *      notice, this list of conditions and the following disclaimer.
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -8,14 +33,49 @@
 #include <net/netmap_user.h>
 #include <sys/poll.h>
 
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <net/ethernet.h>	/* the L2 protocols */
+#include <netinet/in.h>		/* htonl */
 
 #include <pthread.h>
 
 #include "ctrs.h"
-#include "lb.h"
+
+
+/*
+ * use our version of header structs, rather than bringing in a ton
+ * of custom ones
+ */
+#ifndef ETH_ALEN
+#define ETH_ALEN 6
+#endif
+
+struct compact_eth_hdr {
+	unsigned char h_dest[ETH_ALEN];
+	unsigned char h_source[ETH_ALEN];
+	u_int16_t h_proto;
+};
+
+struct compact_ip_hdr {
+	u_int8_t ihl:4, version:4;
+	u_int8_t tos;
+	u_int16_t tot_len;
+	u_int16_t id;
+	u_int16_t frag_off;
+	u_int8_t ttl;
+	u_int8_t protocol;
+	u_int16_t check;
+	u_int32_t saddr;
+	u_int32_t daddr;
+};
+
+struct compact_ipv6_hdr {
+	u_int8_t priority:4, version:4;
+	u_int8_t flow_lbl[3];
+	u_int16_t payload_len;
+	u_int8_t nexthdr;
+	u_int8_t hop_limit;
+	struct in6_addr saddr;
+	struct in6_addr daddr;
+};
 
 #define MAX_IFNAMELEN 	64
 #define DEF_OUT_PIPES 	2
@@ -173,7 +233,7 @@ static void sigint_h(int sig)
 	signal(SIGINT, SIG_DFL);
 }
 
-inline uint32_t ip_hasher(const char * buffer, const u_int16_t buffer_len)
+static inline uint32_t ip_hasher(const char * buffer, const u_int16_t buffer_len)
 {
 	uint32_t l3_offset = sizeof(struct compact_eth_hdr);
 	uint16_t eth_type;

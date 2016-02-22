@@ -1,3 +1,7 @@
+#ifndef ETH_ALEN
+#define ETH_ALEN 6
+#endif
+
 struct compact_eth_hdr {
 	unsigned char h_dest[ETH_ALEN];
 	unsigned char h_source[ETH_ALEN];
