@@ -227,6 +227,11 @@ struct paravirt_csb {
 #define PTNET_IO_MAC_HI		20
 #define PTNET_IO_CSBBAH         24
 #define PTNET_IO_CSBBAL         28
+#define PTNET_IO_NIFP_OFS	32
+#define PTNET_IO_NUM_TX_RINGS	36
+#define PTNET_IO_NUM_RX_RINGS	40
+#define PTNET_IO_NUM_TX_SLOTS	44
+#define PTNET_IO_NUM_RX_SLOTS	48
 #define PTNET_IO_END		64
 #define PTNET_IO_TXKICK		PTNET_IO_END
 #define PTNET_IO_RXKICK		(PTNET_IO_END+4)
