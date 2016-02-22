@@ -1170,30 +1170,16 @@ static int
 ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 		unsigned *rxr, unsigned *rxd)
 {
-	struct netmap_pt_guest_adapter *ptna_nm =
-		(struct netmap_pt_guest_adapter *)na;
-	struct paravirt_csb *csb;
-	int ret;
+	struct ptnet_info *pi = netdev_priv(na->ifp);
 
-	if (ptna_nm->csb == NULL) {
-		pr_err("%s: NULL CSB pointer\n", __func__);
-		return EINVAL;
-	}
-	csb = ptna_nm->csb;
-
-	ret = ptnet_nm_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
-	if (ret) {
-		return ret;
-	}
-
-	*txr = csb->num_tx_rings;
-	*rxr = csb->num_rx_rings;
+	*txr = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_RINGS);
+	*rxr = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_RINGS);
 #if 1
 	*txr = 1;
 	*rxr = 1;
 #endif
-	*txd = csb->num_tx_slots;
-	*rxd = csb->num_rx_slots;
+	*txd = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_SLOTS);
+	*rxd = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_SLOTS);
 
 	pr_info("txr %u, rxr %u, txd %u, rxd %u\n",
 		*txr, *rxr, *txd, *rxd);
@@ -1269,6 +1255,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	uint32_t wanted_features = NET_PTN_FEATURES_BASE;
 	struct net_device *netdev;
 	struct netmap_adapter na_arg;
+	unsigned int nifp_offset;
 	struct ptnet_info *pi;
 	uint8_t macaddr[6];
 	uint32_t macreg;
@@ -1363,14 +1350,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 #endif /* PTNET_CSB_ALLOC */
 
-	/* Ask the device to fill in some configuration fields. Here we
-	 * just need nifp_offset. */
-	err = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_CONFIG);
-	if (err) {
-		D("Failed to get nifp_offset from passthrough device");
-		goto err_ptfeat;
-	}
-
 	netdev->netdev_ops = &ptnet_netdev_ops;
 	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
 
@@ -1417,10 +1396,13 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err)
 		goto err_netreg;
 
+	/* Read the nifp_offset for the passed-through interface. */
+	nifp_offset = ioread32(pi->ioaddr + PTNET_IO_NIFP_OFS);
+
 	/* Attach a guest pass-through netmap adapter to this device. */
 	na_arg = ptnet_nm_ops;
 	na_arg.ifp = pi->netdev;
-	netmap_pt_guest_attach(&na_arg, pi->csb, pi->csb->nifp_offset,
+	netmap_pt_guest_attach(&na_arg, pi->csb, nifp_offset,
 			       ptnet_nm_ptctl);
 	/* Now a netmap adapter for this device has been allocated, and it
 	 * can be accessed through NA(ifp). We have to initialize the CSB
