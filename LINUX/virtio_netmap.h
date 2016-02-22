@@ -955,13 +955,15 @@ static int
 virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
+	struct paravirt_csb *csb = ptna->csb;
 	struct ifnet *ifp = na->ifp;
 	u_int ring_nr = kring->ring_id;
 	struct virtnet_info *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_TX_VQ(vi, ring_nr);
 	bool notify;
 
-	notify = netmap_pt_guest_txsync(kring, flags);
+	notify = netmap_pt_guest_txsync(&csb->tx_ring, kring, flags);
 	if (notify)
 		virtqueue_notify(vq);
 
@@ -979,13 +981,15 @@ static int
 virtio_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
+	struct netmap_pt_guest_adapter *ptna = (struct netmap_pt_guest_adapter *)na;
+	struct paravirt_csb *csb = ptna->csb;
 	struct ifnet *ifp = na->ifp;
 	u_int ring_nr = kring->ring_id;
 	struct virtnet_info *vi = netdev_priv(ifp);
 	struct virtqueue *vq = GET_RX_VQ(vi, ring_nr);
 	bool notify;
 
-	notify = netmap_pt_guest_rxsync(kring, flags);
+	notify = netmap_pt_guest_rxsync(&csb->rx_ring, kring, flags);
 	if (notify)
 		virtqueue_notify(vq);
 
@@ -1075,6 +1079,7 @@ virtio_netmap_attach(struct virtnet_info *vi)
 		virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
 			(virtio_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
 		struct paravirt_csb *csb;
+		int err;
 
 		D("ptnetmap supported");
 		na.nm_register = virtio_ptnetmap_reg;
@@ -1089,7 +1094,16 @@ virtio_netmap_attach(struct virtnet_info *vi)
 			return;
 		}
 
-		netmap_pt_guest_attach(&na, csb, virtio_ptnetmap_ptctl);
+		/* Ask the device to fill in some configuration fields. Here we
+		 * just need nifp_offset. */
+		err = virtio_ptnetmap_ptctl(na.ifp, NET_PARAVIRT_PTCTL_CONFIG);
+		if (err) {
+			D("Failed to get nifp_offset from passthrough device");
+			return;
+		}
+
+		netmap_pt_guest_attach(&na, csb, csb->nifp_offset,
+				       virtio_ptnetmap_ptctl);
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	{

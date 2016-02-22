@@ -2050,13 +2050,16 @@ typedef uint32_t (*nm_pt_guest_ptctl_t)(struct ifnet *, uint32_t);
  */
 struct netmap_pt_guest_adapter {
 	struct netmap_hw_adapter hwup;
-	struct paravirt_csb *csb;
+	void *csb;
 };
 
-int netmap_pt_guest_attach(struct netmap_adapter *, struct paravirt_csb *,
-			   nm_pt_guest_ptctl_t);
-bool netmap_pt_guest_txsync(struct netmap_kring *kring, int flags);
-bool netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags);
+int netmap_pt_guest_attach(struct netmap_adapter *, void *,
+			   unsigned int, nm_pt_guest_ptctl_t);
+struct pt_ring;
+bool netmap_pt_guest_txsync(struct pt_ring *ptring, struct netmap_kring *kring,
+			    int flags);
+bool netmap_pt_guest_rxsync(struct pt_ring *ptring, struct netmap_kring *kring,
+			    int flags);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */

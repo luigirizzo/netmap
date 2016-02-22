@@ -293,7 +293,7 @@ struct ptnetmap_cfg {
 #define PTNETMAP_CFG_FEAT_IOCTL		0x0004
 	struct nm_kth_event_cfg tx_ring;	/* TX eventfds/ioctl */
 	struct nm_kth_event_cfg rx_ring;	/* RX eventfds/ioctl */
-        void *csb;				/* CSB */
+        void *ptrings;				/* ptrings area inside CSB */
 };
 
 /*

@@ -172,7 +172,8 @@ struct ptnetmap_state {
     struct nm_kthread *ptk_tx, *ptk_rx;		/* kthreads pointers */
 
     struct ptnetmap_cfg config;                 /* rings configuration */
-    struct paravirt_csb __user *csb;		/* shared page with the guest */
+    struct pt_ring __user *tx_ring;		/* shared memory with the guest (TX) */
+    struct pt_ring __user *rx_ring;		/* shared memory with the guest (RX) */
 
     bool stopped;
 
@@ -214,27 +215,27 @@ ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur
 
 /* Enable or disable TX kick to the host */
 static inline void
-ptnetmap_tx_set_hostkick(struct paravirt_csb __user *csb, uint32_t val)
+ptnetmap_tx_set_hostkick(struct pt_ring __user *ptring, uint32_t val)
 {
-    CSB_WRITE(csb, host_need_txkick, val);
+    CSB_WRITE(ptring, host_need_kick, val);
 }
 
 /* Check if TX kick to the guest is enable or disable */
 static inline uint32_t
-ptnetmap_tx_get_guestkick(struct paravirt_csb __user *csb)
+ptnetmap_tx_get_guestkick(struct pt_ring __user *ptring)
 {
     uint32_t v;
 
-    CSB_READ(csb, guest_need_txkick, v);
+    CSB_READ(ptring, guest_need_kick, v);
 
     return v;
 }
 
 /* Enable or disable TX kick to the guest */
 static inline void
-ptnetmap_tx_set_guestkick(struct paravirt_csb __user *csb, uint32_t val)
+ptnetmap_tx_set_guestkick(struct pt_ring __user *ptring, uint32_t val)
 {
-    CSB_WRITE(csb, guest_need_txkick, val);
+    CSB_WRITE(ptring, guest_need_kick, val);
 }
 
 /* Handle TX events: from the guest or from the backend */
@@ -242,14 +243,13 @@ static void
 ptnetmap_tx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
+    struct pt_ring __user *ptring;
     struct netmap_kring *kring;
-    struct paravirt_csb __user *csb = NULL;
-    struct pt_ring __user *csb_ring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t num_slots;
     bool more_txspace = false;
     int batch;
-    IFRATE(uint32_t pre_tail;)
+    IFRATE(uint32_t pre_tail);
 
     if (unlikely(!pts || !pts->pth_na)) {
         D("ERROR ptnetmap state %p, ptnetmap host adapter %p", pts,
@@ -272,17 +272,16 @@ ptnetmap_tx_handler(void *data)
     /* This is a guess, to be fixed in the rate callback. */
     IFRATE(pts->rate_ctx.new.gtxk++);
 
-    csb = pts->csb;
-    csb_ring = &csb->tx_ring; /* netmap TX kring pointers in CSB */
+    ptring = pts->tx_ring; /* netmap TX kring pointers in CSB */
     num_slots = kring->nkr_num_slots;
 
     g_ring.head = kring->rhead;
     g_ring.cur = kring->rcur;
 
     /* Disable notifications. */
-    ptnetmap_tx_set_hostkick(csb, 0);
+    ptnetmap_tx_set_hostkick(ptring, 0);
     /* Copy the guest kring pointers from the CSB */
-    ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
+    ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
 
     for (;;) {
 	/* If guest moves ahead too fast, let's cut the move so
@@ -312,7 +311,7 @@ ptnetmap_tx_handler(void *data)
         if (unlikely(nm_txsync_prologue(kring, &g_ring) >= num_slots)) {
             ptnetmap_ring_reinit(kring, g_ring.head, g_ring.cur);
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(csb, 1);
+            ptnetmap_tx_set_hostkick(ptring, 1);
             break;
         }
 #else /* PTN_AVOID_NM_PROLOGUE */
@@ -326,7 +325,7 @@ ptnetmap_tx_handler(void *data)
         IFRATE(pre_tail = kring->rtail);
         if (unlikely(kring->nm_sync(kring, g_ring.flags))) {
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(csb, 1);
+            ptnetmap_tx_set_hostkick(ptring, 1);
             D("ERROR txsync");
 	    break;
         }
@@ -336,7 +335,7 @@ ptnetmap_tx_handler(void *data)
          * Copy host hwcur and hwtail into the CSB for the guest sync(), and
 	 * do the nm_sync_finalize.
          */
-        ptnetmap_host_write_kring_csb(csb_ring, kring->nr_hwcur,
+        ptnetmap_host_write_kring_csb(ptring, kring->nr_hwcur,
 				      kring->nr_hwtail);
         if (kring->rtail != kring->nr_hwtail) {
 	    /* Some more room available in the parent adapter. */
@@ -353,16 +352,16 @@ ptnetmap_tx_handler(void *data)
 
 #ifndef BUSY_WAIT
         /* Interrupt the guest if needed. */
-        if (more_txspace && ptnetmap_tx_get_guestkick(csb)) {
+        if (more_txspace && ptnetmap_tx_get_guestkick(ptring)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
-            ptnetmap_tx_set_guestkick(csb, 0);
+            ptnetmap_tx_set_guestkick(ptring, 0);
             nm_os_kthread_send_irq(pts->ptk_tx);
             IFRATE(pts->rate_ctx.new.htxk++);
             more_txspace = false;
         }
 #endif
         /* Read CSB to see if there is more work to do. */
-        ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
+        ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
 #ifndef BUSY_WAIT
         if (g_ring.head == kring->rhead) {
             /*
@@ -372,13 +371,13 @@ ptnetmap_tx_handler(void *data)
              */
             usleep_range(1,1);
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(csb, 1);
+            ptnetmap_tx_set_hostkick(ptring, 1);
             /* Doublecheck. */
-            ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
+            ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
             if (g_ring.head != kring->rhead) {
 		/* We won the race condition, there are more packets to
 		 * transmit. Disable notifications and do another cycle */
-		ptnetmap_tx_set_hostkick(csb, 0);
+		ptnetmap_tx_set_hostkick(ptring, 0);
 		continue;
 	    }
 	    break;
@@ -399,8 +398,8 @@ ptnetmap_tx_handler(void *data)
 
     nm_kr_put(kring);
 
-    if (more_txspace && ptnetmap_tx_get_guestkick(csb)) {
-        ptnetmap_tx_set_guestkick(csb, 0);
+    if (more_txspace && ptnetmap_tx_get_guestkick(ptring)) {
+        ptnetmap_tx_set_guestkick(ptring, 0);
         nm_os_kthread_send_irq(pts->ptk_tx);
         IFRATE(pts->rate_ctx.new.htxk++);
     }
@@ -414,27 +413,27 @@ ptnetmap_tx_handler(void *data)
 
 /* Enable or disable RX kick to the host */
 static inline void
-ptnetmap_rx_set_hostkick(struct paravirt_csb __user *csb, uint32_t val)
+ptnetmap_rx_set_hostkick(struct pt_ring __user *ptring, uint32_t val)
 {
-    CSB_WRITE(csb, host_need_rxkick, val);
+    CSB_WRITE(ptring, host_need_kick, val);
 }
 
 /* Check if RX kick to the guest is enable or disable */
 static inline uint32_t
-ptnetmap_rx_get_guestkick(struct paravirt_csb __user *csb)
+ptnetmap_rx_get_guestkick(struct pt_ring __user *ptring)
 {
     uint32_t v;
 
-    CSB_READ(csb, guest_need_rxkick, v);
+    CSB_READ(ptring, guest_need_kick, v);
 
     return v;
 }
 
 /* Enable or disable RX kick to the guest */
 static inline void
-ptnetmap_rx_set_guestkick(struct paravirt_csb __user *csb, uint32_t val)
+ptnetmap_rx_set_guestkick(struct pt_ring __user *ptring, uint32_t val)
 {
-    CSB_WRITE(csb, guest_need_rxkick, val);
+    CSB_WRITE(ptring, guest_need_kick, val);
 }
 
 /*
@@ -456,8 +455,7 @@ ptnetmap_rx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
-    struct paravirt_csb __user *csb = NULL;
-    struct pt_ring __user *csb_ring;
+    struct pt_ring __user *ptring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t num_slots;
     int dry_cycles = 0;
@@ -485,17 +483,16 @@ ptnetmap_rx_handler(void *data)
     /* This is a guess, to be fixed in the rate callback. */
     IFRATE(pts->rate_ctx.new.grxk++);
 
-    csb = pts->csb;
-    csb_ring = &csb->rx_ring; /* netmap RX kring pointers in CSB */
+    ptring = pts->rx_ring; /* netmap RX kring pointers in CSB */
     num_slots = kring->nkr_num_slots;
 
     g_ring.head = kring->rhead;
     g_ring.cur = kring->rcur;
 
     /* Disable notifications. */
-    ptnetmap_rx_set_hostkick(csb, 0);
+    ptnetmap_rx_set_hostkick(ptring, 0);
     /* Copy the guest kring pointers from the CSB */
-    ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
+    ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
 
     for (;;) {
 	uint32_t hwtail;
@@ -505,7 +502,7 @@ ptnetmap_rx_handler(void *data)
         if (unlikely(nm_rxsync_prologue(kring, &g_ring) >= num_slots)) {
             ptnetmap_ring_reinit(kring, g_ring.head, g_ring.cur);
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(csb, 1);
+            ptnetmap_rx_set_hostkick(ptring, 1);
             break;
         }
 #else /* PTN_AVOID_NM_PROLOGUE */
@@ -520,7 +517,7 @@ ptnetmap_rx_handler(void *data)
 
         if (unlikely(kring->nm_sync(kring, g_ring.flags))) {
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(csb, 1);
+            ptnetmap_rx_set_hostkick(ptring, 1);
             D("ERROR rxsync()");
 	    break;
         }
@@ -529,7 +526,7 @@ ptnetmap_rx_handler(void *data)
          * Copy host hwcur and hwtail into the CSB for the guest sync()
          */
 	hwtail = NM_ACCESS_ONCE(kring->nr_hwtail);
-        ptnetmap_host_write_kring_csb(csb_ring, kring->nr_hwcur, hwtail);
+        ptnetmap_host_write_kring_csb(ptring, kring->nr_hwcur, hwtail);
         if (kring->rtail != hwtail) {
 	    kring->rtail = hwtail;
             some_recvd = true;
@@ -546,16 +543,16 @@ ptnetmap_rx_handler(void *data)
 
 #ifndef BUSY_WAIT
 	/* Interrupt the guest if needed. */
-        if (some_recvd && ptnetmap_rx_get_guestkick(csb)) {
+        if (some_recvd && ptnetmap_rx_get_guestkick(ptring)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
-            ptnetmap_rx_set_guestkick(csb, 0);
+            ptnetmap_rx_set_guestkick(ptring, 0);
             nm_os_kthread_send_irq(pts->ptk_rx);
             IFRATE(pts->rate_ctx.new.hrxk++);
             some_recvd = false;
         }
 #endif
         /* Read CSB to see if there is more work to do. */
-        ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
+        ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
 #ifndef BUSY_WAIT
         if (ptnetmap_norxslots(kring, g_ring.head)) {
             /*
@@ -565,13 +562,13 @@ ptnetmap_rx_handler(void *data)
              */
             usleep_range(1,1);
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(csb, 1);
+            ptnetmap_rx_set_hostkick(ptring, 1);
             /* Doublecheck. */
-            ptnetmap_host_read_kring_csb(csb_ring, &g_ring, num_slots);
+            ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
             if (!ptnetmap_norxslots(kring, g_ring.head)) {
 		/* We won the race condition, more slots are available. Disable
 		 * notifications and do another cycle. */
-                ptnetmap_rx_set_hostkick(csb, 0);
+                ptnetmap_rx_set_hostkick(ptring, 0);
                 continue;
 	    }
             break;
@@ -596,8 +593,8 @@ ptnetmap_rx_handler(void *data)
     nm_kr_put(kring);
 
     /* Interrupt the guest if needed. */
-    if (some_recvd && ptnetmap_rx_get_guestkick(csb)) {
-        ptnetmap_rx_set_guestkick(csb, 0);
+    if (some_recvd && ptnetmap_rx_get_guestkick(ptring)) {
+        ptnetmap_rx_set_guestkick(ptring, 0);
         nm_os_kthread_send_irq(pts->ptk_rx);
         IFRATE(pts->rate_ctx.new.hrxk++);
     }
@@ -616,23 +613,23 @@ ptnetmap_print_configuration(struct ptnetmap_state *pts)
     D("RX: iofd=%llu, irqfd=%llu",
             (unsigned long long) cfg->rx_ring.ioeventfd,
             (unsigned long long) cfg->rx_ring.irqfd);
-    D("CSB: csb_addr=%p", cfg->csb);
+    D("CSB ptrings: addr=%p", cfg->ptrings);
 
 }
 #endif
 
 /* Copy actual state of the host ring into the CSB for the guest init */
 static int
-ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *ptr)
+ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *ptring)
 {
-    if(CSB_WRITE(ptr, head, kring->rhead))
+    if(CSB_WRITE(ptring, head, kring->rhead))
         goto err;
-    if(CSB_WRITE(ptr, cur, kring->rcur))
+    if(CSB_WRITE(ptring, cur, kring->rcur))
         goto err;
 
-    if(CSB_WRITE(ptr, hwcur, kring->nr_hwcur))
+    if(CSB_WRITE(ptring, hwcur, kring->nr_hwcur))
         goto err;
-    if(CSB_WRITE(ptr, hwtail, NM_ACCESS_ONCE(kring->nr_hwtail)))
+    if(CSB_WRITE(ptring, hwtail, NM_ACCESS_ONCE(kring->nr_hwtail)))
         goto err;
 
     DBG(ptnetmap_kring_dump("ptnetmap_kring_snapshot", kring);)
@@ -650,11 +647,11 @@ ptnetmap_krings_snapshot(struct ptnetmap_state *pts,
     int error = 0;
 
     kring = &pth_na->parent->tx_rings[0];
-    if((error = ptnetmap_kring_snapshot(kring, &pts->csb->tx_ring)))
+    if((error = ptnetmap_kring_snapshot(kring, pts->tx_ring)))
         goto err;
 
     kring = &pth_na->parent->rx_rings[0];
-    error = ptnetmap_kring_snapshot(kring, &pts->csb->rx_ring);
+    error = ptnetmap_kring_snapshot(kring, pts->rx_ring);
 
 err:
     return error;
@@ -777,7 +774,8 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 
     /* Store the ptnetmap configuration provided by the hypervisor. */
     memcpy(&pts->config, cfg, sizeof(struct ptnetmap_cfg));
-    pts->csb = pts->config.csb;
+    pts->tx_ring = pts->config.ptrings;
+    pts->rx_ring = pts->tx_ring + 1;
     DBG(ptnetmap_print_configuration(pts));
 
     /* Create kthreads */
@@ -1215,7 +1213,7 @@ put_out_noputparent:
  * Reconcile host and guest views of the transmit ring.
  *
  * Guest user wants to transmit packets up to the one before ring->head,
- * and guest kernel knows csb->tx_ring.hwcur is the first packet unsent
+ * and guest kernel knows tx_ring->hwcur is the first packet unsent
  * by the host kernel.
  *
  * We push out as many packets as possible, and possibly
@@ -1225,29 +1223,26 @@ put_out_noputparent:
  * block (no space in the ring).
  */
 bool
-netmap_pt_guest_txsync(struct netmap_kring *kring, int flags)
+netmap_pt_guest_txsync(struct pt_ring *ptring, struct netmap_kring *kring,
+		       int flags)
 {
-	struct netmap_adapter *na = kring->na;
-	struct netmap_pt_guest_adapter *ptna =
-		(struct netmap_pt_guest_adapter *)na;
-	struct paravirt_csb *csb = ptna->csb;
 	bool notify = false;
 
 	/* Disable notifications */
-	csb->guest_need_txkick = 0;
+	ptring->guest_need_kick = 0;
 
 	/*
 	 * First part: tell the host (updating the CSB) to process the new
 	 * packets.
 	 */
-	kring->nr_hwcur = csb->tx_ring.hwcur;
-	ptnetmap_guest_write_kring_csb(&csb->tx_ring, kring->rcur, kring->rhead);
+	kring->nr_hwcur = ptring->hwcur;
+	ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
 
         /* Ask for a kick from a guest to the host if needed. */
 	if ((kring->rhead != kring->nr_hwcur &&
-		NM_ACCESS_ONCE(csb->host_need_txkick)) ||
+		NM_ACCESS_ONCE(ptring->host_need_kick)) ||
 			(flags & NAF_FORCE_RECLAIM)) {
-		csb->tx_ring.sync_flags = flags;
+		ptring->sync_flags = flags;
 		notify = true;
 	}
 
@@ -1255,7 +1250,7 @@ netmap_pt_guest_txsync(struct netmap_kring *kring, int flags)
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
 	if (nm_kr_txempty(kring) || (flags & NAF_FORCE_RECLAIM)) {
-                ptnetmap_guest_read_kring_csb(&csb->tx_ring, kring);
+                ptnetmap_guest_read_kring_csb(ptring, kring);
 	}
 
         /*
@@ -1265,17 +1260,17 @@ netmap_pt_guest_txsync(struct netmap_kring *kring, int flags)
          */
 	if (nm_kr_txempty(kring)) {
 		/* Reenable notifications. */
-		csb->guest_need_txkick = 1;
+		ptring->guest_need_kick = 1;
                 /* Double check */
-                ptnetmap_guest_read_kring_csb(&csb->tx_ring, kring);
+                ptnetmap_guest_read_kring_csb(ptring, kring);
                 /* If there is new free space, disable notifications */
 		if (unlikely(!nm_kr_txempty(kring))) {
-			csb->guest_need_txkick = 0;
+			ptring->guest_need_kick = 0;
 		}
 	}
 
-	ND(1,"TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u tail: %u",
-			csb->tx_ring.head, csb->tx_ring.cur, csb->tx_ring.hwtail,
+	RD(1, "TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u tail: %u",
+			ptring->head, ptring->cur, ptring->hwtail,
 			kring->rhead, kring->rcur, kring->nr_hwtail);
 
 	return notify;
@@ -1293,23 +1288,20 @@ netmap_pt_guest_txsync(struct netmap_kring *kring, int flags)
  * block (no more completed slots in the ring).
  */
 bool
-netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags)
+netmap_pt_guest_rxsync(struct pt_ring *ptring, struct netmap_kring *kring,
+		       int flags)
 {
-	struct netmap_adapter *na = kring->na;
-	struct netmap_pt_guest_adapter *ptna =
-		(struct netmap_pt_guest_adapter *)na;
-	struct paravirt_csb *csb = ptna->csb;
 	bool notify = false;
 
         /* Disable notifications */
-	csb->guest_need_rxkick = 0;
+	ptring->guest_need_kick = 0;
 
 	/*
 	 * First part: import newly received packets, by updating the kring
 	 * hwtail to the hwtail known from the host (read from the CSB).
 	 * This also updates the kring hwcur.
 	 */
-        ptnetmap_guest_read_kring_csb(&csb->rx_ring, kring);
+        ptnetmap_guest_read_kring_csb(ptring, kring);
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
 	/*
@@ -1317,11 +1309,11 @@ netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags)
 	 * released, by updating cur and head in the CSB.
 	 */
 	if (kring->rhead != kring->nr_hwcur) {
-		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur,
+		ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
 					       kring->rhead);
                 /* Ask for a kick from the guest to the host if needed. */
-		if (NM_ACCESS_ONCE(csb->host_need_rxkick)) {
-			csb->rx_ring.sync_flags = flags;
+		if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
+			ptring->sync_flags = flags;
 			notify = true;
 		}
 	}
@@ -1333,18 +1325,18 @@ netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags)
          */
 	if (nm_kr_rxempty(kring)) {
 		/* Reenable notifications. */
-                csb->guest_need_rxkick = 1;
+                ptring->guest_need_kick = 1;
                 /* Double check */
-                ptnetmap_guest_read_kring_csb(&csb->rx_ring, kring);
+                ptnetmap_guest_read_kring_csb(ptring, kring);
                 /* If there are new slots, disable notifications. */
 		if (!nm_kr_rxempty(kring)) {
-                        csb->guest_need_rxkick = 0;
+                        ptring->guest_need_kick = 0;
                 }
         }
 
-	ND("RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
-			csb->rx_ring.head, csb->rx_ring.cur, csb->rx_ring.hwtail,
-			kring->rhead, kring->rcur);
+	RD(1, "RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
+		ptring->head, ptring->cur, ptring->hwtail,
+		kring->rhead, kring->rcur);
 
 	return notify;
 }

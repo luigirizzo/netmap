@@ -114,9 +114,9 @@ hang_tmr_callback(unsigned long arg)
 	struct netmap_ring *ring = kring->ring;
 	volatile struct paravirt_csb *csb = pi->csb;
 
-	pr_info("HANG RX: hwc %u h %u c %u hwt %u t %u guest_need_rxkick %u\n",
+	pr_info("HANG RX: hwc %u h %u c %u hwt %u t %u rx.guest_need_kick %u\n",
 		kring->nr_hwcur, ring->head, ring->cur,
-		kring->nr_hwtail, ring->tail, csb->guest_need_rxkick);
+		kring->nr_hwtail, ring->tail, csb->rx_ring.guest_need_kick);
 
 	if (mod_timer(&pi->hang_timer,
 		      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
@@ -300,7 +300,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 				       kring->rhead);
 
         /* Ask for a kick from a guest to the host if needed. */
-	if (NM_ACCESS_ONCE(csb->host_need_txkick) && !skb->xmit_more) {
+	if (NM_ACCESS_ONCE(csb->tx_ring.host_need_kick) && !skb->xmit_more) {
 		csb->tx_ring.sync_flags = NAF_FORCE_RECLAIM;
 		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK);
 	}
@@ -309,14 +309,14 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	 * qdisc layer and enable notifications. */
 	if (ptnet_tx_slots(a.ring) < pi->min_tx_slots) {
 		netif_stop_queue(netdev);
-		csb->guest_need_txkick = 1;
+		csb->tx_ring.guest_need_kick = 1;
 
                 /* Double check. */
 		ptnet_sync_tail(&csb->tx_ring, kring);
 		if (unlikely(ptnet_tx_slots(a.ring) >= pi->min_tx_slots)) {
 			/* More TX space came in the meanwhile. */
 			netif_start_queue(netdev);
-			csb->guest_need_txkick = 0;
+			csb->tx_ring.guest_need_kick = 0;
 		}
 	}
 
@@ -381,13 +381,13 @@ ptnet_napi_schedule(struct ptnet_info *pi)
 	/* Disable RX interrupts and schedule NAPI. */
 
 	if (likely(napi_schedule_prep(&pi->napi))) {
-		/* It's good thing to reset guest_need_rxkick as soon as
+		/* It's good thing to reset rx.guest_need_kick as soon as
 		 * possible. */
-		pi->csb->guest_need_rxkick = 0;
+		pi->csb->rx_ring.guest_need_kick = 0;
 		__napi_schedule(&pi->napi);
 	} else {
 		/* NAPI is already scheduled and we are ok with it. */
-		pi->csb->guest_need_rxkick = 1;
+		pi->csb->rx_ring.guest_need_kick = 1;
 	}
 }
 
@@ -653,7 +653,7 @@ out_of_slots:
 		/* Budget was not fully consumed, since we have no more
 		 * completed RX slots. We can enable notifications and
 		 * exit polling mode. */
-                csb->guest_need_rxkick = 1;
+                csb->rx_ring.guest_need_kick = 1;
 		napi_complete_done(napi, work_done);
 
                 /* Double check for more completed RX slots. */
@@ -681,7 +681,7 @@ out_of_slots:
 		ptnetmap_guest_write_kring_csb(&csb->rx_ring, kring->rcur,
 					       kring->rhead);
 		/* Kick the host if needed. */
-		if (NM_ACCESS_ONCE(csb->host_need_rxkick)) {
+		if (NM_ACCESS_ONCE(csb->rx_ring.host_need_kick)) {
 			csb->rx_ring.sync_flags = NAF_FORCE_READ;
 			iowrite32(0, pi->ioaddr + PTNET_IO_RXKICK);
 		}
@@ -702,10 +702,10 @@ ptnet_netpoll(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 
-	pi->csb->guest_need_txkick = pi->csb->guest_need_rxkick = 0;
+	pi->csb->tx_ring.guest_need_kick = pi->csb->rx_ring.guest_need_kick = 0;
 	ptnet_tx_intr(pi->msix_entries[0].vector, netdev);
 	ptnet_rx_intr(pi->msix_entries[1].vector, netdev);
-	pi->csb->guest_need_txkick = pi->csb->guest_need_rxkick = 1;
+	pi->csb->tx_ring.guest_need_kick = pi->csb->rx_ring.guest_need_kick = 1;
 }
 #endif
 
@@ -1094,7 +1094,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	 * until these will be processed. */
 	if (native && !onoff && na->active_fds == 0) {
 		D("Exit netmap mode, re-enable interrupts");
-		csb->guest_need_txkick = csb->guest_need_rxkick = 1;
+		csb->tx_ring.guest_need_kick = csb->rx_ring.guest_need_kick = 1;
 		if (netif_running(netdev)) {
 			D("Exit netmap mode, schedule NAPI to flush RX ring");
 			ptnet_napi_schedule(pi);
@@ -1172,26 +1172,28 @@ ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 {
 	struct netmap_pt_guest_adapter *ptna_nm =
 		(struct netmap_pt_guest_adapter *)na;
+	struct paravirt_csb *csb;
 	int ret;
 
 	if (ptna_nm->csb == NULL) {
 		pr_err("%s: NULL CSB pointer\n", __func__);
 		return EINVAL;
 	}
+	csb = ptna_nm->csb;
 
 	ret = ptnet_nm_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
 	if (ret) {
 		return ret;
 	}
 
-	*txr = ptna_nm->csb->num_tx_rings;
-	*rxr = ptna_nm->csb->num_rx_rings;
+	*txr = csb->num_tx_rings;
+	*rxr = csb->num_rx_rings;
 #if 1
 	*txr = 1;
 	*rxr = 1;
 #endif
-	*txd = ptna_nm->csb->num_tx_slots;
-	*rxd = ptna_nm->csb->num_rx_slots;
+	*txd = csb->num_tx_slots;
+	*rxd = csb->num_rx_slots;
 
 	pr_info("txr %u, rxr %u, txd %u, rxd %u\n",
 		*txr, *rxr, *txd, *rxd);
@@ -1207,7 +1209,7 @@ ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	bool notify;
 
-	notify = netmap_pt_guest_txsync(kring, flags);
+	notify = netmap_pt_guest_txsync(&pi->csb->tx_ring, kring, flags);
 	if (notify) {
 		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK);
 	}
@@ -1223,7 +1225,7 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	bool notify;
 
-	notify = netmap_pt_guest_rxsync(kring, flags);
+	notify = netmap_pt_guest_rxsync(&pi->csb->rx_ring, kring, flags);
 	if (notify) {
 		iowrite32(0, pi->ioaddr + PTNET_IO_RXKICK);
 	}
@@ -1361,6 +1363,14 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 #endif /* PTNET_CSB_ALLOC */
 
+	/* Ask the device to fill in some configuration fields. Here we
+	 * just need nifp_offset. */
+	err = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_CONFIG);
+	if (err) {
+		D("Failed to get nifp_offset from passthrough device");
+		goto err_ptfeat;
+	}
+
 	netdev->netdev_ops = &ptnet_netdev_ops;
 	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
 
@@ -1410,7 +1420,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Attach a guest pass-through netmap adapter to this device. */
 	na_arg = ptnet_nm_ops;
 	na_arg.ifp = pi->netdev;
-	netmap_pt_guest_attach(&na_arg, pi->csb, ptnet_nm_ptctl);
+	netmap_pt_guest_attach(&na_arg, pi->csb, pi->csb->nifp_offset,
+			       ptnet_nm_ptctl);
 	/* Now a netmap adapter for this device has been allocated, and it
 	 * can be accessed through NA(ifp). We have to initialize the CSB
 	 * pointer. */
