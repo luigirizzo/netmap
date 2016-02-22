@@ -222,12 +222,12 @@ struct paravirt_csb {
 #define PTNET_IO_CTRL		12
 #define PTNET_IO_MAC_LO		16
 #define PTNET_IO_MAC_HI		20
-#define PTNET_IO_TXKICK		24
-#define PTNET_IO_RXKICK		28
-#define PTNET_IO_CSBBAH         32
-#define PTNET_IO_CSBBAL         36
-#define PTNET_IO_END            40
-#define PTNET_IO_MASK           0x3f
+#define PTNET_IO_CSBBAH         24
+#define PTNET_IO_CSBBAL         28
+#define PTNET_IO_END		64
+#define PTNET_IO_TXKICK		PTNET_IO_END
+#define PTNET_IO_RXKICK		(PTNET_IO_END+4)
+#define PTNET_IO_MASK           0xff
 
 /* If defined, CSB is allocated by the guest, not by the host. */
 #define PTNET_CSB_ALLOC
