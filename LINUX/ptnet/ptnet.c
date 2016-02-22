@@ -1183,10 +1183,6 @@ ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 
 	*txr = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_RINGS);
 	*rxr = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_RINGS);
-#if 1
-	*txr = 1;
-	*rxr = 1;
-#endif
 	*txd = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_SLOTS);
 	*rxd = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_SLOTS);
 
