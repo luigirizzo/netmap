@@ -108,8 +108,8 @@
 #if !defined(NETMAP_VIRT_CSB) /*&& !defined(NET_PARAVIRT_CSB_SIZE) XXX: NET_PARAVIRT_CSB_SIZE to avoid oldest CSB */
 #define NETMAP_VIRT_CSB
 
- /* ptnetmap ring fields shared between guest and host */
- struct ptnet_ring {
+/* ptnetmap ring fields shared between guest and host */
+struct ptnet_ring {
 	/* XXX revise the layout to minimize cache bounces. */
 	uint32_t head;		  /* GW+ HR+ the head of the guest netmap_ring */
 	uint32_t cur;		  /* GW+ HR+ the cur of the guest netmap_ring */
@@ -119,8 +119,9 @@
 	uint32_t hwtail;	  /* GR+ HW+ the hwtail of the host netmap_kring */
 	uint32_t host_need_kick;  /* GR+ HW+ guest-->host notification enable */
 	uint32_t sync_flags;	  /* GW+ HR+ the flags of the guest [tx|rx]sync() */
- };
+};
 
+/* This is for legacy ptnetmap (e1000, virtio), it does not support multi-ring. */
 struct paravirt_csb {
     /* XXX revise the layout to minimize cache bounces.
      * Usage is described as follows:
@@ -215,10 +216,7 @@ struct paravirt_csb {
  */
 
 
-/*
- * ptnetmap registers for the ptnet device
- */
-
+/* I/O registers for the ptnet device. */
 #define PTNET_IO_PTFEAT		0
 #define PTNET_IO_PTCTL		4
 #define PTNET_IO_PTSTS		8
@@ -247,6 +245,11 @@ struct paravirt_csb {
 /* Tell the hypervisor to tear down the host --> guest
  * notification system, since guest has deallocated the MSI-X. */
 #define PTNET_CTRL_IRQFINI	2
+
+/* CSB for the ptnet device. */
+struct ptnet_csb {
+	struct ptnet_ring rings[NET_PARAVIRT_CSB_SIZE/sizeof(struct ptnet_ring)];
+};
 
 #endif /* NETMAP_VIRT_CSB */
 
