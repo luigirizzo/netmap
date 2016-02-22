@@ -42,7 +42,7 @@
 
 /*
  * use our version of header structs, rather than bringing in a ton
- * of custom ones
+ * of platform specific ones
  */
 #ifndef ETH_ALEN
 #define ETH_ALEN 6
@@ -90,13 +90,16 @@ struct {
 	uint16_t batch;
 } glob_arg;
 
+/*
+ * the overflow queue is a circular queue of buffers
+ */
 struct overflow_queue {
 	char name[MAX_IFNAMELEN];
 	struct netmap_slot *slots;
-	int head;
-	int tail;
-	int n;
-	int size;
+	uint32_t head;
+	uint32_t tail;
+	uint32_t n;
+	uint32_t size;
 };
 
 static inline void
@@ -300,7 +303,8 @@ void usage()
 
 int main(int argc, char **argv)
 {
-	int ch, i;
+	int ch;
+	uint32_t i;
 	unsigned int iter = 0;
 
 	glob_arg.ifname[0] = '\0';
@@ -355,7 +359,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	int npipes = glob_arg.output_rings;
+	uint32_t npipes = glob_arg.output_rings;
 
 	struct overflow_queue *freeq = NULL;
 
@@ -373,6 +377,8 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+
+	/* we need base_req to specify pipes and extra bufs */
 	struct nmreq base_req;
 	memset(&base_req, 0, sizeof(base_req));
 
@@ -389,7 +395,7 @@ int main(int argc, char **argv)
 		  rxport->nmd->req.nr_tx_slots);
 	}
 
-	int extra_bufs = rxport->nmd->req.nr_arg3;
+	uint32_t extra_bufs = rxport->nmd->req.nr_arg3;
 	struct overflow_queue *oq = NULL;
 	/* reference ring to access the buffers */
 	rxport->ring = NETMAP_RXRING(rxport->nmd->nifp, 0);
@@ -420,6 +426,10 @@ int main(int argc, char **argv)
 	freeq->size = extra_bufs;
 	snprintf(freeq->name, MAX_IFNAMELEN, "free queue");
 
+	/*
+	 * the list of buffers uses the first uint32_t in each buffer
+	 * as the index of the next buffer.
+	 */
 	uint32_t scan;
 	for (scan = rxport->nmd->nifp->ni_bufs_head;
 	     scan;
@@ -524,7 +534,7 @@ run:
 			for (i = 0; i < npipes; i++) {
 				struct port_des *p = &ports[i];
 				struct overflow_queue *q = p->oq;
-				int j, lim;
+				uint32_t j, lim;
 				struct netmap_ring *ring;
 				struct netmap_slot *slot;
 
@@ -610,9 +620,9 @@ run:
 
 				if (!freeq->n) {
 					/* revoke some buffers from the longest overflow queue */
-					int j;
+					uint32_t j;
 					struct port_des *lp = &ports[0];
-					int max = lp->oq->n;
+					uint32_t max = lp->oq->n;
 
 					for (j = 1; j < npipes; j++) {
 						struct port_des *cp = &ports[j];
