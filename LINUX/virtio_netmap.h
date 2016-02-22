@@ -895,7 +895,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		for_rx_tx(t) {
 			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = &NMR(na, t)[i];
-				struct pt_ring *ptr;
+				struct ptnet_ring *ptr;
 
 				if (!nm_kring_pending_on(kring))
 					continue;

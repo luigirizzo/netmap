@@ -2055,10 +2055,10 @@ struct netmap_pt_guest_adapter {
 
 int netmap_pt_guest_attach(struct netmap_adapter *, void *,
 			   unsigned int, nm_pt_guest_ptctl_t);
-struct pt_ring;
-bool netmap_pt_guest_txsync(struct pt_ring *ptring, struct netmap_kring *kring,
+struct ptnet_ring;
+bool netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 			    int flags);
-bool netmap_pt_guest_rxsync(struct pt_ring *ptring, struct netmap_kring *kring,
+bool netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 			    int flags);
 #endif /* WITH_PTNETMAP_GUEST */
 

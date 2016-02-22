@@ -126,7 +126,7 @@ hang_tmr_callback(unsigned long arg)
 #endif
 
 static inline void
-ptnet_sync_tail(struct pt_ring *ptring, struct netmap_kring *kring)
+ptnet_sync_tail(struct ptnet_ring *ptring, struct netmap_kring *kring)
 {
 	struct netmap_ring *ring = kring->ring;
 
@@ -1040,7 +1040,7 @@ ptnet_sync_from_csb(struct paravirt_csb *csb, struct netmap_adapter *na)
 	for_rx_tx(t) {
 		for (i=0; i<nma_get_nrings(na, t); i++) {
 			struct netmap_kring *kring = &NMR(na, t)[i];
-			struct pt_ring *ptring;
+			struct ptnet_ring *ptring;
 
 			ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
 			kring->rhead = kring->ring->head = ptring->head;
@@ -1054,7 +1054,7 @@ ptnet_sync_from_csb(struct paravirt_csb *csb, struct netmap_adapter *na)
 	for_rx_tx(t) {
 		for (i=0; i<nma_get_nrings(na, t); i++) {
 			struct netmap_kring *kring = &NMR(na, t)[i];
-			struct pt_ring *ptring;
+			struct ptnet_ring *ptring;
 
 			ptring = (t == NR_TX ? &csb->tx_ring : &csb->rx_ring);
 			ND("%d: csb {hc %u h %u c %u ht %u}", t, ptring->hwcur,

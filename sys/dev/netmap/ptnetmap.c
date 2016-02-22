@@ -172,8 +172,8 @@ struct ptnetmap_state {
     struct nm_kthread *ptk_tx, *ptk_rx;		/* kthreads pointers */
 
     struct ptnetmap_cfg config;                 /* rings configuration */
-    struct pt_ring __user *tx_ring;		/* shared memory with the guest (TX) */
-    struct pt_ring __user *rx_ring;		/* shared memory with the guest (RX) */
+    struct ptnet_ring __user *tx_ring;		/* shared memory with the guest (TX) */
+    struct ptnet_ring __user *rx_ring;		/* shared memory with the guest (RX) */
 
     bool stopped;
 
@@ -215,14 +215,14 @@ ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur
 
 /* Enable or disable TX kick to the host */
 static inline void
-ptnetmap_tx_set_hostkick(struct pt_ring __user *ptring, uint32_t val)
+ptnetmap_tx_set_hostkick(struct ptnet_ring __user *ptring, uint32_t val)
 {
     CSB_WRITE(ptring, host_need_kick, val);
 }
 
 /* Check if TX kick to the guest is enable or disable */
 static inline uint32_t
-ptnetmap_tx_get_guestkick(struct pt_ring __user *ptring)
+ptnetmap_tx_get_guestkick(struct ptnet_ring __user *ptring)
 {
     uint32_t v;
 
@@ -233,7 +233,7 @@ ptnetmap_tx_get_guestkick(struct pt_ring __user *ptring)
 
 /* Enable or disable TX kick to the guest */
 static inline void
-ptnetmap_tx_set_guestkick(struct pt_ring __user *ptring, uint32_t val)
+ptnetmap_tx_set_guestkick(struct ptnet_ring __user *ptring, uint32_t val)
 {
     CSB_WRITE(ptring, guest_need_kick, val);
 }
@@ -243,7 +243,7 @@ static void
 ptnetmap_tx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
-    struct pt_ring __user *ptring;
+    struct ptnet_ring __user *ptring;
     struct netmap_kring *kring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t num_slots;
@@ -413,14 +413,14 @@ ptnetmap_tx_handler(void *data)
 
 /* Enable or disable RX kick to the host */
 static inline void
-ptnetmap_rx_set_hostkick(struct pt_ring __user *ptring, uint32_t val)
+ptnetmap_rx_set_hostkick(struct ptnet_ring __user *ptring, uint32_t val)
 {
     CSB_WRITE(ptring, host_need_kick, val);
 }
 
 /* Check if RX kick to the guest is enable or disable */
 static inline uint32_t
-ptnetmap_rx_get_guestkick(struct pt_ring __user *ptring)
+ptnetmap_rx_get_guestkick(struct ptnet_ring __user *ptring)
 {
     uint32_t v;
 
@@ -431,7 +431,7 @@ ptnetmap_rx_get_guestkick(struct pt_ring __user *ptring)
 
 /* Enable or disable RX kick to the guest */
 static inline void
-ptnetmap_rx_set_guestkick(struct pt_ring __user *ptring, uint32_t val)
+ptnetmap_rx_set_guestkick(struct ptnet_ring __user *ptring, uint32_t val)
 {
     CSB_WRITE(ptring, guest_need_kick, val);
 }
@@ -455,7 +455,7 @@ ptnetmap_rx_handler(void *data)
 {
     struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
     struct netmap_kring *kring;
-    struct pt_ring __user *ptring;
+    struct ptnet_ring __user *ptring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t num_slots;
     int dry_cycles = 0;
@@ -620,7 +620,7 @@ ptnetmap_print_configuration(struct ptnetmap_state *pts)
 
 /* Copy actual state of the host ring into the CSB for the guest init */
 static int
-ptnetmap_kring_snapshot(struct netmap_kring *kring, struct pt_ring __user *ptring)
+ptnetmap_kring_snapshot(struct netmap_kring *kring, struct ptnet_ring __user *ptring)
 {
     if(CSB_WRITE(ptring, head, kring->rhead))
         goto err;
@@ -1223,7 +1223,7 @@ put_out_noputparent:
  * block (no space in the ring).
  */
 bool
-netmap_pt_guest_txsync(struct pt_ring *ptring, struct netmap_kring *kring,
+netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 		       int flags)
 {
 	bool notify = false;
@@ -1288,7 +1288,7 @@ netmap_pt_guest_txsync(struct pt_ring *ptring, struct netmap_kring *kring,
  * block (no more completed slots in the ring).
  */
 bool
-netmap_pt_guest_rxsync(struct pt_ring *ptring, struct netmap_kring *kring,
+netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 		       int flags)
 {
 	bool notify = false;

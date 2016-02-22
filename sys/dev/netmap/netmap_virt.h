@@ -109,7 +109,7 @@
 #define NETMAP_VIRT_CSB
 
  /* ptnetmap ring fields shared between guest and host */
- struct pt_ring {
+ struct ptnet_ring {
 	/* XXX revise the layout to minimize cache bounces. */
 	uint32_t head;		  /* GW+ HR+ the head of the guest netmap_ring */
 	uint32_t cur;		  /* GW+ HR+ the cur of the guest netmap_ring */
@@ -158,8 +158,8 @@ struct paravirt_csb {
     uint16_t num_rx_slots;         /* number of slots in the RX ring */
 
     /* ptnetmap ring fields */
-    struct pt_ring tx_ring;       /* TX ring fields shared between guest and host */
-    struct pt_ring rx_ring;       /* RX ring fields shared between guest and host */
+    struct ptnet_ring tx_ring;       /* TX ring fields shared between guest and host */
+    struct ptnet_ring rx_ring;       /* RX ring fields shared between guest and host */
 };
 
 #define NET_PARAVIRT_CSB_SIZE   4096
@@ -357,7 +357,7 @@ enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
 
 /* Host: Read kring pointers (head, cur, sync_flags) from CSB */
 static inline void
-ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr,
+ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
 			     struct netmap_ring *g_ring,
 			     uint32_t num_slots)
 {
@@ -407,7 +407,7 @@ ptnetmap_host_read_kring_csb(struct pt_ring __user *ptr,
 
 /* Host: Write kring pointers (hwcur, hwtail) into the CSB */
 static inline void
-ptnetmap_host_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
+ptnetmap_host_write_kring_csb(struct ptnet_ring __user *ptr, uint32_t hwcur,
         uint32_t hwtail)
 {
     /* We must write hwtail before hwcur (see below). */
@@ -428,7 +428,7 @@ ptnetmap_host_write_kring_csb(struct pt_ring __user *ptr, uint32_t hwcur,
 
 /* Guest: Write kring pointers (cur, head) into the CSB */
 static inline void
-ptnetmap_guest_write_kring_csb(struct pt_ring *ptr, uint32_t cur,
+ptnetmap_guest_write_kring_csb(struct ptnet_ring *ptr, uint32_t cur,
 			       uint32_t head)
 {
     /* We must write cur before head for sync reason (see above) */
@@ -441,7 +441,7 @@ ptnetmap_guest_write_kring_csb(struct pt_ring *ptr, uint32_t cur,
 
 /* Guest: Read kring pointers (hwcur, hwtail) from CSB */
 static inline void
-ptnetmap_guest_read_kring_csb(struct pt_ring *ptr, struct netmap_kring *kring)
+ptnetmap_guest_read_kring_csb(struct ptnet_ring *ptr, struct netmap_kring *kring)
 {
     uint32_t old_hwcur = kring->nr_hwcur, old_hwtail = kring->nr_hwtail;
     uint32_t num_slots = kring->nkr_num_slots;
