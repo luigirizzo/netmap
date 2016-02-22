@@ -108,15 +108,18 @@
 #if !defined(NETMAP_VIRT_CSB) /*&& !defined(NET_PARAVIRT_CSB_SIZE) XXX: NET_PARAVIRT_CSB_SIZE to avoid oldest CSB */
 #define NETMAP_VIRT_CSB
 
-/* ptnetmap ring fields shared between guest and host */
-struct pt_ring {
-    /* XXX revise the layout to minimize cache bounces. */
-    uint32_t head;		/* GW+ HR+ the head of the guest netmap_ring */
-    uint32_t cur;		/* GW+ HR+ the cur of the guest netmap_ring */
-    uint32_t hwcur;		/* GR+ HW+ the hwcur of the host netmap_kring */
-    uint32_t hwtail;		/* GR+ HW+ the hwtail of the host netmap_kring */
-    uint32_t sync_flags;	/* GW+ HR+ the flags of the guest [tx|rx]sync() */
-};
+ /* ptnetmap ring fields shared between guest and host */
+ struct pt_ring {
+	/* XXX revise the layout to minimize cache bounces. */
+	uint32_t head;		  /* GW+ HR+ the head of the guest netmap_ring */
+	uint32_t cur;		  /* GW+ HR+ the cur of the guest netmap_ring */
+	uint32_t guest_need_kick; /* GW+ HR+ host-->guest notification enable */
+	char pad[4];
+	uint32_t hwcur;		  /* GR+ HW+ the hwcur of the host netmap_kring */
+	uint32_t hwtail;	  /* GR+ HW+ the hwtail of the host netmap_kring */
+	uint32_t host_need_kick;  /* GR+ HW+ guest-->host notification enable */
+	uint32_t sync_flags;	  /* GW+ HR+ the flags of the guest [tx|rx]sync() */
+ };
 
 struct paravirt_csb {
     /* XXX revise the layout to minimize cache bounces.
