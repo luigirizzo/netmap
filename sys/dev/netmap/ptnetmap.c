@@ -1269,7 +1269,7 @@ netmap_pt_guest_txsync(struct pt_ring *ptring, struct netmap_kring *kring,
 		}
 	}
 
-	RD(1, "TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u tail: %u",
+	ND(1, "TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u tail: %u",
 			ptring->head, ptring->cur, ptring->hwtail,
 			kring->rhead, kring->rcur, kring->nr_hwtail);
 
@@ -1334,7 +1334,7 @@ netmap_pt_guest_rxsync(struct pt_ring *ptring, struct netmap_kring *kring,
                 }
         }
 
-	RD(1, "RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
+	ND(1, "RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
 		ptring->head, ptring->cur, ptring->hwtail,
 		kring->rhead, kring->rcur);
 
