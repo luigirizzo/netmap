@@ -246,18 +246,19 @@ ptnetmap_tx_set_guestkick(struct ptnet_ring __user *ptring, uint32_t val)
 static void
 ptnetmap_tx_handler(void *data)
 {
-    struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
+    struct netmap_kring *kring = data;
+    struct netmap_pt_host_adapter *pth_na =
+		(struct netmap_pt_host_adapter *)kring->na->na_private;
+    struct ptnetmap_state *pts = pth_na->ptn_state;
     struct ptnet_ring __user *ptring;
-    struct netmap_kring *kring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
-    uint32_t num_slots;
     bool more_txspace = false;
+    uint32_t num_slots;
     int batch;
     IFRATE(uint32_t pre_tail);
 
-    if (unlikely(!pts || !pts->pth_na)) {
-        D("ERROR ptnetmap state %p, ptnetmap host adapter %p", pts,
-	   pts ? pts->pth_na : NULL);
+    if (unlikely(!pts)) {
+        D("ERROR ptnetmap state is NULL");
         return;
     }
 
@@ -265,8 +266,6 @@ ptnetmap_tx_handler(void *data)
         RD(1, "backend netmap is being stopped");
         return;
     }
-
-    kring = &pts->pth_na->up.tx_rings[0];
 
     if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
         D("ERROR nm_kr_tryget()");
@@ -277,7 +276,7 @@ ptnetmap_tx_handler(void *data)
     IFRATE(pts->rate_ctx.new.gtxk++);
 
     /* Get TX ptring pointer from the CSB. */
-    ptring = &pts->ptrings[kring->ring_id];
+    ptring = pts->ptrings + kring->ring_id;
     num_slots = kring->nkr_num_slots;
 
     g_ring.head = kring->rhead;
@@ -458,8 +457,10 @@ ptnetmap_norxslots(struct netmap_kring *kring, uint32_t g_head)
 static void
 ptnetmap_rx_handler(void *data)
 {
-    struct ptnetmap_state *pts = (struct ptnetmap_state *) data;
-    struct netmap_kring *kring;
+    struct netmap_kring *kring = data;
+    struct netmap_pt_host_adapter *pth_na =
+		(struct netmap_pt_host_adapter *)kring->na->na_private;
+    struct ptnetmap_state *pts = pth_na->ptn_state;
     struct ptnet_ring __user *ptring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     uint32_t num_slots;
@@ -478,8 +479,6 @@ ptnetmap_rx_handler(void *data)
 	return;
     }
 
-    kring = &pts->pth_na->up.rx_rings[0];
-
     if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
         D("ERROR nm_kr_tryget()");
 	return;
@@ -488,7 +487,8 @@ ptnetmap_rx_handler(void *data)
     /* This is a guess, to be fixed in the rate callback. */
     IFRATE(pts->rate_ctx.new.grxk++);
 
-    ptring = &pts->ptrings[1]; /* netmap RX kring pointers in CSB */
+    /* Get RX ptring pointer from the CSB. */
+    ptring = pts->ptrings + (pth_na->up.num_tx_rings + kring->ring_id);
     num_slots = kring->nkr_num_slots;
 
     g_ring.head = kring->rhead;
@@ -646,7 +646,7 @@ err:
 
 static int
 ptnetmap_krings_snapshot(struct ptnetmap_state *pts,
-		struct netmap_pt_host_adapter *pth_na)
+			 struct netmap_pt_host_adapter *pth_na)
 {
     struct netmap_kring *kring;
     int error = 0;
@@ -667,13 +667,14 @@ err:
  */
 
 static int
-ptnetmap_create_kthreads(struct ptnetmap_state *pts)
+ptnetmap_create_kthreads(struct ptnetmap_state *pts,
+			 struct netmap_pt_host_adapter *pth_na)
 {
     struct nm_kthread_cfg nmk_cfg;
 
-    nmk_cfg.worker_private = pts;
 
     /* TX kthread */
+    nmk_cfg.worker_private = &pth_na->up.tx_rings[0];
     nmk_cfg.type = PTK_TX;
     nmk_cfg.event = pts->config.tx_ring;
     nmk_cfg.worker_fn = ptnetmap_tx_handler;
@@ -684,6 +685,7 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts)
     }
 
     /* RX kthread */
+    nmk_cfg.worker_private = &pth_na->up.rx_rings[0];
     nmk_cfg.type = PTK_RX;
     nmk_cfg.event = pts->config.rx_ring;
     nmk_cfg.worker_fn = ptnetmap_rx_handler;
@@ -784,7 +786,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     DBG(ptnetmap_print_configuration(pts));
 
     /* Create kthreads */
-    if ((ret = ptnetmap_create_kthreads(pts))) {
+    if ((ret = ptnetmap_create_kthreads(pts, pth_na))) {
         D("ERROR ptnetmap_create_kthreads()");
         goto err;
     }
