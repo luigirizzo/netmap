@@ -80,7 +80,7 @@ struct compact_ipv6_hdr {
 #define MAX_IFNAMELEN 	64
 #define DEF_OUT_PIPES 	2
 #define DEF_EXTRA_BUFS 	0
-#define DEF_BATCH	512
+#define DEF_BATCH	2048
 #define BUF_REVOKE	100
 
 struct {
