@@ -170,7 +170,7 @@ rate_batch_stats_update(struct rate_batch_stats *bf, uint32_t pre_tail,
 
 struct ptnetmap_state {
     /* Kthreads. */
-    struct nm_kthread *ptk_tx, *ptk_rx;
+    struct nm_kthread **kthreads;
 
     /* Configuration of rings (ioeventfds, ...). */
     struct ptnetmap_cfg config;
@@ -253,6 +253,7 @@ ptnetmap_tx_handler(void *data)
     struct ptnet_ring __user *ptring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     bool more_txspace = false;
+    struct nm_kthread *kth;
     uint32_t num_slots;
     int batch;
     IFRATE(uint32_t pre_tail);
@@ -277,8 +278,9 @@ ptnetmap_tx_handler(void *data)
 
     /* Get TX ptring pointer from the CSB. */
     ptring = pts->ptrings + kring->ring_id;
-    num_slots = kring->nkr_num_slots;
+    kth = pts->kthreads[kring->ring_id];
 
+    num_slots = kring->nkr_num_slots;
     g_ring.head = kring->rhead;
     g_ring.cur = kring->rcur;
 
@@ -359,7 +361,7 @@ ptnetmap_tx_handler(void *data)
         if (more_txspace && ptring_intr_enabled(ptring)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptring_intr_enable(ptring, 0);
-            nm_os_kthread_send_irq(pts->ptk_tx);
+            nm_os_kthread_send_irq(kth);
             IFRATE(pts->rate_ctx.new.htxk++);
             more_txspace = false;
         }
@@ -404,7 +406,7 @@ ptnetmap_tx_handler(void *data)
 
     if (more_txspace && ptring_intr_enabled(ptring)) {
         ptring_intr_enable(ptring, 0);
-        nm_os_kthread_send_irq(pts->ptk_tx);
+        nm_os_kthread_send_irq(kth);
         IFRATE(pts->rate_ctx.new.htxk++);
     }
 }
@@ -432,6 +434,7 @@ ptnetmap_rx_handler(void *data)
     struct ptnetmap_state *pts = pth_na->ptn_state;
     struct ptnet_ring __user *ptring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
+    struct nm_kthread *kth;
     uint32_t num_slots;
     int dry_cycles = 0;
     bool some_recvd = false;
@@ -458,8 +461,9 @@ ptnetmap_rx_handler(void *data)
 
     /* Get RX ptring pointer from the CSB. */
     ptring = pts->ptrings + (pth_na->up.num_tx_rings + kring->ring_id);
-    num_slots = kring->nkr_num_slots;
+    kth = pts->kthreads[pth_na->up.num_tx_rings + kring->ring_id];
 
+    num_slots = kring->nkr_num_slots;
     g_ring.head = kring->rhead;
     g_ring.cur = kring->rcur;
 
@@ -520,7 +524,7 @@ ptnetmap_rx_handler(void *data)
         if (some_recvd && ptring_intr_enabled(ptring)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptring_intr_enable(ptring, 0);
-            nm_os_kthread_send_irq(pts->ptk_rx);
+            nm_os_kthread_send_irq(kth);
             IFRATE(pts->rate_ctx.new.hrxk++);
             some_recvd = false;
         }
@@ -569,7 +573,7 @@ ptnetmap_rx_handler(void *data)
     /* Interrupt the guest if needed. */
     if (some_recvd && ptring_intr_enabled(ptring)) {
         ptring_intr_enable(ptring, 0);
-        nm_os_kthread_send_irq(pts->ptk_rx);
+        nm_os_kthread_send_irq(kth);
         IFRATE(pts->rate_ctx.new.hrxk++);
     }
 }
@@ -640,7 +644,7 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts,
 			 struct netmap_pt_host_adapter *pth_na)
 {
     struct nm_kthread_cfg nmk_cfg;
-
+    int k = 0;
 
     /* TX kthread */
     nmk_cfg.worker_private = &pth_na->up.tx_rings[0];
@@ -648,10 +652,11 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts,
     nmk_cfg.event = pts->config.tx_ring;
     nmk_cfg.worker_fn = ptnetmap_tx_handler;
     nmk_cfg.attach_user = 1; /* attach kthread to user process */
-    pts->ptk_tx = nm_os_kthread_create(&nmk_cfg);
-    if (pts->ptk_tx == NULL) {
+    pts->kthreads[k] = nm_os_kthread_create(&nmk_cfg);
+    if (pts->kthreads[k] == NULL) {
         goto err;
     }
+    k++;
 
     /* RX kthread */
     nmk_cfg.worker_private = &pth_na->up.rx_rings[0];
@@ -659,16 +664,17 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts,
     nmk_cfg.event = pts->config.rx_ring;
     nmk_cfg.worker_fn = ptnetmap_rx_handler;
     nmk_cfg.attach_user = 1; /* attach kthread to user process */
-    pts->ptk_rx = nm_os_kthread_create(&nmk_cfg);
-    if (pts->ptk_rx == NULL) {
+    pts->kthreads[k] = nm_os_kthread_create(&nmk_cfg);
+    if (pts->kthreads[k] == NULL) {
         goto err;
     }
+    k++;
 
     return 0;
 err:
-    if (pts->ptk_tx) {
-        nm_os_kthread_delete(pts->ptk_tx);
-        pts->ptk_tx = NULL;
+    for (; k >= 0; k--) {
+        nm_os_kthread_delete(pts->kthreads[k]);
+	pts->kthreads[k] = NULL;
     }
     return EFAULT;
 }
@@ -686,16 +692,16 @@ ptnetmap_start_kthreads(struct ptnetmap_state *pts)
     pts->stopped = false;
 
     /* TX kthread */
-    //nm_os_kthread_set_affinity(pts->ptk_tx, 2);
-    error = nm_os_kthread_start(pts->ptk_tx);
+    //nm_os_kthread_set_affinity(pts->kthreads[0], 2);
+    error = nm_os_kthread_start(pts->kthreads[0]);
     if (error) {
         return error;
     }
     /* RX kthread */
-    //nm_os_kthread_set_affinity(pts->ptk_tx, 3);
-    error = nm_os_kthread_start(pts->ptk_rx);
+    //nm_os_kthread_set_affinity(pts->kthreads[1], 3);
+    error = nm_os_kthread_start(pts->kthreads[1]);
     if (error) {
-        nm_os_kthread_stop(pts->ptk_tx);
+        nm_os_kthread_stop(pts->kthreads[0]);
         return error;
     }
 
@@ -713,9 +719,9 @@ ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
     pts->stopped = true;
 
     /* TX kthread */
-    nm_os_kthread_stop(pts->ptk_tx);
+    nm_os_kthread_stop(pts->kthreads[0]);
     /* RX kthread */
-    nm_os_kthread_stop(pts->ptk_rx);
+    nm_os_kthread_stop(pts->kthreads[1]);
 }
 
 static int nm_unused_notify(struct netmap_kring *, int);
@@ -728,6 +734,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 {
     unsigned ft_mask = (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD);
     struct ptnetmap_state *pts;
+    unsigned int num_rings;
     int ret, i;
 
     /* Check if ptnetmap state is already there. */
@@ -742,10 +749,15 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
         return EINVAL;
     }
 
-    pts = malloc(sizeof(*pts), M_DEVBUF, M_NOWAIT | M_ZERO);
-    if (!pts)
-        return ENOMEM;
+    num_rings = pth_na->up.num_tx_rings + pth_na->up.num_rx_rings;
 
+    pts = malloc(sizeof(*pts) + num_rings * sizeof(*pts->kthreads),
+		 M_DEVBUF, M_NOWAIT | M_ZERO);
+    if (!pts) {
+        return ENOMEM;
+    }
+
+    pts->kthreads = (struct nm_kthread **)(pts + 1);
     pts->stopped = true;
 
     /* Store the ptnetmap configuration provided by the hypervisor. */
@@ -830,8 +842,8 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     }
 
     /* delete kthreads */
-    nm_os_kthread_delete(pts->ptk_tx);
-    nm_os_kthread_delete(pts->ptk_rx);
+    nm_os_kthread_delete(pts->kthreads[0]);
+    nm_os_kthread_delete(pts->kthreads[1]);
 
     IFRATE(del_timer(&pts->rate_ctx.timer));
 
@@ -926,12 +938,12 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 	/* Notify kthreads (wake up if needed) */
 	if (kring->tx == NR_TX) {
 		ND(1, "TX backend irq");
-		nm_os_kthread_wakeup_worker(pts->ptk_tx);
+		nm_os_kthread_wakeup_worker(pts->kthreads[0]);
 		IFRATE(pts->rate_ctx.new.btxwu++);
 
 	} else {
 		ND(1, "RX backend irq");
-		nm_os_kthread_wakeup_worker(pts->ptk_rx);
+		nm_os_kthread_wakeup_worker(pts->kthreads[1]);
 		IFRATE(pts->rate_ctx.new.brxwu++);
 	}
 
