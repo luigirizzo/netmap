@@ -217,16 +217,16 @@ ptnetmap_ring_reinit(struct netmap_kring *kring, uint32_t g_head, uint32_t g_cur
  */
 
 
-/* Enable or disable TX kick to the host */
+/* Enable or disable guest --> host kicks. */
 static inline void
-ptnetmap_tx_set_hostkick(struct ptnet_ring __user *ptring, uint32_t val)
+ptring_kick_enable(struct ptnet_ring __user *ptring, uint32_t val)
 {
     CSB_WRITE(ptring, host_need_kick, val);
 }
 
-/* Check if TX kick to the guest is enable or disable */
+/* Are guest interrupt enabled or disabled? */
 static inline uint32_t
-ptnetmap_tx_get_guestkick(struct ptnet_ring __user *ptring)
+ptring_intr_enabled(struct ptnet_ring __user *ptring)
 {
     uint32_t v;
 
@@ -235,9 +235,9 @@ ptnetmap_tx_get_guestkick(struct ptnet_ring __user *ptring)
     return v;
 }
 
-/* Enable or disable TX kick to the guest */
+/* Enable or disable guest interrupts. */
 static inline void
-ptnetmap_tx_set_guestkick(struct ptnet_ring __user *ptring, uint32_t val)
+ptring_intr_enable(struct ptnet_ring __user *ptring, uint32_t val)
 {
     CSB_WRITE(ptring, guest_need_kick, val);
 }
@@ -282,8 +282,8 @@ ptnetmap_tx_handler(void *data)
     g_ring.head = kring->rhead;
     g_ring.cur = kring->rcur;
 
-    /* Disable notifications. */
-    ptnetmap_tx_set_hostkick(ptring, 0);
+    /* Disable guest --> host notifications. */
+    ptring_kick_enable(ptring, 0);
     /* Copy the guest kring pointers from the CSB */
     ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
 
@@ -315,7 +315,7 @@ ptnetmap_tx_handler(void *data)
         if (unlikely(nm_txsync_prologue(kring, &g_ring) >= num_slots)) {
             ptnetmap_ring_reinit(kring, g_ring.head, g_ring.cur);
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(ptring, 1);
+            ptring_kick_enable(ptring, 1);
             break;
         }
 #else /* PTN_AVOID_NM_PROLOGUE */
@@ -329,7 +329,7 @@ ptnetmap_tx_handler(void *data)
         IFRATE(pre_tail = kring->rtail);
         if (unlikely(kring->nm_sync(kring, g_ring.flags))) {
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(ptring, 1);
+            ptring_kick_enable(ptring, 1);
             D("ERROR txsync");
 	    break;
         }
@@ -356,9 +356,9 @@ ptnetmap_tx_handler(void *data)
 
 #ifndef BUSY_WAIT
         /* Interrupt the guest if needed. */
-        if (more_txspace && ptnetmap_tx_get_guestkick(ptring)) {
+        if (more_txspace && ptring_intr_enabled(ptring)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
-            ptnetmap_tx_set_guestkick(ptring, 0);
+            ptring_intr_enable(ptring, 0);
             nm_os_kthread_send_irq(pts->ptk_tx);
             IFRATE(pts->rate_ctx.new.htxk++);
             more_txspace = false;
@@ -375,13 +375,13 @@ ptnetmap_tx_handler(void *data)
              */
             usleep_range(1,1);
             /* Reenable notifications. */
-            ptnetmap_tx_set_hostkick(ptring, 1);
+            ptring_kick_enable(ptring, 1);
             /* Doublecheck. */
             ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
             if (g_ring.head != kring->rhead) {
 		/* We won the race condition, there are more packets to
 		 * transmit. Disable notifications and do another cycle */
-		ptnetmap_tx_set_hostkick(ptring, 0);
+		ptring_kick_enable(ptring, 0);
 		continue;
 	    }
 	    break;
@@ -402,42 +402,11 @@ ptnetmap_tx_handler(void *data)
 
     nm_kr_put(kring);
 
-    if (more_txspace && ptnetmap_tx_get_guestkick(ptring)) {
-        ptnetmap_tx_set_guestkick(ptring, 0);
+    if (more_txspace && ptring_intr_enabled(ptring)) {
+        ptring_intr_enable(ptring, 0);
         nm_os_kthread_send_irq(pts->ptk_tx);
         IFRATE(pts->rate_ctx.new.htxk++);
     }
-}
-
-
-/*
- * RX functions to set/get and to handle host/guest kick.
- */
-
-
-/* Enable or disable RX kick to the host */
-static inline void
-ptnetmap_rx_set_hostkick(struct ptnet_ring __user *ptring, uint32_t val)
-{
-    CSB_WRITE(ptring, host_need_kick, val);
-}
-
-/* Check if RX kick to the guest is enable or disable */
-static inline uint32_t
-ptnetmap_rx_get_guestkick(struct ptnet_ring __user *ptring)
-{
-    uint32_t v;
-
-    CSB_READ(ptring, guest_need_kick, v);
-
-    return v;
-}
-
-/* Enable or disable RX kick to the guest */
-static inline void
-ptnetmap_rx_set_guestkick(struct ptnet_ring __user *ptring, uint32_t val)
-{
-    CSB_WRITE(ptring, guest_need_kick, val);
 }
 
 /*
@@ -495,7 +464,7 @@ ptnetmap_rx_handler(void *data)
     g_ring.cur = kring->rcur;
 
     /* Disable notifications. */
-    ptnetmap_rx_set_hostkick(ptring, 0);
+    ptring_kick_enable(ptring, 0);
     /* Copy the guest kring pointers from the CSB */
     ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
 
@@ -507,7 +476,7 @@ ptnetmap_rx_handler(void *data)
         if (unlikely(nm_rxsync_prologue(kring, &g_ring) >= num_slots)) {
             ptnetmap_ring_reinit(kring, g_ring.head, g_ring.cur);
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(ptring, 1);
+            ptring_kick_enable(ptring, 1);
             break;
         }
 #else /* PTN_AVOID_NM_PROLOGUE */
@@ -522,7 +491,7 @@ ptnetmap_rx_handler(void *data)
 
         if (unlikely(kring->nm_sync(kring, g_ring.flags))) {
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(ptring, 1);
+            ptring_kick_enable(ptring, 1);
             D("ERROR rxsync()");
 	    break;
         }
@@ -548,9 +517,9 @@ ptnetmap_rx_handler(void *data)
 
 #ifndef BUSY_WAIT
 	/* Interrupt the guest if needed. */
-        if (some_recvd && ptnetmap_rx_get_guestkick(ptring)) {
+        if (some_recvd && ptring_intr_enabled(ptring)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
-            ptnetmap_rx_set_guestkick(ptring, 0);
+            ptring_intr_enable(ptring, 0);
             nm_os_kthread_send_irq(pts->ptk_rx);
             IFRATE(pts->rate_ctx.new.hrxk++);
             some_recvd = false;
@@ -567,13 +536,13 @@ ptnetmap_rx_handler(void *data)
              */
             usleep_range(1,1);
             /* Reenable notifications. */
-            ptnetmap_rx_set_hostkick(ptring, 1);
+            ptring_kick_enable(ptring, 1);
             /* Doublecheck. */
             ptnetmap_host_read_kring_csb(ptring, &g_ring, num_slots);
             if (!ptnetmap_norxslots(kring, g_ring.head)) {
 		/* We won the race condition, more slots are available. Disable
 		 * notifications and do another cycle. */
-                ptnetmap_rx_set_hostkick(ptring, 0);
+                ptring_kick_enable(ptring, 0);
                 continue;
 	    }
             break;
@@ -598,8 +567,8 @@ ptnetmap_rx_handler(void *data)
     nm_kr_put(kring);
 
     /* Interrupt the guest if needed. */
-    if (some_recvd && ptnetmap_rx_get_guestkick(ptring)) {
-        ptnetmap_rx_set_guestkick(ptring, 0);
+    if (some_recvd && ptring_intr_enabled(ptring)) {
+        ptring_intr_enable(ptring, 0);
         nm_os_kthread_send_irq(pts->ptk_rx);
         IFRATE(pts->rate_ctx.new.hrxk++);
     }
