@@ -176,7 +176,7 @@ struct ptnetmap_state {
     struct ptnetmap_cfg config;
 
     /* Shared memory with the guest (TX/RX) */
-    struct ptnet_ring __user *rings;
+    struct ptnet_ring __user *ptrings;
 
     bool stopped;
 
@@ -276,7 +276,7 @@ ptnetmap_tx_handler(void *data)
     /* This is a guess, to be fixed in the rate callback. */
     IFRATE(pts->rate_ctx.new.gtxk++);
 
-    ptring = &pts->rings[0]; /* netmap TX kring pointers in CSB */
+    ptring = &pts->ptrings[0]; /* netmap TX kring pointers in CSB */
     num_slots = kring->nkr_num_slots;
 
     g_ring.head = kring->rhead;
@@ -487,7 +487,7 @@ ptnetmap_rx_handler(void *data)
     /* This is a guess, to be fixed in the rate callback. */
     IFRATE(pts->rate_ctx.new.grxk++);
 
-    ptring = &pts->rings[1]; /* netmap RX kring pointers in CSB */
+    ptring = &pts->ptrings[1]; /* netmap RX kring pointers in CSB */
     num_slots = kring->nkr_num_slots;
 
     g_ring.head = kring->rhead;
@@ -651,11 +651,11 @@ ptnetmap_krings_snapshot(struct ptnetmap_state *pts,
     int error = 0;
 
     kring = &pth_na->parent->tx_rings[0];
-    if((error = ptnetmap_kring_snapshot(kring, &pts->rings[0])))
+    if((error = ptnetmap_kring_snapshot(kring, &pts->ptrings[0])))
         goto err;
 
     kring = &pth_na->parent->rx_rings[0];
-    error = ptnetmap_kring_snapshot(kring, &pts->rings[1]);
+    error = ptnetmap_kring_snapshot(kring, &pts->ptrings[1]);
 
 err:
     return error;
@@ -778,7 +778,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 
     /* Store the ptnetmap configuration provided by the hypervisor. */
     memcpy(&pts->config, cfg, sizeof(struct ptnetmap_cfg));
-    pts->rings = pts->config.ptrings;
+    pts->ptrings = pts->config.ptrings;
 
     DBG(ptnetmap_print_configuration(pts));
 
