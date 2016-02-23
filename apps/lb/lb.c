@@ -38,6 +38,7 @@
 
 #include <pthread.h>
 
+#include "pkt_hash.h"
 #include "ctrs.h"
 
 
@@ -82,7 +83,7 @@ struct compact_ipv6_hdr {
 #define DEF_OUT_PIPES 	2
 #define DEF_EXTRA_BUFS 	0
 #define DEF_BATCH	2048
-#define DEF_SYSLOG_INT	10
+#define DEF_SYSLOG_INT	600
 #define BUF_REVOKE	100
 
 struct {
@@ -138,6 +139,7 @@ static volatile int do_abort = 0;
 
 uint64_t dropped = 0;
 uint64_t forwarded = 0;
+uint64_t non_ip = 0;
 
 struct port_des {
 	struct my_ctrs ctr;
@@ -210,8 +212,9 @@ print_stats(void *arg)
 					"\"interface\":\"%s\","
 					"\"output_ring\":null,"
 					"\"packets_forwarded\":%"PRIu64","
-					"\"packets_dropped\":%"PRIu64
-				"}", glob_arg.ifname, cur.pkts, cur.drop);
+					"\"packets_dropped\":%"PRIu64","
+					"\"non_ip_packets\":%"PRIu64
+				"}", glob_arg.ifname, forwarded, dropped, non_ip);
 		}
 		x.pkts = cur.pkts - prev.pkts;
 		x.drop = cur.drop - prev.drop;
@@ -262,58 +265,6 @@ static void sigint_h(int sig)
 	(void)sig;		/* UNUSED */
 	do_abort = 1;
 	signal(SIGINT, SIG_DFL);
-}
-
-static inline uint32_t ip_hasher(const char * buffer, const u_int16_t buffer_len)
-{
-	uint32_t l3_offset = sizeof(struct compact_eth_hdr);
-	uint16_t eth_type;
-
-	eth_type = (buffer[12] << 8) + buffer[13];
-
-	while (eth_type == 0x8100 /* VLAN */ ) {
-		l3_offset += 4;
-		eth_type = (buffer[l3_offset - 2] << 8) + buffer[l3_offset - 1];
-	}
-
-	switch (eth_type) {
-	case 0x0800:
-		{
-			/* IPv4 */
-			struct compact_ip_hdr *iph;
-
-			if (unlikely
-			    (buffer_len <
-			     l3_offset + sizeof(struct compact_ip_hdr)))
-				return 0;
-
-			iph = (struct compact_ip_hdr *)&buffer[l3_offset];
-
-			return ntohl(iph->saddr) + ntohl(iph->daddr);
-		}
-		break;
-	case 0x86DD:
-		{
-			/* IPv6 */
-			struct compact_ipv6_hdr *ipv6h;
-			uint32_t *s, *d;
-
-			if (unlikely
-			    (buffer_len <
-			     l3_offset + sizeof(struct compact_ipv6_hdr)))
-				return 0;
-
-			ipv6h = (struct compact_ipv6_hdr *)&buffer[l3_offset];
-			s = (uint32_t *) & ipv6h->saddr;
-			d = (uint32_t *) & ipv6h->daddr;
-
-			return (s[0] + s[1] + s[2] + s[3] + d[0] + d[1] + d[2] +
-				d[3]);
-		}
-		break;
-	default:
-		return 0;	/* Unknown protocol */
-	}
 }
 
 void usage()
@@ -614,11 +565,13 @@ run:
 				next_slot = &rxring->slot[next_cur];
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
-				const char *p = next_buf;
 				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 				__builtin_prefetch(next_buf);
-				uint32_t output_port =
-				    ip_hasher(p, rs->len) % npipes;
+				// 'B' is just a hashing seed
+				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
+				if (hash == 0)
+					non_ip++; // XXX ??
+				uint32_t output_port = hash % glob_arg.output_rings;
 				struct port_des *port = &ports[output_port];
 				struct netmap_ring *ring = port->ring;
 				uint32_t free_buf;

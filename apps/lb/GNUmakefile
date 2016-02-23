@@ -23,5 +23,7 @@ PREFIX ?= /usr/local
 
 all: $(PROGS)
 
+lb: lb.o pkt_hash.o
+
 clean:
 	-@rm -rf $(CLEANFILES)
