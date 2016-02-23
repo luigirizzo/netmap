@@ -169,15 +169,19 @@ rate_batch_stats_update(struct rate_batch_stats *bf, uint32_t pre_tail,
 #endif /* RATE */
 
 struct ptnetmap_state {
-    struct nm_kthread *ptk_tx, *ptk_rx;		/* kthreads pointers */
+    /* Kthreads. */
+    struct nm_kthread *ptk_tx, *ptk_rx;
 
-    struct ptnetmap_cfg config;                 /* rings configuration */
-    struct ptnet_ring __user *tx_ring;		/* shared memory with the guest (TX) */
-    struct ptnet_ring __user *rx_ring;		/* shared memory with the guest (RX) */
+    /* Configuration of rings (ioeventfds, ...). */
+    struct ptnetmap_cfg config;
+
+    /* Shared memory with the guest (TX/RX) */
+    struct ptnet_ring __user *rings;
 
     bool stopped;
 
-    struct netmap_pt_host_adapter *pth_na;	/* backend netmap adapter */
+    /* Netmap adapter wrapping the backend. */
+    struct netmap_pt_host_adapter *pth_na;
 
     IFRATE(struct rate_context rate_ctx;)
 };
@@ -272,7 +276,7 @@ ptnetmap_tx_handler(void *data)
     /* This is a guess, to be fixed in the rate callback. */
     IFRATE(pts->rate_ctx.new.gtxk++);
 
-    ptring = pts->tx_ring; /* netmap TX kring pointers in CSB */
+    ptring = &pts->rings[0]; /* netmap TX kring pointers in CSB */
     num_slots = kring->nkr_num_slots;
 
     g_ring.head = kring->rhead;
@@ -483,7 +487,7 @@ ptnetmap_rx_handler(void *data)
     /* This is a guess, to be fixed in the rate callback. */
     IFRATE(pts->rate_ctx.new.grxk++);
 
-    ptring = pts->rx_ring; /* netmap RX kring pointers in CSB */
+    ptring = &pts->rings[1]; /* netmap RX kring pointers in CSB */
     num_slots = kring->nkr_num_slots;
 
     g_ring.head = kring->rhead;
@@ -647,11 +651,11 @@ ptnetmap_krings_snapshot(struct ptnetmap_state *pts,
     int error = 0;
 
     kring = &pth_na->parent->tx_rings[0];
-    if((error = ptnetmap_kring_snapshot(kring, pts->tx_ring)))
+    if((error = ptnetmap_kring_snapshot(kring, &pts->rings[0])))
         goto err;
 
     kring = &pth_na->parent->rx_rings[0];
-    error = ptnetmap_kring_snapshot(kring, pts->rx_ring);
+    error = ptnetmap_kring_snapshot(kring, &pts->rings[1]);
 
 err:
     return error;
@@ -750,9 +754,9 @@ static int
 ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 		struct ptnetmap_cfg *cfg)
 {
+    unsigned ft_mask = (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD);
     struct ptnetmap_state *pts;
     int ret, i;
-    unsigned ft_mask = (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD);
 
     /* Check if ptnetmap state is already there. */
     if (pth_na->ptn_state) {
@@ -774,8 +778,8 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 
     /* Store the ptnetmap configuration provided by the hypervisor. */
     memcpy(&pts->config, cfg, sizeof(struct ptnetmap_cfg));
-    pts->tx_ring = pts->config.ptrings;
-    pts->rx_ring = pts->tx_ring + 1;
+    pts->rings = pts->config.ptrings;
+
     DBG(ptnetmap_print_configuration(pts));
 
     /* Create kthreads */
