@@ -266,7 +266,7 @@ ptnetmap_tx_handler(void *data)
         return;
     }
 
-    kring = &pts->pth_na->parent->tx_rings[0];
+    kring = &pts->pth_na->up.tx_rings[0];
 
     if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
         D("ERROR nm_kr_tryget()");
@@ -276,7 +276,8 @@ ptnetmap_tx_handler(void *data)
     /* This is a guess, to be fixed in the rate callback. */
     IFRATE(pts->rate_ctx.new.gtxk++);
 
-    ptring = &pts->ptrings[0]; /* netmap TX kring pointers in CSB */
+    /* Get TX ptring pointer from the CSB. */
+    ptring = &pts->ptrings[kring->ring_id];
     num_slots = kring->nkr_num_slots;
 
     g_ring.head = kring->rhead;
@@ -477,7 +478,7 @@ ptnetmap_rx_handler(void *data)
 	return;
     }
 
-    kring = &pts->pth_na->parent->rx_rings[0];
+    kring = &pts->pth_na->up.rx_rings[0];
 
     if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
         D("ERROR nm_kr_tryget()");
@@ -650,11 +651,11 @@ ptnetmap_krings_snapshot(struct ptnetmap_state *pts,
     struct netmap_kring *kring;
     int error = 0;
 
-    kring = &pth_na->parent->tx_rings[0];
+    kring = &pth_na->up.tx_rings[0];
     if((error = ptnetmap_kring_snapshot(kring, &pts->ptrings[0])))
         goto err;
 
-    kring = &pth_na->parent->rx_rings[0];
+    kring = &pth_na->up.rx_rings[0];
     error = ptnetmap_kring_snapshot(kring, &pts->ptrings[1]);
 
 err:
@@ -802,14 +803,14 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     pth_na->parent->nm_notify = nm_unused_notify;
 
     for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
-        pth_na->parent->rx_rings[i].save_notify =
-        	pth_na->parent->rx_rings[i].nm_notify;
-        pth_na->parent->rx_rings[i].nm_notify = nm_pt_host_notify;
+        pth_na->up.rx_rings[i].save_notify =
+        	pth_na->up.rx_rings[i].nm_notify;
+        pth_na->up.rx_rings[i].nm_notify = nm_pt_host_notify;
     }
     for (i = 0; i < pth_na->parent->num_tx_rings; i++) {
-        pth_na->parent->tx_rings[i].save_notify =
-        	pth_na->parent->tx_rings[i].nm_notify;
-        pth_na->parent->tx_rings[i].nm_notify = nm_pt_host_notify;
+        pth_na->up.tx_rings[i].save_notify =
+        	pth_na->up.tx_rings[i].nm_notify;
+        pth_na->up.tx_rings[i].nm_notify = nm_pt_host_notify;
     }
 
 #ifdef RATE
@@ -847,14 +848,14 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     pth_na->parent->na_private = NULL;
 
     for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
-        pth_na->parent->rx_rings[i].nm_notify =
-        	pth_na->parent->rx_rings[i].save_notify;
-        pth_na->parent->rx_rings[i].save_notify = NULL;
+        pth_na->up.rx_rings[i].nm_notify =
+        	pth_na->up.rx_rings[i].save_notify;
+        pth_na->up.rx_rings[i].save_notify = NULL;
     }
     for (i = 0; i < pth_na->parent->num_tx_rings; i++) {
-        pth_na->parent->tx_rings[i].nm_notify =
-        	pth_na->parent->tx_rings[i].save_notify;
-        pth_na->parent->tx_rings[i].save_notify = NULL;
+        pth_na->up.tx_rings[i].nm_notify =
+        	pth_na->up.tx_rings[i].save_notify;
+        pth_na->up.tx_rings[i].save_notify = NULL;
     }
 
     /* delete kthreads */
@@ -1023,8 +1024,8 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
     }
 
     /* A ptnetmap host adapter points the very same krings
-     * as its parent adapter. However, these pointers are
-     * currently never used. */
+     * as its parent adapter. These pointer are used in the
+     * TX/RX worker functions. */
     na->tx_rings = parent->tx_rings;
     na->rx_rings = parent->rx_rings;
     na->tailroom = parent->tailroom; //XXX

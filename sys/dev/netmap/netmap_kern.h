@@ -454,7 +454,7 @@ struct netmap_kring {
 
 	uint32_t	users;		/* existing bindings for this ring */
 
-	uint32_t	ring_id;	/* debugging */
+	uint32_t	ring_id;	/* kring identifier */
 	enum txrx	tx;		/* kind of ring (tx or rx) */
 	char name[64];			/* diagnostic */
 
