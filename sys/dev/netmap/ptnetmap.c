@@ -877,7 +877,7 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
         return;
     }
 
-    /* restore parent adapter callbacks */
+    /* Restore parent adapter callbacks. */
     pth_na->parent->nm_notify = pth_na->parent_nm_notify;
     pth_na->parent->na_private = NULL;
 
@@ -1025,7 +1025,7 @@ nm_pt_host_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
     struct netmap_adapter *parent = pth_na->parent;
     int error;
 
-    //XXX: maybe call parent->nm_config is better
+    //XXX: maybe calling parent->nm_config is better
 
     /* forward the request */
     error = netmap_update_config(parent);
