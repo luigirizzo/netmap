@@ -1268,16 +1268,19 @@ static struct netmap_adapter ptnet_nm_ops = {
 static int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
-	uint32_t wanted_features = NET_PTN_FEATURES_BASE;
+	uint32_t ptfeatures = NET_PTN_FEATURES_BASE;
 	struct net_device *netdev;
 	struct netmap_adapter na_arg;
+	unsigned int queue_pairs;
 	unsigned int nifp_offset;
 	struct ptnet_info *pi;
 	uint8_t macaddr[6];
 	uint32_t macreg;
+	u8* __iomem ioaddr;
 	int bars;
 	int err;
 
+	/* PCI I/O BAR initialization. */
 	bars = pci_select_bars(pdev, IORESOURCE_MEM | IORESOURCE_IO);
 	err = pci_enable_device(pdev);
 	if (err) {
@@ -1292,13 +1295,39 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_set_master(pdev);
 	err = pci_save_state(pdev);
 	if (err) {
-		goto err_alloc_etherdev;
+		goto err_iomap;
 	}
 
+	err = -EIO;
+	pr_info("IO BAR (registers): start 0x%llx, len %llu, flags 0x%lx\n",
+		pci_resource_start(pdev, PTNETMAP_IO_PCI_BAR),
+		pci_resource_len(pdev, PTNETMAP_IO_PCI_BAR),
+		pci_resource_flags(pdev, PTNETMAP_IO_PCI_BAR));
+
+	ioaddr = pci_iomap(pdev, PTNETMAP_IO_PCI_BAR, 0);
+	if (!ioaddr) {
+		goto err_iomap;
+	}
+
+	/* Check if we are supported by the hypervisor. If not,
+	 * bail out immediately. */
+	if (ptnet_vnet_hdr) {
+		ptfeatures |= NET_PTN_FEATURES_VNET_HDR;
+	}
+	iowrite32(ptfeatures, ioaddr + PTNET_IO_PTFEAT); /* wanted */
+	ptfeatures = ioread32(ioaddr + PTNET_IO_PTFEAT); /* acked */
+	if (!(ptfeatures & NET_PTN_FEATURES_BASE)) {
+		pr_err("Hypervisor doesn't support netmap passthrough\n");
+		goto err_ptfeat;
+	}
+
+	/* Allocate a multi-queue Ethernet device. */
 	err = -ENOMEM;
-	netdev = alloc_etherdev(sizeof(struct ptnet_info));
+	queue_pairs = min(ioread32(ioaddr + PTNET_IO_NUM_TX_RINGS),
+			  ioread32(ioaddr + PTNET_IO_NUM_RX_RINGS));
+	netdev = alloc_etherdev_mq(sizeof(struct ptnet_info), queue_pairs);
 	if (!netdev) {
-		goto err_alloc_etherdev;
+		goto err_ptfeat;
 	}
 
 	/* Cross-link data structures. */
@@ -1308,29 +1337,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->netdev = netdev;
 	pi->pdev = pdev;
 	pi->bars = bars;
-
-	err = -EIO;
-	pr_info("IO BAR (registers): start 0x%llx, len %llu, flags 0x%lx\n",
-		pci_resource_start(pdev, PTNETMAP_IO_PCI_BAR),
-		pci_resource_len(pdev, PTNETMAP_IO_PCI_BAR),
-		pci_resource_flags(pdev, PTNETMAP_IO_PCI_BAR));
-
-	pi->ioaddr = pci_iomap(pdev, PTNETMAP_IO_PCI_BAR, 0);
-	if (!pi->ioaddr) {
-		goto err_ptfeat;
-	}
-
-	/* Check if we are supported by the hypervisor. If not,
-	 * bail out immediately. */
-	if (ptnet_vnet_hdr) {
-		wanted_features |= NET_PTN_FEATURES_VNET_HDR;
-	}
-	iowrite32(wanted_features, pi->ioaddr + PTNET_IO_PTFEAT);
-	pi->ptfeatures = ioread32(pi->ioaddr + PTNET_IO_PTFEAT);
-	if (!(pi->ptfeatures & NET_PTN_FEATURES_BASE)) {
-		pr_err("Hypervisor doesn't support netmap passthrough\n");
-		goto err_ptfeat;
-	}
+	pi->ioaddr = ioaddr;
+	pi->ptfeatures = ptfeatures;
 
 #ifndef PTNET_CSB_ALLOC
 	/* Map the CSB memory exposed by the device. We don't use
@@ -1343,7 +1351,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->csbaddr = ioremap_cache(pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
 				    pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR));
 	if (!pi->csbaddr)
-		goto err_ptfeat;
+		goto err_csb;
 	pi->csb = (struct ptnet_csb *)pi->csbaddr;
 
 #else  /* PTNET_CSB_ALLOC */
@@ -1351,7 +1359,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Alloc the CSB here and tell the hypervisor its physical address. */
 	pi->csb = kzalloc(sizeof(struct ptnet_csb), GFP_KERNEL);
 	if (!pi->csb) {
-		goto err_ptfeat;
+		goto err_csb;
 	}
 
 	{
@@ -1360,14 +1368,14 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		/* CSB allocation protocol. Write CSBBAH first, then
 		 * CSBBAL. */
 		iowrite32((paddr >> 32) & 0xffffffff,
-			  pi->ioaddr + PTNET_IO_CSBBAH);
+			  ioaddr + PTNET_IO_CSBBAH);
 		iowrite32(paddr & 0xffffffff,
-			  pi->ioaddr + PTNET_IO_CSBBAL);
+			  ioaddr + PTNET_IO_CSBBAL);
 	}
 #endif /* PTNET_CSB_ALLOC */
 
 	pi->csb_rx_rings = pi->csb->rings +
-			   ioread32(pi->ioaddr + PTNET_IO_NUM_TX_RINGS);
+			   ioread32(ioaddr + PTNET_IO_NUM_TX_RINGS);
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
 	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
@@ -1375,10 +1383,10 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
 
 	/* Read MAC address from device and put it into the netdev struct. */
-	macreg = ioread32(pi->ioaddr + PTNET_IO_MAC_HI);
+	macreg = ioread32(ioaddr + PTNET_IO_MAC_HI);
 	macaddr[0] = (macreg >> 8) & 0xff;
 	macaddr[1] = macreg & 0xff;
-	macreg = ioread32(pi->ioaddr + PTNET_IO_MAC_LO);
+	macreg = ioread32(ioaddr + PTNET_IO_MAC_LO);
 	macaddr[2] = (macreg >> 24) & 0xff;
 	macaddr[3] = (macreg >> 16) & 0xff;
 	macaddr[4] = (macreg >> 8) & 0xff;
@@ -1416,13 +1424,13 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_netreg;
 
 	/* Read the nifp_offset for the passed-through interface. */
-	nifp_offset = ioread32(pi->ioaddr + PTNET_IO_NIFP_OFS);
+	nifp_offset = ioread32(ioaddr + PTNET_IO_NIFP_OFS);
 
 	/* Attach a guest pass-through netmap adapter to this device. */
-	ptnet_nm_ops.num_tx_desc = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_SLOTS);
-	ptnet_nm_ops.num_rx_desc = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_SLOTS);
-	ptnet_nm_ops.num_tx_rings = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_RINGS);
-	ptnet_nm_ops.num_rx_rings = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_RINGS);
+	ptnet_nm_ops.num_tx_desc = ioread32(ioaddr + PTNET_IO_NUM_TX_SLOTS);
+	ptnet_nm_ops.num_rx_desc = ioread32(ioaddr + PTNET_IO_NUM_RX_SLOTS);
+	ptnet_nm_ops.num_tx_rings = ioread32(ioaddr + PTNET_IO_NUM_TX_RINGS);
+	ptnet_nm_ops.num_rx_rings = ioread32(ioaddr + PTNET_IO_NUM_RX_RINGS);
 	na_arg = ptnet_nm_ops;
 	na_arg.ifp = pi->netdev;
 	netmap_pt_guest_attach(&na_arg, pi->csb, nifp_offset,
@@ -1462,15 +1470,17 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 err_netreg:
 	ptnet_irqs_fini(pi);
 err_irqs:
-#ifndef  PTNET_CSB_ALLOC
-	iounmap(pi->csbaddr);
-#else  /* PTNET_CSB_ALLOC */
+#ifdef PTNET_CSB_ALLOC
 	kfree(pi->csb);
 #endif /* PTNET_CSB_ALLOC */
-err_ptfeat:
-	iounmap(pi->ioaddr);
+err_csb:
+#ifndef PTNET_CSB_ALLOC
+	iounmap(pi->csbaddr);
+#endif  /* !PTNET_CSB_ALLOC */
 	free_netdev(netdev);
-err_alloc_etherdev:
+err_ptfeat:
+	iounmap(ioaddr);
+err_iomap:
 	pci_release_selected_regions(pdev, bars);
 err_pci_reg:
 	pci_disable_device(pdev);
