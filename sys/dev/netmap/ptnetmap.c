@@ -172,9 +172,6 @@ struct ptnetmap_state {
     /* Kthreads. */
     struct nm_kthread **kthreads;
 
-    /* Configuration of rings (ioeventfds, ...). */
-    struct ptnetmap_cfg config;
-
     /* Shared memory with the guest (TX/RX) */
     struct ptnet_ring __user *ptrings;
 
@@ -580,10 +577,8 @@ ptnetmap_rx_handler(void *data)
 
 #ifdef DEBUG
 static void
-ptnetmap_print_configuration(struct ptnetmap_state *pts)
+ptnetmap_print_configuration(struct ptnetmap_cfg *cfg)
 {
-    struct ptnetmap_cfg *cfg = &pts->config;
-
     D("[PTN] configuration:");
     D("TX: iofd=%llu, irqfd=%llu",
             (unsigned long long) cfg->tx_ring.ioeventfd,
@@ -649,7 +644,8 @@ ptnetmap_krings_snapshot(struct ptnetmap_state *pts,
 
 static int
 ptnetmap_create_kthreads(struct ptnetmap_state *pts,
-			 struct netmap_pt_host_adapter *pth_na)
+			 struct netmap_pt_host_adapter *pth_na,
+			 struct ptnetmap_cfg *cfg)
 {
 	struct nm_kthread_cfg nmk_cfg;
 	unsigned int num_rings;
@@ -662,12 +658,12 @@ ptnetmap_create_kthreads(struct ptnetmap_state *pts,
 		nmk_cfg.attach_user = 1; /* attach kthread to user process */
 		if (k < pth_na->up.num_tx_rings) {
 			nmk_cfg.type = PTK_TX;
-			nmk_cfg.event = pts->config.tx_ring;
+			nmk_cfg.event = cfg->tx_ring;
 			nmk_cfg.worker_fn = ptnetmap_tx_handler;
 			nmk_cfg.worker_private = pth_na->up.tx_rings + k;
 		} else {
 			nmk_cfg.type = PTK_RX;
-			nmk_cfg.event = pts->config.rx_ring;
+			nmk_cfg.event = cfg->rx_ring;
 			nmk_cfg.worker_fn = ptnetmap_rx_handler;
 			nmk_cfg.worker_private = pth_na->up.rx_rings +
 						 k - pth_na->up.num_tx_rings;
@@ -773,14 +769,13 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     pts->kthreads = (struct nm_kthread **)(pts + 1);
     pts->stopped = true;
 
-    /* Store the ptnetmap configuration provided by the hypervisor. */
-    memcpy(&pts->config, cfg, sizeof(struct ptnetmap_cfg));
-    pts->ptrings = pts->config.ptrings;
+    /* Store the CSB address provided by the hypervisor. */
+    pts->ptrings = cfg->ptrings;
 
-    DBG(ptnetmap_print_configuration(pts));
+    DBG(ptnetmap_print_configuration(cfg));
 
     /* Create kthreads */
-    if ((ret = ptnetmap_create_kthreads(pts, pth_na))) {
+    if ((ret = ptnetmap_create_kthreads(pts, pth_na, cfg))) {
         D("ERROR ptnetmap_create_kthreads()");
         goto err;
     }
