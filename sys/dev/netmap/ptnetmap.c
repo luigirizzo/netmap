@@ -943,6 +943,7 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 	struct netmap_pt_host_adapter *pth_na =
 		(struct netmap_pt_host_adapter *)na->na_private;
 	struct ptnetmap_state *pts;
+	int k;
 
 	if (unlikely(!pth_na)) {
 		return NM_IRQ_COMPLETED;
@@ -953,17 +954,18 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 		return NM_IRQ_COMPLETED;
 	}
 
+	k = kring->ring_id;
+
 	/* Notify kthreads (wake up if needed) */
 	if (kring->tx == NR_TX) {
 		ND(1, "TX backend irq");
-		nm_os_kthread_wakeup_worker(pts->kthreads[0]);
 		IFRATE(pts->rate_ctx.new.btxwu++);
-
 	} else {
+		k += pth_na->up.num_tx_rings;
 		ND(1, "RX backend irq");
-		nm_os_kthread_wakeup_worker(pts->kthreads[1]);
 		IFRATE(pts->rate_ctx.new.brxwu++);
 	}
+	nm_os_kthread_wakeup_worker(pts->kthreads[k]);
 
 	return NM_IRQ_COMPLETED;
 }
