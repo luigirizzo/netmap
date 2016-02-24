@@ -2023,7 +2023,7 @@ struct netmap_pt_host_adapter {
 
 	struct netmap_adapter *parent;
 	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
-	void *ptn_state;
+	void *ptns;
 };
 /* ptnetmap HOST routines */
 int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create);

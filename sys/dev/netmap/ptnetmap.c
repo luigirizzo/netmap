@@ -246,7 +246,7 @@ ptnetmap_tx_handler(void *data)
     struct netmap_kring *kring = data;
     struct netmap_pt_host_adapter *pth_na =
 		(struct netmap_pt_host_adapter *)kring->na->na_private;
-    struct ptnetmap_state *pts = pth_na->ptn_state;
+    struct ptnetmap_state *ptns = pth_na->ptns;
     struct ptnet_ring __user *ptring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     bool more_txspace = false;
@@ -255,12 +255,12 @@ ptnetmap_tx_handler(void *data)
     int batch;
     IFRATE(uint32_t pre_tail);
 
-    if (unlikely(!pts)) {
+    if (unlikely(!ptns)) {
         D("ERROR ptnetmap state is NULL");
         return;
     }
 
-    if (unlikely(pts->stopped)) {
+    if (unlikely(ptns->stopped)) {
         RD(1, "backend netmap is being stopped");
         return;
     }
@@ -271,11 +271,11 @@ ptnetmap_tx_handler(void *data)
     }
 
     /* This is a guess, to be fixed in the rate callback. */
-    IFRATE(pts->rate_ctx.new.gtxk++);
+    IFRATE(ptns->rate_ctx.new.gtxk++);
 
     /* Get TX ptring pointer from the CSB. */
-    ptring = pts->ptrings + kring->ring_id;
-    kth = pts->kthreads[kring->ring_id];
+    ptring = ptns->ptrings + kring->ring_id;
+    kth = ptns->kthreads[kring->ring_id];
 
     num_slots = kring->nkr_num_slots;
     g_ring.head = kring->rhead;
@@ -346,7 +346,7 @@ ptnetmap_tx_handler(void *data)
 	    more_txspace = true;
         }
 
-        IFRATE(rate_batch_stats_update(&pts->rate_ctx.new.txbs, pre_tail,
+        IFRATE(rate_batch_stats_update(&ptns->rate_ctx.new.txbs, pre_tail,
 				      kring->rtail, num_slots));
 
         if (unlikely(netmap_verbose & NM_VERB_TXSYNC)) {
@@ -359,7 +359,7 @@ ptnetmap_tx_handler(void *data)
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptring_intr_enable(ptring, 0);
             nm_os_kthread_send_irq(kth);
-            IFRATE(pts->rate_ctx.new.htxk++);
+            IFRATE(ptns->rate_ctx.new.htxk++);
             more_txspace = false;
         }
 #endif
@@ -393,7 +393,7 @@ ptnetmap_tx_handler(void *data)
             break;
         }
 #endif
-        if (unlikely(pts->stopped)) {
+        if (unlikely(ptns->stopped)) {
             D("backend netmap is being stopped");
             break;
         }
@@ -404,7 +404,7 @@ ptnetmap_tx_handler(void *data)
     if (more_txspace && ptring_intr_enabled(ptring)) {
         ptring_intr_enable(ptring, 0);
         nm_os_kthread_send_irq(kth);
-        IFRATE(pts->rate_ctx.new.htxk++);
+        IFRATE(ptns->rate_ctx.new.htxk++);
     }
 }
 
@@ -428,7 +428,7 @@ ptnetmap_rx_handler(void *data)
     struct netmap_kring *kring = data;
     struct netmap_pt_host_adapter *pth_na =
 		(struct netmap_pt_host_adapter *)kring->na->na_private;
-    struct ptnetmap_state *pts = pth_na->ptn_state;
+    struct ptnetmap_state *ptns = pth_na->ptns;
     struct ptnet_ring __user *ptring;
     struct netmap_ring g_ring;	/* guest ring pointer, copied from CSB */
     struct nm_kthread *kth;
@@ -437,13 +437,13 @@ ptnetmap_rx_handler(void *data)
     bool some_recvd = false;
     IFRATE(uint32_t pre_tail);
 
-    if (unlikely(!pts || !pts->pth_na)) {
-        D("ERROR ptnetmap state %p, ptnetmap host adapter %p", pts,
-	  pts ? pts->pth_na : NULL);
+    if (unlikely(!ptns || !ptns->pth_na)) {
+        D("ERROR ptnetmap state %p, ptnetmap host adapter %p", ptns,
+	  ptns ? ptns->pth_na : NULL);
         return;
     }
 
-    if (unlikely(pts->stopped)) {
+    if (unlikely(ptns->stopped)) {
         RD(1, "backend netmap is being stopped");
 	return;
     }
@@ -454,11 +454,11 @@ ptnetmap_rx_handler(void *data)
     }
 
     /* This is a guess, to be fixed in the rate callback. */
-    IFRATE(pts->rate_ctx.new.grxk++);
+    IFRATE(ptns->rate_ctx.new.grxk++);
 
     /* Get RX ptring pointer from the CSB. */
-    ptring = pts->ptrings + (pth_na->up.num_tx_rings + kring->ring_id);
-    kth = pts->kthreads[pth_na->up.num_tx_rings + kring->ring_id];
+    ptring = ptns->ptrings + (pth_na->up.num_tx_rings + kring->ring_id);
+    kth = ptns->kthreads[pth_na->up.num_tx_rings + kring->ring_id];
 
     num_slots = kring->nkr_num_slots;
     g_ring.head = kring->rhead;
@@ -510,7 +510,7 @@ ptnetmap_rx_handler(void *data)
             dry_cycles++;
         }
 
-        IFRATE(rate_batch_stats_update(&pts->rate_ctx.new.rxbs, pre_tail,
+        IFRATE(rate_batch_stats_update(&ptns->rate_ctx.new.rxbs, pre_tail,
 	                               kring->rtail, num_slots));
 
         if (unlikely(netmap_verbose & NM_VERB_RXSYNC))
@@ -522,7 +522,7 @@ ptnetmap_rx_handler(void *data)
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptring_intr_enable(ptring, 0);
             nm_os_kthread_send_irq(kth);
-            IFRATE(pts->rate_ctx.new.hrxk++);
+            IFRATE(ptns->rate_ctx.new.hrxk++);
             some_recvd = false;
         }
 #endif
@@ -559,7 +559,7 @@ ptnetmap_rx_handler(void *data)
             break;
         }
 #endif
-        if (unlikely(pts->stopped)) {
+        if (unlikely(ptns->stopped)) {
             D("backend netmap is being stopped");
             break;
         }
@@ -571,7 +571,7 @@ ptnetmap_rx_handler(void *data)
     if (some_recvd && ptring_intr_enabled(ptring)) {
         ptring_intr_enable(ptring, 0);
         nm_os_kthread_send_irq(kth);
-        IFRATE(pts->rate_ctx.new.hrxk++);
+        IFRATE(ptns->rate_ctx.new.hrxk++);
     }
 }
 
@@ -624,7 +624,7 @@ ptnetmap_kring(struct netmap_pt_host_adapter *pth_na, int k)
 static int
 ptnetmap_krings_snapshot(struct netmap_pt_host_adapter *pth_na)
 {
-	struct ptnetmap_state *pts = pth_na->ptn_state;
+	struct ptnetmap_state *ptns = pth_na->ptns;
 	struct netmap_kring *kring;
 	unsigned int num_rings;
 	int err = 0, k;
@@ -634,7 +634,7 @@ ptnetmap_krings_snapshot(struct netmap_pt_host_adapter *pth_na)
 
 	for (k = 0; k < num_rings; k++) {
 		kring = ptnetmap_kring(pth_na, k);
-		err = ptnetmap_kring_snapshot(kring, pts->ptrings + k);
+		err = ptnetmap_kring_snapshot(kring, ptns->ptrings + k);
 		if (err) {
 			return err;
 		}
@@ -651,7 +651,7 @@ static int
 ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
 			 struct ptnetmap_cfg *cfg)
 {
-	struct ptnetmap_state *pts = pth_na->ptn_state;
+	struct ptnetmap_state *ptns = pth_na->ptns;
 	struct nm_kthread_cfg nmk_cfg;
 	unsigned int num_rings;
 	int k;
@@ -672,8 +672,8 @@ ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
 			nmk_cfg.worker_fn = ptnetmap_rx_handler;
 		}
 
-		pts->kthreads[k] = nm_os_kthread_create(&nmk_cfg);
-		if (pts->kthreads[k] == NULL) {
+		ptns->kthreads[k] = nm_os_kthread_create(&nmk_cfg);
+		if (ptns->kthreads[k] == NULL) {
 			goto err;
 		}
 	}
@@ -681,9 +681,9 @@ ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
 	return 0;
 err:
 	for (k = 0; k < num_rings; k++) {
-		if (pts->kthreads[k]) {
-			nm_os_kthread_delete(pts->kthreads[k]);
-			pts->kthreads[k] = NULL;
+		if (ptns->kthreads[k]) {
+			nm_os_kthread_delete(ptns->kthreads[k]);
+			ptns->kthreads[k] = NULL;
 		}
 	}
 	return EFAULT;
@@ -692,23 +692,23 @@ err:
 static int
 ptnetmap_start_kthreads(struct netmap_pt_host_adapter *pth_na)
 {
-	struct ptnetmap_state *pts = pth_na->ptn_state;
+	struct ptnetmap_state *ptns = pth_na->ptns;
 	int num_rings;
 	int error;
 	int k;
 
-	if (!pts) {
-		D("BUG pts is NULL");
+	if (!ptns) {
+		D("BUG ptns is NULL");
 		return EFAULT;
 	}
 
-	pts->stopped = false;
+	ptns->stopped = false;
 
-	num_rings = pts->pth_na->up.num_tx_rings +
-		    pts->pth_na->up.num_rx_rings;
+	num_rings = ptns->pth_na->up.num_tx_rings +
+		    ptns->pth_na->up.num_rx_rings;
 	for (k = 0; k < num_rings; k++) {
-		//nm_os_kthread_set_affinity(pts->kthreads[k], xxx);
-		error = nm_os_kthread_start(pts->kthreads[k]);
+		//nm_os_kthread_set_affinity(ptns->kthreads[k], xxx);
+		error = nm_os_kthread_start(ptns->kthreads[k]);
 		if (error) {
 			return error;
 		}
@@ -720,21 +720,21 @@ ptnetmap_start_kthreads(struct netmap_pt_host_adapter *pth_na)
 static void
 ptnetmap_stop_kthreads(struct netmap_pt_host_adapter *pth_na)
 {
-	struct ptnetmap_state *pts = pth_na->ptn_state;
+	struct ptnetmap_state *ptns = pth_na->ptns;
 	int num_rings;
 	int k;
 
-	if (!pts) {
+	if (!ptns) {
 		/* Nothing to do. */
 		return;
 	}
 
-	pts->stopped = true;
+	ptns->stopped = true;
 
-	num_rings = pts->pth_na->up.num_tx_rings +
-		    pts->pth_na->up.num_rx_rings;
+	num_rings = ptns->pth_na->up.num_tx_rings +
+		    ptns->pth_na->up.num_rx_rings;
 	for (k = 0; k < num_rings; k++) {
-		nm_os_kthread_stop(pts->kthreads[k]);
+		nm_os_kthread_stop(ptns->kthreads[k]);
 	}
 }
 
@@ -747,12 +747,12 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 		struct ptnetmap_cfg *cfg)
 {
     unsigned ft_mask = (PTNETMAP_CFG_FEAT_CSB | PTNETMAP_CFG_FEAT_EVENTFD);
-    struct ptnetmap_state *pts;
+    struct ptnetmap_state *ptns;
     unsigned int num_rings;
     int ret, i;
 
     /* Check if ptnetmap state is already there. */
-    if (pth_na->ptn_state) {
+    if (pth_na->ptns) {
         D("ERROR adapter %p already in ptnetmap mode", pth_na->parent);
         return EINVAL;
     }
@@ -765,21 +765,21 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 
     num_rings = pth_na->up.num_tx_rings + pth_na->up.num_rx_rings;
 
-    pts = malloc(sizeof(*pts) + num_rings * sizeof(*pts->kthreads),
+    ptns = malloc(sizeof(*ptns) + num_rings * sizeof(*ptns->kthreads),
 		 M_DEVBUF, M_NOWAIT | M_ZERO);
-    if (!pts) {
+    if (!ptns) {
         return ENOMEM;
     }
 
-    pts->kthreads = (struct nm_kthread **)(pts + 1);
-    pts->stopped = true;
+    ptns->kthreads = (struct nm_kthread **)(ptns + 1);
+    ptns->stopped = true;
 
     /* Cross-link data structures. */
-    pth_na->ptn_state = pts;
-    pts->pth_na = pth_na;
+    pth_na->ptns = ptns;
+    ptns->pth_na = pth_na;
 
     /* Store the CSB address provided by the hypervisor. */
-    pts->ptrings = cfg->ptrings;
+    ptns->ptrings = cfg->ptrings;
 
     DBG(ptnetmap_print_configuration(cfg));
 
@@ -811,10 +811,10 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     }
 
 #ifdef RATE
-    memset(&pts->rate_ctx, 0, sizeof(pts->rate_ctx));
-    setup_timer(&pts->rate_ctx.timer, &rate_callback,
-            (unsigned long)&pts->rate_ctx);
-    if (mod_timer(&pts->rate_ctx.timer, jiffies + msecs_to_jiffies(1500)))
+    memset(&ptns->rate_ctx, 0, sizeof(ptns->rate_ctx));
+    setup_timer(&ptns->rate_ctx.timer, &rate_callback,
+            (unsigned long)&ptns->rate_ctx);
+    if (mod_timer(&ptns->rate_ctx.timer, jiffies + msecs_to_jiffies(1500)))
         D("[ptn] Error: mod_timer()\n");
 #endif
 
@@ -823,8 +823,8 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     return 0;
 
 err:
-    pth_na->ptn_state = NULL;
-    free(pts, M_DEVBUF);
+    pth_na->ptns = NULL;
+    free(ptns, M_DEVBUF);
     return ret;
 }
 
@@ -833,11 +833,11 @@ err:
 static void
 ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
 {
-    struct ptnetmap_state *pts = pth_na->ptn_state;
+    struct ptnetmap_state *ptns = pth_na->ptns;
     int num_rings;
     int i;
 
-    if (!pts) {
+    if (!ptns) {
 	/* Nothing to do. */
         return;
     }
@@ -858,18 +858,18 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     }
 
     /* Delete kthreads. */
-    num_rings = pts->pth_na->up.num_tx_rings +
-                pts->pth_na->up.num_rx_rings;
+    num_rings = ptns->pth_na->up.num_tx_rings +
+                ptns->pth_na->up.num_rx_rings;
     for (i = 0; i < num_rings; i++) {
-        nm_os_kthread_delete(pts->kthreads[i]);
-	pts->kthreads[i] = NULL;
+        nm_os_kthread_delete(ptns->kthreads[i]);
+	ptns->kthreads[i] = NULL;
     }
 
-    IFRATE(del_timer(&pts->rate_ctx.timer));
+    IFRATE(del_timer(&ptns->rate_ctx.timer));
 
-    free(pts, M_DEVBUF);
+    free(ptns, M_DEVBUF);
 
-    pth_na->ptn_state = NULL;
+    pth_na->ptns = NULL;
 
     DBG(D("[%s] ptnetmap deleted", pth_na->up.name));
 }
@@ -944,15 +944,15 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 	struct netmap_adapter *na = kring->na;
 	struct netmap_pt_host_adapter *pth_na =
 		(struct netmap_pt_host_adapter *)na->na_private;
-	struct ptnetmap_state *pts;
+	struct ptnetmap_state *ptns;
 	int k;
 
 	if (unlikely(!pth_na)) {
 		return NM_IRQ_COMPLETED;
 	}
 
-	pts = pth_na->ptn_state;
-	if (unlikely(!pts)) {
+	ptns = pth_na->ptns;
+	if (unlikely(!ptns)) {
 		return NM_IRQ_COMPLETED;
 	}
 
@@ -961,13 +961,13 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 	/* Notify kthreads (wake up if needed) */
 	if (kring->tx == NR_TX) {
 		ND(1, "TX backend irq");
-		IFRATE(pts->rate_ctx.new.btxwu++);
+		IFRATE(ptns->rate_ctx.new.btxwu++);
 	} else {
 		k += pth_na->up.num_tx_rings;
 		ND(1, "RX backend irq");
-		IFRATE(pts->rate_ctx.new.brxwu++);
+		IFRATE(ptns->rate_ctx.new.brxwu++);
 	}
-	nm_os_kthread_wakeup_worker(pts->kthreads[k]);
+	nm_os_kthread_wakeup_worker(ptns->kthreads[k]);
 
 	return NM_IRQ_COMPLETED;
 }
