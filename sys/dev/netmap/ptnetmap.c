@@ -612,6 +612,15 @@ err:
     return EFAULT;
 }
 
+static struct netmap_kring *
+ptnetmap_kring(struct netmap_pt_host_adapter *pth_na, int k)
+{
+	if (k < pth_na->up.num_tx_rings) {
+		return pth_na->up.tx_rings + k;
+	}
+	return pth_na->up.rx_rings + k - pth_na->up.num_tx_rings;
+}
+
 static int
 ptnetmap_krings_snapshot(struct netmap_pt_host_adapter *pth_na)
 {
@@ -624,11 +633,7 @@ ptnetmap_krings_snapshot(struct netmap_pt_host_adapter *pth_na)
 		    pth_na->up.num_rx_rings;
 
 	for (k = 0; k < num_rings; k++) {
-		if (k < pth_na->up.num_tx_rings) {
-			kring = pth_na->up.tx_rings + k;
-		} else {
-			kring = pth_na->up.rx_rings + k - pth_na->up.num_tx_rings;
-		}
+		kring = ptnetmap_kring(pth_na, k);
 		err = ptnetmap_kring_snapshot(kring, pts->ptrings + k);
 		if (err) {
 			return err;
@@ -656,17 +661,15 @@ ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
 
 	for (k = 0; k < num_rings; k++) {
 		nmk_cfg.attach_user = 1; /* attach kthread to user process */
+		nmk_cfg.worker_private = ptnetmap_kring(pth_na, k);
 		if (k < pth_na->up.num_tx_rings) {
 			nmk_cfg.type = PTK_TX;
 			nmk_cfg.event = cfg->tx_ring;
 			nmk_cfg.worker_fn = ptnetmap_tx_handler;
-			nmk_cfg.worker_private = pth_na->up.tx_rings + k;
 		} else {
 			nmk_cfg.type = PTK_RX;
 			nmk_cfg.event = cfg->rx_ring;
 			nmk_cfg.worker_fn = ptnetmap_rx_handler;
-			nmk_cfg.worker_private = pth_na->up.rx_rings +
-						 k - pth_na->up.num_tx_rings;
 		}
 
 		pts->kthreads[k] = nm_os_kthread_create(&nmk_cfg);
