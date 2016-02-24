@@ -643,85 +643,91 @@ static int
 ptnetmap_create_kthreads(struct ptnetmap_state *pts,
 			 struct netmap_pt_host_adapter *pth_na)
 {
-    struct nm_kthread_cfg nmk_cfg;
-    int k = 0;
+	struct nm_kthread_cfg nmk_cfg;
+	unsigned int num_rings;
+	int k = 0, i;
 
-    /* TX kthread */
-    nmk_cfg.worker_private = &pth_na->up.tx_rings[0];
-    nmk_cfg.type = PTK_TX;
-    nmk_cfg.event = pts->config.tx_ring;
-    nmk_cfg.worker_fn = ptnetmap_tx_handler;
-    nmk_cfg.attach_user = 1; /* attach kthread to user process */
-    pts->kthreads[k] = nm_os_kthread_create(&nmk_cfg);
-    if (pts->kthreads[k] == NULL) {
-        goto err;
-    }
-    k++;
+	num_rings = pth_na->up.num_tx_rings +
+		    pth_na->up.num_rx_rings;
 
-    /* RX kthread */
-    nmk_cfg.worker_private = &pth_na->up.rx_rings[0];
-    nmk_cfg.type = PTK_RX;
-    nmk_cfg.event = pts->config.rx_ring;
-    nmk_cfg.worker_fn = ptnetmap_rx_handler;
-    nmk_cfg.attach_user = 1; /* attach kthread to user process */
-    pts->kthreads[k] = nm_os_kthread_create(&nmk_cfg);
-    if (pts->kthreads[k] == NULL) {
-        goto err;
-    }
-    k++;
+	for (k = 0; k < num_rings; k++) {
+		nmk_cfg.attach_user = 1; /* attach kthread to user process */
+		if (k < pth_na->up.num_tx_rings) {
+			nmk_cfg.type = PTK_TX;
+			nmk_cfg.event = pts->config.tx_ring;
+			nmk_cfg.worker_fn = ptnetmap_tx_handler;
+			i = k;
+			nmk_cfg.worker_private = &pth_na->up.tx_rings[i];
+		} else {
+			nmk_cfg.type = PTK_RX;
+			nmk_cfg.event = pts->config.rx_ring;
+			nmk_cfg.worker_fn = ptnetmap_rx_handler;
+			i = k - pth_na->up.num_tx_rings;
+			nmk_cfg.worker_private = &pth_na->up.rx_rings[i];
+		}
 
-    return 0;
+		pts->kthreads[k] = nm_os_kthread_create(&nmk_cfg);
+		if (pts->kthreads[k] == NULL) {
+			goto err;
+		}
+	}
+
+	return 0;
 err:
-    for (; k >= 0; k--) {
-        nm_os_kthread_delete(pts->kthreads[k]);
-	pts->kthreads[k] = NULL;
-    }
-    return EFAULT;
+	for (k = 0; k < num_rings; k++) {
+		if (pts->kthreads[k]) {
+			nm_os_kthread_delete(pts->kthreads[k]);
+			pts->kthreads[k] = NULL;
+		}
+	}
+	return EFAULT;
 }
 
 static int
 ptnetmap_start_kthreads(struct ptnetmap_state *pts)
 {
-    int error;
+	int num_rings;
+	int error;
+	int k;
 
-    if (!pts) {
-        D("BUG pts is NULL");
-        return EFAULT;
-    }
+	if (!pts) {
+		D("BUG pts is NULL");
+		return EFAULT;
+	}
 
-    pts->stopped = false;
+	pts->stopped = false;
 
-    /* TX kthread */
-    //nm_os_kthread_set_affinity(pts->kthreads[0], 2);
-    error = nm_os_kthread_start(pts->kthreads[0]);
-    if (error) {
-        return error;
-    }
-    /* RX kthread */
-    //nm_os_kthread_set_affinity(pts->kthreads[1], 3);
-    error = nm_os_kthread_start(pts->kthreads[1]);
-    if (error) {
-        nm_os_kthread_stop(pts->kthreads[0]);
-        return error;
-    }
+	num_rings = pts->pth_na->up.num_tx_rings +
+		    pts->pth_na->up.num_rx_rings;
+	for (k = 0; k < num_rings; k++) {
+		//nm_os_kthread_set_affinity(pts->kthreads[k], xxx);
+		error = nm_os_kthread_start(pts->kthreads[k]);
+		if (error) {
+			return error;
+		}
+	}
 
-    return 0;
+	return 0;
 }
 
 static void
 ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
 {
-    if (!pts) {
-	/* Nothing to do. */
-        return;
-    }
+	int num_rings;
+	int k;
 
-    pts->stopped = true;
+	if (!pts) {
+		/* Nothing to do. */
+		return;
+	}
 
-    /* TX kthread */
-    nm_os_kthread_stop(pts->kthreads[0]);
-    /* RX kthread */
-    nm_os_kthread_stop(pts->kthreads[1]);
+	pts->stopped = true;
+
+	num_rings = pts->pth_na->up.num_tx_rings +
+		    pts->pth_na->up.num_rx_rings;
+	for (k = 0; k < num_rings; k++) {
+		nm_os_kthread_stop(pts->kthreads[k]);
+	}
 }
 
 static int nm_unused_notify(struct netmap_kring *, int);
@@ -819,6 +825,7 @@ static void
 ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
 {
     struct ptnetmap_state *pts = pth_na->ptn_state;
+    int num_rings;
     int i;
 
     if (!pts) {
@@ -841,9 +848,13 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
         pth_na->up.tx_rings[i].save_notify = NULL;
     }
 
-    /* delete kthreads */
-    nm_os_kthread_delete(pts->kthreads[0]);
-    nm_os_kthread_delete(pts->kthreads[1]);
+    /* Delete kthreads. */
+    num_rings = pts->pth_na->up.num_tx_rings +
+                pts->pth_na->up.num_rx_rings;
+    for (i = 0; i < num_rings; i++) {
+        nm_os_kthread_delete(pts->kthreads[i]);
+	pts->kthreads[i] = NULL;
+    }
 
     IFRATE(del_timer(&pts->rate_ctx.timer));
 
