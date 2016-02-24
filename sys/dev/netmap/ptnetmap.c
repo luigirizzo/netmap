@@ -579,14 +579,16 @@ ptnetmap_rx_handler(void *data)
 static void
 ptnetmap_print_configuration(struct ptnetmap_cfg *cfg)
 {
-    D("[PTN] configuration:");
-    D("TX: iofd=%llu, irqfd=%llu",
-            (unsigned long long) cfg->tx_ring.ioeventfd,
-            (unsigned long long)cfg->tx_ring.irqfd);
-    D("RX: iofd=%llu, irqfd=%llu",
-            (unsigned long long) cfg->rx_ring.ioeventfd,
-            (unsigned long long) cfg->rx_ring.irqfd);
-    D("CSB ptrings: addr=%p", cfg->ptrings);
+	int k;
+
+	D("[PTN] configuration:");
+	D("  CSB ptrings @%p, num_rings=%u, features %08x", cfg->ptrings,
+	  cfg->num_rings, cfg->features);
+	for (k = 0; k < cfg->num_rings; k++) {
+		D("    ring #%d: iofd=%llu, irqfd=%llu", k,
+		  (unsigned long long)cfg->entries[k].ioeventfd,
+		  (unsigned long long)cfg->entries[k].irqfd);
+	}
 
 }
 #endif
@@ -662,13 +664,12 @@ ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
 	for (k = 0; k < num_rings; k++) {
 		nmk_cfg.attach_user = 1; /* attach kthread to user process */
 		nmk_cfg.worker_private = ptnetmap_kring(pth_na, k);
+		nmk_cfg.event = *(cfg->entries + k);
 		if (k < pth_na->up.num_tx_rings) {
 			nmk_cfg.type = PTK_TX;
-			nmk_cfg.event = cfg->tx_ring;
 			nmk_cfg.worker_fn = ptnetmap_tx_handler;
 		} else {
 			nmk_cfg.type = PTK_RX;
-			nmk_cfg.event = cfg->rx_ring;
 			nmk_cfg.worker_fn = ptnetmap_rx_handler;
 		}
 
@@ -738,6 +739,34 @@ ptnetmap_stop_kthreads(struct netmap_pt_host_adapter *pth_na)
 	}
 }
 
+static struct ptnetmap_cfg *
+ptnetmap_read_cfg(struct nmreq *nmr)
+{
+	uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
+	struct ptnetmap_cfg *cfg;
+	struct ptnetmap_cfg tmp;
+	size_t cfglen;
+
+	if (copyin((const void *)*nmr_ptncfg, &tmp, sizeof(tmp))) {
+		D("Partial copyin() failed");
+		return NULL;
+	}
+
+	cfglen = sizeof(tmp) + tmp.num_rings * sizeof(struct ptnet_ring_cfg);
+	cfg = malloc(cfglen, M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (!cfg) {
+		return NULL;
+	}
+
+	if (copyin((const void *)*nmr_ptncfg, cfg, cfglen)) {
+		D("Full copyin() failed");
+		free(cfg, M_DEVBUF);
+		return NULL;
+	}
+
+	return cfg;
+}
+
 static int nm_unused_notify(struct netmap_kring *, int);
 static int nm_pt_host_notify(struct netmap_kring *, int);
 
@@ -765,8 +794,14 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 
     num_rings = pth_na->up.num_tx_rings + pth_na->up.num_rx_rings;
 
+    if (num_rings != cfg->num_rings) {
+        D("ERROR configuration mismatch, expected %u rings, found %u",
+           num_rings, cfg->num_rings);
+        return EINVAL;
+    }
+
     ptns = malloc(sizeof(*ptns) + num_rings * sizeof(*ptns->kthreads),
-		 M_DEVBUF, M_NOWAIT | M_ZERO);
+		  M_DEVBUF, M_NOWAIT | M_ZERO);
     if (!ptns) {
         return ENOMEM;
     }
@@ -884,7 +919,7 @@ int
 ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
 {
     struct netmap_pt_host_adapter *pth_na;
-    struct ptnetmap_cfg cfg;
+    struct ptnetmap_cfg *cfg;
     char *name;
     int cmd, error = 0;
 
@@ -904,22 +939,23 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
     switch (cmd) {
     case NETMAP_PT_HOST_CREATE:
 	/* Read hypervisor configuration from userspace. */
-        error = ptnetmap_read_cfg(nmr, &cfg);
-        if (error)
+        cfg = ptnetmap_read_cfg(nmr);
+        if (!cfg)
             break;
         /* Create ptnetmap state (kthreads, ...) and switch parent
 	 * adapter to ptnetmap mode. */
-        error = ptnetmap_create(pth_na, &cfg);
+        error = ptnetmap_create(pth_na, cfg);
+	free(cfg, M_DEVBUF);
         if (error)
             break;
-        /* start kthreads */
+        /* Start kthreads. */
         error = ptnetmap_start_kthreads(pth_na);
         if (error)
             ptnetmap_delete(pth_na);
         break;
 
     case NETMAP_PT_HOST_DELETE:
-        /* stop kthreads */
+        /* Stop kthreads. */
         ptnetmap_stop_kthreads(pth_na);
         /* Switch parent adapter back to normal mode and destroy
 	 * ptnetmap state (kthreads, ...). */

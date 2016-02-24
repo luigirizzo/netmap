@@ -2039,7 +2039,7 @@ nm_kthread_close_files(struct nm_kthread *nmk)
 }
 
 static int
-nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kth_event_cfg *ring_cfg)
+nm_kthread_open_files(struct nm_kthread *nmk, struct ptnet_ring_cfg *ring_cfg)
 {
     struct file *file;
     struct nm_kthread_ctx *wctx = &nmk->worker_ctx;

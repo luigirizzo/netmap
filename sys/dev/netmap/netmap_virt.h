@@ -295,17 +295,17 @@ struct ptnet_csb {
  * kthreads.
  */
 struct ptnetmap_cfg {
-        uint32_t features;
 #define PTNETMAP_CFG_FEAT_CSB           0x0001
 #define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
 #define PTNETMAP_CFG_FEAT_IOCTL		0x0004
-	struct nm_kth_event_cfg tx_ring;	/* TX eventfds/ioctl */
-	struct nm_kth_event_cfg rx_ring;	/* RX eventfds/ioctl */
-        void *ptrings;				/* ptrings area inside CSB */
+	uint32_t features;
+	void *ptrings;				/* ptrings inside CSB */
+	uint32_t num_rings;			/* number of entries */
+	struct ptnet_ring_cfg entries[0];	/* per-ptring configuration */
 };
 
 /*
- * Functions used to read/write ptnetmap_cfg from/to the nmreq.
+ * Functions used to write ptnetmap_cfg from/to the nmreq.
  * The user-space application writes the pointer of ptnetmap_cfg
  * (user-space buffer) starting from nr_arg1 field, so that the kernel
  * can read it with copyin (copy_from_user).
@@ -313,17 +313,9 @@ struct ptnetmap_cfg {
 static inline void
 ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 {
-    uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
-    *nmr_ptncfg = (uintptr_t)cfg;
+	uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
+	*nmr_ptncfg = (uintptr_t)cfg;
 }
-#if defined (WITH_PTNETMAP_HOST)
-static inline int
-ptnetmap_read_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
-{
-    uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
-    return copyin((const void *)*nmr_ptncfg, cfg, sizeof(*cfg));
-}
-#endif /* WITH_PTNETMAP_HOST */
 
 #if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
 
