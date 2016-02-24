@@ -613,9 +613,9 @@ err:
 }
 
 static int
-ptnetmap_krings_snapshot(struct ptnetmap_state *pts,
-			 struct netmap_pt_host_adapter *pth_na)
+ptnetmap_krings_snapshot(struct netmap_pt_host_adapter *pth_na)
 {
+	struct ptnetmap_state *pts = pth_na->ptn_state;
 	struct netmap_kring *kring;
 	unsigned int num_rings;
 	int err = 0, k;
@@ -643,10 +643,10 @@ ptnetmap_krings_snapshot(struct ptnetmap_state *pts,
  */
 
 static int
-ptnetmap_create_kthreads(struct ptnetmap_state *pts,
-			 struct netmap_pt_host_adapter *pth_na,
+ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
 			 struct ptnetmap_cfg *cfg)
 {
+	struct ptnetmap_state *pts = pth_na->ptn_state;
 	struct nm_kthread_cfg nmk_cfg;
 	unsigned int num_rings;
 	int k;
@@ -687,8 +687,9 @@ err:
 }
 
 static int
-ptnetmap_start_kthreads(struct ptnetmap_state *pts)
+ptnetmap_start_kthreads(struct netmap_pt_host_adapter *pth_na)
 {
+	struct ptnetmap_state *pts = pth_na->ptn_state;
 	int num_rings;
 	int error;
 	int k;
@@ -714,8 +715,9 @@ ptnetmap_start_kthreads(struct ptnetmap_state *pts)
 }
 
 static void
-ptnetmap_stop_kthreads(struct ptnetmap_state *pts)
+ptnetmap_stop_kthreads(struct netmap_pt_host_adapter *pth_na)
 {
+	struct ptnetmap_state *pts = pth_na->ptn_state;
 	int num_rings;
 	int k;
 
@@ -769,24 +771,25 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     pts->kthreads = (struct nm_kthread **)(pts + 1);
     pts->stopped = true;
 
+    /* Cross-link data structures. */
+    pth_na->ptn_state = pts;
+    pts->pth_na = pth_na;
+
     /* Store the CSB address provided by the hypervisor. */
     pts->ptrings = cfg->ptrings;
 
     DBG(ptnetmap_print_configuration(cfg));
 
     /* Create kthreads */
-    if ((ret = ptnetmap_create_kthreads(pts, pth_na, cfg))) {
+    if ((ret = ptnetmap_create_kthreads(pth_na, cfg))) {
         D("ERROR ptnetmap_create_kthreads()");
         goto err;
     }
     /* Copy krings state into the CSB for the guest initialization */
-    if ((ret = ptnetmap_krings_snapshot(pts, pth_na))) {
+    if ((ret = ptnetmap_krings_snapshot(pth_na))) {
         D("ERROR ptnetmap_krings_snapshot()");
         goto err;
     }
-
-    pth_na->ptn_state = pts;
-    pts->pth_na = pth_na;
 
     /* Overwrite parent nm_notify krings callback. */
     pth_na->parent->na_private = pth_na;
@@ -817,6 +820,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     return 0;
 
 err:
+    pth_na->ptn_state = NULL;
     free(pts, M_DEVBUF);
     return ret;
 }
@@ -906,14 +910,14 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
         if (error)
             break;
         /* start kthreads */
-        error = ptnetmap_start_kthreads(pth_na->ptn_state);
+        error = ptnetmap_start_kthreads(pth_na);
         if (error)
             ptnetmap_delete(pth_na);
         break;
 
     case NETMAP_PT_HOST_DELETE:
         /* stop kthreads */
-        ptnetmap_stop_kthreads(pth_na->ptn_state);
+        ptnetmap_stop_kthreads(pth_na);
         /* Switch parent adapter back to normal mode and destroy
 	 * ptnetmap state (kthreads, ...). */
         ptnetmap_delete(pth_na);
