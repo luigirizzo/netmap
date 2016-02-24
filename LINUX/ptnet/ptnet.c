@@ -686,7 +686,7 @@ out_of_slots:
 		/* Kick the host if needed. */
 		if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
 			ptring->sync_flags = NAF_FORCE_READ;
-			iowrite32(0, pi->ioaddr + PTNET_IO_RXKICK);
+			iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK + 4);
 		}
 	}
 
@@ -694,6 +694,17 @@ out_of_slots:
 
 	return work_done;
 }
+
+#define csb_notification_enable_all(_pi, _na, _t, _fld, _v)		\
+	do {								\
+		int i;							\
+		for (i=0; i<nma_get_nrings(_na, _t); i++) {		\
+			struct ptnet_ring *ptring = (_t == NR_TX) ?	\
+					&CSB_TX_RING(_pi, i) :		\
+					&CSB_RX_RING(_pi, i);		\
+			ptring->_fld = _v;				\
+		}							\
+	} while (0)							\
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
 /* Polling 'interrupt' - used by things like netconsole to send skbs
@@ -704,13 +715,14 @@ static void
 ptnet_netpoll(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct ptnet_ring *tx_ptring = &CSB_TX_RING(pi, 0);
-	struct ptnet_ring *rx_ptring = &CSB_RX_RING(pi, 0);
+	struct netmap_adapter *na = &pi->ptna_dr.hwup.up;
 
-	tx_ptring->guest_need_kick = rx_ptring->guest_need_kick = 0;
+	csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 0);
+	csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 0);
 	ptnet_tx_intr(pi->msix_entries[0].vector, netdev);
 	ptnet_rx_intr(pi->msix_entries[1].vector, netdev);
-	tx_ptring->guest_need_kick = rx_ptring->guest_need_kick = 1;
+	csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 1);
+	csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
 }
 #endif
 
@@ -804,8 +816,6 @@ ptnet_ioregs_dump(struct ptnet_info *pi)
 		"CTRL",
 		"MAC_LO",
 		"MAC_HI",
-		"TXKICK",
-		"RXKICK",
 	}; // remove this ; to drive the compiler crazy !
 	uint32_t val;
 	int i;
@@ -1043,8 +1053,8 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 			struct netmap_kring *kring = &NMR(na, t)[i];
 			struct ptnet_ring *ptring;
 
-			ptring = (t == NR_TX ? &CSB_TX_RING(pi, 0)
-					     : &CSB_RX_RING(pi, 0));
+			ptring = (t == NR_TX ? &CSB_TX_RING(pi, i)
+					     : &CSB_RX_RING(pi, i));
 			kring->rhead = kring->ring->head = ptring->head;
 			kring->rcur = kring->ring->cur = ptring->cur;
 			kring->nr_hwcur = ptring->hwcur;
@@ -1058,14 +1068,15 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 			struct netmap_kring *kring = &NMR(na, t)[i];
 			struct ptnet_ring *ptring;
 
-			ptring = (t == NR_TX ? &CSB_TX_RING(pi, 0)
-					     : &CSB_RX_RING(pi, 0));
-			ND("%d: csb {hc %u h %u c %u ht %u}", t, ptring->hwcur,
-			  ptring->head, ptring->cur, ptring->hwtail);
-			ND("%d: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}", t,
-			  kring->nr_hwcur, kring->rhead, kring->rcur, kring->ring->head,
-			  kring->ring->cur, kring->nr_hwtail, kring->rtail,
-			  kring->ring->tail);
+			ptring = (t == NR_TX ? &CSB_TX_RING(pi, i)
+					     : &CSB_RX_RING(pi, i));
+			ND("%d,%d: csb {hc %u h %u c %u ht %u}", t, i,
+			   ptring->hwcur, ptring->head, ptring->cur,
+			   ptring->hwtail);
+			ND("%d,%d: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
+			   t, i, kring->nr_hwcur, kring->rhead, kring->rcur,
+			   kring->ring->head, kring->ring->cur, kring->nr_hwtail,
+			   kring->rtail, kring->ring->tail);
 			(void)ptring; (void)kring;
 		}
 	}
@@ -1096,7 +1107,8 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	 * until these will be processed. */
 	if (native && !onoff && na->active_fds == 0) {
 		D("Exit netmap mode, re-enable interrupts");
-		CSB_TX_RING(pi, 0).guest_need_kick = CSB_RX_RING(pi, 0).guest_need_kick = 1;
+		csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 1);
+		csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
 		if (netif_running(netdev)) {
 			D("Exit netmap mode, schedule NAPI to flush RX ring");
 			ptnet_napi_schedule(pi);
@@ -1106,10 +1118,10 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	if (onoff) {
 		if (pi->backend_regifs == 0) {
 			/* Initialize notification enable fields in the CSB. */
-			CSB_TX_RING(pi, 0).host_need_kick = 1;
-			CSB_TX_RING(pi, 0).guest_need_kick = 0;
-			CSB_RX_RING(pi, 0).host_need_kick = 1;
-			CSB_RX_RING(pi, 0).guest_need_kick = 1;
+			csb_notification_enable_all(pi, na, NR_TX, host_need_kick, 1);
+			csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 0);
+			csb_notification_enable_all(pi, na, NR_RX, host_need_kick, 1);
+			csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
 
 			/* Make sure the host adapter passed through is ready
 			 * for txsync/rxsync. */
@@ -1199,10 +1211,11 @@ ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	bool notify;
 
-	notify = netmap_pt_guest_txsync(&CSB_TX_RING(pi, 0),
+	notify = netmap_pt_guest_txsync(&CSB_TX_RING(pi, kring->ring_id),
 					kring, flags);
 	if (notify) {
-		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK);
+		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK +
+			     (kring->ring_id << 2));
 	}
 
 	return 0;
@@ -1216,10 +1229,11 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	bool notify;
 
-	notify = netmap_pt_guest_rxsync(&CSB_RX_RING(pi, 0),
+	notify = netmap_pt_guest_rxsync(&CSB_RX_RING(pi, kring->ring_id),
 					kring, flags);
 	if (notify) {
-		iowrite32(0, pi->ioaddr + PTNET_IO_RXKICK);
+		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK +
+			     ((na->num_tx_rings + kring->ring_id) << 2));
 	}
 
 	return 0;
@@ -1232,10 +1246,6 @@ ptnet_nm_dtor(struct netmap_adapter *na)
 }
 
 static struct netmap_adapter ptnet_nm_ops = {
-	.num_tx_desc = 1024,
-	.num_rx_desc = 1024,
-	.num_tx_rings = 1,
-	.num_rx_rings = 1,
 	.nm_register = ptnet_nm_register,
 	.nm_config = ptnet_nm_config,
 	.nm_txsync = ptnet_nm_txsync,
@@ -1409,6 +1419,10 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	nifp_offset = ioread32(pi->ioaddr + PTNET_IO_NIFP_OFS);
 
 	/* Attach a guest pass-through netmap adapter to this device. */
+	ptnet_nm_ops.num_tx_desc = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_SLOTS);
+	ptnet_nm_ops.num_rx_desc = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_SLOTS);
+	ptnet_nm_ops.num_tx_rings = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_RINGS);
+	ptnet_nm_ops.num_rx_rings = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_RINGS);
 	na_arg = ptnet_nm_ops;
 	na_arg.ifp = pi->netdev;
 	netmap_pt_guest_attach(&na_arg, pi->csb, nifp_offset,
