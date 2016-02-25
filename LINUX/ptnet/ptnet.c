@@ -69,6 +69,11 @@ struct ptnet_queue {
 	cpumask_var_t msix_affinity_mask;
 };
 
+struct ptnet_rx_queue {
+	struct ptnet_queue q;
+	struct napi_struct napi;
+};
+
 /* Per-adapter data structure. */
 struct ptnet_info {
 	struct net_device *netdev;
@@ -94,7 +99,7 @@ struct ptnet_info {
 	struct msix_entry *msix_entries;
 
 	int num_rings;
-	struct ptnet_queue *queues;
+	struct ptnet_queue **queues;
 
 	/* CSB memory to be used for producer/consumer state
 	 * synchronization. */
@@ -111,8 +116,6 @@ struct ptnet_info {
 
 	/* Pass-through netmap adapter used by this driver. */
 	struct netmap_pt_guest_adapter ptna_dr;
-
-	struct napi_struct napi;
 
 #ifdef HANGCTRL
 #define HANG_INTVAL_MS		3000
@@ -392,18 +395,20 @@ ptnet_tx_intr(int irq, void *data)
 }
 
 static inline void
-ptnet_napi_schedule(struct ptnet_info *pi)
+ptnet_napi_schedule(struct ptnet_queue *pq)
 {
+	struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)pq;
+
 	/* Disable RX interrupts and schedule NAPI. */
 
-	if (likely(napi_schedule_prep(&pi->napi))) {
+	if (likely(napi_schedule_prep(&prq->napi))) {
 		/* It's good thing to reset rx.guest_need_kick as soon as
 		 * possible. */
-		CSB_RX_RING(pi, 0).guest_need_kick = 0;
-		__napi_schedule(&pi->napi);
+		CSB_RX_RING(pq->pi, 0).guest_need_kick = 0;
+		__napi_schedule(&prq->napi);
 	} else {
 		/* NAPI is already scheduled and we are ok with it. */
-		CSB_RX_RING(pi, 0).guest_need_kick = 1;
+		CSB_RX_RING(pq->pi, 0).guest_need_kick = 1;
 	}
 }
 
@@ -414,9 +419,7 @@ ptnet_napi_schedule(struct ptnet_info *pi)
 static irqreturn_t
 ptnet_rx_intr(int irq, void *data)
 {
-	struct ptnet_queue *pq = data;
-
-	ptnet_napi_schedule(pq->pi);
+	ptnet_napi_schedule((struct ptnet_queue *)data);
 
 	return IRQ_HANDLED;
 }
@@ -459,8 +462,10 @@ ptnet_rx_pool_refill(struct ptnet_info *pi)
 static int
 ptnet_rx_poll(struct napi_struct *napi, int budget)
 {
-	struct ptnet_info *pi = container_of(napi, struct ptnet_info,
-					     napi);
+	struct ptnet_rx_queue *prq = container_of(napi, struct ptnet_rx_queue,
+					          napi);
+	struct ptnet_queue *pq = (struct ptnet_queue *)prq;
+	struct ptnet_info *pi = pq->pi;
 	struct netmap_adapter *na = &pi->ptna_dr.hwup.up;
 	struct netmap_kring *kring = &na->rx_rings[0];
 	struct netmap_ring *ring = kring->ring;
@@ -471,7 +476,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	int work_done = 0;
 	int nm_irq;
 
-	nm_irq = netmap_rx_irq(pi->netdev, 0, &work_done);
+	nm_irq = netmap_rx_irq(pi->netdev, pq->kring_id, &work_done);
 	if (nm_irq != NM_IRQ_PASS) {
 		if (nm_irq == NM_IRQ_COMPLETED) {
 			napi_complete(napi);
@@ -677,7 +682,7 @@ out_of_slots:
 		if (head != ring->tail) {
 			/* If there is more work to do, disable notifications
 			 * and reschedule. */
-			ptnet_napi_schedule(pi);
+			ptnet_napi_schedule(pq);
                 }
 #ifdef HANGCTRL
 		if (mod_timer(&pi->hang_timer,
@@ -699,7 +704,8 @@ out_of_slots:
 		/* Kick the host if needed. */
 		if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
 			ptring->sync_flags = NAF_FORCE_READ;
-			iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE + 4);
+			iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE +
+				  4 * (na->num_tx_rings + pq->kring_id));
 		}
 	}
 
@@ -732,8 +738,8 @@ ptnet_netpoll(struct net_device *netdev)
 
 	csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 0);
 	csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 0);
-	ptnet_tx_intr(pi->msix_entries[0].vector, pi->queues + 0);
-	ptnet_rx_intr(pi->msix_entries[1].vector, pi->queues + 1);
+	ptnet_tx_intr(pi->msix_entries[0].vector, pi->queues[0]);
+	ptnet_rx_intr(pi->msix_entries[1].vector, pi->queues[1]);
 	csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 1);
 	csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
 }
@@ -757,7 +763,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	}
 
 	for (i=0; i<pi->num_rings; i++) {
-		struct ptnet_queue *pq = pi->queues + i;
+		struct ptnet_queue *pq = pi->queues[i];
 
 		memset(&pq->msix_affinity_mask, 0, sizeof(pq->msix_affinity_mask));
 		if (!alloc_cpumask_var(&pq->msix_affinity_mask, GFP_KERNEL)) {
@@ -775,7 +781,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	}
 
 	for (i=0; i<pi->num_rings; i++) {
-		struct ptnet_queue *pq = pi->queues + i;
+		struct ptnet_queue *pq = pi->queues[i];
 		irq_handler_t handler = (i < num_tx_rings) ?
 					ptnet_tx_intr : ptnet_rx_intr;
 
@@ -804,7 +810,7 @@ err_irqs:
 	i = pi->num_rings-1;
 err_masks:
 	for (; i>=0; i--) {
-		free_cpumask_var(pi->queues[i].msix_affinity_mask);
+		free_cpumask_var(pi->queues[i]->msix_affinity_mask);
 	}
 
 	return ret;
@@ -820,7 +826,7 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 	iowrite32(PTNET_CTRL_IRQFINI, pi->ioaddr + PTNET_IO_CTRL);
 
 	for (i=0; i<pi->num_rings; i++) {
-		struct ptnet_queue *pq = pi->queues + i;
+		struct ptnet_queue *pq = pi->queues[i];
 
 		free_irq(pi->msix_entries[i].vector, pq);
 		if (pq->msix_affinity_mask) {
@@ -868,7 +874,7 @@ ptnet_open(struct net_device *netdev)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na_dr = &pi->ptna_dr.hwup.up;
 	int ret;
-
+	int i;
 
 	D("%s: netif_running %u", __func__, netif_running(netdev));
 
@@ -916,7 +922,6 @@ ptnet_open(struct net_device *netdev)
 	pi->rx_pool = NULL;
 	pi->rx_pool_num = 0;
 
-	napi_enable(&pi->napi);
 	netif_start_queue(netdev);
 
 	if (0) ptnet_ioregs_dump(pi);
@@ -935,8 +940,13 @@ ptnet_open(struct net_device *netdev)
 	 * interface was down. Schedule NAPI to flush packets that are
 	 * pending in the RX ring. We won't receive further interrupts until
 	 * the pending ones will be processed.  */
-	D("Schedule NAPI to flush RX ring");
-	ptnet_napi_schedule(pi);
+	for (i = 0; i < na_dr->num_rx_rings; i++){
+		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
+					pi->queues[na_dr->num_tx_rings + i];
+		napi_enable(&prq->napi);
+		D("Schedule NAPI to flush RX ring #%d", i);
+		ptnet_napi_schedule(&prq->q);
+	}
 
 	return 0;
 
@@ -963,6 +973,7 @@ ptnet_close(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na_dr = &pi->ptna_dr.hwup.up;
+	int i;
 
 	D("%s: netif_running %u", __func__, netif_running(netdev));
 
@@ -971,7 +982,12 @@ ptnet_close(struct net_device *netdev)
 #endif
 
 	netif_tx_disable(netdev);
-	napi_disable(&pi->napi);
+	for (i = 0; i < na_dr->num_rx_rings; i++){
+		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
+					pi->queues[na_dr->num_tx_rings + i];
+		napi_disable(&prq->napi);
+	}
+
 
 	/* Free RX pool. */
 	while (pi->rx_pool) {
@@ -1137,7 +1153,10 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
 		if (netif_running(netdev)) {
 			D("Exit netmap mode, schedule NAPI to flush RX ring");
-			ptnet_napi_schedule(pi);
+			for (i = 0; i < na->num_rx_rings; i++){
+				ptnet_napi_schedule(pi->queues[na->num_tx_rings + i]);
+			}
+
 		}
 	}
 
@@ -1354,8 +1373,10 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	num_tx_rings = ioread32(ioaddr + PTNET_IO_NUM_TX_RINGS);
 	num_rx_rings = ioread32(ioaddr + PTNET_IO_NUM_RX_RINGS);
 	netdev = alloc_etherdev_mq(sizeof(*pi) +
-				   ((num_tx_rings + num_rx_rings) *
-				   sizeof(struct ptnet_queue)),
+				   (num_tx_rings + num_rx_rings) *
+						sizeof(struct ptnet_queue *) +
+				   num_tx_rings * sizeof(struct ptnet_queue) +
+				   num_rx_rings * sizeof(struct ptnet_rx_queue),
 				   min(num_tx_rings, num_rx_rings));
 	if (!netdev) {
 		goto err_ptfeat;
@@ -1371,10 +1392,29 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->ioaddr = ioaddr;
 	pi->ptfeatures = ptfeatures;
 	pi->num_rings = num_tx_rings + num_rx_rings;
-	pi->queues = (struct ptnet_queue *)(pi + 1);
 
+	/* Initialize the array of pointers with the per-ring structures. */
+	pi->queues = (struct ptnet_queue **)(pi + 1);
+	{
+		struct ptnet_queue *pq;
+		struct ptnet_rx_queue *prq;
+
+		/* TX queues first. */
+		pq = (struct ptnet_queue *)(pi->queues + pi->num_rings);
+		for (i = 0; i < num_tx_rings; i++) {
+			pi->queues[i] = pq++;
+		}
+		/* Then RX queues. */
+		prq = (struct ptnet_rx_queue *)pq;
+		for (i = 0; i < num_rx_rings; i++, prq++) {
+			pi->queues[num_tx_rings + i] = (struct ptnet_queue *)prq;
+		}
+	}
+
+	/* Initialize common parts of all the queues (interrupt
+	 * setup excluded). */
 	for (i = 0; i < pi->num_rings; i++) {
-		struct ptnet_queue *pq = pi->queues + i;
+		struct ptnet_queue *pq = pi->queues[i];
 		pq->pi = pi;
 		pq->kring_id = i;
 		if (i >= num_tx_rings) {
@@ -1419,7 +1459,12 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->csb_rx_rings = pi->csb->rings + num_tx_rings;
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
-	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
+
+	for (i = 0; i < num_rx_rings; i++) {
+		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
+					     pi->queues[num_tx_rings + i];
+		netif_napi_add(netdev, &prq->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
+	}
 
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
 
