@@ -62,8 +62,9 @@ struct ptnet_info;
 /* Per-ring data structure. */
 struct ptnet_queue {
 	struct ptnet_info *pi;
-	unsigned int kick;
+	struct ptnet_ring *ptring;
 	int kring_id;
+	u8* __iomem kick;
 
 	/* MSI-X interrupt data structures. */
 	char msix_name[64];
@@ -211,7 +212,8 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int nfrags = skb_shinfo(skb)->nr_frags;
 	int queue_idx = skb_get_queue_mapping(skb);
-	struct ptnet_ring *ptring = &CSB_TX_RING(pi, queue_idx);
+	struct ptnet_queue *pq = pi->queues[queue_idx];
+	struct ptnet_ring *ptring = pq->ptring;
 	struct netmap_kring *kring;
 	struct xmit_copy_args a;
 	int f;
@@ -321,8 +323,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
         /* Ask for a kick from a guest to the host if needed. */
 	if (NM_ACCESS_ONCE(ptring->host_need_kick) && !skb->xmit_more) {
 		ptring->sync_flags = NAF_FORCE_RECLAIM;
-		iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE +
-			     4 * queue_idx);
+		iowrite32(0, pq->kick);
 	}
 
         /* No more TX slots for further transmissions. We have to stop the
@@ -406,11 +407,11 @@ ptnet_napi_schedule(struct ptnet_queue *pq)
 	if (likely(napi_schedule_prep(&prq->napi))) {
 		/* It's good thing to reset rx.guest_need_kick as soon as
 		 * possible. */
-		CSB_RX_RING(pq->pi, 0).guest_need_kick = 0;
+		pq->ptring->guest_need_kick = 0;
 		__napi_schedule(&prq->napi);
 	} else {
 		/* NAPI is already scheduled and we are ok with it. */
-		CSB_RX_RING(pq->pi, 0).guest_need_kick = 1;
+		pq->ptring->guest_need_kick = 1;
 	}
 }
 
@@ -467,12 +468,12 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	struct ptnet_rx_queue *prq = container_of(napi, struct ptnet_rx_queue,
 					          napi);
 	struct ptnet_queue *pq = (struct ptnet_queue *)prq;
+	struct ptnet_ring *ptring = pq->ptring;
 	struct ptnet_info *pi = pq->pi;
 	struct netmap_adapter *na = &pi->ptna_dr.hwup.up;
 	struct netmap_kring *kring = &na->rx_rings[pq->kring_id];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
-	struct ptnet_ring *ptring = &CSB_RX_RING(pi, pq->kring_id);
 	bool have_vnet_hdr = pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR;
 	unsigned int head = ring->head;
 	int work_done = 0;
@@ -706,8 +707,7 @@ out_of_slots:
 		/* Kick the host if needed. */
 		if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
 			ptring->sync_flags = NAF_FORCE_READ;
-			iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE +
-				  4 * (na->num_tx_rings + pq->kring_id));
+			iowrite32(0, pq->kick);
 		}
 	}
 
@@ -1414,17 +1414,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		}
 	}
 
-	/* Initialize common parts of all the queues (interrupt
-	 * setup excluded). */
-	for (i = 0; i < pi->num_rings; i++) {
-		struct ptnet_queue *pq = pi->queues[i];
-		pq->pi = pi;
-		pq->kring_id = i;
-		if (i >= num_tx_rings) {
-			pq->kring_id -= num_tx_rings;
-		}
-	}
-
 #ifndef PTNET_CSB_ALLOC
 	/* Map the CSB memory exposed by the device. We don't use
 	 * pci_ioremap_bar(), since we want the ioremap_cache() function
@@ -1460,6 +1449,19 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 #endif /* PTNET_CSB_ALLOC */
 
 	pi->csb_rx_rings = pi->csb->rings + num_tx_rings;
+
+	/* Initialize common parts of all the queues (interrupt
+	 * setup excluded). */
+	for (i = 0; i < pi->num_rings; i++) {
+		struct ptnet_queue *pq = pi->queues[i];
+		pq->pi = pi;
+		pq->kring_id = i;
+		pq->kick = ioaddr + PTNET_IO_KICK_BASE + 4 * i;
+		pq->ptring = pi->csb->rings + i;
+		if (i >= num_tx_rings) {
+			pq->kring_id -= num_tx_rings;
+		}
+	}
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
 
