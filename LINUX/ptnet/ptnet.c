@@ -65,6 +65,10 @@ struct ptnet_info;
 struct ptnet_queue {
 	struct ptnet_info *pi;
 	int kring_id;
+
+	/* MSI-X interrupt data structures. */
+	char msix_name[64];
+	cpumask_var_t msix_affinity_mask;
 };
 
 /* Per-adapter data structure. */
@@ -90,8 +94,6 @@ struct ptnet_info {
 
 	/* MSI-X interrupt data structures. */
 	struct msix_entry msix_entries[PTNET_MSIX_VECTORS];
-	char msix_names[PTNET_MSIX_VECTORS][64];
-	cpumask_var_t msix_affinity_masks[PTNET_MSIX_VECTORS];
 
 	unsigned int num_tx_rings, num_rx_rings;
 	struct ptnet_queue *queues;
@@ -747,11 +749,11 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	int i;
 
 	/* Allocate the MSI-X interrupt vectors we need. */
-	memset(pi->msix_affinity_masks, 0, sizeof(pi->msix_affinity_masks));
-
 	for (i=0; i<num_rings; i++) {
-		if (!alloc_cpumask_var(&pi->msix_affinity_masks[i],
-				       GFP_KERNEL)) {
+		struct ptnet_queue *pq = pi->queues + i;
+
+		memset(&pq->msix_affinity_mask, 0, sizeof(pq->msix_affinity_mask));
+		if (!alloc_cpumask_var(&pq->msix_affinity_mask, GFP_KERNEL)) {
 			pr_err("Failed to alloc cpumask var\n");
 			goto err_masks;
 		}
@@ -766,12 +768,14 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	}
 
 	for (i=0; i<num_rings; i++) {
+		struct ptnet_queue *pq = pi->queues + i;
 		irq_handler_t handler = (i < pi->num_tx_rings) ?
 					ptnet_tx_intr : ptnet_rx_intr;
-		snprintf(pi->msix_names[i], sizeof(pi->msix_names[i]),
+
+		snprintf(pq->msix_name, sizeof(pq->msix_name),
 			 "ptnet-%d", i);
 		ret = request_irq(pi->msix_entries[i].vector, handler,
-				  0, pi->msix_names[i], pi->queues + i);
+				  0, pq->msix_name, pq);
 		if (ret) {
 			pr_err("Unable to allocate interrupt (%d)\n", ret);
 			goto err_irqs;
@@ -793,7 +797,7 @@ err_irqs:
 	i = num_rings-1;
 err_masks:
 	for (; i>=0; i--) {
-		free_cpumask_var(pi->msix_affinity_masks[i]);
+		free_cpumask_var(pi->queues[i].msix_affinity_mask);
 	}
 
 	return ret;
@@ -810,9 +814,11 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 	iowrite32(PTNET_CTRL_IRQFINI, pi->ioaddr + PTNET_IO_CTRL);
 
 	for (i=0; i<num_rings; i++) {
-		free_irq(pi->msix_entries[i].vector, pi->queues + i);
-		if (pi->msix_affinity_masks[i]) {
-			free_cpumask_var(pi->msix_affinity_masks[i]);
+		struct ptnet_queue *pq = pi->queues + i;
+
+		free_irq(pi->msix_entries[i].vector, pq);
+		if (pq->msix_affinity_mask) {
+			free_cpumask_var(pq->msix_affinity_mask);
 		}
 	}
 	pci_disable_msix(pi->pdev);
