@@ -62,6 +62,7 @@ struct ptnet_info;
 /* Per-ring data structure. */
 struct ptnet_queue {
 	struct ptnet_info *pi;
+	unsigned int kick;
 	int kring_id;
 
 	/* MSI-X interrupt data structures. */
@@ -209,13 +210,14 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int nfrags = skb_shinfo(skb)->nr_frags;
-	struct ptnet_ring *ptring = &CSB_TX_RING(pi, 0);
+	int queue_idx = skb_get_queue_mapping(skb);
+	struct ptnet_ring *ptring = &CSB_TX_RING(pi, queue_idx);
 	struct netmap_kring *kring;
 	struct xmit_copy_args a;
 	int f;
 
 	a.na = &pi->ptna_dr.hwup.up;
-	kring = &a.na->tx_rings[0];
+	kring = &a.na->tx_rings[queue_idx];
 	a.ring = kring->ring;
 	a.lim = kring->nkr_num_slots - 1;
 
@@ -319,7 +321,8 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
         /* Ask for a kick from a guest to the host if needed. */
 	if (NM_ACCESS_ONCE(ptring->host_need_kick) && !skb->xmit_more) {
 		ptring->sync_flags = NAF_FORCE_RECLAIM;
-		iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE);
+		iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE +
+			     4 * queue_idx);
 	}
 
         /* No more TX slots for further transmissions. We have to stop the
@@ -466,10 +469,10 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	struct ptnet_queue *pq = (struct ptnet_queue *)prq;
 	struct ptnet_info *pi = pq->pi;
 	struct netmap_adapter *na = &pi->ptna_dr.hwup.up;
-	struct netmap_kring *kring = &na->rx_rings[0];
+	struct netmap_kring *kring = &na->rx_rings[pq->kring_id];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
-	struct ptnet_ring *ptring = &CSB_RX_RING(pi, 0);
+	struct ptnet_ring *ptring = &CSB_RX_RING(pi, pq->kring_id);
 	bool have_vnet_hdr = pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR;
 	unsigned int head = ring->head;
 	int work_done = 0;
