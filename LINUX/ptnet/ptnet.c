@@ -64,6 +64,7 @@ struct ptnet_info;
 /* Per-ring data structure. */
 struct ptnet_queue {
 	struct ptnet_info *pi;
+	int kring_id;
 };
 
 /* Per-adapter data structure. */
@@ -376,9 +377,10 @@ ptnet_change_mtu(struct net_device *netdev, int new_mtu)
 static irqreturn_t
 ptnet_tx_intr(int irq, void *data)
 {
-	struct net_device *netdev = data;
+	struct ptnet_queue *pq = data;
+	struct net_device *netdev = pq->pi->netdev;
 
-	if (netmap_tx_irq(netdev, 0)) {
+	if (netmap_tx_irq(netdev, pq->kring_id)) {
 		return IRQ_HANDLED;
 	}
 
@@ -412,9 +414,9 @@ ptnet_napi_schedule(struct ptnet_info *pi)
 static irqreturn_t
 ptnet_rx_intr(int irq, void *data)
 {
-	struct net_device *netdev = data;
+	struct ptnet_queue *pq = data;
 
-	ptnet_napi_schedule(netdev_priv(netdev));
+	ptnet_napi_schedule(pq->pi);
 
 	return IRQ_HANDLED;
 }
@@ -730,8 +732,8 @@ ptnet_netpoll(struct net_device *netdev)
 
 	csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 0);
 	csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 0);
-	ptnet_tx_intr(pi->msix_entries[0].vector, netdev);
-	ptnet_rx_intr(pi->msix_entries[1].vector, netdev);
+	ptnet_tx_intr(pi->msix_entries[0].vector, pi->queues + 0);
+	ptnet_rx_intr(pi->msix_entries[1].vector, pi->queues + 1);
 	csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 1);
 	csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
 }
@@ -769,13 +771,13 @@ ptnet_irqs_init(struct ptnet_info *pi)
 		snprintf(pi->msix_names[i], sizeof(pi->msix_names[i]),
 			 "ptnet-%d", i);
 		ret = request_irq(pi->msix_entries[i].vector, handler,
-				  0, pi->msix_names[i], pi->netdev);
+				  0, pi->msix_names[i], pi->queues + i);
 		if (ret) {
 			pr_err("Unable to allocate interrupt (%d)\n", ret);
 			goto err_irqs;
 		}
-		pr_info("IRQ for ring #%d --> %u\n", i,
-			pi->msix_entries[i].vector);
+		pr_info("IRQ for ring #%d --> %u, handler %p\n", i,
+			pi->msix_entries[i].vector, handler);
 	}
 
 	/* Tell the hypervisor that we have allocated the MSI-X vectors,
@@ -808,7 +810,7 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 	iowrite32(PTNET_CTRL_IRQFINI, pi->ioaddr + PTNET_IO_CTRL);
 
 	for (i=0; i<num_rings; i++) {
-		free_irq(pi->msix_entries[i].vector, pi->netdev);
+		free_irq(pi->msix_entries[i].vector, pi->queues + i);
 		if (pi->msix_affinity_masks[i]) {
 			free_cpumask_var(pi->msix_affinity_masks[i]);
 		}
@@ -1359,9 +1361,13 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->num_rx_rings = num_rx_rings;
 	pi->queues = (struct ptnet_queue *)(pi + 1);
 
-	for (i=0; i<num_tx_rings+num_rx_rings; i++) {
+	for (i = 0; i < num_tx_rings + num_rx_rings; i++) {
 		struct ptnet_queue *pq = pi->queues + i;
 		pq->pi = pi;
+		pq->kring_id = i;
+		if (i >= num_tx_rings) {
+			pq->kring_id -= num_tx_rings;
+		}
 	}
 
 #ifndef PTNET_CSB_ALLOC
