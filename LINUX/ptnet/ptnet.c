@@ -1255,15 +1255,13 @@ static int
 ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
-	struct net_device *netdev = na->ifp;
-	struct ptnet_info *pi = netdev_priv(netdev);
+	struct ptnet_info *pi = netdev_priv(na->ifp);
+	struct ptnet_queue *pq = pi->queues[kring->ring_id];
 	bool notify;
 
-	notify = netmap_pt_guest_txsync(&CSB_TX_RING(pi, kring->ring_id),
-					kring, flags);
+	notify = netmap_pt_guest_txsync(pq->ptring, kring, flags);
 	if (notify) {
-		iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE +
-			     (kring->ring_id << 2));
+		iowrite32(0, pq->kick);
 	}
 
 	return 0;
@@ -1273,15 +1271,13 @@ static int
 ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
-	struct net_device *netdev = na->ifp;
-	struct ptnet_info *pi = netdev_priv(netdev);
+	struct ptnet_info *pi = netdev_priv(na->ifp);
+	struct ptnet_queue *pq = pi->queues[na->num_tx_rings + kring->ring_id];
 	bool notify;
 
-	notify = netmap_pt_guest_rxsync(&CSB_RX_RING(pi, kring->ring_id),
-					kring, flags);
+	notify = netmap_pt_guest_rxsync(pq->ptring, kring, flags);
 	if (notify) {
-		iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE +
-			     ((na->num_tx_rings + kring->ring_id) << 2));
+		iowrite32(0, pq->kick);
 	}
 
 	return 0;
