@@ -305,7 +305,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
         /* Ask for a kick from a guest to the host if needed. */
 	if (NM_ACCESS_ONCE(ptring->host_need_kick) && !skb->xmit_more) {
 		ptring->sync_flags = NAF_FORCE_RECLAIM;
-		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK);
+		iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE);
 	}
 
         /* No more TX slots for further transmissions. We have to stop the
@@ -686,7 +686,7 @@ out_of_slots:
 		/* Kick the host if needed. */
 		if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
 			ptring->sync_flags = NAF_FORCE_READ;
-			iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK + 4);
+			iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE + 4);
 		}
 	}
 
@@ -1214,7 +1214,7 @@ ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 	notify = netmap_pt_guest_txsync(&CSB_TX_RING(pi, kring->ring_id),
 					kring, flags);
 	if (notify) {
-		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK +
+		iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE +
 			     (kring->ring_id << 2));
 	}
 
@@ -1232,7 +1232,7 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 	notify = netmap_pt_guest_rxsync(&CSB_RX_RING(pi, kring->ring_id),
 					kring, flags);
 	if (notify) {
-		iowrite32(0, pi->ioaddr + PTNET_IO_TXKICK +
+		iowrite32(0, pi->ioaddr + PTNET_IO_KICK_BASE +
 			     ((na->num_tx_rings + kring->ring_id) << 2));
 	}
 
