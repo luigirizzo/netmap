@@ -59,6 +59,14 @@ module_param(ptnet_gso, bool, 0444);
 #define CSB_TX_RING(_pi, _n)	(_pi)->csb->rings[_n]
 #define CSB_RX_RING(_pi, _n)	(_pi)->csb_rx_rings[_n]
 
+struct ptnet_info;
+
+/* Per-ring data structure. */
+struct ptnet_queue {
+	struct ptnet_info *pi;
+};
+
+/* Per-adapter data structure. */
 struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
@@ -83,6 +91,8 @@ struct ptnet_info {
 	struct msix_entry msix_entries[PTNET_MSIX_VECTORS];
 	char msix_names[PTNET_MSIX_VECTORS][64];
 	cpumask_var_t msix_affinity_masks[PTNET_MSIX_VECTORS];
+
+	struct ptnet_queue *queues;
 
 	/* CSB memory to be used for producer/consumer state
 	 * synchronization. */
@@ -1269,16 +1279,17 @@ static int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	uint32_t ptfeatures = NET_PTN_FEATURES_BASE;
+	unsigned int num_tx_rings, num_rx_rings;
 	struct net_device *netdev;
 	struct netmap_adapter na_arg;
-	unsigned int queue_pairs;
 	unsigned int nifp_offset;
 	struct ptnet_info *pi;
 	uint8_t macaddr[6];
-	uint32_t macreg;
 	u8* __iomem ioaddr;
+	uint32_t macreg;
 	int bars;
 	int err;
+	int i;
 
 	/* PCI I/O BAR initialization. */
 	bars = pci_select_bars(pdev, IORESOURCE_MEM | IORESOURCE_IO);
@@ -1321,11 +1332,15 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_ptfeat;
 	}
 
-	/* Allocate a multi-queue Ethernet device. */
+	/* Allocate a multi-queue Ethernet device, with space for
+	 * the adapter struct and per-ring structs. */
 	err = -ENOMEM;
-	queue_pairs = min(ioread32(ioaddr + PTNET_IO_NUM_TX_RINGS),
-			  ioread32(ioaddr + PTNET_IO_NUM_RX_RINGS));
-	netdev = alloc_etherdev_mq(sizeof(struct ptnet_info), queue_pairs);
+	num_tx_rings = ioread32(ioaddr + PTNET_IO_NUM_TX_RINGS);
+	num_rx_rings = ioread32(ioaddr + PTNET_IO_NUM_RX_RINGS);
+	netdev = alloc_etherdev_mq(sizeof(*pi) +
+				   ((num_tx_rings + num_rx_rings) *
+				   sizeof(struct ptnet_queue)),
+				   min(num_tx_rings, num_rx_rings));
 	if (!netdev) {
 		goto err_ptfeat;
 	}
@@ -1339,6 +1354,12 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->bars = bars;
 	pi->ioaddr = ioaddr;
 	pi->ptfeatures = ptfeatures;
+	pi->queues = (struct ptnet_queue *)(pi + 1);
+
+	for (i=0; i<num_tx_rings+num_rx_rings; i++) {
+		struct ptnet_queue *pq = pi->queues + i;
+		pq->pi = pi;
+	}
 
 #ifndef PTNET_CSB_ALLOC
 	/* Map the CSB memory exposed by the device. We don't use
@@ -1374,8 +1395,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 #endif /* PTNET_CSB_ALLOC */
 
-	pi->csb_rx_rings = pi->csb->rings +
-			   ioread32(ioaddr + PTNET_IO_NUM_TX_RINGS);
+	pi->csb_rx_rings = pi->csb->rings + num_tx_rings;
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
 	netif_napi_add(netdev, &pi->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
@@ -1429,8 +1449,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Attach a guest pass-through netmap adapter to this device. */
 	ptnet_nm_ops.num_tx_desc = ioread32(ioaddr + PTNET_IO_NUM_TX_SLOTS);
 	ptnet_nm_ops.num_rx_desc = ioread32(ioaddr + PTNET_IO_NUM_RX_SLOTS);
-	ptnet_nm_ops.num_tx_rings = ioread32(ioaddr + PTNET_IO_NUM_TX_RINGS);
-	ptnet_nm_ops.num_rx_rings = ioread32(ioaddr + PTNET_IO_NUM_RX_RINGS);
+	ptnet_nm_ops.num_tx_rings = num_tx_rings;
+	ptnet_nm_ops.num_rx_rings = num_rx_rings;
 	na_arg = ptnet_nm_ops;
 	na_arg.ifp = pi->netdev;
 	netmap_pt_guest_attach(&na_arg, pi->csb, nifp_offset,
