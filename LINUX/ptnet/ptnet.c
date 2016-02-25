@@ -93,7 +93,7 @@ struct ptnet_info {
 	/* MSI-X interrupt data structures. */
 	struct msix_entry *msix_entries;
 
-	unsigned int num_tx_rings, num_rx_rings;
+	int num_rings;
 	struct ptnet_queue *queues;
 
 	/* CSB memory to be used for producer/consumer state
@@ -742,19 +742,21 @@ ptnet_netpoll(struct net_device *netdev)
 static int
 ptnet_irqs_init(struct ptnet_info *pi)
 {
-	int num_rings = pi->num_tx_rings + pi->num_rx_rings;
+	unsigned int num_tx_rings;
 	int ret;
 	int i;
 
+	num_tx_rings = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_RINGS);
+
 	/* Allocate the MSI-X interrupt vectors we need. */
-	pi->msix_entries = kzalloc(sizeof(*pi->msix_entries) * num_rings,
+	pi->msix_entries = kzalloc(sizeof(*pi->msix_entries) * pi->num_rings,
 				   GFP_KERNEL);
 	if (!pi->msix_entries) {
 		pr_err("Failed to allocate msix entires\n");
 		return -ENOMEM;
 	}
 
-	for (i=0; i<num_rings; i++) {
+	for (i=0; i<pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues + i;
 
 		memset(&pq->msix_affinity_mask, 0, sizeof(pq->msix_affinity_mask));
@@ -766,15 +768,15 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	}
 
 	ret = pci_enable_msix_exact(pi->pdev, pi->msix_entries,
-				    num_rings);
+				    pi->num_rings);
 	if (ret) {
 		pr_err("Failed to enable msix vectors (%d)\n", ret);
 		goto err_masks;
 	}
 
-	for (i=0; i<num_rings; i++) {
+	for (i=0; i<pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues + i;
-		irq_handler_t handler = (i < pi->num_tx_rings) ?
+		irq_handler_t handler = (i < num_tx_rings) ?
 					ptnet_tx_intr : ptnet_rx_intr;
 
 		snprintf(pq->msix_name, sizeof(pq->msix_name),
@@ -799,7 +801,7 @@ err_irqs:
 	for (; i>=0; i--) {
 		free_irq(pi->msix_entries[i].vector, pi->netdev);
 	}
-	i = num_rings-1;
+	i = pi->num_rings-1;
 err_masks:
 	for (; i>=0; i--) {
 		free_cpumask_var(pi->queues[i].msix_affinity_mask);
@@ -811,14 +813,13 @@ err_masks:
 static void
 ptnet_irqs_fini(struct ptnet_info *pi)
 {
-	int num_rings = pi->num_tx_rings + pi->num_rx_rings;
 	int i;
 
 	/* Tell the hypervisor that we are going to deallocate the
 	 * MSI-X vectors, so that it can do its own setup. */
 	iowrite32(PTNET_CTRL_IRQFINI, pi->ioaddr + PTNET_IO_CTRL);
 
-	for (i=0; i<num_rings; i++) {
+	for (i=0; i<pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues + i;
 
 		free_irq(pi->msix_entries[i].vector, pq);
@@ -1369,11 +1370,10 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->bars = bars;
 	pi->ioaddr = ioaddr;
 	pi->ptfeatures = ptfeatures;
-	pi->num_tx_rings = num_tx_rings;
-	pi->num_rx_rings = num_rx_rings;
+	pi->num_rings = num_tx_rings + num_rx_rings;
 	pi->queues = (struct ptnet_queue *)(pi + 1);
 
-	for (i = 0; i < num_tx_rings + num_rx_rings; i++) {
+	for (i = 0; i < pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues + i;
 		pq->pi = pi;
 		pq->kring_id = i;
