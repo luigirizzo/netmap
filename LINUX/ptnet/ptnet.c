@@ -54,8 +54,6 @@ module_param(ptnet_gso, bool, 0444);
 #define DRV_NAME "ptnet"
 #define DRV_VERSION "0.1"
 
-#define PTNET_MSIX_VECTORS	2
-
 #define CSB_TX_RING(_pi, _n)	(_pi)->csb->rings[_n]
 #define CSB_RX_RING(_pi, _n)	(_pi)->csb_rx_rings[_n]
 
@@ -93,7 +91,7 @@ struct ptnet_info {
 #endif  /* !PTNET_CSB_ALLOC */
 
 	/* MSI-X interrupt data structures. */
-	struct msix_entry msix_entries[PTNET_MSIX_VECTORS];
+	struct msix_entry *msix_entries;
 
 	unsigned int num_tx_rings, num_rx_rings;
 	struct ptnet_queue *queues;
@@ -749,6 +747,13 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	int i;
 
 	/* Allocate the MSI-X interrupt vectors we need. */
+	pi->msix_entries = kzalloc(sizeof(*pi->msix_entries) * num_rings,
+				   GFP_KERNEL);
+	if (!pi->msix_entries) {
+		pr_err("Failed to allocate msix entires\n");
+		return -ENOMEM;
+	}
+
 	for (i=0; i<num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues + i;
 
@@ -822,6 +827,7 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 		}
 	}
 	pci_disable_msix(pi->pdev);
+	kfree(pi->msix_entries);
 }
 
 // TODO fix/remove this
