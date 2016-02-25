@@ -72,6 +72,8 @@ struct ptnet_queue {
 struct ptnet_rx_queue {
 	struct ptnet_queue q;
 	struct napi_struct napi;
+	struct page *rx_pool;
+	int rx_pool_num;
 };
 
 /* Per-adapter data structure. */
@@ -107,9 +109,6 @@ struct ptnet_info {
 	struct ptnet_ring *csb_rx_rings;
 
 	int min_tx_slots;
-
-	struct page *rx_pool;
-	int rx_pool_num;
 
 	/* Pass-through netmap adapter used by netmap. */
 	struct netmap_pt_guest_adapter *ptna_nm;
@@ -425,13 +424,13 @@ ptnet_rx_intr(int irq, void *data)
 }
 
 static struct page *
-ptnet_alloc_page(struct ptnet_info *pi)
+ptnet_alloc_page(struct ptnet_rx_queue *prq)
 {
-	struct page *p = pi->rx_pool;
+	struct page *p = prq->rx_pool;
 
 	if (p) {
-		pi->rx_pool = (struct page *)(p->private);
-		pi->rx_pool_num--;
+		prq->rx_pool = (struct page *)(p->private);
+		prq->rx_pool_num--;
 		p->private = (unsigned long)NULL;
 
 		return p;
@@ -441,18 +440,18 @@ ptnet_alloc_page(struct ptnet_info *pi)
 }
 
 static inline void
-ptnet_rx_pool_refill(struct ptnet_info *pi)
+ptnet_rx_pool_refill(struct ptnet_rx_queue *prq)
 {
-	while (pi->rx_pool_num < 2 * MAX_SKB_FRAGS) {
+	while (prq->rx_pool_num < 2 * MAX_SKB_FRAGS) {
 		struct page *p = alloc_page(GFP_ATOMIC);
 
 		if (!p) {
 			break;
 		}
 
-		p->private = (unsigned long)(pi->rx_pool);
-		pi->rx_pool = p;
-		pi->rx_pool_num ++;
+		p->private = (unsigned long)(prq->rx_pool);
+		prq->rx_pool = p;
+		prq->rx_pool_num ++;
 	}
 }
 
@@ -561,7 +560,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 								PAGE_SIZE);
 					}
 
-					skbpage = ptnet_alloc_page(pi);
+					skbpage = ptnet_alloc_page(prq);
 					if (unlikely(!skbpage)) {
 						pr_err("%s: pntet_alloc_page() failed\n",
 						       __func__);
@@ -709,7 +708,7 @@ out_of_slots:
 		}
 	}
 
-	ptnet_rx_pool_refill(pi);
+	ptnet_rx_pool_refill(prq);
 
 	return work_done;
 }
@@ -919,9 +918,6 @@ ptnet_open(struct net_device *netdev)
 		pr_info("%s: min_tx_slots = %u\n", __func__, pi->min_tx_slots);
 	}
 
-	pi->rx_pool = NULL;
-	pi->rx_pool_num = 0;
-
 	netif_start_queue(netdev);
 
 	if (0) ptnet_ioregs_dump(pi);
@@ -936,14 +932,17 @@ ptnet_open(struct net_device *netdev)
 
 	pr_info("%s: %p\n", __func__, pi);
 
-	/* There may be pending packets received in netmap mode while the
-	 * interface was down. Schedule NAPI to flush packets that are
-	 * pending in the RX ring. We won't receive further interrupts until
-	 * the pending ones will be processed.  */
 	for (i = 0; i < na_dr->num_rx_rings; i++){
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
 					pi->queues[na_dr->num_tx_rings + i];
+		prq->rx_pool = NULL;
+		prq->rx_pool_num = 0;
 		napi_enable(&prq->napi);
+
+		/* There may be pending packets received in netmap mode while
+		 * the interface was down. Schedule NAPI to flush packets that
+		 * are pending in the RX ring. We won't receive further
+		 * interrupts until the pending ones will be processed. */
 		D("Schedule NAPI to flush RX ring #%d", i);
 		ptnet_napi_schedule(&prq->q);
 	}
@@ -985,20 +984,21 @@ ptnet_close(struct net_device *netdev)
 	for (i = 0; i < na_dr->num_rx_rings; i++){
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
 					pi->queues[na_dr->num_tx_rings + i];
+		/* Stop napi. */
 		napi_disable(&prq->napi);
+
+		/* Free RX pool. */
+		while (prq->rx_pool) {
+			struct page *p = prq->rx_pool;
+
+			prq->rx_pool = (struct page *)(p->private);
+			p->private = (unsigned long)NULL;
+			put_page(p);
+		}
+		prq->rx_pool = NULL;
+		prq->rx_pool_num = 0;
 	}
 
-
-	/* Free RX pool. */
-	while (pi->rx_pool) {
-		struct page *p = pi->rx_pool;
-
-		pi->rx_pool = (struct page *)(p->private);
-		p->private = (unsigned long)NULL;
-		put_page(p);
-	}
-	pi->rx_pool = NULL;
-	pi->rx_pool_num = 0;
 
 	ptnet_nm_register(na_dr, 0 /* off */);
 
