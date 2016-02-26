@@ -1218,6 +1218,8 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 			}
 			D("Using vnet_hdr_len %d for %p", na->virt_hdr_len, na);
 			netmap_adapter_put(na);
+		} else if (!na) {
+			error = ENXIO;
 		}
 		NMG_UNLOCK();
 		break;
