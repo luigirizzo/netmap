@@ -329,14 +329,14 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
         /* No more TX slots for further transmissions. We have to stop the
 	 * qdisc layer and enable notifications. */
 	if (ptnet_tx_slots(a.ring) < pi->min_tx_slots) {
-		netif_stop_queue(netdev);
+		netif_stop_subqueue(netdev, pq->kring_id);
 		ptring->guest_need_kick = 1;
 
                 /* Double check. */
 		ptnet_sync_tail(ptring, kring);
 		if (unlikely(ptnet_tx_slots(a.ring) >= pi->min_tx_slots)) {
 			/* More TX space came in the meanwhile. */
-			netif_start_queue(netdev);
+			netif_start_subqueue(netdev, pq->kring_id);
 			ptring->guest_need_kick = 0;
 		}
 	}
@@ -392,7 +392,7 @@ ptnet_tx_intr(int irq, void *data)
 
 	/* Just wake up the qdisc layer, it will flush pending transmissions,
 	 * with the side effect of reclaiming completed TX slots. */
-	netif_wake_queue(netdev);
+	netif_wake_subqueue(netdev, pq->kring_id);
 
 	return IRQ_HANDLED;
 }
@@ -921,7 +921,7 @@ ptnet_open(struct net_device *netdev)
 		pr_info("%s: min_tx_slots = %u\n", __func__, pi->min_tx_slots);
 	}
 
-	netif_start_queue(netdev);
+	netif_tx_start_all_queues(netdev);
 
 	if (0) ptnet_ioregs_dump(pi);
 
@@ -983,7 +983,8 @@ ptnet_close(struct net_device *netdev)
 	del_timer(&pi->hang_timer);
 #endif
 
-	netif_tx_disable(netdev);
+	netif_tx_stop_all_queues(netdev);
+
 	for (i = 0; i < na_dr->num_rx_rings; i++){
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
 					pi->queues[na_dr->num_tx_rings + i];
