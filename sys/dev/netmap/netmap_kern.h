@@ -454,7 +454,7 @@ struct netmap_kring {
 
 	uint32_t	users;		/* existing bindings for this ring */
 
-	uint32_t	ring_id;	/* debugging */
+	uint32_t	ring_id;	/* kring identifier */
 	enum txrx	tx;		/* kind of ring (tx or rx) */
 	char name[64];			/* diagnostic */
 
@@ -1998,8 +1998,8 @@ typedef void (*nm_kthread_worker_fn_t)(void *data);
 
 /* kthread configuration */
 struct nm_kthread_cfg {
-	long				type;		/* kthread type */
-	struct nm_kth_event_cfg		event;		/* event/ioctl fd */
+	long				type;		/* kthread type/identifier */
+	struct ptnet_ring_cfg		event;		/* event/ioctl fd */
 	nm_kthread_worker_fn_t		worker_fn;	/* worker function */
 	void				*worker_private;/* worker parameter */
 	int				attach_user;	/* attach kthread to user process */
@@ -2023,7 +2023,7 @@ struct netmap_pt_host_adapter {
 
 	struct netmap_adapter *parent;
 	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
-	void *ptn_state;
+	void *ptns;
 };
 /* ptnetmap HOST routines */
 int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
@@ -2050,13 +2050,16 @@ typedef uint32_t (*nm_pt_guest_ptctl_t)(struct ifnet *, uint32_t);
  */
 struct netmap_pt_guest_adapter {
 	struct netmap_hw_adapter hwup;
-	struct paravirt_csb *csb;
+	void *csb;
 };
 
-int netmap_pt_guest_attach(struct netmap_adapter *, struct paravirt_csb *,
-			   nm_pt_guest_ptctl_t);
-bool netmap_pt_guest_txsync(struct netmap_kring *kring, int flags);
-bool netmap_pt_guest_rxsync(struct netmap_kring *kring, int flags);
+int netmap_pt_guest_attach(struct netmap_adapter *, void *,
+			   unsigned int, nm_pt_guest_ptctl_t);
+struct ptnet_ring;
+bool netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
+			    int flags);
+bool netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
+			    int flags);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */

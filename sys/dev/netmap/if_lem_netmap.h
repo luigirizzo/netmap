@@ -531,7 +531,7 @@ lem_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 	struct adapter *adapter = ifp->if_softc;
 	bool notify;
 
-	notify = netmap_pt_guest_txsync(kring, flags);
+	notify = netmap_pt_guest_txsync(&adapter->csb->tx_ring, kring, flags);
 	if (notify)
 		E1000_WRITE_REG(&adapter->hw, E1000_TDT(0), 0);
 
@@ -548,7 +548,7 @@ lem_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 	struct adapter *adapter = ifp->if_softc;
 	bool notify;
 
-	notify = netmap_pt_guest_rxsync(kring, flags);
+	notify = netmap_pt_guest_rxsync(&adapter->csb->rx_ring, kring, flags);
 	if (notify)
 		E1000_WRITE_REG(&adapter->hw, E1000_RDT(0), 0);
 
@@ -676,6 +676,8 @@ lem_netmap_attach(struct adapter *adapter)
         /* XXX: check if the device support ptnetmap (now we use PARA_SUBDEV) */
 	if ((adapter->hw.subsystem_device_id == E1000_PARA_SUBDEV) &&
 		(lem_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE)) {
+		int err;
+
 		na.nm_config = lem_ptnetmap_config;
 		na.nm_register = lem_ptnetmap_reg;
 		na.nm_txsync = lem_ptnetmap_txsync;
@@ -683,7 +685,17 @@ lem_netmap_attach(struct adapter *adapter)
 		na.nm_bdg_attach = lem_ptnetmap_bdg_attach; /* XXX */
 		na.nm_dtor = lem_ptnetmap_dtor;
 
-		netmap_pt_guest_attach(&na, adapter->csb, lem_ptnetmap_ptctl);
+		/* Ask the device to fill in some configuration fields. Here we
+		 * just need nifp_offset. */
+		err = lem_ptnetmap_ptctl(na.ifp, NET_PARAVIRT_PTCTL_CONFIG);
+		if (err) {
+			D("Failed to get nifp_offset from passthrough device");
+			return;
+		}
+
+		netmap_pt_guest_attach(&na, adapter->csb,
+				       adapter->csb->nifp_offset,
+				       lem_ptnetmap_ptctl);
 	} else
 #endif /* NIC_PTNETMAP && defined WITH_PTNETMAP_GUEST */
 		netmap_attach(&na);

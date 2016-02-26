@@ -2835,7 +2835,8 @@ netmap_attach(struct netmap_adapter *arg)
 #ifdef WITH_PTNETMAP_GUEST
 int
 netmap_pt_guest_attach(struct netmap_adapter *arg,
-		       struct paravirt_csb *csb,
+		       void *csb,
+		       unsigned int nifp_offset,
 		       nm_pt_guest_ptctl_t ptctl)
 {
 	struct netmap_pt_guest_adapter *ptna;
@@ -2843,7 +2844,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 	int error;
 
 	/* get allocator */
-	arg->nm_mem = netmap_mem_pt_guest_new(ifp, csb, ptctl);
+	arg->nm_mem = netmap_mem_pt_guest_new(ifp, nifp_offset, ptctl);
 	if (arg->nm_mem == NULL)
 		return ENOMEM;
 	arg->na_flags |= NAF_MEM_OWNER;

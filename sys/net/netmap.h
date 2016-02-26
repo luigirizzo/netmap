@@ -626,7 +626,7 @@ struct nm_ifreq {
 /*
  * netmap kernel thread configuration
  */
-/* bhyve/vmm.ko MSIX paramenters for IOCTL */
+/* bhyve/vmm.ko MSIX parameters for IOCTL */
 struct ptn_vmm_ioctl_msix {
 	uint64_t        msg;
 	uint64_t        addr;
@@ -640,8 +640,9 @@ struct nm_kth_ioctl {
 		struct ptn_vmm_ioctl_msix msix;
 	} data;
 };
-/* event configuration */
-struct nm_kth_event_cfg {
+
+/* Configuration of a ptnetmap ring */
+struct ptnet_ring_cfg {
 	uint64_t ioeventfd;		/* eventfd in linux, tsleep() parameter in FreeBSD */
 	uint64_t irqfd;			/* eventfd in linux, ioctl fd in FreeBSD */
 	struct nm_kth_ioctl ioctl;	/* ioctl parameter to send irq (only used in bhyve/FreeBSD) */

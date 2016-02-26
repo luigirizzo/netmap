@@ -560,13 +560,16 @@ static int
 vtnet_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
+	struct netmap_pt_guest_adapter *ptna =
+		(struct netmap_pt_guest_adapter *)na;
+	struct paravirt_csb *csb = ptna->csb;
         struct ifnet *ifp = na->ifp;
 	u_int ring_nr = kring->ring_id;
 	struct SOFTC_T *sc = ifp->if_softc;
 	struct virtqueue *vq = sc->vtnet_txqs[ring_nr].vtntx_vq;
 	bool notify;
 
-	notify = netmap_pt_guest_txsync(kring, flags);
+	notify = netmap_pt_guest_txsync(&csb->tx_ring, kring, flags);
 	if (notify)
 		virtqueue_notify(vq);
 
@@ -584,13 +587,16 @@ static int
 vtnet_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
+	struct netmap_pt_guest_adapter *ptna =
+		(struct netmap_pt_guest_adapter *)na;
+	struct paravirt_csb *csb = ptna->csb;
         struct ifnet *ifp = na->ifp;
 	u_int ring_nr = kring->ring_id;
 	struct SOFTC_T *sc = ifp->if_softc;
 	struct virtqueue *vq = sc->vtnet_rxqs[ring_nr].vtnrx_vq;
 	bool notify;
 
-	notify = netmap_pt_guest_rxsync(kring, flags);
+	notify = netmap_pt_guest_rxsync(&csb->rx_ring, kring, flags);
 	if (notify)
 		virtqueue_notify(vq);
 
@@ -754,6 +760,7 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 	if (virtio_with_feature(sc->vtnet_dev, VIRTIO_NET_F_PTNETMAP) &&
 		(vtnet_ptnetmap_features(sc) & NET_PTN_FEATURES_BASE)) {
 		struct paravirt_csb *csb;
+		int err;
 
 		D("ptnetmap supported");
 		na.nm_config = vtnet_ptnetmap_config;
@@ -768,7 +775,16 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 			return;
 		}
 
-		netmap_pt_guest_attach(&na, csb, vtnet_ptnetmap_ptctl);
+		/* Ask the device to fill in some configuration fields. Here we
+		 * just need nifp_offset. */
+		err = vtnet_ptnetmap_ptctl(na.ifp, NET_PARAVIRT_PTCTL_CONFIG);
+		if (err) {
+			D("Failed to get nifp_offset from passthrough device");
+			return;
+		}
+
+		netmap_pt_guest_attach(&na, csb, csb->nifp_offset,
+				       vtnet_ptnetmap_ptctl);
 	} else
 #endif /* WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);

@@ -393,7 +393,7 @@ e1000_ptnetmap_txsync(struct netmap_kring *kring, int flags)
 
         IFRATE(adapter->rate_ctx.new.tx_sync++);
 
-	notify = netmap_pt_guest_txsync(kring, flags);
+	notify = netmap_pt_guest_txsync(&adapter->csb.tx_ring, kring, flags);
 	if (notify)
 		writel(0, adapter->hw.hw_addr + txr->tdt);
 
@@ -414,7 +414,7 @@ e1000_ptnetmap_rxsync(struct netmap_kring *kring, int flags)
 
         IFRATE(adapter->rate_ctx.new.rx_sync++);
 
-	notify = netmap_pt_guest_rxsync(kring, flags);
+	notify = netmap_pt_guest_rxsync(&adapter->csb.rx_ring, kring, flags);
 	if (notify)
 		writel(0, hw->hw_addr + rxr->rdt);
 
@@ -556,6 +556,8 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	if (paravirtual &&
 		(adapter->pdev->subsystem_device == E1000_PARAVIRT_SUBDEV) &&
 	        (e1000_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE)) {
+		int err;
+
 		na.nm_config = e1000_ptnetmap_config;
 		na.nm_register = e1000_ptnetmap_reg;
 		na.nm_txsync = e1000_ptnetmap_txsync;
@@ -563,7 +565,16 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 		na.nm_bdg_attach = e1000_ptnetmap_bdg_attach; /* XXX */
 		na.nm_dtor = e1000_ptnetmap_dtor;
 
-		netmap_pt_guest_attach(&na, adapter->csb, e1000_ptnetmap_ptctl);
+		/* Ask the device to fill in some configuration fields. Here we
+		 * just need nifp_offset. */
+		err = e1000_ptnetmap_ptctl(na.ifp, NET_PARAVIRT_PTCTL_CONFIG);
+		if (err) {
+			D("Failed to get nifp_offset from passthrough device");
+			return;
+		}
+
+		netmap_pt_guest_attach(&na, adapter->csb, adapter->csb->nifp_offset,
+				       e1000_ptnetmap_ptctl);
 	} else
 #endif /* CONFIG_E1000_NETMAP_PT && WITH_PTNETMAP_GUEST */
 	netmap_attach(&na);

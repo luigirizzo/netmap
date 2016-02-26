@@ -28,6 +28,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <syslog.h>
 
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
@@ -37,6 +38,7 @@
 
 #include <pthread.h>
 
+#include "pkt_hash.h"
 #include "ctrs.h"
 
 
@@ -80,7 +82,8 @@ struct compact_ipv6_hdr {
 #define MAX_IFNAMELEN 	64
 #define DEF_OUT_PIPES 	2
 #define DEF_EXTRA_BUFS 	0
-#define DEF_BATCH	512
+#define DEF_BATCH	2048
+#define DEF_SYSLOG_INT	600
 #define BUF_REVOKE	100
 
 struct {
@@ -88,6 +91,7 @@ struct {
 	uint16_t output_rings;
 	uint32_t extra_bufs;
 	uint16_t batch;
+	int syslog_interval;
 } glob_arg;
 
 /*
@@ -135,6 +139,7 @@ static volatile int do_abort = 0;
 
 uint64_t dropped = 0;
 uint64_t forwarded = 0;
+uint64_t non_ip = 0;
 
 struct port_des {
 	struct my_ctrs ctr;
@@ -150,6 +155,7 @@ static void *
 print_stats(void *arg)
 {
 	int npipes = glob_arg.output_rings;
+	int sys_int = 0;
 	(void)arg;
 	struct my_ctrs cur, prev;
 	char b1[40], b2[40];
@@ -164,12 +170,17 @@ print_stats(void *arg)
 	memset(&prev, 0, sizeof(prev));
 	gettimeofday(&prev.t, NULL);
 	while (!do_abort) {
-		int j;
+		int j, dosyslog = 0;
 		uint64_t pps, dps, usec;
 		struct my_ctrs x;
 
 		memset(&cur, 0, sizeof(cur));
 		usec = wait_for_next_report(&prev.t, &cur.t, 1000);
+
+		if (++sys_int == glob_arg.syslog_interval) {
+			dosyslog = 1;
+			sys_int = 0;
+		}
 
 		for (j = 0; j < npipes; ++j) {
 			struct port_des *p = &ports[j];
@@ -183,8 +194,28 @@ print_stats(void *arg)
 			dps = (x.drop*1000000 + usec/2) / usec;
 			printf("%s/%s|", norm(b1, pps), norm(b2, dps));
 			pipe_prev[j] = p->ctr;
+
+			if (dosyslog) {
+				syslog(LOG_INFO,
+					"{"
+						"\"interface\":\"%s\","
+						"\"output_ring\":%"PRIu16","
+						"\"packets_forwarded\":%"PRIu64","
+						"\"packets_dropped\":%"PRIu64
+					"}", glob_arg.ifname, j, p->ctr.pkts, p->ctr.drop);
+			}
 		}
 		printf("\n");
+		if (dosyslog) {
+			syslog(LOG_INFO,
+				"{"
+					"\"interface\":\"%s\","
+					"\"output_ring\":null,"
+					"\"packets_forwarded\":%"PRIu64","
+					"\"packets_dropped\":%"PRIu64","
+					"\"non_ip_packets\":%"PRIu64
+				"}", glob_arg.ifname, forwarded, dropped, non_ip);
+		}
 		x.pkts = cur.pkts - prev.pkts;
 		x.drop = cur.drop - prev.drop;
 		pps = (x.pkts*1000000 + usec/2) / usec;
@@ -236,58 +267,6 @@ static void sigint_h(int sig)
 	signal(SIGINT, SIG_DFL);
 }
 
-static inline uint32_t ip_hasher(const char * buffer, const u_int16_t buffer_len)
-{
-	uint32_t l3_offset = sizeof(struct compact_eth_hdr);
-	uint16_t eth_type;
-
-	eth_type = (buffer[12] << 8) + buffer[13];
-
-	while (eth_type == 0x8100 /* VLAN */ ) {
-		l3_offset += 4;
-		eth_type = (buffer[l3_offset - 2] << 8) + buffer[l3_offset - 1];
-	}
-
-	switch (eth_type) {
-	case 0x0800:
-		{
-			/* IPv4 */
-			struct compact_ip_hdr *iph;
-
-			if (unlikely
-			    (buffer_len <
-			     l3_offset + sizeof(struct compact_ip_hdr)))
-				return 0;
-
-			iph = (struct compact_ip_hdr *)&buffer[l3_offset];
-
-			return ntohl(iph->saddr) + ntohl(iph->daddr);
-		}
-		break;
-	case 0x86DD:
-		{
-			/* IPv6 */
-			struct compact_ipv6_hdr *ipv6h;
-			uint32_t *s, *d;
-
-			if (unlikely
-			    (buffer_len <
-			     l3_offset + sizeof(struct compact_ipv6_hdr)))
-				return 0;
-
-			ipv6h = (struct compact_ipv6_hdr *)&buffer[l3_offset];
-			s = (uint32_t *) & ipv6h->saddr;
-			d = (uint32_t *) & ipv6h->daddr;
-
-			return (s[0] + s[1] + s[2] + s[3] + d[0] + d[1] + d[2] +
-				d[3]);
-		}
-		break;
-	default:
-		return 0;	/* Unknown protocol */
-	}
-}
-
 void usage()
 {
 	printf("usage: lb [options]\n");
@@ -296,6 +275,8 @@ void usage()
 	printf("  -p npipes       number of output pipes (default: %d)\n", DEF_OUT_PIPES);
 	printf("  -B nbufs        number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
 	printf("  -b batch        batch size (default: %d)\n", DEF_BATCH);
+	printf("  -s seconds      seconds between syslog messages (default: %d)\n",
+			DEF_SYSLOG_INT);
 	exit(0);
 }
 
@@ -310,8 +291,9 @@ int main(int argc, char **argv)
 	glob_arg.ifname[0] = '\0';
 	glob_arg.output_rings = DEF_OUT_PIPES;
 	glob_arg.batch = DEF_BATCH;
+	glob_arg.syslog_interval = DEF_SYSLOG_INT;
 
-	while ( (ch = getopt(argc, argv, "i:p:b:B:")) != -1) {
+	while ( (ch = getopt(argc, argv, "i:p:b:B:s:")) != -1) {
 		switch (ch) {
 		case 'i':
 			D("interface is %s", optarg);
@@ -345,6 +327,11 @@ int main(int argc, char **argv)
 			D("batch is %d", glob_arg.batch);
 			break;
 
+		case 's':
+			glob_arg.syslog_interval = atoi(optarg);
+			D("syslog interval is %d", glob_arg.syslog_interval);
+			break;
+
 		default:
 			D("bad option %c %s", ch, optarg);
 			usage();
@@ -358,6 +345,9 @@ int main(int argc, char **argv)
 		usage();
 		return 1;
 	}
+
+	setlogmask(LOG_UPTO(LOG_INFO));
+	openlog("lb", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
 
 	uint32_t npipes = glob_arg.output_rings;
 
@@ -575,11 +565,13 @@ run:
 				next_slot = &rxring->slot[next_cur];
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
-				const char *p = next_buf;
 				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 				__builtin_prefetch(next_buf);
-				uint32_t output_port =
-				    ip_hasher(p, rs->len) % npipes;
+				// 'B' is just a hashing seed
+				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
+				if (hash == 0)
+					non_ip++; // XXX ??
+				uint32_t output_port = hash % glob_arg.output_rings;
 				struct port_des *port = &ports[output_port];
 				struct netmap_ring *ring = port->ring;
 				uint32_t free_buf;

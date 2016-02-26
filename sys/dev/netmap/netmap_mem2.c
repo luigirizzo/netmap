@@ -359,12 +359,14 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 		if (nmd->pools[NETMAP_BUF_POOL].bitmap) {
 			/* XXX This check is a workaround that prevents a
 			 * NULL pointer crash which currently happens only
-			 * with ptnetmap guests. */
+			 * with ptnetmap guests. Also,
+			 * netmap_mem_init_shared_info must not be called
+			 * by ptnetmap guest. */
 			nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
-		}
 
-		/* expose info to the ptnetmap guest */
-		netmap_mem_init_shared_info(nmd);
+			/* expose info to the ptnetmap guest */
+			netmap_mem_init_shared_info(nmd);
+		}
 	}
 	nmd->ops->nmd_deref(nmd);
 
@@ -2409,22 +2411,13 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 /* Called when ptnetmap device (virtio/e1000) is attaching */
 struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
-			struct paravirt_csb *csb,
+			unsigned int nifp_offset,
 			nm_pt_guest_ptctl_t ptctl)
 {
 	struct netmap_mem_d *nmd;
 	nm_memid_t host_id;
-	int err;
 
 	if (ifp == NULL || ptctl == NULL) {
-		return NULL;
-	}
-
-	/* Ask the device to fill in some configuration fields. Here we
-	 * just need nifp_offset. */
-	err = ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
-	if (err) {
-		D("Failed to get nifp_offset from passthrough device");
 		return NULL;
 	}
 
@@ -2434,7 +2427,7 @@ netmap_mem_pt_guest_new(struct ifnet *ifp,
 	nmd = netmap_mem_pt_guest_get(host_id);
 
 	if (nmd) {
-		netmap_mem_pt_guest_ifp_add(nmd, ifp, csb->nifp_offset,
+		netmap_mem_pt_guest_ifp_add(nmd, ifp, nifp_offset,
 					    ptctl);
 	}
 
