@@ -54,9 +54,6 @@ module_param(ptnet_gso, bool, 0444);
 #define DRV_NAME "ptnet"
 #define DRV_VERSION "0.1"
 
-#define CSB_TX_RING(_pi, _n)	(_pi)->csb->rings[_n]
-#define CSB_RX_RING(_pi, _n)	(_pi)->csb_rx_rings[_n]
-
 struct ptnet_info;
 
 /* Per-ring data structure. */
@@ -109,7 +106,6 @@ struct ptnet_info {
 	/* CSB memory to be used for producer/consumer state
 	 * synchronization. */
 	struct ptnet_csb *csb;
-	struct ptnet_ring *csb_rx_rings;
 
 	int min_tx_slots;
 
@@ -1088,42 +1084,32 @@ ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
 static void
 ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 {
-	enum txrx t;
 	int i;
 
 	/* Sync krings from the host, reading from
 	 * CSB. */
-	for_rx_tx(t) {
-		for (i=0; i<nma_get_nrings(na, t); i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
-			struct ptnet_ring *ptring;
+	for (i = 0; i < pi->num_rings; i++) {
+		struct ptnet_ring *ptring = pi->queues[i]->ptring;
+		struct netmap_kring *kring;
 
-			ptring = (t == NR_TX ? &CSB_TX_RING(pi, i)
-					     : &CSB_RX_RING(pi, i));
-			kring->rhead = kring->ring->head = ptring->head;
-			kring->rcur = kring->ring->cur = ptring->cur;
-			kring->nr_hwcur = ptring->hwcur;
-			kring->nr_hwtail = kring->rtail =
-				kring->ring->tail = ptring->hwtail;
+		if (i < na->num_tx_rings) {
+			kring = na->tx_rings + i;
+		} else {
+			kring = na->rx_rings + i - na->num_tx_rings;
 		}
-	}
+		kring->rhead = kring->ring->head = ptring->head;
+		kring->rcur = kring->ring->cur = ptring->cur;
+		kring->nr_hwcur = ptring->hwcur;
+		kring->nr_hwtail = kring->rtail =
+			kring->ring->tail = ptring->hwtail;
 
-	for_rx_tx(t) {
-		for (i=0; i<nma_get_nrings(na, t); i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
-			struct ptnet_ring *ptring;
-
-			ptring = (t == NR_TX ? &CSB_TX_RING(pi, i)
-					     : &CSB_RX_RING(pi, i));
-			ND("%d,%d: csb {hc %u h %u c %u ht %u}", t, i,
-			   ptring->hwcur, ptring->head, ptring->cur,
-			   ptring->hwtail);
-			ND("%d,%d: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
-			   t, i, kring->nr_hwcur, kring->rhead, kring->rcur,
-			   kring->ring->head, kring->ring->cur, kring->nr_hwtail,
-			   kring->rtail, kring->ring->tail);
-			(void)ptring; (void)kring;
-		}
+		ND("%d,%d: csb {hc %u h %u c %u ht %u}", t, i,
+		   ptring->hwcur, ptring->head, ptring->cur,
+		   ptring->hwtail);
+		ND("%d,%d: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
+		   t, i, kring->nr_hwcur, kring->rhead, kring->rcur,
+		   kring->ring->head, kring->ring->cur, kring->nr_hwtail,
+		   kring->rtail, kring->ring->tail);
 	}
 }
 
@@ -1444,8 +1430,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 			  ioaddr + PTNET_IO_CSBBAL);
 	}
 #endif /* PTNET_CSB_ALLOC */
-
-	pi->csb_rx_rings = pi->csb->rings + num_tx_rings;
 
 	/* Initialize common parts of all the queues (interrupt
 	 * setup excluded). */
