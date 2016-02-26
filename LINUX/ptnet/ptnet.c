@@ -168,8 +168,7 @@ ptnet_tx_slots(struct netmap_ring *ring)
 	return space;
 }
 
-struct xmit_copy_args
-{
+struct xmit_copy_args {
 	struct netmap_adapter *na;
 	struct netmap_ring *ring;
 	unsigned int head;
@@ -1318,6 +1317,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct netmap_adapter na_arg;
 	struct net_device *netdev;
 	unsigned int nifp_offset;
+	unsigned int queue_pairs;
 	struct ptnet_info *pi;
 	uint8_t macaddr[6];
 	u8* __iomem ioaddr;
@@ -1372,12 +1372,13 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	err = -ENOMEM;
 	num_tx_rings = ioread32(ioaddr + PTNET_IO_NUM_TX_RINGS);
 	num_rx_rings = ioread32(ioaddr + PTNET_IO_NUM_RX_RINGS);
+	queue_pairs = min(num_tx_rings, num_rx_rings);
 	netdev = alloc_etherdev_mq(sizeof(*pi) +
 				   (num_tx_rings + num_rx_rings) *
 						sizeof(struct ptnet_queue *) +
 				   num_tx_rings * sizeof(struct ptnet_queue) +
 				   num_rx_rings * sizeof(struct ptnet_rx_queue),
-				   min(num_tx_rings, num_rx_rings));
+				   queue_pairs);
 	if (!netdev) {
 		goto err_ptfeat;
 	}
@@ -1507,6 +1508,10 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	strcpy(netdev->name, "eth%d");
+
+	netif_set_real_num_tx_queues(netdev, queue_pairs);
+	netif_set_real_num_rx_queues(netdev, queue_pairs);
+
 	err = register_netdev(netdev);
 	if (err)
 		goto err_netreg;
