@@ -334,7 +334,6 @@ ptn_sub(uint32_t l_elem, uint32_t r_elem, uint32_t num_slots)
 /*
  * ptnetmap kernel thread routines
  * */
-enum ptn_kthread_t { PTK_RX = 0, PTK_TX = 1 }; /* kthread type */
 
 /* Functions to read and write CSB fields in the host */
 #if defined (linux)

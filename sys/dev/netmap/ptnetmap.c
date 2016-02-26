@@ -663,10 +663,8 @@ ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
 		nmk_cfg.worker_private = ptnetmap_kring(pth_na, k);
 		nmk_cfg.event = *(cfg->entries + k);
 		if (k < pth_na->up.num_tx_rings) {
-			nmk_cfg.type = PTK_TX;
 			nmk_cfg.worker_fn = ptnetmap_tx_handler;
 		} else {
-			nmk_cfg.type = PTK_RX;
 			nmk_cfg.worker_fn = ptnetmap_rx_handler;
 		}
 
