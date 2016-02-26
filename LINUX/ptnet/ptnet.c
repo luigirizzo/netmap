@@ -104,6 +104,7 @@ struct ptnet_info {
 
 	int num_rings;
 	struct ptnet_queue **queues;
+	struct ptnet_queue **rxqueues;
 
 	/* CSB memory to be used for producer/consumer state
 	 * synchronization. */
@@ -936,7 +937,7 @@ ptnet_open(struct net_device *netdev)
 
 	for (i = 0; i < na_dr->num_rx_rings; i++){
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
-					pi->queues[na_dr->num_tx_rings + i];
+					pi->rxqueues[i];
 		prq->rx_pool = NULL;
 		prq->rx_pool_num = 0;
 		napi_enable(&prq->napi);
@@ -986,7 +987,7 @@ ptnet_close(struct net_device *netdev)
 
 	for (i = 0; i < na_dr->num_rx_rings; i++){
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
-					pi->queues[na_dr->num_tx_rings + i];
+					pi->rxqueues[i];
 		/* Stop napi. */
 		napi_disable(&prq->napi);
 
@@ -1157,7 +1158,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		if (netif_running(netdev)) {
 			D("Exit netmap mode, schedule NAPI to flush RX ring");
 			for (i = 0; i < na->num_rx_rings; i++){
-				ptnet_napi_schedule(pi->queues[na->num_tx_rings + i]);
+				ptnet_napi_schedule(pi->rxqueues[i]);
 			}
 
 		}
@@ -1254,8 +1255,7 @@ ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 static int
 ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 {
-	struct netmap_adapter *na = kring->na;
-	struct ptnet_info *pi = netdev_priv(na->ifp);
+	struct ptnet_info *pi = netdev_priv(kring->na->ifp);
 	struct ptnet_queue *pq = pi->queues[kring->ring_id];
 	bool notify;
 
@@ -1270,9 +1270,8 @@ ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 static int
 ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 {
-	struct netmap_adapter *na = kring->na;
-	struct ptnet_info *pi = netdev_priv(na->ifp);
-	struct ptnet_queue *pq = pi->queues[na->num_tx_rings + kring->ring_id];
+	struct ptnet_info *pi = netdev_priv(kring->na->ifp);
+	struct ptnet_queue *pq = pi->rxqueues[kring->ring_id];
 	bool notify;
 
 	notify = netmap_pt_guest_rxsync(pq->ptring, kring, flags);
@@ -1394,8 +1393,9 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->ptfeatures = ptfeatures;
 	pi->num_rings = num_tx_rings + num_rx_rings;
 
-	/* Initialize the array of pointers with the per-ring structures. */
+	/* Initialize the arrays of pointers with the per-ring structures. */
 	pi->queues = (struct ptnet_queue **)(pi + 1);
+	pi->rxqueues = pi->queues + num_tx_rings;
 	{
 		struct ptnet_queue *pq;
 		struct ptnet_rx_queue *prq;
@@ -1408,7 +1408,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		/* Then RX queues. */
 		prq = (struct ptnet_rx_queue *)pq;
 		for (i = 0; i < num_rx_rings; i++, prq++) {
-			pi->queues[num_tx_rings + i] = (struct ptnet_queue *)prq;
+			pi->rxqueues[i] = (struct ptnet_queue *)prq;
 		}
 	}
 
@@ -1463,9 +1463,9 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
 
-	for (i = 0; i < num_rx_rings; i++) {
+	for (i = 0; i < queue_pairs; i++) {
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
-					     pi->queues[num_tx_rings + i];
+					     pi->rxqueues[i];
 		netif_napi_add(netdev, &prq->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
 	}
 
@@ -1593,6 +1593,7 @@ ptnet_remove(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct ptnet_info *pi = netdev_priv(netdev);
+	int i;
 
 	netif_carrier_off(netdev);
 
@@ -1606,6 +1607,12 @@ ptnet_remove(struct pci_dev *pdev)
 	memset(&pi->ptna_dr, 0, sizeof(pi->ptna_dr));
 
 	netmap_detach(netdev);
+
+	for (i = 0; i < netdev->num_rx_queues; i++) {
+		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
+					     pi->rxqueues[i];
+		netif_napi_del(&prq->napi);
+	}
 
 	ptnet_irqs_fini(pi);
 
