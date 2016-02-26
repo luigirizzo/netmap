@@ -359,12 +359,14 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 		if (nmd->pools[NETMAP_BUF_POOL].bitmap) {
 			/* XXX This check is a workaround that prevents a
 			 * NULL pointer crash which currently happens only
-			 * with ptnetmap guests. */
+			 * with ptnetmap guests. Also,
+			 * netmap_mem_init_shared_info must not be called
+			 * by ptnetmap guest. */
 			nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
-		}
 
-		/* expose info to the ptnetmap guest */
-		netmap_mem_init_shared_info(nmd);
+			/* expose info to the ptnetmap guest */
+			netmap_mem_init_shared_info(nmd);
+		}
 	}
 	nmd->ops->nmd_deref(nmd);
 
