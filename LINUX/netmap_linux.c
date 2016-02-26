@@ -1896,7 +1896,7 @@ struct nm_kthread_ctx {
     nm_kthread_worker_fn_t worker_fn;
     void *worker_private;
 
-    /* integer to manage multiple worker contexts (e.g., RX or TX in ptnetmap) */
+    /* integer to manage multiple worker contexts */
     long type;
 };
 
@@ -2158,8 +2158,8 @@ nm_os_kthread_start(struct nm_kthread *nmk)
     }
 
     /* ToDo Make this able to pass arbitrary string (e.g., for 'nm_') from nmk */
-    snprintf(name, sizeof(name), "nm_kthread-%ld-%d", nmk->worker_ctx.type,
-	     current->pid);
+    snprintf(name, sizeof(name), "nmkth:%d:%ld", current->pid,
+	     nmk->worker_ctx.type);
     nmk->worker = kthread_create(nm_kthread_worker, nmk, name);
     if (IS_ERR(nmk->worker)) {
 	error = -PTR_ERR(nmk->worker);
