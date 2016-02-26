@@ -718,12 +718,11 @@ out_of_slots:
 
 #define csb_notification_enable_all(_pi, _na, _t, _fld, _v)		\
 	do {								\
+		struct ptnet_queue **queues = (_pi)->queues;		\
 		int i;							\
+		if (_t == NR_RX) queues = (_pi)->rxqueues;		\
 		for (i=0; i<nma_get_nrings(_na, _t); i++) {		\
-			struct ptnet_ring *ptring = (_t == NR_TX) ?	\
-					&CSB_TX_RING(_pi, i) :		\
-					&CSB_RX_RING(_pi, i);		\
-			ptring->_fld = _v;				\
+			queues[i]->ptring->_fld = _v;			\
 		}							\
 	} while (0)							\
 
