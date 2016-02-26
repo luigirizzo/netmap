@@ -636,13 +636,10 @@ ptnetmap_krings_snapshot(struct netmap_pt_host_adapter *pth_na)
 
 	for (k = 0; k < num_rings; k++) {
 		kring = ptnetmap_kring(pth_na, k);
-		err = ptnetmap_kring_snapshot(kring, ptns->ptrings + k);
-		if (err) {
-			return err;
-		}
+		err |= ptnetmap_kring_snapshot(kring, ptns->ptrings + k);
 	}
 
-	return 0;
+	return err;
 }
 
 /*
