@@ -73,6 +73,10 @@ struct ptnet_rx_queue {
 	struct napi_struct napi;
 	struct page *rx_pool;
 	int rx_pool_num;
+#ifdef HANGCTRL
+#define HANG_INTVAL_MS		3000
+	struct timer_list hang_timer;
+#endif
 };
 
 /* Per-adapter data structure. */
@@ -114,27 +118,23 @@ struct ptnet_info {
 
 	/* Pass-through netmap adapter used by this driver. */
 	struct netmap_pt_guest_adapter ptna_dr;
-
-#ifdef HANGCTRL
-#define HANG_INTVAL_MS		3000
-	struct timer_list hang_timer;
-#endif
 };
 
 #ifdef HANGCTRL
 static void
 hang_tmr_callback(unsigned long arg)
 {
-	struct ptnet_info *pi = (struct ptnet_info *)arg;
+	struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)arg;
+	struct ptnet_info *pi = prq->q.pi;
 	struct netmap_adapter *na = &pi->ptna_dr.hwup.up;
-	struct netmap_kring *kring = &na->rx_rings[0];
+	struct netmap_kring *kring = na->rx_rings + prq->q.kring_id;
 	struct netmap_ring *ring = kring->ring;
 
-	pr_info("HANG RX: hwc %u h %u c %u hwt %u t %u rx.guest_need_kick %u\n",
-		kring->nr_hwcur, ring->head, ring->cur,
-		kring->nr_hwtail, ring->tail, CSB_RX_RING(pi, 0).guest_need_kick);
+	pr_info("HANG RX#%d: hwc %u h %u c %u hwt %u t %u rx.guest_need_kick %u\n",
+		kring->ring_id, kring->nr_hwcur, ring->head, ring->cur,
+		kring->nr_hwtail, ring->tail, prq->q.ptring->guest_need_kick);
 
-	if (mod_timer(&pi->hang_timer,
+	if (mod_timer(&prq->hang_timer,
 		      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
 		pr_err("%s: mod_timer() failed\n", __func__);
 	}
@@ -486,7 +486,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	}
 
 #ifdef HANGCTRL
-	del_timer(&pi->hang_timer);
+	del_timer(&prq->hang_timer);
 #endif
 
 	/* Update hwtail, rtail, tail and hwcur to what is known from the host,
@@ -684,7 +684,7 @@ out_of_slots:
 			ptnet_napi_schedule(pq);
                 }
 #ifdef HANGCTRL
-		if (mod_timer(&pi->hang_timer,
+		if (mod_timer(&prq->hang_timer,
 			      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
 			pr_err("%s: mod_timer failed\n", __func__);
 		}
@@ -920,19 +920,19 @@ ptnet_open(struct net_device *netdev)
 
 	if (0) ptnet_ioregs_dump(pi);
 
-#ifdef HANGCTRL
-	setup_timer(&pi->hang_timer, &hang_tmr_callback, (unsigned long)pi);
-	if (mod_timer(&pi->hang_timer,
-		      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
-		pr_err("%s: mod_timer failed\n", __func__);
-	}
-#endif
-
 	pr_info("%s: %p\n", __func__, pi);
 
 	for (i = 0; i < na_dr->num_rx_rings; i++){
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
 					pi->rxqueues[i];
+#ifdef HANGCTRL
+		setup_timer(&prq->hang_timer, &hang_tmr_callback,
+			    (unsigned long)prq);
+		if (mod_timer(&prq->hang_timer,
+			      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
+			pr_err("%s: mod_timer failed\n", __func__);
+		}
+#endif
 		prq->rx_pool = NULL;
 		prq->rx_pool_num = 0;
 		napi_enable(&prq->napi);
@@ -974,15 +974,14 @@ ptnet_close(struct net_device *netdev)
 
 	D("%s: netif_running %u", __func__, netif_running(netdev));
 
-#ifdef HANGCTRL
-	del_timer(&pi->hang_timer);
-#endif
-
 	netif_tx_stop_all_queues(netdev);
 
 	for (i = 0; i < na_dr->num_rx_rings; i++){
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
 					pi->rxqueues[i];
+#ifdef HANGCTRL
+		del_timer(&prq->hang_timer);
+#endif
 		/* Stop napi. */
 		napi_disable(&prq->napi);
 
