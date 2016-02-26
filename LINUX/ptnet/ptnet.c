@@ -822,27 +822,6 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 	kfree(pi->msix_entries);
 }
 
-// TODO fix/remove this
-static void
-ptnet_ioregs_dump(struct ptnet_info *pi)
-{
-	char *regnames[PTNET_IO_END >> 2] = {
-		"PTFEAT",
-		"PTCTL",
-		"PTSTS",
-		"CTRL",
-		"MAC_LO",
-		"MAC_HI",
-	}; // remove this ; to drive the compiler crazy !
-	uint32_t val;
-	int i;
-
-	for (i=0; i<PTNET_IO_END; i+=4) {
-		val = ioread32(pi->ioaddr + i);
-		pr_info("PTNET_IO_%s = %u\n", regnames[i >> 2], val);
-	}
-}
-
 static int ptnet_nm_krings_create(struct netmap_adapter *na);
 static void ptnet_nm_krings_delete(struct netmap_adapter *na);
 
@@ -905,8 +884,6 @@ ptnet_open(struct net_device *netdev)
 	}
 
 	netif_tx_start_all_queues(netdev);
-
-	if (0) ptnet_ioregs_dump(pi);
 
 	pr_info("%s: %p\n", __func__, pi);
 
