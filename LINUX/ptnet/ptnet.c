@@ -712,16 +712,6 @@ out_of_slots:
 	return work_done;
 }
 
-#define csb_notification_enable_all(_pi, _na, _t, _fld, _v)		\
-	do {								\
-		struct ptnet_queue **queues = (_pi)->queues;		\
-		int i;							\
-		if (_t == NR_RX) queues = (_pi)->rxqueues;		\
-		for (i=0; i<nma_get_nrings(_na, _t); i++) {		\
-			queues[i]->ptring->_fld = _v;			\
-		}							\
-	} while (0)							\
-
 #ifdef CONFIG_NET_POLL_CONTROLLER
 /* Polling 'interrupt' - used by things like netconsole to send skbs
  * without having to re-enable interrupts. It's not called while
@@ -732,13 +722,11 @@ ptnet_netpoll(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na = &pi->ptna_dr.hwup.up;
+	int i;
 
-	csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 0);
-	csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 0);
-	ptnet_tx_intr(pi->msix_entries[0].vector, pi->queues[0]);
-	ptnet_rx_intr(pi->msix_entries[1].vector, pi->queues[1]);
-	csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 1);
-	csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
+	for (i = 0; i < na->num_rx_rings; i++) {
+		ptnet_napi_schedule(pi->rxqueues[i]);
+	}
 }
 #endif
 
@@ -1111,6 +1099,16 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 		   kring->rtail, kring->ring->tail);
 	}
 }
+
+#define csb_notification_enable_all(_pi, _na, _t, _fld, _v)		\
+	do {								\
+		struct ptnet_queue **queues = (_pi)->queues;		\
+		int i;							\
+		if (_t == NR_RX) queues = (_pi)->rxqueues;		\
+		for (i=0; i<nma_get_nrings(_na, _t); i++) {		\
+			queues[i]->ptring->_fld = _v;			\
+		}							\
+	} while (0)							\
 
 static int
 ptnet_nm_register(struct netmap_adapter *na, int onoff)
