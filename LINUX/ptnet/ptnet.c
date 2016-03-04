@@ -311,13 +311,15 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	kring->rcur = a.ring->cur;
 	kring->rhead = a.ring->head;
 
-	/* Tell the host to process the new packets, updating cur and head in
-	 * the CSB. */
-	ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
-				       kring->rhead);
+	if (!skb->xmit_more) {
+		/* Tell the host to process the new packets, updating cur and
+		 * head in the CSB. */
+		ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
+					       kring->rhead);
+	}
 
         /* Ask for a kick from a guest to the host if needed. */
-	if (NM_ACCESS_ONCE(ptring->host_need_kick) && !skb->xmit_more) {
+	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
 		ptring->sync_flags = NAF_FORCE_RECLAIM;
 		iowrite32(0, pq->kick);
 	}
