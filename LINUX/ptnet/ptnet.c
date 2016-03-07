@@ -792,7 +792,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 
 err_irqs:
 	for (; i>=0; i--) {
-		free_irq(pi->msix_entries[i].vector, pi->netdev);
+		free_irq(pi->msix_entries[i].vector, pi->queues[i]);
 	}
 	i = pi->num_rings-1;
 err_masks:
