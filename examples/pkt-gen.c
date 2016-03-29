@@ -1320,10 +1320,10 @@ static void
 receive_pcap(u_char *user, const struct pcap_pkthdr * h,
 	const u_char * bytes)
 {
-	int *count = (int *)user;
-	(void)h;	/* UNUSED */
+	struct my_ctrs *ctr = (struct my_ctrs *)user;
 	(void)bytes;	/* UNUSED */
-	(*count)++;
+	ctr->bytes += h->len;
+	ctr->pkts++;
 }
 #endif /* !NO_PCAP */
 
@@ -1400,8 +1400,8 @@ receiver_body(void *data)
 	while (!targ->cancel) {
 		/* XXX should we poll ? */
 		pcap_dispatch(targ->g->p, targ->g->burst, receive_pcap,
-			(u_char *)&targ->count);
-		//XXX-ste: targ->count_event++ for pcap
+			(u_char *)&targ->ctr);
+                targ->ctr.events++;
 	}
 #endif /* !NO_PCAP */
     } else {
@@ -1879,7 +1879,6 @@ usage(void)
 		"\t-c cores		cores to use\n"
 		"\t-p threads		processes/threads to use\n"
 		"\t-T report_ms		milliseconds between reports\n"
-		"\t-P			use libpcap instead of netmap\n"
 		"\t-w wait_for_link_time	in seconds\n"
 		"\t-R rate		in packets per second\n"
 		"\t-X			dump payload\n"
