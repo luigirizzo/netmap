@@ -21,17 +21,19 @@ N="$1"                          # number of TX kthreads minus one
 if [ -z "$1" ]; then
     N=0
 fi
-NCPUS="7"                       # number of CPUs on your machine minus one
-IF="enp1s0f1"                   # network interface to test
+NCPUS="1"                       # number of CPUs on your machine minus one
+IF="ens4"                   # network interface to test
 DST_IP="10.216.8.1"             # destination IP address
-DST_MAC="00:1b:21:80:e7:d9"     # destination MAC address
+SRC_MAC="00:00:00:00:00:00"     # source MAC address
+DST_MAC="ff:ff:ff:ff:ff:ff"     # destination MAC address
 PKT_SIZE="60"                   # packet size
-PKT_COUNT="10000000"            # number of packets to send
-CLONE_SKB="10000"               # how many times a sk_buff is recycled
+PKT_COUNT="0"            # number of packets to send (0 means an infinite number)
+CLONE_SKB="0"               # how many times a sk_buff is recycled (0 means always use the same skbuff)
+BURST_LEN="1"		# burst-size (xmit_more skb flag)
 
 
 # Load pktgen kernel module
-modprobe pktgen
+modprobe pktgen || exit 1
 
 
 # Clean the configuration for all the CPU-kthread (from 0 to ${NCPUS})
@@ -56,7 +58,9 @@ for cpu in ${IDX}; do
     pgset "count ${PKT_COUNT}"
     pgset "clone_skb ${CLONE_SKB}"
     pgset "pkt_size ${PKT_SIZE}"
+    pgset "burst ${BURST_LEN}"
     pgset "delay 0"
+    pgset "src_mac $SRC_MAC"
     pgset "dst $DST_IP"
     pgset "dst_mac $DST_MAC"
     pgset "flag QUEUE_MAP_CPU"

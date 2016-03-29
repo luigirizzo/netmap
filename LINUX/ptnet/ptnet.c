@@ -311,13 +311,15 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	kring->rcur = a.ring->cur;
 	kring->rhead = a.ring->head;
 
-	/* Tell the host to process the new packets, updating cur and head in
-	 * the CSB. */
-	ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
-				       kring->rhead);
+	if (!skb->xmit_more) {
+		/* Tell the host to process the new packets, updating cur and
+		 * head in the CSB. */
+		ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
+					       kring->rhead);
+	}
 
         /* Ask for a kick from a guest to the host if needed. */
-	if (NM_ACCESS_ONCE(ptring->host_need_kick) && !skb->xmit_more) {
+	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
 		ptring->sync_flags = NAF_FORCE_RECLAIM;
 		iowrite32(0, pq->kick);
 	}
@@ -790,7 +792,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 
 err_irqs:
 	for (; i>=0; i--) {
-		free_irq(pi->msix_entries[i].vector, pi->netdev);
+		free_irq(pi->msix_entries[i].vector, pi->queues[i]);
 	}
 	i = pi->num_rings-1;
 err_masks:
@@ -820,27 +822,6 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 	}
 	pci_disable_msix(pi->pdev);
 	kfree(pi->msix_entries);
-}
-
-// TODO fix/remove this
-static void
-ptnet_ioregs_dump(struct ptnet_info *pi)
-{
-	char *regnames[PTNET_IO_END >> 2] = {
-		"PTFEAT",
-		"PTCTL",
-		"PTSTS",
-		"CTRL",
-		"MAC_LO",
-		"MAC_HI",
-	}; // remove this ; to drive the compiler crazy !
-	uint32_t val;
-	int i;
-
-	for (i=0; i<PTNET_IO_END; i+=4) {
-		val = ioread32(pi->ioaddr + i);
-		pr_info("PTNET_IO_%s = %u\n", regnames[i >> 2], val);
-	}
 }
 
 static int ptnet_nm_krings_create(struct netmap_adapter *na);
@@ -905,8 +886,6 @@ ptnet_open(struct net_device *netdev)
 	}
 
 	netif_tx_start_all_queues(netdev);
-
-	if (0) ptnet_ioregs_dump(pi);
 
 	pr_info("%s: %p\n", __func__, pi);
 

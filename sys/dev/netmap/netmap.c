@@ -498,14 +498,19 @@ static int netmap_admode = NETMAP_ADMODE_BEST;
  * nanoseconds. */
 int netmap_generic_mit = 100*1000;
 
-/* For now we don't use by default netmap-aware qdiscs with
- * generic netmap adapters, because of a slight performance hit.
- * However, this should be done in the future, since the txqdisc
- * feature prevents non-fifo qdiscs to break the TX notification
- * scheme, which is based on mbuf destructors when txqdisc is
- * not used.
+/* We use by default netmap-aware qdiscs with generic netmap adapters,
+ * even if there can be a little performance hit with hardware NICs.
+ * However, using the qdisc is the safer approach, for two reasons:
+ * 1) it prevents non-fifo qdiscs to break the TX notification
+ *    scheme, which is based on mbuf destructors when txqdisc is
+ *    not used.
+ * 2) it makes it possible to transmit over software devices that
+ *    change skb->dev, like bridge, veth, ...
+ *
+ * Anyway users looking for the best performance should
+ * use native adapters.
  */
-int netmap_generic_txqdisc = 0;
+int netmap_generic_txqdisc = 1;
 
 /* Default number of slots and queues for generic adapters. */
 int netmap_generic_ringsize = 1024;

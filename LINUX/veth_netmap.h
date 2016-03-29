@@ -113,8 +113,12 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 		goto out;
 
 	peer_na = NA(peer_ifp);
-	if (unlikely(!nm_netmap_on(peer_na)))
+	if (unlikely(!nm_netmap_on(peer_na))) {
+		RD(1, "Warning: peer veth is not in netmap mode, dropping");
+		kring->nr_hwcur = head;
+		kring->nr_hwtail = nm_prev(head, lim);
 		goto out;
+	}
 
 	/* XXX This is unsafe, we are accessing the peer whose krings
 	 * and rings may be disappearing beause peer_na->active_fds
