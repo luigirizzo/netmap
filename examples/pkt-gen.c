@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo. All rights reserved.
- * Copyright (C) 2013-2015 Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2013-2014 Universita` di Pisa. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,7 +25,7 @@
  */
 
 /*
- * $FreeBSD$
+ * $FreeBSD: releng/10.2/tools/tools/netmap/pkt-gen.c 274259 2014-11-08 00:42:11Z gnn $
  * $Id: pkt-gen.c 12346 2013-06-12 17:36:25Z luigi $
  *
  * Example program to show how to build a multithreaded packet
@@ -37,6 +37,8 @@
  *
  */
 
+// #define TRASH_VHOST_HDR
+
 #define _GNU_SOURCE	/* for CPU_SET() */
 #include <stdio.h>
 #define NETMAP_WITH_LIBS
@@ -47,84 +49,18 @@
 #include <unistd.h>	// sysconf()
 #include <sys/poll.h>
 #include <arpa/inet.h>	/* ntohs */
-#ifndef _WIN32
 #include <sys/sysctl.h>	/* sysctl */
-#endif
 #include <ifaddrs.h>	/* getifaddrs */
 #include <net/ethernet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
-#include <assert.h>
 
 #include <pthread.h>
 
 #ifndef NO_PCAP
 #include <pcap/pcap.h>
 #endif
-
-#include "ctrs.h"
-
-#ifdef _WIN32
-#define cpuset_t        DWORD_PTR   //uint64_t
-static inline void CPU_ZERO(cpuset_t *p)
-{
-        *p = 0;
-}
-
-static inline void CPU_SET(uint32_t i, cpuset_t *p)
-{
-        *p |= 1<< (i & 0x3f);
-}
-
-#define pthread_setaffinity_np(a, b, c) !SetThreadAffinityMask(a, *c)    //((void)a, 0)
-#define TAP_CLONEDEV	"/dev/tap"
-#define AF_LINK	18	//defined in winsocks.h
-#define CLOCK_REALTIME_PRECISE CLOCK_REALTIME
-#include <net/if_dl.h>
-
-/*
- * Convert an ASCII representation of an ethernet address to
- * binary form.
- */
-struct ether_addr *
-ether_aton(const char *a)
-{
-	int i;
-	static struct ether_addr o;
-	unsigned int o0, o1, o2, o3, o4, o5;
-
-	i = sscanf(a, "%x:%x:%x:%x:%x:%x", &o0, &o1, &o2, &o3, &o4, &o5);
-
-	if (i != 6)
-		return (NULL);
-
-	o.octet[0]=o0;
-	o.octet[1]=o1;
-	o.octet[2]=o2;
-	o.octet[3]=o3;
-	o.octet[4]=o4;
-	o.octet[5]=o5;
-
-	return ((struct ether_addr *)&o);
-}
-
-/*
- * Convert a binary representation of an ethernet address to
- * an ASCII string.
- */
-char *
-ether_ntoa(const struct ether_addr *n)
-{
-	int i;
-	static char a[18];
-
-	i = sprintf(a, "%02x:%02x:%02x:%02x:%02x:%02x",
-	    n->octet[0], n->octet[1], n->octet[2],
-	    n->octet[3], n->octet[4], n->octet[5]);
-	return (i < 17 ? NULL : (char *)&a);
-}
-#endif /* _WIN32 */
 
 #ifdef linux
 
@@ -236,9 +172,7 @@ struct glob_arg {
 	int npackets;	/* total packets to send */
 	int frags;	/* fragments per packet */
 	int nthreads;
-	int cpus;	/* cpus used for running */
-	int system_cpus;	/* cpus on the system */
-
+	int cpus;
 	int options;	/* testing */
 #define OPT_PREFETCH	1
 #define OPT_ACCESS	2
@@ -247,9 +181,8 @@ struct glob_arg {
 #define OPT_TS		16	/* add a timestamp */
 #define OPT_INDIRECT	32	/* use indirect buffers, tx only */
 #define OPT_DUMP	64	/* dump rx/tx traffic */
-#define OPT_RUBBISH	256	/* send wathever the buffers contain */
-#define OPT_RANDOM_SRC  512
-#define OPT_RANDOM_DST  1024
+#define OPT_MONITOR_TX  128
+#define OPT_MONITOR_RX  256
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -263,14 +196,12 @@ struct glob_arg {
 	struct nm_desc *nmd;
 	int report_interval;		/* milliseconds between prints */
 	void *(*td_body)(void *);
-	int td_type;
 	void *mmap_addr;
 	char ifname[MAX_IFNAMELEN];
 	char *nmr_config;
 	int dummy_send;
 	int virt_header;	/* send also the virt_header */
 	int extra_bufs;		/* goes in nr_arg3 */
-	int extra_pipes;	/* goes in nr_arg1 */
 	char *packet_file;	/* -P option */
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
@@ -287,11 +218,7 @@ struct targ {
 	int cancel;
 	int fd;
 	struct nm_desc *nmd;
-	/* these ought to be volatile, but they are
-	 * only sampled and errors should not accumulate
-	 */
-	struct my_ctrs ctr;
-
+	volatile uint64_t count;
 	struct timespec tic, toc;
 	int me;
 	pthread_t thread;
@@ -398,7 +325,7 @@ sigint_h(int sig)
 	int i;
 
 	(void)sig;	/* UNUSED */
-	D("received control-C on thread %p", (void *)pthread_self());
+	D("received control-C on thread %p", pthread_self());
 	for (i = 0; i < global_nthreads; i++) {
 		targs[i].cancel = 1;
 	}
@@ -416,12 +343,6 @@ system_ncpus(void)
 	sysctl(mib, 2, &ncpus, &len, NULL, 0);
 #elif defined(linux)
 	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
-#elif defined(_WIN32)
-	{
-		SYSTEM_INFO sysinfo;
-		GetSystemInfo(&sysinfo);
-		ncpus = sysinfo.dwNumberOfProcessors;
-	}
 #else /* others */
 	ncpus = 1;
 #endif /* others */
@@ -584,6 +505,71 @@ checksum(const void *data, uint16_t len, uint32_t sum)
 	return sum;
 }
 
+uint16_t
+ipv4_hdr_cksum(struct ip *ip_h)
+{
+        uint16_t *v16_h;
+        uint32_t ip_cksum;
+
+        /*
+         * Compute the sum of successive 16-bit words of the IPv4 header,
+         * skipping the checksum field of the header.
+         */
+        v16_h = (uint16_t *) ip_h;
+        ip_cksum = v16_h[0] + v16_h[1] + v16_h[2] + v16_h[3] +
+                v16_h[4] + v16_h[6] + v16_h[7] + v16_h[8] + v16_h[9];
+
+        /* reduce 32 bit checksum to 16 bits and complement it */
+        ip_cksum = (ip_cksum & 0xffff) + (ip_cksum >> 16);
+        ip_cksum = (ip_cksum & 0xffff) + (ip_cksum >> 16);
+        ip_cksum = (~ip_cksum) & 0x0000FFFF;
+        return (ip_cksum == 0) ? 0xFFFF : (uint16_t) ip_cksum;
+}
+
+/* set tcp checksum: given IP header and UDP datagram */
+void compute_udp_checksum(struct ip *pIph, unsigned short *ipPayload) {
+        register unsigned long sum = 0;
+        struct udphdr *udphdr = (struct udphdr*)(ipPayload);
+        unsigned short udpLen = htons(udphdr->uh_ulen);
+        //printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~udp len=%d\n", udpLen);
+        //add the pseudo header
+        //printf("add pseudo header\n");
+        //the source ip
+        sum += (pIph->ip_src.s_addr>>16)&0xFFFF;
+        sum += (pIph->ip_src.s_addr)&0xFFFF;
+        //the dest ip
+        sum += (pIph->ip_dst.s_addr>>16)&0xFFFF;
+        sum += (pIph->ip_dst.s_addr)&0xFFFF;
+        //protocol and reserved: 17
+        sum += htons(IPPROTO_UDP);
+        //the length
+        sum += udphdr->uh_ulen;
+
+        //add the IP payload
+        //printf("add ip payload\n");
+        //initialize checksum to 0
+        udphdr->uh_sum = 0;
+        while (udpLen > 1) {
+                sum += * ipPayload++;
+                udpLen -= 2;
+        }
+    //if any bytes left, pad the bytes and add
+    if(udpLen > 0) {
+                //printf("+++++++++++++++padding: %d\n", udpLen);
+        sum += ((*ipPayload)&htons(0xFF00));
+    }
+        //Fold sum to 16 bits: add carrier to result
+        //printf("add carrier\n");
+        while (sum>>16) {
+                sum = (sum & 0xffff) + (sum >> 16);
+        }
+        //printf("one's complement\n");
+        sum = ~sum;
+        //set computation result
+        udphdr->uh_sum = ((unsigned short)sum == 0x0000)?0xFFFF:(unsigned short)sum;
+
+}
+
 static u_int16_t
 wrapsum(u_int32_t sum)
 {
@@ -595,11 +581,10 @@ wrapsum(u_int32_t sum)
  * Look for consecutive ascii representations of the size of the packet.
  */
 static void
-dump_payload(const char *_p, int len, struct netmap_ring *ring, int cur)
+dump_payload(char *p, int len, struct netmap_ring *ring, int cur)
 {
 	char buf[128];
 	int i, j, i0;
-	const unsigned char *p = (const unsigned char *)_p;
 
 	/* get the length in ASCII of the length of the packet. */
 
@@ -647,48 +632,41 @@ update_addresses(struct pkt *pkt, struct glob_arg *g)
 	struct udphdr *udp = &pkt->udp;
 
     do {
-    	/* XXX for now it doesn't handle non-random src, random dst */
-	if (g->options & OPT_RANDOM_SRC) {
-		udp->uh_sport = random();
-		ip->ip_src.s_addr = random();
-	} else {
-		p = ntohs(udp->uh_sport);
-		if (p < g->src_ip.port1) { /* just inc, no wrap */
-			udp->uh_sport = htons(p + 1);
-			break;
-		}
-		udp->uh_sport = htons(g->src_ip.port0);
-
-		a = ntohl(ip->ip_src.s_addr);
-		if (a < g->src_ip.end) { /* just inc, no wrap */
-			ip->ip_src.s_addr = htonl(a + 1);
-			break;
-		}
-		ip->ip_src.s_addr = htonl(g->src_ip.start);
-
-		udp->uh_sport = htons(g->src_ip.port0);
+	
+	p = ntohs(udp->uh_sport);
+	if (p < g->src_ip.port1) { // just inc, no wrap 
+		udp->uh_sport = htons(p + 1);
+		break;
 	}
+	udp->uh_sport = htons(g->src_ip.port0);
 
-	if (g->options & OPT_RANDOM_DST) {
-		udp->uh_dport = random();
-		ip->ip_dst.s_addr = random();
-	} else {
-		p = ntohs(udp->uh_dport);
-		if (p < g->dst_ip.port1) { /* just inc, no wrap */
-			udp->uh_dport = htons(p + 1);
-			break;
-		}
-		udp->uh_dport = htons(g->dst_ip.port0);
+	a = ntohl(ip->ip_src.s_addr);
+	if (a < g->src_ip.end) { // just inc, no wrap 
+		ip->ip_src.s_addr = htonl(a + 1);
+		break;
+	}
+	ip->ip_src.s_addr = htonl(g->src_ip.start);
 
-		a = ntohl(ip->ip_dst.s_addr);
-		if (a < g->dst_ip.end) { /* just inc, no wrap */
-			ip->ip_dst.s_addr = htonl(a + 1);
-			break;
-		}
+	udp->uh_sport = htons(g->src_ip.port0);
+	p = ntohs(udp->uh_dport);
+	if (p < g->dst_ip.port1) { // just inc, no wrap 
+		udp->uh_dport = htons(p + 1);
+		break;
+	}
+	udp->uh_dport = htons(g->dst_ip.port0);		
+
+	a = ntohl(ip->ip_dst.s_addr);
+	if (a < g->dst_ip.end) { // just inc, no wrap 
+		ip->ip_dst.s_addr = htonl(a + 1);
+		break;
 	}
 	ip->ip_dst.s_addr = htonl(g->dst_ip.start);
+	
+
     } while (0);
     // update checksum
+	compute_udp_checksum(ip, (unsigned short*)udp);
+	ip->ip_sum = ipv4_hdr_cksum(ip);
 }
 
 /*
@@ -707,12 +685,11 @@ initialize_packet(struct targ *targ)
 		indirect_payload : default_payload;
 	int i, l0 = strlen(payload);
 
-#ifndef NO_PCAP
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t *file;
 	struct pcap_pkthdr *header;
 	const unsigned char *packet;
-	
+
 	/* Read a packet from a PCAP file if asked. */
 	if (targ->g->packet_file != NULL) {
 		if ((file = pcap_open_offline(targ->g->packet_file,
@@ -729,7 +706,6 @@ initialize_packet(struct targ *targ)
 		pcap_close(file);
 		return;
 	}
-#endif
 
 	/* create a nice NUL-terminated string */
 	for (i = 0; i < paylen; i += l0) {
@@ -775,49 +751,35 @@ initialize_packet(struct targ *targ)
 	eh->ether_type = htons(ETHERTYPE_IP);
 
 	bzero(&pkt->vh, sizeof(pkt->vh));
+#ifdef TRASH_VHOST_HDR
+	/* set bogus content */
+	pkt->vh.fields[0] = 0xff;
+	pkt->vh.fields[1] = 0xff;
+	pkt->vh.fields[2] = 0xff;
+	pkt->vh.fields[3] = 0xff;
+	pkt->vh.fields[4] = 0xff;
+	pkt->vh.fields[5] = 0xff;
+#endif /* TRASH_VHOST_HDR */
 	// dump_payload((void *)pkt, targ->g->pkt_size, NULL, 0);
 }
 
 static void
-get_vnet_hdr_len(struct glob_arg *g)
+set_vnet_hdr_len(struct targ *t)
 {
-	struct nmreq req;
-	int err;
-
-	memset(&req, 0, sizeof(req));
-	bcopy(g->nmd->req.nr_name, req.nr_name, sizeof(req.nr_name));
-	req.nr_version = NETMAP_API;
-	req.nr_cmd = NETMAP_VNET_HDR_GET;
-	err = ioctl(g->main_fd, NIOCREGIF, &req);
-	if (err) {
-		D("Unable to get virtio-net header length");
-		return;
-	}
-
-	g->virt_header = req.nr_arg1;
-	if (g->virt_header) {
-		D("Port requires virtio-net header, length = %d",
-		  g->virt_header);
-	}
-}
-
-static void
-set_vnet_hdr_len(struct glob_arg *g)
-{
-	int err, l = g->virt_header;
+	int err, l = t->g->virt_header;
 	struct nmreq req;
 
 	if (l == 0)
 		return;
 
 	memset(&req, 0, sizeof(req));
-	bcopy(g->nmd->req.nr_name, req.nr_name, sizeof(req.nr_name));
+	bcopy(t->nmd->req.nr_name, req.nr_name, sizeof(req.nr_name));
 	req.nr_version = NETMAP_API;
 	req.nr_cmd = NETMAP_BDG_VNET_HDR;
 	req.nr_arg1 = l;
-	err = ioctl(g->main_fd, NIOCREGIF, &req);
+	err = ioctl(t->fd, NIOCREGIF, &req);
 	if (err) {
-		D("Unable to set virtio-net header length %d", l);
+		D("Unable to set vnet header length %d", l);
 	}
 }
 
@@ -857,15 +819,12 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 	for (fcnt = nfrags, sent = 0; sent < count; sent++) {
 		struct netmap_slot *slot = &ring->slot[cur];
 		char *p = NETMAP_BUF(ring, slot->buf_idx);
-		int buf_changed = slot->flags & NS_BUF_CHANGED;
 
 		slot->flags = 0;
-		if (options & OPT_RUBBISH) {
-			/* do nothing */
-		} else if (options & OPT_INDIRECT) {
+		if (options & OPT_INDIRECT) {
 			slot->flags |= NS_INDIRECT;
-			slot->ptr = (uint64_t)((uintptr_t)frame);
-		} else if ((options & OPT_COPY) || buf_changed) {
+			slot->ptr = (uint64_t)frame;
+		} else if (options & OPT_COPY) {
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == nfrags)
 				update_addresses(pkt, g);
@@ -895,21 +854,6 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 }
 
 /*
- * Index of the highest bit set
- */
-uint32_t
-msb64(uint64_t x)
-{
-	uint64_t m = 1ULL << 63;
-	int i;
-
-	for (i = 63; i >= 0; i--, m >>=1)
-		if (m & x)
-			return i;
-	return 0;
-}
-
-/*
  * Send a packet, and wait for a response.
  * The payload (after UDP header, ofs 42) has a 4-byte sequence
  * followed by a struct timeval (or bintime?)
@@ -927,23 +871,20 @@ pinger_body(void *data)
 	int size;
 	uint32_t sent = 0;
 	struct timespec ts, now, last_print;
-	uint64_t count = 0, t_cur, t_min = ~0, av = 0;
-	uint64_t buckets[64];	/* bins for delays, ns */
+	uint32_t count = 0, min = 1000000000, av = 0;
 
 	frame = &targ->pkt;
 	frame += sizeof(targ->pkt.vh) - targ->g->virt_header;
 	size = targ->g->pkt_size + targ->g->virt_header;
-
 
 	if (targ->g->nthreads > 1) {
 		D("can only ping with 1 thread");
 		return NULL;
 	}
 
-	bzero(&buckets, sizeof(buckets));
 	clock_gettime(CLOCK_REALTIME_PRECISE, &last_print);
 	now = last_print;
-	while (!targ->cancel && (n == 0 || (int)sent < n)) {
+	while (n == 0 || (int)sent < n) {
 		struct netmap_ring *ring = NETMAP_TXRING(nifp, 0);
 		struct netmap_slot *slot;
 		char *p;
@@ -979,8 +920,6 @@ pinger_body(void *data)
 			while (!nm_ring_empty(ring)) {
 				uint32_t seq;
 				struct tstamp *tp;
-				int pos;
-
 				slot = &ring->slot[ring->cur];
 				p = NETMAP_BUF(ring, slot->buf_idx);
 
@@ -995,16 +934,12 @@ pinger_body(void *data)
 					ts.tv_nsec += 1000000000;
 					ts.tv_sec--;
 				}
-				if (0) D("seq %d/%d delta %d.%09d", seq, sent,
+				if (1) D("seq %d/%d delta %d.%09d", seq, sent,
 					(int)ts.tv_sec, (int)ts.tv_nsec);
-				t_cur = ts.tv_sec * 1000000000UL + ts.tv_nsec;
-				if (t_cur < t_min)
-					t_min = t_cur;
+				if (ts.tv_nsec < (int)min)
+					min = ts.tv_nsec;
 				count ++;
-				av += t_cur;
-				pos = msb64(t_cur);
-				buckets[pos]++;
-				/* now store it in a bucket */
+				av += ts.tv_nsec;
 				ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 				rx++;
 			}
@@ -1018,32 +953,14 @@ pinger_body(void *data)
 			ts.tv_sec--;
 		}
 		if (ts.tv_sec >= 1) {
-			D("count %d RTT: min %d av %d ns",
-				(int)count, (int)t_min, (int)(av/count));
-			int k, j, kmin;
-			char buf[512];
-
-			for (kmin = 0; kmin < 64; kmin ++)
-				if (buckets[kmin])
-					break;
-			for (k = 63; k >= kmin; k--)
-				if (buckets[k])
-					break;
-			buf[0] = '\0';
-			for (j = kmin; j <= k; j++)
-				sprintf(buf, "%s %5d", buf, (int)buckets[j]);
-			D("k: %d .. %d\n\t%s", 1<<kmin, 1<<k, buf);
-			bzero(&buckets, sizeof(buckets));
+			D("count %d min %d av %d",
+				count, min, av/count);
 			count = 0;
 			av = 0;
-			t_min = ~0;
+			min = 100000000;
 			last_print = now;
 		}
 	}
-
-	/* reset the ``used`` flag. */
-	targ->used = 0;
-
 	return NULL;
 }
 
@@ -1065,10 +982,10 @@ ponger_body(void *data)
 		return NULL;
 	}
 	D("understood ponger %d but don't know how to do it", n);
-	while (!targ->cancel && (n == 0 || sent < n)) {
+	while (n == 0 || sent < n) {
 		uint32_t txcur, txavail;
-//#define BUSY_WAIT
-#ifdef BUSY_WAIT
+//#define BUSYWAIT
+#ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
 #else
 		if (poll(&pfd, 1, 1000) <= 0) {
@@ -1114,17 +1031,69 @@ ponger_body(void *data)
 			}
 		}
 		txring->head = txring->cur = txcur;
-		targ->ctr.pkts = sent;
-#ifdef BUSY_WAIT
+		targ->count = sent;
+#ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #endif
 		//D("tx %d rx %d", sent, rx);
 	}
-
-	/* reset the ``used`` flag. */
-	targ->used = 0;
-
 	return NULL;
+}
+
+static __inline int
+timespec_ge(const struct timespec *a, const struct timespec *b)
+{
+
+	if (a->tv_sec > b->tv_sec)
+		return (1);
+	if (a->tv_sec < b->tv_sec)
+		return (0);
+	if (a->tv_nsec >= b->tv_nsec)
+		return (1);
+	return (0);
+}
+
+static __inline struct timespec
+timeval2spec(const struct timeval *a)
+{
+	struct timespec ts = {
+		.tv_sec = a->tv_sec,
+		.tv_nsec = a->tv_usec * 1000
+	};
+	return ts;
+}
+
+static __inline struct timeval
+timespec2val(const struct timespec *a)
+{
+	struct timeval tv = {
+		.tv_sec = a->tv_sec,
+		.tv_usec = a->tv_nsec / 1000
+	};
+	return tv;
+}
+
+
+static __inline struct timespec
+timespec_add(struct timespec a, struct timespec b)
+{
+	struct timespec ret = { a.tv_sec + b.tv_sec, a.tv_nsec + b.tv_nsec };
+	if (ret.tv_nsec >= 1000000000) {
+		ret.tv_sec++;
+		ret.tv_nsec -= 1000000000;
+	}
+	return ret;
+}
+
+static __inline struct timespec
+timespec_sub(struct timespec a, struct timespec b)
+{
+	struct timespec ret = { a.tv_sec - b.tv_sec, a.tv_nsec - b.tv_nsec };
+	if (ret.tv_nsec < 0) {
+		ret.tv_sec--;
+		ret.tv_nsec += 1000000000;
+	}
+	return ret;
 }
 
 
@@ -1152,10 +1121,9 @@ sender_body(void *data)
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
 	struct netmap_if *nifp;
-	struct netmap_ring *txring = NULL;
+	struct netmap_ring *txring;
 	int i, n = targ->g->npackets / targ->g->nthreads;
 	int64_t sent = 0;
-	uint64_t event = 0;
 	int options = targ->g->options | OPT_COPY;
 	struct timespec nexttime = { 0, 0}; // XXX silence compiler
 	int rate_limit = targ->g->tx_rate;
@@ -1192,9 +1160,7 @@ sender_body(void *data)
 			sent++;
 		update_addresses(pkt, targ->g);
 		if (i > 10000) {
-			targ->ctr.pkts = sent;
-			targ->ctr.bytes = sent*size;
-			targ->ctr.events = sent;
+			targ->count = sent;
 			i = 0;
 		}
 	    }
@@ -1207,9 +1173,7 @@ sender_body(void *data)
 			sent++;
 		update_addresses(pkt, targ->g);
 		if (i > 10000) {
-			targ->ctr.pkts = sent;
-			targ->ctr.bytes = sent*size;
-			targ->ctr.events = sent;
+			targ->count = sent;
 			i = 0;
 		}
 	    }
@@ -1218,7 +1182,7 @@ sender_body(void *data)
 	int tosend = 0;
 	int frags = targ->g->frags;
 
-	nifp = targ->nmd->nifp;
+        nifp = targ->nmd->nifp;
 	while (!targ->cancel && (n == 0 || sent < n)) {
 
 		if (rate_limit && tosend <= 0) {
@@ -1230,13 +1194,6 @@ sender_body(void *data)
 		/*
 		 * wait for available room in the send queue(s)
 		 */
-#ifdef BUSY_WAIT
-		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
-			D("ioctl error on queue %d: %s", targ->me,
-					strerror(errno));
-			goto quit;
-		}
-#else /* !BUSY_WAIT */
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
@@ -1245,11 +1202,9 @@ sender_body(void *data)
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
-			D("poll error on %d ring %d-%d", pfd.fd,
-				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
+			D("poll error");
 			goto quit;
 		}
-#endif /* !BUSY_WAIT */
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1272,11 +1227,7 @@ sender_body(void *data)
 			ND("limit %d tail %d frags %d m %d",
 				limit, txring->tail, frags, m);
 			sent += m;
-			if (m > 0) //XXX-ste: can m be 0?
-				event++;
-			targ->ctr.pkts = sent;
-			targ->ctr.bytes = sent*size;
-			targ->ctr.events = event;
+			targ->count = sent;
 			if (rate_limit) {
 				tosend -= m;
 				if (tosend <= 0)
@@ -1287,7 +1238,7 @@ sender_body(void *data)
 	/* flush any remaining packets */
 	D("flush tail %d head %d on thread %p",
 		txring->tail, txring->head,
-		(void *)pthread_self());
+		pthread_self());
 	ioctl(pfd.fd, NIOCTXSYNC, NULL);
 
 	/* final part: wait all the TX queues to be empty. */
@@ -1304,9 +1255,8 @@ sender_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 	targ->completed = 1;
-	targ->ctr.pkts = sent;
-	targ->ctr.bytes = sent*size;
-	targ->ctr.events = event;
+	targ->count = sent;
+
 quit:
 	/* reset the ``used`` flag. */
 	targ->used = 0;
@@ -1320,22 +1270,17 @@ static void
 receive_pcap(u_char *user, const struct pcap_pkthdr * h,
 	const u_char * bytes)
 {
-	struct my_ctrs *ctr = (struct my_ctrs *)user;
+	int *count = (int *)user;
+	(void)h;	/* UNUSED */
 	(void)bytes;	/* UNUSED */
-	ctr->bytes += h->len;
-	ctr->pkts++;
+	(*count)++;
 }
 #endif /* !NO_PCAP */
 
-
 static int
-receive_packets(struct netmap_ring *ring, u_int limit, int dump, uint64_t *bytes)
+receive_packets(struct netmap_ring *ring, u_int limit, int dump)
 {
 	u_int cur, rx, n;
-	uint64_t b = 0;
-
-	if (bytes == NULL)
-		bytes = &b;
 
 	cur = ring->cur;
 	n = nm_ring_space(ring);
@@ -1345,7 +1290,6 @@ receive_packets(struct netmap_ring *ring, u_int limit, int dump, uint64_t *bytes
 		struct netmap_slot *slot = &ring->slot[cur];
 		char *p = NETMAP_BUF(ring, slot->buf_idx);
 
-		*bytes += slot->len;
 		if (dump)
 			dump_payload(p, slot->len, ring, cur);
 
@@ -1364,10 +1308,7 @@ receiver_body(void *data)
 	struct netmap_if *nifp;
 	struct netmap_ring *rxring;
 	int i;
-	struct my_ctrs cur;
-
-	cur.pkts = cur.bytes = cur.events = cur.min_space = 0;
-	cur.t.tv_usec = cur.t.tv_sec = 0; //  unused, just silence the compiler
+	uint64_t received = 0;
 
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
@@ -1388,36 +1329,24 @@ receiver_body(void *data)
 	while (!targ->cancel) {
 		char buf[MAX_BODYSIZE];
 		/* XXX should we poll ? */
-		i = read(targ->g->main_fd, buf, sizeof(buf));
-		if (i > 0) {
-			targ->ctr.pkts++;
-			targ->ctr.bytes += i;
-			targ->ctr.events++;
-		}
+		if (read(targ->g->main_fd, buf, sizeof(buf)) > 0)
+			targ->count++;
 	}
 #ifndef NO_PCAP
     } else if (targ->g->dev_type == DEV_PCAP) {
 	while (!targ->cancel) {
 		/* XXX should we poll ? */
 		pcap_dispatch(targ->g->p, targ->g->burst, receive_pcap,
-			(u_char *)&targ->ctr);
-                targ->ctr.events++;
+			(u_char *)&targ->count);
 	}
 #endif /* !NO_PCAP */
     } else {
 	int dump = targ->g->options & OPT_DUMP;
 
-	nifp = targ->nmd->nifp;
+        nifp = targ->nmd->nifp;
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
-#ifdef BUSY_WAIT
-		if (ioctl(pfd.fd, NIOCRXSYNC, NULL) < 0) {
-			D("ioctl error on queue %d: %s", targ->me,
-					strerror(errno));
-			goto quit;
-		}
-#else /* !BUSY_WAIT */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -1428,39 +1357,26 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
-#endif /* !BUSY_WAIT */
-		uint64_t cur_space = 0;
+
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
 
 			rxring = NETMAP_RXRING(nifp, i);
-			/* compute free space in the ring */
-			m = rxring->head + rxring->num_slots - rxring->tail;
-			if (m >= (int) rxring->num_slots)
-				m -= rxring->num_slots;
-			cur_space += m;
 			if (nm_ring_empty(rxring))
 				continue;
 
-			m = receive_packets(rxring, targ->g->burst, dump, &cur.bytes);
-			cur.pkts += m;
-			if (m > 0) //XXX-ste: can m be 0?
-				cur.events++;
+			m = receive_packets(rxring, targ->g->burst, dump);
+			received += m;
 		}
-		cur.min_space = targ->ctr.min_space;
-		if (cur_space < cur.min_space)
-			cur.min_space = cur_space;
-		targ->ctr = cur;
+		targ->count = received;
 	}
     }
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#if !defined(BUSY_WAIT)
 out:
-#endif
 	targ->completed = 1;
-	targ->ctr = cur;
+	targ->count = received;
 
 quit:
 	/* reset the ``used`` flag. */
@@ -1469,392 +1385,56 @@ quit:
 	return (NULL);
 }
 
-static void *
-txseq_body(void *data)
+/* very crude code to print a number in normalized form.
+ * Caller has to make sure that the buffer is large enough.
+ */
+static const char *
+norm(char *buf, double val)
 {
-	struct targ *targ = (struct targ *) data;
-	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
-	struct netmap_ring *ring;
-	int64_t sent = 0;
-	uint64_t event = 0;
-	int options = targ->g->options | OPT_COPY;
-	struct timespec nexttime = {0, 0};
-	int rate_limit = targ->g->tx_rate;
-	struct pkt *pkt = &targ->pkt;
-	int frags = targ->g->frags;
-	uint32_t sequence = 0;
-	int budget = 0;
-	void *frame;
-	int size;
+	char *units[] = { "", "K", "M", "G", "T" };
+	u_int i;
 
-	if (targ->g->nthreads > 1) {
-		D("can only txseq ping with 1 thread");
-		return NULL;
-	}
-
-	if (targ->g->npackets > 0) {
-		D("Ignoring -n argument");
-	}
-
-	frame = pkt;
-	frame += sizeof(pkt->vh) - targ->g->virt_header;
-	size = targ->g->pkt_size + targ->g->virt_header;
-
-	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
-	if (setaffinity(targ->thread, targ->affinity))
-		goto quit;
-
-	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
-	if (rate_limit) {
-		targ->tic = timespec_add(targ->tic, (struct timespec){2,0});
-		targ->tic.tv_nsec = 0;
-		wait_time(targ->tic);
-		nexttime = targ->tic;
-	}
-
-	/* Only use the first queue. */
-	ring = NETMAP_TXRING(targ->nmd->nifp, targ->nmd->first_tx_ring);
-
-	while (!targ->cancel) {
-		int64_t limit;
-		unsigned int space;
-		unsigned int head;
-		int fcnt;
-
-		if (!rate_limit) {
-			budget = targ->g->burst;
-
-		} else if (budget <= 0) {
-			budget = targ->g->burst;
-			nexttime = timespec_add(nexttime, targ->g->tx_period);
-			wait_time(nexttime);
-		}
-
-		/* wait for available room in the send queue */
-		if (poll(&pfd, 1, 2000) <= 0) {
-			if (targ->cancel)
-				break;
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
-		}
-		if (pfd.revents & POLLERR) {
-			D("poll error on %d ring %d-%d", pfd.fd,
-				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
-			goto quit;
-		}
-
-		/* If no room poll() again. */
-		space = nm_ring_space(ring);
-		if (!space) {
-			continue;
-		}
-
-		limit = budget;
-
-		if (space < limit) {
-			limit = space;
-		}
-
-		/* Cut off ``limit`` to make sure is multiple of ``frags``. */
-		if (frags > 1) {
-			limit = (limit / frags) * frags;
-		}
-
-		limit = sent + limit; /* Convert to absolute. */
-
-		for (fcnt = frags, head = ring->head;
-				sent < limit; sent++, sequence++) {
-			struct netmap_slot *slot = &ring->slot[head];
-			char *p = NETMAP_BUF(ring, slot->buf_idx);
-
-			slot->flags = 0;
-			pkt->body[0] = sequence >> 24;
-			pkt->body[1] = (sequence >> 16) & 0xff;
-			pkt->body[2] = (sequence >> 8) & 0xff;
-			pkt->body[3] = sequence & 0xff;
-			nm_pkt_copy(frame, p, size);
-			if (fcnt == frags) {
-				update_addresses(pkt, targ->g);
-			}
-
-			if (options & OPT_DUMP) {
-				dump_payload(p, size, ring, head);
-			}
-
-			slot->len = size;
-
-			if (--fcnt > 0) {
-				slot->flags |= NS_MOREFRAG;
-			} else {
-				fcnt = frags;
-			}
-
-			if (sent == limit - 1) {
-				/* Make sure we don't push an incomplete
-				 * packet. */
-				assert(!(slot->flags & NS_MOREFRAG));
-				slot->flags |= NS_REPORT;
-			}
-
-			head = nm_ring_next(ring, head);
-			if (rate_limit) {
-				budget--;
-			}
-		}
-
-		ring->cur = ring->head = head;
-
-		event ++;
-		targ->ctr.pkts = sent;
-		targ->ctr.bytes = sent * size;
-		targ->ctr.events = event;
-	}
-
-	/* flush any remaining packets */
-	D("flush tail %d head %d on thread %p",
-		ring->tail, ring->head,
-		(void *)pthread_self());
-	ioctl(pfd.fd, NIOCTXSYNC, NULL);
-
-	/* final part: wait the TX queues to become empty. */
-	while (nm_tx_pending(ring)) {
-		RD(5, "pending tx tail %d head %d on ring %d",
-				ring->tail, ring->head, targ->nmd->first_tx_ring);
-		ioctl(pfd.fd, NIOCTXSYNC, NULL);
-		usleep(1); /* wait 1 tick */
-	}
-
-	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
-	targ->completed = 1;
-	targ->ctr.pkts = sent;
-	targ->ctr.bytes = sent * size;
-	targ->ctr.events = event;
-quit:
-	/* reset the ``used`` flag. */
-	targ->used = 0;
-
-	return (NULL);
+	for (i = 0; val >=1000 && i < sizeof(units)/sizeof(char *) - 1; i++)
+		val /= 1000;
+	sprintf(buf, "%.2f %s", val, units[i]);
+	return buf;
 }
-
-
-static char *
-multi_slot_to_string(struct netmap_ring *ring, unsigned int head,
-		     unsigned int nfrags, char *strbuf, size_t strbuflen)
-{
-	unsigned int f;
-	char *ret = strbuf;
-
-	for (f = 0; f < nfrags; f++) {
-		struct netmap_slot *slot = &ring->slot[head];
-		int m = snprintf(strbuf, strbuflen, "|%u,%x|", slot->len,
-				 slot->flags);
-		if (m >= (int)strbuflen) {
-			break;
-		}
-		strbuf += m;
-		strbuflen -= m;
-
-		head = nm_ring_next(ring, head);
-	}
-
-	return ret;
-}
-
-static void *
-rxseq_body(void *data)
-{
-	struct targ *targ = (struct targ *) data;
-	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
-	int dump = targ->g->options & OPT_DUMP;
-	struct netmap_ring *ring;
-	unsigned int frags_exp = 1;
-	uint32_t seq_exp = 0;
-	struct my_ctrs cur;
-	unsigned int frags = 0;
-	int first_packet = 1;
-	int first_slot = 1;
-	int i;
-
-	cur.pkts = cur.bytes = cur.events = cur.min_space = 0;
-	cur.t.tv_usec = cur.t.tv_sec = 0; //  unused, just silence the compiler
-
-	if (setaffinity(targ->thread, targ->affinity))
-		goto quit;
-
-	D("reading from %s fd %d main_fd %d",
-		targ->g->ifname, targ->fd, targ->g->main_fd);
-	/* unbounded wait for the first packet. */
-	for (;!targ->cancel;) {
-		i = poll(&pfd, 1, 1000);
-		if (i > 0 && !(pfd.revents & POLLERR))
-			break;
-		RD(1, "waiting for initial packets, poll returns %d %d",
-			i, pfd.revents);
-	}
-
-	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
-
-	ring = NETMAP_RXRING(targ->nmd->nifp, targ->nmd->first_rx_ring);
-
-	while (!targ->cancel) {
-		unsigned int head;
-		uint32_t seq;
-		int limit;
-
-		/* Once we started to receive packets, wait at most 1 seconds
-		   before quitting. */
-		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
-			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
-			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
-			goto out;
-		}
-
-		if (pfd.revents & POLLERR) {
-			D("poll err");
-			goto quit;
-		}
-
-		if (nm_ring_empty(ring))
-			continue;
-
-		limit = nm_ring_space(ring);
-		if (limit > targ->g->burst)
-			limit = targ->g->burst;
-
-#if 0
-		/* Enable this if
-		 *     1) we remove the early-return optimization from
-		 *        the netmap poll implementation, or
-		 *     2) pipes get NS_MOREFRAG support.
-		 * With the current netmap implementation, an experiment like
-		 *    pkt-gen -i vale:1{1 -f txseq -F 9
-		 *    pkt-gen -i vale:1}1 -f rxseq
-		 * would get stuck as soon as we find nm_ring_space(ring) < 9,
-		 * since here limit is rounded to 0 and
-		 * pipe rxsync is not called anymore by the poll() of this loop.
-		 */
-		if (frags_exp > 1) {
-			int o = limit;
-			/* Cut off to the closest smaller multiple. */
-			limit = (limit / frags_exp) * frags_exp;
-			RD(2, "LIMIT %d --> %d", o, limit);
-		}
-#endif
-
-		for (head = ring->head, i = 0; i < limit; i++) {
-			struct netmap_slot *slot = &ring->slot[head];
-			char *p = NETMAP_BUF(ring, slot->buf_idx);
-			int len = slot->len;
-			struct pkt *pkt;
-
-			if (dump) {
-				dump_payload(p, slot->len, ring, head);
-			}
-
-			frags++;
-			if (!(slot->flags & NS_MOREFRAG)) {
-				if (first_packet) {
-					first_packet = 0;
-				} else if (frags != frags_exp) {
-					char prbuf[512];
-					RD(1, "Received packets with %u frags, "
-					      "expected %u, '%s'", frags, frags_exp,
-					      multi_slot_to_string(ring, head-frags+1, frags,
-								   prbuf, sizeof(prbuf)));
-				}
-				first_packet = 0;
-				frags_exp = frags;
-				frags = 0;
-			}
-
-			p -= sizeof(pkt->vh) - targ->g->virt_header;
-			len += sizeof(pkt->vh) - targ->g->virt_header;
-			pkt = (struct pkt *)p;
-
-			if ((char *)pkt + len < ((char *)pkt->body) + sizeof(seq)) {
-				RD(1, "%s: packet too small (len=%u)", __func__,
-				      slot->len);
-			} else {
-				seq = (pkt->body[0] << 24) | (pkt->body[1] << 16)
-				      | (pkt->body[2] << 8) | pkt->body[3];
-				if (first_slot) {
-					/* Grab the first one, whatever it
-					   is. */
-					seq_exp = seq;
-					first_slot = 0;
-				} else if (seq != seq_exp) {
-					uint32_t delta = seq - seq_exp;
-
-					if (delta < (0xFFFFFFFF >> 1)) {
-						RD(2, "Sequence GAP: exp %u found %u",
-						      seq_exp, seq);
-					} else {
-						RD(2, "Sequence OUT OF ORDER: "
-						      "exp %u found %u", seq_exp, seq);
-					}
-					seq_exp = seq;
-				}
-				seq_exp++;
-			}
-
-			cur.bytes += slot->len;
-			head = nm_ring_next(ring, head);
-			cur.pkts++;
-		}
-
-		ring->cur = ring->head = head;
-
-		cur.events++;
-		targ->ctr = cur;
-	}
-
-	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
-
-#if !defined(BUSY_WAIT)
-out:
-#endif
-	targ->completed = 1;
-	targ->ctr = cur;
-
-quit:
-	/* reset the ``used`` flag. */
-	targ->used = 0;
-
-	return (NULL);
-}
-
 
 static void
-tx_output(struct my_ctrs *cur, double delta, const char *msg)
+tx_output(uint64_t sent, int size, double delta)
 {
-	double bw, raw_bw, pps, abs;
+	double bw, raw_bw, pps;
 	char b1[40], b2[80], b3[80];
-	int size;
 
-	if (cur->pkts == 0) {
-		printf("%s nothing.\n", msg);
-		return;
-	}
-
-	size = (int)(cur->bytes / cur->pkts);
-
-	printf("%s %llu packets %llu bytes %llu events %d bytes each in %.2f seconds.\n",
-		msg,
-		(unsigned long long)cur->pkts,
-		(unsigned long long)cur->bytes,
-		(unsigned long long)cur->events, size, delta);
+	printf("Sent %llu packets, %d bytes each, in %.2f seconds.\n",
+	       (unsigned long long)sent, size, delta);
 	if (delta == 0)
 		delta = 1e-6;
 	if (size < 60)		/* correct for min packet size */
 		size = 60;
-	pps = cur->pkts / delta;
-	bw = (8.0 * cur->bytes) / delta;
+	pps = sent / delta;
+	bw = (8.0 * size * sent) / delta;
 	/* raw packets have4 bytes crc + 20 bytes framing */
-	raw_bw = (8.0 * (cur->pkts * 24 + cur->bytes)) / delta;
-	abs = cur->pkts / (double)(cur->events);
+	raw_bw = (8.0 * (size + 24) * sent) / delta;
 
-	printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
-		norm(b1, pps), norm(b2, bw), norm(b3, raw_bw), abs);
+	printf("Speed: %spps Bandwidth: %sbps (raw %sbps)\n",
+		norm(b1, pps), norm(b2, bw), norm(b3, raw_bw) );
+}
+
+
+static void
+rx_output(uint64_t received, double delta)
+{
+	double pps;
+	char b1[40];
+
+	printf("Received %llu packets, in %.2f seconds.\n",
+		(unsigned long long) received, delta);
+
+	if (delta == 0)
+		delta = 1e-6;
+	pps = received / delta;
+	printf("Speed: %spps\n", norm(b1, pps));
 }
 
 static void
@@ -1865,9 +1445,9 @@ usage(void)
 		"Usage:\n"
 		"%s arguments\n"
 		"\t-i interface		interface name\n"
-		"\t-f function		tx rx ping pong txseq rxseq\n"
+		"\t-f function		tx rx ping pong\n"
 		"\t-n count		number of iterations (can be 0)\n"
-		"\t-t pkts_to_send	also forces tx mode\n"
+		"\t-t pkts_to_send		also forces tx mode\n"
 		"\t-r pkts_to_receive	also forces rx mode\n"
 		"\t-l pkt_size		in bytes excluding CRC\n"
 		"\t-d dst_ip[:port[-dst_ip:port]]   single or range\n"
@@ -1879,27 +1459,17 @@ usage(void)
 		"\t-c cores		cores to use\n"
 		"\t-p threads		processes/threads to use\n"
 		"\t-T report_ms		milliseconds between reports\n"
+		"\t-P			use libpcap instead of netmap\n"
 		"\t-w wait_for_link_time	in seconds\n"
 		"\t-R rate		in packets per second\n"
 		"\t-X			dump payload\n"
 		"\t-H len		add empty virtio-net-header with size 'len'\n"
-		"\t-E pipes		allocate extra space for a number of pipes\n"
-		"\t-r			do not touch the buffers (send rubbish)\n"
-	        "\t-P file		load packet from pcap file\n"
-		"\t-z			use random IPv4 src address/port\n"
-		"\t-Z			use random IPv4 dst address/port\n"
-		"\t-F num_frags		send multi-slot packets\n"
+	        "\t-P file		load packet from pcap file"
 		"",
 		cmd);
 
 	exit(0);
 }
-
-enum {
-	TD_TYPE_SENDER = 1,
-	TD_TYPE_RECEIVER,
-	TD_TYPE_OTHER,
-};
 
 static void
 start_threads(struct glob_arg *g)
@@ -1923,32 +1493,33 @@ start_threads(struct glob_arg *g)
 		uint64_t nmd_flags = 0;
 		nmd.self = &nmd;
 
-		if (i > 0) {
-			/* the first thread uses the fd opened by the main
-			 * thread, the other threads re-open /dev/netmap
-			 */
-			if (g->nthreads > 1) {
-				nmd.req.nr_flags =
-					g->nmd->req.nr_flags & ~NR_REG_MASK;
-				nmd.req.nr_flags |= NR_REG_ONE_NIC;
-				nmd.req.nr_ringid = i;
-			}
-			/* Only touch one of the rings (rx is already ok) */
-			if (g->td_type == TD_TYPE_RECEIVER)
-				nmd_flags |= NETMAP_NO_TX_POLL;
-
-			/* register interface. Override ifname and ringid etc. */
-			t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
-				NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
-			if (t->nmd == NULL) {
-				D("Unable to open %s: %s",
-					t->g->ifname, strerror(errno));
+		if (g->nthreads > 1) {
+			if (nmd.req.nr_flags != NR_REG_ALL_NIC) {
+				D("invalid nthreads mode %d", nmd.req.nr_flags);
 				continue;
 			}
-		} else {
-			t->nmd = g->nmd;
+			nmd.req.nr_flags = NR_REG_ONE_NIC;
+			nmd.req.nr_ringid = i;
+		}
+		/* Only touch one of the rings (rx is already ok) */
+		if (g->td_body == receiver_body)
+			nmd_flags |= NETMAP_NO_TX_POLL;
+
+		/* register interface. Override ifname and ringid etc. */
+		if (g->options & OPT_MONITOR_TX)
+			nmd.req.nr_flags |= NR_MONITOR_TX;
+		if (g->options & OPT_MONITOR_RX)
+			nmd.req.nr_flags |= NR_MONITOR_RX;
+
+		t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
+			NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
+		if (t->nmd == NULL) {
+			D("Unable to open %s: %s",
+				t->g->ifname, strerror(errno));
+			continue;
 		}
 		t->fd = t->nmd->fd;
+		set_vnet_hdr_len(t);
 
 	    } else {
 		targs[i].fd = g->main_fd;
@@ -1956,7 +1527,10 @@ start_threads(struct glob_arg *g)
 		t->used = 1;
 		t->me = i;
 		if (g->affinity >= 0) {
-			t->affinity = (g->affinity + i) % g->system_cpus;
+			if (g->affinity < g->cpus)
+				t->affinity = g->affinity;
+			else
+				t->affinity = i % g->cpus;
 		} else {
 			t->affinity = -1;
 		}
@@ -1975,57 +1549,45 @@ main_thread(struct glob_arg *g)
 {
 	int i;
 
-	struct my_ctrs prev, cur;
+	uint64_t prev = 0;
+	uint64_t count = 0;
 	double delta_t;
 	struct timeval tic, toc;
 
-	prev.pkts = prev.bytes = prev.events = 0;
-	gettimeofday(&prev.t, NULL);
+	gettimeofday(&toc, NULL);
 	for (;;) {
-		char b1[40], b2[40], b3[40];
-		uint64_t pps, usec;
-		struct my_ctrs x;
-		double abs;
+		struct timeval now, delta;
+		uint64_t pps, usec, my_count, npkts;
 		int done = 0;
 
-		usec = wait_for_next_report(&prev.t, &cur.t,
-				g->report_interval);
-
-		cur.pkts = cur.bytes = cur.events = 0;
-		cur.min_space = 0;
-		if (usec < 10000) /* too short to be meaningful */
-			continue;
-		/* accumulate counts for all threads */
+		delta.tv_sec = g->report_interval/1000;
+		delta.tv_usec = (g->report_interval%1000)*1000;
+		select(0, NULL, NULL, NULL, &delta);
+		gettimeofday(&now, NULL);
+		timersub(&now, &toc, &toc);
+		my_count = 0;
 		for (i = 0; i < g->nthreads; i++) {
-			cur.pkts += targs[i].ctr.pkts;
-			cur.bytes += targs[i].ctr.bytes;
-			cur.events += targs[i].ctr.events;
-			cur.min_space += targs[i].ctr.min_space;
-			targs[i].ctr.min_space = 99999;
+			my_count += targs[i].count;
 			if (targs[i].used == 0)
 				done++;
 		}
-		x.pkts = cur.pkts - prev.pkts;
-		x.bytes = cur.bytes - prev.bytes;
-		x.events = cur.events - prev.events;
-		pps = (x.pkts*1000000 + usec/2) / usec;
-		abs = (x.events > 0) ? (x.pkts / (double) x.events) : 0;
-
-		D("%spps (%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
-			norm(b1,pps),
-			norm(b2, (double)x.pkts),
-			norm(b3, (double)x.bytes*8),
-			(unsigned long long)usec,
-			abs, (int)cur.min_space);
-		prev = cur;
+		usec = toc.tv_sec* 1000000 + toc.tv_usec;
+		if (usec < 10000)
+			continue;
+		npkts = my_count - prev;
+		pps = (npkts*1000000 + usec/2) / usec;
+		D("%llu pps (%llu pkts in %llu usec)",
+			(unsigned long long)pps,
+			(unsigned long long)npkts,
+			(unsigned long long)usec);
+		prev = my_count;
+		toc = now;
 		if (done == g->nthreads)
 			break;
 	}
 
 	timerclear(&tic);
 	timerclear(&toc);
-	cur.pkts = cur.bytes = cur.events = 0;
-	/* final round */
 	for (i = 0; i < g->nthreads; i++) {
 		struct timespec t_tic, t_toc;
 		/*
@@ -2033,7 +1595,7 @@ main_thread(struct glob_arg *g)
 		 * file descriptors.
 		 */
 		if (targs[i].used)
-			pthread_join(targs[i].thread, NULL); /* blocking */
+			pthread_join(targs[i].thread, NULL);
 		close(targs[i].fd);
 
 		if (targs[i].completed == 0)
@@ -2043,13 +1605,7 @@ main_thread(struct glob_arg *g)
 		 * Collect threads output and extract information about
 		 * how long it took to send all the packets.
 		 */
-		cur.pkts += targs[i].ctr.pkts;
-		cur.bytes += targs[i].ctr.bytes;
-		cur.events += targs[i].ctr.events;
-		/* collect the largest start (tic) and end (toc) times,
-		 * XXX maybe we should do the earliest tic, or do a weighted
-		 * average ?
-		 */
+		count += targs[i].count;
 		t_tic = timeval2spec(&tic);
 		t_toc = timeval2spec(&toc);
 		if (!timerisset(&tic) || timespec_ge(&targs[i].tic, &t_tic))
@@ -2061,10 +1617,10 @@ main_thread(struct glob_arg *g)
 	/* print output. */
 	timersub(&toc, &tic, &toc);
 	delta_t = toc.tv_sec + 1e-6* toc.tv_usec;
-	if (g->td_type == TD_TYPE_SENDER)
-		tx_output(&cur, delta_t, "Sent");
+	if (g->td_body == sender_body)
+		tx_output(count, g->pkt_size, delta_t);
 	else
-		tx_output(&cur, delta_t, "Received");
+		rx_output(count, delta_t);
 
 	if (g->dev_type == DEV_NETMAP) {
 		munmap(g->nmd->mem, g->nmd->req.nr_memsize);
@@ -2072,20 +1628,18 @@ main_thread(struct glob_arg *g)
 	}
 }
 
-struct td_desc {
-	int ty;
+
+struct sf {
 	char *key;
 	void *f;
 };
 
-static struct td_desc func[] = {
-	{ TD_TYPE_SENDER,	"tx",		sender_body },
-	{ TD_TYPE_RECEIVER,	"rx",		receiver_body },
-	{ TD_TYPE_OTHER,	"ping",		pinger_body },
-	{ TD_TYPE_OTHER,	"pong",		ponger_body },
-	{ TD_TYPE_SENDER,	"txseq",	txseq_body },
-	{ TD_TYPE_RECEIVER,	"rxseq",	rxseq_body },
-	{ 0,			NULL,	NULL }
+static struct sf func[] = {
+	{ "tx",	sender_body },
+	{ "rx",	receiver_body },
+	{ "ping",	pinger_body },
+	{ "pong",	ponger_body },
+	{ NULL, NULL }
 };
 
 static int
@@ -2165,7 +1719,6 @@ main(int arc, char **argv)
 
 	g.main_fd = -1;
 	g.td_body = receiver_body;
-	g.td_type = TD_TYPE_RECEIVER;
 	g.report_interval = 1000;	/* report interval */
 	g.affinity = -1;
 	/* ip addresses can also be a range x.x.x.x-x.x.x.y */
@@ -2176,7 +1729,7 @@ main(int arc, char **argv)
 	g.pkt_size = 60;
 	g.burst = 512;		// default
 	g.nthreads = 1;
-	g.cpus = 1;		// default
+	g.cpus = 1;
 	g.forever = 1;
 	g.tx_rate = 0;
 	g.frags = 1;
@@ -2184,8 +1737,8 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZ")) != -1) {
-		struct td_desc *fn;
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:m:P:")) != -1) {
+		struct sf *fn;
 
 		switch(ch) {
 		default:
@@ -2211,12 +1764,10 @@ main(int arc, char **argv)
 				if (!strcmp(fn->key, optarg))
 					break;
 			}
-			if (fn->key) {
+			if (fn->key)
 				g.td_body = fn->f;
-				g.td_type = fn->ty;
-			} else {
+			else
 				D("unrecognised function %s", optarg);
-			}
 			break;
 
 		case 'o':	/* data generation options */
@@ -2320,38 +1871,32 @@ main(int arc, char **argv)
 		case 'e': /* extra bufs */
 			g.extra_bufs = atoi(optarg);
 			break;
-		case 'E':
-			g.extra_pipes = atoi(optarg);
+		case 'm':
+			if (strcmp(optarg, "tx") == 0) {
+				g.options |= OPT_MONITOR_TX;
+			} else if (strcmp(optarg, "rx") == 0) {
+				g.options |= OPT_MONITOR_RX;
+			} else {
+				D("unrecognized monitor mode %s", optarg);
+			}
 			break;
 		case 'P':
 			g.packet_file = strdup(optarg);
 			break;
-		case 'm':
-			/* ignored */
-			break;
-		case 'r':
-			g.options |= OPT_RUBBISH;
-			break;
-		case 'z':
-			g.options |= OPT_RANDOM_SRC;
-			break;
-		case 'Z':
-			g.options |= OPT_RANDOM_DST;
-			break;
 		}
+
 	}
 
-	if (strlen(g.ifname) <=0 ) {
+	if (g.ifname == NULL) {
 		D("missing ifname");
 		usage();
 	}
 
-	g.system_cpus = i = system_ncpus();
+	i = system_ncpus();
 	if (g.cpus < 0 || g.cpus > i) {
 		D("%d cpus is too high, have only %d cpus", g.cpus, i);
 		usage();
 	}
-D("running on %d cpus (have %d)", g.cpus, i);
 	if (g.cpus == 0)
 		g.cpus = i;
 
@@ -2418,11 +1963,6 @@ D("running on %d cpus (have %d)", g.cpus, i);
 	if (g.extra_bufs) {
 		base_nmd.nr_arg3 = g.extra_bufs;
 	}
-	if (g.extra_pipes) {
-	    base_nmd.nr_arg1 = g.extra_pipes;
-	}
-
-	base_nmd.nr_flags |= NR_ACCEPT_VNET_HDR;
 
 	/*
 	 * Open the netmap device using nm_open().
@@ -2436,38 +1976,13 @@ D("running on %d cpus (have %d)", g.cpus, i);
 		D("Unable to open %s: %s", g.ifname, strerror(errno));
 		goto out;
 	}
-
-	if (g.nthreads > 1) {
-		struct nm_desc saved_desc = *g.nmd;
-		saved_desc.self = &saved_desc;
-		saved_desc.mem = NULL;
-		nm_close(g.nmd);
-		saved_desc.req.nr_flags &= ~NR_REG_MASK;
-		saved_desc.req.nr_flags |= NR_REG_ONE_NIC;
-		saved_desc.req.nr_ringid = 0;
-		g.nmd = nm_open(g.ifname, &base_nmd, NM_OPEN_IFNAME, &saved_desc);
-		if (g.nmd == NULL) {
-			D("Unable to open %s: %s", g.ifname, strerror(errno));
-			goto out;
-		}
-	}
 	g.main_fd = g.nmd->fd;
 	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
-	if (g.virt_header) {
-		/* Set the virtio-net header length, since the user asked
-		 * for it explicitely. */
-		set_vnet_hdr_len(&g);
-	} else {
-		/* Check whether the netmap port we opened requires us to send
-		 * and receive frames with virtio-net header. */
-		get_vnet_hdr_len(&g);
-	}
-
-	/* get num of queues in tx or rx */
-	if (g.td_type == TD_TYPE_SENDER)
+	/* get num of queues in tx or rx */ 
+	if (g.td_body == sender_body)
 		devqueues = g.nmd->req.nr_tx_rings;
-	else
+	else 
 		devqueues = g.nmd->req.nr_rx_rings;
 
 	/* validate provided nthreads. */
@@ -2485,27 +2000,25 @@ D("running on %d cpus (have %d)", g.cpus, i);
 		    req->nr_arg2);
 		for (i = 0; i <= req->nr_tx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
-			D("   TX%d at 0x%p slots %d", i,
-			    (void *)((char *)ring - (char *)nifp), ring->num_slots);
+			D("   TX%d at 0x%lx slots %d", i,
+			    (char *)ring - (char *)nifp, ring->num_slots);
 		}
 		for (i = 0; i <= req->nr_rx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_RXRING(nifp, i);
-			D("   RX%d at 0x%p slots %d", i,
-			    (void *)((char *)ring - (char *)nifp), ring->num_slots);
+			D("   RX%d at 0x%lx slots %d", i,
+			    (char *)ring - (char *)nifp, ring->num_slots);
 		}
 	}
 
 	/* Print some debug information. */
 	fprintf(stdout,
 		"%s %s: %d queues, %d threads and %d cpus.\n",
-		(g.td_type == TD_TYPE_SENDER) ? "Sending on" :
-			((g.td_type == TD_TYPE_RECEIVER) ? "Receiving from" :
-			"Working on"),
+		(g.td_body == sender_body) ? "Sending on" : "Receiving from",
 		g.ifname,
 		devqueues,
 		g.nthreads,
 		g.cpus);
-	if (g.td_type == TD_TYPE_SENDER) {
+	if (g.td_body == sender_body) {
 		fprintf(stdout, "%s -> %s (%s -> %s)\n",
 			g.src_ip.name, g.dst_ip.name,
 			g.src_mac.name, g.dst_mac.name);
@@ -2521,13 +2034,12 @@ out:
 
 
 	if (g.options) {
-		D("--- SPECIAL OPTIONS:%s%s%s%s%s%s\n",
+		D("--- SPECIAL OPTIONS:%s%s%s%s%s\n",
 			g.options & OPT_PREFETCH ? " prefetch" : "",
 			g.options & OPT_ACCESS ? " access" : "",
 			g.options & OPT_MEMCPY ? " memcpy" : "",
 			g.options & OPT_INDIRECT ? " indirect" : "",
-			g.options & OPT_COPY ? " copy" : "",
-			g.options & OPT_RUBBISH ? " rubbish " : "");
+			g.options & OPT_COPY ? " copy" : "");
 	}
 
 	g.tx_period.tv_sec = g.tx_period.tv_nsec = 0;
@@ -2547,7 +2059,7 @@ out:
 		g.tx_period.tv_sec = g.tx_period.tv_nsec / 1000000000;
 		g.tx_period.tv_nsec = g.tx_period.tv_nsec % 1000000000;
 	}
-	if (g.td_type == TD_TYPE_SENDER)
+	if (g.td_body == sender_body)
 	    D("Sending %d packets every  %ld.%09ld s",
 			g.burst, g.tx_period.tv_sec, g.tx_period.tv_nsec);
 	/* Wait for PHY reset. */
