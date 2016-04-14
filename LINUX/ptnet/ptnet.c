@@ -921,7 +921,6 @@ err_get_lut:
 err_rings_create:
 	ptnet_nm_krings_delete(na_dr);
 err_mem_finalize:
-	NMG_UNLOCK();
 	return -ret;
 }
 

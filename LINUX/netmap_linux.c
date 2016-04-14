@@ -742,19 +742,26 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 int
 nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
-    int error = EOPNOTSUPP;
+	int error = EOPNOTSUPP;
 #ifdef NETMAP_LINUX_HAVE_GET_RINGPARAM
-    struct ethtool_ringparam rp;
+	struct ethtool_ringparam rp;
 
-    if (ifp->ethtool_ops && ifp->ethtool_ops->get_ringparam) {
-        ifp->ethtool_ops->get_ringparam(ifp, &rp);
-        *tx = rp.tx_pending ? rp.tx_pending : rp.tx_max_pending;
-        *rx = rp.rx_pending ? rp.rx_pending : rp.rx_max_pending;
-	if (*tx && *rx)
+	if (ifp->ethtool_ops && ifp->ethtool_ops->get_ringparam) {
+		ifp->ethtool_ops->get_ringparam(ifp, &rp);
+		*tx = rp.tx_pending ? rp.tx_pending : rp.tx_max_pending;
+		*rx = rp.rx_pending ? rp.rx_pending : rp.rx_max_pending;
+		if (*rx < 3) {
+			D("Invalid RX ring size %u, using default", *rx);
+			*rx = netmap_generic_ringsize;
+		}
+		if (*tx < 3) {
+			D("Invalid TX ring size %u, using default", *tx);
+			*tx = netmap_generic_ringsize;
+		}
 		error = 0;
-    }
+	}
 #endif /* HAVE_GET_RINGPARAM */
-    return error;
+	return error;
 }
 
 /* Fills in the output arguments with the number of hardware TX/RX queues. */
