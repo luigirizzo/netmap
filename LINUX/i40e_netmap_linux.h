@@ -64,14 +64,15 @@ extern int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
  *	During regular operations the CRC is stripped, but on some
  *	hardware reception of frames not multiple of 64 is slower,
  *	so using crcstrip=0 helps in benchmarks.
+ *      The driver by default strips CRCs and we do not override it.
  *
  * ix_rx_miss, ix_rx_miss_bufs:
  *	count packets that might be missed due to lost interrupts.
  */
 SYSCTL_DECL(_dev_netmap);
-int ix_rx_miss = 0, ix_rx_miss_bufs = 0, ix_crcstrip = 0;
+int ix_rx_miss = 0, ix_rx_miss_bufs = 0, ix_crcstrip = 1;
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_crcstrip,
-    CTLFLAG_RW, &ix_crcstrip, 0, "strip CRC on rx frames");
+    CTLFLAG_RW, &ix_crcstrip, 1, "NIC strips CRC on rx frames");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss,
     CTLFLAG_RW, &ix_rx_miss, 0, "potentially missed rx intr");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss_bufs,
