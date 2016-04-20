@@ -561,16 +561,17 @@ run:
 			while (!nm_ring_empty(rxring)) {
 				struct overflow_queue *q;
 				struct netmap_slot *rs = next_slot;
-				next_cur = nm_ring_next(rxring, next_cur);
-				next_slot = &rxring->slot[next_cur];
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
-				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
-				__builtin_prefetch(next_buf);
-				// 'B' is just a hashing seed
 				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
 				if (hash == 0)
 					non_ip++; // XXX ??
+				// prefetch the buffer for the next round
+				next_cur = nm_ring_next(rxring, next_cur);
+				next_slot = &rxring->slot[next_cur];
+				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
+				__builtin_prefetch(next_buf);
+				// 'B' is just a hashing seed
 				uint32_t output_port = hash % glob_arg.output_rings;
 				struct port_des *port = &ports[output_port];
 				struct netmap_ring *ring = port->ring;
