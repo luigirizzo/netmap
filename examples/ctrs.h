@@ -95,7 +95,7 @@ wait_for_next_report(struct timeval *prev, struct timeval *cur,
 
 	delta.tv_sec = report_interval/1000;
 	delta.tv_usec = (report_interval%1000)*1000;
-	if (select(0, NULL, NULL, NULL, &delta) < 0) {
+	if (select(0, NULL, NULL, NULL, &delta) < 0 && errno != EINTR) {
 		perror("select");
 		abort();
 	}
