@@ -1481,8 +1481,9 @@ static int
 netmap_mem_private_finalize(struct netmap_mem_d *nmd)
 {
 	int err;
-	nmd->active++;
 	err = netmap_mem_finalize_all(nmd);
+	if (!err)
+		nmd->active++;
 	return err;
 
 }
