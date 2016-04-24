@@ -63,6 +63,7 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
+#define WITH_NMCONF
 
 #else	/* neither linux nor windows */
 #define WITH_VALE	// comment out to disable VALE support
@@ -71,6 +72,7 @@
 #define WITH_GENERIC
 #define WITH_PTNETMAP_HOST	/* ptnetmap host support */
 #define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
+#define WITH_NMCONF
 
 #endif
 
@@ -265,6 +267,27 @@ typedef struct hrtimer{
 			D(format, ##__VA_ARGS__);		\
 	} while (0)
 
+#ifdef WITH_NMCONF
+
+struct nm_confb_data;
+struct nm_confb {
+	struct nm_confb_data *readp;
+	struct nm_confb_data *writep;
+	u_int n_data;
+	u_int next_w;
+	u_int next_r;
+};
+
+struct nm_conf {
+	NM_MTX_T mux;
+	struct nm_confb buf[2]; /* 0 in, 1 out */
+};
+void nm_conf_init(struct nm_conf*);
+void nm_conf_uninit(struct nm_conf*, int locked);
+struct uio;
+int nm_conf_read(struct nm_conf *, struct uio *);
+int nm_conf_write(struct nm_conf *, struct uio *);
+#endif /* WITH_NMCONF */
 struct netmap_adapter;
 struct nm_bdg_fwd;
 struct nm_bridge;
@@ -1801,6 +1824,10 @@ struct netmap_priv_d {
 	 */
 	NM_SELINFO_T *np_si[NR_TXRX];
 	struct thread	*np_td;		/* kqueue, just debugging */
+
+#ifdef WITH_NMCONF
+	struct nm_conf	conf;
+#endif
 };
 
 struct netmap_priv_d *netmap_priv_new(void);

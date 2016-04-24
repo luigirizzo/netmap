@@ -987,6 +987,9 @@ netmap_priv_new(void)
 		return NULL;
 	priv->np_refs = 1;
 	nm_os_get_module();
+#ifdef WITH_NMCONF
+	nm_conf_init(&priv->conf);
+#endif
 	return priv;
 }
 
@@ -1003,12 +1006,14 @@ void
 netmap_priv_delete(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na = priv->np_na;
-
 	/* number of active references to this fd */
 	if (--priv->np_refs > 0) {
 		return;
 	}
 	nm_os_put_module();
+#ifdef WITH_NMCONF
+	nm_conf_uninit(&priv->conf, 1 /* locked */);
+#endif
 	if (na) {
 		netmap_do_unregif(priv);
 	}

@@ -25,11 +25,34 @@ int curr_var;
 
 char *firstarg(char *buf)
 {
+	static char *ptr;
 	int v;
-	char *arg = strtok(buf, " \t\n");
+	char *arg;
 	char *ret;
-	if (!arg)
+
+	if (buf)
+		ptr = buf;
+	while (*ptr && isspace(*ptr))
+		ptr++;
+	if (!*ptr)
 		return NULL;
+	arg = ptr;
+	if (*arg == '\'') {
+		arg++;
+		ptr++;
+		while (*ptr && *ptr != '\'')
+			ptr++;
+		if (*ptr != '\'') {
+			printf("unterminated quoted string\n");
+			return NULL;
+		}
+		*ptr = '\0';
+		return arg;
+	}
+	while (*ptr && !isspace(*ptr))
+		ptr++;
+	if (*ptr)
+		*ptr++ = '\0';
 	if (arg[0] != '$' && arg[0] != '?')
 		return arg;
 	v = atoi(arg+1);
@@ -137,6 +160,37 @@ void do_close()
 	fd = arg ? atoi(arg) : last_fd;
 	ret = close(fd);
 	output_err(ret, "close(%d)=%d", fd, ret);
+}
+
+void do_read()
+{
+	int ret, fd, size;
+	char *buf, *arg = nextarg();
+	fd = arg ? atoi(arg) : last_fd;
+	arg = nextarg();
+	size = arg ? atoi(arg) : 1024;
+	buf = malloc(size);
+	if (!buf) {
+		fprintf(stderr, "malloc(%d) failed", size);
+		return;
+	}
+	ret = read(fd, buf, size);
+	output_err(ret, "read(%d, %p, %d)=%d", fd, buf, size, ret);
+	if (ret > 0)
+		printf("%*.*s", ret, ret, buf);
+	free(buf);
+}
+
+void do_write()
+{
+	int ret, fd, size;
+	char *buf, *arg = nextarg();
+	buf = arg ? arg : "";
+	size = strlen(buf);
+	arg = nextarg();
+	fd = arg ? atoi(arg) : last_fd;
+	ret = write(fd, buf, size);
+	output_err(ret, "write(%d, %p, %d)=%d", fd, buf, size, ret);
 }
 
 #ifdef TEST_NETMAP
@@ -1144,6 +1198,8 @@ do_nmr()
 struct cmd_def commands[] = {
 	{ "open",	do_open,	},
 	{ "close", 	do_close,	},
+	{ "read",	do_read,	},
+	{ "write",	do_write,	},
 #ifdef TEST_NETMAP
 	{ "getinfo",	do_getinfo,	},
 	{ "regif",	do_regif,	},

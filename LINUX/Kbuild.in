@@ -17,6 +17,7 @@ remoteobjs-$(CONFIG_NETMAP_GENERIC) += netmap_generic.o
 remoteobjs-ptnetmap-$(CONFIG_NETMAP_PTNETMAP_GUEST) = ptnetmap.o
 remoteobjs-ptnetmap-$(CONFIG_NETMAP_PTNETMAP_HOST)  = ptnetmap.o
 remoteobjs-y += $(remoteobjs-ptnetmap-y)
+remoteobjs-$(CONFIG_NETMAP_NMCONF)  += netmap_config.o
 
 define remote_template
 $$(obj)/$(1): %.o: $$(SRCDIR)/../sys/dev/netmap/$(2) FORCE

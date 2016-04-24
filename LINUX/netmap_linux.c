@@ -1118,27 +1118,39 @@ static ssize_t
 linux_netmap_write(struct file *filp, const char __user *buf,
 		size_t count, loff_t *f_pos)
 {
+	struct netmap_priv_d *priv = filp->private_data;
 	struct uio uio = {
 		.uio_resid = count,
 		.buf = (char *)buf,
 		.write = 1,
 	};
-	D("buf %p count %d", uio.buf, uio.uio_resid);
-	return 0;
+	int err;
+
+	ND("buf %p count %zd", buf, count);
+	err = nm_conf_write(&priv->conf, &uio);
+	ND("err %d uio.uio_resid %d", err, uio.uio_resid);
+	if (err)
+		return -err;
+	return count - uio.uio_resid;
 }
 
 static ssize_t
 linux_netmap_read(struct file *filp, char __user *buf,
 		size_t count, loff_t *f_pos)
 {
+	struct netmap_priv_d *priv = filp->private_data;
 	struct uio uio = {
 		.uio_resid = count,
 		.buf = buf,
 		.write = 0,
 	};
+	int err;
 
-	D("buf %p count %d", uio.buf, uio.uio_resid);
-	return 0;
+	err = nm_conf_read(&priv->conf, &uio);
+	ND("err %d uio.uio_resid %d", err, uio.uio_resid);
+	if (err)
+		return -err;
+	return count - uio.uio_resid;
 }
 
 #endif /* WITH_NMCONF */
