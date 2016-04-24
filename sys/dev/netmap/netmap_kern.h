@@ -365,6 +365,9 @@ struct nm_jp_ptr {
 
 void nm_jp_pinit(struct nm_jp_ptr *, struct nm_jp *type,
 		void *arg, u_int flags);
+struct _jpo nm_jp_pinterp(struct nm_jp *, struct _jpo, struct nm_conf *);
+struct _jpo nm_jp_pdump(struct nm_jp *, struct nm_conf *);
+void nm_jp_pbracket(struct nm_jp *, int, struct nm_conf *);
 
 extern struct nm_jp_dict nm_jp_root;
 extern struct nm_jp_dict nm_jp_ports;
@@ -384,6 +387,17 @@ static struct nm_jp_num NM_JPO_FIELD(p, f) = {		\
 	},						\
 	.var = (void *)offsetof(st, f),			\
 	.size = member_size(st, f) | NM_JP_NUM_REL,	\
+}
+#define NM_JPO_STRUCT(p, st, n, t, f)			\
+static struct nm_jp_ptr NM_JPO_FIELD(p, f) = {		\
+	.up = {						\
+		.interp = nm_jp_pinterp,		\
+		.dump   = nm_jp_pdump,			\
+		.bracket = nm_jp_pbracket		\
+	},						\
+	.type = &NM_JPO_CLASS(t).up,			\
+	.arg = (void *)offsetof(st, n),			\
+	.flags = NM_JP_PTR_REL,				\
 }
 #define NM_JPO_FIELDS_LIST(p)				\
 	static struct nm_jp_delem NM_JPO_FIELDS(p)[] =

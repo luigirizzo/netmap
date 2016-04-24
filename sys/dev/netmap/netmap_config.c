@@ -1165,7 +1165,7 @@ nm_jp_pnewcurobj(struct nm_jp_ptr *p, void *cur_obj)
 	return obj;
 }
 
-static struct _jpo
+struct _jpo
 nm_jp_pinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
 	struct nm_jp_ptr *p = (struct nm_jp_ptr *)jp;
@@ -1178,7 +1178,7 @@ nm_jp_pinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	return rv;
 }
 
-static struct _jpo
+struct _jpo
 nm_jp_pdump(struct nm_jp *jp, struct nm_conf *c)
 {
 	struct nm_jp_ptr *p = (struct nm_jp_ptr *)jp;
@@ -1191,7 +1191,7 @@ nm_jp_pdump(struct nm_jp *jp, struct nm_conf *c)
 	return rv;
 }
 
-static void
+void
 nm_jp_pbracket(struct nm_jp *jp, int stage, struct nm_conf *c)
 {
 	struct nm_jp_ptr *p = (struct nm_jp_ptr *)jp;
