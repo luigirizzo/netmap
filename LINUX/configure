@@ -71,7 +71,7 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host"
+subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host nmconf"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -84,6 +84,7 @@ subsys enable vale
 subsys enable pipe
 subsys enable monitor
 subsys enable generic
+subsys enable nmconf
 
 # available drivers
 driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \

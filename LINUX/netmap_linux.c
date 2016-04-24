@@ -1094,11 +1094,64 @@ out:
 	return (0);
 }
 
+int
+uiomove(void *buf, int howmuch, struct uio *uio)
+{
+	if (uio->write) {
+		ND("copy_from_user(%p, %p, %d)", uio->buf, buf, howmuch);
+		if (copy_from_user(buf, uio->buf, howmuch))
+			return EFAULT;
+	} else {
+		ND("copy_to_user(%p, %p, %d", uio->buf, buf, howmuch);
+		if (copy_to_user(uio->buf, buf, howmuch))
+			return EFAULT;
+	}
+	uio->buf += howmuch;
+	uio->uio_resid -= howmuch;
+	ND("howmuch %d uio_resid %d", howmuch, uio->uio_resid);
+	return 0;
+}
+
+#ifdef WITH_NMCONF
+
+static ssize_t
+linux_netmap_write(struct file *filp, const char __user *buf,
+		size_t count, loff_t *f_pos)
+{
+	struct uio uio = {
+		.uio_resid = count,
+		.buf = (char *)buf,
+		.write = 1,
+	};
+	D("buf %p count %d", uio.buf, uio.uio_resid);
+	return 0;
+}
+
+static ssize_t
+linux_netmap_read(struct file *filp, char __user *buf,
+		size_t count, loff_t *f_pos)
+{
+	struct uio uio = {
+		.uio_resid = count,
+		.buf = buf,
+		.write = 0,
+	};
+
+	D("buf %p count %d", uio.buf, uio.uio_resid);
+	return 0;
+}
+
+#endif /* WITH_NMCONF */
+
 
 static struct file_operations netmap_fops = {
     .owner = THIS_MODULE,
     .open = linux_netmap_open,
     .mmap = linux_netmap_mmap,
+#ifdef WITH_NMCONF
+    .read = linux_netmap_read,
+    .write = linux_netmap_write,
+#endif /* WITH_NMCONF */
     LIN_IOCTL_NAME = linux_netmap_ioctl,
     .poll = linux_netmap_poll,
     .release = linux_netmap_release,

@@ -54,6 +54,9 @@
 #if defined(CONFIG_NETMAP_PTNETMAP_HOST)
 #define WITH_PTNETMAP_HOST
 #endif
+#if defined(CONFIG_NETMAP_NMCONF)
+#define WITH_NMCONF
+#endif
 
 #elif defined (_WIN32)
 #define WITH_VALE	// comment out to disable VALE support

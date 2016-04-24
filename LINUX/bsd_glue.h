@@ -473,4 +473,12 @@ void netmap_bns_unregister(void);
 
 #define if_printf(ifp, fmt, ...)  dev_info(&(ifp)->dev, fmt, ##__VA_ARGS__)
 
+struct uio {
+	int uio_resid;
+	char *buf;
+	int write;
+};
+
+int uiomove(void *buf, int howmuch, struct uio *uiop);
+
 #endif /* _BSD_GLUE_H */
