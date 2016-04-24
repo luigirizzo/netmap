@@ -283,6 +283,7 @@ struct nm_confb {
 struct nm_conf {
 	NM_MTX_T mux;
 	struct nm_confb buf[2]; /* 0 in, 1 out */
+	int written;
 	char *pool;
 	int (*dump)(const char *pool, struct _jpo*, struct nm_confb *);
 };
@@ -292,19 +293,61 @@ void nm_conf_uninit(struct nm_conf*, int locked);
 struct uio;
 int nm_conf_read(struct nm_conf *, struct uio *);
 int nm_conf_write(struct nm_conf *, struct uio *);
+int nm_conf_parse(struct nm_conf*, int locked);
 const char *nm_conf_get_output_mode(struct nm_conf *);
 int nm_conf_set_output_mode(struct nm_conf *, const char *);
 
-struct nm_jp;
-struct nm_jp_ops {
+struct nm_jp {
 	struct _jpo (*interp)(struct nm_jp *, struct _jpo, struct nm_conf *);
 	struct _jpo (*dump)(struct nm_jp *, struct nm_conf *);
 	void	    (*bracket)(struct nm_jp *, int stage, struct nm_conf *);
 };
+struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
 
-struct nm_jp {
-	struct nm_jp_ops *ops;
+/* dictionaries */
+struct nm_jp_delem {
+#define	NETMAP_CONFIG_MAXNAME	64
+	char name[NETMAP_CONFIG_MAXNAME];
+	struct nm_jp *jp;
+	int have_ref;
 };
+
+struct nm_jp_dict {
+	struct nm_jp up;
+	struct nm_jp_delem *list;
+	u_int minelem;
+	u_int nelem;
+	u_int nextfree;
+
+	int (*new)(struct nm_jp_delem *);
+	void (*delete)(struct nm_jp *);
+};
+
+int nm_jp_dinit(struct nm_jp_dict *, u_int nelem);
+void nm_jp_duninit(struct nm_jp_dict *);
+struct nm_jp_delem *nm_jp_dnew_elem(struct nm_jp_dict *);
+int nm_jp_delem_fill(struct nm_jp_delem *e,
+		struct nm_jp *, const char *fmt, ...);
+int nm_jp_dadd(struct nm_jp_dict *, struct nm_jp *, const char *fmt, ...);
+int nm_jp_ddel(struct nm_jp_dict *, struct nm_jp *);
+int nm_jp_drename(struct nm_jp_dict *, struct nm_jp *, const char *);
+
+/* numbers */
+struct nm_jp_num {
+	struct nm_jp up;
+	void *var;
+	size_t size;
+
+	int (*update)(struct nm_jp_num *, int64_t);
+};
+
+typedef int64_t (*nm_jp_nreader)(struct nm_jp_num *);
+void nm_jp_ninit(struct nm_jp_num *, void *var, size_t size,
+		int (*update)(struct nm_jp_num *, int64_t));
+int nm_jp_nupdate(struct nm_jp_num *, int64_t);
+
+extern struct nm_jp_dict nm_jp_root;
+extern struct nm_jp_dict nm_jp_ports;
 
 #endif /* WITH_NMCONF */
 struct netmap_adapter;

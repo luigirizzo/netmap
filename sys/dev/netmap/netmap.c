@@ -3264,6 +3264,11 @@ netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 	return netmap_common_irq(na, q, work_done);
 }
 
+#ifdef WITH_NMCONF
+struct nm_jp_dict nm_jp_root;
+struct nm_jp_dict nm_jp_ports;
+#endif /* WITH_NMCONF */
+
 
 /*
  * Module loader and unloader
@@ -3289,6 +3294,10 @@ netmap_fini(void)
 	netmap_uninit_bridges();
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
+#ifdef WITH_NMCONF
+	nm_jp_duninit(&nm_jp_ports);
+	nm_jp_duninit(&nm_jp_root);
+#endif /* WITH_NMCONF */
 	printf("netmap: unloaded module.\n");
 }
 
@@ -3299,6 +3308,16 @@ netmap_init(void)
 	int error;
 
 	NMG_LOCK_INIT();
+
+#ifdef WITH_NMCONF
+	error = nm_jp_dinit(&nm_jp_root, 6);
+	if (error)
+		goto fail;
+	error = nm_jp_dinit(&nm_jp_ports, 10);
+	if (error)
+		goto fail;
+	nm_jp_dadd(&nm_jp_root, &nm_jp_ports.up, "port");
+#endif /* WITH_NMCONF */
 
 	error = netmap_mem_init();
 	if (error != 0)

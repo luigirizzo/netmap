@@ -358,6 +358,7 @@ nm_conf_uninit(struct nm_conf *c, int locked)
 {
 	int i;
 	
+	(void)nm_conf_parse(c, locked);
 	for (i = 0; i < 2; i++)
 		nm_confb_destroy(c->buf + i);
 	NM_MTX_DESTROY(c->mux);
@@ -537,6 +538,10 @@ nm_conf_dump_flat(const char *pool, struct _jpo *r,
 }
 
 #define NETMAP_CONFIG_POOL_SIZE (1<<12)
+
+static struct _jpo nm_jp_interp(struct nm_jp *,
+		struct _jpo, struct nm_conf *c);
+
 int
 nm_conf_parse(struct nm_conf *c, int locked)
 {
@@ -566,9 +571,13 @@ nm_conf_parse(struct nm_conf *c, int locked)
 		nm_confb_destroy(i);
 		goto out;
 	}
-
-	c->dump(c->pool, &r, o);
-
+	D("parse OK: ty %u len %u ptr %u", r.ty, r.len, r.ptr);
+	if (!locked)
+		NMG_LOCK();
+	r = nm_jp_interp(&nm_jp_root.up, r, c);
+	if (!locked)
+		NMG_UNLOCK();
+	error = c->dump(c->pool, &r, o);
 	nm_confb_trunc(o);
 out:
 	nm_os_free(c->pool);
@@ -595,11 +604,12 @@ nm_conf_write(struct nm_conf *c, struct uio *uio)
 			ret = ENOMEM;
 			goto out;
 		}
-		D("s %d", s);
+		ND("s %d", s);
 		ret = uiomove(p, s, uio);
 		if (ret)
 			goto out;
 		nm_confb_post_write(i, s);
+		c->written = 1;
 	}
 
 out:
@@ -611,11 +621,16 @@ int
 nm_conf_read(struct nm_conf *c, struct uio *uio)
 {
 	int ret = 0;
-	struct nm_confb *o = &c->buf[1];
+	struct nm_confb *i = &c->buf[0],
+			      *o = &c->buf[1];
 
 	NM_MTX_LOCK(c->mux);
 
-	D("");
+	if (!c->written) {
+		nm_confb_printf(i, "dump");
+		c->written = 1;
+	}
+
 	ret = nm_conf_parse(c, 0 /* not locked */);
 	if (ret)
 		goto out;
@@ -637,4 +652,483 @@ out:
 
 	return ret;
 }
+
+
+struct _jpo
+nm_jp_error(char *pool, const char *format, ...)
+{
+	va_list ap;
+	struct _jpo r, *o;
+#define NM_INTERP_ERRSIZE 128
+	char buf[NM_INTERP_ERRSIZE + 1];
+	int rv;
+
+	r = jslr_new_object(pool, 1);
+	if (r.ty == JPO_ERR)
+		return r;
+	o = jslr_get_object(pool, r);
+	o++;
+	*o = jslr_new_string(pool, "err");
+	if (o->ty == JPO_ERR)
+		return *o;
+	o++;
+	va_start(ap, format);
+	rv = vsnprintf(buf, NM_INTERP_ERRSIZE, format, ap);
+	va_end(ap);
+	if (rv < 0 || rv >= NM_INTERP_ERRSIZE)
+		return (struct _jpo) {.ty = JPO_ERR};
+	*o = jslr_new_string(pool, buf);
+	if (o->ty == JPO_ERR)
+		return *o;
+	return r;
+#undef	NM_INTERP_ERRSIZE
+}
+
+static int
+nm_jp_streq(struct _jpo r, char *pool, const char *str1)
+{
+	const char *str;
+
+	if (r.ty != JPO_STRING)
+		return 0;
+
+	str = jslr_get_string(pool, r);
+	return (strcmp(str1, str) == 0);
+}
+
+static int
+nm_jp_is_dump(struct _jpo r, char *pool)
+{
+	return nm_jp_streq(r, pool, "dump");
+}
+
+static void
+nm_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
+{
+	if (jp->bracket)
+		jp->bracket(jp, stage, c);
+}
+
+static struct _jpo
+nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	nm_jp_bracket(jp, 0, c);
+	if (nm_jp_is_dump(r, c->pool) || jp->interp == NULL) {
+		r = jp->dump(jp, c);
+	} else {
+		r = jp->interp(jp, r, c);
+	}
+	nm_jp_bracket(jp, 2, c);
+	return r;
+}
+
+static struct _jpo
+nm_jp_dump(struct nm_jp *jp, struct nm_conf *c)
+{
+	struct _jpo r;
+
+	nm_jp_bracket(jp, 0, c);
+	r = jp->dump(jp, c);
+	nm_jp_bracket(jp, 2, c);
+	return r;
+}
+
+static struct _jpo
+nm_jp_ddelete(struct nm_jp_dict *d, struct nm_jp_delem *e,
+		char *pool)
+{
+	if (d->delete == NULL)
+		return nm_jp_error(pool, "'delete' not supported");
+	if (!e->have_ref)
+		return nm_jp_error(pool, "busy");
+	d->delete(e->jp);
+	e->have_ref = 0;
+	return jslr_new_object(pool, 0);
+}
+
+static struct nm_jp_delem *
+nm_jp_dsearch(struct nm_jp_dict *d, const char *name);
+
+static struct _jpo
+nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pn, struct nm_conf *c)
+{
+	struct nm_jp_delem *e = NULL;
+	struct nm_jp *jp;
+	struct _jpo o;
+	int error;
+
+	if (d->new == NULL) {
+		o = nm_jp_error(c->pool, "not supported");
+		goto out;
+	}
+	e = nm_jp_dnew_elem(d);
+	if (e == NULL) {
+		o = nm_jp_error(c->pool, "out of memory");
+		goto out;
+	}
+	error = d->new(e);
+	if (error || e->jp == NULL) {
+		o = nm_jp_error(c->pool, "error: %d", error);
+		goto out;
+	}
+	*pn++ = jslr_new_string(c->pool, e->name);
+	jp = e->jp;
+	nm_jp_bracket(jp, 0, c);
+	if (jp->interp) {
+		o = jp->interp(jp, *pn, c);
+		if (o.ty == JPO_ERR)
+			goto leave_;
+		nm_jp_bracket(jp, 1, c);
+	}
+	o = jp->dump(jp, c);
+leave_:
+	nm_jp_bracket(jp, 2, c);
+	e->have_ref = 1;
+out:
+	return o;
+}
+
+
+
+static struct _jpo
+nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	struct _jpo *po;
+	int i, len, ty = r.len;
+	struct nm_jp_dict *d = (struct nm_jp_dict *)jp;
+	char *pool = c->pool;
+
+	if (r.ty != JPO_PTR || ty != JPO_OBJECT) {
+		r = nm_jp_error(pool, "need object");
+		goto out;
+	}
+
+	po = jslr_get_object(c->pool, r);
+	if (po == NULL || po->ty != ty) {
+		r = nm_jp_error(pool, "internal error");
+		goto out;
+	}
+
+	len = po->len;
+	po++;
+	for (i = 0; i < len; i++) {
+		struct _jpo r1;
+		const char *name = jslr_get_string(pool, *po);
+		struct nm_jp_delem *e;
+
+		if (name == NULL) {
+			r = nm_jp_error(pool, "internal error");
+			goto out;
+		}
+		if (strcmp(name, "new") == 0) {
+			r1 = nm_jp_dnew(d, po, c);
+			po++;
+			goto next;
+		}
+		e = nm_jp_dsearch(d, name);
+		if (e == NULL) {
+			po++;
+			r1 = nm_jp_error(pool, "%s: not found", name);
+			goto next;
+		}
+		po++;
+		D("found %s", name);
+		if (nm_jp_streq(*po, pool, "delete")) {
+			r1 = nm_jp_ddelete(d, e, pool);
+			goto next;
+		}
+		r1 = nm_jp_interp(e->jp, *po, c);
+	next:
+		*po++ = r1;
+	}
+
+out:
+	return r;
+}
+
+static struct _jpo
+nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
+{
+	struct _jpo *po, r;
+	struct nm_jp_dict *d = (struct nm_jp_dict *)jp;
+	int i, len = d->nextfree;
+	char *pool = c->pool;
+
+	r = jslr_new_object(pool, len);
+	if (r.ty == JPO_ERR)
+		return r;
+	po = jslr_get_object(pool, r);
+	po++;
+	for (i = 0; i < len; i++) {
+		struct nm_jp_delem *e = &d->list[i];
+		*po = jslr_new_string(pool, e->name);
+		if (po->ty == JPO_ERR)
+			return *po;
+		po++;
+		*po = nm_jp_dump(e->jp, c);
+		if (po->ty == JPO_ERR)
+			return *po;
+		po++;
+	}
+	return r;
+}
+
+int
+nm_jp_dinit(struct nm_jp_dict *d, u_int nelem)
+{
+
+	d->up.interp = nm_jp_dinterp;
+	d->up.dump   = nm_jp_ddump;
+	d->minelem = nelem;
+	d->list = nm_os_malloc(sizeof(*d->list) * nelem);
+	if (d->list == NULL)
+		return ENOMEM;
+	d->nelem = nelem;
+	d->nextfree = 0;
+	return 0;
+}
+
+void
+nm_jp_duninit(struct nm_jp_dict *d)
+{
+	nm_os_free(d->list);
+	memset(d, 0, sizeof(*d));
+}
+
+struct nm_jp_delem *
+nm_jp_dnew_elem(struct nm_jp_dict *d)
+{
+	struct nm_jp_delem *newlist;
+
+	if (d->nextfree >= d->nelem) {
+		u_int newnelem = d->nelem * 2;
+		newlist = nm_os_realloc(d->list, sizeof(*d->list) * newnelem,
+				sizeof(*d->list) * d->nelem);
+		if (newlist == NULL)
+			return NULL;
+		d->list = newlist;
+		d->nelem = newnelem;
+	}
+	return &d->list[d->nextfree++];
+}
+
+static int
+nm_jp_delem_vfill(struct nm_jp_delem *e,
+		struct nm_jp *jp,
+		const char *fmt, va_list ap)
+{
+	int n;
+
+	e->jp = jp;
+	n = vsnprintf(e->name, NETMAP_CONFIG_MAXNAME, fmt, ap);
+
+	if (n >= NETMAP_CONFIG_MAXNAME)
+		return ENAMETOOLONG;
+
+	return 0;
+}
+
+int
+nm_jp_delem_fill(struct nm_jp_delem *e,
+		struct nm_jp *jp,
+		const char *fmt, ...)
+{
+	va_list ap;
+	int rv;
+
+	va_start(ap, fmt);
+	rv = nm_jp_delem_vfill(e, jp, fmt, ap);
+	va_end(ap);
+
+	return rv;
+}
+
+int nm_jp_dadd(struct nm_jp_dict *d,
+		struct nm_jp *jp,
+		const char *fmt, ...)
+{
+	struct nm_jp_delem *e;
+	va_list ap;
+	int rv;
+
+	e = nm_jp_dnew_elem(d);
+	if (e == NULL) {
+		return ENOMEM;
+	}
+	va_start(ap, fmt);
+	rv = nm_jp_delem_vfill(e, jp, fmt, ap);
+	va_end(ap);
+
+	return rv;
+}
+
+
+static int
+_nm_jp_ddel(struct nm_jp_dict *d, struct nm_jp_delem *e1)
+{
+	struct nm_jp_delem *e2;
+
+	d->nextfree--;
+	e2 = &d->list[d->nextfree];
+	if (e1 != e2) {
+		strncpy(e1->name, e2->name, NETMAP_CONFIG_MAXNAME);
+		e1->jp = e2->jp;
+	}
+	memset(e2, 0, sizeof(*e2));
+	if (d->nelem > d->minelem && d->nextfree < d->nelem / 2) {
+		struct nm_jp_delem *newlist;
+		u_int newnelem = d->nelem / 2;
+		if (newnelem < d->minelem)
+			newnelem = d->minelem;
+		newlist = nm_os_realloc(d->list, sizeof(*d->list) * newnelem,
+				sizeof(*d->list) * d->nelem);
+		if (newlist == NULL) {
+			D("out of memory when trying to release memory?");
+			return 0; /* not fatal */
+		}
+		d->list = newlist;
+		d->nelem = newnelem;
+	}
+	return 0;
+}
+
+static struct nm_jp_delem *
+_nm_jp_dfind(struct nm_jp_dict *d, struct nm_jp *jp)
+{
+	struct nm_jp_delem *e;
+
+	for (e = d->list; e != d->list + d->nextfree; e++)
+		if (e->jp == jp)
+			return e;
+	return NULL;
+}
+
+int
+nm_jp_ddel(struct nm_jp_dict *d, struct nm_jp *jp)
+{
+	struct nm_jp_delem *e = _nm_jp_dfind(d, jp);
+
+	if (e == NULL)
+		return ENOENT;
+
+	return _nm_jp_ddel(d, e);
+}
+
+int
+nm_jp_drename(struct nm_jp_dict *d, struct nm_jp *jp, const char *name)
+{
+	struct nm_jp_delem *e = _nm_jp_dfind(d, jp);
+
+	if (e == NULL)
+		return ENOENT;
+
+	return nm_jp_delem_fill(e, e->jp, "%s", name);
+}
+
+
+static struct nm_jp_delem *
+nm_jp_dsearch(struct nm_jp_dict *d, const char *name)
+{
+	int i;
+	for (i = 0; i < d->nextfree; i++) {
+		struct nm_jp_delem *e = &d->list[i];
+		if (strncmp(name, e->name, NETMAP_CONFIG_MAXNAME) == 0)
+			break;
+	}
+	if (i == d->nextfree)
+		return NULL;
+	return &d->list[i];
+}
+
+static int64_t
+nm_jp_ngetvar(struct nm_jp_num *in)
+{
+	switch (in->size) {
+	case 0:
+		return ((nm_jp_nreader)in->var)(in);
+	case 1:
+		return *(int8_t*)in->var;
+	case 2:
+		return *(int16_t*)in->var;
+	case 4:
+		return *(int32_t*)in->var;
+	case 8:
+		return *(int64_t*)in->var;
+	default:
+		D("unsupported size %zd", in->size);
+		return 0;
+	}
+}
+
+int
+nm_jp_nupdate(struct nm_jp_num *in, int64_t v)
+{
+	switch (in->size) {
+	case 1:
+		*(int8_t*)in->var = (int8_t)v;
+		break;
+	case 2:
+		*(int16_t*)in->var = (int16_t)v;
+		break;
+	case 4:
+		*(int32_t*)in->var = (int32_t)v;
+		break;
+	case 8:
+		*(int64_t*)in->var = (int64_t)v;
+		break;
+	default:
+		return EINVAL;
+	}
+	return 0;
+}
+
+static struct _jpo
+nm_jp_ninterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	int64_t v, nv;
+	struct nm_jp_num *in = (struct nm_jp_num *)jp;
+	int error;
+	char *pool = c->pool;
+
+	if (r.ty != JPO_NUM) {
+		r = nm_jp_error(pool, "need number");
+		goto done;
+	}
+
+	nv = jslr_get_num(pool, r);
+	v = nm_jp_ngetvar(in);
+	if (v == nv)
+		goto done;
+	if (in->update == NULL) {
+		r = nm_jp_error(pool, "read-only");
+		goto done;
+	}
+	error = in->update(in, nv);
+	if (error)
+		r = nm_jp_error(pool, "invalid; %ld", nv);
+	r = jp->dump(jp, c);
+done:
+	return r;
+}
+
+static struct _jpo
+nm_jp_ndump(struct nm_jp *jp, struct nm_conf *c)
+{
+	struct nm_jp_num *in = (struct nm_jp_num*)jp;
+	int64_t v = nm_jp_ngetvar(in);
+
+	return jslr_new_num(c->pool, v);
+}
+
+void
+nm_jp_ninit(struct nm_jp_num *in, void *var, size_t size,
+		int (*update)(struct nm_jp_num *, int64_t))
+{
+	in->up.interp = nm_jp_ninterp;
+	in->up.dump   = nm_jp_ndump;
+	in->var = var;
+	in->size = size;
+	in->update = update;
+}
+
 #endif /* WITH_NMCONF */
