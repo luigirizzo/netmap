@@ -271,6 +271,8 @@ typedef struct hrtimer{
 
 #include "jsonlr.h"
 
+#define member_size(st, m) 	sizeof(((st *)0)->m)
+
 struct nm_confb_data;
 struct nm_confb {
 	struct nm_confb_data *readp;
@@ -285,6 +287,7 @@ struct nm_conf {
 	struct nm_confb buf[2]; /* 0 in, 1 out */
 	int written;
 	char *pool;
+	void *cur_obj;
 	int (*dump)(const char *pool, struct _jpo*, struct nm_confb *);
 };
 
@@ -323,7 +326,7 @@ struct nm_jp_dict {
 	void (*delete)(struct nm_jp *);
 };
 
-int nm_jp_dinit(struct nm_jp_dict *, u_int nelem);
+int nm_jp_dinit(struct nm_jp_dict *, struct nm_jp_delem *, u_int nelem);
 void nm_jp_duninit(struct nm_jp_dict *);
 struct nm_jp_delem *nm_jp_dnew_elem(struct nm_jp_dict *);
 int nm_jp_delem_fill(struct nm_jp_delem *e,
@@ -337,6 +340,8 @@ struct nm_jp_num {
 	struct nm_jp up;
 	void *var;
 	size_t size;
+#define NM_JP_NUM_SZMSK	4
+#define NM_JP_NUM_REL	0x80
 
 	int (*update)(struct nm_jp_num *, int64_t);
 };
@@ -344,7 +349,22 @@ struct nm_jp_num {
 typedef int64_t (*nm_jp_nreader)(struct nm_jp_num *);
 void nm_jp_ninit(struct nm_jp_num *, void *var, size_t size,
 		int (*update)(struct nm_jp_num *, int64_t));
-int nm_jp_nupdate(struct nm_jp_num *, int64_t);
+int nm_jp_nupdate(struct nm_jp_num *, int64_t, void *);
+struct _jpo nm_jp_ninterp(struct nm_jp *, struct _jpo, struct nm_conf *);
+struct _jpo nm_jp_ndump(struct nm_jp *, struct nm_conf *);
+
+/* pointers */
+struct nm_jp_ptr {
+	struct nm_jp up;
+	struct nm_jp *type;
+	void *arg;
+	u_int flags;
+#define NM_JP_PTR_REL	1
+#define NM_JP_PTR_IND	2
+};
+
+void nm_jp_pinit(struct nm_jp_ptr *, struct nm_jp *type,
+		void *arg, u_int flags);
 
 extern struct nm_jp_dict nm_jp_root;
 extern struct nm_jp_dict nm_jp_ports;
@@ -884,6 +904,10 @@ struct netmap_adapter {
 	u_int virt_hdr_len;
 
 	char name[64];
+
+#ifdef WITH_NMCONF
+	struct nm_jp_ptr _jp;
+#endif /* WITH_NMCONF */
 };
 
 static __inline u_int

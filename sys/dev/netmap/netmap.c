@@ -2696,6 +2696,62 @@ enum txrx tx, int flags)
 }
 #endif
 
+#ifdef WITH_NMCONF
+struct nm_jp_dict nm_jp_port_class;
+struct nm_jp_num nm_jp_port_field_num_tx_rings = {
+	.up = {
+		.interp = nm_jp_ninterp,
+		.dump   = nm_jp_ndump
+	},
+	.var = (void *)offsetof(struct netmap_adapter, num_tx_rings),
+	.size = member_size(struct netmap_adapter, num_tx_rings) | NM_JP_NUM_REL,
+};
+struct nm_jp_num nm_jp_port_field_num_rx_rings = {
+	.up = {
+		.interp = nm_jp_ninterp,
+		.dump   = nm_jp_ndump
+	},
+	.var = (void *)offsetof(struct netmap_adapter, num_rx_rings),
+	.size = member_size(struct netmap_adapter, num_rx_rings) | NM_JP_NUM_REL,
+};
+struct nm_jp_num nm_jp_port_field_num_tx_desc = {
+	.up = {
+		.interp = nm_jp_ninterp,
+		.dump   = nm_jp_ndump
+	},
+	.var = (void *)offsetof(struct netmap_adapter, num_tx_desc),
+	.size = member_size(struct netmap_adapter, num_tx_desc) | NM_JP_NUM_REL,
+};
+struct nm_jp_num nm_jp_port_field_num_rx_desc = {
+	.up = {
+		.interp = nm_jp_ninterp,
+		.dump   = nm_jp_ndump
+	},
+	.var = (void *)offsetof(struct netmap_adapter, num_rx_desc),
+	.size = member_size(struct netmap_adapter, num_rx_desc) | NM_JP_NUM_REL,
+};
+
+struct nm_jp_delem nm_jp_port_fields[] = {
+	{
+		.name = "num_tx_rings",
+		.jp   = &nm_jp_port_field_num_tx_rings.up
+	},
+	{
+		.name = "num_rx_rings",
+		.jp   = &nm_jp_port_field_num_rx_rings.up
+	},
+	{
+		.name = "num_tx_desc",
+		.jp   = &nm_jp_port_field_num_tx_desc.up
+	},
+	{
+		.name = "num_rx_desc",
+		.jp   = &nm_jp_port_field_num_rx_desc.up
+	}
+};
+#endif
+
+
 /* called by all routines that create netmap_adapters.
  * provide some defaults and get a reference to the
  * memory allocator
@@ -2738,6 +2794,11 @@ netmap_attach_common(struct netmap_adapter *na)
 		na->nm_bdg_attach = netmap_bwrap_attach;
 #endif
 
+#ifdef WITH_NMCONF
+	nm_jp_pinit(&na->_jp, &nm_jp_port_class.up, na, 0);
+	nm_jp_dadd(&nm_jp_ports, &na->_jp.up, na->name);
+#endif
+
 	return 0;
 }
 
@@ -2746,6 +2807,9 @@ netmap_attach_common(struct netmap_adapter *na)
 void
 netmap_detach_common(struct netmap_adapter *na)
 {
+#ifdef WITH_NMCONF
+	nm_jp_ddel(&nm_jp_ports, &na->_jp.up);
+#endif
 	if (na->tx_rings) { /* XXX should not happen */
 		D("freeing leftover tx_rings");
 		na->nm_krings_delete(na);
@@ -3295,6 +3359,7 @@ netmap_fini(void)
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
 #ifdef WITH_NMCONF
+	nm_jp_duninit(&nm_jp_port_class);
 	nm_jp_duninit(&nm_jp_ports);
 	nm_jp_duninit(&nm_jp_root);
 #endif /* WITH_NMCONF */
@@ -3310,13 +3375,17 @@ netmap_init(void)
 	NMG_LOCK_INIT();
 
 #ifdef WITH_NMCONF
-	error = nm_jp_dinit(&nm_jp_root, 6);
+	error = nm_jp_dinit(&nm_jp_root, NULL, 6);
 	if (error)
 		goto fail;
-	error = nm_jp_dinit(&nm_jp_ports, 10);
+	error = nm_jp_dinit(&nm_jp_ports, NULL, 10);
 	if (error)
 		goto fail;
 	nm_jp_dadd(&nm_jp_root, &nm_jp_ports.up, "port");
+	error = nm_jp_dinit(&nm_jp_port_class, nm_jp_port_fields,
+			sizeof(nm_jp_port_fields)/sizeof(nm_jp_port_fields[0]));
+	if (error)
+		goto fail;
 #endif /* WITH_NMCONF */
 
 	error = netmap_mem_init();

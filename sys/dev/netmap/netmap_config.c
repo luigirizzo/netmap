@@ -874,7 +874,7 @@ nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
 }
 
 int
-nm_jp_dinit(struct nm_jp_dict *d, u_int nelem)
+nm_jp_dinit(struct nm_jp_dict *d, struct nm_jp_delem *list, u_int nelem)
 {
 
 	d->up.interp = nm_jp_dinterp;
@@ -884,7 +884,14 @@ nm_jp_dinit(struct nm_jp_dict *d, u_int nelem)
 	if (d->list == NULL)
 		return ENOMEM;
 	d->nelem = nelem;
-	d->nextfree = 0;
+	if (list) {
+		u_int i;
+		for (i = 0; i < nelem; i++)
+			d->list[i] = list[i];
+		d->nextfree = nelem;
+	} else {
+		d->nextfree = 0;
+	}
 	return 0;
 }
 
@@ -1041,19 +1048,25 @@ nm_jp_dsearch(struct nm_jp_dict *d, const char *name)
 }
 
 static int64_t
-nm_jp_ngetvar(struct nm_jp_num *in)
+nm_jp_ngetvar(struct nm_jp_num *in, void *cur_obj)
 {
-	switch (in->size) {
+	void *base;
+	if (in->size & NM_JP_NUM_REL)
+		base = cur_obj + (size_t)in->var;
+	else
+		base = in->var;
+
+	switch (in->size & NM_JP_NUM_SZMSK) {
 	case 0:
-		return ((nm_jp_nreader)in->var)(in);
+		return ((nm_jp_nreader)base)(in);
 	case 1:
-		return *(int8_t*)in->var;
+		return *(int8_t*)base;
 	case 2:
-		return *(int16_t*)in->var;
+		return *(int16_t*)base;
 	case 4:
-		return *(int32_t*)in->var;
+		return *(int32_t*)base;
 	case 8:
-		return *(int64_t*)in->var;
+		return *(int64_t*)base;
 	default:
 		D("unsupported size %zd", in->size);
 		return 0;
@@ -1061,20 +1074,26 @@ nm_jp_ngetvar(struct nm_jp_num *in)
 }
 
 int
-nm_jp_nupdate(struct nm_jp_num *in, int64_t v)
+nm_jp_nupdate(struct nm_jp_num *in, int64_t v, void *cur_obj)
 {
-	switch (in->size) {
+	void *base;
+	if (in->size & NM_JP_NUM_REL)
+		base = cur_obj + (size_t)in->var;
+	else
+		base = in->var;
+
+	switch (in->size & NM_JP_NUM_SZMSK) {
 	case 1:
-		*(int8_t*)in->var = (int8_t)v;
+		*(int8_t*)base = (int8_t)v;
 		break;
 	case 2:
-		*(int16_t*)in->var = (int16_t)v;
+		*(int16_t*)base = (int16_t)v;
 		break;
 	case 4:
-		*(int32_t*)in->var = (int32_t)v;
+		*(int32_t*)base = (int32_t)v;
 		break;
 	case 8:
-		*(int64_t*)in->var = (int64_t)v;
+		*(int64_t*)base = (int64_t)v;
 		break;
 	default:
 		return EINVAL;
@@ -1082,7 +1101,7 @@ nm_jp_nupdate(struct nm_jp_num *in, int64_t v)
 	return 0;
 }
 
-static struct _jpo
+struct _jpo
 nm_jp_ninterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
 	int64_t v, nv;
@@ -1096,7 +1115,7 @@ nm_jp_ninterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	}
 
 	nv = jslr_get_num(pool, r);
-	v = nm_jp_ngetvar(in);
+	v = nm_jp_ngetvar(in, c->cur_obj);
 	if (v == nv)
 		goto done;
 	if (in->update == NULL) {
@@ -1111,11 +1130,11 @@ done:
 	return r;
 }
 
-static struct _jpo
+struct _jpo
 nm_jp_ndump(struct nm_jp *jp, struct nm_conf *c)
 {
 	struct nm_jp_num *in = (struct nm_jp_num*)jp;
-	int64_t v = nm_jp_ngetvar(in);
+	int64_t v = nm_jp_ngetvar(in, c->cur_obj);
 
 	return jslr_new_num(c->pool, v);
 }
@@ -1130,5 +1149,70 @@ nm_jp_ninit(struct nm_jp_num *in, void *var, size_t size,
 	in->size = size;
 	in->update = update;
 }
+
+static void *
+nm_jp_pnewcurobj(struct nm_jp_ptr *p, void *cur_obj)
+{
+	void *obj;
+
+	if (p->flags & NM_JP_PTR_REL)
+		obj = cur_obj + (size_t)p->arg;
+	else
+		obj = p->arg;
+	if (p->flags & NM_JP_PTR_IND) {
+		obj = *(void **)obj;
+	}
+	return obj;
+}
+
+static struct _jpo
+nm_jp_pinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	struct nm_jp_ptr *p = (struct nm_jp_ptr *)jp;
+	void *save = c->cur_obj;
+	struct _jpo rv;
+
+	c->cur_obj = nm_jp_pnewcurobj(p, save);
+	rv = nm_jp_interp(p->type, r, c);
+	c->cur_obj = save;
+	return rv;
+}
+
+static struct _jpo
+nm_jp_pdump(struct nm_jp *jp, struct nm_conf *c)
+{
+	struct nm_jp_ptr *p = (struct nm_jp_ptr *)jp;
+	void *save = c->cur_obj;
+	struct _jpo rv;
+
+	c->cur_obj = nm_jp_pnewcurobj(p, save);
+	rv = nm_jp_dump(p->type, c);
+	c->cur_obj = save;
+	return rv;
+}
+
+static void
+nm_jp_pbracket(struct nm_jp *jp, int stage, struct nm_conf *c)
+{
+	struct nm_jp_ptr *p = (struct nm_jp_ptr *)jp;
+	void *save = c->cur_obj;
+
+	c->cur_obj = nm_jp_pnewcurobj(p, save);
+	nm_jp_bracket(p->type, stage, c);
+	c->cur_obj = save;
+}
+
+void
+nm_jp_pinit(struct nm_jp_ptr *p, struct nm_jp *type,
+		void *arg, u_int flags)
+{
+	p->up.interp  = nm_jp_pinterp;
+	p->up.dump    = nm_jp_pdump;
+	p->up.bracket = nm_jp_pbracket;
+	p->type = type;
+	p->arg = arg;
+	p->flags = flags;
+}
+
 
 #endif /* WITH_NMCONF */
