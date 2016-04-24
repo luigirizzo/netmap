@@ -369,6 +369,40 @@ void nm_jp_pinit(struct nm_jp_ptr *, struct nm_jp *type,
 extern struct nm_jp_dict nm_jp_root;
 extern struct nm_jp_dict nm_jp_ports;
 
+/* convenience macros */
+#define NM_JPO_CLASS(p)		nm_jp_##p##_class
+#define NM_JPO_CLASS_DECL(p)	static struct nm_jp_dict NM_JPO_CLASS(p)
+#define NM_JPO_OBJ_DECL		struct nm_jp_ptr _jpo
+#define NM_JPO_OBJ(o)		((o)->_jpo.up)
+#define NM_JPO_FIELDS(p)	nm_jp_##p##_fields
+#define NM_JPO_FIELD(p, f)	nm_jp_##p##_field_##f
+#define NM_JPO_RONUM(p, st, f)				\
+static struct nm_jp_num NM_JPO_FIELD(p, f) = {		\
+	.up = {						\
+		.interp = nm_jp_ninterp,		\
+		.dump   = nm_jp_ndump			\
+	},						\
+	.var = (void *)offsetof(st, f),			\
+	.size = member_size(st, f) | NM_JP_NUM_REL,	\
+}
+#define NM_JPO_FIELDS_LIST(p)				\
+	static struct nm_jp_delem NM_JPO_FIELDS(p)[] =
+#define NM_JPO_FIELD_DECL(p, f)				\
+		{					\
+			.name = #f,			\
+			.jp = &NM_JPO_FIELD(p, f).up	\
+		}
+#define NM_JPO_CLASS_INIT(p)				\
+	nm_jp_dinit(&NM_JPO_CLASS(p), 			\
+		NM_JPO_FIELDS(p),			\
+		sizeof(NM_JPO_FIELDS(p))/sizeof(NM_JPO_FIELDS(p)[0]));
+#define NM_JPO_CLASS_UNINIT(p)				\
+	nm_jp_duninit(&NM_JPO_CLASS(p))
+#define NM_JPO_OBJ_INIT(p, o)				\
+	nm_jp_pinit(&(o)->_jpo, &NM_JPO_CLASS(p).up, o, 0);
+
+#else /* !WITH_NMCONF */
+#define NM_JPO_OBJ_DECL
 #endif /* WITH_NMCONF */
 struct netmap_adapter;
 struct nm_bdg_fwd;
@@ -905,9 +939,7 @@ struct netmap_adapter {
 
 	char name[64];
 
-#ifdef WITH_NMCONF
-	struct nm_jp_ptr _jp;
-#endif /* WITH_NMCONF */
+	NM_JPO_OBJ_DECL;
 };
 
 static __inline u_int
