@@ -269,6 +269,8 @@ typedef struct hrtimer{
 
 #ifdef WITH_NMCONF
 
+#include "jsonlr.h"
+
 struct nm_confb_data;
 struct nm_confb {
 	struct nm_confb_data *readp;
@@ -281,12 +283,29 @@ struct nm_confb {
 struct nm_conf {
 	NM_MTX_T mux;
 	struct nm_confb buf[2]; /* 0 in, 1 out */
+	char *pool;
+	int (*dump)(const char *pool, struct _jpo*, struct nm_confb *);
 };
+
 void nm_conf_init(struct nm_conf*);
 void nm_conf_uninit(struct nm_conf*, int locked);
 struct uio;
 int nm_conf_read(struct nm_conf *, struct uio *);
 int nm_conf_write(struct nm_conf *, struct uio *);
+const char *nm_conf_get_output_mode(struct nm_conf *);
+int nm_conf_set_output_mode(struct nm_conf *, const char *);
+
+struct nm_jp;
+struct nm_jp_ops {
+	struct _jpo (*interp)(struct nm_jp *, struct _jpo, struct nm_conf *);
+	struct _jpo (*dump)(struct nm_jp *, struct nm_conf *);
+	void	    (*bracket)(struct nm_jp *, int stage, struct nm_conf *);
+};
+
+struct nm_jp {
+	struct nm_jp_ops *ops;
+};
+
 #endif /* WITH_NMCONF */
 struct netmap_adapter;
 struct nm_bdg_fwd;

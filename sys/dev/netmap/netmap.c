@@ -483,6 +483,10 @@ int netmap_adaptive_io = 0;
 int netmap_flags = 0;	/* debug flags */
 static int netmap_fwd = 0;	/* force transparent mode */
 
+#ifdef WITH_NMCONF
+int nm_conf_flat_mode = 0;
+#endif
+
 /*
  * netmap_admode selects the netmap mode to use.
  * Invalid values are reset to NETMAP_ADMODE_BEST
@@ -547,6 +551,10 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW, &netmap_generic_rings, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW, &netmap_generic_txqdisc, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ptnet_vnet_hdr, CTLFLAG_RW, &ptnet_vnet_hdr, 0 , "");
+
+#ifdef WITH_NMCONF
+SYSCTL_INT(_dev_netmap, OID_AUTO, confmode, CTLFLAG_RW, &nm_conf_flat_mode, 0 , "");
+#endif
 
 SYSEND;
 
