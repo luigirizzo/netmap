@@ -58,3 +58,4 @@ LINUX/veth.c
 *.opensdf
 *~
 cscope.out
+config.status
