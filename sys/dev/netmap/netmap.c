@@ -3334,10 +3334,10 @@ netmap_init(void)
 	NMG_LOCK_INIT();
 
 #ifdef WITH_NMCONF
-	error = nm_jp_dinit(&nm_jp_root, NULL, 6);
+	error = nm_jp_dinit(&nm_jp_root, NULL, 6, NULL);
 	if (error)
 		goto fail;
-	error = nm_jp_dinit(&nm_jp_ports, NULL, 10);
+	error = nm_jp_dinit(&nm_jp_ports, NULL, 10, NULL);
 	if (error)
 		goto fail;
 	nm_jp_dadd(&nm_jp_root, &nm_jp_ports.up, "port");

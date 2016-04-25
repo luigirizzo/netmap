@@ -328,7 +328,8 @@ struct nm_jp_dict {
 	void (*delete)(struct nm_jp *);
 };
 
-int nm_jp_dinit(struct nm_jp_dict *, struct nm_jp_delem *, u_int nelem);
+int nm_jp_dinit(struct nm_jp_dict *, struct nm_jp_delem *, u_int nelem,
+		void (*)(struct nm_jp *, int, struct nm_conf *));
 void nm_jp_duninit(struct nm_jp_dict *);
 struct nm_jp_delem *nm_jp_dnew_elem(struct nm_jp_dict *);
 int nm_jp_delem_fill(struct nm_jp_delem *e,
@@ -406,14 +407,12 @@ static struct nm_jp_ptr NM_JPO_FIELD(p, f) = {		\
 			.name = #f,			\
 			.jp = &NM_JPO_FIELD(p, f).up	\
 		}
-#define NM_JPO_CLASS_INIT(p)				\
+#define NM_JPO_CLASS_INIT_BRACKETED(p, b)		\
 	nm_jp_dinit(&NM_JPO_CLASS(p), 			\
 		NM_JPO_FIELDS(p),			\
-		sizeof(NM_JPO_FIELDS(p))/sizeof(NM_JPO_FIELDS(p)[0]));
-#define NM_JPO_CLASS_INIT_BRACKETED(p, b) do {		\
-		NM_JPO_CLASS_INIT(p);			\
-		NM_JPO_CLASS(p).up.bracket = b;		\
-	} while (0)
+		sizeof(NM_JPO_FIELDS(p))/sizeof(NM_JPO_FIELDS(p)[0]), b);
+#define NM_JPO_CLASS_INIT(p)				\
+	NM_JPO_CLASS_INIT_BRACKETED(p, NULL);
 #define NM_JPO_CLASS_UNINIT(p)				\
 	nm_jp_duninit(&NM_JPO_CLASS(p))
 #define NM_JPO_OBJ_INIT(p, o)				\

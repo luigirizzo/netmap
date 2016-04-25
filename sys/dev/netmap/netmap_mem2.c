@@ -1769,20 +1769,30 @@ netmap_mem_init(void)
 	NMA_LOCK_INIT(&nm_mem);
 	netmap_mem_get(&nm_mem);
 #ifdef WITH_NMCONF
-	error = nm_jp_dinit(&nm_jp_mem, NULL, 10);
+	error = nm_jp_dinit(&nm_jp_mem, NULL, 10, NULL);
 	if (error)
 		goto fail_put;
 	error = nm_jp_dadd(&nm_jp_root,
 			&nm_jp_mem.up, "mem");
 	if (error)
 		goto fail_uninit;
-	NM_JPO_CLASS_INIT(objpool);
-	NM_JPO_CLASS_INIT_BRACKETED(mem, netmap_mem_jp_bracket);
-	netmap_mem_jp_init(&nm_mem);
+	error = NM_JPO_CLASS_INIT(objpool);
+	if (error)
+		goto fail_del;
+	error = NM_JPO_CLASS_INIT_BRACKETED(mem, netmap_mem_jp_bracket);
+		goto fail_class_uninit;
+	error = netmap_mem_jp_init(&nm_mem);
+		goto fail_class_uninit2;
 #endif /* WITH_NMCONF */
 	return (error);
 
 #ifdef WITH_NMCONF
+fail_class_uninit2:
+	NM_JPO_CLASS_UNINIT(mem);
+fail_class_uninit:
+	NM_JPO_CLASS_UNINIT(objpool);
+fail_del:
+	nm_jp_ddel(&nm_jp_root, &nm_jp_mem.up);
 fail_uninit:
 	nm_jp_duninit(&nm_jp_mem);
 fail_put:

@@ -874,11 +874,13 @@ nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
 }
 
 int
-nm_jp_dinit(struct nm_jp_dict *d, struct nm_jp_delem *list, u_int nelem)
+nm_jp_dinit(struct nm_jp_dict *d, struct nm_jp_delem *list, u_int nelem,
+		void (*bracket)(struct nm_jp *, int, struct nm_conf *))
 {
 
 	d->up.interp = nm_jp_dinterp;
 	d->up.dump   = nm_jp_ddump;
+	d->up.bracket = bracket;
 	d->minelem = nelem;
 	d->list = nm_os_malloc(sizeof(*d->list) * nelem);
 	if (d->list == NULL)
