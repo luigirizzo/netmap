@@ -346,12 +346,12 @@ struct nm_jp_num {
 #define NM_JP_NUM_SZMSK	4
 #define NM_JP_NUM_REL	0x80
 
-	int (*update)(struct nm_jp_num *, int64_t);
+	int (*update)(struct nm_jp_num *, int64_t, void *);
 };
 
 typedef int64_t (*nm_jp_nreader)(struct nm_jp_num *);
 void nm_jp_ninit(struct nm_jp_num *, void *var, size_t size,
-		int (*update)(struct nm_jp_num *, int64_t));
+		int (*update)(struct nm_jp_num *, int64_t, void *));
 int nm_jp_nupdate(struct nm_jp_num *, int64_t, void *);
 struct _jpo nm_jp_ninterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_ndump(struct nm_jp *, struct nm_conf *);
@@ -381,15 +381,24 @@ extern struct nm_jp_dict nm_jp_ports;
 #define NM_JPO_OBJ(o)		((o)->_jpo.up)
 #define NM_JPO_FIELDS(p)	nm_jp_##p##_fields
 #define NM_JPO_FIELD(p, f)	nm_jp_##p##_field_##f
-#define NM_JPO_RONUM(p, st, f)				\
+#define NM_JPO_NUM(p, f, sz, rd, wr)			\
 static struct nm_jp_num NM_JPO_FIELD(p, f) = {		\
 	.up = {						\
 		.interp = nm_jp_ninterp,		\
 		.dump   = nm_jp_ndump			\
 	},						\
-	.var = (void *)offsetof(st, f),			\
-	.size = member_size(st, f) | NM_JP_NUM_REL,	\
+	.var = rd,					\
+	.size = sz,					\
+	.update = wr					\
 }
+#define _NM_JPO_RWNUM(p, st, f, u)			\
+	NM_JPO_NUM(p, f, 				\
+		member_size(st, f) | NM_JP_NUM_REL,	\
+		(void *)offsetof(st, f), u)
+#define NM_JPO_RONUM(p, st, f)				\
+	_NM_JPO_RWNUM(p, st, f, NULL)
+#define NM_JPO_RWNUM(p, st, f)				\
+	_NM_JPO_RWNUM(p, st, f, nm_jp_nupdate)
 #define NM_JPO_STRUCT(p, st, n, t, f)			\
 static struct nm_jp_ptr NM_JPO_FIELD(p, f) = {		\
 	.up = {						\

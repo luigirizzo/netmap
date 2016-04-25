@@ -201,7 +201,7 @@ struct netmap_mem_d {
 
 	struct netmap_mem_ops *ops;
 
-	struct netmap_obj_params *params;
+	struct netmap_obj_params params[NETMAP_POOLS_NR];
 
 #define	NM_MEM_NAMESZ	16
 	char name[NM_MEM_NAMESZ];
@@ -396,21 +396,6 @@ netmap_mem2_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 	return 0;
 }
 
-static struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
-	[NETMAP_IF_POOL] = {
-		.size = 1024,
-		.num  = 100,
-	},
-	[NETMAP_RING_POOL] = {
-		.size = 9*PAGE_SIZE,
-		.num  = 200,
-	},
-	[NETMAP_BUF_POOL] = {
-		.size = 2048,
-		.num  = NETMAP_BUF_MAX_NUM,
-	},
-};
-
 static struct netmap_obj_params netmap_min_priv_params[NETMAP_POOLS_NR] = {
 	[NETMAP_IF_POOL] = {
 		.size = 1024,
@@ -455,6 +440,21 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 			.objmaxsize = 65536,
 			.nummin     = 4,
 			.nummax	    = 1000000, /* one million! */
+		},
+	},
+
+	.params = {
+		[NETMAP_IF_POOL] = {
+			.size = 1024,
+			.num  = 100,
+		},
+		[NETMAP_RING_POOL] = {
+			.size = 9*PAGE_SIZE,
+			.num  = 200,
+		},
+		[NETMAP_BUF_POOL] = {
+			.size = 2048,
+			.num  = NETMAP_BUF_MAX_NUM,
 		},
 	},
 
@@ -516,11 +516,11 @@ static const struct netmap_mem_d nm_blueprint = {
 	SYSBEGIN(mem2_ ## name); \
 	SYSCTL_DECL(_dev_netmap); /* leave it here, easier for porting */ \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_size, \
-	    CTLFLAG_RW, &netmap_params[id].size, 0, "Requested size of netmap " STRINGIFY(name) "s"); \
+	    CTLFLAG_RW, &nm_mem.params[id].size, 0, "Requested size of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_size, \
 	    CTLFLAG_RD, &nm_mem.pools[id]._objsize, 0, "Current size of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_num, \
-	    CTLFLAG_RW, &netmap_params[id].num, 0, "Requested number of netmap " STRINGIFY(name) "s"); \
+	    CTLFLAG_RW, &nm_mem.params[id].num, 0, "Requested number of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_num, \
 	    CTLFLAG_RD, &nm_mem.pools[id].objtotal, 0, "Current number of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, priv_##name##_size, \
@@ -1501,13 +1501,8 @@ _netmap_mem_private_new(struct netmap_obj_params *p, int *perr)
 {
 	struct netmap_mem_d *d = NULL;
 	int i, err = 0;
-#ifdef WITH_NMCONF
-	size_t extra = sizeof(struct netmap_obj_params) * NETMAP_POOLS_NR;
-#else
-	size_t extra = 0;
-#endif
 
-	d = nm_os_malloc(sizeof(struct netmap_mem_d) + extra);
+	d = nm_os_malloc(sizeof(struct netmap_mem_d));
 	if (d == NULL) {
 		err = ENOMEM;
 		goto error;
@@ -1519,10 +1514,6 @@ _netmap_mem_private_new(struct netmap_obj_params *p, int *perr)
 	if (err)
 		goto error;
 	snprintf(d->name, NM_MEM_NAMESZ, "%d", d->nm_id);
-
-#ifdef WITH_NMCONF
-	d->params = (struct netmap_obj_params *)(d + 1);
-#endif
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		snprintf(d->pools[i].name, NETMAP_POOL_MAX_NAMSZ,
@@ -1705,6 +1696,7 @@ netmap_mem2_delete(struct netmap_mem_d *nmd)
 
 #ifdef WITH_NMCONF
 static struct nm_jp_dict nm_jp_mem;
+
 NM_JPO_CLASS_DECL(objpool);
 NM_JPO_RONUM(objpool, struct netmap_obj_pool, objtotal);
 NM_JPO_RONUM(objpool, struct netmap_obj_pool, memtotal);
@@ -1717,16 +1709,30 @@ NM_JPO_FIELDS_LIST(objpool) {
 	NM_JPO_FIELD_DECL(objpool, objfree)
 };
 
+NM_JPO_CLASS_DECL(mparams);
+NM_JPO_RWNUM(mparams, struct netmap_obj_params, size);
+NM_JPO_RWNUM(mparams, struct netmap_obj_params, num);
+NM_JPO_FIELDS_LIST(mparams) {
+	NM_JPO_FIELD_DECL(mparams, size),
+	NM_JPO_FIELD_DECL(mparams, num)
+};
+
 NM_JPO_CLASS_DECL(mem);
 NM_JPO_RONUM(mem, struct netmap_mem_d, active);
 NM_JPO_STRUCT(mem, struct netmap_mem_d, pools[NETMAP_IF_POOL], objpool, if);
 NM_JPO_STRUCT(mem, struct netmap_mem_d, pools[NETMAP_RING_POOL], objpool, ring);
 NM_JPO_STRUCT(mem, struct netmap_mem_d, pools[NETMAP_BUF_POOL], objpool, buf);
+NM_JPO_STRUCT(mem, struct netmap_mem_d, params[NETMAP_IF_POOL], mparams, req_if);
+NM_JPO_STRUCT(mem, struct netmap_mem_d, params[NETMAP_RING_POOL], mparams, req_ring);
+NM_JPO_STRUCT(mem, struct netmap_mem_d, params[NETMAP_BUF_POOL], mparams, req_buf);
 NM_JPO_FIELDS_LIST(mem) {
 	NM_JPO_FIELD_DECL(mem, active),
 	NM_JPO_FIELD_DECL(mem, if),
 	NM_JPO_FIELD_DECL(mem, ring),
-	NM_JPO_FIELD_DECL(mem, buf)
+	NM_JPO_FIELD_DECL(mem, buf),
+	NM_JPO_FIELD_DECL(mem, req_if),
+	NM_JPO_FIELD_DECL(mem, req_ring),
+	NM_JPO_FIELD_DECL(mem, req_buf)
 };
 
 static void
@@ -1779,16 +1785,23 @@ netmap_mem_init(void)
 	error = NM_JPO_CLASS_INIT(objpool);
 	if (error)
 		goto fail_del;
-	error = NM_JPO_CLASS_INIT_BRACKETED(mem, netmap_mem_jp_bracket);
+	error = NM_JPO_CLASS_INIT(mparams);
+	if (error)
 		goto fail_class_uninit;
-	error = netmap_mem_jp_init(&nm_mem);
+	error = NM_JPO_CLASS_INIT_BRACKETED(mem, netmap_mem_jp_bracket);
+	if (error)
 		goto fail_class_uninit2;
+	error = netmap_mem_jp_init(&nm_mem);
+	if (error)
+		goto fail_class_uninit3;
 #endif /* WITH_NMCONF */
 	return (error);
 
 #ifdef WITH_NMCONF
-fail_class_uninit2:
+fail_class_uninit3:
 	NM_JPO_CLASS_UNINIT(mem);
+fail_class_uninit2:
+	NM_JPO_CLASS_UNINIT(mparams);
 fail_class_uninit:
 	NM_JPO_CLASS_UNINIT(objpool);
 fail_del:
@@ -1806,6 +1819,7 @@ netmap_mem_fini(void)
 {
 #ifdef WITH_NMCONF
 	NM_JPO_CLASS_UNINIT(mem);
+	NM_JPO_CLASS_UNINIT(mparams);
 	NM_JPO_CLASS_UNINIT(objpool);
 	nm_jp_ddel(&nm_jp_root, &nm_jp_mem.up);
 	nm_jp_duninit(&nm_jp_mem);

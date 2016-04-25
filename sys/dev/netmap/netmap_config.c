@@ -1124,7 +1124,7 @@ nm_jp_ninterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		r = nm_jp_error(pool, "read-only");
 		goto done;
 	}
-	error = in->update(in, nv);
+	error = in->update(in, nv, c->cur_obj);
 	if (error)
 		r = nm_jp_error(pool, "invalid; %ld", nv);
 	r = jp->dump(jp, c);
@@ -1143,7 +1143,7 @@ nm_jp_ndump(struct nm_jp *jp, struct nm_conf *c)
 
 void
 nm_jp_ninit(struct nm_jp_num *in, void *var, size_t size,
-		int (*update)(struct nm_jp_num *, int64_t))
+		int (*update)(struct nm_jp_num *, int64_t, void *))
 {
 	in->up.interp = nm_jp_ninterp;
 	in->up.dump   = nm_jp_ndump;
