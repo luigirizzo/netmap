@@ -2731,18 +2731,12 @@ nm_jp_memid_update(struct nm_jp_num *in, int64_t id, void *obj)
 }
 
 NM_JPO_CLASS_DECL(port, struct netmap_adapter);
-NM_JPO_NUM(port, memid, 0, nm_jp_memid_read, nm_jp_memid_update);
-NM_JPO_RONUM(port, num_tx_rings);
-NM_JPO_RONUM(port, num_rx_rings);
-NM_JPO_RONUM(port, num_tx_desc);
-NM_JPO_RONUM(port, num_rx_desc);
-NM_JPO_FIELDS_LIST(port) {
-	NM_JPO_FIELD_DECL(port, memid),
-	NM_JPO_FIELD_DECL(port, num_tx_rings),
-	NM_JPO_FIELD_DECL(port, num_rx_rings),
-	NM_JPO_FIELD_DECL(port, num_tx_desc),
-	NM_JPO_FIELD_DECL(port, num_rx_desc)
-};
+	NM_JPO_NUM(port, memid, 0, nm_jp_memid_read, nm_jp_memid_update);
+	NM_JPO_RONUM(port, num_tx_rings);
+	NM_JPO_RONUM(port, num_rx_rings);
+	NM_JPO_RONUM(port, num_tx_desc);
+	NM_JPO_RONUM(port, num_rx_desc);
+NM_JPO_CLASS_END(port);
 #endif
 
 

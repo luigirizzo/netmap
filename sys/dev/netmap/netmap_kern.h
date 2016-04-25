@@ -328,7 +328,10 @@ struct nm_jp_dict {
 	void (*delete)(struct nm_jp *);
 };
 
-int nm_jp_dinit(struct nm_jp_dict *, struct nm_jp_delem *, u_int nelem,
+int nm_jp_dinit(struct nm_jp_dict *, const struct nm_jp_delem *, u_int nelem,
+		void (*)(struct nm_jp *, int, struct nm_conf *));
+int nm_jp_dinit_class(struct nm_jp_dict *, const struct nm_jp_delem*,
+		const struct nm_jp_delem *,
 		void (*)(struct nm_jp *, int, struct nm_conf *));
 void nm_jp_duninit(struct nm_jp_dict *);
 struct nm_jp_delem *nm_jp_dnew_elem(struct nm_jp_dict *);
@@ -377,15 +380,30 @@ extern struct nm_jp_dict nm_jp_ports;
 /* convenience macros */
 #define NM_JPO_CLASS(p)		nm_jp_##p##_class
 #define NM_JPO_TYPE(p)		nm_jp_##p##_type
+#define NM_JPO_START(p)		nm_jp_##p##_start
+#define NM_JPO_END(p)		nm_jp_##p##_end
+#define NM_JPO_FIELD(p, f)	nm_jp_##p##_field_##f
+#define NM_JPO_SEC(p)					\
+	__attribute__((__section__(".nm_jp_"#p), aligned(sizeof(void *)), used))
 #define NM_JPO_CLASS_DECL(p, st)			\
 	static struct nm_jp_dict NM_JPO_CLASS(p);	\
-	typedef st NM_JPO_TYPE(p)
+	typedef st NM_JPO_TYPE(p);			\
+	static const struct nm_jp_delem NM_JPO_START(p) NM_JPO_SEC(p) = { \
+		.name = "m1 "#p				\
+	}
+#define NM_JPO_CLASS_END(p)				\
+	static const struct nm_jp_delem NM_JPO_END(p) NM_JPO_SEC(p) = { \
+		.name = "m2 "#p				\
+	}
 #define NM_JPO_OBJ_DECL		struct nm_jp_ptr _jpo
 #define NM_JPO_OBJ(o)		((o)->_jpo.up)
 #define NM_JPO_CONTAINER(o, st)				\
 	container_of((struct nm_jp_ptr *)o, st, _jpo)
-#define NM_JPO_FIELDS(p)	nm_jp_##p##_fields
-#define NM_JPO_FIELD(p, f)	nm_jp_##p##_field_##f
+#define NM_JPO_FIELD_DECL(p, f)				\
+static const struct nm_jp_delem nm_jp_##p##_flist_##f NM_JPO_SEC(p) = {	\
+	.name = #f,					\
+	.jp = &NM_JPO_FIELD(p, f).up			\
+}
 #define NM_JPO_NUM(p, f, sz, rd, wr)			\
 static struct nm_jp_num NM_JPO_FIELD(p, f) = {		\
 	.up = {						\
@@ -395,7 +413,8 @@ static struct nm_jp_num NM_JPO_FIELD(p, f) = {		\
 	.var = rd,					\
 	.size = sz,					\
 	.update = wr					\
-}
+};							\
+NM_JPO_FIELD_DECL(p, f)
 #define _NM_JPO_RWNUM(p, f, u)				\
 	NM_JPO_NUM(p, f, 				\
 		member_size(NM_JPO_TYPE(p), f) | NM_JP_NUM_REL,	\
@@ -413,18 +432,11 @@ static struct nm_jp_ptr NM_JPO_FIELD(p, f) = {		\
 	.type = &NM_JPO_CLASS(t).up,			\
 	.arg = (void *)offsetof(NM_JPO_TYPE(p), n),	\
 	.flags = NM_JP_PTR_REL,				\
-}
-#define NM_JPO_FIELDS_LIST(p)				\
-	static struct nm_jp_delem NM_JPO_FIELDS(p)[] =
-#define NM_JPO_FIELD_DECL(p, f)				\
-		{					\
-			.name = #f,			\
-			.jp = &NM_JPO_FIELD(p, f).up	\
-		}
+};							\
+NM_JPO_FIELD_DECL(p, f)
 #define NM_JPO_CLASS_INIT_BRACKETED(p, b)		\
-	nm_jp_dinit(&NM_JPO_CLASS(p), 			\
-		NM_JPO_FIELDS(p),			\
-		sizeof(NM_JPO_FIELDS(p))/sizeof(NM_JPO_FIELDS(p)[0]), b);
+	nm_jp_dinit_class(&NM_JPO_CLASS(p), 		\
+		&NM_JPO_START(p), &NM_JPO_END(p), b)
 #define NM_JPO_CLASS_INIT(p)				\
 	NM_JPO_CLASS_INIT_BRACKETED(p, NULL);
 #define NM_JPO_CLASS_UNINIT(p)				\

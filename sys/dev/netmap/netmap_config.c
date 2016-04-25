@@ -874,7 +874,7 @@ nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
 }
 
 int
-nm_jp_dinit(struct nm_jp_dict *d, struct nm_jp_delem *list, u_int nelem,
+nm_jp_dinit(struct nm_jp_dict *d, const struct nm_jp_delem *list, u_int nelem,
 		void (*bracket)(struct nm_jp *, int, struct nm_conf *))
 {
 
@@ -882,19 +882,36 @@ nm_jp_dinit(struct nm_jp_dict *d, struct nm_jp_delem *list, u_int nelem,
 	d->up.dump   = nm_jp_ddump;
 	d->up.bracket = bracket;
 	d->minelem = nelem;
+	ND("nelem %u", nelem);
 	d->list = nm_os_malloc(sizeof(*d->list) * nelem);
 	if (d->list == NULL)
 		return ENOMEM;
 	d->nelem = nelem;
 	if (list) {
 		u_int i;
-		for (i = 0; i < nelem; i++)
+		for (i = 0; i < nelem; i++) {
+			ND("%u: %s", i, list[i].name);
 			d->list[i] = list[i];
+		}
 		d->nextfree = nelem;
 	} else {
 		d->nextfree = 0;
 	}
 	return 0;
+}
+
+int
+nm_jp_dinit_class(struct nm_jp_dict *d, const struct nm_jp_delem *e1,
+		const struct nm_jp_delem *e2,
+		void (*bracket)(struct nm_jp *, int, struct nm_conf *))
+{
+	if (e2 < e1) {
+		const struct nm_jp_delem *c = e2;
+		e2 = e1;
+		e1 = c;
+	}
+	e1++;
+	return nm_jp_dinit(d, e1, e2 - e1, bracket);
 }
 
 void
