@@ -1736,19 +1736,17 @@ NM_JPO_FIELDS_LIST(mem) {
 };
 
 static void
-netmap_mem_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
+netmap_mem_jp_bracket(struct nm_jp *i, int stage, struct nm_conf *c)
 {
-	struct netmap_mem_d *nmd = (struct netmap_mem_d *)c->cur_obj;
+	struct netmap_mem_d *nmd = c->cur_obj;
 
-	switch (stage) {
-	case NM_JPB_ENTER:
+	if (stage == NM_JPB_ENTER) {
 		NMA_LOCK(nmd);
-		break;
-	case NM_JPB_LEAVE:
+	}
+	netmap_mem_config(nmd);
+	if (stage == NM_JPB_LEAVE) {
+		nmd->flags &= ~NETMAP_MEM_HIDDEN;
 		NMA_UNLOCK(nmd);
-		break;
-	default:
-		break;
 	}
 }
 
@@ -1765,6 +1763,29 @@ netmap_mem_jp_uninit(struct netmap_mem_d *nmd)
 	nm_jp_ddel(&nm_jp_mem, &NM_JPO_OBJ(nmd));
 }
 
+static int
+netmap_mem_jp_new(struct nm_jp_delem *e)
+{
+	struct netmap_mem_d *d;
+	int err = 0;
+
+	D("");
+	d = _netmap_mem_private_new(netmap_min_priv_params, &err);
+	if (d == NULL)
+		return err;
+	netmap_mem_get(d);
+	D("");
+	NM_JPO_OBJ_INIT(mem, d);
+	nm_jp_delem_fill(e, &NM_JPO_OBJ(d), d->name);
+	return 0;
+}
+
+static void
+netmap_mem_jp_delete(struct nm_jp *i)
+{
+	struct netmap_mem_d *d = NM_JPO_CONTAINER(i, struct netmap_mem_d);
+	netmap_mem_put(d);
+}
 #endif
 
 int
@@ -1778,6 +1799,8 @@ netmap_mem_init(void)
 	error = nm_jp_dinit(&nm_jp_mem, NULL, 10, NULL);
 	if (error)
 		goto fail_put;
+	nm_jp_mem.new = netmap_mem_jp_new;
+	nm_jp_mem.delete = netmap_mem_jp_delete;
 	error = nm_jp_dadd(&nm_jp_root,
 			&nm_jp_mem.up, "mem");
 	if (error)

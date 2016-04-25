@@ -379,6 +379,8 @@ extern struct nm_jp_dict nm_jp_ports;
 #define NM_JPO_CLASS_DECL(p)	static struct nm_jp_dict NM_JPO_CLASS(p)
 #define NM_JPO_OBJ_DECL		struct nm_jp_ptr _jpo
 #define NM_JPO_OBJ(o)		((o)->_jpo.up)
+#define NM_JPO_CONTAINER(o, st)				\
+	container_of((struct nm_jp_ptr *)o, st, _jpo)
 #define NM_JPO_FIELDS(p)	nm_jp_##p##_fields
 #define NM_JPO_FIELD(p, f)	nm_jp_##p##_field_##f
 #define NM_JPO_NUM(p, f, sz, rd, wr)			\
