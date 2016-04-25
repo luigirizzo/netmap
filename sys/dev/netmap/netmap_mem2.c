@@ -1702,10 +1702,10 @@ netmap_mem_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
 	struct netmap_mem_d *nmd = (struct netmap_mem_d *)c->cur_obj;
 
 	switch (stage) {
-	case 0:	/* entering */
+	case NM_JPB_ENTER:
 		NMA_LOCK(nmd);
 		break;
-	case 2: /* leaving */
+	case NM_JPB_LEAVE:
 		NMA_UNLOCK(nmd);
 		break;
 	default:
