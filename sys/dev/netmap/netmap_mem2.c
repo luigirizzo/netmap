@@ -1714,11 +1714,11 @@ netmap_mem2_delete(struct netmap_mem_d *nmd)
 #ifdef WITH_NMCONF
 static struct nm_jp_dict nm_jp_mem;
 
-NM_JPO_CLASS_DECL(objpool);
-NM_JPO_RONUM(objpool, struct netmap_obj_pool, objtotal);
-NM_JPO_RONUM(objpool, struct netmap_obj_pool, memtotal);
-NM_JPO_RONUM(objpool, struct netmap_obj_pool, numclusters);
-NM_JPO_RONUM(objpool, struct netmap_obj_pool, objfree);
+NM_JPO_CLASS_DECL(objpool, struct netmap_obj_pool);
+NM_JPO_RONUM(objpool, objtotal);
+NM_JPO_RONUM(objpool, memtotal);
+NM_JPO_RONUM(objpool, numclusters);
+NM_JPO_RONUM(objpool, objfree);
 NM_JPO_FIELDS_LIST(objpool) {
 	NM_JPO_FIELD_DECL(objpool, objtotal),
 	NM_JPO_FIELD_DECL(objpool, memtotal),
@@ -1726,22 +1726,22 @@ NM_JPO_FIELDS_LIST(objpool) {
 	NM_JPO_FIELD_DECL(objpool, objfree)
 };
 
-NM_JPO_CLASS_DECL(mparams);
-NM_JPO_RWNUM(mparams, struct netmap_obj_params, size);
-NM_JPO_RWNUM(mparams, struct netmap_obj_params, num);
+NM_JPO_CLASS_DECL(mparams, struct netmap_obj_params);
+NM_JPO_RWNUM(mparams, size);
+NM_JPO_RWNUM(mparams, num);
 NM_JPO_FIELDS_LIST(mparams) {
 	NM_JPO_FIELD_DECL(mparams, size),
 	NM_JPO_FIELD_DECL(mparams, num)
 };
 
-NM_JPO_CLASS_DECL(mem);
-NM_JPO_RONUM(mem, struct netmap_mem_d, active);
-NM_JPO_STRUCT(mem, struct netmap_mem_d, pools[NETMAP_IF_POOL], objpool, if);
-NM_JPO_STRUCT(mem, struct netmap_mem_d, pools[NETMAP_RING_POOL], objpool, ring);
-NM_JPO_STRUCT(mem, struct netmap_mem_d, pools[NETMAP_BUF_POOL], objpool, buf);
-NM_JPO_STRUCT(mem, struct netmap_mem_d, params[NETMAP_IF_POOL], mparams, req_if);
-NM_JPO_STRUCT(mem, struct netmap_mem_d, params[NETMAP_RING_POOL], mparams, req_ring);
-NM_JPO_STRUCT(mem, struct netmap_mem_d, params[NETMAP_BUF_POOL], mparams, req_buf);
+NM_JPO_CLASS_DECL(mem, struct netmap_mem_d);
+NM_JPO_RONUM(mem,  active);
+NM_JPO_STRUCT(mem, pools[NETMAP_IF_POOL], objpool, if);
+NM_JPO_STRUCT(mem, pools[NETMAP_RING_POOL], objpool, ring);
+NM_JPO_STRUCT(mem, pools[NETMAP_BUF_POOL], objpool, buf);
+NM_JPO_STRUCT(mem, params[NETMAP_IF_POOL], mparams, req_if);
+NM_JPO_STRUCT(mem, params[NETMAP_RING_POOL], mparams, req_ring);
+NM_JPO_STRUCT(mem, params[NETMAP_BUF_POOL], mparams, req_buf);
 NM_JPO_FIELDS_LIST(mem) {
 	NM_JPO_FIELD_DECL(mem, active),
 	NM_JPO_FIELD_DECL(mem, if),

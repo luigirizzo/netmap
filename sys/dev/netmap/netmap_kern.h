@@ -376,7 +376,10 @@ extern struct nm_jp_dict nm_jp_ports;
 
 /* convenience macros */
 #define NM_JPO_CLASS(p)		nm_jp_##p##_class
-#define NM_JPO_CLASS_DECL(p)	static struct nm_jp_dict NM_JPO_CLASS(p)
+#define NM_JPO_TYPE(p)		nm_jp_##p##_type
+#define NM_JPO_CLASS_DECL(p, st)			\
+	static struct nm_jp_dict NM_JPO_CLASS(p);	\
+	typedef st NM_JPO_TYPE(p)
 #define NM_JPO_OBJ_DECL		struct nm_jp_ptr _jpo
 #define NM_JPO_OBJ(o)		((o)->_jpo.up)
 #define NM_JPO_CONTAINER(o, st)				\
@@ -393,22 +396,22 @@ static struct nm_jp_num NM_JPO_FIELD(p, f) = {		\
 	.size = sz,					\
 	.update = wr					\
 }
-#define _NM_JPO_RWNUM(p, st, f, u)			\
+#define _NM_JPO_RWNUM(p, f, u)				\
 	NM_JPO_NUM(p, f, 				\
-		member_size(st, f) | NM_JP_NUM_REL,	\
-		(void *)offsetof(st, f), u)
-#define NM_JPO_RONUM(p, st, f)				\
-	_NM_JPO_RWNUM(p, st, f, NULL)
-#define NM_JPO_RWNUM(p, st, f)				\
-	_NM_JPO_RWNUM(p, st, f, nm_jp_nupdate)
-#define NM_JPO_STRUCT(p, st, n, t, f)			\
+		member_size(NM_JPO_TYPE(p), f) | NM_JP_NUM_REL,	\
+		(void *)offsetof(NM_JPO_TYPE(p), f), u)
+#define NM_JPO_RONUM(p, f)				\
+	_NM_JPO_RWNUM(p, f, NULL)
+#define NM_JPO_RWNUM(p, f)				\
+	_NM_JPO_RWNUM(p, f, nm_jp_nupdate)
+#define NM_JPO_STRUCT(p, n, t, f)			\
 static struct nm_jp_ptr NM_JPO_FIELD(p, f) = {		\
 	.up = {						\
 		.interp = nm_jp_pinterp,		\
 		.dump   = nm_jp_pdump,			\
 	},						\
 	.type = &NM_JPO_CLASS(t).up,			\
-	.arg = (void *)offsetof(st, n),			\
+	.arg = (void *)offsetof(NM_JPO_TYPE(p), n),	\
 	.flags = NM_JP_PTR_REL,				\
 }
 #define NM_JPO_FIELDS_LIST(p)				\
