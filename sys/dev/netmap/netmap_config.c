@@ -1060,7 +1060,7 @@ nm_jp_ngetvar(struct nm_jp_num *in, void *cur_obj)
 
 	switch (in->size & NM_JP_NUM_SZMSK) {
 	case 0:
-		return ((nm_jp_nreader)base)(in);
+		return ((nm_jp_nreader)base)(in, cur_obj);
 	case 1:
 		return *(int8_t*)base;
 	case 2:

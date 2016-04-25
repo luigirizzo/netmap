@@ -343,13 +343,13 @@ struct nm_jp_num {
 	struct nm_jp up;
 	void *var;
 	size_t size;
-#define NM_JP_NUM_SZMSK	4
+#define NM_JP_NUM_SZMSK	0xF
 #define NM_JP_NUM_REL	0x80
 
 	int (*update)(struct nm_jp_num *, int64_t, void *);
 };
 
-typedef int64_t (*nm_jp_nreader)(struct nm_jp_num *);
+typedef int64_t (*nm_jp_nreader)(struct nm_jp_num *, void *);
 void nm_jp_ninit(struct nm_jp_num *, void *var, size_t size,
 		int (*update)(struct nm_jp_num *, int64_t, void *));
 int nm_jp_nupdate(struct nm_jp_num *, int64_t, void *);

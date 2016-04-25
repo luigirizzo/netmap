@@ -145,8 +145,6 @@ struct netmap_mem_ops {
 	void (*nmd_rings_delete)(struct netmap_adapter *);
 };
 
-typedef uint16_t nm_memid_t;
-
 /*
  * Shared info for netmap allocator
  *
@@ -591,6 +589,25 @@ nm_mem_release_id(struct netmap_mem_d *nmd)
 	nmd->prev = nmd->next = NULL;
 
 	NMA_UNLOCK(&nm_mem);
+}
+
+struct netmap_mem_d *
+netmap_mem_find(uint16_t id)
+{
+	struct netmap_mem_d *scan;
+
+	NMA_LOCK(&nm_mem);
+	scan = netmap_last_mem_d;
+	do {
+		if (!(scan->flags & NETMAP_MEM_HIDDEN) &&
+		    scan->nm_id == id) {
+			NMA_UNLOCK(&nm_mem);
+			return scan;
+		}
+		scan = scan->next;
+	} while (scan != netmap_last_mem_d);
+	NMA_UNLOCK(&nm_mem);
+	return NULL;
 }
 
 static int

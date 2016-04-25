@@ -116,6 +116,7 @@
  */
 
 extern struct netmap_mem_d nm_mem;
+typedef uint16_t nm_memid_t;
 
 int	   netmap_mem_get_lut(struct netmap_mem_d *, struct netmap_lut *);
 vm_paddr_t netmap_mem_ofstophys(struct netmap_mem_d *, vm_ooffset_t);
@@ -131,11 +132,13 @@ int	   netmap_mem_rings_create(struct netmap_adapter *);
 void	   netmap_mem_rings_delete(struct netmap_adapter *);
 void 	   netmap_mem_deref(struct netmap_mem_d *, struct netmap_adapter *);
 int	netmap_mem2_get_pool_info(struct netmap_mem_d *, u_int, u_int *, u_int *);
-int	   netmap_mem_get_info(struct netmap_mem_d *, u_int *size, u_int *memflags, uint16_t *id);
+int	   netmap_mem_get_info(struct netmap_mem_d *, u_int *size, u_int *memflags, nm_memid_t *id);
 ssize_t    netmap_mem_if_offset(struct netmap_mem_d *, const void *vaddr);
 struct netmap_mem_d* netmap_mem_private_new( u_int txr, u_int txd, u_int rxr, u_int rxd,
 		u_int extra_bufs, u_int npipes, int* error);
 void	   netmap_mem_delete(struct netmap_mem_d *);
+struct netmap_mem_d *
+	   netmap_mem_find(uint16_t);
 
 //#define NM_DEBUG_MEM_PUTGET 1
 

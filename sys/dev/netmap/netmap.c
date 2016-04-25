@@ -2697,12 +2697,47 @@ enum txrx tx, int flags)
 #endif
 
 #ifdef WITH_NMCONF
+static int64_t
+nm_jp_memid_read(struct nm_jp_num *in, void *obj)
+{
+	struct netmap_adapter *na = obj;
+	uint16_t memid;
+
+	if (na->nm_mem == NULL)
+		return 0;
+	if (netmap_mem_get_info(na->nm_mem, NULL, NULL, &memid))
+		return 0;
+	return memid;
+}
+
+static int
+nm_jp_memid_update(struct nm_jp_num *in, int64_t id, void *obj)
+{
+	struct netmap_adapter *na = obj;
+	struct netmap_mem_d *newmem;
+
+	if (na->active_fds > 0)
+		return EBUSY;
+
+	newmem = netmap_mem_find(id);
+	if (newmem == NULL)
+		return ENOENT;
+	if (newmem != na->nm_mem) {
+		netmap_mem_put(na->nm_mem);
+		netmap_mem_get(newmem);
+		na->nm_mem = newmem;
+	}
+	return 0;
+}
+
 NM_JPO_CLASS_DECL(port);
+NM_JPO_NUM(port, memid, 0, nm_jp_memid_read, nm_jp_memid_update);
 NM_JPO_RONUM(port, struct netmap_adapter, num_tx_rings);
 NM_JPO_RONUM(port, struct netmap_adapter, num_rx_rings);
 NM_JPO_RONUM(port, struct netmap_adapter, num_tx_desc);
 NM_JPO_RONUM(port, struct netmap_adapter, num_rx_desc);
 NM_JPO_FIELDS_LIST(port) {
+	NM_JPO_FIELD_DECL(port, memid),
 	NM_JPO_FIELD_DECL(port, num_tx_rings),
 	NM_JPO_FIELD_DECL(port, num_rx_rings),
 	NM_JPO_FIELD_DECL(port, num_tx_desc),
