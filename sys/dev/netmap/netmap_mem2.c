@@ -84,6 +84,9 @@ enum {
 struct netmap_obj_params {
 	u_int size;
 	u_int num;
+
+	u_int last_size;
+	u_int last_num;
 };
 
 struct netmap_obj_pool {
@@ -183,6 +186,7 @@ struct netmap_mem_d {
 
 	u_int flags;
 #define NETMAP_MEM_FINALIZED	0x1	/* preallocation done */
+#define NETMAP_MEM_HIDDEN	0x2	/* beeing prepared */
 	int lasterr;		/* last error for curr config */
 	int active;		/* active users */
 	int refcount;
@@ -196,6 +200,11 @@ struct netmap_mem_d {
 	struct netmap_mem_d *prev, *next;
 
 	struct netmap_mem_ops *ops;
+
+	struct netmap_obj_params *params;
+
+#define	NM_MEM_NAMESZ	16
+	char name[NM_MEM_NAMESZ];
 
 	NM_JPO_OBJ_DECL;
 };
@@ -455,7 +464,9 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 	.prev = &nm_mem,
 	.next = &nm_mem,
 
-	.ops = &netmap_mem_global_ops
+	.ops = &netmap_mem_global_ops,
+
+	.name = "1"
 };
 
 
@@ -489,9 +500,11 @@ static const struct netmap_mem_d nm_blueprint = {
 		},
 	},
 
+	.nm_grp = -1,
+
 	.flags = NETMAP_MEM_PRIVATE,
 
-	.ops = &netmap_mem_private_ops
+	.ops = &netmap_mem_global_ops,
 };
 
 /* memory allocator related sysctls */
@@ -1089,7 +1102,7 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 #ifdef linux
 		vfree(p->lut);
 #else
-		free(p->lut, M_NETMAP);
+		nm_os_free(p->lut);
 #endif
 	}
 	p->lut = NULL;
@@ -1316,16 +1329,18 @@ clean:
 
 /* call with lock held */
 static int
-netmap_memory_config_changed(struct netmap_mem_d *nmd)
+netmap_mem_params_changed(struct netmap_obj_params* p)
 {
-	int i;
+	int i, rv = 0;
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
-		if (nmd->pools[i].r_objsize != netmap_params[i].size ||
-		    nmd->pools[i].r_objtotal != netmap_params[i].num)
-		    return 1;
+		if (p[i].last_size != p[i].size || p[i].last_num != p[i].num) {
+			p[i].last_size = p[i].size;
+			p[i].last_num = p[i].num;
+			rv = 1;
+		}
 	}
-	return 0;
+	return rv;
 }
 
 static void
@@ -1346,7 +1361,7 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
 	int i, lim = p->_objtotal;
 
-	if (na->pdev == NULL)
+	if (na == NULL || na->pdev == NULL)
 		return 0;
 
 #if defined(__FreeBSD__)
@@ -1454,6 +1469,10 @@ error:
 }
 
 
+#ifdef WITH_NMCONF
+static int netmap_mem_jp_init(struct netmap_mem_d *);
+static void netmap_mem_jp_uninit(struct netmap_mem_d *);
+#endif
 
 static void
 netmap_mem_private_delete(struct netmap_mem_d *nmd)
@@ -1464,6 +1483,9 @@ netmap_mem_private_delete(struct netmap_mem_d *nmd)
 		D("deleting %p", nmd);
 	if (nmd->active > 0)
 		D("bug: deleting mem allocator with active=%d!", nmd->active);
+#ifdef WITH_NMCONF
+	netmap_mem_jp_uninit(nmd);
+#endif
 	nm_mem_release_id(nmd);
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
@@ -1471,47 +1493,21 @@ netmap_mem_private_delete(struct netmap_mem_d *nmd)
 	nm_os_free(nmd);
 }
 
-static int
-netmap_mem_private_config(struct netmap_mem_d *nmd)
-{
-	/* nothing to do, we are configured on creation
- 	 * and configuration never changes thereafter
- 	 */
-	return 0;
-}
-
-static int
-netmap_mem_private_finalize(struct netmap_mem_d *nmd)
-{
-	int err;
-	err = netmap_mem_finalize_all(nmd);
-	if (!err)
-		nmd->active++;
-	return err;
-
-}
-
-static void
-netmap_mem_private_deref(struct netmap_mem_d *nmd)
-{
-	if (--nmd->active <= 0)
-		netmap_mem_reset_all(nmd);
-}
-
-
 /*
  * allocator for private memory
  */
-struct netmap_mem_d *
-netmap_mem_private_new(const char *name, u_int txr, u_int txd,
-	u_int rxr, u_int rxd, u_int extra_bufs, u_int npipes, int *perr)
+static struct netmap_mem_d *
+_netmap_mem_private_new(struct netmap_obj_params *p, int *perr)
 {
 	struct netmap_mem_d *d = NULL;
-	struct netmap_obj_params p[NETMAP_POOLS_NR];
-	int i, err;
-	u_int v, maxd;
+	int i, err = 0;
+#ifdef WITH_NMCONF
+	size_t extra = sizeof(struct netmap_obj_params) * NETMAP_POOLS_NR;
+#else
+	size_t extra = 0;
+#endif
 
-	d = nm_os_malloc(sizeof(struct netmap_mem_d));
+	d = nm_os_malloc(sizeof(struct netmap_mem_d) + extra);
 	if (d == NULL) {
 		err = ENOMEM;
 		goto error;
@@ -1522,7 +1518,45 @@ netmap_mem_private_new(const char *name, u_int txr, u_int txd,
 	err = nm_mem_assign_id(d);
 	if (err)
 		goto error;
+	snprintf(d->name, NM_MEM_NAMESZ, "%d", d->nm_id);
 
+#ifdef WITH_NMCONF
+	d->params = (struct netmap_obj_params *)(d + 1);
+#endif
+
+	for (i = 0; i < NETMAP_POOLS_NR; i++) {
+		snprintf(d->pools[i].name, NETMAP_POOL_MAX_NAMSZ,
+				nm_blueprint.pools[i].name,
+				d->name);
+		d->params[i].num = p[i].num;
+		d->params[i].size = p[i].size;
+	}
+
+	NMA_LOCK_INIT(d);
+
+	err = netmap_mem_config(d);
+	if (err)
+		goto error;
+
+	d->flags &= ~NETMAP_MEM_FINALIZED;
+
+	return d;
+
+error:
+	netmap_mem_private_delete(d);
+	if (perr)
+		*perr = err;
+	return NULL;
+}
+
+struct netmap_mem_d *
+netmap_mem_private_new(u_int txr, u_int txd, u_int rxr, u_int rxd,
+		u_int extra_bufs, u_int npipes, int *perr)
+{
+	struct netmap_mem_d *d = NULL;
+	struct netmap_obj_params p[NETMAP_POOLS_NR];
+	int i, err = 0;
+	u_int v, maxd;
 	/* account for the fake host rings */
 	txr++;
 	rxr++;
@@ -1568,19 +1602,15 @@ netmap_mem_private_new(const char *name, u_int txr, u_int txd,
 			p[NETMAP_BUF_POOL].num,
 			p[NETMAP_BUF_POOL].size);
 
-	for (i = 0; i < NETMAP_POOLS_NR; i++) {
-		snprintf(d->pools[i].name, NETMAP_POOL_MAX_NAMSZ,
-				nm_blueprint.pools[i].name,
-				name);
-		err = netmap_config_obj_allocator(&d->pools[i],
-				p[i].num, p[i].size);
-		if (err)
-			goto error;
-	}
+	d = _netmap_mem_private_new(p, perr);
+	if (d == NULL)
+		goto error;
 
-	d->flags &= ~NETMAP_MEM_FINALIZED;
-
-	NMA_LOCK_INIT(d);
+#ifdef WITH_NMCONF
+	err = netmap_mem_jp_init(d);
+	if (err)
+		goto error;
+#endif
 
 	return d;
 error:
@@ -1593,7 +1623,7 @@ error:
 
 /* call with lock held */
 static int
-netmap_mem_global_config(struct netmap_mem_d *nmd)
+netmap_mem2_config(struct netmap_mem_d *nmd)
 {
 	int i;
 
@@ -1601,7 +1631,7 @@ netmap_mem_global_config(struct netmap_mem_d *nmd)
 		/* already in use, we cannot change the configuration */
 		goto out;
 
-	if (!netmap_memory_config_changed(nmd))
+	if (!netmap_mem_params_changed(nmd->params))
 		goto out;
 
 	ND("reconfiguring");
@@ -1616,7 +1646,7 @@ netmap_mem_global_config(struct netmap_mem_d *nmd)
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		nmd->lasterr = netmap_config_obj_allocator(&nmd->pools[i],
-				netmap_params[i].num, netmap_params[i].size);
+				nmd->params[i].num, nmd->params[i].size);
 		if (nmd->lasterr)
 			goto out;
 	}
@@ -1627,13 +1657,13 @@ out:
 }
 
 static int
-netmap_mem_global_finalize(struct netmap_mem_d *nmd)
+netmap_mem2_finalize(struct netmap_mem_d *nmd)
 {
 	int err;
 
 	/* update configuration if changed */
-	if (netmap_mem_global_config(nmd))
-		return nmd->lasterr;
+	if (netmap_mem2_config(nmd))
+		goto out1;
 
 	nmd->active++;
 
@@ -1651,6 +1681,7 @@ netmap_mem_global_finalize(struct netmap_mem_d *nmd)
 out:
 	if (nmd->lasterr)
 		nmd->active--;
+out1:
 	err = nmd->lasterr;
 
 	return err;
@@ -1658,10 +1689,13 @@ out:
 }
 
 static void
-netmap_mem_global_delete(struct netmap_mem_d *nmd)
+netmap_mem2_delete(struct netmap_mem_d *nmd)
 {
 	int i;
 
+#ifdef WITH_NMCONF
+	netmap_mem_jp_uninit(nmd);
+#endif
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 	    netmap_destroy_obj_allocator(&nm_mem.pools[i]);
 	}
@@ -1694,7 +1728,6 @@ NM_JPO_FIELDS_LIST(mem) {
 	NM_JPO_FIELD_DECL(mem, ring),
 	NM_JPO_FIELD_DECL(mem, buf)
 };
-#endif
 
 static void
 netmap_mem_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
@@ -1713,6 +1746,21 @@ netmap_mem_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
 	}
 }
 
+static int
+netmap_mem_jp_init(struct netmap_mem_d *nmd)
+{
+	NM_JPO_OBJ_INIT(mem, nmd);
+	return nm_jp_dadd(&nm_jp_mem, &NM_JPO_OBJ(nmd), nmd->name);
+}
+
+static void
+netmap_mem_jp_uninit(struct netmap_mem_d *nmd)
+{
+	nm_jp_ddel(&nm_jp_mem, &NM_JPO_OBJ(nmd));
+}
+
+#endif
+
 int
 netmap_mem_init(void)
 {
@@ -1730,8 +1778,7 @@ netmap_mem_init(void)
 		goto fail_uninit;
 	NM_JPO_CLASS_INIT(objpool);
 	NM_JPO_CLASS_INIT_BRACKETED(mem, netmap_mem_jp_bracket);
-	NM_JPO_OBJ_INIT(mem, &nm_mem);
-	nm_jp_dadd(&nm_jp_mem, &NM_JPO_OBJ(&nm_mem), "1");
+	netmap_mem_jp_init(&nm_mem);
 #endif /* WITH_NMCONF */
 	return (error);
 
@@ -1960,7 +2007,7 @@ netmap_mem2_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 }
 
 static void
-netmap_mem_global_deref(struct netmap_mem_d *nmd)
+netmap_mem2_deref(struct netmap_mem_d *nmd)
 {
 
 	nmd->active--;
@@ -1975,25 +2022,11 @@ struct netmap_mem_ops netmap_mem_global_ops = {
 	.nmd_get_lut = netmap_mem2_get_lut,
 	.nmd_get_info = netmap_mem2_get_info,
 	.nmd_ofstophys = netmap_mem2_ofstophys,
-	.nmd_config = netmap_mem_global_config,
-	.nmd_finalize = netmap_mem_global_finalize,
-	.nmd_deref = netmap_mem_global_deref,
-	.nmd_delete = netmap_mem_global_delete,
+	.nmd_config = netmap_mem2_config,
+	.nmd_finalize = netmap_mem2_finalize,
+	.nmd_deref = netmap_mem2_deref,
+	.nmd_delete = netmap_mem2_delete,
 	.nmd_if_offset = netmap_mem2_if_offset,
-	.nmd_if_new = netmap_mem2_if_new,
-	.nmd_if_delete = netmap_mem2_if_delete,
-	.nmd_rings_create = netmap_mem2_rings_create,
-	.nmd_rings_delete = netmap_mem2_rings_delete
-};
-struct netmap_mem_ops netmap_mem_private_ops = {
-	.nmd_get_lut = netmap_mem2_get_lut,
-	.nmd_get_info = netmap_mem2_get_info,
-	.nmd_ofstophys = netmap_mem2_ofstophys,
-	.nmd_config = netmap_mem_private_config,
-	.nmd_finalize = netmap_mem_private_finalize,
-	.nmd_deref = netmap_mem_private_deref,
-	.nmd_if_offset = netmap_mem2_if_offset,
-	.nmd_delete = netmap_mem_private_delete,
 	.nmd_if_new = netmap_mem2_if_new,
 	.nmd_if_delete = netmap_mem2_if_delete,
 	.nmd_rings_create = netmap_mem2_rings_create,
