@@ -367,7 +367,6 @@ void nm_jp_pinit(struct nm_jp_ptr *, struct nm_jp *type,
 		void *arg, u_int flags);
 struct _jpo nm_jp_pinterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_pdump(struct nm_jp *, struct nm_conf *);
-void nm_jp_pbracket(struct nm_jp *, int, struct nm_conf *);
 
 extern struct nm_jp_dict nm_jp_root;
 extern struct nm_jp_dict nm_jp_ports;
@@ -393,7 +392,6 @@ static struct nm_jp_ptr NM_JPO_FIELD(p, f) = {		\
 	.up = {						\
 		.interp = nm_jp_pinterp,		\
 		.dump   = nm_jp_pdump,			\
-		.bracket = nm_jp_pbracket		\
 	},						\
 	.type = &NM_JPO_CLASS(t).up,			\
 	.arg = (void *)offsetof(st, n),			\
@@ -410,6 +408,10 @@ static struct nm_jp_ptr NM_JPO_FIELD(p, f) = {		\
 	nm_jp_dinit(&NM_JPO_CLASS(p), 			\
 		NM_JPO_FIELDS(p),			\
 		sizeof(NM_JPO_FIELDS(p))/sizeof(NM_JPO_FIELDS(p)[0]));
+#define NM_JPO_CLASS_INIT_BRACKETED(p, b) do {		\
+		NM_JPO_CLASS_INIT(p);			\
+		NM_JPO_CLASS(p).up.bracket = b;		\
+	} while (0)
 #define NM_JPO_CLASS_UNINIT(p)				\
 	nm_jp_duninit(&NM_JPO_CLASS(p))
 #define NM_JPO_OBJ_INIT(p, o)				\

@@ -1696,6 +1696,23 @@ NM_JPO_FIELDS_LIST(mem) {
 };
 #endif
 
+static void
+netmap_mem_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
+{
+	struct netmap_mem_d *nmd = (struct netmap_mem_d *)c->cur_obj;
+
+	switch (stage) {
+	case 0:	/* entering */
+		NMA_LOCK(nmd);
+		break;
+	case 2: /* leaving */
+		NMA_UNLOCK(nmd);
+		break;
+	default:
+		break;
+	}
+}
+
 int
 netmap_mem_init(void)
 {
@@ -1712,7 +1729,7 @@ netmap_mem_init(void)
 	if (error)
 		goto fail_uninit;
 	NM_JPO_CLASS_INIT(objpool);
-	NM_JPO_CLASS_INIT(mem);
+	NM_JPO_CLASS_INIT_BRACKETED(mem, netmap_mem_jp_bracket);
 	NM_JPO_OBJ_INIT(mem, &nm_mem);
 	nm_jp_dadd(&nm_jp_mem, &NM_JPO_OBJ(&nm_mem), "1");
 #endif /* WITH_NMCONF */

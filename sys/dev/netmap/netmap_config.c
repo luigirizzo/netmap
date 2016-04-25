@@ -1192,23 +1192,12 @@ nm_jp_pdump(struct nm_jp *jp, struct nm_conf *c)
 }
 
 void
-nm_jp_pbracket(struct nm_jp *jp, int stage, struct nm_conf *c)
-{
-	struct nm_jp_ptr *p = (struct nm_jp_ptr *)jp;
-	void *save = c->cur_obj;
-
-	c->cur_obj = nm_jp_pnewcurobj(p, save);
-	nm_jp_bracket(p->type, stage, c);
-	c->cur_obj = save;
-}
-
-void
 nm_jp_pinit(struct nm_jp_ptr *p, struct nm_jp *type,
 		void *arg, u_int flags)
 {
 	p->up.interp  = nm_jp_pinterp;
 	p->up.dump    = nm_jp_pdump;
-	p->up.bracket = nm_jp_pbracket;
+	p->up.bracket = NULL;
 	p->type = type;
 	p->arg = arg;
 	p->flags = flags;
