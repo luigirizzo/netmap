@@ -2182,7 +2182,7 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 	na->nm_krings_create = netmap_vp_krings_create;
 	na->nm_krings_delete = netmap_vp_krings_delete;
 	na->nm_dtor = netmap_vp_dtor;
-	na->nm_mem = netmap_mem_private_new(na->name,
+	na->nm_mem = netmap_mem_private_new(
 			na->num_tx_rings, na->num_tx_desc,
 			na->num_rx_rings, na->num_rx_desc,
 			nmr->nr_arg3, npipes, &error);
