@@ -3347,7 +3347,6 @@ netmap_fini(void)
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
 #ifdef WITH_NMCONF
-	NM_JPO_CLASS_UNINIT(port);
 	nm_jp_duninit(&nm_jp_ports);
 	nm_jp_duninit(&nm_jp_root);
 #endif /* WITH_NMCONF */
@@ -3370,9 +3369,7 @@ netmap_init(void)
 	if (error)
 		goto fail;
 	nm_jp_dadd(&nm_jp_root, &nm_jp_ports.up, "port");
-	error = NM_JPO_CLASS_INIT(port);
-	if (error)
-		goto fail;
+	NM_JPO_CLASS_INIT(port);
 #endif /* WITH_NMCONF */
 
 	error = netmap_mem_init();

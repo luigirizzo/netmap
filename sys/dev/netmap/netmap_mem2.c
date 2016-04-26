@@ -1806,28 +1806,16 @@ netmap_mem_init(void)
 			&nm_jp_mem.up, "mem");
 	if (error)
 		goto fail_uninit;
-	error = NM_JPO_CLASS_INIT(objpool);
-	if (error)
-		goto fail_del;
-	error = NM_JPO_CLASS_INIT(mparams);
-	if (error)
-		goto fail_class_uninit;
-	error = NM_JPO_CLASS_INIT_BRACKETED(mem, netmap_mem_jp_bracket);
-	if (error)
-		goto fail_class_uninit2;
+	NM_JPO_CLASS_INIT(objpool);
+	NM_JPO_CLASS_INIT(mparams);
+	NM_JPO_CLASS_INIT_BRACKETED(mem, netmap_mem_jp_bracket);
 	error = netmap_mem_jp_init(&nm_mem);
 	if (error)
-		goto fail_class_uninit3;
+		goto fail_del;
 #endif /* WITH_NMCONF */
 	return (error);
 
 #ifdef WITH_NMCONF
-fail_class_uninit3:
-	NM_JPO_CLASS_UNINIT(mem);
-fail_class_uninit2:
-	NM_JPO_CLASS_UNINIT(mparams);
-fail_class_uninit:
-	NM_JPO_CLASS_UNINIT(objpool);
 fail_del:
 	nm_jp_ddel(&nm_jp_root, &nm_jp_mem.up);
 fail_uninit:
@@ -1842,9 +1830,7 @@ void
 netmap_mem_fini(void)
 {
 #ifdef WITH_NMCONF
-	NM_JPO_CLASS_UNINIT(mem);
-	NM_JPO_CLASS_UNINIT(mparams);
-	NM_JPO_CLASS_UNINIT(objpool);
+	netmap_mem_jp_uninit(&nm_mem);
 	nm_jp_ddel(&nm_jp_root, &nm_jp_mem.up);
 	nm_jp_duninit(&nm_jp_mem);
 #endif

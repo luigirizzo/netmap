@@ -330,7 +330,7 @@ struct nm_jp_dict {
 
 int nm_jp_dinit(struct nm_jp_dict *, const struct nm_jp_delem *, u_int nelem,
 		void (*)(struct nm_jp *, int, struct nm_conf *));
-int nm_jp_dinit_class(struct nm_jp_dict *, const struct nm_jp_delem*,
+void nm_jp_dinit_class(struct nm_jp_dict *, const struct nm_jp_delem*,
 		const struct nm_jp_delem *,
 		void (*)(struct nm_jp *, int, struct nm_conf *));
 void nm_jp_duninit(struct nm_jp_dict *);
@@ -439,8 +439,6 @@ NM_JPO_FIELD_DECL(p, f)
 		&NM_JPO_START(p), &NM_JPO_END(p), b)
 #define NM_JPO_CLASS_INIT(p)				\
 	NM_JPO_CLASS_INIT_BRACKETED(p, NULL);
-#define NM_JPO_CLASS_UNINIT(p)				\
-	nm_jp_duninit(&NM_JPO_CLASS(p))
 #define NM_JPO_OBJ_INIT(p, o)				\
 	nm_jp_pinit(&(o)->_jpo, &NM_JPO_CLASS(p).up, o, 0);
 

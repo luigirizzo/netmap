@@ -900,18 +900,23 @@ nm_jp_dinit(struct nm_jp_dict *d, const struct nm_jp_delem *list, u_int nelem,
 	return 0;
 }
 
-int
+void
 nm_jp_dinit_class(struct nm_jp_dict *d, const struct nm_jp_delem *e1,
 		const struct nm_jp_delem *e2,
 		void (*bracket)(struct nm_jp *, int, struct nm_conf *))
 {
+	d->up.interp = nm_jp_dinterp;
+	d->up.dump   = nm_jp_ddump;
+	d->up.bracket = bracket;
+
 	if (e2 < e1) {
 		const struct nm_jp_delem *c = e2;
 		e2 = e1;
 		e1 = c;
 	}
 	e1++;
-	return nm_jp_dinit(d, e1, e2 - e1, bracket);
+	d->list = (struct nm_jp_delem *)e1;
+	d->minelem = d->nelem = d->nextfree = e2 - e1;
 }
 
 void
