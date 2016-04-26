@@ -712,13 +712,13 @@ nm_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
 static struct _jpo
 nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
-	nm_jp_bracket(jp, 0, c);
+	nm_jp_bracket(jp, NM_JPB_ENTER, c);
 	if (nm_jp_is_dump(r, c->pool) || jp->interp == NULL) {
 		r = jp->dump(jp, c);
 	} else {
 		r = jp->interp(jp, r, c);
 	}
-	nm_jp_bracket(jp, 2, c);
+	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
 	return r;
 }
 
@@ -727,9 +727,9 @@ nm_jp_dump(struct nm_jp *jp, struct nm_conf *c)
 {
 	struct _jpo r;
 
-	nm_jp_bracket(jp, 0, c);
+	nm_jp_bracket(jp, NM_JPB_ENTER, c);
 	r = jp->dump(jp, c);
-	nm_jp_bracket(jp, 2, c);
+	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
 	return r;
 }
 
@@ -773,16 +773,16 @@ nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pn, struct nm_conf *c)
 	}
 	*pn++ = jslr_new_string(c->pool, e->name);
 	jp = e->jp;
-	nm_jp_bracket(jp, 0, c);
+	nm_jp_bracket(jp, NM_JPB_ENTER, c);
 	if (jp->interp) {
 		o = jp->interp(jp, *pn, c);
 		if (o.ty == JPO_ERR)
 			goto leave_;
-		nm_jp_bracket(jp, 1, c);
+		nm_jp_bracket(jp, NM_JPB_MIDDLE, c);
 	}
 	o = jp->dump(jp, c);
 leave_:
-	nm_jp_bracket(jp, 2, c);
+	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
 	e->have_ref = 1;
 out:
 	return o;

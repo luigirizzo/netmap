@@ -305,6 +305,7 @@ struct nm_jp {
 	struct _jpo (*dump)(struct nm_jp *, struct nm_conf *);
 	void	    (*bracket)(struct nm_jp *, int stage, struct nm_conf *);
 #define NM_JPB_ENTER	0
+#define NM_JPB_MIDDLE	1
 #define NM_JPB_LEAVE	2
 };
 struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
