@@ -385,7 +385,7 @@ extern struct nm_jp_dict nm_jp_ports;
 #define NM_JPO_END(p)		nm_jp_##p##_end
 #define NM_JPO_FIELD(p, f)	nm_jp_##p##_field_##f
 #define NM_JPO_SEC(p)					\
-	__attribute__((__section__(".nm_jp_"#p), aligned(sizeof(void *)), used))
+	__attribute__((__section__(".nm_jpo"), aligned(sizeof(void *)), used))
 #define NM_JPO_CLASS_DECL(p, st)			\
 	static struct nm_jp_dict NM_JPO_CLASS(p);	\
 	typedef st NM_JPO_TYPE(p);			\
