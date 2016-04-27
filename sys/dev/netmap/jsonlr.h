@@ -41,6 +41,8 @@ struct _jpo { /* object */
 	unsigned int ptr:16;	/* offset in the pool */
 };
 
+static const struct _jpo _r_EINVAL = { .ty = JPO_ERR, .ptr = JSLR_EINVAL, .len = 0};
+
 struct _jp;
 
 struct _jp_stream {
@@ -51,8 +53,9 @@ struct _jp_stream {
 /*
  * external functions
  */
+int jslr_init(char *pool, uint32_t pool_len);
 struct _jpo jslr_parse(struct _jp_stream *js, char *pool, uint32_t pool_len);
-const char *	jslr_get_string(const char *pool, struct _jpo);
+char *		jslr_get_string(const char *pool, struct _jpo);
 int64_t		jslr_get_num(const char *pool, struct _jpo);
 struct _jpo*	jslr_get_array(const char *pool, struct _jpo);
 struct _jpo*	jslr_get_object(const char *pool, struct _jpo);

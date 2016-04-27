@@ -282,12 +282,22 @@ struct nm_confb {
 	u_int next_r;
 };
 
+#define	NETMAP_CONFIG_MAXNAME	64
+
+struct nm_conf_var {
+	char name[NETMAP_CONFIG_MAXNAME];
+	struct _jpo value;
+};
+
 struct nm_conf {
 	NM_MTX_T mux;
 	struct nm_confb buf[2]; /* 0 in, 1 out */
 	int written;
 	char *pool;
 	void *cur_obj;
+	struct nm_conf_var *vars;
+	int next_var;
+	int max_vars;
 	int (*dump)(const char *pool, struct _jpo*, struct nm_confb *);
 };
 
@@ -312,7 +322,6 @@ struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
 
 /* dictionaries */
 struct nm_jp_delem {
-#define	NETMAP_CONFIG_MAXNAME	64
 	char name[NETMAP_CONFIG_MAXNAME];
 	struct nm_jp *jp;
 	int have_ref;

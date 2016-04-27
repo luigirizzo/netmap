@@ -1772,12 +1772,12 @@ netmap_mem_jp_new(struct nm_jp_delem *e)
 	struct netmap_mem_d *d;
 	int err = 0;
 
-	D("");
 	d = _netmap_mem_private_new(netmap_min_priv_params, &err);
-	if (d == NULL)
+	if (d == NULL) {
+		D("");
 		return err;
+	}
 	netmap_mem_get(d);
-	D("");
 	NM_JPO_OBJ_INIT(mem, d);
 	nm_jp_delem_fill(e, &NM_JPO_OBJ(d), d->name);
 	return 0;

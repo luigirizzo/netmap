@@ -98,7 +98,6 @@ pr_obj(struct _jpo r)
 #endif
 
 
-static const struct _jpo _r_EINVAL = { .ty = JPO_ERR, .ptr = JSLR_EINVAL, .len = 0};
 static const struct _jpo _r_ENOMEM = { .ty = JPO_ERR, .ptr = JSLR_ENOMEM, .len = 0};
 static const struct _jpo _r_NUL = { .ty = JPO_CHAR, .ptr = 0, .len = 0};
 static const struct _jpo _r_ARRAY = { .ty = JPO_ARRAY, .ptr = 0, .len = 0};
@@ -507,7 +506,7 @@ jslr_1(struct _jp *p)
 	} else if (c == '"') { /* start string */
 		r = jslr_string(p);
 #ifdef JSLR_SLOPPY
-	} else if (c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+	} else if (in_map(("_?$&"), c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
 		r = jslr_unquoted_string(p);
 #endif /* JSLR_SLOPPY */
 	} else if (c == '{') { /* start object */
@@ -525,28 +524,43 @@ out:
 	return r;
 }
 
-struct _jpo
-jslr_parse(struct _jp_stream *s, char *pool, uint32_t pool_len)
+int
+jslr_init(char *pool, uint32_t pool_len)
 {
 	struct _jp *p;
-	struct _jpo r1;
 	uint32_t nobjs;
 
 	if (pool == NULL || pool_len < sizeof(*p))
-		goto bad_size;
+		return ENOMEM;
 	p = (struct _jp *)pool;
-	p->stream = s;
 	p->pool = (struct _jpo *)(p+1);
 	pool_len -= sizeof(*p);
 	if (pool_len >= JSLR_MAXSIZE)
-		goto bad_size;
-	nobjs = pool_len / sizeof(r1);
+		return ENOMEM;
+	nobjs = pool_len / sizeof(struct _jpo);
 	if (nobjs == 0)
-		goto bad_size;
-	p->pool_len = nobjs * sizeof(r1);
+		return ENOMEM;
+	p->pool_len = nobjs * sizeof(struct _jpo);
 	p->pool_next = nobjs;
 	p->pool_tail = 0;
 	p->depth = p->max_depth = 0;
+
+	return 0;
+}
+
+struct _jpo
+jslr_parse(struct _jp_stream *s, char *pool, uint32_t pool_len)
+{
+	struct _jp *p = (struct _jp *)pool;
+	struct _jpo r1;
+	
+	if (jslr_init(pool, pool_len)) {
+		D("bad pool length %u (min %zu, max %zu)", pool_len,
+				sizeof(*p), JSLR_MAXSIZE + sizeof(*p));
+		return _r_ENOMEM;
+	}
+
+	p->stream = s;
 
 	r1 = jslr_1(p); /* first pass */
 	if (r1.ty > JPO_CHAR) {
@@ -560,18 +574,13 @@ jslr_parse(struct _jp_stream *s, char *pool, uint32_t pool_len)
 	if (r1.ty == JPO_PTR && r1.len == JPO_DOT)
 		r1.len = JPO_OBJECT;
 	return r1;
-
-bad_size:
-	D("bad pool length %u (min %zu, max %zu)", pool_len,
-			sizeof(*p), JSLR_MAXSIZE + sizeof(*p));
-	return _r_ENOMEM;
 }
 
-const char *
+char *
 jslr_get_string(const char *pool, struct _jpo r)
 {
 	struct _jp *p = (struct _jp *)pool;
-	const char *d = (const char *)(p->pool);
+	char *d = (char *)p->pool;
 
 	if (r.ty != JPO_STRING)
 		return NULL;

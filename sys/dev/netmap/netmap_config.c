@@ -46,7 +46,6 @@
 #include <sys/uio.h>
 #include <machine/stdarg.h>
 
-
 #elif defined(linux)
 
 #include "bsd_glue.h"
@@ -76,8 +75,8 @@
 
 #ifdef WITH_NMCONF
 
-#define NM_CBDATASIZ 1024
-#define NM_CBDATAMAX 4
+#define NM_CBDATASIZ 4096
+#define NM_CBDATAMAX 1024
 
 /* simple buffers for incoming/outgoing data on read()/write() */
 
@@ -178,13 +177,14 @@ nm_confb_vprintf(struct nm_confb *cb, const char *format, va_list ap)
 			return ENOMEM;
 		va_copy(_ap, ap);
 		rv = vsnprintf(p, size, format, _ap);
+		ND("writing: '%s'", (char *)p);
 		va_end(_ap);
 		if (rv < 0)
 			return EINVAL;
 		if (rv < size) {
 			break;
 		}
-		D("rv %d size %u: retry", rv, size);
+		ND("rv %d size %u: retry", rv, size);
 		size = rv + 1;
 		psz = NULL;
 	}
@@ -428,6 +428,7 @@ again:
 		}
 		goto again;
 	default:
+		D("Unknown JPO: (%u, %u, %u)", r->ty, r->len, r->ptr);
 		error = EINVAL;
 		break;
 	}
@@ -537,7 +538,7 @@ nm_conf_dump_flat(const char *pool, struct _jpo *r,
 	return nm_conf_dump_flat_rec(pool, r, cb, &lst);
 }
 
-#define NETMAP_CONFIG_POOL_SIZE (1<<12)
+#define NETMAP_CONFIG_POOL_SIZE JSLR_MAXSIZE
 
 static struct _jpo nm_jp_interp(struct nm_jp *,
 		struct _jpo, struct nm_conf *c);
@@ -546,8 +547,7 @@ int
 nm_conf_parse(struct nm_conf *c, int locked)
 {
 	uint32_t pool_len = NETMAP_CONFIG_POOL_SIZE;
-	struct nm_confb *i = &c->buf[0],
-			      *o = &c->buf[1];
+	struct nm_confb *i = &c->buf[0], *o = &c->buf[1];
 	struct nm_jp_stream njs = {
 		.stream = {
 			.peek = nm_confb_peek,
@@ -571,17 +571,21 @@ nm_conf_parse(struct nm_conf *c, int locked)
 		nm_confb_destroy(i);
 		goto out;
 	}
-	D("parse OK: ty %u len %u ptr %u", r.ty, r.len, r.ptr);
+	ND("parse OK: ty %u len %u ptr %u", r.ty, r.len, r.ptr);
 	if (!locked)
 		NMG_LOCK();
 	r = nm_jp_interp(&nm_jp_root.up, r, c);
 	if (!locked)
 		NMG_UNLOCK();
 	error = c->dump(c->pool, &r, o);
+	ND("error %d", error);
 	nm_confb_trunc(o);
+
 out:
 	nm_os_free(c->pool);
 	c->pool = NULL;
+	nm_os_free(c->vars);
+	c->max_vars = c->next_var = 0;
 	return error;
 }
 
@@ -627,13 +631,15 @@ nm_conf_read(struct nm_conf *c, struct uio *uio)
 	NM_MTX_LOCK(c->mux);
 
 	if (!c->written) {
-		nm_confb_printf(i, "dump");
+		nm_confb_printf(i, "?");
 		c->written = 1;
 	}
 
 	ret = nm_conf_parse(c, 0 /* not locked */);
-	if (ret)
+	if (ret) {
+		D("parse error!");
 		goto out;
+	}
 
 	while (uio->uio_resid > 0) {
 		int s = uio->uio_resid;
@@ -642,8 +648,10 @@ nm_conf_read(struct nm_conf *c, struct uio *uio)
 			goto out;
 		}
 		ret = uiomove(p, s, uio);
-		if (ret)
+		if (ret) {
+			D("uiomove error!");
 			goto out;
+		}
 		nm_confb_post_read(o, s);
 	}
 
@@ -653,6 +661,48 @@ out:
 	return ret;
 }
 
+static struct nm_conf_var *
+nm_conf_var_search(struct nm_conf *c, const char *name)
+{
+	int i;
+
+	for (i = 0; i < c->next_var; i++) {
+		struct nm_conf_var *v = &c->vars[i];
+		ND("comparing '%s' with '%s'", v->name, name);
+		if (strncmp(v->name, name, NETMAP_CONFIG_MAXNAME) == 0)
+			return v;
+	}
+	return NULL;
+}
+
+static struct nm_conf_var *
+nm_conf_var_create(struct nm_conf *c, const char *name)
+{
+	struct nm_conf_var *v = NULL;
+
+	if (c->next_var >= c->max_vars) {
+		struct nm_conf_var *nv =
+			nm_os_realloc(c->vars, 2*c->max_vars + 1, c->max_vars);
+		if (nv == NULL)
+			return NULL;
+		c->vars = nv;
+	}
+	v = &c->vars[c->next_var];
+	c->next_var++;
+	strncpy(v->name, name, NETMAP_CONFIG_MAXNAME);
+	return v;
+}
+
+static struct nm_conf_var *
+nm_conf_var_get(struct nm_conf *c, const char *name)
+{
+	struct nm_conf_var *v = nm_conf_var_search(c, name);
+
+	if (v == NULL)
+		v = nm_conf_var_create(c, name);
+
+	return v;
+}
 
 struct _jpo
 nm_jp_error(char *pool, const char *format, ...)
@@ -684,22 +734,22 @@ nm_jp_error(char *pool, const char *format, ...)
 #undef	NM_INTERP_ERRSIZE
 }
 
-static int
-nm_jp_streq(struct _jpo r, char *pool, const char *str1)
+static char *
+nm_jp_getstr(struct _jpo r, char *pool)
 {
-	const char *str;
-
 	if (r.ty != JPO_STRING)
-		return 0;
+		return NULL;
 
-	str = jslr_get_string(pool, r);
-	return (strcmp(str1, str) == 0);
+	return jslr_get_string(pool, r);
 }
 
 static int
-nm_jp_is_dump(struct _jpo r, char *pool)
+nm_jp_streq(struct _jpo r, char *pool, const char *str1)
 {
-	return nm_jp_streq(r, pool, "dump");
+	const char *str = nm_jp_getstr(r, pool);
+	if (str == NULL)
+		return 0;
+	return (strcmp(str1, str) == 0);
 }
 
 static void
@@ -710,27 +760,67 @@ nm_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
 }
 
 static struct _jpo
-nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+nm_jp_interp_vars(struct nm_jp *jp, struct _jpo r, struct nm_conf *c, int is_dump)
 {
-	nm_jp_bracket(jp, NM_JPB_ENTER, c);
-	if (nm_jp_is_dump(r, c->pool) || jp->interp == NULL) {
-		r = jp->dump(jp, c);
-	} else {
-		r = jp->interp(jp, r, c);
+	char *str = nm_jp_getstr(r, c->pool);
+	struct nm_conf_var *v = NULL;
+	int vcmd = 0;
+
+	ND("entering with (%u, %u, %u) %s", r.ty, r.len, r.ptr, (is_dump ? "is_dump" : ""));
+	if (str && (str[0] == '?' || str[0] == '$')) {
+		vcmd = *str++;
+		ND("vcmd %c var '%s'", vcmd, str);
+		v = nm_conf_var_search(c, str);
+
+		if (v == NULL) {
+			if (vcmd == '?') {
+				v = nm_conf_var_create(c, str);
+				if (v == NULL)
+					return nm_jp_error(c->pool, "out of variables");
+			} else {
+				return nm_jp_error(c->pool, "not found: '%s'", str);
+			}
+		}
 	}
-	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
+
+	if (vcmd == '?' || jp->interp == NULL || is_dump) {
+		r = jp->dump(jp, c);
+		if (vcmd == '?') {
+			ND("setting var '%s' to (%u, %u, %u)", v->name, r.ty, r.len, r.ptr);
+			v->value = r;
+		}
+	} else {
+		if (vcmd == '$') {
+			ND("reading var '%s' got (%u, %u, %u)", v->name, v->value.ty, v->value.len, v->value.ptr);
+			r = v->value;
+		}
+		r = (is_dump ? jp->dump(jp, c) : jp->interp(jp, r, c));
+	}
 	return r;
 }
 
 static struct _jpo
 nm_jp_dump(struct nm_jp *jp, struct nm_conf *c)
 {
-	struct _jpo r;
+	struct _jpo rv;
 
 	nm_jp_bracket(jp, NM_JPB_ENTER, c);
-	r = jp->dump(jp, c);
+	rv = nm_jp_interp_vars(jp, _r_EINVAL, c, 1);
 	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
-	return r;
+
+	return rv;
+}
+
+static struct _jpo
+nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	struct _jpo rv;
+
+	nm_jp_bracket(jp, NM_JPB_ENTER, c);
+	rv = nm_jp_interp_vars(jp, r, c, 0);
+	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
+	
+	return rv;
 }
 
 static struct _jpo
@@ -750,7 +840,7 @@ static struct nm_jp_delem *
 nm_jp_dsearch(struct nm_jp_dict *d, const char *name);
 
 static struct _jpo
-nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pn, struct nm_conf *c)
+nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pi, struct _jpo *po, struct nm_conf *c)
 {
 	struct nm_jp_delem *e = NULL;
 	struct nm_jp *jp;
@@ -771,13 +861,14 @@ nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pn, struct nm_conf *c)
 		o = nm_jp_error(c->pool, "error: %d", error);
 		goto out;
 	}
-	*pn++ = jslr_new_string(c->pool, e->name);
+	*po++ = jslr_new_string(c->pool, e->name);
 	jp = e->jp;
 	nm_jp_bracket(jp, NM_JPB_ENTER, c);
 	if (jp->interp) {
-		o = jp->interp(jp, *pn, c);
-		if (o.ty == JPO_ERR)
+		o = nm_jp_interp_vars(jp, *pi, c, 0);
+		if (o.ty == JPO_ERR) {
 			goto leave_;
+		}
 		nm_jp_bracket(jp, NM_JPB_MIDDLE, c);
 	}
 	o = jp->dump(jp, c);
@@ -793,7 +884,7 @@ out:
 static struct _jpo
 nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
-	struct _jpo *po;
+	struct _jpo *pi, *po, ro;
 	int i, len, ty = r.len;
 	struct nm_jp_dict *d = (struct nm_jp_dict *)jp;
 	char *pool = c->pool;
@@ -803,47 +894,78 @@ nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		goto out;
 	}
 
-	po = jslr_get_object(c->pool, r);
-	if (po == NULL || po->ty != ty) {
+	pi = jslr_get_object(pool, r);
+	if (pi == NULL || pi->ty != ty) {
 		r = nm_jp_error(pool, "internal error");
 		goto out;
 	}
 
-	len = po->len;
-	po++;
+	len = pi->len;
+	ro = jslr_new_object(pool, len);
+	if (ro.ty == JPO_ERR) {
+		ND("len %d, creation failed", len);
+		return ro;
+	}
+	po = jslr_get_object(pool, ro);
+
+	pi++; po++; /* move to first entry */
 	for (i = 0; i < len; i++) {
 		struct _jpo r1;
-		const char *name = jslr_get_string(pool, *po);
+		const char *name = jslr_get_string(pool, *pi);
 		struct nm_jp_delem *e;
 
 		if (name == NULL) {
 			r = nm_jp_error(pool, "internal error");
 			goto out;
 		}
-		if (strcmp(name, "new") == 0) {
-			r1 = nm_jp_dnew(d, po, c);
-			po++;
+		if (name[0] == '&') {
+			struct nm_conf_var *v;
+
+			name++;
+			v = nm_conf_var_get(c, name);
+			pi++; /* move to ptr */
+			r1 = nm_jp_dnew(d, pi, po, c);
+			if (v) {
+				v->value = *po;
+			}
+			po++; /* skip name, move to ptr */
 			goto next;
+		} else if (name[0] == '$') {
+			struct nm_conf_var *v;
+			const char *new_name;
+
+			v = nm_conf_var_search(c, name + 1);
+			if (v && (new_name = jslr_get_string(pool, v->value))) {
+				ND("found '%s', replacing with '%s'", name, new_name);
+				name = new_name;
+			} else {
+				if (!v)
+					D("'%s' not found", name);
+				else
+					D("v->value = (%u, %u, %u) not a string",
+							v->value.ty, v->value.len, v->value.ptr);
+			}
 		}
 		e = nm_jp_dsearch(d, name);
 		if (e == NULL) {
-			po++;
-			r1 = nm_jp_error(pool, "%s: not found", name);
+			r1 = nm_jp_error(pool, "not found");
 			goto next;
 		}
-		po++;
-		D("found %s", name);
-		if (nm_jp_streq(*po, pool, "delete")) {
+		ND("found %s", name);
+		/* copy and skip the name */
+		*po++ = jslr_new_string(pool, name);
+		pi++;
+		if (nm_jp_streq(*pi, pool, "delete")) {
 			r1 = nm_jp_ddelete(d, e, pool);
 			goto next;
 		}
-		r1 = nm_jp_interp(e->jp, *po, c);
+		r1 = nm_jp_interp(e->jp, *pi, c);
 	next:
-		*po++ = r1;
+		*po++ = r1; pi++; /* move to next entry */
 	}
 
 out:
-	return r;
+	return ro;
 }
 
 static struct _jpo
@@ -1149,8 +1271,8 @@ nm_jp_ninterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	error = in->update(in, nv, c->cur_obj);
 	if (error)
 		r = nm_jp_error(pool, "invalid; %ld", nv);
-	r = jp->dump(jp, c);
 done:
+	r = jp->dump(jp, c);
 	return r;
 }
 
