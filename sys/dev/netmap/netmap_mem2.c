@@ -1719,6 +1719,8 @@ NM_JPO_CLASS_DECL(objpool, struct netmap_obj_pool);
 	NM_JPO_RONUM(objpool, memtotal);
 	NM_JPO_RONUM(objpool, numclusters);
 	NM_JPO_RONUM(objpool, objfree);
+	NM_JPO_RONUM(objpool, _objsize);
+	NM_JPO_RONUM(objpool, _clustsize);
 NM_JPO_CLASS_END(objpool);
 
 NM_JPO_CLASS_DECL(mparams, struct netmap_obj_params);
