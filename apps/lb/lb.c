@@ -578,7 +578,6 @@ run:
 				uint32_t free_buf;
 
 				// Move the packet to the output pipe.
-			retry:
 				if (nm_ring_space(ring)) {
 					struct netmap_slot *ts = &ring->slot[ring->cur];
 					free_buf = ts->buf_idx;
@@ -589,17 +588,6 @@ run:
 					port->ctr.pkts++;
 					forwarded++;
 					goto forward;
-				}
-
-				/* try to push packets down to free some space
-				 * in the pipe (no more than once per loop on
-				 * the same pipe, to make sure that there is a
-				 * reasonable amount of time between syncs)
-				 */
-				if (port->last_sync != iter) {
-					port->last_sync = iter;
-					ioctl(port->nmd->fd, NIOCTXSYNC, NULL);
-					goto retry;
 				}
 
 				/* use the overflow queue, if available */
