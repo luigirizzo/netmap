@@ -1,9 +1,11 @@
 #!/usr/bin/env python
+# Copyright (C) 2013-2015, Vincenzo Maffione
 
 import netmap
 import time
 import struct
 import select
+import argparse     # program argument parsing
 
 
 def build_packet():
@@ -12,13 +14,28 @@ def build_packet():
 
 
 ############################## MAIN ###########################
+
+parser = argparse.ArgumentParser(description = 'Minimal, high-performance packet '\
+                                               'generator written in Python using '\
+                                               'the netmap API',
+                                 epilog = 'Press Ctrl-C to stop')
+parser.add_argument('-i', '--interface', help = 'the interface to register with netmap; '
+                    'can be in the form <OSNAME> or <VALENAME>, where '
+                    'OSNAME is the O.S. name for a network interface (e.g. "eth0"), '
+                    '<VALENAME> is a valid VALE port name (e.g. "vale18:2")',
+                    default = 'vale0:0')
+
+args = parser.parse_args()
+
 pkt = build_packet()
+
+print("Opening interface %s" % (args.interface))
 
 # open the netmap device and register an interface
 nm = netmap.Netmap()
 nm.open()
 nfd = nm.getfd()
-nm.if_name = 'vale:1'
+nm.if_name = args.interface
 nm.register()
 time.sleep(1)
 
@@ -29,6 +46,7 @@ for i in range(num_slots):
     txr.slots[i].buf[0:len(pkt)] = pkt
     txr.slots[i].len = len(pkt)
 
+print("Starting transmission, press Ctrl-C to stop")
 
 # transmit at maximum speed until Ctr-C is pressed
 cnt = 0         # packet counter
@@ -58,6 +76,12 @@ except KeyboardInterrupt:
     pass
 t_end = time.time()
 
-print("\nPackets sent: %s, Avg rate %s Kpps" % (cnt, 0.001 * cnt / (t_end - t_start)))
+rate = 0.001 * cnt / (t_end - t_start)
+unit = 'K'
+if rate > 1000:
+    rate /= 1000.0
+    unit = 'M'
+
+print("\nPackets sent: %s, Avg rate %6.3f %spps" % (cnt, rate, unit))
 
 nm.close()

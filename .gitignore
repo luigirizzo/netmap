@@ -57,3 +57,4 @@ LINUX/veth.c
 *.sdf
 *.opensdf
 *~
+cscope.out

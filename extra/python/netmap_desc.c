@@ -44,6 +44,7 @@ NetmapDesc_dealloc(NetmapDesc* self)
 
     if (self->nmd) {
         nm_close(self->nmd);
+        self->nmd = NULL;
     }
     self->ob_type->tp_free((PyObject*)self);
 }
@@ -171,6 +172,24 @@ static PyGetSetDef NetmapDesc_getseters[] = {
 /*########################## NetmapDesc methods ########################*/
 
 static PyObject *
+NetmapDesc_enter(NetmapDesc *self)
+{
+    Py_INCREF(self);
+    return (PyObject *)self;
+}
+
+static PyObject *
+NetmapDesc_exit(NetmapDesc *self, PyObject *args)
+{
+    if (self->nmd) {
+        nm_close(self->nmd);
+        self->nmd = NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyObject *
 NetmapDesc_xxsync(NetmapDesc *self, int iocmd)
 {
     int ret;
@@ -217,6 +236,12 @@ NetmapDesc_getflags(NetmapDesc *self)
 
 /* A container for the netmap methods. */
 static PyMethodDef NetmapDesc_methods[] = {
+    {"__enter__", (PyCFunction)NetmapDesc_enter, METH_NOARGS,
+        "__enter__ implementation to support with statement"
+    },
+    {"__exit__", (PyCFunction)NetmapDesc_exit, METH_VARARGS,
+        "__exit__ implementation to support with statement"
+    },
     {"txsync", (PyCFunction)NetmapDesc_txsync, METH_NOARGS,
         "Do a txsync on the registered rings"
     },

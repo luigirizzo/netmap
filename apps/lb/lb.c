@@ -561,23 +561,23 @@ run:
 			while (!nm_ring_empty(rxring)) {
 				struct overflow_queue *q;
 				struct netmap_slot *rs = next_slot;
-				next_cur = nm_ring_next(rxring, next_cur);
-				next_slot = &rxring->slot[next_cur];
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
-				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
-				__builtin_prefetch(next_buf);
-				// 'B' is just a hashing seed
 				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
 				if (hash == 0)
 					non_ip++; // XXX ??
+				// prefetch the buffer for the next round
+				next_cur = nm_ring_next(rxring, next_cur);
+				next_slot = &rxring->slot[next_cur];
+				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
+				__builtin_prefetch(next_buf);
+				// 'B' is just a hashing seed
 				uint32_t output_port = hash % glob_arg.output_rings;
 				struct port_des *port = &ports[output_port];
 				struct netmap_ring *ring = port->ring;
 				uint32_t free_buf;
 
 				// Move the packet to the output pipe.
-			retry:
 				if (nm_ring_space(ring)) {
 					struct netmap_slot *ts = &ring->slot[ring->cur];
 					free_buf = ts->buf_idx;
@@ -588,17 +588,6 @@ run:
 					port->ctr.pkts++;
 					forwarded++;
 					goto forward;
-				}
-
-				/* try to push packets down to free some space
-				 * in the pipe (no more than once per loop on
-				 * the same pipe, to make sure that there is a
-				 * reasonable amount of time between syncs)
-				 */
-				if (port->last_sync != iter) {
-					port->last_sync = iter;
-					ioctl(port->nmd->fd, NIOCTXSYNC, NULL);
-					goto retry;
 				}
 
 				/* use the overflow queue, if available */

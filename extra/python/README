@@ -95,6 +95,7 @@ language.
 
                 to see the available options.
 
-        (5.2) tx.py - An example packet generator using the lower level
-                      Python netmap bindings.
+        (5.2) tx.py - An minimal packet generator using the lower level
+                      Python netmap bindings, it is able to transmit
+                      more than 20 Mpps.
 

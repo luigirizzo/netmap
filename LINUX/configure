@@ -831,7 +831,7 @@ add_test 'have RX_HANDLER_RESULT' <<-EOF
 	#include <linux/netdevice.h>
 
 
-	static rx_handler_result_t dummy_rx_handler(struct sk_buf **pm)
+	static rx_handler_result_t dummy_rx_handler(struct sk_buff **pm)
 	{
 	        (void)pm;
 	        return RX_HANDLER_PASS;
