@@ -1270,9 +1270,10 @@ nm_jp_ninterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	}
 	error = in->update(in, nv, c->cur_obj);
 	if (error)
-		r = nm_jp_error(pool, "invalid; %ld", nv);
+		r = nm_jp_error(pool, "invalid: %ld (error: %d)", nv, error);
+	else
+		r = jp->dump(jp, c);
 done:
-	r = jp->dump(jp, c);
 	return r;
 }
 
