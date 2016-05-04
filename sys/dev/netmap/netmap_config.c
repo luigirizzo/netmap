@@ -947,8 +947,7 @@ nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			}
 		}
 		/* copy and skip the name */
-		*po++ = jslr_new_string(pool, name);
-		pi++;
+		*po++ = *pi++;
 		e = nm_jp_dsearch(d, name);
 		if (e == NULL) {
 			r1 = nm_jp_error(pool, "not found");
