@@ -946,15 +946,15 @@ nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 							v->value.ty, v->value.len, v->value.ptr);
 			}
 		}
+		/* copy and skip the name */
+		*po++ = jslr_new_string(pool, name);
+		pi++;
 		e = nm_jp_dsearch(d, name);
 		if (e == NULL) {
 			r1 = nm_jp_error(pool, "not found");
 			goto next;
 		}
 		ND("found %s", name);
-		/* copy and skip the name */
-		*po++ = jslr_new_string(pool, name);
-		pi++;
 		if (nm_jp_streq(*pi, pool, "delete")) {
 			r1 = nm_jp_ddelete(d, e, pool);
 			goto next;
