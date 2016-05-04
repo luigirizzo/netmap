@@ -384,6 +384,11 @@ void nm_jp_pinit(struct nm_jp_ptr *, struct nm_jp *type,
 struct _jpo nm_jp_pinterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_pdump(struct nm_jp *, struct nm_conf *);
 
+/* special */
+struct nm_jp_special {
+	struct nm_jp up;
+};
+
 extern struct nm_jp_dict nm_jp_root;
 extern struct nm_jp_dict nm_jp_ports;
 
@@ -414,6 +419,15 @@ static const struct nm_jp_delem nm_jp_##p##_flist_##f NM_JPO_SEC(p) = {	\
 	.name = #f,					\
 	.jp = &NM_JPO_FIELD(p, f).up			\
 }
+#define NM_JPO_SPECIAL(p, f, i, d, b)			\
+static struct nm_jp_special NM_JPO_FIELD(p, f) = {	\
+	.up = {						\
+		.interp = i,				\
+		.dump   = d,				\
+		.bracket = b				\
+	}						\
+};							\
+NM_JPO_FIELD_DECL(p, f)
 #define NM_JPO_NUM(p, f, sz, rd, wr)			\
 static struct nm_jp_num NM_JPO_FIELD(p, f) = {		\
 	.up = {						\

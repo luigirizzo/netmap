@@ -2697,41 +2697,52 @@ enum txrx tx, int flags)
 #endif
 
 #ifdef WITH_NMCONF
-static int64_t
-nm_jp_memid_read(struct nm_jp_num *in, void *obj)
+static struct _jpo
+nm_jp_memid_dump(struct nm_jp *jp, struct nm_conf *c)
 {
-	struct netmap_adapter *na = obj;
-	uint16_t memid;
+	struct netmap_adapter *na = c->cur_obj;
+	uint16_t memid = 0, w;
 
-	if (na->nm_mem == NULL)
-		return 0;
-	if (netmap_mem_get_info(na->nm_mem, NULL, NULL, &memid))
-		return 0;
-	return memid;
+	if (na->nm_mem && !netmap_mem_get_info(na->nm_mem, NULL, NULL, &w)) {
+		memid = w;
+	}
+	return jslr_new_string(c->pool, "%u", memid);
 }
 
-static int
-nm_jp_memid_update(struct nm_jp_num *in, int64_t id, void *obj)
+static struct _jpo
+nm_jp_memid_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
-	struct netmap_adapter *na = obj;
+	struct netmap_adapter *na = c->cur_obj;
+	const char *_memid;
+	long memid;
 	struct netmap_mem_d *newmem;
 
-	if (na->active_fds > 0)
-		return EBUSY;
+	if (r.ty != JPO_STRING)
+		return nm_jp_error(c->pool, "need string");
 
-	newmem = netmap_mem_find(id);
+	if (na->active_fds > 0)
+		return nm_jp_error(c->pool, "busy");
+
+	_memid = jslr_get_string(c->pool, r);
+	if (_memid == NULL)
+		return nm_jp_error(c->pool, "internal error");
+	if (kstrtol(_memid, 10, &memid))
+		return nm_jp_error(c->pool, "invalid format");
+	if (memid >= (1U << 16))
+		return nm_jp_error(c->pool, "out of range");
+	newmem = netmap_mem_find(memid);
 	if (newmem == NULL)
-		return ENOENT;
+		return nm_jp_error(c->pool, "not found");
 	if (newmem != na->nm_mem) {
 		netmap_mem_put(na->nm_mem);
 		netmap_mem_get(newmem);
 		na->nm_mem = newmem;
 	}
-	return 0;
+	return jp->dump(jp, c);
 }
 
 NM_JPO_CLASS_DECL(port, struct netmap_adapter);
-	NM_JPO_NUM(port, memid, 0, nm_jp_memid_read, nm_jp_memid_update);
+	NM_JPO_SPECIAL(port, memid, nm_jp_memid_interp, nm_jp_memid_dump, NULL);
 	NM_JPO_RONUM(port, num_tx_rings);
 	NM_JPO_RONUM(port, num_rx_rings);
 	NM_JPO_RONUM(port, num_tx_desc);
