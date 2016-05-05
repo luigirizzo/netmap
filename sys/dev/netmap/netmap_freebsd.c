@@ -133,6 +133,17 @@ nm_os_put_module(void)
 	netmap_use_count--;
 }
 
+int
+nm_os_strtol(const char *s, unsigned int base, long *res)
+{
+	char *endptr;
+
+	*res = strtol(s, &endptr, (int)base);
+	if (*s != '\0' && *endptr != '\0')
+		return EINVAL;
+	return 0;	
+}
+
 static void
 netmap_ifnet_arrival_handler(void *arg __unused, struct ifnet *ifp)
 {
@@ -1448,8 +1459,8 @@ freebsd_netmap_read(struct cdev *dev __unused, struct uio *uio, int ioflag __unu
 	error = devfs_get_cdevpriv((void **)&priv);
 	if (error)
 		return error;
-	D("");
-	return 0;
+
+	return nm_conf_read(&priv->conf, uio);
 }
 
 static int
@@ -1461,8 +1472,8 @@ freebsd_netmap_write(struct cdev *dev __unused, struct uio *uio, int ioflag __un
 	error = devfs_get_cdevpriv((void **)&priv);
 	if (error)
 		return error;
-	D("");
-	return 0;
+
+	return nm_conf_write(&priv->conf, uio);
 }
 
 #endif /* WITH_NMCONF */

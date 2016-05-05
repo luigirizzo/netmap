@@ -82,6 +82,8 @@
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
 #define __user
 
+#define container_of(ptr, type, member)	((type *)((char *)ptr - offsetof(type, member)))
+
 #define	NM_LOCK_T	struct mtx	/* low level spinlock, used to protect queues */
 
 #define NM_MTX_T	struct sx	/* OS-specific mutex (sleepable) */
@@ -498,6 +500,9 @@ void netmap_undo_zombie(struct ifnet *);
 void *nm_os_malloc(size_t);
 void *nm_os_realloc(void *, size_t new_size, size_t old_size);
 void nm_os_free(void *);
+
+/* os independent string to long */
+int nm_os_strtol(const char *s, unsigned int base, long *res);
 
 /* passes a packet up to the host stack.
  * If the packet is sent (or dropped) immediately it returns NULL,

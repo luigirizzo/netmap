@@ -1197,7 +1197,7 @@ nm_jp_ngetvar(struct nm_jp_num *in, void *cur_obj)
 {
 	void *base;
 	if (in->size & NM_JP_NUM_REL)
-		base = cur_obj + (size_t)in->var;
+		base = (void *)((char *)cur_obj + (size_t)in->var);
 	else
 		base = in->var;
 
@@ -1223,7 +1223,7 @@ nm_jp_nupdate(struct nm_jp_num *in, int64_t v, void *cur_obj)
 {
 	void *base;
 	if (in->size & NM_JP_NUM_REL)
-		base = cur_obj + (size_t)in->var;
+		base = (void *)((char *)cur_obj + (size_t)in->var);
 	else
 		base = in->var;
 
@@ -1302,7 +1302,7 @@ nm_jp_pnewcurobj(struct nm_jp_ptr *p, void *cur_obj)
 	void *obj;
 
 	if (p->flags & NM_JP_PTR_REL)
-		obj = cur_obj + (size_t)p->arg;
+		obj = (void *)((char *)cur_obj + (size_t)p->arg);
 	else
 		obj = p->arg;
 	if (p->flags & NM_JP_PTR_IND) {

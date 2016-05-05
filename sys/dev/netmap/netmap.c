@@ -2726,7 +2726,7 @@ nm_jp_memid_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		const char *_memid = jslr_get_string(c->pool, r);
 		if (_memid == NULL)
 			return nm_jp_error(c->pool, "internal error");
-		if (kstrtol(_memid, 10, &memid))
+		if (nm_os_strtol(_memid, 10, &memid))
 			return nm_jp_error(c->pool, "invalid format");
 	} else {
 		memid = jslr_get_num(c->pool, r);
