@@ -2713,21 +2713,24 @@ static struct _jpo
 nm_jp_memid_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
 	struct netmap_adapter *na = c->cur_obj;
-	const char *_memid;
 	long memid;
 	struct netmap_mem_d *newmem;
 
-	if (r.ty != JPO_STRING)
-		return nm_jp_error(c->pool, "need string");
+	if (r.ty != JPO_STRING && r.ty != JPO_NUM)
+		return nm_jp_error(c->pool, "need number or string");
 
 	if (na->active_fds > 0)
 		return nm_jp_error(c->pool, "busy");
 
-	_memid = jslr_get_string(c->pool, r);
-	if (_memid == NULL)
-		return nm_jp_error(c->pool, "internal error");
-	if (kstrtol(_memid, 10, &memid))
-		return nm_jp_error(c->pool, "invalid format");
+	if (r.ty == JPO_STRING) {
+		const char *_memid = jslr_get_string(c->pool, r);
+		if (_memid == NULL)
+			return nm_jp_error(c->pool, "internal error");
+		if (kstrtol(_memid, 10, &memid))
+			return nm_jp_error(c->pool, "invalid format");
+	} else {
+		memid = jslr_get_num(c->pool, r);
+	}
 	if (memid >= (1U << 16))
 		return nm_jp_error(c->pool, "out of range");
 	newmem = netmap_mem_find(memid);
