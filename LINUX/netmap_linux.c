@@ -91,6 +91,12 @@ nm_os_put_module(void)
 	module_put(THIS_MODULE);
 }
 
+int
+nm_os_strtol(const char *s, unsigned int base, long *res)
+{
+	return kstrtol(s, base, res);
+}
+
 /* Register for a notification on device removal */
 static int
 linux_netmap_notifier_cb(struct notifier_block *b,
