@@ -1491,25 +1491,6 @@ static int netmap_mem_jp_init(struct netmap_mem_d *);
 static void netmap_mem_jp_uninit(struct netmap_mem_d *);
 #endif
 
-static void
-netmap_mem_private_delete(struct netmap_mem_d *nmd)
-{
-	if (nmd == NULL)
-		return;
-	if (netmap_verbose)
-		D("deleting %p", nmd);
-	if (nmd->active > 0)
-		D("bug: deleting mem allocator with active=%d!", nmd->active);
-#ifdef WITH_NMCONF
-	netmap_mem_jp_uninit(nmd);
-#endif
-	nm_mem_release_id(nmd);
-	if (netmap_verbose)
-		D("done deleting %p", nmd);
-	NMA_LOCK_DESTROY(nmd);
-	nm_os_free(nmd);
-}
-
 /*
  * allocator for private memory
  */
@@ -1551,7 +1532,7 @@ _netmap_mem_private_new(struct netmap_obj_params *p, int *perr)
 	return d;
 
 error:
-	netmap_mem_private_delete(d);
+	netmap_mem_delete(d);
 	if (perr)
 		*perr = err;
 	return NULL;
@@ -1622,7 +1603,7 @@ netmap_mem_private_new(u_int txr, u_int txd, u_int rxr, u_int rxd,
 
 	return d;
 error:
-	netmap_mem_private_delete(d);
+	netmap_mem_delete(d);
 	if (perr)
 		*perr = err;
 	return NULL;
@@ -1701,6 +1682,7 @@ netmap_mem2_delete(struct netmap_mem_d *nmd)
 {
 	int i;
 
+	nm_mem_release_id(nmd);
 #ifdef WITH_NMCONF
 	netmap_mem_jp_uninit(nmd);
 #endif
@@ -1708,7 +1690,9 @@ netmap_mem2_delete(struct netmap_mem_d *nmd)
 	    netmap_destroy_obj_allocator(&nm_mem.pools[i]);
 	}
 
-	NMA_LOCK_DESTROY(&nm_mem);
+	NMA_LOCK_DESTROY(nmd);
+	if (nmd != &nm_mem)
+		nm_os_free(nmd);
 }
 
 #ifdef WITH_NMCONF
