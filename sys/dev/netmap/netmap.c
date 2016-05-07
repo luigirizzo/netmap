@@ -2819,6 +2819,7 @@ NM_JPO_CLASS_DECL(port, struct netmap_adapter);
 	NM_JPO_RONUM(port, num_rx_rings);
 	NM_JPO_RONUM(port, num_tx_desc);
 	NM_JPO_RONUM(port, num_rx_desc);
+	NM_JPO_RONUM(port, active_fds);
 NM_JPO_CLASS_END(port);
 #endif
 
