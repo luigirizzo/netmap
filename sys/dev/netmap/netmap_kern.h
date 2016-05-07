@@ -332,6 +332,7 @@ struct nm_jp_delem {
 struct nm_jp_dict {
 	struct nm_jp up;
 	struct nm_jp_delem *list;
+	struct nm_jp_dict *parent;
 	u_int minelem;
 	u_int nelem;
 	u_int nextfree;
@@ -402,8 +403,16 @@ extern struct nm_jp_dict nm_jp_ports;
 #define NM_JPO_FIELD(p, f)	nm_jp_##p##_field_##f
 #define NM_JPO_SEC(p)					\
 	__attribute__((__section__(".nm_jpo"), aligned(sizeof(void *)), used))
+#define NM_JPO_DERIVED_CLASS_DECL(p, st, b)		\
+	extern struct nm_jp_dict NM_JPO_CLASS(b);	\
+	struct nm_jp_dict NM_JPO_CLASS(p) = {		\
+		.parent = &NM_JPO_CLASS(b),		\
+	};						\
+	_NM_JPO_CLASS_DECL(st, p)
 #define NM_JPO_CLASS_DECL(p, st)			\
-	static struct nm_jp_dict NM_JPO_CLASS(p);	\
+	struct nm_jp_dict NM_JPO_CLASS(p);		\
+	_NM_JPO_CLASS_DECL(st, p)
+#define _NM_JPO_CLASS_DECL(st, p)			\
 	typedef st NM_JPO_TYPE(p);			\
 	static const struct nm_jp_delem NM_JPO_START(p) NM_JPO_SEC(p) = { \
 		.name = "m1 "#p				\

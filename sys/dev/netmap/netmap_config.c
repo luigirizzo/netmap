@@ -985,12 +985,23 @@ out:
 	return ro;
 }
 
+static int
+nm_jp_dgetlen(struct nm_jp_dict *d)
+{
+	int rv = 0;
+	do {
+		rv += d->nextfree;
+		d = d->parent;
+	} while (d);
+	return rv;
+}
+
 static struct _jpo
 nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
 {
 	struct _jpo *po, r;
 	struct nm_jp_dict *d = (struct nm_jp_dict *)jp;
-	int i, len = d->nextfree;
+	int i, len = nm_jp_dgetlen(d);
 	char *pool = c->pool;
 
 	r = jslr_new_object(pool, len);
@@ -998,17 +1009,20 @@ nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
 		return r;
 	po = jslr_get_object(pool, r);
 	po++;
-	for (i = 0; i < len; i++) {
-		struct nm_jp_delem *e = &d->list[i];
-		*po = jslr_new_string(pool, e->name);
-		if (po->ty == JPO_ERR)
-			return *po;
-		po++;
-		*po = nm_jp_dump(e->jp, c);
-		if (po->ty == JPO_ERR)
-			return *po;
-		po++;
-	}
+	do {
+		for (i = 0; i < d->nextfree; i++) {
+			struct nm_jp_delem *e = &d->list[i];
+			*po = jslr_new_string(pool, e->name);
+			if (po->ty == JPO_ERR)
+				return *po;
+			po++;
+			*po = nm_jp_dump(e->jp, c);
+			if (po->ty == JPO_ERR)
+				return *po;
+			po++;
+		}
+		d = d->parent;
+	} while (d);
 	return r;
 }
 
@@ -1205,8 +1219,11 @@ nm_jp_dsearch(struct nm_jp_dict *d, const char *name)
 		if (strncmp(name, e->name, NETMAP_CONFIG_MAXNAME) == 0)
 			break;
 	}
-	if (i == d->nextfree)
+	if (i == d->nextfree) {
+		if (d->parent)
+			return nm_jp_dsearch(d->parent, name);
 		return NULL;
+	}
 	return &d->list[i];
 }
 

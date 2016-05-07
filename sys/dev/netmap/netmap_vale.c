@@ -2090,6 +2090,14 @@ netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na)
 	return 0;
 }
 
+#ifdef WITH_NMCONF
+NM_JPO_DERIVED_CLASS_DECL(vp, struct netmap_vp_adapter, port);
+	NM_JPO_RONUM(vp, bdg_port);
+	NM_JPO_RONUM(vp, mfs);
+NM_JPO_CLASS_END(vp);
+#endif /* WITH_NMCONF */
+
+
 /* create a netmap_vp_adapter that describes a VALE port.
  * Only persistent VALE ports have a non-null ifp.
  */
@@ -2163,6 +2171,9 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 	error = netmap_attach_common(na);
 	if (error)
 		goto err;
+#ifdef WITH_NMCONF
+	NM_JPO_OBJ_INIT(vp, na);
+#endif
 	*ret = vpna;
 	return 0;
 
@@ -2724,6 +2735,9 @@ netmap_uninit_bridges2(struct nm_bridge *b, u_int n)
 int
 netmap_init_bridges(void)
 {
+#ifdef WITH_NMCONF
+	NM_JPO_CLASS_INIT(vp);
+#endif
 #ifdef CONFIG_NET_NS
 	return netmap_bns_register();
 #else
@@ -2743,4 +2757,5 @@ netmap_uninit_bridges(void)
 	netmap_uninit_bridges2(nm_bridges, NM_BRIDGES);
 #endif
 }
+
 #endif /* WITH_VALE */
