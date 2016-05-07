@@ -2095,6 +2095,10 @@ NM_JPO_DERIVED_CLASS_DECL(vp, struct netmap_vp_adapter, port);
 	NM_JPO_RONUM(vp, bdg_port);
 	NM_JPO_RONUM(vp, mfs);
 NM_JPO_CLASS_END(vp);
+
+NM_JPO_DERIVED_CLASS_DECL(bwrap, struct netmap_bwrap_adapter, vp);
+	NM_JPO_STRUCT(bwrap, host, vp, host);
+NM_JPO_CLASS_END(bwrap);
 #endif /* WITH_NMCONF */
 
 
@@ -2695,6 +2699,9 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		goto err_free;
 	}
 	hwna->na_flags |= NAF_BUSY;
+#ifdef WITH_NMCONF
+	NM_JPO_OBJ_INIT(bwrap, na);
+#endif
 	return 0;
 
 err_free:
@@ -2737,6 +2744,7 @@ netmap_init_bridges(void)
 {
 #ifdef WITH_NMCONF
 	NM_JPO_CLASS_INIT(vp);
+	NM_JPO_CLASS_INIT(bwrap);
 #endif
 #ifdef CONFIG_NET_NS
 	return netmap_bns_register();
