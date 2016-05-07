@@ -48,7 +48,7 @@ clean-$(1):
 endef
 
 
-all: $(S_DRIVERS:%=get-%)
+all: netmap_version.h $(S_DRIVERS:%=get-%)
 	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)" \
 		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
 
@@ -108,6 +108,11 @@ distclean: clean
 	rm -f config.status config.log netmap_linux_config.h \
 		patches drivers.mak Kbuild netmap.mak
 	rm -rf netmap-tmpdir
+	rm -f gen-version netmap_version.h
 	if [ -L Makefile ]; then rm Makefile; fi
 	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
 	rm -rf build-apps
+
+.PHONY: netmap_version.h
+netmap_version.h:
+		./gen-version

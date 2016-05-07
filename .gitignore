@@ -59,3 +59,5 @@ LINUX/veth.c
 *~
 cscope.out
 config.status
+netmap_version.h
+netmap_version.h.tmp

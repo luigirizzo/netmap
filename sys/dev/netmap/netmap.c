@@ -3401,9 +3401,21 @@ netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 }
 
 #ifdef WITH_NMCONF
+#include <netmap_version.h>
+
 struct nm_jp_dict nm_jp_root;
 struct nm_jp_dict nm_jp_ports;
+
+static struct _jpo
+nm_jp_version_dump(struct nm_jp *jp, struct nm_conf *c)
+{
+	return jslr_new_string(c->pool, NETMAP_VERSION);
+}
 #endif /* WITH_NMCONF */
+
+struct nm_jp nm_jp_version = {
+	.dump = nm_jp_version_dump
+};
 
 
 /*
@@ -3453,6 +3465,7 @@ netmap_init(void)
 	if (error)
 		goto fail;
 	nm_jp_dadd(&nm_jp_root, &nm_jp_ports.up, "port");
+	nm_jp_dadd(&nm_jp_root, &nm_jp_version, "version");
 	NM_JPO_CLASS_INIT(port);
 #endif /* WITH_NMCONF */
 

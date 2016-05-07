@@ -22,7 +22,12 @@ SRCS	+= netmap_pipe.c
 SRCS	+= netmap_monitor.c
 SRCS	+= ptnetmap.c
 SRCS	+= if_ptnet.c
-SRCS	+= netmap_config.c jsonlr.c jsonlr.h
+SRCS	+= netmap_config.c jsonlr.c netmap_version.h
 SRCS	+= opt_inet.h opt_inet6.h
+
+netmap_version.h: FORCE
+	./gen-version
+
+FORCE:
 
 .include <bsd.kmod.mk>
