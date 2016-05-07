@@ -2744,8 +2744,77 @@ nm_jp_memid_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	return jp->dump(jp, c);
 }
 
+static struct _jpo
+nm_jp_flags_dump(struct nm_jp *ip, struct nm_conf *c)
+{
+	struct netmap_adapter *na = c->cur_obj;
+	uint32_t f, flags;
+	struct _jpo r, *po;
+	char *pool = c->pool;
+	int len = 0;
+
+	for (flags = na->na_flags; flags; flags >>= 1)
+		if (flags & 1)
+			len++;
+	r = jslr_new_array(pool, len);
+	if (r.ty == JPO_ERR)
+		return r;
+	po = jslr_get_array(pool, r);
+	po++;
+	for (flags = na->na_flags, f = 1U; flags; flags &= ~f, f <<= 1) {
+		const char *fs;
+
+		if (!(flags & f))
+			continue;
+		switch (f) {
+		case NAF_SKIP_INTR:
+			fs = "skip-intr";
+			break;
+		case NAF_SW_ONLY:
+			fs = "sw-only";
+			break;
+		case NAF_BDG_MAYSLEEP:
+			fs = "bdg-maysleep";
+			break;
+		case NAF_MEM_OWNER:
+			fs = "mem-owner";
+			break;
+		case NAF_NATIVE:
+			fs = "native";
+			break;
+		case NAF_NETMAP_ON:
+			fs = "netmap-on";
+			break;
+		case NAF_HOST_RINGS:
+			fs = "host-rings";
+			break;
+		case NAF_FORCE_NATIVE:
+			fs = "force-native";
+			break;
+		case NAF_PTNETMAP_HOST:
+			fs = "ptnemtap-host";
+			break;
+		case NAF_ZOMBIE:
+			fs = "zombie";
+			break;
+		case NAF_BUSY:
+			fs = "busy";
+			break;
+		default:
+			fs = "unknown";
+			break;
+		}
+		*po = jslr_new_string(pool, fs);
+		if (po->ty == JPO_ERR)
+			break;
+		po++;
+	}
+	return r;
+}
+
 NM_JPO_CLASS_DECL(port, struct netmap_adapter);
 	NM_JPO_SPECIAL(port, memid, nm_jp_memid_interp, nm_jp_memid_dump, NULL);
+	NM_JPO_SPECIAL(port, flags, NULL, nm_jp_flags_dump, NULL);
 	NM_JPO_RONUM(port, num_tx_rings);
 	NM_JPO_RONUM(port, num_rx_rings);
 	NM_JPO_RONUM(port, num_tx_desc);
