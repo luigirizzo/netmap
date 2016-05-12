@@ -1365,7 +1365,6 @@ int netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	uint16_t ringid, uint32_t flags);
 void netmap_do_unregif(struct netmap_priv_d *priv);
 
-
 u_int nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg);
 int netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 		  struct ifnet **ifp, int create);
