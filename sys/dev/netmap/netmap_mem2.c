@@ -2336,6 +2336,9 @@ netmap_mem_pt_guest_delete(struct netmap_mem_d *nmd)
 		D("deleting %p", nmd);
 	if (nmd->active > 0)
 		D("bug: deleting mem allocator with active=%d!", nmd->active);
+#ifdef WITH_NMCONF
+	netmap_mem_jp_uninit(nmd);
+#endif
 	nm_mem_release_id(nmd);
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
@@ -2498,6 +2501,12 @@ netmap_mem_pt_guest_create(nm_memid_t host_id)
 	ptnmd->up.flags |= NETMAP_MEM_IO;
 
 	NMA_LOCK_INIT(&ptnmd->up);
+
+#ifdef WITH_NMCONF
+	err = netmap_mem_jp_init(&ptnmd->up);
+	if (err)
+		goto error;
+#endif
 
 	return &ptnmd->up;
 error:
