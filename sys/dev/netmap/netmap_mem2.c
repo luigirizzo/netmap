@@ -2502,6 +2502,8 @@ netmap_mem_pt_guest_create(nm_memid_t host_id)
 
 	NMA_LOCK_INIT(&ptnmd->up);
 
+	snprintf(ptnmd->up.name, NM_MEM_NAMESZ, "%d", ptnmd->up.nm_id);
+
 #ifdef WITH_NMCONF
 	err = netmap_mem_jp_init(&ptnmd->up);
 	if (err)
