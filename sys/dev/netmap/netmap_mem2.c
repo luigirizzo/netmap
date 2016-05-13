@@ -2360,8 +2360,8 @@ netmap_mem_pt_guest_if_new(struct netmap_adapter *na)
 
 	nifp = (struct netmap_if *)((char *)(ptnmd->nm_addr) +
 				    ptif->nifp_offset);
-	NMA_UNLOCK(na->nm_mem);
 out:
+	NMA_UNLOCK(na->nm_mem);
 	return nifp;
 }
 
