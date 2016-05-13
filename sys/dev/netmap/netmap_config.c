@@ -735,7 +735,7 @@ nm_jp_error(char *pool, const char *format, ...)
 }
 
 static char *
-nm_jp_getstr(struct _jpo r, char *pool)
+nm_jp_getstr(struct _jpo r, const char *pool)
 {
 	if (r.ty != JPO_STRING)
 		return NULL;
@@ -744,7 +744,7 @@ nm_jp_getstr(struct _jpo r, char *pool)
 }
 
 static int
-nm_jp_streq(struct _jpo r, char *pool, const char *str1)
+nm_jp_streq(struct _jpo r, const char *pool, const char *str1)
 {
 	const char *str = nm_jp_getstr(r, pool);
 	if (str == NULL)
