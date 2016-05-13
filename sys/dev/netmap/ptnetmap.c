@@ -1225,6 +1225,9 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
     pth_na->up.na_flags |= NAF_HOST_RINGS;
 
+    strncpy(pth_na->up.name, parent->name, sizeof(pth_na->up.name));
+    strcat(pth_na->up.name, "-PTN");
+
     error = netmap_attach_common(&pth_na->up);
     if (error) {
         D("ERROR netmap_attach_common()");
@@ -1236,9 +1239,6 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
     /* set parent busy, because attached for ptnetmap */
     parent->na_flags |= NAF_BUSY;
-
-    strncpy(pth_na->up.name, parent->name, sizeof(pth_na->up.name));
-    strcat(pth_na->up.name, "-PTN");
 
     DBG(D("%s ptnetmap request DONE", pth_na->up.name));
 
