@@ -2792,7 +2792,7 @@ nm_jp_flags_dump(struct nm_jp *ip, struct nm_conf *c)
 			fs = "force-native";
 			break;
 		case NAF_PTNETMAP_HOST:
-			fs = "ptnemtap-host";
+			fs = "ptnetmap-host";
 			break;
 		case NAF_ZOMBIE:
 			fs = "zombie";
