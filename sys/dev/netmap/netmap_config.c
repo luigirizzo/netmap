@@ -759,54 +759,55 @@ nm_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
 		jp->bracket(jp, stage, c);
 }
 
-static struct _jpo
-nm_jp_interp_vars(struct nm_jp *jp, struct _jpo r, struct nm_conf *c, int is_dump)
+static int
+nm_jp_parse_var(struct _jpo *r, struct nm_conf *c, struct nm_conf_var **v)
 {
-	char *str = nm_jp_getstr(r, c->pool);
-	struct nm_conf_var *v = NULL;
+	char *str = nm_jp_getstr(*r, c->pool);
 	int vcmd = 0;
 
-	ND("entering with (%u, %u, %u) %s", r.ty, r.len, r.ptr, (is_dump ? "is_dump" : ""));
-	if (str && (str[0] == '?' || str[0] == '$')) {
-		vcmd = *str++;
-		ND("vcmd %c var '%s'", vcmd, str);
-		v = nm_conf_var_search(c, str);
+	if (str == NULL || (str[0] != '?' && str[0] != '$'))
+		return 0;
 
-		if (v == NULL) {
-			if (vcmd == '?') {
-				v = nm_conf_var_create(c, str);
-				if (v == NULL)
-					return nm_jp_error(c->pool, "out of variables");
-			} else {
-				return nm_jp_error(c->pool, "not found: '%s'", str);
+	vcmd = *str++;
+	*v = nm_conf_var_search(c, str);
+
+	switch (vcmd) {
+	case '?':
+		if (*v == NULL) {
+			*v = nm_conf_var_create(c, str);
+			if (*v == NULL) {
+				*r = nm_jp_error(c->pool, "out of variables");
+				return -1;
 			}
 		}
-	}
-
-	if (vcmd == '?' || jp->interp == NULL || is_dump) {
-		r = jp->dump(jp, c);
-		if (vcmd == '?') {
-			ND("setting var '%s' to (%u, %u, %u)", v->name, r.ty, r.len, r.ptr);
-			v->value = r;
+		break;
+	case '$':
+		if (*v == NULL) {
+			*r = nm_jp_error(c->pool, "not found: '%s'", str);
+			return -1;
 		}
-	} else {
-		if (vcmd == '$') {
-			ND("reading var '%s' got (%u, %u, %u)", v->name, v->value.ty, v->value.len, v->value.ptr);
-			r = v->value;
-		}
-		r = (is_dump ? jp->dump(jp, c) : jp->interp(jp, r, c));
+		*r = (*v)->value;
+		break;
 	}
-	return r;
+	return vcmd;
 }
 
 static struct _jpo
 nm_jp_dump(struct nm_jp *jp, struct nm_conf *c)
 {
 	struct _jpo rv;
+	struct nm_conf_var *v;
+	int vcmd = nm_jp_parse_var(&rv, c, &v);
+
+	if (vcmd < 0)
+		return rv;
 
 	nm_jp_bracket(jp, NM_JPB_ENTER, c);
-	rv = nm_jp_interp_vars(jp, _r_EINVAL, c, 1);
+	rv = jp->dump(jp, c);
 	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
+
+	if (vcmd == '?')
+		v->value = rv;
 
 	return rv;
 }
@@ -815,10 +816,21 @@ static struct _jpo
 nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
 	struct _jpo rv;
+	struct nm_conf_var *v;
+	int vcmd = nm_jp_parse_var(&r, c, &v);
+
+	if (vcmd < 0)
+		return r;
 
 	nm_jp_bracket(jp, NM_JPB_ENTER, c);
-	rv = nm_jp_interp_vars(jp, r, c, 0);
+	if (vcmd == '?' || jp->interp == NULL)
+		rv = jp->dump(jp, c);
+	else
+		rv = jp->interp(jp, r, c);
 	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
+
+	if (vcmd == '?')
+		v->value = rv;
 	
 	return rv;
 }
@@ -865,11 +877,17 @@ nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pi, struct _jpo *po, struct nm_con
 	jp = e->jp;
 	nm_jp_bracket(jp, NM_JPB_ENTER, c);
 	if (jp->interp) {
-		o = nm_jp_interp_vars(jp, *pi, c, 0);
-		if (o.ty == JPO_ERR) {
+		struct _jpo r = *pi;
+		struct nm_conf_var *v;
+		int vcmd = nm_jp_parse_var(&r, c, &v);
+		if (vcmd < 0) {
+			o = r;
 			goto leave_;
 		}
+		o = jp->interp(jp, r, c);
 		nm_jp_bracket(jp, NM_JPB_MIDDLE, c);
+		if (vcmd == '?')
+			v->value = o;
 	}
 	o = jp->dump(jp, c);
 leave_:
