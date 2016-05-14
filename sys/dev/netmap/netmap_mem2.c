@@ -1689,7 +1689,7 @@ netmap_mem2_delete(struct netmap_mem_d *nmd)
 	netmap_mem_jp_uninit(nmd);
 #endif
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
-	    netmap_destroy_obj_allocator(&nm_mem.pools[i]);
+	    netmap_destroy_obj_allocator(&nmd->pools[i]);
 	}
 
 	NMA_LOCK_DESTROY(nmd);
