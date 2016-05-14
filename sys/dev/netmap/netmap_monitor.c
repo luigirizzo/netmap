@@ -721,7 +721,8 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	int i, error;
 	enum txrx t;
 	int zcopy = (nmr->nr_flags & NR_ZCOPY_MON);
-	char monsuff[10] = "";
+	uint32_t id;
+	struct netmap_kring *first;
 
 	if ((nmr->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX)) == 0) {
 		if (nmr->nr_flags & NR_ZCOPY_MON) {
@@ -775,15 +776,9 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		D("ringid error");
 		goto put_out;
 	}
-	if (mna->priv.np_qlast[NR_TX] - mna->priv.np_qfirst[NR_TX] == 1) {
-		snprintf(monsuff, 10, "-%d", mna->priv.np_qfirst[NR_TX]);
-	}
-	snprintf(mna->up.name, sizeof(mna->up.name), "%s%s/%s%s%s", pna->name,
-			monsuff,
-			zcopy ? "z" : "",
-			(nmr->nr_flags & NR_MONITOR_RX) ? "r" : "",
-			(nmr->nr_flags & NR_MONITOR_TX) ? "t" : "");
 
+	/* remember the first monitored ring, to obtain a unique name later on */
+	first = NULL;
 	if (zcopy) {
 		/* zero copy monitors need exclusive access to the monitored rings */
 		for_rx_tx(t) {
@@ -797,6 +792,8 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 							kring->monitors[0]->name);
 					goto put_out;
 				}
+				if (first == NULL)
+					first = kring;
 			}
 		}
 		mna->up.nm_register = netmap_zmon_reg;
@@ -820,12 +817,29 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 					D("ring busy");
 					goto put_out;
 				}
+				if (first == NULL)
+					first = kring;
 			}
 		}
 		mna->up.nm_rxsync = netmap_monitor_rxsync;
 		mna->up.nm_register = netmap_monitor_reg;
 		mna->up.nm_dtor = netmap_monitor_dtor;
 	}
+	/* to obtain a unique name we use the name of the monitored port and
+	 * the index of the first ring to monitor; then, we look for next
+	 * unused id among the monitors that are already sharing that ring
+	 */
+	id = 0;
+	for (i = 0; i < first->n_monitors; i++) {
+		uint32_t mid =
+			((struct netmap_monitor_adapter *)first->monitors[i]->na)->id;
+		if (mid > id)
+			id = mid;
+	}
+	mna->id = id + 1;
+	snprintf(mna->up.name, sizeof(mna->up.name), "m%c%d-%d:%s",
+			(first->tx == NR_TX ? 't' : 'r'), first->ring_id, mna->id,
+			pna->name);
 
 	/* the monitor supports the host rings iff the parent does */
 	mna->up.na_flags = (pna->na_flags & NAF_HOST_RINGS);
