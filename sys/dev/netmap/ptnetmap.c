@@ -1225,8 +1225,7 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
     pth_na->up.na_flags |= NAF_HOST_RINGS;
 
-    strncpy(pth_na->up.name, parent->name, sizeof(pth_na->up.name));
-    strcat(pth_na->up.name, "-PTN");
+    snprintf(pth_na->up.name, sizeof(pth_na->up.name), "pt:%s", parent->name);
 
     error = netmap_attach_common(&pth_na->up);
     if (error) {

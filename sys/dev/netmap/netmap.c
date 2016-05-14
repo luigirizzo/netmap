@@ -2004,6 +2004,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	error = netmap_set_ringid(priv, ringid, flags);
 	if (error)
 		goto err;
+	D("nm_mem %p", na->nm_mem);
 	error = netmap_mem_finalize(na->nm_mem, na);
 	if (error)
 		goto err;
