@@ -147,7 +147,6 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
 #define NM_BDG_BATCH_MAX	(NM_BDG_BATCH + NM_MULTISEG)
 /* NM_FT_NULL terminates a list of slots in the ft */
 #define NM_FT_NULL		NM_BDG_BATCH_MAX
-#define	NM_BRIDGES		8	/* number of bridges */
 
 
 /*
