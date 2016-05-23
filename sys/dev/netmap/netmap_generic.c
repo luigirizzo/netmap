@@ -163,6 +163,13 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 #include <linux/ethtool.h>      /* struct ethtool_ops, get_ringparam */
 #include <linux/hrtimer.h>
 
+static inline struct mbuf *
+nm_os_get_mbuf(struct ifnet *ifp, int len)
+{
+	return alloc_skb(ifp->needed_headroom + len +
+			 ifp->needed_tailroom, GFP_ATOMIC);
+}
+
 #endif /* linux */
 
 

@@ -191,7 +191,6 @@ struct thread;
 #define m_freem(m)		dev_kfree_skb_any(m)	// free a sk_buff
 
 #define MBUF_REFCNT(m)			NM_ATOMIC_READ(&((m)->users))
-#define nm_os_get_mbuf(ifp, size)	alloc_skb(size, GFP_ATOMIC)
 /*
  * on tx we force skb->queue_mapping = ring_nr,
  * but on rx it is the driver that sets the value,
