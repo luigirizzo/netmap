@@ -689,6 +689,18 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	if (unlikely(skb_headroom(m)))
 		skb_push(m, skb_headroom(m));
 	skb_trim(m, 0);
+	/* Re-reserve the minimum headroom. 
+	 * TODO: just never lose it in the first place ?
+	 */
+	skb_reserve(m, m->dev->needed_headroom);
+	skb_reset_network_header(m);
+	skb_reset_mac_header(m);
+	skb_reset_transport_header(m);
+
+	/* Check there is enough room in the buffer
+	 * skb_copy_to_linear_data does not check. */
+	if (unlikely(skb_availroom(m) < len))
+		BUG();
 
 	/* Copy a netmap buffer into the mbuf.
 	 * TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
