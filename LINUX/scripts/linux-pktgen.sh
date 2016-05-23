@@ -30,6 +30,7 @@ PKT_SIZE="60"                   # packet size
 PKT_COUNT="0"            # number of packets to send (0 means an infinite number)
 CLONE_SKB="0"               # how many times a sk_buff is recycled (0 means always use the same skbuff)
 BURST_LEN="1"		# burst-size (xmit_more skb flag)
+XMIT_MODE="start_xmit"       # Transmit mode. start_xmit to put on wire, netif_receive to put into kernel stack
 
 
 # Load pktgen kernel module
@@ -63,6 +64,7 @@ for cpu in ${IDX}; do
     pgset "src_mac $SRC_MAC"
     pgset "dst $DST_IP"
     pgset "dst_mac $DST_MAC"
+    pgset "xmit_mode $XMIT_MODE"
     pgset "flag QUEUE_MAP_CPU"
 
     echo ""
