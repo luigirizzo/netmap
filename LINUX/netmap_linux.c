@@ -701,6 +701,8 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	m->len = 0;
 	m->data = m->head + ifp->needed_headroom;
 	skb_reset_tail_pointer(m);
+	skb_reset_mac_header(m);
+	skb_reset_network_header(m);
 
 	/* Copy a netmap buffer into the mbuf.
 	 * TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
