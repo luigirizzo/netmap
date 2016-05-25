@@ -185,7 +185,7 @@ ports attached to the switch)
  * 	      This is a persistent or ephemeral VALE port. Ephemeral ports
  * 	      are created on the fly if they don't already exist, and are
  * 	      always attached to a bridge.
- * 	      Persistent VALE ports must must be created seperately, and i
+ * 	      Persistent VALE ports must must be created separately, and i
  * 	      then attached like normal NICs. The NIOCREGIF we are examining
  * 	      will find them only if they had previosly been created and
  * 	      attached (see VALE_CTL below).
@@ -595,7 +595,7 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
 /*
  * Convenience function used in drivers.  Waits for current txsync()s/rxsync()s
  * to finish and prevents any new one from starting.  Call this before turning
- * netmap mode off, or before removing the harware rings (e.g., on module
+ * netmap mode off, or before removing the hardware rings (e.g., on module
  * onload). 
  */
 void
@@ -1388,7 +1388,7 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 
 	NMG_LOCK_ASSERT();
 
-	/* we cascade through all possibile types of netmap adapter.
+	/* We cascade through all possible types of netmap adapter.
 	 * All netmap_get_*_na() functions return an error and an na,
 	 * with the following combinations:
 	 *
@@ -1935,7 +1935,7 @@ netmap_krings_put(struct netmap_priv_d *priv)
  *
  *	* netmap_pipe_reg				(pipes)
  *		inform the other pipe end that it is no
- *		longer responsibile for the lifetime of this
+ *		longer responsible for the lifetime of this
  *		pipe end
  *
  *	* netmap_monitor_reg				(monitors)

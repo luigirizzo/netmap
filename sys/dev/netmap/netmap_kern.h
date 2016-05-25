@@ -1365,7 +1365,6 @@ int netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	uint16_t ringid, uint32_t flags);
 void netmap_do_unregif(struct netmap_priv_d *priv);
 
-
 u_int nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg);
 int netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 		  struct ifnet **ifp, int create);
@@ -1396,6 +1395,7 @@ struct netmap_bdg_ops {
 u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *);
 
+#define	NM_BRIDGES		8	/* number of bridges */
 #define	NM_BDG_MAXPORTS		254	/* up to 254 */
 #define	NM_BDG_BROADCAST	NM_BDG_MAXPORTS
 #define	NM_BDG_NOPORT		(NM_BDG_MAXPORTS+1)

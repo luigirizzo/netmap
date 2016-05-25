@@ -682,13 +682,27 @@ int
 nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 {
 	struct mbuf *m = a->m;
+	struct ifnet *ifp = a->ifp;
 	u_int len = a->len;
 	netdev_tx_t ret;
 
-	/* Empty the mbuf. */
-	if (unlikely(skb_headroom(m)))
-		skb_push(m, skb_headroom(m));
-	skb_trim(m, 0);
+	/* We know that the driver needs to prepend ifp->needed_headroom bytes
+	 * to each packet to be transmitted. We then reset the mbuf pointers
+	 * to the correct initial state:
+	 *    ___________________________________________
+	 *    ^           ^                             ^
+	 *    |           |                             |
+	 *   head        data                          end
+	 *               tail
+	 *
+	 * which correspond to an empty buffer with exactly
+	 * ifp->needed_headroom bytes between head and data.
+	 */
+	m->len = 0;
+	m->data = m->head + ifp->needed_headroom;
+	skb_reset_tail_pointer(m);
+	skb_reset_mac_header(m);
+	skb_reset_network_header(m);
 
 	/* Copy a netmap buffer into the mbuf.
 	 * TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
@@ -704,7 +718,7 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	 * and bridge drivers. For this reason, the nm_os_generic_xmit_frame()
 	 * implementation for linux stores a copy of m->dev into the
 	 * destructor_arg field. */
-	m->dev = a->ifp;
+	m->dev = ifp;
 	skb_shinfo(m)->destructor_arg = m->dev;
 
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
@@ -1819,7 +1833,7 @@ netmap_pernet_init(struct net *net)
 		return error;
 
 	ns->net = net;
-	ns->num_bridges = 8;
+	ns->num_bridges = NM_BRIDGES;
 	ns->bridges = netmap_init_bridges2(ns->num_bridges);
 	if (ns->bridges == NULL) {
 		nm_bns_destroy(net, ns);

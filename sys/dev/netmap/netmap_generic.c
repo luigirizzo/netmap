@@ -92,7 +92,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
  *
  * We allocate EXT_PACKET mbuf+clusters, but need to set M_NOFREE
  * so that the destructor, if invoked, will not free the packet.
- *    In principle we should set the destructor only on demand,
+ * In principle we should set the destructor only on demand,
  * but since there might be a race we better do it on allocation.
  * As a consequence, we also need to set the destructor or we
  * would leak buffers.
@@ -131,8 +131,12 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 	struct mbuf *m;
 
 	(void)ifp;
-	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR | M_NOFREE);
+	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
 	if (m) {
+		/* m_getcl() (mb_ctor_mbuf) has an assert that checks that
+		 * M_NOFREE flag is not specified as third argument,
+		 * so we have to set M_NOFREE after m_getcl(). */
+		m->m_flags |= M_NOFREE;
 		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
 		m->m_ext.ext_free = (void *)netmap_default_mbuf_destructor;
 		m->m_ext.ext_type = EXT_EXTREF;
@@ -158,6 +162,13 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 #include <linux/rtnetlink.h>    /* rtnl_[un]lock() */
 #include <linux/ethtool.h>      /* struct ethtool_ops, get_ringparam */
 #include <linux/hrtimer.h>
+
+static inline struct mbuf *
+nm_os_get_mbuf(struct ifnet *ifp, int len)
+{
+	return alloc_skb(ifp->needed_headroom + len +
+			 ifp->needed_tailroom, GFP_ATOMIC);
+}
 
 #endif /* linux */
 
