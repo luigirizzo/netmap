@@ -284,8 +284,7 @@ struct nm_confb {
 	u_int next_r;
 };
 
-#define	NETMAP_CONFIG_MAXNAME	64
-
+#define	NETMAP_CONFIG_MAXNAME	60
 struct nm_conf_var {
 	char name[NETMAP_CONFIG_MAXNAME];
 	struct _jpo value;
@@ -312,10 +311,14 @@ int nm_conf_parse(struct nm_conf*, int locked);
 const char *nm_conf_get_output_mode(struct nm_conf *);
 int nm_conf_set_output_mode(struct nm_conf *, const char *);
 
+struct nm_jp;
+typedef struct _jpo nm_jp_interp_t(struct nm_jp *, struct _jpo, struct nm_conf *);
+typedef struct _jpo nm_jp_dump_t(struct nm_jp *, struct nm_conf *);
+typedef void	    nm_jp_bracket_t(struct nm_jp *, int stage, struct nm_conf *);
 struct nm_jp {
-	struct _jpo (*interp)(struct nm_jp *, struct _jpo, struct nm_conf *);
-	struct _jpo (*dump)(struct nm_jp *, struct nm_conf *);
-	void	    (*bracket)(struct nm_jp *, int stage, struct nm_conf *);
+	nm_jp_interp_t 	*interp;
+	nm_jp_dump_t 	*dump;
+	nm_jp_bracket_t	*bracket;
 #define NM_JPB_ENTER	0
 #define NM_JPB_MIDDLE	1
 #define NM_JPB_LEAVE	2
@@ -323,12 +326,8 @@ struct nm_jp {
 struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
 
 /* dictionaries */
-struct nm_jp_delem {
-	char name[NETMAP_CONFIG_MAXNAME];
-	struct nm_jp *jp;
-	int have_ref;
-};
 
+struct nm_jp_delem;
 struct nm_jp_dict {
 	struct nm_jp up;
 	struct nm_jp_delem *list;
@@ -348,11 +347,15 @@ void nm_jp_dinit_class(struct nm_jp_dict *, const struct nm_jp_delem*,
 		void (*)(struct nm_jp *, int, struct nm_conf *));
 void nm_jp_duninit(struct nm_jp_dict *);
 struct nm_jp_delem *nm_jp_dnew_elem(struct nm_jp_dict *);
-int nm_jp_delem_fill(struct nm_jp_delem *e,
-		struct nm_jp *, const char *fmt, ...);
-int nm_jp_dadd(struct nm_jp_dict *, struct nm_jp *, const char *fmt, ...);
-int nm_jp_ddel(struct nm_jp_dict *, struct nm_jp *);
+int nm_jp_ddel_elem(struct nm_jp_dict *, struct nm_jp_delem *);
+int nm_jp_delem_setname(struct nm_jp_delem *e, const char *fmt, ...);
+int nm_jp_dadd_ptr(struct nm_jp_dict *, void *, struct nm_jp *, const char *fmt, ...);
+int nm_jp_dadd_external(struct nm_jp_dict *, struct nm_jp*, const char *fmt, ...);
+int nm_jp_ddel(struct nm_jp_dict *, const char *);
 int nm_jp_drename(struct nm_jp_dict *, struct nm_jp *, const char *);
+
+struct _jpo nm_jp_dinterp(struct nm_jp *, struct _jpo, struct nm_conf *);
+struct _jpo nm_jp_ddump(struct nm_jp *, struct nm_conf *);
 
 /* numbers */
 struct nm_jp_num {
@@ -392,93 +395,110 @@ struct nm_jp_special {
 	struct nm_jp up;
 };
 
+struct nm_jp_delem {
+	char name[NETMAP_CONFIG_MAXNAME];
+	u_int flags;
+#define NM_JP_D_HAVE_REF	1
+#define NM_JP_D_EXTERNAL	2
+	union {
+		struct nm_jp	     jp;
+		struct nm_jp_special special;
+		struct nm_jp_dict    dict;
+		struct nm_jp_num     num;
+		struct nm_jp_ptr     ptr;
+		struct nm_jp	    *external;
+	};
+};
+
+
 extern struct nm_jp_dict nm_jp_root;
 extern struct nm_jp_dict nm_jp_ports;
 
+int nm_jp_port_add(struct netmap_adapter *, struct nm_jp_dict *);
+void nm_jp_port_del(struct netmap_adapter *);
+
 /* convenience macros */
+#define NM_ARRAY_LEN(a)		(sizeof(a)/sizeof(*(a)))
 #define NM_JPO_CLASS(p)		nm_jp_##p##_class
 #define NM_JPO_TYPE(p)		nm_jp_##p##_type
-#define NM_JPO_START(p)		nm_jp_##p##_start
-#define NM_JPO_END(p)		nm_jp_##p##_end
 #define NM_JPO_FIELD(p, f)	nm_jp_##p##_field_##f
-#define NM_JPO_SEC(p)					\
-	__attribute__((__section__(".nm_jpo"), aligned(sizeof(void *)), used))
-#define NM_JPO_DERIVED_CLASS_DECL(p, st, b)		\
-	extern struct nm_jp_dict NM_JPO_CLASS(b);	\
-	struct nm_jp_dict NM_JPO_CLASS(p) = {		\
-		.parent = &NM_JPO_CLASS(b),		\
-	};						\
-	_NM_JPO_CLASS_DECL(st, p)
-#define NM_JPO_CLASS_DECL(p, st)			\
-	struct nm_jp_dict NM_JPO_CLASS(p);		\
-	_NM_JPO_CLASS_DECL(st, p)
-#define _NM_JPO_CLASS_DECL(st, p)			\
-	typedef st NM_JPO_TYPE(p);			\
-	static const struct nm_jp_delem NM_JPO_START(p) NM_JPO_SEC(p) = { \
-		.name = "m1 "#p				\
-	}
-#define NM_JPO_CLASS_END(p)				\
-	static const struct nm_jp_delem NM_JPO_END(p) NM_JPO_SEC(p) = { \
-		.name = "m2 "#p				\
-	}
-#define NM_JPO_OBJ_DECL		struct nm_jp_ptr _jpo
-#define NM_JPO_OBJ(o)		((o)->_jpo.up)
-#define NM_JPO_CONTAINER(o, st)				\
-	container_of((struct nm_jp_ptr *)o, st, _jpo)
-#define NM_JPO_FIELD_DECL(p, f)				\
-static const struct nm_jp_delem nm_jp_##p##_flist_##f NM_JPO_SEC(p) = {	\
-	.name = #f,					\
-	.jp = &NM_JPO_FIELD(p, f).up			\
-}
-#define NM_JPO_SPECIAL(p, f, i, d, b)			\
-static struct nm_jp_special NM_JPO_FIELD(p, f) = {	\
-	.up = {						\
-		.interp = i,				\
-		.dump   = d,				\
-		.bracket = b				\
-	}						\
-};							\
-NM_JPO_FIELD_DECL(p, f)
-#define NM_JPO_NUM(p, f, sz, rd, wr)			\
-static struct nm_jp_num NM_JPO_FIELD(p, f) = {		\
-	.up = {						\
-		.interp = nm_jp_ninterp,		\
-		.dump   = nm_jp_ndump			\
-	},						\
-	.var = rd,					\
-	.size = sz,					\
-	.update = wr					\
-};							\
-NM_JPO_FIELD_DECL(p, f)
-#define _NM_JPO_RWNUM(p, f, u)				\
-	NM_JPO_NUM(p, f, 				\
-		member_size(NM_JPO_TYPE(p), f) | NM_JP_NUM_REL,	\
-		(void *)offsetof(NM_JPO_TYPE(p), f), u)
-#define NM_JPO_RONUM(p, f)				\
-	_NM_JPO_RWNUM(p, f, NULL)
-#define NM_JPO_RWNUM(p, f)				\
-	_NM_JPO_RWNUM(p, f, nm_jp_nupdate)
-#define NM_JPO_STRUCT(p, n, t, f)			\
-static struct nm_jp_ptr NM_JPO_FIELD(p, f) = {		\
-	.up = {						\
-		.interp = nm_jp_pinterp,		\
-		.dump   = nm_jp_pdump,			\
-	},						\
-	.type = &NM_JPO_CLASS(t).up,			\
-	.arg = (void *)offsetof(NM_JPO_TYPE(p), n),	\
-	.flags = NM_JP_PTR_REL,				\
-};							\
-NM_JPO_FIELD_DECL(p, f)
-#define NM_JPO_CLASS_INIT_BRACKETED(p, b)		\
-	nm_jp_dinit_class(&NM_JPO_CLASS(p), 		\
-		&NM_JPO_START(p), &NM_JPO_END(p), b)
-#define NM_JPO_CLASS_INIT(p)				\
-	NM_JPO_CLASS_INIT_BRACKETED(p, NULL);
-#define NM_JPO_OBJ_INIT(p, o)				\
-	nm_jp_pinit(&(o)->_jpo, &NM_JPO_CLASS(p).up, o, 0);
+/* internal convenience macros */
+#define _NM_JPO_FL(p)		nm_jp_##p##_field_list
+#define _NM_JPO_B(p)		nm_jp_##p##_bracket
+#define _NM_JPO_P(p)		nm_jp_##p##_parent
 
-#else /* !WITH_NMCONF */
-#define NM_JPO_OBJ_DECL
+#define NM_JPO_CLASS_DECL(t, st)			\
+	typedef st NM_JPO_TYPE(t);			\
+	static struct nm_jp_delem _NM_JPO_FL(t)[] = {
+
+#define _NM_JPO_CLASS_END(t, b, p)			\
+	struct nm_jp_dict NM_JPO_CLASS(t) = {		\
+		.up.interp = nm_jp_dinterp,		\
+		.up.dump   = nm_jp_ddump,		\
+		.up.bracket = b,			\
+		.list = _NM_JPO_FL(t),			\
+		.parent = p,				\
+		.nelem = NM_ARRAY_LEN(_NM_JPO_FL(t)),	\
+		.nextfree = NM_ARRAY_LEN(_NM_JPO_FL(t)),\
+	};
+
+#define NM_JPO_CLASS_END(t, b)				\
+	};						\
+	_NM_JPO_CLASS_END(t, b, NULL)
+
+#define NM_JPO_CLASS_END_DERIVED(t, b, p)		\
+	};						\
+	extern struct nm_jp_dict NM_JPO_CLASS(p);	\
+	_NM_JPO_CLASS_END(t, b, &NM_JPO_CLASS(p))
+	
+#define NM_JPO_SPECIAL(t, f, i, d, b)   {		\
+	.name = #f,					\
+	.special = {					\
+		.up = {					\
+			.interp = i,			\
+			.dump   = d,			\
+			.bracket = b,			\
+		},					\
+	},						\
+},
+
+#define NM_JPO_NUM(t, f, sz, rd, wr)	{		\
+	.name = #f,					\
+	.num = {					\
+		.up = {					\
+			.interp = nm_jp_ninterp,	\
+			.dump   = nm_jp_ndump		\
+		},					\
+		.var = rd,				\
+		.size = sz,				\
+		.update = wr				\
+	},						\
+},
+
+#define _NM_JPO_RWNUM(t, f, u)				\
+	NM_JPO_NUM(t, f, 				\
+		member_size(NM_JPO_TYPE(t), f) | NM_JP_NUM_REL,	\
+		(void *)offsetof(NM_JPO_TYPE(t), f), u)
+
+#define NM_JPO_RONUM(t, f)				\
+	_NM_JPO_RWNUM(t, f, NULL)
+
+#define NM_JPO_RWNUM(t, f)				\
+	_NM_JPO_RWNUM(t, f, nm_jp_nupdate)
+
+#define NM_JPO_STRUCT(t, n, s, f)	{		\
+	.name = #f,					\
+	.ptr = {					\
+		.up = {					\
+			.interp = nm_jp_pinterp,	\
+			.dump   = nm_jp_pdump,		\
+		},					\
+		.type = &NM_JPO_CLASS(s).up,		\
+		.arg = (void *)offsetof(NM_JPO_TYPE(t), n),\
+		.flags = NM_JP_PTR_REL,			\
+	},						\
+},
+
 #endif /* WITH_NMCONF */
 struct netmap_adapter;
 struct nm_bdg_fwd;
@@ -1017,8 +1037,6 @@ struct netmap_adapter {
 	u_int virt_hdr_len;
 
 	char name[64];
-
-	NM_JPO_OBJ_DECL;
 };
 
 static __inline u_int
@@ -2054,6 +2072,7 @@ struct netmap_monitor_adapter {
 
 	struct netmap_priv_d priv;
 	uint32_t flags;
+	uint32_t id;
 };
 
 #endif /* WITH_MONITOR */

@@ -203,8 +203,6 @@ struct netmap_mem_d {
 
 #define	NM_MEM_NAMESZ	16
 	char name[NM_MEM_NAMESZ];
-
-	NM_JPO_OBJ_DECL;
 };
 
 /*
@@ -1700,31 +1698,6 @@ netmap_mem2_delete(struct netmap_mem_d *nmd)
 #ifdef WITH_NMCONF
 static struct nm_jp_dict nm_jp_mem;
 
-NM_JPO_CLASS_DECL(objpool, struct netmap_obj_pool);
-	NM_JPO_RONUM(objpool, objtotal);
-	NM_JPO_RONUM(objpool, memtotal);
-	NM_JPO_RONUM(objpool, numclusters);
-	NM_JPO_RONUM(objpool, objfree);
-	NM_JPO_RONUM(objpool, _objsize);
-	NM_JPO_RONUM(objpool, _clustsize);
-NM_JPO_CLASS_END(objpool);
-
-NM_JPO_CLASS_DECL(mparams, struct netmap_obj_params);
-	NM_JPO_RWNUM(mparams, size);
-	NM_JPO_RWNUM(mparams, num);
-NM_JPO_CLASS_END(mparams);
-
-NM_JPO_CLASS_DECL(mem, struct netmap_mem_d);
-	NM_JPO_RONUM(mem,  active);
-	NM_JPO_RONUM(mem,  refcount);
-	NM_JPO_STRUCT(mem, pools[NETMAP_IF_POOL], objpool, if);
-	NM_JPO_STRUCT(mem, pools[NETMAP_RING_POOL], objpool, ring);
-	NM_JPO_STRUCT(mem, pools[NETMAP_BUF_POOL], objpool, buf);
-	NM_JPO_STRUCT(mem, params[NETMAP_IF_POOL], mparams, req_if);
-	NM_JPO_STRUCT(mem, params[NETMAP_RING_POOL], mparams, req_ring);
-	NM_JPO_STRUCT(mem, params[NETMAP_BUF_POOL], mparams, req_buf);
-NM_JPO_CLASS_END(mem);
-
 static void
 netmap_mem_jp_bracket(struct nm_jp *i, int stage, struct nm_conf *c)
 {
@@ -1740,17 +1713,44 @@ netmap_mem_jp_bracket(struct nm_jp *i, int stage, struct nm_conf *c)
 	}
 }
 
+NM_JPO_CLASS_DECL(objpool, struct netmap_obj_pool)
+	NM_JPO_RONUM(objpool, objtotal)
+	NM_JPO_RONUM(objpool, memtotal)
+	NM_JPO_RONUM(objpool, numclusters)
+	NM_JPO_RONUM(objpool, objfree)
+	NM_JPO_RONUM(objpool, _objsize)
+	NM_JPO_RONUM(objpool, _clustsize)
+NM_JPO_CLASS_END(objpool, NULL);
+
+NM_JPO_CLASS_DECL(mparams, struct netmap_obj_params)
+	NM_JPO_RWNUM(mparams, size)
+	NM_JPO_RWNUM(mparams, num)
+NM_JPO_CLASS_END(mparams, NULL);
+
+NM_JPO_CLASS_DECL(mem, struct netmap_mem_d)
+	NM_JPO_RONUM(mem,  active)
+	NM_JPO_RONUM(mem,  refcount)
+	NM_JPO_STRUCT(mem, pools[NETMAP_IF_POOL], objpool, if)
+	NM_JPO_STRUCT(mem, pools[NETMAP_RING_POOL], objpool, ring)
+	NM_JPO_STRUCT(mem, pools[NETMAP_BUF_POOL], objpool, buf)
+	NM_JPO_STRUCT(mem, params[NETMAP_IF_POOL], mparams, req_if)
+	NM_JPO_STRUCT(mem, params[NETMAP_RING_POOL], mparams, req_ring)
+	NM_JPO_STRUCT(mem, params[NETMAP_BUF_POOL], mparams, req_buf)
+NM_JPO_CLASS_END(mem, netmap_mem_jp_bracket);
+
+
 static int
 netmap_mem_jp_init(struct netmap_mem_d *nmd)
 {
-	NM_JPO_OBJ_INIT(mem, nmd);
-	return nm_jp_dadd(&nm_jp_mem, &NM_JPO_OBJ(nmd), nmd->name);
+	//NM_JPO_OBJ_INIT(mem, nmd);
+	//return nm_jp_dadd(&nm_jp_mem, &NM_JPO_OBJ(nmd), nmd->name);
+	return 0;
 }
 
 static void
 netmap_mem_jp_uninit(struct netmap_mem_d *nmd)
 {
-	nm_jp_ddel(&nm_jp_mem, &NM_JPO_OBJ(nmd));
+	//nm_jp_ddel(&nm_jp_mem, &NM_JPO_OBJ(nmd));
 }
 
 static int
@@ -1765,16 +1765,18 @@ netmap_mem_jp_new(struct nm_jp_delem *e)
 		return err;
 	}
 	netmap_mem_get(d);
-	NM_JPO_OBJ_INIT(mem, d);
-	nm_jp_delem_fill(e, &NM_JPO_OBJ(d), d->name);
+	//NM_JPO_OBJ_INIT(mem, d);
+	//nm_jp_delem_fill(e, &NM_JPO_OBJ(d), d->name);
 	return 0;
 }
 
 static void
 netmap_mem_jp_delete(struct nm_jp *i)
 {
+#if 0
 	struct netmap_mem_d *d = NM_JPO_CONTAINER(i, struct netmap_mem_d);
 	netmap_mem_put(d);
+#endif
 }
 #endif
 
@@ -1791,13 +1793,9 @@ netmap_mem_init(void)
 		goto fail_put;
 	nm_jp_mem.new = netmap_mem_jp_new;
 	nm_jp_mem.delete = netmap_mem_jp_delete;
-	error = nm_jp_dadd(&nm_jp_root,
-			&nm_jp_mem.up, "mem");
+	error = nm_jp_dadd_external(&nm_jp_root, &nm_jp_mem.up, "mem");
 	if (error)
 		goto fail_uninit;
-	NM_JPO_CLASS_INIT(objpool);
-	NM_JPO_CLASS_INIT(mparams);
-	NM_JPO_CLASS_INIT_BRACKETED(mem, netmap_mem_jp_bracket);
 	error = netmap_mem_jp_init(&nm_mem);
 	if (error)
 		goto fail_del;
@@ -1806,7 +1804,7 @@ netmap_mem_init(void)
 
 #ifdef WITH_NMCONF
 fail_del:
-	nm_jp_ddel(&nm_jp_root, &nm_jp_mem.up);
+	nm_jp_ddel(&nm_jp_root, "mem");
 fail_uninit:
 	nm_jp_duninit(&nm_jp_mem);
 fail_put:
@@ -1820,7 +1818,7 @@ netmap_mem_fini(void)
 {
 #ifdef WITH_NMCONF
 	netmap_mem_jp_uninit(&nm_mem);
-	nm_jp_ddel(&nm_jp_root, &nm_jp_mem.up);
+	nm_jp_ddel(&nm_jp_root, "mem");
 	nm_jp_duninit(&nm_jp_mem);
 #endif
 	netmap_mem_put(&nm_mem);

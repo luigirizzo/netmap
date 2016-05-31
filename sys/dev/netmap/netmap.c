@@ -2813,15 +2813,35 @@ nm_jp_flags_dump(struct nm_jp *ip, struct nm_conf *c)
 	return r;
 }
 
-NM_JPO_CLASS_DECL(port, struct netmap_adapter);
-	NM_JPO_SPECIAL(port, memid, nm_jp_memid_interp, nm_jp_memid_dump, NULL);
-	NM_JPO_SPECIAL(port, flags, NULL, nm_jp_flags_dump, NULL);
-	NM_JPO_RONUM(port, num_tx_rings);
-	NM_JPO_RONUM(port, num_rx_rings);
-	NM_JPO_RONUM(port, num_tx_desc);
-	NM_JPO_RONUM(port, num_rx_desc);
-	NM_JPO_RONUM(port, active_fds);
-NM_JPO_CLASS_END(port);
+NM_JPO_CLASS_DECL(port, struct netmap_adapter)
+	NM_JPO_SPECIAL(port, memid, nm_jp_memid_interp, nm_jp_memid_dump, NULL)
+	NM_JPO_SPECIAL(port, flags, NULL, nm_jp_flags_dump, NULL)
+	NM_JPO_RONUM(port, num_tx_rings)
+	NM_JPO_RONUM(port, num_rx_rings)
+	NM_JPO_RONUM(port, num_tx_desc)
+	NM_JPO_RONUM(port, num_rx_desc)
+	NM_JPO_RONUM(port, active_fds)
+NM_JPO_CLASS_END(port, NULL);
+
+int
+nm_jp_port_add(struct netmap_adapter *na, struct nm_jp_dict *d)
+{
+	int error = nm_jp_dadd_ptr(&nm_jp_ports, na,
+			(d == NULL ? &NM_JPO_CLASS(port).up : &d->up),
+			na->name);
+	if (error) {
+		D("WARNING: failed to add %s to port list (error: %d)",
+				na->name, error);
+	}
+	return error;
+}
+
+void
+nm_jp_port_del(struct netmap_adapter *na)
+{
+	nm_jp_ddel(&nm_jp_ports, na->name);
+}
+
 #endif
 
 
@@ -2867,11 +2887,6 @@ netmap_attach_common(struct netmap_adapter *na)
 		na->nm_bdg_attach = netmap_bwrap_attach;
 #endif
 
-#ifdef WITH_NMCONF
-	NM_JPO_OBJ_INIT(port, na);
-	nm_jp_dadd(&nm_jp_ports, &NM_JPO_OBJ(na), na->name);
-#endif
-
 	return 0;
 }
 
@@ -2881,7 +2896,7 @@ void
 netmap_detach_common(struct netmap_adapter *na)
 {
 #ifdef WITH_NMCONF
-	nm_jp_ddel(&nm_jp_ports, &NM_JPO_OBJ(na));
+	nm_jp_port_del(na);
 #endif
 	if (na->tx_rings) { /* XXX should not happen */
 		D("freeing leftover tx_rings");
@@ -2998,6 +3013,10 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 		hwna->up.nm_dtor = netmap_hw_dtor;
 	}
 
+#ifdef WITH_NMCONF
+	nm_jp_port_add(&hwna->up, &NM_JPO_CLASS(port));
+#endif
+
 	if_printf(ifp, "netmap queues/slots: TX %d/%d, RX %d/%d\n",
 	    hwna->up.num_tx_rings, hwna->up.num_tx_desc,
 	    hwna->up.num_rx_rings, hwna->up.num_rx_desc);
@@ -3112,6 +3131,9 @@ netmap_detach(struct ifnet *ifp)
 		return;
 
 	NMG_LOCK();
+#ifdef WITH_NMCONF
+	nm_jp_ddel(&nm_jp_ports, na->name);
+#endif
 	netmap_set_all_rings(na, NM_KR_LOCKED);
 	na->na_flags |= NAF_ZOMBIE;
 	/*
@@ -3465,9 +3487,8 @@ netmap_init(void)
 	error = nm_jp_dinit(&nm_jp_ports, NULL, 10, NULL);
 	if (error)
 		goto fail;
-	nm_jp_dadd(&nm_jp_root, &nm_jp_ports.up, "port");
-	nm_jp_dadd(&nm_jp_root, &nm_jp_version, "version");
-	NM_JPO_CLASS_INIT(port);
+	nm_jp_dadd_external(&nm_jp_root, &nm_jp_ports.up, "port");
+	nm_jp_dadd_external(&nm_jp_root, &nm_jp_version, "version");
 #endif /* WITH_NMCONF */
 
 	error = netmap_mem_init();

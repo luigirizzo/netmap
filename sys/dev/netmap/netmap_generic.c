@@ -1188,6 +1188,9 @@ generic_netmap_attach(struct ifnet *ifp)
 	nm_os_generic_set_features(gna);
 
 	D("Created generic NA %p (prev %p)", gna, gna->prev);
+#ifdef WITH_NMCONF
+	nm_jp_port_add(na, NULL);
+#endif
 
 	return retval;
 }

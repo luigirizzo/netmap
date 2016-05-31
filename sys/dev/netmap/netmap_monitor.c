@@ -877,6 +877,9 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	*na = &mna->up;
 	netmap_adapter_get(*na);
 
+#ifdef WITH_NMCONF
+	nm_jp_port_add(&mna->up, NULL);
+#endif
 	/* keep the reference to the parent */
 	ND("monitor ok");
 

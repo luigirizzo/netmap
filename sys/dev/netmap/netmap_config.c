@@ -835,16 +835,22 @@ nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	return rv;
 }
 
+static struct nm_jp*
+nm_jp_dget(struct nm_jp_delem *e)
+{
+	return (e->flags & NM_JP_D_EXTERNAL) ? e->external : &e->jp;
+}
+
 static struct _jpo
 nm_jp_ddelete(struct nm_jp_dict *d, struct nm_jp_delem *e,
 		char *pool)
 {
 	if (d->delete == NULL)
 		return nm_jp_error(pool, "'delete' not supported");
-	if (!e->have_ref)
+	if (!e->flags & NM_JP_D_HAVE_REF)
 		return nm_jp_error(pool, "busy");
-	d->delete(e->jp);
-	e->have_ref = 0;
+	d->delete(&e->jp);
+	e->flags &= ~NM_JP_D_HAVE_REF;
 	return jslr_new_object(pool, 0);
 }
 
@@ -869,12 +875,21 @@ nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pi, struct _jpo *po, struct nm_con
 		goto out;
 	}
 	error = d->new(e);
-	if (error || e->jp == NULL) {
+	if (error) {
 		o = nm_jp_error(c->pool, "error: %d", error);
 		goto out;
 	}
+	/* the new element is guaranteed to be at the end, while
+	 * search returns the first
+	 */
+	if (nm_jp_dsearch(d, e->name) != e) {
+		/* it must be a duplicate */
+		nm_jp_ddel_elem(d, e);
+		o = nm_jp_error(c->pool, "duplicate entry: %s", e->name);
+		goto out;
+	}
 	*po++ = jslr_new_string(c->pool, e->name);
-	jp = e->jp;
+	jp = nm_jp_dget(e);
 	nm_jp_bracket(jp, NM_JPB_ENTER, c);
 	if (jp->interp) {
 		struct _jpo r = *pi;
@@ -892,14 +907,14 @@ nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pi, struct _jpo *po, struct nm_con
 	o = jp->dump(jp, c);
 leave_:
 	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
-	e->have_ref = 1;
+	e->flags |= NM_JP_D_HAVE_REF;
 out:
 	return o;
 }
 
 
 
-static struct _jpo
+struct _jpo
 nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
 	struct _jpo *pi, *po, ro;
@@ -976,7 +991,7 @@ nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			r1 = nm_jp_ddelete(d, e, pool);
 			goto next;
 		}
-		r1 = nm_jp_interp(e->jp, *pi, c);
+		r1 = nm_jp_interp(nm_jp_dget(e), *pi, c);
 	next:
 		*po++ = r1; pi++; /* move to next entry */
 	}
@@ -996,7 +1011,7 @@ nm_jp_dgetlen(struct nm_jp_dict *d)
 	return rv;
 }
 
-static struct _jpo
+struct _jpo
 nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
 {
 	struct _jpo *po, r;
@@ -1016,7 +1031,7 @@ nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
 			if (po->ty == JPO_ERR)
 				return *po;
 			po++;
-			*po = nm_jp_dump(e->jp, c);
+			*po = nm_jp_dump(nm_jp_dget(e), c);
 			if (po->ty == JPO_ERR)
 				return *po;
 			po++;
@@ -1079,14 +1094,15 @@ nm_jp_duninit(struct nm_jp_dict *d)
 	memset(d, 0, sizeof(*d));
 }
 
+/* add a new element to the dictionary */
 struct nm_jp_delem *
 nm_jp_dnew_elem(struct nm_jp_dict *d)
 {
-	struct nm_jp_delem *newlist;
-
+	/* possibly make more room */
 	if (d->nextfree >= d->nelem) {
 		u_int newnelem = d->nelem * 2;
-		newlist = nm_os_realloc(d->list, sizeof(*d->list) * newnelem,
+		struct nm_jp_delem *newlist = nm_os_realloc(d->list,
+				sizeof(*d->list) * newnelem,
 				sizeof(*d->list) * d->nelem);
 		if (newlist == NULL)
 			return NULL;
@@ -1096,67 +1112,15 @@ nm_jp_dnew_elem(struct nm_jp_dict *d)
 	return &d->list[d->nextfree++];
 }
 
-static int
-nm_jp_delem_vfill(struct nm_jp_delem *e,
-		struct nm_jp *jp,
-		const char *fmt, va_list ap)
-{
-	int n;
-
-	e->jp = jp;
-	n = vsnprintf(e->name, NETMAP_CONFIG_MAXNAME, fmt, ap);
-
-	if (n >= NETMAP_CONFIG_MAXNAME)
-		return ENAMETOOLONG;
-
-	return 0;
-}
-
 int
-nm_jp_delem_fill(struct nm_jp_delem *e,
-		struct nm_jp *jp,
-		const char *fmt, ...)
-{
-	va_list ap;
-	int rv;
-
-	va_start(ap, fmt);
-	rv = nm_jp_delem_vfill(e, jp, fmt, ap);
-	va_end(ap);
-
-	return rv;
-}
-
-int nm_jp_dadd(struct nm_jp_dict *d,
-		struct nm_jp *jp,
-		const char *fmt, ...)
-{
-	struct nm_jp_delem *e;
-	va_list ap;
-	int rv;
-
-	e = nm_jp_dnew_elem(d);
-	if (e == NULL) {
-		return ENOMEM;
-	}
-	va_start(ap, fmt);
-	rv = nm_jp_delem_vfill(e, jp, fmt, ap);
-	va_end(ap);
-
-	return rv;
-}
-
-
-static int
-_nm_jp_ddel(struct nm_jp_dict *d, struct nm_jp_delem *e1)
+nm_jp_ddel_elem(struct nm_jp_dict *d, struct nm_jp_delem *e1)
 {
 	struct nm_jp_delem *e2;
 
 	d->nextfree--;
 	e2 = &d->list[d->nextfree];
 	if (e1 != e2) {
-		strncpy(e1->name, e2->name, NETMAP_CONFIG_MAXNAME);
-		e1->jp = e2->jp;
+		memcpy(e1, e2, sizeof(*e2));
 	}
 	memset(e2, 0, sizeof(*e2));
 	if (d->nelem > d->minelem && d->nextfree < d->nelem / 2) {
@@ -1177,40 +1141,6 @@ _nm_jp_ddel(struct nm_jp_dict *d, struct nm_jp_delem *e1)
 }
 
 static struct nm_jp_delem *
-_nm_jp_dfind(struct nm_jp_dict *d, struct nm_jp *jp)
-{
-	struct nm_jp_delem *e;
-
-	for (e = d->list; e != d->list + d->nextfree; e++)
-		if (e->jp == jp)
-			return e;
-	return NULL;
-}
-
-int
-nm_jp_ddel(struct nm_jp_dict *d, struct nm_jp *jp)
-{
-	struct nm_jp_delem *e = _nm_jp_dfind(d, jp);
-
-	if (e == NULL)
-		return ENOENT;
-
-	return _nm_jp_ddel(d, e);
-}
-
-int
-nm_jp_drename(struct nm_jp_dict *d, struct nm_jp *jp, const char *name)
-{
-	struct nm_jp_delem *e = _nm_jp_dfind(d, jp);
-
-	if (e == NULL)
-		return ENOENT;
-
-	return nm_jp_delem_fill(e, e->jp, "%s", name);
-}
-
-
-static struct nm_jp_delem *
 nm_jp_dsearch(struct nm_jp_dict *d, const char *name)
 {
 	int i;
@@ -1225,6 +1155,100 @@ nm_jp_dsearch(struct nm_jp_dict *d, const char *name)
 		return NULL;
 	}
 	return &d->list[i];
+}
+
+static int
+nm_jp_dvsetname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, va_list ap)
+{
+	int n = vsnprintf(e->name, NETMAP_CONFIG_MAXNAME, fmt, ap);
+	if (n >= NETMAP_CONFIG_MAXNAME)
+		return ENAMETOOLONG;
+	if (nm_jp_dsearch(d, e->name) != e)
+		return EEXIST;
+	return 0;
+}
+
+int
+nm_jp_dsetname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, ...)
+{
+	va_list ap;
+	int rv;
+
+	va_start(ap, fmt);
+	rv = nm_jp_dvsetname(d, e, fmt, ap);
+	va_end(ap);
+
+	return rv;
+}
+
+static int
+_nm_jp_dadd(struct nm_jp_dict *d, struct nm_jp_delem **e, const char *fmt, va_list ap)
+{
+	int rv;
+
+	*e = nm_jp_dnew_elem(d);
+	if (*e == NULL)
+		return ENOMEM;
+	rv = nm_jp_dvsetname(d, *e, fmt, ap);
+	if (rv) {
+		nm_jp_ddel_elem(d, *e);
+		return rv;
+	}
+	D("%s: e %p", (*e)->name, *e);
+	return 0;
+}
+
+int
+nm_jp_dadd_ptr(struct nm_jp_dict *d, void *p, struct nm_jp *t, const char *fmt, ...)
+{
+	struct nm_jp_delem *e;
+	va_list ap;
+	int rv;
+
+	va_start(ap, fmt);
+	rv = _nm_jp_dadd(d, &e, fmt, ap);
+	va_end(ap);
+	if (rv)
+		return rv;
+
+	e->ptr.up.interp = nm_jp_pinterp;
+	e->ptr.up.dump   = nm_jp_pdump;
+	e->ptr.up.bracket = NULL;
+	e->ptr.arg = p;
+	e->ptr.type = t;
+	e->ptr.flags = 0;
+	D("%s: e %p type %p", e->name, e, e->ptr.type);
+	return 0;
+}
+
+int
+nm_jp_dadd_external(struct nm_jp_dict *d, struct nm_jp *jp, const char *fmt, ...)
+{
+	struct nm_jp_delem *e;
+	va_list ap;
+	int rv;
+
+	va_start(ap, fmt);
+	rv = _nm_jp_dadd(d, &e, fmt, ap);
+	va_end(ap);
+	if (rv)
+		return rv;
+
+	e->flags = NM_JP_D_EXTERNAL;
+	e->external = jp;
+	
+	return 0;
+}
+
+int
+nm_jp_ddel(struct nm_jp_dict *d, const char *name)
+{
+	struct nm_jp_delem *e = nm_jp_dsearch(d, name);
+
+	if (e == NULL)
+		return ENOENT;
+
+	return nm_jp_ddel_elem(d, e);
 }
 
 static int64_t

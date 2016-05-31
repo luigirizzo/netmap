@@ -2091,14 +2091,14 @@ netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na)
 }
 
 #ifdef WITH_NMCONF
-NM_JPO_DERIVED_CLASS_DECL(vp, struct netmap_vp_adapter, port);
-	NM_JPO_RONUM(vp, bdg_port);
-	NM_JPO_RONUM(vp, mfs);
-NM_JPO_CLASS_END(vp);
+NM_JPO_CLASS_DECL(vp, struct netmap_vp_adapter)
+	NM_JPO_RONUM(vp, bdg_port)
+	NM_JPO_RONUM(vp, mfs)
+NM_JPO_CLASS_END_DERIVED(vp, NULL, port);
 
-NM_JPO_DERIVED_CLASS_DECL(bwrap, struct netmap_bwrap_adapter, vp);
-	NM_JPO_STRUCT(bwrap, host, vp, host);
-NM_JPO_CLASS_END(bwrap);
+NM_JPO_CLASS_DECL(bwrap, struct netmap_bwrap_adapter)
+	NM_JPO_STRUCT(bwrap, host, vp, host)
+NM_JPO_CLASS_END_DERIVED(bwrap, NULL, vp);
 #endif /* WITH_NMCONF */
 
 
@@ -2176,7 +2176,7 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 	if (error)
 		goto err;
 #ifdef WITH_NMCONF
-	NM_JPO_OBJ_INIT(vp, na);
+	nm_jp_port_add(na, &NM_JPO_CLASS(vp));
 #endif
 	*ret = vpna;
 	return 0;
@@ -2700,7 +2700,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	}
 	hwna->na_flags |= NAF_BUSY;
 #ifdef WITH_NMCONF
-	NM_JPO_OBJ_INIT(bwrap, na);
+	nm_jp_port_add(na, &NM_JPO_CLASS(bwrap));
 #endif
 	return 0;
 
@@ -2742,10 +2742,6 @@ netmap_uninit_bridges2(struct nm_bridge *b, u_int n)
 int
 netmap_init_bridges(void)
 {
-#ifdef WITH_NMCONF
-	NM_JPO_CLASS_INIT(vp);
-	NM_JPO_CLASS_INIT(bwrap);
-#endif
 #ifdef CONFIG_NET_NS
 	return netmap_bns_register();
 #else

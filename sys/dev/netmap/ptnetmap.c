@@ -1241,6 +1241,10 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
     DBG(D("%s ptnetmap request DONE", pth_na->up.name));
 
+#ifdef WITH_NMCONF
+    nm_jp_port_add(&pth_na->up, NULL);
+#endif
+
     /* drop the reference to the ifp, if any */
     if (ifp)
         if_rele(ifp);

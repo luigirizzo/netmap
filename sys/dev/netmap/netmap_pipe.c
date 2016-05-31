@@ -652,6 +652,12 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		netmap_adapter_get(&mna->up);
 	}
 	ND("created master %p and slave %p", mna, sna);
+
+#ifdef WITH_NMCONF
+	nm_jp_port_add(&mna->up, NULL);
+	nm_jp_port_add(&sna->up, NULL);
+#endif
+
 found:
 
 	ND("pipe %d %s at %p", pipe_id,
