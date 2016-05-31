@@ -849,7 +849,7 @@ nm_jp_ddelete(struct nm_jp_dict *d, struct nm_jp_delem *e,
 		return nm_jp_error(pool, "'delete' not supported");
 	if (!e->flags & NM_JP_D_HAVE_REF)
 		return nm_jp_error(pool, "busy");
-	d->delete(&e->jp);
+	d->delete(d, e);
 	e->flags &= ~NM_JP_D_HAVE_REF;
 	return jslr_new_object(pool, 0);
 }
@@ -874,7 +874,7 @@ nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pi, struct _jpo *po, struct nm_con
 		o = nm_jp_error(c->pool, "out of memory");
 		goto out;
 	}
-	error = d->new(e);
+	error = d->new(d, e);
 	if (error) {
 		o = nm_jp_error(c->pool, "error: %d", error);
 		goto out;
@@ -1169,7 +1169,7 @@ nm_jp_dvsetname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, va
 }
 
 int
-nm_jp_dsetname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, ...)
+nm_jp_delem_setname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, ...)
 {
 	va_list ap;
 	int rv;
@@ -1179,6 +1179,17 @@ nm_jp_dsetname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, ...
 	va_end(ap);
 
 	return rv;
+}
+
+void
+nm_jp_delem_set_ptr(struct nm_jp_delem *e, void *p, struct nm_jp *t)
+{
+	e->ptr.up.interp = nm_jp_pinterp;
+	e->ptr.up.dump   = nm_jp_pdump;
+	e->ptr.up.bracket = NULL;
+	e->ptr.arg = p;
+	e->ptr.type = t;
+	e->ptr.flags = 0;
 }
 
 static int
@@ -1211,13 +1222,7 @@ nm_jp_dadd_ptr(struct nm_jp_dict *d, void *p, struct nm_jp *t, const char *fmt, 
 	if (rv)
 		return rv;
 
-	e->ptr.up.interp = nm_jp_pinterp;
-	e->ptr.up.dump   = nm_jp_pdump;
-	e->ptr.up.bracket = NULL;
-	e->ptr.arg = p;
-	e->ptr.type = t;
-	e->ptr.flags = 0;
-	D("%s: e %p type %p", e->name, e, e->ptr.type);
+	nm_jp_delem_set_ptr(e, p, t);
 	return 0;
 }
 

@@ -1742,43 +1742,46 @@ NM_JPO_CLASS_END(mem, netmap_mem_jp_bracket);
 static int
 netmap_mem_jp_init(struct netmap_mem_d *nmd)
 {
-	//NM_JPO_OBJ_INIT(mem, nmd);
-	//return nm_jp_dadd(&nm_jp_mem, &NM_JPO_OBJ(nmd), nmd->name);
-	return 0;
+	return nm_jp_dadd_ptr(&nm_jp_mem, nmd, &NM_JPO_CLASS(mem).up, nmd->name);
 }
 
 static void
 netmap_mem_jp_uninit(struct netmap_mem_d *nmd)
 {
-	//nm_jp_ddel(&nm_jp_mem, &NM_JPO_OBJ(nmd));
+	nm_jp_ddel(&nm_jp_mem, nmd->name);
 }
 
 static int
-netmap_mem_jp_new(struct nm_jp_delem *e)
+netmap_mem_jp_new(struct nm_jp_dict *d, struct nm_jp_delem *e)
 {
-	struct netmap_mem_d *d;
+	struct netmap_mem_d *nmd;
 	int err = 0;
 
-	d = _netmap_mem_private_new(netmap_min_priv_params, &err);
-	if (d == NULL) {
+	nmd = _netmap_mem_private_new(netmap_min_priv_params, &err);
+	if (nmd == NULL) {
 		D("");
 		return err;
 	}
-	netmap_mem_get(d);
-	//NM_JPO_OBJ_INIT(mem, d);
-	//nm_jp_delem_fill(e, &NM_JPO_OBJ(d), d->name);
+	
+	err = nm_jp_delem_setname(d, e, nmd->name);
+	if (err) {
+		netmap_mem_delete(nmd);
+		return err;
+	}
+		
+	nm_jp_delem_set_ptr(e, nmd, &NM_JPO_CLASS(mem).up);
+
+	netmap_mem_get(nmd);
 	return 0;
 }
-
 static void
-netmap_mem_jp_delete(struct nm_jp *i)
+netmap_mem_jp_delete(struct nm_jp_dict *d, struct nm_jp_delem *e)
 {
-#if 0
-	struct netmap_mem_d *d = NM_JPO_CONTAINER(i, struct netmap_mem_d);
-	netmap_mem_put(d);
-#endif
+	struct netmap_mem_d *nmd = e->ptr.arg;
+	netmap_mem_put(nmd);
 }
-#endif
+
+#endif /* WITH_NMCONF */
 
 int
 netmap_mem_init(void)

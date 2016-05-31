@@ -336,8 +336,8 @@ struct nm_jp_dict {
 	u_int nelem;
 	u_int nextfree;
 
-	int (*new)(struct nm_jp_delem *);
-	void (*delete)(struct nm_jp *);
+	int (*new)(struct nm_jp_dict *, struct nm_jp_delem *);
+	void (*delete)(struct nm_jp_dict *, struct nm_jp_delem *);
 };
 
 int nm_jp_dinit(struct nm_jp_dict *, const struct nm_jp_delem *, u_int nelem,
@@ -348,7 +348,8 @@ void nm_jp_dinit_class(struct nm_jp_dict *, const struct nm_jp_delem*,
 void nm_jp_duninit(struct nm_jp_dict *);
 struct nm_jp_delem *nm_jp_dnew_elem(struct nm_jp_dict *);
 int nm_jp_ddel_elem(struct nm_jp_dict *, struct nm_jp_delem *);
-int nm_jp_delem_setname(struct nm_jp_delem *e, const char *fmt, ...);
+int nm_jp_delem_setname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, ...);
+void nm_jp_delem_set_ptr(struct nm_jp_delem *e, void *, struct nm_jp *);
 int nm_jp_dadd_ptr(struct nm_jp_dict *, void *, struct nm_jp *, const char *fmt, ...);
 int nm_jp_dadd_external(struct nm_jp_dict *, struct nm_jp*, const char *fmt, ...);
 int nm_jp_ddel(struct nm_jp_dict *, const char *);
