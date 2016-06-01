@@ -926,6 +926,9 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		na->nm_register(na, 0);
 	}
 
+	/* delete rings and buffers that are no longer needed */
+	netmap_mem_rings_delete(na);
+
 	if (na->active_fds <= 0) {	/* last instance */
 		/*
 		 * (TO CHECK) We enter here
@@ -944,8 +947,6 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		if (netmap_verbose)
 			D("deleting last instance for %s", na->name);
 
-		/* delete rings and buffers */
-		netmap_mem_rings_delete(na);
 		na->nm_krings_delete(na);
 	}
 
@@ -1990,7 +1991,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	if (na->active_fds == 0) {
 		/*
 		 * If this is the first registration of the adapter,
-		 * also create the netmap rings and their in-kernel view,
+		 * create the  in-kernel view of the netmap rings,
 		 * the netmap krings.
 		 */
 
@@ -2002,25 +2003,26 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		if (error)
 			goto err_drop_mem;
 
-		/* create all missing netmap rings */
-		error = netmap_mem_rings_create(na);
-		if (error)
-			goto err_del_krings;
 	}
 
-	/* now the kring must exist and we can check whether some
+	/* now the krings must exist and we can check whether some
 	 * previous bind has exclusive ownership on them, and set
 	 * nr_pending_mode
 	 */
 	error = netmap_krings_get(priv);
 	if (error)
-		goto err_del_rings;
+		goto err_del_krings;
+
+	/* create all needed missing netmap rings */
+	error = netmap_mem_rings_create(na);
+	if (error)
+		goto err_rel_excl;
 
 	/* in all cases, create a new netmap if */
 	nifp = netmap_mem_if_new(na);
 	if (nifp == NULL) {
 		error = ENOMEM;
-		goto err_rel_excl;
+		goto err_del_rings;
 	}
 
 	if (na->active_fds == 0) {
@@ -2061,8 +2063,7 @@ err_del_if:
 err_rel_excl:
 	netmap_krings_put(priv);
 err_del_rings:
-	if (na->active_fds == 0)
-		netmap_mem_rings_delete(na);
+	netmap_mem_rings_delete(na);
 err_del_krings:
 	if (na->active_fds == 0)
 		na->nm_krings_delete(na);

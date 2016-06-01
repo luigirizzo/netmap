@@ -396,6 +396,9 @@ struct netmap_kring {
 #define NKR_FORWARD	0x4		/* (host ring only) there are
 					   packets to forward
 					 */
+#define NKR_PIPERING	0x8		/* ring needed even if users==0
+					 * (used internally by pipes)
+					 */
 
 	uint32_t	nr_mode;
 	uint32_t	nr_pending_mode;
@@ -475,9 +478,6 @@ struct netmap_kring {
 #ifdef WITH_PIPES
 	struct netmap_kring *pipe;	/* if this is a pipe ring,
 					 * pointer to the other end
-					 */
-	struct netmap_ring *save_ring;	/* pointer to hidden rings
-       					 * (see netmap_pipe.c for details)
 					 */
 #endif /* WITH_PIPES */
 
