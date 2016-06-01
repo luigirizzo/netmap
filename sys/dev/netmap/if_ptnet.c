@@ -85,7 +85,8 @@
 #include <dev/netmap/netmap_mem2.h>
 
 struct ptnet_softc {
-    struct ifnet *ifp;
+	device_t dev;
+	struct ifnet *ifp;
 };
 
 static int	ptnet_probe(device_t);
@@ -135,11 +136,28 @@ static int
 ptnet_attach(device_t dev)
 {
 	struct ptnet_softc *sc;
+	struct ifnet *ifp;
 
 	printf("%s\n", __func__);
 
 	sc = device_get_softc(dev);
-	sc->ifp = NULL;
+	sc->dev = dev;
+	sc->ifp = ifp = if_alloc(IFT_ETHER);
+	if (ifp == NULL) {
+		device_printf(dev, "Failed to allocate ifnet\n");
+		return (ENOMEM);
+	}
+
+	if_initname(ifp, device_get_name(dev), device_get_unit(dev));
+	if_initbaudrate(ifp, IF_Gbps(10));
+	ifp->if_softc = sc;
+	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST | IFF_SIMPLEX;
+	ifp->if_init = NULL;
+	ifp->if_start = NULL;
+
+	IFQ_SET_MAXLEN(&ifp->if_snd, 255);
+	ifp->if_snd.ifq_drv_maxlen = 255;
+	IFQ_SET_READY(&ifp->if_snd);
 
 	return (0);
 }
