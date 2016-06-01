@@ -87,6 +87,7 @@
 struct ptnet_softc {
 	device_t dev;
 	struct ifnet *ifp;
+	struct ifmedia media;
 };
 
 static int	ptnet_probe(device_t);
@@ -95,6 +96,12 @@ static int	ptnet_detach(device_t);
 static int	ptnet_suspend(device_t);
 static int	ptnet_resume(device_t);
 static int	ptnet_shutdown(device_t);
+
+static void	ptnet_init(void *opaque);
+static void	ptnet_start(struct ifnet *ifp);
+
+static int	ptnet_media_change(struct ifnet *ifp);
+static void	ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr);
 
 static device_method_t ptnet_methods[] = {
 	DEVMETHOD(device_probe,			ptnet_probe),
@@ -152,12 +159,17 @@ ptnet_attach(device_t dev)
 	if_initbaudrate(ifp, IF_Gbps(10));
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST | IFF_SIMPLEX;
-	ifp->if_init = NULL;
-	ifp->if_start = NULL;
+	ifp->if_init = ptnet_init;
+	ifp->if_start = ptnet_start;
 
 	IFQ_SET_MAXLEN(&ifp->if_snd, 255);
 	ifp->if_snd.ifq_drv_maxlen = 255;
 	IFQ_SET_READY(&ifp->if_snd);
+
+	ifmedia_init(&sc->media, IFM_IMASK, ptnet_media_change,
+		     ptnet_media_status);
+	ifmedia_add(&sc->media, IFM_ETHER | IFM_10G_T | IFM_FDX, 0, NULL);
+	ifmedia_set(&sc->media, IFM_ETHER | IFM_10G_T | IFM_FDX);
 
 	return (0);
 }
@@ -200,4 +212,46 @@ ptnet_shutdown(device_t dev)
 	 * do here; we just never expect to be resumed.
 	 */
 	return (ptnet_suspend(dev));
+}
+
+static void
+ptnet_init(void *opaque)
+{
+	struct ptnet_softc *sc = opaque;
+	(void)sc;
+}
+
+static void
+ptnet_start(struct ifnet *ifp)
+{
+}
+
+static int
+ptnet_media_change(struct ifnet *ifp)
+{
+	struct ptnet_softc *sc = ifp->if_softc;
+	struct ifmedia *ifm = &sc->media;
+
+	if (IFM_TYPE(ifm->ifm_media) != IFM_ETHER) {
+		return (EINVAL);
+	}
+
+	return (0);
+}
+
+
+static void
+ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
+{
+	ifmr->ifm_status = IFM_AVALID;
+	ifmr->ifm_active = IFM_ETHER;
+
+	//lock
+	if (1) {
+		ifmr->ifm_status |= IFM_ACTIVE;
+		ifmr->ifm_active |= IFM_10G_T | IFM_FDX;
+	} else {
+		ifmr->ifm_active |= IFM_NONE;
+	}
+	//unlock
 }
