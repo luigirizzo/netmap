@@ -143,7 +143,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: bridge [-v] [-i ifa] [-i ifb] [-b burst] [-w wait_time] [iface]\n");
+	    "usage: bridge [-v] [-i ifa] [-i ifb] [-b burst] [-w wait_time] [ifa [ifb [burst]]]\n");
 	exit(1);
 }
 
@@ -201,12 +201,12 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
+	if (argc > 0)
+		ifa = argv[0];
 	if (argc > 1)
-		ifa = argv[1];
+		ifb = argv[1];
 	if (argc > 2)
-		ifb = argv[2];
-	if (argc > 3)
-		burst = atoi(argv[3]);
+		burst = atoi(argv[2]);
 	if (!ifb)
 		ifb = ifa;
 	if (!ifa) {
