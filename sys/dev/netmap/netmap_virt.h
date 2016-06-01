@@ -252,7 +252,6 @@ struct ptnet_csb {
 
 #endif /* NETMAP_VIRT_CSB */
 
-
 #if defined(NETMAP_API) && !defined(NETMAP_VIRT_PTNETMAP)
 #define NETMAP_VIRT_PTNETMAP
 
