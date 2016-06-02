@@ -419,41 +419,67 @@ int nm_jp_port_add(struct netmap_adapter *, struct nm_jp_dict *);
 void nm_jp_port_del(struct netmap_adapter *);
 
 /* convenience macros */
+
+/* return the number of elements of array a */
 #define NM_ARRAY_LEN(a)		(sizeof(a)/sizeof(*(a)))
-#define NM_JPO_CLASS(p)		nm_jp_##p##_class
-#define NM_JPO_TYPE(p)		nm_jp_##p##_type
-#define NM_JPO_FIELD(p, f)	nm_jp_##p##_field_##f
+/* the class object of jpo class C */
+#define NM_JPO_CLASS(C)		nm_jp_##C##_class
+/* the native type described by jpo class C */
+#define NM_JPO_TYPE(C)		nm_jp_##C##_type
+/* the field object of jpo field F of jpo class C */
+#define NM_JPO_FIELD(C, F)	nm_jp_##C##_field_##F
 /* internal convenience macros */
-#define _NM_JPO_FL(p)		nm_jp_##p##_field_list
-#define _NM_JPO_B(p)		nm_jp_##p##_bracket
-#define _NM_JPO_P(p)		nm_jp_##p##_parent
+#define _NM_JPO_FL(C)		nm_jp_##C##_field_list
+#define _NM_JPO_B(C)		nm_jp_##C##_bracket
+#define _NM_JPO_P(C)		nm_jp_##C##_parent
 
-#define NM_JPO_CLASS_DECL(t, st)			\
-	typedef st NM_JPO_TYPE(t);			\
-	static struct nm_jp_delem _NM_JPO_FL(t)[] = {
+/* start the declaration of a jpo class 'C' that describes the native type 't'
+ */
+#define NM_JPO_CLASS_DECL(C, t)				\
+	typedef t NM_JPO_TYPE(C);			\
+	static struct nm_jp_delem _NM_JPO_FL(C)[] = {
 
-#define _NM_JPO_CLASS_END(t, b, p)			\
-	struct nm_jp_dict NM_JPO_CLASS(t) = {		\
+/* end the declaration of jpo class 'C' with bracketing function 'b'. 'p' is a
+ * pointer to the class object of the the parent jpo class.  ('b' and 'p' may
+ * be NULL)
+ */
+#define _NM_JPO_CLASS_END(C, b, p)			\
+	struct nm_jp_dict NM_JPO_CLASS(C) = {		\
 		.up.interp = nm_jp_dinterp,		\
 		.up.dump   = nm_jp_ddump,		\
 		.up.bracket = b,			\
-		.list = _NM_JPO_FL(t),			\
+		.list = _NM_JPO_FL(C),			\
 		.parent = p,				\
-		.nelem = NM_ARRAY_LEN(_NM_JPO_FL(t)),	\
-		.nextfree = NM_ARRAY_LEN(_NM_JPO_FL(t)),\
+		.nelem = NM_ARRAY_LEN(_NM_JPO_FL(C)),	\
+		.nextfree = NM_ARRAY_LEN(_NM_JPO_FL(C)),\
 	};
 
-#define NM_JPO_CLASS_END(t, b)				\
+/* convenience macro to end a jpo class 'C' which has no parent class. 'b' is
+ * bracketing function and may be NULL
+ */
+#define NM_JPO_CLASS_END(C, b)				\
 	};						\
-	_NM_JPO_CLASS_END(t, b, NULL)
+	_NM_JPO_CLASS_END(C, b, NULL)
 
+/* convenience macro to end a jpo class 'C' with parent class 'P'. 'b' is the
+ * bracketing function and may be NULL
+ */
 #define NM_JPO_CLASS_END_DERIVED(t, b, p)		\
 	};						\
 	extern struct nm_jp_dict NM_JPO_CLASS(p);	\
 	_NM_JPO_CLASS_END(t, b, &NM_JPO_CLASS(p))
 	
-#define NM_JPO_SPECIAL(t, f, i, d, b)   {		\
-	.name = #f,					\
+/* the following macros can be placed between a CLASS_DECL()/CLASS_END_*() pair
+ * to declare the fields of the jpo class. The name of the jpo class has to be
+ * repeated each time, unfortunately.
+ */
+
+/* declare a special field with name 'f' and handler methods 'i', 'd' and 'b'.
+ * Only 'd' is mandatory, the others may be NULL. The name 'C' of the jpo class
+ * is not needed, but is passed for uniformity.
+ */
+#define NM_JPO_SPECIAL(C, F, i, d, b)   {		\
+	.name = #F,					\
 	.special = {					\
 		.up = {					\
 			.interp = i,			\
@@ -463,39 +489,70 @@ void nm_jp_port_del(struct netmap_adapter *);
 	},						\
 },
 
-#define NM_JPO_NUM(t, f, sz, rd, wr)	{		\
-	.name = #f,					\
+/* declare a numeric field 'f' with size 's', read method 'r' and update method
+ * 'w'. See nm_jp_num for the available options. 'C' is the name of the jpo
+ * class and is here for uniformity
+ */
+#define NM_JPO_NUM(C, F, s, r, w)	{		\
+	.name = #F,					\
 	.num = {					\
 		.up = {					\
 			.interp = nm_jp_ninterp,	\
 			.dump   = nm_jp_ndump		\
 		},					\
-		.var = rd,				\
-		.size = sz,				\
-		.update = wr				\
+		.var = r,				\
+		.size = s,				\
+		.update = w				\
 	},						\
 },
 
-#define _NM_JPO_RWNUM(t, f, u)				\
-	NM_JPO_NUM(t, f, 				\
-		member_size(NM_JPO_TYPE(t), f) | NM_JP_NUM_REL,	\
-		(void *)offsetof(NM_JPO_TYPE(t), f), u)
+/* declare a r/w numeric field 'F' that describes a field with the same name in
+ * the native type described by jpo class 'C'. 'u' is the update method
+ * (possibly NULL for read-only)
+ */
+#define _NM_JPO_RWNUM(C, F, u)				\
+	NM_JPO_NUM(C, F, 				\
+		member_size(NM_JPO_TYPE(C), F) | NM_JP_NUM_REL,	\
+		(void *)offsetof(NM_JPO_TYPE(C), F), u)
 
-#define NM_JPO_RONUM(t, f)				\
-	_NM_JPO_RWNUM(t, f, NULL)
+/* convenience macro to declare a read-only numeric field 'F' that describes a
+ * field with the same name in the native type descibed by jpo class 'C'.
+ */
+#define NM_JPO_RONUM(C, F)				\
+	_NM_JPO_RWNUM(C, F, NULL)
 
+/* declare a read-write numeric field 'F' that describes a field with the same
+ * name in the native type descibed by jpo class 'C'. Writing into
+ * the field changes the native field with no other action involved.
+ */
 #define NM_JPO_RWNUM(t, f)				\
 	_NM_JPO_RWNUM(t, f, nm_jp_nupdate)
 
-#define NM_JPO_STRUCT(t, n, s, f)	{		\
-	.name = #f,					\
+/* declare a field 'F' that describes an embedded native
+ * structure inside the native type described by jpo class 'C'.
+ * A jpo class 'S' describing the embedded structure must
+ * have already been declared. 'n' is the name of the field
+ * in the native structure. 
+ *
+ * Note that 'n' may also be a more complex expression.
+ * Assume, for example, that the native structure is
+ *
+ * struct native {
+ * 	...
+ * 	struct embedded a[4];
+ * };
+ *
+ * then 'a[0]' to 'a[3]' are all valid 'n's.
+ */
+#define NM_JPO_STRUCT(C, n, S, F)	{		\
+	.name = #F,					\
 	.ptr = {					\
 		.up = {					\
 			.interp = nm_jp_pinterp,	\
 			.dump   = nm_jp_pdump,		\
 		},					\
-		.type = &NM_JPO_CLASS(s).up,		\
-		.arg = (void *)offsetof(NM_JPO_TYPE(t), n),\
+		.type = &NM_JPO_CLASS(S).up,		\
+		.arg = (void *)offsetof(NM_JPO_TYPE(C), n),\
 		.flags = NM_JP_PTR_REL,			\
 	},						\
 },
