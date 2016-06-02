@@ -207,6 +207,17 @@ ptnet_detach(device_t dev)
 
 	printf("%s\n", __func__);
 
+	if (device_is_attached(dev)) {
+		ether_ifdetach(sc->ifp);
+	}
+
+	ifmedia_removeall(&sc->media);
+
+	if (sc->ifp) {
+		if_free(sc->ifp);
+		sc->ifp = NULL;
+	}
+
 	PTNET_CORE_LOCK_FINI(sc);
 
 	return (0);
