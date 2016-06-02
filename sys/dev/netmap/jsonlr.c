@@ -43,7 +43,6 @@
 struct _jp {
 	/* fields used during the parse phase */
 	struct _jp_stream *stream;
-	int indot;
         uint32_t depth, max_depth; /* control stack depth */
 
 	/* persistent after a parse */
