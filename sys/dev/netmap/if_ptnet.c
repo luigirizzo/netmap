@@ -86,8 +86,11 @@
 
 struct ptnet_softc {
 	device_t dev;
-	struct ifnet *ifp;
-	struct ifmedia media;
+	struct ifnet		*ifp;
+	struct ifmedia		media;
+	struct mtx		core_mtx;
+	char			core_mtx_name[16];
+	char			hwaddr[ETHER_ADDR_LEN];
 };
 
 static int	ptnet_probe(device_t);
@@ -170,6 +173,14 @@ ptnet_attach(device_t dev)
 		     ptnet_media_status);
 	ifmedia_add(&sc->media, IFM_ETHER | IFM_10G_T | IFM_FDX, 0, NULL);
 	ifmedia_set(&sc->media, IFM_ETHER | IFM_10G_T | IFM_FDX);
+
+	memset(sc->hwaddr, 0, sizeof(sc->hwaddr));
+	ether_ifattach(ifp, sc->hwaddr);
+
+	ifp->if_data.ifi_hdrlen = sizeof(struct ether_vlan_header);
+	ifp->if_capabilities |= IFCAP_JUMBO_MTU | IFCAP_VLAN_MTU;
+
+	ifp->if_capenable = ifp->if_capabilities;
 
 	return (0);
 }
