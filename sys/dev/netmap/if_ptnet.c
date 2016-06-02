@@ -93,6 +93,18 @@ struct ptnet_softc {
 	char			hwaddr[ETHER_ADDR_LEN];
 };
 
+#define PTNET_CORE_LOCK_INIT(_sc)	do {			\
+		snprintf((_sc)->core_mtx_name, sizeof((_sc)->core_mtx_name),	\
+			 "%s", device_get_nameunit(sc->dev));			\
+		mtx_init(&(_sc)->core_mtx, (_sc)->core_mtx_name,		\
+			 "ptnet core lock", MTX_DEF);				\
+	} while (0)
+
+#define PTNET_CORE_LOCK_FINI(_sc)	mtx_destroy(&(_sc)->core_mtx)
+
+#define PTNET_CORE_LOCK(_sc)	mtx_lock(&(_sc)->core_mtx)
+#define PTNET_CORE_UNLOCK(_sc)	mtx_unlock(&(_sc)->core_mtx)
+
 static int	ptnet_probe(device_t);
 static int	ptnet_attach(device_t);
 static int	ptnet_detach(device_t);
@@ -152,6 +164,9 @@ ptnet_attach(device_t dev)
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
+
+	PTNET_CORE_LOCK_INIT(sc);
+
 	sc->ifp = ifp = if_alloc(IFT_ETHER);
 	if (ifp == NULL) {
 		device_printf(dev, "Failed to allocate ifnet\n");
@@ -188,7 +203,11 @@ ptnet_attach(device_t dev)
 static int
 ptnet_detach(device_t dev)
 {
+	struct ptnet_softc *sc = device_get_softc(dev);
+
 	printf("%s\n", __func__);
+
+	PTNET_CORE_LOCK_FINI(sc);
 
 	return (0);
 }
@@ -257,12 +276,10 @@ ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	ifmr->ifm_status = IFM_AVALID;
 	ifmr->ifm_active = IFM_ETHER;
 
-	//lock
 	if (1) {
 		ifmr->ifm_status |= IFM_ACTIVE;
 		ifmr->ifm_active |= IFM_10G_T | IFM_FDX;
 	} else {
 		ifmr->ifm_active |= IFM_NONE;
 	}
-	//unlock
 }
