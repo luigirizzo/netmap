@@ -47,6 +47,8 @@
 #include <machine/smp.h>
 
 #include <vm/uma.h>
+#include <vm/vm.h>
+#include <vm/pmap.h>
 
 #include <net/ethernet.h>
 #include <net/if.h>
@@ -209,11 +211,22 @@ ptnet_attach(device_t dev)
 	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
 	num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
 #endif
-	sc->csb = malloc(sizeof(struct ptnet_csb), M_DEVBUF, M_NOWAIT | M_ZERO);
+	/* Allocate CSB and carry out CSB allocation protocol (CSBBAH first,
+	 * then CSBBAL). */
+	sc->csb = malloc(sizeof(struct ptnet_csb), M_DEVBUF,
+			 M_NOWAIT | M_ZERO);
 	if (sc->csb == NULL) {
 		device_printf(dev, "Failed to allocate CSB\n");
 		err = ENOMEM;
 		goto err_path;
+	}
+
+	{
+		vm_paddr_t paddr = vtophys(sc->csb);
+
+		bus_write_4(sc->iomem, PTNET_IO_CSBBAH,
+			    (paddr >> 32) & 0xffffffff);
+		bus_write_4(sc->iomem, PTNET_IO_CSBBAL, paddr & 0xffffffff);
 	}
 
 	/* Setup Ethernet interface. */
@@ -272,6 +285,8 @@ ptnet_detach(device_t dev)
 	}
 
 	if (sc->csb) {
+		bus_write_4(sc->iomem, PTNET_IO_CSBBAH, 0);
+		bus_write_4(sc->iomem, PTNET_IO_CSBBAL, 0);
 		free(sc->csb, M_DEVBUF);
 		sc->csb = NULL;
 	}
