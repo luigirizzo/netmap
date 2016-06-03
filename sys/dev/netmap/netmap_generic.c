@@ -179,13 +179,18 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 #include <dev/netmap/netmap_mem2.h>
 
 
-#define for_each_tx_kring(_i, _k, _na)					\
-	for (_k=&(_na)->tx_rings[0], _i = 0;				\
-	     _i < (_na)->num_tx_rings; (_k)++, (_i)++)
+#define for_each_kring_n(_i, _k, _karr, _n) \
+	for (_k=_karr, _i = 0; _i < _n; (_k)++, (_i)++)
 
-#define for_each_rx_kring(_i, _k, _na)					\
-	for (_k=&(_na)->rx_rings[0], _i = 0;				\
-	     _i < (_na)->num_rx_rings; (_k)++, (_i)++)
+#define for_each_tx_kring(_i, _k, _na) \
+            for_each_kring_n(_i, _k, (_na)->tx_rings, (_na)->num_tx_rings)
+#define for_each_tx_kring_h(_i, _k, _na) \
+            for_each_kring_n(_i, _k, (_na)->tx_rings, (_na)->num_tx_rings + 1)
+
+#define for_each_rx_kring(_i, _k, _na) \
+            for_each_kring_n(_i, _k, (_na)->rx_rings, (_na)->num_rx_rings)
+#define for_each_rx_kring_h(_i, _k, _na) \
+            for_each_kring_n(_i, _k, (_na)->rx_rings, (_na)->num_rx_rings + 1)
 
 
 /* ======================== PERFORMANCE STATISTICS =========================== */
@@ -297,18 +302,25 @@ generic_netmap_unregister(struct netmap_adapter *na)
 		rtnl_unlock();
 	}
 
-	for_each_rx_kring(r, kring, na) {
-		if (!nm_kring_pending_off(kring)) {
-			continue;
+	for_each_rx_kring_h(r, kring, na) {
+		if (nm_kring_pending_off(kring)) {
+			D("RX ring %d of generic adapter %p goes off", r, na);
+			kring->nr_mode = NKR_NETMAP_OFF;
 		}
+	}
+	for_each_tx_kring_h(r, kring, na) {
+		if (nm_kring_pending_off(kring)) {
+			kring->nr_mode = NKR_NETMAP_OFF;
+			D("TX ring %d of generic adapter %p goes off", r, na);
+		}
+	}
 
-		D("RX ring %d of generic adapter %p goes off", r, na);
+	for_each_rx_kring(r, kring, na) {
 		/* Free the mbufs still pending in the RX queues,
 		 * that did not end up into the corresponding netmap
 		 * RX rings. */
 		mbq_safe_purge(&kring->rx_queue);
 		nm_os_mitigation_cleanup(&gna->mit[r]);
-		kring->nr_mode = NKR_NETMAP_OFF;
 	}
 
 	/* Decrement reference counter for the mbufs in the
@@ -316,11 +328,6 @@ generic_netmap_unregister(struct netmap_adapter *na)
 	 * (e.g. this happens with virtio-net driver, which
 	 * does lazy reclaiming of transmitted mbufs). */
 	for_each_tx_kring(r, kring, na) {
-		if (!nm_kring_pending_off(kring)) {
-			continue;
-		}
-
-		D("TX ring %d of generic adapter %p goes off", r, na);
 		/* We must remove the destructor on the TX event,
 		 * because the destructor invokes netmap code, and
 		 * the netmap module may disappear before the
@@ -331,8 +338,6 @@ generic_netmap_unregister(struct netmap_adapter *na)
 		}
 		kring->tx_event = NULL;
 		mtx_unlock(&kring->tx_event_lock);
-
-		kring->nr_mode = NKR_NETMAP_OFF;
 	}
 
 	if (na->active_fds == 0) {
@@ -418,7 +423,6 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		for_each_tx_kring(r, kring, na) {
 			kring->tx_pool = NULL;
 		}
-
 		for_each_tx_kring(r, kring, na) {
 			kring->tx_pool =
 				malloc(na->num_tx_desc * sizeof(struct mbuf *),
@@ -433,29 +437,27 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 	}
 
-	for_each_rx_kring(r, kring, na) {
-		if (!nm_kring_pending_on(kring)) {
-			continue;
+	for_each_rx_kring_h(r, kring, na) {
+		if (nm_kring_pending_on(kring)) {
+			D("RX ring %d of generic adapter %p goes on", r, na);
+			kring->nr_mode = NKR_NETMAP_ON;
 		}
 
-		D("RX ring %d of generic adapter %p goes on", r, na);
-		kring->nr_mode = NKR_NETMAP_ON;
+	}
+	for_each_tx_kring_h(r, kring, na) {
+		if (nm_kring_pending_on(kring)) {
+			D("TX ring %d of generic adapter %p goes on", r, na);
+			kring->nr_mode = NKR_NETMAP_ON;
+		}
 	}
 
 	for_each_tx_kring(r, kring, na) {
-		if (!nm_kring_pending_on(kring)) {
-			continue;
-		}
-
 		/* Initialize tx_pool and tx_event. */
-		D("TX ring %d of generic adapter %p goes on", r, na);
 		for (i=0; i<na->num_tx_desc; i++) {
 			kring->tx_pool[i] = NULL;
 		}
 
 		kring->tx_event = NULL;
-
-		kring->nr_mode = NKR_NETMAP_ON;
 	}
 
 	if (na->active_fds == 0) {
@@ -1187,7 +1189,7 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	nm_os_generic_set_features(gna);
 
-	ND("Created generic NA %p (prev %p)", gna, gna->prev);
+	D("Created generic NA %p (prev %p)", gna, gna->prev);
 
 	return retval;
 }
