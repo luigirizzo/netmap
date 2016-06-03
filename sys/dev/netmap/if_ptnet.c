@@ -95,8 +95,13 @@ struct ptnet_softc {
 	struct mtx		core_mtx;
 	char			core_mtx_name[16];
 	char			hwaddr[ETHER_ADDR_LEN];
+
+	/* PCI BARs support. */
 	struct resource		*iomem;
 	struct resource		*msix_mem;
+
+	/* Mirror of PTFEAT register. */
+	uint32_t		ptfeatures;
 };
 
 #define PTNET_CORE_LOCK_INIT(_sc)	do {			\
@@ -163,9 +168,10 @@ ptnet_probe(device_t dev)
 static int
 ptnet_attach(device_t dev)
 {
+	uint32_t ptfeatures = NET_PTN_FEATURES_BASE;
 	struct ptnet_softc *sc;
 	struct ifnet *ifp;
-	int rid;
+	int err, rid;
 
 	device_printf(dev, "%s\n", __func__);
 
@@ -183,11 +189,24 @@ ptnet_attach(device_t dev)
 		return (ENXIO);
 	}
 
+	/* Check if we are supported by the hypervisor. If not,
+	 * bail out immediately. */
+	bus_write_4(sc->iomem, PTNET_IO_PTFEAT, ptfeatures); /* wanted */
+	ptfeatures = bus_read_4(sc->iomem, PTNET_IO_PTFEAT); /* acked */
+	if (!(ptfeatures & NET_PTN_FEATURES_BASE)) {
+		device_printf(dev, "Hypervisor does not support netmap "
+				   "passthorugh");
+		err = ENXIO;
+		goto err_path;
+	}
+	sc->ptfeatures = ptfeatures;
+
 	/* Setup Ethernet interface. */
 	sc->ifp = ifp = if_alloc(IFT_ETHER);
 	if (ifp == NULL) {
 		device_printf(dev, "Failed to allocate ifnet\n");
-		return (ENOMEM);
+		err = ENOMEM;
+		goto err_path;
 	}
 
 	if_initname(ifp, device_get_name(dev), device_get_unit(dev));
@@ -217,6 +236,10 @@ ptnet_attach(device_t dev)
 	PTNET_CORE_LOCK_INIT(sc);
 
 	return (0);
+
+err_path:
+	ptnet_detach(dev);
+	return err;
 }
 
 static int
@@ -224,23 +247,22 @@ ptnet_detach(device_t dev)
 {
 	struct ptnet_softc *sc = device_get_softc(dev);
 
-	printf("%s\n", __func__);
-
-	if (device_is_attached(dev)) {
-		ether_ifdetach(sc->ifp);
-	}
-
-	ifmedia_removeall(&sc->media);
+	device_printf(dev, "%s\n", __func__);
 
 	if (sc->ifp) {
+		ether_ifdetach(sc->ifp);
+		ifmedia_removeall(&sc->media);
 		if_free(sc->ifp);
 		sc->ifp = NULL;
 	}
 
 	PTNET_CORE_LOCK_FINI(sc);
 
-	bus_release_resource(dev, SYS_RES_IOPORT,
-			     PCIR_BAR(PTNETMAP_IO_PCI_BAR), sc->iomem);
+	if (sc->iomem) {
+		bus_release_resource(dev, SYS_RES_IOPORT,
+				     PCIR_BAR(PTNETMAP_IO_PCI_BAR), sc->iomem);
+		sc->iomem = NULL;
+	}
 
 	return (0);
 }
