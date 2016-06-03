@@ -84,6 +84,10 @@
 #include <dev/netmap/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
 
+#ifndef PTNET_CSB_ALLOC
+#error "No support for on-device CSB"
+#endif
+
 struct ptnet_softc {
 	device_t dev;
 	struct ifnet		*ifp;
@@ -91,6 +95,8 @@ struct ptnet_softc {
 	struct mtx		core_mtx;
 	char			core_mtx_name[16];
 	char			hwaddr[ETHER_ADDR_LEN];
+	struct resource		*iomem;
+	struct resource		*msix_mem;
 };
 
 #define PTNET_CORE_LOCK_INIT(_sc)	do {			\
@@ -142,7 +148,7 @@ MODULE_DEPEND(ptnet, netmap, 1, 1, 1);
 static int
 ptnet_probe(device_t dev)
 {
-	printf("%s\n", __func__);
+	device_printf(dev, "%s\n", __func__);
 
 	if (pci_get_vendor(dev) != PTNETMAP_PCI_VENDOR_ID ||
 		pci_get_device(dev) != PTNETMAP_PCI_NETIF_ID) {
@@ -159,14 +165,25 @@ ptnet_attach(device_t dev)
 {
 	struct ptnet_softc *sc;
 	struct ifnet *ifp;
+	int rid;
 
-	printf("%s\n", __func__);
+	device_printf(dev, "%s\n", __func__);
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
-	PTNET_CORE_LOCK_INIT(sc);
+	/* Setup PCI resources. */
+	pci_enable_busmaster(dev);
 
+	rid = PCIR_BAR(PTNETMAP_IO_PCI_BAR);
+	sc->iomem = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
+					   RF_ACTIVE);
+	if (!sc->iomem) {
+		device_printf(dev, "Failed to map I/O BAR");
+		return (ENXIO);
+	}
+
+	/* Setup Ethernet interface. */
 	sc->ifp = ifp = if_alloc(IFT_ETHER);
 	if (ifp == NULL) {
 		device_printf(dev, "Failed to allocate ifnet\n");
@@ -197,6 +214,8 @@ ptnet_attach(device_t dev)
 
 	ifp->if_capenable = ifp->if_capabilities;
 
+	PTNET_CORE_LOCK_INIT(sc);
+
 	return (0);
 }
 
@@ -219,6 +238,9 @@ ptnet_detach(device_t dev)
 	}
 
 	PTNET_CORE_LOCK_FINI(sc);
+
+	bus_release_resource(dev, SYS_RES_IOPORT,
+			     PCIR_BAR(PTNETMAP_IO_PCI_BAR), sc->iomem);
 
 	return (0);
 }
