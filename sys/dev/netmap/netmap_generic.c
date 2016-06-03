@@ -1187,7 +1187,7 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	nm_os_generic_set_features(gna);
 
-	ND("Created generic NA %p (prev %p)", gna, gna->prev);
+	D("Created generic NA %p (prev %p)", gna, gna->prev);
 
 	return retval;
 }
