@@ -96,12 +96,14 @@ struct ptnet_softc {
 	char			core_mtx_name[16];
 	char			hwaddr[ETHER_ADDR_LEN];
 
+	/* Mirror of PTFEAT register. */
+	uint32_t		ptfeatures;
+
 	/* PCI BARs support. */
 	struct resource		*iomem;
 	struct resource		*msix_mem;
 
-	/* Mirror of PTFEAT register. */
-	uint32_t		ptfeatures;
+	struct ptnet_csb	*csb;
 };
 
 #define PTNET_CORE_LOCK_INIT(_sc)	do {			\
@@ -169,6 +171,9 @@ static int
 ptnet_attach(device_t dev)
 {
 	uint32_t ptfeatures = NET_PTN_FEATURES_BASE;
+#if 0
+	unsigned int num_rx_rings, num_tx_rings;
+#endif
 	struct ptnet_softc *sc;
 	struct ifnet *ifp;
 	int err, rid;
@@ -184,8 +189,8 @@ ptnet_attach(device_t dev)
 	rid = PCIR_BAR(PTNETMAP_IO_PCI_BAR);
 	sc->iomem = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
 					   RF_ACTIVE);
-	if (!sc->iomem) {
-		device_printf(dev, "Failed to map I/O BAR");
+	if (sc->iomem == NULL) {
+		device_printf(dev, "Failed to map I/O BAR\n");
 		return (ENXIO);
 	}
 
@@ -195,11 +200,21 @@ ptnet_attach(device_t dev)
 	ptfeatures = bus_read_4(sc->iomem, PTNET_IO_PTFEAT); /* acked */
 	if (!(ptfeatures & NET_PTN_FEATURES_BASE)) {
 		device_printf(dev, "Hypervisor does not support netmap "
-				   "passthorugh");
+				   "passthorugh\n");
 		err = ENXIO;
 		goto err_path;
 	}
 	sc->ptfeatures = ptfeatures;
+#if 0
+	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
+	num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
+#endif
+	sc->csb = malloc(sizeof(struct ptnet_csb), M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (sc->csb == NULL) {
+		device_printf(dev, "Failed to allocate CSB\n");
+		err = ENOMEM;
+		goto err_path;
+	}
 
 	/* Setup Ethernet interface. */
 	sc->ifp = ifp = if_alloc(IFT_ETHER);
@@ -254,6 +269,11 @@ ptnet_detach(device_t dev)
 		ifmedia_removeall(&sc->media);
 		if_free(sc->ifp);
 		sc->ifp = NULL;
+	}
+
+	if (sc->csb) {
+		free(sc->csb, M_DEVBUF);
+		sc->csb = NULL;
 	}
 
 	PTNET_CORE_LOCK_FINI(sc);
