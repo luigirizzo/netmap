@@ -1098,7 +1098,7 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 	struct netmap_adapter *prev_na = gna->prev;
 
-	if (prev_na != NULL) {
+	if (prev_na == NULL) {
 		D("Released generic NA %p", gna);
 		netmap_adapter_put(prev_na);
 		if (nm_iszombie(na)) {
