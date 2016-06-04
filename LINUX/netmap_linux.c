@@ -482,20 +482,20 @@ static struct mbuf *
 generic_qdisc_dequeue(struct Qdisc *qdisc)
 {
 	struct mbuf *m = qdisc_dequeue_head(qdisc);
-	bool event;
 
 	if (!m) {
 		return NULL;
 	}
 
-	event = (m->priority == NM_MAGIC_PRIORITY_TXQE);
-	m->priority = NM_MAGIC_PRIORITY_TX;
-
-	if (event) {
-		ND(5, "Event met, notify %p", m);
-		netmap_generic_irq(NA(qdisc_dev(qdisc)),
-				   skb_get_queue_mapping(m), NULL);
-	}
+        if (unlikely(m->priority == NM_MAGIC_PRIORITY_TXQE)) {
+            /* nm_os_generic_xmit_frame() asked us an event on this mbuf.
+             * We have to set the priority to the normal TX token, so that
+             * generic_ndo_start_xmit can pass it to the driver. */
+            m->priority = NM_MAGIC_PRIORITY_TX;
+            ND(5, "Event met, notify %p", m);
+            netmap_generic_irq(NA(qdisc_dev(qdisc)),
+                               skb_get_queue_mapping(m), NULL);
+        }
 
 	ND(5, "Dequeuing mbuf, len %u", qdisc_qlen(qdisc));
 
