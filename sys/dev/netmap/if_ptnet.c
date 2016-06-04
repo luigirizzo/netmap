@@ -90,6 +90,14 @@
 #error "No support for on-device CSB"
 #endif
 
+struct ptnet_softc;
+
+struct ptnet_queue {
+	struct ptnet_softc *sc;
+	struct resource *irq;
+	int kring_id;
+};
+
 struct ptnet_softc {
 	device_t dev;
 	struct ifnet		*ifp;
@@ -106,7 +114,7 @@ struct ptnet_softc {
 	struct resource		*msix_mem;
 
 	unsigned int		num_rings;
-
+	struct ptnet_queue	*queues;
 	struct ptnet_csb	*csb;
 };
 
@@ -183,6 +191,7 @@ ptnet_attach(device_t dev)
 	struct ifnet *ifp;
 	uint32_t macreg;
 	int err, rid;
+	int i;
 
 	device_printf(dev, "%s\n", __func__);
 
@@ -215,6 +224,24 @@ ptnet_attach(device_t dev)
 	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
 	num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
 	sc->num_rings = num_tx_rings + num_rx_rings;
+
+	/* Allocate per-queue data structures. */
+	sc->queues = malloc(sizeof(struct ptnet_queue) * sc->num_rings,
+			    M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (sc->queues == NULL) {
+		err = ENOMEM;
+		goto err_path;
+	}
+
+	for (i = 0; i < sc->num_rings; i++) {
+		struct ptnet_queue *pq = sc->queues + i;
+
+		pq->sc = sc;
+		pq->kring_id = i;
+		if (i >= num_tx_rings) {
+			pq->kring_id -= num_tx_rings;
+		}
+	}
 
 	/* Allocate CSB and carry out CSB allocation protocol (CSBBAH first,
 	 * then CSBBAL). */
@@ -309,6 +336,11 @@ ptnet_detach(device_t dev)
 		bus_write_4(sc->iomem, PTNET_IO_CSBBAL, 0);
 		free(sc->csb, M_DEVBUF);
 		sc->csb = NULL;
+	}
+
+	if (sc->queues) {
+		free(sc->queues, M_DEVBUF);
+		sc->queues = NULL;
 	}
 
 	if (sc->iomem) {
