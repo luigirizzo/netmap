@@ -178,6 +178,7 @@ ptnet_attach(device_t dev)
 #endif
 	struct ptnet_softc *sc;
 	struct ifnet *ifp;
+	uint32_t macreg;
 	int err, rid;
 
 	device_printf(dev, "%s\n", __func__);
@@ -253,7 +254,15 @@ ptnet_attach(device_t dev)
 	ifmedia_add(&sc->media, IFM_ETHER | IFM_10G_T | IFM_FDX, 0, NULL);
 	ifmedia_set(&sc->media, IFM_ETHER | IFM_10G_T | IFM_FDX);
 
-	memset(sc->hwaddr, 0, sizeof(sc->hwaddr));
+	macreg = bus_read_4(sc->iomem, PTNET_IO_MAC_HI);
+	sc->hwaddr[0] = (macreg >> 8) & 0xff;
+	sc->hwaddr[1] = macreg & 0xff;
+	macreg = bus_read_4(sc->iomem, PTNET_IO_MAC_LO);
+	sc->hwaddr[2] = (macreg >> 24) & 0xff;
+	sc->hwaddr[3] = (macreg >> 16) & 0xff;
+	sc->hwaddr[4] = (macreg >> 8) & 0xff;
+	sc->hwaddr[5] = macreg & 0xff;
+
 	ether_ifattach(ifp, sc->hwaddr);
 
 	ifp->if_data.ifi_hdrlen = sizeof(struct ether_vlan_header);
