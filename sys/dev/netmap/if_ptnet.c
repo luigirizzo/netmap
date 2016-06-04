@@ -105,6 +105,8 @@ struct ptnet_softc {
 	struct resource		*iomem;
 	struct resource		*msix_mem;
 
+	unsigned int		num_rings;
+
 	struct ptnet_csb	*csb;
 };
 
@@ -132,6 +134,9 @@ static void	ptnet_start(struct ifnet *ifp);
 
 static int	ptnet_media_change(struct ifnet *ifp);
 static void	ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr);
+
+static int	ptnet_irqs_init(struct ptnet_softc *sc);
+static void	ptnet_irqs_fini(struct ptnet_softc *sc);
 
 static device_method_t ptnet_methods[] = {
 	DEVMETHOD(device_probe,			ptnet_probe),
@@ -173,9 +178,7 @@ static int
 ptnet_attach(device_t dev)
 {
 	uint32_t ptfeatures = NET_PTN_FEATURES_BASE;
-#if 0
 	unsigned int num_rx_rings, num_tx_rings;
-#endif
 	struct ptnet_softc *sc;
 	struct ifnet *ifp;
 	uint32_t macreg;
@@ -208,10 +211,11 @@ ptnet_attach(device_t dev)
 		goto err_path;
 	}
 	sc->ptfeatures = ptfeatures;
-#if 0
+
 	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
 	num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
-#endif
+	sc->num_rings = num_tx_rings + num_rx_rings;
+
 	/* Allocate CSB and carry out CSB allocation protocol (CSBBAH first,
 	 * then CSBBAL). */
 	sc->csb = malloc(sizeof(struct ptnet_csb), M_DEVBUF,
@@ -228,6 +232,11 @@ ptnet_attach(device_t dev)
 		bus_write_4(sc->iomem, PTNET_IO_CSBBAH,
 			    (paddr >> 32) & 0xffffffff);
 		bus_write_4(sc->iomem, PTNET_IO_CSBBAL, paddr & 0xffffffff);
+	}
+
+	err = ptnet_irqs_init(sc);
+	if (err) {
+		goto err_path;
 	}
 
 	/* Setup Ethernet interface. */
@@ -293,6 +302,8 @@ ptnet_detach(device_t dev)
 		sc->ifp = NULL;
 	}
 
+	ptnet_irqs_fini(sc);
+
 	if (sc->csb) {
 		bus_write_4(sc->iomem, PTNET_IO_CSBBAH, 0);
 		bus_write_4(sc->iomem, PTNET_IO_CSBBAL, 0);
@@ -300,13 +311,13 @@ ptnet_detach(device_t dev)
 		sc->csb = NULL;
 	}
 
-	PTNET_CORE_LOCK_FINI(sc);
-
 	if (sc->iomem) {
 		bus_release_resource(dev, SYS_RES_IOPORT,
 				     PCIR_BAR(PTNETMAP_IO_PCI_BAR), sc->iomem);
 		sc->iomem = NULL;
 	}
+
+	PTNET_CORE_LOCK_FINI(sc);
 
 	return (0);
 }
@@ -341,6 +352,53 @@ ptnet_shutdown(device_t dev)
 	 * do here; we just never expect to be resumed.
 	 */
 	return (ptnet_suspend(dev));
+}
+
+static int
+ptnet_irqs_init(struct ptnet_softc *sc)
+{
+	int rid = PCIR_BAR(PTNETMAP_MSIX_PCI_BAR);
+	int nvecs = sc->num_rings;
+	int err = ENOSPC;
+
+	sc->msix_mem = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
+					      &rid, RF_ACTIVE);
+	if (sc->msix_mem == NULL) {
+		device_printf(sc->dev, "Failed to allocate MSIX PCI BAR\n");
+		return (ENXIO);
+	}
+
+	if (pci_msix_count(sc->dev) < nvecs) {
+		device_printf(sc->dev, "Not enough MSI-X vectors\n");
+		goto err_path;
+	}
+
+	err = pci_alloc_msix(sc->dev, &nvecs);
+	if (err) {
+		device_printf(sc->dev, "Failed to allocate MSI-X vectors\n");
+		goto err_path;
+	}
+
+	device_printf(sc->dev, "Allocated %d MSI-X vectors\n", nvecs);
+
+	return 0;
+err_path:
+	ptnet_irqs_fini(sc);
+	return err;
+}
+
+static void
+ptnet_irqs_fini(struct ptnet_softc *sc)
+{
+	if (sc->msix_mem == NULL) {
+		return;
+	}
+
+	pci_release_msi(sc->dev);
+
+	bus_release_resource(sc->dev, SYS_RES_MEMORY,
+			     PCIR_BAR(PTNETMAP_MSIX_PCI_BAR), sc->msix_mem);
+	sc->msix_mem = NULL;
 }
 
 static void
