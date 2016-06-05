@@ -437,7 +437,8 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 		}
 
 		err = bus_setup_intr(dev, pq->irq, INTR_TYPE_NET | INTR_MPSAFE,
-				     NULL, handler, pq, &pq->cookie);
+				     NULL /* intr_filter */, handler,
+				     pq, &pq->cookie);
 		if (err) {
 			device_printf(dev, "Failed to register intr handler "
 					   "for queue #%d\n", i);
@@ -529,9 +530,17 @@ ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 static void
 ptnet_tx_intr(void *opaque)
 {
+	struct ptnet_queue *pq = opaque;
+	struct ptnet_softc *sc = pq->sc;
+
+	device_printf(sc->dev, "Tx interrupt #%d", pq->kring_id);
 }
 
 static void
 ptnet_rx_intr(void *opaque)
 {
+	struct ptnet_queue *pq = opaque;
+	struct ptnet_softc *sc = pq->sc;
+
+	device_printf(sc->dev, "Rx interrupt #%d", pq->kring_id);
 }
