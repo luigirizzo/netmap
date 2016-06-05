@@ -139,6 +139,7 @@ static int	ptnet_resume(device_t);
 static int	ptnet_shutdown(device_t);
 
 static void	ptnet_init(void *opaque);
+static int	ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data);
 static void	ptnet_start(struct ifnet *ifp);
 
 static int	ptnet_media_change(struct ifnet *ifp);
@@ -283,6 +284,7 @@ ptnet_attach(device_t dev)
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST | IFF_SIMPLEX;
 	ifp->if_init = ptnet_init;
+	ifp->if_ioctl = ptnet_ioctl;
 	ifp->if_start = ptnet_start;
 
 	IFQ_SET_MAXLEN(&ifp->if_snd, 255);
@@ -492,6 +494,19 @@ ptnet_init(void *opaque)
 {
 	struct ptnet_softc *sc = opaque;
 	(void)sc;
+}
+
+static int
+ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
+{
+	int err = 0;
+
+	switch (cmd) {
+		default:
+			err = ether_ioctl(ifp, cmd, data);
+	}
+
+	return err;
 }
 
 static void
