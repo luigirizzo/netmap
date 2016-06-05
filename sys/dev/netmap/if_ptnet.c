@@ -93,9 +93,10 @@
 struct ptnet_softc;
 
 struct ptnet_queue {
-	struct ptnet_softc *sc;
-	struct resource *irq;
-	int kring_id;
+	struct ptnet_softc	*sc;
+	struct			resource *irq;
+	void			*cookie;
+	int			kring_id;
 };
 
 struct ptnet_softc {
@@ -145,6 +146,9 @@ static void	ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr);
 
 static int	ptnet_irqs_init(struct ptnet_softc *sc);
 static void	ptnet_irqs_fini(struct ptnet_softc *sc);
+
+static void	ptnet_tx_intr(void *opaque);
+static void	ptnet_rx_intr(void *opaque);
 
 static device_method_t ptnet_methods[] = {
 	DEVMETHOD(device_probe,			ptnet_probe),
@@ -391,27 +395,60 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 {
 	int rid = PCIR_BAR(PTNETMAP_MSIX_PCI_BAR);
 	int nvecs = sc->num_rings;
+	unsigned int num_tx_rings;
+	device_t dev = sc->dev;
 	int err = ENOSPC;
+	int i;
 
-	sc->msix_mem = bus_alloc_resource_any(sc->dev, SYS_RES_MEMORY,
+	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
+
+	sc->msix_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
 					      &rid, RF_ACTIVE);
 	if (sc->msix_mem == NULL) {
-		device_printf(sc->dev, "Failed to allocate MSIX PCI BAR\n");
+		device_printf(dev, "Failed to allocate MSIX PCI BAR\n");
 		return (ENXIO);
 	}
 
-	if (pci_msix_count(sc->dev) < nvecs) {
-		device_printf(sc->dev, "Not enough MSI-X vectors\n");
+	if (pci_msix_count(dev) < nvecs) {
+		device_printf(dev, "Not enough MSI-X vectors\n");
 		goto err_path;
 	}
 
-	err = pci_alloc_msix(sc->dev, &nvecs);
+	err = pci_alloc_msix(dev, &nvecs);
 	if (err) {
-		device_printf(sc->dev, "Failed to allocate MSI-X vectors\n");
+		device_printf(dev, "Failed to allocate MSI-X vectors\n");
 		goto err_path;
 	}
 
-	device_printf(sc->dev, "Allocated %d MSI-X vectors\n", nvecs);
+	for (i = 0; i < nvecs; i++) {
+		struct ptnet_queue *pq = sc->queues + i;
+		void (*handler)(void *) = ptnet_tx_intr;
+		int rid = i + i;
+
+		if (i > num_tx_rings) {
+			handler = ptnet_rx_intr;
+		}
+		pq->irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
+						 RF_ACTIVE);
+		if (pq->irq == NULL) {
+			device_printf(dev, "Failed to allocate interrupt"
+					   "for queue #%d\n", i);
+			goto err_path;
+		}
+
+		err = bus_setup_intr(dev, pq->irq, INTR_TYPE_NET | INTR_MPSAFE,
+				     NULL, handler, pq, &pq->cookie);
+		if (err) {
+			device_printf(dev, "Failed to register intr handler "
+					   "for queue #%d\n", i);
+			goto err_path;
+		}
+
+		bus_describe_intr(dev, pq->irq, pq->cookie, "q%d", i);
+		//bus_bind_intr(); /* bind intr to CPU */
+	}
+
+	device_printf(dev, "Allocated %d MSI-X vectors\n", nvecs);
 
 	return 0;
 err_path:
@@ -422,15 +459,31 @@ err_path:
 static void
 ptnet_irqs_fini(struct ptnet_softc *sc)
 {
-	if (sc->msix_mem == NULL) {
-		return;
+	device_t dev = sc->dev;
+	int i;
+
+	for (i = 0; i < sc->num_rings; i++) {
+		struct ptnet_queue *pq = sc->queues + i;
+
+		if (pq->cookie) {
+			bus_teardown_intr(dev, pq->irq, pq->cookie);
+			pq->cookie = NULL;
+		}
+
+		if (pq->irq) {
+			bus_release_resource(dev, SYS_RES_IRQ, i + i, pq->irq);
+			pq->irq = NULL;
+		}
 	}
 
-	pci_release_msi(sc->dev);
+	if (sc->msix_mem) {
+		pci_release_msi(dev);
 
-	bus_release_resource(sc->dev, SYS_RES_MEMORY,
-			     PCIR_BAR(PTNETMAP_MSIX_PCI_BAR), sc->msix_mem);
-	sc->msix_mem = NULL;
+		bus_release_resource(dev, SYS_RES_MEMORY,
+				     PCIR_BAR(PTNETMAP_MSIX_PCI_BAR),
+				     sc->msix_mem);
+		sc->msix_mem = NULL;
+	}
 }
 
 static void
@@ -471,4 +524,14 @@ ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	} else {
 		ifmr->ifm_active |= IFM_NONE;
 	}
+}
+
+static void
+ptnet_tx_intr(void *opaque)
+{
+}
+
+static void
+ptnet_rx_intr(void *opaque)
+{
 }
