@@ -137,6 +137,26 @@
  *	netmap:foo-k			the k-th NIC ring pair
  *	netmap:foo{k			PIPE ring pair k, master side
  *	netmap:foo}k			PIPE ring pair k, slave side
+ *
+ * Some notes about host rings:
+ *
+ * + The RX host ring is used to store those packets that the host network
+ *   stack is trying to transmit through a NIC queue, but only if that queue
+ *   is currently in netmap mode. Netmap will not intercept host stack mbufs
+ *   designated to NIC queues that are not in netmap mode. As a consequence,
+ *   registering a netmap port with netmap:foo^ is not enough to intercept
+ *   mbufs in the RX host ring; the netmap port should be registered with
+ *   netmap:foo*, or another registration should be done to open at least a
+ *   NIC TX queue in netmap mode.
+ *
+ * + Netmap is not currently able to deal with intercepted trasmit mbufs which
+ *   require offloadings like TSO, UFO, checksumming offloadings, etc. It is
+ *   responsibility of the user to disable those offloadings (e.g. using
+ *   ifconfig on FreeBSD or ethtool -K on Linux) for an interface that is being
+ *   used in netmap mode. If the offloadings are not disabled, GSO and/or
+ *   unchecksummed packets may be dropped immediately or end up in the host RX
+ *   ring, and will be dropped as soon as the packet reaches another netmap
+ *   adapter.
  */
 
 /*
