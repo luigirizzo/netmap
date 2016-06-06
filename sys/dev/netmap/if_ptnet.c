@@ -38,8 +38,6 @@
 #include <sys/module.h>
 #include <sys/socket.h>
 #include <sys/sysctl.h>
-#include <sys/random.h>
-#include <sys/sglist.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
 #include <sys/taskqueue.h>
@@ -58,8 +56,6 @@
 #include <net/if_media.h>
 #include <net/if_vlan_var.h>
 
-#include <net/bpf.h>
-
 #include <netinet/in_systm.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
@@ -67,7 +63,6 @@
 #include <netinet6/ip6_var.h>
 #include <netinet/udp.h>
 #include <netinet/tcp.h>
-#include <netinet/sctp.h>
 
 #include <machine/bus.h>
 #include <machine/resource.h>
