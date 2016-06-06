@@ -112,6 +112,8 @@ struct ptnet_softc {
 	unsigned int		num_rings;
 	struct ptnet_queue	*queues;
 	struct ptnet_csb	*csb;
+
+	struct netmap_pt_guest_adapter *ptna_nm;
 };
 
 #define PTNET_CORE_LOCK_INIT(_sc)	do {			\
@@ -144,6 +146,8 @@ static void	ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr);
 
 static int	ptnet_irqs_init(struct ptnet_softc *sc);
 static void	ptnet_irqs_fini(struct ptnet_softc *sc);
+
+static uint32_t ptnet_nm_ptctl(struct ifnet *ifp, uint32_t cmd);
 
 static void	ptnet_tx_intr(void *opaque);
 static void	ptnet_rx_intr(void *opaque);
@@ -189,6 +193,8 @@ ptnet_attach(device_t dev)
 {
 	uint32_t ptfeatures = NET_PTN_FEATURES_BASE;
 	unsigned int num_rx_rings, num_tx_rings;
+	struct netmap_adapter na_arg;
+	unsigned int nifp_offset;
 	struct ptnet_softc *sc;
 	struct ifnet *ifp;
 	uint32_t macreg;
@@ -311,6 +317,22 @@ ptnet_attach(device_t dev)
 
 	PTNET_CORE_LOCK_INIT(sc);
 
+	/* Prepare a netmap_adapter struct instance to do netmap_attach(). */
+	nifp_offset = bus_read_4(sc->iomem, PTNET_IO_NIFP_OFS);
+	na_arg.ifp = ifp;
+	na_arg.num_tx_desc = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_SLOTS);
+	na_arg.num_rx_desc = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_SLOTS);
+	na_arg.num_tx_rings = num_tx_rings;
+	na_arg.num_rx_rings = num_rx_rings;
+
+	netmap_pt_guest_attach(&na_arg, sc->csb, nifp_offset, ptnet_nm_ptctl);
+
+	/* Now a netmap adapter for this ifp has been allocated, and it
+	 * can be accessed through NA(ifp). We also have to initialize the CSB
+	 * pointer. */
+	sc->ptna_nm = (struct netmap_pt_guest_adapter *)NA(ifp);
+	sc->ptna_nm->csb = sc->csb;
+
 	return (0);
 
 err_path:
@@ -327,6 +349,9 @@ ptnet_detach(device_t dev)
 
 	if (sc->ifp) {
 		ether_ifdetach(sc->ifp);
+
+		netmap_detach(sc->ifp);
+
 		ifmedia_removeall(&sc->media);
 		if_free(sc->ifp);
 		sc->ifp = NULL;
@@ -579,6 +604,19 @@ ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	} else {
 		ifmr->ifm_active |= IFM_NONE;
 	}
+}
+
+static uint32_t
+ptnet_nm_ptctl(struct ifnet *ifp, uint32_t cmd)
+{
+	struct ptnet_softc *sc = ifp->if_softc;
+	int ret;
+
+	bus_write_4(sc->iomem, PTNET_IO_PTCTL, cmd);
+	ret = bus_read_4(sc->iomem, PTNET_IO_PTSTS);
+	device_printf(sc->dev, "PTCTL %u, ret %u\n", cmd, ret);
+
+	return ret;
 }
 
 static void
