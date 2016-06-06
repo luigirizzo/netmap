@@ -135,6 +135,8 @@ static int	ptnet_shutdown(device_t);
 
 static void	ptnet_init(void *opaque);
 static int	ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data);
+static void	ptnet_init_locked(struct ptnet_softc *sc);
+static void	ptnet_stop(struct ptnet_softc *sc);
 static void	ptnet_start(struct ifnet *ifp);
 
 static int	ptnet_media_change(struct ifnet *ifp);
@@ -488,20 +490,54 @@ static void
 ptnet_init(void *opaque)
 {
 	struct ptnet_softc *sc = opaque;
-	(void)sc;
+
+	PTNET_CORE_LOCK(sc);
+	ptnet_init_locked(sc);
+	PTNET_CORE_UNLOCK(sc);
 }
 
 static int
 ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 {
+	struct ptnet_softc *sc = ifp->if_softc;
+	device_t dev = sc->dev;
 	int err = 0;
 
 	switch (cmd) {
+		case SIOCSIFFLAGS:
+			device_printf(dev, "SIOCSIFFLAGS %x\n", ifp->if_flags);
+			PTNET_CORE_LOCK(sc);
+			if (ifp->if_flags & IFF_UP) {
+				/* Network stack wants the iff to be up. */
+				if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
+					ptnet_init_locked(sc);
+				}
+			} else {
+				/* Network stack wants the iff to be down. */
+				if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
+					ptnet_stop(sc);
+				}
+			}
+			PTNET_CORE_UNLOCK(sc);
+
 		default:
 			err = ether_ioctl(ifp, cmd, data);
 	}
 
 	return err;
+}
+
+static void
+ptnet_init_locked(struct ptnet_softc *sc)
+{
+	device_printf(sc->dev, "%s\n", __func__);
+}
+
+/* To be called under core lock. */
+static void
+ptnet_stop(struct ptnet_softc *sc)
+{
+	device_printf(sc->dev, "%s\n", __func__);
 }
 
 static void
