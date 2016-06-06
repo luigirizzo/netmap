@@ -509,14 +509,10 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			PTNET_CORE_LOCK(sc);
 			if (ifp->if_flags & IFF_UP) {
 				/* Network stack wants the iff to be up. */
-				if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
-					ptnet_init_locked(sc);
-				}
+				ptnet_init_locked(sc);
 			} else {
 				/* Network stack wants the iff to be down. */
-				if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
-					ptnet_stop(sc);
-				}
+				ptnet_stop(sc);
 			}
 			PTNET_CORE_UNLOCK(sc);
 
@@ -530,14 +526,26 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 static void
 ptnet_init_locked(struct ptnet_softc *sc)
 {
+	struct ifnet *ifp = sc->ifp;
+
 	device_printf(sc->dev, "%s\n", __func__);
+
+	if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
+		return; /* nothing to do */
+	}
 }
 
 /* To be called under core lock. */
 static void
 ptnet_stop(struct ptnet_softc *sc)
 {
+	struct ifnet *ifp = sc->ifp;
+
 	device_printf(sc->dev, "%s\n", __func__);
+
+	if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
+		return; /* nothing to do */
+	}
 }
 
 static void
