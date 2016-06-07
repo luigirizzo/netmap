@@ -497,6 +497,11 @@ run:
 		iter++;
 
 		for (i = 0; i < npipes; ++i) {
+			struct netmap_ring *ring = ports[i].ring;
+			if (nm_ring_next(ring, ring->tail) == ring->cur) {
+				/* no need to poll, there are no packets pending */
+				continue;
+			}
 			pollfd[polli].fd = ports[i].nmd->fd;
 			pollfd[polli].events = POLLOUT;
 			pollfd[polli].revents = 0;
