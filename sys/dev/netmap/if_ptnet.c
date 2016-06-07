@@ -148,6 +148,8 @@ static int	ptnet_irqs_init(struct ptnet_softc *sc);
 static void	ptnet_irqs_fini(struct ptnet_softc *sc);
 
 static uint32_t ptnet_nm_ptctl(struct ifnet *ifp, uint32_t cmd);
+static int	ptnet_nm_config(struct netmap_adapter *na, unsigned *txr,
+				unsigned *txd, unsigned *rxr, unsigned *rxd);
 
 static void	ptnet_tx_intr(void *opaque);
 static void	ptnet_rx_intr(void *opaque);
@@ -324,6 +326,7 @@ ptnet_attach(device_t dev)
 	na_arg.num_rx_desc = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_SLOTS);
 	na_arg.num_tx_rings = num_tx_rings;
 	na_arg.num_rx_rings = num_rx_rings;
+	na_arg.nm_config = ptnet_nm_config;
 
 	netmap_pt_guest_attach(&na_arg, sc->csb, nifp_offset, ptnet_nm_ptctl);
 
@@ -617,6 +620,23 @@ ptnet_nm_ptctl(struct ifnet *ifp, uint32_t cmd)
 	device_printf(sc->dev, "PTCTL %u, ret %u\n", cmd, ret);
 
 	return ret;
+}
+
+static int
+ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
+		unsigned *rxr, unsigned *rxd)
+{
+	struct ptnet_softc *sc = na->ifp->if_softc;
+
+	*txr = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
+	*rxr = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
+	*txd = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_SLOTS);
+	*rxd = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_SLOTS);
+
+	device_printf(sc->dev, "txr %u, rxr %u, txd %u, rxd %u\n",
+		      *txr, *rxr, *txd, *rxd);
+
+	return 0;
 }
 
 static void
