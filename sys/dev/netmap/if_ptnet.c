@@ -92,6 +92,8 @@ struct ptnet_queue {
 	struct			resource *irq;
 	void			*cookie;
 	int			kring_id;
+	struct ptnet_ring	*ptring;
+	unsigned int		kick;
 };
 
 struct ptnet_softc {
@@ -231,28 +233,6 @@ ptnet_attach(device_t dev)
 	}
 	sc->ptfeatures = ptfeatures;
 
-	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
-	num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
-	sc->num_rings = num_tx_rings + num_rx_rings;
-
-	/* Allocate per-queue data structures. */
-	sc->queues = malloc(sizeof(struct ptnet_queue) * sc->num_rings,
-			    M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (sc->queues == NULL) {
-		err = ENOMEM;
-		goto err_path;
-	}
-
-	for (i = 0; i < sc->num_rings; i++) {
-		struct ptnet_queue *pq = sc->queues + i;
-
-		pq->sc = sc;
-		pq->kring_id = i;
-		if (i >= num_tx_rings) {
-			pq->kring_id -= num_tx_rings;
-		}
-	}
-
 	/* Allocate CSB and carry out CSB allocation protocol (CSBBAH first,
 	 * then CSBBAL). */
 	sc->csb = malloc(sizeof(struct ptnet_csb), M_DEVBUF,
@@ -269,6 +249,30 @@ ptnet_attach(device_t dev)
 		bus_write_4(sc->iomem, PTNET_IO_CSBBAH,
 			    (paddr >> 32) & 0xffffffff);
 		bus_write_4(sc->iomem, PTNET_IO_CSBBAL, paddr & 0xffffffff);
+	}
+
+	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
+	num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
+	sc->num_rings = num_tx_rings + num_rx_rings;
+
+	/* Allocate and initialize per-queue data structures. */
+	sc->queues = malloc(sizeof(struct ptnet_queue) * sc->num_rings,
+			    M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (sc->queues == NULL) {
+		err = ENOMEM;
+		goto err_path;
+	}
+
+	for (i = 0; i < sc->num_rings; i++) {
+		struct ptnet_queue *pq = sc->queues + i;
+
+		pq->sc = sc;
+		pq->kring_id = i;
+		pq->kick = PTNET_IO_KICK_BASE + 4 * i;
+		pq->ptring = sc->csb->rings + i;
+		if (i >= num_tx_rings) {
+			pq->kring_id -= num_tx_rings;
+		}
 	}
 
 	err = ptnet_irqs_init(sc);
