@@ -2009,7 +2009,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		error = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
 		if (error)
 			goto err_del_if;
-		D("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
+		ND("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
 					    na->na_lut.objsize);
 	}
 
@@ -2241,10 +2241,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			}
 
 			if (nmr->nr_arg3) {
-				D("requested %d extra buffers", nmr->nr_arg3);
+				if (netmap_verbose)
+					D("requested %d extra buffers", nmr->nr_arg3);
 				nmr->nr_arg3 = netmap_extra_alloc(na,
 					&nifp->ni_bufs_head, nmr->nr_arg3);
-				D("got %d extra buffers", nmr->nr_arg3);
+				if (netmap_verbose)
+					D("got %d extra buffers", nmr->nr_arg3);
 			}
 			nmr->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
 
