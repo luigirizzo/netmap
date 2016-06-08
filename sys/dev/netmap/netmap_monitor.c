@@ -252,7 +252,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 	kring->n_monitors++;
 	if (kring->n_monitors == 1) {
 		/* this is the first monitor, intercept callbacks */
-		D("%s: intercept callbacks on %s", mkring->name, kring->name);
+		ND("%s: intercept callbacks on %s", mkring->name, kring->name);
 		kring->mon_sync = kring->nm_sync;
 		/* zcopy monitors do not override nm_notify(), but
 		 * we save the original one regardless, so that
@@ -296,11 +296,11 @@ netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring)
 	kring->monitors[kring->n_monitors] = NULL;
 	if (kring->n_monitors == 0) {
 		/* this was the last monitor, restore callbacks  and delete monitor array */
-		D("%s: restoring sync on %s: %p", mkring->name, kring->name, kring->mon_sync);
+		ND("%s: restoring sync on %s: %p", mkring->name, kring->name, kring->mon_sync);
 		kring->nm_sync = kring->mon_sync;
 		kring->mon_sync = NULL;
 		if (kring->tx == NR_RX) {
-			D("%s: restoring notify on %s: %p", 
+			ND("%s: restoring notify on %s: %p", 
 					mkring->name, kring->name, kring->mon_notify);
 			kring->nm_notify = kring->mon_notify;
 			kring->mon_notify = NULL;
@@ -738,7 +738,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	}
 	/* this is a request for a monitor adapter */
 
-	D("flags %x", nmr->nr_flags);
+	ND("flags %x", nmr->nr_flags);
 
 	mna = malloc(sizeof(*mna), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (mna == NULL) {
@@ -758,7 +758,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		D("parent lookup failed: %d", error);
 		return error;
 	}
-	D("found parent: %s", pna->name);
+	ND("found parent: %s", pna->name);
 
 	if (!nm_netmap_on(pna)) {
 		/* parent not in netmap mode */
@@ -866,7 +866,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	netmap_adapter_get(*na);
 
 	/* keep the reference to the parent */
-	D("monitor ok");
+	ND("monitor ok");
 
 	/* drop the reference to the ifp, if any */
 	if (ifp)
