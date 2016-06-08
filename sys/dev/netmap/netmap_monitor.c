@@ -727,6 +727,12 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	char monsuff[10] = "";
 
 	if ((nmr->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX)) == 0) {
+		if (nmr->nr_flags & NR_ZCOPY_MON) {
+			/* the flag makes no sense unless you are 
+			 * creating a monitor
+			 */
+			return EINVAL;
+		}
 		ND("not a monitor");
 		return 0;
 	}
