@@ -152,6 +152,7 @@ static void	ptnet_irqs_fini(struct ptnet_softc *sc);
 static uint32_t ptnet_nm_ptctl(struct ifnet *ifp, uint32_t cmd);
 static int	ptnet_nm_config(struct netmap_adapter *na, unsigned *txr,
 				unsigned *txd, unsigned *rxr, unsigned *rxd);
+static int	ptnet_nm_txsync(struct netmap_kring *kring, int flags);
 
 static void	ptnet_tx_intr(void *opaque);
 static void	ptnet_rx_intr(void *opaque);
@@ -331,6 +332,7 @@ ptnet_attach(device_t dev)
 	na_arg.num_tx_rings = num_tx_rings;
 	na_arg.num_rx_rings = num_rx_rings;
 	na_arg.nm_config = ptnet_nm_config;
+	na_arg.nm_txsync = ptnet_nm_txsync;
 
 	netmap_pt_guest_attach(&na_arg, sc->csb, nifp_offset, ptnet_nm_ptctl);
 
@@ -647,6 +649,21 @@ ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 
 	device_printf(sc->dev, "txr %u, rxr %u, txd %u, rxd %u\n",
 		      *txr, *rxr, *txd, *rxd);
+
+	return 0;
+}
+
+static int
+ptnet_nm_txsync(struct netmap_kring *kring, int flags)
+{
+	struct ptnet_softc *sc = kring->na->ifp->if_softc;
+	struct ptnet_queue *pq = sc->queues + kring->ring_id;
+	bool notify;
+
+	notify = netmap_pt_guest_txsync(pq->ptring, kring, flags);
+	if (notify) {
+		bus_write_4(sc->iomem, pq->kick, 0);
+	}
 
 	return 0;
 }
