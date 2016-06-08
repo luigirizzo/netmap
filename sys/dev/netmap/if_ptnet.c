@@ -107,6 +107,10 @@ struct ptnet_softc {
 	/* Mirror of PTFEAT register. */
 	uint32_t		ptfeatures;
 
+	/* Reference counter used to track the regif operations on the
+	 * passed-through netmap port. */
+	int backend_regifs;
+
 	/* PCI BARs support. */
 	struct resource		*iomem;
 	struct resource		*msix_mem;
@@ -117,6 +121,7 @@ struct ptnet_softc {
 	struct ptnet_csb	*csb;
 
 	struct netmap_pt_guest_adapter *ptna_nm;
+	struct netmap_pt_guest_adapter ptna_dr;
 };
 
 #define PTNET_CORE_LOCK_INIT(_sc)	do {			\
@@ -153,6 +158,8 @@ static void	ptnet_irqs_fini(struct ptnet_softc *sc);
 static uint32_t ptnet_nm_ptctl(struct ifnet *ifp, uint32_t cmd);
 static int	ptnet_nm_config(struct netmap_adapter *na, unsigned *txr,
 				unsigned *txd, unsigned *rxr, unsigned *rxd);
+static int	ptnet_nm_krings_create(struct netmap_adapter *na);
+static void	ptnet_nm_krings_delete(struct netmap_adapter *na);
 static int	ptnet_nm_txsync(struct netmap_kring *kring, int flags);
 static int	ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
 
@@ -327,6 +334,8 @@ ptnet_attach(device_t dev)
 
 	PTNET_CORE_LOCK_INIT(sc);
 
+	sc->backend_regifs = 0;
+
 	/* Prepare a netmap_adapter struct instance to do netmap_attach(). */
 	nifp_offset = bus_read_4(sc->iomem, PTNET_IO_NIFP_OFS);
 	na_arg.ifp = ifp;
@@ -335,6 +344,8 @@ ptnet_attach(device_t dev)
 	na_arg.num_tx_rings = num_tx_rings;
 	na_arg.num_rx_rings = num_rx_rings;
 	na_arg.nm_config = ptnet_nm_config;
+	na_arg.nm_krings_create = ptnet_nm_krings_create;
+	na_arg.nm_krings_delete = ptnet_nm_krings_delete;
 	na_arg.nm_txsync = ptnet_nm_txsync;
 	na_arg.nm_rxsync = ptnet_nm_rxsync;
 
@@ -345,6 +356,8 @@ ptnet_attach(device_t dev)
 	 * pointer. */
 	sc->ptna_nm = (struct netmap_pt_guest_adapter *)NA(ifp);
 	sc->ptna_nm->csb = sc->csb;
+
+	memset(&sc->ptna_dr, 0, sizeof(sc->ptna_dr));
 
 	return (0);
 
@@ -655,6 +668,50 @@ ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 		      *txr, *rxr, *txd, *rxd);
 
 	return 0;
+}
+
+static int
+ptnet_nm_krings_create(struct netmap_adapter *na)
+{
+	/* Here (na == &sc->ptna_nm->hwup.up || na == &sc->ptna_dr.hwup.up). */
+	struct ptnet_softc *sc = na->ifp->if_softc;
+	struct netmap_adapter *na_nm = &sc->ptna_nm->hwup.up;
+	struct netmap_adapter *na_dr = &sc->ptna_dr.hwup.up;
+	int ret;
+
+	if (sc->backend_regifs) {
+		return 0;
+	}
+
+	/* Create krings on the public netmap adapter. */
+	ret = netmap_hw_krings_create(na_nm);
+	if (ret) {
+		return ret;
+	}
+
+	/* Copy krings into the netmap adapter private to the driver. */
+	na_dr->tx_rings = na_nm->tx_rings;
+	na_dr->rx_rings = na_nm->rx_rings;
+
+	return 0;
+}
+
+static void
+ptnet_nm_krings_delete(struct netmap_adapter *na)
+{
+	/* Here (na == &sc->ptna_nm->hwup.up || na == &sc->ptna_dr.hwup.up). */
+	struct ptnet_softc *sc = na->ifp->if_softc;
+	struct netmap_adapter *na_nm = &sc->ptna_nm->hwup.up;
+	struct netmap_adapter *na_dr = &sc->ptna_dr.hwup.up;
+
+	if (sc->backend_regifs) {
+		return;
+	}
+
+	na_dr->tx_rings = NULL;
+	na_dr->rx_rings = NULL;
+
+	netmap_hw_krings_delete(na_nm);
 }
 
 static int
