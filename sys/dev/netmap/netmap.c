@@ -596,7 +596,7 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
  * Convenience function used in drivers.  Waits for current txsync()s/rxsync()s
  * to finish and prevents any new one from starting.  Call this before turning
  * netmap mode off, or before removing the hardware rings (e.g., on module
- * onload). 
+ * onload).
  */
 void
 netmap_disable_all_rings(struct ifnet *ifp)
@@ -630,6 +630,18 @@ netmap_make_zombie(struct ifnet *ifp)
 	}
 }
 
+void
+netmap_undo_zombie(struct ifnet *ifp)
+{
+	if (NM_NA_VALID(ifp)) {
+		struct netmap_adapter *na = NA(ifp);
+		if (na->na_flags & NAF_ZOMBIE) {
+			netmap_set_all_rings(na, NM_KR_LOCKED);
+			na->na_flags &= ~NAF_ZOMBIE;
+			netmap_set_all_rings(na, 0);
+		}
+	}
+}
 
 /*
  * generic bound_checking function
@@ -825,7 +837,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 			 * IMPORTANT: Always keep one slot empty.
 			 */
 			kring->rtail = kring->nr_hwtail = (t == NR_TX ? ndesc - 1 : 0);
-			snprintf(kring->name, sizeof(kring->name) - 1, "%s %s%d", na->name, 
+			snprintf(kring->name, sizeof(kring->name) - 1, "%s %s%d", na->name,
 					nm_txrx2str(t), i);
 			ND("ktx %s h %d c %d t %d",
 				kring->name, kring->rhead, kring->rcur, kring->rtail);
@@ -2017,7 +2029,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		/* Some kring is switching mode, tell the adapter to
 		 * react on this. */
 		error = na->nm_register(na, 1);
-		if (error) 
+		if (error)
 			goto err_put_lut;
 	}
 

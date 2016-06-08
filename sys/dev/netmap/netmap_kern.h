@@ -288,6 +288,7 @@ void nm_os_get_module(void);
 void nm_os_put_module(void);
 
 void netmap_make_zombie(struct ifnet *);
+void netmap_undo_zombie(struct ifnet *);
 
 /* passes a packet up to the host stack.
  * If the packet is sent (or dropped) immediately it returns NULL,
