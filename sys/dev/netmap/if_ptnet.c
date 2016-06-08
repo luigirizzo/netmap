@@ -160,6 +160,7 @@ static int	ptnet_nm_config(struct netmap_adapter *na, unsigned *txr,
 				unsigned *txd, unsigned *rxr, unsigned *rxd);
 static int	ptnet_nm_krings_create(struct netmap_adapter *na);
 static void	ptnet_nm_krings_delete(struct netmap_adapter *na);
+static void	ptnet_nm_dtor(struct netmap_adapter *na);
 static int	ptnet_nm_txsync(struct netmap_kring *kring, int flags);
 static int	ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
 
@@ -346,6 +347,7 @@ ptnet_attach(device_t dev)
 	na_arg.nm_config = ptnet_nm_config;
 	na_arg.nm_krings_create = ptnet_nm_krings_create;
 	na_arg.nm_krings_delete = ptnet_nm_krings_delete;
+	na_arg.nm_dtor = ptnet_nm_dtor;
 	na_arg.nm_txsync = ptnet_nm_txsync;
 	na_arg.nm_rxsync = ptnet_nm_rxsync;
 
@@ -712,6 +714,12 @@ ptnet_nm_krings_delete(struct netmap_adapter *na)
 	na_dr->rx_rings = NULL;
 
 	netmap_hw_krings_delete(na_nm);
+}
+
+static void
+ptnet_nm_dtor(struct netmap_adapter *na)
+{
+	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
 }
 
 static int
