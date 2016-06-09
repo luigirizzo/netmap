@@ -763,7 +763,12 @@ NICs without native support can still be used in
 mode through emulation. Performance is inferior to native netmap
 mode but still significantly higher than sockets, and approaching
 that of in-kernel solutions such as Linux's
-.Xr pktgen .
+.Xr pktgen . Packet sniffer programs such as tcpdump could see packets before
+they are diverted by netmap when emulation is in use. This is an artifact of the
+implementation of emulation. If the netmap application places packets received
+from the adapter onto the host ring, then they can be sniffed twice: once before
+the diversion, and then once after the application placed them into the host
+ring and the operating system picks them up.
 .Pp
 Emulation is also available for devices with native netmap support,
 which can be used for testing or performance comparison.
