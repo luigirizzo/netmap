@@ -163,6 +163,7 @@ static int	ptnet_nm_config(struct netmap_adapter *na, unsigned *txr,
 static int	ptnet_nm_krings_create(struct netmap_adapter *na);
 static void	ptnet_nm_krings_delete(struct netmap_adapter *na);
 static void	ptnet_nm_dtor(struct netmap_adapter *na);
+static int	ptnet_nm_register(struct netmap_adapter *na, int onoff);
 static int	ptnet_nm_txsync(struct netmap_kring *kring, int flags);
 static int	ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
 
@@ -350,6 +351,7 @@ ptnet_attach(device_t dev)
 	na_arg.nm_krings_create = ptnet_nm_krings_create;
 	na_arg.nm_krings_delete = ptnet_nm_krings_delete;
 	na_arg.nm_dtor = ptnet_nm_dtor;
+	na_arg.nm_register = ptnet_nm_register;
 	na_arg.nm_txsync = ptnet_nm_txsync;
 	na_arg.nm_rxsync = ptnet_nm_rxsync;
 
@@ -733,6 +735,146 @@ static void
 ptnet_nm_dtor(struct netmap_adapter *na)
 {
 	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
+}
+
+static void
+ptnet_sync_from_csb(struct ptnet_softc *sc, struct netmap_adapter *na)
+{
+	int i;
+
+	/* Sync krings from the host, reading from
+	 * CSB. */
+	for (i = 0; i < sc->num_rings; i++) {
+		struct ptnet_ring *ptring = sc->queues[i].ptring;
+		struct netmap_kring *kring;
+
+		if (i < na->num_tx_rings) {
+			kring = na->tx_rings + i;
+		} else {
+			kring = na->rx_rings + i - na->num_tx_rings;
+		}
+		kring->rhead = kring->ring->head = ptring->head;
+		kring->rcur = kring->ring->cur = ptring->cur;
+		kring->nr_hwcur = ptring->hwcur;
+		kring->nr_hwtail = kring->rtail =
+			kring->ring->tail = ptring->hwtail;
+
+		ND("%d,%d: csb {hc %u h %u c %u ht %u}", t, i,
+		   ptring->hwcur, ptring->head, ptring->cur,
+		   ptring->hwtail);
+		ND("%d,%d: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
+		   t, i, kring->nr_hwcur, kring->rhead, kring->rcur,
+		   kring->ring->head, kring->ring->cur, kring->nr_hwtail,
+		   kring->rtail, kring->ring->tail);
+	}
+}
+
+#define csb_notification_enable_all(_x, _na, _t, _fld, _v)		\
+	do {								\
+		struct ptnet_queue *queues = (_x)->queues;		\
+		int i;							\
+		if (_t == NR_RX) queues = (_x)->rxqueues;		\
+		for (i=0; i<nma_get_nrings(_na, _t); i++) {		\
+			queues[i].ptring->_fld = _v;			\
+		}							\
+	} while (0)							\
+
+static int
+ptnet_nm_register(struct netmap_adapter *na, int onoff)
+{
+	/* device-specific */
+	struct ifnet *ifp = na->ifp;
+	struct ptnet_softc *sc = ifp->if_softc;
+	int native = (na == &sc->ptna_nm->hwup.up);
+	enum txrx t;
+	int ret = 0;
+	int i;
+
+	if (!onoff) {
+		sc->backend_regifs--;
+	}
+
+	/* If this is the last netmap client, guest interrupt enable flags may
+	 * be in arbitrary state. Since these flags are going to be used also
+	 * by the netdevice driver, we have to make sure to start with
+	 * notifications enabled. Also, schedule NAPI to flush pending packets
+	 * in the RX rings, since we will not receive further interrupts
+	 * until these will be processed. */
+	if (native && !onoff && na->active_fds == 0) {
+		D("Exit netmap mode, re-enable interrupts");
+		csb_notification_enable_all(sc, na, NR_TX, guest_need_kick, 1);
+		csb_notification_enable_all(sc, na, NR_RX, guest_need_kick, 1);
+	}
+
+	if (onoff) {
+		if (sc->backend_regifs == 0) {
+			/* Initialize notification enable fields in the CSB. */
+			csb_notification_enable_all(sc, na, NR_TX, host_need_kick, 1);
+			csb_notification_enable_all(sc, na, NR_TX, guest_need_kick, 0);
+			csb_notification_enable_all(sc, na, NR_RX, host_need_kick, 1);
+			csb_notification_enable_all(sc, na, NR_RX, guest_need_kick, 1);
+
+			/* Make sure the host adapter passed through is ready
+			 * for txsync/rxsync. */
+			ret = ptnet_nm_ptctl(ifp, NET_PARAVIRT_PTCTL_REGIF);
+			if (ret) {
+				return ret;
+			}
+		}
+
+		/* Sync from CSB must be done after REGIF PTCTL. Skip this
+		 * step only if this is a netmap client and it is not the
+		 * first one. */
+		if ((!native && sc->backend_regifs == 0) ||
+				(native && na->active_fds == 0)) {
+			ptnet_sync_from_csb(sc, na);
+		}
+
+		/* If not native, don't call nm_set_native_flags, since we don't want
+		 * to replace ndo_start_xmit method, nor set NAF_NETMAP_ON */
+		if (native) {
+			for_rx_tx(t) {
+				for (i=0; i<nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = &NMR(na, t)[i];
+
+					if (nm_kring_pending_on(kring)) {
+						kring->nr_mode = NKR_NETMAP_ON;
+					}
+				}
+			}
+			nm_set_native_flags(na);
+		}
+
+	} else {
+		if (native) {
+			nm_clear_native_flags(na);
+			for_rx_tx(t) {
+				for (i=0; i<nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = &NMR(na, t)[i];
+
+					if (nm_kring_pending_off(kring)) {
+						kring->nr_mode = NKR_NETMAP_OFF;
+					}
+				}
+			}
+		}
+
+		/* Sync from CSB must be done before UNREGIF PTCTL, on the last
+		 * netmap client. */
+		if (native && na->active_fds == 0) {
+			ptnet_sync_from_csb(sc, na);
+		}
+
+		if (sc->backend_regifs == 0) {
+			ret = ptnet_nm_ptctl(ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		}
+	}
+
+	if (onoff) {
+		sc->backend_regifs++;
+	}
+
+	return ret;
 }
 
 static int
