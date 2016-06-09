@@ -297,6 +297,8 @@ void netmap_make_zombie(struct ifnet *);
  */
 void *nm_os_send_up(struct ifnet *, struct mbuf *m, struct mbuf *prev);
 
+int nm_os_mbuf_has_offld(struct mbuf *m);
+
 #include "netmap_mbq.h"
 
 extern NMG_LOCK_T	netmap_global_lock;

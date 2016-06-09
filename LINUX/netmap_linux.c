@@ -215,6 +215,12 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 	return NULL;
 }
 
+int
+nm_os_mbuf_has_offld(struct mbuf *m)
+{
+	return m->ip_summed == CHECKSUM_PARTIAL || skb_is_gso(m);
+}
+
 #ifdef WITH_GENERIC
 /* ####################### MITIGATION SUPPORT ###################### */
 

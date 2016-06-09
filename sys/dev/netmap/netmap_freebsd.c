@@ -227,6 +227,14 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 	return NULL;
 }
 
+int
+nm_os_mbuf_has_offld(struct mbuf *m)
+{
+	return m->m_pkthdr.csum_flags & (CSUM_TCP | CSUM_UDP | CSUM_SCTP |
+					 CSUM_TCP_IPV6 | CSUM_UDP_IPV6 |
+					 CSUM_SCTP_IPV6 | CSUM_TSO);
+}
+
 static void
 freebsd_generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 {

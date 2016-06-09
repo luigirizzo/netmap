@@ -2996,6 +2996,11 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 		goto done;
 	}
 
+	if (nm_os_mbuf_has_offld(m)) {
+		D("%s drop mbuf requiring offloadings", na->name);
+		goto done;
+	}
+
 	/* protect against rxsync_from_host(), netmap_sw_to_nic()
 	 * and maybe other instances of netmap_transmit (the latter
 	 * not possible on Linux).
