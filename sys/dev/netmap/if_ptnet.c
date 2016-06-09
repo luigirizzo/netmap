@@ -359,7 +359,15 @@ ptnet_attach(device_t dev)
 	sc->ptna_nm = (struct netmap_pt_guest_adapter *)NA(ifp);
 	sc->ptna_nm->csb = sc->csb;
 
+	/* Initialize a separate pass-through netmap adapter that is going to
+	 * be used by this driver only, and so never exposed to netmap. We
+	 * only need a subset of the available fields. */
 	memset(&sc->ptna_dr, 0, sizeof(sc->ptna_dr));
+	sc->ptna_dr.hwup.up.ifp = ifp;
+	sc->ptna_dr.hwup.up.nm_mem = sc->ptna_nm->hwup.up.nm_mem;
+	netmap_mem_get(sc->ptna_dr.hwup.up.nm_mem);
+	sc->ptna_dr.hwup.up.nm_config = ptnet_nm_config;
+	sc->ptna_dr.csb = sc->csb;
 
 	return (0);
 
@@ -378,6 +386,9 @@ ptnet_detach(device_t dev)
 	if (sc->ifp) {
 		ether_ifdetach(sc->ifp);
 
+		/* Uninitialize netmap adapters for this device. */
+		netmap_mem_put(sc->ptna_dr.hwup.up.nm_mem);
+		memset(&sc->ptna_dr, 0, sizeof(sc->ptna_dr));
 		netmap_detach(sc->ifp);
 
 		ifmedia_removeall(&sc->media);
