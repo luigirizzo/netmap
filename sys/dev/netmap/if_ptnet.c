@@ -122,6 +122,8 @@ struct ptnet_softc {
 
 	struct netmap_pt_guest_adapter *ptna_nm;
 	struct netmap_pt_guest_adapter ptna_dr;
+	/* XXX we should move ptna_dr and backend_regifs inside struct
+	 * netmap_pt_guest_adapter and have just one instance of that. */
 };
 
 #define PTNET_CORE_LOCK_INIT(_sc)	do {			\
