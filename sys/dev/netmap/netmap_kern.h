@@ -415,6 +415,7 @@ struct nm_jp_delem {
 extern struct nm_jp_dict nm_jp_root;
 extern struct nm_jp_dict nm_jp_ports;
 
+struct netmap_adapter;
 int nm_jp_port_add(struct netmap_adapter *, struct nm_jp_dict *);
 void nm_jp_port_del(struct netmap_adapter *);
 
