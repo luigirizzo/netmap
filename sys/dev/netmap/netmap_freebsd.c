@@ -583,8 +583,8 @@ nm_os_vi_detach(struct ifnet *ifp)
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
 /*
- * ptnetmap memory device (memdev) for freebsd guest
- * Used to expose host memory to the guest through PCI-BAR
+ * ptnetmap memory device (memdev) for freebsd guest,
+ * ssed to expose host netmap memory to the guest through a PCI BAR.
  */
 
 /*
@@ -603,7 +603,6 @@ static int	ptn_memdev_detach(device_t);
 static int	ptn_memdev_shutdown(device_t);
 
 static device_method_t ptn_memdev_methods[] = {
-	/* Device interface */
 	DEVMETHOD(device_probe, ptn_memdev_probe),
 	DEVMETHOD(device_attach, ptn_memdev_attach),
 	DEVMETHOD(device_detach, ptn_memdev_detach),
@@ -612,12 +611,13 @@ static device_method_t ptn_memdev_methods[] = {
 };
 
 static driver_t ptn_memdev_driver = {
-	PTN_MEMDEV_NAME, ptn_memdev_methods, sizeof(struct ptnetmap_memdev),
+	PTN_MEMDEV_NAME,
+	ptn_memdev_methods,
+	sizeof(struct ptnetmap_memdev),
 };
 
 static devclass_t ptnetmap_devclass;
 DRIVER_MODULE(netmap, pci, ptn_memdev_driver, ptnetmap_devclass, 0, 0);
-
 MODULE_DEPEND(netmap, pci, 1, 1, 1);
 
 /*
@@ -634,9 +634,8 @@ MODULE_DEPEND(netmap, pci, 1, 1, 1);
 #endif /* unused */
 
 /*
- * map host netmap memory through PCI-BAR in the guest OS
- *
- * return physical (nm_paddr) and virtual (nm_addr) addresses
+ * Map host netmap memory through PCI-BAR in the guest OS,
+ * returning physical (nm_paddr) and virtual (nm_addr) addresses
  * of the netmap memory mapped in the guest.
  */
 int
@@ -670,9 +669,7 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, voi
 	return (0);
 }
 
-/*
- * unmap PCI-BAR
- */
+/* Unmap host netmap memory. */
 void
 nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
 {
@@ -685,14 +682,8 @@ nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
 	}
 }
 
-/*********************************************************************
- *  Device identification routine
- *
- *  ixgbe_probe determines if the driver should be loaded on
- *  adapter based on PCI vendor/device id of the adapter.
- *
- *  return BUS_PROBE_DEFAULT on success, positive on failure
- *********************************************************************/
+/* Device identification routine, return BUS_PROBE_DEFAULT on success,
+ * positive on failure */
 static int
 ptn_memdev_probe(device_t dev)
 {
@@ -711,15 +702,7 @@ ptn_memdev_probe(device_t dev)
 	return (BUS_PROBE_DEFAULT);
 }
 
-/*********************************************************************
- *  Device initialization routine
- *
- *  The attach entry point is called when the driver is being loaded.
- *  This routine identifies the type of hardware, allocates all resources
- *  and initializes the hardware.
- *
- *  return 0 on success, positive on failure
- *********************************************************************/
+/* Device initialization routine. */
 static int
 ptn_memdev_attach(device_t dev)
 {
@@ -736,7 +719,7 @@ ptn_memdev_attach(device_t dev)
 
 	rid = PCIR_BAR(PTNETMAP_IO_PCI_BAR);
 	ptn_dev->pci_io = bus_alloc_resource_any(dev, SYS_RES_IOPORT, &rid,
-			RF_ACTIVE);
+						 RF_ACTIVE);
 	if (ptn_dev->pci_io == NULL) {
 	        device_printf(dev, "cannot map I/O space\n");
 	        return (ENXIO);
@@ -757,15 +740,7 @@ ptn_memdev_attach(device_t dev)
 	return (0);
 }
 
-/*********************************************************************
- *  Device removal routine
- *
- *  The detach entry point is called when the driver is being removed.
- *  This routine stops the adapter and deallocates all the resources
- *  that were allocated for driver operation.
- *
- *  return 0 on success, positive on failure
- *********************************************************************/
+/* Device removal routine. */
 static int
 ptn_memdev_detach(device_t dev)
 {
@@ -792,29 +767,18 @@ ptn_memdev_detach(device_t dev)
 	return (0);
 }
 
-/*********************************************************************
- *
- *  Shutdown entry point
- *
- **********************************************************************/
 static int
 ptn_memdev_shutdown(device_t dev)
 {
-	D("ptn_memdev_driver shutsown");
+	D("ptn_memdev_driver shutdown");
 	return bus_generic_shutdown(dev);
 }
 
 int
-nm_os_pt_memdev_init(void)
-{
-	return 0;
-}
+nm_os_pt_memdev_init(void) { return 0; }
 
 void
-nm_os_pt_memdev_uninit(void)
-{
-
-}
+nm_os_pt_memdev_uninit(void) { }
 #endif /* WITH_PTNETMAP_GUEST */
 
 /*
