@@ -187,8 +187,7 @@ static driver_t ptnet_driver = {
 };
 
 static devclass_t ptnet_devclass;
-DRIVER_MODULE(netmap, pci, ptnet_driver, ptnet_devclass, 0, 0);
-MODULE_DEPEND(netmap, pci, 1, 1, 1);
+DRIVER_MODULE(ptnet, pci, ptnet_driver, ptnet_devclass, NULL, NULL);
 
 static int
 ptnet_probe(device_t dev)

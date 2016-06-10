@@ -617,8 +617,8 @@ static driver_t ptn_memdev_driver = {
 };
 
 static devclass_t ptnetmap_devclass;
-DRIVER_MODULE(netmap, pci, ptn_memdev_driver, ptnetmap_devclass, 0, 0);
-MODULE_DEPEND(netmap, pci, 1, 1, 1);
+DRIVER_MODULE(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
+	      NULL, NULL);
 
 /*
  * I/O port read/write wrappers.
@@ -1477,6 +1477,7 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 
 
 DEV_MODULE(netmap, netmap_loader, NULL);
+MODULE_DEPEND(netmap, pci, 1, 1, 1);
 MODULE_VERSION(netmap, 1);
 /* reduce conditional code */
 // linux API, use for the knlist in FreeBSD
