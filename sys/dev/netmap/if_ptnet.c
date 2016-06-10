@@ -204,6 +204,8 @@ ptnet_probe(device_t dev)
 	return (BUS_PROBE_DEFAULT);
 }
 
+extern int netmap_initialized;
+
 static int
 ptnet_attach(device_t dev)
 {
@@ -216,6 +218,11 @@ ptnet_attach(device_t dev)
 	uint32_t macreg;
 	int err, rid;
 	int i;
+
+	if (!netmap_initialized) {
+		device_printf(dev, "Netmap still not initialized\n");
+		return (ENXIO);
+	}
 
 	device_printf(dev, "%s\n", __func__);
 
