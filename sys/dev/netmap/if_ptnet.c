@@ -185,11 +185,10 @@ static driver_t ptnet_driver = {
 	ptnet_methods,
 	sizeof(struct ptnet_softc)
 };
-static devclass_t ptnet_devclass;
 
-DRIVER_MODULE(ptnet, pci, ptnet_driver, ptnet_devclass, 0, 0);
-MODULE_VERSION(ptnet, 1);
-MODULE_DEPEND(ptnet, netmap, 1, 1, 1);
+static devclass_t ptnet_devclass;
+DRIVER_MODULE(netmap, pci, ptnet_driver, ptnet_devclass, 0, 0);
+MODULE_DEPEND(netmap, pci, 1, 1, 1);
 
 static int
 ptnet_probe(device_t dev)
