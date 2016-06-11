@@ -504,8 +504,9 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 		pq->irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
 						 RF_ACTIVE);
 		if (pq->irq == NULL) {
-			device_printf(dev, "Failed to allocate interrupt"
+			device_printf(dev, "Failed to allocate interrupt "
 					   "for queue #%d\n", i);
+			err = ENOSPC;
 			goto err_path;
 		}
 
