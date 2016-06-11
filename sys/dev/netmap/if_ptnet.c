@@ -475,6 +475,11 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 
 	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
 
+	if (pci_find_cap(dev, PCIY_MSIX, NULL) != 0)  {
+		device_printf(dev, "Could not find MSI-X capability\n");
+		return (ENXIO);
+	}
+
 	sc->msix_mem = bus_alloc_resource_any(dev, SYS_RES_MEMORY,
 					      &rid, RF_ACTIVE);
 	if (sc->msix_mem == NULL) {
@@ -495,12 +500,8 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 
 	for (i = 0; i < nvecs; i++) {
 		struct ptnet_queue *pq = sc->queues + i;
-		void (*handler)(void *) = ptnet_tx_intr;
-		int rid = i + i;
 
-		if (i > num_tx_rings) {
-			handler = ptnet_rx_intr;
-		}
+		rid = i + i;
 		pq->irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
 						 RF_ACTIVE);
 		if (pq->irq == NULL) {
@@ -509,7 +510,15 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 			err = ENOSPC;
 			goto err_path;
 		}
+	}
 
+	for (i = 0; i < nvecs; i++) {
+		struct ptnet_queue *pq = sc->queues + i;
+		void (*handler)(void *) = ptnet_tx_intr;
+
+		if (i > num_tx_rings) {
+			handler = ptnet_rx_intr;
+		}
 		err = bus_setup_intr(dev, pq->irq, INTR_TYPE_NET | INTR_MPSAFE,
 				     NULL /* intr_filter */, handler,
 				     pq, &pq->cookie);
