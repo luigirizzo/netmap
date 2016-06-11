@@ -617,8 +617,8 @@ static driver_t ptn_memdev_driver = {
 };
 
 static devclass_t ptnetmap_devclass;
-DRIVER_MODULE(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
-	      NULL, NULL);
+DRIVER_MODULE_ORDERED(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
+		      NULL, NULL, SI_ORDER_MIDDLE);
 
 /*
  * I/O port read/write wrappers.

@@ -187,7 +187,8 @@ static driver_t ptnet_driver = {
 };
 
 static devclass_t ptnet_devclass;
-DRIVER_MODULE(ptnet, pci, ptnet_driver, ptnet_devclass, NULL, NULL);
+DRIVER_MODULE_ORDERED(ptnet, pci, ptnet_driver, ptnet_devclass,
+		      NULL, NULL, SI_ORDER_MIDDLE + 1);
 
 static int
 ptnet_probe(device_t dev)
