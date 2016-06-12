@@ -922,12 +922,10 @@ struct netmap_generic_adapter {	/* emulated device */
 	/* Pointer to a previously used netmap adapter. */
 	struct netmap_adapter *prev;
 
-	/* generic netmap adapters support:
-	 * a net_device_ops struct overrides ndo_select_queue(),
-	 * save_if_input saves the if_input hook (FreeBSD),
-	 * mit implements rx interrupt mitigation,
+	/* Emulated netmap adapters support:
+	 *  - save_if_input saves the if_input hook (FreeBSD);
+	 *  - mit implements rx interrupt mitigation;
 	 */
-	struct net_device_ops generic_ndo;
 	void (*save_if_input)(struct ifnet *, struct mbuf *);
 
 	struct nm_generic_mit *mit;

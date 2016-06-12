@@ -688,15 +688,14 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 		/* Save a redundant copy of ndo_start_xmit(). */
 		gna->save_start_xmit = ifp->netdev_ops->ndo_start_xmit;
 
-		gna->generic_ndo = *ifp->netdev_ops;  /* Copy all */
-		gna->generic_ndo.ndo_start_xmit = &generic_ndo_start_xmit;
+		gna->up.nm_ndo = *ifp->netdev_ops; /* copy all, replace some */
+		gna->up.nm_ndo.ndo_start_xmit = &generic_ndo_start_xmit;
 #ifndef NETMAP_LINUX_SELECT_QUEUE
 		D("No packet steering support");
 #else
-		gna->generic_ndo.ndo_select_queue = &generic_ndo_select_queue;
+		gna->up.nm_ndo.ndo_select_queue = &generic_ndo_select_queue;
 #endif
-
-		ifp->netdev_ops = &gna->generic_ndo;
+		ifp->netdev_ops = &gna->up.nm_ndo;
 
 	} else {
 		/* Restore the original netdev_ops. */
