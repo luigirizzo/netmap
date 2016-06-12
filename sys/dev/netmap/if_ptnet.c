@@ -344,6 +344,7 @@ ptnet_attach(device_t dev)
 
 	/* Prepare a netmap_adapter struct instance to do netmap_attach(). */
 	nifp_offset = bus_read_4(sc->iomem, PTNET_IO_NIFP_OFS);
+	memset(&na_arg, 0, sizeof(na_arg));
 	na_arg.ifp = ifp;
 	na_arg.num_tx_desc = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_SLOTS);
 	na_arg.num_rx_desc = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_SLOTS);
