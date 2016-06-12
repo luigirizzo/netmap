@@ -193,8 +193,6 @@ DRIVER_MODULE_ORDERED(ptnet, pci, ptnet_driver, ptnet_devclass,
 static int
 ptnet_probe(device_t dev)
 {
-	device_printf(dev, "%s\n", __func__);
-
 	if (pci_get_vendor(dev) != PTNETMAP_PCI_VENDOR_ID ||
 		pci_get_device(dev) != PTNETMAP_PCI_NETIF_ID) {
 		return (ENXIO);
@@ -224,8 +222,6 @@ ptnet_attach(device_t dev)
 		device_printf(dev, "Netmap still not initialized\n");
 		return (ENXIO);
 	}
-
-	device_printf(dev, "%s\n", __func__);
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -379,6 +375,8 @@ ptnet_attach(device_t dev)
 	sc->ptna_dr.hwup.up.nm_config = ptnet_nm_config;
 	sc->ptna_dr.csb = sc->csb;
 
+	device_printf(dev, "%s() completed\n", __func__);
+
 	return (0);
 
 err_path:
@@ -390,8 +388,6 @@ static int
 ptnet_detach(device_t dev)
 {
 	struct ptnet_softc *sc = device_get_softc(dev);
-
-	device_printf(dev, "%s\n", __func__);
 
 	if (sc->ifp) {
 		ether_ifdetach(sc->ifp);
@@ -427,6 +423,8 @@ ptnet_detach(device_t dev)
 	}
 
 	PTNET_CORE_LOCK_FINI(sc);
+
+	device_printf(dev, "%s() completed\n", __func__);
 
 	return (0);
 }

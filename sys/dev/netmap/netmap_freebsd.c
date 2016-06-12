@@ -694,7 +694,6 @@ ptn_memdev_probe(device_t dev)
 	if (pci_get_device(dev) != PTNETMAP_PCI_DEVICE_ID)
 		return (ENXIO);
 
-	D("ptn_memdev_driver probe");
 	snprintf(desc, sizeof(desc), "%s PCI adapter",
 			PTN_MEMDEV_NAME);
 	device_set_desc_copy(dev, desc);
