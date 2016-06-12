@@ -501,7 +501,7 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 	for (i = 0; i < nvecs; i++) {
 		struct ptnet_queue *pq = sc->queues + i;
 
-		rid = i + i;
+		rid = i + 1;
 		pq->irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &rid,
 						 RF_ACTIVE);
 		if (pq->irq == NULL) {
@@ -563,7 +563,7 @@ ptnet_irqs_fini(struct ptnet_softc *sc)
 		}
 
 		if (pq->irq) {
-			bus_release_resource(dev, SYS_RES_IRQ, i + i, pq->irq);
+			bus_release_resource(dev, SYS_RES_IRQ, i + 1, pq->irq);
 			pq->irq = NULL;
 		}
 	}
