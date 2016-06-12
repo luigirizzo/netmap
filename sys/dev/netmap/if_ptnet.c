@@ -85,6 +85,13 @@
 #error "No support for on-device CSB"
 #endif
 
+//#define DEBUG
+#ifdef DEBUG
+#define DBG(x) x
+#else   /* !DEBUG */
+#define DBG(x)
+#endif  /* !DEBUG */
+
 struct ptnet_softc;
 
 struct ptnet_queue {
@@ -928,7 +935,11 @@ ptnet_tx_intr(void *opaque)
 	struct ptnet_queue *pq = opaque;
 	struct ptnet_softc *sc = pq->sc;
 
-	device_printf(sc->dev, "Tx interrupt #%d", pq->kring_id);
+	DBG(device_printf(sc->dev, "Tx interrupt #%d\n", pq->kring_id));
+
+	if (netmap_tx_irq(sc->ifp, pq->kring_id) != NM_IRQ_PASS) {
+		return;
+	}
 }
 
 static void
@@ -936,6 +947,11 @@ ptnet_rx_intr(void *opaque)
 {
 	struct ptnet_queue *pq = opaque;
 	struct ptnet_softc *sc = pq->sc;
+	unsigned int unused;
 
-	device_printf(sc->dev, "Rx interrupt #%d", pq->kring_id);
+	DBG(device_printf(sc->dev, "Rx interrupt #%d\n", pq->kring_id));
+
+	if (netmap_rx_irq(sc->ifp, pq->kring_id, &unused) != NM_IRQ_PASS) {
+		return;
+	}
 }
