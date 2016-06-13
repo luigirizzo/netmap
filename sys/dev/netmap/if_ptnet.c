@@ -522,7 +522,7 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 		struct ptnet_queue *pq = sc->queues + i;
 		void (*handler)(void *) = ptnet_tx_intr;
 
-		if (i > num_tx_rings) {
+		if (i >= num_tx_rings) {
 			handler = ptnet_rx_intr;
 		}
 		err = bus_setup_intr(dev, pq->irq, INTR_TYPE_NET | INTR_MPSAFE,
