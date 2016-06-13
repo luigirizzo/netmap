@@ -104,7 +104,7 @@ struct ptnet_queue {
 };
 
 struct ptnet_softc {
-	device_t dev;
+	device_t		dev;
 	struct ifnet		*ifp;
 	struct ifmedia		media;
 	struct mtx		core_mtx;
@@ -156,7 +156,8 @@ static void	ptnet_init(void *opaque);
 static int	ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data);
 static int	ptnet_init_locked(struct ptnet_softc *sc);
 static int	ptnet_stop(struct ptnet_softc *sc);
-static void	ptnet_start(struct ifnet *ifp);
+static int	ptnet_transmit(struct ifnet *ifp, struct mbuf *m);
+static void	ptnet_qflush(struct ifnet *ifp);
 
 static int	ptnet_media_change(struct ifnet *ifp);
 static void	ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr);
@@ -318,7 +319,8 @@ ptnet_attach(device_t dev)
 	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST | IFF_SIMPLEX;
 	ifp->if_init = ptnet_init;
 	ifp->if_ioctl = ptnet_ioctl;
-	ifp->if_start = ptnet_start;
+	ifp->if_transmit = ptnet_transmit;
+	ifp->if_qflush = ptnet_qflush;
 
 	IFQ_SET_MAXLEN(&ifp->if_snd, 255);
 	ifp->if_snd.ifq_drv_maxlen = 255;
@@ -708,8 +710,19 @@ ptnet_stop(struct ptnet_softc *sc)
 	return 0;
 }
 
+static int
+ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
+{
+	struct ptnet_softc *sc = ifp->if_softc;
+
+	device_printf(sc->dev, "transmit %p\n", m);
+	m_freem(m);
+
+	return 0;
+}
+
 static void
-ptnet_start(struct ifnet *ifp)
+ptnet_qflush(struct ifnet *ifp)
 {
 }
 
