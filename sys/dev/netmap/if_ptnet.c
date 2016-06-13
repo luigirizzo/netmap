@@ -154,8 +154,8 @@ static int	ptnet_shutdown(device_t);
 
 static void	ptnet_init(void *opaque);
 static int	ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data);
-static void	ptnet_init_locked(struct ptnet_softc *sc);
-static void	ptnet_stop(struct ptnet_softc *sc);
+static int	ptnet_init_locked(struct ptnet_softc *sc);
+static int	ptnet_stop(struct ptnet_softc *sc);
 static void	ptnet_start(struct ifnet *ifp);
 
 static int	ptnet_media_change(struct ifnet *ifp);
@@ -607,10 +607,10 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			PTNET_CORE_LOCK(sc);
 			if (ifp->if_flags & IFF_UP) {
 				/* Network stack wants the iff to be up. */
-				ptnet_init_locked(sc);
+				err = ptnet_init_locked(sc);
 			} else {
 				/* Network stack wants the iff to be down. */
-				ptnet_stop(sc);
+				err = ptnet_stop(sc);
 			}
 			PTNET_CORE_UNLOCK(sc);
 
@@ -621,29 +621,91 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	return err;
 }
 
-static void
+static int
 ptnet_init_locked(struct ptnet_softc *sc)
 {
 	struct ifnet *ifp = sc->ifp;
+	struct netmap_adapter *na_dr = &sc->ptna_dr.hwup.up;
+	int ret;
 
 	device_printf(sc->dev, "%s\n", __func__);
 
 	if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
-		return; /* nothing to do */
+		return 0; /* nothing to do */
 	}
+
+	netmap_update_config(na_dr);
+
+	ret = netmap_mem_finalize(na_dr->nm_mem, na_dr);
+	if (ret) {
+		device_printf(sc->dev, "netmap_mem_finalize() failed\n");
+		return ret;
+	}
+
+	if (sc->backend_regifs == 0) {
+		ret = ptnet_nm_krings_create(na_dr);
+		if (ret) {
+			device_printf(sc->dev, "ptnet_nm_krings_create() "
+					       "failed\n");
+			goto err_mem_finalize;
+		}
+
+		ret = netmap_mem_rings_create(na_dr);
+		if (ret) {
+			device_printf(sc->dev, "netmap_mem_rings_create() "
+					       "failed\n");
+			goto err_rings_create;
+		}
+
+		ret = netmap_mem_get_lut(na_dr->nm_mem, &na_dr->na_lut);
+		if (ret) {
+			device_printf(sc->dev, "netmap_mem_get_lut() "
+					       "failed\n");
+			goto err_get_lut;
+		}
+	}
+
+	ret = ptnet_nm_register(na_dr, 1 /* on */);
+	if (ret) {
+		goto err_register;
+	}
+
+	return 0;
+
+err_register:
+	memset(&na_dr->na_lut, 0, sizeof(na_dr->na_lut));
+err_get_lut:
+	netmap_mem_rings_delete(na_dr);
+err_rings_create:
+	ptnet_nm_krings_delete(na_dr);
+err_mem_finalize:
+	netmap_mem_deref(na_dr->nm_mem, na_dr);
+
+	return ret;
 }
 
 /* To be called under core lock. */
-static void
+static int
 ptnet_stop(struct ptnet_softc *sc)
 {
 	struct ifnet *ifp = sc->ifp;
+	struct netmap_adapter *na_dr = &sc->ptna_dr.hwup.up;
 
 	device_printf(sc->dev, "%s\n", __func__);
 
 	if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
-		return; /* nothing to do */
+		return 0; /* nothing to do */
 	}
+
+	ptnet_nm_register(na_dr, 0 /* off */);
+
+	if (sc->backend_regifs == 0) {
+		netmap_mem_rings_delete(na_dr);
+		ptnet_nm_krings_delete(na_dr);
+	}
+	netmap_mem_deref(na_dr->nm_mem, na_dr);
+
+	return 0;
 }
 
 static void
@@ -709,6 +771,8 @@ ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 	return 0;
 }
 
+/* XXX krings create/delete and register functions should be shared
+ *     with the Linux driver. */
 static int
 ptnet_nm_krings_create(struct netmap_adapter *na)
 {
