@@ -322,10 +322,6 @@ ptnet_attach(device_t dev)
 	ifp->if_transmit = ptnet_transmit;
 	ifp->if_qflush = ptnet_qflush;
 
-	IFQ_SET_MAXLEN(&ifp->if_snd, 255);
-	ifp->if_snd.ifq_drv_maxlen = 255;
-	IFQ_SET_READY(&ifp->if_snd);
-
 	ifmedia_init(&sc->media, IFM_IMASK, ptnet_media_change,
 		     ptnet_media_status);
 	ifmedia_add(&sc->media, IFM_ETHER | IFM_10G_T | IFM_FDX, 0, NULL);
