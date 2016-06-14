@@ -101,14 +101,19 @@ struct ptnet_queue {
 	int			kring_id;
 	struct ptnet_ring	*ptring;
 	unsigned int		kick;
+	struct mtx		lock;
+	char			lock_name[16];
 };
+
+#define PTNET_Q_LOCK(_pq)	mtx_lock(&(_pq_->lock)
+#define PTNET_Q_UNLOCK(_pq)	mtx_unlock(&(_pq_->lock)
 
 struct ptnet_softc {
 	device_t		dev;
 	struct ifnet		*ifp;
 	struct ifmedia		media;
-	struct mtx		core_mtx;
-	char			core_mtx_name[16];
+	struct mtx		lock;
+	char			lock_name[16];
 	char			hwaddr[ETHER_ADDR_LEN];
 
 	/* Mirror of PTFEAT register. */
@@ -133,17 +138,8 @@ struct ptnet_softc {
 	 * netmap_pt_guest_adapter and have just one instance of that. */
 };
 
-#define PTNET_CORE_LOCK_INIT(_sc)	do {			\
-		snprintf((_sc)->core_mtx_name, sizeof((_sc)->core_mtx_name),	\
-			 "%s", device_get_nameunit(sc->dev));			\
-		mtx_init(&(_sc)->core_mtx, (_sc)->core_mtx_name,		\
-			 "ptnet core lock", MTX_DEF);				\
-	} while (0)
-
-#define PTNET_CORE_LOCK_FINI(_sc)	mtx_destroy(&(_sc)->core_mtx)
-
-#define PTNET_CORE_LOCK(_sc)	mtx_lock(&(_sc)->core_mtx)
-#define PTNET_CORE_UNLOCK(_sc)	mtx_unlock(&(_sc)->core_mtx)
+#define PTNET_CORE_LOCK(_sc)	mtx_lock(&(_sc)->lock)
+#define PTNET_CORE_UNLOCK(_sc)	mtx_unlock(&(_sc)->lock)
 
 static int	ptnet_probe(device_t);
 static int	ptnet_attach(device_t);
@@ -298,6 +294,9 @@ ptnet_attach(device_t dev)
 		if (i >= num_tx_rings) {
 			pq->kring_id -= num_tx_rings;
 		}
+		snprintf(pq->lock_name, sizeof(pq->lock_name), "%s-%d",
+			 device_get_nameunit(dev), i);
+		mtx_init(&pq->lock, pq->lock_name, NULL, MTX_DEF);
 	}
 
 	err = ptnet_irqs_init(sc);
@@ -343,7 +342,9 @@ ptnet_attach(device_t dev)
 
 	ifp->if_capenable = ifp->if_capabilities;
 
-	PTNET_CORE_LOCK_INIT(sc);
+	snprintf(sc->lock_name, sizeof(sc->lock_name),
+		 "%s", device_get_nameunit(dev));
+	mtx_init(&sc->lock, sc->lock_name, "ptnet core lock", MTX_DEF);
 
 	sc->backend_regifs = 0;
 
@@ -428,7 +429,7 @@ ptnet_detach(device_t dev)
 		sc->iomem = NULL;
 	}
 
-	PTNET_CORE_LOCK_FINI(sc);
+	mtx_destroy(&sc->lock);
 
 	device_printf(dev, "%s() completed\n", __func__);
 
