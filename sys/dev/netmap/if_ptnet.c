@@ -669,6 +669,8 @@ ptnet_init_locked(struct ptnet_softc *sc)
 		goto err_register;
 	}
 
+	ifp->if_drv_flags |= IFF_DRV_RUNNING;
+
 	return 0;
 
 err_register:
@@ -704,16 +706,106 @@ ptnet_stop(struct ptnet_softc *sc)
 	}
 	netmap_mem_deref(na_dr->nm_mem, na_dr);
 
+	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
+
 	return 0;
+}
+
+static inline void
+ptnet_sync_tail(struct ptnet_ring *ptring, struct netmap_kring *kring)
+{
+	struct netmap_ring *ring = kring->ring;
+
+	/* Update hwcur and hwtail as known by the host. */
+        ptnetmap_guest_read_kring_csb(ptring, kring);
+
+	/* nm_sync_finalize */
+	ring->tail = kring->rtail = kring->nr_hwtail;
 }
 
 static int
 ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 {
 	struct ptnet_softc *sc = ifp->if_softc;
+	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
+	struct ptnet_ring *ptring;
+	struct netmap_kring *kring;
+	struct netmap_ring *ring;
+	struct netmap_slot *slot;
+	struct ptnet_queue *pq;
+	unsigned int head;
+	unsigned int lim;
+	struct mbuf *mf;
+	int nmbuf_bytes;
+	uint8_t *nmbuf;
 
 	device_printf(sc->dev, "transmit %p\n", m);
+
+	pq = sc->queues + 0;
+	ptring = pq->ptring;
+	kring = na->tx_rings + 0;
+	ring = kring->ring;
+	lim = kring->nkr_num_slots - 1;
+
+	/* Update hwcur and hwtail (completed TX slots) as known by the host,
+	 * by reading from CSB. */
+	ptnet_sync_tail(ptring, kring);
+
+	head = ring->head;
+	slot = ring->slot + head;
+	nmbuf = NMB(na, slot);
+	nmbuf_bytes = 0;
+
+	for (mf = m; mf; mf = mf->m_next) {
+		uint8_t *mdata = mf->m_data;
+		int mlen = mf->m_len;
+
+		for (;;) {
+			int copy = NETMAP_BUF_SIZE(na) - nmbuf_bytes;
+
+			if (mlen < copy) {
+				copy = mlen;
+			}
+			memcpy(nmbuf, mdata, copy);
+
+			mdata += copy;
+			mlen -= copy;
+			nmbuf += copy;
+			nmbuf_bytes += copy;
+
+			if (!mlen) {
+				break;
+			}
+
+			slot->len = nmbuf_bytes;
+			slot->flags = NS_MOREFRAG;
+			head = nm_next(head, lim);
+			slot = ring->slot + head;
+			nmbuf = NMB(na, slot);
+			nmbuf_bytes = 0;
+		}
+	}
+
 	m_freem(m);
+
+	/* Complete last slot and update head. */
+	slot->len = nmbuf_bytes;
+	slot->flags = 0;
+	ring->head = ring->cur = nm_next(head, lim);
+
+	/* nm_txsync_prologue */
+	kring->rcur = kring->rhead = ring->head;
+
+	/* Tell the host to process the new packets, updating cur and
+	 * head in the CSB. */
+	ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
+			kring->rhead);
+
+        /* Ask for a kick from a guest to the host if needed. */
+	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
+		ptring->sync_flags = NAF_FORCE_RECLAIM;
+		bus_write_4(sc->iomem, pq->kick, 0);
+	}
 
 	return 0;
 }
