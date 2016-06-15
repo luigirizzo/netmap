@@ -174,6 +174,8 @@ static int	ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
 static void	ptnet_tx_intr(void *opaque);
 static void	ptnet_rx_intr(void *opaque);
 
+static int	ptnet_rx_eof(struct ptnet_queue *pq);
+
 static device_method_t ptnet_methods[] = {
 	DEVMETHOD(device_probe,			ptnet_probe),
 	DEVMETHOD(device_attach,		ptnet_attach),
@@ -802,8 +804,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	/* Tell the host to process the new packets, updating cur and
 	 * head in the CSB. */
-	ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
-			kring->rhead);
+	ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
 
         /* Ask for a kick from a guest to the host if needed. */
 	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
@@ -1137,4 +1138,53 @@ ptnet_rx_intr(void *opaque)
 	if (netmap_rx_irq(sc->ifp, pq->kring_id, &unused) != NM_IRQ_PASS) {
 		return;
 	}
+
+	ptnet_rx_eof(pq);
+}
+
+static int
+ptnet_rx_eof(struct ptnet_queue *pq)
+{
+	struct ptnet_softc *sc = pq->sc;
+	struct ptnet_ring *ptring = pq->ptring;
+	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
+	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
+	struct netmap_ring *ring = kring->ring;
+	unsigned int const lim = kring->nkr_num_slots - 1;
+	unsigned int head = ring->head;
+	struct ifnet *ifp = sc->ifp;
+
+	PTNET_Q_LOCK(pq);
+
+	/* Update hwtail, rtail, tail and hwcur to what is known from the host,
+	 * reading from CSB. */
+	ptnet_sync_tail(ptring, kring);
+
+	kring->nr_kflags &= ~NKR_PENDINTR;
+
+	while (head != ring->tail) {
+		struct netmap_slot *slot = ring->slot + head;
+		unsigned int nmbuf_len = slot->len;
+		uint8_t *nmbuf = NMB(na, slot);
+		struct mbuf *m = NULL;
+
+		if (unlikely(m == NULL)) {
+			device_printf(sc->dev, "%s: failed to allocate mbuf"
+				      "(len=%d)\n", __func__, nmbuf_len);
+			break;
+		}
+
+		memcpy(m->m_data, nmbuf, nmbuf_len);
+		m->m_len = nmbuf_len;
+
+		head = nm_next(head, lim);
+
+		PTNET_Q_UNLOCK(pq);
+		(*ifp->if_input)(ifp, m);
+		PTNET_Q_LOCK(pq);
+	}
+
+	PTNET_Q_UNLOCK(pq);
+
+	return 0;
 }
