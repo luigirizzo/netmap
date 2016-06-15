@@ -105,8 +105,8 @@ struct ptnet_queue {
 	char			lock_name[16];
 };
 
-#define PTNET_Q_LOCK(_pq)	mtx_lock(&(_pq_->lock)
-#define PTNET_Q_UNLOCK(_pq)	mtx_unlock(&(_pq_->lock)
+#define PTNET_Q_LOCK(_pq)	mtx_lock(&(_pq)->lock)
+#define PTNET_Q_UNLOCK(_pq)	mtx_unlock(&(_pq)->lock)
 
 struct ptnet_softc {
 	device_t		dev;
@@ -743,13 +743,17 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	pq = sc->queues + 0;
 	ptring = pq->ptring;
-	kring = na->tx_rings + 0;
+	kring = na->tx_rings + pq->kring_id;
 	ring = kring->ring;
 	lim = kring->nkr_num_slots - 1;
+
+	PTNET_Q_LOCK(pq);
 
 	/* Update hwcur and hwtail (completed TX slots) as known by the host,
 	 * by reading from CSB. */
 	ptnet_sync_tail(ptring, kring);
+
+	PTNET_Q_UNLOCK(pq);
 
 	head = ring->head;
 	slot = ring->slot + head;
@@ -1100,12 +1104,21 @@ ptnet_tx_intr(void *opaque)
 {
 	struct ptnet_queue *pq = opaque;
 	struct ptnet_softc *sc = pq->sc;
+	struct netmap_adapter *na_dr = &sc->ptna_dr.hwup.up;
 
 	DBG(device_printf(sc->dev, "Tx interrupt #%d\n", pq->kring_id));
+
+	if (!(sc->ifp->if_drv_flags & IFF_DRV_RUNNING)) {
+		return;
+	}
 
 	if (netmap_tx_irq(sc->ifp, pq->kring_id) != NM_IRQ_PASS) {
 		return;
 	}
+
+	PTNET_Q_LOCK(pq);
+	ptnet_sync_tail(pq->ptring, na_dr->tx_rings + pq->kring_id);
+	PTNET_Q_UNLOCK(pq);
 }
 
 static void
@@ -1116,6 +1129,10 @@ ptnet_rx_intr(void *opaque)
 	unsigned int unused;
 
 	DBG(device_printf(sc->dev, "Rx interrupt #%d\n", pq->kring_id));
+
+	if (!(sc->ifp->if_drv_flags & IFF_DRV_RUNNING)) {
+		return;
+	}
 
 	if (netmap_rx_irq(sc->ifp, pq->kring_id, &unused) != NM_IRQ_PASS) {
 		return;
