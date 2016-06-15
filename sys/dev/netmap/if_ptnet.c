@@ -1174,6 +1174,12 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			break;
 		}
 
+		m->m_pkthdr.rcvif = ifp;
+		m->m_pkthdr.len = nmbuf_len;
+
+                /* No support for checksum offloading for now. */
+		m->m_pkthdr.csum_flags = 0;
+
 		memcpy(m->m_data, nmbuf, nmbuf_len);
 		m->m_len = nmbuf_len;
 
