@@ -1153,6 +1153,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	unsigned int head = ring->head;
 	struct ifnet *ifp = sc->ifp;
+	unsigned int budget = 512;
 
 	PTNET_Q_LOCK(pq);
 
@@ -1162,7 +1163,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
-	while (head != ring->tail) {
+	while (head != ring->tail && budget) {
 		struct netmap_slot *slot = ring->slot + head;
 		unsigned int nmbuf_len = slot->len;
 		uint8_t *nmbuf = NMB(na, slot);
@@ -1183,11 +1184,12 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		memcpy(m->m_data, nmbuf, nmbuf_len);
 		m->m_len = nmbuf_len;
 
-		head = nm_next(head, lim);
-
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, m);
 		PTNET_Q_LOCK(pq);
+
+		head = nm_next(head, lim);
+		budget--;
 	}
 
 	PTNET_Q_UNLOCK(pq);
