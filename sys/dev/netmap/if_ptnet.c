@@ -1167,8 +1167,18 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		struct netmap_slot *slot = ring->slot + head;
 		unsigned int nmbuf_len = slot->len;
 		uint8_t *nmbuf = NMB(na, slot);
-		struct mbuf *m = NULL;
+		struct mbuf *m;
 
+		if (unlikely(nmbuf_len > MCLBYTES)) {
+			RD(1, "Dropping long frame: len %u > %u",
+			      nmbuf_len, MCLBYTES);
+			goto next;
+		}
+
+		/* We use m_getcl() to allocate an mbuf with standard
+		 * cluster size (MCLBYTES). In the future we could use m_getjcl()
+		 * to choose different sizes. */
+		m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
 		if (unlikely(m == NULL)) {
 			device_printf(sc->dev, "%s: failed to allocate mbuf"
 				      "(len=%d)\n", __func__, nmbuf_len);
@@ -1187,7 +1197,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, m);
 		PTNET_Q_LOCK(pq);
-
+next:
 		head = nm_next(head, lim);
 		budget--;
 	}
