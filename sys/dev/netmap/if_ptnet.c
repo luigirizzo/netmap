@@ -614,9 +614,11 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 				err = ptnet_stop(sc);
 			}
 			PTNET_CORE_UNLOCK(sc);
+			break;
 
 		default:
 			err = ether_ioctl(ifp, cmd, data);
+			break;
 	}
 
 	return err;
