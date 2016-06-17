@@ -808,7 +808,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	 * head in the CSB. */
 	ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
 
-        /* Ask for a kick from a guest to the host if needed. */
+        /* Kick the host if needed. */
 	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
 		ptring->sync_flags = NAF_FORCE_RECLAIM;
 		bus_write_4(sc->iomem, pq->kick, 0);
@@ -1144,6 +1144,8 @@ ptnet_rx_intr(void *opaque)
 	ptnet_rx_eof(pq);
 }
 
+#define RX_BUDGET	512
+
 static int
 ptnet_rx_eof(struct ptnet_queue *pq)
 {
@@ -1155,7 +1157,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	unsigned int head = ring->head;
 	struct ifnet *ifp = sc->ifp;
-	unsigned int budget = 512;
+	unsigned int budget = RX_BUDGET;
 
 	PTNET_Q_LOCK(pq);
 
@@ -1198,9 +1200,30 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, m);
 		PTNET_Q_LOCK(pq);
+		device_printf(sc->dev, "%s: if_input(%p)\n", __func__, m);
 next:
 		head = nm_next(head, lim);
 		budget--;
+	}
+
+	if (budget != RX_BUDGET) {
+		/* Some packets have been pushed to the network stack.
+		 * We need to update the CSB to tell the host about the new
+		 * ring->cur and ring->head (RX buffer refill). */
+		ring->head = ring->cur = head;
+
+		/* Mimic rxsync_prologue */
+		kring->rcur = ring->cur;
+		kring->rhead = ring->head;
+
+		ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
+					       kring->rhead);
+
+		/* Kick the host if needed. */
+		if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
+			ptring->sync_flags = NAF_FORCE_READ;
+			bus_write_4(sc->iomem, pq->kick, 0);
+		}
 	}
 
 	PTNET_Q_UNLOCK(pq);
