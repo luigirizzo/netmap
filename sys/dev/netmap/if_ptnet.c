@@ -814,6 +814,10 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		bus_write_4(sc->iomem, pq->kick, 0);
 	}
 
+	if (0) {
+		ptring->guest_need_kick = 1;
+	}
+
 	return 0;
 }
 
@@ -1205,6 +1209,10 @@ next:
 		head = nm_next(head, lim);
 		budget--;
 	}
+
+	/* Reactivate interrupts as they were disabled by the host thread right
+	 * before issuing the last interrupt. */
+	ptring->guest_need_kick = 1;
 
 	if (budget != RX_BUDGET) {
 		/* Some packets have been pushed to the network stack.
