@@ -631,11 +631,11 @@ ptnet_init_locked(struct ptnet_softc *sc)
 	struct netmap_adapter *na_dr = &sc->ptna_dr.hwup.up;
 	int ret;
 
-	device_printf(sc->dev, "%s\n", __func__);
-
 	if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
 		return 0; /* nothing to do */
 	}
+
+	device_printf(sc->dev, "%s\n", __func__);
 
 	netmap_update_config(na_dr);
 
