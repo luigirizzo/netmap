@@ -1183,6 +1183,9 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			goto next;
 		}
 
+		DBG(device_printf(sc->dev, "%s: h %u t %u rcv frame len %u\n",
+			          __func__, head, ring->tail, nmbuf_len));
+
 		/* We use m_getcl() to allocate an mbuf with standard
 		 * cluster size (MCLBYTES). In the future we could use m_getjcl()
 		 * to choose different sizes. */
@@ -1204,7 +1207,6 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, m);
 		PTNET_Q_LOCK(pq);
-		device_printf(sc->dev, "%s: if_input(%p)\n", __func__, m);
 next:
 		head = nm_next(head, lim);
 		budget--;
