@@ -764,6 +764,14 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	nmbuf = NMB(na, slot);
 	nmbuf_bytes = 0;
 
+	if (head == ring->tail) {
+		device_printf(sc->dev, "%s: Drop, no free slots\n", __func__);
+		m_freem(m);
+		ptring->guest_need_kick = 1;
+
+		return 0;
+	}
+
 	for (mf = m; mf; mf = mf->m_next) {
 		uint8_t *mdata = mf->m_data;
 		int mlen = mf->m_len;
