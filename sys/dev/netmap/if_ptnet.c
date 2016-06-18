@@ -613,6 +613,8 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 				/* Network stack wants the iff to be down. */
 				err = ptnet_stop(sc);
 			}
+			/* We don't need to do nothing to support IFF_PROMISC,
+			 * since that is managed by the backend port. */
 			PTNET_CORE_UNLOCK(sc);
 			break;
 
@@ -743,7 +745,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	int nmbuf_bytes;
 	uint8_t *nmbuf;
 
-	device_printf(sc->dev, "transmit %p\n", m);
+	DBG(device_printf(sc->dev, "transmit %p\n", m));
 
 	pq = sc->queues + 0;
 	ptring = pq->ptring;
