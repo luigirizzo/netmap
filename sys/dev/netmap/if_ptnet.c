@@ -759,8 +759,6 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	 * by reading from CSB. */
 	ptnet_sync_tail(ptring, kring);
 
-	PTNET_Q_UNLOCK(pq);
-
 	head = ring->head;
 	slot = ring->slot + head;
 	nmbuf = NMB(na, slot);
@@ -819,6 +817,8 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (0) {
 		ptring->guest_need_kick = 1;
 	}
+
+	PTNET_Q_UNLOCK(pq);
 
 	return 0;
 }
