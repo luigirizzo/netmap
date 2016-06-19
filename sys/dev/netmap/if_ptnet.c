@@ -102,6 +102,7 @@ struct ptnet_queue {
 	struct ptnet_ring	*ptring;
 	unsigned int		kick;
 	struct mtx		lock;
+	struct buf_ring		*bufring; /* for TX queues */
 	struct taskqueue	*taskq;
 	struct task		task;
 	char			lock_name[16];
@@ -214,6 +215,8 @@ ptnet_probe(device_t dev)
 
 extern int netmap_initialized;
 
+#define PTNET_BUF_RING_SIZE	4096
+
 static int
 ptnet_attach(device_t dev)
 {
@@ -296,12 +299,21 @@ ptnet_attach(device_t dev)
 		pq->kring_id = i;
 		pq->kick = PTNET_IO_KICK_BASE + 4 * i;
 		pq->ptring = sc->csb->rings + i;
-		if (i >= num_tx_rings) {
-			pq->kring_id -= num_tx_rings;
-		}
 		snprintf(pq->lock_name, sizeof(pq->lock_name), "%s-%d",
 			 device_get_nameunit(dev), i);
 		mtx_init(&pq->lock, pq->lock_name, NULL, MTX_DEF);
+		if (i >= num_tx_rings) {
+			/* RX queue: fix kring_id. */
+			pq->kring_id -= num_tx_rings;
+		} else {
+			/* TX queue: allocate buf_ring. */
+			pq->bufring = buf_ring_alloc(PTNET_BUF_RING_SIZE,
+						M_DEVBUF, M_NOWAIT, &pq->lock);
+			if (pq->bufring == NULL) {
+				err = ENOMEM;
+				goto err_path;
+			}
+		}
 	}
 
 	err = ptnet_irqs_init(sc);
@@ -424,6 +436,15 @@ ptnet_detach(device_t dev)
 	}
 
 	if (sc->queues) {
+		int i;
+
+		for (i = 0; i < sc->num_rings; i++) {
+			struct ptnet_queue *pq = sc->queues + i;
+
+			if (pq->bufring != NULL) {
+				buf_ring_free(pq->bufring, M_DEVBUF);
+			}
+		}
 		free(sc->queues, M_DEVBUF);
 		sc->queues = NULL;
 	}
