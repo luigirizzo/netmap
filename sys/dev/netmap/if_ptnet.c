@@ -541,7 +541,9 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 		}
 
 		bus_describe_intr(dev, pq->irq, pq->cookie, "q%d", i);
+#if 0
 		bus_bind_intr(sc->dev, pq->irq, cpu_cur);
+#endif
 		cpu_cur = CPU_NEXT(cpu_cur);
 	}
 
