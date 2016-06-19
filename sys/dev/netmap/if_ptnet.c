@@ -441,6 +441,9 @@ ptnet_detach(device_t dev)
 		for (i = 0; i < sc->num_rings; i++) {
 			struct ptnet_queue *pq = sc->queues + i;
 
+			if (mtx_initialized(&pq->lock)) {
+				mtx_destroy(&pq->lock);
+			}
 			if (pq->bufring != NULL) {
 				buf_ring_free(pq->bufring, M_DEVBUF);
 			}
