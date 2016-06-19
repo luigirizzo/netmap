@@ -102,6 +102,8 @@ struct ptnet_queue {
 	struct ptnet_ring	*ptring;
 	unsigned int		kick;
 	struct mtx		lock;
+	struct taskqueue	*taskq;
+	struct task		task;
 	char			lock_name[16];
 };
 
@@ -175,6 +177,7 @@ static void	ptnet_tx_intr(void *opaque);
 static void	ptnet_rx_intr(void *opaque);
 
 static int	ptnet_rx_eof(struct ptnet_queue *pq);
+static void	ptnet_rx_task(void *context, int pending);
 
 static device_method_t ptnet_methods[] = {
 	DEVMETHOD(device_probe,			ptnet_probe),
@@ -478,6 +481,7 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 	unsigned int num_tx_rings;
 	device_t dev = sc->dev;
 	int err = ENOSPC;
+	int cpu_cur;
 	int i;
 
 	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
@@ -519,6 +523,7 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 		}
 	}
 
+	cpu_cur = CPU_FIRST();
 	for (i = 0; i < nvecs; i++) {
 		struct ptnet_queue *pq = sc->queues + i;
 		void (*handler)(void *) = ptnet_tx_intr;
@@ -536,10 +541,28 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 		}
 
 		bus_describe_intr(dev, pq->irq, pq->cookie, "q%d", i);
-		//bus_bind_intr(); /* bind intr to CPU */
+		bus_bind_intr(sc->dev, pq->irq, cpu_cur);
+		cpu_cur = CPU_NEXT(cpu_cur);
 	}
 
 	device_printf(dev, "Allocated %d MSI-X vectors\n", nvecs);
+
+	cpu_cur = CPU_FIRST();
+	for (i = 0; i < nvecs; i++) {
+		struct ptnet_queue *pq = sc->queues + i;
+
+		if (i < num_tx_rings) {
+			/* Only support RX queues for now. */
+			continue;
+		}
+
+		TASK_INIT(&pq->task, 0, ptnet_rx_task, pq);
+		pq->taskq = taskqueue_create_fast("ptnet_queue", M_NOWAIT,
+					taskqueue_thread_enqueue, &pq->taskq);
+		taskqueue_start_threads(&pq->taskq, 1, PI_NET, "%s-pq-%d",
+					device_get_nameunit(sc->dev), cpu_cur);
+		cpu_cur = CPU_NEXT(cpu_cur);
+	}
 
 	/* Tell the hypervisor that we have allocated the MSI-X vectors,
 	 * so that it can do its own setup. */
@@ -1169,9 +1192,10 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
+	unsigned int budget = RX_BUDGET;
 	unsigned int head = ring->head;
 	struct ifnet *ifp = sc->ifp;
-	unsigned int budget = RX_BUDGET;
+	unsigned int more;
 
 	PTNET_Q_LOCK(pq);
 
@@ -1246,7 +1270,26 @@ next:
 		}
 	}
 
+	more = (head != ring->tail);
+
 	PTNET_Q_UNLOCK(pq);
+
+	if (more) {
+		device_printf(sc->dev, "%s: resched: budget %u h %u "
+			      "t %u\n", __func__, budget, ring->head,
+			      ring->tail);
+		taskqueue_enqueue(pq->taskq, &pq->task);
+	}
 
 	return 0;
 }
+
+static void
+ptnet_rx_task(void *context, int pending)
+{
+	struct ptnet_queue *pq = context;
+
+	device_printf(pq->sc->dev, "%s: pq #%u\n", __func__, pq->kring_id);
+	ptnet_rx_eof(pq);
+}
+
