@@ -722,6 +722,12 @@ nm_open(const char *ifname, const struct nmreq *req,
 		snprintf(errmsg, MAXERRMSG, "unexpected end of port name");
 		goto fail;
 	}
+	if ((nr_flags & NR_ZCOPY_MON) &&
+	   !(nr_flags & (NR_MONITOR_TX|NR_MONITOR_RX)))
+	{
+		snprintf(errmsg, MAXERRMSG, "'z' used but neither 'r', nor 't' found");
+		goto fail;
+	}
 	ND("flags: %s %s %s %s",
 			(nr_flags & NR_EXCLUSIVE) ? "EXCLUSIVE" : "",
 			(nr_flags & NR_ZCOPY_MON) ? "ZCOPY_MON" : "",

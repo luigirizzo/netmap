@@ -596,7 +596,7 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
  * Convenience function used in drivers.  Waits for current txsync()s/rxsync()s
  * to finish and prevents any new one from starting.  Call this before turning
  * netmap mode off, or before removing the hardware rings (e.g., on module
- * onload). 
+ * onload).
  */
 void
 netmap_disable_all_rings(struct ifnet *ifp)
@@ -630,6 +630,18 @@ netmap_make_zombie(struct ifnet *ifp)
 	}
 }
 
+void
+netmap_undo_zombie(struct ifnet *ifp)
+{
+	if (NM_NA_VALID(ifp)) {
+		struct netmap_adapter *na = NA(ifp);
+		if (na->na_flags & NAF_ZOMBIE) {
+			netmap_set_all_rings(na, NM_KR_LOCKED);
+			na->na_flags &= ~NAF_ZOMBIE;
+			netmap_set_all_rings(na, 0);
+		}
+	}
+}
 
 /*
  * generic bound_checking function
@@ -825,7 +837,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 			 * IMPORTANT: Always keep one slot empty.
 			 */
 			kring->rtail = kring->nr_hwtail = (t == NR_TX ? ndesc - 1 : 0);
-			snprintf(kring->name, sizeof(kring->name) - 1, "%s %s%d", na->name, 
+			snprintf(kring->name, sizeof(kring->name) - 1, "%s %s%d", na->name,
 					nm_txrx2str(t), i);
 			ND("ktx %s h %d c %d t %d",
 				kring->name, kring->rhead, kring->rcur, kring->rtail);
@@ -2009,7 +2021,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		error = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
 		if (error)
 			goto err_del_if;
-		D("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
+		ND("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
 					    na->na_lut.objsize);
 	}
 
@@ -2017,7 +2029,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		/* Some kring is switching mode, tell the adapter to
 		 * react on this. */
 		error = na->nm_register(na, 1);
-		if (error) 
+		if (error)
 			goto err_put_lut;
 	}
 
@@ -2241,10 +2253,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			}
 
 			if (nmr->nr_arg3) {
-				D("requested %d extra buffers", nmr->nr_arg3);
+				if (netmap_verbose)
+					D("requested %d extra buffers", nmr->nr_arg3);
 				nmr->nr_arg3 = netmap_extra_alloc(na,
 					&nifp->ni_bufs_head, nmr->nr_arg3);
-				D("got %d extra buffers", nmr->nr_arg3);
+				if (netmap_verbose)
+					D("got %d extra buffers", nmr->nr_arg3);
 			}
 			nmr->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
 
@@ -2991,6 +3005,11 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (len > NETMAP_BUF_SIZE(na)) { /* too long for us */
 		D("%s from_host, drop packet size %d > %d", na->name,
 			len, NETMAP_BUF_SIZE(na));
+		goto done;
+	}
+
+	if (nm_os_mbuf_has_offld(m)) {
+		D("%s drop mbuf requiring offloadings", na->name);
 		goto done;
 	}
 

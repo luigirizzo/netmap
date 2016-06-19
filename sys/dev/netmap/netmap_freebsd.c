@@ -116,16 +116,27 @@ nm_os_put_module(void)
 }
 
 static void
+netmap_ifnet_arrival_handler(void *arg __unused, struct ifnet *ifp)
+{
+        netmap_undo_zombie(ifp);
+}
+
+static void
 netmap_ifnet_departure_handler(void *arg __unused, struct ifnet *ifp)
 {
         netmap_make_zombie(ifp);
 }
 
+static eventhandler_tag nm_ifnet_ah_tag;
 static eventhandler_tag nm_ifnet_dh_tag;
 
 int
 nm_os_ifnet_init(void)
 {
+        nm_ifnet_ah_tag =
+                EVENTHANDLER_REGISTER(ifnet_arrival_event,
+                        netmap_ifnet_arrival_handler,
+                        NULL, EVENTHANDLER_PRI_ANY);
         nm_ifnet_dh_tag =
                 EVENTHANDLER_REGISTER(ifnet_departure_event,
                         netmap_ifnet_departure_handler,
@@ -136,6 +147,8 @@ nm_os_ifnet_init(void)
 void
 nm_os_ifnet_fini(void)
 {
+        EVENTHANDLER_DEREGISTER(ifnet_arrival_event,
+                nm_ifnet_ah_tag);
         EVENTHANDLER_DEREGISTER(ifnet_departure_event,
                 nm_ifnet_dh_tag);
 }
@@ -225,6 +238,14 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 
 	NA(ifp)->if_input(ifp, m);
 	return NULL;
+}
+
+int
+nm_os_mbuf_has_offld(struct mbuf *m)
+{
+	return m->m_pkthdr.csum_flags & (CSUM_TCP | CSUM_UDP | CSUM_SCTP |
+					 CSUM_TCP_IPV6 | CSUM_UDP_IPV6 |
+					 CSUM_SCTP_IPV6 | CSUM_TSO);
 }
 
 static void

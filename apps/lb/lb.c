@@ -286,6 +286,7 @@ int main(int argc, char **argv)
 {
 	int ch;
 	uint32_t i;
+	int rv;
 	unsigned int iter = 0;
 
 	glob_arg.ifname[0] = '\0';
@@ -497,6 +498,11 @@ run:
 		iter++;
 
 		for (i = 0; i < npipes; ++i) {
+			struct netmap_ring *ring = ports[i].ring;
+			if (nm_ring_next(ring, ring->tail) == ring->cur) {
+				/* no need to poll, there are no packets pending */
+				continue;
+			}
 			pollfd[polli].fd = ports[i].nmd->fd;
 			pollfd[polli].events = POLLOUT;
 			pollfd[polli].revents = 0;
@@ -509,12 +515,11 @@ run:
 		++polli;
 
 		//RD(5, "polling %d file descriptors", polli+1);
-		i = poll(pollfd, polli, 10);
-		if (i <= 0) {
-			RD(1, "poll error %s", errno ? strerror(errno) : "timeout");
+		rv = poll(pollfd, polli, 10);
+		if (rv <= 0) {
+			if (rv < 0 && errno != EAGAIN && errno != EINTR)
+				RD(1, "poll error %s", strerror(errno));
 			continue;
-		} else {
-			//RD(5, "Poll returned %d", i);
 		}
 
 		if (oq) {

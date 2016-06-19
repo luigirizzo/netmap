@@ -958,7 +958,7 @@ netmap_extra_alloc(struct netmap_adapter *na, uint32_t *head, uint32_t n)
 			*head = cur; /* restore */
 			break;
 		}
-		RD(5, "allocate buffer %d -> %d", *head, cur);
+		ND(5, "allocate buffer %d -> %d", *head, cur);
 		*p = cur; /* link to previous head */
 	}
 
@@ -975,7 +975,7 @@ netmap_extra_free(struct netmap_adapter *na, uint32_t head)
 	struct netmap_obj_pool *p = &nmd->pools[NETMAP_BUF_POOL];
 	uint32_t i, cur, *buf;
 
-	D("freeing the extra list");
+	ND("freeing the extra list");
 	for (i = 0; head >=2 && head < p->objtotal; i++) {
 		cur = head;
 		buf = lut[head].vaddr;
@@ -986,7 +986,8 @@ netmap_extra_free(struct netmap_adapter *na, uint32_t head)
 	}
 	if (head != 0)
 		D("breaking with head %d", head);
-	D("freed %d buffers", i);
+	if (netmap_verbose)
+		D("freed %d buffers", i);
 }
 
 

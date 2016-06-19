@@ -81,6 +81,9 @@ linux_netmap_notifier_cb(struct notifier_block *b,
 
 	/* linux calls us while holding rtnl_lock() */
 	switch (val) {
+	case NETDEV_REGISTER:
+		netmap_undo_zombie(ifp);
+		break;
 	case NETDEV_UNREGISTER:
 		netmap_make_zombie(ifp);
 		break;
@@ -213,6 +216,12 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 	m->priority = NM_MAGIC_PRIORITY_RX; /* do not reinject to netmap */
 	netif_rx(m);
 	return NULL;
+}
+
+int
+nm_os_mbuf_has_offld(struct mbuf *m)
+{
+	return m->ip_summed == CHECKSUM_PARTIAL || skb_is_gso(m);
 }
 
 #ifdef WITH_GENERIC
@@ -949,12 +958,12 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 		pa = netmap_mem_ofstophys(na->nm_mem, 0);
 		if (pa == 0)
 			return -EINVAL;
-		return remap_pfn_range(vma, vma->vm_start, 
+		return remap_pfn_range(vma, vma->vm_start,
 				pa >> PAGE_SHIFT,
 				vma->vm_end - vma->vm_start,
 				vma->vm_page_prot);
 	} else {
-		/* non contiguous memory, we serve 
+		/* non contiguous memory, we serve
 		 * page faults as they come
 		 */
 		vma->vm_private_data = priv;
