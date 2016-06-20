@@ -613,6 +613,11 @@ ptnet_irqs_fini(struct ptnet_softc *sc)
 	for (i = 0; i < sc->num_rings; i++) {
 		struct ptnet_queue *pq = sc->queues + i;
 
+		if (pq->taskq) {
+			taskqueue_free(pq->taskq);
+			pq->taskq = NULL;
+		}
+
 		if (pq->cookie) {
 			bus_teardown_intr(dev, pq->irq, pq->cookie);
 			pq->cookie = NULL;
