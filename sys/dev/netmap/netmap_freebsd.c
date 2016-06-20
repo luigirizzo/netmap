@@ -1472,6 +1472,7 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 			error = EBUSY;
 			break;
 		}
+		netmap_initialized = 0;
 		netmap_fini();
 		break;
 

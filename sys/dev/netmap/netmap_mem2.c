@@ -562,9 +562,15 @@ nm_mem_assign_id(struct netmap_mem_d *nmd)
 	return ret;
 }
 
+extern int netmap_initialized;
+
 static void
 nm_mem_release_id(struct netmap_mem_d *nmd)
 {
+	if (!netmap_initialized) {
+		D("skip, nm_mem could be gone");
+		return;
+	}
 	NMA_LOCK(&nm_mem);
 
 	nmd->prev->next = nmd->next;
