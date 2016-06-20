@@ -109,6 +109,7 @@ struct ptnet_queue {
 };
 
 #define PTNET_Q_LOCK(_pq)	mtx_lock(&(_pq)->lock)
+#define PTNET_Q_TRYLOCK(_pq)	mtx_trylock(&(_pq)->lock)
 #define PTNET_Q_UNLOCK(_pq)	mtx_unlock(&(_pq)->lock)
 
 struct ptnet_softc {
@@ -157,6 +158,7 @@ static int	ptnet_init_locked(struct ptnet_softc *sc);
 static int	ptnet_stop(struct ptnet_softc *sc);
 static int	ptnet_transmit(struct ifnet *ifp, struct mbuf *m);
 static void	ptnet_qflush(struct ifnet *ifp);
+static void	ptnet_tx_task(void *context, int pending);
 
 static int	ptnet_media_change(struct ifnet *ifp);
 static void	ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr);
@@ -576,13 +578,11 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 	cpu_cur = CPU_FIRST();
 	for (i = 0; i < nvecs; i++) {
 		struct ptnet_queue *pq = sc->queues + i;
+		static void (*handler)(void *context, int pending);
 
-		if (i < num_tx_rings) {
-			/* Only support RX queues for now. */
-			continue;
-		}
+		handler = (i < num_tx_rings) ? ptnet_tx_task : ptnet_rx_task;
 
-		TASK_INIT(&pq->task, 0, ptnet_rx_task, pq);
+		TASK_INIT(&pq->task, 0, handler, pq);
 		pq->taskq = taskqueue_create_fast("ptnet_queue", M_NOWAIT,
 					taskqueue_thread_enqueue, &pq->taskq);
 		taskqueue_start_threads(&pq->taskq, 1, PI_NET, "%s-pq-%d",
@@ -1317,5 +1317,14 @@ ptnet_rx_task(void *context, int pending)
 
 	device_printf(pq->sc->dev, "%s: pq #%u\n", __func__, pq->kring_id);
 	ptnet_rx_eof(pq);
+}
+
+static void
+ptnet_tx_task(void *context, int pending)
+{
+	struct ptnet_queue *pq = context;
+
+	device_printf(pq->sc->dev, "%s: pq #%u\n", __func__, pq->kring_id);
+	ptnet_transmit(pq->sc->ifp, NULL);
 }
 
