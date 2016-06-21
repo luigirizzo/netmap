@@ -218,6 +218,9 @@ ptnet_probe(device_t dev)
 extern int netmap_initialized;
 
 #define PTNET_BUF_RING_SIZE	4096
+#define PTNET_RX_BUDGET		512
+#define PTNET_TX_BATCH		64
+
 
 static int
 ptnet_attach(device_t dev)
@@ -783,11 +786,36 @@ ptnet_sync_tail(struct ptnet_ring *ptring, struct netmap_kring *kring)
 	ring->tail = kring->rtail = kring->nr_hwtail;
 }
 
+static void
+ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
+		  unsigned int head)
+{
+	struct netmap_ring *ring = kring->ring;
+	struct ptnet_ring *ptring = pq->ptring;
+
+	/* Some packets have been pushed to the netmap ring. We have
+	 * to tell the host to process the new packets, updating cur
+	 * and head in the CSB. */
+	ring->head = ring->cur = head;
+
+	/* nm_txsync_prologue */
+	kring->rcur = kring->rhead = ring->head;
+
+	ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
+
+	/* Kick the host if needed. */
+	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
+		ptring->sync_flags = NAF_FORCE_RECLAIM;
+		bus_write_4(pq->sc->iomem, pq->kick, 0);
+	}
+}
+
 static int
 ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 {
 	struct ptnet_softc *sc = ifp->if_softc;
 	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
+	unsigned int batch_count = 0;
 	struct ptnet_ring *ptring;
 	struct netmap_kring *kring;
 	struct netmap_ring *ring;
@@ -896,24 +924,15 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		/* Consume the packet just processed. */
 		drbr_advance(ifp, pq->bufring);
 		m_freem(m);
+
+		if (++batch_count == PTNET_TX_BATCH) {
+			batch_count = 0;
+			ptnet_ring_update(pq, kring, head);
+		}
 	}
 escape:
-	if (head != ring->head) {
-		/* Some packets have been pushed to the netmap ring. We have
-		 * to tell the host to process the new packets, updating cur
-		 * and head in the CSB. */
-		ring->head = ring->cur = head;
-
-		/* nm_txsync_prologue */
-		kring->rcur = kring->rhead = ring->head;
-
-		ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
-
-		/* Kick the host if needed. */
-		if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
-			ptring->sync_flags = NAF_FORCE_RECLAIM;
-			bus_write_4(sc->iomem, pq->kick, 0);
-		}
+	if (batch_count) {
+		ptnet_ring_update(pq, kring, head);
 	}
 
 	if (head == ring->tail) {
@@ -1254,8 +1273,6 @@ ptnet_rx_intr(void *opaque)
 	ptnet_rx_eof(pq);
 }
 
-#define RX_BUDGET	512
-
 static int
 ptnet_rx_eof(struct ptnet_queue *pq)
 {
@@ -1265,7 +1282,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
-	unsigned int budget = RX_BUDGET;
+	unsigned int budget = PTNET_RX_BUDGET;
 	unsigned int head = ring->head;
 	struct ifnet *ifp = sc->ifp;
 	unsigned int more;
@@ -1323,7 +1340,7 @@ next:
 	 * before issuing the last interrupt. */
 	ptring->guest_need_kick = 1;
 
-	if (budget != RX_BUDGET) {
+	if (budget != PTNET_RX_BUDGET) {
 		/* Some packets have been pushed to the network stack.
 		 * We need to update the CSB to tell the host about the new
 		 * ring->cur and ring->head (RX buffer refill). */
