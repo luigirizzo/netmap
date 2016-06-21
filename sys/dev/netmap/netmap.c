@@ -2814,6 +2814,7 @@ nm_jp_flags_dump(struct nm_jp *ip, struct nm_conf *c)
 }
 
 NM_JPO_CLASS_DECL(port, struct netmap_adapter)
+	NM_JPO_ROSTR(port, name)
 	NM_JPO_SPECIAL(port, memid, nm_jp_memid_interp, nm_jp_memid_dump, NULL)
 	NM_JPO_SPECIAL(port, flags, NULL, nm_jp_flags_dump, NULL)
 	NM_JPO_RONUM(port, num_tx_rings)

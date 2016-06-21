@@ -1541,6 +1541,8 @@ nm_jp_ninterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 
 	if (r.ty != JPO_NUM) {
 		r = nm_jp_error(pool, "need number");
+		if (c->matching)
+			c->mismatch = 1;
 		goto done;
 	}
 
@@ -1583,6 +1585,55 @@ nm_jp_ninit(struct nm_jp_num *in, void *var, size_t size,
 	in->var = var;
 	in->size = size;
 	in->update = update;
+}
+
+static char *
+nm_jp_sgetstr(struct nm_jp_str *s, void *cur_obj)
+{
+	char *str;
+
+	if (s->flags & NM_JP_STR_REL)
+		str = (char *)cur_obj + (size_t)s->str;
+	else
+		str = s->str;
+	if (s->flags & NM_JP_STR_IND) {
+		str = *(char **)str;
+	}
+
+	return str;
+}
+
+struct _jpo
+nm_jp_sinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	struct nm_jp_str *s = (struct nm_jp_str *)jp;
+	char *nstr, *str;
+	char *pool = c->pool;
+
+	if (r.ty != JPO_STRING) {
+		r = nm_jp_error(pool, "need number");
+		if (c->matching)
+			c->mismatch = 1;
+		goto done;
+	}
+
+	nstr = jslr_get_string(pool, r);
+	str = nm_jp_sgetstr(s, c->cur_obj);
+	if (strcmp(nstr, str) && c->matching) {
+		c->mismatch = 1;
+	}
+	r = jp->dump(jp, c);
+done:
+	return r;
+}
+
+struct _jpo
+nm_jp_sdump(struct nm_jp *jp, struct nm_conf *c)
+{
+	struct nm_jp_str *s = (struct nm_jp_str *)jp;
+	char *str = nm_jp_sgetstr(s, c->cur_obj);
+
+	return jslr_new_string(c->pool, str);
 }
 
 static void *

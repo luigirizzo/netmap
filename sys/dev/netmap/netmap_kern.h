@@ -407,6 +407,17 @@ int nm_jp_nupdate(struct nm_jp_num *, int64_t, void *);
 struct _jpo nm_jp_ninterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_ndump(struct nm_jp *, struct nm_conf *);
 
+/* strings */
+
+struct nm_jp_str {
+	struct nm_jp up;
+	void *str;
+	u_int flags;
+	size_t maxsize;
+#define NM_JP_STR_REL	1
+#define NM_JP_STR_IND	2
+};
+
 /* pointers */
 struct nm_jp_ptr {
 	struct nm_jp up;
@@ -416,6 +427,9 @@ struct nm_jp_ptr {
 #define NM_JP_PTR_REL	1
 #define NM_JP_PTR_IND	2
 };
+
+struct _jpo nm_jp_sinterp(struct nm_jp *, struct _jpo, struct nm_conf *);
+struct _jpo nm_jp_sdump(struct nm_jp *, struct nm_conf *);
 
 void nm_jp_pinit(struct nm_jp_ptr *, struct nm_jp *type,
 		void *arg, u_int flags);
@@ -433,6 +447,7 @@ union nm_jp_union {
 	struct nm_jp_dict    dict;
 	struct nm_jp_list    list;
 	struct nm_jp_num     num;
+	struct nm_jp_str     str;
 	struct nm_jp_ptr     ptr;
 	struct nm_jp	    *external;
 };
@@ -562,6 +577,24 @@ void nm_jp_port_del(struct netmap_adapter *);
  */
 #define NM_JPO_RWNUM(t, f)				\
 	_NM_JPO_RWNUM(t, f, nm_jp_nupdate)
+
+/* declare a (read only) string field 'F' with maxsize 's'.
+ * The string must be embedded in the native type and zero
+ * terminated.
+ * 'C' is the name of the jpo class.
+ */
+#define NM_JPO_ROSTR(C, F)	{			\
+	.name = #F,					\
+	.u.str = {					\
+		.up = {					\
+			.interp = nm_jp_sinterp,	\
+			.dump   = nm_jp_sdump		\
+		},					\
+		.str = (char *)offsetof(NM_JPO_TYPE(C),	F),\
+		.flags = NM_JP_STR_REL,			\
+	},						\
+},
+
 
 /* declare a field 'F' that describes an embedded native
  * structure inside the native type described by jpo class 'C'.

@@ -678,7 +678,7 @@ jslr_realloc_array(char *pool, struct _jpo a, int n)
 		goto out;
 	}
 
-	if (jslr_expand(p, pa, n - old))
+	if (jslr_expand(p, pa + old + 1, n - old))
 		return _r_ENOMEM;
 	pa -= n - old;
 	pa->len = n;
