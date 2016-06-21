@@ -931,13 +931,13 @@ nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	char *pool = c->pool;
 
 	if (r.ty != JPO_PTR || ty != JPO_OBJECT) {
-		r = nm_jp_error(pool, "need object");
+		ro = nm_jp_error(pool, "need object");
 		goto out;
 	}
 
 	pi = jslr_get_object(pool, r);
 	if (pi == NULL || pi->ty != ty) {
-		r = nm_jp_error(pool, "internal error");
+		ro = nm_jp_error(pool, "internal error");
 		goto out;
 	}
 
