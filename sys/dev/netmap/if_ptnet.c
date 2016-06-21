@@ -793,6 +793,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct netmap_ring *ring;
 	struct netmap_slot *slot;
 	struct ptnet_queue *pq;
+	unsigned int prev_head;
 	unsigned int head;
 	unsigned int lim;
 	struct mbuf *mf;
@@ -839,75 +840,88 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	nmbuf = NMB(na, slot);
 	nmbuf_bytes = 0;
 
-	m = drbr_peek(ifp, pq->bufring);
-	if (!m) {
-		device_printf(sc->dev, "%s: Empty drbr\n", __func__);
-		goto out;
-	}
+	while (head != ring->tail) {
+		m = drbr_peek(ifp, pq->bufring);
+		if (!m) {
+			break;
+		}
 
-	if (head == ring->tail) {
-		device_printf(sc->dev, "%s: Drop, no free slots\n", __func__);
-		drbr_putback(ifp, pq->bufring, m);
-		ptring->guest_need_kick = 1;
-		goto out;
-	}
+		for (prev_head = head, mf = m; mf; mf = mf->m_next) {
+			uint8_t *mdata = mf->m_data;
+			int mlen = mf->m_len;
 
-	drbr_advance(ifp, pq->bufring);
+			for (;;) {
+				int copy = NETMAP_BUF_SIZE(na) - nmbuf_bytes;
 
-	for (mf = m; mf; mf = mf->m_next) {
-		uint8_t *mdata = mf->m_data;
-		int mlen = mf->m_len;
+				if (mlen < copy) {
+					copy = mlen;
+				}
+				memcpy(nmbuf, mdata, copy);
 
-		for (;;) {
-			int copy = NETMAP_BUF_SIZE(na) - nmbuf_bytes;
+				mdata += copy;
+				mlen -= copy;
+				nmbuf += copy;
+				nmbuf_bytes += copy;
 
-			if (mlen < copy) {
-				copy = mlen;
+				if (!mlen) {
+					break;
+				}
+
+				slot->len = nmbuf_bytes;
+				slot->flags = NS_MOREFRAG;
+
+				head = nm_next(head, lim);
+				if (head == ring->tail) {
+					/* Run out of slots while processing
+					 * a packet. Reset head to the previous
+					 * position and requeue the mbuf. */
+					device_printf(sc->dev, "%s: Drop, "
+						      " no free slots\n",
+						      __func__);
+					head = prev_head;
+					drbr_putback(ifp, pq->bufring, m);
+					goto escape;
+				}
+				slot = ring->slot + head;
+				nmbuf = NMB(na, slot);
+				nmbuf_bytes = 0;
 			}
-			memcpy(nmbuf, mdata, copy);
+		}
 
-			mdata += copy;
-			mlen -= copy;
-			nmbuf += copy;
-			nmbuf_bytes += copy;
+		/* Complete last slot and update head. */
+		slot->len = nmbuf_bytes;
+		slot->flags = 0;
+		head = nm_next(head, lim);
 
-			if (!mlen) {
-				break;
-			}
+		/* Consume the packet just processed. */
+		drbr_advance(ifp, pq->bufring);
+		m_freem(m);
+	}
+escape:
+	if (head != ring->head) {
+		/* Some packets have been pushed to the netmap ring. We have
+		 * to tell the host to process the new packets, updating cur
+		 * and head in the CSB. */
+		ring->head = ring->cur = head;
 
-			slot->len = nmbuf_bytes;
-			slot->flags = NS_MOREFRAG;
-			head = nm_next(head, lim);
-			slot = ring->slot + head;
-			nmbuf = NMB(na, slot);
-			nmbuf_bytes = 0;
+		/* nm_txsync_prologue */
+		kring->rcur = kring->rhead = ring->head;
+
+		ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
+
+		/* Kick the host if needed. */
+		if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
+			ptring->sync_flags = NAF_FORCE_RECLAIM;
+			bus_write_4(sc->iomem, pq->kick, 0);
 		}
 	}
 
-	m_freem(m);
-
-	/* Complete last slot and update head. */
-	slot->len = nmbuf_bytes;
-	slot->flags = 0;
-	ring->head = ring->cur = nm_next(head, lim);
-
-	/* nm_txsync_prologue */
-	kring->rcur = kring->rhead = ring->head;
-
-	/* Tell the host to process the new packets, updating cur and
-	 * head in the CSB. */
-	ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
-
-        /* Kick the host if needed. */
-	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
-		ptring->sync_flags = NAF_FORCE_RECLAIM;
-		bus_write_4(sc->iomem, pq->kick, 0);
-	}
-
-	if (0) {
+	if (head == ring->tail) {
+		/* Reactivate the interrupts so that we can be notified
+		 * when some netmap slots are made available by the host. */
 		ptring->guest_need_kick = 1;
 	}
-out:
+
 	PTNET_Q_UNLOCK(pq);
 
 	return 0;
