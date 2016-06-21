@@ -693,6 +693,7 @@ nm_conf_var_create(struct nm_conf *c, const char *name)
 	return v;
 }
 
+#if 0
 static struct nm_conf_var *
 nm_conf_var_get(struct nm_conf *c, const char *name)
 {
@@ -703,6 +704,7 @@ nm_conf_var_get(struct nm_conf *c, const char *name)
 
 	return v;
 }
+#endif
 
 struct _jpo
 nm_jp_error(char *pool, const char *format, ...)
@@ -743,6 +745,7 @@ nm_jp_getstr(struct _jpo r, const char *pool)
 	return jslr_get_string(pool, r);
 }
 
+#if 0
 static int
 nm_jp_streq(struct _jpo r, const char *pool, const char *str1)
 {
@@ -751,6 +754,7 @@ nm_jp_streq(struct _jpo r, const char *pool, const char *str1)
 		return 0;
 	return (strcmp(str1, str) == 0);
 }
+#endif
 
 static void
 nm_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
@@ -841,6 +845,7 @@ nm_jp_dget(struct nm_jp_delem *e)
 	return (e->flags & NM_JP_D_EXTERNAL) ? e->external : &e->jp;
 }
 
+#if 0
 static struct _jpo
 nm_jp_ddelete(struct nm_jp_dict *d, struct nm_jp_delem *e,
 		char *pool)
@@ -853,10 +858,12 @@ nm_jp_ddelete(struct nm_jp_dict *d, struct nm_jp_delem *e,
 	e->flags &= ~NM_JP_D_HAVE_REF;
 	return jslr_new_object(pool, 0);
 }
+#endif
 
 static struct nm_jp_delem *
 nm_jp_dsearch(struct nm_jp_dict *d, const char *name);
 
+#if 0
 static struct _jpo
 nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pi, struct _jpo *po, struct nm_conf *c)
 {
@@ -911,6 +918,7 @@ leave_:
 out:
 	return o;
 }
+#endif
 
 
 
@@ -951,19 +959,7 @@ nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			r = nm_jp_error(pool, "internal error");
 			goto out;
 		}
-		if (name[0] == '&') {
-			struct nm_conf_var *v;
-
-			name++;
-			v = nm_conf_var_get(c, name);
-			pi++; /* move to ptr */
-			r1 = nm_jp_dnew(d, pi, po, c);
-			if (v) {
-				v->value = *po;
-			}
-			po++; /* skip name, move to ptr */
-			goto next;
-		} else if (name[0] == '$') {
+		if (name[0] == '$') {
 			struct nm_conf_var *v;
 			const char *new_name;
 
@@ -987,10 +983,6 @@ nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			goto next;
 		}
 		ND("found %s", name);
-		if (nm_jp_streq(*pi, pool, "delete")) {
-			r1 = nm_jp_ddelete(d, e, pool);
-			goto next;
-		}
 		r1 = nm_jp_interp(nm_jp_dget(e), *pi, c);
 	next:
 		*po++ = r1; pi++; /* move to next entry */
