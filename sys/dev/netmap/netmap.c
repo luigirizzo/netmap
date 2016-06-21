@@ -2826,9 +2826,8 @@ NM_JPO_CLASS_END(port, NULL);
 int
 nm_jp_port_add(struct netmap_adapter *na, struct nm_jp_dict *d)
 {
-	int error = nm_jp_dadd_ptr(&nm_jp_ports, na,
-			(d == NULL ? &NM_JPO_CLASS(port).up : &d->up),
-			na->name);
+	int error = nm_jp_oladd_ptr(&nm_jp_ports, na,
+			(d == NULL ? &NM_JPO_CLASS(port).up : &d->up));
 	if (error) {
 		D("WARNING: failed to add %s to port list (error: %d)",
 				na->name, error);
@@ -2839,7 +2838,7 @@ nm_jp_port_add(struct netmap_adapter *na, struct nm_jp_dict *d)
 void
 nm_jp_port_del(struct netmap_adapter *na)
 {
-	nm_jp_ddel(&nm_jp_ports, na->name);
+	nm_jp_oldel_ptr(&nm_jp_ports, na);
 }
 
 #endif
@@ -3132,7 +3131,7 @@ netmap_detach(struct ifnet *ifp)
 
 	NMG_LOCK();
 #ifdef WITH_NMCONF
-	nm_jp_ddel(&nm_jp_ports, na->name);
+	nm_jp_oldel_ptr(&nm_jp_ports, na);
 #endif
 	netmap_set_all_rings(na, NM_KR_LOCKED);
 	na->na_flags |= NAF_ZOMBIE;
@@ -3427,7 +3426,7 @@ netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 #include <netmap_version.h>
 
 struct nm_jp_dict nm_jp_root;
-struct nm_jp_dict nm_jp_ports;
+struct nm_jp_olist nm_jp_ports;
 
 static struct _jpo
 nm_jp_version_dump(struct nm_jp *jp, struct nm_conf *c)
@@ -3466,7 +3465,7 @@ netmap_fini(void)
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
 #ifdef WITH_NMCONF
-	nm_jp_duninit(&nm_jp_ports);
+	nm_jp_oluninit(&nm_jp_ports);
 	nm_jp_duninit(&nm_jp_root);
 #endif /* WITH_NMCONF */
 	printf("netmap: unloaded module.\n");
@@ -3484,10 +3483,10 @@ netmap_init(void)
 	error = nm_jp_dinit(&nm_jp_root, NULL, 6, NULL);
 	if (error)
 		goto fail;
-	error = nm_jp_dinit(&nm_jp_ports, NULL, 10, NULL);
+	error = nm_jp_olinit(&nm_jp_ports, 10, NULL);
 	if (error)
 		goto fail;
-	nm_jp_dadd_external(&nm_jp_root, &nm_jp_ports.up, "port");
+	nm_jp_dadd_external(&nm_jp_root, (struct nm_jp *)&nm_jp_ports, "port");
 	nm_jp_dadd_external(&nm_jp_root, &nm_jp_version, "version");
 #endif /* WITH_NMCONF */
 

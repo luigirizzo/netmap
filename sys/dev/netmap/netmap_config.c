@@ -839,10 +839,242 @@ nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	return rv;
 }
 
+struct _jpo
+nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	struct _jpo *pi, *po, ro, *err, r1;
+	int i, j = 0, len, ty = r.len;
+	struct nm_jp_list *l = (struct nm_jp_list *)jp;
+	char *pool = c->pool;
+	struct nm_jp *jpe = NULL;
+
+	if (r.ty != JPO_PTR || ty != JPO_ARRAY) {
+		ro = nm_jp_error(pool, "need array");
+		c->mismatch = 1;
+		goto out;
+	}
+
+	pi = jslr_get_array(pool, r);
+	if (pi == NULL || pi->ty != ty) {
+		ro = nm_jp_error(pool, "internal error");
+		goto out;
+	}
+
+	if (c->matching)
+		goto out;
+
+	len = pi->len;
+	ro = jslr_new_array(pool, len);
+	if (ro.ty == JPO_ERR) {
+		ND("len %d, creation failed", len);
+		goto out;
+	}
+	po = jslr_get_array(pool, ro);
+
+	pi++; po++; /* move to first entry */
+	err = NULL;
+	for (i = 0; i < len; i++) {
+
+		if (err) {
+			r1 = *err;
+			goto next;
+		}
+
+		/* try to match the i-th elem to some element in the list,
+		 * starting from the j-th
+		 */
+		for (;;) {
+			jpe = l->access(l, j);
+
+			if (jpe == NULL) {
+				r1 = nm_jp_error(pool, "no more elements");
+				err = &r1;
+				goto next;
+			}
+
+			c->matching++;
+			c->mismatch = 0;
+			r1 = nm_jp_interp(jpe, *pi, c);
+			c->matching--;
+			if (!c->mismatch)
+				break;
+			j++;
+		}
+		r1 = nm_jp_interp(jpe, *pi, c);
+		c->mismatch = 0;
+		j++;
+
+	next:
+		*po++ = r1; pi++; /* move to next entry */
+	}
+
+out:
+	if (j > l->n)
+		l->n = j;
+	return ro;
+}
+
+struct _jpo
+nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
+{
+	char *pool = c->pool;
+	struct _jpo *po, r;
+	struct nm_jp_list *l = (struct nm_jp_list *)jp;
+	struct nm_jp *jpe;
+	int j;
+
+	r = jslr_new_array(pool, l->n);
+	if (r.ty == JPO_ERR)
+		return r;
+	po = jslr_get_array(pool, r);
+	po++;
+	for (j = 0; (jpe = l->access(l, j)) ; j++) {
+		D("j %d", j);
+		if (j >= l->n) {
+			l->n = j + 1;
+			r = jslr_realloc_array(pool, r, l->n);
+			if (r.ty == JPO_ERR)
+				return r;
+			po = jslr_get_array(pool, r);
+			po += j + 1;
+		}
+		*po++ = nm_jp_dump(jpe, c);
+	}
+	l->n = j;
+	jslr_realloc_array(pool, r, l->n);
+	return r;
+}
+
+void
+nm_jp_linit(struct nm_jp_list *l, int n,
+		struct nm_jp *(*access)(struct nm_jp_list *, int),
+		void (*bracket)(struct nm_jp *, int, struct nm_conf *))
+{
+	l->up.interp = nm_jp_linterp;
+	l->up.dump = nm_jp_ldump;
+	l->up.bracket = bracket;
+
+	l->n = n;
+	l->access = access;
+}
+
+void
+nm_jp_oluninit(struct nm_jp_olist *l)
+{
+	nm_os_free(l->list);
+	memset(l, 0, sizeof(*l));
+}
+
+struct nm_jp *
+nm_jp_olaccess(struct nm_jp_list *l, int i)
+{
+	struct nm_jp_olist *ol = (struct nm_jp_olist *)l;
+
+	if (i >= ol->nextfree)
+		return NULL;
+
+	return &ol->list[i].jp;
+}
+
+int
+nm_jp_olinit(struct nm_jp_olist *l, int n, void (*bracket)(struct nm_jp *, int, struct nm_conf *))
+{
+	nm_jp_linit(&l->up, n, nm_jp_olaccess, bracket);
+
+	l->list = nm_os_malloc(sizeof(*l->list) * n);
+	if (l->list == NULL)
+		return ENOMEM;
+	l->minelem = l->nelem = n;
+	l->nextfree = 0;
+	return 0;
+}
+
+union nm_jp_union *
+nm_jp_olnew_elem(struct nm_jp_olist *l)
+{
+	/* possibly make more room */
+	if (l->nextfree >= l->nelem) {
+		u_int newnelem = l->nelem * 2;
+		union nm_jp_union *newlist = nm_os_realloc(l->list,
+				sizeof(*l->list) * newnelem,
+				sizeof(*l->list) * l->nelem);
+		if (newlist == NULL)
+			return NULL;
+		l->list = newlist;
+		l->nelem = newnelem;
+	}
+	return &l->list[l->nextfree++];
+}
+
+int
+nm_jp_oldel_elem(struct nm_jp_olist *l, int i)
+{
+	union nm_jp_union *u1, *u2;
+
+	l->nextfree--;
+	u1 = &l->list[i];
+	u2 = &l->list[l->nextfree];
+	if (u1 != u2) {
+		memcpy(u1, u2, sizeof(*u2));
+	}
+	memset(u2, 0, sizeof(*u2));
+	if (l->nelem > l->minelem && l->nextfree < l->nelem / 2) {
+		union nm_jp_union *newlist;
+		u_int newnelem = l->nelem / 2;
+		if (newnelem < l->minelem)
+			newnelem = l->minelem;
+		newlist = nm_os_realloc(l->list, sizeof(*l->list) * newnelem,
+				sizeof(*l->list) * l->nelem);
+		if (newlist == NULL) {
+			D("out of memory when trying to release memory?");
+			return 0; /* not fatal */
+		}
+		l->list = newlist;
+		l->nelem = newnelem;
+	}
+	return 0;
+}
+
+void
+nm_jp_union_set_ptr(union nm_jp_union *u, void *p, struct nm_jp *t)
+{
+	u->ptr.up.interp = nm_jp_pinterp;
+	u->ptr.up.dump   = nm_jp_pdump;
+	u->ptr.up.bracket = NULL;
+	u->ptr.arg = p;
+	u->ptr.type = t;
+	u->ptr.flags = 0;
+}
+
+int
+nm_jp_oladd_ptr(struct nm_jp_olist *l, void *p, struct nm_jp *t)
+{
+	union nm_jp_union *u = nm_jp_olnew_elem(l);
+	if (u == NULL)
+		return ENOMEM;
+	
+	nm_jp_union_set_ptr(u, p, t);
+	return 0;
+}
+
+int
+nm_jp_oldel_ptr(struct nm_jp_olist *l, void *p)
+{
+	int i;
+
+	for (i = 0; i < l->nextfree; i++) {
+		if (l->list[i].ptr.arg == p) {
+			nm_jp_oldel_elem(l, i);
+			return 0;
+		}
+	}
+	return ENOENT;
+}
+
 static struct nm_jp*
 nm_jp_dget(struct nm_jp_delem *e)
 {
-	return (e->flags & NM_JP_D_EXTERNAL) ? e->external : &e->jp;
+	return (e->flags & NM_JP_D_EXTERNAL) ? e->u.external : &e->u.jp;
 }
 
 #if 0
@@ -980,6 +1212,7 @@ nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		e = nm_jp_dsearch(d, name);
 		if (e == NULL) {
 			r1 = nm_jp_error(pool, "not found");
+			c->mismatch = 1;
 			goto next;
 		}
 		ND("found %s", name);
@@ -1019,6 +1252,7 @@ nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
 	do {
 		for (i = 0; i < d->nextfree; i++) {
 			struct nm_jp_delem *e = &d->list[i];
+			D("name %s jp %p", e->name, nm_jp_dget(e));
 			*po = jslr_new_string(pool, e->name);
 			if (po->ty == JPO_ERR)
 				return *po;
@@ -1176,12 +1410,7 @@ nm_jp_delem_setname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt
 void
 nm_jp_delem_set_ptr(struct nm_jp_delem *e, void *p, struct nm_jp *t)
 {
-	e->ptr.up.interp = nm_jp_pinterp;
-	e->ptr.up.dump   = nm_jp_pdump;
-	e->ptr.up.bracket = NULL;
-	e->ptr.arg = p;
-	e->ptr.type = t;
-	e->ptr.flags = 0;
+	nm_jp_union_set_ptr(&e->u, p, t);
 }
 
 static int
@@ -1232,7 +1461,7 @@ nm_jp_dadd_external(struct nm_jp_dict *d, struct nm_jp *jp, const char *fmt, ...
 		return rv;
 
 	e->flags = NM_JP_D_EXTERNAL;
-	e->external = jp;
+	e->u.external = jp;
 	
 	return 0;
 }
@@ -1319,6 +1548,10 @@ nm_jp_ninterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	v = nm_jp_ngetvar(in, c->cur_obj);
 	if (v == nv)
 		goto done;
+	if (c->matching) {
+		c->mismatch = 1;
+		goto done;
+	}
 	if (in->update == NULL) {
 		r = nm_jp_error(pool, "read-only");
 		goto done;

@@ -294,6 +294,8 @@ struct nm_conf {
 	NM_MTX_T mux;
 	struct nm_confb buf[2]; /* 0 in, 1 out */
 	int written;
+	int matching;
+	int mismatch;
 	char *pool;
 	void *cur_obj;
 	struct nm_conf_var *vars;
@@ -324,6 +326,35 @@ struct nm_jp {
 #define NM_JPB_LEAVE	2
 };
 struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
+
+/* lists */
+struct nm_jp_list {
+	struct nm_jp up;
+	int n;
+	
+	struct nm_jp * (*access)(struct nm_jp_list *, int);
+};
+
+void nm_jp_linit(struct nm_jp_list *, int, 
+		struct nm_jp *(*)(struct nm_jp_list *, int),
+		void (*)(struct nm_jp *, int, struct nm_conf *));
+struct _jpo nm_jp_linterp(struct nm_jp *, struct _jpo, struct nm_conf *);
+struct _jpo nm_jp_ldump(struct nm_jp *, struct nm_conf *);
+
+union nm_jp_union;
+struct nm_jp_olist {
+	struct nm_jp_list up;
+
+	union nm_jp_union *list;
+	u_int minelem;
+	u_int nelem;
+	u_int nextfree;
+};
+
+int nm_jp_olinit(struct nm_jp_olist *, int, void (*)(struct nm_jp *, int, struct nm_conf *));
+void nm_jp_oluninit(struct nm_jp_olist *);
+int nm_jp_oladd_ptr(struct nm_jp_olist *, void *, struct nm_jp *);
+int nm_jp_oldel_ptr(struct nm_jp_olist *, void *);
 
 /* dictionaries */
 
@@ -396,24 +427,27 @@ struct nm_jp_special {
 	struct nm_jp up;
 };
 
+union nm_jp_union {
+	struct nm_jp	     jp;
+	struct nm_jp_special special;
+	struct nm_jp_dict    dict;
+	struct nm_jp_list    list;
+	struct nm_jp_num     num;
+	struct nm_jp_ptr     ptr;
+	struct nm_jp	    *external;
+};
+
 struct nm_jp_delem {
 	char name[NETMAP_CONFIG_MAXNAME];
 	u_int flags;
 #define NM_JP_D_HAVE_REF	1
 #define NM_JP_D_EXTERNAL	2
-	union {
-		struct nm_jp	     jp;
-		struct nm_jp_special special;
-		struct nm_jp_dict    dict;
-		struct nm_jp_num     num;
-		struct nm_jp_ptr     ptr;
-		struct nm_jp	    *external;
-	};
+	union nm_jp_union u;
 };
 
 
 extern struct nm_jp_dict nm_jp_root;
-extern struct nm_jp_dict nm_jp_ports;
+extern struct nm_jp_olist nm_jp_ports;
 
 struct netmap_adapter;
 int nm_jp_port_add(struct netmap_adapter *, struct nm_jp_dict *);
@@ -481,7 +515,7 @@ void nm_jp_port_del(struct netmap_adapter *);
  */
 #define NM_JPO_SPECIAL(C, F, i, d, b)   {		\
 	.name = #F,					\
-	.special = {					\
+	.u.special = {					\
 		.up = {					\
 			.interp = i,			\
 			.dump   = d,			\
@@ -496,7 +530,7 @@ void nm_jp_port_del(struct netmap_adapter *);
  */
 #define NM_JPO_NUM(C, F, s, r, w)	{		\
 	.name = #F,					\
-	.num = {					\
+	.u.num = {					\
 		.up = {					\
 			.interp = nm_jp_ninterp,	\
 			.dump   = nm_jp_ndump		\
@@ -547,7 +581,7 @@ void nm_jp_port_del(struct netmap_adapter *);
  */
 #define NM_JPO_STRUCT(C, n, S, F)	{		\
 	.name = #F,					\
-	.ptr = {					\
+	.u.ptr = {					\
 		.up = {					\
 			.interp = nm_jp_pinterp,	\
 			.dump   = nm_jp_pdump,		\

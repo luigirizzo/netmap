@@ -665,6 +665,28 @@ jslr_new_array(char *pool, int n)
 }
 
 struct _jpo
+jslr_realloc_array(char *pool, struct _jpo a, int n)
+{
+	struct _jp *p = (struct _jp *)pool;
+	struct _jpo *pa = jslr_get_array(pool, a);
+	int old = pa->len;
+
+	D("old %d new %d", old, n);
+
+	if (old >= n) {
+		pa->len = n;
+		goto out;
+	}
+
+	if (jslr_expand(p, pa, n - old))
+		return _r_ENOMEM;
+	pa -= n - old;
+	pa->len = n;
+out:
+	return (struct _jpo) {.ty = JPO_PTR, .ptr = (pa - p->pool), .len = JPO_ARRAY};
+}
+
+struct _jpo
 jslr_new_object(char *pool, int n)
 {
 	struct _jp *p = (struct _jp *)pool;

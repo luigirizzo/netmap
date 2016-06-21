@@ -64,4 +64,6 @@ struct _jpo	jslr_new_num(char *pool, int64_t);
 struct _jpo	jslr_new_array(char *pool, int n);
 struct _jpo	jslr_new_object(char *pool, int n);
 
+struct _jpo	jslr_realloc_array(char *pool, struct _jpo a, int n);
+
 #endif /* NETMAP_JSONLR_H */

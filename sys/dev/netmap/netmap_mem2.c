@@ -1777,7 +1777,7 @@ netmap_mem_jp_new(struct nm_jp_dict *d, struct nm_jp_delem *e)
 static void
 netmap_mem_jp_delete(struct nm_jp_dict *d, struct nm_jp_delem *e)
 {
-	struct netmap_mem_d *nmd = e->ptr.arg;
+	struct netmap_mem_d *nmd = e->u.ptr.arg;
 	netmap_mem_put(nmd);
 }
 
