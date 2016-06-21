@@ -802,12 +802,33 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	DBG(device_printf(sc->dev, "transmit %p\n", m));
 
 	pq = sc->queues + 0;
+
+	if (m) {
+		int err;
+
+		/* Here we are called by the network stack, and not by
+		 * by the taskqueue thread. */
+		err = drbr_enqueue(ifp, pq->bufring, m);
+		m = NULL; /* just to stay safe */
+		if (unlikely(err)) {
+			device_printf(sc->dev, "%s: drbr_enqueue() failed %d\n",
+				      __func__, err);
+			return err;
+		}
+	}
+
+	if (!PTNET_Q_TRYLOCK(pq)) {
+		/* We failed to acquire the lock, schedule the taskqueue. */
+		RD(1, "Deferring TX work");
+		taskqueue_enqueue(pq->taskq, &pq->task);
+
+		return 0;
+	}
+
 	ptring = pq->ptring;
 	kring = na->tx_rings + pq->kring_id;
 	ring = kring->ring;
 	lim = kring->nkr_num_slots - 1;
-
-	PTNET_Q_LOCK(pq);
 
 	/* Update hwcur and hwtail (completed TX slots) as known by the host,
 	 * by reading from CSB. */
@@ -818,13 +839,20 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	nmbuf = NMB(na, slot);
 	nmbuf_bytes = 0;
 
+	m = drbr_peek(ifp, pq->bufring);
+	if (!m) {
+		device_printf(sc->dev, "%s: Empty drbr\n", __func__);
+		goto out;
+	}
+
 	if (head == ring->tail) {
 		device_printf(sc->dev, "%s: Drop, no free slots\n", __func__);
-		m_freem(m);
+		drbr_putback(ifp, pq->bufring, m);
 		ptring->guest_need_kick = 1;
-
-		return 0;
+		goto out;
 	}
+
+	drbr_advance(ifp, pq->bufring);
 
 	for (mf = m; mf; mf = mf->m_next) {
 		uint8_t *mdata = mf->m_data;
@@ -879,7 +907,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (0) {
 		ptring->guest_need_kick = 1;
 	}
-
+out:
 	PTNET_Q_UNLOCK(pq);
 
 	return 0;
