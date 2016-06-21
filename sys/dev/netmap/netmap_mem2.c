@@ -1696,7 +1696,7 @@ netmap_mem2_delete(struct netmap_mem_d *nmd)
 }
 
 #ifdef WITH_NMCONF
-static struct nm_jp_dict nm_jp_mem;
+static struct nm_jp_olist nm_jp_mem;
 
 static void
 netmap_mem_jp_bracket(struct nm_jp *i, int stage, struct nm_conf *c)
@@ -1728,6 +1728,7 @@ NM_JPO_CLASS_DECL(mparams, struct netmap_obj_params)
 NM_JPO_CLASS_END(mparams, NULL);
 
 NM_JPO_CLASS_DECL(mem, struct netmap_mem_d)
+	NM_JPO_ROSTR(mem, name)
 	NM_JPO_RONUM(mem,  active)
 	NM_JPO_RONUM(mem,  refcount)
 	NM_JPO_STRUCT(mem, pools[NETMAP_IF_POOL], objpool, if)
@@ -1742,15 +1743,16 @@ NM_JPO_CLASS_END(mem, netmap_mem_jp_bracket);
 static int
 netmap_mem_jp_init(struct netmap_mem_d *nmd)
 {
-	return nm_jp_dadd_ptr(&nm_jp_mem, nmd, &NM_JPO_CLASS(mem).up, nmd->name);
+	return nm_jp_oladd_ptr(&nm_jp_mem, nmd, &NM_JPO_CLASS(mem).up);
 }
 
 static void
 netmap_mem_jp_uninit(struct netmap_mem_d *nmd)
 {
-	nm_jp_ddel(&nm_jp_mem, nmd->name);
+	nm_jp_oldel_ptr(&nm_jp_mem, nmd);
 }
 
+#if 0
 static int
 netmap_mem_jp_new(struct nm_jp_dict *d, struct nm_jp_delem *e)
 {
@@ -1780,6 +1782,7 @@ netmap_mem_jp_delete(struct nm_jp_dict *d, struct nm_jp_delem *e)
 	struct netmap_mem_d *nmd = e->u.ptr.arg;
 	netmap_mem_put(nmd);
 }
+#endif
 
 #endif /* WITH_NMCONF */
 
@@ -1791,12 +1794,12 @@ netmap_mem_init(void)
 	NMA_LOCK_INIT(&nm_mem);
 	netmap_mem_get(&nm_mem);
 #ifdef WITH_NMCONF
-	error = nm_jp_dinit(&nm_jp_mem, NULL, 10, NULL);
+	error = nm_jp_olinit(&nm_jp_mem, 10, NULL);
 	if (error)
 		goto fail_put;
-	nm_jp_mem.new = netmap_mem_jp_new;
-	nm_jp_mem.delete = netmap_mem_jp_delete;
-	error = nm_jp_dadd_external(&nm_jp_root, &nm_jp_mem.up, "mem");
+	//nm_jp_mem.new = netmap_mem_jp_new;
+	//nm_jp_mem.delete = netmap_mem_jp_delete;
+	error = nm_jp_dadd_external(&nm_jp_root, (struct nm_jp *)&nm_jp_mem, "mem");
 	if (error)
 		goto fail_uninit;
 	error = netmap_mem_jp_init(&nm_mem);
@@ -1809,7 +1812,7 @@ netmap_mem_init(void)
 fail_del:
 	nm_jp_ddel(&nm_jp_root, "mem");
 fail_uninit:
-	nm_jp_duninit(&nm_jp_mem);
+	nm_jp_oluninit(&nm_jp_mem);
 fail_put:
 	netmap_mem_put(&nm_mem);
 	return (error);
@@ -1822,7 +1825,7 @@ netmap_mem_fini(void)
 #ifdef WITH_NMCONF
 	netmap_mem_jp_uninit(&nm_mem);
 	nm_jp_ddel(&nm_jp_root, "mem");
-	nm_jp_duninit(&nm_jp_mem);
+	nm_jp_oluninit(&nm_jp_mem);
 #endif
 	netmap_mem_put(&nm_mem);
 }
