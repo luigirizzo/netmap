@@ -974,7 +974,7 @@ ptnet_qflush(struct ifnet *ifp)
 	struct ptnet_softc *sc = ifp->if_softc;
 	int i;
 
-	/* Flush all ring buffers and do the interface flush. */
+	/* Flush all the bufrings and do the interface flush. */
 	for (i = 0; i < sc->num_rings; i++) {
 		struct ptnet_queue *pq = sc->queues + i;
 		struct mbuf *m;
@@ -1008,15 +1008,10 @@ ptnet_media_change(struct ifnet *ifp)
 static void
 ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 {
-	ifmr->ifm_status = IFM_AVALID;
-	ifmr->ifm_active = IFM_ETHER;
-
-	if (1) {
-		ifmr->ifm_status |= IFM_ACTIVE;
-		ifmr->ifm_active |= IFM_10G_T | IFM_FDX;
-	} else {
-		ifmr->ifm_active |= IFM_NONE;
-	}
+	/* We are always active, as the backend netmap port is
+	 * always open in netmap mode. */
+	ifmr->ifm_status = IFM_AVALID | IFM_ACTIVE;
+	ifmr->ifm_active = IFM_ETHER | IFM_10G_T | IFM_FDX;
 }
 
 static uint32_t
