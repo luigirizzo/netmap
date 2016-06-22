@@ -937,8 +937,20 @@ escape:
 
 	if (head == ring->tail) {
 		/* Reactivate the interrupts so that we can be notified
-		 * when some netmap slots are made available by the host. */
+		 * when some free slots are made available by the host. */
 		ptring->guest_need_kick = 1;
+
+                /* Double check. */
+		ptnet_sync_tail(ptring, kring);
+		if (unlikely(head != ring->tail)) {
+			RD(1, "Doublecheck finds more slots");
+			/* More slots were freed before reactivating
+			 * the interrupts. */
+			ptring->guest_need_kick = 0;
+			if (!drbr_empty(ifp, pq->bufring)) {
+				taskqueue_enqueue(pq->taskq, &pq->task);
+			}
+		}
 	}
 
 	PTNET_Q_UNLOCK(pq);
