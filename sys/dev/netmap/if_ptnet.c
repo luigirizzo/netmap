@@ -417,6 +417,18 @@ static int
 ptnet_detach(device_t dev)
 {
 	struct ptnet_softc *sc = device_get_softc(dev);
+	int i;
+
+	if (sc->queues) {
+		/* Drain taskqueues before calling if_detach. */
+		for (i = 0; i < sc->num_rings; i++) {
+			struct ptnet_queue *pq = sc->queues + i;
+
+			if (pq->taskq) {
+				taskqueue_drain(pq->taskq, &pq->task);
+			}
+		}
+	}
 
 	if (sc->ifp) {
 		ether_ifdetach(sc->ifp);
@@ -441,8 +453,6 @@ ptnet_detach(device_t dev)
 	}
 
 	if (sc->queues) {
-		int i;
-
 		for (i = 0; i < sc->num_rings; i++) {
 			struct ptnet_queue *pq = sc->queues + i;
 
@@ -943,7 +953,7 @@ escape:
                 /* Double check. */
 		ptnet_sync_tail(ptring, kring);
 		if (unlikely(head != ring->tail)) {
-			RD(1, "Doublecheck finds more slots");
+			RD(1, "Found more slots by doublecheck");
 			/* More slots were freed before reactivating
 			 * the interrupts. */
 			ptring->guest_need_kick = 0;
