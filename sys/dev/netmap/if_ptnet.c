@@ -971,6 +971,24 @@ escape:
 static void
 ptnet_qflush(struct ifnet *ifp)
 {
+	struct ptnet_softc *sc = ifp->if_softc;
+	int i;
+
+	/* Flush all ring buffers and do the interface flush. */
+	for (i = 0; i < sc->num_rings; i++) {
+		struct ptnet_queue *pq = sc->queues + i;
+		struct mbuf *m;
+
+		PTNET_Q_LOCK(pq);
+		if (pq->bufring) {
+			while ((m = buf_ring_dequeue_sc(pq->bufring))) {
+				m_freem(m);
+			}
+		}
+		PTNET_Q_UNLOCK(pq);
+	}
+
+	if_qflush(ifp);
 }
 
 static int
