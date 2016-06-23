@@ -883,9 +883,9 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			goto next;
 		}
 
-		for (stop = it, last = it, jpe = l->next(l, &it);
+		for (stop = it, last = it, jpe = l->next(l, &it, c);
 		     !nm_jp_liter_eq(&it, &stop);
-		     last = it, jpe = l->next(l, &it))
+		     last = it, jpe = l->next(l, &it, c))
 		{
 			D("jpe %p", jpe);
 			if (jpe) {
@@ -935,7 +935,7 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 	struct nm_jp_list *l = (struct nm_jp_list *)jp;
 	struct nm_jp *jpe;
 	int j;
-	struct nm_jp_liter it;
+	struct nm_jp_liter it, *save;
 
 	r = jslr_new_array(pool, l->n);
 	if (r.ty == JPO_ERR)
@@ -943,7 +943,8 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 	po = jslr_get_array(pool, r);
 	po++;
 	nm_jp_liter_beg(&it);
-	for (j = 0; (jpe = l->next(l, &it)) ; j++) {
+	save = c->cur_iter;
+	for (j = 0; (jpe = l->next(l, &it, c)) ; j++) {
 		D("j %d", j);
 		if (j >= l->n) {
 			l->n = j + 1;
@@ -953,16 +954,19 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 			po = jslr_get_array(pool, r);
 			po += j + 1;
 		}
+		c->cur_iter = &it;
 		*po++ = nm_jp_dump(jpe, c);
 	}
 	l->n = j;
 	jslr_realloc_array(pool, r, l->n);
+	c->cur_iter = save;
 	return r;
 }
 
 void
 nm_jp_linit(struct nm_jp_list *l, int n,
-		struct nm_jp *(*next)(struct nm_jp_list *, struct nm_jp_liter *),
+		struct nm_jp *(*next)(struct nm_jp_list *,
+			struct nm_jp_liter *i, struct nm_conf *),
 		void (*bracket)(struct nm_jp *, int, struct nm_conf *))
 {
 	l->up.interp = nm_jp_linterp;
@@ -981,7 +985,7 @@ nm_jp_oluninit(struct nm_jp_olist *l)
 }
 
 struct nm_jp *
-nm_jp_olnext(struct nm_jp_list *l, struct nm_jp_liter *it)
+nm_jp_olnext(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 {
 	struct nm_jp_olist *ol = (struct nm_jp_olist *)l;
 	union nm_jp_union **e = (union nm_jp_union **)&it->it;

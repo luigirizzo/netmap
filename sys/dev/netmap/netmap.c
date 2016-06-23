@@ -2745,78 +2745,94 @@ nm_jp_memid_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	return jp->dump(jp, c);
 }
 
+//static const char *nm_jp_flag_names[member_size(struct netmap_adapter, na_flags) * 8];
+static const char *nm_jp_flag_names[] = {
+	[__builtin_ctz(NAF_SKIP_INTR)]		= "skip-intr",
+	[__builtin_ctz(NAF_SW_ONLY)]   		= "sw-only",
+	[__builtin_ctz(NAF_BDG_MAYSLEEP)]	= "bdg-maysleep",
+	[__builtin_ctz(NAF_MEM_OWNER)]		= "mem-owner",
+	[__builtin_ctz(NAF_NATIVE)]		= "native",
+	[__builtin_ctz(NAF_NETMAP_ON)]		= "netmap-on",
+	[__builtin_ctz(NAF_HOST_RINGS)]		= "host-rings",
+	[__builtin_ctz(NAF_FORCE_NATIVE)]	= "force-native",
+	[__builtin_ctz(NAF_PTNETMAP_HOST)]	= "ptnetmap-host",
+	[__builtin_ctz(NAF_ZOMBIE)]		= "zombie",
+};
+
 static struct _jpo
-nm_jp_flags_dump(struct nm_jp *ip, struct nm_conf *c)
+nm_jp_flag_dump(struct nm_jp *ip, struct nm_conf *c)
+{
+	struct nm_jp_liter *it = c->cur_iter;
+	int f = it->it >> 16;
+	return jslr_new_string(c->pool, nm_jp_flag_names[f]);
+}
+
+static struct _jpo
+nm_jp_flag_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	struct nm_jp_liter *it = c->cur_iter;
+	int f = it->it >> 16;
+	const char *s = jslr_get_string(c->pool, r);
+	if (c->matching)
+		c->mismatch = (strcmp(nm_jp_flag_names[f], s) != 0);
+	return nm_jp_flag_dump(jp, c);
+}
+
+struct nm_jp_flag_list {
+	struct nm_jp_list up;
+	struct nm_jp flag;
+};
+
+static struct nm_jp *
+nm_jp_flag_next(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 {
 	struct netmap_adapter *na = c->cur_obj;
-	uint32_t f, flags;
-	struct _jpo r, *po;
-	char *pool = c->pool;
-	int len = 0;
+	u_int flags = na->na_flags;
+	struct nm_jp_flag_list *fl = (struct nm_jp_flag_list *)l;
+	int prev = 0, next;
 
-	for (flags = na->na_flags; flags; flags >>= 1)
-		if (flags & 1)
-			len++;
-	r = jslr_new_array(pool, len);
-	if (r.ty == JPO_ERR)
-		return r;
-	po = jslr_get_array(pool, r);
-	po++;
-	for (flags = na->na_flags, f = 1U; flags; flags &= ~f, f <<= 1) {
-		const char *fs;
-
-		if (!(flags & f))
-			continue;
-		switch (f) {
-		case NAF_SKIP_INTR:
-			fs = "skip-intr";
-			break;
-		case NAF_SW_ONLY:
-			fs = "sw-only";
-			break;
-		case NAF_BDG_MAYSLEEP:
-			fs = "bdg-maysleep";
-			break;
-		case NAF_MEM_OWNER:
-			fs = "mem-owner";
-			break;
-		case NAF_NATIVE:
-			fs = "native";
-			break;
-		case NAF_NETMAP_ON:
-			fs = "netmap-on";
-			break;
-		case NAF_HOST_RINGS:
-			fs = "host-rings";
-			break;
-		case NAF_FORCE_NATIVE:
-			fs = "force-native";
-			break;
-		case NAF_PTNETMAP_HOST:
-			fs = "ptnetmap-host";
-			break;
-		case NAF_ZOMBIE:
-			fs = "zombie";
-			break;
-		case NAF_BUSY:
-			fs = "busy";
-			break;
-		default:
-			fs = "unknown";
-			break;
-		}
-		*po = jslr_new_string(pool, fs);
-		if (po->ty == JPO_ERR)
-			break;
-		po++;
+	if (flags == 0) {
+		nm_jp_liter_end(it);
 	}
-	return r;
+
+	if (nm_jp_liter_is_end(it)) {
+		nm_jp_liter_beg(it);
+		return NULL;
+	}
+
+	if (!nm_jp_liter_is_beg(it)) {
+		prev = (int) (it->it >> 16) + 1;
+	}
+
+	flags >>= prev;
+	if (flags) {
+		next = prev + __builtin_ctz(flags);
+		it->it = (uintptr_t)(next << 16);
+		return &fl->flag;
+	} else {
+		nm_jp_liter_end(it);
+		return NULL;
+	}
 }
+
+static struct nm_jp_flag_list nm_jp_port_flags = {
+	.up = {
+		.up = {
+			.interp = nm_jp_linterp,
+			.dump = nm_jp_ldump,
+		},
+		.next = nm_jp_flag_next,
+	},
+	.flag = {
+		.interp = nm_jp_flag_interp,
+		.dump = nm_jp_flag_dump,
+	}
+};
 
 NM_JPO_CLASS_DECL(port, struct netmap_adapter)
 	NM_JPO_ROSTR(port, name)
 	NM_JPO_SPECIAL(port, memid, nm_jp_memid_interp, nm_jp_memid_dump, NULL)
-	NM_JPO_SPECIAL(port, flags, NULL, nm_jp_flags_dump, NULL)
+	NM_JPO_EXTERNAL(port, flags, &nm_jp_port_flags.up.up)
 	NM_JPO_RONUM(port, num_tx_rings)
 	NM_JPO_RONUM(port, num_rx_rings)
 	NM_JPO_RONUM(port, num_tx_desc)

@@ -368,11 +368,13 @@ struct nm_jp_list {
 	struct nm_jp up;
 	int n;
 	
-	struct nm_jp * (*next)(struct nm_jp_list *, struct nm_jp_liter *);
+	struct nm_jp * (*next)(struct nm_jp_list *,
+			struct nm_jp_liter *i, struct nm_conf *);
 };
 
 void nm_jp_linit(struct nm_jp_list *, int, 
-		struct nm_jp *(*)(struct nm_jp_list *, struct nm_jp_liter *),
+		struct nm_jp *(*)(struct nm_jp_list *,
+			struct nm_jp_liter *, struct nm_conf *),
 		void (*)(struct nm_jp *, int, struct nm_conf *));
 struct _jpo nm_jp_linterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_ldump(struct nm_jp *, struct nm_conf *);
@@ -631,7 +633,6 @@ void nm_jp_port_del(struct netmap_adapter *);
 	},						\
 },
 
-
 /* declare a field 'F' that describes an embedded native
  * structure inside the native type described by jpo class 'C'.
  * A jpo class 'S' describing the embedded structure must
@@ -659,6 +660,12 @@ void nm_jp_port_del(struct netmap_adapter *);
 		.arg = (void *)offsetof(NM_JPO_TYPE(C), n),\
 		.flags = NM_JP_PTR_REL,			\
 	},						\
+},
+
+#define NM_JPO_EXTERNAL(C, F, jp)	{		\
+	.name = #F,					\
+	.flags = NM_JP_D_EXTERNAL,			\
+	.u.external = jp,				\
 },
 
 #endif /* WITH_NMCONF */
