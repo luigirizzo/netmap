@@ -861,9 +861,6 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		goto out;
 	}
 
-	if (c->matching)
-		goto out;
-
 	len = pi->len;
 	ro = jslr_new_array(pool, len);
 	if (ro.ty == JPO_ERR) {
@@ -916,6 +913,10 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 
 		}
 		r1 = nm_jp_error(pool, "no match");
+		if (c->matching) {
+			c->mismatch = 1;
+			err = &r1;
+		}
 	next:
 		*po++ = r1; pi++; /* move to next entry */
 	}
