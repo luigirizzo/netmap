@@ -328,15 +328,49 @@ struct nm_jp {
 struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
 
 /* lists */
+struct nm_jp_liter {
+	uintptr_t it;
+#define NM_JP_LITER_BEG	0x1UL
+#define NM_JP_LITER_END 0x2UL
+};
+
+static inline void
+nm_jp_liter_beg(struct nm_jp_liter *i) {
+	i->it = NM_JP_LITER_BEG;
+}
+
+static inline void
+nm_jp_liter_end(struct nm_jp_liter *i) {
+	i->it = NM_JP_LITER_END;
+}
+
+static inline int
+nm_jp_liter_eq(struct nm_jp_liter *i1, struct nm_jp_liter *i2)
+{
+	return i1->it == i2->it;
+}
+
+static inline int
+nm_jp_liter_is_beg(struct nm_jp_liter *i)
+{
+	return i->it == NM_JP_LITER_BEG;
+}
+
+static inline int
+nm_jp_liter_is_end(struct nm_jp_liter *i)
+{
+	return i->it == NM_JP_LITER_END;
+}
+
 struct nm_jp_list {
 	struct nm_jp up;
 	int n;
 	
-	struct nm_jp * (*access)(struct nm_jp_list *, int);
+	struct nm_jp * (*next)(struct nm_jp_list *, struct nm_jp_liter *);
 };
 
 void nm_jp_linit(struct nm_jp_list *, int, 
-		struct nm_jp *(*)(struct nm_jp_list *, int),
+		struct nm_jp *(*)(struct nm_jp_list *, struct nm_jp_liter *),
 		void (*)(struct nm_jp *, int, struct nm_conf *));
 struct _jpo nm_jp_linterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_ldump(struct nm_jp *, struct nm_conf *);

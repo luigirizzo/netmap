@@ -847,6 +847,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	struct nm_jp_list *l = (struct nm_jp_list *)jp;
 	char *pool = c->pool;
 	struct nm_jp *jpe = NULL;
+	struct nm_jp_liter it;
 
 	if (r.ty != JPO_PTR || ty != JPO_ARRAY) {
 		ro = nm_jp_error(pool, "need array");
@@ -873,37 +874,47 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 
 	pi++; po++; /* move to first entry */
 	err = NULL;
+	nm_jp_liter_beg(&it);
 	for (i = 0; i < len; i++) {
+		struct nm_jp_liter stop, last;
 
 		if (err) {
 			r1 = *err;
 			goto next;
 		}
 
-		/* try to match the i-th elem to some element in the list,
-		 * starting from the j-th
-		 */
-		for (;;) {
-			jpe = l->access(l, j);
-
-			if (jpe == NULL) {
-				r1 = nm_jp_error(pool, "no more elements");
-				err = &r1;
-				goto next;
+		for (stop = it, last = it, jpe = l->next(l, &it);
+		     !nm_jp_liter_eq(&it, &stop);
+		     last = it, jpe = l->next(l, &it))
+		{
+			D("jpe %p", jpe);
+			if (jpe) {
+				c->matching++;
+				c->mismatch = 0;
+				r1 = nm_jp_interp(jpe, *pi, c);
+				c->matching--;
+				if (!c->mismatch) {
+					D("match!");
+					r1 = nm_jp_interp(jpe, *pi, c);
+					goto next;
+				}
 			}
 
-			c->matching++;
-			c->mismatch = 0;
-			r1 = nm_jp_interp(jpe, *pi, c);
-			c->matching--;
-			if (!c->mismatch)
-				break;
-			j++;
-		}
-		r1 = nm_jp_interp(jpe, *pi, c);
-		c->mismatch = 0;
-		j++;
+			if (nm_jp_liter_is_end(&it)) {
+				D("reached end");
+				if (jpe == NULL) {
+					D("should be empty");
+					r1 = nm_jp_error(pool, "empty list");
+					err = &r1;
+					goto next;
+				}
+				/* restart and continue */
+				D("restarting search from beginning");
+				continue;
+			}
 
+		}
+		r1 = nm_jp_error(pool, "no match");
 	next:
 		*po++ = r1; pi++; /* move to next entry */
 	}
@@ -922,13 +933,15 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 	struct nm_jp_list *l = (struct nm_jp_list *)jp;
 	struct nm_jp *jpe;
 	int j;
+	struct nm_jp_liter it;
 
 	r = jslr_new_array(pool, l->n);
 	if (r.ty == JPO_ERR)
 		return r;
 	po = jslr_get_array(pool, r);
 	po++;
-	for (j = 0; (jpe = l->access(l, j)) ; j++) {
+	nm_jp_liter_beg(&it);
+	for (j = 0; (jpe = l->next(l, &it)) ; j++) {
 		D("j %d", j);
 		if (j >= l->n) {
 			l->n = j + 1;
@@ -947,7 +960,7 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 
 void
 nm_jp_linit(struct nm_jp_list *l, int n,
-		struct nm_jp *(*access)(struct nm_jp_list *, int),
+		struct nm_jp *(*next)(struct nm_jp_list *, struct nm_jp_liter *),
 		void (*bracket)(struct nm_jp *, int, struct nm_conf *))
 {
 	l->up.interp = nm_jp_linterp;
@@ -955,7 +968,7 @@ nm_jp_linit(struct nm_jp_list *l, int n,
 	l->up.bracket = bracket;
 
 	l->n = n;
-	l->access = access;
+	l->next = next;
 }
 
 void
@@ -966,20 +979,40 @@ nm_jp_oluninit(struct nm_jp_olist *l)
 }
 
 struct nm_jp *
-nm_jp_olaccess(struct nm_jp_list *l, int i)
+nm_jp_olnext(struct nm_jp_list *l, struct nm_jp_liter *it)
 {
 	struct nm_jp_olist *ol = (struct nm_jp_olist *)l;
+	union nm_jp_union **e = (union nm_jp_union **)&it->it;
+	struct nm_jp *rv;
+	
+	if (ol->nextfree == 0) {
+		nm_jp_liter_end(it);
+	}
 
-	if (i >= ol->nextfree)
+	if (nm_jp_liter_is_end(it)) {
+		nm_jp_liter_beg(it);
 		return NULL;
+	}
 
-	return &ol->list[i].jp;
+	if (nm_jp_liter_is_beg(it)) {
+		*e = ol->list;
+	}
+
+	rv = (struct nm_jp *)*e;
+
+	if (*e == ol->list + ol->nextfree - 1) {
+		nm_jp_liter_end(it);
+	} else {
+		(*e)++;
+	}
+
+	return rv;
 }
 
 int
 nm_jp_olinit(struct nm_jp_olist *l, int n, void (*bracket)(struct nm_jp *, int, struct nm_conf *))
 {
-	nm_jp_linit(&l->up, n, nm_jp_olaccess, bracket);
+	nm_jp_linit(&l->up, n, nm_jp_olnext, bracket);
 
 	l->list = nm_os_malloc(sizeof(*l->list) * n);
 	if (l->list == NULL)
@@ -1252,7 +1285,7 @@ nm_jp_ddump(struct nm_jp *jp, struct nm_conf *c)
 	do {
 		for (i = 0; i < d->nextfree; i++) {
 			struct nm_jp_delem *e = &d->list[i];
-			D("name %s jp %p", e->name, nm_jp_dget(e));
+			ND("name %s jp %p", e->name, nm_jp_dget(e));
 			*po = jslr_new_string(pool, e->name);
 			if (po->ty == JPO_ERR)
 				return *po;
