@@ -1287,7 +1287,10 @@ ptnet_tx_intr(void *opaque)
 		return;
 	}
 
-	/* Schedule the tasqueue to flush process transmissions requests. */
+	/* Schedule the tasqueue to flush process transmissions requests.
+	 * However, vtnet, if_em and if_igb just call ptnet_transmit() here,
+	 * at least when using MSI-X interrupts. The if_em driver, instead
+	 * schedule taskqueue when using legacy interrupts. */
 	taskqueue_enqueue(pq->taskq, &pq->task);
 }
 
