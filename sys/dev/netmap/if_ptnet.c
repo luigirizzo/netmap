@@ -1276,7 +1276,6 @@ ptnet_tx_intr(void *opaque)
 {
 	struct ptnet_queue *pq = opaque;
 	struct ptnet_softc *sc = pq->sc;
-	struct netmap_adapter *na_dr = &sc->ptna_dr.hwup.up;
 
 	DBG(device_printf(sc->dev, "Tx interrupt #%d\n", pq->kring_id));
 
@@ -1288,9 +1287,8 @@ ptnet_tx_intr(void *opaque)
 		return;
 	}
 
-	PTNET_Q_LOCK(pq);
-	ptnet_sync_tail(pq->ptring, na_dr->tx_rings + pq->kring_id);
-	PTNET_Q_UNLOCK(pq);
+	/* Schedule the tasqueue to flush process transmissions requests. */
+	taskqueue_enqueue(pq->taskq, &pq->task);
 }
 
 static void
