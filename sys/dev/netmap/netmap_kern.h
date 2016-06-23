@@ -290,6 +290,7 @@ struct nm_conf_var {
 	struct _jpo value;
 };
 
+struct nm_jp_liter;
 struct nm_conf {
 	NM_MTX_T mux;
 	struct nm_confb buf[2]; /* 0 in, 1 out */
@@ -298,6 +299,7 @@ struct nm_conf {
 	int mismatch;
 	char *pool;
 	void *cur_obj;
+	struct nm_jp_liter *cur_iter;
 	struct nm_conf_var *vars;
 	int next_var;
 	int max_vars;

@@ -847,7 +847,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	struct nm_jp_list *l = (struct nm_jp_list *)jp;
 	char *pool = c->pool;
 	struct nm_jp *jpe = NULL;
-	struct nm_jp_liter it;
+	struct nm_jp_liter it, *save = c->cur_iter;
 
 	if (r.ty != JPO_PTR || ty != JPO_ARRAY) {
 		ro = nm_jp_error(pool, "need array");
@@ -891,6 +891,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			if (jpe) {
 				c->matching++;
 				c->mismatch = 0;
+				c->cur_iter = &it;
 				r1 = nm_jp_interp(jpe, *pi, c);
 				c->matching--;
 				if (!c->mismatch) {
@@ -922,6 +923,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 out:
 	if (j > l->n)
 		l->n = j;
+	c->cur_iter = save;
 	return ro;
 }
 
