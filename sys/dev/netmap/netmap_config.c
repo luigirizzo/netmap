@@ -839,6 +839,23 @@ nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	return rv;
 }
 
+static int
+nm_jp_lgetcmd(char *pool, struct _jpo r, struct _jpo *arg)
+{
+	struct _jpo *cmd = jslr_get_object(pool, r);
+	const char *s;
+
+	if (cmd  == NULL || cmd->len != 1)
+		return -1;
+
+	cmd++;
+	s = jslr_get_string(pool, *cmd);
+	*arg = *cmd;
+	if (!strcmp(s, "+") && !strcmp(s, "-"))
+		return -1;
+	return s[0];
+}
+
 struct _jpo
 nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
@@ -874,10 +891,33 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	nm_jp_liter_beg(&it);
 	for (i = 0; i < len; i++) {
 		struct nm_jp_liter stop, last;
+		struct _jpo arg, search = *pi;
+		int cmd;
 
 		if (err) {
 			r1 = *err;
 			goto next;
+		}
+
+		cmd = nm_jp_lgetcmd(c->pool, *pi, &arg);
+		switch (cmd) {
+		case '+':
+			if (l->insert == NULL) {
+				r1 = nm_jp_error(c->pool, "insert not supported");
+				goto next;
+			}
+			r1 = l->insert(l, &it, arg, c);
+			nm_jp_liter_beg(&it);
+			goto next;
+		case '-':
+			if (l->remove == NULL) {
+				r1 = nm_jp_error(c->pool, "remove not supported");
+				goto next;
+			}
+			search = arg;
+			break;
+		default:
+			break;
 		}
 
 		for (stop = it, last = it, jpe = l->next(l, &it, c);
@@ -889,11 +929,16 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 				c->matching++;
 				c->mismatch = 0;
 				c->cur_iter = &it;
-				r1 = nm_jp_interp(jpe, *pi, c);
+				r1 = nm_jp_interp(jpe, search, c);
 				c->matching--;
 				if (!c->mismatch) {
 					D("match!");
-					r1 = nm_jp_interp(jpe, *pi, c);
+					if (cmd == '-') {
+						r1 = l->remove(l, &it, c);
+						nm_jp_liter_beg(&it);
+					} else {
+						r1 = nm_jp_interp(jpe, search, c);
+					}
 					goto next;
 				}
 			}

@@ -368,8 +368,12 @@ struct nm_jp_list {
 	struct nm_jp up;
 	int n;
 	
-	struct nm_jp * (*next)(struct nm_jp_list *,
-			struct nm_jp_liter *i, struct nm_conf *);
+	struct nm_jp *(*next)(struct nm_jp_list *,
+			struct nm_jp_liter *, struct nm_conf *);
+	struct _jpo (*insert)(struct nm_jp_list *,
+			struct nm_jp_liter *, struct _jpo, struct nm_conf *);
+	struct _jpo (*remove)(struct nm_jp_list *,
+			struct nm_jp_liter *, struct nm_conf *);	
 };
 
 void nm_jp_linit(struct nm_jp_list *, int, 
