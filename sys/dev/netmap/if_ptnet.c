@@ -856,6 +856,11 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		}
 	}
 
+	if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
+		RD(1, "Interface is down");
+		return ENETDOWN;
+	}
+
 	if (!PTNET_Q_TRYLOCK(pq)) {
 		/* We failed to acquire the lock, schedule the taskqueue. */
 		RD(1, "Deferring TX work");
@@ -998,10 +1003,10 @@ ptnet_media_change(struct ifnet *ifp)
 	struct ifmedia *ifm = &sc->media;
 
 	if (IFM_TYPE(ifm->ifm_media) != IFM_ETHER) {
-		return (EINVAL);
+		return EINVAL;
 	}
 
-	return (0);
+	return 0;
 }
 
 
