@@ -866,19 +866,27 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	struct nm_jp *jpe = NULL;
 	struct nm_jp_liter it, *save = c->cur_iter;
 
-	if (r.ty != JPO_PTR || ty != JPO_ARRAY) {
-		ro = nm_jp_error(pool, "need array");
-		c->mismatch = 1;
+	if (r.ty != JPO_PTR || (ty != JPO_ARRAY && ty != JPO_OBJECT) ) {
+		ro = nm_jp_error(pool, "need array or object");
+		if (c->matching)
+			c->mismatch = 1;
 		goto out;
 	}
 
-	pi = jslr_get_array(pool, r);
-	if (pi == NULL || pi->ty != ty) {
-		ro = nm_jp_error(pool, "internal error");
-		goto out;
+	if (ty == JPO_ARRAY) {
+		pi = jslr_get_array(pool, r);
+		if (pi == NULL || pi->ty != ty) {
+			ro = nm_jp_error(pool, "internal error");
+			goto out;
+		}
+
+		len = pi->len;
+		pi++;
+	} else {
+		len = 1;
+		pi = &r;
 	}
 
-	len = pi->len;
 	ro = jslr_new_array(pool, len);
 	if (ro.ty == JPO_ERR) {
 		ND("len %d, creation failed", len);
@@ -886,7 +894,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	}
 	po = jslr_get_array(pool, ro);
 
-	pi++; po++; /* move to first entry */
+	po++; /* move to first entry */
 	err = NULL;
 	nm_jp_liter_beg(&it);
 	for (i = 0; i < len; i++) {
@@ -900,6 +908,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		}
 
 		cmd = nm_jp_lgetcmd(c->pool, *pi, &arg);
+		D("cmd %d", cmd);
 		switch (cmd) {
 		case '+':
 			if (l->insert == NULL) {
