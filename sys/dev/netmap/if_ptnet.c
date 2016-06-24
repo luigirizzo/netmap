@@ -955,7 +955,7 @@ escape:
 		 * when some free slots are made available by the host. */
 		ptring->guest_need_kick = 1;
 
-                /* Double check. */
+                /* Double-check. */
 		ptnet_sync_tail(ptring, kring);
 		if (unlikely(head != ring->tail)) {
 			RD(1, "Found more slots by doublecheck");
@@ -1326,7 +1326,6 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	unsigned int budget = PTNET_RX_BUDGET;
 	unsigned int head = ring->head;
 	struct ifnet *ifp = sc->ifp;
-	unsigned int more;
 
 	PTNET_Q_LOCK(pq);
 
@@ -1377,10 +1376,6 @@ next:
 		budget--;
 	}
 
-	/* Reactivate interrupts as they were disabled by the host thread right
-	 * before issuing the last interrupt. */
-	ptring->guest_need_kick = 1;
-
 	if (budget != PTNET_RX_BUDGET) {
 		/* Some packets have been pushed to the network stack.
 		 * We need to update the CSB to tell the host about the new
@@ -1401,16 +1396,29 @@ next:
 		}
 	}
 
-	more = (head != ring->tail);
+	if (head == ring->tail) {
+		/* No more slots to process. Reactivate interrupts as they
+		 * were disabled by the host thread right before issuing the
+		 * last interrupt. */
+		ptring->guest_need_kick = 1;
 
-	PTNET_Q_UNLOCK(pq);
+		/* Double-check. */
+		ptnet_sync_tail(ptring, kring);
+		if (unlikely(head != ring->tail)) {
+			ptring->guest_need_kick = 0;
+		}
+	}
 
-	if (more) {
+	if (head != ring->tail) {
+		/* If we ran out of budget or the double-check found new
+		 * slots to process, schedule the taskqueue. */
 		device_printf(sc->dev, "%s: resched: budget %u h %u "
 			      "t %u\n", __func__, budget, ring->head,
 			      ring->tail);
 		taskqueue_enqueue(pq->taskq, &pq->task);
 	}
+
+	PTNET_Q_UNLOCK(pq);
 
 	return 0;
 }
