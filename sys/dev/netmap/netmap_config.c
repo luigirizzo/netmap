@@ -897,53 +897,86 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	nm_jp_liter_beg(&it);
 	for (i = 0; i < len; i++) {
 		struct nm_jp_liter stop, last;
-		struct _jpo arg, search = *pi, *k;
+		struct _jpo arg, search = *pi, *out;
 		const char *cmd;
 
+		/* if err is non NULL a fatal error has occurred, but we still
+		 * have to fill all the slots in the output array.
+		 */
 		if (err) {
 			r1 = *err;
 			goto next;
 		}
 
+		/* the reply will be put in out. It normally goes into the
+		 * current slot in the output array
+		 */
+		out = po;
+
+		/* first try to interpret the current input array element as a
+		 * special {cmd:arg} object.  cmd will be "" if the element
+		 * does not match this pattern */
 		cmd = nm_jp_lgetcmd(c->pool, *pi, &arg);
 		D("cmd %s", cmd);
 		if (cmd[0] == '+') {
+			/* this is an insert command */
 			if (l->insert == NULL) {
 				r1 = nm_jp_error(c->pool, "insert not supported");
 				goto next;
 			}
 			r1 = l->insert(l, &it, arg, c);
+			/* iterators may change after the insertion. Restart
+			 * the remaining searches from the beginning
+			 */
 			nm_jp_liter_beg(&it);
 			goto next;
 		} else if (cmd[0] == '-') {
+			/* this is a remove command */
 			if (l->remove == NULL) {
 				r1 = nm_jp_error(c->pool, "remove not supported");
 				goto next;
 			}
+			/* the arg of the command is the element to remove */
 			search = arg;
 		} else if (cmd[0] == '/' || (cmd[0] != '\0' && auto_search)) {
+			struct _jpo *ki, *ko;
+
+			/* this is a search command */
 			D("search for %s", cmd);
 			if (l->search_key == NULL) {
 				r1 = nm_jp_error(c->pool, "search not supported");
 				goto next;
 			}
+			/* create a '{key:value}' object for the search with
+			 * the default search_key as key and cmd as value */
 			r1 = jslr_new_object(c->pool, 1);
 			if (r1.ty == JPO_ERR)
 				goto next;
 			search = r1;
-			k = jslr_get_object(c->pool, r1);
+			ki = jslr_get_object(c->pool, r1);
 			r1 = jslr_new_string(c->pool, l->search_key);
 			if (r1.ty == JPO_ERR)
 				goto next;
-			k[1] = r1;
+			ki[1] = r1;
 			r1 = jslr_new_string(c->pool, (auto_search ? cmd : cmd + 1));
 			if (r1.ty == JPO_ERR)
 				goto next;
-			k[2] = r1;
+			ki[2] = r1;
+			/* the reply will have the form {value:reply}, where
+			 * value is as above and reply is the result of the
+			 * command arg */
+			r1 = jslr_new_object(c->pool, 1);
+			if (r1.ty == JPO_ERR)
+				goto next;
+			*po = r1;
+			ko = jslr_get_object(c->pool, r1);
+			ko[1] = ki[2]; /* the "value" string */
+			out = &ko[2];  /* the reply goes here */
 		} else {
 			arg = search;
 		}
 
+		/* now search for a matching element in the underlying list */
 		for (stop = it, last = it, jpe = l->next(l, &it, c);
 		     !nm_jp_liter_eq(&it, &stop);
 		     last = it, jpe = l->next(l, &it, c))
@@ -987,7 +1020,8 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			err = &r1;
 		}
 	next:
-		*po++ = r1; pi++; /* move to next entry */
+		*out = r1;
+		po++; pi++; /* move to next entry */
 	}
 
 out:
