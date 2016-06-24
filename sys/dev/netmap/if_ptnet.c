@@ -784,195 +784,6 @@ ptnet_stop(struct ptnet_softc *sc)
 	return 0;
 }
 
-static inline void
-ptnet_sync_tail(struct ptnet_ring *ptring, struct netmap_kring *kring)
-{
-	struct netmap_ring *ring = kring->ring;
-
-	/* Update hwcur and hwtail as known by the host. */
-        ptnetmap_guest_read_kring_csb(ptring, kring);
-
-	/* nm_sync_finalize */
-	ring->tail = kring->rtail = kring->nr_hwtail;
-}
-
-static void
-ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
-		  unsigned int head)
-{
-	struct netmap_ring *ring = kring->ring;
-	struct ptnet_ring *ptring = pq->ptring;
-
-	/* Some packets have been pushed to the netmap ring. We have
-	 * to tell the host to process the new packets, updating cur
-	 * and head in the CSB. */
-	ring->head = ring->cur = head;
-
-	/* nm_txsync_prologue */
-	kring->rcur = kring->rhead = ring->head;
-
-	ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
-
-	/* Kick the host if needed. */
-	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
-		ptring->sync_flags = NAF_FORCE_RECLAIM;
-		bus_write_4(pq->sc->iomem, pq->kick, 0);
-	}
-}
-
-static int
-ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
-{
-	struct ptnet_softc *sc = ifp->if_softc;
-	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
-	unsigned int batch_count = 0;
-	struct ptnet_ring *ptring;
-	struct netmap_kring *kring;
-	struct netmap_ring *ring;
-	struct netmap_slot *slot;
-	struct ptnet_queue *pq;
-	unsigned int prev_head;
-	unsigned int head;
-	unsigned int lim;
-	struct mbuf *mf;
-	int nmbuf_bytes;
-	uint8_t *nmbuf;
-
-	DBG(device_printf(sc->dev, "transmit %p\n", m));
-
-	pq = sc->queues + 0;
-
-	if (m) {
-		int err;
-
-		/* Here we are called by the network stack, and not by
-		 * by the taskqueue thread. */
-		err = drbr_enqueue(ifp, pq->bufring, m);
-		m = NULL; /* just to stay safe */
-		if (unlikely(err)) {
-			device_printf(sc->dev, "%s: drbr_enqueue() failed %d\n",
-				      __func__, err);
-			return err;
-		}
-	}
-
-	if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
-		RD(1, "Interface is down");
-		return ENETDOWN;
-	}
-
-	if (!PTNET_Q_TRYLOCK(pq)) {
-		/* We failed to acquire the lock, schedule the taskqueue. */
-		RD(1, "Deferring TX work");
-		taskqueue_enqueue(pq->taskq, &pq->task);
-
-		return 0;
-	}
-
-	ptring = pq->ptring;
-	kring = na->tx_rings + pq->kring_id;
-	ring = kring->ring;
-	lim = kring->nkr_num_slots - 1;
-
-	/* Update hwcur and hwtail (completed TX slots) as known by the host,
-	 * by reading from CSB. */
-	ptnet_sync_tail(ptring, kring);
-
-	head = ring->head;
-	slot = ring->slot + head;
-	nmbuf = NMB(na, slot);
-	nmbuf_bytes = 0;
-
-	while (head != ring->tail) {
-		m = drbr_peek(ifp, pq->bufring);
-		if (!m) {
-			break;
-		}
-
-		for (prev_head = head, mf = m; mf; mf = mf->m_next) {
-			uint8_t *mdata = mf->m_data;
-			int mlen = mf->m_len;
-
-			for (;;) {
-				int copy = NETMAP_BUF_SIZE(na) - nmbuf_bytes;
-
-				if (mlen < copy) {
-					copy = mlen;
-				}
-				memcpy(nmbuf, mdata, copy);
-
-				mdata += copy;
-				mlen -= copy;
-				nmbuf += copy;
-				nmbuf_bytes += copy;
-
-				if (!mlen) {
-					break;
-				}
-
-				slot->len = nmbuf_bytes;
-				slot->flags = NS_MOREFRAG;
-
-				head = nm_next(head, lim);
-				if (head == ring->tail) {
-					/* Run out of slots while processing
-					 * a packet. Reset head to the previous
-					 * position and requeue the mbuf. */
-					device_printf(sc->dev, "%s: Drop, "
-						      " no free slots\n",
-						      __func__);
-					head = prev_head;
-					drbr_putback(ifp, pq->bufring, m);
-					goto escape;
-				}
-				slot = ring->slot + head;
-				nmbuf = NMB(na, slot);
-				nmbuf_bytes = 0;
-			}
-		}
-
-		/* Complete last slot and update head. */
-		slot->len = nmbuf_bytes;
-		slot->flags = 0;
-		head = nm_next(head, lim);
-
-		/* Consume the packet just processed. */
-		drbr_advance(ifp, pq->bufring);
-		m_freem(m);
-
-		if (++batch_count == PTNET_TX_BATCH) {
-			batch_count = 0;
-			ptnet_ring_update(pq, kring, head);
-		}
-	}
-escape:
-	if (batch_count) {
-		ptnet_ring_update(pq, kring, head);
-	}
-
-	if (head == ring->tail) {
-		/* Reactivate the interrupts so that we can be notified
-		 * when some free slots are made available by the host. */
-		ptring->guest_need_kick = 1;
-
-                /* Double-check. */
-		ptnet_sync_tail(ptring, kring);
-		if (unlikely(head != ring->tail)) {
-			RD(1, "Found more slots by doublecheck");
-			/* More slots were freed before reactivating
-			 * the interrupts. */
-			ptring->guest_need_kick = 0;
-			if (!drbr_empty(ifp, pq->bufring)) {
-				taskqueue_enqueue(pq->taskq, &pq->task);
-			}
-		}
-	}
-
-	PTNET_Q_UNLOCK(pq);
-
-	return 0;
-}
-
 static void
 ptnet_qflush(struct ifnet *ifp)
 {
@@ -1312,6 +1123,195 @@ ptnet_rx_intr(void *opaque)
 	}
 
 	ptnet_rx_eof(pq);
+}
+
+static inline void
+ptnet_sync_tail(struct ptnet_ring *ptring, struct netmap_kring *kring)
+{
+	struct netmap_ring *ring = kring->ring;
+
+	/* Update hwcur and hwtail as known by the host. */
+        ptnetmap_guest_read_kring_csb(ptring, kring);
+
+	/* nm_sync_finalize */
+	ring->tail = kring->rtail = kring->nr_hwtail;
+}
+
+static void
+ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
+		  unsigned int head)
+{
+	struct netmap_ring *ring = kring->ring;
+	struct ptnet_ring *ptring = pq->ptring;
+
+	/* Some packets have been pushed to the netmap ring. We have
+	 * to tell the host to process the new packets, updating cur
+	 * and head in the CSB. */
+	ring->head = ring->cur = head;
+
+	/* nm_txsync_prologue */
+	kring->rcur = kring->rhead = ring->head;
+
+	ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
+
+	/* Kick the host if needed. */
+	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
+		ptring->sync_flags = NAF_FORCE_RECLAIM;
+		bus_write_4(pq->sc->iomem, pq->kick, 0);
+	}
+}
+
+static int
+ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
+{
+	struct ptnet_softc *sc = ifp->if_softc;
+	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
+	unsigned int batch_count = 0;
+	struct ptnet_ring *ptring;
+	struct netmap_kring *kring;
+	struct netmap_ring *ring;
+	struct netmap_slot *slot;
+	struct ptnet_queue *pq;
+	unsigned int prev_head;
+	unsigned int head;
+	unsigned int lim;
+	struct mbuf *mf;
+	int nmbuf_bytes;
+	uint8_t *nmbuf;
+
+	DBG(device_printf(sc->dev, "transmit %p\n", m));
+
+	pq = sc->queues + 0;
+
+	if (m) {
+		int err;
+
+		/* Here we are called by the network stack, and not by
+		 * by the taskqueue thread. */
+		err = drbr_enqueue(ifp, pq->bufring, m);
+		m = NULL; /* just to stay safe */
+		if (unlikely(err)) {
+			device_printf(sc->dev, "%s: drbr_enqueue() failed %d\n",
+				      __func__, err);
+			return err;
+		}
+	}
+
+	if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
+		RD(1, "Interface is down");
+		return ENETDOWN;
+	}
+
+	if (!PTNET_Q_TRYLOCK(pq)) {
+		/* We failed to acquire the lock, schedule the taskqueue. */
+		RD(1, "Deferring TX work");
+		taskqueue_enqueue(pq->taskq, &pq->task);
+
+		return 0;
+	}
+
+	ptring = pq->ptring;
+	kring = na->tx_rings + pq->kring_id;
+	ring = kring->ring;
+	lim = kring->nkr_num_slots - 1;
+
+	/* Update hwcur and hwtail (completed TX slots) as known by the host,
+	 * by reading from CSB. */
+	ptnet_sync_tail(ptring, kring);
+
+	head = ring->head;
+	slot = ring->slot + head;
+	nmbuf = NMB(na, slot);
+	nmbuf_bytes = 0;
+
+	while (head != ring->tail) {
+		m = drbr_peek(ifp, pq->bufring);
+		if (!m) {
+			break;
+		}
+
+		for (prev_head = head, mf = m; mf; mf = mf->m_next) {
+			uint8_t *mdata = mf->m_data;
+			int mlen = mf->m_len;
+
+			for (;;) {
+				int copy = NETMAP_BUF_SIZE(na) - nmbuf_bytes;
+
+				if (mlen < copy) {
+					copy = mlen;
+				}
+				memcpy(nmbuf, mdata, copy);
+
+				mdata += copy;
+				mlen -= copy;
+				nmbuf += copy;
+				nmbuf_bytes += copy;
+
+				if (!mlen) {
+					break;
+				}
+
+				slot->len = nmbuf_bytes;
+				slot->flags = NS_MOREFRAG;
+
+				head = nm_next(head, lim);
+				if (head == ring->tail) {
+					/* Run out of slots while processing
+					 * a packet. Reset head to the previous
+					 * position and requeue the mbuf. */
+					device_printf(sc->dev, "%s: Drop, "
+						      " no free slots\n",
+						      __func__);
+					head = prev_head;
+					drbr_putback(ifp, pq->bufring, m);
+					goto escape;
+				}
+				slot = ring->slot + head;
+				nmbuf = NMB(na, slot);
+				nmbuf_bytes = 0;
+			}
+		}
+
+		/* Complete last slot and update head. */
+		slot->len = nmbuf_bytes;
+		slot->flags = 0;
+		head = nm_next(head, lim);
+
+		/* Consume the packet just processed. */
+		drbr_advance(ifp, pq->bufring);
+		m_freem(m);
+
+		if (++batch_count == PTNET_TX_BATCH) {
+			batch_count = 0;
+			ptnet_ring_update(pq, kring, head);
+		}
+	}
+escape:
+	if (batch_count) {
+		ptnet_ring_update(pq, kring, head);
+	}
+
+	if (head == ring->tail) {
+		/* Reactivate the interrupts so that we can be notified
+		 * when some free slots are made available by the host. */
+		ptring->guest_need_kick = 1;
+
+                /* Double-check. */
+		ptnet_sync_tail(ptring, kring);
+		if (unlikely(head != ring->tail)) {
+			RD(1, "Found more slots by doublecheck");
+			/* More slots were freed before reactivating
+			 * the interrupts. */
+			ptring->guest_need_kick = 0;
+			if (!drbr_empty(ifp, pq->bufring)) {
+				taskqueue_enqueue(pq->taskq, &pq->task);
+			}
+		}
+	}
+
+	PTNET_Q_UNLOCK(pq);
+
+	return 0;
 }
 
 static int
