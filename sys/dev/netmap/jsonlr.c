@@ -505,7 +505,7 @@ jslr_1(struct _jp *p)
 	} else if (c == '"') { /* start string */
 		r = jslr_string(p);
 #ifdef JSLR_SLOPPY
-	} else if (in_map(("_?$&"), c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+	} else if (in_map(("_?$&+-/"), c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
 		r = jslr_unquoted_string(p);
 #endif /* JSLR_SLOPPY */
 	} else if (c == '{') { /* start object */

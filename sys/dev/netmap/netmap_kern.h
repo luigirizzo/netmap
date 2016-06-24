@@ -367,6 +367,7 @@ nm_jp_liter_is_end(struct nm_jp_liter *i)
 struct nm_jp_list {
 	struct nm_jp up;
 	int n;
+	const char *search_key;
 	
 	struct nm_jp *(*next)(struct nm_jp_list *,
 			struct nm_jp_liter *, struct nm_conf *);
@@ -376,7 +377,7 @@ struct nm_jp_list {
 			struct nm_jp_liter *, struct nm_conf *);	
 };
 
-void nm_jp_linit(struct nm_jp_list *, int, 
+void nm_jp_linit(struct nm_jp_list *, int, const char *,
 		struct nm_jp *(*)(struct nm_jp_list *,
 			struct nm_jp_liter *, struct nm_conf *),
 		void (*)(struct nm_jp *, int, struct nm_conf *));

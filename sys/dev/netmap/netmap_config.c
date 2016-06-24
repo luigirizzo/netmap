@@ -823,6 +823,7 @@ nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	struct nm_conf_var *v;
 	int vcmd = nm_jp_parse_var(&r, c, &v);
 
+	D("vcmd %d", vcmd);
 	if (vcmd < 0)
 		return r;
 
@@ -839,21 +840,16 @@ nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	return rv;
 }
 
-static int
+static const char *
 nm_jp_lgetcmd(char *pool, struct _jpo r, struct _jpo *arg)
 {
 	struct _jpo *cmd = jslr_get_object(pool, r);
-	const char *s;
 
 	if (cmd  == NULL || cmd->len != 1)
-		return -1;
+		return "";
 
-	cmd++;
-	s = jslr_get_string(pool, *cmd);
-	*arg = *cmd;
-	if (!strcmp(s, "+") && !strcmp(s, "-"))
-		return -1;
-	return s[0];
+	*arg = cmd[2];
+	return jslr_get_string(pool, cmd[1]);
 }
 
 struct _jpo
@@ -865,6 +861,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	char *pool = c->pool;
 	struct nm_jp *jpe = NULL;
 	struct nm_jp_liter it, *save = c->cur_iter;
+	int auto_search = 0;
 
 	if (r.ty != JPO_PTR || (ty != JPO_ARRAY && ty != JPO_OBJECT) ) {
 		ro = nm_jp_error(pool, "need array or object");
@@ -885,6 +882,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	} else {
 		len = 1;
 		pi = &r;
+		auto_search = 1;
 	}
 
 	ro = jslr_new_array(pool, len);
@@ -899,8 +897,8 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	nm_jp_liter_beg(&it);
 	for (i = 0; i < len; i++) {
 		struct nm_jp_liter stop, last;
-		struct _jpo arg, search = *pi;
-		int cmd;
+		struct _jpo arg, search = *pi, *k;
+		const char *cmd;
 
 		if (err) {
 			r1 = *err;
@@ -908,9 +906,8 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		}
 
 		cmd = nm_jp_lgetcmd(c->pool, *pi, &arg);
-		D("cmd %d", cmd);
-		switch (cmd) {
-		case '+':
+		D("cmd %s", cmd);
+		if (cmd[0] == '+') {
 			if (l->insert == NULL) {
 				r1 = nm_jp_error(c->pool, "insert not supported");
 				goto next;
@@ -918,15 +915,33 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			r1 = l->insert(l, &it, arg, c);
 			nm_jp_liter_beg(&it);
 			goto next;
-		case '-':
+		} else if (cmd[0] == '-') {
 			if (l->remove == NULL) {
 				r1 = nm_jp_error(c->pool, "remove not supported");
 				goto next;
 			}
 			search = arg;
-			break;
-		default:
-			break;
+		} else if (cmd[0] == '/' || (cmd[0] != '\0' && auto_search)) {
+			D("search for %s", cmd);
+			if (l->search_key == NULL) {
+				r1 = nm_jp_error(c->pool, "search not supported");
+				goto next;
+			}
+			r1 = jslr_new_object(c->pool, 1);
+			if (r1.ty == JPO_ERR)
+				goto next;
+			search = r1;
+			k = jslr_get_object(c->pool, r1);
+			r1 = jslr_new_string(c->pool, l->search_key);
+			if (r1.ty == JPO_ERR)
+				goto next;
+			k[1] = r1;
+			r1 = jslr_new_string(c->pool, (auto_search ? cmd : cmd + 1));
+			if (r1.ty == JPO_ERR)
+				goto next;
+			k[2] = r1;
+		} else {
+			arg = search;
 		}
 
 		for (stop = it, last = it, jpe = l->next(l, &it, c);
@@ -942,11 +957,11 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 				c->matching--;
 				if (!c->mismatch) {
 					D("match!");
-					if (cmd == '-') {
+					if (cmd[0] == '-') {
 						r1 = l->remove(l, &it, c);
 						nm_jp_liter_beg(&it);
 					} else {
-						r1 = nm_jp_interp(jpe, search, c);
+						r1 = nm_jp_interp(jpe, arg, c);
 					}
 					goto next;
 				}
@@ -1019,7 +1034,7 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 }
 
 void
-nm_jp_linit(struct nm_jp_list *l, int n,
+nm_jp_linit(struct nm_jp_list *l, int n, const char *key,
 		struct nm_jp *(*next)(struct nm_jp_list *,
 			struct nm_jp_liter *i, struct nm_conf *),
 		void (*bracket)(struct nm_jp *, int, struct nm_conf *))
@@ -1029,6 +1044,7 @@ nm_jp_linit(struct nm_jp_list *l, int n,
 	l->up.bracket = bracket;
 
 	l->n = n;
+	l->search_key = key;
 	l->next = next;
 }
 
@@ -1073,7 +1089,7 @@ nm_jp_olnext(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 int
 nm_jp_olinit(struct nm_jp_olist *l, int n, void (*bracket)(struct nm_jp *, int, struct nm_conf *))
 {
-	nm_jp_linit(&l->up, n, nm_jp_olnext, bracket);
+	nm_jp_linit(&l->up, n, "name", nm_jp_olnext, bracket);
 
 	l->list = nm_os_malloc(sizeof(*l->list) * n);
 	if (l->list == NULL)
