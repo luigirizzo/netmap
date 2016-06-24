@@ -184,7 +184,7 @@ struct netmap_mem_d {
 
 	u_int flags;
 #define NETMAP_MEM_FINALIZED	0x1	/* preallocation done */
-#define NETMAP_MEM_HIDDEN	0x2	/* beeing prepared */
+#define NETMAP_MEM_HIDDEN	0x8	/* beeing prepared */
 	int lasterr;		/* last error for curr config */
 	int active;		/* active users */
 	int refcount;
