@@ -863,13 +863,6 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	struct nm_jp_liter it, *save = c->cur_iter;
 	int auto_search = 0;
 
-	if (r.ty != JPO_PTR || (ty != JPO_ARRAY && ty != JPO_OBJECT) ) {
-		ro = nm_jp_error(pool, "need array or object");
-		if (c->matching)
-			c->mismatch = 1;
-		goto out;
-	}
-
 	if (ty == JPO_ARRAY) {
 		pi = jslr_get_array(pool, r);
 		if (pi == NULL || pi->ty != ty) {
