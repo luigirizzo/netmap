@@ -333,17 +333,11 @@ struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
 struct nm_jp_liter {
 	uintptr_t it;
 #define NM_JP_LITER_BEG	0x1UL
-#define NM_JP_LITER_END 0x2UL
 };
 
 static inline void
 nm_jp_liter_beg(struct nm_jp_liter *i) {
 	i->it = NM_JP_LITER_BEG;
-}
-
-static inline void
-nm_jp_liter_end(struct nm_jp_liter *i) {
-	i->it = NM_JP_LITER_END;
 }
 
 static inline int
@@ -356,12 +350,6 @@ static inline int
 nm_jp_liter_is_beg(struct nm_jp_liter *i)
 {
 	return i->it == NM_JP_LITER_BEG;
-}
-
-static inline int
-nm_jp_liter_is_end(struct nm_jp_liter *i)
-{
-	return i->it == NM_JP_LITER_END;
 }
 
 struct nm_jp_list {

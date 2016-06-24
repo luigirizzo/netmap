@@ -2791,15 +2791,6 @@ nm_jp_flag_next(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 	struct nm_jp_flag_list *fl = (struct nm_jp_flag_list *)l;
 	int prev = 0, next;
 
-	if (flags == 0) {
-		nm_jp_liter_end(it);
-	}
-
-	if (nm_jp_liter_is_end(it)) {
-		nm_jp_liter_beg(it);
-		return NULL;
-	}
-
 	if (!nm_jp_liter_is_beg(it)) {
 		prev = (int) (it->it >> 16) + 1;
 	}
@@ -2810,7 +2801,7 @@ nm_jp_flag_next(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 		it->it = (uintptr_t)(next << 16);
 		return &fl->flag;
 	} else {
-		nm_jp_liter_end(it);
+		nm_jp_liter_beg(it);
 		return NULL;
 	}
 }

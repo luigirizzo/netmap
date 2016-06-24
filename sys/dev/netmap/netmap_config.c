@@ -962,7 +962,9 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		}
 
 		/* now search for a matching element in the underlying list */
-		for (stop = it, last = it, jpe = l->next(l, &it, c);
+		stop = it;
+		ND("stop %lx it %lx", stop.it, it.it);
+		for (last = it, jpe = l->next(l, &it, c);
 		     !nm_jp_liter_eq(&it, &stop);
 		     last = it, jpe = l->next(l, &it, c))
 		{
@@ -980,24 +982,11 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 						nm_jp_liter_beg(&it);
 					} else {
 						r1 = nm_jp_interp(jpe, arg, c);
+						it = last;
 					}
 					goto next;
 				}
 			}
-
-			if (nm_jp_liter_is_end(&it)) {
-				D("reached end");
-				if (jpe == NULL) {
-					D("should be empty");
-					r1 = nm_jp_error(pool, "empty list");
-					err = &r1;
-					goto next;
-				}
-				/* restart and continue */
-				D("restarting search from beginning");
-				continue;
-			}
-
 		}
 		r1 = nm_jp_error(pool, "no match");
 		if (c->matching) {
@@ -1081,23 +1070,16 @@ nm_jp_olnext(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 	union nm_jp_union **e = (union nm_jp_union **)&it->it;
 	struct nm_jp *rv;
 	
-	if (ol->nextfree == 0) {
-		nm_jp_liter_end(it);
-	}
-
-	if (nm_jp_liter_is_end(it)) {
-		nm_jp_liter_beg(it);
-		return NULL;
-	}
-
 	if (nm_jp_liter_is_beg(it)) {
+		/* first use or wrap around: initialize */
 		*e = ol->list;
 	}
 
 	rv = (struct nm_jp *)*e;
 
-	if (*e == ol->list + ol->nextfree - 1) {
-		nm_jp_liter_end(it);
+	if (*e == ol->list + ol->nextfree) {
+		rv = NULL;
+		nm_jp_liter_beg(it); /* circular list */
 	} else {
 		(*e)++;
 	}
