@@ -1714,6 +1714,7 @@ netmap_mem_jp_bracket(struct nm_jp *i, int stage, struct nm_conf *c)
 }
 
 NM_JPO_CLASS_DECL(objpool, struct netmap_obj_pool)
+	NM_JPO_ROSTR(objpool, name)
 	NM_JPO_RONUM(objpool, objtotal)
 	NM_JPO_RONUM(objpool, memtotal)
 	NM_JPO_RONUM(objpool, numclusters)
@@ -1729,14 +1730,10 @@ NM_JPO_CLASS_END(mparams, NULL);
 
 NM_JPO_CLASS_DECL(mem, struct netmap_mem_d)
 	NM_JPO_ROSTR(mem, name)
-	NM_JPO_RONUM(mem,  active)
-	NM_JPO_RONUM(mem,  refcount)
-	NM_JPO_STRUCT(mem, pools[NETMAP_IF_POOL], objpool, if)
-	NM_JPO_STRUCT(mem, pools[NETMAP_RING_POOL], objpool, ring)
-	NM_JPO_STRUCT(mem, pools[NETMAP_BUF_POOL], objpool, buf)
-	NM_JPO_STRUCT(mem, params[NETMAP_IF_POOL], mparams, req_if)
-	NM_JPO_STRUCT(mem, params[NETMAP_RING_POOL], mparams, req_ring)
-	NM_JPO_STRUCT(mem, params[NETMAP_BUF_POOL], mparams, req_buf)
+	NM_JPO_RONUM(mem, active)
+	NM_JPO_RONUM(mem, refcount)
+	NM_JPO_ARRAY(mem, pools, objpool, "name")
+	NM_JPO_ARRAY(mem, params, mparams, NULL)
 NM_JPO_CLASS_END(mem, netmap_mem_jp_bracket);
 
 

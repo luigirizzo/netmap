@@ -387,6 +387,21 @@ void nm_jp_oluninit(struct nm_jp_olist *);
 int nm_jp_oladd_ptr(struct nm_jp_olist *, void *, struct nm_jp *);
 int nm_jp_oldel_ptr(struct nm_jp_olist *, void *);
 
+struct nm_jp_array {
+	struct nm_jp_list up;
+	size_t size;
+	int nelem;
+	void *var;
+	u_int flags;
+#define NM_JPO_ARR_REL	1
+	struct nm_jp arr;
+	struct nm_jp *type;
+};
+
+struct nm_jp *nm_jp_anext(struct nm_jp_list *, struct nm_jp_liter *, struct nm_conf *);
+struct _jpo nm_jp_ainterp(struct nm_jp *, struct _jpo, struct nm_conf *);
+struct _jpo nm_jp_adump(struct nm_jp *, struct nm_conf *);
+
 /* dictionaries */
 
 struct nm_jp_delem;
@@ -480,6 +495,7 @@ union nm_jp_union {
 	struct nm_jp_num     num;
 	struct nm_jp_str     str;
 	struct nm_jp_ptr     ptr;
+	struct nm_jp_array   arr;
 	struct nm_jp	    *external;
 };
 
@@ -623,6 +639,29 @@ void nm_jp_port_del(struct netmap_adapter *);
 		},					\
 		.str = (char *)offsetof(NM_JPO_TYPE(C),	F),\
 		.flags = NM_JP_STR_REL,			\
+	},						\
+},
+
+#define NM_JPO_ARRAY(C, F, S, k)	{		\
+	.name = #F,					\
+	.u.arr = {					\
+		.up = {					\
+			.up = {				\
+				.interp = nm_jp_linterp,\
+				.dump   = nm_jp_ldump,	\
+			},				\
+			.search_key = k,		\
+			.next = nm_jp_anext,		\
+		},					\
+		.arr = {				\
+			.interp = nm_jp_ainterp,	\
+			.dump   = nm_jp_adump,		\
+		},					\
+		.var = (void *)offsetof(NM_JPO_TYPE(C), F),\
+		.flags = NM_JPO_ARR_REL,		\
+		.size = sizeof(((NM_JPO_TYPE(C)*)0)->F[0]),\
+		.nelem = NM_ARRAY_LEN(((NM_JPO_TYPE(C)*)0)->F),\
+		.type = &NM_JPO_CLASS(S).up,		\
 	},						\
 },
 

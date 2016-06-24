@@ -1181,6 +1181,70 @@ nm_jp_oldel_ptr(struct nm_jp_olist *l, void *p)
 	return ENOENT;
 }
 
+struct nm_jp *
+nm_jp_anext(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
+{
+	struct nm_jp_array *a = (struct nm_jp_array *)l;
+	int cur = 0;
+	
+	if (!nm_jp_liter_is_beg(it)) {
+		cur = (int) (it->it >> 2);
+	}
+
+	if (cur >= a->nelem) {
+		nm_jp_liter_beg(it); /* circular list */
+		return NULL;
+	}
+	it->it = (cur + 1) << 2;
+	return &a->arr;
+}
+
+static void *
+nm_jp_anewcurobj(struct nm_jp_array *a, void *cur_obj, int i)
+{
+	char *base;
+
+	if (a->flags & NM_JPO_ARR_REL)
+		base = (char *)cur_obj + (size_t)a->var;
+	else
+		base = a->var;
+	
+	return base + a->size * i;
+}
+
+struct _jpo
+nm_jp_adump(struct nm_jp *jp, struct nm_conf *c)
+{
+	struct nm_jp_array *a = container_of(jp, struct nm_jp_array, arr);
+	struct nm_jp_liter *it = c->cur_iter;
+	struct _jpo rv;
+	void *save = c->cur_obj;
+	int i = nm_jp_liter_is_beg(it) ? 0 : (it->it >> 2);
+
+	D("i %d", i);
+	c->cur_obj = nm_jp_anewcurobj(a, save, i);
+	rv = nm_jp_dump(a->type, c);
+	c->cur_obj = save;
+
+	return rv;
+}
+
+struct _jpo
+nm_jp_ainterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	struct nm_jp_array *a = container_of(jp, struct nm_jp_array, arr);
+	struct nm_jp_liter *it = c->cur_iter;
+	struct _jpo rv;
+	void *save = c->cur_obj;
+	int i = nm_jp_liter_is_beg(it) ? 0 : (it->it >> 2);
+
+	c->cur_obj = nm_jp_anewcurobj(a, save, i);
+	rv = nm_jp_interp(a->type, r, c);
+	c->cur_obj = save;
+
+	return rv;
+}
+
 static struct nm_jp*
 nm_jp_dget(struct nm_jp_delem *e)
 {
