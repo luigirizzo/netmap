@@ -1323,9 +1323,8 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
-	unsigned int budget = PTNET_RX_BUDGET;
-	unsigned int head = ring->head;
 	struct ifnet *ifp = sc->ifp;
+	unsigned int budget, head;
 
 	PTNET_Q_LOCK(pq);
 
@@ -1335,7 +1334,9 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
-	while (head != ring->tail && budget) {
+	for (head = ring->head, budget = PTNET_RX_BUDGET;
+		head != ring->tail && budget;
+			head = nm_next(head, lim), budget--) {
 		struct netmap_slot *slot = ring->slot + head;
 		unsigned int nmbuf_len = slot->len;
 		uint8_t *nmbuf = NMB(na, slot);
@@ -1344,7 +1345,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		if (unlikely(nmbuf_len > MCLBYTES)) {
 			RD(1, "Dropping long frame: len %u > %u",
 			      nmbuf_len, MCLBYTES);
-			goto next;
+			continue;
 		}
 
 		DBG(device_printf(sc->dev, "%s: h %u t %u rcv frame len %u\n",
@@ -1371,9 +1372,6 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, m);
 		PTNET_Q_LOCK(pq);
-next:
-		head = nm_next(head, lim);
-		budget--;
 	}
 
 	if (budget != PTNET_RX_BUDGET) {
