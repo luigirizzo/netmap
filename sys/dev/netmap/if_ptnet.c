@@ -1122,6 +1122,9 @@ ptnet_rx_intr(void *opaque)
 		return;
 	}
 
+	/* Like vtnet, if_igb and if_em drivers when using MSI-X interrupts,
+	 * receive-side processing is executed directly in the interrupt
+	 * service routine. Alternatively, we may schedule the taskqueue. */
 	ptnet_rx_eof(pq);
 }
 
@@ -1410,8 +1413,8 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	if (head != ring->tail) {
 		/* If we ran out of budget or the double-check found new
 		 * slots to process, schedule the taskqueue. */
-		device_printf(sc->dev, "%s: resched: budget %u h %u "
-			      "t %u\n", __func__, budget, ring->head,
+		RD(1, "%s: resched: budget %u h %u t %u\n", __func__,
+		   budget, ring->head,
 			      ring->tail);
 		taskqueue_enqueue(pq->taskq, &pq->task);
 	}
@@ -1426,7 +1429,7 @@ ptnet_rx_task(void *context, int pending)
 {
 	struct ptnet_queue *pq = context;
 
-	device_printf(pq->sc->dev, "%s: pq #%u\n", __func__, pq->kring_id);
+	RD(1, "%s: pq #%u\n", __func__, pq->kring_id);
 	ptnet_rx_eof(pq);
 }
 
@@ -1435,7 +1438,7 @@ ptnet_tx_task(void *context, int pending)
 {
 	struct ptnet_queue *pq = context;
 
-	device_printf(pq->sc->dev, "%s: pq #%u\n", __func__, pq->kring_id);
+	RD(1, "%s: pq #%u\n", __func__, pq->kring_id);
 	ptnet_transmit(pq->sc->ifp, NULL);
 }
 
