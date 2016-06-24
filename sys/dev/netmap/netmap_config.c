@@ -800,18 +800,10 @@ static struct _jpo
 nm_jp_dump(struct nm_jp *jp, struct nm_conf *c)
 {
 	struct _jpo rv;
-	struct nm_conf_var *v;
-	int vcmd = nm_jp_parse_var(&rv, c, &v);
-
-	if (vcmd < 0)
-		return rv;
 
 	nm_jp_bracket(jp, NM_JPB_ENTER, c);
 	rv = jp->dump(jp, c);
 	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
-
-	if (vcmd == '?')
-		v->value = rv;
 
 	return rv;
 }
