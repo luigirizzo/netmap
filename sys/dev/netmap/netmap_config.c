@@ -972,7 +972,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			if (jpe) {
 				c->matching++;
 				c->mismatch = 0;
-				c->cur_iter = &it;
+				c->cur_iter = &last;
 				r1 = nm_jp_interp(jpe, search, c);
 				c->matching--;
 				if (!c->mismatch) {
@@ -1013,7 +1013,7 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 	struct nm_jp_list *l = (struct nm_jp_list *)jp;
 	struct nm_jp *jpe;
 	int j;
-	struct nm_jp_liter it, *save;
+	struct nm_jp_liter last, it, *save;
 
 	r = jslr_new_array(pool, l->n);
 	if (r.ty == JPO_ERR)
@@ -1022,8 +1022,7 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 	po++;
 	nm_jp_liter_beg(&it);
 	save = c->cur_iter;
-	for (j = 0; (jpe = l->next(l, &it, c)) ; j++) {
-		D("j %d", j);
+	for (j = 0, last = it; (jpe = l->next(l, &it, c)); j++, last = it) {
 		if (j >= l->n) {
 			l->n = j + 1;
 			r = jslr_realloc_array(pool, r, l->n);
@@ -1032,7 +1031,7 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 			po = jslr_get_array(pool, r);
 			po += j + 1;
 		}
-		c->cur_iter = &it;
+		c->cur_iter = &last;
 		*po++ = nm_jp_dump(jpe, c);
 	}
 	l->n = j;

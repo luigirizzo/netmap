@@ -2759,25 +2759,6 @@ static const char *nm_jp_flag_names[] = {
 	[__builtin_ctz(NAF_ZOMBIE)]		= "zombie",
 };
 
-static struct _jpo
-nm_jp_flag_dump(struct nm_jp *ip, struct nm_conf *c)
-{
-	struct nm_jp_liter *it = c->cur_iter;
-	int f = it->it >> 16;
-	return jslr_new_string(c->pool, nm_jp_flag_names[f]);
-}
-
-static struct _jpo
-nm_jp_flag_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
-{
-	struct nm_jp_liter *it = c->cur_iter;
-	int f = it->it >> 16;
-	const char *s = jslr_get_string(c->pool, r);
-	if (c->matching)
-		c->mismatch = (strcmp(nm_jp_flag_names[f], s) != 0);
-	return nm_jp_flag_dump(jp, c);
-}
-
 struct nm_jp_flag_list {
 	struct nm_jp_list up;
 	struct nm_jp flag;
@@ -2805,6 +2786,28 @@ nm_jp_flag_next(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 		return NULL;
 	}
 }
+
+static struct _jpo
+nm_jp_flag_dump(struct nm_jp *jp, struct nm_conf *c)
+{
+	struct nm_jp_flag_list *f = container_of(jp, struct nm_jp_flag_list, flag);
+	struct nm_jp_liter it = *c->cur_iter;
+	nm_jp_flag_next(&f->up, &it, c);
+	return jslr_new_string(c->pool, nm_jp_flag_names[it.it >> 16]);
+}
+
+static struct _jpo
+nm_jp_flag_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	struct nm_jp_flag_list *l = container_of(jp, struct nm_jp_flag_list, flag);
+	struct nm_jp_liter it = *c->cur_iter;
+	const char *s = jslr_get_string(c->pool, r);
+	nm_jp_flag_next(&l->up, &it, c);
+	if (c->matching)
+		c->mismatch = (strcmp(nm_jp_flag_names[it.it >> 16], s) != 0);
+	return nm_jp_flag_dump(jp, c);
+}
+
 
 static struct nm_jp_flag_list nm_jp_port_flags = {
 	.up = {
