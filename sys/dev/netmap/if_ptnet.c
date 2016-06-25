@@ -1231,12 +1231,12 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 			 * freed up some, by reading hwcur and hwtail from
 			 * the CSB. */
 			ptnet_sync_tail(ptring, kring);
-		}
 
-		if (head == ring->tail) {
-			/* Still no slots available, let's stop and wait
-			 * for interrupts. */
-			break;
+			if (head == ring->tail) {
+				/* Still no slots available, let's stop and
+				 * wait for interrupts. */
+				break;
+			}
 		}
 
 		m = drbr_peek(ifp, pq->bufring);
