@@ -1219,16 +1219,26 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	ring = kring->ring;
 	lim = kring->nkr_num_slots - 1;
 
-	/* Update hwcur and hwtail (completed TX slots) as known by the host,
-	 * by reading from CSB. */
-	ptnet_sync_tail(ptring, kring);
-
+	/* Initialize transmission state variables. */
 	head = ring->head;
 	slot = ring->slot + head;
 	nmbuf = NMB(na, slot);
 	nmbuf_bytes = 0;
 
-	while (head != ring->tail) {
+	for (;;) {
+		if (head == ring->tail) {
+			/* We ran out of slot, let's see if the host has
+			 * freed up some, by reading hwcur and hwtail from
+			 * the CSB. */
+			ptnet_sync_tail(ptring, kring);
+		}
+
+		if (head == ring->tail) {
+			/* Still no slots available, let's stop and wait
+			 * for interrupts. */
+			break;
+		}
+
 		m = drbr_peek(ifp, pq->bufring);
 		if (!m) {
 			break;
