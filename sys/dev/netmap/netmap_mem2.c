@@ -1713,8 +1713,33 @@ netmap_mem_jp_bracket(struct nm_jp *i, int stage, struct nm_conf *c)
 	}
 }
 
+static const char *netmap_mem_jp_names[] = { "if", "ring", "buf" };
+
+static struct _jpo
+netmap_mem_jp_name_dump(struct nm_jp *jp, struct nm_conf *c)
+{
+	struct nm_jp_liter *it = c->cur_iter;
+	int i = nm_jp_liter_is_beg(it) ? 0 : it->it >> 2;
+
+	return jslr_new_string(c->pool, netmap_mem_jp_names[i]);
+}
+
+static struct _jpo
+netmap_mem_jp_name_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	const char *s = jslr_get_string(c->pool, r);
+	struct _jpo rv = netmap_mem_jp_name_dump(jp, c);
+
+	if (c->matching) {
+		const char *s1 = jslr_get_string(c->pool, rv);
+		c->mismatch = (strcmp(s, s1) != 0);
+	}
+	return rv;
+}
+
 NM_JPO_CLASS_DECL(objpool, struct netmap_obj_pool)
-	NM_JPO_ROSTR(objpool, name)
+	NM_JPO_SPECIAL(objpool, name, netmap_mem_jp_name_interp,
+			netmap_mem_jp_name_dump, NULL)
 	NM_JPO_RONUM(objpool, objtotal)
 	NM_JPO_RONUM(objpool, memtotal)
 	NM_JPO_RONUM(objpool, numclusters)
@@ -1724,6 +1749,8 @@ NM_JPO_CLASS_DECL(objpool, struct netmap_obj_pool)
 NM_JPO_CLASS_END(objpool, NULL);
 
 NM_JPO_CLASS_DECL(mparams, struct netmap_obj_params)
+	NM_JPO_SPECIAL(objpool, name, netmap_mem_jp_name_interp,
+			netmap_mem_jp_name_dump, NULL)
 	NM_JPO_RWNUM(mparams, size)
 	NM_JPO_RWNUM(mparams, num)
 NM_JPO_CLASS_END(mparams, NULL);
@@ -1733,7 +1760,7 @@ NM_JPO_CLASS_DECL(mem, struct netmap_mem_d)
 	NM_JPO_RONUM(mem, active)
 	NM_JPO_RONUM(mem, refcount)
 	NM_JPO_ARRAY(mem, pools, objpool, "name")
-	NM_JPO_ARRAY(mem, params, mparams, NULL)
+	NM_JPO_ARRAY(mem, params, mparams, "name")
 NM_JPO_CLASS_END(mem, netmap_mem_jp_bracket);
 
 
