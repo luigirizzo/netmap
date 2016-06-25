@@ -1193,9 +1193,10 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		 * by the taskqueue thread. */
 		err = drbr_enqueue(ifp, pq->bufring, m);
 		m = NULL; /* just to stay safe */
-		if (unlikely(err)) {
-			device_printf(sc->dev, "%s: drbr_enqueue() failed %d\n",
-				      __func__, err);
+		if (err) {
+			/* ENOBUFS when the bufring is full */
+			RD(1, "%s: drbr_enqueue() failed %d\n",
+				__func__, err);
 			return err;
 		}
 	}
@@ -1262,9 +1263,8 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 					/* Run out of slots while processing
 					 * a packet. Reset head to the previous
 					 * position and requeue the mbuf. */
-					device_printf(sc->dev, "%s: Drop, "
-						      " no free slots\n",
-						      __func__);
+					RD(1, "%s: Drop, no free slots\n",
+						__func__);
 					head = prev_head;
 					drbr_putback(ifp, pq->bufring, m);
 					goto escape;
