@@ -945,8 +945,14 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 				r1 = nm_jp_error(c->pool, "remove not supported");
 				goto next;
 			}
-			/* the arg of the command is the element to remove */
-			search = arg;
+			if (cmd[1] != '\0') {
+				/* this is a removal with form "-name". arg is ignored */
+				auto_search = 0; /* skip the first char in cmd */
+				goto search_obj;
+			} else {
+				/* the arg of the command is the element to remove */
+				search = arg;
+			}
 		} else if (cmd[0] == '/' || (cmd[0] != '\0' && auto_search)) {
 			struct _jpo *ki, *ko;
 
@@ -956,6 +962,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 				r1 = nm_jp_error(c->pool, "search not supported");
 				goto next;
 			}
+		search_obj:
 			/* create a '{key:value}' object for the search with
 			 * the default search_key as key and cmd as value */
 			r1 = jslr_new_object(c->pool, 1);
