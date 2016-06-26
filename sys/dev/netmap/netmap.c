@@ -2757,12 +2757,15 @@ static const char *nm_jp_flag_names[] = {
 	[__builtin_ctz(NAF_FORCE_NATIVE)]	= "force-native",
 	[__builtin_ctz(NAF_PTNETMAP_HOST)]	= "ptnetmap-host",
 	[__builtin_ctz(NAF_ZOMBIE)]		= "zombie",
+	[__builtin_ctz(NAF_BUSY)]		= "busy",
 };
 
 struct nm_jp_flag_list {
 	struct nm_jp_list up;
 	struct nm_jp flag;
 };
+
+static const uintptr_t nm_jp_flags_width = member_size(struct netmap_adapter, na_flags) * 8;
 
 static void
 nm_jp_flag_newiter(struct nm_jp_list *l, struct nm_jp_liter *it, int which, struct nm_conf *c)
@@ -2774,7 +2777,7 @@ nm_jp_flag_newiter(struct nm_jp_list *l, struct nm_jp_liter *it, int which, stru
 		it->it = __builtin_ctz(na->na_flags);
 		break;
 	case NM_JP_LITER_END:
-		it->it = sizeof(na->na_flags) * 8;
+		it->it = nm_jp_flags_width;
 		break;
 	}
 }
@@ -2783,33 +2786,39 @@ static struct nm_jp *
 nm_jp_flag_next(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 {
 	struct netmap_adapter *na = c->cur_obj;
-	u_int flags = na->na_flags;
+	u_long flags = na->na_flags;
 	struct nm_jp_flag_list *fl = (struct nm_jp_flag_list *)l;
-	int prev = it->it + 1;
+	u_long prev = it->it;
 
-	flags >>= prev;
-	if (flags) {
-		it->it = prev + __builtin_ctz(flags);
-		return &fl->flag;
-	} else {
-		it->it = __builtin_ctz(na->na_flags); /* circular list */
+	if (prev == nm_jp_flags_width) {
+		it->it = __builtin_ctz(flags); /* circular list */
 		return NULL;
 	}
+	if (prev + 1 == nm_jp_flags_width)
+		flags = 0; /* rsh of the same widht as operand is undefined */
+	else
+		flags >>= prev + 1;
+	if (flags) {
+		it->it = prev + 1 + __builtin_ctz(flags);
+	} else {
+		it->it = nm_jp_flags_width;
+	}
+	return &fl->flag;
 }
 
 static struct _jpo
 nm_jp_flag_dump(struct nm_jp *jp, struct nm_conf *c)
 {
-	struct nm_jp_liter it = *c->cur_iter;
-	return jslr_new_string(c->pool, nm_jp_flag_names[it.it]);
+	struct nm_jp_liter *it = c->cur_iter;
+	return jslr_new_string(c->pool, nm_jp_flag_names[it->it]);
 }
 
 static struct _jpo
 nm_jp_flag_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
-	struct nm_jp_liter it = *c->cur_iter;
+	struct nm_jp_liter *it = c->cur_iter;
 	const char *s = jslr_get_string(c->pool, r);
-	if (strcmp(nm_jp_flag_names[it.it], s) == 0) {
+	if (strcmp(nm_jp_flag_names[it->it], s) == 0) {
 		return r;
 	} else {
 		if (c->matching)
