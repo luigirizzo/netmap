@@ -696,19 +696,6 @@ nm_conf_var_create(struct nm_conf *c, const char *name)
 	return v;
 }
 
-#if 0
-static struct nm_conf_var *
-nm_conf_var_get(struct nm_conf *c, const char *name)
-{
-	struct nm_conf_var *v = nm_conf_var_search(c, name);
-
-	if (v == NULL)
-		v = nm_conf_var_create(c, name);
-
-	return v;
-}
-#endif
-
 struct _jpo
 nm_jp_error(char *pool, const char *format, ...)
 {
@@ -747,17 +734,6 @@ nm_jp_getstr(struct _jpo r, const char *pool)
 
 	return jslr_get_string(pool, r);
 }
-
-#if 0
-static int
-nm_jp_streq(struct _jpo r, const char *pool, const char *str1)
-{
-	const char *str = nm_jp_getstr(r, pool);
-	if (str == NULL)
-		return 0;
-	return (strcmp(str1, str) == 0);
-}
-#endif
 
 static void
 nm_jp_bracket(struct nm_jp *jp, int stage, struct nm_conf *c)
@@ -1314,82 +1290,8 @@ nm_jp_dget(struct nm_jp_delem *e)
 	return (e->flags & NM_JP_D_EXTERNAL) ? e->u.external : &e->u.jp;
 }
 
-#if 0
-static struct _jpo
-nm_jp_ddelete(struct nm_jp_dict *d, struct nm_jp_delem *e,
-		char *pool)
-{
-	if (d->delete == NULL)
-		return nm_jp_error(pool, "'delete' not supported");
-	if (!e->flags & NM_JP_D_HAVE_REF)
-		return nm_jp_error(pool, "busy");
-	d->delete(d, e);
-	e->flags &= ~NM_JP_D_HAVE_REF;
-	return jslr_new_object(pool, 0);
-}
-#endif
-
 static struct nm_jp_delem *
 nm_jp_dsearch(struct nm_jp_dict *d, const char *name);
-
-#if 0
-static struct _jpo
-nm_jp_dnew(struct nm_jp_dict *d, struct _jpo *pi, struct _jpo *po, struct nm_conf *c)
-{
-	struct nm_jp_delem *e = NULL;
-	struct nm_jp *jp;
-	struct _jpo o;
-	int error;
-
-	if (d->new == NULL) {
-		o = nm_jp_error(c->pool, "not supported");
-		goto out;
-	}
-	e = nm_jp_dnew_elem(d);
-	if (e == NULL) {
-		o = nm_jp_error(c->pool, "out of memory");
-		goto out;
-	}
-	error = d->new(d, e);
-	if (error) {
-		o = nm_jp_error(c->pool, "error: %d", error);
-		goto out;
-	}
-	/* the new element is guaranteed to be at the end, while
-	 * search returns the first
-	 */
-	if (nm_jp_dsearch(d, e->name) != e) {
-		/* it must be a duplicate */
-		nm_jp_ddel_elem(d, e);
-		o = nm_jp_error(c->pool, "duplicate entry: %s", e->name);
-		goto out;
-	}
-	*po++ = jslr_new_string(c->pool, e->name);
-	jp = nm_jp_dget(e);
-	nm_jp_bracket(jp, NM_JPB_ENTER, c);
-	if (jp->interp) {
-		struct _jpo r = *pi;
-		struct nm_conf_var *v;
-		int vcmd = nm_jp_parse_var(&r, c, &v);
-		if (vcmd < 0) {
-			o = r;
-			goto leave_;
-		}
-		o = jp->interp(jp, r, c);
-		nm_jp_bracket(jp, NM_JPB_MIDDLE, c);
-		if (vcmd == '?')
-			v->value = o;
-	}
-	o = jp->dump(jp, c);
-leave_:
-	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
-	e->flags |= NM_JP_D_HAVE_REF;
-out:
-	return o;
-}
-#endif
-
-
 
 struct _jpo
 nm_jp_dinterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
