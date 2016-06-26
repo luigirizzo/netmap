@@ -1336,24 +1336,49 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
+	unsigned int budget = PTNET_RX_BUDGET;
+	unsigned int head = ring->head;
 	struct ifnet *ifp = sc->ifp;
-	unsigned int budget, head;
 
 	PTNET_Q_LOCK(pq);
 
-	/* Update hwtail, rtail, tail and hwcur to what is known from the host,
-	 * reading from CSB. */
-	ptnet_sync_tail(ptring, kring);
-
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
-	for (head = ring->head, budget = PTNET_RX_BUDGET;
-		head != ring->tail && budget;
-			head = nm_next(head, lim), budget--) {
+	for (;;) {
 		struct netmap_slot *slot = ring->slot + head;
-		unsigned int nmbuf_len = slot->len;
-		uint8_t *nmbuf = NMB(na, slot);
+		unsigned int nmbuf_len;
 		struct mbuf *m;
+		uint8_t *nmbuf;
+
+		if (budget == 0) {
+			RD(1, "Run out of budget h %u t %u", head, ring->tail);
+			break;
+		}
+
+		if (head == ring->tail) {
+			/* We ran out of slot, let's see if the host has
+			 * added some, by reading hwcur and hwtail from
+			 * the CSB. */
+			ptnet_sync_tail(ptring, kring);
+
+			if (head == ring->tail) {
+				/* Still no slots available. Reactivate
+				 * interrupts as they were disabled by the
+				 * host thread right before issuing the
+				 * last interrupt. */
+				ptring->guest_need_kick = 1;
+
+				/* Double-check. */
+				ptnet_sync_tail(ptring, kring);
+				if (likely(head == ring->tail)) {
+					break;
+				}
+				ptring->guest_need_kick = 0;
+			}
+		}
+
+		nmbuf_len = slot->len;
+		nmbuf = NMB(na, slot);
 
 		if (unlikely(nmbuf_len > MCLBYTES)) {
 			RD(1, "Dropping long frame: len %u > %u",
@@ -1385,6 +1410,9 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, m);
 		PTNET_Q_LOCK(pq);
+
+		head = nm_next(head, lim);
+		budget--;
 	}
 
 	if (head != ring->head) {
@@ -1405,28 +1433,14 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			ptring->sync_flags = NAF_FORCE_READ;
 			bus_write_4(sc->iomem, pq->kick, 0);
 		}
-	}
 
-	if (head == ring->tail) {
-		/* No more slots to process. Reactivate interrupts as they
-		 * were disabled by the host thread right before issuing the
-		 * last interrupt. */
-		ptring->guest_need_kick = 1;
-
-		/* Double-check. */
-		ptnet_sync_tail(ptring, kring);
-		if (unlikely(head != ring->tail)) {
-			ptring->guest_need_kick = 0;
+		if (!budget) {
+			/* If we ran out of budget or the double-check found new
+			 * slots to process, schedule the taskqueue. */
+			RD(1, "%s: resched: budget %u h %u t %u\n", __func__,
+					budget, head, ring->tail);
+			taskqueue_enqueue(pq->taskq, &pq->task);
 		}
-	}
-
-	if (head != ring->tail) {
-		/* If we ran out of budget or the double-check found new
-		 * slots to process, schedule the taskqueue. */
-		RD(1, "%s: resched: budget %u h %u t %u\n", __func__,
-		   budget, ring->head,
-			      ring->tail);
-		taskqueue_enqueue(pq->taskq, &pq->task);
 	}
 
 	PTNET_Q_UNLOCK(pq);
