@@ -1761,6 +1761,43 @@ NM_JPO_CLASS_DECL(mem, struct netmap_mem_d)
 	NM_JPO_ARRAY(mem, params, mparams, "name")
 NM_JPO_CLASS_END(mem, netmap_mem_jp_bracket);
 
+static struct _jpo
+netmap_mem_jp_insert(struct nm_jp_list *l, struct nm_jp_liter *it, 
+		struct _jpo r, struct nm_conf *c)
+{
+	struct netmap_mem_d *nmd;
+	struct nm_jp_olist *ol = (struct nm_jp_olist *)l;
+	struct nm_jp_olelem *e;
+	int err = 0;
+
+	nmd = _netmap_mem_private_new(netmap_min_priv_params, &err);
+	if (nmd == NULL)
+		return nm_jp_error(c->pool, "create error: %d", err);
+	
+	e = nm_jp_olnew_elem(ol);
+	if (e == NULL) {
+		netmap_mem_delete(nmd);
+		return nm_jp_error(c->pool, "out of memory");
+	}
+		
+	netmap_mem_get(nmd);
+	nm_jp_union_set_ptr(&e->u, nmd, &NM_JPO_CLASS(mem).up);
+	e->flags |= NM_JP_D_HAVE_REF;
+	return nm_jp_ctor((struct nm_jp *)&e->u, r, c);
+}
+
+static void
+netmap_mem_jp_remove(struct nm_jp_list *l, struct nm_jp_liter *it,
+		struct nm_conf *c)
+{
+	struct nm_jp_olelem *e = (struct nm_jp_olelem *)it->it;
+
+	if (e && (e->flags & NM_JP_D_HAVE_REF)) {
+		struct netmap_mem_d *nmd = e->u.ptr.arg;
+		netmap_mem_put(nmd);
+		e->flags &= ~NM_JP_D_HAVE_REF;
+	}
+}
 
 static int
 netmap_mem_jp_init(struct netmap_mem_d *nmd)
@@ -1773,38 +1810,6 @@ netmap_mem_jp_uninit(struct netmap_mem_d *nmd)
 {
 	nm_jp_oldel_ptr(&nm_jp_mem, nmd);
 }
-
-#if 0
-static int
-netmap_mem_jp_new(struct nm_jp_dict *d, struct nm_jp_delem *e)
-{
-	struct netmap_mem_d *nmd;
-	int err = 0;
-
-	nmd = _netmap_mem_private_new(netmap_min_priv_params, &err);
-	if (nmd == NULL) {
-		D("");
-		return err;
-	}
-	
-	err = nm_jp_delem_setname(d, e, nmd->name);
-	if (err) {
-		netmap_mem_delete(nmd);
-		return err;
-	}
-		
-	nm_jp_delem_set_ptr(e, nmd, &NM_JPO_CLASS(mem).up);
-
-	netmap_mem_get(nmd);
-	return 0;
-}
-static void
-netmap_mem_jp_delete(struct nm_jp_dict *d, struct nm_jp_delem *e)
-{
-	struct netmap_mem_d *nmd = e->u.ptr.arg;
-	netmap_mem_put(nmd);
-}
-#endif
 
 #endif /* WITH_NMCONF */
 
@@ -1819,8 +1824,9 @@ netmap_mem_init(void)
 	error = nm_jp_olinit(&nm_jp_mem, 10, NULL);
 	if (error)
 		goto fail_put;
-	//nm_jp_mem.new = netmap_mem_jp_new;
-	//nm_jp_mem.delete = netmap_mem_jp_delete;
+	nm_jp_mem.up.search_key = "name";
+	nm_jp_mem.up.insert = netmap_mem_jp_insert;
+	nm_jp_mem.up.remove = netmap_mem_jp_remove;
 	error = nm_jp_dadd_external(&nm_jp_root, (struct nm_jp *)&nm_jp_mem, "mem");
 	if (error)
 		goto fail_uninit;

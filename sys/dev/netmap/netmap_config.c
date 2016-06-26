@@ -832,7 +832,7 @@ nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	return rv;
 }
 
-static struct _jpo
+struct _jpo
 nm_jp_ctor(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
 	struct _jpo rv;
@@ -1002,7 +1002,8 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 				if (!c->mismatch) {
 					D("match!");
 					if (cmd[0] == '-') {
-						r1 = l->remove(l, &it, c);
+						l->remove(l, &last, c);
+						r1 = jslr_new_object(c->pool, 0);
 						nm_jp_liter_beg(l, &it, c);
 					} else {
 						r1 = nm_jp_interp(jpe, arg, c);
@@ -1076,33 +1077,38 @@ void
 nm_jp_olnewiter(struct nm_jp_list *l, struct nm_jp_liter *it, int which, struct nm_conf *c)
 {
 	struct nm_jp_olist *ol = (struct nm_jp_olist *)l;
-	union nm_jp_union **e = (union nm_jp_union **)&it->it;
+	struct nm_jp_olelem *e;
 
 	switch (which) {
 	case NM_JP_LITER_BEG:
-		*e = ol->list;
+		e = ol->list;
 		break;
 	case NM_JP_LITER_END:
-		*e = ol->list + ol->nextfree;
+		e = ol->list + ol->nextfree;
 		break;
+	default:
+		// XXX error?
+		return;
 	}
+	it->it = (uintptr_t)e;
 }
 
 struct nm_jp *
 nm_jp_olnext(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 {
 	struct nm_jp_olist *ol = (struct nm_jp_olist *)l;
-	union nm_jp_union **e = (union nm_jp_union **)&it->it;
+	struct nm_jp_olelem *e = (struct nm_jp_olelem *)it->it;
 	struct nm_jp *rv;
 	
-	rv = (struct nm_jp *)*e;
-
-	if (*e == ol->list + ol->nextfree) {
+	if (e == ol->list + ol->nextfree) {
 		rv = NULL;
-		(*e) = ol->list; /* circular list */
+		e = ol->list; /* circular list */
 	} else {
-		(*e)++;
+		rv = &e->u.jp;
+		e++;
+
 	}
+	it->it = (uintptr_t)e;
 
 	return rv;
 }
@@ -1133,13 +1139,15 @@ nm_jp_oluninit(struct nm_jp_olist *l)
 	memset(l, 0, sizeof(*l));
 }
 
-union nm_jp_union *
+struct nm_jp_olelem *
 nm_jp_olnew_elem(struct nm_jp_olist *l)
 {
+	struct nm_jp_olelem *e;
+
 	/* possibly make more room */
 	if (l->nextfree >= l->nelem) {
 		u_int newnelem = l->nelem * 2;
-		union nm_jp_union *newlist = nm_os_realloc(l->list,
+		struct nm_jp_olelem *newlist = nm_os_realloc(l->list,
 				sizeof(*l->list) * newnelem,
 				sizeof(*l->list) * l->nelem);
 		if (newlist == NULL)
@@ -1147,23 +1155,25 @@ nm_jp_olnew_elem(struct nm_jp_olist *l)
 		l->list = newlist;
 		l->nelem = newnelem;
 	}
-	return &l->list[l->nextfree++];
+	e = l->list + l->nextfree;
+	memset(e, 0, sizeof(*e));
+	l->nextfree++;
+	return e;
 }
 
-int
-nm_jp_oldel_elem(struct nm_jp_olist *l, int i)
+void
+nm_jp_oldel_elem(struct nm_jp_olist *l, struct nm_jp_olelem *u1)
 {
-	union nm_jp_union *u1, *u2;
+	struct nm_jp_olelem *u2;
 
 	l->nextfree--;
-	u1 = &l->list[i];
 	u2 = &l->list[l->nextfree];
 	if (u1 != u2) {
 		memcpy(u1, u2, sizeof(*u2));
 	}
 	memset(u2, 0, sizeof(*u2));
 	if (l->nelem > l->minelem && l->nextfree < l->nelem / 2) {
-		union nm_jp_union *newlist;
+		struct nm_jp_olelem *newlist;
 		u_int newnelem = l->nelem / 2;
 		if (newnelem < l->minelem)
 			newnelem = l->minelem;
@@ -1171,12 +1181,10 @@ nm_jp_oldel_elem(struct nm_jp_olist *l, int i)
 				sizeof(*l->list) * l->nelem);
 		if (newlist == NULL) {
 			D("out of memory when trying to release memory?");
-			return 0; /* not fatal */
 		}
 		l->list = newlist;
 		l->nelem = newnelem;
 	}
-	return 0;
 }
 
 void
@@ -1193,11 +1201,11 @@ nm_jp_union_set_ptr(union nm_jp_union *u, void *p, struct nm_jp *t)
 int
 nm_jp_oladd_ptr(struct nm_jp_olist *l, void *p, struct nm_jp *t)
 {
-	union nm_jp_union *u = nm_jp_olnew_elem(l);
-	if (u == NULL)
+	struct nm_jp_olelem *e = nm_jp_olnew_elem(l);
+	if (e == NULL)
 		return ENOMEM;
 	
-	nm_jp_union_set_ptr(u, p, t);
+	nm_jp_union_set_ptr(&e->u, p, t);
 	return 0;
 }
 
@@ -1207,8 +1215,9 @@ nm_jp_oldel_ptr(struct nm_jp_olist *l, void *p)
 	int i;
 
 	for (i = 0; i < l->nextfree; i++) {
-		if (l->list[i].ptr.arg == p) {
-			nm_jp_oldel_elem(l, i);
+		struct nm_jp_olelem *e = &l->list[i];
+		if (e->u.ptr.arg == p) {
+			nm_jp_oldel_elem(l, e);
 			return 0;
 		}
 	}

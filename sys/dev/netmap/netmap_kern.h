@@ -328,6 +328,7 @@ struct nm_jp {
 #define NM_JPB_LEAVE	2
 };
 struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
+struct _jpo nm_jp_ctor(struct nm_jp *, struct _jpo, struct nm_conf *);
 
 /* lists */
 struct nm_jp_liter {
@@ -347,7 +348,7 @@ struct nm_jp_list {
 			struct nm_jp_liter *, struct nm_conf *);
 	struct _jpo (*insert)(struct nm_jp_list *,
 			struct nm_jp_liter *, struct _jpo, struct nm_conf *);
-	struct _jpo (*remove)(struct nm_jp_list *,
+	void        (*remove)(struct nm_jp_list *,
 			struct nm_jp_liter *, struct nm_conf *);	
 };
 
@@ -366,11 +367,11 @@ void nm_jp_linit(struct nm_jp_list *, void (*)(struct nm_jp *, int, struct nm_co
 struct _jpo nm_jp_linterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_ldump(struct nm_jp *, struct nm_conf *);
 
-union nm_jp_union;
+struct nm_jp_olelem;
 struct nm_jp_olist {
 	struct nm_jp_list up;
 
-	union nm_jp_union *list;
+	struct nm_jp_olelem *list;
 	u_int minelem;
 	u_int nelem;
 	u_int nextfree;
@@ -378,6 +379,8 @@ struct nm_jp_olist {
 
 int nm_jp_olinit(struct nm_jp_olist *, int, void (*)(struct nm_jp *, int, struct nm_conf *));
 void nm_jp_oluninit(struct nm_jp_olist *);
+struct nm_jp_olelem *nm_jp_olnew_elem(struct nm_jp_olist *);
+void nm_jp_oldel_elem(struct nm_jp_olist *, struct nm_jp_olelem *);
 int nm_jp_oladd_ptr(struct nm_jp_olist *, void *, struct nm_jp *);
 int nm_jp_oldel_ptr(struct nm_jp_olist *, void *);
 
@@ -407,9 +410,6 @@ struct nm_jp_dict {
 	u_int minelem;
 	u_int nelem;
 	u_int nextfree;
-
-	int (*new)(struct nm_jp_dict *, struct nm_jp_delem *);
-	void (*delete)(struct nm_jp_dict *, struct nm_jp_delem *);
 };
 
 int nm_jp_dinit(struct nm_jp_dict *, const struct nm_jp_delem *, u_int nelem,
@@ -493,14 +493,20 @@ union nm_jp_union {
 	struct nm_jp_array   arr;
 	struct nm_jp	    *external;
 };
+void nm_jp_union_set_ptr(union nm_jp_union *, void *, struct nm_jp *);
 
+#define NM_JP_D_HAVE_REF	1
+#define NM_JP_D_EXTERNAL	2
 struct nm_jp_delem {
 	char name[NETMAP_CONFIG_MAXNAME];
 	u_int flags;
-#define NM_JP_D_HAVE_REF	1
-#define NM_JP_D_EXTERNAL	2
 	union nm_jp_union u;
 };
+struct nm_jp_olelem {
+	u_int flags;
+	union nm_jp_union u;
+};
+
 
 
 extern struct nm_jp_dict nm_jp_root;

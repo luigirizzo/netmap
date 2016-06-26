@@ -3508,6 +3508,7 @@ netmap_init(void)
 	error = nm_jp_olinit(&nm_jp_ports, 10, NULL);
 	if (error)
 		goto fail;
+	nm_jp_ports.up.search_key = "name";
 	nm_jp_dadd_external(&nm_jp_root, (struct nm_jp *)&nm_jp_ports, "port");
 	nm_jp_dadd_external(&nm_jp_root, &nm_jp_version, "version");
 #endif /* WITH_NMCONF */
