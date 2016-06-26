@@ -1387,7 +1387,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		PTNET_Q_LOCK(pq);
 	}
 
-	if (budget != PTNET_RX_BUDGET) {
+	if (head != ring->head) {
 		/* Some packets have been pushed to the network stack.
 		 * We need to update the CSB to tell the host about the new
 		 * ring->cur and ring->head (RX buffer refill). */
