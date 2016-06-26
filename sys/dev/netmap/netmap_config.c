@@ -926,7 +926,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		 * special {cmd:arg} object.  cmd will be "" if the element
 		 * does not match this pattern */
 		cmd = nm_jp_lgetcmd(c->pool, *pi, &arg);
-		D("cmd %s", cmd);
+		ND("cmd %s", cmd);
 		if (cmd[0] == '+') {
 			/* this is an insert command */
 			if (l->insert == NULL) {
@@ -951,7 +951,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			struct _jpo *ki, *ko;
 
 			/* this is a search command */
-			D("search for %s", cmd);
+			ND("search for %s", cmd);
 			if (l->search_key == NULL) {
 				r1 = nm_jp_error(c->pool, "search not supported");
 				goto next;
@@ -992,7 +992,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		     !nm_jp_liter_eq(&it, &stop);
 		     last = it, jpe = l->next(l, &it, c))
 		{
-			D("jpe %p", jpe);
+			ND("jpe %p", jpe);
 			if (jpe) {
 				c->matching++;
 				c->mismatch = 0;
@@ -1000,7 +1000,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 				r1 = nm_jp_interp(jpe, search, c);
 				c->matching--;
 				if (!c->mismatch) {
-					D("match!");
+					ND("match!");
 					if (cmd[0] == '-') {
 						l->remove(l, &last, c);
 						r1 = jslr_new_object(c->pool, 0);
@@ -1274,7 +1274,7 @@ nm_jp_adump(struct nm_jp *jp, struct nm_conf *c)
 	void *save = c->cur_obj;
 	int i = it->it;
 
-	D("i %d", i);
+	ND("i %d", i);
 	c->cur_obj = nm_jp_anewcurobj(a, save, i);
 	rv = nm_jp_dump(a->type, c);
 	c->cur_obj = save;
@@ -1653,7 +1653,7 @@ _nm_jp_dadd(struct nm_jp_dict *d, struct nm_jp_delem **e, const char *fmt, va_li
 		nm_jp_ddel_elem(d, *e);
 		return rv;
 	}
-	D("%s: e %p", (*e)->name, *e);
+	ND("%s: e %p", (*e)->name, *e);
 	return 0;
 }
 

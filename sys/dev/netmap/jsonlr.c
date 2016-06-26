@@ -284,7 +284,7 @@ jslr_dot(struct _jp *p)
 		return _r_EINVAL;
 	if (x.ty == JPO_NUM) {
 		int64_t n;
-		D("got num, (%d, %d, %d)", x.ty, x.ptr, x.len);
+		ND("got num, (%d, %d, %d)", x.ty, x.ptr, x.len);
 	        n = jslr_get_num((const char *)p, x);
 		x = jslr_new_string((char *)p, "%ld", n);
 		if (x.ty == JPO_ERR)
@@ -671,7 +671,7 @@ jslr_realloc_array(char *pool, struct _jpo a, int n)
 	struct _jpo *pa = jslr_get_array(pool, a);
 	int old = pa->len;
 
-	D("old %d new %d", old, n);
+	ND("old %d new %d", old, n);
 
 	if (old >= n) {
 		pa->len = n;
