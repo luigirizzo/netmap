@@ -815,7 +815,7 @@ nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	struct nm_conf_var *v;
 	int vcmd = nm_jp_parse_var(&r, c, &v);
 
-	D("vcmd %d", vcmd);
+	ND("vcmd %d", vcmd);
 	if (vcmd < 0)
 		return r;
 
@@ -824,6 +824,30 @@ nm_jp_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		rv = jp->dump(jp, c);
 	else
 		rv = jp->interp(jp, r, c);
+	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
+
+	if (vcmd == '?')
+		v->value = rv;
+	
+	return rv;
+}
+
+static struct _jpo
+nm_jp_ctor(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
+{
+	struct _jpo rv;
+	struct nm_conf_var *v;
+	int vcmd = nm_jp_parse_var(&r, c, &v);
+
+	if (vcmd < 0)
+		return r;
+
+	nm_jp_bracket(jp, NM_JPB_ENTER, c);
+	if (jp->interp) {
+		jp->interp(jp, r, c);
+		nm_jp_bracket(jp, NM_JPB_MIDDLE, c);
+	}
+	rv = jp->dump(jp, c);
 	nm_jp_bracket(jp, NM_JPB_LEAVE, c);
 
 	if (vcmd == '?')
