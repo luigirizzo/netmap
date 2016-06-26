@@ -270,6 +270,7 @@ jslr_dot(struct _jp *p)
 		    *rn = jslr_alloc(p, _r_EINVAL),
 		    *ro = jslr_alloc(p, _r_OBJECT), x;
 	struct _jp_stream *s = p->stream;
+	int c;
 
 	if (rp == NULL || rn == NULL || ro == NULL)
 		return _r_ENOMEM;
@@ -291,13 +292,20 @@ jslr_dot(struct _jp *p)
 			return x;
 	}
 	*rn = x;
+	jslr_space(p);
+	/* autocomplete with :? if necessary */
+	c = s->peek(s);
+	if (c == 0 || in_map(",}", c)) {
+		x = jslr_new_string((char *)p, "?");
+		goto out;
+	}
 	/* wait for either :/= or dot */
 	x = jslr_1(p);
 	if (x.ty == JPO_PTR && x.len == JPO_DOT) {
 		x.len = JPO_OBJECT;
 		goto out;
 	}
-	if (x.ty != JPO_CHAR || (x.ptr != ':' && x.ptr != '='))
+	if (x.ty != JPO_CHAR || !in_map(":=", x.ptr))
 		return _r_EINVAL;
 	/* wait for object (not dot) */
 	x = jslr_1(p);
@@ -381,7 +389,10 @@ jslr_object(struct _jp *p)
 				x.len = JPO_OBJECT;
 				goto obj;
 			} else {
-				return _r_EINVAL;
+				/* try to add :? and continue */
+				x = jslr_new_string((char *)p, "?");
+				state = 2;
+				goto obj;
 			}
 		} else if (state == 2) { /* need object */
 	obj:
