@@ -1218,12 +1218,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	kring = na->tx_rings + pq->kring_id;
 	ring = kring->ring;
 	lim = kring->nkr_num_slots - 1;
-
-	/* Initialize transmission state variables. */
 	head = ring->head;
-	slot = ring->slot + head;
-	nmbuf = NMB(na, slot);
-	nmbuf_bytes = 0;
 
 	for (;;) {
 		if (head == ring->tail) {
@@ -1243,6 +1238,11 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		if (!m) {
 			break;
 		}
+
+		/* Initialize transmission state variables. */
+		slot = ring->slot + head;
+		nmbuf = NMB(na, slot);
+		nmbuf_bytes = 0;
 
 		for (prev_head = head, mf = m; mf; mf = mf->m_next) {
 			uint8_t *mdata = mf->m_data;
