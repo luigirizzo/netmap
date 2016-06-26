@@ -332,31 +332,17 @@ struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
 /* lists */
 struct nm_jp_liter {
 	uintptr_t it;
-#define NM_JP_LITER_BEG	0x1UL
 };
-
-static inline void
-nm_jp_liter_beg(struct nm_jp_liter *i) {
-	i->it = NM_JP_LITER_BEG;
-}
-
-static inline int
-nm_jp_liter_eq(struct nm_jp_liter *i1, struct nm_jp_liter *i2)
-{
-	return i1->it == i2->it;
-}
-
-static inline int
-nm_jp_liter_is_beg(struct nm_jp_liter *i)
-{
-	return i->it == NM_JP_LITER_BEG;
-}
 
 struct nm_jp_list {
 	struct nm_jp up;
 	int n;
 	const char *search_key;
 	
+	void	     (*newiter)(struct nm_jp_list *, struct nm_jp_liter *,
+			int, struct nm_conf *);
+#define NM_JP_LITER_BEG	1
+#define NM_JP_LITER_END	2
 	struct nm_jp *(*next)(struct nm_jp_list *,
 			struct nm_jp_liter *, struct nm_conf *);
 	struct _jpo (*insert)(struct nm_jp_list *,
@@ -365,10 +351,18 @@ struct nm_jp_list {
 			struct nm_jp_liter *, struct nm_conf *);	
 };
 
-void nm_jp_linit(struct nm_jp_list *, int, const char *,
-		struct nm_jp *(*)(struct nm_jp_list *,
-			struct nm_jp_liter *, struct nm_conf *),
-		void (*)(struct nm_jp *, int, struct nm_conf *));
+static inline void
+nm_jp_liter_beg(struct nm_jp_list *l, struct nm_jp_liter *i, struct nm_conf *c) {
+	l->newiter(l, i, NM_JP_LITER_BEG, c);
+}
+
+static inline int
+nm_jp_liter_eq(struct nm_jp_liter *i1, struct nm_jp_liter *i2)
+{
+	return i1->it == i2->it;
+}
+
+void nm_jp_linit(struct nm_jp_list *, void (*)(struct nm_jp *, int, struct nm_conf *));
 struct _jpo nm_jp_linterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_ldump(struct nm_jp *, struct nm_conf *);
 
@@ -398,6 +392,7 @@ struct nm_jp_array {
 	struct nm_jp *type;
 };
 
+void nm_jp_anewiter(struct nm_jp_list *, struct nm_jp_liter *, int, struct nm_conf *);
 struct nm_jp *nm_jp_anext(struct nm_jp_list *, struct nm_jp_liter *, struct nm_conf *);
 struct _jpo nm_jp_ainterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_adump(struct nm_jp *, struct nm_conf *);
@@ -651,6 +646,7 @@ void nm_jp_port_del(struct netmap_adapter *);
 				.dump   = nm_jp_ldump,	\
 			},				\
 			.search_key = k,		\
+			.newiter = nm_jp_anewiter,	\
 			.next = nm_jp_anext,		\
 		},					\
 		.arr = {				\

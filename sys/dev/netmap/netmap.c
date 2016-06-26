@@ -2764,25 +2764,35 @@ struct nm_jp_flag_list {
 	struct nm_jp flag;
 };
 
+static void
+nm_jp_flag_newiter(struct nm_jp_list *l, struct nm_jp_liter *it, int which, struct nm_conf *c)
+{
+	struct netmap_adapter *na = c->cur_obj;
+
+	switch (which) {
+	case NM_JP_LITER_BEG:
+		it->it = __builtin_ctz(na->na_flags);
+		break;
+	case NM_JP_LITER_END:
+		it->it = sizeof(na->na_flags) * 8;
+		break;
+	}
+}
+
 static struct nm_jp *
 nm_jp_flag_next(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 {
 	struct netmap_adapter *na = c->cur_obj;
 	u_int flags = na->na_flags;
 	struct nm_jp_flag_list *fl = (struct nm_jp_flag_list *)l;
-	int prev = 0, next;
-
-	if (!nm_jp_liter_is_beg(it)) {
-		prev = (int) (it->it >> 16) + 1;
-	}
+	int prev = it->it + 1;
 
 	flags >>= prev;
 	if (flags) {
-		next = prev + __builtin_ctz(flags);
-		it->it = (uintptr_t)(next << 16);
+		it->it = prev + __builtin_ctz(flags);
 		return &fl->flag;
 	} else {
-		nm_jp_liter_beg(it);
+		it->it = __builtin_ctz(na->na_flags); /* circular list */
 		return NULL;
 	}
 }
@@ -2790,22 +2800,22 @@ nm_jp_flag_next(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 static struct _jpo
 nm_jp_flag_dump(struct nm_jp *jp, struct nm_conf *c)
 {
-	struct nm_jp_flag_list *f = container_of(jp, struct nm_jp_flag_list, flag);
 	struct nm_jp_liter it = *c->cur_iter;
-	nm_jp_flag_next(&f->up, &it, c);
-	return jslr_new_string(c->pool, nm_jp_flag_names[it.it >> 16]);
+	return jslr_new_string(c->pool, nm_jp_flag_names[it.it]);
 }
 
 static struct _jpo
 nm_jp_flag_interp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 {
-	struct nm_jp_flag_list *l = container_of(jp, struct nm_jp_flag_list, flag);
 	struct nm_jp_liter it = *c->cur_iter;
 	const char *s = jslr_get_string(c->pool, r);
-	nm_jp_flag_next(&l->up, &it, c);
-	if (c->matching)
-		c->mismatch = (strcmp(nm_jp_flag_names[it.it >> 16], s) != 0);
-	return nm_jp_flag_dump(jp, c);
+	if (strcmp(nm_jp_flag_names[it.it], s) == 0) {
+		return r;
+	} else {
+		if (c->matching)
+			c->mismatch = 1;
+		return nm_jp_flag_dump(jp, c);
+	}
 }
 
 
@@ -2815,6 +2825,7 @@ static struct nm_jp_flag_list nm_jp_port_flags = {
 			.interp = nm_jp_linterp,
 			.dump = nm_jp_ldump,
 		},
+		.newiter = nm_jp_flag_newiter,
 		.next = nm_jp_flag_next,
 	},
 	.flag = {

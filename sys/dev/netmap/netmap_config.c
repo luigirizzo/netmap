@@ -879,7 +879,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 
 	po++; /* move to first entry */
 	err = NULL;
-	nm_jp_liter_beg(&it);
+	nm_jp_liter_beg(l, &it, c);
 	for (i = 0; i < len; i++) {
 		struct nm_jp_liter stop, last;
 		struct _jpo arg, search = *pi, *out;
@@ -913,7 +913,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			/* iterators may change after the insertion. Restart
 			 * the remaining searches from the beginning
 			 */
-			nm_jp_liter_beg(&it);
+			nm_jp_liter_beg(l, &it, c);
 			goto next;
 		} else if (cmd[0] == '-') {
 			/* this is a remove command */
@@ -979,7 +979,7 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 					D("match!");
 					if (cmd[0] == '-') {
 						r1 = l->remove(l, &it, c);
-						nm_jp_liter_beg(&it);
+						nm_jp_liter_beg(l, &it, c);
 					} else {
 						r1 = nm_jp_interp(jpe, arg, c);
 						it = last;
@@ -1020,7 +1020,7 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 		return r;
 	po = jslr_get_array(pool, r);
 	po++;
-	nm_jp_liter_beg(&it);
+	nm_jp_liter_beg(l, &it, c);
 	save = c->cur_iter;
 	for (j = 0, last = it; (jpe = l->next(l, &it, c)); j++, last = it) {
 		if (j >= l->n) {
@@ -1041,25 +1041,27 @@ nm_jp_ldump(struct nm_jp *jp, struct nm_conf *c)
 }
 
 void
-nm_jp_linit(struct nm_jp_list *l, int n, const char *key,
-		struct nm_jp *(*next)(struct nm_jp_list *,
-			struct nm_jp_liter *i, struct nm_conf *),
-		void (*bracket)(struct nm_jp *, int, struct nm_conf *))
+nm_jp_linit(struct nm_jp_list *l, void (*bracket)(struct nm_jp *, int, struct nm_conf *))
 {
 	l->up.interp = nm_jp_linterp;
 	l->up.dump = nm_jp_ldump;
 	l->up.bracket = bracket;
-
-	l->n = n;
-	l->search_key = key;
-	l->next = next;
 }
 
 void
-nm_jp_oluninit(struct nm_jp_olist *l)
+nm_jp_olnewiter(struct nm_jp_list *l, struct nm_jp_liter *it, int which, struct nm_conf *c)
 {
-	nm_os_free(l->list);
-	memset(l, 0, sizeof(*l));
+	struct nm_jp_olist *ol = (struct nm_jp_olist *)l;
+	union nm_jp_union **e = (union nm_jp_union **)&it->it;
+
+	switch (which) {
+	case NM_JP_LITER_BEG:
+		*e = ol->list;
+		break;
+	case NM_JP_LITER_END:
+		*e = ol->list + ol->nextfree;
+		break;
+	}
 }
 
 struct nm_jp *
@@ -1069,16 +1071,11 @@ nm_jp_olnext(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 	union nm_jp_union **e = (union nm_jp_union **)&it->it;
 	struct nm_jp *rv;
 	
-	if (nm_jp_liter_is_beg(it)) {
-		/* first use or wrap around: initialize */
-		*e = ol->list;
-	}
-
 	rv = (struct nm_jp *)*e;
 
 	if (*e == ol->list + ol->nextfree) {
 		rv = NULL;
-		nm_jp_liter_beg(it); /* circular list */
+		(*e) = ol->list; /* circular list */
 	} else {
 		(*e)++;
 	}
@@ -1087,16 +1084,29 @@ nm_jp_olnext(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 }
 
 int
-nm_jp_olinit(struct nm_jp_olist *l, int n, void (*bracket)(struct nm_jp *, int, struct nm_conf *))
+nm_jp_olinit(struct nm_jp_olist *ol, int n, void (*bracket)(struct nm_jp *, int, struct nm_conf *))
 {
-	nm_jp_linit(&l->up, n, "name", nm_jp_olnext, bracket);
+	struct nm_jp_list *l = &ol->up;
 
-	l->list = nm_os_malloc(sizeof(*l->list) * n);
-	if (l->list == NULL)
+	memset(ol, 0, sizeof(*ol));
+	nm_jp_linit(l, bracket);
+	l->n = n;
+	l->newiter = nm_jp_olnewiter;
+	l->next = nm_jp_olnext;
+
+	ol->list = nm_os_malloc(sizeof(*ol->list) * n);
+	if (ol->list == NULL)
 		return ENOMEM;
-	l->minelem = l->nelem = n;
-	l->nextfree = 0;
+	ol->minelem = ol->nelem = n;
+	ol->nextfree = 0;
 	return 0;
+}
+
+void
+nm_jp_oluninit(struct nm_jp_olist *l)
+{
+	nm_os_free(l->list);
+	memset(l, 0, sizeof(*l));
 }
 
 union nm_jp_union *
@@ -1181,21 +1191,31 @@ nm_jp_oldel_ptr(struct nm_jp_olist *l, void *p)
 	return ENOENT;
 }
 
+void
+nm_jp_anewiter(struct nm_jp_list *l, struct nm_jp_liter *it, int which, struct nm_conf *c)
+{
+	struct nm_jp_array *a = (struct nm_jp_array *)l;
+
+	switch (which) {
+	case NM_JP_LITER_BEG:
+		it->it = 0;
+		break;
+	case NM_JP_LITER_END:
+		it->it = a->nelem;
+		break;
+	}
+}
+
 struct nm_jp *
 nm_jp_anext(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 {
 	struct nm_jp_array *a = (struct nm_jp_array *)l;
-	int cur = 0;
 	
-	if (!nm_jp_liter_is_beg(it)) {
-		cur = (int) (it->it >> 2);
-	}
-
-	if (cur >= a->nelem) {
-		nm_jp_liter_beg(it); /* circular list */
+	if (it->it >= a->nelem) {
+		it->it = 0; /* circular list */
 		return NULL;
 	}
-	it->it = (cur + 1) << 2;
+	it->it++;
 	return &a->arr;
 }
 
@@ -1219,7 +1239,7 @@ nm_jp_adump(struct nm_jp *jp, struct nm_conf *c)
 	struct nm_jp_liter *it = c->cur_iter;
 	struct _jpo rv;
 	void *save = c->cur_obj;
-	int i = nm_jp_liter_is_beg(it) ? 0 : (it->it >> 2);
+	int i = it->it;
 
 	D("i %d", i);
 	c->cur_obj = nm_jp_anewcurobj(a, save, i);
@@ -1236,7 +1256,7 @@ nm_jp_ainterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 	struct nm_jp_liter *it = c->cur_iter;
 	struct _jpo rv;
 	void *save = c->cur_obj;
-	int i = nm_jp_liter_is_beg(it) ? 0 : (it->it >> 2);
+	int i = it->it;
 
 	c->cur_obj = nm_jp_anewcurobj(a, save, i);
 	rv = nm_jp_interp(a->type, r, c);

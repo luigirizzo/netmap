@@ -1719,9 +1719,7 @@ static struct _jpo
 netmap_mem_jp_name_dump(struct nm_jp *jp, struct nm_conf *c)
 {
 	struct nm_jp_liter *it = c->cur_iter;
-	int i = nm_jp_liter_is_beg(it) ? 0 : it->it >> 2;
-
-	return jslr_new_string(c->pool, netmap_mem_jp_names[i]);
+	return jslr_new_string(c->pool, netmap_mem_jp_names[it->it]);
 }
 
 static struct _jpo
