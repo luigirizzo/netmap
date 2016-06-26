@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2016, Vincenzo Maffione <v.maffione@gmail.com>
+ * Copyright (c) 2016, Vincenzo Maffione <v DoT maffione AT gmail DoT com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
