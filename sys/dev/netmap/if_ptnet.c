@@ -1164,6 +1164,13 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 	}
 }
 
+/* This should be computed as MAX_FRAME_SIZE / NETMAP_BUF_SIZE */
+#define PTNET_TX_MIN_SLOTS	33
+
+#define PTNET_TX_NOSPACE(h, k)	\
+	((((h) < (k)->rtail) ? 0 : (k)->nkr_num_slots) + \
+		(k)->rtail - (h)) < PTNET_TX_MIN_SLOTS
+
 static int
 ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 {
@@ -1221,13 +1228,13 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	head = ring->head;
 
 	for (;;) {
-		if (head == ring->tail) {
+		if (PTNET_TX_NOSPACE(head, kring)) {
 			/* We ran out of slot, let's see if the host has
 			 * freed up some, by reading hwcur and hwtail from
 			 * the CSB. */
 			ptnet_sync_tail(ptring, kring);
 
-			if (head == ring->tail) {
+			if (PTNET_TX_NOSPACE(head, kring)) {
 				/* Still no slots available. Reactivate the
 				 * interrupts so that we can be notified
 				 * when some free slots are made available by
@@ -1236,7 +1243,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 
 				/* Double-check. */
 				ptnet_sync_tail(ptring, kring);
-				if (likely(head == ring->tail)) {
+				if (likely(PTNET_TX_NOSPACE(head, kring))) {
 					break;
 				}
 
