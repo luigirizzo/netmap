@@ -1228,9 +1228,22 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 			ptnet_sync_tail(ptring, kring);
 
 			if (head == ring->tail) {
-				/* Still no slots available, let's stop and
-				 * wait for interrupts. */
-				break;
+				/* Still no slots available. Reactivate the
+				 * interrupts so that we can be notified
+				 * when some free slots are made available by
+				 * the host. */
+				ptring->guest_need_kick = 1;
+
+				/* Double-check. */
+				ptnet_sync_tail(ptring, kring);
+				if (likely(head == ring->tail)) {
+					break;
+				}
+
+				RD(1, "Found more slots by doublecheck");
+				/* More slots were freed before reactivating
+				 * the interrupts. */
+				ptring->guest_need_kick = 0;
 			}
 		}
 
@@ -1302,24 +1315,6 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 escape:
 	if (batch_count) {
 		ptnet_ring_update(pq, kring, head);
-	}
-
-	if (head == ring->tail) {
-		/* Reactivate the interrupts so that we can be notified
-		 * when some free slots are made available by the host. */
-		ptring->guest_need_kick = 1;
-
-                /* Double-check. */
-		ptnet_sync_tail(ptring, kring);
-		if (unlikely(head != ring->tail)) {
-			RD(1, "Found more slots by doublecheck");
-			/* More slots were freed before reactivating
-			 * the interrupts. */
-			ptring->guest_need_kick = 0;
-			if (!drbr_empty(ifp, pq->bufring)) {
-				taskqueue_enqueue(pq->taskq, &pq->task);
-			}
-		}
 	}
 
 	PTNET_Q_UNLOCK(pq);
