@@ -2774,7 +2774,8 @@ nm_jp_flag_newiter(struct nm_jp_list *l, struct nm_jp_liter *it, int which, stru
 
 	switch (which) {
 	case NM_JP_LITER_BEG:
-		it->it = __builtin_ctz(na->na_flags);
+		it->it = na->na_flags ? __builtin_ctz(na->na_flags) :
+			nm_jp_flags_width;
 		break;
 	case NM_JP_LITER_END:
 		it->it = nm_jp_flags_width;
