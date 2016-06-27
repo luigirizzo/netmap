@@ -912,6 +912,11 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 		struct _jpo arg, search = *pi, *out;
 		const char *cmd;
 
+		/* the reply will be put in out. It normally goes into the
+		 * current slot in the output array
+		 */
+		out = po;
+
 		/* if err is non NULL a fatal error has occurred, but we still
 		 * have to fill all the slots in the output array.
 		 */
@@ -919,11 +924,6 @@ nm_jp_linterp(struct nm_jp *jp, struct _jpo r, struct nm_conf *c)
 			r1 = *err;
 			goto next;
 		}
-
-		/* the reply will be put in out. It normally goes into the
-		 * current slot in the output array
-		 */
-		out = po;
 
 		/* first try to interpret the current input array element as a
 		 * special {cmd:arg} object.  cmd will be "" if the element
@@ -1083,7 +1083,7 @@ nm_jp_linit(struct nm_jp_list *l, void (*bracket)(struct nm_jp *, int, struct nm
 	l->up.bracket = bracket;
 }
 
-void
+static void
 nm_jp_olnewiter(struct nm_jp_list *l, struct nm_jp_liter *it, int which, struct nm_conf *c)
 {
 	struct nm_jp_olist *ol = (struct nm_jp_olist *)l;
@@ -1103,7 +1103,7 @@ nm_jp_olnewiter(struct nm_jp_list *l, struct nm_jp_liter *it, int which, struct 
 	it->it = (uintptr_t)e;
 }
 
-struct nm_jp *
+static struct nm_jp *
 nm_jp_olnext(struct nm_jp_list *l, struct nm_jp_liter *it, struct nm_conf *c)
 {
 	struct nm_jp_olist *ol = (struct nm_jp_olist *)l;
@@ -1558,7 +1558,7 @@ nm_jp_duninit(struct nm_jp_dict *d)
 }
 
 /* add a new element to the dictionary */
-struct nm_jp_delem *
+static struct nm_jp_delem *
 nm_jp_dnew_elem(struct nm_jp_dict *d)
 {
 	/* possibly make more room */
@@ -1575,7 +1575,7 @@ nm_jp_dnew_elem(struct nm_jp_dict *d)
 	return &d->list[d->nextfree++];
 }
 
-int
+static int
 nm_jp_ddel_elem(struct nm_jp_dict *d, struct nm_jp_delem *e1)
 {
 	struct nm_jp_delem *e2;
@@ -1631,25 +1631,6 @@ nm_jp_dvsetname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, va
 	return 0;
 }
 
-int
-nm_jp_delem_setname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, ...)
-{
-	va_list ap;
-	int rv;
-
-	va_start(ap, fmt);
-	rv = nm_jp_dvsetname(d, e, fmt, ap);
-	va_end(ap);
-
-	return rv;
-}
-
-void
-nm_jp_delem_set_ptr(struct nm_jp_delem *e, void *p, struct nm_jp *t)
-{
-	nm_jp_union_set_ptr(&e->u, p, t);
-}
-
 static int
 _nm_jp_dadd(struct nm_jp_dict *d, struct nm_jp_delem **e, const char *fmt, va_list ap)
 {
@@ -1664,23 +1645,6 @@ _nm_jp_dadd(struct nm_jp_dict *d, struct nm_jp_delem **e, const char *fmt, va_li
 		return rv;
 	}
 	ND("%s: e %p", (*e)->name, *e);
-	return 0;
-}
-
-int
-nm_jp_dadd_ptr(struct nm_jp_dict *d, void *p, struct nm_jp *t, const char *fmt, ...)
-{
-	struct nm_jp_delem *e;
-	va_list ap;
-	int rv;
-
-	va_start(ap, fmt);
-	rv = _nm_jp_dadd(d, &e, fmt, ap);
-	va_end(ap);
-	if (rv)
-		return rv;
-
-	nm_jp_delem_set_ptr(e, p, t);
 	return 0;
 }
 
