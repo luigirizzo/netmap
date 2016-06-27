@@ -271,51 +271,129 @@ typedef struct hrtimer{
 
 #ifdef WITH_NMCONF
 
+/* JSON based configuration support.
+ *
+ * - by reading from /dev/netmap you obtain a JSON representation of some
+ *   netmap data-structures, namely:
+ *   - ports: existing netmap ports which may hardware, VALE, pipes and
+ *     monitors, but also internal ports such as the adapters used for
+ *     passthrough or for connecting an hardware port to a VALE switch
+ *   - memory areas: collections of pre-allocated phisical memory which can be
+ *     used to supply buffers and rings to ports
+ * - by writing JSON into /dev/netmap you can query/change parameters of existing
+ *   ports and memory areas, or create new ones (creation and deletion
+ *   is limited to memory areas for the time being)
+ *
+ */
+
 #include "jsonlr.h"
 
 #define member_size(st, m) 	sizeof(((st *)0)->m)
 
+/* chain of buffers that used to store the input and output JSON texts.
+ * Each chain keeps a write pointer for appending data and a read pointer
+ * for consuming the data. Data should be first completely produced,
+ * then completely consumed.
+ *
+ * These are only used internally in netmap_config.c and are here since
+ * they are required by struct nm_conf below.
+ */
 struct nm_confb_data;
 struct nm_confb {
-	struct nm_confb_data *readp;
-	struct nm_confb_data *writep;
-	u_int n_data;
-	u_int next_w;
-	u_int next_r;
+	/* the pointers are implemented as a pair (base, offset).
+	 * The base points to the start of a buffer in the chain.
+	 */
+	struct nm_confb_data *readp;	/* base of the read pointer */
+	struct nm_confb_data *writep;	/* base of the write pointer */
+	u_int n_data;			/* number of buffers in the chain */
+	u_int next_w;			/* offset of the write pointer */
+	u_int next_r;			/* offset or the read pointer */
 };
 
+/* configuration variables. Each variable has a string name and can
+ * store any JSON value.
+ *
+ * Variables are only parsed in the input JSON, where they may appear
+ * anywhere a string may appear. All strings in the input are
+ * checked for special syntax in their first character:
+ *
+ * "?X", where X is any string, assigns to variable X the internal
+ *    value at the current handling point. X is created if it does
+ *    not exists;
+ * "$X", where X is any string, replaces the "$X" string with the
+ *    value stored in variable X. An error is reported if X does
+ *    not exist
+ */
 #define	NETMAP_CONFIG_MAXNAME	60
 struct nm_conf_var {
 	char name[NETMAP_CONFIG_MAXNAME];
 	struct _jpo value;
 };
 
+/* list iterator, forward */
 struct nm_jp_liter;
+/* a struct nm_conf stores the context for the current session */
 struct nm_conf {
 	NM_MTX_T mux;
+	/* the input and output JSON text buffers */
 	struct nm_confb buf[2]; /* 0 in, 1 out */
-	int written;
-	int matching;
-	int mismatch;
-	char *pool;
-	void *cur_obj;
-	struct nm_jp_liter *cur_iter;
+	char *pool;	/* the jslr pool */
+
+	int written;	/* 1 if the user has given some input */
+
+	/* matching state, started by list traversiong operations */
+	int matching;	/* >0 if a matching is in progress */
+	int mismatch;	/* 1 if a mismatch has been found */
+
+	/* pointers to the C objects being examined */
+	void *cur_obj;			/* the current object */
+	struct nm_jp_liter *cur_iter;	/* the current iterator */
+
+	/* variables are per-session and stored in an array */
 	struct nm_conf_var *vars;
-	int next_var;
-	int max_vars;
+	int next_var;			/* first free slot in the array */
+	int max_vars;			/* current size of the array */
+
+	/* the pretty-printer function that produces the output.
+	 * The default one produces JSON, but there optionally is a sysctl-like
+	 * output for humans
+	 */
 	int (*dump)(const char *pool, struct _jpo*, struct nm_confb *);
 };
 
+/* initialize at the beginning of a session */
 void nm_conf_init(struct nm_conf*);
+/* clean-up at the end of a session */
 void nm_conf_uninit(struct nm_conf*, int locked);
+/* input/output functions */
 struct uio;
 int nm_conf_read(struct nm_conf *, struct uio *);
 int nm_conf_write(struct nm_conf *, struct uio *);
+/* start parsing and handling */
 int nm_conf_parse(struct nm_conf*, int locked);
+/* get/set the output mode. It may be either "json" (default)
+ * of "flat" (sysctl-like)
+ */
 const char *nm_conf_get_output_mode(struct nm_conf *);
 int nm_conf_set_output_mode(struct nm_conf *, const char *);
 
+/* handlers. Once jslr has parsed the input, the resulting pool
+ * is passed to handlers. Handlers are organized in a tree which mimics
+ * the internal JSON state (as obtainable by 'cat /dev/netmap'). Each
+ * handler is the root of a subtree and typically only looks at one element of
+ * the input JSON and then pass down the rest to its children
+ */
 struct nm_jp;
+ /* All handlers must implement the following functions
+  * 
+  * interp: get a JSON value, apply the changes to the subtree and return the result
+  *    Note: if a matching is in progress, only check for mismatch on read-only
+  *    values
+  * dump: produce a JSON representation of the subtree
+  * bracket (optional): this is called when entering and leaving the subtree
+  *    and may be used, e.g., to take and release locks. It is also called
+  *    during subtree creation, after the initialization and before the final dump
+  */
 typedef struct _jpo nm_jp_interp_t(struct nm_jp *, struct _jpo, struct nm_conf *);
 typedef struct _jpo nm_jp_dump_t(struct nm_jp *, struct nm_conf *);
 typedef void	    nm_jp_bracket_t(struct nm_jp *, int stage, struct nm_conf *);
@@ -323,18 +401,35 @@ struct nm_jp {
 	nm_jp_interp_t 	*interp;
 	nm_jp_dump_t 	*dump;
 	nm_jp_bracket_t	*bracket;
-#define NM_JPB_ENTER	0
-#define NM_JPB_MIDDLE	1
-#define NM_JPB_LEAVE	2
+#define NM_JPB_ENTER	0	/* bracket called on entering the subtree */
+#define NM_JPB_MIDDLE	1	/* bracket called during subtree creation */
+#define NM_JPB_LEAVE	2	/* bracket called on leaving the subtree */
 };
+
+/* create an object of the form {"err":"error message"} */
 struct _jpo nm_jp_error(char *pool, const char *fmt, ...);
+/* initialize a subtree */
 struct _jpo nm_jp_ctor(struct nm_jp *, struct _jpo, struct nm_conf *);
 
-/* lists */
+/* Lists
+ *
+ * List handlers take care of JSON '[]' syntax, with some extensions for
+ *
+ * - searching
+ * - insertion
+ * - removal
+ */
+
+/* the generic code for lists uses an iterator interface to access the
+ * actual list elements
+ */
 struct nm_jp_liter {
 	uintptr_t it;
 };
 
+/* generic list. Actual lists should extend this and provide implementations
+ * for newiter/next (mandatory) and insert/remove (optional)
+ */
 struct nm_jp_list {
 	struct nm_jp up;
 	int n;
@@ -367,6 +462,7 @@ void nm_jp_linit(struct nm_jp_list *, void (*)(struct nm_jp *, int, struct nm_co
 struct _jpo nm_jp_linterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_ldump(struct nm_jp *, struct nm_conf *);
 
+/* object lists are a special kind of list that contain a list of handlers */
 struct nm_jp_olelem;
 struct nm_jp_olist {
 	struct nm_jp_list up;
@@ -384,15 +480,20 @@ void nm_jp_oldel_elem(struct nm_jp_olist *, struct nm_jp_olelem *);
 int nm_jp_oladd_ptr(struct nm_jp_olist *, void *, struct nm_jp *);
 int nm_jp_oldel_ptr(struct nm_jp_olist *, void *);
 
+/* arrays are a special kind of list that can be used to inspect/update existing C arrays
+ * (static size only)
+ */
 struct nm_jp_array {
 	struct nm_jp_list up;
-	size_t size;
-	int nelem;
-	void *var;
+	size_t size;			/* size of eache element in the array */
+	int nelem;			/* numner of elements in the array */
+	void *var;			/* pointer to the array, or offset inside the
+					 * current object
+					 */
 	u_int flags;
 #define NM_JPO_ARR_REL	1
 	struct nm_jp arr;
-	struct nm_jp *type;
+	struct nm_jp *type;		/* handler for the elements */
 };
 
 void nm_jp_anewiter(struct nm_jp_list *, struct nm_jp_liter *, int, struct nm_conf *);
@@ -400,7 +501,16 @@ struct nm_jp *nm_jp_anext(struct nm_jp_list *, struct nm_jp_liter *, struct nm_c
 struct _jpo nm_jp_ainterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_adump(struct nm_jp *, struct nm_conf *);
 
-/* dictionaries */
+/* dictionaries
+ *
+ * dictionaries take care of JSON '{}' syntax
+ *
+ * They can have a 'parent' dictionary, which will be searched whenever an input key
+ * is not found.
+ *
+ * Dictionaries are also used to implement 'jpo classes' to inspect/update existing
+ * C structures.
+ */
 
 struct nm_jp_delem;
 struct nm_jp_dict {
@@ -418,37 +528,53 @@ void nm_jp_dinit_class(struct nm_jp_dict *, const struct nm_jp_delem*,
 		const struct nm_jp_delem *,
 		void (*)(struct nm_jp *, int, struct nm_conf *));
 void nm_jp_duninit(struct nm_jp_dict *);
-struct nm_jp_delem *nm_jp_dnew_elem(struct nm_jp_dict *);
-int nm_jp_ddel_elem(struct nm_jp_dict *, struct nm_jp_delem *);
-int nm_jp_delem_setname(struct nm_jp_dict *d, struct nm_jp_delem *e, const char *fmt, ...);
-void nm_jp_delem_set_ptr(struct nm_jp_delem *e, void *, struct nm_jp *);
-int nm_jp_dadd_ptr(struct nm_jp_dict *, void *, struct nm_jp *, const char *fmt, ...);
 int nm_jp_dadd_external(struct nm_jp_dict *, struct nm_jp*, const char *fmt, ...);
 int nm_jp_ddel(struct nm_jp_dict *, const char *);
-int nm_jp_drename(struct nm_jp_dict *, struct nm_jp *, const char *);
 
 struct _jpo nm_jp_dinterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_ddump(struct nm_jp *, struct nm_conf *);
 
-/* numbers */
+/* numbers
+ *
+ * number handlers take care of JSON numbers. They may be read-only or
+ * read-write and may be used to inspect/update existing C integer variables
+ * (also inside C structures)
+ */
 struct nm_jp_num {
 	struct nm_jp up;
-	void *var;
-	size_t size;
+	void *var;		/* pointer to the integer variable, or
+				 * offset inside the current object, or, if
+				 * size is 0,pointer to a function that returns
+				 * the current value
+				 */
+	size_t size;		/* size of the existing variable or zero
+				 * if the number must be obtained by calling
+				 * a function
+				 */
 #define NM_JP_NUM_SZMSK	0xF
 #define NM_JP_NUM_REL	0x80
 
+	/* callback for the update operations (NULL if the number is
+	 * read-only
+	 */
 	int (*update)(struct nm_jp_num *, int64_t, void *);
 };
 
 typedef int64_t (*nm_jp_nreader)(struct nm_jp_num *, void *);
 void nm_jp_ninit(struct nm_jp_num *, void *var, size_t size,
 		int (*update)(struct nm_jp_num *, int64_t, void *));
+/* generic update callback that simply writes into the same variable
+ * used for reading
+ */
 int nm_jp_nupdate(struct nm_jp_num *, int64_t, void *);
 struct _jpo nm_jp_ninterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_ndump(struct nm_jp *, struct nm_conf *);
 
-/* strings */
+/* strings
+ *
+ * String handlers take care of JSON strings. They can be used to inspect existing
+ * C strings, which must be zero-terminated.
+ */
 
 struct nm_jp_str {
 	struct nm_jp up;
@@ -459,25 +585,35 @@ struct nm_jp_str {
 #define NM_JP_STR_IND	2
 };
 
-/* pointers */
+struct _jpo nm_jp_sinterp(struct nm_jp *, struct _jpo, struct nm_conf *);
+struct _jpo nm_jp_sdump(struct nm_jp *, struct nm_conf *);
+
+/* pointers
+ *
+ * Pointer handlers do not correspond to any JSON syntax. They are used internally
+ * to link the handlers to existing C objects. When traversed, they change (and then
+ * restore) the cur_obj pointer in the session context.
+ */
 struct nm_jp_ptr {
 	struct nm_jp up;
 	struct nm_jp *type;
-	void *arg;
+	void *arg;		/* pointer to new object, or offset into the
+				 * current object
+				 */
 	u_int flags;
-#define NM_JP_PTR_REL	1
-#define NM_JP_PTR_IND	2
+#define NM_JP_PTR_REL	1	/* arg is an offset */
+#define NM_JP_PTR_IND	2	/* arg leads to a C pointer */
 };
-
-struct _jpo nm_jp_sinterp(struct nm_jp *, struct _jpo, struct nm_conf *);
-struct _jpo nm_jp_sdump(struct nm_jp *, struct nm_conf *);
 
 void nm_jp_pinit(struct nm_jp_ptr *, struct nm_jp *type,
 		void *arg, u_int flags);
 struct _jpo nm_jp_pinterp(struct nm_jp *, struct _jpo, struct nm_conf *);
 struct _jpo nm_jp_pdump(struct nm_jp *, struct nm_conf *);
 
-/* special */
+/* special
+ *
+ * Special handlers for cases that do not fit any of the above
+ */
 struct nm_jp_special {
 	struct nm_jp up;
 };
@@ -643,6 +779,13 @@ void nm_jp_port_del(struct netmap_adapter *);
 	},						\
 },
 
+/* declare an array field 'F' that describes an array
+ * embedded in the native class described by jpo class 'C'.
+ * A jpo clas 'S' describing the the elements of the
+ * array must have already been declared. 'k' is an
+ * optional string that, if non NULL, is used in the
+ * auto-search extension
+ */
 #define NM_JPO_ARRAY(C, F, S, k)	{		\
 	.name = #F,					\
 	.u.arr = {					\
@@ -696,6 +839,10 @@ void nm_jp_port_del(struct netmap_adapter *);
 	},						\
 },
 
+/* declare an field 'F' for jpo class 'C'. The field
+ * is handled by the externally allocated handler pointed to
+ * by 'jp'
+ */
 #define NM_JPO_EXTERNAL(C, F, jp)	{		\
 	.name = #F,					\
 	.flags = NM_JP_D_EXTERNAL,			\

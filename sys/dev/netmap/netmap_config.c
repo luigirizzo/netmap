@@ -78,11 +78,14 @@
 #define NM_CBDATASIZ 4096
 #define NM_CBDATAMAX 1024
 
-/* simple buffers for incoming/outgoing data on read()/write() */
-
+/* simple buffers for incoming/outgoing data on read()/write()
+ *
+ * buffers are organized in a list which is extended as needed
+ * when more data is pushed
+ */
 struct nm_confb_data {
-	struct nm_confb_data *chain;
-	u_int size;
+	struct nm_confb_data *chain;	/* next buffer in the list */
+	u_int size;			/* size of this buffer */
 	char data[];
 };
 
