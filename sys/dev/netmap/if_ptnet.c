@@ -136,6 +136,8 @@ struct ptnet_softc {
 	struct ptnet_queue	*rxqueues;
 	struct ptnet_csb	*csb;
 
+	unsigned int		min_tx_space;
+
 	struct netmap_pt_guest_adapter *ptna_nm;
 	struct netmap_pt_guest_adapter ptna_dr;
 	/* XXX we should move ptna_dr and backend_regifs inside struct
@@ -320,6 +322,8 @@ ptnet_attach(device_t dev)
 			}
 		}
 	}
+
+	sc->min_tx_space = 64; /* Safe initial value. */
 
 	err = ptnet_irqs_init(sc);
 	if (err) {
@@ -698,6 +702,7 @@ ptnet_init_locked(struct ptnet_softc *sc)
 {
 	struct ifnet *ifp = sc->ifp;
 	struct netmap_adapter *na_dr = &sc->ptna_dr.hwup.up;
+	unsigned int nm_buf_size;
 	int ret;
 
 	if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
@@ -741,6 +746,13 @@ ptnet_init_locked(struct ptnet_softc *sc)
 	if (ret) {
 		goto err_register;
 	}
+
+	nm_buf_size = NETMAP_BUF_SIZE(na_dr);
+
+	KASSERT(nm_buf_size > 0, "Invalid netmap buffer size");
+	sc->min_tx_space = 65536 / nm_buf_size + 2;
+	device_printf(sc->dev, "%s: min_tx_space = %u\n", __func__,
+		      sc->min_tx_space);
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 
@@ -1164,12 +1176,9 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 	}
 }
 
-/* This should be computed as MAX_FRAME_SIZE / NETMAP_BUF_SIZE */
-#define PTNET_TX_MIN_SLOTS	33
-
-#define PTNET_TX_NOSPACE(h, k)	\
-	((((h) < (k)->rtail) ? 0 : (k)->nkr_num_slots) + \
-		(k)->rtail - (h)) < PTNET_TX_MIN_SLOTS
+#define PTNET_TX_NOSPACE(_h, _k, _min)	\
+	((((_h) < (_k)->rtail) ? 0 : (_k)->nkr_num_slots) + \
+		(_k)->rtail - (_h)) < (_min)
 
 static int
 ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
@@ -1183,6 +1192,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct netmap_slot *slot;
 	struct ptnet_queue *pq;
 	unsigned int prev_head;
+	unsigned int minspace;
 	unsigned int head;
 	unsigned int lim;
 	struct mbuf *mf;
@@ -1226,15 +1236,16 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	ring = kring->ring;
 	lim = kring->nkr_num_slots - 1;
 	head = ring->head;
+	minspace = sc->min_tx_space;
 
 	for (;;) {
-		if (PTNET_TX_NOSPACE(head, kring)) {
+		if (PTNET_TX_NOSPACE(head, kring, minspace)) {
 			/* We ran out of slot, let's see if the host has
 			 * freed up some, by reading hwcur and hwtail from
 			 * the CSB. */
 			ptnet_sync_tail(ptring, kring);
 
-			if (PTNET_TX_NOSPACE(head, kring)) {
+			if (PTNET_TX_NOSPACE(head, kring, minspace)) {
 				/* Still no slots available. Reactivate the
 				 * interrupts so that we can be notified
 				 * when some free slots are made available by
@@ -1243,7 +1254,8 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 
 				/* Double-check. */
 				ptnet_sync_tail(ptring, kring);
-				if (likely(PTNET_TX_NOSPACE(head, kring))) {
+				if (likely(PTNET_TX_NOSPACE(head, kring,
+							    minspace))) {
 					break;
 				}
 
