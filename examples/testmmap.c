@@ -319,7 +319,6 @@ do_rxsync()
 #endif /* TEST_NETMAP */
 
 
-volatile char tmp1;
 void do_access()
 {
 	char *arg = nextarg();
@@ -334,7 +333,12 @@ void do_access()
 		p = (char *)strtoul((void *)arg, NULL, 0);
 	}
 	last_access_addr = p + 4096;
-	tmp1 = *p;
+	arg = nextarg();
+	if (arg) {
+		*p = strtol((void *)arg, NULL, 0);
+	} else {
+		output("*%p=%2x", p, *p);
+	}
 }
 
 void do_dup()
@@ -385,6 +389,86 @@ doit:
 		"mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_SHARED, %d, %jd)=%p",
 		memsize, fd, (intmax_t)off, last_mmap_addr);
 
+}
+
+int str2prot(const char *arg)
+{
+	int prot = 0;
+	char c;
+
+	while ( (c = *arg++) ) {
+		switch (c) {
+		case '-':
+			prot = 0;
+			break;
+		case 'r':
+			prot |= PROT_READ;
+			break;
+		case 'w':
+			prot |= PROT_WRITE;
+			break;
+		case 'x':
+			prot |= PROT_EXEC;
+			break;
+		}
+	}
+	return prot;
+}
+
+const char *prot2str(int prot)
+{
+	static char rv[32];
+	int i = 0;
+
+	rv[0] = '\0';
+
+	if (prot & PROT_READ) {
+		strcat(rv, "PROT_READ");
+		i++;
+	}
+	if (prot & PROT_WRITE) {
+		if (i)
+			strcat(rv, "|");
+		strcat(rv, "PROT_WRITE");
+		i++;
+	}
+	if (prot & PROT_WRITE) {
+		if (i)
+			strcat(rv, "|");
+		strcat(rv, "PROT_EXEC");
+		i++;
+	}
+	if (i == 0)
+		strcat(rv, "PROT_NONE");
+	return rv;
+}
+
+void do_mprotect()
+{
+	void *mmap_addr = last_mmap_addr;
+	size_t memsize = last_memsize;
+	int prot = PROT_READ;
+	char *arg;
+	int ret;
+
+	arg = nextarg();
+	if (!arg) {
+		goto doit;
+	}
+	mmap_addr = (void*)strtoul(arg, NULL, 0);
+	arg = nextarg();
+	if (!arg) {
+		goto doit;
+	}
+	memsize = (size_t)strtoul(arg, NULL, 0);
+	arg = nextarg();
+	if (!arg) {
+		goto doit;
+	}
+	prot = str2prot(arg);
+doit:
+	ret = mprotect(mmap_addr, memsize, prot);
+	output_err(ret, "mprotect(%p, %zu, %s)=%d", mmap_addr, memsize, prot2str(prot), ret);
 }
 
 void do_munmap()
@@ -1208,6 +1292,7 @@ struct cmd_def commands[] = {
 #endif /* TEST_NETMAP */
 	{ "dup",	do_dup,		},
 	{ "mmap",	do_mmap,	},
+	{ "mprotect",	do_mprotect,	},
 	{ "access",	do_access,	},
 	{ "munmap",	do_munmap,	},
 	{ "poll",	do_poll,	},
