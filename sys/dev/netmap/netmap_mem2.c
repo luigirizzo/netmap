@@ -84,9 +84,11 @@ enum {
 struct netmap_obj_params {
 	u_int size;
 	u_int num;
+	u_int clustsize;
 
 	u_int last_size;
 	u_int last_num;
+	u_int last_clustsize;
 };
 
 struct netmap_obj_pool {
@@ -122,6 +124,7 @@ struct netmap_obj_pool {
 	/* requested values */
 	u_int r_objtotal;
 	u_int r_objsize;
+	u_int r_clustsize;
 };
 
 #define NMA_LOCK_T		NM_MTX_T
@@ -1154,7 +1157,8 @@ netmap_destroy_obj_allocator(struct netmap_obj_pool *p)
 
 /* call with NMA_LOCK held */
 static int
-netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int objsize)
+netmap_config_obj_allocator(struct netmap_obj_pool *p,
+		u_int objtotal, u_int objsize, u_int r_clustsize)
 {
 	int i;
 	u_int clustsize;	/* the cluster size, multiple of page size */
@@ -1164,6 +1168,7 @@ netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int obj
 	 * detect configuration changes later */
 	p->r_objtotal = objtotal;
 	p->r_objsize = objsize;
+	p->r_clustsize = r_clustsize;
 
 #define MAX_CLUSTSIZE	(1<<22)		// 4 MB
 #define LINE_ROUND	NM_CACHE_ALIGN	// 64
@@ -1351,9 +1356,12 @@ netmap_mem_params_changed(struct netmap_obj_params* p)
 	int i, rv = 0;
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
-		if (p[i].last_size != p[i].size || p[i].last_num != p[i].num) {
+		if (p[i].last_size != p[i].size ||
+		    p[i].last_num != p[i].num   ||
+		    p[i].last_clustsize != p[i].clustsize) {
 			p[i].last_size = p[i].size;
 			p[i].last_num = p[i].num;
+			p[i].last_clustsize = p[i].clustsize;
 			rv = 1;
 		}
 	}
@@ -1519,6 +1527,7 @@ _netmap_mem_private_new(struct netmap_obj_params *p, int *perr)
 				d->name);
 		d->params[i].num = p[i].num;
 		d->params[i].size = p[i].size;
+		d->params[i].clustsize = p[i].clustsize;
 	}
 
 	NMA_LOCK_INIT(d);
@@ -1635,7 +1644,8 @@ netmap_mem2_config(struct netmap_mem_d *nmd)
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		nmd->lasterr = netmap_config_obj_allocator(&nmd->pools[i],
-				nmd->params[i].num, nmd->params[i].size);
+				nmd->params[i].num, nmd->params[i].size,
+				nmd->params[i].clustsize);
 		if (nmd->lasterr)
 			goto out;
 	}
@@ -1751,6 +1761,7 @@ NM_JPO_CLASS_DECL(mparams, struct netmap_obj_params)
 			netmap_mem_jp_name_dump, NULL)
 	NM_JPO_RWNUM(mparams, size)
 	NM_JPO_RWNUM(mparams, num)
+	NM_JPO_RWNUM(mparams, clustsize)
 NM_JPO_CLASS_END(mparams, NULL);
 
 NM_JPO_CLASS_DECL(mem, struct netmap_mem_d)
