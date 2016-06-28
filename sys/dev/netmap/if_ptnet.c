@@ -1301,16 +1301,8 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 				slot->flags = NS_MOREFRAG;
 
 				head = nm_next(head, lim);
-				if (head == ring->tail) {
-					/* Run out of slots while processing
-					 * a packet. Reset head to the previous
-					 * position and requeue the mbuf. */
-					RD(1, "%s: Drop, no free slots\n",
-						__func__);
-					head = prev_head;
-					drbr_putback(ifp, pq->bufring, m);
-					goto escape;
-				}
+				KASSERT(head != rina->tail,
+					"Unexpectedly run out of TX space");
 				slot = ring->slot + head;
 				nmbuf = NMB(na, slot);
 				nmbuf_bytes = 0;
@@ -1331,7 +1323,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 			ptnet_ring_update(pq, kring, head);
 		}
 	}
-escape:
+
 	if (batch_count) {
 		ptnet_ring_update(pq, kring, head);
 	}
