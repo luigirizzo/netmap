@@ -323,7 +323,7 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	NMA_LOCK(nmd);
 	netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
-#if 0
+
 	if (nmd->active == 1) {
 		u_int i;
 
@@ -376,7 +376,7 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 			netmap_mem_init_shared_info(nmd);
 		}
 	}
-#endif
+
 	nmd->ops->nmd_deref(nmd);
 
 	NMA_UNLOCK(nmd);
