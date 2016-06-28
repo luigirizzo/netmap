@@ -159,6 +159,7 @@ static int	ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data);
 static int	ptnet_init_locked(struct ptnet_softc *sc);
 static int	ptnet_stop(struct ptnet_softc *sc);
 static int	ptnet_transmit(struct ifnet *ifp, struct mbuf *m);
+static int	ptnet_drain_transmit_queue(struct ptnet_queue *pq);
 static void	ptnet_qflush(struct ifnet *ifp);
 static void	ptnet_tx_task(void *context, int pending);
 
@@ -1181,46 +1182,31 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 		(_k)->rtail - (_h)) < (_min)
 
 static int
-ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
+ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 {
-	struct ptnet_softc *sc = ifp->if_softc;
+	struct ptnet_softc *sc = pq->sc;
 	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
+	struct ifnet *ifp = sc->ifp;
 	unsigned int batch_count = 0;
 	struct ptnet_ring *ptring;
 	struct netmap_kring *kring;
 	struct netmap_ring *ring;
 	struct netmap_slot *slot;
-	struct ptnet_queue *pq;
 	unsigned int minspace;
 	unsigned int head;
 	unsigned int lim;
+	struct mbuf *mhead;
 	struct mbuf *mf;
 	int nmbuf_bytes;
 	uint8_t *nmbuf;
-
-	DBG(device_printf(sc->dev, "transmit %p\n", m));
-
-	pq = sc->queues + 0;
-
-	if (m) {
-		int err;
-
-		/* Here we are called by the network stack, and not by
-		 * by the taskqueue thread. */
-		err = drbr_enqueue(ifp, pq->bufring, m);
-		m = NULL; /* just to stay safe */
-		if (err) {
-			/* ENOBUFS when the bufring is full */
-			RD(1, "%s: drbr_enqueue() failed %d\n",
-				__func__, err);
-			return err;
-		}
-	}
 
 	if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
 		RD(1, "Interface is down");
 		return ENETDOWN;
 	}
+
+	/* Here we may be called by the network stack, or by
+	 * by the taskqueue thread. */
 
 	if (!PTNET_Q_TRYLOCK(pq)) {
 		/* We failed to acquire the lock, schedule the taskqueue. */
@@ -1265,8 +1251,8 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 			}
 		}
 
-		m = drbr_peek(ifp, pq->bufring);
-		if (!m) {
+		mhead = drbr_peek(ifp, pq->bufring);
+		if (!mhead) {
 			break;
 		}
 
@@ -1275,7 +1261,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		nmbuf = NMB(na, slot);
 		nmbuf_bytes = 0;
 
-		for (mf = m; mf; mf = mf->m_next) {
+		for (mf = mhead; mf; mf = mf->m_next) {
 			uint8_t *mdata = mf->m_data;
 			int mlen = mf->m_len;
 
@@ -1315,7 +1301,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 
 		/* Consume the packet just processed. */
 		drbr_advance(ifp, pq->bufring);
-		m_freem(m);
+		m_freem(mhead);
 
 		if (++batch_count == PTNET_TX_BATCH) {
 			batch_count = 0;
@@ -1330,6 +1316,28 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	PTNET_Q_UNLOCK(pq);
 
 	return 0;
+}
+
+static int
+ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
+{
+	struct ptnet_softc *sc = ifp->if_softc;
+	struct ptnet_queue *pq;
+	int err;
+
+	DBG(device_printf(sc->dev, "transmit %p\n", m));
+
+	pq = sc->queues + 0;
+
+	err = drbr_enqueue(ifp, pq->bufring, m);
+	if (err) {
+		/* ENOBUFS when the bufring is full */
+		RD(1, "%s: drbr_enqueue() failed %d\n",
+			__func__, err);
+		return err;
+	}
+
+	return ptnet_drain_transmit_queue(pq);
 }
 
 static int
@@ -1468,6 +1476,6 @@ ptnet_tx_task(void *context, int pending)
 	struct ptnet_queue *pq = context;
 
 	RD(1, "%s: pq #%u\n", __func__, pq->kring_id);
-	ptnet_transmit(pq->sc->ifp, NULL);
+	ptnet_drain_transmit_queue(pq);
 }
 
