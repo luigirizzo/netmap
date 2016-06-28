@@ -1191,7 +1191,6 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct netmap_ring *ring;
 	struct netmap_slot *slot;
 	struct ptnet_queue *pq;
-	unsigned int prev_head;
 	unsigned int minspace;
 	unsigned int head;
 	unsigned int lim;
@@ -1276,7 +1275,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		nmbuf = NMB(na, slot);
 		nmbuf_bytes = 0;
 
-		for (prev_head = head, mf = m; mf; mf = mf->m_next) {
+		for (mf = m; mf; mf = mf->m_next) {
 			uint8_t *mdata = mf->m_data;
 			int mlen = mf->m_len;
 
