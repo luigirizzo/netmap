@@ -789,6 +789,8 @@ ptnet_stop(struct ptnet_softc *sc)
 		return 0; /* nothing to do */
 	}
 
+	/* XXX Here we should wait for all TX and RX worker to finish. */
+
 	ptnet_nm_register(na_dr, 0 /* off */);
 
 	if (sc->backend_regifs == 0) {
