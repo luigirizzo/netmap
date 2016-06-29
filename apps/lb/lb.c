@@ -447,7 +447,6 @@ run:
 		sprintf(interface, "%s{%d", glob_arg.ifname, i);
 		D("opening pipe named %s", interface);
 
-		//ports[i].nmd = nm_open(interface, NULL, NM_OPEN_NO_MMAP | NM_OPEN_ARG3 | NM_OPEN_RING_CFG, rxport->nmd);
 		ports[i].nmd = nm_open(interface, NULL, 0, rxport->nmd);
 
 		if (ports[i].nmd == NULL) {
