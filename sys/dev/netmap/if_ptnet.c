@@ -1327,6 +1327,15 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	DBG(device_printf(sc->dev, "transmit %p\n", m));
 
+	/* Insert 802.1Q header if needed. */
+	if (m->m_flags & M_VLANTAG) {
+		m = ether_vlanencap(m, m->m_pkthdr.ether_vtag);
+		if (m == NULL) {
+			return ENOBUFS;
+		}
+		m->m_flags &= ~M_VLANTAG;
+	}
+
 	/* Get the flow-id if available. */
 	queue_idx = (M_HASHTYPE_GET(m) != M_HASHTYPE_NONE) ?
 		    m->m_pkthdr.flowid : curcpu;
