@@ -80,6 +80,7 @@
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
+#include <dev/virtio/network/virtio_net.h>
 
 #ifndef PTNET_CSB_ALLOC
 #error "No support for on-device CSB"
@@ -224,7 +225,12 @@ extern int netmap_initialized;
 #define PTNET_BUF_RING_SIZE	4096
 #define PTNET_RX_BUDGET		512
 #define PTNET_TX_BATCH		64
+#define PTNET_HDR_SIZE		sizeof(struct virtio_net_hdr_mrg_rxbuf)
 
+#define PTNET_CSUM_OFFLOAD	(CSUM_TCP | CSUM_UDP | CSUM_SCTP)
+#define PTNET_CSUM_OFFLOAD_IPV6	(CSUM_TCP_IPV6 | CSUM_UDP_IPV6 |\
+				 CSUM_SCTP_IPV6)
+#define PTNET_ALL_OFFLOAD	(CSUM_TSO | PTNET_CSUM_OFFLOAD | CSUM_TSO)
 
 static int
 ptnet_attach(device_t dev)
@@ -1140,6 +1146,150 @@ ptnet_rx_intr(void *opaque)
 	ptnet_rx_eof(pq);
 }
 
+/* The following three functions are taken from the virtio-net driver, but
+ * the same functionality applies to the ptnet driver.
+ * As a temporary solution, I copied this code from virtio-net and I started
+ * to generalize it (taking away driver-specific statistic accounting),
+ * making as little modifications as possible.
+ * In the future we need to share these functions between virtio-net and ptnet.
+ */
+static int
+ptnet_tx_offload_ctx(struct mbuf *m, int *etype, int *proto, int *start)
+{
+	struct ether_vlan_header *evh;
+	int offset;
+
+	evh = mtod(m, struct ether_vlan_header *);
+	if (evh->evl_encap_proto == htons(ETHERTYPE_VLAN)) {
+		/* BMV: We should handle nested VLAN tags too. */
+		*etype = ntohs(evh->evl_proto);
+		offset = sizeof(struct ether_vlan_header);
+	} else {
+		*etype = ntohs(evh->evl_encap_proto);
+		offset = sizeof(struct ether_header);
+	}
+
+	switch (*etype) {
+#if defined(INET)
+	case ETHERTYPE_IP: {
+		struct ip *ip, iphdr;
+		if (__predict_false(m->m_len < offset + sizeof(struct ip))) {
+			m_copydata(m, offset, sizeof(struct ip),
+			    (caddr_t) &iphdr);
+			ip = &iphdr;
+		} else
+			ip = (struct ip *)(m->m_data + offset);
+		*proto = ip->ip_p;
+		*start = offset + (ip->ip_hl << 2);
+		break;
+	}
+#endif
+#if defined(INET6)
+	case ETHERTYPE_IPV6:
+		*proto = -1;
+		*start = ip6_lasthdr(m, offset, IPPROTO_IPV6, proto);
+		/* Assert the network stack sent us a valid packet. */
+		KASSERT(*start > offset,
+		    ("%s: mbuf %p start %d offset %d proto %d", __func__, m,
+		    *start, offset, *proto));
+		break;
+#endif
+	default:
+		/* Here we should increment the tx_csum_bad_ethtype counter. */
+		return (EINVAL);
+	}
+
+	return (0);
+}
+
+static int
+ptnet_tx_offload_tso(struct ifnet *ifp, struct mbuf *m, int eth_type,
+		     int offset, bool allow_ecn, struct virtio_net_hdr *hdr)
+{
+	static struct timeval lastecn;
+	static int curecn;
+	struct tcphdr *tcp, tcphdr;
+
+	if (__predict_false(m->m_len < offset + sizeof(struct tcphdr))) {
+		m_copydata(m, offset, sizeof(struct tcphdr), (caddr_t) &tcphdr);
+		tcp = &tcphdr;
+	} else
+		tcp = (struct tcphdr *)(m->m_data + offset);
+
+	hdr->hdr_len = offset + (tcp->th_off << 2);
+	hdr->gso_size = m->m_pkthdr.tso_segsz;
+	hdr->gso_type = eth_type == ETHERTYPE_IP ? VIRTIO_NET_HDR_GSO_TCPV4 :
+	    VIRTIO_NET_HDR_GSO_TCPV6;
+
+	if (tcp->th_flags & TH_CWR) {
+		/*
+		 * Drop if VIRTIO_NET_F_HOST_ECN was not negotiated. In FreeBSD,
+		 * ECN support is not on a per-interface basis, but globally via
+		 * the net.inet.tcp.ecn.enable sysctl knob. The default is off.
+		 */
+		if (!allow_ecn) {
+			if (ppsratecheck(&lastecn, &curecn, 1))
+				if_printf(ifp,
+				    "TSO with ECN not negotiated with host\n");
+			return (ENOTSUP);
+		}
+		hdr->gso_type |= VIRTIO_NET_HDR_GSO_ECN;
+	}
+
+	/* Here we should increment tx_tso counter. */
+
+	return (0);
+}
+
+static struct mbuf *
+ptnet_tx_offload(struct ifnet *ifp, struct mbuf *m, bool allow_ecn,
+		 struct virtio_net_hdr *hdr)
+{
+	int flags, etype, csum_start, proto, error;
+
+	flags = m->m_pkthdr.csum_flags;
+
+	error = ptnet_tx_offload_ctx(m, &etype, &proto, &csum_start);
+	if (error)
+		goto drop;
+
+	if ((etype == ETHERTYPE_IP && flags & PTNET_CSUM_OFFLOAD) ||
+	    (etype == ETHERTYPE_IPV6 && flags & PTNET_CSUM_OFFLOAD_IPV6)) {
+		/*
+		 * We could compare the IP protocol vs the CSUM_ flag too,
+		 * but that really should not be necessary.
+		 */
+		hdr->flags |= VIRTIO_NET_HDR_F_NEEDS_CSUM;
+		hdr->csum_start = csum_start;
+		hdr->csum_offset = m->m_pkthdr.csum_data;
+		/* Here we should increment the tx_csum counter. */
+	}
+
+	if (flags & CSUM_TSO) {
+		if (__predict_false(proto != IPPROTO_TCP)) {
+			/* Likely failed to correctly parse the mbuf.
+			 * Here we should increment the tx_tso_not_tcp
+			 * counter. */
+			goto drop;
+		}
+
+		KASSERT(hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM,
+		    ("%s: mbuf %p TSO without checksum offload %#x",
+		    __func__, m, flags));
+
+		error = ptnet_tx_offload_tso(ifp, m, etype, csum_start,
+					     allow_ecn, hdr);
+		if (error)
+			goto drop;
+	}
+
+	return (m);
+
+drop:
+	m_freem(m);
+	return (NULL);
+}
+
 static inline void
 ptnet_sync_tail(struct ptnet_ring *ptring, struct netmap_kring *kring)
 {
@@ -1259,6 +1409,29 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 		slot = ring->slot + head;
 		nmbuf = NMB(na, slot);
 		nmbuf_bytes = 0;
+
+		/* If needed, prepare the virtio-net header at the beginning
+		 * of the first slot. */
+		if (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+			/* For performance, we could replace this memset() with
+			 * two 8-bytes-wide writes. */
+			memset(nmbuf, 0, PTNET_HDR_SIZE);
+			if (mhead->m_pkthdr.csum_flags & PTNET_ALL_OFFLOAD) {
+				mhead = ptnet_tx_offload(ifp, mhead, false,
+					    (struct virtio_net_hdr *)nmbuf);
+				if (unlikely(!mhead)) {
+					/* Packet dropped because errors
+					 * occurred while preparing the vnet
+					 * header. Let's go ahead with the next
+					 * packet. */
+					drbr_advance(ifp, pq->bufring);
+					continue;
+				}
+			}
+
+			nmbuf += PTNET_HDR_SIZE;
+			nmbuf_bytes += PTNET_HDR_SIZE;
+		}
 
 		for (mf = mhead; mf; mf = mf->m_next) {
 			uint8_t *mdata = mf->m_data;
