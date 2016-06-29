@@ -132,6 +132,7 @@ struct ptnet_softc {
 	struct resource		*msix_mem;
 
 	unsigned int		num_rings;
+	unsigned int		num_tx_rings;
 	struct ptnet_queue	*queues;
 	struct ptnet_queue	*rxqueues;
 	struct ptnet_csb	*csb;
@@ -290,6 +291,7 @@ ptnet_attach(device_t dev)
 	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
 	num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
 	sc->num_rings = num_tx_rings + num_rx_rings;
+	sc->num_tx_rings = num_tx_rings;
 
 	/* Allocate and initialize per-queue data structures. */
 	sc->queues = malloc(sizeof(struct ptnet_queue) * sc->num_rings,
@@ -522,13 +524,10 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 {
 	int rid = PCIR_BAR(PTNETMAP_MSIX_PCI_BAR);
 	int nvecs = sc->num_rings;
-	unsigned int num_tx_rings;
 	device_t dev = sc->dev;
 	int err = ENOSPC;
 	int cpu_cur;
 	int i;
-
-	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
 
 	if (pci_find_cap(dev, PCIY_MSIX, NULL) != 0)  {
 		device_printf(dev, "Could not find MSI-X capability\n");
@@ -572,7 +571,7 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 		struct ptnet_queue *pq = sc->queues + i;
 		void (*handler)(void *) = ptnet_tx_intr;
 
-		if (i >= num_tx_rings) {
+		if (i >= sc->num_tx_rings) {
 			handler = ptnet_rx_intr;
 		}
 		err = bus_setup_intr(dev, pq->irq, INTR_TYPE_NET | INTR_MPSAFE,
@@ -598,7 +597,7 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 		struct ptnet_queue *pq = sc->queues + i;
 		static void (*handler)(void *context, int pending);
 
-		handler = (i < num_tx_rings) ? ptnet_tx_task : ptnet_rx_task;
+		handler = (i < sc->num_tx_rings) ? ptnet_tx_task : ptnet_rx_task;
 
 		TASK_INIT(&pq->task, 0, handler, pq);
 		pq->taskq = taskqueue_create_fast("ptnet_queue", M_NOWAIT,
@@ -1323,11 +1322,20 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 {
 	struct ptnet_softc *sc = ifp->if_softc;
 	struct ptnet_queue *pq;
+	unsigned int queue_idx;
 	int err;
 
 	DBG(device_printf(sc->dev, "transmit %p\n", m));
 
-	pq = sc->queues + 0;
+	/* Get the flow-id if available. */
+	queue_idx = (M_HASHTYPE_GET(m) != M_HASHTYPE_NONE) ?
+		    m->m_pkthdr.flowid : curcpu;
+
+	if (unlikely(queue_idx >= sc->num_tx_rings)) {
+		queue_idx %= sc->num_tx_rings;
+	}
+
+	pq = sc->queues + queue_idx;
 
 	err = drbr_enqueue(ifp, pq->bufring, m);
 	if (err) {
