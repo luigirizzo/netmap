@@ -71,7 +71,7 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic v1000 ptnetmap-guest ptnetmap-host"
+subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -220,10 +220,6 @@ Available options:
   --disable-ptnetmap-host      disable ptnetmap for host kernel
   --enable-ptnetmap            enable ptnetmap (both guest and host)
   --disable-ptnetmap           disable ptnetmap (both guest and host)
-  --enable-v1000     	       enable the v1000 backend for
-                               the e1000-paravirt driver
-  --disable-v1000     	       disable the v1000 backend for
-                               the e1000-paravirt driver
   --override=		       use override file, see OVERRIDE below
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
@@ -713,14 +709,6 @@ done
 
 # get the drivers that are still enabled
 s_drivers=$(drv print)
-
-# add v1000 if enabled
-if subsys enabled v1000; then
-	cat >> drivers.mak <<-EOF
-		v1000-src := $SRCDIR/vhost-port
-	EOF
-	s_drivers="v1000 $s_drivers"
-fi
 
 if [ -n "$override" ]; then
 	cat >> drivers.mak <<-EOF

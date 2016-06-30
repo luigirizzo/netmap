@@ -48,9 +48,6 @@
 #if defined(CONFIG_NETMAP_GENERIC)
 #define WITH_GENERIC
 #endif
-#if defined(CONFIG_NETMAP_V1000)
-#define WITH_V1000
-#endif
 #if defined(CONFIG_NETMAP_PTNETMAP_GUEST)
 #define WITH_PTNETMAP_GUEST
 #endif
