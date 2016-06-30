@@ -1550,10 +1550,10 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
 	for (;;) {
-		struct netmap_slot *slot = ring->slot + head;
+		struct netmap_slot *slot;
 		unsigned int nmbuf_len;
-		struct mbuf *m;
-		uint8_t *nmbuf;
+		struct mbuf *mhead, *mtail;
+		uint8_t *nmbuf, *mdata;
 
 		if (budget == 0) {
 			RD(1, "Run out of budget h %u t %u", head, ring->tail);
@@ -1582,45 +1582,79 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			}
 		}
 
-		nmbuf_len = slot->len;
-		nmbuf = NMB(na, slot);
-
-		if (unlikely(nmbuf_len > MCLBYTES)) {
-			RD(1, "Dropping long frame: len %u > %u",
-			      nmbuf_len, MCLBYTES);
-			continue;
-		}
-
-		DBG(device_printf(sc->dev, "%s: h %u t %u rcv frame len %u\n",
-			          __func__, head, ring->tail, nmbuf_len));
-
-		/* We use m_getcl() to allocate an mbuf with standard
-		 * cluster size (MCLBYTES). In the future we could use m_getjcl()
+		/* We use m_getcl() to allocate an mbuf with standard cluster
+		 * size (MCLBYTES). In the future we could use m_getjcl()
 		 * to choose different sizes. */
-		m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
-		if (unlikely(m == NULL)) {
-			device_printf(sc->dev, "%s: failed to allocate mbuf"
-				      "(len=%d)\n", __func__, nmbuf_len);
+		mhead = mtail = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
+		if (unlikely(mhead == NULL)) {
+			device_printf(sc->dev, "%s: failed to allocate mbuf\n",
+				      __func__);
 			break;
 		}
 
-		m->m_pkthdr.rcvif = ifp;
-		m->m_len = m->m_pkthdr.len = nmbuf_len;
+		mhead->m_pkthdr.rcvif = ifp;
+		mhead->m_pkthdr.len = 0;
 
                 /* No support for checksum offloading for now. */
-		m->m_pkthdr.csum_flags = 0;
-
-		memcpy(mtod(m, void *), nmbuf, nmbuf_len);
+		mhead->m_pkthdr.csum_flags = 0;
 
 		/* Store the queue idx in the packet header. */
-		m->m_pkthdr.flowid = pq->kring_id;
-		M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
+		mhead->m_pkthdr.flowid = pq->kring_id;
+		M_HASHTYPE_SET(mhead, M_HASHTYPE_OPAQUE);
+
+		/* Initialize state variables. */
+		mdata = mtod(mtail, uint8_t *);
+		mtail->m_len = 0;
+
+		do {
+			slot = ring->slot + head;
+			nmbuf_len = slot->len;
+			nmbuf = NMB(na, slot);
+
+			mhead->m_pkthdr.len += nmbuf_len;
+
+			DBG(device_printf(sc->dev, "%s: h %u t %u rcv frag "
+					  "len %u, flags %u\n", __func__,
+					  head, ring->tail, nmbuf_len,
+					  slot->flags));
+
+			do {
+				unsigned int copy;
+
+				if (mtail->m_len == MCLBYTES) {
+					struct mbuf *mf;
+
+					mf = m_getcl(M_NOWAIT, MT_DATA, 0);
+					if (!mf) {
+						/* XXX handle error */
+						break;
+					}
+					mtail->m_next = mf;
+					mtail = mf;
+					mdata = mtod(mtail, uint8_t *);
+					mtail->m_len = 0;
+				}
+
+				copy = MCLBYTES - mtail->m_len;
+				if (nmbuf_len < copy) {
+					copy = nmbuf_len;
+				}
+
+				memcpy(mdata, nmbuf, copy);
+
+				nmbuf += copy;
+				nmbuf_len -= copy;
+				mdata += copy;
+				mtail->m_len += copy;
+			} while (nmbuf_len);
+
+			head = nm_next(head, lim);
+		} while (slot->flags & NS_MOREFRAG);
 
 		PTNET_Q_UNLOCK(pq);
-		(*ifp->if_input)(ifp, m);
+		(*ifp->if_input)(ifp, mhead);
 		PTNET_Q_LOCK(pq);
 
-		head = nm_next(head, lim);
 		budget--;
 	}
 
