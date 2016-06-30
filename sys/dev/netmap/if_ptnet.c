@@ -1612,6 +1612,10 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 
 		memcpy(mtod(m, void *), nmbuf, nmbuf_len);
 
+		/* Store the queue idx in the packet header. */
+		m->m_pkthdr.flowid = pq->kring_id;
+		M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
+
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, m);
 		PTNET_Q_LOCK(pq);
