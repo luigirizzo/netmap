@@ -195,10 +195,16 @@ nm_ring_space(struct netmap_ring *ring)
     } while (0)
 #endif
 
-struct nm_pkthdr {	/* same as pcap_pkthdr */
+struct nm_pkthdr {	/* first part is the same as pcap_pkthdr */
 	struct timeval	ts;
 	uint32_t	caplen;
 	uint32_t	len;
+
+	uint64_t flags;	/* NM_MORE_PKTS etc */
+#define NM_MORE_PKTS	1
+	struct nm_desc *d;
+	struct netmap_slot *slot;
+	uint8_t *buf;
 };
 
 struct nm_stat {	/* same as pcap_stat	*/
@@ -959,6 +965,9 @@ nm_dispatch(struct nm_desc *d, int cnt, nm_cb_t cb, u_char *arg)
 {
 	int n = d->last_rx_ring - d->first_rx_ring + 1;
 	int c, got = 0, ri = d->cur_rx_ring;
+	d->hdr.buf = NULL;
+	d->hdr.flags = NM_MORE_PKTS;
+	d->hdr.d = d;
 
 	if (cnt == 0)
 		cnt = -1;
@@ -975,16 +984,23 @@ nm_dispatch(struct nm_desc *d, int cnt, nm_cb_t cb, u_char *arg)
 			ri = d->first_rx_ring;
 		ring = NETMAP_RXRING(d->nifp, ri);
 		for ( ; !nm_ring_empty(ring) && cnt != got; got++) {
-			u_int i = ring->cur;
-			u_int idx = ring->slot[i].buf_idx;
-			u_char *buf = (u_char *)NETMAP_BUF(ring, idx);
-
+			u_int idx, i;
+			if (d->hdr.buf) { /* from previous round */
+				cb(arg, &d->hdr, d->hdr.buf);
+			}
+			i = ring->cur;
+			idx = ring->slot[i].buf_idx;
+			d->hdr.slot = &ring->slot[i];
+			d->hdr.buf = (u_char *)NETMAP_BUF(ring, idx);
 			// __builtin_prefetch(buf);
 			d->hdr.len = d->hdr.caplen = ring->slot[i].len;
 			d->hdr.ts = ring->ts;
-			cb(arg, &d->hdr, buf);
 			ring->head = ring->cur = nm_ring_next(ring, i);
 		}
+	}
+	if (d->hdr.buf) { /* from previous round */
+		d->hdr.flags = 0;
+		cb(arg, &d->hdr, d->hdr.buf);
 	}
 	d->cur_rx_ring = ri;
 	return got;
