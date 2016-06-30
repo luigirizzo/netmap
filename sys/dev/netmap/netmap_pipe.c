@@ -397,7 +397,7 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 
 				if (nm_kring_pending_on(kring)) {
 					/* mark the partner ring as needed */
-					kring->pipe->nr_kflags |= NKR_PIPERING;
+					kring->pipe->nr_kflags |= NKR_NEEDRING;
 				}
 			}
 		}
@@ -431,7 +431,7 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 					/* mark the peer ring as no longer needed by us
 					 * (it may still be kept if sombody else is using it)
 					 */
-					kring->pipe->nr_kflags &= ~NKR_PIPERING;
+					kring->pipe->nr_kflags &= ~NKR_NEEDRING;
 				}
 			}
 		}

@@ -1054,18 +1054,27 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
         return error;
     }
 
-    /* Parent's kring_create function will initialize
-     * its own na->si. We have to init our na->si here. */
-    for_rx_tx(t) {
-        nm_os_selinfo_init(&na->si[t]);
-    }
-
     /* A ptnetmap host adapter points the very same krings
      * as its parent adapter. These pointer are used in the
      * TX/RX worker functions. */
     na->tx_rings = parent->tx_rings;
     na->rx_rings = parent->rx_rings;
-    na->tailroom = parent->tailroom; //XXX
+    na->tailroom = parent->tailroom;
+
+    for_rx_tx(t) {
+	struct netmap_kring *kring;
+
+	/* Parent's kring_create function will initialize
+	 * its own na->si. We have to init our na->si here. */
+	nm_os_selinfo_init(&na->si[t]);
+
+	/* Force the mem_rings_create() method to create the
+	 * host rings independently on what the regif asked for:
+	 * these rings are needed by the guest ptnetmap adapter
+	 * anyway. */
+	kring = &NMR(na, t)[nma_get_nrings(na, t)];
+	kring->nr_kflags |= NKR_NEEDRING;
+    }
 
     return 0;
 }

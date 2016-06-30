@@ -1693,7 +1693,7 @@ netmap_free_rings(struct netmap_adapter *na)
 			struct netmap_kring *kring = &NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 
-			if (ring == NULL || kring->users > 0 || (kring->nr_kflags & NKR_PIPERING)) {
+			if (ring == NULL || kring->users > 0 || (kring->nr_kflags & NKR_NEEDRING)) {
 				ND("skipping ring %s (ring %p, users %d)",
 						kring->name, ring, kring->users);
 				continue;
@@ -1728,7 +1728,7 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 			struct netmap_ring *ring = kring->ring;
 			u_int len, ndesc;
 
-			if (ring || (!kring->users && !(kring->nr_kflags & NKR_PIPERING))) {
+			if (ring || (!kring->users && !(kring->nr_kflags & NKR_NEEDRING))) {
 				/* uneeded, or already created by somebody else */
 				ND("skipping ring %s", kring->name);
 				continue;

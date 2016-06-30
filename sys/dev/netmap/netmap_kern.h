@@ -396,8 +396,9 @@ struct netmap_kring {
 #define NKR_FORWARD	0x4		/* (host ring only) there are
 					   packets to forward
 					 */
-#define NKR_PIPERING	0x8		/* ring needed even if users==0
-					 * (used internally by pipes)
+#define NKR_NEEDRING	0x8		/* ring needed even if users==0
+					 * (used internally by pipes and
+					 *  by ptnetmap host ports)
 					 */
 
 	uint32_t	nr_mode;
