@@ -1550,9 +1550,10 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
 	for (;;) {
+		unsigned int prev_head = head;
+		struct mbuf *mhead, *mtail;
 		struct netmap_slot *slot;
 		unsigned int nmbuf_len;
-		struct mbuf *mhead, *mtail;
 		uint8_t *nmbuf, *mdata;
 
 		if (budget == 0) {
@@ -1582,7 +1583,8 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			}
 		}
 
-		/* We use m_getcl() to allocate an mbuf with standard cluster
+		/* Allocate the head of an mbuf chain.
+		 * We use m_getcl() to allocate an mbuf with standard cluster
 		 * size (MCLBYTES). In the future we could use m_getjcl()
 		 * to choose different sizes. */
 		mhead = mtail = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
@@ -1606,7 +1608,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		mdata = mtod(mtail, uint8_t *);
 		mtail->m_len = 0;
 
-		do {
+		for (;;) {
 			slot = ring->slot + head;
 			nmbuf_len = slot->len;
 			nmbuf = NMB(na, slot);
@@ -1625,10 +1627,22 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 					struct mbuf *mf;
 
 					mf = m_getcl(M_NOWAIT, MT_DATA, 0);
-					if (!mf) {
-						/* XXX handle error */
-						break;
+					if (unlikely(!mf)) {
+						/* Ouch. We ran out of memory
+						 * while processing a packet.
+						 * We have to restore the
+						 * previous head position,
+						 * free the mbuf chain, and
+						 * schedule the taskqueue to
+						 * give the packet another
+						 * chance. */
+						head = prev_head;
+						m_freem(mhead);
+						taskqueue_enqueue(pq->taskq,
+								  &pq->task);
+						goto escape;
 					}
+
 					mtail->m_next = mf;
 					mtail = mf;
 					mdata = mtod(mtail, uint8_t *);
@@ -1649,7 +1663,20 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			} while (nmbuf_len);
 
 			head = nm_next(head, lim);
-		} while (slot->flags & NS_MOREFRAG);
+
+			if (!(slot->flags & NS_MOREFRAG)) {
+				break;
+			}
+
+			if (unlikely(head == ring->tail)) {
+				/* The very last slot prepared by the host has
+				 * the NS_MOREFRAG set. This is an error that
+				 * we handle by accepting the truncated packet,
+				 * and let the network stack drop it. */
+				RD(1, "Warning: Truncating incomplete packet");
+				break;
+			}
+		}
 
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, mhead);
@@ -1657,7 +1684,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 
 		budget--;
 	}
-
+escape:
 	if (head != ring->head) {
 		/* Some packets have been pushed to the network stack.
 		 * We need to update the CSB to tell the host about the new
