@@ -1532,6 +1532,43 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	return ptnet_drain_transmit_queue(pq);
 }
 
+static inline int
+ptnet_rx_slot(uint8_t *nmbuf, unsigned int nmbuf_len, struct mbuf **mtail,
+	      uint8_t **mdata)
+{
+	do {
+		unsigned int copy;
+
+		if ((*mtail)->m_len == MCLBYTES) {
+			struct mbuf *mf;
+
+			mf = m_getcl(M_NOWAIT, MT_DATA, 0);
+			if (unlikely(!mf)) {
+				return ENOMEM;
+			}
+
+			(*mtail)->m_next = mf;
+			(*mtail) = mf;
+			*mdata = mtod(*mtail, uint8_t *);
+			(*mtail)->m_len = 0;
+		}
+
+		copy = MCLBYTES - (*mtail)->m_len;
+		if (nmbuf_len < copy) {
+			copy = nmbuf_len;
+		}
+
+		memcpy(*mdata, nmbuf, copy);
+
+		nmbuf += copy;
+		nmbuf_len -= copy;
+		*mdata += copy;
+		(*mtail)->m_len += copy;
+	} while (nmbuf_len);
+
+	return 0;
+}
+
 static int
 ptnet_rx_eof(struct ptnet_queue *pq)
 {
@@ -1604,6 +1641,8 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		mtail->m_len = 0;
 
 		for (;;) {
+			int err;
+
 			slot = ring->slot + head;
 			nmbuf_len = slot->len;
 			nmbuf = NMB(na, slot);
@@ -1615,48 +1654,22 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 					  head, ring->tail, nmbuf_len,
 					  slot->flags));
 
-			do {
-				unsigned int copy;
-
-				if (mtail->m_len == MCLBYTES) {
-					struct mbuf *mf;
-
-					mf = m_getcl(M_NOWAIT, MT_DATA, 0);
-					if (unlikely(!mf)) {
-						/* Ouch. We ran out of memory
-						 * while processing a packet.
-						 * We have to restore the
-						 * previous head position,
-						 * free the mbuf chain, and
-						 * schedule the taskqueue to
-						 * give the packet another
-						 * chance. */
-						head = prev_head;
-						m_freem(mhead);
-						taskqueue_enqueue(pq->taskq,
-								  &pq->task);
-						goto escape;
-					}
-
-					mtail->m_next = mf;
-					mtail = mf;
-					mdata = mtod(mtail, uint8_t *);
-					mtail->m_len = 0;
-				}
-
-				copy = MCLBYTES - mtail->m_len;
-				if (nmbuf_len < copy) {
-					copy = nmbuf_len;
-				}
-
-				memcpy(mdata, nmbuf, copy);
-
-				nmbuf += copy;
-				nmbuf_len -= copy;
-				mdata += copy;
-				mtail->m_len += copy;
-			} while (nmbuf_len);
-
+			err = ptnet_rx_slot(nmbuf, nmbuf_len, &mtail, &mdata);
+			if (unlikely(err)) {
+				/* Ouch. We ran out of memory
+				 * while processing a packet.
+				 * We have to restore the
+				 * previous head position,
+				 * free the mbuf chain, and
+				 * schedule the taskqueue to
+				 * give the packet another
+				 * chance. */
+				head = prev_head;
+				m_freem(mhead);
+				taskqueue_enqueue(pq->taskq,
+						  &pq->task);
+				goto escape;
+			}
 			head = nm_next(head, lim);
 
 			if (!(slot->flags & NS_MOREFRAG)) {
