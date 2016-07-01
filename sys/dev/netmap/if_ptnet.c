@@ -1533,13 +1533,15 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 }
 
 static inline int
-ptnet_rx_slot(uint8_t *nmbuf, unsigned int nmbuf_len, struct mbuf **mtail,
-	      uint8_t **mdata)
+ptnet_rx_slot(uint8_t *nmbuf, unsigned int nmbuf_len, struct mbuf **mtail_p)
 {
+	struct mbuf *mtail = *mtail_p;
+	uint8_t *mdata = mtod(mtail, uint8_t *) + mtail->m_len;
+
 	do {
 		unsigned int copy;
 
-		if ((*mtail)->m_len == MCLBYTES) {
+		if (mtail->m_len == MCLBYTES) {
 			struct mbuf *mf;
 
 			mf = m_getcl(M_NOWAIT, MT_DATA, 0);
@@ -1547,23 +1549,23 @@ ptnet_rx_slot(uint8_t *nmbuf, unsigned int nmbuf_len, struct mbuf **mtail,
 				return ENOMEM;
 			}
 
-			(*mtail)->m_next = mf;
-			(*mtail) = mf;
-			*mdata = mtod(*mtail, uint8_t *);
-			(*mtail)->m_len = 0;
+			mtail->m_next = mf;
+			mtail = *mtail_p = mf;
+			mdata = mtod(mtail, uint8_t *);
+			mtail->m_len = 0;
 		}
 
-		copy = MCLBYTES - (*mtail)->m_len;
+		copy = MCLBYTES - mtail->m_len;
 		if (nmbuf_len < copy) {
 			copy = nmbuf_len;
 		}
 
-		memcpy(*mdata, nmbuf, copy);
+		memcpy(mdata, nmbuf, copy);
 
 		nmbuf += copy;
 		nmbuf_len -= copy;
-		*mdata += copy;
-		(*mtail)->m_len += copy;
+		mdata += copy;
+		mtail->m_len += copy;
 	} while (nmbuf_len);
 
 	return 0;
@@ -1590,7 +1592,6 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		unsigned int prev_head = head;
 		struct mbuf *mhead, *mtail;
 		struct netmap_slot *slot;
-		uint8_t *mdata;
 
 		if (head == ring->tail) {
 			/* We ran out of slot, let's see if the host has
@@ -1636,7 +1637,6 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		M_HASHTYPE_SET(mhead, M_HASHTYPE_OPAQUE);
 
 		/* Initialize state variables. */
-		mdata = mtod(mtail, uint8_t *);
 		mtail->m_len = 0;
 
 		/* Scan all the netmap slots containing the current packet. */
@@ -1651,8 +1651,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 					  head, ring->tail, slot->len,
 					  slot->flags));
 
-			err = ptnet_rx_slot(NMB(na, slot), slot->len,
-					    &mtail, &mdata);
+			err = ptnet_rx_slot(NMB(na, slot), slot->len, &mtail);
 			if (unlikely(err)) {
 				/* Ouch. We ran out of memory while processing
 				 * a packet. We have to restore the previous
