@@ -1590,8 +1590,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		unsigned int prev_head = head;
 		struct mbuf *mhead, *mtail;
 		struct netmap_slot *slot;
-		unsigned int nmbuf_len;
-		uint8_t *nmbuf, *mdata;
+		uint8_t *mdata;
 
 		if (head == ring->tail) {
 			/* We ran out of slot, let's see if the host has
@@ -1615,14 +1614,14 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			}
 		}
 
-		/* Allocate the head of an mbuf chain.
+		/* Allocate the head of a new mbuf chain.
 		 * We use m_getcl() to allocate an mbuf with standard cluster
 		 * size (MCLBYTES). In the future we could use m_getjcl()
 		 * to choose different sizes. */
 		mhead = mtail = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
 		if (unlikely(mhead == NULL)) {
-			device_printf(sc->dev, "%s: failed to allocate mbuf\n",
-				      __func__);
+			device_printf(sc->dev, "%s: failed to allocate mbuf "
+				      "head\n", __func__);
 			break;
 		}
 
@@ -1640,30 +1639,29 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		mdata = mtod(mtail, uint8_t *);
 		mtail->m_len = 0;
 
+		/* Scan all the netmap slots containing the current packet. */
 		for (;;) {
 			int err;
 
 			slot = ring->slot + head;
-			nmbuf_len = slot->len;
-			nmbuf = NMB(na, slot);
-
-			mhead->m_pkthdr.len += nmbuf_len;
+			mhead->m_pkthdr.len += slot->len;
 
 			DBG(device_printf(sc->dev, "%s: h %u t %u rcv frag "
 					  "len %u, flags %u\n", __func__,
-					  head, ring->tail, nmbuf_len,
+					  head, ring->tail, slot->len,
 					  slot->flags));
 
-			err = ptnet_rx_slot(nmbuf, nmbuf_len, &mtail, &mdata);
+			err = ptnet_rx_slot(NMB(na, slot), slot->len,
+					    &mtail, &mdata);
 			if (unlikely(err)) {
-				/* Ouch. We ran out of memory
-				 * while processing a packet.
-				 * We have to restore the
-				 * previous head position,
-				 * free the mbuf chain, and
-				 * schedule the taskqueue to
-				 * give the packet another
-				 * chance. */
+				/* Ouch. We ran out of memory while processing
+				 * a packet. We have to restore the previous
+				 * head position, free the mbuf chain, and
+				 * schedule the taskqueue to give the packet
+				 * another chance. */
+				device_printf(sc->dev, "%s: failed to allocate"
+					" mbuf frag, reset head %u --> %u\n",
+					__func__, head, prev_head);
 				head = prev_head;
 				m_freem(mhead);
 				taskqueue_enqueue(pq->taskq,
