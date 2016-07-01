@@ -1549,17 +1549,12 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
-	for (;;) {
+	do {
 		unsigned int prev_head = head;
 		struct mbuf *mhead, *mtail;
 		struct netmap_slot *slot;
 		unsigned int nmbuf_len;
 		uint8_t *nmbuf, *mdata;
-
-		if (budget == 0) {
-			RD(1, "Run out of budget h %u t %u", head, ring->tail);
-			break;
-		}
 
 		if (head == ring->tail) {
 			/* We ran out of slot, let's see if the host has
@@ -1682,8 +1677,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		(*ifp->if_input)(ifp, mhead);
 		PTNET_Q_LOCK(pq);
 
-		budget--;
-	}
+	} while (--budget);
 escape:
 	if (head != ring->head) {
 		/* Some packets have been pushed to the network stack.
@@ -1707,8 +1701,8 @@ escape:
 		if (!budget) {
 			/* If we ran out of budget or the double-check found new
 			 * slots to process, schedule the taskqueue. */
-			RD(1, "%s: resched: budget %u h %u t %u\n", __func__,
-					budget, head, ring->tail);
+			RD(1, "out of budget: resched h %u t %u\n",
+			      head, ring->tail);
 			taskqueue_enqueue(pq->taskq, &pq->task);
 		}
 	}
