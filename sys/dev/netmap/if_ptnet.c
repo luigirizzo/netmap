@@ -1532,10 +1532,9 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	return ptnet_drain_transmit_queue(pq);
 }
 
-static inline int
-ptnet_rx_slot(uint8_t *nmbuf, unsigned int nmbuf_len, struct mbuf **mtail_p)
+static inline struct mbuf *
+ptnet_rx_slot(struct mbuf *mtail, uint8_t *nmbuf, unsigned int nmbuf_len)
 {
-	struct mbuf *mtail = *mtail_p;
 	uint8_t *mdata = mtod(mtail, uint8_t *) + mtail->m_len;
 
 	do {
@@ -1546,11 +1545,11 @@ ptnet_rx_slot(uint8_t *nmbuf, unsigned int nmbuf_len, struct mbuf **mtail_p)
 
 			mf = m_getcl(M_NOWAIT, MT_DATA, 0);
 			if (unlikely(!mf)) {
-				return ENOMEM;
+				return NULL;
 			}
 
 			mtail->m_next = mf;
-			mtail = *mtail_p = mf;
+			mtail = mf;
 			mdata = mtod(mtail, uint8_t *);
 			mtail->m_len = 0;
 		}
@@ -1568,7 +1567,7 @@ ptnet_rx_slot(uint8_t *nmbuf, unsigned int nmbuf_len, struct mbuf **mtail_p)
 		mtail->m_len += copy;
 	} while (nmbuf_len);
 
-	return 0;
+	return mtail;
 }
 
 static int
@@ -1641,8 +1640,6 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 
 		/* Scan all the netmap slots containing the current packet. */
 		for (;;) {
-			int err;
-
 			slot = ring->slot + head;
 			mhead->m_pkthdr.len += slot->len;
 
@@ -1651,8 +1648,8 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 					  head, ring->tail, slot->len,
 					  slot->flags));
 
-			err = ptnet_rx_slot(NMB(na, slot), slot->len, &mtail);
-			if (unlikely(err)) {
+			mtail = ptnet_rx_slot(mtail, NMB(na, slot), slot->len);
+			if (unlikely(!mtail)) {
 				/* Ouch. We ran out of memory while processing
 				 * a packet. We have to restore the previous
 				 * head position, free the mbuf chain, and
