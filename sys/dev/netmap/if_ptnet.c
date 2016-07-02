@@ -1336,6 +1336,7 @@ static int
 ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 {
 	struct ptnet_softc *sc = pq->sc;
+	bool use_vnet_hdr = (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR);
 	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
 	struct ifnet *ifp = sc->ifp;
 	unsigned int batch_count = 0;
@@ -1414,7 +1415,7 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 
 		/* If needed, prepare the virtio-net header at the beginning
 		 * of the first slot. */
-		if (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+		if (use_vnet_hdr) {
 			/* For performance, we could replace this memset() with
 			 * two 8-bytes-wide writes. */
 			memset(nmbuf, 0, PTNET_HDR_SIZE);
