@@ -1625,17 +1625,8 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			break;
 		}
 
-		mhead->m_pkthdr.rcvif = ifp;
-		mhead->m_pkthdr.len = 0;
-
-                /* No support for checksum offloading for now. */
-		mhead->m_pkthdr.csum_flags = 0;
-
-		/* Store the queue idx in the packet header. */
-		mhead->m_pkthdr.flowid = pq->kring_id;
-		M_HASHTYPE_SET(mhead, M_HASHTYPE_OPAQUE);
-
 		/* Initialize state variables. */
+		mhead->m_pkthdr.len = 0;
 		mtail->m_len = 0;
 
 		/* Scan all the netmap slots containing the current packet. */
@@ -1679,6 +1670,15 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 				break;
 			}
 		}
+
+		mhead->m_pkthdr.rcvif = ifp;
+
+                /* No support for checksum offloading for now. */
+		mhead->m_pkthdr.csum_flags = 0;
+
+		/* Store the queue idx in the packet header. */
+		mhead->m_pkthdr.flowid = pq->kring_id;
+		M_HASHTYPE_SET(mhead, M_HASHTYPE_OPAQUE);
 
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, mhead);
