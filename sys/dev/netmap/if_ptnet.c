@@ -184,6 +184,8 @@ static int	ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
 static void	ptnet_tx_intr(void *opaque);
 static void	ptnet_rx_intr(void *opaque);
 
+static unsigned	ptnet_rx_discard(struct netmap_kring *kring,
+				 unsigned int head);
 static int	ptnet_rx_eof(struct ptnet_queue *pq);
 static void	ptnet_rx_task(void *context, int pending);
 
@@ -1336,7 +1338,7 @@ static int
 ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 {
 	struct ptnet_softc *sc = pq->sc;
-	bool use_vnet_hdr = (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR);
+	bool have_vnet_hdr = (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR);
 	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
 	struct ifnet *ifp = sc->ifp;
 	unsigned int batch_count = 0;
@@ -1415,7 +1417,7 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 
 		/* If needed, prepare the virtio-net header at the beginning
 		 * of the first slot. */
-		if (use_vnet_hdr) {
+		if (have_vnet_hdr) {
 			/* For performance, we could replace this memset() with
 			 * two 8-bytes-wide writes. */
 			memset(nmbuf, 0, PTNET_HDR_SIZE);
@@ -1533,6 +1535,23 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	return ptnet_drain_transmit_queue(pq);
 }
 
+static unsigned int
+ptnet_rx_discard(struct netmap_kring *kring, unsigned int head)
+{
+	struct netmap_ring *ring = kring->ring;
+	struct netmap_slot *slot = ring->slot + head;
+
+	for (;;) {
+		head = nm_next(head, kring->nkr_num_slots - 1);
+		if (!(slot->flags & NS_MOREFRAG) || head == ring->tail) {
+			break;
+		}
+		slot = ring->slot + head;
+	}
+
+	return head;
+}
+
 static inline struct mbuf *
 ptnet_rx_slot(struct mbuf *mtail, uint8_t *nmbuf, unsigned int nmbuf_len)
 {
@@ -1575,6 +1594,7 @@ static int
 ptnet_rx_eof(struct ptnet_queue *pq)
 {
 	struct ptnet_softc *sc = pq->sc;
+	bool have_vnet_hdr = (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR);
 	struct ptnet_ring *ptring = pq->ptring;
 	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
 	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
@@ -1591,7 +1611,10 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	do {
 		unsigned int prev_head = head;
 		struct mbuf *mhead, *mtail;
+		struct virtio_net_hdr *vh;
 		struct netmap_slot *slot;
+		unsigned int nmbuf_len;
+		uint8_t *nmbuf;
 
 		if (head == ring->tail) {
 			/* We ran out of slot, let's see if the host has
@@ -1615,6 +1638,30 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			}
 		}
 
+		/* Initialize ring state variables, possibly grabbing the
+		 * virtio-net header. */
+		slot = ring->slot + head;
+		nmbuf = NMB(na, slot);
+		nmbuf_len = slot->len;
+
+		vh = (struct virtio_net_hdr *)nmbuf;
+		if (have_vnet_hdr) {
+			if (unlikely(nmbuf_len < PTNET_HDR_SIZE)) {
+				/* There is no good reason why host should
+				 * put the header in multiple netmap slots.
+				 * If this is the case, discard. */
+				head = ptnet_rx_discard(kring, head);
+				continue;
+			}
+			RD(1, "%s: vnet hdr: flags %x csum_start %u "
+			      "csum_ofs %u hdr_len = %u gso_size %u "
+			      "gso_type %x", __func__, vh->flags,
+			      vh->csum_start, vh->csum_offset, vh->hdr_len,
+			      vh->gso_size, vh->gso_type);
+			nmbuf += PTNET_HDR_SIZE;
+			nmbuf_len -= PTNET_HDR_SIZE;
+		}
+
 		/* Allocate the head of a new mbuf chain.
 		 * We use m_getcl() to allocate an mbuf with standard cluster
 		 * size (MCLBYTES). In the future we could use m_getjcl()
@@ -1626,21 +1673,18 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			break;
 		}
 
-		/* Initialize state variables. */
-		mhead->m_pkthdr.len = 0;
+		/* Initialize the mbuf state variables. */
+		mhead->m_pkthdr.len = nmbuf_len;
 		mtail->m_len = 0;
 
 		/* Scan all the netmap slots containing the current packet. */
 		for (;;) {
-			slot = ring->slot + head;
-			mhead->m_pkthdr.len += slot->len;
-
 			DBG(device_printf(sc->dev, "%s: h %u t %u rcv frag "
 					  "len %u, flags %u\n", __func__,
 					  head, ring->tail, slot->len,
 					  slot->flags));
 
-			mtail = ptnet_rx_slot(mtail, NMB(na, slot), slot->len);
+			mtail = ptnet_rx_slot(mtail, nmbuf, nmbuf_len);
 			if (unlikely(!mtail)) {
 				/* Ouch. We ran out of memory while processing
 				 * a packet. We have to restore the previous
@@ -1656,6 +1700,9 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 						  &pq->task);
 				goto escape;
 			}
+
+			/* We have to increment head irrespective of the
+			 * NS_MOREFRAG being set or not. */
 			head = nm_next(head, lim);
 
 			if (!(slot->flags & NS_MOREFRAG)) {
@@ -1670,6 +1717,11 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 				RD(1, "Warning: Truncating incomplete packet");
 				break;
 			}
+
+			slot = ring->slot + head;
+			nmbuf = NMB(na, slot);
+			nmbuf_len = slot->len;
+			mhead->m_pkthdr.len += nmbuf_len;
 		}
 
 		mhead->m_pkthdr.rcvif = ifp;
