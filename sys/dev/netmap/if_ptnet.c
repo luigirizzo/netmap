@@ -1495,6 +1495,22 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 	return 0;
 }
 
+/* This function should be shared with the virtio-net driver. */
+static void
+ptnet_vlan_tag_remove(struct mbuf *m)
+{
+	struct ether_vlan_header *evh;
+
+	evh = mtod(m, struct ether_vlan_header *);
+	m->m_pkthdr.ether_vtag = ntohs(evh->evl_tag);
+	m->m_flags |= M_VLANTAG;
+
+	/* Strip the 802.1Q header. */
+	bcopy((char *) evh, (char *) evh + ETHER_VLAN_ENCAP_LEN,
+	    ETHER_HDR_LEN - ETHER_TYPE_LEN);
+	m_adj(m, ETHER_VLAN_ENCAP_LEN);
+}
+
 static int
 ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 {
@@ -1732,6 +1748,21 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		/* Store the queue idx in the packet header. */
 		mhead->m_pkthdr.flowid = pq->kring_id;
 		M_HASHTYPE_SET(mhead, M_HASHTYPE_OPAQUE);
+
+		if (ifp->if_capenable & IFCAP_VLAN_HWTAGGING) {
+			struct ether_header *eh;
+
+			eh = mtod(mhead, struct ether_header *);
+			if (eh->ether_type == htons(ETHERTYPE_VLAN)) {
+				ptnet_vlan_tag_remove(mhead);
+				/*
+				 * With the 802.1Q header removed, update the
+				 * checksum starting location accordingly.
+				 */
+				if (vh->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM)
+					vh->csum_start -= ETHER_VLAN_ENCAP_LEN;
+			}
+		}
 
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, mhead);
