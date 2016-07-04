@@ -1176,12 +1176,12 @@ ptnet_rx_intr(void *opaque)
 	ptnet_rx_eof(pq);
 }
 
-/* The following offloadings-related functions are taken from the virtio-net
+/* The following offloadings-related functions are taken from the vtnet
  * driver, but the same functionality is required for the ptnet driver.
- * As a temporary solution, I copied this code from virtio-net and I started
+ * As a temporary solution, I copied this code from vtnet and I started
  * to generalize it (taking away driver-specific statistic accounting),
  * making as little modifications as possible.
- * In the future we need to share these functions between virtio-net and ptnet.
+ * In the future we need to share these functions between vtnet and ptnet.
  */
 static int
 ptnet_tx_offload_ctx(struct mbuf *m, int *etype, int *proto, int *start)
@@ -1492,7 +1492,7 @@ ptnet_rx_csum(struct mbuf *m, struct virtio_net_hdr *hdr)
 
 	return (error);
 }
-/* End of offloading-related functions to be shared with virtio-net. */
+/* End of offloading-related functions to be shared with vtnet. */
 
 static inline void
 ptnet_sync_tail(struct ptnet_ring *ptring, struct netmap_kring *kring)
