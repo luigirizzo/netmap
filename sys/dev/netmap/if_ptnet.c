@@ -1151,8 +1151,8 @@ ptnet_rx_intr(void *opaque)
 	ptnet_rx_eof(pq);
 }
 
-/* The following three functions are taken from the virtio-net driver, but
- * the same functionality applies to the ptnet driver.
+/* The following offloadings-related functions are taken from the virtio-net
+ * driver, but the same functionality is required for the ptnet driver.
  * As a temporary solution, I copied this code from virtio-net and I started
  * to generalize it (taking away driver-specific statistic accounting),
  * making as little modifications as possible.
@@ -1294,6 +1294,180 @@ drop:
 	m_freem(m);
 	return (NULL);
 }
+
+static void
+ptnet_vlan_tag_remove(struct mbuf *m)
+{
+	struct ether_vlan_header *evh;
+
+	evh = mtod(m, struct ether_vlan_header *);
+	m->m_pkthdr.ether_vtag = ntohs(evh->evl_tag);
+	m->m_flags |= M_VLANTAG;
+
+	/* Strip the 802.1Q header. */
+	bcopy((char *) evh, (char *) evh + ETHER_VLAN_ENCAP_LEN,
+	    ETHER_HDR_LEN - ETHER_TYPE_LEN);
+	m_adj(m, ETHER_VLAN_ENCAP_LEN);
+}
+
+/*
+ * Use the checksum offset in the VirtIO header to set the
+ * correct CSUM_* flags.
+ */
+static int
+ptnet_rx_csum_by_offset(struct mbuf *m, uint16_t eth_type, int ip_start,
+			struct virtio_net_hdr *hdr)
+{
+#if defined(INET) || defined(INET6)
+	int offset = hdr->csum_start + hdr->csum_offset;
+#endif
+
+	/* Only do a basic sanity check on the offset. */
+	switch (eth_type) {
+#if defined(INET)
+	case ETHERTYPE_IP:
+		if (__predict_false(offset < ip_start + sizeof(struct ip)))
+			return (1);
+		break;
+#endif
+#if defined(INET6)
+	case ETHERTYPE_IPV6:
+		if (__predict_false(offset < ip_start + sizeof(struct ip6_hdr)))
+			return (1);
+		break;
+#endif
+	default:
+		/* Here we should increment the rx_csum_bad_ethtype counter. */
+		return (1);
+	}
+
+	/*
+	 * Use the offset to determine the appropriate CSUM_* flags. This is
+	 * a bit dirty, but we can get by with it since the checksum offsets
+	 * happen to be different. We assume the host host does not do IPv4
+	 * header checksum offloading.
+	 */
+	switch (hdr->csum_offset) {
+	case offsetof(struct udphdr, uh_sum):
+	case offsetof(struct tcphdr, th_sum):
+		m->m_pkthdr.csum_flags |= CSUM_DATA_VALID | CSUM_PSEUDO_HDR;
+		m->m_pkthdr.csum_data = 0xFFFF;
+		break;
+	case offsetof(struct sctphdr, checksum):
+		m->m_pkthdr.csum_flags |= CSUM_SCTP_VALID;
+		break;
+	default:
+		/* Here we should increment the rx_csum_bad_offset counter. */
+		return (1);
+	}
+
+	return (0);
+}
+
+static int
+ptnet_rx_csum_by_parse(struct mbuf *m, uint16_t eth_type, int ip_start,
+		       struct virtio_net_hdr *hdr)
+{
+	int offset, proto;
+
+	switch (eth_type) {
+#if defined(INET)
+	case ETHERTYPE_IP: {
+		struct ip *ip;
+		if (__predict_false(m->m_len < ip_start + sizeof(struct ip)))
+			return (1);
+		ip = (struct ip *)(m->m_data + ip_start);
+		proto = ip->ip_p;
+		offset = ip_start + (ip->ip_hl << 2);
+		break;
+	}
+#endif
+#if defined(INET6)
+	case ETHERTYPE_IPV6:
+		if (__predict_false(m->m_len < ip_start +
+		    sizeof(struct ip6_hdr)))
+			return (1);
+		offset = ip6_lasthdr(m, ip_start, IPPROTO_IPV6, &proto);
+		if (__predict_false(offset < 0))
+			return (1);
+		break;
+#endif
+	default:
+		/* Here we should increment the rx_csum_bad_ethtype counter. */
+		return (1);
+	}
+
+	switch (proto) {
+	case IPPROTO_TCP:
+		if (__predict_false(m->m_len < offset + sizeof(struct tcphdr)))
+			return (1);
+		m->m_pkthdr.csum_flags |= CSUM_DATA_VALID | CSUM_PSEUDO_HDR;
+		m->m_pkthdr.csum_data = 0xFFFF;
+		break;
+	case IPPROTO_UDP:
+		if (__predict_false(m->m_len < offset + sizeof(struct udphdr)))
+			return (1);
+		m->m_pkthdr.csum_flags |= CSUM_DATA_VALID | CSUM_PSEUDO_HDR;
+		m->m_pkthdr.csum_data = 0xFFFF;
+		break;
+	case IPPROTO_SCTP:
+		if (__predict_false(m->m_len < offset + sizeof(struct sctphdr)))
+			return (1);
+		m->m_pkthdr.csum_flags |= CSUM_SCTP_VALID;
+		break;
+	default:
+		/*
+		 * For the remaining protocols, FreeBSD does not support
+		 * checksum offloading, so the checksum will be recomputed.
+		 */
+#if 0
+		if_printf(ifp, "cksum offload of unsupported "
+		    "protocol eth_type=%#x proto=%d csum_start=%d "
+		    "csum_offset=%d\n", __func__, eth_type, proto,
+		    hdr->csum_start, hdr->csum_offset);
+#endif
+		break;
+	}
+
+	return (0);
+}
+
+/*
+ * Set the appropriate CSUM_* flags. Unfortunately, the information
+ * provided is not directly useful to us. The VirtIO header gives the
+ * offset of the checksum, which is all Linux needs, but this is not
+ * how FreeBSD does things. We are forced to peek inside the packet
+ * a bit.
+ *
+ * It would be nice if VirtIO gave us the L4 protocol or if FreeBSD
+ * could accept the offsets and let the stack figure it out.
+ */
+static int
+ptnet_rx_csum(struct mbuf *m, struct virtio_net_hdr *hdr)
+{
+	struct ether_header *eh;
+	struct ether_vlan_header *evh;
+	uint16_t eth_type;
+	int offset, error;
+
+	eh = mtod(m, struct ether_header *);
+	eth_type = ntohs(eh->ether_type);
+	if (eth_type == ETHERTYPE_VLAN) {
+		/* BMV: We should handle nested VLAN tags too. */
+		evh = mtod(m, struct ether_vlan_header *);
+		eth_type = ntohs(evh->evl_proto);
+		offset = sizeof(struct ether_vlan_header);
+	} else
+		offset = sizeof(struct ether_header);
+
+	if (hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM)
+		error = ptnet_rx_csum_by_offset(m, eth_type, offset, hdr);
+	else
+		error = ptnet_rx_csum_by_parse(m, eth_type, offset, hdr);
+
+	return (error);
+}
+/* End of offloading-related functions to be shared with virtio-net. */
 
 static inline void
 ptnet_sync_tail(struct ptnet_ring *ptring, struct netmap_kring *kring)
@@ -1534,180 +1708,6 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	return ptnet_drain_transmit_queue(pq);
-}
-
-/* This function should be shared with the virtio-net driver. */
-static void
-ptnet_vlan_tag_remove(struct mbuf *m)
-{
-	struct ether_vlan_header *evh;
-
-	evh = mtod(m, struct ether_vlan_header *);
-	m->m_pkthdr.ether_vtag = ntohs(evh->evl_tag);
-	m->m_flags |= M_VLANTAG;
-
-	/* Strip the 802.1Q header. */
-	bcopy((char *) evh, (char *) evh + ETHER_VLAN_ENCAP_LEN,
-	    ETHER_HDR_LEN - ETHER_TYPE_LEN);
-	m_adj(m, ETHER_VLAN_ENCAP_LEN);
-}
-
-/*
- * Use the checksum offset in the VirtIO header to set the
- * correct CSUM_* flags.
- */
-static int
-ptnet_rx_csum_by_offset(struct mbuf *m, uint16_t eth_type, int ip_start,
-			struct virtio_net_hdr *hdr)
-{
-#if defined(INET) || defined(INET6)
-	int offset = hdr->csum_start + hdr->csum_offset;
-#endif
-
-	/* Only do a basic sanity check on the offset. */
-	switch (eth_type) {
-#if defined(INET)
-	case ETHERTYPE_IP:
-		if (__predict_false(offset < ip_start + sizeof(struct ip)))
-			return (1);
-		break;
-#endif
-#if defined(INET6)
-	case ETHERTYPE_IPV6:
-		if (__predict_false(offset < ip_start + sizeof(struct ip6_hdr)))
-			return (1);
-		break;
-#endif
-	default:
-		/* Here we should increment the rx_csum_bad_ethtype counter. */
-		return (1);
-	}
-
-	/*
-	 * Use the offset to determine the appropriate CSUM_* flags. This is
-	 * a bit dirty, but we can get by with it since the checksum offsets
-	 * happen to be different. We assume the host host does not do IPv4
-	 * header checksum offloading.
-	 */
-	switch (hdr->csum_offset) {
-	case offsetof(struct udphdr, uh_sum):
-	case offsetof(struct tcphdr, th_sum):
-		m->m_pkthdr.csum_flags |= CSUM_DATA_VALID | CSUM_PSEUDO_HDR;
-		m->m_pkthdr.csum_data = 0xFFFF;
-		break;
-	case offsetof(struct sctphdr, checksum):
-		m->m_pkthdr.csum_flags |= CSUM_SCTP_VALID;
-		break;
-	default:
-		/* Here we should increment the rx_csum_bad_offset counter. */
-		return (1);
-	}
-
-	return (0);
-}
-
-static int
-ptnet_rx_csum_by_parse(struct mbuf *m, uint16_t eth_type, int ip_start,
-		       struct virtio_net_hdr *hdr)
-{
-	int offset, proto;
-
-	switch (eth_type) {
-#if defined(INET)
-	case ETHERTYPE_IP: {
-		struct ip *ip;
-		if (__predict_false(m->m_len < ip_start + sizeof(struct ip)))
-			return (1);
-		ip = (struct ip *)(m->m_data + ip_start);
-		proto = ip->ip_p;
-		offset = ip_start + (ip->ip_hl << 2);
-		break;
-	}
-#endif
-#if defined(INET6)
-	case ETHERTYPE_IPV6:
-		if (__predict_false(m->m_len < ip_start +
-		    sizeof(struct ip6_hdr)))
-			return (1);
-		offset = ip6_lasthdr(m, ip_start, IPPROTO_IPV6, &proto);
-		if (__predict_false(offset < 0))
-			return (1);
-		break;
-#endif
-	default:
-		/* Here we should increment the rx_csum_bad_ethtype counter. */
-		return (1);
-	}
-
-	switch (proto) {
-	case IPPROTO_TCP:
-		if (__predict_false(m->m_len < offset + sizeof(struct tcphdr)))
-			return (1);
-		m->m_pkthdr.csum_flags |= CSUM_DATA_VALID | CSUM_PSEUDO_HDR;
-		m->m_pkthdr.csum_data = 0xFFFF;
-		break;
-	case IPPROTO_UDP:
-		if (__predict_false(m->m_len < offset + sizeof(struct udphdr)))
-			return (1);
-		m->m_pkthdr.csum_flags |= CSUM_DATA_VALID | CSUM_PSEUDO_HDR;
-		m->m_pkthdr.csum_data = 0xFFFF;
-		break;
-	case IPPROTO_SCTP:
-		if (__predict_false(m->m_len < offset + sizeof(struct sctphdr)))
-			return (1);
-		m->m_pkthdr.csum_flags |= CSUM_SCTP_VALID;
-		break;
-	default:
-		/*
-		 * For the remaining protocols, FreeBSD does not support
-		 * checksum offloading, so the checksum will be recomputed.
-		 */
-#if 0
-		if_printf(ifp, "cksum offload of unsupported "
-		    "protocol eth_type=%#x proto=%d csum_start=%d "
-		    "csum_offset=%d\n", __func__, eth_type, proto,
-		    hdr->csum_start, hdr->csum_offset);
-#endif
-		break;
-	}
-
-	return (0);
-}
-
-/*
- * Set the appropriate CSUM_* flags. Unfortunately, the information
- * provided is not directly useful to us. The VirtIO header gives the
- * offset of the checksum, which is all Linux needs, but this is not
- * how FreeBSD does things. We are forced to peek inside the packet
- * a bit.
- *
- * It would be nice if VirtIO gave us the L4 protocol or if FreeBSD
- * could accept the offsets and let the stack figure it out.
- */
-static int
-ptnet_rx_csum(struct mbuf *m, struct virtio_net_hdr *hdr)
-{
-	struct ether_header *eh;
-	struct ether_vlan_header *evh;
-	uint16_t eth_type;
-	int offset, error;
-
-	eh = mtod(m, struct ether_header *);
-	eth_type = ntohs(eh->ether_type);
-	if (eth_type == ETHERTYPE_VLAN) {
-		/* BMV: We should handle nested VLAN tags too. */
-		evh = mtod(m, struct ether_vlan_header *);
-		eth_type = ntohs(evh->evl_proto);
-		offset = sizeof(struct ether_vlan_header);
-	} else
-		offset = sizeof(struct ether_header);
-
-	if (hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM)
-		error = ptnet_rx_csum_by_offset(m, eth_type, offset, hdr);
-	else
-		error = ptnet_rx_csum_by_parse(m, eth_type, offset, hdr);
-
-	return (error);
 }
 
 static unsigned int
