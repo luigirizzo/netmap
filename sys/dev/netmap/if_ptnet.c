@@ -94,6 +94,9 @@
 #define DBG(x)
 #endif  /* !DEBUG */
 
+/* Tunable parameters. */
+static bool ptnet_vnet_hdr = false;
+
 struct ptnet_softc;
 
 struct ptnet_queue {
@@ -269,6 +272,9 @@ ptnet_attach(device_t dev)
 
 	/* Check if we are supported by the hypervisor. If not,
 	 * bail out immediately. */
+	if (ptnet_vnet_hdr) {
+		ptfeatures |= NET_PTN_FEATURES_VNET_HDR;
+	}
 	bus_write_4(sc->iomem, PTNET_IO_PTFEAT, ptfeatures); /* wanted */
 	ptfeatures = bus_read_4(sc->iomem, PTNET_IO_PTFEAT); /* acked */
 	if (!(ptfeatures & NET_PTN_FEATURES_BASE)) {
@@ -409,6 +415,13 @@ ptnet_attach(device_t dev)
 	 * pointer. */
 	sc->ptna_nm = (struct netmap_pt_guest_adapter *)NA(ifp);
 	sc->ptna_nm->csb = sc->csb;
+
+	/* If virtio-net header was negotiated, set the virt_hdr_len field in
+	 * the netmap adapter, to inform users that this netmap adapter requires
+	 * the application to deal with the headers. */
+	if (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+		sc->ptna_nm->hwup.up.virt_hdr_len = PTNET_HDR_SIZE;
+	}
 
 	/* Initialize a separate pass-through netmap adapter that is going to
 	 * be used by this driver only, and so never exposed to netmap. We
