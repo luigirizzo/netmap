@@ -384,6 +384,18 @@ ptnet_attach(device_t dev)
 	ifp->if_data.ifi_hdrlen = sizeof(struct ether_vlan_header);
 	ifp->if_capabilities |= IFCAP_JUMBO_MTU | IFCAP_VLAN_MTU;
 
+	if (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+		/* Similarly to what the vtnet driver does, we can emulate
+		 * VLAN offloadings by inserting and removing the 802.1Q
+		 * header during transmit and receive. We are then able
+		 * to do checksum offloading of VLAN frames. */
+		ifp->if_capabilities |= IFCAP_HWCSUM | IFCAP_HWCSUM_IPV6
+					| IFCAP_VLAN_HWCSUM
+					| IFCAP_TSO | IFCAP_LRO
+					| IFCAP_VLAN_HWTSO
+					| IFCAP_VLAN_HWTAGGING;
+	}
+
 	ifp->if_capenable = ifp->if_capabilities;
 
 	snprintf(sc->lock_name, sizeof(sc->lock_name),
@@ -1913,8 +1925,6 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		}
 
 		mhead->m_pkthdr.rcvif = ifp;
-
-                /* No support for checksum offloading for now. */
 		mhead->m_pkthdr.csum_flags = 0;
 
 		/* Store the queue idx in the packet header. */
