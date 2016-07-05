@@ -236,7 +236,8 @@ extern int netmap_initialized;
 #define PTNET_CSUM_OFFLOAD	(CSUM_TCP | CSUM_UDP | CSUM_SCTP)
 #define PTNET_CSUM_OFFLOAD_IPV6	(CSUM_TCP_IPV6 | CSUM_UDP_IPV6 |\
 				 CSUM_SCTP_IPV6)
-#define PTNET_ALL_OFFLOAD	(CSUM_TSO | PTNET_CSUM_OFFLOAD | CSUM_TSO)
+#define PTNET_ALL_OFFLOAD	(CSUM_TSO | PTNET_CSUM_OFFLOAD |\
+				 PTNET_CSUM_OFFLOAD_IPV6)
 
 static int
 ptnet_attach(device_t dev)
@@ -1054,7 +1055,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		}
 
 		/* If not native, don't call nm_set_native_flags, since we don't want
-		 * to replace ndo_start_xmit method, nor set NAF_NETMAP_ON */
+		 * to replace if_transmit method, nor set NAF_NETMAP_ON */
 		if (native) {
 			for_rx_tx(t) {
 				for (i=0; i<nma_get_nrings(na, t); i++) {
@@ -1618,12 +1619,15 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 		/* If needed, prepare the virtio-net header at the beginning
 		 * of the first slot. */
 		if (have_vnet_hdr) {
+			struct virtio_net_hdr *vh =
+					(struct virtio_net_hdr *)nmbuf;
+
 			/* For performance, we could replace this memset() with
 			 * two 8-bytes-wide writes. */
 			memset(nmbuf, 0, PTNET_HDR_SIZE);
 			if (mhead->m_pkthdr.csum_flags & PTNET_ALL_OFFLOAD) {
 				mhead = ptnet_tx_offload(ifp, mhead, false,
-					    (struct virtio_net_hdr *)nmbuf);
+							 vh);
 				if (unlikely(!mhead)) {
 					/* Packet dropped because errors
 					 * occurred while preparing the vnet
@@ -1633,6 +1637,12 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 					continue;
 				}
 			}
+			RD(1, "%s: [csum_flags %lX] vnet hdr: flags %x "
+			      "csum_start %u csum_ofs %u hdr_len = %u "
+			      "gso_size %u gso_type %x", __func__,
+			      mhead->m_pkthdr.csum_flags, vh->flags,
+			      vh->csum_start, vh->csum_offset, vh->hdr_len,
+			      vh->gso_size, vh->gso_type);
 
 			nmbuf += PTNET_HDR_SIZE;
 			nmbuf_bytes += PTNET_HDR_SIZE;
