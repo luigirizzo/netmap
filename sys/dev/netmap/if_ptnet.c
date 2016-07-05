@@ -232,6 +232,7 @@ extern int netmap_initialized;
 #define PTNET_RX_BUDGET		512
 #define PTNET_TX_BATCH		64
 #define PTNET_HDR_SIZE		sizeof(struct virtio_net_hdr_mrg_rxbuf)
+#define PTNET_MAX_PKT_SIZE	65536
 
 #define PTNET_CSUM_OFFLOAD	(CSUM_TCP | CSUM_UDP | CSUM_SCTP)
 #define PTNET_CSUM_OFFLOAD_IPV6	(CSUM_TCP_IPV6 | CSUM_UDP_IPV6 |\
@@ -710,32 +711,44 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	int err = 0;
 
 	switch (cmd) {
-		case SIOCSIFFLAGS:
-			device_printf(dev, "SIOCSIFFLAGS %x\n", ifp->if_flags);
-			PTNET_CORE_LOCK(sc);
-			if (ifp->if_flags & IFF_UP) {
-				/* Network stack wants the iff to be up. */
-				err = ptnet_init_locked(sc);
-			} else {
-				/* Network stack wants the iff to be down. */
-				err = ptnet_stop(sc);
-			}
-			/* We don't need to do nothing to support IFF_PROMISC,
-			 * since that is managed by the backend port. */
-			PTNET_CORE_UNLOCK(sc);
-			break;
+	case SIOCSIFFLAGS:
+		device_printf(dev, "SIOCSIFFLAGS %x\n", ifp->if_flags);
+		PTNET_CORE_LOCK(sc);
+		if (ifp->if_flags & IFF_UP) {
+			/* Network stack wants the iff to be up. */
+			err = ptnet_init_locked(sc);
+		} else {
+			/* Network stack wants the iff to be down. */
+			err = ptnet_stop(sc);
+		}
+		/* We don't need to do nothing to support IFF_PROMISC,
+		 * since that is managed by the backend port. */
+		PTNET_CORE_UNLOCK(sc);
+		break;
 
-		case SIOCSIFCAP:
-			device_printf(dev, "SIOCSIFCAP %x %x\n",
-				      ifr->ifr_reqcap, ifp->if_capenable);
-			PTNET_CORE_LOCK(sc);
-			ifp->if_capenable = ifr->ifr_reqcap;
-			PTNET_CORE_UNLOCK(sc);
-			break;
+	case SIOCSIFCAP:
+		device_printf(dev, "SIOCSIFCAP %x %x\n",
+			      ifr->ifr_reqcap, ifp->if_capenable);
+		PTNET_CORE_LOCK(sc);
+		ifp->if_capenable = ifr->ifr_reqcap;
+		PTNET_CORE_UNLOCK(sc);
+		break;
 
-		default:
-			err = ether_ioctl(ifp, cmd, data);
-			break;
+	case SIOCSIFMTU:
+		/* We support any reasonable MTU. */
+		if (ifr->ifr_mtu < ETHERMIN ||
+				ifr->ifr_mtu > PTNET_MAX_PKT_SIZE) {
+			err = EINVAL;
+		} else {
+			PTNET_CORE_LOCK(sc);
+			ifp->if_mtu = ifr->ifr_mtu;
+			PTNET_CORE_UNLOCK(sc);
+		}
+		break;
+
+	default:
+		err = ether_ioctl(ifp, cmd, data);
+		break;
 	}
 
 	return err;
@@ -794,7 +807,7 @@ ptnet_init_locked(struct ptnet_softc *sc)
 	nm_buf_size = NETMAP_BUF_SIZE(na_dr);
 
 	KASSERT(nm_buf_size > 0, "Invalid netmap buffer size");
-	sc->min_tx_space = 65536 / nm_buf_size + 2;
+	sc->min_tx_space = PTNET_MAX_PKT_SIZE / nm_buf_size + 2;
 	device_printf(sc->dev, "%s: min_tx_space = %u\n", __func__,
 		      sc->min_tx_space);
 
