@@ -706,6 +706,7 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 {
 	struct ptnet_softc *sc = ifp->if_softc;
 	device_t dev = sc->dev;
+	struct ifreq *ifr = (struct ifreq *)data;
 	int err = 0;
 
 	switch (cmd) {
@@ -721,6 +722,14 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			}
 			/* We don't need to do nothing to support IFF_PROMISC,
 			 * since that is managed by the backend port. */
+			PTNET_CORE_UNLOCK(sc);
+			break;
+
+		case SIOCSIFCAP:
+			device_printf(dev, "SIOCSIFCAP %x %x\n",
+				      ifr->ifr_reqcap, ifp->if_capenable);
+			PTNET_CORE_LOCK(sc);
+			ifp->if_capenable = ifr->ifr_reqcap;
 			PTNET_CORE_UNLOCK(sc);
 			break;
 
