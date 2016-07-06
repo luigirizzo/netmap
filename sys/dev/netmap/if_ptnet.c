@@ -746,6 +746,11 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		}
 		break;
 
+	case SIOCSIFMEDIA:
+	case SIOCGIFMEDIA:
+		err = ifmedia_ioctl(ifp, ifr, &sc->media, cmd);
+		break;
+
 	default:
 		err = ether_ioctl(ifp, cmd, data);
 		break;
