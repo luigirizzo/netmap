@@ -773,6 +773,20 @@ ptnet_init_locked(struct ptnet_softc *sc)
 
 	device_printf(sc->dev, "%s\n", __func__);
 
+	/* Translate offload capabilities according to if_capenable. */
+	ifp->if_hwassist = 0;
+	if (ifp->if_capenable & IFCAP_TXCSUM)
+		ifp->if_hwassist |= PTNET_CSUM_OFFLOAD;
+	if (ifp->if_capenable & IFCAP_TXCSUM_IPV6)
+		ifp->if_hwassist |= PTNET_CSUM_OFFLOAD_IPV6;
+	if (ifp->if_capenable & IFCAP_TSO4)
+		ifp->if_hwassist |= CSUM_IP_TSO;
+	if (ifp->if_capenable & IFCAP_TSO6)
+		ifp->if_hwassist |= CSUM_IP6_TSO;
+
+	/*
+	 * Prepare the interface for netmap mode access.
+	 */
 	netmap_update_config(na_dr);
 
 	ret = netmap_mem_finalize(na_dr->nm_mem, na_dr);
