@@ -87,6 +87,10 @@
 #error "No support for on-device CSB"
 #endif
 
+#ifndef INET
+#error "INET not defined, cannot support offloadings"
+#endif
+
 //#define DEBUG
 #ifdef DEBUG
 #define DBG(x) x
