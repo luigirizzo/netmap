@@ -99,7 +99,7 @@
 #endif  /* !DEBUG */
 
 /* Tunable parameters. */
-static bool ptnet_vnet_hdr = false;
+static bool ptnet_vnet_hdr = true;
 
 struct ptnet_softc;
 
@@ -1682,7 +1682,7 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 					continue;
 				}
 			}
-			RD(1, "%s: [csum_flags %lX] vnet hdr: flags %x "
+			ND(1, "%s: [csum_flags %lX] vnet hdr: flags %x "
 			      "csum_start %u csum_ofs %u hdr_len = %u "
 			      "gso_size %u gso_type %x", __func__,
 			      mhead->m_pkthdr.csum_flags, vh->flags,
@@ -1908,7 +1908,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 				head = ptnet_rx_discard(kring, head);
 				continue;
 			}
-			RD(1, "%s: vnet hdr: flags %x csum_start %u "
+			ND(1, "%s: vnet hdr: flags %x csum_start %u "
 			      "csum_ofs %u hdr_len = %u gso_size %u "
 			      "gso_type %x", __func__, vh->flags,
 			      vh->csum_start, vh->csum_offset, vh->hdr_len,
