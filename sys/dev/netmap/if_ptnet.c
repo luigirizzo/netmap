@@ -99,7 +99,8 @@
 #endif  /* !DEBUG */
 
 /* Tunable parameters. */
-static bool ptnet_vnet_hdr = true;
+static int ptnet_vnet_hdr = 0;
+TUNABLE_INT("hw.ptnet.vnet_hdr", &ptnet_vnet_hdr);
 
 struct ptnet_softc;
 
