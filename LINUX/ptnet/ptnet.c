@@ -37,8 +37,7 @@
 #include <dev/netmap/netmap_mem2.h>
 
 
-static bool ptnet_vnet_hdr = true;
-module_param(ptnet_vnet_hdr, bool, 0444);
+extern int ptnet_vnet_hdr;
 static bool ptnet_gso = true;
 module_param(ptnet_gso, bool, 0444);
 
