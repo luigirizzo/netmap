@@ -98,9 +98,7 @@
 #define DBG(x)
 #endif  /* !DEBUG */
 
-/* Tunable parameters. */
-static int ptnet_vnet_hdr = 0;
-TUNABLE_INT("hw.ptnet.vnet_hdr", &ptnet_vnet_hdr);
+extern int ptnet_vnet_hdr; /* Tunable parameter */
 
 struct ptnet_softc;
 

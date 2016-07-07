@@ -516,6 +516,9 @@ int netmap_generic_txqdisc = 1;
 int netmap_generic_ringsize = 1024;
 int netmap_generic_rings = 1;
 
+/* Let ptnet devices use virtio-net headers. */
+int ptnet_vnet_hdr = 0;
+
 /*
  * SYSCTL calls are grouped between SYSBEGIN and SYSEND to be emulated
  * in some other operating systems
@@ -543,6 +546,7 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit, 
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_ringsize, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW, &netmap_generic_rings, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW, &netmap_generic_txqdisc, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, ptnet_vnet_hdr, CTLFLAG_RW, &ptnet_vnet_hdr, 0 , "");
 
 SYSEND;
 
