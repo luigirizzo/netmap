@@ -130,6 +130,7 @@ struct ptnet_softc {
 
 	/* Mirror of PTFEAT register. */
 	uint32_t		ptfeatures;
+	unsigned int		vnet_hdr_len;
 
 	/* Reference counter used to track the regif operations on the
 	 * passed-through netmap port. */
@@ -184,6 +185,7 @@ static int	ptnet_nm_config(struct netmap_adapter *na, unsigned *txr,
 static int	ptnet_nm_krings_create(struct netmap_adapter *na);
 static void	ptnet_nm_krings_delete(struct netmap_adapter *na);
 static void	ptnet_nm_dtor(struct netmap_adapter *na);
+static void	ptnet_update_vnet_hdr(struct ptnet_softc *sc);
 static int	ptnet_nm_register(struct netmap_adapter *na, int onoff);
 static int	ptnet_nm_txsync(struct netmap_kring *kring, int flags);
 static int	ptnet_nm_rxsync(struct netmap_kring *kring, int flags);
@@ -436,9 +438,7 @@ ptnet_attach(device_t dev)
 	/* If virtio-net header was negotiated, set the virt_hdr_len field in
 	 * the netmap adapter, to inform users that this netmap adapter requires
 	 * the application to deal with the headers. */
-	if (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
-		sc->ptna_nm->hwup.up.virt_hdr_len = PTNET_HDR_SIZE;
-	}
+	ptnet_update_vnet_hdr(sc);
 
 	/* Initialize a separate pass-through netmap adapter that is going to
 	 * be used by this driver only, and so never exposed to netmap. We
@@ -1047,6 +1047,14 @@ ptnet_sync_from_csb(struct ptnet_softc *sc, struct netmap_adapter *na)
 		}							\
 	} while (0)							\
 
+static void
+ptnet_update_vnet_hdr(struct ptnet_softc *sc)
+{
+	sc->vnet_hdr_len = ptnet_vnet_hdr ? PTNET_HDR_SIZE : 0;
+	sc->ptna_nm->hwup.up.virt_hdr_len = sc->vnet_hdr_len;
+	bus_write_4(sc->iomem, PTNET_IO_VNET_HDR_LEN, sc->vnet_hdr_len);
+}
+
 static int
 ptnet_nm_register(struct netmap_adapter *na, int onoff)
 {
@@ -1081,6 +1089,9 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			csb_notification_enable_all(sc, na, NR_TX, guest_need_kick, 0);
 			csb_notification_enable_all(sc, na, NR_RX, host_need_kick, 1);
 			csb_notification_enable_all(sc, na, NR_RX, guest_need_kick, 1);
+
+			/* Set the virtio-net header length. */
+			ptnet_update_vnet_hdr(sc);
 
 			/* Make sure the host adapter passed through is ready
 			 * for txsync/rxsync. */
@@ -1583,7 +1594,7 @@ static int
 ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 {
 	struct ptnet_softc *sc = pq->sc;
-	bool have_vnet_hdr = (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR);
+	bool have_vnet_hdr = sc->vnet_hdr_len;
 	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
 	struct ifnet *ifp = sc->ifp;
 	unsigned int batch_count = 0;
@@ -1848,7 +1859,7 @@ static int
 ptnet_rx_eof(struct ptnet_queue *pq)
 {
 	struct ptnet_softc *sc = pq->sc;
-	bool have_vnet_hdr = (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR);
+	bool have_vnet_hdr = sc->vnet_hdr_len;
 	struct ptnet_ring *ptring = pq->ptring;
 	struct netmap_adapter *na = &sc->ptna_dr.hwup.up;
 	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
@@ -2033,8 +2044,8 @@ escape:
 		if (!budget) {
 			/* If we ran out of budget or the double-check found new
 			 * slots to process, schedule the taskqueue. */
-			RD(1, "out of budget: resched h %u t %u\n",
-			      head, ring->tail);
+			DBG(RD(1, "out of budget: resched h %u t %u\n",
+			      head, ring->tail));
 			taskqueue_enqueue(pq->taskq, &pq->task);
 		}
 	}
