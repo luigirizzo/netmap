@@ -2049,7 +2049,7 @@ ptnet_rx_task(void *context, int pending)
 {
 	struct ptnet_queue *pq = context;
 
-	RD(1, "%s: pq #%u\n", __func__, pq->kring_id);
+	DBG(RD(1, "%s: pq #%u\n", __func__, pq->kring_id));
 	ptnet_rx_eof(pq);
 }
 
@@ -2058,7 +2058,7 @@ ptnet_tx_task(void *context, int pending)
 {
 	struct ptnet_queue *pq = context;
 
-	RD(1, "%s: pq #%u\n", __func__, pq->kring_id);
+	DBG(RD(1, "%s: pq #%u\n", __func__, pq->kring_id));
 	ptnet_drain_transmit_queue(pq);
 }
 
