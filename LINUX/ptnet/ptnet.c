@@ -91,6 +91,7 @@ struct ptnet_info {
 
 	/* Mirrors PTFEAT register content. */
 	uint32_t ptfeatures;
+	unsigned int vnet_hdr_len;
 
 	/* Access to device memory. */
 	int bars;
@@ -238,7 +239,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 	/* First step: Setup the virtio-net header at the beginning of th
 	 *  first slot. */
-	if (pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+	if (pi->vnet_hdr_len) {
 		struct virtio_net_hdr_v1 *vh = a.nmbuf;
 
 		if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
@@ -471,7 +472,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	struct netmap_kring *kring = &na->rx_rings[pq->kring_id];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
-	bool have_vnet_hdr = pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR;
+	bool have_vnet_hdr = pi->vnet_hdr_len;
 	unsigned int head = ring->head;
 	int work_done = 0;
 	int nm_irq;
@@ -1087,6 +1088,15 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 		}							\
 	} while (0)							\
 
+static void
+ptnet_update_vnet_hdr(struct ptnet_info *pi)
+{
+	pi->vnet_hdr_len = ptnet_vnet_hdr ?
+			       sizeof(struct virtio_net_hdr_v1) : 0;
+	pi->ptna_nm->hwup.up.virt_hdr_len = pi->vnet_hdr_len;
+	iowrite32(pi->vnet_hdr_len, pi->ioaddr + PTNET_IO_VNET_HDR_LEN);
+}
+
 static int
 ptnet_nm_register(struct netmap_adapter *na, int onoff)
 {
@@ -1130,6 +1140,9 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 0);
 			csb_notification_enable_all(pi, na, NR_RX, host_need_kick, 1);
 			csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
+
+			/* Set the virtio-net header length. */
+			ptnet_update_vnet_hdr(pi);
 
 			/* Make sure the host adapter passed through is ready
 			 * for txsync/rxsync. */
@@ -1494,9 +1507,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* If virtio-net header was negotiated, set the virt_hdr_len field in
 	 * the netmap adapter, to inform users that this netmap adapter requires
 	 * the application to deal with the headers. */
-	if (pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
-		pi->ptna_nm->hwup.up.virt_hdr_len = sizeof(struct virtio_net_hdr_v1);
-	}
+	ptnet_update_vnet_hdr(pi);
 
 	/* Initialize a separate pass-through netmap adapter that is going to
 	 * be used by this driver only, and so never exposed to netmap. We
