@@ -230,7 +230,8 @@ struct paravirt_csb {
 #define PTNET_IO_NUM_RX_RINGS	40
 #define PTNET_IO_NUM_TX_SLOTS	44
 #define PTNET_IO_NUM_RX_SLOTS	48
-#define PTNET_IO_END		52
+#define PTNET_IO_VNET_HDR_LEN	52
+#define PTNET_IO_END		56
 #define PTNET_IO_KICK_BASE	128
 #define PTNET_IO_MASK           0xff
 
