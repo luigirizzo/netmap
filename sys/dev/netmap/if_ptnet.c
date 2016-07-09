@@ -55,6 +55,7 @@
 #include <net/if_types.h>
 #include <net/if_media.h>
 #include <net/if_vlan_var.h>
+#include <net/bpf.h>
 
 #include <netinet/in_systm.h>
 #include <netinet/in.h>
@@ -1743,6 +1744,10 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 
 		/* Consume the packet just processed. */
 		drbr_advance(ifp, pq->bufring);
+
+		/* Copy the packet to listeners. */
+		ETHER_BPF_MTAP(ifp, mhead);
+
 		m_freem(mhead);
 
 		if (++batch_count == PTNET_TX_BATCH) {
