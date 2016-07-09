@@ -1565,7 +1565,7 @@ ptnet_sync_tail(struct ptnet_ring *ptring, struct netmap_kring *kring)
 
 static void
 ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
-		  unsigned int head)
+		  unsigned int head, unsigned int sync_flags)
 {
 	struct netmap_ring *ring = kring->ring;
 	struct ptnet_ring *ptring = pq->ptring;
@@ -1575,14 +1575,14 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 	 * and head in the CSB. */
 	ring->head = ring->cur = head;
 
-	/* nm_txsync_prologue */
-	kring->rcur = kring->rhead = ring->head;
+	/* Mimic nm_txsync_prologue/nm_rxsync_prologue. */
+	kring->rcur = kring->rhead = head;
 
 	ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
 
 	/* Kick the host if needed. */
 	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
-		ptring->sync_flags = NAF_FORCE_RECLAIM;
+		ptring->sync_flags = sync_flags;
 		bus_write_4(pq->sc->iomem, pq->kick, 0);
 	}
 }
@@ -1752,12 +1752,12 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 
 		if (++batch_count == PTNET_TX_BATCH) {
 			batch_count = 0;
-			ptnet_ring_update(pq, kring, head);
+			ptnet_ring_update(pq, kring, head, NAF_FORCE_RECLAIM);
 		}
 	}
 
 	if (batch_count) {
-		ptnet_ring_update(pq, kring, head);
+		ptnet_ring_update(pq, kring, head, NAF_FORCE_RECLAIM);
 	}
 
 	PTNET_Q_UNLOCK(pq);
