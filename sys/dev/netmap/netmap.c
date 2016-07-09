@@ -516,8 +516,8 @@ int netmap_generic_txqdisc = 1;
 int netmap_generic_ringsize = 1024;
 int netmap_generic_rings = 1;
 
-/* Let ptnet devices use virtio-net headers. */
-int ptnet_vnet_hdr = 0;
+/* Non-zero if ptnet devices are allowed to use virtio-net headers. */
+int ptnet_vnet_hdr = 1;
 
 /*
  * SYSCTL calls are grouped between SYSBEGIN and SYSEND to be emulated
