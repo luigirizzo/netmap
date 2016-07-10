@@ -2031,20 +2031,7 @@ escape:
 		/* Some packets have been pushed to the network stack.
 		 * We need to update the CSB to tell the host about the new
 		 * ring->cur and ring->head (RX buffer refill). */
-		ring->head = ring->cur = head;
-
-		/* Mimic rxsync_prologue */
-		kring->rcur = ring->cur;
-		kring->rhead = ring->head;
-
-		ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
-					       kring->rhead);
-
-		/* Kick the host if needed. */
-		if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
-			ptring->sync_flags = NAF_FORCE_READ;
-			bus_write_4(sc->iomem, pq->kick, 0);
-		}
+		ptnet_ring_update(pq, kring, head, NAF_FORCE_READ);
 
 		if (!budget) {
 			/* If we ran out of budget or the double-check found new
