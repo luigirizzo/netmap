@@ -236,6 +236,7 @@ extern int netmap_initialized;
 
 #define PTNET_BUF_RING_SIZE	4096
 #define PTNET_RX_BUDGET		512
+#define PTNET_RX_BATCH		1
 #define PTNET_TX_BATCH		64
 #define PTNET_HDR_SIZE		sizeof(struct virtio_net_hdr_mrg_rxbuf)
 #define PTNET_MAX_PKT_SIZE	65536
@@ -1751,8 +1752,8 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 		m_freem(mhead);
 
 		if (++batch_count == PTNET_TX_BATCH) {
-			batch_count = 0;
 			ptnet_ring_update(pq, kring, head, NAF_FORCE_RECLAIM);
+			batch_count = 0;
 		}
 	}
 
@@ -1872,6 +1873,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	unsigned int budget = PTNET_RX_BUDGET;
 	unsigned int head = ring->head;
+	unsigned int batch_count = 0;
 	struct ifnet *ifp = sc->ifp;
 
 	PTNET_Q_LOCK(pq);
@@ -2025,21 +2027,26 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		(*ifp->if_input)(ifp, mhead);
 		PTNET_Q_LOCK(pq);
 
+		if (++batch_count == PTNET_RX_BATCH) {
+			/* Some packets have been pushed to the network stack.
+			 * We need to update the CSB to tell the host about the new
+			 * ring->cur and ring->head (RX buffer refill). */
+			ptnet_ring_update(pq, kring, head, NAF_FORCE_READ);
+			batch_count = 0;
+		}
 	} while (--budget);
 escape:
-	if (head != ring->head) {
-		/* Some packets have been pushed to the network stack.
-		 * We need to update the CSB to tell the host about the new
-		 * ring->cur and ring->head (RX buffer refill). */
+	if (batch_count) {
 		ptnet_ring_update(pq, kring, head, NAF_FORCE_READ);
 
-		if (!budget) {
-			/* If we ran out of budget or the double-check found new
-			 * slots to process, schedule the taskqueue. */
-			DBG(RD(1, "out of budget: resched h %u t %u\n",
-			      head, ring->tail));
-			taskqueue_enqueue(pq->taskq, &pq->task);
-		}
+	}
+
+	if (!budget) {
+		/* If we ran out of budget or the double-check found new
+		 * slots to process, schedule the taskqueue. */
+		DBG(RD(1, "out of budget: resched h %u t %u\n",
+					head, ring->tail));
+		taskqueue_enqueue(pq->taskq, &pq->task);
 	}
 
 	PTNET_Q_UNLOCK(pq);
