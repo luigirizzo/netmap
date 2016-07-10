@@ -8,7 +8,7 @@
 
 .PATH: ${.CURDIR}/../../dev/netmap
 .PATH.h: ${.CURDIR}/../../net
-CFLAGS += -I${.CURDIR}/../../ -D INET
+CFLAGS += -I${.CURDIR}/../../ -D INET -D DEVICE_POLLING
 KMOD	= netmap
 SRCS	= device_if.h bus_if.h pci_if.h opt_netmap.h
 SRCS	+= netmap.c netmap.h netmap_kern.h

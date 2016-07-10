@@ -199,6 +199,10 @@ static unsigned	ptnet_rx_discard(struct netmap_kring *kring,
 static void	ptnet_rx_eof(struct ptnet_queue *pq);
 static void	ptnet_rx_task(void *context, int pending);
 
+#ifdef DEVICE_POLLING
+static poll_handler_t ptnet_poll;
+#endif
+
 static device_method_t ptnet_methods[] = {
 	DEVMETHOD(device_probe,			ptnet_probe),
 	DEVMETHOD(device_attach,		ptnet_attach),
@@ -406,7 +410,10 @@ ptnet_attach(device_t dev)
 	}
 
 	ifp->if_capenable = ifp->if_capabilities;
-
+#ifdef DEVICE_POLLING
+	/* Don't enable polling by default. */
+	ifp->if_capabilities |= IFCAP_POLLING;
+#endif
 	snprintf(sc->lock_name, sizeof(sc->lock_name),
 		 "%s", device_get_nameunit(dev));
 	mtx_init(&sc->lock, sc->lock_name, "ptnet core lock", MTX_DEF);
@@ -467,6 +474,11 @@ ptnet_detach(device_t dev)
 	struct ptnet_softc *sc = device_get_softc(dev);
 	int i;
 
+#ifdef DEVICE_POLLING
+	if (sc->ifp->if_capenable & IFCAP_POLLING) {
+		ether_poll_deregister(sc->ifp);
+	}
+#endif
 	if (sc->queues) {
 		/* Drain taskqueues before calling if_detach. */
 		for (i = 0; i < sc->num_rings; i++) {
@@ -713,7 +725,7 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	struct ptnet_softc *sc = ifp->if_softc;
 	device_t dev = sc->dev;
 	struct ifreq *ifr = (struct ifreq *)data;
-	int err = 0;
+	int mask, err = 0;
 
 	switch (cmd) {
 	case SIOCSIFFLAGS:
@@ -734,9 +746,45 @@ ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	case SIOCSIFCAP:
 		device_printf(dev, "SIOCSIFCAP %x %x\n",
 			      ifr->ifr_reqcap, ifp->if_capenable);
-		PTNET_CORE_LOCK(sc);
+		mask = ifr->ifr_reqcap ^ ifp->if_capenable;
+#ifdef DEVICE_POLLING
+		if (mask & IFCAP_POLLING) {
+			struct ptnet_queue *pq;
+			int i;
+
+			if (ifr->ifr_reqcap & IFCAP_POLLING) {
+				err = ether_poll_register(ptnet_poll, ifp);
+				if (err) {
+					break;
+				}
+				/* Stop queues and sync with taskqueues. */
+				ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
+				for (i = 0; i < sc->num_rings; i++) {
+					pq = sc-> queues + i;
+					/* Make sure the worker sees the
+					 * IFF_DRV_RUNNING down. */
+					PTNET_Q_LOCK(pq);
+					pq->ptring->guest_need_kick = 0;
+					PTNET_Q_UNLOCK(pq);
+					/* Wait for rescheduling to finish. */
+					if (pq->taskq) {
+						taskqueue_drain(pq->taskq,
+								&pq->task);
+					}
+				}
+				ifp->if_drv_flags |= IFF_DRV_RUNNING;
+			} else {
+				err = ether_poll_deregister(ifp);
+				for (i = 0; i < sc->num_rings; i++) {
+					pq = sc-> queues + i;
+					PTNET_Q_LOCK(pq);
+					pq->ptring->guest_need_kick = 1;
+					PTNET_Q_UNLOCK(pq);
+				}
+			}
+		}
+#endif  /* DEVICE_POLLING */
 		ifp->if_capenable = ifr->ifr_reqcap;
-		PTNET_CORE_UNLOCK(sc);
 		break;
 
 	case SIOCSIFMTU:
@@ -1045,16 +1093,6 @@ ptnet_sync_from_csb(struct ptnet_softc *sc, struct netmap_adapter *na)
 	}
 }
 
-#define csb_notification_enable_all(_x, _na, _t, _fld, _v)		\
-	do {								\
-		struct ptnet_queue *queues = (_x)->queues;		\
-		int i;							\
-		if (_t == NR_RX) queues = (_x)->rxqueues;		\
-		for (i=0; i<nma_get_nrings(_na, _t); i++) {		\
-			queues[i].ptring->_fld = _v;			\
-		}							\
-	} while (0)							\
-
 static void
 ptnet_update_vnet_hdr(struct ptnet_softc *sc)
 {
@@ -1070,6 +1108,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	struct ifnet *ifp = na->ifp;
 	struct ptnet_softc *sc = ifp->if_softc;
 	int native = (na == &sc->ptna_nm->hwup.up);
+	struct ptnet_queue *pq;
 	enum txrx t;
 	int ret = 0;
 	int i;
@@ -1086,17 +1125,22 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	 * until these will be processed. */
 	if (native && !onoff && na->active_fds == 0) {
 		D("Exit netmap mode, re-enable interrupts");
-		csb_notification_enable_all(sc, na, NR_TX, guest_need_kick, 1);
-		csb_notification_enable_all(sc, na, NR_RX, guest_need_kick, 1);
+		for (i = 0; i < sc->num_rings; i++) {
+			pq = sc->queues + i;
+			pq->ptring->guest_need_kick = 1;
+		}
 	}
 
 	if (onoff) {
 		if (sc->backend_regifs == 0) {
 			/* Initialize notification enable fields in the CSB. */
-			csb_notification_enable_all(sc, na, NR_TX, host_need_kick, 1);
-			csb_notification_enable_all(sc, na, NR_TX, guest_need_kick, 0);
-			csb_notification_enable_all(sc, na, NR_RX, host_need_kick, 1);
-			csb_notification_enable_all(sc, na, NR_RX, guest_need_kick, 1);
+			for (i = 0; i < sc->num_rings; i++) {
+				pq = sc->queues + i;
+				pq->ptring->host_need_kick = 1;
+				pq->ptring->guest_need_kick =
+					(!(ifp->if_capenable & IFCAP_POLLING)
+						&& i >= sc->num_tx_rings);
+			}
 
 			/* Set the virtio-net header length. */
 			ptnet_update_vnet_hdr(sc);
@@ -2078,3 +2122,19 @@ ptnet_tx_task(void *context, int pending)
 	ptnet_drain_transmit_queue(pq);
 }
 
+#ifdef DEVICE_POLLING
+static int
+ptnet_poll(struct ifnet *ifp, enum poll_cmd cmd, int count)
+{
+	struct ptnet_softc *sc = ifp->if_softc;
+
+	/* We don't need to handle differently POLL_AND_CHECK_STATUS and
+	 * POLL_ONLY, since we don't have an Interrupt Status Register. */
+
+	//rx_done = ptnet_rx_eof(pq)
+	// ptnet_drain_transmit_queue(pq);
+	(void)sc;
+
+	return 0; //(rx_done);
+}
+#endif /* DEVICE_POLLING */
