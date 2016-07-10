@@ -196,7 +196,7 @@ static void	ptnet_rx_intr(void *opaque);
 
 static unsigned	ptnet_rx_discard(struct netmap_kring *kring,
 				 unsigned int head);
-static int	ptnet_rx_eof(struct ptnet_queue *pq);
+static void	ptnet_rx_eof(struct ptnet_queue *pq);
 static void	ptnet_rx_task(void *context, int pending);
 
 static device_method_t ptnet_methods[] = {
@@ -857,6 +857,7 @@ ptnet_stop(struct ptnet_softc *sc)
 {
 	struct ifnet *ifp = sc->ifp;
 	struct netmap_adapter *na_dr = &sc->ptna_dr.hwup.up;
+	int i;
 
 	device_printf(sc->dev, "%s\n", __func__);
 
@@ -864,7 +865,14 @@ ptnet_stop(struct ptnet_softc *sc)
 		return 0; /* nothing to do */
 	}
 
-	/* XXX Here we should wait for all TX and RX worker to finish. */
+	/* Clear the driver-ready flag, and synchronize with all the queues,
+	 * so that after this loop we are sure nobody is working anymore with
+	 * the device. This scheme is taken from the vtnet driver. */
+	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
+	for (i = 0; i < sc->num_rings; i++) {
+		PTNET_Q_LOCK(sc->queues + i);
+		PTNET_Q_UNLOCK(sc->queues + i);
+	}
 
 	ptnet_nm_register(na_dr, 0 /* off */);
 
@@ -873,8 +881,6 @@ ptnet_stop(struct ptnet_softc *sc)
 		ptnet_nm_krings_delete(na_dr);
 	}
 	netmap_mem_deref(na_dr->nm_mem, na_dr);
-
-	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 
 	return 0;
 }
@@ -1196,10 +1202,6 @@ ptnet_tx_intr(void *opaque)
 
 	DBG(device_printf(sc->dev, "Tx interrupt #%d\n", pq->kring_id));
 
-	if (!(sc->ifp->if_drv_flags & IFF_DRV_RUNNING)) {
-		return;
-	}
-
 	if (netmap_tx_irq(sc->ifp, pq->kring_id) != NM_IRQ_PASS) {
 		return;
 	}
@@ -1219,10 +1221,6 @@ ptnet_rx_intr(void *opaque)
 	unsigned int unused;
 
 	DBG(device_printf(sc->dev, "Rx interrupt #%d\n", pq->kring_id));
-
-	if (!(sc->ifp->if_drv_flags & IFF_DRV_RUNNING)) {
-		return;
-	}
 
 	if (netmap_rx_irq(sc->ifp, pq->kring_id, &unused) != NM_IRQ_PASS) {
 		return;
@@ -1592,6 +1590,8 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 	((((_h) < (_k)->rtail) ? 0 : (_k)->nkr_num_slots) + \
 		(_k)->rtail - (_h)) < (_min)
 
+/* This function may be called by the network stack, or by
+ * by the taskqueue thread. */
 static int
 ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 {
@@ -1612,20 +1612,18 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 	int nmbuf_bytes;
 	uint8_t *nmbuf;
 
-	if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
-		RD(1, "Interface is down");
-		return ENETDOWN;
-	}
-
-	/* Here we may be called by the network stack, or by
-	 * by the taskqueue thread. */
-
 	if (!PTNET_Q_TRYLOCK(pq)) {
 		/* We failed to acquire the lock, schedule the taskqueue. */
 		RD(1, "Deferring TX work");
 		taskqueue_enqueue(pq->taskq, &pq->task);
 
 		return 0;
+	}
+
+	if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
+		PTNET_Q_UNLOCK(pq);
+		RD(1, "Interface is down");
+		return ENETDOWN;
 	}
 
 	ptring = pq->ptring;
@@ -1861,7 +1859,7 @@ ptnet_rx_slot(struct mbuf *mtail, uint8_t *nmbuf, unsigned int nmbuf_len)
 	return mtail;
 }
 
-static int
+static void
 ptnet_rx_eof(struct ptnet_queue *pq)
 {
 	struct ptnet_softc *sc = pq->sc;
@@ -1877,6 +1875,10 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	struct ifnet *ifp = sc->ifp;
 
 	PTNET_Q_LOCK(pq);
+
+	if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
+		goto unlock;
+	}
 
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
@@ -2027,6 +2029,12 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 		(*ifp->if_input)(ifp, mhead);
 		PTNET_Q_LOCK(pq);
 
+		if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
+			/* The interface has gone down while we didn't
+			 * have the lock. Stop any processing and exit. */
+			goto unlock;
+		}
+
 		if (++batch_count == PTNET_RX_BATCH) {
 			/* Some packets have been pushed to the network stack.
 			 * We need to update the CSB to tell the host about the new
@@ -2048,10 +2056,8 @@ escape:
 					head, ring->tail));
 		taskqueue_enqueue(pq->taskq, &pq->task);
 	}
-
+unlock:
 	PTNET_Q_UNLOCK(pq);
-
-	return 0;
 }
 
 static void
