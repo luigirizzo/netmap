@@ -170,7 +170,9 @@ static int	ptnet_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data);
 static int	ptnet_init_locked(struct ptnet_softc *sc);
 static int	ptnet_stop(struct ptnet_softc *sc);
 static int	ptnet_transmit(struct ifnet *ifp, struct mbuf *m);
-static int	ptnet_drain_transmit_queue(struct ptnet_queue *pq);
+static int	ptnet_drain_transmit_queue(struct ptnet_queue *pq,
+					   unsigned int budget,
+					   bool may_resched);
 static void	ptnet_qflush(struct ifnet *ifp);
 static void	ptnet_tx_task(void *context, int pending);
 
@@ -196,7 +198,8 @@ static void	ptnet_rx_intr(void *opaque);
 
 static unsigned	ptnet_rx_discard(struct netmap_kring *kring,
 				 unsigned int head);
-static void	ptnet_rx_eof(struct ptnet_queue *pq);
+static int	ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget,
+			     bool may_resched);
 static void	ptnet_rx_task(void *context, int pending);
 
 #ifdef DEVICE_POLLING
@@ -241,6 +244,7 @@ extern int netmap_initialized;
 #define PTNET_BUF_RING_SIZE	4096
 #define PTNET_RX_BUDGET		512
 #define PTNET_RX_BATCH		1
+#define PTNET_TX_BUDGET		512
 #define PTNET_TX_BATCH		64
 #define PTNET_HDR_SIZE		sizeof(struct virtio_net_hdr_mrg_rxbuf)
 #define PTNET_MAX_PKT_SIZE	65536
@@ -1273,7 +1277,7 @@ ptnet_rx_intr(void *opaque)
 	/* Like vtnet, if_igb and if_em drivers when using MSI-X interrupts,
 	 * receive-side processing is executed directly in the interrupt
 	 * service routine. Alternatively, we may schedule the taskqueue. */
-	ptnet_rx_eof(pq);
+	ptnet_rx_eof(pq, PTNET_RX_BUDGET, true);
 }
 
 /* The following offloadings-related functions are taken from the vtnet
@@ -1637,7 +1641,8 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 /* This function may be called by the network stack, or by
  * by the taskqueue thread. */
 static int
-ptnet_drain_transmit_queue(struct ptnet_queue *pq)
+ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
+			   bool may_resched)
 {
 	struct ptnet_softc *sc = pq->sc;
 	bool have_vnet_hdr = sc->vnet_hdr_len;
@@ -1648,6 +1653,7 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 	struct netmap_kring *kring;
 	struct netmap_ring *ring;
 	struct netmap_slot *slot;
+	unsigned int count = 0;
 	unsigned int minspace;
 	unsigned int head;
 	unsigned int lim;
@@ -1659,7 +1665,9 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 	if (!PTNET_Q_TRYLOCK(pq)) {
 		/* We failed to acquire the lock, schedule the taskqueue. */
 		RD(1, "Deferring TX work");
-		taskqueue_enqueue(pq->taskq, &pq->task);
+		if (may_resched) {
+			taskqueue_enqueue(pq->taskq, &pq->task);
+		}
 
 		return 0;
 	}
@@ -1677,7 +1685,7 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 	head = ring->head;
 	minspace = sc->min_tx_space;
 
-	for (;;) {
+	while (count < budget) {
 		if (PTNET_TX_NOSPACE(head, kring, minspace)) {
 			/* We ran out of slot, let's see if the host has
 			 * freed up some, by reading hwcur and hwtail from
@@ -1793,6 +1801,7 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 
 		m_freem(mhead);
 
+		count ++;
 		if (++batch_count == PTNET_TX_BATCH) {
 			ptnet_ring_update(pq, kring, head, NAF_FORCE_RECLAIM);
 			batch_count = 0;
@@ -1803,9 +1812,15 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq)
 		ptnet_ring_update(pq, kring, head, NAF_FORCE_RECLAIM);
 	}
 
+	if (count >= budget && may_resched) {
+		DBG(RD(1, "out of budget: resched, %d mbufs pending\n",
+					drbr_inuse(ifp, pq->bufring)));
+		taskqueue_enqueue(pq->taskq, &pq->task);
+	}
+
 	PTNET_Q_UNLOCK(pq);
 
-	return 0;
+	return count;
 }
 
 static int
@@ -1845,7 +1860,9 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		return err;
 	}
 
-	return ptnet_drain_transmit_queue(pq);
+	err = ptnet_drain_transmit_queue(pq, PTNET_TX_BUDGET, true);
+
+	return (err < 0) ? err : 0;
 }
 
 static unsigned int
@@ -1903,8 +1920,8 @@ ptnet_rx_slot(struct mbuf *mtail, uint8_t *nmbuf, unsigned int nmbuf_len)
 	return mtail;
 }
 
-static void
-ptnet_rx_eof(struct ptnet_queue *pq)
+static int
+ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 {
 	struct ptnet_softc *sc = pq->sc;
 	bool have_vnet_hdr = sc->vnet_hdr_len;
@@ -1913,10 +1930,10 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
-	unsigned int budget = PTNET_RX_BUDGET;
 	unsigned int head = ring->head;
 	unsigned int batch_count = 0;
 	struct ifnet *ifp = sc->ifp;
+	unsigned int count = 0;
 
 	PTNET_Q_LOCK(pq);
 
@@ -1926,7 +1943,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
-	do {
+	while (count < budget) {
 		unsigned int prev_head = head;
 		struct mbuf *mhead, *mtail;
 		struct virtio_net_hdr *vh;
@@ -2014,8 +2031,10 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 					__func__, head, prev_head);
 				head = prev_head;
 				m_freem(mhead);
-				taskqueue_enqueue(pq->taskq,
-						  &pq->task);
+				if (may_resched) {
+					taskqueue_enqueue(pq->taskq,
+							  &pq->task);
+				}
 				goto escape;
 			}
 
@@ -2079,6 +2098,7 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			goto unlock;
 		}
 
+		count ++;
 		if (++batch_count == PTNET_RX_BATCH) {
 			/* Some packets have been pushed to the network stack.
 			 * We need to update the CSB to tell the host about the new
@@ -2086,14 +2106,14 @@ ptnet_rx_eof(struct ptnet_queue *pq)
 			ptnet_ring_update(pq, kring, head, NAF_FORCE_READ);
 			batch_count = 0;
 		}
-	} while (--budget);
+	}
 escape:
 	if (batch_count) {
 		ptnet_ring_update(pq, kring, head, NAF_FORCE_READ);
 
 	}
 
-	if (!budget) {
+	if (count >= budget && may_resched) {
 		/* If we ran out of budget or the double-check found new
 		 * slots to process, schedule the taskqueue. */
 		DBG(RD(1, "out of budget: resched h %u t %u\n",
@@ -2102,6 +2122,8 @@ escape:
 	}
 unlock:
 	PTNET_Q_UNLOCK(pq);
+
+	return count;
 }
 
 static void
@@ -2110,7 +2132,7 @@ ptnet_rx_task(void *context, int pending)
 	struct ptnet_queue *pq = context;
 
 	DBG(RD(1, "%s: pq #%u\n", __func__, pq->kring_id));
-	ptnet_rx_eof(pq);
+	ptnet_rx_eof(pq, PTNET_RX_BUDGET, true);
 }
 
 static void
@@ -2119,22 +2141,65 @@ ptnet_tx_task(void *context, int pending)
 	struct ptnet_queue *pq = context;
 
 	DBG(RD(1, "%s: pq #%u\n", __func__, pq->kring_id));
-	ptnet_drain_transmit_queue(pq);
+	ptnet_drain_transmit_queue(pq, PTNET_TX_BUDGET, true);
 }
 
 #ifdef DEVICE_POLLING
+/* We don't need to handle differently POLL_AND_CHECK_STATUS and
+ * POLL_ONLY, since we don't have an Interrupt Status Register. */
 static int
-ptnet_poll(struct ifnet *ifp, enum poll_cmd cmd, int count)
+ptnet_poll(struct ifnet *ifp, enum poll_cmd cmd, int budget)
 {
 	struct ptnet_softc *sc = ifp->if_softc;
+	unsigned int queue_budget;
+	unsigned int count = 0;
+	bool borrow = false;
+	int i;
 
-	/* We don't need to handle differently POLL_AND_CHECK_STATUS and
-	 * POLL_ONLY, since we don't have an Interrupt Status Register. */
+	KASSERT(sc->num_rings > 0, "Found no queues in while polling ptnet");
+	queue_budget = MIN(budget / sc->num_rings, 1);
+	RD(1, "Per-queue budget is %d", queue_budget);
 
-	//rx_done = ptnet_rx_eof(pq)
-	// ptnet_drain_transmit_queue(pq);
-	(void)sc;
+	while (budget) {
+		unsigned int rcnt = 0;
 
-	return 0; //(rx_done);
+		for (i = 0; i < sc->num_rings; i++) {
+			struct ptnet_queue *pq = sc->queues + i;
+
+			if (borrow) {
+				queue_budget = MIN(queue_budget, budget);
+				if (queue_budget == 0) {
+					break;
+				}
+			}
+
+			if (i < sc->num_tx_rings) {
+				rcnt += ptnet_drain_transmit_queue(pq,
+						   queue_budget, false);
+			} else {
+				rcnt += ptnet_rx_eof(pq, queue_budget,
+						      false);
+			}
+		}
+
+		if (!rcnt) {
+			/* A scan of the queues gave no result, we can
+			 * stop here. */
+			break;
+		}
+
+		if (rcnt > budget) {
+			/* This may happen when initial budget < sc->num_rings,
+			 * since one packet budget is given to each queue
+			 * anyway. Just pretend we didn't eat "so much". */
+			rcnt = budget;
+		}
+		count += rcnt;
+		budget -= rcnt;
+		borrow = true;
+	}
+
+
+	return count;
 }
 #endif /* DEVICE_POLLING */
