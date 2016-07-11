@@ -153,6 +153,8 @@ struct ptnet_softc {
 	struct netmap_pt_guest_adapter ptna_dr;
 	/* XXX we should move ptna_dr and backend_regifs inside struct
 	 * netmap_pt_guest_adapter and have just one instance of that. */
+
+	struct callout		tick;
 };
 
 #define PTNET_CORE_LOCK(_sc)	mtx_lock(&(_sc)->lock)
@@ -178,6 +180,7 @@ static void	ptnet_tx_task(void *context, int pending);
 
 static int	ptnet_media_change(struct ifnet *ifp);
 static void	ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr);
+static void	ptnet_tick(void *opaque);
 
 static int	ptnet_irqs_init(struct ptnet_softc *sc);
 static void	ptnet_irqs_fini(struct ptnet_softc *sc);
@@ -421,6 +424,7 @@ ptnet_attach(device_t dev)
 	snprintf(sc->lock_name, sizeof(sc->lock_name),
 		 "%s", device_get_nameunit(dev));
 	mtx_init(&sc->lock, sc->lock_name, "ptnet core lock", MTX_DEF);
+	callout_init_mtx(&sc->tick, &sc->lock, 0);
 
 	sc->backend_regifs = 0;
 
@@ -483,6 +487,8 @@ ptnet_detach(device_t dev)
 		ether_poll_deregister(sc->ifp);
 	}
 #endif
+	callout_drain(&sc->tick);
+
 	if (sc->queues) {
 		/* Drain taskqueues before calling if_detach. */
 		for (i = 0; i < sc->num_rings; i++) {
@@ -887,6 +893,8 @@ ptnet_init_locked(struct ptnet_softc *sc)
 	device_printf(sc->dev, "%s: min_tx_space = %u\n", __func__,
 		      sc->min_tx_space);
 
+	callout_reset(&sc->tick, hz, ptnet_tick, sc);
+
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 
 	return 0;
@@ -921,6 +929,7 @@ ptnet_stop(struct ptnet_softc *sc)
 	 * so that after this loop we are sure nobody is working anymore with
 	 * the device. This scheme is taken from the vtnet driver. */
 	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
+	callout_stop(&sc->tick);
 	for (i = 0; i < sc->num_rings; i++) {
 		PTNET_Q_LOCK(sc->queues + i);
 		PTNET_Q_UNLOCK(sc->queues + i);
@@ -973,6 +982,16 @@ ptnet_media_change(struct ifnet *ifp)
 	return 0;
 }
 
+/* Called under core lock. */
+static void
+ptnet_tick(void *opaque)
+{
+	struct ptnet_softc *sc = opaque;
+	struct ifnet *ifp = sc->ifp;
+
+	(void)ifp;
+	callout_schedule(&sc->tick, hz);
+}
 
 static void
 ptnet_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
