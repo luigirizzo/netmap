@@ -103,18 +103,27 @@ extern int ptnet_vnet_hdr; /* Tunable parameter */
 
 struct ptnet_softc;
 
+struct ptnet_queue_stats {
+	uint64_t	packets; /* if_[io]packets */
+	uint64_t	bytes;	 /* if_[io]bytes */
+	uint64_t	errors;	 /* if_[io]errors */
+	uint64_t	iqdrops; /* if_iqdrops */
+	uint64_t	mcasts;  /* if_[io]mcasts */
+};
+
 struct ptnet_queue {
-	struct ptnet_softc	*sc;
-	struct			resource *irq;
-	void			*cookie;
-	int			kring_id;
-	struct ptnet_ring	*ptring;
-	unsigned int		kick;
-	struct mtx		lock;
-	struct buf_ring		*bufring; /* for TX queues */
-	struct taskqueue	*taskq;
-	struct task		task;
-	char			lock_name[16];
+	struct ptnet_softc		*sc;
+	struct				resource *irq;
+	void				*cookie;
+	int				kring_id;
+	struct ptnet_ring		*ptring;
+	unsigned int			kick;
+	struct mtx			lock;
+	struct buf_ring			*bufring; /* for TX queues */
+	struct ptnet_queue_stats	stats;
+	struct taskqueue		*taskq;
+	struct task			task;
+	char				lock_name[16];
 };
 
 #define PTNET_Q_LOCK(_pq)	mtx_lock(&(_pq)->lock)
@@ -988,8 +997,33 @@ ptnet_tick(void *opaque)
 {
 	struct ptnet_softc *sc = opaque;
 	struct ifnet *ifp = sc->ifp;
+	struct ptnet_queue_stats stats[2];
+	int i;
 
-	(void)ifp;
+	/* Accumulate statistics over the queues. */
+	memset(stats, 0, sizeof(stats));
+	for (i = 0; i < sc->num_rings; i++) {
+		struct ptnet_queue *pq = sc->queues + i;
+		int idx = (i < sc->num_tx_rings) ? 0 : 1;
+
+		stats[idx].packets	+= pq->stats.packets;
+		stats[idx].bytes	+= pq->stats.bytes;
+		stats[idx].errors	+= pq->stats.errors;
+		stats[idx].iqdrops	+= pq->stats.iqdrops;
+		stats[idx].mcasts	+= pq->stats.mcasts;
+	}
+
+	/* Update interface statistics. */
+	ifp->if_opackets	= stats[0].packets;
+	ifp->if_obytes		= stats[0].bytes;
+	ifp->if_omcasts		= stats[0].mcasts;
+	ifp->if_oerrors		= stats[0].errors;
+	ifp->if_ipackets	= stats[1].packets;
+	ifp->if_ibytes		= stats[1].bytes;
+	ifp->if_imcasts		= stats[1].mcasts;
+	ifp->if_ierrors		= stats[1].errors;
+	ifp->if_iqdrops		= stats[1].iqdrops;
+
 	callout_schedule(&sc->tick, hz);
 }
 
@@ -1759,6 +1793,7 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
 					 * occurred while preparing the vnet
 					 * header. Let's go ahead with the next
 					 * packet. */
+					pq->stats.errors ++;
 					drbr_advance(ifp, pq->bufring);
 					continue;
 				}
@@ -1818,6 +1853,12 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
 		/* Copy the packet to listeners. */
 		ETHER_BPF_MTAP(ifp, mhead);
 
+		pq->stats.packets ++;
+		pq->stats.bytes += mhead->m_pkthdr.len;
+		if (mhead->m_flags & M_MCAST) {
+			pq->stats.mcasts ++;
+		}
+
 		m_freem(mhead);
 
 		count ++;
@@ -1876,6 +1917,7 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		/* ENOBUFS when the bufring is full */
 		RD(1, "%s: drbr_enqueue() failed %d\n",
 			__func__, err);
+		pq->stats.errors ++;
 		return err;
 	}
 
@@ -1969,7 +2011,7 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 		struct netmap_slot *slot;
 		unsigned int nmbuf_len;
 		uint8_t *nmbuf;
-
+host_sync:
 		if (head == ring->tail) {
 			/* We ran out of slot, let's see if the host has
 			 * added some, by reading hwcur and hwtail from
@@ -2004,8 +2046,10 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 				/* There is no good reason why host should
 				 * put the header in multiple netmap slots.
 				 * If this is the case, discard. */
+				RD(1, "Fragmented vnet-hdr: dropping");
 				head = ptnet_rx_discard(kring, head);
-				continue;
+				pq->stats.iqdrops ++;
+				goto skip;
 			}
 			ND(1, "%s: vnet hdr: flags %x csum_start %u "
 			      "csum_ofs %u hdr_len = %u gso_size %u "
@@ -2024,6 +2068,7 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 		if (unlikely(mhead == NULL)) {
 			device_printf(sc->dev, "%s: failed to allocate mbuf "
 				      "head\n", __func__);
+			pq->stats.errors ++;
 			break;
 		}
 
@@ -2050,6 +2095,7 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 					__func__, head, prev_head);
 				head = prev_head;
 				m_freem(mhead);
+				pq->stats.errors ++;
 				if (may_resched) {
 					taskqueue_enqueue(pq->taskq,
 							  &pq->task);
@@ -2067,11 +2113,12 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 
 			if (unlikely(head == ring->tail)) {
 				/* The very last slot prepared by the host has
-				 * the NS_MOREFRAG set. This is an error that
-				 * we handle by accepting the truncated packet,
-				 * and let the network stack drop it. */
-				RD(1, "Warning: Truncating incomplete packet");
-				break;
+				 * the NS_MOREFRAG set. Drop it and continue
+				 * the outer cycle (to do the double-check). */
+				RD(1, "Incomplete packet: dropping");
+				m_freem(mhead);
+				pq->stats.iqdrops ++;
+				goto host_sync;
 			}
 
 			slot = ring->slot + head;
@@ -2104,8 +2151,16 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 
 		if (have_vnet_hdr && (vh->flags & (VIRTIO_NET_HDR_F_NEEDS_CSUM
 					| VIRTIO_NET_HDR_F_DATA_VALID))) {
-			ptnet_rx_csum(mhead, vh);
+			if (unlikely(ptnet_rx_csum(mhead, vh))) {
+				m_freem(mhead);
+				RD(1, "Csum offload error: dropping");
+				pq->stats.iqdrops ++;
+				goto skip;
+			}
 		}
+
+		pq->stats.packets ++;
+		pq->stats.bytes += mhead->m_pkthdr.len;
 
 		PTNET_Q_UNLOCK(pq);
 		(*ifp->if_input)(ifp, mhead);
@@ -2116,7 +2171,7 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 			 * have the lock. Stop any processing and exit. */
 			goto unlock;
 		}
-
+skip:
 		count ++;
 		if (++batch_count == PTNET_RX_BATCH) {
 			/* Some packets have been pushed to the network stack.
