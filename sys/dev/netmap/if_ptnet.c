@@ -1921,6 +1921,12 @@ ptnet_transmit(struct ifnet *ifp, struct mbuf *m)
 		return err;
 	}
 
+	if (ifp->if_capenable & IFCAP_POLLING) {
+		/* If polling is on, the transmit queues will be
+		 * drained by the poller. */
+		return 0;
+	}
+
 	err = ptnet_drain_transmit_queue(pq, PTNET_TX_BUDGET, true);
 
 	return (err < 0) ? err : 0;
