@@ -2237,7 +2237,7 @@ ptnet_poll(struct ifnet *ifp, enum poll_cmd cmd, int budget)
 	int i;
 
 	KASSERT(sc->num_rings > 0, "Found no queues in while polling ptnet");
-	queue_budget = MIN(budget / sc->num_rings, 1);
+	queue_budget = MAX(budget / sc->num_rings, 1);
 	RD(1, "Per-queue budget is %d", queue_budget);
 
 	while (budget) {
