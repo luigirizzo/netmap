@@ -784,10 +784,6 @@ ptnet_irqs_init(struct ptnet_info *pi)
 			pi->msix_entries[i].vector, handler);
 	}
 
-	/* Tell the hypervisor that we have allocated the MSI-X vectors,
-	 * so that it can do its own setup. */
-	iowrite32(PTNET_CTRL_IRQINIT, pi->ioaddr + PTNET_IO_CTRL);
-
 	return 0;
 
 err_irqs:
@@ -807,10 +803,6 @@ static void
 ptnet_irqs_fini(struct ptnet_info *pi)
 {
 	int i;
-
-	/* Tell the hypervisor that we are going to deallocate the
-	 * MSI-X vectors, so that it can do its own setup. */
-	iowrite32(PTNET_CTRL_IRQFINI, pi->ioaddr + PTNET_IO_CTRL);
 
 	for (i=0; i<pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues[i];
