@@ -40,16 +40,17 @@
 #define _GNU_SOURCE	/* for CPU_SET() */
 #include <stdio.h>
 #define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
-
 
 #include <ctype.h>	// isprint()
 #include <unistd.h>	// sysconf()
-#include <sys/poll.h>
+#include <poll.h>
 #include <arpa/inet.h>	/* ntohs */
 #ifndef _WIN32
-#include <sys/sysctl.h>	/* sysctl */
+#include <linux/sysctl.h>	/* sysctl */
+#include <sys/time.h>	/* sysctl */
+#include <sys/types.h>	// isprint()
 #endif
+#include <net/netmap_user.h>
 #include <ifaddrs.h>	/* getifaddrs */
 #include <net/ethernet.h>
 #include <netinet/in.h>

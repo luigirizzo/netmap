@@ -161,7 +161,7 @@ nm_ring_space(struct netmap_ring *ring)
 #include <sys/mman.h>
 #include <string.h>	/* memset */
 #include <sys/ioctl.h>
-#include <sys/errno.h>	/* EINVAL */
+#include <errno.h>	/* EINVAL */
 #include <fcntl.h>	/* O_RDWR */
 #include <unistd.h>	/* close() */
 #include <signal.h>

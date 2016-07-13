@@ -11,8 +11,10 @@
 
 #include <stdio.h>
 #define NETMAP_WITH_LIBS
+#include <poll.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <net/netmap_user.h>
-#include <sys/poll.h>
 
 int verbose = 0;
 

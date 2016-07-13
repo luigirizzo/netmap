@@ -1,13 +1,14 @@
 #define TEST_NETMAP
 
 #include <inttypes.h>
+#include <sys/types.h>
 #include <sys/param.h>	/* ULONG_MAX */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include <sys/poll.h>
+#include <poll.h>
 #include <sys/wait.h>
 #include <sys/mman.h>	/* PROT_* */
 #include <fcntl.h>	/* O_RDWR */
@@ -142,6 +143,7 @@ void do_close()
 #ifdef TEST_NETMAP
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <ifaddrs.h>
 #include <net/netmap_user.h>
 
@@ -1276,7 +1278,7 @@ cmd_loop()
 					exit(1);
 				}
 				close(p1[1]);
-				stdin = fdopen(0, "r");
+				//stdin = fdopen(0, "r");
 				chan_clear_all(channels, MAX_CHAN);
 				goto out;
 			default:
