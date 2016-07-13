@@ -220,7 +220,7 @@ struct paravirt_csb {
 #define PTNET_IO_PTFEAT		0
 #define PTNET_IO_PTCTL		4
 #define PTNET_IO_PTSTS		8
-#define PTNET_IO_CTRL		12
+/* hole */
 #define PTNET_IO_MAC_LO		16
 #define PTNET_IO_MAC_HI		20
 #define PTNET_IO_CSBBAH         24
@@ -237,14 +237,6 @@ struct paravirt_csb {
 
 /* If defined, CSB is allocated by the guest, not by the host. */
 #define PTNET_CSB_ALLOC
-
-/* Tell the hypervisor that guest has allocated the MSI-X
- * interrupts, so that it can setup the host --> guest
- * notification system (e.g. irqfd). */
-#define PTNET_CTRL_IRQINIT	1
-/* Tell the hypervisor to tear down the host --> guest
- * notification system, since guest has deallocated the MSI-X. */
-#define PTNET_CTRL_IRQFINI	2
 
 /* CSB for the ptnet device. */
 struct ptnet_csb {
