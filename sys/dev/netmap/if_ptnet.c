@@ -679,10 +679,6 @@ ptnet_irqs_init(struct ptnet_softc *sc)
 		cpu_cur = CPU_NEXT(cpu_cur);
 	}
 
-	/* Tell the hypervisor that we have allocated the MSI-X vectors,
-	 * so that it can do its own setup. */
-	bus_write_4(sc->iomem, PTNET_IO_CTRL, PTNET_CTRL_IRQINIT);
-
 	return 0;
 err_path:
 	ptnet_irqs_fini(sc);
@@ -694,10 +690,6 @@ ptnet_irqs_fini(struct ptnet_softc *sc)
 {
 	device_t dev = sc->dev;
 	int i;
-
-	/* Tell the hypervisor that we are going to deallocate the
-	 * MSI-X vectors, so that it can do its own cleanup. */
-	bus_write_4(sc->iomem, PTNET_IO_CTRL, PTNET_CTRL_IRQFINI);
 
 	for (i = 0; i < sc->num_rings; i++) {
 		struct ptnet_queue *pq = sc->queues + i;
