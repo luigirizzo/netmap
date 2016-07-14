@@ -83,12 +83,6 @@ struct ptnet_info {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
 
-	/* Reference counter to track users of backend netmap port: the
-	 * network stack and netmap clients.
-	 * Used to decide when we need (de)allocate krings/rings and
-	 * start (stop) ptnetmap kthreads. */
-	int backend_regifs;
-
 	/* Mirrors PTFEAT register content. */
 	uint32_t ptfeatures;
 	unsigned int vnet_hdr_len;
@@ -115,9 +109,6 @@ struct ptnet_info {
 
 	/* Pass-through netmap adapter used by netmap. */
 	struct netmap_pt_guest_adapter *ptna_nm;
-
-	/* Pass-through netmap adapter used by this driver. */
-	struct netmap_pt_guest_adapter ptna_dr;
 };
 
 #ifdef HANGCTRL
@@ -126,7 +117,7 @@ hang_tmr_callback(unsigned long arg)
 {
 	struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)arg;
 	struct ptnet_info *pi = prq->q.pi;
-	struct netmap_adapter *na = &pi->ptna_dr.hwup.up;
+	struct netmap_adapter *na = &pi->ptna_nm->dr.up;
 	struct netmap_kring *kring = na->rx_rings + prq->q.kring_id;
 	struct netmap_ring *ring = kring->ring;
 
@@ -214,7 +205,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	struct xmit_copy_args a;
 	int f;
 
-	a.na = &pi->ptna_dr.hwup.up;
+	a.na = &pi->ptna_nm->dr.up;
 	kring = &a.na->tx_rings[queue_idx];
 	a.ring = kring->ring;
 	a.lim = kring->nkr_num_slots - 1;
@@ -468,7 +459,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	struct ptnet_queue *pq = (struct ptnet_queue *)prq;
 	struct ptnet_ring *ptring = pq->ptring;
 	struct ptnet_info *pi = pq->pi;
-	struct netmap_adapter *na = &pi->ptna_dr.hwup.up;
+	struct netmap_adapter *na = &pi->ptna_nm->dr.up;
 	struct netmap_kring *kring = &na->rx_rings[pq->kring_id];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
@@ -723,7 +714,7 @@ static void
 ptnet_netpoll(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na = &pi->ptna_dr.hwup.up;
+	struct netmap_adapter *na = &pi->ptna_nm->dr.up;
 	int i;
 
 	for (i = 0; i < na->num_rx_rings; i++) {
@@ -830,7 +821,7 @@ static int
 ptnet_open(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na_dr = &pi->ptna_dr.hwup.up;
+	struct netmap_adapter *na_dr = &pi->ptna_nm->dr.up;
 	int ret;
 	int i;
 
@@ -844,7 +835,7 @@ ptnet_open(struct net_device *netdev)
 		goto err_mem_finalize;
 	}
 
-	if (pi->backend_regifs == 0) {
+	if (pi->ptna_nm->backend_regifs == 0) {
 		ret = ptnet_nm_krings_create(na_dr);
 		if (ret) {
 			pr_err("ptnet_nm_krings_create() failed\n");
@@ -927,7 +918,7 @@ static int
 ptnet_close(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	struct netmap_adapter *na_dr = &pi->ptna_dr.hwup.up;
+	struct netmap_adapter *na_dr = &pi->ptna_nm->dr.up;
 	int i;
 
 	D("%s: netif_running %u", __func__, netif_running(netdev));
@@ -958,7 +949,7 @@ ptnet_close(struct net_device *netdev)
 
 	ptnet_nm_register(na_dr, 0 /* off */);
 
-	if (pi->backend_regifs == 0) {
+	if (pi->ptna_nm->backend_regifs == 0) {
 		netmap_mem_rings_delete(na_dr);
 		ptnet_nm_krings_delete(na_dr);
 	}
@@ -984,13 +975,13 @@ static const struct net_device_ops ptnet_netdev_ops = {
 static int
 ptnet_nm_krings_create(struct netmap_adapter *na)
 {
-	/* Here (na == &pi->ptna_nm->hwup.up || na == &pi->ptna_dr.hwup.up). */
+	/* Here (na == &pi->ptna_nm->hwup.up || na == &pi->ptna_nm->dr.up). */
 	struct ptnet_info *pi = netdev_priv(na->ifp);
 	struct netmap_adapter *na_nm = &pi->ptna_nm->hwup.up;
-	struct netmap_adapter *na_dr = &pi->ptna_dr.hwup.up;
+	struct netmap_adapter *na_dr = &pi->ptna_nm->dr.up;
 	int ret;
 
-	if (pi->backend_regifs) {
+	if (pi->ptna_nm->backend_regifs) {
 		return 0;
 	}
 
@@ -1010,12 +1001,12 @@ ptnet_nm_krings_create(struct netmap_adapter *na)
 static void
 ptnet_nm_krings_delete(struct netmap_adapter *na)
 {
-	/* Here (na == &pi->ptna_nm->hwup.up || na == &pi->ptna_dr.hwup.up). */
+	/* Here (na == &pi->ptna_nm->hwup.up || na == &pi->ptna_nm->dr.up). */
 	struct ptnet_info *pi = netdev_priv(na->ifp);
 	struct netmap_adapter *na_nm = &pi->ptna_nm->hwup.up;
-	struct netmap_adapter *na_dr = &pi->ptna_dr.hwup.up;
+	struct netmap_adapter *na_dr = &pi->ptna_nm->dr.up;
 
-	if (pi->backend_regifs) {
+	if (pi->ptna_nm->backend_regifs) {
 		return;
 	}
 
@@ -1100,10 +1091,10 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	int ret = 0;
 	int i;
 
-	BUG_ON(!(na == &pi->ptna_nm->hwup.up || na == &pi->ptna_dr.hwup.up));
+	BUG_ON(!(na == &pi->ptna_nm->hwup.up || na == &pi->ptna_nm->dr.up));
 
 	if (!onoff) {
-		pi->backend_regifs--;
+		pi->ptna_nm->backend_regifs--;
 	}
 
 	/* If this is the last netmap client, guest interrupt enable flags may
@@ -1126,7 +1117,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	}
 
 	if (onoff) {
-		if (pi->backend_regifs == 0) {
+		if (pi->ptna_nm->backend_regifs == 0) {
 			/* Initialize notification enable fields in the CSB. */
 			csb_notification_enable_all(pi, na, NR_TX, host_need_kick, 1);
 			csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 0);
@@ -1147,7 +1138,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		/* Sync from CSB must be done after REGIF PTCTL. Skip this
 		 * step only if this is a netmap client and it is not the
 		 * first one. */
-		if ((!native && pi->backend_regifs == 0) ||
+		if ((!native && pi->ptna_nm->backend_regifs == 0) ||
 				(native && na->active_fds == 0)) {
 			ptnet_sync_from_csb(pi, na);
 		}
@@ -1187,13 +1178,13 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			ptnet_sync_from_csb(pi, na);
 		}
 
-		if (pi->backend_regifs == 0) {
+		if (pi->ptna_nm->backend_regifs == 0) {
 			ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
 		}
 	}
 
 	if (onoff) {
-		pi->backend_regifs++;
+		pi->ptna_nm->backend_regifs++;
 	}
 
 	return ret;
@@ -1494,24 +1485,13 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * can be accessed through NA(ifp). We have to initialize the CSB
 	 * pointer. */
 	pi->ptna_nm = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
-	pi->ptna_nm->csb = pi->csb;
+	pi->ptna_nm->csb = pi->csb; /* XXX useless, done inside attach. */
+	pi->ptna_nm->dr.up.nm_config = ptnet_nm_config; /* XXX should be done inside attach */
 
 	/* If virtio-net header was negotiated, set the virt_hdr_len field in
 	 * the netmap adapter, to inform users that this netmap adapter requires
 	 * the application to deal with the headers. */
 	ptnet_update_vnet_hdr(pi);
-
-	/* Initialize a separate pass-through netmap adapter that is going to
-	 * be used by this driver only, and so never exposed to netmap. We
-	 * only need a subset of the available fields. */
-	memset(&pi->ptna_dr, 0, sizeof(pi->ptna_dr));
-	pi->ptna_dr.hwup.up.ifp = pi->netdev;
-	pi->ptna_dr.hwup.up.nm_mem = pi->ptna_nm->hwup.up.nm_mem;
-	netmap_mem_get(pi->ptna_dr.hwup.up.nm_mem);
-	pi->ptna_dr.hwup.up.nm_config = ptnet_nm_config;
-	pi->ptna_dr.csb = pi->csb;
-
-	pi->backend_regifs = 0;
 
 	netif_carrier_on(netdev);
 
@@ -1559,14 +1539,12 @@ ptnet_remove(struct pci_dev *pdev)
 
 	/* When the netdev is unregistered, ptnet_close() is invoked
 	 * for the device. Therefore, the uninitialization of the the
-	 * two netmap adapter (ptna_dr, ptna_nm) must happen afterwards. */
+	 * two netmap adapters (ptna_nm, ptna_nm->dr) must happen
+         * afterwards. */
 	unregister_netdev(netdev);
 
 	/* Uninitialize netmap adapters for this device. */
-	netmap_mem_put(pi->ptna_dr.hwup.up.nm_mem);
-	memset(&pi->ptna_dr, 0, sizeof(pi->ptna_dr));
-
-	netmap_detach(netdev);
+	netmap_pt_guest_detach(pi->ptna_nm);
 
 	for (i = 0; i < netdev->num_rx_queues; i++) {
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)

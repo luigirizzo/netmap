@@ -2887,7 +2887,26 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 	ptna = (struct netmap_pt_guest_adapter *) NA(ifp);
 	ptna->csb = csb;
 
+	/* Initialize a separate pass-through netmap adapter that is going to
+	 * be used by the ptnet driver only, and so never exposed to netmap
+         * applications. We only need a subset of the available fields. */
+	memset(&ptna->dr, 0, sizeof(ptna->dr));
+	ptna->dr.up.ifp = ifp;
+	ptna->dr.up.nm_mem = ptna->hwup.up.nm_mem;
+	netmap_mem_get(ptna->dr.up.nm_mem);
+        ptna->dr.up.nm_config = NULL;
+
+	ptna->backend_regifs = 0;
+
 	return 0;
+}
+
+void
+netmap_pt_guest_detach(struct netmap_pt_guest_adapter *ptna)
+{
+	netmap_mem_put(ptna->dr.up.nm_mem);
+	memset(&ptna->dr, 0, sizeof(ptna->dr));
+	netmap_detach(ptna->hwup.up.ifp);
 }
 #endif /* WITH_PTNETMAP_GUEST */
 

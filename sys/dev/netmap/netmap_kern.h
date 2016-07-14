@@ -2050,12 +2050,25 @@ typedef uint32_t (*nm_pt_guest_ptctl_t)(struct ifnet *, uint32_t);
  * netmap adapter for guest ptnetmap ports
  */
 struct netmap_pt_guest_adapter {
+        /* The netmap adapter to be used by netmap applications. */
 	struct netmap_hw_adapter hwup;
+
+        /* The netmap adapter to be used by the driver. */
+        struct netmap_hw_adapter dr;
+
 	void *csb;
+
+	/* Reference counter to track users of backend netmap port: the
+	 * network stack and netmap clients.
+	 * Used to decide when we need (de)allocate krings/rings and
+	 * start (stop) ptnetmap kthreads. */
+	int backend_regifs;
+
 };
 
 int netmap_pt_guest_attach(struct netmap_adapter *, void *,
 			   unsigned int, nm_pt_guest_ptctl_t);
+void netmap_pt_guest_detach(struct netmap_pt_guest_adapter *);
 struct ptnet_ring;
 bool netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 			    int flags);

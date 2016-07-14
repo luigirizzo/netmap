@@ -142,10 +142,6 @@ struct ptnet_softc {
 	uint32_t		ptfeatures;
 	unsigned int		vnet_hdr_len;
 
-	/* Reference counter used to track the regif operations on the
-	 * passed-through netmap port. */
-	int backend_regifs;
-
 	/* PCI BARs support. */
 	struct resource		*iomem;
 	struct resource		*msix_mem;
