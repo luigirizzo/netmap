@@ -98,6 +98,7 @@ struct ptnet_info {
 	struct msix_entry *msix_entries;
 
 	int num_rings;
+	int num_tx_rings;
 	struct ptnet_queue **queues;
 	struct ptnet_queue **rxqueues;
 
@@ -726,11 +727,8 @@ ptnet_netpoll(struct net_device *netdev)
 static int
 ptnet_irqs_init(struct ptnet_info *pi)
 {
-	unsigned int num_tx_rings;
 	int ret;
 	int i;
-
-	num_tx_rings = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_RINGS);
 
 	/* Allocate the MSI-X interrupt vectors we need. */
 	pi->msix_entries = kzalloc(sizeof(*pi->msix_entries) * pi->num_rings,
@@ -760,7 +758,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 
 	for (i=0; i<pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues[i];
-		irq_handler_t handler = (i < num_tx_rings) ?
+		irq_handler_t handler = (i < pi->num_tx_rings) ?
 					ptnet_tx_intr : ptnet_rx_intr;
 
 		snprintf(pq->msix_name, sizeof(pq->msix_name),
@@ -1063,16 +1061,6 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 	}
 }
 
-#define csb_notification_enable_all(_pi, _na, _t, _fld, _v)		\
-	do {								\
-		struct ptnet_queue **queues = (_pi)->queues;		\
-		int i;							\
-		if (_t == NR_RX) queues = (_pi)->rxqueues;		\
-		for (i=0; i<nma_get_nrings(_na, _t); i++) {		\
-			queues[i]->ptring->_fld = _v;			\
-		}							\
-	} while (0)							\
-
 static void
 ptnet_update_vnet_hdr(struct ptnet_info *pi)
 {
@@ -1089,6 +1077,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	struct net_device *netdev = na->ifp;
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int native = (na == &pi->ptna_nm->hwup.up);
+	struct ptnet_ring *ptring;
 	enum txrx t;
 	int ret = 0;
 	int i;
@@ -1107,8 +1096,10 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	 * until these will be processed. */
 	if (native && !onoff && na->active_fds == 0) {
 		D("Exit netmap mode, re-enable interrupts");
-		csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 1);
-		csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
+		for (i = 0; i < pi->num_rings; i++) {
+			ptring = pi->queues[i]->ptring;
+			ptring->guest_need_kick = 1;
+		}
 		if (netif_running(netdev)) {
 			D("Exit netmap mode, schedule NAPI to flush RX ring");
 			for (i = 0; i < na->num_rx_rings; i++){
@@ -1121,10 +1112,11 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	if (onoff) {
 		if (pi->ptna_nm->backend_regifs == 0) {
 			/* Initialize notification enable fields in the CSB. */
-			csb_notification_enable_all(pi, na, NR_TX, host_need_kick, 1);
-			csb_notification_enable_all(pi, na, NR_TX, guest_need_kick, 0);
-			csb_notification_enable_all(pi, na, NR_RX, host_need_kick, 1);
-			csb_notification_enable_all(pi, na, NR_RX, guest_need_kick, 1);
+			for (i = 0; i < pi->num_rings; i++) {
+				ptring = pi->queues[i]->ptring;
+				ptring->host_need_kick = 1;
+				ptring->guest_need_kick = (i >= pi->num_tx_rings);
+			}
 
 			/* Set the virtio-net header length. */
 			ptnet_update_vnet_hdr(pi);
@@ -1349,6 +1341,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->ioaddr = ioaddr;
 	pi->ptfeatures = ptfeatures;
 	pi->num_rings = num_tx_rings + num_rx_rings;
+	pi->num_tx_rings = num_tx_rings;
 
 	/* Initialize the arrays of pointers with the per-ring structures. */
 	pi->queues = (struct ptnet_queue **)(pi + 1);
