@@ -2050,7 +2050,8 @@ typedef uint32_t (*nm_pt_guest_ptctl_t)(struct ifnet *, uint32_t);
  * netmap adapter for guest ptnetmap ports
  */
 struct netmap_pt_guest_adapter {
-        /* The netmap adapter to be used by netmap applications. */
+        /* The netmap adapter to be used by netmap applications.
+	 * This field must be the first, to allow upcast. */
 	struct netmap_hw_adapter hwup;
 
         /* The netmap adapter to be used by the driver. */

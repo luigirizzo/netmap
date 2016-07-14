@@ -822,6 +822,7 @@ ptnet_open(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na_dr = &pi->ptna_nm->dr.up;
+	struct netmap_adapter *na_nm = &pi->ptna_nm->hwup.up;
 	int ret;
 	int i;
 
@@ -836,7 +837,7 @@ ptnet_open(struct net_device *netdev)
 	}
 
 	if (pi->ptna_nm->backend_regifs == 0) {
-		ret = ptnet_nm_krings_create(na_dr);
+		ret = ptnet_nm_krings_create(na_nm);
 		if (ret) {
 			pr_err("ptnet_nm_krings_create() failed\n");
 			goto err_mem_finalize;
@@ -902,7 +903,7 @@ err_register:
 err_get_lut:
 	netmap_mem_rings_delete(na_dr);
 err_rings_create:
-	ptnet_nm_krings_delete(na_dr);
+	ptnet_nm_krings_delete(na_nm);
 err_mem_finalize:
 	return -ret;
 }
@@ -919,6 +920,7 @@ ptnet_close(struct net_device *netdev)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
 	struct netmap_adapter *na_dr = &pi->ptna_nm->dr.up;
+	struct netmap_adapter *na_nm = &pi->ptna_nm->hwup.up;
 	int i;
 
 	D("%s: netif_running %u", __func__, netif_running(netdev));
@@ -951,7 +953,7 @@ ptnet_close(struct net_device *netdev)
 
 	if (pi->ptna_nm->backend_regifs == 0) {
 		netmap_mem_rings_delete(na_dr);
-		ptnet_nm_krings_delete(na_dr);
+		ptnet_nm_krings_delete(na_nm);
 	}
 	netmap_mem_deref(na_dr->nm_mem, na_dr);
 
@@ -975,13 +977,13 @@ static const struct net_device_ops ptnet_netdev_ops = {
 static int
 ptnet_nm_krings_create(struct netmap_adapter *na)
 {
-	/* Here (na == &pi->ptna_nm->hwup.up || na == &pi->ptna_nm->dr.up). */
-	struct ptnet_info *pi = netdev_priv(na->ifp);
-	struct netmap_adapter *na_nm = &pi->ptna_nm->hwup.up;
-	struct netmap_adapter *na_dr = &pi->ptna_nm->dr.up;
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na; /* Upcast. */
+	struct netmap_adapter *na_nm = &ptna->hwup.up;
+	struct netmap_adapter *na_dr = &ptna->dr.up;
 	int ret;
 
-	if (pi->ptna_nm->backend_regifs) {
+	if (ptna->backend_regifs) {
 		return 0;
 	}
 
@@ -1001,12 +1003,12 @@ ptnet_nm_krings_create(struct netmap_adapter *na)
 static void
 ptnet_nm_krings_delete(struct netmap_adapter *na)
 {
-	/* Here (na == &pi->ptna_nm->hwup.up || na == &pi->ptna_nm->dr.up). */
-	struct ptnet_info *pi = netdev_priv(na->ifp);
-	struct netmap_adapter *na_nm = &pi->ptna_nm->hwup.up;
-	struct netmap_adapter *na_dr = &pi->ptna_nm->dr.up;
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na; /* Upcast. */
+	struct netmap_adapter *na_nm = &ptna->hwup.up;
+	struct netmap_adapter *na_dr = &ptna->dr.up;
 
-	if (pi->ptna_nm->backend_regifs) {
+	if (ptna->backend_regifs) {
 		return;
 	}
 
@@ -1485,7 +1487,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * can be accessed through NA(ifp). We have to initialize the CSB
 	 * pointer. */
 	pi->ptna_nm = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
-	pi->ptna_nm->csb = pi->csb; /* XXX useless, done inside attach. */
 	pi->ptna_nm->dr.up.nm_config = ptnet_nm_config; /* XXX should be done inside attach */
 
 	/* If virtio-net header was negotiated, set the virt_hdr_len field in
