@@ -2894,7 +2894,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 	ptna->dr.up.ifp = ifp;
 	ptna->dr.up.nm_mem = ptna->hwup.up.nm_mem;
 	netmap_mem_get(ptna->dr.up.nm_mem);
-        ptna->dr.up.nm_config = NULL;
+        ptna->dr.up.nm_config = ptna->hwup.up.nm_config;
 
 	ptna->backend_regifs = 0;
 

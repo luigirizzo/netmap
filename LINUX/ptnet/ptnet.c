@@ -1438,7 +1438,6 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * can be accessed through NA(ifp). We have to initialize the CSB
 	 * pointer. */
 	pi->ptna = (struct netmap_pt_guest_adapter *)NA(pi->netdev);
-	pi->ptna->dr.up.nm_config = ptnet_nm_config; /* XXX should be done inside attach */
 
 	/* If virtio-net header was negotiated, set the virt_hdr_len field in
 	 * the netmap adapter, to inform users that this netmap adapter requires
