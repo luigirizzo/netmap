@@ -1967,7 +1967,6 @@ module_exit(linux_netmap_fini);
 EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
 #ifdef WITH_PTNETMAP_GUEST
 EXPORT_SYMBOL(netmap_pt_guest_attach);	/* ptnetmap driver attach routine */
-EXPORT_SYMBOL(netmap_pt_guest_detach);	/* ptnetmap driver detach routine */
 EXPORT_SYMBOL(netmap_pt_guest_rxsync);	/* ptnetmap generic rxsync */
 EXPORT_SYMBOL(netmap_pt_guest_txsync);	/* ptnetmap generic txsync */
 EXPORT_SYMBOL(netmap_mem_pt_guest_ifp_del); /* unlink passthrough interface */

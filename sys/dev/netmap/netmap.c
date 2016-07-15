@@ -2900,14 +2900,6 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 
 	return 0;
 }
-
-void
-netmap_pt_guest_detach(struct netmap_pt_guest_adapter *ptna)
-{
-	netmap_mem_put(ptna->dr.up.nm_mem);
-	memset(&ptna->dr, 0, sizeof(ptna->dr));
-	netmap_detach(ptna->hwup.up.ifp);
-}
 #endif /* WITH_PTNETMAP_GUEST */
 
 
