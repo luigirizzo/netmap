@@ -805,9 +805,6 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 	kfree(pi->msix_entries);
 }
 
-static int ptnet_nm_krings_create(struct netmap_adapter *na);
-static void ptnet_nm_krings_delete(struct netmap_adapter *na);
-
 static int ptnet_nm_register(struct netmap_adapter *na, int onoff);
 /*
  * ptnet_open - Called when a network interface is made active
@@ -971,50 +968,6 @@ static const struct net_device_ops ptnet_netdev_ops = {
 #endif
 };
 
-
-static int
-ptnet_nm_krings_create(struct netmap_adapter *na)
-{
-	struct netmap_pt_guest_adapter *ptna =
-			(struct netmap_pt_guest_adapter *)na; /* Upcast. */
-	struct netmap_adapter *na_nm = &ptna->hwup.up;
-	struct netmap_adapter *na_dr = &ptna->dr.up;
-	int ret;
-
-	if (ptna->backend_regifs) {
-		return 0;
-	}
-
-	/* Create krings on the public netmap adapter. */
-	ret = netmap_hw_krings_create(na_nm);
-	if (ret) {
-		return ret;
-	}
-
-	/* Copy krings into the netmap adapter private to the driver. */
-	na_dr->tx_rings = na_nm->tx_rings;
-	na_dr->rx_rings = na_nm->rx_rings;
-
-	return 0;
-}
-
-static void
-ptnet_nm_krings_delete(struct netmap_adapter *na)
-{
-	struct netmap_pt_guest_adapter *ptna =
-			(struct netmap_pt_guest_adapter *)na; /* Upcast. */
-	struct netmap_adapter *na_nm = &ptna->hwup.up;
-	struct netmap_adapter *na_dr = &ptna->dr.up;
-
-	if (ptna->backend_regifs) {
-		return;
-	}
-
-	na_dr->tx_rings = NULL;
-	na_dr->rx_rings = NULL;
-
-	netmap_hw_krings_delete(na_nm);
-}
 
 static uint32_t
 ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)

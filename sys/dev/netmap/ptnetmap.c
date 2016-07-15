@@ -1391,4 +1391,51 @@ netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 
 	return notify;
 }
+
+/*
+ * nm_krings_create and nm_krings_delete callbacks for ptnet drivers.
+ */
+int
+ptnet_nm_krings_create(struct netmap_adapter *na)
+{
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na; /* Upcast. */
+	struct netmap_adapter *na_nm = &ptna->hwup.up;
+	struct netmap_adapter *na_dr = &ptna->dr.up;
+	int ret;
+
+	if (ptna->backend_regifs) {
+		return 0;
+	}
+
+	/* Create krings on the public netmap adapter. */
+	ret = netmap_hw_krings_create(na_nm);
+	if (ret) {
+		return ret;
+	}
+
+	/* Copy krings into the netmap adapter private to the driver. */
+	na_dr->tx_rings = na_nm->tx_rings;
+	na_dr->rx_rings = na_nm->rx_rings;
+
+	return 0;
+}
+
+void
+ptnet_nm_krings_delete(struct netmap_adapter *na)
+{
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na; /* Upcast. */
+	struct netmap_adapter *na_nm = &ptna->hwup.up;
+	struct netmap_adapter *na_dr = &ptna->dr.up;
+
+	if (ptna->backend_regifs) {
+		return;
+	}
+
+	na_dr->tx_rings = NULL;
+	na_dr->rx_rings = NULL;
+
+	netmap_hw_krings_delete(na_nm);
+}
 #endif /* WITH_PTNETMAP_GUEST */
