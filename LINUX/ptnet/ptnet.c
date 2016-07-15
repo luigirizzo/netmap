@@ -1184,17 +1184,6 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
-static void
-ptnet_nm_dtor(struct netmap_adapter *na)
-{
-	struct netmap_pt_guest_adapter *ptna =
-			(struct netmap_pt_guest_adapter *)na;
-
-	netmap_mem_put(ptna->dr.up.nm_mem);
-	memset(&ptna->dr, 0, sizeof(ptna->dr));
-	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
-}
-
 static struct netmap_adapter ptnet_nm_ops = {
 	.nm_register = ptnet_nm_register,
 	.nm_config = ptnet_nm_config,

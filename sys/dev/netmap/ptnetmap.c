@@ -1393,7 +1393,7 @@ netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 }
 
 /*
- * nm_krings_create and nm_krings_delete callbacks for ptnet drivers.
+ * Callbacks for ptnet drivers: nm_krings_create, nm_krings_delete, nm_dtor.
  */
 int
 ptnet_nm_krings_create(struct netmap_adapter *na)
@@ -1438,4 +1438,16 @@ ptnet_nm_krings_delete(struct netmap_adapter *na)
 
 	netmap_hw_krings_delete(na_nm);
 }
+
+void
+ptnet_nm_dtor(struct netmap_adapter *na)
+{
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na;
+
+	netmap_mem_put(ptna->dr.up.nm_mem);
+	memset(&ptna->dr, 0, sizeof(ptna->dr));
+	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
+}
+
 #endif /* WITH_PTNETMAP_GUEST */

@@ -2076,6 +2076,7 @@ bool netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *krin
 			    int flags);
 int ptnet_nm_krings_create(struct netmap_adapter *na);
 void ptnet_nm_krings_delete(struct netmap_adapter *na);
+void ptnet_nm_dtor(struct netmap_adapter *na);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */
