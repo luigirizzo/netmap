@@ -1139,7 +1139,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		 * to replace if_transmit method, nor set NAF_NETMAP_ON */
 		if (native) {
 			for_rx_tx(t) {
-				for (i=0; i<nma_get_nrings(na, t); i++) {
+				for (i = 0; i <= nma_get_nrings(na, t); i++) {
 					struct netmap_kring *kring = &NMR(na, t)[i];
 
 					if (nm_kring_pending_on(kring)) {
@@ -1154,7 +1154,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		if (native) {
 			nm_clear_native_flags(na);
 			for_rx_tx(t) {
-				for (i=0; i<nma_get_nrings(na, t); i++) {
+				for (i = 0; i <= nma_get_nrings(na, t); i++) {
 					struct netmap_kring *kring = &NMR(na, t)[i];
 
 					if (nm_kring_pending_off(kring)) {
