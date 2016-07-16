@@ -1139,6 +1139,11 @@ nm_pt_host_dtor(struct netmap_adapter *na)
 
     DBG(D("%s", pth_na->up.name));
 
+    /* The equivalent of NETMAP_PT_HOST_DELETE if the hypervisor
+     * didn't do it. */
+    ptnetmap_stop_kthreads(pth_na);
+    ptnetmap_delete(pth_na);
+
     parent->na_flags &= ~NAF_BUSY;
 
     netmap_adapter_put(pth_na->parent);
