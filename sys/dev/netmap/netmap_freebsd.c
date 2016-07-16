@@ -33,7 +33,7 @@
 #include <sys/param.h>  /* defines used in kernel.h */
 #include <sys/poll.h>  /* POLLIN, POLLOUT */
 #include <sys/kernel.h> /* types used in module initialization */
-#include <sys/conf.h>	/* DEV_MODULE */
+#include <sys/conf.h>	/* DEV_MODULE_ORDERED */
 #include <sys/endian.h>
 #include <sys/syscallsubr.h> /* kern_ioctl() */
 
@@ -616,9 +616,11 @@ static driver_t ptn_memdev_driver = {
 	sizeof(struct ptnetmap_memdev),
 };
 
+/* We use (SI_ORDER_MIDDLE+1) here, see DEV_MODULE_ORDERED() invocation
+ * below. */
 static devclass_t ptnetmap_devclass;
 DRIVER_MODULE_ORDERED(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
-		      NULL, NULL, SI_ORDER_MIDDLE);
+		      NULL, NULL, SI_ORDER_MIDDLE + 1);
 
 /*
  * I/O port read/write wrappers.
@@ -1484,8 +1486,18 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 	return (error);
 }
 
-
-DEV_MODULE(netmap, netmap_loader, NULL);
+/*
+ * The netmap module contains three drivers: (i) the netmap character device
+ * driver; (ii) the ptnetmap memdev PCI device driver, (iii) the ptnet PCI
+ * device driver. The attach() routines of both (ii) and (iii) need the
+ * lock of the global allocator, and such lock is initialized in netmap_init(),
+ * which is part of (i).
+ * Therefore, we make sure that (i) is loaded before (ii) and (iii), using
+ * the 'order' parameter of driver declaration macros. For (i), we specify
+ * SI_ORDER_MIDDLE, while higher orders are used with the DRIVER_MODULE_ORDERED
+ * macros for (ii) and (iii).
+ */
+DEV_MODULE_ORDERED(netmap, netmap_loader, NULL, SI_ORDER_MIDDLE);
 MODULE_DEPEND(netmap, pci, 1, 1, 1);
 MODULE_VERSION(netmap, 1);
 /* reduce conditional code */
