@@ -42,6 +42,7 @@
 #include <sys/mutex.h>
 #include <sys/taskqueue.h>
 #include <sys/smp.h>
+#include <sys/time.h>
 #include <machine/smp.h>
 
 #include <vm/uma.h>
@@ -92,6 +93,7 @@
 #error "INET not defined, cannot support offloadings"
 #endif
 
+//#define PTNETMAP_STATS
 //#define DEBUG
 #ifdef DEBUG
 #define DBG(x) x
@@ -109,6 +111,10 @@ struct ptnet_queue_stats {
 	uint64_t	errors;	 /* if_[io]errors */
 	uint64_t	iqdrops; /* if_iqdrops */
 	uint64_t	mcasts;  /* if_[io]mcasts */
+#ifdef PTNETMAP_STATS
+	uint64_t	intrs;
+	uint64_t	kicks;
+#endif /* PTNETMAP_STATS */
 };
 
 struct ptnet_queue {
@@ -121,6 +127,9 @@ struct ptnet_queue {
 	struct mtx			lock;
 	struct buf_ring			*bufring; /* for TX queues */
 	struct ptnet_queue_stats	stats;
+#ifdef PTNETMAP_STATS
+	struct ptnet_queue_stats	last_stats;
+#endif /* PTNETMAP_STATS */
 	struct taskqueue		*taskq;
 	struct task			task;
 	char				lock_name[16];
@@ -157,6 +166,9 @@ struct ptnet_softc {
 	struct netmap_pt_guest_adapter *ptna;
 
 	struct callout		tick;
+#ifdef PTNETMAP_STATS
+	struct timeval		last_ts;
+#endif /* PTNETMAP_STATS */
 };
 
 #define PTNET_CORE_LOCK(_sc)	mtx_lock(&(_sc)->lock)
@@ -240,6 +252,14 @@ ptnet_probe(device_t dev)
 	device_set_desc(dev, "ptnet network adapter");
 
 	return (BUS_PROBE_DEFAULT);
+}
+
+static inline void ptnet_kick(struct ptnet_queue *pq)
+{
+#ifdef PTNETMAP_STATS
+	pq->stats.kicks ++;
+#endif /* PTNETMAP_STATS */
+	bus_write_4(pq->sc->iomem, pq->kick, 0);
 }
 
 #define PTNET_BUF_RING_SIZE	4096
@@ -987,6 +1007,31 @@ ptnet_tick(void *opaque)
 	ifp->if_ierrors		= stats[1].errors;
 	ifp->if_iqdrops		= stats[1].iqdrops;
 
+#ifdef PTNETMAP_STATS
+	for (i = 0; i < sc->num_rings; i++) {
+		struct ptnet_queue *pq = sc->queues + i;
+		struct ptnet_queue_stats cur = pq->stats;
+		struct timeval now;
+		unsigned int delta;
+
+		microtime(&now);
+		delta = now.tv_usec - sc->last_ts.tv_usec +
+			(now.tv_sec - sc->last_ts.tv_sec) * 1000000;
+		delta /= 1000; /* in milliseconds */
+
+		if (delta == 0)
+			continue;
+
+		device_printf(sc->dev, "#%d[%u ms]:pkts %lu, kicks %lu, "
+			      "intr %lu\n", i, delta,
+			      (cur.packets - pq->last_stats.packets),
+			      (cur.kicks - pq->last_stats.kicks),
+			      (cur.intrs - pq->last_stats.intrs));
+		pq->last_stats = cur;
+	}
+	microtime(&sc->last_ts);
+#endif /* PTNETMAP_STATS */
+
 	callout_schedule(&sc->tick, hz);
 }
 
@@ -1185,7 +1230,7 @@ ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 
 	notify = netmap_pt_guest_txsync(pq->ptring, kring, flags);
 	if (notify) {
-		bus_write_4(sc->iomem, pq->kick, 0);
+		ptnet_kick(pq);
 	}
 
 	return 0;
@@ -1200,7 +1245,7 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 
 	notify = netmap_pt_guest_rxsync(pq->ptring, kring, flags);
 	if (notify) {
-		bus_write_4(sc->iomem, pq->kick, 0);
+		ptnet_kick(pq);
 	}
 
 	return 0;
@@ -1213,6 +1258,9 @@ ptnet_tx_intr(void *opaque)
 	struct ptnet_softc *sc = pq->sc;
 
 	DBG(device_printf(sc->dev, "Tx interrupt #%d\n", pq->kring_id));
+#ifdef PTNETMAP_STATS
+	pq->stats.intrs ++;
+#endif /* PTNETMAP_STATS */
 
 	if (netmap_tx_irq(sc->ifp, pq->kring_id) != NM_IRQ_PASS) {
 		return;
@@ -1233,6 +1281,9 @@ ptnet_rx_intr(void *opaque)
 	unsigned int unused;
 
 	DBG(device_printf(sc->dev, "Rx interrupt #%d\n", pq->kring_id));
+#ifdef PTNETMAP_STATS
+	pq->stats.intrs ++;
+#endif /* PTNETMAP_STATS */
 
 	if (netmap_rx_irq(sc->ifp, pq->kring_id, &unused) != NM_IRQ_PASS) {
 		return;
@@ -1594,7 +1645,7 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 	/* Kick the host if needed. */
 	if (NM_ACCESS_ONCE(ptring->host_need_kick)) {
 		ptring->sync_flags = sync_flags;
-		bus_write_4(pq->sc->iomem, pq->kick, 0);
+		ptnet_kick(pq);
 	}
 }
 
