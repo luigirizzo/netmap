@@ -703,8 +703,6 @@ ptn_memdev_probe(device_t dev)
 	return (BUS_PROBE_DEFAULT);
 }
 
-int netmap_initialized = 0; /* XXX temporary hack */
-
 /* Device initialization routine. */
 static int
 ptn_memdev_attach(device_t dev)
@@ -714,11 +712,6 @@ ptn_memdev_attach(device_t dev)
 	uint16_t mem_id;
 
 	D("ptn_memdev_driver attach");
-
-	if (!netmap_initialized) {
-		device_printf(dev, "Netmap still not initialized\n");
-		return (ENXIO);
-	}
 
 	ptn_dev = device_get_softc(dev);
 	ptn_dev->dev = dev;
@@ -1459,8 +1452,6 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 	switch (event) {
 	case MOD_LOAD:
 		error = netmap_init();
-		if (!error)
-			netmap_initialized = 1;
 		break;
 
 	case MOD_UNLOAD:
@@ -1474,7 +1465,6 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 			error = EBUSY;
 			break;
 		}
-		netmap_initialized = 0;
 		netmap_fini();
 		break;
 

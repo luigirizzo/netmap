@@ -242,8 +242,6 @@ ptnet_probe(device_t dev)
 	return (BUS_PROBE_DEFAULT);
 }
 
-extern int netmap_initialized;
-
 #define PTNET_BUF_RING_SIZE	4096
 #define PTNET_RX_BUDGET		512
 #define PTNET_RX_BATCH		1
@@ -270,11 +268,6 @@ ptnet_attach(device_t dev)
 	uint32_t macreg;
 	int err, rid;
 	int i;
-
-	if (!netmap_initialized) {
-		device_printf(dev, "Netmap still not initialized\n");
-		return (ENXIO);
-	}
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;

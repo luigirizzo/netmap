@@ -562,19 +562,9 @@ nm_mem_assign_id(struct netmap_mem_d *nmd)
 	return ret;
 }
 
-#if defined(__FreeBSD__)
-extern int netmap_initialized;
-#endif
-
 static void
 nm_mem_release_id(struct netmap_mem_d *nmd)
 {
-#if defined(__FreeBSD__)
-	if (!netmap_initialized) {
-		D("skip, nm_mem could be gone");
-		return;
-	}
-#endif
 	NMA_LOCK(&nm_mem);
 
 	nmd->prev->next = nmd->next;
