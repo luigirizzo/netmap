@@ -194,6 +194,12 @@ ptnet_copy_to_ring(struct xmit_copy_args *a,
 	}
 }
 
+#ifdef NETMAP_LINUX_HAVE_XMIT_MORE
+#define XMIT_MORE(skb) skb->xmit_more
+#else
+#define XMIT_MORE(skb) false
+#endif
+
 static netdev_tx_t
 ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
@@ -303,7 +309,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	kring->rcur = a.ring->cur;
 	kring->rhead = a.ring->head;
 
-	if (!skb->xmit_more) {
+	if (!XMIT_MORE(skb)) {
 		/* Tell the host to process the new packets, updating cur and
 		 * head in the CSB. */
 		ptnetmap_guest_write_kring_csb(ptring, kring->rcur,
@@ -519,9 +525,13 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			nmbuf_len -= sizeof(*vh);
 		}
 
+#ifdef NETMAP_LINUX_HAVE_NAPI_ALLOC_SKB
 		skb = napi_alloc_skb(napi, nmbuf_len);
+#else
+		skb = netdev_alloc_skb_ip_align(pi->netdev, nmbuf_len);
+#endif
 		if (unlikely(!skb)) {
-			pr_err("%s: napi_alloc_skb() failed\n",
+			pr_err("%s: skb allocation failed\n",
 			       __func__);
 			break;
 		}
@@ -670,7 +680,11 @@ out_of_slots:
 		 * completed RX slots. We can enable notifications and
 		 * exit polling mode. */
                 ptring->guest_need_kick = 1;
+#ifdef NETMAP_LINUX_HAVE_NAPI_COMPLETE_DONE
 		napi_complete_done(napi, work_done);
+#else
+		napi_complete(napi);
+#endif
 
                 /* Double check for more completed RX slots. */
 		ptnet_sync_tail(ptring, kring);

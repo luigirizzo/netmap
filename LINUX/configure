@@ -1081,6 +1081,34 @@ add_test 'define QDISC_CREATE_DFLT_3ARGS' <<-EOF
 	}
 EOF
 
+# check for napi_complete_done
+add_test 'have NAPI_COMPLETE_DONE' <<-EOF
+	#include <linux/netdevice.h>
+
+	void dummy(struct napi_struct *n, int work_done) {
+		napi_complete_done(n, work_done);
+	}
+EOF
+
+# check for napi_alloc_skb
+add_test 'have NAPI_ALLOC_SKB' <<-EOF
+	#include <linux/skbuff.h>
+
+	struct sk_buff *
+	dummy(struct napi_struct *n, unsigned int l) {
+		return napi_alloc_skb(n, l);
+	}
+EOF
+
+# check for xmit_more in sk_buff
+add_test 'have XMIT_MORE' <<-EOF
+	#include <linux/skbuff.h>
+
+	struct sk_buff *skb;
+        (void)skb->xmit_more;
+EOF
+
+
 #####################################################
 # checks related to drivers                         #
 #####################################################
