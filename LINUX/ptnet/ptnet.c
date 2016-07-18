@@ -497,7 +497,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		unsigned int first = head;
 		struct page *skbpage = NULL;
 		int skbdata_avail = 0;
-		void *skbdata;
+		void *skbdata = NULL;
 		int nmbuf_len;
 		void *nmbuf;
 		int copy;
@@ -727,7 +727,7 @@ ptnet_netpoll(struct net_device *netdev)
 static int
 ptnet_irqs_init(struct ptnet_info *pi)
 {
-	int ret;
+	int ret = 0;
 	int i;
 
 	/* Allocate the MSI-X interrupt vectors we need. */
