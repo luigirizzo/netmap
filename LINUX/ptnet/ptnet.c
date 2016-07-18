@@ -50,8 +50,7 @@ module_param(ptnet_gso, bool, 0444);
 #define DBG ND
 #endif
 
-#define DRV_NAME "ptnet"
-#define DRV_VERSION "0.1"
+#define PTNET_DRV_NAME "ptnet"
 
 struct ptnet_info;
 
@@ -1220,7 +1219,7 @@ static struct netmap_adapter ptnet_nm_ops = {
  * The OS initialization and configuration of the pi private structure
  * occur.
  */
-static int
+int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	uint32_t ptfeatures = NET_PTN_FEATURES_BASE;
@@ -1244,7 +1243,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return err;
 	}
 
-	err = pci_request_selected_regions(pdev, bars, DRV_NAME);
+	err = pci_request_selected_regions(pdev, bars, PTNET_DRV_NAME);
 	if (err) {
 		goto err_pci_reg;
 	}
@@ -1484,7 +1483,7 @@ err_pci_reg:
  * Hot-Plug event, or because the driver is going to be removed from
  * memory.
  */
-static void
+void
 ptnet_remove(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
@@ -1525,6 +1524,7 @@ ptnet_remove(struct pci_dev *pdev)
 	pr_info("%s: %p\n", __func__, pi);
 }
 
+#if 0
 static void
 ptnet_shutdown(struct pci_dev *pdev)
 {
@@ -1538,35 +1538,4 @@ ptnet_shutdown(struct pci_dev *pdev)
 
 	pci_disable_device(pdev);
 }
-
-/* PCI Device ID Table */
-static const struct pci_device_id ptnet_pci_table[] = {
-        {PCI_DEVICE(PTNETMAP_PCI_VENDOR_ID, PTNETMAP_PCI_NETIF_ID), 0, 0, 0},
-	/* required last entry */
-	{0,}
-};
-
-MODULE_DEVICE_TABLE(pci, ptnet_pci_table);
-
-static struct pci_driver ptnet_driver = {
-	.name     = DRV_NAME,
-	.id_table = ptnet_pci_table,
-	.probe    = ptnet_probe,
-	.remove   = ptnet_remove,
-	.shutdown = ptnet_shutdown,
-};
-
-int
-ptnet_init(void)
-{
-	pr_info("%s - version %s\n", "Passthrough netmap interface driver",
-		DRV_VERSION);
-
-	return pci_register_driver(&ptnet_driver);
-}
-
-void
-ptnet_fini(void)
-{
-	pci_unregister_driver(&ptnet_driver);
-}
+#endif

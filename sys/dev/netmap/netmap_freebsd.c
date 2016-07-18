@@ -775,11 +775,6 @@ ptn_memdev_shutdown(device_t dev)
 	return bus_generic_shutdown(dev);
 }
 
-int
-nm_os_pt_memdev_init(void) { return 0; }
-
-void
-nm_os_pt_memdev_uninit(void) { }
 #endif /* WITH_PTNETMAP_GUEST */
 
 /*

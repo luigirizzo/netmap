@@ -1588,16 +1588,20 @@ nm_os_kthread_delete(struct nm_kthread *nmk)
 #include <linux/module.h>
 #include <linux/pci.h>
 
+int ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *id);
+void ptnet_remove(struct pci_dev *pdev);
+
 /*
  * PCI Device ID Table
  * list of (VendorID,DeviceID) supported by this driver
  */
-static struct pci_device_id ptn_memdev_ids[] = {
-    { PCI_DEVICE(PTNETMAP_PCI_VENDOR_ID, PTNETMAP_PCI_DEVICE_ID), },
-    { 0, }
+static struct pci_device_id ptnetmap_guest_device_table[] = {
+	{ PCI_DEVICE(PTNETMAP_PCI_VENDOR_ID, PTNETMAP_PCI_DEVICE_ID), },
+	{ PCI_DEVICE(PTNETMAP_PCI_VENDOR_ID, PTNETMAP_PCI_NETIF_ID), },
+	{ 0, }
 };
 
-MODULE_DEVICE_TABLE(pci, ptn_memdev_ids);
+MODULE_DEVICE_TABLE(pci, ptnetmap_guest_device_table);
 
 /*
  * ptnetmap memdev private data structure
@@ -1663,15 +1667,19 @@ nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
  * Returns 0 on success, negative on failure
  */
 static int
-ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+ptnetmap_guest_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
     struct ptnetmap_memdev *ptn_dev;
     int bars, err;
     uint16_t mem_id;
 
-    ND("ptn_memdev_driver probe START");
+    if (id->device == PTNETMAP_PCI_NETIF_ID) {
+        /* Probe the ptnet device. */
+        return ptnet_probe(pdev, id);
+    }
 
-    /* allocate our structure and fill it out */
+    /* Probe the memdev device. */
+
     ptn_dev = kzalloc(sizeof(*ptn_dev), GFP_KERNEL);
     if (ptn_dev == NULL)
         return -ENOMEM;
@@ -1706,8 +1714,6 @@ ptn_memdev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     }
     netmap_mem_get(ptn_dev->nm_mem);
 
-    ND("ptn_memdev_driver mem_id: %d probe OK", mem_id);
-
     return 0;
 
 err_nmd_attach:
@@ -1726,11 +1732,17 @@ err:
  * Device Removal Routine
  */
 static void
-ptn_memdev_remove(struct pci_dev *pdev)
+ptnetmap_guest_remove(struct pci_dev *pdev)
 {
     struct ptnetmap_memdev *ptn_dev = pci_get_drvdata(pdev);
 
-    ND("ptn_memdev_driver remove");
+    if (pdev->device == PTNETMAP_PCI_NETIF_ID) {
+        /* Remove the ptnet device. */
+        return ptnet_remove(pdev);
+    }
+
+    /* Remove the memdev device. */
+
     if (ptn_dev->nm_mem) {
         netmap_mem_put(ptn_dev->nm_mem);
         ptn_dev->nm_mem = NULL;
@@ -1746,11 +1758,11 @@ ptn_memdev_remove(struct pci_dev *pdev)
 /*
  * pci driver information
  */
-static struct pci_driver ptn_memdev_driver = {
-    .name       = PTN_MEMDEV_NAME,
-    .id_table   = ptn_memdev_ids,
-    .probe      = ptn_memdev_probe,
-    .remove     = ptn_memdev_remove,
+static struct pci_driver ptnetmap_guest_drivers = {
+    .name       = "ptnetmap-guest-drivers",
+    .id_table   = ptnetmap_guest_device_table,
+    .probe      = ptnetmap_guest_probe,
+    .remove     = ptnetmap_guest_remove,
 };
 
 /*
@@ -1758,15 +1770,15 @@ static struct pci_driver ptn_memdev_driver = {
  *
  * Returns 0 on success, negative on failure
  */
-int
-nm_os_pt_memdev_init(void)
+static int
+ptnetmap_guest_init(void)
 {
     int ret;
 
     /* register pci driver */
-    ret = pci_register_driver(&ptn_memdev_driver);
+    ret = pci_register_driver(&ptnetmap_guest_drivers);
     if (ret < 0) {
-        D("ptn-driver register error");
+        D("Failed to register drivers");
         return ret;
     }
     return 0;
@@ -1776,22 +1788,15 @@ nm_os_pt_memdev_init(void)
  * Driver Exit Cleanup Routine
  */
 void
-nm_os_pt_memdev_uninit(void)
+ptnetmap_guest_fini(void)
 {
     /* unregister pci driver */
-    pci_unregister_driver(&ptn_memdev_driver);
-
-    D("ptn_memdev_driver exit");
+    pci_unregister_driver(&ptnetmap_guest_drivers);
 }
 
-int ptnet_init(void);
-void ptnet_fini(void);
-
 #else /* !WITH_PTNETMAP_GUEST */
-#define nm_os_pt_memdev_init()		0
-#define nm_os_pt_memdev_uninit()
-#define ptnet_init()			0
-#define ptnet_fini()
+#define ptnetmap_guest_init()		0
+#define ptnetmap_guest_fini()
 #endif /* WITH_PTNETMAP_GUEST */
 
 
@@ -1814,14 +1819,8 @@ static int linux_netmap_init(void)
 		return err;
 	}
 
-	err = nm_os_pt_memdev_init();
+	err = ptnetmap_guest_init();
 	if (err) {
-		return err;
-	}
-
-	err = ptnet_init();
-	if (err) {
-		nm_os_pt_memdev_uninit();
 		return err;
 	}
 
@@ -1831,8 +1830,7 @@ static int linux_netmap_init(void)
 
 static void linux_netmap_fini(void)
 {
-	ptnet_fini();
-        nm_os_pt_memdev_uninit();
+        ptnetmap_guest_fini();
         netmap_fini();
 }
 
