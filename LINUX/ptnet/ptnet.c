@@ -232,43 +232,43 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	/* First step: Setup the virtio-net header at the beginning of th
 	 *  first slot. */
 	if (pi->vnet_hdr_len) {
-		struct virtio_net_hdr_v1 *vh = a.nmbuf;
+		struct virtio_net_hdr_mrg_rxbuf *vh = a.nmbuf;
 
 		if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
-			vh->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
-			vh->csum_start = skb_checksum_start_offset(skb);
-			vh->csum_offset = skb->csum_offset;
+			vh->hdr.flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
+			vh->hdr.csum_start = skb_checksum_start_offset(skb);
+			vh->hdr.csum_offset = skb->csum_offset;
 		} else {
-			vh->flags = 0;
-			vh->csum_start = vh->csum_offset = 0;
+			vh->hdr.flags = 0;
+			vh->hdr.csum_start = vh->hdr.csum_offset = 0;
 		}
 
 		if (skb_is_gso(skb)) {
-			vh->hdr_len = skb_headlen(skb);
-			vh->gso_size = skb_shinfo(skb)->gso_size;
+			vh->hdr.hdr_len = skb_headlen(skb);
+			vh->hdr.gso_size = skb_shinfo(skb)->gso_size;
 			if (skb_shinfo(skb)->gso_type & SKB_GSO_TCPV4) {
-				vh->gso_type = VIRTIO_NET_HDR_GSO_TCPV4;
+				vh->hdr.gso_type = VIRTIO_NET_HDR_GSO_TCPV4;
 			} else if (skb_shinfo(skb)->gso_type & SKB_GSO_UDP) {
-				vh->gso_type = VIRTIO_NET_HDR_GSO_UDP;
+				vh->hdr.gso_type = VIRTIO_NET_HDR_GSO_UDP;
 			} else if (skb_shinfo(skb)->gso_type & SKB_GSO_TCPV6) {
-				vh->gso_type = VIRTIO_NET_HDR_GSO_TCPV6;
+				vh->hdr.gso_type = VIRTIO_NET_HDR_GSO_TCPV6;
 			}
 
 			if (skb_shinfo(skb)->gso_type & SKB_GSO_TCP_ECN) {
-				vh->gso_type |= VIRTIO_NET_HDR_GSO_ECN;
+				vh->hdr.gso_type |= VIRTIO_NET_HDR_GSO_ECN;
 			}
 
 		} else {
-			vh->hdr_len = vh->gso_size = 0;
-			vh->gso_type = VIRTIO_NET_HDR_GSO_NONE;
+			vh->hdr.hdr_len = vh->hdr.gso_size = 0;
+			vh->hdr.gso_type = VIRTIO_NET_HDR_GSO_NONE;
 		}
 
 		vh->num_buffers = 0; /* unused */
 
 		ND(1, "%s: vnet hdr: flags %x csum_start %u csum_ofs %u hdr_len = "
-		      "%u gso_size %u gso_type %x", __func__, vh->flags,
-		      vh->csum_start, vh->csum_offset, vh->hdr_len, vh->gso_size,
-		      vh->gso_type);
+		      "%u gso_size %u gso_type %x", __func__, vh->hdr.flags,
+		      vh->hdr.csum_start, vh->hdr.csum_offset, vh->hdr.hdr_len,
+		      vh->hdr.gso_size, vh->hdr.gso_type);
 
 		a.nmbuf += sizeof(*vh);
 		a.nmbuf_bytes += sizeof(*vh);
@@ -491,7 +491,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
 	/* Import completed RX slots. */
 	while (work_done < budget && head != ring->tail) {
-		struct virtio_net_hdr_v1 *vh;
+		struct virtio_net_hdr_mrg_rxbuf *vh;
 		struct netmap_slot *slot;
 		struct sk_buff *skb;
 		unsigned int first = head;
@@ -511,9 +511,10 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		if (likely(have_vnet_hdr)) {
 			ND(1, "%s: vnet hdr: flags %x csum_start %u "
 			      "csum_ofs %u hdr_len = %u gso_size %u "
-			      "gso_type %x", __func__, vh->flags,
-			      vh->csum_start, vh->csum_offset, vh->hdr_len,
-			      vh->gso_size, vh->gso_type);
+			      "gso_type %x", __func__, vh->hdr.flags,
+			      vh->hdr.csum_start, vh->hdr.csum_offset,
+			      vh->hdr.hdr_len, vh->hdr.gso_size,
+			      vh->hdr.gso_type);
 			nmbuf += sizeof(*vh);
 			nmbuf_len -= sizeof(*vh);
 		}
@@ -578,8 +579,9 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
 					skbpage, 0, PAGE_SIZE - skbdata_avail,
 					PAGE_SIZE);
-			ND(1, "RX frags #%u lfsz %lu tsz %d nns %d", skb_shinfo(skb)->nr_frags,
-					PAGE_SIZE - skbdata_avail, (int)skb->len, nns);
+			ND(1, "RX frags #%u lfsz %lu tsz %d nns %d",
+			   skb_shinfo(skb)->nr_frags,
+			   PAGE_SIZE - skbdata_avail, (int)skb->len, nns);
 		}
 
 		head = nm_next(head, lim);
@@ -589,23 +591,23 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		pi->netdev->stats.rx_bytes += skb->len;
 		pi->netdev->stats.rx_packets ++;
 
-		if (likely(have_vnet_hdr && (vh->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM))) {
-			if (unlikely(!skb_partial_csum_set(skb, vh->csum_start,
-							   vh->csum_offset))) {
+		if (likely(have_vnet_hdr && (vh->hdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM))) {
+			if (unlikely(!skb_partial_csum_set(skb, vh->hdr.csum_start,
+							   vh->hdr.csum_offset))) {
 				dev_kfree_skb_any(skb);
 				work_done ++;
 				pi->netdev->stats.rx_frame_errors ++;
 				continue;
 			}
 
-		} else if (have_vnet_hdr && (vh->flags & VIRTIO_NET_HDR_F_DATA_VALID)) {
+		} else if (have_vnet_hdr && (vh->hdr.flags & VIRTIO_NET_HDR_F_DATA_VALID)) {
 			skb->ip_summed = CHECKSUM_UNNECESSARY;
 		}
 
 		skb->protocol = eth_type_trans(skb, pi->netdev);
 
-		if (likely(have_vnet_hdr && vh->gso_type != VIRTIO_NET_HDR_GSO_NONE)) {
-			switch (vh->gso_type & ~VIRTIO_NET_HDR_GSO_ECN) {
+		if (likely(have_vnet_hdr && vh->hdr.gso_type != VIRTIO_NET_HDR_GSO_NONE)) {
+			switch (vh->hdr.gso_type & ~VIRTIO_NET_HDR_GSO_ECN) {
 
 			case VIRTIO_NET_HDR_GSO_TCPV4:
 				skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
@@ -620,11 +622,11 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 				break;
 			}
 
-			if (vh->gso_type & VIRTIO_NET_HDR_GSO_ECN) {
+			if (vh->hdr.gso_type & VIRTIO_NET_HDR_GSO_ECN) {
 				skb_shinfo(skb)->gso_type |= SKB_GSO_TCP_ECN;
 			}
 
-			skb_shinfo(skb)->gso_size = vh->gso_size;
+			skb_shinfo(skb)->gso_size = vh->hdr.gso_size;
 			skb_shinfo(skb)->gso_type |= SKB_GSO_DODGY;
 			skb_shinfo(skb)->gso_segs = 0;
 		}
@@ -653,7 +655,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		 *
 		 * where usually MTU == 1500.
 		 */
-		if (have_vnet_hdr && vh->flags) {
+		if (have_vnet_hdr && vh->hdr.flags) {
 			netif_receive_skb(skb);
 		} else {
 			napi_gro_receive(napi, skb);
@@ -1018,7 +1020,7 @@ static void
 ptnet_update_vnet_hdr(struct ptnet_info *pi)
 {
 	pi->vnet_hdr_len = ptnet_vnet_hdr ?
-			       sizeof(struct virtio_net_hdr_v1) : 0;
+			       sizeof(struct virtio_net_hdr_mrg_rxbuf) : 0;
 	pi->ptna->hwup.up.virt_hdr_len = pi->vnet_hdr_len;
 	iowrite32(pi->vnet_hdr_len, pi->ioaddr + PTNET_IO_VNET_HDR_LEN);
 }
