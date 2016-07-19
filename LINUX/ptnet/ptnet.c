@@ -764,8 +764,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 		pi->msix_entries[i].entry = i;
 	}
 
-	ret = pci_enable_msix_exact(pi->pdev, pi->msix_entries,
-				    pi->num_rings);
+	ret = pci_enable_msix(pi->pdev, pi->msix_entries, pi->num_rings);
 	if (ret) {
 		pr_err("Failed to enable msix vectors (%d)\n", ret);
 		goto err_masks;
