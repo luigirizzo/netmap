@@ -1108,6 +1108,18 @@ add_test 'have XMIT_MORE' <<-EOF
         (void)skb->xmit_more;
 EOF
 
+# arguments of skb_add_rx_frag (either 5 or 6)
+add_test 'define SKB_ADD_RX_FRAG_6ARGS' <<-EOF
+	#include <linux/skbuff.h>
+
+	void
+	dummy(struct sk_buff *skb, int i, struct page *p,
+	      int off, int size, int truesize)
+	{
+		skb_add_rx_frag(skb, i, p, off, size, truesize);
+	}
+EOF
+
 
 #####################################################
 # checks related to drivers                         #

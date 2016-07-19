@@ -564,8 +564,11 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 						ND(1, "add f #%u fsz %lu tsz %d", skb_shinfo(skb)->nr_frags,
 								PAGE_SIZE - skbdata_avail, (int)skb->len);
 						skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
-								skbpage, 0, PAGE_SIZE - skbdata_avail,
-								PAGE_SIZE);
+								skbpage, 0, PAGE_SIZE - skbdata_avail
+#ifdef NETMAP_LINUX_SKB_ADD_RX_FRAG_6ARGS
+								, PAGE_SIZE
+#endif
+								);
 					}
 
 					skbpage = ptnet_alloc_page(prq);
@@ -590,8 +593,11 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 		nns++;
 		if (skbpage) {
 			skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
-					skbpage, 0, PAGE_SIZE - skbdata_avail,
-					PAGE_SIZE);
+					skbpage, 0, PAGE_SIZE - skbdata_avail
+#ifdef NETMAP_LINUX_SKB_ADD_RX_FRAG_6ARGS
+					, PAGE_SIZE
+#endif
+					);
 			ND(1, "RX frags #%u lfsz %lu tsz %d nns %d",
 			   skb_shinfo(skb)->nr_frags,
 			   PAGE_SIZE - skbdata_avail, (int)skb->len, nns);
