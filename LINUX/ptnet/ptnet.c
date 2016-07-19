@@ -111,6 +111,10 @@ struct ptnet_info {
 	struct netmap_pt_guest_adapter *ptna;
 };
 
+#ifndef NAPI_POLL_WEIGHT
+#define NAPI_POLL_WEIGHT	64
+#endif
+
 #ifdef HANGCTRL
 static void
 hang_tmr_callback(unsigned long arg)
