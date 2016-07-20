@@ -1849,7 +1849,7 @@ netmap_mem2_if_new(struct netmap_adapter *na)
 		if (na->tx_rings[i].ring == NULL) {
 			// XXX maybe use the offset of an error ring,
 			// like we do for buffers?
-		 	*(uintptr_t *)&nifp->ring_ofs[i] = 0;
+			*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i] = 0;
 			continue;
 		}
 		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i] =
@@ -1859,7 +1859,7 @@ netmap_mem2_if_new(struct netmap_adapter *na)
 		if (na->rx_rings[i].ring == NULL) {
 			// XXX maybe use the offset of an error ring,
 			// like we do for buffers?
-		 	*(uintptr_t *)&nifp->ring_ofs[i+n[NR_TX]] = 0;
+			*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i+n[NR_TX]] = 0;
 			continue;
 		}
 		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i+n[NR_TX]] =
