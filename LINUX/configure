@@ -1029,8 +1029,9 @@ EOF
 add_test 'have HW_FEATURES' <<-EOF
 	#include <linux/netdevice.h>
 
-	struct net_device *n;
-        (void)n->hw_features;
+	unsigned int dummy(struct net_device *n) {
+		return n->hw_features;
+	}
 EOF
 
 # check for eth_hw_addr_random

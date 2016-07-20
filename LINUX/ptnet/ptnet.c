@@ -1416,19 +1416,20 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	netdev->features = NETIF_F_HIGHDMA;
 
 	if (pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
-		netdev->hw_features |= NETIF_F_HW_CSUM
-				       | NETIF_F_SG;
+		unsigned int hw_features = NETIF_F_HW_CSUM | NETIF_F_SG;
+
 		if (ptnet_gso) {
-			netdev->hw_features |= NETIF_F_TSO
-					       | NETIF_F_UFO
-				               | NETIF_F_TSO_ECN
-				               | NETIF_F_TSO6;
-		}
-		netdev->features |= netdev->hw_features
-				    | NETIF_F_RXCSUM;
-		if (ptnet_gso) {
+			hw_features |= NETIF_F_TSO
+				       | NETIF_F_UFO
+				       | NETIF_F_TSO_ECN
+				       | NETIF_F_TSO6;
 			netdev->features |= NETIF_F_GSO_ROBUST;
 		}
+		netdev->features |= hw_features;
+#ifdef NETMAP_LINUX_HAVE_HW_FEATURES
+		netdev->hw_features = hw_features;
+		netdev->features |= NETIF_F_RXCSUM;
+#endif
 	}
 
 	device_set_wakeup_enable(&pi->pdev->dev, 0);
