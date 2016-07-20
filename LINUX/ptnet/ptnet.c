@@ -115,6 +115,18 @@ struct ptnet_info {
 #define NAPI_POLL_WEIGHT	64
 #endif
 
+#ifndef NETMAP_LINUX_HAVE_SKB_FRAG_SIZE
+static inline unsigned int skb_frag_size(const skb_frag_t *frag) {
+	return frag->size;
+}
+#endif
+#ifndef NETMAP_LINUX_HAVE_SKB_FRAG_ADDRESS
+static inline void *skb_frag_address(const skb_frag_t *frag) {
+	return page_address(frag->page) + frag->page_offset;
+}
+#endif
+
+
 #ifdef HANGCTRL
 static void
 hang_tmr_callback(unsigned long arg)
