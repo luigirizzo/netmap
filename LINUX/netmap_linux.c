@@ -758,6 +758,13 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 
 	return 0;
 }
+
+void
+nm_os_generic_set_features(struct netmap_generic_adapter *gna)
+{
+	gna->rxsg = 1; /* Supported through skb_copy_bits(). */
+	gna->txqdisc = netmap_generic_txqdisc;
+}
 #endif /* WITH_GENERIC */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
@@ -809,13 +816,6 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
     	*rxq = 1; /* TODO ifp->real_num_rx_queues */
 #endif /* HAVE_NUM_QUEUES */
     }
-}
-
-void
-nm_os_generic_set_features(struct netmap_generic_adapter *gna)
-{
-	gna->rxsg = 1; /* Supported through skb_copy_bits(). */
-	gna->txqdisc = netmap_generic_txqdisc;
 }
 
 int
