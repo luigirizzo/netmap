@@ -125,6 +125,11 @@ static inline void *skb_frag_address(const skb_frag_t *frag) {
 	return page_address(frag->page) + frag->page_offset;
 }
 #endif
+#ifndef NETMAP_LINUX_HAVE_SKB_CHECKSUM_START_OFFSET
+static inline int skb_checksum_start_offset(const struct sk_buff *skb) {
+	return skb->csum_start - skb_headroom(skb);
+}
+#endif
 
 
 #ifdef HANGCTRL

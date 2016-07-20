@@ -1141,6 +1141,16 @@ add_test 'have SKB_FRAG_ADDRESS' <<-EOF
 	}
 EOF
 
+# check for skb_checksum_start_offset
+add_test 'have SKB_CHECKSUM_START_OFFSET' <<-EOF
+	#include <linux/skbuff.h>
+
+	int
+	dummy(const struct sk_buff *skb) {
+		return skb_checksum_start_offset(skb);
+	}
+EOF
+
 
 #####################################################
 # checks related to drivers                         #
