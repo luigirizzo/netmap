@@ -799,23 +799,22 @@ void
 nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
 #ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
-    struct ethtool_channels ch;
-    memset(&ch, 0, sizeof(ch));
-    if (ifp->ethtool_ops && ifp->ethtool_ops->get_channels) {
-	    ifp->ethtool_ops->get_channels(ifp, &ch);
-	    *txq = ch.tx_count ? ch.tx_count : ch.combined_count;
-	    *rxq = ch.rx_count ? ch.rx_count : ch.combined_count;
-    } else
+	struct ethtool_channels ch;
+	memset(&ch, 0, sizeof(ch));
+	if (ifp->ethtool_ops && ifp->ethtool_ops->get_channels) {
+		ifp->ethtool_ops->get_channels(ifp, &ch);
+		*txq = ch.tx_count ? ch.tx_count : ch.combined_count;
+		*rxq = ch.rx_count ? ch.rx_count : ch.combined_count;
+	} else
 #endif /* HAVE_SET_CHANNELS */
-    {
-#if defined(NETMAP_LINUX_HAVE_NUM_QUEUES)
-    	*txq = ifp->real_num_tx_queues;
-    	*rxq = ifp->real_num_rx_queues;
+	{
+		*txq = ifp->real_num_tx_queues;
+#if defined(NETMAP_LINUX_HAVE_REAL_NUM_RX_QUEUES)
+		*rxq = ifp->real_num_rx_queues;
 #else
-    	*txq = 1;
-    	*rxq = 1; /* TODO ifp->real_num_rx_queues */
-#endif /* HAVE_NUM_QUEUES */
-    }
+		*rxq = 1;
+#endif /* HAVE_REAL_NUM_RX_QUEUES */
+	}
 }
 
 int

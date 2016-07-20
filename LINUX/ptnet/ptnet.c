@@ -1447,7 +1447,9 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	strcpy(netdev->name, "eth%d");
 
 	netif_set_real_num_tx_queues(netdev, queue_pairs);
+#ifdef NETMAP_LINUX_HAVE_REAL_NUM_RX_QUEUES
 	netif_set_real_num_rx_queues(netdev, queue_pairs);
+#endif
 
 	err = register_netdev(netdev);
 	if (err)
