@@ -879,14 +879,25 @@ add_test 'have PERNET_OPS_ID' <<-EOF
 	}
 EOF
 
-# number of tx/rx queues
+# check for real_num_rx_queues
 add_test 'have REAL_NUM_RX_QUEUES' <<-EOF
 	#include <linux/netdevice.h>
 
-	void
-	dummy(struct net_device *net, unsigned int *rxq)
+	unsigned int
+	dummy(struct net_device *net)
 	{
-	    *rxq = net->real_num_rx_queues;
+	    return net->real_num_rx_queues;
+	}
+EOF
+
+# check for num_rx_queues
+add_test 'have NUM_RX_QUEUES' <<-EOF
+	#include <linux/netdevice.h>
+
+	unsigned int
+	dummy(struct net_device *net)
+	{
+	    return net->num_rx_queues;
 	}
 EOF
 

@@ -131,6 +131,12 @@ static inline int skb_checksum_start_offset(const struct sk_buff *skb) {
 }
 #endif
 
+#ifdef NETMAP_LINUX_HAVE_NUM_RX_QUEUES
+#define DEV_NUM_RX_QUEUES(_netdev) (_netdev)->num_rx_queues
+#else
+#define	DEV_NUM_RX_QUEUES(_netdev) 1
+#endif
+
 
 #ifdef HANGCTRL
 static void
@@ -1530,7 +1536,7 @@ ptnet_remove(struct pci_dev *pdev)
 	/* Uninitialize netmap adapters for this device. */
 	netmap_detach(netdev);
 
-	for (i = 0; i < netdev->num_rx_queues; i++) {
+	for (i = 0; i < DEV_NUM_RX_QUEUES(netdev); i++) {
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
 					     pi->rxqueues[i];
 		netif_napi_del(&prq->napi);
