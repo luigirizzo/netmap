@@ -1122,6 +1122,16 @@ add_test 'have NAPI_ALLOC_SKB' <<-EOF
 	}
 EOF
 
+# check for netdev_alloc_skb_ip_align
+add_test 'have ALLOC_SKB_IP_ALIGN' <<-EOF
+	#include <linux/skbuff.h>
+
+	struct sk_buff *
+	dummy(struct net_device *n, unsigned int l) {
+		return netdev_alloc_skb_ip_align(n, l);
+	}
+EOF
+
 # check for xmit_more in sk_buff
 add_test 'have XMIT_MORE' <<-EOF
 	#include <linux/skbuff.h>

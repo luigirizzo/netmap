@@ -553,8 +553,10 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
 #ifdef NETMAP_LINUX_HAVE_NAPI_ALLOC_SKB
 		skb = napi_alloc_skb(napi, nmbuf_len);
-#else
+#elif defined(NETMAP_LINUX_HAVE_ALLOC_SKB_IP_ALIGN)
 		skb = netdev_alloc_skb_ip_align(pi->netdev, nmbuf_len);
+#else
+		skb = netdev_alloc_skb(pi->netdev, nmbuf_len);
 #endif
 		if (unlikely(!skb)) {
 			pr_err("%s: skb allocation failed\n",
