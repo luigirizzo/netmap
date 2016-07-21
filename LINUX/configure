@@ -901,6 +901,17 @@ add_test 'have NUM_RX_QUEUES' <<-EOF
 	}
 EOF
 
+# check for netif_set_real_num_rx_queues
+add_test 'have SET_REAL_NUM_TX_QUEUES' <<-EOF
+	#include <linux/netdevice.h>
+
+	int
+	dummy(struct net_device *net, unsigned int txq)
+	{
+	    return netif_set_real_num_tx_queues(net, txq);
+	}
+EOF
+
 # poll_table key field
 for k in _key key; do
 	add_test "define PWAIT_KEY $k" <<-EOF
