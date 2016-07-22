@@ -1082,7 +1082,7 @@ nm_kthread_worker(void *data)
 		 * mechanism and we continually execute worker_fn()
 		 */
 		if (!ctx->ioevent_file) {
-			ctx->worker_fn(ctx->worker_private); /* worker_body */
+			ctx->worker_fn(ctx->worker_private); /* worker body */
 		} else {
 			/* checks if there is a pending notification */
 			mtx_lock(&nmk->worker_lock);
@@ -1090,13 +1090,13 @@ nm_kthread_worker(void *data)
 				old_scheduled = nmk->scheduled;
 				mtx_unlock(&nmk->worker_lock);
 
-				ctx->worker_fn(ctx->worker_private); /* worker_body */
+				ctx->worker_fn(ctx->worker_private); /* worker body */
 
 				continue;
 			} else if (nmk->run) {
-				/* wait on event with timetout 1 second */
-				msleep_spin_sbt(ctx->ioevent_file, &nmk->worker_lock,
-						"nmk_event", SBT_1S, SBT_1S, C_ABSOLUTE);
+				/* wait on event with one second timeout */
+				msleep_spin(ctx->ioevent_file, &nmk->worker_lock,
+					    "nmk_ev", hz);
 				nmk->scheduled++;
 			}
 			mtx_unlock(&nmk->worker_lock);
