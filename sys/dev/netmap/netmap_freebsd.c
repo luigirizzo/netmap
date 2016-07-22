@@ -1058,11 +1058,11 @@ nm_kthread_worker(void *data)
 	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
 	uint64_t old_scheduled = nmk->scheduled;
 
-	thread_lock(curthread);
 	if (nmk->affinity >= 0) {
+		thread_lock(curthread);
 		sched_bind(curthread, nmk->affinity);
+		thread_unlock(curthread);
 	}
-	thread_unlock(curthread);
 
 	while (nmk->run) {
 		/*
