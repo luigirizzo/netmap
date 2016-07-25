@@ -220,7 +220,7 @@ struct paravirt_csb {
 #define PTNET_IO_PTFEAT		0
 #define PTNET_IO_PTCTL		4
 #define PTNET_IO_PTSTS		8
-#define PTNET_IO_CTRL		12
+/* hole */
 #define PTNET_IO_MAC_LO		16
 #define PTNET_IO_MAC_HI		20
 #define PTNET_IO_CSBBAH         24
@@ -230,20 +230,13 @@ struct paravirt_csb {
 #define PTNET_IO_NUM_RX_RINGS	40
 #define PTNET_IO_NUM_TX_SLOTS	44
 #define PTNET_IO_NUM_RX_SLOTS	48
-#define PTNET_IO_END		52
+#define PTNET_IO_VNET_HDR_LEN	52
+#define PTNET_IO_END		56
 #define PTNET_IO_KICK_BASE	128
 #define PTNET_IO_MASK           0xff
 
 /* If defined, CSB is allocated by the guest, not by the host. */
 #define PTNET_CSB_ALLOC
-
-/* Tell the hypervisor that guest has allocated the MSI-X
- * interrupts, so that it can setup the host --> guest
- * notification system (e.g. irqfd). */
-#define PTNET_CTRL_IRQINIT	1
-/* Tell the hypervisor to tear down the host --> guest
- * notification system, since guest has deallocated the MSI-X. */
-#define PTNET_CTRL_IRQFINI	2
 
 /* CSB for the ptnet device. */
 struct ptnet_csb {
@@ -251,7 +244,6 @@ struct ptnet_csb {
 };
 
 #endif /* NETMAP_VIRT_CSB */
-
 
 #if defined(NETMAP_API) && !defined(NETMAP_VIRT_PTNETMAP)
 #define NETMAP_VIRT_PTNETMAP
@@ -483,8 +475,6 @@ ptnetmap_guest_read_kring_csb(struct ptnet_ring *ptr, struct netmap_kring *kring
 
 /* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
 struct ptnetmap_memdev;
-int nm_os_pt_memdev_init(void);
-void nm_os_pt_memdev_uninit(void);
 int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
 void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
 #endif /* WITH_PTNETMAP_GUEST */

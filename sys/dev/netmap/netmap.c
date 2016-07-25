@@ -516,6 +516,9 @@ int netmap_generic_txqdisc = 1;
 int netmap_generic_ringsize = 1024;
 int netmap_generic_rings = 1;
 
+/* Non-zero if ptnet devices are allowed to use virtio-net headers. */
+int ptnet_vnet_hdr = 1;
+
 /*
  * SYSCTL calls are grouped between SYSBEGIN and SYSEND to be emulated
  * in some other operating systems
@@ -543,6 +546,7 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit, 
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_ringsize, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW, &netmap_generic_rings, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW, &netmap_generic_txqdisc, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, ptnet_vnet_hdr, CTLFLAG_RW, &ptnet_vnet_hdr, 0 , "");
 
 SYSEND;
 
@@ -926,6 +930,9 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		na->nm_register(na, 0);
 	}
 
+	/* delete rings and buffers that are no longer needed */
+	netmap_mem_rings_delete(na);
+
 	if (na->active_fds <= 0) {	/* last instance */
 		/*
 		 * (TO CHECK) We enter here
@@ -944,8 +951,6 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		if (netmap_verbose)
 			D("deleting last instance for %s", na->name);
 
-		/* delete rings and buffers */
-		netmap_mem_rings_delete(na);
 		na->nm_krings_delete(na);
 	}
 
@@ -1990,7 +1995,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	if (na->active_fds == 0) {
 		/*
 		 * If this is the first registration of the adapter,
-		 * also create the netmap rings and their in-kernel view,
+		 * create the  in-kernel view of the netmap rings,
 		 * the netmap krings.
 		 */
 
@@ -2002,25 +2007,26 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		if (error)
 			goto err_drop_mem;
 
-		/* create all missing netmap rings */
-		error = netmap_mem_rings_create(na);
-		if (error)
-			goto err_del_krings;
 	}
 
-	/* now the kring must exist and we can check whether some
+	/* now the krings must exist and we can check whether some
 	 * previous bind has exclusive ownership on them, and set
 	 * nr_pending_mode
 	 */
 	error = netmap_krings_get(priv);
 	if (error)
-		goto err_del_rings;
+		goto err_del_krings;
+
+	/* create all needed missing netmap rings */
+	error = netmap_mem_rings_create(na);
+	if (error)
+		goto err_rel_excl;
 
 	/* in all cases, create a new netmap if */
 	nifp = netmap_mem_if_new(na);
 	if (nifp == NULL) {
 		error = ENOMEM;
-		goto err_rel_excl;
+		goto err_del_rings;
 	}
 
 	if (na->active_fds == 0) {
@@ -2061,8 +2067,7 @@ err_del_if:
 err_rel_excl:
 	netmap_krings_put(priv);
 err_del_rings:
-	if (na->active_fds == 0)
-		netmap_mem_rings_delete(na);
+	netmap_mem_rings_delete(na);
 err_del_krings:
 	if (na->active_fds == 0)
 		na->nm_krings_delete(na);
@@ -2881,6 +2886,17 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 	/* get the netmap_pt_guest_adapter */
 	ptna = (struct netmap_pt_guest_adapter *) NA(ifp);
 	ptna->csb = csb;
+
+	/* Initialize a separate pass-through netmap adapter that is going to
+	 * be used by the ptnet driver only, and so never exposed to netmap
+         * applications. We only need a subset of the available fields. */
+	memset(&ptna->dr, 0, sizeof(ptna->dr));
+	ptna->dr.up.ifp = ifp;
+	ptna->dr.up.nm_mem = ptna->hwup.up.nm_mem;
+	netmap_mem_get(ptna->dr.up.nm_mem);
+        ptna->dr.up.nm_config = ptna->hwup.up.nm_config;
+
+	ptna->backend_regifs = 0;
 
 	return 0;
 }

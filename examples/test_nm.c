@@ -5,7 +5,15 @@
 #include <net/netmap_user.h>
 #include <poll.h>
 
-static void my_cb(u_char *arg, const struct nm_pkthdr *h, const u_char *buf)
+static void
+usage(const char *progname)
+{
+	fprintf(stderr, "usage: %s IFNAME [w|r]\n", progname);
+	exit(EXIT_FAILURE);
+}
+
+static void
+my_cb(u_char *arg, const struct nm_pkthdr *h, const u_char *buf)
 {
 	int *count = (int *)arg;
 	(*count)++;
@@ -14,14 +22,17 @@ static void my_cb(u_char *arg, const struct nm_pkthdr *h, const u_char *buf)
 		h->len, buf, *count, h->slot, h->slot->buf_idx);
 }
 
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
 	struct nm_desc *d;
 	struct pollfd pfd;
 	char buf[2048];
 	int count = 0;
 	
-	(void)argc;
+	if (argc < 2) {
+		usage(argv[0]);
+	}
 
 	bzero(&pfd, sizeof(pfd));
 

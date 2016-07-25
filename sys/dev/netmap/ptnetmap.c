@@ -1054,18 +1054,27 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
         return error;
     }
 
-    /* Parent's kring_create function will initialize
-     * its own na->si. We have to init our na->si here. */
-    for_rx_tx(t) {
-        nm_os_selinfo_init(&na->si[t]);
-    }
-
     /* A ptnetmap host adapter points the very same krings
      * as its parent adapter. These pointer are used in the
      * TX/RX worker functions. */
     na->tx_rings = parent->tx_rings;
     na->rx_rings = parent->rx_rings;
-    na->tailroom = parent->tailroom; //XXX
+    na->tailroom = parent->tailroom;
+
+    for_rx_tx(t) {
+	struct netmap_kring *kring;
+
+	/* Parent's kring_create function will initialize
+	 * its own na->si. We have to init our na->si here. */
+	nm_os_selinfo_init(&na->si[t]);
+
+	/* Force the mem_rings_create() method to create the
+	 * host rings independently on what the regif asked for:
+	 * these rings are needed by the guest ptnetmap adapter
+	 * anyway. */
+	kring = &NMR(na, t)[nma_get_nrings(na, t)];
+	kring->nr_kflags |= NKR_NEEDRING;
+    }
 
     return 0;
 }
@@ -1129,6 +1138,11 @@ nm_pt_host_dtor(struct netmap_adapter *na)
     struct netmap_adapter *parent = pth_na->parent;
 
     DBG(D("%s", pth_na->up.name));
+
+    /* The equivalent of NETMAP_PT_HOST_DELETE if the hypervisor
+     * didn't do it. */
+    ptnetmap_stop_kthreads(pth_na);
+    ptnetmap_delete(pth_na);
 
     parent->na_flags &= ~NAF_BUSY;
 
@@ -1382,4 +1396,63 @@ netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 
 	return notify;
 }
+
+/*
+ * Callbacks for ptnet drivers: nm_krings_create, nm_krings_delete, nm_dtor.
+ */
+int
+ptnet_nm_krings_create(struct netmap_adapter *na)
+{
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na; /* Upcast. */
+	struct netmap_adapter *na_nm = &ptna->hwup.up;
+	struct netmap_adapter *na_dr = &ptna->dr.up;
+	int ret;
+
+	if (ptna->backend_regifs) {
+		return 0;
+	}
+
+	/* Create krings on the public netmap adapter. */
+	ret = netmap_hw_krings_create(na_nm);
+	if (ret) {
+		return ret;
+	}
+
+	/* Copy krings into the netmap adapter private to the driver. */
+	na_dr->tx_rings = na_nm->tx_rings;
+	na_dr->rx_rings = na_nm->rx_rings;
+
+	return 0;
+}
+
+void
+ptnet_nm_krings_delete(struct netmap_adapter *na)
+{
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na; /* Upcast. */
+	struct netmap_adapter *na_nm = &ptna->hwup.up;
+	struct netmap_adapter *na_dr = &ptna->dr.up;
+
+	if (ptna->backend_regifs) {
+		return;
+	}
+
+	na_dr->tx_rings = NULL;
+	na_dr->rx_rings = NULL;
+
+	netmap_hw_krings_delete(na_nm);
+}
+
+void
+ptnet_nm_dtor(struct netmap_adapter *na)
+{
+	struct netmap_pt_guest_adapter *ptna =
+			(struct netmap_pt_guest_adapter *)na;
+
+	netmap_mem_put(ptna->dr.up.nm_mem);
+	memset(&ptna->dr, 0, sizeof(ptna->dr));
+	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
+}
+
 #endif /* WITH_PTNETMAP_GUEST */

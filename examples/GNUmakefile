@@ -2,7 +2,7 @@
 # we can just define 'progs' and create custom targets.
 PROGS	=	pkt-gen pkt-gen-b bridge bridge-b vale-ctl
 #PROGS += pingd
-PROGS	+= test_select testmmap
+PROGS	+= test_select testmmap test_nm
 X86PROG = testlock testcsum
 LIBNETMAP =
 
@@ -49,6 +49,8 @@ bridge: bridge.o
 bridge-b: bridge-b.o
 
 vale-ctl: vale-ctl.o
+
+test_nm: test_nm.o
 
 %-pic.o: %.c
 	$(CC) $(CFLAGS) -fpic -c $^ -o $@

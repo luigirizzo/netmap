@@ -444,7 +444,7 @@ int main(int argc, char **argv)
 run:
 	for (i = 0; i < npipes; ++i) {
 		char interface[25];
-		sprintf(interface, "%s{%d", glob_arg.ifname, i);
+		sprintf(interface, "%s{%d/T", glob_arg.ifname, i);
 		D("opening pipe named %s", interface);
 
 		ports[i].nmd = nm_open(interface, NULL, 0, rxport->nmd);

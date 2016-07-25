@@ -52,19 +52,7 @@ static int virtnet_open(struct ifnet *ifp);
 static void free_receive_bufs(struct virtnet_info *vi);
 static void free_unused_bufs(struct virtnet_info *vi);
 
-#ifdef NETMAP_LINUX_HAVE_NUM_QUEUES
-
-#define DEV_NUM_RX_QUEUES(_netdev)	(_netdev)->num_rx_queues
 #define DEV_NUM_TX_QUEUES(_netdev)	(_netdev)->num_tx_queues
-
-#else  /* !HAVE_NUM_QUEUES */
-
-/* Before 2.6.35 there was no net_device.num_rx_queues, so we assume 1. */
-#define DEV_NUM_RX_QUEUES(_netdev)	1
-#define DEV_NUM_TX_QUEUES(_netdev)	1
-
-#endif /* !HAVE_NUM_QUEUES */
-
 
 #ifdef NETMAP_LINUX_VIRTIO_FUNCTIONS
 

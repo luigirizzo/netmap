@@ -879,15 +879,36 @@ add_test 'have PERNET_OPS_ID' <<-EOF
 	}
 EOF
 
-# number of tx/rx queues
-add_test 'have NUM_QUEUES' <<-EOF
+# check for real_num_rx_queues
+add_test 'have REAL_NUM_RX_QUEUES' <<-EOF
 	#include <linux/netdevice.h>
 
-	void
-	dummy(struct net_device *net, unsigned int *txq, unsigned int *rxq)
+	unsigned int
+	dummy(struct net_device *net)
 	{
-	    *txq = net->real_num_tx_queues;
-	    *rxq = net->real_num_rx_queues;
+	    return net->real_num_rx_queues;
+	}
+EOF
+
+# check for num_rx_queues
+add_test 'have NUM_RX_QUEUES' <<-EOF
+	#include <linux/netdevice.h>
+
+	unsigned int
+	dummy(struct net_device *net)
+	{
+	    return net->num_rx_queues;
+	}
+EOF
+
+# check for netif_set_real_num_rx_queues
+add_test 'have SET_REAL_NUM_TX_QUEUES' <<-EOF
+	#include <linux/netdevice.h>
+
+	int
+	dummy(struct net_device *net, unsigned int txq)
+	{
+	    return netif_set_real_num_tx_queues(net, txq);
 	}
 EOF
 
@@ -1029,8 +1050,9 @@ EOF
 add_test 'have HW_FEATURES' <<-EOF
 	#include <linux/netdevice.h>
 
-	struct net_device *n;
-        (void)n->hw_features;
+	unsigned int dummy(struct net_device *n) {
+		return n->hw_features;
+	}
 EOF
 
 # check for eth_hw_addr_random
@@ -1080,6 +1102,86 @@ add_test 'define QDISC_CREATE_DFLT_3ARGS' <<-EOF
 					 ops, parent_id);
 	}
 EOF
+
+# check for napi_complete_done
+add_test 'have NAPI_COMPLETE_DONE' <<-EOF
+	#include <linux/netdevice.h>
+
+	void dummy(struct napi_struct *n, int work_done) {
+		napi_complete_done(n, work_done);
+	}
+EOF
+
+# check for napi_alloc_skb
+add_test 'have NAPI_ALLOC_SKB' <<-EOF
+	#include <linux/skbuff.h>
+
+	struct sk_buff *
+	dummy(struct napi_struct *n, unsigned int l) {
+		return napi_alloc_skb(n, l);
+	}
+EOF
+
+# check for netdev_alloc_skb_ip_align
+add_test 'have ALLOC_SKB_IP_ALIGN' <<-EOF
+	#include <linux/skbuff.h>
+
+	struct sk_buff *
+	dummy(struct net_device *n, unsigned int l) {
+		return netdev_alloc_skb_ip_align(n, l);
+	}
+EOF
+
+# check for xmit_more in sk_buff
+add_test 'have XMIT_MORE' <<-EOF
+	#include <linux/skbuff.h>
+
+	struct sk_buff *skb;
+        (void)skb->xmit_more;
+EOF
+
+# arguments of skb_add_rx_frag (either 5 or 6)
+add_test 'define SKB_ADD_RX_FRAG_6ARGS' <<-EOF
+	#include <linux/skbuff.h>
+
+	void
+	dummy(struct sk_buff *skb, int i, struct page *p,
+	      int off, int size, int truesize)
+	{
+		skb_add_rx_frag(skb, i, p, off, size, truesize);
+	}
+EOF
+
+# check for skb_frag_size
+add_test 'have SKB_FRAG_SIZE' <<-EOF
+	#include <linux/skbuff.h>
+
+	unsigned int
+	dummy(const skb_frag_t *frag) {
+		return skb_frag_size(frag);
+	}
+EOF
+
+# check for skb_frag_address
+add_test 'have SKB_FRAG_ADDRESS' <<-EOF
+	#include <linux/skbuff.h>
+
+	void *
+	dummy(const skb_frag_t *frag) {
+		return skb_frag_address(frag);
+	}
+EOF
+
+# check for skb_checksum_start_offset
+add_test 'have SKB_CHECKSUM_START_OFFSET' <<-EOF
+	#include <linux/skbuff.h>
+
+	int
+	dummy(const struct sk_buff *skb) {
+		return skb_checksum_start_offset(skb);
+	}
+EOF
+
 
 #####################################################
 # checks related to drivers                         #

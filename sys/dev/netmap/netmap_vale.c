@@ -1513,6 +1513,7 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	uint32_t sh, dh;
 	u_int dst, mysrc = na->bdg_port;
 	uint64_t smac, dmac;
+	uint8_t indbuf[12];
 
 	/* safety check, unfortunately we have many cases */
 	if (buf_len >= 14 + na->up.virt_hdr_len) {
@@ -1528,6 +1529,14 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		RD(5, "invalid buf format, length %d", buf_len);
 		return NM_BDG_NOPORT;
 	}
+
+	if (ft->ft_flags & NS_INDIRECT) {
+		if (copyin(buf, indbuf, sizeof(indbuf))) {
+			return NM_BDG_NOPORT;
+		}
+		buf = indbuf;
+	}
+
 	dmac = le64toh(*(uint64_t *)(buf)) & 0xffffffffffff;
 	smac = le64toh(*(uint64_t *)(buf + 4));
 	smac >>= 16;

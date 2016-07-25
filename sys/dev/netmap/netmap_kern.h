@@ -396,6 +396,10 @@ struct netmap_kring {
 #define NKR_FORWARD	0x4		/* (host ring only) there are
 					   packets to forward
 					 */
+#define NKR_NEEDRING	0x8		/* ring needed even if users==0
+					 * (used internally by pipes and
+					 *  by ptnetmap host ports)
+					 */
 
 	uint32_t	nr_mode;
 	uint32_t	nr_pending_mode;
@@ -475,9 +479,6 @@ struct netmap_kring {
 #ifdef WITH_PIPES
 	struct netmap_kring *pipe;	/* if this is a pipe ring,
 					 * pointer to the other end
-					 */
-	struct netmap_ring *save_ring;	/* pointer to hidden rings
-       					 * (see netmap_pipe.c for details)
 					 */
 #endif /* WITH_PIPES */
 
@@ -2049,8 +2050,21 @@ typedef uint32_t (*nm_pt_guest_ptctl_t)(struct ifnet *, uint32_t);
  * netmap adapter for guest ptnetmap ports
  */
 struct netmap_pt_guest_adapter {
+        /* The netmap adapter to be used by netmap applications.
+	 * This field must be the first, to allow upcast. */
 	struct netmap_hw_adapter hwup;
+
+        /* The netmap adapter to be used by the driver. */
+        struct netmap_hw_adapter dr;
+
 	void *csb;
+
+	/* Reference counter to track users of backend netmap port: the
+	 * network stack and netmap clients.
+	 * Used to decide when we need (de)allocate krings/rings and
+	 * start (stop) ptnetmap kthreads. */
+	int backend_regifs;
+
 };
 
 int netmap_pt_guest_attach(struct netmap_adapter *, void *,
@@ -2060,6 +2074,9 @@ bool netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *krin
 			    int flags);
 bool netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 			    int flags);
+int ptnet_nm_krings_create(struct netmap_adapter *na);
+void ptnet_nm_krings_delete(struct netmap_adapter *na);
+void ptnet_nm_dtor(struct netmap_adapter *na);
 #endif /* WITH_PTNETMAP_GUEST */
 
 #endif /* _NET_NETMAP_KERN_H_ */
