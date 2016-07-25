@@ -31,7 +31,7 @@
 
 #ifdef WITH_PTNETMAP_GUEST
 
-#include <netmap/netmap_virt.h>
+#include <net/netmap_virt.h>
 
 static int virtio_ptnetmap_txsync(struct netmap_kring *kring, int flags);
 

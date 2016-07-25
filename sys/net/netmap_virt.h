@@ -105,8 +105,8 @@
 
  */
 
-#if !defined(NETMAP_VIRT_CSB) /*&& !defined(NET_PARAVIRT_CSB_SIZE) XXX: NET_PARAVIRT_CSB_SIZE to avoid oldest CSB */
-#define NETMAP_VIRT_CSB
+#ifndef NETMAP_VIRT_H
+#define NETMAP_VIRT_H
 
 /* ptnetmap ring fields shared between guest and host */
 struct ptnet_ring {
@@ -243,10 +243,6 @@ struct ptnet_csb {
 	struct ptnet_ring rings[NET_PARAVIRT_CSB_SIZE/sizeof(struct ptnet_ring)];
 };
 
-#endif /* NETMAP_VIRT_CSB */
-
-#if defined(NETMAP_API) && !defined(NETMAP_VIRT_PTNETMAP)
-#define NETMAP_VIRT_PTNETMAP
 
 /*
  * ptnetmap_memdev: device used to expose memory into the guest VM
@@ -479,4 +475,4 @@ int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
 void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
 #endif /* WITH_PTNETMAP_GUEST */
 
-#endif /* NETMAP_VIRT_PTNETMAP */
+#endif /* NETMAP_VIRT_H */

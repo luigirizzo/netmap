@@ -48,7 +48,7 @@
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
-#include <dev/netmap/netmap_virt.h>
+#include <net/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
 
 #ifdef WITH_PTNETMAP_HOST

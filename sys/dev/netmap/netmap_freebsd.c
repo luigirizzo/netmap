@@ -67,8 +67,8 @@
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
+#include <net/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
-#include <dev/netmap/netmap_virt.h>
 
 
 /* ======================== FREEBSD-SPECIFIC ROUTINES ================== */

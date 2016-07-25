@@ -41,7 +41,7 @@
 #ifdef WITH_PTNETMAP_GUEST
 #include <dev/netmap/netmap_mem2.h>
 #endif
-#include <dev/netmap/netmap_virt.h>
+#include <net/netmap_virt.h>
 
 extern int netmap_adaptive_io;
 

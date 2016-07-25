@@ -33,7 +33,7 @@
 #include <vm/pmap.h>    /* vtophys ? */
 #include <dev/netmap/netmap_kern.h>
 #ifdef WITH_PTNETMAP_GUEST
-#include <dev/netmap/netmap_virt.h>
+#include <net/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
 static int vtnet_ptnetmap_txsync(struct netmap_kring *kring, int flags);
 #define VTNET_PTNETMAP_ON(_na) \
