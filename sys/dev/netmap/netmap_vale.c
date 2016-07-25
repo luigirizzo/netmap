@@ -2340,6 +2340,28 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 			hostna->up.na_lut = na->na_lut;
 		}
 
+		/* cross-link the netmap rings
+		 * The original number of rings comes from hwna,
+		 * rx rings on one side equals tx rings on the other.
+		 */
+		for_rx_tx(t) {
+			enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
+			for (i = 0; i < nma_get_nrings(hwna, r) + 1; i++) {
+				NMR(hwna, r)[i].ring = NMR(na, t)[i].ring;
+			}
+		}
+
+		if (na->na_flags & NAF_HOST_RINGS) {
+			struct netmap_adapter *hna = &hostna->up;
+			/* the hostna rings are the host rings of the bwrap.
+			 * The corresponding krings must point back to the
+			 * hostna
+			 */
+			hna->tx_rings = &na->tx_rings[na->num_tx_rings];
+			hna->tx_rings[0].na = hna;
+			hna->rx_rings = &na->rx_rings[na->num_rx_rings];
+			hna->rx_rings[0].na = hna;
+		}
 	}
 
 	/* pass down the pending ring state information */
@@ -2429,7 +2451,6 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	struct netmap_bwrap_adapter *bna =
 		(struct netmap_bwrap_adapter *)na;
 	struct netmap_adapter *hwna = bna->hwna;
-	struct netmap_adapter *hostna = &bna->host.up;
 	int i, error = 0;
 	enum txrx t;
 
@@ -2445,39 +2466,17 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	if (error) {
 		goto err_del_vp_rings;
 	}
-	/* and the actual rings */
-	error = netmap_mem_rings_create(hwna);
-	if (error) {
-		goto err_del_hw_rings;
-	}
 
-	/* cross-link the netmap rings
-	 * The original number of rings comes from hwna,
-	 * rx rings on one side equals tx rings on the other.
-	 */
-        for_rx_tx(t) {
-                enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
-                for (i = 0; i < nma_get_nrings(hwna, r) + 1; i++) {
-                        NMR(na, t)[i].nkr_num_slots = NMR(hwna, r)[i].nkr_num_slots;
-                        NMR(na, t)[i].ring = NMR(hwna, r)[i].ring;
-                }
-        }
-
-	if (na->na_flags & NAF_HOST_RINGS) {
-		/* the hostna rings are the host rings of the bwrap.
-		 * The corresponding krings must point back to the
-		 * hostna
-		 */
-		hostna->tx_rings = &na->tx_rings[na->num_tx_rings];
-		hostna->tx_rings[0].na = hostna;
-		hostna->rx_rings = &na->rx_rings[na->num_rx_rings];
-		hostna->rx_rings[0].na = hostna;
+	/* get each ring slot number from the corresponding hwna ring */
+	for_rx_tx(t) {
+		enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
+		for (i = 0; i < nma_get_nrings(hwna, r) + 1; i++) {
+			NMR(na, t)[i].nkr_num_slots = NMR(hwna, r)[i].nkr_num_slots;
+		}
 	}
 
 	return 0;
 
-err_del_hw_rings:
-	hwna->nm_krings_delete(hwna);
 err_del_vp_rings:
 	netmap_vp_krings_delete(na);
 
@@ -2581,7 +2580,7 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 		if (npriv == NULL)
 			return ENOMEM;
 		npriv->np_ifp = na->ifp; /* let the priv destructor release the ref */
-		error = netmap_do_regif(npriv, na, nmr->nr_ringid, nmr->nr_flags);
+		error = netmap_do_regif(npriv, na, 0, NR_REG_NIC_SW);
 		if (error) {
 			netmap_priv_delete(npriv);
 			return error;
