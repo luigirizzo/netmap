@@ -34,7 +34,7 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
-#include <netmap/netmap_virt.h>
+#include <net/netmap_virt.h>
 
 #define SOFTC_T	e1000_adapter
 
@@ -366,7 +366,7 @@ e1000_ptnetmap_config(struct netmap_adapter *na,
 	if (csb == NULL)
 		return EINVAL;
 
-	ret = e1000_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	ret = e1000_ptnetmap_ptctl(na->ifp, PTNETMAP_PTCTL_CONFIG);
 	if (ret)
 		return ret;
 
@@ -431,7 +431,7 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	int ret = 0;
 
 	if (onoff) {
-		ret = e1000_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+		ret = e1000_ptnetmap_ptctl(na->ifp, PTNETMAP_PTCTL_REGIF);
 		if (ret)
 			return ret;
 
@@ -476,7 +476,7 @@ e1000_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		kring = na->rx_rings;
 		kring->nr_pending_mode = kring->nr_mode = NKR_NETMAP_OFF;
 
-		ret = e1000_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		ret = e1000_ptnetmap_ptctl(na->ifp, PTNETMAP_PTCTL_UNREGIF);
 	}
 
 	return ret;
@@ -517,11 +517,11 @@ e1000_ptnetmap_features(struct SOFTC_T *adapter)
 	struct net_device *netdev = adapter->netdev;
 	uint32_t features;
 	/* tell the device the features we support */
-	ew32(PTFEAT, NET_PTN_FEATURES_BASE); /* we are cheating for now */
+	ew32(PTFEAT, PTNETMAP_F_BASE); /* we are cheating for now */
 	/* get back the acknowledged features */
 	features = er32(PTFEAT);
 	pr_info("%s ptnetmap support: %s\n", netdev->name,
-			(features & NET_PTN_FEATURES_BASE) ? "base" :
+			(features & PTNETMAP_F_BASE) ? "base" :
 			"none");
 	return features;
 }
@@ -555,7 +555,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
         /* XXX:check device ptnetmap support (now we use PARAVIRT_SUBDEV) */
 	if (paravirtual &&
 		(adapter->pdev->subsystem_device == E1000_PARAVIRT_SUBDEV) &&
-	        (e1000_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE)) {
+	        (e1000_ptnetmap_features(adapter) & PTNETMAP_F_BASE)) {
 		int err;
 
 		na.nm_config = e1000_ptnetmap_config;
@@ -567,7 +567,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 
 		/* Ask the device to fill in some configuration fields. Here we
 		 * just need nifp_offset. */
-		err = e1000_ptnetmap_ptctl(na.ifp, NET_PARAVIRT_PTCTL_CONFIG);
+		err = e1000_ptnetmap_ptctl(na.ifp, PTNETMAP_PTCTL_CONFIG);
 		if (err) {
 			D("Failed to get nifp_offset from passthrough device");
 			return;

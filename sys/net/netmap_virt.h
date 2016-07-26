@@ -23,8 +23,132 @@
  * SUCH DAMAGE.
  */
 
+#ifndef NETMAP_VIRT_H
+#define NETMAP_VIRT_H
+
+#define NETMAP_VIRT_CSB_SIZE   4096
+
+/* ptnetmap features */
+#define PTNETMAP_F_BASE            1
+#define PTNETMAP_F_FULL            2 /* not used */
+#define PTNETMAP_F_VNET_HDR        4
+
 /*
- Support for virtio-like communication between host (H) and guest (G) NICs.
+ * ptnetmap_memdev: device used to expose memory into the guest VM
+ *
+ * These macros are used in the hypervisor frontend (QEMU, bhyve) and in the
+ * guest device driver.
+ */
+
+/* PCI identifiers and PCI BARs for the ptnetmap memdev
+ * and ptnetmap network interface. */
+#define PTNETMAP_MEMDEV_NAME            "ptnetmap-memdev"
+#define PTNETMAP_PCI_VENDOR_ID          0x3333  /* TODO change vendor_id */
+#define PTNETMAP_PCI_DEVICE_ID          0x0001  /* memory device */
+#define PTNETMAP_PCI_NETIF_ID           0x0002  /* ptnet network interface */
+#define PTNETMAP_IO_PCI_BAR             0
+#define PTNETMAP_MEM_PCI_BAR            1
+#define PTNETMAP_MSIX_PCI_BAR           2
+
+/* Registers for the ptnetmap memdev */
+/* 32 bit r/o */
+#define PTNETMAP_IO_PCI_FEATURES        0	/* XXX should be removed */
+/* 32 bit r/o */
+#define PTNETMAP_IO_PCI_MEMSIZE         4	/* size of the netmap memory shared
+						 * between guest and host */
+/* 16 bit r/o */
+#define PTNETMAP_IO_PCI_HOSTID          8	/* memory allocator ID in netmap host */
+#define PTNETMAP_IO_SIZE                10
+
+/*
+ * ptnetmap configuration
+ *
+ * The hypervisor (QEMU or bhyve) sends this struct to the host netmap
+ * module through an ioctl() command when it wants to start the ptnetmap
+ * kthreads.
+ */
+struct ptnetmap_cfg {
+#define PTNETMAP_CFG_FEAT_CSB           0x0001
+#define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
+#define PTNETMAP_CFG_FEAT_IOCTL		0x0004
+	uint32_t features;
+	void *ptrings;				/* ptrings inside CSB */
+	uint32_t num_rings;			/* number of entries */
+	struct ptnet_ring_cfg entries[0];	/* per-ptring configuration */
+};
+
+/*
+ * Functions used to write ptnetmap_cfg from/to the nmreq.
+ * The user-space application writes the pointer of ptnetmap_cfg
+ * (user-space buffer) starting from nr_arg1 field, so that the kernel
+ * can read it with copyin (copy_from_user).
+ */
+static inline void
+ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
+{
+	uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
+	*nmr_ptncfg = (uintptr_t)cfg;
+}
+
+/* ptnetmap control commands */
+#define PTNETMAP_PTCTL_CONFIG	1
+#define PTNETMAP_PTCTL_FINALIZE	2
+#define PTNETMAP_PTCTL_IFNEW	3
+#define PTNETMAP_PTCTL_IFDELETE	4
+#define PTNETMAP_PTCTL_RINGSCREATE	5
+#define PTNETMAP_PTCTL_RINGSDELETE	6
+#define PTNETMAP_PTCTL_DEREF	7
+#define PTNETMAP_PTCTL_TXSYNC	8
+#define PTNETMAP_PTCTL_RXSYNC	9
+#define PTNETMAP_PTCTL_REGIF        10
+#define PTNETMAP_PTCTL_UNREGIF      11
+#define PTNETMAP_PTCTL_HOSTMEMID	12
+
+
+/* I/O registers for the ptnet device. */
+#define PTNET_IO_PTFEAT		0
+#define PTNET_IO_PTCTL		4
+#define PTNET_IO_PTSTS		8
+/* hole */
+#define PTNET_IO_MAC_LO		16
+#define PTNET_IO_MAC_HI		20
+#define PTNET_IO_CSBBAH         24
+#define PTNET_IO_CSBBAL         28
+#define PTNET_IO_NIFP_OFS	32
+#define PTNET_IO_NUM_TX_RINGS	36
+#define PTNET_IO_NUM_RX_RINGS	40
+#define PTNET_IO_NUM_TX_SLOTS	44
+#define PTNET_IO_NUM_RX_SLOTS	48
+#define PTNET_IO_VNET_HDR_LEN	52
+#define PTNET_IO_END		56
+#define PTNET_IO_KICK_BASE	128
+#define PTNET_IO_MASK           0xff
+
+/* If defined, CSB is allocated by the guest, not by the host. */
+#define PTNET_CSB_ALLOC
+
+/* ptnetmap ring fields shared between guest and host */
+struct ptnet_ring {
+	/* XXX revise the layout to minimize cache bounces. */
+	uint32_t head;		  /* GW+ HR+ the head of the guest netmap_ring */
+	uint32_t cur;		  /* GW+ HR+ the cur of the guest netmap_ring */
+	uint32_t guest_need_kick; /* GW+ HR+ host-->guest notification enable */
+	char pad[4];
+	uint32_t hwcur;		  /* GR+ HW+ the hwcur of the host netmap_kring */
+	uint32_t hwtail;	  /* GR+ HW+ the hwtail of the host netmap_kring */
+	uint32_t host_need_kick;  /* GR+ HW+ guest-->host notification enable */
+	uint32_t sync_flags;	  /* GW+ HR+ the flags of the guest [tx|rx]sync() */
+};
+
+/* CSB for the ptnet device. */
+struct ptnet_csb {
+	struct ptnet_ring rings[NETMAP_VIRT_CSB_SIZE/sizeof(struct ptnet_ring)];
+};
+
+/* Support for virtio-like communication between host (H) and guest (G) NICs.
+
+ This is for legacy e1000-paravirt and ptnetmap (e1000, virtio), it does not
+ support multi-ring.
 
  The guest allocates the shared Communication Status Block (csb) and
  write its physical address at CSBAL and CSBAH (data is little endian).
@@ -102,28 +226,9 @@
 	This second mechanism reduces the number of kicks and
         RDT writes on the receive side when the guest is too slow and
 	would free only a few buffers at a time.
-
  */
-
-#if !defined(NETMAP_VIRT_CSB) /*&& !defined(NET_PARAVIRT_CSB_SIZE) XXX: NET_PARAVIRT_CSB_SIZE to avoid oldest CSB */
-#define NETMAP_VIRT_CSB
-
-/* ptnetmap ring fields shared between guest and host */
-struct ptnet_ring {
-	/* XXX revise the layout to minimize cache bounces. */
-	uint32_t head;		  /* GW+ HR+ the head of the guest netmap_ring */
-	uint32_t cur;		  /* GW+ HR+ the cur of the guest netmap_ring */
-	uint32_t guest_need_kick; /* GW+ HR+ host-->guest notification enable */
-	char pad[4];
-	uint32_t hwcur;		  /* GR+ HW+ the hwcur of the host netmap_kring */
-	uint32_t hwtail;	  /* GR+ HW+ the hwtail of the host netmap_kring */
-	uint32_t host_need_kick;  /* GR+ HW+ guest-->host notification enable */
-	uint32_t sync_flags;	  /* GW+ HR+ the flags of the guest [tx|rx]sync() */
-};
-
-/* This is for legacy ptnetmap (e1000, virtio), it does not support multi-ring. */
 struct paravirt_csb {
-    /* XXX revise the layout to minimize cache bounces.
+    /*
      * Usage is described as follows:
      * 	[GH][RW][+-0]	guest/host reads/writes frequently/rarely/almost never
      */
@@ -163,30 +268,10 @@ struct paravirt_csb {
     struct ptnet_ring rx_ring;       /* RX ring fields shared between guest and host */
 };
 
-#define NET_PARAVIRT_CSB_SIZE   4096
-#define NET_PARAVIRT_NONE   (~((uint32_t)0))
-
-/* ptnetmap features */
-#define NET_PTN_FEATURES_BASE            1
-#define NET_PTN_FEATURES_FULL            2 /* not used */
-#define NET_PTN_FEATURES_VNET_HDR        4
-
-/* ptnetmap commands */
-#define NET_PARAVIRT_PTCTL_CONFIG	1
-#define NET_PARAVIRT_PTCTL_FINALIZE	2
-#define NET_PARAVIRT_PTCTL_IFNEW	3
-#define NET_PARAVIRT_PTCTL_IFDELETE	4
-#define NET_PARAVIRT_PTCTL_RINGSCREATE	5
-#define NET_PARAVIRT_PTCTL_RINGSDELETE	6
-#define NET_PARAVIRT_PTCTL_DEREF	7
-#define NET_PARAVIRT_PTCTL_TXSYNC	8
-#define NET_PARAVIRT_PTCTL_RXSYNC	9
-#define NET_PARAVIRT_PTCTL_REGIF        10
-#define NET_PARAVIRT_PTCTL_UNREGIF      11
-#define NET_PARAVIRT_PTCTL_HOSTMEMID	12
-
 /*
- * ptnetmap registers added to the virtio-net configuration space
+ * ptnetmap registers added to the virtio-net configuration space.
+ * ptnetmap registers for e1000 are defined in if_lem.h for FreeBSD
+ * and e1000_hw.h for Linux
  */
 /* 32 bit r/w */
 #define PTNETMAP_VIRTIO_IO_PTFEAT       0 /* ptnetmap features */
@@ -209,104 +294,6 @@ struct paravirt_csb {
 #define VIRTIO_NET_F_PTNETMAP		0x2000000
 #endif
 
-
-/*
- * ptnetmap registers for e1000 are defined in if_lem.h for FreeBSD
- * and e1000_hw.h for Linux
- */
-
-
-/* I/O registers for the ptnet device. */
-#define PTNET_IO_PTFEAT		0
-#define PTNET_IO_PTCTL		4
-#define PTNET_IO_PTSTS		8
-/* hole */
-#define PTNET_IO_MAC_LO		16
-#define PTNET_IO_MAC_HI		20
-#define PTNET_IO_CSBBAH         24
-#define PTNET_IO_CSBBAL         28
-#define PTNET_IO_NIFP_OFS	32
-#define PTNET_IO_NUM_TX_RINGS	36
-#define PTNET_IO_NUM_RX_RINGS	40
-#define PTNET_IO_NUM_TX_SLOTS	44
-#define PTNET_IO_NUM_RX_SLOTS	48
-#define PTNET_IO_VNET_HDR_LEN	52
-#define PTNET_IO_END		56
-#define PTNET_IO_KICK_BASE	128
-#define PTNET_IO_MASK           0xff
-
-/* If defined, CSB is allocated by the guest, not by the host. */
-#define PTNET_CSB_ALLOC
-
-/* CSB for the ptnet device. */
-struct ptnet_csb {
-	struct ptnet_ring rings[NET_PARAVIRT_CSB_SIZE/sizeof(struct ptnet_ring)];
-};
-
-#endif /* NETMAP_VIRT_CSB */
-
-#if defined(NETMAP_API) && !defined(NETMAP_VIRT_PTNETMAP)
-#define NETMAP_VIRT_PTNETMAP
-
-/*
- * ptnetmap_memdev: device used to expose memory into the guest VM
- *
- * These macros are used in the hypervisor frontend (QEMU, bhyve) and in the
- * guest device driver.
- */
-
-/* PCI identifiers and PCI BARs for the ptnetmap memdev
- * and ptnetmap network interface. */
-#define PTN_MEMDEV_NAME                 "ptnetmap-memdev"
-#define PTNETMAP_PCI_VENDOR_ID          0x3333  /* XXX-ste: change vendor_id */
-#define PTNETMAP_PCI_DEVICE_ID          0x0001  /* memory device */
-#define PTNETMAP_PCI_NETIF_ID           0x0002  /* network interface */
-#define PTNETMAP_IO_PCI_BAR             0
-#define PTNETMAP_MEM_PCI_BAR            1
-#define PTNETMAP_MSIX_PCI_BAR           2
-
-#define PTNETMAP_MSIX_VEC_TX            0
-#define PTNETMAP_MSIX_VEC_RX            1
-
-/* Registers for the ptnetmap memdev */
-/* 32 bit r/o */
-#define PTNETMAP_IO_PCI_FEATURES        0	/* XXX should be removed */
-/* 32 bit r/o */
-#define PTNETMAP_IO_PCI_MEMSIZE         4	/* size of the netmap memory shared
-						 * between guest and host */
-/* 16 bit r/o */
-#define PTNETMAP_IO_PCI_HOSTID          8	/* memory allocator ID in netmap host */
-#define PTNETMAP_IO_SIZE                10
-
-/*
- * ptnetmap configuration
- *
- * The hypervisor (QEMU or bhyve) sends this struct to the host netmap
- * module through an ioctl() command when it wants to start the ptnetmap
- * kthreads.
- */
-struct ptnetmap_cfg {
-#define PTNETMAP_CFG_FEAT_CSB           0x0001
-#define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
-#define PTNETMAP_CFG_FEAT_IOCTL		0x0004
-	uint32_t features;
-	void *ptrings;				/* ptrings inside CSB */
-	uint32_t num_rings;			/* number of entries */
-	struct ptnet_ring_cfg entries[0];	/* per-ptring configuration */
-};
-
-/*
- * Functions used to write ptnetmap_cfg from/to the nmreq.
- * The user-space application writes the pointer of ptnetmap_cfg
- * (user-space buffer) starting from nr_arg1 field, so that the kernel
- * can read it with copyin (copy_from_user).
- */
-static inline void
-ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
-{
-	uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
-	*nmr_ptncfg = (uintptr_t)cfg;
-}
 
 #if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
 
@@ -479,4 +466,4 @@ int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
 void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
 #endif /* WITH_PTNETMAP_GUEST */
 
-#endif /* NETMAP_VIRT_PTNETMAP */
+#endif /* NETMAP_VIRT_H */
