@@ -1102,7 +1102,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 
 			/* Make sure the host adapter passed through is ready
 			 * for txsync/rxsync. */
-			ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_REGIF);
+			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_REGIF);
 			if (ret) {
 				return ret;
 			}
@@ -1152,7 +1152,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		}
 
 		if (pi->ptna->backend_regifs == 0) {
-			ret = ptnet_nm_ptctl(netdev, NET_PARAVIRT_PTCTL_UNREGIF);
+			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_UNREGIF);
 		}
 	}
 
@@ -1233,7 +1233,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
-	uint32_t ptfeatures = NET_PTN_FEATURES_BASE;
+	uint32_t ptfeatures = PTNETMAP_F_BASE;
 	unsigned int num_tx_rings, num_rx_rings;
 	struct netmap_adapter na_arg;
 	struct net_device *netdev;
@@ -1279,11 +1279,11 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Check if we are supported by the hypervisor. If not,
 	 * bail out immediately. */
 	if (ptnet_vnet_hdr) {
-		ptfeatures |= NET_PTN_FEATURES_VNET_HDR;
+		ptfeatures |= PTNETMAP_F_VNET_HDR;
 	}
 	iowrite32(ptfeatures, ioaddr + PTNET_IO_PTFEAT); /* wanted */
 	ptfeatures = ioread32(ioaddr + PTNET_IO_PTFEAT); /* acked */
-	if (!(ptfeatures & NET_PTN_FEATURES_BASE)) {
+	if (!(ptfeatures & PTNETMAP_F_BASE)) {
 		pr_err("Hypervisor doesn't support netmap passthrough\n");
 		goto err_ptfeat;
 	}
@@ -1405,7 +1405,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	netdev->features = NETIF_F_HIGHDMA;
 
-	if (pi->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+	if (pi->ptfeatures & PTNETMAP_F_VNET_HDR) {
 		unsigned int hw_features = NETIF_F_HW_CSUM | NETIF_F_SG;
 
 		if (ptnet_gso) {

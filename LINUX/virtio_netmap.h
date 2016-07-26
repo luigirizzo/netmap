@@ -737,7 +737,7 @@ virtio_ptnetmap_alloc_csb(struct virtnet_info *vi)
 
 	phys_addr_t csb_phyaddr;
 
-	csb = kmalloc(NET_PARAVIRT_CSB_SIZE, GFP_KERNEL | __GFP_ZERO);
+	csb = kmalloc(NETMAP_VIRT_CSB_SIZE, GFP_KERNEL | __GFP_ZERO);
 	if (!csb) {
 		D("Communication Status Block allocation failed");
 		return NULL;
@@ -796,7 +796,7 @@ virtio_ptnetmap_config(struct netmap_adapter *na,
 	if (csb == NULL)
 		return EINVAL;
 
-	ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	ret = virtio_ptnetmap_ptctl(na->ifp, PTNETMAP_PTCTL_CONFIG);
 	if (ret)
 		return ret;
 
@@ -868,7 +868,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 			virtqueue_add_outbuf(vq, sg, 1, skb, GFP_ATOMIC);
 		}
 
-		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+		ret = virtio_ptnetmap_ptctl(na->ifp, PTNETMAP_PTCTL_REGIF);
 		if (ret) {
 			goto out;
 		}
@@ -924,7 +924,7 @@ virtio_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		ret = virtio_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		ret = virtio_ptnetmap_ptctl(na->ifp, PTNETMAP_PTCTL_UNREGIF);
 	}
 out:
 	if (was_up) {
@@ -1023,11 +1023,11 @@ virtio_ptnetmap_features(struct virtnet_info *vi)
 	uint32_t features;
 	/* tell the device the features we support */
 	virtio_ptnetmap_iowrite4(vdev, PTNETMAP_VIRTIO_IO_PTFEAT,
-				 NET_PTN_FEATURES_BASE);
+				 PTNETMAP_F_BASE);
 	/* get back the acknowledged features */
 	features = virtio_ptnetmap_ioread4(vdev, PTNETMAP_VIRTIO_IO_PTFEAT);
 	pr_info("ptnetmap support: %s\n",
-		(features & NET_PTN_FEATURES_BASE) ? "base" : "none");
+		(features & PTNETMAP_F_BASE) ? "base" : "none");
 	return features;
 }
 
@@ -1065,7 +1065,7 @@ virtio_netmap_attach(struct virtnet_info *vi)
 	/* check if virtio-net (guest and host) supports ptnetmap */
 	if (passthrough &&
 		virtio_has_feature(vi->vdev, VIRTIO_NET_F_PTNETMAP) &&
-			(virtio_ptnetmap_features(vi) & NET_PTN_FEATURES_BASE)) {
+			(virtio_ptnetmap_features(vi) & PTNETMAP_F_BASE)) {
 		struct paravirt_csb *csb;
 		int err;
 
@@ -1084,7 +1084,7 @@ virtio_netmap_attach(struct virtnet_info *vi)
 
 		/* Ask the device to fill in some configuration fields. Here we
 		 * just need nifp_offset. */
-		err = virtio_ptnetmap_ptctl(na.ifp, NET_PARAVIRT_PTCTL_CONFIG);
+		err = virtio_ptnetmap_ptctl(na.ifp, PTNETMAP_PTCTL_CONFIG);
 		if (err) {
 			D("Failed to get nifp_offset from passthrough device");
 			return;

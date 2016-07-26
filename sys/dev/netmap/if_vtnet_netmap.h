@@ -477,7 +477,7 @@ vtnet_ptnetmap_alloc_csb(struct SOFTC_T *sc)
 
 	vm_paddr_t csb_phyaddr;
 
-	csb = contigmalloc(NET_PARAVIRT_CSB_SIZE, M_DEVBUF,
+	csb = contigmalloc(NETMAP_VIRT_CSB_SIZE, M_DEVBUF,
 			M_NOWAIT | M_ZERO, (size_t)0, -1UL, PAGE_SIZE, 0);
 	if (!csb) {
 		D("Communication Status Block allocation failed!");
@@ -513,7 +513,7 @@ vtnet_ptnetmap_free_csb(struct SOFTC_T *sc)
 		vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAH, 0x0ULL);
 		vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_CSBBAL, 0x0ULL);
 
-		contigfree(ptna->csb, NET_PARAVIRT_CSB_SIZE, M_DEVBUF);
+		contigfree(ptna->csb, NETMAP_VIRT_CSB_SIZE, M_DEVBUF);
 		ptna->csb = NULL;
 	}
 }
@@ -538,7 +538,7 @@ vtnet_ptnetmap_config(struct netmap_adapter *na,
 	if (csb == NULL)
 		return EINVAL;
 
-	ret = vtnet_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	ret = vtnet_ptnetmap_ptctl(na->ifp, PTNETMAP_PTCTL_CONFIG);
 	if (ret)
 		return ret;
 
@@ -642,7 +642,7 @@ vtnet_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 				ret = vtnet_txq_encap(txq, &m0);
 			}
 		}
-		ret = vtnet_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_REGIF);
+		ret = vtnet_ptnetmap_ptctl(na->ifp, PTNETMAP_PTCTL_REGIF);
 		if (ret) {
 			//na->na_flags &= ~NAF_NETMAP_ON;
 			nm_clear_native_flags(na);
@@ -674,7 +674,7 @@ vtnet_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 		ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
 		//na->na_flags &= ~NAF_NETMAP_ON;
 		nm_clear_native_flags(na);
-		ret = vtnet_ptnetmap_ptctl(na->ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		ret = vtnet_ptnetmap_ptctl(na->ifp, PTNETMAP_PTCTL_UNREGIF);
 		vtnet_init_locked(sc);       /* also enable intr */
 	}
 out:
@@ -719,11 +719,11 @@ vtnet_ptnetmap_features(struct SOFTC_T *sc)
 	uint32_t features;
 	/* tell the device the features we support */
 	vtnet_ptnetmap_iowrite4(dev, PTNETMAP_VIRTIO_IO_PTFEAT,
-			NET_PTN_FEATURES_BASE);
+			PTNETMAP_F_BASE);
 	/* get back the acknowledged features */
 	features = vtnet_ptnetmap_ioread4(dev, PTNETMAP_VIRTIO_IO_PTFEAT);
 	D("ptnetmap support: %s\n",
-			(features & NET_PTN_FEATURES_BASE) ? "base" :
+			(features & PTNETMAP_F_BASE) ? "base" :
 			"none");
 	return features;
 }
@@ -759,7 +759,7 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 #ifdef WITH_PTNETMAP_GUEST
 	/* check if virtio-net (guest and host) supports ptnetmap */
 	if (virtio_with_feature(sc->vtnet_dev, VIRTIO_NET_F_PTNETMAP) &&
-		(vtnet_ptnetmap_features(sc) & NET_PTN_FEATURES_BASE)) {
+		(vtnet_ptnetmap_features(sc) & PTNETMAP_F_BASE)) {
 		struct paravirt_csb *csb;
 		int err;
 
@@ -778,7 +778,7 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 
 		/* Ask the device to fill in some configuration fields. Here we
 		 * just need nifp_offset. */
-		err = vtnet_ptnetmap_ptctl(na.ifp, NET_PARAVIRT_PTCTL_CONFIG);
+		err = vtnet_ptnetmap_ptctl(na.ifp, PTNETMAP_PTCTL_CONFIG);
 		if (err) {
 			D("Failed to get nifp_offset from passthrough device");
 			return;

@@ -509,7 +509,7 @@ lem_ptnetmap_config(struct netmap_adapter *na,
 	if (csb == NULL)
 		return EINVAL;
 
-	ret = lem_ptnetmap_ptctl(ifp, NET_PARAVIRT_PTCTL_CONFIG);
+	ret = lem_ptnetmap_ptctl(ifp, PTNETMAP_PTCTL_CONFIG);
 	if (ret)
 		return ret;
 
@@ -569,7 +569,7 @@ lem_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	int ret;
 
 	if (onoff) {
-		ret = lem_ptnetmap_ptctl(ifp, NET_PARAVIRT_PTCTL_REGIF);
+		ret = lem_ptnetmap_ptctl(ifp, PTNETMAP_PTCTL_REGIF);
 		if (ret)
 			return ret;
 
@@ -601,7 +601,7 @@ lem_ptnetmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		na->na_flags &= ~NAF_NETMAP_ON;
 		adapter->ptnetmap_enabled = 0;
-		ret = lem_ptnetmap_ptctl(ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+		ret = lem_ptnetmap_ptctl(ifp, PTNETMAP_PTCTL_UNREGIF);
 	}
 
 	return lem_netmap_reg(na, onoff);
@@ -634,11 +634,11 @@ lem_ptnetmap_features(struct adapter *adapter)
 {
 	uint32_t features;
 	/* tell the device the features we support */
-	E1000_WRITE_REG(&adapter->hw, E1000_PTFEAT, NET_PTN_FEATURES_BASE);
+	E1000_WRITE_REG(&adapter->hw, E1000_PTFEAT, PTNETMAP_F_BASE);
 	/* get back the acknowledged features */
 	features = E1000_READ_REG(&adapter->hw, E1000_PTFEAT);
 	device_printf(adapter->dev, "ptnetmap support: %s\n",
-			(features & NET_PTN_FEATURES_BASE) ? "base" :
+			(features & PTNETMAP_F_BASE) ? "base" :
 			"none");
 	return features;
 }
@@ -678,7 +678,7 @@ lem_netmap_attach(struct adapter *adapter)
 #if defined (NIC_PTNETMAP) && defined (WITH_PTNETMAP_GUEST)
         /* XXX: check if the device support ptnetmap (now we use PARA_SUBDEV) */
 	if ((adapter->hw.subsystem_device_id == E1000_PARA_SUBDEV) &&
-		(lem_ptnetmap_features(adapter) & NET_PTN_FEATURES_BASE)) {
+		(lem_ptnetmap_features(adapter) & PTNETMAP_F_BASE)) {
 		int err;
 
 		na.nm_config = lem_ptnetmap_config;
@@ -690,7 +690,7 @@ lem_netmap_attach(struct adapter *adapter)
 
 		/* Ask the device to fill in some configuration fields. Here we
 		 * just need nifp_offset. */
-		err = lem_ptnetmap_ptctl(na.ifp, NET_PARAVIRT_PTCTL_CONFIG);
+		err = lem_ptnetmap_ptctl(na.ifp, PTNETMAP_PTCTL_CONFIG);
 		if (err) {
 			D("Failed to get nifp_offset from passthrough device");
 			return;

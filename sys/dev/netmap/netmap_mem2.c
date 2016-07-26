@@ -2252,7 +2252,7 @@ netmap_mem_pt_guest_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 		goto out;
 	}
 
-	ptif->ptctl(na->ifp, NET_PARAVIRT_PTCTL_IFDELETE);
+	ptif->ptctl(na->ifp, PTNETMAP_PTCTL_IFDELETE);
 out:
 	NMA_UNLOCK(na->nm_mem);
 }
@@ -2292,7 +2292,7 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
 	}
 
-	//error = ptif->ptctl->nm_ptctl(ifp, NET_PARAVIRT_PTCTL_RINGSCREATE);
+	//error = ptif->ptctl->nm_ptctl(ifp, PTNETMAP_PTCTL_RINGSCREATE);
 	error = 0;
 out:
 	NMA_UNLOCK(na->nm_mem);
@@ -2440,7 +2440,7 @@ netmap_mem_pt_guest_new(struct ifnet *ifp,
 	}
 
 	/* Get the host id allocator. */
-	host_id = ptctl(ifp, NET_PARAVIRT_PTCTL_HOSTMEMID);
+	host_id = ptctl(ifp, PTNETMAP_PTCTL_HOSTMEMID);
 
 	nmd = netmap_mem_pt_guest_get(host_id);
 

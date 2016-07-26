@@ -279,7 +279,7 @@ static inline void ptnet_kick(struct ptnet_queue *pq)
 static int
 ptnet_attach(device_t dev)
 {
-	uint32_t ptfeatures = NET_PTN_FEATURES_BASE;
+	uint32_t ptfeatures = PTNETMAP_F_BASE;
 	unsigned int num_rx_rings, num_tx_rings;
 	struct netmap_adapter na_arg;
 	unsigned int nifp_offset;
@@ -306,11 +306,11 @@ ptnet_attach(device_t dev)
 	/* Check if we are supported by the hypervisor. If not,
 	 * bail out immediately. */
 	if (ptnet_vnet_hdr) {
-		ptfeatures |= NET_PTN_FEATURES_VNET_HDR;
+		ptfeatures |= PTNETMAP_F_VNET_HDR;
 	}
 	bus_write_4(sc->iomem, PTNET_IO_PTFEAT, ptfeatures); /* wanted */
 	ptfeatures = bus_read_4(sc->iomem, PTNET_IO_PTFEAT); /* acked */
-	if (!(ptfeatures & NET_PTN_FEATURES_BASE)) {
+	if (!(ptfeatures & PTNETMAP_F_BASE)) {
 		device_printf(dev, "Hypervisor does not support netmap "
 				   "passthorugh\n");
 		err = ENXIO;
@@ -417,7 +417,7 @@ ptnet_attach(device_t dev)
 	ifp->if_data.ifi_hdrlen = sizeof(struct ether_vlan_header);
 	ifp->if_capabilities |= IFCAP_JUMBO_MTU | IFCAP_VLAN_MTU;
 
-	if (sc->ptfeatures & NET_PTN_FEATURES_VNET_HDR) {
+	if (sc->ptfeatures & PTNETMAP_F_VNET_HDR) {
 		/* Similarly to what the vtnet driver does, we can emulate
 		 * VLAN offloadings by inserting and removing the 802.1Q
 		 * header during transmit and receive. We are then able
@@ -1160,7 +1160,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 
 			/* Make sure the host adapter passed through is ready
 			 * for txsync/rxsync. */
-			ret = ptnet_nm_ptctl(ifp, NET_PARAVIRT_PTCTL_REGIF);
+			ret = ptnet_nm_ptctl(ifp, PTNETMAP_PTCTL_REGIF);
 			if (ret) {
 				return ret;
 			}
@@ -1210,7 +1210,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		}
 
 		if (sc->ptna->backend_regifs == 0) {
-			ret = ptnet_nm_ptctl(ifp, NET_PARAVIRT_PTCTL_UNREGIF);
+			ret = ptnet_nm_ptctl(ifp, PTNETMAP_PTCTL_UNREGIF);
 		}
 	}
 

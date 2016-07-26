@@ -1690,7 +1690,7 @@ ptnetmap_guest_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     if (err)
         goto err;
 
-    err = pci_request_selected_regions(pdev, bars, PTN_MEMDEV_NAME);
+    err = pci_request_selected_regions(pdev, bars, PTNETMAP_MEMDEV_NAME);
     if (err)
         goto err_pci_reg;
 

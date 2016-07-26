@@ -611,7 +611,7 @@ static device_method_t ptn_memdev_methods[] = {
 };
 
 static driver_t ptn_memdev_driver = {
-	PTN_MEMDEV_NAME,
+	PTNETMAP_MEMDEV_NAME,
 	ptn_memdev_methods,
 	sizeof(struct ptnetmap_memdev),
 };
@@ -697,7 +697,7 @@ ptn_memdev_probe(device_t dev)
 		return (ENXIO);
 
 	snprintf(desc, sizeof(desc), "%s PCI adapter",
-			PTN_MEMDEV_NAME);
+			PTNETMAP_MEMDEV_NAME);
 	device_set_desc_copy(dev, desc);
 
 	return (BUS_PROBE_DEFAULT);
