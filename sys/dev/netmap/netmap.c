@@ -951,6 +951,10 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		if (netmap_verbose)
 			D("deleting last instance for %s", na->name);
 
+                if (nm_netmap_on(na)) {
+                    D("BUG: netmap on while going to delete the krings");
+                }
+
 		na->nm_krings_delete(na);
 	}
 

@@ -700,9 +700,9 @@ EOF
 	mod_list="$drv_conf=m $mod_list"
 	# add the driver related variables to drivers.mak
 	cat >> drivers.mak <<EOF
-		$d-src := $s
-		$d-patch := patches/$p
-		$d-dst := $d
+$d-src := $s
+$d-patch := patches/$p
+$d-dst := $d
 EOF
 done
 

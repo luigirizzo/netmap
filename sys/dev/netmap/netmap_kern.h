@@ -1210,6 +1210,16 @@ nm_iszombie(struct netmap_adapter *na)
 	return na == NULL || (na->na_flags & NAF_ZOMBIE);
 }
 
+static inline void
+nm_update_hostrings_mode(struct netmap_adapter *na)
+{
+	/* Process nr_mode and nr_pending_mode for host rings. */
+	na->tx_rings[na->num_tx_rings].nr_mode =
+		na->tx_rings[na->num_tx_rings].nr_pending_mode;
+	na->rx_rings[na->num_rx_rings].nr_mode =
+		na->rx_rings[na->num_rx_rings].nr_pending_mode;
+}
+
 /* set/clear native flags and if_transmit/netdev_ops */
 static inline void
 nm_set_native_flags(struct netmap_adapter *na)
@@ -1240,8 +1250,8 @@ nm_set_native_flags(struct netmap_adapter *na)
 	((struct netmap_hw_adapter *)na)->save_ethtool = ifp->ethtool_ops;
 	ifp->ethtool_ops = &((struct netmap_hw_adapter*)na)->nm_eto;
 #endif
+	nm_update_hostrings_mode(na);
 }
-
 
 static inline void
 nm_clear_native_flags(struct netmap_adapter *na)
@@ -1253,6 +1263,8 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	if (na->active_fds > 0) {
 		return;
 	}
+
+	nm_update_hostrings_mode(na);
 
 #if defined(__FreeBSD__)
 	ifp->if_transmit = na->if_transmit;
