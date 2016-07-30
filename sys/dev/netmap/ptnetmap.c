@@ -979,12 +979,13 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 	struct ptnetmap_state *ptns;
 	int k;
 
+	/* First check that the passthrough port is not being destroyed. */
 	if (unlikely(!pth_na)) {
 		return NM_IRQ_COMPLETED;
 	}
 
 	ptns = pth_na->ptns;
-	if (unlikely(!ptns)) {
+	if (unlikely(!ptns || ptns->stopped)) {
 		return NM_IRQ_COMPLETED;
 	}
 
