@@ -756,6 +756,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	error = netmap_get_na(&pnmr, &pna, &ifp, create);
 	if (error) {
 		D("parent lookup failed: %d", error);
+		free(mna, M_DEVBUF);
 		return error;
 	}
 	ND("found parent: %s", pna->name);
