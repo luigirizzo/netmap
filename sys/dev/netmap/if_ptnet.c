@@ -883,7 +883,7 @@ ptnet_init_locked(struct ptnet_softc *sc)
 
 	nm_buf_size = NETMAP_BUF_SIZE(na_dr);
 
-	KASSERT(nm_buf_size > 0, "Invalid netmap buffer size");
+	KASSERT(nm_buf_size > 0, ("Invalid netmap buffer size"));
 	sc->min_tx_space = PTNET_MAX_PKT_SIZE / nm_buf_size + 2;
 	device_printf(sc->dev, "%s: min_tx_space = %u\n", __func__,
 		      sc->min_tx_space);
@@ -1811,8 +1811,8 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
 				slot->flags = NS_MOREFRAG;
 
 				head = nm_next(head, lim);
-				KASSERT(head != rina->tail,
-					"Unexpectedly run out of TX space");
+				KASSERT(head != ring->tail,
+					("Unexpectedly run out of TX space"));
 				slot = ring->slot + head;
 				nmbuf = NMB(na, slot);
 				nmbuf_bytes = 0;
@@ -2213,7 +2213,7 @@ ptnet_poll(if_t ifp, enum poll_cmd cmd, int budget)
 	bool borrow = false;
 	int i;
 
-	KASSERT(sc->num_rings > 0, "Found no queues in while polling ptnet");
+	KASSERT(sc->num_rings > 0, ("Found no queues in while polling ptnet"));
 	queue_budget = MAX(budget / sc->num_rings, 1);
 	RD(1, "Per-queue budget is %d", queue_budget);
 
