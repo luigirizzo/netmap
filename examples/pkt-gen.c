@@ -402,7 +402,6 @@ sigint_h(int sig)
 	for (i = 0; i < global_nthreads; i++) {
 		targs[i].cancel = 1;
 	}
-	signal(SIGINT, SIG_DFL);
 }
 
 /* sysctl wrapper to return the number of active CPUs */
@@ -2154,6 +2153,8 @@ int
 main(int arc, char **argv)
 {
 	int i;
+	struct sigaction sa;
+	sigset_t ss;
 
 	struct glob_arg g;
 
@@ -2557,9 +2558,22 @@ out:
 
 	/* Install ^C handler. */
 	global_nthreads = g.nthreads;
-	signal(SIGINT, sigint_h);
-
+	sigemptyset(&ss);
+	sigaddset(&ss, SIGINT);
+	/* block SIGINT now, so that all created threads will inherit the mask */
+	if (pthread_sigmask(SIG_BLOCK, &ss, NULL) < 0) {
+		D("failed to block SIGINT: %s", strerror(errno));
+	}
 	start_threads(&g);
+	/* Install the handler and re-enable SIGINT for the main thread */
+	sa.sa_handler = sigint_h;
+	if (sigaction(SIGINT, &sa, NULL) < 0) {
+		D("failed to install ^C handler: %s", strerror(errno));
+	}
+
+	if (pthread_sigmask(SIG_UNBLOCK, &ss, NULL) < 0) {
+		D("failed to re-enable SIGINT: %s", strerror(errno));
+	}
 	main_thread(&g);
 	return 0;
 }
