@@ -26,8 +26,6 @@
 /* $FreeBSD$ */
 
 #define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
-#include <net/netmap.h>
 
 #include <errno.h>
 #include <stdio.h>
@@ -38,9 +36,13 @@
 #include <sys/ioctl.h>	/* ioctl */
 #include <sys/param.h>
 #include <sys/socket.h>	/* apple needs sockaddr */
+#include <sys/time.h>
+#include <sys/types.h>
 #include <net/if.h>	/* ifreq */
 #include <libgen.h>	/* basename */
 #include <stdlib.h>	/* atoi, free */
+#include <net/netmap_user.h>
+#include <net/netmap.h>
 
 /* XXX cut and paste from pkt-gen.c because I'm not sure whether this
  * program may include nm_util.h

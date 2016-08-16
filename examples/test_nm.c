@@ -1,6 +1,8 @@
 /* simple test program for netmap library */
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
 #include <poll.h>
