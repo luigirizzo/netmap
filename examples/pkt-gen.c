@@ -233,7 +233,7 @@ struct glob_arg {
 	int pkt_size;
 	int burst;
 	int forever;
-	int npackets;	/* total packets to send */
+	uint64_t npackets;	/* total packets to send */
 	int frags;	/* fragments per packet */
 	int nthreads;
 	int cpus;	/* cpus used for running */
@@ -921,11 +921,11 @@ pinger_body(void *data)
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	struct netmap_if *nifp = targ->nmd->nifp;
-	int i, rx = 0, n = targ->g->npackets;
+	int i, rx = 0;
 	void *frame;
 	int size;
-	uint32_t sent = 0;
 	struct timespec ts, now, last_print;
+	uint64_t sent = 0, n = targ->g->npackets;
 	uint64_t count = 0, t_cur, t_min = ~0, av = 0;
 	uint64_t buckets[64];	/* bins for delays, ns */
 
@@ -942,7 +942,7 @@ pinger_body(void *data)
 	bzero(&buckets, sizeof(buckets));
 	clock_gettime(CLOCK_REALTIME_PRECISE, &last_print);
 	now = last_print;
-	while (!targ->cancel && (n == 0 || (int)sent < n)) {
+	while (!targ->cancel && (n == 0 || sent < n)) {
 		struct netmap_ring *ring = NETMAP_TXRING(nifp, 0);
 		struct netmap_slot *slot;
 		char *p;
@@ -994,7 +994,7 @@ pinger_body(void *data)
 					ts.tv_nsec += 1000000000;
 					ts.tv_sec--;
 				}
-				if (0) D("seq %d/%d delta %d.%09d", seq, sent,
+				if (0) D("seq %d/%lu delta %d.%09d", seq, sent,
 					(int)ts.tv_sec, (int)ts.tv_nsec);
 				t_cur = ts.tv_sec * 1000000000UL + ts.tv_nsec;
 				if (t_cur < t_min)
@@ -1057,13 +1057,14 @@ ponger_body(void *data)
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	struct netmap_if *nifp = targ->nmd->nifp;
 	struct netmap_ring *txring, *rxring;
-	int i, rx = 0, sent = 0, n = targ->g->npackets;
+	int i, rx = 0;
+	uint64_t sent = 0, n = targ->g->npackets;
 
 	if (targ->g->nthreads > 1) {
 		D("can only reply ping with 1 thread");
 		return NULL;
 	}
-	D("understood ponger %d but don't know how to do it", n);
+	D("understood ponger %lu but don't know how to do it", n);
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		uint32_t txcur, txavail;
 //#define BUSY_WAIT
@@ -1152,8 +1153,9 @@ sender_body(void *data)
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
 	struct netmap_if *nifp;
 	struct netmap_ring *txring = NULL;
-	int i, n = targ->g->npackets / targ->g->nthreads;
-	int64_t sent = 0;
+	int i;
+	uint64_t n = targ->g->npackets / targ->g->nthreads;
+	uint64_t sent = 0;
 	uint64_t event = 0;
 	int options = targ->g->options | OPT_COPY;
 	struct timespec nexttime = { 0, 0}; // XXX silence compiler
@@ -1257,7 +1259,8 @@ sender_body(void *data)
 			options &= ~OPT_COPY;
 		}
 		for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
-			int m, limit = rate_limit ?  tosend : targ->g->burst;
+			int m;
+			uint64_t limit = rate_limit ?  tosend : targ->g->burst;
 			if (n > 0 && n - sent < limit)
 				limit = n - sent;
 			txring = NETMAP_TXRING(nifp, i);
@@ -2195,7 +2198,7 @@ main(int arc, char **argv)
 			break;
 
 		case 'n':
-			g.npackets = atoi(optarg);
+			g.npackets = strtoull(optarg, NULL, 10);
 			break;
 
 		case 'F':
