@@ -56,6 +56,7 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <assert.h>
+#include <math.h>
 
 #include <pthread.h>
 
@@ -250,6 +251,7 @@ struct glob_arg {
 #define OPT_RUBBISH	256	/* send wathever the buffers contain */
 #define OPT_RANDOM_SRC  512
 #define OPT_RANDOM_DST  1024
+#define OPT_PPS_STATS   2048
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -272,6 +274,9 @@ struct glob_arg {
 	int extra_bufs;		/* goes in nr_arg3 */
 	int extra_pipes;	/* goes in nr_arg1 */
 	char *packet_file;	/* -P option */
+#define	STATS_WIN	30
+	int win_idx;
+	int64_t win[STATS_WIN];
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
 
@@ -1891,6 +1896,7 @@ usage(void)
 		"\t-z			use random IPv4 src address/port\n"
 		"\t-Z			use random IPv4 dst address/port\n"
 		"\t-F num_frags		send multi-slot packets\n"
+		"\t-A			activate pps stats on receiver\n"
 		"",
 		cmd);
 
@@ -1984,7 +1990,7 @@ main_thread(struct glob_arg *g)
 	prev.pkts = prev.bytes = prev.events = 0;
 	gettimeofday(&prev.t, NULL);
 	for (;;) {
-		char b1[40], b2[40], b3[40];
+		char b1[40], b2[40], b3[40], b4[70];
 		uint64_t pps, usec;
 		struct my_ctrs x;
 		double abs;
@@ -2013,13 +2019,45 @@ main_thread(struct glob_arg *g)
 		pps = (x.pkts*1000000 + usec/2) / usec;
 		abs = (x.events > 0) ? (x.pkts / (double) x.events) : 0;
 
-		D("%spps (%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
-			norm(b1,pps),
+		if (!(g->options & OPT_PPS_STATS)) {
+			strcpy(b4, "");
+		} else {
+			/* Compute some pps stats using a sliding window. */
+			double ppsavg = 0.0, ppsdev = 0.0;
+			int nsamples = 0;
+
+			g->win[g->win_idx] = pps;
+			g->win_idx = (g->win_idx + 1) % STATS_WIN;
+
+			for (i = 0; i < STATS_WIN; i++) {
+				ppsavg += g->win[i];
+				if (g->win[i]) {
+					nsamples ++;
+				}
+			}
+			ppsavg /= nsamples;
+
+			for (i = 0; i < STATS_WIN; i++) {
+				if (g->win[i] == 0) {
+					continue;
+				}
+				ppsdev += (g->win[i] - ppsavg) * (g->win[i] - ppsavg);
+			}
+			ppsdev /= nsamples;
+			ppsdev = sqrt(ppsdev);
+
+			snprintf(b4, sizeof(b4), "[avg/std %s/%s pps]",
+				 norm(b1, ppsavg), norm(b2, ppsdev));
+		}
+
+		D("%spps %s(%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
+			norm(b1, pps), b4,
 			norm(b2, (double)x.pkts),
 			norm(b3, (double)x.bytes*8),
 			(unsigned long long)usec,
 			abs, (int)cur.min_space);
 		prev = cur;
+
 		if (done == g->nthreads)
 			break;
 	}
@@ -2188,7 +2226,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZ")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
 		struct td_desc *fn;
 
 		switch(ch) {
@@ -2341,6 +2379,9 @@ main(int arc, char **argv)
 			break;
 		case 'Z':
 			g.options |= OPT_RANDOM_DST;
+			break;
+		case 'A':
+			g.options |= OPT_PPS_STATS;
 			break;
 		}
 	}
