@@ -1300,7 +1300,7 @@ sender_body(void *data)
 	/* final part: wait all the TX queues to be empty. */
 	for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
 		txring = NETMAP_TXRING(nifp, i);
-		while (nm_tx_pending(txring)) {
+		while (!targ->cancel && nm_tx_pending(txring)) {
 			RD(5, "pending tx tail %d head %d on ring %d",
 				txring->tail, txring->head, i);
 			ioctl(pfd.fd, NIOCTXSYNC, NULL);
@@ -1624,7 +1624,7 @@ txseq_body(void *data)
 	ioctl(pfd.fd, NIOCTXSYNC, NULL);
 
 	/* final part: wait the TX queues to become empty. */
-	while (nm_tx_pending(ring)) {
+	while (!targ->cancel && nm_tx_pending(ring)) {
 		RD(5, "pending tx tail %d head %d on ring %d",
 				ring->tail, ring->head, targ->nmd->first_tx_ring);
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
