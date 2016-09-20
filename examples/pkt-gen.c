@@ -274,7 +274,7 @@ struct glob_arg {
 	int extra_bufs;		/* goes in nr_arg3 */
 	int extra_pipes;	/* goes in nr_arg1 */
 	char *packet_file;	/* -P option */
-#define	STATS_WIN	30
+#define	STATS_WIN	15
 	int win_idx;
 	int64_t win[STATS_WIN];
 };
