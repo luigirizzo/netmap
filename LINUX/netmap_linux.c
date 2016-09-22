@@ -711,7 +711,14 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	m->data = m->head + ifp->needed_headroom;
 	skb_reset_tail_pointer(m);
 	skb_reset_mac_header(m);
-	skb_reset_network_header(m);
+
+        /* Initialize the header pointers assuming this is an IPv4 packet.
+         * This is useful to make netmap interact well with TC when
+         * netmap_generic_txqdisc == 0.  */
+	skb_set_network_header(m, 14);
+	skb_set_transport_header(m, 34);
+	m->protocol = htons(ETH_P_IP);
+	m->pkt_type = PACKET_HOST;
 
 	/* Copy a netmap buffer into the mbuf.
 	 * TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */

@@ -56,6 +56,7 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <assert.h>
+#include <math.h>
 
 #include <pthread.h>
 
@@ -250,6 +251,7 @@ struct glob_arg {
 #define OPT_RUBBISH	256	/* send wathever the buffers contain */
 #define OPT_RANDOM_SRC  512
 #define OPT_RANDOM_DST  1024
+#define OPT_PPS_STATS   2048
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -272,6 +274,9 @@ struct glob_arg {
 	int extra_bufs;		/* goes in nr_arg3 */
 	int extra_pipes;	/* goes in nr_arg1 */
 	char *packet_file;	/* -P option */
+#define	STATS_WIN	15
+	int win_idx;
+	int64_t win[STATS_WIN];
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
 
@@ -1067,8 +1072,8 @@ ponger_body(void *data)
 	D("understood ponger %lu but don't know how to do it", n);
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		uint32_t txcur, txavail;
-//#define BUSY_WAIT
-#ifdef BUSY_WAIT
+//#define BUSYWAIT
+#ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
 #else
 		if (poll(&pfd, 1, 1000) <= 0) {
@@ -1115,7 +1120,7 @@ ponger_body(void *data)
 		}
 		txring->head = txring->cur = txcur;
 		targ->ctr.pkts = sent;
-#ifdef BUSY_WAIT
+#ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #endif
 		//D("tx %d rx %d", sent, rx);
@@ -1231,13 +1236,13 @@ sender_body(void *data)
 		/*
 		 * wait for available room in the send queue(s)
 		 */
-#ifdef BUSY_WAIT
+#ifdef BUSYWAIT
 		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
-#else /* !BUSY_WAIT */
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
@@ -1250,7 +1255,7 @@ sender_body(void *data)
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
-#endif /* !BUSY_WAIT */
+#endif /* !BUSYWAIT */
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1295,7 +1300,7 @@ sender_body(void *data)
 	/* final part: wait all the TX queues to be empty. */
 	for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
 		txring = NETMAP_TXRING(nifp, i);
-		while (nm_tx_pending(txring)) {
+		while (!targ->cancel && nm_tx_pending(txring)) {
 			RD(5, "pending tx tail %d head %d on ring %d",
 				txring->tail, txring->head, i);
 			ioctl(pfd.fd, NIOCTXSYNC, NULL);
@@ -1413,13 +1418,13 @@ receiver_body(void *data)
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
-#ifdef BUSY_WAIT
+#ifdef BUSYWAIT
 		if (ioctl(pfd.fd, NIOCRXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
-#else /* !BUSY_WAIT */
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -1430,7 +1435,7 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
-#endif /* !BUSY_WAIT */
+#endif /* !BUSYWAIT */
 		uint64_t cur_space = 0;
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
@@ -1458,7 +1463,7 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#if !defined(BUSY_WAIT)
+#if !defined(BUSYWAIT)
 out:
 #endif
 	targ->completed = 1;
@@ -1619,7 +1624,7 @@ txseq_body(void *data)
 	ioctl(pfd.fd, NIOCTXSYNC, NULL);
 
 	/* final part: wait the TX queues to become empty. */
-	while (nm_tx_pending(ring)) {
+	while (!targ->cancel && nm_tx_pending(ring)) {
 		RD(5, "pending tx tail %d head %d on ring %d",
 				ring->tail, ring->head, targ->nmd->first_tx_ring);
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
@@ -1812,9 +1817,7 @@ rxseq_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#if !defined(BUSY_WAIT)
 out:
-#endif
 	targ->completed = 1;
 	targ->ctr = cur;
 
@@ -1891,6 +1894,7 @@ usage(void)
 		"\t-z			use random IPv4 src address/port\n"
 		"\t-Z			use random IPv4 dst address/port\n"
 		"\t-F num_frags		send multi-slot packets\n"
+		"\t-A			activate pps stats on receiver\n"
 		"",
 		cmd);
 
@@ -1984,7 +1988,7 @@ main_thread(struct glob_arg *g)
 	prev.pkts = prev.bytes = prev.events = 0;
 	gettimeofday(&prev.t, NULL);
 	for (;;) {
-		char b1[40], b2[40], b3[40];
+		char b1[40], b2[40], b3[40], b4[70];
 		uint64_t pps, usec;
 		struct my_ctrs x;
 		double abs;
@@ -2013,13 +2017,45 @@ main_thread(struct glob_arg *g)
 		pps = (x.pkts*1000000 + usec/2) / usec;
 		abs = (x.events > 0) ? (x.pkts / (double) x.events) : 0;
 
-		D("%spps (%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
-			norm(b1,pps),
+		if (!(g->options & OPT_PPS_STATS)) {
+			strcpy(b4, "");
+		} else {
+			/* Compute some pps stats using a sliding window. */
+			double ppsavg = 0.0, ppsdev = 0.0;
+			int nsamples = 0;
+
+			g->win[g->win_idx] = pps;
+			g->win_idx = (g->win_idx + 1) % STATS_WIN;
+
+			for (i = 0; i < STATS_WIN; i++) {
+				ppsavg += g->win[i];
+				if (g->win[i]) {
+					nsamples ++;
+				}
+			}
+			ppsavg /= nsamples;
+
+			for (i = 0; i < STATS_WIN; i++) {
+				if (g->win[i] == 0) {
+					continue;
+				}
+				ppsdev += (g->win[i] - ppsavg) * (g->win[i] - ppsavg);
+			}
+			ppsdev /= nsamples;
+			ppsdev = sqrt(ppsdev);
+
+			snprintf(b4, sizeof(b4), "[avg/std %s/%s pps]",
+				 norm(b1, ppsavg), norm(b2, ppsdev));
+		}
+
+		D("%spps %s(%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
+			norm(b1, pps), b4,
 			norm(b2, (double)x.pkts),
 			norm(b3, (double)x.bytes*8),
 			(unsigned long long)usec,
 			abs, (int)cur.min_space);
 		prev = cur;
+
 		if (done == g->nthreads)
 			break;
 	}
@@ -2188,7 +2224,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZ")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
 		struct td_desc *fn;
 
 		switch(ch) {
@@ -2341,6 +2377,9 @@ main(int arc, char **argv)
 			break;
 		case 'Z':
 			g.options |= OPT_RANDOM_DST;
+			break;
+		case 'A':
+			g.options |= OPT_PPS_STATS;
 			break;
 		}
 	}
