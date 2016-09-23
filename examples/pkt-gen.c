@@ -56,6 +56,7 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <assert.h>
+#include <math.h>
 
 #include <pthread.h>
 
@@ -233,7 +234,7 @@ struct glob_arg {
 	int pkt_size;
 	int burst;
 	int forever;
-	int npackets;	/* total packets to send */
+	uint64_t npackets;	/* total packets to send */
 	int frags;	/* fragments per packet */
 	int nthreads;
 	int cpus;	/* cpus used for running */
@@ -250,6 +251,7 @@ struct glob_arg {
 #define OPT_RUBBISH	256	/* send wathever the buffers contain */
 #define OPT_RANDOM_SRC  512
 #define OPT_RANDOM_DST  1024
+#define OPT_PPS_STATS   2048
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -272,6 +274,9 @@ struct glob_arg {
 	int extra_bufs;		/* goes in nr_arg3 */
 	int extra_pipes;	/* goes in nr_arg1 */
 	char *packet_file;	/* -P option */
+#define	STATS_WIN	15
+	int win_idx;
+	int64_t win[STATS_WIN];
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
 
@@ -402,7 +407,6 @@ sigint_h(int sig)
 	for (i = 0; i < global_nthreads; i++) {
 		targs[i].cancel = 1;
 	}
-	signal(SIGINT, SIG_DFL);
 }
 
 /* sysctl wrapper to return the number of active CPUs */
@@ -922,11 +926,11 @@ pinger_body(void *data)
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	struct netmap_if *nifp = targ->nmd->nifp;
-	int i, rx = 0, n = targ->g->npackets;
+	int i, rx = 0;
 	void *frame;
 	int size;
-	uint32_t sent = 0;
 	struct timespec ts, now, last_print;
+	uint64_t sent = 0, n = targ->g->npackets;
 	uint64_t count = 0, t_cur, t_min = ~0, av = 0;
 	uint64_t buckets[64];	/* bins for delays, ns */
 
@@ -943,7 +947,7 @@ pinger_body(void *data)
 	bzero(&buckets, sizeof(buckets));
 	clock_gettime(CLOCK_REALTIME_PRECISE, &last_print);
 	now = last_print;
-	while (!targ->cancel && (n == 0 || (int)sent < n)) {
+	while (!targ->cancel && (n == 0 || sent < n)) {
 		struct netmap_ring *ring = NETMAP_TXRING(nifp, 0);
 		struct netmap_slot *slot;
 		char *p;
@@ -995,7 +999,7 @@ pinger_body(void *data)
 					ts.tv_nsec += 1000000000;
 					ts.tv_sec--;
 				}
-				if (0) D("seq %d/%d delta %d.%09d", seq, sent,
+				if (0) D("seq %d/%lu delta %d.%09d", seq, sent,
 					(int)ts.tv_sec, (int)ts.tv_nsec);
 				t_cur = ts.tv_sec * 1000000000UL + ts.tv_nsec;
 				if (t_cur < t_min)
@@ -1058,17 +1062,18 @@ ponger_body(void *data)
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	struct netmap_if *nifp = targ->nmd->nifp;
 	struct netmap_ring *txring, *rxring;
-	int i, rx = 0, sent = 0, n = targ->g->npackets;
+	int i, rx = 0;
+	uint64_t sent = 0, n = targ->g->npackets;
 
 	if (targ->g->nthreads > 1) {
 		D("can only reply ping with 1 thread");
 		return NULL;
 	}
-	D("understood ponger %d but don't know how to do it", n);
+	D("understood ponger %lu but don't know how to do it", n);
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		uint32_t txcur, txavail;
-//#define BUSY_WAIT
-#ifdef BUSY_WAIT
+//#define BUSYWAIT
+#ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
 #else
 		if (poll(&pfd, 1, 1000) <= 0) {
@@ -1115,7 +1120,7 @@ ponger_body(void *data)
 		}
 		txring->head = txring->cur = txcur;
 		targ->ctr.pkts = sent;
-#ifdef BUSY_WAIT
+#ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #endif
 		//D("tx %d rx %d", sent, rx);
@@ -1153,8 +1158,9 @@ sender_body(void *data)
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
 	struct netmap_if *nifp;
 	struct netmap_ring *txring = NULL;
-	int i, n = targ->g->npackets / targ->g->nthreads;
-	int64_t sent = 0;
+	int i;
+	uint64_t n = targ->g->npackets / targ->g->nthreads;
+	uint64_t sent = 0;
 	uint64_t event = 0;
 	int options = targ->g->options | OPT_COPY;
 	struct timespec nexttime = { 0, 0}; // XXX silence compiler
@@ -1230,13 +1236,13 @@ sender_body(void *data)
 		/*
 		 * wait for available room in the send queue(s)
 		 */
-#ifdef BUSY_WAIT
+#ifdef BUSYWAIT
 		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
-#else /* !BUSY_WAIT */
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
@@ -1249,7 +1255,7 @@ sender_body(void *data)
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
-#endif /* !BUSY_WAIT */
+#endif /* !BUSYWAIT */
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1258,7 +1264,8 @@ sender_body(void *data)
 			options &= ~OPT_COPY;
 		}
 		for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
-			int m, limit = rate_limit ?  tosend : targ->g->burst;
+			int m;
+			uint64_t limit = rate_limit ?  tosend : targ->g->burst;
 			if (n > 0 && n - sent < limit)
 				limit = n - sent;
 			txring = NETMAP_TXRING(nifp, i);
@@ -1293,7 +1300,7 @@ sender_body(void *data)
 	/* final part: wait all the TX queues to be empty. */
 	for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
 		txring = NETMAP_TXRING(nifp, i);
-		while (nm_tx_pending(txring)) {
+		while (!targ->cancel && nm_tx_pending(txring)) {
 			RD(5, "pending tx tail %d head %d on ring %d",
 				txring->tail, txring->head, i);
 			ioctl(pfd.fd, NIOCTXSYNC, NULL);
@@ -1411,13 +1418,13 @@ receiver_body(void *data)
 	while (!targ->cancel) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
-#ifdef BUSY_WAIT
+#ifdef BUSYWAIT
 		if (ioctl(pfd.fd, NIOCRXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
-#else /* !BUSY_WAIT */
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -1428,7 +1435,7 @@ receiver_body(void *data)
 			D("poll err");
 			goto quit;
 		}
-#endif /* !BUSY_WAIT */
+#endif /* !BUSYWAIT */
 		uint64_t cur_space = 0;
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
@@ -1456,7 +1463,7 @@ receiver_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#if !defined(BUSY_WAIT)
+#if !defined(BUSYWAIT)
 out:
 #endif
 	targ->completed = 1;
@@ -1617,7 +1624,7 @@ txseq_body(void *data)
 	ioctl(pfd.fd, NIOCTXSYNC, NULL);
 
 	/* final part: wait the TX queues to become empty. */
-	while (nm_tx_pending(ring)) {
+	while (!targ->cancel && nm_tx_pending(ring)) {
 		RD(5, "pending tx tail %d head %d on ring %d",
 				ring->tail, ring->head, targ->nmd->first_tx_ring);
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
@@ -1810,9 +1817,7 @@ rxseq_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
-#if !defined(BUSY_WAIT)
 out:
-#endif
 	targ->completed = 1;
 	targ->ctr = cur;
 
@@ -1889,6 +1894,7 @@ usage(void)
 		"\t-z			use random IPv4 src address/port\n"
 		"\t-Z			use random IPv4 dst address/port\n"
 		"\t-F num_frags		send multi-slot packets\n"
+		"\t-A			activate pps stats on receiver\n"
 		"",
 		cmd);
 
@@ -1982,7 +1988,7 @@ main_thread(struct glob_arg *g)
 	prev.pkts = prev.bytes = prev.events = 0;
 	gettimeofday(&prev.t, NULL);
 	for (;;) {
-		char b1[40], b2[40], b3[40];
+		char b1[40], b2[40], b3[40], b4[70];
 		uint64_t pps, usec;
 		struct my_ctrs x;
 		double abs;
@@ -2011,13 +2017,45 @@ main_thread(struct glob_arg *g)
 		pps = (x.pkts*1000000 + usec/2) / usec;
 		abs = (x.events > 0) ? (x.pkts / (double) x.events) : 0;
 
-		D("%spps (%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
-			norm(b1,pps),
+		if (!(g->options & OPT_PPS_STATS)) {
+			strcpy(b4, "");
+		} else {
+			/* Compute some pps stats using a sliding window. */
+			double ppsavg = 0.0, ppsdev = 0.0;
+			int nsamples = 0;
+
+			g->win[g->win_idx] = pps;
+			g->win_idx = (g->win_idx + 1) % STATS_WIN;
+
+			for (i = 0; i < STATS_WIN; i++) {
+				ppsavg += g->win[i];
+				if (g->win[i]) {
+					nsamples ++;
+				}
+			}
+			ppsavg /= nsamples;
+
+			for (i = 0; i < STATS_WIN; i++) {
+				if (g->win[i] == 0) {
+					continue;
+				}
+				ppsdev += (g->win[i] - ppsavg) * (g->win[i] - ppsavg);
+			}
+			ppsdev /= nsamples;
+			ppsdev = sqrt(ppsdev);
+
+			snprintf(b4, sizeof(b4), "[avg/std %s/%s pps]",
+				 norm(b1, ppsavg), norm(b2, ppsdev));
+		}
+
+		D("%spps %s(%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
+			norm(b1, pps), b4,
 			norm(b2, (double)x.pkts),
 			norm(b3, (double)x.bytes*8),
 			(unsigned long long)usec,
 			abs, (int)cur.min_space);
 		prev = cur;
+
 		if (done == g->nthreads)
 			break;
 	}
@@ -2154,6 +2192,8 @@ int
 main(int arc, char **argv)
 {
 	int i;
+	struct sigaction sa;
+	sigset_t ss;
 
 	struct glob_arg g;
 
@@ -2184,7 +2224,7 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZ")) != -1) {
+			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
 		struct td_desc *fn;
 
 		switch(ch) {
@@ -2194,7 +2234,7 @@ main(int arc, char **argv)
 			break;
 
 		case 'n':
-			g.npackets = atoi(optarg);
+			g.npackets = strtoull(optarg, NULL, 10);
 			break;
 
 		case 'F':
@@ -2337,6 +2377,9 @@ main(int arc, char **argv)
 			break;
 		case 'Z':
 			g.options |= OPT_RANDOM_DST;
+			break;
+		case 'A':
+			g.options |= OPT_PPS_STATS;
 			break;
 		}
 	}
@@ -2557,9 +2600,22 @@ out:
 
 	/* Install ^C handler. */
 	global_nthreads = g.nthreads;
-	signal(SIGINT, sigint_h);
-
+	sigemptyset(&ss);
+	sigaddset(&ss, SIGINT);
+	/* block SIGINT now, so that all created threads will inherit the mask */
+	if (pthread_sigmask(SIG_BLOCK, &ss, NULL) < 0) {
+		D("failed to block SIGINT: %s", strerror(errno));
+	}
 	start_threads(&g);
+	/* Install the handler and re-enable SIGINT for the main thread */
+	sa.sa_handler = sigint_h;
+	if (sigaction(SIGINT, &sa, NULL) < 0) {
+		D("failed to install ^C handler: %s", strerror(errno));
+	}
+
+	if (pthread_sigmask(SIG_UNBLOCK, &ss, NULL) < 0) {
+		D("failed to re-enable SIGINT: %s", strerror(errno));
+	}
 	main_thread(&g);
 	return 0;
 }
