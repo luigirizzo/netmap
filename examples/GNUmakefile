@@ -25,7 +25,7 @@ endif
 
 LDLIBS += -lpthread
 ifeq ($(shell uname),Linux)
-	LDLIBS += -lrt	# on linux
+	LDLIBS += -lrt -lm	# on linux
 endif
 #SRCS = pkt-gen.c
 

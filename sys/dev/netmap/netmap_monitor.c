@@ -752,10 +752,11 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	 * except other monitors.
 	 */
 	memcpy(&pnmr, nmr, sizeof(pnmr));
-	pnmr.nr_flags &= ~(NR_MONITOR_TX | NR_MONITOR_RX);
+	pnmr.nr_flags &= ~(NR_MONITOR_TX | NR_MONITOR_RX | NR_ZCOPY_MON);
 	error = netmap_get_na(&pnmr, &pna, &ifp, create);
 	if (error) {
 		D("parent lookup failed: %d", error);
+		free(mna, M_DEVBUF);
 		return error;
 	}
 	ND("found parent: %s", pna->name);

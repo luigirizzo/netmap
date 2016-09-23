@@ -1471,6 +1471,7 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 	return (error);
 }
 
+#ifdef DEV_MODULE_ORDERED
 /*
  * The netmap module contains three drivers: (i) the netmap character device
  * driver; (ii) the ptnetmap memdev PCI device driver, (iii) the ptnet PCI
@@ -1483,6 +1484,9 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
  * macros for (ii) and (iii).
  */
 DEV_MODULE_ORDERED(netmap, netmap_loader, NULL, SI_ORDER_MIDDLE);
+#else /* !DEV_MODULE_ORDERED */
+DEV_MODULE(netmap, netmap_loader, NULL);
+#endif /* DEV_MODULE_ORDERED  */
 MODULE_DEPEND(netmap, pci, 1, 1, 1);
 MODULE_VERSION(netmap, 1);
 /* reduce conditional code */

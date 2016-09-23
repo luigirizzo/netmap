@@ -142,7 +142,7 @@ report() {
 		echo "requested drivers           $(drv print)"
 		echo
 		if [ -f "drivers.mak" ]; then
-			cat <<-EOF
+			cat <<EOF
 Contents of the drivers.mak file:
 
   Note: only drivers for which both the <driver>-src and the
@@ -150,7 +150,7 @@ Contents of the drivers.mak file:
   we can actually patch the sources). Other NICs will be accessed using
   the generic driver, at reduced performance.
 
-			EOF
+EOF
 			cat drivers.mak
 		fi
 	fi
@@ -159,22 +159,22 @@ Contents of the drivers.mak file:
 message()
 {
 	{
-		cat <<-EOF
+		cat <<EOF
 ********************************** $1 **********************************
-		EOF
+EOF
 		sed 's/^/*** /' # output the error message from stdin
 	if [ -n "$2" ]; then
-		cat <<-EOF
+		cat <<EOF
 ***
 ***
 ***     Current configuration values:
 ***
-		EOF
+EOF
 		report | sed 's/^/*** /'
 	fi
-		cat <<-EOF
+		cat <<EOF
 *****************************************************************************
-		EOF
+EOF
 	} | tee -a config.log
 }
 
@@ -192,7 +192,7 @@ warning()
 
 # print_help
 print_help() {
-	cat <<-EOF
+	cat <<EOF
 Available options:
 
   --help                       print this message
@@ -242,7 +242,7 @@ Available options:
   DRIVER-patch := ...
 
   where DRIVER is one of the drivers displayed by '--show-drivers'.
-	EOF
+EOF
 }
 
 #################################################################
@@ -276,11 +276,11 @@ add_file_exists_check()
 	cmd="if [ -f "$TMPDIR/$1" ]; then $2"
 	[ -n "$3" ] && cmd="$cmd; else $3"
 	cmd="$cmd; fi"
-	cat >> config.log <<-EOF
+	cat >> config.log <<EOF
 ##############################################################################
 ## cmd: $cmd
 ##############################################################################
-	EOF
+EOF
 	TESTPOSTPROC="$cmd; $TESTPOSTPROC"
 }
 
@@ -298,19 +298,19 @@ add_file_exists_check()
 #     know the name of the test files.
 add_named_test() {
 	{
-		cat <<-EOF
+		cat <<EOF
 			#include <linux/module.h>
 			#include <linux/kernel.h>
 			#include <linux/init.h>
-		EOF
+EOF
 		cat	# output the test code read from stdin
 	} > $TMPDIR/$1.c
 	{
-		cat <<-EOF
+		cat <<EOF
 ##############################################################################
 ##            TEST:  $1
 ##############################################################################
-		EOF
+EOF
 		cat $TMPDIR/$1.c
 	} >> config.log
 	# add the module to the running list
@@ -338,57 +338,56 @@ reset_tests() {
 	TESTOBJS=
 	TESTPOSTPROC=
 	NEXTTEST=1
-	cat >> config.log <<-EOF
+	cat >> config.log <<EOF
 ##############################################################################
 ##		NEW TESTS
 ##############################################################################
-	EOF
+EOF
 }
 
 # run_tests: run all accumulated tests and exec the pertinent
 #   success/failure actions for each one.
 run_tests() {
-	local t= 	# prevent -EOF to eat the make TAB
-	cat > $TMPDIR/Makefile <<-EOF
-		ifneq (\$(KERNELRELEASE),)
-		obj-m := $TESTOBJS
-		else
-		S_DRIVERS := $(drv print)
-		all: \$(S_DRIVERS:%=get-%)
-		$t	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
+	cat > $TMPDIR/Makefile <<EOF
+ifneq (\$(KERNELRELEASE),)
+obj-m := $TESTOBJS
+else
+S_DRIVERS := $(drv print)
+all: \$(S_DRIVERS:%=get-%)
+	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
-		-include $TOPDIR/drivers.mak
-	EOF
+-include $TOPDIR/drivers.mak
+EOF
 	for d in $(drv print); do
-		cat >> $TMPDIR/Makefile <<-EOF
-			get-$d:
-			$t	[ -z "\$($d-src)" ] || cp -Rp \$($d-src) \$(if \$($d-dst),\$($d-dst),.)
-			$t	touch get-$d
-		EOF
+		cat >> $TMPDIR/Makefile <<EOF
+get-$d:
+	[ -z "\$($d-src)" ] || cp -Rp \$($d-src) \$(if \$($d-dst),\$($d-dst),.)
+	touch get-$d
+EOF
 	done
 	echo endif >> $TMPDIR/Makefile
 	{
-		cat <<-EOF
+		cat <<EOF
 ##############################################################################
 ## BEGIN RUNNING TESTS: $(date)
 ##############################################################################
 ## Makefile:
-		EOF
+EOF
 		cat $TMPDIR/Makefile
-		cat <<-EOF
+		cat <<EOF
 ##############################################################################
-		EOF
+EOF
 	} >> config.log
 	(
 		cd $TMPDIR
 		make -k -j $(grep -c processor /proc/cpuinfo)
 	) >> config.log
 	eval "$TESTPOSTPROC"
-	cat >> config.log <<-EOF
+	cat >> config.log <<EOF
 ##############################################################################
 ## END RUNNING TESTS: $(date)
 ##############################################################################
-	EOF
+EOF
 }
 
 configh=netmap_linux_config.h
@@ -398,10 +397,10 @@ configh=netmap_linux_config.h
 
 # define <macro> <value>: define NETMAP_LINUX_<macro> as <value>
 define() {
-	cat >> $configh <<-EOF
+	cat >> $configh <<EOF
 
 		#define NETMAP_LINUX_$1 $2
-	EOF
+EOF
 }
 
 # have <macro>: define NETMAP_LINUX_HAVE_<macro>
@@ -522,7 +521,7 @@ exec 2>> config.log
 }
 
 if [ ! -d "$ksrc" ]; then
-	error <<-EOF
+	error <<EOF
 Cannot find kernel directory.
 
 We need at least the kernel headers to compile the netmap kernel module.
@@ -538,7 +537,7 @@ Otherwise, check that the 'build' symlink in
     /lib/modules/\$(uname -r)
 
 is not broken.
-	EOF
+EOF
 fi
 ksrc=$(cd $ksrc; pwd)
 
@@ -548,7 +547,7 @@ ksrc=$(cd $ksrc; pwd)
 version_hdr="$ksrc/include/generated/uapi/linux/version.h"
 [ -f "$version_hdr" ] || version_hdr="$ksrc/include/linux/version.h"
 if [ ! -f "$ksrc/.config" ] || [ ! -f "$version_hdr" ]; then
-	error <<-EOF
+	error <<EOF
 kernel not configured.
 
 The kernel directory must be ready for external module compilation.
@@ -557,15 +556,15 @@ You may need to issue the following or equivalent commands:
     cd $ksrc
     make oldconfig
     make modules_prepare
-	EOF
+EOF
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
 # if the user has provided an override file, check that it exists
 if [ -n "$override" ]; then
-	[ -f "$override" ] || error <<-EOF
+	[ -f "$override" ] || error <<EOF
 		Cannot access '$override'
-	EOF
+EOF
 fi
 
 # if the user has asked for the patched drivers, we also need the
@@ -579,7 +578,7 @@ if ! drv is-empty; then
 	   [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
 		if [ -z "$override" ]; then
 			drv disable-all
-			error <<-EOF
+			error <<EOF
 Cannot find full kernel sources.
 
 We need the full kernel sources to build the netmap-enabled drivers.
@@ -594,22 +593,22 @@ option.
 If you are only interested in VALE and pipes, you can rerun the script
 now with the '--no-drivers' option. Hardware devices will then be accessed
 via a generic adapter at reduced performance."
-			EOF
+EOF
 		else
-			warning <<-EOF
+			warning <<EOF
 Cannot find full kernel sources. We assume that the drivers sources'
 location has been provided in the override file.
-			EOF
+EOF
 		fi
 	fi
 fi
 src=$(cd $src; pwd)
 
 broken_buildsystem() {
-	error <<-EOF
+	error <<EOF
 It looks like we are not able to build kernel modules for the current
 configuration. Please check 'config.log' for possible clues.
-	EOF
+EOF
 }
 
 reset_tests
@@ -644,7 +643,7 @@ fi
 s_drivers=$(drv print)
 
 rm -f drivers.mak
-cat > drivers.mak <<-EOF
+cat > drivers.mak <<EOF
 	########################################
 	#  configure generated values          #
 	########################################
@@ -656,20 +655,20 @@ for d in $s_drivers; do
 	# XXX the selection is based only on the kernel version
 	p=$(cd patches; ls diff--$d--* | awk -v v=$lin_ver -F -- '($3 != "*") && ($3 <= v"") && (v"" < $4)')
 	if [ -z "$p" ] && [ -z "$override" ]; then
-		warning <<-EOF
+		warning <<EOF
 '$d': no applicable patch found and no override file provided.
 Disabling driver.
-		EOF
+EOF
 		drv disable $d
 		continue
 	fi
 	# find the driver sources
 	s=$(find $src/drivers/ -name "$d" -print -quit)
 	if [ -z "$s" ] && [ -z "$override" ]; then
-		warning <<-EOF
+		warning <<EOF
 '$d': sources not found ad no override provided.
 Disabling driver.
-		EOF
+EOF
 		drv disable $d
 		continue
 	fi
@@ -686,7 +685,7 @@ Disabling driver.
 		continue
 	}
 	[ "$m" = y ] && [ -z "$drvsuffix" ] && {
-		warning <<-EOF
+		warning <<EOF
 The $d driver is not compiled as a module:
 you will not be able to load the netmap enabled driver on this kernel.
 Please consider setting
@@ -696,27 +695,27 @@ Please consider setting
 in your .config.
 
 Alternatively, you can pass a --driver-suffix= option to configure.
-		EOF
+EOF
 	}
 	mod_list="$drv_conf=m $mod_list"
 	# add the driver related variables to drivers.mak
-	cat >> drivers.mak <<-EOF
-		$d-src := $s
-		$d-patch := patches/$p
-		$d-dst := $d
-	EOF
+	cat >> drivers.mak <<EOF
+$d-src := $s
+$d-patch := patches/$p
+$d-dst := $d
+EOF
 done
 
 # get the drivers that are still enabled
 s_drivers=$(drv print)
 
 if [ -n "$override" ]; then
-	cat >> drivers.mak <<-EOF
+	cat >> drivers.mak <<EOF
 		########################################
 		# ovverride from
 		# $override
 		########################################
-	EOF
+EOF
 	cat "$override" >> drivers.mak
 fi
 
@@ -756,14 +755,14 @@ if [ -d "$cache" ] && [ -f "$cache/netmap_linux_config.h" ]; then
 	cp "$cache/netmap_linux_config.h" .
 else
 
-# BEGIN_TESTS
-reset_tests
+  # BEGIN_TESTS
+  reset_tests
 
-# check that we can actually find the sources for each
-# configured driver
-drv_source_error()
-{
-	error <<-EOF
+  # check that we can actually find the sources for each
+  # configured driver
+  drv_source_error()
+  {
+	error <<EOF
 There were problems copying the sources of driver $1.
 
 If you need this driver, please check that the $1-src variable 
@@ -771,15 +770,15 @@ points to the correct path contaning the driver sources.
 
 If you are not interested in this driver, please disable it
 by rerunning configure with the additional --no-drivers=$1 option.
-	EOF
-}
+EOF
+  }
 
-for d in $(drv print); do
+  for d in $(drv print); do
 	add_file_exists_check get-$d true "drv_source_error $d"
-done
+  done
 
-# iommu support
-add_test 'have IOMMU' <<-EOF
+  # iommu support
+  add_test 'have IOMMU' <<EOF
 	#include <linux/iommu.h>
 
 	void dummy(void)
@@ -792,8 +791,8 @@ add_test 'have IOMMU' <<-EOF
 	}
 EOF
 
-# return value of hrtimer handler
-add_test 'define TIMER_RTYPE "enum hrtimer_restart"' 'define TIMER_RTYPE int' <<-EOF
+  # return value of hrtimer handler
+  add_test 'define TIMER_RTYPE "enum hrtimer_restart"' 'define TIMER_RTYPE int' <<EOF
 	#include <linux/hrtimer.h>
 
 	enum hrtimer_restart
@@ -804,8 +803,8 @@ add_test 'define TIMER_RTYPE "enum hrtimer_restart"' 'define TIMER_RTYPE int' <<
 	}
 EOF
 
-# rx_register (intercept packets in the generic adapter)
-add_test 'have RX_REGISTER' <<-EOF
+  # rx_register (intercept packets in the generic adapter)
+  add_test 'have RX_REGISTER' <<EOF
 	#include <linux/netdevice.h>
 
 	int dummy(void)
@@ -814,8 +813,8 @@ add_test 'have RX_REGISTER' <<-EOF
 	}
 EOF
 
-# rx_handler_result_t
-add_test 'have RX_HANDLER_RESULT' <<-EOF
+  # rx_handler_result_t
+  add_test 'have RX_HANDLER_RESULT' <<EOF
 	#include <linux/netdevice.h>
 
 
@@ -831,23 +830,23 @@ add_test 'have RX_HANDLER_RESULT' <<-EOF
 	}
 EOF
 
-# number of parameters in ndo_select_queue
-# (we expect at most one of these to succeed)
-params="NULL, NULL"
-for n in 2 3 4; do
-	add_test "define SELECT_QUEUE $n" <<-EOF
-		#include <linux/netdevice.h>
-
-		u16 dummy(struct net_device_ops *ndo)
-		{
-		        return ndo->ndo_select_queue($params);
-		}
-	EOF
+  # number of parameters in ndo_select_queue
+  # (we expect at most one of these to succeed)
+  params="NULL, NULL"
+  for n in 2 3 4; do
+  	add_test "define SELECT_QUEUE $n" <<EOF
+  		#include <linux/netdevice.h>
+  
+  		u16 dummy(struct net_device_ops *ndo)
+  		{
+  		        return ndo->ndo_select_queue($params);
+  		}
+EOF
 	params="NULL, $params"
-done
+  done
 
-# ethtool get_ringparam
-add_test 'have GET_RINGPARAM' <<-EOF
+  # ethtool get_ringparam
+  add_test 'have GET_RINGPARAM' <<EOF
 	#include <linux/netdevice.h>
 	#include <linux/ethtool.h>
 
@@ -857,8 +856,8 @@ add_test 'have GET_RINGPARAM' <<-EOF
 	}
 EOF
 
-# ethtool set/get_channels
-add_test 'have SET_CHANNELS' <<-EOF
+  # ethtool set/get_channels
+  add_test 'have SET_CHANNELS' <<EOF
 	#include <linux/netdevice.h>
 	#include <linux/ethtool.h>
 
@@ -869,8 +868,8 @@ add_test 'have SET_CHANNELS' <<-EOF
 	}
 EOF
 
-# pernet_operations id field
-add_test 'have PERNET_OPS_ID' <<-EOF
+  # pernet_operations id field
+  add_test 'have PERNET_OPS_ID' <<EOF
 	#include <net/net_namespace.h>
 
 	int *
@@ -879,8 +878,8 @@ add_test 'have PERNET_OPS_ID' <<-EOF
 	}
 EOF
 
-# check for real_num_rx_queues
-add_test 'have REAL_NUM_RX_QUEUES' <<-EOF
+  # check for real_num_rx_queues
+  add_test 'have REAL_NUM_RX_QUEUES' <<EOF
 	#include <linux/netdevice.h>
 
 	unsigned int
@@ -890,8 +889,8 @@ add_test 'have REAL_NUM_RX_QUEUES' <<-EOF
 	}
 EOF
 
-# check for num_rx_queues
-add_test 'have NUM_RX_QUEUES' <<-EOF
+  # check for num_rx_queues
+  add_test 'have NUM_RX_QUEUES' <<EOF
 	#include <linux/netdevice.h>
 
 	unsigned int
@@ -901,8 +900,8 @@ add_test 'have NUM_RX_QUEUES' <<-EOF
 	}
 EOF
 
-# check for netif_set_real_num_rx_queues
-add_test 'have SET_REAL_NUM_TX_QUEUES' <<-EOF
+  # check for netif_set_real_num_rx_queues
+  add_test 'have SET_REAL_NUM_TX_QUEUES' <<EOF
 	#include <linux/netdevice.h>
 
 	int
@@ -912,9 +911,9 @@ add_test 'have SET_REAL_NUM_TX_QUEUES' <<-EOF
 	}
 EOF
 
-# poll_table key field
-for k in _key key; do
-	add_test "define PWAIT_KEY $k" <<-EOF
+  # poll_table key field
+  for k in _key key; do
+	add_test "define PWAIT_KEY $k" <<EOF
 		#include <linux/poll.h>
 
 		int
@@ -922,11 +921,11 @@ for k in _key key; do
 		{
 		        return pwait->$k;
 		}
-	EOF
-done
+EOF
+  done
 
-# check for unlocked_ioctl
-add_test 'have UNLOCKED_IOCTL' <<-EOF
+  # check for unlocked_ioctl
+  add_test 'have UNLOCKED_IOCTL' <<EOF
 	#include <linux/fs.h>
 
 	void *
@@ -936,8 +935,8 @@ add_test 'have UNLOCKED_IOCTL' <<-EOF
 	}
 EOF
 
-# check for init_net
-add_test 'have INIT_NET' <<-EOF
+  # check for init_net
+  add_test 'have INIT_NET' <<EOF
 	#include <linux/netdevice.h>
 
 	struct net_device *
@@ -947,8 +946,8 @@ add_test 'have INIT_NET' <<-EOF
 	}
 EOF
 
-# check for skb_copy_to_linear_data*
-add_test 'have SKB_COPY_LINEAR' <<-EOF
+  # check for skb_copy_to_linear_data*
+  add_test 'have SKB_COPY_LINEAR' <<EOF
 	#include <linux/skbuff.h>
 
 	void dummy(struct sk_buff *skb, const void *from, const unsigned int len)
@@ -957,13 +956,13 @@ add_test 'have SKB_COPY_LINEAR' <<-EOF
 	}
 EOF
 
-# check for uintptr_t
-add_test 'have UINTPTR' <<-EOF
+  # check for uintptr_t
+  add_test 'have UINTPTR' <<EOF
 	uintptr_t dummy;
 EOF
 
-# check for queue_mapping
-add_test 'have QUEUE_MAPPING' <<-EOF
+  # check for queue_mapping
+  add_test 'have QUEUE_MAPPING' <<EOF
 	#include <linux/skbuff.h>
 
 	u16 dummy(const struct sk_buff *skb)
@@ -972,8 +971,8 @@ add_test 'have QUEUE_MAPPING' <<-EOF
 	}
 EOF
 
-# check for hrtimer_forward_now
-add_test 'have HRTIMER_FORWARD_NOW' <<-EOF
+  # check for hrtimer_forward_now
+  add_test 'have HRTIMER_FORWARD_NOW' <<EOF
 	#include <linux/hrtimer.h>
 
 	u64 dummy(struct hrtimer *timer, ktime_t interval)
@@ -982,29 +981,29 @@ add_test 'have HRTIMER_FORWARD_NOW' <<-EOF
 	}
 EOF
 
-# check for phys_addr_t
-add_test 'have PHYS_ADDR_T' <<-EOF
+  # check for phys_addr_t
+  add_test 'have PHYS_ADDR_T' <<EOF
 	#include <linux/types.h>
 
 	phys_addr_t dummy;
 EOF
 
-# check for net_device_ops
-add_test 'have NETDEV_OPS' <<-EOF
+  # check for net_device_ops
+  add_test 'have NETDEV_OPS' <<EOF
 	#include <linux/netdevice.h>
 
 	struct net_device_ops dummy;
 EOF
 
-# check for netdev_tx_t
-add_test 'have NETDEV_TX_T' <<-EOF
+  # check for netdev_tx_t
+  add_test 'have NETDEV_TX_T' <<EOF
 	#include <linux/netdevice.h>
 
 	netdev_tx_t dummy;
 EOF
 
-# check for usleep_range
-add_test 'have USLEEP_RANGE' <<-EOF
+  # check for usleep_range
+  add_test 'have USLEEP_RANGE' <<EOF
 	#include <linux/delay.h>
 
 	void dummy(void)
@@ -1013,8 +1012,8 @@ add_test 'have USLEEP_RANGE' <<-EOF
 	}
 EOF
 
-# check for HRTIMER_MODE_REL
-add_test 'have HRTIMER_MODE_REL' <<-EOF
+  # check for HRTIMER_MODE_REL
+  add_test 'have HRTIMER_MODE_REL' <<EOF
 	#include <linux/hrtimer.h>
 
 	void dummy(struct hrtimer *timer, clockid_t which_clock)
@@ -1023,15 +1022,15 @@ add_test 'have HRTIMER_MODE_REL' <<-EOF
 	}
 EOF
 
-# check for IFF_LIVE_ADDR_CHANGE
-add_test 'have LIVE_ADDR_CHANGE' <<-EOF
+  # check for IFF_LIVE_ADDR_CHANGE
+  add_test 'have LIVE_ADDR_CHANGE' <<EOF
 	#include <linux/netdevice.h>
 
 	int dummy = IFF_LIVE_ADDR_CHANGE;
 EOF
 
-# check for ndo_get_stats64
-add_test 'have GET_STATS64' <<-EOF
+  # check for ndo_get_stats64
+  add_test 'have GET_STATS64' <<EOF
 	#include <linux/netdevice.h>
 
 	void * dummy(struct net_device_ops *ops) {
@@ -1039,15 +1038,15 @@ add_test 'have GET_STATS64' <<-EOF
 	}
 EOF
 
-# check for IFF_TX_SKB_SHARING
-add_test 'have TX_SKB_SHARING' <<-EOF
+  # check for IFF_TX_SKB_SHARING
+  add_test 'have TX_SKB_SHARING' <<EOF
 	#include <linux/netdevice.h>
 
 	int dummy = IFF_TX_SKB_SHARING;
 EOF
 
-# check for hw_features in net_device
-add_test 'have HW_FEATURES' <<-EOF
+  # check for hw_features in net_device
+  add_test 'have HW_FEATURES' <<EOF
 	#include <linux/netdevice.h>
 
 	unsigned int dummy(struct net_device *n) {
@@ -1055,8 +1054,8 @@ add_test 'have HW_FEATURES' <<-EOF
 	}
 EOF
 
-# check for eth_hw_addr_random
-add_test 'have ADDR_RANDOM' <<-EOF
+  # check for eth_hw_addr_random
+  add_test 'have ADDR_RANDOM' <<EOF
 	#include <linux/etherdevice.h>
 
 	void dummy(struct net_device *dev) {
@@ -1064,8 +1063,8 @@ add_test 'have ADDR_RANDOM' <<-EOF
 	}
 EOF
 
-# arguments of alloc_netdev (either 4 or 3)
-add_test 'define ALLOC_NETDEV_4ARGS' <<-EOF
+  # arguments of alloc_netdev (either 4 or 3)
+  add_test 'define ALLOC_NETDEV_4ARGS' <<EOF
 	#include <linux/netdevice.h>
 
 	struct net_device *
@@ -1078,8 +1077,8 @@ add_test 'define ALLOC_NETDEV_4ARGS' <<-EOF
 	}
 EOF
 
-# netdev_notifier_info_to_dev
-add_test 'have NNITD' <<-EOF
+  # netdev_notifier_info_to_dev
+  add_test 'have NNITD' <<EOF
 	#include <linux/netdevice.h>
 
 	struct net_device *
@@ -1089,8 +1088,8 @@ add_test 'have NNITD' <<-EOF
 	}
 EOF
 
-# arguments of qdisc_create_dflt (either 3 or 4)
-add_test 'define QDISC_CREATE_DFLT_3ARGS' <<-EOF
+  # arguments of qdisc_create_dflt (either 3 or 4)
+  add_test 'define QDISC_CREATE_DFLT_3ARGS' <<EOF
 	#include <net/sch_generic.h>
 
 	struct Qdisc *
@@ -1103,8 +1102,8 @@ add_test 'define QDISC_CREATE_DFLT_3ARGS' <<-EOF
 	}
 EOF
 
-# check for napi_complete_done
-add_test 'have NAPI_COMPLETE_DONE' <<-EOF
+  # check for napi_complete_done
+  add_test 'have NAPI_COMPLETE_DONE' <<EOF
 	#include <linux/netdevice.h>
 
 	void dummy(struct napi_struct *n, int work_done) {
@@ -1112,8 +1111,8 @@ add_test 'have NAPI_COMPLETE_DONE' <<-EOF
 	}
 EOF
 
-# check for napi_alloc_skb
-add_test 'have NAPI_ALLOC_SKB' <<-EOF
+  # check for napi_alloc_skb
+  add_test 'have NAPI_ALLOC_SKB' <<EOF
 	#include <linux/skbuff.h>
 
 	struct sk_buff *
@@ -1122,8 +1121,8 @@ add_test 'have NAPI_ALLOC_SKB' <<-EOF
 	}
 EOF
 
-# check for netdev_alloc_skb_ip_align
-add_test 'have ALLOC_SKB_IP_ALIGN' <<-EOF
+  # check for netdev_alloc_skb_ip_align
+  add_test 'have ALLOC_SKB_IP_ALIGN' <<EOF
 	#include <linux/skbuff.h>
 
 	struct sk_buff *
@@ -1132,16 +1131,16 @@ add_test 'have ALLOC_SKB_IP_ALIGN' <<-EOF
 	}
 EOF
 
-# check for xmit_more in sk_buff
-add_test 'have XMIT_MORE' <<-EOF
+  # check for xmit_more in sk_buff
+  add_test 'have XMIT_MORE' <<EOF
 	#include <linux/skbuff.h>
 
 	struct sk_buff *skb;
         (void)skb->xmit_more;
 EOF
 
-# arguments of skb_add_rx_frag (either 5 or 6)
-add_test 'define SKB_ADD_RX_FRAG_6ARGS' <<-EOF
+  # arguments of skb_add_rx_frag (either 5 or 6)
+  add_test 'define SKB_ADD_RX_FRAG_6ARGS' <<EOF
 	#include <linux/skbuff.h>
 
 	void
@@ -1152,8 +1151,8 @@ add_test 'define SKB_ADD_RX_FRAG_6ARGS' <<-EOF
 	}
 EOF
 
-# check for skb_frag_size
-add_test 'have SKB_FRAG_SIZE' <<-EOF
+  # check for skb_frag_size
+  add_test 'have SKB_FRAG_SIZE' <<EOF
 	#include <linux/skbuff.h>
 
 	unsigned int
@@ -1162,8 +1161,8 @@ add_test 'have SKB_FRAG_SIZE' <<-EOF
 	}
 EOF
 
-# check for skb_frag_address
-add_test 'have SKB_FRAG_ADDRESS' <<-EOF
+  # check for skb_frag_address
+  add_test 'have SKB_FRAG_ADDRESS' <<EOF
 	#include <linux/skbuff.h>
 
 	void *
@@ -1172,8 +1171,8 @@ add_test 'have SKB_FRAG_ADDRESS' <<-EOF
 	}
 EOF
 
-# check for skb_checksum_start_offset
-add_test 'have SKB_CHECKSUM_START_OFFSET' <<-EOF
+  # check for skb_checksum_start_offset
+  add_test 'have SKB_CHECKSUM_START_OFFSET' <<EOF
 	#include <linux/skbuff.h>
 
 	int
@@ -1192,233 +1191,232 @@ add_test 'have SPLIT_PAGE' <<-EOF
 	}
 EOF
 
-#####################################################
-# checks related to drivers                         #
-#####################################################
-
-# e1000e
-if drv enabled e1000e; then
-
-add_file_exists_check e1000e/e1000.h true "drv_source_error e1000e"
-
-add_test 'have E1000E_HWADDR' <<-EOF
-	#include "e1000e/e1000.h"
-
-	void* dummy(struct e1000_adapter *adapter,
-	        struct e1000_ring *ring)
-	{
-		return adapter->hw.hw_addr + ring->tail;
-	}
+  #####################################################
+  # checks related to drivers                         #
+  #####################################################
+  
+  # e1000e
+  if drv enabled e1000e; then
+  
+  add_file_exists_check e1000e/e1000.h true "drv_source_error e1000e"
+  
+  add_test 'have E1000E_HWADDR' <<EOF
+  	#include "e1000e/e1000.h"
+  
+  	void* dummy(struct e1000_adapter *adapter,
+  	        struct e1000_ring *ring)
+  	{
+  		return adapter->hw.hw_addr + ring->tail;
+  	}
 EOF
-
-add_test 'have E1000E_DOWN2' <<-EOF
-	#include "e1000e/e1000.h"
-
-	void dummy(struct e1000_adapter *adapter)
-	{
-		e1000e_down(adapter, false);
-	}
+  
+  add_test 'have E1000E_DOWN2' <<EOF
+  	#include "e1000e/e1000.h"
+  
+  	void dummy(struct e1000_adapter *adapter)
+  	{
+  		e1000e_down(adapter, false);
+  	}
 EOF
-
-add_test "grep -q '\<e1000_rx_desc_extended\>' $TMPDIR/e1000e/netdev.c \
-	&& have E1000E_EXT_RXDESC" </dev/null
-fi # e1000e
-
-# rtl8169
-if drv enabled r8169.c; then
-
-add_file_exists_check r8169.c true "drv_source_error r8169.c"
-
-add_test 'define RTL_OPEN rtl8169_open' 'define RTL_OPEN rtl_open' <<-EOF
-	#include "r8169.c"
-
-	static int dummy(struct net_device *dev) {
-		return rtl8169_open(dev);
-	}
+  
+  add_test "grep -q '\<e1000_rx_desc_extended\>' $TMPDIR/e1000e/netdev.c \
+  	&& have E1000E_EXT_RXDESC" </dev/null
+  fi # e1000e
+  
+  # rtl8169
+  if drv enabled r8169.c; then
+  
+  add_file_exists_check r8169.c true "drv_source_error r8169.c"
+  
+  add_test 'define RTL_OPEN rtl8169_open' 'define RTL_OPEN rtl_open' <<EOF
+  	#include "r8169.c"
+  
+  	static int dummy(struct net_device *dev) {
+  		return rtl8169_open(dev);
+  	}
 EOF
-
-add_test 'have RTL_WFQ' <<-EOF
-	#include "r8169.c"
-
-	static void dummy(struct net_device *dev) {
-		rtl8169_wait_for_quiescence(dev);
-	}
+  
+  add_test 'have RTL_WFQ' <<EOF
+  	#include "r8169.c"
+  
+  	static void dummy(struct net_device *dev) {
+  		rtl8169_wait_for_quiescence(dev);
+  	}
 EOF
-fi # r8169.c
-
-# ixgbe
-if drv enabled ixgbe; then
-
-add_file_exists_check ixgbe/ixgbe.h true "drv_source_error ixgbe"
-
-# different versions of IXGBE_?X_DESC
-add_test 'define IXGBE_DESC 1' <<-EOF
-	#include "ixgbe/ixgbe.h"
-
-	union ixgbe_adv_tx_desc *
-	dummy(struct ixgbe_ring *ring) {
-		return IXGBE_TX_DESC_ADV(*ring, 0);
-	}
+  fi # r8169.c
+  
+  # ixgbe
+  if drv enabled ixgbe; then
+  
+  add_file_exists_check ixgbe/ixgbe.h true "drv_source_error ixgbe"
+  
+  # different versions of IXGBE_?X_DESC
+  add_test 'define IXGBE_DESC 1' <<EOF
+  	#include "ixgbe/ixgbe.h"
+  
+  	union ixgbe_adv_tx_desc *
+  	dummy(struct ixgbe_ring *ring) {
+  		return IXGBE_TX_DESC_ADV(*ring, 0);
+  	}
 EOF
-add_test 'define IXGBE_DESC 2' <<-EOF
-	#include "ixgbe/ixgbe.h"
-
-	union ixgbe_adv_tx_desc *
-	dummy(struct ixgbe_ring *ring) {
-		return IXGBE_TX_DESC_ADV(ring, 0);
-	}
+  add_test 'define IXGBE_DESC 2' <<EOF
+  	#include "ixgbe/ixgbe.h"
+  
+  	union ixgbe_adv_tx_desc *
+  	dummy(struct ixgbe_ring *ring) {
+  		return IXGBE_TX_DESC_ADV(ring, 0);
+  	}
 EOF
-add_test 'define IXGBE_DESC 3' <<-EOF
-	#include "ixgbe/ixgbe.h"
-
-	union ixgbe_adv_tx_desc *
-	dummy(struct ixgbe_ring *ring) {
-		return IXGBE_TX_DESC(ring, 0);
-	}
+  add_test 'define IXGBE_DESC 3' <<EOF
+  	#include "ixgbe/ixgbe.h"
+  
+  	union ixgbe_adv_tx_desc *
+  	dummy(struct ixgbe_ring *ring) {
+  		return IXGBE_TX_DESC(ring, 0);
+  	}
 EOF
-
-# array of rings or array of poiners to rings?
-add_test 'define IXGBE_PTR_ARRAY' <<-EOF
-	#include "ixgbe/ixgbe.h"
-
-	struct ixgbe_ring *
-	dummy(struct ixgbe_adapter *adapter) {
-		return adapter->tx_ring[0];
-	}
+  
+  # array of rings or array of poiners to rings?
+  add_test 'define IXGBE_PTR_ARRAY' <<EOF
+  	#include "ixgbe/ixgbe.h"
+  
+  	struct ixgbe_ring *
+  	dummy(struct ixgbe_adapter *adapter) {
+  		return adapter->tx_ring[0];
+  	}
 EOF
-fi # ixgbe
-
-if drv enabled virtio_net.c; then
-
-add_file_exists_check virtio_net.c true "drv_source_error virtio_net.c"
-
-add_test 'define VIRTIO_CB_DELAYED' <<-EOF
-	#include <linux/virtio.h>
-
-	bool
-	dummy(struct virtqueue *vq) {
-		return virtqueue_enable_cb_delayed(vq);
-	}
+  fi # ixgbe
+  
+  if drv enabled virtio_net.c; then
+  
+    add_file_exists_check virtio_net.c true "drv_source_error virtio_net.c"
+  
+    add_test 'define VIRTIO_CB_DELAYED' <<EOF
+  	#include <linux/virtio.h>
+  
+  	bool
+  	dummy(struct virtqueue *vq) {
+  		return virtqueue_enable_cb_delayed(vq);
+  	}
 EOF
-
-add_test 'define VIRTIO_GET_VRSIZE' <<-EOF
-	#include <linux/virtio.h>
-
-	unsigned int
-	dummy(struct virtqueue *vq) {
-		return virtqueue_get_vring_size(vq);
-	}
+  
+    add_test 'define VIRTIO_GET_VRSIZE' <<EOF
+  	#include <linux/virtio.h>
+  
+  	unsigned int
+  	dummy(struct virtqueue *vq) {
+  		return virtqueue_get_vring_size(vq);
+  	}
 EOF
-
-add_test 'define VIRTIO_FREE_PAGES' <<-EOF
-	#include "virtio_net.c"
-
-	void
-	dummy(struct virtnet_info *vi) {
-		free_receive_bufs(vi);
-	}
+  
+    add_test 'define VIRTIO_FREE_PAGES' <<EOF
+  	#include "virtio_net.c"
+  
+  	void
+  	dummy(struct virtnet_info *vi) {
+  		free_receive_bufs(vi);
+  	}
 EOF
-
-add_test 'define VIRTIO_FUNCTIONS' <<-EOF
-	#include <linux/virtio.h>
-
-	void
-	dummy(struct virtqueue *vq) {
-		(void)virtqueue_kick(vq);
-	}
+  
+    add_test 'define VIRTIO_FUNCTIONS' <<EOF
+  	#include <linux/virtio.h>
+  
+  	void
+  	dummy(struct virtqueue *vq) {
+  		(void)virtqueue_kick(vq);
+  	}
 EOF
-
-for s in "" _gfp; do
-	f="virtqueue_add_buf$s"
-	add_test "define VIRTIO_ADD_BUF $f" <<-EOF
-		#include <linux/virtio.h>
-
-		int
-		dummy(struct virtqueue *vq, struct scatterlist sg[],
-			unsigned int out_num, unsigned int in_num,
-			void *data, gfp_t gfp)
-		{
-			return $f(vq, sg, out_num, in_num, data, gfp);
-		}
-	EOF
-done
-
-add_test 'define VIRTIO_MULTI_QUEUE' <<-EOF
-	#include "virtio_net.c"
-
-	struct virtqueue *
-	dummy(struct virtnet_info *vi) {
-		return vi->rq[0].vq;
-	}
+  
+    for s in "" _gfp; do
+  	f="virtqueue_add_buf$s"
+  	add_test "define VIRTIO_ADD_BUF $f" <<EOF
+  		#include <linux/virtio.h>
+  
+  		int
+  		dummy(struct virtqueue *vq, struct scatterlist sg[],
+  			unsigned int out_num, unsigned int in_num,
+  			void *data, gfp_t gfp)
+  		{
+  			return $f(vq, sg, out_num, in_num, data, gfp);
+  		}
 EOF
-
-add_test 'define VIRTIO_RQ_NUM' <<-EOF
-	#include "virtio_net.c"
-
-	int
-	dummy(struct virtnet_info *vi) {
-		return vi->rq[0].num;
-	}
+  done
+  
+    add_test 'define VIRTIO_MULTI_QUEUE' <<EOF
+  	#include "virtio_net.c"
+  
+  	struct virtqueue *
+  	dummy(struct virtnet_info *vi) {
+  		return vi->rq[0].vq;
+  	}
 EOF
-
-add_test 'define VIRTIO_SG' <<-EOF
-	#include "virtio_net.c"
-
-	struct scatterlist *
-	dummy(struct virtnet_info *vi) {
-		return vi->rx_sg;
-	}
+  
+    add_test 'define VIRTIO_RQ_NUM' <<EOF
+  	#include "virtio_net.c"
+  
+  	int
+  	dummy(struct virtnet_info *vi) {
+  		return vi->rq[0].num;
+  	}
 EOF
-
-add_test 'define VIRTIO_NOTIFY' <<-EOF
-	#include <linux/virtio.h>
-
-	void
-	dummy(struct virtqueue *_vq) {
-		(void)virtqueue_notify(_vq);
-	}
+  
+    add_test 'define VIRTIO_SG' <<EOF
+  	#include "virtio_net.c"
+  
+  	struct scatterlist *
+  	dummy(struct virtnet_info *vi) {
+  		return vi->rx_sg;
+  	}
 EOF
-
-fi # virtio-net
-
-if drv enabled i40e; then
-add_test 'define I40E_PTR_ARRAY' <<-EOF
-	#include "i40e/i40e.h"
-
-	struct i40e_ring *
-	dummy(struct i40e_vsi *vsi) {
-		return vsi->tx_rings[0];
-	}
+  
+     add_test 'define VIRTIO_NOTIFY' <<EOF
+  	#include <linux/virtio.h>
+  
+  	void
+  	dummy(struct virtqueue *_vq) {
+  		(void)virtqueue_notify(_vq);
+  	}
 EOF
-fi # i40e
-
-# END_TESTS
-
-# now we actually create the file
-
-rm -f $configh
-cat > $configh <<-EOF
-	#ifndef NETMAP_LINUX_CONFIG_H
-	#define NETMAP_LINUX_CONFIG_H
+  
+  fi # virtio-net
+  
+  if drv enabled i40e; then
+    add_test 'define I40E_PTR_ARRAY' <<EOF
+  	#include "i40e/i40e.h"
+  
+  	struct i40e_ring *
+  	dummy(struct i40e_vsi *vsi) {
+  		return vsi->tx_rings[0];
+  	}
 EOF
-
-# the TESTPOSTPROC script will add macros to $configh
-run_tests
-
-define DRIVER_SUFFIX \"$drvsuffix\"
-
-# file end
-cat >> $configh <<-EOF
-
-	#endif
+  fi # i40e
+  
+  # END_TESTS
+  
+  # now we actually create the file
+  
+  rm -f $configh
+  cat > $configh <<EOF
+  	#ifndef NETMAP_LINUX_CONFIG_H
+  	#define NETMAP_LINUX_CONFIG_H
 EOF
-
-if [ -d "$cache" ]; then
-	cp $configh "$cache"
-fi
+  
+  # the TESTPOSTPROC script will add macros to $configh
+  run_tests
+  
+  define DRIVER_SUFFIX \"$drvsuffix\"
+  
+  # file end
+  cat >> $configh <<EOF
+  
+  	#endif
+EOF
+  
+  if [ -d "$cache" ]; then
+  	cp $configh "$cache"
+  fi
 
 fi # ! -f $cache/netmap_config_h
-
 
 report
 

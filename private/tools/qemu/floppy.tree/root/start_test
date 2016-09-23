@@ -1,7 +1,0 @@
-#!/bin/sh
-sysctl dev.cpu.0.freq=1200
-sysctl dev.cpu.0.freq=2934
-sysctl dev.ix.0.flow_control=0
-sysctl dev.ix.1.flow_control=0
-ifconfig ix0 up
-ifconfig ix1 up
