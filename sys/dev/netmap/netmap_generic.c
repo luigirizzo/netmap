@@ -332,12 +332,12 @@ generic_netmap_unregister(struct netmap_adapter *na)
 		 * because the destructor invokes netmap code, and
 		 * the netmap module may disappear before the
 		 * TX event is consumed. */
-		mtx_lock(&kring->tx_event_lock);
+		mtx_lock_spin(&kring->tx_event_lock);
 		if (kring->tx_event) {
 			SET_MBUF_DESTRUCTOR(kring->tx_event, NULL);
 		}
 		kring->tx_event = NULL;
-		mtx_unlock(&kring->tx_event_lock);
+		mtx_unlock_spin(&kring->tx_event_lock);
 	}
 
 	if (na->active_fds == 0) {
@@ -539,9 +539,9 @@ generic_mbuf_destructor(struct mbuf *m)
 
 	/* First, clear the event. */
 	kring = &na->tx_rings[r];
-	mtx_lock(&kring->tx_event_lock);
+	mtx_lock_spin(&kring->tx_event_lock);
 	kring->tx_event = NULL;
-	mtx_unlock(&kring->tx_event_lock);
+	mtx_unlock_spin(&kring->tx_event_lock);
 
 	/* Second, wake up clients, that will reclaim
 	 * the event through txsync. */
@@ -598,9 +598,9 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 				int event_consumed;
 
 				/* This slot was used to place an event. */
-				mtx_lock(&kring->tx_event_lock);
+				mtx_lock_spin(&kring->tx_event_lock);
 				event_consumed = (kring->tx_event == NULL);
-				mtx_unlock(&kring->tx_event_lock);
+				mtx_unlock_spin(&kring->tx_event_lock);
 				if (!event_consumed) {
 					/* The event has not been consumed yet,
 					 * still busy in the driver. */
@@ -701,16 +701,16 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 		return;
 	}
 
-	mtx_lock(&kring->tx_event_lock);
+	mtx_lock_spin(&kring->tx_event_lock);
 	if (kring->tx_event) {
 		/* An event is already in place. */
-		mtx_unlock(&kring->tx_event_lock);
+		mtx_unlock_spin(&kring->tx_event_lock);
 		return;
 	}
 
 	SET_MBUF_DESTRUCTOR(m, generic_mbuf_destructor);
 	kring->tx_event = m;
-	mtx_unlock(&kring->tx_event_lock);
+	mtx_unlock_spin(&kring->tx_event_lock);
 
 	kring->tx_pool[e] = NULL;
 
