@@ -109,40 +109,13 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
  */
 #define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
 	(m)->m_ext.ext_free = (void *)fn;	\
-	(m)->m_ext.ext_type = EXT_EXTREF;	\
 } while (0)
-
-static void
-netmap_default_mbuf_destructor(struct mbuf *m)
-{
-	/* restore original mbuf */
-	m->m_ext.ext_buf = m->m_data = m->m_ext.ext_arg1;
-	m->m_ext.ext_arg1 = NULL;
-	m->m_ext.ext_type = EXT_PACKET;
-	m->m_ext.ext_free = NULL;
-	if (MBUF_REFCNT(m) == 0)
-		SET_MBUF_REFCNT(m, 1);
-	uma_zfree(zone_pack, m);
-}
 
 static inline struct mbuf *
 nm_os_get_mbuf(struct ifnet *ifp, int len)
 {
-	struct mbuf *m;
-
 	(void)ifp;
-	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
-	if (m) {
-		/* m_getcl() (mb_ctor_mbuf) has an assert that checks that
-		 * M_NOFREE flag is not specified as third argument,
-		 * so we have to set M_NOFREE after m_getcl(). */
-		m->m_flags |= M_NOFREE;
-		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
-		m->m_ext.ext_free = (void *)netmap_default_mbuf_destructor;
-		m->m_ext.ext_type = EXT_EXTREF;
-		ND(5, "create m %p refcnt %d", m, MBUF_REFCNT(m));
-	}
-	return m;
+	return m_gethdr(M_NOWAIT, MT_DATA);
 }
 
 #elif defined _WIN32
@@ -546,13 +519,6 @@ generic_mbuf_destructor(struct mbuf *m)
 	/* Second, wake up clients, that will reclaim
 	 * the event through txsync. */
 	netmap_generic_irq(na, r, NULL);
-#ifdef __FreeBSD__
-	if (netmap_verbose) {
-		RD(5, "Tx irq (%p) queue %d index %d" , m, r,
-		   (int)(uintptr_t)m->m_ext.ext_arg1);
-	}
-	netmap_default_mbuf_destructor(m);
-#endif /* __FreeBSD__ */
 }
 
 extern int netmap_adaptive_io;

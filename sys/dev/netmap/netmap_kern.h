@@ -110,9 +110,9 @@ struct netmap_adapter *netmap_getna(if_t ifp);
 #endif
 
 #if __FreeBSD_version >= 1100027
-#define MBUF_REFCNT(m)		((m)->m_ext.ext_cnt ? *((m)->m_ext.ext_cnt) : -1)
-#define SET_MBUF_REFCNT(m, x)   *((m)->m_ext.ext_cnt) = x
-#define PNT_MBUF_REFCNT(m)      ((m)->m_ext.ext_cnt)
+#define MBUF_REFCNT(m)		((m)->m_ext.ext_count)
+#define SET_MBUF_REFCNT(m, x)   (m)->m_ext.ext_count = x
+#define PNT_MBUF_REFCNT(m)      &((m)->m_ext.ext_count)
 #else
 #define MBUF_REFCNT(m)		((m)->m_ext.ref_cnt ? *((m)->m_ext.ref_cnt) : -1)
 #define SET_MBUF_REFCNT(m, x)   *((m)->m_ext.ref_cnt) = x

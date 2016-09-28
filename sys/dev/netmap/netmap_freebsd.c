@@ -313,6 +313,13 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 }
 
 
+static void
+void_mbuf_dtor(struct mbuf *m)
+{
+}
+
+typedef void (*mbuf_free_t)(struct mbuf *m, void *arg1, void *arg2);
+
 /*
  * Transmit routine used by generic_netmap_txsync(). Returns 0 on success
  * and non-zero on error (which may be packet drops or other errors).
@@ -343,21 +350,11 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	 * (and eventually, just reference the netmap buffer)
 	 */
 
-	if (MBUF_REFCNT(m) != 1) {
-		D("invalid refcnt %d for %p", MBUF_REFCNT(m), m);
-		panic("in generic_xmit_frame");
-	}
-	// XXX the ext_size check is unnecessary if we link the netmap buf
-	if (m->m_ext.ext_size < len) {
-		RD(5, "size %d < len %d", m->m_ext.ext_size, len);
-		len = m->m_ext.ext_size;
-	}
-	if (0) { /* XXX seems to have negligible benefits */
-		m->m_ext.ext_buf = m->m_data = a->addr;
-	} else {
-		bcopy(a->addr, m->m_data, len);
-	}
+	m->m_data = a->addr;
 	m->m_len = m->m_pkthdr.len = len;
+	m_extadd(m, a->addr, len, (mbuf_free_t)void_mbuf_dtor,
+		 NULL, NULL, 0, EXT_NET_DRV);
+
 	// inc refcount. All ours, we could skip the atomic
 	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
 	M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
