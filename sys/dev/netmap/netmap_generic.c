@@ -111,11 +111,32 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
 	(m)->m_ext.ext_free = (void *)fn;	\
 } while (0)
 
+#if __FreeBSD_version < 1100000
+static int void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { return 0; }
+#else
+static void void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { }
+#endif
+
 static inline struct mbuf *
 nm_os_get_mbuf(struct ifnet *ifp, int len)
 {
+	struct mbuf *m;
+
 	(void)ifp;
-	return m_gethdr(M_NOWAIT, MT_DATA);
+	(void)len;
+
+	m = m_gethdr(M_NOWAIT, MT_DATA);
+	if (m == NULL) {
+		return m;
+	}
+
+	m_extadd(m, NULL /* buf */, 0 /* size */, void_mbuf_dtor, NULL, NULL, 0, EXT_NET_DRV
+#if __FreeBSD_version < 1100000
+		, M_NOWAIT
+#endif
+		);
+
+	return m;
 }
 
 #elif defined _WIN32
