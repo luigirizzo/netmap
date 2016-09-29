@@ -313,12 +313,12 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 }
 
 
-static void
-void_mbuf_dtor(struct mbuf *m)
-{
-}
 
-typedef void (*mbuf_free_t)(struct mbuf *m, void *arg1, void *arg2);
+#if __FreeBSD_version < 1100000
+static int void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { return 0; }
+#else
+static void void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { }
+#endif
 
 /*
  * Transmit routine used by generic_netmap_txsync(). Returns 0 on success
@@ -352,8 +352,11 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 
 	m->m_data = a->addr;
 	m->m_len = m->m_pkthdr.len = len;
-	m_extadd(m, a->addr, len, (mbuf_free_t)void_mbuf_dtor,
-		 NULL, NULL, 0, EXT_NET_DRV);
+	m_extadd(m, a->addr, len, void_mbuf_dtor, NULL, NULL, 0, EXT_NET_DRV
+#if __FreeBSD_version < 1100000
+		, M_NOWAIT
+#endif
+		);
 
 	// inc refcount. All ours, we could skip the atomic
 	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
