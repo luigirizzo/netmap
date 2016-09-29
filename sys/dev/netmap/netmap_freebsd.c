@@ -346,8 +346,9 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	m->m_ext.ext_buf = m->m_data = a->addr;
 	m->m_ext.ext_size = m->m_len = m->m_pkthdr.len = len;
 
-	// inc refcount. All ours, we could skip the atomic
-	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
+	/* mbuf refcnt is not contended, no need to use atomic
+	 * (a memory barrier is enough). */
+	SET_MBUF_REFCNT(m, 2);
 	M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
 	m->m_pkthdr.flowid = a->ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */
