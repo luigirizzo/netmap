@@ -576,6 +576,7 @@ generic_mbuf_destructor(struct mbuf *m)
 	struct netmap_adapter *na = NA(GEN_TX_MBUF_IFP(m));
 	struct netmap_kring *kring;
 	unsigned int r = MBUF_TXQ(m);
+	unsigned int r_orig = r;
 
 	if (unlikely(!nm_netmap_on(na) || r >= na->num_tx_rings)) {
 		D("Error: no netmap adapter on device %p",
@@ -583,14 +584,41 @@ generic_mbuf_destructor(struct mbuf *m)
 		return;
 	}
 
-	/* First, clear the event. */
-	kring = &na->tx_rings[r];
-	mtx_lock_spin(&kring->tx_event_lock);
-	kring->tx_event = NULL;
-	mtx_unlock_spin(&kring->tx_event_lock);
+	/*
+	 * First, clear the event mbuf.
+	 * In principle, the event 'm' should match the one stored
+	 * on ring 'r'. However we check it explicitely to stay
+	 * safe against lower layers (qdisc, driver, etc.) changing
+	 * MBUF_TXQ(m) under our feet. If the match is not found
+	 * on 'r', we try to see if it belongs to some other ring.
+	 */
+        for (;;) {
+		bool match = false;
 
-	/* Second, wake up clients, that will reclaim
-	 * the event through txsync. */
+		kring = &na->tx_rings[r];
+		mtx_lock_spin(&kring->tx_event_lock);
+		if (kring->tx_event == m) {
+			kring->tx_event = NULL;
+			match = true;
+		}
+		mtx_unlock_spin(&kring->tx_event_lock);
+
+		if (match) {
+			break;
+		}
+
+		if (++r == na->num_tx_rings) r = 0;
+
+		if (r == r_orig) {
+			RD(1, "Cannot match event %p", m);
+			return;
+		}
+
+		RD(1, "event %p: txq changed, trying with %u", m, r);
+	}
+
+	/* Second, wake up clients. They will reclaim the event through
+	 * txsync. */
 	netmap_generic_irq(na, r, NULL);
 #ifdef __FreeBSD__
 	void_mbuf_dtor(m, NULL, NULL);
