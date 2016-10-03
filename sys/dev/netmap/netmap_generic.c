@@ -87,11 +87,14 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
 #define MBUF_RXQ(m)	((m)->m_pkthdr.flowid)
 #define smp_mb()
 
+/*
+ * FreeBSD mbuf allocator/deallocator in emulation mode:
+ */
 #if __FreeBSD_version < 1100000
 
 /*
- * FreeBSD mbuf allocator/deallocator in emulation mode:
- *
+ * For older versions of FreeBSD:
+ * 
  * We allocate EXT_PACKET mbuf+clusters, but need to set M_NOFREE
  * so that the destructor, if invoked, will not free the packet.
  * In principle we should set the destructor only on demand,
@@ -145,7 +148,21 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 	return m;
 }
 
-#else
+#else /* __FreeBSD_version >= 1100000 */
+
+/*
+ * Newer versions of FreeBSD, using a straightforward scheme.
+ *
+ * We allocate mbufs with m_gethdr(), since the mbuf header is needed
+ * by the driver. We also attach a customly-provided external storage,
+ * which in this case is a netmap buffer. When calling m_extadd(), however
+ * we pass a NULL address, since the real address (and length) will be
+ * filled in by nm_os_generic_xmit_frame() right before calling
+ * if_transmit().
+ *
+ * The dtor function does nothing, however we need it since mb_free_ext()
+ * has a KASSERT(), checking that the mbuf dtor function is not NULL.
+ */
 
 #define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
 	(m)->m_ext.ext_free = (void *)fn;	\
@@ -172,7 +189,7 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 	return m;
 }
 
-#endif
+#endif /* __FreeBSD_version >= 1100000 */
 
 #elif defined _WIN32
 
@@ -575,7 +592,7 @@ generic_mbuf_destructor(struct mbuf *m)
 	/* Second, wake up clients, that will reclaim
 	 * the event through txsync. */
 	netmap_generic_irq(na, r, NULL);
-#if __FreeBSD_version < 1100000
+#ifdef __FreeBSD__
 	void_mbuf_dtor(m, NULL, NULL);
 #endif
 }

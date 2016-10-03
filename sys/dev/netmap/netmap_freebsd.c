@@ -339,9 +339,8 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 
 #if __FreeBSD_version < 1100000
 	/*
-	 * The mbuf should be a cluster from our special pool,
-	 * so we do not need to do an m_copyback but just copy
-	 * (and eventually, just reference the netmap buffer)
+	 * Old FreeBSD versions. The mbuf has a cluster attached,
+	 * we need to copy from the cluster to the netmap buffer.
 	 */
 	if (MBUF_REFCNT(m) != 1) {
 		D("invalid refcnt %d for %p", MBUF_REFCNT(m), m);
@@ -352,10 +351,13 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 		len = m->m_ext.ext_size;
 	}
 	bcopy(a->addr, m->m_data, len);
-#else
+#else  /* __FreeBSD_version >= 1100000 */
+	/* New FreeBSD versions. Link the external storage to
+	 * the netmap buffer, so that no copy is necessary. */ 
 	m->m_ext.ext_buf = m->m_data = a->addr;
 	m->m_ext.ext_size = len;
-#endif
+#endif /* __FreeBSD_version >= 1100000 */
+
 	m->m_len = m->m_pkthdr.len = len;
 
 	/* mbuf refcnt is not contended, no need to use atomic
