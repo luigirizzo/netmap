@@ -3036,7 +3036,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	if (nm_os_mbuf_has_offld(m)) {
-		D("%s drop mbuf requiring offloadings", na->name);
+		RD(1, "%s drop mbuf requiring offloadings", na->name);
 		goto done;
 	}
 
