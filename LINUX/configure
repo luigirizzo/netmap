@@ -1182,7 +1182,7 @@ EOF
 EOF
 
 # check for split_page
-add_test 'have SPLIT_PAGE' <<-EOF
+  add_test 'have SPLIT_PAGE' <<EOF
 	#include <linux/mm.h>
 
 	int
@@ -1192,7 +1192,7 @@ add_test 'have SPLIT_PAGE' <<-EOF
 EOF
 
 # check for third argument in qdisc enqueue callbacks
-add_test 'have QDISC_ENQUEUE_TOFREE' <<-EOF
+  add_test 'have QDISC_ENQUEUE_TOFREE' <<EOF
 	#include <net/sch_generic.h>
 
 	int
