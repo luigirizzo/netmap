@@ -1191,6 +1191,17 @@ add_test 'have SPLIT_PAGE' <<-EOF
 	}
 EOF
 
+# check for third argument in qdisc enqueue callbacks
+add_test 'have QDISC_ENQUEUE_TOFREE' <<-EOF
+	#include <net/sch_generic.h>
+
+	int
+	dummy(struct sk_buff *skb, struct Qdisc *q, struct sk_buff **to_free) {
+		return q->enqueue(skb, q, to_free);
+	}
+EOF
+
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

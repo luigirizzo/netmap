@@ -471,14 +471,22 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 }
 
 static int
-generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
+generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc
+#ifdef NETMAP_LINUX_HAVE_QDISC_ENQUEUE_TOFREE
+		      , struct mbuf **to_free
+#endif
+)
 {
 	struct nm_generic_qdisc *priv = qdisc_priv(qdisc);
 
 	if (unlikely(qdisc_qlen(qdisc) >= priv->limit)) {
 		RD(5, "dropping mbuf");
 
-		return qdisc_drop(m, qdisc);
+		return qdisc_drop(m, qdisc
+#ifdef NETMAP_LINUX_HAVE_QDISC_ENQUEUE_TOFREE
+		       , to_free
+#endif
+			);
 		/* or qdisc_reshape_fail() ? */
 	}
 
@@ -518,13 +526,6 @@ generic_qdisc_peek(struct Qdisc *qdisc)
 	return skb_peek(&qdisc->q);
 }
 
-static unsigned int
-generic_qdisc_drop(struct Qdisc *qdisc)
-{
-	RD(5, "Dropping on purpose");
-	return qdisc_queue_drop(qdisc);
-}
-
 static struct Qdisc_ops
 generic_qdisc_ops __read_mostly = {
 	.id		= "netmap_generic",
@@ -535,7 +536,6 @@ generic_qdisc_ops __read_mostly = {
 	.enqueue	= generic_qdisc_enqueue,
 	.dequeue	= generic_qdisc_dequeue,
 	.peek		= generic_qdisc_peek,
-	.drop		= generic_qdisc_drop,
 	.dump		= NULL,
 	.owner		= THIS_MODULE,
 };
