@@ -604,6 +604,10 @@ generic_mbuf_destructor(struct mbuf *m)
 		mtx_unlock_spin(&kring->tx_event_lock);
 
 		if (match) {
+			if (r != r_orig) {
+				RD(1, "event %p migrated: ring %u --> %u",
+				      m, r_orig, r);
+			}
 			break;
 		}
 
@@ -613,8 +617,6 @@ generic_mbuf_destructor(struct mbuf *m)
 			RD(1, "Cannot match event %p", m);
 			return;
 		}
-
-		RD(1, "event %p: txq changed, trying with %u", m, r);
 	}
 
 	/* Second, wake up clients. They will reclaim the event through
