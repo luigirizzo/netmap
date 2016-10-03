@@ -337,14 +337,26 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	struct ifnet *ifp = a->ifp;
 	struct mbuf *m = a->m;
 
+#if __FreeBSD_version < 1100000
 	/*
 	 * The mbuf should be a cluster from our special pool,
 	 * so we do not need to do an m_copyback but just copy
 	 * (and eventually, just reference the netmap buffer)
 	 */
-
+	if (MBUF_REFCNT(m) != 1) {
+		D("invalid refcnt %d for %p", MBUF_REFCNT(m), m);
+		panic("in generic_xmit_frame");
+	}
+	if (m->m_ext.ext_size < len) {
+		RD(5, "size %d < len %d", m->m_ext.ext_size, len);
+		len = m->m_ext.ext_size;
+	}
+	bcopy(a->addr, m->m_data, len);
+#else
 	m->m_ext.ext_buf = m->m_data = a->addr;
-	m->m_ext.ext_size = m->m_len = m->m_pkthdr.len = len;
+	m->m_ext.ext_size = len;
+#endif
+	m->m_len = m->m_pkthdr.len = len;
 
 	/* mbuf refcnt is not contended, no need to use atomic
 	 * (a memory barrier is enough). */

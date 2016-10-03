@@ -87,6 +87,8 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
 #define MBUF_RXQ(m)	((m)->m_pkthdr.flowid)
 #define smp_mb()
 
+#if __FreeBSD_version < 1100000
+
 /*
  * FreeBSD mbuf allocator/deallocator in emulation mode:
  *
@@ -98,10 +100,6 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
  * would leak buffers.
  */
 
-/*
- * mbuf wrappers
- */
-
 /* mbuf destructor, also need to change the type to EXT_EXTREF,
  * add an M_NOFREE flag, and then clear the flag and
  * chain into uma_zfree(zone_pack, mf)
@@ -109,13 +107,51 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
  */
 #define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
 	(m)->m_ext.ext_free = (void *)fn;	\
+	(m)->m_ext.ext_type = EXT_EXTREF;	\
 } while (0)
 
-#if __FreeBSD_version < 1100000
-static int void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { return 0; }
+static int
+void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2)
+{
+	/* restore original mbuf */
+	m->m_ext.ext_buf = m->m_data = m->m_ext.ext_arg1;
+	m->m_ext.ext_arg1 = NULL;
+	m->m_ext.ext_type = EXT_PACKET;
+	m->m_ext.ext_free = NULL;
+	if (MBUF_REFCNT(m) == 0)
+		SET_MBUF_REFCNT(m, 1);
+	uma_zfree(zone_pack, m);
+
+	return 0;
+}
+
+static inline struct mbuf *
+nm_os_get_mbuf(struct ifnet *ifp, int len)
+{
+	struct mbuf *m;
+
+	(void)ifp;
+	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
+	if (m) {
+		/* m_getcl() (mb_ctor_mbuf) has an assert that checks that
+		 * M_NOFREE flag is not specified as third argument,
+		 * so we have to set M_NOFREE after m_getcl(). */
+		m->m_flags |= M_NOFREE;
+		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
+		m->m_ext.ext_free = (void *)void_mbuf_dtor;
+		m->m_ext.ext_type = EXT_EXTREF;
+		ND(5, "create m %p refcnt %d", m, MBUF_REFCNT(m));
+	}
+	return m;
+}
+
 #else
+
+#define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
+	(m)->m_ext.ext_free = (void *)fn;	\
+} while (0)
+
 static void void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { }
-#endif
 
 static inline struct mbuf *
 nm_os_get_mbuf(struct ifnet *ifp, int len)
@@ -130,14 +166,13 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 		return m;
 	}
 
-	m_extadd(m, NULL /* buf */, 0 /* size */, void_mbuf_dtor, NULL, NULL, 0, EXT_NET_DRV
-#if __FreeBSD_version < 1100000
-		, M_NOWAIT
-#endif
-		);
+	m_extadd(m, NULL /* buf */, 0 /* size */, void_mbuf_dtor,
+		 NULL, NULL, 0, EXT_NET_DRV);
 
 	return m;
 }
+
+#endif
 
 #elif defined _WIN32
 
@@ -540,6 +575,9 @@ generic_mbuf_destructor(struct mbuf *m)
 	/* Second, wake up clients, that will reclaim
 	 * the event through txsync. */
 	netmap_generic_irq(na, r, NULL);
+#if __FreeBSD_version < 1100000
+	void_mbuf_dtor(m, NULL, NULL);
+#endif
 }
 
 extern int netmap_adaptive_io;
