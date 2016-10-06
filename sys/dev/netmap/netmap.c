@@ -3004,9 +3004,9 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct netmap_kring *kring, *tx_kring;
 	u_int len = MBUF_LEN(m);
 	u_int error = ENOBUFS;
+	unsigned int txr;
 	struct mbq *q;
 	int space;
-	int txr;
 
 	kring = &na->rx_rings[na->num_rx_rings];
 	// XXX [Linux] we do not need this lock
@@ -3020,6 +3020,9 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	txr = MBUF_TXQ(m);
+	if (txr >= na->num_tx_rings) {
+		txr %= na->num_tx_rings;
+	}
 	tx_kring = &NMR(na, NR_TX)[txr];
 
 	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
