@@ -1182,7 +1182,7 @@ EOF
 EOF
 
 # check for split_page
-add_test 'have SPLIT_PAGE' <<-EOF
+  add_test 'have SPLIT_PAGE' <<EOF
 	#include <linux/mm.h>
 
 	int
@@ -1190,6 +1190,17 @@ add_test 'have SPLIT_PAGE' <<-EOF
 		split_page(page, 0);
 	}
 EOF
+
+# check for third argument in qdisc enqueue callbacks
+  add_test 'have QDISC_ENQUEUE_TOFREE' <<EOF
+	#include <net/sch_generic.h>
+
+	int
+	dummy(struct sk_buff *skb, struct Qdisc *q, struct sk_buff **to_free) {
+		return q->enqueue(skb, q, to_free);
+	}
+EOF
+
 
   #####################################################
   # checks related to drivers                         #

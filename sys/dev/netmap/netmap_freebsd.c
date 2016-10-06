@@ -337,29 +337,32 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	struct ifnet *ifp = a->ifp;
 	struct mbuf *m = a->m;
 
+#if __FreeBSD_version < 1100000
 	/*
-	 * The mbuf should be a cluster from our special pool,
-	 * so we do not need to do an m_copyback but just copy
-	 * (and eventually, just reference the netmap buffer)
+	 * Old FreeBSD versions. The mbuf has a cluster attached,
+	 * we need to copy from the cluster to the netmap buffer.
 	 */
-
 	if (MBUF_REFCNT(m) != 1) {
 		D("invalid refcnt %d for %p", MBUF_REFCNT(m), m);
 		panic("in generic_xmit_frame");
 	}
-	// XXX the ext_size check is unnecessary if we link the netmap buf
 	if (m->m_ext.ext_size < len) {
 		RD(5, "size %d < len %d", m->m_ext.ext_size, len);
 		len = m->m_ext.ext_size;
 	}
-	if (0) { /* XXX seems to have negligible benefits */
-		m->m_ext.ext_buf = m->m_data = a->addr;
-	} else {
-		bcopy(a->addr, m->m_data, len);
-	}
+	bcopy(a->addr, m->m_data, len);
+#else  /* __FreeBSD_version >= 1100000 */
+	/* New FreeBSD versions. Link the external storage to
+	 * the netmap buffer, so that no copy is necessary. */ 
+	m->m_ext.ext_buf = m->m_data = a->addr;
+	m->m_ext.ext_size = len;
+#endif /* __FreeBSD_version >= 1100000 */
+
 	m->m_len = m->m_pkthdr.len = len;
-	// inc refcount. All ours, we could skip the atomic
-	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
+
+	/* mbuf refcnt is not contended, no need to use atomic
+	 * (a memory barrier is enough). */
+	SET_MBUF_REFCNT(m, 2);
 	M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
 	m->m_pkthdr.flowid = a->ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */
