@@ -2617,6 +2617,7 @@ out:
 		D("failed to re-enable SIGINT: %s", strerror(errno));
 	}
 	main_thread(&g);
+	free(targs);
 	return 0;
 }
 
