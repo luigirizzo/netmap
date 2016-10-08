@@ -1317,6 +1317,7 @@ sender_body(void *data)
 quit:
 	/* reset the ``used`` flag. */
 	targ->used = 0;
+  free(targ->nmd);
 
 	return (NULL);
 }
@@ -2094,6 +2095,7 @@ main_thread(struct glob_arg *g)
 			tic = timespec2val(&targs[i].tic);
 		if (!timerisset(&toc) || timespec_ge(&targs[i].toc, &t_toc))
 			toc = timespec2val(&targs[i].toc);
+    free(&targs[i]);
 	}
 
 	/* print output. */
