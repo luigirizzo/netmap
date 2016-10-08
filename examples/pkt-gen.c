@@ -2072,7 +2072,12 @@ main_thread(struct glob_arg *g)
 		 */
 		if (targs[i].used)
 			pthread_join(targs[i].thread, NULL); /* blocking */
-		close(targs[i].fd);
+		if (g->dev_type == DEV_NETMAP) {
+			nm_close(targs[i].nmd);
+			targs[i].nmd = NULL;
+		} else {
+			close(targs[i].fd);
+		}
 
 		if (targs[i].completed == 0)
 			D("ouch, thread %d exited with error", i);
@@ -2103,11 +2108,6 @@ main_thread(struct glob_arg *g)
 		tx_output(&cur, delta_t, "Sent");
 	else
 		tx_output(&cur, delta_t, "Received");
-
-	if (g->dev_type == DEV_NETMAP) {
-		munmap(g->nmd->mem, g->nmd->req.nr_memsize);
-		close(g->main_fd);
-	}
 }
 
 struct td_desc {
