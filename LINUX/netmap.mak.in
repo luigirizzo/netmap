@@ -95,6 +95,7 @@ APPS_LD=@APPS_LD@
 PREFIX=@PREFIX@
 DESTDIR?=@DESTDIR@
 
+.PHONY: apps
 apps:
 	$(MAKE) -C build-apps SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)"
 

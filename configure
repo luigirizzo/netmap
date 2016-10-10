@@ -1,0 +1,13 @@
+#!/bin/sh
+
+os=$(uname -s)
+
+case $os in
+	Linux)
+		LINUX/configure "$@";;
+	FreeBSD)
+		FreeBSD/configure "$@";;
+	*)
+		echo "Sorry, $os is not supported"
+		exit 1;;
+esac
