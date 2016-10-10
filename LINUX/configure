@@ -743,7 +743,7 @@ done
 
 # if we are in SRCDIR this will fail, since
 # Makefile already exists
-ln -s $SRCDIR/Makefile || true
+ln -s $SRCDIR/../GNUmakefile || true
 ln -s $SRCDIR/drv-subdir.mak || true
 
 
