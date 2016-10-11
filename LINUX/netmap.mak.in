@@ -39,8 +39,8 @@ COMMON_OPTS=-C $(KSRC) M=$(PWD) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
 
 define driver_target
 get-$(1):
-	$(if $($(1)-src),cp -Rp $($(1)-src) $(if $($(1)-dst),$($(1)-dst),.),@true)
-	$(foreach p,$($(1)-patch),patch --posix --quiet --force -p1 < $(p);)
+	$(if $($(1)@src),cp -Rp $($(1)@src) $(if $($(1)@dst),$($(1)@dst),.),@true)
+	$(foreach p,$($(1)@patch),patch --posix --quiet --force -p1 < $(p);)
 	$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,@true)
 	touch get-$(1)
 clean-$(1):
@@ -111,4 +111,6 @@ distclean: clean
 	rm -rf netmap-tmpdir
 	if [ -L GNUmakefile ]; then rm GNUmakefile; fi
 	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
+	if [ -L config.mak ]; then rm config.mak; fi
+	if [ -L read-vars.mak ]; then rm read-vars.mak; fi
 	rm -rf build-apps
