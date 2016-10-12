@@ -64,11 +64,6 @@ install:
 		$(if $(MODPATH),INSTALL_MOD_PATH=$(MODPATH)) \
 		modules_install
 
-test:
-	@echo "version $(LIN_VER)"
-	@echo "patches $(PATCHES)"
-	@echo "drivers $(DRIVERS)"
-
 clean: $(S_DRIVERS:%=clean-%)
 	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
 	-@ $(MAKE) -C build-apps clean
@@ -77,18 +72,6 @@ clean: $(S_DRIVERS:%=clean-%)
 		Module.symvers .*.cmd
 	-@ rm -rf .tmp_versions
 
-
-
-test3:
-	@echo "from $(PATCHES) -- to $(MYDRIVERS)"
-	@echo "Drivers is $(DRIVERS)"
-	@echo "Actually have `ls -d $(DRIVERS) 2> /dev/null`"
-
-# compute the diffs for the original files
-diffs:
-	@for i in `find . -name \*.orig`; do 	\
-		diff -urp $$i $${i%.orig} ;	\
-	done
 
 APPS_CC=@APPS_CC@
 APPS_LD=@APPS_LD@
