@@ -1,6 +1,6 @@
 #!/bin/sh
 
-TOPDIR=$PWD
+BUILDDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
 
@@ -351,11 +351,13 @@ S_DRIVERS := $(drv print)
 all: \$(S_DRIVERS:%=get-%)
 	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
--include $TOPDIR/drivers.mak
+-include $BUILDDIR/config.mak
+-include $BUILDDIR/drivers.mak
 EOF
 	for d in $(drv print); do
 		cat >> $TMPDIR/Makefile <<EOF
 get-$d:
+	\$(if \$($d@fetch),\$($d@fetch),)
 	[ -z "\$($d@src)" ] || cp -Rp \$($d@src) \$(if \$($d@dst),\$($d@dst),.)
 	touch get-$d
 EOF
@@ -718,6 +720,7 @@ s_drivers=$(drv print)
 # create netmap.mak and Kbuild
 for f in $SRCDIR/*.in; do
 	sed \
+		-e "s|@BUILDDIR@|$BUILDDIR|g" \
 		-e "s|@SRCDIR@|$SRCDIR|g" \
 		-e "s|@KSRC@|$ksrc|g" \
 		-e "s|@SRC@|$src|g" \

@@ -8,14 +8,13 @@
 MODNAME:=@MODNAME@
 SUBSYS:=@SUBSYS@
 SRCDIR:=@SRCDIR@
+BUILDDIR:=@BUILDDIR@
 
 # The following commands are needed to build the modules as out-of-tree,
 # in fact the kernel sources path must be specified.
 
-PWD ?= $(CURDIR)
-
 # Additional compile flags (e.g. header location)
-EXTRA_CFLAGS := -I$(PWD) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
+EXTRA_CFLAGS := -I$(BUILDDIR) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
 EXTRA_CFLAGS += $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z- A-Z_))
 
@@ -38,7 +37,7 @@ DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
 # external drivers after copy and patch
 DRIVERS_EXT = $(shell [ -n "$(E_DRIVERS)" ] && ls -dAp $(E_DRIVERS) 2> /dev/null)
 
-COMMON_OPTS=-C $(KSRC) M=$(PWD) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
+COMMON_OPTS=-C $(KSRC) M=$(BUILDDIR) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
 
 define get_driver
 get-$(1):
@@ -65,13 +64,14 @@ all: $(S_DRIVERS:%=get-%) netmap.ko $(E_DRIVERS:%=build-%)
 netmap.ko:
 	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(patsubst %.c,%.o,$(filter-out $(DRIVERS_EXT),$(DRIVERS)))" NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
 
+-include config.mak
 include drivers.mak
 
 $(foreach d,$(S_DRIVERS),$(eval $(call get_driver,$(d))))
 $(foreach d,$(E_DRIVERS),$(eval $(call build_driver,$(d))))
 
 install:
-	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
+	$(MAKE) -C $(KSRC) M=$(BUILDDIR) CONFIG_NETMAP=m $(MOD_LIST) \
 		O_DRIVERS="$(DRIVERS:%.c=%.o)" \
 		$(KOPTS) \
 		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX) \
@@ -79,7 +79,7 @@ install:
 		modules_install
 
 clean: $(S_DRIVERS:%=clean-%)
-	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
+	-@ $(MAKE) -C $(KSRC) M=$(BUILDDIR) clean 2> /dev/null
 	-@ $(MAKE) -C build-apps clean
 	-@ rm -f *.orig *.rej *.ko *.o .*.d 		\
 		*.mod.c modules.order			\
