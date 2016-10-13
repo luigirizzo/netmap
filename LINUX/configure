@@ -608,7 +608,6 @@ for d in $s_drivers; do
 	drv_src=
 	drv_patch=
 	drv_build=
-	drv_dst=
 	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
 	# possibly override from config.mak
 	eval $(make -rf read-vars.mak $d@vars)
@@ -706,12 +705,9 @@ EOF
 
 	# add the driver related variables to drivers.mak
 	cat >> drivers.mak <<EOF
-$d@fetch := $drv_fetch
-$d@src := $drv_src
-$d@dst := $drv_dst
-$d@patch := $drv_patch
-$d@build := $drv_build
 $d@conf := $drv_conf
+$d@src := $drv_src
+$d@patch := $drv_patch
 EOF
 done
 
