@@ -51,14 +51,17 @@ clean-$(1):
 endef
 
 define build_driver
-build-$(1): get-$(1)
+build-$(1): get-$(1) netmap.ko
+	D=$(if $($(1)@dst),$($(1)@dst),$(1)); if [ -d "$$$$D" ] && [ -e Module.symvers ]; then cp Module.symvers "$$$$D"; fi
 	echo "===>" $($(1)@build)
 endef
 
-.PHONY: $(foreach d,$(E_DRIVERS),build-$(d))
+.PHONY: $(foreach d,$(E_DRIVERS),build-$(d)) netmap.ko
 
 
-all: $(S_DRIVERS:%=get-%) $(E_DRIVERS:%=build-%)
+all: $(S_DRIVERS:%=get-%) netmap.ko $(E_DRIVERS:%=build-%)
+
+netmap.ko:
 	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(patsubst %.c,%.o,$(filter-out $(DRIVERS_EXT),$(DRIVERS)))" NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
 
 include drivers.mak
