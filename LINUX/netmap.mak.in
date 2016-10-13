@@ -53,7 +53,7 @@ endef
 define build_driver
 build-$(1): get-$(1) netmap.ko
 	D=$(if $($(1)@dst),$($(1)@dst),$(1)); if [ -d "$$$$D" ] && [ -e Module.symvers ]; then cp Module.symvers "$$$$D"; fi
-	echo "===>" $($(1)@build)
+	$($(1)@build)
 endef
 
 .PHONY: $(foreach d,$(E_DRIVERS),build-$(d)) netmap.ko

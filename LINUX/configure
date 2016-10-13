@@ -344,6 +344,7 @@ EOF
 #   success/failure actions for each one.
 run_tests() {
 	cat > $TMPDIR/Makefile <<EOF
+SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
