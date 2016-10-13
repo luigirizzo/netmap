@@ -630,6 +630,7 @@ EOF
 . $ksrc/.config
 for d in $s_drivers; do
 	# reset all driver variables to default values
+	drv_fetch=
 	drv_src=
 	drv_patch=
 	drv_build=
@@ -701,6 +702,7 @@ EOF
 
 	# add the driver related variables to drivers.mak
 	cat >> drivers.mak <<EOF
+$d@fetch := $drv_fetch
 $d@src := $drv_src
 $d@dst := $drv_dst
 $d@patch := $drv_patch
