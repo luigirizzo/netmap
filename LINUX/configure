@@ -90,13 +90,21 @@ driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
 	e1000 e1000e igb ixgbe i40e"
 # enabled drivers (bitfield)
 driver=
-
 drv()
 {
 	setop driver "$@"
 }
 
 drv enable-all
+
+# drivers built by external commands (bitfield)
+external_driver_avail="$driver_avail"
+external_driver=
+edrv()
+{
+	setop external_driver "$@"
+}
+
 
 prefix=/usr/local
 cc=cc
@@ -588,13 +596,6 @@ rm -f drivers.mak
 add_test true broken_buildsystem < /dev/null
 run_tests
 
-drvname2config() {
-	local name=$1
-	local conf=$(awk -v n=$name '$1==n { print $2 }' $SRCDIR/drvname2config)
-	if [ x"$conf" = x ]; then conf="CONFIG_$(echo $name|tr a-z- A-Z_)"; fi
-	echo $conf
-}
-
 ###############################################################
 # Makefile creation
 ###############################################################
@@ -688,13 +689,22 @@ in your .config.
 Alternatively, you can pass a --driver-suffix= option to configure.
 EOF
 	}
-	mod_list="$drv_conf=m $mod_list"
+
+	# if no external build command has been specified, add
+	# this driver to the list of modules built by netmap,
+	# otherwise add it to the list of external drivers
+	if [ -z "$drv_build" ]; then
+		mod_list="$drv_conf=m $mod_list"
+	else
+		edrv enable $d
+	fi
+
 	# add the driver related variables to drivers.mak
 	cat >> drivers.mak <<EOF
 $d@src := $drv_src
 $d@dst := $drv_dst
 $d@patch := $drv_patch
-$d@build :=
+$d@build := $drv_build
 $d@conf := $drv_conf
 EOF
 done
@@ -716,6 +726,7 @@ for f in $SRCDIR/*.in; do
 		-e "s|@MOD_LIST@|$mod_list|g" \
 		-e "s|@PATCHES@|$(echo $patches)|g" \
 		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
+		-e "s|@E_DRIVERS@|$(edrv print)|g" \
 		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
 		-e "s|@APPS_CC@|$cc|g" \
 		-e "s|@APPS_LD@|$ld|g" \

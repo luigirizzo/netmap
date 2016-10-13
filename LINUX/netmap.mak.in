@@ -30,31 +30,41 @@ LIN_VER = @LIN_VER@
 MOD_LIST := @MOD_LIST@
 PATCHES = @PATCHES@
 S_DRIVERS = @S_DRIVERS@
+E_DRIVERS = @E_DRIVERS@
 DRVSUFFIX = @DRVSUFFIX@
 
 # actual drivers after copy and patch
 DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
+# external drivers after copy and patch
+DRIVERS_EXT = $(shell [ -n "$(E_DRIVERS)" ] && ls -dAp $(E_DRIVERS) 2> /dev/null)
 
 COMMON_OPTS=-C $(KSRC) M=$(PWD) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
 
-define driver_target
+define get_driver
 get-$(1):
-	$(if $($(1)@src),cp -Rp $($(1)@src) $(if $($(1)@dst),$($(1)@dst),.),@true)
+	$(if $($(1)@src),cp -Rp $($(1)@src) $(if $($(1)@dst),$($(1)@dst),.),)
 	$(foreach p,$($(1)@patch),patch --posix --quiet --force -p1 < $(p);)
-	$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,@true)
+	$(if $($(1)@build),,$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,))
 	touch get-$(1)
 clean-$(1):
 	rm -rf $(1) get-$(1)
 endef
 
+define build_driver
+build-$(1): get-$(1)
+	echo "===>" $($(1)@build)
+endef
 
-all: $(S_DRIVERS:%=get-%)
-	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)" \
-		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
+.PHONY: $(foreach d,$(E_DRIVERS),build-$(d))
+
+
+all: $(S_DRIVERS:%=get-%) $(E_DRIVERS:%=build-%)
+	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(patsubst %.c,%.o,$(filter-out $(DRIVERS_EXT),$(DRIVERS)))" NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
 
 include drivers.mak
 
-$(foreach d,$(S_DRIVERS),$(eval $(call driver_target,$(d))))
+$(foreach d,$(S_DRIVERS),$(eval $(call get_driver,$(d))))
+$(foreach d,$(E_DRIVERS),$(eval $(call build_driver,$(d))))
 
 install:
 	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
