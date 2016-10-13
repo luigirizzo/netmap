@@ -668,6 +668,8 @@ EOF
 			drv disable $d
 			continue
 		fi
+	elif [ "$drv_patch" = none ]; then
+		drv_patch=
 	fi
 	# check that the original driver had been compiled as a module, otherwise
 	# skip this driver
