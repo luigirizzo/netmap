@@ -198,38 +198,6 @@ warning()
 	message WARNING
 }
 
-src_checked=
-check_src()
-{
-	# if the user has asked for the patched drivers, we also need the
-	# full kernel sources. Since we may have put $src=$ksrc, and $ksrc
-	# may only contain header files, we check that $src/drivers actually
-	# contains some .c file
-	# Note: if we have an override file the test is not fatal, since the
-	# intended driver sources location may be found there
-	if [ -z "$src_checked" ] && [ ! -d "$src" ] ||
-	   [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
-		error <<EOF
-Cannot find full kernel sources.
-
-We need the full kernel sources to build the netmap-enabled drivers.
-Please note that most distributions provide separate packages for kernel
-headers and sources. Once you know the path to kernel sources, you can
-rerun this script with the additional
-
-    --kernel-sources=/path/to/sources
-
-option.
-
-If you are only interested in VALE and pipes, you can rerun the script
-now with the '--no-drivers' option. Hardware devices will then be accessed
-via a generic adapter at reduced performance."
-EOF
-	fi
-	src=$(cd $src; pwd)
-	src_checked=1
-}
-
 # print_help
 print_help() {
 	cat <<EOF
@@ -628,6 +596,9 @@ cat > drivers.mak <<EOF
 EOF
 # read in all the kernel .config, we use it below
 . $ksrc/.config
+# check for full kernel sources just once
+src_checked=
+src_found=
 for d in $s_drivers; do
 	# reset all driver variables to default values
 	drv_fetch=
@@ -639,18 +610,48 @@ for d in $s_drivers; do
 	# possibly override from config.mak
 	eval $(make -rf read-vars.mak $d@vars)
 
-	if [ -z "$drv_src" ]; then
-		# find the driver sources
-		check_src
-		drv_src=$(find $src/drivers/ -name "$d" -print -quit)
-		if [ -z "$drv_src" ]; then
-			warning <<EOF
-'$d': sources not found ad no override provided.
+	if [ -z "$drv_src" ] && [ -z "$drv_fetch" ]; then
+		# if the user has asked for the patched drivers, we also need the
+		# full kernel sources. Since we may have put $src=$ksrc, and $ksrc
+		# may only contain header files, we check that $src/drivers actually
+		# contains some .c file
+		# Note: if we have an override file the test is not fatal, since the
+		# intended driver sources location may be found there
+		if [ -z "$src_checked" ]; then
+			if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
+				warning <<EOF
+Cannot find full kernel sources.
+
+Please note that most distributions provide separate packages for kernel
+headers and sources. Once you know the path to kernel sources, you can
+rerun this script with the additional
+
+    --kernel-sources=/path/to/sources
+
+option.
+
+Native drivers that are listed as disabled below are not going to be built.
+The corresponding devices will be accessed using a generic driver at
+reduced performance.
+EOF
+			else
+				src=$(cd $src; pwd)
+				src_found=1
+			fi
+			src_checked=1
+		fi
+		if [ -n "$src_found" ]; then
+			drv_src=$(find $src/drivers/ -name "$d" -print -quit)
+		fi
+	fi
+
+	if [ -z "$drv_src" ] && [ -z "$drv_fetch" ]; then
+		warning <<EOF
+'$d': sources not found ad no fetch command provided.
 Disabling driver.
 EOF
-			drv disable $d
-			continue
-		fi
+		drv disable $d
+		continue
 	fi
 
 	if [ -z "$drv_patch" ]; then
