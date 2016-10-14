@@ -947,6 +947,18 @@ void nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 	//hrtimer_cancel(&mit->mit_timer);
 }
 
+u_int
+nm_os_ncpus(void)
+{
+	return 1;  // TODO
+}
+
+int
+nm_os_mbuf_has_offld(struct mbuf *m)
+{
+	return 0;  // TODO
+}
+
 void
 nm_os_get_module(void)
 {
@@ -958,3 +970,41 @@ nm_os_put_module(void)
 {
 	// TODO
 }
+
+
+struct nm_kthread {
+};
+
+void
+nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
+{
+	// TODO
+}
+
+struct nm_kthread *
+nm_os_kthread_create(struct nm_kthread_cfg *cfg)
+{
+	// TODO
+	return NULL;
+}
+
+int
+nm_os_kthread_start(struct nm_kthread *nmk)
+{
+	// TODO
+	return -1;
+}
+
+void
+nm_os_kthread_stop(struct nm_kthread *nmk)
+{
+	// TODO
+}
+
+
+void
+nm_os_kthread_delete(struct nm_kthread *nmk)
+{
+	// TODO
+}
+
