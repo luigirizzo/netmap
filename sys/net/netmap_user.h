@@ -638,7 +638,8 @@ nm_open(const char *ifname, const struct nmreq *req,
 	int is_vale;
 	long num;
 
-	if (strncmp(ifname, "netmap:", 7) && strncmp(ifname, "vale", 4)) {
+	if (strncmp(ifname, "netmap:", 7) &&
+			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
 		errno = 0; /* name not recognised, not an error */
 		return NULL;
 	}

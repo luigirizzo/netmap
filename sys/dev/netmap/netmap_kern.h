@@ -1412,8 +1412,6 @@ u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 #define	NM_BDG_BROADCAST	NM_BDG_MAXPORTS
 #define	NM_BDG_NOPORT		(NM_BDG_MAXPORTS+1)
 
-#define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
-
 /* these are redefined in case of no VALE support */
 int netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 struct nm_bridge *netmap_init_bridges2(u_int);

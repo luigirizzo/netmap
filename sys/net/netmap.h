@@ -562,6 +562,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  * NETMAP_VNET_HDR_GET command to figure out the header length. */
 #define NR_ACCEPT_VNET_HDR	0x8000
 
+#define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
 
 /*
  * Windows does not have _IOWR(). _IO(), _IOW() and _IOR() are defined

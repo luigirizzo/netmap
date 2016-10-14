@@ -123,7 +123,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
 
 /*
  * system parameters (most of them in netmap_kern.h)
- * NM_NAME	prefix for switch port names, default "vale"
+ * NM_BDG_NAME	prefix for switch port names, default "vale"
  * NM_BDG_MAXPORTS	number of ports
  * NM_BRIDGES	max number of switches in the system.
  *	XXX should become a sysctl or tunable
