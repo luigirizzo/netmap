@@ -1,0 +1,5 @@
+ixgbe@fetch:=tar xf @SRCDIR@/ext-drivers/orig/ixgbe-4.4.6.tar.gz
+ixgbe@src:=ixgbe-4.4.6/src
+ixgbe@dst:=ixgbe
+ixgbe@patch:=@SRCDIR@/final-patches/intel--ixgbe--4.4.6
+ixgbe@build=make -C $(ixgbe@dst) EXTRA_CFLAGS="$(EXTRA_CFLAGS)"

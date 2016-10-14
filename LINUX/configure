@@ -587,8 +587,8 @@ s_drivers=$(drv print)
 
 # copy the system config.mak if any, but do not
 # overwrite any user-provied one
-if [ -e $SRCDIR/config.mak ]; then
-	ln -s $SRCDIR/config.mak 2>/dev/null || true
+if [ -e $SRCDIR/config.mak.in ]; then
+	sed "s|@SRCDIR@|$SRCDIR|g" $SRCDIR/config.mak.in > config.mak || true
 fi
 ln -s $SRCDIR/read-vars.mak 2>/dev/null || true
 rm -f drivers.mak
