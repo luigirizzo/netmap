@@ -80,6 +80,7 @@ lem_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (ifp->if_drv_flags & IFF_DRV_RUNNING ? 0 : 1);
 }
 
+
 static void
 lem_netmap_intr(struct netmap_adapter *na, int onoff)
 {
@@ -94,6 +95,7 @@ lem_netmap_intr(struct netmap_adapter *na, int onoff)
 	}
 	EM_CORE_UNLOCK(adapter);
 }
+
 
 /*
  * Reconcile kernel and user view of the transmit ring.
@@ -299,6 +301,7 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 ring_reset:
 	return netmap_ring_reinit(kring);
 }
+
 
 static void
 lem_netmap_attach(struct adapter *adapter)
