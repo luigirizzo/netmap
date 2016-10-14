@@ -90,6 +90,7 @@
 #include <stdint.h>
 #include <sys/socket.h>		/* apple needs sockaddr */
 #include <net/if.h>		/* IFNAMSIZ */
+#include <ctype.h>
 
 #ifndef likely
 #define likely(x)	__builtin_expect(!!(x), 1)
@@ -598,6 +599,18 @@ win_nm_close(int fd)
 
 #endif /* _WIN32 */
 
+static int
+nm_is_identifier(const char *s, const char *e)
+{
+	for (; s != e; s++) {
+		if (!isalnum(*s) && *s != '_') {
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
 /*
  * Try to open, return descriptor if successful, NULL otherwise.
  * An invalid netmap name will return errno = 0;
@@ -618,20 +631,47 @@ nm_open(const char *ifname, const struct nmreq *req,
 	u_int namelen;
 	uint32_t nr_ringid = 0, nr_flags, nr_reg;
 	const char *port = NULL;
+	const char *vpname = NULL;
 #define MAXERRMSG 80
 	char errmsg[MAXERRMSG] = "";
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK } p_state;
+	int is_vale;
 	long num;
 
 	if (strncmp(ifname, "netmap:", 7) && strncmp(ifname, "vale", 4)) {
 		errno = 0; /* name not recognised, not an error */
 		return NULL;
 	}
-	if (ifname[0] == 'n')
+
+	is_vale = (ifname[0] == 'v');
+	if (is_vale) {
+		port = index(ifname, ':');
+		if (port == NULL) {
+			snprintf(errmsg, MAXERRMSG,
+				 "missing ':' in vale name");
+			goto fail;
+		}
+
+		if (!nm_is_identifier(ifname + 4, port)) {
+			snprintf(errmsg, MAXERRMSG, "invalid bridge name");
+			goto fail;
+		}
+
+		vpname = ++port;
+	} else {
 		ifname += 7;
+		port = ifname;
+	}
+
 	/* scan for a separator */
-	for (port = ifname; *port && !index("-*^{}/", *port); port++)
+	for (; *port && !index("-*^{}/", *port); port++)
 		;
+
+	if (is_vale && !nm_is_identifier(vpname, port)) {
+		snprintf(errmsg, MAXERRMSG, "invalid bridge port name");
+		goto fail;
+	}
+
 	namelen = port - ifname;
 	if (namelen >= sizeof(d->req.nr_name)) {
 		snprintf(errmsg, MAXERRMSG, "name too long");
