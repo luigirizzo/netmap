@@ -358,8 +358,8 @@ EOF
 	for d in $(drv print); do
 		cat >> $TMPDIR/Makefile <<EOF
 get-$d:
-	\$(if \$($d@fetch),\$($d@fetch),)
-	[ -z "\$($d@src)" ] || cp -Rp \$($d@src) \$(if \$($d@dst),\$($d@dst),.)
+	\$($d@src)
+	if [ \$($d@dst) != $d ]; then cp -Rp \$($d@dst) $d; fi
 	touch get-$d
 EOF
 	done
@@ -604,15 +604,19 @@ src_checked=
 src_found=
 for d in $s_drivers; do
 	# reset all driver variables to default values
-	drv_fetch=
 	drv_src=
+	drv_dst=
 	drv_patch=
 	drv_build=
 	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
 	# possibly override from config.mak
 	eval $(make -rf read-vars.mak $d@vars)
 
-	if [ -z "$drv_src" ] && [ -z "$drv_fetch" ]; then
+	if [ -z "$drv_dst" ]; then
+		drv_dst=$d
+	fi
+
+	if [ -z "$drv_src" ]; then
 		# if the user has asked for the patched drivers, we also need the
 		# full kernel sources. Since we may have put $src=$ksrc, and $ksrc
 		# may only contain header files, we check that $src/drivers actually
@@ -642,18 +646,18 @@ EOF
 			fi
 			src_checked=1
 		fi
+		drv_kernel_src=
 		if [ -n "$src_found" ]; then
-			drv_src=$(find $src/drivers/ -name "$d" -print -quit)
+			drv_kernel_src=$(find $src/drivers/ -name "$d" -print -quit)
 		fi
-	fi
-
-	if [ -z "$drv_src" ] && [ -z "$drv_fetch" ]; then
-		warning <<EOF
-'$d': sources not found ad no fetch command provided.
-Disabling driver.
+		if [ -z "$drv_kernel_src" ]; then
+			warning <<EOF
+'$d': sources not found.  Disabling driver.
 EOF
-		drv disable $d
-		continue
+			drv disable $d
+			continue
+		fi
+		drv_src="cp -Rp $drv_kernel_src $drv_dst"
 	fi
 
 	if [ -z "$drv_patch" ]; then
@@ -709,6 +713,7 @@ EOF
 	cat >> drivers.mak <<EOF
 $d@conf := $drv_conf
 $d@src := $drv_src
+$d@dst := $drv_dst
 $d@patch := $drv_patch
 EOF
 done

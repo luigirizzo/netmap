@@ -1,9 +1,9 @@
 define intel_driver
-$(1)@fetch := tar xf @SRCDIR@/ext-drivers/orig/$(1)-$(2).tar.gz
-$(1)@src := $(1)-$(2)/src
-$(1)@dst := $(1)
+$(1)@src := tar xf @SRCDIR@/ext-drivers/orig/$(1)-$(2).tar.gz
+$(1)@dst := $(1)-$(2)/src
 $(1)@patch := @SRCDIR@/ext-drivers/patches/$(1)-$(2)
 $(1)@build := make -C $$($(1)@dst) EXTRA_CFLAGS="$(EXTRA_CFLAGS)"
+$(1)@cleandir := $(1)-$(2)
 endef
 
 $(eval $(call intel_driver,ixgbe,4.4.6))
