@@ -1,5 +1,9 @@
 /*
- * Copyright (C) 2013 Luigi Rizzo. All rights reserved.
+ * Copyright (C) 2013-2016 Luigi Rizzo
+ * Copyright (C) 2013-2016 Giuseppe Lettieri
+ * Copyright (C) 2013-2016 Vincenzo Maffione
+ * Copyright (C) 2015 Stefano Garzarella
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
