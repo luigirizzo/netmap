@@ -282,6 +282,45 @@ pkt_copy(void *_src, void *_dst, int l)
 }
 
 
+static int
+nm_is_id_char(const char c)
+{
+	return (c >= 'a' && c <= 'z') ||
+	       (c >= 'A' && c <= 'Z') ||
+	       (c >= '0' && c <= '9') ||
+	       (c == '_');
+}
+
+/* Validate the name of a VALE bridge port and return the
+ * position of the ":" character. */
+static int
+nm_vale_name_validate(const char *name)
+{
+	int colon_pos = -1;
+	int i;
+
+	if (!name || strlen(name) < strlen(NM_BDG_NAME)) {
+		return -1;
+	}
+
+	for (i = 0; name[i]; i++) {
+		if (name[i] == ':') {
+			if (colon_pos != -1) {
+				return -1;
+			}
+			colon_pos = i;
+		} else if (!nm_is_id_char(name[i])) {
+			return -1;
+		}
+	}
+
+	if (i >= IFNAMSIZ) {
+		return -1;
+	}
+
+	return colon_pos;
+}
+
 /*
  * locate a bridge among the existing ones.
  * MUST BE CALLED WITH NMG_LOCK()
@@ -292,7 +331,7 @@ pkt_copy(void *_src, void *_dst, int l)
 static struct nm_bridge *
 nm_find_bridge(const char *name, int create)
 {
-	int i, l, namelen;
+	int i, namelen;
 	struct nm_bridge *b = NULL, *bridges;
 	u_int num_bridges;
 
@@ -300,21 +339,11 @@ nm_find_bridge(const char *name, int create)
 
 	netmap_bns_getbridges(&bridges, &num_bridges);
 
-	namelen = strlen(NM_BDG_NAME);	/* base length */
-	l = name ? strlen(name) : 0;		/* actual length */
-	if (l < namelen) {
+	namelen = nm_vale_name_validate(name);
+	if (namelen < 0) {
 		D("invalid bridge name %s", name ? name : NULL);
 		return NULL;
 	}
-	for (i = namelen + 1; i < l; i++) {
-		if (name[i] == ':') {
-			namelen = i;
-			break;
-		}
-	}
-	if (namelen >= IFNAMSIZ)
-		namelen = IFNAMSIZ;
-	ND("--- prefix is '%.*s' ---", namelen, name);
 
 	/* lookup the name, remember empty slot if there is one */
 	for (i = 0; i < num_bridges; i++) {
