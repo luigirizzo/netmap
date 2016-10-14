@@ -1,5 +1,11 @@
 ixgbe@fetch:=tar xf @SRCDIR@/ext-drivers/orig/ixgbe-4.4.6.tar.gz
 ixgbe@src:=ixgbe-4.4.6/src
 ixgbe@dst:=ixgbe
-ixgbe@patch:=@SRCDIR@/final-patches/intel--ixgbe--4.4.6
+ixgbe@patch:=@SRCDIR@/ext-drivers/patches/ixgbe-4.4.6
 ixgbe@build=make -C $(ixgbe@dst) EXTRA_CFLAGS="$(EXTRA_CFLAGS)"
+
+e1000e@fetch:=tar xf @SRCDIR@/ext-drivers/orig/e1000e-3.3.5.tar.gz
+e1000e@src:=e1000e-3.3.5/src
+e1000e@dst:=e1000e
+e1000e@patch:=@SRCDIR@/ext-drivers/patches/e1000e-3.3.5
+e1000e@build=make -C $(e1000e@dst) EXTRA_CFLAGS="$(EXTRA_CFLAGS)"
