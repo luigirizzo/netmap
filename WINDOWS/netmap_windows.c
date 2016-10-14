@@ -298,6 +298,18 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 	return head;
 }
 
+int
+MBUF_TRANSMIT(struct netmap_adapter *na, struct ifnet *ifp, struct mbuf *m)
+{
+	if (ndis_hooks.injectPacket == NULL) {
+		return 0;
+	}
+	if (ndis_hooks.injectPacket(ifp->pfilter, NULL, 0, TRUE, m)) {
+                return 0;
+        }
+        return -1;
+}
+
 /*
  * Transmit routine used by generic_netmap_txsync(). Returns 0 on success
  * and <> 0 on error (which may be packet drops or other errors).
