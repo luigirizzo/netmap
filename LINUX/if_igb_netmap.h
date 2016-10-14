@@ -48,7 +48,7 @@ char netmap_igb_driver_name[] = "igb" NETMAP_LINUX_DRIVER_SUFFIX;
 #ifndef E1000_TX_DESC_ADV
 #define	E1000_TX_DESC_ADV(_r, _i)	IGB_TX_DESC(&(_r), _i)
 #define	E1000_RX_DESC_ADV(_r, _i)	IGB_RX_DESC(&(_r), _i)
-#define	READ_TDH(_txr)			({struct e1000_hw *hw = &adapter->hw;rd32(E1000_TDH((_txr)->reg_idx));} )
+#define	READ_TDH(_txr)			({struct e1000_hw *hw = &adapter->hw;E1000_READ_REG(hw, E1000_TDH((_txr)->reg_idx));} )
 #else /* up to 3.2, approximately */
 #define	igb_tx_buffer			igb_buffer
 #define	tx_buffer_info			buffer_info
