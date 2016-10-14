@@ -67,6 +67,7 @@
 #define _NET_NETMAP_USER_H_
 
 #define NETMAP_DEVICE_NAME "/dev/netmap"
+
 #ifdef __CYGWIN__
 /*
  * we can compile userspace apps with either cygwin or msvc,
@@ -84,10 +85,7 @@
 #include <windows.h>
 #include <WinDef.h>
 #include <sys/cygwin.h>
-//#include <netioapi.h>
-//#include <winsock.h>
-//#define	IFNAMSIZ 256
-#endif
+#endif /* _WIN32 */
 
 #include <stdint.h>
 #include <sys/socket.h>		/* apple needs sockaddr */
@@ -212,7 +210,7 @@ struct nm_stat {	/* same as pcap_stat	*/
 	u_int	ps_recv;
 	u_int	ps_drop;
 	u_int	ps_ifdrop;
-#ifdef WIN32
+#ifdef WIN32 /* XXX or _WIN32 ? */
 	u_int	bs_capt;
 #endif /* WIN32 */
 };
@@ -566,9 +564,10 @@ win_nm_poll(struct pollfd *fds, int nfds, int timeout)
 #define poll win_nm_poll
 
 static int 
-win_nm_open(char* pathname, int flags){
+win_nm_open(char* pathname, int flags)
+{
 
-	if (strcmp(pathname, NETMAP_DEVICE_NAME) == 0){
+	if (strcmp(pathname, NETMAP_DEVICE_NAME) == 0) {
 		int fd = open(NETMAP_DEVICE_NAME, O_RDWR);
 		if (fd < 0) {
 			return -1;
@@ -576,9 +575,7 @@ win_nm_open(char* pathname, int flags){
 
 		win_insert_fd_record(fd);
 		return fd;
-	}
-	else {
-
+	} else {
 		return open(pathname, flags);
 	}
 }
@@ -586,10 +583,11 @@ win_nm_open(char* pathname, int flags){
 #define open win_nm_open
 
 static int 
-win_nm_close(int fd){
-	if (fd != -1){
+win_nm_close(int fd)
+{
+	if (fd != -1) {
 		close(fd);
-		if (win_get_netmap_handle(fd) != NULL){
+		if (win_get_netmap_handle(fd) != NULL) {
 			win_remove_fd_record(fd);
 		}
 	}
@@ -730,8 +728,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 	if ((nr_flags & NR_ZCOPY_MON) &&
-	   !(nr_flags & (NR_MONITOR_TX|NR_MONITOR_RX)))
-	{
+	   !(nr_flags & (NR_MONITOR_TX|NR_MONITOR_RX))) {
 		snprintf(errmsg, MAXERRMSG, "'z' used but neither 'r', nor 't' found");
 		goto fail;
 	}
@@ -878,7 +875,7 @@ nm_close(struct nm_desc *d)
 		return EINVAL;
 	if (d->done_mmap && d->mem)
 		munmap(d->mem, d->memsize);
-	if (d->fd != -1){
+	if (d->fd != -1) {
 		close(d->fd);
 	}
 		
