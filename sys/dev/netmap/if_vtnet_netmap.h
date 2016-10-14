@@ -33,6 +33,7 @@
 #include <vm/pmap.h>    /* vtophys ? */
 #include <dev/netmap/netmap_kern.h>
 
+
 #define SOFTC_T	vtnet_softc
 
 /* Free all the unused buffer in all the RX virtqueues.

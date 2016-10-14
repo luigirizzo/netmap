@@ -26,7 +26,7 @@
 /*
  * $FreeBSD: head/sys/dev/netmap/ixgbe_netmap.h 244514 2012-12-20 22:26:03Z luigi $
  *
- * netmap support for: ixgbe
+ * netmap support for: ixgbe (both ix and ixv)
  *
  * This file is meant to be a reference on how to implement
  * netmap support for a network driver.
@@ -145,7 +145,7 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		nm_clear_native_flags(na);
 	}
-	adapter->init_locked(adapter);  /* also enables intr */
+	adapter->init_locked(adapter);	/* also enables intr */
 	if (!IXGBE_IS_VF(adapter))
 		set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
 	IXGBE_CORE_UNLOCK(adapter);
@@ -394,7 +394,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * rxr->next_to_check is set to 0 on a ring reinit
 	 */
 	if (netmap_no_pendintr || force_update) {
-		int crclen = (ix_crcstrip || IXGBE_IS_VF(adapter)) ? 0 : 4;
+		int crclen = (ix_crcstrip || IXGBE_IS_VF(adapter) ) ? 0 : 4;
 		uint16_t slot_flags = kring->nkr_slot_flags;
 
 		nic_i = rxr->next_to_check; // or also k2n(kring->nr_hwtail)

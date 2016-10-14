@@ -1625,6 +1625,7 @@ nm_rxsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 	return head;
 }
 
+
 /*
  * Error routine called when txsync/rxsync detects an error.
  * Can't do much more than resetting head =cur = hwcur, tail = hwtail
@@ -2082,6 +2083,7 @@ err:
 	return error;
 }
 
+
 /*
  * update kring and ring at the end of rxsync/txsync.
  */
@@ -2386,6 +2388,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 
 	return (error);
 }
+
 
 /*
  * select(2) and poll(2) handlers for the "netmap" device.
