@@ -147,8 +147,7 @@ struct ptnet_csb {
 
 /* Support for virtio-like communication between host (H) and guest (G) NICs.
 
- This is for legacy e1000-paravirt and ptnetmap (e1000, virtio), it does not
- support multi-ring.
+ This is for legacy e1000-paravirt, it does not support multi-ring.
 
  The guest allocates the shared Communication Status Block (csb) and
  write its physical address at CSBAL and CSBAH (data is little endian).
@@ -267,33 +266,6 @@ struct paravirt_csb {
     struct ptnet_ring tx_ring;       /* TX ring fields shared between guest and host */
     struct ptnet_ring rx_ring;       /* RX ring fields shared between guest and host */
 };
-
-/*
- * ptnetmap registers added to the virtio-net configuration space.
- * ptnetmap registers for e1000 are defined in if_lem.h for FreeBSD
- * and e1000_hw.h for Linux
- */
-/* 32 bit r/w */
-#define PTNETMAP_VIRTIO_IO_PTFEAT       0 /* ptnetmap features */
-/* 32 bit w/o */
-#define PTNETMAP_VIRTIO_IO_PTCTL        4 /* ptnetmap control */
-/* 32 bit r/o */
-#define PTNETMAP_VIRTIO_IO_PTSTS        8 /* ptnetmap status */
-/* 32 bit w/o */
-#define PTNETMAP_VIRTIO_IO_CSBBAH       12 /* CSB Base Address High */
-/* 32 bit w/o */
-#define PTNETMAP_VIRTIO_IO_CSBBAL       16 /* CSB Base Address Low */
-
-#define PTNETMAP_VIRTIO_IO_SIZE         20
-#define PTNETMAP_VIRTIO_IO_SIZE_32      (PTNETMAP_VIRTIO_IO_SIZE/4)
-
-/* virtio feature */
-#if defined (linux)
-#define VIRTIO_NET_F_PTNETMAP		25
-#else /* not linux */
-#define VIRTIO_NET_F_PTNETMAP		0x2000000
-#endif
-
 
 #if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
 
