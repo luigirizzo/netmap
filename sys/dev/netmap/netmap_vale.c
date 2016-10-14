@@ -300,7 +300,7 @@ nm_find_bridge(const char *name, int create)
 
 	netmap_bns_getbridges(&bridges, &num_bridges);
 
-	namelen = strlen(NM_NAME);	/* base length */
+	namelen = strlen(NM_BDG_NAME);	/* base length */
 	l = name ? strlen(name) : 0;		/* actual length */
 	if (l < namelen) {
 		D("invalid bridge name %s", name ? name : NULL);
@@ -561,7 +561,7 @@ nm_vi_create(struct nmreq *nmr)
 	int error;
 
 	/* don't include VALE prefix */
-	if (!strncmp(nmr->nr_name, NM_NAME, strlen(NM_NAME)))
+	if (!strncmp(nmr->nr_name, NM_BDG_NAME, strlen(NM_BDG_NAME)))
 		return EINVAL;
 	ifp = ifunit_ref(nmr->nr_name);
 	if (ifp) { /* already exist, cannot create new one */
@@ -614,7 +614,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
 	/* first try to see if this is a bridge port. */
 	NMG_LOCK_ASSERT();
-	if (strncmp(nr_name, NM_NAME, sizeof(NM_NAME) - 1)) {
+	if (strncmp(nr_name, NM_BDG_NAME, sizeof(NM_BDG_NAME) - 1)) {
 		return 0;  /* no error, but no VALE prefix */
 	}
 
@@ -1119,7 +1119,7 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 	case NETMAP_BDG_LIST:
 		/* this is used to enumerate bridges and ports */
 		if (namelen) { /* look up indexes of bridge and port */
-			if (strncmp(name, NM_NAME, strlen(NM_NAME))) {
+			if (strncmp(name, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
 				error = EINVAL;
 				break;
 			}
