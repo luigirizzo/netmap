@@ -63,7 +63,7 @@ index 577cc4a..d9ee330 100644
  
  err_rings:
 diff --git a/i40e-1.5.23/src/i40e_txrx.c b/i40e-1.5.23/src/i40e_txrx.c
-index e0f1f6c..8c8bd8e 100644
+index e0f1f6c..3b131f2 100644
 --- a/i40e-1.5.23/src/i40e_txrx.c
 +++ b/i40e-1.5.23/src/i40e_txrx.c
 @@ -25,6 +25,10 @@
@@ -95,7 +95,7 @@ index e0f1f6c..8c8bd8e 100644
  
 +#ifdef DEV_NETMAP
 +	int dummy, nm_irq;
-+	nm_irq = netmap_rx_irq(vsi->netdev, ring->queue_index, &dummy);
++	nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy);
 +	if (nm_irq != NM_IRQ_PASS) {
 +		return (nm_irq == NM_IRQ_COMPLETED) ? 1 : budget;
 +	}
