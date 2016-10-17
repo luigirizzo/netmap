@@ -307,7 +307,6 @@ ptnetmap_guest_read_kring_csb(struct ptnet_ring *ptr, struct netmap_kring *kring
         ND(1, "ERROR hwtail overtakes hwcur - old_hwtail: %u hwtail: %u old_hwcur: %u hwcur: %u",
                 old_hwtail, kring->nr_hwtail, old_hwcur, kring->nr_hwcur);
         kring->nr_hwtail = nm_prev(kring->nr_hwcur, num_slots - 1);
-        //kring->nr_hwtail = kring->nr_hwcur;
     }
 }
 
