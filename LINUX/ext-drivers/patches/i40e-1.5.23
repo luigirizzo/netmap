@@ -1,3 +1,38 @@
+diff --git a/i40e-1.5.23/src/Makefile b/i40e-1.5.23/src/Makefile
+index 8c1483c..28e7be0 100644
+--- a/i40e-1.5.23/src/Makefile
++++ b/i40e-1.5.23/src/Makefile
+@@ -27,9 +27,9 @@ ifneq ($(KERNELRELEASE),)
+ # Makefile for the Intel(R) 40-10 Gigabit Ethernet Connection Network Driver
+ #
+ 
+-obj-$(CONFIG_I40E) += i40e.o
++obj-$(CONFIG_I40E) += i40e$(NETMAP_DRIVER_SUFFIX).o
+ 
+-i40e-y := i40e_main.o \
++i40e$(NETMAP_DRIVER_SUFFIX)-y := i40e_main.o \
+ 	i40e_ethtool.o \
+ 	i40e_adminq.o \
+ 	i40e_common.o \
+@@ -42,14 +42,14 @@ i40e-y := i40e_main.o \
+ 	i40e_ptp.o \
+ 	i40e_virtchnl_pf.o
+ 
+-i40e-$(CONFIG_DCB) += i40e_dcb.o i40e_dcb_nl.o
+-i40e-$(CONFIG_FCOE:m=y) += i40e_fcoe.o
+-i40e-y += kcompat.o
++i40e$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DCB) += i40e_dcb.o i40e_dcb_nl.o
++i40e$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_FCOE:m=y) += i40e_fcoe.o
++i40e$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
+ 
+ else	# ifneq($(KERNELRELEASE),)
+ # normal makefile
+ 
+-DRIVER := i40e
++DRIVER := i40e$(NETMAP_DRIVER_SUFFIX)
+ 
+ ifeq (,$(wildcard common.mk))
+   $(error Cannot find common.mk build rules)
 diff --git a/i40e-1.5.23/src/i40e_main.c b/i40e-1.5.23/src/i40e_main.c
 index 577cc4a..d9ee330 100644
 --- a/i40e-1.5.23/src/i40e_main.c
