@@ -56,13 +56,11 @@
 
 /* Registers for the ptnetmap memdev */
 /* 32 bit r/o */
-#define PTNETMAP_IO_PCI_FEATURES        0	/* XXX should be removed */
-/* 32 bit r/o */
-#define PTNETMAP_IO_PCI_MEMSIZE         4	/* size of the netmap memory shared
+#define PTNETMAP_IO_PCI_MEMSIZE         0	/* size of the netmap memory shared
 						 * between guest and host */
 /* 16 bit r/o */
-#define PTNETMAP_IO_PCI_HOSTID          8	/* memory allocator ID in netmap host */
-#define PTNETMAP_IO_SIZE                10
+#define PTNETMAP_IO_PCI_HOSTID          4	/* memory allocator ID in netmap host */
+#define PTNETMAP_IO_SIZE                6
 
 /*
  * ptnetmap configuration
@@ -113,18 +111,17 @@ ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 #define PTNET_IO_PTFEAT		0
 #define PTNET_IO_PTCTL		4
 #define PTNET_IO_PTSTS		8
-/* hole */
-#define PTNET_IO_MAC_LO		16
-#define PTNET_IO_MAC_HI		20
-#define PTNET_IO_CSBBAH         24
-#define PTNET_IO_CSBBAL         28
-#define PTNET_IO_NIFP_OFS	32
-#define PTNET_IO_NUM_TX_RINGS	36
-#define PTNET_IO_NUM_RX_RINGS	40
-#define PTNET_IO_NUM_TX_SLOTS	44
-#define PTNET_IO_NUM_RX_SLOTS	48
-#define PTNET_IO_VNET_HDR_LEN	52
-#define PTNET_IO_END		56
+#define PTNET_IO_MAC_LO		12
+#define PTNET_IO_MAC_HI		16
+#define PTNET_IO_CSBBAH         20
+#define PTNET_IO_CSBBAL         24
+#define PTNET_IO_NIFP_OFS	28
+#define PTNET_IO_NUM_TX_RINGS	32
+#define PTNET_IO_NUM_RX_RINGS	36
+#define PTNET_IO_NUM_TX_SLOTS	40
+#define PTNET_IO_NUM_RX_SLOTS	44
+#define PTNET_IO_VNET_HDR_LEN	48
+#define PTNET_IO_END		52
 #define PTNET_IO_KICK_BASE	128
 #define PTNET_IO_MASK           0xff
 
@@ -227,7 +224,6 @@ ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
         ND(1,"ERROR cur overtakes head - old_cur: %u cur: %u old_head: %u head: %u",
                 old_cur, g_ring->cur, old_head, g_ring->head);
         g_ring->cur = nm_prev(g_ring->head, num_slots - 1);
-        //*g_cur = *g_head;
     }
 }
 
@@ -310,7 +306,6 @@ ptnetmap_guest_read_kring_csb(struct ptnet_ring *ptr, struct netmap_kring *kring
         ND(1, "ERROR hwtail overtakes hwcur - old_hwtail: %u hwtail: %u old_hwcur: %u hwcur: %u",
                 old_hwtail, kring->nr_hwtail, old_hwcur, kring->nr_hwcur);
         kring->nr_hwtail = nm_prev(kring->nr_hwcur, num_slots - 1);
-        //kring->nr_hwtail = kring->nr_hwcur;
     }
 }
 

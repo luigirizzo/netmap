@@ -1043,10 +1043,12 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 static void
 ptnet_update_vnet_hdr(struct ptnet_info *pi)
 {
-	pi->vnet_hdr_len = ptnet_vnet_hdr ?
+	unsigned int wanted_hdr_len = ptnet_vnet_hdr ?
 			       sizeof(struct virtio_net_hdr_mrg_rxbuf) : 0;
+
+	iowrite32(wanted_hdr_len, pi->ioaddr + PTNET_IO_VNET_HDR_LEN);
+	pi->vnet_hdr_len = ioread32(pi->ioaddr + PTNET_IO_VNET_HDR_LEN);
 	pi->ptna->hwup.up.virt_hdr_len = pi->vnet_hdr_len;
-	iowrite32(pi->vnet_hdr_len, pi->ioaddr + PTNET_IO_VNET_HDR_LEN);
 }
 
 static int
