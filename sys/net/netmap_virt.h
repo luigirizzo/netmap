@@ -56,13 +56,11 @@
 
 /* Registers for the ptnetmap memdev */
 /* 32 bit r/o */
-#define PTNETMAP_IO_PCI_FEATURES        0	/* XXX should be removed */
-/* 32 bit r/o */
-#define PTNETMAP_IO_PCI_MEMSIZE         4	/* size of the netmap memory shared
+#define PTNETMAP_IO_PCI_MEMSIZE         0	/* size of the netmap memory shared
 						 * between guest and host */
 /* 16 bit r/o */
-#define PTNETMAP_IO_PCI_HOSTID          8	/* memory allocator ID in netmap host */
-#define PTNETMAP_IO_SIZE                10
+#define PTNETMAP_IO_PCI_HOSTID          4	/* memory allocator ID in netmap host */
+#define PTNETMAP_IO_SIZE                6
 
 /*
  * ptnetmap configuration
