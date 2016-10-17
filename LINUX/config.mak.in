@@ -1,4 +1,5 @@
 define intel_driver
+$(1)@fetch	:= wget -nc https://sourceforge.net/projects/e1000/files/$(1)%20stable/$(2)/$(1)-$(2).tar.gz -P @SRCDIR@/ext-drivers/orig
 $(1)@src 	:= tar xf @SRCDIR@/ext-drivers/orig/$(1)-$(2).tar.gz
 $(1)@dst 	:= $(1)-$(2)/src
 $(1)@patch 	:= @SRCDIR@/ext-drivers/patches/$(1)-$(2)

@@ -372,6 +372,7 @@ EOF
 	for d in $(drv print); do
 		cat >> $TMPDIR/Makefile <<EOF
 get-$d:
+	\$($d@fetch)
 	\$($d@src)
 	if [ \$($d@dst) != $d ]; then cp -Rp \$($d@dst) $d; fi
 	touch get-$d
