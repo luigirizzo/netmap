@@ -111,7 +111,7 @@ ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 #define PTNET_IO_PTFEAT		0
 #define PTNET_IO_PTCTL		4
 #define PTNET_IO_PTSTS		8
-/* hole */
+/* reserved for future extensions */
 #define PTNET_IO_MAC_LO		16
 #define PTNET_IO_MAC_HI		20
 #define PTNET_IO_CSBBAH         24
