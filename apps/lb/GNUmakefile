@@ -6,7 +6,7 @@ LIBNETMAP =
 CLEANFILES = $(PROGS) *.o
 
 SRCDIR ?= ../..
-#VPATH = $(SRCDIR)/examples
+VPATH = $(SRCDIR)/apps/lb
 
 NO_MAN=
 CFLAGS = -O2 -pipe

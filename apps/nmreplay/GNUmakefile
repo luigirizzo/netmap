@@ -6,6 +6,7 @@ LIBNETMAP =
 CLEANFILES = $(PROGS) *.o
 
 SRCDIR ?= ../..
+VPATH = $(SRCDIR)/apps/nmreplay
 
 NO_MAN=
 CFLAGS = -O2 # -pipe -g

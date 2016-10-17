@@ -105,6 +105,15 @@ edrv()
 	setop external_driver "$@"
 }
 
+# available apps
+application_avail="pkt-gen bridge lb tlem nmreplay"
+application=0
+app()
+{
+	setop application "$@"
+}
+# enable all by default
+app enable-all
 
 prefix=/usr/local
 cc=cc
@@ -140,6 +149,7 @@ report() {
 	echo "linux version               $v $dv"
 	echo "module file                 $MODNAME.ko"
 	echo "subsystems                  $(subsys print)"
+	echo "apps                        $(app print)"
 
 
 	if drv is-empty; then
@@ -213,6 +223,9 @@ Available options:
   --no-drivers                 do not compile any driver
   --no-drivers=                do not compile the given drivers (comma sep.)
   --drivers=                   only compile the given drivers (comma sep.)
+  --no-apps	               do not compile any app
+  --no-apps=                   do not compile the given apps (comma sep.)
+  --apps=                      only compile the given apps (comma sep.)
   --mod-name=		       netmap module name [$MODNAME]
   --enable-vale      	       enable the VALE switch
   --disable-vale      	       disable the VALE switch
@@ -236,6 +249,7 @@ Available options:
   --destir=                    destination dir for the examples [$DESTDIR]
 
   --show-drivers	       print the list of available drivers and exit
+  --show-apps	       	       print the list of available apps and exit
 
 EOF
 }
@@ -443,6 +457,20 @@ for opt do
 			drv enable "$d"
 		done
 	;;
+	--no-apps) app disable-all
+	;;
+	--no-apps=*)
+		app enable-all
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			app disable "$d"
+		done
+	;;
+	--apps=*)
+		app disable-all
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			app enable "$d"
+		done
+	;;
 	--cc=*) cc="$optarg"
 	;;
 	--ld=*) ld="$optarg"
@@ -475,6 +503,10 @@ for opt do
 	;;
 	--show-drivers)
 		drv print
+		exit
+	;;
+	--show-apps)
+		app print
 		exit
 	;;
 	*)
@@ -745,6 +777,7 @@ for f in $SRCDIR/*.in; do
 		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
 		-e "s|@E_DRIVERS@|$(edrv print)|g" \
 		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
+		-e "s|@APPS_LIST@|$(app print)|g" \
 		-e "s|@APPS_CC@|$cc|g" \
 		-e "s|@APPS_LD@|$ld|g" \
 		-e "s|@PREFIX@|$prefix|g" \
@@ -1464,8 +1497,11 @@ fi # ! -f $cache/netmap_config_h
 report
 
 # create the build directory for the examples
-mkdir build-apps
-ln -s $SRCDIR/../examples/GNUmakefile build-apps/Makefile
+mkdir -p build-apps
+for a in $(app print); do
+	mkdir -p build-apps/$a
+	ln -s $SRCDIR/../apps/$a/GNUmakefile build-apps/$a/GNUmakefile 2> /dev/null || true
+done
 
 # config.status can be used to rerun configure with the
 # same arguments
