@@ -225,7 +225,6 @@ ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
         ND(1,"ERROR cur overtakes head - old_cur: %u cur: %u old_head: %u head: %u",
                 old_cur, g_ring->cur, old_head, g_ring->head);
         g_ring->cur = nm_prev(g_ring->head, num_slots - 1);
-        //*g_cur = *g_head;
     }
 }
 
