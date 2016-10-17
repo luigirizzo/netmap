@@ -1,3 +1,26 @@
+diff --git a/igb-5.3.5.3/src/Makefile b/igb-5.3.5.3/src/Makefile
+index 8e962f7..cf71864 100644
+--- a/igb-5.3.5.3/src/Makefile
++++ b/igb-5.3.5.3/src/Makefile
+@@ -38,7 +38,7 @@ ifeq (,$(BUILD_KERNEL))
+ BUILD_KERNEL=$(shell uname -r)
+ endif
+ 
+-DRIVER_NAME=igb
++DRIVER_NAME=igb$(NETMAP_DRIVER_SUFFIX)
+ 
+ 
+ ###########################################################################
+@@ -355,6 +355,9 @@ DEPVER := $(shell /sbin/depmod -V 2>/dev/null | \
+ $(MANFILE).gz: ../$(MANFILE)
+ 	gzip -c $< > $@
+ 
++../$(MANFILE):
++	touch $@
++
+ install: default $(MANFILE).gz
+ 	install -D -m 644 $(TARGET) $(INSTALL_MOD_PATH)$(INSTDIR)/$(TARGET)
+ ifeq (,$(INSTALL_MOD_PATH))
 diff --git a/igb-5.3.5.3/src/igb_main.c b/igb-5.3.5.3/src/igb_main.c
 index 6673b55..c43b564 100644
 --- a/igb-5.3.5.3/src/igb_main.c
