@@ -44,23 +44,28 @@ DRIVERS_EXT = $(shell [ -n "$(E_DRIVERS)" ] && ls -dAp $(E_DRIVERS) 2> /dev/null
 
 COMMON_OPTS=-C $(KSRC) M=$(BUILDDIR) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
 
-define get_driver
+define common_driver
 get-$(1):
 	$($(1)@src)
 	$(foreach p,$($(1)@patch),patch --posix --quiet --force -p1 < $(p);)
 	$(if $($(1)@build),,$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,))
 	touch get-$(1)
-clean-$(1):
-	rm -rf $(if $($(1)@cleandir),$($(1)@cleandir),$($(1)@dst)) get-$(1)
+distclean-$(1):
+	$($(1)@distclean)
+	rm -f get-$(1)
 endef
 
-define build_driver
+define external_driver
 build-$(1): get-$(1) netmap.ko
 	D=$(if $($(1)@dst),$($(1)@dst),$(1)); if [ -d "$$$$D" ] && [ -e Module.symvers ]; then cp Module.symvers "$$$$D"; fi
 	$($(1)@build)
+clean-$(1):
+	$($(1)@clean)
+install-$(1):
+	$($(1)@install)
 endef
 
-.PHONY: $(foreach d,$(E_DRIVERS),build-$(d)) netmap.ko
+.PHONY: $(foreach d,$(E_DRIVERS),build-$(d) clean-$(1) install-$(1)) netmap.ko
 
 
 all: $(S_DRIVERS:%=get-%) netmap.ko $(E_DRIVERS:%=build-%)
@@ -71,10 +76,10 @@ netmap.ko:
 -include config.mak
 include drivers.mak
 
-$(foreach d,$(S_DRIVERS),$(eval $(call get_driver,$(d))))
-$(foreach d,$(E_DRIVERS),$(eval $(call build_driver,$(d))))
+$(foreach d,$(S_DRIVERS),$(eval $(call common_driver,$(d))))
+$(foreach d,$(E_DRIVERS),$(eval $(call external_driver,$(d))))
 
-install:
+install: $(E_DRIVERS:%=install-%)
 	$(MAKE) -C $(KSRC) M=$(BUILDDIR) CONFIG_NETMAP=m $(MOD_LIST) \
 		O_DRIVERS="$(DRIVERS:%.c=%.o)" \
 		$(KOPTS) \
@@ -82,14 +87,9 @@ install:
 		$(if $(MODPATH),INSTALL_MOD_PATH=$(MODPATH)) \
 		modules_install
 
-clean: $(S_DRIVERS:%=clean-%)
+clean: $(E_DRIVERS:%=clean-%)
 	-@ $(MAKE) -C $(KSRC) M=$(BUILDDIR) clean 2> /dev/null
-	-@ $(MAKE) -C build-apps clean
-	-@ rm -f *.orig *.rej *.ko *.o .*.d 		\
-		*.mod.c modules.order			\
-		Module.symvers .*.cmd
-	-@ rm -rf .tmp_versions
-
+	-@ if [ -d build-apps ]; then $(MAKE) -C build-apps clean; fi
 
 APPS_CC=@APPS_CC@
 APPS_LD=@APPS_LD@
@@ -106,10 +106,11 @@ install-apps:
 +%:
 	@echo $($*)
 
-distclean: clean
+distclean: clean $(S_DRIVERS:%=distclean-%)
 	rm -f config.status config.log netmap_linux_config.h \
 		patches drivers.mak Kbuild netmap.mak config.mak
 	rm -rf netmap-tmpdir
+	rm -f *.orig *.rej
 	if [ -L GNUmakefile ]; then rm GNUmakefile; fi
 	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
 	if [ -L read-vars.mak ]; then rm read-vars.mak; fi
