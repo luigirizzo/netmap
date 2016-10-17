@@ -4,7 +4,7 @@ $(1)@dst 	:= $(1)-$(2)/src
 $(1)@patch 	:= @SRCDIR@/ext-drivers/patches/$(1)-$(2)
 $(1)@build 	:= make -C $$($(1)@dst) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@
 $(1)@install 	:= make -C $$($(1)@dst) install EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@
-$(1)@clean 	:= make -C $$($(1)@dst) clean EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@
+$(1)@clean 	:= if [ -d $$($(1)@dst) ]; then make -C $$($(1)@dst) clean EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@; fi
 $(1)@distclean	:= rm -rf $(1)-$(2)
 endef
 
