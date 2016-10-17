@@ -111,18 +111,17 @@ ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 #define PTNET_IO_PTFEAT		0
 #define PTNET_IO_PTCTL		4
 #define PTNET_IO_PTSTS		8
-/* reserved for future extensions */
-#define PTNET_IO_MAC_LO		16
-#define PTNET_IO_MAC_HI		20
-#define PTNET_IO_CSBBAH         24
-#define PTNET_IO_CSBBAL         28
-#define PTNET_IO_NIFP_OFS	32
-#define PTNET_IO_NUM_TX_RINGS	36
-#define PTNET_IO_NUM_RX_RINGS	40
-#define PTNET_IO_NUM_TX_SLOTS	44
-#define PTNET_IO_NUM_RX_SLOTS	48
-#define PTNET_IO_VNET_HDR_LEN	52
-#define PTNET_IO_END		56
+#define PTNET_IO_MAC_LO		12
+#define PTNET_IO_MAC_HI		16
+#define PTNET_IO_CSBBAH         20
+#define PTNET_IO_CSBBAL         24
+#define PTNET_IO_NIFP_OFS	28
+#define PTNET_IO_NUM_TX_RINGS	32
+#define PTNET_IO_NUM_RX_RINGS	36
+#define PTNET_IO_NUM_TX_SLOTS	40
+#define PTNET_IO_NUM_RX_SLOTS	44
+#define PTNET_IO_VNET_HDR_LEN	48
+#define PTNET_IO_END		52
 #define PTNET_IO_KICK_BASE	128
 #define PTNET_IO_MASK           0xff
 
