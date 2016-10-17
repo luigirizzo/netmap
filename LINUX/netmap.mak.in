@@ -101,7 +101,7 @@ APPS_BUILD=$(APPS_LIST:%=build-app-%)
 APPS_INSTALL=$(APPS_LIST:%=install-app-%)
 
 apps: $(APPS_BUILD)
-instal-apps: $(APPS_INSTALL)
+install-apps: $(APPS_INSTALL)
 clean-apps: $(APPS_LIST:%=clean-app-%)
 
 .PHONY: apps $(APPS_BUILD) install-apps $(APPS_INSTALL)
