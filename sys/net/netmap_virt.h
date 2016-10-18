@@ -167,12 +167,32 @@ struct ptnetmap_memdev;
 int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
 void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
 
-/* Guest driver: Write kring pointers (cur, head) to the CSB. */
+/* Guest driver: Write kring pointers (cur, head) to the CSB.
+ * This routine is coupled with ptnetmap_host_read_kring_csb(). */
 static inline void
 ptnetmap_guest_write_kring_csb(struct ptnet_ring *ptr, uint32_t cur,
 			       uint32_t head)
 {
-    /* We must write cur before head for sync reason (see above) */
+    /*
+     * We need to write cur and head to the CSB but we cannot do it atomically.
+     * There is no way we can prevent the host from reading the updated value
+     * of one of the two and the old value of the other. However, if we make
+     * sure that the host never reads a value of head more recent than the
+     * value of cur we are safe. We can allow the host to read a value of cur
+     * more recent than the value of head, since in the netmap ring cur can be
+     * ahead of head and cur cannot wrap around head because it must be behind
+     * tail. Inverting the order of writes below could instead result into the
+     * host to think head went ahead of cur, which would cause the sync
+     * prologue to fail.
+     *
+     * The following memory barrier scheme is used to make this happen:
+     *
+     *          Guest              Host
+     *
+     *          STORE(cur)         LOAD(head)
+     *          mb() <-----------> mb()
+     *          STORE(head)        LOAD(cur)
+     */
     ptr->cur = cur;
     mb();
     ptr->head = head;
@@ -180,18 +200,17 @@ ptnetmap_guest_write_kring_csb(struct ptnet_ring *ptr, uint32_t cur,
     //mb(); /* Force memory complete before send notification */
 }
 
-/* Guest driver: Read kring pointers (hwcur, hwtail) from the CSB. */
+/* Guest driver: Read kring pointers (hwcur, hwtail) from the CSB.
+ * This routine is coupled with ptnetmap_host_write_kring_csb(). */
 static inline void
 ptnetmap_guest_read_kring_csb(struct ptnet_ring *ptr, struct netmap_kring *kring)
 {
     //mb(); /* Force memory complete before read CSB */
 
     /*
-     *          host             guest
-     *
-     *          STORE(hwcur)     LOAD(hwtail)
-     *            mb()  ---------  mb()
-     *          STORE(hwtail)    LOAD(hwcur)
+     * We place a memory barrier to make sure that the update of hwtail never
+     * overtakes the update of hwcur.
+     * (see explanation in ptnetmap_host_write_kring_csb).
      */
     kring->nr_hwtail = ptr->hwtail;
     mb();
@@ -214,11 +233,27 @@ ptnetmap_guest_read_kring_csb(struct ptnet_ring *ptr, struct netmap_kring *kring
 #define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
 #endif /* ! linux */
 
-/* Host netmap: Write kring pointers (hwcur, hwtail) to the CSB. */
+/* Host netmap: Write kring pointers (hwcur, hwtail) to the CSB.
+ * This routine is coupled with ptnetmap_guest_read_kring_csb(). */
 static inline void
 ptnetmap_host_write_kring_csb(struct ptnet_ring __user *ptr, uint32_t hwcur,
         uint32_t hwtail)
 {
+    /*
+     * The same scheme used in ptnetmap_guest_write_kring_csb() applies here.
+     * We allow the guest to read a value of hwcur more recent than the value
+     * of hwtail, since this would anyway result in a consistent view of the
+     * ring state (and hwcur can never wraparound hwtail, since hwcur must be
+     * behind head).
+     *
+     * The following memory barrier scheme is used to make this happen:
+     *
+     *          Guest                Host
+     *
+     *          STORE(hwcur)         LOAD(hwtail)
+     *          mb() <-------------> mb()
+     *          STORE(hwtail)        LOAD(hwcur)
+     */
     CSB_WRITE(ptr, hwcur, hwcur);
     mb();
     CSB_WRITE(ptr, hwtail, hwtail);
@@ -226,7 +261,8 @@ ptnetmap_host_write_kring_csb(struct ptnet_ring __user *ptr, uint32_t hwcur,
     //mb(); /* Force memory complete before send notification */
 }
 
-/* Host netmap: Read kring pointers (head, cur, sync_flags) from the CSB. */
+/* Host netmap: Read kring pointers (head, cur, sync_flags) from the CSB.
+ * This routine is coupled with ptnetmap_guest_write_kring_csb(). */
 static inline void
 ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
 			     struct netmap_ring *local_ring,
@@ -235,11 +271,9 @@ ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
     //mb(); /* Force memory complete before read CSB */
 
     /*
-     *          guest           host
-     *
-     *          STORE(cur)      LOAD(head)
-     *            mb() ----------- mb()
-     *          STORE(head)     LOAD(cur)
+     * We place a memory barrier to make sure that the update of head never
+     * overtakes the update of cur.
+     * (see explanation in ptnetmap_guest_write_kring_csb).
      */
     CSB_READ(ptr, head, local_ring->head);
     mb();
