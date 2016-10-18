@@ -35,8 +35,6 @@
 
 #include <net/netmap.h>
 #include <sys/selinfo.h>
-#include <vm/vm.h>
-#include <vm/pmap.h>
 #include <dev/netmap/netmap_kern.h>
 
 /*
