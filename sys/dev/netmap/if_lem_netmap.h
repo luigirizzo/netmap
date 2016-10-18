@@ -36,10 +36,8 @@
 #include <net/netmap.h>
 #include <sys/selinfo.h>
 #include <vm/vm.h>
-#include <vm/pmap.h>    /* vtophys ? */
+#include <vm/pmap.h>
 #include <dev/netmap/netmap_kern.h>
-
-extern int netmap_adaptive_io;
 
 /*
  * Register/unregister. We are already under netmap lock.
