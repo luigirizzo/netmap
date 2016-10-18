@@ -67,8 +67,8 @@
 #define PTN_AVOID_NM_PROLOGUE
 //#define BUSY_WAIT
 
-#define DEBUG  /* Enables communication debugging. */
-#ifdef DEBUG
+#define NETMAP_PT_DEBUG  /* Enables communication debugging. */
+#ifdef NETMAP_PT_DEBUG
 #define DBG(x) x
 #else
 #define DBG(x)
@@ -576,7 +576,7 @@ ptnetmap_rx_handler(void *data)
     }
 }
 
-#ifdef DEBUG
+#ifdef NETMAP_PT_DEBUG
 static void
 ptnetmap_print_configuration(struct ptnetmap_cfg *cfg)
 {
@@ -592,7 +592,7 @@ ptnetmap_print_configuration(struct ptnetmap_cfg *cfg)
 	}
 
 }
-#endif
+#endif /* NETMAP_PT_DEBUG */
 
 /* Copy actual state of the host ring into the CSB for the guest init */
 static int
