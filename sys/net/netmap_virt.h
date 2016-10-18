@@ -134,11 +134,11 @@ struct ptnet_ring {
 	uint32_t head;		  /* GW+ HR+ the head of the guest netmap_ring */
 	uint32_t cur;		  /* GW+ HR+ the cur of the guest netmap_ring */
 	uint32_t guest_need_kick; /* GW+ HR+ host-->guest notification enable */
-	char pad[4];
+	uint32_t sync_flags;	  /* GW+ HR+ the flags of the guest [tx|rx]sync() */
 	uint32_t hwcur;		  /* GR+ HW+ the hwcur of the host netmap_kring */
 	uint32_t hwtail;	  /* GR+ HW+ the hwtail of the host netmap_kring */
 	uint32_t host_need_kick;  /* GR+ HW+ guest-->host notification enable */
-	uint32_t sync_flags;	  /* GW+ HR+ the flags of the guest [tx|rx]sync() */
+	char pad[4];
 };
 
 /* CSB for the ptnet device. */
