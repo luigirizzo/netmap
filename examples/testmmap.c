@@ -76,7 +76,7 @@ void resetvar(int v, char *b)
 		resetvar(curr_var, (char*)malloc(1024));\
 		snprintf(variables[curr_var], 1024, format, ##args);\
 		outecho(format, ##args);\
-	} while (0)		
+	} while (0)
 
 #define output_err(ret, format, args...)\
 	do {\
@@ -88,7 +88,7 @@ void resetvar(int v, char *b)
 			output(format, ##args);\
 		}\
 	} while (0)
-	
+
 struct chan {
 	FILE *out;
 	pid_t pid;
@@ -393,7 +393,7 @@ void do_poll()
 	}
 	ret = poll(fds, nfds, timeout);
 	for (i = 0; i < nfds; i++) {
-		output("poll(%d)=%s%s%s%s%s", fds[i].fd, 
+		output("poll(%d)=%s%s%s%s%s", fds[i].fd,
 			(fds[i].revents & POLLIN) ? "IN  " : "-   ",
 			(fds[i].revents & POLLOUT)? "OUT " : "-   ",
 			(fds[i].revents & POLLERR)? "ERR " : "-   ",
@@ -461,8 +461,8 @@ do_expr()
 	}
 	output_err(err, "expr=%lu", stack[top]);
 }
-				
-			
+
+
 
 void
 do_echo()
@@ -632,19 +632,19 @@ doit:
 		}
 		if (slot->flags & NS_REPORT) {
 			printf(" REPORT");
-		}     
+		}
 		if (slot->flags & NS_FORWARD) {
 			printf(" FORWARD");
-		}    
+		}
 		if (slot->flags & NS_NO_LEARN) {
 			printf(" NO_LEARN");
-		}   
+		}
 		if (slot->flags & NS_INDIRECT) {
 			printf(" INDIRECT");
-		}   
+		}
 		if (slot->flags & NS_MOREFRAG) {
 			printf(" MOREFRAG");
-		}   
+		}
 		printf(" ]");
 	}
 	printf("\n");
@@ -687,7 +687,7 @@ do_buf()
 	if (!arg)
 		goto doit;
 	buf_idx = strtoll(arg, NULL, 0);
-	
+
 	arg = nextarg();
 	if (!arg)
 		goto doit;
@@ -976,7 +976,7 @@ do_nmr_ringid()
 	int n;
 	for (n = 0, arg = nextarg(); arg; arg = nextarg(), n++) {
 		if (strcmp(arg, "hw-ring") == 0) {
-			ringid |= NETMAP_HW_RING; 	
+			ringid |= NETMAP_HW_RING;
 		} else if (strcmp(arg, "sw-ring") == 0) {
 			ringid |= NETMAP_SW_RING;
 		} else if (strcmp(arg, "no-tx-poll") == 0) {
@@ -1064,7 +1064,7 @@ do_nmr_flags()
 			flags |= NR_PTNETMAP_HOST;
 		} else if (strcmp(arg, "default") == 0) {
 			flags = 0;
-		} 
+		}
 	}
 	if (n)
 		curr_nmr.nr_flags = flags;
@@ -1190,7 +1190,7 @@ thread_cmd_loop(void *arg)
 	FILE *in = (FILE*)arg;
 
 	while (fgets(buf, 1024, in)) {
-		char *cmd; 
+		char *cmd;
 		int i;
 
 		cmd = firstarg(buf);
@@ -1238,7 +1238,7 @@ cmd_loop()
 		} else {
 			curr_var = 0;
 		}
-		
+
 		if (strcmp(cmd, "fork") == 0) {
 			int slot = chan_search_free(channels, MAX_CHAN);
 			struct chan *c = NULL;
@@ -1327,7 +1327,7 @@ cmd_loop()
 			int p1[2] = { -1, -1};
 			int ret;
 			FILE *in = NULL;
-			
+
 			if (slot == MAX_CHAN) {
 				output("too many channels");
 				continue;
@@ -1349,7 +1349,7 @@ cmd_loop()
 				goto clean2;
 			}
 			ret = pthread_create(&tid, NULL, thread_cmd_loop, in);
-			output_err(ret, "pthread_create() tid=%lu slot=%d", 
+			output_err(ret, "pthread_create() tid=%lu slot=%d",
 				(unsigned long) tid, slot);
 			if (ret < 0)
 				goto clean2;
@@ -1380,7 +1380,7 @@ cmd_loop()
 			c = channels[slot];
 			fclose(c->out);
 			ret = pthread_join(c->tid, NULL);
-			output_err(ret, "pthread_join(%lu)=%d", 
+			output_err(ret, "pthread_join(%lu)=%d",
 				(unsigned long) c->tid, ret);
 			if (ret > 0) {
 				free(c);

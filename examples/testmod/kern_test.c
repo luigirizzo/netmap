@@ -29,7 +29,7 @@
 #define SYSCTL_STRING(_1, _2, _3, _4, _5, _6, _7)
 #define SYSCTL_PROC(_1, _2, _3, _4, _5, _6, _7, _8, _9)	\
 	void *_1 ## _ ## _3 = _7
-	
+
 struct oidp {
 	char *name;
 	int oldint;

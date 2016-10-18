@@ -716,7 +716,7 @@ initialize_packet(struct targ *targ)
 	pcap_t *file;
 	struct pcap_pkthdr *header;
 	const unsigned char *packet;
-	
+
 	/* Read a packet from a PCAP file if asked. */
 	if (targ->g->packet_file != NULL) {
 		if ((file = pcap_open_offline(targ->g->packet_file,
@@ -1177,7 +1177,7 @@ sender_body(void *data)
 		frame = targ->frame;
 		size = targ->g->pkt_size;
 	}
-	
+
 	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;

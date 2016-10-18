@@ -95,7 +95,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
 
 /*
  * For older versions of FreeBSD:
- * 
+ *
  * We allocate EXT_PACKET mbuf+clusters, but need to set M_NOFREE
  * so that the destructor, if invoked, will not free the packet.
  * In principle we should set the destructor only on demand,

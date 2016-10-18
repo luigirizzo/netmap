@@ -409,7 +409,7 @@ readpcap(const char *fn)
      * average bandwidth of the trace, as follows
      *   first_pkt_ts = p[0].len / avg_bw
      * In turn avg_bw = (total_len - p[0].len)/(p[n-1].ts - p[0].ts)
-     * so 
+     * so
      *   first_ts =  p[0].ts - p[0].len * (p[n-1].ts - p[0].ts) / (total_len - p[0].len)
      */
     if (pf->tot_bytes == first_len) {
@@ -832,7 +832,7 @@ pcap_prod(void *_pa)
 	/* insure no reordering and spacing by transmission time */
 	q->qt_tx = (t_tx >= q->qt_tx + tt) ? t_tx : q->qt_tx + tt;
 	enq(q);
-	
+
 	q->tx++;
 	ND("ins %d q->prod_tail = %lu", (int)insert, (unsigned long)q->prod_tail);
     }
