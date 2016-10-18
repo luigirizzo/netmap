@@ -1554,7 +1554,7 @@ nm_txsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 		}
 	}
 	if (ring->tail != kring->rtail) {
-		RD(5, "tail overwritten was %d need %d",
+		RD(5, "%s tail overwritten was %d need %d", kring->name,
 			ring->tail, kring->rtail);
 		ring->tail = kring->rtail;
 	}

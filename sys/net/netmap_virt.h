@@ -259,7 +259,7 @@ ptnetmap_host_write_kring_csb(struct ptnet_ring __user *ptr, uint32_t hwcur,
  * This routine is coupled with ptnetmap_guest_write_kring_csb(). */
 static inline void
 ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
-			     struct netmap_ring *local_ring,
+			     struct netmap_ring *shadow_ring,
 			     uint32_t num_slots)
 {
     /*
@@ -267,10 +267,10 @@ ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
      * overtakes the update of cur.
      * (see explanation in ptnetmap_guest_write_kring_csb).
      */
-    CSB_READ(ptr, head, local_ring->head);
+    CSB_READ(ptr, head, shadow_ring->head);
     mb();
-    CSB_READ(ptr, cur, local_ring->cur);
-    CSB_READ(ptr, sync_flags, local_ring->flags);
+    CSB_READ(ptr, cur, shadow_ring->cur);
+    CSB_READ(ptr, sync_flags, shadow_ring->flags);
 }
 
 #endif /* WITH_PTNETMAP_HOST */
