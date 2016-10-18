@@ -27,8 +27,6 @@
 /* Driver for ptnet paravirtualized network device. */
 
 #include <sys/cdefs.h>
-//__FBSDID("$FreeBSD: releng/10.2/sys/dev/netmap/netmap_ptnet.c xxx $");
-
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
