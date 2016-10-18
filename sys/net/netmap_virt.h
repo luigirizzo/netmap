@@ -196,8 +196,6 @@ ptnetmap_guest_write_kring_csb(struct ptnet_ring *ptr, uint32_t cur,
     ptr->cur = cur;
     mb();
     ptr->head = head;
-
-    //mb(); /* Force memory complete before send notification */
 }
 
 /* Guest driver: Read kring pointers (hwcur, hwtail) from the CSB.
@@ -205,8 +203,6 @@ ptnetmap_guest_write_kring_csb(struct ptnet_ring *ptr, uint32_t cur,
 static inline void
 ptnetmap_guest_read_kring_csb(struct ptnet_ring *ptr, struct netmap_kring *kring)
 {
-    //mb(); /* Force memory complete before read CSB */
-
     /*
      * We place a memory barrier to make sure that the update of hwtail never
      * overtakes the update of hwcur.
@@ -257,8 +253,6 @@ ptnetmap_host_write_kring_csb(struct ptnet_ring __user *ptr, uint32_t hwcur,
     CSB_WRITE(ptr, hwcur, hwcur);
     mb();
     CSB_WRITE(ptr, hwtail, hwtail);
-
-    //mb(); /* Force memory complete before send notification */
 }
 
 /* Host netmap: Read kring pointers (head, cur, sync_flags) from the CSB.
@@ -268,8 +262,6 @@ ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
 			     struct netmap_ring *local_ring,
 			     uint32_t num_slots)
 {
-    //mb(); /* Force memory complete before read CSB */
-
     /*
      * We place a memory barrier to make sure that the update of head never
      * overtakes the update of cur.
