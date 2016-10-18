@@ -160,89 +160,13 @@ ptn_sub(uint32_t l_elem, uint32_t r_elem, uint32_t num_slots)
 }
 #endif /* WITH_PTNETMAP_HOST || WITH_PTNETMAP_GUEST */
 
-#ifdef WITH_PTNETMAP_HOST
-/*
- * ptnetmap kernel thread routines
- * */
-
-/* Functions to read and write CSB fields in the host */
-#if defined (linux)
-#define CSB_READ(csb, field, r) (get_user(r, &csb->field))
-#define CSB_WRITE(csb, field, v) (put_user(v, &csb->field))
-#else  /* ! linux */
-#define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
-#define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
-#endif /* ! linux */
-
-/*
- * HOST read/write kring pointers from/in CSB
- */
-
-/* Host: Read kring pointers (head, cur, sync_flags) from CSB */
-static inline void
-ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
-			     struct netmap_ring *g_ring,
-			     uint32_t num_slots)
-{
-    uint32_t old_head = g_ring->head, old_cur = g_ring->cur;
-    uint32_t d, inc_h, inc_c;
-
-    //mb(); /* Force memory complete before read CSB */
-
-    /*
-     * We must first read head and then cur with a barrier in the
-     * middle, because cur can exceed head, but not vice versa.
-     * The guest must first write cur and then head with a barrier.
-     *
-     * head <= cur
-     *
-     *          guest           host
-     *
-     *          STORE(cur)      LOAD(head)
-     *            mb() ----------- mb()
-     *          STORE(head)     LOAD(cur)
-     *
-     * This approach ensures that every head that we read is
-     * associated with the correct cur. In this way head can not exceed cur.
-     */
-    CSB_READ(ptr, head, g_ring->head);
-    mb();
-    CSB_READ(ptr, cur, g_ring->cur);
-    CSB_READ(ptr, sync_flags, g_ring->flags);
-
-    /*
-     * Even with the previous barrier, it is still possible that we read an
-     * updated cur and an old head.
-     * To detect this situation, we can check if the new cur overtakes
-     * the (apparently) new head.
-     */
-    d = ptn_sub(old_cur, old_head, num_slots);     /* previous distance */
-    inc_c = ptn_sub(g_ring->cur, old_cur, num_slots);   /* increase of cur */
-    inc_h = ptn_sub(g_ring->head, old_head, num_slots); /* increase of head */
-
-    if (unlikely(inc_c > num_slots - d + inc_h)) { /* cur overtakes head */
-        ND(1,"ERROR cur overtakes head - old_cur: %u cur: %u old_head: %u head: %u",
-                old_cur, g_ring->cur, old_head, g_ring->head);
-        g_ring->cur = nm_prev(g_ring->head, num_slots - 1);
-    }
-}
-
-/* Host: Write kring pointers (hwcur, hwtail) into the CSB */
-static inline void
-ptnetmap_host_write_kring_csb(struct ptnet_ring __user *ptr, uint32_t hwcur,
-        uint32_t hwtail)
-{
-    /* We must write hwtail before hwcur (see below). */
-    CSB_WRITE(ptr, hwtail, hwtail);
-    mb();
-    CSB_WRITE(ptr, hwcur, hwcur);
-
-    //mb(); /* Force memory complete before send notification */
-}
-
-#endif /* WITH_PTNETMAP_HOST */
-
 #ifdef WITH_PTNETMAP_GUEST
+
+/* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
+struct ptnetmap_memdev;
+int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
+void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
+
 /*
  * GUEST read/write kring pointers from/in CSB.
  * To use into device driver.
@@ -309,10 +233,88 @@ ptnetmap_guest_read_kring_csb(struct ptnet_ring *ptr, struct netmap_kring *kring
     }
 }
 
-/* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
-struct ptnetmap_memdev;
-int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
-void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
 #endif /* WITH_PTNETMAP_GUEST */
+
+#ifdef WITH_PTNETMAP_HOST
+/*
+ * ptnetmap kernel thread routines
+ * */
+
+/* Functions to read and write CSB fields in the host */
+#if defined (linux)
+#define CSB_READ(csb, field, r) (get_user(r, &csb->field))
+#define CSB_WRITE(csb, field, v) (put_user(v, &csb->field))
+#else  /* ! linux */
+#define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
+#define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
+#endif /* ! linux */
+
+/*
+ * HOST read/write kring pointers from/in CSB
+ */
+
+/* Host: Write kring pointers (hwcur, hwtail) into the CSB */
+static inline void
+ptnetmap_host_write_kring_csb(struct ptnet_ring __user *ptr, uint32_t hwcur,
+        uint32_t hwtail)
+{
+    /* We must write hwtail before hwcur (see below). */
+    CSB_WRITE(ptr, hwtail, hwtail);
+    mb();
+    CSB_WRITE(ptr, hwcur, hwcur);
+
+    //mb(); /* Force memory complete before send notification */
+}
+
+/* Host: Read kring pointers (head, cur, sync_flags) from CSB */
+static inline void
+ptnetmap_host_read_kring_csb(struct ptnet_ring __user *ptr,
+			     struct netmap_ring *g_ring,
+			     uint32_t num_slots)
+{
+    uint32_t old_head = g_ring->head, old_cur = g_ring->cur;
+    uint32_t d, inc_h, inc_c;
+
+    //mb(); /* Force memory complete before read CSB */
+
+    /*
+     * We must first read head and then cur with a barrier in the
+     * middle, because cur can exceed head, but not vice versa.
+     * The guest must first write cur and then head with a barrier.
+     *
+     * head <= cur
+     *
+     *          guest           host
+     *
+     *          STORE(cur)      LOAD(head)
+     *            mb() ----------- mb()
+     *          STORE(head)     LOAD(cur)
+     *
+     * This approach ensures that every head that we read is
+     * associated with the correct cur. In this way head can not exceed cur.
+     */
+    CSB_READ(ptr, head, g_ring->head);
+    mb();
+    CSB_READ(ptr, cur, g_ring->cur);
+    CSB_READ(ptr, sync_flags, g_ring->flags);
+
+    /*
+     * Even with the previous barrier, it is still possible that we read an
+     * updated cur and an old head.
+     * To detect this situation, we can check if the new cur overtakes
+     * the (apparently) new head.
+     */
+    d = ptn_sub(old_cur, old_head, num_slots);     /* previous distance */
+    inc_c = ptn_sub(g_ring->cur, old_cur, num_slots);   /* increase of cur */
+    inc_h = ptn_sub(g_ring->head, old_head, num_slots); /* increase of head */
+
+    if (unlikely(inc_c > num_slots - d + inc_h)) { /* cur overtakes head */
+        ND(1,"ERROR cur overtakes head - old_cur: %u cur: %u old_head: %u head: %u",
+                old_cur, g_ring->cur, old_head, g_ring->head);
+        g_ring->cur = nm_prev(g_ring->head, num_slots - 1);
+    }
+}
+
+#endif /* WITH_PTNETMAP_HOST */
 
 #endif /* NETMAP_VIRT_H */
