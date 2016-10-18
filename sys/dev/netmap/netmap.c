@@ -481,6 +481,7 @@ int netmap_verbose;
 
 static int netmap_no_timestamp; /* don't timestamp on rxsync */
 int netmap_no_pendintr = 1;
+int netmap_mitigate = 1;
 int netmap_txsync_retry = 2;
 int netmap_flags = 0;	/* debug flags */
 static int netmap_fwd = 0;	/* force transparent mode */
@@ -533,6 +534,7 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, verbose,
     CTLFLAG_RW, &netmap_verbose, 0, "Verbose mode");
 SYSCTL_INT(_dev_netmap, OID_AUTO, no_timestamp,
     CTLFLAG_RW, &netmap_no_timestamp, 0, "no_timestamp");
+SYSCTL_INT(_dev_netmap, OID_AUTO, mitigate, CTLFLAG_RW, &netmap_mitigate, 0, "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr,
     CTLFLAG_RW, &netmap_no_pendintr, 0, "Always look for new received packets.");
 SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
