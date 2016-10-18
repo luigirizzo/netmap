@@ -1394,15 +1394,12 @@ static int
 netmap_mem_init_shared_info(struct netmap_mem_d *nmd)
 {
 	struct netmap_mem_shared_info *nms_info;
-	ssize_t base;
 
         /* Use the first slot in IF_POOL */
 	nms_info = netmap_if_malloc(nmd, sizeof(*nms_info));
 	if (nms_info == NULL) {
 	    return ENOMEM;
 	}
-
-	base = netmap_if_offset(nmd, nms_info);
 
         memcpy(&nms_info->up, &nms_if_blueprint, sizeof(nms_if_blueprint));
 	nms_info->buf_pool_offset = nmd->pools[NETMAP_IF_POOL].memtotal + nmd->pools[NETMAP_RING_POOL].memtotal;
