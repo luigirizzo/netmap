@@ -340,7 +340,9 @@ ptnet_attach(device_t dev)
 	}
 
 	{
-		vm_paddr_t paddr = vtophys(sc->csb);
+		/* We use uint64_t rather than vm_paddr_t since we
+		 * need 64 bit addresses even on 32 bit platforms. */
+		uint64_t paddr = vtophys(sc->csb);
 
 		bus_write_4(sc->iomem, PTNET_IO_CSBBAH,
 			    (paddr >> 32) & 0xffffffff);

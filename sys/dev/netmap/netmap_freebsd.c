@@ -644,7 +644,8 @@ DRIVER_MODULE_ORDERED(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
  * of the netmap memory mapped in the guest.
  */
 int
-nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
+nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
+		      void **nm_addr)
 {
 	uint32_t mem_size;
 	int rid;
@@ -666,10 +667,10 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, voi
 	*nm_paddr = rman_get_start(ptn_dev->pci_mem);
 	*nm_addr = rman_get_virtual(ptn_dev->pci_mem);
 
-	D("=== BAR %d start %lx len %lx mem_size %x ===",
+	D("=== BAR %d start %lx len %llx mem_size %x ===",
 			PTNETMAP_MEM_PCI_BAR,
-			*nm_paddr,
-			rman_get_size(ptn_dev->pci_mem),
+			(unsigned long)(*nm_paddr),
+			(unsigned long long)rman_get_size(ptn_dev->pci_mem),
 			mem_size);
 	return (0);
 }
