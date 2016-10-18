@@ -483,7 +483,6 @@ static int netmap_no_timestamp; /* don't timestamp on rxsync */
 int netmap_mitigate = 1;
 int netmap_no_pendintr = 1;
 int netmap_txsync_retry = 2;
-int netmap_adaptive_io = 0;
 int netmap_flags = 0;	/* debug flags */
 static int netmap_fwd = 0;	/* force transparent mode */
 
@@ -540,8 +539,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr,
     CTLFLAG_RW, &netmap_no_pendintr, 0, "Always look for new received packets.");
 SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
     &netmap_txsync_retry, 0 , "Number of txsync loops in bridge's flush.");
-SYSCTL_INT(_dev_netmap, OID_AUTO, adaptive_io, CTLFLAG_RW,
-    &netmap_adaptive_io, 0 , "Adaptive I/O on paravirt");
 
 SYSCTL_INT(_dev_netmap, OID_AUTO, flags, CTLFLAG_RW, &netmap_flags, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0 , "");
