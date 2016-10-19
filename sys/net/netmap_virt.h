@@ -165,20 +165,6 @@ struct ptnet_csb {
 	struct ptnet_ring rings[NETMAP_VIRT_CSB_SIZE/sizeof(struct ptnet_ring)];
 };
 
-#if defined (WITH_PTNETMAP_HOST) || defined (WITH_PTNETMAP_GUEST)
-
-/* return l_elem - r_elem with wraparound */
-static inline uint32_t
-ptn_sub(uint32_t l_elem, uint32_t r_elem, uint32_t num_slots)
-{
-    int64_t res;
-
-    res = (int64_t)(l_elem) - r_elem;
-
-    return (res < 0) ? res + num_slots : res;
-}
-#endif /* WITH_PTNETMAP_HOST || WITH_PTNETMAP_GUEST */
-
 #ifdef WITH_PTNETMAP_GUEST
 
 /* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
