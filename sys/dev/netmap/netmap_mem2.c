@@ -147,39 +147,6 @@ struct netmap_mem_ops {
 
 typedef uint16_t nm_memid_t;
 
-/*
- * Shared info for netmap allocator
- *
- * Each allocator contains this structur as first netmap_if.
- * In this way, we can share same details about allocator
- * to the VM.
- * Used in ptnetmap.
- */
-struct netmap_mem_shared_info {
-#ifndef _WIN32
-        struct netmap_if up;	/* ends with a 0-sized array, which VSC does not like */
-#else /* !_WIN32 */
-	char up[sizeof(struct netmap_if)];
-#endif /* !_WIN32 */
-        uint64_t features;
-#define NMS_FEAT_BUF_POOL          0x0001
-#define NMS_FEAT_MEMSIZE           0x0002
-
-        uint32_t buf_pool_offset;
-        uint32_t buf_pool_objtotal;
-        uint32_t buf_pool_objsize;
-        uint32_t totalsize;
-};
-
-#define NMS_NAME        "nms_info"
-#define NMS_VERSION     1
-static const struct netmap_if nms_if_blueprint = {
-    .ni_name = NMS_NAME,
-    .ni_version = NMS_VERSION,
-    .ni_tx_rings = 0,
-    .ni_rx_rings = 0
-};
-
 struct netmap_mem_d {
 	NMA_LOCK_T nm_mtx;  /* protect the allocator */
 	u_int nm_totalsize; /* shorthand */
@@ -312,8 +279,6 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	return nmd->lasterr;
 }
 
-static int netmap_mem_init_shared_info(struct netmap_mem_d *nmd);
-
 void
 netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
@@ -362,13 +327,9 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 		if (nmd->pools[NETMAP_BUF_POOL].bitmap) {
 			/* XXX This check is a workaround that prevents a
 			 * NULL pointer crash which currently happens only
-			 * with ptnetmap guests. Also,
-			 * netmap_mem_init_shared_info must not be called
-			 * by ptnetmap guest. */
+			 * with ptnetmap guests.
+			 * Removed shared-info --> is the bug still there? */
 			nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
-
-			/* expose info to the ptnetmap guest */
-			netmap_mem_init_shared_info(nmd);
 		}
 	}
 	nmd->ops->nmd_deref(nmd);
@@ -1391,27 +1352,6 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 }
 
 static int
-netmap_mem_init_shared_info(struct netmap_mem_d *nmd)
-{
-	struct netmap_mem_shared_info *nms_info;
-
-        /* Use the first slot in IF_POOL */
-	nms_info = netmap_if_malloc(nmd, sizeof(*nms_info));
-	if (nms_info == NULL) {
-	    return ENOMEM;
-	}
-
-        memcpy(&nms_info->up, &nms_if_blueprint, sizeof(nms_if_blueprint));
-	nms_info->buf_pool_offset = nmd->pools[NETMAP_IF_POOL].memtotal + nmd->pools[NETMAP_RING_POOL].memtotal;
-	nms_info->buf_pool_objtotal = nmd->pools[NETMAP_BUF_POOL].objtotal;
-	nms_info->buf_pool_objsize = nmd->pools[NETMAP_BUF_POOL]._objsize;
-	nms_info->totalsize = nmd->nm_totalsize;
-	nms_info->features = NMS_FEAT_BUF_POOL | NMS_FEAT_MEMSIZE;
-
-	return 0;
-}
-
-static int
 netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 {
 	int i;
@@ -1429,11 +1369,6 @@ netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 	nmd->pools[NETMAP_BUF_POOL].objfree -= 2;
 	nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
 	nmd->flags |= NETMAP_MEM_FINALIZED;
-
-	/* expose info to the ptnetmap guest */
-	nmd->lasterr = netmap_mem_init_shared_info(nmd);
-	if (nmd->lasterr)
-	        goto error;
 
 	if (netmap_verbose)
 		D("interfaces %d KB, rings %d KB, buffers %d MB",
@@ -2059,62 +1994,6 @@ netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *nmd, struct ifnet *ifp)
 	NMA_UNLOCK(nmd);
 
 	return ret;
-}
-
-/* Read allocator info from the first netmap_if (only on finalize) */
-static int
-netmap_mem_pt_guest_read_shared_info(struct netmap_mem_d *nmd)
-{
-	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
-	struct netmap_mem_shared_info *nms_info;
-	uint32_t bufsize;
-	uint32_t nbuffers;
-	char *vaddr;
-	vm_paddr_t paddr;
-	int i;
-
-        nms_info = (struct netmap_mem_shared_info *)ptnmd->nm_addr;
-        if (strncmp(nms_info->up.ni_name, NMS_NAME, sizeof(NMS_NAME)) != 0) {
-            D("error, the first slot does not contain shared info");
-            return EINVAL;
-        }
-        /* check features mem_shared info */
-        if ((nms_info->features & (NMS_FEAT_BUF_POOL | NMS_FEAT_MEMSIZE)) !=
-               (NMS_FEAT_BUF_POOL | NMS_FEAT_MEMSIZE)) {
-            D("error, the shared info does not contain BUF_POOL and MEMSIZE");
-            return EINVAL;
-        }
-
-        bufsize = nms_info->buf_pool_objsize;
-        nbuffers = nms_info->buf_pool_objtotal;
-
-	/* allocate the lut */
-	if (ptnmd->buf_lut.lut == NULL) {
-		D("allocating lut");
-		ptnmd->buf_lut.lut = nm_alloc_lut(nbuffers);
-		if (ptnmd->buf_lut.lut == NULL) {
-			D("lut allocation failed");
-			return ENOMEM;
-		}
-	}
-
-	/* we have physically contiguous memory mapped through PCI BAR */
-        vaddr = (char *)(ptnmd->nm_addr) + nms_info->buf_pool_offset;
-	paddr = ptnmd->nm_paddr + nms_info->buf_pool_offset;
-
-	for (i = 0; i < nbuffers; i++) {
-		ptnmd->buf_lut.lut[i].vaddr = vaddr;
-		ptnmd->buf_lut.lut[i].paddr = paddr;
-		vaddr += bufsize;
-		paddr += bufsize;
-	}
-
-	ptnmd->buf_lut.objtotal = nbuffers;
-	ptnmd->buf_lut.objsize = bufsize;
-
-        nmd->nm_totalsize = nms_info->totalsize;
-
-        return 0;
 }
 
 static int
