@@ -203,6 +203,7 @@ struct ptnet_csb {
 struct ptnetmap_memdev;
 int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
 void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
+uint32_t nm_os_pt_memdev_ioread(struct ptnetmap_memdev *, unsigned int);
 
 /* Guest driver: Write kring pointers (cur, head) to the CSB.
  * This routine is coupled with ptnetmap_host_read_kring_csb(). */

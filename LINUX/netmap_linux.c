@@ -1668,6 +1668,12 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
     return err;
 }
 
+uint32_t
+nm_os_pt_memdev_ioread(struct ptnetmap_memdev *ptn_dev, unsigned int reg)
+{
+	return ioread32(ptn_dev->pci_io + reg);
+}
+
 /*
  * unmap PCI-BAR
  */
@@ -1723,7 +1729,7 @@ ptnetmap_guest_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     pci_set_master(pdev); /* XXX-ste: is needed??? */
 
     ptn_dev->bars = bars;
-    mem_id = ioread16(ptn_dev->pci_io + PTNET_MDEV_IO_MEMID);
+    mem_id = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMID);
 
     /* create guest allocator */
     ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);

@@ -1977,7 +1977,7 @@ struct netmap_mem_ptg {
 	void *nm_addr;                  /* virtual address in the guest */
 	struct netmap_lut buf_lut;      /* lookup table for BUF pool in the guest */
 	nm_memid_t nm_host_id;          /* allocator identifier in the host */
-	struct ptnetmap_memdev *ptn_dev;
+	struct ptnetmap_memdev *ptn_dev;/* ptnetmap memdev */
 	struct mem_pt_if *pt_ifs;	/* list of interfaces in passthrough */
 };
 
@@ -2179,6 +2179,12 @@ static int
 netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
+	uint32_t bufsize;
+	uint32_t nbuffers;
+	uint32_t poolofs;
+	vm_paddr_t paddr;
+	char *vaddr;
+	int i;
 	int error = 0;
 
 	nmd->active++;
@@ -2191,16 +2197,46 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 		error = ENOMEM;
 		goto err;
 	}
-	/* map memory through ptnetmap-memdev BAR */
+	/* Map memory through ptnetmap-memdev BAR. */
 	error = nm_os_pt_memdev_iomap(ptnmd->ptn_dev, &ptnmd->nm_paddr,
 				      &ptnmd->nm_addr);
 	if (error)
 		goto err;
 
-        /* read allcator info and create lut */
-	error = netmap_mem_pt_guest_read_shared_info(nmd);
-	if (error)
-		goto err;
+        /* Initialize the lut using the information contained in the
+	 * ptnetmap memory device. */
+        bufsize = nm_os_pt_memdev_ioread(ptnmd->ptn_dev,
+					 PTNET_MDEV_IO_BUF_POOL_OBJSZ);
+        nbuffers = nm_os_pt_memdev_ioread(ptnmd->ptn_dev,
+					 PTNET_MDEV_IO_BUF_POOL_OBJNUM);
+
+	/* allocate the lut */
+	if (ptnmd->buf_lut.lut == NULL) {
+		D("allocating lut");
+		ptnmd->buf_lut.lut = nm_alloc_lut(nbuffers);
+		if (ptnmd->buf_lut.lut == NULL) {
+			D("lut allocation failed");
+			return ENOMEM;
+		}
+	}
+
+	/* we have physically contiguous memory mapped through PCI BAR */
+	poolofs = nm_os_pt_memdev_ioread(ptnmd->ptn_dev,
+					 PTNET_MDEV_IO_BUF_POOL_OFS);
+	vaddr = (char *)(ptnmd->nm_addr) + poolofs;
+	paddr = ptnmd->nm_paddr + poolofs;
+
+	for (i = 0; i < nbuffers; i++) {
+		ptnmd->buf_lut.lut[i].vaddr = vaddr;
+		ptnmd->buf_lut.lut[i].paddr = paddr;
+		vaddr += bufsize;
+		paddr += bufsize;
+	}
+
+	ptnmd->buf_lut.objtotal = nbuffers;
+	ptnmd->buf_lut.objsize = bufsize;
+	nmd->nm_totalsize = nm_os_pt_memdev_ioread(ptnmd->ptn_dev,
+						   PTNET_MDEV_IO_TOTALSIZE);
 
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 out:

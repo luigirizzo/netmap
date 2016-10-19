@@ -627,9 +627,7 @@ DRIVER_MODULE_ORDERED(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
 
 /*
  * I/O port read/write wrappers.
- * Some are not used, so we keep them commented out until needed
  */
-#define ptn_ioread16(ptn_dev, reg)		bus_read_2((ptn_dev)->pci_io, (reg))
 #define ptn_ioread32(ptn_dev, reg)		bus_read_4((ptn_dev)->pci_io, (reg))
 #if 0
 #define ptn_ioread8(ptn_dev, reg)		bus_read_1((ptn_dev)->pci_io, (reg))
@@ -675,6 +673,12 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
 			(unsigned long)rman_get_size(ptn_dev->pci_mem),
 			(unsigned long)mem_size);
 	return (0);
+}
+
+uint32_t
+nm_os_pt_memdev_ioread(struct ptnetmap_memdev *ptn_dev, unsigned int reg)
+{
+	return ptn_ioread32(ptn_dev, reg);
 }
 
 /* Unmap host netmap memory. */
@@ -732,7 +736,7 @@ ptn_memdev_attach(device_t dev)
 	        return (ENXIO);
 	}
 
-	mem_id = ptn_ioread16(ptn_dev, PTNET_MDEV_IO_MEMID);
+	mem_id = ptn_ioread32(ptn_dev, PTNET_MDEV_IO_MEMID);
 
 	/* create guest allocator */
 	ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
