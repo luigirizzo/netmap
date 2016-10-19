@@ -982,7 +982,8 @@ nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
 }
 
 struct nm_kthread *
-nm_os_kthread_create(struct nm_kthread_cfg *cfg)
+nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
+		     void *opaque)
 {
 	// TODO
 	return NULL;

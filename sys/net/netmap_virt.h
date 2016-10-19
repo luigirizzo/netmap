@@ -70,13 +70,32 @@
  * kthreads.
  */
 struct ptnetmap_cfg {
-#define PTNETMAP_CFG_FEAT_CSB           0x0001
-#define PTNETMAP_CFG_FEAT_EVENTFD       0x0002
-#define PTNETMAP_CFG_FEAT_IOCTL		0x0004
-	uint32_t features;
-	void *ptrings;				/* ptrings inside CSB */
-	uint32_t num_rings;			/* number of entries */
-	struct ptnet_ring_cfg entries[0];	/* per-ptring configuration */
+#define PTNETMAP_CFGTYPE_QEMU		0x1
+#define PTNETMAP_CFGTYPE_BHYVE		0x2
+	uint16_t cfgtype;		/* how to interpret the cfg entries */
+	uint16_t entry_size;		/* size of a cfg entry */
+	uint32_t num_rings;		/* number of entries */
+	void *ptrings;			/* ptrings inside CSB */
+	/* per-ptring configuration comes here */
+};
+
+/* Configuration of a ptnetmap ring for QEMU. */
+struct ptnetmap_cfgentry_qemu {
+	uint32_t ioeventfd;	/* to intercept guest register access */
+	uint32_t irqfd;		/* to inject guest interrupts */
+};
+
+/* Configuration of a ptnetmap ring for bhyve. */
+struct ptnetmap_cfgentry_bhyve {
+	uint64_t wchan;		/* tsleep() parameter, to wake up kthread */
+	uint32_t ioctl_fd;	/* ioctl fd */
+	/* ioctl parameters to send irq */
+	uint32_t ioctl_cmd;
+	/* vmm.ko MSIX parameters for IOCTL */
+	struct {
+		uint64_t        msg_data;
+		uint64_t        addr;
+	} ioctl_data;
 };
 
 /*

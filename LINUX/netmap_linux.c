@@ -1399,13 +1399,18 @@ nm_kthread_close_files(struct nm_kthread *nmk)
 }
 
 static int
-nm_kthread_open_files(struct nm_kthread *nmk, struct ptnet_ring_cfg *ring_cfg)
+nm_kthread_open_files(struct nm_kthread *nmk, void *opaque)
 {
     struct file *file;
     struct nm_kthread_ctx *wctx = &nmk->worker_ctx;
+    struct ptnetmap_cfgentry_qemu *ring_cfg = opaque;
 
     wctx->ioevent_file = NULL;
     wctx->irq_file = NULL;
+
+    if (!opaque) {
+	return 0;
+    }
 
     if (ring_cfg->ioeventfd) {
 	file = eventfd_fget(ring_cfg->ioeventfd);
@@ -1471,10 +1476,16 @@ nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
 }
 
 struct nm_kthread *
-nm_os_kthread_create(struct nm_kthread_cfg *cfg)
+nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
+		     void *opaque)
 {
     struct nm_kthread *nmk = NULL;
     int error;
+
+    if (cfgtype != PTNETMAP_CFGTYPE_QEMU) {
+	D("Unsupported cfgtype %u", cfgtype);
+	return NULL;
+    }
 
     nmk = kzalloc(sizeof *nmk, GFP_KERNEL);
     if (!nmk)
@@ -1489,7 +1500,7 @@ nm_os_kthread_create(struct nm_kthread_cfg *cfg)
     nmk->attach_user = cfg->attach_user;
 
     /* open event fds */
-    error = nm_kthread_open_files(nmk, &cfg->event);
+    error = nm_kthread_open_files(nmk, opaque);
     if (error)
         goto err;
 
