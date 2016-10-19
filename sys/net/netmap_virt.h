@@ -53,12 +53,20 @@
 #define PTNETMAP_MSIX_PCI_BAR           2
 
 /* Registers for the ptnetmap memdev */
-/* 32 bit r/o */
-#define PTNETMAP_IO_PCI_MEMSIZE         0	/* size of the netmap memory shared
-						 * between guest and host */
-/* 16 bit r/o */
-#define PTNETMAP_IO_PCI_HOSTID          4	/* memory allocator ID in netmap host */
-#define PTNETMAP_IO_SIZE                6
+#define PTNET_MDEV_IO_MEMID		0	/* memory allocator ID in the host */
+#define PTNET_MDEV_IO_MEMSIZE_LO	4	/* netmap memory size (low) */
+#define PTNET_MDEV_IO_MEMSIZE_HI	8	/* netmap_memory_size (high) */
+#define PTNET_MDEV_IO_TOTALSIZE		12
+#define PTNET_MDEV_IO_IF_POOL_OFS	64
+#define PTNET_MDEV_IO_IF_POOL_OBJNUM	68
+#define PTNET_MDEV_IO_IF_POOL_OBJSZ	72
+#define PTNET_MDEV_IO_RING_POOL_OFS	76
+#define PTNET_MDEV_IO_RING_POOL_OBJNUM	80
+#define PTNET_MDEV_IO_RING_POOL_OBJSZ	84
+#define PTNET_MDEV_IO_BUF_POOL_OFS	88
+#define PTNET_MDEV_IO_BUF_POOL_OBJNUM	92
+#define PTNET_MDEV_IO_BUF_POOL_OBJSZ	96
+#define PTNET_MDEV_IO_END		100
 
 /*
  * ptnetmap configuration

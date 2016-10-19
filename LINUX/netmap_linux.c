@@ -1643,17 +1643,19 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
                       void **nm_addr)
 {
     struct pci_dev *pdev = ptn_dev->pdev;
-    uint32_t mem_size;
     phys_addr_t mem_paddr;
+    uint64_t mem_size;
     int err = 0;
 
-    mem_size = ioread32(ptn_dev->pci_io + PTNETMAP_IO_PCI_MEMSIZE);
+    mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_HI);
+    mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_LO) |
+	       (mem_size << 32);
 
-    D("=== BAR %d start %llx len %llx mem_size %x ===",
+    D("=== BAR %d start %llx len %llx mem_size %lx ===",
             PTNETMAP_MEM_PCI_BAR,
             pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
             pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
-            mem_size);
+            (unsigned long)mem_size);
 
     /* map memory allocator */
     mem_paddr = pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR);
@@ -1721,7 +1723,7 @@ ptnetmap_guest_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     pci_set_master(pdev); /* XXX-ste: is needed??? */
 
     ptn_dev->bars = bars;
-    mem_id = ioread16(ptn_dev->pci_io + PTNETMAP_IO_PCI_HOSTID);
+    mem_id = ioread16(ptn_dev->pci_io + PTNET_MDEV_IO_MEMID);
 
     /* create guest allocator */
     ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);

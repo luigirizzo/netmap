@@ -647,13 +647,15 @@ int
 nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
 		      void **nm_addr)
 {
-	uint32_t mem_size;
+	uint64_t mem_size;
 	int rid;
 
 	D("ptn_memdev_driver iomap");
 
 	rid = PCIR_BAR(PTNETMAP_MEM_PCI_BAR);
-	mem_size = ptn_ioread32(ptn_dev, PTNETMAP_IO_PCI_MEMSIZE);
+	mem_size = ptn_ioread32(ptn_dev, PTNET_MDEV_IO_MEMSIZE_HI);
+	mem_size = ptn_ioread32(ptn_dev, PTNET_MDEV_IO_MEMSIZE_LO) |
+			(mem_size << 32);
 
 	/* map memory allocator */
 	ptn_dev->pci_mem = bus_alloc_resource(ptn_dev->dev, SYS_RES_MEMORY,
@@ -667,11 +669,11 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
 	*nm_paddr = rman_get_start(ptn_dev->pci_mem);
 	*nm_addr = rman_get_virtual(ptn_dev->pci_mem);
 
-	D("=== BAR %d start %lx len %lx mem_size %x ===",
+	D("=== BAR %d start %lx len %lx mem_size %lx ===",
 			PTNETMAP_MEM_PCI_BAR,
 			(unsigned long)(*nm_paddr),
 			(unsigned long)rman_get_size(ptn_dev->pci_mem),
-			mem_size);
+			(unsigned long)mem_size);
 	return (0);
 }
 
@@ -730,7 +732,7 @@ ptn_memdev_attach(device_t dev)
 	        return (ENXIO);
 	}
 
-	mem_id = ptn_ioread16(ptn_dev, PTNETMAP_IO_PCI_HOSTID);
+	mem_id = ptn_ioread16(ptn_dev, PTNET_MDEV_IO_MEMID);
 
 	/* create guest allocator */
 	ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
