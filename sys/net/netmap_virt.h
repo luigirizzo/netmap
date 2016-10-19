@@ -105,7 +105,7 @@ struct ptnetmap_cfgentry_bhyve {
 };
 
 /*
- * Functions used to write ptnetmap_cfg from/to the nmreq.
+ * Function used to write ptnetmap_cfg to the nmreq.
  * The user-space application writes the pointer of ptnetmap_cfg
  * (user-space buffer) starting from nr_arg1 field, so that the kernel
  * can read it with copyin (copy_from_user).
@@ -116,6 +116,24 @@ ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 	uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
 	*nmr_ptncfg = (uintptr_t)cfg;
 }
+
+/*
+ * Structure filled-in by the kernel when asked for allocator info
+ * through NETMAP_ALLOC_INFO_GET. Used by hypervisors supporting
+ * ptnetmap.
+ */
+struct netmap_allocator_info {
+	uint64_t totalsize;
+        uint32_t if_pool_offset;
+        uint32_t if_pool_objtotal;
+        uint32_t if_pool_objsize;
+        uint32_t ring_pool_offset;
+        uint32_t ring_pool_objtotal;
+        uint32_t ring_pool_objsize;
+        uint32_t buf_pool_offset;
+        uint32_t buf_pool_objtotal;
+        uint32_t buf_pool_objsize;
+};
 
 /* ptnetmap control commands */
 #define PTNETMAP_PTCTL_CONFIG	1
