@@ -173,6 +173,8 @@ struct netmap_mem_d* netmap_mem_pt_guest_attach(struct ptnetmap_memdev *, uint16
 int netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *, struct ifnet *);
 #endif /* WITH_PTNETMAP_GUEST */
 
+int netmap_mem_pools_info_get(struct nmreq *, struct netmap_adapter *);
+
 #define NETMAP_MEM_PRIVATE	0x2	/* allocator uses private address space */
 #define NETMAP_MEM_IO		0x4	/* the underlying memory is mmapped I/O */
 

@@ -1926,6 +1926,12 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 	.nmd_rings_delete = netmap_mem2_rings_delete
 };
 
+int
+netmap_mem_pools_info_get(struct nmreq *nmr, struct netmap_adapter *na)
+{
+	return 0;
+}
+
 #ifdef WITH_PTNETMAP_GUEST
 struct mem_pt_if {
 	struct mem_pt_if *next;
