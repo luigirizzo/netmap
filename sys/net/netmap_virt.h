@@ -65,18 +65,26 @@
 /*
  * ptnetmap configuration
  *
- * The hypervisor (QEMU or bhyve) sends this struct to the host netmap
- * module through an ioctl() command when it wants to start the ptnetmap
- * kthreads.
+ * The ptnet kthreads (running in host kernel-space) need to be configured
+ * in order to know how to intercept guest kicks (I/O register writes) and
+ * how to inject MSI-X interrupts to the guest. The configuration may vary
+ * depending on the hypervisor. Currently, we support QEMU/KVM on Linux and
+ * and bhyve on FreeBSD.
+ * The configuration is passed by the hypervisor to the host netmap module
+ * by means of an ioctl() with nr_cmd=NETMAP_PT_HOST_CREATE, and it is
+ * specified by the ptnetmap_cfg struct. This struct contains an header
+ * with general informations and an array of entries whose size depends
+ * on the hypervisor. The NETMAP_PT_HOST_CREATE command is issued every
+ * time the kthreads are started.
  */
 struct ptnetmap_cfg {
 #define PTNETMAP_CFGTYPE_QEMU		0x1
 #define PTNETMAP_CFGTYPE_BHYVE		0x2
-	uint16_t cfgtype;		/* how to interpret the cfg entries */
-	uint16_t entry_size;		/* size of a cfg entry */
-	uint32_t num_rings;		/* number of entries */
-	void *ptrings;			/* ptrings inside CSB */
-	/* per-ptring configuration comes here */
+	uint16_t cfgtype;	/* how to interpret the cfg entries */
+	uint16_t entry_size;	/* size of a config entry */
+	uint32_t num_rings;	/* number of config entries */
+	void *ptrings;		/* ptrings inside CSB */
+	/* Configuration entries are allocated right after the struct. */
 };
 
 /* Configuration of a ptnetmap ring for QEMU. */
