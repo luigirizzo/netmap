@@ -291,7 +291,7 @@ static inline void ptnet_kick(struct ptnet_queue *pq)
 static int
 ptnet_attach(device_t dev)
 {
-	uint32_t ptfeatures = PTNETMAP_F_BASE;
+	uint32_t ptfeatures = 0;
 	unsigned int num_rx_rings, num_tx_rings;
 	struct netmap_adapter na_arg;
 	unsigned int nifp_offset;
@@ -315,19 +315,12 @@ ptnet_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	/* Check if we are supported by the hypervisor. If not,
-	 * bail out immediately. */
+	/* Negotiate features with the hypervisor. */
 	if (ptnet_vnet_hdr) {
 		ptfeatures |= PTNETMAP_F_VNET_HDR;
 	}
 	bus_write_4(sc->iomem, PTNET_IO_PTFEAT, ptfeatures); /* wanted */
 	ptfeatures = bus_read_4(sc->iomem, PTNET_IO_PTFEAT); /* acked */
-	if (!(ptfeatures & PTNETMAP_F_BASE)) {
-		device_printf(dev, "Hypervisor does not support netmap "
-				   "passthorugh\n");
-		err = ENXIO;
-		goto err_path;
-	}
 	sc->ptfeatures = ptfeatures;
 
 	/* Allocate CSB and carry out CSB allocation protocol (CSBBAH first,

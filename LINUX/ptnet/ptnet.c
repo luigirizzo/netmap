@@ -1235,7 +1235,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
-	uint32_t ptfeatures = PTNETMAP_F_BASE;
+	uint32_t ptfeatures = 0;
 	unsigned int num_tx_rings, num_rx_rings;
 	struct netmap_adapter na_arg;
 	struct net_device *netdev;
@@ -1278,17 +1278,12 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_iomap;
 	}
 
-	/* Check if we are supported by the hypervisor. If not,
-	 * bail out immediately. */
+	/* Feature negotiation with the hypervisor. */
 	if (ptnet_vnet_hdr) {
 		ptfeatures |= PTNETMAP_F_VNET_HDR;
 	}
 	iowrite32(ptfeatures, ioaddr + PTNET_IO_PTFEAT); /* wanted */
 	ptfeatures = ioread32(ioaddr + PTNET_IO_PTFEAT); /* acked */
-	if (!(ptfeatures & PTNETMAP_F_BASE)) {
-		pr_err("Hypervisor doesn't support netmap passthrough\n");
-		goto err_ptfeat;
-	}
 
 	/* Allocate a multi-queue Ethernet device, with space for
 	 * the adapter struct and per-ring structs. */

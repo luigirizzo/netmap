@@ -33,9 +33,7 @@
 #define NETMAP_VIRT_CSB_SIZE   4096
 
 /* ptnetmap features */
-#define PTNETMAP_F_BASE            1
-#define PTNETMAP_F_FULL            2 /* not used */
-#define PTNETMAP_F_VNET_HDR        4
+#define PTNETMAP_F_VNET_HDR        1
 
 /*
  * ptnetmap_memdev: device used to expose memory into the guest VM
