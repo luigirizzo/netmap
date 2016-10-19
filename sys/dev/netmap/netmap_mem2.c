@@ -1929,6 +1929,35 @@ struct netmap_mem_ops netmap_mem_private_ops = {
 int
 netmap_mem_pools_info_get(struct nmreq *nmr, struct netmap_adapter *na)
 {
+	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
+	struct netmap_pools_info *upi = (struct netmap_pools_info *)(*pp);
+	struct netmap_mem_d *nmd = na->nm_mem;
+	struct netmap_pools_info pi;
+	int ret;
+
+	if (!nmd) {
+		return -1;
+	}
+
+	pi.totalsize = nmd->nm_totalsize;
+	pi.if_pool_offset = 0;
+	pi.if_pool_objtotal = nmd->pools[NETMAP_IF_POOL].objtotal;
+	pi.if_pool_objsize = nmd->pools[NETMAP_IF_POOL]._objsize;
+
+	pi.ring_pool_offset = nmd->pools[NETMAP_IF_POOL].memtotal;
+	pi.ring_pool_objtotal = nmd->pools[NETMAP_RING_POOL].objtotal;
+	pi.ring_pool_objsize = nmd->pools[NETMAP_RING_POOL]._objsize;
+
+	pi.buf_pool_offset = nmd->pools[NETMAP_IF_POOL].memtotal +
+			     nmd->pools[NETMAP_RING_POOL].memtotal;
+	pi.buf_pool_objtotal = nmd->pools[NETMAP_BUF_POOL].objtotal;
+	pi.buf_pool_objsize = nmd->pools[NETMAP_BUF_POOL]._objsize;
+
+	ret = copyout(&pi, upi, sizeof(pi));
+	if (ret) {
+		return ret;
+	}
+
 	return 0;
 }
 

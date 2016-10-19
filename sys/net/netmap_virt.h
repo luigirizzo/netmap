@@ -119,10 +119,10 @@ ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
 
 /*
  * Structure filled-in by the kernel when asked for allocator info
- * through NETMAP_ALLOC_INFO_GET. Used by hypervisors supporting
+ * through NETMAP_POOLS_INFO_GET. Used by hypervisors supporting
  * ptnetmap.
  */
-struct netmap_allocator_info {
+struct netmap_pools_info {
 	uint64_t totalsize;
         uint32_t if_pool_offset;
         uint32_t if_pool_objtotal;
