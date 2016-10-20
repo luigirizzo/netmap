@@ -1919,7 +1919,7 @@ struct netmap_mem_ptg {
 	vm_paddr_t nm_paddr;            /* physical address in the guest */
 	void *nm_addr;                  /* virtual address in the guest */
 	struct netmap_lut buf_lut;      /* lookup table for BUF pool in the guest */
-	nm_memid_t nm_host_id;          /* allocator identifier in the host */
+	nm_memid_t host_mem_id;         /* allocator identifier in the host */
 	struct ptnetmap_memdev *ptn_dev;/* ptnetmap memdev */
 	struct mem_pt_if *pt_ifs;	/* list of interfaces in passthrough */
 };
@@ -2286,7 +2286,7 @@ static struct netmap_mem_ops netmap_mem_pt_guest_ops = {
 
 /* Called with NMA_LOCK(&nm_mem) held. */
 static struct netmap_mem_d *
-netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
+netmap_mem_pt_guest_find_memid(nm_memid_t mem_id)
 {
 	struct netmap_mem_d *mem = NULL;
 	struct netmap_mem_d *scan = netmap_last_mem_d;
@@ -2294,7 +2294,7 @@ netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 	do {
 		/* find ptnetmap allocator through host ID */
 		if (scan->ops->nmd_deref == netmap_mem_pt_guest_deref &&
-			((struct netmap_mem_ptg *)(scan))->nm_host_id == host_id) {
+			((struct netmap_mem_ptg *)(scan))->host_mem_id == mem_id) {
 			mem = scan;
 			break;
 		}
@@ -2306,7 +2306,7 @@ netmap_mem_pt_guest_find_hostid(nm_memid_t host_id)
 
 /* Called with NMA_LOCK(&nm_mem) held. */
 static struct netmap_mem_d *
-netmap_mem_pt_guest_create(nm_memid_t host_id)
+netmap_mem_pt_guest_create(nm_memid_t mem_id)
 {
 	struct netmap_mem_ptg *ptnmd;
 	int err = 0;
@@ -2319,7 +2319,7 @@ netmap_mem_pt_guest_create(nm_memid_t host_id)
 	}
 
 	ptnmd->up.ops = &netmap_mem_pt_guest_ops;
-	ptnmd->nm_host_id = host_id;
+	ptnmd->host_mem_id = mem_id;
 	ptnmd->pt_ifs = NULL;
 
         /* Assign new id in the guest (We have the lock) */
@@ -2343,14 +2343,14 @@ error:
  * if it is not there
  */
 static struct netmap_mem_d *
-netmap_mem_pt_guest_get(nm_memid_t host_id)
+netmap_mem_pt_guest_get(nm_memid_t mem_id)
 {
 	struct netmap_mem_d *nmd;
 
 	NMA_LOCK(&nm_mem);
-	nmd = netmap_mem_pt_guest_find_hostid(host_id);
+	nmd = netmap_mem_pt_guest_find_memid(mem_id);
 	if (nmd == NULL) {
-		nmd = netmap_mem_pt_guest_create(host_id);
+		nmd = netmap_mem_pt_guest_create(mem_id);
 	}
 	NMA_UNLOCK(&nm_mem);
 
@@ -2359,7 +2359,7 @@ netmap_mem_pt_guest_get(nm_memid_t host_id)
 
 /*
  * The guest allocator can be created by ptnetmap_memdev (during the device
- * attach) or by ptnetmap device (e1000/virtio), during the netmap_attach.
+ * attach) or by ptnetmap device (ptnet), during the netmap_attach.
  *
  * The order is not important (we have different order in LINUX and FreeBSD).
  * The first one, creates the device, and the second one simply attaches it.
@@ -2368,12 +2368,12 @@ netmap_mem_pt_guest_get(nm_memid_t host_id)
 /* Called when ptnetmap_memdev is attaching, to attach a new allocator in
  * the guest */
 struct netmap_mem_d *
-netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
+netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t mem_id)
 {
 	struct netmap_mem_d *nmd;
 	struct netmap_mem_ptg *ptnmd;
 
-	nmd = netmap_mem_pt_guest_get(host_id);
+	nmd = netmap_mem_pt_guest_get(mem_id);
 
 	/* assign this device to the guest allocator */
 	if (nmd) {
@@ -2384,23 +2384,23 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t host_id)
 	return nmd;
 }
 
-/* Called when ptnetmap device (virtio/e1000) is attaching */
+/* Called when ptnet device is attaching */
 struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
 			unsigned int nifp_offset,
 			nm_pt_guest_ptctl_t ptctl)
 {
 	struct netmap_mem_d *nmd;
-	nm_memid_t host_id;
+	nm_memid_t mem_id;
 
 	if (ifp == NULL || ptctl == NULL) {
 		return NULL;
 	}
 
 	/* Get the host id allocator. */
-	host_id = ptctl(ifp, PTNETMAP_PTCTL_HOSTMEMID);
+	mem_id = ptctl(ifp, PTNETMAP_PTCTL_HOSTMEMID);
 
-	nmd = netmap_mem_pt_guest_get(host_id);
+	nmd = netmap_mem_pt_guest_get(mem_id);
 
 	if (nmd) {
 		netmap_mem_pt_guest_ifp_add(nmd, ifp, nifp_offset,

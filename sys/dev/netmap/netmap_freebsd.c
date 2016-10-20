@@ -734,7 +734,7 @@ ptn_memdev_attach(device_t dev)
 	}
 	netmap_mem_get(ptn_dev->nm_mem);
 
-	D("ptn_memdev_driver probe OK - host_id: %d", mem_id);
+	D("ptn_memdev_driver probe OK - host_mem_id: %d", mem_id);
 
 	return (0);
 }
