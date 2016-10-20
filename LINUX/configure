@@ -374,7 +374,7 @@ EOF
 get-$d:
 	\$($d@fetch)
 	\$($d@src)
-	if [ \$($d@dst) != $d ]; then cp -Rp \$($d@dst) $d; fi
+	if [ -n "\$($d@dst)" ] && [ \$($d@dst)x != ${d}x ]; then cp -Rp \$($d@dst) $d; fi
 	touch get-$d
 EOF
 	done
