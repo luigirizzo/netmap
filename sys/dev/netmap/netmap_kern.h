@@ -1,6 +1,7 @@
 /*
- * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo. All rights reserved.
- * Copyright (C) 2013-2014 Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo
+ * Copyright (C) 2013-2016 Universita` di Pisa
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -1411,8 +1412,6 @@ u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 #define	NM_BDG_BROADCAST	NM_BDG_MAXPORTS
 #define	NM_BDG_NOPORT		(NM_BDG_MAXPORTS+1)
 
-#define	NM_NAME			"vale"	/* prefix for bridge port name */
-
 /* these are redefined in case of no VALE support */
 int netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 struct nm_bridge *netmap_init_bridges2(u_int);
@@ -1512,9 +1511,9 @@ int netmap_adapter_put(struct netmap_adapter *na);
  */
 #define NETMAP_BUF_BASE(_na)	((_na)->na_lut.lut[0].vaddr)
 #define NETMAP_BUF_SIZE(_na)	((_na)->na_lut.objsize)
-extern int netmap_mitigate;	// XXX not really used
 extern int netmap_no_pendintr;
-extern int netmap_verbose;	// XXX debugging
+extern int netmap_mitigate;
+extern int netmap_verbose;		/* for debugging */
 enum {                                  /* verbose flags */
 	NM_VERB_ON = 1,                 /* generic verbose */
 	NM_VERB_HOST = 0x2,             /* verbose host stack */
@@ -1527,7 +1526,6 @@ enum {                                  /* verbose flags */
 };
 
 extern int netmap_txsync_retry;
-extern int netmap_adaptive_io;
 extern int netmap_flags;
 extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
@@ -2010,13 +2008,14 @@ typedef void (*nm_kthread_worker_fn_t)(void *data);
 /* kthread configuration */
 struct nm_kthread_cfg {
 	long				type;		/* kthread type/identifier */
-	struct ptnet_ring_cfg		event;		/* event/ioctl fd */
 	nm_kthread_worker_fn_t		worker_fn;	/* worker function */
 	void				*worker_private;/* worker parameter */
 	int				attach_user;	/* attach kthread to user process */
 };
 /* kthread configuration */
-struct nm_kthread *nm_os_kthread_create(struct nm_kthread_cfg *cfg);
+struct nm_kthread *nm_os_kthread_create(struct nm_kthread_cfg *cfg,
+					unsigned int cfgtype,
+					void *opaque);
 int nm_os_kthread_start(struct nm_kthread *);
 void nm_os_kthread_stop(struct nm_kthread *);
 void nm_os_kthread_delete(struct nm_kthread *);

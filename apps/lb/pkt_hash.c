@@ -68,21 +68,21 @@ build_sym_key_cache(uint32_t *cache, int cache_len)
                 0x0c, 0xf2, 0x30, 0x80,
                 0x3b, 0xb7, 0x42, 0x6a,
                 0xfa, 0x01, 0xac, 0xbe};
-	
+
         uint32_t result = (((uint32_t)key[0]) << 24) |
                 (((uint32_t)key[1]) << 16) |
                 (((uint32_t)key[2]) << 8)  |
                 ((uint32_t)key[3]);
-	
+
         uint32_t idx = 32;
         int i;
-	
+
         for (i = 0; i < cache_len; i++, idx++) {
                 uint8_t shift = (idx % (sizeof(uint8_t) * 8));
                 uint32_t bit;
-		
+
                 cache[i] = result;
-                bit = ((key[idx/(sizeof(uint8_t) * 8)] << shift) 
+                bit = ((key[idx/(sizeof(uint8_t) * 8)] << shift)
 		       & 0x80) ? 1 : 0;
                 result = ((result << 1) | bit);
         }
@@ -102,12 +102,12 @@ sym_hash_fn(uint32_t sip, uint32_t dip, uint16_t sp, uint32_t dp)
 	int i;
 	static int first_time = 1;
 	static uint32_t key_cache[KEY_CACHE_LEN] = {0};
-	
+
 	if (first_time) {
 		build_sym_key_cache(key_cache, KEY_CACHE_LEN);
 		first_time = 0;
 	}
-	
+
 	for (i = 0; i < 32; i++) {
                 if (sip & MSB32)
                         rc ^= key_cache[i];
@@ -139,7 +139,7 @@ static uint32_t
 decode_ip_n_hash(struct ip *iph, uint8_t hash_split, uint8_t seed)
 {
 	uint32_t rc = 0;
-	
+
 	if (hash_split == 2) {
 		rc = sym_hash_fn(ntohl(iph->ip_src.s_addr),
 			ntohl(iph->ip_dst.s_addr),
@@ -148,13 +148,13 @@ decode_ip_n_hash(struct ip *iph, uint8_t hash_split, uint8_t seed)
 	} else {
 		struct tcphdr *tcph = NULL;
 		struct udphdr *udph = NULL;
-		
+
 		switch (iph->ip_p) {
 		case IPPROTO_TCP:
 			tcph = (struct tcphdr *)((uint8_t *)iph + (iph->ip_hl<<2));
-			rc = sym_hash_fn(ntohl(iph->ip_src.s_addr), 
-					 ntohl(iph->ip_dst.s_addr), 
-					 ntohs(tcph->th_sport) + seed, 
+			rc = sym_hash_fn(ntohl(iph->ip_src.s_addr),
+					 ntohl(iph->ip_dst.s_addr),
+					 ntohs(tcph->th_sport) + seed,
 					 ntohs(tcph->th_dport) + seed);
 			break;
 		case IPPROTO_UDP:
@@ -170,9 +170,9 @@ decode_ip_n_hash(struct ip *iph, uint8_t hash_split, uint8_t seed)
 					      hash_split, seed);
 			break;
 		default:
-			/* 
-			 ** the hash strength (although weaker but) should still hold 
-			 ** even with 2 fields 
+			/*
+			 ** the hash strength (although weaker but) should still hold
+			 ** even with 2 fields
 			rc = sym_hash_fn(ntohl(iph->ip_src.s_addr),
 					 ntohl(iph->ip_dst.s_addr),
 					 ntohs(0xFFFD) + seed,
@@ -194,7 +194,7 @@ decode_ipv6_n_hash(struct ip6_hdr *ipv6h, uint8_t hash_split, uint8_t seed)
 {
 	uint32_t saddr, daddr;
 	uint32_t rc = 0;
-	
+
 	/* Get only the first 4 octets */
 	saddr = ipv6h->ip6_src.s6_addr[0] |
 		(ipv6h->ip6_src.s6_addr[1] << 8) |
@@ -204,7 +204,7 @@ decode_ipv6_n_hash(struct ip6_hdr *ipv6h, uint8_t hash_split, uint8_t seed)
 		(ipv6h->ip6_dst.s6_addr[1] << 8) |
 		(ipv6h->ip6_dst.s6_addr[2] << 16) |
 		(ipv6h->ip6_dst.s6_addr[3] << 24);
-	
+
 	if (hash_split == 2) {
 		rc = sym_hash_fn(ntohl(saddr),
 				 ntohl(daddr),
@@ -213,13 +213,13 @@ decode_ipv6_n_hash(struct ip6_hdr *ipv6h, uint8_t hash_split, uint8_t seed)
 	} else {
 		struct tcphdr *tcph = NULL;
 		struct udphdr *udph = NULL;
-		
+
 		switch(ntohs(ipv6h->ip6_ctlun.ip6_un1.ip6_un1_nxt)) {
 		case IPPROTO_TCP:
 			tcph = (struct tcphdr *)(ipv6h + 1);
-			rc = sym_hash_fn(ntohl(saddr), 
-					 ntohl(daddr), 
-					 ntohs(tcph->th_sport) + seed, 
+			rc = sym_hash_fn(ntohl(saddr),
+					 ntohl(daddr),
+					 ntohs(tcph->th_sport) + seed,
 					 ntohs(tcph->th_dport) + seed);
 			break;
 		case IPPROTO_UDP:
@@ -245,9 +245,9 @@ decode_ipv6_n_hash(struct ip6_hdr *ipv6h, uint8_t hash_split, uint8_t seed)
 		case IPPROTO_PIM:
 		case IPPROTO_IGMP:
 		default:
-			/* 
-			 ** the hash strength (although weaker but) should still hold 
-			 ** even with 2 fields 
+			/*
+			 ** the hash strength (although weaker but) should still hold
+			 ** even with 2 fields
 			 **/
 			rc = sym_hash_fn(ntohl(saddr),
 					 ntohl(daddr),
@@ -266,7 +266,7 @@ static uint32_t
 decode_others_n_hash(struct ether_header *ethh, uint8_t seed)
 {
 	uint32_t saddr, daddr, rc;
-	
+
 	saddr = ethh->ether_shost[5] |
 		(ethh->ether_shost[4] << 8) |
 		(ethh->ether_shost[3] << 16) |
@@ -292,7 +292,7 @@ decode_vlan_n_hash(struct ether_header *ethh, uint8_t hash_split, uint8_t seed)
 {
 	uint32_t rc = 0;
 	struct vlanhdr *vhdr = (struct vlanhdr *)(ethh + 1);
-	
+
 	switch (ntohs(vhdr->proto)) {
 	case ETHERTYPE_IP:
 		rc = decode_ip_n_hash((struct ip *)(vhdr + 1),
@@ -319,7 +319,7 @@ pkt_hdr_hash(const unsigned char *buffer, uint8_t hash_split, uint8_t seed)
 {
 	int rc = 0;
 	struct ether_header *ethh = (struct ether_header *)buffer;
-	
+
 	switch (ntohs(ethh->ether_type)) {
 	case ETHERTYPE_IP:
 		rc = decode_ip_n_hash((struct ip *)(ethh + 1),

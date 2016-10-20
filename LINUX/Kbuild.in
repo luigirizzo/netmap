@@ -14,8 +14,8 @@ remoteobjs-$(CONFIG_NETMAP_VALE)    += netmap_vale.o netmap_offloadings.o
 remoteobjs-$(CONFIG_NETMAP_PIPE)    += netmap_pipe.o
 remoteobjs-$(CONFIG_NETMAP_MONITOR) += netmap_monitor.o
 remoteobjs-$(CONFIG_NETMAP_GENERIC) += netmap_generic.o
-remoteobjs-ptnetmap-$(CONFIG_NETMAP_PTNETMAP_GUEST) = ptnetmap.o
-remoteobjs-ptnetmap-$(CONFIG_NETMAP_PTNETMAP_HOST)  = ptnetmap.o
+remoteobjs-ptnetmap-$(CONFIG_NETMAP_PTNETMAP_GUEST) = netmap_pt.o
+remoteobjs-ptnetmap-$(CONFIG_NETMAP_PTNETMAP_HOST)  = netmap_pt.o
 remoteobjs-y += $(remoteobjs-ptnetmap-y)
 
 define remote_template

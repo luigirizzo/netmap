@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2014 Giuseppe Lettieri. All rights reserved.
+ * Copyright (C) 2014-2016 Giuseppe Lettieri
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -190,7 +191,7 @@ nm_monitor_alloc(struct netmap_kring *kring, u_int n)
 	if (n <= kring->max_monitors)
 		/* we already have more entries that requested */
 		return 0;
-	
+
         len = sizeof(struct netmap_kring *) * n;
 #ifndef _WIN32
 	nm = realloc(kring->monitors, len, M_DEVBUF, M_NOWAIT | M_ZERO);
@@ -300,7 +301,7 @@ netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring)
 		kring->nm_sync = kring->mon_sync;
 		kring->mon_sync = NULL;
 		if (kring->tx == NR_RX) {
-			ND("%s: restoring notify on %s: %p", 
+			ND("%s: restoring notify on %s: %p",
 					mkring->name, kring->name, kring->mon_notify);
 			kring->nm_notify = kring->mon_notify;
 			kring->mon_notify = NULL;
@@ -405,7 +406,7 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 
 /*
  ****************************************************************
- * functions specific for zero-copy monitors                    
+ * functions specific for zero-copy monitors
  ****************************************************************
  */
 
@@ -553,7 +554,7 @@ netmap_zmon_dtor(struct netmap_adapter *na)
 
 /*
  ****************************************************************
- * functions specific for copy monitors                    
+ * functions specific for copy monitors
  ****************************************************************
  */
 
@@ -728,7 +729,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
 	if ((nmr->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX)) == 0) {
 		if (nmr->nr_flags & NR_ZCOPY_MON) {
-			/* the flag makes no sense unless you are 
+			/* the flag makes no sense unless you are
 			 * creating a monitor
 			 */
 			return EINVAL;

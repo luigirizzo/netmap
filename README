@@ -70,7 +70,7 @@ descriptors. Device drivers are completely in the kernel, and the system
 does not rely on IOMMU or other special mechanisms.
 
 
-Installation instructions 
+Installation instructions
 -------------------------
 A single kernel module implements the core NETMAP functions, including
 the VALE switch and access to physical NICS using unmodified device drivers
@@ -128,7 +128,7 @@ FreeBSD has also native netmap support in the Chelsio 10/40G cards.
 	make
 	# build sample applications
 	make apps
-  
+
    WINDOWS
    -------
    Netmap has been ported to Windows in summer 2015 by Alessio Faina as part of
@@ -242,7 +242,7 @@ Credits
 NETMAP and VALE are projects of the Universita` di Pisa,
 partially supported by various entities including:
 Intel Research Berkeley, EU FP7 projects CHANGE and OPENLAB,
-Netapp/Silicon Valley Community Foundation, ICSI, 
+Netapp/Silicon Valley Community Foundation, ICSI
 
 Author:		Luigi Rizzo
 Contributors:

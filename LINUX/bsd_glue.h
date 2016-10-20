@@ -357,7 +357,7 @@ static inline int ilog2(uint64_t n)
 	if (p_ != NULL) 					\
 		split_page(p_, order_);				\
 	(p_ != NULL ? (char*)page_address(p_) : NULL); })
-	
+
 #define contigfree(va, sz, ty)					\
 	do {							\
 		unsigned int npages_ =				\
@@ -470,7 +470,7 @@ int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 #define MALLOC_DEFINE(a, b, c)
 
 struct netmap_adapter;
-int netmap_linux_config(struct netmap_adapter *na, 
+int netmap_linux_config(struct netmap_adapter *na,
 		u_int *txr, u_int *rxr, u_int *txd, u_int *rxd);
 /* ---- namespaces ------ */
 #ifdef CONFIG_NET_NS

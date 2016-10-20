@@ -716,7 +716,7 @@ initialize_packet(struct targ *targ)
 	pcap_t *file;
 	struct pcap_pkthdr *header;
 	const unsigned char *packet;
-	
+
 	/* Read a packet from a PCAP file if asked. */
 	if (targ->g->packet_file != NULL) {
 		if ((file = pcap_open_offline(targ->g->packet_file,
@@ -1177,7 +1177,7 @@ sender_body(void *data)
 		frame = targ->frame;
 		size = targ->g->pkt_size;
 	}
-	
+
 	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
@@ -2072,7 +2072,12 @@ main_thread(struct glob_arg *g)
 		 */
 		if (targs[i].used)
 			pthread_join(targs[i].thread, NULL); /* blocking */
-		close(targs[i].fd);
+		if (g->dev_type == DEV_NETMAP) {
+			nm_close(targs[i].nmd);
+			targs[i].nmd = NULL;
+		} else {
+			close(targs[i].fd);
+		}
 
 		if (targs[i].completed == 0)
 			D("ouch, thread %d exited with error", i);
@@ -2103,11 +2108,6 @@ main_thread(struct glob_arg *g)
 		tx_output(&cur, delta_t, "Sent");
 	else
 		tx_output(&cur, delta_t, "Received");
-
-	if (g->dev_type == DEV_NETMAP) {
-		munmap(g->nmd->mem, g->nmd->req.nr_memsize);
-		close(g->main_fd);
-	}
 }
 
 struct td_desc {
@@ -2617,6 +2617,7 @@ out:
 		D("failed to re-enable SIGINT: %s", strerror(errno));
 	}
 	main_thread(&g);
+	free(targs);
 	return 0;
 }
 

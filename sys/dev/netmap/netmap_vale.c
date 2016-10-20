@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013-2014 Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2013-2016 Universita` di Pisa
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -122,7 +123,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
 
 /*
  * system parameters (most of them in netmap_kern.h)
- * NM_NAME	prefix for switch port names, default "vale"
+ * NM_BDG_NAME	prefix for switch port names, default "vale"
  * NM_BDG_MAXPORTS	number of ports
  * NM_BRIDGES	max number of switches in the system.
  *	XXX should become a sysctl or tunable
@@ -281,6 +282,45 @@ pkt_copy(void *_src, void *_dst, int l)
 }
 
 
+static int
+nm_is_id_char(const char c)
+{
+	return (c >= 'a' && c <= 'z') ||
+	       (c >= 'A' && c <= 'Z') ||
+	       (c >= '0' && c <= '9') ||
+	       (c == '_');
+}
+
+/* Validate the name of a VALE bridge port and return the
+ * position of the ":" character. */
+static int
+nm_vale_name_validate(const char *name)
+{
+	int colon_pos = -1;
+	int i;
+
+	if (!name || strlen(name) < strlen(NM_BDG_NAME)) {
+		return -1;
+	}
+
+	for (i = 0; name[i]; i++) {
+		if (name[i] == ':') {
+			if (colon_pos != -1) {
+				return -1;
+			}
+			colon_pos = i;
+		} else if (!nm_is_id_char(name[i])) {
+			return -1;
+		}
+	}
+
+	if (i >= IFNAMSIZ) {
+		return -1;
+	}
+
+	return colon_pos;
+}
+
 /*
  * locate a bridge among the existing ones.
  * MUST BE CALLED WITH NMG_LOCK()
@@ -291,7 +331,7 @@ pkt_copy(void *_src, void *_dst, int l)
 static struct nm_bridge *
 nm_find_bridge(const char *name, int create)
 {
-	int i, l, namelen;
+	int i, namelen;
 	struct nm_bridge *b = NULL, *bridges;
 	u_int num_bridges;
 
@@ -299,21 +339,11 @@ nm_find_bridge(const char *name, int create)
 
 	netmap_bns_getbridges(&bridges, &num_bridges);
 
-	namelen = strlen(NM_NAME);	/* base length */
-	l = name ? strlen(name) : 0;		/* actual length */
-	if (l < namelen) {
+	namelen = nm_vale_name_validate(name);
+	if (namelen < 0) {
 		D("invalid bridge name %s", name ? name : NULL);
 		return NULL;
 	}
-	for (i = namelen + 1; i < l; i++) {
-		if (name[i] == ':') {
-			namelen = i;
-			break;
-		}
-	}
-	if (namelen >= IFNAMSIZ)
-		namelen = IFNAMSIZ;
-	ND("--- prefix is '%.*s' ---", namelen, name);
 
 	/* lookup the name, remember empty slot if there is one */
 	for (i = 0; i < num_bridges; i++) {
@@ -560,7 +590,7 @@ nm_vi_create(struct nmreq *nmr)
 	int error;
 
 	/* don't include VALE prefix */
-	if (!strncmp(nmr->nr_name, NM_NAME, strlen(NM_NAME)))
+	if (!strncmp(nmr->nr_name, NM_BDG_NAME, strlen(NM_BDG_NAME)))
 		return EINVAL;
 	ifp = ifunit_ref(nmr->nr_name);
 	if (ifp) { /* already exist, cannot create new one */
@@ -613,7 +643,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
 	/* first try to see if this is a bridge port. */
 	NMG_LOCK_ASSERT();
-	if (strncmp(nr_name, NM_NAME, sizeof(NM_NAME) - 1)) {
+	if (strncmp(nr_name, NM_BDG_NAME, sizeof(NM_BDG_NAME) - 1)) {
 		return 0;  /* no error, but no VALE prefix */
 	}
 
@@ -876,14 +906,14 @@ nm_bdg_create_kthreads(struct nm_bdg_polling_state *bps)
 		int affinity = bps->cpu_from + i;
 
 		t->bps = bps;
-		t->qfirst = all ? bps->qfirst /* must be 0 */: affinity; 
+		t->qfirst = all ? bps->qfirst /* must be 0 */: affinity;
 		t->qlast = all ? bps->qlast : t->qfirst + 1;
 		D("kthread %d a:%u qf:%u ql:%u", i, affinity, t->qfirst,
 			t->qlast);
 
 		kcfg.type = i;
 		kcfg.worker_private = t;
-		t->nmk = nm_os_kthread_create(&kcfg);
+		t->nmk = nm_os_kthread_create(&kcfg, 0, NULL);
 		if (t->nmk == NULL) {
 			goto cleanup;
 		}
@@ -1118,7 +1148,7 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 	case NETMAP_BDG_LIST:
 		/* this is used to enumerate bridges and ports */
 		if (namelen) { /* look up indexes of bridge and port */
-			if (strncmp(name, NM_NAME, strlen(NM_NAME))) {
+			if (strncmp(name, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
 				error = EINVAL;
 				break;
 			}
@@ -2510,7 +2540,7 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 	struct netmap_kring *hw_kring;
 	int error;
 
-	ND("%s: na %s hwna %s", 
+	ND("%s: na %s hwna %s",
 			(kring ? kring->name : "NULL!"),
 			(na ? na->name : "NULL!"),
 			(hwna ? hwna->name : "NULL!"));

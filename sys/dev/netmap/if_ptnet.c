@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2016, Vincenzo Maffione <v DoT maffione AT gmail DoT com>
+ * Copyright (c) 2016, Vincenzo Maffione
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,12 +22,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * $FreeBSD$
  */
 
 /* Driver for ptnet paravirtualized network device. */
 
 #include <sys/cdefs.h>
-//__FBSDID("$FreeBSD: releng/10.2/sys/dev/netmap/netmap_ptnet.c xxx $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -340,7 +341,11 @@ ptnet_attach(device_t dev)
 	}
 
 	{
-		vm_paddr_t paddr = vtophys(sc->csb);
+		/*
+		 * We use uint64_t rather than vm_paddr_t since we
+		 * need 64 bit addresses even on 32 bit platforms.
+		 */
+		uint64_t paddr = vtophys(sc->csb);
 
 		bus_write_4(sc->iomem, PTNET_IO_CSBBAH,
 			    (paddr >> 32) & 0xffffffff);
@@ -1138,9 +1143,11 @@ ptnet_sync_from_csb(struct ptnet_softc *sc, struct netmap_adapter *na)
 static void
 ptnet_update_vnet_hdr(struct ptnet_softc *sc)
 {
-	sc->vnet_hdr_len = ptnet_vnet_hdr ? PTNET_HDR_SIZE : 0;
+	unsigned int wanted_hdr_len = ptnet_vnet_hdr ? PTNET_HDR_SIZE : 0;
+
+	bus_write_4(sc->iomem, PTNET_IO_VNET_HDR_LEN, wanted_hdr_len);
+	sc->vnet_hdr_len = bus_read_4(sc->iomem, PTNET_IO_VNET_HDR_LEN);
 	sc->ptna->hwup.up.virt_hdr_len = sc->vnet_hdr_len;
-	bus_write_4(sc->iomem, PTNET_IO_VNET_HDR_LEN, sc->vnet_hdr_len);
 }
 
 static int

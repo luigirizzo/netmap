@@ -41,7 +41,7 @@ Device driver patches
 	+	foo_netmap_attach(adapter);
 	+#endif /* DEV_NETMAP */
     </pre>
-  The argument is either the ifnet or the private device descriptor.  
+  The argument is either the ifnet or the private device descriptor.
   This is in foo_attach() on FreeBSD, and somewhere in the path of
   XXX foo_open() in Linux
 

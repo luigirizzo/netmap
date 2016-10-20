@@ -45,16 +45,36 @@ char netmap_igb_driver_name[] = "igb" NETMAP_LINUX_DRIVER_SUFFIX;
  * E1000_TX_DESC_ADV etc. have dropped the _ADV suffix at some point.
  * Also the first argument is now a pointer not the object.
  */
+#ifdef NETMAP_LINUX_HAVE_IGB_PHY_OPS
+static inline u16 nm_igb_read(struct igb_adapter *adapter, u32 offset)
+{
+	u16 rv = 0;
+	if (igb_read_phy_reg(&adapter->hw, offset, &rv)) {
+		RD(5, "%s: read failure at offset %x",
+				adapter->netdev->name, offset);
+	}
+	return rv;
+
+}
+#elif defined(E1000_READ_REG)
+static inline u16 nm_igb_read(struct igb_adapter *adapter, u32 offset)
+{
+	return E1000_READ_REG(&adapter->hw, offset);
+}
+#else
+#error "I don't know how to read registers in igb"
+#endif
+
 #ifndef E1000_TX_DESC_ADV
 #define	E1000_TX_DESC_ADV(_r, _i)	IGB_TX_DESC(&(_r), _i)
 #define	E1000_RX_DESC_ADV(_r, _i)	IGB_RX_DESC(&(_r), _i)
-#define	READ_TDH(_txr)			({struct e1000_hw *hw = &adapter->hw;rd32(E1000_TDH((_txr)->reg_idx));} )
+#define	READ_TDH(_adapter, _txr)	nm_igb_read(_adapter, E1000_TDH((_txr)->reg_idx))
 #else /* up to 3.2, approximately */
 #define	igb_tx_buffer			igb_buffer
 #define	tx_buffer_info			buffer_info
 #define	igb_rx_buffer			igb_buffer
 #define	rx_buffer_info			buffer_info
-#define	READ_TDH(_txr)			readl((_txr)->head)
+#define	READ_TDH(_adapter, _txr)	readl((_txr)->head)
 #endif
 
 
@@ -175,7 +195,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 	 */
 	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
 		/* record completed transmissions using TDH */
-		nic_i = READ_TDH(txr);
+		nic_i = READ_TDH(adapter, txr);
 		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
 			D("TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;

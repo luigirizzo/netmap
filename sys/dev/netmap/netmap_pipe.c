@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2014 Giuseppe Lettieri. All rights reserved.
+ * Copyright (C) 2014-2016 Giuseppe Lettieri
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -91,7 +92,7 @@ nm_pipe_alloc(struct netmap_adapter *na, u_int npipes)
 	if (npipes <= na->na_max_pipes)
 		/* we already have more entries that requested */
 		return 0;
-	
+
 	if (npipes < na->na_next_pipe || npipes > NM_MAXPIPES)
 		return EINVAL;
 
@@ -401,7 +402,7 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 				}
 			}
 		}
-		
+
 		/* create all missing needed rings on the other end */
 		error = netmap_mem_rings_create(ona);
 		if (error)

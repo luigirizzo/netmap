@@ -962,7 +962,7 @@ split_arg(const char *src, int *_ac)
     l = strlen(src);
     /* in the first pass we count fields, in the second pass
      * we allocate the av[] array and a copy of the string
-     * and fill av[]. av[ac] = NULL, av[ac+1] 
+     * and fill av[]. av[ac] = NULL, av[ac+1]
      */
     for (;;) {
 	i = ac = 0;

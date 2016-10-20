@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2011-2014 Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2011-2016 Universita` di Pisa
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -66,6 +67,7 @@
 #define _NET_NETMAP_USER_H_
 
 #define NETMAP_DEVICE_NAME "/dev/netmap"
+
 #ifdef __CYGWIN__
 /*
  * we can compile userspace apps with either cygwin or msvc,
@@ -83,14 +85,12 @@
 #include <windows.h>
 #include <WinDef.h>
 #include <sys/cygwin.h>
-//#include <netioapi.h>
-//#include <winsock.h>
-//#define	IFNAMSIZ 256
-#endif
+#endif /* _WIN32 */
 
 #include <stdint.h>
 #include <sys/socket.h>		/* apple needs sockaddr */
 #include <net/if.h>		/* IFNAMSIZ */
+#include <ctype.h>
 
 #ifndef likely
 #define likely(x)	__builtin_expect(!!(x), 1)
@@ -211,7 +211,7 @@ struct nm_stat {	/* same as pcap_stat	*/
 	u_int	ps_recv;
 	u_int	ps_drop;
 	u_int	ps_ifdrop;
-#ifdef WIN32
+#ifdef WIN32 /* XXX or _WIN32 ? */
 	u_int	bs_capt;
 #endif /* WIN32 */
 };
@@ -391,8 +391,8 @@ struct win_netmap_fd_list {
 	HANDLE win_netmap_handle;
 };
 
-/* 
- * list head containing all the netmap opened fd and their 
+/*
+ * list head containing all the netmap opened fd and their
  * windows HANDLE counterparts
  */
 static struct win_netmap_fd_list *win_netmap_fd_list_head;
@@ -453,7 +453,7 @@ win_get_netmap_handle(int fd)
 
 /*
  * use this function only from netmap_user.h internal functions
- * same as ioctl, returns 0 on success and -1 on error 
+ * same as ioctl, returns 0 on success and -1 on error
  */
 static int
 win_nm_ioctl_internal(HANDLE h, int32_t ctlCode, void *arg)
@@ -499,9 +499,9 @@ win_nm_ioctl_internal(HANDLE h, int32_t ctlCode, void *arg)
 	return ioctlReturnStatus ? 0 : -1;
 }
 
-/* 
+/*
  * this function is what must be called from user-space programs
- * same as ioctl, returns 0 on success and -1 on error 
+ * same as ioctl, returns 0 on success and -1 on error
  */
 static int
 win_nm_ioctl(int fd, int32_t ctlCode, void *arg)
@@ -541,7 +541,7 @@ win32_mmap_emulated(void *addr, size_t length, int prot, int flags, int fd, int3
 
 #include <sys/poll.h> /* XXX needed to use the structure pollfd */
 
-static int 
+static int
 win_nm_poll(struct pollfd *fds, int nfds, int timeout)
 {
 	HANDLE h;
@@ -564,10 +564,11 @@ win_nm_poll(struct pollfd *fds, int nfds, int timeout)
 
 #define poll win_nm_poll
 
-static int 
-win_nm_open(char* pathname, int flags){
+static int
+win_nm_open(char* pathname, int flags)
+{
 
-	if (strcmp(pathname, NETMAP_DEVICE_NAME) == 0){
+	if (strcmp(pathname, NETMAP_DEVICE_NAME) == 0) {
 		int fd = open(NETMAP_DEVICE_NAME, O_RDWR);
 		if (fd < 0) {
 			return -1;
@@ -575,20 +576,19 @@ win_nm_open(char* pathname, int flags){
 
 		win_insert_fd_record(fd);
 		return fd;
-	}
-	else {
-
+	} else {
 		return open(pathname, flags);
 	}
 }
 
 #define open win_nm_open
 
-static int 
-win_nm_close(int fd){
-	if (fd != -1){
+static int
+win_nm_close(int fd)
+{
+	if (fd != -1) {
 		close(fd);
-		if (win_get_netmap_handle(fd) != NULL){
+		if (win_get_netmap_handle(fd) != NULL) {
 			win_remove_fd_record(fd);
 		}
 	}
@@ -598,6 +598,18 @@ win_nm_close(int fd){
 #define close win_nm_close
 
 #endif /* _WIN32 */
+
+static int
+nm_is_identifier(const char *s, const char *e)
+{
+	for (; s != e; s++) {
+		if (!isalnum(*s) && *s != '_') {
+			return 0;
+		}
+	}
+
+	return 1;
+}
 
 /*
  * Try to open, return descriptor if successful, NULL otherwise.
@@ -619,20 +631,48 @@ nm_open(const char *ifname, const struct nmreq *req,
 	u_int namelen;
 	uint32_t nr_ringid = 0, nr_flags, nr_reg;
 	const char *port = NULL;
+	const char *vpname = NULL;
 #define MAXERRMSG 80
 	char errmsg[MAXERRMSG] = "";
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK } p_state;
+	int is_vale;
 	long num;
 
-	if (strncmp(ifname, "netmap:", 7) && strncmp(ifname, "vale", 4)) {
+	if (strncmp(ifname, "netmap:", 7) &&
+			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
 		errno = 0; /* name not recognised, not an error */
 		return NULL;
 	}
-	if (ifname[0] == 'n')
+
+	is_vale = (ifname[0] == 'v');
+	if (is_vale) {
+		port = index(ifname, ':');
+		if (port == NULL) {
+			snprintf(errmsg, MAXERRMSG,
+				 "missing ':' in vale name");
+			goto fail;
+		}
+
+		if (!nm_is_identifier(ifname + 4, port)) {
+			snprintf(errmsg, MAXERRMSG, "invalid bridge name");
+			goto fail;
+		}
+
+		vpname = ++port;
+	} else {
 		ifname += 7;
+		port = ifname;
+	}
+
 	/* scan for a separator */
-	for (port = ifname; *port && !index("-*^{}/", *port); port++)
+	for (; *port && !index("-*^{}/", *port); port++)
 		;
+
+	if (is_vale && !nm_is_identifier(vpname, port)) {
+		snprintf(errmsg, MAXERRMSG, "invalid bridge port name");
+		goto fail;
+	}
+
 	namelen = port - ifname;
 	if (namelen >= sizeof(d->req.nr_name)) {
 		snprintf(errmsg, MAXERRMSG, "name too long");
@@ -729,8 +769,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 	if ((nr_flags & NR_ZCOPY_MON) &&
-	   !(nr_flags & (NR_MONITOR_TX|NR_MONITOR_RX)))
-	{
+	   !(nr_flags & (NR_MONITOR_TX|NR_MONITOR_RX))) {
 		snprintf(errmsg, MAXERRMSG, "'z' used but neither 'r', nor 't' found");
 		goto fail;
 	}
@@ -877,10 +916,10 @@ nm_close(struct nm_desc *d)
 		return EINVAL;
 	if (d->done_mmap && d->mem)
 		munmap(d->mem, d->memsize);
-	if (d->fd != -1){
+	if (d->fd != -1) {
 		close(d->fd);
 	}
-		
+
 	bzero(d, sizeof(*d));
 	free(d);
 	return 0;

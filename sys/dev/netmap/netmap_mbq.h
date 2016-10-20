@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013-2014 Vincenzo Maffione. All rights reserved.
+ * Copyright (C) 2013-2014 Vincenzo Maffione
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -80,6 +81,7 @@ mbq_unlock(struct mbq *q)
 {
 	mtx_unlock_spin(&q->lock);
 }
+
 
 void mbq_safe_init(struct mbq *q);
 void mbq_safe_fini(struct mbq *q);

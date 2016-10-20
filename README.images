@@ -13,7 +13,7 @@ Below are step-by-step instructions on experiments you can run
 with these images. The two main versions are
 
 	picobsd.hdd	-> FreeBSD HEAD (netmap + VALE)
-	tinycore.hdd	-> Linux (qemu + netmap + VALE)      
+	tinycore.hdd	-> Linux (qemu + netmap + VALE)
 
 Booting the image
 -----------------
@@ -59,7 +59,7 @@ Linux image:
     + "Boot Core (command line only)"
       boots in console mode with virtual terminals.
       You're automatically logged in as user 'tc'.
-      To log in the other terminals use the same username 
+      To log in the other terminals use the same username
       (no password required).
 
   + The system should automatically recognize the existing ethernet
