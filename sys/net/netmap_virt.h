@@ -56,7 +56,6 @@
 #define PTNET_MDEV_IO_MEMID		0	/* memory allocator ID in the host */
 #define PTNET_MDEV_IO_MEMSIZE_LO	4	/* netmap memory size (low) */
 #define PTNET_MDEV_IO_MEMSIZE_HI	8	/* netmap_memory_size (high) */
-#define PTNET_MDEV_IO_TOTALSIZE		12
 #define PTNET_MDEV_IO_IF_POOL_OFS	64
 #define PTNET_MDEV_IO_IF_POOL_OBJNUM	68
 #define PTNET_MDEV_IO_IF_POOL_OBJSZ	72
@@ -131,16 +130,17 @@ ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
  * ptnetmap.
  */
 struct netmap_pools_info {
-	uint64_t totalsize;
-        uint32_t if_pool_offset;
-        uint32_t if_pool_objtotal;
-        uint32_t if_pool_objsize;
-        uint32_t ring_pool_offset;
-        uint32_t ring_pool_objtotal;
-        uint32_t ring_pool_objsize;
-        uint32_t buf_pool_offset;
-        uint32_t buf_pool_objtotal;
-        uint32_t buf_pool_objsize;
+	uint64_t memsize;	/* same as nmr->nr_memsize */
+	uint32_t memid;		/* same as nmr->nr_arg2 */
+	uint32_t if_pool_offset;
+	uint32_t if_pool_objtotal;
+	uint32_t if_pool_objsize;
+	uint32_t ring_pool_offset;
+	uint32_t ring_pool_objtotal;
+	uint32_t ring_pool_objsize;
+	uint32_t buf_pool_offset;
+	uint32_t buf_pool_objtotal;
+	uint32_t buf_pool_objsize;
 };
 
 /* ptnetmap control commands */
@@ -201,7 +201,8 @@ struct ptnet_csb {
 
 /* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
 struct ptnetmap_memdev;
-int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
+int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **,
+                          uint64_t *);
 void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
 uint32_t nm_os_pt_memdev_ioread(struct ptnetmap_memdev *, unsigned int);
 

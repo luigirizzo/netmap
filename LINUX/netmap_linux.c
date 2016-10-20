@@ -1640,26 +1640,25 @@ struct ptnetmap_memdev
  */
 int
 nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
-                      void **nm_addr)
+                      void **nm_addr, uint64_t *mem_size)
 {
     struct pci_dev *pdev = ptn_dev->pdev;
     phys_addr_t mem_paddr;
-    uint64_t mem_size;
     int err = 0;
 
-    mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_HI);
-    mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_LO) |
-	       (mem_size << 32);
+    *mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_HI);
+    *mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_LO) |
+	       (*mem_size << 32);
 
     D("=== BAR %d start %llx len %llx mem_size %lx ===",
             PTNETMAP_MEM_PCI_BAR,
             pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
             pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
-            (unsigned long)mem_size);
+            (unsigned long)(*mem_size));
 
     /* map memory allocator */
     mem_paddr = pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR);
-    ptn_dev->pci_mem = *nm_addr = ioremap_cache(mem_paddr, mem_size);
+    ptn_dev->pci_mem = *nm_addr = ioremap_cache(mem_paddr, *mem_size);
     if (ptn_dev->pci_mem == NULL) {
         err = -ENOMEM;
     }

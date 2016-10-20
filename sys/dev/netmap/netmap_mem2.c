@@ -1868,13 +1868,21 @@ netmap_mem_pools_info_get(struct nmreq *nmr, struct netmap_adapter *na)
 	struct netmap_pools_info *upi = (struct netmap_pools_info *)(*pp);
 	struct netmap_mem_d *nmd = na->nm_mem;
 	struct netmap_pools_info pi;
+	unsigned int memsize;
+	uint16_t memid;
 	int ret;
 
 	if (!nmd) {
 		return -1;
 	}
 
-	pi.totalsize = nmd->nm_totalsize;
+	ret = netmap_mem_get_info(nmd, &memsize, NULL, &memid);
+	if (ret) {
+		return ret;
+	}
+
+	pi.memsize = memsize;
+	pi.memid = memid;
 	pi.if_pool_offset = 0;
 	pi.if_pool_objtotal = nmd->pools[NETMAP_IF_POOL].objtotal;
 	pi.if_pool_objsize = nmd->pools[NETMAP_IF_POOL]._objsize;
@@ -2058,6 +2066,7 @@ static int
 netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
+	uint64_t mem_size;
 	uint32_t bufsize;
 	uint32_t nbuffers;
 	uint32_t poolofs;
@@ -2078,7 +2087,7 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 	}
 	/* Map memory through ptnetmap-memdev BAR. */
 	error = nm_os_pt_memdev_iomap(ptnmd->ptn_dev, &ptnmd->nm_paddr,
-				      &ptnmd->nm_addr);
+				      &ptnmd->nm_addr, &mem_size);
 	if (error)
 		goto err;
 
@@ -2114,8 +2123,7 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 
 	ptnmd->buf_lut.objtotal = nbuffers;
 	ptnmd->buf_lut.objsize = bufsize;
-	nmd->nm_totalsize = nm_os_pt_memdev_ioread(ptnmd->ptn_dev,
-						   PTNET_MDEV_IO_TOTALSIZE);
+	nmd->nm_totalsize = (unsigned int)mem_size;
 
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 out:

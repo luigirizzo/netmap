@@ -632,21 +632,20 @@ DRIVER_MODULE_ORDERED(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
  */
 int
 nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
-		      void **nm_addr)
+		      void **nm_addr, uint64_t *mem_size)
 {
-	uint64_t mem_size;
 	int rid;
 
 	D("ptn_memdev_driver iomap");
 
 	rid = PCIR_BAR(PTNETMAP_MEM_PCI_BAR);
-	mem_size = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMSIZE_HI);
-	mem_size = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMSIZE_LO) |
-			(mem_size << 32);
+	*mem_size = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMSIZE_HI);
+	*mem_size = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMSIZE_LO) |
+			(*mem_size << 32);
 
 	/* map memory allocator */
 	ptn_dev->pci_mem = bus_alloc_resource(ptn_dev->dev, SYS_RES_MEMORY,
-			&rid, 0, ~0, mem_size, RF_ACTIVE);
+			&rid, 0, ~0, *mem_size, RF_ACTIVE);
 	if (ptn_dev->pci_mem == NULL) {
 		*nm_paddr = 0;
 		*nm_addr = 0;
@@ -660,7 +659,7 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
 			PTNETMAP_MEM_PCI_BAR,
 			(unsigned long)(*nm_paddr),
 			(unsigned long)rman_get_size(ptn_dev->pci_mem),
-			(unsigned long)mem_size);
+			(unsigned long)*mem_size);
 	return (0);
 }
 
