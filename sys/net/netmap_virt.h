@@ -115,7 +115,7 @@ struct ptnetmap_cfgentry_bhyve {
  * Function used to write ptnetmap_cfg to the nmreq.
  * The user-space application writes the pointer of ptnetmap_cfg
  * (user-space buffer) starting from nr_arg1 field, so that the kernel
- * can read it with copyin (copy_from_user).
+ * can read it with copyin (copy_from_user). TODO remove
  */
 static inline void
 ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
@@ -142,6 +142,13 @@ struct netmap_pools_info {
 	uint32_t buf_pool_objtotal;
 	uint32_t buf_pool_objsize;
 };
+
+static inline void
+nmreq_pointer_put(struct nmreq *nmr, void *userptr)
+{
+	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
+	*pp = (uintptr_t)userptr;
+}
 
 /* ptnetmap control commands */
 #define PTNETMAP_PTCTL_CONFIG	1
