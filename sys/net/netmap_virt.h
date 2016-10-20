@@ -53,9 +53,9 @@
 #define PTNETMAP_MSIX_PCI_BAR           2
 
 /* Registers for the ptnetmap memdev */
-#define PTNET_MDEV_IO_MEMID		0	/* memory allocator ID in the host */
-#define PTNET_MDEV_IO_MEMSIZE_LO	4	/* netmap memory size (low) */
-#define PTNET_MDEV_IO_MEMSIZE_HI	8	/* netmap_memory_size (high) */
+#define PTNET_MDEV_IO_MEMSIZE_LO	0	/* netmap memory size (low) */
+#define PTNET_MDEV_IO_MEMSIZE_HI	4	/* netmap_memory_size (high) */
+#define PTNET_MDEV_IO_MEMID		8	/* memory allocator ID in the host */
 #define PTNET_MDEV_IO_IF_POOL_OFS	64
 #define PTNET_MDEV_IO_IF_POOL_OBJNUM	68
 #define PTNET_MDEV_IO_IF_POOL_OBJSZ	72
