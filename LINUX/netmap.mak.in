@@ -62,7 +62,7 @@ build-$(1): get-$(1) netmap.ko
 	$($(1)@build)
 clean-$(1):
 	-$($(1)@clean)
-install-$(1): build-$(1)
+install-$(1): install-netmap
 	$($(1)@install)
 endef
 
@@ -80,7 +80,10 @@ include drivers.mak
 $(foreach d,$(S_DRIVERS),$(eval $(call common_driver,$(d))))
 $(foreach d,$(E_DRIVERS),$(eval $(call external_driver,$(d))))
 
-install: $(E_DRIVERS:%=install-%) install-apps
+.PHONY: install install-netmap install-apps
+install: install-netmap $(E_DRIVERS:%=install-%) install-apps
+
+install-netmap:
 	$(MAKE) -C $(KSRC) M=$(BUILDDIR) CONFIG_NETMAP=m $(MOD_LIST) \
 		O_DRIVERS="$(DRIVERS:%.c=%.o)" \
 		$(KOPTS) \

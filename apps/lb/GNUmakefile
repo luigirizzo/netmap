@@ -27,3 +27,9 @@ lb: lb.o pkt_hash.o
 
 clean:
 	-@rm -rf $(CLEANFILES)
+
+.PHONY: install
+install: $(PROGS:%=install-%)
+
+install-%:
+	install -D $* $(DESTDIR)/$(PREFIX)/bin/$*
