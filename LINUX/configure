@@ -374,7 +374,6 @@ EOF
 get-$d:
 	\$($d@fetch)
 	\$($d@src)
-	if [ -n "\$($d@dst)" ] && [ \$($d@dst)x != ${d}x ]; then cp -Rp \$($d@dst) $d; fi
 	touch get-$d
 EOF
 	done
@@ -639,7 +638,6 @@ for d in $s_drivers; do
 	# reset all driver variables to default values
 	drv_fetch=
 	drv_src=
-	drv_dst=
 	drv_patch=
 	drv_build=
 	drv_distclean=
@@ -655,10 +653,6 @@ EOF
 			drv disable $d
 			continue
 		}
-	fi
-
-	if [ -z "$drv_dst" ]; then
-		drv_dst=$d
 	fi
 
 	if [ -z "$drv_src" ]; then
@@ -702,7 +696,7 @@ EOF
 			drv disable $d
 			continue
 		fi
-		drv_src="cp -Rp $drv_kernel_src $drv_dst"
+		drv_src="cp -Rp $drv_kernel_src $d"
 	fi
 
 	if [ -z "$drv_patch" ]; then
@@ -754,18 +748,11 @@ EOF
 		edrv enable $d
 	fi
 
-	# the default distclean command just removes everthing
-	if [ -z "$drv_distclean" ]; then
-		drv_distclean="rm -rf $drv_dst"
-	fi
-
 	# add the driver related variables to drivers.mak
 	cat >> drivers.mak <<EOF
 $d@conf := $drv_conf
 $d@src := $drv_src
-$d@dst := $drv_dst
 $d@patch := $drv_patch
-$d@distclean := $drv_distclean
 EOF
 done
 

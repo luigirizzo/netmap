@@ -1,7 +1,7 @@
-diff --git a/e1000e-3.3.5/src/Makefile b/e1000e-3.3.5/src/Makefile
+diff --git a/e1000e/Makefile b/e1000e/Makefile
 index 35ccb2d..82519d0 100644
---- a/e1000e-3.3.5/src/Makefile
-+++ b/e1000e-3.3.5/src/Makefile
+--- a/e1000e/Makefile
++++ b/e1000e/Makefile
 @@ -36,7 +36,7 @@ ifeq (,$(BUILD_KERNEL))
  BUILD_KERNEL=$(shell uname -r)
  endif
@@ -21,10 +21,10 @@ index 35ccb2d..82519d0 100644
  install: default $(MANFILE).gz
  	# remove all old versions of the driver
  	find $(INSTALL_MOD_PATH)/lib/modules/$(KVER) -name $(TARGET) -exec rm -f {} \; || true
-diff --git a/e1000e-3.3.5/src/netdev.c b/e1000e-3.3.5/src/netdev.c
+diff --git a/e1000e/netdev.c b/e1000e/netdev.c
 index 702d367..e31161d 100644
---- a/e1000e-3.3.5/src/netdev.c
-+++ b/e1000e-3.3.5/src/netdev.c
+--- a/e1000e/netdev.c
++++ b/e1000e/netdev.c
 @@ -504,6 +504,10 @@ static int e1000_desc_unused(struct e1000_ring *ring)
  	return ring->count + ring->next_to_clean - ring->next_to_use - 1;
  }

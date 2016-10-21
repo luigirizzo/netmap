@@ -1,7 +1,7 @@
-diff --git a/i40e-1.5.23/src/Makefile b/i40e-1.5.23/src/Makefile
+diff --git a/i40e/Makefile b/i40e/Makefile
 index 8c1483c..104b8c9 100644
---- a/i40e-1.5.23/src/Makefile
-+++ b/i40e-1.5.23/src/Makefile
+--- a/i40e/Makefile
++++ b/i40e/Makefile
 @@ -27,9 +27,9 @@ ifneq ($(KERNELRELEASE),)
  # Makefile for the Intel(R) 40-10 Gigabit Ethernet Connection Network Driver
  #
@@ -47,10 +47,10 @@ index 8c1483c..104b8c9 100644
  # Clean the module subdirectories
  clean:
  	@+$(call kernelbuild,clean)
-diff --git a/i40e-1.5.23/src/i40e_main.c b/i40e-1.5.23/src/i40e_main.c
+diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
 index 577cc4a..d9ee330 100644
---- a/i40e-1.5.23/src/i40e_main.c
-+++ b/i40e-1.5.23/src/i40e_main.c
+--- a/i40e/i40e_main.c
++++ b/i40e/i40e_main.c
 @@ -132,6 +132,11 @@ MODULE_VERSION(DRV_VERSION);
  
  static struct workqueue_struct *i40e_wq;
@@ -111,10 +111,10 @@ index 577cc4a..d9ee330 100644
  	return vsi;
  
  err_rings:
-diff --git a/i40e-1.5.23/src/i40e_txrx.c b/i40e-1.5.23/src/i40e_txrx.c
+diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
 index e0f1f6c..3b131f2 100644
---- a/i40e-1.5.23/src/i40e_txrx.c
-+++ b/i40e-1.5.23/src/i40e_txrx.c
+--- a/i40e/i40e_txrx.c
++++ b/i40e/i40e_txrx.c
 @@ -25,6 +25,10 @@
  #include "i40e.h"
  #include "i40e_prototype.h"

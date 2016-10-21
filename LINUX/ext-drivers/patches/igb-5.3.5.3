@@ -1,7 +1,7 @@
-diff --git a/igb-5.3.5.3/src/Makefile b/igb-5.3.5.3/src/Makefile
+diff --git a/igb/Makefile b/igb/Makefile
 index 8e962f7..cf71864 100644
---- a/igb-5.3.5.3/src/Makefile
-+++ b/igb-5.3.5.3/src/Makefile
+--- a/igb/Makefile
++++ b/igb/Makefile
 @@ -38,7 +38,7 @@ ifeq (,$(BUILD_KERNEL))
  BUILD_KERNEL=$(shell uname -r)
  endif
@@ -21,10 +21,10 @@ index 8e962f7..cf71864 100644
  install: default $(MANFILE).gz
  	install -D -m 644 $(TARGET) $(INSTALL_MOD_PATH)$(INSTDIR)/$(TARGET)
  ifeq (,$(INSTALL_MOD_PATH))
-diff --git a/igb-5.3.5.3/src/igb_main.c b/igb-5.3.5.3/src/igb_main.c
+diff --git a/igb/igb_main.c b/igb/igb_main.c
 index 6673b55..c43b564 100644
---- a/igb-5.3.5.3/src/igb_main.c
-+++ b/igb-5.3.5.3/src/igb_main.c
+--- a/igb/igb_main.c
++++ b/igb/igb_main.c
 @@ -318,6 +318,10 @@ static int debug = NETIF_MSG_DRV | NETIF_MSG_PROBE;
  module_param(debug, int, 0);
  MODULE_PARM_DESC(debug, "Debug level (0=none, ..., 16=all)");

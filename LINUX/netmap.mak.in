@@ -52,16 +52,16 @@ get-$(1):
 	$(if $($(1)@build),,$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,))
 	touch get-$(1)
 distclean-$(1):
-	$($(1)@distclean)
-	rm -f get-$(1)
+	-$($(1)@distclean)
+	rm -rf $(1) get-$(1)
 endef
 
 define external_driver
 build-$(1): get-$(1) netmap.ko
-	D=$(if $($(1)@dst),$($(1)@dst),$(1)); if [ -d "$$$$D" ] && [ -e Module.symvers ]; then cp Module.symvers "$$$$D"; fi
+	if [ -d $(1) ] && [ -e Module.symvers ]; then cp Module.symvers $(1); fi
 	$($(1)@build)
 clean-$(1):
-	$($(1)@clean)
+	-$($(1)@clean)
 install-$(1): build-$(1)
 	$($(1)@install)
 endef
