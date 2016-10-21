@@ -598,6 +598,16 @@ run_tests
 # Makefile creation
 ###############################################################
 
+sed "s|@SRCDIR@|$SRCDIR|g" $SRCDIR/default-config.mak > default-config.mak
+
+if [ ! -e config.mak ]; then
+	message " NOTE  " <<EOF
+No config.mak found, we now create one for you that
+just includes default-config.mak.
+EOF
+	echo "include default-config.mak" > config.mak
+fi
+
 # here we select the patches for the drivers and create the
 # main Makefile. The Makefile is obtained from Makefile.in
 # with some values replaced in (mainly the kernel directory).

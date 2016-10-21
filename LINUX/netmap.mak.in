@@ -122,7 +122,7 @@ $(foreach a,$(APPS_LIST),$(eval $(call apps_actions,$(a))))
 
 distclean: clean $(S_DRIVERS:%=distclean-%)
 	rm -f config.status config.log netmap_linux_config.h \
-		patches drivers.mak Kbuild netmap.mak config.mak
+		patches drivers.mak Kbuild netmap.mak default-config.mak
 	rm -rf netmap-tmpdir
 	rm -f *.orig *.rej
 	if [ -L GNUmakefile ]; then rm GNUmakefile; fi
