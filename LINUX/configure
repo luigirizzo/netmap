@@ -203,6 +203,31 @@ warning()
 	message WARNING
 }
 
+replace_vars()
+{
+	sed \
+		-e "s|@BUILDDIR@|$BUILDDIR|g" \
+		-e "s|@SRCDIR@|$SRCDIR|g" \
+		-e "s|@KSRC@|$ksrc|g" \
+		-e "s|@SRC@|$src|g" \
+		-e "s|@KOPTS@|$kopts|g" \
+		-e "s|@MODPATH@|$modpath|g" \
+		-e "s|@MODNAME@|$MODNAME|g" \
+		-e "s|@SUBSYS@|$(subsys print)|g" \
+		-e "s|@LIN_VER@|$lin_ver|g" \
+		-e "s|@MOD_LIST@|$mod_list|g" \
+		-e "s|@PATCHES@|$(echo $patches)|g" \
+		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
+		-e "s|@E_DRIVERS@|$(edrv print)|g" \
+		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
+		-e "s|@APPS_LIST@|$(app print)|g" \
+		-e "s|@APPS_CC@|$cc|g" \
+		-e "s|@APPS_LD@|$ld|g" \
+		-e "s|@PREFIX@|$prefix|g" \
+		-e "s|@DESTDIR@|$DESTDIR|g" \
+		$1
+}
+
 # print_help
 print_help() {
 	cat <<EOF
@@ -598,7 +623,7 @@ run_tests
 # Makefile creation
 ###############################################################
 
-sed "s|@SRCDIR@|$SRCDIR|g" $SRCDIR/default-config.mak > default-config.mak
+replace_vars $SRCDIR/default-config.mak > default-config.mak
 
 if [ ! -e config.mak ]; then
 	message " NOTE  " <<EOF
@@ -774,27 +799,7 @@ s_drivers=$(drv print)
 
 # create netmap.mak and Kbuild
 for f in $SRCDIR/*.in; do
-	sed \
-		-e "s|@BUILDDIR@|$BUILDDIR|g" \
-		-e "s|@SRCDIR@|$SRCDIR|g" \
-		-e "s|@KSRC@|$ksrc|g" \
-		-e "s|@SRC@|$src|g" \
-		-e "s|@KOPTS@|$kopts|g" \
-		-e "s|@MODPATH@|$modpath|g" \
-		-e "s|@MODNAME@|$MODNAME|g" \
-		-e "s|@SUBSYS@|$(subsys print)|g" \
-		-e "s|@LIN_VER@|$lin_ver|g" \
-		-e "s|@MOD_LIST@|$mod_list|g" \
-		-e "s|@PATCHES@|$(echo $patches)|g" \
-		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
-		-e "s|@E_DRIVERS@|$(edrv print)|g" \
-		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
-		-e "s|@APPS_LIST@|$(app print)|g" \
-		-e "s|@APPS_CC@|$cc|g" \
-		-e "s|@APPS_LD@|$ld|g" \
-		-e "s|@PREFIX@|$prefix|g" \
-		-e "s|@DESTDIR@|$DESTDIR|g" \
-		$f > $(basename $f .in)
+	replace_vars $f > $(basename $f .in)
 done
 
 # if we are in SRCDIR this will fail, since
