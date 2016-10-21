@@ -30,11 +30,6 @@
 #ifndef NETMAP_VIRT_H
 #define NETMAP_VIRT_H
 
-#define NETMAP_VIRT_CSB_SIZE   4096
-
-/* ptnetmap features */
-#define PTNETMAP_F_VNET_HDR        1
-
 /*
  * ptnetmap_memdev: device used to expose memory into the guest VM
  *
@@ -141,6 +136,9 @@ nmreq_pointer_put(struct nmreq *nmr, void *userptr)
 	*pp = (uintptr_t)userptr;
 }
 
+/* ptnetmap features */
+#define PTNETMAP_F_VNET_HDR        1
+
 /* I/O registers for the ptnet device. */
 #define PTNET_IO_PTFEAT		0
 #define PTNET_IO_PTCTL		4
@@ -181,6 +179,7 @@ struct ptnet_ring {
 
 /* CSB for the ptnet device. */
 struct ptnet_csb {
+#define NETMAP_VIRT_CSB_SIZE   4096
 	struct ptnet_ring rings[NETMAP_VIRT_CSB_SIZE/sizeof(struct ptnet_ring)];
 };
 
