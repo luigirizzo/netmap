@@ -2186,7 +2186,11 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		break;
 
 	case NIOCREGIF:
-		/* possibly attach/detach NIC and VALE switch */
+		/*
+		 * If nmr->nr_cmd is not zero, this NIOCREGIF is not really
+		 * a regif operation, but a different one, specified by the
+		 * value of nmr->nr_cmd.
+		 */
 		i = nmr->nr_cmd;
 		if (i == NETMAP_BDG_ATTACH || i == NETMAP_BDG_DETACH
 				|| i == NETMAP_BDG_VNET_HDR
@@ -2194,12 +2198,15 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				|| i == NETMAP_BDG_DELIF
 				|| i == NETMAP_BDG_POLLING_ON
 				|| i == NETMAP_BDG_POLLING_OFF) {
+			/* possibly attach/detach NIC and VALE switch */
 			error = netmap_bdg_ctl(nmr, NULL);
 			break;
 		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
+			/* forward the command to the ptnetmap subsystem */
 			error = ptnetmap_ctl(nmr, priv->np_na);
 			break;
 		} else if (i == NETMAP_VNET_HDR_GET) {
+			/* get vnet-header length for this netmap port */
 			struct ifnet *ifp;
 
 			NMG_LOCK();
@@ -2209,6 +2216,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			}
 			netmap_unget_na(na, ifp);
 			NMG_UNLOCK();
+			break;
+		} else if (i == NETMAP_POOLS_INFO_GET) {
+			/* get information from the memory allocator */
+			error = netmap_mem_pools_info_get(nmr, priv->np_na);
 			break;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);

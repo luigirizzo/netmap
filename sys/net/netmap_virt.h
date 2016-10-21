@@ -33,9 +33,7 @@
 #define NETMAP_VIRT_CSB_SIZE   4096
 
 /* ptnetmap features */
-#define PTNETMAP_F_BASE            1
-#define PTNETMAP_F_FULL            2 /* not used */
-#define PTNETMAP_F_VNET_HDR        4
+#define PTNETMAP_F_VNET_HDR        1
 
 /*
  * ptnetmap_memdev: device used to expose memory into the guest VM
@@ -55,12 +53,19 @@
 #define PTNETMAP_MSIX_PCI_BAR           2
 
 /* Registers for the ptnetmap memdev */
-/* 32 bit r/o */
-#define PTNETMAP_IO_PCI_MEMSIZE         0	/* size of the netmap memory shared
-						 * between guest and host */
-/* 16 bit r/o */
-#define PTNETMAP_IO_PCI_HOSTID          4	/* memory allocator ID in netmap host */
-#define PTNETMAP_IO_SIZE                6
+#define PTNET_MDEV_IO_MEMSIZE_LO	0	/* netmap memory size (low) */
+#define PTNET_MDEV_IO_MEMSIZE_HI	4	/* netmap_memory_size (high) */
+#define PTNET_MDEV_IO_MEMID		8	/* memory allocator ID in the host */
+#define PTNET_MDEV_IO_IF_POOL_OFS	64
+#define PTNET_MDEV_IO_IF_POOL_OBJNUM	68
+#define PTNET_MDEV_IO_IF_POOL_OBJSZ	72
+#define PTNET_MDEV_IO_RING_POOL_OFS	76
+#define PTNET_MDEV_IO_RING_POOL_OBJNUM	80
+#define PTNET_MDEV_IO_RING_POOL_OBJSZ	84
+#define PTNET_MDEV_IO_BUF_POOL_OFS	88
+#define PTNET_MDEV_IO_BUF_POOL_OBJNUM	92
+#define PTNET_MDEV_IO_BUF_POOL_OBJSZ	96
+#define PTNET_MDEV_IO_END		100
 
 /*
  * ptnetmap configuration
@@ -107,16 +112,33 @@ struct ptnetmap_cfgentry_bhyve {
 };
 
 /*
- * Functions used to write ptnetmap_cfg from/to the nmreq.
- * The user-space application writes the pointer of ptnetmap_cfg
- * (user-space buffer) starting from nr_arg1 field, so that the kernel
- * can read it with copyin (copy_from_user).
+ * Structure filled-in by the kernel when asked for allocator info
+ * through NETMAP_POOLS_INFO_GET. Used by hypervisors supporting
+ * ptnetmap.
+ */
+struct netmap_pools_info {
+	uint64_t memsize;	/* same as nmr->nr_memsize */
+	uint32_t memid;		/* same as nmr->nr_arg2 */
+	uint32_t if_pool_offset;
+	uint32_t if_pool_objtotal;
+	uint32_t if_pool_objsize;
+	uint32_t ring_pool_offset;
+	uint32_t ring_pool_objtotal;
+	uint32_t ring_pool_objsize;
+	uint32_t buf_pool_offset;
+	uint32_t buf_pool_objtotal;
+	uint32_t buf_pool_objsize;
+};
+
+/*
+ * Pass a pointer to a userspace buffer to be passed to kernelspace for write
+ * or read. Used by NETMAP_PT_HOST_CREATE and NETMAP_POOLS_INFO_GET.
  */
 static inline void
-ptnetmap_write_cfg(struct nmreq *nmr, struct ptnetmap_cfg *cfg)
+nmreq_pointer_put(struct nmreq *nmr, void *userptr)
 {
-	uintptr_t *nmr_ptncfg = (uintptr_t *)&nmr->nr_arg1;
-	*nmr_ptncfg = (uintptr_t)cfg;
+	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
+	*pp = (uintptr_t)userptr;
 }
 
 /* ptnetmap control commands */
@@ -177,8 +199,10 @@ struct ptnet_csb {
 
 /* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
 struct ptnetmap_memdev;
-int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **);
+int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **,
+                          uint64_t *);
 void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
+uint32_t nm_os_pt_memdev_ioread(struct ptnetmap_memdev *, unsigned int);
 
 /* Guest driver: Write kring pointers (cur, head) to the CSB.
  * This routine is coupled with ptnetmap_host_read_kring_csb(). */
