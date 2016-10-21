@@ -143,24 +143,20 @@ decode_version() {
 report() {
 	echo "kernel directory            $ksrc"
 	print_realpath $ksrc
+	echo "kernel sources              $src"
+	print_realpath "$src"
 	local v=$lin_ver
 	[ -n "$v" ] || v="-"
 	local dv="$(decode_version $lin_ver)"
 	echo "linux version               $v $dv"
 	echo "module file                 $MODNAME.ko"
+	echo
 	echo "subsystems                  $(subsys print)"
 	echo "apps                        $(app print)"
-
-
-	if drv is-empty; then
-		echo "no-drivers"
-	else
-		echo "kernel sources              $src"
-		print_realpath "$src"
-		echo "requested drivers           $(drv print)"
-		echo
-		if [ -f "drivers.mak" ]; then
-			cat <<EOF
+	echo "native drivers              $(drv print)"
+	echo
+	if [ -f "drivers.mak" ]; then
+		cat <<EOF
 Contents of the drivers.mak file:
 
   Note: only drivers for which both the <driver>@src and the
@@ -169,8 +165,7 @@ Contents of the drivers.mak file:
   the generic driver, at reduced performance.
 
 EOF
-			egrep '@(src|patch)' drivers.mak
-		fi
+		cat drivers.mak
 	fi
 }
 
@@ -646,7 +641,15 @@ for d in $s_drivers; do
 	eval $(make -rf read-vars.mak $d@vars)
 
 	if [ -n "$drv_fetch" ]; then
-		echo "===> $drv_fetch"
+		message " NOTE  " <<EOF
+We are trying to download the original sources for driver
+$d using the following command:
+  
+  $drv_fetch
+
+If this fails, please download the above file and put it
+in $SRCDIR/ext-drivers/orig, then run configure again.
+EOF
 		$drv_fetch 2>&1 || { warning <<EOF
 Unable to fetch the sources for driver $d. Disabling driver.
 EOF
@@ -1477,6 +1480,10 @@ EOF
 EOF
   
   # the TESTPOSTPROC script will add macros to $configh
+  message " NOTE  " <<EOF
+Now running compile tests to adapt the code to your
+kernel version. Please wait.
+EOF
   run_tests
   
   define DRIVER_SUFFIX \"$drvsuffix\"
