@@ -626,38 +626,26 @@ DRIVER_MODULE_ORDERED(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
 		      NULL, NULL, SI_ORDER_MIDDLE + 1);
 
 /*
- * I/O port read/write wrappers.
- * Some are not used, so we keep them commented out until needed
- */
-#define ptn_ioread16(ptn_dev, reg)		bus_read_2((ptn_dev)->pci_io, (reg))
-#define ptn_ioread32(ptn_dev, reg)		bus_read_4((ptn_dev)->pci_io, (reg))
-#if 0
-#define ptn_ioread8(ptn_dev, reg)		bus_read_1((ptn_dev)->pci_io, (reg))
-#define ptn_iowrite8(ptn_dev, reg, val)		bus_write_1((ptn_dev)->pci_io, (reg), (val))
-#define ptn_iowrite16(ptn_dev, reg, val)	bus_write_2((ptn_dev)->pci_io, (reg), (val))
-#define ptn_iowrite32(ptn_dev, reg, val)	bus_write_4((ptn_dev)->pci_io, (reg), (val))
-#endif /* unused */
-
-/*
  * Map host netmap memory through PCI-BAR in the guest OS,
  * returning physical (nm_paddr) and virtual (nm_addr) addresses
  * of the netmap memory mapped in the guest.
  */
 int
 nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
-		      void **nm_addr)
+		      void **nm_addr, uint64_t *mem_size)
 {
-	uint32_t mem_size;
 	int rid;
 
 	D("ptn_memdev_driver iomap");
 
 	rid = PCIR_BAR(PTNETMAP_MEM_PCI_BAR);
-	mem_size = ptn_ioread32(ptn_dev, PTNETMAP_IO_PCI_MEMSIZE);
+	*mem_size = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMSIZE_HI);
+	*mem_size = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMSIZE_LO) |
+			(*mem_size << 32);
 
 	/* map memory allocator */
 	ptn_dev->pci_mem = bus_alloc_resource(ptn_dev->dev, SYS_RES_MEMORY,
-			&rid, 0, ~0, mem_size, RF_ACTIVE);
+			&rid, 0, ~0, *mem_size, RF_ACTIVE);
 	if (ptn_dev->pci_mem == NULL) {
 		*nm_paddr = 0;
 		*nm_addr = 0;
@@ -667,12 +655,18 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
 	*nm_paddr = rman_get_start(ptn_dev->pci_mem);
 	*nm_addr = rman_get_virtual(ptn_dev->pci_mem);
 
-	D("=== BAR %d start %lx len %lx mem_size %x ===",
+	D("=== BAR %d start %lx len %lx mem_size %lx ===",
 			PTNETMAP_MEM_PCI_BAR,
 			(unsigned long)(*nm_paddr),
 			(unsigned long)rman_get_size(ptn_dev->pci_mem),
-			mem_size);
+			(unsigned long)*mem_size);
 	return (0);
+}
+
+uint32_t
+nm_os_pt_memdev_ioread(struct ptnetmap_memdev *ptn_dev, unsigned int reg)
+{
+	return bus_read_4(ptn_dev->pci_io, reg);
 }
 
 /* Unmap host netmap memory. */
@@ -730,7 +724,7 @@ ptn_memdev_attach(device_t dev)
 	        return (ENXIO);
 	}
 
-	mem_id = ptn_ioread16(ptn_dev, PTNETMAP_IO_PCI_HOSTID);
+	mem_id = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMID);
 
 	/* create guest allocator */
 	ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
@@ -740,7 +734,7 @@ ptn_memdev_attach(device_t dev)
 	}
 	netmap_mem_get(ptn_dev->nm_mem);
 
-	D("ptn_memdev_driver probe OK - host_id: %d", mem_id);
+	D("ptn_memdev_driver probe OK - host_mem_id: %d", mem_id);
 
 	return (0);
 }

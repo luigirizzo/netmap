@@ -999,13 +999,11 @@ static uint32_t
 ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
 {
 	struct ptnet_info *pi = netdev_priv(netdev);
-	int ret;
 
+	/* Write a command and read back error status,
+	 * with zero meaning success. */
 	iowrite32(cmd, pi->ioaddr + PTNET_IO_PTCTL);
-	ret = ioread32(pi->ioaddr + PTNET_IO_PTSTS);
-	pr_info("PTCTL %u, ret %u\n", cmd, ret);
-
-	return ret;
+	return ioread32(pi->ioaddr + PTNET_IO_PTCTL);
 }
 
 static void
@@ -1104,7 +1102,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 
 			/* Make sure the host adapter passed through is ready
 			 * for txsync/rxsync. */
-			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_REGIF);
+			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_CREATE);
 			if (ret) {
 				return ret;
 			}
@@ -1154,7 +1152,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		}
 
 		if (pi->ptna->backend_regifs == 0) {
-			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_UNREGIF);
+			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_DELETE);
 		}
 	}
 
@@ -1235,7 +1233,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 int
 ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
-	uint32_t ptfeatures = PTNETMAP_F_BASE;
+	uint32_t ptfeatures = 0;
 	unsigned int num_tx_rings, num_rx_rings;
 	struct netmap_adapter na_arg;
 	struct net_device *netdev;
@@ -1278,17 +1276,12 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_iomap;
 	}
 
-	/* Check if we are supported by the hypervisor. If not,
-	 * bail out immediately. */
+	/* Feature negotiation with the hypervisor. */
 	if (ptnet_vnet_hdr) {
 		ptfeatures |= PTNETMAP_F_VNET_HDR;
 	}
 	iowrite32(ptfeatures, ioaddr + PTNET_IO_PTFEAT); /* wanted */
 	ptfeatures = ioread32(ioaddr + PTNET_IO_PTFEAT); /* acked */
-	if (!(ptfeatures & PTNETMAP_F_BASE)) {
-		pr_err("Hypervisor doesn't support netmap passthrough\n");
-		goto err_ptfeat;
-	}
 
 	/* Allocate a multi-queue Ethernet device, with space for
 	 * the adapter struct and per-ring structs. */
@@ -1457,7 +1450,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	na_arg = ptnet_nm_ops;
 	na_arg.ifp = pi->netdev;
 	netmap_pt_guest_attach(&na_arg, pi->csb, nifp_offset,
-			       ptnet_nm_ptctl);
+			        ioread32(ioaddr + PTNET_IO_HOSTMEMID));
 	/* Now a netmap adapter for this device has been allocated, and it
 	 * can be accessed through NA(ifp). We have to initialize the CSB
 	 * pointer. */
