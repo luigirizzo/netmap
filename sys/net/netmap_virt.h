@@ -141,29 +141,27 @@ nmreq_pointer_put(struct nmreq *nmr, void *userptr)
 	*pp = (uintptr_t)userptr;
 }
 
-/* ptnetmap control commands */
-#define PTNETMAP_PTCTL_REGIF        1
-#define PTNETMAP_PTCTL_UNREGIF      2
-#define PTNETMAP_PTCTL_HOSTMEMID    3
-
-
 /* I/O registers for the ptnet device. */
 #define PTNET_IO_PTFEAT		0
 #define PTNET_IO_PTCTL		4
-#define PTNET_IO_PTSTS		8
-#define PTNET_IO_MAC_LO		12
-#define PTNET_IO_MAC_HI		16
-#define PTNET_IO_CSBBAH         20
-#define PTNET_IO_CSBBAL         24
-#define PTNET_IO_NIFP_OFS	28
-#define PTNET_IO_NUM_TX_RINGS	32
-#define PTNET_IO_NUM_RX_RINGS	36
-#define PTNET_IO_NUM_TX_SLOTS	40
-#define PTNET_IO_NUM_RX_SLOTS	44
-#define PTNET_IO_VNET_HDR_LEN	48
+#define PTNET_IO_MAC_LO		8
+#define PTNET_IO_MAC_HI		12
+#define PTNET_IO_CSBBAH		16
+#define PTNET_IO_CSBBAL		20
+#define PTNET_IO_NIFP_OFS	24
+#define PTNET_IO_NUM_TX_RINGS	28
+#define PTNET_IO_NUM_RX_RINGS	32
+#define PTNET_IO_NUM_TX_SLOTS	36
+#define PTNET_IO_NUM_RX_SLOTS	40
+#define PTNET_IO_VNET_HDR_LEN	44
+#define PTNET_IO_HOSTMEMID	48
 #define PTNET_IO_END		52
 #define PTNET_IO_KICK_BASE	128
-#define PTNET_IO_MASK           0xff
+#define PTNET_IO_MASK		0xff
+
+/* ptnetmap control commands (values for PTCTL register) */
+#define PTNETMAP_PTCTL_CREATE		1
+#define PTNETMAP_PTCTL_DELETE		2
 
 /* If defined, CSB is allocated by the guest, not by the host. */
 #define PTNET_CSB_ALLOC

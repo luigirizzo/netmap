@@ -167,7 +167,7 @@ void netmap_mem_put(struct netmap_mem_d *);
 #ifdef WITH_PTNETMAP_GUEST
 struct netmap_mem_d* netmap_mem_pt_guest_new(struct ifnet *,
 					     unsigned int nifp_offset,
-					     nm_pt_guest_ptctl_t);
+					     unsigned int memid);
 struct ptnetmap_memdev;
 struct netmap_mem_d* netmap_mem_pt_guest_attach(struct ptnetmap_memdev *, uint16_t);
 int netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *, struct ifnet *);

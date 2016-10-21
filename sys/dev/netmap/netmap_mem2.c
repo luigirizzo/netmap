@@ -1909,7 +1909,6 @@ struct mem_pt_if {
 	struct mem_pt_if *next;
 	struct ifnet *ifp;
 	unsigned int nifp_offset;
-	nm_pt_guest_ptctl_t ptctl;
 };
 
 /* Netmap allocator for ptnetmap guests. */
@@ -1927,8 +1926,7 @@ struct netmap_mem_ptg {
 /* Link a passthrough interface to a passthrough netmap allocator. */
 static int
 netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
-			    unsigned int nifp_offset,
-			    nm_pt_guest_ptctl_t ptctl)
+			    unsigned int nifp_offset)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 	struct mem_pt_if *ptif = malloc(sizeof(*ptif), M_NETMAP,
@@ -1942,7 +1940,6 @@ netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 
 	ptif->ifp = ifp;
 	ptif->nifp_offset = nifp_offset;
-	ptif->ptctl = ptctl;
 
 	if (ptnmd->pt_ifs) {
 		ptif->next = ptnmd->pt_ifs;
@@ -2382,23 +2379,18 @@ netmap_mem_pt_guest_attach(struct ptnetmap_memdev *ptn_dev, nm_memid_t mem_id)
 struct netmap_mem_d *
 netmap_mem_pt_guest_new(struct ifnet *ifp,
 			unsigned int nifp_offset,
-			nm_pt_guest_ptctl_t ptctl)
+			unsigned int memid)
 {
 	struct netmap_mem_d *nmd;
-	nm_memid_t mem_id;
 
-	if (ifp == NULL || ptctl == NULL) {
+	if (ifp == NULL) {
 		return NULL;
 	}
 
-	/* Get the host id allocator. */
-	mem_id = ptctl(ifp, PTNETMAP_PTCTL_HOSTMEMID);
-
-	nmd = netmap_mem_pt_guest_get(mem_id);
+	nmd = netmap_mem_pt_guest_get((nm_memid_t)memid);
 
 	if (nmd) {
-		netmap_mem_pt_guest_ifp_add(nmd, ifp, nifp_offset,
-					    ptctl);
+		netmap_mem_pt_guest_ifp_add(nmd, ifp, nifp_offset);
 	}
 
 	return nmd;
