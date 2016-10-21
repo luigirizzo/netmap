@@ -2203,15 +2203,10 @@ netmap_mem_pt_guest_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 	struct mem_pt_if *ptif;
 
 	NMA_LOCK(na->nm_mem);
-
 	ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
 	if (ptif == NULL) {
 		D("Error: interface %p is not in passthrough", na->ifp);
-		goto out;
 	}
-
-	ptif->ptctl(na->ifp, PTNETMAP_PTCTL_IFDELETE);
-out:
 	NMA_UNLOCK(na->nm_mem);
 }
 
@@ -2250,7 +2245,6 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
 	}
 
-	//error = ptif->ptctl->nm_ptctl(ifp, PTNETMAP_PTCTL_RINGSCREATE);
 	error = 0;
 out:
 	NMA_UNLOCK(na->nm_mem);

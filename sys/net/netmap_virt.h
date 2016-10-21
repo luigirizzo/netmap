@@ -142,18 +142,9 @@ nmreq_pointer_put(struct nmreq *nmr, void *userptr)
 }
 
 /* ptnetmap control commands */
-#define PTNETMAP_PTCTL_CONFIG	1
-#define PTNETMAP_PTCTL_FINALIZE	2
-#define PTNETMAP_PTCTL_IFNEW	3
-#define PTNETMAP_PTCTL_IFDELETE	4
-#define PTNETMAP_PTCTL_RINGSCREATE	5
-#define PTNETMAP_PTCTL_RINGSDELETE	6
-#define PTNETMAP_PTCTL_DEREF	7
-#define PTNETMAP_PTCTL_TXSYNC	8
-#define PTNETMAP_PTCTL_RXSYNC	9
-#define PTNETMAP_PTCTL_REGIF        10
-#define PTNETMAP_PTCTL_UNREGIF      11
-#define PTNETMAP_PTCTL_HOSTMEMID	12
+#define PTNETMAP_PTCTL_REGIF        1
+#define PTNETMAP_PTCTL_UNREGIF      2
+#define PTNETMAP_PTCTL_HOSTMEMID    3
 
 
 /* I/O registers for the ptnet device. */
