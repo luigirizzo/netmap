@@ -156,7 +156,7 @@ function get-patch()
 	local v1=$(scripts/vers $version -c)
 	# compute next kernel version (in fixed notation)
 	local v2=$(scripts/vers $version -i -c)
-	local patchname=diff--$driver--$v1--$v2
+	local patchname=vanilla--$driver--$v1--$v2
 	local out=tmp-patches/$patchname
 	[ -n "$use_cache" -a -s $out ] && { echo $out; return; }
 	local drvpath=$(driver-path $driver $version)
@@ -164,7 +164,7 @@ function get-patch()
 	local drvdir=$(dirname $drvpath)
 	(
 		cd $GITDIR
-		git diff --relative=$drvdir v$version..netmap-$version -- $drvpath
+		git vanilla --relative=$drvdir v$version..netmap-$version -- $drvpath
 	) > $out
 	# an empty patch means no netmap support for this driver
 	[ -s $out ] || { rm $out; return 1; }
@@ -259,11 +259,11 @@ function minimize()
 
 	mkdir -p final-patches
 	local drv=$(basename $driver)
-	local patches=$(ls tmp-patches/diff--$drv--* 2>/dev/null)
+	local patches=$(ls tmp-patches/vanilla--$drv--* 2>/dev/null)
 	[ -n "$patches" ] || return 1
 	# put the patch names in $1, $2, ...
 	set $patches
-	rm -f final-patches/diff--$drv--*
+	rm -f final-patches/vanilla--$drv--*
 	# the original patches (in tmp-patches) are ordered by version number.
 	# We consider one patch in turn (the 'pivot') and try
 	# to extend its range to cover the range of the next
@@ -291,7 +291,7 @@ function minimize()
 		# either out of patches or failed merge.
 		# Compute the file name of the current pivot and store
 		# the patch in its final location
-		out=$(scripts/vers diff $drv $ple -c $pre -c -S4)
+		out=$(scripts/vers vanilla $drv $ple -c $pre -c -S4)
 		cp $pivot final-patches/$out
 		# the new pivot becames the next patch (if any)
 		pivot=$1
@@ -313,7 +313,7 @@ function infty()
 	local drv=$(basename $driver)
 	# convert kernel version to fixed notation
 	local v=$(scripts/vers $version -c)
-	local last=$(ls final-patches/diff--$drv--*--$v 2>/dev/null|tail -n1)
+	local last=$(ls final-patches/vanilla--$drv--*--$v 2>/dev/null|tail -n1)
 	[ -n "$last" ] || return 1
 	mv -n $last $(scripts/vers $last -s -p 99999 -S4) 2>/dev/null
 }
@@ -474,7 +474,7 @@ function build-check()
 
 	mkdir -p failed-patches
 	local drv=$(basename $driver)
-	local patches=$(ls tmp-patches/diff--$drv--* 2>/dev/null)
+	local patches=$(ls tmp-patches/vanilla--$drv--* 2>/dev/null)
 	local p
 	for p in $patches; do
 		check-patch $p || mv $p failed-patches

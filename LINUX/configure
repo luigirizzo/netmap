@@ -702,7 +702,7 @@ EOF
 	if [ -z "$drv_patch" ]; then
 		# check that we have a patch for this driver
 		# XXX the selection is based only on the kernel version
-		drv_patch=$(ls patches/diff--$d--* | awk -v v=$lin_ver -F -- '($3 != "*") && ($3 <= v"") && (v"" < $4)')
+		drv_patch=$(ls patches/vanilla--$d--* | awk -v v=$lin_ver -F -- '($3 != "*") && ($3 <= v"") && (v"" < $4)')
 		if [ -z "$drv_patch" ]; then
 			warning <<EOF
 '$d': no applicable patch found and no override provided.
