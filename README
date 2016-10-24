@@ -102,13 +102,21 @@ FreeBSD has also native netmap support in the Chelsio 10/40G cards.
   Please look at LINUX/README for details.
 
   + make sure you have kernel sources matching your installed kernel
-    (headers only suffice, if you want NETMAP/VALE but no drivers)
+    (headers only suffice, if you want NETMAP/VALE and the Intel
+    drivers for igb, e1000e, ixgbe and i40e)
 
-  + Enter LINUX directory and configure netmap.
+  + Configure netmap.
+    To compile NETMAP/VALE and the Intel drivers above: 
+
+	./configure
+
+    (This will also download the Intel driver sources from sourceforce).
     To compile only NETMAP/VALE (using unmodified drivers):
 
 	./configure --no-drivers # only netmap
 
+    To also compile the netmap enabled drivers for e1000, virtio-net
+    and a few other, you need the full kernel sources.
     If kernel sources (prepared for out-of-tree compilation) are in
     /a/b/c/linux-A.B.C/, and you want to compile netmap-enabled (patched)
     drivers, then you should do
@@ -124,10 +132,17 @@ FreeBSD has also native netmap support in the Chelsio 10/40G cards.
 		    --kernel-dir=/a/b/c/linux-headers-A.B/
 
   + build kernel modules and sample applications:
-	# build kernel modules
+
 	make
-	# build sample applications
-	make apps
+
+  + (optionally) install the new modules and the applications:
+
+	make install # as root
+   
+    To have the new netmap-enabled driver modules alongside the original
+    ones, you may want to add --driver-suffix=-netmap to the configure
+    command above. The new drivers will then be called e1000e-netmap,
+    ixgbe-netmap and so on.
 
    WINDOWS
    -------
