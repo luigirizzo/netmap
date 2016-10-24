@@ -1164,7 +1164,7 @@ nm_os_kthread_start(struct nm_kthread *nmk)
 		goto err;
 	}
 
-	D("nm_kthread started td 0x%p", nmk->worker);
+	D("nm_kthread started td %p", nmk->worker);
 
 	return 0;
 err:
