@@ -277,6 +277,7 @@ struct glob_arg {
 #define	STATS_WIN	15
 	int win_idx;
 	int64_t win[STATS_WIN];
+	int wait_link;
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
 
@@ -1908,57 +1909,57 @@ enum {
 };
 
 static void
-start_threads(struct glob_arg *g)
-{
+start_threads(struct glob_arg *g) {
 	int i;
 
 	targs = calloc(g->nthreads, sizeof(*targs));
+	struct targ *t;
 	/*
 	 * Now create the desired number of threads, each one
 	 * using a single descriptor.
- 	 */
+	 */
 	for (i = 0; i < g->nthreads; i++) {
-		struct targ *t = &targs[i];
+		t = &targs[i];
 
 		bzero(t, sizeof(*t));
 		t->fd = -1; /* default, with pcap */
 		t->g = g;
 
-	    if (g->dev_type == DEV_NETMAP) {
-		struct nm_desc nmd = *g->nmd; /* copy, we overwrite ringid */
-		uint64_t nmd_flags = 0;
-		nmd.self = &nmd;
+		if (g->dev_type == DEV_NETMAP) {
+			struct nm_desc nmd = *g->nmd; /* copy, we overwrite ringid */
+			uint64_t nmd_flags = 0;
+			nmd.self = &nmd;
 
-		if (i > 0) {
-			/* the first thread uses the fd opened by the main
-			 * thread, the other threads re-open /dev/netmap
-			 */
-			if (g->nthreads > 1) {
-				nmd.req.nr_flags =
-					g->nmd->req.nr_flags & ~NR_REG_MASK;
-				nmd.req.nr_flags |= NR_REG_ONE_NIC;
-				nmd.req.nr_ringid = i;
-			}
-			/* Only touch one of the rings (rx is already ok) */
-			if (g->td_type == TD_TYPE_RECEIVER)
-				nmd_flags |= NETMAP_NO_TX_POLL;
+			if (i > 0) {
+				/* the first thread uses the fd opened by the main
+				 * thread, the other threads re-open /dev/netmap
+				 */
+				if (g->nthreads > 1) {
+					nmd.req.nr_flags =
+						g->nmd->req.nr_flags & ~NR_REG_MASK;
+					nmd.req.nr_flags |= NR_REG_ONE_NIC;
+					nmd.req.nr_ringid = i;
+				}
+				/* Only touch one of the rings (rx is already ok) */
+				if (g->td_type == TD_TYPE_RECEIVER)
+					nmd_flags |= NETMAP_NO_TX_POLL;
 
-			/* register interface. Override ifname and ringid etc. */
-			t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
-				NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
-			if (t->nmd == NULL) {
-				D("Unable to open %s: %s",
-					t->g->ifname, strerror(errno));
-				continue;
+				/* register interface. Override ifname and ringid etc. */
+				t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
+						NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
+				if (t->nmd == NULL) {
+					D("Unable to open %s: %s",
+							t->g->ifname, strerror(errno));
+					continue;
+				}
+			} else {
+				t->nmd = g->nmd;
 			}
+			t->fd = t->nmd->fd;
+
 		} else {
-			t->nmd = g->nmd;
+			targs[i].fd = g->main_fd;
 		}
-		t->fd = t->nmd->fd;
-
-	    } else {
-		targs[i].fd = g->main_fd;
-	    }
 		t->used = 1;
 		t->me = i;
 		if (g->affinity >= 0) {
@@ -1968,7 +1969,14 @@ start_threads(struct glob_arg *g)
 		}
 		/* default, init packets */
 		initialize_packet(t);
+	}
+	/* Wait for PHY reset. */
+	D("Wait %d secs for phy reset", g->wait_link);
+	sleep(g->wait_link);
+	D("Ready...");
 
+	for (i = 0; i < g->nthreads; i++) {
+		t = &targs[i];
 		if (pthread_create(&t->thread, NULL, g->td_body, t) == -1) {
 			D("Unable to create thread %d: %s", i, strerror(errno));
 			t->used = 0;
@@ -2198,7 +2206,6 @@ main(int arc, char **argv)
 	struct glob_arg g;
 
 	int ch;
-	int wait_link = 2;
 	int devqueues = 1;	/* how many device queues */
 
 	bzero(&g, sizeof(g));
@@ -2222,6 +2229,7 @@ main(int arc, char **argv)
 	g.frags = 1;
 	g.nmr_config = "";
 	g.virt_header = 0;
+	g.wait_link = 2;
 
 	while ( (ch = getopt(arc, argv,
 			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
@@ -2318,7 +2326,7 @@ main(int arc, char **argv)
 			break;
 
 		case 'w':
-			wait_link = atoi(optarg);
+			g.wait_link = atoi(optarg);
 			break;
 
 		case 'W': /* XXX changed default */
@@ -2593,11 +2601,6 @@ out:
 	if (g.td_type == TD_TYPE_SENDER)
 	    D("Sending %d packets every  %ld.%09ld s",
 			g.burst, g.tx_period.tv_sec, g.tx_period.tv_nsec);
-	/* Wait for PHY reset. */
-	D("Wait %d secs for phy reset", wait_link);
-	sleep(wait_link);
-	D("Ready...");
-
 	/* Install ^C handler. */
 	global_nthreads = g.nthreads;
 	sigemptyset(&ss);
