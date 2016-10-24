@@ -1198,8 +1198,8 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 					continue;
 				}
 				nmr->nr_arg1 = i;
-				nmr->nr_arg2 = j;
 				j = b->bdg_port_index[j];
+				nmr->nr_arg2 = j;
 				vpna = b->bdg_ports[j];
 				strncpy(name, vpna->up.name, (size_t)IFNAMSIZ);
 				error = 0;
