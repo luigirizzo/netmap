@@ -1823,8 +1823,7 @@ ptnetmap_guest_fini(void)
 #define ptnetmap_guest_fini()
 #endif /* WITH_PTNETMAP_GUEST */
 
-#define WITH_NETMAP_SINK
-#ifdef WITH_NETMAP_SINK
+#ifdef WITH_SINK
 
 static struct net_device *nm_sink_netdev = NULL;
 static unsigned int sink_delay_ns = 100;
@@ -1931,7 +1930,7 @@ netmap_sink_fini(void)
 	netmap_detach(netdev);
 	free_netdev(netdev);
 }
-#endif  /* WITH_NETMAP_SINK */
+#endif  /* WITH_SINK */
 
 
 /* ########################## MODULE INIT ######################### */
@@ -1956,21 +1955,21 @@ static int linux_netmap_init(void)
 	if (err) {
 		return err;
 	}
-#ifdef WITH_NETMAP_SINK
+#ifdef WITH_SINK
 	err = netmap_sink_init();
 	if (err) {
 		D("Warning: could not init netmap sink interface");
 	}
-#endif
+#endif /* WITH_SINK */
 	return 0;
 }
 
 
 static void linux_netmap_fini(void)
 {
-#ifdef WITH_NETMAP_SINK
+#ifdef WITH_SINK
 	netmap_sink_fini();
-#endif
+#endif /* WITH_SINK */
         ptnetmap_guest_fini();
         netmap_fini();
 }

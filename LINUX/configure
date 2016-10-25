@@ -71,7 +71,7 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host"
+subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -261,6 +261,8 @@ Available options:
   --disable-ptnetmap-host      disable ptnetmap for host kernel
   --enable-ptnetmap            enable ptnetmap (both guest and host)
   --disable-ptnetmap           disable ptnetmap (both guest and host)
+  --enable-sink   	       enable the netmap sink device
+  --disable-sink   	       disable the netmap sink device
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
   --cc=                        C compiler for the examples [$cc]
