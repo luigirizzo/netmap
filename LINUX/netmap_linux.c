@@ -1826,6 +1826,7 @@ ptnetmap_guest_fini(void)
 #ifdef WITH_SINK
 
 static struct net_device *nm_sink_netdev = NULL;
+s64 nm_sink_next_link_idle;
 static unsigned int sink_delay_ns = 100;
 module_param(sink_delay_ns, uint, 0644);
 
@@ -1854,21 +1855,28 @@ nm_sink_register(struct netmap_adapter *na, int onoff)
 	else
 		nm_clear_native_flags(na);
 
+	nm_sink_next_link_idle = ktime_get_ns();
+
 	return 0;
 }
 
 static int
 nm_sink_txsync(struct netmap_kring *kring, int flags)
 {
-	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const head = kring->rhead;
+	unsigned int const lim = kring->nkr_num_slots - 1;
+	unsigned int const head = kring->rhead;
+	unsigned int n;
 
-	while (kring->nr_hwcur != head) {
-		ndelay(sink_delay_ns);
-		kring->nr_hwcur = nm_next(kring->nr_hwcur, lim);
+	n = kring->nkr_num_slots + head - kring->nr_hwcur;
+	if (n >= kring->nkr_num_slots) {
+		n -= kring->nkr_num_slots;
 	}
+	nm_sink_next_link_idle += n * sink_delay_ns;
 
+	kring->nr_hwcur = head;
 	kring->nr_hwtail = nm_prev(kring->nr_hwcur, lim);
+
+	while (ktime_get_ns() < nm_sink_next_link_idle) ;
 
 	return 0;
 }
