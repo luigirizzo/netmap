@@ -1,13 +1,13 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
-PROGS	= vale-ctl test_select testmmap test_nm
+PROGS	= test_select testmmap test_nm
 X86PROG = testlock testcsum
 LIBNETMAP =
 
 CLEANFILES = $(PROGS) $(X86PROGS) *.o
 
 SRCDIR ?= ..
-VPATH = $(SRCDIR)/examples
+VPATH = $(SRCDIR)/utils
 
 NO_MAN=
 CFLAGS = -O2 -pipe
@@ -34,8 +34,6 @@ all: $(PROGS)
 all-x86: $(PROGS) $(X86PROGS)
 
 kern_test: testmod/kern_test.c
-
-vale-ctl: vale-ctl.o
 
 test_nm: test_nm.o
 
