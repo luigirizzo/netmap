@@ -6,12 +6,12 @@ LIBNETMAP =
 CLEANFILES = $(PROGS) *.o
 
 SRCDIR ?= ../..
-#VPATH = $(SRCDIR)/examples
+VPATH = $(SRCDIR)/apps/lb
 
 NO_MAN=
 CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
-CFLAGS += -I $(SRCDIR)/sys -I ../../examples
+CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include
 CFLAGS += -Wextra
 
 LDLIBS += -lpthread -lm
@@ -27,3 +27,9 @@ lb: lb.o pkt_hash.o
 
 clean:
 	-@rm -rf $(CLEANFILES)
+
+.PHONY: install
+install: $(PROGS:%=install-%)
+
+install-%:
+	install -D $* $(DESTDIR)/$(PREFIX)/bin/$*

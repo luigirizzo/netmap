@@ -1,12 +1,12 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
-PROGS	=	tlem
+PROGS	=	bridge
 LIBNETMAP =
 
 CLEANFILES = $(PROGS) *.o
 
 SRCDIR ?= ../..
-VPATH = $(SRCDIR)/apps/tlem
+VPATH = $(SRCDIR)/apps/bridge
 
 NO_MAN=
 CFLAGS = -O2 -pipe
@@ -22,10 +22,6 @@ endif
 PREFIX ?= /usr/local
 
 all: $(PROGS)
-
-testlock: testlock.c
-
-tlem: LDLIBS += -lm
 
 clean:
 	-@rm -rf $(CLEANFILES)

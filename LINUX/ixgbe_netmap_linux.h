@@ -104,6 +104,7 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (0);
 }
 
+#ifdef NETMAP_LINUX_IXGBE_HAVE_DISABLE
 static inline void ixgbe_irq_enable_queues(struct ixgbe_adapter *adapter,
 						u64 qmask);
 static inline void ixgbe_irq_disable_queues(struct ixgbe_adapter *adapter,
@@ -120,6 +121,13 @@ ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
 		ixgbe_irq_disable_queues(adapter, ~0);
 	}
 }
+#else
+static void
+ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
+{
+	RD(5, "per-queue irq disable not supported");
+}
+#endif
 
 /*
  * Reconcile kernel and user view of the transmit ring.

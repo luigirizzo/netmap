@@ -1,6 +1,6 @@
 #!/bin/sh
 
-TOPDIR=$PWD
+BUILDDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
 
@@ -90,13 +90,30 @@ driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
 	e1000 e1000e igb ixgbe i40e"
 # enabled drivers (bitfield)
 driver=
-
 drv()
 {
 	setop driver "$@"
 }
 
 drv enable-all
+
+# drivers built by external commands (bitfield)
+external_driver_avail="$driver_avail"
+external_driver=
+edrv()
+{
+	setop external_driver "$@"
+}
+
+# available apps
+application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl"
+application=0
+app()
+{
+	setop application "$@"
+}
+# enable all by default
+app enable-all
 
 prefix=/usr/local
 cc=cc
@@ -126,33 +143,29 @@ decode_version() {
 report() {
 	echo "kernel directory            $ksrc"
 	print_realpath $ksrc
+	echo "kernel sources              $src"
+	print_realpath "$src"
 	local v=$lin_ver
 	[ -n "$v" ] || v="-"
 	local dv="$(decode_version $lin_ver)"
 	echo "linux version               $v $dv"
 	echo "module file                 $MODNAME.ko"
+	echo
 	echo "subsystems                  $(subsys print)"
-
-
-	if drv is-empty; then
-		echo "no-drivers"
-	else
-		echo "kernel sources              $src"
-		print_realpath "$src"
-		echo "requested drivers           $(drv print)"
-		echo
-		if [ -f "drivers.mak" ]; then
-			cat <<EOF
+	echo "apps                        $(app print)"
+	echo "native drivers              $(drv print)"
+	echo
+	if [ -f "drivers.mak" ]; then
+		cat <<EOF
 Contents of the drivers.mak file:
 
-  Note: only drivers for which both the <driver>-src and the
-  <driver>-patch variable are set may be used in native mode (assuming
+  Note: only drivers for which both the <driver>@src and the
+  <driver>@patch variable are set may be used in native mode (assuming
   we can actually patch the sources). Other NICs will be accessed using
   the generic driver, at reduced performance.
 
 EOF
-			cat drivers.mak
-		fi
+		cat drivers.mak
 	fi
 }
 
@@ -190,6 +203,31 @@ warning()
 	message WARNING
 }
 
+replace_vars()
+{
+	sed \
+		-e "s|@BUILDDIR@|$BUILDDIR|g" \
+		-e "s|@SRCDIR@|$SRCDIR|g" \
+		-e "s|@KSRC@|$ksrc|g" \
+		-e "s|@SRC@|$src|g" \
+		-e "s|@KOPTS@|$kopts|g" \
+		-e "s|@MODPATH@|$modpath|g" \
+		-e "s|@MODNAME@|$MODNAME|g" \
+		-e "s|@SUBSYS@|$(subsys print)|g" \
+		-e "s|@LIN_VER@|$lin_ver|g" \
+		-e "s|@MOD_LIST@|$mod_list|g" \
+		-e "s|@PATCHES@|$(echo $patches)|g" \
+		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
+		-e "s|@E_DRIVERS@|$(edrv print)|g" \
+		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
+		-e "s|@APPS_LIST@|$(app print)|g" \
+		-e "s|@APPS_CC@|$cc|g" \
+		-e "s|@APPS_LD@|$ld|g" \
+		-e "s|@PREFIX@|$prefix|g" \
+		-e "s|@DESTDIR@|$DESTDIR|g" \
+		$1
+}
+
 # print_help
 print_help() {
 	cat <<EOF
@@ -205,6 +243,9 @@ Available options:
   --no-drivers                 do not compile any driver
   --no-drivers=                do not compile the given drivers (comma sep.)
   --drivers=                   only compile the given drivers (comma sep.)
+  --no-apps	               do not compile any app
+  --no-apps=                   do not compile the given apps (comma sep.)
+  --apps=                      only compile the given apps (comma sep.)
   --mod-name=		       netmap module name [$MODNAME]
   --enable-vale      	       enable the VALE switch
   --disable-vale      	       disable the VALE switch
@@ -220,7 +261,6 @@ Available options:
   --disable-ptnetmap-host      disable ptnetmap for host kernel
   --enable-ptnetmap            enable ptnetmap (both guest and host)
   --disable-ptnetmap           disable ptnetmap (both guest and host)
-  --override=		       use override file, see OVERRIDE below
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
   --cc=                        C compiler for the examples [$cc]
@@ -229,19 +269,8 @@ Available options:
   --destir=                    destination dir for the examples [$DESTDIR]
 
   --show-drivers	       print the list of available drivers and exit
+  --show-apps	       	       print the list of available apps and exit
 
-
-  OVERRIDE:
-
-  The script tries to automatically determine the source files and the
-  appropriate patch for each driver. If this does not work as expected,
-  or you need to do something non standard, you can provide an
-  'override' file containing a set of GNU make variables such as
-
-  DRIVER-src := ...
-  DRIVER-patch := ...
-
-  where DRIVER is one of the drivers displayed by '--show-drivers'.
 EOF
 }
 
@@ -348,7 +377,9 @@ EOF
 # run_tests: run all accumulated tests and exec the pertinent
 #   success/failure actions for each one.
 run_tests() {
+	cp $BUILDDIR/default-config.mak $TMPDIR
 	cat > $TMPDIR/Makefile <<EOF
+SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
@@ -356,12 +387,14 @@ S_DRIVERS := $(drv print)
 all: \$(S_DRIVERS:%=get-%)
 	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
--include $TOPDIR/drivers.mak
+-include $BUILDDIR/config.mak
+-include $BUILDDIR/drivers.mak
 EOF
 	for d in $(drv print); do
 		cat >> $TMPDIR/Makefile <<EOF
 get-$d:
-	[ -z "\$($d-src)" ] || cp -Rp \$($d-src) \$(if \$($d-dst),\$($d-dst),.)
+	\$($d@fetch)
+	\$($d@src)
 	touch get-$d
 EOF
 	done
@@ -418,7 +451,6 @@ kopts=
 modpath=
 drvsuffix=
 cache=
-override=
 for opt do
 	optarg=${opt#*=}
 	case "$opt" in
@@ -444,6 +476,20 @@ for opt do
 		drv disable-all
 		for d in $(echo "$optarg" | sed 's/,/ /g'); do
 			drv enable "$d"
+		done
+	;;
+	--no-apps) app disable-all
+	;;
+	--no-apps=*)
+		app enable-all
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			app disable "$d"
+		done
+	;;
+	--apps=*)
+		app disable-all
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			app enable "$d"
 		done
 	;;
 	--cc=*) cc="$optarg"
@@ -472,14 +518,16 @@ for opt do
 	;;
 	--cache=*) cache="$optarg"
 	;;
-	--override=*) override="$optarg"
-	;;
 	--help)
 		print_help
 		exit
 	;;
 	--show-drivers)
 		drv print
+		exit
+	;;
+	--show-apps)
+		app print
 		exit
 	;;
 	*)
@@ -560,50 +608,6 @@ EOF
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
-# if the user has provided an override file, check that it exists
-if [ -n "$override" ]; then
-	[ -f "$override" ] || error <<EOF
-		Cannot access '$override'
-EOF
-fi
-
-# if the user has asked for the patched drivers, we also need the
-# full kernel sources. Since we may have put $src=$ksrc, and $ksrc
-# may only contain header files, we check that $src/drivers actually
-# contains some .c file
-# Note: if we have an override file the test is not fatal, since the
-# intended driver sources location may be found there
-if ! drv is-empty; then
-	if [ ! -d "$src" ] ||
-	   [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
-		if [ -z "$override" ]; then
-			drv disable-all
-			error <<EOF
-Cannot find full kernel sources.
-
-We need the full kernel sources to build the netmap-enabled drivers.
-Please note that most distributions provide separate packages for kernel
-headers and sources. Once you know the path to kernel sources, you can
-rerun this script with the additional
-
-    --kernel-sources=/path/to/sources
-
-option.
-
-If you are only interested in VALE and pipes, you can rerun the script
-now with the '--no-drivers' option. Hardware devices will then be accessed
-via a generic adapter at reduced performance."
-EOF
-		else
-			warning <<EOF
-Cannot find full kernel sources. We assume that the drivers sources'
-location has been provided in the override file.
-EOF
-		fi
-	fi
-fi
-src=$(cd $src; pwd)
-
 broken_buildsystem() {
 	error <<EOF
 It looks like we are not able to build kernel modules for the current
@@ -611,37 +615,45 @@ configuration. Please check 'config.log' for possible clues.
 EOF
 }
 
+replace_vars $SRCDIR/default-config.mak > default-config.mak
+
 reset_tests
 rm -f drivers.mak
 add_test true broken_buildsystem < /dev/null
 run_tests
 
-drvname2config() {
-	local name=$1
-	local conf=$(awk -v n=$name '$1==n { print $2 }' $SRCDIR/drvname2config)
-	if [ x"$conf" = x ]; then conf="CONFIG_$(echo $name|tr a-z- A-Z_)"; fi
-	echo $conf
-}
-
 ###############################################################
 # Makefile creation
 ###############################################################
+
+if [ ! -e config.mak ]; then
+	message " NOTE  " <<EOF
+No config.mak found, we now create one for you that
+just includes default-config.mak.
+EOF
+	echo "include default-config.mak" > config.mak
+fi
 
 # here we select the patches for the drivers and create the
 # main Makefile. The Makefile is obtained from Makefile.in
 # with some values replaced in (mainly the kernel directory).
 # The final Makefile will include drivers.mak, which is also
-# created here. drivers.mak will contain a <driver>-src
-# and <driver>-patch variable each of the available drivers.
+# created here. drivers.mak will contain a <driver>@src
+# and <driver>@patch variable each of the available drivers.
 
 mod_list=
 if ! drv is-empty; then
-	# produce a list of applicable patches for this version
 	[ -d patches ] || { rm -f patches; ln -s $SRCDIR/final-patches patches; }
 fi
 
 s_drivers=$(drv print)
 
+# copy the system config.mak if any, but do not
+# overwrite any user-provied one
+if [ -e $SRCDIR/config.mak.in ]; then
+	sed "s|@SRCDIR@|$SRCDIR|g" $SRCDIR/config.mak.in > config.mak || true
+fi
+ln -s $SRCDIR/read-vars.mak 2>/dev/null || true
 rm -f drivers.mak
 cat > drivers.mak <<EOF
 	########################################
@@ -650,34 +662,102 @@ cat > drivers.mak <<EOF
 EOF
 # read in all the kernel .config, we use it below
 . $ksrc/.config
+# check for full kernel sources just once
+src_checked=
+src_found=
 for d in $s_drivers; do
-	# check that we have a patch for this driver
-	# XXX the selection is based only on the kernel version
-	p=$(cd patches; ls diff--$d--* | awk -v v=$lin_ver -F -- '($3 != "*") && ($3 <= v"") && (v"" < $4)')
-	if [ -z "$p" ] && [ -z "$override" ]; then
-		warning <<EOF
-'$d': no applicable patch found and no override file provided.
-Disabling driver.
+	# reset all driver variables to default values
+	drv_fetch=
+	drv_src=
+	drv_patch=
+	drv_build=
+	drv_distclean=
+	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
+	# possibly override from config.mak
+	eval $(make -rf read-vars.mak $d@vars)
+
+	if [ -n "$drv_fetch" ]; then
+		message " NOTE  " <<EOF
+We are trying to download the original sources for driver
+$d using the following command:
+  
+  $drv_fetch
+
+If this fails, please download the above file and put it
+in $SRCDIR/ext-drivers/, then run configure again.
 EOF
-		drv disable $d
-		continue
+		$drv_fetch 2>&1 || { warning <<EOF
+Unable to fetch the sources for driver $d. Disabling driver.
+EOF
+			drv disable $d
+			continue
+		}
 	fi
-	# find the driver sources
-	s=$(find $src/drivers/ -name "$d" -print -quit)
-	if [ -z "$s" ] && [ -z "$override" ]; then
-		warning <<EOF
-'$d': sources not found ad no override provided.
+
+	if [ -z "$drv_src" ]; then
+		# if the user has asked for the patched drivers, we also need the
+		# full kernel sources. Since we may have put $src=$ksrc, and $ksrc
+		# may only contain header files, we check that $src/drivers actually
+		# contains some .c file
+		# Note: if we have an override file the test is not fatal, since the
+		# intended driver sources location may be found there
+		if [ -z "$src_checked" ]; then
+			if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
+				warning <<EOF
+Cannot find full kernel sources.
+
+Please note that most distributions provide separate packages for kernel
+headers and sources. Once you know the path to kernel sources, you can
+rerun this script with the additional
+
+    --kernel-sources=/path/to/sources
+
+option.
+
+Native drivers that are listed as disabled below are not going to be built.
+The corresponding devices will be accessed using a generic driver at
+reduced performance.
+EOF
+			else
+				src=$(cd $src; pwd)
+				src_found=1
+			fi
+			src_checked=1
+		fi
+		drv_kernel_src=
+		if [ -n "$src_found" ]; then
+			drv_kernel_src=$(find $src/drivers/ -name "$d" -print -quit)
+		fi
+		if [ -z "$drv_kernel_src" ]; then
+			warning <<EOF
+'$d': sources not found.  Disabling driver.
+EOF
+			drv disable $d
+			continue
+		fi
+		drv_src="cp -Rp $drv_kernel_src $d"
+	fi
+
+	if [ -z "$drv_patch" ]; then
+		# check that we have a patch for this driver
+		# XXX the selection is based only on the kernel version
+		drv_patch=$(ls patches/vanilla--$d--* | awk -v v=$lin_ver -F -- '($3 != "*") && ($3 <= v"") && (v"" < $4)')
+		if [ -z "$drv_patch" ]; then
+			warning <<EOF
+'$d': no applicable patch found and no override provided.
 Disabling driver.
 EOF
-		drv disable $d
-		continue
+			drv disable $d
+			continue
+		fi
+	elif [ "$drv_patch" = none ]; then
+		drv_patch=
 	fi
 	# check that the original driver had been compiled as a module, otherwise
 	# skip this driver
 	# (we do this mainly to be sure that any module dependency has already
 	#  been taken care of)
 	# XXX maybe add a (per driver?) flag to force compilation anyway
-	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
 	m="$(eval echo \$$drv_conf)"
 	[ -n "$m" ] || {
 		echo "$drv_conf not set in $ksrc/.config, skipping $d" | warning
@@ -697,53 +777,35 @@ in your .config.
 Alternatively, you can pass a --driver-suffix= option to configure.
 EOF
 	}
-	mod_list="$drv_conf=m $mod_list"
+
+	# if no external build command has been specified, add
+	# this driver to the list of modules built by netmap,
+	# otherwise add it to the list of external drivers
+	if [ -z "$drv_build" ]; then
+		mod_list="$drv_conf=m $mod_list"
+	else
+		edrv enable $d
+	fi
+
 	# add the driver related variables to drivers.mak
 	cat >> drivers.mak <<EOF
-$d-src := $s
-$d-patch := patches/$p
-$d-dst := $d
+$d@conf := $drv_conf
+$d@src := $drv_src
+$d@patch := $drv_patch
 EOF
 done
 
 # get the drivers that are still enabled
 s_drivers=$(drv print)
 
-if [ -n "$override" ]; then
-	cat >> drivers.mak <<EOF
-		########################################
-		# ovverride from
-		# $override
-		########################################
-EOF
-	cat "$override" >> drivers.mak
-fi
-
 # create netmap.mak and Kbuild
 for f in $SRCDIR/*.in; do
-	sed \
-		-e "s|@SRCDIR@|$SRCDIR|g" \
-		-e "s|@KSRC@|$ksrc|g" \
-		-e "s|@SRC@|$src|g" \
-		-e "s|@KOPTS@|$kopts|g" \
-		-e "s|@MODPATH@|$modpath|g" \
-		-e "s|@MODNAME@|$MODNAME|g" \
-		-e "s|@SUBSYS@|$(subsys print)|g" \
-		-e "s|@LIN_VER@|$lin_ver|g" \
-		-e "s|@MOD_LIST@|$mod_list|g" \
-		-e "s|@PATCHES@|$(echo $patches)|g" \
-		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
-		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
-		-e "s|@APPS_CC@|$cc|g" \
-		-e "s|@APPS_LD@|$ld|g" \
-		-e "s|@PREFIX@|$prefix|g" \
-		-e "s|@DESTDIR@|$DESTDIR|g" \
-		$f > $(basename $f .in)
+	replace_vars $f > $(basename $f .in)
 done
 
 # if we are in SRCDIR this will fail, since
 # Makefile already exists
-ln -s $SRCDIR/Makefile || true
+ln -s $SRCDIR/../GNUmakefile || true
 ln -s $SRCDIR/drv-subdir.mak || true
 
 
@@ -765,7 +827,7 @@ else
 	error <<EOF
 There were problems copying the sources of driver $1.
 
-If you need this driver, please check that the $1-src variable 
+If you need this driver, please check that the $1@src variable 
 points to the correct path contaning the driver sources.
 
 If you are not interested in this driver, please disable it
@@ -1296,6 +1358,16 @@ EOF
   		return adapter->tx_ring[0];
   	}
 EOF
+
+  # is ixgbe_irq_disable_queues available?
+  add_test "define IXGBE_HAVE_DISABLE" <<EOF
+ 	 #include "ixgbe/ixgbe_main.c"
+
+ 	 void
+ 	 dummy(struct ixgbe_adapter *adater, u64 qmask) {
+ 	 	ixgbe_irq_disable_queues(adapter, qmask);
+ 	 }
+EOF
   fi # ixgbe
   
   if drv enabled virtio_net.c; then
@@ -1424,6 +1496,10 @@ EOF
 EOF
   
   # the TESTPOSTPROC script will add macros to $configh
+  message " NOTE  " <<EOF
+Now running compile tests to adapt the code to your
+kernel version. Please wait.
+EOF
   run_tests
   
   define DRIVER_SUFFIX \"$drvsuffix\"
@@ -1443,8 +1519,11 @@ fi # ! -f $cache/netmap_config_h
 report
 
 # create the build directory for the examples
-mkdir build-apps
-ln -s $SRCDIR/../examples/GNUmakefile build-apps/Makefile
+mkdir -p build-apps
+for a in $(app print); do
+	mkdir -p build-apps/$a
+	ln -s $SRCDIR/../apps/$a/GNUmakefile build-apps/$a/GNUmakefile 2> /dev/null || true
+done
 
 # config.status can be used to rerun configure with the
 # same arguments

@@ -1,15 +1,13 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
-PROGS	=	pkt-gen pkt-gen-b bridge bridge-b vale-ctl
-#PROGS += pingd
-PROGS	+= test_select testmmap test_nm
+PROGS	= test_select testmmap test_nm
 X86PROG = testlock testcsum
 LIBNETMAP =
 
 CLEANFILES = $(PROGS) $(X86PROGS) *.o
 
 SRCDIR ?= ..
-VPATH = $(SRCDIR)/examples
+VPATH = $(SRCDIR)/utils
 
 NO_MAN=
 CFLAGS = -O2 -pipe
@@ -37,30 +35,12 @@ all-x86: $(PROGS) $(X86PROGS)
 
 kern_test: testmod/kern_test.c
 
-pkt-gen: pkt-gen.o
-
-pkt-gen-b: pkt-gen-b.o
-
-%-b.o: %.c
-	$(CC) $(CFLAGS) -DBUSYWAIT -c $^ -o $@
-
-bridge: bridge.o
-
-bridge-b: bridge-b.o
-
-vale-ctl: vale-ctl.o
-
 test_nm: test_nm.o
-
-%-pic.o: %.c
-	$(CC) $(CFLAGS) -fpic -c $^ -o $@
 
 clean:
 	-@rm -rf $(CLEANFILES)
 
 testlock: testlock.c
-
-tlem: LDLIBS += -lm
 
 .PHONY: install
 install: $(PROGS:%=install-%)

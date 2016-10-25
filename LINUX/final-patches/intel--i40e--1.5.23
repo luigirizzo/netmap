@@ -1,0 +1,156 @@
+diff --git a/i40e/Makefile b/i40e/Makefile
+index 8c1483c..104b8c9 100644
+--- a/i40e/Makefile
++++ b/i40e/Makefile
+@@ -27,9 +27,9 @@ ifneq ($(KERNELRELEASE),)
+ # Makefile for the Intel(R) 40-10 Gigabit Ethernet Connection Network Driver
+ #
+ 
+-obj-$(CONFIG_I40E) += i40e.o
++obj-$(CONFIG_I40E) += i40e$(NETMAP_DRIVER_SUFFIX).o
+ 
+-i40e-y := i40e_main.o \
++i40e$(NETMAP_DRIVER_SUFFIX)-y := i40e_main.o \
+ 	i40e_ethtool.o \
+ 	i40e_adminq.o \
+ 	i40e_common.o \
+@@ -42,14 +42,14 @@ i40e-y := i40e_main.o \
+ 	i40e_ptp.o \
+ 	i40e_virtchnl_pf.o
+ 
+-i40e-$(CONFIG_DCB) += i40e_dcb.o i40e_dcb_nl.o
+-i40e-$(CONFIG_FCOE:m=y) += i40e_fcoe.o
+-i40e-y += kcompat.o
++i40e$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DCB) += i40e_dcb.o i40e_dcb_nl.o
++i40e$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_FCOE:m=y) += i40e_fcoe.o
++i40e$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
+ 
+ else	# ifneq($(KERNELRELEASE),)
+ # normal makefile
+ 
+-DRIVER := i40e
++DRIVER := i40e$(NETMAP_DRIVER_SUFFIX)
+ 
+ ifeq (,$(wildcard common.mk))
+   $(error Cannot find common.mk build rules)
+@@ -116,9 +116,12 @@ ccc: clean
+ 	@+$(call kernelbuild,modules,coccicheck MODE=report)
+ 
+ # Build manfiles
+-manfile:
++manfile: ../${DRIVER}.${MANSECTION}
+ 	@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
+ 
++../${DRIVER}.${MANSECTION}:
++	touch $@
++
+ # Clean the module subdirectories
+ clean:
+ 	@+$(call kernelbuild,clean)
+diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
+index 577cc4a..d9ee330 100644
+--- a/i40e/i40e_main.c
++++ b/i40e/i40e_main.c
+@@ -132,6 +132,11 @@ MODULE_VERSION(DRV_VERSION);
+ 
+ static struct workqueue_struct *i40e_wq;
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_I40E_MAIN
++#include <i40e_netmap_linux.h>
++#endif
++
+ /**
+  * i40e_get_lump - find a lump of free generic resource
+  * @pf: board private structure
+@@ -3069,6 +3074,10 @@ static int i40e_configure_tx_ring(struct i40e_ring *ring)
+ 	/* cache tail off for easier writes later */
+ 	ring->tail = hw->hw_addr + I40E_QTX_TAIL(pf_q);
+ 
++#ifdef DEV_NETMAP
++	i40e_netmap_configure_tx_ring(ring);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ }
+ 
+@@ -3141,6 +3150,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+ 	ring->tail = hw->hw_addr + I40E_QRX_TAIL(pf_q);
+ 	writel(0, ring->tail);
+ 
++#ifdef DEV_NETMAP
++	if (i40e_netmap_configure_rx_ring(ring))
++		return 0;
++#endif /* DEV_NETMAP */
++
+ 	i40e_alloc_rx_buffers(ring, I40E_DESC_UNUSED(ring));
+ 
+ 	return 0;
+@@ -10100,6 +10114,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
+ 		return -ENODEV;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	if (vsi->netdev_registered)
++		netmap_detach(vsi->netdev);
++#endif
++
+ 	uplink_seid = vsi->uplink_seid;
+ 	if (vsi->type != I40E_VSI_SRIOV) {
+ 		if (vsi->netdev_registered) {
+@@ -10461,6 +10480,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
+ 	    (vsi->type == I40E_VSI_VMDQ2)) {
+ 		ret = i40e_vsi_config_rss(vsi);
+ 	}
++
++#ifdef DEV_NETMAP
++	if (vsi->netdev_registered)
++		i40e_netmap_attach(vsi);
++#endif
++
+ 	return vsi;
+ 
+ err_rings:
+diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
+index e0f1f6c..3b131f2 100644
+--- a/i40e/i40e_txrx.c
++++ b/i40e/i40e_txrx.c
+@@ -25,6 +25,10 @@
+ #include "i40e.h"
+ #include "i40e_prototype.h"
+ 
++#if defined(CONFIG_NETMAP) || defined (CONFIG_NETMAP_MODULE)
++#include <i40e_netmap_linux.h>
++#endif /* DEV_NETMAP */
++
+ static inline __le64 build_ctob(u32 td_cmd, u32 td_offset, unsigned int size,
+ 				u32 td_tag)
+ {
+@@ -696,6 +700,11 @@ static bool i40e_clean_tx_irq(struct i40e_ring *tx_ring, int budget)
+ 	unsigned int total_packets = 0;
+ 	unsigned int total_bytes = 0;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++		return true;
++#endif /* DEV_NETMAP */
++
+ 	tx_buf = &tx_ring->tx_bi[i];
+ 	tx_desc = I40E_TX_DESC(tx_ring, i);
+ 	i -= tx_ring->count;
+@@ -1892,6 +1901,15 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
+ 	u16 cleaned_count = I40E_DESC_UNUSED(rx_ring);
+ 	bool failure = false;
+ 
++#ifdef DEV_NETMAP
++	int dummy, nm_irq;
++	nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy);
++	if (nm_irq != NM_IRQ_PASS) {
++		return (nm_irq == NM_IRQ_COMPLETED) ? 1 : budget;
++	}
++#endif /* DEV_NETMAP */
++
++
+ 	while (likely(total_rx_packets < (unsigned int)budget)) {
+ 		union i40e_rx_desc *rx_desc;
+ 		struct sk_buff *skb;

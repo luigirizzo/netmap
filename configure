@@ -1,0 +1,14 @@
+#!/bin/sh
+
+os=$(uname -s)
+topdir=$(cd $(dirname $0); pwd)
+
+case $os in
+	Linux)
+		$topdir/LINUX/configure "$@";;
+	FreeBSD)
+		$topdir/FreeBSD/configure "$@";;
+	*)
+		echo "Sorry, $os is not supported"
+		exit 1;;
+esac

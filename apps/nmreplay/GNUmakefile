@@ -6,11 +6,12 @@ LIBNETMAP =
 CLEANFILES = $(PROGS) *.o
 
 SRCDIR ?= ../..
+VPATH = $(SRCDIR)/apps/nmreplay
 
 NO_MAN=
 CFLAGS = -O2 # -pipe -g
 CFLAGS += -Werror -Wall -Wunused-function
-CFLAGS += -I $(SRCDIR)/sys
+CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include
 CFLAGS += -Wextra
 
 LDLIBS += -lpthread
