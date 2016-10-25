@@ -377,6 +377,7 @@ EOF
 # run_tests: run all accumulated tests and exec the pertinent
 #   success/failure actions for each one.
 run_tests() {
+	cp $BUILDDIR/default-config.mak $TMPDIR
 	cat > $TMPDIR/Makefile <<EOF
 SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
@@ -614,6 +615,8 @@ configuration. Please check 'config.log' for possible clues.
 EOF
 }
 
+replace_vars $SRCDIR/default-config.mak > default-config.mak
+
 reset_tests
 rm -f drivers.mak
 add_test true broken_buildsystem < /dev/null
@@ -622,8 +625,6 @@ run_tests
 ###############################################################
 # Makefile creation
 ###############################################################
-
-replace_vars $SRCDIR/default-config.mak > default-config.mak
 
 if [ ! -e config.mak ]; then
 	message " NOTE  " <<EOF
