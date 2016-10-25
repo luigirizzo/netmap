@@ -106,7 +106,7 @@ edrv()
 }
 
 # available apps
-application_avail="pkt-gen bridge lb tlem nmreplay"
+application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl"
 application=0
 app()
 {
