@@ -62,7 +62,7 @@ index c49cba8..546435f 100644
  clean:
  	@+$(call devkernelbuild,clean)
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 202f595..7d30efd 100644
+index 202f595..200f5a2 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -709,6 +709,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
@@ -107,6 +107,15 @@ index 202f595..7d30efd 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBE_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
+@@ -1656,7 +1684,7 @@ static bool ixgbe_add_rx_frag(struct ixgbe_ring *rx_ring,
+ 	/* Even if we own the page, we are not allowed to use atomic_set()
+ 	 * This would break get_page_unless_zero() users.
+ 	 */
+-	atomic_inc(&page->_count);
++	atomic_inc(&page->NETMAP_LINUX_PAGE_COUNT);
+ 
+ 	return true;
+ }
 @@ -1767,6 +1795,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
  #endif /* CONFIG_FCOE */
  	u16 cleaned_count = ixgbe_desc_unused(rx_ring);
@@ -168,3 +177,16 @@ index 202f595..7d30efd 100644
  #ifdef HAVE_IXGBE_DEBUG_FS
  	ixgbe_dbg_adapter_exit(adapter);
  
+diff --git a/ixgbe/kcompat.h b/ixgbe/kcompat.h
+index 048157a..c2a2acd 100644
+--- a/ixgbe/kcompat.h
++++ b/ixgbe/kcompat.h
+@@ -4880,7 +4880,7 @@ static inline void csum_replace_by_diff(__sum16 *sum, __wsum diff)
+ 
+ static inline void page_ref_inc(struct page *page)
+ {
+-	atomic_inc(&page->_count);
++	atomic_inc(&page->NETMAP_LINUX_PAGE_COUNT);
+ }
+ 
+ #endif /* 4.6.0 */

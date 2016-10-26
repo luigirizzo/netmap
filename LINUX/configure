@@ -71,7 +71,7 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host"
+subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -161,10 +161,19 @@ Contents of the drivers.mak file:
 
   Note: only drivers for which both the <driver>@src and the
   <driver>@patch variable are set may be used in native mode (assuming
-  we can actually patch the sources). Other NICs will be accessed using
-  the generic driver, at reduced performance.
-
+  we can actually patch the sources).
 EOF
+		if subsys enabled generic; then
+			cat <<EOF
+  Other NICs will be accessed using
+  the generic driver, at reduced performance.
+EOF
+		else
+			cat <<EOF
+  Since the generic driver has been disabled, the
+  other NICs will NOT be usable by netmap.
+EOF
+		fi
 		cat drivers.mak
 	fi
 }
@@ -261,12 +270,14 @@ Available options:
   --disable-ptnetmap-host      disable ptnetmap for host kernel
   --enable-ptnetmap            enable ptnetmap (both guest and host)
   --disable-ptnetmap           disable ptnetmap (both guest and host)
+  --enable-sink   	       enable the netmap sink device
+  --disable-sink   	       disable the netmap sink device
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
-  --cc=                        C compiler for the examples [$cc]
-  --ld=                        linker for the examples [$ld]
-  --prefix=                    install path for the examples [$prefix]
-  --destir=                    destination dir for the examples [$DESTDIR]
+  --cc=                        C compiler to be used for the apps [$cc]
+  --ld=                        linker to be used for the apps [$ld]
+  --prefix=                    install path for the apps [$prefix]
+  --destir=                    destination dir for the apps [$DESTDIR]
 
   --show-drivers	       print the list of available drivers and exit
   --show-apps	       	       print the list of available apps and exit
@@ -702,8 +713,8 @@ EOF
 		# Note: if we have an override file the test is not fatal, since the
 		# intended driver sources location may be found there
 		if [ -z "$src_checked" ]; then
-			if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then
-				warning <<EOF
+			if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then {
+				cat <<EOF
 Cannot find full kernel sources.
 
 Please note that most distributions provide separate packages for kernel
@@ -715,13 +726,23 @@ rerun this script with the additional
 option.
 
 Native drivers that are listed as disabled below are not going to be built.
+EOF
+				if subsys enabled generic; then
+					cat <<EOF
 The corresponding devices will be accessed using a generic driver at
 reduced performance.
 EOF
+				else
+					cat <<EOF
+Since the generic driver has been disabled, the corresponding NICs
+will NOT be usable by netmap.
+EOF
+				fi 
+			} | warning
 			else
 				src=$(cd $src; pwd)
 				src_found=1
-			fi
+			fi 
 			src_checked=1
 		fi
 		drv_kernel_src=
@@ -1243,11 +1264,28 @@ EOF
 	}
 EOF
 
+  # page_ref?
+  add_test 'have PAGE_REF' <<EOF
+  	#include <linux/page_ref.h>
+EOF
+
+  # _count or _refcount?
+  for f in _count _refcount; do
+	  add_test "define PAGE_COUNT $f" <<EOF
+	  #include <linux/mm.h>
+
+	  atomic_t
+	  dummy(struct page *page) {
+	  	return page->$f;
+	  }
+EOF
+  done
+
 # check for split_page
   add_test 'have SPLIT_PAGE' <<EOF
 	#include <linux/mm.h>
 
-	int
+	void
 	dummy(struct page *page) {
 		split_page(page, 0);
 	}

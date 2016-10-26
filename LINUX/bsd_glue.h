@@ -64,6 +64,10 @@
 /*----- support for compiling on older versions of linux -----*/
 #include "netmap_linux_config.h"
 
+#ifdef NETMAP_LINUX_HAVE_PAGE_REF
+#include <linux/page_ref.h>
+#endif /* NETMAP_LINUX_HAVE_PAGE_REF */
+
 #ifndef NETMAP_LINUX_HAVE_HRTIMER_MODE_REL
 #define HRTIMER_MODE_REL	HRTIMER_REL
 #endif
@@ -120,12 +124,18 @@ struct net_device_ops {
 #define usleep_range(a, b)	msleep((a)+(b)+999)
 #endif
 
+#ifdef NETMAP_LINUX_HAVE_PAGE_REF
+#define NM_SET_PAGE_COUNT(page, v)	set_page_count(page, v)
+#else
+#define NM_SET_PAGE_COUNT(page, v)	atomic_inc(&((page)->NETMAP_LINUX_PAGE_COUNT), (v))
+#endif
+
 #ifndef NETMAP_LINUX_HAVE_SPLIT_PAGE
 #define split_page(page, order) 			  \
 	do {						  \
 		int i_;					  \
 		for (i_ = 1; i_ < (1 << (order)); i_++)	  \
-			atomic_set(&(page)[i_]._count, 1);\
+			NM_SET_PAGE_COUNT(&(page)[i_], 1);\
 	} while (0)
 #endif /* HAVE_SPLIT_PAGE */
 

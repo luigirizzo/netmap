@@ -1823,6 +1823,129 @@ ptnetmap_guest_fini(void)
 #define ptnetmap_guest_fini()
 #endif /* WITH_PTNETMAP_GUEST */
 
+#ifdef WITH_SINK
+
+static struct net_device *nm_sink_netdev = NULL;
+s64 nm_sink_next_link_idle; /* for link emulation */
+static unsigned int sink_delay_ns = 100; /* packet transmission time */
+module_param(sink_delay_ns, uint, 0644);
+
+static int nm_sink_open(struct net_device *netdev) { return 0; }
+static int nm_sink_close(struct net_device *netdev) { return 0; }
+
+static netdev_tx_t
+nm_sink_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+{
+	ndelay(sink_delay_ns); /* no link emulation here */
+	kfree_skb(skb);
+	return NETDEV_TX_OK;
+}
+
+static const struct net_device_ops nm_sink_netdev_ops = {
+	.ndo_open = nm_sink_open,
+	.ndo_stop = nm_sink_close,
+	.ndo_start_xmit = nm_sink_start_xmit,
+};
+
+static int
+nm_sink_register(struct netmap_adapter *na, int onoff)
+{
+	if (onoff)
+		nm_set_native_flags(na);
+	else
+		nm_clear_native_flags(na);
+
+	nm_sink_next_link_idle = ktime_get_ns();
+
+	return 0;
+}
+
+static int
+nm_sink_txsync(struct netmap_kring *kring, int flags)
+{
+	u64 inactivity = ktime_get_ns() - nm_sink_next_link_idle;
+	unsigned int const lim = kring->nkr_num_slots - 1;
+	unsigned int const head = kring->rhead;
+	unsigned int n; /* num of packets to be transmitted */
+
+	if (unlikely(inactivity > 4 * kring->nkr_num_slots * sink_delay_ns)) {
+		/* Reset link emulation if there has been no
+		 * activity for a while. */
+		nm_sink_next_link_idle = ktime_get_ns();
+	}
+
+	n = kring->nkr_num_slots + head - kring->nr_hwcur;
+	if (n >= kring->nkr_num_slots) {
+		n -= kring->nkr_num_slots;
+	}
+	nm_sink_next_link_idle += n * sink_delay_ns;
+
+	kring->nr_hwcur = head;
+	kring->nr_hwtail = nm_prev(kring->nr_hwcur, lim);
+
+	while (ktime_get_ns() < nm_sink_next_link_idle) ;
+
+	return 0;
+}
+
+static int
+nm_sink_rxsync(struct netmap_kring *kring, int flags)
+{
+	u_int const head = kring->rhead;
+
+	/* First part: nothing received for now. */
+	/* Second part: skip past packets that userspace has released */
+	kring->nr_hwcur = head;
+
+	return 0;
+}
+int
+netmap_sink_init(void)
+{
+	struct netmap_adapter na;
+	struct net_device *netdev;
+	int err;
+
+	netdev = alloc_etherdev(0);
+	if (!netdev) {
+		return ENOMEM;
+	}
+	netdev->netdev_ops = &nm_sink_netdev_ops ;
+	strncpy(netdev->name, "nmsink", sizeof(netdev->name) - 1);
+	netdev->features = NETIF_F_HIGHDMA;
+	strcpy(netdev->name, "nmsink%d");
+	err = register_netdev(netdev);
+	if (err) {
+		free_netdev(netdev);
+	}
+
+	bzero(&na, sizeof(na));
+	na.ifp = netdev;
+	na.num_tx_desc = 1024;
+	na.num_rx_desc = 1024;
+	na.nm_register = nm_sink_register;
+	na.nm_txsync = nm_sink_txsync;
+	na.nm_rxsync = nm_sink_rxsync;
+	na.num_tx_rings = na.num_rx_rings = 1;
+	netmap_attach(&na);
+
+	netif_carrier_on(netdev);
+	nm_sink_netdev = netdev;
+
+	return 0;
+}
+
+void
+netmap_sink_fini(void)
+{
+	struct net_device *netdev = nm_sink_netdev;
+
+	nm_sink_netdev = NULL;
+	unregister_netdev(netdev);
+	netmap_detach(netdev);
+	free_netdev(netdev);
+}
+#endif  /* WITH_SINK */
 
 
 /* ########################## MODULE INIT ######################### */
@@ -1847,13 +1970,21 @@ static int linux_netmap_init(void)
 	if (err) {
 		return err;
 	}
-
+#ifdef WITH_SINK
+	err = netmap_sink_init();
+	if (err) {
+		D("Warning: could not init netmap sink interface");
+	}
+#endif /* WITH_SINK */
 	return 0;
 }
 
 
 static void linux_netmap_fini(void)
 {
+#ifdef WITH_SINK
+	netmap_sink_fini();
+#endif /* WITH_SINK */
         ptnetmap_guest_fini();
         netmap_fini();
 }
