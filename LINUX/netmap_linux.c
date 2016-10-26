@@ -1825,10 +1825,24 @@ ptnetmap_guest_fini(void)
 
 #ifdef WITH_SINK
 
+/*
+ * An emulated netmap-enabled device acting as a packet sink, useful for
+ * performance tests of netmap applications or other netmap subsystems
+ * (i.e. VALE, ptnetmap).
+ *
+ * The sink_delay_ns parameter is used to tune the speed of the packet sink
+ * device. The absolute value of the parameter is interpreted as the number
+ * of nanoseconds that are required to send a packet into the sink.
+ * For positive values, the sink device emulates a NIC transmitting packets
+ * asynchronously with respect to the txsync() caller, similarly to what
+ * happens with real NICs.
+ * For negative values, the sink device emulates a packet consumer,
+ * transmitting packets synchronously with respect to the txsync() caller.
+ */
+static int sink_delay_ns = 100;
+module_param(sink_delay_ns, int, 0644);
 static struct net_device *nm_sink_netdev = NULL; /* global sink netdev */
 s64 nm_sink_next_link_idle; /* for link emulation */
-static int sink_delay_ns = 100; /* packet transmission time */
-module_param(sink_delay_ns, int, 0644);
 
 #define NM_SINK_DELAY_NS \
 	((unsigned int)(sink_delay_ns > 0 ? sink_delay_ns : -sink_delay_ns))
@@ -1839,7 +1853,7 @@ static int nm_sink_close(struct net_device *netdev) { return 0; }
 static netdev_tx_t
 nm_sink_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
-	/* no link emulation here */
+	/* no link emulation here, we could add it */
 	ndelay(NM_SINK_DELAY_NS);
 	kfree_skb(skb);
 	return NETDEV_TX_OK;
