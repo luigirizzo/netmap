@@ -164,8 +164,8 @@ int main(int argc, char **argv)
 			ring->head -= ring->num_slots;
 		}
 		ring->cur = ring->head;
-		poll(&pfd, 1, -1);
 		tsc_sleep_till(now + b * wp_ticks);
+		poll(&pfd, 1, -1);
 	}
 	gettimeofday(&t2, NULL);
 	udiff = (t2.tv_sec - t1.tv_sec) * 1000000 + (t2.tv_usec - t1.tv_usec);
