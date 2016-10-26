@@ -1844,26 +1844,9 @@ module_param(sink_delay_ns, int, 0644);
 static struct net_device *nm_sink_netdev = NULL; /* global sink netdev */
 s64 nm_sink_next_link_idle; /* for link emulation */
 
+#define NM_SINK_SLOTS	1024
 #define NM_SINK_DELAY_NS \
 	((unsigned int)(sink_delay_ns > 0 ? sink_delay_ns : -sink_delay_ns))
-
-static int nm_sink_open(struct net_device *netdev) { return 0; }
-static int nm_sink_close(struct net_device *netdev) { return 0; }
-
-static netdev_tx_t
-nm_sink_start_xmit(struct sk_buff *skb, struct net_device *netdev)
-{
-	/* no link emulation here, we could add it */
-	ndelay(NM_SINK_DELAY_NS);
-	kfree_skb(skb);
-	return NETDEV_TX_OK;
-}
-
-static const struct net_device_ops nm_sink_netdev_ops = {
-	.ndo_open = nm_sink_open,
-	.ndo_stop = nm_sink_close,
-	.ndo_start_xmit = nm_sink_start_xmit,
-};
 
 static int
 nm_sink_register(struct netmap_adapter *na, int onoff)
@@ -1878,31 +1861,38 @@ nm_sink_register(struct netmap_adapter *na, int onoff)
 	return 0;
 }
 
-static int
-nm_sink_txsync(struct netmap_kring *kring, int flags)
+static inline void
+nm_sink_emu(unsigned int n)
 {
-	unsigned int w = NM_SINK_DELAY_NS;
 	u64 inactivity = ktime_get_ns() - nm_sink_next_link_idle;
-	unsigned int const lim = kring->nkr_num_slots - 1;
-	unsigned int const head = kring->rhead;
-	unsigned int n; /* num of packets to be transmitted */
+	unsigned int w = NM_SINK_DELAY_NS;
 
-	if (sink_delay_ns < 0 || inactivity > 4 * kring->nkr_num_slots * w) {
+	if (sink_delay_ns < 0 || inactivity > 4 * NM_SINK_SLOTS * w) {
 		/* Reset link emulation if there has been no activity for
 		 * a while or if we are emulating a packet consumer. */
 		nm_sink_next_link_idle = ktime_get_ns();
 	}
 
+	nm_sink_next_link_idle += n * w;
+
+	while (ktime_get_ns() < nm_sink_next_link_idle) ;
+}
+
+static int
+nm_sink_txsync(struct netmap_kring *kring, int flags)
+{
+	unsigned int const lim = kring->nkr_num_slots - 1;
+	unsigned int const head = kring->rhead;
+	unsigned int n; /* num of packets to be transmitted */
+
 	n = kring->nkr_num_slots + head - kring->nr_hwcur;
 	if (n >= kring->nkr_num_slots) {
 		n -= kring->nkr_num_slots;
 	}
-	nm_sink_next_link_idle += n * w;
-
 	kring->nr_hwcur = head;
 	kring->nr_hwtail = nm_prev(kring->nr_hwcur, lim);
 
-	while (ktime_get_ns() < nm_sink_next_link_idle) ;
+	nm_sink_emu(n);
 
 	return 0;
 }
@@ -1918,6 +1908,24 @@ nm_sink_rxsync(struct netmap_kring *kring, int flags)
 
 	return 0;
 }
+
+static int nm_sink_open(struct net_device *netdev) { return 0; }
+static int nm_sink_close(struct net_device *netdev) { return 0; }
+
+static netdev_tx_t
+nm_sink_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+{
+	kfree_skb(skb);
+	nm_sink_emu(1);
+	return NETDEV_TX_OK;
+}
+
+static const struct net_device_ops nm_sink_netdev_ops = {
+	.ndo_open = nm_sink_open,
+	.ndo_stop = nm_sink_close,
+	.ndo_start_xmit = nm_sink_start_xmit,
+};
+
 int
 netmap_sink_init(void)
 {
@@ -1940,8 +1948,8 @@ netmap_sink_init(void)
 
 	bzero(&na, sizeof(na));
 	na.ifp = netdev;
-	na.num_tx_desc = 1024;
-	na.num_rx_desc = 1024;
+	na.num_tx_desc = NM_SINK_SLOTS;
+	na.num_rx_desc = NM_SINK_SLOTS;
 	na.nm_register = nm_sink_register;
 	na.nm_txsync = nm_sink_txsync;
 	na.nm_rxsync = nm_sink_rxsync;
