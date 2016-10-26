@@ -125,7 +125,7 @@ struct net_device_ops {
 	do {						  \
 		int i_;					  \
 		for (i_ = 1; i_ < (1 << (order)); i_++)	  \
-			atomic_set(&(page)[i_]._count, 1);\
+			atomic_set(&(page)[i_]._refcount, 1);\
 	} while (0)
 #endif /* HAVE_SPLIT_PAGE */
 
