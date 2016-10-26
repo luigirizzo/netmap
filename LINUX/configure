@@ -1264,11 +1264,28 @@ EOF
 	}
 EOF
 
+  # page_ref?
+  add_test 'have PAGE_REF' <<EOF
+  	#include <linux/page_ref.h>
+EOF
+
+  # _count or _refcount?
+  for f in _count _refcount; do
+	  add_test "define PAGE_COUNT $f" <<EOF
+	  #include <linux/mm.h>
+
+	  atomic_t
+	  dummy(struct page *page) {
+	  	return page->$f;
+	  }
+EOF
+  done
+
 # check for split_page
   add_test 'have SPLIT_PAGE' <<EOF
 	#include <linux/mm.h>
 
-	int
+	void
 	dummy(struct page *page) {
 		split_page(page, 0);
 	}
