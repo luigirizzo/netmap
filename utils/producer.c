@@ -82,6 +82,7 @@ int main(int argc, char **argv)
 	const char *ifname = "netmap:nmsink0";
 	unsigned int wp_ns = 150;
 	struct netmap_ring *ring;
+	unsigned int num_slots;
 	unsigned long npkts = 0;
 	struct timeval t1, t2;
 	unsigned long udiff;
@@ -133,7 +134,8 @@ int main(int argc, char **argv)
 	}
 
 	ring = NETMAP_TXRING(nmd->nifp, 0);
-	for (i = 0; i < ring->num_slots; i++) {
+	num_slots = ring->num_slots;
+	for (i = 0; i < num_slots; i++) {
 		struct netmap_slot *slot;
 
 		slot = ring->slot + i;
@@ -146,22 +148,24 @@ int main(int argc, char **argv)
 
 	gettimeofday(&t1, NULL);
 	while (!stop) {
-		ret = poll(&pfd, 1, -1);
-		if (ret > 0) {
-			uint64_t now = rdtsc();
+		uint64_t now = rdtsc();
+		unsigned int b = num_slots +
+			ring->tail - ring->head;
 
-			if (!nm_ring_empty(ring)) {
-				unsigned int b = ring->num_slots +
-						 ring->tail - ring->head;
-
-				if (b >= ring->num_slots) {
-					b -= ring->num_slots;
-				}
-				npkts += b;
-				ring->cur = ring->head = ring->tail;
-				tsc_sleep_till(now + b * wp_ticks);
-			}
+		if (b >= num_slots) { /* wraparound */
+			b -= num_slots;
 		}
+		if (b > num_slots >> 1) {
+			b = num_slots >> 1;
+		}
+		npkts += b;
+		ring->head += b;
+		if (ring->head >= ring->num_slots) { /* wraparound */
+			ring->head -= ring->num_slots;
+		}
+		ring->cur = ring->head;
+		poll(&pfd, 1, -1);
+		tsc_sleep_till(now + b * wp_ticks);
 	}
 	gettimeofday(&t2, NULL);
 	udiff = (t2.tv_sec - t1.tv_sec) * 1000000 + (t2.tv_usec - t1.tv_usec);
