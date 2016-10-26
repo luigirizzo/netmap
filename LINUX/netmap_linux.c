@@ -1825,10 +1825,13 @@ ptnetmap_guest_fini(void)
 
 #ifdef WITH_SINK
 
-static struct net_device *nm_sink_netdev = NULL;
+static struct net_device *nm_sink_netdev = NULL; /* global sink netdev */
 s64 nm_sink_next_link_idle; /* for link emulation */
-static unsigned int sink_delay_ns = 100; /* packet transmission time */
-module_param(sink_delay_ns, uint, 0644);
+static int sink_delay_ns = 100; /* packet transmission time */
+module_param(sink_delay_ns, int, 0644);
+
+#define NM_SINK_DELAY_NS \
+	((unsigned int)(sink_delay_ns > 0 ? sink_delay_ns : -sink_delay_ns))
 
 static int nm_sink_open(struct net_device *netdev) { return 0; }
 static int nm_sink_close(struct net_device *netdev) { return 0; }
@@ -1836,7 +1839,8 @@ static int nm_sink_close(struct net_device *netdev) { return 0; }
 static netdev_tx_t
 nm_sink_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
-	ndelay(sink_delay_ns); /* no link emulation here */
+	/* no link emulation here */
+	ndelay(NM_SINK_DELAY_NS);
 	kfree_skb(skb);
 	return NETDEV_TX_OK;
 }
@@ -1863,14 +1867,15 @@ nm_sink_register(struct netmap_adapter *na, int onoff)
 static int
 nm_sink_txsync(struct netmap_kring *kring, int flags)
 {
+	unsigned int w = NM_SINK_DELAY_NS;
 	u64 inactivity = ktime_get_ns() - nm_sink_next_link_idle;
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	unsigned int const head = kring->rhead;
 	unsigned int n; /* num of packets to be transmitted */
 
-	if (unlikely(inactivity > 4 * kring->nkr_num_slots * sink_delay_ns)) {
-		/* Reset link emulation if there has been no
-		 * activity for a while. */
+	if (sink_delay_ns < 0 || inactivity > 4 * kring->nkr_num_slots * w) {
+		/* Reset link emulation if there has been no activity for
+		 * a while or if we are emulating a packet consumer. */
 		nm_sink_next_link_idle = ktime_get_ns();
 	}
 
@@ -1878,7 +1883,7 @@ nm_sink_txsync(struct netmap_kring *kring, int flags)
 	if (n >= kring->nkr_num_slots) {
 		n -= kring->nkr_num_slots;
 	}
-	nm_sink_next_link_idle += n * sink_delay_ns;
+	nm_sink_next_link_idle += n * w;
 
 	kring->nr_hwcur = head;
 	kring->nr_hwtail = nm_prev(kring->nr_hwcur, lim);
