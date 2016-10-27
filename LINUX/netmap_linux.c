@@ -1864,18 +1864,25 @@ nm_sink_register(struct netmap_adapter *na, int onoff)
 static inline void
 nm_sink_emu(unsigned int n)
 {
-	u64 inactivity = ktime_get_ns() - nm_sink_next_link_idle;
-	unsigned int w = NM_SINK_DELAY_NS;
+	u64 wait_until = nm_sink_next_link_idle;
+	u64 now = ktime_get_ns();
 
-	if (sink_delay_ns < 0 || inactivity > 4 * NM_SINK_SLOTS * w) {
-		/* Reset link emulation if there has been no activity for
-		 * a while or if we are emulating a packet consumer. */
-		nm_sink_next_link_idle = ktime_get_ns();
+	if (sink_delay_ns < 0 || nm_sink_next_link_idle < now) {
+		/* If we are emulating packet consumer mode or the link went
+		 * idle some time ago, we need to update the link emulation
+		 * variable, because we don't want the caller to accumulate
+		 * credit. */
+		nm_sink_next_link_idle = now;
 	}
-
-	nm_sink_next_link_idle += n * w;
-
-	while (ktime_get_ns() < nm_sink_next_link_idle) ;
+	/* Schedule new transmissions. */
+	nm_sink_next_link_idle += n * NM_SINK_DELAY_NS;
+	if (sink_delay_ns < 0) {
+		/* In packet consumer mode we emulate synchronous
+		 * transmission, so we have to wait right now for the link
+		 * to become idle. */
+		wait_until = nm_sink_next_link_idle;
+	}
+	while (ktime_get_ns() < wait_until) ;
 }
 
 static int
