@@ -177,11 +177,20 @@ index 202f595..200f5a2 100644
  #ifdef HAVE_IXGBE_DEBUG_FS
  	ixgbe_dbg_adapter_exit(adapter);
  
-diff --git a/ixgbe/kcompat.h b/ixgbe/kcompat.h
-index 048157a..c2a2acd 100644
+diff --git a/ixgbe-4.4.6/src/kcompat.h b/ixgbe-4.4.6/src/kcompat.h
+index 048157a..2349540 100644
 --- a/ixgbe/kcompat.h
 +++ b/ixgbe/kcompat.h
-@@ -4880,7 +4880,7 @@ static inline void csum_replace_by_diff(__sum16 *sum, __wsum diff)
+@@ -25,6 +25,8 @@
+ #ifndef _KCOMPAT_H_
+ #define _KCOMPAT_H_
+ 
++#include <netmap_linux_config.h>
++
+ #ifndef LINUX_VERSION_CODE
+ #include <linux/version.h>
+ #else
+@@ -4880,7 +4882,7 @@ static inline void csum_replace_by_diff(__sum16 *sum, __wsum diff)
  
  static inline void page_ref_inc(struct page *page)
  {
