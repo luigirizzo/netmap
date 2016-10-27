@@ -87,7 +87,7 @@ subsys enable generic
 
 # available drivers
 driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
-	e1000 e1000e igb ixgbe i40e"
+	e1000 e1000e igb ixgbe ixgbevf i40e"
 # enabled drivers (bitfield)
 driver=
 drv()
@@ -1407,7 +1407,7 @@ EOF
  	 }
 EOF
   fi # ixgbe
-  
+
   if drv enabled virtio_net.c; then
   
     add_file_exists_check virtio_net.c true "drv_source_error virtio_net.c"

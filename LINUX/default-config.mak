@@ -9,6 +9,7 @@ $(1)@distclean	:= rm -rf $(1)-$(2)
 endef
 
 $(eval $(call intel_driver,ixgbe,4.4.6))
+$(eval $(call intel_driver,ixgbevf,3.2.2))
 $(eval $(call intel_driver,e1000e,3.3.5))
 $(eval $(call intel_driver,igb,5.3.5.3))
 $(eval $(call intel_driver,i40e,1.5.23))
