@@ -626,7 +626,7 @@ configuration. Please check 'config.log' for possible clues.
 EOF
 }
 
-replace_vars $SRCDIR/default-config.mak > default-config.mak
+replace_vars $SRCDIR/default-config.mak.in_ > default-config.mak
 
 reset_tests
 rm -f drivers.mak
