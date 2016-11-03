@@ -447,7 +447,9 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 };
 
 
+/* circular list of all existing allocators */
 static struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
+NM_MTX_T nm_mem_list_lock;
 
 /* blueprint for the private memory allocators */
 extern struct netmap_mem_ops netmap_mem_private_ops; /* forward */
@@ -512,7 +514,7 @@ DECLARE_SYSCTLS(NETMAP_IF_POOL, if);
 DECLARE_SYSCTLS(NETMAP_RING_POOL, ring);
 DECLARE_SYSCTLS(NETMAP_BUF_POOL, buf);
 
-/* call with NMA_LOCK(&nm_mem) held */
+/* call with nm_mem_list_lock held */
 static int
 nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
 {
@@ -541,15 +543,15 @@ nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
 	return error;
 }
 
-/* call with NMA_LOCK(&nm_mem) *not* held */
+/* call with nm_mem_list_lock *not* held */
 static int
 nm_mem_assign_id(struct netmap_mem_d *nmd)
 {
         int ret;
 
-	NMA_LOCK(&nm_mem);
+	NM_MTX_LOCK(nm_mem_list_lock);
         ret = nm_mem_assign_id_locked(nmd);
-	NMA_UNLOCK(&nm_mem);
+	NM_MTX_UNLOCK(nm_mem_list_lock);
 
 	return ret;
 }
@@ -557,7 +559,7 @@ nm_mem_assign_id(struct netmap_mem_d *nmd)
 static void
 nm_mem_release_id(struct netmap_mem_d *nmd)
 {
-	NMA_LOCK(&nm_mem);
+	NM_MTX_LOCK(nm_mem_list_lock);
 
 	nmd->prev->next = nmd->next;
 	nmd->next->prev = nmd->prev;
@@ -567,7 +569,7 @@ nm_mem_release_id(struct netmap_mem_d *nmd)
 
 	nmd->prev = nmd->next = NULL;
 
-	NMA_UNLOCK(&nm_mem);
+	NM_MTX_UNLOCK(nm_mem_list_lock);
 }
 
 static int
@@ -1613,6 +1615,7 @@ netmap_mem2_delete(struct netmap_mem_d *nmd)
 int
 netmap_mem_init(void)
 {
+	NM_MTX_INIT(nm_mem_list_lock);
 	NMA_LOCK_INIT(&nm_mem);
 	netmap_mem_get(&nm_mem);
 	return (0);
@@ -2267,7 +2270,7 @@ static struct netmap_mem_ops netmap_mem_pt_guest_ops = {
 	.nmd_rings_delete = netmap_mem_pt_guest_rings_delete
 };
 
-/* Called with NMA_LOCK(&nm_mem) held. */
+/* Called with nm_mem_list_lock held. */
 static struct netmap_mem_d *
 netmap_mem_pt_guest_find_memid(nm_memid_t mem_id)
 {
@@ -2287,7 +2290,7 @@ netmap_mem_pt_guest_find_memid(nm_memid_t mem_id)
 	return mem;
 }
 
-/* Called with NMA_LOCK(&nm_mem) held. */
+/* Called with nm_mem_list_lock held. */
 static struct netmap_mem_d *
 netmap_mem_pt_guest_create(nm_memid_t mem_id)
 {
@@ -2332,12 +2335,12 @@ netmap_mem_pt_guest_get(nm_memid_t mem_id)
 {
 	struct netmap_mem_d *nmd;
 
-	NMA_LOCK(&nm_mem);
+	NM_MTX_LOCK(nm_mem_list_lock);
 	nmd = netmap_mem_pt_guest_find_memid(mem_id);
 	if (nmd == NULL) {
 		nmd = netmap_mem_pt_guest_create(mem_id);
 	}
-	NMA_UNLOCK(&nm_mem);
+	NM_MTX_UNLOCK(nm_mem_list_lock);
 
 	return nmd;
 }
