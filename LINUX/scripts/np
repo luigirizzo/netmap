@@ -164,7 +164,7 @@ function get-patch()
 	local drvdir=$(dirname $drvpath)
 	(
 		cd $GITDIR
-		git vanilla --relative=$drvdir v$version..netmap-$version -- $drvpath
+		git diff --relative=$drvdir v$version..netmap-$version -- $drvpath
 	) > $out
 	# an empty patch means no netmap support for this driver
 	[ -s $out ] || { rm $out; return 1; }
