@@ -117,7 +117,7 @@ move(struct nm_desc *src, struct nm_desc *dst, u_int limit)
 {
 	struct netmap_ring *txring, *rxring;
 	u_int m = 0, si = src->first_rx_ring, di = dst->first_tx_ring;
-	const char *msg = (src->req.nr_ringid & NETMAP_SW_RING) ?
+	const char *msg = (src->req.nr_flags == NR_REG_SW) ?
 		"host->net" : "net->host";
 
 	while (si <= src->last_rx_ring && di <= dst->last_tx_ring) {
