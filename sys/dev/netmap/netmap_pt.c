@@ -1215,7 +1215,7 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
      * directly. */
     pth_na->up.nm_notify = nm_unused_notify;
 
-    pth_na->up.nm_mem = parent->nm_mem;
+    pth_na->up.nm_mem = netmap_mem_get(parent->nm_mem);
 
     pth_na->up.na_flags |= NAF_HOST_RINGS;
 
@@ -1444,7 +1444,7 @@ ptnet_nm_dtor(struct netmap_adapter *na)
 	struct netmap_pt_guest_adapter *ptna =
 			(struct netmap_pt_guest_adapter *)na;
 
-	netmap_mem_put(ptna->dr.up.nm_mem);
+	netmap_mem_put(ptna->dr.up.nm_mem); // XXX is this needed?
 	memset(&ptna->dr, 0, sizeof(ptna->dr));
 	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
 }

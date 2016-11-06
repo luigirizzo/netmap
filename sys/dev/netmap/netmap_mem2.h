@@ -140,28 +140,8 @@ struct netmap_mem_d* netmap_mem_private_new( u_int txr, u_int txd, u_int rxr, u_
 		u_int extra_bufs, u_int npipes, int* error);
 void	   netmap_mem_delete(struct netmap_mem_d *);
 
-//#define NM_DEBUG_MEM_PUTGET 1
-
-#ifdef NM_DEBUG_MEM_PUTGET
-
-#define netmap_mem_get(nmd) 				\
-	do {						\
-		__netmap_mem_get(nmd, __FUNCTION__, __LINE__);	\
-	} while (0)
-
-#define netmap_mem_put(nmd)				\
-	do {						\
-		__netmap_mem_put(nmd, __FUNCTION__, __LINE__);	\
-	} while (0)
-
-void __netmap_mem_get(struct netmap_mem_d *, const char *, int);
-void __netmap_mem_put(struct netmap_mem_d *, const char *, int);
-#else /* !NM_DEBUG_MEM_PUTGET */
-
-void netmap_mem_get(struct netmap_mem_d *);
+struct netmap_mem_d* netmap_mem_get(struct netmap_mem_d *);
 void netmap_mem_put(struct netmap_mem_d *);
-
-#endif /* !NM_DEBUG_PUTGET */
 
 #ifdef WITH_PTNETMAP_GUEST
 struct netmap_mem_d* netmap_mem_pt_guest_new(struct ifnet *,

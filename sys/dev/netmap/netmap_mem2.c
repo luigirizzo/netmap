@@ -231,6 +231,7 @@ NMD_DEFNACB(void, rings_delete);
 static int netmap_mem_map(struct netmap_obj_pool *, struct netmap_adapter *);
 static int netmap_mem_unmap(struct netmap_obj_pool *, struct netmap_adapter *);
 static int nm_mem_assign_group(struct netmap_mem_d *, struct device *);
+static void nm_mem_release_id(struct netmap_mem_d *);
 
 #define NMA_LOCK_INIT(n)	NM_MTX_INIT((n)->nm_mtx)
 #define NMA_LOCK_DESTROY(n)	NM_MTX_DESTROY((n)->nm_mtx)
@@ -244,29 +245,30 @@ static int nm_mem_assign_group(struct netmap_mem_d *, struct device *);
 #define NM_DBG_REFC(nmd, func, line)
 #endif
 
-#ifdef NM_DEBUG_MEM_PUTGET
-void __netmap_mem_get(struct netmap_mem_d *nmd, const char *func, int line)
-#else
-void netmap_mem_get(struct netmap_mem_d *nmd)
-#endif
+/* circular list of all existing allocators */
+static struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
+NM_MTX_T nm_mem_list_lock;
+
+struct netmap_mem_d *
+netmap_mem_get(struct netmap_mem_d *nmd)
 {
-	NMA_LOCK(nmd);
+	NM_MTX_LOCK(nm_mem_list_lock);
 	nmd->refcount++;
 	NM_DBG_REFC(nmd, func, line);
-	NMA_UNLOCK(nmd);
+	NM_MTX_UNLOCK(nm_mem_list_lock);
+	return nmd;
 }
 
-#ifdef NM_DEBUG_MEM_PUTGET
-void __netmap_mem_put(struct netmap_mem_d *nmd, const char *func, int line)
-#else
-void netmap_mem_put(struct netmap_mem_d *nmd)
-#endif
+void
+netmap_mem_put(struct netmap_mem_d *nmd)
 {
 	int last;
-	NMA_LOCK(nmd);
+	NM_MTX_LOCK(nm_mem_list_lock);
 	last = (--nmd->refcount == 0);
+	if (last)
+		nm_mem_release_id(nmd);
 	NM_DBG_REFC(nmd, func, line);
-	NMA_UNLOCK(nmd);
+	NM_MTX_UNLOCK(nm_mem_list_lock);
 	if (last)
 		netmap_mem_delete(nmd);
 }
@@ -447,10 +449,6 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 };
 
 
-/* circular list of all existing allocators */
-static struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
-NM_MTX_T nm_mem_list_lock;
-
 /* blueprint for the private memory allocators */
 extern struct netmap_mem_ops netmap_mem_private_ops; /* forward */
 /* XXX clang is not happy about using name as a print format */
@@ -535,6 +533,7 @@ nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
 			scan->prev->next = nmd;
 			scan->prev = nmd;
 			netmap_last_mem_d = nmd;
+			nmd->refcount = 1;
 			error = 0;
 			break;
 		}
@@ -556,11 +555,10 @@ nm_mem_assign_id(struct netmap_mem_d *nmd)
 	return ret;
 }
 
+/* call with nm_mem_list_lock held */
 static void
 nm_mem_release_id(struct netmap_mem_d *nmd)
 {
-	NM_MTX_LOCK(nm_mem_list_lock);
-
 	nmd->prev->next = nmd->next;
 	nmd->next->prev = nmd->prev;
 
@@ -568,8 +566,25 @@ nm_mem_release_id(struct netmap_mem_d *nmd)
 		netmap_last_mem_d = nmd->prev;
 
 	nmd->prev = nmd->next = NULL;
+}
 
+struct netmap_mem_d *
+netmap_mem_find(nm_memid_t id)
+{
+	struct netmap_mem_d *nmd;
+
+	NM_MTX_LOCK(nm_mem_list_lock);
+	nmd = netmap_last_mem_d;
+	do {
+		if (!(nmd->flags & NETMAP_MEM_HIDDEN) && nmd->nm_id == id) {
+			nmd->refcount++;
+			NM_MTX_UNLOCK(nm_mem_list_lock);
+			return nmd;
+		}
+		nmd = nmd->next;
+	} while (nmd != netmap_last_mem_d);
 	NM_MTX_UNLOCK(nm_mem_list_lock);
+	return NULL;
 }
 
 static int
@@ -2160,7 +2175,6 @@ netmap_mem_pt_guest_delete(struct netmap_mem_d *nmd)
 		D("deleting %p", nmd);
 	if (nmd->active > 0)
 		D("bug: deleting mem allocator with active=%d!", nmd->active);
-	nm_mem_release_id(nmd);
 	if (netmap_verbose)
 		D("done deleting %p", nmd);
 	NMA_LOCK_DESTROY(nmd);
@@ -2282,6 +2296,7 @@ netmap_mem_pt_guest_find_memid(nm_memid_t mem_id)
 		if (scan->ops->nmd_deref == netmap_mem_pt_guest_deref &&
 			((struct netmap_mem_ptg *)(scan))->host_mem_id == mem_id) {
 			mem = scan;
+			mem->refcount++;
 			break;
 		}
 		scan = scan->next;

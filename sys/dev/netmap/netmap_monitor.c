@@ -805,7 +805,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		/* to have zero copy, we need to use the same memory allocator
 		 * as the monitored port
 		 */
-		mna->up.nm_mem = pna->nm_mem;
+		mna->up.nm_mem = netmap_mem_get(pna->nm_mem);
 		mna->up.na_lut = pna->na_lut;
 	} else {
 		/* normal monitors are incompatible with zero copy ones */

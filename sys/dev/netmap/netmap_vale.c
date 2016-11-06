@@ -2242,6 +2242,8 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	struct nm_bridge *b = bna->up.na_bdg,
 		*bh = bna->host.na_bdg;
 
+	netmap_mem_put(bna->host.up.nm_mem);
+
 	if (b) {
 		netmap_bdg_detach_common(b, bna->up.bdg_port,
 			    (bh ? bna->host.bdg_port : -1));
@@ -2672,7 +2674,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->nm_notify = netmap_bwrap_notify;
 	na->nm_bdg_ctl = netmap_bwrap_bdg_ctl;
 	na->pdev = hwna->pdev;
-	na->nm_mem = hwna->nm_mem;
+	na->nm_mem = netmap_mem_get(hwna->nm_mem);
 	na->virt_hdr_len = hwna->virt_hdr_len;
 	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
 
@@ -2696,7 +2698,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		// hostna->nm_txsync = netmap_bwrap_host_txsync;
 		// hostna->nm_rxsync = netmap_bwrap_host_rxsync;
 		hostna->nm_notify = netmap_bwrap_notify;
-		hostna->nm_mem = na->nm_mem;
+		hostna->nm_mem = netmap_mem_get(na->nm_mem);
 		hostna->na_private = bna;
 		hostna->na_vp = &bna->up;
 		na->na_hostvp = hwna->na_hostvp =

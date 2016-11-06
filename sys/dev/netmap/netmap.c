@@ -2728,10 +2728,10 @@ netmap_attach_common(struct netmap_adapter *na)
 		na->nm_notify = netmap_notify;
 	na->active_fds = 0;
 
-	if (na->nm_mem == NULL)
+	if (na->nm_mem == NULL) {
 		/* use the global allocator */
-		na->nm_mem = &nm_mem;
-	netmap_mem_get(na->nm_mem);
+		na->nm_mem = netmap_mem_get(&nm_mem);
+	}
 #ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
 		/* no special nm_bdg_attach callback. On VALE
@@ -2908,8 +2908,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg, void *csb,
          * applications. We only need a subset of the available fields. */
 	memset(&ptna->dr, 0, sizeof(ptna->dr));
 	ptna->dr.up.ifp = ifp;
-	ptna->dr.up.nm_mem = ptna->hwup.up.nm_mem;
-	netmap_mem_get(ptna->dr.up.nm_mem);
+	ptna->dr.up.nm_mem = netmap_mem_get(ptna->hwup.up.nm_mem);
         ptna->dr.up.nm_config = ptna->hwup.up.nm_config;
 
 	ptna->backend_regifs = 0;

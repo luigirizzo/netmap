@@ -601,7 +601,8 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	mna->up.nm_dtor = netmap_pipe_dtor;
 	mna->up.nm_krings_create = netmap_pipe_krings_create;
 	mna->up.nm_krings_delete = netmap_pipe_krings_delete;
-	mna->up.nm_mem = pna->nm_mem;
+	mna->up.nm_mem = netmap_mem_get(pna->nm_mem);
+	mna->up.na_flags |= NAF_MEM_OWNER;
 	mna->up.na_lut = pna->na_lut;
 
 	mna->up.num_tx_rings = 1;
@@ -628,6 +629,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	}
 	/* most fields are the same, copy from master and then fix */
 	*sna = *mna;
+	sna->up.nm_mem = netmap_mem_get(mna->up.nm_mem);
 	snprintf(sna->up.name, sizeof(sna->up.name), "%s}%d", pna->name, pipe_id);
 	sna->role = NR_REG_PIPE_SLAVE;
 	error = netmap_attach_common(&sna->up);
