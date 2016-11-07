@@ -807,6 +807,8 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		 */
 		mna->up.nm_mem = netmap_mem_get(pna->nm_mem);
 		mna->up.na_lut = pna->na_lut;
+		/* and the allocator cannot be changed */
+		mna->up.na_flags |= NAF_MEM_OWNER;
 	} else {
 		/* normal monitors are incompatible with zero copy ones */
 		for_rx_tx(t) {
@@ -829,7 +831,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	}
 
 	/* the monitor supports the host rings iff the parent does */
-	mna->up.na_flags = (pna->na_flags & NAF_HOST_RINGS);
+	mna->up.na_flags |= (pna->na_flags & NAF_HOST_RINGS);
 	/* a do-nothing txsync: monitors cannot be used to inject packets */
 	mna->up.nm_txsync = netmap_monitor_txsync;
 	mna->up.nm_rxsync = netmap_monitor_rxsync;

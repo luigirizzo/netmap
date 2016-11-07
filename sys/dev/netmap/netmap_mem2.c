@@ -148,8 +148,6 @@ struct netmap_mem_ops {
 	void (*nmd_rings_delete)(struct netmap_adapter *);
 };
 
-typedef uint16_t nm_memid_t;
-
 struct netmap_mem_d {
 	NMA_LOCK_T nm_mtx;  /* protect the allocator */
 	u_int nm_totalsize; /* shorthand */
@@ -232,6 +230,12 @@ static int netmap_mem_map(struct netmap_obj_pool *, struct netmap_adapter *);
 static int netmap_mem_unmap(struct netmap_obj_pool *, struct netmap_adapter *);
 static int nm_mem_assign_group(struct netmap_mem_d *, struct device *);
 static void nm_mem_release_id(struct netmap_mem_d *);
+
+nm_memid_t
+netmap_mem_get_id(struct netmap_mem_d *nmd)
+{
+	return nmd->nm_id;
+}
 
 #define NMA_LOCK_INIT(n)	NM_MTX_INIT((n)->nm_mtx)
 #define NMA_LOCK_DESTROY(n)	NM_MTX_DESTROY((n)->nm_mtx)

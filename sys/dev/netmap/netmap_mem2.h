@@ -119,8 +119,10 @@
  */
 
 extern struct netmap_mem_d nm_mem;
+typedef uint16_t nm_memid_t;
 
 int	   netmap_mem_get_lut(struct netmap_mem_d *, struct netmap_lut *);
+nm_memid_t netmap_mem_get_id(struct netmap_mem_d *);
 vm_paddr_t netmap_mem_ofstophys(struct netmap_mem_d *, vm_ooffset_t);
 #ifdef _WIN32
 PMDL win32_build_user_vm_map(struct netmap_mem_d* nmd);
@@ -142,6 +144,7 @@ void	   netmap_mem_delete(struct netmap_mem_d *);
 
 struct netmap_mem_d* netmap_mem_get(struct netmap_mem_d *);
 void netmap_mem_put(struct netmap_mem_d *);
+struct netmap_mem_d* netmap_mem_find(nm_memid_t);
 
 #ifdef WITH_PTNETMAP_GUEST
 struct netmap_mem_d* netmap_mem_pt_guest_new(struct ifnet *,

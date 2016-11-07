@@ -2102,6 +2102,29 @@ nm_sync_finalize(struct netmap_kring *kring)
 		kring->rhead, kring->rcur, kring->rtail);
 }
 
+static int
+nm_override_mem(struct netmap_adapter *na, nm_memid_t id)
+{
+	struct netmap_mem_d *nmd;
+
+	if (id == 0 || netmap_mem_get_id(na->nm_mem) == id)
+		return 0;
+
+	if (na->na_flags & NAF_MEM_OWNER)
+		return EINVAL;
+
+	if (na->active_fds > 0)
+		return EBUSY;
+
+	nmd = netmap_mem_find(id);
+	if (nmd == NULL)
+		return ENOENT;
+
+	netmap_mem_put(na->nm_mem);
+	na->nm_mem = nmd;
+	return 0;
+}
+
 /*
  * ioctl(2) support for the "netmap" device.
  *
@@ -2164,6 +2187,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 					break;
 				}
 				nmd = na->nm_mem; /* get memory allocator */
+			}
+
+			error = nm_override_mem(na, nmr->nr_arg2);
+			if (error) {
+				netmap_unget_na(na, ifp);
+				break;
 			}
 
 			error = netmap_mem_get_info(nmd, &nmr->nr_memsize, &memflags,
@@ -2250,6 +2279,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			if (na->virt_hdr_len && !(nmr->nr_flags & NR_ACCEPT_VNET_HDR)) {
 				netmap_unget_na(na, ifp);
 				error = EIO;
+				break;
+			}
+
+			error = nm_override_mem(na, nmr->nr_arg2);
+			if (error) {
+				netmap_unget_na(na, ifp);
 				break;
 			}
 
