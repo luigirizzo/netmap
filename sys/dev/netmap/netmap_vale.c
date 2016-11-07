@@ -578,6 +578,16 @@ err:
 	return error;
 }
 
+static int
+nm_update_info(struct nmreq *nmr, struct netmap_adapter *na)
+{
+	nmr->nr_rx_rings = na->num_rx_rings;
+	nmr->nr_tx_rings = na->num_tx_rings;
+	nmr->nr_rx_slots = na->num_rx_desc;
+	nmr->nr_tx_slots = na->num_tx_desc;
+	return netmap_mem_get_info(na->nm_mem, &nmr->nr_memsize, NULL, &nmr->nr_arg2);
+}
+
 /*
  * Create a virtual interface registered to the system.
  * The interface will be attached to a bridge later.
@@ -594,8 +604,16 @@ nm_vi_create(struct nmreq *nmr)
 		return EINVAL;
 	ifp = ifunit_ref(nmr->nr_name);
 	if (ifp) { /* already exist, cannot create new one */
+		error = EEXIST;
+		NMG_LOCK();
+		if (NM_NA_VALID(ifp)) {
+			int update_err = nm_update_info(nmr, NA(ifp));
+			if (update_err)
+				error = update_err;
+		}
+		NMG_UNLOCK();
 		if_rele(ifp);
-		return EEXIST;
+		return error;
 	}
 	error = nm_os_vi_persist(nmr->nr_name, &ifp);
 	if (error)
@@ -606,16 +624,29 @@ nm_vi_create(struct nmreq *nmr)
 	error = netmap_vp_create(nmr, ifp, &vpna);
 	if (error) {
 		D("error %d", error);
-		nm_os_vi_detach(ifp);
-		return error;
+		goto err_1;
 	}
 	/* persist-specific routines */
 	vpna->up.nm_bdg_ctl = netmap_vp_bdg_ctl;
 	netmap_adapter_get(&vpna->up);
 	NM_ATTACH_NA(ifp, &vpna->up);
+	/* return the updated info */
+	error = nm_update_info(nmr, &vpna->up);
+	if (error) {
+		goto err_2;
+	}
+	D("returning nr_arg2 %d", nmr->nr_arg2);
 	NMG_UNLOCK();
 	D("created %s", ifp->if_xname);
 	return 0;
+
+err_2:
+	netmap_detach(ifp);
+err_1:
+	NMG_UNLOCK();
+	nm_os_vi_detach(ifp);
+
+	return error;
 }
 
 /* Try to get a reference to a netmap adapter attached to a VALE switch.
@@ -2182,7 +2213,9 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 	na->nm_krings_create = netmap_vp_krings_create;
 	na->nm_krings_delete = netmap_vp_krings_delete;
 	na->nm_dtor = netmap_vp_dtor;
-	na->nm_mem = netmap_mem_private_new(
+	na->nm_mem = (nmr->nr_arg2 > 0) ?
+		netmap_mem_find(nmr->nr_arg2):
+		netmap_mem_private_new(
 			na->num_tx_rings, na->num_tx_desc,
 			na->num_rx_rings, na->num_rx_desc,
 			nmr->nr_arg3, npipes, &error);
@@ -2198,7 +2231,7 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 
 err:
 	if (na->nm_mem != NULL)
-		netmap_mem_delete(na->nm_mem);
+		netmap_mem_put(na->nm_mem);
 	nm_os_free(vpna);
 	return error;
 }
