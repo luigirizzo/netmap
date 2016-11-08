@@ -88,6 +88,9 @@ struct compact_ipv6_hdr {
 
 struct {
 	char ifname[MAX_IFNAMELEN];
+	char base_name[MAX_IFNAMELEN];
+	char pipename[MAX_IFNAMELEN];
+	int netmap_fd;
 	uint16_t output_rings;
 	uint32_t extra_bufs;
 	uint16_t batch;
@@ -280,7 +283,98 @@ void usage()
 	exit(0);
 }
 
+static int
+parse_pipes(char *spec)
+{
+	char *end = index(spec, ':');
+	int npipes;
 
+	if (end != NULL) {
+		*end = '\0';
+		if (end - spec > MAX_IFNAMELEN - 8) {
+			D("name %s too long", spec);
+			return 1;
+		}
+		strcpy(glob_arg.pipename, spec);
+		end++;
+	} else {
+		end = spec;
+	}
+	if (*end == '\0') {
+		D("missing number of pipes after %s:", spec);
+		return 1;
+	}
+	npipes = atoi(end);
+	if (npipes < 1) {
+		D("invalid number of pipes %s (must be at least 1)", end);
+		return 1;
+	}
+	glob_arg.output_rings = npipes;
+	return 0;
+}
+
+static void delete_custom_port(void);
+/* create a persistent vale port or reuse an existing one.
+ * Returns 1 on error, 0 on success
+ */
+static int
+create_custom_port(int memid)
+{
+	struct nmreq nmr;
+	int rv;
+
+	rv = open("/dev/netmap", O_RDWR);
+	if (rv < 0) {
+		D("failed to open /dev/netmap: %s", strerror(errno));
+		return 1;
+	}
+	glob_arg.netmap_fd = rv;
+
+	bzero(&nmr, sizeof(nmr));
+	nmr.nr_version = NETMAP_API;
+	strncpy(nmr.nr_name, glob_arg.pipename, sizeof(nmr.nr_name));
+	nmr.nr_cmd = NETMAP_BDG_NEWIF;
+	nmr.nr_arg2 = memid;
+	
+	rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
+	if (rv < 0) {
+		if (errno == EEXIST) {
+			if (nmr.nr_arg2 != memid) {
+				D("%s already exists, but it is using allocator %d instead of %d",
+						glob_arg.pipename, nmr.nr_arg2, memid);
+						
+				return 1;
+			} else {
+				D("opened already existing port %s", glob_arg.pipename);
+			}
+		} else {
+			D("error creating %s: %s", glob_arg.pipename, strerror(errno));
+			return 1;
+		}
+	} else {
+		D("successfully created port %s", glob_arg.pipename);
+		atexit(delete_custom_port);
+	}
+	return 0;
+}
+
+static void
+delete_custom_port(void)
+{
+	struct nmreq nmr;
+	int rv;
+
+	bzero(&nmr, sizeof(nmr));
+	nmr.nr_version = NETMAP_API;
+	strncpy(nmr.nr_name, glob_arg.pipename, sizeof(nmr.nr_name));
+	nmr.nr_cmd = NETMAP_BDG_DELIF;
+	
+	rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
+	if (rv < 0) {
+		D("WARNING: error while deleting %s: %s",
+				glob_arg.pipename, strerror(errno));
+	}
+}
 
 int main(int argc, char **argv)
 {
@@ -310,9 +404,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 'p':
-			glob_arg.output_rings = atoi(optarg);
-			if (glob_arg.output_rings < 1) {
-				D("you must output to at least one pipe");
+			if (parse_pipes(optarg)) {
 				usage();
 				return 1;
 			}
@@ -345,6 +437,19 @@ int main(int argc, char **argv)
 		D("missing interface name");
 		usage();
 		return 1;
+	}
+
+	/* extract the base name */
+	char *nscan = strncmp(glob_arg.ifname, "netmap:", 7) ?
+			glob_arg.ifname : glob_arg.ifname + 7;
+	strncpy(glob_arg.base_name, nscan, MAX_IFNAMELEN);
+	for (nscan = glob_arg.base_name; *nscan && !index("-*^{}/@", *nscan); nscan++)
+		;
+	*nscan = '\0';	
+
+	/* if no special name for pipes has been provied, use the base name */
+	if (glob_arg.pipename[0] == '\0') {
+		strcpy(glob_arg.pipename, glob_arg.base_name);
 	}
 
 	setlogmask(LOG_UPTO(LOG_INFO));
@@ -432,7 +537,6 @@ int main(int argc, char **argv)
 		oq_enq(freeq, &s);
 	}
 
-	atexit(free_buffers);
 
 	if (freeq->n != extra_bufs) {
 		D("something went wrong: netmap reported %d extra_bufs, but the free list contained %d",
@@ -442,9 +546,17 @@ int main(int argc, char **argv)
 	rxport->nmd->nifp->ni_bufs_head = 0;
 
 run:
+	if (strcmp(glob_arg.pipename, glob_arg.base_name)) {
+		/* we need to create a persistent vale port */
+		if (create_custom_port(rxport->nmd->req.nr_arg2))
+			return 1;
+	}
+
+	atexit(free_buffers);
+
 	for (i = 0; i < npipes; ++i) {
 		char interface[25];
-		sprintf(interface, "%s{%d/T", glob_arg.ifname, i);
+		sprintf(interface, "netmap:%s{%d/T", glob_arg.pipename, i);
 		D("opening pipe named %s", interface);
 
 		ports[i].nmd = nm_open(interface, NULL, 0, rxport->nmd);

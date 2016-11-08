@@ -2213,6 +2213,7 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 	na->nm_krings_create = netmap_vp_krings_create;
 	na->nm_krings_delete = netmap_vp_krings_delete;
 	na->nm_dtor = netmap_vp_dtor;
+	D("nr_arg2 %d", nmr->nr_arg2);
 	na->nm_mem = (nmr->nr_arg2 > 0) ?
 		netmap_mem_find(nmr->nr_arg2):
 		netmap_mem_private_new(
