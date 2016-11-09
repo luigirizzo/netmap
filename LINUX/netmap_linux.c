@@ -378,6 +378,7 @@ int
 nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
 #ifndef NETMAP_LINUX_HAVE_RX_REGISTER
+#warning "Packet reception with emulated (generic) mode not supported for this kernel version"
     return 0;
 #else /* HAVE_RX_REGISTER */
     struct netmap_adapter *na = &gna->up.up;
