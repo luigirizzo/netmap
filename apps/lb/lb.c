@@ -109,6 +109,9 @@ struct overflow_queue {
 	uint32_t size;
 };
 
+struct overflow_queue *overflow_queues;
+struct overflow_queue *freeq;
+
 static inline void
 oq_enq(struct overflow_queue *q, const struct netmap_slot *s)
 {
@@ -438,6 +441,70 @@ void init_groups(void)
 	g->last = 1;
 }
 
+void forward_packet(struct group_des *g, struct netmap_slot *rs)
+{
+	uint32_t hash = rs->ptr;
+	uint32_t output_port = hash % g->nports;
+	struct port_des *port = &g->ports[output_port];
+	struct netmap_ring *ring = port->ring;
+	uint32_t free_buf;
+	struct overflow_queue *oq = overflow_queues, *q;
+
+	// Move the packet to the output pipe.
+	if (nm_ring_space(ring)) {
+		struct netmap_slot *ts = &ring->slot[ring->cur];
+		free_buf = ts->buf_idx;
+		ts->buf_idx = rs->buf_idx;
+		ts->len = rs->len;
+		ts->flags |= NS_BUF_CHANGED;
+		ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+		port->ctr.pkts++;
+		forwarded++;
+		goto forward;
+	}
+
+	/* use the overflow queue, if available */
+	if (!oq) {
+		dropped++;
+		port->ctr.drop++;
+		return;
+	}
+
+	q = &oq[output_port];
+
+	if (!freeq->n) {
+		/* revoke some buffers from the longest overflow queue */
+		uint32_t j;
+		struct port_des *lp = &ports[0];
+		uint32_t max = lp->oq->n;
+
+		for (j = 1; j < glob_arg.output_rings; j++) {
+			struct port_des *cp = &ports[j];
+			if (cp->oq->n > max) {
+				lp = cp;
+				max = cp->oq->n;
+			}
+		}
+
+		// XXX optimize this cycle
+		for (j = 0; lp->oq->n && j < BUF_REVOKE; j++) {
+			struct netmap_slot tmp = oq_deq(lp->oq);
+			oq_enq(freeq, &tmp);
+		}
+
+		ND(1, "revoked %d buffers from %s", j, lq->name);
+		lp->ctr.drop += j;
+		dropped += j;
+	}
+
+	free_buf = oq_deq(freeq).buf_idx;
+	oq_enq(q, rs);
+
+forward:
+	rs->buf_idx = free_buf;
+	rs->flags |= NS_BUF_CHANGED;
+}
+
 int main(int argc, char **argv)
 {
 	int ch;
@@ -517,7 +584,6 @@ int main(int argc, char **argv)
 
 	uint32_t npipes = glob_arg.output_rings;
 
-	struct overflow_queue *freeq = NULL;
 
 	pthread_t stat_thread;
 
@@ -567,7 +633,7 @@ int main(int argc, char **argv)
 	/* one overflow queue for each output pipe, plus one for the
 	 * free extra buffers
 	 */
-	oq = calloc(npipes + 1, sizeof(struct overflow_queue));
+	overflow_queues = oq = calloc(npipes + 1, sizeof(struct overflow_queue));
 	if (!oq) {
 		D("failed to allocated overflow queues descriptors");
 		goto run;
@@ -742,78 +808,21 @@ run:
 			struct netmap_slot *next_slot = &rxring->slot[next_cur];
 			const char *next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 			while (!nm_ring_empty(rxring)) {
-				struct overflow_queue *q;
 				struct netmap_slot *rs = next_slot;
+				struct group_des *g = &groups[0];
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
 				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
 				if (hash == 0)
 					non_ip++; // XXX ??
+				rs->ptr = hash;
 				// prefetch the buffer for the next round
 				next_cur = nm_ring_next(rxring, next_cur);
 				next_slot = &rxring->slot[next_cur];
 				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 				__builtin_prefetch(next_buf);
 				// 'B' is just a hashing seed
-				uint32_t output_port = hash % glob_arg.output_rings;
-				struct port_des *port = &ports[output_port];
-				struct netmap_ring *ring = port->ring;
-				uint32_t free_buf;
-
-				// Move the packet to the output pipe.
-				if (nm_ring_space(ring)) {
-					struct netmap_slot *ts = &ring->slot[ring->cur];
-					free_buf = ts->buf_idx;
-					ts->buf_idx = rs->buf_idx;
-					ts->len = rs->len;
-					ts->flags |= NS_BUF_CHANGED;
-					ring->head = ring->cur = nm_ring_next(ring, ring->cur);
-					port->ctr.pkts++;
-					forwarded++;
-					goto forward;
-				}
-
-				/* use the overflow queue, if available */
-				if (!oq) {
-					dropped++;
-					port->ctr.drop++;
-					goto next;
-				}
-
-				q = &oq[output_port];
-
-				if (!freeq->n) {
-					/* revoke some buffers from the longest overflow queue */
-					uint32_t j;
-					struct port_des *lp = &ports[0];
-					uint32_t max = lp->oq->n;
-
-					for (j = 1; j < npipes; j++) {
-						struct port_des *cp = &ports[j];
-						if (cp->oq->n > max) {
-							lp = cp;
-							max = cp->oq->n;
-						}
-					}
-
-					// XXX optimize this cycle
-					for (j = 0; lp->oq->n && j < BUF_REVOKE; j++) {
-						struct netmap_slot tmp = oq_deq(lp->oq);
-						oq_enq(freeq, &tmp);
-					}
-
-					ND(1, "revoked %d buffers from %s", j, lq->name);
-					lp->ctr.drop += j;
-					dropped += j;
-				}
-
-				free_buf = oq_deq(freeq).buf_idx;
-				oq_enq(q, rs);
-
-			forward:
-				rs->buf_idx = free_buf;
-				rs->flags |= NS_BUF_CHANGED;
-			next:
+				forward_packet(g, rs);
 				rxring->head = rxring->cur = next_cur;
 
 				batch++;
