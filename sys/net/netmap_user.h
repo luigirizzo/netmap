@@ -316,9 +316,9 @@ typedef void (*nm_cb_t)(u_char *, const struct nm_pkthdr *, const u_char *d);
  *		a suffix starting with / and the following flags,
  *		in any order:
  *		x		exclusive access
- *		z		zero copy monitor
- *		t		monitor tx side
- *		r		monitor rx side
+ *		z		zero copy monitor (both tx and rx)
+ *		t		monitor tx side (copy monitor)
+ *		r		monitor rx side (copy monitor)
  *		R		bind only RX ring(s)
  *		T		bind only TX ring(s)
  *
@@ -791,11 +791,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 	}
 	if (p_state != P_START && p_state != P_RNGSFXOK && p_state != P_FLAGSOK) {
 		snprintf(errmsg, MAXERRMSG, "unexpected end of port name");
-		goto fail;
-	}
-	if ((nr_flags & NR_ZCOPY_MON) &&
-	   !(nr_flags & (NR_MONITOR_TX|NR_MONITOR_RX))) {
-		snprintf(errmsg, MAXERRMSG, "'z' used but neither 'r', nor 't' found");
 		goto fail;
 	}
 	ND("flags: %s %s %s %s",
