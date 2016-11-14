@@ -89,9 +89,9 @@ struct compact_ipv6_hdr {
 struct {
 	char ifname[MAX_IFNAMELEN];
 	char base_name[MAX_IFNAMELEN];
-	char pipename[MAX_IFNAMELEN];
 	int netmap_fd;
 	uint16_t output_rings;
+	uint16_t num_groups;
 	uint32_t extra_bufs;
 	uint16_t batch;
 	int syslog_interval;
@@ -150,9 +150,21 @@ struct port_des {
 	struct overflow_queue *oq;
 	struct nm_desc *nmd;
 	struct netmap_ring *ring;
+	struct group_des *group;
 };
 
 struct port_des *ports;
+
+struct group_des {
+	char pipename[MAX_IFNAMELEN];
+	struct port_des *ports;
+	int first_id;
+	int nports;
+	int last;
+	int custom_port;
+};
+
+struct group_des *groups;
 
 static void *
 print_stats(void *arg)
@@ -287,41 +299,56 @@ static int
 parse_pipes(char *spec)
 {
 	char *end = index(spec, ':');
-	int npipes;
+	static int max_groups = 0;
+	struct group_des *g;
+       
+	D("spec %s num_groups %d", spec, glob_arg.num_groups);
+	if (max_groups < glob_arg.num_groups + 1) {
+		size_t size = sizeof(*g) * (glob_arg.num_groups + 1);
+		groups = realloc(groups, size);
+		if (groups == NULL) {
+			D("out of memory");
+			return 1;
+		}
+	}
+	g = &groups[glob_arg.num_groups];
+	memset(g, 0, sizeof(*g));
 
 	if (end != NULL) {
-		*end = '\0';
 		if (end - spec > MAX_IFNAMELEN - 8) {
 			D("name %s too long", spec);
 			return 1;
 		}
-		strcpy(glob_arg.pipename, spec);
+		strncpy(g->pipename, spec, end - spec);
+		g->custom_port = 1;
 		end++;
 	} else {
 		end = spec;
 	}
 	if (*end == '\0') {
-		D("missing number of pipes after %s:", spec);
-		return 1;
+		g->nports = DEF_OUT_PIPES;
+	} else {
+		g->nports = atoi(end);
+		if (g->nports < 1) {
+			D("invalid number of pipes %s (must be at least 1)", end);
+			return 1;
+		}
 	}
-	npipes = atoi(end);
-	if (npipes < 1) {
-		D("invalid number of pipes %s (must be at least 1)", end);
-		return 1;
-	}
-	glob_arg.output_rings = npipes;
+	glob_arg.output_rings += g->nports;
+	glob_arg.num_groups++;
 	return 0;
 }
 
-static void delete_custom_port(void);
+static void delete_custom_ports(void);
 /* create a persistent vale port or reuse an existing one.
  * Returns 1 on error, 0 on success
  */
 static int
-create_custom_port(int memid)
+create_custom_ports(int memid)
 {
 	struct nmreq nmr;
-	int rv;
+	int i,rv;
+	struct group_des *g;
 
 	rv = open("/dev/netmap", O_RDWR);
 	if (rv < 0) {
@@ -330,50 +357,85 @@ create_custom_port(int memid)
 	}
 	glob_arg.netmap_fd = rv;
 
-	bzero(&nmr, sizeof(nmr));
-	nmr.nr_version = NETMAP_API;
-	strncpy(nmr.nr_name, glob_arg.pipename, sizeof(nmr.nr_name));
-	nmr.nr_cmd = NETMAP_BDG_NEWIF;
-	nmr.nr_arg2 = memid;
-	
-	rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
-	if (rv < 0) {
-		if (errno == EEXIST) {
-			if (nmr.nr_arg2 != memid) {
-				D("%s already exists, but it is using allocator %d instead of %d",
-						glob_arg.pipename, nmr.nr_arg2, memid);
-						
-				return 1;
+	for (i = 0; i < glob_arg.num_groups; i++) {
+		g = &groups[i];
+
+		if (!g->custom_port)
+			continue;
+
+		bzero(&nmr, sizeof(nmr));
+		nmr.nr_version = NETMAP_API;
+		strncpy(nmr.nr_name, g->pipename, sizeof(nmr.nr_name));
+		nmr.nr_cmd = NETMAP_BDG_NEWIF;
+		nmr.nr_arg2 = memid;
+		
+		rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
+		if (rv < 0) {
+			g->custom_port = 0;
+			if (errno == EEXIST) {
+				if (nmr.nr_arg2 != memid) {
+					D("%s already exists, but it is using allocator %d instead of %d",
+							g->pipename, nmr.nr_arg2, memid);
+							
+					return 1;
+				} else {
+					D("opened already existing port %s", g->pipename);
+				}
 			} else {
-				D("opened already existing port %s", glob_arg.pipename);
+				D("error creating %s: %s", g->pipename, strerror(errno));
+				return 1;
 			}
 		} else {
-			D("error creating %s: %s", glob_arg.pipename, strerror(errno));
-			return 1;
+			D("successfully created port %s", g->pipename);
 		}
-	} else {
-		D("successfully created port %s", glob_arg.pipename);
-		atexit(delete_custom_port);
 	}
 	return 0;
 }
 
 static void
-delete_custom_port(void)
+delete_custom_ports(void)
 {
 	struct nmreq nmr;
-	int rv;
+	int rv, i;
 
-	bzero(&nmr, sizeof(nmr));
-	nmr.nr_version = NETMAP_API;
-	strncpy(nmr.nr_name, glob_arg.pipename, sizeof(nmr.nr_name));
-	nmr.nr_cmd = NETMAP_BDG_DELIF;
-	
-	rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
-	if (rv < 0) {
-		D("WARNING: error while deleting %s: %s",
-				glob_arg.pipename, strerror(errno));
+	for (i = 0; i < glob_arg.num_groups; i++) {
+		struct group_des *g = &groups[i];
+
+		if (!g->custom_port)
+			continue;
+
+		bzero(&nmr, sizeof(nmr));
+		nmr.nr_version = NETMAP_API;
+		strncpy(nmr.nr_name, g->pipename, sizeof(nmr.nr_name));
+		nmr.nr_cmd = NETMAP_BDG_DELIF;
+		
+		rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
+		if (rv < 0) {
+			D("WARNING: error while deleting %s: %s",
+					g->pipename, strerror(errno));
+		}
 	}
+}
+
+void init_groups(void)
+{
+	int i, j, t = 0;
+	struct group_des *g = NULL;
+	for (i = 0; i < glob_arg.num_groups; i++) {
+		g = &groups[i];
+		g->ports = &ports[t];
+		for (j = 0; j < g->nports; j++)
+			g->ports[j].group = g;
+		t += g->nports;
+		if (!g->custom_port)
+			strcpy(g->pipename, glob_arg.base_name);
+		for (j = 0; j < i; j++) {
+			struct group_des *h = &groups[j];
+			if (!strcmp(h->pipename, g->pipename))
+				g->first_id += h->nports;
+		}
+	}
+	g->last = 1;
 }
 
 int main(int argc, char **argv)
@@ -384,7 +446,7 @@ int main(int argc, char **argv)
 	unsigned int iter = 0;
 
 	glob_arg.ifname[0] = '\0';
-	glob_arg.output_rings = DEF_OUT_PIPES;
+	glob_arg.output_rings = 0;
 	glob_arg.batch = DEF_BATCH;
 	glob_arg.syslog_interval = DEF_SYSLOG_INT;
 
@@ -447,10 +509,8 @@ int main(int argc, char **argv)
 		;
 	*nscan = '\0';	
 
-	/* if no special name for pipes has been provied, use the base name */
-	if (glob_arg.pipename[0] == '\0') {
-		strcpy(glob_arg.pipename, glob_arg.base_name);
-	}
+	if (glob_arg.num_groups == 0)
+		parse_pipes("");
 
 	setlogmask(LOG_UPTO(LOG_INFO));
 	openlog("lb", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
@@ -467,6 +527,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	struct port_des *rxport = &ports[npipes];
+	init_groups();
 
 	if (pthread_create(&stat_thread, NULL, print_stats, NULL) == -1) {
 		D("unable to create the stats thread: %s", strerror(errno));
@@ -546,43 +607,50 @@ int main(int argc, char **argv)
 	rxport->nmd->nifp->ni_bufs_head = 0;
 
 run:
-	if (strcmp(glob_arg.pipename, glob_arg.base_name)) {
-		/* we need to create a persistent vale port */
-		if (create_custom_port(rxport->nmd->req.nr_arg2))
-			return 1;
+	/* we need to create the persistent vale ports */
+	if (create_custom_ports(rxport->nmd->req.nr_arg2)) {
+		free_buffers();
+		return 1;
 	}
+	atexit(delete_custom_ports);
 
 	atexit(free_buffers);
 
-	for (i = 0; i < npipes; ++i) {
-		char interface[25];
-		sprintf(interface, "netmap:%s{%d/T", glob_arg.pipename, i);
-		D("opening pipe named %s", interface);
+	int j;
+	for (j = 0; j < glob_arg.num_groups; j++) {
+		struct group_des *g = &groups[j];
+		int k;
+		for (k = 0; k < g->nports; ++k) {
+			struct port_des *p = &g->ports[k];
+			char interface[25];
+			sprintf(interface, "netmap:%s{%d/xT", g->pipename, g->first_id + k);
+			D("opening pipe named %s", interface);
 
-		ports[i].nmd = nm_open(interface, NULL, 0, rxport->nmd);
+			p->nmd = nm_open(interface, NULL, 0, rxport->nmd);
 
-		if (ports[i].nmd == NULL) {
-			D("cannot open %s", interface);
-			return (1);
-		} else {
-			D("successfully opened pipe #%d %s (tx slots: %d)",
-			  i + 1, interface, ports[i].nmd->req.nr_tx_slots);
-			ports[i].ring = NETMAP_TXRING(ports[i].nmd->nifp, 0);
-		}
-		D("zerocopy %s",
-		  (rxport->nmd->mem == ports[i].nmd->mem) ? "enabled" : "disabled");
-
-		if (extra_bufs) {
-			struct overflow_queue *q = &oq[i];
-			q->slots = calloc(extra_bufs, sizeof(struct netmap_slot));
-			if (!q->slots) {
-				D("failed to allocate overflow queue for pipe %d", i);
-				/* make all overflow queue management fail */
-				extra_bufs = 0;
+			if (p->nmd == NULL) {
+				D("cannot open %s", interface);
+				return (1);
+			} else {
+				D("successfully opened pipe #%d %s (tx slots: %d)",
+				  k + 1, interface, p->nmd->req.nr_tx_slots);
+				p->ring = NETMAP_TXRING(p->nmd->nifp, 0);
 			}
-			q->size = extra_bufs;
-			snprintf(q->name, MAX_IFNAMELEN, "oq %d", i);
-			ports[i].oq = q;
+			D("zerocopy %s",
+			  (rxport->nmd->mem == p->nmd->mem) ? "enabled" : "disabled");
+
+			if (extra_bufs) {
+				struct overflow_queue *q = &oq[k];
+				q->slots = calloc(extra_bufs, sizeof(struct netmap_slot));
+				if (!q->slots) {
+					D("failed to allocate overflow queue for pipe %d", k);
+					/* make all overflow queue management fail */
+					extra_bufs = 0;
+				}
+				q->size = extra_bufs;
+				snprintf(q->name, MAX_IFNAMELEN, "oq %d", k);
+				p->oq = q;
+			}
 		}
 	}
 
@@ -602,7 +670,6 @@ run:
 
 	struct pollfd pollfd[npipes + 1];
 	memset(&pollfd, 0, sizeof(pollfd));
-
 	signal(SIGINT, sigint_h);
 	while (!do_abort) {
 		u_int polli = 0;
