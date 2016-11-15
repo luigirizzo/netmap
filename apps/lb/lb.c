@@ -743,7 +743,7 @@ run:
 
 	atexit(free_buffers);
 
-	int j;
+	int j, t = 0;
 	for (j = 0; j < glob_arg.num_groups; j++) {
 		struct group_des *g = &groups[j];
 		int k;
@@ -767,7 +767,7 @@ run:
 			  (rxport->nmd->mem == p->nmd->mem) ? "enabled" : "disabled");
 
 			if (extra_bufs) {
-				struct overflow_queue *q = &oq[k];
+				struct overflow_queue *q = &oq[t + k];
 				q->slots = calloc(extra_bufs, sizeof(struct netmap_slot));
 				if (!q->slots) {
 					D("failed to allocate overflow queue for pipe %d", k);
@@ -775,10 +775,11 @@ run:
 					extra_bufs = 0;
 				}
 				q->size = extra_bufs;
-				snprintf(q->name, MAX_IFNAMELEN, "oq %d", k);
+				snprintf(q->name, MAX_IFNAMELEN, "oq %s{%d", g->pipename, k);
 				p->oq = q;
 			}
 		}
+		t += g->nports;
 	}
 
 	if (glob_arg.extra_bufs && !extra_bufs) {
