@@ -109,7 +109,6 @@ struct overflow_queue {
 	uint32_t size;
 };
 
-struct overflow_queue *overflow_queues;
 struct overflow_queue *freeq;
 
 static inline void
@@ -158,6 +157,7 @@ struct port_des {
 
 struct port_des *ports;
 
+/* each group of pipes receives all the packets */
 struct group_des {
 	char pipename[MAX_IFNAMELEN];
 	struct port_des *ports;
@@ -289,11 +289,11 @@ void usage()
 {
 	printf("usage: lb [options]\n");
 	printf("where options are:\n");
-	printf("  -i iface        interface name (required)\n");
-	printf("  -p npipes       number of output pipes (default: %d)\n", DEF_OUT_PIPES);
-	printf("  -B nbufs        number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
-	printf("  -b batch        batch size (default: %d)\n", DEF_BATCH);
-	printf("  -s seconds      seconds between syslog messages (default: %d)\n",
+	printf("  -i iface        	interface name (required)\n");
+	printf("  -p [prefix:]npipes	add a new group of output pipes\n");
+	printf("  -B nbufs        	number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
+	printf("  -b batch        	batch size (default: %d)\n", DEF_BATCH);
+	printf("  -s seconds      	seconds between syslog messages (default: %d)\n",
 			DEF_SYSLOG_INT);
 	exit(0);
 }
@@ -305,7 +305,7 @@ parse_pipes(char *spec)
 	static int max_groups = 0;
 	struct group_des *g;
        
-	D("spec %s num_groups %d", spec, glob_arg.num_groups);
+	ND("spec %s num_groups %d", spec, glob_arg.num_groups);
 	if (max_groups < glob_arg.num_groups + 1) {
 		size_t size = sizeof(*g) * (glob_arg.num_groups + 1);
 		groups = realloc(groups, size);
@@ -319,13 +319,23 @@ parse_pipes(char *spec)
 
 	if (end != NULL) {
 		if (end - spec > MAX_IFNAMELEN - 8) {
-			D("name %s too long", spec);
+			D("name '%s' too long", spec);
+			return 1;
+		}
+		if (end == spec) {
+			D("missing prefix before ':' in '%s'", spec);
 			return 1;
 		}
 		strncpy(g->pipename, spec, end - spec);
 		g->custom_port = 1;
 		end++;
 	} else {
+		/* no prefix, this group will use the
+		 * name of the input port.
+		 * This will be set in init_groups(),
+		 * since here the input port may still
+		 * be uninitialized
+		 */
 		end = spec;
 	}
 	if (*end == '\0') {
@@ -333,7 +343,7 @@ parse_pipes(char *spec)
 	} else {
 		g->nports = atoi(end);
 		if (g->nports < 1) {
-			D("invalid number of pipes %s (must be at least 1)", end);
+			D("invalid number of pipes '%s' (must be at least 1)", end);
 			return 1;
 		}
 	}
@@ -374,6 +384,9 @@ create_custom_ports(int memid)
 		
 		rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
 		if (rv < 0) {
+			/* reset the custom_port flag, so that we do not
+			 * try to delete what we did not create
+			 */
 			g->custom_port = 0;
 			if (errno == EEXIST) {
 				if (nmr.nr_arg2 != memid) {
@@ -395,6 +408,10 @@ create_custom_ports(int memid)
 	return 0;
 }
 
+/* called at exit to remove all the custom ports that
+ * we created (note that deletion may fail is somebody
+ * is still using either the ports or their pipes
+ */
 static void
 delete_custom_ports(void)
 {
@@ -420,6 +437,7 @@ delete_custom_ports(void)
 	}
 }
 
+/* complete the initialization of the groups data structure */
 void init_groups(void)
 {
 	int i, j, t = 0;
@@ -441,43 +459,76 @@ void init_groups(void)
 	g->last = 1;
 }
 
-void forward_packet(struct group_des *g, struct netmap_slot *rs)
+/* push the packet described by slot rs to the group g.
+ * This may cause other buffers to be pushed down the
+ * chain headed by g.
+ * Return a free buffer.
+ */
+uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 {
 	uint32_t hash = rs->ptr;
 	uint32_t output_port = hash % g->nports;
 	struct port_des *port = &g->ports[output_port];
 	struct netmap_ring *ring = port->ring;
-	uint32_t free_buf;
-	struct overflow_queue *oq = overflow_queues, *q;
+	struct overflow_queue *q = port->oq;
 
-	// Move the packet to the output pipe.
-	if (nm_ring_space(ring)) {
+	/* Move the packet to the output pipe, unless there is
+	 * either no space left on the ring, or there is some
+	 * packet still in the overflow queue (since those must
+	 * take precedence over the new one)
+	*/
+	if (nm_ring_space(ring) && (q == NULL || q->n == 0)) {
 		struct netmap_slot *ts = &ring->slot[ring->cur];
-		free_buf = ts->buf_idx;
+		struct netmap_slot old_slot = *ts;
+		uint32_t free_buf;
+
 		ts->buf_idx = rs->buf_idx;
 		ts->len = rs->len;
 		ts->flags |= NS_BUF_CHANGED;
+		ts->ptr = rs->ptr;
 		ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 		port->ctr.pkts++;
 		forwarded++;
-		goto forward;
+		if (old_slot.ptr && !g->last) {
+			/* old slot not empty and we are not the last group:
+			 * push it further down the chain
+			 */
+			free_buf = forward_packet(g + 1, &old_slot);
+		} else {
+			/* just return the old slot buffer: it is
+			 * either empty or already seen by everybody
+			 */
+			free_buf = old_slot.buf_idx;
+		}
+
+		return free_buf;
 	}
 
 	/* use the overflow queue, if available */
-	if (!oq) {
+	if (q) {
+		oq_enq(q, rs);
+	} else {
+		/* no space left on the ring and no overflow queue
+		 * available: we are forced to drop the packet
+		 */
 		dropped++;
 		port->ctr.drop++;
-		return;
 	}
 
-	q = &oq[output_port];
-
+	/* if we are here the new packet is either dropped or
+	 * waiting in the overflow queue. Either way,
+	 * we cannot continue down the chain and we need to
+	 * return a free buffer now. We take it from the free queue.
+	 */
 	if (!freeq->n) {
-		/* revoke some buffers from the longest overflow queue */
+		/* the free queue is empty. Revoke some buffers
+		 * from the longest overflow queue
+		 */
 		uint32_t j;
 		struct port_des *lp = &ports[0];
 		uint32_t max = lp->oq->n;
 
+		/* let lp point to the port with the longest queue */
 		for (j = 1; j < glob_arg.output_rings; j++) {
 			struct port_des *cp = &ports[j];
 			if (cp->oq->n > max) {
@@ -486,6 +537,9 @@ void forward_packet(struct group_des *g, struct netmap_slot *rs)
 			}
 		}
 
+		/* move the oldest BUF_REVOKE buffers from the
+		 * lp queue to the free queue
+		 */
 		// XXX optimize this cycle
 		for (j = 0; lp->oq->n && j < BUF_REVOKE; j++) {
 			struct netmap_slot tmp = oq_deq(lp->oq);
@@ -497,12 +551,7 @@ void forward_packet(struct group_des *g, struct netmap_slot *rs)
 		dropped += j;
 	}
 
-	free_buf = oq_deq(freeq).buf_idx;
-	oq_enq(q, rs);
-
-forward:
-	rs->buf_idx = free_buf;
-	rs->flags |= NS_BUF_CHANGED;
+	return oq_deq(freeq).buf_idx;
 }
 
 int main(int argc, char **argv)
@@ -633,7 +682,7 @@ int main(int argc, char **argv)
 	/* one overflow queue for each output pipe, plus one for the
 	 * free extra buffers
 	 */
-	overflow_queues = oq = calloc(npipes + 1, sizeof(struct overflow_queue));
+	oq = calloc(npipes + 1, sizeof(struct overflow_queue));
 	if (!oq) {
 		D("failed to allocated overflow queues descriptors");
 		goto run;
@@ -773,6 +822,7 @@ run:
 			for (i = 0; i < npipes; i++) {
 				struct port_des *p = &ports[i];
 				struct overflow_queue *q = p->oq;
+				struct group_des *g = p->group;
 				uint32_t j, lim;
 				struct netmap_ring *ring;
 				struct netmap_slot *slot;
@@ -786,9 +836,20 @@ run:
 				if (q->n < lim)
 					lim = q->n;
 				for (j = 0; j < lim; j++) {
-					struct netmap_slot s = oq_deq(q);
+					struct netmap_slot s = oq_deq(q), tmp;
+					tmp.ptr = 0;
 					slot = &ring->slot[ring->cur];
-					oq_enq(freeq, slot);
+					if (slot->ptr && !g->last) {
+						tmp.buf_idx = forward_packet(g + 1, slot);
+						/* the forwarding may have removed packets
+						 * from the current queue
+						 */
+						if (q->n < lim)
+							lim = q->n;
+					} else {
+						tmp.buf_idx = slot->buf_idx;
+					}
+					oq_enq(freeq, &tmp);
 					*slot = s;
 					slot->flags |= NS_BUF_CHANGED;
 					ring->cur = nm_ring_next(ring, ring->cur);
@@ -813,16 +874,18 @@ run:
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
 				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
-				if (hash == 0)
+				if (hash == 0) {
 					non_ip++; // XXX ??
-				rs->ptr = hash;
+				}
+				rs->ptr = hash | (1UL << 32);
 				// prefetch the buffer for the next round
 				next_cur = nm_ring_next(rxring, next_cur);
 				next_slot = &rxring->slot[next_cur];
 				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 				__builtin_prefetch(next_buf);
 				// 'B' is just a hashing seed
-				forward_packet(g, rs);
+				rs->buf_idx = forward_packet(g, rs);
+				rs->flags |= NS_BUF_CHANGED;
 				rxring->head = rxring->cur = next_cur;
 
 				batch++;
