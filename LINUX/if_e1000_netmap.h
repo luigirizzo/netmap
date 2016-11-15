@@ -275,14 +275,6 @@ ring_reset:
 }
 
 
-/* diagnostic routine to catch errors */
-static void e1000_no_rx_alloc(struct SOFTC_T *adapter,
-	  struct e1000_rx_ring *rxr, int cleaned_count)
-{
-	D("e1000->alloc_rx_buf should not be called");
-}
-
-
 /*
  * Make the tx and rx rings point to the netmap buffers.
  */
@@ -299,7 +291,6 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	if (!nm_native_on(na))
 		return 0;
 
-	adapter->alloc_rx_buf = e1000_no_rx_alloc;
 	for (r = 0; r < na->num_rx_rings; r++) {
 		struct e1000_rx_ring *rxr;
 		slot = netmap_reset(na, NR_RX, r, 0);

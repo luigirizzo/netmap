@@ -1,18 +1,18 @@
 diff --git a/e1000/e1000_main.c b/e1000/e1000_main.c
-index 24f3986..2cb98ce 100644
+index 24f3986..c28425f 100644
 --- a/e1000/e1000_main.c
 +++ b/e1000/e1000_main.c
-@@ -224,6 +224,10 @@ static int debug = -1;
- module_param(debug, int, 0);
- MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
+@@ -200,6 +200,10 @@ static const struct pci_error_handlers e1000_err_handler = {
+ 	.resume = e1000_io_resume,
+ };
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
 +#include <if_e1000_netmap.h>
 +#endif
 +
- /**
-  * e1000_get_hw_dev - return device
-  * used by hardware layer to print debugging information
+ static struct pci_driver e1000_driver = {
+ 	.name     = e1000_driver_name,
+ 	.id_table = e1000_pci_tbl,
 @@ -395,6 +399,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
  	e1000_configure_tx(adapter);
  	e1000_setup_rctl(adapter);

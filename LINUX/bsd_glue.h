@@ -333,18 +333,6 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 #define BDG_GET_VAR(lval)	(lval)
 #define BDG_FREE(p)		kfree(p)
 
-/*
- * in the malloc/free code we ignore the type
- */
-/* use volatile to fix a probable compiler error on 2.6.25 */
-#define malloc(_size, type, flags)                      \
-        ({ volatile int _v = _size; kmalloc(_v, GFP_ATOMIC | __GFP_ZERO); })
-
-#define realloc(addr, _size, type, flags)		\
-	({ volatile int _v = _size; krealloc(addr, _v, GFP_ATOMIC | __GFP_ZERO); })
-
-#define free(a, t)	kfree(a)
-
 // XXX do we need GPF_ZERO ?
 // XXX do we need GFP_DMA for slots ?
 // http://www.mjmwired.net/kernel/Documentation/DMA-API.txt

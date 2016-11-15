@@ -807,7 +807,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 
 	len = (n[NR_TX] + n[NR_RX]) * sizeof(struct netmap_kring) + tailroom;
 
-	na->tx_rings = malloc((size_t)len, M_DEVBUF, M_NOWAIT | M_ZERO);
+	na->tx_rings = nm_os_malloc((size_t)len);
 	if (na->tx_rings == NULL) {
 		D("Cannot allocate krings");
 		return ENOMEM;
@@ -874,7 +874,7 @@ netmap_krings_delete(struct netmap_adapter *na)
 		mtx_destroy(&kring->q_lock);
 		nm_os_selinfo_uninit(&kring->si);
 	}
-	free(na->tx_rings, M_DEVBUF);
+	nm_os_free(na->tx_rings);
 	na->tx_rings = na->rx_rings = na->tailroom = NULL;
 }
 
@@ -983,8 +983,7 @@ netmap_priv_new(void)
 {
 	struct netmap_priv_d *priv;
 
-	priv = malloc(sizeof(struct netmap_priv_d), M_DEVBUF,
-			      M_NOWAIT | M_ZERO);
+	priv = nm_os_malloc(sizeof(struct netmap_priv_d));
 	if (priv == NULL)
 		return NULL;
 	priv->np_refs = 1;
@@ -1016,7 +1015,7 @@ netmap_priv_delete(struct netmap_priv_d *priv)
 	}
 	netmap_unget_na(na, priv->np_ifp);
 	bzero(priv, sizeof(*priv));	/* for safety */
-	free(priv, M_DEVBUF);
+	nm_os_free(priv);
 }
 
 
@@ -2103,6 +2102,29 @@ nm_sync_finalize(struct netmap_kring *kring)
 		kring->rhead, kring->rcur, kring->rtail);
 }
 
+static int
+nm_override_mem(struct netmap_adapter *na, nm_memid_t id)
+{
+	struct netmap_mem_d *nmd;
+
+	if (id == 0 || netmap_mem_get_id(na->nm_mem) == id)
+		return 0;
+
+	if (na->na_flags & NAF_MEM_OWNER)
+		return EINVAL;
+
+	if (na->active_fds > 0)
+		return EBUSY;
+
+	nmd = netmap_mem_find(id);
+	if (nmd == NULL)
+		return ENOENT;
+
+	netmap_mem_put(na->nm_mem);
+	na->nm_mem = nmd;
+	return 0;
+}
+
 /*
  * ioctl(2) support for the "netmap" device.
  *
@@ -2165,6 +2187,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 					break;
 				}
 				nmd = na->nm_mem; /* get memory allocator */
+			}
+
+			error = nm_override_mem(na, nmr->nr_arg2);
+			if (error) {
+				netmap_unget_na(na, ifp);
+				break;
 			}
 
 			error = netmap_mem_get_info(nmd, &nmr->nr_memsize, &memflags,
@@ -2251,6 +2279,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			if (na->virt_hdr_len && !(nmr->nr_flags & NR_ACCEPT_VNET_HDR)) {
 				netmap_unget_na(na, ifp);
 				error = EIO;
+				break;
+			}
+
+			error = nm_override_mem(na, nmr->nr_arg2);
+			if (error) {
+				netmap_unget_na(na, ifp);
 				break;
 			}
 
@@ -2729,10 +2763,10 @@ netmap_attach_common(struct netmap_adapter *na)
 		na->nm_notify = netmap_notify;
 	na->active_fds = 0;
 
-	if (na->nm_mem == NULL)
+	if (na->nm_mem == NULL) {
 		/* use the global allocator */
-		na->nm_mem = &nm_mem;
-	netmap_mem_get(na->nm_mem);
+		na->nm_mem = netmap_mem_get(&nm_mem);
+	}
 #ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
 		/* no special nm_bdg_attach callback. On VALE
@@ -2757,7 +2791,7 @@ netmap_detach_common(struct netmap_adapter *na)
 	if (na->nm_mem)
 		netmap_mem_put(na->nm_mem);
 	bzero(na, sizeof(*na));
-	free(na, M_DEVBUF);
+	nm_os_free(na);
 }
 
 /* Wrapper for the register callback provided netmap-enabled
@@ -2823,7 +2857,7 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	if (arg == NULL || arg->ifp == NULL)
 		goto fail;
 	ifp = arg->ifp;
-	hwna = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
+	hwna = nm_os_malloc(size);
 	if (hwna == NULL)
 		goto fail;
 	hwna->up = *arg;
@@ -2832,7 +2866,7 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	hwna->nm_hw_register = hwna->up.nm_register;
 	hwna->up.nm_register = netmap_hw_reg;
 	if (netmap_attach_common(&hwna->up)) {
-		free(hwna, M_DEVBUF);
+		nm_os_free(hwna);
 		goto fail;
 	}
 	netmap_adapter_get(&hwna->up);
@@ -2909,8 +2943,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg, void *csb,
          * applications. We only need a subset of the available fields. */
 	memset(&ptna->dr, 0, sizeof(ptna->dr));
 	ptna->dr.up.ifp = ifp;
-	ptna->dr.up.nm_mem = ptna->hwup.up.nm_mem;
-	netmap_mem_get(ptna->dr.up.nm_mem);
+	ptna->dr.up.nm_mem = netmap_mem_get(ptna->hwup.up.nm_mem);
         ptna->dr.up.nm_config = ptna->hwup.up.nm_config;
 
 	ptna->backend_regifs = 0;

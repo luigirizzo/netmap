@@ -1,18 +1,18 @@
 diff --git a/e1000/e1000_main.c b/e1000/e1000_main.c
-index bcd192c..2b33eba 100644
+index bcd192c..013f528 100644
 --- a/e1000/e1000_main.c
 +++ b/e1000/e1000_main.c
-@@ -213,6 +213,10 @@ static int debug = NETIF_MSG_DRV | NETIF_MSG_PROBE;
- module_param(debug, int, 0);
- MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
+@@ -190,6 +190,10 @@ static struct pci_error_handlers e1000_err_handler = {
+ 	.resume = e1000_io_resume,
+ };
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
 +#include <if_e1000_netmap.h>
 +#endif
 +
- /**
-  * e1000_init_module - Driver Registration Routine
-  *
+ static struct pci_driver e1000_driver = {
+ 	.name     = e1000_driver_name,
+ 	.id_table = e1000_pci_tbl,
 @@ -375,6 +379,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
  	e1000_configure_tx(adapter);
  	e1000_setup_rctl(adapter);

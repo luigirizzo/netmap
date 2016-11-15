@@ -750,14 +750,14 @@ ptnetmap_read_cfg(struct nmreq *nmr)
 	}
 
 	cfglen = sizeof(tmp) + tmp.num_rings * tmp.entry_size;
-	cfg = malloc(cfglen, M_DEVBUF, M_NOWAIT | M_ZERO);
+	cfg = nm_os_malloc(cfglen);
 	if (!cfg) {
 		return NULL;
 	}
 
 	if (copyin((const void *)*nmr_ptncfg, cfg, cfglen)) {
 		D("Full copyin() failed");
-		free(cfg, M_DEVBUF);
+		nm_os_free(cfg);
 		return NULL;
 	}
 
@@ -790,8 +790,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
         return EINVAL;
     }
 
-    ptns = malloc(sizeof(*ptns) + num_rings * sizeof(*ptns->kthreads),
-		  M_DEVBUF, M_NOWAIT | M_ZERO);
+    ptns = nm_os_malloc(sizeof(*ptns) + num_rings * sizeof(*ptns->kthreads));
     if (!ptns) {
         return ENOMEM;
     }
@@ -849,7 +848,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 
 err:
     pth_na->ptns = NULL;
-    free(ptns, M_DEVBUF);
+    nm_os_free(ptns);
     return ret;
 }
 
@@ -892,7 +891,7 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
 
     IFRATE(del_timer(&ptns->rate_ctx.timer));
 
-    free(ptns, M_DEVBUF);
+    nm_os_free(ptns);
 
     pth_na->ptns = NULL;
 
@@ -935,7 +934,7 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
         /* Create ptnetmap state (kthreads, ...) and switch parent
 	 * adapter to ptnetmap mode. */
         error = ptnetmap_create(pth_na, cfg);
-	free(cfg, M_DEVBUF);
+	nm_os_free(cfg);
         if (error)
             break;
         /* Start kthreads. */
@@ -1162,7 +1161,7 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 
     D("Requesting a ptnetmap host adapter");
 
-    pth_na = malloc(sizeof(*pth_na), M_DEVBUF, M_NOWAIT | M_ZERO);
+    pth_na = nm_os_malloc(sizeof(*pth_na));
     if (pth_na == NULL) {
         D("ERROR malloc");
         return ENOMEM;
@@ -1216,7 +1215,7 @@ netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
      * directly. */
     pth_na->up.nm_notify = nm_unused_notify;
 
-    pth_na->up.nm_mem = parent->nm_mem;
+    pth_na->up.nm_mem = netmap_mem_get(parent->nm_mem);
 
     pth_na->up.na_flags |= NAF_HOST_RINGS;
 
@@ -1248,7 +1247,7 @@ put_out:
     if (ifp)
 	if_rele(ifp);
 put_out_noputparent:
-    free(pth_na, M_DEVBUF);
+    nm_os_free(pth_na);
     return error;
 }
 #endif /* WITH_PTNETMAP_HOST */
@@ -1445,7 +1444,7 @@ ptnet_nm_dtor(struct netmap_adapter *na)
 	struct netmap_pt_guest_adapter *ptna =
 			(struct netmap_pt_guest_adapter *)na;
 
-	netmap_mem_put(ptna->dr.up.nm_mem);
+	netmap_mem_put(ptna->dr.up.nm_mem); // XXX is this needed?
 	memset(&ptna->dr, 0, sizeof(ptna->dr));
 	netmap_mem_pt_guest_ifp_del(na->nm_mem, na->ifp);
 }
