@@ -111,10 +111,22 @@ struct overflow_queue {
 
 struct overflow_queue *freeq;
 
+static inline int
+oq_full(struct overflow_queue *q)
+{
+	return q->n >= q->size;
+}
+
+static inline int
+oq_empty(struct overflow_queue *q)
+{
+	return q->n <= 0;
+}
+
 static inline void
 oq_enq(struct overflow_queue *q, const struct netmap_slot *s)
 {
-	if (unlikely(q->n >= q->size)) {
+	if (unlikely(oq_full(q))) {
 		D("%s: queue full!", q->name);
 		abort();
 	}
@@ -129,7 +141,7 @@ static inline struct netmap_slot
 oq_deq(struct overflow_queue *q)
 {
 	struct netmap_slot s = q->slots[q->head];
-	if (unlikely(q->n <= 0)) {
+	if (unlikely(oq_empty(q))) {
 		D("%s: queue empty!", q->name);
 		abort();
 	}
@@ -477,7 +489,7 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 	 * packet still in the overflow queue (since those must
 	 * take precedence over the new one)
 	*/
-	if (nm_ring_space(ring) && (q == NULL || q->n == 0)) {
+	if (nm_ring_space(ring) && (q == NULL || oq_empty(q))) {
 		struct netmap_slot *ts = &ring->slot[ring->cur];
 		struct netmap_slot old_slot = *ts;
 		uint32_t free_buf;
@@ -505,22 +517,22 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 	}
 
 	/* use the overflow queue, if available */
-	if (q) {
-		oq_enq(q, rs);
-	} else {
+	if (q == NULL || oq_full(q)) {
 		/* no space left on the ring and no overflow queue
 		 * available: we are forced to drop the packet
 		 */
 		dropped++;
 		port->ctr.drop++;
+		return rs->buf_idx;
 	}
 
-	/* if we are here the new packet is either dropped or
-	 * waiting in the overflow queue. Either way,
+	oq_enq(q, rs);
+
+	/*
 	 * we cannot continue down the chain and we need to
 	 * return a free buffer now. We take it from the free queue.
 	 */
-	if (!freeq->n) {
+	if (oq_empty(freeq)) {
 		/* the free queue is empty. Revoke some buffers
 		 * from the longest overflow queue
 		 */
@@ -827,7 +839,7 @@ run:
 				struct netmap_ring *ring;
 				struct netmap_slot *slot;
 
-				if (!q->n)
+				if (oq_empty(q))
 					continue;
 				ring = p->ring;
 				lim = nm_ring_space(ring);
