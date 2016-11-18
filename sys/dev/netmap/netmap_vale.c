@@ -2159,7 +2159,7 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 {
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
-	int error;
+	int error = 0;
 	u_int npipes = 0;
 
 	vpna = nm_os_malloc(sizeof(*vpna));

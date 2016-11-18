@@ -85,7 +85,7 @@ ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     NMG_LOCK();
     priv = irpSp->FileObject->FsContext;
     if (priv == NULL) {
-	priv = malloc(sizeof (*priv), M_DEVBUF, M_NOWAIT | M_ZERO); // could wait
+	priv = nm_os_malloc(sizeof (*priv)); // could wait
 	if (priv == NULL) {
 	    status = STATUS_INSUFFICIENT_RESOURCES;
 	} else {
@@ -242,6 +242,53 @@ windows_handle_tx(struct net_device *ifp, uint32_t length, const char *data)
 	if (m)
 		netmap_transmit(ifp, m);
 	return NULL;
+}
+
+/*
+ * we default to always allocating and zeroing
+ */
+void *
+nm_os_malloc(size_t size)
+{
+    void* mem = ExAllocatePoolWithTag(NonPagedPool, size, /* M_DEVBUF */ 2);
+
+    if (mem != NULL) {
+        RtlZeroMemory(mem, size);
+    }
+    return mem;
+}
+
+void
+nm_os_free(void *addr)
+{
+    ExFreePoolWithTag(addr, /* M_DEVBUF */ 2);
+}
+
+void *
+nm_os_realloc(void *src, size_t size, size_t oldSize)
+{
+    //DbgPrint("Netmap.sys: win_reallocate(%p, %i, %i)", src, size, oldSize);
+    PVOID newBuff = NULL; /* default return value */
+
+    if (src == NULL) { /* if size > 0, this is a malloc */
+        if (size > 0) {
+            newBuff = nm_os_malloc(size);
+        }
+    } else if (size == 0) {
+        nm_os_free(src);
+    } else if (size == oldSize) {
+        newBuff = src;
+    } else { /* realloc -- XXX later maybe ignore shrink ? */
+        newBuff = nm_os_malloc(size);
+        if (newBuff != NULL) {
+            if (size <= oldSize) { /* shrink, just copy back part of the data */
+                RtlCopyMemory(newBuff, src, size);
+            } else {
+                RtlCopyMemory(newBuff, src, oldSize);
+            }
+        }
+    }
+    return newBuff;
 }
 
 int
@@ -573,7 +620,7 @@ ifunit_ref(const char* name)
     deviceIfIndex = getDeviceIfIndex(name+3);
     if (deviceIfIndex < 0)
 	return NULL;
-    ifp = malloc(sizeof(struct net_device), M_DEVBUF, M_NOWAIT | M_ZERO);
+    ifp = nm_os_malloc(sizeof(struct net_device));
     if (ifp == NULL)
 	return NULL;
 
@@ -585,7 +632,7 @@ ifunit_ref(const char* name)
 	win32_init_lookaside_buffers(ifp);
 
 	if (ndis_hooks.ndis_regif(ifp) != STATUS_SUCCESS) {
-	free(ifp, M_DEVBUF);
+	nm_os_free(ifp);
 	win32_clear_lookaside_buffers(ifp);
 	return NULL; /* not found */
     }
