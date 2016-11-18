@@ -973,6 +973,7 @@ nm_os_put_module(void)
 
 
 struct nm_kthread {
+    int unused; /* To avoid compiler barfs */
 };
 
 void

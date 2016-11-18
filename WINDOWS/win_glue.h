@@ -257,6 +257,7 @@ static int time_uptime_w32()
  * Is it ok to use RtlCopyMemory for user buffers ?
  */
 #define copyin(src, dst, copy_len)		RtlCopyMemory(dst, src, copy_len)
+#define copyout(src, dst, copy_len)		RtlCopyMemory(dst, src, copy_len)
 
 
 /*
