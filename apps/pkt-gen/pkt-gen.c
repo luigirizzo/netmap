@@ -179,6 +179,7 @@ const char *indirect_payload="netmap pkt-gen indirect payload\n"
 	"http://info.iet.unipi.it/~luigi/netmap/ ";
 
 int verbose = 0;
+int normalize = 1;
 
 #define SKIP_PAYLOAD 1 /* do not check payload. XXX unused */
 
@@ -1859,8 +1860,13 @@ tx_output(struct my_ctrs *cur, double delta, const char *msg)
 	raw_bw = (8.0 * (cur->pkts * 24 + cur->bytes)) / delta;
 	abs = cur->pkts / (double)(cur->events);
 
-	printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
-		norm(b1, pps), norm(b2, bw), norm(b3, raw_bw), abs);
+	if (normalize)
+		printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
+			norm(b1, pps), norm(b2, bw), norm(b3, raw_bw), abs);
+	else
+		printf("Speed: %llupps Bandwidth: %llubps (raw %llubps). Average batch: %.2f pkts\n",
+			(unsigned long long)pps, (unsigned long long)bw,
+			(unsigned long long)raw_bw, abs);
 }
 
 static void
@@ -1896,6 +1902,7 @@ usage(void)
 		"\t-Z			use random IPv4 dst address/port\n"
 		"\t-F num_frags		send multi-slot packets\n"
 		"\t-A			activate pps stats on receiver\n"
+		"\t-N			disable units normalization\n"
 		"",
 		cmd);
 
@@ -2051,17 +2058,28 @@ main_thread(struct glob_arg *g)
 			}
 			ppsdev /= nsamples;
 			ppsdev = sqrt(ppsdev);
-
-			snprintf(b4, sizeof(b4), "[avg/std %s/%s pps]",
-				 norm(b1, ppsavg), norm(b2, ppsdev));
+			if (normalize)
+				snprintf(b4, sizeof(b4), "[avg/std %s/%s pps]",
+					norm(b1, ppsavg), norm(b2, ppsdev));
+			else
+				snprintf(b4, sizeof(b4), "[avg/std %lf/%lf pps]",
+					ppsavg, ppsdev);
 		}
 
-		D("%spps %s(%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
-			norm(b1, pps), b4,
-			norm(b2, (double)x.pkts),
-			norm(b3, (double)x.bytes*8),
-			(unsigned long long)usec,
-			abs, (int)cur.min_space);
+		if (normalize)
+			D("%spps %s(%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
+				norm(b1, pps), b4,
+				norm(b2, (double)x.pkts),
+				norm(b3, (double)x.bytes*8),
+				(unsigned long long)usec,
+				abs, (int)cur.min_space);
+		else
+			D("%llupps %s(%llupkts %llubps in %llu usec) %.2f avg_batch %d min_space",
+				(unsigned long long)pps, b4,
+				(unsigned long long)x.pkts,
+				(unsigned long long)x.bytes*8,
+				(unsigned long long)usec,
+				abs, (int)cur.min_space);
 		prev = cur;
 
 		if (done == g->nthreads)
@@ -2232,7 +2250,7 @@ main(int arc, char **argv)
 	g.wait_link = 2;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
+			"a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
 		struct td_desc *fn;
 
 		switch(ch) {
@@ -2243,6 +2261,10 @@ main(int arc, char **argv)
 
 		case 'n':
 			g.npackets = strtoull(optarg, NULL, 10);
+			break;
+
+		case 'N':
+			normalize = 0;
 			break;
 
 		case 'F':
