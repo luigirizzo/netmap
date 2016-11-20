@@ -1,5 +1,7 @@
 /*
- * Copyright (C) 2013-2015 Vincenzo Maffione, Luigi Rizzo. All rights reserved.
+ * Copyright (C) 2013-2016 Vincenzo Maffione
+ * Copyright (C) 2013-2016 Luigi Rizzo
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -83,12 +85,16 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
 
 #define rtnl_lock()	ND("rtnl_lock called")
 #define rtnl_unlock()	ND("rtnl_unlock called")
-#define MBUF_TXQ(m)	((m)->m_pkthdr.flowid)
 #define MBUF_RXQ(m)	((m)->m_pkthdr.flowid)
 #define smp_mb()
 
 /*
  * FreeBSD mbuf allocator/deallocator in emulation mode:
+ */
+#if __FreeBSD_version < 1100000
+
+/*
+ * For older versions of FreeBSD:
  *
  * We allocate EXT_PACKET mbuf+clusters, but need to set M_NOFREE
  * so that the destructor, if invoked, will not free the packet.
@@ -96,10 +102,6 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
  * but since there might be a race we better do it on allocation.
  * As a consequence, we also need to set the destructor or we
  * would leak buffers.
- */
-
-/*
- * mbuf wrappers
  */
 
 /* mbuf destructor, also need to change the type to EXT_EXTREF,
@@ -112,8 +114,8 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
 	(m)->m_ext.ext_type = EXT_EXTREF;	\
 } while (0)
 
-static void
-netmap_default_mbuf_destructor(struct mbuf *m)
+static int
+void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2)
 {
 	/* restore original mbuf */
 	m->m_ext.ext_buf = m->m_data = m->m_ext.ext_arg1;
@@ -123,6 +125,8 @@ netmap_default_mbuf_destructor(struct mbuf *m)
 	if (MBUF_REFCNT(m) == 0)
 		SET_MBUF_REFCNT(m, 1);
 	uma_zfree(zone_pack, m);
+
+	return 0;
 }
 
 static inline struct mbuf *
@@ -138,12 +142,55 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 		 * so we have to set M_NOFREE after m_getcl(). */
 		m->m_flags |= M_NOFREE;
 		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
-		m->m_ext.ext_free = (void *)netmap_default_mbuf_destructor;
+		m->m_ext.ext_free = (void *)void_mbuf_dtor;
 		m->m_ext.ext_type = EXT_EXTREF;
 		ND(5, "create m %p refcnt %d", m, MBUF_REFCNT(m));
 	}
 	return m;
 }
+
+#else /* __FreeBSD_version >= 1100000 */
+
+/*
+ * Newer versions of FreeBSD, using a straightforward scheme.
+ *
+ * We allocate mbufs with m_gethdr(), since the mbuf header is needed
+ * by the driver. We also attach a customly-provided external storage,
+ * which in this case is a netmap buffer. When calling m_extadd(), however
+ * we pass a NULL address, since the real address (and length) will be
+ * filled in by nm_os_generic_xmit_frame() right before calling
+ * if_transmit().
+ *
+ * The dtor function does nothing, however we need it since mb_free_ext()
+ * has a KASSERT(), checking that the mbuf dtor function is not NULL.
+ */
+
+#define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
+	(m)->m_ext.ext_free = (void *)fn;	\
+} while (0)
+
+static void void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { }
+
+static inline struct mbuf *
+nm_os_get_mbuf(struct ifnet *ifp, int len)
+{
+	struct mbuf *m;
+
+	(void)ifp;
+	(void)len;
+
+	m = m_gethdr(M_NOWAIT, MT_DATA);
+	if (m == NULL) {
+		return m;
+	}
+
+	m_extadd(m, NULL /* buf */, 0 /* size */, void_mbuf_dtor,
+		 NULL, NULL, 0, EXT_NET_DRV);
+
+	return m;
+}
+
+#endif /* __FreeBSD_version >= 1100000 */
 
 #elif defined _WIN32
 
@@ -332,16 +379,16 @@ generic_netmap_unregister(struct netmap_adapter *na)
 		 * because the destructor invokes netmap code, and
 		 * the netmap module may disappear before the
 		 * TX event is consumed. */
-		mtx_lock(&kring->tx_event_lock);
+		mtx_lock_spin(&kring->tx_event_lock);
 		if (kring->tx_event) {
 			SET_MBUF_DESTRUCTOR(kring->tx_event, NULL);
 		}
 		kring->tx_event = NULL;
-		mtx_unlock(&kring->tx_event_lock);
+		mtx_unlock_spin(&kring->tx_event_lock);
 	}
 
 	if (na->active_fds == 0) {
-		free(gna->mit, M_DEVBUF);
+		nm_os_free(gna->mit);
 
 		for_each_rx_kring(r, kring, na) {
 			mbq_safe_fini(&kring->rx_queue);
@@ -358,7 +405,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 					m_freem(kring->tx_pool[i]);
 				}
 			}
-			free(kring->tx_pool, M_DEVBUF);
+			nm_os_free(kring->tx_pool);
 			kring->tx_pool = NULL;
 		}
 
@@ -397,8 +444,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		 * simplify error management. */
 
 		/* Allocate memory for mitigation support on all the rx queues. */
-		gna->mit = malloc(na->num_rx_rings * sizeof(struct nm_generic_mit),
-				M_DEVBUF, M_NOWAIT | M_ZERO);
+		gna->mit = nm_os_malloc(na->num_rx_rings * sizeof(struct nm_generic_mit));
 		if (!gna->mit) {
 			D("mitigation allocation failed");
 			error = ENOMEM;
@@ -425,8 +471,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 		}
 		for_each_tx_kring(r, kring, na) {
 			kring->tx_pool =
-				malloc(na->num_tx_desc * sizeof(struct mbuf *),
-				       M_DEVBUF, M_NOWAIT | M_ZERO);
+				nm_os_malloc(na->num_tx_desc * sizeof(struct mbuf *));
 			if (!kring->tx_pool) {
 				D("tx_pool allocation failed");
 				error = ENOMEM;
@@ -507,13 +552,13 @@ free_tx_pools:
 		if (kring->tx_pool == NULL) {
 			continue;
 		}
-		free(kring->tx_pool, M_DEVBUF);
+		nm_os_free(kring->tx_pool);
 		kring->tx_pool = NULL;
 	}
 	for_each_rx_kring(r, kring, na) {
 		mbq_safe_fini(&kring->rx_queue);
 	}
-	free(gna->mit, M_DEVBUF);
+	nm_os_free(gna->mit);
 out:
 
 	return error;
@@ -530,6 +575,7 @@ generic_mbuf_destructor(struct mbuf *m)
 	struct netmap_adapter *na = NA(GEN_TX_MBUF_IFP(m));
 	struct netmap_kring *kring;
 	unsigned int r = MBUF_TXQ(m);
+	unsigned int r_orig = r;
 
 	if (unlikely(!nm_netmap_on(na) || r >= na->num_tx_rings)) {
 		D("Error: no netmap adapter on device %p",
@@ -537,25 +583,48 @@ generic_mbuf_destructor(struct mbuf *m)
 		return;
 	}
 
-	/* First, clear the event. */
-	kring = &na->tx_rings[r];
-	mtx_lock(&kring->tx_event_lock);
-	kring->tx_event = NULL;
-	mtx_unlock(&kring->tx_event_lock);
+	/*
+	 * First, clear the event mbuf.
+	 * In principle, the event 'm' should match the one stored
+	 * on ring 'r'. However we check it explicitely to stay
+	 * safe against lower layers (qdisc, driver, etc.) changing
+	 * MBUF_TXQ(m) under our feet. If the match is not found
+	 * on 'r', we try to see if it belongs to some other ring.
+	 */
+        for (;;) {
+		bool match = false;
 
-	/* Second, wake up clients, that will reclaim
-	 * the event through txsync. */
+		kring = &na->tx_rings[r];
+		mtx_lock_spin(&kring->tx_event_lock);
+		if (kring->tx_event == m) {
+			kring->tx_event = NULL;
+			match = true;
+		}
+		mtx_unlock_spin(&kring->tx_event_lock);
+
+		if (match) {
+			if (r != r_orig) {
+				RD(1, "event %p migrated: ring %u --> %u",
+				      m, r_orig, r);
+			}
+			break;
+		}
+
+		if (++r == na->num_tx_rings) r = 0;
+
+		if (r == r_orig) {
+			RD(1, "Cannot match event %p", m);
+			return;
+		}
+	}
+
+	/* Second, wake up clients. They will reclaim the event through
+	 * txsync. */
 	netmap_generic_irq(na, r, NULL);
 #ifdef __FreeBSD__
-	if (netmap_verbose) {
-		RD(5, "Tx irq (%p) queue %d index %d" , m, r,
-		   (int)(uintptr_t)m->m_ext.ext_arg1);
-	}
-	netmap_default_mbuf_destructor(m);
-#endif /* __FreeBSD__ */
+	void_mbuf_dtor(m, NULL, NULL);
+#endif
 }
-
-extern int netmap_adaptive_io;
 
 /* Record completed transmissions and update hwtail.
  *
@@ -598,9 +667,9 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 				int event_consumed;
 
 				/* This slot was used to place an event. */
-				mtx_lock(&kring->tx_event_lock);
+				mtx_lock_spin(&kring->tx_event_lock);
 				event_consumed = (kring->tx_event == NULL);
-				mtx_unlock(&kring->tx_event_lock);
+				mtx_unlock_spin(&kring->tx_event_lock);
 				if (!event_consumed) {
 					/* The event has not been consumed yet,
 					 * still busy in the driver. */
@@ -617,23 +686,6 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 
 		n++;
 		nm_i = nm_next(nm_i, lim);
-#if 0 /* rate adaptation */
-		if (netmap_adaptive_io > 1) {
-			if (n >= netmap_adaptive_io)
-				break;
-		} else if (netmap_adaptive_io) {
-			/* if hwcur - nm_i < lim/8 do an early break
-			 * so we prevent the sender from stalling. See CVT.
-			 */
-			if (hwcur >= nm_i) {
-				if (hwcur - nm_i < lim/2)
-					break;
-			} else {
-				if (hwcur + lim + 1 - nm_i < lim/2)
-					break;
-			}
-		}
-#endif
 	}
 	kring->nr_hwtail = nm_prev(nm_i, lim);
 	ND("tx completed [%d] -> hwtail %d", n, kring->nr_hwtail);
@@ -701,16 +753,16 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 		return;
 	}
 
-	mtx_lock(&kring->tx_event_lock);
+	mtx_lock_spin(&kring->tx_event_lock);
 	if (kring->tx_event) {
 		/* An event is already in place. */
-		mtx_unlock(&kring->tx_event_lock);
+		mtx_unlock_spin(&kring->tx_event_lock);
 		return;
 	}
 
 	SET_MBUF_DESTRUCTOR(m, generic_mbuf_destructor);
 	kring->tx_event = m;
-	mtx_unlock(&kring->tx_event_lock);
+	mtx_unlock_spin(&kring->tx_event_lock);
 
 	kring->tx_pool[e] = NULL;
 
@@ -1148,7 +1200,7 @@ generic_netmap_attach(struct ifnet *ifp)
 		return EINVAL;
 	}
 
-	gna = malloc(sizeof(*gna), M_DEVBUF, M_NOWAIT | M_ZERO);
+	gna = nm_os_malloc(sizeof(*gna));
 	if (gna == NULL) {
 		D("no memory on attach, give up");
 		return ENOMEM;
@@ -1177,7 +1229,7 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	retval = netmap_attach_common(na);
 	if (retval) {
-		free(gna, M_DEVBUF);
+		nm_os_free(gna);
 		return retval;
 	}
 

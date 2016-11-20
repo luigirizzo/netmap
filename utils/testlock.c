@@ -111,7 +111,7 @@ int atomic_cmpset_32(volatile uint32_t *p, uint32_t old, uint32_t new)
 
 #define ONE_MILLION	1000000
 /* debug support */
-#define ND(format, ...)			
+#define ND(format, ...)
 #define D(format, ...)				\
 	fprintf(stderr, "%s [%d] " format "\n",	\
 	__FUNCTION__, __LINE__, ##__VA_ARGS__)
@@ -119,7 +119,7 @@ int atomic_cmpset_32(volatile uint32_t *p, uint32_t old, uint32_t new)
 int verbose = 0;
 
 #if 1//def MY_RDTSC
-/* Wrapper around `rdtsc' to take reliable timestamps flushing the pipeline */ 
+/* Wrapper around `rdtsc' to take reliable timestamps flushing the pipeline */
 #define my_rdtsc(t)				\
 	do {					\
 		u_int __regs[4];		\
@@ -422,7 +422,7 @@ void
 test_cli(struct targ *t)
 {
         int64_t m, i;
-	if (!t->g->privs) {	
+	if (!t->g->privs) {
 		D("%s", "privileged instructions not available");
 		return;
 	}

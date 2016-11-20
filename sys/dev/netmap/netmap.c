@@ -1,5 +1,9 @@
 /*
- * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo. All rights reserved.
+ * Copyright (C) 2011-2014 Matteo Landi
+ * Copyright (C) 2011-2016 Luigi Rizzo
+ * Copyright (C) 2011-2016 Giuseppe Lettieri
+ * Copyright (C) 2011-2016 Vincenzo Maffione
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -479,7 +483,6 @@ static int netmap_no_timestamp; /* don't timestamp on rxsync */
 int netmap_mitigate = 1;
 int netmap_no_pendintr = 1;
 int netmap_txsync_retry = 2;
-int netmap_adaptive_io = 0;
 int netmap_flags = 0;	/* debug flags */
 static int netmap_fwd = 0;	/* force transparent mode */
 
@@ -536,8 +539,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr,
     CTLFLAG_RW, &netmap_no_pendintr, 0, "Always look for new received packets.");
 SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
     &netmap_txsync_retry, 0 , "Number of txsync loops in bridge's flush.");
-SYSCTL_INT(_dev_netmap, OID_AUTO, adaptive_io, CTLFLAG_RW,
-    &netmap_adaptive_io, 0 , "Adaptive I/O on paravirt");
 
 SYSCTL_INT(_dev_netmap, OID_AUTO, flags, CTLFLAG_RW, &netmap_flags, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0 , "");
@@ -806,7 +807,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 
 	len = (n[NR_TX] + n[NR_RX]) * sizeof(struct netmap_kring) + tailroom;
 
-	na->tx_rings = malloc((size_t)len, M_DEVBUF, M_NOWAIT | M_ZERO);
+	na->tx_rings = nm_os_malloc((size_t)len);
 	if (na->tx_rings == NULL) {
 		D("Cannot allocate krings");
 		return ENOMEM;
@@ -873,7 +874,7 @@ netmap_krings_delete(struct netmap_adapter *na)
 		mtx_destroy(&kring->q_lock);
 		nm_os_selinfo_uninit(&kring->si);
 	}
-	free(na->tx_rings, M_DEVBUF);
+	nm_os_free(na->tx_rings);
 	na->tx_rings = na->rx_rings = na->tailroom = NULL;
 }
 
@@ -982,8 +983,7 @@ netmap_priv_new(void)
 {
 	struct netmap_priv_d *priv;
 
-	priv = malloc(sizeof(struct netmap_priv_d), M_DEVBUF,
-			      M_NOWAIT | M_ZERO);
+	priv = nm_os_malloc(sizeof(struct netmap_priv_d));
 	if (priv == NULL)
 		return NULL;
 	priv->np_refs = 1;
@@ -1015,7 +1015,7 @@ netmap_priv_delete(struct netmap_priv_d *priv)
 	}
 	netmap_unget_na(na, priv->np_ifp);
 	bzero(priv, sizeof(*priv));	/* for safety */
-	free(priv, M_DEVBUF);
+	nm_os_free(priv);
 }
 
 
@@ -1555,7 +1555,7 @@ nm_txsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 		}
 	}
 	if (ring->tail != kring->rtail) {
-		RD(5, "tail overwritten was %d need %d",
+		RD(5, "%s tail overwritten was %d need %d", kring->name,
 			ring->tail, kring->rtail);
 		ring->tail = kring->rtail;
 	}
@@ -1624,6 +1624,7 @@ nm_rxsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 	}
 	return head;
 }
+
 
 /*
  * Error routine called when txsync/rxsync detects an error.
@@ -2082,6 +2083,7 @@ err:
 	return error;
 }
 
+
 /*
  * update kring and ring at the end of rxsync/txsync.
  */
@@ -2098,6 +2100,29 @@ nm_sync_finalize(struct netmap_kring *kring)
 	ND(5, "%s now hwcur %d hwtail %d head %d cur %d tail %d",
 		kring->name, kring->nr_hwcur, kring->nr_hwtail,
 		kring->rhead, kring->rcur, kring->rtail);
+}
+
+static int
+nm_override_mem(struct netmap_adapter *na, nm_memid_t id)
+{
+	struct netmap_mem_d *nmd;
+
+	if (id == 0 || netmap_mem_get_id(na->nm_mem) == id)
+		return 0;
+
+	if (na->na_flags & NAF_MEM_OWNER)
+		return EINVAL;
+
+	if (na->active_fds > 0)
+		return EBUSY;
+
+	nmd = netmap_mem_find(id);
+	if (nmd == NULL)
+		return ENOENT;
+
+	netmap_mem_put(na->nm_mem);
+	na->nm_mem = nmd;
+	return 0;
 }
 
 /*
@@ -2164,6 +2189,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				nmd = na->nm_mem; /* get memory allocator */
 			}
 
+			error = nm_override_mem(na, nmr->nr_arg2);
+			if (error) {
+				netmap_unget_na(na, ifp);
+				break;
+			}
+
 			error = netmap_mem_get_info(nmd, &nmr->nr_memsize, &memflags,
 				&nmr->nr_arg2);
 			if (error)
@@ -2183,7 +2214,11 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		break;
 
 	case NIOCREGIF:
-		/* possibly attach/detach NIC and VALE switch */
+		/*
+		 * If nmr->nr_cmd is not zero, this NIOCREGIF is not really
+		 * a regif operation, but a different one, specified by the
+		 * value of nmr->nr_cmd.
+		 */
 		i = nmr->nr_cmd;
 		if (i == NETMAP_BDG_ATTACH || i == NETMAP_BDG_DETACH
 				|| i == NETMAP_BDG_VNET_HDR
@@ -2191,12 +2226,15 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				|| i == NETMAP_BDG_DELIF
 				|| i == NETMAP_BDG_POLLING_ON
 				|| i == NETMAP_BDG_POLLING_OFF) {
+			/* possibly attach/detach NIC and VALE switch */
 			error = netmap_bdg_ctl(nmr, NULL);
 			break;
 		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
+			/* forward the command to the ptnetmap subsystem */
 			error = ptnetmap_ctl(nmr, priv->np_na);
 			break;
 		} else if (i == NETMAP_VNET_HDR_GET) {
+			/* get vnet-header length for this netmap port */
 			struct ifnet *ifp;
 
 			NMG_LOCK();
@@ -2206,6 +2244,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			}
 			netmap_unget_na(na, ifp);
 			NMG_UNLOCK();
+			break;
+		} else if (i == NETMAP_POOLS_INFO_GET) {
+			/* get information from the memory allocator */
+			error = netmap_mem_pools_info_get(nmr, priv->np_na);
 			break;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);
@@ -2237,6 +2279,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			if (na->virt_hdr_len && !(nmr->nr_flags & NR_ACCEPT_VNET_HDR)) {
 				netmap_unget_na(na, ifp);
 				error = EIO;
+				break;
+			}
+
+			error = nm_override_mem(na, nmr->nr_arg2);
+			if (error) {
+				netmap_unget_na(na, ifp);
 				break;
 			}
 
@@ -2386,6 +2434,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 
 	return (error);
 }
+
 
 /*
  * select(2) and poll(2) handlers for the "netmap" device.
@@ -2714,10 +2763,10 @@ netmap_attach_common(struct netmap_adapter *na)
 		na->nm_notify = netmap_notify;
 	na->active_fds = 0;
 
-	if (na->nm_mem == NULL)
+	if (na->nm_mem == NULL) {
 		/* use the global allocator */
-		na->nm_mem = &nm_mem;
-	netmap_mem_get(na->nm_mem);
+		na->nm_mem = netmap_mem_get(&nm_mem);
+	}
 #ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
 		/* no special nm_bdg_attach callback. On VALE
@@ -2742,7 +2791,7 @@ netmap_detach_common(struct netmap_adapter *na)
 	if (na->nm_mem)
 		netmap_mem_put(na->nm_mem);
 	bzero(na, sizeof(*na));
-	free(na, M_DEVBUF);
+	nm_os_free(na);
 }
 
 /* Wrapper for the register callback provided netmap-enabled
@@ -2808,7 +2857,7 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	if (arg == NULL || arg->ifp == NULL)
 		goto fail;
 	ifp = arg->ifp;
-	hwna = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
+	hwna = nm_os_malloc(size);
 	if (hwna == NULL)
 		goto fail;
 	hwna->up = *arg;
@@ -2817,7 +2866,7 @@ _netmap_attach(struct netmap_adapter *arg, size_t size)
 	hwna->nm_hw_register = hwna->up.nm_register;
 	hwna->up.nm_register = netmap_hw_reg;
 	if (netmap_attach_common(&hwna->up)) {
-		free(hwna, M_DEVBUF);
+		nm_os_free(hwna);
 		goto fail;
 	}
 	netmap_adapter_get(&hwna->up);
@@ -2869,17 +2918,15 @@ netmap_attach(struct netmap_adapter *arg)
 
 #ifdef WITH_PTNETMAP_GUEST
 int
-netmap_pt_guest_attach(struct netmap_adapter *arg,
-		       void *csb,
-		       unsigned int nifp_offset,
-		       nm_pt_guest_ptctl_t ptctl)
+netmap_pt_guest_attach(struct netmap_adapter *arg, void *csb,
+		       unsigned int nifp_offset, unsigned int memid)
 {
 	struct netmap_pt_guest_adapter *ptna;
 	struct ifnet *ifp = arg ? arg->ifp : NULL;
 	int error;
 
 	/* get allocator */
-	arg->nm_mem = netmap_mem_pt_guest_new(ifp, nifp_offset, ptctl);
+	arg->nm_mem = netmap_mem_pt_guest_new(ifp, nifp_offset, memid);
 	if (arg->nm_mem == NULL)
 		return ENOMEM;
 	arg->na_flags |= NAF_MEM_OWNER;
@@ -2896,8 +2943,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
          * applications. We only need a subset of the available fields. */
 	memset(&ptna->dr, 0, sizeof(ptna->dr));
 	ptna->dr.up.ifp = ifp;
-	ptna->dr.up.nm_mem = ptna->hwup.up.nm_mem;
-	netmap_mem_get(ptna->dr.up.nm_mem);
+	ptna->dr.up.nm_mem = netmap_mem_get(ptna->hwup.up.nm_mem);
         ptna->dr.up.nm_config = ptna->hwup.up.nm_config;
 
 	ptna->backend_regifs = 0;
@@ -3004,9 +3050,9 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct netmap_kring *kring, *tx_kring;
 	u_int len = MBUF_LEN(m);
 	u_int error = ENOBUFS;
+	unsigned int txr;
 	struct mbq *q;
 	int space;
-	int txr;
 
 	kring = &na->rx_rings[na->num_rx_rings];
 	// XXX [Linux] we do not need this lock
@@ -3020,6 +3066,9 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	txr = MBUF_TXQ(m);
+	if (txr >= na->num_tx_rings) {
+		txr %= na->num_tx_rings;
+	}
 	tx_kring = &NMR(na, NR_TX)[txr];
 
 	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
@@ -3036,7 +3085,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	if (nm_os_mbuf_has_offld(m)) {
-		D("%s drop mbuf requiring offloadings", na->name);
+		RD(1, "%s drop mbuf requiring offloadings", na->name);
 		goto done;
 	}
 

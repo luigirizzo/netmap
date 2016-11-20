@@ -102,6 +102,10 @@ typedef unsigned __int64	uint64_t;
 typedef uint32_t		u_int;
 typedef ULONG			u_long;
 typedef SSIZE_T			ssize_t;
+typedef int                     bool;
+
+#define true    1
+#define false   0
 
 
 struct timeval {
@@ -305,7 +309,11 @@ typedef struct _FUNCTION_POINTER_XCHANGE {
 #define MBUF_REFCNT(a)				1
 #define	SET_MBUF_DESTRUCTOR(a,b)		a->netmap_default_mbuf_destructor = b;// XXX must be set to enable tx notifications
 #define MBUF_QUEUED(m)				1
-#define GEN_TX_MBUF_IFP(m)				m->dev
+#define GEN_TX_MBUF_IFP(m)			m->dev
+#define MBUF_LEN(m)				((m)->m_len)
+#define MBUF_TXQ(m)                             0
+
+int MBUF_TRANSMIT(struct netmap_adapter *na, struct ifnet *ifp, struct mbuf *m);
 
 void win32_init_lookaside_buffers(struct net_device *ifp);
 void win32_clear_lookaside_buffers(struct net_device *ifp);
@@ -386,7 +394,6 @@ win32_ndis_packet_freem(struct mbuf* m)
 	}	
 }
 
-#define MBUF_LEN(m)					((m)->m_len)
 /*
  * m_devget() is used to construct an mbuf from a host ring to the host stack
  */

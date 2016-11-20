@@ -23,14 +23,14 @@
  * SUCH DAMAGE.
  */
 
-/* $FreeBSD$ */
+/* $FreeBSD: head/sys/dev/netmap/netmap_freebsd.c 307706 2016-10-21 06:32:45Z sephe $ */
 #include "opt_inet.h"
 #include "opt_inet6.h"
 
-#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/module.h>
 #include <sys/errno.h>
-#include <sys/param.h>  /* defines used in kernel.h */
+#include <sys/jail.h>
 #include <sys/poll.h>  /* POLLIN, POLLOUT */
 #include <sys/kernel.h> /* types used in module initialization */
 #include <sys/conf.h>	/* DEV_MODULE_ORDERED */
@@ -87,6 +87,24 @@ nm_os_selinfo_uninit(NM_SELINFO_T *si)
 	knlist_destroy(&si->si.si_note);
 	/* now we don't need the mutex anymore */
 	mtx_destroy(&si->m);
+}
+
+void *
+nm_os_malloc(size_t size)
+{
+	return malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
+}
+
+void *
+nm_os_realloc(void *addr, size_t new_size, size_t old_size __unused)
+{
+	return realloc(addr, new_size, M_DEVBUF, M_NOWAIT | M_ZERO);	
+}
+
+void
+nm_os_free(void *addr)
+{
+	free(addr, M_DEVBUF);
 }
 
 void
@@ -337,29 +355,32 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	struct ifnet *ifp = a->ifp;
 	struct mbuf *m = a->m;
 
+#if __FreeBSD_version < 1100000
 	/*
-	 * The mbuf should be a cluster from our special pool,
-	 * so we do not need to do an m_copyback but just copy
-	 * (and eventually, just reference the netmap buffer)
+	 * Old FreeBSD versions. The mbuf has a cluster attached,
+	 * we need to copy from the cluster to the netmap buffer.
 	 */
-
 	if (MBUF_REFCNT(m) != 1) {
 		D("invalid refcnt %d for %p", MBUF_REFCNT(m), m);
 		panic("in generic_xmit_frame");
 	}
-	// XXX the ext_size check is unnecessary if we link the netmap buf
 	if (m->m_ext.ext_size < len) {
 		RD(5, "size %d < len %d", m->m_ext.ext_size, len);
 		len = m->m_ext.ext_size;
 	}
-	if (0) { /* XXX seems to have negligible benefits */
-		m->m_ext.ext_buf = m->m_data = a->addr;
-	} else {
-		bcopy(a->addr, m->m_data, len);
-	}
+	bcopy(a->addr, m->m_data, len);
+#else  /* __FreeBSD_version >= 1100000 */
+	/* New FreeBSD versions. Link the external storage to
+	 * the netmap buffer, so that no copy is necessary. */
+	m->m_ext.ext_buf = m->m_data = a->addr;
+	m->m_ext.ext_size = len;
+#endif /* __FreeBSD_version >= 1100000 */
+
 	m->m_len = m->m_pkthdr.len = len;
-	// inc refcount. All ours, we could skip the atomic
-	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
+
+	/* mbuf refcnt is not contended, no need to use atomic
+	 * (a memory barrier is enough). */
+	SET_MBUF_REFCNT(m, 2);
 	M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
 	m->m_pkthdr.flowid = a->ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */
@@ -623,37 +644,26 @@ DRIVER_MODULE_ORDERED(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
 		      NULL, NULL, SI_ORDER_MIDDLE + 1);
 
 /*
- * I/O port read/write wrappers.
- * Some are not used, so we keep them commented out until needed
- */
-#define ptn_ioread16(ptn_dev, reg)		bus_read_2((ptn_dev)->pci_io, (reg))
-#define ptn_ioread32(ptn_dev, reg)		bus_read_4((ptn_dev)->pci_io, (reg))
-#if 0
-#define ptn_ioread8(ptn_dev, reg)		bus_read_1((ptn_dev)->pci_io, (reg))
-#define ptn_iowrite8(ptn_dev, reg, val)		bus_write_1((ptn_dev)->pci_io, (reg), (val))
-#define ptn_iowrite16(ptn_dev, reg, val)	bus_write_2((ptn_dev)->pci_io, (reg), (val))
-#define ptn_iowrite32(ptn_dev, reg, val)	bus_write_4((ptn_dev)->pci_io, (reg), (val))
-#endif /* unused */
-
-/*
  * Map host netmap memory through PCI-BAR in the guest OS,
  * returning physical (nm_paddr) and virtual (nm_addr) addresses
  * of the netmap memory mapped in the guest.
  */
 int
-nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, void **nm_addr)
+nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
+		      void **nm_addr, uint64_t *mem_size)
 {
-	uint32_t mem_size;
 	int rid;
 
 	D("ptn_memdev_driver iomap");
 
 	rid = PCIR_BAR(PTNETMAP_MEM_PCI_BAR);
-	mem_size = ptn_ioread32(ptn_dev, PTNETMAP_IO_PCI_MEMSIZE);
+	*mem_size = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMSIZE_HI);
+	*mem_size = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMSIZE_LO) |
+			(*mem_size << 32);
 
 	/* map memory allocator */
 	ptn_dev->pci_mem = bus_alloc_resource(ptn_dev->dev, SYS_RES_MEMORY,
-			&rid, 0, ~0, mem_size, RF_ACTIVE);
+			&rid, 0, ~0, *mem_size, RF_ACTIVE);
 	if (ptn_dev->pci_mem == NULL) {
 		*nm_paddr = 0;
 		*nm_addr = 0;
@@ -663,12 +673,18 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr, voi
 	*nm_paddr = rman_get_start(ptn_dev->pci_mem);
 	*nm_addr = rman_get_virtual(ptn_dev->pci_mem);
 
-	D("=== BAR %d start %lx len %lx mem_size %x ===",
+	D("=== BAR %d start %lx len %lx mem_size %lx ===",
 			PTNETMAP_MEM_PCI_BAR,
-			*nm_paddr,
-			rman_get_size(ptn_dev->pci_mem),
-			mem_size);
+			(unsigned long)(*nm_paddr),
+			(unsigned long)rman_get_size(ptn_dev->pci_mem),
+			(unsigned long)*mem_size);
 	return (0);
+}
+
+uint32_t
+nm_os_pt_memdev_ioread(struct ptnetmap_memdev *ptn_dev, unsigned int reg)
+{
+	return bus_read_4(ptn_dev->pci_io, reg);
 }
 
 /* Unmap host netmap memory. */
@@ -726,7 +742,7 @@ ptn_memdev_attach(device_t dev)
 	        return (ENXIO);
 	}
 
-	mem_id = ptn_ioread16(ptn_dev, PTNETMAP_IO_PCI_HOSTID);
+	mem_id = bus_read_4(ptn_dev->pci_io, PTNET_MDEV_IO_MEMID);
 
 	/* create guest allocator */
 	ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
@@ -736,7 +752,7 @@ ptn_memdev_attach(device_t dev)
 	}
 	netmap_mem_get(ptn_dev->nm_mem);
 
-	D("ptn_memdev_driver probe OK - host_id: %d", mem_id);
+	D("ptn_memdev_driver probe OK - host_mem_id: %d", mem_id);
 
 	return (0);
 }
@@ -989,12 +1005,7 @@ nm_os_ncpus(void)
 
 struct nm_kthread_ctx {
 	struct thread *user_td;		/* thread user-space (kthread creator) to send ioctl */
-	/* notification to guest (interrupt) */
-	int irq_fd;		/* ioctl fd */
-	struct nm_kth_ioctl irq_ioctl;	/* ioctl arguments */
-
-	/* notification from guest */
-	void *ioevent_file; 		/* tsleep() argument */
+	struct ptnetmap_cfgentry_bhyve	cfg;
 
 	/* worker function and parameter */
 	nm_kthread_worker_fn_t worker_fn;
@@ -1030,8 +1041,8 @@ nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
 	 */
 	mtx_lock(&nmk->worker_lock);
 	nmk->scheduled++;
-	if (nmk->worker_ctx.ioevent_file) {
-		wakeup(nmk->worker_ctx.ioevent_file);
+	if (nmk->worker_ctx.cfg.wchan) {
+		wakeup((void *)nmk->worker_ctx.cfg.wchan);
 	}
 	mtx_unlock(&nmk->worker_lock);
 }
@@ -1042,11 +1053,13 @@ nm_os_kthread_send_irq(struct nm_kthread *nmk)
 	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
 	int err;
 
-	if (ctx->user_td && ctx->irq_fd > 0) {
-		err = kern_ioctl(ctx->user_td, ctx->irq_fd, ctx->irq_ioctl.com, (caddr_t)&ctx->irq_ioctl.data.msix);
+	if (ctx->user_td && ctx->cfg.ioctl_fd > 0) {
+		err = kern_ioctl(ctx->user_td, ctx->cfg.ioctl_fd, ctx->cfg.ioctl_cmd,
+				 (caddr_t)&ctx->cfg.ioctl_data);
 		if (err) {
 			D("kern_ioctl error: %d ioctl parameters: fd %d com %lu data %p",
-				err, ctx->irq_fd, ctx->irq_ioctl.com, &ctx->irq_ioctl.data);
+				err, ctx->cfg.ioctl_fd, (unsigned long)ctx->cfg.ioctl_cmd,
+				&ctx->cfg.ioctl_data);
 		}
 	}
 }
@@ -1078,10 +1091,10 @@ nm_kthread_worker(void *data)
 		}
 
 		/*
-		 * if ioevent_file is not defined, we don't have notification
+		 * if wchan is not defined, we don't have notification
 		 * mechanism and we continually execute worker_fn()
 		 */
-		if (!ctx->ioevent_file) {
+		if (!ctx->cfg.wchan) {
 			ctx->worker_fn(ctx->worker_private); /* worker body */
 		} else {
 			/* checks if there is a pending notification */
@@ -1095,7 +1108,7 @@ nm_kthread_worker(void *data)
 				continue;
 			} else if (nmk->run) {
 				/* wait on event with one second timeout */
-				msleep_spin(ctx->ioevent_file, &nmk->worker_lock,
+				msleep_spin((void *)ctx->cfg.wchan, &nmk->worker_lock,
 					    "nmk_ev", hz);
 				nmk->scheduled++;
 			}
@@ -1106,29 +1119,6 @@ nm_kthread_worker(void *data)
 	kthread_exit();
 }
 
-static int
-nm_kthread_open_files(struct nm_kthread *nmk, struct nm_kthread_cfg *cfg)
-{
-	/* send irq through ioctl to bhyve (vmm.ko) */
-	if (cfg->event.irqfd) {
-		nmk->worker_ctx.irq_fd = cfg->event.irqfd;
-		nmk->worker_ctx.irq_ioctl = cfg->event.ioctl;
-	}
-	/* ring.ioeventfd contains the chan where do tsleep to wait events */
-	if (cfg->event.ioeventfd) {
-		nmk->worker_ctx.ioevent_file = (void *)cfg->event.ioeventfd;
-	}
-
-	return 0;
-}
-
-static void
-nm_kthread_close_files(struct nm_kthread *nmk)
-{
-	nmk->worker_ctx.irq_fd = 0;
-	nmk->worker_ctx.ioevent_file = NULL;
-}
-
 void
 nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
 {
@@ -1136,10 +1126,15 @@ nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
 }
 
 struct nm_kthread *
-nm_os_kthread_create(struct nm_kthread_cfg *cfg)
+nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
+		     void *opaque)
 {
 	struct nm_kthread *nmk = NULL;
-	int error;
+
+	if (cfgtype != PTNETMAP_CFGTYPE_BHYVE) {
+		D("Unsupported cfgtype %u", cfgtype);
+		return NULL;
+	}
 
 	nmk = malloc(sizeof(*nmk),  M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (!nmk)
@@ -1154,15 +1149,12 @@ nm_os_kthread_create(struct nm_kthread_cfg *cfg)
 	/* attach kthread to user process (ptnetmap) */
 	nmk->attach_user = cfg->attach_user;
 
-	/* open event fd */
-	error = nm_kthread_open_files(nmk, cfg);
-	if (error)
-		goto err;
+	/* store kick/interrupt configuration */
+	if (opaque) {
+		nmk->worker_ctx.cfg = *((struct ptnetmap_cfgentry_bhyve *)opaque);
+	}
 
 	return nmk;
-err:
-	free(nmk, M_DEVBUF);
-	return NULL;
 }
 
 int
@@ -1190,7 +1182,7 @@ nm_os_kthread_start(struct nm_kthread *nmk)
 		goto err;
 	}
 
-	D("nm_kthread started td 0x%p", nmk->worker);
+	D("nm_kthread started td %p", nmk->worker);
 
 	return 0;
 err:
@@ -1224,7 +1216,7 @@ nm_os_kthread_delete(struct nm_kthread *nmk)
 		nm_os_kthread_stop(nmk);
 	}
 
-	nm_kthread_close_files(nmk);
+	memset(&nmk->worker_ctx.cfg, 0, sizeof(nmk->worker_ctx.cfg));
 
 	free(nmk, M_DEVBUF);
 }
@@ -1403,7 +1395,7 @@ freebsd_netmap_ioctl(struct cdev *dev __unused, u_long cmd, caddr_t data,
 	int error;
 	struct netmap_priv_d *priv;
 
-	CURVNET_SET(TD_TO_VNET(rd));
+	CURVNET_SET(TD_TO_VNET(td));
 	error = devfs_get_cdevpriv((void **)&priv);
 	if (error) {
 		/* XXX ENOENT should be impossible, since the priv

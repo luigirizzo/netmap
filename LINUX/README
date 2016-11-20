@@ -18,7 +18,7 @@ of the code and documentation as well as pre-built TinyCore
 images based on linux 3.0.3 and containing the netmap modules
 and some test applications.
 
-This version supports r8169, ixgbe, igb, e1000, e1000e and forcedeth.
+This version supports r8169, ixgbe, igb, i40e, e1000, e1000e and forcedeth.
 
 Netmap relies on a kernel module (netmap.ko) and slightly modified
 device drivers. Userspace programs can use the native API (documented
@@ -28,9 +28,16 @@ The FreeBSD and Linux versions share the same codebase, which
 is located in ../sys . For Linux we use some additional glue code,
 (bsd_glue.h).
 
-Device drivers are taken directly from the Linux distributions,
-and patched using the files in the patches/ directory.
-Common driver modifications are in the .h files in this directory.
+Device drivers are taken directly from either the Linux distributions,
+or the Intel out-of-tree drivers, and patched using the files in
+the patches/ directory.  Common driver modifications are in the .h
+files in this directory. Note that the patches for e1000, forcedeth,
+virtio-net have been prepared on the vanilla kernel: this is usually
+sufficient for Debian/Ubuntu, but it often fails on Red Hat/CentOS.
+The patches for igb, e1000e, ixgbe and i40e, instead, are against
+a specific version of the out-of-tree Intel drivers, and should compile
+without any problem on the same systems where the original drivers do.
+
 
 
 HOW TO BUILD THE CODE
@@ -38,23 +45,22 @@ HOW TO BUILD THE CODE
 
 1. make sure you have kernel sources/headers matching your installed system
 
-2. do the following
+2. do the following (either here, or in the parent directory)
 	./configure
 	make
    this produces ./netmap.ko and other kernel modules.
    (If your kernel sources are not in standard places, follow the
     instructions in the errors output by ./configure)
 
-3. to build sample applications, run
-	make apps
-   (you will need the pthreads and libpcap-dev packages to build them)
+   This also builds a few netmap applications.  (you will need the
+   pthreads and libpcap-dev packages to build them)
 
 If you want support for additional drivers please have a look at
 ixgbe_netmap_linux.h and the patches in patches/
 The patch file are named as diff--DRIVER--LOW--HIGH--otherstuff
 where DRIVER is the driver name to patch, LOW and HIGH are the
 versions to which the patch applies (LOW included, HIGH excluded, so
-diff--r8169.c--20638--30300--ok applies from 2.6.38 to 3.3.0 (excluded)
+vanilla--r8169.c--20638--30300--ok applies from 2.6.38 to 3.3.0 (excluded)
 
 HOW TO USE THE CODE
 -------------------

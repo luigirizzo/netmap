@@ -66,7 +66,7 @@ typedef struct vlanhdr {
 } vlanhdr;
 /*---------------------------------------------------------------------*/
 /**
- ** Analyzes the packet header of computes a corresponding 
+ ** Analyzes the packet header of computes a corresponding
  ** hash function.
  **/
 uint32_t

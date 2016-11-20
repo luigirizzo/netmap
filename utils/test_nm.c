@@ -29,7 +29,7 @@ main(int argc, char *argv[])
 	struct pollfd pfd;
 	char buf[2048];
 	int count = 0;
-	
+
 	if (argc < 2) {
 		usage(argv[0]);
 	}

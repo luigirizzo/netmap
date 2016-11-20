@@ -1,6 +1,7 @@
 /*
- * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo. All rights reserved.
- * Copyright (C) 2013-2014 Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo
+ * Copyright (C) 2013-2016 Universita` di Pisa
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -54,6 +55,9 @@
 #if defined(CONFIG_NETMAP_PTNETMAP_HOST)
 #define WITH_PTNETMAP_HOST
 #endif
+#if defined(CONFIG_NETMAP_SINK)
+#define WITH_SINK
+#endif
 
 #elif defined (_WIN32)
 #define WITH_VALE	// comment out to disable VALE support
@@ -72,6 +76,7 @@
 #endif
 
 #if defined(__FreeBSD__)
+#include <sys/selinfo.h>
 
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
@@ -110,13 +115,11 @@ struct netmap_adapter *netmap_getna(if_t ifp);
 #endif
 
 #if __FreeBSD_version >= 1100027
-#define MBUF_REFCNT(m)		((m)->m_ext.ext_cnt ? *((m)->m_ext.ext_cnt) : -1)
-#define SET_MBUF_REFCNT(m, x)   *((m)->m_ext.ext_cnt) = x
-#define PNT_MBUF_REFCNT(m)      ((m)->m_ext.ext_cnt)
+#define MBUF_REFCNT(m)		((m)->m_ext.ext_count)
+#define SET_MBUF_REFCNT(m, x)   (m)->m_ext.ext_count = x
 #else
 #define MBUF_REFCNT(m)		((m)->m_ext.ref_cnt ? *((m)->m_ext.ref_cnt) : -1)
 #define SET_MBUF_REFCNT(m, x)   *((m)->m_ext.ref_cnt) = x
-#define PNT_MBUF_REFCNT(m)      ((m)->m_ext.ref_cnt)
 #endif
 
 #define MBUF_QUEUED(m)		1
@@ -286,6 +289,11 @@ void nm_os_put_module(void);
 
 void netmap_make_zombie(struct ifnet *);
 void netmap_undo_zombie(struct ifnet *);
+
+/* os independent alloc/realloc/free */
+void *nm_os_malloc(size_t);
+void *nm_os_realloc(void *, size_t new_size, size_t old_size);
+void nm_os_free(void *);
 
 /* passes a packet up to the host stack.
  * If the packet is sent (or dropped) immediately it returns NULL,
@@ -1413,8 +1421,6 @@ u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 #define	NM_BDG_BROADCAST	NM_BDG_MAXPORTS
 #define	NM_BDG_NOPORT		(NM_BDG_MAXPORTS+1)
 
-#define	NM_NAME			"vale"	/* prefix for bridge port name */
-
 /* these are redefined in case of no VALE support */
 int netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create);
 struct nm_bridge *netmap_init_bridges2(u_int);
@@ -1514,9 +1520,9 @@ int netmap_adapter_put(struct netmap_adapter *na);
  */
 #define NETMAP_BUF_BASE(_na)	((_na)->na_lut.lut[0].vaddr)
 #define NETMAP_BUF_SIZE(_na)	((_na)->na_lut.objsize)
-extern int netmap_mitigate;	// XXX not really used
 extern int netmap_no_pendintr;
-extern int netmap_verbose;	// XXX debugging
+extern int netmap_mitigate;
+extern int netmap_verbose;		/* for debugging */
 enum {                                  /* verbose flags */
 	NM_VERB_ON = 1,                 /* generic verbose */
 	NM_VERB_HOST = 0x2,             /* verbose host stack */
@@ -1529,7 +1535,6 @@ enum {                                  /* verbose flags */
 };
 
 extern int netmap_txsync_retry;
-extern int netmap_adaptive_io;
 extern int netmap_flags;
 extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
@@ -2012,13 +2017,14 @@ typedef void (*nm_kthread_worker_fn_t)(void *data);
 /* kthread configuration */
 struct nm_kthread_cfg {
 	long				type;		/* kthread type/identifier */
-	struct ptnet_ring_cfg		event;		/* event/ioctl fd */
 	nm_kthread_worker_fn_t		worker_fn;	/* worker function */
 	void				*worker_private;/* worker parameter */
 	int				attach_user;	/* attach kthread to user process */
 };
 /* kthread configuration */
-struct nm_kthread *nm_os_kthread_create(struct nm_kthread_cfg *cfg);
+struct nm_kthread *nm_os_kthread_create(struct nm_kthread_cfg *cfg,
+					unsigned int cfgtype,
+					void *opaque);
 int nm_os_kthread_start(struct nm_kthread *);
 void nm_os_kthread_stop(struct nm_kthread *);
 void nm_os_kthread_delete(struct nm_kthread *);
@@ -2056,8 +2062,6 @@ nm_ptnetmap_host_on(struct netmap_adapter *na)
 #ifdef WITH_PTNETMAP_GUEST
 /* ptnetmap GUEST routines */
 
-typedef uint32_t (*nm_pt_guest_ptctl_t)(struct ifnet *, uint32_t);
-
 /*
  * netmap adapter for guest ptnetmap ports
  */
@@ -2079,8 +2083,8 @@ struct netmap_pt_guest_adapter {
 
 };
 
-int netmap_pt_guest_attach(struct netmap_adapter *, void *,
-			   unsigned int, nm_pt_guest_ptctl_t);
+int netmap_pt_guest_attach(struct netmap_adapter *na, void *csb,
+			   unsigned int nifp_offset, unsigned int memid);
 struct ptnet_ring;
 bool netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 			    int flags);

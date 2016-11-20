@@ -88,7 +88,10 @@ struct compact_ipv6_hdr {
 
 struct {
 	char ifname[MAX_IFNAMELEN];
+	char base_name[MAX_IFNAMELEN];
+	int netmap_fd;
 	uint16_t output_rings;
+	uint16_t num_groups;
 	uint32_t extra_bufs;
 	uint16_t batch;
 	int syslog_interval;
@@ -106,10 +109,24 @@ struct overflow_queue {
 	uint32_t size;
 };
 
+struct overflow_queue *freeq;
+
+static inline int
+oq_full(struct overflow_queue *q)
+{
+	return q->n >= q->size;
+}
+
+static inline int
+oq_empty(struct overflow_queue *q)
+{
+	return q->n <= 0;
+}
+
 static inline void
 oq_enq(struct overflow_queue *q, const struct netmap_slot *s)
 {
-	if (unlikely(q->n >= q->size)) {
+	if (unlikely(oq_full(q))) {
 		D("%s: queue full!", q->name);
 		abort();
 	}
@@ -124,7 +141,7 @@ static inline struct netmap_slot
 oq_deq(struct overflow_queue *q)
 {
 	struct netmap_slot s = q->slots[q->head];
-	if (unlikely(q->n <= 0)) {
+	if (unlikely(oq_empty(q))) {
 		D("%s: queue empty!", q->name);
 		abort();
 	}
@@ -147,9 +164,22 @@ struct port_des {
 	struct overflow_queue *oq;
 	struct nm_desc *nmd;
 	struct netmap_ring *ring;
+	struct group_des *group;
 };
 
 struct port_des *ports;
+
+/* each group of pipes receives all the packets */
+struct group_des {
+	char pipename[MAX_IFNAMELEN];
+	struct port_des *ports;
+	int first_id;
+	int nports;
+	int last;
+	int custom_port;
+};
+
+struct group_des *groups;
 
 static void *
 print_stats(void *arg)
@@ -271,16 +301,270 @@ void usage()
 {
 	printf("usage: lb [options]\n");
 	printf("where options are:\n");
-	printf("  -i iface        interface name (required)\n");
-	printf("  -p npipes       number of output pipes (default: %d)\n", DEF_OUT_PIPES);
-	printf("  -B nbufs        number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
-	printf("  -b batch        batch size (default: %d)\n", DEF_BATCH);
-	printf("  -s seconds      seconds between syslog messages (default: %d)\n",
+	printf("  -i iface        	interface name (required)\n");
+	printf("  -p [prefix:]npipes	add a new group of output pipes\n");
+	printf("  -B nbufs        	number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
+	printf("  -b batch        	batch size (default: %d)\n", DEF_BATCH);
+	printf("  -s seconds      	seconds between syslog messages (default: %d)\n",
 			DEF_SYSLOG_INT);
 	exit(0);
 }
 
+static int
+parse_pipes(char *spec)
+{
+	char *end = index(spec, ':');
+	static int max_groups = 0;
+	struct group_des *g;
+       
+	ND("spec %s num_groups %d", spec, glob_arg.num_groups);
+	if (max_groups < glob_arg.num_groups + 1) {
+		size_t size = sizeof(*g) * (glob_arg.num_groups + 1);
+		groups = realloc(groups, size);
+		if (groups == NULL) {
+			D("out of memory");
+			return 1;
+		}
+	}
+	g = &groups[glob_arg.num_groups];
+	memset(g, 0, sizeof(*g));
 
+	if (end != NULL) {
+		if (end - spec > MAX_IFNAMELEN - 8) {
+			D("name '%s' too long", spec);
+			return 1;
+		}
+		if (end == spec) {
+			D("missing prefix before ':' in '%s'", spec);
+			return 1;
+		}
+		strncpy(g->pipename, spec, end - spec);
+		g->custom_port = 1;
+		end++;
+	} else {
+		/* no prefix, this group will use the
+		 * name of the input port.
+		 * This will be set in init_groups(),
+		 * since here the input port may still
+		 * be uninitialized
+		 */
+		end = spec;
+	}
+	if (*end == '\0') {
+		g->nports = DEF_OUT_PIPES;
+	} else {
+		g->nports = atoi(end);
+		if (g->nports < 1) {
+			D("invalid number of pipes '%s' (must be at least 1)", end);
+			return 1;
+		}
+	}
+	glob_arg.output_rings += g->nports;
+	glob_arg.num_groups++;
+	return 0;
+}
+
+static void delete_custom_ports(void);
+/* create a persistent vale port or reuse an existing one.
+ * Returns 1 on error, 0 on success
+ */
+static int
+create_custom_ports(int memid)
+{
+	struct nmreq nmr;
+	int i,rv;
+	struct group_des *g;
+
+	rv = open("/dev/netmap", O_RDWR);
+	if (rv < 0) {
+		D("failed to open /dev/netmap: %s", strerror(errno));
+		return 1;
+	}
+	glob_arg.netmap_fd = rv;
+
+	for (i = 0; i < glob_arg.num_groups; i++) {
+		g = &groups[i];
+
+		if (!g->custom_port)
+			continue;
+
+		bzero(&nmr, sizeof(nmr));
+		nmr.nr_version = NETMAP_API;
+		strncpy(nmr.nr_name, g->pipename, sizeof(nmr.nr_name));
+		nmr.nr_cmd = NETMAP_BDG_NEWIF;
+		nmr.nr_arg2 = memid;
+		
+		rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
+		if (rv < 0) {
+			/* reset the custom_port flag, so that we do not
+			 * try to delete what we did not create
+			 */
+			g->custom_port = 0;
+			if (errno == EEXIST) {
+				if (nmr.nr_arg2 != memid) {
+					D("%s already exists, but it is using allocator %d instead of %d",
+							g->pipename, nmr.nr_arg2, memid);
+							
+					return 1;
+				} else {
+					D("opened already existing port %s", g->pipename);
+				}
+			} else {
+				D("error creating %s: %s", g->pipename, strerror(errno));
+				return 1;
+			}
+		} else {
+			D("successfully created port %s", g->pipename);
+		}
+	}
+	return 0;
+}
+
+/* called at exit to remove all the custom ports that
+ * we created (note that deletion may fail is somebody
+ * is still using either the ports or their pipes
+ */
+static void
+delete_custom_ports(void)
+{
+	struct nmreq nmr;
+	int rv, i;
+
+	for (i = 0; i < glob_arg.num_groups; i++) {
+		struct group_des *g = &groups[i];
+
+		if (!g->custom_port)
+			continue;
+
+		bzero(&nmr, sizeof(nmr));
+		nmr.nr_version = NETMAP_API;
+		strncpy(nmr.nr_name, g->pipename, sizeof(nmr.nr_name));
+		nmr.nr_cmd = NETMAP_BDG_DELIF;
+		
+		rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
+		if (rv < 0) {
+			D("WARNING: error while deleting %s: %s",
+					g->pipename, strerror(errno));
+		}
+	}
+}
+
+/* complete the initialization of the groups data structure */
+void init_groups(void)
+{
+	int i, j, t = 0;
+	struct group_des *g = NULL;
+	for (i = 0; i < glob_arg.num_groups; i++) {
+		g = &groups[i];
+		g->ports = &ports[t];
+		for (j = 0; j < g->nports; j++)
+			g->ports[j].group = g;
+		t += g->nports;
+		if (!g->custom_port)
+			strcpy(g->pipename, glob_arg.base_name);
+		for (j = 0; j < i; j++) {
+			struct group_des *h = &groups[j];
+			if (!strcmp(h->pipename, g->pipename))
+				g->first_id += h->nports;
+		}
+	}
+	g->last = 1;
+}
+
+/* push the packet described by slot rs to the group g.
+ * This may cause other buffers to be pushed down the
+ * chain headed by g.
+ * Return a free buffer.
+ */
+uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
+{
+	uint32_t hash = rs->ptr;
+	uint32_t output_port = hash % g->nports;
+	struct port_des *port = &g->ports[output_port];
+	struct netmap_ring *ring = port->ring;
+	struct overflow_queue *q = port->oq;
+
+	/* Move the packet to the output pipe, unless there is
+	 * either no space left on the ring, or there is some
+	 * packet still in the overflow queue (since those must
+	 * take precedence over the new one)
+	*/
+	if (nm_ring_space(ring) && (q == NULL || oq_empty(q))) {
+		struct netmap_slot *ts = &ring->slot[ring->cur];
+		struct netmap_slot old_slot = *ts;
+		uint32_t free_buf;
+
+		ts->buf_idx = rs->buf_idx;
+		ts->len = rs->len;
+		ts->flags |= NS_BUF_CHANGED;
+		ts->ptr = rs->ptr;
+		ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+		port->ctr.pkts++;
+		forwarded++;
+		if (old_slot.ptr && !g->last) {
+			/* old slot not empty and we are not the last group:
+			 * push it further down the chain
+			 */
+			free_buf = forward_packet(g + 1, &old_slot);
+		} else {
+			/* just return the old slot buffer: it is
+			 * either empty or already seen by everybody
+			 */
+			free_buf = old_slot.buf_idx;
+		}
+
+		return free_buf;
+	}
+
+	/* use the overflow queue, if available */
+	if (q == NULL || oq_full(q)) {
+		/* no space left on the ring and no overflow queue
+		 * available: we are forced to drop the packet
+		 */
+		dropped++;
+		port->ctr.drop++;
+		return rs->buf_idx;
+	}
+
+	oq_enq(q, rs);
+
+	/*
+	 * we cannot continue down the chain and we need to
+	 * return a free buffer now. We take it from the free queue.
+	 */
+	if (oq_empty(freeq)) {
+		/* the free queue is empty. Revoke some buffers
+		 * from the longest overflow queue
+		 */
+		uint32_t j;
+		struct port_des *lp = &ports[0];
+		uint32_t max = lp->oq->n;
+
+		/* let lp point to the port with the longest queue */
+		for (j = 1; j < glob_arg.output_rings; j++) {
+			struct port_des *cp = &ports[j];
+			if (cp->oq->n > max) {
+				lp = cp;
+				max = cp->oq->n;
+			}
+		}
+
+		/* move the oldest BUF_REVOKE buffers from the
+		 * lp queue to the free queue
+		 */
+		// XXX optimize this cycle
+		for (j = 0; lp->oq->n && j < BUF_REVOKE; j++) {
+			struct netmap_slot tmp = oq_deq(lp->oq);
+			oq_enq(freeq, &tmp);
+		}
+
+		ND(1, "revoked %d buffers from %s", j, lq->name);
+		lp->ctr.drop += j;
+		dropped += j;
+	}
+
+	return oq_deq(freeq).buf_idx;
+}
 
 int main(int argc, char **argv)
 {
@@ -290,7 +574,7 @@ int main(int argc, char **argv)
 	unsigned int iter = 0;
 
 	glob_arg.ifname[0] = '\0';
-	glob_arg.output_rings = DEF_OUT_PIPES;
+	glob_arg.output_rings = 0;
 	glob_arg.batch = DEF_BATCH;
 	glob_arg.syslog_interval = DEF_SYSLOG_INT;
 
@@ -310,9 +594,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 'p':
-			glob_arg.output_rings = atoi(optarg);
-			if (glob_arg.output_rings < 1) {
-				D("you must output to at least one pipe");
+			if (parse_pipes(optarg)) {
 				usage();
 				return 1;
 			}
@@ -347,12 +629,22 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	/* extract the base name */
+	char *nscan = strncmp(glob_arg.ifname, "netmap:", 7) ?
+			glob_arg.ifname : glob_arg.ifname + 7;
+	strncpy(glob_arg.base_name, nscan, MAX_IFNAMELEN);
+	for (nscan = glob_arg.base_name; *nscan && !index("-*^{}/@", *nscan); nscan++)
+		;
+	*nscan = '\0';	
+
+	if (glob_arg.num_groups == 0)
+		parse_pipes("");
+
 	setlogmask(LOG_UPTO(LOG_INFO));
 	openlog("lb", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
 
 	uint32_t npipes = glob_arg.output_rings;
 
-	struct overflow_queue *freeq = NULL;
 
 	pthread_t stat_thread;
 
@@ -362,6 +654,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	struct port_des *rxport = &ports[npipes];
+	init_groups();
 
 	if (pthread_create(&stat_thread, NULL, print_stats, NULL) == -1) {
 		D("unable to create the stats thread: %s", strerror(errno));
@@ -432,7 +725,6 @@ int main(int argc, char **argv)
 		oq_enq(freeq, &s);
 	}
 
-	atexit(free_buffers);
 
 	if (freeq->n != extra_bufs) {
 		D("something went wrong: netmap reported %d extra_bufs, but the free list contained %d",
@@ -442,36 +734,52 @@ int main(int argc, char **argv)
 	rxport->nmd->nifp->ni_bufs_head = 0;
 
 run:
-	for (i = 0; i < npipes; ++i) {
-		char interface[25];
-		sprintf(interface, "%s{%d/T", glob_arg.ifname, i);
-		D("opening pipe named %s", interface);
+	/* we need to create the persistent vale ports */
+	if (create_custom_ports(rxport->nmd->req.nr_arg2)) {
+		free_buffers();
+		return 1;
+	}
+	atexit(delete_custom_ports);
 
-		ports[i].nmd = nm_open(interface, NULL, 0, rxport->nmd);
+	atexit(free_buffers);
 
-		if (ports[i].nmd == NULL) {
-			D("cannot open %s", interface);
-			return (1);
-		} else {
-			D("successfully opened pipe #%d %s (tx slots: %d)",
-			  i + 1, interface, ports[i].nmd->req.nr_tx_slots);
-			ports[i].ring = NETMAP_TXRING(ports[i].nmd->nifp, 0);
-		}
-		D("zerocopy %s",
-		  (rxport->nmd->mem == ports[i].nmd->mem) ? "enabled" : "disabled");
+	int j, t = 0;
+	for (j = 0; j < glob_arg.num_groups; j++) {
+		struct group_des *g = &groups[j];
+		int k;
+		for (k = 0; k < g->nports; ++k) {
+			struct port_des *p = &g->ports[k];
+			char interface[25];
+			sprintf(interface, "netmap:%s{%d/xT", g->pipename, g->first_id + k);
+			D("opening pipe named %s", interface);
 
-		if (extra_bufs) {
-			struct overflow_queue *q = &oq[i];
-			q->slots = calloc(extra_bufs, sizeof(struct netmap_slot));
-			if (!q->slots) {
-				D("failed to allocate overflow queue for pipe %d", i);
-				/* make all overflow queue management fail */
-				extra_bufs = 0;
+			p->nmd = nm_open(interface, NULL, 0, rxport->nmd);
+
+			if (p->nmd == NULL) {
+				D("cannot open %s", interface);
+				return (1);
+			} else {
+				D("successfully opened pipe #%d %s (tx slots: %d)",
+				  k + 1, interface, p->nmd->req.nr_tx_slots);
+				p->ring = NETMAP_TXRING(p->nmd->nifp, 0);
 			}
-			q->size = extra_bufs;
-			snprintf(q->name, MAX_IFNAMELEN, "oq %d", i);
-			ports[i].oq = q;
+			D("zerocopy %s",
+			  (rxport->nmd->mem == p->nmd->mem) ? "enabled" : "disabled");
+
+			if (extra_bufs) {
+				struct overflow_queue *q = &oq[t + k];
+				q->slots = calloc(extra_bufs, sizeof(struct netmap_slot));
+				if (!q->slots) {
+					D("failed to allocate overflow queue for pipe %d", k);
+					/* make all overflow queue management fail */
+					extra_bufs = 0;
+				}
+				q->size = extra_bufs;
+				snprintf(q->name, MAX_IFNAMELEN, "oq %s{%d", g->pipename, k);
+				p->oq = q;
+			}
 		}
+		t += g->nports;
 	}
 
 	if (glob_arg.extra_bufs && !extra_bufs) {
@@ -490,7 +798,6 @@ run:
 
 	struct pollfd pollfd[npipes + 1];
 	memset(&pollfd, 0, sizeof(pollfd));
-
 	signal(SIGINT, sigint_h);
 	while (!do_abort) {
 		u_int polli = 0;
@@ -528,11 +835,12 @@ run:
 			for (i = 0; i < npipes; i++) {
 				struct port_des *p = &ports[i];
 				struct overflow_queue *q = p->oq;
+				struct group_des *g = p->group;
 				uint32_t j, lim;
 				struct netmap_ring *ring;
 				struct netmap_slot *slot;
 
-				if (!q->n)
+				if (oq_empty(q))
 					continue;
 				ring = p->ring;
 				lim = nm_ring_space(ring);
@@ -541,9 +849,20 @@ run:
 				if (q->n < lim)
 					lim = q->n;
 				for (j = 0; j < lim; j++) {
-					struct netmap_slot s = oq_deq(q);
+					struct netmap_slot s = oq_deq(q), tmp;
+					tmp.ptr = 0;
 					slot = &ring->slot[ring->cur];
-					oq_enq(freeq, slot);
+					if (slot->ptr && !g->last) {
+						tmp.buf_idx = forward_packet(g + 1, slot);
+						/* the forwarding may have removed packets
+						 * from the current queue
+						 */
+						if (q->n < lim)
+							lim = q->n;
+					} else {
+						tmp.buf_idx = slot->buf_idx;
+					}
+					oq_enq(freeq, &tmp);
 					*slot = s;
 					slot->flags |= NS_BUF_CHANGED;
 					ring->cur = nm_ring_next(ring, ring->cur);
@@ -563,78 +882,23 @@ run:
 			struct netmap_slot *next_slot = &rxring->slot[next_cur];
 			const char *next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 			while (!nm_ring_empty(rxring)) {
-				struct overflow_queue *q;
 				struct netmap_slot *rs = next_slot;
+				struct group_des *g = &groups[0];
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
 				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
-				if (hash == 0)
+				if (hash == 0) {
 					non_ip++; // XXX ??
+				}
+				rs->ptr = hash | (1UL << 32);
 				// prefetch the buffer for the next round
 				next_cur = nm_ring_next(rxring, next_cur);
 				next_slot = &rxring->slot[next_cur];
 				next_buf = NETMAP_BUF(rxring, next_slot->buf_idx);
 				__builtin_prefetch(next_buf);
 				// 'B' is just a hashing seed
-				uint32_t output_port = hash % glob_arg.output_rings;
-				struct port_des *port = &ports[output_port];
-				struct netmap_ring *ring = port->ring;
-				uint32_t free_buf;
-
-				// Move the packet to the output pipe.
-				if (nm_ring_space(ring)) {
-					struct netmap_slot *ts = &ring->slot[ring->cur];
-					free_buf = ts->buf_idx;
-					ts->buf_idx = rs->buf_idx;
-					ts->len = rs->len;
-					ts->flags |= NS_BUF_CHANGED;
-					ring->head = ring->cur = nm_ring_next(ring, ring->cur);
-					port->ctr.pkts++;
-					forwarded++;
-					goto forward;
-				}
-
-				/* use the overflow queue, if available */
-				if (!oq) {
-					dropped++;
-					port->ctr.drop++;
-					goto next;
-				}
-
-				q = &oq[output_port];
-
-				if (!freeq->n) {
-					/* revoke some buffers from the longest overflow queue */
-					uint32_t j;
-					struct port_des *lp = &ports[0];
-					uint32_t max = lp->oq->n;
-
-					for (j = 1; j < npipes; j++) {
-						struct port_des *cp = &ports[j];
-						if (cp->oq->n > max) {
-							lp = cp;
-							max = cp->oq->n;
-						}
-					}
-
-					// XXX optimize this cycle
-					for (j = 0; lp->oq->n && j < BUF_REVOKE; j++) {
-						struct netmap_slot tmp = oq_deq(lp->oq);
-						oq_enq(freeq, &tmp);
-					}
-
-					ND(1, "revoked %d buffers from %s", j, lq->name);
-					lp->ctr.drop += j;
-					dropped += j;
-				}
-
-				free_buf = oq_deq(freeq).buf_idx;
-				oq_enq(q, rs);
-
-			forward:
-				rs->buf_idx = free_buf;
+				rs->buf_idx = forward_packet(g, rs);
 				rs->flags |= NS_BUF_CHANGED;
-			next:
 				rxring->head = rxring->cur = next_cur;
 
 				batch++;

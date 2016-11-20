@@ -37,6 +37,25 @@
 
 #include "netmap_linux_config.h"
 
+void *
+nm_os_malloc(size_t size)
+{
+	return kmalloc(size, GFP_ATOMIC | __GFP_ZERO);
+}
+
+void *
+nm_os_realloc(void *addr, size_t new_size, size_t old_size)
+{
+	(void)old_size;
+
+	return krealloc(addr, new_size, GFP_ATOMIC | __GFP_ZERO);
+}
+
+void
+nm_os_free(void *addr){
+	kfree(addr);
+}
+
 void
 nm_os_selinfo_init(NM_SELINFO_T *si)
 {
@@ -378,6 +397,7 @@ int
 nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
 #ifndef NETMAP_LINUX_HAVE_RX_REGISTER
+#warning "Packet reception with emulated (generic) mode not supported for this kernel version"
     return 0;
 #else /* HAVE_RX_REGISTER */
     struct netmap_adapter *na = &gna->up.up;
@@ -471,14 +491,22 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 }
 
 static int
-generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc)
+generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc
+#ifdef NETMAP_LINUX_HAVE_QDISC_ENQUEUE_TOFREE
+		      , struct mbuf **to_free
+#endif
+)
 {
 	struct nm_generic_qdisc *priv = qdisc_priv(qdisc);
 
 	if (unlikely(qdisc_qlen(qdisc) >= priv->limit)) {
 		RD(5, "dropping mbuf");
 
-		return qdisc_drop(m, qdisc);
+		return qdisc_drop(m, qdisc
+#ifdef NETMAP_LINUX_HAVE_QDISC_ENQUEUE_TOFREE
+		       , to_free
+#endif
+			);
 		/* or qdisc_reshape_fail() ? */
 	}
 
@@ -518,13 +546,6 @@ generic_qdisc_peek(struct Qdisc *qdisc)
 	return skb_peek(&qdisc->q);
 }
 
-static unsigned int
-generic_qdisc_drop(struct Qdisc *qdisc)
-{
-	RD(5, "Dropping on purpose");
-	return qdisc_queue_drop(qdisc);
-}
-
 static struct Qdisc_ops
 generic_qdisc_ops __read_mostly = {
 	.id		= "netmap_generic",
@@ -535,7 +556,6 @@ generic_qdisc_ops __read_mostly = {
 	.enqueue	= generic_qdisc_enqueue,
 	.dequeue	= generic_qdisc_dequeue,
 	.peek		= generic_qdisc_peek,
-	.drop		= generic_qdisc_drop,
 	.dump		= NULL,
 	.owner		= THIS_MODULE,
 };
@@ -711,7 +731,14 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	m->data = m->head + ifp->needed_headroom;
 	skb_reset_tail_pointer(m);
 	skb_reset_mac_header(m);
-	skb_reset_network_header(m);
+
+        /* Initialize the header pointers assuming this is an IPv4 packet.
+         * This is useful to make netmap interact well with TC when
+         * netmap_generic_txqdisc == 0.  */
+	skb_set_network_header(m, 14);
+	skb_set_transport_header(m, 34);
+	m->protocol = htons(ETH_P_IP);
+	m->pkt_type = PACKET_HOST;
 
 	/* Copy a netmap buffer into the mbuf.
 	 * TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
@@ -1392,13 +1419,18 @@ nm_kthread_close_files(struct nm_kthread *nmk)
 }
 
 static int
-nm_kthread_open_files(struct nm_kthread *nmk, struct ptnet_ring_cfg *ring_cfg)
+nm_kthread_open_files(struct nm_kthread *nmk, void *opaque)
 {
     struct file *file;
     struct nm_kthread_ctx *wctx = &nmk->worker_ctx;
+    struct ptnetmap_cfgentry_qemu *ring_cfg = opaque;
 
     wctx->ioevent_file = NULL;
     wctx->irq_file = NULL;
+
+    if (!opaque) {
+	return 0;
+    }
 
     if (ring_cfg->ioeventfd) {
 	file = eventfd_fget(ring_cfg->ioeventfd);
@@ -1464,10 +1496,16 @@ nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
 }
 
 struct nm_kthread *
-nm_os_kthread_create(struct nm_kthread_cfg *cfg)
+nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
+		     void *opaque)
 {
     struct nm_kthread *nmk = NULL;
     int error;
+
+    if (cfgtype != PTNETMAP_CFGTYPE_QEMU) {
+	D("Unsupported cfgtype %u", cfgtype);
+	return NULL;
+    }
 
     nmk = kzalloc(sizeof *nmk, GFP_KERNEL);
     if (!nmk)
@@ -1482,7 +1520,7 @@ nm_os_kthread_create(struct nm_kthread_cfg *cfg)
     nmk->attach_user = cfg->attach_user;
 
     /* open event fds */
-    error = nm_kthread_open_files(nmk, &cfg->event);
+    error = nm_kthread_open_files(nmk, opaque);
     if (error)
         goto err;
 
@@ -1622,30 +1660,37 @@ struct ptnetmap_memdev
  */
 int
 nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
-                      void **nm_addr)
+                      void **nm_addr, uint64_t *mem_size)
 {
     struct pci_dev *pdev = ptn_dev->pdev;
-    uint32_t mem_size;
     phys_addr_t mem_paddr;
     int err = 0;
 
-    mem_size = ioread32(ptn_dev->pci_io + PTNETMAP_IO_PCI_MEMSIZE);
+    *mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_HI);
+    *mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_LO) |
+	       (*mem_size << 32);
 
-    D("=== BAR %d start %llx len %llx mem_size %x ===",
+    D("=== BAR %d start %llx len %llx mem_size %lx ===",
             PTNETMAP_MEM_PCI_BAR,
             pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
             pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
-            mem_size);
+            (unsigned long)(*mem_size));
 
     /* map memory allocator */
     mem_paddr = pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR);
-    ptn_dev->pci_mem = *nm_addr = ioremap_cache(mem_paddr, mem_size);
+    ptn_dev->pci_mem = *nm_addr = ioremap_cache(mem_paddr, *mem_size);
     if (ptn_dev->pci_mem == NULL) {
         err = -ENOMEM;
     }
     *nm_paddr = mem_paddr;
 
     return err;
+}
+
+uint32_t
+nm_os_pt_memdev_ioread(struct ptnetmap_memdev *ptn_dev, unsigned int reg)
+{
+	return ioread32(ptn_dev->pci_io + reg);
 }
 
 /*
@@ -1703,7 +1748,7 @@ ptnetmap_guest_probe(struct pci_dev *pdev, const struct pci_device_id *id)
     pci_set_master(pdev); /* XXX-ste: is needed??? */
 
     ptn_dev->bars = bars;
-    mem_id = ioread16(ptn_dev->pci_io + PTNETMAP_IO_PCI_HOSTID);
+    mem_id = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMID);
 
     /* create guest allocator */
     ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
@@ -1798,6 +1843,163 @@ ptnetmap_guest_fini(void)
 #define ptnetmap_guest_fini()
 #endif /* WITH_PTNETMAP_GUEST */
 
+#ifdef WITH_SINK
+
+/*
+ * An emulated netmap-enabled device acting as a packet sink, useful for
+ * performance tests of netmap applications or other netmap subsystems
+ * (i.e. VALE, ptnetmap).
+ *
+ * The sink_delay_ns parameter is used to tune the speed of the packet sink
+ * device. The absolute value of the parameter is interpreted as the number
+ * of nanoseconds that are required to send a packet into the sink.
+ * For positive values, the sink device emulates a NIC transmitting packets
+ * asynchronously with respect to the txsync() caller, similarly to what
+ * happens with real NICs.
+ * For negative values, the sink device emulates a packet consumer,
+ * transmitting packets synchronously with respect to the txsync() caller.
+ */
+static int sink_delay_ns = 100;
+module_param(sink_delay_ns, int, 0644);
+static struct net_device *nm_sink_netdev = NULL; /* global sink netdev */
+s64 nm_sink_next_link_idle; /* for link emulation */
+
+#define NM_SINK_SLOTS	1024
+#define NM_SINK_DELAY_NS \
+	((unsigned int)(sink_delay_ns > 0 ? sink_delay_ns : -sink_delay_ns))
+
+static int
+nm_sink_register(struct netmap_adapter *na, int onoff)
+{
+	if (onoff)
+		nm_set_native_flags(na);
+	else
+		nm_clear_native_flags(na);
+
+	nm_sink_next_link_idle = ktime_get_ns();
+
+	return 0;
+}
+
+static inline void
+nm_sink_emu(unsigned int n)
+{
+	u64 wait_until = nm_sink_next_link_idle;
+	u64 now = ktime_get_ns();
+
+	if (sink_delay_ns < 0 || nm_sink_next_link_idle < now) {
+		/* If we are emulating packet consumer mode or the link went
+		 * idle some time ago, we need to update the link emulation
+		 * variable, because we don't want the caller to accumulate
+		 * credit. */
+		nm_sink_next_link_idle = now;
+	}
+	/* Schedule new transmissions. */
+	nm_sink_next_link_idle += n * NM_SINK_DELAY_NS;
+	if (sink_delay_ns < 0) {
+		/* In packet consumer mode we emulate synchronous
+		 * transmission, so we have to wait right now for the link
+		 * to become idle. */
+		wait_until = nm_sink_next_link_idle;
+	}
+	while (ktime_get_ns() < wait_until) ;
+}
+
+static int
+nm_sink_txsync(struct netmap_kring *kring, int flags)
+{
+	unsigned int const lim = kring->nkr_num_slots - 1;
+	unsigned int const head = kring->rhead;
+	unsigned int n; /* num of packets to be transmitted */
+
+	n = kring->nkr_num_slots + head - kring->nr_hwcur;
+	if (n >= kring->nkr_num_slots) {
+		n -= kring->nkr_num_slots;
+	}
+	kring->nr_hwcur = head;
+	kring->nr_hwtail = nm_prev(kring->nr_hwcur, lim);
+
+	nm_sink_emu(n);
+
+	return 0;
+}
+
+static int
+nm_sink_rxsync(struct netmap_kring *kring, int flags)
+{
+	u_int const head = kring->rhead;
+
+	/* First part: nothing received for now. */
+	/* Second part: skip past packets that userspace has released */
+	kring->nr_hwcur = head;
+
+	return 0;
+}
+
+static int nm_sink_open(struct net_device *netdev) { return 0; }
+static int nm_sink_close(struct net_device *netdev) { return 0; }
+
+static netdev_tx_t
+nm_sink_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+{
+	kfree_skb(skb);
+	nm_sink_emu(1);
+	return NETDEV_TX_OK;
+}
+
+static const struct net_device_ops nm_sink_netdev_ops = {
+	.ndo_open = nm_sink_open,
+	.ndo_stop = nm_sink_close,
+	.ndo_start_xmit = nm_sink_start_xmit,
+};
+
+int
+netmap_sink_init(void)
+{
+	struct netmap_adapter na;
+	struct net_device *netdev;
+	int err;
+
+	netdev = alloc_etherdev(0);
+	if (!netdev) {
+		return ENOMEM;
+	}
+	netdev->netdev_ops = &nm_sink_netdev_ops ;
+	strncpy(netdev->name, "nmsink", sizeof(netdev->name) - 1);
+	netdev->features = NETIF_F_HIGHDMA;
+	strcpy(netdev->name, "nmsink%d");
+	err = register_netdev(netdev);
+	if (err) {
+		free_netdev(netdev);
+	}
+
+	bzero(&na, sizeof(na));
+	na.ifp = netdev;
+	na.num_tx_desc = NM_SINK_SLOTS;
+	na.num_rx_desc = NM_SINK_SLOTS;
+	na.nm_register = nm_sink_register;
+	na.nm_txsync = nm_sink_txsync;
+	na.nm_rxsync = nm_sink_rxsync;
+	na.num_tx_rings = na.num_rx_rings = 1;
+	netmap_attach(&na);
+
+	netif_carrier_on(netdev);
+	nm_sink_netdev = netdev;
+
+	return 0;
+}
+
+void
+netmap_sink_fini(void)
+{
+	struct net_device *netdev = nm_sink_netdev;
+
+	nm_sink_netdev = NULL;
+	unregister_netdev(netdev);
+	netmap_detach(netdev);
+	free_netdev(netdev);
+}
+#endif  /* WITH_SINK */
 
 
 /* ########################## MODULE INIT ######################### */
@@ -1822,13 +2024,21 @@ static int linux_netmap_init(void)
 	if (err) {
 		return err;
 	}
-
+#ifdef WITH_SINK
+	err = netmap_sink_init();
+	if (err) {
+		D("Warning: could not init netmap sink interface");
+	}
+#endif /* WITH_SINK */
 	return 0;
 }
 
 
 static void linux_netmap_fini(void)
 {
+#ifdef WITH_SINK
+	netmap_sink_fini();
+#endif /* WITH_SINK */
         ptnetmap_guest_fini();
         netmap_fini();
 }

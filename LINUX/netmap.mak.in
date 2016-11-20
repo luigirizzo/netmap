@@ -8,14 +8,13 @@
 MODNAME:=@MODNAME@
 SUBSYS:=@SUBSYS@
 SRCDIR:=@SRCDIR@
+BUILDDIR:=@BUILDDIR@
 
 # The following commands are needed to build the modules as out-of-tree,
 # in fact the kernel sources path must be specified.
 
-PWD ?= $(CURDIR)
-
 # Additional compile flags (e.g. header location)
-EXTRA_CFLAGS := -I$(PWD) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
+EXTRA_CFLAGS := -I$(BUILDDIR) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
 EXTRA_CFLAGS += $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z- A-Z_))
 
@@ -30,84 +29,112 @@ LIN_VER = @LIN_VER@
 MOD_LIST := @MOD_LIST@
 PATCHES = @PATCHES@
 S_DRIVERS = @S_DRIVERS@
+E_DRIVERS = @E_DRIVERS@
 DRVSUFFIX = @DRVSUFFIX@
+
+ifeq (,$(DRVSUFFIX))
+else
+EXTRA_CFLAGS += -DNETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
+endif
 
 # actual drivers after copy and patch
 DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
+# external drivers after copy and patch
+DRIVERS_EXT = $(shell [ -n "$(E_DRIVERS)" ] && ls -dAp $(E_DRIVERS) 2> /dev/null)
 
-COMMON_OPTS=-C $(KSRC) M=$(PWD) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
+COMMON_OPTS=-C $(KSRC) M=$(BUILDDIR) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
 
-define driver_target
+define common_driver
 get-$(1):
-	$(if $($(1)-src),cp -Rp $($(1)-src) $(if $($(1)-dst),$($(1)-dst),.),@true)
-	$(foreach p,$($(1)-patch),patch --posix --quiet --force -p1 < $(p);)
-	$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,@true)
+	$($(1)@fetch)
+	$($(1)@src)
+	$(foreach p,$($(1)@patch),patch --posix --quiet --force -p1 < $(p);)
+	$(if $($(1)@build),,$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,))
 	touch get-$(1)
-clean-$(1):
+distclean-$(1):
+	-$($(1)@distclean)
 	rm -rf $(1) get-$(1)
 endef
 
+define external_driver
+build-$(1): get-$(1) netmap.ko
+	if [ -d $(1) ] && [ -e Module.symvers ]; then cp Module.symvers $(1); fi
+	$($(1)@build)
+clean-$(1):
+	-$($(1)@clean)
+install-$(1): install-netmap
+	$($(1)@install)
+endef
 
-all: $(S_DRIVERS:%=get-%)
-	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(DRIVERS:%.c=%.o)" \
-		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
+.PHONY: $(foreach d,$(E_DRIVERS),build-$(d) clean-$(1) install-$(1)) netmap.ko
 
+
+all: $(S_DRIVERS:%=get-%) netmap.ko $(E_DRIVERS:%=build-%) apps
+
+netmap.ko:
+	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(patsubst %.c,%.o,$(filter-out $(DRIVERS_EXT),$(DRIVERS)))" NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
+
+-include config.mak
 include drivers.mak
 
-$(foreach d,$(S_DRIVERS),$(eval $(call driver_target,$(d))))
+$(foreach d,$(S_DRIVERS),$(eval $(call common_driver,$(d))))
+$(foreach d,$(E_DRIVERS),$(eval $(call external_driver,$(d))))
 
-install:
-	$(MAKE) -C $(KSRC) M=$(PWD) CONFIG_NETMAP=m $(MOD_LIST) \
+.PHONY: install install-netmap install-apps install-headers
+install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers
+
+install-netmap:
+	$(MAKE) -C $(KSRC) M=$(BUILDDIR) CONFIG_NETMAP=m $(MOD_LIST) \
 		O_DRIVERS="$(DRIVERS:%.c=%.o)" \
 		$(KOPTS) \
 		NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX) \
 		$(if $(MODPATH),INSTALL_MOD_PATH=$(MODPATH)) \
 		modules_install
 
-test:
-	@echo "version $(LIN_VER)"
-	@echo "patches $(PATCHES)"
-	@echo "drivers $(DRIVERS)"
+clean: $(E_DRIVERS:%=clean-%) clean-apps
+	-@ $(MAKE) -C $(KSRC) M=$(BUILDDIR) clean 2> /dev/null
 
-clean: $(S_DRIVERS:%=clean-%)
-	-@ $(MAKE) -C $(KSRC) M=$(PWD) clean 2> /dev/null
-	-@ $(MAKE) -C build-apps clean
-	-@ rm -f *.orig *.rej *.ko *.o .*.d 		\
-		*.mod.c modules.order			\
-		Module.symvers .*.cmd
-	-@ rm -rf .tmp_versions
-
-
-
-test3:
-	@echo "from $(PATCHES) -- to $(MYDRIVERS)"
-	@echo "Drivers is $(DRIVERS)"
-	@echo "Actually have `ls -d $(DRIVERS) 2> /dev/null`"
-
-# compute the diffs for the original files
-diffs:
-	@for i in `find . -name \*.orig`; do 	\
-		diff -urp $$i $${i%.orig} ;	\
-	done
-
+APPS_LIST=@APPS_LIST@
 APPS_CC=@APPS_CC@
 APPS_LD=@APPS_LD@
 PREFIX=@PREFIX@
 DESTDIR?=@DESTDIR@
 
-apps:
-	$(MAKE) -C build-apps SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)"
+APPS_BUILD=$(APPS_LIST:%=build-app-%)
+APPS_INSTALL=$(APPS_LIST:%=install-app-%)
 
-install-apps:
-	$(MAKE) -C build-apps install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+apps: $(APPS_BUILD)
+install-apps: $(APPS_INSTALL)
+clean-apps: $(APPS_LIST:%=clean-app-%)
+
+.PHONY: apps $(APPS_BUILD) install-apps $(APPS_INSTALL)
+define apps_actions
+build-app-$(1):
+	$(MAKE) -C build-apps/$(1) SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)"
+
+install-app-$(1):
+	$(MAKE) -C build-apps/$(1) install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+
+clean-app-$(1):
+	$(MAKE) -C build-apps/$(1) clean SRCDIR=$(SRCDIR)/..
+endef
+$(foreach a,$(APPS_LIST),$(eval $(call apps_actions,$(a))))
 
 +%:
 	@echo $($*)
 
-distclean: clean
+INCLUDE_PREFIX := $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)
+
+install-headers:
+	install -m 0644 -D $(SRCDIR)/../sys/net/netmap.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap.h
+	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_user.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_user.h
+
+distclean: clean $(S_DRIVERS:%=distclean-%)
 	rm -f config.status config.log netmap_linux_config.h \
-		patches drivers.mak Kbuild netmap.mak
+		patches drivers.mak Kbuild netmap.mak default-config.mak
 	rm -rf netmap-tmpdir
-	if [ -L Makefile ]; then rm Makefile; fi
+	rm -f *.orig *.rej
+	if [ -L GNUmakefile ]; then rm GNUmakefile; fi
 	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
+	if [ -L read-vars.mak ]; then rm read-vars.mak; fi
 	rm -rf build-apps

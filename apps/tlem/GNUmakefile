@@ -6,12 +6,12 @@ LIBNETMAP =
 CLEANFILES = $(PROGS) *.o
 
 SRCDIR ?= ../..
-#VPATH = $(SRCDIR)/examples
+VPATH = $(SRCDIR)/apps/tlem
 
 NO_MAN=
 CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
-CFLAGS += -I $(SRCDIR)/sys
+CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include
 CFLAGS += -Wextra
 
 LDLIBS += -lpthread

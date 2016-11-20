@@ -64,6 +64,10 @@
 /*----- support for compiling on older versions of linux -----*/
 #include "netmap_linux_config.h"
 
+#ifdef NETMAP_LINUX_HAVE_PAGE_REF
+#include <linux/page_ref.h>
+#endif /* NETMAP_LINUX_HAVE_PAGE_REF */
+
 #ifndef NETMAP_LINUX_HAVE_HRTIMER_MODE_REL
 #define HRTIMER_MODE_REL	HRTIMER_REL
 #endif
@@ -120,12 +124,18 @@ struct net_device_ops {
 #define usleep_range(a, b)	msleep((a)+(b)+999)
 #endif
 
+#ifdef NETMAP_LINUX_HAVE_PAGE_REF
+#define NM_SET_PAGE_COUNT(page, v)	set_page_count(page, v)
+#else
+#define NM_SET_PAGE_COUNT(page, v)	atomic_inc(&((page)->NETMAP_LINUX_PAGE_COUNT), (v))
+#endif
+
 #ifndef NETMAP_LINUX_HAVE_SPLIT_PAGE
 #define split_page(page, order) 			  \
 	do {						  \
 		int i_;					  \
 		for (i_ = 1; i_ < (1 << (order)); i_++)	  \
-			atomic_set(&(page)[i_]._count, 1);\
+			NM_SET_PAGE_COUNT(&(page)[i_], 1);\
 	} while (0)
 #endif /* HAVE_SPLIT_PAGE */
 
@@ -240,6 +250,7 @@ struct thread;
 #define m_copydata(m, o, l, b)          skb_copy_bits(m, o, b, l)
 
 #define copyin(_from, _to, _len)	copy_from_user(_to, _from, _len)
+#define copyout(_from, _to, _len)	copy_to_user(_to, _from, _len)
 
 /*
  * struct ifnet is remapped into struct net_device on linux.
@@ -322,18 +333,6 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 #define BDG_GET_VAR(lval)	(lval)
 #define BDG_FREE(p)		kfree(p)
 
-/*
- * in the malloc/free code we ignore the type
- */
-/* use volatile to fix a probable compiler error on 2.6.25 */
-#define malloc(_size, type, flags)                      \
-        ({ volatile int _v = _size; kmalloc(_v, GFP_ATOMIC | __GFP_ZERO); })
-
-#define realloc(addr, _size, type, flags)		\
-	({ volatile int _v = _size; krealloc(addr, _v, GFP_ATOMIC | __GFP_ZERO); })
-
-#define free(a, t)	kfree(a)
-
 // XXX do we need GPF_ZERO ?
 // XXX do we need GFP_DMA for slots ?
 // http://www.mjmwired.net/kernel/Documentation/DMA-API.txt
@@ -357,7 +356,7 @@ static inline int ilog2(uint64_t n)
 	if (p_ != NULL) 					\
 		split_page(p_, order_);				\
 	(p_ != NULL ? (char*)page_address(p_) : NULL); })
-	
+
 #define contigfree(va, sz, ty)					\
 	do {							\
 		unsigned int npages_ =				\
@@ -470,7 +469,7 @@ int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 #define MALLOC_DEFINE(a, b, c)
 
 struct netmap_adapter;
-int netmap_linux_config(struct netmap_adapter *na, 
+int netmap_linux_config(struct netmap_adapter *na,
 		u_int *txr, u_int *rxr, u_int *txd, u_int *rxd);
 /* ---- namespaces ------ */
 #ifdef CONFIG_NET_NS

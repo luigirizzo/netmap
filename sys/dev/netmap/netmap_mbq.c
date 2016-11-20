@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013-2014 Vincenzo Maffione. All rights reserved.
+ * Copyright (C) 2013-2014 Vincenzo Maffione
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -124,6 +125,7 @@ struct mbuf *mbq_dequeue(struct mbq *q)
 {
     return __mbq_dequeue(q);
 }
+
 
 /* XXX seems pointless to have a generic purge */
 static void __mbq_purge(struct mbq *q, int safe)
