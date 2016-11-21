@@ -331,7 +331,6 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 #define BDG_RTRYLOCK(b)		down_read_trylock(&(b)->bdg_lock)
 #define BDG_SET_VAR(lval, p)	((lval) = (p))
 #define BDG_GET_VAR(lval)	(lval)
-#define BDG_FREE(p)		kfree(p)
 
 // XXX do we need GPF_ZERO ?
 // XXX do we need GFP_DMA for slots ?
