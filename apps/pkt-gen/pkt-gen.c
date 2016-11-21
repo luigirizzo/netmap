@@ -179,6 +179,7 @@ const char *indirect_payload="netmap pkt-gen indirect payload\n"
 	"http://info.iet.unipi.it/~luigi/netmap/ ";
 
 int verbose = 0;
+int normalize = 1;
 
 #define SKIP_PAYLOAD 1 /* do not check payload. XXX unused */
 
@@ -1860,7 +1861,7 @@ tx_output(struct my_ctrs *cur, double delta, const char *msg)
 	abs = cur->pkts / (double)(cur->events);
 
 	printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
-		norm(b1, pps), norm(b2, bw), norm(b3, raw_bw), abs);
+		norm(b1, pps, normalize), norm(b2, bw, normalize), norm(b3, raw_bw, normalize), abs);
 }
 
 static void
@@ -1896,6 +1897,7 @@ usage(void)
 		"\t-Z			use random IPv4 dst address/port\n"
 		"\t-F num_frags		send multi-slot packets\n"
 		"\t-A			activate pps stats on receiver\n"
+		"\t-N			disable units normalization\n"
 		"",
 		cmd);
 
@@ -2051,17 +2053,16 @@ main_thread(struct glob_arg *g)
 			}
 			ppsdev /= nsamples;
 			ppsdev = sqrt(ppsdev);
-
 			snprintf(b4, sizeof(b4), "[avg/std %s/%s pps]",
-				 norm(b1, ppsavg), norm(b2, ppsdev));
+				norm(b1, ppsavg, normalize), norm(b2, ppsdev, normalize));
 		}
 
 		D("%spps %s(%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
-			norm(b1, pps), b4,
-			norm(b2, (double)x.pkts),
-			norm(b3, (double)x.bytes*8),
-			(unsigned long long)usec,
-			abs, (int)cur.min_space);
+				norm(b1, pps, normalize), b4,
+				norm(b2, (double)x.pkts, normalize),
+				norm(b3, (double)x.bytes*8, normalize),
+				(unsigned long long)usec,
+				abs, (int)cur.min_space);
 		prev = cur;
 
 		if (done == g->nthreads)
@@ -2232,7 +2233,7 @@ main(int arc, char **argv)
 	g.wait_link = 2;
 
 	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
+			"a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
 		struct td_desc *fn;
 
 		switch(ch) {
@@ -2243,6 +2244,10 @@ main(int arc, char **argv)
 
 		case 'n':
 			g.npackets = strtoull(optarg, NULL, 10);
+			break;
+
+		case 'N':
+			normalize = 0;
 			break;
 
 		case 'F':
