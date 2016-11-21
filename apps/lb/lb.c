@@ -157,6 +157,7 @@ static volatile int do_abort = 0;
 uint64_t dropped = 0;
 uint64_t forwarded = 0;
 uint64_t non_ip = 0;
+int normalize = 1;
 
 struct port_des {
 	struct my_ctrs ctr;
@@ -222,7 +223,8 @@ print_stats(void *arg)
 			x.drop = p->ctr.drop - pipe_prev[j].drop;
 			pps = (x.pkts*1000000 + usec/2) / usec;
 			dps = (x.drop*1000000 + usec/2) / usec;
-			printf("%s/%s|", norm(b1, pps), norm(b2, dps));
+			printf("%s/%s|", norm(b1, pps, normalize),
+				norm(b2, dps, normalize));
 			pipe_prev[j] = p->ctr;
 
 			if (dosyslog) {
@@ -250,7 +252,8 @@ print_stats(void *arg)
 		x.drop = cur.drop - prev.drop;
 		pps = (x.pkts*1000000 + usec/2) / usec;
 		dps = (x.drop*1000000 + usec/2) / usec;
-		printf("===> aggregate %spps %sdps\n", norm(b1, pps), norm(b2, dps));
+		printf("===> aggregate %spps %sdps\n", norm(b1, pps, normalize),
+			norm(b2, dps, normalize));
 		prev = cur;
 	}
 

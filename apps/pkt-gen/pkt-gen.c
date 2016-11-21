@@ -1860,13 +1860,8 @@ tx_output(struct my_ctrs *cur, double delta, const char *msg)
 	raw_bw = (8.0 * (cur->pkts * 24 + cur->bytes)) / delta;
 	abs = cur->pkts / (double)(cur->events);
 
-	if (normalize)
-		printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
-			norm(b1, pps), norm(b2, bw), norm(b3, raw_bw), abs);
-	else
-		printf("Speed: %llupps Bandwidth: %llubps (raw %llubps). Average batch: %.2f pkts\n",
-			(unsigned long long)pps, (unsigned long long)bw,
-			(unsigned long long)raw_bw, abs);
+	printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
+		norm(b1, pps, normalize), norm(b2, bw, normalize), norm(b3, raw_bw, normalize), abs);
 }
 
 static void
@@ -2058,26 +2053,14 @@ main_thread(struct glob_arg *g)
 			}
 			ppsdev /= nsamples;
 			ppsdev = sqrt(ppsdev);
-			if (normalize)
-				snprintf(b4, sizeof(b4), "[avg/std %s/%s pps]",
-					norm(b1, ppsavg), norm(b2, ppsdev));
-			else
-				snprintf(b4, sizeof(b4), "[avg/std %lf/%lf pps]",
-					ppsavg, ppsdev);
+			snprintf(b4, sizeof(b4), "[avg/std %s/%s pps]",
+				norm(b1, ppsavg, normalize), norm(b2, ppsdev, normalize));
 		}
 
-		if (normalize)
-			D("%spps %s(%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
-				norm(b1, pps), b4,
-				norm(b2, (double)x.pkts),
-				norm(b3, (double)x.bytes*8),
-				(unsigned long long)usec,
-				abs, (int)cur.min_space);
-		else
-			D("%llupps %s(%llupkts %llubps in %llu usec) %.2f avg_batch %d min_space",
-				(unsigned long long)pps, b4,
-				(unsigned long long)x.pkts,
-				(unsigned long long)x.bytes*8,
+		D("%spps %s(%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
+				norm(b1, pps, normalize), b4,
+				norm(b2, (double)x.pkts, normalize),
+				norm(b3, (double)x.bytes*8, normalize),
 				(unsigned long long)usec,
 				abs, (int)cur.min_space);
 		prev = cur;
