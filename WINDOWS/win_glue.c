@@ -25,8 +25,12 @@
 
 #include <win_glue.h>
 
+#include <net/netmap.h>
+#include <dev/netmap/netmap_kern.h>
+#include <dev/netmap/netmap_mem2.h>
+
 /*
- * reimplementation of some FreeBSD/Linux kernel functions used in netmap.
+ * implementation of some FreeBSD/Linux kernel functions used by netmap.
  */
 
 /*
@@ -179,7 +183,7 @@ formatnames(void)
 
 	for (i = 0; i<GST.count; i++)
 		size += GST.entry[i].head.namelen;
-	GST.namebuffer = malloc(size, 0, 0);
+	GST.namebuffer = nm_os_malloc(size);
 	if (GST.namebuffer == NULL)
 		return -1;
 	name = GST.namebuffer;
@@ -234,7 +238,7 @@ void
 keexit_GST()
 {
 	if (GST.namebuffer != NULL)
-		free(GST.namebuffer, 0);
+		nm_os_free(GST.namebuffer);
 	bzero(&GST, sizeof(GST));
 }
 

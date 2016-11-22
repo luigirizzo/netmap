@@ -203,7 +203,6 @@ static inline void mtx_unlock(win_spinlock_t *m)
 #define BDG_RTRYLOCK(b)			ExAcquireResourceExclusiveLite(&b->bdg_lock, FALSE)
 #define BDG_SET_VAR(lval, p)		((lval) = (p))
 #define BDG_GET_VAR(lval)		(lval)
-#define BDG_FREE(p)			free(p)
 
 
 /*
@@ -257,6 +256,7 @@ static int time_uptime_w32()
  * Is it ok to use RtlCopyMemory for user buffers ?
  */
 #define copyin(src, dst, copy_len)		RtlCopyMemory(dst, src, copy_len)
+#define copyout(src, dst, copy_len)		RtlCopyMemory(dst, src, copy_len)
 
 
 /*
@@ -326,52 +326,6 @@ struct device;	// XXX unused, in some place in netmap_mem2.c
 
 #define bcopy(_s, _d, _l)			RtlCopyMemory(_d, _s, _l)
 #define bzero(addr, size)			RtlZeroMemory(addr, size)
-#define malloc(size, _ty, flags)		win_kernel_malloc(size, _ty, flags)
-#define free(addr, _type)			ExFreePoolWithTag(addr, _type)
-#define realloc(src, len, old_len)		win_reallocate(src, len, old_len)
-
-/*
- * we default to always allocating and zeroing
- */
-static void *
-win_kernel_malloc(size_t size, int32_t ty, int flags)
-{
-	void* mem = ExAllocatePoolWithTag(NonPagedPool, size, ty);
-
-	(void)flags;
-
-	if (mem != NULL) { // && flags & M_ZERO XXX todo
-		RtlZeroMemory(mem, size);
-	}
-	return mem;
-}
-
-static inline PVOID
-win_reallocate(void* src, size_t size, size_t oldSize)
-{
-	//DbgPrint("Netmap.sys: win_reallocate(%p, %i, %i)", src, size, oldSize);
-	PVOID newBuff = NULL; /* default return value */
-
-	if (src == NULL) { /* if size > 0, this is a malloc */
-		if (size > 0) {
-			newBuff = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
-		}
-	} else if (size == 0) {
-		free(src, M_DEVBUF);
-	} else if (size == oldSize) {
-		newBuff = src;
-	} else { /* realloc -- XXX later maybe ignore shrink ? */
-		newBuff = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
-		if (newBuff != NULL) {
-			if (size <= oldSize) { /* shrink, just copy back part of the data */
-				RtlCopyMemory(newBuff, src, size);
-			} else {
-				RtlCopyMemory(newBuff, src, oldSize);
-			}
-		}
-	}
-	return newBuff;
-}
 
 struct mbuf *win_make_mbuf(struct net_device *, uint32_t, const char *);
 

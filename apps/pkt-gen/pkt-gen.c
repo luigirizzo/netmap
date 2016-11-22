@@ -55,6 +55,11 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netinet/ip6.h>
+#ifdef linux
+#define IPV6_VERSION	0x60
+#define IPV6_DEFHLIM	64
+#endif
 #include <assert.h>
 #include <math.h>
 
@@ -65,6 +70,8 @@
 #endif
 
 #include "ctrs.h"
+
+static void usage(void);
 
 #ifdef _WIN32
 #define cpuset_t        DWORD_PTR   //uint64_t
@@ -195,14 +202,34 @@ struct virt_header {
 struct pkt {
 	struct virt_header vh;
 	struct ether_header eh;
-	struct ip ip;
-	struct udphdr udp;
-	uint8_t body[MAX_BODYSIZE];	// XXX hardwired
+	union {
+		struct {
+			struct ip ip;
+			struct udphdr udp;
+			uint8_t body[MAX_BODYSIZE];	// XXX hardwired
+		} ipv4;
+		struct {
+			struct ip6_hdr ip;
+			struct udphdr udp;
+			uint8_t body[MAX_BODYSIZE];	// XXX hardwired
+		} ipv6;
+	};
 } __attribute__((__packed__));
+
+#define	PKT(p, f, af)	\
+    ((af) == AF_INET ? (p)->ipv4.f: (p)->ipv6.f)
 
 struct ip_range {
 	char *name;
-	uint32_t start, end; /* same as struct in_addr */
+	union {
+		struct {
+			uint32_t start, end; /* same as struct in_addr */
+		} ipv4;
+		struct {
+			struct in6_addr start, end;
+			uint8_t sgroup, egroup;
+		} ipv6;
+	};
 	uint16_t port0, port1;
 };
 
@@ -227,6 +254,7 @@ struct tstamp {
  */
 
 struct glob_arg {
+	int af;		/* address family AF_INET/AF_INET6 */
 	struct ip_range src_ip;
 	struct ip_range dst_ip;
 	struct mac_range dst_mac;
@@ -307,68 +335,145 @@ struct targ {
 	void *frame;
 };
 
+static __inline uint16_t
+cksum_add(uint16_t sum, uint16_t a)
+{
+	uint16_t res;
 
+	res = sum + a;
+	return (res + (res < a));
+}
+
+static void
+extract_ipv4_addr(char *name, uint32_t *addr, uint16_t *port)
+{
+	struct in_addr a;
+	char *pp;
+
+	pp = strchr(name, ':');
+	if (pp != NULL) {	/* do we have ports ? */
+		*pp++ = '\0';
+		*port = (uint16_t)strtol(pp, NULL, 0);
+	}
+
+	inet_pton(AF_INET, name, &a);
+	*addr = ntohl(a.s_addr);
+}
+
+static void
+extract_ipv6_addr(char *name, struct in6_addr *addr, uint16_t *port,
+    uint8_t *group)
+{
+	char *pp;
+
+	/*
+	 * We accept IPv6 address in the following form:
+	 *  group@[2001:DB8::1001]:port	(w/ brackets and port)
+	 *  group@[2001:DB8::1]		(w/ brackets and w/o port)
+	 *  group@2001:DB8::1234	(w/o brackets and w/o port)
+	 */
+	pp = strchr(name, '@');
+	if (pp != NULL) {
+		*pp++ = '\0';
+		*group = (uint8_t)strtol(name, NULL, 0);
+		if (*group > 7)
+			*group = 7;
+		name = pp;
+	}
+	if (name[0] == '[')
+		name++;
+	pp = strchr(name, ']');
+	if (pp != NULL)
+		*pp++ = '\0';
+	if (pp != NULL && *pp != ':')
+		pp = NULL;
+	if (pp != NULL) {	/* do we have ports ? */
+		*pp++ = '\0';
+		*port = (uint16_t)strtol(pp, NULL, 0);
+	}
+	inet_pton(AF_INET6, name, addr);
+}
 /*
  * extract the extremes from a range of ipv4 addresses.
  * addr_lo[-addr_hi][:port_lo[-port_hi]]
  */
-static void
-extract_ip_range(struct ip_range *r)
+static int
+extract_ip_range(struct ip_range *r, int af)
 {
-	char *ap, *pp;
+	char *name, *ap, start[INET6_ADDRSTRLEN];
+	char end[INET6_ADDRSTRLEN];
 	struct in_addr a;
+	uint32_t tmp;
 
 	if (verbose)
 		D("extract IP range from %s", r->name);
-	r->port0 = r->port1 = 0;
-	r->start = r->end = 0;
 
+	name = strdup(r->name);
+	if (name == NULL) {
+		D("strdup failed");
+		usage();
+	}
 	/* the first - splits start/end of range */
-	ap = index(r->name, '-');	/* do we have ports ? */
-	if (ap) {
+	ap = strchr(name, '-');
+	if (ap != NULL)
 		*ap++ = '\0';
-	}
-	/* grab the initial values (mandatory) */
-	pp = index(r->name, ':');
-	if (pp) {
-		*pp++ = '\0';
-		r->port0 = r->port1 = strtol(pp, NULL, 0);
-	};
-	inet_aton(r->name, &a);
-	r->start = r->end = ntohl(a.s_addr);
-	if (ap) {
-		pp = index(ap, ':');
-		if (pp) {
-			*pp++ = '\0';
-			if (*pp)
-				r->port1 = strtol(pp, NULL, 0);
+	r->port0 = 1234;	/* default port */
+	if (af == AF_INET6) {
+		r->ipv6.sgroup = 7; /* default group */
+		extract_ipv6_addr(name, &r->ipv6.start, &r->port0,
+		    &r->ipv6.sgroup);
+	} else
+		extract_ipv4_addr(name, &r->ipv4.start, &r->port0);
+
+	r->port1 = r->port0;
+	if (af == AF_INET6) {
+		if (ap != NULL) {
+			r->ipv6.egroup = r->ipv6.sgroup;
+			extract_ipv6_addr(ap, &r->ipv6.end, &r->port1,
+			    &r->ipv6.egroup);
+		} else {
+			r->ipv6.end = r->ipv6.start;
+			r->ipv6.egroup = r->ipv6.sgroup;
 		}
-		if (*ap) {
-			inet_aton(ap, &a);
-			r->end = ntohl(a.s_addr);
-		}
+	} else {
+		if (ap != NULL) {
+			extract_ipv4_addr(ap, &r->ipv4.end, &r->port1);
+			if (r->ipv4.start > r->ipv4.end) {
+				tmp = r->ipv4.end;
+				r->ipv4.end = r->ipv4.start;
+				r->ipv4.start = tmp;
+			}
+		} else
+			r->ipv4.end = r->ipv4.start;
 	}
+
 	if (r->port0 > r->port1) {
-		uint16_t tmp = r->port0;
+		tmp = r->port0;
 		r->port0 = r->port1;
 		r->port1 = tmp;
 	}
-	if (r->start > r->end) {
-		uint32_t tmp = r->start;
-		r->start = r->end;
-		r->end = tmp;
+	if (af == AF_INET) {
+		a.s_addr = htonl(r->ipv4.start);
+		inet_ntop(af, &a, start, sizeof(start));
+		a.s_addr = htonl(r->ipv4.end);
+		inet_ntop(af, &a, end, sizeof(end));
+	} else {
+		inet_ntop(af, &r->ipv6.start, start, sizeof(start));
+		inet_ntop(af, &r->ipv6.end, end, sizeof(end));
 	}
-	{
-		struct in_addr a;
-		char buf1[16]; // one ip address
+	if (af == AF_INET)
+		D("range is %s:%d to %s:%d", start, r->port0, end, r->port1);
+	else
+		D("range is %d@[%s]:%d to %d@[%s]:%d", r->ipv6.sgroup,
+		    start, r->port0, r->ipv6.egroup, end, r->port1);
 
-		a.s_addr = htonl(r->end);
-		strncpy(buf1, inet_ntoa(a), sizeof(buf1));
-		a.s_addr = htonl(r->start);
-		if (1)
-		    D("range is %s:%d to %s:%d",
-			inet_ntoa(a), r->port0, buf1, r->port1);
-	}
+	free(name);
+	if (r->port0 != r->port1 ||
+	    (af == AF_INET && r->ipv4.start != r->ipv4.end) ||
+	    (af == AF_INET6 &&
+		!IN6_ARE_ADDR_EQUAL(&r->ipv6.start, &r->ipv6.end)))
+		return (OPT_COPY);
+	return (0);
 }
 
 static void
@@ -563,8 +668,9 @@ setaffinity(pthread_t me, int i)
 	return 0;
 }
 
+
 /* Compute the checksum of the given ip header. */
-static uint16_t
+static uint32_t
 checksum(const void *data, uint16_t len, uint32_t sum)
 {
         const uint8_t *addr = data;
@@ -589,8 +695,8 @@ checksum(const void *data, uint16_t len, uint32_t sum)
 	return sum;
 }
 
-static u_int16_t
-wrapsum(u_int32_t sum)
+static uint16_t
+wrapsum(uint32_t sum)
 {
 	sum = ~sum & 0xFFFF;
 	return (htons(sum));
@@ -638,64 +744,184 @@ dump_payload(const char *_p, int len, struct netmap_ring *ring, int cur)
 #define uh_sum check
 #endif /* linux */
 
-/*
- * increment the addressed in the packet,
- * starting from the least significant field.
- *	DST_IP DST_PORT SRC_IP SRC_PORT
- */
+static void
+update_ip(struct pkt *pkt, struct glob_arg *g)
+{
+	struct ip *ip;
+	struct udphdr *udp;
+	uint32_t oaddr, naddr;
+	uint16_t oport, nport;
+	uint16_t ip_sum, udp_sum;
+
+	ip = &pkt->ipv4.ip;
+	udp = &pkt->ipv4.udp;
+	do {
+		ip_sum = udp_sum = 0;
+		naddr = oaddr = ntohl(ip->ip_src.s_addr);
+		nport = oport = ntohs(udp->uh_sport);
+		if (g->options & OPT_RANDOM_SRC) {
+			naddr = ip->ip_src.s_addr = random();
+			nport = udp->uh_sport = random();
+			break;
+		}
+		if (oport < g->src_ip.port1) {
+			nport = oport + 1;
+			udp->uh_sport = htons(nport);
+			break;
+		}
+		nport = g->src_ip.port0;
+		udp->uh_sport = htons(nport);
+		if (oaddr < g->src_ip.ipv4.end) {
+			naddr = oaddr + 1;
+			ip->ip_src.s_addr = htonl(naddr);
+			break;
+		}
+		naddr = g->src_ip.ipv4.start;
+		ip->ip_src.s_addr = htonl(naddr);
+
+		/* update checksums if needed */
+		if (oaddr != naddr) {
+			ip_sum = cksum_add(ip_sum, ~oaddr >> 16);
+			ip_sum = cksum_add(ip_sum, ~oaddr & 0xffff);
+			ip_sum = cksum_add(ip_sum, naddr >> 16);
+			ip_sum = cksum_add(ip_sum, naddr & 0xffff);
+		}
+		if (oport != nport) {
+			udp_sum = cksum_add(udp_sum, ~oport);
+			udp_sum = cksum_add(udp_sum, nport);
+		}
+
+		naddr = oaddr = ntohl(ip->ip_dst.s_addr);
+		nport = oport = ntohs(udp->uh_dport);
+		if (g->options & OPT_RANDOM_DST) {
+			naddr = ip->ip_dst.s_addr = random();
+			nport = udp->uh_dport = random();
+			break;
+		}
+		if (oport < g->dst_ip.port1) {
+			nport = oport + 1;
+			udp->uh_dport = htons(nport);
+			break;
+		}
+		nport = g->dst_ip.port0;
+		udp->uh_dport = htons(nport);
+		if (oaddr < g->dst_ip.ipv4.end) {
+			naddr = oaddr + 1;
+			ip->ip_dst.s_addr = htonl(naddr);
+			break;
+		}
+		naddr = g->dst_ip.ipv4.start;
+		ip->ip_dst.s_addr = htonl(naddr);
+	} while (0);
+	/* update checksums */
+	if (oaddr != naddr) {
+		ip_sum = cksum_add(ip_sum, ~oaddr >> 16);
+		ip_sum = cksum_add(ip_sum, ~oaddr & 0xffff);
+		ip_sum = cksum_add(ip_sum, naddr >> 16);
+		ip_sum = cksum_add(ip_sum, naddr & 0xffff);
+	}
+	if (oport != nport) {
+		udp_sum = cksum_add(udp_sum, ~oport);
+		udp_sum = cksum_add(udp_sum, nport);
+	}
+	if (udp_sum != 0)
+		udp->uh_sum = cksum_add(udp->uh_sum, ~htons(udp_sum));
+	if (ip_sum != 0) {
+		ip->ip_sum = cksum_add(ip->ip_sum, ~htons(ip_sum));
+		udp->uh_sum = cksum_add(udp->uh_sum, ~htons(ip_sum));
+	}
+}
+
+#ifndef s6_addr16
+#define	s6_addr16	__u6_addr.__u6_addr16
+#endif
+static void
+update_ip6(struct pkt *pkt, struct glob_arg *g)
+{
+	struct ip6_hdr *ip6;
+	struct udphdr *udp;
+	uint16_t udp_sum;
+	uint16_t oaddr, naddr;
+	uint16_t oport, nport;
+	uint8_t group;
+
+	ip6 = &pkt->ipv6.ip;
+	udp = &pkt->ipv6.udp;
+	do {
+		udp_sum = 0;
+		group = g->src_ip.ipv6.sgroup;
+		naddr = oaddr = ntohs(ip6->ip6_src.s6_addr16[group]);
+		nport = oport = ntohs(udp->uh_sport);
+		if (g->options & OPT_RANDOM_SRC) {
+			naddr = ip6->ip6_src.s6_addr16[group] = random();
+			nport = udp->uh_sport = random();
+			break;
+		}
+		if (oport < g->src_ip.port1) {
+			nport = oport + 1;
+			udp->uh_sport = htons(nport);
+			break;
+		}
+		nport = g->src_ip.port0;
+		udp->uh_sport = htons(nport);
+		if (oaddr < ntohs(g->src_ip.ipv6.end.s6_addr16[group])) {
+			naddr = oaddr + 1;
+			ip6->ip6_src.s6_addr16[group] = htons(naddr);
+			break;
+		}
+		naddr = ntohs(g->src_ip.ipv6.start.s6_addr16[group]);
+		ip6->ip6_src.s6_addr16[group] = htons(naddr);
+
+		/* update checksums if needed */
+		if (oaddr != naddr)
+			udp_sum = cksum_add(~oaddr, naddr);
+		if (oport != nport)
+			udp_sum = cksum_add(udp_sum,
+			    cksum_add(~oport, nport));
+
+		group = g->dst_ip.ipv6.egroup;
+		naddr = oaddr = ntohs(ip6->ip6_dst.s6_addr16[group]);
+		nport = oport = ntohs(udp->uh_dport);
+		if (g->options & OPT_RANDOM_DST) {
+			naddr = ip6->ip6_dst.s6_addr16[group] = random();
+			nport = udp->uh_dport = random();
+			break;
+		}
+		if (oport < g->dst_ip.port1) {
+			nport = oport + 1;
+			udp->uh_dport = htons(nport);
+			break;
+		}
+		nport = g->dst_ip.port0;
+		udp->uh_dport = htons(nport);
+		if (oaddr < ntohs(g->dst_ip.ipv6.end.s6_addr16[group])) {
+			naddr = oaddr + 1;
+			ip6->ip6_dst.s6_addr16[group] = htons(naddr);
+			break;
+		}
+		naddr = ntohs(g->dst_ip.ipv6.start.s6_addr16[group]);
+		ip6->ip6_dst.s6_addr16[group] = htons(naddr);
+	} while (0);
+	/* update checksums */
+	if (oaddr != naddr)
+		udp_sum = cksum_add(udp_sum,
+		    cksum_add(~oaddr, naddr));
+	if (oport != nport)
+		udp_sum = cksum_add(udp_sum,
+		    cksum_add(~oport, nport));
+	if (udp_sum != 0)
+		udp->uh_sum = cksum_add(udp->uh_sum, ~htons(udp_sum));
+}
+
 static void
 update_addresses(struct pkt *pkt, struct glob_arg *g)
 {
-	uint32_t a;
-	uint16_t p;
-	struct ip *ip = &pkt->ip;
-	struct udphdr *udp = &pkt->udp;
 
-    do {
-    	/* XXX for now it doesn't handle non-random src, random dst */
-	if (g->options & OPT_RANDOM_SRC) {
-		udp->uh_sport = random();
-		ip->ip_src.s_addr = random();
-	} else {
-		p = ntohs(udp->uh_sport);
-		if (p < g->src_ip.port1) { /* just inc, no wrap */
-			udp->uh_sport = htons(p + 1);
-			break;
-		}
-		udp->uh_sport = htons(g->src_ip.port0);
-
-		a = ntohl(ip->ip_src.s_addr);
-		if (a < g->src_ip.end) { /* just inc, no wrap */
-			ip->ip_src.s_addr = htonl(a + 1);
-			break;
-		}
-		ip->ip_src.s_addr = htonl(g->src_ip.start);
-
-		udp->uh_sport = htons(g->src_ip.port0);
-	}
-
-	if (g->options & OPT_RANDOM_DST) {
-		udp->uh_dport = random();
-		ip->ip_dst.s_addr = random();
-	} else {
-		p = ntohs(udp->uh_dport);
-		if (p < g->dst_ip.port1) { /* just inc, no wrap */
-			udp->uh_dport = htons(p + 1);
-			break;
-		}
-		udp->uh_dport = htons(g->dst_ip.port0);
-
-		a = ntohl(ip->ip_dst.s_addr);
-		if (a < g->dst_ip.end) { /* just inc, no wrap */
-			ip->ip_dst.s_addr = htonl(a + 1);
-			break;
-		}
-	}
-	ip->ip_dst.s_addr = htonl(g->dst_ip.start);
-    } while (0);
-    // update checksum
+	if (g->af == AF_INET)
+		update_ip(pkt, g);
+	else
+		update_ip6(pkt, g);
 }
-
 /*
  * initialize one packet and prepare for the next one.
  * The copy could be done better instead of repeating it each time.
@@ -705,9 +931,11 @@ initialize_packet(struct targ *targ)
 {
 	struct pkt *pkt = &targ->pkt;
 	struct ether_header *eh;
+	struct ip6_hdr *ip6;
 	struct ip *ip;
 	struct udphdr *udp;
-	uint16_t paylen = targ->g->pkt_size - sizeof(*eh) - sizeof(struct ip);
+	uint16_t paylen;
+	uint32_t csum;
 	const char *payload = targ->g->options & OPT_INDIRECT ?
 		indirect_payload : default_payload;
 	int i, l0 = strlen(payload);
@@ -736,48 +964,74 @@ initialize_packet(struct targ *targ)
 	}
 #endif
 
+	paylen = targ->g->pkt_size - sizeof(*eh) -
+	    (targ->g->af == AF_INET ? sizeof(*ip): sizeof(*ip6));
+
 	/* create a nice NUL-terminated string */
 	for (i = 0; i < paylen; i += l0) {
 		if (l0 > paylen - i)
 			l0 = paylen - i; // last round
-		bcopy(payload, pkt->body + i, l0);
+		bcopy(payload, PKT(pkt, body, targ->g->af) + i, l0);
 	}
-	pkt->body[i-1] = '\0';
-	ip = &pkt->ip;
+	PKT(pkt, body, targ->g->af)[i - 1] = '\0';
 
 	/* prepare the headers */
-        ip->ip_v = IPVERSION;
-        ip->ip_hl = 5;
-        ip->ip_id = 0;
-        ip->ip_tos = IPTOS_LOWDELAY;
-	ip->ip_len = ntohs(targ->g->pkt_size - sizeof(*eh));
-        ip->ip_id = 0;
-        ip->ip_off = htons(IP_DF); /* Don't fragment */
-        ip->ip_ttl = IPDEFTTL;
-	ip->ip_p = IPPROTO_UDP;
-	ip->ip_dst.s_addr = htonl(targ->g->dst_ip.start);
-	ip->ip_src.s_addr = htonl(targ->g->src_ip.start);
-	ip->ip_sum = wrapsum(checksum(ip, sizeof(*ip), 0));
-
-
-	udp = &pkt->udp;
-        udp->uh_sport = htons(targ->g->src_ip.port0);
-        udp->uh_dport = htons(targ->g->dst_ip.port0);
-	udp->uh_ulen = htons(paylen);
-	/* Magic: taken from sbin/dhclient/packet.c */
-	udp->uh_sum = wrapsum(checksum(udp, sizeof(*udp),
-                    checksum(pkt->body,
-                        paylen - sizeof(*udp),
-                        checksum(&ip->ip_src, 2 * sizeof(ip->ip_src),
-                            IPPROTO_UDP + (u_int32_t)ntohs(udp->uh_ulen)
-                        )
-                    )
-                ));
-
 	eh = &pkt->eh;
 	bcopy(&targ->g->src_mac.start, eh->ether_shost, 6);
 	bcopy(&targ->g->dst_mac.start, eh->ether_dhost, 6);
-	eh->ether_type = htons(ETHERTYPE_IP);
+
+	if (targ->g->af == AF_INET) {
+		eh->ether_type = htons(ETHERTYPE_IP);
+		ip = &pkt->ipv4.ip;
+		udp = &pkt->ipv4.udp;
+		ip->ip_v = IPVERSION;
+		ip->ip_hl = sizeof(*ip) >> 2;
+		ip->ip_id = 0;
+		ip->ip_tos = IPTOS_LOWDELAY;
+		ip->ip_len = ntohs(targ->g->pkt_size - sizeof(*eh));
+		ip->ip_id = 0;
+		ip->ip_off = htons(IP_DF); /* Don't fragment */
+		ip->ip_ttl = IPDEFTTL;
+		ip->ip_p = IPPROTO_UDP;
+		ip->ip_dst.s_addr = htonl(targ->g->dst_ip.ipv4.start);
+		ip->ip_src.s_addr = htonl(targ->g->src_ip.ipv4.start);
+		ip->ip_sum = wrapsum(checksum(ip, sizeof(*ip), 0));
+	} else {
+		eh->ether_type = htons(ETHERTYPE_IPV6);
+		ip6 = &pkt->ipv6.ip;
+		udp = &pkt->ipv6.udp;
+		ip6->ip6_flow = 0;
+		ip6->ip6_plen = htons(paylen);
+		ip6->ip6_vfc = IPV6_VERSION;
+		ip6->ip6_nxt = IPPROTO_UDP;
+		ip6->ip6_hlim = IPV6_DEFHLIM;
+		ip6->ip6_src = targ->g->src_ip.ipv6.start;
+		ip6->ip6_dst = targ->g->dst_ip.ipv6.start;
+	}
+
+	udp->uh_sport = htons(targ->g->src_ip.port0);
+	udp->uh_dport = htons(targ->g->dst_ip.port0);
+	udp->uh_ulen = htons(paylen);
+	if (targ->g->af == AF_INET) {
+		/* Magic: taken from sbin/dhclient/packet.c */
+		udp->uh_sum = wrapsum(
+		    checksum(udp, sizeof(*udp),	/* udp header */
+                    checksum(pkt->ipv4.body,	/* udp payload */
+		    paylen - sizeof(*udp),
+		    checksum(&pkt->ipv4.ip.ip_src, /* pseudo header */
+			2 * sizeof(pkt->ipv4.ip.ip_src),
+			IPPROTO_UDP + (u_int32_t)ntohs(udp->uh_ulen)))));
+	} else {
+		/* Save part of pseudo header checksum into csum */
+		csum = IPPROTO_UDP << 24;
+		csum = checksum(&csum, sizeof(csum), paylen);
+		udp->uh_sum = wrapsum(
+		    checksum(udp, sizeof(*udp),	/* udp header */
+		    checksum(pkt->ipv6.body,	/* udp payload */
+		    paylen - sizeof(*udp),
+		    checksum(&pkt->ipv6.ip.ip6_src, /* pseudo header */
+			2 * sizeof(pkt->ipv6.ip.ip6_src), csum))));
+	}
 
 	bzero(&pkt->vh, sizeof(pkt->vh));
 	// dump_payload((void *)pkt, targ->g->pkt_size, NULL, 0);
@@ -1576,10 +1830,10 @@ txseq_body(void *data)
 			char *p = NETMAP_BUF(ring, slot->buf_idx);
 
 			slot->flags = 0;
-			pkt->body[0] = sequence >> 24;
-			pkt->body[1] = (sequence >> 16) & 0xff;
-			pkt->body[2] = (sequence >> 8) & 0xff;
-			pkt->body[3] = sequence & 0xff;
+			PKT(pkt, body, targ->g->af)[0] = sequence >> 24;
+			PKT(pkt, body, targ->g->af)[1] = (sequence >> 16) & 0xff;
+			PKT(pkt, body, targ->g->af)[2] = (sequence >> 8) & 0xff;
+			PKT(pkt, body, targ->g->af)[3] = sequence & 0xff;
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == frags) {
 				update_addresses(pkt, targ->g);
@@ -1681,7 +1935,7 @@ rxseq_body(void *data)
 	unsigned int frags = 0;
 	int first_packet = 1;
 	int first_slot = 1;
-	int i;
+	int i, af;
 
 	cur.pkts = cur.bytes = cur.events = cur.min_space = 0;
 	cur.t.tv_usec = cur.t.tv_sec = 0; //  unused, just silence the compiler
@@ -1778,13 +2032,20 @@ rxseq_body(void *data)
 			p -= sizeof(pkt->vh) - targ->g->virt_header;
 			len += sizeof(pkt->vh) - targ->g->virt_header;
 			pkt = (struct pkt *)p;
+			if (ntohs(pkt->eh.ether_type) == ETHERTYPE_IP)
+				af = AF_INET;
+			else
+				af = AF_INET6;
 
-			if ((char *)pkt + len < ((char *)pkt->body) + sizeof(seq)) {
+			if ((char *)pkt + len < ((char *)PKT(pkt, body, af)) +
+			    sizeof(seq)) {
 				RD(1, "%s: packet too small (len=%u)", __func__,
 				      slot->len);
 			} else {
-				seq = (pkt->body[0] << 24) | (pkt->body[1] << 16)
-				      | (pkt->body[2] << 8) | pkt->body[3];
+				seq = (PKT(pkt, body, af)[0] << 24) |
+				    (PKT(pkt, body, af)[1] << 16) |
+				    (PKT(pkt, body, af)[2] << 8) |
+				    PKT(pkt, body, af)[3];
 				if (first_slot) {
 					/* Grab the first one, whatever it
 					   is. */
@@ -2216,6 +2477,7 @@ main(int arc, char **argv)
 	g.report_interval = 1000;	/* report interval */
 	g.affinity = -1;
 	/* ip addresses can also be a range x.x.x.x-x.x.x.y */
+	g.af = AF_INET;		/* default */
 	g.src_ip.name = "10.0.0.1";
 	g.dst_ip.name = "10.1.0.1";
 	g.dst_mac.name = "ff:ff:ff:ff:ff:ff";
@@ -2231,14 +2493,22 @@ main(int arc, char **argv)
 	g.virt_header = 0;
 	g.wait_link = 2;
 
-	while ( (ch = getopt(arc, argv,
-			"a:f:F:n:i:Il:d:s:D:S:b:c:o:p:T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
+	while ((ch = getopt(arc, argv, "46a:f:F:n:i:Il:d:s:D:S:b:c:o:p:"
+	    "T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
 		struct td_desc *fn;
 
 		switch(ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
 			usage();
+			break;
+
+		case '4':
+			g.af = AF_INET;
+			break;
+
+		case '6':
+			g.af = AF_INET6;
 			break;
 
 		case 'n':
@@ -2421,16 +2691,10 @@ D("running on %d cpus (have %d)", g.cpus, i);
 		g.src_mac.name = mybuf;
 	}
 	/* extract address ranges */
-	extract_ip_range(&g.src_ip);
-	extract_ip_range(&g.dst_ip);
 	extract_mac_range(&g.src_mac);
 	extract_mac_range(&g.dst_mac);
-
-	if (g.src_ip.start != g.src_ip.end ||
-	    g.src_ip.port0 != g.src_ip.port1 ||
-	    g.dst_ip.start != g.dst_ip.end ||
-	    g.dst_ip.port0 != g.dst_ip.port1)
-		g.options |= OPT_COPY;
+	g.options |= extract_ip_range(&g.src_ip, g.af);
+	g.options |= extract_ip_range(&g.dst_ip, g.af);
 
 	if (g.virt_header != 0 && g.virt_header != VIRT_HDR_1
 			&& g.virt_header != VIRT_HDR_2) {
