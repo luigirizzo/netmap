@@ -61,7 +61,7 @@ LD_FLAGS += ${OUTDIR}/netmap_windows.res"
 
 
 
-APP_CFLAGS = -I../sys -Iincludes -DNO_PCAP
+APP_CFLAGS = -I../sys -Iincludes -I../apps/include -DNO_PCAP
 APP_CFLAGS += -g -O2 -Wall -Werror
 
 KMOD	= netmap
@@ -95,10 +95,10 @@ _msbuild:
 	$(MSBUILD) netmap.sln /t:Build /p:Configuration="Win8.1 Release" -p:Platform=x64
 
 _apps:
-	gcc $(APP_CFLAGS) ../examples/pkt-gen.c  -o ../examples/pkt-gen.exe
-	gcc $(APP_CFLAGS) ../examples/pkt-gen.c -DBUSYWAIT -o ../examples/pkt-gen-b.exe
-	gcc $(APP_CFLAGS) ../examples/bridge.c -DBUSYWAIT -Wno-unused-function -o ../examples/bridge-b.exe
-	gcc $(APP_CFLAGS) ../examples/vale-ctl.c -Wno-unused-function -o ../examples/vale-ctl.exe
+	gcc $(APP_CFLAGS) ../apps/pkt-gen/pkt-gen.c  -o ../apps/pkt-gen/pkt-gen.exe
+	gcc $(APP_CFLAGS) ../apps/pkt-gen/pkt-gen.c -DBUSYWAIT -o ../apps/pkt-gen/pkt-gen-b.exe
+	gcc $(APP_CFLAGS) ../apps/bridge/bridge.c -DBUSYWAIT -Wno-unused-function -o ../apps/bridge/bridge-b.exe
+	gcc $(APP_CFLAGS) ../apps/vale-ctl/vale-ctl.c -Wno-unused-function -o ../apps/vale-ctl/vale-ctl.exe
 	
 clean:
 	rm -rf Output*
