@@ -148,7 +148,7 @@ static int
 netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
 {
         ND("%s %x", kring->name, flags);
-	kring->nr_hwcur = kring->rcur;
+	kring->nr_hwcur = kring->rhead;
 	mb();
         return 0;
 }
