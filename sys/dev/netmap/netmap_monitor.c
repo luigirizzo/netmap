@@ -148,7 +148,7 @@ static int
 netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
 {
         ND("%s %x", kring->name, flags);
-	kring->nr_hwcur = kring->rcur;
+	kring->nr_hwcur = kring->rhead;
 	mb();
         return 0;
 }
@@ -246,7 +246,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 	if (error)
 		goto out;
 	kring->monitors[kring->n_monitors] = mkring;
-	mkring->mon_pos = kring->n_monitors;
+	mkring->mon_pos[kring->tx] = kring->n_monitors;
 	kring->n_monitors++;
 	if (kring->n_monitors == 1) {
 		/* this is the first monitor, intercept callbacks */
@@ -284,12 +284,14 @@ out:
 static void
 netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring)
 {
+	uint32_t mon_pos;
 	/* sinchronize with concurrently running nm_sync()s */
 	nm_kr_stop(kring, NM_KR_LOCKED);
 	kring->n_monitors--;
-	if (mkring->mon_pos != kring->n_monitors) {
-		kring->monitors[mkring->mon_pos] = kring->monitors[kring->n_monitors];
-		kring->monitors[mkring->mon_pos]->mon_pos = mkring->mon_pos;
+	mon_pos = mkring->mon_pos[kring->tx];
+	if (mon_pos != kring->n_monitors) {
+		kring->monitors[mon_pos] = kring->monitors[kring->n_monitors];
+		kring->monitors[mon_pos]->mon_pos[kring->tx] = mon_pos;
 	}
 	kring->monitors[kring->n_monitors] = NULL;
 	if (kring->n_monitors == 0) {
@@ -334,8 +336,10 @@ netmap_monitor_stop(struct netmap_adapter *na)
 				struct netmap_monitor_adapter *mna =
 					(struct netmap_monitor_adapter *)mkring->na;
 				/* forget about this adapter */
-				netmap_adapter_put(mna->priv.np_na);
-				mna->priv.np_na = NULL;
+				if (mna->priv.np_na != NULL) {
+					netmap_adapter_put(mna->priv.np_na);
+					mna->priv.np_na = NULL;
+				}
 			}
 		}
 	}
@@ -354,7 +358,7 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 	struct netmap_adapter *pna = priv->np_na;
 	struct netmap_kring *kring, *mkring;
 	int i;
-	enum txrx t;
+	enum txrx t, s;
 
 	ND("%p: onoff %d", na, onoff);
 	if (onoff) {
@@ -364,13 +368,19 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 			return ENXIO;
 		}
 		for_rx_tx(t) {
-			if (mna->flags & nm_txrx2flag(t)) {
-				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-					kring = &NMR(pna, t)[i];
-					mkring = &na->rx_rings[i];
-					if (nm_kring_pending_on(mkring)) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				mkring = &NMR(na, t)[i];
+				if (!nm_kring_pending_on(mkring))
+					continue;
+				mkring->nr_mode = NKR_NETMAP_ON;
+				if (t == NR_TX)
+					continue;
+				for_rx_tx(s) {
+					if (i > nma_get_nrings(pna, s))
+						continue;
+					if (mna->flags & nm_txrx2flag(s)) {
+						kring = &NMR(pna, s)[i];
 						netmap_monitor_add(mkring, kring, zmon);
-						mkring->nr_mode = NKR_NETMAP_ON;
 					}
 				}
 			}
@@ -380,19 +390,25 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 		if (na->active_fds == 0)
 			na->na_flags &= ~NAF_NETMAP_ON;
 		for_rx_tx(t) {
-			if (mna->flags & nm_txrx2flag(t)) {
-				for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-					mkring = &na->rx_rings[i];
-					if (nm_kring_pending_off(mkring)) {
-						mkring->nr_mode = NKR_NETMAP_OFF;
-						/* we cannot access the parent krings if the parent
-						 * has left netmap mode. This is signaled by a NULL
-						 * pna pointer
-						 */
-						if (pna) {
-							kring = &NMR(pna, t)[i];
-							netmap_monitor_del(mkring, kring);
-						}
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				mkring = &NMR(na, t)[i];
+				if (!nm_kring_pending_off(mkring))
+					continue;
+				mkring->nr_mode = NKR_NETMAP_OFF;
+				if (t == NR_TX)
+					continue;
+				/* we cannot access the parent krings if the parent
+				 * has left netmap mode. This is signaled by a NULL
+				 * pna pointer
+				 */
+				if (pna == NULL)
+					continue;
+				for_rx_tx(s) {
+					if (i > nma_get_nrings(pna, s))
+						continue;
+					if (mna->flags & nm_txrx2flag(s)) {
+						kring = &NMR(pna, s)[i];
+						netmap_monitor_del(mkring, kring);
 					}
 				}
 			}

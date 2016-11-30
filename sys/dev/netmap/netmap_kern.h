@@ -508,7 +508,7 @@ struct netmap_kring {
 	int (*mon_notify)(struct netmap_kring *kring, int flags);
 
 	uint32_t mon_tail;  /* last seen slot on rx */
-	uint32_t mon_pos;   /* index of this ring in the monitored ring array */
+	uint32_t mon_pos[NR_TXRX];  /* index of this ring in the monitored ring array */
 #endif
 }
 #ifdef _WIN32
