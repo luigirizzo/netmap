@@ -476,13 +476,20 @@ extract_ip_range(struct ip_range *r, int af)
 	return (0);
 }
 
-static void
+static int
 extract_mac_range(struct mac_range *r)
 {
+	struct ether_addr *e;
 	if (verbose)
 	    D("extract MAC range from %s", r->name);
-	bcopy(ether_aton(r->name), &r->start, 6);
-	bcopy(ether_aton(r->name), &r->end, 6);
+
+	e = ether_aton(r->name);
+	if (e == NULL) {
+		D("invalid MAC address '%s'", r->name);
+		return 1;
+	}
+	bcopy(e, &r->start, 6);
+	bcopy(e, &r->end, 6);
 #if 0
 	bcopy(targ->src_mac, eh->ether_shost, 6);
 	p = index(targ->g->src_mac, '-');
@@ -497,6 +504,7 @@ extract_mac_range(struct mac_range *r)
 #endif
 	if (verbose)
 		D("%s starts at %s", r->name, ether_ntoa(&r->start));
+	return 0;
 }
 
 static struct targ *targs;
@@ -2691,8 +2699,8 @@ D("running on %d cpus (have %d)", g.cpus, i);
 		g.src_mac.name = mybuf;
 	}
 	/* extract address ranges */
-	extract_mac_range(&g.src_mac);
-	extract_mac_range(&g.dst_mac);
+	if (extract_mac_range(&g.src_mac) || extract_mac_range(&g.dst_mac))
+		usage();
 	g.options |= extract_ip_range(&g.src_ip, g.af);
 	g.options |= extract_ip_range(&g.dst_ip, g.af);
 
