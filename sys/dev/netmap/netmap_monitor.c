@@ -447,11 +447,11 @@ netmap_zmon_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
 
 	/* get the relased slots (rel_slots) */
 	if (tx == NR_TX) {
-		beg = kring->nr_hwtail;
+		beg = kring->nr_hwtail + 1;
 		error = kring->mon_sync(kring, flags);
 		if (error)
 			return error;
-		end = kring->nr_hwtail;
+		end = kring->nr_hwtail + 1;
 	} else { /* NR_RX */
 		beg = kring->nr_hwcur;
 		end = kring->rhead;
@@ -486,10 +486,10 @@ netmap_zmon_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
 	/* swap min(free_slots, rel_slots) slots */
 	if (free_slots < rel_slots) {
 		beg += (rel_slots - free_slots);
-		if (beg >= kring->nkr_num_slots)
-			beg -= kring->nkr_num_slots;
 		rel_slots = free_slots;
 	}
+	if (unlikely(beg >= kring->nkr_num_slots))
+		beg -= kring->nkr_num_slots;
 
 	sent = rel_slots;
 	for ( ; rel_slots; rel_slots--) {
