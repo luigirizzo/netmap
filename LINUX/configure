@@ -1281,16 +1281,6 @@ EOF
 EOF
   done
 
-# check for split_page
-  add_test 'have SPLIT_PAGE' <<EOF
-	#include <linux/mm.h>
-
-	void
-	dummy(struct page *page) {
-		split_page(page, 0);
-	}
-EOF
-
 # check for third argument in qdisc enqueue callbacks
   add_test 'have QDISC_ENQUEUE_TOFREE' <<EOF
 	#include <net/sch_generic.h>
@@ -1300,7 +1290,6 @@ EOF
 		return q->enqueue(skb, q, to_free);
 	}
 EOF
-
 
   #####################################################
   # checks related to drivers                         #
@@ -1539,6 +1528,27 @@ Now running compile tests to adapt the code to your
 kernel version. Please wait.
 EOF
   run_tests
+
+# check for exported split_page 
+  cat >> config.log <<EOF
+##############################################################################
+## CHECKING FOR split_page
+##############################################################################
+EOF
+  symf=$ksrc/Module.symvers
+  if [ -e $symf ]; then
+	  if cut -f2 $symf | grep -q split_page; then
+		  echo "found in $symf" >> config.log
+		  have SPLIT_PAGE
+	  else
+		  echo "not found in $symf" >> config.log
+	  fi
+  else
+	  echo "$symf file not found" >> config.log
+  fi
+  cat >> config.log <<EOF
+##############################################################################
+EOF
   
   define DRIVER_SUFFIX \"$drvsuffix\"
   
