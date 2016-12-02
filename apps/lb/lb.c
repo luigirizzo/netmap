@@ -720,6 +720,8 @@ int main(int argc, char **argv)
 	     scan = *(uint32_t *)NETMAP_BUF(rxport->ring, scan))
 	{
 		struct netmap_slot s;
+		s.len = s.flags = 0;
+		s.ptr = 0;
 		s.buf_idx = scan;
 		ND("freeq <- %d", s.buf_idx);
 		oq_enq(freeq, &s);
