@@ -83,6 +83,7 @@ struct compact_ipv6_hdr {
 #define DEF_OUT_PIPES 	2
 #define DEF_EXTRA_BUFS 	0
 #define DEF_BATCH	2048
+#define DEF_WAIT_LINK	2
 #define DEF_SYSLOG_INT	600
 #define BUF_REVOKE	100
 
@@ -95,6 +96,7 @@ struct {
 	uint32_t extra_bufs;
 	uint16_t batch;
 	int syslog_interval;
+	int wait_link;
 } glob_arg;
 
 /*
@@ -305,6 +307,7 @@ void usage()
 	printf("  -p [prefix:]npipes	add a new group of output pipes\n");
 	printf("  -B nbufs        	number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
 	printf("  -b batch        	batch size (default: %d)\n", DEF_BATCH);
+	printf("  -w seconds        	wait for link up (default: %d)\n", DEF_WAIT_LINK);
 	printf("  -s seconds      	seconds between syslog messages (default: %d)\n",
 			DEF_SYSLOG_INT);
 	exit(0);
@@ -576,6 +579,7 @@ int main(int argc, char **argv)
 	glob_arg.ifname[0] = '\0';
 	glob_arg.output_rings = 0;
 	glob_arg.batch = DEF_BATCH;
+	glob_arg.wait_link = DEF_WAIT_LINK;
 	glob_arg.syslog_interval = DEF_SYSLOG_INT;
 
 	while ( (ch = getopt(argc, argv, "i:p:b:B:s:")) != -1) {
@@ -796,7 +800,7 @@ run:
 		D("*** overflow queues disabled ***");
 	}
 
-	sleep(2);
+	sleep(glob_arg.wait_link);
 
 	struct pollfd pollfd[npipes + 1];
 	memset(&pollfd, 0, sizeof(pollfd));
