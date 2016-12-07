@@ -1832,8 +1832,10 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		needed = d->bq_len + brddst->bq_len;
 
 		if (unlikely(dst_na->up.virt_hdr_len != na->up.virt_hdr_len)) {
-			RD(3, "virt_hdr_mismatch, src %d dst %d", na->up.virt_hdr_len,
-			      dst_na->up.virt_hdr_len);
+                        if (netmap_verbose) {
+                            RD(3, "virt_hdr_mismatch, src %d dst %d", na->up.virt_hdr_len,
+                                  dst_na->up.virt_hdr_len);
+                        }
 			/* There is a virtio-net header/offloadings mismatch between
 			 * source and destination. The slower mismatch datapath will
 			 * be used to cope with all the mismatches.
