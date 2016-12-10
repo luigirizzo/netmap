@@ -1619,16 +1619,16 @@ exp_delay_run(struct _qs *q, struct _cfg *arg)
 }
 
 
-#define _CFG_END	NULL, 0, {0}
+#define TLEM_CFG_END	NULL, 0, {0}
 
 static struct _cfg delay_cfg[] = {
 	{ const_delay_parse, const_delay_run,
-		"constant,delay", _CFG_END },
+		"constant,delay", TLEM_CFG_END },
 	{ uniform_delay_parse, uniform_delay_run,
-		"uniform,dmin,dmax # dmin <= dmax", _CFG_END },
+		"uniform,dmin,dmax # dmin <= dmax", TLEM_CFG_END },
 	{ exp_delay_parse, exp_delay_run,
-		"exp,dmin,davg # dmin <= davg", _CFG_END },
-	{ NULL, NULL, NULL, _CFG_END }
+		"exp,dmin,davg # dmin <= davg", TLEM_CFG_END },
+	{ NULL, NULL, NULL, TLEM_CFG_END }
 };
 
 /* standard bandwidth, also accepts just a number */
@@ -1692,10 +1692,10 @@ ether_bw_run(struct _qs *q, struct _cfg *arg)
 
 static struct _cfg bw_cfg[] = {
 	{ const_bw_parse, const_bw_run,
-		"constant,bps", _CFG_END },
+		"constant,bps", TLEM_CFG_END },
 	{ ether_bw_parse, ether_bw_run,
-		"ether,bps", _CFG_END },
-	{ NULL, NULL, NULL, _CFG_END }
+		"ether,bps", TLEM_CFG_END },
+	{ NULL, NULL, NULL, TLEM_CFG_END }
 };
 
 /*
@@ -1801,8 +1801,8 @@ const_ber_run(struct _qs *q, struct _cfg *arg)
 
 static struct _cfg loss_cfg[] = {
 	{ const_plr_parse, const_plr_run,
-		"plr,prob # 0 <= prob <= 1", _CFG_END },
+		"plr,prob # 0 <= prob <= 1", TLEM_CFG_END },
 	{ const_ber_parse, const_ber_run,
-		"ber,prob # 0 <= prob <= 1", _CFG_END },
-	{ NULL, NULL, NULL, _CFG_END }
+		"ber,prob # 0 <= prob <= 1", TLEM_CFG_END },
+	{ NULL, NULL, NULL, TLEM_CFG_END }
 };

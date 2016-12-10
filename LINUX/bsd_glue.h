@@ -29,8 +29,8 @@
  * character device drivers and network code/device drivers.
  */
 
-#ifndef _BSD_GLUE_H
-#define _BSD_GLUE_H
+#ifndef NETMAP_BSD_GLUE_H
+#define NETMAP_BSD_GLUE_H
 
 /* a set of headers used in netmap */
 #include <linux/version.h>
@@ -483,4 +483,4 @@ void netmap_bns_unregister(void);
 
 #define if_printf(ifp, fmt, ...)  dev_info(&(ifp)->dev, fmt, ##__VA_ARGS__)
 
-#endif /* _BSD_GLUE_H */
+#endif /* NETMAP_BSD_GLUE_H */

@@ -23,8 +23,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef __NETMAP_CLASSES_H__
-#define __NETMAP_CLASSES_H__
+#ifndef NETMAP_PYTHON_CLASSES_H
+#define NETMAP_PYTHON_CLASSES_H
 
 #include <Python.h>
 #include <net/if.h>
@@ -137,4 +137,4 @@ extern PyTypeObject NetmapSlotType;
 int NetmapSlot_build(NetmapSlot *slot, void *addr, void *buf);
 void NetmapSlot_destroy(NetmapSlot *slot);
 
-#endif  /* __NETMAP_CLASSES_H__ */
+#endif  /* NETMAP_PYTHON_CLASSES_H */
