@@ -443,7 +443,13 @@ function check-patch()
 			ok=false
 			cp /dev/null config.mak
 			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX \
-				--drivers=$driver --cache=$cache >>$log
+				--drivers=$driver \
+				--disable-generic \
+				--disable-vale \
+				--disable-monitor \
+				--disable-pipe \
+				--disable-ptnetmap \
+				--cache=$cache >>$log
 			(make get-$driver && make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
 			grep -q warning: $log && { warn=true; echo $warn > $cwarn; }
 			cat config.log >>$log
