@@ -80,8 +80,8 @@ include drivers.mak
 $(foreach d,$(S_DRIVERS),$(eval $(call common_driver,$(d))))
 $(foreach d,$(E_DRIVERS),$(eval $(call external_driver,$(d))))
 
-.PHONY: install install-netmap install-apps install-headers
-install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers
+.PHONY: install install-netmap install-apps install-headers install-docs
+install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers install-docs
 
 install-netmap:
 	$(MAKE) -C $(KSRC) M=$(BUILDDIR) CONFIG_NETMAP=m $(MOD_LIST) \
@@ -128,6 +128,11 @@ INCLUDE_PREFIX := $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)
 install-headers:
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap.h
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_user.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_user.h
+
+MAN_PREFIX := $(INCLUDE_PREFIX)
+
+install-docs:
+	install -D -m 644 $(SRCDIR)/../share/man/man4/netmap.4 $(DESTDIR)/$(MAN_PREFIX)/share/man/man4/netmap.4
 
 distclean: clean $(S_DRIVERS:%=distclean-%)
 	rm -f config.status config.log netmap_linux_config.h \

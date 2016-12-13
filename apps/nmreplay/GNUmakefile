@@ -20,6 +20,7 @@ ifeq ($(shell uname),Linux)
 endif
 
 PREFIX ?= /usr/local
+MAN_PREFIX = $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)/share/man
 
 all: $(PROGS)
 
@@ -30,8 +31,9 @@ nmreplay: LDLIBS += -lm
 clean:
 	-@rm -rf $(CLEANFILES)
 
-.PHONY: install
+.PHONY: install install-docs
 install: $(PROGS:%=install-%)
 
 install-%:
 	install -D $* $(DESTDIR)/$(PREFIX)/bin/$*
+	-install -D -m 644 $(SRCDIR)/apps/nmreplay/nmreplay.8 $(DESTDIR)/$(MAN_PREFIX)/man8/nmreplay.8
