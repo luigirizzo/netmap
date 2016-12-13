@@ -441,6 +441,7 @@ function check-patch()
 			ln -s single-patch patches
 			cp $p single-patch
 			ok=false
+			cp /dev/null config.mak
 			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX \
 				--drivers=$driver --cache=$cache >>$log
 			(make get-$driver && make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
