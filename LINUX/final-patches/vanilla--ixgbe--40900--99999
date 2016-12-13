@@ -1,9 +1,9 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 5bcc870..c4e71a9 100644
+index fee1f2918..2a71eac 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
-@@ -328,6 +328,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
- 	{}
+@@ -497,6 +497,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
+ 	{ .name = NULL }
  };
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
@@ -25,7 +25,7 @@ index 5bcc870..c4e71a9 100644
  
  /*
   * ixgbe_regdump - register printout routine
-@@ -959,6 +975,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
+@@ -1159,6 +1175,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
  	if (test_bit(__IXGBE_DOWN, &adapter->state))
  		return true;
  
@@ -43,7 +43,7 @@ index 5bcc870..c4e71a9 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBE_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -1995,6 +2022,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+@@ -2112,6 +2139,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
  #endif /* IXGBE_FCOE */
  	u16 cleaned_count = ixgbe_desc_unused(rx_ring);
  
@@ -57,20 +57,20 @@ index 5bcc870..c4e71a9 100644
 +		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
 +#endif /* DEV_NETMAP */
 +
- 	do {
+ 	while (likely(total_rx_packets < budget)) {
  		union ixgbe_adv_rx_desc *rx_desc;
  		struct sk_buff *skb;
-@@ -3033,6 +3070,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+@@ -3225,6 +3262,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  	} while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
  	if (!wait_loop)
- 		e_err(drv, "Could not enable Tx Queue %d\n", reg_idx);
+ 		hw_dbg(hw, "Could not enable Tx Queue %d\n", reg_idx);
 +#ifdef DEV_NETMAP
 +	ixgbe_netmap_configure_tx_ring(adapter, reg_idx);
 +#endif /* DEV_NETMAP */
  }
  
  static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
-@@ -3394,6 +3434,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+@@ -3720,6 +3760,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -81,32 +81,17 @@ index 5bcc870..c4e71a9 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -4600,16 +4644,6 @@ static void ixgbe_up_complete(struct ixgbe_adapter *adapter)
- 	/* enable transmits */
- 	netif_tx_start_all_queues(adapter->netdev);
+@@ -5271,6 +5315,9 @@ static void ixgbe_up_complete(struct ixgbe_adapter *adapter)
+ 			e_crit(drv, "Fan has stopped, replace the adapter\n");
+ 	}
  
--	/* enable any upper devices */
--	netdev_for_each_all_upper_dev_rcu(adapter->netdev, upper, iter) {
--		if (netif_is_macvlan(upper)) {
--			struct macvlan_dev *vlan = netdev_priv(upper);
--
--			if (vlan->fwd_priv)
--				netif_tx_start_all_queues(upper);
--		}
--	}
--
++	/* enable transmits */
++	netif_tx_start_all_queues(adapter->netdev);
++
  	/* bring the link up in the watchdog, this could race with our first
  	 * link up interrupt but shouldn't be a problem */
  	adapter->flags |= IXGBE_FLAG_NEED_LINK_UPDATE;
-@@ -5412,6 +5446,7 @@ static int ixgbe_open(struct net_device *netdev)
- 
- 	ixgbe_up_complete(adapter);
- 
-+
- 	return 0;
- 
- err_set_queues:
-@@ -8174,6 +8209,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+@@ -9799,6 +9846,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
  			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
  			true);
  
@@ -117,14 +102,15 @@ index 5bcc870..c4e71a9 100644
  	return 0;
  
  err_register:
-@@ -8208,6 +8247,10 @@ static void ixgbe_remove(struct pci_dev *pdev)
- 	struct ixgbe_adapter *adapter = pci_get_drvdata(pdev);
- 	struct net_device *netdev = adapter->netdev;
+@@ -9843,6 +9894,11 @@ static void ixgbe_remove(struct pci_dev *pdev)
+ 		return;
  
+ 	netdev  = adapter->netdev;
++
 +#ifdef DEV_NETMAP
 +	netmap_detach(netdev);
 +#endif /* DEV_NETMAP */
 +
  	ixgbe_dbg_adapter_exit(adapter);
  
- 	set_bit(__IXGBE_DOWN, &adapter->state);
+ 	set_bit(__IXGBE_REMOVING, &adapter->state);

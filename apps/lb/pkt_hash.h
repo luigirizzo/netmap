@@ -25,8 +25,8 @@
  ** ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  ** POSSIBILITY OF SUCH DAMAGE.
  **/
-#ifndef __PKT_HASH__
-#define __PKT_HASH__
+#ifndef LB_PKT_HASH_H
+#define LB_PKT_HASH_H
 /*---------------------------------------------------------------------*/
 /**
  ** Packet header hashing function utility - This file contains functions
@@ -74,5 +74,5 @@ pkt_hdr_hash(const unsigned char *buffer,
 	     uint8_t hash_split,
 	     uint8_t seed);
 /*---------------------------------------------------------------------*/
-#endif /* __PKT_HASH__ */
+#endif /* LB_PKT_HASH_H */
 

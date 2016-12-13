@@ -99,7 +99,7 @@ index d62e7a2..dfd338d 100644
  	return 0;
  
  err_set_queues:
-@@ -8310,6 +8358,10 @@ skip_sriov:
+@@ -8310,6 +8358,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
  			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
  			true);
  

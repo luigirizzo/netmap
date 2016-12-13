@@ -539,13 +539,6 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 	return m;
 }
 
-static struct mbuf *
-generic_qdisc_peek(struct Qdisc *qdisc)
-{
-	RD(5, "Peeking queue, curr len %u", qdisc_qlen(qdisc));
-	return skb_peek(&qdisc->q);
-}
-
 static struct Qdisc_ops
 generic_qdisc_ops __read_mostly = {
 	.id		= "netmap_generic",
@@ -555,7 +548,6 @@ generic_qdisc_ops __read_mostly = {
 	.change		= generic_qdisc_init,
 	.enqueue	= generic_qdisc_enqueue,
 	.dequeue	= generic_qdisc_dequeue,
-	.peek		= generic_qdisc_peek,
 	.dump		= NULL,
 	.owner		= THIS_MODULE,
 };

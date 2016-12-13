@@ -23,8 +23,8 @@
  * SUCH DAMAGE.
  */
  
-#ifndef _WIN_GLUE_H_
-#define _WIN_GLUE_H_
+#ifndef NETMAP_WIN_GLUE_H
+#define NETMAP_WIN_GLUE_H
 
 /*
  * This header is used to compile the kernel components of netmap for Windows.
@@ -592,4 +592,4 @@ int sysctlbyname(const char *name, void *oldp, size_t *oldlenp, void *newp, size
 #endif
 
 
-#endif /* _WIN_GLUE_H */
+#endif /* NETMAP_WIN_GLUE_H */

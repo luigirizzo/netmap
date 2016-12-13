@@ -29,8 +29,8 @@
  * character device drivers and network code/device drivers.
  */
 
-#ifndef _BSD_GLUE_H
-#define _BSD_GLUE_H
+#ifndef NETMAP_BSD_GLUE_H
+#define NETMAP_BSD_GLUE_H
 
 /* a set of headers used in netmap */
 #include <linux/version.h>
@@ -127,7 +127,7 @@ struct net_device_ops {
 #ifdef NETMAP_LINUX_HAVE_PAGE_REF
 #define NM_SET_PAGE_COUNT(page, v)	set_page_count(page, v)
 #else
-#define NM_SET_PAGE_COUNT(page, v)	atomic_inc(&((page)->NETMAP_LINUX_PAGE_COUNT), (v))
+#define NM_SET_PAGE_COUNT(page, v)	atomic_set(&((page)->NETMAP_LINUX_PAGE_COUNT), (v))
 #endif
 
 #ifndef NETMAP_LINUX_HAVE_SPLIT_PAGE
@@ -483,4 +483,4 @@ void netmap_bns_unregister(void);
 
 #define if_printf(ifp, fmt, ...)  dev_info(&(ifp)->dev, fmt, ##__VA_ARGS__)
 
-#endif /* _BSD_GLUE_H */
+#endif /* NETMAP_BSD_GLUE_H */

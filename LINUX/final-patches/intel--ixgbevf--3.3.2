@@ -1,8 +1,8 @@
-diff --git a/ixgbevf/Makefile b/ixgbevf/Makefile
-index b50a61d..e8aa31c 100644
+diff --git a/ixgbevf/Makefile b/ixgbevf-3.3.2/src/Makefile
+index d85c225..da05d8b 100644
 --- a/ixgbevf/Makefile
 +++ b/ixgbevf/Makefile
-@@ -28,23 +28,23 @@ ifneq ($(KERNELRELEASE),)
+@@ -28,22 +28,22 @@ ifneq ($(KERNELRELEASE),)
  # Makefile for the Intel(R) 10GbE PCI Express Virtual Function Driver
  #
  
@@ -12,15 +12,15 @@ index b50a61d..e8aa31c 100644
 -define ixgbevf-y
 +define ixgbevf$(NETMAP_DRIVER_SUFFIX)-y
  	ixgbevf_main.o
- 	ixgbevf_param.o
  	ixgbevf_ethtool.o
  	ixgbe_vf.o
  	ixgbe_mbx.o
  endef
 -ixgbevf-y := $(strip ${ixgbevf-y})
-+ixgbevf$(NETMAP_DRIVER_SUFFIX)-y := $(strip ${ixgbevf$(NETMAP_DRIVER_SUFFIX)-y})
- 
+-ixgbevf-${CONFIG_PCI_HYPERV:m=y} += ixgbe_hv_vf.o
 -ixgbevf-y += kcompat.o
++ixgbevf$(NETMAP_DRIVER_SUFFIX)-y := $(strip ${ixgbevf$(NETMAP_DRIVER_SUFFIX)-y})
++ixgbevf$(NETMAP_DRIVER_SUFFIX)-${CONFIG_PCI_HYPERV:m=y} += ixgbe_hv_vf.o
 +ixgbevf$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
  
  else	# ifneq($(KERNELRELEASE),)
@@ -31,7 +31,7 @@ index b50a61d..e8aa31c 100644
  
  ifeq (,$(wildcard common.mk))
    $(error Cannot find common.mk build rules)
-@@ -91,9 +91,12 @@ ccc: clean
+@@ -90,9 +90,12 @@ ccc: clean
  	@+$(call kernelbuild,modules,coccicheck MODE=report))
  
  # Build manfiles
@@ -46,10 +46,10 @@ index b50a61d..e8aa31c 100644
  clean:
  	@+$(call kernelbuild,clean)
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index bf6cc35..b2d2704 100644
+index 2435281..a64d083 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
-@@ -303,6 +303,23 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
+@@ -371,6 +371,23 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
  	ixgbevf_tx_timeout_reset(adapter);
  }
  
@@ -73,7 +73,7 @@ index bf6cc35..b2d2704 100644
  
  /**
   * ixgbevf_clean_tx_irq - Reclaim resources after transmit completes
-@@ -322,6 +339,17 @@ static bool ixgbevf_clean_tx_irq(struct ixgbevf_q_vector *q_vector,
+@@ -390,6 +407,17 @@ static bool ixgbevf_clean_tx_irq(struct ixgbevf_q_vector *q_vector,
  	if (test_bit(__IXGBEVF_DOWN, &adapter->state))
  		return true;
  
@@ -91,7 +91,7 @@ index bf6cc35..b2d2704 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBEVF_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -1140,6 +1168,17 @@ static int ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
+@@ -1192,6 +1220,17 @@ static int ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
  	u16 cleaned_count = ixgbevf_desc_unused(rx_ring);
  	struct sk_buff *skb = rx_ring->skb;
  
@@ -109,17 +109,20 @@ index bf6cc35..b2d2704 100644
  	do {
  		union ixgbe_adv_rx_desc *rx_desc;
  
-@@ -1771,6 +1810,9 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
+@@ -1823,8 +1862,11 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
  	}  while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
  	if (!wait_loop)
- 		DPRINTK(PROBE, ERR, "Could not enable Tx Queue %d\n", reg_idx);
+ 		DPRINTK(HW, DEBUG, "Could not enable Tx Queue %d\n", reg_idx);
 +#ifdef DEV_NETMAP
 +	ixgbe_netmap_configure_tx_ring(adapter, reg_idx);
 +#endif /* DEV_NETMAP */
  }
-  
+- 
++
  /**
-@@ -1943,6 +1985,10 @@ static void ixgbevf_configure_rx_ring(struct ixgbevf_adapter *adapter,
+  * ixgbevf_configure_tx - Configure 82599 VF Transmit Unit after Reset
+  * @adapter: board private structure
+@@ -1995,6 +2037,10 @@ static void ixgbevf_configure_rx_ring(struct ixgbevf_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_VFRXDCTL(reg_idx), rxdctl);
  
  	ixgbevf_rx_desc_queue_enable(adapter, ring);
@@ -130,7 +133,7 @@ index bf6cc35..b2d2704 100644
  	ixgbevf_alloc_rx_buffers(ring, ixgbevf_desc_unused(ring));
  }
  
-@@ -4767,8 +4813,10 @@ static int __devinit ixgbevf_probe(struct pci_dev *pdev,
+@@ -4883,8 +4929,10 @@ static int __devinit ixgbevf_probe(struct pci_dev *pdev,
          if (netdev->features & NETIF_F_GRO)
                  DPRINTK(PROBE, INFO, "GRO is enabled\n");
  #endif
@@ -142,7 +145,7 @@ index bf6cc35..b2d2704 100644
  	cards_found++;
  	return 0;
  
-@@ -4807,6 +4855,10 @@ static void __devexit ixgbevf_remove(struct pci_dev *pdev)
+@@ -4923,6 +4971,10 @@ static void __devexit ixgbevf_remove(struct pci_dev *pdev)
  	if (!netdev)
  		return;
  
@@ -154,7 +157,7 @@ index bf6cc35..b2d2704 100644
  
  	set_bit(__IXGBEVF_REMOVE, &adapter->state);
 diff --git a/ixgbevf/kcompat.h b/ixgbevf/kcompat.h
-index 683975b..2647519 100644
+index 976dc04..30b8868 100644
 --- a/ixgbevf/kcompat.h
 +++ b/ixgbevf/kcompat.h
 @@ -25,6 +25,8 @@
@@ -166,12 +169,12 @@ index 683975b..2647519 100644
  #ifndef LINUX_VERSION_CODE
  #include <linux/version.h>
  #else
-@@ -4793,7 +4795,7 @@ static inline void csum_replace_by_diff(__sum16 *sum, __wsum diff)
- 
+@@ -5085,7 +5087,7 @@ static inline void csum_replace_by_diff(__sum16 *sum, __wsum diff)
+ #if !(RHEL_RELEASE_CODE && (RHEL_RELEASE_CODE > RHEL_RELEASE_VERSION(7,2)))
  static inline void page_ref_inc(struct page *page)
  {
 -	atomic_inc(&page->_count);
 +	atomic_inc(&page->NETMAP_LINUX_PAGE_COUNT);
  }
  
- #endif /* 4.6.0 */
+ #endif
