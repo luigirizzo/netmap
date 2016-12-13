@@ -129,6 +129,36 @@ COMMON PROBLEMS
   remote party is senting flow control frames to slow down traffic.
   If that happens try to use the ethtool command to disable flow control.
 
+* netmap does not program the NICs to perform offloadings such as TSO,
+  UFO, RX/TX checksum offloadings, etc. As a result, in order to let
+  netmap applications correctly interact with the host rings, you need
+  to disable these offloadings
+
+      # ethtool -K eth0 tx off rx off gso off tso off gro off lro off
+
+  If offloadings are not disabled, the network stack may try to send
+  GSO packets (up to 64KB) that are dropped by netmap (as they are
+  too big for the netmap buffers); or the network stack could send
+  unchecksummed packets that end up in the host RX ring, and if
+  transmitted by netmap on a NIC TX ring they will be dropped by the
+  destination as the checksum is wrong.
+
+* if you are using netmap to implement an L2 switch (e.g. using the
+  bridge application), you must put the NIC in promiscuous mode,
+  otherwise the NIC (usually) drops all the frames whose destination
+  MAC is different from the MAC of the NIC.
+
+      # ip link set eth0 promisc on
+
+* if you are receiving VLAN-tagged packets, netmap applications (with
+  patched drivers) may not see the VLAN tag because receive VLAN offloading
+  is enabled (and so VLAN tags are stripped by the NIC). To disable it use
+
+      # ethtool -K eth0 rxvlan off
+
+  In emulated netmap mode (i.e. with unpatched drivers) VLAN tags are never
+  visible by the netmap application.
+
 
 REVISION HISTORY
 -----------------
