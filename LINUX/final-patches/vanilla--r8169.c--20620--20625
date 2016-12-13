@@ -35,7 +35,7 @@ index 0fe2fc9..5d363e5 100644
  	/* restore original MAC address */
  	rtl_rar_set(tp, dev->perm_addr);
  
-@@ -3993,6 +4005,11 @@ err_out:
+@@ -3993,6 +4005,11 @@ static struct sk_buff *rtl8169_alloc_rx_skb(struct pci_dev *pdev,
  static void rtl8169_rx_clear(struct rtl8169_private *tp)
  {
  	unsigned int i;
