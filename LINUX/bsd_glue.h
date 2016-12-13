@@ -127,7 +127,7 @@ struct net_device_ops {
 #ifdef NETMAP_LINUX_HAVE_PAGE_REF
 #define NM_SET_PAGE_COUNT(page, v)	set_page_count(page, v)
 #else
-#define NM_SET_PAGE_COUNT(page, v)	atomic_inc(&((page)->NETMAP_LINUX_PAGE_COUNT), (v))
+#define NM_SET_PAGE_COUNT(page, v)	atomic_set(&((page)->NETMAP_LINUX_PAGE_COUNT), (v))
 #endif
 
 #ifndef NETMAP_LINUX_HAVE_SPLIT_PAGE
