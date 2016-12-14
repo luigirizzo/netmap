@@ -1,5 +1,5 @@
 diff --git a/virtio_net.c b/virtio_net.c
-index 63c7810..121c5df 100644
+index 63c7810..f5fc43c 100644
 --- a/virtio_net.c
 +++ b/virtio_net.c
 @@ -142,6 +142,10 @@ struct virtnet_info {
@@ -86,13 +86,3 @@ index 63c7810..121c5df 100644
  	unregister_hotcpu_notifier(&vi->nb);
  
  	/* Make sure no work handler is accessing the device. */
-@@ -2017,6 +2058,9 @@ static unsigned int features[] = {
- 	VIRTIO_NET_F_GUEST_ANNOUNCE, VIRTIO_NET_F_MQ,
- 	VIRTIO_NET_F_CTRL_MAC_ADDR,
- 	VIRTIO_F_ANY_LAYOUT,
-+#ifdef VIRTIO_NET_F_PTNETMAP
-+	VIRTIO_NET_F_PTNETMAP,
-+#endif
- };
- 
- static struct virtio_driver virtio_net_driver = {
