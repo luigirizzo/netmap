@@ -1,5 +1,5 @@
 diff --git a/virtio_net.c b/virtio_net.c
-index b6d4028..f3555d2 100644
+index b6d4028..60bb2b2 100644
 --- a/virtio_net.c
 +++ b/virtio_net.c
 @@ -67,6 +67,10 @@ struct virtnet_info {
@@ -78,13 +78,3 @@ index b6d4028..f3555d2 100644
  	/* Stop all the virtqueues. */
  	vdev->config->reset(vdev);
  
-@@ -1066,6 +1098,9 @@ static unsigned int features[] = {
- 	VIRTIO_NET_F_GUEST_ECN, VIRTIO_NET_F_GUEST_UFO,
- 	VIRTIO_NET_F_MRG_RXBUF, VIRTIO_NET_F_STATUS, VIRTIO_NET_F_CTRL_VQ,
- 	VIRTIO_NET_F_CTRL_RX, VIRTIO_NET_F_CTRL_VLAN,
-+#ifdef VIRTIO_NET_F_PTNETMAP
-+	VIRTIO_NET_F_PTNETMAP,
-+#endif
- };
- 
- static struct virtio_driver virtio_net_driver = {
