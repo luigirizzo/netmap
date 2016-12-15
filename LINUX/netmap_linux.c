@@ -1063,6 +1063,16 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 	return -ret;
 }
 
+#ifdef CONFIG_COMPAT
+#include <asm/compat.h>
+
+static long
+linux_netmap_compat_ioctl(struct file *file, unsigned int cmd,
+                          unsigned long arg)
+{
+    return linux_netmap_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
+}
+#endif
 
 static int
 linux_netmap_release(struct inode *inode, struct file *file)
@@ -1100,6 +1110,9 @@ static struct file_operations netmap_fops = {
     .open = linux_netmap_open,
     .mmap = linux_netmap_mmap,
     LIN_IOCTL_NAME = linux_netmap_ioctl,
+#ifdef CONFIG_COMPAT
+    .compat_ioctl = linux_netmap_compat_ioctl,
+#endif
     .poll = linux_netmap_poll,
     .release = linux_netmap_release,
 };
