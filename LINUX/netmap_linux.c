@@ -1022,11 +1022,9 @@ linux_netmap_set_channels(struct net_device *dev,
 
 
 #ifndef NETMAP_LINUX_HAVE_UNLOCKED_IOCTL
-#define LIN_IOCTL_NAME	.ioctl
 static int
 linux_netmap_ioctl(struct inode *inode, struct file *file, u_int cmd, u_long data /* arg */)
 #else
-#define LIN_IOCTL_NAME	.unlocked_ioctl
 static long
 linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 #endif
@@ -1099,7 +1097,12 @@ static struct file_operations netmap_fops = {
     .owner = THIS_MODULE,
     .open = linux_netmap_open,
     .mmap = linux_netmap_mmap,
-    LIN_IOCTL_NAME = linux_netmap_ioctl,
+#ifdef NETMAP_LINUX_HAVE_UNLOCKED_IOCTL
+    .unlocked_ioctl = linux_netmap_ioctl,
+    .compat_ioctl   = linux_netmap_ioctl,
+#else
+    .ioctl          = linux_netmap_ioctl,
+#endif
     .poll = linux_netmap_poll,
     .release = linux_netmap_release,
 };
