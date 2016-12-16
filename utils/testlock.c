@@ -109,10 +109,13 @@ int atomic_cmpset_32(volatile uint32_t *p, uint32_t old, uint32_t new)
 #include <sys/sysctl.h>	/* sysctl */
 #include <sys/time.h>	/* timersub */
 
+#define CE(a, b)	(((a)+(b)-1)/(b))
+
 #define ONE_MILLION	1000000
 #define _1K		(1000)
 #define _100K		(100*_1K)
 #define	_1M		(_1K*_1K)
+#define	_10M		(10*_1M)
 #define	_100M		(100*_1M)
 /* debug support */
 #define ND(format, ...)
@@ -169,6 +172,7 @@ struct glob_arg {
 	void (*fn)(struct targ *);
 	uint64_t scale;	// scaling factor
 	char *scale_name;	// scaling factor
+	struct targ *ta;	// per cpu/thread argument
 };
 
 /*
@@ -183,7 +187,8 @@ struct targ {
 	int		me;
 	pthread_t	thread;
 	int		affinity;
-};
+	pthread_mutex_t	mtx;
+} __attribute__ ((aligned(64) ));
 
 
 static struct targ *ta;
@@ -552,9 +557,9 @@ test_atomic_cmpset(struct targ *t)
 void
 test_pthread_mutex(struct targ *t)
 {
-        int64_t m, i;
+        int64_t m, i, lim = CE(t->g->m_cycles, ONE_MILLION);
 	pthread_mutex_t *mtx = &t->g->mtx;
-        for (m = 0; m < t->g->m_cycles; m++) {
+        for (m = 0; m < lim; m++) {
 		for (i = 0; i < ONE_MILLION; i++) {
 		        pthread_mutex_lock(mtx);
 			t->count++;
@@ -967,8 +972,14 @@ main(int argc, char **argv)
 	/* Install ^C handler. */
 	global_nthreads = g.nthreads;
 	signal(SIGINT, sigint_h);
+    {
+	int sz = g.nthreads;
+	if (sz < g.cpus)
+		sz = g.cpus;
 
-	ta = calloc(g.nthreads, sizeof(*ta));
+	ta = calloc(sz, sizeof(*ta));
+	g.ta = ta;
+    }
 	/*
 	 * Now create the desired number of threads, each one
 	 * using a single descriptor.
