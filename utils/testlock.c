@@ -434,7 +434,7 @@ void
 test_cpuid(struct targ *t)
 {
 	int64_t m, i;
-	uint32_t old, regs[4], migrate=0;
+	uint32_t old, curcpu, tmp, regs[4], migrate=0;
 	do_cpuid2(0xb, regs);
 	D("cpuid() returns %x %x %x %x",
 	regs[0], regs[1], regs[2], regs[3]);
@@ -442,11 +442,11 @@ test_cpuid(struct targ *t)
 
 	for (m = 0; m < t->g->m_cycles; m++) {
 		for (i = 0; i < _1K; i++) {
-			asm volatile("cpuid" : "=d"(regs[3]) : "a"(0xb) : "eax", "ebx", "ecx", "edx");
-			//do_cpuid2(0xb, regs);
-			if (old != regs[3])
+			asm volatile("cpuid" : "=d"(curcpu), "=a"(tmp), "=b"(tmp), "=c"(tmp) : "a"(0xb) );
+			//do_cpuid2(0xb, regs); curcpu = regs[3];
+			if (old != curcpu)
 				migrate++;
-			old = regs[3];
+			old = curcpu;
 			t->count++;
 		}
 	}
