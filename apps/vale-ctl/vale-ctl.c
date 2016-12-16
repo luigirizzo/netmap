@@ -255,8 +255,6 @@ usage:
 			break;
 		case 'l':
 			nr_cmd = NETMAP_BDG_LIST;
-			if (optind < argc && argv[optind][0] == '-')
-				name = NULL;
 			break;
 		case 'C':
 			nmr_config = strdup(optarg);
@@ -276,7 +274,9 @@ usage:
 		// fprintf(stderr, "optind %d argc %d\n", optind, argc);
 		goto usage;
 	}
-	if (argc == 1)
+	if (argc == 1) {
 		nr_cmd = NETMAP_BDG_LIST;
+		name = NULL;
+	}
 	return bdg_ctl(name, nr_cmd, nr_arg, nmr_config, nr_arg2) ? 1 : 0;
 }
