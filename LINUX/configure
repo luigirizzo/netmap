@@ -409,7 +409,7 @@ get-$d:
 	\$($d@src)
 	touch get-$d
 build-$d: get-$d
-	\$($d@build)
+	+\$($d@build)
 	touch build-$d
 EOF
 	done

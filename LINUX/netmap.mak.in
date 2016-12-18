@@ -59,7 +59,7 @@ endef
 define external_driver
 build-$(1): get-$(1) netmap.ko
 	if [ -d $(1) ] && [ -e Module.symvers ]; then cp Module.symvers $(1); fi
-	$($(1)@build)
+	+$($(1)@build)
 clean-$(1):
 	-$($(1)@clean)
 install-$(1): install-netmap
