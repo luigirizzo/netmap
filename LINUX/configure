@@ -395,7 +395,8 @@ ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
 S_DRIVERS := $(drv print)
-all: \$(S_DRIVERS:%=get-%)
+E_DRIVERS := $(edrv print)
+all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%)
 	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
 -include $BUILDDIR/config.mak
@@ -407,6 +408,9 @@ get-$d:
 	\$($d@fetch)
 	\$($d@src)
 	touch get-$d
+build-$d: get-$d
+	\$($d@build)
+	touch build-$d
 EOF
 	done
 	echo endif >> $TMPDIR/Makefile
@@ -858,6 +862,24 @@ EOF
 
   for d in $(drv print); do
 	add_file_exists_check get-$d true "drv_source_error $d"
+  done
+
+  # check that we can build the unpatched external drivers
+  edrv_build_error()
+  {
+	error <<EOF
+There were problems building the external driver $1.
+
+Please note that this is not related to the netmap patches,
+that were not applied.
+
+If you are not interested in this driver, please disable it
+by rerunning configure with the additional --no-drivers=$1 option.
+EOF
+  }	
+
+  for d in $(edrv print); do
+	add_file_exists_check build-$d true "edrv_build_error $d"
   done
 
   # iommu support
