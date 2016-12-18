@@ -1,5 +1,5 @@
 diff --git a/igb/Makefile b/igb/Makefile
-index 8e962f7..d7266d4 100644
+index 8e962f7..22071fc 100644
 --- a/igb/Makefile
 +++ b/igb/Makefile
 @@ -38,7 +38,7 @@ ifeq (,$(BUILD_KERNEL))
@@ -20,15 +20,18 @@ index 8e962f7..d7266d4 100644
  endif
  ifeq ($(ARCH),ppc)
    EXTRA_CFLAGS += -msoft-float
-@@ -140,6 +140,8 @@ ifeq ($(ARCH),ppc64)
+@@ -140,8 +140,10 @@ ifeq ($(ARCH),ppc64)
    LDFLAGS += -melf64ppc
  endif
  
 +EXTRA_CFLAGS += -DDISABLE_PACKET_SPLIT
 +
  # extra flags for module builds
- EXTRA_CFLAGS += -DDRIVER_$(shell echo $(DRIVER_NAME) | tr '[a-z]' '[A-Z]')
+-EXTRA_CFLAGS += -DDRIVER_$(shell echo $(DRIVER_NAME) | tr '[a-z]' '[A-Z]')
++EXTRA_CFLAGS += -DDRIVER_$(shell echo $(DRIVER_NAME) | tr '[a-z-]' '[A-Z_]')
  EXTRA_CFLAGS += -DDRIVER_NAME=$(DRIVER_NAME)
+ EXTRA_CFLAGS += -DDRIVER_NAME_CAPS=$(shell echo $(DRIVER_NAME) | tr '[a-z]' '[A-Z]')
+ # standard flags for module builds
 @@ -355,6 +357,9 @@ DEPVER := $(shell /sbin/depmod -V 2>/dev/null | \
  $(MANFILE).gz: ../$(MANFILE)
  	gzip -c $< > $@
