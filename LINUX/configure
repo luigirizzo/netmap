@@ -158,22 +158,7 @@ report() {
 	if [ -f "drivers.mak" ]; then
 		cat <<EOF
 Contents of the drivers.mak file:
-
-  Note: only drivers for which both the <driver>@src and the
-  <driver>@patch variable are set may be used in native mode (assuming
-  we can actually patch the sources).
 EOF
-		if subsys enabled generic; then
-			cat <<EOF
-  Other NICs will be accessed using
-  the generic driver, at reduced performance.
-EOF
-		else
-			cat <<EOF
-  Since the generic driver has been disabled, the
-  other NICs will NOT be usable by netmap.
-EOF
-		fi
 		cat drivers.mak
 	fi
 }
@@ -672,11 +657,6 @@ if [ -e $SRCDIR/config.mak.in ]; then
 fi
 ln -s $SRCDIR/read-vars.mak 2>/dev/null || true
 rm -f drivers.mak
-cat > drivers.mak <<EOF
-	########################################
-	#  configure generated values          #
-	########################################
-EOF
 # read in all the kernel .config, we use it below
 . $ksrc/.config
 # check for full kernel sources just once
@@ -716,8 +696,6 @@ EOF
 		# full kernel sources. Since we may have put $src=$ksrc, and $ksrc
 		# may only contain header files, we check that $src/drivers actually
 		# contains some .c file
-		# Note: if we have an override file the test is not fatal, since the
-		# intended driver sources location may be found there
 		if [ -z "$src_checked" ]; then
 			if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then {
 				cat <<EOF
