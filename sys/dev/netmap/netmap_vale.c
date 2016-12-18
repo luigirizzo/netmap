@@ -1223,18 +1223,19 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 			NMG_LOCK();
 			for (error = ENOENT; i < NM_BRIDGES; i++) {
 				b = bridges + i;
-				if (j >= b->bdg_active_ports) {
-					j = 0; /* following bridges scan from 0 */
-					continue;
+				for ( ; j < NM_BDG_MAXPORTS; j++) {
+					if (b->bdg_ports[j] == NULL)
+						continue;
+					vpna = b->bdg_ports[j];
+					strncpy(name, vpna->up.name, (size_t)IFNAMSIZ);
+					error = 0;
+					goto out;
 				}
-				nmr->nr_arg1 = i;
-				nmr->nr_arg2 = j;
-				j = b->bdg_port_index[j];
-				vpna = b->bdg_ports[j];
-				strncpy(name, vpna->up.name, (size_t)IFNAMSIZ);
-				error = 0;
-				break;
+				j = 0; /* following bridges scan from 0 */
 			}
+		out:
+			nmr->nr_arg1 = i;
+			nmr->nr_arg2 = j;
 			NMG_UNLOCK();
 		}
 		break;
