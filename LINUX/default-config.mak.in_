@@ -11,5 +11,6 @@ endef
 $(eval $(call intel_driver,ixgbe,4.5.4))
 $(eval $(call intel_driver,ixgbevf,3.3.2))
 $(eval $(call intel_driver,e1000e,3.3.5))
+igb@cflags := -DDISABLE_PACKET_SPLIT
 $(eval $(call intel_driver,igb,5.3.5.4))
 $(eval $(call intel_driver,i40e,1.5.25))
