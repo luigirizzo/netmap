@@ -691,7 +691,7 @@ for d in $s_drivers; do
 	drv_distclean=
 	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
 	# possibly override from config.mak
-	eval $(make -srf read-vars.mak $d@vars)
+	eval $(make -nrf read-vars.mak $d@vars)
 
 	if [ -n "$drv_fetch" ]; then
 		message " NOTE  " <<EOF

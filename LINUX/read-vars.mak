@@ -2,6 +2,6 @@
 -include drivers.mak
 
 %@vars: FORCE
-	$(foreach v,$(filter $*@%,$(.VARIABLES)),echo drv_$(patsubst $*@%,%,$(v))='"$(subst ",\",$($(v)))"';)true
+	$(foreach v,$(filter $*@%,$(.VARIABLES)),drv_$(patsubst $*@%,%,$(v))='$($(v))';)true
 
 FORCE:
