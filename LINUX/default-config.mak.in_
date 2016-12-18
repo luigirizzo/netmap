@@ -8,9 +8,11 @@ $(1)@clean 	:= if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$(EXTRA_CFL
 $(1)@distclean	:= rm -rf $(1)-$(2)
 endef
 
-$(eval $(call intel_driver,ixgbe,4.5.4))
-$(eval $(call intel_driver,ixgbevf,3.3.2))
-$(eval $(call intel_driver,e1000e,3.3.5))
+enabled_intel_driver = $(if $(filter $(1),$(E_DRIVERS)),$(eval $(call intel_driver,$(1),$(2)),))
+
+$(call enabled_intel_driver,ixgbe,4.5.4)
+$(call enabled_intel_driver,ixgbevf,3.3.2)
+$(call enabled_intel_driver,e1000e,3.3.5)
 igb@cflags := -DDISABLE_PACKET_SPLIT
-$(eval $(call intel_driver,igb,5.3.5.4))
-$(eval $(call intel_driver,i40e,1.5.25))
+$(call enabled_intel_driver,igb,5.3.5.4)
+$(call enabled_intel_driver,i40e,1.5.25)

@@ -1,3 +1,4 @@
+-include default-config.mak
 -include config.mak
 -include drivers.mak
 
