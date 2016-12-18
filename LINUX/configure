@@ -396,7 +396,9 @@ obj-m := $TESTOBJS
 else
 S_DRIVERS := $(drv print)
 E_DRIVERS := $(edrv print)
-all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%)
+all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) tests
+
+tests:
 	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
 -include $BUILDDIR/config.mak
@@ -820,20 +822,6 @@ $d@patch := $drv_patch
 EOF
 done
 
-# get the drivers that are still enabled
-s_drivers=$(drv print)
-
-# create netmap.mak and Kbuild
-for f in $SRCDIR/*.in; do
-	replace_vars $f > $(basename $f .in)
-done
-
-# if we are in SRCDIR this will fail, since
-# Makefile already exists
-ln -s $SRCDIR/../GNUmakefile || true
-ln -s $SRCDIR/drv-subdir.mak || true
-
-
 #################################################
 # create the config.h file
 #################################################
@@ -849,15 +837,16 @@ else
   # configured driver
   drv_source_error()
   {
-	error <<EOF
+	warning <<EOF
 There were problems copying the sources of driver $1.
 
 If you need this driver, please check that the $1@src variable 
 points to the correct path contaning the driver sources.
 
-If you are not interested in this driver, please disable it
-by rerunning configure with the additional --no-drivers=$1 option.
+Disabling $1.
 EOF
+	drv disable $1
+	edrv disable $1
   }
 
   for d in $(drv print); do
@@ -867,15 +856,16 @@ EOF
   # check that we can build the unpatched external drivers
   edrv_build_error()
   {
-	error <<EOF
+	warning <<EOF
 There were problems building the external driver $1.
 
 Please note that this is not related to the netmap patches,
 that were not applied.
 
-If you are not interested in this driver, please disable it
-by rerunning configure with the additional --no-drivers=$1 option.
+Disabling $1.
 EOF
+	drv disable $1
+	edrv disable $1
   }	
 
   for d in $(edrv print); do
@@ -1585,6 +1575,21 @@ EOF
   fi
 
 fi # ! -f $cache/netmap_config_h
+
+# get the drivers that are still enabled
+s_drivers=$(drv print)
+
+# create netmap.mak and Kbuild
+for f in $SRCDIR/*.in; do
+	replace_vars $f > $(basename $f .in)
+done
+
+# if we are in SRCDIR this will fail, since
+# Makefile already exists
+ln -s $SRCDIR/../GNUmakefile || true
+ln -s $SRCDIR/drv-subdir.mak || true
+
+
 
 report
 
