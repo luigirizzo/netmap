@@ -27,8 +27,16 @@ setop()
 	local e
 
 	case "$2" in
+	new)
+		eval "$1_avail=\$$3_avail; $1=\$$3"
+		return
+		;;
 	intersect)
 		eval "$1=\$(($1 & $3))"
+		return
+		;;
+	subtract)
+		eval "$1=\$(($1 & ~$3))"
 		return
 		;;
 	esac
@@ -225,7 +233,8 @@ replace_vars()
 		-e "s|@MOD_LIST@|$mod_list|g" \
 		-e "s|@PATCHES@|$(echo $patches)|g" \
 		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
-		-e "s|@E_DRIVERS@|$(edrv print)|g" \
+		-e "s|@E_DRIVERS@|$(echo $e_drivers)|g" \
+		-e "s|@I_DRIVERS@|$(echo $i_drivers)|g" \
 		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
 		-e "s|@APPS_LIST@|$(app print)|g" \
 		-e "s|@APPS_CC@|$cc|g" \
@@ -396,9 +405,9 @@ SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
-S_DRIVERS := $(drv print)
-E_DRIVERS := $(edrv print)
-I_DRIVERS := \$(filter-out \$(E_DRIVERS),\$(S_DRIVERS))
+S_DRIVERS := $s_drivers
+E_DRIVERS := $e_drivers
+I_DRIVERS := $i_drivers
 all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 
 tests:
@@ -663,11 +672,11 @@ if ! drv is-empty; then
 fi
 
 s_drivers=$(drv print)
+edrv intersect driver
 e_drivers=$(edrv print)
-for d in $e_drivers; do
-	drv enabled $d && continue
-	edrv disable $d
-done
+setop internal_driver new driver
+setop internal_driver subtract external_driver
+i_drivers=$(setop internal_driver print)
 
 ln -s $SRCDIR/read-vars.mak 2>/dev/null || true
 rm -f drivers.mak
