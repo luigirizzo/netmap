@@ -1039,12 +1039,12 @@ nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
 	 * but simply that it has changed since the last
 	 * time the kthread saw it.
 	 */
-	mtx_lock(&nmk->worker_lock);
+	mtx_lock_spin(&nmk->worker_lock);
 	nmk->scheduled++;
 	if (nmk->worker_ctx.cfg.wchan) {
 		wakeup((void *)nmk->worker_ctx.cfg.wchan);
 	}
-	mtx_unlock(&nmk->worker_lock);
+	mtx_unlock_spin(&nmk->worker_lock);
 }
 
 void inline
@@ -1098,10 +1098,10 @@ nm_kthread_worker(void *data)
 			ctx->worker_fn(ctx->worker_private); /* worker body */
 		} else {
 			/* checks if there is a pending notification */
-			mtx_lock(&nmk->worker_lock);
+			mtx_lock_spin(&nmk->worker_lock);
 			if (likely(nmk->scheduled != old_scheduled)) {
 				old_scheduled = nmk->scheduled;
-				mtx_unlock(&nmk->worker_lock);
+				mtx_unlock_spin(&nmk->worker_lock);
 
 				ctx->worker_fn(ctx->worker_private); /* worker body */
 
@@ -1112,7 +1112,7 @@ nm_kthread_worker(void *data)
 					    "nmk_ev", hz);
 				nmk->scheduled++;
 			}
-			mtx_unlock(&nmk->worker_lock);
+			mtx_unlock_spin(&nmk->worker_lock);
 		}
 	}
 
