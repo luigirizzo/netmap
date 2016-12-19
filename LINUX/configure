@@ -1326,6 +1326,16 @@ EOF
 	}
 EOF
 
+# check for redhat register_netdevice_notifier_rh
+  add_test 'have REG_NOTIF_RH' <<EOF
+	#include <linux/netdevice.h>
+
+	int
+	dummy(struct notifier_block *nb) {
+		return register_netdevice_notifier_rh(nb);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
