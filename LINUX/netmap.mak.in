@@ -74,9 +74,9 @@ all: $(S_DRIVERS:%=get-%) netmap.ko $(E_DRIVERS:%=build-%) apps
 netmap.ko:
 	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(patsubst %.c,%.o,$(filter-out $(DRIVERS_EXT),$(DRIVERS)))" NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
 
-include default-config.mak
+-include default-config.mak
 -include config.mak
-include drivers.mak
+-include drivers.mak
 
 $(foreach d,$(S_DRIVERS),$(eval $(call common_driver,$(d))))
 $(foreach d,$(E_DRIVERS),$(eval $(call external_driver,$(d))))
