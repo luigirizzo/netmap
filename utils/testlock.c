@@ -109,7 +109,14 @@ int atomic_cmpset_32(volatile uint32_t *p, uint32_t old, uint32_t new)
 #include <sys/sysctl.h>	/* sysctl */
 #include <sys/time.h>	/* timersub */
 
+#define CE(a, b)	(((a)+(b)-1)/(b))
+
 #define ONE_MILLION	1000000
+#define _1K		(1000)
+#define _100K		(100*_1K)
+#define	_1M		(_1K*_1K)
+#define	_10M		(10*_1M)
+#define	_100M		(100*_1M)
 /* debug support */
 #define ND(format, ...)
 #define D(format, ...)				\
@@ -165,6 +172,7 @@ struct glob_arg {
 	void (*fn)(struct targ *);
 	uint64_t scale;	// scaling factor
 	char *scale_name;	// scaling factor
+	struct targ *ta;	// per cpu/thread argument
 };
 
 /*
@@ -179,7 +187,8 @@ struct targ {
 	int		me;
 	pthread_t	thread;
 	int		affinity;
-};
+	pthread_mutex_t	mtx;
+} __attribute__ ((aligned(64) ));
 
 
 static struct targ *ta;
@@ -349,7 +358,7 @@ test_fork(struct targ *t)
  * arg = -1 -> NULL timeout (select)
  */
 void
-test_sel(struct targ *t)
+test_select(struct targ *t)
 {
 	int arg = t->g->arg;
 	// stdin is blocking on reads /dev/null or /dev/zero are not
@@ -416,6 +425,37 @@ test_usleep(struct targ *t)
 		usleep(t->g->arg);
 		t->count++;
 	}
+}
+
+/* X86 only support for reading the current cpu */
+static inline void do_cpuid2(uint32_t code, uint32_t* regs)
+{
+	asm volatile ( "cpuid" : "=a"(regs[0]), "=b"(regs[1]),
+		"=c"(regs[2]), "=d"(regs[3]) : "a"(code));
+}
+
+
+void
+test_cpuid(struct targ *t)
+{
+	int64_t m, i;
+	uint32_t old, curcpu, tmp, regs[4], migrate=0;
+	do_cpuid2(0xb, regs);
+	D("cpuid() returns %x %x %x %x",
+	regs[0], regs[1], regs[2], regs[3]);
+	old = regs[3];
+
+	for (m = 0; m < t->g->m_cycles; m++) {
+		for (i = 0; i < _1K; i++) {
+			asm volatile("cpuid" : "=d"(curcpu), "=a"(tmp), "=b"(tmp), "=c"(tmp) : "a"(0xb) );
+			//do_cpuid2(0xb, regs); curcpu = regs[3];
+			if (old != curcpu)
+				migrate++;
+			old = curcpu;
+			t->count++;
+		}
+	}
+	D("migrated %d times out of %ld", migrate, m*i);
 }
 
 void
@@ -517,9 +557,9 @@ test_atomic_cmpset(struct targ *t)
 void
 test_pthread_mutex(struct targ *t)
 {
-        int64_t m, i;
+        int64_t m, i, lim = CE(t->g->m_cycles, ONE_MILLION);
 	pthread_mutex_t *mtx = &t->g->mtx;
-        for (m = 0; m < t->g->m_cycles; m++) {
+        for (m = 0; m < lim; m++) {
 		for (i = 0; i < ONE_MILLION; i++) {
 		        pthread_mutex_lock(mtx);
 			t->count++;
@@ -747,29 +787,31 @@ struct entry {
 	uint64_t scale;
 	uint64_t m_cycles;
 };
+#define EE(a, b, c)	{ test_ ## a, #a, b, c }
 struct entry tests[] = {
-	{ test_fork, "fork", 1, 1000 },
-	{ test_sel, "select", 1, 1000 },
-	{ test_poll, "poll", 1, 1000 },
-	{ test_usleep, "usleep", 1, 1000 },
-	{ test_time, "time", 1, 1000 },
-	{ test_gettimeofday, "gettimeofday", 1, 1000000 },
-	{ test_getpid, "getpid", 1, 1000000 },
-	{ test_bcopy, "bcopy", 1000, 100000000 },
-	{ test_builtin_memcpy, "__builtin_memcpy", 1000, 100000000 },
-	{ test_memcpy, "memcpy", 1000, 100000000 },
-	{ test_fastcopy, "fastcopy", 1000, 100000000 },
-	{ test_asmcopy, "asmcopy", 1000, 100000000 },
-	{ test_add, "add", ONE_MILLION, 100000000 },
-	{ test_nop, "nop", ONE_MILLION, 100000000 },
-	{ test_atomic_add, "atomic-add", ONE_MILLION, 100000000 },
-	{ test_cli, "cli", ONE_MILLION, 100000000 },
-	{ test_rdtsc, "rdtsc", ONE_MILLION, 100000000 },	// unserialized
-	{ test_rdtsc1, "rdtsc1", ONE_MILLION, 100000000 },	// serialized
-	{ test_atomic_cmpset, "cmpset", ONE_MILLION, 100000000 },
-	{ test_netmap, "netmap", 1000, 100000000 },
-	{ test_pthread_mutex, "mutex", 1000, 100000000 },
-	{ test_spinlock, "spinlock", 1000, 100000000 },
+	EE(fork, 1, _1K),
+	EE(select, 1, _1K),
+	EE(poll, 1, _1K),
+	EE(usleep, 1, _1K),
+	EE(cpuid, _1K, _100K),
+	EE(time, 1, _1K),
+	EE(gettimeofday, 1, _1M),
+	EE(getpid, 1, _1M),
+	EE(bcopy, _1K, _100M),
+	EE(builtin_memcpy, _1K, _100M),
+	EE(memcpy, _1K, _100M),
+	EE(fastcopy, _1K, _100M),
+	EE(asmcopy, _1K, _100M),
+	EE(add, _1M, _100M),
+	EE(nop, _1M, _100M),
+	EE(atomic_add, _1M, _100M),
+	EE(cli, _1M, _100M),
+	EE(rdtsc, _1M, _100M),	// unserialized
+	EE(rdtsc1, _1M, _100M),	// serialized
+	EE(atomic_cmpset, _1M, _100M),
+	EE(netmap, _1K, _100M),
+	EE(pthread_mutex, _1K, _100M),
+	EE(spinlock, _1K, _100M),
 	{ NULL, NULL, 0, 0 }
 };
 
@@ -930,8 +972,14 @@ main(int argc, char **argv)
 	/* Install ^C handler. */
 	global_nthreads = g.nthreads;
 	signal(SIGINT, sigint_h);
+    {
+	int sz = g.nthreads;
+	if (sz < g.cpus)
+		sz = g.cpus;
 
-	ta = calloc(g.nthreads, sizeof(*ta));
+	ta = calloc(sz, sizeof(*ta));
+	g.ta = ta;
+    }
 	/*
 	 * Now create the desired number of threads, each one
 	 * using a single descriptor.

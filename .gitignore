@@ -72,3 +72,4 @@ read-vars.mak
 !LINUX/read-vars.mak
 LINUX/scripts/conf
 config.mak
+*.rej

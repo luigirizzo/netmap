@@ -128,7 +128,7 @@ static int nm_os_ifnet_registered;
 int
 nm_os_ifnet_init(void)
 {
-	int error = register_netdevice_notifier(&linux_netmap_netdev_notifier);
+	int error = NM_REG_NETDEV_NOTIF(&linux_netmap_netdev_notifier);
 	if (!error)
 		nm_os_ifnet_registered = 1;
 	return error;
@@ -138,7 +138,7 @@ void
 nm_os_ifnet_fini(void)
 {
 	if (nm_os_ifnet_registered) {
-		unregister_netdevice_notifier(&linux_netmap_netdev_notifier);
+		NM_UNREG_NETDEV_NOTIF(&linux_netmap_netdev_notifier);
 		nm_os_ifnet_registered = 0;
 	}
 }

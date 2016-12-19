@@ -26,6 +26,21 @@ setop()
 	local s
 	local e
 
+	case "$2" in
+	new)
+		eval "$1_avail=\$$3_avail; $1=\$$3"
+		return
+		;;
+	intersect)
+		eval "$1=\$(($1 & $3))"
+		return
+		;;
+	subtract)
+		eval "$1=\$(($1 & ~$3))"
+		return
+		;;
+	esac
+
 	if [ -n "$3" ]; then
 		w=$(setelem2n $1 $3)
 		[ -n "$w" ] || {
@@ -97,13 +112,19 @@ drv()
 
 drv enable-all
 
-# drivers built by external commands (bitfield)
-external_driver_avail="$driver_avail"
+# drivers built by external commands (subset of driver)
+external_driver_avail=$driver_avail
 external_driver=
 edrv()
 {
 	setop external_driver "$@"
 }
+
+edrv enable e1000e
+edrv enable igb
+edrv enable ixgbe
+edrv enable ixgbevf
+edrv enable i40e
 
 # available apps
 application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl"
@@ -158,22 +179,7 @@ report() {
 	if [ -f "drivers.mak" ]; then
 		cat <<EOF
 Contents of the drivers.mak file:
-
-  Note: only drivers for which both the <driver>@src and the
-  <driver>@patch variable are set may be used in native mode (assuming
-  we can actually patch the sources).
 EOF
-		if subsys enabled generic; then
-			cat <<EOF
-  Other NICs will be accessed using
-  the generic driver, at reduced performance.
-EOF
-		else
-			cat <<EOF
-  Since the generic driver has been disabled, the
-  other NICs will NOT be usable by netmap.
-EOF
-		fi
 		cat drivers.mak
 	fi
 }
@@ -227,7 +233,8 @@ replace_vars()
 		-e "s|@MOD_LIST@|$mod_list|g" \
 		-e "s|@PATCHES@|$(echo $patches)|g" \
 		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
-		-e "s|@E_DRIVERS@|$(edrv print)|g" \
+		-e "s|@E_DRIVERS@|$(echo $e_drivers)|g" \
+		-e "s|@I_DRIVERS@|$(echo $i_drivers)|g" \
 		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
 		-e "s|@APPS_LIST@|$(app print)|g" \
 		-e "s|@APPS_CC@|$cc|g" \
@@ -252,6 +259,8 @@ Available options:
   --no-drivers                 do not compile any driver
   --no-drivers=                do not compile the given drivers (comma sep.)
   --drivers=                   only compile the given drivers (comma sep.)
+  --no-ext-drivers             do not use external drivers
+  --no-ext-drivers=            do not use the given external drivers (comma sep.)
   --no-apps	               do not compile any app
   --no-apps=                   do not compile the given apps (comma sep.)
   --apps=                      only compile the given apps (comma sep.)
@@ -280,6 +289,7 @@ Available options:
   --destir=                    destination dir for the apps [$DESTDIR]
 
   --show-drivers	       print the list of available drivers and exit
+  --show-ext-drivers	       print the list of available external drivers and exit
   --show-apps	       	       print the list of available apps and exit
 
 EOF
@@ -389,15 +399,21 @@ EOF
 #   success/failure actions for each one.
 run_tests() {
 	cp $BUILDDIR/default-config.mak $TMPDIR
+	ln -s $BUILDDIR/patches $TMPDIR
 	cat > $TMPDIR/Makefile <<EOF
 SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
-S_DRIVERS := $(drv print)
-all: \$(S_DRIVERS:%=get-%)
+S_DRIVERS := $s_drivers
+E_DRIVERS := $e_drivers
+I_DRIVERS := $i_drivers
+all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
+
+tests:
 	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
+-include $BUILDDIR/default-config.mak
 -include $BUILDDIR/config.mak
 -include $BUILDDIR/drivers.mak
 EOF
@@ -407,6 +423,12 @@ get-$d:
 	\$($d@fetch)
 	\$($d@src)
 	touch get-$d
+build-$d: get-$d
+	+\$($d@build)
+	touch build-$d
+patch-$d: get-$d
+	\$(foreach p,\$($d@patch),patch --posix --quiet --force -p1 < \$(p);)
+	touch patch-$d
 EOF
 	done
 	echo endif >> $TMPDIR/Makefile
@@ -483,6 +505,13 @@ for opt do
 			drv disable "$d"
 		done
 	;;
+	--no-ext-drivers) edrv disable-all
+	;;
+	--no-ext-drivers=*)
+		for d in $(echo "$optarg" | sed 's/,/ /g'); do
+			edrv disable "$d"
+		done
+	;;
 	--drivers=*)
 		drv disable-all
 		for d in $(echo "$optarg" | sed 's/,/ /g'); do
@@ -535,6 +564,10 @@ for opt do
 	;;
 	--show-drivers)
 		drv print
+		exit
+	;;
+	--show-ext-drivers)
+		edrv print
 		exit
 	;;
 	--show-apps)
@@ -619,31 +652,12 @@ EOF
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
-broken_buildsystem() {
-	error <<EOF
-It looks like we are not able to build kernel modules for the current
-configuration. Please check 'config.log' for possible clues.
-EOF
-}
-
 replace_vars $SRCDIR/default-config.mak.in_ > default-config.mak
 
-reset_tests
-rm -f drivers.mak
-add_test true broken_buildsystem < /dev/null
-run_tests
 
 ###############################################################
 # Makefile creation
 ###############################################################
-
-if [ ! -e config.mak ]; then
-	message " NOTE  " <<EOF
-No config.mak found, we now create one for you that
-just includes default-config.mak.
-EOF
-	echo "include default-config.mak" > config.mak
-fi
 
 # here we select the patches for the drivers and create the
 # main Makefile. The Makefile is obtained from Makefile.in
@@ -658,19 +672,14 @@ if ! drv is-empty; then
 fi
 
 s_drivers=$(drv print)
+edrv intersect driver
+e_drivers=$(edrv print)
+setop internal_driver new driver
+setop internal_driver subtract external_driver
+i_drivers=$(setop internal_driver print)
 
-# copy the system config.mak if any, but do not
-# overwrite any user-provied one
-if [ -e $SRCDIR/config.mak.in ]; then
-	sed "s|@SRCDIR@|$SRCDIR|g" $SRCDIR/config.mak.in > config.mak || true
-fi
 ln -s $SRCDIR/read-vars.mak 2>/dev/null || true
 rm -f drivers.mak
-cat > drivers.mak <<EOF
-	########################################
-	#  configure generated values          #
-	########################################
-EOF
 # read in all the kernel .config, we use it below
 . $ksrc/.config
 # check for full kernel sources just once
@@ -685,7 +694,7 @@ for d in $s_drivers; do
 	drv_distclean=
 	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
 	# possibly override from config.mak
-	eval $(make -srf read-vars.mak $d@vars)
+	eval $(make -nrf read-vars.mak $d@vars E_DRIVERS="$e_drivers")
 
 	if [ -n "$drv_fetch" ]; then
 		message " NOTE  " <<EOF
@@ -710,8 +719,6 @@ EOF
 		# full kernel sources. Since we may have put $src=$ksrc, and $ksrc
 		# may only contain header files, we check that $src/drivers actually
 		# contains some .c file
-		# Note: if we have an override file the test is not fatal, since the
-		# intended driver sources location may be found there
 		if [ -z "$src_checked" ]; then
 			if [ ! -d "$src" ] || [ -z "$(find "$src/drivers" -name '*.c' -print -quit)" ]; then {
 				cat <<EOF
@@ -801,11 +808,8 @@ EOF
 
 	# if no external build command has been specified, add
 	# this driver to the list of modules built by netmap,
-	# otherwise add it to the list of external drivers
 	if [ -z "$drv_build" ]; then
 		mod_list="$drv_conf=m $mod_list"
-	else
-		edrv enable $d
 	fi
 
 	# add the driver related variables to drivers.mak
@@ -815,20 +819,6 @@ $d@src := $drv_src
 $d@patch := $drv_patch
 EOF
 done
-
-# get the drivers that are still enabled
-s_drivers=$(drv print)
-
-# create netmap.mak and Kbuild
-for f in $SRCDIR/*.in; do
-	replace_vars $f > $(basename $f .in)
-done
-
-# if we are in SRCDIR this will fail, since
-# Makefile already exists
-ln -s $SRCDIR/../GNUmakefile || true
-ln -s $SRCDIR/drv-subdir.mak || true
-
 
 #################################################
 # create the config.h file
@@ -840,24 +830,69 @@ else
 
   # BEGIN_TESTS
   reset_tests
+ 
+broken_buildsystem() {
+	error <<EOF
+It looks like we are not able to build kernel modules for the current
+configuration. Please check 'config.log' for possible clues.
+EOF
+}
+
+  add_test true broken_buildsystem < /dev/null
 
   # check that we can actually find the sources for each
   # configured driver
   drv_source_error()
   {
-	error <<EOF
+	warning <<EOF
 There were problems copying the sources of driver $1.
 
 If you need this driver, please check that the $1@src variable 
 points to the correct path contaning the driver sources.
 
-If you are not interested in this driver, please disable it
-by rerunning configure with the additional --no-drivers=$1 option.
+Disabling $1.
 EOF
+	drv disable $1
+	edrv disable $1
   }
 
   for d in $(drv print); do
 	add_file_exists_check get-$d true "drv_source_error $d"
+  done
+
+  # check that we can build the unpatched external drivers
+  edrv_build_error()
+  {
+	warning <<EOF
+There were problems building the external driver $1.
+
+Please note that this is not related to the netmap patches,
+that were not applied.
+
+Disabling $1.
+EOF
+	drv disable $1
+	edrv disable $1
+  }	
+
+  for d in $(edrv print); do
+	add_file_exists_check build-$d true "edrv_build_error $d"
+  done
+
+  # check that we can patch the internal drivers
+  drv_patch_error()
+  {
+	warning <<EOF
+There were problems patching the driver $1.
+
+Disabling $1.
+EOF
+	drv disable $1
+  }	
+
+  for d in $(drv print); do
+	  edrv enabled $d && continue
+	  add_file_exists_check patch-$d true "drv_patch_error $d"
   done
 
   # iommu support
@@ -1291,6 +1326,16 @@ EOF
 	}
 EOF
 
+# check for redhat register_netdevice_notifier_rh
+  add_test 'have REG_NOTIF_RH' <<EOF
+	#include <linux/netdevice.h>
+
+	int
+	dummy(struct notifier_block *nb) {
+		return register_netdevice_notifier_rh(nb);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
@@ -1563,6 +1608,21 @@ EOF
   fi
 
 fi # ! -f $cache/netmap_config_h
+
+# get the drivers that are still enabled
+s_drivers=$(drv print)
+
+# create netmap.mak and Kbuild
+for f in $SRCDIR/*.in; do
+	replace_vars $f > $(basename $f .in)
+done
+
+# if we are in SRCDIR this will fail, since
+# Makefile already exists
+ln -s $SRCDIR/../GNUmakefile || true
+ln -s $SRCDIR/drv-subdir.mak || true
+
+
 
 report
 

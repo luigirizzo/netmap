@@ -1,5 +1,5 @@
 diff --git a/e1000e/Makefile b/e1000e/Makefile
-index 35ccb2d..db5d8fa 100644
+index 35ccb2d..1170cfd 100644
 --- a/e1000e/Makefile
 +++ b/e1000e/Makefile
 @@ -36,7 +36,7 @@ ifeq (,$(BUILD_KERNEL))
@@ -20,6 +20,15 @@ index 35ccb2d..db5d8fa 100644
  endif
  ifeq ($(ARCH),ppc)
    EXTRA_CFLAGS += -msoft-float
+@@ -139,7 +139,7 @@ ifeq ($(ARCH),ppc64)
+ endif
+ 
+ # extra flags for module builds
+-EXTRA_CFLAGS += -DDRIVER_$(shell echo $(DRIVER_NAME) | tr '[a-z]' '[A-Z]')
++EXTRA_CFLAGS += -DDRIVER_$(shell echo $(DRIVER_NAME) | tr '[a-z-]' '[A-Z_]')
+ EXTRA_CFLAGS += -DDRIVER_NAME=$(DRIVER_NAME)
+ EXTRA_CFLAGS += -DDRIVER_NAME_CAPS=$(shell echo $(DRIVER_NAME) | tr '[a-z]' '[A-Z]')
+ # standard flags for module builds
 @@ -327,6 +327,9 @@ DEPVER := $(shell /sbin/depmod -V 2>/dev/null | \
  $(MANFILE).gz: ../$(MANFILE)
  	gzip -c $< > $@
