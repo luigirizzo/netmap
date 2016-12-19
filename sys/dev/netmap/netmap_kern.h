@@ -325,6 +325,12 @@ nm_txrx_swap(enum txrx t)
 
 #define for_rx_tx(t)	for ((t) = 0; (t) < NR_TXRX; (t)++)
 
+#ifdef WITH_MONITOR
+struct netmap_zmon_list {
+	struct netmap_kring *next;
+	struct netmap_kring *prev;
+};
+#endif /* WITH_MONITOR */
 
 /*
  * private, kernel view of a ring. Keeps track of the status of
@@ -499,6 +505,12 @@ struct netmap_kring {
 	struct netmap_kring **monitors;
 	uint32_t max_monitors; /* current size of the monitors array */
 	uint32_t n_monitors;	/* next unused entry in the monitor array */
+	uint32_t mon_pos[NR_TXRX]; /* index of this ring in the monitored ring array */
+	uint32_t mon_tail;  /* last seen slot on rx */
+
+	/* circular list of zero-copy monitors */
+	struct netmap_zmon_list zmon_list[NR_TXRX];
+
 	/*
 	 * Monitors work by intercepting the sync and notify callbacks of the
 	 * monitored krings. This is implemented by replacing the pointers
@@ -507,8 +519,6 @@ struct netmap_kring {
 	int (*mon_sync)(struct netmap_kring *kring, int flags);
 	int (*mon_notify)(struct netmap_kring *kring, int flags);
 
-	uint32_t mon_tail;  /* last seen slot on rx */
-	uint32_t mon_pos[NR_TXRX];  /* index of this ring in the monitored ring array */
 #endif
 }
 #ifdef _WIN32

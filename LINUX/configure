@@ -1611,6 +1611,7 @@ fi # ! -f $cache/netmap_config_h
 
 # get the drivers that are still enabled
 s_drivers=$(drv print)
+e_drivers=$(edrv print)
 
 # create netmap.mak and Kbuild
 for f in $SRCDIR/*.in; do
