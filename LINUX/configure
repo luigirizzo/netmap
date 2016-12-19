@@ -104,15 +104,19 @@ drv()
 
 drv enable-all
 
-# drivers built by external commands (bitfield)
-external_driver_avail="e1000e igb ixgbe ixgbevf i40e"
+# drivers built by external commands (subset of driver)
+external_driver_avail=$driver_avail
 external_driver=
 edrv()
 {
 	setop external_driver "$@"
 }
 
-edrv enable-all
+edrv enable e1000e
+edrv enable igb
+edrv enable ixgbe
+edrv enable ixgbevf
+edrv enable i40e
 
 # available apps
 application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl"
@@ -386,6 +390,7 @@ EOF
 #   success/failure actions for each one.
 run_tests() {
 	cp $BUILDDIR/default-config.mak $TMPDIR
+	ln -s $BUILDDIR/patches $TMPDIR
 	cat > $TMPDIR/Makefile <<EOF
 SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
@@ -393,7 +398,8 @@ obj-m := $TESTOBJS
 else
 S_DRIVERS := $(drv print)
 E_DRIVERS := $(edrv print)
-all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) tests
+I_DRIVERS := \$(filter-out \$(E_DRIVERS),\$(S_DRIVERS))
+all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 
 tests:
 	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
@@ -411,6 +417,9 @@ get-$d:
 build-$d: get-$d
 	+\$($d@build)
 	touch build-$d
+patch-$d: get-$d
+	\$(foreach p,\$($d@patch),patch --posix --quiet --force -p1 < \$(p);)
+	touch patch-$d
 EOF
 	done
 	echo endif >> $TMPDIR/Makefile
@@ -859,6 +868,22 @@ EOF
 
   for d in $(edrv print); do
 	add_file_exists_check build-$d true "edrv_build_error $d"
+  done
+
+  # check that we can patch the internal drivers
+  drv_patch_error()
+  {
+	warning <<EOF
+There were problems patching the driver $1.
+
+Disabling $1.
+EOF
+	drv disable $1
+  }	
+
+  for d in $(drv print); do
+	  edrv enabled $d && continue
+	  add_file_exists_check patch-$d true "drv_patch_error $d"
   done
 
   # iommu support
