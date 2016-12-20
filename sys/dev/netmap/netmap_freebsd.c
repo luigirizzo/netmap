@@ -110,7 +110,7 @@ nm_os_free(void *addr)
 void
 nm_os_ifnet_lock(void)
 {
-	IFNET_WLOCK();
+	IFNET_RLOCK();
 }
 
 void
