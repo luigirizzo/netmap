@@ -98,7 +98,7 @@ nm_os_malloc(size_t size)
 void *
 nm_os_realloc(void *addr, size_t new_size, size_t old_size __unused)
 {
-	return realloc(addr, new_size, M_DEVBUF, M_NOWAIT | M_ZERO);	
+	return realloc(addr, new_size, M_DEVBUF, M_NOWAIT | M_ZERO);
 }
 
 void
