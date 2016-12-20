@@ -1,6 +1,18 @@
 	EXPERIMENTING WITH NETMAP, VALE AND FAST QEMU
 	---------------------------------------------
 
+***** DISCLAIMER *****
+2016-12-20
+The bootable images referenced here are still available, but they contain
+a very old version of the netmap software. As a result, also the
+instructions here are outdated, as they refer to the old images.
+In particular, the e1000-paravirt solution has been deprecated and
+replaced by a solution based on the netmap passthrough.
+New images with updated software are being produced and will be published
+soon.
+
+***** END OF DIS *****
+
 To ease experiments with Netmap, the VALE switch and our Qemu enhancements
 we have prepared a couple of bootable images (linux and FreeBSD).
 You can find them on the netmap page
