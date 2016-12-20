@@ -43,10 +43,16 @@ Linux distributions used and tested
 
 Development:
 	Ubuntu 16.04.1 LTS (tested on kernel 4.4.0-53-generic)
+	Archlinux (tested on the 4.8.x vanilla kernel provided by Arch)
 
 Supported for general compatibility:
 	Ubuntu 16.10 (tested on kernel 4.8.0-30-generic)
 	CentOS 7     (tested on kernel 3.10.0-514.2.2.el7.x86_64)
+
+On Archlinux systems the netmap software is provided by the 'netmap'
+AUR package (https://aur.archlinux.org/packages/netmap/).
+In general, you can build and install netmap following the instruction
+in 'HOW TO BUILD THE CODE'.
 
 HOW TO BUILD THE CODE
 ---------------------
@@ -68,7 +74,7 @@ ixgbe_netmap_linux.h and the patches in patches/
 The patch file are named as diff--DRIVER--LOW--HIGH--otherstuff
 where DRIVER is the driver name to patch, LOW and HIGH are the
 versions to which the patch applies (LOW included, HIGH excluded, so
-vanilla--r8169.c--20638--30300--ok applies from 2.6.38 to 3.3.0 (excluded)
+vanilla--r8169.c--20638--30300--ok applies from 2.6.38 to 3.3.0 (excluded).
 
 HOW TO USE THE CODE
 -------------------
