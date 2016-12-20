@@ -1,5 +1,5 @@
 diff --git a/e1000e/Makefile b/e1000e/Makefile
-index 35ccb2d..1170cfd 100644
+index 35ccb2d..6f4e05e 100644
 --- a/e1000e/Makefile
 +++ b/e1000e/Makefile
 @@ -36,7 +36,7 @@ ifeq (,$(BUILD_KERNEL))
@@ -11,15 +11,6 @@ index 35ccb2d..1170cfd 100644
  
  ###########################################################################
  # Environment tests
-@@ -128,7 +128,7 @@ ifeq ($(ARCH),alpha)
-   EXTRA_CFLAGS += -ffixed-8 -mno-fp-regs
- endif
- ifeq ($(ARCH),x86_64)
--  EXTRA_CFLAGS += -mcmodel=kernel -mno-red-zone
-+  EXTRA_CFLAGS += -mcmodel=kernel -mno-red-zone -fno-pie
- endif
- ifeq ($(ARCH),ppc)
-   EXTRA_CFLAGS += -msoft-float
 @@ -139,7 +139,7 @@ ifeq ($(ARCH),ppc64)
  endif
  
