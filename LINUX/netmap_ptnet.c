@@ -39,7 +39,7 @@
 
 extern int ptnet_vnet_hdr;
 static bool ptnet_gso = true;
-module_param(ptnet_gso, bool, 0444);
+module_param(ptnet_gso, bool, 0644);
 
 /* Enable to debug RX-side hangs */
 //#define HANGCTRL
