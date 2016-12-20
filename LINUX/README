@@ -38,7 +38,15 @@ The patches for igb, e1000e, ixgbe and i40e, instead, are against
 a specific version of the out-of-tree Intel drivers, and should compile
 without any problem on the same systems where the original drivers do.
 
+Linux distributions used and tested
+-----------------------------------
 
+Development:
+	Ubuntu 16.04.1 LTS (tested on kernel 4.4.0-53-generic)
+
+Supported for general compatibility:
+	Ubuntu 16.10 (tested on kernel 4.8.0-30-generic)
+	CentOS 7     (tested on kernel 3.10.0-514.2.2.el7.x86_64)
 
 HOW TO BUILD THE CODE
 ---------------------
