@@ -233,7 +233,10 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 	int error = 0;
 	enum txrx t;
 
-	D("(%p) are our krings needed? --> %d", na, krings_needed(na));
+	if (krings_needed(na)) {
+		D("%p: krings already created, nothing to do", na);
+		return 0;
+	}
 
 	rcu_read_lock();
 	peer_ifp = rcu_dereference(priv->peer);
@@ -244,18 +247,17 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 	}
 	peer_na = NA(peer_ifp);
 
-	/* create my krings, if not already created */
+	/* create my krings */
 	error = netmap_krings_create(na, 0);
 	if (error)
 		goto err;
 
-	/* create the krings of the other end, if not already created */
+	/* create the krings of the other end */
 	error = netmap_krings_create(peer_na, 0);
 	if (error)
 		goto del_krings1;
 
-	/* cross link the krings (it may be already done, but it is
-	 * an idempotent operation, so it does not hurt) */
+	/* cross link the krings */
 	for_rx_tx(t) {
 		enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
 		int i;
@@ -268,7 +270,7 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 
 	rcu_read_unlock();
 
-	D("(%p) created our krings and the peer ones", na);
+	D("%p: created our krings and the peer krings", na);
 
 	return 0;
 
@@ -287,7 +289,7 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 	struct ifnet *peer_ifp;
 
 	if (krings_needed(na)) {
-		D("(%p) Our krings are still needed by the peer", na);
+		D("%p: Our krings are still needed by the peer", na);
 		return;
 	}
 
@@ -302,7 +304,7 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 
 	peer_na = NA(peer_ifp);
 
-	D("(%p) Delete our krings and the peer krings", na);
+	D("%p: Delete our krings and the peer krings", na);
 
 	netmap_krings_delete(na);
 	netmap_krings_delete(peer_na);

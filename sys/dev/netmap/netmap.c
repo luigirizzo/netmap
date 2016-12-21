@@ -802,7 +802,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	enum txrx t;
 
 	if (na->tx_rings != NULL) {
-		D("krings were already created");
+		D("warning: krings were already created");
 		return 0;
 	}
 
@@ -872,7 +872,7 @@ netmap_krings_delete(struct netmap_adapter *na)
 	enum txrx t;
 
 	if (na->tx_rings == NULL) {
-		D("krings were already deleted");
+		D("warning: krings were already deleted");
 		return;
 	}
 
