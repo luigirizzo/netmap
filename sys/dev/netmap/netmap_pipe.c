@@ -529,7 +529,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	struct ifnet *ifp = NULL;
 	u_int pipe_id;
 	int role = nmr->nr_flags & NR_REG_MASK;
-	int error;
+	int error, retries = 0;
 
 	ND("flags %x", nmr->nr_flags);
 
@@ -544,12 +544,28 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	memcpy(&pnmr.nr_name, nmr->nr_name, IFNAMSIZ);
 	/* pass to parent the requested number of pipes */
 	pnmr.nr_arg1 = nmr->nr_arg1;
-	error = netmap_get_na(&pnmr, &pna, &ifp, create);
-	if (error) {
-		ND("parent lookup failed: %d", error);
-		return error;
+	for (;;) {
+		int create_error;
+
+		error = netmap_get_na(&pnmr, &pna, &ifp, create);
+		if (!error)
+			break;
+		if (error != ENXIO || retries++) {
+			D("parent lookup failed: %d", error);
+			return error;
+		}
+		D("try to create a persistent vale port");
+		/* create a persistent vale port and try again */
+		NMG_UNLOCK();
+		create_error = netmap_vi_create(&pnmr, 1 /* autodelete */);
+		NMG_LOCK();
+		if (create_error) {
+			if (create_error != EOPNOTSUPP) {
+				D("failed to create a persistent vale port: %d", create_error);
+			}
+			return error;
+		}
 	}
-	ND("found parent: %s", na->name);
 
 	if (NETMAP_OWNED_BY_KERN(pna)) {
 		ND("parent busy");

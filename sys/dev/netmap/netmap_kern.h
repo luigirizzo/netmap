@@ -872,6 +872,7 @@ struct netmap_vp_adapter {	/* VALE software port */
 	int bdg_port;
 	struct nm_bridge *na_bdg;
 	int retry;
+	int autodelete; /* remove the ifp on last reference */
 
 	/* Maximum Frame Size, used in bdg_mismatch_datapath() */
 	u_int mfs;
@@ -995,7 +996,10 @@ struct netmap_bwrap_adapter {
 	struct nm_bdg_polling_state *na_polling_state;
 };
 int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
+int netmap_vi_create(struct nmreq *, int);
 
+#else /* !WITH_VALE */
+#define netmap_vi_create(nmr, a) (EOPNOTSUPP)
 #endif /* WITH_VALE */
 
 #ifdef WITH_PIPES
