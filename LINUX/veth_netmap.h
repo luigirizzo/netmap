@@ -32,83 +32,6 @@
 static int veth_open(struct ifnet *ifp);
 static int veth_close(struct ifnet *ifp);
 
-/*
- * Reconcile kernel and user view of the transmit ring.
- */
-#ifdef CUSTOM_TXSYNC
-static int
-veth_netmap_txsync(struct netmap_kring *txkring, int flags)
-{
-	struct netmap_adapter *na = txkring->na;
-	struct ifnet *ifp = na->ifp;
-	struct netmap_ring *txring = txkring->ring;
-	u_int const lim = txkring->nkr_num_slots - 1;
-	u_int const head = txkring->rhead;
-	u_int nm_i; /* index into the netmap ring */
-	u_int n;
-
-	/* device-specific */
-	struct netmap_kring *rxkring;
-	struct netmap_ring *rxring;
-	u_int peer_hwtail_lim;
-	u_int lim_peer;
-	u_int nm_j;
-
-	if (unlikely(!netif_carrier_ok(ifp))) {
-		return 0;
-	}
-
-	rxkring = txkring->pipe;
-	rxring = rxkring->ring;
-	lim_peer = rxkring->nkr_num_slots - 1;
-
-	/*
-	 * First part: process new packets to send.
-	 */
-	nm_i = txkring->nr_hwcur;
-	nm_j = rxkring->nr_hwtail;
-	mb();  /* for reading rxkring->nr_hwcur */
-	peer_hwtail_lim = nm_prev(rxkring->nr_hwcur, lim_peer);
-	if (nm_i != head) {	/* we have new packets to send */
-		for (n = 0; nm_i != head && nm_j != peer_hwtail_lim; n++) {
-			struct netmap_slot *slot = &txring->slot[nm_i];
-			struct netmap_slot tmp;
-
-			/* device specific */
-			struct netmap_slot *peer_slot = &rxring->slot[nm_j];
-
-			tmp = *slot;
-			*slot = *peer_slot;
-			*peer_slot = tmp;
-
-			nm_i = nm_next(nm_i, lim);
-			nm_j = nm_next(nm_j, lim_peer);
-		}
-		txkring->nr_hwcur = nm_i;
-
-		smp_mb();  /* for writing the slots */
-
-		rxkring->nr_hwtail = nm_j;
-		if (rxkring->nr_hwtail > lim_peer) {
-			rxkring->nr_hwtail -= lim_peer + 1;
-		}
-
-		smp_mb();  /* for writing rxkring->nr_hwtail */
-
-		/*
-		 * Second part: reclaim buffers for completed transmissions.
-		 */
-		txkring->nr_hwtail += n;
-		if (txkring->nr_hwtail > lim)
-			txkring->nr_hwtail -= lim + 1;
-
-		rxkring->nm_notify(rxkring, 0);
-	}
-
-	return 0;
-}
-#endif
-
 /* To be called under RCU read lock */
 static struct netmap_adapter *
 veth_get_peer_na(struct netmap_adapter *na)
@@ -343,11 +266,7 @@ veth_netmap_attach(struct ifnet *ifp)
 	na.num_tx_desc = 1024;
 	na.num_rx_desc = 1024;
 	na.nm_register = veth_netmap_reg;
-#ifdef CUSTOM_TXSYNC
-	na.nm_txsync = veth_netmap_txsync;
-#else
 	na.nm_txsync = netmap_pipe_txsync;
-#endif
 	na.nm_rxsync = netmap_pipe_rxsync;
 	na.nm_krings_create = veth_netmap_krings_create;
 	na.nm_krings_delete = veth_netmap_krings_delete;
