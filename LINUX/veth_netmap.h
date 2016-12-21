@@ -29,6 +29,10 @@
 #include <netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 
+#ifndef WITH_PIPES
+#error "netmap pipes are required by veth native adapter"
+#endif /* WITH_PIPES */
+
 static int veth_open(struct ifnet *ifp);
 static int veth_close(struct ifnet *ifp);
 
