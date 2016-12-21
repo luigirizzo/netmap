@@ -706,7 +706,7 @@ $d using the following command:
 If this fails, please download the above file and put it
 in $SRCDIR/ext-drivers/, then run configure again.
 EOF
-		$drv_fetch 2>&1 || { warning <<EOF
+		eval $drv_fetch 2>&1 || { warning <<EOF
 Unable to fetch the sources for driver $d. Disabling driver.
 EOF
 			drv disable $d

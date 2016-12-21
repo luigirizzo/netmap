@@ -298,3 +298,7 @@ You can find the papers at http://info.iet.unipi.it/~luigi/research.html
 + Stefano Garzarella, Giuseppe Lettieri, Luigi Rizzo,
 	Virtual device passthrough for high speed VM networking
 	IEEE/ACM ANCS 2015, Oakland, May 2015
+
++ Vincenzo Maffione, Luigi Rizzo, Giuseppe Lettieri,
+	Flexible virtual machine networking using netmap passthrough
+	IEEE Lanman 2016, Rome, June 2016
