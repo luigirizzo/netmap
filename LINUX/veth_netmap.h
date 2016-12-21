@@ -112,33 +112,11 @@ veth_netmap_txsync(struct netmap_kring *txkring, int flags)
  * Reconcile kernel and user view of the receive ring.
  */
 static int
-veth_netmap_rxsync(struct netmap_kring *kring, int flags)
+veth_netmap_rxsync(struct netmap_kring *rxkring, int flags)
 {
-	struct netmap_adapter *na = kring->na;
-	struct ifnet *ifp = na->ifp;
-	u_int ring_nr = kring->ring_id;
-	u_int const head = kring->rhead;
-	struct netmap_kring *peer_kring;
-
-	/* device-specific */
-	struct veth_priv *priv = netdev_priv(ifp);
-	struct net_device *peer_ifp;
-	struct netmap_adapter *peer_na;
-	uint32_t oldhwcur = kring->nr_hwcur;
-
-	rcu_read_lock();
-
-	if (unlikely(!netif_carrier_ok(ifp)))
-		goto out;
-
-	peer_ifp = rcu_dereference(priv->peer);
-	if (unlikely(!peer_ifp))
-		goto out;
-
-	peer_na = NA(peer_ifp);
-	if (unlikely(!nm_netmap_on(peer_na)))
-		goto out;
-
+	u_int const head = rxkring->rhead;
+	struct netmap_kring *txkring;
+	uint32_t oldhwcur = rxkring->nr_hwcur;
 
 	mb();
 
@@ -150,15 +128,13 @@ veth_netmap_rxsync(struct netmap_kring *kring, int flags)
 	/*
 	 * Second part: skip past packets that userspace has released.
 	 */
-	kring->nr_hwcur = head;
+	rxkring->nr_hwcur = head;
 
 	if (oldhwcur != head) {
-		mb();  /* for writing kring->nr_hwcur */
-		peer_kring = &peer_na->tx_rings[ring_nr];
-		peer_kring->nm_notify(peer_kring, 0);
+		mb();  /* for writing rxkring->nr_hwcur */
+		txkring = rxkring->pipe;
+		txkring->nm_notify(txkring, 0);
 	}
-out:
-	rcu_read_unlock();
 
 	return 0;
 }
