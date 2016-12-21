@@ -41,48 +41,23 @@ veth_netmap_txsync(struct netmap_kring *txkring, int flags)
 	struct netmap_adapter *na = txkring->na;
 	struct ifnet *ifp = na->ifp;
 	struct netmap_ring *txring = txkring->ring;
-	u_int ring_nr = txkring->ring_id;
-	u_int nm_i;	/* index into the netmap ring */
-	u_int n;
 	u_int const lim = txkring->nkr_num_slots - 1;
 	u_int const head = txkring->rhead;
+	u_int nm_i; /* index into the netmap ring */
+	u_int n;
 
 	/* device-specific */
-	struct veth_priv *priv = netdev_priv(ifp);
-	struct net_device *peer_ifp;
-	struct netmap_adapter *peer_na;
 	struct netmap_kring *rxkring;
 	struct netmap_ring *rxring;
-	u_int nm_j;
 	u_int peer_hwtail_lim;
 	u_int lim_peer;
+	u_int nm_j;
 
-	rcu_read_lock();
-
-	if (unlikely(!netif_carrier_ok(ifp)))
-		goto out;
-
-	peer_ifp = rcu_dereference(priv->peer);
-	if (unlikely(!peer_ifp))
-		goto out;
-
-	peer_na = NA(peer_ifp);
-	if (unlikely(!nm_netmap_on(peer_na))) {
-		RD(1, "Warning: peer veth is not in netmap mode, dropping");
-		txkring->nr_hwcur = head;
-		txkring->nr_hwtail = nm_prev(head, lim);
-		goto out;
+	if (unlikely(!netif_carrier_ok(ifp))) {
+		return 0;
 	}
 
-	/* XXX This is unsafe, we are accessing the peer whose krings
-	 * and rings may be disappearing beause peer_na->active_fds
-	 * the last user is doing unregif. Is it feasible to call
-	 * netamp_do_regif() on the peer in veth_netmap_reg()?. */
-	rxkring = &peer_na->rx_rings[ring_nr];
-	if (!rxkring) {
-		goto out;
-	}
-
+	rxkring = txkring->pipe;
 	rxring = rxkring->ring;
 	lim_peer = rxkring->nkr_num_slots - 1;
 
@@ -128,8 +103,6 @@ veth_netmap_txsync(struct netmap_kring *txkring, int flags)
 
 		rxkring->nm_notify(rxkring, 0);
 	}
-out:
-	rcu_read_unlock();
 
 	return 0;
 }
