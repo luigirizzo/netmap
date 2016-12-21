@@ -538,6 +538,13 @@ netmap_vp_dtor(struct netmap_adapter *na)
 	if (b) {
 		netmap_bdg_detach_common(b, vpna->bdg_port, -1);
 	}
+
+	if (vpna->autodelete && na->ifp != NULL) {
+		ND("releasing %s", na->ifp->if_xname);
+		NMG_UNLOCK();
+		nm_os_vi_detach(na->ifp);
+		NMG_LOCK();
+	}
 }
 
 /* remove a persistent VALE port from the system */
@@ -592,8 +599,8 @@ nm_update_info(struct nmreq *nmr, struct netmap_adapter *na)
  * Create a virtual interface registered to the system.
  * The interface will be attached to a bridge later.
  */
-static int
-nm_vi_create(struct nmreq *nmr)
+int
+netmap_vi_create(struct nmreq *nmr, int autodelete)
 {
 	struct ifnet *ifp;
 	struct netmap_vp_adapter *vpna;
@@ -628,7 +635,11 @@ nm_vi_create(struct nmreq *nmr)
 	}
 	/* persist-specific routines */
 	vpna->up.nm_bdg_ctl = netmap_vp_bdg_ctl;
-	netmap_adapter_get(&vpna->up);
+	if (!autodelete) {
+		netmap_adapter_get(&vpna->up);
+	} else {
+		vpna->autodelete = 1;
+	}
 	NM_ATTACH_NA(ifp, &vpna->up);
 	/* return the updated info */
 	error = nm_update_info(nmr, &vpna->up);
@@ -1160,7 +1171,7 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 
 	switch (cmd) {
 	case NETMAP_BDG_NEWIF:
-		error = nm_vi_create(nmr);
+		error = netmap_vi_create(nmr, 0 /* no autodelete */);
 		break;
 
 	case NETMAP_BDG_DELIF:
