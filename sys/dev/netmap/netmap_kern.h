@@ -1830,6 +1830,11 @@ static inline int nm_kring_pending(struct netmap_priv_d *np)
 	return 0;
 }
 
+#ifdef WITH_PIPES
+int netmap_pipe_txsync(struct netmap_kring *txkring, int flags);
+int netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags);
+#endif /* WITH_PIPES */
+
 #ifdef WITH_MONITOR
 
 struct netmap_monitor_adapter {

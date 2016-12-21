@@ -172,7 +172,7 @@ netmap_pipe_remove(struct netmap_adapter *parent, struct netmap_pipe_adapter *na
 	parent->na_pipes[n] = NULL;
 }
 
-static int
+int
 netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 {
         struct netmap_kring *rxkring = txkring->pipe;
@@ -237,7 +237,7 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 	return 0;
 }
 
-static int
+int
 netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
 {
         struct netmap_kring *txkring = rxkring->pipe;

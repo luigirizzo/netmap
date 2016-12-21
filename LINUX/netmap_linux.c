@@ -2199,6 +2199,8 @@ EXPORT_SYMBOL(netmap_krings_create);
 EXPORT_SYMBOL(netmap_krings_delete);	/* used by veth module */
 EXPORT_SYMBOL(netmap_mem_rings_create);	/* used by veth module */
 EXPORT_SYMBOL(netmap_mem_rings_delete);	/* used by veth module */
+EXPORT_SYMBOL(netmap_pipe_txsync);	/* used by veth module */
+EXPORT_SYMBOL(netmap_pipe_rxsync);	/* used by veth module */
 
 MODULE_AUTHOR("http://info.iet.unipi.it/~luigi/netmap/");
 MODULE_DESCRIPTION("The netmap packet I/O framework");
