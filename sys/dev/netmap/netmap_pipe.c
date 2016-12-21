@@ -521,7 +521,8 @@ netmap_pipe_dtor(struct netmap_adapter *na)
 }
 
 int
-netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
+netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, 
+		struct netmap_mem_d *nmd, int create)
 {
 	struct nmreq pnmr;
 	struct netmap_adapter *pna; /* parent adapter */
@@ -547,14 +548,14 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	for (;;) {
 		int create_error;
 
-		error = netmap_get_na(&pnmr, &pna, &ifp, create);
+		error = netmap_get_na(&pnmr, &pna, &ifp, nmd, create);
 		if (!error)
 			break;
 		if (error != ENXIO || retries++) {
 			D("parent lookup failed: %d", error);
 			return error;
 		}
-		D("try to create a persistent vale port");
+		ND("try to create a persistent vale port");
 		/* create a persistent vale port and try again */
 		NMG_UNLOCK();
 		create_error = netmap_vi_create(&pnmr, 1 /* autodelete */);

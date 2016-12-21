@@ -1326,7 +1326,7 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
  */
 static void netmap_hw_dtor(struct netmap_adapter *); /* needed by NM_IS_NATIVE() */
 int
-netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
+netmap_get_hw_na(struct ifnet *ifp, struct netmap_mem_d *nmd, struct netmap_adapter **na)
 {
 	/* generic support */
 	int i = netmap_admode;	/* Take a snapshot. */
@@ -1357,7 +1357,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 #endif
 		) {
 			*na = prev_na;
-			return 0;
+			goto assign_mem;
 		}
 	}
 
@@ -1386,9 +1386,16 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
 		return error;
 
 	*na = NA(ifp);
+
+assign_mem:
+	if (nmd != NULL && !((*na)->na_flags & NAF_MEM_OWNER) &&
+	    (*na)->active_fds == 0 && ((*na)->nm_mem != nmd)) {
+		netmap_mem_put((*na)->nm_mem);
+		(*na)->nm_mem = netmap_mem_get(nmd);
+	}
+
 	return 0;
 }
-
 
 /*
  * MUST BE CALLED UNDER NMG_LOCK()
@@ -1409,15 +1416,27 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_adapter **na)
  */
 int
 netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
-	      struct ifnet **ifp, int create)
+	      struct ifnet **ifp, struct netmap_mem_d *nmd, int create)
 {
 	int error = 0;
 	struct netmap_adapter *ret = NULL;
+	int nmd_ref = 0;
 
 	*na = NULL;     /* default return value */
 	*ifp = NULL;
 
 	NMG_LOCK_ASSERT();
+
+	/* if the request contain a memid, try to find the
+	 * corresponding memory region
+	 */
+	if (nmd == NULL && nmr->nr_arg2) {
+		nmd = netmap_mem_find(nmr->nr_arg2);
+		if (nmd == NULL)
+			return EINVAL;
+		/* keep the rereference */
+		nmd_ref = 1;
+	}
 
 	/* We cascade through all possible types of netmap adapter.
 	 * All netmap_get_*_na() functions return an error and an na,
@@ -1431,24 +1450,24 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 	 */
 
 	/* try to see if this is a ptnetmap port */
-	error = netmap_get_pt_host_na(nmr, na, create);
+	error = netmap_get_pt_host_na(nmr, na, nmd, create);
 	if (error || *na != NULL)
-		return error;
+		goto out;
 
 	/* try to see if this is a monitor port */
-	error = netmap_get_monitor_na(nmr, na, create);
+	error = netmap_get_monitor_na(nmr, na, nmd, create);
 	if (error || *na != NULL)
-		return error;
+		goto out;
 
 	/* try to see if this is a pipe port */
-	error = netmap_get_pipe_na(nmr, na, create);
+	error = netmap_get_pipe_na(nmr, na, nmd, create);
 	if (error || *na != NULL)
-		return error;
+		goto out;
 
 	/* try to see if this is a bridge port */
-	error = netmap_get_bdg_na(nmr, na, create);
+	error = netmap_get_bdg_na(nmr, na, nmd, create);
 	if (error)
-		return error;
+		goto out;
 
 	if (*na != NULL) /* valid match in netmap_get_bdg_na() */
 		goto out;
@@ -1461,10 +1480,11 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 	 */
 	*ifp = ifunit_ref(nmr->nr_name);
 	if (*ifp == NULL) {
-	        return ENXIO;
+		error = ENXIO;
+		goto out;
 	}
 
-	error = netmap_get_hw_na(*ifp, &ret);
+	error = netmap_get_hw_na(*ifp, nmd, &ret);
 	if (error)
 		goto out;
 
@@ -1480,6 +1500,8 @@ out:
 			*ifp = NULL;
 		}
 	}
+	if (nmd_ref)
+		netmap_mem_put(nmd);
 
 	return error;
 }
@@ -2112,29 +2134,6 @@ nm_sync_finalize(struct netmap_kring *kring)
 		kring->rhead, kring->rcur, kring->rtail);
 }
 
-static int
-nm_override_mem(struct netmap_adapter *na, nm_memid_t id)
-{
-	struct netmap_mem_d *nmd;
-
-	if (id == 0 || netmap_mem_get_id(na->nm_mem) == id)
-		return 0;
-
-	if (na->na_flags & NAF_MEM_OWNER)
-		return EINVAL;
-
-	if (na->active_fds > 0)
-		return EBUSY;
-
-	nmd = netmap_mem_find(id);
-	if (nmd == NULL)
-		return ENOENT;
-
-	netmap_mem_put(na->nm_mem);
-	na->nm_mem = nmd;
-	return 0;
-}
-
 /*
  * ioctl(2) support for the "netmap" device.
  *
@@ -2184,25 +2183,25 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		NMG_LOCK();
 		do {
 			/* memsize is always valid */
-			struct netmap_mem_d *nmd = &nm_mem;
+			struct netmap_mem_d *nmd;
 			u_int memflags;
 
 			if (nmr->nr_name[0] != '\0') {
 
 				/* get a refcount */
-				error = netmap_get_na(nmr, &na, &ifp, 1 /* create */);
+				error = netmap_get_na(nmr, &na, &ifp, NULL, 1 /* create */);
 				if (error) {
 					na = NULL;
 					ifp = NULL;
 					break;
 				}
 				nmd = na->nm_mem; /* get memory allocator */
-			}
-
-			error = nm_override_mem(na, nmr->nr_arg2);
-			if (error) {
-				netmap_unget_na(na, ifp);
-				break;
+			} else {
+				nmd = netmap_mem_find(nmr->nr_arg2 ? nmr->nr_arg2 : 1);
+				if (nmd == NULL) {
+					error = EINVAL;
+					break;
+				}
 			}
 
 			error = netmap_mem_get_info(nmd, &nmr->nr_memsize, &memflags,
@@ -2248,7 +2247,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			struct ifnet *ifp;
 
 			NMG_LOCK();
-			error = netmap_get_na(nmr, &na, &ifp, 0);
+			error = netmap_get_na(nmr, &na, &ifp, NULL, 0);
 			if (na && !error) {
 				nmr->nr_arg1 = na->virt_hdr_len;
 			}
@@ -2270,36 +2269,45 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		do {
 			u_int memflags;
 			struct ifnet *ifp;
+			struct netmap_mem_d *nmd = NULL;
 
 			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
 				break;
 			}
+
+			if (nmr->nr_arg2) {
+				nmd = netmap_mem_find(nmr->nr_arg2);
+				if (nmd == NULL) {
+					error = EINVAL;
+					break;
+				}
+			}
 			/* find the interface and a reference */
-			error = netmap_get_na(nmr, &na, &ifp,
+			error = netmap_get_na(nmr, &na, &ifp, nmd,
 					      1 /* create */); /* keep reference */
 			if (error)
 				break;
 			if (NETMAP_OWNED_BY_KERN(na)) {
+				if (nmd)
+					netmap_mem_put(nmd);
 				netmap_unget_na(na, ifp);
 				error = EBUSY;
 				break;
 			}
 
 			if (na->virt_hdr_len && !(nmr->nr_flags & NR_ACCEPT_VNET_HDR)) {
+				if (nmd)
+					netmap_mem_put(nmd);
 				netmap_unget_na(na, ifp);
 				error = EIO;
 				break;
 			}
 
-			error = nm_override_mem(na, nmr->nr_arg2);
-			if (error) {
-				netmap_unget_na(na, ifp);
-				break;
-			}
-
 			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
 			if (error) {    /* reg. failed, release priv and ref */
+				if (nmd)
+					netmap_mem_put(nmd);
 				netmap_unget_na(na, ifp);
 				break;
 			}
@@ -2315,6 +2323,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				&nmr->nr_arg2);
 			if (error) {
 				netmap_do_unregif(priv);
+				if (nmd)
+					netmap_mem_put(nmd);
 				netmap_unget_na(na, ifp);
 				break;
 			}
