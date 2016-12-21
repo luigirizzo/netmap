@@ -331,8 +331,8 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 		for_rx_tx(t) {
 			enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
 			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				NMR(na, t)[i].pipe = NMR(&pna->peer->up, r) + i;
-				NMR(&pna->peer->up, r)[i].pipe = NMR(na, t) + i;
+				NMR(na, t)[i].pipe = NMR(ona, r) + i;
+				NMR(ona, r)[i].pipe = NMR(na, t) + i;
 			}
 		}
 
