@@ -123,6 +123,10 @@ veth_get_peer_na(struct netmap_adapter *na)
 	return NA(peer_ifp);
 }
 
+/*
+ * Returns true if our krings needed by the other peer, false
+ * if they are not, or they do not exist.
+ */
 static bool
 krings_needed(struct netmap_adapter *na)
 {
@@ -148,6 +152,11 @@ krings_needed(struct netmap_adapter *na)
 
 /*
  * Register/unregister. We are already under netmap lock.
+ * This register function is similar to the one used by
+ * pipes; in addition to the regular tasks (commit the rings
+ * in/out netmap node and call nm_(set|clear)_native_flags),
+ * we also mark the peer rings as needed by us and possibly
+ * create/destroy some netmap rings.
  */
 static int
 veth_netmap_reg(struct netmap_adapter *na, int onoff)
@@ -180,7 +189,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 				struct netmap_kring *kring = &NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring)) {
-					/* mark the partner ring as needed */
+					/* mark the peer ring as needed */
 					kring->pipe->nr_kflags |= NKR_NEEDRING;
 				}
 			}
@@ -235,7 +244,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 	return error;
 }
 
-
 static int
 veth_netmap_krings_create(struct netmap_adapter *na)
 {
@@ -244,6 +252,8 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 	enum txrx t;
 
 	if (krings_needed(na)) {
+		/* Our krings are already needed by our peer, which
+		 * means they were already created. */
 		D("%p: krings already created, nothing to do", na);
 		return 0;
 	}
@@ -296,22 +306,27 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 	struct netmap_adapter *peer_na;
 
 	if (krings_needed(na)) {
+		/* Our krings are needed by the other peer, so we
+		 * do nothing here, and let the peer destroy also
+		 * our krings when it needs to destroy its krings. */
 		D("%p: Our krings are still needed by the peer", na);
-		return;
-	}
-
-	rcu_read_lock();
-	peer_na = veth_get_peer_na(na);
-	if (!peer_na) {
-		rcu_read_unlock();
-		D("veth peer not found");
-		netmap_krings_delete(na);
 		return;
 	}
 
 	D("%p: Delete our krings and the peer krings", na);
 
+	/* Destroy my krings. */
 	netmap_krings_delete(na);
+
+	/* Destroy the krings of our peer. */
+	rcu_read_lock();
+	peer_na = veth_get_peer_na(na);
+	if (!peer_na) {
+		rcu_read_unlock();
+		D("veth peer not found");
+		return;
+	}
+
 	netmap_krings_delete(peer_na);
 	rcu_read_unlock();
 }
