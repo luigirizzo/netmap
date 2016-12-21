@@ -33,100 +33,6 @@ static int veth_open(struct ifnet *ifp);
 static int veth_close(struct ifnet *ifp);
 
 /*
- * Register/unregister. We are already under netmap lock.
- */
-static int
-veth_netmap_reg(struct netmap_adapter *na, int onoff)
-{
-	struct ifnet *ifp = na->ifp;
-	struct veth_priv *priv = netdev_priv(ifp);
-	struct netmap_adapter *peer_na;
-	struct ifnet *peer_ifp;
-	bool was_up;
-	enum txrx t;
-	int error;
-	int i;
-
-	rcu_read_lock();
-
-	/* Grab peer ifp and na. */
-	peer_ifp = rcu_dereference(priv->peer);
-	if (!peer_ifp) {
-		rcu_read_unlock();
-		return EINVAL;
-	}
-	peer_na = NA(peer_ifp);
-
-	was_up = netif_running(ifp);
-	if (na->active_fds == 0 && was_up) {
-		/* The interface is up. Close it while (un)registering. */
-		veth_close(ifp);
-	}
-
-	/* Enable or disable flags and callbacks in na and ifp. */
-	if (onoff) {
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-
-				if (nm_kring_pending_on(kring)) {
-					/* mark the partner ring as needed */
-					kring->pipe->nr_kflags |= NKR_NEEDRING;
-				}
-			}
-		}
-
-		/* create all missing needed rings on the other end */
-		error = netmap_mem_rings_create(peer_na);
-		if (error) {
-			rcu_read_unlock();
-			return error;
-		}
-
-		/* In case of no error we put our rings in netmap mode */
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-
-				if (nm_kring_pending_on(kring)) {
-					kring->nr_mode = NKR_NETMAP_ON;
-				}
-			}
-		}
-		nm_set_native_flags(na);
-		D("registered %p", na);
-	} else {
-		nm_clear_native_flags(na);
-
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-
-				if (nm_kring_pending_off(kring)) {
-					kring->nr_mode = NKR_NETMAP_OFF;
-					/* mark the peer ring as no longer needed by us
-					 * (it may still be kept if sombody else is using it)
-					 */
-					kring->pipe->nr_kflags &= ~NKR_NEEDRING;
-				}
-			}
-		}
-		/* delete all the peer rings that are no longer needed */
-		netmap_mem_rings_delete(peer_na);
-		D("unregistered %p", na);
-	}
-
-	rcu_read_unlock();
-
-	if (na->active_fds == 0 && was_up) {
-		veth_open(ifp);
-	}
-
-	return error;
-}
-
-
-/*
  * Reconcile kernel and user view of the transmit ring.
  */
 static int
@@ -310,6 +216,100 @@ krings_needed(struct netmap_adapter *na)
 
 	return false;
 }
+
+/*
+ * Register/unregister. We are already under netmap lock.
+ */
+static int
+veth_netmap_reg(struct netmap_adapter *na, int onoff)
+{
+	struct ifnet *ifp = na->ifp;
+	struct veth_priv *priv = netdev_priv(ifp);
+	struct netmap_adapter *peer_na;
+	struct ifnet *peer_ifp;
+	bool was_up;
+	enum txrx t;
+	int error;
+	int i;
+
+	rcu_read_lock();
+
+	/* Grab peer ifp and na. */
+	peer_ifp = rcu_dereference(priv->peer);
+	if (!peer_ifp) {
+		rcu_read_unlock();
+		return EINVAL;
+	}
+	peer_na = NA(peer_ifp);
+
+	was_up = netif_running(ifp);
+	if (na->active_fds == 0 && was_up) {
+		/* The interface is up. Close it while (un)registering. */
+		veth_close(ifp);
+	}
+
+	/* Enable or disable flags and callbacks in na and ifp. */
+	if (onoff) {
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring)) {
+					/* mark the partner ring as needed */
+					kring->pipe->nr_kflags |= NKR_NEEDRING;
+				}
+			}
+		}
+
+		/* create all missing needed rings on the other end */
+		error = netmap_mem_rings_create(peer_na);
+		if (error) {
+			rcu_read_unlock();
+			return error;
+		}
+
+		/* In case of no error we put our rings in netmap mode */
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring)) {
+					kring->nr_mode = NKR_NETMAP_ON;
+				}
+			}
+		}
+		nm_set_native_flags(na);
+		D("registered %p", na);
+	} else {
+		nm_clear_native_flags(na);
+
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_off(kring)) {
+					kring->nr_mode = NKR_NETMAP_OFF;
+					/* mark the peer ring as no longer needed by us
+					 * (it may still be kept if sombody else is using it)
+					 */
+					kring->pipe->nr_kflags &= ~NKR_NEEDRING;
+				}
+			}
+		}
+		/* delete all the peer rings that are no longer needed */
+		netmap_mem_rings_delete(peer_na);
+		D("unregistered %p", na);
+	}
+
+	rcu_read_unlock();
+
+	if (na->active_fds == 0 && was_up) {
+		veth_open(ifp);
+	}
+
+	return error;
+}
+
 
 static int
 veth_netmap_krings_create(struct netmap_adapter *na)
