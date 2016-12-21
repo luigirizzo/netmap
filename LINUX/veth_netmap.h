@@ -27,6 +27,7 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
+#include <dev/netmap/netmap_mem2.h>
 
 static int veth_open(struct ifnet *ifp);
 static int veth_close(struct ifnet *ifp);
@@ -38,29 +39,84 @@ static int
 veth_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
-	bool was_up = false;
+	struct veth_priv *priv = netdev_priv(ifp);
+	struct netmap_adapter *peer_na;
+	struct ifnet *peer_ifp;
+	bool was_up;
 	enum txrx t;
+	int error;
 	int i;
 
-	if (na->active_fds > 0) {
-		/* No support for single-queue mode. Actually do something
-		 * only for first user and last user. */
-		return 0;
-	}
+	rcu_read_lock();
 
-	if (netif_running(ifp)) {
+	/* Grab peer ifp and na. */
+	peer_ifp = rcu_dereference(priv->peer);
+	if (!peer_ifp) {
+		rcu_read_unlock();
+		return EINVAL;
+	}
+	peer_na = NA(peer_ifp);
+
+	was_up = netif_running(ifp);
+	if (na->active_fds == 0 && was_up) {
 		/* The interface is up. Close it while (un)registering. */
-		was_up = true;
 		veth_close(ifp);
 	}
 
 	/* Enable or disable flags and callbacks in na and ifp. */
 	if (onoff) {
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring)) {
+					/* mark the partner ring as needed */
+					kring->pipe->nr_kflags |= NKR_NEEDRING;
+				}
+			}
+		}
+
+		/* create all missing needed rings on the other end */
+		error = netmap_mem_rings_create(peer_na);
+		if (error) {
+			rcu_read_unlock();
+			return error;
+		}
+
+		/* In case of no error we put our rings in netmap mode */
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring)) {
+					kring->nr_mode = NKR_NETMAP_ON;
+				}
+			}
+		}
 		nm_set_native_flags(na);
+		D("registered %p", na);
 	} else {
 		nm_clear_native_flags(na);
+
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_off(kring)) {
+					kring->nr_mode = NKR_NETMAP_OFF;
+					/* mark the peer ring as no longer needed by us
+					 * (it may still be kept if sombody else is using it)
+					 */
+					kring->pipe->nr_kflags &= ~NKR_NEEDRING;
+				}
+			}
+		}
+		/* delete all the peer rings that are no longer needed */
+		netmap_mem_rings_delete(peer_na);
+		D("unregistered %p", na);
 	}
 
+#if 0
 	/* Set or clear nr_pending_mode and nr_mode, independently of the
 	 * state of nr_pending_mode. */
 	for_rx_tx(t) {
@@ -70,11 +126,15 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 				onoff ? NKR_NETMAP_ON : NKR_NETMAP_OFF;
 		}
 	}
+#endif
 
-	if (was_up)
+	rcu_read_unlock();
+
+	if (na->active_fds == 0 && was_up) {
 		veth_open(ifp);
+	}
 
-	return (0);
+	return error;
 }
 
 
@@ -240,6 +300,114 @@ out:
 	return 0;
 }
 
+static bool
+krings_needed(struct netmap_adapter *na)
+{
+	enum txrx t;
+	int i;
+
+	if (na->tx_rings == NULL) {
+		return false;
+	}
+
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
+
+			if (kring->nr_kflags & NKR_NEEDRING) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+static int
+veth_netmap_krings_create(struct netmap_adapter *na)
+{
+	struct veth_priv *priv = (netdev_priv(na->ifp));
+	struct netmap_adapter *peer_na;
+	struct ifnet *peer_ifp;
+	int error = 0;
+	enum txrx t;
+
+	D("(%p) are our krings needed? --> %d", na, krings_needed(na));
+
+	rcu_read_lock();
+	peer_ifp = rcu_dereference(priv->peer);
+	if (!peer_ifp) {
+		rcu_read_unlock();
+		D("veth peer not found");
+		return ENXIO;
+	}
+	peer_na = NA(peer_ifp);
+
+	/* create my krings, if not already created */
+	error = netmap_krings_create(na, 0);
+	if (error)
+		goto err;
+
+	/* create the krings of the other end, if not already created */
+	error = netmap_krings_create(peer_na, 0);
+	if (error)
+		goto del_krings1;
+
+	/* cross link the krings (it may be already done, but it is
+	 * an idempotent operation, so it does not hurt) */
+	for_rx_tx(t) {
+		enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
+		int i;
+
+		for (i = 0; i < nma_get_nrings(na, t); i++) {
+			NMR(na, t)[i].pipe = NMR(peer_na, r) + i;
+			NMR(peer_na, r)[i].pipe = NMR(na, t) + i;
+		}
+	}
+
+	rcu_read_unlock();
+
+	D("(%p) created our krings and the peer ones", na);
+
+	return 0;
+
+del_krings1:
+	netmap_krings_delete(na);
+err:
+	rcu_read_unlock();
+	return error;
+}
+
+static void
+veth_netmap_krings_delete(struct netmap_adapter *na)
+{
+	struct veth_priv *priv = netdev_priv(na->ifp);
+	struct netmap_adapter *peer_na;
+	struct ifnet *peer_ifp;
+
+	if (krings_needed(na)) {
+		D("(%p) Our krings are still needed by the peer", na);
+		return;
+	}
+
+	rcu_read_lock();
+	peer_ifp = rcu_dereference(priv->peer);
+	if (!peer_ifp) {
+		rcu_read_unlock();
+		D("veth peer not found");
+		netmap_krings_delete(na);
+		return;
+	}
+
+	peer_na = NA(peer_ifp);
+
+	D("(%p) Delete our krings and the peer krings", na);
+
+	netmap_krings_delete(na);
+	netmap_krings_delete(peer_na);
+	rcu_read_unlock();
+}
+
 static void
 veth_netmap_attach(struct ifnet *ifp)
 {
@@ -254,6 +422,8 @@ veth_netmap_attach(struct ifnet *ifp)
 	na.nm_register = veth_netmap_reg;
 	na.nm_txsync = veth_netmap_txsync;
 	na.nm_rxsync = veth_netmap_rxsync;
+	na.nm_krings_create = veth_netmap_krings_create;
+	na.nm_krings_delete = veth_netmap_krings_delete;
 	na.num_tx_rings = na.num_rx_rings = 1;
 	netmap_attach(&na);
 }

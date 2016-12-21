@@ -801,6 +801,11 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	u_int n[NR_TXRX];
 	enum txrx t;
 
+	if (na->tx_rings != NULL) {
+		D("krings were already created");
+		return 0;
+	}
+
 	/* account for the (possibly fake) host rings */
 	n[NR_TX] = na->num_tx_rings + 1;
 	n[NR_RX] = na->num_rx_rings + 1;
@@ -865,6 +870,11 @@ netmap_krings_delete(struct netmap_adapter *na)
 {
 	struct netmap_kring *kring = na->tx_rings;
 	enum txrx t;
+
+	if (na->tx_rings == NULL) {
+		D("krings were already deleted");
+		return;
+	}
 
 	for_rx_tx(t)
 		nm_os_selinfo_uninit(&na->si[t]);
