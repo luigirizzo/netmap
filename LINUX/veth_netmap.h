@@ -116,18 +116,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		D("unregistered %p", na);
 	}
 
-#if 0
-	/* Set or clear nr_pending_mode and nr_mode, independently of the
-	 * state of nr_pending_mode. */
-	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(na, t); i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
-			kring->nr_mode = kring->nr_pending_mode =
-				onoff ? NKR_NETMAP_ON : NKR_NETMAP_OFF;
-		}
-	}
-#endif
-
 	rcu_read_unlock();
 
 	if (na->active_fds == 0 && was_up) {
