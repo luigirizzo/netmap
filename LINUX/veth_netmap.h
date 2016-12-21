@@ -138,6 +138,9 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 			}
 		}
 		nm_set_native_flags(na);
+		if (netmap_verbose) {
+			D("registered veth %s", na->name);
+		}
 	} else {
 		nm_clear_native_flags(na);
 
@@ -156,6 +159,9 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		}
 		/* delete all the peer rings that are no longer needed */
 		netmap_mem_rings_delete(peer_na);
+		if (netmap_verbose) {
+			D("unregistered veth %s", na->name);
+		}
 	}
 
 	rcu_read_unlock();
@@ -177,7 +183,10 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 	if (krings_needed(na)) {
 		/* Our krings are already needed by our peer, which
 		 * means they were already created. */
-		D("%p: krings already created, nothing to do", na);
+		if (netmap_verbose) {
+			D("krings already created for %s, nothing to do",
+			  na->name);
+		}
 		return 0;
 	}
 
@@ -212,7 +221,9 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 
 	rcu_read_unlock();
 
-	D("%p: created our krings and the peer krings", na);
+	if (netmap_verbose) {
+		D("created krings for %s and its peer", na->name);
+	}
 
 	return 0;
 
@@ -232,11 +243,16 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 		/* Our krings are needed by the other peer, so we
 		 * do nothing here, and let the peer destroy also
 		 * our krings when it needs to destroy its krings. */
-		D("%p: Our krings are still needed by the peer", na);
+		if (netmap_verbose) {
+			D("krings for %s are still needed by its peer",
+			  na->name);
+		}
 		return;
 	}
 
-	D("%p: Delete our krings and the peer krings", na);
+	if (netmap_verbose) {
+		D("Delete krings for %s and its peer", na->name);
+	}
 
 	/* Destroy my krings. */
 	netmap_krings_delete(na);
