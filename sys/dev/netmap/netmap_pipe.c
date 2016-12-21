@@ -286,7 +286,7 @@ netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
  */
 
 
-/* netmap_pipe_krings_delete.
+/* netmap_pipe_krings_create.
  *
  * There are two cases:
  *
