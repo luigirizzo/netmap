@@ -491,7 +491,7 @@ netmap_pipe_krings_delete(struct netmap_adapter *na)
 		return;
 	}
 	/* case 1) above */
-	ND("%p: case 1, deleting everyhing", na);
+	ND("%p: case 1, deleting everything", na);
 	netmap_krings_delete(na); /* also zeroes tx_rings etc. */
 	ona = &pna->peer->up;
 	if (ona->tx_rings == NULL) {
