@@ -35,6 +35,7 @@ static int veth_close(struct ifnet *ifp);
 /*
  * Reconcile kernel and user view of the transmit ring.
  */
+#ifdef CUSTOM_TXSYNC
 static int
 veth_netmap_txsync(struct netmap_kring *txkring, int flags)
 {
@@ -106,6 +107,7 @@ veth_netmap_txsync(struct netmap_kring *txkring, int flags)
 
 	return 0;
 }
+#endif
 
 /* To be called under RCU read lock */
 static struct netmap_adapter *
@@ -341,7 +343,11 @@ veth_netmap_attach(struct ifnet *ifp)
 	na.num_tx_desc = 1024;
 	na.num_rx_desc = 1024;
 	na.nm_register = veth_netmap_reg;
+#ifdef CUSTOM_TXSYNC
 	na.nm_txsync = veth_netmap_txsync;
+#else
+	na.nm_txsync = netmap_pipe_txsync;
+#endif
 	na.nm_rxsync = netmap_pipe_rxsync;
 	na.nm_krings_create = veth_netmap_krings_create;
 	na.nm_krings_delete = veth_netmap_krings_delete;
