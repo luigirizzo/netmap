@@ -394,7 +394,7 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 				struct netmap_kring *kring = &NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring)) {
-					/* mark the partner ring as needed */
+					/* mark the peer ring as needed */
 					kring->pipe->nr_kflags |= NKR_NEEDRING;
 				}
 			}
