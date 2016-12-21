@@ -107,38 +107,6 @@ veth_netmap_txsync(struct netmap_kring *txkring, int flags)
 	return 0;
 }
 
-
-/*
- * Reconcile kernel and user view of the receive ring.
- */
-static int
-veth_netmap_rxsync(struct netmap_kring *rxkring, int flags)
-{
-	u_int const head = rxkring->rhead;
-	struct netmap_kring *txkring;
-	uint32_t oldhwcur = rxkring->nr_hwcur;
-
-	mb();
-
-	/*
-	 * First part: import newly received packets.
-	 * This is done by the peer's txsync.
-	 */
-
-	/*
-	 * Second part: skip past packets that userspace has released.
-	 */
-	rxkring->nr_hwcur = head;
-
-	if (oldhwcur != head) {
-		mb();  /* for writing rxkring->nr_hwcur */
-		txkring = rxkring->pipe;
-		txkring->nm_notify(txkring, 0);
-	}
-
-	return 0;
-}
-
 static bool
 krings_needed(struct netmap_adapter *na)
 {
@@ -354,7 +322,7 @@ veth_netmap_attach(struct ifnet *ifp)
 	na.num_rx_desc = 1024;
 	na.nm_register = veth_netmap_reg;
 	na.nm_txsync = veth_netmap_txsync;
-	na.nm_rxsync = veth_netmap_rxsync;
+	na.nm_rxsync = netmap_pipe_rxsync;
 	na.nm_krings_create = veth_netmap_krings_create;
 	na.nm_krings_delete = veth_netmap_krings_delete;
 	na.num_tx_rings = na.num_rx_rings = 1;
