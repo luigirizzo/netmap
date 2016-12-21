@@ -213,7 +213,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 			}
 		}
 		nm_set_native_flags(na);
-		D("registered %p", na);
 	} else {
 		nm_clear_native_flags(na);
 
@@ -232,7 +231,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		}
 		/* delete all the peer rings that are no longer needed */
 		netmap_mem_rings_delete(peer_na);
-		D("unregistered %p", na);
 	}
 
 	rcu_read_unlock();
