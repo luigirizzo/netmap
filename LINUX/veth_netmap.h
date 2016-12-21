@@ -107,6 +107,22 @@ veth_netmap_txsync(struct netmap_kring *txkring, int flags)
 	return 0;
 }
 
+/* To be called under RCU read lock */
+static struct netmap_adapter *
+veth_get_peer_na(struct netmap_adapter *na)
+{
+	struct ifnet *ifp = na->ifp;
+	struct veth_priv *priv = netdev_priv(ifp);
+	struct ifnet *peer_ifp;
+
+	peer_ifp = rcu_dereference(priv->peer);
+	if (!peer_ifp) {
+		return NULL;
+	}
+
+	return NA(peer_ifp);
+}
+
 static bool
 krings_needed(struct netmap_adapter *na)
 {
@@ -136,10 +152,8 @@ krings_needed(struct netmap_adapter *na)
 static int
 veth_netmap_reg(struct netmap_adapter *na, int onoff)
 {
-	struct ifnet *ifp = na->ifp;
-	struct veth_priv *priv = netdev_priv(ifp);
 	struct netmap_adapter *peer_na;
-	struct ifnet *peer_ifp;
+	struct ifnet *ifp = na->ifp;
 	bool was_up;
 	enum txrx t;
 	int error;
@@ -147,13 +161,11 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	rcu_read_lock();
 
-	/* Grab peer ifp and na. */
-	peer_ifp = rcu_dereference(priv->peer);
-	if (!peer_ifp) {
+	peer_na = veth_get_peer_na(na);
+	if (!peer_na) {
 		rcu_read_unlock();
 		return EINVAL;
 	}
-	peer_na = NA(peer_ifp);
 
 	was_up = netif_running(ifp);
 	if (na->active_fds == 0 && was_up) {
@@ -227,9 +239,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 static int
 veth_netmap_krings_create(struct netmap_adapter *na)
 {
-	struct veth_priv *priv = (netdev_priv(na->ifp));
 	struct netmap_adapter *peer_na;
-	struct ifnet *peer_ifp;
 	int error = 0;
 	enum txrx t;
 
@@ -239,13 +249,12 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 	}
 
 	rcu_read_lock();
-	peer_ifp = rcu_dereference(priv->peer);
-	if (!peer_ifp) {
+	peer_na = veth_get_peer_na(na);
+	if (!peer_na) {
 		rcu_read_unlock();
 		D("veth peer not found");
 		return ENXIO;
 	}
-	peer_na = NA(peer_ifp);
 
 	/* create my krings */
 	error = netmap_krings_create(na, 0);
@@ -284,9 +293,7 @@ err:
 static void
 veth_netmap_krings_delete(struct netmap_adapter *na)
 {
-	struct veth_priv *priv = netdev_priv(na->ifp);
 	struct netmap_adapter *peer_na;
-	struct ifnet *peer_ifp;
 
 	if (krings_needed(na)) {
 		D("%p: Our krings are still needed by the peer", na);
@@ -294,15 +301,13 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 	}
 
 	rcu_read_lock();
-	peer_ifp = rcu_dereference(priv->peer);
-	if (!peer_ifp) {
+	peer_na = veth_get_peer_na(na);
+	if (!peer_na) {
 		rcu_read_unlock();
 		D("veth peer not found");
 		netmap_krings_delete(na);
 		return;
 	}
-
-	peer_na = NA(peer_ifp);
 
 	D("%p: Delete our krings and the peer krings", na);
 
