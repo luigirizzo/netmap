@@ -36,23 +36,23 @@ static int veth_close(struct ifnet *ifp);
  * Reconcile kernel and user view of the transmit ring.
  */
 static int
-veth_netmap_txsync(struct netmap_kring *kring, int flags)
+veth_netmap_txsync(struct netmap_kring *txkring, int flags)
 {
-	struct netmap_adapter *na = kring->na;
+	struct netmap_adapter *na = txkring->na;
 	struct ifnet *ifp = na->ifp;
-	struct netmap_ring *ring = kring->ring;
-	u_int ring_nr = kring->ring_id;
+	struct netmap_ring *txring = txkring->ring;
+	u_int ring_nr = txkring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int n;
-	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const head = kring->rhead;
+	u_int const lim = txkring->nkr_num_slots - 1;
+	u_int const head = txkring->rhead;
 
 	/* device-specific */
 	struct veth_priv *priv = netdev_priv(ifp);
 	struct net_device *peer_ifp;
 	struct netmap_adapter *peer_na;
-	struct netmap_kring *peer_kring;
-	struct netmap_ring *peer_ring;
+	struct netmap_kring *rxkring;
+	struct netmap_ring *rxring;
 	u_int nm_j;
 	u_int peer_hwtail_lim;
 	u_int lim_peer;
@@ -69,8 +69,8 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 	peer_na = NA(peer_ifp);
 	if (unlikely(!nm_netmap_on(peer_na))) {
 		RD(1, "Warning: peer veth is not in netmap mode, dropping");
-		kring->nr_hwcur = head;
-		kring->nr_hwtail = nm_prev(head, lim);
+		txkring->nr_hwcur = head;
+		txkring->nr_hwtail = nm_prev(head, lim);
 		goto out;
 	}
 
@@ -78,32 +78,28 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 	 * and rings may be disappearing beause peer_na->active_fds
 	 * the last user is doing unregif. Is it feasible to call
 	 * netamp_do_regif() on the peer in veth_netmap_reg()?. */
-	peer_kring = &peer_na->rx_rings[ring_nr];
-	if (!peer_kring) {
+	rxkring = &peer_na->rx_rings[ring_nr];
+	if (!rxkring) {
 		goto out;
 	}
 
-	peer_ring = peer_kring->ring;
-	lim_peer = peer_kring->nkr_num_slots - 1;
+	rxring = rxkring->ring;
+	lim_peer = rxkring->nkr_num_slots - 1;
 
 	/*
 	 * First part: process new packets to send.
 	 */
-	nm_i = kring->nr_hwcur;
-	nm_j = peer_kring->nr_hwtail;
-	mb();  /* for reading peer_kring->nr_hwcur */
-	peer_hwtail_lim = nm_prev(peer_kring->nr_hwcur, lim_peer);
+	nm_i = txkring->nr_hwcur;
+	nm_j = rxkring->nr_hwtail;
+	mb();  /* for reading rxkring->nr_hwcur */
+	peer_hwtail_lim = nm_prev(rxkring->nr_hwcur, lim_peer);
 	if (nm_i != head) {	/* we have new packets to send */
 		for (n = 0; nm_i != head && nm_j != peer_hwtail_lim; n++) {
-			struct netmap_slot *slot = &ring->slot[nm_i];
-			u_int len = slot->len;
+			struct netmap_slot *slot = &txring->slot[nm_i];
 			struct netmap_slot tmp;
-			void *addr = NMB(na, slot);
 
 			/* device specific */
-			struct netmap_slot *peer_slot = &peer_ring->slot[nm_j];
-
-			NM_CHECK_ADDR_LEN(na, addr, len);
+			struct netmap_slot *peer_slot = &rxring->slot[nm_j];
 
 			tmp = *slot;
 			*slot = *peer_slot;
@@ -112,25 +108,25 @@ veth_netmap_txsync(struct netmap_kring *kring, int flags)
 			nm_i = nm_next(nm_i, lim);
 			nm_j = nm_next(nm_j, lim_peer);
 		}
-		kring->nr_hwcur = nm_i;
+		txkring->nr_hwcur = nm_i;
 
 		smp_mb();  /* for writing the slots */
 
-		peer_kring->nr_hwtail = nm_j;
-		if (peer_kring->nr_hwtail > lim_peer) {
-			peer_kring->nr_hwtail -= lim_peer + 1;
+		rxkring->nr_hwtail = nm_j;
+		if (rxkring->nr_hwtail > lim_peer) {
+			rxkring->nr_hwtail -= lim_peer + 1;
 		}
 
-		smp_mb();  /* for writing peer_kring->nr_hwtail */
+		smp_mb();  /* for writing rxkring->nr_hwtail */
 
 		/*
 		 * Second part: reclaim buffers for completed transmissions.
 		 */
-		kring->nr_hwtail += n;
-		if (kring->nr_hwtail > lim)
-			kring->nr_hwtail -= lim + 1;
+		txkring->nr_hwtail += n;
+		if (txkring->nr_hwtail > lim)
+			txkring->nr_hwtail -= lim + 1;
 
-		peer_kring->nm_notify(peer_kring, 0);
+		rxkring->nm_notify(rxkring, 0);
 	}
 out:
 	rcu_read_unlock();
