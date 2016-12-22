@@ -71,7 +71,7 @@ features, namely:
 
   netmap subsystems
   -----------------
- 
+
   These are optional parts of netmap that can be compiled in with
   --enable-SUBSYSTEM and commented out with --disable-SUBSYSTEM.
   The available subsystems the following (the starred ones are enabled
@@ -110,16 +110,16 @@ features, namely:
   the host OS already supplies a driver. The optimal performance, however,
   is only obtained with netmap-enabled NIC drivers.  The configure script
   implements two methods to obtain the netmap-enabled drivers:
-	
+
 	1. patching the native drivers that come with your kernel;
 	2. patching NIC-vendors out-of-tree drivers selected by us.
-  
+
   Both methods have advantages and drawbacks and none is perfect.
   In method 1 the patches we supply may fail to apply (especially on
   Red Hat based distributions), but compilation of successfully patched
   drivers usually works. In method 2 the patches will be guaranteed to
   apply, but compilation may fail since the out-of-tree drivers may
-  not support your kernel. 
+  not support your kernel.
 
   By default e1000e, i40e, ixgbe, ixgbevf and igb use method 2, while
   e1000, r8169.c, forcedeth.c, veth.c and virtio_net.c drivers use method
@@ -149,7 +149,7 @@ features, namely:
 	  external module compilation is available and there is typically
 	  no need to supply it, since configure is already able to find
 	  it in the standard place.
-  
+
   The configure script selects the patch to apply based only on the
   kernel version. Moreover, we only supply patches for the vanilla kernel
   from the Torvalds repository (not even the stable kernels). If the
@@ -298,4 +298,4 @@ DETAILS
 + if_e1000_e uses regular descriptor up 3.1 at least
   3.2.32 is reported to use extended descriptors
 	(in my repo updated at -r 11975)
-	
+
