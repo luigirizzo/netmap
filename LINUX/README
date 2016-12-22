@@ -18,7 +18,8 @@ of the code and documentation as well as pre-built TinyCore
 images based on linux 3.0.3 and containing the netmap modules
 and some test applications.
 
-This version supports r8169, ixgbe, igb, i40e, e1000, e1000e and forcedeth.
+This version supports r8169, ixgbe, igb, i40e, e1000, e1000e and
+forcedeth.
 
 Netmap relies on a kernel module (netmap.ko) and slightly modified
 device drivers. Userspace programs can use the native API (documented
@@ -50,31 +51,124 @@ Supported for general compatibility:
 	CentOS 7     (tested on kernel 3.10.0-514.2.2.el7.x86_64)
 
 On Archlinux systems the netmap software is provided by the 'netmap'
-AUR package (https://aur.archlinux.org/packages/netmap/).
-In general, you can build and install netmap following the instruction
-in 'HOW TO BUILD THE CODE'.
+AUR package (https://aur.archlinux.org/packages/netmap/).  In general,
+you can build and install netmap following the instruction in 'HOW TO
+BUILD THE CODE'.
 
 HOW TO BUILD THE CODE
 ---------------------
 
-1. make sure you have kernel sources/headers matching your installed system
+The netmap port for linux is built and installed using the standard
+./configure; make; sudo make install workflow.
 
-2. do the following (either here, or in the parent directory)
-	./configure
-	make
-   this produces ./netmap.ko and other kernel modules.
-   (If your kernel sources are not in standard places, follow the
-    instructions in the errors output by ./configure)
+The main purpose of the configure script is to determine the features of
+your kernel using simple compile tests, since just trusting the kernel
+version number is unreliable. The outcomes of the tests are stored in
+a set of macros in the generated netmap_linux_config.h file.
 
-   This also builds a few netmap applications.  (you will need the
-   pthreads and libpcap-dev packages to build them)
+The configure script also controls the compilation of optional netmap
+features, namely:
 
-If you want support for additional drivers please have a look at
-ixgbe_netmap_linux.h and the patches in patches/
-The patch file are named as diff--DRIVER--LOW--HIGH--otherstuff
-where DRIVER is the driver name to patch, LOW and HIGH are the
-versions to which the patch applies (LOW included, HIGH excluded, so
-vanilla--r8169.c--20638--30300--ok applies from 2.6.38 to 3.3.0 (excluded).
+  netmap subsystems
+  -----------------
+
+  These are optional parts of netmap that can be compiled in with
+  --enable-SUBSYSTEM and commented out with --disable-SUBSYSTEM.
+  The available subsystems the following (the starred ones are enabled
+  by default):
+
+    vale (*):		the VALE switch (a fast switch that uses
+			the netmap API).
+
+    pipe (*):		netmap pipes (pairs of netmap ports connected
+			back to back).
+
+    monitor (*):	netmap monitors (can monitor other netmap ports
+			in copy and zero-copy modes, without stopping
+			traffic).
+
+    generic (*):	the generic driver that is used to access
+			NICs without native netmap support (at reduced
+			performance).
+
+    ptnetmap-guest:	netmap passthrough support for guests
+			(including the ptnet driver).
+
+    ptnetmap-host:	netmap passthrough support for the host
+
+    ptnetmap:		shortcut to include both ptnetmap-guest and
+			ptnetmap-host.
+
+    sink:		a dummy drop-everything device with native netmap
+			support.  It can emulate a link with configurable
+			packet rate.
+
+  NIC drivers
+  --------------
+
+  The generic driver can be used to open in netmap mode any NIC for which
+  the host OS already supplies a driver. The optimal performance, however,
+  is only obtained with netmap-enabled NIC drivers.  The configure script
+  implements two methods to obtain the netmap-enabled drivers:
+
+	1. patching the native drivers that come with your kernel;
+	2. patching NIC-vendors out-of-tree drivers selected by us.
+
+  Both methods have advantages and drawbacks and none is perfect.
+  In method 1 the patches we supply may fail to apply (especially on
+  Red Hat based distributions), but compilation of successfully patched
+  drivers usually works. In method 2 the patches will be guaranteed to
+  apply, but compilation may fail since the out-of-tree drivers may
+  not support your kernel.
+
+  By default e1000e, i40e, ixgbe, ixgbevf and igb use method 2, while
+  e1000, r8169.c, forcedeth.c, veth.c and virtio_net.c drivers use method
+  1. The list of supported drivers can be obtained by running configure
+  with the --show-drivers option, while --show-ext-drivers lists the
+  drivers that use method 2 by default. For the latter drivers you may
+  also choose to use method 1 using the --no-ext-drivers (use method
+  1 for everything) or --no-ext-drivers= followed by a comma separated
+  list of drivers.
+
+  For method 1 you need the driver sources for your kernel.
+
+	- If you have built your own kernel, you need to tell configure
+	  where the kernel build directory is using the --kernel-dir=
+	  option. The build directory must have been prepared for external
+	  modules compilation.
+
+	- If you are using the kernel provided by your Linux distribution
+	  you need to install the full kernel-sources package (how to do
+	  so depends on the distribution).  Note that, even when you have
+	  installed the sources, configure will automatically find them
+	  only if they are pointed to by /lib/modules/$(uname -r)/build
+	  or /lib/modules/$(uname -r)/build/sources. If the sources are
+	  anywhere else, you need to tell configure where to find them
+	  using the --kernel-sources= options. The --kernel-dir= option
+	  must still point to a directory where all the information for
+	  external module compilation is available and there is typically
+	  no need to supply it, since configure is already able to find
+	  it in the standard place.
+
+  The configure script selects the patch to apply based only on the
+  kernel version. Moreover, we only supply patches for the vanilla kernel
+  from the Torvalds repository (not even the stable kernels). If the
+  patch selected by configure for a driver fails to apply, the driver
+  is disabled and will not be built my make.
+
+  For method 2 you need an Internet connection, since the external drivers
+  are downloaded by configure from the vendor repository.  Otherwise,
+  follow the instructions printed by the script.  The configure script
+  will try to build the original external driver before applying the
+  netmap patches: if the clean build fails then the vendor driver does
+  not support your kernel (yet?) and the driver is disabled.
+
+  If you want support for additional drivers please have a look at
+  ixgbe_netmap_linux.h and the patches in patches/ The patch file are
+  named as vanilla--DRIVER--LOW--HIGH where DRIVER is the driver name
+  to patch, LOW and HIGH are the versions to which the patch applies
+  (LOW included, HIGH excluded, so vanilla--r8169.c--20638--30300 applies
+  from 2.6.38 to 3.3.0 (excluded).
 
 HOW TO USE THE CODE
 -------------------
@@ -140,7 +234,7 @@ COMMON PROBLEMS
   use the '-w' argument on the generator to specify a longer timeout
 
 * the ixgbe driver (and perhaps others) is severely slowed down if the
-  remote party is senting flow control frames to slow down traffic.
+  remote party is sending flow control frames to slow down traffic.
   If that happens try to use the ethtool command to disable flow control.
 
 * netmap does not program the NICs to perform offloadings such as TSO,
@@ -204,4 +298,4 @@ DETAILS
 + if_e1000_e uses regular descriptor up 3.1 at least
   3.2.32 is reported to use extended descriptors
 	(in my repo updated at -r 11975)
-	
+
