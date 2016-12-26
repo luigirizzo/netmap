@@ -28,7 +28,11 @@ setop()
 
 	case "$2" in
 	new)
-		eval "$1_avail=\$$3_avail; $1=\$$3"
+		eval "$1_avail=\$$3_avail; $1="
+		return
+		;;
+	copy)
+		eval "$1=\$$3"
 		return
 		;;
 	intersect)
@@ -113,8 +117,7 @@ drv()
 drv enable-all
 
 # drivers built by external commands (subset of driver)
-external_driver_avail=$driver_avail
-external_driver=
+setop external_driver new driver
 edrv()
 {
 	setop external_driver "$@"
@@ -125,6 +128,21 @@ edrv enable igb
 edrv enable ixgbe
 edrv enable ixgbevf
 edrv enable i40e
+
+# drivers built by patching the system drivers
+setop internal_driver new driver
+idrv()
+{
+	setop internal_driver "$@"
+}
+
+update_drivers() {
+	edrv intersect driver
+	idrv copy driver
+	idrv subtract external_driver
+}
+
+update_drivers
 
 # available apps
 application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl"
@@ -232,9 +250,9 @@ replace_vars()
 		-e "s|@LIN_VER@|$lin_ver|g" \
 		-e "s|@MOD_LIST@|$mod_list|g" \
 		-e "s|@PATCHES@|$(echo $patches)|g" \
-		-e "s|@S_DRIVERS@|$(echo $s_drivers)|g" \
-		-e "s|@E_DRIVERS@|$(echo $e_drivers)|g" \
-		-e "s|@I_DRIVERS@|$(echo $i_drivers)|g" \
+		-e "s|@S_DRIVERS@|$(drv print)|g" \
+		-e "s|@E_DRIVERS@|$(edrv print)|g" \
+		-e "s|@I_DRIVERS@|$(idrv print)|g" \
 		-e "s|@DRVSUFFIX@|$drvsuffix|g" \
 		-e "s|@APPS_LIST@|$(app print)|g" \
 		-e "s|@APPS_CC@|$cc|g" \
@@ -405,9 +423,9 @@ SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
-S_DRIVERS := $s_drivers
-E_DRIVERS := $e_drivers
-I_DRIVERS := $i_drivers
+S_DRIVERS := $(drv print)
+E_DRIVERS := $(edrv print)
+I_DRIVERS := $(idrv print)
 all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 
 tests:
@@ -580,6 +598,9 @@ for opt do
 	esac
 done
 
+# update the divers subsets so that they are all consistent
+update_drivers
+
 ####################################################################
 ################### START OF PROCESSING ############################
 ####################################################################
@@ -671,13 +692,6 @@ if ! drv is-empty; then
 	[ -d patches ] || { rm -f patches; ln -s $SRCDIR/final-patches patches; }
 fi
 
-s_drivers=$(drv print)
-edrv intersect driver
-e_drivers=$(edrv print)
-setop internal_driver new driver
-setop internal_driver subtract external_driver
-i_drivers=$(setop internal_driver print)
-
 ln -s $SRCDIR/read-vars.mak 2>/dev/null || true
 rm -f drivers.mak
 # read in all the kernel .config, we use it below
@@ -685,7 +699,9 @@ rm -f drivers.mak
 # check for full kernel sources just once
 src_checked=
 src_found=
-for d in $s_drivers; do
+# cache
+e_drivers=$(edrv print)
+for d in $(drv print); do
 	# reset all driver variables to default values
 	drv_fetch=
 	drv_src=
@@ -820,6 +836,10 @@ $d@src := $drv_src
 $d@patch := $drv_patch
 EOF
 done
+
+# update the subsets again since the above checks
+# may have disabled some driver
+update_drivers
 
 #################################################
 # create the config.h file
@@ -1609,10 +1629,6 @@ EOF
   fi
 
 fi # ! -f $cache/netmap_config_h
-
-# get the drivers that are still enabled
-s_drivers=$(drv print)
-e_drivers=$(edrv print)
 
 # create netmap.mak and Kbuild
 for f in $SRCDIR/*.in; do
