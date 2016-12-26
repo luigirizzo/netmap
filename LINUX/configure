@@ -696,6 +696,31 @@ for d in $s_drivers; do
 	# possibly override from config.mak
 	eval $(make -nrf read-vars.mak $d@vars E_DRIVERS="$e_drivers")
 
+	# check that the original driver had been compiled as a module, otherwise
+	# skip this driver
+	# (we do this mainly to be sure that any module dependency has already
+	#  been taken care of)
+	# XXX maybe add a (per driver?) flag to force compilation anyway
+	m="$(eval echo \$$drv_conf)"
+	[ -n "$m" ] || {
+		echo "$drv_conf not set in $ksrc/.config, skipping $d" | warning
+		drv disable $d
+		continue
+	}
+	[ "$m" = y ] && [ -z "$drvsuffix" ] && {
+		warning <<EOF
+The $d driver is not compiled as a module:
+you will not be able to load the netmap enabled driver on this kernel.
+Please consider setting
+
+    $drv_conf=m
+
+in your .config.
+
+Alternatively, you can pass a --driver-suffix= option to configure.
+EOF
+	}
+
 	if [ -n "$drv_fetch" ]; then
 		message " NOTE  " <<EOF
 We are trying to download the original sources for driver
@@ -781,30 +806,6 @@ EOF
 	elif [ "$drv_patch" = none ]; then
 		drv_patch=
 	fi
-	# check that the original driver had been compiled as a module, otherwise
-	# skip this driver
-	# (we do this mainly to be sure that any module dependency has already
-	#  been taken care of)
-	# XXX maybe add a (per driver?) flag to force compilation anyway
-	m="$(eval echo \$$drv_conf)"
-	[ -n "$m" ] || {
-		echo "$drv_conf not set in $ksrc/.config, skipping $d" | warning
-		drv disable $d
-		continue
-	}
-	[ "$m" = y ] && [ -z "$drvsuffix" ] && {
-		warning <<EOF
-The $d driver is not compiled as a module:
-you will not be able to load the netmap enabled driver on this kernel.
-Please consider setting
-
-    $drv_conf=m
-
-in your .config.
-
-Alternatively, you can pass a --driver-suffix= option to configure.
-EOF
-	}
 
 	# if no external build command has been specified, add
 	# this driver to the list of modules built by netmap,
