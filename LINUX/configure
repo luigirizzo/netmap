@@ -1274,8 +1274,10 @@ EOF
   add_test 'have XMIT_MORE' <<EOF
 	#include <linux/skbuff.h>
 
-	struct sk_buff *skb;
-        (void)skb->xmit_more;
+	unsigned int
+	dummy(struct sk_buff *skb) {
+		return skb->xmit_more;
+	}
 EOF
 
   # arguments of skb_add_rx_frag (either 5 or 6)
