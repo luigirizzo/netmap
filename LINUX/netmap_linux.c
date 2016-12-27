@@ -2196,7 +2196,14 @@ EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
 EXPORT_SYMBOL(netmap_disable_all_rings);
 EXPORT_SYMBOL(netmap_enable_all_rings);
 EXPORT_SYMBOL(netmap_krings_create);
-
+EXPORT_SYMBOL(netmap_krings_delete);	/* used by veth module */
+EXPORT_SYMBOL(netmap_mem_rings_create);	/* used by veth module */
+EXPORT_SYMBOL(netmap_mem_rings_delete);	/* used by veth module */
+#ifdef WITH_PIPES
+EXPORT_SYMBOL(netmap_pipe_txsync);	/* used by veth module */
+EXPORT_SYMBOL(netmap_pipe_rxsync);	/* used by veth module */
+#endif /* WITH_PIPES */
+EXPORT_SYMBOL(netmap_verbose);
 
 MODULE_AUTHOR("http://info.iet.unipi.it/~luigi/netmap/");
 MODULE_DESCRIPTION("The netmap packet I/O framework");
