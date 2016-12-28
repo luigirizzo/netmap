@@ -2151,6 +2151,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 {
 	struct nmreq *nmr = (struct nmreq *) data;
 	struct netmap_adapter *na = NULL;
+	struct netmap_mem_d *nmd = NULL;
 	struct ifnet *ifp = NULL;
 	int error = 0;
 	u_int i, qfirst, qlast;
@@ -2183,7 +2184,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		NMG_LOCK();
 		do {
 			/* memsize is always valid */
-			struct netmap_mem_d *nmd;
 			u_int memflags;
 
 			if (nmr->nr_name[0] != '\0') {
@@ -2269,7 +2269,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		do {
 			u_int memflags;
 			struct ifnet *ifp;
-			struct netmap_mem_d *nmd = NULL;
 
 			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
@@ -2289,26 +2288,17 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			if (error)
 				break;
 			if (NETMAP_OWNED_BY_KERN(na)) {
-				if (nmd)
-					netmap_mem_put(nmd);
-				netmap_unget_na(na, ifp);
 				error = EBUSY;
 				break;
 			}
 
 			if (na->virt_hdr_len && !(nmr->nr_flags & NR_ACCEPT_VNET_HDR)) {
-				if (nmd)
-					netmap_mem_put(nmd);
-				netmap_unget_na(na, ifp);
 				error = EIO;
 				break;
 			}
 
 			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
 			if (error) {    /* reg. failed, release priv and ref */
-				if (nmd)
-					netmap_mem_put(nmd);
-				netmap_unget_na(na, ifp);
 				break;
 			}
 			nifp = priv->np_nifp;
@@ -2323,9 +2313,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				&nmr->nr_arg2);
 			if (error) {
 				netmap_do_unregif(priv);
-				if (nmd)
-					netmap_mem_put(nmd);
-				netmap_unget_na(na, ifp);
 				break;
 			}
 			if (memflags & NETMAP_MEM_PRIVATE) {
@@ -2349,6 +2336,11 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			/* store ifp reference so that priv destructor may release it */
 			priv->np_ifp = ifp;
 		} while (0);
+		if (error) {
+			netmap_unget_na(na, ifp);
+			if (nmd)
+				netmap_mem_put(nmd);
+		}
 		NMG_UNLOCK();
 		break;
 
