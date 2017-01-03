@@ -560,7 +560,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 		NMG_UNLOCK();
 		create_error = netmap_vi_create(&pnmr, 1 /* autodelete */);
 		NMG_LOCK();
-		if (create_error) {
+		if (create_error && create_error != EEXIST) {
 			if (create_error != EOPNOTSUPP) {
 				D("failed to create a persistent vale port: %d", create_error);
 			}
