@@ -1015,6 +1015,7 @@ struct netmap_pipe_adapter {
 	struct netmap_adapter *parent; /* adapter that owns the memory */
 	struct netmap_pipe_adapter *peer; /* the other end of the pipe */
 	int peer_ref;		/* 1 iff we are holding a ref to the peer */
+	struct ifnet *parent_ifp;	/* maybe null */
 
 	u_int parent_slot; /* index in the parent pipe array */
 };

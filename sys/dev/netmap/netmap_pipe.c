@@ -508,7 +508,7 @@ netmap_pipe_dtor(struct netmap_adapter *na)
 {
 	struct netmap_pipe_adapter *pna =
 		(struct netmap_pipe_adapter *)na;
-	ND("%p", na);
+	ND("%p %p", na, pna->parent_ifp);
 	if (pna->peer_ref) {
 		ND("%p: clean up peer", na);
 		pna->peer_ref = 0;
@@ -516,6 +516,8 @@ netmap_pipe_dtor(struct netmap_adapter *na)
 	}
 	if (pna->role == NR_REG_PIPE_MASTER)
 		netmap_pipe_remove(pna->parent, pna);
+	if (pna->parent_ifp)
+		if_rele(pna->parent_ifp);
 	netmap_adapter_put(pna->parent);
 	pna->parent = NULL;
 }
@@ -589,7 +591,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 		/* the pipe we have found already holds a ref to the parent,
                  * so we need to drop the one we got from netmap_get_na()
                  */
-		netmap_adapter_put(pna);
+		netmap_unget_na(pna, ifp);
 		goto found;
 	}
 	ND("pipe %d not found, create %d", pipe_id, create);
@@ -611,6 +613,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 	mna->id = pipe_id;
 	mna->role = NR_REG_PIPE_MASTER;
 	mna->parent = pna;
+	mna->parent_ifp = ifp;
 
 	mna->up.nm_txsync = netmap_pipe_txsync;
 	mna->up.nm_rxsync = netmap_pipe_rxsync;
@@ -661,6 +664,9 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
          * need another one for the other endpoint we created
          */
 	netmap_adapter_get(pna);
+	/* likewise for the ifp, if any */
+	if (ifp)
+		if_ref(ifp);
 
 	if (role == NR_REG_PIPE_MASTER) {
 		req = mna;
@@ -682,11 +688,6 @@ found:
 	/* keep the reference to the parent.
          * It will be released by the req destructor
          */
-
-	/* drop the ifp reference, if any */
-	if (ifp) {
-		if_rele(ifp);
-	}
 
 	return 0;
 
