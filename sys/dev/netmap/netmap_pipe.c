@@ -317,7 +317,7 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 		int i;
 
 		/* case 1) above */
-		D("%p: case 1, create both ends", na);
+		ND("%p: case 1, create both ends", na);
 		error = netmap_krings_create(na, 0);
 		if (error)
 			goto err;
@@ -438,7 +438,7 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 	}
 
 	if (na->active_fds) {
-		D("active_fds %d", na->active_fds);
+		ND("active_fds %d", na->active_fds);
 		return 0;
 	}
 
@@ -554,7 +554,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 		if (!error)
 			break;
 		if (error != ENXIO || retries++) {
-			D("parent lookup failed: %d", error);
+			ND("parent lookup failed: %d", error);
 			return error;
 		}
 		ND("try to create a persistent vale port");
