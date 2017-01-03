@@ -821,7 +821,7 @@ static int
 nm_bdg_ctl_attach(struct nmreq *nmr)
 {
 	struct netmap_adapter *na;
-	struct netmap_mem_d *nmd;
+	struct netmap_mem_d *nmd = NULL;
 	int error;
 
 	NMG_LOCK();
