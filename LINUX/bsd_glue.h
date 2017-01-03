@@ -283,6 +283,7 @@ struct thread;
 
 /* some other FreeBSD APIs */
 struct net_device* ifunit_ref(const char *name);
+void if_ref(struct net_device *ifp);
 void if_rele(struct net_device *ifp);
 
 /* hook to send from user space */

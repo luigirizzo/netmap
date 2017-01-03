@@ -674,7 +674,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 {
 	char *nr_name = nmr->nr_name;
 	const char *ifname;
-	struct ifnet *ifp;
+	struct ifnet *ifp = NULL;
 	int error = 0;
 	struct netmap_vp_adapter *vpna, *hostna = NULL;
 	struct nm_bridge *b;
@@ -744,15 +744,15 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		 */
 		if (nmr->nr_cmd) {
 			/* nr_cmd must be 0 for a virtual port */
-			return EINVAL;
+			error = EINVAL;
+			goto out;
 		}
 
 		/* bdg_netmap_attach creates a struct netmap_adapter */
 		error = netmap_vp_create(nmr, NULL, &vpna);
 		if (error) {
 			D("error %d", error);
-			nm_os_free(ifp);
-			return error;
+			goto out;
 		}
 		/* shortcut - we can skip get_hw_na(),
 		 * ownership check and nm_bdg_attach()
@@ -793,10 +793,10 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	BDG_WUNLOCK(b);
 	*na = &vpna->up;
 	netmap_adapter_get(*na);
-	return 0;
 
 out:
-	if_rele(ifp);
+	if (ifp)
+		if_rele(ifp);
 
 	return error;
 }
@@ -2701,6 +2701,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na = &bna->up.up;
 	/* make bwrap ifp point to the real ifp */
 	na->ifp = hwna->ifp;
+	if_ref(na->ifp);
 	na->na_private = bna;
 	strncpy(na->name, nr_name, sizeof(na->name));
 	/* fill the ring data for the bwrap adapter with rx/tx meanings
