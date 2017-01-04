@@ -1053,7 +1053,7 @@ netmap_dtor(void *data)
  *   arrival, and the user application has a chance to reset the
  *   flag for packets that should be dropped.
  *   On the RXSYNC or poll(), packets in RX rings between
- *   kring->nr_kcur and ring->cur with NS_FORWARD still set are moved
+ *   kring->nr_hwcur and ring->cur with NS_FORWARD still set are moved
  *   to the other side.
  * The transfer NIC --> host is relatively easy, just encapsulate
  * into mbufs and we are done. The host --> NIC side is slightly
@@ -3064,7 +3064,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	u_int error = ENOBUFS;
 	unsigned int txr;
 	struct mbq *q;
-	int space;
+	int busy;
 
 	kring = &na->rx_rings[na->num_rx_rings];
 	// XXX [Linux] we do not need this lock
@@ -3097,28 +3097,27 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	if (nm_os_mbuf_has_offld(m)) {
-		RD(1, "%s drop mbuf requiring offloadings", na->name);
+		RD(1, "%s drop mbuf that needs offloadings", na->name);
 		goto done;
 	}
 
 	/* protect against rxsync_from_host(), netmap_sw_to_nic()
 	 * and maybe other instances of netmap_transmit (the latter
 	 * not possible on Linux).
-	 * Also avoid overflowing the queue.
+	 * We enqueue the mbuf only if we are sure there is going to be
+	 * enough room in the host RX ring, otherwise we drop it.
 	 */
 	mbq_lock(q);
 
-        space = kring->nr_hwtail - kring->nr_hwcur;
-        if (space < 0)
-                space += kring->nkr_num_slots;
-	if (space + mbq_len(q) >= kring->nkr_num_slots - 1) { // XXX
-		RD(10, "%s full hwcur %d hwtail %d qlen %d len %d m %p",
-			na->name, kring->nr_hwcur, kring->nr_hwtail, mbq_len(q),
-			len, m);
+        busy = kring->nr_hwtail - kring->nr_hwcur;
+        if (busy < 0)
+                busy += kring->nkr_num_slots;
+	if (busy + mbq_len(q) >= kring->nkr_num_slots - 1) {
+		RD(2, "%s full hwcur %d hwtail %d qlen %d", na->name,
+			kring->nr_hwcur, kring->nr_hwtail, mbq_len(q));
 	} else {
 		mbq_enqueue(q, m);
-		ND(10, "%s %d bufs in queue len %d m %p",
-			na->name, mbq_len(q), len, m);
+		ND(2, "%s %d bufs in queue", na->name, mbq_len(q));
 		/* notify outside the lock */
 		m = NULL;
 		error = 0;
