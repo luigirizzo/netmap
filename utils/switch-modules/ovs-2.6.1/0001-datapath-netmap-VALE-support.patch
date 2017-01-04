@@ -1,9 +1,9 @@
 diff --git a/INSTALL.NETMAP b/INSTALL.NETMAP
 new file mode 100644
-index 000000000..314531daf
+index 000000000..088a5d842
 --- /dev/null
 +++ b/INSTALL.NETMAP
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,95 @@
 +                   Using Open vSwitch with netmap (VALE)
 +                   ============================
 +
@@ -14,39 +14,91 @@ index 000000000..314531daf
 +by three times when forwarding short packets between 10 Gbps NICs.
 +This file explains how to install and use the Open vSwitch with VALE.
 +
-+The VALE support of Open vSwitch is experimental.
-+It has not been throughly tested.
++The VALE support for Open vSwitch is **experimental**: it has not
++been throughly tested.
 +It currently supports only netdev (including internal one) and VXLAN
-+ vport types.
++vport types.
 +
 +HOW TO BUILD CODE
 +-----------------
-+This patch is created for Open vSwitch 2.6.1.
++This patch applies to Open vSwitch 2.6.1.
 +
 +We assume that an up-to-date version of netmap
-+(http://info.iet.unipi.it/~luigi/netmap/) is already installed.
++(https://github.com/luigirizzo/netmap) is already installed.
 +
 +Installation steps are same with one written in a file INSTALL,
-+ except for specifying a path to netmap source in configure process:
++except for specifying a path to netmap source in configure process:
 +
-+* `./configure --with-netmap=/home/micchie/netmap`
++* `./configure --with-netmap=/path/to/netmap/repo`
 +
 +This is necessary because the VALE-accelerated version of
 +Open vswitch datapath (kernel module) leverages utility functions
-+ provided by netmap (defined in
-+sys/dev/netmap/netmap_kern.h, sys/net/netmap.h etc.),
-+and refers to symbols exported from a netmap kernel module
-+(LINUX/Module.symvers).
++provided by netmap (defined in sys/dev/netmap/netmap_kern.h,
++sys/net/netmap.h etc.), and refers to symbols exported from a
++netmap kernel module (LINUX/Module.symvers).
 +
-+Thus, you need to have compiled the netmap kernel module but don't need
-+to have loaded it before running the Open vSwitch.
++Before being able to build OVS, therefore, you need to build netmap.
 +
-+To quickly build and run, ovs-dev.py script can also be used like:
++To quickly build and run, ovs-dev.py script can also be used:
 +
 +* `python utilities/ovs-dev.py env && python utilities/ovs-dev.py conf \
-+	--with-netmap=/home/micchie/netmap make`
++	--with-netmap=/path/to/netmap/repo make`
 +
 +See ovs-dev.py itself for detailed information.
++
++
++HOW TO TRY THE PATCHED OVS
++--------------------------
++
++(1) Load netmap openvswitch kernel modules (assuming you have installed netmap
++and openvswitch system-wide)
++
++# modprobe netmap
++# modprobe openvswitch
++
++(2) Run the openvswitch deamon. This step may be performed differently on
++different distributions. Refer to the OVS documentation.
++
++(3) Create an OVS bridge:
++
++# ovs-vsctl add-br vale0
++
++(4) Create two persistent VALE ports:
++
++# vale-ctl -n vi0
++# vale-ctl -n vi1
++
++(5) Attach the two ports to the bridge:
++
++# ovs-vsctl add-port vale0 vi0
++# ovs-vsctl add-port vale0 vi1
++
++(6) Add some OpenFlow rules, to forward traffic betweeen vi0 and vi1
++(assuming the port identifiers are 1 and 2):
++
++# ovs-ofctl add-flow vale0 in_port=1,actions=output:2
++# ovs-ofctl add-flow vale0 in_port=2,actions=output:1
++
++(7) Bring the various interfaces up:
++
++# ip link set vi0 up
++# ip link set vi1 up
++# ip link set vale0 up
++
++(8) Run pkt-gen in receive mode on vi0:
++
++# pkt-gen -i vi0 -f rx
++
++(9) On a different terminal, run pkt-gen in transmit mode on vi1:
++
++# pkt-gen -i vi1 -f tx
++
++(10) You should see traffic received by the receiving pkt-gen.
++You can also attach other interfaces to the switches, provided
++they have netmap support (e.g. Intel NIC veth interfaces,
++etc.):
++
++# ovs-vsctl add-port vale0 eth2
 diff --git a/Makefile.am b/Makefile.am
 index 49010b3b5..56f4f62ef 100644
 --- a/Makefile.am
@@ -144,7 +196,7 @@ index db8a18a13..0352e3d83 100644
  	if (err)
 diff --git a/datapath/dp-vale.c b/datapath/dp-vale.c
 new file mode 100644
-index 000000000..c53fe34f4
+index 000000000..514bf9197
 --- /dev/null
 +++ b/datapath/dp-vale.c
 @@ -0,0 +1,195 @@
@@ -278,7 +330,7 @@ index 000000000..c53fe34f4
 +	error = netmap_bdg_ctl(&nmr, NULL);
 +	D("netmap_bdg_ctl(%s, NETMAP_BDG_%s, %s) --> %d", nmr.nr_name,
 +		onoff ? "ATTACH" : "DETACH",
-+		internal ? "NETMAP_BDG_HOST" : "", error);
++		internal ? "NETMAP_BDG_HOST" : "0", error);
 +	if (error) {
 +		return error;
 +	}
