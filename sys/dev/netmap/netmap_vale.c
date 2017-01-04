@@ -161,7 +161,8 @@ SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0 , "");
 SYSEND;
 
-static int netmap_vp_create(struct nmreq *, struct ifnet *, struct netmap_vp_adapter **);
+static int netmap_vp_create(struct nmreq *, struct ifnet *, 
+		struct netmap_mem_d *nmd, struct netmap_vp_adapter **);
 static int netmap_vp_reg(struct netmap_adapter *na, int onoff);
 static int netmap_bwrap_reg(struct netmap_adapter *, int onoff);
 
@@ -604,6 +605,7 @@ netmap_vi_create(struct nmreq *nmr, int autodelete)
 {
 	struct ifnet *ifp;
 	struct netmap_vp_adapter *vpna;
+	struct netmap_mem_d *nmd = NULL;
 	int error;
 
 	/* don't include VALE prefix */
@@ -627,8 +629,15 @@ netmap_vi_create(struct nmreq *nmr, int autodelete)
 		return error;
 
 	NMG_LOCK();
+	if (nmr->nr_arg2) {
+		nmd = netmap_mem_find(nmr->nr_arg2);
+		if (nmd == NULL) {
+			error = EINVAL;
+			goto err_1;
+		}
+	}
 	/* netmap_vp_create creates a struct netmap_vp_adapter */
-	error = netmap_vp_create(nmr, ifp, &vpna);
+	error = netmap_vp_create(nmr, ifp, nmd, &vpna);
 	if (error) {
 		D("error %d", error);
 		goto err_1;
@@ -647,6 +656,8 @@ netmap_vi_create(struct nmreq *nmr, int autodelete)
 		goto err_2;
 	}
 	D("returning nr_arg2 %d", nmr->nr_arg2);
+	if (nmd)
+		netmap_mem_put(nmd);
 	NMG_UNLOCK();
 	D("created %s", ifp->if_xname);
 	return 0;
@@ -654,6 +665,8 @@ netmap_vi_create(struct nmreq *nmr, int autodelete)
 err_2:
 	netmap_detach(ifp);
 err_1:
+	if (nmd)
+		netmap_mem_put(nmd);
 	NMG_UNLOCK();
 	nm_os_vi_detach(ifp);
 
@@ -670,11 +683,12 @@ err_1:
  * (*na != NULL && return == 0).
  */
 int
-netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
+netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na,
+		struct netmap_mem_d *nmd, int create)
 {
 	char *nr_name = nmr->nr_name;
 	const char *ifname;
-	struct ifnet *ifp;
+	struct ifnet *ifp = NULL;
 	int error = 0;
 	struct netmap_vp_adapter *vpna, *hostna = NULL;
 	struct nm_bridge *b;
@@ -744,15 +758,15 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 		 */
 		if (nmr->nr_cmd) {
 			/* nr_cmd must be 0 for a virtual port */
-			return EINVAL;
+			error = EINVAL;
+			goto out;
 		}
 
 		/* bdg_netmap_attach creates a struct netmap_adapter */
-		error = netmap_vp_create(nmr, NULL, &vpna);
+		error = netmap_vp_create(nmr, NULL, nmd, &vpna);
 		if (error) {
 			D("error %d", error);
-			nm_os_free(ifp);
-			return error;
+			goto out;
 		}
 		/* shortcut - we can skip get_hw_na(),
 		 * ownership check and nm_bdg_attach()
@@ -760,7 +774,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	} else {
 		struct netmap_adapter *hw;
 
-		error = netmap_get_hw_na(ifp, &hw);
+		error = netmap_get_hw_na(ifp, nmd, &hw);
 		if (error || hw == NULL)
 			goto out;
 
@@ -793,10 +807,10 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	BDG_WUNLOCK(b);
 	*na = &vpna->up;
 	netmap_adapter_get(*na);
-	return 0;
 
 out:
-	if_rele(ifp);
+	if (ifp)
+		if_rele(ifp);
 
 	return error;
 }
@@ -807,11 +821,20 @@ static int
 nm_bdg_ctl_attach(struct nmreq *nmr)
 {
 	struct netmap_adapter *na;
+	struct netmap_mem_d *nmd = NULL;
 	int error;
 
 	NMG_LOCK();
 
-	error = netmap_get_bdg_na(nmr, &na, 1 /* create if not exists */);
+	if (nmr->nr_arg2) {
+		nmd = netmap_mem_find(nmr->nr_arg2);
+		if (nmd == NULL) {
+			error = EINVAL;
+			goto unlock_exit;
+		}
+	}
+
+	error = netmap_get_bdg_na(nmr, &na, nmd, 1 /* create if not exists */);
 	if (error) /* no device */
 		goto unlock_exit;
 
@@ -858,7 +881,7 @@ nm_bdg_ctl_detach(struct nmreq *nmr)
 	int error;
 
 	NMG_LOCK();
-	error = netmap_get_bdg_na(nmr, &na, 0 /* don't create */);
+	error = netmap_get_bdg_na(nmr, &na, NULL, 0 /* don't create */);
 	if (error) { /* no device, or another bridge or user owns the device */
 		goto unlock_exit;
 	}
@@ -1280,7 +1303,7 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 			break;
 		}
 		NMG_LOCK();
-		error = netmap_get_bdg_na(nmr, &na, 0);
+		error = netmap_get_bdg_na(nmr, &na, NULL, 0);
 		if (na && !error) {
 			vpna = (struct netmap_vp_adapter *)na;
 			na->virt_hdr_len = nmr->nr_arg1;
@@ -1298,7 +1321,7 @@ netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops)
 	case NETMAP_BDG_POLLING_ON:
 	case NETMAP_BDG_POLLING_OFF:
 		NMG_LOCK();
-		error = netmap_get_bdg_na(nmr, &na, 0);
+		error = netmap_get_bdg_na(nmr, &na, NULL, 0);
 		if (na && !error) {
 			if (!nm_is_bwrap(na)) {
 				error = EOPNOTSUPP;
@@ -2169,7 +2192,9 @@ netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na)
  * Only persistent VALE ports have a non-null ifp.
  */
 static int
-netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter **ret)
+netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp,
+		struct netmap_mem_d *nmd,
+		struct netmap_vp_adapter **ret)
 {
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
@@ -2228,8 +2253,8 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp, struct netmap_vp_adapter 
 	na->nm_krings_delete = netmap_vp_krings_delete;
 	na->nm_dtor = netmap_vp_dtor;
 	D("nr_arg2 %d", nmr->nr_arg2);
-	na->nm_mem = (nmr->nr_arg2 > 0) ?
-		netmap_mem_find(nmr->nr_arg2):
+	na->nm_mem = nmd ?
+		netmap_mem_get(nmd):
 		netmap_mem_private_new(
 			na->num_tx_rings, na->num_tx_desc,
 			na->num_rx_rings, na->num_rx_desc,
@@ -2701,6 +2726,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na = &bna->up.up;
 	/* make bwrap ifp point to the real ifp */
 	na->ifp = hwna->ifp;
+	if_ref(na->ifp);
 	na->na_private = bna;
 	strncpy(na->name, nr_name, sizeof(na->name));
 	/* fill the ring data for the bwrap adapter with rx/tx meanings

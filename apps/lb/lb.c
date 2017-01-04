@@ -367,91 +367,6 @@ parse_pipes(char *spec)
 	return 0;
 }
 
-static void delete_custom_ports(void);
-/* create a persistent vale port or reuse an existing one.
- * Returns 1 on error, 0 on success
- */
-static int
-create_custom_ports(int memid)
-{
-	struct nmreq nmr;
-	int i,rv;
-	struct group_des *g;
-
-	rv = open("/dev/netmap", O_RDWR);
-	if (rv < 0) {
-		D("failed to open /dev/netmap: %s", strerror(errno));
-		return 1;
-	}
-	glob_arg.netmap_fd = rv;
-
-	for (i = 0; i < glob_arg.num_groups; i++) {
-		g = &groups[i];
-
-		if (!g->custom_port)
-			continue;
-
-		bzero(&nmr, sizeof(nmr));
-		nmr.nr_version = NETMAP_API;
-		strncpy(nmr.nr_name, g->pipename, sizeof(nmr.nr_name));
-		nmr.nr_cmd = NETMAP_BDG_NEWIF;
-		nmr.nr_arg2 = memid;
-		
-		rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
-		if (rv < 0) {
-			/* reset the custom_port flag, so that we do not
-			 * try to delete what we did not create
-			 */
-			g->custom_port = 0;
-			if (errno == EEXIST) {
-				if (nmr.nr_arg2 != memid) {
-					D("%s already exists, but it is using allocator %d instead of %d",
-							g->pipename, nmr.nr_arg2, memid);
-							
-					return 1;
-				} else {
-					D("opened already existing port %s", g->pipename);
-				}
-			} else {
-				D("error creating %s: %s", g->pipename, strerror(errno));
-				return 1;
-			}
-		} else {
-			D("successfully created port %s", g->pipename);
-		}
-	}
-	return 0;
-}
-
-/* called at exit to remove all the custom ports that
- * we created (note that deletion may fail is somebody
- * is still using either the ports or their pipes
- */
-static void
-delete_custom_ports(void)
-{
-	struct nmreq nmr;
-	int rv, i;
-
-	for (i = 0; i < glob_arg.num_groups; i++) {
-		struct group_des *g = &groups[i];
-
-		if (!g->custom_port)
-			continue;
-
-		bzero(&nmr, sizeof(nmr));
-		nmr.nr_version = NETMAP_API;
-		strncpy(nmr.nr_name, g->pipename, sizeof(nmr.nr_name));
-		nmr.nr_cmd = NETMAP_BDG_DELIF;
-		
-		rv = ioctl(glob_arg.netmap_fd, NIOCREGIF, &nmr);
-		if (rv < 0) {
-			D("WARNING: error while deleting %s: %s",
-					g->pipename, strerror(errno));
-		}
-	}
-}
-
 /* complete the initialization of the groups data structure */
 void init_groups(void)
 {
@@ -740,13 +655,6 @@ int main(int argc, char **argv)
 	rxport->nmd->nifp->ni_bufs_head = 0;
 
 run:
-	/* we need to create the persistent vale ports */
-	if (create_custom_ports(rxport->nmd->req.nr_arg2)) {
-		free_buffers();
-		return 1;
-	}
-	atexit(delete_custom_ports);
-
 	atexit(free_buffers);
 
 	int j, t = 0;
@@ -756,7 +664,8 @@ run:
 		for (k = 0; k < g->nports; ++k) {
 			struct port_des *p = &g->ports[k];
 			char interface[25];
-			sprintf(interface, "netmap:%s{%d/xT", g->pipename, g->first_id + k);
+			sprintf(interface, "netmap:%s{%d/xT@%d", g->pipename, g->first_id + k,
+					rxport->nmd->req.nr_arg2);
 			D("opening pipe named %s", interface);
 
 			p->nmd = nm_open(interface, NULL, 0, rxport->nmd);

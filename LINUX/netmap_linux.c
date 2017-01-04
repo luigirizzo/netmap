@@ -878,6 +878,11 @@ ifunit_ref(const char *name)
 #endif
 }
 
+void if_ref(struct net_device *ifp)
+{
+	dev_hold(ifp);
+}
+
 void if_rele(struct net_device *ifp)
 {
 	dev_put(ifp);

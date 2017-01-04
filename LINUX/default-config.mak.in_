@@ -8,7 +8,7 @@ $(1)@clean 	:= if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$($(1)@cfla
 $(1)@distclean	:= rm -rf $(1)-$(2)
 endef
 
-enabled_intel_driver = $(if $(filter $(1),$(E_DRIVERS)),$(eval $(call intel_driver,$(1),$(2)),))
+enabled_intel_driver = $(if $(filter $(1),$(E_DRIVERS)),$(eval $(call intel_driver,$(1),$(2))))
 
 $(call enabled_intel_driver,ixgbe,4.5.4)
 $(call enabled_intel_driver,ixgbevf,3.3.2)

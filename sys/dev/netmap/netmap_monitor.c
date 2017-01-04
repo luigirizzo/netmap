@@ -828,7 +828,8 @@ netmap_monitor_dtor(struct netmap_adapter *na)
 
 /* check if nmr is a request for a monitor adapter that we can satisfy */
 int
-netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
+netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na,
+		struct netmap_mem_d *nmd, int create)
 {
 	struct nmreq pnmr;
 	struct netmap_adapter *pna; /* parent adapter */
@@ -856,7 +857,7 @@ netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na, int create)
 	 */
 	memcpy(&pnmr, nmr, sizeof(pnmr));
 	pnmr.nr_flags &= ~(NR_MONITOR_TX | NR_MONITOR_RX | NR_ZCOPY_MON);
-	error = netmap_get_na(&pnmr, &pna, &ifp, create);
+	error = netmap_get_na(&pnmr, &pna, &ifp, nmd, create);
 	if (error) {
 		D("parent lookup failed: %d", error);
 		return error;
