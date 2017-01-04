@@ -1063,8 +1063,9 @@ netmap_dtor(void *data)
 
 
 /*
- * pass a chain of buffers to the host stack as coming from 'dst'
+ * Pass a whole queue of mbufs to the host stack as coming from 'dst'
  * We do not need to lock because the queue is private.
+ * After this call the queue is empty.
  */
 static void
 netmap_send_up(struct ifnet *dst, struct mbq *q)
@@ -1072,7 +1073,8 @@ netmap_send_up(struct ifnet *dst, struct mbq *q)
 	struct mbuf *m;
 	struct mbuf *head = NULL, *prev = NULL;
 
-	/* send packets up, outside the lock */
+	/* Send packets up, outside the lock; head/prev machinery
+	 * is only useful for Windows. */
 	while ((m = mbq_dequeue(q)) != NULL) {
 		if (netmap_verbose & NM_VERB_HOST)
 			D("sending up pkt %p size %d", m, MBUF_LEN(m));
@@ -1087,9 +1089,9 @@ netmap_send_up(struct ifnet *dst, struct mbq *q)
 
 
 /*
- * put a copy of the buffers marked NS_FORWARD into an mbuf chain.
- * Take packets from hwcur to ring->head marked NS_FORWARD (or forced)
- * and pass them up. Drop remaining packets in the unlikely event
+ * Scan the buffers from hwcur to ring->head, and put a copy of those
+ * marked NS_FORWARD (or all of them if forced) into a queue of mbufs.
+ * Drop remaining packets in the unlikely event
  * of an mbuf shortage.
  */
 static void
@@ -1209,9 +1211,7 @@ netmap_txsync_to_host(struct netmap_kring *kring, int flags)
 	struct mbq q;
 
 	/* Take packets from hwcur to head and pass them up.
-	 * force head = cur since netmap_grab_packets() stops at head
-	 * In case of no buffers we give up. At the end of the loop,
-	 * the queue is drained in all cases.
+	 * Force hwcur = head since netmap_grab_packets() stops at head
 	 */
 	mbq_init(&q);
 	netmap_grab_packets(kring, &q, 1 /* force */);
