@@ -67,7 +67,7 @@ void mbq_purge(struct mbq *q);
 static inline struct mbuf *
 mbq_peek(struct mbq *q)
 {
-	return q->head ? q->head : NULL;
+	return q->head;
 }
 
 static inline void
