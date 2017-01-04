@@ -1161,6 +1161,8 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 
 	/* scan rings to find space, then fill as much as possible */
 	for (i = 0; i < na->num_tx_rings; i++) {
+		/* XXX some krings may not be in netmap mode,
+		 * buffers may not be there */
 		struct netmap_kring *kdst = &na->tx_rings[i];
 		struct netmap_ring *rdst = kdst->ring;
 		u_int const dst_lim = kdst->nkr_num_slots - 1;
@@ -1188,6 +1190,8 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 			dst->len = tmp.len;
 			dst->flags = NS_BUF_CHANGED;
 
+			/* XXX is it safe to write head/cur concurrently to
+			 * the userspace application? */
 			rdst->head = rdst->cur = nm_next(dst_head, dst_lim);
 		}
 		/* if (sent) XXX txsync ? */
@@ -1259,7 +1263,7 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 		uint32_t stop_i;
 
 		nm_i = kring->nr_hwtail;
-		stop_i = nm_prev(nm_i, lim);
+		stop_i = nm_prev(kring->nr_hwcur, lim);
 		while ( nm_i != stop_i && (m = mbq_dequeue(q)) != NULL ) {
 			int len = MBUF_LEN(m);
 			struct netmap_slot *slot = &ring->slot[nm_i];
