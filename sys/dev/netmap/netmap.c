@@ -2652,21 +2652,24 @@ do_retry_rx:
 			/* now we can use kring->rcur, rtail */
 
 			/*
-			 * transparent mode support: collect packets
-			 * from the rxring(s).
+			 * transparent mode support: collect packets from
+			 * hw rxring(s) that have been released by the user
 			 */
 			if (nm_may_forward_up(kring)) {
-				ND(10, "forwarding some buffers up %d to %d",
-				    kring->nr_hwcur, ring->cur);
+				ND(2, "forwarding some buffers up %d to %d",
+				       kring->nr_hwcur, ring->cur);
 				netmap_grab_packets(kring, &q, netmap_fwd);
 			}
 
+			/* Clear the NR_FORWARD flag anyway, it may be set by
+			 * the nm_sync() below only on for the host RX ring (see
+			 * netmap_rxsync_from_host()). */
 			kring->nr_kflags &= ~NR_FORWARD;
 			if (kring->nm_sync(kring, 0))
 				revents |= POLLERR;
 			else
 				nm_sync_finalize(kring);
-			send_down |= (kring->nr_kflags & NR_FORWARD); /* host ring only */
+			send_down |= (kring->nr_kflags & NR_FORWARD);
 			if (netmap_no_timestamp == 0 ||
 					ring->flags & NR_TIMESTAMP) {
 				microtime(&ring->ts);
@@ -2684,7 +2687,7 @@ do_retry_rx:
 			nm_os_selrecord(sr, check_all_rx ?
 			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
 		}
-		if (send_down > 0 || retry_rx) {
+		if (send_down || retry_rx) {
 			retry_rx = 0;
 			if (send_down)
 				goto flush_tx; /* and retry_rx */
@@ -2694,9 +2697,9 @@ do_retry_rx:
 	}
 
 	/*
-	 * Transparent mode: marked bufs on rx rings between
-	 * kring->nr_hwcur and ring->head
-	 * are passed to the other endpoint.
+	 * Transparent mode: released bufs (i.e. between kring->nr_hwcur and
+	 * ring->head) marked with NS_FORWARD on hw rx rings are passed up
+	 * to the host stack.
 	 *
 	 * Transparent mode requires to bind all
  	 * rings to a single file descriptor.
@@ -3105,7 +3108,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 		goto done;
 	}
 
-	/* protect against rxsync_from_host(), netmap_sw_to_nic()
+	/* protect against netmap_rxsync_from_host(), netmap_sw_to_nic()
 	 * and maybe other instances of netmap_transmit (the latter
 	 * not possible on Linux).
 	 * We enqueue the mbuf only if we are sure there is going to be
