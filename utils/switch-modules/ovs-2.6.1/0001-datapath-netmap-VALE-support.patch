@@ -1,20 +1,14 @@
-commit d55e43ec530094f2f2b8eb13524de74c0b208ada
-Author: Vincenzo Maffione <v.maffione@gmail.com>
-Date:   Tue Jan 3 17:47:31 2017 +0100
-
-    add netmap support
-
 diff --git a/INSTALL.NETMAP b/INSTALL.NETMAP
 new file mode 100644
-index 0000000..b3e95c2
+index 000000000..314531daf
 --- /dev/null
 +++ b/INSTALL.NETMAP
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,43 @@
 +                   Using Open vSwitch with netmap (VALE)
 +                   ============================
 +
 +Open vSwitch can use VALE, a software switch that runs in a kernel
-+ to accelerate its datapath.
++to accelerate its datapath.
 +Thanks to efficient packet I/O based on netmap API and a novel
 +packet forwarding algorithm, VALE accelerates Open vSwitch datapath
 +by three times when forwarding short packets between 10 Gbps NICs.
@@ -27,7 +21,7 @@ index 0000000..b3e95c2
 +
 +HOW TO BUILD CODE
 +-----------------
-+This patch is created for Open vSwitch 2.4.0.
++This patch is created for Open vSwitch 2.6.1.
 +
 +We assume that an up-to-date version of netmap
 +(http://info.iet.unipi.it/~luigi/netmap/) is already installed.
@@ -53,11 +47,8 @@ index 0000000..b3e95c2
 +	--with-netmap=/home/micchie/netmap make`
 +
 +See ovs-dev.py itself for detailed information.
-+
-+To use netmap API 4, pass -DNETMAP_API_4 to EXTRA_CFLAGS
-+in datapath/linux/Kbuild.in
 diff --git a/Makefile.am b/Makefile.am
-index 49010b3..56f4f62 100644
+index 49010b3b5..56f4f62ef 100644
 --- a/Makefile.am
 +++ b/Makefile.am
 @@ -85,6 +85,7 @@ docs = \
@@ -69,7 +60,7 @@ index 49010b3..56f4f62 100644
  	MAINTAINERS.md \
  	OPENFLOW-1.1+.md \
 diff --git a/acinclude.m4 b/acinclude.m4
-index 2c500a8..9a792be 100644
+index 2c500a8d1..9a792be56 100644
 --- a/acinclude.m4
 +++ b/acinclude.m4
 @@ -155,6 +155,24 @@ AC_DEFUN([OVS_CHECK_LINUX], [
@@ -98,7 +89,7 @@ index 2c500a8..9a792be 100644
  dnl
  dnl Configure DPDK source tree
 diff --git a/configure.ac b/configure.ac
-index da3bbae..6d6a1fd 100644
+index da3bbaeb4..6d6a1fdd1 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -168,6 +168,7 @@ AC_ARG_VAR(KARCH, [Kernel Architecture String])
@@ -110,7 +101,7 @@ index da3bbae..6d6a1fd 100644
  AC_SUBST([OVS_CFLAGS])
  AC_SUBST([OVS_LDFLAGS])
 diff --git a/datapath/Modules.mk b/datapath/Modules.mk
-index 8e9a169..bc8b651 100644
+index 8e9a1697a..bc8b651f1 100644
 --- a/datapath/Modules.mk
 +++ b/datapath/Modules.mk
 @@ -26,7 +26,8 @@ openvswitch_sources = \
@@ -134,12 +125,29 @@ index 8e9a169..bc8b651 100644
  
  openvswitch_extras = \
  	README.md
+diff --git a/datapath/datapath.c b/datapath/datapath.c
+index db8a18a13..0352e3d83 100644
+--- a/datapath/datapath.c
++++ b/datapath/datapath.c
+@@ -2378,7 +2378,11 @@ static int __init dp_init(void)
+ 
+ 	BUILD_BUG_ON(sizeof(struct ovs_skb_cb) > FIELD_SIZEOF(struct sk_buff, cb));
+ 
+-	pr_info("Open vSwitch switching datapath %s\n", VERSION);
++	pr_info("Open vSwitch switching datapath %s"
++#ifdef DEV_NETMAP
++		" [patched for NETMAP]"
++#endif
++		"\n", VERSION);
+ 
+ 	err = compat_init();
+ 	if (err)
 diff --git a/datapath/dp-vale.c b/datapath/dp-vale.c
 new file mode 100644
-index 0000000..1eb553b
+index 000000000..c53fe34f4
 --- /dev/null
 +++ b/datapath/dp-vale.c
-@@ -0,0 +1,194 @@
+@@ -0,0 +1,195 @@
 +/*
 + * Copyright (c) 2014 NEC Europe Ltd.
 + *
@@ -268,9 +276,10 @@ index 0000000..1eb553b
 +	if (onoff && internal)
 +		nmr.nr_arg1 = NETMAP_BDG_HOST;
 +	error = netmap_bdg_ctl(&nmr, NULL);
++	D("netmap_bdg_ctl(%s, NETMAP_BDG_%s, %s) --> %d", nmr.nr_name,
++		onoff ? "ATTACH" : "DETACH",
++		internal ? "NETMAP_BDG_HOST" : "", error);
 +	if (error) {
-+		D("failed to %s %s (internal:%d)",
-+		    onoff?"attach":"detach", name, internal);
 +		return error;
 +	}
 +
@@ -284,7 +293,7 @@ index 0000000..1eb553b
 +				D("error on BDG_DETACH after BDG_REGOPS failure");
 +		} else {
 +			vale_dp_initialized = 1;
-+			D("datapath is registered to %s", OVS_VALE_PREFIX);
++			D("datapath registered to %s", OVS_VALE_PREFIX);
 +		}
 +
 +	} else if (!onoff && vale_dp_initialized) { /* last interface? */
@@ -293,7 +302,7 @@ index 0000000..1eb553b
 +		strncpy(nmr.nr_name, OVS_VALE_PREFIX, sizeof(nmr.nr_name));
 +		if (netmap_bdg_ctl(&nmr, NULL) == ENOENT) {
 +			vale_dp_initialized = 0;
-+			D("%s is destroyed", OVS_VALE_PREFIX);
++			D("%s destroyed", OVS_VALE_PREFIX);
 +		}
 +	}
 +	return error;
@@ -336,7 +345,7 @@ index 0000000..1eb553b
 +#endif /* DEV_NETMAP */
 diff --git a/datapath/dp-vale.h b/datapath/dp-vale.h
 new file mode 100644
-index 0000000..faaeb9b
+index 000000000..faaeb9b6a
 --- /dev/null
 +++ b/datapath/dp-vale.h
 @@ -0,0 +1,67 @@
@@ -408,17 +417,16 @@ index 0000000..faaeb9b
 +int ovs_vale_ctl(const char *, int, int);
 +int ovs_vale_send(struct net_device *, struct sk_buff *skb);
 diff --git a/datapath/linux/Kbuild.in b/datapath/linux/Kbuild.in
-index 9e3259f..19e5933 100644
+index 9e3259f19..a88c33ade 100644
 --- a/datapath/linux/Kbuild.in
 +++ b/datapath/linux/Kbuild.in
-@@ -13,6 +13,13 @@ ccflags-y += -I$(builddir)/..
+@@ -13,6 +13,12 @@ ccflags-y += -I$(builddir)/..
  ccflags-y += -g
  ccflags-y += -include $(builddir)/kcompat.h
  
 +ifneq (@NETMAP_DIR@,)
 +NETMAP_DIR := @NETMAP_DIR@
 +EXTRA_CFLAGS += -I$(NETMAP_DIR) -I$(NETMAP_DIR)/LINUX -I$(NETMAP_DIR)/sys -I$(NETMAP_DIR)/sys/dev -DDEV_NETMAP -DWITH_VALE
-+#EXTRA_CFLAGS += -I$(NETMAP_DIR) -I$(NETMAP_DIR)/sys -I$(NETMAP_DIR)/sys/dev -DDEV_NETMAP -DNETMAP_API_4
 +KBUILD_EXTRA_SYMBOLS = $(NETMAP_DIR)/Module.symvers
 +endif
 +
@@ -426,7 +434,7 @@ index 9e3259f..19e5933 100644
  # NOSTDINC_FLAGS just happens to be a variable that goes in the
  # right place, even though it's conceptually incorrect.
 diff --git a/datapath/vport-internal_dev.c b/datapath/vport-internal_dev.c
-index 482af37..1376a03 100644
+index 482af37fc..1376a0334 100644
 --- a/datapath/vport-internal_dev.c
 +++ b/datapath/vport-internal_dev.c
 @@ -31,10 +31,16 @@
@@ -512,7 +520,7 @@ index 482af37..1376a03 100644
  struct vport *ovs_internal_dev_get_vport(struct net_device *netdev)
 diff --git a/datapath/vport-internal_dev_netmap.h b/datapath/vport-internal_dev_netmap.h
 new file mode 100644
-index 0000000..2f26d90
+index 000000000..2f26d906b
 --- /dev/null
 +++ b/datapath/vport-internal_dev_netmap.h
 @@ -0,0 +1,66 @@
@@ -583,7 +591,7 @@ index 0000000..2f26d90
 +	/* do we need these ?*/
 +}
 diff --git a/datapath/vport-netdev.c b/datapath/vport-netdev.c
-index 970f7d3..bffcace 100644
+index 970f7d3e5..6d0c6e841 100644
 --- a/datapath/vport-netdev.c
 +++ b/datapath/vport-netdev.c
 @@ -36,6 +36,9 @@
@@ -596,13 +604,18 @@ index 970f7d3..bffcace 100644
  
  static struct vport_ops ovs_netdev_vport_ops;
  
-@@ -101,6 +104,17 @@ struct vport *ovs_netdev_link(struct vport *vport, const char *name)
+@@ -101,6 +104,22 @@ struct vport *ovs_netdev_link(struct vport *vport, const char *name)
  		goto error_free_vport;
  	}
  
 +#ifdef DEV_NETMAP
-+	/* don't attach a non-netmap interface to a vale datapath */
++	/* We only accept interface with native netmap support.
++	 * The emulated (generic) netmap adapter wouldn't work here,
++	 * because registering a generic adapter uses
++	 * netdev_rx_handler_register, which is also needed
++	 * by OVS. */
 +	if (!NM_NA_VALID(vport->dev)) {
++		D("%s: netmap generic adapter incompatible with OVS", name);
 +		err = -EINVAL;
 +		goto error_put;
 +	}
@@ -614,7 +627,7 @@ index 970f7d3..bffcace 100644
  	if (vport->dev->flags & IFF_LOOPBACK ||
  	    vport->dev->type != ARPHRD_ETHER ||
  	    ovs_is_internal_dev(vport->dev)) {
-@@ -175,6 +189,9 @@ static void netdev_destroy(struct vport *vport)
+@@ -175,6 +194,9 @@ static void netdev_destroy(struct vport *vport)
  	if (vport->dev->priv_flags & IFF_OVS_DATAPATH)
  		ovs_netdev_detach_dev(vport);
  	rtnl_unlock();
@@ -624,7 +637,7 @@ index 970f7d3..bffcace 100644
  
  	call_rcu(&vport->rcu, vport_netdev_free);
  }
-@@ -209,11 +226,21 @@ struct vport *ovs_netdev_get_vport(struct net_device *dev)
+@@ -209,11 +231,21 @@ struct vport *ovs_netdev_get_vport(struct net_device *dev)
  		return NULL;
  }
  
@@ -648,7 +661,7 @@ index 970f7d3..bffcace 100644
  
  int __init ovs_netdev_init(void)
 diff --git a/datapath/vport-vxlan.c b/datapath/vport-vxlan.c
-index 11965c0..4599e2b 100644
+index 11965c004..4599e2b87 100644
 --- a/datapath/vport-vxlan.c
 +++ b/datapath/vport-vxlan.c
 @@ -30,6 +30,10 @@
@@ -689,7 +702,7 @@ index 11965c0..4599e2b 100644
  
  static int __init ovs_vxlan_tnl_init(void)
 diff --git a/datapath/vport.c b/datapath/vport.c
-index c29f0b0..b07c340 100644
+index c29f0b0e5..b07c34025 100644
 --- a/datapath/vport.c
 +++ b/datapath/vport.c
 @@ -39,7 +39,10 @@
@@ -720,7 +733,7 @@ index c29f0b0..b07c340 100644
  	if (ops) {
  		struct hlist_head *bucket;
 diff --git a/utilities/ovs-dev.py b/utilities/ovs-dev.py
-index 31621f4..8e8e135 100755
+index 31621f452..8e8e13566 100755
 --- a/utilities/ovs-dev.py
 +++ b/utilities/ovs-dev.py
 @@ -92,6 +92,9 @@ def conf():
