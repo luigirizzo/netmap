@@ -1,88 +1,106 @@
-From 6e4cf6d3f2d096cefa7af66e511769b027979a51 Mon Sep 17 00:00:00 2001
-From: Michio Honda <micchie@sfc.wide.ad.jp>
-Date: Fri, 22 Aug 2014 17:25:29 +0200
-Subject: [PATCH] datapath: Add support for netmap/VALE
-
-This patch implements a datapath that exploits a VALE software
-switch at packet I/O and switching.
-
-This is tested with packet forwarding between two native netmap-mode
-NICs and it accelerates packet forwarding rates by approx. 3 times.
----
- INSTALL.NETMAP                       |  46 +++++++++
- Makefile.am                          |   1 +
- acinclude.m4                         |  18 ++++
- configure.ac                         |   1 +
- datapath/Modules.mk                  |   3 +-
- datapath/dp-vale.c                   | 193 +++++++++++++++++++++++++++++++++++
- datapath/dp-vale.h                   |  67 ++++++++++++
- datapath/linux/Kbuild.in             |   7 ++
- datapath/vport-internal_dev.c        |  33 +++++-
- datapath/vport-internal_dev_netmap.h |  66 ++++++++++++
- datapath/vport-netdev.c              |  21 ++++
- datapath/vport-vxlan.c               |   7 ++
- datapath/vport.c                     |  12 +++
- utilities/ovs-dev.py                 |   5 +
- 14 files changed, 477 insertions(+), 3 deletions(-)
- create mode 100644 INSTALL.NETMAP
- create mode 100644 datapath/dp-vale.c
- create mode 100644 datapath/dp-vale.h
- create mode 100644 datapath/vport-internal_dev_netmap.h
-
 diff --git a/INSTALL.NETMAP b/INSTALL.NETMAP
 new file mode 100644
-index 0000000..b3e95c2
+index 000000000..57d796715
 --- /dev/null
 +++ b/INSTALL.NETMAP
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,95 @@
 +                   Using Open vSwitch with netmap (VALE)
 +                   ============================
 +
 +Open vSwitch can use VALE, a software switch that runs in a kernel
-+ to accelerate its datapath.
++to accelerate its datapath.
 +Thanks to efficient packet I/O based on netmap API and a novel
 +packet forwarding algorithm, VALE accelerates Open vSwitch datapath
 +by three times when forwarding short packets between 10 Gbps NICs.
 +This file explains how to install and use the Open vSwitch with VALE.
 +
-+The VALE support of Open vSwitch is experimental.
-+It has not been throughly tested.
++The VALE support for Open vSwitch is **experimental**: it has not
++been throughly tested.
 +It currently supports only netdev (including internal one) and VXLAN
-+ vport types.
++vport types.
 +
 +HOW TO BUILD CODE
 +-----------------
-+This patch is created for Open vSwitch 2.4.0.
++This patch applies to Open vSwitch 2.4.1.
 +
 +We assume that an up-to-date version of netmap
-+(http://info.iet.unipi.it/~luigi/netmap/) is already installed.
++(https://github.com/luigirizzo/netmap) is already installed.
 +
 +Installation steps are same with one written in a file INSTALL,
-+ except for specifying a path to netmap source in configure process:
++except for specifying a path to netmap source in configure process:
 +
-+* `./configure --with-netmap=/home/micchie/netmap`
++* `./configure --with-netmap=/path/to/netmap/repo`
 +
 +This is necessary because the VALE-accelerated version of
 +Open vswitch datapath (kernel module) leverages utility functions
-+ provided by netmap (defined in
-+sys/dev/netmap/netmap_kern.h, sys/net/netmap.h etc.),
-+and refers to symbols exported from a netmap kernel module
-+(LINUX/Module.symvers).
++provided by netmap (defined in sys/dev/netmap/netmap_kern.h,
++sys/net/netmap.h etc.), and refers to symbols exported from a
++netmap kernel module (LINUX/Module.symvers).
 +
-+Thus, you need to have compiled the netmap kernel module but don't need
-+to have loaded it before running the Open vSwitch.
++Before being able to build OVS, therefore, you need to build netmap.
 +
-+To quickly build and run, ovs-dev.py script can also be used like:
++To quickly build and run, ovs-dev.py script can also be used:
 +
 +* `python utilities/ovs-dev.py env && python utilities/ovs-dev.py conf \
-+	--with-netmap=/home/micchie/netmap make`
++	--with-netmap=/path/to/netmap/repo make`
 +
 +See ovs-dev.py itself for detailed information.
 +
-+To use netmap API 4, pass -DNETMAP_API_4 to EXTRA_CFLAGS
-+in datapath/linux/Kbuild.in
++
++HOW TO TRY THE PATCHED OVS
++--------------------------
++
++(1) Load netmap openvswitch kernel modules (assuming you have installed netmap
++and openvswitch system-wide)
++
++# modprobe netmap
++# modprobe openvswitch
++
++(2) Run the openvswitch deamon. This step may be performed differently on
++different distributions. Refer to the OVS documentation.
++
++(3) Create an OVS bridge:
++
++# ovs-vsctl add-br vale0
++
++(4) Create two persistent VALE ports:
++
++# vale-ctl -n vi0
++# vale-ctl -n vi1
++
++(5) Attach the two ports to the bridge:
++
++# ovs-vsctl add-port vale0 vi0
++# ovs-vsctl add-port vale0 vi1
++
++(6) Add some OpenFlow rules, to forward traffic betweeen vi0 and vi1
++(assuming the port identifiers are 1 and 2):
++
++# ovs-ofctl add-flow vale0 in_port=1,actions=output:2
++# ovs-ofctl add-flow vale0 in_port=2,actions=output:1
++
++(7) Bring the various interfaces up:
++
++# ip link set vi0 up
++# ip link set vi1 up
++# ip link set vale0 up
++
++(8) Run pkt-gen in receive mode on vi0:
++
++# pkt-gen -i vi0 -f rx
++
++(9) On a different terminal, run pkt-gen in transmit mode on vi1:
++
++# pkt-gen -i vi1 -f tx
++
++(10) You should see traffic received by the receiving pkt-gen.
++You can also attach other interfaces to the switches, provided
++they have netmap support (e.g. Intel NIC veth interfaces,
++etc.):
++
++# ovs-vsctl add-port vale0 eth2
 diff --git a/Makefile.am b/Makefile.am
-index 59a1466..1f59e74 100644
+index 59a14667d..1f59e74fa 100644
 --- a/Makefile.am
 +++ b/Makefile.am
 @@ -87,6 +87,7 @@ docs = \
@@ -94,7 +112,7 @@ index 59a1466..1f59e74 100644
  	OPENFLOW-1.1+.md \
  	PORTING.md \
 diff --git a/acinclude.m4 b/acinclude.m4
-index 45cfaf6..ef668f4 100644
+index 45cfaf660..ef668f410 100644
 --- a/acinclude.m4
 +++ b/acinclude.m4
 @@ -159,6 +159,24 @@ AC_DEFUN([OVS_CHECK_LINUX], [
@@ -123,7 +141,7 @@ index 45cfaf6..ef668f4 100644
  dnl
  dnl Configure DPDK source tree
 diff --git a/configure.ac b/configure.ac
-index e6a23a6..8ff2397 100644
+index e6a23a692..8ff23972d 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -164,6 +164,7 @@ AC_ARG_VAR(KARCH, [Kernel Architecture String])
@@ -135,7 +153,7 @@ index e6a23a6..8ff2397 100644
  AC_SUBST([OVS_CFLAGS])
  AC_SUBST([OVS_LDFLAGS])
 diff --git a/datapath/Modules.mk b/datapath/Modules.mk
-index 8dc3415..f5d4a26 100644
+index 8dc3415c6..f5d4a2682 100644
 --- a/datapath/Modules.mk
 +++ b/datapath/Modules.mk
 @@ -25,7 +25,8 @@ openvswitch_sources = \
@@ -148,9 +166,26 @@ index 8dc3415..f5d4a26 100644
  
  vport_geneve_sources = vport-geneve.c
  vport_vxlan_sources = vport-vxlan.c
+diff --git a/datapath/datapath.c b/datapath/datapath.c
+index 3c97b86df..c0307dd22 100644
+--- a/datapath/datapath.c
++++ b/datapath/datapath.c
+@@ -2270,7 +2270,11 @@ static int __init dp_init(void)
+ 
+ 	BUILD_BUG_ON(sizeof(struct ovs_skb_cb) > FIELD_SIZEOF(struct sk_buff, cb));
+ 
+-	pr_info("Open vSwitch switching datapath %s\n", VERSION);
++	pr_info("Open vSwitch switching datapath %s"
++#ifdef DEV_NETMAP
++                " [patched for NETMAP]"
++#endif
++                "\n", VERSION);
+ 
+ 	err = action_fifos_init();
+ 	if (err)
 diff --git a/datapath/dp-vale.c b/datapath/dp-vale.c
 new file mode 100644
-index 0000000..41cb433
+index 000000000..41cb43337
 --- /dev/null
 +++ b/datapath/dp-vale.c
 @@ -0,0 +1,193 @@
@@ -349,7 +384,7 @@ index 0000000..41cb433
 +#endif /* DEV_NETMAP */
 diff --git a/datapath/dp-vale.h b/datapath/dp-vale.h
 new file mode 100644
-index 0000000..3ace110
+index 000000000..3ace110ce
 --- /dev/null
 +++ b/datapath/dp-vale.h
 @@ -0,0 +1,67 @@
@@ -421,7 +456,7 @@ index 0000000..3ace110
 +int ovs_vale_ctl(const char *, int, int);
 +int ovs_vale_send(struct net_device *, struct sk_buff *skb);
 diff --git a/datapath/linux/Kbuild.in b/datapath/linux/Kbuild.in
-index 9e3259f..c5ab75a 100644
+index 9e3259f19..c5ab75a81 100644
 --- a/datapath/linux/Kbuild.in
 +++ b/datapath/linux/Kbuild.in
 @@ -13,6 +13,13 @@ ccflags-y += -I$(builddir)/..
@@ -439,7 +474,7 @@ index 9e3259f..c5ab75a 100644
  # NOSTDINC_FLAGS just happens to be a variable that goes in the
  # right place, even though it's conceptually incorrect.
 diff --git a/datapath/vport-internal_dev.c b/datapath/vport-internal_dev.c
-index f38f9be..f5b7915 100644
+index f38f9be07..f5b7915a0 100644
 --- a/datapath/vport-internal_dev.c
 +++ b/datapath/vport-internal_dev.c
 @@ -33,10 +33,16 @@
@@ -528,7 +563,7 @@ index f38f9be..f5b7915 100644
  struct vport *ovs_internal_dev_get_vport(struct net_device *netdev)
 diff --git a/datapath/vport-internal_dev_netmap.h b/datapath/vport-internal_dev_netmap.h
 new file mode 100644
-index 0000000..bab25c7
+index 000000000..bab25c7c9
 --- /dev/null
 +++ b/datapath/vport-internal_dev_netmap.h
 @@ -0,0 +1,66 @@
@@ -599,7 +634,7 @@ index 0000000..bab25c7
 +	/* do we need these ?*/
 +}
 diff --git a/datapath/vport-netdev.c b/datapath/vport-netdev.c
-index de85087..769e1cc 100644
+index de8508756..769e1cc64 100644
 --- a/datapath/vport-netdev.c
 +++ b/datapath/vport-netdev.c
 @@ -34,6 +34,9 @@
@@ -652,7 +687,7 @@ index de85087..769e1cc 100644
  
  	return len;
 diff --git a/datapath/vport-vxlan.c b/datapath/vport-vxlan.c
-index eff7ca2..87d087c 100644
+index eff7ca23c..87d087cc1 100644
 --- a/datapath/vport-vxlan.c
 +++ b/datapath/vport-vxlan.c
 @@ -43,6 +43,9 @@
@@ -677,7 +712,7 @@ index eff7ca2..87d087c 100644
  	/* Route lookup */
  	saddr = tun_key->ipv4_src;
 diff --git a/datapath/vport.c b/datapath/vport.c
-index 4486d06..86fc1de 100644
+index 4486d06cd..86fc1de4f 100644
 --- a/datapath/vport.c
 +++ b/datapath/vport.c
 @@ -35,7 +35,10 @@
@@ -708,7 +743,7 @@ index 4486d06..86fc1de 100644
  	if (ops) {
  		struct hlist_head *bucket;
 diff --git a/utilities/ovs-dev.py b/utilities/ovs-dev.py
-index 8128b08..34f8944 100755
+index 8128b08f9..34f894406 100755
 --- a/utilities/ovs-dev.py
 +++ b/utilities/ovs-dev.py
 @@ -79,6 +79,9 @@ def conf():
@@ -730,6 +765,3 @@ index 8128b08..34f8944 100755
      parser.add_option_group(group)
  
      group = optparse.OptionGroup(parser, "Optimization Flags")
--- 
-2.5.4 (Apple Git-61)
-
