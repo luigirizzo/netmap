@@ -2485,9 +2485,11 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	 */
 	int retry_tx = 1, retry_rx = 1;
 
-	/* transparent mode: send_down is 1 if we have found some
-	 * packets to forward during the rx scan and we have not
-	 * sent them down to the nic yet
+	/* Transparent mode: send_down is 1 if we have found some
+	 * packets to forward (host RX ring --> NIC) during the rx
+	 * scan and we have not sent them down to the NIC yet.
+	 * Transparent mode requires to bind all rings to a single
+	 * file descriptor.
 	 */
 	int send_down = 0;
 
@@ -2700,14 +2702,10 @@ do_retry_rx:
 	 * Transparent mode: released bufs (i.e. between kring->nr_hwcur and
 	 * ring->head) marked with NS_FORWARD on hw rx rings are passed up
 	 * to the host stack.
-	 *
-	 * Transparent mode requires to bind all
- 	 * rings to a single file descriptor.
 	 */
 
-	if (q.head && !nm_kr_tryget(&na->tx_rings[na->num_tx_rings], 1, &revents)) {
+	if (mbq_peek(&q)) {
 		netmap_send_up(na->ifp, &q);
-		nm_kr_put(&na->tx_rings[na->num_tx_rings]);
 	}
 
 	return (revents);

@@ -253,7 +253,6 @@ nm_os_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
 void *
 nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 {
-
 	NA(ifp)->if_input(ifp, m);
 	return NULL;
 }
