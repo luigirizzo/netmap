@@ -484,7 +484,7 @@ int netmap_mitigate = 1;
 int netmap_no_pendintr = 1;
 int netmap_txsync_retry = 2;
 int netmap_flags = 0;	/* debug flags */
-static int netmap_fwd = 0;	/* force transparent mode */
+static int netmap_fwd = 0;	/* force transparent forwarding */
 
 /*
  * netmap_admode selects the netmap mode to use.
@@ -1041,20 +1041,27 @@ netmap_dtor(void *data)
 }
 
 
-
-
 /*
- * Handlers for synchronization of the queues from/to the host.
- * Netmap has two operating modes:
- * - in the default mode, the rings connected to the host stack are
- *   just another ring pair managed by userspace;
- * - in transparent mode (XXX to be defined) incoming packets
- *   (from the host or the NIC) are marked as NS_FORWARD upon
- *   arrival, and the user application has a chance to reset the
- *   flag for packets that should be dropped.
- *   On the RXSYNC or poll(), packets in RX rings between
- *   kring->nr_hwcur and ring->cur with NS_FORWARD still set are moved
- *   to the other side.
+ * Handlers for synchronization of the rings from/to the host stack.
+ * These are associated to a network interface and are just another
+ * ring pair managed by userspace.
+ *
+ * Netmap also supports transparent forwarding (NS_FOWARD and NR_FOWARD
+ * flags):
+ *
+ * - Before releasing buffers on hw RX rings, the application can mark
+ *   them with the NS_FOWARD flag. During the next RXSYNC or poll(), they
+ *   will be forwarded to the host stack, similarly to what happened if
+ *   the application moved them to the host TX ring.
+ *
+ * - Before releasing buffers on the host RX ring, the application can
+ *   mark them with the NS_FOWARD flag. During the next RXSYNC or poll(),
+ *   they will be forwarded to the hw TX rings, saving the application
+ *   from doing the same task in user-space.
+ *
+ * Transparent fowarding can be enabled per-ring, by setting the NR_FOWARD
+ * flag, or globally with the netmap_fwd sysctl.
+ *
  * The transfer NIC --> host is relatively easy, just encapsulate
  * into mbufs and we are done. The host --> NIC side is slightly
  * harder because there might not be room in the tx ring so it
