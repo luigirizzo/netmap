@@ -2145,6 +2145,16 @@ nm_sync_finalize(struct netmap_kring *kring)
 		kring->rhead, kring->rcur, kring->rtail);
 }
 
+/* set ring timestamp */
+static inline void
+ring_timestamp_set(struct netmap_ring *ring)
+{
+	if (netmap_no_timestamp == 0 || ring->flags & NR_TIMESTAMP) {
+		microtime(&ring->ts);
+	}
+}
+
+
 /*
  * ioctl(2) support for the "netmap" device.
  *
@@ -2407,7 +2417,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				} else if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
 					nm_sync_finalize(kring);
 				}
-				microtime(&ring->ts);
+				ring_timestamp_set(ring);
 			}
 			nm_kr_put(kring);
 		}
@@ -2679,10 +2689,7 @@ do_retry_rx:
 			else
 				nm_sync_finalize(kring);
 			send_down |= (kring->nr_kflags & NR_FORWARD);
-			if (netmap_no_timestamp == 0 ||
-					ring->flags & NR_TIMESTAMP) {
-				microtime(&ring->ts);
-			}
+			ring_timestamp_set(ring);
 			found = kring->rcur != kring->rtail;
 			nm_kr_put(kring);
 			if (found) {
