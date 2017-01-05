@@ -1046,20 +1046,20 @@ netmap_dtor(void *data)
  * These are associated to a network interface and are just another
  * ring pair managed by userspace.
  *
- * Netmap also supports transparent forwarding (NS_FOWARD and NR_FOWARD
+ * Netmap also supports transparent forwarding (NS_FORWARD and NR_FORWARD
  * flags):
  *
  * - Before releasing buffers on hw RX rings, the application can mark
- *   them with the NS_FOWARD flag. During the next RXSYNC or poll(), they
+ *   them with the NS_FORWARD flag. During the next RXSYNC or poll(), they
  *   will be forwarded to the host stack, similarly to what happened if
  *   the application moved them to the host TX ring.
  *
  * - Before releasing buffers on the host RX ring, the application can
- *   mark them with the NS_FOWARD flag. During the next RXSYNC or poll(),
+ *   mark them with the NS_FORWARD flag. During the next RXSYNC or poll(),
  *   they will be forwarded to the hw TX rings, saving the application
  *   from doing the same task in user-space.
  *
- * Transparent fowarding can be enabled per-ring, by setting the NR_FOWARD
+ * Transparent fowarding can be enabled per-ring, by setting the NR_FORWARD
  * flag, or globally with the netmap_fwd sysctl.
  *
  * The transfer NIC --> host is relatively easy, just encapsulate
