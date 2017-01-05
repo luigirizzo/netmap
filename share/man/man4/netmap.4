@@ -498,8 +498,7 @@ can be delayed indefinitely.
 This flag helps detect
 when packets have been sent and a file descriptor can be closed.
 .It NS_FORWARD
-When a ring is in 'transparent' mode (see
-.Sx TRANSPARENT MODE ) ,
+When a ring is in 'transparent' mode,
 packets marked with this flag are forwarded to the other endpoint
 at the next system call, thus restoring (in a selective way)
 the connection between a NIC and the host stack.
@@ -958,7 +957,7 @@ rates, and use multiple send/receive threads and cores.
 is another test program which interconnects two
 .Nm
 ports.
-It can be used for transparent forwarding between
+It can be used for zero-copy forwarding between
 interfaces, as in
 .Dl bridge -i ix0 -i ix1
 or even connect the NIC to the host stack using netmap

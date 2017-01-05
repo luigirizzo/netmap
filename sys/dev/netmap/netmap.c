@@ -484,7 +484,7 @@ int netmap_mitigate = 1;
 int netmap_no_pendintr = 1;
 int netmap_txsync_retry = 2;
 int netmap_flags = 0;	/* debug flags */
-static int netmap_fwd = 0;	/* force transparent mode */
+static int netmap_fwd = 0;	/* force transparent forwarding */
 
 /*
  * netmap_admode selects the netmap mode to use.
@@ -1041,20 +1041,27 @@ netmap_dtor(void *data)
 }
 
 
-
-
 /*
- * Handlers for synchronization of the queues from/to the host.
- * Netmap has two operating modes:
- * - in the default mode, the rings connected to the host stack are
- *   just another ring pair managed by userspace;
- * - in transparent mode (XXX to be defined) incoming packets
- *   (from the host or the NIC) are marked as NS_FORWARD upon
- *   arrival, and the user application has a chance to reset the
- *   flag for packets that should be dropped.
- *   On the RXSYNC or poll(), packets in RX rings between
- *   kring->nr_kcur and ring->cur with NS_FORWARD still set are moved
- *   to the other side.
+ * Handlers for synchronization of the rings from/to the host stack.
+ * These are associated to a network interface and are just another
+ * ring pair managed by userspace.
+ *
+ * Netmap also supports transparent forwarding (NS_FOWARD and NR_FOWARD
+ * flags):
+ *
+ * - Before releasing buffers on hw RX rings, the application can mark
+ *   them with the NS_FOWARD flag. During the next RXSYNC or poll(), they
+ *   will be forwarded to the host stack, similarly to what happened if
+ *   the application moved them to the host TX ring.
+ *
+ * - Before releasing buffers on the host RX ring, the application can
+ *   mark them with the NS_FOWARD flag. During the next RXSYNC or poll(),
+ *   they will be forwarded to the hw TX rings, saving the application
+ *   from doing the same task in user-space.
+ *
+ * Transparent fowarding can be enabled per-ring, by setting the NR_FOWARD
+ * flag, or globally with the netmap_fwd sysctl.
+ *
  * The transfer NIC --> host is relatively easy, just encapsulate
  * into mbufs and we are done. The host --> NIC side is slightly
  * harder because there might not be room in the tx ring so it
@@ -1063,8 +1070,9 @@ netmap_dtor(void *data)
 
 
 /*
- * pass a chain of buffers to the host stack as coming from 'dst'
+ * Pass a whole queue of mbufs to the host stack as coming from 'dst'
  * We do not need to lock because the queue is private.
+ * After this call the queue is empty.
  */
 static void
 netmap_send_up(struct ifnet *dst, struct mbq *q)
@@ -1072,7 +1080,8 @@ netmap_send_up(struct ifnet *dst, struct mbq *q)
 	struct mbuf *m;
 	struct mbuf *head = NULL, *prev = NULL;
 
-	/* send packets up, outside the lock */
+	/* Send packets up, outside the lock; head/prev machinery
+	 * is only useful for Windows. */
 	while ((m = mbq_dequeue(q)) != NULL) {
 		if (netmap_verbose & NM_VERB_HOST)
 			D("sending up pkt %p size %d", m, MBUF_LEN(m));
@@ -1087,9 +1096,9 @@ netmap_send_up(struct ifnet *dst, struct mbq *q)
 
 
 /*
- * put a copy of the buffers marked NS_FORWARD into an mbuf chain.
- * Take packets from hwcur to ring->head marked NS_FORWARD (or forced)
- * and pass them up. Drop remaining packets in the unlikely event
+ * Scan the buffers from hwcur to ring->head, and put a copy of those
+ * marked NS_FORWARD (or all of them if forced) into a queue of mbufs.
+ * Drop remaining packets in the unlikely event
  * of an mbuf shortage.
  */
 static void
@@ -1159,6 +1168,8 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 
 	/* scan rings to find space, then fill as much as possible */
 	for (i = 0; i < na->num_tx_rings; i++) {
+		/* XXX some krings may not be in netmap mode,
+		 * buffers may not be there */
 		struct netmap_kring *kdst = &na->tx_rings[i];
 		struct netmap_ring *rdst = kdst->ring;
 		u_int const dst_lim = kdst->nkr_num_slots - 1;
@@ -1186,6 +1197,8 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 			dst->len = tmp.len;
 			dst->flags = NS_BUF_CHANGED;
 
+			/* XXX is it safe to write head/cur concurrently to
+			 * the userspace application? */
 			rdst->head = rdst->cur = nm_next(dst_head, dst_lim);
 		}
 		/* if (sent) XXX txsync ? */
@@ -1209,9 +1222,7 @@ netmap_txsync_to_host(struct netmap_kring *kring, int flags)
 	struct mbq q;
 
 	/* Take packets from hwcur to head and pass them up.
-	 * force head = cur since netmap_grab_packets() stops at head
-	 * In case of no buffers we give up. At the end of the loop,
-	 * the queue is drained in all cases.
+	 * Force hwcur = head since netmap_grab_packets() stops at head
 	 */
 	mbq_init(&q);
 	netmap_grab_packets(kring, &q, 1 /* force */);
@@ -1259,7 +1270,7 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 		uint32_t stop_i;
 
 		nm_i = kring->nr_hwtail;
-		stop_i = nm_prev(nm_i, lim);
+		stop_i = nm_prev(kring->nr_hwcur, lim);
 		while ( nm_i != stop_i && (m = mbq_dequeue(q)) != NULL ) {
 			int len = MBUF_LEN(m);
 			struct netmap_slot *slot = &ring->slot[nm_i];
@@ -2481,9 +2492,11 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	 */
 	int retry_tx = 1, retry_rx = 1;
 
-	/* transparent mode: send_down is 1 if we have found some
-	 * packets to forward during the rx scan and we have not
-	 * sent them down to the nic yet
+	/* Transparent mode: send_down is 1 if we have found some
+	 * packets to forward (host RX ring --> NIC) during the rx
+	 * scan and we have not sent them down to the NIC yet.
+	 * Transparent mode requires to bind all rings to a single
+	 * file descriptor.
 	 */
 	int send_down = 0;
 
@@ -2648,21 +2661,24 @@ do_retry_rx:
 			/* now we can use kring->rcur, rtail */
 
 			/*
-			 * transparent mode support: collect packets
-			 * from the rxring(s).
+			 * transparent mode support: collect packets from
+			 * hw rxring(s) that have been released by the user
 			 */
 			if (nm_may_forward_up(kring)) {
-				ND(10, "forwarding some buffers up %d to %d",
-				    kring->nr_hwcur, ring->cur);
+				ND(2, "forwarding some buffers up %d to %d",
+				       kring->nr_hwcur, ring->cur);
 				netmap_grab_packets(kring, &q, netmap_fwd);
 			}
 
+			/* Clear the NR_FORWARD flag anyway, it may be set by
+			 * the nm_sync() below only on for the host RX ring (see
+			 * netmap_rxsync_from_host()). */
 			kring->nr_kflags &= ~NR_FORWARD;
 			if (kring->nm_sync(kring, 0))
 				revents |= POLLERR;
 			else
 				nm_sync_finalize(kring);
-			send_down |= (kring->nr_kflags & NR_FORWARD); /* host ring only */
+			send_down |= (kring->nr_kflags & NR_FORWARD);
 			if (netmap_no_timestamp == 0 ||
 					ring->flags & NR_TIMESTAMP) {
 				microtime(&ring->ts);
@@ -2680,7 +2696,7 @@ do_retry_rx:
 			nm_os_selrecord(sr, check_all_rx ?
 			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
 		}
-		if (send_down > 0 || retry_rx) {
+		if (send_down || retry_rx) {
 			retry_rx = 0;
 			if (send_down)
 				goto flush_tx; /* and retry_rx */
@@ -2690,17 +2706,13 @@ do_retry_rx:
 	}
 
 	/*
-	 * Transparent mode: marked bufs on rx rings between
-	 * kring->nr_hwcur and ring->head
-	 * are passed to the other endpoint.
-	 *
-	 * Transparent mode requires to bind all
- 	 * rings to a single file descriptor.
+	 * Transparent mode: released bufs (i.e. between kring->nr_hwcur and
+	 * ring->head) marked with NS_FORWARD on hw rx rings are passed up
+	 * to the host stack.
 	 */
 
-	if (q.head && !nm_kr_tryget(&na->tx_rings[na->num_tx_rings], 1, &revents)) {
+	if (mbq_peek(&q)) {
 		netmap_send_up(na->ifp, &q);
-		nm_kr_put(&na->tx_rings[na->num_tx_rings]);
 	}
 
 	return (revents);
@@ -2728,22 +2740,6 @@ netmap_notify(struct netmap_kring *kring, int flags)
 
 	return NM_IRQ_COMPLETED;
 }
-
-#if 0
-static int
-netmap_notify(struct netmap_adapter *na, u_int n_ring,
-enum txrx tx, int flags)
-{
-	if (tx == NR_TX) {
-		KeSetEvent(notes->TX_EVENT, 0, FALSE);
-	}
-	else
-	{
-		KeSetEvent(notes->RX_EVENT, 0, FALSE);
-	}
-	return 0;
-}
-#endif
 
 /* called by all routines that create netmap_adapters.
  * provide some defaults and get a reference to the
@@ -3064,7 +3060,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	u_int error = ENOBUFS;
 	unsigned int txr;
 	struct mbq *q;
-	int space;
+	int busy;
 
 	kring = &na->rx_rings[na->num_rx_rings];
 	// XXX [Linux] we do not need this lock
@@ -3097,28 +3093,27 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	if (nm_os_mbuf_has_offld(m)) {
-		RD(1, "%s drop mbuf requiring offloadings", na->name);
+		RD(1, "%s drop mbuf that needs offloadings", na->name);
 		goto done;
 	}
 
-	/* protect against rxsync_from_host(), netmap_sw_to_nic()
+	/* protect against netmap_rxsync_from_host(), netmap_sw_to_nic()
 	 * and maybe other instances of netmap_transmit (the latter
 	 * not possible on Linux).
-	 * Also avoid overflowing the queue.
+	 * We enqueue the mbuf only if we are sure there is going to be
+	 * enough room in the host RX ring, otherwise we drop it.
 	 */
 	mbq_lock(q);
 
-        space = kring->nr_hwtail - kring->nr_hwcur;
-        if (space < 0)
-                space += kring->nkr_num_slots;
-	if (space + mbq_len(q) >= kring->nkr_num_slots - 1) { // XXX
-		RD(10, "%s full hwcur %d hwtail %d qlen %d len %d m %p",
-			na->name, kring->nr_hwcur, kring->nr_hwtail, mbq_len(q),
-			len, m);
+        busy = kring->nr_hwtail - kring->nr_hwcur;
+        if (busy < 0)
+                busy += kring->nkr_num_slots;
+	if (busy + mbq_len(q) >= kring->nkr_num_slots - 1) {
+		RD(2, "%s full hwcur %d hwtail %d qlen %d", na->name,
+			kring->nr_hwcur, kring->nr_hwtail, mbq_len(q));
 	} else {
 		mbq_enqueue(q, m);
-		ND(10, "%s %d bufs in queue len %d m %p",
-			na->name, mbq_len(q), len, m);
+		ND(2, "%s %d bufs in queue", na->name, mbq_len(q));
 		/* notify outside the lock */
 		m = NULL;
 		error = 0;
