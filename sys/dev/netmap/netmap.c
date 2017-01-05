@@ -2170,6 +2170,7 @@ ring_timestamp_set(struct netmap_ring *ring)
 int
 netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *td)
 {
+	struct mbq q;	/* packets from RX hw queues to host stack */
 	struct nmreq *nmr = (struct nmreq *) data;
 	struct netmap_adapter *na = NULL;
 	struct netmap_mem_d *nmd = NULL;
@@ -2383,6 +2384,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			break;
 		}
 
+		mbq_init(&q);
 		t = (cmd == NIOCTXSYNC ? NR_TX : NR_RX);
 		krings = NMR(na, t);
 		qfirst = priv->np_qfirst[t];
@@ -2414,12 +2416,21 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			} else {
 				if (nm_rxsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
-				} else if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
+				}
+				if (nm_may_forward_up(kring)) {
+					/* transparent forwarding, see netmap_poll() */
+					netmap_grab_packets(kring, &q, netmap_fwd);
+				}
+				if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
 					nm_sync_finalize(kring);
 				}
 				ring_timestamp_set(ring);
 			}
 			nm_kr_put(kring);
+		}
+
+		if (mbq_peek(&q)) {
+			netmap_send_up(na->ifp, &q);
 		}
 
 		break;
@@ -2492,7 +2503,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	u_int i, check_all_tx, check_all_rx, want[NR_TXRX], revents = 0;
 #define want_tx want[NR_TX]
 #define want_rx want[NR_RX]
-	struct mbq q;		/* packets from hw queues to host stack */
+	struct mbq q;	/* packets from RX hw queues to host stack */
 	enum txrx t;
 
 	/*
@@ -2675,8 +2686,6 @@ do_retry_rx:
 			 * hw rxring(s) that have been released by the user
 			 */
 			if (nm_may_forward_up(kring)) {
-				ND(2, "forwarding some buffers up %d to %d",
-				       kring->nr_hwcur, ring->cur);
 				netmap_grab_packets(kring, &q, netmap_fwd);
 			}
 
