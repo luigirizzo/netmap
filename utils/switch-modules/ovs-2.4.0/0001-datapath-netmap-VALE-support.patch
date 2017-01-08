@@ -1,6 +1,6 @@
 diff --git a/INSTALL.NETMAP b/INSTALL.NETMAP
 new file mode 100644
-index 000000000..57d796715
+index 000000000..f70466798
 --- /dev/null
 +++ b/INSTALL.NETMAP
 @@ -0,0 +1,95 @@
@@ -61,7 +61,7 @@ index 000000000..57d796715
 +
 +(3) Create an OVS bridge:
 +
-+# ovs-vsctl add-br vale0
++# ovs-vsctl add-br br0
 +
 +(4) Create two persistent VALE ports:
 +
@@ -70,20 +70,20 @@ index 000000000..57d796715
 +
 +(5) Attach the two ports to the bridge:
 +
-+# ovs-vsctl add-port vale0 vi0
-+# ovs-vsctl add-port vale0 vi1
++# ovs-vsctl add-port br0 vi0
++# ovs-vsctl add-port br0 vi1
 +
 +(6) Add some OpenFlow rules, to forward traffic betweeen vi0 and vi1
 +(assuming the port identifiers are 1 and 2):
 +
-+# ovs-ofctl add-flow vale0 in_port=1,actions=output:2
-+# ovs-ofctl add-flow vale0 in_port=2,actions=output:1
++# ovs-ofctl add-flow br0 in_port=1,actions=output:2
++# ovs-ofctl add-flow br0 in_port=2,actions=output:1
 +
 +(7) Bring the various interfaces up:
 +
 +# ip link set vi0 up
 +# ip link set vi1 up
-+# ip link set vale0 up
++# ip link set br0 up
 +
 +(8) Run pkt-gen in receive mode on vi0:
 +
@@ -98,7 +98,7 @@ index 000000000..57d796715
 +they have netmap support (e.g. Intel NIC veth interfaces,
 +etc.):
 +
-+# ovs-vsctl add-port vale0 eth2
++# ovs-vsctl add-port br0 eth2
 diff --git a/Makefile.am b/Makefile.am
 index 59a14667d..1f59e74fa 100644
 --- a/Makefile.am
@@ -185,10 +185,10 @@ index 3c97b86df..c0307dd22 100644
  	if (err)
 diff --git a/datapath/dp-vale.c b/datapath/dp-vale.c
 new file mode 100644
-index 000000000..41cb43337
+index 000000000..9b38f4431
 --- /dev/null
 +++ b/datapath/dp-vale.c
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,195 @@
 +/*
 + * Copyright (c) 2014 NEC Europe Ltd.
 + *
@@ -286,7 +286,9 @@ index 000000000..41cb43337
 +	return dst.port;
 +}
 +
-+#define OVS_VALE_PREFIX "vale0:"
++/* Name of the VALE switch that will be actually used to
++ * implement the OVS datapath (for all the OVS bridges). */
++#define OVS_VALE_PREFIX "valeOVS:"
 +
 +static struct netmap_bdg_ops ovs_vale_ops = {
 +	.lookup = ovs_vale_lookup,

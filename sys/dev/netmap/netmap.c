@@ -1046,20 +1046,20 @@ netmap_dtor(void *data)
  * These are associated to a network interface and are just another
  * ring pair managed by userspace.
  *
- * Netmap also supports transparent forwarding (NS_FOWARD and NR_FOWARD
+ * Netmap also supports transparent forwarding (NS_FORWARD and NR_FORWARD
  * flags):
  *
  * - Before releasing buffers on hw RX rings, the application can mark
- *   them with the NS_FOWARD flag. During the next RXSYNC or poll(), they
+ *   them with the NS_FORWARD flag. During the next RXSYNC or poll(), they
  *   will be forwarded to the host stack, similarly to what happened if
  *   the application moved them to the host TX ring.
  *
  * - Before releasing buffers on the host RX ring, the application can
- *   mark them with the NS_FOWARD flag. During the next RXSYNC or poll(),
+ *   mark them with the NS_FORWARD flag. During the next RXSYNC or poll(),
  *   they will be forwarded to the hw TX rings, saving the application
  *   from doing the same task in user-space.
  *
- * Transparent fowarding can be enabled per-ring, by setting the NR_FOWARD
+ * Transparent fowarding can be enabled per-ring, by setting the NR_FORWARD
  * flag, or globally with the netmap_fwd sysctl.
  *
  * The transfer NIC --> host is relatively easy, just encapsulate
@@ -2145,6 +2145,16 @@ nm_sync_finalize(struct netmap_kring *kring)
 		kring->rhead, kring->rcur, kring->rtail);
 }
 
+/* set ring timestamp */
+static inline void
+ring_timestamp_set(struct netmap_ring *ring)
+{
+	if (netmap_no_timestamp == 0 || ring->flags & NR_TIMESTAMP) {
+		microtime(&ring->ts);
+	}
+}
+
+
 /*
  * ioctl(2) support for the "netmap" device.
  *
@@ -2160,6 +2170,7 @@ nm_sync_finalize(struct netmap_kring *kring)
 int
 netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *td)
 {
+	struct mbq q;	/* packets from RX hw queues to host stack */
 	struct nmreq *nmr = (struct nmreq *) data;
 	struct netmap_adapter *na = NULL;
 	struct netmap_mem_d *nmd = NULL;
@@ -2373,6 +2384,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			break;
 		}
 
+		mbq_init(&q);
 		t = (cmd == NIOCTXSYNC ? NR_TX : NR_RX);
 		krings = NMR(na, t);
 		qfirst = priv->np_qfirst[t];
@@ -2404,12 +2416,21 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			} else {
 				if (nm_rxsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
-				} else if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
+				}
+				if (nm_may_forward_up(kring)) {
+					/* transparent forwarding, see netmap_poll() */
+					netmap_grab_packets(kring, &q, netmap_fwd);
+				}
+				if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
 					nm_sync_finalize(kring);
 				}
-				microtime(&ring->ts);
+				ring_timestamp_set(ring);
 			}
 			nm_kr_put(kring);
+		}
+
+		if (mbq_peek(&q)) {
+			netmap_send_up(na->ifp, &q);
 		}
 
 		break;
@@ -2482,7 +2503,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	u_int i, check_all_tx, check_all_rx, want[NR_TXRX], revents = 0;
 #define want_tx want[NR_TX]
 #define want_rx want[NR_RX]
-	struct mbq q;		/* packets from hw queues to host stack */
+	struct mbq q;	/* packets from RX hw queues to host stack */
 	enum txrx t;
 
 	/*
@@ -2665,8 +2686,6 @@ do_retry_rx:
 			 * hw rxring(s) that have been released by the user
 			 */
 			if (nm_may_forward_up(kring)) {
-				ND(2, "forwarding some buffers up %d to %d",
-				       kring->nr_hwcur, ring->cur);
 				netmap_grab_packets(kring, &q, netmap_fwd);
 			}
 
@@ -2679,10 +2698,7 @@ do_retry_rx:
 			else
 				nm_sync_finalize(kring);
 			send_down |= (kring->nr_kflags & NR_FORWARD);
-			if (netmap_no_timestamp == 0 ||
-					ring->flags & NR_TIMESTAMP) {
-				microtime(&ring->ts);
-			}
+			ring_timestamp_set(ring);
 			found = kring->rcur != kring->rtail;
 			nm_kr_put(kring);
 			if (found) {

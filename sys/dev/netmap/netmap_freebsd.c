@@ -403,7 +403,6 @@ netmap_getna(if_t ifp)
 int
 nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
-	D("called, in tx %d rx %d", *tx, *rx);
 	return 0;
 }
 
@@ -411,9 +410,10 @@ nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *r
 void
 nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 {
-	D("called, in txq %d rxq %d", *txq, *rxq);
-	*txq = netmap_generic_rings;
-	*rxq = netmap_generic_rings;
+	unsigned num_rings = netmap_generic_rings ? netmap_generic_rings : 1;
+
+	*txq = num_rings;
+	*rxq = num_rings;
 }
 
 void
