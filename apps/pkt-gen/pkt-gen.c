@@ -1649,6 +1649,14 @@ receiver_body(void *data)
 		i = poll(&pfd, 1, 1000);
 		if (i > 0 && !(pfd.revents & POLLERR))
 			break;
+		if (i < 0) {
+			D("poll() error: %s", strerror(errno));
+			goto quit;
+		}
+		if (pfd.revents & POLLERR) {
+			D("fd error");
+			goto quit;
+		}
 		RD(1, "waiting for initial packets, poll returns %d %d",
 			i, pfd.revents);
 	}
