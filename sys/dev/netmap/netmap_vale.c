@@ -565,6 +565,7 @@ nm_vi_destroy(const char *name)
 		goto err;
 	}
 
+	D("refcount %d", NA(ifp)->na_refcount);
 	if (NA(ifp)->na_refcount > 1) {
 		error = EBUSY;
 		goto err;
@@ -575,8 +576,8 @@ nm_vi_destroy(const char *name)
 	/* Linux requires all the references are released
 	 * before unregister
 	 */
-	if_rele(ifp);
 	netmap_detach(ifp);
+	if_rele(ifp);
 	nm_os_vi_detach(ifp);
 	return 0;
 
