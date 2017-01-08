@@ -553,6 +553,7 @@ static int
 nm_vi_destroy(const char *name)
 {
 	struct ifnet *ifp;
+	struct netmap_vp_adapter *vpna;
 	int error;
 
 	ifp = ifunit_ref(name);
@@ -565,11 +566,21 @@ nm_vi_destroy(const char *name)
 		goto err;
 	}
 
-	D("refcount %d", NA(ifp)->na_refcount);
-	if (NA(ifp)->na_refcount > 1) {
+	vpna = (struct netmap_vp_adapter *)NA(ifp);
+
+	/* we can only destroy ports that were created via NETMAP_BDG_NEWIF */
+	if (vpna->autodelete) {
+		error = EINVAL;
+		goto err;
+	}
+
+	/* also make sure that nobody is using the inferface */
+	if (NETMAP_OWNED_BY_ANY(&vpna->up) ||
+	    vpna->up.na_refcount > 1 /* any ref besides the one in nm_vi_create()? */) {
 		error = EBUSY;
 		goto err;
 	}
+
 	NMG_UNLOCK();
 
 	D("destroying a persistent vale interface %s", ifp->if_xname);
