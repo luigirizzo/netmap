@@ -116,7 +116,7 @@ nm_os_ifnet_lock(void)
 void
 nm_os_ifnet_unlock(void)
 {
-	IFNET_WUNLOCK();
+	IFNET_RUNLOCK();
 }
 
 static int netmap_use_count = 0;
