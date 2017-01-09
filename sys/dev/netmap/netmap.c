@@ -1242,11 +1242,9 @@ netmap_txsync_to_host(struct netmap_kring *kring, int flags)
  * They have been put in kring->rx_queue by netmap_transmit().
  * We protect access to the kring using kring->rx_queue.lock
  *
- * This routine also does the selrecord if called from the poll handler
- * (we know because sr != NULL).
- *
- * returns the number of packets delivered to tx queues in
- * transparent mode, or a negative value if error
+ * also moves to the nic hw rings any packet the user has marked
+ * for transparent-mode forwarding, then sets the NR_FORWARD
+ * flag in the kring to let the caller push them out
  */
 static int
 netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
