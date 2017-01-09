@@ -802,7 +802,8 @@ nmr_arg_extra()
 	printf("arg1:      %d [%sextra rings]\n", curr_nmr.nr_arg1,
 		(curr_nmr.nr_arg1 ? "" : "no "));
 	printf("arg2:      %d [%s memory allocator]\n", curr_nmr.nr_arg2,
-		(curr_nmr.nr_arg2 == 0 ? "global" : "private"));
+		(curr_nmr.nr_arg2 == 0 ? "default" :
+		 curr_nmr.nr_arg2 == 1 ? "global"  : "private"));
 	printf("arg3:      %d [%sextra buffers]\n", curr_nmr.nr_arg3,
 		(curr_nmr.nr_arg3 ? "" : "no "));
 }
