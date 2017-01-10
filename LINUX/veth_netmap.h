@@ -114,7 +114,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 	/* Enable or disable flags and callbacks in na and ifp. */
 	if (onoff) {
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = &NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring)) {
@@ -154,10 +154,15 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 				if (nm_kring_pending_off(kring)) {
 					kring->nr_mode = NKR_NETMAP_OFF;
-					/* mark the peer ring as no longer needed by us
-					 * (it may still be kept if sombody else is using it)
+					/* If hw kring, mark the peer kring
+					 * as no longer needed by us (it may
+					 * still be kept if sombody else is
+					 * using it).
 					 */
-					kring->pipe->nr_kflags &= ~NKR_NEEDRING;
+					if (kring->pipe) {
+						kring->pipe->nr_kflags &=
+								~NKR_NEEDRING;
+					}
 				}
 			}
 		}
@@ -212,7 +217,7 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 	if (error)
 		goto del_krings1;
 
-	/* cross link the krings */
+	/* cross link the krings (only the hw ones, not the host krings) */
 	for_rx_tx(t) {
 		enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
 		int i;
