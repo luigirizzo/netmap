@@ -390,7 +390,7 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 	ND("%p: onoff %d", na, onoff);
 	if (onoff) {
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = &NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring)) {
@@ -429,7 +429,9 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 					/* mark the peer ring as no longer needed by us
 					 * (it may still be kept if sombody else is using it)
 					 */
-					kring->pipe->nr_kflags &= ~NKR_NEEDRING;
+					if (kring->pipe) {
+						kring->pipe->nr_kflags &= ~NKR_NEEDRING;
+					}
 				}
 			}
 		}
