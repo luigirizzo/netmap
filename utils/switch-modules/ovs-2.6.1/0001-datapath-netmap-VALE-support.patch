@@ -1,9 +1,9 @@
 diff --git a/INSTALL.NETMAP b/INSTALL.NETMAP
 new file mode 100644
-index 000000000..12ee16307
+index 000000000..7cf02e45e
 --- /dev/null
 +++ b/INSTALL.NETMAP
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,99 @@
 +                   Using Open vSwitch with netmap (VALE)
 +                   ============================
 +
@@ -38,6 +38,10 @@ index 000000000..12ee16307
 +netmap kernel module (LINUX/Module.symvers).
 +
 +Before being able to build OVS, therefore, you need to build netmap.
++When building netmap, run ./configure and make in the root directory of
++the netmap repository; don't run those in the LINUX/ subdir or into
++another build directory, otherwise the openvswitch module will not be
++built with the correct dependencies in place.
 +
 +To quickly build and run, ovs-dev.py script can also be used:
 +
