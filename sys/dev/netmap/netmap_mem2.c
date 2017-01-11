@@ -364,21 +364,6 @@ netmap_mem2_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 	return 0;
 }
 
-static struct netmap_obj_params netmap_params[NETMAP_POOLS_NR] = {
-	[NETMAP_IF_POOL] = {
-		.size = 1024,
-		.num  = 100,
-	},
-	[NETMAP_RING_POOL] = {
-		.size = 9*PAGE_SIZE,
-		.num  = 200,
-	},
-	[NETMAP_BUF_POOL] = {
-		.size = 2048,
-		.num  = NETMAP_BUF_MAX_NUM,
-	},
-};
-
 static struct netmap_obj_params netmap_min_priv_params[NETMAP_POOLS_NR] = {
 	[NETMAP_IF_POOL] = {
 		.size = 1024,
@@ -496,11 +481,11 @@ static const struct netmap_mem_d nm_blueprint = {
 #define DECLARE_SYSCTLS(id, name) \
 	SYSBEGIN(mem2_ ## name); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_size, \
-	    CTLFLAG_RW, &netmap_params[id].size, 0, "Requested size of netmap " STRINGIFY(name) "s"); \
+	    CTLFLAG_RW, &nm_mem.params[id].size, 0, "Requested size of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_size, \
 	    CTLFLAG_RD, &nm_mem.pools[id]._objsize, 0, "Current size of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_num, \
-	    CTLFLAG_RW, &netmap_params[id].num, 0, "Requested number of netmap " STRINGIFY(name) "s"); \
+	    CTLFLAG_RW, &nm_mem.params[id].num, 0, "Requested number of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, name##_curr_num, \
 	    CTLFLAG_RD, &nm_mem.pools[id].objtotal, 0, "Current number of netmap " STRINGIFY(name) "s"); \
 	SYSCTL_INT(_dev_netmap, OID_AUTO, priv_##name##_size, \
