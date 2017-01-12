@@ -43,13 +43,13 @@
 .Nm
 reads packets from an input netmap port and sends them to a number of netmap pipes,
 trying to balance the packets received by each pipe. Packets belonging to the
-same flow will always be sent to the same pipe.
+same connection will always be sent to the same pipe.
 .Pp
 .Pp
 Command line options are listed below.
 .Bl -tag -width Ds
 .It Fl i Ar port
-Name of a netmap port. It must be supplied exactly once to indentify
+Name of a netmap port. It must be supplied exactly once to identify
 the input port.
 Any netmap port type (physical interface, VALE switch, pipe, monitor port...)
 can be used.
