@@ -198,7 +198,7 @@ nm_monitor_alloc(struct netmap_kring *kring, u_int n)
 	if (n <= kring->max_monitors)
 		/* we already have more entries that requested */
 		return 0;
-	
+
 	old_len = sizeof(struct netmap_kring *)*kring->max_monitors;
         len = sizeof(struct netmap_kring *) * n;
 	nm = nm_os_realloc(kring->monitors, len, old_len);

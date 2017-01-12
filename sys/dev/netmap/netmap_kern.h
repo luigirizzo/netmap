@@ -1405,7 +1405,7 @@ u_int nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg);
 int netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 		  struct ifnet **ifp, struct netmap_mem_d *nmd, int create);
 void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
-int netmap_get_hw_na(struct ifnet *ifp, 
+int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
 
 
@@ -2069,7 +2069,7 @@ struct netmap_pt_host_adapter {
 	void *ptns;
 };
 /* ptnetmap HOST routines */
-int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, 
+int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na,
 		struct netmap_mem_d * nmd, int create);
 int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
 static inline int
