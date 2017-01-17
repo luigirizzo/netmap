@@ -263,7 +263,7 @@ print_stats(void *arg)
 				            p->ctr.oq_n);
 
 			if (dosyslog)
-				syslog(LOG_INFO, stat_msg);
+				syslog(LOG_INFO, "%s", stat_msg);
 			if (dostdout)
 				printf("%s\n", stat_msg);
 		}
@@ -304,7 +304,7 @@ print_stats(void *arg)
 			              freeq_n);
 
 		if (dosyslog)
-			syslog(LOG_INFO, stat_msg);
+			syslog(LOG_INFO, "%s", stat_msg);
 		if (dostdout)
 			printf("%s\n", stat_msg);
 
