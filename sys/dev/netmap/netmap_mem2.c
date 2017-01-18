@@ -1800,7 +1800,8 @@ netmap_mem2_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
 		 * ring, like we do for buffers? */
 		ssize_t ofs = 0;
 
-		if (na->tx_rings[i].ring != NULL) {
+		if (na->tx_rings[i].ring != NULL && i >= priv->np_qfirst[NR_TX]
+				&& i < priv->np_qlast[NR_TX]) {
 			ofs = netmap_ring_offset(na->nm_mem,
 						 na->tx_rings[i].ring) - base;
 		}
@@ -1811,7 +1812,8 @@ netmap_mem2_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
 		 * ring, like we do for buffers? */
 		ssize_t ofs = 0;
 
-		if (na->rx_rings[i].ring != NULL) {
+		if (na->rx_rings[i].ring != NULL && i >= priv->np_qfirst[NR_RX]
+				&& i < priv->np_qlast[NR_RX]) {
 			ofs = netmap_ring_offset(na->nm_mem,
 						 na->rx_rings[i].ring) - base;
 		}
