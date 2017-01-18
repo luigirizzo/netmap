@@ -1795,24 +1795,26 @@ netmap_mem2_if_new(struct netmap_adapter *na)
 	 */
 	base = netmap_if_offset(na->nm_mem, nifp);
 	for (i = 0; i < n[NR_TX]; i++) {
-		if (na->tx_rings[i].ring == NULL) {
-			// XXX maybe use the offset of an error ring,
-			// like we do for buffers?
-			*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i] = 0;
-			continue;
+		/* XXX instead of ofs == 0 maybe use the offset of an error
+		 * ring, like we do for buffers? */
+		ssize_t ofs = 0;
+
+		if (na->tx_rings[i].ring != NULL) {
+			ofs = netmap_ring_offset(na->nm_mem,
+						 na->tx_rings[i].ring) - base;
 		}
-		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i] =
-			netmap_ring_offset(na->nm_mem, na->tx_rings[i].ring) - base;
+		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i] = ofs;
 	}
 	for (i = 0; i < n[NR_RX]; i++) {
-		if (na->rx_rings[i].ring == NULL) {
-			// XXX maybe use the offset of an error ring,
-			// like we do for buffers?
-			*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i+n[NR_TX]] = 0;
-			continue;
+		/* XXX instead of ofs == 0 maybe use the offset of an error
+		 * ring, like we do for buffers? */
+		ssize_t ofs = 0;
+
+		if (na->rx_rings[i].ring != NULL) {
+			ofs = netmap_ring_offset(na->nm_mem,
+						 na->rx_rings[i].ring) - base;
 		}
-		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i+n[NR_TX]] =
-			netmap_ring_offset(na->nm_mem, na->rx_rings[i].ring) - base;
+		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i+n[NR_TX]] = ofs;
 	}
 
 	NMA_UNLOCK(na->nm_mem);
