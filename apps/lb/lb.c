@@ -84,8 +84,9 @@ struct compact_ipv6_hdr {
 #define DEF_EXTRA_BUFS 	0
 #define DEF_BATCH	2048
 #define DEF_WAIT_LINK	2
-#define DEF_SYSLOG_INT	600
+#define DEF_STATS_INT	600
 #define BUF_REVOKE	100
+#define STAT_MSG_MAXSIZE 1024
 
 struct {
 	char ifname[MAX_IFNAMELEN];
@@ -95,6 +96,7 @@ struct {
 	uint16_t num_groups;
 	uint32_t extra_bufs;
 	uint16_t batch;
+	int stdout_interval;
 	int syslog_interval;
 	int wait_link;
 } glob_arg;
@@ -158,7 +160,10 @@ static volatile int do_abort = 0;
 
 uint64_t dropped = 0;
 uint64_t forwarded = 0;
+uint64_t received_bytes = 0;
+uint64_t received_pkts = 0;
 uint64_t non_ip = 0;
+uint32_t freeq_n = 0;
 
 struct port_des {
 	struct my_ctrs ctr;
@@ -190,7 +195,6 @@ print_stats(void *arg)
 	int sys_int = 0;
 	(void)arg;
 	struct my_ctrs cur, prev;
-	char b1[40], b2[40];
 	struct my_ctrs *pipe_prev;
 
 	pipe_prev = calloc(npipes, sizeof(struct my_ctrs));
@@ -199,60 +203,111 @@ print_stats(void *arg)
 		exit(1);
 	}
 
+	char stat_msg[STAT_MSG_MAXSIZE];
+
 	memset(&prev, 0, sizeof(prev));
 	gettimeofday(&prev.t, NULL);
 	while (!do_abort) {
-		int j, dosyslog = 0;
-		uint64_t pps, dps, usec;
+		int j, dosyslog, dostdout = 0;
+		uint64_t pps, dps, bps, dbps, usec;
 		struct my_ctrs x;
 
 		memset(&cur, 0, sizeof(cur));
 		usec = wait_for_next_report(&prev.t, &cur.t, 1000);
 
-		if (++sys_int == glob_arg.syslog_interval) {
-			dosyslog = 1;
-			sys_int = 0;
-		}
+		++sys_int;
+		if (glob_arg.stdout_interval && sys_int % glob_arg.stdout_interval == 0)
+				dostdout = 1;
+		if (glob_arg.syslog_interval && sys_int % glob_arg.syslog_interval == 0)
+				dosyslog = 1;
 
 		for (j = 0; j < npipes; ++j) {
 			struct port_des *p = &ports[j];
-
 			cur.pkts += p->ctr.pkts;
 			cur.drop += p->ctr.drop;
+			cur.drop_bytes += p->ctr.drop_bytes;
+			cur.bytes += p->ctr.bytes;
 
 			x.pkts = p->ctr.pkts - pipe_prev[j].pkts;
 			x.drop = p->ctr.drop - pipe_prev[j].drop;
+			x.bytes = p->ctr.bytes - pipe_prev[j].bytes;
+			x.drop_bytes = p->ctr.drop_bytes - pipe_prev[j].drop_bytes;
 			pps = (x.pkts*1000000 + usec/2) / usec;
 			dps = (x.drop*1000000 + usec/2) / usec;
-			printf("%s/%s|", norm(b1, pps), norm(b2, dps));
+			bps = ((x.bytes*1000000 + usec/2) / usec) * 8;
+			dbps = ((x.drop_bytes*1000000 + usec/2) / usec) * 8;
 			pipe_prev[j] = p->ctr;
 
-			if (dosyslog) {
-				syslog(LOG_INFO,
-					"{"
-						"\"interface\":\"%s\","
-						"\"output_ring\":%"PRIu16","
-						"\"packets_forwarded\":%"PRIu64","
-						"\"packets_dropped\":%"PRIu64
-					"}", glob_arg.ifname, j, p->ctr.pkts, p->ctr.drop);
-			}
-		}
-		printf("\n");
-		if (dosyslog) {
-			syslog(LOG_INFO,
-				"{"
-					"\"interface\":\"%s\","
-					"\"output_ring\":null,"
-					"\"packets_forwarded\":%"PRIu64","
-					"\"packets_dropped\":%"PRIu64","
-					"\"non_ip_packets\":%"PRIu64
-				"}", glob_arg.ifname, forwarded, dropped, non_ip);
+			if ( dosyslog || dostdout )
+				snprintf(stat_msg, STAT_MSG_MAXSIZE,
+				       "{"
+				       "\"ts\":%.6f,"
+				       "\"interface\":\"%s\","
+				       "\"output_ring\":%" PRIu16 ","
+				       "\"packets_forwarded\":%" PRIu64 ","
+				       "\"packets_dropped\":%" PRIu64 ","
+				       "\"data_forward_rate_Mbps\":%.4f,"
+				       "\"data_drop_rate_Mbps\":%.4f,"
+				       "\"packet_forward_rate_kpps\":%.4f,"
+				       "\"packet_drop_rate_kpps\":%.4f,"
+				       "\"overflow_queue_size\":%" PRIu32
+				       "}", cur.t.tv_sec + (cur.t.tv_usec / 1000000.0),
+				            glob_arg.ifname,
+				            j,
+				            p->ctr.pkts,
+				            p->ctr.drop,
+				            (double)bps / 1024 / 1024,
+				            (double)dbps / 1024 / 1024,
+				            (double)pps / 1000,
+				            (double)dps / 1000,
+				            p->ctr.oq_n);
+
+			if (dosyslog)
+				syslog(LOG_INFO, stat_msg);
+			if (dostdout)
+				printf("%s\n", stat_msg);
 		}
 		x.pkts = cur.pkts - prev.pkts;
 		x.drop = cur.drop - prev.drop;
+		x.bytes = cur.bytes - prev.bytes;
+		x.drop_bytes = cur.drop_bytes - prev.drop_bytes;
 		pps = (x.pkts*1000000 + usec/2) / usec;
 		dps = (x.drop*1000000 + usec/2) / usec;
-		printf("===> aggregate %spps %sdps\n", norm(b1, pps), norm(b2, dps));
+		bps = ((x.bytes*1000000 + usec/2) / usec) * 8;
+		dbps = ((x.drop_bytes*1000000 + usec/2) / usec) * 8;
+
+		if ( dosyslog || dostdout )
+			snprintf(stat_msg, STAT_MSG_MAXSIZE,
+			         "{"
+			         "\"ts\":%.6f,"
+			         "\"interface\":\"%s\","
+			         "\"output_ring\":null,"
+			         "\"packets_received\":%" PRIu64 ","
+			         "\"packets_forwarded\":%" PRIu64 ","
+			         "\"packets_dropped\":%" PRIu64 ","
+			         "\"non_ip_packets\":%" PRIu64 ","
+			         "\"data_forward_rate_Mbps\":%.4f,"
+			         "\"data_drop_rate_Mbps\":%.4f,"
+			         "\"packet_forward_rate_kpps\":%.4f,"
+			         "\"packet_drop_rate_kpps\":%.4f,"
+			         "\"free_buffer_slots\":%" PRIu32
+			         "}", cur.t.tv_sec + (cur.t.tv_usec / 1000000.0),
+			              glob_arg.ifname,
+			              received_pkts,
+			              cur.pkts,
+			              cur.drop,
+			              non_ip,
+			              (double)bps / 1024 / 1024,
+			              (double)dbps / 1024 / 1024,
+			              (double)pps / 1000,
+			              (double)dps / 1000,
+			              freeq_n);
+
+		if (dosyslog)
+			syslog(LOG_INFO, stat_msg);
+		if (dostdout)
+			printf("%s\n", stat_msg);
+
 		prev = cur;
 	}
 
@@ -303,13 +358,14 @@ void usage()
 {
 	printf("usage: lb [options]\n");
 	printf("where options are:\n");
+	printf("  -h              	view help text\n");
 	printf("  -i iface        	interface name (required)\n");
 	printf("  -p [prefix:]npipes	add a new group of output pipes\n");
 	printf("  -B nbufs        	number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
 	printf("  -b batch        	batch size (default: %d)\n", DEF_BATCH);
 	printf("  -w seconds        	wait for link up (default: %d)\n", DEF_WAIT_LINK);
-	printf("  -s seconds      	seconds between syslog messages (default: %d)\n",
-			DEF_SYSLOG_INT);
+	printf("  -s seconds      	seconds between syslog stats messages (default: 0)\n");
+	printf("  -o seconds      	seconds between stdout stats messages (default: 0)\n");
 	exit(0);
 }
 
@@ -441,6 +497,7 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 		 */
 		dropped++;
 		port->ctr.drop++;
+		port->ctr.drop_bytes += rs->len;
 		return rs->buf_idx;
 	}
 
@@ -473,6 +530,7 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 		// XXX optimize this cycle
 		for (j = 0; lp->oq->n && j < BUF_REVOKE; j++) {
 			struct netmap_slot tmp = oq_deq(lp->oq);
+			lp->ctr.drop_bytes += tmp.len;
 			oq_enq(freeq, &tmp);
 		}
 
@@ -495,9 +553,10 @@ int main(int argc, char **argv)
 	glob_arg.output_rings = 0;
 	glob_arg.batch = DEF_BATCH;
 	glob_arg.wait_link = DEF_WAIT_LINK;
-	glob_arg.syslog_interval = DEF_SYSLOG_INT;
+	glob_arg.syslog_interval = 0;
+	glob_arg.stdout_interval = 0;
 
-	while ( (ch = getopt(argc, argv, "i:p:b:B:s:")) != -1) {
+	while ( (ch = getopt(argc, argv, "hi:p:b:B:s:o:")) != -1) {
 		switch (ch) {
 		case 'i':
 			D("interface is %s", optarg);
@@ -529,16 +588,23 @@ int main(int argc, char **argv)
 			D("batch is %d", glob_arg.batch);
 			break;
 
+		case 'o':
+			glob_arg.stdout_interval = atoi(optarg);
+			break;
+
 		case 's':
 			glob_arg.syslog_interval = atoi(optarg);
-			D("syslog interval is %d", glob_arg.syslog_interval);
+			break;
+
+		case 'h':
+			usage();
+			return 0;
 			break;
 
 		default:
 			D("bad option %c %s", ch, optarg);
 			usage();
 			return 1;
-
 		}
 	}
 
@@ -559,8 +625,10 @@ int main(int argc, char **argv)
 	if (glob_arg.num_groups == 0)
 		parse_pipes("");
 
-	setlogmask(LOG_UPTO(LOG_INFO));
-	openlog("lb", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
+	if (glob_arg.syslog_interval) {
+		setlogmask(LOG_UPTO(LOG_INFO));
+		openlog("lb", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
+	}
 
 	uint32_t npipes = glob_arg.output_rings;
 
@@ -799,6 +867,8 @@ run:
 			while (!nm_ring_empty(rxring)) {
 				struct netmap_slot *rs = next_slot;
 				struct group_des *g = &groups[0];
+				++received_pkts;
+				received_bytes += rs->len;
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
 				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
@@ -828,6 +898,29 @@ run:
 			}
 
 		}
+
+		/*
+		 * If there are overflow queues, copy the number of them for each
+		 * port to the ctrs.oq_n variable for each port, otherwise set it to 0.
+		 */
+		for (i=0; i < npipes + 1; i++) {
+			if (ports[i].oq != NULL) {
+				ports[i].ctr.oq_n = ports[i].oq->n;
+			} else {
+				ports[i].ctr.oq_n = 0;
+			}
+		}
+
+	}
+
+	/*
+	 * If freeq exists, copy the number to the freeq_n member of the
+	 * message struct, otherwise set it to 0.
+	 */
+	if (freeq != NULL) {
+		freeq_n = freeq->n;
+	} else {
+		freeq_n = 0;
 	}
 
 	pthread_join(stat_thread, NULL);
