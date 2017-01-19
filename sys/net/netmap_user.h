@@ -309,7 +309,7 @@ typedef void (*nm_cb_t)(u_char *, const struct nm_pkthdr *, const u_char *d);
  * ifname	(netmap:foo or vale:foo) is the port name
  *		a suffix can indicate the follwing:
  *		^		bind the host (sw) ring pair
- *		*		bind host and NIC ring pairs (transparent)
+ *		*		bind host and NIC ring pairs
  *		-NN		bind individual NIC ring pair
  *		{NN		bind master side of pipe NN
  *		}NN		bind slave side of pipe NN
@@ -870,7 +870,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	nr_reg = d->req.nr_flags & NR_REG_MASK;
 
-	if (nr_reg ==  NR_REG_SW) { /* host stack */
+	if (nr_reg == NR_REG_SW) { /* host stack */
 		d->first_tx_ring = d->last_tx_ring = d->req.nr_tx_rings;
 		d->first_rx_ring = d->last_rx_ring = d->req.nr_rx_rings;
 	} else if (nr_reg ==  NR_REG_ALL_NIC) { /* only nic */
