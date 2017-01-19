@@ -161,7 +161,7 @@ SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0 , "");
 SYSEND;
 
-static int netmap_vp_create(struct nmreq *, struct ifnet *, 
+static int netmap_vp_create(struct nmreq *, struct ifnet *,
 		struct netmap_mem_d *nmd, struct netmap_vp_adapter **);
 static int netmap_vp_reg(struct netmap_adapter *na, int onoff);
 static int netmap_bwrap_reg(struct netmap_adapter *, int onoff);

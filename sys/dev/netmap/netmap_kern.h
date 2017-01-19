@@ -749,8 +749,9 @@ struct netmap_adapter {
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
 	int (*nm_notify)(struct netmap_kring *kring, int flags);
-#define NAF_FORCE_READ    1
-#define NAF_FORCE_RECLAIM 2
+#define NAF_FORCE_READ      1
+#define NAF_FORCE_RECLAIM   2
+#define NAF_CAN_FORWARD_DOWN 4
 	/* return configuration information */
 	int (*nm_config)(struct netmap_adapter *,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd);
@@ -1405,7 +1406,7 @@ u_int nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg);
 int netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 		  struct ifnet **ifp, struct netmap_mem_d *nmd, int create);
 void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
-int netmap_get_hw_na(struct ifnet *ifp, 
+int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
 
 
@@ -1808,6 +1809,7 @@ struct netmap_priv_d {
 	u_int		np_qfirst[NR_TXRX],
 			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
 	uint16_t	np_txpoll;	/* XXX and also np_rxpoll ? */
+	int             np_sync_flags; /* to be passed to nm_sync */
 
 	int		np_refs;	/* use with NMG_LOCK held */
 
@@ -2069,7 +2071,7 @@ struct netmap_pt_host_adapter {
 	void *ptns;
 };
 /* ptnetmap HOST routines */
-int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, 
+int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na,
 		struct netmap_mem_d * nmd, int create);
 int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
 static inline int

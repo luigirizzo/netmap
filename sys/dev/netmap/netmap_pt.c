@@ -1146,7 +1146,7 @@ nm_pt_host_dtor(struct netmap_adapter *na)
 
 /* check if nmr is a request for a ptnetmap adapter that we can satisfy */
 int
-netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na, 
+netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create)
 {
     struct nmreq parent_nmr;

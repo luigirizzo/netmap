@@ -525,7 +525,7 @@ netmap_pipe_dtor(struct netmap_adapter *na)
 }
 
 int
-netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na, 
+netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create)
 {
 	struct nmreq pnmr;
