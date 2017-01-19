@@ -2069,7 +2069,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		goto err_rel_excl;
 
 	/* in all cases, create a new netmap if */
-	nifp = netmap_mem_if_new(na);
+	nifp = netmap_mem_if_new(na, priv);
 	if (nifp == NULL) {
 		error = ENOMEM;
 		goto err_del_rings;
