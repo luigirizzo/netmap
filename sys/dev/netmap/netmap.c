@@ -1145,16 +1145,24 @@ nm_may_forward_up(struct netmap_kring *kring)
 }
 
 static inline int
-nm_may_forward_down(struct netmap_kring *kring)
+nm_may_forward_down(struct netmap_kring *kring, int sync_flags)
 {
 	return	_nm_may_forward(kring) &&
+		 (sync_flags & NAF_CAN_FORWARD_DOWN) &&
 		 kring->ring_id == kring->na->num_rx_rings;
 }
 
 /*
  * Send to the NIC rings packets marked NS_FORWARD between
- * kring->nr_hwcur and kring->rhead
- * Called under kring->rx_queue.lock on the sw rx ring,
+ * kring->nr_hwcur and kring->rhead.
+ * Called under kring->rx_queue.lock on the sw rx ring.
+ *
+ * It can only be called if the user opened all the TX hw rings,
+ * see NAF_CAN_FORWARD_DOWN flag.
+ * We can touch the TX netmap rings (slots, head and cur) since
+ * we are in poll/ioctl system call context, and the application
+ * is not supposed to touch the ring (using a different thread)
+ * during the execution of the system call.
  */
 static u_int
 netmap_sw_to_nic(struct netmap_adapter *na)
@@ -1168,8 +1176,6 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 
 	/* scan rings to find space, then fill as much as possible */
 	for (i = 0; i < na->num_tx_rings; i++) {
-		/* XXX some krings may not be in netmap mode,
-		 * buffers may not be there */
 		struct netmap_kring *kdst = &na->tx_rings[i];
 		struct netmap_ring *rdst = kdst->ring;
 		u_int const dst_lim = kdst->nkr_num_slots - 1;
@@ -1197,11 +1203,9 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 			dst->len = tmp.len;
 			dst->flags = NS_BUF_CHANGED;
 
-			/* XXX is it safe to write head/cur concurrently to
-			 * the userspace application? */
 			rdst->head = rdst->cur = nm_next(dst_head, dst_lim);
 		}
-		/* if (sent) XXX txsync ? */
+		/* if (sent) XXX txsync ? it would be just an optimization */
 	}
 	return sent;
 }
@@ -1291,7 +1295,7 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 	 */
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) { /* something was released */
-		if (nm_may_forward_down(kring)) {
+		if (nm_may_forward_down(kring, flags)) {
 			ret = netmap_sw_to_nic(na);
 			if (ret > 0) {
 				kring->nr_kflags |= NR_FORWARD;
@@ -1806,6 +1810,13 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 	}
 	priv->np_flags = (flags & ~NR_REG_MASK) | reg;
 
+	/* Allow transparent forwarding mode in the host --> nic
+	 * direction only if all the TX hw rings have been opened. */
+	if (priv->np_qfirst[NR_TX] == 0 &&
+			priv->np_qlast[NR_TX] >= na->num_tx_rings) {
+		priv->np_sync_flags |= NAF_CAN_FORWARD_DOWN;
+	}
+
 	if (netmap_verbose) {
 		D("%s: tx [%d,%d) rx [%d,%d) id %d",
 			na->name,
@@ -2177,6 +2188,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 	u_int i, qfirst, qlast;
 	struct netmap_if *nifp;
 	struct netmap_kring *krings;
+	int sync_flags;
 	enum txrx t;
 
 	if (cmd == NIOCGINFO || cmd == NIOCREGIF) {
@@ -2387,6 +2399,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		krings = NMR(na, t);
 		qfirst = priv->np_qfirst[t];
 		qlast = priv->np_qlast[t];
+		sync_flags = priv->np_sync_flags;
 
 		for (i = qfirst; i < qlast; i++) {
 			struct netmap_kring *kring = krings + i;
@@ -2404,7 +2417,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 					    kring->nr_hwcur);
 				if (nm_txsync_prologue(kring, ring) >= kring->nkr_num_slots) {
 					netmap_ring_reinit(kring);
-				} else if (kring->nm_sync(kring, NAF_FORCE_RECLAIM) == 0) {
+				} else if (kring->nm_sync(kring, sync_flags | NAF_FORCE_RECLAIM) == 0) {
 					nm_sync_finalize(kring);
 				}
 				if (netmap_verbose & NM_VERB_TXSYNC)
@@ -2419,7 +2432,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 					/* transparent forwarding, see netmap_poll() */
 					netmap_grab_packets(kring, &q, netmap_fwd);
 				}
-				if (kring->nm_sync(kring, NAF_FORCE_READ) == 0) {
+				if (kring->nm_sync(kring, sync_flags | NAF_FORCE_READ) == 0) {
 					nm_sync_finalize(kring);
 				}
 				ring_timestamp_set(ring);
@@ -2518,6 +2531,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	 * file descriptor.
 	 */
 	int send_down = 0;
+	int sync_flags = priv->np_sync_flags;
 
 	mbq_init(&q);
 
@@ -2627,7 +2641,7 @@ flush_tx:
 				netmap_ring_reinit(kring);
 				revents |= POLLERR;
 			} else {
-				if (kring->nm_sync(kring, 0))
+				if (kring->nm_sync(kring, sync_flags))
 					revents |= POLLERR;
 				else
 					nm_sync_finalize(kring);
@@ -2691,7 +2705,7 @@ do_retry_rx:
 			 * the nm_sync() below only on for the host RX ring (see
 			 * netmap_rxsync_from_host()). */
 			kring->nr_kflags &= ~NR_FORWARD;
-			if (kring->nm_sync(kring, 0))
+			if (kring->nm_sync(kring, sync_flags))
 				revents |= POLLERR;
 			else
 				nm_sync_finalize(kring);

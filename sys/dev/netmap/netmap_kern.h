@@ -749,8 +749,9 @@ struct netmap_adapter {
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
 	int (*nm_notify)(struct netmap_kring *kring, int flags);
-#define NAF_FORCE_READ    1
-#define NAF_FORCE_RECLAIM 2
+#define NAF_FORCE_READ      1
+#define NAF_FORCE_RECLAIM   2
+#define NAF_CAN_FORWARD_DOWN 4
 	/* return configuration information */
 	int (*nm_config)(struct netmap_adapter *,
 		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd);
@@ -1808,6 +1809,7 @@ struct netmap_priv_d {
 	u_int		np_qfirst[NR_TXRX],
 			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
 	uint16_t	np_txpoll;	/* XXX and also np_rxpoll ? */
+	int             np_sync_flags; /* to be passed to nm_sync */
 
 	int		np_refs;	/* use with NMG_LOCK held */
 
