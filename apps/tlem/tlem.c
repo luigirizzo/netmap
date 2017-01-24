@@ -382,6 +382,14 @@ struct ipv4_info {
 	in_addr_t	ip_mask;
 	in_addr_t	ip_gw;
 	uint8_t		ether_addr[6];
+	/* pre-formatted arp reply */
+	union {
+		uint8_t pkt[60];
+		struct {
+			struct ether_header eh;
+			struct ether_arp    ah;
+		} arp __attribute__((packed));
+	} arp_reply;
 };
 
 void
@@ -443,7 +451,7 @@ arp_push_cmd(struct arp_cmd_q *a, const void *pkt)
 	const struct ether_arp *arp = (const struct ether_arp *)(eh + 1);
 	if (c->valid)
 		return;
-	c->cmd = arp->ea_hdr.ar_op;
+	c->cmd = ntohs(arp->ea_hdr.ar_op);
 	memcpy(c->ether_addr, arp->arp_sha, 6);
 	memcpy(c->ip_addr, arp->arp_spa, 4);
 	c->valid = 1;
@@ -474,12 +482,41 @@ struct pipe_args {
 	struct nm_desc *pa;		/* netmap descriptor */
 	struct nm_desc *pb;
 
-	/* route-mode mailbox */
-	struct arp_cmd_q *cons_arpq;
-	struct arp_cmd_q *prod_arpq;
+	/* route-mode */
+	struct arp_cmd_q *cons_arpq;	/* out mailbox for cons */
+	struct arp_cmd_q *prod_arpq;	/* in mailbox for prod */
+	struct ipv4_info *ipv4;		/* mac addr etc. */
 
 	struct _qs	q;
 };
+
+void
+prod_handle_arp(struct pipe_args *pa, struct arp_cmd *c)
+{
+	struct ether_header *eh = &pa->ipv4->arp_reply.arp.eh;
+	struct ether_arp *ah = &pa->ipv4->arp_reply.arp.ah;
+	switch (c->cmd) {
+	case ARPOP_REQUEST:
+		/* send reply */
+		D("sending arp reply");
+		memcpy(eh->ether_dhost, c->ether_addr, 6);
+		memcpy(ah->arp_tha, c->ether_addr, 6);
+		memcpy(ah->arp_tpa, c->ip_addr, 4);
+		if (nm_inject(pa->pb, eh, sizeof(pa->ipv4->arp_reply)) == 0) {
+			RD(1, "failed to inject arp reply");
+			break;
+		}
+		ioctl(pa->pb->fd, NIOCTXSYNC, 0);
+		break;
+	case ARPOP_REPLY:
+		/* update local arp table */
+		break;
+	default:
+		/* we don't handle these */
+		RD(1, "unknown/unsupported ARP operation: %x", c->cmd);
+		break;
+	}
+}
 
 #define NS_IN_S	(1000000000ULL)	// nanoseconds
 #define TIME_UNITS	NS_IN_S
@@ -935,6 +972,7 @@ cons(void *_pa)
 				arpc->ip_addr[1],
 				arpc->ip_addr[2],
 				arpc->ip_addr[3]);
+		prod_handle_arp(pa, arpc);
 		arp_put_cmd(arpc);
 	}
 
@@ -1328,6 +1366,9 @@ main(int argc, char **argv)
 		bp[0].wait_link = 4;
 	}
 
+	bp[0].ipv4 = &ipv4[1];
+	bp[1].ipv4 = &ipv4[0];
+
 	if (bp[0].route_mode) {
 		int fd;
 		struct ifreq ifr;
@@ -1342,6 +1383,9 @@ main(int argc, char **argv)
 		for (i = 0; i < 2; i++) {
 			char hwport[IFNAMSIZ + 1], *dst = hwport;
 			const char *scan;
+			struct ether_header *eh = &ipv4[i].arp_reply.arp.eh;
+			struct ether_arp *ah = &ipv4[i].arp_reply.arp.ah;
+
 			/* try to extract the port name */
 			if (!strncmp("vale", ifname[i], 4)) {
 				ED("route mode not supported for VALE port %s", ifname[i]);
@@ -1394,6 +1438,19 @@ main(int argc, char **argv)
 			memcpy(&ipv4[i].ip_mask, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);
 
 			ipv4_dump(ifname[i], &ipv4[i]);
+
+			/* precompute the arp reply for this interface */
+			memset(&ipv4[i].arp_reply, 0, sizeof(ipv4[i].arp_reply));
+			memcpy(eh->ether_shost, ipv4[i].ether_addr, 6);
+			eh->ether_type = htons(ETHERTYPE_ARP);
+			ah->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
+			ah->ea_hdr.ar_pro = htons(ETHERTYPE_IP);
+			ah->ea_hdr.ar_hln = 6;
+			ah->ea_hdr.ar_pln = 4;
+			ah->ea_hdr.ar_op = htons(ARPOP_REPLY);
+			memcpy(ah->arp_sha, ipv4[i].ether_addr, 6);
+			memcpy(ah->arp_spa, &ipv4[i].ip_addr, 4);
+
 		}
 
 	}
