@@ -378,10 +378,13 @@ struct _qs { /* shared queue */
 
 /* route-mode data structures and helper functions */
 struct ipv4_info {
-	in_addr_t	addr;
-	in_addr_t	mask;
-	in_addr_t	gw;
+	in_addr_t	ip_addr;
+	in_addr_t	ip_mask;
+	in_addr_t	ip_gw;
+	uint8_t		ether_addr[6];
 };
+
+struct ipv4_info ipv4[2];
 
 struct arp_cmd {
 	uint8_t		ether_addr[6];
@@ -1309,6 +1312,51 @@ main(int argc, char **argv)
 	if (bp[0].wait_link > 100) {
 		ED("invalid wait_link %d, set to 4", bp[0].wait_link);
 		bp[0].wait_link = 4;
+	}
+
+	if (bp[0].route_mode) {
+		int fd;
+		struct ifreq ifr;
+
+		fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+
+		if (fd < 0) {
+			ED("failed to open SOCK_DGRAM socket: %s", strerror(errno));
+			usage();
+		}
+
+		for (i = 0; i < 2; i++) {
+			char hwport[IFNAMSIZ + 1], *dst = hwport;
+			const char *scan;
+			/* try to extract the port name */
+			if (!strncmp("vale", ifname[i], 4)) {
+				ED("route mode not supported for VALE port %s", ifname[i]);
+				usage();
+			}
+			if (strncmp("netmap:", ifname[i], 7)) {
+				ED("missing netmap: prefix in %s", ifname[i]);
+				usage();
+			}
+			scan = ifname[i] + 7;
+			if (strlen(scan) >= IFNAMSIZ) {
+				ED("name too long: %s", scan);
+				usage();
+			}
+			while (*scan && isalnum(*scan))
+				*dst++ = *scan++;
+			*dst = '\0';
+			ED("trying to get configuration for %s", hwport);
+
+			memset(&ifr, 0, sizeof(ifr));
+			strcpy(ifr.ifr_name, hwport);
+			if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0) {
+				ED("failed to get MAC address for %s: %s:",
+						hwport, strerror(errno));
+				usage();
+			}
+			memcpy(ipv4[i].ether_addr, ifr.ifr_addr.sa_data, 6);
+		}
+
 	}
 
 	bp[1] = bp[0]; /* copy parameters, but swap interfaces */
