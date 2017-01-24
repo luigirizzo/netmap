@@ -148,6 +148,11 @@ static int do_abort = 0;
 #include <pthread.h>
 #include <sys/time.h>
 
+// for route-mode
+#include <netinet/in.h>
+#include <net/if_arp.h>
+#include <netinet/if_ether.h>
+
 #include <sys/resource.h> // setpriority
 
 #ifdef __FreeBSD__
@@ -370,9 +375,77 @@ struct _qs { /* shared queue */
 	volatile uint64_t head ALIGN_CACHE ;	/* consumer reads from here */
 };
 
+
+/* route-mode data structures and helper functions */
+struct ipv4_info {
+	in_addr_t	addr;
+	in_addr_t	mask;
+	in_addr_t	gw;
+};
+
+struct arp_cmd {
+	uint8_t		ether_addr[6];
+	uint8_t		valid;
+	uint8_t		cmd;
+#define	TLEM_ARP_REPL	1
+#define TLEM_ARP_UPDT	2
+	uint8_t		ip_addr[4];
+	uint8_t		pad[4];
+};
+
+#define ARP_CMD_QSIZE 16
+struct arp_cmd_q {
+	struct arp_cmd	q[ARP_CMD_QSIZE] ALIGN_CACHE;
+	uint64_t	head ALIGN_CACHE;
+	uint64_t	tail ALIGN_CACHE;
+};
+
+static inline struct arp_cmd *
+arp_get_cmd(struct arp_cmd_q *a)
+{
+	int h = a->head & (ARP_CMD_QSIZE - 1);
+	if (unlikely(a->q[h].valid)) {
+		a->head++;
+		return &a->q[h];
+	}
+	return NULL;
+}
+
+void
+arp_put_cmd(struct arp_cmd *c)
+{
+	c->valid = 0;
+}
+
+void
+arp_push_cmd(struct arp_cmd_q *a, const void *pkt)
+{
+	int t = a->tail & (ARP_CMD_QSIZE - 1);
+	struct arp_cmd *c = &a->q[t];
+	const struct ether_header *eh = pkt;
+	const struct ether_arp *arp = (const struct ether_arp *)(eh + 1);
+	if (c->valid)
+		return;
+	c->cmd = arp->ea_hdr.ar_op;
+	memcpy(c->ether_addr, arp->arp_sha, 6);
+	memcpy(c->ip_addr, arp->arp_spa, 4);
+	c->valid = 1;
+	a->tail++;
+}
+
+static inline int
+is_arp(const void *pkt)
+{
+	const struct ether_header *h = pkt;
+	return h->ether_type == htons(ETHERTYPE_ARP);
+}
+
+struct arp_cmd_q arpq[2];
+
 struct pipe_args {
 	int		zerocopy;
 	int		wait_link;
+	int		route_mode;
 
 	pthread_t	cons_tid;	/* main thread */
 	pthread_t	prod_tid;	/* producer thread */
@@ -383,6 +456,10 @@ struct pipe_args {
 
 	struct nm_desc *pa;		/* netmap descriptor */
 	struct nm_desc *pb;
+
+	/* route-mode mailbox */
+	struct arp_cmd_q *cons_arpq;
+	struct arp_cmd_q *prod_arpq;
 
 	struct _qs	q;
 };
@@ -749,6 +826,11 @@ prod(void *_pa)
 		RD(5, "short packet len %d", q->cur_len);
 		continue; // short frame
 	    }
+	    if (pa->route_mode && unlikely(is_arp(q->cur_pkt))) {
+	        /* pass it to the consumer in the other direction */
+		arp_push_cmd(pa->prod_arpq, q->cur_pkt);
+		continue;
+	    }
 	    q->c_loss.run(q, &q->c_loss);
 	    if (q->cur_drop)
 		continue;
@@ -805,6 +887,7 @@ cons(void *_pa)
         uint64_t h = q->head; /* read only once */
         uint64_t t = q->tail; /* read only once */
 	struct q_pkt *p = (struct q_pkt *)(q->buf + h);
+	struct arp_cmd *arpc;
 #if 0
 	struct q_pkt *p = (struct q_pkt *)(q->buf + q->head);
 	if (p->next < q->head) { /* wrap around prefetch */
@@ -822,6 +905,21 @@ cons(void *_pa)
 	for (; pre_start < pre_end; pre_start += 64)
 	    __builtin_prefetch(pre_start);
 #endif
+	if (pa->route_mode && unlikely(arpc = arp_get_cmd(pa->cons_arpq))) {
+		D("arp %x ether %02x:%02x:%02x:%02x:%02x:%02x ip %u.%u.%u.%u",
+				arpc->cmd,
+				arpc->ether_addr[0],
+				arpc->ether_addr[1],
+				arpc->ether_addr[2],
+				arpc->ether_addr[3],
+				arpc->ether_addr[4],
+				arpc->ether_addr[5],
+				arpc->ip_addr[0],
+				arpc->ip_addr[1],
+				arpc->ip_addr[2],
+				arpc->ip_addr[3]);
+		arp_put_cmd(arpc);
+	}
 
 	if (h == t || ts_cmp(p->pt_tx, q->cons_now) > 0) {
 	    ND(4, "                 >>>> TXSYNC, pkt not ready yet h %ld t %ld now %ld tx %ld",
@@ -1116,8 +1214,9 @@ main(int argc, char **argv)
 	// i	interface name (two mandatory)
 	// v	verbose
 	// b	batch size
+	// r	route mode
 
-	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:b:ci:vw:")) != -1) {
+	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:b:ci:vw:r")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -1167,7 +1266,6 @@ main(int argc, char **argv)
 		case 'L': /* loss probability */
 			add_to(l, N_OPTS, optarg, "-L too many times");
 			break;
-
 		case 'b':	/* burst */
 			bp[0].q.burst = atoi(optarg);
 			break;
@@ -1183,6 +1281,8 @@ main(int argc, char **argv)
 			break;
 		case 'w':
 			bp[0].wait_link = atoi(optarg);
+		case 'r':
+			bp[0].route_mode = 1;
 			break;
 		}
 
@@ -1253,6 +1353,12 @@ main(int argc, char **argv)
 		ED("qsize= 0 is not valid, set to 50k");
 		bp[1].q.qsize = 50000;
 	}
+
+	/* assign arp command queues for route mode */
+	bp[0].prod_arpq = &arpq[0];
+	bp[0].cons_arpq = &arpq[1];
+	bp[1].prod_arpq = &arpq[1];
+	bp[1].cons_arpq = &arpq[0];
 
 	pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
 	pthread_create(&bp[1].cons_tid, NULL, tlem_main, (void*)&bp[1]);
