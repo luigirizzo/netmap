@@ -9,8 +9,8 @@ SRCDIR ?= ../..
 VPATH = $(SRCDIR)/apps/tlem
 
 NO_MAN=
-CFLAGS = -O2 -pipe
-CFLAGS += -Werror -Wall -Wunused-function
+CFLAGS = -O2 -pipe -g
+CFLAGS += -Werror -Wall -Wunused-function -Wno-address-of-packed-member
 CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include -I$(SRCDIR)/libnetmap
 CFLAGS += -Wextra
 

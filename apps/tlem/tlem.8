@@ -40,9 +40,11 @@
 .Op Fl L Ar loss
 .Op Fl Q Ar queue size
 .Op Fl C Ar cpu-placement
+.Op Fl G Ar gateway
 .Op Fl b Ar batch size
 .Op Fl w Ar wait-link
 .Op Fl v
+.Op Fl r
 .Sh DESCRIPTION
 .Nm
 implements a high speed bidirectional link emulator between netmap ports,
@@ -127,6 +129,8 @@ limitations are applied.
 .It Fl C Ar a Ns Op , Ns Ar b Ns Op , Ns Ar c,d
 Indicates the cores on which the four threads should be placed.
 One, two or four values can be specified.
+.It Fl G Ar ipv4-address
+Indicates the optional default gateways to be used in route-mode.
 .It Fl w Ar wait-link
 indicates the number of seconds to wait before transmitting.
 It defaults to 2, and may be useful when talking to physical
@@ -139,6 +143,8 @@ Maximum batch size to use during transmissions.
 normally transmits packets one at a time, but it may use
 larger batches, up to the value specified with this option,
 when running at high rates.
+.It Fl r
+Enable route-mode.
 .El
 .Sh OPERATION
 .Nm
@@ -156,6 +162,21 @@ computes the transmit time applying the additional delay.
 Packets annotated with their transmit time are copied in
 a large in-memory buffer. The output thread spins on the buffer,
 doing short sleeps, until packets reach their transmit time.
+.Sh ROUTE-MODE
+In route-mode
+.Nm
+operates as an IPv4 router between the two subnets at its ends,
+replying to and sending the necessary ARP messages and updating
+the destination MAC addresses. The IP addresses and subnets are
+obtained from the ports, so this mode cannot be used with
+software-only netmap ports like ephemeral VALE ports and pipes.
+
+There are some limitations: unresolved destinations are sent as broadcasts
+until resolution; packets destined to the same subnet as their incoming
+port are dropped; TTL is not decremented.  Each subnet may also optionally
+have a default gateway: for each direction, incoming packets not destined
+to either of the two known subnets are sent to the default gateway of
+the output port, if specified, and dropped otherwise.
 .Sh PERFORMANCE
 We have measured speeds in excess of 20 Mpps and 40 Gbit/s per
 direction on a modern i7 CPU with 4 cores.  The accuracy in delays
