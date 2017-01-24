@@ -384,6 +384,20 @@ struct ipv4_info {
 	uint8_t		ether_addr[6];
 };
 
+void
+ipv4_dump(const char *name, const struct ipv4_info *i)
+{
+	const uint8_t *ipa = (uint8_t *)&i->ip_addr,
+		      *ipm = (uint8_t *)&i->ip_mask,
+		      *ea = i->ether_addr;
+
+	ED("%s: ip %u.%u.%u.%u/%u.%u.%u.%u mac %02x:%02x:%02x:%02x:%02x:%02x",
+			name,
+			ipa[0], ipa[1], ipa[2], ipa[3],
+			ipm[0], ipm[1], ipm[2], ipm[3],
+			ea[0], ea[1], ea[2], ea[3], ea[4], ea[5]);
+}
+
 struct ipv4_info ipv4[2];
 
 struct arp_cmd {
@@ -1347,6 +1361,7 @@ main(int argc, char **argv)
 			*dst = '\0';
 			ED("trying to get configuration for %s", hwport);
 
+			/* MAC address */
 			memset(&ifr, 0, sizeof(ifr));
 			strcpy(ifr.ifr_name, hwport);
 			if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0) {
@@ -1355,6 +1370,30 @@ main(int argc, char **argv)
 				usage();
 			}
 			memcpy(ipv4[i].ether_addr, ifr.ifr_addr.sa_data, 6);
+
+			/* IP address */
+			memset(&ifr, 0, sizeof(ifr));
+			strcpy(ifr.ifr_name, hwport);
+			ifr.ifr_addr.sa_family = AF_INET;
+			if (ioctl(fd, SIOCGIFADDR, &ifr) < 0) {
+				ED("failed to get IPv4 address for %s: %s:",
+						hwport, strerror(errno));
+				usage();
+			}
+			memcpy(&ipv4[i].ip_addr, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);
+
+			/* netmask */
+			memset(&ifr, 0, sizeof(ifr));
+			strcpy(ifr.ifr_name, hwport);
+			ifr.ifr_addr.sa_family = AF_INET;
+			if (ioctl(fd, SIOCGIFNETMASK, &ifr) < 0) {
+				ED("failed to get IPv4 netmask for %s: %s:",
+						hwport, strerror(errno));
+				usage();
+			}
+			memcpy(&ipv4[i].ip_mask, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);
+
+			ipv4_dump(ifname[i], &ipv4[i]);
 		}
 
 	}
