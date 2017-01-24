@@ -788,8 +788,9 @@ cons(void *_pa)
 {
     struct pipe_args *pa = _pa;
     struct _qs *q = &pa->q;
-    int cycles = 0;
     int pending = 0;
+#if 0
+    int cycles = 0;
     const char *pre_start, *pre_end; /* prefetch limits */
 
     /*
@@ -797,19 +798,24 @@ cons(void *_pa)
      */
     pre_start = q->buf + q->head;
     pre_end = pre_start + 2048;
-
     (void)cycles; // XXX disable warning
+#endif
+
     set_tns_now(&q->cons_now, q->t0);
     while (!do_abort) { /* consumer, infinite */
+        uint64_t h = q->head; /* read only once */
+        uint64_t t = q->tail; /* read only once */
+        struct q_pkt *p = (struct q_pkt *)(q->buf + h);
+#if 0
         struct q_pkt *p = (struct q_pkt *)(q->buf + q->head);
         if (p->next < q->head) { /* wrap around prefetch */
             pre_start = q->buf + p->next;
         }
         pre_end = q->buf + p->next + 2048;
-#if 1
+        //#if 1
         /* prefetch the first line saves 4ns */
         (void)pre_end;//   __builtin_prefetch(pre_end - 2048);
-#else
+        //#else
         /* prefetch, ideally up to a full packet not just one line.
          * this does not seem to have a huge effect.
          * 4ns out of 198 on 1500 byte packets
@@ -818,9 +824,9 @@ cons(void *_pa)
             __builtin_prefetch(pre_start);
 #endif
 
-        if (q->head == q->tail || ts_cmp(p->pt_tx, q->cons_now) > 0) {
+        if (h == t || ts_cmp(p->pt_tx, q->cons_now) > 0) {
             ND(4, "                 >>>> TXSYNC, pkt not ready yet h %ld t %ld now %ld tx %ld",
-                    q->head, q->tail, q->cons_now, p->pt_tx);
+                    h, t, q->cons_now, p->pt_tx);
             q->rx_wait++;
             ioctl(pa->pb->fd, NIOCTXSYNC, 0); // XXX just in case
             pending = 0;
@@ -829,11 +835,11 @@ cons(void *_pa)
             continue;
         }
         ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
-                p->pktlen, q->cons_now, p->pt_tx, q->head, q->tail, p->next);
+                p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
         /* XXX inefficient but simple */
         if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0) {
             ND(5, "inject failed len %d now %ld tx %ld h %ld t %ld next %ld",
-                    (int)p->pktlen, q->cons_now, p->pt_tx, q->head, q->tail, p->next);
+                    (int)p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
             ioctl(pa->pb->fd, NIOCTXSYNC, 0);
             pending = 0;
             continue;
