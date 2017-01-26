@@ -422,6 +422,7 @@ struct arp_cmd {
 struct arp_cmd_q {
 	struct arp_cmd	q[ARP_CMD_QSIZE] ALIGN_CACHE;
 	uint64_t	head ALIGN_CACHE;
+	uint64_t	toclean;
 	uint64_t	tail ALIGN_CACHE;
 };
 
@@ -429,17 +430,23 @@ static inline struct arp_cmd *
 arp_get_cmd(struct arp_cmd_q *a)
 {
 	int h = a->head & (ARP_CMD_QSIZE - 1);
-	if (unlikely(a->q[h].valid)) {
+	if (unlikely(a->q[h].valid == 1)) {
+		a->q[h].valid = 2;
 		a->head++;
 		return &a->q[h];
 	}
 	return NULL;
 }
 
-void
-arp_put_cmd(struct arp_cmd *c)
+static inline void
+arp_put_cmd(struct arp_cmd_q *a)
 {
-	c->valid = 0;
+	if (likely(a->q[a->toclean].valid != 2))
+		return;
+	while (a->q[a->toclean].valid == 2) {
+		a->q[a->toclean].valid = 0;
+		a->toclean++;
+	}
 }
 
 void
@@ -959,21 +966,23 @@ cons(void *_pa)
 	for (; pre_start < pre_end; pre_start += 64)
 	    __builtin_prefetch(pre_start);
 #endif
-	if (pa->route_mode && unlikely(arpc = arp_get_cmd(pa->cons_arpq))) {
-		D("arp %x ether %02x:%02x:%02x:%02x:%02x:%02x ip %u.%u.%u.%u",
-				arpc->cmd,
-				arpc->ether_addr[0],
-				arpc->ether_addr[1],
-				arpc->ether_addr[2],
-				arpc->ether_addr[3],
-				arpc->ether_addr[4],
-				arpc->ether_addr[5],
-				arpc->ip_addr[0],
-				arpc->ip_addr[1],
-				arpc->ip_addr[2],
-				arpc->ip_addr[3]);
-		cons_handle_arp(pa, arpc);
-		arp_put_cmd(arpc);
+	if (pa->route_mode) {
+	        while (unlikely(arpc = arp_get_cmd(pa->cons_arpq))) {
+			D("arp %x ether %02x:%02x:%02x:%02x:%02x:%02x ip %u.%u.%u.%u",
+					arpc->cmd,
+					arpc->ether_addr[0],
+					arpc->ether_addr[1],
+					arpc->ether_addr[2],
+					arpc->ether_addr[3],
+					arpc->ether_addr[4],
+					arpc->ether_addr[5],
+					arpc->ip_addr[0],
+					arpc->ip_addr[1],
+					arpc->ip_addr[2],
+					arpc->ip_addr[3]);
+			cons_handle_arp(pa, arpc);
+		}
+		arp_put_cmd(pa->cons_arpq);
 	}
 
 	if (h == t || ts_cmp(p->pt_tx, q->cons_now) > 0) {
