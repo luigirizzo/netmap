@@ -1453,6 +1453,7 @@ main(int argc, char **argv)
 
 		}
 
+		close(fd);
 	}
 
 	bp[1] = bp[0]; /* copy parameters, but swap interfaces */
