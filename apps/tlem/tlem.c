@@ -485,24 +485,24 @@ struct pipe_args {
 	/* route-mode */
 	struct arp_cmd_q *cons_arpq;	/* out mailbox for cons */
 	struct arp_cmd_q *prod_arpq;	/* in mailbox for prod */
-	struct ipv4_info *ipv4;		/* mac addr etc. */
+	struct ipv4_info *cons_ipv4;	/* mac addr etc. */
+	struct ipv4_info *prod_ipv4;	/* mac addr etc. */
 
 	struct _qs	q;
 };
 
 void
-prod_handle_arp(struct pipe_args *pa, struct arp_cmd *c)
+cons_handle_arp(struct pipe_args *pa, struct arp_cmd *c)
 {
-	struct ether_header *eh = &pa->ipv4->arp_reply.arp.eh;
-	struct ether_arp *ah = &pa->ipv4->arp_reply.arp.ah;
+	struct ether_header *eh = &pa->cons_ipv4->arp_reply.arp.eh;
+	struct ether_arp *ah = &pa->cons_ipv4->arp_reply.arp.ah;
 	switch (c->cmd) {
 	case ARPOP_REQUEST:
 		/* send reply */
-		D("sending arp reply");
 		memcpy(eh->ether_dhost, c->ether_addr, 6);
 		memcpy(ah->arp_tha, c->ether_addr, 6);
 		memcpy(ah->arp_tpa, c->ip_addr, 4);
-		if (nm_inject(pa->pb, eh, sizeof(pa->ipv4->arp_reply)) == 0) {
+		if (nm_inject(pa->pb, eh, sizeof(pa->cons_ipv4->arp_reply)) == 0) {
 			RD(1, "failed to inject arp reply");
 			break;
 		}
@@ -972,7 +972,7 @@ cons(void *_pa)
 				arpc->ip_addr[1],
 				arpc->ip_addr[2],
 				arpc->ip_addr[3]);
-		prod_handle_arp(pa, arpc);
+		cons_handle_arp(pa, arpc);
 		arp_put_cmd(arpc);
 	}
 
@@ -1366,9 +1366,6 @@ main(int argc, char **argv)
 		bp[0].wait_link = 4;
 	}
 
-	bp[0].ipv4 = &ipv4[1];
-	bp[1].ipv4 = &ipv4[0];
-
 	if (bp[0].route_mode) {
 		int fd;
 		struct ifreq ifr;
@@ -1459,6 +1456,9 @@ main(int argc, char **argv)
 	bp[1] = bp[0]; /* copy parameters, but swap interfaces */
 	bp[0].q.prod_ifname = bp[1].q.cons_ifname = ifname[0];
 	bp[1].q.prod_ifname = bp[0].q.cons_ifname = ifname[1];
+	bp[0].prod_ipv4 = bp[1].cons_ipv4 = &ipv4[0];
+	bp[0].cons_ipv4 = bp[1].prod_ipv4 = &ipv4[1];
+
 
 	/* assign cores. prod and cons work better if on the same HT */
 	bp[0].cons_core = cores[0];
