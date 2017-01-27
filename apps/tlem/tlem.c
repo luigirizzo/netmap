@@ -152,6 +152,7 @@ static int do_abort = 0;
 #include <netinet/in.h>
 #include <net/if_arp.h>
 #include <netinet/if_ether.h>
+#include <netinet/ip.h>
 
 #include <sys/resource.h> // setpriority
 
@@ -375,21 +376,59 @@ struct _qs { /* shared queue */
 	volatile uint64_t head ALIGN_CACHE ;	/* consumer reads from here */
 };
 
+/* route-mode data structures and helper functions
+ *
+ * In route-mode TLEM acts as a router between the two subnets at its ends.
+ * This is implemented as follows:
+ * - there are two arp tables, one for each subnet
+ * - arp tables are private to the cons() process
+ * - the prod() processes extract the relevant info from any received ARP
+ *   message and pass them down to the cons() process insisting on the same
+ *   port, as illustrated in the following diagram:
+ *
+ *         |---> prod1 --------------------------> cons1 --->|
+ *         |       |                                 ^       |
+ *         | ARP req/repl info                       |       |
+ *         |       |                                 |       |
+ * port1<->+       |                                 |       +<->port2
+ *         |       |                                 |       |
+ *         |       |                       ARP req/repl info |
+ *         |       V                                 |       |
+ *         |<--- cons2 <-------------------------- prod2 <---|
+ *
+ * - the cons() processes react to these infos by sending ARP replies/
+ *   updating their private ARP table as needed
+ * - the cons() processes change the outgoing packets destination addresses
+ *   before injecting them, sending ARP requests when needed.
+ * - TTL decrement is not implemented, for performance reasons.
+ *
+ * Delegating all the heavy work to the cons() has the advantage that the only
+ * new inter-thread interactions are prod1->cons1 and prod2->cons2; these can
+ * be implemented by lockless and barrier-less mailboxes. Since writes into the
+ * mailbox are rare, the consumer can bring it into its local cache and poll it
+ * as often as needed, without incurring too much of a performance hit.
+ *
+ */
 
-/* route-mode data structures and helper functions */
-struct ipv4_info {
+/* IPv4 info for a port. Shared between the producer and the consumer that
+ * insist on the same port
+ */
+ struct ipv4_info {
 	in_addr_t	ip_addr;
 	in_addr_t	ip_mask;
+	in_addr_t	ip_bcast;
 	in_addr_t	ip_gw;
 	uint8_t		ether_addr[6];
-	/* pre-formatted arp reply */
+	/* pre-formatted arp messages */
 	union {
 		uint8_t pkt[60];
 		struct {
 			struct ether_header eh;
 			struct ether_arp    ah;
 		} arp __attribute__((packed));
-	} arp_reply;
+	} arp_reply, arp_request;
+
+	struct arp_table_entry *arp_table;
 };
 
 void
@@ -397,47 +436,128 @@ ipv4_dump(const char *name, const struct ipv4_info *i)
 {
 	const uint8_t *ipa = (uint8_t *)&i->ip_addr,
 		      *ipm = (uint8_t *)&i->ip_mask,
+		      *ipb = (uint8_t *)&i->ip_bcast,
 		      *ea = i->ether_addr;
 
-	ED("%s: ip %u.%u.%u.%u/%u.%u.%u.%u mac %02x:%02x:%02x:%02x:%02x:%02x",
+	ED("%s: ip %u.%u.%u.%u/%u.%u.%u.%u bcast %u.%u.%u.%u mac %02x:%02x:%02x:%02x:%02x:%02x",
 			name,
 			ipa[0], ipa[1], ipa[2], ipa[3],
 			ipm[0], ipm[1], ipm[2], ipm[3],
+			ipb[0], ipb[1], ipb[2], ipb[3],
 			ea[0], ea[1], ea[2], ea[3], ea[4], ea[5]);
 }
 
 struct ipv4_info ipv4[2];
 
-struct arp_cmd {
-	uint8_t		ether_addr[6];
-	uint8_t		valid;
-	uint8_t		cmd;
-#define	TLEM_ARP_REPL	1
-#define TLEM_ARP_UPDT	2
-	uint8_t		ip_addr[4];
-	uint8_t		pad[4];
-};
+/* the arp table is implemented as a sparse array indexed by
+ * the host part of the ip address.
+ *
+ * The array is in virtual memory (mmap) and is left uninitialized, so that the
+ * kernel will allocate and zero-fill pages on demand.  The ether_addr is
+ * stored in negated form and therefore it is always valid: uninitialized
+ * entries will give the broadcast address.  A new arp request will be sent
+ * when 'now' is after 'next_req'. The initial zero value of 'next_req' will
+ * trigger an arp request the first time the entry is read.
+ */
+struct arp_table_entry {
+	uint64_t	next_req;	/* when to send next arp request */
+	union {
+		uint8_t		ether_addr[6 + 2]; /* size + padding */
+		struct {
+			uint32_t eth1;
+			uint16_t eth2;
+			uint16_t pad;
+		};
+	};
+} __attribute__((packed));
 
+void
+arp_table_entry_dump(int idx, struct arp_table_entry *e)
+{
+	ED("%d: next %lu addr %02x:%02x:%02x:%02x:%02x:%02x",
+			idx, e->next_req,
+			(uint8_t)~e->ether_addr[0],
+			(uint8_t)~e->ether_addr[1],
+			(uint8_t)~e->ether_addr[2],
+			(uint8_t)~e->ether_addr[3],
+			(uint8_t)~e->ether_addr[4],
+			(uint8_t)~e->ether_addr[5]);
+}
+
+struct arp_table_entry *
+arp_table_new(in_addr_t mask)
+{
+	// XXX this only works if mask is in CIDR form */
+	size_t s = (~ntohl(mask) + 1) * sizeof(struct arp_table_entry);
+	struct arp_table_entry *e;
+	D("allocating %zu bytes for arp table", s);
+	e = mmap(NULL, s, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if (e == MAP_FAILED)
+		return NULL;
+	return e;
+}
+
+static inline int
+arp_idx(in_addr_t addr, in_addr_t mask)
+{
+	return ntohl(addr & ~mask);
+}
+
+
+/* arp commands are sent by the producer to the consumer that insists on
+ * the same port. The commands are sent when the producer receives an ARP
+ * message, as follows:
+ * - when an ARP request is received, ask the consumer to send an ARP
+ *   reply
+ * - when an ARP reply is received, ask the consumer to update its
+ *   ARP table
+ * The commands also contain the ethernet and IP address of the sender
+ * of the received ARP message.
+ */
+struct arp_cmd {
+	union {
+		uint8_t		ether_addr[6];
+		struct {
+			uint32_t eth1;
+			uint16_t eth2;
+		};
+	};
+	uint8_t		valid; /* 0: empty, 1: new, 2: seen */
+	uint8_t		cmd;   /* ARPOP_REQUEST or ARPOP_REPLY */
+	in_addr_t	ip_addr;
+	uint8_t		pad[4];
+} __attribute__((packed));
+
+/* the commands are sent in a small mailbox shared between the producer and the
+ * consumer. The head and tail pointers are not shared, and the synchronization
+ * is enforced by the 'valid' fields inside the commands themselves.  This
+ * saves some cache misses and eliminates the need for memory barriers.
+ */
 #define ARP_CMD_QSIZE 16
 struct arp_cmd_q {
 	struct arp_cmd	q[ARP_CMD_QSIZE] ALIGN_CACHE;
-	uint64_t	head ALIGN_CACHE;
-	uint64_t	toclean;
-	uint64_t	tail ALIGN_CACHE;
+	uint64_t	head ALIGN_CACHE; /* private to the consumer */
+	uint64_t	toclean;	  /* private to the consumer */
+	uint64_t	tail ALIGN_CACHE; /* private to the producer */
 };
 
+/* consumer: extract a new command.  The command slot is not immediatly
+ * released, so that at most ARP_CMD_QSIZE messages are read for each
+ * cons() loop.
+ */
 static inline struct arp_cmd *
 arp_get_cmd(struct arp_cmd_q *a)
 {
 	int h = a->head & (ARP_CMD_QSIZE - 1);
 	if (unlikely(a->q[h].valid == 1)) {
-		a->q[h].valid = 2;
+		a->q[h].valid = 2; /* mark as seen */
 		a->head++;
 		return &a->q[h];
 	}
 	return NULL;
 }
 
+/* consumer: release all seen slots */
 static inline void
 arp_put_cmd(struct arp_cmd_q *a)
 {
@@ -449,6 +569,9 @@ arp_put_cmd(struct arp_cmd_q *a)
 	}
 }
 
+/* poducer: send the proper command depending on the contents of the received
+ * ARP message in pkt
+ */
 void
 arp_push_cmd(struct arp_cmd_q *a, const void *pkt)
 {
@@ -460,7 +583,7 @@ arp_push_cmd(struct arp_cmd_q *a, const void *pkt)
 		return;
 	c->cmd = ntohs(arp->ea_hdr.ar_op);
 	memcpy(c->ether_addr, arp->arp_sha, 6);
-	memcpy(c->ip_addr, arp->arp_spa, 4);
+	memcpy(&c->ip_addr, arp->arp_spa, 4);
 	c->valid = 1;
 	a->tail++;
 }
@@ -497,33 +620,6 @@ struct pipe_args {
 
 	struct _qs	q;
 };
-
-void
-cons_handle_arp(struct pipe_args *pa, struct arp_cmd *c)
-{
-	struct ether_header *eh = &pa->cons_ipv4->arp_reply.arp.eh;
-	struct ether_arp *ah = &pa->cons_ipv4->arp_reply.arp.ah;
-	switch (c->cmd) {
-	case ARPOP_REQUEST:
-		/* send reply */
-		memcpy(eh->ether_dhost, c->ether_addr, 6);
-		memcpy(ah->arp_tha, c->ether_addr, 6);
-		memcpy(ah->arp_tpa, c->ip_addr, 4);
-		if (nm_inject(pa->pb, eh, sizeof(pa->cons_ipv4->arp_reply)) == 0) {
-			RD(1, "failed to inject arp reply");
-			break;
-		}
-		ioctl(pa->pb->fd, NIOCTXSYNC, 0);
-		break;
-	case ARPOP_REPLY:
-		/* update local arp table */
-		break;
-	default:
-		/* we don't handle these */
-		RD(1, "unknown/unsupported ARP operation: %x", c->cmd);
-		break;
-	}
-}
 
 #define NS_IN_S	(1000000000ULL)	// nanoseconds
 #define TIME_UNITS	NS_IN_S
@@ -920,6 +1016,90 @@ prod(void *_pa)
     return NULL;
 }
 
+/* react to a command sent by the producer in the other direction.
+ * returns the number of packets injected.
+ */
+int
+cons_handle_arp(struct pipe_args *pa, struct arp_cmd *c)
+{
+	struct ipv4_info *ip = pa->cons_ipv4;
+	struct ether_header *eh = &ip->arp_reply.arp.eh;
+	struct ether_arp *ah = &ip->arp_reply.arp.ah;
+	struct arp_table_entry *e;
+	int rv = 0;
+
+	switch (c->cmd) {
+	case ARPOP_REQUEST:
+		/* send reply */
+		memcpy(eh->ether_dhost, c->ether_addr, 6);
+		memcpy(ah->arp_tha, c->ether_addr, 6);
+		memcpy(ah->arp_tpa, &c->ip_addr, 4);
+		if (nm_inject(pa->pb, eh, sizeof(ip->arp_reply)) == 0) {
+			RD(1, "failed to inject arp reply");
+			break;
+		}
+		/* force the reply out */
+		rv = pa->q.burst;
+		break;
+	case ARPOP_REPLY:
+		/* update local arp table */
+		e = ip->arp_table + arp_idx(c->ip_addr, ip->ip_mask);
+		set_tns_now(&e->next_req, pa->q.cons_now);
+		e->next_req += 5000000000;
+		e->eth1 = ~c->eth1;
+		e->eth2 = ~c->eth2;
+		break;
+	default:
+		/* we don't handle these ones */
+		RD(1, "unknown/unsupported ARP operation: %x", c->cmd);
+		break;
+	}
+	return rv;
+}
+
+/* change the ethernet target address according to the local ARP table.
+ * may send an ARP request.
+ * returns the number of packets injected.
+ */
+static inline int
+cons_update_dst(struct pipe_args *pa, void *pkt)
+{
+	struct ether_header *eh = pkt;
+	struct ip *iph = (struct ip *)(eh + 1);
+	in_addr_t dst = iph->ip_dst.s_addr;
+	struct arp_table_entry *e;
+	struct ipv4_info *ipv4 = pa->cons_ipv4;
+	int idx;
+	int injected = 0;
+	//uint8_t *d = (uint8_t *)&dst;
+
+	ND("dst %u.%u.%u.%u", d[0], d[1], d[2], d[3]);
+	if (unlikely(!(eh->ether_type == ntohs(ETHERTYPE_IP))))
+		return 0;
+	if (dst == ipv4->ip_bcast || dst == 0xffffffff)
+		return 0;
+	idx = arp_idx(dst, ipv4->ip_mask);
+	e = ipv4->arp_table + idx;
+	ND("idx %d e %p", idx, e);
+	//arp_table_entry_dump(idx, e);
+	if (unlikely(ts_cmp(pa->q.cons_now, e->next_req) > 0)) {
+		/* send arp request for this client */
+		struct ether_arp *ah = &ipv4->arp_request.arp.ah;
+		ND("sending arp request");
+		memcpy(ah->arp_tpa, &dst, 4);
+		set_tns_now(&e->next_req, pa->q.cons_now);
+		e->next_req += 5000000000; /* 5s */
+		if (nm_inject(pa->pb, &ipv4->arp_request,
+					sizeof(ipv4->arp_request)) == 0) {
+			RD(1, "failed to inject arp request");
+		}
+		injected = 1;
+	}
+	/* copy negated dst into eh (either brodcast or unicast) */
+	*(uint32_t *)eh = ~e->eth1;
+	*(uint16_t *)((char *)eh + 4) = ~e->eth2;
+	return injected;
+}
 
 /*
  * the consumer reads from the queue using head,
@@ -930,7 +1110,7 @@ cons(void *_pa)
 {
     struct pipe_args *pa = _pa;
     struct _qs *q = &pa->q;
-    int pending = 0;
+    int pending = 0, retrying = 0;
 #if 0
     int cycles = 0;
     const char *pre_start, *pre_end; /* prefetch limits */
@@ -968,7 +1148,8 @@ cons(void *_pa)
 #endif
 	if (pa->route_mode) {
 	        while (unlikely(arpc = arp_get_cmd(pa->cons_arpq))) {
-			D("arp %x ether %02x:%02x:%02x:%02x:%02x:%02x ip %u.%u.%u.%u",
+			// uint8_t *ip_addr = (uint8_t *)&arpc->ip_addr;
+			ND("arp %x ether %02x:%02x:%02x:%02x:%02x:%02x ip %u.%u.%u.%u",
 					arpc->cmd,
 					arpc->ether_addr[0],
 					arpc->ether_addr[1],
@@ -976,11 +1157,11 @@ cons(void *_pa)
 					arpc->ether_addr[3],
 					arpc->ether_addr[4],
 					arpc->ether_addr[5],
-					arpc->ip_addr[0],
-					arpc->ip_addr[1],
-					arpc->ip_addr[2],
-					arpc->ip_addr[3]);
-			cons_handle_arp(pa, arpc);
+					ip_addr[0],
+					ip_addr[1],
+					ip_addr[2],
+					ip_addr[3]);
+			pending += cons_handle_arp(pa, arpc);
 		}
 		arp_put_cmd(pa->cons_arpq);
 	}
@@ -997,14 +1178,19 @@ cons(void *_pa)
 	}
 	ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
 		p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
+	if (pa->route_mode && !retrying) {
+		pending += cons_update_dst(pa, p + 1);
+	}
 	/* XXX inefficient but simple */
 	if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0) {
 	    ND(5, "inject failed len %d now %ld tx %ld h %ld t %ld next %ld",
 		(int)p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
 	    ioctl(pa->pb->fd, NIOCTXSYNC, 0);
 	    pending = 0;
+	    retrying = 1;
 	    continue;
 	}
+	retrying = 0;
 	pending++;
 	if (pending > q->burst) {
 	    ioctl(pa->pb->fd, NIOCTXSYNC, 0);
@@ -1389,8 +1575,8 @@ main(int argc, char **argv)
 		for (i = 0; i < 2; i++) {
 			char hwport[IFNAMSIZ + 1], *dst = hwport;
 			const char *scan;
-			struct ether_header *eh = &ipv4[i].arp_reply.arp.eh;
-			struct ether_arp *ah = &ipv4[i].arp_reply.arp.ah;
+			struct ether_header *eh;
+			struct ether_arp *ah;
 
 			/* try to extract the port name */
 			if (!strncmp("vale", ifname[i], 4)) {
@@ -1443,9 +1629,22 @@ main(int argc, char **argv)
 			}
 			memcpy(&ipv4[i].ip_mask, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);
 
+			/* broadcast */
+			memset(&ifr, 0, sizeof(ifr));
+			strcpy(ifr.ifr_name, hwport);
+			ifr.ifr_addr.sa_family = AF_INET;
+			if (ioctl(fd, SIOCGIFBRDADDR, &ifr) < 0) {
+				ED("failed to get IPv4 broadcast address for %s: %s:",
+						hwport, strerror(errno));
+				usage();
+			}
+			memcpy(&ipv4[i].ip_bcast, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);
+
 			ipv4_dump(ifname[i], &ipv4[i]);
 
 			/* precompute the arp reply for this interface */
+			eh = &ipv4[i].arp_reply.arp.eh;
+			ah = &ipv4[i].arp_reply.arp.ah;
 			memset(&ipv4[i].arp_reply, 0, sizeof(ipv4[i].arp_reply));
 			memcpy(eh->ether_shost, ipv4[i].ether_addr, 6);
 			eh->ether_type = htons(ETHERTYPE_ARP);
@@ -1457,6 +1656,21 @@ main(int argc, char **argv)
 			memcpy(ah->arp_sha, ipv4[i].ether_addr, 6);
 			memcpy(ah->arp_spa, &ipv4[i].ip_addr, 4);
 
+			/* precompute the arp request for this interface */
+			eh = &ipv4[i].arp_request.arp.eh;
+			ah = &ipv4[i].arp_request.arp.ah;
+			memcpy(&ipv4[i].arp_request, &ipv4[i].arp_reply,
+					sizeof(ipv4[i].arp_reply));
+			memset(eh->ether_dhost, 0xff, 6);
+			ah->ea_hdr.ar_op = htons(ARPOP_REQUEST);
+
+			/* allocate the arp table */
+			ipv4[i].arp_table = arp_table_new(ipv4[i].ip_mask);
+			if (ipv4[i].arp_table == NULL) {
+				ED("failed to allocate the arp table for %s: %s", hwport,
+						strerror(errno));
+				usage();
+			}
 		}
 
 		close(fd);
