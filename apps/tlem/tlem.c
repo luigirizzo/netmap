@@ -546,7 +546,7 @@ struct arp_cmd_q {
  * cons() loop.
  */
 static inline struct arp_cmd *
-arp_get_cmd(struct arp_cmd_q *a)
+arpq_get_cmd(struct arp_cmd_q *a)
 {
 	int h = a->head & (ARP_CMD_QSIZE - 1);
 	if (unlikely(a->q[h].valid == 1)) {
@@ -559,7 +559,7 @@ arp_get_cmd(struct arp_cmd_q *a)
 
 /* consumer: release all seen slots */
 static inline void
-arp_put_cmd(struct arp_cmd_q *a)
+arpq_release(struct arp_cmd_q *a)
 {
 	if (likely(a->q[a->toclean].valid != 2))
 		return;
@@ -569,21 +569,18 @@ arp_put_cmd(struct arp_cmd_q *a)
 	}
 }
 
-/* poducer: send the proper command depending on the contents of the received
- * ARP message in pkt
- */
-void
-arp_push_cmd(struct arp_cmd_q *a, const void *pkt)
+struct arp_cmd *
+arpq_new_cmd(struct arp_cmd_q *a)
 {
 	int t = a->tail & (ARP_CMD_QSIZE - 1);
 	struct arp_cmd *c = &a->q[t];
-	const struct ether_header *eh = pkt;
-	const struct ether_arp *arp = (const struct ether_arp *)(eh + 1);
-	if (c->valid)
-		return;
-	c->cmd = ntohs(arp->ea_hdr.ar_op);
-	memcpy(c->ether_addr, arp->arp_sha, 6);
-	memcpy(&c->ip_addr, arp->arp_spa, 4);
+
+	return (c->valid ? NULL : c);
+}
+
+void
+arpq_push(struct arp_cmd_q *a, struct arp_cmd *c)
+{
 	c->valid = 1;
 	a->tail++;
 }
@@ -620,6 +617,31 @@ struct pipe_args {
 
 	struct _qs	q;
 };
+
+/* poducer: send the proper command depending on the contents of the received
+ * ARP message in pkt
+ */
+void
+prod_push_cmd(const struct pipe_args *pa, const void *pkt)
+{
+	const struct ether_header *eh = pkt;
+	const struct ether_arp *arp = (const struct ether_arp *)(eh + 1);
+	const struct ipv4_info *ip = pa->prod_ipv4;
+	struct arp_cmd_q *a = pa->prod_arpq;
+	struct arp_cmd *c;
+
+	c = arpq_new_cmd(a);
+	if (c == NULL) {
+		/* no space left in the mailbox */
+		return;
+	}
+	c->cmd = ntohs(arp->ea_hdr.ar_op);
+	memcpy(c->ether_addr, arp->arp_sha, 6);
+	memcpy(&c->ip_addr, arp->arp_spa, 4);
+	arpq_push(a, c);
+}
+
+
 
 #define NS_IN_S	(1000000000ULL)	// nanoseconds
 #define TIME_UNITS	NS_IN_S
@@ -985,7 +1007,7 @@ prod(void *_pa)
 	    }
 	    if (pa->route_mode && unlikely(is_arp(q->cur_pkt))) {
 	        /* pass it to the consumer in the other direction */
-		arp_push_cmd(pa->prod_arpq, q->cur_pkt);
+		prod_push_cmd(pa, q->cur_pkt);
 		continue;
 	    }
 	    q->c_loss.run(q, &q->c_loss);
@@ -1147,7 +1169,7 @@ cons(void *_pa)
 	    __builtin_prefetch(pre_start);
 #endif
 	if (pa->route_mode) {
-	        while (unlikely(arpc = arp_get_cmd(pa->cons_arpq))) {
+	        while (unlikely(arpc = arpq_get_cmd(pa->cons_arpq))) {
 			// uint8_t *ip_addr = (uint8_t *)&arpc->ip_addr;
 			ND("arp %x ether %02x:%02x:%02x:%02x:%02x:%02x ip %u.%u.%u.%u",
 					arpc->cmd,
@@ -1163,7 +1185,7 @@ cons(void *_pa)
 					ip_addr[3]);
 			pending += cons_handle_arp(pa, arpc);
 		}
-		arp_put_cmd(pa->cons_arpq);
+		arpq_release(pa->cons_arpq);
 	}
 
 	if (h == t || ts_cmp(p->pt_tx, q->cons_now) > 0) {
