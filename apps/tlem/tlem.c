@@ -618,30 +618,6 @@ struct pipe_args {
 	struct _qs	q;
 };
 
-/* poducer: send the proper command depending on the contents of the received
- * ARP message in pkt
- */
-void
-prod_push_cmd(const struct pipe_args *pa, const void *pkt)
-{
-	const struct ether_header *eh = pkt;
-	const struct ether_arp *arp = (const struct ether_arp *)(eh + 1);
-	const struct ipv4_info *ip = pa->prod_ipv4;
-	struct arp_cmd_q *a = pa->prod_arpq;
-	struct arp_cmd *c;
-
-	c = arpq_new_cmd(a);
-	if (c == NULL) {
-		/* no space left in the mailbox */
-		return;
-	}
-	c->cmd = ntohs(arp->ea_hdr.ar_op);
-	memcpy(c->ether_addr, arp->arp_sha, 6);
-	memcpy(&c->ip_addr, arp->arp_spa, 4);
-	arpq_push(a, c);
-}
-
-
 
 #define NS_IN_S	(1000000000ULL)	// nanoseconds
 #define TIME_UNITS	NS_IN_S
@@ -980,6 +956,38 @@ drop_after(struct _qs *q)
 	return 0;
 }
 
+/* poducer: send the proper command depending on the contents of the received
+ * ARP message in pkt
+ */
+void
+prod_push_arp(const struct pipe_args *pa, const void *pkt)
+{
+	const struct ether_header *eh = pkt;
+	const struct ether_arp *arp = (const struct ether_arp *)(eh + 1);
+	const struct ipv4_info *ip = pa->prod_ipv4;
+	struct arp_cmd_q *a = pa->prod_arpq;
+	struct arp_cmd *c;
+	in_addr_t ip_saddr, ip_taddr;
+	uint16_t arpop = ntohs(arp->ea_hdr.ar_op);
+
+	memcpy(&ip_saddr, arp->arp_spa, 4);
+	memcpy(&ip_taddr, arp->arp_tpa, 4);
+	if (ip_taddr != ip->ip_addr ||
+	    (ip_saddr & ip->ip_mask) != (ip->ip_addr & ip->ip_mask) ||
+	    (arpop != ARPOP_REQUEST && arpop != ARPOP_REPLY)) {
+		/* not for us, drop */
+		return;
+	}
+	c = arpq_new_cmd(a);
+	if (c == NULL) {
+		/* no space left in the mailbox */
+		return;
+	}
+	c->cmd = arpop; /* just the low byte */
+	memcpy(c->ether_addr, arp->arp_sha, 6);
+	c->ip_addr = ip_saddr;
+	arpq_push(a, c);
+}
 
 static void *
 prod(void *_pa)
@@ -1007,7 +1015,7 @@ prod(void *_pa)
 	    }
 	    if (pa->route_mode && unlikely(is_arp(q->cur_pkt))) {
 	        /* pass it to the consumer in the other direction */
-		prod_push_cmd(pa, q->cur_pkt);
+		prod_push_arp(pa, q->cur_pkt);
 		continue;
 	    }
 	    q->c_loss.run(q, &q->c_loss);
