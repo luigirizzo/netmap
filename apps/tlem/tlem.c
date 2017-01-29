@@ -413,7 +413,8 @@ struct _qs { /* shared queue */
 /* IPv4 info for a port. Shared between the producer and the consumer that
  * insist on the same port
  */
- struct ipv4_info {
+struct ipv4_info {
+	char		name[IFNAMSIZ + 1];
 	in_addr_t	ip_addr;
 	in_addr_t	ip_mask;
 	in_addr_t	ip_bcast;
@@ -1603,7 +1604,8 @@ main(int argc, char **argv)
 		}
 
 		for (i = 0; i < 2; i++) {
-			char hwport[IFNAMSIZ + 1], *dst = hwport;
+			struct ipv4_info *ip = &ipv4[i];
+			char *dst = ip->name;
 			const char *scan;
 			struct ether_header *eh;
 			struct ether_arp *ah;
@@ -1625,79 +1627,66 @@ main(int argc, char **argv)
 			while (*scan && isalnum(*scan))
 				*dst++ = *scan++;
 			*dst = '\0';
-			ED("trying to get configuration for %s", hwport);
+			ED("trying to get configuration for %s", ip->name);
 
 			/* MAC address */
 			memset(&ifr, 0, sizeof(ifr));
-			strcpy(ifr.ifr_name, hwport);
+			strcpy(ifr.ifr_name, ip->name);
 			if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0) {
 				ED("failed to get MAC address for %s: %s:",
-						hwport, strerror(errno));
+						ip->name, strerror(errno));
 				usage();
 			}
-			memcpy(ipv4[i].ether_addr, ifr.ifr_addr.sa_data, 6);
+			memcpy(ip->ether_addr, ifr.ifr_addr.sa_data, 6);
+
+#define get_ip_info(_c, _f, _m) 								\
+			memset(&ifr, 0, sizeof(ifr));						\
+			strcpy(ifr.ifr_name, ip->name);						\
+			ifr.ifr_addr.sa_family = AF_INET;					\
+			if (ioctl(fd, _c, &ifr) < 0) {						\
+				ED("failed to get IPv4 " _m " for %s: %s:",			\
+						ip->name, strerror(errno));			\
+				usage();							\
+			}									\
+			memcpy(&ip->_f, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);	\
+
 
 			/* IP address */
-			memset(&ifr, 0, sizeof(ifr));
-			strcpy(ifr.ifr_name, hwport);
-			ifr.ifr_addr.sa_family = AF_INET;
-			if (ioctl(fd, SIOCGIFADDR, &ifr) < 0) {
-				ED("failed to get IPv4 address for %s: %s:",
-						hwport, strerror(errno));
-				usage();
-			}
-			memcpy(&ipv4[i].ip_addr, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);
-
+			get_ip_info(SIOCGIFADDR, ip_addr, "address");
 			/* netmask */
-			memset(&ifr, 0, sizeof(ifr));
-			strcpy(ifr.ifr_name, hwport);
-			ifr.ifr_addr.sa_family = AF_INET;
-			if (ioctl(fd, SIOCGIFNETMASK, &ifr) < 0) {
-				ED("failed to get IPv4 netmask for %s: %s:",
-						hwport, strerror(errno));
-				usage();
-			}
-			memcpy(&ipv4[i].ip_mask, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);
-
+			get_ip_info(SIOCGIFNETMASK, ip_mask, "netmask");
 			/* broadcast */
-			memset(&ifr, 0, sizeof(ifr));
-			strcpy(ifr.ifr_name, hwport);
-			ifr.ifr_addr.sa_family = AF_INET;
-			if (ioctl(fd, SIOCGIFBRDADDR, &ifr) < 0) {
-				ED("failed to get IPv4 broadcast address for %s: %s:",
-						hwport, strerror(errno));
-				usage();
-			}
-			memcpy(&ipv4[i].ip_bcast, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);
+			get_ip_info(SIOCGIFBRDADDR, ip_bcast, "broadcast");
+#undef get_ip_info
 
-			ipv4_dump(ifname[i], &ipv4[i]);
+			ipv4_dump(ifname[i], ip);
 
 			/* precompute the arp reply for this interface */
-			eh = &ipv4[i].arp_reply.arp.eh;
-			ah = &ipv4[i].arp_reply.arp.ah;
-			memset(&ipv4[i].arp_reply, 0, sizeof(ipv4[i].arp_reply));
-			memcpy(eh->ether_shost, ipv4[i].ether_addr, 6);
+			eh = &ip->arp_reply.arp.eh;
+			ah = &ip->arp_reply.arp.ah;
+			memset(&ip->arp_reply, 0, sizeof(ip->arp_reply));
+			memcpy(eh->ether_shost, ip->ether_addr, 6);
 			eh->ether_type = htons(ETHERTYPE_ARP);
 			ah->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
 			ah->ea_hdr.ar_pro = htons(ETHERTYPE_IP);
 			ah->ea_hdr.ar_hln = 6;
 			ah->ea_hdr.ar_pln = 4;
 			ah->ea_hdr.ar_op = htons(ARPOP_REPLY);
-			memcpy(ah->arp_sha, ipv4[i].ether_addr, 6);
-			memcpy(ah->arp_spa, &ipv4[i].ip_addr, 4);
+			memcpy(ah->arp_sha, ip->ether_addr, 6);
+			memcpy(ah->arp_spa, &ip->ip_addr, 4);
 
 			/* precompute the arp request for this interface */
-			eh = &ipv4[i].arp_request.arp.eh;
-			ah = &ipv4[i].arp_request.arp.ah;
-			memcpy(&ipv4[i].arp_request, &ipv4[i].arp_reply,
-					sizeof(ipv4[i].arp_reply));
+			eh = &ip->arp_request.arp.eh;
+			ah = &ip->arp_request.arp.ah;
+			memcpy(&ip->arp_request, &ip->arp_reply,
+					sizeof(ip->arp_reply));
 			memset(eh->ether_dhost, 0xff, 6);
 			ah->ea_hdr.ar_op = htons(ARPOP_REQUEST);
 
 			/* allocate the arp table */
-			ipv4[i].arp_table = arp_table_new(ipv4[i].ip_mask);
-			if (ipv4[i].arp_table == NULL) {
-				ED("failed to allocate the arp table for %s: %s", hwport,
+			ip->arp_table = arp_table_new(ip->ip_mask);
+			if (ip->arp_table == NULL) {
+				ED("failed to allocate the arp table for %s: %s", ip->name,
 						strerror(errno));
 				usage();
 			}
