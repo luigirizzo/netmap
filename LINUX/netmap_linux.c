@@ -2134,6 +2134,7 @@ int
 nm_os_vi_persist(const char *name, struct ifnet **ret)
 {
 	struct ifnet *ifp;
+	int error;
 
 	if (!try_module_get(linux_dummy_drv.owner))
 		return EFAULT;
@@ -2143,16 +2144,27 @@ nm_os_vi_persist(const char *name, struct ifnet **ret)
 	ifp = alloc_netdev(0, name, linux_nm_vi_setup);
 #endif
 	if (!ifp) {
-		module_put(linux_dummy_drv.owner);
-		return ENOMEM;
+		error = ENOMEM;
+		goto err_put;
 	}
 	dev_net_set(ifp, &init_net);
 	ifp->features |= NETIF_F_NETNS_LOCAL; /* just for safety */
-	register_netdev(ifp);
 	ifp->dev.driver = &linux_dummy_drv;
+	error = register_netdev(ifp);
+	if (error < 0) {
+		D("error %d", error);
+		error = -error;
+		goto err_free;
+	}
 	netif_start_queue(ifp);
 	*ret = ifp;
 	return 0;
+
+err_free:
+	free_netdev(ifp);
+err_put:
+	module_put(linux_dummy_drv.owner);
+	return error;
 }
 
 void

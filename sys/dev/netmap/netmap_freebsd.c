@@ -1041,7 +1041,7 @@ nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
 	mtx_lock(&nmk->worker_lock);
 	nmk->scheduled++;
 	if (nmk->worker_ctx.cfg.wchan) {
-		wakeup((void *)nmk->worker_ctx.cfg.wchan);
+		wakeup((void *)(uintptr_t)nmk->worker_ctx.cfg.wchan);
 	}
 	mtx_unlock(&nmk->worker_lock);
 }
@@ -1107,7 +1107,7 @@ nm_kthread_worker(void *data)
 				continue;
 			} else if (nmk->run) {
 				/* wait on event with one second timeout */
-				msleep((void *)ctx->cfg.wchan, &nmk->worker_lock,
+				msleep((void *)(uintptr_t)ctx->cfg.wchan, &nmk->worker_lock,
 					0, "nmk_ev", hz);
 				nmk->scheduled++;
 			}
