@@ -504,6 +504,7 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 		ts->flags |= NS_BUF_CHANGED;
 		ts->ptr = rs->ptr;
 		ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+		port->ctr.bytes += rs->len;
 		port->ctr.pkts++;
 		forwarded++;
 		if (old_slot.ptr && !g->last) {
@@ -561,13 +562,15 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 		// XXX optimize this cycle
 		for (j = 0; lp->oq->n && j < BUF_REVOKE; j++) {
 			struct netmap_slot tmp = oq_deq(lp->oq);
+
+			dropped++;
+			lp->ctr.drop++;
 			lp->ctr.drop_bytes += tmp.len;
+
 			oq_enq(freeq, &tmp);
 		}
 
 		ND(1, "revoked %d buffers from %s", j, lq->name);
-		lp->ctr.drop += j;
-		dropped += j;
 	}
 
 	return oq_deq(freeq).buf_idx;
@@ -888,8 +891,6 @@ run:
 					ring->cur = nm_ring_next(ring, ring->cur);
 				}
 				ring->head = ring->cur;
-				forwarded += lim;
-				p->ctr.pkts += lim;
 			}
 		}
 
