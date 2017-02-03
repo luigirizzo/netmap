@@ -459,6 +459,7 @@ function check-patch()
 				--disable-pipe \
 				--disable-ptnetmap \
 				--no-ext-drivers \
+				--no-apps \
 				--cache=$cache >>$log
 			(make get-$driver && make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
 			grep -q warning: $log && { warn=true; echo $warn > $cwarn; }
