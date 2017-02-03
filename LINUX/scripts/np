@@ -66,6 +66,7 @@ PROGNAME=$0
 
 NETMAP_BRANCH=${NETMAP_BRANCH:-master}
 PARALLEL_MAKE=${PARALLEL_MAKE:-$(grep -c processor /proc/cpuinfo)}
+NP_DEBUG=${NP_DEBUG:-0}
 
 function error {
 	echo "$@" >&2
@@ -367,6 +368,13 @@ function build-prep()
 			ln -s compiler-gcc4.h include/linux/compiler-gcc5.h
 		[ -e include/linux/compiler-gcc6.h ] ||
 			ln -s compiler-gcc5.h include/linux/compiler-gcc6.h
+		# force disabling PIE
+		sed -i -e '/^all: vmlinux/a\
+\
+KBUILD_CFLAGS += $(call cc-option, -fno-pie)\
+KBUILD_CFLAGS += $(call cc-option, -no-pie)\
+KBUILD_AFLAGS += $(call cc-option, -fno-pie)\
+KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 		if [ -f $LINUX_CONFIGS/config-$version ]; then
 			cp $LINUX_CONFIGS/config-$version .config
 			yes '' | make oldconfig
@@ -435,22 +443,37 @@ function check-patch()
 				error "no such kernel version: $v1"
 			fi
 			local tmpdir=$(mktemp -d)
-			trap "rm -rf $tmpdir" 0
+			if [ "$NP_DEBUG" -lt 1 ]; then
+				trap "rm -rf $tmpdir" 0
+			fi
+			echo "====== $tmpdir =====" >>$log
 			(cd ..; git archive $NETMAP_BRANCH | tar xf - -C $tmpdir )
 			pushd $tmpdir/LINUX >/dev/null
-			mkdir single-patch
 			rm -f patches
-			ln -s single-patch patches
-			cp $p single-patch
 			ok=false
-			cp /dev/null config.mak
+			config_opts=
+			if [ -z "$EXT_DRIVERS" ]; then
+				config_opts=--no-ext-drivers
+				mkdir single-patch
+				ln -s single-patch patches
+				cp $p single-patch
+			else
+				rm -rf ext-drivers
+				ln -s $EXT_DRIVERS ext-drivers
+				ln -s final-patches patches
+			fi
+			if [ "$driver" != "veth.c" ]; then
+				config_opts="$config_opts --disable-pipe"
+			fi
 			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX \
 				--drivers=$driver \
 				--disable-generic \
 				--disable-vale \
 				--disable-monitor \
-				--disable-pipe \
 				--disable-ptnetmap \
+				--no-apps \
+				--kernel-opts=CONFIG_STACK_VALIDATION= \
+				$config_opts \
 				--cache=$cache >>$log
 			(make get-$driver && make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
 			grep -q warning: $log && { warn=true; echo $warn > $cwarn; }
@@ -461,7 +484,9 @@ function check-patch()
 		fi
 		[ "$ok" = true ] || { echo FAILED; echo false > $cstatus; return 1; }
 		echo true > $cstatus
-		rm -rf $tmpdir
+		if [ "$NP_DEBUG" -lt 2 ]; then
+			rm -rf $tmpdir
+		fi
 		# compute next version
 		v1=$(scripts/vers $v1 -i)
 	done

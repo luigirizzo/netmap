@@ -111,7 +111,7 @@ clean-apps: $(APPS_LIST:%=clean-app-%)
 .PHONY: apps $(APPS_BUILD) install-apps $(APPS_INSTALL)
 define apps_actions
 build-app-$(1):
-	$(MAKE) -C build-apps/$(1) SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)"
+	+$(MAKE) -C build-apps/$(1) SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)"
 
 install-app-$(1):
 	$(MAKE) -C build-apps/$(1) install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"

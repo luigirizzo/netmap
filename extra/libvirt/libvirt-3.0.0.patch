@@ -1,0 +1,298 @@
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 52aee2b..2690777 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -403,7 +403,8 @@ VIR_ENUM_IMPL(virDomainNet, VIR_DOMAIN_NET_TYPE_LAST,
+               "internal",
+               "direct",
+               "hostdev",
+-              "udp")
++              "udp",
++              "netmap")
+ 
+ VIR_ENUM_IMPL(virDomainNetBackend, VIR_DOMAIN_NET_BACKEND_TYPE_LAST,
+               "default",
+@@ -1891,6 +1892,10 @@ virDomainNetDefClear(virDomainNetDefPtr def)
+         virDomainHostdevDefClear(&def->data.hostdev.def);
+         break;
+ 
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
++        VIR_FREE(def->data.netmap.portname);
++        break;
++
+     case VIR_DOMAIN_NET_TYPE_ETHERNET:
+     case VIR_DOMAIN_NET_TYPE_USER:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+@@ -9308,6 +9313,8 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+     char *network = NULL;
+     char *portgroup = NULL;
+     char *bridge = NULL;
++    char *nmportname = NULL;
++    char *nmpassthrough = NULL;
+     char *dev = NULL;
+     char *ifname = NULL;
+     char *ifname_guest = NULL;
+@@ -9395,6 +9402,11 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+                        def->type == VIR_DOMAIN_NET_TYPE_BRIDGE &&
+                        xmlStrEqual(cur->name, BAD_CAST "source")) {
+                 bridge = virXMLPropString(cur, "bridge");
++            } else if (!nmportname &&
++                       def->type == VIR_DOMAIN_NET_TYPE_NETMAP &&
++                       xmlStrEqual(cur->name, BAD_CAST "source")) {
++                nmportname = virXMLPropString(cur, "portname");
++                nmpassthrough = virXMLPropString(cur, "passthrough");
+             } else if (!dev && def->type == VIR_DOMAIN_NET_TYPE_DIRECT &&
+                        xmlStrEqual(cur->name, BAD_CAST "source")) {
+                 dev  = virXMLPropString(cur, "dev");
+@@ -9663,6 +9675,19 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+         bridge = NULL;
+         break;
+ 
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
++        if (nmportname == NULL) {
++            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                           _("No <source> 'portname' attribute "
++                             "specified with <interface type='netmap'/>"));
++            goto error;
++        }
++        def->data.netmap.portname = nmportname;
++        def->data.netmap.passthrough = nmpassthrough ? 1 : 0;
++        VIR_FREE(nmportname);
++        nmportname = NULL;
++        break;
++
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
+@@ -10064,6 +10089,7 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+     virDomainActualNetDefFree(actual);
+     VIR_FREE(script);
+     VIR_FREE(bridge);
++    VIR_FREE(nmportname);
+     VIR_FREE(model);
+     VIR_FREE(backend);
+     VIR_FREE(txmode);
+@@ -21585,6 +21611,14 @@ virDomainNetDefFormat(virBufferPtr buf,
+            }
+             break;
+ 
++        case VIR_DOMAIN_NET_TYPE_NETMAP:
++           if (def->data.netmap.portname) {
++               virBufferEscapeString(buf, "<source portname='%s'",
++                                     def->data.netmap.portname);
++               sourceLines++;
++           }
++            break;
++
+         case VIR_DOMAIN_NET_TYPE_SERVER:
+         case VIR_DOMAIN_NET_TYPE_CLIENT:
+         case VIR_DOMAIN_NET_TYPE_MCAST:
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index 78a3db4..6b1cf7f 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -859,6 +859,7 @@ typedef enum {
+     VIR_DOMAIN_NET_TYPE_DIRECT,
+     VIR_DOMAIN_NET_TYPE_HOSTDEV,
+     VIR_DOMAIN_NET_TYPE_UDP,
++    VIR_DOMAIN_NET_TYPE_NETMAP,
+ 
+     VIR_DOMAIN_NET_TYPE_LAST
+ } virDomainNetType;
+@@ -988,6 +989,10 @@ struct _virDomainNetDef {
+         struct {
+             virDomainHostdevDef def;
+         } hostdev;
++        struct {
++            char *portname; /* ifname */
++            int passthrough;
++        } netmap;
+     } data;
+     /* virtPortProfile is used by network/bridge/direct/hostdev */
+     virNetDevVPortProfilePtr virtPortProfile;
+diff --git a/src/conf/netdev_bandwidth_conf.h b/src/conf/netdev_bandwidth_conf.h
+index cdeac09..2b1416f 100644
+--- a/src/conf/netdev_bandwidth_conf.h
++++ b/src/conf/netdev_bandwidth_conf.h
+@@ -56,6 +56,7 @@ static inline bool virNetDevSupportBandwidth(virDomainNetType type)
+     case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+         break;
+     }
+diff --git a/src/libxl/libxl_conf.c b/src/libxl/libxl_conf.c
+index a24f9e0..ca733e1 100644
+--- a/src/libxl/libxl_conf.c
++++ b/src/libxl/libxl_conf.c
+@@ -999,6 +999,7 @@ libxlMakeNic(virDomainDefPtr def,
+         case VIR_DOMAIN_NET_TYPE_INTERNAL:
+         case VIR_DOMAIN_NET_TYPE_DIRECT:
+         case VIR_DOMAIN_NET_TYPE_HOSTDEV:
++        case VIR_DOMAIN_NET_TYPE_NETMAP:
+         case VIR_DOMAIN_NET_TYPE_LAST:
+             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                     _("unsupported interface type %s"),
+diff --git a/src/lxc/lxc_process.c b/src/lxc/lxc_process.c
+index d8727c3..b7f7551 100644
+--- a/src/lxc/lxc_process.c
++++ b/src/lxc/lxc_process.c
+@@ -589,6 +589,7 @@ static int virLXCProcessSetupInterfaces(virConnectPtr conn,
+         case VIR_DOMAIN_NET_TYPE_INTERNAL:
+         case VIR_DOMAIN_NET_TYPE_LAST:
+         case VIR_DOMAIN_NET_TYPE_HOSTDEV:
++        case VIR_DOMAIN_NET_TYPE_NETMAP:
+             virReportError(VIR_ERR_INTERNAL_ERROR,
+                            _("Unsupported network type %s"),
+                            virDomainNetTypeToString(type));
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index 89e9dd4..6d4a95a 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -356,6 +356,7 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
+               "drive-iotune-group",
+ 
+               "query-cpu-model-expansion", /* 245 */
++              "ptnet-pci",
+     );
+ 
+ 
+@@ -1623,6 +1624,7 @@ struct virQEMUCapsStringFlags virQEMUCapsObjectTypes[] = {
+     { "ivshmem-plain", QEMU_CAPS_DEVICE_IVSHMEM_PLAIN },
+     { "ivshmem-doorbell", QEMU_CAPS_DEVICE_IVSHMEM_DOORBELL },
+     { "vhost-scsi", QEMU_CAPS_DEVICE_VHOST_SCSI },
++    { "ptnet-pci", QEMU_CAPS_DEVICE_PTNET },
+ };
+ 
+ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioBalloon[] = {
+diff --git a/src/qemu/qemu_capabilities.h b/src/qemu/qemu_capabilities.h
+index b5ad95e..e3ca6c1 100644
+--- a/src/qemu/qemu_capabilities.h
++++ b/src/qemu/qemu_capabilities.h
+@@ -392,6 +392,7 @@ typedef enum {
+ 
+     /* 245 */
+     QEMU_CAPS_QUERY_CPU_MODEL_EXPANSION, /* qmp query-cpu-model-expansion */
++    QEMU_CAPS_DEVICE_PTNET, /* -device ptnet-pci */
+ 
+     QEMU_CAPS_LAST /* this must always be the last item */
+ } virQEMUCapsFlags;
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index d459f8e..68c0a21 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -3803,6 +3803,13 @@ qemuBuildHostNetStr(virDomainNetDefPtr net,
+         /* Should have been handled earlier via PCI/USB hotplug code. */
+     case VIR_DOMAIN_NET_TYPE_LAST:
+         break;
++
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
++        virBufferAsprintf(&buf, "netmap%cifname=%s,passthrough=%s,",
++                          type_sep,
++                          net->data.netmap.portname,
++                          net->data.netmap.passthrough ? "on" : "off");
++        break;
+     }
+ 
+     if (vlan >= 0) {
+@@ -8188,6 +8195,7 @@ qemuBuildInterfaceCommandLine(virQEMUDriverPtr driver,
+     case VIR_DOMAIN_NET_TYPE_MCAST:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_UDP:
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+         /* nada */
+         break;
+@@ -8224,6 +8232,7 @@ qemuBuildInterfaceCommandLine(virQEMUDriverPtr driver,
+     case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+        /* These types don't use a network device on the host, but
+         * instead use some other type of connection to the emulated
+diff --git a/src/qemu/qemu_hotplug.c b/src/qemu/qemu_hotplug.c
+index f2e9846..f226d6a 100644
+--- a/src/qemu/qemu_hotplug.c
++++ b/src/qemu/qemu_hotplug.c
+@@ -1108,6 +1108,7 @@ qemuDomainAttachNetDevice(virQEMUDriverPtr driver,
+     case VIR_DOMAIN_NET_TYPE_MCAST:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_UDP:
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+         virReportError(VIR_ERR_OPERATION_UNSUPPORTED,
+                        _("hotplug of interface type of %s is not implemented yet"),
+diff --git a/src/qemu/qemu_interface.c b/src/qemu/qemu_interface.c
+index 455c2d0..a71bab5 100644
+--- a/src/qemu/qemu_interface.c
++++ b/src/qemu/qemu_interface.c
+@@ -122,6 +122,7 @@ qemuInterfaceStartDevice(virDomainNetDefPtr net)
+     case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+         /* these types all require no action */
+         break;
+@@ -210,6 +211,7 @@ qemuInterfaceStopDevice(virDomainNetDefPtr net)
+     case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+         /* these types all require no action */
+         break;
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index 184440d..60d4a7f 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -6180,6 +6180,7 @@ void qemuProcessStop(virQEMUDriverPtr driver,
+         case VIR_DOMAIN_NET_TYPE_INTERNAL:
+         case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+         case VIR_DOMAIN_NET_TYPE_UDP:
++        case VIR_DOMAIN_NET_TYPE_NETMAP:
+         case VIR_DOMAIN_NET_TYPE_LAST:
+             /* No special cleanup procedure for these types. */
+             break;
+diff --git a/src/uml/uml_conf.c b/src/uml/uml_conf.c
+index 6754d3c..5011445 100644
+--- a/src/uml/uml_conf.c
++++ b/src/uml/uml_conf.c
+@@ -200,6 +200,11 @@ umlBuildCommandLineNet(virConnectPtr conn,
+                        _("UDP networking type not supported"));
+         goto error;
+ 
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
++        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                       _("netmap networking type not supported"));
++        goto error;
++
+     case VIR_DOMAIN_NET_TYPE_MCAST:
+         /* ethNNN=tuntap,macaddr,ipaddr,port */
+         virBufferAddLit(&buf, "mcast");
+diff --git a/src/xenconfig/xen_sxpr.c b/src/xenconfig/xen_sxpr.c
+index baa68b1..2b41847 100644
+--- a/src/xenconfig/xen_sxpr.c
++++ b/src/xenconfig/xen_sxpr.c
+@@ -1936,6 +1936,7 @@ xenFormatSxprNet(virConnectPtr conn,
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_DIRECT:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+         break;
+     }
+diff --git a/tools/virsh-domain.c b/tools/virsh-domain.c
+index 93587e8..dd525d2 100644
+--- a/tools/virsh-domain.c
++++ b/tools/virsh-domain.c
+@@ -1001,6 +1001,7 @@ cmdAttachInterface(vshControl *ctl, const vshCmd *cmd)
+     case VIR_DOMAIN_NET_TYPE_MCAST:
+     case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
++    case VIR_DOMAIN_NET_TYPE_NETMAP:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+         vshError(ctl, _("No support for %s in command 'attach-interface'"),
+                  type);

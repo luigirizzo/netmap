@@ -396,6 +396,7 @@ setaffinity(int i)
 {
         cpuset_t cpumask;
 	struct sched_param p;
+	int error;
 
         if (i == -1)
                 return 0;
@@ -404,8 +405,8 @@ setaffinity(int i)
         CPU_ZERO(&cpumask);
         CPU_SET(i, &cpumask);
 
-        if (pthread_setaffinity_np(pthread_self(), sizeof(cpuset_t), &cpumask) != 0) {
-                ED("Unable to set affinity: %s", strerror(errno));
+        if ( (error = pthread_setaffinity_np(pthread_self(), sizeof(cpuset_t), &cpumask)) != 0) {
+                ED("Unable to set affinity to cpu %d: %s", i, strerror(error));
         }
 	if (setpriority(PRIO_PROCESS, 0, -10)) {; // XXX not meaningful
                 ED("Unable to set priority: %s", strerror(errno));
