@@ -179,22 +179,24 @@ index b5ad95e..e3ca6c1 100644
      QEMU_CAPS_LAST /* this must always be the last item */
  } virQEMUCapsFlags;
 diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
-index d459f8e..1d5b3eb 100644
+index d459f8e..68c0a21 100644
 --- a/src/qemu/qemu_command.c
 +++ b/src/qemu/qemu_command.c
-@@ -3803,6 +3803,11 @@ qemuBuildHostNetStr(virDomainNetDefPtr net,
+@@ -3803,6 +3803,13 @@ qemuBuildHostNetStr(virDomainNetDefPtr net,
          /* Should have been handled earlier via PCI/USB hotplug code. */
      case VIR_DOMAIN_NET_TYPE_LAST:
          break;
 +
 +    case VIR_DOMAIN_NET_TYPE_NETMAP:
-+        virBufferAsprintf(&buf, "netmap%cpassthrough=on,",
-+                          type_sep);
++        virBufferAsprintf(&buf, "netmap%cifname=%s,passthrough=%s,",
++                          type_sep,
++                          net->data.netmap.portname,
++                          net->data.netmap.passthrough ? "on" : "off");
 +        break;
      }
  
      if (vlan >= 0) {
-@@ -8188,6 +8193,7 @@ qemuBuildInterfaceCommandLine(virQEMUDriverPtr driver,
+@@ -8188,6 +8195,7 @@ qemuBuildInterfaceCommandLine(virQEMUDriverPtr driver,
      case VIR_DOMAIN_NET_TYPE_MCAST:
      case VIR_DOMAIN_NET_TYPE_INTERNAL:
      case VIR_DOMAIN_NET_TYPE_UDP:
@@ -202,7 +204,7 @@ index d459f8e..1d5b3eb 100644
      case VIR_DOMAIN_NET_TYPE_LAST:
          /* nada */
          break;
-@@ -8224,6 +8230,7 @@ qemuBuildInterfaceCommandLine(virQEMUDriverPtr driver,
+@@ -8224,6 +8232,7 @@ qemuBuildInterfaceCommandLine(virQEMUDriverPtr driver,
      case VIR_DOMAIN_NET_TYPE_UDP:
      case VIR_DOMAIN_NET_TYPE_INTERNAL:
      case VIR_DOMAIN_NET_TYPE_HOSTDEV:
