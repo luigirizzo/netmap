@@ -66,6 +66,7 @@ PROGNAME=$0
 
 NETMAP_BRANCH=${NETMAP_BRANCH:-master}
 PARALLEL_MAKE=${PARALLEL_MAKE:-$(grep -c processor /proc/cpuinfo)}
+NP_DEBUG=${NP_DEBUG:-0}
 
 function error {
 	echo "$@" >&2
@@ -442,7 +443,7 @@ function check-patch()
 				error "no such kernel version: $v1"
 			fi
 			local tmpdir=$(mktemp -d)
-			if [ -z "$NP_DEBUG" ]; then
+			if [ "$NP_DEBUG" -lt 1 ]; then
 				trap "rm -rf $tmpdir" 0
 			fi
 			echo "====== $tmpdir =====" >>$log
@@ -483,7 +484,9 @@ function check-patch()
 		fi
 		[ "$ok" = true ] || { echo FAILED; echo false > $cstatus; return 1; }
 		echo true > $cstatus
-		rm -rf $tmpdir
+		if [ "$NP_DEBUG" -lt 2 ]; then
+			rm -rf $tmpdir
+		fi
 		# compute next version
 		v1=$(scripts/vers $v1 -i)
 	done
