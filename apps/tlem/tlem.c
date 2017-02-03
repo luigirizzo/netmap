@@ -1123,8 +1123,9 @@ cons_update_dst(struct pipe_args *pa, void *pkt)
 		if (nm_inject(pa->pb, &ipv4->arp_request,
 					sizeof(ipv4->arp_request)) == 0) {
 			RD(1, "failed to inject arp request");
+		} else {
+			injected = 1;
 		}
-		injected = 1;
 	}
 	/* copy negated dst into eh (either brodcast or unicast) */
 	*(uint32_t *)eh = ~e->eth1;
