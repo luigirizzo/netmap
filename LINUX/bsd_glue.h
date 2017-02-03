@@ -120,7 +120,7 @@ struct net_device_ops {
 #define netdev_tx_t	int
 #endif
 
-#ifndef NETMAP_LINUX_HAVE_USLEEP_RANGE
+#if !defined(NETMAP_LINUX_HAVE_USLEEP_RANGE) && !defined(usleep_range)
 #define usleep_range(a, b)	msleep((a)+(b)+999)
 #endif
 
@@ -139,21 +139,21 @@ struct net_device_ops {
 	} while (0)
 #endif /* HAVE_SPLIT_PAGE */
 
-#ifndef NETMAP_LINUX_HAVE_NNITD
+#if !defined(NETMAP_LINUX_HAVE_NNITD) && !defined(netdev_notifier_info_to_dev)
 #define netdev_notifier_info_to_dev(ptr)	(ptr)
 #endif /* HAVE_NNITD */
 
-#ifndef NETMAP_LINUX_HAVE_SKB_FRAG_SIZE
+#if !defined(NETMAP_LINUX_HAVE_SKB_FRAG_SIZE) && !defined(skb_frag_size)
 static inline unsigned int skb_frag_size(const skb_frag_t *frag) {
 	return frag->size;
 }
 #endif
-#ifndef NETMAP_LINUX_HAVE_SKB_FRAG_ADDRESS
+#if !defined(NETMAP_LINUX_HAVE_SKB_FRAG_ADDRESS) && !defined(skb_frag_address)
 static inline void *skb_frag_address(const skb_frag_t *frag) {
 	return page_address(frag->page) + frag->page_offset;
 }
 #endif
-#ifndef NETMAP_LINUX_HAVE_SKB_CHECKSUM_START_OFFSET
+#if !defined(NETMAP_LINUX_HAVE_SKB_CHECKSUM_START_OFFSET) && !defined(skb_checksum_start_offset)
 static inline int skb_checksum_start_offset(const struct sk_buff *skb) {
 	return skb->csum_start - skb_headroom(skb);
 }
