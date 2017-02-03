@@ -448,12 +448,19 @@ function check-patch()
 			echo "====== $tmpdir =====" >>$log
 			(cd ..; git archive $NETMAP_BRANCH | tar xf - -C $tmpdir )
 			pushd $tmpdir/LINUX >/dev/null
-			mkdir single-patch
 			rm -f patches
-			ln -s single-patch patches
-			cp $p single-patch
 			ok=false
-			cp /dev/null config.mak
+			config_opts=
+			if [ -z "$EXT_DRIVERS" ]; then
+				config_opts=--no-ext-drivers
+				mkdir single-patch
+				ln -s single-patch patches
+				cp $p single-patch
+			else
+				rm -rf ext-drivers
+				ln -s $EXT_DRIVERS ext-drivers
+				ln -s final-patches patches
+			fi
 			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX \
 				--drivers=$driver \
 				--disable-generic \
@@ -461,9 +468,9 @@ function check-patch()
 				--disable-monitor \
 				--disable-pipe \
 				--disable-ptnetmap \
-				--no-ext-drivers \
 				--no-apps \
 				--kernel-opts=CONFIG_STACK_VALIDATION= \
+				$config_opts \
 				--cache=$cache >>$log
 			(make get-$driver && make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
 			grep -q warning: $log && { warn=true; echo $warn > $cwarn; }
