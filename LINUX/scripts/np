@@ -461,12 +461,14 @@ function check-patch()
 				ln -s $EXT_DRIVERS ext-drivers
 				ln -s final-patches patches
 			fi
+			if [ "$driver" != "veth.c" ]; then
+				config_opts="$config_opts --disable-pipe"
+			fi
 			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX \
 				--drivers=$driver \
 				--disable-generic \
 				--disable-vale \
 				--disable-monitor \
-				--disable-pipe \
 				--disable-ptnetmap \
 				--no-apps \
 				--kernel-opts=CONFIG_STACK_VALIDATION= \
