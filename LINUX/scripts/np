@@ -442,7 +442,10 @@ function check-patch()
 				error "no such kernel version: $v1"
 			fi
 			local tmpdir=$(mktemp -d)
-			trap "rm -rf $tmpdir" 0
+			if [ -z "$NP_DEBUG" ]; then
+				trap "rm -rf $tmpdir" 0
+			fi
+			echo "====== $tmpdir =====" >>$log
 			(cd ..; git archive $NETMAP_BRANCH | tar xf - -C $tmpdir )
 			pushd $tmpdir/LINUX >/dev/null
 			mkdir single-patch
