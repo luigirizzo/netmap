@@ -388,7 +388,7 @@ ports attached to the switch)
  *
  *      - VALE ports:
  *         concurrently:
- *             1) ioctlNIOCRXSYNC)/netmap_poll() in process context
+ *             1) ioctl(NIOCRXSYNC)/netmap_poll() in process context
  *                    kring->nm_sync() == netmap_vp_rxsync()
  *             2) from nm_bdg_flush()
  *                    na->nm_notify() == netmap_notify()
