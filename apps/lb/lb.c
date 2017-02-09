@@ -80,6 +80,7 @@ struct compact_ipv6_hdr {
 };
 
 #define MAX_IFNAMELEN 	64
+#define MAX_PORTNAMELEN	(MAX_IFNAMELEN + 40)
 #define DEF_OUT_PIPES 	2
 #define DEF_EXTRA_BUFS 	0
 #define DEF_BATCH	2048
@@ -166,6 +167,7 @@ uint64_t non_ip = 0;
 uint32_t freeq_n = 0;
 
 struct port_des {
+	char interface[MAX_PORTNAMELEN];
 	struct my_ctrs ctr;
 	unsigned int last_sync;
 	struct overflow_queue *oq;
@@ -188,6 +190,21 @@ struct group_des {
 
 struct group_des *groups;
 
+/* statistcs */
+struct counters {
+	struct timeval ts;
+	struct my_ctrs *ctrs;
+	uint64_t received_pkts;
+	uint64_t received_bytes;
+	uint64_t non_ip;
+	uint32_t freeq_n;
+	int status __attribute__((aligned(64)));
+#define COUNTERS_EMPTY	0
+#define COUNTERS_FULL	1
+};
+
+struct counters counters_buf;
+
 static void *
 print_stats(void *arg)
 {
@@ -203,17 +220,27 @@ print_stats(void *arg)
 		exit(1);
 	}
 
-	char stat_msg[STAT_MSG_MAXSIZE];
+	char stat_msg[STAT_MSG_MAXSIZE] = "";
 
 	memset(&prev, 0, sizeof(prev));
-	gettimeofday(&prev.t, NULL);
 	while (!do_abort) {
-		int j, dosyslog, dostdout = 0;
-		uint64_t pps, dps, bps, dbps, usec;
+		int j, dosyslog, dostdout = 0, newdata;
+		uint64_t pps = 0, dps = 0, bps = 0, dbps = 0, usec = 0;
 		struct my_ctrs x;
 
+		counters_buf.status = COUNTERS_EMPTY;
+		newdata = 0;
 		memset(&cur, 0, sizeof(cur));
-		usec = wait_for_next_report(&prev.t, &cur.t, 1000);
+		sleep(1);
+		if (counters_buf.status == COUNTERS_FULL) {
+			__sync_synchronize();
+			newdata = 1;
+			cur.t = counters_buf.ts;
+			if (prev.t.tv_sec || prev.t.tv_usec) {
+				usec = (cur.t.tv_sec - prev.t.tv_sec) * 1000000 +
+					cur.t.tv_usec - prev.t.tv_usec;
+			}
+		}
 
 		++sys_int;
 		if (glob_arg.stdout_interval && sys_int % glob_arg.stdout_interval == 0)
@@ -222,23 +249,25 @@ print_stats(void *arg)
 				dosyslog = 1;
 
 		for (j = 0; j < npipes; ++j) {
-			struct port_des *p = &ports[j];
-			cur.pkts += p->ctr.pkts;
-			cur.drop += p->ctr.drop;
-			cur.drop_bytes += p->ctr.drop_bytes;
-			cur.bytes += p->ctr.bytes;
+			struct my_ctrs *c = &counters_buf.ctrs[j];
+			cur.pkts += c->pkts;
+			cur.drop += c->drop;
+			cur.drop_bytes += c->drop_bytes;
+			cur.bytes += c->bytes;
 
-			x.pkts = p->ctr.pkts - pipe_prev[j].pkts;
-			x.drop = p->ctr.drop - pipe_prev[j].drop;
-			x.bytes = p->ctr.bytes - pipe_prev[j].bytes;
-			x.drop_bytes = p->ctr.drop_bytes - pipe_prev[j].drop_bytes;
-			pps = (x.pkts*1000000 + usec/2) / usec;
-			dps = (x.drop*1000000 + usec/2) / usec;
-			bps = ((x.bytes*1000000 + usec/2) / usec) * 8;
-			dbps = ((x.drop_bytes*1000000 + usec/2) / usec) * 8;
-			pipe_prev[j] = p->ctr;
+			if (usec) {
+				x.pkts = c->pkts - pipe_prev[j].pkts;
+				x.drop = c->drop - pipe_prev[j].drop;
+				x.bytes = c->bytes - pipe_prev[j].bytes;
+				x.drop_bytes = c->drop_bytes - pipe_prev[j].drop_bytes;
+				pps = (x.pkts*1000000 + usec/2) / usec;
+				dps = (x.drop*1000000 + usec/2) / usec;
+				bps = ((x.bytes*1000000 + usec/2) / usec) * 8;
+				dbps = ((x.drop_bytes*1000000 + usec/2) / usec) * 8;
+			}
+			pipe_prev[j] = *c;
 
-			if ( dosyslog || dostdout )
+			if ( (dosyslog || dostdout) && newdata )
 				snprintf(stat_msg, STAT_MSG_MAXSIZE,
 				       "{"
 				       "\"ts\":%.6f,"
@@ -252,31 +281,33 @@ print_stats(void *arg)
 				       "\"packet_drop_rate_kpps\":%.4f,"
 				       "\"overflow_queue_size\":%" PRIu32
 				       "}", cur.t.tv_sec + (cur.t.tv_usec / 1000000.0),
-				            glob_arg.ifname,
+				            ports[j].interface,
 				            j,
-				            p->ctr.pkts,
-				            p->ctr.drop,
+				            c->pkts,
+				            c->drop,
 				            (double)bps / 1024 / 1024,
 				            (double)dbps / 1024 / 1024,
 				            (double)pps / 1000,
 				            (double)dps / 1000,
-				            p->ctr.oq_n);
+				            c->oq_n);
 
-			if (dosyslog)
+			if (dosyslog && stat_msg[0])
 				syslog(LOG_INFO, "%s", stat_msg);
-			if (dostdout)
+			if (dostdout && stat_msg[0])
 				printf("%s\n", stat_msg);
 		}
-		x.pkts = cur.pkts - prev.pkts;
-		x.drop = cur.drop - prev.drop;
-		x.bytes = cur.bytes - prev.bytes;
-		x.drop_bytes = cur.drop_bytes - prev.drop_bytes;
-		pps = (x.pkts*1000000 + usec/2) / usec;
-		dps = (x.drop*1000000 + usec/2) / usec;
-		bps = ((x.bytes*1000000 + usec/2) / usec) * 8;
-		dbps = ((x.drop_bytes*1000000 + usec/2) / usec) * 8;
+		if (usec) {
+			x.pkts = cur.pkts - prev.pkts;
+			x.drop = cur.drop - prev.drop;
+			x.bytes = cur.bytes - prev.bytes;
+			x.drop_bytes = cur.drop_bytes - prev.drop_bytes;
+			pps = (x.pkts*1000000 + usec/2) / usec;
+			dps = (x.drop*1000000 + usec/2) / usec;
+			bps = ((x.bytes*1000000 + usec/2) / usec) * 8;
+			dbps = ((x.drop_bytes*1000000 + usec/2) / usec) * 8;
+		}
 
-		if ( dosyslog || dostdout )
+		if ( (dosyslog || dostdout) && newdata )
 			snprintf(stat_msg, STAT_MSG_MAXSIZE,
 			         "{"
 			         "\"ts\":%.6f,"
@@ -296,16 +327,16 @@ print_stats(void *arg)
 			              received_pkts,
 			              cur.pkts,
 			              cur.drop,
-			              non_ip,
+			              counters_buf.non_ip,
 			              (double)bps / 1024 / 1024,
 			              (double)dbps / 1024 / 1024,
 			              (double)pps / 1000,
 			              (double)dps / 1000,
-			              freeq_n);
+			              counters_buf.freeq_n);
 
-		if (dosyslog)
+		if (dosyslog && stat_msg[0])
 			syslog(LOG_INFO, "%s", stat_msg);
-		if (dostdout)
+		if (dostdout && stat_msg[0])
 			printf("%s\n", stat_msg);
 
 		prev = cur;
@@ -643,6 +674,13 @@ int main(int argc, char **argv)
 	struct port_des *rxport = &ports[npipes];
 	init_groups();
 
+	memset(&counters_buf, 0, sizeof(counters_buf));
+	counters_buf.ctrs = calloc(npipes, sizeof(struct my_ctrs));
+	if (!counters_buf.ctrs) {
+		D("failed to allocate the counters snapshot buffer");
+		return 1;
+	}
+
 	if (pthread_create(&stat_thread, NULL, print_stats, NULL) == -1) {
 		D("unable to create the stats thread: %s", strerror(errno));
 		return 1;
@@ -731,19 +769,18 @@ run:
 		int k;
 		for (k = 0; k < g->nports; ++k) {
 			struct port_des *p = &g->ports[k];
-			char interface[25];
-			sprintf(interface, "netmap:%s{%d/xT@%d", g->pipename, g->first_id + k,
+			snprintf(p->interface, MAX_PORTNAMELEN, "netmap:%s{%d/xT@%d", g->pipename, g->first_id + k,
 					rxport->nmd->req.nr_arg2);
-			D("opening pipe named %s", interface);
+			D("opening pipe named %s", p->interface);
 
-			p->nmd = nm_open(interface, NULL, 0, rxport->nmd);
+			p->nmd = nm_open(p->interface, NULL, 0, rxport->nmd);
 
 			if (p->nmd == NULL) {
-				D("cannot open %s", interface);
+				D("cannot open %s", p->interface);
 				return (1);
 			} else {
 				D("successfully opened pipe #%d %s (tx slots: %d)",
-				  k + 1, interface, p->nmd->req.nr_tx_slots);
+				  k + 1, p->interface, p->nmd->req.nr_tx_slots);
 				p->ring = NETMAP_TXRING(p->nmd->nifp, 0);
 			}
 			D("zerocopy %s",
@@ -899,18 +936,27 @@ run:
 
 		}
 
-		/*
-		 * If there are overflow queues, copy the number of them for each
-		 * port to the ctrs.oq_n variable for each port, otherwise set it to 0.
-		 */
-		for (i=0; i < npipes + 1; i++) {
-			if (ports[i].oq != NULL) {
-				ports[i].ctr.oq_n = ports[i].oq->n;
-			} else {
-				ports[i].ctr.oq_n = 0;
-			}
+		if (counters_buf.status == COUNTERS_FULL)
+			continue;
+		/* take a new snapshot of the counters */
+		gettimeofday(&counters_buf.ts, NULL);
+		for (i = 0; i < npipes; i++) {
+			struct my_ctrs *c = &counters_buf.ctrs[i];
+			*c = ports[i].ctr;
+			/*
+			 * If there are overflow queues, copy the number of them for each
+			 * port to the ctrs.oq_n variable for each port.
+			 */
+			if (ports[i].oq != NULL)
+				c->oq_n = ports[i].oq->n;
 		}
-
+		counters_buf.received_pkts = received_pkts;
+		counters_buf.received_bytes = received_bytes;
+		counters_buf.non_ip = non_ip;
+		if (freeq != NULL)
+			counters_buf.freeq_n = freeq->n;
+		__sync_synchronize();
+		counters_buf.status = COUNTERS_FULL;
 	}
 
 	/*

@@ -89,7 +89,7 @@ timespec_sub(struct timespec a, struct timespec b)
 	return ret;
 }
 
-static uint64_t
+static __inline uint64_t
 wait_for_next_report(struct timeval *prev, struct timeval *cur,
 		int report_interval)
 {
