@@ -434,7 +434,7 @@ struct ipv4_info {
 };
 
 void
-ipv4_dump(const char *name, const struct ipv4_info *i)
+ipv4_dump(const struct ipv4_info *i)
 {
 	const uint8_t *ipa = (uint8_t *)&i->ip_addr,
 		      *ipm = (uint8_t *)&i->ip_mask,
@@ -442,7 +442,7 @@ ipv4_dump(const char *name, const struct ipv4_info *i)
 		      *ea = i->ether_addr;
 
 	ED("%s: ip %u.%u.%u.%u/%u.%u.%u.%u bcast %u.%u.%u.%u mac %02x:%02x:%02x:%02x:%02x:%02x",
-			name,
+			i->name,
 			ipa[0], ipa[1], ipa[2], ipa[3],
 			ipm[0], ipm[1], ipm[2], ipm[3],
 			ipb[0], ipb[1], ipb[2], ipb[3],
@@ -1672,7 +1672,7 @@ main(int argc, char **argv)
 			/* cache the subnet */
 			ip->ip_subnet = ip->ip_addr & ip->ip_mask;
 
-			ipv4_dump(ifname[i], ip);
+			ipv4_dump(ip);
 
 			/* precompute the arp reply for this interface */
 			eh = &ip->arp_reply.arp.eh;
