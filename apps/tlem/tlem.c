@@ -153,6 +153,7 @@ static int do_abort = 0;
 #include <net/if_arp.h>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
+#include <arpa/inet.h>
 
 #include <sys/resource.h> // setpriority
 
@@ -410,47 +411,6 @@ struct _qs { /* shared queue */
  *
  */
 
-/* IPv4 info for a port. Shared between the producer and the consumer that
- * insist on the same port
- */
-struct ipv4_info {
-	char		name[IFNAMSIZ + 1];
-	in_addr_t	ip_addr;
-	in_addr_t	ip_mask;
-	in_addr_t	ip_subnet;
-	in_addr_t	ip_bcast;
-	in_addr_t	ip_gw;
-	uint8_t		ether_addr[6];
-	/* pre-formatted arp messages */
-	union {
-		uint8_t pkt[60];
-		struct {
-			struct ether_header eh;
-			struct ether_arp    ah;
-		} arp __attribute__((packed));
-	} arp_reply, arp_request;
-
-	struct arp_table_entry *arp_table;
-};
-
-void
-ipv4_dump(const struct ipv4_info *i)
-{
-	const uint8_t *ipa = (uint8_t *)&i->ip_addr,
-		      *ipm = (uint8_t *)&i->ip_mask,
-		      *ipb = (uint8_t *)&i->ip_bcast,
-		      *ea = i->ether_addr;
-
-	ED("%s: ip %u.%u.%u.%u/%u.%u.%u.%u bcast %u.%u.%u.%u mac %02x:%02x:%02x:%02x:%02x:%02x",
-			i->name,
-			ipa[0], ipa[1], ipa[2], ipa[3],
-			ipm[0], ipm[1], ipm[2], ipm[3],
-			ipb[0], ipb[1], ipb[2], ipb[3],
-			ea[0], ea[1], ea[2], ea[3], ea[4], ea[5]);
-}
-
-struct ipv4_info ipv4[2];
-
 /* the arp table is implemented as a sparse array indexed by
  * the host part of the ip address.
  *
@@ -595,6 +555,50 @@ is_arp(const void *pkt)
 }
 
 struct arp_cmd_q arpq[2];
+
+/* IPv4 info for a port. Shared between the producer and the consumer that
+ * insist on the same port
+ */
+struct ipv4_info {
+	char		name[IFNAMSIZ + 1];
+	in_addr_t	ip_addr;
+	in_addr_t	ip_mask;
+	in_addr_t	ip_subnet;
+	in_addr_t	ip_bcast;
+	in_addr_t	ip_gw;
+	uint8_t		ether_addr[6];
+	/* pre-formatted arp messages */
+	union {
+		uint8_t pkt[60];
+		struct {
+			struct ether_header eh;
+			struct ether_arp    ah;
+		} arp __attribute__((packed));
+	} arp_reply, arp_request;
+
+	struct arp_table_entry *arp_table;
+};
+
+void
+ipv4_dump(const struct ipv4_info *i)
+{
+	const uint8_t *ipa = (uint8_t *)&i->ip_addr,
+		      *ipm = (uint8_t *)&i->ip_mask,
+		      *ipb = (uint8_t *)&i->ip_bcast,
+		      *ipc = (uint8_t *)&i->ip_gw,
+		      *ea = i->ether_addr;
+
+	ED("%s: ip %u.%u.%u.%u/%u.%u.%u.%u bcast %u.%u.%u.%u gw %u.%u.%u.%u mac %02x:%02x:%02x:%02x:%02x:%02x",
+			i->name,
+			ipa[0], ipa[1], ipa[2], ipa[3],
+			ipm[0], ipm[1], ipm[2], ipm[3],
+			ipb[0], ipb[1], ipb[2], ipb[3],
+			ipc[0], ipc[1], ipc[2], ipc[3],
+			ea[0], ea[1], ea[2], ea[3], ea[4], ea[5]);
+}
+
+struct ipv4_info ipv4[2];
+
 
 struct pipe_args {
 	int		zerocopy;
@@ -975,7 +979,7 @@ prod_push_arp(const struct pipe_args *pa, const void *pkt)
 	memcpy(&ip_saddr, arp->arp_spa, 4);
 	memcpy(&ip_taddr, arp->arp_tpa, 4);
 	if (ip_taddr != ip->ip_addr ||
-	    (ip_saddr & ip->ip_mask) != (ip->ip_addr & ip->ip_mask) ||
+	    ((ip_saddr & ip->ip_mask) != ip->ip_subnet) ||
 	    (arpop != ARPOP_REQUEST && arpop != ARPOP_REPLY)) {
 		/* not for us, drop */
 		return;
@@ -1074,7 +1078,6 @@ cons_handle_arp(struct pipe_args *pa, struct arp_cmd *c)
 		rv = pa->q.burst;
 		break;
 	case ARPOP_REPLY:
-		/* update local arp table */
 		e = ip->arp_table + arp_idx(c->ip_addr, ip->ip_mask);
 		set_tns_now(&e->next_req, pa->q.cons_now);
 		e->next_req += 5000000000;
@@ -1111,8 +1114,14 @@ cons_update_dst(struct pipe_args *pa, void *pkt)
 		return -1; /* drop */
 	if (unlikely(dst == ipv4->ip_bcast || dst == 0xffffffff))
 		return -1; /* drop */
-	if (unlikely((dst & ipv4->ip_mask) != ipv4->ip_subnet))
-		return -1; /* drop */ // XXX support default gw
+	if ((dst & ipv4->ip_mask) != ipv4->ip_subnet) {
+		if (ipv4->ip_gw) {
+			/* send to the default gateway */
+			dst = ipv4->ip_gw;
+		} else {
+			return -1; /* drop */
+		}
+	}
 	idx = arp_idx(dst, ipv4->ip_mask);
 	e = ipv4->arp_table + idx;
 	ND("idx %d e %p", idx, e);
@@ -1339,7 +1348,7 @@ usage(void)
 {
 	fprintf(stderr,
 	    "usage: tlem [-v] [-D delay] [-B bps] [-L loss] [-Q qsize] \n"
-	    "\t[-b burst] [-w wait_time] -i ifa -i ifb\n");
+	    "\t[-b burst] [-w wait_time] [-G gateway] -i ifa -i ifb\n");
 	exit(1);
 }
 
@@ -1474,13 +1483,15 @@ main(int argc, char **argv)
 
 #define	N_OPTS	2
 	struct pipe_args bp[N_OPTS];
-	const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS];
+	const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS],
+		*gw[N_OPTS];
 	int cores[4] = { 2, 8, 4, 10 }; /* default values */
 
 	bzero(d, sizeof(d));
 	bzero(b, sizeof(b));
 	bzero(l, sizeof(l));
 	bzero(q, sizeof(q));
+	bzero(gw, sizeof(gw));
 	bzero(ifname, sizeof(ifname));
 
 	fprintf(stderr, "%s built %s %s\n", argv[0], __DATE__, __TIME__);
@@ -1507,7 +1518,7 @@ main(int argc, char **argv)
 	// b	batch size
 	// r	route mode
 
-	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:b:ci:vw:r")) != -1) {
+	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:G:b:ci:vw:r")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -1556,6 +1567,9 @@ main(int argc, char **argv)
 
 		case 'L': /* loss probability */
 			add_to(l, N_OPTS, optarg, "-L too many times");
+			break;
+		case 'G': /* default gateway */
+			add_to(gw, N_OPTS, optarg, "-G too many times");
 			break;
 		case 'b':	/* burst */
 			bp[0].q.burst = atoi(optarg);
@@ -1671,6 +1685,21 @@ main(int argc, char **argv)
 
 			/* cache the subnet */
 			ip->ip_subnet = ip->ip_addr & ip->ip_mask;
+
+			/* default gateway, if any */
+			if (gw[i]) {
+				struct ipv4_info *ip = &ipv4[i];
+				struct in_addr a;
+				if (!inet_aton(gw[i], &a)) {
+					ED("not a valid IP address: %s", gw[i]);
+					usage();
+				}
+				if ((a.s_addr & ip->ip_mask) != ip->ip_subnet) {
+					ED("gateway %s unreachable", gw[i]);
+					usage();
+				}
+				ip->ip_gw = a.s_addr;
+			}
 
 			ipv4_dump(ip);
 
