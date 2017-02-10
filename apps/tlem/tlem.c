@@ -417,6 +417,7 @@ struct ipv4_info {
 	char		name[IFNAMSIZ + 1];
 	in_addr_t	ip_addr;
 	in_addr_t	ip_mask;
+	in_addr_t	ip_subnet;
 	in_addr_t	ip_bcast;
 	in_addr_t	ip_gw;
 	uint8_t		ether_addr[6];
@@ -1090,7 +1091,8 @@ cons_handle_arp(struct pipe_args *pa, struct arp_cmd *c)
 
 /* change the ethernet target address according to the local ARP table.
  * may send an ARP request.
- * returns the number of packets injected.
+ * returns the number of packets injected, or < 0 if the packet
+ * needs to be dropped
  */
 static inline int
 cons_update_dst(struct pipe_args *pa, void *pkt)
@@ -1106,9 +1108,11 @@ cons_update_dst(struct pipe_args *pa, void *pkt)
 
 	ND("dst %u.%u.%u.%u", d[0], d[1], d[2], d[3]);
 	if (unlikely(!(eh->ether_type == ntohs(ETHERTYPE_IP))))
-		return 0;
-	if (dst == ipv4->ip_bcast || dst == 0xffffffff)
-		return 0;
+		return -1; /* drop */
+	if (unlikely(dst == ipv4->ip_bcast || dst == 0xffffffff))
+		return -1; /* drop */
+	if (unlikely((dst & ipv4->ip_mask) != ipv4->ip_subnet))
+		return -1; /* drop */ // XXX support default gw
 	idx = arp_idx(dst, ipv4->ip_mask);
 	e = ipv4->arp_table + idx;
 	ND("idx %d e %p", idx, e);
@@ -1211,7 +1215,12 @@ cons(void *_pa)
 	ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
 		p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
 	if (pa->route_mode && !retrying) {
-		pending += cons_update_dst(pa, p + 1);
+		int injected = cons_update_dst(pa, p + 1);
+		if (unlikely(injected < 0)) {
+			/* drop */
+			continue;
+		}
+		pending += injected;
 	}
 	/* XXX inefficient but simple */
 	if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0) {
@@ -1659,6 +1668,9 @@ main(int argc, char **argv)
 			/* broadcast */
 			get_ip_info(SIOCGIFBRDADDR, ip_bcast, "broadcast");
 #undef get_ip_info
+
+			/* cache the subnet */
+			ip->ip_subnet = ip->ip_addr & ip->ip_mask;
 
 			ipv4_dump(ifname[i], ip);
 
