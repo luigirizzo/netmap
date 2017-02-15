@@ -154,10 +154,12 @@ static int do_abort = 0;
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <arpa/inet.h>
+#include <ifaddrs.h>
 
 #include <sys/resource.h> // setpriority
 
 #ifdef __FreeBSD__
+#include <net/if_dl.h>	/* sokcaddr_dl */
 #include <pthread_np.h> /* pthread w/ affinity */
 #include <sys/cpuset.h> /* cpu_set */
 #endif /* __FreeBSD__ */
@@ -1619,6 +1621,14 @@ main(int argc, char **argv)
 	if (bp[0].route_mode) {
 		int fd;
 		struct ifreq ifr;
+#ifdef __FreeBSD__
+		struct ifaddrs *ifap, *p;
+
+		if (getifaddrs(&ifap) < 0) {
+			ED("failed to get interface list: %s", strerror(errno));
+			usage();
+		}
+#endif /* __FreeBSD__ */
 
 		fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
 
@@ -1633,6 +1643,7 @@ main(int argc, char **argv)
 			const char *scan;
 			struct ether_header *eh;
 			struct ether_arp *ah;
+			void *hwaddr = NULL;
 
 			/* try to extract the port name */
 			if (!strncmp("vale", ifname[i], 4)) {
@@ -1654,14 +1665,33 @@ main(int argc, char **argv)
 			ED("trying to get configuration for %s", ip->name);
 
 			/* MAC address */
+#ifdef linux
 			memset(&ifr, 0, sizeof(ifr));
 			strcpy(ifr.ifr_name, ip->name);
-			if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0) {
-				ED("failed to get MAC address for %s: %s:",
-						ip->name, strerror(errno));
-				usage();
+			if (ioctl(fd, SIOCGIFHWADDR, &ifr) >= 0) {
+				hwaddr = ifr.ifr_addr.sa_data;
 			}
-			memcpy(ip->ether_addr, ifr.ifr_addr.sa_data, 6);
+#elif defined (__FreeBSD__)
+			errno = ENOENT;
+			for (p = ifap; p; p = p->ifa_next) {
+
+				if (!strcmp(p->ifa_name, ip->name) &&
+					p->ifa_addr != NULL &&
+					p->ifa_addr->sa_family == AF_LINK)
+				{
+					struct sockaddr_dl *sdp =
+						(struct sockaddr_dl *)p->ifa_addr;
+					hwaddr = sdp->sdl_data + sdp->sdl_nlen;
+					break;
+				}
+			}
+#endif /* __FreeBSD__ */
+			if (hwaddr == NULL) {
+			        ED("failed to get MAC address for %s: %s",
+			                        ip->name, strerror(errno));
+			        usage();
+			}
+			memcpy(ip->ether_addr, hwaddr, 6);
 
 #define get_ip_info(_c, _f, _m) 								\
 			memset(&ifr, 0, sizeof(ifr));						\
@@ -1735,6 +1765,9 @@ main(int argc, char **argv)
 		}
 
 		close(fd);
+#ifdef __FreeBSD__
+		freeifaddrs(ifap);
+#endif /* __FreeBSD__ */
 	}
 
 	bp[1] = bp[0]; /* copy parameters, but swap interfaces */
