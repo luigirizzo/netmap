@@ -1698,7 +1698,7 @@ main(int argc, char **argv)
 			strcpy(ifr.ifr_name, ip->name);						\
 			ifr.ifr_addr.sa_family = AF_INET;					\
 			if (ioctl(fd, _c, &ifr) < 0) {						\
-				ED("failed to get IPv4 " _m " for %s: %s:",			\
+				ED("failed to get IPv4 " _m " for %s: %s",			\
 						ip->name, strerror(errno));			\
 				usage();							\
 			}									\
@@ -1712,6 +1712,12 @@ main(int argc, char **argv)
 			/* broadcast */
 			get_ip_info(SIOCGIFBRDADDR, ip_bcast, "broadcast");
 #undef get_ip_info
+
+			/* do we have an IP address? */
+			if (ip->ip_addr == 0) {
+				ED("no IPv4 address found for %s", ip->name);
+				usage();
+			}
 
 			/* cache the subnet */
 			ip->ip_subnet = ip->ip_addr & ip->ip_mask;
