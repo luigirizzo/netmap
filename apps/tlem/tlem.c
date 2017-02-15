@@ -1487,7 +1487,8 @@ main(int argc, char **argv)
 	struct pipe_args bp[N_OPTS];
 	const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS],
 		*gw[N_OPTS];
-	int cores[4] = { 2, 8, 4, 10 }; /* default values */
+	int ncpus;
+	int cores[4];
 
 	bzero(d, sizeof(d));
 	bzero(b, sizeof(b));
@@ -1508,6 +1509,20 @@ main(int argc, char **argv)
 	    q->c_loss.run = null_run_fn;
 	    q->c_bw.optarg = "0";
 	    q->c_bw.run = null_run_fn;
+	}
+
+	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+	if (ncpus <= 0) {
+		ED("failed to get the number of online CPUs: %s",
+			strerror(errno));
+		cores[0] = cores[1] = cores[2] = cores[3] = 0;
+	} else {
+		/* try to put prod/cons on two HT of the same core */
+		int h = ncpus / 2;
+		cores[0] = h / 3;
+		cores[1] = cores[0] + h;
+		cores[2] = (2 * h) / 3;
+		cores[3] = cores[2] + h;
 	}
 
 	// Options:
