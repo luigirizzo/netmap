@@ -184,11 +184,21 @@ function get-range()
 	get-params "driver version1 version2"	 "$@"
 
 	local v=$version1
+	local nv
 	# while version is less than $version2
 	while scripts/vers -b $v $version2 -L; do
-		get-patch $driver $v
 		# compute next version
-		v=$(scripts/vers $v -i)
+		nv=$(scripts/vers $v -i)
+		if [ -z "$EXTDRV" ]; then
+			get-patch $driver $v
+		else
+			local V1=$(scripts/vers $v -c)
+			local V2=$(scripts/vers $nv -c)
+			local p=tmp-patches/external--$driver--$V1--$V2
+			touch $p
+			echo $p
+		fi
+		v=$nv
 	done
 }
 
@@ -395,14 +405,17 @@ function check-patch()
 {
 	get-params "patch" "$@"
 
+	local _patch=$(basename $patch)
 	# extract the left version
-	local v1=$(scripts/vers $patch -s -p -C)
+	local v1=$(scripts/vers $_patch -s -p -C)
 	# extract the right version
-	local v2=$(scripts/vers $patch -s -C)
+	local v2=$(scripts/vers $_patch -s -C)
 	# extract the uncoverted right version (might be 99999)
-	local end=$(scripts/vers $patch -s)
+	local end=$(scripts/vers $_patch -s)
 	# extract the driver name
-	local driver=$(scripts/vers $patch -s -p -p)
+	local driver=$(scripts/vers $_patch -s -p -p)
+	# extract the driver type (vanilla or external)
+	local dtype=$(scripts/vers $_patch -s -p)
 	local p=$(realpath $patch)
 	mkdir -p log
 	local log="$(realpath log)/$(basename $patch)"
@@ -415,7 +428,7 @@ function check-patch()
 
 	while scripts/vers -b $v1 $v2 -L; do
 		# cache lookup
-		local cache=$PWD/cache/$v1/$driver
+		local cache=$PWD/cache/$v1/$dtype-$driver
 		mkdir -p $cache
 		local cpatch=$cache/patch
 		local cnmcommit=$cache/nmcommit
@@ -507,8 +520,12 @@ function build-check()
 	get-params "driver" "$@"
 
 	mkdir -p failed-patches
+	local dtype=vanilla
+	if [ "$EXTDRV" = 1 ]; then
+		dtype=external
+	fi
 	local drv=$(basename $driver)
-	local patches=$(ls tmp-patches/vanilla--$drv--* 2>/dev/null)
+	local patches=$(ls tmp-patches/$dtype--$drv--* 2>/dev/null)
 	local p
 	for p in $patches; do
 		check-patch $p || mv $p failed-patches
@@ -546,8 +563,10 @@ function auto()
 	fi
 	get-range $driver $MINVERS $NEXTVERS
 	build-check $driver
-	minimize $driver
-	infty $driver $NEXTVERS
+	if [ -z "$EXTDRV" ]; then
+		minimize $driver
+		infty $driver $NEXTVERS
+	fi
 }
 
 ##
@@ -559,13 +578,26 @@ function forall()
 	shift
 
 	local driver
-	for driver in $(./configure --show-drivers); do
+	for driver in $(./configure --show${EXTDRV:+-ext}-drivers); do
 		$cmd $(basename $driver) "$@"
 	done
 }
 
 mkdir -p tmp-patches
 
+EXTDRV=
+if [ "$1" = -e ]; then
+	if [ -z "$EXT_DRIVERS" ]; then
+		echo "EXT_DRIVERS not set"
+		exit 1
+	fi
+	if ! [ -d "$EXT_DRIVERS" ]; then
+		echo "$EXT_DRIVERS not a directory"
+		exit 1
+	fi
+	EXTDRV=1
+	shift
+fi
 COMMAND=$1; shift
 case $COMMAND in
 ##

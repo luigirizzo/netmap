@@ -6,6 +6,7 @@ $(1)@build 	:= make -C $(1) CFLAGS_EXTRA="$($(1)@cflags) $(EXTRA_CFLAGS)" @KOPTS
 $(1)@install 	:= make -C $(1) install INSTALL_MOD_PATH=@MODPATH@ CFLAGS_EXTRA="$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
 $(1)@clean 	:= if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
 $(1)@distclean	:= rm -rf $(1)-$(2)
+$(1)@force	:= 1
 endef
 
 enabled_intel_driver = $(if $(filter $(1),$(E_DRIVERS)),$(eval $(call intel_driver,$(1),$(2))))

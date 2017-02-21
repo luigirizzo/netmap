@@ -716,13 +716,14 @@ for d in $(drv print); do
 	# skip this driver
 	# (we do this mainly to be sure that any module dependency has already
 	#  been taken care of)
-	# XXX maybe add a (per driver?) flag to force compilation anyway
-	m="$(eval echo \$$drv_conf)"
-	[ -n "$m" ] || {
-		echo "$drv_conf not set in $ksrc/.config, skipping $d" | warning
-		drv disable $d
-		continue
-	}
+	if [ -z "$drv_force" ]; then
+		m="$(eval echo \$$drv_conf)"
+		[ -n "$m" ] || {
+			echo "$drv_conf not set in $ksrc/.config, skipping $d" | warning
+			drv disable $d
+			continue
+		}
+	fi
 	[ "$m" = y ] && [ -z "$drvsuffix" ] && {
 		warning <<EOF
 The $d driver is not compiled as a module:
