@@ -2891,6 +2891,7 @@ out:
 	}
 	start_threads(&g);
 	/* Install the handler and re-enable SIGINT for the main thread */
+	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sigint_h;
 	if (sigaction(SIGINT, &sa, NULL) < 0) {
 		D("failed to install ^C handler: %s", strerror(errno));
