@@ -1217,7 +1217,10 @@ cons(void *_pa)
 	    ND(4, "                 >>>> TXSYNC, pkt not ready yet h %ld t %ld now %ld tx %ld",
 		h, t, q->cons_now, p->pt_tx);
 	    q->rx_wait++;
-	    ioctl(pa->pb->fd, NIOCTXSYNC, 0); // XXX just in case
+	    /* this also sends any pending arp messages from this or
+	     * previous loop iterations
+	     */
+	    ioctl(pa->pb->fd, NIOCTXSYNC, 0);
 	    pending = 0;
 	    usleep(5);
 	    set_tns_now(&q->cons_now, q->t0);
@@ -1228,7 +1231,9 @@ cons(void *_pa)
 	if (pa->route_mode && !retrying) {
 		int injected = cons_update_dst(pa, p + 1);
 		if (unlikely(injected < 0)) {
-			/* drop */
+			/* drop this packet. Any pending arp message
+			 * will be sent in the next iteration
+			 */
 			continue;
 		}
 		pending += injected;
