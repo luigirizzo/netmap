@@ -590,7 +590,7 @@ int main(int argc, char **argv)
 	glob_arg.syslog_interval = 0;
 	glob_arg.stdout_interval = 0;
 
-	while ( (ch = getopt(argc, argv, "hi:p:b:B:s:o:")) != -1) {
+	while ( (ch = getopt(argc, argv, "hi:p:b:B:s:o:w:")) != -1) {
 		switch (ch) {
 		case 'i':
 			D("interface is %s", optarg);
@@ -620,6 +620,11 @@ int main(int argc, char **argv)
 		case 'b':
 			glob_arg.batch = atoi(optarg);
 			D("batch is %d", glob_arg.batch);
+			break;
+
+		case 'w':
+			glob_arg.wait_link = atoi(optarg);
+			D("link wait for up time is %d", glob_arg.wait_link);
 			break;
 
 		case 'o':
