@@ -372,6 +372,7 @@ struct _qs { /* shared queue */
 //	uint64_t	cons_tail;	/* cached copy */
 	uint64_t	cons_now;	/* most recent producer timestamp */
 	uint64_t	cons_lag;	/* tail - head */
+	uint64_t	cons_drop;	/* drop packet count */
 	uint64_t	rx_wait;	/* stats */
 
 	/* shared fields */
@@ -622,6 +623,9 @@ struct pipe_args {
 	struct arp_cmd_q *prod_arpq;	/* in mailbox for prod */
 	struct ipv4_info *cons_ipv4;	/* mac addr etc. */
 	struct ipv4_info *prod_ipv4;	/* mac addr etc. */
+
+	/* max delay before the consumer starts dropping packets */
+	int64_t		max_lag;
 
 	struct _qs	q;
 };
@@ -1182,6 +1186,7 @@ cons(void *_pa)
         uint64_t t = q->tail; /* read only once */
 	struct q_pkt *p = (struct q_pkt *)(q->buf + h);
 	struct arp_cmd *arpc;
+	int64_t delta;
 #if 0
 	struct q_pkt *p = (struct q_pkt *)(q->buf + q->head);
 	if (p->next < q->head) { /* wrap around prefetch */
@@ -1218,8 +1223,7 @@ cons(void *_pa)
 		}
 		arpq_release(pa->cons_arpq);
 	}
-
-	if (h == t || ts_cmp(p->pt_tx, q->cons_now) > 0) {
+	if ( h == t || (delta = ts_cmp(p->pt_tx, q->cons_now) ) > 0) {
 	    ND(4, "                 >>>> TXSYNC, pkt not ready yet h %ld t %ld now %ld tx %ld",
 		h, t, q->cons_now, p->pt_tx);
 	    q->rx_wait++;
@@ -1231,6 +1235,10 @@ cons(void *_pa)
 	    usleep(5);
 	    set_tns_now(&q->cons_now, q->t0);
 	    continue;
+	}
+	if (delta < -pa->max_lag) {
+		q->cons_drop++;
+		goto next;
 	}
 	ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
 		p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
@@ -1249,6 +1257,7 @@ cons(void *_pa)
 	    ND(5, "inject failed len %d now %ld tx %ld h %ld t %ld next %ld",
 		(int)p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
 	    ioctl(pa->pb->fd, NIOCTXSYNC, 0);
+	    set_tns_now(&q->cons_now, q->t0);
 	    pending = 0;
 	    retrying = 1;
 	    continue;
@@ -1260,9 +1269,10 @@ cons(void *_pa)
 	    pending = 0;
 	}
 
+	q->rx++;
+    next:
 	q->head = p->next;
 	/* drain packets from the queue */
-	q->rx++;
 	// XXX barrier
     }
     D("exiting on abort");
@@ -1492,6 +1502,10 @@ add_to(const char ** v, int l, const char *arg, const char *msg)
 	*v = arg;
 }
 
+#define U_PARSE_ERR ~(0ULL)
+
+static uint64_t parse_time(const char *arg); // forward
+
 int
 main(int argc, char **argv)
 {
@@ -1500,9 +1514,10 @@ main(int argc, char **argv)
 #define	N_OPTS	2
 	struct pipe_args bp[N_OPTS];
 	const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS],
-		*gw[N_OPTS];
+		*gw[N_OPTS], *cd[N_OPTS];
 	int ncpus;
 	int cores[4];
+	uint64_t old_drop0 = 0, old_drop1 = 0, drop0, drop1;
 
 	bzero(d, sizeof(d));
 	bzero(b, sizeof(b));
@@ -1548,8 +1563,9 @@ main(int argc, char **argv)
 	// v	verbose
 	// b	batch size
 	// r	route mode
+	// d	max consumer delay
 
-	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:G:b:ci:vw:r")) != -1) {
+	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:G:b:ci:vw:rd:")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -1620,6 +1636,8 @@ main(int argc, char **argv)
 		case 'r':
 			bp[0].route_mode = 1;
 			break;
+		case 'd':
+			add_to(cd, N_OPTS, optarg, "-d too many times");
 		}
 
 	}
@@ -1826,6 +1844,8 @@ main(int argc, char **argv)
 		b[1] = b[0];
 	if (l[1] == NULL)
 		l[1] = l[0];
+	if (cd[1] == NULL)
+		cd[1] = cd[0];
 
 	/* apply commands */
 	for (i = 0; i < N_OPTS; i++) { /* once per queue */
@@ -1833,6 +1853,9 @@ main(int argc, char **argv)
 		err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
 		err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
 		err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
+		bp[i].max_lag = parse_time(cd[i]);
+		if ((unsigned long)bp[i].max_lag == U_PARSE_ERR)
+			err++;
 	}
 
 	if (q[0] == NULL)
@@ -1851,6 +1874,12 @@ main(int argc, char **argv)
 		bp[1].q.qsize = 50000;
 	}
 
+	for (i = 0; i < N_OPTS; i++) {
+	    if (bp[i].max_lag == 0) {
+		bp[i].max_lag = 100000; /* 100 us */
+            }
+	}
+
 	/* assign arp command queues for route mode */
 	bp[0].prod_arpq = &arpq[0];
 	bp[0].cons_arpq = &arpq[1];
@@ -1867,11 +1896,15 @@ main(int argc, char **argv)
 	    struct _qs *q0 = &bp[0].q, *q1 = &bp[1].q;
 
 	    sleep(1);
-	    ED("%lld -> %lld maxq %d round %lld, %lld <- %lld maxq %d round %lld",
+	    drop0 = q0->cons_drop;
+	    drop1 = q1->cons_drop;
+	    ED("%lld -> %lld maxq %d round %lld drop %lld, %lld <- %lld maxq %d round %lld drop %lld",
 		(long long)(q0->rx - olda.rx), (long long)(q0->tx - olda.tx),
 		q0->rx_qmax, (long long)q0->prod_max_gap,
+		(long long)(drop0 - old_drop0),
 		(long long)(q1->rx - oldb.rx), (long long)(q1->tx - oldb.tx),
-		q1->rx_qmax, (long long)q1->prod_max_gap
+		q1->rx_qmax, (long long)q1->prod_max_gap,
+		(long long)(drop1 - old_drop1)
 		);
 	    ED("plr nominal %le actual %le",
 		(double)(q0->c_loss.d[0])/(1<<24),
@@ -1881,6 +1914,8 @@ main(int argc, char **argv)
 	    bp[0].q.prod_max_gap = (bp[0].q.prod_max_gap * 7)/8; // ewma
 	    bp[1].q.rx_qmax = (bp[1].q.rx_qmax * 7)/8; // ewma
 	    bp[1].q.prod_max_gap = (bp[1].q.prod_max_gap * 7)/8; // ewma
+	    old_drop0 = drop0;
+	    old_drop1 = drop1;
 	}
 	D("exiting on abort");
 	sleep(1);
@@ -1938,8 +1973,6 @@ done:
 	ND("returning %lf", d);
 	return d;
 }
-
-#define U_PARSE_ERR ~(0ULL)
 
 /* returns a value in nanoseconds */
 static uint64_t
