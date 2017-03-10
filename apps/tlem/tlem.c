@@ -398,6 +398,7 @@ setaffinity(int i)
     cpuset_t cpumask;
     struct sched_param p;
     int error;
+    int maxprio;
 
     if (i == -1)
         return 0;
@@ -412,8 +413,13 @@ setaffinity(int i)
     if (setpriority(PRIO_PROCESS, 0, -10)) {; // XXX not meaningful
         ED("Unable to set priority: %s", strerror(errno));
     }
+    maxprio = sched_get_priority_max(SCHED_RR);
+    if (maxprio < 0) {
+        ED("Unable to retrive max RR priority, using 10");
+        maxprio = 10;
+    }
     bzero(&p, sizeof(p));
-    p.sched_priority = 10; // 99 on linux ?
+    p.sched_priority = maxprio;
     // use SCHED_RR or SCHED_FIFO
     if (sched_setscheduler(0, SCHED_RR, &p)) {
         ED("Unable to set scheduler: %s", strerror(errno));
