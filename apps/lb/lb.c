@@ -584,6 +584,7 @@ int main(int argc, char **argv)
 	uint32_t i;
 	int rv;
 	unsigned int iter = 0;
+	int poll_timeout = 10; /* default */
 
 	glob_arg.ifname[0] = '\0';
 	glob_arg.output_rings = 0;
@@ -834,6 +835,15 @@ run:
 	struct pollfd pollfd[npipes + 1];
 	memset(&pollfd, 0, sizeof(pollfd));
 	signal(SIGINT, sigint_h);
+
+	/* make sure we wake up as often as needed, even when there are no
+	 * packets coming in
+	 */
+	if (glob_arg.syslog_interval > 0 && glob_arg.syslog_interval < poll_timeout)
+		poll_timeout = glob_arg.syslog_interval;
+	if (glob_arg.stdout_interval > 0 && glob_arg.stdout_interval < poll_timeout)
+		poll_timeout = glob_arg.stdout_interval;
+
 	while (!do_abort) {
 		u_int polli = 0;
 		iter++;
@@ -856,11 +866,11 @@ run:
 		++polli;
 
 		//RD(5, "polling %d file descriptors", polli+1);
-		rv = poll(pollfd, polli, 10);
+		rv = poll(pollfd, polli, poll_timeout);
 		if (rv <= 0) {
 			if (rv < 0 && errno != EAGAIN && errno != EINTR)
 				RD(1, "poll error %s", strerror(errno));
-			continue;
+			goto send_stats;
 		}
 
 		if (oq) {
@@ -949,6 +959,7 @@ run:
 
 		}
 
+	send_stats:
 		if (counters_buf.status == COUNTERS_FULL)
 			continue;
 		/* take a new snapshot of the counters */
