@@ -100,6 +100,7 @@ struct {
 	int stdout_interval;
 	int syslog_interval;
 	int wait_link;
+	bool busy_wait;
 } glob_arg;
 
 /*
@@ -395,6 +396,7 @@ void usage()
 	printf("  -B nbufs        	number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
 	printf("  -b batch        	batch size (default: %d)\n", DEF_BATCH);
 	printf("  -w seconds        	wait for link up (default: %d)\n", DEF_WAIT_LINK);
+	printf("  -W                    enable busy waiting. this will run your CPU at 100%%\n");
 	printf("  -s seconds      	seconds between syslog stats messages (default: 0)\n");
 	printf("  -o seconds      	seconds between stdout stats messages (default: 0)\n");
 	exit(0);
@@ -587,10 +589,11 @@ int main(int argc, char **argv)
 	glob_arg.output_rings = 0;
 	glob_arg.batch = DEF_BATCH;
 	glob_arg.wait_link = DEF_WAIT_LINK;
+	glob_arg.busy_wait = false;
 	glob_arg.syslog_interval = 0;
 	glob_arg.stdout_interval = 0;
 
-	while ( (ch = getopt(argc, argv, "hi:p:b:B:s:o:w:")) != -1) {
+	while ( (ch = getopt(argc, argv, "hi:p:b:B:s:o:w:W")) != -1) {
 		switch (ch) {
 		case 'i':
 			D("interface is %s", optarg);
@@ -625,6 +628,10 @@ int main(int argc, char **argv)
 		case 'w':
 			glob_arg.wait_link = atoi(optarg);
 			D("link wait for up time is %d", glob_arg.wait_link);
+			break;
+
+		case 'W':
+			glob_arg.busy_wait = true;
 			break;
 
 		case 'o':
@@ -833,7 +840,7 @@ run:
 
 		for (i = 0; i < npipes; ++i) {
 			struct netmap_ring *ring = ports[i].ring;
-			if (nm_ring_next(ring, ring->tail) == ring->cur) {
+			if (!glob_arg.busy_wait && nm_ring_next(ring, ring->tail) == ring->cur) {
 				/* no need to poll, there are no packets pending */
 				continue;
 			}
