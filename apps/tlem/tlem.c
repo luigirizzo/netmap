@@ -1328,12 +1328,15 @@ tlem_main(void *_a)
      */
     need *= 3; /* room for descriptors and padding */
 
-    q->buf = calloc(1, need);
-    if (q->buf == NULL) {
+    q->buf = mmap(0, need, PROT_WRITE | PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (q->buf == MAP_FAILED) {
         ED("alloc %lld bytes for queue failed, exiting", (long long)need);
         nmport_close(a->pa);
         nmport_close(a->pb);
         return(NULL);
+    }
+    if (mlock(q->buf, need) < 0) {
+        ED("(not fatal) failed to pin buffer memory: %s", strerror(errno));
     }
     q->buflen = need;
     ED("----\n\t%s -> %s :  bps %lld delay %s loss %s queue %lld bytes"
