@@ -689,12 +689,6 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (pthread_create(&stat_thread, NULL, print_stats, NULL) == -1) {
-		D("unable to create the stats thread: %s", strerror(errno));
-		return 1;
-	}
-
-
 	/* we need base_req to specify pipes and extra bufs */
 	struct nmreq base_req;
 	memset(&base_req, 0, sizeof(base_req));
@@ -823,6 +817,12 @@ run:
 	}
 
 	sleep(glob_arg.wait_link);
+
+	/* start stats thread after wait_link */
+	if (pthread_create(&stat_thread, NULL, print_stats, NULL) == -1) {
+		D("unable to create the stats thread: %s", strerror(errno));
+		return 1;
+	}
 
 	struct pollfd pollfd[npipes + 1];
 	memset(&pollfd, 0, sizeof(pollfd));
