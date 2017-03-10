@@ -224,7 +224,7 @@ print_stats(void *arg)
 
 	memset(&prev, 0, sizeof(prev));
 	while (!do_abort) {
-		int j, dosyslog, dostdout = 0, newdata;
+		int j, dosyslog = 0, dostdout = 0, newdata;
 		uint64_t pps = 0, dps = 0, bps = 0, dbps = 0, usec = 0;
 		struct my_ctrs x;
 
