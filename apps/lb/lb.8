@@ -1,4 +1,4 @@
-.\" Copyright (c) 2016 Broala and Universita` di Pisa
+.\" Copyright (c) 2017 Corelight, Inc. and Universita` di Pisa
 .\" All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
@@ -43,13 +43,13 @@
 .Nm
 reads packets from an input netmap port and sends them to a number of netmap pipes,
 trying to balance the packets received by each pipe. Packets belonging to the
-same flow will always be sent to the same pipe.
+same connection will always be sent to the same pipe.
 .Pp
 .Pp
 Command line options are listed below.
 .Bl -tag -width Ds
 .It Fl i Ar port
-Name of a netmap port. It must be supplied exactly once to indentify
+Name of a netmap port. It must be supplied exactly once to identify
 the input port.
 Any netmap port type (physical interface, VALE switch, pipe, monitor port...)
 can be used.
@@ -106,7 +106,7 @@ to remove any stale persistent VALE port.
 .Nm
 has been written by
 .An Seth Hall
-at Broala, USA. The facilities related to extra buffers and pipe groups
+at Corelight, USA. The facilities related to extra buffers and pipe groups
 have been added by
 .An Giuseppe Lettieri
-at University of Pisa, Italy, under contract by Broala, USA.
+at University of Pisa, Italy, under contract by Corelight, USA.

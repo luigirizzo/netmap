@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Broala and Universita` di Pisa. All rights reserved.
+ * Copyright (C) 2017 Corelight, Inc. and Universita` di Pisa. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -80,12 +80,14 @@ struct compact_ipv6_hdr {
 };
 
 #define MAX_IFNAMELEN 	64
+#define MAX_PORTNAMELEN	(MAX_IFNAMELEN + 40)
 #define DEF_OUT_PIPES 	2
 #define DEF_EXTRA_BUFS 	0
 #define DEF_BATCH	2048
 #define DEF_WAIT_LINK	2
-#define DEF_SYSLOG_INT	600
+#define DEF_STATS_INT	600
 #define BUF_REVOKE	100
+#define STAT_MSG_MAXSIZE 1024
 
 struct {
 	char ifname[MAX_IFNAMELEN];
@@ -95,8 +97,10 @@ struct {
 	uint16_t num_groups;
 	uint32_t extra_bufs;
 	uint16_t batch;
+	int stdout_interval;
 	int syslog_interval;
 	int wait_link;
+	bool busy_wait;
 } glob_arg;
 
 /*
@@ -158,9 +162,13 @@ static volatile int do_abort = 0;
 
 uint64_t dropped = 0;
 uint64_t forwarded = 0;
+uint64_t received_bytes = 0;
+uint64_t received_pkts = 0;
 uint64_t non_ip = 0;
+uint32_t freeq_n = 0;
 
 struct port_des {
+	char interface[MAX_PORTNAMELEN];
 	struct my_ctrs ctr;
 	unsigned int last_sync;
 	struct overflow_queue *oq;
@@ -183,6 +191,21 @@ struct group_des {
 
 struct group_des *groups;
 
+/* statistcs */
+struct counters {
+	struct timeval ts;
+	struct my_ctrs *ctrs;
+	uint64_t received_pkts;
+	uint64_t received_bytes;
+	uint64_t non_ip;
+	uint32_t freeq_n;
+	int status __attribute__((aligned(64)));
+#define COUNTERS_EMPTY	0
+#define COUNTERS_FULL	1
+};
+
+struct counters counters_buf;
+
 static void *
 print_stats(void *arg)
 {
@@ -190,7 +213,6 @@ print_stats(void *arg)
 	int sys_int = 0;
 	(void)arg;
 	struct my_ctrs cur, prev;
-	char b1[40], b2[40];
 	struct my_ctrs *pipe_prev;
 
 	pipe_prev = calloc(npipes, sizeof(struct my_ctrs));
@@ -199,60 +221,125 @@ print_stats(void *arg)
 		exit(1);
 	}
 
+	char stat_msg[STAT_MSG_MAXSIZE] = "";
+
 	memset(&prev, 0, sizeof(prev));
-	gettimeofday(&prev.t, NULL);
 	while (!do_abort) {
-		int j, dosyslog = 0;
-		uint64_t pps, dps, usec;
+		int j, dosyslog = 0, dostdout = 0, newdata;
+		uint64_t pps = 0, dps = 0, bps = 0, dbps = 0, usec = 0;
 		struct my_ctrs x;
 
+		counters_buf.status = COUNTERS_EMPTY;
+		newdata = 0;
 		memset(&cur, 0, sizeof(cur));
-		usec = wait_for_next_report(&prev.t, &cur.t, 1000);
-
-		if (++sys_int == glob_arg.syslog_interval) {
-			dosyslog = 1;
-			sys_int = 0;
-		}
-
-		for (j = 0; j < npipes; ++j) {
-			struct port_des *p = &ports[j];
-
-			cur.pkts += p->ctr.pkts;
-			cur.drop += p->ctr.drop;
-
-			x.pkts = p->ctr.pkts - pipe_prev[j].pkts;
-			x.drop = p->ctr.drop - pipe_prev[j].drop;
-			pps = (x.pkts*1000000 + usec/2) / usec;
-			dps = (x.drop*1000000 + usec/2) / usec;
-			printf("%s/%s|", norm(b1, pps), norm(b2, dps));
-			pipe_prev[j] = p->ctr;
-
-			if (dosyslog) {
-				syslog(LOG_INFO,
-					"{"
-						"\"interface\":\"%s\","
-						"\"output_ring\":%"PRIu16","
-						"\"packets_forwarded\":%"PRIu64","
-						"\"packets_dropped\":%"PRIu64
-					"}", glob_arg.ifname, j, p->ctr.pkts, p->ctr.drop);
+		sleep(1);
+		if (counters_buf.status == COUNTERS_FULL) {
+			__sync_synchronize();
+			newdata = 1;
+			cur.t = counters_buf.ts;
+			if (prev.t.tv_sec || prev.t.tv_usec) {
+				usec = (cur.t.tv_sec - prev.t.tv_sec) * 1000000 +
+					cur.t.tv_usec - prev.t.tv_usec;
 			}
 		}
-		printf("\n");
-		if (dosyslog) {
-			syslog(LOG_INFO,
-				"{"
-					"\"interface\":\"%s\","
-					"\"output_ring\":null,"
-					"\"packets_forwarded\":%"PRIu64","
-					"\"packets_dropped\":%"PRIu64","
-					"\"non_ip_packets\":%"PRIu64
-				"}", glob_arg.ifname, forwarded, dropped, non_ip);
+
+		++sys_int;
+		if (glob_arg.stdout_interval && sys_int % glob_arg.stdout_interval == 0)
+				dostdout = 1;
+		if (glob_arg.syslog_interval && sys_int % glob_arg.syslog_interval == 0)
+				dosyslog = 1;
+
+		for (j = 0; j < npipes; ++j) {
+			struct my_ctrs *c = &counters_buf.ctrs[j];
+			cur.pkts += c->pkts;
+			cur.drop += c->drop;
+			cur.drop_bytes += c->drop_bytes;
+			cur.bytes += c->bytes;
+
+			if (usec) {
+				x.pkts = c->pkts - pipe_prev[j].pkts;
+				x.drop = c->drop - pipe_prev[j].drop;
+				x.bytes = c->bytes - pipe_prev[j].bytes;
+				x.drop_bytes = c->drop_bytes - pipe_prev[j].drop_bytes;
+				pps = (x.pkts*1000000 + usec/2) / usec;
+				dps = (x.drop*1000000 + usec/2) / usec;
+				bps = ((x.bytes*1000000 + usec/2) / usec) * 8;
+				dbps = ((x.drop_bytes*1000000 + usec/2) / usec) * 8;
+			}
+			pipe_prev[j] = *c;
+
+			if ( (dosyslog || dostdout) && newdata )
+				snprintf(stat_msg, STAT_MSG_MAXSIZE,
+				       "{"
+				       "\"ts\":%.6f,"
+				       "\"interface\":\"%s\","
+				       "\"output_ring\":%" PRIu16 ","
+				       "\"packets_forwarded\":%" PRIu64 ","
+				       "\"packets_dropped\":%" PRIu64 ","
+				       "\"data_forward_rate_Mbps\":%.4f,"
+				       "\"data_drop_rate_Mbps\":%.4f,"
+				       "\"packet_forward_rate_kpps\":%.4f,"
+				       "\"packet_drop_rate_kpps\":%.4f,"
+				       "\"overflow_queue_size\":%" PRIu32
+				       "}", cur.t.tv_sec + (cur.t.tv_usec / 1000000.0),
+				            ports[j].interface,
+				            j,
+				            c->pkts,
+				            c->drop,
+				            (double)bps / 1024 / 1024,
+				            (double)dbps / 1024 / 1024,
+				            (double)pps / 1000,
+				            (double)dps / 1000,
+				            c->oq_n);
+
+			if (dosyslog && stat_msg[0])
+				syslog(LOG_INFO, "%s", stat_msg);
+			if (dostdout && stat_msg[0])
+				printf("%s\n", stat_msg);
 		}
-		x.pkts = cur.pkts - prev.pkts;
-		x.drop = cur.drop - prev.drop;
-		pps = (x.pkts*1000000 + usec/2) / usec;
-		dps = (x.drop*1000000 + usec/2) / usec;
-		printf("===> aggregate %spps %sdps\n", norm(b1, pps), norm(b2, dps));
+		if (usec) {
+			x.pkts = cur.pkts - prev.pkts;
+			x.drop = cur.drop - prev.drop;
+			x.bytes = cur.bytes - prev.bytes;
+			x.drop_bytes = cur.drop_bytes - prev.drop_bytes;
+			pps = (x.pkts*1000000 + usec/2) / usec;
+			dps = (x.drop*1000000 + usec/2) / usec;
+			bps = ((x.bytes*1000000 + usec/2) / usec) * 8;
+			dbps = ((x.drop_bytes*1000000 + usec/2) / usec) * 8;
+		}
+
+		if ( (dosyslog || dostdout) && newdata )
+			snprintf(stat_msg, STAT_MSG_MAXSIZE,
+			         "{"
+			         "\"ts\":%.6f,"
+			         "\"interface\":\"%s\","
+			         "\"output_ring\":null,"
+			         "\"packets_received\":%" PRIu64 ","
+			         "\"packets_forwarded\":%" PRIu64 ","
+			         "\"packets_dropped\":%" PRIu64 ","
+			         "\"non_ip_packets\":%" PRIu64 ","
+			         "\"data_forward_rate_Mbps\":%.4f,"
+			         "\"data_drop_rate_Mbps\":%.4f,"
+			         "\"packet_forward_rate_kpps\":%.4f,"
+			         "\"packet_drop_rate_kpps\":%.4f,"
+			         "\"free_buffer_slots\":%" PRIu32
+			         "}", cur.t.tv_sec + (cur.t.tv_usec / 1000000.0),
+			              glob_arg.ifname,
+			              received_pkts,
+			              cur.pkts,
+			              cur.drop,
+			              counters_buf.non_ip,
+			              (double)bps / 1024 / 1024,
+			              (double)dbps / 1024 / 1024,
+			              (double)pps / 1000,
+			              (double)dps / 1000,
+			              counters_buf.freeq_n);
+
+		if (dosyslog && stat_msg[0])
+			syslog(LOG_INFO, "%s", stat_msg);
+		if (dostdout && stat_msg[0])
+			printf("%s\n", stat_msg);
+
 		prev = cur;
 	}
 
@@ -303,13 +390,15 @@ void usage()
 {
 	printf("usage: lb [options]\n");
 	printf("where options are:\n");
+	printf("  -h              	view help text\n");
 	printf("  -i iface        	interface name (required)\n");
 	printf("  -p [prefix:]npipes	add a new group of output pipes\n");
 	printf("  -B nbufs        	number of extra buffers (default: %d)\n", DEF_EXTRA_BUFS);
 	printf("  -b batch        	batch size (default: %d)\n", DEF_BATCH);
 	printf("  -w seconds        	wait for link up (default: %d)\n", DEF_WAIT_LINK);
-	printf("  -s seconds      	seconds between syslog messages (default: %d)\n",
-			DEF_SYSLOG_INT);
+	printf("  -W                    enable busy waiting. this will run your CPU at 100%%\n");
+	printf("  -s seconds      	seconds between syslog stats messages (default: 0)\n");
+	printf("  -o seconds      	seconds between stdout stats messages (default: 0)\n");
 	exit(0);
 }
 
@@ -417,6 +506,7 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 		ts->flags |= NS_BUF_CHANGED;
 		ts->ptr = rs->ptr;
 		ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+		port->ctr.bytes += rs->len;
 		port->ctr.pkts++;
 		forwarded++;
 		if (old_slot.ptr && !g->last) {
@@ -441,6 +531,7 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 		 */
 		dropped++;
 		port->ctr.drop++;
+		port->ctr.drop_bytes += rs->len;
 		return rs->buf_idx;
 	}
 
@@ -473,12 +564,15 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 		// XXX optimize this cycle
 		for (j = 0; lp->oq->n && j < BUF_REVOKE; j++) {
 			struct netmap_slot tmp = oq_deq(lp->oq);
+
+			dropped++;
+			lp->ctr.drop++;
+			lp->ctr.drop_bytes += tmp.len;
+
 			oq_enq(freeq, &tmp);
 		}
 
 		ND(1, "revoked %d buffers from %s", j, lq->name);
-		lp->ctr.drop += j;
-		dropped += j;
 	}
 
 	return oq_deq(freeq).buf_idx;
@@ -490,14 +584,17 @@ int main(int argc, char **argv)
 	uint32_t i;
 	int rv;
 	unsigned int iter = 0;
+	int poll_timeout = 10; /* default */
 
 	glob_arg.ifname[0] = '\0';
 	glob_arg.output_rings = 0;
 	glob_arg.batch = DEF_BATCH;
 	glob_arg.wait_link = DEF_WAIT_LINK;
-	glob_arg.syslog_interval = DEF_SYSLOG_INT;
+	glob_arg.busy_wait = false;
+	glob_arg.syslog_interval = 0;
+	glob_arg.stdout_interval = 0;
 
-	while ( (ch = getopt(argc, argv, "i:p:b:B:s:")) != -1) {
+	while ( (ch = getopt(argc, argv, "hi:p:b:B:s:o:w:W")) != -1) {
 		switch (ch) {
 		case 'i':
 			D("interface is %s", optarg);
@@ -529,16 +626,32 @@ int main(int argc, char **argv)
 			D("batch is %d", glob_arg.batch);
 			break;
 
+		case 'w':
+			glob_arg.wait_link = atoi(optarg);
+			D("link wait for up time is %d", glob_arg.wait_link);
+			break;
+
+		case 'W':
+			glob_arg.busy_wait = true;
+			break;
+
+		case 'o':
+			glob_arg.stdout_interval = atoi(optarg);
+			break;
+
 		case 's':
 			glob_arg.syslog_interval = atoi(optarg);
-			D("syslog interval is %d", glob_arg.syslog_interval);
+			break;
+
+		case 'h':
+			usage();
+			return 0;
 			break;
 
 		default:
 			D("bad option %c %s", ch, optarg);
 			usage();
 			return 1;
-
 		}
 	}
 
@@ -559,8 +672,10 @@ int main(int argc, char **argv)
 	if (glob_arg.num_groups == 0)
 		parse_pipes("");
 
-	setlogmask(LOG_UPTO(LOG_INFO));
-	openlog("lb", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
+	if (glob_arg.syslog_interval) {
+		setlogmask(LOG_UPTO(LOG_INFO));
+		openlog("lb", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
+	}
 
 	uint32_t npipes = glob_arg.output_rings;
 
@@ -575,11 +690,12 @@ int main(int argc, char **argv)
 	struct port_des *rxport = &ports[npipes];
 	init_groups();
 
-	if (pthread_create(&stat_thread, NULL, print_stats, NULL) == -1) {
-		D("unable to create the stats thread: %s", strerror(errno));
+	memset(&counters_buf, 0, sizeof(counters_buf));
+	counters_buf.ctrs = calloc(npipes, sizeof(struct my_ctrs));
+	if (!counters_buf.ctrs) {
+		D("failed to allocate the counters snapshot buffer");
 		return 1;
 	}
-
 
 	/* we need base_req to specify pipes and extra bufs */
 	struct nmreq base_req;
@@ -663,19 +779,18 @@ run:
 		int k;
 		for (k = 0; k < g->nports; ++k) {
 			struct port_des *p = &g->ports[k];
-			char interface[25];
-			sprintf(interface, "netmap:%s{%d/xT@%d", g->pipename, g->first_id + k,
+			snprintf(p->interface, MAX_PORTNAMELEN, "netmap:%s{%d/xT@%d", g->pipename, g->first_id + k,
 					rxport->nmd->req.nr_arg2);
-			D("opening pipe named %s", interface);
+			D("opening pipe named %s", p->interface);
 
-			p->nmd = nm_open(interface, NULL, 0, rxport->nmd);
+			p->nmd = nm_open(p->interface, NULL, 0, rxport->nmd);
 
 			if (p->nmd == NULL) {
-				D("cannot open %s", interface);
+				D("cannot open %s", p->interface);
 				return (1);
 			} else {
 				D("successfully opened pipe #%d %s (tx slots: %d)",
-				  k + 1, interface, p->nmd->req.nr_tx_slots);
+				  k + 1, p->interface, p->nmd->req.nr_tx_slots);
 				p->ring = NETMAP_TXRING(p->nmd->nifp, 0);
 			}
 			D("zerocopy %s",
@@ -711,16 +826,31 @@ run:
 
 	sleep(glob_arg.wait_link);
 
+	/* start stats thread after wait_link */
+	if (pthread_create(&stat_thread, NULL, print_stats, NULL) == -1) {
+		D("unable to create the stats thread: %s", strerror(errno));
+		return 1;
+	}
+
 	struct pollfd pollfd[npipes + 1];
 	memset(&pollfd, 0, sizeof(pollfd));
 	signal(SIGINT, sigint_h);
+
+	/* make sure we wake up as often as needed, even when there are no
+	 * packets coming in
+	 */
+	if (glob_arg.syslog_interval > 0 && glob_arg.syslog_interval < poll_timeout)
+		poll_timeout = glob_arg.syslog_interval;
+	if (glob_arg.stdout_interval > 0 && glob_arg.stdout_interval < poll_timeout)
+		poll_timeout = glob_arg.stdout_interval;
+
 	while (!do_abort) {
 		u_int polli = 0;
 		iter++;
 
 		for (i = 0; i < npipes; ++i) {
 			struct netmap_ring *ring = ports[i].ring;
-			if (nm_ring_next(ring, ring->tail) == ring->cur) {
+			if (!glob_arg.busy_wait && nm_ring_next(ring, ring->tail) == ring->cur) {
 				/* no need to poll, there are no packets pending */
 				continue;
 			}
@@ -736,11 +866,11 @@ run:
 		++polli;
 
 		//RD(5, "polling %d file descriptors", polli+1);
-		rv = poll(pollfd, polli, 10);
+		rv = poll(pollfd, polli, poll_timeout);
 		if (rv <= 0) {
 			if (rv < 0 && errno != EAGAIN && errno != EINTR)
 				RD(1, "poll error %s", strerror(errno));
-			continue;
+			goto send_stats;
 		}
 
 		if (oq) {
@@ -783,8 +913,6 @@ run:
 					ring->cur = nm_ring_next(ring, ring->cur);
 				}
 				ring->head = ring->cur;
-				forwarded += lim;
-				p->ctr.pkts += lim;
 			}
 		}
 
@@ -799,6 +927,8 @@ run:
 			while (!nm_ring_empty(rxring)) {
 				struct netmap_slot *rs = next_slot;
 				struct group_des *g = &groups[0];
+				++received_pkts;
+				received_bytes += rs->len;
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
 				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
@@ -828,6 +958,39 @@ run:
 			}
 
 		}
+
+	send_stats:
+		if (counters_buf.status == COUNTERS_FULL)
+			continue;
+		/* take a new snapshot of the counters */
+		gettimeofday(&counters_buf.ts, NULL);
+		for (i = 0; i < npipes; i++) {
+			struct my_ctrs *c = &counters_buf.ctrs[i];
+			*c = ports[i].ctr;
+			/*
+			 * If there are overflow queues, copy the number of them for each
+			 * port to the ctrs.oq_n variable for each port.
+			 */
+			if (ports[i].oq != NULL)
+				c->oq_n = ports[i].oq->n;
+		}
+		counters_buf.received_pkts = received_pkts;
+		counters_buf.received_bytes = received_bytes;
+		counters_buf.non_ip = non_ip;
+		if (freeq != NULL)
+			counters_buf.freeq_n = freeq->n;
+		__sync_synchronize();
+		counters_buf.status = COUNTERS_FULL;
+	}
+
+	/*
+	 * If freeq exists, copy the number to the freeq_n member of the
+	 * message struct, otherwise set it to 0.
+	 */
+	if (freeq != NULL) {
+		freeq_n = freeq->n;
+	} else {
+		freeq_n = 0;
 	}
 
 	pthread_join(stat_thread, NULL);

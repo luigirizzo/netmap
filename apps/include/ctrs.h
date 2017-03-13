@@ -5,9 +5,11 @@
 
 /* counters to accumulate statistics */
 struct my_ctrs {
-	uint64_t pkts, bytes, events, drop;
+	uint64_t pkts, bytes, events;
+	uint64_t drop, drop_bytes;
 	uint64_t min_space;
 	struct timeval t;
+	uint32_t oq_n; /* number of elements in overflow queue (used in lb) */
 };
 
 /* very crude code to print a number in normalized form.
@@ -87,7 +89,7 @@ timespec_sub(struct timespec a, struct timespec b)
 	return ret;
 }
 
-static uint64_t
+static __inline uint64_t
 wait_for_next_report(struct timeval *prev, struct timeval *cur,
 		int report_interval)
 {
@@ -104,3 +106,4 @@ wait_for_next_report(struct timeval *prev, struct timeval *cur,
 	return delta.tv_sec* 1000000 + delta.tv_usec;
 }
 #endif /* CTRS_H_ */
+
