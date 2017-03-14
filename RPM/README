@@ -1,0 +1,19 @@
+
+HOWTO GENERATE RPM FILE
+-----------------------
+
+1) Edit netmap.spec! Increase at least revision number, but also add
+ something useful to the %changelog section.
+
+2) $ rpmbuild -ba RPM/netmap.spec
+ This (default) directory for your RPM builds may have been changed in
+ ~/.rpmbuild (parameter %_topdir). Another favourite location is
+ /usr/src/redhat/.
+
+3) Find result in ~/rpmbuild/RPMS
+
+4) Upload eventually to Distribution list on ShPt:
+ $ cd $rpmbuild/RPMS/x86_64/
+ $ ~/Astro/CTA/WWW/ShPt/Curl/uploadPortalDoc \
+  /WG/ACTL/SiteAssets/SitePages/CameraServerSetup/netmap-0.1-2.x86_64.rpm
+
