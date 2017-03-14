@@ -955,6 +955,8 @@ void
 do_nmr_reset()
 {
 	bzero(&curr_nmr, sizeof(curr_nmr));
+	curr_nmr.nr_version = NETMAP_API;
+	curr_nmr.nr_flas = NR_REG_ALL_NIC;
 }
 
 void
