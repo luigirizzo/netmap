@@ -801,10 +801,10 @@ nmr_arg_error()
 void
 nmr_pools_info_get()
 {
-	uintptr_t *pp = (uintptr_t *)&curr_nmr.nr_arg1;
+	void **pp = (void **)&curr_nmr.nr_arg1;
 	struct netmap_pools_info *upi = (struct netmap_pools_info *)(*pp);
 
-	printf("arg1+2+3:  %p\n", pp);
+	printf("arg1+2+3:  %p\n", *pp);
 	printf("    memsize:    %"PRIu64"\n", upi->memsize);
 	printf("    memid:      %"PRIu32"\n", upi->memid);
 	printf("    if off:     %"PRIu32"\n", upi->if_pool_offset);
