@@ -630,6 +630,54 @@ nm_mem_assign_group(struct netmap_mem_d *nmd, struct device *dev)
 	return err;
 }
 
+static struct lut_entry *
+nm_alloc_lut(u_int nobj)
+{
+	size_t n = sizeof(struct lut_entry) * nobj;
+	struct lut_entry *lut;
+#ifdef linux
+	lut = vmalloc(n);
+#else
+	lut = nm_os_malloc(n);
+#endif
+	return lut;
+}
+
+static void
+nm_free_lut(struct lut_entry *lut, u_int objtotal)
+{
+	bzero(lut, sizeof(struct lut_entry) * objtotal);
+#ifdef linux
+	vfree(lut);
+#else
+	nm_os_free(lut);
+#endif
+}
+
+static struct plut_entry *
+nm_alloc_plut(u_int nobj)
+{
+	size_t n = sizeof(struct plut_entry) * nobj;
+	struct plut_entry *lut;
+#ifdef linux
+	lut = vmalloc(n);
+#else
+	lut = nm_os_malloc(n);
+#endif
+	return lut;
+}
+
+static void
+nm_free_plut(struct plut_entry * lut)
+{
+#ifdef linux
+	vfree(lut);
+#else
+	nm_os_free(lut);
+#endif
+}
+
+
 /*
  * First, find the allocator that contains the requested offset,
  * then locate the cluster through a lookup table.
@@ -1121,12 +1169,7 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 			if (p->lut[i].vaddr)
 				contigfree(p->lut[i].vaddr, p->_clustsize, M_NETMAP);
 		}
-		bzero(p->lut, sizeof(struct lut_entry) * p->objtotal);
-#ifdef linux
-		vfree(p->lut);
-#else
-		nm_os_free(p->lut);
-#endif
+		nm_free_lut(p->lut, p->objtotal);
 	}
 	p->lut = NULL;
 	p->objtotal = 0;
@@ -1234,42 +1277,6 @@ netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int obj
 	p->_objtotal = p->_numclusters * clustentries;
 
 	return 0;
-}
-
-static struct lut_entry *
-nm_alloc_lut(u_int nobj)
-{
-	size_t n = sizeof(struct lut_entry) * nobj;
-	struct lut_entry *lut;
-#ifdef linux
-	lut = vmalloc(n);
-#else
-	lut = nm_os_malloc(n);
-#endif
-	return lut;
-}
-
-static struct plut_entry *
-nm_alloc_plut(u_int nobj)
-{
-	size_t n = sizeof(struct plut_entry) * nobj;
-	struct plut_entry *lut;
-#ifdef linux
-	lut = vmalloc(n);
-#else
-	lut = nm_os_malloc(n);
-#endif
-	return lut;
-}
-
-static void
-nm_free_plut(struct plut_entry * lut)
-{
-#ifdef linux
-	vfree(lut);
-#else
-	nm_os_free(lut);
-#endif
 }
 
 /* call with NMA_LOCK held */
