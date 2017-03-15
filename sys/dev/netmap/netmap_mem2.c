@@ -1069,6 +1069,17 @@ netmap_free_bufs(struct netmap_mem_d *nmd, struct netmap_slot *slot, u_int n)
 }
 
 static void
+nm_free_lut(struct lut_entry *lut, u_int objtotal)
+{
+	bzero(lut, sizeof(struct lut_entry) * objtotal);
+#ifdef linux
+	vfree(lut);
+#else
+	nm_os_free(lut);
+#endif
+}
+
+static void
 netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 {
 
@@ -1090,12 +1101,7 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 			if (p->lut[i].vaddr)
 				contigfree(p->lut[i].vaddr, p->_clustsize, M_NETMAP);
 		}
-		bzero(p->lut, sizeof(struct lut_entry) * p->objtotal);
-#ifdef linux
-		vfree(p->lut);
-#else
-		nm_os_free(p->lut);
-#endif
+		nm_free_lut(p->lut, p->objtotal);
 	}
 	p->lut = NULL;
 	p->objtotal = 0;
