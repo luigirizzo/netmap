@@ -296,58 +296,88 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	return nmd->lasterr;
 }
 
+
+static int
+netmap_init_obj_allocator_bitmap(struct netmap_obj_pool *p)
+{
+	u_int n, j;
+
+	if (p->bitmap == NULL) {
+		/* Allocate the bitmap */
+		n = (p->objtotal + 31) / 32;
+		p->bitmap = nm_os_malloc(sizeof(uint32_t) * n);
+		if (p->bitmap == NULL) {
+			D("Unable to create bitmap (%d entries) for allocator '%s'", (int)n,
+			    p->name);
+			return ENOMEM;
+		}
+		p->bitmap_slots = n;
+	} else {
+		memset(p->bitmap, 0, p->bitmap_slots);
+	}
+
+	p->objfree = 0;
+	/*
+	 * Set all the bits in the bitmap that have
+	 * corresponding buffers to 1 to indicate they are
+	 * free.
+	 */
+	for (j = 0; j < p->objtotal; j++) {
+		if (p->lut[j].vaddr != NULL) {
+			p->bitmap[ (j>>5) ] |=  ( 1U << (j & 31U) );
+			p->objfree++;
+		}
+	}
+
+	if (p->objfree == 0)
+		return ENOMEM;
+
+	return 0;
+}
+
+static int
+netmap_mem_init_bitmaps(struct netmap_mem_d *nmd)
+{
+	int i, error = 0;
+
+	for (i = 0; i < NETMAP_POOLS_NR; i++) {
+		struct netmap_obj_pool *p = &nmd->pools[i];
+
+		error = netmap_init_obj_allocator_bitmap(p);
+		if (error)
+			return error;
+	}
+
+	/*
+	 * buffers 0 and 1 are reserved
+	 */
+	if (nmd->pools[NETMAP_BUF_POOL].objfree < 2) {
+		return ENOMEM;
+	}
+
+	nmd->pools[NETMAP_BUF_POOL].objfree -= 2;
+	if (nmd->pools[NETMAP_BUF_POOL].bitmap) {
+		/* XXX This check is a workaround that prevents a
+		 * NULL pointer crash which currently happens only
+		 * with ptnetmap guests.
+		 * Removed shared-info --> is the bug still there? */
+		nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3U;
+	}
+	return 0;
+}
+
 void
 netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	NMA_LOCK(nmd);
 	netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
 	if (nmd->active == 1) {
-		u_int i;
-
 		/*
 		 * Reset the allocator when it falls out of use so that any
 		 * pool resources leaked by unclean application exits are
 		 * reclaimed.
 		 */
-		for (i = 0; i < NETMAP_POOLS_NR; i++) {
-			struct netmap_obj_pool *p;
-			u_int j;
-
-			p = &nmd->pools[i];
-			p->objfree = p->objtotal;
-			/*
-			 * Reproduce the net effect of the M_ZERO malloc()
-			 * and marking of free entries in the bitmap that
-			 * occur in finalize_obj_allocator()
-			 */
-			memset(p->bitmap,
-			    '\0',
-			    sizeof(uint32_t) * ((p->objtotal + 31) / 32));
-
-			/*
-			 * Set all the bits in the bitmap that have
-			 * corresponding buffers to 1 to indicate they are
-			 * free.
-			 */
-			for (j = 0; j < p->objtotal; j++) {
-				if (p->lut[j].vaddr != NULL) {
-					p->bitmap[ (j>>5) ] |=  ( 1 << (j & 31) );
-				}
-			}
-		}
-
-		/*
-		 * Per netmap_mem_finalize_all(),
-		 * buffers 0 and 1 are reserved
-		 */
-		nmd->pools[NETMAP_BUF_POOL].objfree -= 2;
-		if (nmd->pools[NETMAP_BUF_POOL].bitmap) {
-			/* XXX This check is a workaround that prevents a
-			 * NULL pointer crash which currently happens only
-			 * with ptnetmap guests.
-			 * Removed shared-info --> is the bug still there? */
-			nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
-		}
+		netmap_mem_init_bitmaps(nmd);
 	}
 	nmd->ops->nmd_deref(nmd);
 
@@ -1241,18 +1271,8 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 		goto clean;
 	}
 
-	/* Allocate the bitmap */
-	n = (p->objtotal + 31) / 32;
-	p->bitmap = nm_os_malloc(sizeof(uint32_t) * n);
-	if (p->bitmap == NULL) {
-		D("Unable to create bitmap (%d entries) for allocator '%s'", (int)n,
-		    p->name);
-		goto clean;
-	}
-	p->bitmap_slots = n;
-
 	/*
-	 * Allocate clusters, init pointers and bitmap
+	 * Allocate clusters, init pointers
 	 */
 
 	n = p->_clustsize;
@@ -1280,7 +1300,6 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 				goto out;
 			lim = i / 2;
 			for (i--; i >= lim; i--) {
-				p->bitmap[ (i>>5) ] &=  ~( 1 << (i & 31) );
 				if (i % p->_clustentries == 0 && p->lut[i].vaddr)
 					contigfree(p->lut[i].vaddr,
 						n, M_NETMAP);
@@ -1293,8 +1312,7 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 			break;
 		}
 		/*
-		 * Set bitmap and lut state for all buffers in the current
-		 * cluster.
+		 * Set lut state for all buffers in the current cluster.
 		 *
 		 * [i, lim) is the set of buffer indexes that cover the
 		 * current cluster.
@@ -1304,15 +1322,11 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 		 * of p->_objsize.
 		 */
 		for (; i < lim; i++, clust += p->_objsize) {
-			p->bitmap[ (i>>5) ] |=  ( 1 << (i & 31) );
 			p->lut[i].vaddr = clust;
 			p->lut[i].paddr = vtophys(clust);
 		}
 	}
-	p->objfree = p->objtotal;
 	p->memtotal = p->numclusters * p->_clustsize;
-	if (p->objfree == 0)
-		goto clean;
 	if (netmap_verbose)
 		D("Pre-allocated %d clusters (%d/%dKB) for '%s'",
 		    p->numclusters, p->_clustsize >> 10,
@@ -1416,9 +1430,10 @@ netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 			goto error;
 		nmd->nm_totalsize += nmd->pools[i].memtotal;
 	}
-	/* buffers 0 and 1 are reserved */
-	nmd->pools[NETMAP_BUF_POOL].objfree -= 2;
-	nmd->pools[NETMAP_BUF_POOL].bitmap[0] = ~3;
+	nmd->lasterr = netmap_mem_init_bitmaps(nmd);
+	if (nmd->lasterr)
+		goto error;
+
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 
 	if (netmap_verbose)
