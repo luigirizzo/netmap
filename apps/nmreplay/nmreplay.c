@@ -971,7 +971,7 @@ usage(void)
 {
 	fprintf(stderr,
 	    "usage: nmreplay [-v] [-D delay] [-B {[constant,]bps|ether,bps|real,speedup}] [-L loss]\n"
-	    "\t[-b burst] -i ifa-or-pcap-file -i ifb\n");
+	    "\t[-b burst] -f pcap-file -i ifb\n");
 	exit(1);
 }
 
