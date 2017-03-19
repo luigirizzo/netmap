@@ -1867,19 +1867,14 @@ struct netmap_mem_ops netmap_mem_global_ops = {
 };
 
 int
-netmap_mem_pools_info_get(struct nmreq *nmr, struct netmap_adapter *na)
+netmap_mem_pools_info_get(struct nmreq *nmr, struct netmap_mem_d *nmd)
 {
 	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
 	struct netmap_pools_info *upi = (struct netmap_pools_info *)(*pp);
-	struct netmap_mem_d *nmd = na->nm_mem;
 	struct netmap_pools_info pi;
 	unsigned int memsize;
 	uint16_t memid;
 	int ret;
-
-	if (!nmd) {
-		return -1;
-	}
 
 	ret = netmap_mem_get_info(nmd, &memsize, NULL, &memid);
 	if (ret) {
@@ -1888,6 +1883,7 @@ netmap_mem_pools_info_get(struct nmreq *nmr, struct netmap_adapter *na)
 
 	pi.memsize = memsize;
 	pi.memid = memid;
+	NMA_LOCK(nmd);
 	pi.if_pool_offset = 0;
 	pi.if_pool_objtotal = nmd->pools[NETMAP_IF_POOL].objtotal;
 	pi.if_pool_objsize = nmd->pools[NETMAP_IF_POOL]._objsize;
@@ -1900,6 +1896,7 @@ netmap_mem_pools_info_get(struct nmreq *nmr, struct netmap_adapter *na)
 			     nmd->pools[NETMAP_RING_POOL].memtotal;
 	pi.buf_pool_objtotal = nmd->pools[NETMAP_BUF_POOL].objtotal;
 	pi.buf_pool_objsize = nmd->pools[NETMAP_BUF_POOL]._objsize;
+	NMA_UNLOCK(nmd);
 
 	ret = copyout(&pi, upi, sizeof(pi));
 	if (ret) {

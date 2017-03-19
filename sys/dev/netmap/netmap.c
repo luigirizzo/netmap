@@ -2288,7 +2288,14 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			break;
 		} else if (i == NETMAP_POOLS_INFO_GET) {
 			/* get information from the memory allocator */
-			error = netmap_mem_pools_info_get(nmr, priv->np_na);
+			NMG_LOCK();
+			if (priv->np_na && priv->np_na->nm_mem) {
+				struct netmap_mem_d *nmd = priv->np_na->nm_mem;
+				error = netmap_mem_pools_info_get(nmr, nmd);
+			} else {
+				error = EINVAL;
+			}
+			NMG_UNLOCK();
 			break;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);

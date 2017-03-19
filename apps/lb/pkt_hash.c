@@ -169,17 +169,20 @@ decode_ip_n_hash(struct ip *iph, uint8_t hash_split, uint8_t seed)
 			rc = decode_ip_n_hash((struct ip *)((uint8_t *)iph + (iph->ip_hl<<2)),
 					      hash_split, seed);
 			break;
+		case IPPROTO_ICMP:
+		case IPPROTO_GRE:
+		case IPPROTO_ESP:
+		case IPPROTO_PIM:
+		case IPPROTO_IGMP:
 		default:
 			/*
 			 ** the hash strength (although weaker but) should still hold
 			 ** even with 2 fields
+			 **/
 			rc = sym_hash_fn(ntohl(iph->ip_src.s_addr),
 					 ntohl(iph->ip_dst.s_addr),
 					 ntohs(0xFFFD) + seed,
 					 ntohs(0xFFFE) + seed);
-			 **/
-			// We return 0 to indicate that the packet couldn't be balanced.
-			return 0;
 			break;
 		}
 	}
