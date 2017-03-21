@@ -1183,7 +1183,7 @@ msb64(uint64_t x)
 #define	PAY_OFS	42	/* where in the pkt... */
 
 static void *
-pinger_body(void *data)
+ping_body(void *data)
 {
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
@@ -1213,7 +1213,7 @@ pinger_body(void *data)
 		struct netmap_ring *ring = NETMAP_TXRING(nifp, 0);
 		struct netmap_slot *slot;
 		char *p;
-	    for (i = 0; i < 1; i++) { /* XXX why the loop for 1 pkt ? */
+
 		slot = &ring->slot[ring->cur];
 		slot->len = size;
 		p = NETMAP_BUF(ring, slot->buf_idx);
@@ -1231,7 +1231,7 @@ pinger_body(void *data)
 			sent++;
 			ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 		}
-	    }
+
 		/* should use a parameter to decide how often to send */
 		if (poll(&pfd, 1, 3000) <= 0) {
 			D("poll error/timeout on queue %d: %s", targ->me,
@@ -1239,8 +1239,8 @@ pinger_body(void *data)
 			continue;
 		}
 		/* see what we got back */
-		for (i = targ->nmd->first_tx_ring;
-			i <= targ->nmd->last_tx_ring; i++) {
+		for (i = targ->nmd->first_rx_ring;
+			i <= targ->nmd->last_rx_ring; i++) {
 			ring = NETMAP_RXRING(nifp, i);
 			while (!nm_ring_empty(ring)) {
 				uint32_t seq;
@@ -1318,7 +1318,7 @@ pinger_body(void *data)
  * reply to ping requests
  */
 static void *
-ponger_body(void *data)
+pong_body(void *data)
 {
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
@@ -2403,8 +2403,8 @@ struct td_desc {
 static struct td_desc func[] = {
 	{ TD_TYPE_SENDER,	"tx",		sender_body },
 	{ TD_TYPE_RECEIVER,	"rx",		receiver_body },
-	{ TD_TYPE_OTHER,	"ping",		pinger_body },
-	{ TD_TYPE_OTHER,	"pong",		ponger_body },
+	{ TD_TYPE_OTHER,	"ping",		ping_body },
+	{ TD_TYPE_OTHER,	"pong",		pong_body },
 	{ TD_TYPE_SENDER,	"txseq",	txseq_body },
 	{ TD_TYPE_RECEIVER,	"rxseq",	rxseq_body },
 	{ 0,			NULL,	NULL }
