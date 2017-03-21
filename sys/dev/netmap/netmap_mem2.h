@@ -148,6 +148,12 @@ struct netmap_mem_d* __netmap_mem_get(struct netmap_mem_d *, const char *, int);
 void __netmap_mem_put(struct netmap_mem_d *, const char *, int);
 struct netmap_mem_d* netmap_mem_find(nm_memid_t);
 
+#ifdef WITH_EXTMEM
+int netmap_mem_ext_create(struct nmreq *);
+#else /* !WITH_EXTMEM */
+#define netmap_mem_ext_create(_1) (EOPNOTSUPP)
+#endif /* WITH_EXTMEM */
+
 #ifdef WITH_PTNETMAP_GUEST
 struct netmap_mem_d* netmap_mem_pt_guest_new(struct ifnet *,
 					     unsigned int nifp_offset,

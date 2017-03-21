@@ -2302,6 +2302,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			}
 			NMG_UNLOCK();
 			break;
+		} else if (i == NETMAP_POOLS_CREATE) {
+			error = netmap_mem_ext_create(nmr);
+			break;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);
 			error = EINVAL;

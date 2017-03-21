@@ -335,6 +335,38 @@ doit:
 
 }
 
+#ifndef MAP_HUGETLB
+#define MAP_HUGETLB 0x40000
+#endif
+
+void do_anon_mmap()
+{
+	size_t memsize;
+	char *arg;
+	int flags = 0;
+
+	arg = nextarg();
+	if (!arg) {
+		memsize = last_memsize;
+		goto doit;
+	}
+	memsize = atoi(arg);
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	flags |= MAP_HUGETLB;
+doit:
+	last_mmap_addr = mmap(0, memsize,
+			PROT_WRITE | PROT_READ,
+			MAP_PRIVATE | MAP_ANONYMOUS | flags, -1, 0);
+	if (last_access_addr == NULL)
+		last_access_addr = last_mmap_addr;
+	output_err(last_mmap_addr == MAP_FAILED ? -1 : 0,
+		"mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS%s, -1, 0)=%p",
+		memsize, (flags ? "MAP_HUGETLB" : ""), last_mmap_addr);
+
+}
+
 void do_munmap()
 {
 	void *mmap_addr;
@@ -920,6 +952,10 @@ do_nmr_dump()
 			printf("POOLS_INFO_GET");
 			arg_interp = nmr_pools_info_get;
 			break;
+		case NETMAP_POOLS_CREATE:
+			printf("POOLS_CREATE");
+			arg_interp = nmr_pools_info_get;
+			break;
 		default:
 			printf("???");
 			arg_interp = nmr_arg_error;
@@ -1054,6 +1090,10 @@ do_nmr_cmd()
 	} else if (strcmp(arg, "pools-info-get") == 0) {
 		curr_nmr.nr_cmd = NETMAP_POOLS_INFO_GET;
 		nmreq_pointer_put(&curr_nmr, &curr_pools_info);
+	} else if (strcmp(arg, "pools-create") == 0) {
+		curr_nmr.nr_cmd = NETMAP_POOLS_CREATE;
+		memcpy(last_mmap_addr, &curr_pools_info, sizeof(curr_pools_info));
+		nmreq_pointer_put(&curr_nmr, last_mmap_addr);
 	}
 out:
 	output("cmd=%x", curr_nmr.nr_cmd);
@@ -1184,6 +1224,7 @@ struct cmd_def commands[] = {
 #endif /* TEST_NETMAP */
 	{ "dup",	do_dup,		},
 	{ "mmap",	do_mmap,	},
+	{ "anon-mmap",	do_anon_mmap,	},
 	{ "access",	do_access,	},
 	{ "munmap",	do_munmap,	},
 	{ "poll",	do_poll,	},
