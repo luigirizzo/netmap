@@ -1057,6 +1057,8 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 			(vma->vm_end - vma->vm_start), memsize);
 	if (off + (vma->vm_end - vma->vm_start) > memsize)
 		return -EINVAL;
+	if (memflags & NETMAP_MEM_EXT)
+		return -ENODEV;
 	if (memflags & NETMAP_MEM_IO) {
 		vm_ooffset_t pa;
 

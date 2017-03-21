@@ -57,6 +57,7 @@
 
 #include <linux/io.h>	// virt_to_phys
 #include <linux/hrtimer.h>
+#include <linux/highmem.h> // kmap
 
 #define KASSERT(a, b)		BUG_ON(!(a))
 
@@ -180,6 +181,10 @@ static inline int skb_checksum_start_offset(const struct sk_buff *skb) {
 #define NM_REG_NETDEV_NOTIF(nb)		register_netdevice_notifier(nb)
 #define NM_UNREG_NETDEV_NOTIF(nb)	unregister_netdevice_notifier(nb)
 #endif /* NETMAP_LINUX_HAVE_REG_NOTIF_RH */
+
+#ifndef NETMAP_LINUX_HAVE_PAGE_TO_VIRT
+#define page_to_virt(p) 		phys_to_virt(page_to_phys(p))
+#endif /* NETMAP_LINUX_HAVE_PAGE_TO_VIRT */
 
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 

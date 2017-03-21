@@ -2374,6 +2374,17 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			}
 			NMG_UNLOCK();
 			break;
+		} else if (i == NETMAP_POOLS_CREATE) {
+			nmd = netmap_mem_ext_create(nmr, &error);
+			if (nmd == NULL)
+				break;
+			/* reset the fields used by POOLS_CREATE to
+			 * avoid confusing the rest of the code
+			 */
+			nmr->nr_cmd = 0;
+			nmr->nr_arg1 = 0;
+			nmr->nr_arg2 = 0;
+			nmr->nr_arg3 = 0;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);
 			error = EINVAL;
@@ -2921,6 +2932,7 @@ netmap_attach_common(struct netmap_adapter *na)
 	if (na->na_flags & NAF_HOST_RINGS && na->ifp) {
 		na->if_input = na->ifp->if_input; /* for netmap_send_up */
 	}
+	pa->pdev = na; /* make sure netmap_mem_map() is called */
 #endif /* __FreeBSD__ */
 	if (na->nm_krings_create == NULL) {
 		/* we assume that we have been called by a driver,
