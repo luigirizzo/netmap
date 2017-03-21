@@ -3210,6 +3210,7 @@ netmap_attach_common(struct netmap_adapter *na)
 	if (na->na_flags & NAF_HOST_RINGS && na->ifp) {
 		na->if_input = na->ifp->if_input; /* for netmap_send_up */
 	}
+	pa->pdev = na; /* make sure netmap_mem_map() is called */
 #endif /* __FreeBSD__ */
 	if (na->nm_krings_create == NULL) {
 		/* we assume that we have been called by a driver,

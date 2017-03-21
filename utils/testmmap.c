@@ -335,6 +335,38 @@ doit:
 
 }
 
+#ifndef MAP_HUGETLB
+#define MAP_HUGETLB 0x40000
+#endif
+
+void do_anon_mmap()
+{
+	size_t memsize;
+	char *arg;
+	int flags = 0;
+
+	arg = nextarg();
+	if (!arg) {
+		memsize = last_memsize;
+		goto doit;
+	}
+	memsize = atoi(arg);
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	flags |= MAP_HUGETLB;
+doit:
+	last_mmap_addr = mmap(0, memsize,
+			PROT_WRITE | PROT_READ,
+			MAP_PRIVATE | MAP_ANONYMOUS | flags, -1, 0);
+	if (last_access_addr == NULL)
+		last_access_addr = last_mmap_addr;
+	output_err(last_mmap_addr == MAP_FAILED ? -1 : 0,
+		"mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS%s, -1, 0)=%p",
+		memsize, (flags ? "MAP_HUGETLB" : ""), last_mmap_addr);
+
+}
+
 void do_munmap()
 {
 	void *mmap_addr;
@@ -1660,6 +1692,7 @@ struct cmd_def commands[] = {
 #endif /* TEST_NETMAP */
 	{ "dup",	do_dup,		},
 	{ "mmap",	do_mmap,	},
+	{ "anon-mmap",	do_anon_mmap,	},
 	{ "access",	do_access,	},
 	{ "munmap",	do_munmap,	},
 	{ "poll",	do_poll,	},
