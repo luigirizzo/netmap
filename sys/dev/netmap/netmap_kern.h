@@ -1561,6 +1561,7 @@ extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
 extern int netmap_generic_rings;
 extern int netmap_generic_txqdisc;
+extern int ptnetmap_worker;
 
 /*
  * NA returns a pointer to the struct netmap adapter from the ifp,
