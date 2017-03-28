@@ -1213,7 +1213,9 @@ ping_body(void *data)
 		struct netmap_ring *ring = NETMAP_TXRING(nifp, 0);
 		struct netmap_slot *slot;
 		char *p;
+		int rv;
 
+	    for (i = 0; i < 1; i++) { /* XXX why the loop for 1 pkt ? */
 		slot = &ring->slot[ring->cur];
 		slot->len = size;
 		p = NETMAP_BUF(ring, slot->buf_idx);
@@ -1233,9 +1235,9 @@ ping_body(void *data)
 		}
 
 		/* should use a parameter to decide how often to send */
-		if (poll(&pfd, 1, 3000) <= 0) {
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
+		if ( (rv = poll(&pfd, 1, 3000)) <= 0) {
+			D("poll error on queue %d: %s", targ->me,
+				(rv ? strerror(errno) : "timeout"));
 			continue;
 		}
 		/* see what we got back */
@@ -1338,9 +1340,10 @@ pong_body(void *data)
 #ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
 #else
-		if (poll(&pfd, 1, 1000) <= 0) {
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
+		int rv;
+		if ( (rv = poll(&pfd, 1, 1000)) <= 0) {
+			D("poll error on queue %d: %s", targ->me,
+				rv ? strerror(errno) : "timeout");
 			continue;
 		}
 #endif
