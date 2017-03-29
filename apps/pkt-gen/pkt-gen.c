@@ -1359,6 +1359,7 @@ ping_body(void *data)
 
 	if (sent > 0)
 		D("RTT over %"PRIu64" packets: min %d av %d ns", sent, (int)g_min, (int)((double)g_av/sent));
+	targ->completed = 1;
 
 	/* reset the ``used`` flag. */
 	targ->used = 0;
@@ -1442,6 +1443,8 @@ pong_body(void *data)
 #endif
 		//D("tx %d rx %d", sent, rx);
 	}
+
+	targ->completed = 1;
 
 	/* reset the ``used`` flag. */
 	targ->used = 0;
