@@ -2422,16 +2422,17 @@ struct td_desc {
 	int ty;
 	char *key;
 	void *f;
+	int default_burst;
 };
 
 static struct td_desc func[] = {
-	{ TD_TYPE_SENDER,	"tx",		sender_body },
-	{ TD_TYPE_RECEIVER,	"rx",		receiver_body },
-	{ TD_TYPE_OTHER,	"ping",		ping_body },
-	{ TD_TYPE_OTHER,	"pong",		pong_body },
-	{ TD_TYPE_SENDER,	"txseq",	txseq_body },
-	{ TD_TYPE_RECEIVER,	"rxseq",	rxseq_body },
-	{ 0,			NULL,	NULL }
+	{ TD_TYPE_SENDER,	"tx",		sender_body,	512 },
+	{ TD_TYPE_RECEIVER,	"rx",		receiver_body,	512},
+	{ TD_TYPE_OTHER,	"ping",		ping_body,	1 },
+	{ TD_TYPE_OTHER,	"pong",		pong_body,	1 },
+	{ TD_TYPE_SENDER,	"txseq",	txseq_body,	512 },
+	{ TD_TYPE_RECEIVER,	"rxseq",	rxseq_body,	512 },
+	{ 0,			NULL,		NULL, 		0 }
 };
 
 static int
@@ -2508,11 +2509,13 @@ main(int arc, char **argv)
 	int ch;
 	int devqueues = 1;	/* how many device queues */
 
+	struct td_desc *fn = func;
+
 	bzero(&g, sizeof(g));
 
 	g.main_fd = -1;
-	g.td_body = receiver_body;
-	g.td_type = TD_TYPE_RECEIVER;
+	g.td_body = fn->f;
+	g.td_type = fn->ty;
 	g.report_interval = 1000;	/* report interval */
 	g.affinity = -1;
 	/* ip addresses can also be a range x.x.x.x-x.x.x.y */
@@ -2522,7 +2525,6 @@ main(int arc, char **argv)
 	g.dst_mac.name = "ff:ff:ff:ff:ff:ff";
 	g.src_mac.name = NULL;
 	g.pkt_size = 60;
-	g.burst = 512;		// default
 	g.nthreads = 1;
 	g.cpus = 1;		// default
 	g.forever = 1;
@@ -2534,7 +2536,6 @@ main(int arc, char **argv)
 
 	while ((ch = getopt(arc, argv, "46a:f:F:n:i:Il:d:s:D:S:b:c:o:p:"
 	    "T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
-		struct td_desc *fn;
 
 		switch(ch) {
 		default:
@@ -2704,6 +2705,11 @@ main(int arc, char **argv)
 	if (strlen(g.ifname) <=0 ) {
 		D("missing ifname");
 		usage();
+	}
+
+	if (g.burst == 0) {
+		g.burst = fn->default_burst;
+		D("using default burst size: %d", g.burst);
 	}
 
 	g.system_cpus = i = system_ncpus();
