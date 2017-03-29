@@ -2430,7 +2430,7 @@ main_thread(struct glob_arg *g)
 	delta_t = toc.tv_sec + 1e-6* toc.tv_usec;
 	if (g->td_type == TD_TYPE_SENDER)
 		tx_output(&cur, delta_t, "Sent");
-	else
+	else if (g->td_type == TD_TYPE_RECEIVER)
 		tx_output(&cur, delta_t, "Received");
 }
 
