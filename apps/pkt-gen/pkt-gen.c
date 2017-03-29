@@ -1240,7 +1240,7 @@ ping_body(void *data)
 		struct netmap_slot *slot;
 		char *p;
 		int rv;
-		uint64_t limit;
+		uint64_t limit, event = 0;
 
 		if (rate_limit && tosend <= 0) {
 			tosend = targ->g->burst;
@@ -1271,6 +1271,11 @@ ping_body(void *data)
 				ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 			}
 		}
+		if (i > 0)
+			event++;
+		targ->ctr.pkts = sent;
+		targ->ctr.bytes = sent*size;
+		targ->ctr.events = event;
 		if (rate_limit)
 			tosend -= i;
 		/* should use a parameter to decide how often to send */
