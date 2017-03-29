@@ -1372,7 +1372,8 @@ pong_body(void *data)
 		D("can only reply ping with 1 thread");
 		return NULL;
 	}
-	D("understood ponger %lu but don't know how to do it", n);
+	if (n > 0)
+		D("understood ponger %lu but don't know how to do it", n);
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		uint32_t txcur, txavail;
 //#define BUSYWAIT
