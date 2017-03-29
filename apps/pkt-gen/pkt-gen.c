@@ -1176,6 +1176,24 @@ msb64(uint64_t x)
 }
 
 /*
+ * wait until ts, either busy or sleeping if more than 1ms.
+ * Return wakeup time.
+ */
+static struct timespec
+wait_time(struct timespec ts)
+{
+	for (;;) {
+		struct timespec w, cur;
+		clock_gettime(CLOCK_REALTIME_PRECISE, &cur);
+		w = timespec_sub(ts, cur);
+		if (w.tv_sec < 0)
+			return cur;
+		else if (w.tv_sec > 0 || w.tv_nsec > 1000000)
+			poll(NULL, 0, 1);
+	}
+}
+
+/*
  * Send a packet, and wait for a response.
  * The payload (after UDP header, ofs 42) has a 4-byte sequence
  * followed by a struct timeval (or bintime?)
@@ -1183,18 +1201,21 @@ msb64(uint64_t x)
 #define	PAY_OFS	42	/* where in the pkt... */
 
 static void *
-pinger_body(void *data)
+ping_body(void *data)
 {
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	struct netmap_if *nifp = targ->nmd->nifp;
-	int i, rx = 0;
+	int i, m, rx = 0;
 	void *frame;
 	int size;
 	struct timespec ts, now, last_print;
+	struct timespec nexttime = { 0, 0}; // XXX silence compiler
 	uint64_t sent = 0, n = targ->g->npackets;
 	uint64_t count = 0, t_cur, t_min = ~0, av = 0;
+	uint64_t g_min = ~0, g_av = 0;
 	uint64_t buckets[64];	/* bins for delays, ns */
+	int rate_limit = targ->g->tx_rate, tosend = 0;
 
 	frame = &targ->pkt;
 	frame += sizeof(targ->pkt.vh) - targ->g->virt_header;
@@ -1209,38 +1230,75 @@ pinger_body(void *data)
 	bzero(&buckets, sizeof(buckets));
 	clock_gettime(CLOCK_REALTIME_PRECISE, &last_print);
 	now = last_print;
+	if (rate_limit) {
+		targ->tic = timespec_add(now, (struct timespec){2,0});
+		targ->tic.tv_nsec = 0;
+		wait_time(targ->tic);
+		nexttime = targ->tic;
+	}
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		struct netmap_ring *ring = NETMAP_TXRING(nifp, 0);
 		struct netmap_slot *slot;
 		char *p;
-	    for (i = 0; i < 1; i++) { /* XXX why the loop for 1 pkt ? */
-		slot = &ring->slot[ring->cur];
-		slot->len = size;
-		p = NETMAP_BUF(ring, slot->buf_idx);
+		int rv;
+		uint64_t limit, event = 0;
 
-		if (nm_ring_empty(ring)) {
-			D("-- ouch, cannot send");
-		} else {
-			struct tstamp *tp;
-			nm_pkt_copy(frame, p, size);
-			clock_gettime(CLOCK_REALTIME_PRECISE, &ts);
-			bcopy(&sent, p+42, sizeof(sent));
-			tp = (struct tstamp *)(p+46);
-			tp->sec = (uint32_t)ts.tv_sec;
-			tp->nsec = (uint32_t)ts.tv_nsec;
-			sent++;
-			ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+		if (rate_limit && tosend <= 0) {
+			tosend = targ->g->burst;
+			nexttime = timespec_add(nexttime, targ->g->tx_period);
+			wait_time(nexttime);
 		}
-	    }
-		/* should use a parameter to decide how often to send */
-		if (poll(&pfd, 1, 3000) <= 0) {
-			D("poll error/timeout on queue %d: %s", targ->me,
+
+		limit = rate_limit ? tosend : targ->g->burst;
+		if (n > 0 && n - sent < limit)
+			limit = n - sent;
+		for (m = 0; (unsigned)m < limit; m++) {
+			slot = &ring->slot[ring->cur];
+			slot->len = size;
+			p = NETMAP_BUF(ring, slot->buf_idx);
+
+			if (nm_ring_empty(ring)) {
+				D("-- ouch, cannot send");
+				break;
+			} else {
+				struct tstamp *tp;
+				nm_pkt_copy(frame, p, size);
+				clock_gettime(CLOCK_REALTIME_PRECISE, &ts);
+				bcopy(&sent, p+42, sizeof(sent));
+				tp = (struct tstamp *)(p+46);
+				tp->sec = (uint32_t)ts.tv_sec;
+				tp->nsec = (uint32_t)ts.tv_nsec;
+				sent++;
+				ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+			}
+		}
+		if (m > 0)
+			event++;
+		targ->ctr.pkts = sent;
+		targ->ctr.bytes = sent*size;
+		targ->ctr.events = event;
+		if (rate_limit)
+			tosend -= m;
+#ifdef BUSYWAIT
+		rv = ioctl(pfd.fd, NIOCTXSYNC, NULL);
+		if (rv < 0) {
+			D("TXSYNC error on queue %d: %s", targ->me,
 				strerror(errno));
+		}
+	again:
+		ioctl(pfd.fd, NIOCRXSYNC, NULL);
+#else
+		/* should use a parameter to decide how often to send */
+		if ( (rv = poll(&pfd, 1, 3000)) <= 0) {
+			D("poll error on queue %d: %s", targ->me,
+				(rv ? strerror(errno) : "timeout"));
 			continue;
 		}
+#endif /* BUSYWAIT */
 		/* see what we got back */
-		for (i = targ->nmd->first_tx_ring;
-			i <= targ->nmd->last_tx_ring; i++) {
+		rx = 0;
+		for (i = targ->nmd->first_rx_ring;
+			i <= targ->nmd->last_rx_ring; i++) {
 			ring = NETMAP_RXRING(nifp, i);
 			while (!nm_ring_empty(ring)) {
 				uint32_t seq;
@@ -1301,11 +1359,22 @@ pinger_body(void *data)
 			D("k: %d .. %d\n\t%s", 1<<kmin, 1<<k, buf);
 			bzero(&buckets, sizeof(buckets));
 			count = 0;
+			g_av += av;
 			av = 0;
+			if (t_min < g_min)
+				g_min = t_min;
 			t_min = ~0;
 			last_print = now;
 		}
+#ifdef BUSYWAIT
+		if (rx < m && ts.tv_sec <= 3 && !targ->cancel)
+			goto again;
+#endif /* BUSYWAIT */
 	}
+
+	if (sent > 0)
+		D("RTT over %"PRIu64" packets: min %d av %d ns", sent, (int)g_min, (int)((double)g_av/sent));
+	targ->completed = 1;
 
 	/* reset the ``used`` flag. */
 	targ->used = 0;
@@ -1318,7 +1387,7 @@ pinger_body(void *data)
  * reply to ping requests
  */
 static void *
-ponger_body(void *data)
+pong_body(void *data)
 {
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
@@ -1331,16 +1400,18 @@ ponger_body(void *data)
 		D("can only reply ping with 1 thread");
 		return NULL;
 	}
-	D("understood ponger %lu but don't know how to do it", n);
+	if (n > 0)
+		D("understood ponger %lu but don't know how to do it", n);
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		uint32_t txcur, txavail;
 //#define BUSYWAIT
 #ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCRXSYNC, NULL);
 #else
-		if (poll(&pfd, 1, 1000) <= 0) {
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
+		int rv;
+		if ( (rv = poll(&pfd, 1, 1000)) <= 0) {
+			D("poll error on queue %d: %s", targ->me,
+				rv ? strerror(errno) : "timeout");
 			continue;
 		}
 #endif
@@ -1388,30 +1459,14 @@ ponger_body(void *data)
 		//D("tx %d rx %d", sent, rx);
 	}
 
+	targ->completed = 1;
+
 	/* reset the ``used`` flag. */
 	targ->used = 0;
 
 	return NULL;
 }
 
-
-/*
- * wait until ts, either busy or sleeping if more than 1ms.
- * Return wakeup time.
- */
-static struct timespec
-wait_time(struct timespec ts)
-{
-	for (;;) {
-		struct timespec w, cur;
-		clock_gettime(CLOCK_REALTIME_PRECISE, &cur);
-		w = timespec_sub(ts, cur);
-		if (w.tv_sec < 0)
-			return cur;
-		else if (w.tv_sec > 0 || w.tv_nsec > 1000000)
-			poll(NULL, 0, 1);
-	}
-}
 
 static void *
 sender_body(void *data)
@@ -2390,7 +2445,7 @@ main_thread(struct glob_arg *g)
 	delta_t = toc.tv_sec + 1e-6* toc.tv_usec;
 	if (g->td_type == TD_TYPE_SENDER)
 		tx_output(&cur, delta_t, "Sent");
-	else
+	else if (g->td_type == TD_TYPE_RECEIVER)
 		tx_output(&cur, delta_t, "Received");
 }
 
@@ -2398,16 +2453,17 @@ struct td_desc {
 	int ty;
 	char *key;
 	void *f;
+	int default_burst;
 };
 
 static struct td_desc func[] = {
-	{ TD_TYPE_SENDER,	"tx",		sender_body },
-	{ TD_TYPE_RECEIVER,	"rx",		receiver_body },
-	{ TD_TYPE_OTHER,	"ping",		pinger_body },
-	{ TD_TYPE_OTHER,	"pong",		ponger_body },
-	{ TD_TYPE_SENDER,	"txseq",	txseq_body },
-	{ TD_TYPE_RECEIVER,	"rxseq",	rxseq_body },
-	{ 0,			NULL,	NULL }
+	{ TD_TYPE_SENDER,	"tx",		sender_body,	512 },
+	{ TD_TYPE_RECEIVER,	"rx",		receiver_body,	512},
+	{ TD_TYPE_OTHER,	"ping",		ping_body,	1 },
+	{ TD_TYPE_OTHER,	"pong",		pong_body,	1 },
+	{ TD_TYPE_SENDER,	"txseq",	txseq_body,	512 },
+	{ TD_TYPE_RECEIVER,	"rxseq",	rxseq_body,	512 },
+	{ 0,			NULL,		NULL, 		0 }
 };
 
 static int
@@ -2484,11 +2540,13 @@ main(int arc, char **argv)
 	int ch;
 	int devqueues = 1;	/* how many device queues */
 
+	struct td_desc *fn = func;
+
 	bzero(&g, sizeof(g));
 
 	g.main_fd = -1;
-	g.td_body = receiver_body;
-	g.td_type = TD_TYPE_RECEIVER;
+	g.td_body = fn->f;
+	g.td_type = fn->ty;
 	g.report_interval = 1000;	/* report interval */
 	g.affinity = -1;
 	/* ip addresses can also be a range x.x.x.x-x.x.x.y */
@@ -2498,7 +2556,6 @@ main(int arc, char **argv)
 	g.dst_mac.name = "ff:ff:ff:ff:ff:ff";
 	g.src_mac.name = NULL;
 	g.pkt_size = 60;
-	g.burst = 512;		// default
 	g.nthreads = 1;
 	g.cpus = 1;		// default
 	g.forever = 1;
@@ -2510,7 +2567,6 @@ main(int arc, char **argv)
 
 	while ((ch = getopt(arc, argv, "46a:f:F:n:i:Il:d:s:D:S:b:c:o:p:"
 	    "T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
-		struct td_desc *fn;
 
 		switch(ch) {
 		default:
@@ -2680,6 +2736,11 @@ main(int arc, char **argv)
 	if (strlen(g.ifname) <=0 ) {
 		D("missing ifname");
 		usage();
+	}
+
+	if (g.burst == 0) {
+		g.burst = fn->default_burst;
+		D("using default burst size: %d", g.burst);
 	}
 
 	g.system_cpus = i = system_ncpus();
