@@ -1213,6 +1213,7 @@ ping_body(void *data)
 	struct timespec nexttime = { 0, 0}; // XXX silence compiler
 	uint64_t sent = 0, n = targ->g->npackets;
 	uint64_t count = 0, t_cur, t_min = ~0, av = 0;
+	uint64_t g_min = ~0, g_av = 0;
 	uint64_t buckets[64];	/* bins for delays, ns */
 	int rate_limit = targ->g->tx_rate, tosend = 0;
 
@@ -1347,11 +1348,17 @@ ping_body(void *data)
 			D("k: %d .. %d\n\t%s", 1<<kmin, 1<<k, buf);
 			bzero(&buckets, sizeof(buckets));
 			count = 0;
+			g_av += av;
 			av = 0;
+			if (t_min < g_min)
+				g_min = t_min;
 			t_min = ~0;
 			last_print = now;
 		}
 	}
+
+	if (sent > 0)
+		D("RTT over %"PRIu64" packets: min %d av %d ns", sent, (int)g_min, (int)((double)g_av/sent));
 
 	/* reset the ``used`` flag. */
 	targ->used = 0;
