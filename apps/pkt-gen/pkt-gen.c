@@ -2457,8 +2457,8 @@ struct td_desc {
 };
 
 static struct td_desc func[] = {
+	{ TD_TYPE_RECEIVER,	"rx",		receiver_body,	512},	/* default */
 	{ TD_TYPE_SENDER,	"tx",		sender_body,	512 },
-	{ TD_TYPE_RECEIVER,	"rx",		receiver_body,	512},
 	{ TD_TYPE_OTHER,	"ping",		ping_body,	1 },
 	{ TD_TYPE_OTHER,	"pong",		pong_body,	1 },
 	{ TD_TYPE_SENDER,	"txseq",	txseq_body,	512 },
