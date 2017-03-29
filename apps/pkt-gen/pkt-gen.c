@@ -1176,6 +1176,24 @@ msb64(uint64_t x)
 }
 
 /*
+ * wait until ts, either busy or sleeping if more than 1ms.
+ * Return wakeup time.
+ */
+static struct timespec
+wait_time(struct timespec ts)
+{
+	for (;;) {
+		struct timespec w, cur;
+		clock_gettime(CLOCK_REALTIME_PRECISE, &cur);
+		w = timespec_sub(ts, cur);
+		if (w.tv_sec < 0)
+			return cur;
+		else if (w.tv_sec > 0 || w.tv_nsec > 1000000)
+			poll(NULL, 0, 1);
+	}
+}
+
+/*
  * Send a packet, and wait for a response.
  * The payload (after UDP header, ofs 42) has a 4-byte sequence
  * followed by a struct timeval (or bintime?)
@@ -1192,9 +1210,11 @@ ping_body(void *data)
 	void *frame;
 	int size;
 	struct timespec ts, now, last_print;
+	struct timespec nexttime = { 0, 0}; // XXX silence compiler
 	uint64_t sent = 0, n = targ->g->npackets;
 	uint64_t count = 0, t_cur, t_min = ~0, av = 0;
 	uint64_t buckets[64];	/* bins for delays, ns */
+	int rate_limit = targ->g->tx_rate, tosend = 0;
 
 	frame = &targ->pkt;
 	frame += sizeof(targ->pkt.vh) - targ->g->virt_header;
@@ -1209,31 +1229,50 @@ ping_body(void *data)
 	bzero(&buckets, sizeof(buckets));
 	clock_gettime(CLOCK_REALTIME_PRECISE, &last_print);
 	now = last_print;
+	if (rate_limit) {
+		targ->tic = timespec_add(now, (struct timespec){2,0});
+		targ->tic.tv_nsec = 0;
+		wait_time(targ->tic);
+		nexttime = targ->tic;
+	}
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		struct netmap_ring *ring = NETMAP_TXRING(nifp, 0);
 		struct netmap_slot *slot;
 		char *p;
 		int rv;
+		uint64_t limit;
 
-	    for (i = 0; i < 1; i++) { /* XXX why the loop for 1 pkt ? */
-		slot = &ring->slot[ring->cur];
-		slot->len = size;
-		p = NETMAP_BUF(ring, slot->buf_idx);
-
-		if (nm_ring_empty(ring)) {
-			D("-- ouch, cannot send");
-		} else {
-			struct tstamp *tp;
-			nm_pkt_copy(frame, p, size);
-			clock_gettime(CLOCK_REALTIME_PRECISE, &ts);
-			bcopy(&sent, p+42, sizeof(sent));
-			tp = (struct tstamp *)(p+46);
-			tp->sec = (uint32_t)ts.tv_sec;
-			tp->nsec = (uint32_t)ts.tv_nsec;
-			sent++;
-			ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+		if (rate_limit && tosend <= 0) {
+			tosend = targ->g->burst;
+			nexttime = timespec_add(nexttime, targ->g->tx_period);
+			wait_time(nexttime);
 		}
 
+		limit = rate_limit ? tosend : targ->g->burst;
+		if (n > 0 && n - sent < limit)
+			limit = n - sent;
+		for (i = 0; (unsigned)i < limit; i++) {
+			slot = &ring->slot[ring->cur];
+			slot->len = size;
+			p = NETMAP_BUF(ring, slot->buf_idx);
+
+			if (nm_ring_empty(ring)) {
+				D("-- ouch, cannot send");
+				break;
+			} else {
+				struct tstamp *tp;
+				nm_pkt_copy(frame, p, size);
+				clock_gettime(CLOCK_REALTIME_PRECISE, &ts);
+				bcopy(&sent, p+42, sizeof(sent));
+				tp = (struct tstamp *)(p+46);
+				tp->sec = (uint32_t)ts.tv_sec;
+				tp->nsec = (uint32_t)ts.tv_nsec;
+				sent++;
+				ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+			}
+		}
+		if (rate_limit)
+			tosend -= i;
 		/* should use a parameter to decide how often to send */
 		if ( (rv = poll(&pfd, 1, 3000)) <= 0) {
 			D("poll error on queue %d: %s", targ->me,
@@ -1397,24 +1436,6 @@ pong_body(void *data)
 	return NULL;
 }
 
-
-/*
- * wait until ts, either busy or sleeping if more than 1ms.
- * Return wakeup time.
- */
-static struct timespec
-wait_time(struct timespec ts)
-{
-	for (;;) {
-		struct timespec w, cur;
-		clock_gettime(CLOCK_REALTIME_PRECISE, &cur);
-		w = timespec_sub(ts, cur);
-		if (w.tv_sec < 0)
-			return cur;
-		else if (w.tv_sec > 0 || w.tv_nsec > 1000000)
-			poll(NULL, 0, 1);
-	}
-}
 
 static void *
 sender_body(void *data)
