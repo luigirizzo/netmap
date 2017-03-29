@@ -1206,7 +1206,7 @@ ping_body(void *data)
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	struct netmap_if *nifp = targ->nmd->nifp;
-	int i, rx = 0;
+	int i, m, rx = 0;
 	void *frame;
 	int size;
 	struct timespec ts, now, last_print;
@@ -1252,7 +1252,7 @@ ping_body(void *data)
 		limit = rate_limit ? tosend : targ->g->burst;
 		if (n > 0 && n - sent < limit)
 			limit = n - sent;
-		for (i = 0; (unsigned)i < limit; i++) {
+		for (m = 0; (unsigned)m < limit; m++) {
 			slot = &ring->slot[ring->cur];
 			slot->len = size;
 			p = NETMAP_BUF(ring, slot->buf_idx);
@@ -1272,20 +1272,31 @@ ping_body(void *data)
 				ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 			}
 		}
-		if (i > 0)
+		if (m > 0)
 			event++;
 		targ->ctr.pkts = sent;
 		targ->ctr.bytes = sent*size;
 		targ->ctr.events = event;
 		if (rate_limit)
-			tosend -= i;
+			tosend -= m;
+#ifdef BUSYWAIT
+		rv = ioctl(pfd.fd, NIOCTXSYNC, NULL);
+		if (rv < 0) {
+			D("TXSYNC error on queue %d: %s", targ->me,
+				strerror(errno));
+		}
+	again:
+		ioctl(pfd.fd, NIOCRXSYNC, NULL);
+#else
 		/* should use a parameter to decide how often to send */
 		if ( (rv = poll(&pfd, 1, 3000)) <= 0) {
 			D("poll error on queue %d: %s", targ->me,
 				(rv ? strerror(errno) : "timeout"));
 			continue;
 		}
+#endif /* BUSYWAIT */
 		/* see what we got back */
+		rx = 0;
 		for (i = targ->nmd->first_rx_ring;
 			i <= targ->nmd->last_rx_ring; i++) {
 			ring = NETMAP_RXRING(nifp, i);
@@ -1355,6 +1366,10 @@ ping_body(void *data)
 			t_min = ~0;
 			last_print = now;
 		}
+#ifdef BUSYWAIT
+		if (rx < m && ts.tv_sec <= 3 && !targ->cancel)
+			goto again;
+#endif /* BUSYWAIT */
 	}
 
 	if (sent > 0)
