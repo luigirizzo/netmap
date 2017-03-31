@@ -1411,6 +1411,17 @@ EOF
 	}
 EOF
 
+# check for get_user_pages_unlocked number of args
+  add_test 'have GUP_4ARGS' <<EOF
+  	#include <linux/mm.h>
+
+	long
+	dummy(unsigned long start, unsigned long nr_pages,
+		struct page **pages, unsigned int gup_flags) {
+		return get_user_pages_unlocked(start, nr_pages, pages, gup_flags);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
