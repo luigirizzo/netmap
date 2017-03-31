@@ -2059,7 +2059,7 @@ netmap_mem_ext_create(struct nmreq *nmr)
 	if (nme == NULL)
 		goto out_unmap;
 					
-	nme->up.refcount = 1;
+	nme->up.flags |= NETMAP_MEM_EXT;
 
 	clust = page_to_virt(*pages);
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
