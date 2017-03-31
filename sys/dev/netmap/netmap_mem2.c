@@ -2048,8 +2048,6 @@ netmap_mem_ext_create(struct nmreq *nmr)
 	nme->pages = pages;
 	res = 0;
 	nme->nr_pages = nr_pages;
-	pages++; /* skip the header */
-	nr_pages--;
 
 	nme = _netmap_mem_private_new(sizeof(*nme),
 			(struct netmap_obj_params[]){
@@ -2114,6 +2112,13 @@ netmap_mem_ext_create(struct nmreq *nmr)
 		p->objtotal = j;
 		p->numclusters = p->objtotal;
 		p->memtotal = j * p->_objsize;
+	}
+
+	/* skip the first netmap_if, where the pools info reside */
+	{
+		struct netmap_obj_pool *p = &nme->up.pools[NETMAP_IF_POOL];
+		p->lut[0].vaddr = NULL;
+		p->lut[0].paddr = 0;
 	}
 
 	error = netmap_mem_init_bitmaps(&nme->up);
