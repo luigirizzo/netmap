@@ -322,8 +322,14 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		 * memory, otherwise we have leakage.
 		 */
 		free_unused_bufs(vi);
-		/* Also free the pages allocated by the driver. */
+
+		/* Also free the pages allocated by the driver. Since
+		 * Linux 4.10, free_receive_bufs() takes the rtnl lock
+		 * to support XDP. To avoid deadlock, we temporarily
+		 * release the lock during this call. */
+		rtnl_unlock();
 		free_receive_bufs(vi);
+		rtnl_lock();
 
 		/* enable netmap mode */
 		virtio_netmap_set_kring_mode(na, NKR_NETMAP_ON);
