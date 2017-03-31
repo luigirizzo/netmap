@@ -1967,7 +1967,7 @@ netmap_mem_ext_delete(struct netmap_mem_d *d)
 		e->pages = NULL;
 		e->nr_pages = 0;
 	}
-	netmap_mem_delete(d);
+	netmap_mem2_delete(d);
 }
 
 static int
