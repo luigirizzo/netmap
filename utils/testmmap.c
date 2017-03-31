@@ -1247,9 +1247,9 @@ int find_command(const char* cmd)
 
 #define MAX_CHAN 10
 
-void prompt()
+void prompt(FILE *f)
 {
-	if (isatty(STDIN_FILENO)) {
+	if (isatty(fileno(f))) {
 		printf("> ");
 	}
 }
@@ -1284,7 +1284,7 @@ void do_exit()
 }
 
 void
-cmd_loop()
+cmd_loop(FILE *input)
 {
 	char buf[1024];
 	int i;
@@ -1294,7 +1294,7 @@ cmd_loop()
 
 	atexit(do_exit);
 
-	for (prompt(); fgets(buf, 1024, stdin); prompt()) {
+	for (prompt(input); fgets(buf, 1024, input); prompt(input)) {
 		char *cmd;
 		int slot;
 
@@ -1461,6 +1461,9 @@ cmd_loop()
 			}
 			continue;
 		}
+		if (strcmp(cmd, "next") == 0) {
+			return;
+		}
 		i = find_command(cmd);
 		if (i < N_CMDS) {
 			commands[i].f();
@@ -1485,9 +1488,25 @@ cmd_loop()
 int
 main(int argc, char **argv)
 {
-	(void) argc;
-	(void) argv;
-	printf("testmmap\n");
-	cmd_loop();
+	int i;
+	if (argc > 1) {
+		for (i = 1; i < argc; i++) {
+			FILE *f;
+		       	if (!strcmp(argv[i], "-")) {
+				f = stdin;
+			} else {
+				f = fopen(argv[i], "r");
+				if (f == NULL) {
+					perror(argv[i]);
+					continue;
+				}
+			}
+			cmd_loop(f);
+			if (f != stdin)
+				fclose(f);
+		}
+	} else {
+		cmd_loop(stdin);
+	}
 	return 0;
 }
