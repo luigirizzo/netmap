@@ -168,10 +168,12 @@ main(int argc, char **argv)
 	fprintf(stderr, "%s built %s %s\n",
 		argv[0], __DATE__, __TIME__);
 
-	while ((ch = getopt(argc, argv, "b:ci:vw:L")) != -1) {
+	while ((ch = getopt(argc, argv, "hb:ci:vw:L")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
+			/* fallthrough */
+		case 'h':
 			usage();
 			break;
 		case 'b':	/* burst */
