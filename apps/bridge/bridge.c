@@ -143,7 +143,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: bridge [-v] [-i ifa] [-i ifb] [-b burst] [-w wait_time] [ifa [ifb [burst]]]\n");
+	    "usage: bridge [-v] [-i ifa] [-i ifb] [-b burst] [-w wait_time] [-L] [ifa [ifb [burst]]]\n");
 	exit(1);
 }
 
@@ -163,11 +163,12 @@ main(int argc, char **argv)
 	struct nm_desc *pa = NULL, *pb = NULL;
 	char *ifa = NULL, *ifb = NULL;
 	char ifabuf[64] = { 0 };
+	int loopback = 0;
 
 	fprintf(stderr, "%s built %s %s\n",
 		argv[0], __DATE__, __TIME__);
 
-	while ( (ch = getopt(argc, argv, "b:ci:vw:")) != -1) {
+	while ((ch = getopt(argc, argv, "b:ci:vw:L")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -193,6 +194,9 @@ main(int argc, char **argv)
 			break;
 		case 'w':
 			wait_link = atoi(optarg);
+			break;
+		case 'L':
+			loopback = 1;
 			break;
 		}
 
@@ -222,9 +226,13 @@ main(int argc, char **argv)
 		wait_link = 4;
 	}
 	if (!strcmp(ifa, ifb)) {
-		D("same interface, endpoint 0 goes to host");
-		snprintf(ifabuf, sizeof(ifabuf) - 1, "%s^", ifa);
-		ifa = ifabuf;
+		if (!loopback) {
+			D("same interface, endpoint 0 goes to host");
+			snprintf(ifabuf, sizeof(ifabuf) - 1, "%s^", ifa);
+			ifa = ifabuf;
+		} else {
+			D("same interface, loopbacking traffic");
+		}
 	} else {
 		/* two different interfaces. Take all rings on if1 */
 	}
