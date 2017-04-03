@@ -2316,6 +2316,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			}
 
 			if (nmr->nr_arg2) {
+				/* find the allocator and get a reference */
 				nmd = netmap_mem_find(nmr->nr_arg2);
 				if (nmd == NULL) {
 					error = EINVAL;
@@ -2378,9 +2379,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		} while (0);
 		if (error) {
 			netmap_unget_na(na, ifp);
-			if (nmd)
-				netmap_mem_put(nmd);
 		}
+		/* release the reference from netmap_mem_find() or
+		 * netmap_mem_ext_create()
+		 */
+		if (nmd)
+			netmap_mem_put(nmd);
 		NMG_UNLOCK();
 		break;
 
