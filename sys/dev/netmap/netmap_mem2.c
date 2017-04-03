@@ -2062,10 +2062,6 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 		goto out_unmap;
 	}
 
-	nme->pages = pages;
-	res = 0;
-	nme->nr_pages = nr_pages;
-
 	nme = _netmap_mem_private_new(sizeof(*nme),
 			(struct netmap_obj_params[]){
 				{ pi.if_pool_objsize, pi.if_pool_objtotal },
@@ -2076,6 +2072,12 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 	if (nme == NULL)
 		goto out_unmap;
 					
+	/* from now on pages will be released by nme destructor;
+	 * we let res = 0 to prevent release in out_unmap below
+	 */
+	res = 0;
+	nme->pages = pages;
+	nme->nr_pages = nr_pages;
 	nme->up.flags |= NETMAP_MEM_EXT;
 
 	clust = page_to_virt(*pages);
@@ -2162,7 +2164,8 @@ out_delete:
 out_unmap:
 	for (i = 0; i < res; i++)
 		put_page(pages[i]);
-	nm_os_free(pages);
+	if (res)
+		nm_os_free(pages);
 out:
 	if (perror)
 		*perror = error;
