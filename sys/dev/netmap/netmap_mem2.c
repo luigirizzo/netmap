@@ -2158,7 +2158,7 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 	return &nme->up;
 
 out_delete:
-	netmap_mem_delete(&nme->up);
+	netmap_mem_put(&nme->up);
 out_unmap:
 	for (i = 0; i < res; i++)
 		put_page(pages[i]);
