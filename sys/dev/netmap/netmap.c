@@ -1756,7 +1756,8 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 		D("deprecated API, old ringid 0x%x -> ringid %x reg %d", ringid, i, reg);
 	}
 
-	if ((flags & NR_PTNETMAP_HOST) && (reg != NR_REG_ALL_NIC ||
+	if ((flags & NR_PTNETMAP_HOST) && ((reg != NR_REG_ALL_NIC &&
+                    reg != NR_REG_PIPE_MASTER && reg != NR_REG_PIPE_SLAVE) ||
 			flags & (NR_RX_RINGS_ONLY|NR_TX_RINGS_ONLY))) {
 		D("Error: only NR_REG_ALL_NIC supported with netmap passthrough");
 		return EINVAL;
