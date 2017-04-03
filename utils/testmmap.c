@@ -2,6 +2,7 @@
 
 #include <inttypes.h>
 #include <sys/param.h>	/* ULONG_MAX */
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -747,6 +748,84 @@ int _find_command(const struct cmd_def *cmds, int ncmds, const char* cmd)
 	return i;
 }
 
+struct pools_info_field {
+	char *name;
+	size_t off;
+	size_t size;
+};
+#define PIFD(n, f)	{ n, offsetof(struct netmap_pools_info, f), \
+	sizeof(((struct netmap_pools_info *)0)->f) }
+struct pools_info_field pools_info_fields[] = {
+	PIFD("memsize", memsize),
+	PIFD("memid", memid),
+	PIFD("if-off", if_pool_offset),
+	PIFD("if-tot", if_pool_objtotal),
+	PIFD("if-siz", if_pool_objsize),
+	PIFD("ring-off", ring_pool_offset),
+	PIFD("ring-tot", ring_pool_objtotal),
+	PIFD("ring-siz", ring_pool_objsize),
+	PIFD("buf-off", buf_pool_offset),
+	PIFD("buf-tot", buf_pool_objtotal),
+	PIFD("buf-siz", buf_pool_objsize),
+	{ NULL, 0, 0 }
+};
+#define PIF(t, p, o)	(*(t*)((void *)((char *)(p)+(o))))
+void
+pools_info_dump(int tab, struct netmap_pools_info *upi)
+{
+	static const char space[] = "        ";
+	struct pools_info_field *f;
+	for (f = pools_info_fields; f->name; f++) {
+		printf("%.*s%-12s", tab, space, f->name);
+		switch (f->size) {
+		case 8:
+			printf("%"PRIu64"\n", PIF(uint64_t, upi, f->off));
+			break;
+		case 4:
+			printf("%"PRIu32"\n", PIF(uint32_t, upi, f->off));
+			break;
+		case 2:
+			printf("%"PRIu16"\n", PIF(uint16_t, upi, f->off));
+			break;
+		}
+	}
+}
+
+/* prepare the curr_pools_info */
+void
+do_pools_info()
+{
+	char *cmd = nextarg();
+	unsigned long long v;
+
+	if (cmd == NULL) {
+		pools_info_dump(0, &curr_pools_info);
+		return;
+	}
+	struct pools_info_field *f = NULL;
+	for (f = pools_info_fields; f->name; f++) {
+		if (strcmp(f->name, cmd) == 0)
+			break;
+	}
+	if (f == NULL)
+		return;
+	cmd = nextarg();
+	if (cmd == NULL)
+		return;
+	v = strtoll(cmd, NULL, 0);
+	switch (f->size) {
+	case 8:
+		PIF(uint64_t, &curr_pools_info, f->off) = v;
+		break;
+	case 4:
+		PIF(uint32_t, &curr_pools_info, f->off) = v;
+		break;
+	case 2:
+		PIF(uint16_t, &curr_pools_info, f->off) = v;
+		break;
+	}
+}
+
 typedef void (*nmr_arg_interp_fun)();
 
 #define nmr_arg_unexpected(n) \
@@ -833,21 +912,9 @@ nmr_arg_error()
 void
 nmr_pools_info_get()
 {
-	void **pp = (void **)&curr_nmr.nr_arg1;
-	struct netmap_pools_info *upi = (struct netmap_pools_info *)(*pp);
-
-	printf("arg1+2+3:  %p\n", *pp);
-	printf("    memsize:    %"PRIu64"\n", upi->memsize);
-	printf("    memid:      %"PRIu32"\n", upi->memid);
-	printf("    if off:     %"PRIu32"\n", upi->if_pool_offset);
-	printf("    if tot:     %"PRIu32"\n", upi->if_pool_objtotal);
-	printf("    if siz:     %"PRIu32"\n", upi->if_pool_objsize);
-	printf("    ring off:   %"PRIu32"\n", upi->ring_pool_offset);
-	printf("    ring tot:   %"PRIu32"\n", upi->ring_pool_objtotal);
-	printf("    ring siz:   %"PRIu32"\n", upi->ring_pool_objsize);
-	printf("    buf off:    %"PRIu32"\n", upi->buf_pool_offset);
-	printf("    buf tot:    %"PRIu32"\n", upi->buf_pool_objtotal);
-	printf("    buf siz:    %"PRIu32"\n", upi->buf_pool_objsize);
+	struct netmap_pools_info *upi = nmreq_pointer_get(&curr_nmr);
+	printf("arg1+2+3:  %p\n", upi);
+	pools_info_dump(4, upi);
 }
 
 void
@@ -1235,7 +1302,8 @@ struct cmd_def commands[] = {
 	{ "ring",       do_ring,        },
 	{ "slot",       do_slot,        },
 	{ "buf",        do_buf,         },
-	{ "nmr",	do_nmr,		}
+	{ "nmr",	do_nmr,		},
+	{ "pools-info", do_pools_info   }
 };
 
 const int N_CMDS = sizeof(commands) / sizeof(struct cmd_def);
