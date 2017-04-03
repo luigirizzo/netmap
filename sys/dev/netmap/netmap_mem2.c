@@ -1991,8 +1991,8 @@ struct netmap_mem_ops netmap_mem_ext_ops = {
 	.nmd_rings_delete = netmap_mem2_rings_delete
 };
 
-int
-netmap_mem_ext_create(struct nmreq *nmr)
+struct netmap_mem_d *
+netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 {
 	uintptr_t p = *(uintptr_t *)&nmr->nr_arg1;
 	struct netmap_pools_info pi;
@@ -2126,11 +2126,7 @@ netmap_mem_ext_create(struct nmreq *nmr)
 	if (error)
 		goto out_delete;
 
-	error = netmap_mem_pools_info_get(nmr, &nme->up);
-	if (error)
-		goto out_delete;
-
-	return 0;
+	return &nme->up;
 
 out_delete:
 	netmap_mem_delete(&nme->up);
@@ -2139,7 +2135,9 @@ out_unmap:
 		put_page(pages[i]);
 	nm_os_free(pages);
 out:
-	return error;
+	if (perror)
+		*perror = error;
+	return NULL;
 
 }
 #endif /* WITH_EXTMEM */
