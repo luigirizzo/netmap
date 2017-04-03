@@ -2002,6 +2002,7 @@ netmap_mem_ext_create(struct nmreq *nmr)
 	struct page **pages = NULL;
 	struct netmap_mem_ext *nme;
 	char *clust;
+	size_t off;
 
 	error = copyin((void *)p, &pi, sizeof(pi));
 	if (error)
@@ -2062,10 +2063,10 @@ netmap_mem_ext_create(struct nmreq *nmr)
 	nme->up.flags |= NETMAP_MEM_EXT;
 
 	clust = page_to_virt(*pages);
+	off = 0;
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		struct netmap_obj_pool *p = &nme->up.pools[i];
 		struct netmap_obj_params *o = &nme->up.params[i];
-		size_t off = 0;
 
 		p->_objsize = o->size;
 		p->_clustsize = o->size;
