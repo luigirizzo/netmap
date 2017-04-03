@@ -2009,6 +2009,22 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 		goto out;
 
 	// XXX sanity checks
+	if (pi.if_pool_objtotal == 0)
+		pi.if_pool_objtotal = netmap_min_priv_params[NETMAP_IF_POOL].num;
+	if (pi.if_pool_objsize == 0)
+		pi.if_pool_objsize = netmap_min_priv_params[NETMAP_IF_POOL].size;
+	if (pi.ring_pool_objtotal == 0)
+		pi.ring_pool_objtotal = netmap_min_priv_params[NETMAP_RING_POOL].num;
+	if (pi.ring_pool_objsize == 0)
+		pi.ring_pool_objsize = netmap_min_priv_params[NETMAP_RING_POOL].size;
+	if (pi.buf_pool_objtotal == 0)
+		pi.buf_pool_objtotal = netmap_min_priv_params[NETMAP_BUF_POOL].num;
+	if (pi.buf_pool_objsize == 0)
+		pi.buf_pool_objsize = netmap_min_priv_params[NETMAP_BUF_POOL].size;
+	D("if %d %d ring %d %d buf %d %d",
+			pi.if_pool_objtotal, pi.if_pool_objsize,
+			pi.ring_pool_objtotal, pi.ring_pool_objsize,
+			pi.buf_pool_objtotal, pi.buf_pool_objsize);
 		
 	end = (p + pi.memsize + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	start = p >> PAGE_SHIFT;
