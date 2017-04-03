@@ -2102,33 +2102,46 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 		}
 
 		for (j = 0; j < o->num && nr_pages > 0; j++) {
+			size_t noff;
+			size_t skip;
+
 			p->lut[j].vaddr = clust + off;
 			p->lut[j].paddr = vtophys(clust + off);
 			ND("%s %d at %p", p->name, j, p->lut[j].vaddr);
-			off += p->_objsize;
-			if (off < PAGE_SIZE)
+			noff = off + p->_objsize;
+			if (noff < PAGE_SIZE) {
+				off = noff;
 				continue;
-			while (off >= PAGE_SIZE) {
-				off -= PAGE_SIZE;
+			}
+			ND("too big, recomputing offset...");
+			skip = PAGE_SIZE - (off & PAGE_MASK);
+			while (noff >= PAGE_SIZE) {
+				noff -= skip;
 				pages++;
 				nr_pages--;
-				if (off > 0 &&
+				ND("noff %zu page %p nr_pages %d", noff,
+						page_to_virt(*pages), nr_pages);
+				if (noff > 0 && p->lut[j].vaddr &&
 					(nr_pages == 0 || *pages != *(pages - 1) + 1))
 				{
 					/* out of space or non contiguous,
 					 * drop this object
 					 * */
-					p->lut[i].vaddr = NULL;
-					p->lut[i].paddr = 0;
+					p->lut[j].vaddr = NULL;
+					p->lut[j].paddr = 0;
+					ND("non contiguous at off %zu, drop", noff);
 				}
 				if (nr_pages == 0)
 					break;
-				clust = page_to_virt(*pages);
+				skip = PAGE_SIZE;
 			}
+			off = noff;
+			clust = page_to_virt(*pages);
 		}
 		p->objtotal = j;
 		p->numclusters = p->objtotal;
 		p->memtotal = j * p->_objsize;
+		ND("%d memtotal %u", j, p->memtotal);
 	}
 
 	/* skip the first netmap_if, where the pools info reside */
