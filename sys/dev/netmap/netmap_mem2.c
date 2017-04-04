@@ -2042,14 +2042,35 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 			nr_pages,
 			pages,
 			FOLL_WRITE | FOLL_GET | FOLL_SPLIT | FOLL_POPULATE); // XXX check other flags
-#else /* !NETMAP_LINUX_GUP_4ARGS */
+#elif defined(NETMAP_LINUX_HAVE_GUP_5ARGS)
 	res = get_user_pages_unlocked(
 			p,
 			nr_pages,
 			1, /* write */
 			0, /* don't force */
 			pages);
-#endif /* NETMAP_LINUX_GUP_4ARGS */
+#elif defined(NETMAP_LINUX_HAVE_GUP_7ARGS)
+	res = get_user_pages_unlocked(
+			current,
+			current->mm,
+			p,
+			nr_pages,
+			1, /* write */
+			0, /* don't force */
+			pages);
+#else
+	down_read(&current->mm->mmap_sem);
+	res = get_user_pages(
+			current,
+			current->mm,
+			p,
+			nr_pages,
+			1, /* write */
+			0, /* don't force */
+			pages,
+			NULL);
+	up_read(&current->mm->mmap_sem);
+#endif	/* NETMAP_LINUX_GUP */
 
 	if (res < nr_pages) {
 		error = EFAULT;

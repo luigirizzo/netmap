@@ -1422,6 +1422,28 @@ EOF
 	}
 EOF
 
+  add_test 'have GUP_5ARGS' <<EOF
+  	#include <linux/mm.h>
+
+	long
+	dummy(unsigned long start, unsigned long nr_pages,
+		int write, int force, struct page **pages) {
+		return get_user_pages_unlocked(start, nr_pages, write, force, pages);
+	}
+EOF
+
+  add_test 'have GUP_7ARGS' <<EOF
+  	#include <linux/mm.h>
+
+	long
+	dummy(struct task_struct *tsk, struct mm_struct *mm,
+		unsigned long start, unsigned long nr_pages,
+		int write, int force, struct page **pages) {
+		return get_user_pages_unlocked(tsk, mm, start, nr_pages,
+			write, force, pages);
+	}
+EOF
+
 # check for page_to_virt
   add_test 'have PAGE_TO_VIRT' <<EOF
   	#include <linux/mm.h>
