@@ -404,6 +404,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 				sizeof(*shared_tx_vnet_hdr) :
 				sizeof(shared_tx_vnet_hdr->hdr);
 	struct netmap_adapter *token;
+	int nospace = 0;
 
 	virtqueue_disable_cb(vq);
 
@@ -434,8 +435,6 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
-		int nospace = 0;
-
 		nic_i = netmap_idx_k2n(kring, nm_i);
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
@@ -465,16 +464,15 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		/* Update hwcur depending on where we stopped. */
 		kring->nr_hwcur = nm_i; /* note we migth break early */
-
-		/* No more free virtio descriptors or netmap slots? Ask the
-		 * hypervisor for notifications, possibly only when a
-		 * considerable amount of work has been done.
-		 */
-		if (nospace || nm_kr_txempty(kring)) {
-			virtqueue_enable_cb_delayed(vq);
-		}
 	}
 out:
+	/* No more free virtio descriptors or netmap slots? Ask the
+	 * hypervisor for notifications, possibly only when it has
+	 * freed a considerable amount of pending descriptors.
+	 */
+	if (nm_kr_txempty(kring) || nospace) {
+		virtqueue_enable_cb_delayed(vq);
+	}
 
 	return 0;
 }
