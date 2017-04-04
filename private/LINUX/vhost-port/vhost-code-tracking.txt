@@ -1,7 +1,0 @@
-# These are linux commit identifiers
-#   - 'root' is the commit from which I did the original porting.
-#   - 'last-included' is the last commit that the current v1000
-#      is synchronized with.
-
-root:46aa92d1ba162b4b3d6b7102440e459d4e4ee255
-last-included:f7c6be404d8fa52c54ff931390aab01e5c7654d6

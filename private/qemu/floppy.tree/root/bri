@@ -1,4 +1,0 @@
-#!/bin/sh
-# 20130610 lr
-# test code for vale switch
-(pkt-gen -i vale0 -f rx -W &); pkt-gen -i vale1 -f tx -b 128
