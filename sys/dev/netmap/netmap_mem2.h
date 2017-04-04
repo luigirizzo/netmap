@@ -151,7 +151,8 @@ struct netmap_mem_d* netmap_mem_find(nm_memid_t);
 #ifdef WITH_EXTMEM
 struct netmap_mem_d* netmap_mem_ext_create(struct nmreq *, int *);
 #else /* !WITH_EXTMEM */
-#define netmap_mem_ext_create(_1) (EOPNOTSUPP)
+#define netmap_mem_ext_create(nmr, _perr) \
+	({ int *perr = _perr; if (perr) *(perr) = EOPNOTSUPP; NULL; })
 #endif /* WITH_EXTMEM */
 
 #ifdef WITH_PTNETMAP_GUEST

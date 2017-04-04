@@ -37,8 +37,9 @@
 
 #if defined(linux)
 
+#if defined(CONFIG_NETMAP_EXTMEM)
 #define WITH_EXTMEM
-
+#endif
 #if  defined(CONFIG_NETMAP_VALE)
 #define WITH_VALE
 #endif

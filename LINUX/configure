@@ -90,7 +90,8 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink"
+subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink \
+	extmem"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -299,6 +300,8 @@ Available options:
   --disable-ptnetmap           disable ptnetmap (both guest and host)
   --enable-sink   	       enable the netmap sink device
   --disable-sink   	       disable the netmap sink device
+  --enable-extmem   	       enable the external memory allocators
+  --disable-extmem   	       disable the external memory allocators
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
   --cc=                        C compiler to be used for the apps [$cc]
