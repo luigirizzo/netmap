@@ -1422,6 +1422,16 @@ EOF
 	}
 EOF
 
+# check for page_to_virt
+  add_test 'have PAGE_TO_VIRT' <<EOF
+  	#include <linux/mm.h>
+
+	void *
+	dummy(struct page *page) {
+		return page_to_virt(page);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
