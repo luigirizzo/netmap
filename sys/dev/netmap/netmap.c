@@ -1756,7 +1756,8 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 		D("deprecated API, old ringid 0x%x -> ringid %x reg %d", ringid, i, reg);
 	}
 
-	if ((flags & NR_PTNETMAP_HOST) && (reg != NR_REG_ALL_NIC ||
+	if ((flags & NR_PTNETMAP_HOST) && ((reg != NR_REG_ALL_NIC &&
+                    reg != NR_REG_PIPE_MASTER && reg != NR_REG_PIPE_SLAVE) ||
 			flags & (NR_RX_RINGS_ONLY|NR_TX_RINGS_ONLY))) {
 		D("Error: only NR_REG_ALL_NIC supported with netmap passthrough");
 		return EINVAL;
@@ -2315,6 +2316,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			}
 
 			if (nmr->nr_arg2) {
+				/* find the allocator and get a reference */
 				nmd = netmap_mem_find(nmr->nr_arg2);
 				if (nmd == NULL) {
 					error = EINVAL;
@@ -2377,9 +2379,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		} while (0);
 		if (error) {
 			netmap_unget_na(na, ifp);
-			if (nmd)
-				netmap_mem_put(nmd);
 		}
+		/* release the reference from netmap_mem_find() or
+		 * netmap_mem_ext_create()
+		 */
+		if (nmd)
+			netmap_mem_put(nmd);
 		NMG_UNLOCK();
 		break;
 

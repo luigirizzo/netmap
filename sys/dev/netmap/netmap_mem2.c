@@ -255,7 +255,7 @@ static struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
 NM_MTX_T nm_mem_list_lock;
 
 struct netmap_mem_d *
-netmap_mem_get(struct netmap_mem_d *nmd)
+__netmap_mem_get(struct netmap_mem_d *nmd, const char *func, int line)
 {
 	NM_MTX_LOCK(nm_mem_list_lock);
 	nmd->refcount++;
@@ -265,7 +265,7 @@ netmap_mem_get(struct netmap_mem_d *nmd)
 }
 
 void
-netmap_mem_put(struct netmap_mem_d *nmd)
+__netmap_mem_put(struct netmap_mem_d *nmd, const char *func, int line)
 {
 	int last;
 	NM_MTX_LOCK(nm_mem_list_lock);
@@ -524,6 +524,7 @@ nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
 			scan->prev = nmd;
 			netmap_last_mem_d = nmd;
 			nmd->refcount = 1;
+			NM_DBG_REFC(nmd, __FUNCTION__, __LINE__);
 			error = 0;
 			break;
 		}
@@ -568,6 +569,7 @@ netmap_mem_find(nm_memid_t id)
 	do {
 		if (!(nmd->flags & NETMAP_MEM_HIDDEN) && nmd->nm_id == id) {
 			nmd->refcount++;
+			NM_DBG_REFC(nmd, __FUNCTION__, __LINE__);
 			NM_MTX_UNLOCK(nm_mem_list_lock);
 			return nmd;
 		}
@@ -2288,6 +2290,7 @@ netmap_mem_pt_guest_find_memid(nm_memid_t mem_id)
 			((struct netmap_mem_ptg *)(scan))->host_mem_id == mem_id) {
 			mem = scan;
 			mem->refcount++;
+			NM_DBG_REFC(mem, __FUNCTION__, __LINE__);
 			break;
 		}
 		scan = scan->next;
