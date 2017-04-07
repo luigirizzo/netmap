@@ -324,7 +324,7 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 
 	slot = netmap_reset(na, NR_RX, 0, 0);
 	if (!slot)
-		return 0;	// not in netmap native mode
+		goto init_tx_buffers;
 
 	adapter->alloc_rx_buf = (void*)e1000e_no_rx_alloc;
 	for (i = 0; i < rxr->count; i++) {
@@ -344,14 +344,20 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 	wmb();	/* Force memory writes to complete */
 	NM_WR_RX_TAIL(i);
 
+init_tx_buffers:
 	/* now initialize the tx ring */
 	slot = netmap_reset(na, NR_TX, 0, 0);
+	if (!slot)
+		goto finish;
+		
 	for (i = 0; i < na->num_tx_desc; i++) {
 		si = netmap_idx_n2k(&na->tx_rings[0], i);
 		PNMB(na, slot + si, &paddr);
 		// netmap_load_map(...)
 		E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
 	}
+	
+finish:	
 	return 1;
 }
 
