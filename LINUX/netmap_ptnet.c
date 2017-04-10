@@ -1210,6 +1210,18 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
+static void
+ptnet_nm_intr(struct netmap_adapter *na, int onoff)
+{
+	struct ptnet_info *pi = netdev_priv(na->ifp);
+	int i;
+
+	for (i = 0; i < pi->num_rings; i++) {
+		struct ptnet_queue *pq = pi->queues[i];
+		pq->ptring->guest_need_kick = onoff;
+	}
+}
+
 static struct netmap_adapter ptnet_nm_ops = {
 	.nm_register = ptnet_nm_register,
 	.nm_config = ptnet_nm_config,
@@ -1218,6 +1230,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 	.nm_krings_create = ptnet_nm_krings_create,
 	.nm_krings_delete = ptnet_nm_krings_delete,
 	.nm_dtor = ptnet_nm_dtor,
+	.nm_intr = ptnet_nm_intr,
 };
 
 /*
