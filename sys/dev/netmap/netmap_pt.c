@@ -1356,7 +1356,7 @@ netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 	 * go to sleep and we need to be notified by the host when more free
 	 * space is available.
          */
-	if (nm_kr_txempty(kring)) {
+	if (nm_kr_txempty(kring) && !(kring->nr_kflags & NKR_NOINTR)) {
 		/* Reenable notifications. */
 		ptring->guest_need_kick = 1;
                 /* Double check */
@@ -1421,7 +1421,7 @@ netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 	 * we need to be notified by the host when more RX slots have been
 	 * completed.
          */
-	if (nm_kr_rxempty(kring)) {
+	if (nm_kr_rxempty(kring) && !(kring->nr_kflags & NKR_NOINTR)) {
 		/* Reenable notifications. */
                 ptring->guest_need_kick = 1;
                 /* Double check */
