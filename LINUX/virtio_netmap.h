@@ -411,6 +411,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 				sizeof(vna->shared_txvhdr) :
 				sizeof(vna->shared_txvhdr.hdr);
 	struct netmap_adapter *token;
+	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
 	int nospace = 0;
 
 	virtqueue_disable_cb(vq);
@@ -477,7 +478,7 @@ out:
 	 * hypervisor for notifications, possibly only when it has
 	 * freed a considerable amount of pending descriptors.
 	 */
-	if (nm_kr_txempty(kring) || nospace) {
+	if (interrupts && (nm_kr_txempty(kring) || nospace)) {
 		virtqueue_enable_cb_delayed(vq);
 	}
 
@@ -509,6 +510,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
 				sizeof(vna->shared_rxvhdr) :
 				sizeof(vna->shared_rxvhdr.hdr);
+	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
 
 	/* XXX netif_carrier_ok ? */
 
@@ -602,7 +604,9 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * the hypervisor to make a call when more used RX buffers will be
 	 * ready.
 	 */
-	virtqueue_enable_cb(vq);
+	if (interrupts) {
+		virtqueue_enable_cb(vq);
+	}
 
 
 	ND("[C] h %d c %d t %d hwcur %d hwtail %d",
@@ -671,6 +675,29 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 	return 1;
 }
 
+/* Enable/disable interrupts on all virtqueues. */
+static void
+virtio_netmap_intr(struct netmap_adapter *na, int onoff)
+{
+	struct virtnet_info *vi = netdev_priv(na->ifp);
+	enum txrx t;
+	int i;
+
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t); i++) {
+			struct virtqueue *vq;
+
+			vq = t == NR_RX ? GET_RX_VQ(vi, i) : GET_TX_VQ(vi, i);
+
+			if (onoff) {
+				virtqueue_enable_cb(vq);
+			} else {
+				virtqueue_disable_cb(vq);
+			}
+		}
+	}
+}
+
 /* Update the virtio-net device configurations. Number of queues can
  * change dinamically, by 'ethtool --set-channels $IFNAME combined $N'.
  * This is actually the only way virtio-net can currently enable
@@ -709,6 +736,7 @@ virtio_netmap_attach(struct virtnet_info *vi)
 	na.nm_txsync = virtio_netmap_txsync;
 	na.nm_rxsync = virtio_netmap_rxsync;
 	na.nm_config = virtio_netmap_config;
+	na.nm_intr = virtio_netmap_intr;
 
 	ret = netmap_attach_ext(&na, sizeof(struct netmap_virtio_adapter));
 	if (ret) {
