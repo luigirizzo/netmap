@@ -425,6 +425,7 @@ struct netmap_kring {
 					 * (used internally by pipes and
 					 *  by ptnetmap host ports)
 					 */
+#define NKR_NOINTR      0x10            /* don't use interrupts on this ring */
 
 	uint32_t	nr_mode;
 	uint32_t	nr_pending_mode;
@@ -858,6 +859,8 @@ NMR(struct netmap_adapter *na, enum txrx t)
 {
 	return (t == NR_TX ? na->tx_rings : na->rx_rings);
 }
+
+int nma_intr_enable(struct netmap_adapter *na, int onoff);
 
 /*
  * If the NIC is owned by the kernel

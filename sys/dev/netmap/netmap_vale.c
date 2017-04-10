@@ -1147,9 +1147,8 @@ nm_bdg_ctl_polling_start(struct nmreq *nmr, struct netmap_adapter *na)
 	bna->na_polling_state = bps;
 	bps->bna = bna;
 
-	/* disable interrupt if possible */
-	if (bna->hwna->nm_intr)
-		bna->hwna->nm_intr(bna->hwna, 0);
+	/* disable interrupts if possible */
+	nma_intr_enable(bna->hwna, 0);
 	/* start kthread now */
 	error = nm_bdg_polling_start_kthreads(bps);
 	if (error) {
@@ -1157,8 +1156,7 @@ nm_bdg_ctl_polling_start(struct nmreq *nmr, struct netmap_adapter *na)
 		nm_os_free(bps->kthreads);
 		nm_os_free(bps);
 		bna->na_polling_state = NULL;
-		if (bna->hwna->nm_intr)
-			bna->hwna->nm_intr(bna->hwna, 1);
+		nma_intr_enable(bna->hwna, 1);
 	}
 	return error;
 }
@@ -1178,9 +1176,8 @@ nm_bdg_ctl_polling_stop(struct nmreq *nmr, struct netmap_adapter *na)
 	bps->configured = false;
 	nm_os_free(bps);
 	bna->na_polling_state = NULL;
-	/* reenable interrupt */
-	if (bna->hwna->nm_intr)
-		bna->hwna->nm_intr(bna->hwna, 1);
+	/* reenable interrupts */
+	nma_intr_enable(bna->hwna, 1);
 	return 0;
 }
 

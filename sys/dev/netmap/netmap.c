@@ -2764,6 +2764,44 @@ do_retry_rx:
 #undef want_rx
 }
 
+int
+nma_intr_enable(struct netmap_adapter *na, int onoff)
+{
+	bool changed = false;
+	enum txrx t;
+	int i;
+
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t); i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
+			int on = !(kring->nr_kflags & NKR_NOINTR);
+
+			if (!!onoff != !!on) {
+				changed = true;
+			}
+			if (onoff) {
+				kring->nr_kflags &= ~NKR_NOINTR;
+			} else {
+				kring->nr_kflags |= NKR_NOINTR;
+			}
+		}
+	}
+
+	if (!changed) {
+		return 0; /* nothing to do */
+	}
+
+	if (!na->nm_intr) {
+		D("Cannot %s interrupts for %s", onoff ? "enable" : "disable",
+		  na->name);
+		return -1;
+	}
+
+	na->nm_intr(na, onoff);
+
+	return 0;
+}
+
 
 /*-------------------- driver support routines -------------------*/
 
