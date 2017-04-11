@@ -351,6 +351,28 @@ vtnet_netmap_rxsync(struct netmap_kring *kring, int flags)
 }
 
 
+/* Enable/disable interrupts on all virtqueues. */
+static void
+vtnet_netmap_intr(struct netmap_adapter *na, int onoff)
+{
+	struct SOFTC_T *sc = na->ifp->if_softc;
+	int i;
+
+	for (i = 0; i < sc->vtnet_max_vq_pairs; i++) {
+		struct vtnet_rxq *rxq = &sc->vtnet_rxqs[i];
+		struct vtnet_txq *txq = &sc->vtnet_txqs[i];
+		struct virtqueue *txvq = txq->vtntx_vq;
+
+		if (onoff) {
+			vtnet_rxq_enable_intr(rxq);
+			virtqueue_enable_intr(txvq);
+		} else {
+			vtnet_rxq_disable_intr(rxq);
+			virtqueue_disable_intr(txvq);
+		}
+	}
+}
+
 /* Make RX virtqueues buffers pointing to netmap buffers. */
 static int
 vtnet_netmap_init_rx_buffers(struct SOFTC_T *sc)
@@ -423,6 +445,7 @@ vtnet_netmap_attach(struct SOFTC_T *sc)
 	na.nm_txsync = vtnet_netmap_txsync;
 	na.nm_rxsync = vtnet_netmap_rxsync;
 	na.nm_config = vtnet_netmap_config;
+	na.nm_intr = vtnet_netmap_intr;
 	na.num_tx_rings = na.num_rx_rings = sc->vtnet_max_vq_pairs;
 	D("max rings %d", sc->vtnet_max_vq_pairs);
 	netmap_attach(&na);
