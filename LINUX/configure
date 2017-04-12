@@ -1466,6 +1466,21 @@ EOF
 EOF
   fi # ixgbe
 
+  if drv enabled ixgbevf; then
+
+  add_file_exists_check ixgbevf/ixgbevf.h true "drv_source_error ixgbevf"
+
+  # array of rings or array of poiners to rings?
+  add_test 'define IXGBEVF_PTR_ARRAY' <<EOF
+  	#include "ixgbevf/ixgbevf.h"
+  
+  	struct ixgbevf_ring *
+  	dummy(struct ixgbevf_adapter *adapter) {
+  		return adapter->tx_ring[0];
+  	}
+EOF
+  fi
+
   if drv enabled virtio_net.c; then
   
     add_file_exists_check virtio_net.c true "drv_source_error virtio_net.c"

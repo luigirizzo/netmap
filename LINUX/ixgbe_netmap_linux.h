@@ -149,8 +149,13 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 #define NM_IXGBE_RDT(ring_nr)		IXGBE_VFRDT(ring_nr)
 #define NM_IXGBE_TX_DESC(_1, _2)	IXGBEVF_TX_DESC(_1, _2)
 #define NM_IXGBE_RX_DESC(_1, _2)	IXGBEVF_RX_DESC(_1, _2)
+#ifdef NETMAP_LINUX_IXGBEVF_PTR_ARRAY
 #define NM_IXGBE_TX_RING(a, r)		((a)->tx_ring[(r)])
 #define NM_IXGBE_RX_RING(a, r)		((a)->rx_ring[(r)])
+#else
+#define NM_IXGBE_TX_RING(a, r)		(&(a)->tx_ring[(r)])
+#define NM_IXGBE_RX_RING(a, r)		(&(a)->rx_ring[(r)])
+#endif /* NETMAP_LINUX_IXGBE_PTR_ARRAY */
 #define NM_IXGBE_ADAPTER 		ixgbevf_adapter
 #define NM_IXGBE_RESETTING 		__IXGBEVF_RESETTING
 #define NM_IXGBE_DOWN(adapter)		ixgbevf_down(adapter)
