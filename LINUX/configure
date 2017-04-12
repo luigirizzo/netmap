@@ -1470,6 +1470,17 @@ EOF
 
   add_file_exists_check ixgbevf/ixgbevf.h true "drv_source_error ixgbevf"
 
+  # IXGBEVF_* or IXGBE_*?
+  add_test true 'define IXGBEVF_IXGBE_MACROS' <<EOF
+  	#include "ixgbevf/ixgbevf.h"
+
+	void *
+	dummy(struct ixgbevf_ring *ring, unsigned int i)
+	{
+		return IXGBEVF_RX_DESC(ring, i);
+	}
+EOF
+
   # array of rings or array of poiners to rings?
   add_test 'define IXGBEVF_PTR_ARRAY' <<EOF
   	#include "ixgbevf/ixgbevf.h"
