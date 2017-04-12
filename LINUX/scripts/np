@@ -597,6 +597,8 @@ if [ "$1" = -e ]; then
 	fi
 	EXTDRV=1
 	shift
+else
+	EXT_DRIVERS=
 fi
 COMMAND=$1; shift
 case $COMMAND in
