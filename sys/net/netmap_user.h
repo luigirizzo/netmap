@@ -98,6 +98,7 @@
 #endif /* likely and unlikely */
 
 #include <net/netmap.h>
+#include <net/netmap_virt.h> /* nmreq_pointer_get() */
 
 /* helper macro */
 #define _NETMAP_OFFSET(type, ptr, offset) \
@@ -611,6 +612,19 @@ nm_is_identifier(const char *s, const char *e)
 	return 1;
 }
 
+static void
+nm_init_offsets(struct nm_desc *d)
+{
+	struct netmap_if *nifp = NETMAP_IF(d->mem, d->req.nr_offset);
+	struct netmap_ring *r = NETMAP_RXRING(nifp, );
+
+	*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
+	*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
+	*(void **)(uintptr_t)&d->buf_start = NETMAP_BUF(r, 0);
+	*(void **)(uintptr_t)&d->buf_end =
+		(char *)d->mem + d->memsize;
+}
+
 /*
  * Try to open, return descriptor if successful, NULL otherwise.
  * An invalid netmap name will return errno = 0;
@@ -811,8 +825,28 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
-	if (req)
+	if (req) {
 		d->req = *req;
+		if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
+			struct netmap_pools_info *pi;
+
+			if (IS_NETMAP_DESC(parent) &&
+					(new_flags & (NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3))) {
+				snprintf(errmsg, MAXERRMSG, "POOLS_CREATE is incompatibile with NM_OPEN_ARG? flags");
+				errno = EINVAL;
+				goto fail;
+			}
+		        pi = nmreq_pointer_get(&d->req);
+			if (pi == NULL) {
+				snprintf(errmsg, MAXERRMSG, "missing netmap_pools_info pointer");
+				errno = EINVAL;
+				goto fail;
+			}
+			d->mem = pi;
+			d->memsize = pi->memsize;
+			nm_init_offsets(d);
+		}
+	}
 	d->req.nr_version = NETMAP_API;
 	d->req.nr_ringid &= ~NETMAP_RING_MASK;
 
@@ -863,9 +897,12 @@ nm_open(const char *ifname, const struct nmreq *req,
 	}
 
         /* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
-	if ((!(new_flags & NM_OPEN_NO_MMAP) || parent) && nm_mmap(d, parent)) {
-	        snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
-		goto fail;
+	if (d->mem == NULL && (!(new_flags & NM_OPEN_NO_MMAP) || parent)) {
+	        errno = nm_mmap(d, parent);
+		if (errno) {
+			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
+			goto fail;
+		}
 	}
 
 	nr_reg = d->req.nr_flags & NR_REG_MASK;
@@ -969,17 +1006,7 @@ nm_mmap(struct nm_desc *d, const struct nm_desc *parent)
 		}
 		d->done_mmap = 1;
 	}
-	{
-		struct netmap_if *nifp = NETMAP_IF(d->mem, d->req.nr_offset);
-		struct netmap_ring *r = NETMAP_RXRING(nifp, );
-
-		*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
-		*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
-		*(void **)(uintptr_t)&d->buf_start = NETMAP_BUF(r, 0);
-		*(void **)(uintptr_t)&d->buf_end =
-			(char *)d->mem + d->memsize;
-	}
-
+	nm_init_offsets(d);
 	return 0;
 
 fail:
