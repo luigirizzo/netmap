@@ -254,29 +254,6 @@ virtio_netmap_reclaim_unused(struct virtnet_info *vi)
 	}
 }
 
-/* Set or clear nr_pending_mode and nr_mode for all the rings, independently
- * of the specific user request. This is necessary for now because the
- * virtio-net driver patches do not support single-queue mode (modifications
- * would be needed to free_unused_bufs() free_receive_bufs()).*/
-static void
-virtio_netmap_set_kring_mode(struct netmap_adapter *na, int mode)
-{
-	int i;
-
-	for (i = 0; i < DEV_NUM_TX_QUEUES(na->ifp); i++) {
-		struct netmap_kring *kring = &na->tx_rings[i];
-
-		kring->nr_pending_mode = kring->nr_mode = mode;
-	}
-
-	for (i = 0; i < DEV_NUM_RX_QUEUES(na->ifp); i++) {
-		struct netmap_kring *kring = &na->rx_rings[i];
-
-		kring->nr_pending_mode = kring->nr_mode = mode;
-	}
-
-}
-
 /* Register and unregister. */
 static int
 virtio_netmap_reg(struct netmap_adapter *na, int onoff)
@@ -286,6 +263,8 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct virtnet_info *vi = netdev_priv(ifp);
 	bool was_up = false;
 	int error = 0;
+	enum txrx t;
+	int i;
 
 	if (na == NULL)
 		return EINVAL;
@@ -296,6 +275,12 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		 * only have effect with first (last) user.*/
 		return 0;
 	}
+
+	/* Set or clear nr_pending_mode and nr_mode for all the rings, independently
+	 * of the specific user request. This is necessary for now because the
+	 * virtio-net driver patches do not support single-queue mode (modifications
+	 * would be needed to free_unused_bufs() free_receive_bufs()).*/
+	// TODO
 
 	/* It's important to make sure each virtnet_close() matches
 	 * a virtnet_open(), otherwise a napi_disable() is not matched by
@@ -345,11 +330,27 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		rtnl_lock();
 
 		/* enable netmap mode */
-		virtio_netmap_set_kring_mode(na, NKR_NETMAP_ON);
+		for_rx_tx(t) {
+			for (i = 0; i <= nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring)) {
+					kring->nr_mode = NKR_NETMAP_ON;
+				}
+			}
+		}
 		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
-		virtio_netmap_set_kring_mode(na, NKR_NETMAP_OFF);
+		for_rx_tx(t) {
+			for (i = 0; i <= nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_off(kring)) {
+					kring->nr_mode = NKR_NETMAP_OFF;
+				}
+			}
+		}
 
 		/* Get and free any used buffer. This is necessary
 		 * before calling virtqueue_detach_unused_buf(). */
