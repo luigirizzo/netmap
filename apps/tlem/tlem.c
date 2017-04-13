@@ -1524,6 +1524,7 @@ main(int argc, char **argv)
 	bzero(l, sizeof(l));
 	bzero(q, sizeof(q));
 	bzero(gw, sizeof(gw));
+	bzero(cd, sizeof(cd));
 	bzero(ifname, sizeof(ifname));
 
 	fprintf(stderr, "%s built %s %s\n", argv[0], __DATE__, __TIME__);
@@ -1853,9 +1854,14 @@ main(int argc, char **argv)
 		err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
 		err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
 		err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
-		bp[i].max_lag = parse_time(cd[i]);
-		if ((unsigned long)bp[i].max_lag == U_PARSE_ERR)
-			err++;
+		if (cd[i] != NULL) {
+			unsigned long max_lag = parse_time(cd[i]);
+			if (max_lag == U_PARSE_ERR) {
+				err++;
+			} else {
+				bp[i].max_lag = max_lag;
+			}
+		}
 	}
 
 	if (q[0] == NULL)
