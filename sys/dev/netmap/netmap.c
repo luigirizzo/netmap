@@ -2899,7 +2899,7 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size)
 	struct netmap_hw_adapter *hwna = NULL;
 	struct ifnet *ifp = NULL;
 
-	if (size < sizeof(struct netmap_adapter)) {
+	if (size < sizeof(struct netmap_hw_adapter)) {
 		D("Invalid netmap adapter size %d", (int)size);
 		return EINVAL;
 	}
