@@ -285,18 +285,16 @@ main(int argc, char **argv)
 		n0 = pkt_queued(pa, 0);
 		n1 = pkt_queued(pb, 0);
 #if defined(_WIN32) || defined(BUSYWAIT)
-		if (n0){
+		if (n0) {
 			ioctl(pollfd[1].fd, NIOCTXSYNC, NULL);
 			pollfd[1].revents = POLLOUT;
-		}
-		else {
+		} else {
 			ioctl(pollfd[0].fd, NIOCRXSYNC, NULL);
 		}
-		if (n1){
+		if (n1) {
 			ioctl(pollfd[0].fd, NIOCTXSYNC, NULL);
 			pollfd[0].revents = POLLOUT;
-		}
-		else {
+		} else {
 			ioctl(pollfd[1].fd, NIOCRXSYNC, NULL);
 		}
 		ret = 1;
@@ -340,16 +338,15 @@ main(int argc, char **argv)
 			D("error on fd1, rx [%d,%d,%d)",
 				rx->head, rx->cur, rx->tail);
 		}
-		if (pollfd[0].revents & POLLOUT) {
+		if (pollfd[0].revents & POLLOUT)
 			move(pb, pa, burst);
-		}
-		if (pollfd[1].revents & POLLOUT) {
+
+		if (pollfd[1].revents & POLLOUT)
 			move(pa, pb, burst);
-		}
+
 		/* We don't need ioctl(NIOCTXSYNC) on the two file descriptors here,
 		 * kernel will txsync on next poll(). */
 	}
-	D("exiting");
 	nm_close(pb);
 	nm_close(pa);
 
