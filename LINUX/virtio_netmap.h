@@ -606,6 +606,7 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 
 	if (!nm_native_on(na))
 		return 0;
+
 	for (r = 0; r < na->num_rx_rings; r++) {
 		COMPAT_DECL_SG
 		struct netmap_ring *ring = na->rx_rings[r].ring;
@@ -617,8 +618,7 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 
 		slot = netmap_reset(na, NR_RX, r, 0);
 		if (!slot) {
-			D("strange, null netmap ring %d", r);
-			return 0;
+			continue;
 		}
 
 		/* Add up to na>-num_rx_desc-1 buffers to this RX virtqueue.
@@ -647,7 +647,6 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 		D("added %d inbufs on queue %d", i, r);
 		virtqueue_kick(vq);
 	}
-
 	return 1;
 }
 
