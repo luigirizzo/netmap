@@ -2886,21 +2886,23 @@ netmap_hw_dtor(struct netmap_adapter *na)
 
 
 /*
- * Allocate a ``netmap_adapter`` object, and initialize it from the
+ * Allocate a netmap_adapter object, and initialize it from the
  * 'arg' passed by the driver on attach.
- * We allocate a block of memory with room for a struct netmap_adapter
- * plus two sets of N+2 struct netmap_kring (where N is the number
- * of hardware rings):
- * krings	0..N-1	are for the hardware queues.
- * kring	N	is for the host stack queue
- * kring	N+1	is only used for the selinfo for all queues. // XXX still true ?
+ * We allocate a block of memory of 'size' bytes, which has room
+ * for struct netmap_adapter plus additional room private to
+ * the caller.
  * Return 0 on success, ENOMEM otherwise.
  */
-static int
-_netmap_attach(struct netmap_adapter *arg, size_t size)
+int
+netmap_attach_ext(struct netmap_adapter *arg, size_t size)
 {
 	struct netmap_hw_adapter *hwna = NULL;
 	struct ifnet *ifp = NULL;
+
+	if (size < sizeof(struct netmap_adapter)) {
+		D("Invalid netmap adapter size %u", size);
+		return EINVAL;
+	}
 
 	if (arg == NULL || arg->ifp == NULL)
 		goto fail;
@@ -2960,7 +2962,7 @@ fail:
 int
 netmap_attach(struct netmap_adapter *arg)
 {
-	return _netmap_attach(arg, sizeof(struct netmap_hw_adapter));
+	return netmap_attach_ext(arg, sizeof(struct netmap_hw_adapter));
 }
 
 
@@ -2978,7 +2980,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg, void *csb,
 	if (arg->nm_mem == NULL)
 		return ENOMEM;
 	arg->na_flags |= NAF_MEM_OWNER;
-	error = _netmap_attach(arg, sizeof(struct netmap_pt_guest_adapter));
+	error = netmap_attach_ext(arg, sizeof(struct netmap_pt_guest_adapter));
 	if (error)
 		return error;
 
