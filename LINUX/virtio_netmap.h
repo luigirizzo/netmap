@@ -276,11 +276,31 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		return 0;
 	}
 
-	/* Set or clear nr_pending_mode and nr_mode for all the rings, independently
-	 * of the specific user request. This is necessary for now because the
-	 * virtio-net driver patches do not support single-queue mode (modifications
-	 * would be needed to free_unused_bufs() free_receive_bufs()).*/
-	// TODO
+	/* These virtio-net driver patches do not support single-queue mode
+	 * (modifications would be needed to free_unused_bufs()
+	 * free_receive_bufs()). As a result, we fail here if we detect
+	 * the user is trying to open only a subset of the rings. */
+	if (onoff) {
+		int hwrings_pending = 0;
+		int hwrings = nma_get_nrings(na, NR_TX) +
+				nma_get_nrings(na, NR_RX);
+
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = &NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring)) {
+					hwrings_pending ++;
+				}
+			}
+		}
+
+		if (!(hwrings_pending == 0 || hwrings_pending == hwrings)) {
+			D("virtio-net native adapter can only open "
+			  "all RX and TX hw rings");
+			return EINVAL;
+		}
+	}
 
 	/* It's important to make sure each virtnet_close() matches
 	 * a virtnet_open(), otherwise a napi_disable() is not matched by
