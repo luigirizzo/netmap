@@ -166,11 +166,15 @@ static int do_abort = 0;
 #include <net/if_dl.h>	/* sokcaddr_dl */
 #include <pthread_np.h> /* pthread w/ affinity */
 #include <sys/cpuset.h> /* cpu_set */
+#define MAP_HUGETLB 0	/* not supported */
 #endif /* __FreeBSD__ */
 
 #ifdef linux
 #define cpuset_t        cpu_set_t
 #include <sys/mman.h>
+#ifndef MAP_HUGETLB
+#define MAP_HUGETLB 0x40000
+#endif
 #endif
 
 #ifdef __APPLE__
@@ -612,6 +616,7 @@ struct pipe_args {
 	int		zerocopy;
 	int		wait_link;
 	int		route_mode;
+	int		hugepages;
 
 	pthread_t	cons_tid;	/* main thread */
 	pthread_t	prod_tid;	/* producer thread */
@@ -1283,7 +1288,6 @@ next:
     return NULL;
 }
 
-
 /*
  * main thread for each direction.
  * Allocates memory for the queues, creates the prod() thread,
@@ -1295,6 +1299,7 @@ tlem_main(void *_a)
     struct pipe_args *a = _a;
     struct _qs *q = &a->q;
     uint64_t need;
+    int mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS;
 
     setaffinity(a->cons_core);
     set_tns_now(&q->t0, 0); /* starting reference */
@@ -1314,6 +1319,11 @@ tlem_main(void *_a)
         nmport_close(a->pa);
         return NULL;
     }
+
+    if (a->hugepages) {
+        mmap_flags |= MAP_HUGETLB;
+    }
+
     a->zerocopy = a->zerocopy && (a->pa->mem == a->pb->mem);
     ND("------- zerocopy %ssupported", a->zerocopy ? "" : "NOT ");
     /* allocate space for the queue:
@@ -1338,7 +1348,7 @@ tlem_main(void *_a)
      */
     need *= 3; /* room for descriptors and padding */
 
-    q->buf = mmap(0, need, PROT_WRITE | PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    q->buf = mmap(0, need, PROT_WRITE | PROT_READ, mmap_flags, -1, 0);
     if (q->buf == MAP_FAILED) {
         ED("alloc %lld bytes for queue failed, exiting", (long long)need);
         nmport_close(a->pa);
@@ -1525,6 +1535,7 @@ main(int argc, char **argv)
     int ncpus;
     int cores[4];
     uint64_t old_drop0 = 0, old_drop1 = 0, drop0, drop1;
+    int hugepages = 0;
 
     nmctx_set_threadsafe();
 
@@ -1575,7 +1586,7 @@ main(int argc, char **argv)
     // r	route mode
     // d	max consumer delay
 
-    while ( (ch = getopt(argc, argv, "B:C:D:L:Q:G:b:ci:vw:rd:")) != -1) {
+    while ( (ch = getopt(argc, argv, "B:C:D:L:Q:G:b:ci:vw:rd:H")) != -1) {
         switch (ch) {
             default:
                 D("bad option %c %s", ch, optarg);
@@ -1649,6 +1660,10 @@ main(int argc, char **argv)
                 break;
             case 'd':
                 add_to(cd, N_OPTS, optarg, "-d too many times");
+                break;
+            case 'H':
+                hugepages = 1;
+                break;
         }
 
     }
@@ -1901,6 +1916,17 @@ main(int argc, char **argv)
     bp[0].cons_arpq = &arpq[1];
     bp[1].prod_arpq = &arpq[1];
     bp[1].cons_arpq = &arpq[0];
+
+    /* hugepages */
+    if (hugepages) {
+#ifdef MAP_HUGETLB
+        ED("using hugepages");
+        bp[0].hugepages = bp[1].hugepages = 1;
+#else /* !MAP_HUGETLB */
+        ED("WARNING: hugepages not supported");
+        hugepages = 0;
+#endif /* MAP_HUGETLB */
+    }
 
     pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
     pthread_create(&bp[1].cons_tid, NULL, tlem_main, (void*)&bp[1]);
