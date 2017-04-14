@@ -616,7 +616,7 @@ static void
 nm_init_offsets(struct nm_desc *d)
 {
 	struct netmap_if *nifp = NETMAP_IF(d->mem, d->req.nr_offset);
-	struct netmap_ring *r = NETMAP_RXRING(nifp, );
+	struct netmap_ring *r = NETMAP_RXRING(nifp, 0);
 
 	*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
 	*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
@@ -652,6 +652,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 	int is_vale;
 	long num;
 	uint16_t nr_arg2 = 0;
+	struct netmap_pools_info *pi = NULL;
 
 	if (strncmp(ifname, "netmap:", 7) &&
 			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
@@ -828,8 +829,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 	if (req) {
 		d->req = *req;
 		if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
-			struct netmap_pools_info *pi;
-
 			if (IS_NETMAP_DESC(parent) &&
 					(new_flags & (NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3))) {
 				snprintf(errmsg, MAXERRMSG, "POOLS_CREATE is incompatibile with NM_OPEN_ARG? flags");
@@ -842,9 +841,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 				errno = EINVAL;
 				goto fail;
 			}
-			d->mem = pi;
-			d->memsize = pi->memsize;
-			nm_init_offsets(d);
 		}
 	}
 	d->req.nr_version = NETMAP_API;
@@ -896,8 +892,12 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
-        /* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
-	if (d->mem == NULL && (!(new_flags & NM_OPEN_NO_MMAP) || parent)) {
+	if (pi != NULL) {
+		d->mem = pi;
+		d->memsize = pi->memsize;
+		nm_init_offsets(d);
+	} else if ((!(new_flags & NM_OPEN_NO_MMAP) || parent)) {
+		/* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
 	        errno = nm_mmap(d, parent);
 		if (errno) {
 			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
