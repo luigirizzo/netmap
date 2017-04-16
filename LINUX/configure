@@ -304,7 +304,7 @@ Available options:
   --cc=                        C compiler to be used for the apps [$cc]
   --ld=                        linker to be used for the apps [$ld]
   --prefix=                    install path for the apps [$prefix]
-  --destir=                    destination dir for the apps [$DESTDIR]
+  --destdir=                    destination dir for the apps [$DESTDIR]
 
   --show-drivers	       print the list of available drivers and exit
   --show-ext-drivers	       print the list of available external drivers and exit
