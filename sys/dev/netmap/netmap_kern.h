@@ -807,6 +807,7 @@ struct netmap_adapter {
 	 * buffer addresses, the total number of buffers and the buffer size.
 	 */
  	struct netmap_mem_d *nm_mem;
+	struct netmap_mem_d *nm_mem_prev;
 	struct netmap_lut na_lut;
 
 	/* additional information attached to this adapter

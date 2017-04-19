@@ -366,13 +366,15 @@ netmap_mem_init_bitmaps(struct netmap_mem_d *nmd)
 	return 0;
 }
 
-void
+int
 netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
+	int last_user = 0;
 	NMA_LOCK(nmd);
 	if (na->active_fds <= 0)
 		netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
 	if (nmd->active == 1) {
+		last_user = 1;
 		/*
 		 * Reset the allocator when it falls out of use so that any
 		 * pool resources leaked by unclean application exits are
@@ -383,6 +385,7 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	nmd->ops->nmd_deref(nmd);
 
 	NMA_UNLOCK(nmd);
+	return last_user;
 }
 
 

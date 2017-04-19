@@ -910,7 +910,19 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 	netmap_krings_delete(na);
 }
 
-
+static void
+netmap_mem_drop(struct netmap_adapter *na)
+{
+	int last = netmap_mem_deref(na->nm_mem, na);
+	/* if the native allocator had been overrided on regif,
+	 * restore it now and drop the temporary one
+	 */
+	if (last && na->nm_mem_prev) {
+		netmap_mem_put(na->nm_mem);
+		na->nm_mem = na->nm_mem_prev;
+		na->nm_mem_prev = NULL;
+	}
+}
 
 /*
  * Undo everything that was done in netmap_do_regif(). In particular,
@@ -978,7 +990,7 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 	/* delete the nifp */
 	netmap_mem_if_delete(na, priv->np_nifp);
 	/* drop the allocator */
-	netmap_mem_deref(na->nm_mem, na);
+	netmap_mem_drop(na);
 	/* mark the priv as unregistered */
 	priv->np_na = NULL;
 	priv->np_nifp = NULL;
@@ -1407,7 +1419,7 @@ netmap_get_hw_na(struct ifnet *ifp, struct netmap_mem_d *nmd, struct netmap_adap
 assign_mem:
 	if (nmd != NULL && !((*na)->na_flags & NAF_MEM_OWNER) &&
 	    (*na)->active_fds == 0 && ((*na)->nm_mem != nmd)) {
-		netmap_mem_put((*na)->nm_mem);
+		(*na)->nm_mem_prev = (*na)->nm_mem;
 		(*na)->nm_mem = netmap_mem_get(nmd);
 	}
 
@@ -2135,7 +2147,7 @@ err_del_krings:
 	if (na->active_fds == 0)
 		na->nm_krings_delete(na);
 err_drop_mem:
-	netmap_mem_deref(na->nm_mem, na);
+	netmap_mem_drop(na);
 err:
 	priv->np_na = NULL;
 	return error;

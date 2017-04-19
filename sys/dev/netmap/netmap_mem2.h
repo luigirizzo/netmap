@@ -134,7 +134,7 @@ struct netmap_if * netmap_mem_if_new(struct netmap_adapter *, struct netmap_priv
 void 	   netmap_mem_if_delete(struct netmap_adapter *, struct netmap_if *);
 int	   netmap_mem_rings_create(struct netmap_adapter *);
 void	   netmap_mem_rings_delete(struct netmap_adapter *);
-void 	   netmap_mem_deref(struct netmap_mem_d *, struct netmap_adapter *);
+int 	   netmap_mem_deref(struct netmap_mem_d *, struct netmap_adapter *);
 int	netmap_mem2_get_pool_info(struct netmap_mem_d *, u_int, u_int *, u_int *);
 int	   netmap_mem_get_info(struct netmap_mem_d *, u_int *size, u_int *memflags, uint16_t *id);
 ssize_t    netmap_mem_if_offset(struct netmap_mem_d *, const void *vaddr);
