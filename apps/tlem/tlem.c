@@ -621,7 +621,6 @@ struct pipe_args {
 
 	struct nm_desc *pa;		/* netmap descriptor */
 	struct nm_desc *pb;
-	struct nm_desc *_pa;
 
 	/* route-mode */
 	struct arp_cmd_q *cons_arpq;	/* out mailbox for cons */
@@ -1304,11 +1303,6 @@ tlem_main(void *_a)
 	mmap_flags |= MAP_HUGETLB;
     }
 
-    a->pb = nm_open(q->cons_ifname, NULL, NM_OPEN_NO_MMAP, a->_pa);
-    if (a->pb == NULL) {
-	ED("cannot open %s", q->cons_ifname);
-	return NULL;
-    }
     a->zerocopy = a->zerocopy && (a->pa->mem == a->pb->mem);
     ND("------- zerocopy %ssupported", a->zerocopy ? "" : "NOT ");
     /* allocate space for the queue:
@@ -1338,6 +1332,7 @@ tlem_main(void *_a)
 	ED("alloc %lld bytes for queue failed, exiting", (long long)need);
 	nm_close(a->pa);
 	nm_close(a->pb);
+	do_abort = 1;
 	return(NULL);
     }
     if (mlock(q->buf, need) < 0) {
@@ -1911,12 +1906,17 @@ main(int argc, char **argv)
 	}
 	
 	for (i = 0; i < 2; i++) {
-		bp[i].pa = nm_open(bp[i].q.prod_ifname, NULL, NETMAP_NO_TX_POLL, NULL);
-		if (bp[i].pa == NULL) {
-		    D("cannot open %s", bp[i].q.prod_ifname);
+		struct pipe_args *a = &bp[i], *b = &bp[1 - i];
+		a->pa = nm_open(a->q.prod_ifname, NULL, NETMAP_NO_TX_POLL, NULL);
+		if (a->pa == NULL) {
+		    D("cannot open %s", a->q.prod_ifname);
 		    exit(1);
 		}
-		bp[1 - i]._pa = bp[i].pa;
+		b->pb = nm_open(b->q.cons_ifname, NULL, NM_OPEN_NO_MMAP, a->pa);
+	        if (b->pb == NULL) {
+	            ED("cannot open %s", b->q.cons_ifname);
+	            exit(1);
+	        }
 	}
 	
 	pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
