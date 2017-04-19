@@ -1304,22 +1304,6 @@ tlem_main(void *_a)
     setaffinity(a->cons_core);
     set_tns_now(&q->t0, 0); /* starting reference */
 
-    a->pa = nmport_prepare(q->prod_ifname);
-    if (a->pa == NULL) {
-        ED("cannot open %s", q->prod_ifname);
-        return NULL;
-    }
-    a->pa->reg.nr_flags |= NETMAP_NO_TX_POLL;
-    if (nmport_open_desc(a->pa) < 0) {
-	ED("cannot open %s", q->prod_ifname);
-    }
-    a->pb = nmport_open(q->cons_ifname);
-    if (a->pb == NULL) {
-        ED("cannot open %s", q->cons_ifname);
-        nmport_close(a->pa);
-        return NULL;
-    }
-
     if (a->hugepages) {
         mmap_flags |= MAP_HUGETLB;
     }
@@ -1926,6 +1910,27 @@ main(int argc, char **argv)
         ED("WARNING: hugepages not supported");
         hugepages = 0;
 #endif /* MAP_HUGETLB */
+    }
+
+    for (i = 0; i < 2; i++) {
+        struct pipe_args *a = &bp[i];
+
+        a->pa = nmport_prepare(a->q.prod_ifname);
+        if (a->pa == NULL) {
+            ED("cannot open %s", a->q.prod_ifname);
+            exit(1);
+        }
+        a->pa->reg.nr_flags |= NETMAP_NO_TX_POLL;
+        if (nmport_open_desc(a->pa) < 0) {
+            ED("cannot open %s", a->q.prod_ifname);
+	    exit(1);
+        }
+        a->pb = nmport_open(a->q.cons_ifname);
+        if (a->pb == NULL) {
+            ED("cannot open %s", a->q.cons_ifname);
+            exit(1);
+        }
+
     }
 
     pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
