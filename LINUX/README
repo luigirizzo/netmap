@@ -87,9 +87,9 @@ features, namely:
 			in copy and zero-copy modes, without stopping
 			traffic).
 
-    generic (*):	the generic driver that is used to access
-			NICs without native netmap support (at reduced
-			performance).
+    generic (*):	the generic (a.k.a. emulated) netmap adapter that is
+			used to access NICs without native netmap support (at
+			reduced performance).
 
     ptnetmap-guest:	netmap passthrough support for guests
 			(including the ptnet driver).
@@ -106,10 +106,10 @@ features, namely:
   NIC drivers
   --------------
 
-  The generic driver can be used to open in netmap mode any NIC for which
-  the host OS already supplies a driver. The optimal performance, however,
-  is only obtained with netmap-enabled NIC drivers.  The configure script
-  implements two methods to obtain the netmap-enabled drivers:
+  The emulated (generic) adapter can be used to open in netmap mode any NIC
+  for which the host OS already supplies a driver. The optimal performance,
+  however, is only obtained with netmap-enabled NIC drivers.  The configure
+  script implements two methods to obtain the netmap-enabled drivers:
 
 	1. patching the native drivers that come with your kernel;
 	2. patching NIC-vendors out-of-tree drivers selected by us.

@@ -305,7 +305,7 @@ void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi)
 #endif /* !RATE */
 
 
-/* =============== GENERIC NETMAP ADAPTER SUPPORT ================= */
+/* ========== GENERIC (EMULATED) NETMAP ADAPTER SUPPORT ============= */
 
 /*
  * Wrapper used by the generic adapter layer to notify
@@ -335,7 +335,6 @@ generic_netmap_unregister(struct netmap_adapter *na)
 	int i, r;
 
 	if (na->active_fds == 0) {
-		D("Generic adapter %p goes off", na);
 		rtnl_lock();
 
 		na->na_flags &= ~NAF_NETMAP_ON;
@@ -351,14 +350,14 @@ generic_netmap_unregister(struct netmap_adapter *na)
 
 	for_each_rx_kring_h(r, kring, na) {
 		if (nm_kring_pending_off(kring)) {
-			D("RX ring %d of generic adapter %p goes off", r, na);
+			D("Emulated adapter: ring '%s' deactivated", kring->name);
 			kring->nr_mode = NKR_NETMAP_OFF;
 		}
 	}
 	for_each_tx_kring_h(r, kring, na) {
 		if (nm_kring_pending_off(kring)) {
 			kring->nr_mode = NKR_NETMAP_OFF;
-			D("TX ring %d of generic adapter %p goes off", r, na);
+			D("Emulated adapter: ring '%s' deactivated", kring->name);
 		}
 	}
 
@@ -415,6 +414,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 			del_timer(&rate_ctx.timer);
 		}
 #endif
+		D("Emulated adapter for %s deactivated", na->name);
 	}
 
 	return 0;
@@ -439,7 +439,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 	}
 
 	if (na->active_fds == 0) {
-		D("Generic adapter %p goes on", na);
+		D("Emulated adapter for %s activated", na->name);
 		/* Do all memory allocations when (na->active_fds == 0), to
 		 * simplify error management. */
 
@@ -484,14 +484,14 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 
 	for_each_rx_kring_h(r, kring, na) {
 		if (nm_kring_pending_on(kring)) {
-			D("RX ring %d of generic adapter %p goes on", r, na);
+			D("Emulated adapter: ring '%s' activated", kring->name);
 			kring->nr_mode = NKR_NETMAP_ON;
 		}
 
 	}
 	for_each_tx_kring_h(r, kring, na) {
 		if (nm_kring_pending_on(kring)) {
-			D("TX ring %d of generic adapter %p goes on", r, na);
+			D("Emulated adapter: ring '%s' activated", kring->name);
 			kring->nr_mode = NKR_NETMAP_ON;
 		}
 	}
@@ -1153,7 +1153,6 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	struct netmap_adapter *prev_na = gna->prev;
 
 	if (prev_na != NULL) {
-		D("Released generic NA %p", gna);
 		netmap_adapter_put(prev_na);
 		if (nm_iszombie(na)) {
 		        /*
@@ -1162,6 +1161,7 @@ generic_netmap_dtor(struct netmap_adapter *na)
 		         */
 		        netmap_adapter_put(prev_na);
 		}
+		D("Native netmap adapter %p restored", prev_na);
 	}
 	NM_ATTACH_NA(ifp, prev_na);
 	/*
@@ -1169,7 +1169,7 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	 * overrides WNA(ifp) if na->ifp is not NULL.
 	 */
 	na->ifp = NULL;
-	D("Restored native NA %p", prev_na);
+	D("Emulated netmap adapter for %s destroyed", na->name);
 }
 
 /*
@@ -1241,7 +1241,7 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	nm_os_generic_set_features(gna);
 
-	D("Created generic NA %p (prev %p)", gna, gna->prev);
+	D("Emulated adapter for %s created (prev was %p)", na->name, gna->prev);
 
 	return retval;
 }
