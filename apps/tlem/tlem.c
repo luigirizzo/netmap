@@ -1252,7 +1252,8 @@ cons(void *_pa)
 			/* drop this packet. Any pending arp message
 			 * will be sent in the next iteration
 			 */
-			continue;
+			q->cons_drop++;
+			goto next;
 		}
 		pending += injected;
 	}
