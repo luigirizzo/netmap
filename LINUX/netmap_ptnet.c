@@ -788,7 +788,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 					ptnet_tx_intr : ptnet_rx_intr;
 
 		snprintf(pq->msix_name, sizeof(pq->msix_name),
-			 "ptnet-%d", i);
+			 "%s-%d", pi->netdev->name, i);
 		ret = request_irq(pi->msix_entries[i].vector, handler,
 				  0, pq->msix_name, pq);
 		if (ret) {
