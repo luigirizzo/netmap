@@ -49,7 +49,7 @@ char netmap_igb_driver_name[] = "igb" NETMAP_LINUX_DRIVER_SUFFIX;
 static inline u16 nm_igb_read(struct igb_adapter *adapter, u32 offset)
 {
 	u16 rv = 0;
-	if (igb_read_phy_reg(&adapter->hw, offset, &rv)) {
+	if (!igb_read_phy_reg(&adapter->hw, offset, &rv)) {
 		RD(5, "%s: read failure at offset %x",
 				adapter->netdev->name, offset);
 	}
