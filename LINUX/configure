@@ -1597,12 +1597,12 @@ EOF
   fi # i40e
 
   if drv enabled igb; then
-    add_test 'have IGB_PHY_OPS' <<EOF
-        #include "igb/igb.h"
+    add_test 'have IGB_RD32' <<EOF
+        #include "igb/e1000_regs.h"
 
-	s32
-	dummy(struct e1000_hw *hw, u32 offset, u16 *data) {
-		return igb_read_phy_reg(hw, offset, data);
+	u32
+	dummy(struct e1000_hw *hw, u32 reg) {
+		return igb_rd32(hw, reg);
 	}
 EOF
   fi # igb
