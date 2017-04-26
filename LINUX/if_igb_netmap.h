@@ -48,7 +48,13 @@ char netmap_igb_driver_name[] = "igb" NETMAP_LINUX_DRIVER_SUFFIX;
 #ifdef NETMAP_LINUX_HAVE_IGB_RD32
 #define READ_TDH(_adapter, _txr)	igb_rd32(&(_adapter)->hw, E1000_TDH((_txr)->reg_idx))
 #elif defined(E1000_READ_REG)
-#define READ_TDH(_adapter, _txr)	E1000_READ_REG((_txr)->head)
+#define READ_TDH(_adapter, _txr)	E1000_READ_REG(&(_adapter)->hw, E1000_TDH((_txr)->reg_idx))
+#elif defined rd32
+static inline u32 READ_TDH(struct igb_adapter *adapter, struct igb_ring *txr)
+{
+	struct e1000_hw *hw = &adapter->hw;
+	return rd32(E1000_TDH(txr->reg_idx));
+}
 #else
 #define	READ_TDH(_adapter, _txr)	readl((_txr)->head)
 #endif
