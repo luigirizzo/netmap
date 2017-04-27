@@ -187,9 +187,6 @@ const char *indirect_payload="netmap pkt-gen indirect payload\n"
 
 int verbose = 0;
 
-#define SKIP_PAYLOAD 1 /* do not check payload. XXX unused */
-
-
 #define VIRT_HDR_1	10	/* length of a base vnet-hdr */
 #define VIRT_HDR_2	12	/* length of the extenede vnet-hdr */
 #define VIRT_HDR_MAX	VIRT_HDR_2
@@ -1198,7 +1195,6 @@ wait_time(struct timespec ts)
  * The payload (after UDP header, ofs 42) has a 4-byte sequence
  * followed by a struct timeval (or bintime?)
  */
-#define	PAY_OFS	42	/* where in the pkt... */
 
 static void *
 ping_body(void *data)
@@ -2748,7 +2744,7 @@ main(int arc, char **argv)
 		D("%d cpus is too high, have only %d cpus", g.cpus, i);
 		usage();
 	}
-D("running on %d cpus (have %d)", g.cpus, i);
+	D("running on %d cpus (have %d)", g.cpus, i);
 	if (g.cpus == 0)
 		g.cpus = i;
 
