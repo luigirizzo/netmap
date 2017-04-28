@@ -337,7 +337,7 @@ ptnetmap_tx_handler(void *data, int is_kthread)
 
 #ifndef BUSY_WAIT
         /* Interrupt the guest if needed. */
-        if (more_txspace && ptring_intr_enabled(ptring)) {
+        if (more_txspace && ptring_intr_enabled(ptring) && is_kthread) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptring_intr_enable(ptring, 0);
             nm_os_kctx_send_irq(kth);
@@ -385,7 +385,7 @@ ptnetmap_tx_handler(void *data, int is_kthread)
 
     nm_kr_put(kring);
 
-    if (more_txspace && ptring_intr_enabled(ptring)) {
+    if (more_txspace && ptring_intr_enabled(ptring) && is_kthread) {
         ptring_intr_enable(ptring, 0);
         nm_os_kctx_send_irq(kth);
         IFRATE(ptns->rate_ctx.new.htxk++);
