@@ -1271,222 +1271,228 @@ nm_os_ncpus(void)
 }
 
 struct nm_kctx {
-    struct mm_struct *mm;       /* to access guest memory */
-    struct task_struct *worker; /* the kernel thread */
+	struct mm_struct *mm;       /* to access guest memory */
+	struct task_struct *worker; /* the kernel thread */
 
-    atomic_t scheduled;         /* pending wake_up request */
-    int attach_user;            /* kthread attached to user_process */
+	atomic_t scheduled;         /* pending wake_up request */
+	int attach_user;            /* kthread attached to user_process */
 
-    int affinity;
+	int affinity;
 
-    /* files to exchange notifications */
-    struct file *ioevent_file;          /* notification from guest */
-    struct file *irq_file;              /* notification to guest (interrupt) */
-    struct eventfd_ctx *irq_ctx;
+	/* files to exchange notifications */
+	struct file *ioevent_file;          /* notification from guest */
+	struct file *irq_file;              /* notification to guest (interrupt) */
+	struct eventfd_ctx *irq_ctx;
 
-    /* poll ioeventfd to receive notification from the guest */
-    poll_table poll_table;
-    wait_queue_head_t *waitq_head;
-    wait_queue_t waitq;
+	/* poll ioeventfd to receive notification from the guest */
+	poll_table poll_table;
+	wait_queue_head_t *waitq_head;
+	wait_queue_t waitq;
 
-    /* worker function and parameter */
-    nm_kctx_worker_fn_t worker_fn;
-    void *worker_private;
+	/* worker function and parameter */
+	nm_kctx_worker_fn_t worker_fn;
+	void *worker_private;
 
-    /* integer to manage multiple worker contexts */
-    long type;
+	/* integer to manage multiple worker contexts */
+	long type;
 };
 
 void inline
 nm_os_kctx_worker_wakeup(struct nm_kctx *nmk)
 {
-    /*
-     * There may be a race between FE and BE,
-     * which call both this function, and worker kthread,
-     * that reads ptk->scheduled.
-     *
-     * For us it is not important the counter value,
-     * but simply that it has changed since the last
-     * time the kthread saw it.
-     */
-    atomic_inc(&nmk->scheduled);
-    wake_up_process(nmk->worker);
+	/*
+	 * There may be a race between FE and BE,
+	 * which call both this function, and worker kthread,
+	 * that reads ptk->scheduled.
+	 *
+	 * For us it is not important the counter value,
+	 * but simply that it has changed since the last
+	 * time the kthread saw it.
+	 */
+	atomic_inc(&nmk->scheduled);
+	wake_up_process(nmk->worker);
 }
 
 
 static void
 nm_kctx_poll_fn(struct file *file, wait_queue_head_t *wq_head, poll_table *pt)
 {
-    struct nm_kctx *nmk;
+	struct nm_kctx *nmk;
 
-    nmk = container_of(pt, struct nm_kctx, poll_table);
-    nmk->waitq_head = wq_head;
-    add_wait_queue(wq_head, &nmk->waitq);
+	nmk = container_of(pt, struct nm_kctx, poll_table);
+	nmk->waitq_head = wq_head;
+	add_wait_queue(wq_head, &nmk->waitq);
 }
 
 static int
 nm_kctx_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
 {
-    struct nm_kctx *nmk;
+	struct nm_kctx *nmk;
 
-    nmk = container_of(wq, struct nm_kctx, waitq);
-    nm_os_kctx_worker_wakeup(nmk);
+	nmk = container_of(wq, struct nm_kctx, waitq);
+	nm_os_kctx_worker_wakeup(nmk);
 
-    return 0;
+	return 0;
 }
 
 static void inline
 nm_kctx_worker_fn(struct nm_kctx *nmk)
 {
-    __set_current_state(TASK_RUNNING);
-    nmk->worker_fn(nmk->worker_private); /* run payload */
-    if (need_resched())
-        schedule();
+	__set_current_state(TASK_RUNNING);
+	nmk->worker_fn(nmk->worker_private); /* run payload */
+	if (need_resched())
+		schedule();
 }
 
 static int
 nm_kctx_worker(void *data)
 {
-    struct nm_kctx *nmk = data;
-    int old_scheduled = atomic_read(&nmk->scheduled);
-    int new_scheduled = old_scheduled;
-    mm_segment_t oldfs = get_fs();
+	struct nm_kctx *nmk = data;
+	int old_scheduled = atomic_read(&nmk->scheduled);
+	int new_scheduled = old_scheduled;
+	mm_segment_t oldfs = get_fs();
 
-    if (nmk->mm) {
-        set_fs(USER_DS);
-        use_mm(nmk->mm);
-    }
+	if (nmk->mm) {
+		set_fs(USER_DS);
+		use_mm(nmk->mm);
+	}
 
-    while (!kthread_should_stop()) {
-        if (!nmk->ioevent_file) {
-	    /*
-             * if ioevent_file is not defined, we don't have notification
-	     * mechanism and we continually execute worker_fn()
-	     */
-            nm_kctx_worker_fn(nmk);
+	while (!kthread_should_stop()) {
+		if (!nmk->ioevent_file) {
+			/*
+			 * if ioevent_file is not defined, we don't have
+			 * notification mechanism and we continually
+			 * execute worker_fn()
+			 */
+			nm_kctx_worker_fn(nmk);
 
-        } else {
-            /*
-             * Set INTERRUPTIBLE state before to check if there is work.
-             * if wake_up() is called, although we have not seen the new
-             * counter value, the kthread state is set to RUNNING and
-             * after schedule() it is not moved off run queue.
-             */
-            set_current_state(TASK_INTERRUPTIBLE);
+		} else {
+			/*
+			 * Set INTERRUPTIBLE state before to check if there
+			 * is work. If wake_up() is called, although we have
+			 * not seen the new counter value, the kthread state
+			 * is set to RUNNING and after schedule() it is not
+			 * moved off run queue.
+			 */
+			set_current_state(TASK_INTERRUPTIBLE);
 
-            new_scheduled = atomic_read(&nmk->scheduled);
+			new_scheduled = atomic_read(&nmk->scheduled);
 
-            /* check if there is a pending notification */
-            if (likely(new_scheduled != old_scheduled)) {
-                old_scheduled = new_scheduled;
-                nm_kctx_worker_fn(nmk);
-            } else {
-                schedule();
-            }
-        }
-    }
+			/* check if there is a pending notification */
+			if (likely(new_scheduled != old_scheduled)) {
+				old_scheduled = new_scheduled;
+				nm_kctx_worker_fn(nmk);
+			} else {
+				schedule();
+			}
+		}
+	}
 
-    __set_current_state(TASK_RUNNING);
+	__set_current_state(TASK_RUNNING);
 
-    if (nmk->mm) {
-        unuse_mm(nmk->mm);
-    }
+	if (nmk->mm) {
+		unuse_mm(nmk->mm);
+	}
 
-    set_fs(oldfs);
-    return 0;
+	set_fs(oldfs);
+	return 0;
 }
 
 void inline
 nm_os_kctx_send_irq(struct nm_kctx *nmk)
 {
-    if (nmk->irq_ctx)
-        eventfd_signal(nmk->irq_ctx, 1);
+	if (nmk->irq_ctx) {
+		eventfd_signal(nmk->irq_ctx, 1);
+	}
 }
 
 static void
 nm_kctx_close_files(struct nm_kctx *nmk)
 {
-    if (nmk->ioevent_file) {
-        fput(nmk->ioevent_file);
-        nmk->ioevent_file = NULL;
-    }
+	if (nmk->ioevent_file) {
+		fput(nmk->ioevent_file);
+		nmk->ioevent_file = NULL;
+	}
 
-    if (nmk->irq_file) {
-        fput(nmk->irq_file);
-        nmk->irq_file = NULL;
-        eventfd_ctx_put(nmk->irq_ctx);
-        nmk->irq_ctx = NULL;
-    }
+	if (nmk->irq_file) {
+		fput(nmk->irq_file);
+		nmk->irq_file = NULL;
+		eventfd_ctx_put(nmk->irq_ctx);
+		nmk->irq_ctx = NULL;
+	}
 }
 
 static int
 nm_kctx_open_files(struct nm_kctx *nmk, void *opaque)
 {
-    struct file *file;
-    struct ptnetmap_cfgentry_qemu *ring_cfg = opaque;
+	struct file *file;
+	struct ptnetmap_cfgentry_qemu *ring_cfg = opaque;
 
-    nmk->ioevent_file = NULL;
-    nmk->irq_file = NULL;
+	nmk->ioevent_file = NULL;
+	nmk->irq_file = NULL;
 
-    if (!opaque) {
+	if (!opaque) {
+		return 0;
+	}
+
+	if (ring_cfg->ioeventfd) {
+		file = eventfd_fget(ring_cfg->ioeventfd);
+		if (IS_ERR(file))
+			goto err;
+		nmk->ioevent_file = file;
+	}
+
+	if (ring_cfg->irqfd) {
+		file = eventfd_fget(ring_cfg->irqfd);
+		if (IS_ERR(file))
+			goto err;
+		nmk->irq_file = file;
+		nmk->irq_ctx = eventfd_ctx_fileget(file);
+	}
+
 	return 0;
-    }
-
-    if (ring_cfg->ioeventfd) {
-	file = eventfd_fget(ring_cfg->ioeventfd);
-	if (IS_ERR(file))
-	    goto err;
-	nmk->ioevent_file = file;
-    }
-
-    if (ring_cfg->irqfd) {
-	file = eventfd_fget(ring_cfg->irqfd);
-	if (IS_ERR(file))
-            goto err;
-	nmk->irq_file = file;
-	nmk->irq_ctx = eventfd_ctx_fileget(file);
-    }
-
-    return 0;
 
 err:
-    nm_kctx_close_files(nmk);
-    return -PTR_ERR(file);
+	nm_kctx_close_files(nmk);
+	return -PTR_ERR(file);
 }
 
 static void
 nm_kctx_init_poll(struct nm_kctx *nmk)
 {
-    init_waitqueue_func_entry(&nmk->waitq, nm_kctx_poll_wakeup);
-    init_poll_funcptr(&nmk->poll_table, nm_kctx_poll_fn);
+	init_waitqueue_func_entry(&nmk->waitq, nm_kctx_poll_wakeup);
+	init_poll_funcptr(&nmk->poll_table, nm_kctx_poll_fn);
 }
 
 static int
 nm_kctx_start_poll(struct nm_kctx *nmk)
 {
-    unsigned long mask;
-    int ret = 0;
+	unsigned long mask;
+	int ret = 0;
 
-    if (nmk->waitq_head)
-        return 0;
-    mask = nmk->ioevent_file->f_op->poll(nmk->ioevent_file, &nmk->poll_table);
-    if (mask)
-        nm_kctx_poll_wakeup(&nmk->waitq, 0, 0, (void *)mask);
-    if (mask & POLLERR) {
-        if (nmk->waitq_head)
-            remove_wait_queue(nmk->waitq_head, &nmk->waitq);
-        ret = EINVAL;
-    }
-    return ret;
+	if (nmk->waitq_head)
+		return 0;
+
+	mask = nmk->ioevent_file->f_op->poll(nmk->ioevent_file,
+					     &nmk->poll_table);
+	if (mask)
+		nm_kctx_poll_wakeup(&nmk->waitq, 0, 0, (void *)mask);
+	if (mask & POLLERR) {
+		if (nmk->waitq_head)
+			remove_wait_queue(nmk->waitq_head, &nmk->waitq);
+		ret = EINVAL;
+	}
+
+	return ret;
 }
 
 static void
 nm_kctx_stop_poll(struct nm_kctx *nmk)
 {
-    if (nmk->waitq_head) {
-        remove_wait_queue(nmk->waitq_head, &nmk->waitq);
-        nmk->waitq_head = NULL;
-    }
+	if (nmk->waitq_head) {
+		remove_wait_queue(nmk->waitq_head, &nmk->waitq);
+		nmk->waitq_head = NULL;
+	}
 }
 
 void
@@ -1499,116 +1505,116 @@ struct nm_kctx *
 nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
 		     void *opaque)
 {
-    struct nm_kctx *nmk = NULL;
-    int error;
+	struct nm_kctx *nmk = NULL;
+	int error;
 
-    if (cfgtype != PTNETMAP_CFGTYPE_QEMU) {
-	D("Unsupported cfgtype %u", cfgtype);
-	return NULL;
-    }
+	if (cfgtype != PTNETMAP_CFGTYPE_QEMU) {
+		D("Unsupported cfgtype %u", cfgtype);
+		return NULL;
+	}
 
-    nmk = kzalloc(sizeof *nmk, GFP_KERNEL);
-    if (!nmk)
-        return NULL;
+	nmk = kzalloc(sizeof *nmk, GFP_KERNEL);
+	if (!nmk)
+		return NULL;
 
-    nmk->worker_fn = cfg->worker_fn;
-    nmk->worker_private = cfg->worker_private;
-    nmk->type = cfg->type;
-    atomic_set(&nmk->scheduled, 0);
+	nmk->worker_fn = cfg->worker_fn;
+	nmk->worker_private = cfg->worker_private;
+	nmk->type = cfg->type;
+	atomic_set(&nmk->scheduled, 0);
 
-    /* attach kthread to user process (ptnetmap) */
-    nmk->attach_user = cfg->attach_user;
+	/* attach kthread to user process (ptnetmap) */
+	nmk->attach_user = cfg->attach_user;
 
-    /* open event fds */
-    error = nm_kctx_open_files(nmk, opaque);
-    if (error)
-        goto err;
+	/* open event fds */
+	error = nm_kctx_open_files(nmk, opaque);
+	if (error)
+		goto err;
 
-    nm_kctx_init_poll(nmk);
+	nm_kctx_init_poll(nmk);
 
-    return nmk;
+	return nmk;
 err:
-    //XXX: set errno?
-    kfree(nmk);
-    return NULL;
+	kfree(nmk);
+	return NULL;
 }
 
 int
 nm_os_kctx_worker_start(struct nm_kctx *nmk)
 {
-    int error = 0;
-    char name[16];
+	int error = 0;
+	char name[16];
 
-    if (nmk->worker) {
-        return EBUSY;
-    }
-
-    /* check if we want to attach kthread to user process */
-    if (nmk->attach_user) {
-        nmk->mm = get_task_mm(current);
-    }
-
-    snprintf(name, sizeof(name), "nmkth:%d:%ld", current->pid, nmk->type);
-    nmk->worker = kthread_create(nm_kctx_worker, nmk, name);
-    if (IS_ERR(nmk->worker)) {
-	error = -PTR_ERR(nmk->worker);
-	goto err;
-    }
-
-    kthread_bind(nmk->worker, nmk->affinity);
-    wake_up_process(nmk->worker);
-
-    if (nmk->ioevent_file) {
-	error = nm_kctx_start_poll(nmk);
-	if (error) {
-            goto err_kstop;
+	if (nmk->worker) {
+		return EBUSY;
 	}
-    }
 
-    return 0;
+	/* check if we want to attach kthread to user process */
+	if (nmk->attach_user) {
+		nmk->mm = get_task_mm(current);
+	}
+
+	snprintf(name, sizeof(name), "nmkth:%d:%ld", current->pid, nmk->type);
+	nmk->worker = kthread_create(nm_kctx_worker, nmk, name);
+	if (IS_ERR(nmk->worker)) {
+		error = -PTR_ERR(nmk->worker);
+		goto err;
+	}
+
+	kthread_bind(nmk->worker, nmk->affinity);
+	wake_up_process(nmk->worker);
+
+	if (nmk->ioevent_file) {
+		error = nm_kctx_start_poll(nmk);
+		if (error) {
+			goto err_kstop;
+		}
+	}
+
+	return 0;
+
 err_kstop:
-    kthread_stop(nmk->worker);
+	kthread_stop(nmk->worker);
 err:
-    nmk->worker = NULL;
-    if (nmk->mm)
-        mmput(nmk->mm);
-    nmk->mm = NULL;
-    return error;
+	nmk->worker = NULL;
+	if (nmk->mm)
+		mmput(nmk->mm);
+	nmk->mm = NULL;
+	return error;
 }
 
 void
 nm_os_kctx_worker_stop(struct nm_kctx *nmk)
 {
-    if (!nmk->worker) {
-        return;
-    }
+	if (!nmk->worker) {
+		return;
+	}
 
-    nm_kctx_stop_poll(nmk);
+	nm_kctx_stop_poll(nmk);
 
-    if (nmk->worker) {
-        kthread_stop(nmk->worker);
-        nmk->worker = NULL;
-    }
+	if (nmk->worker) {
+		kthread_stop(nmk->worker);
+		nmk->worker = NULL;
+	}
 
-    if (nmk->mm) {
-        mmput(nmk->mm);
-        nmk->mm = NULL;
-    }
+	if (nmk->mm) {
+		mmput(nmk->mm);
+		nmk->mm = NULL;
+	}
 }
 
 void
 nm_os_kctx_destroy(struct nm_kctx *nmk)
 {
-    if (!nmk)
-        return;
+	if (!nmk)
+		return;
 
-    if (nmk->worker) {
-        nm_os_kctx_worker_stop(nmk);
-    }
+	if (nmk->worker) {
+		nm_os_kctx_worker_stop(nmk);
+	}
 
-    nm_kctx_close_files(nmk);
+	nm_kctx_close_files(nmk);
 
-    kfree(nmk);
+	kfree(nmk);
 }
 
 /* ##################### PTNETMAP SUPPORT ##################### */
@@ -1642,11 +1648,11 @@ MODULE_DEVICE_TABLE(pci, ptnetmap_guest_device_table);
  */
 struct ptnetmap_memdev
 {
-    struct pci_dev *pdev;
-    void __iomem *pci_io;
-    void __iomem *pci_mem;
-    struct netmap_mem_d *nm_mem;
-    int bars;
+	struct pci_dev *pdev;
+	void __iomem *pci_io;
+	void __iomem *pci_mem;
+	struct netmap_mem_d *nm_mem;
+	int bars;
 };
 
 /*
@@ -1659,29 +1665,29 @@ int
 nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
                       void **nm_addr, uint64_t *mem_size)
 {
-    struct pci_dev *pdev = ptn_dev->pdev;
-    phys_addr_t mem_paddr;
-    int err = 0;
+	struct pci_dev *pdev = ptn_dev->pdev;
+	phys_addr_t mem_paddr;
+	int err = 0;
 
-    *mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_HI);
-    *mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_LO) |
-	       (*mem_size << 32);
+	*mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_HI);
+	*mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_LO) |
+		(*mem_size << 32);
 
-    D("=== BAR %d start %llx len %llx mem_size %lx ===",
-            PTNETMAP_MEM_PCI_BAR,
-            pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
-            pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
-            (unsigned long)(*mem_size));
+	D("=== BAR %d start %llx len %llx mem_size %lx ===",
+			PTNETMAP_MEM_PCI_BAR,
+			pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
+			pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
+			(unsigned long)(*mem_size));
 
-    /* map memory allocator */
-    mem_paddr = pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR);
-    ptn_dev->pci_mem = *nm_addr = ioremap_cache(mem_paddr, *mem_size);
-    if (ptn_dev->pci_mem == NULL) {
-        err = -ENOMEM;
-    }
-    *nm_paddr = mem_paddr;
+	/* map memory allocator */
+	mem_paddr = pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR);
+	ptn_dev->pci_mem = *nm_addr = ioremap_cache(mem_paddr, *mem_size);
+	if (ptn_dev->pci_mem == NULL) {
+		err = -ENOMEM;
+	}
+	*nm_paddr = mem_paddr;
 
-    return err;
+	return err;
 }
 
 uint32_t
@@ -1696,10 +1702,10 @@ nm_os_pt_memdev_ioread(struct ptnetmap_memdev *ptn_dev, unsigned int reg)
 void
 nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
 {
-    if (ptn_dev->pci_mem) {
-        iounmap(ptn_dev->pci_mem);
-        ptn_dev->pci_mem = NULL;
-    }
+	if (ptn_dev->pci_mem) {
+		iounmap(ptn_dev->pci_mem);
+		ptn_dev->pci_mem = NULL;
+	}
 }
 
 /*
@@ -1710,63 +1716,62 @@ nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
 static int
 ptnetmap_guest_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
-    struct ptnetmap_memdev *ptn_dev;
-    int bars, err;
-    uint16_t mem_id;
+	struct ptnetmap_memdev *ptn_dev;
+	int bars, err;
+	uint16_t mem_id;
 
-    if (id->device == PTNETMAP_PCI_NETIF_ID) {
-        /* Probe the ptnet device. */
-        return ptnet_probe(pdev, id);
-    }
+	if (id->device == PTNETMAP_PCI_NETIF_ID) {
+		/* Probe the ptnet device. */
+		return ptnet_probe(pdev, id);
+	}
 
-    /* Probe the memdev device. */
+	/* Probe the memdev device. */
+	ptn_dev = kzalloc(sizeof(*ptn_dev), GFP_KERNEL);
+	if (ptn_dev == NULL)
+		return -ENOMEM;
 
-    ptn_dev = kzalloc(sizeof(*ptn_dev), GFP_KERNEL);
-    if (ptn_dev == NULL)
-        return -ENOMEM;
+	ptn_dev->pdev = pdev;
+	bars = pci_select_bars(pdev, IORESOURCE_MEM | IORESOURCE_IO);
+	/* enable the device */
+	err = pci_enable_device(pdev);
+	if (err)
+		goto err;
 
-    ptn_dev->pdev = pdev;
-    bars = pci_select_bars(pdev, IORESOURCE_MEM | IORESOURCE_IO);
-    /* enable the device */
-    err = pci_enable_device(pdev); /* XXX-ste: device_mem() */
-    if (err)
-        goto err;
+	err = pci_request_selected_regions(pdev, bars, PTNETMAP_MEMDEV_NAME);
+	if (err)
+		goto err_pci_reg;
 
-    err = pci_request_selected_regions(pdev, bars, PTNETMAP_MEMDEV_NAME);
-    if (err)
-        goto err_pci_reg;
+	ptn_dev->pci_io = pci_iomap(pdev, PTNETMAP_IO_PCI_BAR, 0);
+	if (ptn_dev->pci_io == NULL) {
+		err = -ENOMEM;
+		goto err_iomap;
+	}
+	pci_set_drvdata(pdev, ptn_dev);
+	pci_set_master(pdev); /* XXX probably not needed */
 
-    ptn_dev->pci_io = pci_iomap(pdev, PTNETMAP_IO_PCI_BAR, 0);
-    if (ptn_dev->pci_io == NULL) {
-        err = -ENOMEM;
-        goto err_iomap;
-    }
-    pci_set_drvdata(pdev, ptn_dev);
-    pci_set_master(pdev); /* XXX-ste: is needed??? */
+	ptn_dev->bars = bars;
+	mem_id = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMID);
 
-    ptn_dev->bars = bars;
-    mem_id = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMID);
+	/* create guest allocator */
+	ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
+	if (ptn_dev->nm_mem == NULL) {
+		err = -ENOMEM;
+		goto err_nmd_attach;
+	}
+	netmap_mem_get(ptn_dev->nm_mem);
 
-    /* create guest allocator */
-    ptn_dev->nm_mem = netmap_mem_pt_guest_attach(ptn_dev, mem_id);
-    if (ptn_dev->nm_mem == NULL) {
-        err = -ENOMEM;
-        goto err_nmd_attach;
-    }
-    netmap_mem_get(ptn_dev->nm_mem);
-
-    return 0;
+	return 0;
 
 err_nmd_attach:
-    pci_set_drvdata(pdev, NULL);
-    iounmap(ptn_dev->pci_io);
+	pci_set_drvdata(pdev, NULL);
+	iounmap(ptn_dev->pci_io);
 err_iomap:
-    pci_release_selected_regions(pdev, bars);
+	pci_release_selected_regions(pdev, bars);
 err_pci_reg:
-    pci_disable_device(pdev);
+	pci_disable_device(pdev);
 err:
-    kfree(ptn_dev);
-    return err;
+	kfree(ptn_dev);
+	return err;
 }
 
 /*
@@ -1775,35 +1780,35 @@ err:
 static void
 ptnetmap_guest_remove(struct pci_dev *pdev)
 {
-    struct ptnetmap_memdev *ptn_dev = pci_get_drvdata(pdev);
+	struct ptnetmap_memdev *ptn_dev = pci_get_drvdata(pdev);
 
-    if (pdev->device == PTNETMAP_PCI_NETIF_ID) {
-        /* Remove the ptnet device. */
-        return ptnet_remove(pdev);
-    }
+	if (pdev->device == PTNETMAP_PCI_NETIF_ID) {
+		/* Remove the ptnet device. */
+		return ptnet_remove(pdev);
+	}
 
-    /* Remove the memdev device. */
+	/* Remove the memdev device. */
 
-    if (ptn_dev->nm_mem) {
-        netmap_mem_put(ptn_dev->nm_mem);
-        ptn_dev->nm_mem = NULL;
-    }
-    nm_os_pt_memdev_iounmap(ptn_dev);
-    pci_set_drvdata(pdev, NULL);
-    iounmap(ptn_dev->pci_io);
-    pci_release_selected_regions(pdev, ptn_dev->bars);
-    pci_disable_device(pdev);
-    kfree(ptn_dev);
+	if (ptn_dev->nm_mem) {
+		netmap_mem_put(ptn_dev->nm_mem);
+		ptn_dev->nm_mem = NULL;
+	}
+	nm_os_pt_memdev_iounmap(ptn_dev);
+	pci_set_drvdata(pdev, NULL);
+	iounmap(ptn_dev->pci_io);
+	pci_release_selected_regions(pdev, ptn_dev->bars);
+	pci_disable_device(pdev);
+	kfree(ptn_dev);
 }
 
 /*
  * pci driver information
  */
 static struct pci_driver ptnetmap_guest_drivers = {
-    .name       = "ptnetmap-guest-drivers",
-    .id_table   = ptnetmap_guest_device_table,
-    .probe      = ptnetmap_guest_probe,
-    .remove     = ptnetmap_guest_remove,
+	.name       = "ptnetmap-guest-drivers",
+	.id_table   = ptnetmap_guest_device_table,
+	.probe      = ptnetmap_guest_probe,
+	.remove     = ptnetmap_guest_remove,
 };
 
 /*
@@ -1814,15 +1819,16 @@ static struct pci_driver ptnetmap_guest_drivers = {
 static int
 ptnetmap_guest_init(void)
 {
-    int ret;
+	int ret;
 
-    /* register pci driver */
-    ret = pci_register_driver(&ptnetmap_guest_drivers);
-    if (ret < 0) {
-        D("Failed to register drivers");
-        return ret;
-    }
-    return 0;
+	/* register pci driver */
+	ret = pci_register_driver(&ptnetmap_guest_drivers);
+	if (ret < 0) {
+		D("Failed to register drivers");
+		return ret;
+	}
+
+	return 0;
 }
 
 /*
@@ -1831,8 +1837,8 @@ ptnetmap_guest_init(void)
 void
 ptnetmap_guest_fini(void)
 {
-    /* unregister pci driver */
-    pci_unregister_driver(&ptnetmap_guest_drivers);
+	/* unregister pci driver */
+	pci_unregister_driver(&ptnetmap_guest_drivers);
 }
 
 #else /* !WITH_PTNETMAP_GUEST */
