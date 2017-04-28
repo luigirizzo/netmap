@@ -1302,7 +1302,7 @@ void inline
 nm_os_kctx_worker_wakeup(struct nm_kctx *nmk)
 {
 	if (!nmk->worker) {
-		ND("test.send.interrupt %ld", nmk->type);
+		RD(1, "kctx interrupt %ld", nmk->type);
 		/* Propagate notification to the guest. */
 		nm_os_kctx_send_irq(nmk);
 		return;
@@ -1344,9 +1344,7 @@ nm_kctx_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
 	if (nmk->worker) {
 		nm_os_kctx_worker_wakeup(nmk);
 	} else {
-		ND("test.run.work.start %ld", nmk->type);
 		nmk->worker_fn(nmk->worker_private, 0);
-		ND("test.run.work.end %ld", nmk->type);
 	}
 
 	return 0;
