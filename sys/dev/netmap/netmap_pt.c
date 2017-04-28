@@ -225,7 +225,7 @@ ptring_intr_enable(struct ptnet_ring __user *ptring, uint32_t val)
 
 /* Handle TX events: from the guest or from the backend */
 static void
-ptnetmap_tx_handler(void *data)
+ptnetmap_tx_handler(void *data, int is_kthread)
 {
     struct netmap_kring *kring = data;
     struct netmap_pt_host_adapter *pth_na =
@@ -354,7 +354,9 @@ ptnetmap_tx_handler(void *data)
              * go to sleep, waiting for a kick from the guest when new
              * new slots are ready for transmission.
              */
-            usleep_range(1,1);
+            if (is_kthread) {
+                usleep_range(1,1);
+            }
             /* Reenable notifications. */
             ptring_kick_enable(ptring, 1);
             /* Doublecheck. */
@@ -405,7 +407,7 @@ ptnetmap_norxslots(struct netmap_kring *kring, uint32_t g_head)
 
 /* Handle RX events: from the guest or from the backend */
 static void
-ptnetmap_rx_handler(void *data)
+ptnetmap_rx_handler(void *data, int is_kthread)
 {
     struct netmap_kring *kring = data;
     struct netmap_pt_host_adapter *pth_na =

@@ -2040,7 +2040,7 @@ void nm_os_vi_init_index(void);
  * kernel thread routines
  */
 struct nm_kctx; /* OS-specific kernel context - opaque */
-typedef void (*nm_kctx_worker_fn_t)(void *data);
+typedef void (*nm_kctx_worker_fn_t)(void *data, int is_kthread);
 
 /* kthread configuration */
 struct nm_kctx_cfg {

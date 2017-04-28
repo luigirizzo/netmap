@@ -1094,7 +1094,7 @@ nm_kctx_worker(void *data)
 		 * mechanism and we continually execute worker_fn()
 		 */
 		if (!ctx->cfg.wchan) {
-			ctx->worker_fn(ctx->worker_private); /* worker body */
+			ctx->worker_fn(ctx->worker_private, 1); /* worker body */
 		} else {
 			/* checks if there is a pending notification */
 			mtx_lock(&nmk->worker_lock);
@@ -1102,7 +1102,7 @@ nm_kctx_worker(void *data)
 				old_scheduled = nmk->scheduled;
 				mtx_unlock(&nmk->worker_lock);
 
-				ctx->worker_fn(ctx->worker_private); /* worker body */
+				ctx->worker_fn(ctx->worker_private, 1); /* worker body */
 
 				continue;
 			} else if (nmk->run) {

@@ -944,7 +944,7 @@ struct nm_bdg_polling_state {
 };
 
 static void
-netmap_bwrap_polling(void *data)
+netmap_bwrap_polling(void *data, int is_kthread)
 {
 	struct nm_bdg_kthread *nbk = data;
 	struct netmap_bwrap_adapter *bna;

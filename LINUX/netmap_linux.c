@@ -1301,6 +1301,13 @@ struct nm_kctx {
 void inline
 nm_os_kctx_worker_wakeup(struct nm_kctx *nmk)
 {
+	if (!nmk->worker) {
+		ND("test.send.interrupt %ld", nmk->type);
+		/* Propagate notification to the guest. */
+		nm_os_kctx_send_irq(nmk);
+		return;
+	}
+
 	/*
 	 * There may be a race between FE and BE,
 	 * which call both this function, and worker kthread,
@@ -1330,8 +1337,17 @@ nm_kctx_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
 {
 	struct nm_kctx *nmk;
 
+	/* We received a kick on the ioevent_file. If there is a worker,
+	 * wake it up, otherwise do the work here. */
+
 	nmk = container_of(wq, struct nm_kctx, waitq);
-	nm_os_kctx_worker_wakeup(nmk);
+	if (nmk->worker) {
+		nm_os_kctx_worker_wakeup(nmk);
+	} else {
+		ND("test.run.work.start %ld", nmk->type);
+		nmk->worker_fn(nmk->worker_private, 0);
+		ND("test.run.work.end %ld", nmk->type);
+	}
 
 	return 0;
 }
@@ -1340,7 +1356,7 @@ static void inline
 nm_kctx_worker_fn(struct nm_kctx *nmk)
 {
 	__set_current_state(TASK_RUNNING);
-	nmk->worker_fn(nmk->worker_private); /* run payload */
+	nmk->worker_fn(nmk->worker_private, 1); /* work */
 	if (need_resched())
 		schedule();
 }
