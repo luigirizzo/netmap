@@ -976,6 +976,7 @@ nm_bdg_create_kthreads(struct nm_bdg_polling_state *bps)
 
 	bzero(&kcfg, sizeof(kcfg));
 	kcfg.worker_fn = netmap_bwrap_polling;
+	kcfg.use_kthread = 1;
 	for (i = 0; i < bps->ncpus; i++) {
 		struct nm_bdg_kthread *t = bps->kthreads + i;
 		int all = (bps->ncpus == 1 && bps->reg == NR_REG_ALL_NIC);
