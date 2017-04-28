@@ -1273,10 +1273,8 @@ nm_os_ncpus(void)
 struct nm_kctx {
 	struct mm_struct *mm;       /* to access guest memory */
 	struct task_struct *worker; /* the kernel thread */
-
 	atomic_t scheduled;         /* pending wake_up request */
 	int attach_user;            /* kthread attached to user_process */
-
 	int affinity;
 
 	/* files to exchange notifications */
@@ -1295,6 +1293,9 @@ struct nm_kctx {
 
 	/* integer to manage multiple worker contexts */
 	long type;
+
+	/* does this kernel context use a kthread ? */
+	int use_kthread;
 };
 
 void inline
@@ -1520,9 +1521,8 @@ nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
 	nmk->worker_fn = cfg->worker_fn;
 	nmk->worker_private = cfg->worker_private;
 	nmk->type = cfg->type;
+	nmk->use_kthread = cfg->use_kthread;
 	atomic_set(&nmk->scheduled, 0);
-
-	/* attach kthread to user process (ptnetmap) */
 	nmk->attach_user = cfg->attach_user;
 
 	/* open event fds */
@@ -1542,53 +1542,56 @@ int
 nm_os_kctx_worker_start(struct nm_kctx *nmk)
 {
 	int error = 0;
-	char name[16];
 
 	if (nmk->worker) {
 		return EBUSY;
 	}
 
-	/* check if we want to attach kthread to user process */
+	/* Get caller's memory mapping if needed. */
 	if (nmk->attach_user) {
 		nmk->mm = get_task_mm(current);
 	}
 
-	snprintf(name, sizeof(name), "nmkth:%d:%ld", current->pid, nmk->type);
-	nmk->worker = kthread_create(nm_kctx_worker, nmk, name);
-	if (IS_ERR(nmk->worker)) {
-		error = -PTR_ERR(nmk->worker);
-		goto err;
-	}
+	/* Run the context in a kernel thread, if needed. */
+	if (nmk->use_kthread) {
+		char name[16];
 
-	kthread_bind(nmk->worker, nmk->affinity);
-	wake_up_process(nmk->worker);
+		snprintf(name, sizeof(name), "nmkth:%d:%ld", current->pid,
+								nmk->type);
+		nmk->worker = kthread_create(nm_kctx_worker, nmk, name);
+		if (IS_ERR(nmk->worker)) {
+			error = -PTR_ERR(nmk->worker);
+			goto err;
+		}
+
+		kthread_bind(nmk->worker, nmk->affinity);
+		wake_up_process(nmk->worker);
+	}
 
 	if (nmk->ioevent_file) {
 		error = nm_kctx_start_poll(nmk);
 		if (error) {
-			goto err_kstop;
+			goto err;
 		}
 	}
 
 	return 0;
 
-err_kstop:
-	kthread_stop(nmk->worker);
 err:
-	nmk->worker = NULL;
-	if (nmk->mm)
+	if (nmk->worker) {
+		kthread_stop(nmk->worker);
+		nmk->worker = NULL;
+	}
+	if (nmk->mm) {
 		mmput(nmk->mm);
-	nmk->mm = NULL;
+		nmk->mm = NULL;
+	}
 	return error;
 }
 
 void
 nm_os_kctx_worker_stop(struct nm_kctx *nmk)
 {
-	if (!nmk->worker) {
-		return;
-	}
-
 	nm_kctx_stop_poll(nmk);
 
 	if (nmk->worker) {
