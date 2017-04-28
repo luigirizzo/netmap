@@ -186,11 +186,11 @@ struct ptnetmap_state {
 static inline void
 ptnetmap_kring_dump(const char *title, const struct netmap_kring *kring)
 {
-    RD(1, "%s - name: %s hwcur: %d hwtail: %d rhead: %d rcur: %d \
-    		    rtail: %d head: %d cur: %d tail: %d",
-            title, kring->name, kring->nr_hwcur,
-            kring->nr_hwtail, kring->rhead, kring->rcur, kring->rtail,
-            kring->ring->head, kring->ring->cur, kring->ring->tail);
+	D("%s - name: %s hwcur: %d hwtail: %d rhead: %d rcur: %d"
+		" rtail: %d head: %d cur: %d tail: %d",
+		title, kring->name, kring->nr_hwcur,
+		kring->nr_hwtail, kring->rhead, kring->rcur, kring->rtail,
+		kring->ring->head, kring->ring->cur, kring->ring->tail);
 }
 
 /*
@@ -597,14 +597,14 @@ ptnetmap_print_configuration(struct ptnetmap_cfg *cfg)
 static int
 ptnetmap_kring_snapshot(struct netmap_kring *kring, struct ptnet_ring __user *ptring)
 {
-    if(CSB_WRITE(ptring, head, kring->rhead))
+    if (CSB_WRITE(ptring, head, kring->rhead))
         goto err;
-    if(CSB_WRITE(ptring, cur, kring->rcur))
+    if (CSB_WRITE(ptring, cur, kring->rcur))
         goto err;
 
-    if(CSB_WRITE(ptring, hwcur, kring->nr_hwcur))
+    if (CSB_WRITE(ptring, hwcur, kring->nr_hwcur))
         goto err;
-    if(CSB_WRITE(ptring, hwtail, NM_ACCESS_ONCE(kring->nr_hwtail)))
+    if (CSB_WRITE(ptring, hwtail, NM_ACCESS_ONCE(kring->nr_hwtail)))
         goto err;
 
     DBG(ptnetmap_kring_dump("ptnetmap_kring_snapshot", kring);)
