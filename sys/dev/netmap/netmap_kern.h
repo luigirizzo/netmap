@@ -2044,10 +2044,11 @@ typedef void (*nm_kctx_worker_fn_t)(void *data);
 
 /* kthread configuration */
 struct nm_kctx_cfg {
-	long				type;		/* kthread type/identifier */
-	nm_kctx_worker_fn_t		worker_fn;	/* worker function */
-	void				*worker_private;/* worker parameter */
-	int				attach_user;	/* attach kthread to user process */
+	long			type;		/* kthread type/identifier */
+	nm_kctx_worker_fn_t	worker_fn;	/* worker function */
+	void			*worker_private;/* worker parameter */
+	int			attach_user;	/* attach kthread to user process */
+	int			use_kthread;	/* use a kthread for the context */
 };
 /* kthread configuration */
 struct nm_kctx *nm_os_kctx_create(struct nm_kctx_cfg *cfg,

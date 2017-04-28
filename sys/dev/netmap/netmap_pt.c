@@ -650,6 +650,7 @@ static int
 ptnetmap_create_kctxs(struct netmap_pt_host_adapter *pth_na,
 			struct ptnetmap_cfg *cfg)
 {
+	int use_tx_kthreads = ptnetmap_worker; /* snapshot */
 	struct ptnetmap_state *ptns = pth_na->ptns;
 	struct nm_kctx_cfg nmk_cfg;
 	unsigned int num_rings;
@@ -665,8 +666,10 @@ ptnetmap_create_kctxs(struct netmap_pt_host_adapter *pth_na,
 		nmk_cfg.type = k;
 		if (k < pth_na->up.num_tx_rings) {
 			nmk_cfg.worker_fn = ptnetmap_tx_handler;
+			nmk_cfg.use_kthread = use_tx_kthreads;
 		} else {
 			nmk_cfg.worker_fn = ptnetmap_rx_handler;
+			nmk_cfg.use_kthread = 1;
 		}
 
 		ptns->kctxs[k] = nm_os_kctx_create(&nmk_cfg,
