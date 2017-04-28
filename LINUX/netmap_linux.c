@@ -1291,6 +1291,9 @@ struct nm_kctx {
 	nm_kctx_worker_fn_t worker_fn;
 	void *worker_private;
 
+	/* notify function, only needed when use_kthread == 0 */
+	nm_kctx_notify_fn_t notify_fn;
+
 	/* integer to manage multiple worker contexts */
 	long type;
 
@@ -1302,9 +1305,8 @@ void inline
 nm_os_kctx_worker_wakeup(struct nm_kctx *nmk)
 {
 	if (!nmk->worker) {
-		RD(1, "kctx interrupt %ld", nmk->type);
-		/* Propagate notification to the guest. */
-		nm_os_kctx_send_irq(nmk);
+		/* Propagate notification to the user. */
+		nmk->notify_fn(nmk->worker_private);
 		return;
 	}
 
@@ -1528,12 +1530,18 @@ nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
 		return NULL;
 	}
 
+	if (!cfg->use_kthread && cfg->notify_fn == NULL) {
+		D("Error: botify function missing with use_htead == 0");
+		return NULL;
+	}
+
 	nmk = kzalloc(sizeof *nmk, GFP_KERNEL);
 	if (!nmk)
 		return NULL;
 
 	nmk->worker_fn = cfg->worker_fn;
 	nmk->worker_private = cfg->worker_private;
+	nmk->notify_fn = cfg->notify_fn;
 	nmk->type = cfg->type;
 	nmk->use_kthread = cfg->use_kthread;
 	atomic_set(&nmk->scheduled, 0);

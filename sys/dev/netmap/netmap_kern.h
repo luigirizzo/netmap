@@ -2041,12 +2041,14 @@ void nm_os_vi_init_index(void);
  */
 struct nm_kctx; /* OS-specific kernel context - opaque */
 typedef void (*nm_kctx_worker_fn_t)(void *data, int is_kthread);
+typedef void (*nm_kctx_notify_fn_t)(void *data);
 
 /* kthread configuration */
 struct nm_kctx_cfg {
 	long			type;		/* kthread type/identifier */
 	nm_kctx_worker_fn_t	worker_fn;	/* worker function */
 	void			*worker_private;/* worker parameter */
+	nm_kctx_notify_fn_t	notify_fn;	/* notify function */
 	int			attach_user;	/* attach kthread to user process */
 	int			use_kthread;	/* use a kthread for the context */
 };

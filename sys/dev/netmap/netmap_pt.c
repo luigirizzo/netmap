@@ -392,6 +392,36 @@ ptnetmap_tx_handler(void *data, int is_kthread)
     }
 }
 
+/* Called on backend nm_notify when there is no worker thread. */
+static void
+ptnetmap_tx_nothread_notify(void *data)
+{
+	struct netmap_kring *kring = data;
+	struct netmap_pt_host_adapter *pth_na =
+		(struct netmap_pt_host_adapter *)kring->na->na_private;
+	struct ptnetmap_state *ptns = pth_na->ptns;
+	struct ptnet_ring __user *ptring;
+
+	if (unlikely(!ptns)) {
+		D("ERROR ptnetmap state is NULL");
+		return;
+	}
+
+	if (unlikely(ptns->stopped)) {
+		D("backend netmap is being stopped");
+		return;
+	}
+
+	/* Get TX ptring pointer from the CSB. */
+	ptring = ptns->ptrings + kring->ring_id;
+	if (ptring_intr_enabled(ptring)) {
+		ptring_intr_enable(ptring, 0);
+		nm_os_kctx_send_irq(ptns->kctxs[kring->ring_id]);
+		IFRATE(ptns->rate_ctx.new.htxk++);
+		RD(1, "%s interrupt", kring->name);
+	}
+}
+
 /*
  * We need RX kicks from the guest when (tail == head-1), where we wait
  * for the guest to refill.
@@ -669,6 +699,7 @@ ptnetmap_create_kctxs(struct netmap_pt_host_adapter *pth_na,
 		if (k < pth_na->up.num_tx_rings) {
 			nmk_cfg.worker_fn = ptnetmap_tx_handler;
 			nmk_cfg.use_kthread = use_tx_kthreads;
+			nmk_cfg.notify_fn = ptnetmap_tx_nothread_notify;
 		} else {
 			nmk_cfg.worker_fn = ptnetmap_rx_handler;
 			nmk_cfg.use_kthread = 1;
