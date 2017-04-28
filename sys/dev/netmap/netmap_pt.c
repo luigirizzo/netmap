@@ -170,7 +170,7 @@ rate_batch_stats_update(struct rate_batch_stats *bf, uint32_t pre_tail,
 
 struct ptnetmap_state {
     /* Kthreads. */
-    struct nm_kthread **kthreads;
+    struct nm_kctx **kctxs;
 
     /* Shared memory with the guest (TX/RX) */
     struct ptnet_ring __user *ptrings;
@@ -234,7 +234,7 @@ ptnetmap_tx_handler(void *data)
     struct ptnet_ring __user *ptring;
     struct netmap_ring shadow_ring; /* shadow copy of the netmap_ring */
     bool more_txspace = false;
-    struct nm_kthread *kth;
+    struct nm_kctx *kth;
     uint32_t num_slots;
     int batch;
     IFRATE(uint32_t pre_tail);
@@ -259,7 +259,7 @@ ptnetmap_tx_handler(void *data)
 
     /* Get TX ptring pointer from the CSB. */
     ptring = ptns->ptrings + kring->ring_id;
-    kth = ptns->kthreads[kring->ring_id];
+    kth = ptns->kctxs[kring->ring_id];
 
     num_slots = kring->nkr_num_slots;
     shadow_ring.head = kring->rhead;
@@ -340,7 +340,7 @@ ptnetmap_tx_handler(void *data)
         if (more_txspace && ptring_intr_enabled(ptring)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptring_intr_enable(ptring, 0);
-            nm_os_kthread_send_irq(kth);
+            nm_os_kctx_send_irq(kth);
             IFRATE(ptns->rate_ctx.new.htxk++);
             more_txspace = false;
         }
@@ -385,7 +385,7 @@ ptnetmap_tx_handler(void *data)
 
     if (more_txspace && ptring_intr_enabled(ptring)) {
         ptring_intr_enable(ptring, 0);
-        nm_os_kthread_send_irq(kth);
+        nm_os_kctx_send_irq(kth);
         IFRATE(ptns->rate_ctx.new.htxk++);
     }
 }
@@ -413,7 +413,7 @@ ptnetmap_rx_handler(void *data)
     struct ptnetmap_state *ptns = pth_na->ptns;
     struct ptnet_ring __user *ptring;
     struct netmap_ring shadow_ring; /* shadow copy of the netmap_ring */
-    struct nm_kthread *kth;
+    struct nm_kctx *kth;
     uint32_t num_slots;
     int dry_cycles = 0;
     bool some_recvd = false;
@@ -440,7 +440,7 @@ ptnetmap_rx_handler(void *data)
 
     /* Get RX ptring pointer from the CSB. */
     ptring = ptns->ptrings + (pth_na->up.num_tx_rings + kring->ring_id);
-    kth = ptns->kthreads[pth_na->up.num_tx_rings + kring->ring_id];
+    kth = ptns->kctxs[pth_na->up.num_tx_rings + kring->ring_id];
 
     num_slots = kring->nkr_num_slots;
     shadow_ring.head = kring->rhead;
@@ -500,7 +500,7 @@ ptnetmap_rx_handler(void *data)
         if (some_recvd && ptring_intr_enabled(ptring)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
             ptring_intr_enable(ptring, 0);
-            nm_os_kthread_send_irq(kth);
+            nm_os_kctx_send_irq(kth);
             IFRATE(ptns->rate_ctx.new.hrxk++);
             some_recvd = false;
         }
@@ -549,7 +549,7 @@ ptnetmap_rx_handler(void *data)
     /* Interrupt the guest if needed. */
     if (some_recvd && ptring_intr_enabled(ptring)) {
         ptring_intr_enable(ptring, 0);
-        nm_os_kthread_send_irq(kth);
+        nm_os_kctx_send_irq(kth);
         IFRATE(ptns->rate_ctx.new.hrxk++);
     }
 }
@@ -643,15 +643,15 @@ ptnetmap_krings_snapshot(struct netmap_pt_host_adapter *pth_na)
 }
 
 /*
- * Functions to create, start and stop the kthreads
+ * Functions to create kernel contexts, and start/stop the workers.
  */
 
 static int
-ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
-			 struct ptnetmap_cfg *cfg)
+ptnetmap_create_kctxs(struct netmap_pt_host_adapter *pth_na,
+			struct ptnetmap_cfg *cfg)
 {
 	struct ptnetmap_state *ptns = pth_na->ptns;
-	struct nm_kthread_cfg nmk_cfg;
+	struct nm_kctx_cfg nmk_cfg;
 	unsigned int num_rings;
 	uint8_t *cfg_entries = (uint8_t *)(cfg + 1);
 	int k;
@@ -669,9 +669,9 @@ ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
 			nmk_cfg.worker_fn = ptnetmap_rx_handler;
 		}
 
-		ptns->kthreads[k] = nm_os_kthread_create(&nmk_cfg,
+		ptns->kctxs[k] = nm_os_kctx_create(&nmk_cfg,
 			cfg->cfgtype, cfg_entries + k * cfg->entry_size);
-		if (ptns->kthreads[k] == NULL) {
+		if (ptns->kctxs[k] == NULL) {
 			goto err;
 		}
 	}
@@ -679,16 +679,16 @@ ptnetmap_create_kthreads(struct netmap_pt_host_adapter *pth_na,
 	return 0;
 err:
 	for (k = 0; k < num_rings; k++) {
-		if (ptns->kthreads[k]) {
-			nm_os_kthread_delete(ptns->kthreads[k]);
-			ptns->kthreads[k] = NULL;
+		if (ptns->kctxs[k]) {
+			nm_os_kctx_destroy(ptns->kctxs[k]);
+			ptns->kctxs[k] = NULL;
 		}
 	}
 	return EFAULT;
 }
 
 static int
-ptnetmap_start_kthreads(struct netmap_pt_host_adapter *pth_na)
+ptnetmap_start_kctx_workers(struct netmap_pt_host_adapter *pth_na)
 {
 	struct ptnetmap_state *ptns = pth_na->ptns;
 	int num_rings;
@@ -705,8 +705,8 @@ ptnetmap_start_kthreads(struct netmap_pt_host_adapter *pth_na)
 	num_rings = ptns->pth_na->up.num_tx_rings +
 		    ptns->pth_na->up.num_rx_rings;
 	for (k = 0; k < num_rings; k++) {
-		//nm_os_kthread_set_affinity(ptns->kthreads[k], xxx);
-		error = nm_os_kthread_start(ptns->kthreads[k]);
+		//nm_os_kctx_worker_setaff(ptns->kctxs[k], xxx);
+		error = nm_os_kctx_worker_start(ptns->kctxs[k]);
 		if (error) {
 			return error;
 		}
@@ -716,7 +716,7 @@ ptnetmap_start_kthreads(struct netmap_pt_host_adapter *pth_na)
 }
 
 static void
-ptnetmap_stop_kthreads(struct netmap_pt_host_adapter *pth_na)
+ptnetmap_stop_kctx_workers(struct netmap_pt_host_adapter *pth_na)
 {
 	struct ptnetmap_state *ptns = pth_na->ptns;
 	int num_rings;
@@ -732,7 +732,7 @@ ptnetmap_stop_kthreads(struct netmap_pt_host_adapter *pth_na)
 	num_rings = ptns->pth_na->up.num_tx_rings +
 		    ptns->pth_na->up.num_rx_rings;
 	for (k = 0; k < num_rings; k++) {
-		nm_os_kthread_stop(ptns->kthreads[k]);
+		nm_os_kctx_worker_stop(ptns->kctxs[k]);
 	}
 }
 
@@ -790,12 +790,12 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
         return EINVAL;
     }
 
-    ptns = nm_os_malloc(sizeof(*ptns) + num_rings * sizeof(*ptns->kthreads));
+    ptns = nm_os_malloc(sizeof(*ptns) + num_rings * sizeof(*ptns->kctxs));
     if (!ptns) {
         return ENOMEM;
     }
 
-    ptns->kthreads = (struct nm_kthread **)(ptns + 1);
+    ptns->kctxs = (struct nm_kctx **)(ptns + 1);
     ptns->stopped = true;
 
     /* Cross-link data structures. */
@@ -807,9 +807,9 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 
     DBG(ptnetmap_print_configuration(cfg));
 
-    /* Create kthreads */
-    if ((ret = ptnetmap_create_kthreads(pth_na, cfg))) {
-        D("ERROR ptnetmap_create_kthreads()");
+    /* Create kernel contexts. */
+    if ((ret = ptnetmap_create_kctxs(pth_na, cfg))) {
+        D("ERROR ptnetmap_create_kctxs()");
         goto err;
     }
     /* Copy krings state into the CSB for the guest initialization */
@@ -881,12 +881,12 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
         pth_na->up.tx_rings[i].save_notify = NULL;
     }
 
-    /* Delete kthreads. */
+    /* Destroy kernel contexts. */
     num_rings = ptns->pth_na->up.num_tx_rings +
                 ptns->pth_na->up.num_rx_rings;
     for (i = 0; i < num_rings; i++) {
-        nm_os_kthread_delete(ptns->kthreads[i]);
-	ptns->kthreads[i] = NULL;
+        nm_os_kctx_destroy(ptns->kctxs[i]);
+	ptns->kctxs[i] = NULL;
     }
 
     IFRATE(del_timer(&ptns->rate_ctx.timer));
@@ -931,21 +931,21 @@ ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na)
         cfg = ptnetmap_read_cfg(nmr);
         if (!cfg)
             break;
-        /* Create ptnetmap state (kthreads, ...) and switch parent
+        /* Create ptnetmap state (kctxs, ...) and switch parent
 	 * adapter to ptnetmap mode. */
         error = ptnetmap_create(pth_na, cfg);
 	nm_os_free(cfg);
         if (error)
             break;
         /* Start kthreads. */
-        error = ptnetmap_start_kthreads(pth_na);
+        error = ptnetmap_start_kctx_workers(pth_na);
         if (error)
             ptnetmap_delete(pth_na);
         break;
 
     case NETMAP_PT_HOST_DELETE:
         /* Stop kthreads. */
-        ptnetmap_stop_kthreads(pth_na);
+        ptnetmap_stop_kctx_workers(pth_na);
         /* Switch parent adapter back to normal mode and destroy
 	 * ptnetmap state (kthreads, ...). */
         ptnetmap_delete(pth_na);
@@ -993,7 +993,7 @@ nm_pt_host_notify(struct netmap_kring *kring, int flags)
 		ND(1, "RX backend irq");
 		IFRATE(ptns->rate_ctx.new.brxwu++);
 	}
-	nm_os_kthread_wakeup_worker(ptns->kthreads[k]);
+	nm_os_kctx_worker_wakeup(ptns->kctxs[k]);
 
 	return NM_IRQ_COMPLETED;
 }
@@ -1135,7 +1135,7 @@ nm_pt_host_dtor(struct netmap_adapter *na)
 
     /* The equivalent of NETMAP_PT_HOST_DELETE if the hypervisor
      * didn't do it. */
-    ptnetmap_stop_kthreads(pth_na);
+    ptnetmap_stop_kctx_workers(pth_na);
     ptnetmap_delete(pth_na);
 
     parent->na_flags &= ~NAF_BUSY;

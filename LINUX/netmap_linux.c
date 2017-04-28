@@ -1270,7 +1270,7 @@ nm_os_ncpus(void)
 	return nr_cpu_ids;
 }
 
-struct nm_kthread {
+struct nm_kctx {
     struct mm_struct *mm;       /* to access guest memory */
     struct task_struct *worker; /* the kernel thread */
 
@@ -1290,7 +1290,7 @@ struct nm_kthread {
     wait_queue_t waitq;
 
     /* worker function and parameter */
-    nm_kthread_worker_fn_t worker_fn;
+    nm_kctx_worker_fn_t worker_fn;
     void *worker_private;
 
     /* integer to manage multiple worker contexts */
@@ -1298,7 +1298,7 @@ struct nm_kthread {
 };
 
 void inline
-nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
+nm_os_kctx_worker_wakeup(struct nm_kctx *nmk)
 {
     /*
      * There may be a race between FE and BE,
@@ -1315,28 +1315,28 @@ nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
 
 
 static void
-nm_kthread_poll_fn(struct file *file, wait_queue_head_t *wq_head, poll_table *pt)
+nm_kctx_poll_fn(struct file *file, wait_queue_head_t *wq_head, poll_table *pt)
 {
-    struct nm_kthread *nmk;
+    struct nm_kctx *nmk;
 
-    nmk = container_of(pt, struct nm_kthread, poll_table);
+    nmk = container_of(pt, struct nm_kctx, poll_table);
     nmk->waitq_head = wq_head;
     add_wait_queue(wq_head, &nmk->waitq);
 }
 
 static int
-nm_kthread_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
+nm_kctx_poll_wakeup(wait_queue_t *wq, unsigned mode, int sync, void *key)
 {
-    struct nm_kthread *nmk;
+    struct nm_kctx *nmk;
 
-    nmk = container_of(wq, struct nm_kthread, waitq);
-    nm_os_kthread_wakeup_worker(nmk);
+    nmk = container_of(wq, struct nm_kctx, waitq);
+    nm_os_kctx_worker_wakeup(nmk);
 
     return 0;
 }
 
 static void inline
-nm_kthread_worker_fn(struct nm_kthread *nmk)
+nm_kctx_worker_fn(struct nm_kctx *nmk)
 {
     __set_current_state(TASK_RUNNING);
     nmk->worker_fn(nmk->worker_private); /* run payload */
@@ -1345,9 +1345,9 @@ nm_kthread_worker_fn(struct nm_kthread *nmk)
 }
 
 static int
-nm_kthread_worker(void *data)
+nm_kctx_worker(void *data)
 {
-    struct nm_kthread *nmk = data;
+    struct nm_kctx *nmk = data;
     int old_scheduled = atomic_read(&nmk->scheduled);
     int new_scheduled = old_scheduled;
     mm_segment_t oldfs = get_fs();
@@ -1363,7 +1363,7 @@ nm_kthread_worker(void *data)
              * if ioevent_file is not defined, we don't have notification
 	     * mechanism and we continually execute worker_fn()
 	     */
-            nm_kthread_worker_fn(nmk);
+            nm_kctx_worker_fn(nmk);
 
         } else {
             /*
@@ -1379,7 +1379,7 @@ nm_kthread_worker(void *data)
             /* check if there is a pending notification */
             if (likely(new_scheduled != old_scheduled)) {
                 old_scheduled = new_scheduled;
-                nm_kthread_worker_fn(nmk);
+                nm_kctx_worker_fn(nmk);
             } else {
                 schedule();
             }
@@ -1397,14 +1397,14 @@ nm_kthread_worker(void *data)
 }
 
 void inline
-nm_os_kthread_send_irq(struct nm_kthread *nmk)
+nm_os_kctx_send_irq(struct nm_kctx *nmk)
 {
     if (nmk->irq_ctx)
         eventfd_signal(nmk->irq_ctx, 1);
 }
 
 static void
-nm_kthread_close_files(struct nm_kthread *nmk)
+nm_kctx_close_files(struct nm_kctx *nmk)
 {
     if (nmk->ioevent_file) {
         fput(nmk->ioevent_file);
@@ -1420,7 +1420,7 @@ nm_kthread_close_files(struct nm_kthread *nmk)
 }
 
 static int
-nm_kthread_open_files(struct nm_kthread *nmk, void *opaque)
+nm_kctx_open_files(struct nm_kctx *nmk, void *opaque)
 {
     struct file *file;
     struct ptnetmap_cfgentry_qemu *ring_cfg = opaque;
@@ -1450,19 +1450,19 @@ nm_kthread_open_files(struct nm_kthread *nmk, void *opaque)
     return 0;
 
 err:
-    nm_kthread_close_files(nmk);
+    nm_kctx_close_files(nmk);
     return -PTR_ERR(file);
 }
 
 static void
-nm_kthread_init_poll(struct nm_kthread *nmk)
+nm_kctx_init_poll(struct nm_kctx *nmk)
 {
-    init_waitqueue_func_entry(&nmk->waitq, nm_kthread_poll_wakeup);
-    init_poll_funcptr(&nmk->poll_table, nm_kthread_poll_fn);
+    init_waitqueue_func_entry(&nmk->waitq, nm_kctx_poll_wakeup);
+    init_poll_funcptr(&nmk->poll_table, nm_kctx_poll_fn);
 }
 
 static int
-nm_kthread_start_poll(struct nm_kthread *nmk)
+nm_kctx_start_poll(struct nm_kctx *nmk)
 {
     unsigned long mask;
     int ret = 0;
@@ -1471,7 +1471,7 @@ nm_kthread_start_poll(struct nm_kthread *nmk)
         return 0;
     mask = nmk->ioevent_file->f_op->poll(nmk->ioevent_file, &nmk->poll_table);
     if (mask)
-        nm_kthread_poll_wakeup(&nmk->waitq, 0, 0, (void *)mask);
+        nm_kctx_poll_wakeup(&nmk->waitq, 0, 0, (void *)mask);
     if (mask & POLLERR) {
         if (nmk->waitq_head)
             remove_wait_queue(nmk->waitq_head, &nmk->waitq);
@@ -1481,7 +1481,7 @@ nm_kthread_start_poll(struct nm_kthread *nmk)
 }
 
 static void
-nm_kthread_stop_poll(struct nm_kthread *nmk)
+nm_kctx_stop_poll(struct nm_kctx *nmk)
 {
     if (nmk->waitq_head) {
         remove_wait_queue(nmk->waitq_head, &nmk->waitq);
@@ -1490,16 +1490,16 @@ nm_kthread_stop_poll(struct nm_kthread *nmk)
 }
 
 void
-nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
+nm_os_kctx_worker_setaff(struct nm_kctx *nmk, int affinity)
 {
 	nmk->affinity = affinity;
 }
 
-struct nm_kthread *
-nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
+struct nm_kctx *
+nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
 		     void *opaque)
 {
-    struct nm_kthread *nmk = NULL;
+    struct nm_kctx *nmk = NULL;
     int error;
 
     if (cfgtype != PTNETMAP_CFGTYPE_QEMU) {
@@ -1520,11 +1520,11 @@ nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
     nmk->attach_user = cfg->attach_user;
 
     /* open event fds */
-    error = nm_kthread_open_files(nmk, opaque);
+    error = nm_kctx_open_files(nmk, opaque);
     if (error)
         goto err;
 
-    nm_kthread_init_poll(nmk);
+    nm_kctx_init_poll(nmk);
 
     return nmk;
 err:
@@ -1534,7 +1534,7 @@ err:
 }
 
 int
-nm_os_kthread_start(struct nm_kthread *nmk)
+nm_os_kctx_worker_start(struct nm_kctx *nmk)
 {
     int error = 0;
     char name[16];
@@ -1549,7 +1549,7 @@ nm_os_kthread_start(struct nm_kthread *nmk)
     }
 
     snprintf(name, sizeof(name), "nmkth:%d:%ld", current->pid, nmk->type);
-    nmk->worker = kthread_create(nm_kthread_worker, nmk, name);
+    nmk->worker = kthread_create(nm_kctx_worker, nmk, name);
     if (IS_ERR(nmk->worker)) {
 	error = -PTR_ERR(nmk->worker);
 	goto err;
@@ -1559,7 +1559,7 @@ nm_os_kthread_start(struct nm_kthread *nmk)
     wake_up_process(nmk->worker);
 
     if (nmk->ioevent_file) {
-	error = nm_kthread_start_poll(nmk);
+	error = nm_kctx_start_poll(nmk);
 	if (error) {
             goto err_kstop;
 	}
@@ -1577,13 +1577,13 @@ err:
 }
 
 void
-nm_os_kthread_stop(struct nm_kthread *nmk)
+nm_os_kctx_worker_stop(struct nm_kctx *nmk)
 {
     if (!nmk->worker) {
         return;
     }
 
-    nm_kthread_stop_poll(nmk);
+    nm_kctx_stop_poll(nmk);
 
     if (nmk->worker) {
         kthread_stop(nmk->worker);
@@ -1597,16 +1597,16 @@ nm_os_kthread_stop(struct nm_kthread *nmk)
 }
 
 void
-nm_os_kthread_delete(struct nm_kthread *nmk)
+nm_os_kctx_destroy(struct nm_kctx *nmk)
 {
     if (!nmk)
         return;
 
     if (nmk->worker) {
-        nm_os_kthread_stop(nmk);
+        nm_os_kctx_worker_stop(nmk);
     }
 
-    nm_kthread_close_files(nmk);
+    nm_kctx_close_files(nmk);
 
     kfree(nmk);
 }

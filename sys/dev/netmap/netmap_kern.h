@@ -2039,26 +2039,26 @@ void nm_os_vi_init_index(void);
 /*
  * kernel thread routines
  */
-struct nm_kthread; /* OS-specific kthread - opaque */
-typedef void (*nm_kthread_worker_fn_t)(void *data);
+struct nm_kctx; /* OS-specific kernel context - opaque */
+typedef void (*nm_kctx_worker_fn_t)(void *data);
 
 /* kthread configuration */
-struct nm_kthread_cfg {
+struct nm_kctx_cfg {
 	long				type;		/* kthread type/identifier */
-	nm_kthread_worker_fn_t		worker_fn;	/* worker function */
+	nm_kctx_worker_fn_t		worker_fn;	/* worker function */
 	void				*worker_private;/* worker parameter */
 	int				attach_user;	/* attach kthread to user process */
 };
 /* kthread configuration */
-struct nm_kthread *nm_os_kthread_create(struct nm_kthread_cfg *cfg,
+struct nm_kctx *nm_os_kctx_create(struct nm_kctx_cfg *cfg,
 					unsigned int cfgtype,
 					void *opaque);
-int nm_os_kthread_start(struct nm_kthread *);
-void nm_os_kthread_stop(struct nm_kthread *);
-void nm_os_kthread_delete(struct nm_kthread *);
-void nm_os_kthread_wakeup_worker(struct nm_kthread *nmk);
-void nm_os_kthread_send_irq(struct nm_kthread *);
-void nm_os_kthread_set_affinity(struct nm_kthread *, int);
+int nm_os_kctx_worker_start(struct nm_kctx *);
+void nm_os_kctx_worker_stop(struct nm_kctx *);
+void nm_os_kctx_destroy(struct nm_kctx *);
+void nm_os_kctx_worker_wakeup(struct nm_kctx *nmk);
+void nm_os_kctx_send_irq(struct nm_kctx *);
+void nm_os_kctx_worker_setaff(struct nm_kctx *, int);
 u_int nm_os_ncpus(void);
 
 #ifdef WITH_PTNETMAP_HOST

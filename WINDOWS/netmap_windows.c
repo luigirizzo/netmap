@@ -1019,18 +1019,18 @@ nm_os_put_module(void)
 }
 
 
-struct nm_kthread {
+struct nm_kctx {
     int unused; /* To avoid compiler barfs */
 };
 
 void
-nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
+nm_os_kctx_worker_setaff(struct nm_kctx *nmk, int affinity)
 {
 	// TODO
 }
 
-struct nm_kthread *
-nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
+struct nm_kctx *
+nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
 		     void *opaque)
 {
 	// TODO
@@ -1038,21 +1038,21 @@ nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
 }
 
 int
-nm_os_kthread_start(struct nm_kthread *nmk)
+nm_os_kctx_worker_start(struct nm_kctx *nmk)
 {
 	// TODO
 	return -1;
 }
 
 void
-nm_os_kthread_stop(struct nm_kthread *nmk)
+nm_os_kctx_worker_stop(struct nm_kctx *nmk)
 {
 	// TODO
 }
 
 
 void
-nm_os_kthread_delete(struct nm_kthread *nmk)
+nm_os_kctx_destroy(struct nm_kctx *nmk)
 {
 	// TODO
 }

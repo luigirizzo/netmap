@@ -925,7 +925,7 @@ unlock_exit:
 struct nm_bdg_polling_state;
 struct
 nm_bdg_kthread {
-	struct nm_kthread *nmk;
+	struct nm_kctx *nmk;
 	u_int qfirst;
 	u_int qlast;
 	struct nm_bdg_polling_state *bps;
@@ -967,7 +967,7 @@ netmap_bwrap_polling(void *data)
 static int
 nm_bdg_create_kthreads(struct nm_bdg_polling_state *bps)
 {
-	struct nm_kthread_cfg kcfg;
+	struct nm_kctx_cfg kcfg;
 	int i, j;
 
 	bps->kthreads = nm_os_malloc(sizeof(struct nm_bdg_kthread) * bps->ncpus);
@@ -989,24 +989,24 @@ nm_bdg_create_kthreads(struct nm_bdg_polling_state *bps)
 
 		kcfg.type = i;
 		kcfg.worker_private = t;
-		t->nmk = nm_os_kthread_create(&kcfg, 0, NULL);
+		t->nmk = nm_os_kctx_create(&kcfg, 0, NULL);
 		if (t->nmk == NULL) {
 			goto cleanup;
 		}
-		nm_os_kthread_set_affinity(t->nmk, affinity);
+		nm_os_kctx_worker_setaff(t->nmk, affinity);
 	}
 	return 0;
 
 cleanup:
 	for (j = 0; j < i; j++) {
 		struct nm_bdg_kthread *t = bps->kthreads + i;
-		nm_os_kthread_delete(t->nmk);
+		nm_os_kctx_destroy(t->nmk);
 	}
 	nm_os_free(bps->kthreads);
 	return EFAULT;
 }
 
-/* a version of ptnetmap_start_kthreads() */
+/* A variant of ptnetmap_start_kthreads() */
 static int
 nm_bdg_polling_start_kthreads(struct nm_bdg_polling_state *bps)
 {
@@ -1020,7 +1020,7 @@ nm_bdg_polling_start_kthreads(struct nm_bdg_polling_state *bps)
 
 	for (i = 0; i < bps->ncpus; i++) {
 		struct nm_bdg_kthread *t = bps->kthreads + i;
-		error = nm_os_kthread_start(t->nmk);
+		error = nm_os_kctx_worker_start(t->nmk);
 		if (error) {
 			D("error in nm_kthread_start()");
 			goto cleanup;
@@ -1031,7 +1031,7 @@ nm_bdg_polling_start_kthreads(struct nm_bdg_polling_state *bps)
 cleanup:
 	for (j = 0; j < i; j++) {
 		struct nm_bdg_kthread *t = bps->kthreads + i;
-		nm_os_kthread_stop(t->nmk);
+		nm_os_kctx_worker_stop(t->nmk);
 	}
 	bps->stopped = true;
 	return error;
@@ -1047,8 +1047,8 @@ nm_bdg_polling_stop_delete_kthreads(struct nm_bdg_polling_state *bps)
 
 	for (i = 0; i < bps->ncpus; i++) {
 		struct nm_bdg_kthread *t = bps->kthreads + i;
-		nm_os_kthread_stop(t->nmk);
-		nm_os_kthread_delete(t->nmk);
+		nm_os_kctx_worker_stop(t->nmk);
+		nm_os_kctx_destroy(t->nmk);
 	}
 	bps->stopped = true;
 }
