@@ -2091,13 +2091,19 @@ static int linux_nm_vi_xmit(struct sk_buff *skb, struct net_device *netdev)
 }
 
 #ifdef NETMAP_LINUX_HAVE_GET_STATS64
-static struct rtnl_link_stats64 *linux_nm_vi_get_stats(
-		struct net_device *netdev,
-		struct rtnl_link_stats64 *stats)
+static 
+#ifdef NETMAP_LINUX_HAVE_NONVOID_GET_STATS64
+struct rtnl_link_stats64 *
+#else /* !VOID */
+void
+#endif /* NETMAP_LINUX_HAVE_NONVOID_GET_STATS64 */
+linux_nm_vi_get_stats(struct net_device *netdev, struct rtnl_link_stats64 *stats)
 {
+#ifdef NETMAP_LINUX_HAVE_NONVOID_GET_STATS64
 	return stats;
+#endif /* !NETMAP_LINUX_HAVE_VOID_GET_STATS64 */
 }
-#endif
+#endif /* NETMAP_LINUX_HAVE_GET_STATS64 */
 
 static int linux_nm_vi_change_mtu(struct net_device *netdev, int new_mtu)
 {
