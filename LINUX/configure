@@ -1360,6 +1360,17 @@ EOF
 	}
 EOF
 
+# check for fault arguments
+  add_test 'have FAULT_VMA_ARG' <<EOF
+        #include <linux/mm.h>
+
+	int
+	dummy(struct vm_operations_struct *ops,
+		struct vm_area_struct *vma, struct vm_fault *vmf) {
+		return ops->fault(vma, vmf);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

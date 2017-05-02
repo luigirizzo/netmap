@@ -920,8 +920,14 @@ linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
 }
 
 static int
+#ifdef NETMAP_LINUX_HAVE_FAULT_VMA_ARG
 linux_netmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
+#else
+linux_netmap_fault(struct vm_fault *vmf)
+{
+	struct vm_area_struct *vma = vmf->vma;
+#endif /* NETMAP_LINUX_HAVE_FAULT_VMA_ARG */
 	struct netmap_priv_d *priv = vma->vm_private_data;
 	struct netmap_adapter *na = priv->np_na;
 	struct page *page;
