@@ -360,7 +360,7 @@ function get-kernel()
 ##	as a default; if also the latter does not exist, the kernel is
 ##	configure using 'allmodconfig'.
 ##	Errors are logged to $LINUX_CONFIGS/linux-<version>.log.
-##	If $LINUX_SOURCES/linux-<version> already exists,
+##	If $LINUX_SOURCES/linux-<version>/.build-prep already exists,
 ##	nothing is done.
 ##	In all cases, the absolute path of linux-<version> is
 ##	output.
@@ -370,7 +370,7 @@ function build-prep()
 
 	local dst=$(get-kernel $version)
 
-	[ -z "$dst" ] && return
+	[ -f $dst/.build-prep ] && { echo $dst; return; }
 
 	(
 		cd $dst
@@ -392,6 +392,7 @@ KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 			make allmodconfig
 		fi
 		make modules_prepare
+		touch .build-prep
 	) >$dst.log 2>&1 || error "build-prep failed for linux $version. Please check $dst.log"
 	echo $dst
 }
