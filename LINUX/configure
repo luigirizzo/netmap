@@ -1371,6 +1371,13 @@ EOF
 	}
 EOF
 
+# check for sched/mm.h
+  add_test 'have SCHED_MM' <<EOF
+  #include <linux/sched/mm.h>
+
+  void dummy(void) {}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

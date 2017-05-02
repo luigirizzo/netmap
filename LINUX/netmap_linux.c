@@ -34,6 +34,9 @@
 #include <linux/nsproxy.h>
 #include <net/pkt_sched.h>
 #include <net/sch_generic.h>
+#ifdef NETMAP_LINUX_HAVE_SCHED_MM
+#include <linux/sched/mm.h>
+#endif /* NETMAP_LINUX_HAVE_SCHED_MM */
 
 #include "netmap_linux_config.h"
 
