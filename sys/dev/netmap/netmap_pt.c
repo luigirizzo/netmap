@@ -400,7 +400,6 @@ ptnetmap_tx_nothread_notify(void *data)
 	struct netmap_pt_host_adapter *pth_na =
 		(struct netmap_pt_host_adapter *)kring->na->na_private;
 	struct ptnetmap_state *ptns = pth_na->ptns;
-	struct ptnet_ring __user *ptring;
 
 	if (unlikely(!ptns)) {
 		D("ERROR ptnetmap state is NULL");
@@ -412,14 +411,12 @@ ptnetmap_tx_nothread_notify(void *data)
 		return;
 	}
 
-	/* Get TX ptring pointer from the CSB. */
-	ptring = ptns->ptrings + kring->ring_id;
-	if (ptring_intr_enabled(ptring)) {
-		ptring_intr_enable(ptring, 0);
-		nm_os_kctx_send_irq(ptns->kctxs[kring->ring_id]);
-		IFRATE(ptns->rate_ctx.new.htxk++);
-		RD(1, "%s interrupt", kring->name);
-	}
+	/* We cannot access the CSB here (to check ptring->guest_need_kick),
+	 * unless we switch address space to the one of the guest. For now
+	 * we unconditionally inject an interrupt. */
+        nm_os_kctx_send_irq(ptns->kctxs[kring->ring_id]);
+        IFRATE(ptns->rate_ctx.new.htxk++);
+        RD(1, "%s interrupt", kring->name);
 }
 
 /*
