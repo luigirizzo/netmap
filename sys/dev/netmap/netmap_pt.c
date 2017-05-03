@@ -416,7 +416,7 @@ ptnetmap_tx_nothread_notify(void *data)
 	 * we unconditionally inject an interrupt. */
         nm_os_kctx_send_irq(ptns->kctxs[kring->ring_id]);
         IFRATE(ptns->rate_ctx.new.htxk++);
-        RD(1, "%s interrupt", kring->name);
+        ND(1, "%s interrupt", kring->name);
 }
 
 /*
@@ -1353,9 +1353,9 @@ netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 		}
 	}
 
-	ND(1, "TX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u tail: %u",
-			ptring->head, ptring->cur, ptring->hwtail,
-			kring->rhead, kring->rcur, kring->nr_hwtail);
+	ND(1, "%s CSB(head:%u cur:%u hwtail:%u) KRING(head:%u cur:%u tail:%u)",
+		kring->name, ptring->head, ptring->cur, ptring->hwtail,
+		kring->rhead, kring->rcur, kring->nr_hwtail);
 
 	return notify;
 }
@@ -1418,9 +1418,9 @@ netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
                 }
         }
 
-	ND(1, "RX - CSB: head:%u cur:%u hwtail:%u - KRING: head:%u cur:%u",
-		ptring->head, ptring->cur, ptring->hwtail,
-		kring->rhead, kring->rcur);
+	ND(1, "%s CSB(head:%u cur:%u hwtail:%u) KRING(head:%u cur:%u tail:%u)",
+		kring->name, ptring->head, ptring->cur, ptring->hwtail,
+		kring->rhead, kring->rcur, kring->nr_hwtail);
 
 	return notify;
 }
