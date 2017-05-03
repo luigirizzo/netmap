@@ -823,6 +823,12 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
         return EINVAL;
     }
 
+    if (!use_tx_kthreads && na_is_generic(pth_na->parent)) {
+        D("ERROR ptnetmap direct transmission not supported with "
+	  "passed-through emulated adapters");
+        return EOPNOTSUPP;
+    }
+
     ptns = nm_os_malloc(sizeof(*ptns) + num_rings * sizeof(*ptns->kctxs));
     if (!ptns) {
         return ENOMEM;
