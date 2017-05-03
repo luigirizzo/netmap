@@ -1290,8 +1290,8 @@ netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
 	ptnetmap_guest_write_kring_csb(ptring, kring->rcur, kring->rhead);
 
         /* Ask for a kick from a guest to the host if needed. */
-	if ((kring->rhead != kring->nr_hwcur &&
-		NM_ACCESS_ONCE(ptring->host_need_kick)) ||
+	if (((kring->rhead != kring->nr_hwcur || nm_kr_txempty(kring))
+		&& NM_ACCESS_ONCE(ptring->host_need_kick)) ||
 			(flags & NAF_FORCE_RECLAIM)) {
 		ptring->sync_flags = flags;
 		notify = true;
