@@ -677,9 +677,8 @@ ptnetmap_krings_snapshot(struct netmap_pt_host_adapter *pth_na)
 
 static int
 ptnetmap_create_kctxs(struct netmap_pt_host_adapter *pth_na,
-			struct ptnetmap_cfg *cfg)
+		      struct ptnetmap_cfg *cfg, int use_tx_kthreads)
 {
-	int use_tx_kthreads = ptnetmap_tx_workers; /* snapshot */
 	struct ptnetmap_state *ptns = pth_na->ptns;
 	struct nm_kctx_cfg nmk_cfg;
 	unsigned int num_rings;
@@ -805,6 +804,7 @@ static int
 ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
 		struct ptnetmap_cfg *cfg)
 {
+    int use_tx_kthreads = ptnetmap_tx_workers; /* snapshot */
     struct ptnetmap_state *ptns;
     unsigned int num_rings;
     int ret, i;
@@ -841,7 +841,7 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     DBG(ptnetmap_print_configuration(cfg));
 
     /* Create kernel contexts. */
-    if ((ret = ptnetmap_create_kctxs(pth_na, cfg))) {
+    if ((ret = ptnetmap_create_kctxs(pth_na, cfg, use_tx_kthreads))) {
         D("ERROR ptnetmap_create_kctxs()");
         goto err;
     }
@@ -851,10 +851,17 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
         goto err;
     }
 
-    /* Overwrite parent nm_notify krings callback. */
+    /* Overwrite parent nm_notify krings callback, and
+     * clear NAF_BDG_MAYSLEEP if needed. */
     pth_na->parent->na_private = pth_na;
     pth_na->parent_nm_notify = pth_na->parent->nm_notify;
     pth_na->parent->nm_notify = nm_unused_notify;
+    pth_na->parent_na_flags = pth_na->parent->na_flags;
+    if (!use_tx_kthreads) {
+        /* VALE port txsync is executed under spinlock on Linux, so
+         * we need to make sure the bridge cannot sleep. */
+        pth_na->parent->na_flags &= ~NAF_BDG_MAYSLEEP;
+    }
 
     for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
         pth_na->up.rx_rings[i].save_notify =
@@ -902,6 +909,7 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     /* Restore parent adapter callbacks. */
     pth_na->parent->nm_notify = pth_na->parent_nm_notify;
     pth_na->parent->na_private = NULL;
+    pth_na->parent->na_flags = pth_na->parent_na_flags;
 
     for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
         pth_na->up.rx_rings[i].nm_notify =

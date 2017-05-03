@@ -2071,7 +2071,12 @@ u_int nm_os_ncpus(void);
 struct netmap_pt_host_adapter {
 	struct netmap_adapter up;
 
+	/* the passed-through adapter */
 	struct netmap_adapter *parent;
+	/* parent->na_flags, saved at NETMAP_PT_HOST_CREATE time,
+	 * and restored at NETMAP_PT_HOST_DELETE time */
+	uint32_t parent_na_flags;
+
 	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
 	void *ptns;
 };
