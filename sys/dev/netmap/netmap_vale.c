@@ -1462,7 +1462,7 @@ nm_bdg_preflush(struct netmap_kring *kring, u_int end)
 	if (na->up.na_flags & NAF_BDG_MAYSLEEP)
 		BDG_RLOCK(b);
 	else if (!BDG_RTRYLOCK(b))
-		return 0;
+		return j;
 	ND(5, "rlock acquired for %d packets", ((j > end ? lim+1 : 0) + end) - j);
 	ft = kring->nkr_ft;
 
