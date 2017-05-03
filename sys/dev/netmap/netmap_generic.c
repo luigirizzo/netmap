@@ -1172,6 +1172,12 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	D("Emulated netmap adapter for %s destroyed", na->name);
 }
 
+int
+na_is_generic(struct netmap_adapter *na)
+{
+	return na->nm_register == generic_netmap_register;
+}
+
 /*
  * generic_netmap_attach() makes it possible to use netmap on
  * a device without native netmap support.

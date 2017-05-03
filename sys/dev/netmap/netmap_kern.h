@@ -1871,6 +1871,8 @@ int generic_rx_handler(struct ifnet *ifp, struct mbuf *m);;
 int nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept);
 int nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept);
 
+int na_is_generic(struct netmap_adapter *na);
+
 /*
  * the generic transmit routine is passed a structure to optionally
  * build a queue of descriptors, in an OS-specific way.
@@ -1927,6 +1929,7 @@ int nm_os_mitigation_active(struct nm_generic_mit *mit);
 void nm_os_mitigation_cleanup(struct nm_generic_mit *mit);
 #else /* !WITH_GENERIC */
 #define generic_netmap_attach(ifp)	(EOPNOTSUPP)
+#define na_is_generic(na)		(0)
 #endif /* WITH_GENERIC */
 
 /* Shared declarations for the VALE switch. */
