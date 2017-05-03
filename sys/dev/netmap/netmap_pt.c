@@ -679,7 +679,7 @@ static int
 ptnetmap_create_kctxs(struct netmap_pt_host_adapter *pth_na,
 			struct ptnetmap_cfg *cfg)
 {
-	int use_tx_kthreads = ptnetmap_worker; /* snapshot */
+	int use_tx_kthreads = ptnetmap_tx_workers; /* snapshot */
 	struct ptnetmap_state *ptns = pth_na->ptns;
 	struct nm_kctx_cfg nmk_cfg;
 	unsigned int num_rings;
