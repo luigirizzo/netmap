@@ -784,19 +784,19 @@ update_ip(struct pkt *pkt, struct glob_arg *g)
 		}
 		naddr = g->src_ip.ipv4.start;
 		ip->ip_src.s_addr = htonl(naddr);
-
-		/* update checksums if needed */
-		if (oaddr != naddr) {
-			ip_sum = cksum_add(ip_sum, ~oaddr >> 16);
-			ip_sum = cksum_add(ip_sum, ~oaddr & 0xffff);
-			ip_sum = cksum_add(ip_sum, naddr >> 16);
-			ip_sum = cksum_add(ip_sum, naddr & 0xffff);
-		}
-		if (oport != nport) {
-			udp_sum = cksum_add(udp_sum, ~oport);
-			udp_sum = cksum_add(udp_sum, nport);
-		}
-
+	} while (0);
+	/* update checksums if needed */
+	if (oaddr != naddr) {
+		ip_sum = cksum_add(ip_sum, ~oaddr >> 16);
+		ip_sum = cksum_add(ip_sum, ~oaddr & 0xffff);
+		ip_sum = cksum_add(ip_sum, naddr >> 16);
+		ip_sum = cksum_add(ip_sum, naddr & 0xffff);
+	}
+	if (oport != nport) {
+		udp_sum = cksum_add(udp_sum, ~oport);
+		udp_sum = cksum_add(udp_sum, nport);
+	}
+	do {
 		naddr = oaddr = ntohl(ip->ip_dst.s_addr);
 		nport = oport = ntohs(udp->uh_dport);
 		if (g->options & OPT_RANDOM_DST) {
@@ -881,14 +881,14 @@ update_ip6(struct pkt *pkt, struct glob_arg *g)
 		}
 		naddr = ntohs(g->src_ip.ipv6.start.s6_addr16[group]);
 		ip6->ip6_src.s6_addr16[group] = htons(naddr);
-
-		/* update checksums if needed */
-		if (oaddr != naddr)
-			udp_sum = cksum_add(~oaddr, naddr);
-		if (oport != nport)
-			udp_sum = cksum_add(udp_sum,
-			    cksum_add(~oport, nport));
-
+	} while (0);
+	/* update checksums if needed */
+	if (oaddr != naddr)
+		udp_sum = cksum_add(~oaddr, naddr);
+	if (oport != nport)
+		udp_sum = cksum_add(udp_sum,
+		    cksum_add(~oport, nport));
+	do {
 		group = g->dst_ip.ipv6.egroup;
 		naddr = oaddr = ntohs(ip6->ip6_dst.s6_addr16[group]);
 		nport = oport = ntohs(udp->uh_dport);
