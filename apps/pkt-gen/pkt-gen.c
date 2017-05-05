@@ -764,8 +764,10 @@ update_ip(struct pkt *pkt, struct glob_arg *g)
 		naddr = oaddr = ntohl(ip->ip_src.s_addr);
 		nport = oport = ntohs(udp->uh_sport);
 		if (g->options & OPT_RANDOM_SRC) {
-			naddr = ip->ip_src.s_addr = random();
-			nport = udp->uh_sport = random();
+			ip->ip_src.s_addr = random();
+			udp->uh_sport = random();
+			naddr = ntohl(ip->ip_src.s_addr);
+			nport = ntohs(udp->uh_sport);
 			break;
 		}
 		if (oport < g->src_ip.port1) {
@@ -798,8 +800,10 @@ update_ip(struct pkt *pkt, struct glob_arg *g)
 		naddr = oaddr = ntohl(ip->ip_dst.s_addr);
 		nport = oport = ntohs(udp->uh_dport);
 		if (g->options & OPT_RANDOM_DST) {
-			naddr = ip->ip_dst.s_addr = random();
-			nport = udp->uh_dport = random();
+			ip->ip_dst.s_addr = random();
+			udp->uh_dport = random();
+			naddr = ntohl(ip->ip_dst.s_addr);
+			nport = ntohs(udp->uh_dport);
 			break;
 		}
 		if (oport < g->dst_ip.port1) {
@@ -857,8 +861,10 @@ update_ip6(struct pkt *pkt, struct glob_arg *g)
 		naddr = oaddr = ntohs(ip6->ip6_src.s6_addr16[group]);
 		nport = oport = ntohs(udp->uh_sport);
 		if (g->options & OPT_RANDOM_SRC) {
-			naddr = ip6->ip6_src.s6_addr16[group] = random();
-			nport = udp->uh_sport = random();
+			ip6->ip6_src.s6_addr16[group] = random();
+			udp->uh_sport = random();
+			naddr = ntohs(ip6->ip6_src.s6_addr16[group]);
+			nport = ntohs(udp->uh_sport);
 			break;
 		}
 		if (oport < g->src_ip.port1) {
@@ -887,8 +893,10 @@ update_ip6(struct pkt *pkt, struct glob_arg *g)
 		naddr = oaddr = ntohs(ip6->ip6_dst.s6_addr16[group]);
 		nport = oport = ntohs(udp->uh_dport);
 		if (g->options & OPT_RANDOM_DST) {
-			naddr = ip6->ip6_dst.s6_addr16[group] = random();
-			nport = udp->uh_dport = random();
+			ip6->ip6_dst.s6_addr16[group] = random();
+			udp->uh_dport = random();
+			naddr = ntohs(ip6->ip6_dst.s6_addr16[group]);
+			nport = ntohs(udp->uh_dport);
 			break;
 		}
 		if (oport < g->dst_ip.port1) {
