@@ -833,10 +833,10 @@ update_ip(struct pkt *pkt, struct glob_arg *g)
 		udp_sum = cksum_add(udp_sum, nport);
 	}
 	if (udp_sum != 0)
-		udp->uh_sum = cksum_add(udp->uh_sum, ~htons(udp_sum));
+		udp->uh_sum = ~cksum_add(~udp->uh_sum, htons(udp_sum));
 	if (ip_sum != 0) {
-		ip->ip_sum = cksum_add(ip->ip_sum, ~htons(ip_sum));
-		udp->uh_sum = cksum_add(udp->uh_sum, ~htons(ip_sum));
+		ip->ip_sum = ~cksum_add(~ip->ip_sum, htons(ip_sum));
+		udp->uh_sum = ~cksum_add(~udp->uh_sum, htons(ip_sum));
 	}
 }
 
@@ -922,7 +922,7 @@ update_ip6(struct pkt *pkt, struct glob_arg *g)
 		udp_sum = cksum_add(udp_sum,
 		    cksum_add(~oport, nport));
 	if (udp_sum != 0)
-		udp->uh_sum = cksum_add(udp->uh_sum, ~htons(udp_sum));
+		udp->uh_sum = ~cksum_add(~udp->uh_sum, udp_sum);
 }
 
 static void
