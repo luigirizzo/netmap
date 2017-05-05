@@ -1902,12 +1902,19 @@ txseq_body(void *data)
 				sent < limit; sent++, sequence++) {
 			struct netmap_slot *slot = &ring->slot[head];
 			char *p = NETMAP_BUF(ring, slot->buf_idx);
+			uint16_t *w = (uint16_t *)PKT(pkt, body, targ->g->af), t,
+				 *sum = (uint16_t *)(targ->g->af == AF_INET ?
+						 &pkt->ipv4.udp.uh_sum : &pkt->ipv6.udp.uh_sum);
 
 			slot->flags = 0;
+			t = *w;
 			PKT(pkt, body, targ->g->af)[0] = sequence >> 24;
 			PKT(pkt, body, targ->g->af)[1] = (sequence >> 16) & 0xff;
+			*sum = ~cksum_add(~*sum, cksum_add(~t, *w));
+			t = *++w;
 			PKT(pkt, body, targ->g->af)[2] = (sequence >> 8) & 0xff;
 			PKT(pkt, body, targ->g->af)[3] = sequence & 0xff;
+			*sum = ~cksum_add(~*sum, cksum_add(~t, *w));
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == frags) {
 				update_addresses(pkt, targ->g);
