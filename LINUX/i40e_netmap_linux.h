@@ -221,7 +221,6 @@ i40e_netmap_attach(struct i40e_vsi *vsi)
 	bzero(&na, sizeof(na));
 
 	na.ifp = vsi->netdev;
-	na.na_flags = NAF_BDG_MAYSLEEP;
 	// XXX check that queues is set.
 	na.num_tx_desc = NM_I40E_TX_RING(vsi, 0)->count;
 	na.num_rx_desc = NM_I40E_RX_RING(vsi, 0)->count;
