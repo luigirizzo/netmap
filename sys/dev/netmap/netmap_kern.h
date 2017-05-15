@@ -243,12 +243,17 @@ typedef struct hrtimer{
 #define	NMG_UNLOCK()		NM_MTX_UNLOCK(netmap_global_lock)
 #define	NMG_LOCK_ASSERT()	NM_MTX_ASSERT(netmap_global_lock)
 
+#if defined(__FreeBSD__) /* Support log levels as in linux */
+#define KERN_ERR ""
+#define KERN_INFO ""
+#endif /* __FreeBSD__ */
+
 #define ND(format, ...)
 #define D(format, ...)						\
 	do {							\
 		struct timeval __xxts;				\
 		microtime(&__xxts);				\
-		printf("%03d.%06d [%4d] %-25s " format "\n",	\
+		printf(KERN_INFO "%03d.%06d [%4d] %-25s " format "\n",	\
 		(int)__xxts.tv_sec % 1000, (int)__xxts.tv_usec,	\
 		__LINE__, __FUNCTION__, ##__VA_ARGS__);		\
 	} while (0)

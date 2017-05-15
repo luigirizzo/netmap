@@ -3342,7 +3342,7 @@ netmap_fini(void)
 	netmap_uninit_bridges();
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
-	printf("netmap: unloaded module.\n");
+	printf(KERN_INFO "netmap: unloaded module.\n");
 }
 
 
@@ -3379,7 +3379,7 @@ netmap_init(void)
 	if (error)
 		goto fail;
 
-	printf("netmap: loaded module\n");
+	printf(KERN_INFO "netmap: loaded module\n");
 	return (0);
 fail:
 	netmap_fini();
