@@ -1376,8 +1376,11 @@ ping_body(void *data)
 #endif /* BUSYWAIT */
 	}
 
-	if (sent > 0)
-		D("RTT over %"PRIu64" packets: min %d av %d ns", sent, (int)g_min, (int)((double)g_av/sent));
+	if (sent > 0) {
+		D("RTT over %llu packets: min %d av %d ns",
+			(long long unsigned)sent, (int)g_min,
+			(int)((double)g_av/sent));
+	}
 	targ->completed = 1;
 
 	/* reset the ``used`` flag. */
