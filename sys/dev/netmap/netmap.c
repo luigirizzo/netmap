@@ -673,7 +673,7 @@ nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg)
 		op = "Clamp";
 	}
 	if (op && msg)
-		printf("%s %s to %d (was %d)\n", op, msg, *v, oldv);
+		nm_prinf("%s %s to %d (was %d)\n", op, msg, *v, oldv);
 	return *v;
 }
 
@@ -3342,7 +3342,7 @@ netmap_fini(void)
 	netmap_uninit_bridges();
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
-	printf("netmap: unloaded module.\n");
+	nm_prinf("netmap: unloaded module.\n");
 }
 
 
@@ -3379,7 +3379,7 @@ netmap_init(void)
 	if (error)
 		goto fail;
 
-	printf("netmap: loaded module\n");
+	nm_prinf("netmap: loaded module\n");
 	return (0);
 fail:
 	netmap_fini();
