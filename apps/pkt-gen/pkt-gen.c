@@ -1697,8 +1697,7 @@ receiver_body(void *data)
 	int i;
 	struct my_ctrs cur;
 
-	cur.pkts = cur.bytes = cur.events = cur.drop = cur.min_space = 0;
-	cur.t.tv_usec = cur.t.tv_sec = 0; //  unused, just silence the compiler
+	memset(&cur, 0, sizeof(cur));
 
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
@@ -2021,8 +2020,7 @@ rxseq_body(void *data)
 	int first_slot = 1;
 	int i, af;
 
-	cur.pkts = cur.bytes = cur.events = cur.drop = cur.min_space = 0;
-	cur.t.tv_usec = cur.t.tv_sec = 0; //  unused, just silence the compiler
+	memset(&cur, 0, sizeof(cur));
 
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
