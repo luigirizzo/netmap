@@ -418,7 +418,7 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 			.num  = 100,
 		},
 		[NETMAP_RING_POOL] = {
-			.size = 9*PAGE_SIZE,
+			.size = 17*PAGE_SIZE,
 			.num  = 200,
 		},
 		[NETMAP_BUF_POOL] = {
