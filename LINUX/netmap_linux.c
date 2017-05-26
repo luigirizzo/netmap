@@ -823,8 +823,13 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 #ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
 	struct ethtool_channels ch;
 	memset(&ch, 0, sizeof(ch));
-	if (ifp->ethtool_ops && ifp->ethtool_ops->get_channels) {
-		ifp->ethtool_ops->get_channels(ifp, &ch);
+	if ((ifp->ethtool_ops && ifp->ethtool_ops->get_channels) ||
+		(get_ethtool_ops_ext(ifp) && 
+		 get_ethtool_ops_ext(ifp)->get_channels)) {
+		if (ifp->ethtool_ops->get_channels)
+			ifp->ethtool_ops->get_channels(ifp, &ch);
+		else
+			get_ethtool_ops_ext(ifp)->get_channels(ifp, &ch);
 		*txq = ch.tx_count ? ch.tx_count : ch.combined_count;
 		*rxq = ch.rx_count ? ch.rx_count : ch.combined_count;
 	} else
