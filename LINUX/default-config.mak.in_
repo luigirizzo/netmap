@@ -12,10 +12,9 @@ endef
 enabled_intel_driver = $(if $(filter $(1),$(E_DRIVERS)),$(eval $(call intel_driver,$(1),$(2))))
 
 $(call enabled_intel_driver,ixgbe,5.1.3)
-$(call enabled_intel_driver,ixgbevf,4.0.3)
+$(call enabled_intel_driver,ixgbevf,4.1.2)
 e1000e@cflags := -fno-pie
 $(call enabled_intel_driver,e1000e,3.3.5.3)
 igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
 $(call enabled_intel_driver,igb,5.3.5.4)
-$(call enabled_intel_driver,i40e,2.0.23)
-$(if $(filter i40e,$(E_DRIVERS)),$(eval i40e@patch := patches/intel--i40e--2.0.19))
+$(call enabled_intel_driver,i40e,2.0.26)
