@@ -107,7 +107,7 @@ struct {
  * the overflow queue is a circular queue of buffers
  */
 struct overflow_queue {
-	char name[MAX_IFNAMELEN];
+	char name[MAX_IFNAMELEN + 16];
 	struct netmap_slot *slots;
 	uint32_t head;
 	uint32_t tail;
@@ -805,7 +805,7 @@ run:
 					extra_bufs = 0;
 				}
 				q->size = extra_bufs;
-				snprintf(q->name, MAX_IFNAMELEN, "oq %s{%d", g->pipename, k);
+				snprintf(q->name, sizeof(q->name), "oq %s{%4d", g->pipename, k);
 				p->oq = q;
 			}
 		}
