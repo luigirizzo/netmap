@@ -268,11 +268,17 @@ nm_os_mbuf_has_offld(struct mbuf *m)
 static void
 freebsd_generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 {
-	struct netmap_generic_adapter *gna =
-			(struct netmap_generic_adapter *)NA(ifp);
-	int stolen = generic_rx_handler(ifp, m);
+	int stolen;
 
+	if (!NM_NA_VALID(ifp)) {
+		RD(1, "Warning: got RX packet for invalid emulated adapter");
+		return;
+	}
+
+	stolen = generic_rx_handler(ifp, m);
 	if (!stolen) {
+		struct netmap_generic_adapter *gna =
+				(struct netmap_generic_adapter *)NA(ifp);
 		gna->save_if_input(ifp, m);
 	}
 }
