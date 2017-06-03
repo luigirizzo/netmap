@@ -594,7 +594,7 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 		NM_IXGBE_RX_DESC(ring, i)->read.pkt_addr = htole64(paddr);
 	}
 	ring->next_to_use = lim; /* used for debug only */
-	IXGBE_WRITE_REG(&adapter->hw, NM_IXGBE_RDT(ring_nr), lim);
+	IXGBE_WRITE_REG(&adapter->hw, NM_IXGBE_RDT(ring->reg_idx), lim);
 	return 1;
 }
 
