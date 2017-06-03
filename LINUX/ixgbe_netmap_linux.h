@@ -499,13 +499,13 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			nic_i = nm_next(nic_i, lim);
 		}
 		kring->nr_hwcur = head;
-		rxr->next_to_use = nic_i; // XXX not really used
 		wmb();
 		/*
 		 * IMPORTANT: we must leave one free slot in the ring,
 		 * so move nic_i back by one unit
 		 */
 		nic_i = nm_prev(nic_i, lim);
+		rxr->next_to_use = nic_i; /* used for debug only */
 		IXGBE_WRITE_REG(&adapter->hw, NM_IXGBE_RDT(rxr->reg_idx), nic_i);
 	}
 
@@ -593,6 +593,7 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 		/* Update descriptor */
 		NM_IXGBE_RX_DESC(ring, i)->read.pkt_addr = htole64(paddr);
 	}
+	ring->next_to_use = lim; /* used for debug only */
 	IXGBE_WRITE_REG(&adapter->hw, NM_IXGBE_RDT(ring_nr), lim);
 	return 1;
 }
