@@ -830,11 +830,9 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 	} else
 #endif /* HAVE_SET_CHANNELS */
 	{
-		*txq = ifp->real_num_tx_queues;
+		*txq = *rxq = ifp->real_num_tx_queues;
 #if defined(NETMAP_LINUX_HAVE_REAL_NUM_RX_QUEUES)
 		*rxq = ifp->real_num_rx_queues;
-#else
-		*rxq = 1;
 #endif /* HAVE_REAL_NUM_RX_QUEUES */
 	}
 }
