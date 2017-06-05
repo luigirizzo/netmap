@@ -99,3 +99,5 @@ language.
                       Python netmap bindings, it is able to transmit
                       more than 20 Mpps.
 
+        (5.3) rx.py - An example UDP receiver using the NetmapDesc
+                      Python netmap class.
