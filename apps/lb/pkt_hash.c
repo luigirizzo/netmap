@@ -334,7 +334,7 @@ decode_vlan_n_hash(struct ether_header *ethh, uint8_t hash_split, uint8_t seed)
 uint32_t
 pkt_hdr_hash(const unsigned char *buffer, uint8_t hash_split, uint8_t seed)
 {
-	int rc = 0;
+	uint32_t rc = 0;
 	struct ether_header *ethh = (struct ether_header *)buffer;
 
 	switch (ntohs(ethh->ether_type)) {
@@ -366,7 +366,7 @@ pkt_hdr_hash(const unsigned char *buffer, uint8_t hash_split, uint8_t seed)
 static uint32_t
 decode_gre_hash(const uint8_t *grehdr, uint8_t hash_split, uint8_t seed)
 {
-	int rc = 0;
+	uint32_t rc = 0;
 	int len = 4 + 2 * (!!(*grehdr & 1) + /* Checksum */
 			   !!(*grehdr & 2) + /* Routing */
 			   !!(*grehdr & 4) + /* Key */
