@@ -368,6 +368,7 @@ decode_gre_hash(const uint8_t *grehdr, uint8_t hash_split, uint8_t seed)
 {
 	int rc = 0;
 	int len = 4 + 2 * (!!(*grehdr & 1) + /* Checksum */
+			   !!(*grehdr & 2) + /* Routing */
 			   !!(*grehdr & 4) + /* Key */
 			   !!(*grehdr & 8)); /* Sequence Number */
 	uint16_t proto = ntohs(*(uint16_t *)(void *)(grehdr + 2));
