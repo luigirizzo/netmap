@@ -382,6 +382,9 @@ decode_gre_hash(const uint8_t *grehdr, uint8_t hash_split, uint8_t seed)
 		rc = decode_ipv6_n_hash((struct ip6_hdr *)(grehdr + len),
 					hash_split, seed);
 		break;
+	case 0x6558: /* Transparent Ethernet Bridging */
+		rc = pkt_hdr_hash(grehdr + len, hash_split, seed);
+		break;
 	default:
 		/* others */
 		break;
