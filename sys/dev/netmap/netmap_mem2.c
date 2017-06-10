@@ -638,7 +638,7 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 			+ p[NETMAP_BUF_POOL].memtotal);
 	NMA_UNLOCK(nmd);
 #ifndef _WIN32
-	return 0;	// XXX bad address
+	return 0; /* bad address */
 #else
 	vm_paddr_t res;
 	res.QuadPart = 0;
@@ -833,7 +833,6 @@ netmap_obj_malloc(struct netmap_obj_pool *p, u_int len, uint32_t *start, uint32_
 
 	if (len > p->_objsize) {
 		D("%s request size %d too large", p->name, len);
-		// XXX cannot reduce the size
 		return NULL;
 	}
 
@@ -932,7 +931,7 @@ netmap_obj_free_va(struct netmap_obj_pool *p, void *vaddr)
 	netmap_obj_malloc(&(n)->pools[NETMAP_BUF_POOL], netmap_mem_bufsize(n), _pos, _index)
 
 
-#if 0 // XXX unused
+#if 0 /* currently unused */
 /* Return the index associated to the given packet buffer */
 #define netmap_buf_index(n, v)						\
     (netmap_obj_offset(&(n)->pools[NETMAP_BUF_POOL], (v)) / NETMAP_BDG_BUF_SIZE(n))
@@ -1358,7 +1357,7 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 #elif defined(_WIN32)
 	(void)i;
 	(void)lim;
-	D("unsupported on Windows");	//XXX_ale, really?
+	D("unsupported on Windows");
 #else /* linux */
 	for (i = 2; i < lim; i++) {
 		netmap_unload_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr);
@@ -1374,7 +1373,7 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 #if defined(__FreeBSD__)
 	D("unsupported on FreeBSD");
 #elif defined(_WIN32)
-	D("unsupported on Windows");	//XXX_ale, really?
+	D("unsupported on Windows");
 #else /* linux */
 	int i, lim = p->_objtotal;
 
