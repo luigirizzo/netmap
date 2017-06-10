@@ -203,12 +203,12 @@ struct pkt {
 		struct {
 			struct ip ip;
 			struct udphdr udp;
-			uint8_t body[MAX_BODYSIZE];	// XXX hardwired
+			uint8_t body[MAX_BODYSIZE];	/* hardwired */
 		} ipv4;
 		struct {
 			struct ip6_hdr ip;
 			struct udphdr udp;
-			uint8_t body[MAX_BODYSIZE];	// XXX hardwired
+			uint8_t body[MAX_BODYSIZE];	/* hardwired */
 		} ipv6;
 	};
 } __attribute__((__packed__));
@@ -1214,7 +1214,7 @@ ping_body(void *data)
 	void *frame;
 	int size;
 	struct timespec ts, now, last_print;
-	struct timespec nexttime = { 0, 0}; // XXX silence compiler
+	struct timespec nexttime = {0, 0}; /* silence compiler */
 	uint64_t sent = 0, n = targ->g->npackets;
 	uint64_t count = 0, t_cur, t_min = ~0, av = 0;
 	uint64_t g_min = ~0, g_av = 0;
@@ -1445,6 +1445,7 @@ pong_body(void *data)
 				dpkt = (uint16_t *)dst;
 				spkt = (uint16_t *)src;
 				nm_pkt_copy(src, dst, slot->len);
+				/* swap source and destination MAC */
 				dpkt[0] = spkt[3];
 				dpkt[1] = spkt[4];
 				dpkt[2] = spkt[5];
@@ -1452,7 +1453,6 @@ pong_body(void *data)
 				dpkt[4] = spkt[1];
 				dpkt[5] = spkt[2];
 				txring->slot[txcur].len = slot->len;
-				/* XXX swap src dst mac */
 				txcur = nm_ring_next(txring, txcur);
 				txavail--;
 				sent++;
@@ -2569,7 +2569,7 @@ main(int arc, char **argv)
 	g.src_mac.name = NULL;
 	g.pkt_size = 60;
 	g.nthreads = 1;
-	g.cpus = 1;		// default
+	g.cpus = 1;		/* default */
 	g.forever = 1;
 	g.tx_rate = 0;
 	g.frags = 1;
@@ -2659,7 +2659,7 @@ main(int arc, char **argv)
 			break;
 
 		case 'I':
-			g.options |= OPT_INDIRECT;	/* XXX use indirect buffer */
+			g.options |= OPT_INDIRECT;	/* use indirect buffers */
 			break;
 
 		case 'l':	/* pkt_size */
@@ -2682,8 +2682,8 @@ main(int arc, char **argv)
 			g.wait_link = atoi(optarg);
 			break;
 
-		case 'W': /* XXX changed default */
-			g.forever = 0; /* do not exit rx even with no traffic */
+		case 'W':
+			g.forever = 0; /* exit RX with no traffic */
 			break;
 
 		case 'b':	/* burst */

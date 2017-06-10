@@ -565,13 +565,13 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 
 #define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
 
+#ifdef _WIN32
 /*
  * Windows does not have _IOWR(). _IO(), _IOW() and _IOR() are defined
  * in ws2def.h but not sure if they are in the form we need.
- * XXX so we redefine them
- * in a convenient way to use for DeviceIoControl signatures
+ * We therefore redefine them in a convenient way to use for DeviceIoControl
+ * signatures.
  */
-#ifdef _WIN32
 #undef _IO	// ws2def.h
 #define _WIN_NM_IOCTL_TYPE 40000
 #define _IO(_c, _n)	CTL_CODE(_WIN_NM_IOCTL_TYPE, ((_n) + 0x800) , \
