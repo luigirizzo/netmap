@@ -176,10 +176,10 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		wmb();	/* synchronize writes to the NIC ring */
 
-		txr->next_to_use = nic_i; /* XXX what for ? */
 		/* (re)start the tx unit up to slot nic_i (excluded) */
+		txr->next_to_use = nic_i;
 		writel(nic_i, txr->tail);
-		mmiowb(); // XXX where do we need this ?
+		mmiowb(); // XXX why do we need this ?
 	}
 
 	/*
@@ -192,7 +192,6 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 			D("TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
-		txr->next_to_use = nic_i;
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 out:
@@ -284,12 +283,12 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 		}
 		kring->nr_hwcur = head;
 		wmb();
-		rxr->next_to_use = nic_i; // XXX not really used
 		/*
 		 * IMPORTANT: we must leave one free slot in the ring,
 		 * so move nic_i back by one unit
 		 */
 		nic_i = nm_prev(nic_i, lim);
+		rxr->next_to_use = nic_i;
 		writel(nic_i, rxr->tail);
 	}
 
@@ -368,12 +367,12 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 		rx_desc->read.hdr_addr = 0;
 		rx_desc->read.pkt_addr = htole64(paddr);
 	}
-	rxr->next_to_use = 0;
 	/* preserve buffers already made available to clients */
 	i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[reg_idx]);
 
 	wmb();	/* Force memory writes to complete */
 	ND("%s rxr%d.tail %d", na->name, reg_idx, i);
+	rxr->next_to_use = i;
 	writel(i, rxr->tail);
 	return 1;	// success
 }
