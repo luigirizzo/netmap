@@ -130,7 +130,7 @@ struct nm_selinfo {
 };
 
 
-// XXX linux struct, not used in FreeBSD
+/* Linux structs, not used in FreeBSD. */
 struct net_device_ops {
 };
 struct ethtool_ops {
@@ -200,8 +200,8 @@ struct hrtimer {
 #define NETMAP_KERNEL_XCHANGE_POINTERS		_IO('i', 180)
 #define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL	_IO_direct('i', 195)
 
-//Empty data structures are not permitted by MSVC compiler
-//XXX_ale, try to solve this problem
+/* Empty data structures are not allowed by MSVC compiler, so
+ * we workaround. */
 struct net_device_ops{
 	char data[1];
 };
@@ -579,7 +579,7 @@ nm_prev(uint32_t i, uint32_t lim)
 
       +-----------------+            +-----------------+
       |                 |            |                 |
-      |XXX free slot XXX|            |XXX free slot XXX|
+      |      free       |            |      free       |
       +-----------------+            +-----------------+
 head->| owned by user   |<-hwcur     | not sent to nic |<-hwcur
       |                 |            | yet             |
@@ -899,8 +899,8 @@ struct netmap_vp_adapter {	/* VALE software port */
 struct netmap_hw_adapter {	/* physical device */
 	struct netmap_adapter up;
 
-	struct net_device_ops nm_ndo;	// XXX linux only
-	struct ethtool_ops    nm_eto;	// XXX linux only
+	struct net_device_ops nm_ndo; /* Linux only */
+	struct ethtool_ops    nm_eto; /* Linux only */
 	const struct ethtool_ops*   save_ethtool;
 
 	int (*nm_hw_register)(struct netmap_adapter *, int onoff);
@@ -1280,9 +1280,6 @@ nm_set_native_flags(struct netmap_adapter *na)
 	ifp->if_transmit = netmap_transmit;
 #elif defined (_WIN32)
 	(void)ifp; /* prevent a warning */
-	//XXX_ale can we just comment those?
-	//na->if_transmit = ifp->if_transmit;
-	//ifp->if_transmit = netmap_transmit;
 #else
 	na->if_transmit = (void *)ifp->netdev_ops;
 	ifp->netdev_ops = &((struct netmap_hw_adapter *)na)->nm_ndo;
@@ -1309,8 +1306,6 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	ifp->if_transmit = na->if_transmit;
 #elif defined(_WIN32)
 	(void)ifp; /* prevent a warning */
-	//XXX_ale can we just comment those?
-	//ifp->if_transmit = na->if_transmit;
 #else
 	ifp->netdev_ops = (void *)na->if_transmit;
 	ifp->ethtool_ops = ((struct netmap_hw_adapter*)na)->save_ethtool;
@@ -1432,8 +1427,8 @@ int netmap_get_hw_na(struct ifnet *ifp,
  *
  * VALE only supports unicast or broadcast. The lookup
  * function can return 0 .. NM_BDG_MAXPORTS-1 for regular ports,
- * NM_BDG_MAXPORTS for broadcast, NM_BDG_MAXPORTS+1 for unknown.
- * XXX in practice "unknown" might be handled same as broadcast.
+ * NM_BDG_MAXPORTS for broadcast, NM_BDG_MAXPORTS+1 to indicate
+ * drop.
  */
 typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
 		struct netmap_vp_adapter *);
@@ -1472,7 +1467,7 @@ int netmap_bdg_config(struct nmreq *nmr);
 
 #ifdef WITH_PIPES
 /* max number of pipes per device */
-#define NM_MAXPIPES	64	/* XXX how many? */
+#define NM_MAXPIPES	64	/* XXX this should probably be a sysctl */
 void netmap_pipe_dealloc(struct netmap_adapter *);
 int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create);
@@ -1824,7 +1819,7 @@ struct netmap_priv_d {
 	uint32_t	np_flags;	/* from the ioctl */
 	u_int		np_qfirst[NR_TXRX],
 			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
-	uint16_t	np_txpoll;	/* XXX and also np_rxpoll ? */
+	uint16_t	np_txpoll;
 	int             np_sync_flags; /* to be passed to nm_sync */
 
 	int		np_refs;	/* use with NMG_LOCK held */
