@@ -1652,7 +1652,7 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	 */
 	if (((buf[6] & 1) == 0) && (na->last_smac != smac)) { /* valid src */
 		uint8_t *s = buf+6;
-		sh = nm_bridge_rthash(s); // XXX hash of source
+		sh = nm_bridge_rthash(s); /* hash of source */
 		/* update source port forwarding entry */
 		na->last_smac = ht[sh].mac = smac;	/* XXX expire ? */
 		ht[sh].ports = mysrc;
@@ -1662,11 +1662,10 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	}
 	dst = NM_BDG_BROADCAST;
 	if ((buf[0] & 1) == 0) { /* unicast */
-		dh = nm_bridge_rthash(buf); // XXX hash of dst
+		dh = nm_bridge_rthash(buf); /* hash of dst */
 		if (ht[dh].mac == dmac) {	/* found dst */
 			dst = ht[dh].ports;
 		}
-		/* XXX otherwise return NM_BDG_UNKNOWN ? */
 	}
 	return dst;
 }
@@ -1780,10 +1779,8 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
-		if (dst_port == NM_BDG_NOPORT)
+		if (dst_port >= NM_BDG_NOPORT)
 			continue; /* this packet is identified to be dropped */
-		else if (unlikely(dst_port > NM_BDG_MAXPORTS))
-			continue;
 		else if (dst_port == NM_BDG_BROADCAST)
 			dst_ring = 0; /* broadcasts always go to ring 0 */
 		else if (unlikely(dst_port == me ||
