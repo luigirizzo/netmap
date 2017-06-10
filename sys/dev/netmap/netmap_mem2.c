@@ -2253,11 +2253,17 @@ out:
 static void
 netmap_mem_pt_guest_rings_delete(struct netmap_adapter *na)
 {
-	/* TODO: remove?? */
 #if 0
-	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)na->nm_mem;
-	struct mem_pt_if *ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem,
-								na->ifp);
+	enum txrx t;
+
+	for_rx_tx(t) {
+		u_int i;
+		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
+
+			kring->ring = NULL;
+		}
+	}
 #endif
 }
 
