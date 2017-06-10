@@ -241,6 +241,7 @@ netmap_mem_get_id(struct netmap_mem_d *nmd)
 #define NMA_LOCK_INIT(n)	NM_MTX_INIT((n)->nm_mtx)
 #define NMA_LOCK_DESTROY(n)	NM_MTX_DESTROY((n)->nm_mtx)
 #define NMA_LOCK(n)		NM_MTX_LOCK((n)->nm_mtx)
+#define NMA_SPINLOCK(n)         NM_MTX_SPINLOCK((n)->nm_mtx)
 #define NMA_UNLOCK(n)		NM_MTX_UNLOCK((n)->nm_mtx)
 
 #ifdef NM_DEBUG_MEM_PUTGET
@@ -611,7 +612,14 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 	vm_paddr_t pa;
 	struct netmap_obj_pool *p;
 
+#if defined(__FreeBSD__)
+	/* This function is called by netmap_dev_pager_fault(), which holds a
+	 * non-sleepable lock since FreeBSD 12. Since we cannot sleep, we
+	 * spin on the trylock. */
+	NMA_SPINLOCK(nmd);
+#else
 	NMA_LOCK(nmd);
+#endif
 	p = nmd->pools;
 
 	for (i = 0; i < NETMAP_POOLS_NR; offset -= p[i].memtotal, i++) {

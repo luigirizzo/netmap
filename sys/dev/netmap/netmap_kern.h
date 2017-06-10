@@ -88,6 +88,7 @@
 #define NM_MTX_INIT(m)		sx_init(&(m), #m)
 #define NM_MTX_DESTROY(m)	sx_destroy(&(m))
 #define NM_MTX_LOCK(m)		sx_xlock(&(m))
+#define NM_MTX_SPINLOCK(m)	while (!sx_try_xlock(&(m))) ;
 #define NM_MTX_UNLOCK(m)	sx_xunlock(&(m))
 #define NM_MTX_ASSERT(m)	sx_assert(&(m), SA_XLOCKED)
 
