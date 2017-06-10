@@ -780,13 +780,6 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	}
 
 	for (i=0; i<pi->num_rings; i++) {
-		struct ptnet_queue *pq = pi->queues[i];
-
-		memset(&pq->msix_affinity_mask, 0, sizeof(pq->msix_affinity_mask));
-		if (!alloc_cpumask_var(&pq->msix_affinity_mask, GFP_KERNEL)) {
-			pr_err("Failed to alloc cpumask var\n");
-			goto err_masks;
-		}
 		pi->msix_entries[i].entry = i;
 	}
 
@@ -797,7 +790,17 @@ ptnet_irqs_init(struct ptnet_info *pi)
 #endif
 	if (ret) {
 		pr_err("Failed to enable msix vectors (%d)\n", ret);
-		goto err_masks;
+		goto err_alloc;
+	}
+
+	for (i=0; i<pi->num_rings; i++) {
+		struct ptnet_queue *pq = pi->queues[i];
+
+		memset(&pq->msix_affinity_mask, 0, sizeof(pq->msix_affinity_mask));
+		if (!alloc_cpumask_var(&pq->msix_affinity_mask, GFP_KERNEL)) {
+			pr_err("Failed to alloc cpumask var\n");
+			goto err_masks;
+		}
 	}
 
 	for (i=0; i<pi->num_rings; i++) {
@@ -828,7 +831,10 @@ err_masks:
 	for (; i>=0; i--) {
 		free_cpumask_var(pi->queues[i]->msix_affinity_mask);
 	}
-
+err_alloc:
+#ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
+	kfree(pi->msix_entries);
+#endif
 	return ret;
 }
 
