@@ -182,7 +182,7 @@ typedef	int			bus_size_t;
 typedef	int			bus_dma_segment_t;
 typedef void *			bus_addr_t;
 #define vm_paddr_t		phys_addr_t
-/* XXX the 'off_t' on Linux corresponds to a 'long' */
+/* the 'off_t' on Linux corresponds to a 'long' */
 #define vm_offset_t		uint32_t
 #define vm_ooffset_t		unsigned long
 struct thread;
@@ -269,7 +269,6 @@ struct thread;
  *
  *	if_xname	name		device name
  *		we would use "features" but it is all taken.
- *		XXX check for conflict in flags use.
  *
  * In netmap we use if_pspare[0] to point to the netmap_adapter,
  * in linux we have no spares so we overload ax25_ptr, and the detection
@@ -319,7 +318,7 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 }
 
 #define mtx_init(a, b, c, d)	spin_lock_init(&((a)->sl))
-#define mtx_destroy(a)		// XXX spin_lock_destroy(a)
+#define mtx_destroy(a)
 
 #define mtx_lock_spin(a)	mtx_lock(a)
 #define mtx_unlock_spin(a)	mtx_unlock(a)
@@ -340,10 +339,6 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 #define BDG_SET_VAR(lval, p)	((lval) = (p))
 #define BDG_GET_VAR(lval)	(lval)
 
-// XXX do we need GPF_ZERO ?
-// XXX do we need GFP_DMA for slots ?
-// http://www.mjmwired.net/kernel/Documentation/DMA-API.txt
-
 #ifndef ilog2 /* not in 2.6.18 */
 static inline int ilog2(uint64_t n)
 {
@@ -354,6 +349,9 @@ static inline int ilog2(uint64_t n)
 	return i;
 }
 #endif /* ilog2 */
+
+/* XXX do we need GFP_DMA for slots ?
+ * Documentation/DMA-API.txt */
 
 #define contigmalloc(sz, ty, flags, a, b, pgsz, c) ({		\
 	unsigned int order_ =					\
@@ -378,12 +376,11 @@ static inline int ilog2(uint64_t n)
 struct nm_linux_selrecord_t;
 #define NM_SELRECORD_T	struct nm_linux_selrecord_t
 
-#define netmap_knlist_destroy(x)	// XXX todo
+#define netmap_knlist_destroy(x)	// TODO
 
 #define	tsleep(a, b, c, t)	msleep(10)
-// #define	wakeup(sw)				// XXX double check
 
-#define microtime		do_gettimeofday		// debugging
+#define microtime		do_gettimeofday		/* debugging */
 
 
 /*

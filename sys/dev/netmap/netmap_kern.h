@@ -98,7 +98,7 @@
 #define MBUF_TRANSMIT(na, ifp, m)	((na)->if_transmit(ifp, m))
 #define	GEN_TX_MBUF_IFP(m)	((m)->m_pkthdr.rcvif)
 
-#define NM_ATOMIC_T	volatile int	// XXX ?
+#define NM_ATOMIC_T	volatile int /* required by atomic/bitops.h */
 /* atomic operations */
 #include <machine/atomic.h>
 #define NM_ATOMIC_TEST_AND_SET(p)       (!atomic_cmpset_acq_int((p), 0, 1))
