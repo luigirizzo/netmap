@@ -261,93 +261,82 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct netmap_virtio_adapter *vna = (struct netmap_virtio_adapter *)na;
 	struct ifnet *ifp = na->ifp;
 	struct virtnet_info *vi = netdev_priv(ifp);
+	int hwrings_pending = 0, hwrings;
 	bool was_up = false;
 	int error = 0;
 	enum txrx t;
 	int i;
 
-	if (na == NULL)
-		return EINVAL;
-
-	if (na->active_fds > 0) {
-		/* virtio-net adapter currently does not support single-queue
-		 * mode. As a consequence, register (unregister) operations
-		 * only have effect with first (last) user.*/
-		return 0;
-	}
-
 	/* These virtio-net driver patches do not support single-queue mode
 	 * (modifications would be needed to free_unused_bufs()
 	 * free_receive_bufs()). As a result, we fail here if we detect
-	 * the user is trying to open only a subset of the rings. */
-	if (onoff) {
-		int hwrings_pending = 0;
-		int hwrings = nma_get_nrings(na, NR_TX) +
-				nma_get_nrings(na, NR_RX);
+	 * the user is trying to open or close only a subset of the rings. */
+	hwrings = nma_get_nrings(na, NR_TX) + nma_get_nrings(na, NR_RX);
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t); i++) {
+			struct netmap_kring *kring = &NMR(na, t)[i];
 
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
-
-				if (nm_kring_pending_on(kring)) {
-					hwrings_pending ++;
-				}
+			if ((onoff && nm_kring_pending_on(kring)) ||
+				(!onoff && nm_kring_pending_off(kring))) {
+				hwrings_pending ++;
 			}
 		}
+	}
 
-		if (!(hwrings_pending == 0 || hwrings_pending == hwrings)) {
-			D("virtio-net native adapter can only open "
-			  "all RX and TX hw rings");
-			return EINVAL;
-		}
+	if (!(hwrings_pending == 0 || hwrings_pending == hwrings)) {
+		D("virtio-net native adapter can only open "
+		  "all RX and TX hw rings");
+		return EINVAL;
 	}
 
 	/* It's important to make sure each virtnet_close() matches
 	 * a virtnet_open(), otherwise a napi_disable() is not matched by
 	 * a napi_enable(), which results in a deadlock. */
-	if (netif_running(ifp)) {
+	if (hwrings_pending && netif_running(ifp)) {
 		was_up = true;
 		/* Down the interface. This also disables napi. */
 		virtnet_close(ifp);
 	}
 
 	if (onoff) {
-		/* TX shared virtio-net header must be zeroed because its
-		 * content is exposed to the host. RX shared virtio-net
-		 * header is zeroed only for security reasons. */
-		memset(&vna->shared_txvhdr, 0, sizeof(vna->shared_txvhdr));
-		memset(&vna->shared_rxvhdr, 0, sizeof(vna->shared_rxvhdr));
+		if (hwrings_pending) {
+			/* TX shared virtio-net header must be zeroed because its
+			 * content is exposed to the host. RX shared virtio-net
+			 * header is zeroed only for security reasons. */
+			memset(&vna->shared_txvhdr, 0, sizeof(vna->shared_txvhdr));
+			memset(&vna->shared_rxvhdr, 0, sizeof(vna->shared_rxvhdr));
 
-		/* Get and free any used buffers. This is necessary
-		 * before calling free_unused_bufs(), that uses
-		 * virtqueue_detach_unused_buf(). */
-		virtio_netmap_clean_used_rings(vi, na);
+			/* Get and free any used buffers. This is necessary
+			 * before calling free_unused_bufs(), that uses
+			 * virtqueue_detach_unused_buf(). */
+			virtio_netmap_clean_used_rings(vi, na);
 
-		/* Initialize scatter-gather lists used to publish netmap
-		 * buffers through virtio descriptors, in such a way that each
-		 * each scatter-gather list contains exactly one descriptor
-		 * (which can point to a netmap buffer). This initialization is
-		 * necessary to prevent the virtio frontend (host) to think
-		 * we are using multi-descriptors scatter-gather lists. */
-		virtio_netmap_init_sgs(vi);
+			/* Initialize scatter-gather lists used to publish netmap
+			 * buffers through virtio descriptors, in such a way that each
+			 * each scatter-gather list contains exactly one descriptor
+			 * (which can point to a netmap buffer). This initialization is
+			 * necessary to prevent the virtio frontend (host) to think
+			 * we are using multi-descriptors scatter-gather lists. */
+			virtio_netmap_init_sgs(vi);
 
-		/* We have to drain the RX virtqueues, otherwise the
-		 * virtio_netmap_init_buffer() called by the subsequent
-		 * virtnet_open() cannot link the netmap buffers to the
-		 * virtio RX ring.
-		 * The unused buffers point to memory allocated by
-		 * the virtio-driver (e.g. sk_buffs). We need to free that
-		 * memory, otherwise we have leakage.
-		 */
-		free_unused_bufs(vi);
+			/* We have to drain the RX virtqueues, otherwise the
+			 * virtio_netmap_init_buffer() called by the subsequent
+			 * virtnet_open() cannot link the netmap buffers to the
+			 * virtio RX ring.
+			 * The unused buffers point to memory allocated by
+			 * the virtio-driver (e.g. sk_buffs). We need to free that
+			 * memory, otherwise we have leakage.
+			 */
+			free_unused_bufs(vi);
 
-		/* Also free the pages allocated by the driver. Since
-		 * Linux 4.10, free_receive_bufs() takes the rtnl lock
-		 * to support XDP. To avoid deadlock, we temporarily
-		 * release the lock during this call. */
-		rtnl_unlock();
-		free_receive_bufs(vi);
-		rtnl_lock();
+			/* Also free the pages allocated by the driver. Since
+			 * Linux 4.10, free_receive_bufs() takes the rtnl lock
+			 * to support XDP. To avoid deadlock, we temporarily
+			 * release the lock during this call. */
+			rtnl_unlock();
+			free_receive_bufs(vi);
+			rtnl_lock();
+		}
 
 		/* enable netmap mode */
 		for_rx_tx(t) {
@@ -372,11 +361,13 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		/* Get and free any used buffer. This is necessary
-		 * before calling virtqueue_detach_unused_buf(). */
-		virtio_netmap_clean_used_rings(vi, na);
+		if (hwrings_pending) {
+			/* Get and free any used buffer. This is necessary
+			 * before calling virtqueue_detach_unused_buf(). */
+			virtio_netmap_clean_used_rings(vi, na);
 
-		virtio_netmap_reclaim_unused(vi);
+			virtio_netmap_reclaim_unused(vi);
+		}
 	}
 
 	if (was_up) {
