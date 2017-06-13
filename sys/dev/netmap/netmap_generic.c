@@ -168,7 +168,8 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 static void void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { }
 
 #define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
-	(m)->m_ext.ext_free = fn ? (void *)fn : (void *)void_mbuf_dtor;	\
+	(m)->m_ext.ext_free = (fn != NULL) ?		\
+	    (void *)fn : (void *)void_mbuf_dtor;	\
 } while (0)
 
 static inline struct mbuf *
