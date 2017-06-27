@@ -1533,15 +1533,8 @@ netmap_mem_private_new(u_int txr, u_int txd, u_int rxr, u_int rxd,
 			p[NETMAP_BUF_POOL].size);
 
 	d = _netmap_mem_private_new(p, perr);
-	if (d == NULL)
-		goto error;
 
 	return d;
-error:
-	netmap_mem_delete(d);
-	if (perr)
-		*perr = err;
-	return NULL;
 }
 
 
