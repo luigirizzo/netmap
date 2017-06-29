@@ -710,7 +710,7 @@ for d in $(drv print); do
 	drv_distclean=
 	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
 	# possibly override from config.mak
-	eval $(make -nrf read-vars.mak $d@vars E_DRIVERS="$e_drivers")
+	eval $(make -snrf read-vars.mak $d@vars E_DRIVERS="$e_drivers")
 
 	# check that the original driver had been compiled as a module, otherwise
 	# skip this driver
