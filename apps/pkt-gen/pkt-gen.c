@@ -1000,7 +1000,7 @@ initialize_packet(struct targ *targ)
 		ip->ip_hl = sizeof(*ip) >> 2;
 		ip->ip_id = 0;
 		ip->ip_tos = IPTOS_LOWDELAY;
-		ip->ip_len = ntohs(targ->g->pkt_size - sizeof(*eh));
+		ip->ip_len = htons(targ->g->pkt_size - sizeof(*eh));
 		ip->ip_id = 0;
 		ip->ip_off = htons(IP_DF); /* Don't fragment */
 		ip->ip_ttl = IPDEFTTL;
