@@ -1485,7 +1485,7 @@ netmap_mem_private_new(u_int txr, u_int txd, u_int rxr, u_int rxd,
 {
 	struct netmap_mem_d *d = NULL;
 	struct netmap_obj_params p[NETMAP_POOLS_NR];
-	int i, err = 0;
+	int i;
 	u_int v, maxd;
 	/* account for the fake host rings */
 	txr++;
