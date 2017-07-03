@@ -2126,10 +2126,10 @@ err_put_lut:
 		memset(&na->na_lut, 0, sizeof(na->na_lut));
 err_del_if:
 	netmap_mem_if_delete(na, nifp);
-err_rel_excl:
-	netmap_krings_put(priv);
 err_del_rings:
 	netmap_mem_rings_delete(na);
+err_rel_excl:
+	netmap_krings_put(priv);
 err_del_krings:
 	if (na->active_fds == 0)
 		na->nm_krings_delete(na);
