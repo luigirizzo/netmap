@@ -786,6 +786,18 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na,
 	} else {
 		struct netmap_adapter *hw;
 
+		/* the vale:nic syntax is only valid for some commands */
+		switch (nmr->nr_cmd) {
+		case NETMAP_BDG_ATTACH:
+		case NETMAP_BDG_DETACH:
+		case NETMAP_BDG_POLLING_ON:
+		case NETMAP_BDG_POLLING_OFF:
+			break; /* ok */
+		default:
+			error = EINVAL;
+			goto out;
+		}
+
 		error = netmap_get_hw_na(ifp, nmd, &hw);
 		if (error || hw == NULL)
 			goto out;
