@@ -1635,6 +1635,16 @@ EOF
   		return vsi->tx_rings[0];
   	}
 EOF
+   
+   add_test 'define I40E_PTR_STATE' <<EOF
+   	#include "i40e/i40e.h"
+	#include <linux/bitops.h>
+
+	int
+	dummy(struct i40e_pf *pf) {
+		return test_and_set_bit(1, &pf->state);
+	}
+EOF
   fi # i40e
 
   if drv enabled igb; then

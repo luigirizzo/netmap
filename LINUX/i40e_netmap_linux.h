@@ -55,6 +55,11 @@ extern int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
 #define NM_I40E_TX_RING(a, r)		(&(a)->tx_rings[(r)])
 #define NM_I40E_RX_RING(a, r)		(&(a)->rx_rings[(r)])
 #endif
+#ifdef NETMAP_LINUX_I40E_PTR_STATE
+#define NM_I40E_STATE(pf)		(&(pf)->state)
+#else
+#define NM_I40E_STATE(pf)		((pf)->state)
+#endif
 
 #ifdef NETMAP_I40E_MAIN
 /*
@@ -182,7 +187,7 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
         struct i40e_pf   *pf = (struct i40e_pf *)vsi->back;
 	bool was_running;
 
-	while (test_and_set_bit(__I40E_CONFIG_BUSY, &pf->state))
+	while (test_and_set_bit(__I40E_CONFIG_BUSY, NM_I40E_STATE(pf)))
 			usleep_range(1000, 2000);
 
 	if ( (was_running = netif_running(vsi->netdev)) )
@@ -200,7 +205,7 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 	}
 	//set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
 
-	clear_bit(__I40E_CONFIG_BUSY, &pf->state);
+	clear_bit(__I40E_CONFIG_BUSY, NM_I40E_STATE(pf));
 
 	return 0;
 }
