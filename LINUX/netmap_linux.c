@@ -2125,11 +2125,13 @@ static int linux_nm_vi_change_mtu(struct net_device *netdev, int new_mtu)
 {
 	return 0;
 }
+#ifdef NETMAP_LINUX_HAVE_NETDEV_DTOR
 static void linux_nm_vi_destructor(struct net_device *netdev)
 {
 //	netmap_detach(netdev);
 	free_netdev(netdev);
 }
+#endif
 static const struct net_device_ops nm_vi_ops = {
 	.ndo_open = linux_nm_vi_open,
 	.ndo_stop = linux_nm_vi_stop,
@@ -2148,7 +2150,11 @@ linux_nm_vi_setup(struct ifnet *dev)
 	dev->netdev_ops = &nm_vi_ops;
 	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
 	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
+#ifdef NETMAP_LINUX_HAVE_NETDEV_DTOR
 	dev->destructor = linux_nm_vi_destructor;
+#else 
+	dev->needs_free_netdev = 1;
+#endif
 	dev->tx_queue_len = 0;
 	/* XXX */
 	dev->features = NETIF_F_LLTX | NETIF_F_SG | NETIF_F_FRAGLIST |

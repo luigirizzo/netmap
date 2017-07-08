@@ -1390,6 +1390,17 @@ EOF
 	}
 EOF
 
+# check for net_dev destructor
+  add_test 'have NETDEV_DTOR' <<EOF
+  	#include <linux/netdevice.h>
+
+	void
+	dummy(struct net_device *dev)
+	{
+		return dev->destructor(dev);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
