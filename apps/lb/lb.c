@@ -788,6 +788,12 @@ run:
 			if (p->nmd == NULL) {
 				D("cannot open %s", p->interface);
 				return (1);
+			} else if (p->nmd->req.nr_arg2 != rxport->nmd->req.nr_arg2) {
+				D("failed to open pipe #%d in zero-copy mode, "
+					"please close any application that uses either pipe %s}%d, "
+				        "or %s{%d, and retry",
+					k + 1, g->pipename, g->first_id + k, g->pipename, g->first_id + k);
+				return (1);
 			} else {
 				D("successfully opened pipe #%d %s (tx slots: %d)",
 				  k + 1, p->interface, p->nmd->req.nr_tx_slots);
