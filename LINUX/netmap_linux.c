@@ -43,15 +43,21 @@
 void *
 nm_os_malloc(size_t size)
 {
-	return kmalloc(size, GFP_ATOMIC | __GFP_ZERO);
+	void *rv = kmalloc(size, GFP_ATOMIC | __GFP_ZERO);
+	if (IS_ERR(rv))
+		return NULL;
+	return rv;
 }
 
 void *
 nm_os_realloc(void *addr, size_t new_size, size_t old_size)
 {
+	void *rv;
 	(void)old_size;
-
-	return krealloc(addr, new_size, GFP_ATOMIC | __GFP_ZERO);
+	rv = krealloc(addr, new_size, GFP_ATOMIC | __GFP_ZERO);
+	if (IS_ERR(rv))
+		return NULL;
+	return rv;
 }
 
 void
