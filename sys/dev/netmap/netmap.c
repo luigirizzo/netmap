@@ -2312,7 +2312,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		NMG_LOCK();
 		do {
 			u_int memflags;
-			struct ifnet *ifp;
 
 			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
