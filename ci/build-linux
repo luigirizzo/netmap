@@ -1,0 +1,53 @@
+#!/bin/bash -eu
+
+set -o pipefail
+
+readonly KERNEL_VERSION=${1:?}
+readonly ARCH=${2:?}
+readonly GCC_MAJOR_VERSION=$(echo '#include <stdio.h>
+void main() { printf("%u\n", __GNUC__); }' | gcc -x c - -o /tmp/getgccversion  && /tmp/getgccversion)
+readonly PROC_COUNT=$(grep -c '^processor' /proc/cpuinfo)
+
+
+if [ ! -d ~/Linux/$KERNEL_VERSION ]
+then
+  # clone
+  if [ "$KERNEL_VERSION" = "linus" ]
+  then
+    git clone 'https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git' ~/Linux/$KERNEL_VERSION
+  else
+    git clone 'https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git' ~/Linux/$KERNEL_VERSION
+    pushd ~/Linux/$KERNEL_VERSION
+    git checkout linux-${KERNEL_VERSION}.y
+    popd
+  fi
+else
+  # update
+  pushd ~/Linux/$KERNEL_VERSION
+  git pull
+  popd
+fi
+
+# configure kernel
+pushd ~/Linux/$KERNEL_VERSION
+compiler_file=compiler-gcc${GCC_MAJOR_VERSION}.h
+if [ ! -f include/linux/${compiler_file} -a ! -h include/linux/${compiler_file} ]
+then
+  # fix compilation of old kernels with recent GCC
+  pushd include/linux
+  if [ -f compiler-gcc5.h -a $GCC_MAJOR_VERSION -gt 5 ]
+  then
+    ln -sv compiler-gcc5.h ${compiler_file}
+  else
+    ln -sv compiler-gcc4.h ${compiler_file}
+  fi
+  popd
+fi
+make mrproper
+make -j $PROC_COUNT ARCH=${ARCH} defconfig
+make -j $PROC_COUNT ARCH=${ARCH} modules_prepare
+popd
+
+# build
+./configure --kernel-dir=$HOME/Linux/$KERNEL_VERSION
+make -j $PROC_COUNT
