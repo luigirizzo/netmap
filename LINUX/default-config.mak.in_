@@ -11,7 +11,7 @@ endef
 
 enabled_intel_driver = $(if $(filter $(1),$(E_DRIVERS)),$(eval $(call intel_driver,$(1),$(2))))
 
-$(call enabled_intel_driver,ixgbe,5.1.3)
+$(call enabled_intel_driver,ixgbe,5.2.1)
 $(call enabled_intel_driver,ixgbevf,4.1.2)
 e1000e@cflags := -fno-pie
 $(call enabled_intel_driver,e1000e,3.3.5.3)
