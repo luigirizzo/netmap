@@ -1,0 +1,32 @@
+dist: trusty
+sudo: false
+language: c
+cache:
+  directories:
+    - $HOME/Linux
+    - $HOME/Drivers
+env:
+  - KERNEL_VERSION=3.2   ARCH=i386
+  - KERNEL_VERSION=3.4   ARCH=i386
+  - KERNEL_VERSION=3.10  ARCH=i386
+  - KERNEL_VERSION=3.16  ARCH=i386
+  - KERNEL_VERSION=4.1   ARCH=i386
+  - KERNEL_VERSION=4.4   ARCH=i386
+  - KERNEL_VERSION=4.9   ARCH=i386
+  - KERNEL_VERSION=linus ARCH=i386
+  - KERNEL_VERSION=3.2   ARCH=x86_64
+  - KERNEL_VERSION=3.4   ARCH=x86_64
+  - KERNEL_VERSION=3.10  ARCH=x86_64
+  - KERNEL_VERSION=3.16  ARCH=x86_64
+  - KERNEL_VERSION=4.1   ARCH=x86_64
+  - KERNEL_VERSION=4.4   ARCH=x86_64
+  - KERNEL_VERSION=4.9   ARCH=x86_64
+  - KERNEL_VERSION=linus ARCH=x86_64
+matrix:
+  allow_failures:
+    - env: KERNEL_VERSION=linus ARCH=i386
+    - env: KERNEL_VERSION=linus ARCH=x86_64
+install:
+  - "rm -Rf LINUX/ext-drivers && mkdir -p $HOME/Drivers && ln -sv $HOME/Drivers LINUX/ext-drivers"
+script:
+  - "./ci/build-linux $KERNEL_VERSION $ARCH"
