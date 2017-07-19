@@ -1401,6 +1401,16 @@ EOF
 	}
 EOF
 
+# wait_queue_t or wait_queue_entry_t ?
+  add_test 'have WAIT_QUEUE_ENTRY_T' <<EOF
+	#include <linux/wait.h>
+
+	void *
+	dummy(wait_queue_entry_t *wq) {
+		return wq->private;
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
