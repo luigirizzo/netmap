@@ -1561,7 +1561,7 @@ netmap_mem_private_new(u_int txr, u_int txd, u_int rxr, u_int rxd,
 			p[NETMAP_BUF_POOL].num,
 			p[NETMAP_BUF_POOL].size);
 
-	d = _netmap_mem_private_new(p, perr);
+	d = _netmap_mem_private_new(sizeof(*d), p, &netmap_mem_global_ops, perr);
 
 	return d;
 }
