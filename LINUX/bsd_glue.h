@@ -86,6 +86,10 @@
 #define uintptr_t	unsigned long
 #endif
 
+#ifdef NETMAP_LINUX_HAVE_WAIT_QUEUE_ENTRY_T
+#define wait_queue_t	wait_queue_entry_t
+#endif
+
 #ifndef NETMAP_LINUX_HAVE_QUEUE_MAPPING
 #define skb_get_queue_mapping(m)	(0)
 #define skb_set_queue_mapping(a, b)	do { (void)(a); (void)(b); } while (0)
