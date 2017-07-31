@@ -224,9 +224,9 @@ struct nm_bridge {
 
 	/* the forwarding table, MAC+ports.
 	 * XXX should be changed to an argument to be passed to
-	 * the lookup function, and allocated on attach
+	 * the lookup function
 	 */
-	struct nm_hash_ent ht[NM_BDG_HASH];
+	struct nm_hash_ent *ht; // allocated on attach
 
 #ifdef CONFIG_NET_NS
 	struct net *ns;
@@ -363,17 +363,20 @@ nm_find_bridge(const char *name, int create)
 	}
 	if (i == num_bridges && b) { /* name not found, can create entry */
 		/* initialize the bridge */
-		strncpy(b->bdg_basename, name, namelen);
 		ND("create new bridge %s with ports %d", b->bdg_basename,
 			b->bdg_active_ports);
+		b->ht = nm_os_malloc(sizeof(struct nm_hash_ent) * NM_BDG_HASH);
+		if (b->ht == NULL) {
+			D("failed to allocate hash table");
+			return NULL;
+		}
+		strncpy(b->bdg_basename, name, namelen);
 		b->bdg_namelen = namelen;
 		b->bdg_active_ports = 0;
 		for (i = 0; i < NM_BDG_MAXPORTS; i++)
 			b->bdg_port_index[i] = i;
 		/* set the default function */
 		b->bdg_ops.lookup = netmap_bdg_learning;
-		/* reset the MAC address table */
-		bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
 		NM_BNS_GET(b);
 	}
 	return b;
@@ -501,6 +504,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	ND("now %d active ports", lim);
 	if (lim == 0) {
 		ND("marking bridge %s as free", b->bdg_basename);
+		nm_os_free(b->ht);
 		bzero(&b->bdg_ops, sizeof(b->bdg_ops));
 		NM_BNS_PUT(b);
 	}
