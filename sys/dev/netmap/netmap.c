@@ -2867,22 +2867,6 @@ netmap_attach_common(struct netmap_adapter *na)
 	return 0;
 }
 
-
-/* standard cleanup, called by all destructors */
-void
-netmap_detach_common(struct netmap_adapter *na)
-{
-	if (na->tx_rings) { /* XXX should not happen */
-		D("freeing leftover tx_rings");
-		na->nm_krings_delete(na);
-	}
-	netmap_pipe_dealloc(na);
-	if (na->nm_mem)
-		netmap_mem_put(na->nm_mem);
-	bzero(na, sizeof(*na));
-	nm_os_free(na);
-}
-
 /* Wrapper for the register callback provided netmap-enabled
  * hardware drivers.
  * nm_iszombie(na) means that the driver module has been
@@ -3031,7 +3015,15 @@ NM_DBG(netmap_adapter_put)(struct netmap_adapter *na)
 	if (na->nm_dtor)
 		na->nm_dtor(na);
 
-	netmap_detach_common(na);
+	if (na->tx_rings) { /* XXX should not happen */
+		D("freeing leftover tx_rings");
+		na->nm_krings_delete(na);
+	}
+	netmap_pipe_dealloc(na);
+	if (na->nm_mem)
+		netmap_mem_put(na->nm_mem);
+	bzero(na, sizeof(*na));
+	nm_os_free(na);
 
 	return 1;
 }

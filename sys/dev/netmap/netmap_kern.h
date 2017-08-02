@@ -1371,8 +1371,6 @@ uint32_t nm_rxsync_prologue(struct netmap_kring *, struct netmap_ring *);
  * - provide defaults for the setup callbacks and the memory allocator
  */
 int netmap_attach_common(struct netmap_adapter *);
-/* common actions to be performed on netmap adapter destruction */
-void netmap_detach_common(struct netmap_adapter *);
 /* fill priv->np_[tr]xq{first,last} using the ringid and flags information
  * coming from a struct nmreq
  */
