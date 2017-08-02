@@ -738,7 +738,7 @@ virtio_netmap_attach(struct virtnet_info *vi)
 	na.nm_config = virtio_netmap_config;
 	na.nm_intr = virtio_netmap_intr;
 
-	ret = netmap_attach_ext(&na, sizeof(struct netmap_virtio_adapter));
+	ret = netmap_attach_ext(&na, sizeof(struct netmap_virtio_adapter), 1);
 	if (ret) {
 		D("Failed to attach virtio-net interface");
 		return;

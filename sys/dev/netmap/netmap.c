@@ -2919,7 +2919,7 @@ netmap_hw_dtor(struct netmap_adapter *na)
  * Return 0 on success, ENOMEM otherwise.
  */
 int
-netmap_attach_ext(struct netmap_adapter *arg, size_t size)
+netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 {
 	struct netmap_hw_adapter *hwna = NULL;
 	struct ifnet *ifp = NULL;
@@ -2938,8 +2938,10 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size)
 	hwna->up = *arg;
 	hwna->up.na_flags |= NAF_HOST_RINGS | NAF_NATIVE;
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
-	hwna->nm_hw_register = hwna->up.nm_register;
-	hwna->up.nm_register = netmap_hw_reg;
+	if (override_reg) {
+		hwna->nm_hw_register = hwna->up.nm_register;
+		hwna->up.nm_register = netmap_hw_reg;
+	}
 	if (netmap_attach_common(&hwna->up)) {
 		nm_os_free(hwna);
 		goto fail;

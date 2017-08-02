@@ -1188,7 +1188,7 @@ static __inline void nm_kr_start(struct netmap_kring *kr)
  *	virtual ports (vale, pipes, monitor)
  */
 int netmap_attach(struct netmap_adapter *);
-int netmap_attach_ext(struct netmap_adapter *, size_t size);
+int netmap_attach_ext(struct netmap_adapter *, size_t size, int override_reg);
 void netmap_detach(struct ifnet *);
 int netmap_transmit(struct ifnet *, struct mbuf *);
 struct netmap_slot *netmap_reset(struct netmap_adapter *na,
