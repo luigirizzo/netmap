@@ -57,6 +57,7 @@
 
 #include <linux/io.h>	// virt_to_phys
 #include <linux/hrtimer.h>
+#include <linux/highmem.h> // kmap
 
 #define KASSERT(a, b)		BUG_ON(!(a))
 

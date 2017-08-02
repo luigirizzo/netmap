@@ -1961,8 +1961,10 @@ netmap_mem_ext_delete(struct netmap_mem_d *d)
 		}
 	}
 	if (e->pages) {
-		for (i = 0; i < e->nr_pages; i++)
+		for (i = 0; i < e->nr_pages; i++) {
+			kunmap(e->pages[i]);
 			put_page(e->pages[i]);
+		}
 		nm_os_free(e->pages);
 		e->pages = NULL;
 		e->nr_pages = 0;
@@ -2101,7 +2103,7 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 	nme->nr_pages = nr_pages;
 	nme->up.flags |= NETMAP_MEM_EXT;
 
-	clust = page_to_virt(*pages);
+	clust = kmap(*pages);
 	off = 0;
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		struct netmap_obj_pool *p = &nme->up.pools[i];
