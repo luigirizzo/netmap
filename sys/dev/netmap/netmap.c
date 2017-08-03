@@ -2989,7 +2989,8 @@ fail:
 int
 netmap_attach(struct netmap_adapter *arg)
 {
-	return netmap_attach_ext(arg, sizeof(struct netmap_hw_adapter));
+	return netmap_attach_ext(arg, sizeof(struct netmap_hw_adapter),
+			1 /* override nm_reg */);
 }
 
 
