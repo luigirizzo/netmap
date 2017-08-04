@@ -62,10 +62,10 @@ index c49cba8..546435f 100644
  clean:
  	@+$(call devkernelbuild,clean)
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 06017ea..0c84b61 100644
+index 202f595..66242ee 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
-@@ -747,6 +747,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
+@@ -709,6 +709,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
  	}
  }
  
@@ -89,7 +89,7 @@ index 06017ea..0c84b61 100644
  /**
   * ixgbe_clean_tx_irq - Reclaim resources after transmit completes
   * @q_vector: structure containing interrupt and ring information
-@@ -765,6 +782,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
+@@ -727,6 +744,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
  	if (test_bit(__IXGBE_DOWN, &adapter->state))
  		return true;
  
@@ -107,7 +107,16 @@ index 06017ea..0c84b61 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBE_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -1804,6 +1832,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+@@ -1656,7 +1684,7 @@ static bool ixgbe_add_rx_frag(struct ixgbe_ring *rx_ring,
+ 	/* Even if we own the page, we are not allowed to use atomic_set()
+ 	 * This would break get_page_unless_zero() users.
+ 	 */
+-	atomic_inc(&page->_count);
++	atomic_inc(&page->NETMAP_LINUX_PAGE_COUNT);
+ 
+ 	return true;
+ }
+@@ -1767,6 +1795,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
  #endif /* CONFIG_FCOE */
  	u16 cleaned_count = ixgbe_desc_unused(rx_ring);
  
@@ -124,7 +133,7 @@ index 06017ea..0c84b61 100644
  	do {
  		union ixgbe_adv_rx_desc *rx_desc;
  		struct sk_buff *skb;
-@@ -2912,6 +2950,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+@@ -2845,6 +2883,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  
  	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
  
@@ -135,7 +144,7 @@ index 06017ea..0c84b61 100644
  	/* enable queue */
  	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
  
-@@ -3476,6 +3518,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+@@ -3408,6 +3450,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -146,9 +155,9 @@ index 06017ea..0c84b61 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -10436,6 +10482,10 @@ no_info_string:
- 		hw->mac.ops.setup_eee(hw, eee_enable);
- 	}
+@@ -10104,6 +10150,10 @@ no_info_string:
+ 			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
+ 			true);
  
 +#ifdef DEV_NETMAP
 +	ixgbe_netmap_attach(adapter);
@@ -157,7 +166,7 @@ index 06017ea..0c84b61 100644
  	return 0;
  
  err_register:
-@@ -10481,6 +10531,11 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
+@@ -10149,6 +10199,11 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
  		return;
  
  	netdev = adapter->netdev;
@@ -170,7 +179,7 @@ index 06017ea..0c84b61 100644
  	ixgbe_dbg_adapter_exit(adapter);
  
 diff --git a/ixgbe/kcompat.h b/ixgbe/kcompat.h
-index df445c5..f8bec83 100644
+index 048157a..2349540 100644
 --- a/ixgbe/kcompat.h
 +++ b/ixgbe/kcompat.h
 @@ -25,6 +25,8 @@
@@ -182,12 +191,12 @@ index df445c5..f8bec83 100644
  #ifndef LINUX_VERSION_CODE
  #include <linux/version.h>
  #else
-@@ -5172,7 +5174,7 @@ static inline void csum_replace_by_diff(__sum16 *sum, __wsum diff)
- #if !(RHEL_RELEASE_CODE && (RHEL_RELEASE_CODE > RHEL_RELEASE_VERSION(7,2)))
+@@ -4880,7 +4882,7 @@ static inline void csum_replace_by_diff(__sum16 *sum, __wsum diff)
+ 
  static inline void page_ref_inc(struct page *page)
  {
 -	atomic_inc(&page->_count);
 +	atomic_inc(&page->NETMAP_LINUX_PAGE_COUNT);
  }
  
- #endif
+ #endif /* 4.6.0 */

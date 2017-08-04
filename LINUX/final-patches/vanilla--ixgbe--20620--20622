@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index a456578..eec58c8 100644
+index a456578..a14c3e0 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -337,6 +337,16 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
@@ -84,14 +84,16 @@ index a456578..eec58c8 100644
  	for (i = 0; i < adapter->num_rx_queues; i++)
  		ixgbe_alloc_rx_buffers(adapter, &adapter->rx_ring[i],
  		                       (adapter->rx_ring[i].count - 1));
-@@ -2753,6 +2798,11 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
+@@ -2751,8 +2796,13 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
+ 	for (i = 0; i < adapter->num_tx_queues; i++) {
+ 		j = adapter->tx_ring[i].reg_idx;
  		txdctl = IXGBE_READ_REG(hw, IXGBE_TXDCTL(j));
++#ifdef DEV_NETMAP // XXX i and j are the same ?
++		txdctl = ixgbe_netmap_configure_tx_ring(adapter, j, txdctl);
++#endif /* DEV_NETMAP */
  		txdctl |= IXGBE_TXDCTL_ENABLE;
  		IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(j), txdctl);
 +
-+#ifdef DEV_NETMAP // XXX i and j are the same ?
-+		ixgbe_netmap_configure_tx_ring(adapter, j);
-+#endif /* DEV_NETMAP */
 +
  	}
  
