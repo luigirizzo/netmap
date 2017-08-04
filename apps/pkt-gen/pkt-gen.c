@@ -257,6 +257,7 @@ struct glob_arg {
 	struct mac_range dst_mac;
 	struct mac_range src_mac;
 	int pkt_size;
+	int pkt_min_size;
 	int burst;
 	int forever;
 	uint64_t npackets;	/* total packets to send */
@@ -1598,6 +1599,11 @@ sender_body(void *data)
 			if (frags > 1)
 				limit = ((limit + frags - 1) / frags) * frags;
 
+			if (targ->g->pkt_min_size > 0) {
+				size = random() %
+					(targ->g->pkt_size - targ->g->pkt_min_size) +
+					targ->g->pkt_min_size;
+			}
 			m = send_packets(txring, pkt, frame, size, targ->g,
 					 limit, options, frags);
 			ND("limit %d tail %d frags %d m %d",
@@ -2219,6 +2225,9 @@ usage(void)
 		"\t-t pkts_to_send	also forces tx mode\n"
 		"\t-r pkts_to_receive	also forces rx mode\n"
 		"\t-l pkt_size		in bytes excluding CRC\n"
+		"\t                     (if passed a second time, use random sizes\n"
+		"\t                      bigger than the second one and lower than\n"
+		"\t                      the first one)\n"
 		"\t-d dst_ip[:port[-dst_ip:port]]   single or range\n"
 		"\t-s src_ip[:port[-src_ip:port]]   single or range\n"
 		"\t-D dst-mac\n"
@@ -2552,6 +2561,8 @@ main(int arc, char **argv)
 	int ch;
 	int devqueues = 1;	/* how many device queues */
 
+	int pkt_size_done = 0;
+
 	struct td_desc *fn = func;
 
 	bzero(&g, sizeof(g));
@@ -2568,6 +2579,7 @@ main(int arc, char **argv)
 	g.dst_mac.name = "ff:ff:ff:ff:ff:ff";
 	g.src_mac.name = NULL;
 	g.pkt_size = 60;
+	g.pkt_min_size = 0;
 	g.nthreads = 1;
 	g.cpus = 1;		/* default */
 	g.forever = 1;
@@ -2663,7 +2675,12 @@ main(int arc, char **argv)
 			break;
 
 		case 'l':	/* pkt_size */
-			g.pkt_size = atoi(optarg);
+			if (pkt_size_done) {
+				g.pkt_min_size = atoi(optarg);
+			} else {
+				g.pkt_size = atoi(optarg);
+				pkt_size_done = 1;
+			}
 			break;
 
 		case 'd':
@@ -2766,6 +2783,11 @@ main(int arc, char **argv)
 
 	if (g.pkt_size < 16 || g.pkt_size > MAX_PKTSIZE) {
 		D("bad pktsize %d [16..%d]\n", g.pkt_size, MAX_PKTSIZE);
+		usage();
+	}
+
+	if (g.pkt_min_size > 0 && (g.pkt_min_size < 16 || g.pkt_min_size > g.pkt_size)) {
+		D("bad pktminsize %d [16..%d]\n", g.pkt_min_size, g.pkt_size);
 		usage();
 	}
 
