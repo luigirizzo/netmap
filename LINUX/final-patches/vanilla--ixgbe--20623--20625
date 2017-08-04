@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 74d9b6d..d2a6b08 100644
+index 74d9b6d..db08827 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -214,6 +214,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
@@ -73,13 +73,20 @@ index 74d9b6d..d2a6b08 100644
  	for (i = 0; i < adapter->num_rx_queues; i++)
  		ixgbe_alloc_rx_buffers(adapter, adapter->rx_ring[i],
  		                       (adapter->rx_ring[i]->count - 1));
-@@ -3390,6 +3433,10 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
+@@ -3376,6 +3419,9 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
+ 	for (i = 0; i < adapter->num_tx_queues; i++) {
+ 		j = adapter->tx_ring[i]->reg_idx;
+ 		txdctl = IXGBE_READ_REG(hw, IXGBE_TXDCTL(j));
++#ifdef DEV_NETMAP // XXX i and j are the same ?
++		txdctl = ixgbe_netmap_configure_tx_ring(adapter, j, txdctl);
++#endif /* DEV_NETMAP */
+ 		txdctl |= IXGBE_TXDCTL_ENABLE;
+ 		IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(j), txdctl);
+ 		if (hw->mac.type == ixgbe_mac_82599EB) {
+@@ -3390,6 +3436,7 @@ static int ixgbe_up_complete(struct ixgbe_adapter *adapter)
  				DPRINTK(DRV, ERR, "Could not enable "
  				        "Tx Queue %d\n", j);
  		}
-+#ifdef DEV_NETMAP // XXX i and j are the same ?
-+		ixgbe_netmap_configure_tx_ring(adapter, j);
-+#endif /* DEV_NETMAP */
 +
  	}
  
