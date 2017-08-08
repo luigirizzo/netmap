@@ -1,5 +1,5 @@
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index 92ef4cb..1141b53 100644
+index 92ef4cb..f9818b2 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
 @@ -176,6 +176,24 @@ static void ixgbevf_unmap_and_free_tx_resource(struct ixgbevf_ring *tx_ring,
@@ -71,16 +71,16 @@ index 92ef4cb..1141b53 100644
   * ixgbevf_configure_tx - Configure 82599 VF Transmit Unit after Reset
   * @adapter: board private structure
   *
-@@ -1118,6 +1159,9 @@ static void ixgbevf_configure_tx(struct ixgbevf_adapter *adapter)
+@@ -1117,6 +1158,9 @@ static void ixgbevf_configure_tx(struct ixgbevf_adapter *adapter)
+ 		 */
  		txctrl = IXGBE_READ_REG(hw, IXGBE_VFDCA_TXCTRL(j));
  		txctrl &= ~IXGBE_DCA_TXCTRL_TX_WB_RO_EN;
- 		IXGBE_WRITE_REG(hw, IXGBE_VFDCA_TXCTRL(j), txctrl);
 +#ifdef DEV_NETMAP
-+		ixgbe_netmap_configure_tx_ring(adapter, i);
++		txctrl = ixgbe_netmap_configure_tx_ring(adapter, i, txctrl);
 +#endif /* DEV_NETMAP */
+ 		IXGBE_WRITE_REG(hw, IXGBE_VFDCA_TXCTRL(j), txctrl);
  	}
  }
- 
 @@ -1379,6 +1423,10 @@ static void ixgbevf_configure(struct ixgbevf_adapter *adapter)
  	ixgbevf_configure_rx(adapter);
  	for (i = 0; i < adapter->num_rx_queues; i++) {
