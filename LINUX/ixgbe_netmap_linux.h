@@ -47,6 +47,8 @@
 #define NM_IXGBE_TDT(ring_nr)		IXGBE_TDT(ring_nr)
 #define NM_IXGBE_TDH(ring_nr)		IXGBE_TDH(ring_nr)
 #define NM_IXGBE_RDT(ring_nr)		IXGBE_RDT(ring_nr)
+#define NM_IXGBE_TDWBAH(ring_nr)	IXGBE_TDWBAH(ring_nr)
+#define NM_IXGBE_TDWBAL(ring_nr)	IXGBE_TDWBAL(ring_nr)
 #define NM_IXGBE_ADAPTER 		ixgbe_adapter
 #define NM_IXGBE_RESETTING 		__IXGBE_RESETTING
 #define NM_IXGBE_DOWN(adapter)		ixgbe_down(adapter)
@@ -144,9 +146,12 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 /***********************************************************************
  *                        ixgbevf                                      *
  ***********************************************************************/
+#define NM_IXGBE_USE_TDH		// TODO switch to head wb
 #define NM_IXGBE_TDT(ring_nr)		IXGBE_VFTDT(ring_nr)
 #define NM_IXGBE_TDH(ring_nr)		IXGBE_VFTDH(ring_nr)
 #define NM_IXGBE_RDT(ring_nr)		IXGBE_VFRDT(ring_nr)
+#define NM_IXGBE_TDWBAH(ring_nr)	IXGBE_VFTDWBAH(ring_nr)
+#define NM_IXGBE_TDWBAL(ring_nr)	IXGBE_VFTDWBAL(ring_nr)
 #ifdef NETMAP_LINUX_IXGBEVF_IXGBE_MACROS
 #define NM_IXGBE_TX_DESC(_1, _2)	IXGBE_TX_DESC_ADV(*(_1), _2)
 #define NM_IXGBE_RX_DESC(_1, _2)	IXGBE_RX_DESC_ADV(*(_1), _2)
@@ -245,10 +250,16 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
+	/*
+	 * interrupts on every tx packet are expensive so request
+	 * them every half ring, or where NS_REPORT is set
+	 */
+	u_int report_frequency = kring->nkr_num_slots >> 1;
 
 	/* device-specific */
 	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(ifp);
 	struct NM_IXGBE_RING *txr = NM_IXGBE_TX_RING(adapter, ring_nr);
+	int reclaim_tx;
 
 	/*
 	 * First part: process new packets to send.
@@ -300,7 +311,9 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* device-specific */
 			union ixgbe_adv_tx_desc *curr = NM_IXGBE_TX_DESC(txr, nic_i);
-			int flags = (nic_i % 32) ? 0 : IXGBE_TXD_CMD_RS;
+			int flags = (slot->flags & NS_REPORT ||
+				nic_i == 0 || nic_i == report_frequency
+				) ? IXGBE_TXD_CMD_RS : 0;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
@@ -331,10 +344,62 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	/*
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
+#ifndef NM_IXGBE_USE_TDH
+	(void)reclaim_tx;
+	(void)report_frequency;
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
 		u32 h = *(volatile u32*)&txr->next_to_use;
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, h), lim);
 	}
+#else /* NM_IXGBE_USE_TDH */
+	/*
+	 * Because this is expensive (we read a NIC register etc.)
+	 * we only do it in specific cases (see below).
+	 */
+	if (flags & NAF_FORCE_RECLAIM) {
+		reclaim_tx = 1; /* forced reclaim */
+	} else if (!nm_kr_txempty(kring)) {
+		reclaim_tx = 0; /* have buffers, no reclaim */
+	} else {
+		/*
+		 * No buffers available. Locate previous slot with
+		 * REPORT_STATUS set.
+		 * If the slot has DD set, we can reclaim space,
+		 * otherwise wait for the next interrupt.
+		 * This enables interrupt moderation on the tx
+		 * side though it might reduce throughput.
+		 */
+		union ixgbe_adv_tx_desc *txd = NM_IXGBE_TX_DESC(txr, 0);
+
+		nic_i = txr->next_to_clean + report_frequency;
+		if (nic_i > lim)
+			nic_i -= lim + 1;
+		// round to the closest with dd set
+		nic_i = (nic_i < kring->nkr_num_slots / 4 ||
+			 nic_i >= kring->nkr_num_slots*3/4) ?
+			0 : report_frequency;
+		reclaim_tx = txd[nic_i].wb.status & IXGBE_TXD_STAT_DD;	// XXX cpu_to_le32 ?
+	}
+	if (reclaim_tx) {
+		/*
+		 * Record completed transmissions.
+		 * We (re)use the driver's txr->next_to_clean to keep
+		 * track of the most recently completed transmission.
+		 *
+		 * The datasheet discourages the use of TDH to find
+		 * out the number of sent packets, but we only set
+		 * REPORT STATUS in a few slots so TDH is the only
+		 * good way.
+		 */
+		nic_i = IXGBE_READ_REG(&adapter->hw, NM_IXGBE_TDH(ring_nr));
+		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
+			D("TDH wrap %d", nic_i);
+			nic_i -= kring->nkr_num_slots;
+		}
+		txr->next_to_clean = nic_i;
+		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
+	}
+#endif /* NM_IXGBE_USE_TDH */
 out:
 
 	return 0;
@@ -473,27 +538,32 @@ ring_reset:
  * Otherwise return false.
  */
 static u32
-ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u32 txdctl)
+ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u32 txdctl
+		)
 {
 	struct netmap_adapter *na = NA(adapter->netdev);
 	struct netmap_slot *slot;
+#ifndef NM_IXGBE_USE_TDH
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct NM_IXGBE_RING *txr = NM_IXGBE_TX_RING(adapter, ring_nr);
 	u64 wba;
+#endif /* !NM_IXGBE_USE_TDH */
 	//int j;
 
         slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
 		return txdctl;	// not in native netmap mode
 
+#ifndef NM_IXGBE_USE_TDH
 	/* we reset WTRESH (it must be 0 according to specs) */
 	txdctl &= ~(0x7f << 16);
 
 	/* we reuse the next_to_use+next_to_clean fields to receive the hw head */
 	wba = (u64)virt_to_phys(&txr->next_to_use);
-	IXGBE_WRITE_REG(hw, IXGBE_TDWBAL(ring_nr),
+	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAL(ring_nr),
 		(wba & DMA_BIT_MASK(32)) | IXGBE_TDWBAL_HEAD_WB_ENABLE);
-	IXGBE_WRITE_REG(hw, IXGBE_TDWBAH(ring_nr), wba >> 32);
+	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAH(ring_nr), wba >> 32);
+#endif /* !NM_IXGBE_USE_TDH */
 
 #if 0
 	/*

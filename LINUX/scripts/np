@@ -416,7 +416,7 @@ function check-patch()
 	# extract the driver name
 	local driver=$(scripts/vers $_patch -s -p -p)
 	# extract the driver type (vanilla or external)
-	local dtype=$(scripts/vers $_patch -s -p)
+	local dtype=$(scripts/vers $_patch -s -p -p -p)
 	local p=$(realpath $patch)
 	mkdir -p log
 	local log="$(realpath log)/$(basename $patch)"
