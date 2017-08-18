@@ -620,10 +620,14 @@ exec 2>> config.log
 # check for sane configuration
 ################################
 
+[ -n "$kernelver" ] || {
+	kernelver="$(uname -r)"
+}
+
 [ -n "$ksrc" ] || {
 	# user did not provide a kernel dir,
 	# we try to find one by ourselves
-	ksrc="/lib/modules/$(uname -r)/build"
+	ksrc="/lib/modules/${kernelver}/build"
 }
 
 [ -n "$src" ] || {
