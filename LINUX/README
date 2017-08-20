@@ -273,8 +273,8 @@ COMMON PROBLEMS
   netmap hook that needs to be applied on e1000_clean_rx_irq is actually 
   applied on e1000_clean_jumbo_rx_irq. As a result it will end up in packets
   going directly from NIC Rx Rings to Host stack.
-
-     # You should fix this issue by manually patching e1000/e1000_main.c to add
+      
+      You should fix this issue by manually patching e1000/e1000_main.c to add
   the correct netmap hook in e1000_clean_rx_irq
 
 REVISION HISTORY
