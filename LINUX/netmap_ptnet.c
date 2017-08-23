@@ -94,7 +94,9 @@ struct ptnet_info {
 #endif  /* !PTNET_CSB_ALLOC */
 
 	/* MSI-X interrupt data structures. */
+#ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
 	struct msix_entry *msix_entries;
+#endif
 
 	int num_rings;
 	int num_tx_rings;
@@ -751,6 +753,17 @@ ptnet_netpoll(struct net_device *netdev)
 }
 #endif
 
+
+unsigned int
+ptnet_get_irq_vector(struct ptnet_info *pi, unsigned int i)
+{
+#ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
+	return pi->msix_entries[i].vector;
+#else
+	return pci_irq_vector(pi->pdev, i);
+#endif
+}
+
 static int
 ptnet_irqs_init(struct ptnet_info *pi)
 {
@@ -758,11 +771,29 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	int i;
 
 	/* Allocate the MSI-X interrupt vectors we need. */
+#ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
 	pi->msix_entries = kzalloc(sizeof(*pi->msix_entries) * pi->num_rings,
 				   GFP_KERNEL);
 	if (!pi->msix_entries) {
 		pr_err("Failed to allocate msix entires\n");
 		return -ENOMEM;
+	}
+
+	for (i=0; i<pi->num_rings; i++) {
+		pi->msix_entries[i].entry = i;
+	}
+
+	ret = pci_enable_msix(pi->pdev, pi->msix_entries, pi->num_rings);
+	if (ret == 0) { /* ok */
+		ret = pi->num_rings;
+	}
+#else
+	ret = pci_alloc_irq_vectors(pi->pdev, pi->num_rings, pi->num_rings,
+				    PCI_IRQ_MSIX);
+#endif
+	if (ret != pi->num_rings) {
+		pr_err("Failed to enable msix vectors (%d)\n", ret);
+		goto err_alloc;
 	}
 
 	for (i=0; i<pi->num_rings; i++) {
@@ -773,44 +804,40 @@ ptnet_irqs_init(struct ptnet_info *pi)
 			pr_err("Failed to alloc cpumask var\n");
 			goto err_masks;
 		}
-		pi->msix_entries[i].entry = i;
-	}
-
-	ret = pci_enable_msix(pi->pdev, pi->msix_entries, pi->num_rings);
-	if (ret) {
-		pr_err("Failed to enable msix vectors (%d)\n", ret);
-		goto err_masks;
 	}
 
 	for (i=0; i<pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues[i];
 		irq_handler_t handler = (i < pi->num_tx_rings) ?
 					ptnet_tx_intr : ptnet_rx_intr;
+                unsigned int vector = ptnet_get_irq_vector(pi, i);
 
 		snprintf(pq->msix_name, sizeof(pq->msix_name),
 			 "%s-%d", pi->netdev->name, i);
-		ret = request_irq(pi->msix_entries[i].vector, handler,
-				  0, pq->msix_name, pq);
+		ret = request_irq(vector, handler, 0, pq->msix_name, pq);
 		if (ret) {
 			pr_err("Unable to allocate interrupt (%d)\n", ret);
 			goto err_irqs;
 		}
 		pr_info("IRQ for ring #%d --> %u, handler %p\n", i,
-			pi->msix_entries[i].vector, handler);
+                        vector, handler);
 	}
 
 	return 0;
 
 err_irqs:
 	for (; i>=0; i--) {
-		free_irq(pi->msix_entries[i].vector, pi->queues[i]);
+		free_irq(ptnet_get_irq_vector(pi, i), pi->queues[i]);
 	}
 	i = pi->num_rings-1;
 err_masks:
 	for (; i>=0; i--) {
 		free_cpumask_var(pi->queues[i]->msix_affinity_mask);
 	}
-
+err_alloc:
+#ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
+	kfree(pi->msix_entries);
+#endif
 	return ret;
 }
 
@@ -822,13 +849,17 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 	for (i=0; i<pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues[i];
 
-		free_irq(pi->msix_entries[i].vector, pq);
+		free_irq(ptnet_get_irq_vector(pi, i), pq);
 		if (pq->msix_affinity_mask) {
 			free_cpumask_var(pq->msix_affinity_mask);
 		}
 	}
+#ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
 	pci_disable_msix(pi->pdev);
 	kfree(pi->msix_entries);
+#else
+	pci_free_irq_vectors(pi->pdev);
+#endif
 }
 
 static int ptnet_nm_register(struct netmap_adapter *na, int onoff);
