@@ -47,6 +47,8 @@
 #define NM_IXGBE_TDT(ring_nr)		IXGBE_TDT(ring_nr)
 #define NM_IXGBE_TDH(ring_nr)		IXGBE_TDH(ring_nr)
 #define NM_IXGBE_RDT(ring_nr)		IXGBE_RDT(ring_nr)
+#define NM_IXGBE_TDWBAH(ring_nr)	IXGBE_TDWBAH(ring_nr)
+#define NM_IXGBE_TDWBAL(ring_nr)	IXGBE_TDWBAL(ring_nr)
 #define NM_IXGBE_ADAPTER 		ixgbe_adapter
 #define NM_IXGBE_RESETTING 		__IXGBE_RESETTING
 #define NM_IXGBE_DOWN(adapter)		ixgbe_down(adapter)
@@ -144,9 +146,12 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 /***********************************************************************
  *                        ixgbevf                                      *
  ***********************************************************************/
+#define NM_IXGBE_USE_TDH		// TODO switch to head wb
 #define NM_IXGBE_TDT(ring_nr)		IXGBE_VFTDT(ring_nr)
 #define NM_IXGBE_TDH(ring_nr)		IXGBE_VFTDH(ring_nr)
 #define NM_IXGBE_RDT(ring_nr)		IXGBE_VFRDT(ring_nr)
+#define NM_IXGBE_TDWBAH(ring_nr)	IXGBE_VFTDWBAH(ring_nr)
+#define NM_IXGBE_TDWBAL(ring_nr)	IXGBE_VFTDWBAL(ring_nr)
 #ifdef NETMAP_LINUX_IXGBEVF_IXGBE_MACROS
 #define NM_IXGBE_TX_DESC(_1, _2)	IXGBE_TX_DESC_ADV(*(_1), _2)
 #define NM_IXGBE_RX_DESC(_1, _2)	IXGBE_RX_DESC_ADV(*(_1), _2)
@@ -307,11 +312,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* device-specific */
 			union ixgbe_adv_tx_desc *curr = NM_IXGBE_TX_DESC(txr, nic_i);
 			int flags = (slot->flags & NS_REPORT ||
-#ifndef NM_IXGBEVF
-				!(nic_i % 32)
-#else /* NM_IXGBEVF */
 				nic_i == 0 || nic_i == report_frequency
-#endif /* NM_IXGBEVF */
 				) ? IXGBE_TXD_CMD_RS : 0;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
@@ -343,14 +344,14 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	/*
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
-#ifndef NM_IXGBEVF
+#ifndef NM_IXGBE_USE_TDH
 	(void)reclaim_tx;
 	(void)report_frequency;
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
 		u32 h = *(volatile u32*)&txr->next_to_use;
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, h), lim);
 	}
-#else /* NM_IXGBEVF */
+#else /* NM_IXGBE_USE_TDH */
 	/*
 	 * Because this is expensive (we read a NIC register etc.)
 	 * we only do it in specific cases (see below).
@@ -398,7 +399,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		txr->next_to_clean = nic_i;
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
-#endif /* NM_IXGBEVF */
+#endif /* NM_IXGBE_USE_TDH */
 out:
 
 	return 0;
@@ -537,39 +538,32 @@ ring_reset:
  * Otherwise return false.
  */
 static u32
-ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr
-#ifndef NM_IXGBEVF
-		, u32 txdctl
-#endif /* !NM_IXGBEVF */
+ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u32 txdctl
 		)
 {
 	struct netmap_adapter *na = NA(adapter->netdev);
 	struct netmap_slot *slot;
-#ifndef NM_IXGBEVF
+#ifndef NM_IXGBE_USE_TDH
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct NM_IXGBE_RING *txr = NM_IXGBE_TX_RING(adapter, ring_nr);
 	u64 wba;
-#else /* NM_IXGBEVF */
-	u32 txdctl = 0;
-#endif /* NM_IXGBEVF */
+#endif /* !NM_IXGBE_USE_TDH */
 	//int j;
 
         slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
 		return txdctl;	// not in native netmap mode
 
-#ifndef NM_IXGBEVF
+#ifndef NM_IXGBE_USE_TDH
 	/* we reset WTRESH (it must be 0 according to specs) */
 	txdctl &= ~(0x7f << 16);
 
 	/* we reuse the next_to_use+next_to_clean fields to receive the hw head */
 	wba = (u64)virt_to_phys(&txr->next_to_use);
-	IXGBE_WRITE_REG(hw, IXGBE_TDWBAL(ring_nr),
+	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAL(ring_nr),
 		(wba & DMA_BIT_MASK(32)) | IXGBE_TDWBAL_HEAD_WB_ENABLE);
-	IXGBE_WRITE_REG(hw, IXGBE_TDWBAH(ring_nr), wba >> 32);
-#else /* NM_IXGBEVF */
-	txdctl = 1;
-#endif /* NM_IXGBEVF */
+	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAH(ring_nr), wba >> 32);
+#endif /* !NM_IXGBE_USE_TDH */
 
 #if 0
 	/*
