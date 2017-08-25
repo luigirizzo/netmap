@@ -2222,8 +2222,6 @@ usage(void)
 		"\t-i interface		interface name\n"
 		"\t-f function		tx rx ping pong txseq rxseq\n"
 		"\t-n count		number of iterations (can be 0)\n"
-		"\t-t pkts_to_send	also forces tx mode\n"
-		"\t-r pkts_to_receive	also forces rx mode\n"
 		"\t-l pkt_size		in bytes excluding CRC\n"
 		"\t                     (if passed a second time, use random sizes\n"
 		"\t                      bigger than the second one and lower than\n"
