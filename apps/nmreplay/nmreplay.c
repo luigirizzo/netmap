@@ -771,7 +771,7 @@ pcap_prod(void *_pa)
     need = loops * pf->tot_bytes_rounded + sizeof(struct q_pkt);
     q->buf = calloc(1, need);
     if (q->buf == NULL) {
-	D("alloc %ld bytes for queue failed, exiting",(_P64)need);
+	D("alloc %lld bytes for queue failed, exiting",(long long)need);
 	goto fail;
     }
     q->prod_head = q->prod_tail = 0;
@@ -1261,9 +1261,9 @@ main(int argc, char **argv)
 	    struct _qs *q0 = &bp[0].q;
 
 	    sleep(1);
-	    ED("%ld -> %ld maxq %d round %ld",
-		(_P64)(q0->rx - olda.rx), (_P64)(q0->tx - olda.tx),
-		q0->rx_qmax, (_P64)q0->prod_max_gap
+	    ED("%lld -> %lld maxq %d round %lld",
+		(long long)(q0->rx - olda.rx), (long long)(q0->tx - olda.tx),
+		q0->rx_qmax, (long long)q0->prod_max_gap
 		);
 	    ED("plr nominal %le actual %le",
 		(double)(q0->c_loss.d[0])/(1<<24),
@@ -1529,7 +1529,7 @@ uniform_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	dmax = parse_time(av[2]);
 	if (dmin == U_PARSE_ERR || dmax == U_PARSE_ERR || dmin > dmax)
 		return 1;
-	D("dmin %ld dmax %ld", (_P64)dmin, (_P64)dmax);
+	D("dmin %lld dmax %lld", (long long)dmin, (long long)dmax);
 	dst->d[0] = dmin;
 	dst->d[1] = dmax;
 	dst->d[2] = dmax - dmin;
@@ -1592,7 +1592,7 @@ exp_delay_run(struct _qs *q, struct _cfg *arg)
 {
 	uint64_t *t = (uint64_t *)arg->arg;
         q->cur_delay = t[my_random24() & (PTS_D_EXP - 1)];
-	RD(5, "delay %lu", (_P64)q->cur_delay);
+	RD(5, "delay %llu", (unsigned long long)q->cur_delay);
         return 0;
 }
 
