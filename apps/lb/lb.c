@@ -941,7 +941,7 @@ run:
 				if (hash == 0) {
 					non_ip++; // XXX ??
 				}
-				rs->ptr = hash | (1UL << 32);
+				rs->ptr = hash | (1ULL << 32);
 				// prefetch the buffer for the next round
 				next_cur = nm_ring_next(rxring, next_cur);
 				next_slot = &rxring->slot[next_cur];

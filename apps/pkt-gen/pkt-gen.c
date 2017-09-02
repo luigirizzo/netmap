@@ -1324,7 +1324,8 @@ ping_body(void *data)
 					ts.tv_nsec += 1000000000;
 					ts.tv_sec--;
 				}
-				if (0) D("seq %d/%lu delta %d.%09d", seq, sent,
+				if (0) D("seq %d/%llu delta %d.%09d", seq,
+					(unsigned long long)sent,
 					(int)ts.tv_sec, (int)ts.tv_nsec);
 				t_cur = ts.tv_sec * 1000000000UL + ts.tv_nsec;
 				if (t_cur < t_min)
@@ -1409,7 +1410,8 @@ pong_body(void *data)
 		return NULL;
 	}
 	if (n > 0)
-		D("understood ponger %lu but don't know how to do it", n);
+		D("understood ponger %llu but don't know how to do it",
+			(unsigned long long)n);
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		uint32_t txcur, txavail;
 //#define BUSYWAIT

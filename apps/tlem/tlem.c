@@ -513,8 +513,8 @@ no_room(struct _qs *q)
 	q_reclaim(q);
 	if (q->prod_queued > q->qsize) {
 	    q->prod_drop++;
-	    RD(1, "too many bytes queued %lu, drop %lu",
-		(_P64)q->prod_queued, (_P64)q->prod_drop);
+	    RD(1, "too many bytes queued %llu, drop %llu",
+		(unsigned long long)q->prod_queued, (unsigned long long)q->prod_drop);
 	    return 1;
 	}
     }
@@ -523,8 +523,8 @@ no_room(struct _qs *q)
 	h = q->prod_head = q->head; /* re-read head, just in case */
 	/* repeat the test */
 	if ((h <= t && new_t == 0 && h == 0) || (h > t && (new_t == 0 || new_t >= h)) ) {
-	    ND(1, "no room for insert h %ld t %ld new_t %ld",
-		(_P64)h, (_P64)t, (_P64)new_t);
+	    ND(1, "no room for insert h %lld t %lld new_t %lld",
+		(long long)h, (long long)t, (long long)new_t);
 	    return 1; /* no room for insert */
 	}
     }
@@ -906,17 +906,17 @@ tlem_main(void *_a)
 
     q->buf = calloc(1, need);
     if (q->buf == NULL) {
-	ED("alloc %ld bytes for queue failed, exiting", (_P64)need);
+	ED("alloc %lld bytes for queue failed, exiting", (long long)need);
 	nm_close(a->pa);
 	nm_close(a->pb);
 	return(NULL);
     }
     q->buflen = need;
-    ED("----\n\t%s -> %s :  bps %ld delay %s loss %s queue %ld bytes"
-	"\n\tbuffer %lu bytes",
+    ED("----\n\t%s -> %s :  bps %lld delay %s loss %s queue %lld bytes"
+	"\n\tbuffer %llu bytes",
 	q->prod_ifname, q->cons_ifname,
-	(_P64)q->max_bps, q->c_delay.optarg, q->c_loss.optarg, (_P64)q->qsize,
-	(_P64)q->buflen);
+	(long long)q->max_bps, q->c_delay.optarg, q->c_loss.optarg,
+	(long long)q->qsize, (unsigned long long)q->buflen);
 
     q->src_port = a->pa;
 
@@ -1258,11 +1258,11 @@ main(int argc, char **argv)
 	    struct _qs *q0 = &bp[0].q, *q1 = &bp[1].q;
 
 	    sleep(1);
-	    ED("%ld -> %ld maxq %d round %ld, %ld <- %ld maxq %d round %ld",
-		(_P64)(q0->rx - olda.rx), (_P64)(q0->tx - olda.tx),
-		q0->rx_qmax, (_P64)q0->prod_max_gap,
-		(_P64)(q1->rx - oldb.rx), (_P64)(q1->tx - oldb.tx),
-		q1->rx_qmax, (_P64)q1->prod_max_gap
+	    ED("%lld -> %lld maxq %d round %lld, %lld <- %lld maxq %d round %lld",
+		(long long)(q0->rx - olda.rx), (long long)(q0->tx - olda.tx),
+		q0->rx_qmax, (long long)q0->prod_max_gap,
+		(long long)(q1->rx - oldb.rx), (long long)(q1->tx - oldb.tx),
+		q1->rx_qmax, (long long)q1->prod_max_gap
 		);
 	    ED("plr nominal %le actual %le",
 		(double)(q0->c_loss.d[0])/(1<<24),
@@ -1553,7 +1553,7 @@ uniform_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 	dmax = parse_time(av[2]);
 	if (dmin == U_PARSE_ERR || dmax == U_PARSE_ERR || dmin > dmax)
 		return 1;
-	D("dmin %ld dmax %ld", (_P64)dmin, (_P64)dmax);
+	D("dmin %lld dmax %lld", (long long)dmin, (long long)dmax);
 	dst->d[0] = dmin;
 	dst->d[1] = dmax;
 	dst->d[2] = dmax - dmin;
@@ -1618,7 +1618,7 @@ exp_delay_run(struct _qs *q, struct _cfg *arg)
 {
 	uint64_t *t = (uint64_t *)arg->arg;
         q->cur_delay = t[my_random24() & (PTS_D_EXP - 1)];
-	RD(5, "delay %lu", (_P64)q->cur_delay);
+	RD(5, "delay %llu", (unsigned long long)q->cur_delay);
         return 0;
 }
 
