@@ -1450,7 +1450,7 @@ _netmap_mem_private_new(struct netmap_obj_params *p, int *perr)
 
 	err = nm_mem_assign_id(d);
 	if (err)
-		goto error;
+		goto error_free;
 	snprintf(d->name, NM_MEM_NAMESZ, "%d", d->nm_id);
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
@@ -1465,14 +1465,18 @@ _netmap_mem_private_new(struct netmap_obj_params *p, int *perr)
 
 	err = netmap_mem_config(d);
 	if (err)
-		goto error;
+		goto error_rel_id;
 
 	d->flags &= ~NETMAP_MEM_FINALIZED;
 
 	return d;
 
+error_rel_id:
+	NMA_LOCK_DESTROY(d);
+	nm_mem_release_id(d);
+error_free:
+	nm_os_free(d);
 error:
-	netmap_mem_delete(d);
 	if (perr)
 		*perr = err;
 	return NULL;
