@@ -856,7 +856,7 @@ run:
 
 		for (i = 0; i < npipes; ++i) {
 			struct netmap_ring *ring = ports[i].ring;
-			if (!glob_arg.busy_wait && nm_ring_next(ring, ring->tail) == ring->cur) {
+			if (!glob_arg.busy_wait && !nm_tx_pending(ring)) {
 				/* no need to poll, there are no packets pending */
 				continue;
 			}

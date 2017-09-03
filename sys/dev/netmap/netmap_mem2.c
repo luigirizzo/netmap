@@ -1471,7 +1471,7 @@ _netmap_mem_private_new(size_t size, struct netmap_obj_params *p,
 	d = nm_os_malloc(size);
 	if (d == NULL) {
 		err = ENOMEM;
-		goto error1;
+		goto error;
 	}
 
 	*d = nm_blueprint;
@@ -1479,7 +1479,7 @@ _netmap_mem_private_new(size_t size, struct netmap_obj_params *p,
 
 	err = nm_mem_assign_id(d);
 	if (err)
-		goto error2;
+		goto error_free;
 	snprintf(d->name, NM_MEM_NAMESZ, "%d", d->nm_id);
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
@@ -1494,15 +1494,18 @@ _netmap_mem_private_new(size_t size, struct netmap_obj_params *p,
 
 	err = netmap_mem_config(d);
 	if (err)
-		goto error2;
+		goto error_rel_id;
 
 	d->flags &= ~NETMAP_MEM_FINALIZED;
 
 	return d;
 
-error2:
-	netmap_mem_delete(d);
-error1:
+error_rel_id:
+	NMA_LOCK_DESTROY(d);
+	nm_mem_release_id(d);
+error_free:
+	nm_os_free(d);
+error:
 	if (perr)
 		*perr = err;
 	return NULL;

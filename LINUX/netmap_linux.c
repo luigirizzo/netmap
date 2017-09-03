@@ -1247,20 +1247,26 @@ static struct pernet_operations netmap_pernet_ops = {
 #endif
 };
 
+static int netmap_bns_registered = 0;
 int
 netmap_bns_register(void)
 {
+	int rv;
 #ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
-	return -register_pernet_subsys(&netmap_pernet_ops);
+	rv = register_pernet_subsys(&netmap_pernet_ops);
 #else
-	return -register_pernet_gen_subsys(&netmap_bns_id,
+	rv = register_pernet_gen_subsys(&netmap_bns_id,
 			&netmap_pernet_ops);
 #endif
+	netmap_bns_registered = !rv;
+	return -rv;
 }
 
 void
 netmap_bns_unregister(void)
 {
+	if (!netmap_bns_registered)
+		return;
 #ifdef NETMAP_LINUX_HAVE_PERNET_OPS_ID
 	unregister_pernet_subsys(&netmap_pernet_ops);
 #else
@@ -2240,6 +2246,8 @@ module_exit(linux_netmap_fini);
 /* export certain symbols to other modules */
 EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
 EXPORT_SYMBOL(netmap_attach_ext);
+EXPORT_SYMBOL(netmap_adapter_get);
+EXPORT_SYMBOL(netmap_adapter_put);
 #ifdef WITH_PTNETMAP_GUEST
 EXPORT_SYMBOL(netmap_pt_guest_attach);	/* ptnetmap driver attach routine */
 EXPORT_SYMBOL(netmap_pt_guest_rxsync);	/* ptnetmap generic rxsync */

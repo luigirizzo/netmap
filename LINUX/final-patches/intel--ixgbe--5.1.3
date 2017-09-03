@@ -62,7 +62,7 @@ index a3cc895..a038975 100644
  clean:
  	@+$(call devkernelbuild,clean)
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index fe4291e..379d4f4 100644
+index fe4291e..fb53dfc 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -753,6 +753,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
@@ -124,17 +124,18 @@ index fe4291e..379d4f4 100644
  	do {
  		union ixgbe_adv_rx_desc *rx_desc;
  		struct sk_buff *skb;
-@@ -3222,6 +3260,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
- 	} while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
- 	if (!wait_loop)
- 		hw_dbg(hw, "Could not enable Tx Queue %d\n", reg_idx);
-+#ifdef DEV_NETMAP
-+	ixgbe_netmap_configure_tx_ring(adapter, reg_idx);
-+#endif /* DEV_NETMAP */
- }
+@@ -3207,6 +3245,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  
- static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
-@@ -3798,6 +3839,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+ 	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
+ 
++#ifdef DEV_NETMAP
++	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
++#endif /* DEV_NETMAP */
++
+ 	/* enable queue */
+ 	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
+ 
+@@ -3798,6 +3840,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -145,7 +146,7 @@ index fe4291e..379d4f4 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -11114,6 +11159,10 @@ no_info_string:
+@@ -11114,6 +11160,10 @@ no_info_string:
  		hw->mac.ops.setup_eee(hw, eee_enable);
  	}
  
@@ -156,7 +157,7 @@ index fe4291e..379d4f4 100644
  	return 0;
  
  err_register:
-@@ -11159,6 +11208,11 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
+@@ -11159,6 +11209,11 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
  		return;
  
  	netdev = adapter->netdev;

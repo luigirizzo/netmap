@@ -62,7 +62,7 @@ index a3cc895..a038975 100644
  clean:
  	@+$(call devkernelbuild,clean)
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 0f65c2e..e00734b 100644
+index 0f65c2e..b5d52bb 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -753,6 +753,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
@@ -124,17 +124,18 @@ index 0f65c2e..e00734b 100644
  	while (likely(total_rx_packets < budget)) {
  		union ixgbe_adv_rx_desc *rx_desc;
  		struct ixgbe_rx_buffer *rx_buffer;
-@@ -3351,6 +3389,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
- 	} while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
- 	if (!wait_loop)
- 		hw_dbg(hw, "Could not enable Tx Queue %d\n", reg_idx);
-+#ifdef DEV_NETMAP
-+	ixgbe_netmap_configure_tx_ring(adapter, reg_idx);
-+#endif /* DEV_NETMAP */
- }
+@@ -3336,6 +3374,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  
- static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
-@@ -3979,6 +4020,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+ 	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
+ 
++#ifdef DEV_NETMAP
++	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
++#endif /* DEV_NETMAP */
++
+ 	/* enable queue */
+ 	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
+ 
+@@ -3979,6 +4021,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -145,7 +146,7 @@ index 0f65c2e..e00734b 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -11400,6 +11445,10 @@ no_info_string:
+@@ -11400,6 +11446,10 @@ no_info_string:
  		hw->mac.ops.setup_eee(hw, eee_enable);
  	}
  
@@ -156,7 +157,7 @@ index 0f65c2e..e00734b 100644
  	return 0;
  
  err_register:
-@@ -11445,6 +11494,11 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
+@@ -11445,6 +11495,11 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
  		return;
  
  	netdev = adapter->netdev;

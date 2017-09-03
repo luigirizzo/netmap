@@ -1,5 +1,5 @@
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index cbf70fe..1212ce6 100644
+index cbf70fe..1a006e1 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
 @@ -294,6 +294,24 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
@@ -63,17 +63,27 @@ index cbf70fe..1212ce6 100644
  	while (likely(total_rx_packets < budget)) {
  		union ixgbe_adv_rx_desc *rx_desc;
  
-@@ -1613,6 +1653,9 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
+@@ -1604,6 +1644,10 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
+ 
+ 	clear_bit(__IXGBEVF_HANG_CHECK_ARMED, &ring->state);
+ 
++#ifdef DEV_NETMAP
++	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
++#endif /* DEV_NETMAP */
++
+ 	IXGBE_WRITE_REG(hw, IXGBE_VFTXDCTL(reg_idx), txdctl);
+ 
+ 	/* poll to verify queue is enabled */
+@@ -1612,7 +1656,7 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
+ 		txdctl = IXGBE_READ_REG(hw, IXGBE_VFTXDCTL(reg_idx));
  	}  while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
  	if (!wait_loop)
- 		hw_dbg(hw, "Could not enable Tx Queue %d\n", reg_idx);
-+#ifdef DEV_NETMAP
-+	ixgbe_netmap_configure_tx_ring(adapter, reg_idx);
-+#endif /* DEV_NETMAP */
+-		hw_dbg(hw, "Could not enable Tx Queue %d\n", reg_idx);
++		pr_err("Could not enable Tx Queue %d\n", reg_idx);
  }
  
  /**
-@@ -1791,6 +1834,10 @@ static void ixgbevf_configure_rx_ring(struct ixgbevf_adapter *adapter,
+@@ -1791,6 +1835,10 @@ static void ixgbevf_configure_rx_ring(struct ixgbevf_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_VFRXDCTL(reg_idx), rxdctl);
  
  	ixgbevf_rx_desc_queue_enable(adapter, ring);
@@ -84,7 +94,7 @@ index cbf70fe..1212ce6 100644
  	ixgbevf_alloc_rx_buffers(ring, ixgbevf_desc_unused(ring));
  }
  
-@@ -4152,6 +4199,10 @@ static int ixgbevf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+@@ -4152,6 +4200,10 @@ static int ixgbevf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
  		break;
  	}
  
@@ -95,7 +105,7 @@ index cbf70fe..1212ce6 100644
  	return 0;
  
  err_register:
-@@ -4189,6 +4240,10 @@ static void ixgbevf_remove(struct pci_dev *pdev)
+@@ -4189,6 +4241,10 @@ static void ixgbevf_remove(struct pci_dev *pdev)
  	if (!netdev)
  		return;
  

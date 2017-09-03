@@ -2878,22 +2878,6 @@ netmap_attach_common(struct netmap_adapter *na)
 	return 0;
 }
 
-
-/* standard cleanup, called by all destructors */
-void
-netmap_detach_common(struct netmap_adapter *na)
-{
-	if (na->tx_rings) { /* XXX should not happen */
-		D("freeing leftover tx_rings");
-		na->nm_krings_delete(na);
-	}
-	netmap_pipe_dealloc(na);
-	if (na->nm_mem)
-		netmap_mem_put(na->nm_mem);
-	bzero(na, sizeof(*na));
-	nm_os_free(na);
-}
-
 /* Wrapper for the register callback provided netmap-enabled
  * hardware drivers.
  * nm_iszombie(na) means that the driver module has been
@@ -2946,7 +2930,7 @@ netmap_hw_dtor(struct netmap_adapter *na)
  * Return 0 on success, ENOMEM otherwise.
  */
 int
-netmap_attach_ext(struct netmap_adapter *arg, size_t size)
+netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 {
 	struct netmap_hw_adapter *hwna = NULL;
 	struct ifnet *ifp = NULL;
@@ -2965,8 +2949,10 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size)
 	hwna->up = *arg;
 	hwna->up.na_flags |= NAF_HOST_RINGS | NAF_NATIVE;
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
-	hwna->nm_hw_register = hwna->up.nm_register;
-	hwna->up.nm_register = netmap_hw_reg;
+	if (override_reg) {
+		hwna->nm_hw_register = hwna->up.nm_register;
+		hwna->up.nm_register = netmap_hw_reg;
+	}
 	if (netmap_attach_common(&hwna->up)) {
 		nm_os_free(hwna);
 		goto fail;
@@ -3014,7 +3000,8 @@ fail:
 int
 netmap_attach(struct netmap_adapter *arg)
 {
-	return netmap_attach_ext(arg, sizeof(struct netmap_hw_adapter));
+	return netmap_attach_ext(arg, sizeof(struct netmap_hw_adapter),
+			1 /* override nm_reg */);
 }
 
 
@@ -3042,7 +3029,15 @@ NM_DBG(netmap_adapter_put)(struct netmap_adapter *na)
 	if (na->nm_dtor)
 		na->nm_dtor(na);
 
-	netmap_detach_common(na);
+	if (na->tx_rings) { /* XXX should not happen */
+		D("freeing leftover tx_rings");
+		na->nm_krings_delete(na);
+	}
+	netmap_pipe_dealloc(na);
+	if (na->nm_mem)
+		netmap_mem_put(na->nm_mem);
+	bzero(na, sizeof(*na));
+	nm_os_free(na);
 
 	return 1;
 }

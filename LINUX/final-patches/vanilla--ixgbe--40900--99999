@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index fee1f2918..2a71eac 100644
+index fee1f2918..dcf36a3 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -497,6 +497,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
@@ -60,17 +60,27 @@ index fee1f2918..2a71eac 100644
  	while (likely(total_rx_packets < budget)) {
  		union ixgbe_adv_rx_desc *rx_desc;
  		struct sk_buff *skb;
-@@ -3225,6 +3262,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+@@ -3210,6 +3247,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+ 
+ 	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
+ 
++#ifdef DEV_NETMAP
++	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
++#endif /* DEV_NETMAP */
++
+ 	/* enable queue */
+ 	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
+ 
+@@ -3224,7 +3265,7 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+ 		txdctl = IXGBE_READ_REG(hw, IXGBE_TXDCTL(reg_idx));
  	} while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
  	if (!wait_loop)
- 		hw_dbg(hw, "Could not enable Tx Queue %d\n", reg_idx);
-+#ifdef DEV_NETMAP
-+	ixgbe_netmap_configure_tx_ring(adapter, reg_idx);
-+#endif /* DEV_NETMAP */
+-		hw_dbg(hw, "Could not enable Tx Queue %d\n", reg_idx);
++		e_err(drv, "Could not enable Tx Queue %d\n", reg_idx);
  }
  
  static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
-@@ -3720,6 +3760,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+@@ -3720,6 +3761,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -81,7 +91,7 @@ index fee1f2918..2a71eac 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -5271,6 +5315,9 @@ static void ixgbe_up_complete(struct ixgbe_adapter *adapter)
+@@ -5271,6 +5316,9 @@ static void ixgbe_up_complete(struct ixgbe_adapter *adapter)
  			e_crit(drv, "Fan has stopped, replace the adapter\n");
  	}
  
@@ -91,7 +101,7 @@ index fee1f2918..2a71eac 100644
  	/* bring the link up in the watchdog, this could race with our first
  	 * link up interrupt but shouldn't be a problem */
  	adapter->flags |= IXGBE_FLAG_NEED_LINK_UPDATE;
-@@ -9799,6 +9846,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+@@ -9799,6 +9847,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
  			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
  			true);
  
@@ -102,7 +112,7 @@ index fee1f2918..2a71eac 100644
  	return 0;
  
  err_register:
-@@ -9843,6 +9894,11 @@ static void ixgbe_remove(struct pci_dev *pdev)
+@@ -9843,6 +9895,11 @@ static void ixgbe_remove(struct pci_dev *pdev)
  		return;
  
  	netdev  = adapter->netdev;

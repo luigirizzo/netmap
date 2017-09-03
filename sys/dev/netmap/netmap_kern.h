@@ -1191,7 +1191,7 @@ static __inline void nm_kr_start(struct netmap_kring *kr)
  *	virtual ports (vale, pipes, monitor)
  */
 int netmap_attach(struct netmap_adapter *);
-int netmap_attach_ext(struct netmap_adapter *, size_t size);
+int netmap_attach_ext(struct netmap_adapter *, size_t size, int override_reg);
 void netmap_detach(struct ifnet *);
 int netmap_transmit(struct ifnet *, struct mbuf *);
 struct netmap_slot *netmap_reset(struct netmap_adapter *na,
@@ -1374,8 +1374,6 @@ uint32_t nm_rxsync_prologue(struct netmap_kring *, struct netmap_ring *);
  * - provide defaults for the setup callbacks and the memory allocator
  */
 int netmap_attach_common(struct netmap_adapter *);
-/* common actions to be performed on netmap adapter destruction */
-void netmap_detach_common(struct netmap_adapter *);
 /* fill priv->np_[tr]xq{first,last} using the ringid and flags information
  * coming from a struct nmreq
  */

@@ -1510,7 +1510,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg, void *csb,
 	if (arg->nm_mem == NULL)
 		return ENOMEM;
 	arg->na_flags |= NAF_MEM_OWNER;
-	error = netmap_attach_ext(arg, sizeof(struct netmap_pt_guest_adapter));
+	error = netmap_attach_ext(arg, sizeof(struct netmap_pt_guest_adapter), 1);
 	if (error)
 		return error;
 
