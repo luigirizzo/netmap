@@ -441,7 +441,6 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 
 
 /* blueprint for the private memory allocators */
-extern struct netmap_mem_ops netmap_mem_private_ops; /* forward */
 /* XXX clang is not happy about using name as a print format */
 static const struct netmap_mem_d nm_blueprint = {
 	.pools = {
