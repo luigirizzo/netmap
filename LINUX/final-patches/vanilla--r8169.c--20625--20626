@@ -1,5 +1,5 @@
 diff --git a/r8169.c b/r8169.c
-index 53b13de..ced4849 100644
+index 53b13deade95..ced4849577f0 100644
 --- a/r8169.c
 +++ b/r8169.c
 @@ -535,6 +535,10 @@ static int rtl8169_poll(struct napi_struct *napi, int budget);

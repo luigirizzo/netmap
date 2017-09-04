@@ -1,5 +1,5 @@
 diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
-index 3dd26cd..05b8960 100644
+index 3dd26cdd0bf2..05b896037ee4 100644
 --- a/i40e/i40e_main.c
 +++ b/i40e/i40e_main.c
 @@ -94,6 +94,11 @@ MODULE_DESCRIPTION("Intel(R) Ethernet Connection XL710 Network Driver");
@@ -63,7 +63,7 @@ index 3dd26cd..05b8960 100644
  
  err_rings:
 diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
-index 738aca6..77e14b3 100644
+index 738aca68f665..77e14b3828d7 100644
 --- a/i40e/i40e_txrx.c
 +++ b/i40e/i40e_txrx.c
 @@ -29,6 +29,10 @@

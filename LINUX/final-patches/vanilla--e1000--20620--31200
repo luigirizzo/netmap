@@ -1,5 +1,5 @@
 diff --git a/e1000/e1000_main.c b/e1000/e1000_main.c
-index bcd192c..013f528 100644
+index bcd192ca47b0..013f52897fd8 100644
 --- a/e1000/e1000_main.c
 +++ b/e1000/e1000_main.c
 @@ -190,6 +190,10 @@ static struct pci_error_handlers e1000_err_handler = {

@@ -1,5 +1,5 @@
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index 9df2898..f29d0f6 100644
+index 9df28985eba7..f29d0f651271 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
 @@ -175,6 +175,24 @@ static void ixgbevf_unmap_and_free_tx_resource(struct ixgbevf_ring *tx_ring,
