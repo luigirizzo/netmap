@@ -1660,6 +1660,7 @@ EOF
    add_test 'define I40E_PTR_STATE' <<EOF
    	#include "i40e/i40e.h"
 	#include <linux/bitops.h>
+	#pragma GCC diagnostic error "-Wincompatible-pointer-types"
 
 	int
 	dummy(struct i40e_pf *pf) {
