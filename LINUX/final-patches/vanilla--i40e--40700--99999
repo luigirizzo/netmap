@@ -1,5 +1,5 @@
 diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
-index 501f15d..df24012 100644
+index 501f15d9f4d6..df240129be69 100644
 --- a/i40e/i40e_main.c
 +++ b/i40e/i40e_main.c
 @@ -110,6 +110,10 @@ MODULE_LICENSE("GPL");
@@ -62,7 +62,7 @@ index 501f15d..df24012 100644
  
  err_rings:
 diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
-index a8868e1..9186a17 100644
+index a8868e1bf832..9186a17975b8 100644
 --- a/i40e/i40e_txrx.c
 +++ b/i40e/i40e_txrx.c
 @@ -29,6 +29,10 @@
