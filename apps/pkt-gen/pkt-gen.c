@@ -1877,7 +1877,7 @@ txseq_body(void *data)
 		unsigned int space;
 		unsigned int head;
 		int fcnt;
-		uint16_t sum;
+		uint16_t sum = 0;
 
 		if (!rate_limit) {
 			budget = targ->g->burst;
