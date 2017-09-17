@@ -513,18 +513,20 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	rmb();
 	/*
 	 * First part: import newly received packets.
-	 * Only accept our
-	 * own buffers (matching the token). We should only get
-	 * matching buffers, because of free_unused_bufs()
-	 * and virtio_netmap_init_buffers().
+	 * Only accept our own buffers (matching the token). We should only get
+	 * matching buffers, because of free_unused_bufs() and
+	 * virtio_netmap_init_buffers(). We may need to stop early to avoid
+	 * hwtail to overrun hwcur;
 	 */
 	if (netmap_no_pendintr || force_update) {
+		uint32_t hwtail_lim = nm_prev(kring->nr_hwcur, lim);
 		uint16_t slot_flags = kring->nkr_slot_flags;
 		struct netmap_adapter *token;
 
+
 		nm_i = kring->nr_hwtail;
 		n = 0;
-		for (;;) {
+		while (nm_i != hwtail_lim) {
 			int len;
 			token = virtqueue_get_buf(vq, &len);
 			if (token == NULL)
@@ -637,11 +639,16 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 			continue;
 		}
 
-		/* Add up to na>-num_rx_desc-1 buffers to this RX virtqueue.
-		 * It's important to leave one virtqueue slot free, otherwise
-		 * we can run into ring->cur/ring->tail wraparounds.
+		/*
+		 * Add exactly na->num_rx_desc descriptor chains to this RX
+		 * virtqueue, as virtio_netmap_rxsync() assumes the chains
+		 * are returned in the same order by virtqueue_get_buf().
+		 * It is technically possible that the hypervisor returns
+		 * na->num_rx_desc chains before the user can consume them,
+		 * so virtio_netmap_rxsync() must prevent ring->tail to
+		 * wrap around ring->head.
 		 */
-		for (i = 0; i < na->num_rx_desc-1; i++) {
+		for (i = 0; i < na->num_rx_desc; i++) {
 			void *addr;
 
 			slot = &ring->slot[i];
