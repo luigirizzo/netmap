@@ -1,7 +1,7 @@
-diff --git a/src/Makefile b/src/Makefile
+diff --git a/ixgbe/Makefile b/ixgbe/Makefile
 index a3cc895..a038975 100644
---- a/src/Makefile
-+++ b/src/Makefile
+--- a/ixgbe/Makefile
++++ b/ixgbe/Makefile
 @@ -28,9 +28,9 @@ ifneq ($(KERNELRELEASE),)
  # Makefile for the Intel(R) 10GbE PCI Express Linux Network Driver
  #
@@ -61,10 +61,10 @@ index a3cc895..a038975 100644
  # Clean the module subdirectories
  clean:
  	@+$(call devkernelbuild,clean)
-diff --git a/src/ixgbe_main.c b/src/ixgbe_main.c
+diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
 index c7a1499..f2a3c3e 100644
---- a/src/ixgbe_main.c
-+++ b/src/ixgbe_main.c
+--- a/ixgbe/ixgbe_main.c
++++ b/ixgbe/ixgbe_main.c
 @@ -753,6 +753,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
  	}
  }
