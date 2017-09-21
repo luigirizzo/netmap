@@ -468,10 +468,12 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; ; n++) {
 			union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(rxr, nic_i);
 			uint32_t staterr = le32toh(curr->wb.upper.status_error);
+			u_int size = le16toh(curr->wb.upper.length);
 
-			if ((staterr & IXGBE_RXD_STAT_DD) == 0)
+			if (!size)
 				break;
-			ring->slot[nm_i].len = le16toh(curr->wb.upper.length);
+
+			ring->slot[nm_i].len = size;
 			ring->slot[nm_i].flags = (!(staterr & IXGBE_RXD_STAT_EOP) ? NS_MOREFRAG |
 										slot_flags:slot_flags);
 			nm_i = nm_next(nm_i, lim);
@@ -509,6 +511,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_addr, addr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
+			curr->wb.upper.length = 0;
 			curr->wb.upper.status_error = 0;
 			curr->read.pkt_addr = htole64(paddr);
 			nm_i = nm_next(nm_i, lim);
