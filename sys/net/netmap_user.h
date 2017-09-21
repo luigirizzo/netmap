@@ -625,40 +625,21 @@ nm_init_offsets(struct nm_desc *d)
 		(char *)d->mem + d->memsize;
 }
 
-/*
- * Try to open, return descriptor if successful, NULL otherwise.
- * An invalid netmap name will return errno = 0;
- * You can pass a pointer to a pre-filled nm_desc to add special
- * parameters. Flags is used as follows
- * NM_OPEN_NO_MMAP	use the memory from arg, only XXX avoid mmap
- *			if the nr_arg2 (memory block) matches.
- * NM_OPEN_ARG1		use req.nr_arg1 from arg
- * NM_OPEN_ARG2		use req.nr_arg2 from arg
- * NM_OPEN_RING_CFG	user ring config from arg
- */
-static struct nm_desc *
-nm_open(const char *ifname, const struct nmreq *req,
-	uint64_t new_flags, const struct nm_desc *arg)
+#define MAXERRMSG 80
+static int
+nm_parse(const char *ifname, struct nm_desc *d, char *err)
 {
-	struct nm_desc *d = NULL;
-	const struct nm_desc *parent = arg;
-	u_int namelen;
-	uint32_t nr_ringid = 0, nr_flags, nr_reg;
+	int is_vale;
 	const char *port = NULL;
 	const char *vpname = NULL;
-#define MAXERRMSG 80
+	u_int namelen;
+	uint32_t nr_ringid = 0, nr_flags;
 	char errmsg[MAXERRMSG] = "";
-	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID } p_state;
-	int is_vale;
 	long num;
 	uint16_t nr_arg2 = 0;
-	struct netmap_pools_info *pi = NULL;
+	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID } p_state;
 
-	if (strncmp(ifname, "netmap:", 7) &&
-			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
-		errno = 0; /* name not recognised, not an error */
-		return NULL;
-	}
+	errno = 0;
 
 	is_vale = (ifname[0] == 'v');
 	if (is_vale) {
@@ -694,6 +675,9 @@ nm_open(const char *ifname, const struct nmreq *req,
 		snprintf(errmsg, MAXERRMSG, "name too long");
 		goto fail;
 	}
+	memcpy(d->req.nr_name, ifname, namelen);
+	d->req.nr_name[namelen] = '\0';
+
 	p_state = P_START;
 	nr_flags = NR_REG_ALL_NIC; /* default for no suffix */
 	while (*port) {
@@ -813,6 +797,50 @@ nm_open(const char *ifname, const struct nmreq *req,
 			(nr_flags & NR_ZCOPY_MON) ? "ZCOPY_MON" : "",
 			(nr_flags & NR_MONITOR_TX) ? "MONITOR_TX" : "",
 			(nr_flags & NR_MONITOR_RX) ? "MONITOR_RX" : "");
+
+	d->req.nr_flags |= nr_flags;
+	d->req.nr_ringid |= nr_ringid;
+	if (nr_arg2)
+		d->req.nr_arg2 = nr_arg2;
+
+	d->self = d;
+
+	return 0;
+fail:
+	if (!errno)
+		errno = EINVAL;
+	if (err)
+		strncpy(err, errmsg, MAXERRMSG);
+	return -1;
+}
+
+/*
+ * Try to open, return descriptor if successful, NULL otherwise.
+ * An invalid netmap name will return errno = 0;
+ * You can pass a pointer to a pre-filled nm_desc to add special
+ * parameters. Flags is used as follows
+ * NM_OPEN_NO_MMAP	use the memory from arg, only XXX avoid mmap
+ *			if the nr_arg2 (memory block) matches.
+ * NM_OPEN_ARG1		use req.nr_arg1 from arg
+ * NM_OPEN_ARG2		use req.nr_arg2 from arg
+ * NM_OPEN_RING_CFG	user ring config from arg
+ */
+static struct nm_desc *
+nm_open(const char *ifname, const struct nmreq *req,
+	uint64_t new_flags, const struct nm_desc *arg)
+{
+	struct nm_desc *d = NULL;
+	const struct nm_desc *parent = arg;
+	char errmsg[MAXERRMSG] = "";
+	uint32_t nr_reg;
+	struct netmap_pools_info *pi = NULL;
+
+	if (strncmp(ifname, "netmap:", 7) &&
+			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
+		errno = 0; /* name not recognised, not an error */
+		return NULL;
+	}
+
 	d = (struct nm_desc *)calloc(1, sizeof(*d));
 	if (d == NULL) {
 		snprintf(errmsg, MAXERRMSG, "nm_desc alloc failure");
@@ -843,16 +871,15 @@ nm_open(const char *ifname, const struct nmreq *req,
 			}
 		}
 	}
+
+	if (!(new_flags & NM_OPEN_IFNAME)) {
+		if (nm_parse(ifname, d, errmsg) < 0)
+			goto fail;
+	}
+
 	d->req.nr_version = NETMAP_API;
 	d->req.nr_ringid &= ~NETMAP_RING_MASK;
 
-	/* these fields are overridden by ifname and flags processing */
-	d->req.nr_ringid |= nr_ringid;
-	d->req.nr_flags |= nr_flags;
-	if (nr_arg2)
-		d->req.nr_arg2 = nr_arg2;
-	memcpy(d->req.nr_name, ifname, namelen);
-	d->req.nr_name[namelen] = '\0';
 	/* optionally import info from parent */
 	if (IS_NETMAP_DESC(parent) && new_flags) {
 		if (new_flags & NM_OPEN_ARG1)
