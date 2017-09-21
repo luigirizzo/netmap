@@ -2888,19 +2888,26 @@ main(int arc, char **argv)
     } else if (g.dummy_send) { /* but DEV_NETMAP */
 	D("using a dummy send routine");
     } else {
-	struct nmreq base_nmd;
+	struct nm_desc base_nmd;
+	char errmsg[MAXERRMSG];
+	u_int flags;
 
 	bzero(&base_nmd, sizeof(base_nmd));
 
-	parse_nmr_config(g.nmr_config, &base_nmd);
+	parse_nmr_config(g.nmr_config, &base_nmd.req);
 	if (g.extra_bufs) {
-		base_nmd.nr_arg3 = g.extra_bufs;
+		base_nmd.req.nr_arg3 = g.extra_bufs;
 	}
 	if (g.extra_pipes) {
-	    base_nmd.nr_arg1 = g.extra_pipes;
+	    base_nmd.req.nr_arg1 = g.extra_pipes;
 	}
 
-	base_nmd.nr_flags |= NR_ACCEPT_VNET_HDR;
+	base_nmd.req.nr_flags |= NR_ACCEPT_VNET_HDR;
+
+	if (nm_parse(g.ifname, &base_nmd, errmsg) < 0) {
+		D("Invalid name '%s': %s", g.ifname, errmsg);
+		goto out;
+	}
 
 	/*
 	 * Open the netmap device using nm_open().
@@ -2909,25 +2916,17 @@ main(int arc, char **argv)
 	 * which in turn may take some time for the PHY to
 	 * reconfigure. We do the open here to have time to reset.
 	 */
-	g.nmd = nm_open(g.ifname, &base_nmd, 0, NULL);
+	flags = NM_OPEN_IFNAME | NM_OPEN_ARG1 | NM_OPEN_ARG2 |
+		NM_OPEN_ARG3 | NM_OPEN_RING_CFG;
+	if (g.nthreads > 1) {
+		base_nmd.req.nr_flags &= ~NR_REG_MASK;
+		base_nmd.req.nr_flags |= NR_REG_ONE_NIC;
+		base_nmd.req.nr_ringid = 0;
+	}
+	g.nmd = nm_open(g.ifname, NULL, flags, &base_nmd);
 	if (g.nmd == NULL) {
 		D("Unable to open %s: %s", g.ifname, strerror(errno));
 		goto out;
-	}
-
-	if (g.nthreads > 1) {
-		struct nm_desc saved_desc = *g.nmd;
-		saved_desc.self = &saved_desc;
-		saved_desc.mem = NULL;
-		nm_close(g.nmd);
-		saved_desc.req.nr_flags &= ~NR_REG_MASK;
-		saved_desc.req.nr_flags |= NR_REG_ONE_NIC;
-		saved_desc.req.nr_ringid = 0;
-		g.nmd = nm_open(g.ifname, &base_nmd, NM_OPEN_IFNAME, &saved_desc);
-		if (g.nmd == NULL) {
-			D("Unable to open %s: %s", g.ifname, strerror(errno));
-			goto out;
-		}
 	}
 	g.main_fd = g.nmd->fd;
 	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
