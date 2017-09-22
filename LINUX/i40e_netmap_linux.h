@@ -283,7 +283,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 	struct i40e_vsi *vsi = np->vsi;
 	struct i40e_ring *txr;
 
-	if (!netif_running(ifp))
+	if (!netif_carrier_ok(ifp))
 		return 0;
 
 	txr = NM_I40E_TX_RING(vsi, kring->ring_id);
