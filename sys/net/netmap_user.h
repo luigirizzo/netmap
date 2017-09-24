@@ -889,12 +889,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
-        /* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
-	if ((!(new_flags & NM_OPEN_NO_MMAP) || parent) && nm_mmap(d, parent)) {
-	        snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
-		goto fail;
-	}
-
 	nr_reg = d->req.nr_flags & NR_REG_MASK;
 
 	if (nr_reg == NR_REG_SW) { /* host stack */
@@ -918,6 +912,13 @@ nm_open(const char *ifname, const struct nmreq *req,
 		d->first_tx_ring = d->last_tx_ring = 0;
 		d->first_rx_ring = d->last_rx_ring = 0;
 	}
+
+        /* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
+	if ((!(new_flags & NM_OPEN_NO_MMAP) || parent) && nm_mmap(d, parent)) {
+	        snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
+		goto fail;
+	}
+
 
 #ifdef DEBUG_NETMAP_USER
     { /* debugging code */
@@ -998,7 +999,11 @@ nm_mmap(struct nm_desc *d, const struct nm_desc *parent)
 	}
 	{
 		struct netmap_if *nifp = NETMAP_IF(d->mem, d->req.nr_offset);
-		struct netmap_ring *r = NETMAP_RXRING(nifp, );
+		struct netmap_ring *r = NETMAP_RXRING(nifp, d->first_rx_ring);
+		if ((void *)r == (void *)nifp) {
+			/* the descriptor is open for TX only */
+			r = NETMAP_TXRING(nifp, d->first_tx_ring);
+		}
 
 		*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
 		*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;

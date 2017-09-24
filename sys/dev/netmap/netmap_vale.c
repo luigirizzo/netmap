@@ -1925,7 +1925,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		kring = &dst_na->up.rx_rings[dst_nr];
 		ring = kring->ring;
 		/* the destination ring may have not been opened for RX */
-		if (unlikely(ring == NULL))
+		if (unlikely(ring == NULL || kring->nr_mode != NKR_NETMAP_ON))
 			goto cleanup;
 		lim = kring->nkr_num_slots - 1;
 
