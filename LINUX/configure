@@ -1421,6 +1421,17 @@ EOF
 	}
 EOF
 
+  # are skb->users and qdisc->refcnt atomic_t or refcount_t ?
+  add_test 'have REFCOUNT_T' <<EOF
+	#include <linux/skbuff.h>
+
+	unsigned int
+	dummy(void) {
+                struct sk_buff *skb = NULL;
+                return refcount_read(&skb->users);
+	}
+EOF
+
 
   #####################################################
   # checks related to drivers                         #
