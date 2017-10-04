@@ -233,7 +233,11 @@ struct thread;
 #define	m_nextpkt		next			// chain of mbufs
 #define m_freem(m)		dev_kfree_skb_any(m)	// free a sk_buff
 
+#ifdef NETMAP_LINUX_HAVE_REFCOUNT_T
+#define MBUF_REFCNT(m)			refcount_read(&((m)->users))
+#else  /* !NETMAP_LINUX_HAVE_REFCOUNT_T */
 #define MBUF_REFCNT(m)			NM_ATOMIC_READ(&((m)->users))
+#endif /* !NETMAP_LINUX_HAVE_REFCOUNT_T */
 /*
  * on tx we force skb->queue_mapping = ring_nr,
  * but on rx it is the driver that sets the value,
