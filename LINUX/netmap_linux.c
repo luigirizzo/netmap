@@ -172,6 +172,9 @@ int nm_iommu_group_id(struct device *dev)
 		return 0;
 
 	id = iommu_group_id(grp);
+
+	iommu_group_put(grp);
+
 	return id;
 }
 #else /* ! HAVE_IOMMU */
