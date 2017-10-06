@@ -624,6 +624,7 @@ tail->|                 |<-hwtail    |                 |<-hwlease
 
 struct netmap_lut {
 	struct lut_entry *lut;
+	struct plut_entry *plut;
 	uint32_t objtotal;	/* max buffer index */
 	uint32_t objsize;	/* buffer size */
 };
@@ -1611,13 +1612,14 @@ static void netmap_dmamap_cb(__unused void *arg,
 /* bus_dmamap_load wrapper: call aforementioned function if map != NULL.
  * XXX can we do it without a callback ?
  */
-static inline void
+static inline int
 netmap_load_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
 {
 	if (map)
 		bus_dmamap_load(tag, map, buf, NETMAP_BUF_SIZE(na),
 		    netmap_dmamap_cb, NULL, BUS_DMA_NOWAIT);
+	return 0;
 }
 
 static inline void
@@ -1647,14 +1649,17 @@ netmap_reload_map(struct netmap_adapter *na,
 int nm_iommu_group_id(bus_dma_tag_t dev);
 #include <linux/dma-mapping.h>
 
-static inline void
+static inline int
 netmap_load_map(struct netmap_adapter *na,
-	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
+	bus_dma_tag_t tag, bus_dmamap_t map, void *buf, u_int size)
 {
-	if (0 && map) {
-		*map = dma_map_single(na->pdev, buf, NETMAP_BUF_SIZE(na),
+	if (map) {
+		*map = dma_map_single(na->pdev, buf, size,
 				      DMA_BIDIRECTIONAL);
+		if (dma_mapping_error(na->pdev, *map))
+			return ENOMEM;
 	}
+	return 0;
 }
 
 static inline void
@@ -1757,10 +1762,26 @@ netmap_idx_k2n(struct netmap_kring *kr, int idx)
 
 
 /* Entries of the look-up table. */
+#ifndef linux
 struct lut_entry {
 	void *vaddr;		/* virtual address. */
 	vm_paddr_t paddr;	/* physical address. */
 };
+#else /* linux */
+/* dma-mapping in linux can assign a buffer a different address
+ * depending on the device, so we need to have a separate 
+ * physical-adress look-up table for each na.
+ * We can still share the vaddrs, though, therefore we split
+ * the lut_entry structure.
+ */
+struct lut_entry {
+	void *vaddr;		/* virtual address. */
+};
+
+struct plut_entry {
+	vm_paddr_t paddr;	/* physical address. */
+};
+#endif /* !linux */
 
 struct netmap_obj_pool;
 
@@ -1782,12 +1803,13 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 {
 	uint32_t i = slot->buf_idx;
 	struct lut_entry *lut = na->na_lut.lut;
+	struct plut_entry *plut = na->na_lut.plut;
 	void *ret = (i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr;
 
 #ifndef _WIN32
-	*pp = (i >= na->na_lut.objtotal) ? lut[0].paddr : lut[i].paddr;
+	*pp = (i >= na->na_lut.objtotal) ? plut[0].paddr : plut[i].paddr;
 #else
-	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)lut[0].paddr.QuadPart : (uint64_t)lut[i].paddr.QuadPart;
+	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)plut[0].paddr.QuadPart : (uint64_t)plut[i].paddr.QuadPart;
 #endif
 	return ret;
 }

@@ -370,7 +370,8 @@ void
 netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	NMA_LOCK(nmd);
-	netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
+	if (na->active_fds <= 0)
+		netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
 	if (nmd->active == 1) {
 		/*
 		 * Reset the allocator when it falls out of use so that any
@@ -1248,6 +1249,29 @@ nm_alloc_lut(u_int nobj)
 	return lut;
 }
 
+static struct plut_entry *
+nm_alloc_plut(u_int nobj)
+{
+	size_t n = sizeof(struct plut_entry) * nobj;
+	struct plut_entry *lut;
+#ifdef linux
+	lut = vmalloc(n);
+#else
+	lut = nm_os_malloc(n);
+#endif
+	return lut;
+}
+
+static void
+nm_free_plut(struct plut_entry * lut)
+{
+#ifdef linux
+	vfree(lut);
+#else
+	nm_os_free(lut);
+#endif
+}
+
 /* call with NMA_LOCK held */
 static int
 netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
@@ -1317,7 +1341,9 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 		 */
 		for (; i < lim; i++, clust += p->_objsize) {
 			p->lut[i].vaddr = clust;
+#ifndef linux
 			p->lut[i].paddr = vtophys(clust);
+#endif
 		}
 	}
 	p->memtotal = p->numclusters * p->_clustsize;
@@ -1366,6 +1392,7 @@ static int
 netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
 	int i, lim = p->_objtotal;
+	struct netmap_lut *lut = &na->na_lut;
 
 	if (na == NULL || na->pdev == NULL)
 		return 0;
@@ -1373,16 +1400,21 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 #if defined(__FreeBSD__)
 	(void)i;
 	(void)lim;
+	(void)lut;
 	D("unsupported on FreeBSD");
-
 #elif defined(_WIN32)
 	(void)i;
 	(void)lim;
+	(void)lut;
 	D("unsupported on Windows");
 #else /* linux */
-	for (i = 2; i < lim; i++) {
-		netmap_unload_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr);
+	ND("unmapping and freeing plut for %s", na->name);
+	for (i = 2; i < lim; i += p->_clustentries) {
+		if (lut->plut[i].paddr)
+			netmap_unload_map(na, (bus_dma_tag_t) na->pdev, &lut->plut[i].paddr);
 	}
+	nm_free_plut(lut->plut);
+	lut->plut = NULL;
 #endif /* linux */
 
 	return 0;
@@ -1391,23 +1423,54 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 static int
 netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
-#if defined(__FreeBSD__)
-	D("unsupported on FreeBSD");
-#elif defined(_WIN32)
-	D("unsupported on Windows");
-#else /* linux */
+	int error = 0;
 	int i, lim = p->_objtotal;
+	struct netmap_lut *lut = &na->na_lut;
 
 	if (na->pdev == NULL)
 		return 0;
 
-	for (i = 2; i < lim; i++) {
-		netmap_load_map(na, (bus_dma_tag_t) na->pdev, &p->lut[i].paddr,
-				p->lut[i].vaddr);
+#if defined(__FreeBSD__)
+	(void)i;
+	(void)lim;
+	(void)lut;
+	D("unsupported on FreeBSD");
+#elif defined(_WIN32)
+	(void)i;
+	(void)lim;
+	(void)lut;
+	D("unsupported on Windows");
+#else /* linux */
+
+	if (lut->plut != NULL) {
+		ND("plut already allocated for %s", na->name);
+		return 0;
 	}
+
+	ND("allocating physical lut for %s", na->name);
+	lut->plut = nm_alloc_plut(lim);
+	if (lut->plut == NULL)
+		return ENOMEM;
+
+	for (i = 0; i < lim; i += p->_clustentries) {
+		int j;
+
+		error = netmap_load_map(na, (bus_dma_tag_t) na->pdev, &lut->plut[i].paddr,
+				p->lut[i].vaddr, p->_clustsize);
+		if (error)
+			break;
+
+		for (j = 1; j < p->_clustentries; j++) {
+			lut->plut[i + j].paddr = lut->plut[i + j - 1].paddr + p->_objsize;
+		}
+	}
+
+	if (error)
+		netmap_mem_unmap(p, na);
+
 #endif /* linux */
 
-	return 0;
+	return error;
 }
 
 static int
