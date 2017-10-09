@@ -135,6 +135,7 @@ MAN_PREFIX := $(INCLUDE_PREFIX)
 
 install-docs:
 	install -D -m 644 $(SRCDIR)/../share/man/man4/netmap.4 $(DESTDIR)/$(MAN_PREFIX)/share/man/man4/netmap.4
+	install -D -m 644 $(SRCDIR)/../share/man/man4/vale.4 $(DESTDIR)/$(MAN_PREFIX)/share/man/man4/vale.4
 
 distclean: clean $(S_DRIVERS:%=distclean-%)
 	rm -f config.status config.log netmap_linux_config.h \
