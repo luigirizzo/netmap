@@ -97,17 +97,17 @@ Set to non-zero values to enable in-kernel diagnostics.
 Create one switch, with a traffic generator connected to one
 port, and a netmap-enabled tcpdump instance on another port:
 .Bd -literal -offset indent
-tcpdump -ni vale-a:1 &
-pkt-gen  -i vale-a:0 -f tx &
+tcpdump -ni valea:1 &
+pkt-gen  -i valea:0 -f tx &
 .Ed
 .Pp
 Create two switches,
 each connected to two qemu machines on different ports.
 .Bd -literal -offset indent
-qemu -net nic -net netmap,ifname=vale-1:a ... &
-qemu -net nic -net netmap,ifname=vale-1:b ... &
-qemu -net nic -net netmap,ifname=vale-2:c ... &
-qemu -net nic -net netmap,ifname=vale-2:d ... &
+qemu -net nic -net netmap,ifname=vale1:a ... &
+qemu -net nic -net netmap,ifname=vale1:b ... &
+qemu -net nic -net netmap,ifname=vale2:c ... &
+qemu -net nic -net netmap,ifname=vale2:d ... &
 .Ed
 .Sh SEE ALSO
 .Xr netmap 4
