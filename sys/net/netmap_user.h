@@ -848,7 +848,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 	}
 
 	d->req.nr_version = NETMAP_API;
-	d->req.nr_ringid &= ~NETMAP_RING_MASK;
+	d->req.nr_ringid &= NETMAP_RING_MASK;
 
 	/* optionally import info from parent */
 	if (IS_NETMAP_DESC(parent) && new_flags) {
