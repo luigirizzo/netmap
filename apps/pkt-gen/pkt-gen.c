@@ -1635,10 +1635,12 @@ sender_body(void *data)
 		}
 	}
 	/* flush any remaining packets */
-	D("flush tail %d head %d on thread %p",
-		txring->tail, txring->head,
-		(void *)pthread_self());
-	ioctl(pfd.fd, NIOCTXSYNC, NULL);
+	if (txring != NULL) {
+		D("flush tail %d head %d on thread %p",
+			txring->tail, txring->head,
+			(void *)pthread_self());
+		ioctl(pfd.fd, NIOCTXSYNC, NULL);
+	}
 
 	/* final part: wait all the TX queues to be empty. */
 	for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
