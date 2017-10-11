@@ -2197,7 +2197,6 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 
 	for (i = 0; i < nbuffers; i++) {
 		ptnmd->buf_lut.lut[i].vaddr = vaddr;
-		ptnmd->buf_lut.plut[i].paddr = paddr;
 		vaddr += bufsize;
 		paddr += bufsize;
 	}
