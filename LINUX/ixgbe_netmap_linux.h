@@ -626,11 +626,14 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 		 * (see comment in ixgbe_setup_transmit_ring() ).
 		 */
 		int si = netmap_idx_n2k(&na->rx_rings[ring_nr], i);
+		union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(ring, i);
 		uint64_t paddr;
 		PNMB(na, slot + si, &paddr);
 		// netmap_load_map(rxr->ptag, rxbuf->pmap, addr);
 		/* Update descriptor */
-		NM_IXGBE_RX_DESC(ring, i)->read.pkt_addr = htole64(paddr);
+		curr->read.pkt_addr = htole64(paddr);
+		curr->wb.upper.length = 0;
+		curr->wb.upper.status_error = 0;
 	}
 	ring->next_to_use = lim; /* used for debug only */
 	IXGBE_WRITE_REG(&adapter->hw, NM_IXGBE_RDT(ring->reg_idx), lim);
