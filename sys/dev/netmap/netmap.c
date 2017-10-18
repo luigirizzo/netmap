@@ -1808,6 +1808,21 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 			ND("ONE_NIC: %s %d %d", nm_txrx2str(t),
 				priv->np_qfirst[t], priv->np_qlast[t]);
 			break;
+		case NR_REG_RANGE_NIC:
+			if (i >= nma_get_nrings(na, t)) {
+				D("invalid ring id %d", i);
+				return EINVAL;
+			}
+			j = (flags & NR_RANGE_END_MASK) >> NR_RANGE_END_SHIFT;
+			if (j >= nma_get_nrings(na, t)) {
+				D("invalid range end %d", j);
+				return EINVAL;
+			}
+			priv->np_qfirst[t] = i;
+			priv->np_qlast[t] = j + 1;
+			ND("RANGE_NIC: %s %d %d", nm_txrx2str(t),
+				priv->np_qfirst[t], priv->np_qlast[t]);
+			break;
 		default:
 			D("invalid regif type %d", reg);
 			return EINVAL;
