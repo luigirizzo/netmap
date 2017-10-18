@@ -704,6 +704,14 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 			break;
 		case P_RNGSFXOK:
 			switch (*port) {
+			case '-':
+				if ((nr_flags & NR_REG_MASK) != NR_REG_ONE_NIC) {
+					snprintf(errmsg, MAXERRMSG, "invalid range specified");
+					goto fail;
+				}
+				nr_flags |= NR_REG_RANGE_NIC & NR_REG_MASK;
+				p_state = P_GETNUM;
+				break;
 			case '/':
 				p_state = P_FLAGS;
 				break;
@@ -723,7 +731,12 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 						num, NETMAP_RING_MASK);
 				goto fail;
 			}
-			nr_ringid = num & NETMAP_RING_MASK;
+			if ((nr_ringid & NETMAP_RING_MASK) == 0) {
+				nr_ringid = num & NETMAP_RING_MASK;
+			} else {
+				nr_flags &= ~NR_RANGE_END_MASK;
+				nr_flags |= (num << NR_RANGE_END_SHIFT) & NR_RANGE_END_MASK;
+			}
 			p_state = P_RNGSFXOK;
 			break;
 		case P_FLAGS:
@@ -908,6 +921,10 @@ nm_open(const char *ifname, const struct nmreq *req,
 		/* XXX check validity */
 		d->first_tx_ring = d->last_tx_ring =
 		d->first_rx_ring = d->last_rx_ring = d->req.nr_ringid & NETMAP_RING_MASK;
+	} else if (nr_reg == NR_REG_RANGE_NIC) {
+		/* XXX check validity */
+		d->first_tx_ring = d->first_rx_ring = d->req.nr_ringid & NETMAP_RING_MASK;
+		d->last_tx_ring = d->last_rx_ring = (d->req.nr_flags & NR_RANGE_END_MASK) >> NR_RANGE_END_SHIFT;
 	} else { /* pipes */
 		d->first_tx_ring = d->last_tx_ring = 0;
 		d->first_rx_ring = d->last_rx_ring = 0;
