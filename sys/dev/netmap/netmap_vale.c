@@ -2508,9 +2508,14 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 
 	/* copy up the current ring state information */
 	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(na, t) + 1; i++)
-			NMR(na, t)[i].nr_mode =
-				NMR(hwna, t)[i].nr_mode;
+		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			struct netmap_kring *kring = &NMR(hwna, t)[i];
+			NMR(na, t)[i].nr_mode = kring->nr_mode;
+			/* also record the fact that we are
+			 * using/no longer using the hwna ring
+			 */
+			kring->users = onoff;
+		}
 	}
 
 	/* impersonate a netmap_vp_adapter */
@@ -2548,6 +2553,14 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 		hwna->na_lut.lut = NULL;
 		hwna->na_lut.objtotal = 0;
 		hwna->na_lut.objsize = 0;
+
+		/* pass ownership of the netmap rings to the hwna */
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+				NMR(na, t)[i].ring = NULL;
+			}
+		}
+
 	}
 
 	return 0;
@@ -2623,6 +2636,8 @@ netmap_bwrap_krings_delete(struct netmap_adapter *na)
 
 	ND("%s", na->name);
 
+	/* delete any netmap rings that are no longer needed */
+	netmap_mem_rings_delete(hwna);
 	hwna->nm_krings_delete(hwna);
 	netmap_vp_krings_delete(na);
 }

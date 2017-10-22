@@ -1894,7 +1894,8 @@ netmap_krings_get(struct netmap_priv_d *priv)
 	int excl = (priv->np_flags & NR_EXCLUSIVE);
 	enum txrx t;
 
-	ND("%s: grabbing tx [%d, %d) rx [%d, %d)",
+	if (netmap_verbose)
+		D("%s: grabbing tx [%d, %d) rx [%d, %d)",
 			na->name,
 			priv->np_qfirst[NR_TX],
 			priv->np_qlast[NR_TX],
