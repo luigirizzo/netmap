@@ -53,8 +53,10 @@ veth_get_peer_na(struct netmap_adapter *na)
 		(struct netmap_veth_adapter *)na;
 
 	if (vna->peer == NULL) {
+		rcu_read_lock();
 		peer_ifp = rcu_dereference(priv->peer);
 		if (!peer_ifp) {
+			rcu_read_unlock();
 			return NULL;
 		}
 		/* cache the na pointer so that we can retrieve it
@@ -66,6 +68,7 @@ veth_get_peer_na(struct netmap_adapter *na)
 		vna->peer_ref = 1;
 		/* also set the cross reference from the peer_na to us */
 		vna->peer->peer = vna;
+		rcu_read_unlock();
 	}
 
 	return &vna->peer->up.up;
@@ -129,11 +132,8 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 	int error;
 	int i;
 
-	rcu_read_lock();
-
 	peer_na = veth_get_peer_na(na);
 	if (!peer_na) {
-		rcu_read_unlock();
 		return EINVAL;
 	}
 
@@ -159,7 +159,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		/* create all missing needed rings on the other end */
 		error = netmap_mem_rings_create(peer_na);
 		if (error) {
-			rcu_read_unlock();
 			return error;
 		}
 
@@ -204,8 +203,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 			D("unregistered veth %s", na->name);
 		}
 	}
-
-	rcu_read_unlock();
 
 	if (na->active_fds == 0 && was_up) {
 		veth_open(ifp);
