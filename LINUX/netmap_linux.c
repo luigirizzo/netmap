@@ -772,6 +772,11 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	skb_set_queue_mapping(m, a->ring_nr);
 	m->priority = a->qevent ? NM_MAGIC_PRIORITY_TXQE : NM_MAGIC_PRIORITY_TX;
 
+	if (unlikely(m->next)) {
+		RD(1, "Warning: resetting skb->next as it is not NULL\n");
+		m->next = NULL;
+	}
+
 	ret = dev_queue_xmit(m);
 
 	if (unlikely(ret != NET_XMIT_SUCCESS)) {
