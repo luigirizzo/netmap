@@ -415,6 +415,11 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
     struct netmap_adapter *na = &gna->up.up;
     struct ifnet *ifp = netmap_generic_getifp(gna);
 
+    if (!ifp) {
+        D("Failed to get ifp");
+        return -EBUSY;
+    }
+
     if (intercept) {
         return -netdev_rx_handler_register(ifp,
                 &linux_generic_rx_handler, na);
@@ -584,7 +589,7 @@ nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
 				GFP_KERNEL);
 		if (!nla) {
 			D("Failed to allocate netlink attribute");
-			return ENOMEM;
+			return -1;
 		}
 		nla->nla_type = RTM_NEWQDISC;
 		nla->nla_len = nla_attr_size(sizeof(*qdiscopt));
@@ -678,6 +683,11 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 	int err;
+
+	if (!ifp) {
+		D("Failed to get ifp");
+		return -1;
+	}
 
 	err = nm_os_catch_qdisc(gna, intercept);
 	if (err) {
