@@ -127,7 +127,8 @@ hang_tmr_callback(unsigned long arg)
 	struct netmap_kring *kring = na->rx_rings + prq->q.kring_id;
 	struct netmap_ring *ring = kring->ring;
 
-	pr_info("HANG RX#%d: hwc %u h %u c %u hwt %u t %u rx.guest_need_kick %u\n",
+	pr_info("PTNET HANG RX#%d: hwc %u h %u c %u hwt %u t %u"
+		" rx.guest_need_kick %u\n",
 		kring->ring_id, kring->nr_hwcur, ring->head, ring->cur,
 		kring->nr_hwtail, ring->tail, prq->q.ptring->guest_need_kick);
 
@@ -370,8 +371,8 @@ ptnet_get_stats(struct net_device *netdev)
 static int
 ptnet_change_mtu(struct net_device *netdev, int new_mtu)
 {
-	pr_info("%s changing MTU from %d to %d\n",
-		netdev->name, netdev->mtu, new_mtu);
+	pr_info("%s: %s changing MTU from %d to %d\n",
+		__func__, netdev->name, netdev->mtu, new_mtu);
 	netdev->mtu = new_mtu;
 
 	return 0;
@@ -539,7 +540,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 #endif
 		if (unlikely(!skb)) {
 			pr_err("%s: skb allocation failed\n",
-			       __func__);
+				__func__);
 			break;
 		}
 
@@ -578,7 +579,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 					skbpage = ptnet_alloc_page(prq);
 					if (unlikely(!skbpage)) {
 						pr_err("%s: pntet_alloc_page() failed\n",
-						       __func__);
+							__func__);
 						break;
 					}
 					skbdata = page_address(skbpage);
@@ -775,7 +776,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	pi->msix_entries = kzalloc(sizeof(*pi->msix_entries) * pi->num_rings,
 				   GFP_KERNEL);
 	if (!pi->msix_entries) {
-		pr_err("Failed to allocate msix entires\n");
+		pr_err("%s: Failed to allocate msix entires\n", __func__);
 		return -ENOMEM;
 	}
 
@@ -792,7 +793,8 @@ ptnet_irqs_init(struct ptnet_info *pi)
 				    PCI_IRQ_MSIX);
 #endif
 	if (ret != pi->num_rings) {
-		pr_err("Failed to enable msix vectors (%d)\n", ret);
+		pr_err("%s: Failed to enable msix vectors (%d)\n",
+			__func__, ret);
 		goto err_alloc;
 	}
 
@@ -801,7 +803,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 
 		memset(&pq->msix_affinity_mask, 0, sizeof(pq->msix_affinity_mask));
 		if (!alloc_cpumask_var(&pq->msix_affinity_mask, GFP_KERNEL)) {
-			pr_err("Failed to alloc cpumask var\n");
+			pr_err("%s: Failed to alloc cpumask var\n", __func__);
 			goto err_masks;
 		}
 	}
@@ -816,11 +818,12 @@ ptnet_irqs_init(struct ptnet_info *pi)
 			 "%s-%d", pi->netdev->name, i);
 		ret = request_irq(vector, handler, 0, pq->msix_name, pq);
 		if (ret) {
-			pr_err("Unable to allocate interrupt (%d)\n", ret);
+			pr_err("%s: Unable to allocate interrupt (%d)\n",
+				__func__, ret);
 			goto err_irqs;
 		}
-		pr_info("IRQ for ring #%d --> %u, handler %p\n", i,
-                        vector, handler);
+		pr_info("%s: IRQ for ring #%d --> %u, handler %p\n",
+                        __func__, i, vector, handler);
 	}
 
 	return 0;
@@ -878,32 +881,32 @@ ptnet_open(struct net_device *netdev)
 	int ret;
 	int i;
 
-	D("%s: netif_running %u", __func__, netif_running(netdev));
-
 	netmap_update_config(na_dr);
 
 	ret = netmap_mem_finalize(na_dr->nm_mem, na_dr);
 	if (ret) {
-		pr_err("netmap_mem_finalize() failed\n");
+		pr_err("%s: netmap_mem_finalize() failed\n", __func__);
 		goto err_mem_finalize;
 	}
 
 	if (pi->ptna->backend_regifs == 0) {
 		ret = ptnet_nm_krings_create(na_nm);
 		if (ret) {
-			pr_err("ptnet_nm_krings_create() failed\n");
+			pr_err("%s: ptnet_nm_krings_create() failed\n",
+				__func__);
 			goto err_mem_finalize;
 		}
 
 		ret = netmap_mem_rings_create(na_dr);
 		if (ret) {
-			pr_err("netmap_mem_rings_create() failed\n");
+			pr_err("%s: netmap_mem_rings_create() failed\n",
+				__func__);
 			goto err_rings_create;
 		}
 
 		ret = netmap_mem_get_lut(na_dr->nm_mem, &na_dr->na_lut);
 		if (ret) {
-			pr_err("netmap_mem_get_lut() failed\n");
+			pr_err("%s: netmap_mem_get_lut() failed\n", __func__);
 			goto err_get_lut;
 		}
 	}
@@ -922,8 +925,6 @@ ptnet_open(struct net_device *netdev)
 	}
 
 	netif_tx_start_all_queues(netdev);
-
-	pr_info("%s: %p\n", __func__, pi);
 
 	for (i = 0; i < na_dr->num_rx_rings; i++){
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
@@ -944,7 +945,8 @@ ptnet_open(struct net_device *netdev)
 		 * the interface was down. Schedule NAPI to flush packets that
 		 * are pending in the RX ring. We won't receive further
 		 * interrupts until the pending ones will be processed. */
-		D("Schedule NAPI to flush RX ring #%d", i);
+		pr_info("%s: Schedule NAPI to flush RX ring #%d\n",
+			__func__, i);
 		ptnet_napi_schedule(&prq->q);
 	}
 
@@ -974,8 +976,6 @@ ptnet_close(struct net_device *netdev)
 	struct netmap_adapter *na_dr = &pi->ptna->dr.up;
 	struct netmap_adapter *na_nm = &pi->ptna->hwup.up;
 	int i;
-
-	D("%s: netif_running %u", __func__, netif_running(netdev));
 
 	netif_tx_stop_all_queues(netdev);
 
@@ -1008,8 +1008,6 @@ ptnet_close(struct net_device *netdev)
 		ptnet_nm_krings_delete(na_nm);
 	}
 	netmap_mem_deref(na_dr->nm_mem, na_dr);
-
-	pr_info("%s: %p\n", __func__, pi);
 
 	return 0;
 }
@@ -1105,13 +1103,15 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	 * in the RX rings, since we will not receive further interrupts
 	 * until these will be processed. */
 	if (native && !onoff && na->active_fds == 0) {
-		D("Exit netmap mode, re-enable interrupts");
+		pr_info("%s: Exit netmap mode, re-enable interrupts\n",
+			__func__);
 		for (i = 0; i < pi->num_rings; i++) {
 			ptring = pi->queues[i]->ptring;
 			ptring->guest_need_kick = 1;
 		}
 		if (netif_running(netdev)) {
-			D("Exit netmap mode, schedule NAPI to flush RX ring");
+			pr_info("%s: Exit netmap mode, schedule NAPI to flush RX ring\n",
+				__func__);
 			for (i = 0; i < na->num_rx_rings; i++){
 				ptnet_napi_schedule(pi->rxqueues[i]);
 			}
@@ -1205,7 +1205,7 @@ ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
 	*txd = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_SLOTS);
 	*rxd = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_SLOTS);
 
-	pr_info("txr %u, rxr %u, txd %u, rxd %u\n",
+	pr_info("%s: txr %u, rxr %u, txd %u, rxd %u\n", __func__,
 		*txr, *rxr, *txd, *rxd);
 
 	return 0;
@@ -1310,8 +1310,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	err = -EIO;
-	pr_info("IO BAR (registers): start 0x%llx, len %llu, flags 0x%lx\n",
-		pci_resource_start(pdev, PTNETMAP_IO_PCI_BAR),
+	pr_info("%s: IO BAR (registers): start 0x%llx, len %llu, flags 0x%lx\n",
+		__func__, pci_resource_start(pdev, PTNETMAP_IO_PCI_BAR),
 		pci_resource_len(pdev, PTNETMAP_IO_PCI_BAR),
 		pci_resource_flags(pdev, PTNETMAP_IO_PCI_BAR));
 
@@ -1378,8 +1378,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Map the CSB memory exposed by the device. We don't use
 	 * pci_ioremap_bar(), since we want the ioremap_cache() function
 	 * to be called internally, rather than ioremap_nocache(). */
-	pr_info("MEMORY BAR (CSB): start 0x%llx, len %llu, flags 0x%lx\n",
-		pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
+	pr_info("%s: MEMORY BAR (CSB): start 0x%llx, len %llu, flags 0x%lx\n",
+		__func__, pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
 		pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
 		pci_resource_flags(pdev, PTNETMAP_MEM_PCI_BAR));
 	pi->csbaddr = ioremap_cache(pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
@@ -1507,11 +1507,11 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	netif_carrier_on(netdev);
 
-	pr_info("%s: %p\n", __func__, pi);
+	pr_info("%s: device %s registered \n", __func__, netdev->name);
 
 	return 0;
 
-	pr_info("%s: failed\n", __func__);
+	pr_info("%s: failed to probe device\n", __func__);
 err_netreg:
 	ptnet_irqs_fini(pi);
 err_irqs:
@@ -1554,6 +1554,7 @@ ptnet_remove(struct pci_dev *pdev)
 	 * two netmap adapters (ptna, ptna->dr) must happen
          * afterwards. */
 	unregister_netdev(netdev);
+	pr_info("%s: device %s unregistered\n", __func__, netdev->name);
 
 	/* Uninitialize netmap adapters for this device. */
 	netmap_detach(netdev);
@@ -1577,8 +1578,6 @@ ptnet_remove(struct pci_dev *pdev)
 	pci_release_selected_regions(pdev, pi->bars);
 	free_netdev(netdev);
 	pci_disable_device(pdev);
-
-	pr_info("%s: %p\n", __func__, pi);
 }
 
 #if 0
