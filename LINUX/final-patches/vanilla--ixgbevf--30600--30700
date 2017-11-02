@@ -1,5 +1,5 @@
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index 60ef64587412..6594f9ec0a4a 100644
+index 60ef645..b0c3eb1 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
 @@ -179,6 +179,24 @@ static void ixgbevf_unmap_and_free_tx_resource(struct ixgbevf_ring *tx_ring,
@@ -110,7 +110,7 @@ index 60ef64587412..6594f9ec0a4a 100644
  
 +
 +#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
++	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
  	set_bit(__IXGBEVF_DOWN, &adapter->state);

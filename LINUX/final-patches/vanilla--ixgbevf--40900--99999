@@ -1,5 +1,5 @@
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index cbf70fe4028a..1a006e1c8a5d 100644
+index cbf70fe..724ea09 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
 @@ -294,6 +294,24 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
@@ -105,14 +105,14 @@ index cbf70fe4028a..1a006e1c8a5d 100644
  	return 0;
  
  err_register:
-@@ -4189,6 +4241,10 @@ static void ixgbevf_remove(struct pci_dev *pdev)
- 	if (!netdev)
- 		return;
+@@ -4191,6 +4243,10 @@ static void ixgbevf_remove(struct pci_dev *pdev)
  
-+#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
-+#endif /* DEV_NETMAP */
-+
  	adapter = netdev_priv(netdev);
  
++#ifdef DEV_NETMAP
++	ixgbe_netmap_detach(adapter);
++#endif /* DEV_NETMAP */
++
  	set_bit(__IXGBEVF_REMOVING, &adapter->state);
+ 	cancel_work_sync(&adapter->service_task);
+ 

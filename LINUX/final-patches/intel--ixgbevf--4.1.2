@@ -46,7 +46,7 @@ index ca79ef6..939f185 100644
  clean:
  	@+$(call kernelbuild,clean)
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index 789187b..19207f8 100644
+index 789187b..8169ad7 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
 @@ -371,6 +371,23 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
@@ -152,17 +152,17 @@ index 789187b..19207f8 100644
  	cards_found++;
  	return 0;
  
-@@ -4963,6 +5012,10 @@ static void __devexit ixgbevf_remove(struct pci_dev *pdev)
- 	if (!netdev)
- 		return;
+@@ -4965,6 +5014,10 @@ static void __devexit ixgbevf_remove(struct pci_dev *pdev)
  
-+#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
-+#endif /* DEV_NETMAP */
-+
  	adapter = netdev_priv(netdev);
  
++#ifdef DEV_NETMAP
++	ixgbe_netmap_detach(adapter);
++#endif /* DEV_NETMAP */
++
  	set_bit(__IXGBEVF_REMOVE, &adapter->state);
+ 	cancel_work_sync(&adapter->service_task);
+ 
 diff --git a/ixgbevf/kcompat.h b/ixgbevf/kcompat.h
 index c08d849..d7a58a5 100644
 --- a/ixgbevf/kcompat.h

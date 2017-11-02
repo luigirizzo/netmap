@@ -1,10 +1,10 @@
-diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index d30fbdd..a6bcb88 100644
---- a/ixgbe/ixgbe_main.c
-+++ b/ixgbe/ixgbe_main.c
-@@ -248,6 +248,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
- 	{}
- };
+diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
+index 4186981..f37d7cc 100644
+--- a/ixgbevf/ixgbevf_main.c
++++ b/ixgbevf/ixgbevf_main.c
+@@ -283,6 +283,24 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
+ 	ixgbevf_tx_timeout_reset(adapter);
+ }
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
 +/*
@@ -20,13 +20,15 @@ index d30fbdd..a6bcb88 100644
 + * It also defines DEV_NETMAP so further conditional sections use
 + * that instead of CONFIG_NETMAP
 + */
++#define NM_IXGBEVF
 +#include <ixgbe_netmap_linux.h>
 +#endif
- 
- /*
-  * ixgbe_regdump - register printout routine
-@@ -872,6 +888,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
- 	if (test_bit(__IXGBE_DOWN, &adapter->state))
++
+ /**
+  * ixgbevf_clean_tx_irq - Reclaim resources after transmit completes
+  * @q_vector: board private structure
+@@ -301,6 +319,18 @@ static bool ixgbevf_clean_tx_irq(struct ixgbevf_q_vector *q_vector,
+ 	if (test_bit(__IXGBEVF_DOWN, &adapter->state))
  		return true;
  
 +#ifdef DEV_NETMAP
@@ -37,15 +39,16 @@ index d30fbdd..a6bcb88 100644
 +	 * or on a global resource for all rings.
 +	 */
 +	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
-+		return 1; /* seems to be ignored */
++		return true;
 +#endif /* DEV_NETMAP */
 +
++
  	tx_buffer = &tx_ring->tx_buffer_info[i];
- 	tx_desc = IXGBE_TX_DESC(tx_ring, i);
+ 	tx_desc = IXGBEVF_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -1906,6 +1933,16 @@ static bool ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
- #endif /* IXGBE_FCOE */
- 	u16 cleaned_count = ixgbe_desc_unused(rx_ring);
+@@ -912,6 +942,16 @@ static int ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
+ 	u16 cleaned_count = ixgbevf_desc_unused(rx_ring);
+ 	struct sk_buff *skb = rx_ring->skb;
  
 +#ifdef DEV_NETMAP
 +	/*
@@ -57,42 +60,34 @@ index d30fbdd..a6bcb88 100644
 +		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
 +#endif /* DEV_NETMAP */
 +
- 	do {
+ 	while (likely(total_rx_packets < budget)) {
  		union ixgbe_adv_rx_desc *rx_desc;
- 		struct sk_buff *skb;
-@@ -2890,6 +2927,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  
- 	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
+@@ -1585,6 +1625,10 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
+ 
+ 	clear_bit(__IXGBEVF_HANG_CHECK_ARMED, &ring->state);
  
 +#ifdef DEV_NETMAP
 +	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
 +#endif /* DEV_NETMAP */
 +
- 	/* enable queue */
- 	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
+ 	IXGBE_WRITE_REG(hw, IXGBE_VFTXDCTL(reg_idx), txdctl);
  
-@@ -3266,6 +3307,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
- 	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
+ 	/* poll to verify queue is enabled */
+@@ -1763,6 +1807,10 @@ static void ixgbevf_configure_rx_ring(struct ixgbevf_adapter *adapter,
+ 	IXGBE_WRITE_REG(hw, IXGBE_VFRXDCTL(reg_idx), rxdctl);
  
- 	ixgbe_rx_desc_queue_enable(adapter, ring);
+ 	ixgbevf_rx_desc_queue_enable(adapter, ring);
 +#ifdef DEV_NETMAP
 +	if (ixgbe_netmap_configure_rx_ring(adapter, reg_idx))
 +		return;
 +#endif /* DEV_NETMAP */
- 	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
+ 	ixgbevf_alloc_rx_buffers(ring, ixgbevf_desc_unused(ring));
  }
  
-@@ -5037,6 +5082,7 @@ static int ixgbe_open(struct net_device *netdev)
- 
- 	ixgbe_up_complete(adapter);
- 
-+
- 	return 0;
- 
- err_set_queues:
-@@ -7658,6 +7704,10 @@ skip_sriov:
- 			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
- 			true);
+@@ -4064,6 +4112,10 @@ static int ixgbevf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		break;
+ 	}
  
 +#ifdef DEV_NETMAP
 +	ixgbe_netmap_attach(adapter);
@@ -101,14 +96,14 @@ index d30fbdd..a6bcb88 100644
  	return 0;
  
  err_register:
-@@ -7692,6 +7742,10 @@ static void ixgbe_remove(struct pci_dev *pdev)
- 	struct ixgbe_adapter *adapter = pci_get_drvdata(pdev);
- 	struct net_device *netdev = adapter->netdev;
+@@ -4101,6 +4153,10 @@ static void ixgbevf_remove(struct pci_dev *pdev)
+ 	if (!netdev)
+ 		return;
  
 +#ifdef DEV_NETMAP
 +	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
- 	ixgbe_dbg_adapter_exit(adapter);
+ 	adapter = netdev_priv(netdev);
  
- 	set_bit(__IXGBE_DOWN, &adapter->state);
+ 	set_bit(__IXGBEVF_REMOVING, &adapter->state);

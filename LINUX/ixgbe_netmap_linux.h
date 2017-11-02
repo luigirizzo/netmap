@@ -668,4 +668,10 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 	netmap_attach(&na);
 }
 
+static void
+ixgbe_netmap_detach(struct NM_IXGBE_ADAPTER *adapter)
+{
+	netmap_detach(adapter->netdev);
+}
+
 /* end of file */

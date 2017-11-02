@@ -62,7 +62,7 @@ index a3cc895..a038975 100644
  clean:
  	@+$(call devkernelbuild,clean)
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 83c6250..c87f03d 100644
+index 83c6250..5da5967 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -752,6 +752,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
@@ -163,7 +163,7 @@ index 83c6250..c87f03d 100644
  	netdev = adapter->netdev;
 +
 +#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
++	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
  #ifdef HAVE_IXGBE_DEBUG_FS

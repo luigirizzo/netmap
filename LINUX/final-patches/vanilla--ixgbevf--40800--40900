@@ -1,8 +1,8 @@
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index 4186981e562d..5bdcba71c944 100644
+index d9d6616..501804f 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
-@@ -283,6 +283,24 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
+@@ -294,6 +294,24 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
  	ixgbevf_tx_timeout_reset(adapter);
  }
  
@@ -27,7 +27,7 @@ index 4186981e562d..5bdcba71c944 100644
  /**
   * ixgbevf_clean_tx_irq - Reclaim resources after transmit completes
   * @q_vector: board private structure
-@@ -301,6 +319,18 @@ static bool ixgbevf_clean_tx_irq(struct ixgbevf_q_vector *q_vector,
+@@ -313,6 +331,18 @@ static bool ixgbevf_clean_tx_irq(struct ixgbevf_q_vector *q_vector,
  	if (test_bit(__IXGBEVF_DOWN, &adapter->state))
  		return true;
  
@@ -46,7 +46,7 @@ index 4186981e562d..5bdcba71c944 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBEVF_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -912,6 +942,16 @@ static int ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
+@@ -929,6 +959,16 @@ static int ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
  	u16 cleaned_count = ixgbevf_desc_unused(rx_ring);
  	struct sk_buff *skb = rx_ring->skb;
  
@@ -63,7 +63,7 @@ index 4186981e562d..5bdcba71c944 100644
  	while (likely(total_rx_packets < budget)) {
  		union ixgbe_adv_rx_desc *rx_desc;
  
-@@ -1585,6 +1625,10 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
+@@ -1604,6 +1644,10 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
  
  	clear_bit(__IXGBEVF_HANG_CHECK_ARMED, &ring->state);
  
@@ -74,7 +74,7 @@ index 4186981e562d..5bdcba71c944 100644
  	IXGBE_WRITE_REG(hw, IXGBE_VFTXDCTL(reg_idx), txdctl);
  
  	/* poll to verify queue is enabled */
-@@ -1763,6 +1807,10 @@ static void ixgbevf_configure_rx_ring(struct ixgbevf_adapter *adapter,
+@@ -1791,6 +1835,10 @@ static void ixgbevf_configure_rx_ring(struct ixgbevf_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_VFRXDCTL(reg_idx), rxdctl);
  
  	ixgbevf_rx_desc_queue_enable(adapter, ring);
@@ -85,7 +85,7 @@ index 4186981e562d..5bdcba71c944 100644
  	ixgbevf_alloc_rx_buffers(ring, ixgbevf_desc_unused(ring));
  }
  
-@@ -4064,6 +4112,10 @@ static int ixgbevf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+@@ -4143,6 +4191,10 @@ static int ixgbevf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
  		break;
  	}
  
@@ -96,12 +96,12 @@ index 4186981e562d..5bdcba71c944 100644
  	return 0;
  
  err_register:
-@@ -4101,6 +4153,10 @@ static void ixgbevf_remove(struct pci_dev *pdev)
+@@ -4180,6 +4232,10 @@ static void ixgbevf_remove(struct pci_dev *pdev)
  	if (!netdev)
  		return;
  
 +#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
++	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
  	adapter = netdev_priv(netdev);

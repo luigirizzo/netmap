@@ -1,8 +1,8 @@
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index 4c8e19951d57..7a6d084c0aff 100644
+index 0cd6202..57e93f4 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
-@@ -180,6 +180,24 @@ static void ixgbevf_unmap_and_free_tx_resource(struct ixgbevf_adapter *adapter,
+@@ -209,6 +209,24 @@ static inline bool ixgbevf_check_tx_hang(struct ixgbevf_adapter *adapter,
  
  static void ixgbevf_tx_timeout(struct net_device *netdev);
  
@@ -27,7 +27,7 @@ index 4c8e19951d57..7a6d084c0aff 100644
  /**
   * ixgbevf_clean_tx_irq - Reclaim resources after transmit completes
   * @adapter: board private structure
-@@ -195,6 +213,20 @@ static bool ixgbevf_clean_tx_irq(struct ixgbevf_adapter *adapter,
+@@ -224,6 +242,20 @@ static bool ixgbevf_clean_tx_irq(struct ixgbevf_adapter *adapter,
  	unsigned int i, eop, count = 0;
  	unsigned int total_bytes = 0, total_packets = 0;
  
@@ -48,7 +48,7 @@ index 4c8e19951d57..7a6d084c0aff 100644
  	i = tx_ring->next_to_clean;
  	eop = tx_ring->tx_buffer_info[i].next_to_watch;
  	eop_desc = IXGBE_TX_DESC_ADV(*tx_ring, eop);
-@@ -465,6 +497,16 @@ static bool ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
+@@ -507,6 +539,16 @@ static bool ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
  	int cleaned_count = 0;
  	unsigned int total_rx_bytes = 0, total_rx_packets = 0;
  
@@ -65,7 +65,7 @@ index 4c8e19951d57..7a6d084c0aff 100644
  	i = rx_ring->next_to_clean;
  	rx_desc = IXGBE_RX_DESC_ADV(*rx_ring, i);
  	staterr = le32_to_cpu(rx_desc->wb.upper.status_error);
-@@ -1261,6 +1303,8 @@ static inline void ixgbevf_irq_enable(struct ixgbevf_adapter *adapter,
+@@ -1289,6 +1331,8 @@ static inline void ixgbevf_irq_enable(struct ixgbevf_adapter *adapter,
  }
  
  /**
@@ -74,7 +74,7 @@ index 4c8e19951d57..7a6d084c0aff 100644
   * ixgbevf_configure_tx - Configure 82599 VF Transmit Unit after Reset
   * @adapter: board private structure
   *
-@@ -1291,6 +1335,9 @@ static void ixgbevf_configure_tx(struct ixgbevf_adapter *adapter)
+@@ -1319,6 +1363,9 @@ static void ixgbevf_configure_tx(struct ixgbevf_adapter *adapter)
  		 */
  		txctrl = IXGBE_READ_REG(hw, IXGBE_VFDCA_TXCTRL(j));
  		txctrl &= ~IXGBE_DCA_TXCTRL_TX_WB_RO_EN;
@@ -84,7 +84,7 @@ index 4c8e19951d57..7a6d084c0aff 100644
  		IXGBE_WRITE_REG(hw, IXGBE_VFDCA_TXCTRL(j), txctrl);
  	}
  }
-@@ -1524,6 +1571,9 @@ static void ixgbevf_configure(struct ixgbevf_adapter *adapter)
+@@ -1582,6 +1629,9 @@ static void ixgbevf_configure(struct ixgbevf_adapter *adapter)
  	ixgbevf_configure_rx(adapter);
  	for (i = 0; i < adapter->num_rx_queues; i++) {
  		struct ixgbevf_ring *ring = &adapter->rx_ring[i];
@@ -94,8 +94,8 @@ index 4c8e19951d57..7a6d084c0aff 100644
  		ixgbevf_alloc_rx_buffers(adapter, ring, ring->count);
  		ring->next_to_use = ring->count - 1;
  		writel(ring->next_to_use, adapter->hw.hw_addr + ring->tail);
-@@ -3460,6 +3510,11 @@ static int __devinit ixgbevf_probe(struct pci_dev *pdev,
- 	hw_dbg(hw, "LRO is disabled\n");
+@@ -3485,6 +3535,11 @@ static int __devinit ixgbevf_probe(struct pci_dev *pdev,
+ 	hw_dbg(hw, "LRO is disabled \n");
  
  	hw_dbg(hw, "Intel(R) 82599 Virtual Function\n");
 +
@@ -106,13 +106,13 @@ index 4c8e19951d57..7a6d084c0aff 100644
  	cards_found++;
  	return 0;
  
-@@ -3491,6 +3546,11 @@ static void __devexit ixgbevf_remove(struct pci_dev *pdev)
+@@ -3516,6 +3571,11 @@ static void __devexit ixgbevf_remove(struct pci_dev *pdev)
  	struct net_device *netdev = pci_get_drvdata(pdev);
  	struct ixgbevf_adapter *adapter = netdev_priv(netdev);
  
 +
 +#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
++	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
  	set_bit(__IXGBEVF_DOWN, &adapter->state);
