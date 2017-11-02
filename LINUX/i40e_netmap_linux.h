@@ -517,7 +517,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint64_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
-			union i40e_32byte_rx_desc *curr = I40E_RX_DESC(rxr, nic_i);
+			union i40e_rx_desc *curr = I40E_RX_DESC(rxr, nic_i);
 
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
