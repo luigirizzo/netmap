@@ -2932,7 +2932,17 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 
 	if (arg == NULL || arg->ifp == NULL)
 		goto fail;
+
 	ifp = arg->ifp;
+	if (NA(ifp) && !NM_NA_VALID(ifp)) {
+		/* If NA(ifp) is not null but there is no valid netmap
+		 * adapter it means that someone else is using the same
+		 * pointer (e.g. ax25_ptr on linux). This happens for
+		 * instance when also PF_RING is in use. */
+		D("Error: netmap adapter hook is busy");
+		return EBUSY;
+	}
+
 	hwna = nm_os_malloc(size);
 	if (hwna == NULL)
 		goto fail;

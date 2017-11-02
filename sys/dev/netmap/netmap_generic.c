@@ -1206,6 +1206,15 @@ generic_netmap_attach(struct ifnet *ifp)
 	}
 #endif
 
+	if (NA(ifp) && !NM_NA_VALID(ifp)) {
+		/* If NA(ifp) is not null but there is no valid netmap
+		 * adapter it means that someone else is using the same
+		 * pointer (e.g. ax25_ptr on linux). This happens for
+		 * instance when also PF_RING is in use. */
+		D("Error: netmap adapter hook is busy");
+		return EBUSY;
+	}
+
 	num_tx_desc = num_rx_desc = netmap_generic_ringsize; /* starting point */
 
 	nm_os_generic_find_num_desc(ifp, &num_tx_desc, &num_rx_desc); /* ignore errors */
