@@ -1793,7 +1793,7 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 			ring->head = kring->rhead;
 			ring->cur = kring->rcur;
 			ring->tail = kring->rtail;
-			*(uint16_t *)(uintptr_t)&ring->nr_buf_size =
+			*(uint32_t *)(uintptr_t)&ring->nr_buf_size =
 				netmap_mem_bufsize(na->nm_mem);
 			ND("%s h %d c %d t %d", kring->name,
 				ring->head, ring->cur, ring->tail);
