@@ -1590,6 +1590,7 @@ nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
 	nmk->use_kthread = cfg->use_kthread;
 	atomic_set(&nmk->scheduled, 0);
 	nmk->attach_user = cfg->attach_user;
+	nmk->affinity = -1;  /* unspecified */
 
 	/* open event fds */
 	error = nm_kctx_open_files(nmk, opaque);
@@ -1630,7 +1631,9 @@ nm_os_kctx_worker_start(struct nm_kctx *nmk)
 			goto err;
 		}
 
-		kthread_bind(nmk->worker, nmk->affinity);
+		if (nmk->affinity >= 0) {
+			kthread_bind(nmk->worker, nmk->affinity);
+		}
 		wake_up_process(nmk->worker);
 	}
 
