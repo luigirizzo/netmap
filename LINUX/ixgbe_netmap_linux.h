@@ -111,6 +111,17 @@ ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
 }
 #endif /* NETMAP_LINUX_IXGBE_HAVE_DISABLE */
 
+struct netmap_ixgbe_head {
+	dma_addr_t map;
+	u32* phead;
+};
+
+struct netmap_ixgbe_adapter {
+	struct netmap_hw_adapter up;
+	struct dma_pool *pool;
+	struct netmap_ixgbe_head heads[];
+};
+
 /*
  * In netmap mode, overwrite the srrctl register with netmap_buf_size
  * to properly configure the Receive Buffer Size
@@ -244,6 +255,9 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
 	struct netmap_ring *ring = kring->ring;
+#ifndef NM_IXGBE_USE_TDH
+	struct netmap_ixgbe_adapter *ina = (struct netmap_ixgbe_adapter *)na;
+#endif /* !NM_IXGBE_USE_TDH */
 	u_int ring_nr = kring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int nic_i;	/* index into the NIC ring */
@@ -348,7 +362,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	(void)reclaim_tx;
 	(void)report_frequency;
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
-		u32 h = *(volatile u32*)&txr->next_to_use;
+		u32 h = *ina->heads[ring_nr].phead;
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, h), lim);
 	}
 #else /* NM_IXGBE_USE_TDH */
@@ -555,10 +569,9 @@ ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u3
 	struct netmap_slot *slot;
 #ifndef NM_IXGBE_USE_TDH
 	struct ixgbe_hw *hw = &adapter->hw;
-	struct NM_IXGBE_RING *txr = NM_IXGBE_TX_RING(adapter, ring_nr);
+	struct netmap_ixgbe_adapter *ina = (struct netmap_ixgbe_adapter *)na;
 	u64 wba;
 #endif /* !NM_IXGBE_USE_TDH */
-	//int j;
 
         slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
@@ -568,8 +581,7 @@ ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u3
 	/* we reset WTRESH (it must be 0 according to specs) */
 	txdctl &= ~(0x7f << 16);
 
-	/* we reuse the next_to_use+next_to_clean fields to receive the hw head */
-	wba = (u64)virt_to_phys(&txr->next_to_use);
+	wba = (u64)ina->heads[ring_nr].map;
 	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAL(ring_nr),
 		(wba & DMA_BIT_MASK(32)) | IXGBE_TDWBAL_HEAD_WB_ENABLE);
 	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAH(ring_nr), wba >> 32);
@@ -648,6 +660,7 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 }
 
 
+static void ixgbe_netmap_detach(struct NM_IXGBE_ADAPTER *adapter);
 /*
  * The attach routine, called near the end of ixgbe_attach(),
  * fills the parameters for netmap_attach() and calls it.
@@ -659,6 +672,18 @@ static void
 ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 {
 	struct netmap_adapter na;
+	struct netmap_ixgbe_adapter *ina;
+	struct dma_pool *pool;
+	int i;
+
+	// allocate head-writeback region
+	pool = dma_pool_create("head-wb",
+			&adapter->pdev->dev, sizeof(u32),
+			L1_CACHE_BYTES, 0);
+	if (pool == NULL) {
+		pr_err("netmap: failed to allocated head-wb pool");
+		return;
+	}
 
 	bzero(&na, sizeof(na));
 
@@ -672,12 +697,51 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 	na.num_tx_rings = adapter->num_tx_queues;
 	na.num_rx_rings = adapter->num_rx_queues;
 	na.nm_intr = ixgbe_netmap_intr;
-	netmap_attach(&na);
+	if (netmap_attach_ext(&na, sizeof(struct netmap_ixgbe_adapter) +
+				sizeof(struct netmap_ixgbe_head) * adapter->num_tx_queues, 1)) {
+		pr_err("netmap: failed to attach netmap adapter");
+		dma_pool_destroy(pool);
+		return;
+	}
+	ina = (struct netmap_ixgbe_adapter *)NA(adapter->netdev);
+	ina->pool = pool;
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		struct netmap_ixgbe_head *h = &ina->heads[i];
+		h->phead = dma_pool_alloc(pool, GFP_KERNEL, &h->map);
+		if (h->phead == NULL) {
+			pr_err("netmap: failed to allocated head %d", i);
+			ixgbe_netmap_detach(adapter);
+			return;
+		}
+	}
+
+	return;
 }
 
 static void
 ixgbe_netmap_detach(struct NM_IXGBE_ADAPTER *adapter)
 {
+	struct netmap_adapter *na;
+	struct netmap_ixgbe_adapter *ina;
+	int i;
+
+	if (!NM_NA_VALID(adapter->netdev))
+		return;
+
+	na = NA(adapter->netdev);
+
+	ina = (struct netmap_ixgbe_adapter *)na;
+	if (ina->pool != NULL) {
+		for (i = 0; i < na->num_tx_rings; i++) {
+			struct netmap_ixgbe_head *h = &ina->heads[i];
+			if (h->phead == NULL)
+				break;
+			dma_pool_free(ina->pool, h->phead, h->map);
+			h->phead = NULL;
+		}
+		dma_pool_destroy(ina->pool);
+		ina->pool = NULL;
+	}
 	netmap_detach(adapter->netdev);
 }
 
