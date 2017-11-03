@@ -528,6 +528,13 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		IXGBE_WRITE_REG(&adapter->hw, NM_IXGBE_RDT(rxr->reg_idx), nic_i);
 	}
 
+	/* some versions of the ixgbe driver will blindly try to deallocate
+	 * stuff from next_to_clean to next_to_alloc on ifdown, but we skipped
+	 * the corresponding allocations when we put the card in netmap mode.
+	 * We prevent this by always having next_to_alloc==next_to_clean
+	 */
+	rxr->next_to_alloc = rxr->next_to_clean;
+
 
 	return 0;
 
