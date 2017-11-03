@@ -111,17 +111,6 @@ ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
 }
 #endif /* NETMAP_LINUX_IXGBE_HAVE_DISABLE */
 
-struct netmap_ixgbe_head {
-	dma_addr_t map;
-	u32* phead;
-};
-
-struct netmap_ixgbe_adapter {
-	struct netmap_hw_adapter up;
-	struct dma_pool *pool;
-	struct netmap_ixgbe_head heads[];
-};
-
 /*
  * In netmap mode, overwrite the srrctl register with netmap_buf_size
  * to properly configure the Receive Buffer Size
@@ -201,6 +190,22 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 }
 #endif /* NM_IXGBE */
 /**********************************************************************/
+
+struct netmap_ixgbe_head {
+#ifndef NM_IXGBE_USE_TDH
+	dma_addr_t map;
+	u32* phead;
+#endif /*! NM_IXGBE_USE_TDH */
+};
+
+struct netmap_ixgbe_adapter {
+	struct netmap_hw_adapter up;
+#ifndef NM_IXGBE_USE_TDH
+	struct dma_pool *pool;
+	struct netmap_ixgbe_head heads[];
+#endif /*! NM_IXGBE_USE_TDH */
+};
+
 
 /*
  * Register/unregister. We are already under netmap lock.
@@ -362,7 +367,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	(void)reclaim_tx;
 	(void)report_frequency;
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
-		u32 h = *ina->heads[ring_nr].phead;
+		u32 h = ACCESS_ONCE(*ina->heads[ring_nr].phead);
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, h), lim);
 	}
 #else /* NM_IXGBE_USE_TDH */
@@ -672,6 +677,7 @@ static void
 ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 {
 	struct netmap_adapter na;
+#ifndef NM_IXGBE_USE_TDH
 	struct netmap_ixgbe_adapter *ina;
 	struct dma_pool *pool;
 	int i;
@@ -684,6 +690,7 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 		pr_err("netmap: failed to allocated head-wb pool");
 		return;
 	}
+#endif /*! NM_IXGBE_USE_TDH */
 
 	bzero(&na, sizeof(na));
 
@@ -700,9 +707,12 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 	if (netmap_attach_ext(&na, sizeof(struct netmap_ixgbe_adapter) +
 				sizeof(struct netmap_ixgbe_head) * adapter->num_tx_queues, 1)) {
 		pr_err("netmap: failed to attach netmap adapter");
+#ifndef NM_IXGBE_USE_TDH
 		dma_pool_destroy(pool);
+#endif /*! NM_IXGBE_USE_TDH */
 		return;
 	}
+#ifndef NM_IXGBE_USE_TDH
 	ina = (struct netmap_ixgbe_adapter *)NA(adapter->netdev);
 	ina->pool = pool;
 	for (i = 0; i < adapter->num_tx_queues; i++) {
@@ -714,22 +724,24 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 			return;
 		}
 	}
-
-	return;
+#endif /*! NM_IXGBE_USE_TDH */
 }
 
 static void
 ixgbe_netmap_detach(struct NM_IXGBE_ADAPTER *adapter)
 {
 	struct netmap_adapter *na;
+#ifndef NM_IXGBE_USE_TDH
 	struct netmap_ixgbe_adapter *ina;
 	int i;
+#endif /*! NM_IXGBE_USE_TDH */
 
 	if (!NM_NA_VALID(adapter->netdev))
 		return;
 
 	na = NA(adapter->netdev);
 
+#ifndef NM_IXGBE_USE_TDH
 	ina = (struct netmap_ixgbe_adapter *)na;
 	if (ina->pool != NULL) {
 		for (i = 0; i < na->num_tx_rings; i++) {
@@ -742,6 +754,7 @@ ixgbe_netmap_detach(struct NM_IXGBE_ADAPTER *adapter)
 		dma_pool_destroy(ina->pool);
 		ina->pool = NULL;
 	}
+#endif /*! NM_IXGBE_USE_TDH */
 	netmap_detach(adapter->netdev);
 }
 
