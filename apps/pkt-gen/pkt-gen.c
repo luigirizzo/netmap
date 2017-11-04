@@ -1891,17 +1891,26 @@ txseq_body(void *data)
 		}
 
 		/* wait for available room in the send queue */
+#ifdef BUSYWAIT
+		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
+			D("ioctl error on queue %d: %s", targ->me,
+					strerror(errno));
+			goto quit;
+		}
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
 			D("poll error/timeout on queue %d: %s", targ->me,
 				strerror(errno));
+			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
 			D("poll error on %d ring %d-%d", pfd.fd,
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
+#endif /* !BUSYWAIT */
 
 		/* If no room poll() again. */
 		space = nm_ring_space(ring);
@@ -2073,8 +2082,13 @@ rxseq_body(void *data)
 		unsigned int head;
 		int limit;
 
-		/* Once we started to receive packets, wait at most 1 seconds
-		   before quitting. */
+#ifdef BUSYWAIT
+		if (ioctl(pfd.fd, NIOCRXSYNC, NULL) < 0) {
+			D("ioctl error on queue %d: %s", targ->me,
+					strerror(errno));
+			goto quit;
+		}
+#else /* !BUSYWAIT */
 		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
@@ -2085,6 +2099,7 @@ rxseq_body(void *data)
 			D("poll err");
 			goto quit;
 		}
+#endif /* !BUSYWAIT */
 
 		for (j = targ->nmd->first_rx_ring; j <= targ->nmd->last_rx_ring; j++) {
 			ring = NETMAP_RXRING(targ->nmd->nifp, j);
@@ -2192,7 +2207,9 @@ rxseq_body(void *data)
 	}
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
+#ifndef BUSYWAIT
 out:
+#endif /* !BUSYWAIT */
 	targ->completed = 1;
 	targ->ctr = cur;
 
