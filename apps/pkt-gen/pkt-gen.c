@@ -2036,17 +2036,24 @@ rxseq_body(void *data)
 	int dump = targ->g->options & OPT_DUMP;
 	struct netmap_ring *ring;
 	unsigned int frags_exp = 1;
-	uint32_t seq_exp = 0;
 	struct my_ctrs cur;
 	unsigned int frags = 0;
 	int first_packet = 1;
 	int first_slot = 1;
-	int i, af;
+	int i, j, af, nrings;
+	uint32_t seq, *seq_exp = NULL;
 
 	memset(&cur, 0, sizeof(cur));
 
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
+
+	nrings = targ->nmd->last_rx_ring - targ->nmd->first_rx_ring + 1;
+	seq_exp = calloc(nrings, sizeof(uint32_t));
+	if (seq_exp == NULL) {
+		D("failed to allocate seq array");
+		goto quit;
+	}
 
 	D("reading from %s fd %d main_fd %d",
 		targ->g->ifname, targ->fd, targ->g->main_fd);
@@ -2061,11 +2068,9 @@ rxseq_body(void *data)
 
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
 
-	ring = NETMAP_RXRING(targ->nmd->nifp, targ->nmd->first_rx_ring);
 
 	while (!targ->cancel) {
 		unsigned int head;
-		uint32_t seq;
 		int limit;
 
 		/* Once we started to receive packets, wait at most 1 seconds
@@ -2081,107 +2086,110 @@ rxseq_body(void *data)
 			goto quit;
 		}
 
-		if (nm_ring_empty(ring))
-			continue;
+		for (j = targ->nmd->first_rx_ring; j <= targ->nmd->last_rx_ring; j++) {
+			ring = NETMAP_RXRING(targ->nmd->nifp, j);
+			if (nm_ring_empty(ring))
+				continue;
 
-		limit = nm_ring_space(ring);
-		if (limit > targ->g->burst)
-			limit = targ->g->burst;
+			limit = nm_ring_space(ring);
+			if (limit > targ->g->burst)
+				limit = targ->g->burst;
 
 #if 0
-		/* Enable this if
-		 *     1) we remove the early-return optimization from
-		 *        the netmap poll implementation, or
-		 *     2) pipes get NS_MOREFRAG support.
-		 * With the current netmap implementation, an experiment like
-		 *    pkt-gen -i vale:1{1 -f txseq -F 9
-		 *    pkt-gen -i vale:1}1 -f rxseq
-		 * would get stuck as soon as we find nm_ring_space(ring) < 9,
-		 * since here limit is rounded to 0 and
-		 * pipe rxsync is not called anymore by the poll() of this loop.
-		 */
-		if (frags_exp > 1) {
-			int o = limit;
-			/* Cut off to the closest smaller multiple. */
-			limit = (limit / frags_exp) * frags_exp;
-			RD(2, "LIMIT %d --> %d", o, limit);
-		}
+			/* Enable this if
+			 *     1) we remove the early-return optimization from
+			 *        the netmap poll implementation, or
+			 *     2) pipes get NS_MOREFRAG support.
+			 * With the current netmap implementation, an experiment like
+			 *    pkt-gen -i vale:1{1 -f txseq -F 9
+			 *    pkt-gen -i vale:1}1 -f rxseq
+			 * would get stuck as soon as we find nm_ring_space(ring) < 9,
+			 * since here limit is rounded to 0 and
+			 * pipe rxsync is not called anymore by the poll() of this loop.
+			 */
+			if (frags_exp > 1) {
+				int o = limit;
+				/* Cut off to the closest smaller multiple. */
+				limit = (limit / frags_exp) * frags_exp;
+				RD(2, "LIMIT %d --> %d", o, limit);
+			}
 #endif
 
-		for (head = ring->head, i = 0; i < limit; i++) {
-			struct netmap_slot *slot = &ring->slot[head];
-			char *p = NETMAP_BUF(ring, slot->buf_idx);
-			int len = slot->len;
-			struct pkt *pkt;
+			for (head = ring->head, i = 0; i < limit; i++) {
+				struct netmap_slot *slot = &ring->slot[head];
+				char *p = NETMAP_BUF(ring, slot->buf_idx);
+				int len = slot->len;
+				struct pkt *pkt;
 
-			if (dump) {
-				dump_payload(p, slot->len, ring, head);
-			}
-
-			frags++;
-			if (!(slot->flags & NS_MOREFRAG)) {
-				if (first_packet) {
-					first_packet = 0;
-				} else if (frags != frags_exp) {
-					char prbuf[512];
-					RD(1, "Received packets with %u frags, "
-					      "expected %u, '%s'", frags, frags_exp,
-					      multi_slot_to_string(ring, head-frags+1, frags,
-								   prbuf, sizeof(prbuf)));
+				if (dump) {
+					dump_payload(p, slot->len, ring, head);
 				}
-				first_packet = 0;
-				frags_exp = frags;
-				frags = 0;
-			}
 
-			p -= sizeof(pkt->vh) - targ->g->virt_header;
-			len += sizeof(pkt->vh) - targ->g->virt_header;
-			pkt = (struct pkt *)p;
-			if (ntohs(pkt->eh.ether_type) == ETHERTYPE_IP)
-				af = AF_INET;
-			else
-				af = AF_INET6;
-
-			if ((char *)pkt + len < ((char *)PKT(pkt, body, af)) +
-			    sizeof(seq)) {
-				RD(1, "%s: packet too small (len=%u)", __func__,
-				      slot->len);
-			} else {
-				seq = (PKT(pkt, body, af)[0] << 24) |
-				    (PKT(pkt, body, af)[1] << 16) |
-				    (PKT(pkt, body, af)[2] << 8) |
-				    PKT(pkt, body, af)[3];
-				if (first_slot) {
-					/* Grab the first one, whatever it
-					   is. */
-					seq_exp = seq;
-					first_slot = 0;
-				} else if (seq != seq_exp) {
-					uint32_t delta = seq - seq_exp;
-
-					if (delta < (0xFFFFFFFF >> 1)) {
-						RD(2, "Sequence GAP: exp %u found %u",
-						      seq_exp, seq);
-					} else {
-						RD(2, "Sequence OUT OF ORDER: "
-						      "exp %u found %u", seq_exp, seq);
+				frags++;
+				if (!(slot->flags & NS_MOREFRAG)) {
+					if (first_packet) {
+						first_packet = 0;
+					} else if (frags != frags_exp) {
+						char prbuf[512];
+						RD(1, "Received packets with %u frags, "
+								"expected %u, '%s'", frags, frags_exp,
+								multi_slot_to_string(ring, head-frags+1,
+							       	frags,
+									prbuf, sizeof(prbuf)));
 					}
-					seq_exp = seq;
+					first_packet = 0;
+					frags_exp = frags;
+					frags = 0;
 				}
-				seq_exp++;
+
+				p -= sizeof(pkt->vh) - targ->g->virt_header;
+				len += sizeof(pkt->vh) - targ->g->virt_header;
+				pkt = (struct pkt *)p;
+				if (ntohs(pkt->eh.ether_type) == ETHERTYPE_IP)
+					af = AF_INET;
+				else
+					af = AF_INET6;
+
+				if ((char *)pkt + len < ((char *)PKT(pkt, body, af)) +
+						sizeof(seq)) {
+					RD(1, "%s: packet too small (len=%u)", __func__,
+							slot->len);
+				} else {
+					seq = (PKT(pkt, body, af)[0] << 24) |
+						(PKT(pkt, body, af)[1] << 16) |
+						(PKT(pkt, body, af)[2] << 8) |
+						PKT(pkt, body, af)[3];
+					if (first_slot) {
+						/* Grab the first one, whatever it
+						   is. */
+						seq_exp[j] = seq;
+						first_slot = 0;
+					} else if (seq != seq_exp[j]) {
+						uint32_t delta = seq - seq_exp[j];
+
+						if (delta < (0xFFFFFFFF >> 1)) {
+							RD(2, "Sequence GAP: exp %u found %u",
+									seq_exp[j], seq);
+						} else {
+							RD(2, "Sequence OUT OF ORDER: "
+									"exp %u found %u", seq_exp[j], seq);
+						}
+						seq_exp[j] = seq;
+					}
+					seq_exp[j]++;
+				}
+
+				cur.bytes += slot->len;
+				head = nm_ring_next(ring, head);
+				cur.pkts++;
 			}
 
-			cur.bytes += slot->len;
-			head = nm_ring_next(ring, head);
-			cur.pkts++;
+			ring->cur = ring->head = head;
+
+			cur.events++;
+			targ->ctr = cur;
 		}
-
-		ring->cur = ring->head = head;
-
-		cur.events++;
-		targ->ctr = cur;
 	}
-
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 
 out:
@@ -2189,6 +2197,8 @@ out:
 	targ->ctr = cur;
 
 quit:
+	if (seq_exp != NULL)
+		free(seq_exp);
 	/* reset the ``used`` flag. */
 	targ->used = 0;
 
