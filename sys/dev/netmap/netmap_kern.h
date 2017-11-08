@@ -1762,15 +1762,15 @@ netmap_idx_k2n(struct netmap_kring *kr, int idx)
 
 
 /* Entries of the look-up table. */
-#ifndef linux
+#if !defined(linux) && !defined(_WIN32)
 struct lut_entry {
 	void *vaddr;		/* virtual address. */
 	vm_paddr_t paddr;	/* physical address. */
 };
-#else /* linux */
+#else /* linux & _WIN32 */
 /* dma-mapping in linux can assign a buffer a different address
  * depending on the device, so we need to have a separate 
- * physical-adress look-up table for each na.
+ * physical-address look-up table for each na.
  * We can still share the vaddrs, though, therefore we split
  * the lut_entry structure.
  */
@@ -1781,7 +1781,7 @@ struct lut_entry {
 struct plut_entry {
 	vm_paddr_t paddr;	/* physical address. */
 };
-#endif /* !linux */
+#endif /* !linux & !_WIN32 */
 
 struct netmap_obj_pool;
 

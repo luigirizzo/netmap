@@ -1341,7 +1341,7 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 		 */
 		for (; i < lim; i++, clust += p->_objsize) {
 			p->lut[i].vaddr = clust;
-#ifndef linux
+#if !defined(linux) && !defined(_WIN32)
 			p->lut[i].paddr = vtophys(clust);
 #endif
 		}
