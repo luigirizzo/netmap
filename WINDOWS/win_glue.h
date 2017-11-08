@@ -22,7 +22,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
- 
+
 #ifndef NETMAP_WIN_GLUE_H
 #define NETMAP_WIN_GLUE_H
 
@@ -117,7 +117,7 @@ typedef char *			caddr_t;
 
 typedef PHYSICAL_ADDRESS 	vm_paddr_t;
 typedef uint32_t		vm_offset_t;
-typedef ULONG 			vm_ooffset_t; 
+typedef ULONG 			vm_ooffset_t;
 
 #define thread PIO_STACK_LOCATION
 
@@ -127,7 +127,7 @@ typedef ULONG 			vm_ooffset_t;
 /*
  *	ERRNO -> NTSTATUS TRANSLATION
  */
-#define ENOBUFS		STATUS_DEVICE_INSUFFICIENT_RESOURCES	
+#define ENOBUFS		STATUS_DEVICE_INSUFFICIENT_RESOURCES
 #define EOPNOTSUPP	STATUS_INVALID_DEVICE_REQUEST
 
 /*
@@ -215,7 +215,7 @@ typedef struct _win_SELINFO
 	KGUARDED_MUTEX mutex;
 } win_SELINFO;
 
-static void 
+static void
 nm_os_selinfo_init(win_SELINFO* queue)
 {
 	KeInitializeEvent(&queue->queue, NotificationEvent, TRUE);
@@ -266,7 +266,7 @@ static int time_uptime_w32()
 struct netmap_adapter;
 
 struct net_device {
-	char	if_xname[IFNAMSIZ];			// external name (name + unit) 
+	char	if_xname[IFNAMSIZ];			// external name (name + unit)
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter	*na;
 	void	*pfilter;
@@ -333,7 +333,7 @@ struct mbuf *win_make_mbuf(struct net_device *, uint32_t, const char *);
 	// XXX do we also need the netmap_default_mbuf_destructor ?
 
 
-static inline void 
+static inline void
 win32_ndis_packet_freem(struct mbuf* m)
 {
 	if (m != NULL) {
@@ -345,7 +345,7 @@ win32_ndis_packet_freem(struct mbuf* m)
 		ExFreeToNPagedLookasideList(&m->dev->mbuf_pool, m);
 		//free(m, M_DEVBUF);
 
-	}	
+	}
 }
 
 /*
