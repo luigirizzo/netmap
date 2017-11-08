@@ -885,6 +885,16 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
     DbgPrint("bdg_mismatch_datapath unimplemented!!!\n");
 }
 
+void if_ref(struct net_device *ifp)
+{
+	/*
+	* XXX This is just to shut up the compiler.
+	* I wouldn't know what to out in here yet...
+	*/
+	DbgPrint("unimplemented if_ref!!!\n");
+/* 	dev_hold(ifp); */
+}
+
 void
 if_rele(struct net_device *ifp)
 {

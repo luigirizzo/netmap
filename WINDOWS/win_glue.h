@@ -46,7 +46,7 @@
 #pragma warning(disable:4118)	//error in between signed and unsigned
 //#pragma warning(disable:4115)	//definition of type between parenthesis
 #pragma warning(disable:4127)	//constant conditional expression
-#pragma warning(disable:4133)	//warning: uncompatible types: From <1> to <2>
+#pragma warning(disable:4133)	//warning: incompatible types: From <1> to <2>
 #pragma warning(disable:4142)	//benign type redefinition
 // #pragma warning(disable:4189)	//local variable initialized but without references
 #pragma warning(disable:4200)	//non-standard extension: matrix of zero dimension in struct/union
@@ -54,8 +54,8 @@
 #pragma warning(disable:4229)	// zero-size arrays // XXX
 #pragma warning(disable:4242)	//possible loss of data in conversion
 #pragma warning(disable:4244)	//possible loss of data in conversion
-#pragma warning(disable:4245)	//conversion from int to uint_32t: corrispondence error between signed and unsigned
-#pragma warning(disable:4389)	//wrong corrispondence between signed and unsigned
+#pragma warning(disable:4245)	//conversion from int to uint_32t: correspondence error between signed and unsigned
+#pragma warning(disable:4389)	//wrong correspondence between signed and unsigned
 
 #pragma warning(disable:4267)	//conversion from 'size_t' to <type>. possible loss of data
 
@@ -360,6 +360,7 @@ win32_ndis_packet_freem(struct mbuf* m)
 
 struct net_device* ifunit_ref(const char *name);
 void if_rele(struct net_device *ifp);
+void if_ref(struct net_device *ifp);
 
 PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 
