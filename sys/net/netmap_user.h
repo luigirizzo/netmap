@@ -1074,7 +1074,6 @@ nm_dispatch(struct nm_desc *d, int cnt, nm_cb_t cb, u_char *arg)
 
 		if (ri > d->last_rx_ring)
 			ri = d->first_rx_ring;
-		d->cur_rx_ring = ri;
 		ring = NETMAP_RXRING(d->nifp, ri);
 		for ( ; !nm_ring_empty(ring) && cnt != got; got++) {
 			u_int idx, i;
@@ -1083,6 +1082,9 @@ nm_dispatch(struct nm_desc *d, int cnt, nm_cb_t cb, u_char *arg)
 			}
 			i = ring->cur;
 			idx = ring->slot[i].buf_idx;
+			/* d->cur_rx_ring doesn't change inside this loop, but
+			 * set it here, so it reflects d->hdr.buf's ring */
+			d->cur_rx_ring = ri;
 			d->hdr.slot = &ring->slot[i];
 			d->hdr.buf = (u_char *)NETMAP_BUF(ring, idx);
 			// __builtin_prefetch(buf);
