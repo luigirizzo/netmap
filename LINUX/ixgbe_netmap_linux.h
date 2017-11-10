@@ -216,11 +216,36 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
 	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(ifp);
+	int i;
 
 	// adapter->netdev->trans_start = jiffies; // disable watchdog ?
 	/* protect against other reinit */
 	while (test_and_set_bit(NM_IXGBE_RESETTING, &adapter->state))
 		usleep_range(1000, 2000);
+
+	/* reset all next_to_* pointers before leaving netmap mode */
+	for (i = 0; i < adapter->num_rx_queues; i++) {
+		struct netmap_kring *kring = &na->rx_rings[i];
+
+		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
+			struct NM_IXGBE_RING *rxr = NM_IXGBE_RX_RING(adapter, i);
+
+			rxr->next_to_clean = 0;
+			rxr->next_to_use = 0;
+			rxr->next_to_alloc = 0;
+		}
+	}
+
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		struct netmap_kring *kring = &na->tx_rings[i];
+
+		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
+			struct NM_IXGBE_RING *rxr = NM_IXGBE_TX_RING(adapter, i);
+
+			rxr->next_to_clean = 0;
+			rxr->next_to_use = 0;
+		}
+	}
 
 	if (netif_running(adapter->netdev))
 		NM_IXGBE_DOWN(adapter);
@@ -546,14 +571,6 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		rxr->next_to_use = nic_i; /* used for debug only */
 		IXGBE_WRITE_REG(&adapter->hw, NM_IXGBE_RDT(rxr->reg_idx), nic_i);
 	}
-
-	/* some versions of the ixgbe driver will blindly try to deallocate
-	 * stuff from next_to_clean to next_to_alloc on ifdown, but we skipped
-	 * the corresponding allocations when we put the card in netmap mode.
-	 * We prevent this by always having next_to_alloc==next_to_clean
-	 */
-	rxr->next_to_alloc = rxr->next_to_clean;
-
 
 	return 0;
 
