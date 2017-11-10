@@ -1579,7 +1579,7 @@ EOF
 EOF
   # is next_to_alloc defined?
   add_test "define IXGBEVF_HAVE_NTA" <<EOF
-  	#include "ixgbevf/ixgbefv.h"
+  	#include "ixgbevf/ixgbevf.h"
 
 	u16
 	dummy(struct ixgbevf_ring *ring) {

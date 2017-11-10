@@ -101,7 +101,7 @@ index fee1f2918..7b86ce4 100644
  	/* bring the link up in the watchdog, this could race with our first
  	 * link up interrupt but shouldn't be a problem */
  	adapter->flags |= IXGBE_FLAG_NEED_LINK_UPDATE;
-@@ -9799,6 +9847,10 @@ skip_sriov:
+@@ -9799,6 +9847,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
  			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
  			true);
  

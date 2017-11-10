@@ -142,9 +142,9 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 	IXGBE_WRITE_REG(hw, IXGBE_SRRCTL(reg_idx), srrctl);
 }
 
-#ifdef NETMAP_LINUX_HAVE_IXGBE_NTA
+#ifdef NETMAP_LINUX_IXGBE_HAVE_NTA
 #define NETMAP_LINUX_HAVE_NTA
-#endif /* NETMAP_LINUX_HAVE_IXGBE_NTA */
+#endif /* NETMAP_LINUX_IXGBE_HAVE_NTA */
 
 #else
 /***********************************************************************
@@ -193,9 +193,9 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 	D("not supported");
 }
 
-#ifdef NETMAP_LINUX_HAVE_IXGBEVF_NTA
+#ifdef NETMAP_LINUX_IXGBEVF_HAVE_NTA
 #define NETMAP_LINUX_HAVE_NTA
-#endif /* NETMAP_LINUX_HAVE_IXGBEVF_NTA */
+#endif /* NETMAP_LINUX_IXGBEVF_HAVE_NTA */
 
 #endif /* NM_IXGBE */
 /**********************************************************************/
