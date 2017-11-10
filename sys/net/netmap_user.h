@@ -1024,13 +1024,13 @@ fail:
 static int
 nm_inject(struct nm_desc *d, const void *buf, size_t size)
 {
-	u_int c, n = d->last_tx_ring - d->first_tx_ring + 1;
+	u_int c, n = d->last_tx_ring - d->first_tx_ring + 1,
+		ri = d->cur_tx_ring;
 
-	for (c = 0; c < n ; c++) {
+	for (c = 0; c < n ; c++, ri++) {
 		/* compute current ring to use */
 		struct netmap_ring *ring;
 		uint32_t i, idx;
-		uint32_t ri = d->cur_tx_ring + c;
 
 		if (ri > d->last_tx_ring)
 			ri = d->first_tx_ring;
@@ -1068,11 +1068,10 @@ nm_dispatch(struct nm_desc *d, int cnt, nm_cb_t cb, u_char *arg)
 	 * of buffers and the int is large enough that we never wrap,
 	 * so we can omit checking for -1
 	 */
-	for (c=0; c < n && cnt != got; c++) {
+	for (c=0; c < n && cnt != got; c++, ri++) {
 		/* compute current ring to use */
 		struct netmap_ring *ring;
 
-		ri = d->cur_rx_ring + c;
 		if (ri > d->last_rx_ring)
 			ri = d->first_rx_ring;
 		ring = NETMAP_RXRING(d->nifp, ri);
@@ -1083,6 +1082,9 @@ nm_dispatch(struct nm_desc *d, int cnt, nm_cb_t cb, u_char *arg)
 			}
 			i = ring->cur;
 			idx = ring->slot[i].buf_idx;
+			/* d->cur_rx_ring doesn't change inside this loop, but
+			 * set it here, so it reflects d->hdr.buf's ring */
+			d->cur_rx_ring = ri;
 			d->hdr.slot = &ring->slot[i];
 			d->hdr.buf = (u_char *)NETMAP_BUF(ring, idx);
 			// __builtin_prefetch(buf);
@@ -1095,7 +1097,6 @@ nm_dispatch(struct nm_desc *d, int cnt, nm_cb_t cb, u_char *arg)
 		d->hdr.flags = 0;
 		cb(arg, &d->hdr, d->hdr.buf);
 	}
-	d->cur_rx_ring = ri;
 	return got;
 }
 
