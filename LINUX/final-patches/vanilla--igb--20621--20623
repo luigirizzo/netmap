@@ -1,5 +1,5 @@
 diff --git a/igb/igb_main.c b/igb/igb_main.c
-index c881347cb26d..a2af3799f5a8 100644
+index c881347..a2af379 100644
 --- a/igb/igb_main.c
 +++ b/igb/igb_main.c
 @@ -226,6 +226,10 @@ char *igb_get_hw_dev_name(struct e1000_hw *hw)

@@ -1,5 +1,5 @@
 diff --git a/e1000e/netdev.c b/e1000e/netdev.c
-index 9520a6ac1f30..bf94805911f9 100644
+index 9520a6a..bf94805 100644
 --- a/e1000e/netdev.c
 +++ b/e1000e/netdev.c
 @@ -467,6 +467,10 @@ static int e1000_desc_unused(struct e1000_ring *ring)

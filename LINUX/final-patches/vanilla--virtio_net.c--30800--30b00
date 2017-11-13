@@ -1,5 +1,5 @@
 diff --git a/virtio_net.c b/virtio_net.c
-index 35c00c5ea02a..bfbb1787ec55 100644
+index 35c00c5..bfbb178 100644
 --- a/virtio_net.c
 +++ b/virtio_net.c
 @@ -132,6 +132,10 @@ struct virtnet_info {

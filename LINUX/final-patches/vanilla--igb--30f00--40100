@@ -1,5 +1,5 @@
 diff --git a/igb/igb_main.c b/igb/igb_main.c
-index 16430a8440fa..c2c462218ec3 100644
+index 16430a8..c2c4622 100644
 --- a/igb/igb_main.c
 +++ b/igb/igb_main.c
 @@ -257,6 +257,10 @@ static int debug = -1;
