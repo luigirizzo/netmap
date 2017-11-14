@@ -28,6 +28,7 @@ struct dedup {
 
 	/* configuration */ 
 	unsigned int fifo_size;
+	int	zcopy_in_out;
 };
 
 void dedup_ptr_init(struct dedup *d, struct dedup_ptr *p, unsigned long v);

@@ -41,11 +41,19 @@ dedup_duplicate(struct dedup *d, const struct netmap_slot *s)
 static void
 dedup_move_in_out(struct dedup *d, struct netmap_slot *src, struct netmap_slot *dst)
 {
-	char *rxbuf = NETMAP_BUF(d->in_ring, src->buf_idx);
-	char *txbuf = NETMAP_BUF(d->out_ring, dst->buf_idx);
-	nm_pkt_copy(rxbuf, txbuf, src->len);
-	dst->len = src->len;
-	dst->ptr = src->ptr;
+	if (d->zcopy_in_out) {
+		struct netmap_slot w = *dst;
+		*dst = *src;
+		*src = w;
+		src->flags |= NS_BUF_CHANGED;
+		dst->flags |= NS_BUF_CHANGED;
+	} else {
+		char *rxbuf = NETMAP_BUF(d->in_ring, src->buf_idx);
+		char *txbuf = NETMAP_BUF(d->out_ring, dst->buf_idx);
+		nm_pkt_copy(rxbuf, txbuf, src->len);
+		dst->len = src->len;
+		dst->ptr = src->ptr;
+	}
 }
 
 int
