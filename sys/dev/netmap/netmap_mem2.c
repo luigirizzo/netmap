@@ -1409,6 +1409,8 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	D("unsupported on Windows");
 #else /* linux */
 	ND("unmapping and freeing plut for %s", na->name);
+	if (lut->plut == NULL)
+		return 0;
 	for (i = 2; i < lim; i += p->_clustentries) {
 		if (lut->plut[i].paddr)
 			netmap_unload_map(na, (bus_dma_tag_t) na->pdev, &lut->plut[i].paddr);
