@@ -1,7 +1,18 @@
 #include <stdio.h>
+#include <malloc.h>
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
 #include "dedup.h"
+
+int
+dedup_init(struct dedup *d, unsigned int fifo_size)
+{
+	d->fifo = calloc(fifo_size, sizeof(d->fifo[0]));
+	if (d->fifo == NULL)
+		return -1;
+	d->fifo_size = fifo_size;
+	return 0;
+}
 
 void
 dedup_ptr_init(struct dedup *d, struct dedup_ptr *p, unsigned long v)
@@ -14,6 +25,12 @@ static int
 dedup_fifo_full(const struct dedup *d)
 {
 	return (d->fifo_in.r - d->fifo_out.r >= d->fifo_size);
+}
+
+static int
+dedup_fifo_empty(const struct dedup *d)
+{
+	return (d->fifo_in.r == d->fifo_out.r);
 }
 
 static void
@@ -56,12 +73,38 @@ dedup_move_in_out(struct dedup *d, struct netmap_slot *src, struct netmap_slot *
 	}
 }
 
+static void
+_dedup_fifo_push_out(struct dedup *d)
+{
+	dedup_ptr_inc(d, &d->next_to_send);
+	dedup_hash_remove(d, &d->out_slot[d->fifo_out.o]);
+	dedup_ptr_inc(d, &d->fifo_out);
+}
+
+static int
+_dedup_fifo_slide_win(struct dedup *d, int out_space, const struct timeval* now)
+{
+	struct timeval winstart;
+
+	timersub(now, &d->win_size, &winstart);
+
+	while (out_space && !dedup_fifo_empty(d) &&
+			timercmp(&d->fifo[d->fifo_out.f].arrival, &winstart, <)) {
+		_dedup_fifo_push_out(d);
+		out_space--;
+	}
+	return out_space;
+}
+
 int
 dedup_hold_push_in(struct dedup *d)
 {
 	struct netmap_ring *ri = d->in_ring, *ro = d->out_ring;
 	uint32_t head;
 	int n, out_space;
+	struct timeval now;
+
+	gettimeofday(&now, NULL);
 
 	/* packets to input */
 	n = ri->tail - ri->head;
@@ -71,6 +114,8 @@ dedup_hold_push_in(struct dedup *d)
 	out_space = ro->tail - d->fifo_in.o;
 	if (out_space < 0)
 		out_space += ro->num_slots;
+
+	out_space = _dedup_fifo_slide_win(d, out_space, &now);
 
 	for (head = ri->head; n; head = nm_ring_next(ri, head), n--) {
 		struct netmap_slot *src_slot, *dst_slot;
@@ -87,15 +132,13 @@ dedup_hold_push_in(struct dedup *d)
 			break;
 
 		/* if the FIFO is full, send the oldest packet */
-		if (dedup_fifo_full(d)) {
-			dedup_ptr_inc(d, &d->next_to_send);
-			dedup_hash_remove(d, &d->out_slot[d->fifo_out.o]);
-			dedup_ptr_inc(d, &d->fifo_out);
-		}
+		if (dedup_fifo_full(d))
+			_dedup_fifo_push_out(d);
 
 		/* move the new packet to the FIFO */
 		dst_slot = d->out_slot + d->fifo_in.o;
 		dedup_move_in_out(d, src_slot, dst_slot);
+		d->fifo[d->fifo_in.f].arrival = d->in_ring->ts;
 		dedup_ptr_inc(d, &d->fifo_in);
 		out_space--;
 		dedup_hash_insert(d, dst_slot);

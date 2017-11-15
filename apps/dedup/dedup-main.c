@@ -42,13 +42,14 @@ main(int argc, char **argv)
 	struct nm_desc *pa = NULL, *pb = NULL;
 	char *ifa = NULL, *ifb = NULL;
 	int wait_link = 2;
-	int win_size = 10;
+	int win_size_usec = 50;
+	unsigned int fifo_size = 10;
 	struct dedup dedup;
 	int n;
 
 	fprintf(stderr, "%s built %s %s\n\n", argv[0], __DATE__, __TIME__);
 
-	while ((ch = getopt(argc, argv, "hci:vw:W:")) != -1) {
+	while ((ch = getopt(argc, argv, "hci:vw:W:F:")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -75,7 +76,10 @@ main(int argc, char **argv)
 			wait_link = atoi(optarg);
 			break;
 		case 'W':
-			win_size = atoi(optarg);
+			win_size_usec = atoi(optarg);
+			break;
+		case 'F':
+			fifo_size = atoi(optarg);
 			break;
 		}
 
@@ -115,8 +119,19 @@ main(int argc, char **argv)
 	dedup.in_ring = NETMAP_RXRING(pa->nifp, pa->first_rx_ring);
 	dedup.in_slot = dedup.in_ring->slot;
 	dedup.out_ring = NETMAP_TXRING(pb->nifp, pb->first_tx_ring);
+	if (fifo_size >= dedup.out_ring->num_slots - 1) {
+		D("fifo_size %u too large (max %u)", fifo_size, dedup.out_ring->num_slots - 1);
+		return (1);
+	}
 	dedup.out_slot = dedup.out_ring->slot;
-	dedup.fifo_size = win_size;
+	if (dedup_init(&dedup, fifo_size) < 0) {
+		D("failed to initialize dedup with fifo_size %u", fifo_size);
+		return (1);
+	}
+	dedup.win_size.tv_sec = win_size_usec / 1000000;
+	dedup.win_size.tv_usec = win_size_usec % 1000000;
+	D("win_size %lld+%lld", (long long) dedup.win_size.tv_sec,
+			(long long) dedup.win_size.tv_usec);
 	dedup.zcopy_in_out = zerocopy;
 
 	/* setup poll(2) array */
@@ -136,11 +151,12 @@ main(int argc, char **argv)
 
 		pollfd[0].events = pollfd[1].events = 0;
 		pollfd[0].revents = pollfd[1].revents = 0;
-		pollfd[0].events |= POLLIN;
-		if (n)
-			pollfd[1].events |= POLLOUT;
+		if (!n)
+			pollfd[0].events = POLLIN;
+		else
+			pollfd[1].events = POLLOUT;
 		/* poll() also cause kernel to txsync/rxsync the NICs */
-		ret = poll(pollfd, 2, 2500);
+		ret = poll(pollfd, 2, 1000);
 		if (ret <= 0 || verbose)
 		    D("poll %s [0] ev %x %x"
 			     " [1] ev %x %x",
