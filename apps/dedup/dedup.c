@@ -60,11 +60,11 @@ int
 dedup_hold_push_in(struct dedup *d)
 {
 	struct netmap_ring *ri = d->in_ring, *ro = d->out_ring;
-	uint32_t cur;
+	uint32_t head;
 	int n, out_space;
 
 	/* packets to input */
-	n = ri->tail - ri->cur;
+	n = ri->tail - ri->head;
 	if (n < 0)
 		n += ri->num_slots;
 	/* available space on the output ring */
@@ -72,10 +72,10 @@ dedup_hold_push_in(struct dedup *d)
 	if (out_space < 0)
 		out_space += ro->num_slots;
 
-	for (cur = ri->cur; n; cur = nm_ring_next(ri, cur), n--) {
+	for (head = ri->head; n; head = nm_ring_next(ri, head), n--) {
 		struct netmap_slot *src_slot, *dst_slot;
 
-		src_slot = d->in_slot + cur;
+		src_slot = d->in_slot + head;
 
 		if (dedup_duplicate(d, src_slot))
 			continue;
@@ -100,8 +100,8 @@ dedup_hold_push_in(struct dedup *d)
 		out_space--;
 		dedup_hash_insert(d, dst_slot);
 	}
-	ri->head = ri->cur = cur;
-	ro->head = ro->cur = d->next_to_send.o;
+	ri->head = head;
+	ro->head = d->next_to_send.o;
 	return n;
 }
 
