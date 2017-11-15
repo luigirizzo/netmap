@@ -116,16 +116,15 @@ main(int argc, char **argv)
 	D("------- zerocopy %ssupported", zerocopy ? "" : "NOT ");
 
 	memset(&dedup, 0, sizeof(dedup));
-	dedup.in_ring = NETMAP_RXRING(pa->nifp, pa->first_rx_ring);
-	dedup.in_slot = dedup.in_ring->slot;
-	dedup.out_ring = NETMAP_TXRING(pb->nifp, pb->first_tx_ring);
-	if (fifo_size >= dedup.out_ring->num_slots - 1) {
-		D("fifo_size %u too large (max %u)", fifo_size, dedup.out_ring->num_slots - 1);
+	dedup.out_slot = dedup.out_ring->slot;
+	if (dedup_init(&dedup, fifo_size, 
+			NETMAP_RXRING(pa->nifp, pa->first_rx_ring),
+			NETMAP_TXRING(pb->nifp, pb->first_tx_ring)) < 0) {
+		D("failed to initialize dedup with fifo_size %u", fifo_size);
 		return (1);
 	}
-	dedup.out_slot = dedup.out_ring->slot;
-	if (dedup_init(&dedup, fifo_size) < 0) {
-		D("failed to initialize dedup with fifo_size %u", fifo_size);
+	if (fifo_size >= dedup.out_ring->num_slots - 1) {
+		D("fifo_size %u too large (max %u)", fifo_size, dedup.out_ring->num_slots - 1);
 		return (1);
 	}
 	dedup.win_size.tv_sec = win_size_usec / 1000000;

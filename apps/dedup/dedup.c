@@ -5,12 +5,19 @@
 #include "dedup.h"
 
 int
-dedup_init(struct dedup *d, unsigned int fifo_size)
+dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in, struct netmap_ring *out)
 {
 	d->fifo = calloc(fifo_size, sizeof(d->fifo[0]));
 	if (d->fifo == NULL)
 		return -1;
 	d->fifo_size = fifo_size;
+	d->in_ring = in;
+	d->in_slot = in->slot;
+	d->out_ring = out;
+	d->out_slot = out->slot;
+	dedup_ptr_init(d, &d->next_to_send, out->head);
+	dedup_ptr_init(d, &d->fifo_out, out->head);
+	dedup_ptr_init(d, &d->fifo_in, out->head);
 	return 0;
 }
 

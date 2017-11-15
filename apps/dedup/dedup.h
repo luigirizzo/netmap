@@ -37,7 +37,8 @@ struct dedup {
 	int	zcopy_in_out;
 };
 
-int dedup_init(struct dedup *d, unsigned int fifo_size);
+int dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in,
+		struct netmap_ring *out);
 
 void dedup_ptr_init(struct dedup *d, struct dedup_ptr *p, unsigned long v);
 

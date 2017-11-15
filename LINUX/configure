@@ -146,7 +146,7 @@ update_drivers() {
 update_drivers
 
 # available apps
-application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl"
+application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl dedup"
 application=0
 app()
 {
