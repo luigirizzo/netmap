@@ -4,7 +4,6 @@
 struct dedup_ptr {
 	unsigned long r; /* free running, wraps naturally */
 	unsigned int o;  /* wraps at out_ring-size */
-	unsigned int s;  /* wraps at spill-size */
 };
 
 struct dedup {
@@ -34,12 +33,6 @@ static inline void dedup_ptr_inc(struct dedup *d, struct dedup_ptr *p)
 	p->o++;
 	if (unlikely(p->o >= d->out_ring->num_slots))
 			p->o = 0;
-#if 0
-	p->f++;
-	if (unlikely(p->f > d->spill_size))
-			p->f = 0;
-#endif
-
 }
 
 int dedup_hold_push_in(struct dedup *d);
