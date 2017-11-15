@@ -21,11 +21,6 @@ struct dedup {
 	struct dedup_ptr fifo_in;
 	struct dedup_ptr fifo_out;
 
-	/* how many slots of the FIFO are already in the out_ring,
-	 * starting at next_to_send
-	 */
-	unsigned int prefetched;
-
 	/* configuration */ 
 	unsigned int fifo_size;
 	int	zcopy_in_out;

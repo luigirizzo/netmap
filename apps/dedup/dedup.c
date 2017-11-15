@@ -68,7 +68,7 @@ dedup_hold_push_in(struct dedup *d)
 	if (n < 0)
 		n += ri->num_slots;
 	/* available space on the output ring */
-	out_space = ro->tail - (ro->head + d->prefetched);
+	out_space = ro->tail - d->fifo_in.o;
 	if (out_space < 0)
 		out_space += ro->num_slots;
 
@@ -91,15 +91,13 @@ dedup_hold_push_in(struct dedup *d)
 			dedup_ptr_inc(d, &d->next_to_send);
 			dedup_hash_remove(d, &d->out_slot[d->fifo_out.o]);
 			dedup_ptr_inc(d, &d->fifo_out);
-			d->prefetched--;
 		}
 
 		/* move the new packet to the FIFO */
 		dst_slot = d->out_slot + d->fifo_in.o;
 		dedup_move_in_out(d, src_slot, dst_slot);
-		d->prefetched++;
-		out_space--;
 		dedup_ptr_inc(d, &d->fifo_in);
+		out_space--;
 		dedup_hash_insert(d, dst_slot);
 	}
 	ri->head = ri->cur = cur;
