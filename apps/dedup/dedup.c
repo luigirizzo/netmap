@@ -88,19 +88,17 @@ _dedup_fifo_push_out(struct dedup *d)
 	dedup_ptr_inc(d, &d->fifo_out);
 }
 
-static int
-_dedup_fifo_slide_win(struct dedup *d, int out_space, const struct timeval* now)
+static void
+_dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
 {
 	struct timeval winstart;
 
 	timersub(now, &d->win_size, &winstart);
 
-	while (out_space && !dedup_fifo_empty(d) &&
-			timercmp(&d->fifo[d->fifo_out.f].arrival, &winstart, <)) {
+	while (!dedup_fifo_empty(d) &&
+		timercmp(&d->fifo[d->fifo_out.f].arrival, &winstart, <)) {
 		_dedup_fifo_push_out(d);
-		out_space--;
 	}
-	return out_space;
 }
 
 int
@@ -122,7 +120,7 @@ dedup_hold_push_in(struct dedup *d)
 	if (out_space < 0)
 		out_space += ro->num_slots;
 
-	out_space = _dedup_fifo_slide_win(d, out_space, &now);
+	_dedup_fifo_slide_win(d, &now);
 
 	for (head = ri->head; n; head = nm_ring_next(ri, head), n--) {
 		struct netmap_slot *src_slot, *dst_slot;
