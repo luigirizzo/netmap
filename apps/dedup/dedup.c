@@ -95,8 +95,12 @@ _dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
 
 	timersub(now, &d->win_size, &winstart);
 
-	while (!dedup_fifo_empty(d) &&
-		timercmp(&d->fifo[d->fifo_out.f].arrival, &winstart, <)) {
+	while (!dedup_fifo_empty(d)) {
+		struct dedup_fifo_entry *e = &d->fifo[d->fifo_out.f];
+
+		if (timercmp(&e->arrival, &winstart, <))
+			break;
+
 		_dedup_fifo_push_out(d);
 	}
 }
