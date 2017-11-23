@@ -148,6 +148,8 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
 #define NM_BDG_BATCH_MAX	(NM_BDG_BATCH + NM_MULTISEG)
 /* NM_FT_NULL terminates a list of slots in the ft */
 #define NM_FT_NULL		NM_BDG_BATCH_MAX
+/* Default size for the Maximum Frame Size. */
+#define NM_BDG_MFS_DEFAULT	1514
 
 
 /*
@@ -738,7 +740,6 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na,
 	for (j = 0; j < b->bdg_active_ports; j++) {
 		i = b->bdg_port_index[j];
 		vpna = b->bdg_ports[i];
-		// KASSERT(na != NULL);
 		ND("checking %s", vpna->up.name);
 		if (!strcmp(vpna->up.name, nr_name)) {
 			netmap_adapter_get(&vpna->up);
@@ -1910,6 +1911,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 				 * TCPv4 we must account for ethernet header, IP header
 				 * and TCPv4 header).
 				 */
+				KASSERT(dst_na->mfs > 0, ("vpna->mfs is 0"));
 				needed = (needed * na->mfs) /
 						(dst_na->mfs - WORST_CASE_GSO_HEADER) + 1;
 				ND(3, "srcmtu=%u, dstmtu=%u, x=%u", na->mfs, dst_na->mfs, needed);
@@ -2259,7 +2261,10 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp,
 	nm_bound_var(&nmr->nr_arg3, 0, 0,
 			128*NM_BDG_MAXSLOTS, NULL);
 	na->num_rx_desc = nmr->nr_rx_slots;
-	vpna->mfs = 1514;
+	/* Set the mfs to a default value, as it is needed on the VALE
+	 * mismatch datapath. XXX We should set it according to the MTU
+	 * known to the kernel. */
+	vpna->mfs = NM_BDG_MFS_DEFAULT;
 	vpna->last_smac = ~0llu;
 	/*if (vpna->mfs > netmap_buf_size)  TODO netmap_buf_size is zero??
 		vpna->mfs = netmap_buf_size; */
@@ -2809,6 +2814,8 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->nm_mem = netmap_mem_get(hwna->nm_mem);
 	na->virt_hdr_len = hwna->virt_hdr_len;
 	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
+	/* Set the mfs, needed on the VALE mismatch datapath. */
+	bna->up.mfs = NM_BDG_MFS_DEFAULT;
 
 	bna->hwna = hwna;
 	netmap_adapter_get(hwna);
@@ -2836,6 +2843,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		na->na_hostvp = hwna->na_hostvp =
 			hostna->na_hostvp = &bna->host;
 		hostna->na_flags = NAF_BUSY; /* prevent NIOCREGIF */
+		bna->host.mfs = NM_BDG_MFS_DEFAULT;
 	}
 
 	ND("%s<->%s txr %d txd %d rxr %d rxd %d",
