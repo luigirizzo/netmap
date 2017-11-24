@@ -112,8 +112,6 @@ main(int argc, char **argv)
 		nm_close(pa);
 		return (1);
 	}
-	zerocopy = zerocopy && (pa->mem == pb->mem);
-	D("------- zerocopy %ssupported", zerocopy ? "" : "NOT ");
 
 	memset(&dedup, 0, sizeof(dedup));
 	dedup.out_slot = dedup.out_ring->slot;
@@ -127,11 +125,16 @@ main(int argc, char **argv)
 		D("fifo_size %u too large (max %u)", fifo_size, dedup.out_ring->num_slots - 1);
 		return (1);
 	}
+	if (dedup_set_hold_packets(&dedup, 1) < 0) {
+		D("failed to set 'hold packets' option");
+		return (1);
+	}
+	dedup.in_memid = pa->req.nr_arg2;
+	dedup.fifo_memid = dedup.out_memid = (zerocopy ? pb->req.nr_arg2 : -1 );
 	dedup.win_size.tv_sec = win_size_usec / 1000000;
 	dedup.win_size.tv_usec = win_size_usec % 1000000;
 	D("win_size %lld+%lld", (long long) dedup.win_size.tv_sec,
 			(long long) dedup.win_size.tv_usec);
-	dedup.zcopy_in_out = zerocopy;
 
 	/* setup poll(2) array */
 	memset(pollfd, 0, sizeof(pollfd));
@@ -147,6 +150,7 @@ main(int argc, char **argv)
 	n = 0;
 	while (!do_abort) {
 		int ret;
+		struct timeval now;
 
 		pollfd[0].events = pollfd[1].events = 0;
 		pollfd[0].revents = pollfd[1].revents = 0;
@@ -156,6 +160,7 @@ main(int argc, char **argv)
 			pollfd[1].events = POLLOUT;
 		/* poll() also cause kernel to txsync/rxsync the NICs */
 		ret = poll(pollfd, 2, 1000);
+		gettimeofday(&now, NULL);
 		if (ret <= 0 || verbose)
 		    D("poll %s [0] ev %x %x"
 			     " [1] ev %x %x",
@@ -165,9 +170,7 @@ main(int argc, char **argv)
 				pollfd[1].events,
 				pollfd[1].revents
 			);
-		dedup.in_ring->cur = dedup.in_ring->tail;
-		n = dedup_hold_push_in(&dedup);
-		dedup.out_ring->cur = dedup.out_ring->head;
+		n = dedup_push_in(&dedup, &now);
 	}
 	nm_close(pb);
 	nm_close(pa);

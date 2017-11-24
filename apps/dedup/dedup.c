@@ -4,6 +4,14 @@
 #include <net/netmap_user.h>
 #include "dedup.h"
 
+static void
+dedup_ptr_init(struct dedup *d, struct dedup_ptr *p, unsigned long v)
+{
+	p->r = v;
+	p->o = v % d->out_ring->num_slots;
+}
+
+
 int
 dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in, struct netmap_ring *out)
 {
@@ -15,17 +23,37 @@ dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in, stru
 	d->in_slot = in->slot;
 	d->out_ring = out;
 	d->out_slot = out->slot;
-	dedup_ptr_init(d, &d->next_to_send, out->head);
 	dedup_ptr_init(d, &d->fifo_out, out->head);
 	dedup_ptr_init(d, &d->fifo_in, out->head);
 	return 0;
 }
 
-void
-dedup_ptr_init(struct dedup *d, struct dedup_ptr *p, unsigned long v)
+int
+dedup_set_hold_packets(struct dedup *d, int hold)
 {
-	p->r = v;
-	p->o = v % d->out_ring->num_slots;
+	if (hold) {
+		d->fifo_slot = d->out_slot;
+		d->next_to_send = &d->fifo_out;
+	} else {
+		d->fifo_slot = calloc(d->fifo_size, sizeof(struct netmap_slot));
+		if (d->fifo_slot == NULL)
+			return -1;
+		d->next_to_send = &d->fifo_in;
+	}
+	return 0;
+}
+
+void
+dedup_fini(struct dedup *d)
+{
+	if (d->fifo != NULL) {
+		free(d->fifo);
+		d->fifo = NULL;
+	}
+	if (d->fifo_slot != NULL && d->fifo_slot != d->out_slot) {
+		free(d->fifo_slot);
+		d->fifo_slot = NULL;
+	}
 }
 
 static int
@@ -63,9 +91,10 @@ dedup_duplicate(struct dedup *d, const struct netmap_slot *s)
 }
 
 static void
-dedup_move_in_out(struct dedup *d, struct netmap_slot *src, struct netmap_slot *dst)
+_transfer_pkt(struct dedup *d, struct netmap_slot *src, struct netmap_slot *dst,
+		int zcopy)
 {
-	if (d->zcopy_in_out) {
+	if (zcopy) {
 		struct netmap_slot w = *dst;
 		*dst = *src;
 		*src = w;
@@ -83,7 +112,6 @@ dedup_move_in_out(struct dedup *d, struct netmap_slot *src, struct netmap_slot *
 static void
 _dedup_fifo_push_out(struct dedup *d)
 {
-	dedup_ptr_inc(d, &d->next_to_send);
 	dedup_hash_remove(d, &d->out_slot[d->fifo_out.o]);
 	dedup_ptr_inc(d, &d->fifo_out);
 }
@@ -105,26 +133,27 @@ _dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
 	}
 }
 
+static inline int
+dedup_can_hold(struct dedup *d)
+{
+	return d->fifo_slot == d->out_slot;
+}
+
 int
-dedup_hold_push_in(struct dedup *d)
+dedup_push_in(struct dedup *d, const struct timeval *now)
 {
 	struct netmap_ring *ri = d->in_ring, *ro = d->out_ring;
 	uint32_t head;
 	int n, out_space;
-	struct timeval now;
 
-	gettimeofday(&now, NULL);
+	_dedup_fifo_slide_win(d, now);
 
 	/* packets to input */
 	n = ri->tail - ri->head;
 	if (n < 0)
 		n += ri->num_slots;
 	/* available space on the output ring */
-	out_space = ro->tail - d->fifo_in.o;
-	if (out_space < 0)
-		out_space += ro->num_slots;
-
-	_dedup_fifo_slide_win(d, &now);
+	out_space = nm_ring_space(ro);
 
 	for (head = ri->head; n; head = nm_ring_next(ri, head), n--) {
 		struct netmap_slot *src_slot, *dst_slot;
@@ -134,19 +163,82 @@ dedup_hold_push_in(struct dedup *d)
 		if (dedup_duplicate(d, src_slot))
 			continue;
 
-		/* the packet must go into the FIFO, which is implemented
-		 * in the out ring
-		 */
 		if (out_space == 0)
 			break;
 
-		/* if the FIFO is full, send the oldest packet */
+		/* if the FIFO is full, remove and possibily send
+		 * the oldest packet
+		 */
 		if (dedup_fifo_full(d))
 			_dedup_fifo_push_out(d);
 
 		/* move the new packet to the FIFO */
-		dst_slot = d->out_slot + d->fifo_in.o;
+		dst_slot = d->fifo_slot + d->fifo_in.o;
+		_transfer_pkt(d, src_slot, dst_slot, d->in_memid == d->fifo_memid);
+		d->fifo[d->fifo_in.f].arrival = d->in_ring->ts;
+		dedup_ptr_inc(d, &d->fifo_in);
+		dedup_hash_insert(d, dst_slot);
+
+		/* 
+		 * if we cannot hold packets, we need
+		 * to copy the outgoing packet to the out queue
+		 */
+		if (!dedup_can_hold(d)) {
+			_transfer_pkt(d,
+				d->fifo_slot + d->next_to_send->f,
+				d->out_slot + d->next_to_send->o,
+				0 /* force copy */);
+		}
+
+		out_space--;
+	}
+	ri->head = head;
+	ri->cur = ri->tail;
+	ro->head = d->next_to_send->o;
+	ro->cur = dedup_can_hold(d) ? d->fifo_in.o : ro->head;
+	return n;
+}
+
+#if 0
+int
+dedup_push_in(struct dedup *d)
+{
+	struct netmap_ring *ri = d->in_ring, *ro = d->out_ring;
+	uint32_t head;
+	int n, out_space;
+	struct timeval now;
+	struct dedup_ptr *dst = &(d->can_hold ? 
+			d->fifo_in : d->next_to_send);
+
+	gettimeofday(&now, NULL);
+
+	_dedup_fifo_slide_win(d, &now);
+
+	/* packets to input */
+	n = ri->tail - ri->head;
+	if (n < 0)
+		n += ri->num_slots;
+	/* available space on the output ring */
+	out_space = ro->tail - d->next_to_send.o;
+	if (out_space < 0)
+		out_space += ro->num_slots;
+
+	for (head = ri->head; n; head = nm_ring_next(ri, head), n--) {
+		struct netmap_slot *src_slot, *dst_slot;
+
+		src_slot = d->in_slot + head;
+
+		if (dedup_duplicate(d, src_slot))
+			continue;
+
+		/* if the FIFO is full, send the oldest packet */
+		if (dedup_fifo_full(d))
+			_dedup_fifo_drop(d);
+
+		/* send the new packet */
+		dst_slot = d->out_slot + d->next_to_send.o;
 		dedup_move_in_out(d, src_slot, dst_slot);
+		/* copy or move into the FIFO */
 		d->fifo[d->fifo_in.f].arrival = d->in_ring->ts;
 		dedup_ptr_inc(d, &d->fifo_in);
 		out_space--;
@@ -157,7 +249,6 @@ dedup_hold_push_in(struct dedup *d)
 	return n;
 }
 
-#if 0
 /* dedup_push_in: push new packets through the deduplicator.
  *
  * - duplicated packets are dropped

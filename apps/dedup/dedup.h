@@ -18,29 +18,32 @@ struct dedup {
 	/* input ring */
 	struct netmap_ring *in_ring;
 	struct netmap_slot *in_slot;
+	int in_memid;
 
 	/* output ring */
 	struct netmap_ring *out_ring;
 	struct netmap_slot *out_slot;
+	int out_memid;
 
 	/* fifo */
 	struct dedup_fifo_entry *fifo;
+	struct netmap_slot *fifo_slot;
+	int fifo_memid;
 
 	/* pointers */
-	struct dedup_ptr next_to_send;
+	struct dedup_ptr *next_to_send;
 	struct dedup_ptr fifo_in;
 	struct dedup_ptr fifo_out;
 
 	/* configuration */ 
 	unsigned int fifo_size;
 	struct timeval win_size;
-	int	zcopy_in_out;
+	int zcopy_in_out;
 };
 
 int dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in,
 		struct netmap_ring *out);
-
-void dedup_ptr_init(struct dedup *d, struct dedup_ptr *p, unsigned long v);
+int dedup_set_hold_packets(struct dedup *d, int hold);
 
 static inline void dedup_ptr_inc(struct dedup *d, struct dedup_ptr *p)
 {
@@ -53,6 +56,8 @@ static inline void dedup_ptr_inc(struct dedup *d, struct dedup_ptr *p)
 			p->f = 0;
 }
 
-int dedup_hold_push_in(struct dedup *d);
+int dedup_push_in(struct dedup *d, const struct timeval *now);
+
+void dedup_fini(struct dedup *d);
 
 #endif
