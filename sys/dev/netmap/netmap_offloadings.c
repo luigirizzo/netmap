@@ -130,7 +130,7 @@ gso_fix_segment(uint8_t *pkt, size_t len, u_int ipv4, u_int iphlen, u_int tcp,
 	ND("TCP/UDP csum %x", be16toh(*check));
 }
 
-static int
+static inline int
 vnet_hdr_is_bad(struct nm_vnet_hdr *vh)
 {
 	uint8_t gso_type = vh->gso_type & ~VIRTIO_NET_HDR_GSO_ECN;
@@ -190,7 +190,7 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
 			RD(1, "Short src vnet header, dropping");
 			return;
 		}
-		if (vnet_hdr_is_bad(vh)) {
+		if (unlikely(vnet_hdr_is_bad(vh))) {
 			RD(1, "Bad src vnet header, dropping");
 			return;
 		}
