@@ -34,17 +34,33 @@ usage(void)
 	exit(1);
 }
 
+struct dedup dedup;
+struct nm_desc *pa = NULL, *pb = NULL;
+
+static void
+free_buffers(void)
+{
+	struct netmap_ring *ring;
+
+	if (pa == NULL)
+		return;
+
+	ring = NETMAP_RXRING(pa->nifp, pa->first_rx_ring);
+
+	dedup_get_fifo_buffers(&dedup, ring, &pa->nifp->ni_bufs_head);
+	nm_close(pa);
+	nm_close(pb);
+}
+
 int
 main(int argc, char **argv)
 {
 	struct pollfd pollfd[2];
 	int ch;
-	struct nm_desc *pa = NULL, *pb = NULL;
 	char *ifa = NULL, *ifb = NULL;
 	int wait_link = 2;
 	int win_size_usec = 50;
 	unsigned int fifo_size = 10;
-	struct dedup dedup;
 	int n;
 	int hold = 0;
 	struct nmreq base_req;
@@ -147,6 +163,8 @@ main(int argc, char **argv)
 		D("failed to set 'hold packets' option");
 		return (1);
 	}
+	pa->nifp->ni_bufs_head = 0;
+	atexit(free_buffers);
 
 	/* enable/disable zerocopy */
 	dedup.in_memid = pa->req.nr_arg2;
@@ -193,8 +211,6 @@ main(int argc, char **argv)
 			);
 		n = dedup_push_in(&dedup, &now);
 	}
-	nm_close(pb);
-	nm_close(pa);
 
 	return (0);
 }

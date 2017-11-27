@@ -4,6 +4,12 @@
 #include <net/netmap_user.h>
 #include "dedup.h"
 
+static inline int
+dedup_can_hold(struct dedup *d)
+{
+	return d->fifo_slot == d->out_slot;
+}
+
 static void
 dedup_ptr_init(struct dedup *d, struct dedup_ptr *p, unsigned long v)
 {
@@ -57,6 +63,26 @@ dedup_set_fifo_buffers(struct dedup *d, struct netmap_ring *ring, uint32_t buf_h
 	}
 	d->next_to_send = &d->fifo_in;
 	return scan;
+}
+
+void
+dedup_get_fifo_buffers(struct dedup *d, struct netmap_ring *ring, uint32_t *buf_head)
+{
+	struct netmap_ring *r = ring ? ring : d->in_ring;
+	unsigned int i;
+
+	if (d->fifo_slot == NULL || dedup_can_hold(d))
+		return;
+
+	for (i = 0; i < d->fifo_size; i++) {
+		struct netmap_slot *s = d->fifo_slot + i;
+		uint32_t *new_head = (uint32_t *)NETMAP_BUF(r, s->buf_idx);
+		
+		*new_head = *buf_head;
+		*buf_head = s->buf_idx;
+	}	
+	free(d->fifo_slot);
+	d->fifo_slot = NULL;
 }
 
 void
@@ -147,12 +173,6 @@ _dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
 
 		_dedup_fifo_push_out(d);
 	}
-}
-
-static inline int
-dedup_can_hold(struct dedup *d)
-{
-	return d->fifo_slot == d->out_slot;
 }
 
 int
