@@ -46,10 +46,13 @@ main(int argc, char **argv)
 	unsigned int fifo_size = 10;
 	struct dedup dedup;
 	int n;
+	int hold = 0;
+	struct nmreq base_req;
+	uint32_t buf_head = 0;
 
 	fprintf(stderr, "%s built %s %s\n\n", argv[0], __DATE__, __TIME__);
 
-	while ((ch = getopt(argc, argv, "hci:vw:W:F:")) != -1) {
+	while ((ch = getopt(argc, argv, "hci:vw:W:F:H")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -81,6 +84,9 @@ main(int argc, char **argv)
 		case 'F':
 			fifo_size = atoi(optarg);
 			break;
+		case 'H':
+			hold = 1;
+			break;
 		}
 
 	}
@@ -89,10 +95,22 @@ main(int argc, char **argv)
 		D("missing interface");
 		usage();
 	}
-	pa = nm_open(ifa, NULL, 0, NULL);
+	memset(&base_req, 0, sizeof(base_req));
+	if (!hold) {
+		base_req.nr_arg3 = fifo_size;
+	}
+	pa = nm_open(ifa, &base_req, 0, NULL);
 	if (pa == NULL) {
 		D("cannot open %s", ifa);
 		return (1);
+	}
+	if (!hold) {
+	        if (base_req.nr_arg3 != fifo_size) {
+			D("failed to allocate %u extra buffers", fifo_size);
+			return (1); // XXX failover to copy?
+		} else {
+			buf_head = pa->nifp->ni_bufs_head;
+		}
 	}
 	if (pa->first_rx_ring != pa->last_rx_ring) {
 		D("%s: too many RX rings (%d)", pa->req.nr_name,
@@ -125,12 +143,15 @@ main(int argc, char **argv)
 		D("fifo_size %u too large (max %u)", fifo_size, dedup.out_ring->num_slots - 1);
 		return (1);
 	}
-	if (dedup_set_hold_packets(&dedup, 1) < 0) {
+	if (dedup_set_fifo_buffers(&dedup, NULL, buf_head) != 0) {
 		D("failed to set 'hold packets' option");
 		return (1);
 	}
+
+	/* enable/disable zerocopy */
 	dedup.in_memid = pa->req.nr_arg2;
-	dedup.fifo_memid = dedup.out_memid = (zerocopy ? pb->req.nr_arg2 : -1 );
+	dedup.out_memid = (zerocopy ? pb->req.nr_arg2 : -1 );
+	dedup.fifo_memid = hold ? dedup.out_memid : dedup.in_memid;
 	dedup.win_size.tv_sec = win_size_usec / 1000000;
 	dedup.win_size.tv_usec = win_size_usec % 1000000;
 	D("win_size %lld+%lld", (long long) dedup.win_size.tv_sec,

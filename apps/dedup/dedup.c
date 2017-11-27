@@ -9,6 +9,7 @@ dedup_ptr_init(struct dedup *d, struct dedup_ptr *p, unsigned long v)
 {
 	p->r = v;
 	p->o = v % d->out_ring->num_slots;
+	p->f = v % d->fifo_size;
 }
 
 
@@ -28,19 +29,34 @@ dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in, stru
 	return 0;
 }
 
-int
-dedup_set_hold_packets(struct dedup *d, int hold)
+uint32_t
+dedup_set_fifo_buffers(struct dedup *d, struct netmap_ring *ring, uint32_t buf_head)
 {
-	if (hold) {
+	uint32_t scan;
+	struct netmap_slot *s;
+	struct netmap_ring *r = ring ? ring : d->in_ring;
+
+	if (buf_head == 0) {
 		d->fifo_slot = d->out_slot;
 		d->next_to_send = &d->fifo_out;
-	} else {
-		d->fifo_slot = calloc(d->fifo_size, sizeof(struct netmap_slot));
-		if (d->fifo_slot == NULL)
-			return -1;
-		d->next_to_send = &d->fifo_in;
+		return 0;
 	}
-	return 0;
+	d->fifo_slot = calloc(d->fifo_size, sizeof(struct netmap_slot));
+	if (d->fifo_slot == NULL)
+		return buf_head;
+	for (scan = buf_head, s = d->fifo_slot;
+	     scan != 0 && s != d->fifo_slot + d->fifo_size;
+             scan = *(uint32_t *)NETMAP_BUF(r, scan), s++) {
+		s->len = r->nr_buf_size;
+		s->buf_idx = scan;
+	}
+	if (s != d->fifo_slot + d->fifo_size) {
+		free(d->fifo_slot);
+		d->fifo_slot = NULL;
+		return buf_head;
+	}
+	d->next_to_send = &d->fifo_in;
+	return scan;
 }
 
 void
@@ -173,10 +189,10 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 			_dedup_fifo_push_out(d);
 
 		/* move the new packet to the FIFO */
-		dst_slot = d->fifo_slot + d->fifo_in.o;
+		dst_slot = d->fifo_slot +
+			(dedup_can_hold(d) ? d->fifo_in.o : d->fifo_in.f);
 		_transfer_pkt(d, src_slot, dst_slot, d->in_memid == d->fifo_memid);
 		d->fifo[d->fifo_in.f].arrival = d->in_ring->ts;
-		dedup_ptr_inc(d, &d->fifo_in);
 		dedup_hash_insert(d, dst_slot);
 
 		/* 
@@ -189,6 +205,8 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 				d->out_slot + d->next_to_send->o,
 				0 /* force copy */);
 		}
+
+		dedup_ptr_inc(d, &d->fifo_in);
 
 		out_space--;
 	}

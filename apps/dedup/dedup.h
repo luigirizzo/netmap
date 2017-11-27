@@ -43,7 +43,7 @@ struct dedup {
 
 int dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in,
 		struct netmap_ring *out);
-int dedup_set_hold_packets(struct dedup *d, int hold);
+uint32_t dedup_set_fifo_buffers(struct dedup *d, struct netmap_ring *ring, uint32_t buf_head);
 
 static inline void dedup_ptr_inc(struct dedup *d, struct dedup_ptr *p)
 {
