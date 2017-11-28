@@ -43,6 +43,7 @@ dedup_set_fifo_buffers(struct dedup *d, struct netmap_ring *ring, uint32_t buf_h
 	struct netmap_ring *r = ring ? ring : d->in_ring;
 
 	if (buf_head == 0) {
+		d->fifo_ring = d->out_ring;
 		d->fifo_slot = d->out_slot;
 		d->next_to_send = &d->fifo_out;
 		return 0;
@@ -61,6 +62,7 @@ dedup_set_fifo_buffers(struct dedup *d, struct netmap_ring *ring, uint32_t buf_h
 		d->fifo_slot = NULL;
 		return buf_head;
 	}
+	d->fifo_ring = d->in_ring;
 	d->next_to_send = &d->fifo_in;
 	return scan;
 }
@@ -132,23 +134,29 @@ dedup_duplicate(struct dedup *d, const struct netmap_slot *s)
 	return 0;
 }
 
-static void
-dedup_transfer_pkt(struct dedup *d, struct netmap_slot *src, struct netmap_slot *dst,
-		int zcopy)
+static inline void
+dedup_transfer_pkt(struct dedup *d,
+	struct netmap_ring *src_ring,
+	struct netmap_slot *src_slot,
+	struct netmap_ring *dst_ring,
+	struct netmap_slot *dst_slot,
+	int zcopy)
 {
+	(void)d;
+
 	if (zcopy) {
-		struct netmap_slot w = *dst;
-		__builtin_prefetch(dst + 1);
-		*dst = *src;
-		dst->flags |= NS_BUF_CHANGED;
-		*src = w;
-		src->flags |= NS_BUF_CHANGED;
+		struct netmap_slot w = *dst_slot;
+		__builtin_prefetch(dst_slot + 1);
+		*dst_slot = *src_slot;
+		dst_slot->flags |= NS_BUF_CHANGED;
+		*src_slot = w;
+		src_slot->flags |= NS_BUF_CHANGED;
 	} else {
-		char *rxbuf = NETMAP_BUF(d->in_ring, src->buf_idx);
-		char *txbuf = NETMAP_BUF(d->out_ring, dst->buf_idx);
-		nm_pkt_copy(rxbuf, txbuf, src->len);
-		dst->len = src->len;
-		dst->ptr = src->ptr;
+		char *rxbuf = NETMAP_BUF(src_ring, src_slot->buf_idx);
+		char *txbuf = NETMAP_BUF(dst_ring, dst_slot->buf_idx);
+		nm_pkt_copy(rxbuf, txbuf, src_slot->len);
+		dst_slot->len = src_slot->len;
+		dst_slot->ptr = src_slot->ptr;
 	}
 }
 
@@ -209,26 +217,30 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 		if (dedup_fifo_full(d))
 			dedup_fifo_push_out(d);
 
-		/* move the new packet to the FIFO */
-		dst_slot = d->fifo_slot +
-			(dedup_can_hold(d) ? d->fifo_in.o : d->fifo_in.f);
-		dedup_transfer_pkt(d, src_slot, dst_slot, d->in_memid == d->fifo_memid);
+		/* move the new packet to out ring */
+		dst_slot = d->out_slot + d->fifo_in.o;
+		dedup_transfer_pkt(d,
+			d->in_ring,
+			src_slot,
+			d->out_ring,
+			dst_slot,
+			d->in_memid == d->out_memid);
+
+		/* hold/copy/swap the packet in the FIFO ring */
 		d->fifo[d->fifo_in.f].arrival = d->in_ring->ts;
 		dedup_hash_insert(d, dst_slot);
 
-		/* 
-		 * if we cannot hold packets, we need
-		 * to copy the outgoing packet to the out queue
-		 */
 		if (!dedup_can_hold(d)) {
 			dedup_transfer_pkt(d,
-				d->fifo_slot + d->next_to_send->f,
-				d->out_slot + d->next_to_send->o,
-				0 /* force copy */);
+				(d->in_memid == d->out_memid ? d->out_ring : d->in_ring),
+				(d->in_memid == d->out_memid ? dst_slot : src_slot),
+				d->fifo_ring,
+				d->fifo_slot + d->fifo_in.f,
+				(d->in_memid != d->out_memid &&
+				 d->in_memid == d->fifo_memid));
 		}
 
 		dedup_ptr_inc(d, &d->fifo_in);
-
 		out_space--;
 	}
 	ri->head = head;

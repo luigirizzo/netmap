@@ -27,6 +27,7 @@ struct dedup {
 
 	/* fifo */
 	struct dedup_fifo_entry *fifo;
+	struct netmap_ring *fifo_ring;
 	struct netmap_slot *fifo_slot;
 	int fifo_memid;
 
