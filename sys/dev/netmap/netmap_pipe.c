@@ -180,6 +180,7 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
         u_int j, k, lim_tx = txkring->nkr_num_slots - 1,
                 lim_rx = rxkring->nkr_num_slots - 1;
         int m, busy;
+	struct netmap_ring *txring = txkring->ring, *rxring = rxkring->ring;
 
         ND("%p: %s %x -> %s", txkring, txkring->name, flags, rxkring->name);
         ND(2, "before: hwcur %d hwtail %d cur %d head %d tail %d", txkring->nr_hwcur, txkring->nr_hwtail,
@@ -206,18 +207,18 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 	}
 
         while (limit-- > 0) {
-                struct netmap_slot *rs = &rxkring->ring->slot[j];
-                struct netmap_slot *ts = &txkring->ring->slot[k];
+                struct netmap_slot *rs = &rxring->slot[j];
+                struct netmap_slot *ts = &txring->slot[k];
                 struct netmap_slot tmp;
 
-                /* swap the slots */
+		prefetch(ts + 1);
+
+                /* swap the slots and report the buffer change */
                 tmp = *rs;
                 *rs = *ts;
-                *ts = tmp;
-
-                /* report the buffer change */
-		ts->flags |= NS_BUF_CHANGED;
 		rs->flags |= NS_BUF_CHANGED;
+                *ts = tmp;
+		ts->flags |= NS_BUF_CHANGED;
 
                 j = nm_next(j, lim_rx);
                 k = nm_next(k, lim_tx);
