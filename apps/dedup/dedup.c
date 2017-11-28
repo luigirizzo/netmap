@@ -133,7 +133,7 @@ dedup_duplicate(struct dedup *d, const struct netmap_slot *s)
 }
 
 static void
-_transfer_pkt(struct dedup *d, struct netmap_slot *src, struct netmap_slot *dst,
+dedup_transfer_pkt(struct dedup *d, struct netmap_slot *src, struct netmap_slot *dst,
 		int zcopy)
 {
 	if (zcopy) {
@@ -153,14 +153,14 @@ _transfer_pkt(struct dedup *d, struct netmap_slot *src, struct netmap_slot *dst,
 }
 
 static void
-_dedup_fifo_push_out(struct dedup *d)
+dedup_fifo_push_out(struct dedup *d)
 {
 	dedup_hash_remove(d, &d->out_slot[d->fifo_out.o]);
 	dedup_ptr_inc(d, &d->fifo_out);
 }
 
 static void
-_dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
+dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
 {
 	struct timeval winstart;
 
@@ -172,7 +172,7 @@ _dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
 		if (timercmp(&e->arrival, &winstart, <))
 			break;
 
-		_dedup_fifo_push_out(d);
+		dedup_fifo_push_out(d);
 	}
 }
 
@@ -183,7 +183,7 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 	uint32_t head;
 	int n, out_space;
 
-	_dedup_fifo_slide_win(d, now);
+	dedup_fifo_slide_win(d, now);
 
 	/* packets to input */
 	n = ri->tail - ri->head;
@@ -207,12 +207,12 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 		 * the oldest packet
 		 */
 		if (dedup_fifo_full(d))
-			_dedup_fifo_push_out(d);
+			dedup_fifo_push_out(d);
 
 		/* move the new packet to the FIFO */
 		dst_slot = d->fifo_slot +
 			(dedup_can_hold(d) ? d->fifo_in.o : d->fifo_in.f);
-		_transfer_pkt(d, src_slot, dst_slot, d->in_memid == d->fifo_memid);
+		dedup_transfer_pkt(d, src_slot, dst_slot, d->in_memid == d->fifo_memid);
 		d->fifo[d->fifo_in.f].arrival = d->in_ring->ts;
 		dedup_hash_insert(d, dst_slot);
 
@@ -221,7 +221,7 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 		 * to copy the outgoing packet to the out queue
 		 */
 		if (!dedup_can_hold(d)) {
-			_transfer_pkt(d,
+			dedup_transfer_pkt(d,
 				d->fifo_slot + d->next_to_send->f,
 				d->out_slot + d->next_to_send->o,
 				0 /* force copy */);
