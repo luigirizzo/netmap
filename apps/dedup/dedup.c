@@ -138,10 +138,11 @@ _transfer_pkt(struct dedup *d, struct netmap_slot *src, struct netmap_slot *dst,
 {
 	if (zcopy) {
 		struct netmap_slot w = *dst;
+		__builtin_prefetch(dst + 1);
 		*dst = *src;
+		dst->flags |= NS_BUF_CHANGED;
 		*src = w;
 		src->flags |= NS_BUF_CHANGED;
-		dst->flags |= NS_BUF_CHANGED;
 	} else {
 		char *rxbuf = NETMAP_BUF(d->in_ring, src->buf_idx);
 		char *txbuf = NETMAP_BUF(d->out_ring, dst->buf_idx);
