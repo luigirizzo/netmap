@@ -177,7 +177,7 @@ dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
 	while (!dedup_fifo_empty(d)) {
 		struct dedup_fifo_entry *e = &d->fifo[d->fifo_out.f];
 
-		if (timercmp(&e->arrival, &winstart, <))
+		if (timercmp(&winstart, &e->arrival, <=))
 			break;
 
 		dedup_fifo_push_out(d);
