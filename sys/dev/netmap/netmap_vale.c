@@ -711,7 +711,6 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na,
 	struct netmap_vp_adapter *vpna, *hostna = NULL;
 	struct nm_bridge *b;
 	int i, j, cand = -1, cand2 = -1;
-	int needed;
 
 	*na = NULL;     /* default return value */
 
@@ -752,8 +751,7 @@ netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na,
 	if (!create)
 		return ENXIO;
 	/* yes we should, see if we have space to attach entries */
-	needed = 2; /* in some cases we only need 1 */
-	if (b->bdg_active_ports + needed >= NM_BDG_MAXPORTS) {
+	if (b->bdg_active_ports >= NM_BDG_MAXPORTS) {
 		D("bridge full %d, cannot create new port", b->bdg_active_ports);
 		return ENOMEM;
 	}
