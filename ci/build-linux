@@ -33,5 +33,5 @@ make -j $PROC_COUNT ARCH=${ARCH} modules_prepare
 popd
 
 # build
-./configure --kernel-dir=$PWD/linux-${KERNEL_VERSION}
+./configure --kernel-dir=$PWD/linux-${KERNEL_VERSION} --enable-ptnetmap
 make -j $PROC_COUNT
