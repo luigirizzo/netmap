@@ -1,5 +1,5 @@
 dist: trusty
-sudo: false
+sudo: required
 language: c
 env:
   - KERNEL_VERSION=3.0   ARCH=x86_64
@@ -39,3 +39,4 @@ env:
   - KERNEL_VERSION=3.16  ARCH=i386
 script:
   - "./ci/build-linux $KERNEL_VERSION $ARCH"
+  - "./ci/run-integration-tests"

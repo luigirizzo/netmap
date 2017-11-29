@@ -8,16 +8,16 @@ readonly GCC_MAJOR_VERSION=$(echo '#include <stdio.h>
 void main() { printf("%u\n", __GNUC__); }' | gcc -x c - -o /tmp/getgccversion  && /tmp/getgccversion)
 readonly PROC_COUNT=$(grep -c '^processor' /proc/cpuinfo)
 
-# fetch the code
+# Fetch the kernel code
 wget https://www.kernel.org/pub/linux/kernel/v${KERNEL_VERSION:0:1}.x/linux-${KERNEL_VERSION}.tar.gz
 tar xzf linux-${KERNEL_VERSION}.tar.gz
 
-# configure kernel
+# Configure kernel
 pushd linux-${KERNEL_VERSION}
 compiler_file=compiler-gcc${GCC_MAJOR_VERSION}.h
 if [ ! -f include/linux/${compiler_file} -a ! -h include/linux/${compiler_file} ]
 then
-  # fix compilation of old kernels with recent GCC
+  # Fix compilation of old kernels with recent GCC
   pushd include/linux
   if [ -f compiler-gcc5.h -a $GCC_MAJOR_VERSION -gt 5 ]
   then
@@ -32,6 +32,8 @@ make -j $PROC_COUNT ARCH=${ARCH} defconfig
 make -j $PROC_COUNT ARCH=${ARCH} modules_prepare
 popd
 
-# build
+# Build and install
 ./configure --kernel-dir=$PWD/linux-${KERNEL_VERSION} --enable-ptnetmap
 make -j $PROC_COUNT
+sudo make install
+depmod -a
