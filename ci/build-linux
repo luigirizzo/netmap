@@ -36,4 +36,4 @@ popd
 ./configure --kernel-dir=$PWD/linux-${KERNEL_VERSION} --enable-ptnetmap
 make -j $PROC_COUNT
 sudo make install
-depmod -a
+sudo depmod -a
