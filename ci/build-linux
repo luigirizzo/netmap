@@ -8,6 +8,16 @@ readonly GCC_MAJOR_VERSION=$(echo '#include <stdio.h>
 void main() { printf("%u\n", __GNUC__); }' | gcc -x c - -o /tmp/getgccversion  && /tmp/getgccversion)
 readonly PROC_COUNT=$(grep -c '^processor' /proc/cpuinfo)
 
+if [ ${KERNEL_VERSION} == "local" ]; then
+    sudo apt-get -qq update
+    sudo apt-get install -y linux-headers-$(uname -r)
+    ./configure --no-drivers
+    make -j $PROC_COUNT
+    sudo make install
+    sudo depmod -a
+    exit 0
+fi
+
 # Fetch the kernel code
 wget https://www.kernel.org/pub/linux/kernel/v${KERNEL_VERSION:0:1}.x/linux-${KERNEL_VERSION}.tar.gz
 tar xzf linux-${KERNEL_VERSION}.tar.gz
@@ -35,5 +45,3 @@ popd
 # Build and install
 ./configure --kernel-dir=$PWD/linux-${KERNEL_VERSION} --enable-ptnetmap
 make -j $PROC_COUNT
-sudo make install
-sudo depmod -a
