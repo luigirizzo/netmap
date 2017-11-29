@@ -146,3 +146,6 @@ distclean: clean $(S_DRIVERS:%=distclean-%)
 	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
 	if [ -L read-vars.mak ]; then rm read-vars.mak; fi
 	rm -rf build-apps
+
+format:
+	clang-format -i -style=file $(shell git ls-files "utils/*.[ch]" "apps/*.[ch]" "extra/*.[ch]" "LINUX/*.[ch]" "WINDOWS/*.[ch]")
