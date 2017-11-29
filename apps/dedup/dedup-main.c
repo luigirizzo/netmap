@@ -170,6 +170,8 @@ main(int argc, char **argv)
 	dedup.in_memid = pa->req.nr_arg2;
 	dedup.out_memid = (zerocopy ? pb->req.nr_arg2 : -1 );
 	dedup.fifo_memid = hold ? dedup.out_memid : dedup.in_memid;
+	D("memids: in %d out %d fifo %d", dedup.in_memid, dedup.out_memid,
+			dedup.fifo_memid);
 	dedup.win_size.tv_sec = win_size_usec / 1000000;
 	dedup.win_size.tv_usec = win_size_usec % 1000000;
 	D("win_size %lld+%lld", (long long) dedup.win_size.tv_sec,

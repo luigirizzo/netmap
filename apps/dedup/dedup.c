@@ -1,8 +1,10 @@
 #include <stdio.h>
+#include <limits.h>
 #include <malloc.h>
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
 #include "dedup.h"
+
 
 static inline int
 dedup_can_hold(struct dedup *d)
@@ -22,9 +24,23 @@ dedup_ptr_init(struct dedup *d, struct dedup_ptr *p, unsigned long v)
 int
 dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in, struct netmap_ring *out)
 {
+	unsigned int sh;
+
+	if (fifo_size == 0)
+		return -1;
+
 	d->fifo = calloc(fifo_size, sizeof(d->fifo[0]));
 	if (d->fifo == NULL)
 		return -1;
+
+	sh = (unsigned int)(sizeof(fifo_size) * CHAR_BIT - __builtin_clz(fifo_size - 1));
+	D("sh %u size %lu", sh, 1UL << sh);
+	if (sh > sizeof(unsigned short) * CHAR_BIT - 1)
+		goto err;
+	d->hashmap = calloc(1UL << sh, sizeof(struct dedup_hashmap_entry));
+	if (d->hashmap == NULL)
+		goto err;
+	d->hashmap_mask = sh - 1;
 	d->fifo_size = fifo_size;
 	d->in_ring = in;
 	d->in_slot = in->slot;
@@ -33,6 +49,10 @@ dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in, stru
 	dedup_ptr_init(d, &d->fifo_out, out->head);
 	dedup_ptr_init(d, &d->fifo_in, out->head);
 	return 0;
+err:
+	free(d->fifo);
+	d->fifo = NULL;
+	return -1;
 }
 
 uint32_t
@@ -98,6 +118,10 @@ dedup_fini(struct dedup *d)
 		free(d->fifo_slot);
 		d->fifo_slot = NULL;
 	}
+	if (d->hashmap != NULL) {
+		free(d->hashmap);
+		d->hashmap = NULL;
+	}
 }
 
 static int
@@ -112,26 +136,82 @@ dedup_fifo_empty(const struct dedup *d)
 	return (d->fifo_in.r == d->fifo_out.r);
 }
 
-static void
-dedup_hash_remove(struct dedup *d, struct netmap_slot *s)
+static unsigned int
+dedup_hash(const void *buf, size_t len)
 {
-	(void)d;
-	(void)s;
+	unsigned int sum = 0;
+	const char *buf_ = buf;
+	while (len--)
+		sum += *buf_++;
+	D("hash %u", sum);
+	return sum;
 }
 
 static void
-dedup_hash_insert(struct dedup *d, struct netmap_slot *s)
+dedup_hashmap_insert(struct dedup *d, unsigned short h)
 {
-	(void)d;
-	(void)s;
+	struct dedup_hashmap_entry *he = d->hashmap + h;
+	struct dedup_fifo_entry *fe = d->fifo + d->fifo_in.f;
+	fe->bucket_next = (he->valid ? d->fifo_in.r - he->bucket_head : 0);
+	fe->hashmap_entry = h;
+	he->bucket_head = d->fifo_in.r;
+	he->valid = 1;
 }
 
-static int
-dedup_duplicate(struct dedup *d, const struct netmap_slot *s)
+static void
+dedup_hashmap_remove(struct dedup *d)
 {
-	(void)d;
-	(void)s;
-	return 0;
+	struct dedup_fifo_entry *fe = d->fifo + d->fifo_out.f;
+	struct dedup_hashmap_entry *he = d->hashmap + fe->hashmap_entry;
+
+	ND("h %u bucket_head %lu fifo_out.r %lu fifo_out.f %u",
+			fe->hashmap_entry, he->bucket_head,
+			d->fifo_out.r, d->fifo_out.f);
+	if (he->bucket_head == d->fifo_out.r)
+		he->valid = 0;
+	fe->hashmap_entry = 0;
+	fe->bucket_next = 0;
+}
+
+static long
+dedup_fresh_packet(struct dedup *d, const struct netmap_slot *s)
+{
+	const void *buf = NETMAP_BUF(d->in_ring, s->buf_idx);
+	unsigned int h = dedup_hash(buf, 64);
+	unsigned short i = h & d->hashmap_mask;
+	struct dedup_hashmap_entry *he = d->hashmap + i;
+	unsigned long fi = he->bucket_head;
+	unsigned long fifo_win = d->fifo_in.r - d->fifo_out.r;
+
+	if (!he->valid)
+		return i;
+
+	while (d->fifo_in.r - fi > 0 && d->fifo_in.r - fi <= fifo_win) {
+		struct netmap_slot *fs;
+		const void *fbuf;
+		unsigned long rfi = fi - d->fifo_out.r + d->fifo_out.f;
+		unsigned int delta;
+
+		if (rfi >= d->fifo_size)
+			rfi -= d->fifo_size;
+
+		fs = d->fifo_slot + rfi;
+		ND("checking %lu %lu: lenghts %u %u buf %d", fi, rfi, fs->len, s->len,
+				fs->buf_idx);
+
+		if (fs->len != s->len)
+			goto next;
+		fbuf = NETMAP_BUF(d->fifo_ring, fs->buf_idx);
+		if (memcmp(buf, fbuf, s->len))
+			goto next;
+		return -1;
+	next:
+		delta = d->fifo[rfi].bucket_next;
+		if (delta == 0)
+			break;
+		fi -= delta;
+	}
+	return i;
 }
 
 static inline void
@@ -161,13 +241,6 @@ dedup_transfer_pkt(struct dedup *d,
 }
 
 static void
-dedup_fifo_push_out(struct dedup *d)
-{
-	dedup_hash_remove(d, &d->out_slot[d->fifo_out.o]);
-	dedup_ptr_inc(d, &d->fifo_out);
-}
-
-static void
 dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
 {
 	struct timeval winstart;
@@ -177,10 +250,19 @@ dedup_fifo_slide_win(struct dedup *d, const struct timeval* now)
 	while (!dedup_fifo_empty(d)) {
 		struct dedup_fifo_entry *e = &d->fifo[d->fifo_out.f];
 
+		ND("fifo %u: arrival %llu.%llu winstart %llu.%llu",
+				d->fifo_out.f,
+				(unsigned long long)e->arrival.tv_sec,
+				(unsigned long long)e->arrival.tv_usec,
+				(unsigned long long)winstart.tv_sec,
+				(unsigned long long)winstart.tv_usec);
+
 		if (timercmp(&winstart, &e->arrival, <=))
 			break;
 
-		dedup_fifo_push_out(d);
+		ND("fifo %u: pushing out", d->fifo_out.f);
+		dedup_hashmap_remove(d);
+		dedup_ptr_inc(d, &d->fifo_out);
 	}
 }
 
@@ -202,11 +284,15 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 
 	for (head = ri->head; n; head = nm_ring_next(ri, head), n--) {
 		struct netmap_slot *src_slot, *dst_slot;
+		long h;
 
 		src_slot = d->in_slot + head;
 
-		if (dedup_duplicate(d, src_slot))
+		h = dedup_fresh_packet(d, src_slot);
+		if (h < 0) { /* duplicate */
+			ND("dropping %u", head);
 			continue;
+		}
 
 		if (out_space == 0)
 			break;
@@ -214,8 +300,10 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 		/* if the FIFO is full, remove and possibily send
 		 * the oldest packet
 		 */
-		if (dedup_fifo_full(d))
-			dedup_fifo_push_out(d);
+		if (dedup_fifo_full(d)) {
+			dedup_hashmap_remove(d);
+			dedup_ptr_inc(d, &d->fifo_out);
+		}
 
 		/* move the new packet to out ring */
 		dst_slot = d->out_slot + d->fifo_in.o;
@@ -228,7 +316,6 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 
 		/* hold/copy/swap the packet in the FIFO ring */
 		d->fifo[d->fifo_in.f].arrival = d->in_ring->ts;
-		dedup_hash_insert(d, dst_slot);
 
 		if (!dedup_can_hold(d)) {
 			dedup_transfer_pkt(d,
@@ -240,6 +327,7 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 				 d->in_memid == d->fifo_memid));
 		}
 
+		dedup_hashmap_insert(d, h);
 		dedup_ptr_inc(d, &d->fifo_in);
 		out_space--;
 	}

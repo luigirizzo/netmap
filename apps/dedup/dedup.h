@@ -3,15 +3,23 @@
 
 #define _BSD_SOURCE
 #include <time.h>
+#include <limits.h>
 
 struct dedup_ptr {
 	unsigned long r; /* free running, wraps naturally */
-	unsigned int o;  /* wraps at out_ring-size */
-	unsigned int f;  /* wraps at fifo_size */
+	unsigned short o;  /* wraps at out_ring-size */
+	unsigned short f;  /* wraps at fifo_size */
 };
 
 struct dedup_fifo_entry {
 	struct timeval arrival;
+	unsigned short hashmap_entry;
+	unsigned int bucket_next; /* collision chain */
+};
+
+struct dedup_hashmap_entry {
+	int valid;
+	unsigned long bucket_head;
 };
 
 struct dedup {
@@ -35,6 +43,10 @@ struct dedup {
 	struct dedup_ptr *next_to_send;
 	struct dedup_ptr fifo_in;
 	struct dedup_ptr fifo_out;
+
+	/* hash map */
+	struct dedup_hashmap_entry *hashmap;
+	unsigned int hashmap_mask;
 
 	/* configuration */ 
 	unsigned int fifo_size;
