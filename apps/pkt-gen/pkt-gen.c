@@ -71,7 +71,7 @@
 
 #include "ctrs.h"
 
-static void usage(void);
+static void usage(int);
 
 #ifdef _WIN32
 #define cpuset_t        DWORD_PTR   //uint64_t
@@ -410,7 +410,7 @@ extract_ip_range(struct ip_range *r, int af)
 	name = strdup(r->name);
 	if (name == NULL) {
 		D("strdup failed");
-		usage();
+		usage(-1);
 	}
 	/* the first - splits start/end of range */
 	ap = strchr(name, '-');
@@ -2257,7 +2257,7 @@ tx_output(struct my_ctrs *cur, double delta, const char *msg)
 }
 
 static void
-usage(void)
+usage(int errcode)
 {
 	const char *cmd = "pkt-gen";
 	fprintf(stderr,
@@ -2329,7 +2329,7 @@ usage(void)
 		     "\t-m			ignored\n"
 		     "",
 		cmd);
-	exit(0);
+	exit(errcode);
 }
 
 enum {
@@ -2668,14 +2668,17 @@ main(int arc, char **argv)
 	g.wait_link = 2;
 
 	while ((ch = getopt(arc, argv, "46a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:"
-	    "T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
+	    "T:w:WvR:XC:H:e:E:m:rP:zZAh")) != -1) {
 
 		switch(ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
-			usage();
+			usage(-1);
 			break;
 
+                case 'h':
+                        usage(0);
+                        break;
 		case '4':
 			g.af = AF_INET;
 			break;
@@ -2846,7 +2849,7 @@ main(int arc, char **argv)
 
 	if (strlen(g.ifname) <=0 ) {
 		D("missing ifname");
-		usage();
+		usage(-1);
 	}
 
 	if (g.burst == 0) {
@@ -2857,7 +2860,7 @@ main(int arc, char **argv)
 	g.system_cpus = i = system_ncpus();
 	if (g.cpus < 0 || g.cpus > i) {
 		D("%d cpus is too high, have only %d cpus", g.cpus, i);
-		usage();
+		usage(-1);
 	}
 	D("running on %d cpus (have %d)", g.cpus, i);
 	if (g.cpus == 0)
@@ -2865,12 +2868,12 @@ main(int arc, char **argv)
 
 	if (g.pkt_size < 16 || g.pkt_size > MAX_PKTSIZE) {
 		D("bad pktsize %d [16..%d]\n", g.pkt_size, MAX_PKTSIZE);
-		usage();
+		usage(-1);
 	}
 
 	if (g.pkt_min_size > 0 && (g.pkt_min_size < 16 || g.pkt_min_size > g.pkt_size)) {
 		D("bad pktminsize %d [16..%d]\n", g.pkt_min_size, g.pkt_size);
-		usage();
+		usage(-1);
 	}
 
 	if (g.src_mac.name == NULL) {
@@ -2884,14 +2887,14 @@ main(int arc, char **argv)
 	}
 	/* extract address ranges */
 	if (extract_mac_range(&g.src_mac) || extract_mac_range(&g.dst_mac))
-		usage();
+		usage(-1);
 	g.options |= extract_ip_range(&g.src_ip, g.af);
 	g.options |= extract_ip_range(&g.dst_ip, g.af);
 
 	if (g.virt_header != 0 && g.virt_header != VIRT_HDR_1
 			&& g.virt_header != VIRT_HDR_2) {
 		D("bad virtio-net-header length");
-		usage();
+		usage(-1);
 	}
 
     if (g.dev_type == DEV_TAP) {
@@ -2899,7 +2902,7 @@ main(int arc, char **argv)
 	g.main_fd = tap_alloc(g.ifname);
 	if (g.main_fd < 0) {
 		D("cannot open tap %s", g.ifname);
-		usage();
+		usage(-1);
 	}
 #ifndef NO_PCAP
     } else if (g.dev_type == DEV_PCAP) {
@@ -2909,7 +2912,7 @@ main(int arc, char **argv)
 	g.p = pcap_open_live(g.ifname, 256 /* XXX */, 1, 100, pcap_errbuf);
 	if (g.p == NULL) {
 		D("cannot open pcap on %s", g.ifname);
-		usage();
+		usage(-1);
 	}
 	g.main_fd = pcap_fileno(g.p);
 	D("using pcap on %s fileno %d", g.ifname, g.main_fd);
@@ -3021,7 +3024,7 @@ out:
 	/* Exit if something went wrong. */
 	if (g.main_fd < 0) {
 		D("aborting");
-		usage();
+		usage(-1);
 	}
     }
 
