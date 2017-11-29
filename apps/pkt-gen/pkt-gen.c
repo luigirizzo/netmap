@@ -1803,7 +1803,7 @@ receiver_body(void *data)
 
 			m = receive_packets(rxring, targ->g->burst, dump, &cur.bytes);
 			cur.pkts += m;
-			if (m > 0) //XXX-ste: can m be 0?
+			if (m > 0)
 				cur.events++;
 		}
 		cur.min_space = targ->ctr.min_space;
