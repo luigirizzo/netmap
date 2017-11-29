@@ -80,7 +80,7 @@ void resetvar(int v, char *b)
 
 #define output_err(ret, format, args...)\
 	do {\
-		if (ret < 0) {\
+		if ((ret) < 0) {\
 			resetvar(curr_var, VAR_FAILED);\
 			outecho(format, ##args);\
 			outecho("error: %s", strerror(errno));\
