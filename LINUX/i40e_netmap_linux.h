@@ -136,6 +136,26 @@ i40e_netmap_configure_tx_ring(struct i40e_ring *ring)
 	netmap_reset(na, NR_TX, ring->queue_index, 0);
 }
 
+static void
+i40e_netmap_preconfigure_rx_ring(struct i40e_ring *ring,
+		struct i40e_hmc_obj_rxq *rx_ctx)
+{
+	struct netmap_adapter *na;
+
+	if (!ring->netdev) {
+		// XXX it this possible?
+		return;
+	}
+
+	na = NA(ring->netdev);
+
+	if (netmap_reset(na, NR_RX, ring->queue_index, 0) == NULL)
+		return;	// not in native netmap mode
+
+	rx_ctx->dbuff = DIV_ROUND_UP(NETMAP_BUF_SIZE(na),
+			BIT_ULL(I40E_RXQ_CTX_DBUFF_SHIFT));
+}
+
 static int
 i40e_netmap_configure_rx_ring(struct i40e_ring *ring)
 {

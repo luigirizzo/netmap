@@ -378,6 +378,8 @@ function build-prep()
 			ln -s compiler-gcc4.h include/linux/compiler-gcc5.h
 		[ -e include/linux/compiler-gcc6.h ] ||
 			ln -s compiler-gcc5.h include/linux/compiler-gcc6.h
+		[ -e include/linux/compiler-gcc7.h ] ||
+			ln -s compiler-gcc6.h include/linux/compiler-gcc7.h
 		# force disabling PIE
 		sed -i -e '/^all: vmlinux/a\
 \

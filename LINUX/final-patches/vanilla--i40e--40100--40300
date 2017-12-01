@@ -1,5 +1,5 @@
 diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
-index 5b5bea1..c8a32923 100644
+index 5b5bea159bd5..45bfb58a5c5f 100644
 --- a/i40e/i40e_main.c
 +++ b/i40e/i40e_main.c
 @@ -91,6 +91,11 @@ MODULE_DESCRIPTION("Intel(R) Ethernet Connection XL710 Network Driver");
@@ -25,7 +25,18 @@ index 5b5bea1..c8a32923 100644
  	return 0;
  }
  
-@@ -2614,6 +2623,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+@@ -2592,6 +2601,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+ 	/* set the prefena field to 1 because the manual says to */
+ 	rx_ctx.prefena = 1;
+ 
++#ifdef DEV_NETMAP
++	i40e_netmap_preconfigure_rx_ring(ring, &rx_ctx);
++#endif /* DEV_NETMAP */
++
+ 	/* clear the context in the HMC */
+ 	err = i40e_clear_lan_rx_queue_context(hw, pf_q);
+ 	if (err) {
+@@ -2614,6 +2627,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
  	ring->tail = hw->hw_addr + I40E_QRX_TAIL(pf_q);
  	writel(0, ring->tail);
  
@@ -37,7 +48,7 @@ index 5b5bea1..c8a32923 100644
  	if (ring_is_ps_enabled(ring)) {
  		i40e_alloc_rx_headers(ring);
  		i40e_alloc_rx_buffers_ps(ring, I40E_DESC_UNUSED(ring));
-@@ -8515,6 +8529,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
+@@ -8515,6 +8533,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
  		return -ENODEV;
  	}
  
@@ -49,7 +60,7 @@ index 5b5bea1..c8a32923 100644
  	uplink_seid = vsi->uplink_seid;
  	if (vsi->type != I40E_VSI_SRIOV) {
  		if (vsi->netdev_registered) {
-@@ -8850,6 +8869,11 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
+@@ -8850,6 +8873,11 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
  		break;
  	}
  
@@ -62,7 +73,7 @@ index 5b5bea1..c8a32923 100644
  
  err_rings:
 diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
-index 9d95042d..80f8a88 100644
+index 9d95042d5a0f..80f8a88a3ae8 100644
 --- a/i40e/i40e_txrx.c
 +++ b/i40e/i40e_txrx.c
 @@ -29,6 +29,10 @@
