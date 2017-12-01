@@ -48,7 +48,7 @@ index 1af83c9..e896ffe 100644
  clean:
  	@+$(call kernelbuild,clean)
 diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
-index 15e43a1..1eddcb3 100644
+index 15e43a1..d02fc33 100644
 --- a/i40e/i40e_main.c
 +++ b/i40e/i40e_main.c
 @@ -133,6 +133,11 @@ MODULE_VERSION(DRV_VERSION);
@@ -74,7 +74,18 @@ index 15e43a1..1eddcb3 100644
  	return 0;
  }
  
-@@ -3353,6 +3362,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+@@ -3331,6 +3340,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+ 	/* set the prefena field to 1 because the manual says to */
+ 	rx_ctx.prefena = 1;
+ 
++#ifdef DEV_NETMAP
++	i40e_netmap_preconfigure_rx_ring(ring, &rx_ctx);
++#endif /* DEV_NETMAP */
++
+ 	/* clear the context in the HMC */
+ 	err = i40e_clear_lan_rx_queue_context(hw, pf_q);
+ 	if (err) {
+@@ -3353,6 +3366,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
  	ring->tail = hw->hw_addr + I40E_QRX_TAIL(pf_q);
  	writel(0, ring->tail);
  
@@ -86,7 +97,7 @@ index 15e43a1..1eddcb3 100644
  	i40e_alloc_rx_buffers(ring, I40E_DESC_UNUSED(ring));
  
  	return 0;
-@@ -10645,6 +10659,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
+@@ -10645,6 +10663,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
  		return -ENODEV;
  	}
  
@@ -98,7 +109,7 @@ index 15e43a1..1eddcb3 100644
  	uplink_seid = vsi->uplink_seid;
  	if (vsi->type != I40E_VSI_SRIOV) {
  		if (vsi->netdev_registered) {
-@@ -11016,6 +11035,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
+@@ -11016,6 +11039,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
  	    (vsi->type == I40E_VSI_VMDQ2)) {
  		ret = i40e_vsi_config_rss(vsi);
  	}
