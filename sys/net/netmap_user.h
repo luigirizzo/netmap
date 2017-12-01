@@ -98,6 +98,7 @@
 #endif /* likely and unlikely */
 
 #include <net/netmap.h>
+#include <net/netmap_virt.h> /* nmreq_pointer_get() */
 
 /* helper macro */
 #define _NETMAP_OFFSET(type, ptr, offset) \
@@ -611,6 +612,23 @@ nm_is_identifier(const char *s, const char *e)
 	return 1;
 }
 
+static void
+nm_init_offsets(struct nm_desc *d)
+{
+	struct netmap_if *nifp = NETMAP_IF(d->mem, d->req.nr_offset);
+	struct netmap_ring *r = NETMAP_RXRING(nifp, d->first_rx_ring);
+	if ((void *)r == (void *)nifp) {
+		/* the descriptor is open for TX only */
+		r = NETMAP_TXRING(nifp, d->first_tx_ring);
+	}
+
+	*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
+	*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
+	*(void **)(uintptr_t)&d->buf_start = NETMAP_BUF(r, 0);
+	*(void **)(uintptr_t)&d->buf_end =
+		(char *)d->mem + d->memsize;
+}
+
 #define MAXERRMSG 80
 static int
 nm_parse(const char *ifname, struct nm_desc *d, char *err)
@@ -818,6 +836,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 	const struct nm_desc *parent = arg;
 	char errmsg[MAXERRMSG] = "";
 	uint32_t nr_reg;
+	struct netmap_pools_info *pi = NULL;
 
 	if (strncmp(ifname, "netmap:", 7) &&
 			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
@@ -838,8 +857,23 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
-	if (req)
+	if (req) {
 		d->req = *req;
+		if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
+			if (IS_NETMAP_DESC(parent) &&
+					(new_flags & (NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3))) {
+				snprintf(errmsg, MAXERRMSG, "POOLS_CREATE is incompatibile with NM_OPEN_ARG? flags");
+				errno = EINVAL;
+				goto fail;
+			}
+		        pi = nmreq_pointer_get(&d->req);
+			if (pi == NULL) {
+				snprintf(errmsg, MAXERRMSG, "missing netmap_pools_info pointer");
+				errno = EINVAL;
+				goto fail;
+			}
+		}
+	}
 
 	if (!(new_flags & NM_OPEN_IFNAME)) {
 		if (nm_parse(ifname, d, errmsg) < 0)
@@ -888,6 +922,19 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
+	if (pi != NULL) {
+		d->mem = pi;
+		d->memsize = pi->memsize;
+		nm_init_offsets(d);
+	} else if ((!(new_flags & NM_OPEN_NO_MMAP) || parent)) {
+		/* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
+	        errno = nm_mmap(d, parent);
+		if (errno) {
+			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
+			goto fail;
+		}
+	}
+
 	nr_reg = d->req.nr_flags & NR_REG_MASK;
 
 	if (nr_reg == NR_REG_SW) { /* host stack */
@@ -911,13 +958,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 		d->first_tx_ring = d->last_tx_ring = 0;
 		d->first_rx_ring = d->last_rx_ring = 0;
 	}
-
-        /* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
-	if ((!(new_flags & NM_OPEN_NO_MMAP) || parent) && nm_mmap(d, parent)) {
-	        snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
-		goto fail;
-	}
-
 
 #ifdef DEBUG_NETMAP_USER
     { /* debugging code */
@@ -996,21 +1036,8 @@ nm_mmap(struct nm_desc *d, const struct nm_desc *parent)
 		}
 		d->done_mmap = 1;
 	}
-	{
-		struct netmap_if *nifp = NETMAP_IF(d->mem, d->req.nr_offset);
-		struct netmap_ring *r = NETMAP_RXRING(nifp, d->first_rx_ring);
-		if ((void *)r == (void *)nifp) {
-			/* the descriptor is open for TX only */
-			r = NETMAP_TXRING(nifp, d->first_tx_ring);
-		}
 
-		*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
-		*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
-		*(void **)(uintptr_t)&d->buf_start = NETMAP_BUF(r, 0);
-		*(void **)(uintptr_t)&d->buf_end =
-			(char *)d->mem + d->memsize;
-	}
-
+	nm_init_offsets(d);
 	return 0;
 
 fail:
