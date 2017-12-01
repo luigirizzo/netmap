@@ -21,4 +21,16 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <SignMode>TestSign</SignMode>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Release|Win32'">
+    <TestCertificate>CN="WDKTestCert Ali,131544860649071360" | 10000FDB00D12EF1C204354F46F27C83B8A54118</TestCertificate>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Debug|Win32'">
+    <TestCertificate>CN="WDKTestCert Ali,131544860649071360" | 10000FDB00D12EF1C204354F46F27C83B8A54118</TestCertificate>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Release|x64'">
+    <TestCertificate>CN="WDKTestCert Ali,131544860649071360" | 10000FDB00D12EF1C204354F46F27C83B8A54118</TestCertificate>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Debug|x64'">
+    <TestCertificate>CN="WDKTestCert Ali,131544860649071360" | 10000FDB00D12EF1C204354F46F27C83B8A54118</TestCertificate>
+  </PropertyGroup>
 </Project>

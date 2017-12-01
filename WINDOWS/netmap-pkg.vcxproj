@@ -1,32 +1,93 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-
   <PropertyGroup Label="Configuration">
     <ConfigurationType>Utility</ConfigurationType>
     <DriverType>Package</DriverType>
     <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
-    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
   </PropertyGroup>
-
-
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Win10 Debug|Win32">
+      <Configuration>Win10 Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win10 Debug|x64">
+      <Configuration>Win10 Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win10 Release|Win32">
+      <Configuration>Win10 Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win10 Release|x64">
+      <Configuration>Win10 Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8.1 Debug|Win32">
+      <Configuration>Win8.1 Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8.1 Release|Win32">
+      <Configuration>Win8.1 Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8 Debug|Win32">
+      <Configuration>Win8 Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8 Release|Win32">
+      <Configuration>Win8 Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win7 Debug|Win32">
+      <Configuration>Win7 Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win7 Release|Win32">
+      <Configuration>Win7 Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8.1 Debug|x64">
+      <Configuration>Win8.1 Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8.1 Release|x64">
+      <Configuration>Win8.1 Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8 Debug|x64">
+      <Configuration>Win8 Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8 Release|x64">
+      <Configuration>Win8 Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win7 Debug|x64">
+      <Configuration>Win7 Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win7 Release|x64">
+      <Configuration>Win7 Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{72648F4C-6AAA-4E69-99C9-66D9D6400EE9}</ProjectGuid>
     <TemplateGuid>{4605da2c-74a5-4865-98e1-152ef136825f}</TemplateGuid>
     <ProjectName>netmap-pkg</ProjectName>
+    <WindowsTargetPlatformVersion>10.0.14393.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
-
   <Import Project="my-project-cfg.props" />
-
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
-
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup />
-
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Release|Win32'">
+    <EnableInf2cat>true</EnableInf2cat>
+  </PropertyGroup>
   <PropertyGroup>
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
     <EnableDeployment>False</EnableDeployment>
@@ -39,29 +100,33 @@
     <VerifyProjectOutput>True</VerifyProjectOutput>
     <VerifyDrivers />
     <VerifyFlags>133563</VerifyFlags>
-    <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
-    <IntDir>$(SolutionDir)\Output-$(ConfigurationName)\tmp\netmap-pkg\</IntDir>
+    <OutDir>$(SolutionDir)Output-$(ConfigurationName)\</OutDir>
+    <IntDir>$(SolutionDir)Output-$(ConfigurationName)\tmp\$(ProjectName)\</IntDir>
   </PropertyGroup>
-
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Debug|Win32'">
+    <EnableInf2cat>true</EnableInf2cat>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Release|x64'">
+    <EnableInf2cat>true</EnableInf2cat>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Debug|x64'">
+    <EnableInf2cat>true</EnableInf2cat>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
     <Midl>
       <WarningLevel>4</WarningLevel>
       <WarnAsError>true</WarnAsError>
     </Midl>
   </ItemDefinitionGroup>
-
   <ItemGroup>
     <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="netmap.vcxproj">
       <Project>{789055e4-2677-413d-a638-3e2aed7c7427}</Project>
     </ProjectReference>
   </ItemGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
