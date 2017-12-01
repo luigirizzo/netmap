@@ -3219,6 +3219,9 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 
 		kring = na->tx_rings + n;
 
+		if (kring->nr_mode == NKR_NETMAP_ON)
+			return kring->ring->slot;
+
 		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
 			kring->nr_mode = NKR_NETMAP_OFF;
 			return NULL;
@@ -3230,6 +3233,10 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 		if (n >= na->num_rx_rings)
 			return NULL;
 		kring = na->rx_rings + n;
+
+		if (kring->nr_mode == NKR_NETMAP_ON)
+			return kring->ring->slot;
+
 
 		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
 			kring->nr_mode = NKR_NETMAP_OFF;
