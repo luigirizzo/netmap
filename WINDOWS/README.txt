@@ -1,3 +1,8 @@
+**************************************************************
+DISCLAIMER: This documentation is currently outdated.
+            It is going to be updated soon.
+**************************************************************
+
 This directory contains the Windows version of netmap, developed by
 Alessio Faina as part of his MS thesis at the Universita` di Pisa.
 
