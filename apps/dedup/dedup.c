@@ -5,6 +5,9 @@
 #include <net/netmap_user.h>
 #include "dedup.h"
 
+#include "mark-adler-hash.c"
+
+static int dedup_sse42;
 
 static inline int
 dedup_can_hold(struct dedup *d)
@@ -33,14 +36,14 @@ dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in, stru
 	if (d->fifo == NULL)
 		return -1;
 
-	sh = (unsigned int)(sizeof(fifo_size) * CHAR_BIT - __builtin_clz(fifo_size - 1));
+	sh = (unsigned int)(sizeof(fifo_size) * CHAR_BIT - __builtin_clz(fifo_size - 1)) + 1;
 	D("sh %u size %lu", sh, 1UL << sh);
 	if (sh > sizeof(unsigned short) * CHAR_BIT - 1)
 		goto err;
 	d->hashmap = calloc(1UL << sh, sizeof(struct dedup_hashmap_entry));
 	if (d->hashmap == NULL)
 		goto err;
-	d->hashmap_mask = sh - 1;
+	d->hashmap_mask = (1UL << sh) - 1;
 	d->fifo_size = fifo_size;
 	d->in_ring = in;
 	d->in_slot = in->slot;
@@ -48,6 +51,7 @@ dedup_init(struct dedup *d, unsigned int fifo_size, struct netmap_ring *in, stru
 	d->out_slot = out->slot;
 	dedup_ptr_init(d, &d->fifo_out, out->head);
 	dedup_ptr_init(d, &d->fifo_in, out->head);
+	SSE42(dedup_sse42);
 	return 0;
 err:
 	free(d->fifo);
@@ -136,15 +140,10 @@ dedup_fifo_empty(const struct dedup *d)
 	return (d->fifo_in.r == d->fifo_out.r);
 }
 
-static unsigned int
-dedup_hash(const void *buf, size_t len)
+static inline uint32_t
+dedup_hash(const char *data)
 {
-	unsigned int sum = 0;
-	const char *buf_ = buf;
-	while (len--)
-		sum += *buf_++;
-	D("hash %u", sum);
-	return sum;
+	return dedup_sse42 ? crc32c_hw(0, data, 64) : crc32c_sw(0, data, 64);
 }
 
 static void
@@ -156,6 +155,9 @@ dedup_hashmap_insert(struct dedup *d, unsigned short h)
 	fe->hashmap_entry = h;
 	he->bucket_head = d->fifo_in.r;
 	he->valid = 1;
+#ifdef DEDUP_HASH_STAT
+	he->bucket_size++;
+#endif
 }
 
 static void
@@ -171,13 +173,16 @@ dedup_hashmap_remove(struct dedup *d)
 		he->valid = 0;
 	fe->hashmap_entry = 0;
 	fe->bucket_next = 0;
+#ifdef DEDUP_HASH_STAT
+	he->bucket_size--;
+#endif
 }
 
 static long
 dedup_fresh_packet(struct dedup *d, const struct netmap_slot *s)
 {
 	const void *buf = NETMAP_BUF(d->in_ring, s->buf_idx);
-	unsigned int h = dedup_hash(buf, 64);
+	unsigned int h = dedup_hash(buf);
 	unsigned short i = h & d->hashmap_mask;
 	struct dedup_hashmap_entry *he = d->hashmap + i;
 	unsigned long fi = he->bucket_head;

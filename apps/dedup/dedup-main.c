@@ -65,6 +65,9 @@ main(int argc, char **argv)
 	int hold = 0;
 	struct nmreq base_req;
 	uint32_t buf_head = 0;
+#ifdef DEDUP_HASH_STAT
+	time_t last_hash_output = 0;
+#endif
 
 	fprintf(stderr, "%s built %s %s\n\n", argv[0], __DATE__, __TIME__);
 
@@ -212,6 +215,19 @@ main(int argc, char **argv)
 				pollfd[1].revents
 			);
 		n = dedup_push_in(&dedup, &now);
+#ifdef DEDUP_HASH_STAT
+		if (now.tv_sec != last_hash_output) {
+			unsigned int i;
+
+			last_hash_output = now.tv_sec;
+			printf("buckets: ");
+			for (i = 0; i <= dedup.hashmap_mask; i++) {
+				if  (dedup.hashmap[i].bucket_size)
+					printf("%u: %u, ", i, dedup.hashmap[i].bucket_size);
+			}
+			printf("\n");
+		}
+#endif
 	}
 
 	return (0);

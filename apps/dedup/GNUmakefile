@@ -13,6 +13,7 @@ CFLAGS = -O2 -pipe -g
 CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include
 CFLAGS += -Wextra
+#CFLAGS += -DDEDUP_HASH_STAT
 
 LDLIBS += -lpthread
 ifeq ($(shell uname),Linux)

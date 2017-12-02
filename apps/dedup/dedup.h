@@ -19,6 +19,9 @@ struct dedup_fifo_entry {
 
 struct dedup_hashmap_entry {
 	int valid;
+#ifdef DEDUP_HASH_STAT
+	unsigned int bucket_size;
+#endif
 	unsigned long bucket_head;
 };
 
