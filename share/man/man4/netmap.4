@@ -266,9 +266,15 @@ normally depends on the hardware.
 NICs also have an extra tx/rx ring pair connected to the host stack.
 .Em NIOCREGIF
 can also request additional unbound buffers in the same memory space,
-to be used as temporary storage for packets.
+to be used as temporary storage for packets. The number of extra
+buffers is specified in the
+.Va arg.nr_arg3
+field. On success, the kernel writes back to
+.Va arg.nr_arg3
+the number of extra buffers actually allocated (they may be less
+than the amount requested if the memory space ran out of buffers).
 .Pa ni_bufs_head
-contains the index of the first of these free rings,
+contains the index of the first of these extra buffers,
 which are connected in a list (the first uint32_t of each
 buffer being the index of the next buffer in the list).
 A
