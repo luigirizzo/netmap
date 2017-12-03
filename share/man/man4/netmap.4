@@ -279,7 +279,13 @@ which are connected in a list (the first uint32_t of each
 buffer being the index of the next buffer in the list).
 A
 .Dv 0
-indicates the end of the list.
+indicates the end of the list. The application is free to modify
+this list and use the buffers (i.e., binding them to the slots of a
+netmap ring). When closing the netmap file descriptor,
+the kernel frees the buffers contained in the list pointed by
+.Pa ni_bufs_head
+, irrespectively of the buffers originally provided by the kernel on
+.Em NIOCREGIF.
 .It Dv struct netmap_ring (one per ring)
 .Bd -literal
 struct netmap_ring {
