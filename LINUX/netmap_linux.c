@@ -935,13 +935,13 @@ struct nm_linux_selrecord_t {
  * - file is passed as 'td';
  */
 static u_int
-linux_netmap_poll(struct file * file, struct poll_table_struct *pwait)
+linux_netmap_poll(struct file *file, struct poll_table_struct *pwait)
 {
 #ifdef NETMAP_LINUX_PWAIT_KEY
 	int events = pwait ? pwait->NETMAP_LINUX_PWAIT_KEY : \
 		     POLLIN | POLLOUT | POLLERR;
 #else
-	int events = POLLIN | POLLOUT; /* XXX maybe... */
+	int events = POLLIN | POLLOUT | POLLERR;
 #endif /* PWAIT_KEY */
 	struct nm_linux_selrecord_t sr = {
 		.file = file,
