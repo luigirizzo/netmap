@@ -211,7 +211,7 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
                 struct netmap_slot *ts = &txring->slot[k];
                 struct netmap_slot tmp;
 
-		prefetch(ts + 1);
+		__builtin_prefetch(ts + 1);
 
                 /* swap the slots and report the buffer change */
                 tmp = *rs;
