@@ -588,8 +588,8 @@ do_ring()
 	}
 	printf("]\n");
 	printf("head        %u\n", ring->head);
-	printf("cur         %u\n", ring->head);
-	printf("tail        %u\n", ring->head);
+	printf("cur         %u\n", ring->cur);
+	printf("tail        %u\n", ring->tail);
 	printf("flags       %x", ring->flags);
 	if (ring->flags) {
 		printf(" [");
