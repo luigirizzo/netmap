@@ -2627,11 +2627,18 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	}
 #endif
 
+#ifdef linux
+	/* The selrecord must be unconditional on linux. */
+	nm_os_selrecord(sr, check_all_tx ?
+	    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
+	nm_os_selrecord(sr, check_all_rx ?
+		&na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
+#endif /* linux */
+
 	/*
 	 * If we want to push packets out (priv->np_txpoll) or
 	 * want_tx is still set, we must issue txsync calls
 	 * (on all rings, to avoid that the tx rings stall).
-	 * XXX should also check cur != hwcur on the tx rings.
 	 * Fortunately, normal tx mode has np_txpoll set.
 	 */
 	if (priv->np_txpoll || want_tx) {
@@ -2648,6 +2655,12 @@ flush_tx:
 			kring = &na->tx_rings[i];
 			ring = kring->ring;
 
+			/*
+			 * Don't try to txsync this TX ring if we already found some
+			 * space in some of the TX rings (want_tx == 0) and there are no
+			 * TX slots in this ring that need to be flushed to the NIC
+			 * (cur == hwcur).
+			 */
 			if (!send_down && !want_tx && ring->cur == kring->nr_hwcur)
 				continue;
 
@@ -2681,8 +2694,10 @@ flush_tx:
 		/* if there were any packet to forward we must have handled them by now */
 		send_down = 0;
 		if (want_tx && retry_tx && sr) {
+#ifndef linux
 			nm_os_selrecord(sr, check_all_tx ?
 			    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
+#endif /* !linux */
 			retry_tx = 0;
 			goto flush_tx;
 		}
@@ -2737,10 +2752,12 @@ do_retry_rx:
 			}
 		}
 
+#ifndef linux
 		if (retry_rx && sr) {
 			nm_os_selrecord(sr, check_all_rx ?
 			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
 		}
+#endif /* !linux */
 		if (send_down || retry_rx) {
 			retry_rx = 0;
 			if (send_down)
