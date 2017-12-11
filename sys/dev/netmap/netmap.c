@@ -2543,7 +2543,6 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 #define want_tx want[NR_TX]
 #define want_rx want[NR_RX]
 	struct mbq q;	/* packets from RX hw queues to host stack */
-	enum txrx t;
 
 	/*
 	 * In order to avoid nested locks, we need to "double check"
@@ -2595,14 +2594,15 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	check_all_tx = nm_si_user(priv, NR_TX);
 	check_all_rx = nm_si_user(priv, NR_RX);
 
+#ifdef __FreeBSD__
 	/*
 	 * We start with a lock free round which is cheap if we have
 	 * slots available. If this fails, then lock and call the sync
-	 * routines.
+	 * routines. We can't do this on Linux, as the contract says
+	 * that we must call nm_os_selrecord() unconditionally.
 	 */
-#if 1 /* new code- call rx if any of the ring needs to release or read buffers */
 	if (want_tx) {
-		t = NR_TX;
+		enum txrx t = NR_TX;
 		for (i = priv->np_qfirst[t]; want[t] && i < priv->np_qlast[t]; i++) {
 			kring = &NMR(na, t)[i];
 			/* XXX compare ring->cur and kring->tail */
@@ -2613,8 +2613,8 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 		}
 	}
 	if (want_rx) {
+		enum txrx t = NR_RX;
 		want_rx = 0; /* look for a reason to run the handlers */
-		t = NR_RX;
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
 			kring = &NMR(na, t)[i];
 			if (kring->ring->cur == kring->ring->tail /* try fetch new buffers */
@@ -2625,18 +2625,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 		if (!want_rx)
 			revents |= events & (POLLIN | POLLRDNORM); /* we have data */
 	}
-#else /* old code */
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; want[t] && i < priv->np_qlast[t]; i++) {
-			kring = &NMR(na, t)[i];
-			/* XXX compare ring->cur and kring->tail */
-			if (!nm_ring_empty(kring->ring)) {
-				revents |= want[t];
-				want[t] = 0;	/* also breaks the loop */
-			}
-		}
-	}
-#endif /* old code */
+#endif
 
 	/*
 	 * If we want to push packets out (priv->np_txpoll) or
