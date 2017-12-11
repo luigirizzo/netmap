@@ -621,6 +621,10 @@ tail->|                 |<-hwtail    |                 |<-hwlease
  *    a circular array where completions should be reported.
  */
 
+struct lut_entry;
+#ifdef __FreeBSD__
+#define plut_entry lut_entry
+#endif
 
 struct netmap_lut {
 	struct lut_entry *lut;
@@ -1763,7 +1767,7 @@ netmap_idx_k2n(struct netmap_kring *kr, int idx)
 
 
 /* Entries of the look-up table. */
-#if !defined(linux) && !defined(_WIN32)
+#ifdef __FreeBSD__
 struct lut_entry {
 	void *vaddr;		/* virtual address. */
 	vm_paddr_t paddr;	/* physical address. */
@@ -1782,7 +1786,7 @@ struct lut_entry {
 struct plut_entry {
 	vm_paddr_t paddr;	/* physical address. */
 };
-#endif /* !linux & !_WIN32 */
+#endif /* linux & _WIN32 */
 
 struct netmap_obj_pool;
 
@@ -1807,10 +1811,10 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 	struct plut_entry *plut = na->na_lut.plut;
 	void *ret = (i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr;
 
-#ifndef _WIN32
-	*pp = (i >= na->na_lut.objtotal) ? plut[0].paddr : plut[i].paddr;
-#else
+#ifdef _WIN32
 	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)plut[0].paddr.QuadPart : (uint64_t)plut[i].paddr.QuadPart;
+#else
+	*pp = (i >= na->na_lut.objtotal) ? plut[0].paddr : plut[i].paddr;
 #endif
 	return ret;
 }

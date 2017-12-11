@@ -394,6 +394,9 @@ static int
 netmap_mem2_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 {
 	lut->lut = nmd->pools[NETMAP_BUF_POOL].lut;
+#ifdef __FreeBSD__
+	lut->plut = lut->lut;
+#endif
 	lut->objtotal = nmd->pools[NETMAP_BUF_POOL].objtotal;
 	lut->objsize = nmd->pools[NETMAP_BUF_POOL]._objsize;
 
