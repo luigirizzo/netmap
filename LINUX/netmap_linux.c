@@ -2294,6 +2294,8 @@ EXPORT_SYMBOL(netmap_disable_all_rings);
 EXPORT_SYMBOL(netmap_enable_all_rings);
 EXPORT_SYMBOL(netmap_krings_create);
 EXPORT_SYMBOL(netmap_krings_delete);	/* used by veth module */
+EXPORT_SYMBOL(netmap_hw_krings_create);
+EXPORT_SYMBOL(netmap_hw_krings_delete);
 EXPORT_SYMBOL(netmap_mem_rings_create);	/* used by veth module */
 EXPORT_SYMBOL(netmap_mem_rings_delete);	/* used by veth module */
 #ifdef WITH_PIPES
