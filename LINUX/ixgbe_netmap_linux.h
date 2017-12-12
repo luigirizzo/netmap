@@ -751,6 +751,7 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 			ixgbe_netmap_detach(adapter);
 			return;
 		}
+		*h->phead = 0;
 	}
 #endif /*! NM_IXGBE_USE_TDH */
 }
