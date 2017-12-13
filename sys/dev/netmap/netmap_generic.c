@@ -1015,7 +1015,6 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	/* Adapter-specific variables. */
-	uint16_t slot_flags = kring->nkr_slot_flags;
 	u_int nm_buf_len = NETMAP_BUF_SIZE(na);
 	struct mbq tmpq;
 	struct mbuf *m;
@@ -1094,7 +1093,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 			avail -= nm_buf_len;
 
 			ring->slot[nm_i].len = copy;
-			ring->slot[nm_i].flags = slot_flags | (mlen ? NS_MOREFRAG : 0);
+			ring->slot[nm_i].flags = (mlen ? NS_MOREFRAG : 0);
 			nm_i = nm_next(nm_i, lim);
 		}
 

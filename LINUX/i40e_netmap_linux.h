@@ -480,8 +480,6 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	if (netmap_no_pendintr || force_update) {
 		int crclen = ix_crcstrip ? 0 : 4;
-		uint16_t slot_flags = kring->nkr_slot_flags;
-		uint16_t curr_slot_flag;
 
 		nic_i = rxr->next_to_clean; // or also k2n(kring->nr_hwtail)
 		nm_i = netmap_idx_n2k(kring, nic_i);
@@ -491,6 +489,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint64_t qword = le64toh(curr->wb.qword1.status_error_len);
 			uint32_t staterr = (qword & I40E_RXD_QW1_STATUS_MASK)
 				 >> I40E_RXD_QW1_STATUS_SHIFT;
+		        uint16_t slot_flags = 0;
 
 			if ((staterr & (1<<I40E_RX_DESC_STATUS_DD_SHIFT)) == 0) {
 				break;
@@ -498,11 +497,10 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			ring->slot[nm_i].len = ((qword & I40E_RXD_QW1_LENGTH_PBUF_MASK)
 			    >> I40E_RXD_QW1_LENGTH_PBUF_SHIFT) - crclen;
 
-			curr_slot_flag = slot_flags;
 			if (unlikely((staterr & (1<<I40E_RX_DESC_STATUS_EOF_SHIFT)) == 0 )) {
-				curr_slot_flag |= NS_MOREFRAG;
+				slot_flags |= NS_MOREFRAG;
 			}
-			ring->slot[nm_i].flags = curr_slot_flag;
+			ring->slot[nm_i].flags = slot_flags;
 
 			//bus_dmamap_sync(rxr->ptag,
 			//    rxr->buffers[nic_i].pmap, BUS_DMASYNC_POSTREAD);

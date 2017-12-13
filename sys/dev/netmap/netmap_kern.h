@@ -441,8 +441,6 @@ struct netmap_kring {
 	 */
 	int32_t		nkr_hwofs;
 
-	uint16_t	nkr_slot_flags;	/* initial value for flags */
-
 	/* last_reclaim is opaque marker to help reduce the frequency
 	 * of operations such as reclaiming tx buffers. A possible use
 	 * is set it to ticks and do the reclaim only once per tick.

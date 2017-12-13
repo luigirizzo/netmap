@@ -301,7 +301,6 @@ vtnet_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * and vtnet_netmap_init_buffers().
 	 */
 	if (netmap_no_pendintr || force_update) {
-		uint16_t slot_flags = kring->nkr_slot_flags;
                 struct netmap_adapter *token;
 
                 nm_i = kring->nr_hwtail;
@@ -313,7 +312,7 @@ vtnet_netmap_rxsync(struct netmap_kring *kring, int flags)
                                 break;
                         if (likely(token == (void *)rxq)) {
                             ring->slot[nm_i].len = len;
-                            ring->slot[nm_i].flags = slot_flags;
+                            ring->slot[nm_i].flags = 0;
                             nm_i = nm_next(nm_i, lim);
                             n++;
                         } else {

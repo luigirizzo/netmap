@@ -1299,7 +1299,7 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
                                 D("%s", nm_dump_buf(NMB(na, slot),len, 128, NULL));
 
 			slot->len = len;
-			slot->flags = kring->nkr_slot_flags;
+			slot->flags = 0;
 			nm_i = nm_next(nm_i, lim);
 			mbq_enqueue(&fq, m);
 		}

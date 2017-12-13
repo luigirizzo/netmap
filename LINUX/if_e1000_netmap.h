@@ -210,8 +210,6 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * First part: import newly received packets.
 	 */
 	if (netmap_no_pendintr || force_update) {
-		uint16_t slot_flags = kring->nkr_slot_flags;
-
 		nic_i = rxr->next_to_clean;
 		nm_i = netmap_idx_n2k(kring, nic_i);
 
@@ -222,7 +220,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
 			ring->slot[nm_i].len = le16toh(curr->length) - 4;
-			ring->slot[nm_i].flags = slot_flags;
+			ring->slot[nm_i].flags = 0;
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}

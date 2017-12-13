@@ -520,7 +520,6 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	if (netmap_no_pendintr || force_update) {
 		uint32_t hwtail_lim = nm_prev(kring->nr_hwcur, lim);
-		uint16_t slot_flags = kring->nkr_slot_flags;
 		struct netmap_adapter *token;
 
 
@@ -547,7 +546,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 				}
 
 				ring->slot[nm_i].len = len;
-				ring->slot[nm_i].flags = slot_flags;
+				ring->slot[nm_i].flags = 0;
 				nm_i = nm_next(nm_i, lim);
 				n++;
 			}
