@@ -370,8 +370,7 @@ struct netmap_zmon_list {
  * TX rings: hwcur + hwofs coincides with next_to_send
  *
  * For received packets, slot->flags is set to nkr_slot_flags
- * so we can provide a proper initial value (e.g. set NS_FORWARD
- * when operating in 'transparent' mode).
+ * so we can provide a proper initial value.
  *
  * The following fields are used to implement lock-free copy of packets
  * from input to output ports in VALE switch:

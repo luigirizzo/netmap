@@ -510,10 +510,9 @@ can be delayed indefinitely.
 This flag helps detect
 when packets have been sent and a file descriptor can be closed.
 .It NS_FORWARD
-When a ring is in 'transparent' mode (see
-.Sx TRANSPARENT MODE ) ,
-packets marked with this flag are forwarded to the other endpoint
-at the next system call, thus restoring (in a selective way)
+When a ring is in 'transparent' mode,
+packets marked with this flag by the user application are forwarded to the
+other endpoint at the next system call, thus restoring (in a selective way)
 the connection between a NIC and the host stack.
 .It NS_NO_LEARN
 tells the forwarding code that the source MAC address for this
