@@ -291,7 +291,7 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	}
 
 	if (!nmd->lasterr && na->pdev)
-		netmap_mem_map(&nmd->pools[NETMAP_BUF_POOL], na);
+		nmd->lasterr = netmap_mem_map(&nmd->pools[NETMAP_BUF_POOL], na);
 
 	return nmd->lasterr;
 }
@@ -1464,8 +1464,10 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 
 	ND("allocating physical lut for %s", na->name);
 	lut->plut = nm_alloc_plut(lim);
-	if (lut->plut == NULL)
+	if (lut->plut == NULL) {
+		D("Failed to allocate physical lut for %s", na->name);
 		return ENOMEM;
+        }
 
 	for (i = 0; i < lim; i += p->_clustentries) {
 		int j;
