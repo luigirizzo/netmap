@@ -1666,10 +1666,8 @@ netmap_load_map(struct netmap_adapter *na,
 
 static inline void
 netmap_unload_map(struct netmap_adapter *na,
-	bus_dma_tag_t tag, bus_dmamap_t map)
+	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz)
 {
-	u_int sz = NETMAP_BUF_SIZE(na);
-
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,
 				 DMA_BIDIRECTIONAL);
