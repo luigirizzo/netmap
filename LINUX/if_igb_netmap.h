@@ -240,11 +240,15 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 			union e1000_adv_rx_desc *curr =
 					E1000_RX_DESC_ADV(*rxr, nic_i);
 			uint32_t staterr = le32toh(curr->wb.upper.status_error);
+			struct netmap_slot *slot = &ring->slot[nm_i];
+			uint64_t paddr;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
-			ring->slot[nm_i].len = le16toh(curr->wb.upper.length);
-			ring->slot[nm_i].flags = 0;
+			PNMB(na, slot, &paddr);
+			slot->len = le16toh(curr->wb.upper.length);
+			slot->flags = 0;
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, NETMAP_BUF_SIZE(na));
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
