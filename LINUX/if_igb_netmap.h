@@ -248,7 +248,7 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 			PNMB(na, slot, &paddr);
 			slot->len = le16toh(curr->wb.upper.length);
 			slot->flags = 0;
-			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, NETMAP_BUF_SIZE(na));
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, NETMAP_BUF_SIZE(na), NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}

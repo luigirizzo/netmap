@@ -1676,7 +1676,7 @@ netmap_unload_map(struct netmap_adapter *na,
 
 static inline void
 netmap_sync_map(struct netmap_adapter *na,
-	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz)
+	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz, enum txrx t)
 {
 	if (*map) {
 		dma_sync_single_for_cpu(na->pdev, *map, sz,
