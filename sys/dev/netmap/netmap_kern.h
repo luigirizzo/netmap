@@ -1632,6 +1632,8 @@ netmap_unload_map(struct netmap_adapter *na,
 		bus_dmamap_unload(tag, map);
 }
 
+#define netmap_sync_map(na, tag, map, sz, t)
+
 /* update the map when a buffer changes. */
 static inline void
 netmap_reload_map(struct netmap_adapter *na,
@@ -1666,13 +1668,21 @@ netmap_load_map(struct netmap_adapter *na,
 
 static inline void
 netmap_unload_map(struct netmap_adapter *na,
-	bus_dma_tag_t tag, bus_dmamap_t map)
+	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz)
 {
-	u_int sz = NETMAP_BUF_SIZE(na);
-
 	if (*map) {
 		dma_unmap_single(na->pdev, *map, sz,
 				 DMA_BIDIRECTIONAL);
+	}
+}
+
+static inline void
+netmap_sync_map(struct netmap_adapter *na,
+	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz, enum txrx t)
+{
+	if (*map) {
+		dma_sync_single_for_cpu(na->pdev, *map, sz,
+				DMA_FROM_DEVICE);
 	}
 }
 
