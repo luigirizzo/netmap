@@ -1632,6 +1632,8 @@ netmap_unload_map(struct netmap_adapter *na,
 		bus_dmamap_unload(tag, map);
 }
 
+#define netmap_sync_map(na, tag, map, sz, t)
+
 /* update the map when a buffer changes. */
 static inline void
 netmap_reload_map(struct netmap_adapter *na,
