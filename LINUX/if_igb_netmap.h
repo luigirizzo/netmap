@@ -159,6 +159,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_paddr, addr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, NETMAP_BUF_SIZE(na), NR_TX);
 
 			/* Fill the slot in the NIC ring. */
 			curr->read.buffer_addr = htole64(paddr);
