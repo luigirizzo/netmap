@@ -716,9 +716,12 @@ ixgbe_netmap_krings_delete(struct netmap_adapter *na)
 static int
 ixgbe_netmap_krings_create(struct netmap_adapter *na)
 {
+#ifndef NM_IXGBE_USE_TDH
 	struct netmap_ixgbe_adapter *ina =
 		(struct netmap_ixgbe_adapter *)na;
-	int i, ret;
+	int i;
+#endif /* !NM_IXGBE_USE_TDH */
+        int ret;
        
 	ret = netmap_hw_krings_create(na);
 	if (ret)
