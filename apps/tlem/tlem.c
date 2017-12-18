@@ -1633,6 +1633,7 @@ main(int argc, char **argv)
 			break;
 		case 'w':
 			bp[0].wait_link = atoi(optarg);
+			break;
 		case 'r':
 			bp[0].route_mode = 1;
 			break;
