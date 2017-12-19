@@ -260,8 +260,10 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 			vh->hdr.gso_size = skb_shinfo(skb)->gso_size;
 			if (skb_shinfo(skb)->gso_type & SKB_GSO_TCPV4) {
 				vh->hdr.gso_type = VIRTIO_NET_HDR_GSO_TCPV4;
+#ifdef NETMAP_LINUX_HAVE_UFO
 			} else if (skb_shinfo(skb)->gso_type & SKB_GSO_UDP) {
 				vh->hdr.gso_type = VIRTIO_NET_HDR_GSO_UDP;
+#endif /* NETMAP_LINUX_HAVE_UFO */
 			} else if (skb_shinfo(skb)->gso_type & SKB_GSO_TCPV6) {
 				vh->hdr.gso_type = VIRTIO_NET_HDR_GSO_TCPV6;
 			}
@@ -636,10 +638,11 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			case VIRTIO_NET_HDR_GSO_TCPV4:
 				skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
 				break;
-
+#ifdef NETMAP_LINUX_HAVE_UFO
 			case VIRTIO_NET_HDR_GSO_UDP:
 				skb_shinfo(skb)->gso_type = SKB_GSO_UDP;
 				break;
+#endif /* NETMAP_LINUX_HAVE_UFO */
 
 			case VIRTIO_NET_HDR_GSO_TCPV6:
 				skb_shinfo(skb)->gso_type = SKB_GSO_TCPV6;
@@ -1449,7 +1452,9 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 		if (ptnet_gso) {
 			hw_features |= NETIF_F_TSO
+#ifdef NETMAP_LINUX_HAVE_UFO
 				       | NETIF_F_UFO
+#endif /* NETMAP_LINUX_HAVE_UFO */
 				       | NETIF_F_TSO_ECN
 				       | NETIF_F_TSO6;
 			netdev->features |= NETIF_F_GSO_ROBUST;
