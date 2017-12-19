@@ -2366,7 +2366,6 @@ quit:
 	return (NULL);
 }
 
-#define norm(a,b,c)	norm(a,b)
 
 static void
 tx_output(struct my_ctrs *cur, double delta, const char *msg)
