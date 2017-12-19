@@ -290,8 +290,12 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 		NMA_UNLOCK(nmd);
 	}
 
-	if (!nmd->lasterr && na->pdev)
+	if (!nmd->lasterr && na->pdev) {
 		nmd->lasterr = netmap_mem_map(&nmd->pools[NETMAP_BUF_POOL], na);
+		if (nmd->lasterr) {
+			netmap_mem_deref(nmd, na);
+		}
+	}
 
 	return nmd->lasterr;
 }
