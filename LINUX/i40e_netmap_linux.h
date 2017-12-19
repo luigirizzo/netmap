@@ -309,7 +309,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	txr = NM_I40E_TX_RING(vsi, kring->ring_id);
 	if (unlikely(!txr || !txr->desc)) {
-		D("ring %s is missing (txr=%p)", kring->name, txr);
+		RD(1, "ring %s is missing (txr=%p)", kring->name, txr);
 		return ENXIO;
 	}
 	//bus_dmamap_sync(txr->dma.tag, txr->dma.map,
@@ -454,7 +454,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
        
 	rxr = NM_I40E_RX_RING(vsi, kring->ring_id);
 	if (unlikely(!rxr || !rxr->desc)) {
-		D("ring %s is missing (rxr=%p)", kring->name, rxr);
+		RD(1, "ring %s is missing (rxr=%p)", kring->name, rxr);
 		return ENXIO;
 	}
 
