@@ -457,8 +457,6 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 	if (head > lim)
 		return netmap_ring_reinit(kring);
 
-	if (!rxr)
-		return ENXIO;
 	/* XXX check sync modes */
 	//bus_dmamap_sync(rxr->dma.tag, rxr->dma.map,
 	//		BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
