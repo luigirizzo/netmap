@@ -1186,7 +1186,7 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		int copy = options & OPT_COPY || slot->flags & NS_BUF_CHANGED;
 		/* sender_body() drops OPT_COPY after starting, but we need to
 		 * copy over any ARP packets lingering in the txring */
-		copy ||= (old->eh->ether_type == htons(ETHERTYPE_ARP));
+		copy |= (old->eh.ether_type == htons(ETHERTYPE_ARP));
 
 		slot->flags = 0;
 		if (options & OPT_RUBBISH) {
