@@ -753,6 +753,8 @@ do_buf()
 doit:
 	ring = get_ring();
 	buf = NETMAP_BUF(ring, buf_idx);
+	output("buf=%p", buf);
+	last_access_addr = buf;
 	dump_payload(buf, len);
 }
 
