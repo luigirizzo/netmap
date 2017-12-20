@@ -268,8 +268,7 @@ do_rxsync()
 #endif /* TEST_NETMAP */
 
 
-volatile char tmp1;
-void do_access()
+void do_rd()
 {
 	char *arg = nextarg();
 	char *p;
@@ -283,7 +282,31 @@ void do_access()
 		p = (char *)strtoul((void *)arg, NULL, 0);
 	}
 	last_access_addr = p + 4096;
-	tmp1 = *p;
+	output("%2x", *p);
+}
+
+char *last_wr_byte = "x";
+void do_wr()
+{
+	char *arg = nextarg();
+	char *p;
+	if (!arg) {
+		if (!last_access_addr) {
+			output("missing address");
+			return;
+		}
+		p = last_access_addr;
+		last_access_addr += 4096;
+	} else {
+		p = (char *)strtoul((void *)arg, NULL, 0);
+	}
+	arg = nextarg();
+	if (!arg) {
+		arg = last_wr_byte;
+	}
+	for ( ; arg; arg = nextarg()) {
+		*p++ = strtoul((void *)arg, NULL, 0);
+	}
 }
 
 void do_dup()
@@ -1772,7 +1795,8 @@ struct cmd_def commands[] = {
 	{ "dup",	do_dup,		},
 	{ "mmap",	do_mmap,	},
 	{ "anon-mmap",	do_anon_mmap,	},
-	{ "access",	do_access,	},
+	{ "rd",		do_rd,		},
+	{ "wr",		do_wr,		},
 	{ "munmap",	do_munmap,	},
 	{ "poll",	do_poll,	},
 	{ "expr",	do_expr,	},
