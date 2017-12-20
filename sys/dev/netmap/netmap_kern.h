@@ -1681,8 +1681,12 @@ netmap_sync_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz, enum txrx t)
 {
 	if (*map) {
-		dma_sync_single_for_cpu(na->pdev, *map, sz,
-				DMA_FROM_DEVICE);
+		if (t == NR_RX)
+			dma_sync_single_for_cpu(na->pdev, *map, sz,
+					DMA_FROM_DEVICE);
+		else
+			dma_sync_single_for_device(na->pdev, *map, sz,
+					DMA_TO_DEVICE);
 	}
 }
 
