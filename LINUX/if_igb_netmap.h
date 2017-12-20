@@ -159,7 +159,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_paddr, addr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
-			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, NETMAP_BUF_SIZE(na), NR_TX);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 
 			/* Fill the slot in the NIC ring. */
 			curr->read.buffer_addr = htole64(paddr);
@@ -249,7 +249,7 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 			PNMB(na, slot, &paddr);
 			slot->len = le16toh(curr->wb.upper.length);
 			slot->flags = 0;
-			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, NETMAP_BUF_SIZE(na), NR_RX);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
