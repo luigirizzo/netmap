@@ -1660,8 +1660,10 @@ netmap_load_map(struct netmap_adapter *na,
 	if (map) {
 		*map = dma_map_single(na->pdev, buf, size,
 				      DMA_BIDIRECTIONAL);
-		if (dma_mapping_error(na->pdev, *map))
+		if (dma_mapping_error(na->pdev, *map)) {
+			*map = 0;
 			return ENOMEM;
+		}
 	}
 	return 0;
 }
