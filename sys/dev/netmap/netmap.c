@@ -3088,15 +3088,14 @@ netmap_detach(struct ifnet *ifp)
 
 	NMG_LOCK();
 	netmap_set_all_rings(na, NM_KR_LOCKED);
-	na->na_flags |= NAF_ZOMBIE;
 	/*
 	 * if the netmap adapter is not native, somebody
 	 * changed it, so we can not release it here.
 	 * The NAF_ZOMBIE flag will notify the new owner that
 	 * the driver is gone.
 	 */
-	if (na->na_flags & NAF_NATIVE) {
-	        netmap_adapter_put(na);
+	if (!(na->na_flags & NAF_NATIVE) || !netmap_adapter_put(na)) {
+		na->na_flags |= NAF_ZOMBIE;
 	}
 	/* give active users a chance to notice that NAF_ZOMBIE has been
 	 * turned on, so that they can stop and return an error to userspace.
