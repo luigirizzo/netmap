@@ -398,17 +398,6 @@ struct nm_linux_selrecord_t;
 #define	cdev			miscdevice
 #define	cdevsw			miscdevice
 
-
-/*
- * XXX to complete - the dmamap interface
- */
-#define	BUS_DMA_NOWAIT	0
-#define	bus_dmamap_load(_1, _2, _3, _4, _5, _6, _7)
-#define	bus_dmamap_unload(_1, _2)
-
-typedef int (d_mmap_t)(struct file *f, struct vm_area_struct *vma);
-typedef unsigned int (d_poll_t)(struct file * file, struct poll_table_struct *pwait);
-
 /*
  * make_dev_credf() will set an error and return the first argument.
  * This relies on the availability of the 'error' local variable.
