@@ -1653,6 +1653,33 @@ netmap_reload_map(struct netmap_adapter *na,
 int nm_iommu_group_id(bus_dma_tag_t dev);
 #include <linux/dma-mapping.h>
 
+/*
+ * on linux we need
+ *	dma_map_single(&pdev->dev, virt_addr, len, direction)
+ *	dma_unmap_single(&adapter->pdev->dev, phys_addr, len, direction)
+ */
+#if 0
+	struct e1000_buffer *buffer_info =  &tx_ring->buffer_info[l];
+	/* set time_stamp *before* dma to help avoid a possible race */
+	buffer_info->time_stamp = jiffies;
+	buffer_info->mapped_as_page = false;
+	buffer_info->length = len;
+	//buffer_info->next_to_watch = l;
+	/* reload dma map */
+	dma_unmap_single(&adapter->pdev->dev, buffer_info->dma,
+			NETMAP_BUF_SIZE, DMA_TO_DEVICE);
+	buffer_info->dma = dma_map_single(&adapter->pdev->dev,
+			addr, NETMAP_BUF_SIZE, DMA_TO_DEVICE);
+
+	if (dma_mapping_error(&adapter->pdev->dev, buffer_info->dma)) {
+		D("dma mapping error");
+		/* goto dma_error; See e1000_put_txbuf() */
+		/* XXX reset */
+	}
+	tx_desc->buffer_addr = htole64(buffer_info->dma); //XXX
+
+#endif
+
 static inline int
 netmap_load_map(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, void *buf, u_int size)
@@ -1706,44 +1733,6 @@ netmap_reload_map(struct netmap_adapter *na,
 	*map = dma_map_single(na->pdev, buf, sz,
 				DMA_BIDIRECTIONAL);
 }
-
-/*
- * XXX How do we redefine these functions:
- *
- * on linux we need
- *	dma_map_single(&pdev->dev, virt_addr, len, direction)
- *	dma_unmap_single(&adapter->pdev->dev, phys_addr, len, direction
- * The len can be implicit (on netmap it is NETMAP_BUF_SIZE)
- * unfortunately the direction is not, so we need to change
- * something to have a cross API
- */
-
-#if 0
-	struct e1000_buffer *buffer_info =  &tx_ring->buffer_info[l];
-	/* set time_stamp *before* dma to help avoid a possible race */
-	buffer_info->time_stamp = jiffies;
-	buffer_info->mapped_as_page = false;
-	buffer_info->length = len;
-	//buffer_info->next_to_watch = l;
-	/* reload dma map */
-	dma_unmap_single(&adapter->pdev->dev, buffer_info->dma,
-			NETMAP_BUF_SIZE, DMA_TO_DEVICE);
-	buffer_info->dma = dma_map_single(&adapter->pdev->dev,
-			addr, NETMAP_BUF_SIZE, DMA_TO_DEVICE);
-
-	if (dma_mapping_error(&adapter->pdev->dev, buffer_info->dma)) {
-		D("dma mapping error");
-		/* goto dma_error; See e1000_put_txbuf() */
-		/* XXX reset */
-	}
-	tx_desc->buffer_addr = htole64(buffer_info->dma); //XXX
-
-#endif
-
-/*
- * The bus_dmamap_sync() can be one of wmb() or rmb() depending on direction.
- */
-#define bus_dmamap_sync(_a, _b, _c)
 
 #endif /* linux */
 
