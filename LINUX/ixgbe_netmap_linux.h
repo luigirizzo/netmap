@@ -236,7 +236,7 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 	for (i = 0; i < adapter->num_rx_queues; i++) {
 		struct netmap_kring *kring = &na->rx_rings[i];
 
-		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
+		if (nm_kring_pending_off(kring)) {
 			struct NM_IXGBE_RING *rxr = NM_IXGBE_RX_RING(adapter, i);
 
 			rxr->next_to_clean = 0;
@@ -250,7 +250,7 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct netmap_kring *kring = &na->tx_rings[i];
 
-		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
+		if (nm_kring_pending_off(kring)) {
 			struct NM_IXGBE_RING *rxr = NM_IXGBE_TX_RING(adapter, i);
 
 			rxr->next_to_clean = 0;
