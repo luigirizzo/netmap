@@ -258,6 +258,18 @@ COMMON PROBLEMS
 
       # ip link set eth0 promisc on
 
+  Some drivers (e.g. i40e with patched driver) may require the
+  promiscuous mode flag to be set after starting the application, not
+  before it. If the promiscuous mode flag is already on, you may need
+  to turn it off temporarily first. For such drivers, start the
+  application first, and then execute these commands:
+
+      # ip link set eth0 promisc off
+      # ip link set eth0 promisc on
+
+  When writing your own application, consider embedding system()
+  calls for these commands into your application.
+
 * if you are receiving VLAN-tagged packets, netmap applications (with
   patched drivers) may not see the VLAN tag because receive VLAN offloading
   is enabled (and so VLAN tags are stripped by the NIC). To disable it use
