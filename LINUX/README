@@ -170,6 +170,14 @@ features, namely:
   (LOW included, HIGH excluded, so vanilla--r8169.c--20638--30300 applies
   from 2.6.38 to 3.3.0 (excluded).
 
+  The patches for the external drivers are named VENDOR--DRIVER--VERSION,
+  where VENDOR is just intel as of now, and VERSION is the upstream driver
+  version number (assigned by the VENDOR). If you want to use a different
+  VERSION than the default, and the patches directory contains a patch
+  for the version you are interest in, you can use the --select-version
+  option of configure. E.g., to select the 5.2.4 version of the ixgbe
+  external driver, pass --select-version=ixgbe:5.2.4 to configure.
+
 HOW TO USE THE CODE
 -------------------
 
