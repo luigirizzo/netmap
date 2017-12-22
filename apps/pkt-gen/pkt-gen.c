@@ -57,6 +57,7 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netinet/ip6.h>
+#include <netinet/if_ether.h>
 #ifdef linux
 #define IPV6_VERSION	0x60
 #define IPV6_DEFHLIM	64
