@@ -218,15 +218,17 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, nic_i);
 			uint32_t staterr = le32toh(curr->status);
 			struct netmap_slot *slot;
+			uint64_t paddr;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
 
+			PNMB(na, slot, &paddr);
 			slot = ring->slot + nm_i;
 			slot->len = le16toh(curr->length) - 4;
 			slot->flags = 0;
 			netmap_sync_map(na, (bus_dma_tag_t) na->pdev,
-					&curr->buffer_addr, slot->len, NR_RX);
+					&paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
