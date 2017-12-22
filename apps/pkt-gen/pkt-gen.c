@@ -1268,23 +1268,23 @@ send_arp(struct targ *targ)
 		hdr = &arp->ea_hdr;
 
 		eh->ether_type = htons(ETHERTYPE_ARP);
-		memset(eh->ether_dhost, 0xff, ETH_ALEN);
-		bcopy(src_mac, eh->ether_shost, ETH_ALEN);
+		memset(eh->ether_dhost, 0xff, 6);
+		bcopy(src_mac, eh->ether_shost, 6);
 		hdr->ar_hrd = htons(ARPHRD_ETHER);
 		hdr->ar_pro = htons(ETHERTYPE_IP);
-		hdr->ar_hln = ETH_ALEN;
+		hdr->ar_hln = 6;
 		hdr->ar_pln = 4;
 
 		if (need == 2) {	/* first send a GARP */
 			hdr->ar_op = htons(ARPOP_REPLY);
-			bcopy(src_mac, arp->arp_sha, ETH_ALEN);
-			bcopy(src_mac, arp->arp_tha, ETH_ALEN);
+			bcopy(src_mac, arp->arp_sha, 6);
+			bcopy(src_mac, arp->arp_tha, 6);
 			bcopy(&dst_ip, arp->arp_spa, 4);
 			bcopy(&dst_ip, arp->arp_tpa, 4);
 		} else {		/* then send an ARP request */
 			hdr->ar_op = htons(ARPOP_REQUEST);
-			bcopy(src_mac, arp->arp_sha, ETH_ALEN);
-			bzero(arp->arp_tha, ETH_ALEN);
+			bcopy(src_mac, arp->arp_sha, 6);
+			bzero(arp->arp_tha, 6);
 			bcopy(&src_ip, arp->arp_spa, 4);
 			bcopy(&dst_ip, arp->arp_tpa, 4);
 		}
