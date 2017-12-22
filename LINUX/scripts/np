@@ -127,14 +127,14 @@ function driver-path()
 {
 	get-params "driver version" "$@"
 	
-	cat cache/$version/$driver/path 2>/dev/null && return
+	cat cache/$version/vanilla-$driver/path 2>/dev/null && return
 	local kern=$(get-kernel $version)
 	[ -z "$kern" ] && error "no such kernel version: $version"
-	mkdir -p cache/$version/$driver
+	mkdir -p cache/$version/vanilla-$driver
 	(
 		cd $kern
 		find drivers/net -name $driver
-	) | tee cache/$version/$driver/path
+	) | tee cache/$version/vanilla-$driver/path
 }
 
 
