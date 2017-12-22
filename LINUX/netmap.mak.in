@@ -9,6 +9,7 @@ MODNAME:=@MODNAME@
 SUBSYS:=@SUBSYS@
 SRCDIR:=@SRCDIR@
 BUILDDIR:=@BUILDDIR@
+DEBUG:=@DEBUG@
 
 # The following commands are needed to build the modules as out-of-tree,
 # in fact the kernel sources path must be specified.
@@ -17,6 +18,7 @@ BUILDDIR:=@BUILDDIR@
 EXTRA_CFLAGS := -I$(BUILDDIR) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
 EXTRA_CFLAGS += $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z- A-Z_))
+EXTRA_CFLAGS += $(if $(DEBUG),-g)
 
 
 # We use KSRC for the kernel configuration and sources.

@@ -3,6 +3,7 @@
 BUILDDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
+DEBUG=1
 
 # setelem2n <set> <elem>
 setelem2n()
@@ -259,6 +260,7 @@ replace_vars()
 		-e "s|@APPS_LD@|$ld|g" \
 		-e "s|@PREFIX@|$prefix|g" \
 		-e "s|@DESTDIR@|$DESTDIR|g" \
+		-e "s|@DEBUG@|$DEBUG|g" \
 		$1
 }
 
@@ -299,6 +301,9 @@ Available options:
   --disable-ptnetmap           disable ptnetmap (both guest and host)
   --enable-sink   	       enable the netmap sink device
   --disable-sink   	       disable the netmap sink device
+  --force-debug	       	       build the modules w/ debug symbols (default)
+  --no-force-debug	       build the modules w/ or w/o debug symbols,
+  			       according to the kernel configuration
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
   --cc=                        C compiler to be used for the apps [$cc]
@@ -591,6 +596,12 @@ for opt do
 	--show-apps)
 		app print
 		exit
+	;;
+	--force-debug)
+		DEBUG=1
+	;;
+	--no-force-debug)
+		DEBUG=
 	;;
 	*)
 		echo "Unrecognized option: $opt" | warning
