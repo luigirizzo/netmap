@@ -372,10 +372,6 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
-			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_addr, addr);
-			}
 			if (!(slot->flags & NS_MOREFRAG))
 				flags |= IXGBE_TXD_CMD_EOP;
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
@@ -386,6 +382,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			curr->read.cmd_type_len = htole32(len | flags |
 				IXGBE_ADVTXD_DTYP_DATA | IXGBE_ADVTXD_DCMD_DEXT |
 				IXGBE_ADVTXD_DCMD_IFCS);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -523,12 +520,17 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(rxr, nic_i);
 			uint32_t staterr = le32toh(curr->wb.upper.status_error);
 			u_int size = le16toh(curr->wb.upper.length);
+			uint64_t paddr;
+			struct netmap_slot *slot = &ring->slot[nm_i];
 
 			if (!size)
 				break;
 
-			ring->slot[nm_i].len = size;
-			ring->slot[nm_i].flags = (!(staterr & IXGBE_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
+			slot->len = size;
+			slot->flags = (!(staterr & IXGBE_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
+			PNMB(na, slot, &paddr);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, size, NR_RX);
+
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -560,8 +562,6 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_addr, addr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
 			curr->wb.upper.length = 0;
