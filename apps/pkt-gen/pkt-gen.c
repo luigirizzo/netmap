@@ -685,7 +685,7 @@ check_link_up(const char *ifname)
 		struct sockaddr_dl *sdl =
 			(struct sockaddr_dl*)ifap->ifa_addr;
 
-		if (!sdl || sdl->sdl_family != PF_PACKET)
+		if (!sdl || sdl->sdl_family != AF_LINK)
 			continue;
 		if (!strncmp(ifap->ifa_name, ifname, IFNAMSIZ))
 			break;
