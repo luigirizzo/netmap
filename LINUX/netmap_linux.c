@@ -50,6 +50,15 @@ nm_os_malloc(size_t size)
 }
 
 void *
+nm_os_vmalloc(size_t size)
+{
+	void *rv = vmalloc(size);
+	if (IS_ERR(rv))
+		return NULL;
+	return rv;
+}
+
+void *
 nm_os_realloc(void *addr, size_t new_size, size_t old_size)
 {
 	void *rv;
@@ -63,6 +72,11 @@ nm_os_realloc(void *addr, size_t new_size, size_t old_size)
 void
 nm_os_free(void *addr){
 	kfree(addr);
+}
+
+void
+nm_os_vfree(void *addr){
+	vfree(addr);
 }
 
 void
@@ -963,7 +977,8 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 {
 	int error = 0;
 	unsigned long off;
-	u_int memsize, memflags;
+	uint64_t memsize;
+	u_int memflags;
 	struct netmap_priv_d *priv = f->private_data;
 	struct netmap_adapter *na = priv->np_na;
 	/*
