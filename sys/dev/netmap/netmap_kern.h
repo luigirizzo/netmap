@@ -307,8 +307,10 @@ void netmap_undo_zombie(struct ifnet *);
 
 /* os independent alloc/realloc/free */
 void *nm_os_malloc(size_t);
+void *nm_os_vmalloc(size_t);
 void *nm_os_realloc(void *, size_t new_size, size_t old_size);
 void nm_os_free(void *);
+void nm_os_vfree(void *);
 
 /* passes a packet up to the host stack.
  * If the packet is sent (or dropped) immediately it returns NULL,
