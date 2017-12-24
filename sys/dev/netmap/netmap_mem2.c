@@ -2118,7 +2118,7 @@ netmap_mem_ext_free_pages(struct page **pages, int nr_pages)
 		kunmap(pages[i]);
 		put_page(pages[i]);
 	}
-	nm_os_free(pages);
+	nm_os_vfree(pages);
 }
 
 static void
@@ -2206,7 +2206,7 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 	start = p >> PAGE_SHIFT;
 	nr_pages = end - start;
 
-	pages = nm_os_malloc(nr_pages * sizeof(*pages));
+	pages = nm_os_vmalloc(nr_pages * sizeof(*pages));
 	if (pages == NULL) {
 		error = ENOMEM;
 		goto out;

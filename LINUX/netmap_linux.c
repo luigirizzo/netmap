@@ -52,6 +52,15 @@ nm_os_malloc(size_t size)
 }
 
 void *
+nm_os_vmalloc(size_t size)
+{
+	void *rv = vmalloc(size);
+	if (IS_ERR(rv))
+		return NULL;
+	return rv;
+}
+
+void *
 nm_os_realloc(void *addr, size_t new_size, size_t old_size)
 {
 	void *rv;
@@ -65,6 +74,11 @@ nm_os_realloc(void *addr, size_t new_size, size_t old_size)
 void
 nm_os_free(void *addr){
 	kfree(addr);
+}
+
+void
+nm_os_vfree(void *addr){
+	vfree(addr);
 }
 
 void
