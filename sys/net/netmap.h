@@ -496,7 +496,7 @@ struct nmreq {
 	char		nr_name[IFNAMSIZ];
 	uint32_t	nr_version;	/* API version */
 	uint32_t	nr_offset;	/* nifp offset in the shared region */
-	uint32_t	nr_memsize;	/* size of the shared region */
+	uint64_t	nr_memsize;	/* size of the shared region */
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
 	uint32_t	nr_rx_slots;	/* slots in rx rings */
 	uint16_t	nr_tx_rings;	/* number of tx rings */
