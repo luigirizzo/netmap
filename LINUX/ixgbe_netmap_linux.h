@@ -225,38 +225,11 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
 	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(ifp);
-	int i;
 
 	// adapter->netdev->trans_start = jiffies; // disable watchdog ?
 	/* protect against other reinit */
 	while (test_and_set_bit(NM_IXGBE_RESETTING, &adapter->state))
 		usleep_range(1000, 2000);
-
-	/* reset all next_to_* pointers before leaving netmap mode */
-	for (i = 0; i < adapter->num_rx_queues; i++) {
-		struct netmap_kring *kring = &na->rx_rings[i];
-
-		if (nm_kring_pending_off(kring)) {
-			struct NM_IXGBE_RING *rxr = NM_IXGBE_RX_RING(adapter, i);
-
-			rxr->next_to_clean = 0;
-			rxr->next_to_use = 0;
-#ifdef NETMAP_LINUX_HAVE_NTA
-			rxr->next_to_alloc = 0;
-#endif /* NETMAP_LINUX_HAVE_NTA */
-		}
-	}
-
-	for (i = 0; i < adapter->num_tx_queues; i++) {
-		struct netmap_kring *kring = &na->tx_rings[i];
-
-		if (nm_kring_pending_off(kring)) {
-			struct NM_IXGBE_RING *rxr = NM_IXGBE_TX_RING(adapter, i);
-
-			rxr->next_to_clean = 0;
-			rxr->next_to_use = 0;
-		}
-	}
 
 	if (netif_running(adapter->netdev))
 		NM_IXGBE_DOWN(adapter);
@@ -450,6 +423,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			nic_i -= kring->nkr_num_slots;
 		}
 		txr->next_to_clean = nic_i;
+		txr->next_to_use = txr->next_to_clean;
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 #endif /* NM_IXGBE_USE_TDH */
@@ -540,6 +514,10 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		}
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
+			rxr->next_to_use = rxr->next_to_clean;
+#ifdef NETMAP_LINUX_IXGBE_HAVE_NTA
+			rxr->next_to_alloc = rxr->next_to_clean;
+#endif /* NETMAP_LINUX_HAVE_NTA */
 			kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;

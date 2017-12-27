@@ -3241,9 +3241,6 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 			return NULL;
 		}
 
-		if (kring->nr_mode == NKR_NETMAP_ON)
-			return kring->ring->slot;
-
 		// XXX check whether we should use hwcur or rcur
 		new_hwofs = kring->nr_hwcur - new_cur;
 	} else {
@@ -3255,9 +3252,6 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 			kring->nr_mode = NKR_NETMAP_OFF;
 			return NULL;
 		}
-
-		if (kring->nr_mode == NKR_NETMAP_ON)
-			return kring->ring->slot;
 
 		new_hwofs = kring->nr_hwtail - new_cur;
 	}
