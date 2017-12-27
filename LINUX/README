@@ -103,6 +103,9 @@ features, namely:
 			support.  It can emulate a link with configurable
 			packet rate.
 
+    stack:		Stackmap (a zero-copy datapath through the netmap
+			API, kernel protocol stack and netmap-mode NICs).
+
   NIC drivers
   --------------
 

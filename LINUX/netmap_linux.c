@@ -37,8 +37,10 @@
 #ifdef NETMAP_LINUX_HAVE_SCHED_MM
 #include <linux/sched/mm.h>
 #endif /* NETMAP_LINUX_HAVE_SCHED_MM */
+#include <net/sock.h> // sock_owned_by_user
 
 #include "netmap_linux_config.h"
+#define STACKMAP_RECYCLE
 
 void *
 nm_os_malloc(size_t size)
@@ -808,6 +810,318 @@ nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 	gna->txqdisc = netmap_generic_txqdisc;
 }
 #endif /* WITH_GENERIC */
+
+#ifdef WITH_STACK
+netdev_tx_t
+linux_stmp_start_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	stmp_transmit(dev, skb);
+	return (NETDEV_TX_OK);
+}
+
+/* We have no way to track subsequent fragments, but such fragments 
+ * are always sent after queueing.
+ * XXX !zerocopy_success might need to be handled explicitly
+ */
+void
+nm_os_stmp_mbuf_data_destructor(struct ubuf_info *uarg,
+	bool zerocopy_success)
+{
+	struct stmp_cb *scb;
+	struct nm_ubuf_info *u = (struct nm_ubuf_info *)uarg;
+
+	scb = container_of(u, struct stmp_cb, ui);
+	stmp_cb_wstate(scb, SCB_M_NOREF);
+	stmp_extra_dequeue(scb_kring(scb), scb_slot(scb));
+}
+
+static void
+nm_os_stmp_mbuf_destructor(struct sk_buff *skb)
+{
+	struct stmp_cb *scb = NMCB(skb);
+
+	if (likely(stmp_cb_valid(scb))) {
+		nm_set_mbuf_data_destructor(skb, &scb->ui,
+				nm_os_stmp_mbuf_data_destructor);
+	} else {
+		RD(1, "invalid scb in our mbuf destructor");
+	}
+}
+
+extern int stackmap_no_runtocomp;
+void
+nm_os_stmp_data_ready(NM_SOCK_T *sk)
+{
+	struct sk_buff_head *queue = &sk->sk_receive_queue;
+	struct sk_buff *m, *tmp;
+	unsigned long cpu_flags;
+	struct netmap_kring *kring = NULL;
+
+	//if (stackmap_no_runtocomp)
+	//	spin_lock_irqsave(&queue->lock, cpu_flags);
+	/* OOO segment(s) might have been enqueued in the same rxsync round */
+	skb_queue_walk_safe(queue, m, tmp) {
+		struct stmp_cb *scb = NMCB(m);
+		struct netmap_slot *slot;
+		int queued = 0;
+//
+//		if (unlikely(!stmp_cb_valid(scb))) {
+//			D("invalid scb %p (m %p len %u cpu %d)",
+//				scb, m, skb_headlen(m), smp_processor_id());
+//			goto ignore;
+//		}
+		if (unlikely(!kring)) {
+			kring = scb_kring(scb);
+			/* XXX this happens when stackmap goes away.
+			 * We need better workaround */
+			if (unlikely(!kring)) {
+				RD(1, "WARNING: no kring");
+ignore:
+				SET_MBUF_DESTRUCTOR(m, NULL);
+				nm_set_mbuf_data_destructor(m, &scb->ui, NULL);
+				sk_eat_skb(sk, m);
+				continue;
+			}
+		}
+		/* append this buffer to the scratchpad */
+		slot = scb_slot(scb);
+		if (unlikely(slot == NULL)) {
+			RD(1, "no slot");
+			continue;
+		}
+		slot->fd = stmp_sk(m->sk)->fd;
+		slot->len = skb_headroom(m) + skb_headlen(m);
+		slot->offset = skb_headroom(m) - kring->na->virt_hdr_len; // XXX
+		stmp_add_fdtable(scb, kring);
+		/* see comment in stmp_transmit() */
+#ifdef STACKMAP_RECYCLE
+		if (unlikely(stmp_cb_rstate(scb) == SCB_M_QUEUED))
+			queued = 1;
+#endif
+		stmp_cb_wstate(scb, SCB_M_TXREF);
+#ifdef STACKMAP_RECYCLE
+		if (likely(!queued)) {
+			__skb_unlink(m, queue);
+			skb_orphan(m);
+		} else
+#endif
+		sk_eat_skb(sk, m);
+		ND("ate %p state %x", m, stmp_cb_rstate(scb));
+	}
+	//if (stackmap_no_runtocomp)
+	//	spin_unlock_irqrestore(&queue->lock, cpu_flags);
+}
+
+NM_SOCK_T *
+nm_os_sock_fget(int fd, void **f)
+{
+	int err;
+	struct socket *sock = sockfd_lookup(fd, &err);
+
+	return sock ? sock->sk : NULL;
+}
+
+void
+nm_os_sock_fput(NM_SOCK_T *sk, void *dummy)
+{
+	sockfd_put(sk->sk_socket);
+}
+
+void
+nm_os_stmp_sb_drain(struct netmap_adapter *na, NM_SOCK_T *sk)
+{
+	struct mbuf *m;
+	struct stmp_cb *scb;
+	struct netmap_kring *kring, *dst_kring;
+
+	/* drain receive queue (we are under BDG_WLOCK)
+	 * XXX We cannot survive non-netmap packets to this socket
+	 */
+	m = skb_peek(&sk->sk_receive_queue);
+	if (!m)
+		return;
+	scb = NMCB(m);
+	if (!stmp_cb_valid(scb))
+		return;
+	nm_os_stmp_data_ready(sk);
+	kring = scb_kring(scb);
+	if (kring) {
+		dst_kring = NMR(na, NR_RX) + kring->ring_id % na->num_rx_rings;
+		/* See comment on stmp_intr_notify() */
+		dst_kring->nm_notify(dst_kring, 0);
+	}
+}
+
+static inline int
+nm_os_mbuf_valid(struct mbuf *m)
+{
+	return likely(*(int *)(&m->users) != 0);
+}
+
+/* build_skb() + kfree_skb() drops packet rates from 14.5 to 9.5 Mpps
+ * at 2.8 Ghz CPU, and netif_receive_skb() to drop packet does so to
+ * 6 Mpps.
+ * Anyways alloc/dealloc overhead of 200 ns is not that bad.
+ */
+static struct mbuf *
+nm_os_build_mbuf(struct netmap_kring *kring, char *buf, u_int len)
+{
+	struct netmap_adapter *na = kring->na;
+	struct mbuf *m;
+	struct page *page;
+	int alen = NETMAP_BUF_SIZE(na) - sizeof(struct stmp_cb);
+
+#ifdef STACKMAP_RECYCLE
+	m = kring->tx_pool[1];
+	if (m) {
+		struct skb_shared_info *shinfo;
+
+		//if (unlikely(!nm_os_mbuf_valid(kring->tx_pool[0])))
+		//	panic("invalid m0");
+		*m = *kring->tx_pool[0];
+		m->head = m->data = buf;
+		skb_reset_tail_pointer(m);
+		shinfo = skb_shinfo(m);
+		bzero(shinfo, offsetof(struct skb_shared_info, dataref));
+		*(int *)(&shinfo->dataref) = 1;
+	} else
+#endif
+	{
+		m = build_skb(buf, alen);
+		m->dev = na->ifp;
+	}
+	if (unlikely(!m))
+		return NULL;
+#ifdef STACKMAP_RECYCLE
+	else if (unlikely(!nm_os_mbuf_valid(kring->tx_pool[0]))) {
+		*kring->tx_pool[0] = *m;
+	}
+#endif
+	page = virt_to_page(buf);
+	get_page(page); // survive __kfree_skb()
+	skb_reserve(m, na->virt_hdr_len); // m->data and tail
+	skb_put(m, len - na->virt_hdr_len); // advance m->tail and m->len
+	return m;
+}
+
+/* scb must has been populated
+ * XXX Maybe we can exploit return value of netif_receive_skb()
+ * and ip_rcv() for some shortcut */
+int
+nm_os_stmp_recv(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	char *nmb = NMB(na, slot);
+	struct stmp_cb *scb = NMCB_BUF(nmb);
+	struct mbuf *m;
+	int ret = 0;
+
+	slot->len += na->virt_hdr_len; // Ugly to do here...
+
+	m = nm_os_build_mbuf(kring, nmb, slot->len);
+	if (unlikely(!m))
+		return 0; // drop and skip
+
+	stmp_cb_wstate(scb, SCB_M_STACK);
+	//m->ip_summed = CHECKSUM_UNNECESSARY;
+	m->protocol = eth_type_trans(m, m->dev);
+	/* have orphan() set data_destructor */
+	SET_MBUF_DESTRUCTOR(m, nm_os_stmp_mbuf_destructor);
+#ifdef NETMAP_LINUX_HAVE_IP_RCV
+	if (ntohs(m->protocol) == ETH_P_IP) {
+		skb_reset_network_header(m);
+		skb_reset_mac_len(m);
+		m->skb_iif = na->ifp->ifindex;
+		rcu_read_lock();
+		ip_rcv(m, na->ifp, NULL, na->ifp);
+		rcu_read_unlock();
+	} else
+#endif /* NETMAP_LINUX_HAVE_IP_RCV */
+	netif_receive_skb(m);
+
+	/* setting data destructor is safe only after skb_orphan_frag()
+	 * in __netif_receive_skb_core().
+	 */
+	if (unlikely(stmp_cb_rstate(scb) == SCB_M_STACK)) {
+		stmp_cb_wstate(scb, SCB_M_QUEUED);
+		if (stmp_extra_enqueue(kring, slot)) {
+			ret = -EBUSY;
+		}
+	}
+
+#ifdef STACKMAP_RECYCLE
+	/* XXX avoid refcount_read... */
+	if (stmp_cb_rstate(scb) == SCB_M_TXREF && likely(!skb_shared(m))) {
+		/* we can recycle this mbuf (see nm_os_stmp_data_ready) */
+		struct ubuf_info *uarg = skb_shinfo(m)->destructor_arg;
+
+		if (likely(uarg->callback)) {
+			uarg->callback(uarg, true);
+		} else {
+			D("WARNING: no destructor on recycling mbuf!");
+		}
+		kring->tx_pool[1] = m;
+	} else {
+		kring->tx_pool[1] = NULL;
+	}
+#endif
+	return ret;
+}
+
+int
+nm_os_stmp_send(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	struct stmp_sk_adapter *ska;
+	struct stmp_cb *scb;
+	struct page *page;
+	u_int poff, len;
+	NM_SOCK_T *sk;
+	void *nmb;
+	int err, pageref = 0;
+
+	nmb = NMB(na, slot);
+	ska = stmp_ska_from_fd(na, slot->fd);
+	if (unlikely(!ska)) {
+		D("no ska for fd %d (na %s)", slot->fd, na->name);
+		return 0;
+	}
+	sk = ska->sk;
+
+	page = virt_to_page(nmb);
+	get_page(page); // survive __kfree_skb()
+	pageref = page_ref_count(page);
+	poff = nmb - page_to_virt(page) + na->virt_hdr_len + slot->offset;
+	len = slot->len - na->virt_hdr_len - slot->offset;
+	scb = NMCB_BUF(nmb);
+	stmp_cb_wstate(scb, SCB_M_STACK);
+
+	err = kernel_sendpage(sk->sk_socket, page, poff, len, MSG_DONTWAIT);
+	if (unlikely(err < 0)) {
+		/* XXX check if it is enough to assume EAGAIN only */
+		ND(1, "error %d in sendpage() slot %ld",
+				err, slot - kring->ring->slot);
+		stmp_cb_invalidate(scb);
+		return -EAGAIN;
+	}
+
+	if (unlikely(stmp_cb_rstate(scb) == SCB_M_STACK)) {
+		/* The stack might have just dropped a page reference (e.g.,
+		 * linearized in skb_checksum_help() in __dev_queue_xmit().
+		 */
+		if (unlikely(pageref == page_ref_count(page))) {
+			D("WARNING: just dropped frag ref (fd %d)", slot->fd);
+			stmp_cb_invalidate(scb);
+			return 0;
+		}
+		stmp_cb_wstate(scb, SCB_M_QUEUED);
+		if (likely(stmp_extra_enqueue(kring, slot))) {
+			return -EBUSY;
+		}
+	} /* usually SCB_M_TXREF (TCP) or SCB_M_NOREF (UDP) */
+	return 0;
+}
+#endif /* WITH_STACK */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
    rings can have the same lengths. */
