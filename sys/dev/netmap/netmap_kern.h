@@ -1803,9 +1803,10 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 	uint32_t i = slot->buf_idx;
 	struct lut_entry *lut = na->na_lut.lut;
 	void *ret = (i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr;
+	u_int offset = na->virt_hdr_len;
 
 #ifndef _WIN32
-	*pp = (i >= na->na_lut.objtotal) ? lut[0].paddr : lut[i].paddr;
+	*pp = (i >= na->na_lut.objtotal) ? lut[0].paddr + offset : lut[i].paddr + offset;
 #else
 	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)lut[0].paddr.QuadPart : (uint64_t)lut[i].paddr.QuadPart;
 #endif
