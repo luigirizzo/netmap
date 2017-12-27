@@ -825,8 +825,8 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	}
 
 	/* account for the (possibly fake) host rings */
-	n[NR_TX] = na->num_tx_rings + 1;
-	n[NR_RX] = na->num_rx_rings + 1;
+	n[NR_TX] = netmap_all_rings(na, NR_TX);
+	n[NR_RX] = netmap_all_rings(na, NR_RX);
 
 	len = (n[NR_TX] + n[NR_RX]) *
 		(sizeof(struct netmap_kring) + sizeof(struct netmap_kring *))
@@ -928,11 +928,14 @@ netmap_krings_delete(struct netmap_adapter *na)
 void
 netmap_hw_krings_delete(struct netmap_adapter *na)
 {
-	struct mbq *q = &na->rx_rings[na->num_rx_rings]->rx_queue;
+	u_int lim = netmap_real_rings(na, NR_RX), i;
 
-	ND("destroy sw mbq with len %d", mbq_len(q));
-	mbq_purge(q);
-	mbq_safe_fini(q);
+	for (i = nma_get_nrings(na, NR_RX); i < lim; i++) {
+		struct mbq *q = &NMR(na, NR_RX)[i]->rx_queue;
+		ND("destroy sw mbq with len %d", mbq_len(q));
+		mbq_purge(q);
+		mbq_safe_fini(q);
+	}
 	netmap_krings_delete(na);
 }
 
@@ -1825,7 +1828,7 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
 			}
 			priv->np_qfirst[t] = (nr_mode == NR_REG_SW ?
 				nma_get_nrings(na, t) : 0);
-			priv->np_qlast[t] = nma_get_nrings(na, t) + 1;
+			priv->np_qlast[t] = netmap_all_rings(na, t);
 			ND("%s: %s %d %d", nr_mode == NR_REG_SW ? "SW" : "NIC+SW",
 				nm_txrx2str(t),
 				priv->np_qfirst[t], priv->np_qlast[t]);
@@ -3441,6 +3444,7 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 		goto fail;
 	hwna->up = *arg;
 	hwna->up.na_flags |= NAF_HOST_RINGS | NAF_NATIVE;
+	hwna->up.num_host_tx_rings = hwna->up.num_host_rx_rings = 1;
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
 	if (override_reg) {
 		hwna->nm_hw_register = hwna->up.nm_register;
@@ -3543,7 +3547,10 @@ netmap_hw_krings_create(struct netmap_adapter *na)
 	int ret = netmap_krings_create(na, 0);
 	if (ret == 0) {
 		/* initialize the mbq for the sw rx ring */
-		mbq_safe_init(&na->rx_rings[na->num_rx_rings]->rx_queue);
+		u_int lim = netmap_real_rings(na, NR_RX), i;
+		for (i = na->num_rx_rings; i < lim; i++) {
+			mbq_safe_init(&NMR(na, NR_RX)[i]->rx_queue);
+		}
 		ND("initialized sw rx queue %d", na->num_rx_rings);
 	}
 	return ret;
@@ -3606,8 +3613,11 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	unsigned int txr;
 	struct mbq *q;
 	int busy;
+	u_int i;
 
-	kring = na->rx_rings[na->num_rx_rings];
+	i = MBUF_TXQ(m);
+	kring = NMR(na, NR_RX)[nma_get_nrings(na, NR_RX) + i];
+
 	// XXX [Linux] we do not need this lock
 	// if we follow the down/configure/up protocol -gl
 	// mtx_lock(&na->core_lock);
