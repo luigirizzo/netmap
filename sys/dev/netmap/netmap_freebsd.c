@@ -36,6 +36,7 @@
 #include <sys/conf.h>	/* DEV_MODULE_ORDERED */
 #include <sys/endian.h>
 #include <sys/syscallsubr.h> /* kern_ioctl() */
+#include <sys/capsicum.h> /* cap_rights_t */
 
 #include <sys/rwlock.h>
 
@@ -46,10 +47,13 @@
 #include <vm/vm_page.h>
 #include <vm/vm_pager.h>
 #include <vm/uma.h>
+//#include <vm/vm_kern.h> /* kernel_map */
+//#include <vm/vm_map.h>	/* vm_map_lookup */
 
 
 #include <sys/malloc.h>
 #include <sys/socket.h> /* sockaddrs */
+#include <sys/socketvar.h> /* getsock_cap() */
 #include <sys/selinfo.h>
 #include <sys/kthread.h> /* kthread_add() */
 #include <sys/proc.h> /* PROC_LOCK() */
@@ -64,6 +68,7 @@
 #include <machine/bus.h>        /* bus_dmamap_* */
 #include <netinet/in.h>		/* in6_cksum_pseudo() */
 #include <machine/in_cksum.h>  /* in_pseudo(), in_cksum_hdr() */
+#include <netinet/in_var.h>	/* ip_input() */
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
@@ -797,6 +802,276 @@ ptn_memdev_shutdown(device_t dev)
 }
 
 #endif /* WITH_PTNETMAP_GUEST */
+
+#ifdef WITH_STACK
+int
+nm_os_stmp_data_ready(NM_SOCK_T *so, void *x, int y)
+{
+	struct mbuf *m;
+	struct sockbuf *sb = &so->so_rcv;
+	struct stmp_cb *scb;
+
+	if (unlikely(!sbavail(sb))) {
+		return 0;
+	}
+	KASSERT(sb->sb_mb != NULL, ("NULL sb->sb_mb while sbavail()"));
+	m = sb->sb_mb;
+	scb = NMCB(m);
+	if (stmp_cb_valid(scb)) {
+		struct netmap_kring *kring = scb_kring(scb);
+		kring->nkr_leases = (void *)so;
+	}
+	return 0;
+}
+
+static int
+__data_ready(struct stmp_cb *scb)
+{
+	NM_SOCK_T *so;
+	struct mbuf *m0 = NULL, *m, *tmp;
+	int error;
+	struct netmap_kring *kring = NULL;
+	struct uio uio;
+	int flags = MSG_DONTWAIT | MSG_EOR;
+	int rlen = 65535; // XXX
+
+	if (!stmp_cb_valid(scb))
+		return 0;
+	else if (!scb_kring(scb))
+		return 0;
+	so = (NM_SOCK_T *)scb_kring(scb)->nkr_leases;
+	if (!so)
+		return 0;
+	scb_kring(scb)->nkr_leases = NULL;
+
+	if (!sbavail(&so->so_rcv)) {
+		ND("no sbavail");
+		return 0;
+	}
+	bzero(&uio, sizeof(uio));
+	uio.uio_resid = rlen;
+	error = soreceive(so, NULL, &uio, &m0, NULL, &flags);
+	if (error) {
+		D("error on soreceive() (%d)", error);
+		return error;
+	}
+	rlen = rlen - uio.uio_resid;
+	/* XXX soreceive() has already iterated the mbuf chain.
+	 * We may have a room for optimization
+	 */
+	for (m = m0; m; m = tmp) {
+		struct stmp_cb *scb = NMCB(m);
+		struct netmap_slot *slot;
+
+		tmp = m->m_next;
+		if (!kring) {
+			kring = scb_kring(scb);
+			if(unlikely(!kring)) {
+				RD(1, "WARNING: no kring");
+				m_free(m);
+				continue;
+			}
+		}
+		slot = scb_slot(scb);
+		if (unlikely(slot == NULL)) {
+			RD(1, "no slot");
+			m_free(m);
+			continue;
+		}
+		slot->fd = stmp_sk(so)->fd;
+		slot->len = m->m_len;
+		/* m_data points payload */
+		slot->offset = m->m_data - M_START(m) - kring->na->virt_hdr_len;
+		ND("scb %p kring %p slot %p slot->offset %u slot->len %u", scb, kring, slot, slot->offset, slot->len);
+		stmp_add_fdtable(scb, kring);
+
+		stmp_cb_wstate(scb, SCB_M_TXREF);
+		m_free(m);
+	}
+	//m_freem(m0);
+	return 0;
+}
+
+NM_SOCK_T *
+nm_os_sock_fget(int fd, void **f)
+{
+	int err;
+	cap_rights_t rights;
+	struct file *fp;
+	u_int fflag;
+
+	err = getsock_cap(curthread, fd, cap_rights_init(&rights, CAP_IOCTL),
+			&fp, &fflag, NULL);
+	*f = fp;
+	return err ? NULL : fp->f_data;
+}
+
+#define container_of(ptr, type, member) ({                      \
+	const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
+	(type *)( (char *)__mptr - offsetof(type,member) );})
+void
+nm_os_sock_fput(NM_SOCK_T *so, void *f)
+{
+	//fp = container_of((void *)&so, struct file, f_data); // XXX do better...
+	fdrop((struct file *)f, curthread);
+}
+
+void
+nm_os_stmp_sb_drain(struct netmap_adapter *na, NM_SOCK_T *so)
+{
+	struct mbuf * m;
+	struct stmp_cb *scb;
+	//struct netmap_kring *kring, *dst_kring;
+
+	if (!sbavail(&so->so_rcv))
+		return;
+	m = so->so_rcv.sb_mb;
+	scb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
+	ND("m %p m_data %p scb 0x%x",
+		m, m->m_data, stmp_cb_rstate(scb));
+	if (!stmp_cb_valid(scb)) {
+		D("invalid scb");
+		return;
+	}
+	D("next nm_os_stmp_data_ready (SCB %p %d", scb, stmp_cb_rstate(scb));
+	nm_os_stmp_data_ready(so, NULL, 0);
+	__data_ready(scb);
+}
+
+#if 0
+static vm_page_t
+__get_page(void *va, size_t size, int unwire)
+{
+	vm_page_t page;
+	vm_map_t map;
+	vm_map_entry_t entry;
+	vm_offset_t kva, ofs;
+	vm_object_t obj;
+	vm_pindex_t pindex;
+	vm_prot_t prot;
+	boolean_t wired;
+	int rv;
+
+	kva = (vm_offset_t)va;
+	ofs = kva & PAGE_MASK;
+	kva = trunc_page(kva);
+	size = round_page(size + ofs);
+	map = kernel_map;
+	rv = vm_map_lookup(&map, kva, VM_PROT_READ | VM_PROT_WRITE, &entry,
+			&obj, &pindex, &prot, &wired);
+	if (rv != KERN_SUCCESS) {
+		D("error in vm_map_lookup()");
+	}
+	page = vm_page_lookup(obj, pindex);
+	if (unwire)
+		vm_page_unhold(page);
+	else
+		vm_page_hold(page);
+	vm_map_lookup_done(map, entry);
+	return (!unwire && page) ? page : NULL;
+}
+#endif /* 0 */
+
+void
+nm_os_stmp_mbuf_data_destructor(struct mbuf *m)
+{
+	struct stmp_cb *scb = NMCB(m);
+
+	stmp_cb_wstate(scb, SCB_M_NOREF);
+	stmp_extra_dequeue(scb_kring(scb), scb_slot(scb));
+	//__get_page(M_START(m), 2048, 1);
+}
+
+int
+nm_os_stmp_recv(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	struct ifnet *ifp = na->ifp;
+	char *nmb = NMB(na, slot);
+	struct stmp_cb *scb = NMCB_BUF(nmb);
+	struct mbuf *m;
+	int ret = 0;
+
+	slot->len += na->virt_hdr_len; // Ugly to do here...
+	m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
+	if (unlikely(m == NULL)) {
+		return 0; // drop and skip
+	}
+	m->m_ext.ext_buf = m->m_data = nmb;
+	m->m_ext.ext_size = slot->len;
+	m->m_ext.ext_free = nm_os_stmp_mbuf_data_destructor;
+	m->m_ext.ext_arg2 = NULL;
+	m->m_len = m->m_pkthdr.len = slot->len;
+	//SET_MBUF_REFCNT(m, 2);
+	m->m_pkthdr.flowid = kring->ring_id;
+	m->m_pkthdr.rcvif = ifp;
+	m->m_data = nmb + na->virt_hdr_len;
+
+	scbw(scb, kring, slot);
+	stmp_cb_wstate(scb, SCB_M_STACK);
+	na->if_input(ifp, m);
+
+	__data_ready(scb);
+
+	if (unlikely(stmp_cb_rstate(scb) == SCB_M_STACK)) {
+		stmp_cb_wstate(scb, SCB_M_QUEUED);
+		if (stmp_extra_enqueue(kring, slot)) {
+			ret = -EBUSY;
+		}
+	}
+	return 0;
+}
+
+int
+nm_os_stmp_send(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	struct stmp_sk_adapter *ska;
+	struct mbuf *m;
+	//u_int len;
+	char *nmb = NMB(na, slot);
+	int err;
+	struct stmp_cb *scb = NMCB_BUF(nmb);
+	int flags = MSG_DONTWAIT | MSG_DONTROUTE;
+#if 0
+	vm_page_t page;
+#endif
+
+	//len = slot->len - na->virt_hdr_len; // XXX not substruct virt header?
+
+	/* Link to the external mbuf storage */
+	m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
+	if (unlikely(m == NULL)) {
+		return 0; // XXX
+	}
+	m->m_ext.ext_buf = m->m_data = nmb;
+	m->m_ext.ext_size = slot->len;
+	m->m_ext.ext_free = nm_os_stmp_mbuf_data_destructor;
+	m->m_len = m->m_pkthdr.len = slot->len - slot->offset - na->virt_hdr_len;
+	m->m_data = nmb + na->virt_hdr_len + slot->offset;
+
+	//page = __get_page((void *)nmb, NETMAP_BUF_SIZE(na), 0);
+
+	stmp_cb_wstate(scb, SCB_M_STACK);
+
+	ND("m %p ext_buf %p m_data %p scb %p slot off %u len %u fd %d", m, m->m_ext.ext_buf, m->m_data, scb, slot->offset, slot->len, slot->fd);
+	ska = stmp_ska_from_fd(na, slot->fd);
+	err = sosend(ska->sk, NULL, NULL, m, NULL, flags, curthread);
+	if (unlikely(err < 0)) {
+		D("error %d", err);
+		stmp_cb_invalidate(scb);
+	}
+
+	if (unlikely(stmp_cb_rstate(scb) == SCB_M_STACK)) {
+		stmp_cb_wstate(scb, SCB_M_QUEUED);
+		if (likely(stmp_extra_enqueue(kring, slot))) {
+			return -EBUSY;
+		}
+	}
+	return 0;
+}
+
+#endif /* WITH_STACK */
 
 /*
  * In order to track whether pages are still mapped, we hook into
