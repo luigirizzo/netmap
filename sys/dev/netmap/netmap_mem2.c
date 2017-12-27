@@ -1708,7 +1708,7 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 	for_rx_tx(t) {
 		u_int i;
 
-		for (i = 0; i <= nma_get_nrings(na, t); i++) {
+		for (i = 0; i < netmap_real_rings(na, t); i++) {
 			struct netmap_kring *kring = &NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 			u_int len, ndesc;

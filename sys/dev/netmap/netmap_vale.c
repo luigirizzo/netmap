@@ -79,6 +79,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
 #include <machine/bus.h>	/* bus_dmamap_* */
 #include <sys/endian.h>
 #include <sys/refcount.h>
+#include <sys/smp.h>
 
 
 #define BDG_RWLOCK_T		struct rwlock // struct rwlock
@@ -2351,8 +2352,9 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	hwna->na_private = NULL;
 	hwna->na_vp = hwna->na_hostvp = NULL;
 	hwna->na_flags &= ~NAF_BUSY;
+	if (hwna->na_flags & NAF_HOST_MQ)
+		hwna->na_flags &= ~NAF_HOST_MQ;
 	netmap_adapter_put(hwna);
-
 }
 
 
@@ -2473,7 +2475,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 		 */
 		for_rx_tx(t) {
 			enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
-			for (i = 0; i < nma_get_nrings(hwna, r) + 1; i++) {
+			for (i = 0; i < netmap_real_rings(hwna, r); i++) {
 				NMR(hwna, r)[i].ring = NMR(na, t)[i].ring;
 			}
 		}
@@ -2485,15 +2487,18 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 			 * hostna
 			 */
 			hna->tx_rings = &na->tx_rings[na->num_tx_rings];
-			hna->tx_rings[0].na = hna;
 			hna->rx_rings = &na->rx_rings[na->num_rx_rings];
-			hna->rx_rings[0].na = hna;
+			for_rx_tx(t) {
+				for (i = 0; i < nma_get_nrings(hna, t); i++) {
+					NMR(hna, t)[i].na = hna;
+				}
+			}
 		}
 	}
 
 	/* pass down the pending ring state information */
 	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(na, t) + 1; i++)
+		for (i = 0; i < netmap_real_rings(hwna, t); i++)
 			NMR(hwna, t)[i].nr_pending_mode =
 				NMR(na, t)[i].nr_pending_mode;
 	}
@@ -2505,9 +2510,10 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 
 	/* copy up the current ring state information */
 	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(na, t) + 1; i++)
-			NMR(na, t)[i].nr_mode =
-				NMR(hwna, t)[i].nr_mode;
+		for (i = 0; i < netmap_real_rings(hwna, t); i++) {
+			struct netmap_kring *kring = &NMR(hwna, t)[i];
+			NMR(na, t)[i].nr_mode = kring->nr_mode;
+		}
 	}
 
 	/* impersonate a netmap_vp_adapter */
@@ -2516,7 +2522,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 		netmap_vp_reg(&hostna->up, onoff);
 
 	if (onoff) {
-		u_int i;
+		u_int i, j;
 		/* intercept the hwna nm_nofify callback on the hw rings */
 		for (i = 0; i < hwna->num_rx_rings; i++) {
 			hwna->rx_rings[i].save_notify = hwna->rx_rings[i].nm_notify;
@@ -2524,10 +2530,15 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 		}
 		i = hwna->num_rx_rings; /* for safety */
 		/* save the host ring notify unconditionally */
-		hwna->rx_rings[i].save_notify = hwna->rx_rings[i].nm_notify;
-		if (hostna->na_bdg) {
-			/* also intercept the host ring notify */
-			hwna->rx_rings[i].nm_notify = netmap_bwrap_intr_notify;
+		for (j = i; j < netmap_real_rings(hwna, NR_RX); j++) {
+			hwna->rx_rings[j].save_notify =
+				hwna->rx_rings[j].nm_notify;
+			if (hostna->na_bdg) {
+				/* also intercept the host ring notify */
+				hwna->rx_rings[j].nm_notify =
+					netmap_bwrap_intr_notify;
+				na->tx_rings[j].nm_sync = na->nm_txsync;
+			}
 		}
 		if (na->active_fds == 0)
 			na->na_flags |= NAF_NETMAP_ON;
@@ -2538,8 +2549,9 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 			na->na_flags &= ~NAF_NETMAP_ON;
 
 		/* reset all notify callbacks (including host ring) */
-		for (i = 0; i <= hwna->num_rx_rings; i++) {
-			hwna->rx_rings[i].nm_notify = hwna->rx_rings[i].save_notify;
+		for (i = 0; i < netmap_real_rings(hwna, NR_RX); i++) {
+			hwna->rx_rings[i].nm_notify =
+				hwna->rx_rings[i].save_notify;
 			hwna->rx_rings[i].save_notify = NULL;
 		}
 		hwna->na_lut.lut = NULL;
@@ -2781,6 +2793,15 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	hwna->na_vp = &bna->up;
 
 	if (hwna->na_flags & NAF_HOST_RINGS) {
+		int nrings = 1;
+		/* HOST_MQ always creates host rings with the same number 
+		 * with CPU cores regardless of NIC rings
+		 */
+		if (netmap_host_mq) {
+			na->na_flags |= NAF_HOST_MQ;
+			hwna->na_flags |= NAF_HOST_MQ;
+			nrings = mp_maxid + 1;
+		}
 		if (hwna->na_flags & NAF_SW_ONLY)
 			na->na_flags |= NAF_SW_ONLY;
 		na->na_flags |= NAF_HOST_RINGS;
@@ -2789,7 +2810,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		hostna->ifp = hwna->ifp;
 		for_rx_tx(t) {
 			enum txrx r = nm_txrx_swap(t);
-			nma_set_nrings(hostna, t, 1);
+			nma_set_nrings(hostna, t, nrings);
 			nma_set_ndesc(hostna, t, nma_get_ndesc(hwna, r));
 		}
 		// hostna->nm_txsync = netmap_bwrap_host_txsync;

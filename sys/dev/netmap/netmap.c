@@ -483,6 +483,7 @@ static int netmap_no_timestamp; /* don't timestamp on rxsync */
 int netmap_mitigate = 1;
 int netmap_no_pendintr = 1;
 int netmap_txsync_retry = 2;
+int netmap_host_mq = 1;
 int netmap_flags = 0;	/* debug flags */
 static int netmap_fwd = 0;	/* force transparent forwarding */
 
@@ -542,6 +543,8 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr,
     CTLFLAG_RW, &netmap_no_pendintr, 0, "Always look for new received packets.");
 SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
     &netmap_txsync_retry, 0 , "Number of txsync loops in bridge's flush.");
+SYSCTL_INT(_dev_netmap, OID_AUTO, host_mq, CTLFLAG_RW,
+    &netmap_host_mq, 0 , "Number of host rings.");
 
 SYSCTL_INT(_dev_netmap, OID_AUTO, flags, CTLFLAG_RW, &netmap_flags, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0 , "");
@@ -804,6 +807,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	struct netmap_kring *kring;
 	u_int n[NR_TXRX];
 	enum txrx t;
+	u_int txhost, rxhost;
 
 	if (na->tx_rings != NULL) {
 		D("warning: krings were already created");
@@ -811,8 +815,10 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	}
 
 	/* account for the (possibly fake) host rings */
-	n[NR_TX] = na->num_tx_rings + 1;
-	n[NR_RX] = na->num_rx_rings + 1;
+	txhost = na->na_flags & NAF_HOST_MQ ? na->num_tx_rings : 1;
+	rxhost = na->na_flags & NAF_HOST_MQ ? na->num_rx_rings : 1;
+	n[NR_TX] = na->num_tx_rings + txhost;
+	n[NR_RX] = na->num_rx_rings + rxhost;
 
 	len = (n[NR_TX] + n[NR_RX]) * sizeof(struct netmap_kring) + tailroom;
 
@@ -902,11 +908,14 @@ netmap_krings_delete(struct netmap_adapter *na)
 void
 netmap_hw_krings_delete(struct netmap_adapter *na)
 {
-	struct mbq *q = &na->rx_rings[na->num_rx_rings].rx_queue;
+	u_int lim = netmap_real_rings(na, NR_RX), i;
 
-	ND("destroy sw mbq with len %d", mbq_len(q));
-	mbq_purge(q);
-	mbq_safe_fini(q);
+	for (i = nma_get_nrings(na, NR_RX); i < lim; i++) {
+		struct mbq *q = &NMR(na, NR_RX)[i].rx_queue;
+		ND("destroy sw mbq with len %d", mbq_len(q));
+		mbq_purge(q);
+		mbq_safe_fini(q);
+	}
 	netmap_krings_delete(na);
 }
 
@@ -1789,7 +1798,7 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 			}
 			priv->np_qfirst[t] = (reg == NR_REG_SW ?
 				nma_get_nrings(na, t) : 0);
-			priv->np_qlast[t] = nma_get_nrings(na, t) + 1;
+			priv->np_qlast[t] = netmap_real_rings(na, t);
 			ND("%s: %s %d %d", reg == NR_REG_SW ? "SW" : "NIC+SW",
 				nm_txrx2str(t),
 				priv->np_qfirst[t], priv->np_qlast[t]);
@@ -3049,7 +3058,10 @@ netmap_hw_krings_create(struct netmap_adapter *na)
 	int ret = netmap_krings_create(na, 0);
 	if (ret == 0) {
 		/* initialize the mbq for the sw rx ring */
-		mbq_safe_init(&na->rx_rings[na->num_rx_rings].rx_queue);
+		u_int lim = netmap_real_rings(na, NR_RX), i;
+		for (i = na->num_rx_rings; i < lim; i++) {
+			mbq_safe_init(&NMR(na, NR_RX)[i].rx_queue);
+		}
 		ND("initialized sw rx queue %d", na->num_rx_rings);
 	}
 	return ret;
@@ -3113,8 +3125,11 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	unsigned int txr;
 	struct mbq *q;
 	int busy;
+	u_int i;
 
-	kring = &na->rx_rings[na->num_rx_rings];
+	i = curcpu % nm_num_host_rings(na, NR_RX);
+	kring = &NMR(na, NR_RX)[nma_get_nrings(na, NR_RX) + i];
+
 	// XXX [Linux] we do not need this lock
 	// if we follow the down/configure/up protocol -gl
 	// mtx_lock(&na->core_lock);

@@ -496,5 +496,7 @@ void netmap_bns_unregister(void);
 #endif
 
 #define if_printf(ifp, fmt, ...)  dev_info(&(ifp)->dev, fmt, ##__VA_ARGS__)
+#define curcpu         smp_processor_id()
+#define mp_maxid       (num_online_cpus() - 1) // XXX num_possible_cpus()?
 
 #endif /* NETMAP_BSD_GLUE_H */
