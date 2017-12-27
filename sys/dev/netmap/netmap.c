@@ -1493,6 +1493,14 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 	if (error || *na != NULL)
 		goto out;
 
+	/* try to see if this is a stackmap port */
+	error = netmap_get_stack_na(nmr, nmd, na, create);
+	if (error)
+	       return error;
+	if (*na != NULL) {
+		goto out;
+	}
+
 	/* try to see if this is a bridge port */
 	error = netmap_get_bdg_na(nmr, na, nmd, create);
 	if (error)

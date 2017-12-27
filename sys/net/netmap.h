@@ -496,7 +496,6 @@ struct netmap_if {
  */
 
 
-#define	NETMAP_SUFFIX_LEN	64
 /*
  * struct nmreq overlays a struct ifreq (just the name)
  */
@@ -589,6 +588,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NR_EXTNAME		0x10000
 
 #define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
+#define	NM_STACK_NAME		"stack"	/* prefix for stack port name */
 
 #ifdef _WIN32
 /*
