@@ -61,7 +61,9 @@ a shared memory packet transport channel;
 .It Nm netmap monitors
 a mechanism similar to
 .Xr bpf 4
-to capture traffic
+to capture traffic;
+.It Nm stackmap ports
+a netmap port on top of a NIC port and the kernel TCP/IP implementation
 .El
 .Pp
 All these
@@ -1072,6 +1074,84 @@ Other
 .Nm
 clients attached to the same switch can now communicate
 with the network card or the host.
+.Ss STACKMAP
+STACKMAP slightly extends the netmap slot, overriding the
+.Pa ptr
+field (64 bit) with
+.Pa fd
+(32 bit) to which the buffer belongs (i.e., each slot in a ring may contain data
+of different file descriptors), and
+.Pa offset
+(32 bit) which indicates application data offset from the beginning of the
+ethernet
+header.  Note that the ethernet header is placed after a virt header whose
+length is indicated by the
+.Pa nr_arg1
+field obtained by
+.Pa NETMAP_VNET_HDR_GET
+of
+.Pa nr_cmd
+on ioctl(NIOCREGIF).
+Also, to access data via the stack port, the client needs to register a file
+descriptor using ioctl(NIOCCONFIG) whose
+.Pa struct nm_ifreq
+contains the port name (e.g., stack:0) and file descriptor in
+.Pa nifr_name
+and
+.Pa nifr_data
+fields, respectively.
+To manage TCP connections, it is useful to have
+.Xr poll 2
+monitor the netmap file descriptor and the
+.Xr listen 2
+socket:
+
+.Bd -literal -compact
+void monitor_connections(void)
+{
+    struct nm_desc *d;
+    struct pollfd fds[2];
+    ...
+    sd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    listen(sd, 0);
+
+    d = nm_open("stack:0+eth0", NULL, 0, 0);
+    fds.[0].fd = NETMAP_FD(d);
+    fds.[0].events = POLLIN;
+    fds.[1].fd = sd;
+    fds.[1].events = POLLIN;
+
+    for (;;) {
+	poll(&fds, 2, -1);
+	if (fds[1].revents & POLLIN) {
+	    struct nm_ifreq ifreq;
+
+	    newfd = accept(fds[1].fd, &client, &len);
+	    memcpy(ifreq.data, &newfd, sizeof(newfd));
+	    ioctl(fds[0], NIOCCONFIG, &ifreq);
+	}
+	if (fds[0].revents & POLLIN) {
+	    while (!nm_ring_empty(ring)) {
+	    	struct netmap_slot *slot;
+		i = ring->cur;
+ 		slot = ring->slot[i];
+		fd = slot->fd;
+		buf = NETMAP_BUF(ring, slot[i].buf_idx);
+		buf += virt_header + slot[i].offset;
+		... consume data on buf ...
+		... put new data on a tx ring slot at appropriate
+		    offset with fd ...
+		ring->head = ring->cur = nm_ring_next(ring, i);
+	    }
+	}
+    }
+}
+
+A simple way to test a stack port is to use a UDP sender,
+e.g. running the following in a terminal:
+.Dl pkt-gen -i stack:0+eth1 -f tx -s 10.0.0.3:60000 -d 10.0.0.2:50000
+where the host has 10.0.0.3 on eth1 and a route to 10.0.0.2 exists
+in the network stack
 .Sh SEE ALSO
 .Pa http://info.iet.unipi.it/~luigi/netmap/
 .Pp
