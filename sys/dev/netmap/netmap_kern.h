@@ -2174,4 +2174,115 @@ void ptnet_nm_krings_delete(struct netmap_adapter *na);
 void ptnet_nm_dtor(struct netmap_adapter *na);
 #endif /* WITH_PTNETMAP_GUEST */
 
+#ifdef __FreeBSD__
+/*
+ * FreeBSD mbuf allocator/deallocator in emulation mode:
+ */
+#if __FreeBSD_version < 1100000
+
+/*
+ * For older versions of FreeBSD:
+ *
+ * We allocate EXT_PACKET mbuf+clusters, but need to set M_NOFREE
+ * so that the destructor, if invoked, will not free the packet.
+ * In principle we should set the destructor only on demand,
+ * but since there might be a race we better do it on allocation.
+ * As a consequence, we also need to set the destructor or we
+ * would leak buffers.
+ */
+
+/* mbuf destructor, also need to change the type to EXT_EXTREF,
+ * add an M_NOFREE flag, and then clear the flag and
+ * chain into uma_zfree(zone_pack, mf)
+ * (or reinstall the buffer ?)
+ */
+#define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
+	(m)->m_ext.ext_free = (void *)fn;	\
+	(m)->m_ext.ext_type = EXT_EXTREF;	\
+} while (0)
+
+static int
+void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2)
+{
+	/* restore original mbuf */
+	m->m_ext.ext_buf = m->m_data = m->m_ext.ext_arg1;
+	m->m_ext.ext_arg1 = NULL;
+	m->m_ext.ext_type = EXT_PACKET;
+	m->m_ext.ext_free = NULL;
+	if (MBUF_REFCNT(m) == 0)
+		SET_MBUF_REFCNT(m, 1);
+	uma_zfree(zone_pack, m);
+
+	return 0;
+}
+
+static inline struct mbuf *
+nm_os_get_mbuf(struct ifnet *ifp, int len)
+{
+	struct mbuf *m;
+
+	(void)ifp;
+	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
+	if (m) {
+		/* m_getcl() (mb_ctor_mbuf) has an assert that checks that
+		 * M_NOFREE flag is not specified as third argument,
+		 * so we have to set M_NOFREE after m_getcl(). */
+		m->m_flags |= M_NOFREE;
+		m->m_ext.ext_arg1 = m->m_ext.ext_buf; // XXX save
+		m->m_ext.ext_free = (void *)void_mbuf_dtor;
+		m->m_ext.ext_type = EXT_EXTREF;
+		ND(5, "create m %p refcnt %d", m, MBUF_REFCNT(m));
+	}
+	return m;
+}
+
+#else /* __FreeBSD_version >= 1100000 */
+
+/*
+ * Newer versions of FreeBSD, using a straightforward scheme.
+ *
+ * We allocate mbufs with m_gethdr(), since the mbuf header is needed
+ * by the driver. We also attach a customly-provided external storage,
+ * which in this case is a netmap buffer. When calling m_extadd(), however
+ * we pass a NULL address, since the real address (and length) will be
+ * filled in by nm_os_generic_xmit_frame() right before calling
+ * if_transmit().
+ *
+ * The dtor function does nothing, however we need it since mb_free_ext()
+ * has a KASSERT(), checking that the mbuf dtor function is not NULL.
+ */
+
+#if __FreeBSD_version > 1200000
+static void void_mbuf_dtor(struct mbuf *m) { }
+#define void_mbuf_dtor(_1, _2, _3)	void_mbuf_dtor(_1)
+#else
+static void void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { }
+#endif
+
+#define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
+	(m)->m_ext.ext_free = (fn != NULL) ?		\
+	    (void *)fn : (void *)void_mbuf_dtor;	\
+} while (0)
+
+static inline struct mbuf *
+nm_os_get_mbuf(struct ifnet *ifp, int len)
+{
+	struct mbuf *m;
+
+	(void)ifp;
+	(void)len;
+
+	m = m_gethdr(M_NOWAIT, MT_DATA);
+	if (m == NULL) {
+		return m;
+	}
+
+	m_extadd(m, NULL /* buf */, 0 /* size */, void_mbuf_dtor,
+		 NULL, NULL, 0, EXT_NET_DRV);
+
+	return m;
+}
+#endif /* __FreeBSD_version >= 1100000 */
+#endif /* __FreeBSD__ */
+
 #endif /* _NET_NETMAP_KERN_H_ */
