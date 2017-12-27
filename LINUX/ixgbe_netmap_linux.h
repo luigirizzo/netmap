@@ -518,13 +518,17 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 		for (n = 0; ; n++) {
 			union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(rxr, nic_i);
-			uint32_t staterr = le32toh(curr->wb.upper.status_error);
+			uint32_t staterr;
 			u_int size = le16toh(curr->wb.upper.length);
 			uint64_t paddr;
 			struct netmap_slot *slot = &ring->slot[nm_i];
 
 			if (!size)
 				break;
+
+			dma_rmb();
+
+			staterr = le32toh(curr->wb.upper.status_error);
 
 			slot->len = size;
 			slot->flags = (!(staterr & IXGBE_RXD_STAT_EOP) ? NS_MOREFRAG : 0);

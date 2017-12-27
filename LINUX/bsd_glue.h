@@ -63,6 +63,10 @@
 /*----- support for compiling on older versions of linux -----*/
 #include "netmap_linux_config.h"
 
+#ifndef dma_rmb
+#define dma_rmb() rmb()
+#endif /* dma_rmb */
+
 #ifdef NETMAP_LINUX_HAVE_PAGE_REF
 #include <linux/page_ref.h>
 #endif /* NETMAP_LINUX_HAVE_PAGE_REF */
