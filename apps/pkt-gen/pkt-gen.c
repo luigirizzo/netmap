@@ -305,6 +305,10 @@ struct glob_arg {
 	int win_idx;
 	int64_t win[STATS_WIN];
 	int wait_link;
+	char stack_ifname[MAX_IFNAMELEN];
+	int sfd;
+	int soff;
+	int transport;
 	struct nm_msghdr nmsg;
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP, DEV_UDPSOCK };
@@ -1140,7 +1144,14 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 			slot->flags |= NS_INDIRECT;
 			slot->ptr = (uint64_t)((uintptr_t)frame);
 		} else if ((options & OPT_COPY) || buf_changed) {
-			nm_pkt_copy(frame, p, size);
+			u_int o = 0;
+
+			if (g->soff) {
+				o = g->virt_header + g->soff;
+				slot->offset = g->soff;
+				slot->fd = g->sfd;
+			}
+			nm_pkt_copy(frame + o, p + o, size - o);
 			if (fcnt == nfrags)
 				update_addresses(pkt, g);
 		} else if (options & OPT_MEMCPY) {
@@ -1482,7 +1493,7 @@ static void *
 sender_body(void *data)
 {
 	struct targ *targ = (struct targ *) data;
-	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
+	struct pollfd pfd[2] = {{ .fd = targ->fd, .events = POLLOUT }};
 	struct netmap_if *nifp;
 	struct netmap_ring *txring = NULL;
 	int i;
@@ -1503,6 +1514,14 @@ sender_body(void *data)
 	} else {
 		frame = targ->frame;
 		size = targ->g->pkt_size;
+	}
+	if (targ->g->dev_type == DEV_NETMAP &&
+	    !strncmp(targ->g->ifname, "stack", 5)) {
+		pfd[0].events |= POLLIN; /* ARP/Ack processing */
+		if (targ->g->transport == IPPROTO_TCP)
+			targ->g->soff = 14+20+20+12; // tsopt
+		else /* UDP */
+			targ->g->soff = 14+20+8;
 	}
 
 	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
@@ -1635,6 +1654,21 @@ sender_body(void *data)
 	int frags = targ->g->frags;
 
 	nifp = targ->nmd->nifp;
+	if (targ->g->sfd) {
+		int on = 1, err;
+		int cfd = targ->g->sfd;
+
+		pfd[1].fd = cfd;
+		pfd[1].events |= POLLOUT;
+		ioctl(cfd, FIONBIO, &on);
+		err = connect(cfd, (struct sockaddr *)targ->g->nmsg.nmsg_name,
+				targ->g->nmsg.nmsg_namelen);
+		if (err && errno != EINPROGRESS) {
+			perror("connect");
+			close(cfd);
+			goto quit;
+		}
+	}
 	while (!targ->cancel && (n == 0 || sent < n)) {
 
 		if (rate_limit && tosend <= 0) {
@@ -1642,30 +1676,38 @@ sender_body(void *data)
 			nexttime = timespec_add(nexttime, targ->g->tx_period);
 			wait_time(nexttime);
 		}
-
 		/*
 		 * wait for available room in the send queue(s)
 		 */
 #ifdef BUSYWAIT
-		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
+		if (ioctl(pfd[0].fd, NIOCTXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
 #else /* !BUSYWAIT */
-		if (poll(&pfd, 1, 2000) <= 0) {
+		if (poll(pfd, pfd[1].fd ? 2 : 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
 			D("poll error/timeout on queue %d: %s", targ->me,
 				strerror(errno));
 			// goto quit;
 		}
-		if (pfd.revents & POLLERR) {
-			D("poll error on %d ring %d-%d", pfd.fd,
+		if (pfd[0].revents & POLLERR) {
+			D("poll error on %d ring %d-%d", pfd[0].fd,
 				targ->nmd->first_tx_ring, targ->nmd->last_tx_ring);
 			goto quit;
 		}
 #endif /* !BUSYWAIT */
+		if (pfd[1].fd) {
+			if (!(pfd[1].revents & POLLOUT)) {
+				/* the socket is not writable yet */
+				D("not connected yet");
+				continue;
+			} else {
+				pfd[1].fd = 0;
+			}
+		}
 		/*
 		 * scan our queues and send on those with room
 		 */
@@ -1710,15 +1752,21 @@ sender_body(void *data)
 	D("flush tail %d head %d on thread %p",
 		txring->tail, txring->head,
 		(void *)pthread_self());
-	ioctl(pfd.fd, NIOCTXSYNC, NULL);
+	ioctl(pfd[0].fd, NIOCTXSYNC, NULL);
 
 	/* final part: wait all the TX queues to be empty. */
 	for (i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring; i++) {
 		txring = NETMAP_TXRING(nifp, i);
 		while (!targ->cancel && nm_tx_pending(txring)) {
-			RD(5, "pending tx tail %d head %d on ring %d",
+			D("pending tx tail %d head %d on ring %d",
 				txring->tail, txring->head, i);
-			ioctl(pfd.fd, NIOCTXSYNC, NULL);
+			/* stack port might need to process incoming packets 
+			 * like ARP and ACK
+			 */
+			if (pfd[0].events & POLLIN)
+				poll(&pfd[0], 1, 0);
+			else
+				ioctl(pfd[0].fd, NIOCTXSYNC, NULL);
 			usleep(1); /* wait 1 tick */
 		}
 	}
@@ -1782,7 +1830,7 @@ static void *
 receiver_body(void *data)
 {
 	struct targ *targ = (struct targ *) data;
-	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
+	struct pollfd pfd[2] = {{ .fd = targ->fd, .events = POLLIN }};
 	struct netmap_if *nifp;
 	struct netmap_ring *rxring;
 	int i;
@@ -1793,23 +1841,69 @@ receiver_body(void *data)
 	if (setaffinity(targ->thread, targ->affinity))
 		goto quit;
 
+	if (targ->g->sfd && targ->g->transport == IPPROTO_TCP) {
+		int on = 1, err;
+		int lfd = targ->g->sfd;
+
+		pfd[1].fd = lfd;
+		pfd[1].events |= POLLIN;
+		ioctl(lfd, FIONBIO, &on);
+		err = listen(lfd, 0);
+		if (err) {
+			perror("listen");
+			close(lfd);
+			goto quit;
+		}
+	}
+
 	D("reading from %s fd %d main_fd %d",
 		targ->g->ifname, targ->fd, targ->g->main_fd);
 	/* unbounded wait for the first packet. */
 	for (;!targ->cancel;) {
-		i = poll(&pfd, 1, 1000);
-		if (i > 0 && !(pfd.revents & POLLERR))
+		i = poll(pfd, pfd[1].fd ? 2 : 1, 1000);
+		if (pfd[1].fd) {
+			int newfd;
+			struct nm_ifreq ifreq;
+			char *p;
+			struct glob_arg *g = targ->g;
+
+			if (!(pfd[1].revents & POLLIN)) {
+				RD(1, "not accept yet");
+				continue;
+			}
+
+			newfd = accept(pfd[1].fd, (struct sockaddr *)
+			    g->nmsg.nmsg_name, &g->nmsg.nmsg_namelen);
+			if (newfd < 0) {
+				perror("accept");
+				goto quit;
+			}
+			bzero(&ifreq, sizeof(ifreq));
+			p = index(g->ifname, '+');
+			strncpy(ifreq.nifr_name, g->ifname, p ?  p - g->ifname :
+				(int)strlen(g->ifname));
+			memcpy(ifreq.data, &newfd, sizeof(newfd));
+			if (ioctl(g->nmd->fd, NIOCCONFIG, &ifreq)) {
+				perror("ioctl");
+				close(newfd);
+				close(pfd[1].fd);
+				goto quit;
+			}
+			D("accepted and registered");
+			// maybe drain received data?
+		}
+		if (i > 0 && !(pfd[0].revents & POLLERR))
 			break;
 		if (i < 0) {
 			D("poll() error: %s", strerror(errno));
 			goto quit;
 		}
-		if (pfd.revents & POLLERR) {
+		if (pfd[0].revents & POLLERR) {
 			D("fd error");
 			goto quit;
 		}
 		RD(1, "waiting for initial packets, poll returns %d %d",
-			i, pfd.revents);
+			i, pfd[0].revents);
 	}
 	/* main loop, exit after 1s silence */
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
@@ -1867,19 +1961,20 @@ receiver_body(void *data)
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
 #ifdef BUSYWAIT
-		if (ioctl(pfd.fd, NIOCRXSYNC, NULL) < 0) {
+		if (ioctl(pfd[0].fd, NIOCRXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
 #else /* !BUSYWAIT */
-		if (poll(&pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
+		if (poll(pfd, pfd[1].fd ? 2 : 1,
+		    1 * 1000) <= 0 && !targ->g->forever) {
 			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
 			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
 			goto out;
 		}
 
-		if (pfd.revents & POLLERR) {
+		if (pfd[0].revents & POLLERR) {
 			D("poll err");
 			goto quit;
 		}
@@ -2675,6 +2770,7 @@ main(int arc, char **argv)
 	int pkt_size_done = 0;
 
 	struct td_desc *fn = func;
+	int sfd = 0;
 
 	bzero(&g, sizeof(g));
 
@@ -2699,9 +2795,11 @@ main(int arc, char **argv)
 	g.nmr_config = "";
 	g.virt_header = 0;
 	g.wait_link = 2;
+	g.soff = 0;
+	g.transport = 0;
 
 	while ((ch = getopt(arc, argv, "46a:f:F:n:i:Il:d:s:D:S:b:c:o:p:"
-	    "T:w:WvR:XC:H:e:E:m:rP:zZA")) != -1) {
+	    "T:w:WvR:XC:H:e:E:m:rP:zZAt:")) != -1) {
 
 		switch(ch) {
 		default:
@@ -2771,7 +2869,8 @@ main(int arc, char **argv)
 				g.dev_type = DEV_PCAP;
 				strcpy(g.ifname, optarg + 5);
 			} else if (!strncmp(optarg, "netmap:", 7) ||
-				   !strncmp(optarg, "vale", 4)) {
+				   !strncmp(optarg, "vale", 4) ||
+				   !strncmp(optarg, "stack", 5)) {
 				g.dev_type = DEV_NETMAP;
 			} else if (!strncmp(optarg, "tap", 3)) {
 				g.dev_type = DEV_TAP;
@@ -2871,6 +2970,12 @@ main(int arc, char **argv)
 			break;
 		case 'A':
 			g.options |= OPT_PPS_STATS;
+			break;
+		case 't':
+			if (!strncmp(optarg, "tcp", 3))
+				g.transport = IPPROTO_TCP;
+			else if (!strncmp(optarg, "udp", 3))
+				g.transport = IPPROTO_UDP;
 			break;
 		}
 	}
@@ -3001,6 +3106,65 @@ main(int arc, char **argv)
 		D("Unable to open %s: %s", g.ifname, strerror(errno));
 		goto out;
 	}
+	if (!strncmp(g.ifname, "stack", 5)) {
+		struct sockaddr_storage ss;
+		struct sockaddr_in *sin = (struct sockaddr_in *)&ss;
+		int on = 1;
+
+		if (g.transport == IPPROTO_UDP)
+			sfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		else if (g.transport == IPPROTO_TCP)
+			sfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (sfd < 0) {
+			perror("socket");
+			goto out;
+		}
+		if (setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &on,
+		    sizeof(on)) < 0) {
+			perror("setsockopt");
+			goto out;
+		}
+
+		sin->sin_family = AF_INET;
+		sin->sin_port = htons(g.src_ip.port0);
+		sin->sin_addr.s_addr = htonl(g.src_ip.ipv4.start);
+		//sin->sin_addr.s_addr = INADDR_ANY;
+		if (bind(sfd, (struct sockaddr *)sin, sizeof(*sin))) {
+			perror("bind");
+			close(sfd);
+			goto out;
+		}
+
+		/* Don't register TCP listen socket */
+		if (!(g.transport == IPPROTO_TCP &&
+		      g.td_body == receiver_body)) {
+			struct nm_ifreq ifreq;
+			char *p;
+
+			bzero(&ifreq, sizeof(ifreq));
+			p = index(g.ifname, '+');
+			strncpy(ifreq.nifr_name, g.ifname,
+			    p ? p - g.ifname : (int)strlen(g.ifname));
+			memcpy(ifreq.data, &sfd, sizeof(sfd));
+			if (ioctl(g.nmd->fd, NIOCCONFIG, &ifreq)) {
+				perror("ioctl");
+				close(sfd);
+				goto out;
+			}
+		}
+		g.sfd = sfd;
+
+		sin = (struct sockaddr_in *)g.nmsg.nmsg_name;
+		sin->sin_family = AF_INET;
+		sin->sin_port = htons(g.dst_ip.port0);
+		sin->sin_addr.s_addr = htonl(g.dst_ip.ipv4.start);
+		g.nmsg.nmsg_namelen = sizeof(*sin);
+
+		/* We defer connect() so that the stack can process control 
+		 * packets on pull mode.
+		 */
+	}
+
 	g.main_fd = g.nmd->fd;
 	D("mapped %luKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
@@ -3121,6 +3285,8 @@ out:
 	}
 	main_thread(&g);
 	free(targs);
+	if (sfd > 0)
+		close(sfd);
 	return 0;
 }
 
