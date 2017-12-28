@@ -1623,7 +1623,7 @@ sender_body(void *data)
 			}
 			m = send_packets(txring, pkt, frame, size, targ->g,
 					 limit, options, frags);
-			ND("limit %d tail %d frags %d m %d",
+			ND("limit %lu tail %d frags %d m %d",
 				limit, txring->tail, frags, m);
 			sent += m;
 			if (m > 0) //XXX-ste: can m be 0?
