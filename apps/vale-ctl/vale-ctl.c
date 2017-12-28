@@ -25,6 +25,7 @@
 
 /* $FreeBSD$ */
 
+#define _GNU_SOURCE
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
 #include <net/netmap.h>
@@ -41,6 +42,32 @@
 #include <net/if.h>	/* ifreq */
 #include <libgen.h>	/* basename */
 #include <stdlib.h>	/* atoi, free */
+
+#define IF_OBJTOTAL     128
+#define RING_OBJTOTAL   512
+#define RING_OBJSIZE    33024
+
+static char *
+_do_mmap(int fd, size_t len)
+{
+	char *p;
+
+	if (lseek(fd, len -1, SEEK_SET) < 0) {
+		perror("lseek");
+		return NULL;
+	}
+	if (write(fd, "", 1) != 1) {
+		perror("write");
+		return NULL;
+	}
+	p = mmap(0, len, PROT_WRITE, MAP_SHARED | MAP_FILE, fd, 0);
+	if (p == MAP_FAILED) {
+		perror("mmap");
+		return NULL;
+	}
+	return p;
+}
+
 
 /* XXX cut and paste from pkt-gen.c because I'm not sure whether this
  * program may include nm_util.h
@@ -82,11 +109,16 @@ void parse_nmr_config(const char* conf, struct nmreq *nmr)
 }
 
 static int
-bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config, int nr_arg2)
+bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config, int nr_arg2, char *memname, size_t extmem_siz, int extra_bufs)
 {
 	struct nmreq nmr;
 	int error = 0;
 	int fd = open("/dev/netmap", O_RDWR);
+#ifdef WITH_EXTMEM
+	struct netmap_pools_info *pi;
+	int mfd;
+	char *m = NULL;
+#endif /* WITH_EXTMEM */
 
 	if (fd == -1) {
 		D("Unable to open /dev/netmap");
@@ -100,10 +132,45 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config, int nr_arg2)
 	nmr.nr_cmd = nr_cmd;
 	parse_nmr_config(nmr_config, &nmr);
 	nmr.nr_arg2 = nr_arg2;
+	nmr.nr_arg3 = extra_bufs;
+#ifdef WITH_EXTMEM
+	if (strlen(memname) > 0) {
+		mfd = open(memname, O_RDWR|O_CREAT, S_IRWXU);
+		if (mfd < 0) {
+			perror("open");
+			close(fd);
+			return -1;
+		}
+		if (fallocate(mfd, 0, 0, extmem_siz) < 0) {
+			perror("fallocate");
+			close(mfd);
+			return -1;
+		}
+		m = _do_mmap(mfd, extmem_siz);
+		if (m == NULL) {
+			D("map failed");
+			close(mfd);
+			return -1;
+		}
+		pi = (struct netmap_pools_info *)m;
+		pi->memsize = extmem_siz;
+
+		pi->if_pool_objtotal = IF_OBJTOTAL;
+		pi->ring_pool_objtotal = RING_OBJTOTAL;
+		pi->ring_pool_objsize = RING_OBJSIZE;
+		pi->buf_pool_objtotal = extra_bufs + 800000;
+	}
+#endif
 
 	switch (nr_cmd) {
-	case NETMAP_BDG_DELIF:
 	case NETMAP_BDG_NEWIF:
+	case NETMAP_BDG_DELIF:
+#ifdef WITH_EXTMEM
+		if (nr_cmd == NETMAP_BDG_NEWIF && strlen(memname) > 0) {
+			nmr.nr_cmd2 = NETMAP_POOLS_CREATE;
+			memcpy((void *)&nmr.nr_ptr, &m, sizeof(void *));
+		}
+#endif /* WITH_EXTMEM */
 		error = ioctl(fd, NIOCREGIF, &nmr);
 		if (error == -1) {
 			ND("Unable to %s %s", nr_cmd == NETMAP_BDG_DELIF ? "delete":"create", name);
@@ -120,6 +187,16 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config, int nr_arg2)
 			nr_arg = 0;
 		}
 		nmr.nr_arg1 = nr_arg;
+		if (extra_bufs) {
+			nmr.nr_arg3 = extra_bufs;
+		}
+#ifdef WITH_EXTMEM
+		if (strlen(memname) > 0) {
+			nmr.nr_cmd2 = NETMAP_POOLS_CREATE;
+			memcpy((void *)&nmr.nr_ptr, &m, sizeof(void *));
+		}
+#endif /* WITH_EXTMEM */
+		D("%s", nmr.nr_name);
 		error = ioctl(fd, NIOCREGIF, &nmr);
 		if (error == -1) {
 			ND("Unable to %s %s to the bridge", nr_cmd ==
@@ -203,8 +280,11 @@ main(int argc, char *argv[])
 	const char *command = basename(argv[0]);
 	char *name = NULL, *nmr_config = NULL;
 	int nr_arg2 = 0;
+	char memname[64] = {'\0'};
+	size_t extmem_siz = 0;
+	int extra_bufs = 0;
 
-	if (argc > 5) {
+	if (argc > 9) {
 usage:
 		fprintf(stderr,
 			"Usage:\n"
@@ -227,7 +307,7 @@ usage:
 		return 0;
 	}
 
-	while ((ch = getopt(argc, argv, "d:a:h:g:l:n:r:C:p:P:m:")) != -1) {
+	while ((ch = getopt(argc, argv, "d:a:h:g:l:n:r:C:p:P:m:f:s:")) != -1) {
 		if (ch != 'C' && ch != 'm')
 			name = optarg; /* default */
 		switch (ch) {
@@ -268,6 +348,15 @@ usage:
 		case 'm':
 			nr_arg2 = atoi(optarg);
 			break;
+#ifdef WITH_EXTMEM
+		case 'f':
+			strncpy(memname, optarg, sizeof(memname));
+			break;
+		case 's':
+			extmem_siz = atol(optarg) * 1000000;
+			extra_bufs = (extmem_siz / 2048) / 10 * 9;
+			break;
+#endif
 		}
 	}
 	if (optind != argc) {
@@ -278,5 +367,6 @@ usage:
 		nr_cmd = NETMAP_BDG_LIST;
 		name = NULL;
 	}
-	return bdg_ctl(name, nr_cmd, nr_arg, nmr_config, nr_arg2) ? 1 : 0;
+	return bdg_ctl(name, nr_cmd, nr_arg, nmr_config, nr_arg2,
+			memname, extmem_siz, extra_bufs) ? 1 : 0;
 }

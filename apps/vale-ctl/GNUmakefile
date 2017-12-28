@@ -12,7 +12,7 @@ NO_MAN=
 CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include
-CFLAGS += -Wextra
+CFLAGS += -Wextra -DWITH_EXTMEM
 
 LDLIBS += -lpthread -lm
 ifeq ($(shell uname),Linux)
