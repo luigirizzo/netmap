@@ -670,4 +670,9 @@ struct nm_ifreq {
 	char data[NM_IFRDATA_LEN];
 };
 
+/* msghdr-like structure in a flat location */
+struct nm_msghdr {
+	char nmsg_name[28]; // accommodate sockaddr_in6
+	uint32_t nmsg_namelen;
+};
 #endif /* _NET_NETMAP_H_ */
