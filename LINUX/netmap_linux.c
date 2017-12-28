@@ -1070,6 +1070,7 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 	int ret = 0;
 	union {
 		struct nm_ifreq ifr;
+		struct nmreq0 nmr0;
 		struct nmreq nmr;
 	} arg;
 	size_t argsize = 0;
@@ -1082,7 +1083,7 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 		argsize = sizeof(arg.ifr);
 		break;
 	default:
-		argsize = sizeof(arg.nmr);
+		argsize = sizeof(arg.nmr0);
 		break;
 	}
 	if (argsize) {
@@ -1091,6 +1092,11 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 		bzero(&arg, argsize);
 		if (copy_from_user(&arg, (void *)data, argsize) != 0)
 			return -EFAULT;
+		if (arg.nmr.nmreq_version == NMREQ_VERSION) {
+			if (copy_from_user((&arg.nmr0) + 1, (void *)data +
+			    argsize, sizeof(arg.nmr) - argsize) != 0)
+				return -EFAULT;
+		}
 	}
 	ret = netmap_ioctl(priv, cmd, (caddr_t)&arg, NULL);
 	if (data && copy_to_user((void*)data, &arg, argsize) != 0)

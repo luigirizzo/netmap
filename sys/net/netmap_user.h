@@ -856,13 +856,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	if (req) {
 		d->req = *req;
-		if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
-			if (IS_NETMAP_DESC(parent) &&
-					(new_flags & (NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3))) {
-				snprintf(errmsg, MAXERRMSG, "POOLS_CREATE is incompatibile with NM_OPEN_ARG? flags");
-				errno = EINVAL;
-				goto fail;
-			}
+		if (d->req.nr_cmd2 == NETMAP_POOLS_CREATE) {
 		        pi = nmreq_pointer_get(&d->req);
 			if (pi == NULL) {
 				snprintf(errmsg, MAXERRMSG, "missing netmap_pools_info pointer");
@@ -879,6 +873,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	d->req.nr_version = NETMAP_API;
 	d->req.nr_ringid &= ~NETMAP_RING_MASK;
+	d->req.nmreq_version = NMREQ_VERSION;
 
 	/* optionally import info from parent */
 	if (IS_NETMAP_DESC(parent) && new_flags) {
@@ -919,19 +914,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 		goto fail;
 	}
 
-	if (pi != NULL) {
-		d->mem = pi;
-		d->memsize = pi->memsize;
-		nm_init_offsets(d);
-	} else if ((!(new_flags & NM_OPEN_NO_MMAP) || parent)) {
-		/* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
-	        errno = nm_mmap(d, parent);
-		if (errno) {
-			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
-			goto fail;
-		}
-	}
-
 	nr_reg = d->req.nr_flags & NR_REG_MASK;
 
 	if (nr_reg == NR_REG_SW) { /* host stack */
@@ -955,6 +937,20 @@ nm_open(const char *ifname, const struct nmreq *req,
 		d->first_tx_ring = d->last_tx_ring = 0;
 		d->first_rx_ring = d->last_rx_ring = 0;
 	}
+
+	if (pi != NULL) {
+		d->mem = pi;
+		d->memsize = pi->memsize;
+		nm_init_offsets(d);
+	} else if ((!(new_flags & NM_OPEN_NO_MMAP) || parent)) {
+		/* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
+	        errno = nm_mmap(d, parent);
+		if (errno) {
+			snprintf(errmsg, MAXERRMSG, "mmap failed: %s", strerror(errno));
+			goto fail;
+		}
+	}
+
 
 #ifdef DEBUG_NETMAP_USER
     { /* debugging code */

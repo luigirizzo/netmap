@@ -43,6 +43,7 @@
 
 #define	NETMAP_MIN_API	11		/* min and max versions accepted */
 #define	NETMAP_MAX_API	15
+#define NMREQ_VERSION	1
 /*
  * Some fields should be cache-aligned to reduce contention.
  * The alignment is architecture and OS dependent, but rather than
@@ -491,50 +492,64 @@ struct netmap_if {
 /*
  * struct nmreq overlays a struct ifreq (just the name)
  */
-struct nmreq {
-	char		nr_name[IFNAMSIZ];
-	uint32_t	nr_version;	/* API version */
-	uint32_t	nr_offset;	/* nifp offset in the shared region */
-	uint64_t	nr_memsize;	/* size of the shared region */
-	uint32_t	nr_tx_slots;	/* slots in tx rings */
-	uint32_t	nr_rx_slots;	/* slots in rx rings */
-	uint16_t	nr_tx_rings;	/* number of tx rings */
-	uint16_t	nr_rx_rings;	/* number of rx rings */
-
-	uint16_t	nr_ringid;	/* ring(s) we care about */
-#define NETMAP_HW_RING		0x4000	/* single NIC ring pair */
-#define NETMAP_SW_RING		0x2000	/* only host ring pair */
-
-#define NETMAP_RING_MASK	0x0fff	/* the ring number */
-
-#define NETMAP_NO_TX_POLL	0x1000	/* no automatic txsync on poll */
-
-#define NETMAP_DO_RX_POLL	0x8000	/* DO automatic rxsync on poll */
-
-	uint16_t	nr_cmd;
-#define NETMAP_BDG_ATTACH	1	/* attach the NIC */
-#define NETMAP_BDG_DETACH	2	/* detach the NIC */
-#define NETMAP_BDG_REGOPS	3	/* register bridge callbacks */
-#define NETMAP_BDG_LIST		4	/* get bridge's info */
+/* nr_ringid */
+#define NETMAP_HW_RING          0x4000  /* single NIC ring pair */
+#define NETMAP_SW_RING          0x2000  /* only host ring pair */
+#define NETMAP_RING_MASK        0x0fff  /* the ring number */
+#define NETMAP_NO_TX_POLL       0x1000  /* no automatic txsync on poll */
+#define NETMAP_DO_RX_POLL       0x8000  /* DO automatic rxsync on poll */
+/* nr_cmd */
+#define NETMAP_BDG_ATTACH       1       /* attach the NIC */
+#define NETMAP_BDG_DETACH       2       /* detach the NIC */
+#define NETMAP_BDG_REGOPS       3       /* register bridge callbacks */
+#define NETMAP_BDG_LIST         4       /* get bridge's info */
 #define NETMAP_BDG_VNET_HDR     5       /* set the port virtio-net-hdr length */
-#define NETMAP_BDG_OFFSET	NETMAP_BDG_VNET_HDR	/* deprecated alias */
-#define NETMAP_BDG_NEWIF	6	/* create a virtual port */
-#define NETMAP_BDG_DELIF	7	/* destroy a virtual port */
-#define NETMAP_PT_HOST_CREATE	8	/* create ptnetmap kthreads */
-#define NETMAP_PT_HOST_DELETE	9	/* delete ptnetmap kthreads */
-#define NETMAP_BDG_POLLING_ON	10	/* delete polling kthread */
-#define NETMAP_BDG_POLLING_OFF	11	/* delete polling kthread */
-#define NETMAP_VNET_HDR_GET	12      /* get the port virtio-net-hdr length */
-#define NETMAP_POOLS_INFO_GET	13	/* get memory allocator pools info */
-#define NETMAP_POOLS_CREATE	14	/* create a new memory allocator */
-	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
-#define NETMAP_BDG_HOST		1	/* attach the host stack on ATTACH */
+#define NETMAP_BDG_OFFSET       NETMAP_BDG_VNET_HDR     /* deprecated alias */
+#define NETMAP_BDG_NEWIF        6       /* create a virtual port */
+#define NETMAP_BDG_DELIF        7       /* destroy a virtual port */
+#define NETMAP_PT_HOST_CREATE   8       /* create ptnetmap kthreads */
+#define NETMAP_PT_HOST_DELETE   9       /* delete ptnetmap kthreads */
+#define NETMAP_BDG_POLLING_ON   10      /* delete polling kthread */
+#define NETMAP_BDG_POLLING_OFF  11      /* delete polling kthread */
+#define NETMAP_VNET_HDR_GET     12      /* get the port virtio-net-hdr length */
+/* nr_cmd2 */
+#define NETMAP_POOLS_INFO_GET   1	/* get memory allocator pools info */
+#define NETMAP_POOLS_CREATE     2       /* create a new memory allocator */
+/* nr_arg1 */
+#define NETMAP_BDG_HOST         1       /* attach the host stack on ATTACH */
 
-	uint16_t	nr_arg2;
-	uint32_t	nr_arg3;	/* req. extra buffers in NIOCREGIF */
-	uint32_t	nr_flags;
-	/* various modes, extends nr_ringid */
-	uint32_t	spare2[1];
+#define NMREQ_FIELDS	\
+	char		nr_name[IFNAMSIZ];				\
+	uint32_t	nr_version;	/* API version */		\
+	uint32_t	nr_offset;	/* nifp offset in the shared region */ \
+	uint64_t	nr_memsize;	/* size of the shared region */ \
+	uint32_t	nr_tx_slots;	/* slots in tx rings */ 	\
+	uint32_t	nr_rx_slots;	/* slots in rx rings */ 	\
+	uint16_t	nr_tx_rings;	/* number of tx rings */ 	\
+	uint16_t	nr_rx_rings;	/* number of rx rings */	\
+									\
+	uint16_t	nr_ringid;	/* ring(s) we care about */	\
+									\
+	uint16_t	nr_cmd;						\
+	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */\
+	uint16_t	nr_arg2;					\
+	uint32_t	nr_arg3;	/* req. extra buffers in NIOCREGIF */\
+	uint32_t	nr_flags;					\
+	/* various modes, extends nr_ringid */				\
+ 	uint32_t	spare2[1];
+#define nmreq_version	spare2[0]
+#define NMREQ_VERSION	1
+
+struct nmreq0 {
+	NMREQ_FIELDS
+};
+
+#define NMREQ_EXTNAME_LEN	64
+struct nmreq {
+	NMREQ_FIELDS
+	uint16_t	nr_cmd2;
+	uintptr_t	nr_ptr;
+	char		nr_extname[NMREQ_EXTNAME_LEN];
 };
 
 #define NR_REG_MASK		0xf /* values for nr_flags */
@@ -563,6 +578,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  * to use those headers. If the flag is set, the application can use the
  * NETMAP_VNET_HDR_GET command to figure out the header length. */
 #define NR_ACCEPT_VNET_HDR	0x8000
+#define NR_EXTNAME		0x10000
 
 #define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
 

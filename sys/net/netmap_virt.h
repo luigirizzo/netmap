@@ -134,14 +134,14 @@ struct netmap_pools_info {
 static inline void
 nmreq_pointer_put(struct nmreq *nmr, void *userptr)
 {
-	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
+	uintptr_t *pp = (uintptr_t *)&nmr->nr_ptr;
 	*pp = (uintptr_t)userptr;
 }
 
 static inline void *
 nmreq_pointer_get(struct nmreq *nmr)
 {
-	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
+	uintptr_t *pp = (uintptr_t *)&nmr->nr_ptr;
 	return (void *)*pp;
 }
 

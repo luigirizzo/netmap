@@ -1904,7 +1904,7 @@ struct netmap_mem_ops netmap_mem_global_ops = {
 int
 netmap_mem_pools_info_get(struct nmreq *nmr, struct netmap_mem_d *nmd)
 {
-	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
+	uintptr_t *pp = (uintptr_t *)&nmr->nr_ptr;
 	struct netmap_pools_info *upi = (struct netmap_pools_info *)(*pp);
 	struct netmap_pools_info pi;
 	uint64_t memsize;
@@ -2000,7 +2000,7 @@ struct netmap_mem_ops netmap_mem_ext_ops = {
 struct netmap_mem_d *
 netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 {
-	uintptr_t p = *(uintptr_t *)&nmr->nr_arg1;
+	uintptr_t p = *(uintptr_t *)&nmr->nr_ptr;
 	struct netmap_pools_info pi;
 	int error = 0;
 	unsigned long end, start;
