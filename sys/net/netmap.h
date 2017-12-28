@@ -496,6 +496,7 @@ struct netmap_if {
  */
 
 
+#define	NETMAP_SUFFIX_LEN	64
 /*
  * struct nmreq overlays a struct ifreq (just the name)
  */

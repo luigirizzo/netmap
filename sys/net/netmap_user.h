@@ -637,11 +637,15 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 	char errmsg[MAXERRMSG] = "";
 	long num;
 	uint16_t nr_arg2 = 0;
-	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID } p_state;
+	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID,
+	       P_GETEXTNAME } p_state;
 
 	errno = 0;
+	char extname[NMREQ_EXTNAME_LEN];
 
-	is_vale = (ifname[0] == 'v');
+	bzero(extname, sizeof(extname));
+
+	is_vale = (ifname[0] == 'v') || (ifname[0] == 's');
 	if (is_vale) {
 		port = index(ifname, ':');
 		if (port == NULL) {
@@ -662,7 +666,7 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 	}
 
 	/* scan for a separator */
-	for (; *port && !index("-*^{}/@", *port); port++)
+	for (; *port && !index("-*^{}/@+", *port); port++)
 		;
 
 	if (is_vale && !nm_is_identifier(vpname, port)) {
@@ -679,7 +683,7 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 	d->req.nr_name[namelen] = '\0';
 
 	p_state = P_START;
-	nr_flags = NR_REG_ALL_NIC; /* default for no suffix */
+	nr_flags = NR_REG_ALL_NIC; /* default for no extname */
 	while (*port) {
 		switch (p_state) {
 		case P_START:
@@ -709,6 +713,10 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 				break;
 			case '@': /* start of memid */
 				p_state = P_MEMID;
+				break;
+			case '+': /* start of extra string */
+				nr_flags |= NR_EXTNAME;
+				p_state = P_GETEXTNAME;
 				break;
 			default:
 				snprintf(errmsg, MAXERRMSG, "unknown modifier: '%c'", *port);
@@ -786,7 +794,19 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 			nr_arg2 = num;
 			p_state = P_RNGSFXOK;
 			break;
+		case P_GETEXTNAME:
+			if (sizeof(extname) <= strlen(port)) {
+				snprintf(errmsg, MAXERRMSG, "str too short");
+				goto fail;
+			}
+			strncpy(extname, port, sizeof(extname));
+			port += strlen(port);
+			p_state = P_RNGSFXOK;
+			break;
 		}
+	}
+	if (nr_flags & NR_EXTNAME) {
+		strncpy(d->req.nr_extname, extname, sizeof(d->req.nr_extname));
 	}
 	if (p_state != P_START && p_state != P_RNGSFXOK && p_state != P_FLAGSOK) {
 		snprintf(errmsg, MAXERRMSG, "unexpected end of port name");
@@ -836,7 +856,8 @@ nm_open(const char *ifname, const struct nmreq *req,
 	struct netmap_pools_info *pi = NULL;
 
 	if (strncmp(ifname, "netmap:", 7) &&
-			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
+			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME)) &&
+			strncmp(ifname, "stack", 5)) {
 		errno = 0; /* name not recognised, not an error */
 		return NULL;
 	}
