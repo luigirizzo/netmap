@@ -768,6 +768,7 @@ struct netmap_adapter {
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
 	int (*nm_notify)(struct netmap_kring *kring, int flags);
+	int (*nm_intr_notify)(struct netmap_kring *kring, int flags);
 #define NAF_FORCE_READ      1
 #define NAF_FORCE_RECLAIM   2
 #define NAF_CAN_FORWARD_DOWN 4
@@ -1031,6 +1032,8 @@ struct netmap_bwrap_adapter {
 int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
 int netmap_vi_create(struct nmreq *, int);
 
+int nm_bdg_prefix(const char *name);
+
 #else /* !WITH_VALE */
 #define netmap_vi_create(nmr, a) (EOPNOTSUPP)
 #endif /* WITH_VALE */
@@ -1241,6 +1244,13 @@ int netmap_common_irq(struct netmap_adapter *, u_int, u_int *work_done);
 #define netmap_ifp_to_host_vp(_ifp) (NA(_ifp)->na_hostvp)
 #define netmap_bdg_idx(_vp)	((_vp)->bdg_port)
 const char *netmap_bdg_name(struct netmap_vp_adapter *);
+struct netmap_vp_adapter *netmap_bdg_port(struct nm_bridge *b, int i);
+u_int netmap_bdg_active_ports(struct nm_bridge *b);
+void netmap_set_bdg_port(struct nm_bridge *b, int i, struct netmap_vp_adapter *vpna);
+int netmap_bdg_rlock(struct nm_bridge *b, struct netmap_adapter *na);
+void netmap_bdg_runlock(struct nm_bridge *b);
+void netmap_bdg_wlock(struct nm_bridge *b);
+void netmap_bdg_wunlock(struct nm_bridge *b);
 #else /* !WITH_VALE */
 #define netmap_vp_to_ifp(_vp)	NULL
 #define netmap_ifp_to_vp(_ifp)	NULL
@@ -1448,7 +1458,7 @@ int netmap_get_hw_na(struct ifnet *ifp,
  */
 typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
 		struct netmap_vp_adapter *);
-typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
+typedef int (*bdg_config_fn_t)(struct nm_ifreq *, struct netmap_vp_adapter *);
 typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
 struct netmap_bdg_ops {
 	bdg_lookup_fn_t lookup;
@@ -1471,8 +1481,10 @@ struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
-int netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops);
+int netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops, int locked);
 int netmap_bdg_config(struct nmreq *nmr);
+/* For internal modules (e.g., stackmap) */
+void netmap_bdg_set_ops(struct nm_bridge *b, struct netmap_bdg_ops *);
 
 #else /* !WITH_VALE */
 #define	netmap_get_bdg_na(_1, _2, _3, _4)	0

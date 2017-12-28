@@ -2226,7 +2226,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 	switch (cmd) {
 	case NIOCGINFO:		/* return capabilities etc */
 		if (nmr->nr_cmd == NETMAP_BDG_LIST) {
-			error = netmap_bdg_ctl(nmr, NULL);
+			error = netmap_bdg_ctl(nmr, NULL, 0);
 			break;
 		}
 
@@ -2307,7 +2307,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			if (nmd) {
 				nmr->nr_arg2 = netmap_mem_get_id(nmd);
 			}
-			error = netmap_bdg_ctl(nmr, NULL);
+			error = netmap_bdg_ctl(nmr, NULL, 0);
 			break;
 		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
 			/* forward the command to the ptnetmap subsystem */
