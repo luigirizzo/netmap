@@ -318,7 +318,6 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[0]);
 		if (i < 0) // XXX something wrong here, can it really happen ?
 			i += rxr->count;
-		D("i now is %d", i);
 		wmb(); /* Force memory writes to complete */
 		writel(i, hw->hw_addr + rxr->rdt);
 	}
