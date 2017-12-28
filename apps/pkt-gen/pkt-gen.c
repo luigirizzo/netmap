@@ -41,7 +41,8 @@
 #include <stdio.h>
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
-
+#define HAVE_MMSG 1
+#define CONNECT 1
 
 #include <ctype.h>	// isprint()
 #include <unistd.h>	// sysconf()
@@ -304,8 +305,9 @@ struct glob_arg {
 	int win_idx;
 	int64_t win[STATS_WIN];
 	int wait_link;
+	struct nm_msghdr nmsg;
 };
-enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
+enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP, DEV_UDPSOCK };
 
 
 /*
@@ -1529,6 +1531,89 @@ sender_body(void *data)
 			i = 0;
 		}
 	    }
+	} else if (targ->g->dev_type == DEV_UDPSOCK) {
+#ifdef HAVE_MMSG
+	    struct mmsghdr *mmsg;
+#else
+	    struct msghdr *mmsg;
+#endif /* HAVE_MMSG */
+	    struct iovec iov; /* shared */
+	    struct sockaddr_in sin;
+	    int fd = targ->g->main_fd;
+
+	    /* XXX always the same destination */
+	    bzero(&sin, sizeof(sin));
+	    sin.sin_family = AF_INET;
+	    sin.sin_port = htons(targ->g->dst_ip.port0);
+	    sin.sin_addr.s_addr = htonl(targ->g->dst_ip.ipv4.start);
+
+	    /* XXX always the same content */
+	    bzero(&iov, sizeof(iov));
+	    iov.iov_base = calloc(1, size);
+	    if (!iov.iov_base) {
+		    perror("calloc");
+		    goto quit;
+	    }
+	    iov.iov_len = size - sizeof(struct ether_header)
+		- sizeof(struct ip) - sizeof(struct udphdr);
+
+	    mmsg = calloc(targ->g->burst, sizeof(*mmsg));
+	    if (!mmsg) {
+		    perror("calloc");
+		    goto quit;
+	    }
+#ifdef CONNECT
+	    if (connect(fd, (struct sockaddr *)&sin, sizeof(sin))) {
+		    perror("connect");
+		    goto quit;
+	    }
+	    D("connected");
+#endif /* CONNECT */
+	    for (i = 0; i < targ->g->burst; i++) {
+#ifdef HAVE_MMSG
+		    struct msghdr *msg = &mmsg[i].msg_hdr;
+#else
+		    struct msghdr *msg = mmsg + i;
+#endif
+#ifndef CONNECT
+		    msg->msg_name = &sin;
+		    msg->msg_namelen = (socklen_t)sizeof(sin);
+#endif /* !CONNECT */
+		    msg->msg_iov = &iov;
+		    msg->msg_iovlen = 1;
+	    }
+	    for (i = 0; !targ->cancel && (n == 0 || sent < n); i++) {
+#ifdef HAVE_MMSG
+		int m = sendmmsg(fd, mmsg, targ->g->burst, 0);
+		if (m != -1) {
+			sent += m;
+		} else if (i > 100) {
+			perror("sendmmsg");
+		}
+#else
+		int j;
+		for (j = 0; j < targ->g->burst; j++) {
+			struct msghdr *msg = mmsg + j;
+			int m = sendmsg(fd, msg, 0);
+			if (m != -1) {
+				sent++;
+			} else if (i > 1000) {
+				perror("sendmsg");
+			}
+		}
+#endif
+		if (i > 100) {
+			targ->ctr.pkts = sent;
+			targ->ctr.bytes = sent * size;
+			targ->ctr.events = sent;
+			i = 0;
+		}
+	    }
+#ifdef HAVE_MMSG
+	    free(mmsg);
+#endif /* HAVE_MMSG */
+	    free(iov.iov_base);
+
 #ifndef NO_PCAP
     } else if (targ->g->dev_type == DEV_PCAP) {
 	    pcap_t *p = targ->g->p;
@@ -1733,6 +1818,32 @@ receiver_body(void *data)
 		char buf[MAX_BODYSIZE];
 		/* XXX should we poll ? */
 		i = read(targ->g->main_fd, buf, sizeof(buf));
+		if (i > 0) {
+			targ->ctr.pkts++;
+			targ->ctr.bytes += i;
+			targ->ctr.events++;
+		}
+	}
+    } else if (targ->g->dev_type == DEV_UDPSOCK) {
+	struct sockaddr_in sin;
+	socklen_t l = sizeof(sin);
+	while (!targ->cancel) {
+		char buf[MAX_BODYSIZE];
+
+		if (poll(pfd, 1, 1 * 1000) <= 0 && !targ->g->forever) {
+			clock_gettime(CLOCK_REALTIME_PRECISE, &targ->toc);
+			targ->toc.tv_sec -= 1; /* Subtract timeout time. */
+			/* XXX to avoid using 'goto out' */
+			targ->completed = 1;
+			targ->ctr = cur;
+			goto quit;
+		}
+		if (pfd[0].revents & POLLERR) {
+			D("poll err");
+			goto quit;
+		}
+		i = recvfrom(targ->g->main_fd, buf, sizeof(buf), MSG_DONTWAIT,
+		    (struct sockaddr *)&sin, &l);
 		if (i > 0) {
 			targ->ctr.pkts++;
 			targ->ctr.bytes += i;
@@ -2664,6 +2775,8 @@ main(int arc, char **argv)
 				g.dev_type = DEV_NETMAP;
 			} else if (!strncmp(optarg, "tap", 3)) {
 				g.dev_type = DEV_TAP;
+			} else if (!strncmp(optarg, "udp", 3)) {
+				g.dev_type = DEV_UDPSOCK;
 			} else { /* prepend netmap: */
 				g.dev_type = DEV_NETMAP;
 				sprintf(g.ifname, "netmap:%s", optarg);
@@ -2817,6 +2930,19 @@ main(int arc, char **argv)
 	g.main_fd = tap_alloc(g.ifname);
 	if (g.main_fd < 0) {
 		D("cannot open tap %s", g.ifname);
+		usage();
+	}
+    } else if (g.dev_type == DEV_UDPSOCK) {
+	struct sockaddr_in sin;
+
+	D("want to use UDP socket");
+	g.main_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	sin.sin_family = AF_INET;
+	D("g.src_ip.port0 %u", g.src_ip.port0);
+	sin.sin_port = htons(g.src_ip.port0);
+	sin.sin_addr.s_addr = INADDR_ANY;
+	if (bind(g.main_fd, (struct sockaddr *)&sin, sizeof(sin))) {
+		D("cannot open socket");
 		usage();
 	}
 #ifndef NO_PCAP
