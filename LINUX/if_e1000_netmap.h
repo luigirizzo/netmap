@@ -223,8 +223,8 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
 
-			PNMB(na, slot, &paddr);
 			slot = ring->slot + nm_i;
+			PNMB(na, slot, &paddr);
 			slot->len = le16toh(curr->length) - 4;
 			slot->flags = 0;
 			netmap_sync_map(na, (bus_dma_tag_t) na->pdev,
