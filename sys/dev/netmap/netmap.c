@@ -2688,7 +2688,9 @@ flush_tx:
 			if (found) { /* notify other listeners */
 				revents |= want_tx;
 				want_tx = 0;
+#ifndef linux
 				kring->nm_notify(kring, 0);
+#endif /* linux */
 			}
 		}
 		/* if there were any packet to forward we must have handled them by now */
@@ -2748,7 +2750,9 @@ do_retry_rx:
 			if (found) {
 				revents |= want_rx;
 				retry_rx = 0;
+#ifndef linux
 				kring->nm_notify(kring, 0);
+#endif /* linux */
 			}
 		}
 
