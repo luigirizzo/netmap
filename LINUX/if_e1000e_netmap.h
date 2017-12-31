@@ -161,8 +161,6 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_paddr, addr)
 				curr->buffer_addr = htole64(paddr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
@@ -171,6 +169,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			curr->upper.data = 0;
 			curr->lower.data = htole32(adapter->txd_cmd | len | flags |
 				E1000_TXD_CMD_EOP);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -243,11 +242,16 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; ; n++) {
 			NM_E1K_RX_DESC_T *curr = E1000_RX_DESC_EXT(*rxr, nic_i);
 			uint32_t staterr = le32toh(curr->NM_E1R_RX_STATUS);
+			struct netmap_slot *slot = &ring->slot[nm_i];
+			uint64_t paddr;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
-			ring->slot[nm_i].len = le16toh(curr->NM_E1R_RX_LENGTH) - strip_crc;
-			ring->slot[nm_i].flags = 0;
+			PNMB(na, slot, &paddr);
+			slot->len = le16toh(curr->wb.upper.length) - strip_crc;
+			slot->flags = 0;
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr,
+					slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -274,8 +278,6 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 				goto ring_reset;
 			curr->NM_E1R_RX_BUFADDR = htole64(paddr); /* reload ext.desc. addr. */
 			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_paddr, addr)
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
 			curr->NM_E1R_RX_STATUS = 0;

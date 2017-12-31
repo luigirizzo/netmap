@@ -786,8 +786,7 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 
 	d->req.nr_flags |= nr_flags;
 	d->req.nr_ringid |= nr_ringid;
-	if (nr_arg2)
-		d->req.nr_arg2 = nr_arg2;
+	d->req.nr_arg2 = nr_arg2;
 
 	d->self = d;
 
@@ -856,10 +855,10 @@ nm_open(const char *ifname, const struct nmreq *req,
 			D("overriding ARG1 %d", parent->req.nr_arg1);
 		d->req.nr_arg1 = new_flags & NM_OPEN_ARG1 ?
 			parent->req.nr_arg1 : 4;
-		if (new_flags & NM_OPEN_ARG2)
+		if (new_flags & NM_OPEN_ARG2) {
 			D("overriding ARG2 %d", parent->req.nr_arg2);
-		d->req.nr_arg2 = new_flags & NM_OPEN_ARG2 ?
-			parent->req.nr_arg2 : 0;
+			d->req.nr_arg2 =  parent->req.nr_arg2;
+		}
 		if (new_flags & NM_OPEN_ARG3)
 			D("overriding ARG3 %d", parent->req.nr_arg3);
 		d->req.nr_arg3 = new_flags & NM_OPEN_ARG3 ?

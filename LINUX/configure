@@ -3,6 +3,7 @@
 BUILDDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
+DEBUG=1
 
 # setelem2n <set> <elem>
 setelem2n()
@@ -259,6 +260,7 @@ replace_vars()
 		-e "s|@APPS_LD@|$ld|g" \
 		-e "s|@PREFIX@|$prefix|g" \
 		-e "s|@DESTDIR@|$DESTDIR|g" \
+		-e "s|@DEBUG@|$DEBUG|g" \
 		$1
 }
 
@@ -279,6 +281,8 @@ Available options:
   --drivers=                   only compile the given drivers (comma sep.)
   --no-ext-drivers             do not use external drivers
   --no-ext-drivers=            do not use the given external drivers (comma sep.)
+  --select-version=	       comma sep. list of driver:version expressions
+  			       (select a different versions for external drivers)
   --no-apps	               do not compile any app
   --no-apps=                   do not compile the given apps (comma sep.)
   --apps=                      only compile the given apps (comma sep.)
@@ -299,6 +303,9 @@ Available options:
   --disable-ptnetmap           disable ptnetmap (both guest and host)
   --enable-sink   	       enable the netmap sink device
   --disable-sink   	       disable the netmap sink device
+  --force-debug	       	       build the modules w/ debug symbols (default)
+  --no-force-debug	       build the modules w/ or w/o debug symbols,
+  			       according to the kernel configuration
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
   --cc=                        C compiler to be used for the apps [$cc]
@@ -416,7 +423,6 @@ EOF
 # run_tests: run all accumulated tests and exec the pertinent
 #   success/failure actions for each one.
 run_tests() {
-	cp $BUILDDIR/default-config.mak $TMPDIR
 	ln -s $BUILDDIR/patches $TMPDIR
 	cat > $TMPDIR/Makefile <<EOF
 SRCDIR=$SRCDIR
@@ -431,6 +437,7 @@ all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 tests:
 	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
+-include $BUILDDIR/extdrv-versions.mak
 -include $BUILDDIR/default-config.mak
 -include $BUILDDIR/config.mak
 -include $BUILDDIR/drivers.mak
@@ -502,6 +509,7 @@ kopts=
 modpath=
 drvsuffix=
 cache=
+versions=
 for opt do
 	optarg=${opt#*=}
 	case "$opt" in
@@ -550,6 +558,13 @@ for opt do
 			app enable "$d"
 		done
 	;;
+	--select-version=*)
+		if [ -z "$versions" ]; then
+			versions=$optarg
+		else
+			versions="$versions,$optarg"
+		fi
+	;;
 	--cc=*) cc="$optarg"
 	;;
 	--ld=*) ld="$optarg"
@@ -591,6 +606,12 @@ for opt do
 	--show-apps)
 		app print
 		exit
+	;;
+	--force-debug)
+		DEBUG=1
+	;;
+	--no-force-debug)
+		DEBUG=
 	;;
 	*)
 		echo "Unrecognized option: $opt" | warning
@@ -676,6 +697,17 @@ You may need to issue the following or equivalent commands:
 EOF
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
+
+# create the versions file
+rm -f extdrv-versions.mak
+for dv in $(echo "$versions" | sed 's/,/ /g'); do
+	d=${dv%:*}
+	v=${dv#*:}
+	if ! $(edrv enabled $d); then
+		echo "$d is not an external driver" | warning
+	fi
+	echo "$d@v := $v" >> extdrv-versions.mak
+done
 
 replace_vars $SRCDIR/default-config.mak.in_ > default-config.mak
 
@@ -1436,6 +1468,16 @@ EOF
 	}
 EOF
 
+  # kernels from 4.14 onwards don't have support for UDP fragmentation
+  # offload.
+  add_test 'have UFO' <<EOF
+	#include <linux/netdevice.h>
+
+	unsigned int
+	dummy(void) {
+                return NETIF_F_UFO;
+	}
+EOF
 
   #####################################################
   # checks related to drivers                         #

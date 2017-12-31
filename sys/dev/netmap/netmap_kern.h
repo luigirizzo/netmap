@@ -1653,65 +1653,11 @@ netmap_reload_map(struct netmap_adapter *na,
 int nm_iommu_group_id(bus_dma_tag_t dev);
 #include <linux/dma-mapping.h>
 
-static inline int
-netmap_load_map(struct netmap_adapter *na,
-	bus_dma_tag_t tag, bus_dmamap_t map, void *buf, u_int size)
-{
-	if (map) {
-		*map = dma_map_single(na->pdev, buf, size,
-				      DMA_BIDIRECTIONAL);
-		if (dma_mapping_error(na->pdev, *map))
-			return ENOMEM;
-	}
-	return 0;
-}
-
-static inline void
-netmap_unload_map(struct netmap_adapter *na,
-	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz)
-{
-	if (*map) {
-		dma_unmap_single(na->pdev, *map, sz,
-				 DMA_BIDIRECTIONAL);
-	}
-}
-
-static inline void
-netmap_sync_map(struct netmap_adapter *na,
-	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz, enum txrx t)
-{
-	if (*map) {
-		dma_sync_single_for_cpu(na->pdev, *map, sz,
-				DMA_FROM_DEVICE);
-	}
-}
-
-static inline void
-netmap_reload_map(struct netmap_adapter *na,
-	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
-{
-	u_int sz = NETMAP_BUF_SIZE(na);
-
-	if (*map) {
-		dma_unmap_single(na->pdev, *map, sz,
-				DMA_BIDIRECTIONAL);
-	}
-
-	*map = dma_map_single(na->pdev, buf, sz,
-				DMA_BIDIRECTIONAL);
-}
-
 /*
- * XXX How do we redefine these functions:
- *
  * on linux we need
  *	dma_map_single(&pdev->dev, virt_addr, len, direction)
- *	dma_unmap_single(&adapter->pdev->dev, phys_addr, len, direction
- * The len can be implicit (on netmap it is NETMAP_BUF_SIZE)
- * unfortunately the direction is not, so we need to change
- * something to have a cross API
+ *	dma_unmap_single(&adapter->pdev->dev, phys_addr, len, direction)
  */
-
 #if 0
 	struct e1000_buffer *buffer_info =  &tx_ring->buffer_info[l];
 	/* set time_stamp *before* dma to help avoid a possible race */
@@ -1734,10 +1680,59 @@ netmap_reload_map(struct netmap_adapter *na,
 
 #endif
 
-/*
- * The bus_dmamap_sync() can be one of wmb() or rmb() depending on direction.
- */
-#define bus_dmamap_sync(_a, _b, _c)
+static inline int
+netmap_load_map(struct netmap_adapter *na,
+	bus_dma_tag_t tag, bus_dmamap_t map, void *buf, u_int size)
+{
+	if (map) {
+		*map = dma_map_single(na->pdev, buf, size,
+				      DMA_BIDIRECTIONAL);
+		if (dma_mapping_error(na->pdev, *map)) {
+			*map = 0;
+			return ENOMEM;
+		}
+	}
+	return 0;
+}
+
+static inline void
+netmap_unload_map(struct netmap_adapter *na,
+	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz)
+{
+	if (*map) {
+		dma_unmap_single(na->pdev, *map, sz,
+				 DMA_BIDIRECTIONAL);
+	}
+}
+
+static inline void
+netmap_sync_map(struct netmap_adapter *na,
+	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz, enum txrx t)
+{
+	if (*map) {
+		if (t == NR_RX)
+			dma_sync_single_for_cpu(na->pdev, *map, sz,
+					DMA_FROM_DEVICE);
+		else
+			dma_sync_single_for_device(na->pdev, *map, sz,
+					DMA_TO_DEVICE);
+	}
+}
+
+static inline void
+netmap_reload_map(struct netmap_adapter *na,
+	bus_dma_tag_t tag, bus_dmamap_t map, void *buf)
+{
+	u_int sz = NETMAP_BUF_SIZE(na);
+
+	if (*map) {
+		dma_unmap_single(na->pdev, *map, sz,
+				DMA_BIDIRECTIONAL);
+	}
+
+	*map = dma_map_single(na->pdev, buf, sz,
+				DMA_BIDIRECTIONAL);
+}
 
 #endif /* linux */
 

@@ -225,38 +225,11 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
 	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(ifp);
-	int i;
 
 	// adapter->netdev->trans_start = jiffies; // disable watchdog ?
 	/* protect against other reinit */
 	while (test_and_set_bit(NM_IXGBE_RESETTING, &adapter->state))
 		usleep_range(1000, 2000);
-
-	/* reset all next_to_* pointers before leaving netmap mode */
-	for (i = 0; i < adapter->num_rx_queues; i++) {
-		struct netmap_kring *kring = &na->rx_rings[i];
-
-		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
-			struct NM_IXGBE_RING *rxr = NM_IXGBE_RX_RING(adapter, i);
-
-			rxr->next_to_clean = 0;
-			rxr->next_to_use = 0;
-#ifdef NETMAP_LINUX_HAVE_NTA
-			rxr->next_to_alloc = 0;
-#endif /* NETMAP_LINUX_HAVE_NTA */
-		}
-	}
-
-	for (i = 0; i < adapter->num_tx_queues; i++) {
-		struct netmap_kring *kring = &na->tx_rings[i];
-
-		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
-			struct NM_IXGBE_RING *rxr = NM_IXGBE_TX_RING(adapter, i);
-
-			rxr->next_to_clean = 0;
-			rxr->next_to_use = 0;
-		}
-	}
 
 	if (netif_running(adapter->netdev))
 		NM_IXGBE_DOWN(adapter);
@@ -372,10 +345,6 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
-			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_addr, addr);
-			}
 			if (!(slot->flags & NS_MOREFRAG))
 				flags |= IXGBE_TXD_CMD_EOP;
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
@@ -386,6 +355,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			curr->read.cmd_type_len = htole32(len | flags |
 				IXGBE_ADVTXD_DTYP_DATA | IXGBE_ADVTXD_DCMD_DEXT |
 				IXGBE_ADVTXD_DCMD_IFCS);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -404,7 +374,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	(void)report_frequency;
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
 		u32 h = ACCESS_ONCE(*ina->heads[ring_nr].phead);
-		RD(5, "%s: h %d", kring->name, h);
+		ND(5, "%s: h %d", kring->name, h);
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, h), lim);
 	}
 #else /* NM_IXGBE_USE_TDH */
@@ -453,6 +423,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			nic_i -= kring->nkr_num_slots;
 		}
 		txr->next_to_clean = nic_i;
+		txr->next_to_use = txr->next_to_clean;
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 #endif /* NM_IXGBE_USE_TDH */
@@ -521,19 +492,32 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 		for (n = 0; ; n++) {
 			union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(rxr, nic_i);
-			uint32_t staterr = le32toh(curr->wb.upper.status_error);
+			uint32_t staterr;
 			u_int size = le16toh(curr->wb.upper.length);
+			uint64_t paddr;
+			struct netmap_slot *slot = &ring->slot[nm_i];
 
 			if (!size)
 				break;
 
-			ring->slot[nm_i].len = size;
-			ring->slot[nm_i].flags = (!(staterr & IXGBE_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
+			dma_rmb();
+
+			staterr = le32toh(curr->wb.upper.status_error);
+
+			slot->len = size;
+			slot->flags = (!(staterr & IXGBE_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
+			PNMB(na, slot, &paddr);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, size, NR_RX);
+
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
+			rxr->next_to_use = rxr->next_to_clean;
+#ifdef NETMAP_LINUX_IXGBE_HAVE_NTA
+			rxr->next_to_alloc = rxr->next_to_clean;
+#endif /* NETMAP_LINUX_HAVE_NTA */
 			kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
@@ -560,8 +544,6 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 				goto ring_reset;
 
 			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_addr, addr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
 			curr->wb.upper.length = 0;
@@ -716,9 +698,12 @@ ixgbe_netmap_krings_delete(struct netmap_adapter *na)
 static int
 ixgbe_netmap_krings_create(struct netmap_adapter *na)
 {
+#ifndef NM_IXGBE_USE_TDH
 	struct netmap_ixgbe_adapter *ina =
 		(struct netmap_ixgbe_adapter *)na;
-	int i, ret;
+	int i;
+#endif /* !NM_IXGBE_USE_TDH */
+        int ret;
        
 	ret = netmap_hw_krings_create(na);
 	if (ret)
