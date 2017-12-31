@@ -200,6 +200,13 @@ struct virt_header {
 
 #define MAX_BODYSIZE	16384
 
+#ifndef ETH_ALEN
+#define ETH_ALEN	6	/* ethernet address (MAC) size */
+#endif
+#ifndef IP4_ALEN
+#define IP4_ALEN	4
+#endif
+
 struct pkt {
 	struct virt_header vh;
 	struct ether_header eh;
@@ -220,6 +227,13 @@ struct pkt {
 
 #define	PKT(p, f, af)	\
     ((af) == AF_INET ? (p)->ipv4.f: (p)->ipv6.f)
+
+#define ARP_SIZE(vh)	\
+    ((vh) + sizeof(struct ether_header) + sizeof(struct ether_arp))
+
+#define PKT_OVERHD(af, vh)		\
+    (sizeof(struct ether_header) + vh +	\
+     ((af) == AF_INET ? sizeof(struct ip) : sizeof(struct ip6_hdr)))
 
 struct ip_range {
 	char *name;
@@ -250,6 +264,9 @@ struct tstamp {
 	uint32_t sec;
 	uint32_t nsec;
 };
+
+#define PKT_MINSIZE(af, vh)		\
+    (PKT_OVERHD(af, vh) + sizeof(struct udphdr) + sizeof(struct tstamp))
 
 /*
  * global arguments for all threads
@@ -283,6 +300,7 @@ struct glob_arg {
 #define OPT_RANDOM_SRC  512
 #define OPT_RANDOM_DST  1024
 #define OPT_PPS_STATS   2048
+#define OPT_GARP	4096
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -494,16 +512,16 @@ extract_mac_range(struct mac_range *r)
 		D("invalid MAC address '%s'", r->name);
 		return 1;
 	}
-	bcopy(e, &r->start, 6);
-	bcopy(e, &r->end, 6);
+	bcopy(e, &r->start, ETH_ALEN);
+	bcopy(e, &r->end, ETH_ALEN);
 #if 0
-	bcopy(targ->src_mac, eh->ether_shost, 6);
+	bcopy(targ->src_mac, eh->ether_shost, ETH_ALEN);
 	p = index(targ->g->src_mac, '-');
 	if (p)
 		targ->src_mac_range = atoi(p+1);
 
-	bcopy(ether_aton(targ->g->dst_mac), targ->dst_mac, 6);
-	bcopy(targ->dst_mac, eh->ether_dhost, 6);
+	bcopy(ether_aton(targ->g->dst_mac), targ->dst_mac, ETH_ALEN);
+	bcopy(targ->dst_mac, eh->ether_dhost, ETH_ALEN);
 	p = index(targ->g->dst_mac, '-');
 	if (p)
 		targ->dst_mac_range = atoi(p+1);
@@ -1026,8 +1044,8 @@ initialize_packet(struct targ *targ)
 	}
 #endif
 
-	paylen = targ->g->pkt_size - sizeof(*eh) -
-	    (targ->g->af == AF_INET ? sizeof(ip): sizeof(ip6));
+	paylen = targ->g->pkt_size -
+	    PKT_OVERHD(targ->g->af, targ->g->virt_header);
 
 	/* create a nice NUL-terminated string */
 	for (i = 0; i < paylen; i += l0) {
@@ -1039,8 +1057,8 @@ initialize_packet(struct targ *targ)
 
 	/* prepare the headers */
 	eh = &pkt->eh;
-	bcopy(&targ->g->src_mac.start, eh->ether_shost, 6);
-	bcopy(&targ->g->dst_mac.start, eh->ether_dhost, 6);
+	bcopy(&targ->g->src_mac.start, eh->ether_shost, ETH_ALEN);
+	bcopy(&targ->g->dst_mac.start, eh->ether_dhost, ETH_ALEN);
 
 	if (targ->g->af == AF_INET) {
 		eh->ether_type = htons(ETHERTYPE_IP);
@@ -1076,6 +1094,7 @@ initialize_packet(struct targ *targ)
 	udp.uh_sport = htons(targ->g->src_ip.port0);
 	udp.uh_dport = htons(targ->g->dst_ip.port0);
 	udp.uh_ulen = htons(paylen);
+	udp.uh_sum = 0;
 	if (targ->g->af == AF_INET) {
 		/* Magic: taken from sbin/dhclient/packet.c */
 		udp.uh_sum = wrapsum(
@@ -1158,8 +1177,8 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		int size, struct glob_arg *g, u_int count, int options,
 		u_int nfrags)
 {
-	u_int n, sent, vh = g->virt_header, cur = ring->cur;
-	u_int fcnt;
+	u_int n, sent, fcnt, cur = ring->cur, vh = g->virt_header;
+	u_int arp_size = (options & OPT_GARP) ? ARP_SIZE(vh) : 0;
 
 	n = nm_ring_space(ring);
 	if (n < count)
@@ -1183,11 +1202,14 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 	for (fcnt = nfrags, sent = 0; sent < count; sent++) {
 		struct netmap_slot *slot = &ring->slot[cur];
 		char *p = NETMAP_BUF(ring, slot->buf_idx);
-		struct pkt *old = (struct pkt*)(p - sizeof(old->vh) + vh);
 		int copy = options & OPT_COPY || slot->flags & NS_BUF_CHANGED;
-		/* sender_body() drops OPT_COPY after starting, but we need to
-		 * copy over any ARP packets lingering in the txring */
-		copy |= (old->eh.ether_type == htons(ETHERTYPE_ARP));
+
+		/* sender_body() drops OPT_COPY after starting, but we need
+		 * to copy over any ARP packets lingering in the txring */
+		if (!copy && slot->len == arp_size) {
+			struct pkt *old = (struct pkt*)(p - sizeof(old->vh) + vh);
+			copy |= (old->eh.ether_type == htons(ETHERTYPE_ARP));
+		}
 
 		slot->flags = 0;
 		if (options & OPT_RUBBISH) {
@@ -1236,61 +1258,58 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 static void
 send_arp(struct targ *targ)
 {
+	struct nm_desc *nmd = targ->nmd;
 	struct netmap_if *nifp = targ->nmd->nifp;
 	struct ether_addr *src_mac = &targ->g->src_mac.start;
 	uint32_t src_ip = htonl(targ->g->src_ip.ipv4.start);
 	uint32_t dst_ip = htonl(targ->g->dst_ip.ipv4.start);
-	struct pkt *pkt = 0;
-	void *frame = 0;
+	int vhlen = targ->g->virt_header;
 	int need = 2;
-	int virt = targ->g->virt_header;
-	int size = sizeof(pkt->eh) + sizeof(pkt->arp4) + virt;
 	if (!targ->garp) return;
 
-	for (int i = targ->nmd->first_tx_ring; i <= targ->nmd->last_tx_ring && need; i++) {
-		struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
-		struct netmap_slot *slot;
-		struct ether_header *eh;
-		struct ether_arp *arp;
+	for (int i = nmd->first_tx_ring; i <= nmd->last_tx_ring && need > 0; i++) {
+		void *frame;
+		struct pkt *pkt;
 		struct arphdr *hdr;
+		struct netmap_slot *slot;
+		struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
+
 		if (nm_ring_empty(ring))
 			continue;
 
 		slot = &ring->slot[ring->cur];
-		slot->len = size;
-		slot->ptr = 0;
 		frame = NETMAP_BUF(ring, slot->buf_idx);
-		pkt = (struct pkt*)(frame - sizeof(pkt->vh) + virt);
-		bzero(frame, virt);
+		pkt = (struct pkt*)(frame - sizeof(pkt->vh) + vhlen);
+		hdr = &pkt->arp4.ea_hdr;
+		slot->len = ARP_SIZE(vhlen);
+		slot->ptr = 0;
+		bzero(frame, vhlen);
 
-		eh = &pkt->eh;
-		arp = &pkt->arp4;
-		hdr = &arp->ea_hdr;
-
-		eh->ether_type = htons(ETHERTYPE_ARP);
-		memset(eh->ether_dhost, 0xff, 6);
-		bcopy(src_mac, eh->ether_shost, 6);
+		pkt->eh.ether_type = htons(ETHERTYPE_ARP);
+		memset(pkt->eh.ether_dhost, 0xff, ETH_ALEN);
+		bcopy(src_mac, pkt->eh.ether_shost, ETH_ALEN);
 		hdr->ar_hrd = htons(ARPHRD_ETHER);
 		hdr->ar_pro = htons(ETHERTYPE_IP);
-		hdr->ar_hln = 6;
-		hdr->ar_pln = 4;
+		hdr->ar_hln = ETH_ALEN;
+		hdr->ar_pln = IP4_ALEN;
 
 		if (need == 2) {	/* first send a GARP */
 			hdr->ar_op = htons(ARPOP_REPLY);
-			bcopy(src_mac, arp->arp_sha, 6);
-			bcopy(src_mac, arp->arp_tha, 6);
-			bcopy(&dst_ip, arp->arp_spa, 4);
-			bcopy(&dst_ip, arp->arp_tpa, 4);
+			bcopy(src_mac, pkt->arp4.arp_sha, ETH_ALEN);
+			bcopy(src_mac, pkt->arp4.arp_tha, ETH_ALEN);
+			bcopy(&src_ip, pkt->arp4.arp_spa, IP4_ALEN);
+			bcopy(&src_ip, pkt->arp4.arp_spa, IP4_ALEN);
 		} else {		/* then send an ARP request */
 			hdr->ar_op = htons(ARPOP_REQUEST);
-			bcopy(src_mac, arp->arp_sha, 6);
-			bzero(arp->arp_tha, 6);
-			bcopy(&src_ip, arp->arp_spa, 4);
-			bcopy(&dst_ip, arp->arp_tpa, 4);
+			bcopy(src_mac, pkt->arp4.arp_sha, ETH_ALEN);
+			bzero(pkt->arp4.arp_tha, ETH_ALEN);
+			bcopy(&src_ip, pkt->arp4.arp_spa, IP4_ALEN);
+			bcopy(&dst_ip, pkt->arp4.arp_tpa, IP4_ALEN);
 		}
 
 		ring->head = ring->cur = nm_ring_next(ring, ring->cur);
 		need--;
+		i--;
 	}
 }
 
@@ -1614,7 +1633,6 @@ sender_body(void *data)
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
 	struct netmap_if *nifp;
 	struct netmap_ring *txring = NULL;
-	int i;
 	uint64_t n = targ->g->npackets / targ->g->nthreads;
 	uint64_t sent = 0;
 	uint64_t event = 0;
@@ -1623,7 +1641,7 @@ sender_body(void *data)
 	int rate_limit = targ->g->tx_rate;
 	struct pkt *pkt = &targ->pkt;
 	void *frame;
-	int size;
+	int size, i;
 
 	if (targ->frame == NULL) {
 		frame = pkt;
@@ -1633,6 +1651,9 @@ sender_body(void *data)
 		frame = targ->frame;
 		size = targ->g->pkt_size;
 	}
+
+	if (targ->garp)
+		options |= OPT_GARP;
 
 	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
 	if (setaffinity(targ->thread, targ->affinity))
@@ -2452,7 +2473,7 @@ usage(int errcode)
 		     "\t			OPT_INDIRECT	32 (use indirect buffers)\n"
 		     "\t			OPT_DUMP	64 (dump rx/tx traffic)\n"
 		     "\t			OPT_RUBBISH	256\n"
-		     "\t			    (send wathever the buffers contain)\n"
+		     "\t			    (send whatever the buffers contain)\n"
 		     "\t			OPT_RANDOM_SRC  512\n"
 		     "\t			OPT_RANDOM_DST  1024\n"
 		     "\t			OPT_PPS_STATS   2048\n"
@@ -2554,7 +2575,7 @@ start_threads(struct glob_arg *g) {
 		sleep(g->wait_link);
 		D("Ready...");
 	} else {
-		D("Wait for phy reset");
+		D("Wait up to 5 secs for phy reset");
 		for (i = 5*4; i > 0; i--) {
 			if (check_link_up(g->phyname)) {
 				D("Ready...");
@@ -3032,16 +3053,6 @@ main(int arc, char **argv)
 	if (g.cpus == 0)
 		g.cpus = i;
 
-	if (g.pkt_size < 16 || g.pkt_size > MAX_PKTSIZE) {
-		D("bad pktsize %d [16..%d]\n", g.pkt_size, MAX_PKTSIZE);
-		usage(-1);
-	}
-
-	if (g.pkt_min_size > 0 && (g.pkt_min_size < 16 || g.pkt_min_size > g.pkt_size)) {
-		D("bad pktminsize %d [16..%d]\n", g.pkt_min_size, g.pkt_size);
-		usage(-1);
-	}
-
 	if (g.src_mac.name == NULL) {
 		static char mybuf[20] = "00:00:00:00:00:00";
 		/* retrieve source mac address. */
@@ -3060,6 +3071,18 @@ main(int arc, char **argv)
 	if (g.virt_header != 0 && g.virt_header != VIRT_HDR_1
 			&& g.virt_header != VIRT_HDR_2) {
 		D("bad virtio-net-header length");
+		usage(-1);
+	}
+
+	ch = PKT_MINSIZE(g.af, g.virt_header);
+
+	if (g.pkt_size < ch || g.pkt_size > MAX_PKTSIZE) {
+		D("bad pktsize %d [%d..%d]\n", g.pkt_size, ch, MAX_PKTSIZE);
+		usage(-1);
+	}
+
+	if (g.pkt_min_size > 0 && (g.pkt_min_size < 16 || g.pkt_min_size > g.pkt_size)) {
+		D("bad pktminsize %d [16..%d]\n", g.pkt_min_size, g.pkt_size);
 		usage(-1);
 	}
 
