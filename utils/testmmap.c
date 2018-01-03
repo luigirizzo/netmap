@@ -382,12 +382,12 @@ void do_anon_mmap()
 doit:
 	last_mmap_addr = mmap(0, memsize,
 			PROT_WRITE | PROT_READ,
-			MAP_PRIVATE | MAP_ANONYMOUS | flags, -1, 0);
+			MAP_SHARED | MAP_ANONYMOUS | flags, -1, 0);
 	if (last_access_addr == NULL)
 		last_access_addr = last_mmap_addr;
 	output_err(last_mmap_addr == MAP_FAILED ? -1 : 0,
-		"mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS%s, -1, 0)=%p",
-		memsize, (flags ? "MAP_HUGETLB" : ""), last_mmap_addr);
+		"mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_SHARED|MAP_ANONYMOUS%s, -1, 0)=%p",
+		memsize, (flags ? "|MAP_HUGETLB" : ""), last_mmap_addr);
 
 }
 
