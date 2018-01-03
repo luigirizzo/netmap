@@ -2239,7 +2239,8 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 				skip = PAGE_SIZE;
 			}
 			off = noff;
-			clust = page_to_virt(*pages);
+			if (nr_pages > 0)
+				clust = page_to_virt(*pages);
 		}
 		p->objtotal = j;
 		p->numclusters = p->objtotal;
