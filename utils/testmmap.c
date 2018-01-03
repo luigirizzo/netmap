@@ -1980,13 +1980,8 @@ cmd_loop(FILE *input)
 				output_err(-1, "fork");
 				goto clean1;
 			case 0:
-				fclose(stdin);
-				if (dup(p1[0]) < 0) {
-					output_err(-1, "dup");
-					exit(1);
-				}
 				close(p1[1]);
-				stdin = fdopen(0, "r");
+				input = fdopen(p1[0], "r");
 				chan_clear_all(channels, MAX_CHAN);
 				goto out;
 			default:
