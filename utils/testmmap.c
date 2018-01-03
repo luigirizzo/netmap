@@ -556,7 +556,7 @@ get_if()
 
 	/* first arg: if offset */
 	arg = nextarg();
-	if (!arg) {
+	if (!arg || (strcmp(arg, "-") == 0)) {
 		goto doit;
 	}
 	off = strtoul(arg, NULL, 0);
@@ -618,14 +618,9 @@ doit:
 	return NETMAP_TXRING(nifp, ringid);
 }
 
-
 void
-do_ring()
+dump_ring(struct netmap_ring *ring)
 {
-	struct netmap_ring *ring;
-
-	ring = get_ring();
-
 	printf("buf_ofs     %"PRId64"\n", ring->buf_ofs);
 	printf("num_slots   %u\n", ring->num_slots);
 	printf("nr_buf_size %u\n", ring->nr_buf_size);
@@ -663,23 +658,46 @@ do_ring()
 }
 
 void
-do_slot()
+do_ring()
 {
 	struct netmap_ring *ring;
-	struct netmap_slot *slot;
-	long int index;
 	char *arg;
+	int upd = -1;
+	unsigned int v;
 
-	/* defaults */
-	index = 0;
+	ring = get_ring();
 
 	arg = nextarg();
-	if (!arg)
-		goto doit;
-	index = strtoll(arg, NULL, 0);
-doit:
-	ring = get_ring();
-	slot = ring->slot + index;
+	if (!arg) {
+		dump_ring(ring);
+		return;
+	}
+	if (strcmp(arg, "head") == 0) {
+		upd = 1;
+	} else if (strcmp(arg, "cur") == 0) {
+		upd = 2;
+	} else if (strcmp(arg, "both") == 0) {
+		upd = 3;
+	} else {
+		return;
+	}
+	arg = nextarg();
+	if (!arg) {
+		v = ring->cur + 1;
+		if (ring->cur >= ring->num_slots)
+			ring->cur = 0;
+	} else {
+		v = strtoul((void *)arg, NULL, 0);
+	}
+	if (upd & 1)
+		ring->head = v;
+	if (upd & 2)
+		ring->cur = v;
+}
+
+void
+dump_slot(struct netmap_slot *slot)
+{
 	printf("buf_idx       %u\n", slot->buf_idx);
 	printf("len           %u\n", slot->len);
 	printf("flags         %x", slot->flags);
@@ -703,10 +721,53 @@ doit:
 		if (slot->flags & NS_MOREFRAG) {
 			printf(" MOREFRAG");
 		}
+		if (NS_RFRAGS(slot)) {
+			printf(" fragments=%u", NS_RFRAGS(slot));
+		}
 		printf(" ]");
 	}
 	printf("\n");
 	printf("ptr           %lx\n", (long)slot->ptr);
+}
+
+void
+do_slot()
+{
+	struct netmap_ring *ring;
+	struct netmap_slot *slot;
+	long int index;
+	char *arg;
+
+	/* defaults */
+	index = 0;
+
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	index = strtoll(arg, NULL, 0);
+doit:
+	ring = get_ring();
+	slot = ring->slot + index;
+	arg = nextarg();
+	if (!arg) {
+		dump_slot(slot);
+		return;
+	}
+	if (strcmp(arg, "buf_idx") == 0) {
+		arg = nextarg();
+		if (!arg) {
+			output("buf_idx=%u", slot->buf_idx);
+			return;
+		}
+		slot->buf_idx = strtoul((void *)arg, NULL, 0);
+	} else if (strcmp(arg, "len") == 0) {
+		arg = nextarg();
+		if (!arg) {
+			output("len=%u", slot->len);
+			return;
+		}
+		slot->len = strtoul((void *)arg, NULL, 0);
+	}
 }
 
 static void
