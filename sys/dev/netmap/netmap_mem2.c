@@ -106,6 +106,7 @@ struct netmap_obj_pool {
 
 	struct lut_entry *lut;  /* virt,phys addresses, objtotal entries */
 	uint32_t *bitmap;       /* one bit per buffer, 1 means free */
+	uint32_t *invalid_bitmap;/* one bit per buffer, 1 means invalid */
 	uint32_t bitmap_slots;	/* number of uint32 entries in bitmap */
 	/* ---------------------------------------------------*/
 
@@ -300,6 +301,12 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	return nmd->lasterr;
 }
 
+static int
+nm_isset(uint32_t *bitmap, u_int i)
+{
+	return bitmap[ (i>>5) ] & ( 1U << (i & 31U) );
+}
+
 
 static int
 netmap_init_obj_allocator_bitmap(struct netmap_obj_pool *p)
@@ -327,10 +334,12 @@ netmap_init_obj_allocator_bitmap(struct netmap_obj_pool *p)
 	 * free.
 	 */
 	for (j = 0; j < p->objtotal; j++) {
-		if (p->lut[j].vaddr != NULL) {
-			p->bitmap[ (j>>5) ] |=  ( 1U << (j & 31U) );
-			p->objfree++;
+		if (p->invalid_bitmap && nm_isset(p->invalid_bitmap, j)) {
+			D("skipping %s %d", p->name, j);
+			continue;
 		}
+		p->bitmap[ (j>>5) ] |=  ( 1U << (j & 31U) );
+		p->objfree++;
 	}
 
 	ND("%s free %u", p->name, p->objfree);
@@ -1165,6 +1174,9 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 	if (p->bitmap)
 		nm_os_free(p->bitmap);
 	p->bitmap = NULL;
+	if (p->invalid_bitmap)
+		nm_os_free(p->invalid_bitmap);
+	p->invalid_bitmap = NULL;
 	if (p->lut) {
 		u_int i;
 
@@ -1175,8 +1187,7 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 		 * in the lut.
 		 */
 		for (i = 0; i < p->objtotal; i += p->_clustentries) {
-			if (p->lut[i].vaddr)
-				contigfree(p->lut[i].vaddr, p->_clustsize, M_NETMAP);
+			contigfree(p->lut[i].vaddr, p->_clustsize, M_NETMAP);
 		}
 		nm_free_lut(p->lut, p->objtotal);
 	}
@@ -2213,6 +2224,13 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 			error = ENOMEM;
 			goto out_delete;
 		}
+		
+		p->bitmap_slots = (o->num + sizeof(uint32_t) - 1) / sizeof(uint32_t);
+		p->invalid_bitmap = nm_os_malloc(sizeof(uint32_t) * p->bitmap_slots);
+		if (p->invalid_bitmap == NULL) {
+			error = ENOMEM;
+			goto out_delete;
+		}
 
 		if (nr_pages == 0) {
 			p->objtotal = 0;
@@ -2240,13 +2258,13 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 				nr_pages--;
 				ND("noff %zu page %p nr_pages %d", noff,
 						page_to_virt(*pages), nr_pages);
-				if (noff > 0 && p->lut[j].vaddr &&
+				if (noff > 0 && !nm_isset(p->invalid_bitmap, j) &&
 					(nr_pages == 0 || *pages != *(pages - 1) + 1))
 				{
 					/* out of space or non contiguous,
 					 * drop this object
 					 * */
-					p->lut[j].vaddr = NULL;
+					p->invalid_bitmap[ (j>>5) ] |= 1U << (j & 31U);
 					ND("non contiguous at off %zu, drop", noff);
 				}
 				if (nr_pages == 0)
@@ -2266,7 +2284,7 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 	/* skip the first netmap_if, where the pools info reside */
 	{
 		struct netmap_obj_pool *p = &nme->up.pools[NETMAP_IF_POOL];
-		p->lut[0].vaddr = NULL;
+		p->invalid_bitmap[0] |= 1U;
 	}
 
 	error = netmap_mem_init_bitmaps(&nme->up);
