@@ -873,6 +873,10 @@ nm_open(const char *ifname, const struct nmreq *req,
 				goto fail;
 			}
 		}
+	} else {
+		d->req.nr_arg1 = 4;
+		d->req.nr_arg2 = 0;
+		d->req.nr_arg3 = 0;
 	}
 
 	if (!(new_flags & NM_OPEN_IFNAME)) {
@@ -885,18 +889,18 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	/* optionally import info from parent */
 	if (IS_NETMAP_DESC(parent) && new_flags) {
-		if (new_flags & NM_OPEN_ARG1)
+		if (new_flags & NM_OPEN_ARG1) {
 			D("overriding ARG1 %d", parent->req.nr_arg1);
-		d->req.nr_arg1 = new_flags & NM_OPEN_ARG1 ?
-			parent->req.nr_arg1 : 4;
+			d->req.nr_arg1 = parent->req.nr_arg1;
+		}
 		if (new_flags & NM_OPEN_ARG2) {
 			D("overriding ARG2 %d", parent->req.nr_arg2);
-			d->req.nr_arg2 =  parent->req.nr_arg2;
+			d->req.nr_arg2 = parent->req.nr_arg2;
 		}
-		if (new_flags & NM_OPEN_ARG3)
+		if (new_flags & NM_OPEN_ARG3) {
 			D("overriding ARG3 %d", parent->req.nr_arg3);
-		d->req.nr_arg3 = new_flags & NM_OPEN_ARG3 ?
-			parent->req.nr_arg3 : 0;
+			d->req.nr_arg3 = parent->req.nr_arg3;
+		}
 		if (new_flags & NM_OPEN_RING_CFG) {
 			D("overriding RING_CFG");
 			d->req.nr_tx_slots = parent->req.nr_tx_slots;
