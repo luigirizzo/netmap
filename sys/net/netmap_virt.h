@@ -122,7 +122,7 @@ nmreq_pointer_put(struct nmreq *nmr, void *userptr)
 }
 
 static inline void *
-nmreq_pointer_get(struct nmreq *nmr)
+nmreq_pointer_get(const struct nmreq *nmr)
 {
 	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
 	return (void *)*pp;
