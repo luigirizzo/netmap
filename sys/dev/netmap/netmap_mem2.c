@@ -1742,12 +1742,21 @@ netmap_mem2_delete(struct netmap_mem_d *nmd)
 		nm_os_free(nmd);
 }
 
+#ifdef WITH_EXTMEM
+/* doubly linekd list of all existing external allocators */
+static struct netmap_mem_ext *netmap_mem_ext_list = NULL;
+NM_MTX_T nm_mem_ext_list_lock;
+#endif /* WITH_EXTMEM */
+
 int
 netmap_mem_init(void)
 {
 	NM_MTX_INIT(nm_mem_list_lock);
 	NMA_LOCK_INIT(&nm_mem);
 	netmap_mem_get(&nm_mem);
+#ifdef WITH_EXTMEM
+	NM_MTX_INIT(nm_mem_ext_list_lock);
+#endif /* WITH_EXTMEM */
 	return (0);
 }
 
@@ -2034,7 +2043,78 @@ struct netmap_mem_ext {
 
 	struct page **pages;
 	int nr_pages;
+	struct netmap_mem_ext *next, *prev;
 };
+
+/* call with nm_mem_list_lock held */
+static void
+netmap_mem_ext_register(struct netmap_mem_ext *e)
+{
+	NM_MTX_LOCK(nm_mem_ext_list_lock);
+	if (netmap_mem_ext_list)
+		netmap_mem_ext_list->prev = e;
+	e->next = netmap_mem_ext_list;
+	netmap_mem_ext_list = e;
+	e->prev = NULL;
+	NM_MTX_UNLOCK(nm_mem_ext_list_lock);
+}
+
+/* call with nm_mem_list_lock held */
+static void
+netmap_mem_ext_unregister(struct netmap_mem_ext *e)
+{
+	if (e->prev)
+		e->prev->next = e->next;
+	else
+		netmap_mem_ext_list = e->next;
+	if (e->next)
+		e->next->prev = e->prev;
+	e->prev = e->next = NULL;
+}
+
+static int
+netmap_mem_ext_same_pages(struct netmap_mem_ext *e, struct page **pages, int nr_pages)
+{
+	int i;
+
+	if (e->nr_pages != nr_pages)
+		return 0;
+
+	for (i = 0; i < nr_pages; i++)
+		if (pages[i] != e->pages[i])
+			return 0;
+
+	return 1;
+}
+
+static struct netmap_mem_ext *
+netmap_mem_ext_search(struct page **pages, int nr_pages)
+{
+	struct netmap_mem_ext *e;
+
+	NM_MTX_LOCK(nm_mem_ext_list_lock);
+	for (e = netmap_mem_ext_list; e; e = e->next) {
+		if (netmap_mem_ext_same_pages(e, pages, nr_pages)) {
+			netmap_mem_get(&e->up);
+			break;
+		}
+	}
+	NM_MTX_UNLOCK(nm_mem_ext_list_lock);
+	return e;
+}
+
+
+static void
+netmap_mem_ext_free_pages(struct page **pages, int nr_pages)
+{
+	int i;
+
+	for (i = 0; i < nr_pages; i++) {
+		kunmap(pages[i]);
+		put_page(pages[i]);
+	}
+	nm_os_free(pages);
+}
 
 static void
 netmap_mem_ext_delete(struct netmap_mem_d *d)
@@ -2042,6 +2122,8 @@ netmap_mem_ext_delete(struct netmap_mem_d *d)
 	int i;
 	struct netmap_mem_ext *e =
 		(struct netmap_mem_ext *)d;
+
+	netmap_mem_ext_unregister(e);
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		struct netmap_obj_pool *p = &d->pools[i];
@@ -2052,11 +2134,7 @@ netmap_mem_ext_delete(struct netmap_mem_d *d)
 		}
 	}
 	if (e->pages) {
-		for (i = 0; i < e->nr_pages; i++) {
-			kunmap(e->pages[i]);
-			put_page(e->pages[i]);
-		}
-		nm_os_free(e->pages);
+		netmap_mem_ext_free_pages(e->pages, e->nr_pages);
 		e->pages = NULL;
 		e->nr_pages = 0;
 	}
@@ -2170,6 +2248,13 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 		goto out_unmap;
 	}
 
+	nme = netmap_mem_ext_search(pages, nr_pages);
+	if (nme) {
+		netmap_mem_ext_free_pages(pages, nr_pages);
+		return &nme->up;
+	}
+	D("not found, creating new");
+
 	nme = _netmap_mem_private_new(sizeof(*nme),
 			(struct netmap_obj_params[]){
 				{ pi.if_pool_objsize, pi.if_pool_objtotal },
@@ -2269,6 +2354,8 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 	error = netmap_mem_init_bitmaps(&nme->up);
 	if (error)
 		goto out_delete;
+
+	netmap_mem_ext_register(nme);
 
 	return &nme->up;
 
