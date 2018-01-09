@@ -2175,12 +2175,6 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 		goto out_unmap;
 	}
 
-	nme = nm_os_malloc(sizeof(*nme));
-	if (nme == NULL) {
-		error = ENOMEM;
-		goto out_unmap;
-	}
-
 	nme = _netmap_mem_private_new(sizeof(*nme),
 			(struct netmap_obj_params[]){
 				{ pi.if_pool_objsize, pi.if_pool_objtotal },
