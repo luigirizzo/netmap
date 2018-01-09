@@ -1455,7 +1455,7 @@ static int
 netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
 	int error = 0;
-	int i, lim = p->_objtotal;
+	int i, lim = p->objtotal;
 	struct netmap_lut *lut = &na->na_lut;
 
 	if (na->pdev == NULL)
