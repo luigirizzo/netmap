@@ -351,6 +351,7 @@ enum {
 	NM_OPEN_ARG2 =		0x200000,
 	NM_OPEN_ARG3 =		0x400000,
 	NM_OPEN_RING_CFG =	0x800000, /* tx|rx rings|slots */
+	NM_OPEN_EXTMEM =       0x1000000,
 };
 
 
@@ -630,8 +631,10 @@ nm_init_offsets(struct nm_desc *d)
 }
 
 #define MAXERRMSG 80
+#define NM_PARSE_OK	  	0
+#define NM_PARSE_MEMID 		1
 static int
-nm_parse(const char *ifname, struct nm_desc *d, char *err)
+nm_parse_one(const char *ifname, struct nmreq *d, char **out)
 {
 	int is_vale;
 	const char *port = NULL;
@@ -644,6 +647,13 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID } p_state;
 
 	errno = 0;
+
+	if (strncmp(ifname, "netmap:", 7) &&
+			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
+		snprintf(errmsg, MAXERRMSG, "invalid port name: %s", ifname);
+		errno = EINVAL;
+		goto fail;
+	}
 
 	is_vale = (ifname[0] == 'v');
 	if (is_vale) {
@@ -675,12 +685,13 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 	}
 
 	namelen = port - ifname;
-	if (namelen >= sizeof(d->req.nr_name)) {
+	if (namelen >= sizeof(d->nr_name)) {
 		snprintf(errmsg, MAXERRMSG, "name too long");
 		goto fail;
 	}
-	memcpy(d->req.nr_name, ifname, namelen);
-	d->req.nr_name[namelen] = '\0';
+	memcpy(d->nr_name, ifname, namelen);
+	d->nr_name[namelen] = '\0';
+	D("name %s", d->nr_name);
 
 	p_state = P_START;
 	nr_flags = NR_REG_ALL_NIC; /* default for no suffix */
@@ -784,15 +795,21 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 			}
 			num = strtol(port, (char **)&port, 10);
 			if (num <= 0) {
-				snprintf(errmsg, MAXERRMSG, "invalid memid %ld, must be >0", num);
-				goto fail;
+				ND("non-numeric memid %s (out = %p)", port, out);
+				if (out == NULL)
+					goto fail;
+				*out = (char *)port;
+				while (*port)
+					port++;
+			} else {
+				nr_arg2 = num;
+				p_state = P_RNGSFXOK;
 			}
-			nr_arg2 = num;
-			p_state = P_RNGSFXOK;
 			break;
 		}
 	}
-	if (p_state != P_START && p_state != P_RNGSFXOK && p_state != P_FLAGSOK) {
+	if (p_state != P_START && p_state != P_RNGSFXOK &&
+	    p_state != P_FLAGSOK && p_state != P_MEMID) {
 		snprintf(errmsg, MAXERRMSG, "unexpected end of port name");
 		goto fail;
 	}
@@ -802,19 +819,104 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 			(nr_flags & NR_MONITOR_TX) ? "MONITOR_TX" : "",
 			(nr_flags & NR_MONITOR_RX) ? "MONITOR_RX" : "");
 
-	d->req.nr_flags |= nr_flags;
-	d->req.nr_ringid |= nr_ringid;
-	d->req.nr_arg2 = nr_arg2;
+	d->nr_flags |= nr_flags;
+	d->nr_ringid |= nr_ringid;
+	d->nr_arg2 = nr_arg2;
 
-	d->self = d;
-
-	return 0;
+	return (p_state == P_MEMID) ? NM_PARSE_MEMID : NM_PARSE_OK;
 fail:
 	if (!errno)
 		errno = EINVAL;
-	if (err)
-		strncpy(err, errmsg, MAXERRMSG);
+	if (out)
+		*out = strdup(errmsg);
 	return -1;
+}
+
+static int
+nm_interp_memid(const char *memid, struct nmreq *req, char **err)
+{
+	int fd = -1;
+	char errmsg[MAXERRMSG] = "";
+	struct nmreq greq;
+	off_t mapsize;
+	struct netmap_pools_info *pi;
+
+	/* first, try to look for a netmap port with this name */
+	fd = open("/dev/netmap", O_RDONLY);
+	if (fd < 0) {
+		snprintf(errmsg, MAXERRMSG, "cannot open /dev/netmap: %s", strerror(errno));
+		goto fail;
+	}
+	memset(&greq, 0, sizeof(greq));
+	if (nm_parse_one(memid, &greq, err) == NM_PARSE_OK) {
+		greq.nr_version = NETMAP_API;
+		if (ioctl(fd, NIOCGINFO, &greq) < 0) {
+			if (errno == ENOENT || errno == ENXIO)
+				goto try_external;
+			snprintf(errmsg, MAXERRMSG, "cannot getinfo for %s: %s", memid, strerror(errno));
+			goto fail;
+		}
+		req->nr_arg2 = greq.nr_arg2;
+		close(fd);
+		return 0;
+	}
+try_external:
+	D("trying with external memory");
+	close(fd);
+	fd = open(memid, O_RDWR);
+	if (fd < 0) {
+		snprintf(errmsg, MAXERRMSG, "cannot open %s: %s", memid, strerror(errno));
+		goto fail;
+	}
+	mapsize = lseek(fd, 0, SEEK_END);
+	if (mapsize < 0) {
+		snprintf(errmsg, MAXERRMSG, "failed to obtain filesize of %s: %s", memid, strerror(errno));
+		goto fail;
+	}
+	pi = mmap(0, mapsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (pi == MAP_FAILED) {
+		snprintf(errmsg, MAXERRMSG, "cannot map %s: %s", memid, strerror(errno));
+		goto fail;
+	}
+	req->nr_cmd = NETMAP_POOLS_CREATE;
+	pi->memsize = mapsize;
+	nmreq_pointer_put(req, pi);
+	D("mapped %zu bytes at %p from file %s", mapsize, pi, memid);
+	return 0;
+
+fail:
+	D("%s", errmsg);
+	close(fd);
+	if (err && !*err)
+		*err = strdup(errmsg);
+	return errno;
+}
+
+static int
+nm_parse(const char *ifname, struct nm_desc *d, char *errmsg)
+{
+	char *err;
+	switch (nm_parse_one(ifname, &d->req, &err)) {
+	case NM_PARSE_OK:
+		D("parse OK");
+		break;
+	case NM_PARSE_MEMID:
+		D("memid: %s", err);
+		errno = nm_interp_memid(err, &d->req, &err);
+		D("errno = %d", errno);
+		if (!errno)
+			break;
+		/* fallthrough */
+	default:
+		D("error");
+		strncpy(errmsg, err, MAXERRMSG);
+		errmsg[MAXERRMSG-1] = '\0';
+		free(err);
+		return -1;
+	}
+	D("parsed name: %s", d->req.nr_name);
+	d->self = d;
+	return 0;
 }
 
 /*
@@ -859,6 +961,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	if (req) {
 		d->req = *req;
+#if 0
 		if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
 			if (IS_NETMAP_DESC(parent) &&
 					(new_flags & (NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3))) {
@@ -873,6 +976,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 				goto fail;
 			}
 		}
+#endif
 	} else {
 		d->req.nr_arg1 = 4;
 		d->req.nr_arg2 = 0;
@@ -884,11 +988,28 @@ nm_open(const char *ifname, const struct nmreq *req,
 			goto fail;
 	}
 
+	if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
+		if (IS_NETMAP_DESC(parent) &&
+				(new_flags & (NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3))) {
+			snprintf(errmsg, MAXERRMSG, "POOLS_CREATE is incompatibile with NM_OPEN_ARG? flags");
+			errno = EINVAL;
+			goto fail;
+		}
+	}
+
 	d->req.nr_version = NETMAP_API;
 	d->req.nr_ringid &= NETMAP_RING_MASK;
 
 	/* optionally import info from parent */
 	if (IS_NETMAP_DESC(parent) && new_flags) {
+		if (new_flags & NM_OPEN_EXTMEM) {
+			if (parent->req.nr_cmd == NETMAP_POOLS_CREATE) {
+				d->req.nr_cmd = NETMAP_POOLS_CREATE;
+				nmreq_pointer_put(&d->req, nmreq_pointer_get(&parent->req));
+				D("Warning: not overriding arg[1-3] since external memory is being used");
+				new_flags &= ~(NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3);
+			}
+		}
 		if (new_flags & NM_OPEN_ARG1) {
 			D("overriding ARG1 %d", parent->req.nr_arg1);
 			d->req.nr_arg1 = parent->req.nr_arg1;
@@ -920,6 +1041,10 @@ nm_open(const char *ifname, const struct nmreq *req,
 	}
 	/* add the *XPOLL flags */
 	d->req.nr_ringid |= new_flags & (NETMAP_NO_TX_POLL | NETMAP_DO_RX_POLL);
+
+	if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
+		pi = nmreq_pointer_get(&d->req);
+	}
 
 	if (ioctl(d->fd, NIOCREGIF, &d->req)) {
 		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
