@@ -632,7 +632,7 @@ nm_init_offsets(struct nm_desc *d)
 #define NM_PARSE_OK	  	0
 #define NM_PARSE_MEMID 		1
 static int
-nm_parse_one(const char *ifname, struct nmreq *d, char **out)
+nm_parse_one(const char *ifname, struct nmreq *d, char **out, int memid_allowed)
 {
 	int is_vale;
 	const char *port = NULL;
@@ -787,7 +787,7 @@ nm_parse_one(const char *ifname, struct nmreq *d, char **out)
 			p_state = P_FLAGSOK;
 			break;
 		case P_MEMID:
-			if (nr_arg2 != 0) {
+			if (!memid_allowed) {
 				snprintf(errmsg, MAXERRMSG, "double setting of memid");
 				goto fail;
 			}
@@ -801,6 +801,7 @@ nm_parse_one(const char *ifname, struct nmreq *d, char **out)
 					port++;
 			} else {
 				nr_arg2 = num;
+				memid_allowed = 0;
 				p_state = P_RNGSFXOK;
 			}
 			break;
@@ -846,7 +847,7 @@ nm_interp_memid(const char *memid, struct nmreq *req, char **err)
 		goto fail;
 	}
 	memset(&greq, 0, sizeof(greq));
-	if (nm_parse_one(memid, &greq, err) == NM_PARSE_OK) {
+	if (nm_parse_one(memid, &greq, err, 0) == NM_PARSE_OK) {
 		greq.nr_version = NETMAP_API;
 		if (ioctl(fd, NIOCGINFO, &greq) < 0) {
 			if (errno == ENOENT || errno == ENXIO)
@@ -894,7 +895,7 @@ static int
 nm_parse(const char *ifname, struct nm_desc *d, char *errmsg)
 {
 	char *err;
-	switch (nm_parse_one(ifname, &d->req, &err)) {
+	switch (nm_parse_one(ifname, &d->req, &err, 1)) {
 	case NM_PARSE_OK:
 		D("parse OK");
 		break;
