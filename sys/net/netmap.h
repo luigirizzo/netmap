@@ -215,7 +215,8 @@ struct netmap_slot {
 
 #define	NS_MOREFRAG	0x0020	/* packet has more fragments */
  	/*
-	 * (VALE ports only)
+	 * (VALE ports, ptnetmap ports and some NIC ports, e.g.
+         * ixgbe and i40e on Linux)
 	 * Set on all but the last slot of a multi-segment packet.
 	 * The 'len' field refers to the individual fragment.
 	 */
