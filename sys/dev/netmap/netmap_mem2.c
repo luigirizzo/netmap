@@ -2356,10 +2356,6 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 		p->invalid_bitmap[0] |= 1U;
 	}
 
-	error = netmap_mem_init_bitmaps(&nme->up);
-	if (error)
-		goto out_delete;
-
 	netmap_mem_ext_register(nme);
 
 	return &nme->up;
