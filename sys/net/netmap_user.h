@@ -923,8 +923,12 @@ nm_parse(const char *ifname, struct nm_desc *d, char *errmsg)
  * An invalid netmap name will return errno = 0;
  * You can pass a pointer to a pre-filled nm_desc to add special
  * parameters. Flags is used as follows
- * NM_OPEN_NO_MMAP	use the memory from arg, only XXX avoid mmap
+ * NM_OPEN_NO_MMAP	use the memory from arg, only
  *			if the nr_arg2 (memory block) matches.
+ *			Special case: if arg is NULL, skip the
+ *			mmap entirely (maybe because you are going
+ *			to do it by yourself, or you plan to call
+ *			nm_mmap() only later)
  * NM_OPEN_ARG1		use req.nr_arg1 from arg
  * NM_OPEN_ARG2		use req.nr_arg2 from arg
  * NM_OPEN_RING_CFG	user ring config from arg
@@ -967,16 +971,50 @@ nm_open(const char *ifname, const struct nmreq *req,
 	}
 
 	if (!(new_flags & NM_OPEN_IFNAME)) {
-		if (nm_parse(ifname, d, errmsg) < 0)
+		char *err;
+		switch (nm_parse_one(ifname, &d->req, &err, 1)) {
+		case NM_PARSE_OK:
+			break;
+		case NM_PARSE_MEMID:
+			if ((new_flags & NM_OPEN_NO_MMAP) &&
+					IS_NETMAP_DESC(parent)) {
+				/* ignore the memid setting, since we are
+				 * going to use the parent's one
+				 */
+				break;
+			}
+			errno = nm_interp_memid(err, &d->req, &err);
+			if (!errno)
+				break;
+			/* fallthrough */
+		default:
+			strncpy(errmsg, err, MAXERRMSG);
+			errmsg[MAXERRMSG-1] = '\0';
+			free(err);
 			goto fail;
+		}
+		d->self = d;
 	}
 
+	/* compatibility checks for POOL_SCREATE and NM_OPEN flags
+	 * the first check may be dropped once we have a larger nreq
+	 */
 	if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
-		if (IS_NETMAP_DESC(parent) &&
-				(new_flags & (NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3))) {
-			snprintf(errmsg, MAXERRMSG, "POOLS_CREATE is incompatibile with NM_OPEN_ARG? flags");
-			errno = EINVAL;
-			goto fail;
+		if (IS_NETMAP_DESC(parent)) {
+		       	if (new_flags & (NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3)) {
+				snprintf(errmsg, MAXERRMSG,
+						"POOLS_CREATE is incompatibile "
+						"with NM_OPEN_ARG? flags");
+				errno = EINVAL;
+				goto fail;
+			}
+			if (new_flags & NM_OPEN_NO_MMAP) {
+				snprintf(errmsg, MAXERRMSG,
+						"POOLS_CREATE is incompatible "
+						"with NM_OPEN_NO_MMAP flag");
+				errno = EINVAL;
+				goto fail;
+			}
 		}
 	}
 
@@ -997,7 +1035,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 			D("overriding ARG1 %d", parent->req.nr_arg1);
 			d->req.nr_arg1 = parent->req.nr_arg1;
 		}
-		if (new_flags & NM_OPEN_ARG2) {
+		if (new_flags & (NM_OPEN_ARG2 | NM_OPEN_NO_MMAP)) {
 			D("overriding ARG2 %d", parent->req.nr_arg2);
 			d->req.nr_arg2 = parent->req.nr_arg2;
 		}
@@ -1111,7 +1149,8 @@ nm_close(struct nm_desc *d)
 	 */
 	static void *__xxzt[] __attribute__ ((unused))  =
 		{ (void *)nm_open, (void *)nm_inject,
-		  (void *)nm_dispatch, (void *)nm_nextpkt } ;
+		  (void *)nm_dispatch, (void *)nm_nextpkt,
+	          (void *)nm_parse } ;
 
 	if (d == NULL || d->self != d)
 		return EINVAL;
