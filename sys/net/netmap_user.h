@@ -962,22 +962,6 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	if (req) {
 		d->req = *req;
-#if 0
-		if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
-			if (IS_NETMAP_DESC(parent) &&
-					(new_flags & (NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3))) {
-				snprintf(errmsg, MAXERRMSG, "POOLS_CREATE is incompatibile with NM_OPEN_ARG? flags");
-				errno = EINVAL;
-				goto fail;
-			}
-		        pi = nmreq_pointer_get(&d->req);
-			if (pi == NULL) {
-				snprintf(errmsg, MAXERRMSG, "missing netmap_pools_info pointer");
-				errno = EINVAL;
-				goto fail;
-			}
-		}
-#endif
 	} else {
 		d->req.nr_arg1 = 4;
 		d->req.nr_arg2 = 0;
