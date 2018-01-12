@@ -2501,7 +2501,7 @@ netmap_mem_pt_guest_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 }
 
 static int
-netmap_mem_pt_guest_get_info(struct netmap_mem_d *nmd, size_t *size,
+netmap_mem_pt_guest_get_info(struct netmap_mem_d *nmd, uint64_t *size,
 			     u_int *memflags, uint16_t *id)
 {
 	int error = 0;
