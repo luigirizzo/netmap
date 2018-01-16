@@ -664,28 +664,22 @@ nm_free_lut(struct lut_entry *lut, u_int objtotal)
 #endif
 }
 
+#ifdef linux
 static struct plut_entry *
 nm_alloc_plut(u_int nobj)
 {
 	size_t n = sizeof(struct plut_entry) * nobj;
 	struct plut_entry *lut;
-#ifdef linux
 	lut = vmalloc(n);
-#else
-	lut = nm_os_malloc(n);
-#endif
 	return lut;
 }
 
 static void
 nm_free_plut(struct plut_entry * lut)
 {
-#ifdef linux
 	vfree(lut);
-#else
-	nm_os_free(lut);
-#endif
 }
+#endif
 
 
 /*
