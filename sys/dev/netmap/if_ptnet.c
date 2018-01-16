@@ -169,7 +169,8 @@ struct ptnet_softc {
 	unsigned int		num_tx_rings;
 	struct ptnet_queue	*queues;
 	struct ptnet_queue	*rxqueues;
-	struct ptnet_csb	*csb;
+	struct ptnet_gh_ring    *csb_gh;
+	struct ptnet_hg_ring    *csb_hg;
 
 	unsigned int		min_tx_space;
 

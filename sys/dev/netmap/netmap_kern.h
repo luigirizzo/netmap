@@ -2148,8 +2148,6 @@ struct netmap_pt_guest_adapter {
         /* The netmap adapter to be used by the driver. */
         struct netmap_hw_adapter dr;
 
-	void *csb;
-
 	/* Reference counter to track users of backend netmap port: the
 	 * network stack and netmap clients.
 	 * Used to decide when we need (de)allocate krings/rings and
@@ -2158,13 +2156,18 @@ struct netmap_pt_guest_adapter {
 
 };
 
-int netmap_pt_guest_attach(struct netmap_adapter *na, void *csb,
-			   unsigned int nifp_offset, unsigned int memid);
-struct ptnet_ring;
-bool netmap_pt_guest_txsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
-			    int flags);
-bool netmap_pt_guest_rxsync(struct ptnet_ring *ptring, struct netmap_kring *kring,
-			    int flags);
+int netmap_pt_guest_attach(struct netmap_adapter *na,
+			unsigned int nifp_offset,
+			unsigned int memid);
+struct ptnet_gh_ring;
+struct ptnet_hg_ring;
+bool netmap_pt_guest_txsync(struct ptnet_gh_ring *ptgh,
+			struct ptnet_hg_ring *pthg,
+			struct netmap_kring *kring,
+			int flags);
+bool netmap_pt_guest_rxsync(struct ptnet_gh_ring *ptgh,
+			struct ptnet_hg_ring *pthg,
+			struct netmap_kring *kring, int flags);
 int ptnet_nm_krings_create(struct netmap_adapter *na);
 void ptnet_nm_krings_delete(struct netmap_adapter *na);
 void ptnet_nm_dtor(struct netmap_adapter *na);
