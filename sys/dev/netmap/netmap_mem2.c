@@ -1474,6 +1474,10 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
         }
 
 	for (i = 0; i < lim; i += p->_clustentries) {
+		lut->plut[i].paddr = 0;
+	}
+
+	for (i = 0; i < lim; i += p->_clustentries) {
 		int j;
 
 		error = netmap_load_map(na, (bus_dma_tag_t) na->pdev, &lut->plut[i].paddr,
