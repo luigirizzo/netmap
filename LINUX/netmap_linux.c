@@ -2273,8 +2273,13 @@ module_exit(linux_netmap_fini);
 /* export certain symbols to other modules */
 EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
 EXPORT_SYMBOL(netmap_attach_ext);
+#ifdef NM_DEBUG_PUTGET
+EXPORT_SYMBOL(__netmap_adapter_get);
+EXPORT_SYMBOL(__netmap_adapter_put);
+#else
 EXPORT_SYMBOL(netmap_adapter_get);
 EXPORT_SYMBOL(netmap_adapter_put);
+#endif /* NM_DEBUG_PUTGET */
 #ifdef WITH_PTNETMAP_GUEST
 EXPORT_SYMBOL(netmap_pt_guest_attach);	/* ptnetmap driver attach routine */
 EXPORT_SYMBOL(netmap_pt_guest_rxsync);	/* ptnetmap generic rxsync */
