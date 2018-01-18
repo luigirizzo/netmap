@@ -322,6 +322,18 @@ ptnet_attach(device_t dev)
 	ptfeatures = bus_read_4(sc->iomem, PTNET_IO_PTFEAT); /* acked */
 	sc->ptfeatures = ptfeatures;
 
+	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
+	num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
+	sc->num_rings = num_tx_rings + num_rx_rings;
+	sc->num_tx_rings = num_tx_rings;
+
+	if (sc->num_rings * sizeof(struct ptnet_gh_ring) > PAGE_SIZE) {
+		device_printf(dev, "CSB cannot handle that many rings (%u)\n",
+				sc->num_rings);
+		err = ENOMEM;
+		goto err_path;
+	}
+
 	/* Allocate CSB and carry out CSB allocation protocol. */
 	sc->csb_gh = contigmalloc(2*PAGE_SIZE, M_DEVBUF, M_NOWAIT | M_ZERO,
 				  (size_t)0, -1UL, PAGE_SIZE, 0);
@@ -351,11 +363,6 @@ ptnet_attach(device_t dev)
 		bus_write_4(sc->iomem, PTNET_IO_CSB_HG_BAL,
 				paddr & 0xffffffff);
 	}
-
-	num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
-	num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
-	sc->num_rings = num_tx_rings + num_rx_rings;
-	sc->num_tx_rings = num_tx_rings;
 
 	/* Allocate and initialize per-queue data structures. */
 	sc->queues = malloc(sizeof(struct ptnet_queue) * sc->num_rings,
