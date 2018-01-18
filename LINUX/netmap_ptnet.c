@@ -1366,6 +1366,12 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->num_rings = num_tx_rings + num_rx_rings;
 	pi->num_tx_rings = num_tx_rings;
 
+	if (pi->num_rings * sizeof(struct ptnet_gh_ring) > PAGE_SIZE) {
+		pr_err("%s: CSB for device %s cannot handle too many "
+			"rings (%u)\n",__func__, netdev->name, pi->num_rings);
+		goto err_ptfeat;
+	}
+
 	/* Initialize the arrays of pointers with the per-ring structures. */
 	pi->queues = (struct ptnet_queue **)(pi + 1);
 	pi->rxqueues = pi->queues + num_tx_rings;
