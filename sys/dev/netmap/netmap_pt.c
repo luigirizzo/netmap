@@ -217,13 +217,6 @@ ptgh_intr_enabled(struct ptnet_gh_ring __user *ptgh)
     return v;
 }
 
-/* Enable or disable guest interrupts. */
-static inline void
-ptgh_intr_enable(struct ptnet_gh_ring __user *ptgh, uint32_t val)
-{
-    CSB_WRITE(ptgh, guest_need_kick, val);
-}
-
 /* Handle TX events: from the guest or from the backend */
 static void
 ptnetmap_tx_handler(void *data, int is_kthread)
@@ -342,7 +335,6 @@ ptnetmap_tx_handler(void *data, int is_kthread)
         /* Interrupt the guest if needed. */
         if (more_txspace && ptgh_intr_enabled(ptgh) && is_kthread) {
             /* Disable guest kick to avoid sending unnecessary kicks */
-            ptgh_intr_enable(ptgh, 0);
             nm_os_kctx_send_irq(kth);
             IFRATE(ptns->rate_ctx.new.htxk++);
             more_txspace = false;
@@ -389,7 +381,6 @@ ptnetmap_tx_handler(void *data, int is_kthread)
     nm_kr_put(kring);
 
     if (more_txspace && ptgh_intr_enabled(ptgh) && is_kthread) {
-        ptgh_intr_enable(ptgh, 0);
         nm_os_kctx_send_irq(kth);
         IFRATE(ptns->rate_ctx.new.htxk++);
     }
@@ -533,7 +524,6 @@ ptnetmap_rx_handler(void *data, int is_kthread)
 	/* Interrupt the guest if needed. */
         if (some_recvd && ptgh_intr_enabled(ptgh)) {
             /* Disable guest kick to avoid sending unnecessary kicks */
-            ptgh_intr_enable(ptgh, 0);
             nm_os_kctx_send_irq(kth);
             IFRATE(ptns->rate_ctx.new.hrxk++);
             some_recvd = false;
@@ -582,7 +572,6 @@ ptnetmap_rx_handler(void *data, int is_kthread)
 
     /* Interrupt the guest if needed. */
     if (some_recvd && ptgh_intr_enabled(ptgh)) {
-        ptgh_intr_enable(ptgh, 0);
         nm_os_kctx_send_irq(kth);
         IFRATE(ptns->rate_ctx.new.hrxk++);
     }
