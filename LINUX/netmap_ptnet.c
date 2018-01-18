@@ -57,8 +57,8 @@ struct ptnet_info;
 /* Per-ring data structure. */
 struct ptnet_queue {
 	struct ptnet_info *pi;
-	struct ptnet_gh_ring *ptgh;
-	struct ptnet_hg_ring *pthg;
+	struct ptnet_csb_gh *ptgh;
+	struct ptnet_csb_hg *pthg;
 	int kring_id;
 	u8* __iomem kick;
 
@@ -107,8 +107,8 @@ struct ptnet_info {
 	/* CSB memory to be used for producer/consumer state
 	 * synchronization. */
 	struct page *csb_pages;
-	struct ptnet_gh_ring *csb_gh;
-	struct ptnet_hg_ring *csb_hg;
+	struct ptnet_csb_gh *csb_gh;
+	struct ptnet_csb_hg *csb_hg;
 
 	int min_tx_slots;
 
@@ -143,7 +143,7 @@ hang_tmr_callback(unsigned long arg)
 #endif
 
 static inline void
-ptnet_sync_tail(struct ptnet_hg_ring *pthg, struct netmap_kring *kring)
+ptnet_sync_tail(struct ptnet_csb_hg *pthg, struct netmap_kring *kring)
 {
 	struct netmap_ring *ring = kring->ring;
 
@@ -216,8 +216,8 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	int nfrags = skb_shinfo(skb)->nr_frags;
 	int queue_idx = skb_get_queue_mapping(skb);
 	struct ptnet_queue *pq = pi->queues[queue_idx];
-	struct ptnet_gh_ring *ptgh = pq->ptgh;
-	struct ptnet_hg_ring *pthg = pq->pthg;
+	struct ptnet_csb_gh *ptgh = pq->ptgh;
+	struct ptnet_csb_hg *pthg = pq->pthg;
 	struct netmap_kring *kring;
 	struct xmit_copy_args a;
 	int f;
@@ -476,8 +476,8 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	struct ptnet_rx_queue *prq = container_of(napi, struct ptnet_rx_queue,
 					          napi);
 	struct ptnet_queue *pq = (struct ptnet_queue *)prq;
-	struct ptnet_gh_ring *ptgh = pq->ptgh;
-	struct ptnet_hg_ring *pthg = pq->pthg;
+	struct ptnet_csb_gh *ptgh = pq->ptgh;
+	struct ptnet_csb_hg *pthg = pq->pthg;
 	struct ptnet_info *pi = pq->pi;
 	struct netmap_adapter *na = &pi->ptna->dr.up;
 	struct netmap_kring *kring = &na->rx_rings[pq->kring_id];
@@ -1051,8 +1051,8 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 	/* Sync krings from the host, reading from
 	 * CSB. */
 	for (i = 0; i < pi->num_rings; i++) {
-		struct ptnet_gh_ring *ptgh = pi->queues[i]->ptgh;
-		struct ptnet_hg_ring *pthg = pi->queues[i]->pthg;
+		struct ptnet_csb_gh *ptgh = pi->queues[i]->ptgh;
+		struct ptnet_csb_hg *pthg = pi->queues[i]->pthg;
 		struct netmap_kring *kring;
 
 		if (i < na->num_tx_rings) {
@@ -1094,8 +1094,8 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	struct net_device *netdev = na->ifp;
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int native = (na == &pi->ptna->hwup.up);
-	struct ptnet_gh_ring *ptgh;
-	struct ptnet_hg_ring *pthg;
+	struct ptnet_csb_gh *ptgh;
+	struct ptnet_csb_hg *pthg;
 	enum txrx t;
 	int ret = 0;
 	int i;
@@ -1366,7 +1366,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->num_rings = num_tx_rings + num_rx_rings;
 	pi->num_tx_rings = num_tx_rings;
 
-	if (pi->num_rings * sizeof(struct ptnet_gh_ring) > PAGE_SIZE) {
+	if (pi->num_rings * sizeof(struct ptnet_csb_gh) > PAGE_SIZE) {
 		pr_err("%s: CSB for device %s cannot handle too many "
 			"rings (%u)\n",__func__, netdev->name, pi->num_rings);
 		goto err_ptfeat;

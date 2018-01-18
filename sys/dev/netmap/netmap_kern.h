@@ -2159,14 +2159,14 @@ struct netmap_pt_guest_adapter {
 int netmap_pt_guest_attach(struct netmap_adapter *na,
 			unsigned int nifp_offset,
 			unsigned int memid);
-struct ptnet_gh_ring;
-struct ptnet_hg_ring;
-bool netmap_pt_guest_txsync(struct ptnet_gh_ring *ptgh,
-			struct ptnet_hg_ring *pthg,
+struct ptnet_csb_gh;
+struct ptnet_csb_hg;
+bool netmap_pt_guest_txsync(struct ptnet_csb_gh *ptgh,
+			struct ptnet_csb_hg *pthg,
 			struct netmap_kring *kring,
 			int flags);
-bool netmap_pt_guest_rxsync(struct ptnet_gh_ring *ptgh,
-			struct ptnet_hg_ring *pthg,
+bool netmap_pt_guest_rxsync(struct ptnet_csb_gh *ptgh,
+			struct ptnet_csb_hg *pthg,
 			struct netmap_kring *kring, int flags);
 int ptnet_nm_krings_create(struct netmap_adapter *na);
 void ptnet_nm_krings_delete(struct netmap_adapter *na);

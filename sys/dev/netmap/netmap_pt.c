@@ -173,8 +173,8 @@ struct ptnetmap_state {
 	struct nm_kctx **kctxs;
 
 	/* Shared memory with the guest (TX/RX) */
-	struct ptnet_gh_ring __user *csb_gh;
-	struct ptnet_hg_ring __user *csb_hg;
+	struct ptnet_csb_gh __user *csb_gh;
+	struct ptnet_csb_hg __user *csb_hg;
 
 	bool stopped;
 
@@ -201,14 +201,14 @@ ptnetmap_kring_dump(const char *title, const struct netmap_kring *kring)
 
 /* Enable or disable guest --> host kicks. */
 static inline void
-pthg_kick_enable(struct ptnet_hg_ring __user *pthg, uint32_t val)
+pthg_kick_enable(struct ptnet_csb_hg __user *pthg, uint32_t val)
 {
     CSB_WRITE(pthg, host_need_kick, val);
 }
 
 /* Are guest interrupt enabled or disabled? */
 static inline uint32_t
-ptgh_intr_enabled(struct ptnet_gh_ring __user *ptgh)
+ptgh_intr_enabled(struct ptnet_csb_gh __user *ptgh)
 {
     uint32_t v;
 
@@ -225,8 +225,8 @@ ptnetmap_tx_handler(void *data, int is_kthread)
     struct netmap_pt_host_adapter *pth_na =
 		(struct netmap_pt_host_adapter *)kring->na->na_private;
     struct ptnetmap_state *ptns = pth_na->ptns;
-    struct ptnet_gh_ring __user *ptgh;
-    struct ptnet_hg_ring __user *pthg;
+    struct ptnet_csb_gh __user *ptgh;
+    struct ptnet_csb_hg __user *pthg;
     struct netmap_ring shadow_ring; /* shadow copy of the netmap_ring */
     bool more_txspace = false;
     struct nm_kctx *kth;
@@ -434,8 +434,8 @@ ptnetmap_rx_handler(void *data, int is_kthread)
     struct netmap_pt_host_adapter *pth_na =
 		(struct netmap_pt_host_adapter *)kring->na->na_private;
     struct ptnetmap_state *ptns = pth_na->ptns;
-    struct ptnet_gh_ring __user *ptgh;
-    struct ptnet_hg_ring __user *pthg;
+    struct ptnet_csb_gh __user *ptgh;
+    struct ptnet_csb_hg __user *pthg;
     struct netmap_ring shadow_ring; /* shadow copy of the netmap_ring */
     struct nm_kctx *kth;
     uint32_t num_slots;
@@ -619,8 +619,8 @@ ptnetmap_print_configuration(struct ptnetmap_cfg *cfg)
 /* Copy actual state of the host ring into the CSB for the guest init */
 static int
 ptnetmap_kring_snapshot(struct netmap_kring *kring,
-			struct ptnet_gh_ring __user *ptgh,
-			struct ptnet_hg_ring __user *pthg)
+			struct ptnet_csb_gh __user *ptgh,
+			struct ptnet_csb_hg __user *pthg)
 {
     if (CSB_WRITE(ptgh, head, kring->rhead))
         goto err;
@@ -1319,7 +1319,7 @@ put_out_noputparent:
  * block (no space in the ring).
  */
 bool
-netmap_pt_guest_txsync(struct ptnet_gh_ring *ptgh, struct ptnet_hg_ring *pthg,
+netmap_pt_guest_txsync(struct ptnet_csb_gh *ptgh, struct ptnet_csb_hg *pthg,
 			struct netmap_kring *kring, int flags)
 {
 	bool notify = false;
@@ -1384,7 +1384,7 @@ netmap_pt_guest_txsync(struct ptnet_gh_ring *ptgh, struct ptnet_hg_ring *pthg,
  * block (no more completed slots in the ring).
  */
 bool
-netmap_pt_guest_rxsync(struct ptnet_gh_ring *ptgh, struct ptnet_hg_ring *pthg,
+netmap_pt_guest_rxsync(struct ptnet_csb_gh *ptgh, struct ptnet_csb_hg *pthg,
 			struct netmap_kring *kring, int flags)
 {
 	bool notify = false;

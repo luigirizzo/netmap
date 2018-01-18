@@ -169,14 +169,14 @@ nmreq_pointer_put(struct nmreq *nmr, void *userptr)
 #define PTNETMAP_PTCTL_DELETE		2
 
 /* ptnetmap synchronization variables shared between guest and host */
-struct ptnet_gh_ring {
+struct ptnet_csb_gh {
 	uint32_t head;		  /* GW+ HR+ the head of the guest netmap_ring */
 	uint32_t cur;		  /* GW+ HR+ the cur of the guest netmap_ring */
 	uint32_t guest_need_kick; /* GW+ HR+ host-->guest notification enable */
 	uint32_t sync_flags;	  /* GW+ HR+ the flags of the guest [tx|rx]sync() */
 	char pad[32];		  /* pad to a 64 bytes cacheline */
 };
-struct ptnet_hg_ring {
+struct ptnet_csb_hg {
 	uint32_t hwcur;		  /* GR+ HW+ the hwcur of the host netmap_kring */
 	uint32_t hwtail;	  /* GR+ HW+ the hwtail of the host netmap_kring */
 	uint32_t host_need_kick;  /* GR+ HW+ guest-->host notification enable */
@@ -195,7 +195,7 @@ uint32_t nm_os_pt_memdev_ioread(struct ptnetmap_memdev *, unsigned int);
 /* Guest driver: Write kring pointers (cur, head) to the CSB.
  * This routine is coupled with ptnetmap_host_read_kring_csb(). */
 static inline void
-ptnetmap_guest_write_kring_csb(struct ptnet_gh_ring *ptr, uint32_t cur,
+ptnetmap_guest_write_kring_csb(struct ptnet_csb_gh *ptr, uint32_t cur,
 			       uint32_t head)
 {
     /*
@@ -226,7 +226,7 @@ ptnetmap_guest_write_kring_csb(struct ptnet_gh_ring *ptr, uint32_t cur,
 /* Guest driver: Read kring pointers (hwcur, hwtail) from the CSB.
  * This routine is coupled with ptnetmap_host_write_kring_csb(). */
 static inline void
-ptnetmap_guest_read_kring_csb(struct ptnet_hg_ring *pthg, struct netmap_kring *kring)
+ptnetmap_guest_read_kring_csb(struct ptnet_csb_hg *pthg, struct netmap_kring *kring)
 {
     /*
      * We place a memory barrier to make sure that the update of hwtail never
@@ -257,7 +257,7 @@ ptnetmap_guest_read_kring_csb(struct ptnet_hg_ring *pthg, struct netmap_kring *k
 /* Host netmap: Write kring pointers (hwcur, hwtail) to the CSB.
  * This routine is coupled with ptnetmap_guest_read_kring_csb(). */
 static inline void
-ptnetmap_host_write_kring_csb(struct ptnet_hg_ring __user *ptr, uint32_t hwcur,
+ptnetmap_host_write_kring_csb(struct ptnet_csb_hg __user *ptr, uint32_t hwcur,
         uint32_t hwtail)
 {
     /*
@@ -283,7 +283,7 @@ ptnetmap_host_write_kring_csb(struct ptnet_hg_ring __user *ptr, uint32_t hwcur,
 /* Host netmap: Read kring pointers (head, cur, sync_flags) from the CSB.
  * This routine is coupled with ptnetmap_guest_write_kring_csb(). */
 static inline void
-ptnetmap_host_read_kring_csb(struct ptnet_gh_ring __user *ptr,
+ptnetmap_host_read_kring_csb(struct ptnet_csb_gh __user *ptr,
 			     struct netmap_ring *shadow_ring,
 			     uint32_t num_slots)
 {

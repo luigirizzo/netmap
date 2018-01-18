@@ -128,8 +128,8 @@ struct ptnet_queue {
 	struct				resource *irq;
 	void				*cookie;
 	int				kring_id;
-	struct ptnet_gh_ring		*ptgh;
-	struct ptnet_hg_ring		*pthg;
+	struct ptnet_csb_gh		*ptgh;
+	struct ptnet_csb_hg		*pthg;
 	unsigned int			kick;
 	struct mtx			lock;
 	struct buf_ring			*bufring; /* for TX queues */
@@ -166,8 +166,8 @@ struct ptnet_softc {
 	unsigned int		num_tx_rings;
 	struct ptnet_queue	*queues;
 	struct ptnet_queue	*rxqueues;
-	struct ptnet_gh_ring    *csb_gh;
-	struct ptnet_hg_ring    *csb_hg;
+	struct ptnet_csb_gh    *csb_gh;
+	struct ptnet_csb_hg    *csb_hg;
 
 	unsigned int		min_tx_space;
 
@@ -327,7 +327,7 @@ ptnet_attach(device_t dev)
 	sc->num_rings = num_tx_rings + num_rx_rings;
 	sc->num_tx_rings = num_tx_rings;
 
-	if (sc->num_rings * sizeof(struct ptnet_gh_ring) > PAGE_SIZE) {
+	if (sc->num_rings * sizeof(struct ptnet_csb_gh) > PAGE_SIZE) {
 		device_printf(dev, "CSB cannot handle that many rings (%u)\n",
 				sc->num_rings);
 		err = ENOMEM;
@@ -342,7 +342,7 @@ ptnet_attach(device_t dev)
 		err = ENOMEM;
 		goto err_path;
 	}
-	sc->csb_hg = (struct ptnet_hg_ring *)(((char *)sc->csb_gh) + PAGE_SIZE);
+	sc->csb_hg = (struct ptnet_csb_hg *)(((char *)sc->csb_gh) + PAGE_SIZE);
 
 	{
 		/*
@@ -1128,8 +1128,8 @@ ptnet_sync_from_csb(struct ptnet_softc *sc, struct netmap_adapter *na)
 	/* Sync krings from the host, reading from
 	 * CSB. */
 	for (i = 0; i < sc->num_rings; i++) {
-		struct ptnet_gh_ring *ptgh = sc->queues[i].ptgh;
-		struct ptnet_hg_ring *pthg = sc->queues[i].pthg;
+		struct ptnet_csb_gh *ptgh = sc->queues[i].ptgh;
+		struct ptnet_csb_hg *pthg = sc->queues[i].pthg;
 		struct netmap_kring *kring;
 
 		if (i < na->num_tx_rings) {
@@ -1675,7 +1675,7 @@ ptnet_rx_csum(struct mbuf *m, struct virtio_net_hdr *hdr)
 /* End of offloading-related functions to be shared with vtnet. */
 
 static inline void
-ptnet_sync_tail(struct ptnet_hg_ring *pthg, struct netmap_kring *kring)
+ptnet_sync_tail(struct ptnet_csb_hg *pthg, struct netmap_kring *kring)
 {
 	struct netmap_ring *ring = kring->ring;
 
@@ -1691,8 +1691,8 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 		  unsigned int head, unsigned int sync_flags)
 {
 	struct netmap_ring *ring = kring->ring;
-	struct ptnet_gh_ring *ptgh = pq->ptgh;
-	struct ptnet_hg_ring *pthg = pq->pthg;
+	struct ptnet_csb_gh *ptgh = pq->ptgh;
+	struct ptnet_csb_hg *pthg = pq->pthg;
 
 	/* Some packets have been pushed to the netmap ring. We have
 	 * to tell the host to process the new packets, updating cur
@@ -1726,8 +1726,8 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
 	struct netmap_adapter *na = &sc->ptna->dr.up;
 	if_t ifp = sc->ifp;
 	unsigned int batch_count = 0;
-	struct ptnet_gh_ring *ptgh;
-	struct ptnet_hg_ring *pthg;
+	struct ptnet_csb_gh *ptgh;
+	struct ptnet_csb_hg *pthg;
 	struct netmap_kring *kring;
 	struct netmap_ring *ring;
 	struct netmap_slot *slot;
@@ -2018,8 +2018,8 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 {
 	struct ptnet_softc *sc = pq->sc;
 	bool have_vnet_hdr = sc->vnet_hdr_len;
-	struct ptnet_gh_ring *ptgh = pq->ptgh;
-	struct ptnet_hg_ring *pthg = pq->pthg;
+	struct ptnet_csb_gh *ptgh = pq->ptgh;
+	struct ptnet_csb_hg *pthg = pq->pthg;
 	struct netmap_adapter *na = &sc->ptna->dr.up;
 	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
 	struct netmap_ring *ring = kring->ring;
