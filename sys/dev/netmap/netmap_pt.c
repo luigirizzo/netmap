@@ -258,8 +258,6 @@ ptnetmap_tx_handler(void *data, int is_kthread)
     kth = ptns->kctxs[kring->ring_id];
 
     num_slots = kring->nkr_num_slots;
-    shadow_ring.head = kring->rhead;
-    shadow_ring.cur = kring->rcur;
 
     /* Disable guest --> host notifications. */
     pthg_kick_enable(pthg, 0);
@@ -468,8 +466,6 @@ ptnetmap_rx_handler(void *data, int is_kthread)
     kth = ptns->kctxs[pth_na->up.num_tx_rings + kring->ring_id];
 
     num_slots = kring->nkr_num_slots;
-    shadow_ring.head = kring->rhead;
-    shadow_ring.cur = kring->rcur;
 
     /* Disable notifications. */
     pthg_kick_enable(pthg, 0);
