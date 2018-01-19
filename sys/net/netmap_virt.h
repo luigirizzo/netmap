@@ -174,13 +174,13 @@ struct ptnet_csb_gh {
 	uint32_t cur;		  /* GW+ HR+ the cur of the guest netmap_ring */
 	uint32_t guest_need_kick; /* GW+ HR+ host-->guest notification enable */
 	uint32_t sync_flags;	  /* GW+ HR+ the flags of the guest [tx|rx]sync() */
-	char pad[32];		  /* pad to a 64 bytes cacheline */
+	char pad[48];		  /* pad to a 64 bytes cacheline */
 };
 struct ptnet_csb_hg {
 	uint32_t hwcur;		  /* GR+ HW+ the hwcur of the host netmap_kring */
 	uint32_t hwtail;	  /* GR+ HW+ the hwtail of the host netmap_kring */
 	uint32_t host_need_kick;  /* GR+ HW+ guest-->host notification enable */
-	char pad[4+32];
+	char pad[4+48];
 };
 
 #ifdef WITH_PTNETMAP_GUEST
