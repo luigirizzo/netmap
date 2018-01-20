@@ -2024,10 +2024,10 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 	struct netmap_kring *kring = na->rx_rings + pq->kring_id;
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
-	unsigned int head = ring->head;
 	unsigned int batch_count = 0;
 	if_t ifp = sc->ifp;
 	unsigned int count = 0;
+	uint32_t head;
 
 	PTNET_Q_LOCK(pq);
 
@@ -2037,13 +2037,15 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
+	head = ring->head;
 	while (count < budget) {
-		unsigned int prev_head = head;
+		uint32_t prev_head = head;
 		struct mbuf *mhead, *mtail;
 		struct virtio_net_hdr *vh;
 		struct netmap_slot *slot;
 		unsigned int nmbuf_len;
 		uint8_t *nmbuf;
+		int deliver = 1; /* the mbuf to the network stack. */
 host_sync:
 		if (head == ring->tail) {
 			/* We ran out of slot, let's see if the host has
@@ -2082,6 +2084,7 @@ host_sync:
 				RD(1, "Fragmented vnet-hdr: dropping");
 				head = ptnet_rx_discard(kring, head);
 				pq->stats.iqdrops ++;
+				deliver = 0;
 				goto skip;
 			}
 			ND(1, "%s: vnet hdr: flags %x csum_start %u "
@@ -2188,30 +2191,39 @@ host_sync:
 				m_freem(mhead);
 				RD(1, "Csum offload error: dropping");
 				pq->stats.iqdrops ++;
-				goto skip;
+				deliver = 0;
 			}
 		}
 
-		pq->stats.packets ++;
-		pq->stats.bytes += mhead->m_pkthdr.len;
-
-		PTNET_Q_UNLOCK(pq);
-		(*ifp->if_input)(ifp, mhead);
-		PTNET_Q_LOCK(pq);
-
-		if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
-			/* The interface has gone down while we didn't
-			 * have the lock. Stop any processing and exit. */
-			goto unlock;
-		}
 skip:
 		count ++;
-		if (++batch_count == PTNET_RX_BATCH) {
-			/* Some packets have been pushed to the network stack.
-			 * We need to update the CSB to tell the host about the new
-			 * ring->cur and ring->head (RX buffer refill). */
+		if (++batch_count >= PTNET_RX_BATCH) {
+			/* Some packets have been (or will be) pushed to the network
+			 * stack. We need to update the CSB to tell the host about
+			 * the new ring->cur and ring->head (RX buffer refill). */
 			ptnet_ring_update(pq, kring, head, NAF_FORCE_READ);
 			batch_count = 0;
+		}
+
+		if (likely(deliver))  {
+			pq->stats.packets ++;
+			pq->stats.bytes += mhead->m_pkthdr.len;
+
+			PTNET_Q_UNLOCK(pq);
+			(*ifp->if_input)(ifp, mhead);
+			PTNET_Q_LOCK(pq);
+			/* The ring->head index (and related indices) are
+			 * updated under pq lock by ptnet_ring_update().
+			 * Since we dropped the lock to call if_input(), we
+			 * must reload ring->head and restart processing the
+			 * ring from there. */
+			head = ring->head;
+
+			if (unlikely(!(ifp->if_drv_flags & IFF_DRV_RUNNING))) {
+				/* The interface has gone down while we didn't
+				 * have the lock. Stop any processing and exit. */
+				goto unlock;
+			}
 		}
 	}
 escape:
