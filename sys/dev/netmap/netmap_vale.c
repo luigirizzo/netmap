@@ -2257,8 +2257,8 @@ netmap_vp_create(struct nmreq *nmr, struct ifnet *ifp,
 	nm_bound_var(&npipes, 2, 1, NM_MAXPIPES, NULL);
 	nmr->nr_arg1 = npipes;	/* write back */
 	/* validate extra bufs */
-	nm_bound_var(&nmr->nr_arg3, 0, 0,
-			128*NM_BDG_MAXSLOTS, NULL);
+	//nm_bound_var(&nmr->nr_arg3, 0, 0,
+	//		128*NM_BDG_MAXSLOTS, NULL);
 	na->num_rx_desc = nmr->nr_rx_slots;
 	vpna->mfs = 1514;
 	vpna->last_smac = ~0llu;
