@@ -1142,6 +1142,7 @@ struct stmp_cb {
 	struct nm_ubuf_info ui; /* ctx keeps kring and desc keeps slot */
 #define SCB_M_MAGIC		0x12345600	/* XXX do better */
 #define SCB_M_MAGIC_MASK	0xffffff00	/* XXX do better */
+#define SCB_GONE		0x00000001
 	uint32_t flags;
 	uint32_t next;
 } __attribute__((__packed__)); /* 32 byte */
@@ -1161,6 +1162,24 @@ static inline int
 stmp_cb_valid(struct stmp_cb *scb)
 {
 	return ((scb->flags & SCB_M_MAGIC_MASK) == SCB_M_MAGIC);
+}
+
+static inline int
+stmp_cb_gone(struct stmp_cb *scb)
+{
+	return !!(scb->flags & SCB_GONE);
+}
+
+static inline void
+stmp_cb_set_gone(struct stmp_cb *scb)
+{
+	scb->flags |= SCB_GONE;
+}
+
+static inline void
+stmp_cb_clr_gone(struct stmp_cb *scb)
+{
+	scb->flags &= ~SCB_GONE;
 }
 
 static inline int

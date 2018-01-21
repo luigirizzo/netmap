@@ -831,6 +831,10 @@ nm_os_stmp_mbuf_data_destructor(struct ubuf_info *uarg,
 	struct nm_ubuf_info *u = (struct nm_ubuf_info *)uarg;
 
 	scb = container_of(u, struct stmp_cb, ui);
+	if (unlikely(stmp_cb_gone(scb))) {
+		stmp_cb_wstate(scb, SCB_M_NOREF); // XXX also clear GONE
+		return;
+	}
 	stmp_cb_wstate(scb, SCB_M_NOREF);
 	stmp_extra_dequeue(scb_kring(scb), scb_slot(scb));
 }
