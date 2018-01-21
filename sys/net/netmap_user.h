@@ -616,7 +616,7 @@ static void
 nm_init_offsets(struct nm_desc *d)
 {
 	struct netmap_if *nifp = NETMAP_IF(d->mem, d->req.nr_offset);
-	struct netmap_ring *r = NETMAP_RXRING(nifp, 0);
+	struct netmap_ring *r = NETMAP_RXRING(nifp, d->first_rx_ring);
 
 	*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
 	*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
