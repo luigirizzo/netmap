@@ -133,6 +133,7 @@ install-headers:
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap.h
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_user.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_user.h
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_virt.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_virt.h
+	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_legacy.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_legacy.h
 
 MAN_PREFIX := $(INCLUDE_PREFIX)
 
