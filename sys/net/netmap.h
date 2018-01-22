@@ -529,7 +529,6 @@ struct nmreq {
 #define NETMAP_BDG_REGOPS	3	/* register bridge callbacks */
 #define NETMAP_BDG_LIST		4	/* get bridge's info */
 #define NETMAP_BDG_VNET_HDR     5       /* set the port virtio-net-hdr length */
-#define NETMAP_BDG_OFFSET	NETMAP_BDG_VNET_HDR	/* deprecated alias */
 #define NETMAP_BDG_NEWIF	6	/* create a virtual port */
 #define NETMAP_BDG_DELIF	7	/* destroy a virtual port */
 #define NETMAP_PT_HOST_CREATE	8	/* create ptnetmap kthreads */
@@ -643,7 +642,21 @@ enum {
 	NETMAP_REQ_VALE_NEWIF,
 	/* Delete a persistent VALE port. */
 	NETMAP_REQ_VALE_DELIF,
+	/* Enable polling kthread on a VALE port. */
+	NETMAP_REQ_VALE_POLLING_ENABLE,
+	/* Disable polling kthread on a VALE port. */
+	NETMAP_REQ_VALE_POLLING_DISABLE,
+	/* Get info about the pools of a memory allocator. */
+	NETMAP_REQ_POOLS_INFO_GET,
+	/* Enable host-side ptnetmap processing (e.g. start ptnetmap
+	 * kthreads). */
+	NETMAP_REQ_PASSTHROUGH_ENABLE,
+	/* Disable host-side ptnetmap processing (e.g. stop ptnetmap
+	 * kthreads). */
+	NETMAP_REQ_PASSTHROUGH_DISABLE,
 };
+
+#define NETMAP_REQ_IFNAMSIZ	64
 
 /*
  * nr_reqtype: NETMAP_REQ_REGISTER
@@ -651,7 +664,7 @@ enum {
  */
 struct nmreq_register {
 	struct nmreq_header nr_hdr;
-	char		nr_name[64];	/* name of the netmap port */
+	char		nr_name[NETMAP_REQ_IFNAMSIZ]; /* port name */
 	uint64_t	nr_offset;	/* nifp offset in the shared region */
 	uint64_t	nr_memsize;	/* size of the shared region */
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
@@ -709,7 +722,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  */
 struct nmreq_vale_attach {
 	struct nmreq_header nr_hdr;
-	char		nr_name[64];	/* name in the form valeXXX:YYY */
+	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
 	uint16_t	nr_mem_id;	/* id of the memory allocator to use */
 	uint16_t	nr_flags;	/* flags (see below) */
 #define NETMAP_BDG_HOST		0x1	/* attach the host stack */
@@ -722,7 +735,7 @@ struct nmreq_vale_attach {
  */
 struct nmreq_vale_detach {
 	struct nmreq_header nr_hdr;
-	char		nr_name[64];	/* name in the form valeXXX:YYY */
+	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
 };
 
 /*
@@ -731,28 +744,19 @@ struct nmreq_vale_detach {
  */
 struct nmreq_vale_list {
 	struct nmreq_header nr_hdr;
-	char		nr_name[64];	/* name of the VALE switch or empty */
+	/* Name of the VALE port (valeXXX:YYY) or empty. */
+	char		nr_name[NETMAP_REQ_IFNAMSIZ];
 	uint16_t	nr_bridge_idx;
 	uint16_t	nr_port_idx;
 };
 
 /*
- * nr_reqtype: NETMAP_REQ_PORT_HDR_SET
+ * nr_reqtype: NETMAP_REQ_PORT_HDR_SET or NETMAP_REQ_PORT_HDR_GET
  * Set the port header length.
  */
-struct nmreq_set_port_hdr {
+struct nmreq_port_hdr {
 	struct nmreq_header nr_hdr;
-	char		nr_name[64];	/* name of the netmap port */
-	uint32_t	nr_hdr_len;
-};
-
-/*
- * nr_reqtype: NETMAP_REQ_PORT_HDR_GET
- * Get the port header length.
- */
-struct nmreq_get_port_hdr {
-	struct nmreq_header nr_hdr;
-	char		nr_name[64];	/* name of the netmap port */
+	char		nr_name[NETMAP_REQ_IFNAMSIZ];
 	uint32_t	nr_hdr_len;
 };
 
@@ -762,7 +766,7 @@ struct nmreq_get_port_hdr {
  */
 struct nmreq_vale_newif {
 	struct nmreq_header nr_hdr;
-	char		nr_name[64];	/* name in the form valeXXX:YYY */
+	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
 	uint32_t	nr_rx_slots;	/* slots in rx rings */
 	uint16_t	nr_tx_rings;	/* number of tx rings */
@@ -776,7 +780,37 @@ struct nmreq_vale_newif {
  */
 struct nmreq_vale_delif {
 	struct nmreq_header nr_hdr;
-	char		nr_name[64];	/* name in the form valeXXX:YYY */
+	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
+};
+
+/*
+ * nr_reqtype: NETMAP_REQ_VALE_POLLING_ENABLE or NETMAP_REQ_VALE_POLLING_DISABLE
+ * Enable or disable polling kthreads on a VALE port.
+ */
+struct nmreq_vale_polling {
+	struct nmreq_header nr_hdr;
+	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
+};
+
+/*
+ * nr_reqtype: NETMAP_REQ_POOLS_INFO_GET
+ * Get info about the pools of a memory allocator (used i.e. by
+ * a ptnetmap-enabled hypervisor).
+ */
+struct nmreq_pools_info_get {
+	struct nmreq_header nr_hdr;
+	char		nr_name[NETMAP_REQ_IFNAMSIZ];
+	uint64_t	nr_memsize;
+	uint64_t	nr_mem_id;
+	uint64_t	nr_if_pool_offset;
+	uint32_t	nr_if_pool_objtotal;
+	uint32_t	nr_if_pool_objsize;
+	uint64_t	nr_ring_pool_offset;
+	uint32_t	nr_ring_pool_objtotal;
+	uint32_t	nr_ring_pool_objsize;
+	uint64_t	nr_buf_pool_offset;
+	uint32_t	nr_buf_pool_objtotal;
+	uint32_t	nr_buf_pool_objsize;
 };
 
 #endif /* _NET_NETMAP_H_ */
