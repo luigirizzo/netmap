@@ -614,9 +614,8 @@ typedef struct _POLL_REQUEST_DATA {
 
 
 /*
- * New API to control netmap control devices, deprecating 'struct nmreq',
- * NIOCREGIF, NIOCGINFO and NIOCCONFIG. New applications should only use
- * nmreq_xyz structs.
+ * New API to control netmap control devices. New applications should only use
+ * nmreq_xyz structs with the NIOCCTRL ioctl() command.
  */
 
 /* Header common to all requests. */
@@ -628,6 +627,8 @@ struct nmreq_header {
 enum {
 	/* Register a netmap port with the device. */
 	NETMAP_REQ_REGISTER = 1,
+	/* Get information from a netmap port. */
+	NETMAP_REQ_PORT_INFO_GET,
 	/* Attach a netmap port to a VALE switch. */
 	NETMAP_REQ_VALE_ATTACH,
 	/* Detach a netmap port from a VALE switch. */
@@ -713,6 +714,30 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 	NR_REG_ONE_NIC	= 4,
 	NR_REG_PIPE_MASTER = 5,
 	NR_REG_PIPE_SLAVE = 6,
+};
+
+/* A single ioctl number is shared by all the new API command.
+ * Demultiplexing is done using the nr_hdr.nr_reqtype field.
+ * FreeBSD uses the size value embedded in the _IOWR to determine
+ * how much to copy in/out, so we define the ioctl() command
+ * specifying the largest among the nmreq_xyz structs. */
+#define NIOCCTRL	_IOWR('i', 151, struct nmreq_register)
+
+/*
+ * nr_reqtype: NETMAP_REQ_PORT_INFO_GET
+ * Get information about a netmap port, including number of rings.
+ * slots per ring, id of the memory allocator, etc.
+ */
+struct nmreq_port_info_get {
+	struct nmreq_header nr_hdr;
+	char		nr_name[NETMAP_REQ_IFNAMSIZ]; /* netmap port name */
+	uint64_t	nr_offset;	/* nifp offset in the shared region */
+	uint64_t	nr_memsize;	/* size of the shared region */
+	uint32_t	nr_tx_slots;	/* slots in tx rings */
+	uint32_t	nr_rx_slots;	/* slots in rx rings */
+	uint16_t	nr_tx_rings;	/* number of tx rings */
+	uint16_t	nr_rx_rings;	/* number of rx rings */
+	uint16_t	nr_mem_id;	/* id of the memory allocator */
 };
 
 #define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
