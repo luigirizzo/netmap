@@ -635,6 +635,12 @@ enum {
 	NETMAP_REQ_VALE_DETACH,
 	/* List the ports attached to a VALE switch. */
 	NETMAP_REQ_VALE_LIST,
+	/* Set the port header length (was virtio-net header length). */
+	NETMAP_REQ_SET_PORT_HDR,
+	/* Create a new persistent VALE port. */
+	NETMAP_REQ_VALE_NEWIF,
+	/* Delete a persistent VALE port. */
+	NETMAP_REQ_VALE_DELIF,
 };
 
 /*
@@ -701,7 +707,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  */
 struct nmreq_vale_attach {
 	struct nmreq_header nr_hdr;
-	char		nr_name[128];	/* name in the form valeXXX:YYY */
+	char		nr_name[64];	/* name in the form valeXXX:YYY */
 	uint16_t	nr_mem_id;	/* id of the memory allocator to use */
 	uint16_t	nr_flags;	/* flags (see below) */
 #define NETMAP_BDG_HOST		0x1	/* attach the host stack */
@@ -714,7 +720,7 @@ struct nmreq_vale_attach {
  */
 struct nmreq_vale_detach {
 	struct nmreq_header nr_hdr;
-	char		nr_name[128];	/* name in the form valeXXX:YYY */
+	char		nr_name[64];	/* name in the form valeXXX:YYY */
 };
 
 /*
@@ -726,6 +732,38 @@ struct nmreq_vale_list {
 	char		nr_name[64];	/* name of the VALE switch or empty */
 	uint16_t	nr_bridge_idx;
 	uint16_t	nr_port_idx;
+};
+
+/*
+ * nr_reqtype: NETMAP_REQ_SET_PORT_HDR
+ * Set the port header length.
+ */
+struct nmreq_set_port_hdr {
+	struct nmreq_header nr_hdr;
+	uint32_t	nr_hdr_len;
+};
+
+/*
+ * nr_reqtype: NETMAP_REQ_VALE_NEWIF
+ * Create a new persistent VALE port.
+ */
+struct nmreq_vale_newif {
+	struct nmreq_header nr_hdr;
+	char		nr_name[64];	/* name in the form valeXXX:YYY */
+	uint32_t	nr_tx_slots;	/* slots in tx rings */
+	uint32_t	nr_rx_slots;	/* slots in rx rings */
+	uint16_t	nr_tx_rings;	/* number of tx rings */
+	uint16_t	nr_rx_rings;	/* number of rx rings */
+	uint16_t	nr_mem_id;	/* id of the memory allocator */
+};
+
+/*
+ * nr_reqtype: NETMAP_REQ_VALE_DELIF
+ * Delete a persistent VALE port.
+ */
+struct nmreq_vale_delif {
+	struct nmreq_header nr_hdr;
+	char		nr_name[64];	/* name in the form valeXXX:YYY */
 };
 
 #endif /* _NET_NETMAP_H_ */
