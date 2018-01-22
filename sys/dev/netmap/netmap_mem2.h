@@ -174,4 +174,14 @@ int netmap_mem_pools_info_get(struct nmreq_pools_info_get *,
 
 uint32_t netmap_extra_alloc(struct netmap_adapter *, uint32_t *, uint32_t n);
 
+#ifdef WITH_EXTMEM
+#include <net/netmap_virt.h>
+struct nm_os_extmem; /* opaque */
+struct nm_os_extmem *nm_os_extmem_create(unsigned long, struct netmap_pools_info *, int *perror);
+char *nm_os_extmem_nextpage(struct nm_os_extmem *);
+int nm_os_extmem_nr_pages(struct nm_os_extmem *);
+int nm_os_extmem_isequal(struct nm_os_extmem *, struct nm_os_extmem *);
+void nm_os_extmem_delete(struct nm_os_extmem *);
+#endif /* WITH_EXTMEM */
+
 #endif
