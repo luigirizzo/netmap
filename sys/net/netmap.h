@@ -324,6 +324,18 @@ struct netmap_ring {
 	 * Enables the NS_FORWARD slot flag for the ring.
 	 */
 
+/*
+ * Helper functions for kernel and userspace
+ */
+
+/*
+ * check if space is available in the ring.
+ */
+static inline int
+nm_ring_empty(struct netmap_ring *ring)
+{
+	return (ring->cur == ring->tail);
+}
 
 /*
  * Netmap representation of an interface and its queue(s).
@@ -527,7 +539,6 @@ struct nmreq {
 #define NETMAP_VNET_HDR_GET	12      /* get the port virtio-net-hdr length */
 #define NETMAP_POOLS_INFO_GET	13	/* get memory allocator pools info */
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
-#define NETMAP_BDG_HOST		1	/* attach the host stack on ATTACH */
 
 	uint16_t	nr_arg2;
 	uint32_t	nr_arg3;	/* req. extra buffers in NIOCREGIF */
@@ -535,6 +546,17 @@ struct nmreq {
 #define NR_REG_MASK		0xf /* to extract NR_REG_* mode from nr_flags */
 	/* various modes, extends nr_ringid */
 	uint32_t	spare2[1];
+};
+
+/*
+ * Opaque structure that is passed to an external kernel
+ * module via ioctl(fd, NIOCCONFIG, req) for a user-owned
+ * bridge port (at this point ephemeral VALE interface).
+ */
+#define NM_IFRDATA_LEN 256
+struct nm_ifreq {
+	char nifr_name[IFNAMSIZ];
+	char data[NM_IFRDATA_LEN];
 };
 
 #ifdef _WIN32
@@ -607,10 +629,18 @@ struct nmreq_header {
 enum {
 	/* Register a netmap port with the device. */
 	NETMAP_REQ_REGISTER = 1,
+	/* Attach a netmap port to a VALE switch. */
 	NETMAP_REQ_VALE_ATTACH,
+	/* Detach a netmap port from a VALE switch. */
+	NETMAP_REQ_VALE_DETACH,
+	/* List the ports attached to a VALE switch. */
+	NETMAP_REQ_VALE_LIST,
 };
 
-/* Bind (register) a netmap port to this control device. */
+/*
+ * nr_reqtype: NETMAP_REQ_REGISTER
+ * Bind (register) a netmap port to this control device.
+ */
 struct nmreq_register {
 	struct nmreq_header nr_hdr;
 	char		nr_name[64];	/* name of the netmap port */
@@ -664,34 +694,38 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 
 #define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
 
+/*
+ * nr_reqtype: NETMAP_REQ_VALE_ATTACH
+ * Attach a netmap port to a VALE switch. Both the name of the netmap
+ * port and the VALE switch are specified through the nr_name argument.
+ */
 struct nmreq_vale_attach {
 	struct nmreq_header nr_hdr;
-	char		nr_name[64];	/* name of the netmap port */
-	uint16_t	nr_mem_id;	/* id of the memory allocator */
+	char		nr_name[128];	/* name in the form valeXXX:YYY */
+	uint16_t	nr_mem_id;	/* id of the memory allocator to use */
+	uint16_t	nr_flags;	/* flags (see below) */
+#define NETMAP_BDG_HOST		0x1	/* attach the host stack */
 };
 
 /*
- * Helper functions for kernel and userspace
+ * nr_reqtype: NETMAP_REQ_VALE_DETACH
+ * Detach a netmap port from a VALE switch. Both the name of the netmap
+ * port and the VALE switch are specified through the nr_name argument.
  */
+struct nmreq_vale_detach {
+	struct nmreq_header nr_hdr;
+	char		nr_name[128];	/* name in the form valeXXX:YYY */
+};
 
 /*
- * check if space is available in the ring.
+ * nr_reqtype: NETMAP_REQ_VALE_LIST
+ * List the ports of a VALE switch.
  */
-static inline int
-nm_ring_empty(struct netmap_ring *ring)
-{
-	return (ring->cur == ring->tail);
-}
-
-/*
- * Opaque structure that is passed to an external kernel
- * module via ioctl(fd, NIOCCONFIG, req) for a user-owned
- * bridge port (at this point ephemeral VALE interface).
- */
-#define NM_IFRDATA_LEN 256
-struct nm_ifreq {
-	char nifr_name[IFNAMSIZ];
-	char data[NM_IFRDATA_LEN];
+struct nmreq_vale_list {
+	struct nmreq_header nr_hdr;
+	char		nr_name[64];	/* name of the VALE switch or empty */
+	uint16_t	nr_bridge_idx;
+	uint16_t	nr_port_idx;
 };
 
 #endif /* _NET_NETMAP_H_ */
