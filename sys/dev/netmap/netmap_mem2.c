@@ -2046,8 +2046,7 @@ netmap_mem_pools_info_get(struct nmreq_pools_info_get *req,
 struct netmap_mem_ext {
 	struct netmap_mem_d up;
 
-	struct page **pages;
-	int nr_pages;
+	struct nm_os_extmem *os;
 	struct netmap_mem_ext *next, *prev;
 };
 
@@ -2077,29 +2076,14 @@ netmap_mem_ext_unregister(struct netmap_mem_ext *e)
 	e->prev = e->next = NULL;
 }
 
-static int
-netmap_mem_ext_same_pages(struct netmap_mem_ext *e, struct page **pages, int nr_pages)
-{
-	int i;
-
-	if (e->nr_pages != nr_pages)
-		return 0;
-
-	for (i = 0; i < nr_pages; i++)
-		if (pages[i] != e->pages[i])
-			return 0;
-
-	return 1;
-}
-
 static struct netmap_mem_ext *
-netmap_mem_ext_search(struct page **pages, int nr_pages)
+netmap_mem_ext_search(struct nm_os_extmem *os)
 {
 	struct netmap_mem_ext *e;
 
 	NM_MTX_LOCK(nm_mem_ext_list_lock);
 	for (e = netmap_mem_ext_list; e; e = e->next) {
-		if (netmap_mem_ext_same_pages(e, pages, nr_pages)) {
+		if (nm_os_extmem_isequal(e->os, os)) {
 			netmap_mem_get(&e->up);
 			break;
 		}
@@ -2108,18 +2092,6 @@ netmap_mem_ext_search(struct page **pages, int nr_pages)
 	return e;
 }
 
-
-static void
-netmap_mem_ext_free_pages(struct page **pages, int nr_pages)
-{
-	int i;
-
-	for (i = 0; i < nr_pages; i++) {
-		kunmap(pages[i]);
-		put_page(pages[i]);
-	}
-	nm_os_vfree(pages);
-}
 
 static void
 netmap_mem_ext_delete(struct netmap_mem_d *d)
@@ -2138,11 +2110,8 @@ netmap_mem_ext_delete(struct netmap_mem_d *d)
 			p->lut = NULL;
 		}
 	}
-	if (e->pages) {
-		netmap_mem_ext_free_pages(e->pages, e->nr_pages);
-		e->pages = NULL;
-		e->nr_pages = 0;
-	}
+	if (e->os)
+		nm_os_extmem_delete(e->os);
 	netmap_mem2_delete(d);
 }
 
@@ -2173,12 +2142,12 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 	uintptr_t p = *(uintptr_t *)&nmr->nr_arg1;
 	struct netmap_pools_info pi;
 	int error = 0;
-	unsigned long end, start;
-	int nr_pages, res, i, j;
-	struct page **pages = NULL;
+	int i, j;
 	struct netmap_mem_ext *nme;
 	char *clust;
 	size_t off;
+	struct nm_os_extmem *os = NULL;
+	int nr_pages;
 
 	error = copyin((void *)p, &pi, sizeof(pi));
 	if (error)
@@ -2202,60 +2171,15 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 			pi.ring_pool_objtotal, pi.ring_pool_objsize,
 			pi.buf_pool_objtotal, pi.buf_pool_objsize);
 		
-	end = (p + pi.memsize + PAGE_SIZE - 1) >> PAGE_SHIFT;
-	start = p >> PAGE_SHIFT;
-	nr_pages = end - start;
-
-	pages = nm_os_vmalloc(nr_pages * sizeof(*pages));
-	if (pages == NULL) {
-		error = ENOMEM;
+	os = nm_os_extmem_create(p, &pi, &error);
+	if (os == NULL) {
+		D("os extmem creation failed");
 		goto out;
 	}
 
-#ifdef NETMAP_LINUX_HAVE_GUP_4ARGS
-	res = get_user_pages_unlocked(
-			p,
-			nr_pages,
-			pages,
-			FOLL_WRITE | FOLL_GET | FOLL_SPLIT | FOLL_POPULATE); // XXX check other flags
-#elif defined(NETMAP_LINUX_HAVE_GUP_5ARGS)
-	res = get_user_pages_unlocked(
-			p,
-			nr_pages,
-			1, /* write */
-			0, /* don't force */
-			pages);
-#elif defined(NETMAP_LINUX_HAVE_GUP_7ARGS)
-	res = get_user_pages_unlocked(
-			current,
-			current->mm,
-			p,
-			nr_pages,
-			1, /* write */
-			0, /* don't force */
-			pages);
-#else
-	down_read(&current->mm->mmap_sem);
-	res = get_user_pages(
-			current,
-			current->mm,
-			p,
-			nr_pages,
-			1, /* write */
-			0, /* don't force */
-			pages,
-			NULL);
-	up_read(&current->mm->mmap_sem);
-#endif	/* NETMAP_LINUX_GUP */
-
-	if (res < nr_pages) {
-		error = EFAULT;
-		goto out_unmap;
-	}
-
-	nme = netmap_mem_ext_search(pages, nr_pages);
+	nme = netmap_mem_ext_search(os);
 	if (nme) {
-		netmap_mem_ext_free_pages(pages, nr_pages);
+		nm_os_extmem_delete(os);
 		return &nme->up;
 	}
 	D("not found, creating new");
@@ -2270,15 +2194,17 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 	if (nme == NULL)
 		goto out_unmap;
 					
+	nr_pages = nm_os_extmem_nr_pages(os);
+
 	/* from now on pages will be released by nme destructor;
 	 * we let res = 0 to prevent release in out_unmap below
 	 */
-	res = 0;
-	nme->pages = pages;
-	nme->nr_pages = nr_pages;
+	nme->os = os;
+	os = NULL; /* pass ownership */
 	nme->up.flags |= NETMAP_MEM_EXT;
 
-	clust = kmap(*pages);
+
+	clust = nm_os_extmem_nextpage(nme->os);
 	off = 0;
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		struct netmap_obj_pool *p = &nme->up.pools[i];
@@ -2322,13 +2248,15 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 			ND("too big, recomputing offset...");
 			skip = PAGE_SIZE - (off & PAGE_MASK);
 			while (noff >= PAGE_SIZE) {
+				char *old_clust = clust;
 				noff -= skip;
-				pages++;
+				clust = nm_os_extmem_nextpage(nme->os);
 				nr_pages--;
 				ND("noff %zu page %p nr_pages %d", noff,
 						page_to_virt(*pages), nr_pages);
 				if (noff > 0 && !nm_isset(p->invalid_bitmap, j) &&
-					(nr_pages == 0 || *pages != *(pages - 1) + 1))
+					(nr_pages == 0 ||
+					 old_clust + PAGE_SIZE != clust))
 				{
 					/* out of space or non contiguous,
 					 * drop this object
@@ -2341,8 +2269,6 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 				skip = PAGE_SIZE;
 			}
 			off = noff;
-			if (nr_pages > 0)
-				clust = kmap(*pages);
 		}
 		p->objtotal = j;
 		p->numclusters = p->objtotal;
@@ -2363,10 +2289,8 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 out_delete:
 	netmap_mem_put(&nme->up);
 out_unmap:
-	for (i = 0; i < res; i++)
-		put_page(pages[i]);
-	if (res)
-		nm_os_free(pages);
+	if (os)
+		nm_os_extmem_delete(os);
 out:
 	if (perror)
 		*perror = error;

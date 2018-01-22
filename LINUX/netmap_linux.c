@@ -168,11 +168,148 @@ nm_os_ifnet_fini(void)
 	}
 }
 
+
 unsigned
 nm_os_ifnet_mtu(struct ifnet *ifp)
 {
 	return ifp->mtu;
 }
+
+#ifdef WITH_EXTMEM
+struct nm_os_extmem {
+	struct page **pages;
+	int nr_pages;
+	int mapped;
+};
+
+void
+nm_os_extmem_delete(struct nm_os_extmem *e)
+{
+	int i;
+	for (i = 0; i < e->nr_pages; i++) {
+		if (i < e->mapped)
+			kunmap(e->pages[i]);
+		put_page(e->pages[i]);
+	}
+	if (e->pages)
+		nm_os_vfree(e->pages);
+	nm_os_free(e);
+}
+
+char *
+nm_os_extmem_nextpage(struct nm_os_extmem *e)
+{
+	if (e->mapped >= e->nr_pages)
+		return NULL;
+	D("mapping %d/%d", e->mapped, e->nr_pages);
+	return kmap(e->pages[e->mapped++]);
+}
+
+int
+nm_os_extmem_isequal(struct nm_os_extmem *e1, struct nm_os_extmem *e2)
+{
+	int i;
+
+	if (e1->nr_pages != e2->nr_pages)
+		return 0;
+
+	for (i = 0; i < e1->nr_pages; i++)
+		if (e1->pages[i] != e2->pages[i])
+			return 0;
+
+	return 1;
+}
+
+int
+nm_os_extmem_nr_pages(struct nm_os_extmem *e)
+{
+	return e->nr_pages;
+}
+
+
+struct nm_os_extmem *
+nm_os_extmem_create(unsigned long p, struct netmap_pools_info *pi, int *perror)
+{
+	unsigned long end, start;
+	int nr_pages, res;
+	struct nm_os_extmem *e = NULL;
+	int err;
+	struct page **pages;
+
+	end = (p + pi->memsize + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	start = p >> PAGE_SHIFT;
+	nr_pages = end - start;
+
+	e = nm_os_malloc(sizeof(*e));
+	if (e == NULL) {
+		D("failed to allocate os_extmem");
+		err = ENOMEM;
+		goto out;
+	}
+
+	pages = nm_os_vmalloc(nr_pages * sizeof(*pages));
+	if (pages == NULL) {
+		D("failed to allocate pages array (nr_pages %d)", nr_pages);
+		err = ENOMEM;
+		goto out;
+	}
+
+	e->pages = pages;
+
+#ifdef NETMAP_LINUX_HAVE_GUP_4ARGS
+	res = get_user_pages_unlocked(
+			p,
+			nr_pages,
+			pages,
+			FOLL_WRITE | FOLL_GET | FOLL_SPLIT | FOLL_POPULATE); // XXX check other flags
+#elif defined(NETMAP_LINUX_HAVE_GUP_5ARGS)
+	res = get_user_pages_unlocked(
+			p,
+			nr_pages,
+			1, /* write */
+			0, /* don't force */
+			pages);
+#elif defined(NETMAP_LINUX_HAVE_GUP_7ARGS)
+	res = get_user_pages_unlocked(
+			current,
+			current->mm,
+			p,
+			nr_pages,
+			1, /* write */
+			0, /* don't force */
+			pages);
+#else
+	down_read(&current->mm->mmap_sem);
+	res = get_user_pages(
+			current,
+			current->mm,
+			p,
+			nr_pages,
+			1, /* write */
+			0, /* don't force */
+			pages,
+			NULL);
+	up_read(&current->mm->mmap_sem);
+#endif	/* NETMAP_LINUX_GUP */
+
+	e->nr_pages = res;
+
+	if (res < nr_pages) {
+		D("failed to get user pages: res %d nr_pages %d", res, nr_pages);
+		err = EFAULT;
+		goto out;
+	}
+
+	return e;
+
+out:
+	if (e)
+		nm_os_extmem_delete(e);
+	if (perror)
+		*perror = err;
+	return NULL;
+}
+#endif /* WITH_EXTMEM */
 
 #ifdef NETMAP_LINUX_HAVE_IOMMU
 #include <linux/iommu.h>
