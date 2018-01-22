@@ -780,7 +780,7 @@ struct netmap_adapter {
 	 *      Called with NMG_LOCK held.
 	 */
 	int (*nm_bdg_attach)(const char *bdg_name, struct netmap_adapter *);
-	int (*nm_bdg_ctl)(struct netmap_adapter *, struct nmreq *, int);
+	int (*nm_bdg_ctl)(struct netmap_adapter *, int);
 
 	/* adapter used to attach this adapter to a VALE switch (if any) */
 	struct netmap_vp_adapter *na_vp;

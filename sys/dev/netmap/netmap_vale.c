@@ -515,12 +515,11 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 
 /* nm_bdg_ctl callback for VALE ports */
 static int
-netmap_vp_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
+netmap_vp_bdg_ctl(struct netmap_adapter *na, int attach)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	struct nm_bridge *b = vpna->na_bdg;
 
-	(void)nmr;	// XXX merge ?
 	if (attach)
 		return 0; /* nothing to do */
 	if (b) {
@@ -891,7 +890,7 @@ nm_bdg_ctl_attach(struct nmreq *nmr)
 		/* nop for VALE ports. The bwrap needs to put the hwna
 		 * in netmap mode (see netmap_bwrap_bdg_ctl)
 		 */
-		error = na->nm_bdg_ctl(na, nmr, 1);
+		error = na->nm_bdg_ctl(na, 1);
 		if (error)
 			goto unref_exit;
 		ND("registered %s to netmap-mode", na->name);
@@ -939,7 +938,7 @@ nm_bdg_ctl_detach(struct nmreq *nmr)
 		/* remove the port from bridge. The bwrap
 		 * also needs to put the hwna in normal mode
 		 */
-		error = na->nm_bdg_ctl(na, nmr, 0);
+		error = na->nm_bdg_ctl(na, 0);
 	}
 
 	netmap_adapter_put(na);
@@ -2741,7 +2740,7 @@ put_out:
  * directed to hwna.
  */
 static int
-netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
+netmap_bwrap_bdg_ctl(struct netmap_adapter *na, int attach)
 {
 	struct netmap_priv_d *npriv;
 	struct netmap_bwrap_adapter *bna = (struct netmap_bwrap_adapter*)na;
