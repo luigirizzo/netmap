@@ -636,7 +636,9 @@ enum {
 	/* List the ports attached to a VALE switch. */
 	NETMAP_REQ_VALE_LIST,
 	/* Set the port header length (was virtio-net header length). */
-	NETMAP_REQ_SET_PORT_HDR,
+	NETMAP_REQ_PORT_HDR_SET,
+	/* Get the port header length (was virtio-net header length). */
+	NETMAP_REQ_PORT_HDR_GET,
 	/* Create a new persistent VALE port. */
 	NETMAP_REQ_VALE_NEWIF,
 	/* Delete a persistent VALE port. */
@@ -735,11 +737,22 @@ struct nmreq_vale_list {
 };
 
 /*
- * nr_reqtype: NETMAP_REQ_SET_PORT_HDR
+ * nr_reqtype: NETMAP_REQ_PORT_HDR_SET
  * Set the port header length.
  */
 struct nmreq_set_port_hdr {
 	struct nmreq_header nr_hdr;
+	char		nr_name[64];	/* name of the netmap port */
+	uint32_t	nr_hdr_len;
+};
+
+/*
+ * nr_reqtype: NETMAP_REQ_PORT_HDR_GET
+ * Get the port header length.
+ */
+struct nmreq_get_port_hdr {
+	struct nmreq_header nr_hdr;
+	char		nr_name[64];	/* name of the netmap port */
 	uint32_t	nr_hdr_len;
 };
 
