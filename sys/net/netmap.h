@@ -654,6 +654,8 @@ enum {
 	/* Disable host-side ptnetmap processing (e.g. stop ptnetmap
 	 * kthreads). */
 	NETMAP_REQ_PASSTHROUGH_DISABLE,
+	/* Program a VALE switch by registering custom callbacks. */
+	NETMAP_REQ_VALE_OPS_REGISTER,
 };
 
 #define NETMAP_REQ_IFNAMSIZ	64
@@ -811,6 +813,18 @@ struct nmreq_pools_info_get {
 	uint64_t	nr_buf_pool_offset;
 	uint32_t	nr_buf_pool_objtotal;
 	uint32_t	nr_buf_pool_objsize;
+};
+
+/*
+ * nr_reqtype: NETMAP_REQ_VALE_OPS_REGISTER
+ * Program a VALE switch by registering custom callbacks (e.g.
+ * lookup, config and dtor). This netmap request should not
+ * be called from userspace programs, but only by kernel
+ * modules.
+ */
+struct nmreq_vale_ops_register {
+	struct nmreq_header nr_hdr;
+	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
 };
 
 #endif /* _NET_NETMAP_H_ */
