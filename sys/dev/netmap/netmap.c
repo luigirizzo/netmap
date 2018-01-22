@@ -260,7 +260,7 @@ ports attached to the switch)
  *
  *  Any network interface known to the system (including a persistent VALE
  *  port) can be attached to a VALE switch by issuing the
- *  NETMAP_BDG_ATTACH subcommand. After the attachment, persistent VALE ports
+ *  NETMAP_REQ_VALE_ATTACH command. After the attachment, persistent VALE ports
  *  look exactly like ephemeral VALE ports (as created in step 2 above).  The
  *  attachment of other interfaces, instead, requires the creation of a
  *  netmap_bwrap_adapter.  Moreover, the attached interface must be put in

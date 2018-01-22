@@ -367,7 +367,6 @@ struct netmap_if {
 };
 
 
-#ifndef NIOCREGIF
 /*
  * ioctl names and related fields
  *
@@ -532,39 +531,11 @@ struct nmreq {
 
 	uint16_t	nr_arg2;
 	uint32_t	nr_arg3;	/* req. extra buffers in NIOCREGIF */
-	uint32_t	nr_flags;
+	uint32_t	nr_flags;	/* specify NR_REG_* mode and other flags */
+#define NR_REG_MASK		0xf /* to extract NR_REG_* mode from nr_flags */
 	/* various modes, extends nr_ringid */
 	uint32_t	spare2[1];
 };
-
-#define NR_REG_MASK		0xf /* values for nr_flags */
-enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
-	NR_REG_ALL_NIC	= 1,
-	NR_REG_SW	= 2,
-	NR_REG_NIC_SW	= 3,
-	NR_REG_ONE_NIC	= 4,
-	NR_REG_PIPE_MASTER = 5,
-	NR_REG_PIPE_SLAVE = 6,
-};
-/* monitor uses the NR_REG to select the rings to monitor */
-#define NR_MONITOR_TX	0x100
-#define NR_MONITOR_RX	0x200
-#define NR_ZCOPY_MON	0x400
-/* request exclusive access to the selected rings */
-#define NR_EXCLUSIVE	0x800
-/* request ptnetmap host support */
-#define NR_PASSTHROUGH_HOST	NR_PTNETMAP_HOST /* deprecated */
-#define NR_PTNETMAP_HOST	0x1000
-#define NR_RX_RINGS_ONLY	0x2000
-#define NR_TX_RINGS_ONLY	0x4000
-/* Applications set this flag if they are able to deal with virtio-net headers,
- * that is send/receive frames that start with a virtio-net header.
- * If not set, NIOCREGIF will fail with netmap ports that require applications
- * to use those headers. If the flag is set, the application can use the
- * NETMAP_VNET_HDR_GET command to figure out the header length. */
-#define NR_ACCEPT_VNET_HDR	0x8000
-
-#define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
 
 #ifdef _WIN32
 /*
@@ -591,11 +562,11 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 #define NETMAP_GETSOCKOPT _IO('i', 141)
 
 
-//These linknames are for the Netmap Core Driver
+/* These linknames are for the Netmap Core Driver */
 #define NETMAP_NT_DEVICE_NAME			L"\\Device\\NETMAP"
 #define NETMAP_DOS_DEVICE_NAME			L"\\DosDevices\\netmap"
 
-//Definition of a structure used to pass a virtual address within an IOCTL
+/* Definition of a structure used to pass a virtual address within an IOCTL */
 typedef struct _MEMORY_ENTRY {
 	PVOID       pUsermodeVirtualAddress;
 } MEMORY_ENTRY, *PMEMORY_ENTRY;
@@ -619,8 +590,85 @@ typedef struct _POLL_REQUEST_DATA {
 #define NIOCTXSYNC	_IO('i', 148) /* sync tx queues */
 #define NIOCRXSYNC	_IO('i', 149) /* sync rx queues */
 #define NIOCCONFIG	_IOWR('i',150, struct nm_ifreq) /* for ext. modules */
-#endif /* !NIOCREGIF */
 
+
+/*
+ * New API to control netmap control devices, deprecating 'struct nmreq',
+ * NIOCREGIF, NIOCGINFO and NIOCCONFIG. New applications should only use
+ * nmreq_xyz structs.
+ */
+
+/* Header common to all requests. */
+struct nmreq_header {
+	uint16_t	nr_version;	/* API version */
+	uint16_t	nr_reqtype;	/* nmreq type (NETMAP_REQ_*) */
+};
+
+enum {
+	/* Register a netmap port with the device. */
+	NETMAP_REQ_REGISTER = 1,
+	NETMAP_REQ_VALE_ATTACH,
+};
+
+/* Bind (register) a netmap port to this control device. */
+struct nmreq_register {
+	struct nmreq_header nr_hdr;
+	char		nr_name[64];	/* name of the netmap port */
+	uint64_t	nr_offset;	/* nifp offset in the shared region */
+	uint64_t	nr_memsize;	/* size of the shared region */
+	uint32_t	nr_tx_slots;	/* slots in tx rings */
+	uint32_t	nr_rx_slots;	/* slots in rx rings */
+	uint16_t	nr_tx_rings;	/* number of tx rings */
+	uint16_t	nr_rx_rings;	/* number of rx rings */
+
+	uint16_t	nr_mem_id;	/* id of the memory allocator */
+	uint16_t	nr_ringid;	/* ring(s) we care about */
+	uint32_t	nr_mode;	/* specify NR_REG_* modes */
+
+	uint64_t	nr_flags;	/* additional flags (see below) */
+/* monitors use nr_ringid and nr_mode to select the rings to monitor */
+#define NR_MONITOR_TX	0x100
+#define NR_MONITOR_RX	0x200
+#define NR_ZCOPY_MON	0x400
+/* request exclusive access to the selected rings */
+#define NR_EXCLUSIVE	0x800
+/* request ptnetmap host support */
+#define NR_PASSTHROUGH_HOST	NR_PTNETMAP_HOST /* deprecated */
+#define NR_PTNETMAP_HOST	0x1000
+#define NR_RX_RINGS_ONLY	0x2000
+#define NR_TX_RINGS_ONLY	0x4000
+/* Applications set this flag if they are able to deal with virtio-net headers,
+ * that is send/receive frames that start with a virtio-net header.
+ * If not set, NIOCREGIF will fail with netmap ports that require applications
+ * to use those headers. If the flag is set, the application can use the
+ * NETMAP_VNET_HDR_GET command to figure out the header length. */
+#define NR_ACCEPT_VNET_HDR	0x8000
+/* The following two have the same meaning of NETMAP_NO_TX_POLL and
+ * NETMAP_DO_RX_POLL. */
+#define NR_DO_RX_POLL		0x10000
+#define NR_NO_TX_POLL		0x20000
+
+	uint32_t	nr_extra_bufs;	/* number of requested extra buffers */
+	uint8_t         nr_spare[64];
+};
+
+/* Valid values for nmreq_register.nr_mode (see above). */
+enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
+	NR_REG_ALL_NIC	= 1,
+	NR_REG_SW	= 2,
+	NR_REG_NIC_SW	= 3,
+	NR_REG_ONE_NIC	= 4,
+	NR_REG_PIPE_MASTER = 5,
+	NR_REG_PIPE_SLAVE = 6,
+};
+
+#define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
+
+struct nmreq_vale_attach {
+	struct nmreq_header nr_hdr;
+	char		nr_name[64];	/* name of the netmap port */
+	uint16_t	nr_mem_id;	/* id of the memory allocator */
+};
 
 /*
  * Helper functions for kernel and userspace
