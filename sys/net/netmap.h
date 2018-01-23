@@ -39,7 +39,7 @@
 #ifndef _NET_NETMAP_H_
 #define _NET_NETMAP_H_
 
-#define	NETMAP_API	11		/* current API version */
+#define	NETMAP_API	12		/* current API version */
 
 #define	NETMAP_MIN_API	11		/* min and max versions accepted */
 #define	NETMAP_MAX_API	15
@@ -472,8 +472,8 @@ struct nmreq_register {
 #define NR_DO_RX_POLL		0x10000
 #define NR_NO_TX_POLL		0x20000
 
+	uint32_t	nr_pipes;	/* number of pipes to create */
 	uint32_t	nr_extra_bufs;	/* number of requested extra buffers */
-	uint8_t         nr_spare[64];
 };
 
 /* Valid values for nmreq_register.nr_mode (see above). */

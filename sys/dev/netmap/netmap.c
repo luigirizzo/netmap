@@ -2192,16 +2192,75 @@ ring_timestamp_set(struct netmap_ring *ring)
 	}
 }
 
+/* Convert the legacy 'nmr' struct into one of the nmreq_xyz structs
+ * (new API). The new struct is dynamically allocated. */
+static struct nmreq_header *
+nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
+{
+	/* Sanitize nmr->nr_name by adding the string terminator. */
+	if (ioctl_cmd == NIOCGINFO || ioctl_cmd == NIOCREGIF) {
+		nmr->nr_name[sizeof(nmr->nr_name) - 1] = '\0';
+	}
+
+	switch (ioctl_cmd) {
+	case NIOCREGIF: {
+		switch (nmr->nr_cmd) {
+		case 0: {
+			/* Regular NIOCREGIF operation. */
+			struct nmreq_register *req = nm_os_malloc(sizeof(*req));
+			if (!req) { goto oom; }
+			strncpy(req->nr_name, nmr->nr_name, sizeof(req->nr_name));
+			req->nr_offset = nmr->nr_offset;
+			req->nr_memsize = nmr->nr_memsize;
+			req->nr_tx_slots = nmr->nr_tx_slots;
+			req->nr_rx_slots = nmr->nr_rx_slots;
+			req->nr_tx_rings = nmr->nr_tx_rings;
+			req->nr_rx_rings = nmr->nr_rx_rings;
+			req->nr_mem_id = nmr->nr_arg2;
+			req->nr_ringid = nmr->nr_ringid & NETMAP_RING_MASK;
+			req->nr_mode = nmr->nr_flags & NR_REG_MASK;
+			req->nr_flags = nmr->nr_flags & (~NR_REG_MASK);
+			if (nmr->nr_ringid & NETMAP_NO_TX_POLL) {
+				req->nr_flags |= NR_NO_TX_POLL;
+			}
+			if (nmr->nr_ringid & NETMAP_DO_RX_POLL) {
+				req->nr_flags |= NR_DO_RX_POLL;
+			}
+			req->nr_pipes = nmr->nr_arg1;
+			req->nr_extra_bufs = nmr->nr_arg3;
+			return (struct nmreq_header *)req;
+			break;
+		}
+		}
+		break;
+	}
+	}
+
+	return NULL;
+oom:
+	D("Failed to allocate memory for nmreq_xyz struct");
+	return NULL;
+}
+
+/* Convert a nmreq_xyz struct (new API) to the legacy 'nmr' struct.
+ * It also frees the nmreq_xyz struct, as it was allocated by
+ * nmreq_from_legacy(). */
+static void
+nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
+{
+	nm_os_free(hdr);
+}
 
 /*
  * ioctl(2) support for the "netmap" device.
  *
  * Following a list of accepted commands:
- * - NIOCGINFO
+ * - NIOCCTRL		device control API
+ * - NIOCTXSYNC		sync TX rings
+ * - NIOCRXSYNC		sync RX rings
  * - SIOCGIFADDR	just for convenience
- * - NIOCREGIF
- * - NIOCTXSYNC
- * - NIOCRXSYNC
+ * - NIOCGINFO		deprecated (legacy API)
+ * - NIOCREGIF		deprecated (legacy API)
  *
  * Return 0 on success, errno otherwise.
  */
@@ -2236,6 +2295,16 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 	}
 
 	switch (cmd) {
+	case NIOCCTRL: {
+		struct nmreq_header *hdr = (struct nmreq_header *)data;
+
+		switch (hdr->nr_reqtype) {
+		default: {
+			break;
+		}
+		}
+		break;
+	}
 	case NIOCGINFO:		/* return capabilities etc */
 		if (nmr->nr_cmd == NETMAP_BDG_LIST) {
 			error = netmap_bdg_ctl(nmr, NULL);
