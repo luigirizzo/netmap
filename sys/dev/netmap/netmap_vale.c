@@ -2209,7 +2209,7 @@ netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na)
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 
 	if (vpna->na_bdg)
-		return EBUSY;
+		return netmap_bwrap_attach(name, na);
 	na->na_vp = vpna;
 	strncpy(na->name, name, sizeof(na->name));
 	na->na_hostvp = NULL;
