@@ -2346,7 +2346,8 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	struct nm_bridge *b = bna->up.na_bdg,
 		*bh = bna->host.na_bdg;
 
-	netmap_mem_put(bna->host.up.nm_mem);
+	if (bna->host.up.nm_mem)
+		netmap_mem_put(bna->host.up.nm_mem);
 
 	if (b) {
 		netmap_bdg_detach_common(b, bna->up.bdg_port,
@@ -2747,7 +2748,7 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, struct nmreq *nmr, int attach)
 		if (npriv == NULL)
 			return ENOMEM;
 		npriv->np_ifp = na->ifp; /* let the priv destructor release the ref */
-		error = netmap_do_regif(npriv, na, 0, NR_REG_NIC_SW);
+		error = netmap_do_regif(npriv, na, nmr->nr_ringid, nmr->nr_flags);
 		if (error) {
 			netmap_priv_delete(npriv);
 			return error;
