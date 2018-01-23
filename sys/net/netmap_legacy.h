@@ -187,7 +187,7 @@ struct nmreq {
 #define NETMAP_POOLS_INFO_GET	13	/* get memory allocator pools info */
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
 
-	uint16_t	nr_arg2;
+	uint16_t	nr_arg2;	/* id of the memory allocator */
 	uint32_t	nr_arg3;	/* req. extra buffers in NIOCREGIF */
 	uint32_t	nr_flags;	/* specify NR_REG_* mode and other flags */
 #define NR_REG_MASK		0xf /* to extract NR_REG_* mode from nr_flags */
