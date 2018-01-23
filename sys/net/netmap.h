@@ -388,10 +388,19 @@ struct netmap_if {
  * nmreq_xyz structs with the NIOCCTRL ioctl() command.
  */
 
+/* Header common to all request options. */
+struct nmreq_option {
+	/* Pointer ot the next option. */
+	struct nmreq_option	*nro_next;
+	/* Option type. */
+	uint16_t		nro_reqtype;
+};
+
 /* Header common to all requests. */
 struct nmreq_header {
-	uint16_t	nr_version;	/* API version */
-	uint16_t	nr_reqtype;	/* nmreq type (NETMAP_REQ_*) */
+	uint16_t		nr_version;	/* API version */
+	uint16_t		nr_reqtype;	/* nmreq type (NETMAP_REQ_*) */
+	struct nmreq_option	*options;	/* command-specific options */
 };
 
 enum {
@@ -427,6 +436,12 @@ enum {
 	NETMAP_REQ_PASSTHROUGH_DISABLE,
 	/* Program a VALE switch by registering custom callbacks. */
 	NETMAP_REQ_VALE_OPS_REGISTER,
+};
+
+enum {
+	/* On NETMAP_REQ_REGISTER, ask netmap to use memory allocated
+	 * from user-space allocated memory pools (e.g. hugepages). */
+	NETMAP_REQ_OPT_EXTMEM = 1,
 };
 
 #define NETMAP_REQ_IFNAMSIZ	64
