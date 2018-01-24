@@ -2284,6 +2284,59 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			hdr = (struct nmreq_header *)req;
 			break;
 		}
+		case NETMAP_BDG_POLLING_ON:
+		case NETMAP_BDG_POLLING_OFF: {
+			struct nmreq_vale_polling *req = nm_os_malloc(sizeof(*req));
+			if (!req) { goto oom; }
+			req->nr_hdr.nr_reqtype = (nmr->nr_cmd == NETMAP_BDG_POLLING_ON) ?
+				NETMAP_REQ_VALE_POLLING_ENABLE :
+				NETMAP_REQ_VALE_POLLING_DISABLE;
+			strncpy(req->nr_name, nmr->nr_name, sizeof(req->nr_name));
+			hdr = (struct nmreq_header *)req;
+			break;
+		}
+		case NETMAP_POOLS_INFO_GET: {
+			struct nmreq_pools_info_get *req = nm_os_malloc(sizeof(*req));
+			if (!req) { goto oom; }
+			req->nr_hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
+			strncpy(req->nr_name, nmr->nr_name, sizeof(req->nr_name));
+			/* Most of the fields are for output (see
+			 * nmreq_to_legacy). */
+			hdr = (struct nmreq_header *)req;
+			break;
+		}
+		case NETMAP_PT_HOST_CREATE:
+		case NETMAP_PT_HOST_DELETE: {
+			D("Netmap passthrough not supported yet");
+			return NULL;
+			break;
+		}
+		}
+		break;
+	}
+	case NIOCGINFO: {
+		if (nmr->nr_cmd == NETMAP_BDG_LIST) {
+			struct nmreq_vale_list *req = nm_os_malloc(sizeof(*req));
+			if (!req) { goto oom; }
+			req->nr_hdr.nr_reqtype = NETMAP_REQ_VALE_LIST;
+			strncpy(req->nr_name, nmr->nr_name, sizeof(req->nr_name));
+			req->nr_bridge_idx = nmr->nr_arg1;
+			req->nr_port_idx = nmr->nr_arg2;
+			hdr = (struct nmreq_header *)req;
+		} else {
+			/* Regular NIOCGINFO. */
+			struct nmreq_vale_list *req = nm_os_malloc(sizeof(*req));
+			if (!req) { goto oom; }
+			req->nr_hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
+			strncpy(req->nr_name, nmr->nr_name, sizeof(req->nr_name));
+			req->nr_offset = nmr->nr_offset;
+			req->nr_memsize = nmr->nr_memsize;
+			req->nr_tx_slots = nmr->nr_tx_slots;
+			req->nr_rx_slots = nmr->nr_rx_slots;
+			req->nr_tx_rings = nmr->nr_tx_rings;
+			req->nr_rx_rings = nmr->nr_rx_rings;
+			req->nr_mem_id = nmr->nr_arg2;
+			hdr = (struct nmreq_header *)req;
 		}
 		break;
 	}
