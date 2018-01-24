@@ -2221,6 +2221,20 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			req->nr_rx_rings = nmr->nr_rx_rings;
 			req->nr_mem_id = nmr->nr_arg2;
 			req->nr_ringid = nmr->nr_ringid & NETMAP_RING_MASK;
+			if ((nmr->nr_flags & NR_REG_MASK) == NR_REG_DEFAULT) {
+				/* Convert the older nmr->nr_ringid (original
+				 * netmap control API) to nmr->nr_flags. */
+				u_int regmode = NR_REG_DEFAULT;
+				if (req->nr_ringid & NETMAP_SW_RING) {
+					regmode = NR_REG_SW;
+				} else if (req->nr_ringid & NETMAP_HW_RING) {
+					regmode = NR_REG_ONE_NIC;
+				} else {
+					regmode = NR_REG_ALL_NIC;
+				}
+				nmr->nr_flags = regmode |
+					(nmr->nr_flags & (~NR_REG_MASK));
+			}
 			req->nr_mode = nmr->nr_flags & NR_REG_MASK;
 			req->nr_flags = nmr->nr_flags & (~NR_REG_MASK);
 			if (nmr->nr_ringid & NETMAP_NO_TX_POLL) {
