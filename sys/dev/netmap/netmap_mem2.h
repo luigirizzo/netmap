@@ -135,8 +135,9 @@ void 	   netmap_mem_if_delete(struct netmap_adapter *, struct netmap_if *);
 int	   netmap_mem_rings_create(struct netmap_adapter *);
 void	   netmap_mem_rings_delete(struct netmap_adapter *);
 int 	   netmap_mem_deref(struct netmap_mem_d *, struct netmap_adapter *);
-int	netmap_mem2_get_pool_info(struct netmap_mem_d *, u_int, u_int *, u_int *);
-int	   netmap_mem_get_info(struct netmap_mem_d *, u_int *size, u_int *memflags, uint16_t *id);
+int	   netmap_mem2_get_pool_info(struct netmap_mem_d *, u_int, u_int *, u_int *);
+int	   netmap_mem_get_info(struct netmap_mem_d *, uint64_t *size,
+				u_int *memflags, uint16_t *id);
 ssize_t    netmap_mem_if_offset(struct netmap_mem_d *, const void *vaddr);
 struct netmap_mem_d* netmap_mem_private_new( u_int txr, u_int txd, u_int rxr, u_int rxd,
 		u_int extra_bufs, u_int npipes, int* error);
@@ -158,7 +159,8 @@ struct netmap_mem_d* netmap_mem_pt_guest_attach(struct ptnetmap_memdev *, uint16
 int netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *, struct ifnet *);
 #endif /* WITH_PTNETMAP_GUEST */
 
-int netmap_mem_pools_info_get(struct nmreq *, struct netmap_mem_d *);
+int netmap_mem_pools_info_get(struct nmreq_pools_info_get *,
+				struct netmap_mem_d *);
 
 #define NETMAP_MEM_PRIVATE	0x2	/* allocator uses private address space */
 #define NETMAP_MEM_IO		0x4	/* the underlying memory is mmapped I/O */

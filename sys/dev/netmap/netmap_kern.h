@@ -1005,11 +1005,16 @@ struct netmap_bwrap_adapter {
 	struct netmap_priv_d *na_kpriv;
 	struct nm_bdg_polling_state *na_polling_state;
 };
+int nm_bdg_ctl_attach(struct nmreq_vale_attach *req);
+int nm_bdg_ctl_detach(struct nmreq_vale_detach *req);
+int nm_bdg_polling(struct nmreq_vale_polling *req);
 int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
-int netmap_vi_create(struct nmreq *, int);
+int netmap_vi_create(struct nmreq_register *, int);
+int nm_vi_destroy(const char *name);
+int netmap_bdg_list(struct nmreq_vale_list *req);
 
 #else /* !WITH_VALE */
-#define netmap_vi_create(nmr, a) (EOPNOTSUPP)
+#define netmap_vi_create(req, a) (EOPNOTSUPP)
 #endif /* WITH_VALE */
 
 #ifdef WITH_PIPES
@@ -1366,9 +1371,10 @@ uint32_t nm_rxsync_prologue(struct netmap_kring *, struct netmap_ring *);
  */
 int netmap_attach_common(struct netmap_adapter *);
 /* fill priv->np_[tr]xq{first,last} using the ringid and flags information
- * coming from a struct nmreq
+ * coming from a struct nmreq_register
  */
-int netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags);
+int netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
+			uint16_t nr_ringid, uint64_t nr_flags);
 /* update the ring parameters (number and size of tx and rx rings).
  * It calls the nm_config callback, if available.
  */
@@ -1402,11 +1408,11 @@ void netmap_disable_all_rings(struct ifnet *);
 void netmap_enable_all_rings(struct ifnet *);
 
 int netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
-	uint16_t ringid, uint32_t flags);
+		uint32_t nr_mode, uint16_t nr_ringid, uint64_t nr_flags);
 void netmap_do_unregif(struct netmap_priv_d *priv);
 
 u_int nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg);
-int netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
+int netmap_get_na(struct nmreq_register *req, struct netmap_adapter **na,
 		  struct ifnet **ifp, struct netmap_mem_d *nmd, int create);
 void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
 int netmap_get_hw_na(struct ifnet *ifp,
@@ -1442,27 +1448,27 @@ u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 #define	NM_BDG_NOPORT		(NM_BDG_MAXPORTS+1)
 
 /* these are redefined in case of no VALE support */
-int netmap_get_bdg_na(struct nmreq *nmr, struct netmap_adapter **na,
+int netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create);
 struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
-int netmap_bdg_ctl(struct nmreq *nmr, struct netmap_bdg_ops *bdg_ops);
-int netmap_bdg_config(struct nmreq *nmr);
+int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops);
+int netmap_bdg_config(struct nm_ifreq *nifr);
 
 #else /* !WITH_VALE */
 #define	netmap_get_bdg_na(_1, _2, _3, _4)	0
 #define netmap_init_bridges(_1) 0
 #define netmap_uninit_bridges()
-#define	netmap_bdg_ctl(_1, _2)	EINVAL
+#define	netmap_bdg_regops(_1, _2)	EINVAL
 #endif /* !WITH_VALE */
 
 #ifdef WITH_PIPES
 /* max number of pipes per device */
 #define NM_MAXPIPES	64	/* XXX this should probably be a sysctl */
 void netmap_pipe_dealloc(struct netmap_adapter *);
-int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
+int netmap_get_pipe_na(struct nmreq_register *req, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create);
 #else /* !WITH_PIPES */
 #define NM_MAXPIPES	0
@@ -1475,8 +1481,9 @@ int netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 #endif
 
 #ifdef WITH_MONITOR
-int netmap_get_monitor_na(struct nmreq *nmr, struct netmap_adapter **na,
-		struct netmap_mem_d *nmd, int create);
+int netmap_get_monitor_na(struct nmreq_register *req,
+		struct netmap_adapter **na, struct netmap_mem_d *nmd,
+		int create);
 void netmap_monitor_stop(struct netmap_adapter *na);
 #else
 #define netmap_get_monitor_na(nmr, _2, _3, _4) \
@@ -2113,10 +2120,13 @@ struct netmap_pt_host_adapter {
 	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
 	void *ptns;
 };
-/* ptnetmap HOST routines */
-int netmap_get_pt_host_na(struct nmreq *nmr, struct netmap_adapter **na,
-		struct netmap_mem_d * nmd, int create);
-int ptnetmap_ctl(struct nmreq *nmr, struct netmap_adapter *na);
+
+/* ptnetmap host-side routines */
+int netmap_get_pt_host_na(struct nmreq_register *req,
+		struct netmap_adapter **na, struct netmap_mem_d * nmd,
+		int create);
+int ptnetmap_ctl(const char *nr_name, int create, struct netmap_adapter *na);
+
 static inline int
 nm_ptnetmap_host_on(struct netmap_adapter *na)
 {
@@ -2125,7 +2135,7 @@ nm_ptnetmap_host_on(struct netmap_adapter *na)
 #else /* !WITH_PTNETMAP_HOST */
 #define netmap_get_pt_host_na(nmr, _2, _3, _4) \
 	((nmr)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
-#define ptnetmap_ctl(_1, _2)   EINVAL
+#define ptnetmap_ctl(_1, _2, _3)   EINVAL
 #define nm_ptnetmap_host_on(_1)   EINVAL
 #endif /* !WITH_PTNETMAP_HOST */
 

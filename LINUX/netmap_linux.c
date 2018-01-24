@@ -1032,8 +1032,9 @@ static int
 linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 {
 	int error = 0;
-	unsigned long off;
-	u_int memsize, memflags;
+	uint64_t off;
+	unsigned int memflags;
+	uint64_t memsize;
 	struct netmap_priv_d *priv = f->private_data;
 	struct netmap_adapter *na = priv->np_na;
 	/*
@@ -2363,7 +2364,7 @@ EXPORT_SYMBOL(netmap_reset);		/* ring init routines */
 EXPORT_SYMBOL(netmap_rx_irq);	        /* default irq handler */
 EXPORT_SYMBOL(netmap_no_pendintr);	/* XXX mitigation - should go away */
 #ifdef WITH_VALE
-EXPORT_SYMBOL(netmap_bdg_ctl);		/* bridge configuration routine */
+EXPORT_SYMBOL(netmap_bdg_regops);	/* bridge configuration routine */
 EXPORT_SYMBOL(netmap_bdg_learning);	/* the default lookup function */
 EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
 #endif /* WITH_VALE */

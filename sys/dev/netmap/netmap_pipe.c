@@ -527,34 +527,34 @@ netmap_pipe_dtor(struct netmap_adapter *na)
 }
 
 int
-netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
+netmap_get_pipe_na(struct nmreq_register *req, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create)
 {
-	struct nmreq pnmr;
+	struct nmreq_register preq;
 	struct netmap_adapter *pna; /* parent adapter */
-	struct netmap_pipe_adapter *mna, *sna, *req;
+	struct netmap_pipe_adapter *mna, *sna, *reqna;
 	struct ifnet *ifp = NULL;
 	u_int pipe_id;
-	int role = nmr->nr_flags & NR_REG_MASK;
+	int role = req->nr_flags;
 	int error, retries = 0;
 
-	ND("flags %x", nmr->nr_flags);
+	ND("flags %x", req->nr_flags);
 
 	if (role != NR_REG_PIPE_MASTER && role != NR_REG_PIPE_SLAVE) {
 		ND("not a pipe");
 		return 0;
 	}
-	role = nmr->nr_flags & NR_REG_MASK;
 
 	/* first, try to find the parent adapter */
-	bzero(&pnmr, sizeof(pnmr));
-	memcpy(&pnmr.nr_name, nmr->nr_name, IFNAMSIZ);
+	bzero(&preq, sizeof(preq));
+	memcpy(&preq.nr_hdr.nr_name, req->nr_hdr.nr_name,
+		sizeof(preq.nr_hdr.nr_name));
 	/* pass to parent the requested number of pipes */
-	pnmr.nr_arg1 = nmr->nr_arg1;
+	preq.nr_pipes = req->nr_pipes;
 	for (;;) {
 		int create_error;
 
-		error = netmap_get_na(&pnmr, &pna, &ifp, nmd, create);
+		error = netmap_get_na(&preq, &pna, &ifp, nmd, create);
 		if (!error)
 			break;
 		if (error != ENXIO || retries++) {
@@ -564,7 +564,7 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 		ND("try to create a persistent vale port");
 		/* create a persistent vale port and try again */
 		NMG_UNLOCK();
-		create_error = netmap_vi_create(&pnmr, 1 /* autodelete */);
+		create_error = netmap_vi_create(&preq, 1 /* autodelete */);
 		NMG_LOCK();
 		if (create_error && create_error != EEXIST) {
 			if (create_error != EOPNOTSUPP) {
@@ -581,16 +581,16 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 	}
 
 	/* next, lookup the pipe id in the parent list */
-	req = NULL;
-	pipe_id = nmr->nr_ringid & NETMAP_RING_MASK;
+	reqna = NULL;
+	pipe_id = req->nr_ringid;
 	mna = netmap_pipe_find(pna, pipe_id);
 	if (mna) {
 		if (mna->role == role) {
 			ND("found %d directly at %d", pipe_id, mna->parent_slot);
-			req = mna;
+			reqna = mna;
 		} else {
 			ND("found %d indirectly at %d", pipe_id, mna->parent_slot);
-			req = mna->peer;
+			reqna = mna->peer;
 		}
 		/* the pipe we have found already holds a ref to the parent,
                  * so we need to drop the one we got from netmap_get_na()
@@ -631,10 +631,10 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 
 	mna->up.num_tx_rings = 1;
 	mna->up.num_rx_rings = 1;
-	mna->up.num_tx_desc = nmr->nr_tx_slots;
+	mna->up.num_tx_desc = req->nr_tx_slots;
 	nm_bound_var(&mna->up.num_tx_desc, pna->num_tx_desc,
 			1, NM_PIPE_MAXSLOTS, NULL);
-	mna->up.num_rx_desc = nmr->nr_rx_slots;
+	mna->up.num_rx_desc = req->nr_rx_slots;
 	nm_bound_var(&mna->up.num_rx_desc, pna->num_rx_desc,
 			1, NM_PIPE_MAXSLOTS, NULL);
 	error = netmap_attach_common(&mna->up);
@@ -673,11 +673,11 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 		if_ref(ifp);
 
 	if (role == NR_REG_PIPE_MASTER) {
-		req = mna;
+		reqna = mna;
 		mna->peer_ref = 1;
 		netmap_adapter_get(&sna->up);
 	} else {
-		req = sna;
+		reqna = sna;
 		sna->peer_ref = 1;
 		netmap_adapter_get(&mna->up);
 	}
@@ -685,8 +685,8 @@ netmap_get_pipe_na(struct nmreq *nmr, struct netmap_adapter **na,
 found:
 
 	ND("pipe %d %s at %p", pipe_id,
-		(req->role == NR_REG_PIPE_MASTER ? "master" : "slave"), req);
-	*na = &req->up;
+		(reqna->role == NR_REG_PIPE_MASTER ? "master" : "slave"), reqna);
+	*na = &reqna->up;
 	netmap_adapter_get(*na);
 
 	/* keep the reference to the parent.
