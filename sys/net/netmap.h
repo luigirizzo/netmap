@@ -400,7 +400,9 @@ struct nmreq_option {
 struct nmreq_header {
 	uint16_t		nr_version;	/* API version */
 	uint16_t		nr_reqtype;	/* nmreq type (NETMAP_REQ_*) */
-	struct nmreq_option	*options;	/* command-specific options */
+#define NETMAP_REQ_IFNAMSIZ	64
+	char			nr_name[NETMAP_REQ_IFNAMSIZ]; /* port name */
+	struct nmreq_option	*nr_options;	/* command-specific options */
 };
 
 enum {
@@ -444,15 +446,12 @@ enum {
 	NETMAP_REQ_OPT_EXTMEM = 1,
 };
 
-#define NETMAP_REQ_IFNAMSIZ	64
-
 /*
  * nr_reqtype: NETMAP_REQ_REGISTER
  * Bind (register) a netmap port to this control device.
  */
 struct nmreq_register {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ]; /* port name */
 	uint64_t	nr_offset;	/* nifp offset in the shared region */
 	uint64_t	nr_memsize;	/* size of the shared region */
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
@@ -519,7 +518,6 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  */
 struct nmreq_port_info_get {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ]; /* netmap port name */
 	uint64_t	nr_offset;	/* nifp offset in the shared region */
 	uint64_t	nr_memsize;	/* size of the shared region */
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
@@ -538,7 +536,6 @@ struct nmreq_port_info_get {
  */
 struct nmreq_vale_attach {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
 	uint16_t	nr_mem_id;	/* id of the memory allocator to use */
 	uint16_t	nr_flags;	/* flags (see below) */
 #define NETMAP_BDG_HOST		0x1	/* attach the host stack */
@@ -551,7 +548,6 @@ struct nmreq_vale_attach {
  */
 struct nmreq_vale_detach {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
 };
 
 /*
@@ -561,7 +557,6 @@ struct nmreq_vale_detach {
 struct nmreq_vale_list {
 	struct nmreq_header nr_hdr;
 	/* Name of the VALE port (valeXXX:YYY) or empty. */
-	char		nr_name[NETMAP_REQ_IFNAMSIZ];
 	uint16_t	nr_bridge_idx;
 	uint16_t	nr_port_idx;
 };
@@ -572,7 +567,6 @@ struct nmreq_vale_list {
  */
 struct nmreq_port_hdr {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ];
 	uint32_t	nr_hdr_len;
 };
 
@@ -582,7 +576,6 @@ struct nmreq_port_hdr {
  */
 struct nmreq_vale_newif {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
 	uint32_t	nr_rx_slots;	/* slots in rx rings */
 	uint16_t	nr_tx_rings;	/* number of tx rings */
@@ -596,7 +589,6 @@ struct nmreq_vale_newif {
  */
 struct nmreq_vale_delif {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
 };
 
 /*
@@ -605,7 +597,11 @@ struct nmreq_vale_delif {
  */
 struct nmreq_vale_polling {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
+	uint32_t	nr_mode;
+#define NETMAP_POLLING_MODE_SINGLE_CPU 1
+#define NETMAP_POLLING_MODE_MULTI_CPU 2
+	uint32_t	nr_first_cpu_id;
+	uint32_t	nr_num_polling_cpus;
 };
 
 /*
@@ -615,9 +611,8 @@ struct nmreq_vale_polling {
  */
 struct nmreq_pools_info_get {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ];
 	uint64_t	nr_memsize;
-	uint64_t	nr_mem_id;
+	uint16_t	nr_mem_id;
 	uint64_t	nr_if_pool_offset;
 	uint32_t	nr_if_pool_objtotal;
 	uint32_t	nr_if_pool_objsize;
@@ -638,7 +633,6 @@ struct nmreq_pools_info_get {
  */
 struct nmreq_vale_ops_register {
 	struct nmreq_header nr_hdr;
-	char		nr_name[NETMAP_REQ_IFNAMSIZ];	/* valeXXX:YYY */
 };
 
 #endif /* _NET_NETMAP_H_ */
