@@ -2344,6 +2344,7 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			break;
 		}
 		case NETMAP_POOLS_INFO_GET: {
+			/* We could deny this request similar to ptnetmap requests. */
 			struct nmreq_pools_info_get *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
 			req->nr_hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
@@ -2373,7 +2374,7 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			hdr = (struct nmreq_header *)req;
 		} else {
 			/* Regular NIOCGINFO. */
-			struct nmreq_vale_list *req = nm_os_malloc(sizeof(*req));
+			struct nmreq_port_info_get *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
 			req->nr_hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
 			strncpy(req->nr_name, nmr->nr_name, sizeof(req->nr_name));
@@ -2401,10 +2402,122 @@ oom:
 /* Convert a nmreq_xyz struct (new API) to the legacy 'nmr' struct.
  * It also frees the nmreq_xyz struct, as it was allocated by
  * nmreq_from_legacy(). */
-static void
+static int
 nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 {
+	int ret = 0;
+	/* Don't bzero 'nmr', we may need the pointers stored into
+	 * nr_arg1, nr_arg2 and nr_arg3 (see NETMAP_REQ_POOLS_INFO_GET). */
+
+	switch (hdr->nr_reqtype) {
+	case NETMAP_REQ_REGISTER: {
+		struct nmreq_register *req = (struct nmreq_register *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		nmr->nr_offset = req->nr_offset;
+		nmr->nr_memsize = req->nr_memsize;
+		nmr->nr_tx_slots = req->nr_tx_slots;
+		nmr->nr_rx_slots = req->nr_rx_slots;
+		nmr->nr_tx_rings = req->nr_tx_rings;
+		nmr->nr_rx_rings = req->nr_rx_rings;
+		nmr->nr_arg2 = req->nr_mem_id;
+		nmr->nr_ringid = req->nr_ringid;
+		if (req->nr_flags & NR_NO_TX_POLL) {
+			nmr->nr_ringid |= NETMAP_NO_TX_POLL;
+		}
+		if (req->nr_flags & NR_DO_RX_POLL) {
+			nmr->nr_ringid |= NETMAP_DO_RX_POLL;
+		}
+		nmr->nr_flags = req->nr_mode | req->nr_flags;
+		nmr->nr_arg1 = req->nr_pipes;
+		nmr->nr_arg3 = req->nr_extra_bufs;
+		break;
+	}
+	case NETMAP_REQ_PORT_INFO_GET: {
+		struct nmreq_port_info_get *req = (struct nmreq_port_info_get *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		nmr->nr_offset = req->nr_offset;
+		nmr->nr_memsize = req->nr_memsize;
+		nmr->nr_tx_slots = req->nr_tx_slots;
+		nmr->nr_rx_slots = req->nr_rx_slots;
+		nmr->nr_tx_rings = req->nr_tx_rings;
+		nmr->nr_rx_rings = req->nr_rx_rings;
+		nmr->nr_arg2 = req->nr_mem_id;
+		break;
+	}
+	case NETMAP_REQ_VALE_ATTACH: {
+		struct nmreq_vale_attach *req = (struct nmreq_vale_attach *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		nmr->nr_arg2 = req->nr_mem_id;
+		nmr->nr_arg1 = req->nr_flags;
+		break;
+	}
+	case NETMAP_REQ_VALE_DETACH: {
+		struct nmreq_vale_detach *req = (struct nmreq_vale_detach *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		break;
+	}
+	case NETMAP_REQ_VALE_LIST: {
+		struct nmreq_vale_list *req = (struct nmreq_vale_list *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		nmr->nr_arg1 = req->nr_bridge_idx;
+		nmr->nr_arg2 = req->nr_port_idx;
+		break;
+	}
+	case NETMAP_REQ_PORT_HDR_SET:
+	case NETMAP_REQ_PORT_HDR_GET: {
+		struct nmreq_port_hdr *req = (struct nmreq_port_hdr *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		nmr->nr_arg1 = req->nr_hdr_len;
+		break;
+	}
+	case NETMAP_REQ_VALE_NEWIF: {
+		struct nmreq_vale_newif *req = (struct nmreq_vale_newif *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		nmr->nr_tx_slots = req->nr_tx_slots;
+		nmr->nr_rx_slots = req->nr_rx_slots;
+		nmr->nr_tx_rings = req->nr_tx_rings;
+		nmr->nr_rx_rings = req->nr_rx_rings;
+		nmr->nr_arg2 = req->nr_mem_id;
+		break;
+	}
+	case NETMAP_REQ_VALE_DELIF: {
+		struct nmreq_vale_delif *req = (struct nmreq_vale_delif *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		break;
+	}
+	case NETMAP_REQ_VALE_POLLING_ENABLE:
+	case NETMAP_REQ_VALE_POLLING_DISABLE: {
+		struct nmreq_vale_polling *req = (struct nmreq_vale_polling *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		break;
+	}
+	case NETMAP_REQ_POOLS_INFO_GET: {
+		uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
+		struct netmap_pools_info *upi = (struct netmap_pools_info *)(*pp);
+		struct netmap_pools_info pi;
+		struct nmreq_pools_info_get *req = (struct nmreq_pools_info_get *)hdr;
+		strncpy(nmr->nr_name, req->nr_name, sizeof(nmr->nr_name));
+		pi.memsize = req->nr_memsize;
+		pi.memid = req->nr_mem_id;
+		pi.if_pool_offset = req->nr_if_pool_offset;
+		pi.if_pool_objtotal = req->nr_if_pool_objtotal;
+		pi.if_pool_objsize = req->nr_if_pool_objsize;
+		pi.ring_pool_offset = req->nr_ring_pool_offset;
+		pi.ring_pool_objtotal = req->nr_ring_pool_objtotal;
+		pi.ring_pool_objsize = req->nr_ring_pool_objsize;
+		pi.buf_pool_offset = req->nr_buf_pool_offset;
+		pi.buf_pool_objtotal = req->nr_buf_pool_objtotal;
+		pi.buf_pool_objsize = req->nr_buf_pool_objsize;
+		ret = copyout(&pi, upi, sizeof(pi));
+		if (ret) {
+			D("copyout() failed");
+		}
+		break;
+	}
+	}
+
 	nm_os_free(hdr);
+	return ret;
 }
 
 /*
