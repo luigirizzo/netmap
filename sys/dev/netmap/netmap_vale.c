@@ -514,13 +514,14 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 
 /* nm_bdg_ctl callback for VALE ports */
 static int
-netmap_vp_bdg_ctl(struct netmap_adapter *na, int attach)
+netmap_vp_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	struct nm_bridge *b = vpna->na_bdg;
 
-	if (attach)
+	if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
 		return 0; /* nothing to do */
+	}
 	if (b) {
 		netmap_set_all_rings(na, 0 /* disable */);
 		netmap_bdg_detach_common(b, vpna->bdg_port, -1);
@@ -898,7 +899,7 @@ nm_bdg_ctl_attach(struct nmreq_vale_attach *req)
 		/* nop for VALE ports. The bwrap needs to put the hwna
 		 * in netmap mode (see netmap_bwrap_bdg_ctl)
 		 */
-		error = na->nm_bdg_ctl(na, 1);
+		error = na->nm_bdg_ctl((struct nmreq_header *)req, na);
 		if (error)
 			goto unref_exit;
 		ND("registered %s to netmap-mode", na->name);
@@ -947,7 +948,7 @@ nm_bdg_ctl_detach(struct nmreq_vale_detach *req)
 		/* remove the port from bridge. The bwrap
 		 * also needs to put the hwna in normal mode
 		 */
-		error = na->nm_bdg_ctl(na, 0);
+		error = na->nm_bdg_ctl((struct nmreq_header *)req, na);
 	}
 
 	netmap_adapter_put(na);
@@ -2709,13 +2710,15 @@ put_out:
  * directed to hwna.
  */
 static int
-netmap_bwrap_bdg_ctl(struct netmap_adapter *na, int attach)
+netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 {
 	struct netmap_priv_d *npriv;
 	struct netmap_bwrap_adapter *bna = (struct netmap_bwrap_adapter*)na;
 	int error = 0;
 
-	if (attach) {
+	if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
+		struct nmreq_vale_attach *req =
+			(struct nmreq_vale_attach *)hdr;
 		if (NETMAP_OWNED_BY_ANY(na)) {
 			return EBUSY;
 		}
@@ -2727,7 +2730,9 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, int attach)
 		if (npriv == NULL)
 			return ENOMEM;
 		npriv->np_ifp = na->ifp; /* let the priv destructor release the ref */
-		error = netmap_do_regif(npriv, na, /* TODO no-host-rings*/ NR_REG_NIC_SW, 0, 0);
+		error = netmap_do_regif(npriv, na,
+			(req->nr_flags & NETMAP_BDG_HOST) ? NR_REG_NIC_SW : NR_REG_ALL_NIC,
+			0, 0);
 		if (error) {
 			netmap_priv_delete(npriv);
 			return error;
@@ -2741,8 +2746,8 @@ netmap_bwrap_bdg_ctl(struct netmap_adapter *na, int attach)
 		bna->na_kpriv = NULL;
 		na->na_flags &= ~NAF_BUSY;
 	}
-	return error;
 
+	return error;
 }
 
 /* attach a bridge wrapper to the 'real' device */
