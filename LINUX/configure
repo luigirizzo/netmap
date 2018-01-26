@@ -272,6 +272,8 @@ Available options:
   --help                       print this message
   --kernel-dir=                path to configured kernel directory
   --kernel-sources=            path to full kernel sources
+  --kernel-version=	       specifiy the kernel version
+  				(assuming everything is in the default place)
   --kernel-opts=	       additional options to pass to kernel make
                                (you can call this several times)
   --install-mod-path=          where the modules will be installed
@@ -516,6 +518,8 @@ for opt do
 	--kernel-dir=*) ksrc="$optarg"
 	;;
 	--kernel-sources=*) src="$optarg"
+	;;
+	--kernel-version=*) ksrc="/lib/modules/$optarg/build"
 	;;
 	--kernel-opts=*) kopts="$kopts $optarg"
 	;;
