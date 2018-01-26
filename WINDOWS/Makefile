@@ -81,6 +81,7 @@ SRCS	+= netmap_mem2.c
 SRCS	+= netmap_monitor.c
 SRCS	+= netmap_pipe.c
 SRCS	+= netmap_vale.c
+SRCS	+= netmap_legacy.c
 SRCS	+= netmap_windows.c
 SRCS	+= win_glue.c
 

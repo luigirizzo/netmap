@@ -202,6 +202,7 @@
     <ClCompile Include="..\sys\dev\netmap\netmap_monitor.c" />
     <ClCompile Include="..\sys\dev\netmap\netmap_pipe.c" />
     <ClCompile Include="..\sys\dev\netmap\netmap_vale.c" />
+    <ClCompile Include="..\sys\dev\netmap\netmap_legacy.c" />
     <ClCompile Include="netmap_windows.c" />
     <ClCompile Include="win_glue.c" />
   </ItemGroup>
