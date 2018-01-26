@@ -75,7 +75,7 @@
 #define WITH_GENERIC
 #define WITH_PTNETMAP_HOST	/* ptnetmap host support */
 #define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
-
+#define WITH_EXTMEM
 #endif
 
 #if defined(__FreeBSD__)
