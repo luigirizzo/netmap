@@ -73,7 +73,9 @@ port_register(int fd, struct TestContext *ctx)
 	struct nmreq_register req;
 	int ret;
 
-	printf("Testing NETMAP_REQ_REGISTER on '%s'\n", ctx->ifname);
+	printf("Testing NETMAP_REQ_REGISTER(mode=%d,ringid=%d,"
+		"flags=%lx) on '%s'\n", ctx->nr_mode, ctx->nr_ringid,
+		ctx->nr_flags, ctx->ifname);
 
 	memset(&req, 0, sizeof(req));
 	req.nr_hdr.nr_version = NETMAP_API;
@@ -92,8 +94,14 @@ port_register(int fd, struct TestContext *ctx)
 	printf("nr_tx_rings %u\n", req.nr_tx_rings);
 	printf("nr_rx_rings %u\n", req.nr_rx_rings);
 	printf("nr_mem_id %u\n", req.nr_mem_id);
+	printf("nr_mode %u\n", req.nr_mode);
+	printf("nr_ringid %u\n", req.nr_ringid);
+	printf("nr_flags %lx\n", req.nr_flags);
 
 	return req.nr_memsize &&
+		(ctx->nr_mode == req.nr_mode) &&
+		(ctx->nr_ringid == req.nr_ringid) &&
+		(ctx->nr_flags == req.nr_flags) &&
 		((!ctx->nr_tx_slots && req.nr_tx_slots) ||
 			(ctx->nr_tx_slots == req.nr_tx_slots)) &&
 		((!ctx->nr_rx_slots && req.nr_rx_slots) ||
@@ -109,13 +117,47 @@ port_register(int fd, struct TestContext *ctx)
 		       ? 0 : -1;
 }
 
+static int
+port_register_hwall_host(int fd, struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_NIC_SW;
+	return port_register(fd, ctx);
+}
+
+static int
+port_register_host(int fd, struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_SW;
+	return port_register(fd, ctx);
+}
+
+static int
+port_register_hwall(int fd, struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_ALL_NIC;
+	return port_register(fd, ctx);
+}
+
+static int
+port_register_single_ring_couple(int fd, struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_ONE_NIC;
+	ctx->nr_ringid = 0;
+	return port_register(fd, ctx);
+}
+
 static void
 usage(const char *prog)
 {
 	printf("%s -i IFNAME\n", prog);
 }
 
-static testfunc_t tests[] = {port_info_get, port_register};
+static testfunc_t tests[] = {
+		port_info_get,
+		port_register_hwall_host,
+		port_register_hwall,
+		port_register_host,
+		port_register_single_ring_couple};
 
 int
 main(int argc, char **argv)
@@ -156,6 +198,7 @@ main(int argc, char **argv)
 		ret = tests[i](fd, &ctx);
 		if (ret) {
 			printf("Test #%d failed\n", i + 1);
+			return ret;
 		}
 		printf("Test #%d successful\n", i + 1);
 	}
