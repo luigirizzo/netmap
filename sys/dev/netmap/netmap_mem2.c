@@ -2233,6 +2233,9 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 			size_t noff;
 
 			p->lut[j].vaddr = clust + off;
+#if !defined(linux) && !defined(_WIN32)
+			p->lut[j].paddr = vtophys(p->lut[j].vaddr);
+#endif
 			ND("%s %d at %p", p->name, j, p->lut[j].vaddr);
 			noff = off + p->_objsize;
 			if (noff < PAGE_SIZE) {
