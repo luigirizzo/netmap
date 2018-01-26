@@ -11,6 +11,7 @@
 
 struct TestContext {
 	const char	*ifname;
+	const char	*bdgname;
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
 	uint32_t	nr_rx_slots;	/* slots in rx rings */
 	uint16_t	nr_tx_rings;	/* number of tx rings */
@@ -26,9 +27,11 @@ struct TestContext {
 static void
 ctx_reset(struct TestContext *ctx)
 {
-	const char *tmp = ctx->ifname;
+	const char *tmp1 = ctx->ifname;
+	const char *tmp2 = ctx->bdgname;
 	memset(ctx, 0, sizeof(*ctx));
-	ctx->ifname = tmp;
+	ctx->ifname = tmp1;
+	ctx->bdgname = tmp2;
 }
 
 typedef int (*testfunc_t)(int fd, struct TestContext *ctx);
@@ -60,10 +63,8 @@ port_info_get(int fd, struct TestContext *ctx)
 	printf("nr_mem_id %u\n", req.nr_mem_id);
 
 	return req.nr_memsize && req.nr_tx_slots && req.nr_rx_slots &&
-			       req.nr_tx_rings && req.nr_rx_rings &&
-			       req.nr_tx_rings
-		       ? 0
-		       : -1;
+		req.nr_tx_rings && req.nr_rx_rings && req.nr_tx_rings
+		       ? 0 : -1;
 }
 
 /* Single NETMAP_REQ_REGISTER, no use. */
@@ -80,7 +81,16 @@ port_register(int fd, struct TestContext *ctx)
 	memset(&req, 0, sizeof(req));
 	req.nr_hdr.nr_version = NETMAP_API;
 	req.nr_hdr.nr_reqtype = NETMAP_REQ_REGISTER;
-	req.nr_mode	   = NR_REG_NIC_SW;
+	req.nr_mem_id	   = ctx->nr_mem_id;
+	req.nr_mode	   = ctx->nr_mode;
+	req.nr_ringid	   = ctx->nr_ringid;
+	req.nr_flags	   = ctx->nr_flags;
+	req.nr_tx_slots	   = ctx->nr_tx_slots;
+	req.nr_rx_slots	   = ctx->nr_rx_slots;
+	req.nr_tx_rings	   = ctx->nr_tx_rings;
+	req.nr_rx_rings	   = ctx->nr_rx_rings;
+	req.nr_pipes	   = ctx->nr_pipes;
+	req.nr_extra_bufs  = ctx->nr_extra_bufs;
 	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
 	ret = ioctl(fd, NIOCCTRL, &req);
 	if (ret) {
@@ -94,9 +104,6 @@ port_register(int fd, struct TestContext *ctx)
 	printf("nr_tx_rings %u\n", req.nr_tx_rings);
 	printf("nr_rx_rings %u\n", req.nr_rx_rings);
 	printf("nr_mem_id %u\n", req.nr_mem_id);
-	printf("nr_mode %u\n", req.nr_mode);
-	printf("nr_ringid %u\n", req.nr_ringid);
-	printf("nr_flags %lx\n", req.nr_flags);
 
 	return req.nr_memsize &&
 		(ctx->nr_mode == req.nr_mode) &&
@@ -146,6 +153,58 @@ port_register_single_ring_couple(int fd, struct TestContext *ctx)
 	return port_register(fd, ctx);
 }
 
+/* First NETMAP_REQ_VALE_ATTACH, then NETMAP_REQ_VALE_DETACH. */
+static int
+vale_attach_detach(int fd, struct TestContext *ctx)
+{
+	struct nmreq_vale_attach req;
+	struct nmreq_vale_detach dreq;
+	char vpname[256];
+	int result = 0;
+	int ret;
+
+	snprintf(vpname, sizeof(vpname), "%s:%s", ctx->bdgname, ctx->ifname);
+	printf("Testing NETMAP_REQ_VALE_ATTACH on '%s'\n", vpname);
+
+	memset(&req, 0, sizeof(req));
+	req.nr_hdr.nr_version = NETMAP_API;
+	req.nr_hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
+	strncpy(req.nr_hdr.nr_name, vpname, sizeof(req.nr_hdr.nr_name));
+	req.nr_mem_id = ctx->nr_mem_id;
+	req.nr_flags = ctx->nr_flags;
+	ret = ioctl(fd, NIOCCTRL, &req);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_ATTACH)");
+		return ret;
+	}
+	printf("nr_mem_id %u\n", req.nr_mem_id);
+
+	result = ((!ctx->nr_mem_id && req.nr_mem_id > 1) ||
+			(ctx->nr_mem_id == req.nr_mem_id)) &&
+		(ctx->nr_flags == req.nr_flags)
+		       ? 0 : -1;
+
+	memset(&dreq, 0, sizeof(dreq));
+	memcpy(&dreq, &req, sizeof(dreq.nr_hdr));
+	dreq.nr_hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
+	ret = ioctl(fd, NIOCCTRL, &dreq);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_DETACH)");
+		if (result == 0) {
+			result = ret;
+		}
+	}
+
+	return result;
+}
+
+static int
+vale_attach_detach_host_rings(int fd, struct TestContext *ctx)
+{
+	ctx->nr_flags = NETMAP_BDG_HOST;
+	return vale_attach_detach(fd, ctx);
+}
+
 static void
 usage(const char *prog)
 {
@@ -157,7 +216,9 @@ static testfunc_t tests[] = {
 		port_register_hwall_host,
 		port_register_hwall,
 		port_register_host,
-		port_register_single_ring_couple};
+		port_register_single_ring_couple,
+		vale_attach_detach,
+		vale_attach_detach_host_rings};
 
 int
 main(int argc, char **argv)
@@ -168,6 +229,7 @@ main(int argc, char **argv)
 
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.ifname = "ens4";
+	ctx.bdgname = "vale1x2";
 
 	while ((opt = getopt(argc, argv, "hi:")) != -1) {
 		switch (opt) {
@@ -201,6 +263,7 @@ main(int argc, char **argv)
 			return ret;
 		}
 		printf("Test #%d successful\n", i + 1);
+		close(fd);
 	}
 
 	return 0;
