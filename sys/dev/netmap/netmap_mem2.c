@@ -2231,7 +2231,6 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 
 		for (j = 0; j < o->num && nr_pages > 0; j++) {
 			size_t noff;
-			size_t skip;
 
 			p->lut[j].vaddr = clust + off;
 			ND("%s %d at %p", p->name, j, p->lut[j].vaddr);
@@ -2241,10 +2240,9 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 				continue;
 			}
 			ND("too big, recomputing offset...");
-			skip = PAGE_SIZE - (off & PAGE_MASK);
 			while (noff >= PAGE_SIZE) {
 				char *old_clust = clust;
-				noff -= skip;
+				noff -= PAGE_SIZE;
 				clust = nm_os_extmem_nextpage(nme->os);
 				nr_pages--;
 				ND("noff %zu page %p nr_pages %d", noff,
@@ -2261,7 +2259,6 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 				}
 				if (nr_pages == 0)
 					break;
-				skip = PAGE_SIZE;
 			}
 			off = noff;
 		}
