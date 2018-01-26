@@ -1516,8 +1516,8 @@ int netmap_get_memory(struct netmap_priv_d* p);
 void netmap_dtor(void *data);
 
 int netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *);
-struct nmreq_header *nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd);
-int nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr);
+int netmap_ioctl_legacy(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
+			struct thread *td);
 
 /* netmap_adapter creation/destruction */
 

@@ -2516,25 +2516,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		break;
 	}
 
-	case NIOCGINFO:
-	case NIOCREGIF: {
-		/* Request for the legacy control API. Convert it to a
-		 * NIOCCTRL request. */
-		struct nmreq *nmr = (struct nmreq *) data;
-		struct nmreq_header *hdr = nmreq_from_legacy(nmr, cmd);
-		if (hdr == NULL) { /* out of memory */
-			return ENOMEM;
-		}
-		error = netmap_ioctl(priv, NIOCCTRL, (caddr_t)hdr, td);
-		if (error == 0) {
-			nmreq_to_legacy(hdr, nmr);
-		}
-		nm_os_free(hdr);
-		break;
-	}
-
 	case NIOCTXSYNC:
-	case NIOCRXSYNC:
+	case NIOCRXSYNC: {
 		nifp = priv->np_nifp;
 
 		if (nifp == NULL) {
@@ -2602,49 +2585,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		}
 
 		break;
+	}
 
-#ifdef WITH_VALE
-	case NIOCCONFIG: {
-		struct nm_ifreq *nr = (struct nm_ifreq *)data;
-		error = netmap_bdg_config(nr);
+	default: {
+		return netmap_ioctl_legacy(priv, cmd, data, td);
 		break;
 	}
-#endif
-#ifdef __FreeBSD__
-	case FIONBIO:
-	case FIOASYNC:
-		ND("FIONBIO/FIOASYNC are no-ops");
-		break;
-
-	case BIOCIMMEDIATE:
-	case BIOCGHDRCMPLT:
-	case BIOCSHDRCMPLT:
-	case BIOCSSEESENT:
-		D("ignore BIOCIMMEDIATE/BIOCSHDRCMPLT/BIOCSHDRCMPLT/BIOCSSEESENT");
-		break;
-
-	default:	/* allow device-specific ioctls */
-	    {
-		struct nmreq *nmr = (struct nmreq *)data;
-		struct ifnet *ifp = ifunit_ref(nmr->nr_name);
-		if (ifp == NULL) {
-			error = ENXIO;
-		} else {
-			struct socket so;
-
-			bzero(&so, sizeof(so));
-			so.so_vnet = ifp->if_vnet;
-			// so->so_proto not null.
-			error = ifioctl(&so, cmd, data, td);
-			if_rele(ifp);
-		}
-		break;
-	    }
-
-#else /* linux */
-	default:
-		error = EOPNOTSUPP;
-#endif /* linux */
 	}
 
 	return (error);
