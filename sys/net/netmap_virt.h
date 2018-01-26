@@ -110,27 +110,6 @@ struct ptnetmap_cfgentry_bhyve {
 };
 
 /*
- * nr_reqtype: NETMAP_REQ_PASSTHROUGH_ENABLE
- * Enable host-side ptnetmap processing (e.g. start ptnetmap kthreads).
- */
-struct nmreq_passthrough_enable {
-	struct nmreq_header	nr_hdr;
-	/* Userspace pointer to a variable-size struct containing the
-	 * ptnetmap configuration. */
-	struct pnetmap_cfg	*nr_cfg;
-	/* Length of the configuration struct above (in bytes). */
-	uint32_t		nr_cfg_len;
-};
-
-/*
- * nr_reqtype: NETMAP_REQ_PASSTHROUGH_DISABLE
- * Disalbe host-side ptnetmap processing (e.g. stop ptnetmap kthreads).
- */
-struct nmreq_passthrough_disable {
-	struct nmreq_header	nr_hdr;
-};
-
-/*
  * Pass a pointer to a userspace buffer to be passed to kernelspace for write
  * or read. Used by NETMAP_PT_HOST_CREATE and NETMAP_POOLS_INFO_GET.
  * XXX deprecated

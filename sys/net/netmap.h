@@ -430,12 +430,6 @@ enum {
 	NETMAP_REQ_VALE_POLLING_DISABLE,
 	/* Get info about the pools of a memory allocator. */
 	NETMAP_REQ_POOLS_INFO_GET,
-	/* Enable host-side ptnetmap processing (e.g. start ptnetmap
-	 * kthreads). */
-	NETMAP_REQ_PASSTHROUGH_ENABLE,
-	/* Disable host-side ptnetmap processing (e.g. stop ptnetmap
-	 * kthreads). */
-	NETMAP_REQ_PASSTHROUGH_DISABLE,
 	/* Program a VALE switch by registering custom callbacks. */
 	NETMAP_REQ_VALE_OPS_REGISTER,
 };
