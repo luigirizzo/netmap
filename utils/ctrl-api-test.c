@@ -211,7 +211,8 @@ vale_attach_detach_host_rings(int fd, struct TestContext *ctx)
 	return vale_attach_detach(fd, ctx);
 }
 
-/* NETMAP_REQ_PORT_HDR_SET and NETMAP_REQ_PORT_HDR_GET. */
+/* First NETMAP_REQ_PORT_HDR_SET and the NETMAP_REQ_PORT_HDR_GET
+ * to check that we get the same value. */
 static int
 port_hdr_set_and_get(int fd, struct TestContext *ctx)
 {
@@ -225,6 +226,19 @@ port_hdr_set_and_get(int fd, struct TestContext *ctx)
 	req.nr_hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
 	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
 	req.nr_hdr_len = ctx->nr_hdr_len;
+	ret = ioctl(fd, NIOCCTRL, &req);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_HDR_SET)");
+		return ret;
+	}
+
+	if (req.nr_hdr_len != ctx->nr_hdr_len) {
+		return -1;
+	}
+
+	printf("Testing NETMAP_REQ_PORT_HDR_GET on '%s'\n", ctx->ifname);
+	req.nr_hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
+	req.nr_hdr_len = 0;
 	ret = ioctl(fd, NIOCCTRL, &req);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_HDR_SET)");
@@ -244,8 +258,20 @@ vale_ephemeral_port_hdr_manipulation(int fd, struct TestContext *ctx)
 	if ((ret = port_register(fd, ctx))) {
 		return ret;
 	}
+	/* Try to set and get all the acceptable values. */
 	ctx->nr_hdr_len = 12;
-	return port_hdr_set_and_get(fd, ctx);
+	if ((ret = port_hdr_set_and_get(fd, ctx))) {
+		return ret;
+	}
+	ctx->nr_hdr_len = 0;
+	if ((ret = port_hdr_set_and_get(fd, ctx))) {
+		return ret;
+	}
+	ctx->nr_hdr_len = 10;
+	if ((ret = port_hdr_set_and_get(fd, ctx))) {
+		return ret;
+	}
+	return 0;
 }
 
 static void
