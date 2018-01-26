@@ -208,7 +208,7 @@ vale_attach_detach_host_rings(int fd, struct TestContext *ctx)
 static void
 usage(const char *prog)
 {
-	printf("%s -i IFNAME\n", prog);
+	printf("%s -i IFNAME [-j TESTCASE]\n", prog);
 }
 
 static testfunc_t tests[] = {
@@ -225,13 +225,14 @@ main(int argc, char **argv)
 {
 	struct TestContext ctx;
 	unsigned int i;
+	int j = -1;
 	int opt;
 
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.ifname = "ens4";
 	ctx.bdgname = "vale1x2";
 
-	while ((opt = getopt(argc, argv, "hi:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:j:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage(argv[0]);
@@ -239,6 +240,10 @@ main(int argc, char **argv)
 
 		case 'i':
 			ctx.ifname = optarg;
+			break;
+
+		case 'j':
+			j = atoi(optarg);
 			break;
 
 		default:
@@ -251,6 +256,9 @@ main(int argc, char **argv)
 	for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
 		int fd;
 		int ret;
+		if (j > 0 && (unsigned)j != i+1) {
+			continue;
+		}
 		fd = open("/dev/netmap", O_RDWR);
 		if (fd < 0) {
 			perror("open(/dev/netmap)");
