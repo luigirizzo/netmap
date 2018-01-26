@@ -1065,7 +1065,6 @@ linux_netmap_set_channels(struct net_device *dev,
 }
 #endif
 
-
 #ifndef NETMAP_LINUX_HAVE_UNLOCKED_IOCTL
 #define LIN_IOCTL_NAME	.ioctl
 static int
@@ -1081,6 +1080,10 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 	union {
 		struct nm_ifreq ifr;
 		struct nmreq nmr;
+		/* It must follow the largest among the nmreq_xyz structs,
+		 * so that there is enough space for any NIOCCTRL request.
+		 * This is asserted by the BUG_ON() below. */
+		struct nmreq_register req;
 	} arg;
 	size_t argsize = 0;
 
@@ -1091,9 +1094,24 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 	case NIOCCONFIG:
 		argsize = sizeof(arg.ifr);
 		break;
-	default:
+	case NIOCREGIF:
+	case NIOCGINFO:
 		argsize = sizeof(arg.nmr);
 		break;
+	case NIOCCTRL: {
+		/* Look at the value of the nr_reqtype field to know
+		 * how much we need to copy from/to userspace. */
+		size_t peeksize = sizeof(arg.req.nr_hdr.nr_version) +
+				sizeof(arg.req.nr_hdr.nr_reqtype);
+		if (copy_from_user(&arg, (void *)data, peeksize) != 0)
+			return -EFAULT;
+		argsize = nmreq_size_by_type(arg.req.nr_hdr.nr_reqtype);
+		BUG_ON(argsize > sizeof(arg));
+		if (argsize == 0) {
+			return -EINVAL;
+		}
+		break;
+	}
 	}
 	if (argsize) {
 		if (!data)

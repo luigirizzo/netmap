@@ -396,7 +396,8 @@ struct nmreq_option {
 	uint16_t		nro_reqtype;
 };
 
-/* Header common to all requests. */
+/* Header common to all requests. Do not reorder these fields, as we need
+ * the second one (nr_reqtype) to know how much to copy from/to userspace. */
 struct nmreq_header {
 	uint16_t		nr_version;	/* API version */
 	uint16_t		nr_reqtype;	/* nmreq type (NETMAP_REQ_*) */
@@ -498,8 +499,8 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  * Demultiplexing is done using the nr_hdr.nr_reqtype field.
  * FreeBSD uses the size value embedded in the _IOWR to determine
  * how much to copy in/out, so we define the ioctl() command
- * specifying the largest among the nmreq_xyz structs. */
-#define NIOCCTRL	_IOWR('i', 151, struct nmreq_register)
+ * specifying only nmreq_header, and copyin the remainder. */
+#define NIOCCTRL	_IOWR('i', 151, struct nmreq_header)
 
 /* The ioctl commands to sync TX/RX netmap rings. */
 #define NIOCTXSYNC	_IO('i', 148) /* sync tx queues */
