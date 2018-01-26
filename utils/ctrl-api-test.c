@@ -22,8 +22,10 @@ struct TestContext {
 	uint64_t	nr_flags;	/* additional flags (see below) */
 	uint32_t	nr_pipes;	/* number of pipes to create */
 	uint32_t	nr_extra_bufs;	/* number of requested extra buffers */
+	uint32_t	nr_hdr_len;
 };
 
+#if 0
 static void
 ctx_reset(struct TestContext *ctx)
 {
@@ -33,6 +35,7 @@ ctx_reset(struct TestContext *ctx)
 	ctx->ifname = tmp1;
 	ctx->bdgname = tmp2;
 }
+#endif
 
 typedef int (*testfunc_t)(int fd, struct TestContext *ctx);
 
@@ -104,6 +107,8 @@ port_register(int fd, struct TestContext *ctx)
 	printf("nr_tx_rings %u\n", req.nr_tx_rings);
 	printf("nr_rx_rings %u\n", req.nr_rx_rings);
 	printf("nr_mem_id %u\n", req.nr_mem_id);
+	printf("nr_pipes %u\n", req.nr_pipes);
+	printf("nr_extra_bufs %u\n", req.nr_extra_bufs);
 
 	return req.nr_memsize &&
 		(ctx->nr_mode == req.nr_mode) &&
@@ -119,7 +124,7 @@ port_register(int fd, struct TestContext *ctx)
 			(ctx->nr_rx_rings == req.nr_rx_rings)) &&
 		((!ctx->nr_mem_id && req.nr_mem_id) ||
 			(ctx->nr_mem_id == req.nr_mem_id)) &&
-		(ctx->nr_pipes == req.nr_pipes) &&
+		(!ctx->nr_pipes || (ctx->nr_pipes == req.nr_pipes)) &&
 		(ctx->nr_extra_bufs == req.nr_extra_bufs)
 		       ? 0 : -1;
 }
@@ -164,8 +169,8 @@ vale_attach_detach(int fd, struct TestContext *ctx)
 	int ret;
 
 	snprintf(vpname, sizeof(vpname), "%s:%s", ctx->bdgname, ctx->ifname);
-	printf("Testing NETMAP_REQ_VALE_ATTACH on '%s'\n", vpname);
 
+	printf("Testing NETMAP_REQ_VALE_ATTACH on '%s'\n", vpname);
 	memset(&req, 0, sizeof(req));
 	req.nr_hdr.nr_version = NETMAP_API;
 	req.nr_hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
@@ -184,6 +189,7 @@ vale_attach_detach(int fd, struct TestContext *ctx)
 		(ctx->nr_flags == req.nr_flags)
 		       ? 0 : -1;
 
+	printf("Testing NETMAP_REQ_VALE_DETACH on '%s'\n", vpname);
 	memset(&dreq, 0, sizeof(dreq));
 	memcpy(&dreq, &req, sizeof(dreq.nr_hdr));
 	dreq.nr_hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
@@ -205,6 +211,43 @@ vale_attach_detach_host_rings(int fd, struct TestContext *ctx)
 	return vale_attach_detach(fd, ctx);
 }
 
+/* NETMAP_REQ_PORT_HDR_SET and NETMAP_REQ_PORT_HDR_GET. */
+static int
+port_hdr_set_and_get(int fd, struct TestContext *ctx)
+{
+	struct nmreq_port_hdr req;
+	int ret;
+
+	printf("Testing NETMAP_REQ_PORT_HDR_SET on '%s'\n", ctx->ifname);
+
+	memset(&req, 0, sizeof(req));
+	req.nr_hdr.nr_version = NETMAP_API;
+	req.nr_hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
+	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
+	req.nr_hdr_len = ctx->nr_hdr_len;
+	ret = ioctl(fd, NIOCCTRL, &req);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_HDR_SET)");
+		return ret;
+	}
+	printf("nr_hdr_len %u\n", req.nr_hdr_len);
+
+	return (req.nr_hdr_len == ctx->nr_hdr_len) ? 0 : -1;
+}
+
+static int
+vale_ephemeral_port_hdr_manipulation(int fd, struct TestContext *ctx)
+{
+	int ret;
+	ctx->ifname = "vale:eph0";
+	ctx->nr_mode = NR_REG_ALL_NIC;
+	if ((ret = port_register(fd, ctx))) {
+		return ret;
+	}
+	ctx->nr_hdr_len = 12;
+	return port_hdr_set_and_get(fd, ctx);
+}
+
 static void
 usage(const char *prog)
 {
@@ -218,7 +261,8 @@ static testfunc_t tests[] = {
 		port_register_host,
 		port_register_single_ring_couple,
 		vale_attach_detach,
-		vale_attach_detach_host_rings};
+		vale_attach_detach_host_rings,
+		vale_ephemeral_port_hdr_manipulation};
 
 int
 main(int argc, char **argv)
@@ -229,7 +273,7 @@ main(int argc, char **argv)
 	int opt;
 
 	memset(&ctx, 0, sizeof(ctx));
-	ctx.ifname = "ens4";
+	ctx.ifname = "lo";
 	ctx.bdgname = "vale1x2";
 
 	while ((opt = getopt(argc, argv, "hi:j:")) != -1) {
@@ -254,6 +298,7 @@ main(int argc, char **argv)
 	}
 
 	for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+		struct TestContext ctxcopy;
 		int fd;
 		int ret;
 		if (j > 0 && (unsigned)j != i+1) {
@@ -264,8 +309,8 @@ main(int argc, char **argv)
 			perror("open(/dev/netmap)");
 			return fd;
 		}
-		ctx_reset(&ctx);
-		ret = tests[i](fd, &ctx);
+		memcpy(&ctxcopy, &ctx, sizeof(ctxcopy));
+		ret = tests[i](fd, &ctxcopy);
 		if (ret) {
 			printf("Test #%d failed\n", i + 1);
 			return ret;
