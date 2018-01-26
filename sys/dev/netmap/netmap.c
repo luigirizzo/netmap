@@ -2644,6 +2644,38 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 	return (error);
 }
 
+size_t
+nmreq_size_by_type(uint16_t nr_reqtype)
+{
+	switch (nr_reqtype) {
+	case NETMAP_REQ_REGISTER:
+		return sizeof(struct nmreq_register);
+	case NETMAP_REQ_PORT_INFO_GET:
+		return sizeof(struct nmreq_port_info_get);
+	case NETMAP_REQ_VALE_ATTACH:
+		return sizeof(struct nmreq_vale_attach);
+	case NETMAP_REQ_VALE_DETACH:
+		return sizeof(struct nmreq_vale_detach);
+	case NETMAP_REQ_VALE_LIST:
+		return sizeof(struct nmreq_vale_list);
+	case NETMAP_REQ_PORT_HDR_SET:
+	case NETMAP_REQ_PORT_HDR_GET:
+		return sizeof(struct nmreq_port_hdr);
+	case NETMAP_REQ_VALE_NEWIF:
+		return sizeof(struct nmreq_vale_newif);
+	case NETMAP_REQ_VALE_DELIF:
+		return sizeof(struct nmreq_vale_delif);
+	case NETMAP_REQ_VALE_POLLING_ENABLE:
+	case NETMAP_REQ_VALE_POLLING_DISABLE:
+		return sizeof(struct nmreq_vale_polling);
+	case NETMAP_REQ_POOLS_INFO_GET:
+		return sizeof(struct nmreq_pools_info_get);
+	case NETMAP_REQ_VALE_OPS_REGISTER:
+		return sizeof(struct nmreq_vale_ops_register);
+	}
+	return 0;
+}
+
 
 /*
  * select(2) and poll(2) handlers for the "netmap" device.

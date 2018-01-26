@@ -1511,6 +1511,7 @@ void netmap_dtor(void *data);
 int netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *);
 int netmap_ioctl_legacy(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			struct thread *td);
+size_t nmreq_size_by_type(uint16_t nr_reqtype);
 
 /* netmap_adapter creation/destruction */
 
