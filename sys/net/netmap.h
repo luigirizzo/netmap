@@ -533,7 +533,7 @@ struct nmreq_vale_attach {
 	struct nmreq_header nr_hdr;
 	uint16_t	nr_mem_id;	/* id of the memory allocator to use */
 	uint16_t	nr_flags;	/* flags (see below) */
-#define NETMAP_BDG_HOST		0x1	/* attach the host stack */
+#define NETMAP_BDG_HOST		0x1	/* also  attach the host rings */
 };
 
 /*
