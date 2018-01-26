@@ -9,7 +9,9 @@
 #include <stdint.h>
 #include <net/netmap.h>
 
-int
+typedef int (*testfunc_t)(int fd, const char *ifname);
+
+static int
 port_info_get(int fd, const char *ifname)
 {
 	struct nmreq_port_info_get req;
@@ -22,6 +24,7 @@ port_info_get(int fd, const char *ifname)
 	ret = ioctl(fd, NIOCCTRL, &req);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL)");
+		return ret;
 	}
 	printf("nr_offset %lu\n", req.nr_offset);
 	printf("nr_memsize %lu\n", req.nr_memsize);
@@ -40,9 +43,13 @@ usage(const char *prog)
 	printf("%s -i IFNAME\n", prog);
 }
 
-int main(int argc, char **argv)
+static testfunc_t tests[] = {port_info_get, NULL};
+
+int
+main(int argc, char **argv)
 {
 	const char *ifname = "ens4";
+	unsigned int i;
 	int opt;
 
 	while ((opt = getopt(argc, argv, "hi:")) != -1) {
@@ -62,7 +69,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	{
+	for (i = 0; i < sizeof(tests)/sizeof(tests[0]); i++) {
 		int fd;
 		int ret;
 		fd = open("/dev/netmap", O_RDWR);
@@ -70,7 +77,7 @@ int main(int argc, char **argv)
 			perror("open(/dev/netmap)");
 			return fd;
 		}
-		ret = port_info_get(fd, ifname);
+		ret = tests[i](fd, ifname);
 		return ret;
 	}
 
