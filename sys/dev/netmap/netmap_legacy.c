@@ -27,6 +27,16 @@
 #if defined(__FreeBSD__)
 #include <sys/cdefs.h> /* prerequisite */
 #include <sys/types.h>
+#include <sys/param.h>	/* defines used in kernel.h */
+#include <sys/filio.h>	/* FIONBIO */
+#include <sys/malloc.h>
+#include <sys/socket.h> /* sockaddrs */
+#include <sys/sysctl.h>
+#include <net/if.h>
+#include <net/if_var.h>
+#include <net/bpf.h>		/* BIOCIMMEDIATE */
+#include <machine/bus.h>	/* bus_dmamap_* */
+#include <sys/endian.h>
 #elif defined(linux)
 #include "bsd_glue.h"
 #elif defined(__APPLE__)
@@ -44,7 +54,7 @@
 
 /* Convert the legacy 'nmr' struct into one of the nmreq_xyz structs
  * (new API). The new struct is dynamically allocated. */
-struct nmreq_header *
+static struct nmreq_header *
 nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 {
 	struct nmreq_header *hdr = NULL;
@@ -223,7 +233,7 @@ oom:
 /* Convert a nmreq_xyz struct (new API) to the legacy 'nmr' struct.
  * It also frees the nmreq_xyz struct, as it was allocated by
  * nmreq_from_legacy(). */
-int
+static int
 nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 {
 	int ret = 0;
@@ -347,3 +357,72 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 	return ret;
 }
 
+int
+netmap_ioctl_legacy(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
+			struct thread *td)
+{
+	int error = 0;
+
+	switch (cmd) {
+	case NIOCGINFO:
+	case NIOCREGIF: {
+		/* Request for the legacy control API. Convert it to a
+		 * NIOCCTRL request. */
+		struct nmreq *nmr = (struct nmreq *) data;
+		struct nmreq_header *hdr = nmreq_from_legacy(nmr, cmd);
+		if (hdr == NULL) { /* out of memory */
+			return ENOMEM;
+		}
+		error = netmap_ioctl(priv, NIOCCTRL, (caddr_t)hdr, td);
+		if (error == 0) {
+			nmreq_to_legacy(hdr, nmr);
+		}
+		nm_os_free(hdr);
+		break;
+	}
+#ifdef WITH_VALE
+	case NIOCCONFIG: {
+		struct nm_ifreq *nr = (struct nm_ifreq *)data;
+		error = netmap_bdg_config(nr);
+		break;
+	}
+#endif
+#ifdef __FreeBSD__
+	case FIONBIO:
+	case FIOASYNC:
+		ND("FIONBIO/FIOASYNC are no-ops");
+		break;
+
+	case BIOCIMMEDIATE:
+	case BIOCGHDRCMPLT:
+	case BIOCSHDRCMPLT:
+	case BIOCSSEESENT:
+		D("ignore BIOCIMMEDIATE/BIOCSHDRCMPLT/BIOCSHDRCMPLT/BIOCSSEESENT");
+		break;
+
+	default:	/* allow device-specific ioctls */
+	    {
+		struct nmreq *nmr = (struct nmreq *)data;
+		struct ifnet *ifp = ifunit_ref(nmr->nr_name);
+		if (ifp == NULL) {
+			error = ENXIO;
+		} else {
+			struct socket so;
+
+			bzero(&so, sizeof(so));
+			so.so_vnet = ifp->if_vnet;
+			// so->so_proto not null.
+			error = ifioctl(&so, cmd, data, td);
+			if_rele(ifp);
+		}
+		break;
+	    }
+
+#else /* linux */
+	default:
+		error = EOPNOTSUPP;
+#endif /* linux */
+	}
+
+	return error;
+}
