@@ -2104,7 +2104,6 @@ struct nm_kctx_cfg {
 };
 /* kthread configuration */
 struct nm_kctx *nm_os_kctx_create(struct nm_kctx_cfg *cfg,
-					unsigned int cfgtype,
 					void *opaque);
 int nm_os_kctx_worker_start(struct nm_kctx *);
 void nm_os_kctx_worker_stop(struct nm_kctx *);
