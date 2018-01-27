@@ -1241,6 +1241,9 @@ nm_bdg_polling(struct nmreq_vale_polling *req)
 				netmap_adapter_put(na);
 		}
 		netmap_adapter_put(na);
+	} else if (!na && !error) {
+		/* Not VALE port. */
+		error = EINVAL;
 	}
 	NMG_UNLOCK();
 
