@@ -54,10 +54,10 @@ port_info_get(int fd, struct TestContext *ctx)
 	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
 	ret = ioctl(fd, NIOCCTRL, &req);
 	if (ret) {
-		perror("ioctl(/dev/netmap, NIOCCTRL)");
+		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_INFO_GET)");
 		return ret;
 	}
-	printf("nr_offset %lu\n", req.nr_offset);
+	printf("nr_offset 0x%lx\n", req.nr_offset);
 	printf("nr_memsize %lu\n", req.nr_memsize);
 	printf("nr_tx_slots %u\n", req.nr_tx_slots);
 	printf("nr_rx_slots %u\n", req.nr_rx_slots);
@@ -80,7 +80,7 @@ port_register(int fd, struct TestContext *ctx)
 	int ret;
 
 	printf("Testing NETMAP_REQ_REGISTER(mode=%d,ringid=%d,"
-	       "flags=%lx) on '%s'\n",
+	       "flags=0x%lx) on '%s'\n",
 	       ctx->nr_mode, ctx->nr_ringid, ctx->nr_flags, ctx->ifname);
 
 	memset(&req, 0, sizeof(req));
@@ -99,10 +99,10 @@ port_register(int fd, struct TestContext *ctx)
 	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
 	ret = ioctl(fd, NIOCCTRL, &req);
 	if (ret) {
-		perror("ioctl(/dev/netmap, NIOCCTRL)");
+		perror("ioctl(/dev/netmap, NIOCCTRL, REGISTER)");
 		return ret;
 	}
-	printf("nr_offset %lu\n", req.nr_offset);
+	printf("nr_offset 0x%lx\n", req.nr_offset);
 	printf("nr_memsize %lu\n", req.nr_memsize);
 	printf("nr_tx_slots %u\n", req.nr_tx_slots);
 	printf("nr_rx_slots %u\n", req.nr_rx_slots);
@@ -305,6 +305,7 @@ vale_persistent_port(int fd, struct TestContext *ctx)
 		return ret;
 	}
 
+	/* Attach the persistent VALE port to a switch and then detach. */
 	result = vale_attach_detach(fd, ctx);
 
 	printf("Testing NETMAP_REQ_VALE_DELIF on '%s'\n", ctx->ifname);
@@ -322,6 +323,57 @@ vale_persistent_port(int fd, struct TestContext *ctx)
 	return result;
 }
 
+/* Single NETMAP_REQ_POOLS_INFO_GET. */
+static int
+pools_info_get(int fd, struct TestContext *ctx)
+{
+	struct nmreq_pools_info_get req;
+	int ret;
+
+	printf("Testing NETMAP_REQ_POOLS_INFO_GET on '%s'\n", ctx->ifname);
+
+	memset(&req, 0, sizeof(req));
+	req.nr_hdr.nr_version = NETMAP_API;
+	req.nr_hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
+	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
+	ret = ioctl(fd, NIOCCTRL, &req);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, POOLS_INFO_GET)");
+		return ret;
+	}
+	printf("nr_memsize %lu\n", req.nr_memsize);
+	printf("nr_mem_id %u\n", req.nr_mem_id);
+	printf("nr_if_pool_offset 0x%lx\n", req.nr_if_pool_offset);
+	printf("nr_if_pool_objtotal %u\n", req.nr_if_pool_objtotal);
+	printf("nr_if_pool_objsize %u\n", req.nr_if_pool_objsize);
+	printf("nr_ring_pool_offset 0x%lx\n", req.nr_if_pool_offset);
+	printf("nr_ring_pool_objtotal %u\n", req.nr_ring_pool_objtotal);
+	printf("nr_ring_pool_objsize %u\n", req.nr_ring_pool_objsize);
+	printf("nr_buf_pool_offset 0x%lx\n", req.nr_buf_pool_offset);
+	printf("nr_buf_pool_objtotal %u\n", req.nr_buf_pool_objtotal);
+	printf("nr_buf_pool_objsize %u\n", req.nr_buf_pool_objsize);
+
+	return req.nr_memsize && req.nr_if_pool_objtotal &&
+		req.nr_if_pool_objsize && req.nr_ring_pool_objtotal &&
+		req.nr_ring_pool_objsize && req.nr_buf_pool_objtotal &&
+		req.nr_buf_pool_objsize ? 0: -1;
+}
+
+static int
+register_and_pools_info_get(int fd, struct TestContext *ctx)
+{
+	int ret;
+
+	ctx->nr_mode = NR_REG_ONE_NIC;
+	ret = port_register(fd, ctx);
+	if (ret) {
+		return ret;
+	}
+	ctx->nr_mem_id = 1;
+
+	return pools_info_get(fd, ctx);
+}
+
 static void
 usage(const char *prog)
 {
@@ -336,7 +388,8 @@ static testfunc_t tests[] = {port_info_get,
 			     vale_attach_detach,
 			     vale_attach_detach_host_rings,
 			     vale_ephemeral_port_hdr_manipulation,
-			     vale_persistent_port};
+			     vale_persistent_port,
+			     register_and_pools_info_get};
 
 int
 main(int argc, char **argv)

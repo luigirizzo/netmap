@@ -601,8 +601,9 @@ struct nmreq_vale_polling {
 
 /*
  * nr_reqtype: NETMAP_REQ_POOLS_INFO_GET
- * Get info about the pools of a memory allocator (used i.e. by
- * a ptnetmap-enabled hypervisor).
+ * Get info about the pools of the memory allocator of the port bound
+ * to a given netmap control device (used i.e. by a ptnetmap-enabled
+ * hypervisor). The nr_hdr.nr_name field is ignored.
  */
 struct nmreq_pools_info_get {
 	struct nmreq_header nr_hdr;
