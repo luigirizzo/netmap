@@ -1633,16 +1633,10 @@ nm_os_kctx_worker_setaff(struct nm_kctx *nmk, int affinity)
 }
 
 struct nm_kctx *
-nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
-		     void *opaque)
+nm_os_kctx_create(struct nm_kctx_cfg *cfg, void *opaque)
 {
 	struct nm_kctx *nmk = NULL;
 	int error;
-
-	if (cfgtype != PTNETMAP_CFGTYPE_QEMU) {
-		D("Unsupported cfgtype %u", cfgtype);
-		return NULL;
-	}
 
 	if (!cfg->use_kthread && cfg->notify_fn == NULL) {
 		D("Error: botify function missing with use_htead == 0");

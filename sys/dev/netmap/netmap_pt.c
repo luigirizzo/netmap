@@ -676,7 +676,18 @@ ptnetmap_create_kctxs(struct netmap_pt_host_adapter *pth_na,
 	struct nm_kctx_cfg nmk_cfg;
 	unsigned int num_rings;
 	uint8_t *cfg_entries = (uint8_t *)(cfg + 1);
+	unsigned int expected_cfgtype = 0;
 	int k;
+
+#if defined(__FreeBSD__)
+	expected_cfgtype = PTNETMAP_CFGTYPE_BHYVE;
+#elif defined(linux)
+	expected_cfgtype = PTNETMAP_CFGTYPE_QEMU;
+#endif
+	if (cfg->cfgtype != expected_cfgtype) {
+		D("Unsupported cfgtype %u", cfg->cfgtype);
+		return EINVAL;
+	}
 
 	num_rings = pth_na->up.num_tx_rings +
 		    pth_na->up.num_rx_rings;
@@ -695,7 +706,7 @@ ptnetmap_create_kctxs(struct netmap_pt_host_adapter *pth_na,
 		}
 
 		ptns->kctxs[k] = nm_os_kctx_create(&nmk_cfg,
-			cfg->cfgtype, cfg_entries + k * cfg->entry_size);
+				cfg_entries + k * cfg->entry_size);
 		if (ptns->kctxs[k] == NULL) {
 			goto err;
 		}
