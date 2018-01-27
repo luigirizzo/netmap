@@ -410,9 +410,11 @@ static int
 vale_polling_enable(int fd, struct TestContext *ctx)
 {
 	struct nmreq_vale_polling req;
+	char vpname[256];
 	int ret;
 
-	printf("Testing NETMAP_REQ_VALE_POLLING_ENABLE on '%s'\n", ctx->ifname);
+	snprintf(vpname, sizeof(vpname), "%s:%s", ctx->bdgname, ctx->ifname);
+	printf("Testing NETMAP_REQ_VALE_POLLING_ENABLE on '%s'\n", vpname);
 
 	memset(&req, 0, sizeof(req));
 	req.nr_hdr.nr_version = NETMAP_API;
@@ -420,7 +422,7 @@ vale_polling_enable(int fd, struct TestContext *ctx)
 	req.nr_mode = ctx->nr_mode;
 	req.nr_first_cpu_id = ctx->nr_first_cpu_id;
 	req.nr_num_polling_cpus = ctx->nr_num_polling_cpus;
-	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
+	strncpy(req.nr_hdr.nr_name, vpname, sizeof(req.nr_hdr.nr_name));
 	ret = ioctl(fd, NIOCCTRL, &req);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_POLLING_ENABLE)");
@@ -438,14 +440,16 @@ static int
 vale_polling_disable(int fd, struct TestContext *ctx)
 {
 	struct nmreq_vale_polling req;
+	char vpname[256];
 	int ret;
 
-	printf("Testing NETMAP_REQ_VALE_POLLING_DISABLE on '%s'\n", ctx->ifname);
+	snprintf(vpname, sizeof(vpname), "%s:%s", ctx->bdgname, ctx->ifname);
+	printf("Testing NETMAP_REQ_VALE_POLLING_DISABLE on '%s'\n", vpname);
 
 	memset(&req, 0, sizeof(req));
 	req.nr_hdr.nr_version = NETMAP_API;
 	req.nr_hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_DISABLE;
-	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
+	strncpy(req.nr_hdr.nr_name, vpname, sizeof(req.nr_hdr.nr_name));
 	ret = ioctl(fd, NIOCCTRL, &req);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_POLLING_DISABLE)");
@@ -458,16 +462,26 @@ vale_polling_disable(int fd, struct TestContext *ctx)
 static int
 vale_polling_enable_disable(int fd, struct TestContext *ctx)
 {
-	int ret;
+	int ret = 0;
+
+	if ((ret = vale_attach(fd, ctx))) {
+		return ret;
+	}
 
 	ctx->nr_mode = NETMAP_POLLING_MODE_SINGLE_CPU;
 	ctx->nr_num_polling_cpus = 1;
 	ctx->nr_first_cpu_id = 0;
 	if ((ret = vale_polling_enable(fd, ctx))) {
+		vale_detach(fd, ctx);
 		return ret;
 	}
 
-	return vale_polling_disable(fd, ctx);
+	if ((ret = vale_polling_disable(fd, ctx))) {
+		vale_detach(fd, ctx);
+		return ret;
+	}
+
+	return vale_detach(fd, ctx);
 }
 
 static void
