@@ -2544,7 +2544,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		case NETMAP_REQ_POOLS_INFO_GET: {
 			struct nmreq_pools_info_get *req =
 				(struct nmreq_pools_info_get *)hdr;
-			/* Get information from the memory allocator */
+			/* Get information from the memory allocator. This
+			 * netmap device must already be bound to a port.
+			 * Note that hdr->nr_name is ignored. */
 			NMG_LOCK();
 			if (priv->np_na && priv->np_na->nm_mem) {
 				struct netmap_mem_d *nmd = priv->np_na->nm_mem;
