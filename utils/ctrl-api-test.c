@@ -364,6 +364,13 @@ register_and_pools_info_get(int fd, struct TestContext *ctx)
 {
 	int ret;
 
+	ret = pools_info_get(fd, ctx);
+	if (ret == 0) {
+		printf("Failed: POOLS_INFO_GET didn't fail on unbound "
+			"netmap device\n");
+		return -1;
+	}
+
 	ctx->nr_mode = NR_REG_ONE_NIC;
 	ret = port_register(fd, ctx);
 	if (ret) {
@@ -424,11 +431,18 @@ main(int argc, char **argv)
 		}
 	}
 
+	if (j >= 0) {
+		j--; /* one-based --> zero-based */
+		if (j >= (int)(sizeof(tests) / sizeof(tests[0]))) {
+			printf("Error: Test not in range\n");
+			return -1;
+		}
+	}
 	for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
 		struct TestContext ctxcopy;
 		int fd;
 		int ret;
-		if (j > 0 && (unsigned)j != i + 1) {
+		if (j >= 0 && (unsigned)j != i) {
 			continue;
 		}
 		fd = open("/dev/netmap", O_RDWR);

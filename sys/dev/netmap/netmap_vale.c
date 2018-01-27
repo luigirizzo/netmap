@@ -1227,7 +1227,7 @@ nm_bdg_polling(struct nmreq_vale_polling *req)
 
 	NMG_LOCK();
 	error = netmap_get_bdg_na((struct nmreq_header *)req,
-					&na, NULL, 0);
+					&na, NULL, /*create=*/0);
 	if (na && !error) {
 		if (!nm_is_bwrap(na)) {
 			error = EOPNOTSUPP;
