@@ -425,9 +425,9 @@ enum {
 	NETMAP_REQ_VALE_NEWIF,
 	/* Delete a persistent VALE port. */
 	NETMAP_REQ_VALE_DELIF,
-	/* Enable polling kthread on a VALE port. */
+	/* Enable polling kernel thread(s) on an attached VALE port. */
 	NETMAP_REQ_VALE_POLLING_ENABLE,
-	/* Disable polling kthread on a VALE port. */
+	/* Disable polling kernel thread(s) on an attached VALE port. */
 	NETMAP_REQ_VALE_POLLING_DISABLE,
 	/* Get info about the pools of a memory allocator. */
 	NETMAP_REQ_POOLS_INFO_GET,

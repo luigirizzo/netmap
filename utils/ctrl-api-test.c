@@ -22,7 +22,11 @@ struct TestContext {
 	uint64_t nr_flags;      /* additional flags (see below) */
 	uint32_t nr_pipes;      /* number of pipes to create */
 	uint32_t nr_extra_bufs; /* number of requested extra buffers */
-	uint32_t nr_hdr_len;
+
+	uint32_t nr_hdr_len;	/* for PORT_HDR_SET and PORT_HDR_GET */
+
+	uint32_t nr_first_cpu_id;	/* vale polling */
+	uint32_t nr_num_polling_cpus;	/* vale polling */
 };
 
 #if 0
@@ -161,14 +165,12 @@ port_register_single_ring_couple(int fd, struct TestContext *ctx)
 	return port_register(fd, ctx);
 }
 
-/* First NETMAP_REQ_VALE_ATTACH, then NETMAP_REQ_VALE_DETACH. */
+/* NETMAP_REQ_VALE_ATTACH */
 static int
-vale_attach_detach(int fd, struct TestContext *ctx)
+vale_attach(int fd, struct TestContext *ctx)
 {
 	struct nmreq_vale_attach req;
-	struct nmreq_vale_detach dreq;
 	char vpname[256];
-	int result = 0;
 	int ret;
 
 	snprintf(vpname, sizeof(vpname), "%s:%s", ctx->bdgname, ctx->ifname);
@@ -187,25 +189,47 @@ vale_attach_detach(int fd, struct TestContext *ctx)
 	}
 	printf("nr_mem_id %u\n", req.nr_mem_id);
 
-	result = ((!ctx->nr_mem_id && req.nr_mem_id > 1) ||
+	return ((!ctx->nr_mem_id && req.nr_mem_id > 1) ||
 		  (ctx->nr_mem_id == req.nr_mem_id)) &&
 				 (ctx->nr_flags == req.nr_flags)
 			 ? 0
 			 : -1;
+}
+
+/* NETMAP_REQ_VALE_DETACH */
+static int
+vale_detach(int fd, struct TestContext *ctx)
+{
+	struct nmreq_vale_detach req;
+	char vpname[256];
+	int ret;
+
+	snprintf(vpname, sizeof(vpname), "%s:%s", ctx->bdgname, ctx->ifname);
 
 	printf("Testing NETMAP_REQ_VALE_DETACH on '%s'\n", vpname);
-	memset(&dreq, 0, sizeof(dreq));
-	memcpy(&dreq, &req, sizeof(dreq.nr_hdr));
-	dreq.nr_hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
-	ret		       = ioctl(fd, NIOCCTRL, &dreq);
+	memset(&req, 0, sizeof(req));
+	req.nr_hdr.nr_version = NETMAP_API;
+	req.nr_hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
+	strncpy(req.nr_hdr.nr_name, vpname, sizeof(req.nr_hdr.nr_name));
+	ret		       = ioctl(fd, NIOCCTRL, &req);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_DETACH)");
-		if (result == 0) {
-			result = ret;
-		}
+		return ret;
 	}
 
-	return result;
+	return 0;
+}
+
+/* First NETMAP_REQ_VALE_ATTACH, then NETMAP_REQ_VALE_DETACH. */
+static int
+vale_attach_detach(int fd, struct TestContext *ctx)
+{
+	int ret;
+	if ((ret = vale_attach(fd, ctx))) {
+		return ret;
+	}
+
+	return vale_detach(fd, ctx);
 }
 
 static int
@@ -381,6 +405,71 @@ register_and_pools_info_get(int fd, struct TestContext *ctx)
 	return pools_info_get(fd, ctx);
 }
 
+/* NETMAP_REQ_VALE_POLLING_ENABLE */
+static int
+vale_polling_enable(int fd, struct TestContext *ctx)
+{
+	struct nmreq_vale_polling req;
+	int ret;
+
+	printf("Testing NETMAP_REQ_VALE_POLLING_ENABLE on '%s'\n", ctx->ifname);
+
+	memset(&req, 0, sizeof(req));
+	req.nr_hdr.nr_version = NETMAP_API;
+	req.nr_hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_ENABLE;
+	req.nr_mode = ctx->nr_mode;
+	req.nr_first_cpu_id = ctx->nr_first_cpu_id;
+	req.nr_num_polling_cpus = ctx->nr_num_polling_cpus;
+	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
+	ret = ioctl(fd, NIOCCTRL, &req);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_POLLING_ENABLE)");
+		return ret;
+	}
+
+	return (req.nr_mode == ctx->nr_mode &&
+		req.nr_first_cpu_id == ctx->nr_first_cpu_id &&
+		req.nr_num_polling_cpus == ctx->nr_num_polling_cpus)
+			? 0 : -1;
+}
+
+/* NETMAP_REQ_VALE_POLLING_DISABLE */
+static int
+vale_polling_disable(int fd, struct TestContext *ctx)
+{
+	struct nmreq_vale_polling req;
+	int ret;
+
+	printf("Testing NETMAP_REQ_VALE_POLLING_DISABLE on '%s'\n", ctx->ifname);
+
+	memset(&req, 0, sizeof(req));
+	req.nr_hdr.nr_version = NETMAP_API;
+	req.nr_hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_DISABLE;
+	strncpy(req.nr_hdr.nr_name, ctx->ifname, sizeof(req.nr_hdr.nr_name));
+	ret = ioctl(fd, NIOCCTRL, &req);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_POLLING_DISABLE)");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int
+vale_polling_enable_disable(int fd, struct TestContext *ctx)
+{
+	int ret;
+
+	ctx->nr_mode = NETMAP_POLLING_MODE_SINGLE_CPU;
+	ctx->nr_num_polling_cpus = 1;
+	ctx->nr_first_cpu_id = 0;
+	if ((ret = vale_polling_enable(fd, ctx))) {
+		return ret;
+	}
+
+	return vale_polling_disable(fd, ctx);
+}
+
 static void
 usage(const char *prog)
 {
@@ -396,7 +485,8 @@ static testfunc_t tests[] = {port_info_get,
 			     vale_attach_detach_host_rings,
 			     vale_ephemeral_port_hdr_manipulation,
 			     vale_persistent_port,
-			     register_and_pools_info_get};
+			     register_and_pools_info_get,
+			     vale_polling_enable_disable};
 
 int
 main(int argc, char **argv)
