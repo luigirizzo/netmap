@@ -127,6 +127,7 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config, int nr_arg2,
 
 	bzero(&nmr, sizeof(nmr));
 	nmr.nr_version = NETMAP_API;
+	nmr.nmreq_version = NMREQ_VERSION;
 	if (name != NULL) /* might be NULL */
 		strncpy(nmr.nr_name, name, sizeof(nmr.nr_name));
 	nmr.nr_cmd = nr_cmd;
@@ -135,6 +136,7 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config, int nr_arg2,
 	nmr.nr_arg3 = extra_bufs;
 #ifdef WITH_EXTMEM
 	if (strlen(memname) > 0) {
+		unlink(memname);
 		mfd = open(memname, O_RDWR|O_CREAT, S_IRWXU);
 		if (mfd < 0) {
 			perror("open");

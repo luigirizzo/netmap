@@ -36,6 +36,7 @@
 #define _NET_NETMAP_KERN_H_
 
 #if defined(linux)
+#define WITH_FTMB	1
 
 #if defined(CONFIG_NETMAP_EXTMEM)
 #define WITH_EXTMEM
@@ -549,6 +550,9 @@ struct netmap_kring {
 #ifdef WITH_STACK
 	struct stmp_extra_pool	*extra;
 #endif /* WITH_STACK */
+#ifdef WITH_FTMB
+	struct nm_ft_log *ftlog;
+#endif
 #ifdef WITH_MONITOR
 	/* array of krings that are monitoring this kring */
 	struct netmap_kring **monitors;
