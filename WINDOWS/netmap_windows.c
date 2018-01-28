@@ -565,7 +565,7 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		}
 
 		ret = netmap_ioctl(priv, irpSp->Parameters.DeviceIoControl.IoControlCode,
-			(caddr_t)&arg, NULL);
+			(caddr_t)&arg, NULL, 1);
 		if (NT_SUCCESS(ret)) {
 			if (data && !NT_SUCCESS(copy_to_user((void*)data, &arg, argsize, Irp))) {
 				DbgPrint("Netmap.sys: ioctl failure/cannot copy data to user");

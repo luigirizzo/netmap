@@ -57,12 +57,21 @@
 static struct nmreq_header *
 nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 {
-	struct nmreq_header *hdr = NULL;
+	struct nmreq_header *hdr = nm_os_malloc(sizeof(*hdr));
+
+	if (hdr == NULL) {
+		goto oom;
+	}
 
 	/* Sanitize nmr->nr_name by adding the string terminator. */
 	if (ioctl_cmd == NIOCGINFO || ioctl_cmd == NIOCREGIF) {
 		nmr->nr_name[sizeof(nmr->nr_name) - 1] = '\0';
 	}
+
+	hdr->nr_version = NETMAP_API; /* new API */
+	strncpy(hdr->nr_name, nmr->nr_name, sizeof(nmr->nr_name));
+	hdr->nr_options = NULL;
+	hdr->nr_body = NULL;
 
 	switch (ioctl_cmd) {
 	case NIOCREGIF: {
@@ -71,7 +80,8 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			/* Regular NIOCREGIF operation. */
 			struct nmreq_register *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = NETMAP_REQ_REGISTER;
+			hdr->nr_body = req;
+			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
 			req->nr_offset = nmr->nr_offset;
 			req->nr_memsize = nmr->nr_memsize;
 			req->nr_tx_slots = nmr->nr_tx_slots;
@@ -104,59 +114,53 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			}
 			req->nr_pipes = nmr->nr_arg1;
 			req->nr_extra_bufs = nmr->nr_arg3;
-			hdr = (struct nmreq_header *)req;
 			break;
 		}
 		case NETMAP_BDG_ATTACH: {
 			struct nmreq_vale_attach *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
+			hdr->nr_body = req;
+			hdr->nr_reqtype = NETMAP_REQ_VALE_ATTACH;
 			req->nr_mem_id = nmr->nr_arg2;
 			req->nr_flags = nmr->nr_arg1 & NETMAP_BDG_HOST;
-			hdr = (struct nmreq_header *)req;
 			break;
 		}
 		case NETMAP_BDG_DETACH: {
-			struct nmreq_vale_detach *req = nm_os_malloc(sizeof(*req));
-			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
-			hdr = (struct nmreq_header *)req;
+			hdr->nr_reqtype = NETMAP_REQ_VALE_DETACH;
 			break;
 		}
 		case NETMAP_BDG_VNET_HDR:
 		case NETMAP_VNET_HDR_GET: {
 			struct nmreq_port_hdr *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = (nmr->nr_cmd == NETMAP_BDG_VNET_HDR) ?
+			hdr->nr_body = req;
+			hdr->nr_reqtype = (nmr->nr_cmd == NETMAP_BDG_VNET_HDR) ?
 				NETMAP_REQ_PORT_HDR_SET : NETMAP_REQ_PORT_HDR_GET;
 			req->nr_hdr_len = nmr->nr_arg1;
-			hdr = (struct nmreq_header *)req;
 			break;
 		}
 		case NETMAP_BDG_NEWIF : {
 			struct nmreq_vale_newif *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = NETMAP_REQ_VALE_NEWIF;
+			hdr->nr_body = req;
+			hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
 			req->nr_tx_slots = nmr->nr_tx_slots;
 			req->nr_rx_slots = nmr->nr_rx_slots;
 			req->nr_tx_rings = nmr->nr_tx_rings;
 			req->nr_rx_rings = nmr->nr_rx_rings;
 			req->nr_mem_id = nmr->nr_arg2;
-			hdr = (struct nmreq_header *)req;
 			break;
 		}
 		case NETMAP_BDG_DELIF: {
-			struct nmreq_vale_newif *req = nm_os_malloc(sizeof(*req));
-			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = NETMAP_REQ_VALE_DELIF;
-			hdr = (struct nmreq_header *)req;
+			hdr->nr_reqtype = NETMAP_REQ_VALE_DELIF;
 			break;
 		}
 		case NETMAP_BDG_POLLING_ON:
 		case NETMAP_BDG_POLLING_OFF: {
 			struct nmreq_vale_polling *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = (nmr->nr_cmd == NETMAP_BDG_POLLING_ON) ?
+			hdr->nr_body = req;
+			hdr->nr_reqtype = (nmr->nr_cmd == NETMAP_BDG_POLLING_ON) ?
 				NETMAP_REQ_VALE_POLLING_ENABLE :
 				NETMAP_REQ_VALE_POLLING_DISABLE;
 			switch (nmr->nr_flags & NR_REG_MASK) {
@@ -172,17 +176,16 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			}
 			req->nr_first_cpu_id = nmr->nr_ringid & NETMAP_RING_MASK;
 			req->nr_num_polling_cpus = nmr->nr_arg1;
-			hdr = (struct nmreq_header *)req;
 			break;
 		}
 		case NETMAP_POOLS_INFO_GET: {
 			/* We could deny this request similar to ptnetmap requests. */
 			struct nmreq_pools_info_get *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
+			hdr->nr_body = req;
+			hdr->nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
 			/* Most of the fields are for output (see
 			 * nmreq_to_legacy). */
-			hdr = (struct nmreq_header *)req;
 			break;
 		}
 		case NETMAP_PT_HOST_CREATE:
@@ -198,15 +201,16 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 		if (nmr->nr_cmd == NETMAP_BDG_LIST) {
 			struct nmreq_vale_list *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = NETMAP_REQ_VALE_LIST;
+			hdr->nr_body = req;
+			hdr->nr_reqtype = NETMAP_REQ_VALE_LIST;
 			req->nr_bridge_idx = nmr->nr_arg1;
 			req->nr_port_idx = nmr->nr_arg2;
-			hdr = (struct nmreq_header *)req;
 		} else {
 			/* Regular NIOCGINFO. */
 			struct nmreq_port_info_get *req = nm_os_malloc(sizeof(*req));
 			if (!req) { goto oom; }
-			req->nr_hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
+			hdr->nr_body = req;
+			hdr->nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
 			req->nr_offset = nmr->nr_offset;
 			req->nr_memsize = nmr->nr_memsize;
 			req->nr_tx_slots = nmr->nr_tx_slots;
@@ -214,19 +218,18 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			req->nr_tx_rings = nmr->nr_tx_rings;
 			req->nr_rx_rings = nmr->nr_rx_rings;
 			req->nr_mem_id = nmr->nr_arg2;
-			hdr = (struct nmreq_header *)req;
 		}
 		break;
 	}
 	}
 
-	KASSERT(hdr != NULL, "Invalid NULL netmap request");
-	hdr->nr_version = NETMAP_API; /* new API */
-	strncpy(hdr->nr_name, nmr->nr_name, sizeof(nmr->nr_name));
-
 	return hdr;
 oom:
+	if (hdr) {
+		nm_os_free(hdr);
+	}
 	D("Failed to allocate memory for nmreq_xyz struct");
+
 	return NULL;
 }
 
@@ -244,7 +247,8 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 
 	switch (hdr->nr_reqtype) {
 	case NETMAP_REQ_REGISTER: {
-		struct nmreq_register *req = (struct nmreq_register *)hdr;
+		struct nmreq_register *req =
+			(struct nmreq_register *)hdr->nr_body;
 		nmr->nr_offset = req->nr_offset;
 		nmr->nr_memsize = req->nr_memsize;
 		nmr->nr_tx_slots = req->nr_tx_slots;
@@ -265,7 +269,8 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 		break;
 	}
 	case NETMAP_REQ_PORT_INFO_GET: {
-		struct nmreq_port_info_get *req = (struct nmreq_port_info_get *)hdr;
+		struct nmreq_port_info_get *req =
+			(struct nmreq_port_info_get *)hdr->nr_body;
 		nmr->nr_offset = req->nr_offset;
 		nmr->nr_memsize = req->nr_memsize;
 		nmr->nr_tx_slots = req->nr_tx_slots;
@@ -276,30 +281,32 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 		break;
 	}
 	case NETMAP_REQ_VALE_ATTACH: {
-		struct nmreq_vale_attach *req = (struct nmreq_vale_attach *)hdr;
+		struct nmreq_vale_attach *req =
+			(struct nmreq_vale_attach *)hdr->nr_body;
 		nmr->nr_arg2 = req->nr_mem_id;
 		nmr->nr_arg1 = req->nr_flags;
 		break;
 	}
 	case NETMAP_REQ_VALE_DETACH: {
-		struct nmreq_vale_detach *req = (struct nmreq_vale_detach *)hdr;
-		(void)req;
 		break;
 	}
 	case NETMAP_REQ_VALE_LIST: {
-		struct nmreq_vale_list *req = (struct nmreq_vale_list *)hdr;
+		struct nmreq_vale_list *req =
+			(struct nmreq_vale_list *)hdr->nr_body;
 		nmr->nr_arg1 = req->nr_bridge_idx;
 		nmr->nr_arg2 = req->nr_port_idx;
 		break;
 	}
 	case NETMAP_REQ_PORT_HDR_SET:
 	case NETMAP_REQ_PORT_HDR_GET: {
-		struct nmreq_port_hdr *req = (struct nmreq_port_hdr *)hdr;
+		struct nmreq_port_hdr *req =
+			(struct nmreq_port_hdr *)hdr->nr_body;
 		nmr->nr_arg1 = req->nr_hdr_len;
 		break;
 	}
 	case NETMAP_REQ_VALE_NEWIF: {
-		struct nmreq_vale_newif *req = (struct nmreq_vale_newif *)hdr;
+		struct nmreq_vale_newif *req =
+			(struct nmreq_vale_newif *)hdr->nr_body;
 		nmr->nr_tx_slots = req->nr_tx_slots;
 		nmr->nr_rx_slots = req->nr_rx_slots;
 		nmr->nr_tx_rings = req->nr_tx_rings;
@@ -308,13 +315,12 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 		break;
 	}
 	case NETMAP_REQ_VALE_DELIF: {
-		struct nmreq_vale_delif *req = (struct nmreq_vale_delif *)hdr;
-		(void)req;
 		break;
 	}
 	case NETMAP_REQ_VALE_POLLING_ENABLE:
 	case NETMAP_REQ_VALE_POLLING_DISABLE: {
-		struct nmreq_vale_polling *req = (struct nmreq_vale_polling *)hdr;
+		struct nmreq_vale_polling *req =
+			(struct nmreq_vale_polling *)hdr->nr_body;
 		switch (req->nr_mode) {
 		default:
 			nmr->nr_flags = NR_REG_DEFAULT; /* invalid */
@@ -334,7 +340,8 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 		uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
 		struct netmap_pools_info *upi = (struct netmap_pools_info *)(*pp);
 		struct netmap_pools_info pi;
-		struct nmreq_pools_info_get *req = (struct nmreq_pools_info_get *)hdr;
+		struct nmreq_pools_info_get *req =
+			(struct nmreq_pools_info_get *)hdr->nr_body;
 		pi.memsize = req->nr_memsize;
 		pi.memid = req->nr_mem_id;
 		pi.if_pool_offset = req->nr_if_pool_offset;
@@ -373,9 +380,13 @@ netmap_ioctl_legacy(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		if (hdr == NULL) { /* out of memory */
 			return ENOMEM;
 		}
-		error = netmap_ioctl(priv, NIOCCTRL, (caddr_t)hdr, td);
+		error = netmap_ioctl(priv, NIOCCTRL, (caddr_t)hdr, td,
+					/*nr_body_is_user=*/0);
 		if (error == 0) {
 			nmreq_to_legacy(hdr, nmr);
+		}
+		if (hdr->nr_body) {
+			nm_os_free(hdr->nr_body);
 		}
 		nm_os_free(hdr);
 		break;

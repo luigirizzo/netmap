@@ -1159,9 +1159,10 @@ nm_pt_host_dtor(struct netmap_adapter *na)
 
 /* check if nmr is a request for a ptnetmap adapter that we can satisfy */
 int
-netmap_get_pt_host_na(struct nmreq_register *req, struct netmap_adapter **na,
+netmap_get_pt_host_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create)
 {
+    struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
     struct nmreq_register preq;
     struct netmap_adapter *parent; /* target adapter */
     struct netmap_pt_host_adapter *pth_na;
@@ -1187,7 +1188,9 @@ netmap_get_pt_host_na(struct nmreq_register *req, struct netmap_adapter **na,
      */
     memcpy(&preq, req, sizeof(preq));
     preq.nr_flags &= ~(NR_PTNETMAP_HOST);
-    error = netmap_get_na(&preq, &parent, &ifp, nmd, create);
+    hdr->nr_body = &preq;
+    error = netmap_get_na(hdr, &parent, &ifp, nmd, create);
+    hdr->nr_body = req;
     if (error) {
         D("parent lookup failed: %d", error);
         goto put_out_noputparent;

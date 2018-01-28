@@ -1417,7 +1417,7 @@ freebsd_netmap_ioctl(struct cdev *dev __unused, u_long cmd, caddr_t data,
 			error = ENXIO;
 		goto out;
 	}
-	error = netmap_ioctl(priv, cmd, data, td);
+	error = netmap_ioctl(priv, cmd, data, td, /*nr_body_is_user=*/1);
 out:
 	CURVNET_RESTORE();
 

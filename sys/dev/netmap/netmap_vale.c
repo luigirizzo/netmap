@@ -164,7 +164,7 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0,
     "Max batch size to be used in the bridge");
 SYSEND;
 
-static int netmap_vp_create(struct nmreq_register *, struct ifnet *,
+static int netmap_vp_create(struct nmreq_header *hdr, struct ifnet *,
 		struct netmap_mem_d *nmd, struct netmap_vp_adapter **);
 static int netmap_vp_reg(struct netmap_adapter *na, int onoff);
 static int netmap_bwrap_reg(struct netmap_adapter *, int onoff);
@@ -623,17 +623,22 @@ nm_update_info(struct nmreq_register *req, struct netmap_adapter *na)
  * The interface will be attached to a bridge later.
  */
 int
-netmap_vi_create(struct nmreq_register *req, int autodelete)
+netmap_vi_create(struct nmreq_header *hdr, int autodelete)
 {
+	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
 	struct ifnet *ifp;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_mem_d *nmd = NULL;
 	int error;
 
-	/* don't include VALE prefix */
-	if (!strncmp(req->nr_hdr.nr_name, NM_BDG_NAME, strlen(NM_BDG_NAME)))
+	if (hdr->nr_reqtype != NETMAP_REQ_REGISTER) {
 		return EINVAL;
-	ifp = ifunit_ref(req->nr_hdr.nr_name);
+	}
+
+	/* don't include VALE prefix */
+	if (!strncmp(hdr->nr_name, NM_BDG_NAME, strlen(NM_BDG_NAME)))
+		return EINVAL;
+	ifp = ifunit_ref(hdr->nr_name);
 	if (ifp) { /* already exist, cannot create new one */
 		error = EEXIST;
 		NMG_LOCK();
@@ -646,7 +651,7 @@ netmap_vi_create(struct nmreq_register *req, int autodelete)
 		if_rele(ifp);
 		return error;
 	}
-	error = nm_os_vi_persist(req->nr_hdr.nr_name, &ifp);
+	error = nm_os_vi_persist(hdr->nr_name, &ifp);
 	if (error)
 		return error;
 
@@ -659,7 +664,7 @@ netmap_vi_create(struct nmreq_register *req, int autodelete)
 		}
 	}
 	/* netmap_vp_create creates a struct netmap_vp_adapter */
-	error = netmap_vp_create(req, ifp, nmd, &vpna);
+	error = netmap_vp_create(hdr, ifp, nmd, &vpna);
 	if (error) {
 		D("error %d", error);
 		goto err_1;
@@ -774,8 +779,8 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	ifname = nr_name + b->bdg_namelen + 1;
 	ifp = ifunit_ref(ifname);
 	if (!ifp) {
-		/* Create an ephemeral virtual port
-		 * This block contains all the ephemeral-specific logics
+		/* Create an ephemeral virtual port.
+		 * This block contains all the ephemeral-specific logic.
 		 */
 
 		if (hdr->nr_reqtype != NETMAP_REQ_REGISTER) {
@@ -784,8 +789,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		}
 
 		/* bdg_netmap_attach creates a struct netmap_adapter */
-		error = netmap_vp_create((struct nmreq_register *)hdr,
-					NULL, nmd, &vpna);
+		error = netmap_vp_create(hdr, NULL, nmd, &vpna);
 		if (error) {
 			D("error %d", error);
 			goto out;
@@ -821,7 +825,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
 			/* Check if we need to skip the host rings. */
 			struct nmreq_vale_attach *areq =
-				(struct nmreq_vale_attach *)hdr;
+				(struct nmreq_vale_attach *)hdr->nr_body;
 			if ((areq->nr_flags & NETMAP_BDG_HOST) == 0) {
 				hostna = NULL;
 			}
@@ -858,8 +862,10 @@ out:
 
 /* Process NETMAP_REQ_VALE_ATTACH. */
 int
-nm_bdg_ctl_attach(struct nmreq_vale_attach *req)
+nm_bdg_ctl_attach(struct nmreq_header *hdr)
 {
+	struct nmreq_vale_attach *req =
+		(struct nmreq_vale_attach *)hdr->nr_body;
 	struct netmap_adapter *na;
 	struct netmap_mem_d *nmd = NULL;
 	int error;
@@ -875,12 +881,12 @@ nm_bdg_ctl_attach(struct nmreq_vale_attach *req)
 	}
 
 	/* check for existing one */
-	error = netmap_get_bdg_na((struct nmreq_header *)req, &na, nmd, 0);
+	error = netmap_get_bdg_na(hdr, &na, nmd, 0);
 	if (!error) {
 		error = EBUSY;
 		goto unref_exit;
 	}
-	error = netmap_get_bdg_na((struct nmreq_header *)req, &na,
+	error = netmap_get_bdg_na(hdr, &na,
 				nmd, 1 /* create if not exists */);
 	if (error) /* no device */
 		goto unlock_exit;
@@ -899,7 +905,7 @@ nm_bdg_ctl_attach(struct nmreq_vale_attach *req)
 		/* nop for VALE ports. The bwrap needs to put the hwna
 		 * in netmap mode (see netmap_bwrap_bdg_ctl)
 		 */
-		error = na->nm_bdg_ctl((struct nmreq_header *)req, na);
+		error = na->nm_bdg_ctl(hdr, na);
 		if (error)
 			goto unref_exit;
 		ND("registered %s to netmap-mode", na->name);
@@ -922,14 +928,13 @@ nm_is_bwrap(struct netmap_adapter *na)
 
 /* Process NETMAP_REQ_VALE_DETACH. */
 int
-nm_bdg_ctl_detach(struct nmreq_vale_detach *req)
+nm_bdg_ctl_detach(struct nmreq_header *hdr)
 {
 	struct netmap_adapter *na;
 	int error;
 
 	NMG_LOCK();
-	error = netmap_get_bdg_na((struct nmreq_header *)req, &na,
-				NULL, 0 /* don't create */);
+	error = netmap_get_bdg_na(hdr, &na, NULL, 0 /* don't create */);
 	if (error) { /* no device, or another bridge or user owns the device */
 		goto unlock_exit;
 	}
@@ -948,7 +953,7 @@ nm_bdg_ctl_detach(struct nmreq_vale_detach *req)
 		/* remove the port from bridge. The bwrap
 		 * also needs to put the hwna in normal mode
 		 */
-		error = na->nm_bdg_ctl((struct nmreq_header *)req, na);
+		error = na->nm_bdg_ctl(hdr, na);
 	}
 
 	netmap_adapter_put(na);
@@ -1220,18 +1225,19 @@ nm_bdg_ctl_polling_stop(struct netmap_adapter *na)
 }
 
 int
-nm_bdg_polling(struct nmreq_vale_polling *req)
+nm_bdg_polling(struct nmreq_header *hdr)
 {
+	struct nmreq_vale_polling *req =
+		(struct nmreq_vale_polling *)hdr->nr_body;
 	struct netmap_adapter *na = NULL;
 	int error = 0;
 
 	NMG_LOCK();
-	error = netmap_get_bdg_na((struct nmreq_header *)req,
-					&na, NULL, /*create=*/0);
+	error = netmap_get_bdg_na(hdr, &na, NULL, /*create=*/0);
 	if (na && !error) {
 		if (!nm_is_bwrap(na)) {
 			error = EOPNOTSUPP;
-		} else if (req->nr_hdr.nr_reqtype == NETMAP_BDG_POLLING_ON) {
+		} else if (hdr->nr_reqtype == NETMAP_BDG_POLLING_ON) {
 			error = nm_bdg_ctl_polling_start(req, na);
 			if (!error)
 				netmap_adapter_get(na);
@@ -1252,9 +1258,11 @@ nm_bdg_polling(struct nmreq_vale_polling *req)
 
 /* Process NETMAP_REQ_VALE_LIST. */
 int
-netmap_bdg_list(struct nmreq_vale_list *req)
+netmap_bdg_list(struct nmreq_header *hdr)
 {
-	int namelen = strlen(req->nr_hdr.nr_name);
+	struct nmreq_vale_list *req =
+		(struct nmreq_vale_list *)hdr->nr_body;
+	int namelen = strlen(hdr->nr_name);
 	struct nm_bridge *b, *bridges;
 	struct netmap_vp_adapter *vpna;
 	int error = 0, i, j;
@@ -1264,12 +1272,12 @@ netmap_bdg_list(struct nmreq_vale_list *req)
 
 	/* this is used to enumerate bridges and ports */
 	if (namelen) { /* look up indexes of bridge and port */
-		if (strncmp(req->nr_hdr.nr_name, NM_BDG_NAME,
+		if (strncmp(hdr->nr_name, NM_BDG_NAME,
 					strlen(NM_BDG_NAME))) {
 			return EINVAL;
 		}
 		NMG_LOCK();
-		b = nm_find_bridge(req->nr_hdr.nr_name, 0 /* don't create */);
+		b = nm_find_bridge(hdr->nr_name, 0 /* don't create */);
 		if (!b) {
 			NMG_UNLOCK();
 			return ENOENT;
@@ -1287,7 +1295,7 @@ netmap_bdg_list(struct nmreq_vale_list *req)
 			/* the former and the latter identify a
 			 * virtual port and a NIC, respectively
 			 */
-			if (!strcmp(vpna->up.name, req->nr_hdr.nr_name)) {
+			if (!strcmp(vpna->up.name, hdr->nr_name)) {
 				req->nr_port_idx = i; /* port index */
 				break;
 			}
@@ -1311,7 +1319,7 @@ netmap_bdg_list(struct nmreq_vale_list *req)
 				if (b->bdg_ports[j] == NULL)
 					continue;
 				vpna = b->bdg_ports[j];
-				strncpy(req->nr_hdr.nr_name, vpna->up.name,
+				strncpy(hdr->nr_name, vpna->up.name,
 					(size_t)IFNAMSIZ);
 				error = 0;
 				goto out;
@@ -2200,15 +2208,19 @@ netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na)
  * Only persistent VALE ports have a non-null ifp.
  */
 static int
-netmap_vp_create(struct nmreq_register *req, struct ifnet *ifp,
-		struct netmap_mem_d *nmd,
-		struct netmap_vp_adapter **ret)
+netmap_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
+		struct netmap_mem_d *nmd, struct netmap_vp_adapter **ret)
 {
+	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
 	int error = 0;
 	u_int npipes = 0;
 	u_int extrabufs = 0;
+
+	if (hdr->nr_reqtype != NETMAP_REQ_REGISTER) {
+		return EINVAL;
+	}
 
 	vpna = nm_os_malloc(sizeof(*vpna));
 	if (vpna == NULL)
@@ -2217,7 +2229,7 @@ netmap_vp_create(struct nmreq_register *req, struct ifnet *ifp,
  	na = &vpna->up;
 
 	na->ifp = ifp;
-	strncpy(na->name, req->nr_hdr.nr_name, sizeof(na->name));
+	strncpy(na->name, hdr->nr_name, sizeof(na->name));
 
 	/* bound checking */
 	na->num_tx_rings = req->nr_tx_rings;
@@ -2721,7 +2733,7 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 
 	if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
 		struct nmreq_vale_attach *req =
-			(struct nmreq_vale_attach *)hdr;
+			(struct nmreq_vale_attach *)hdr->nr_body;
 		if (NETMAP_OWNED_BY_ANY(na)) {
 			return EBUSY;
 		}

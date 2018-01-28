@@ -1455,15 +1455,21 @@ assign_mem:
  * a reference to it and return a valid *ifp.
  */
 int
-netmap_get_na(struct nmreq_register *req, struct netmap_adapter **na,
-	      struct ifnet **ifp, struct netmap_mem_d *nmd, int create)
+netmap_get_na(struct nmreq_header *hdr,
+	      struct netmap_adapter **na, struct ifnet **ifp,
+	      struct netmap_mem_d *nmd, int create)
 {
+	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
 	int error = 0;
 	struct netmap_adapter *ret = NULL;
 	int nmd_ref = 0;
 
 	*na = NULL;     /* default return value */
 	*ifp = NULL;
+
+	if (hdr->nr_reqtype != NETMAP_REQ_REGISTER) {
+		return EINVAL;
+	}
 
 	NMG_LOCK_ASSERT();
 
@@ -1490,23 +1496,22 @@ netmap_get_na(struct nmreq_register *req, struct netmap_adapter **na,
 	 */
 
 	/* try to see if this is a ptnetmap port */
-	error = netmap_get_pt_host_na(req, na, nmd, create);
+	error = netmap_get_pt_host_na(hdr, na, nmd, create);
 	if (error || *na != NULL)
 		goto out;
 
 	/* try to see if this is a monitor port */
-	error = netmap_get_monitor_na(req, na, nmd, create);
+	error = netmap_get_monitor_na(hdr, na, nmd, create);
 	if (error || *na != NULL)
 		goto out;
 
 	/* try to see if this is a pipe port */
-	error = netmap_get_pipe_na(req, na, nmd, create);
+	error = netmap_get_pipe_na(hdr, na, nmd, create);
 	if (error || *na != NULL)
 		goto out;
 
 	/* try to see if this is a bridge port */
-	error = netmap_get_bdg_na((struct nmreq_header *)req,
-					na, nmd, create);
+	error = netmap_get_bdg_na(hdr, na, nmd, create);
 	if (error)
 		goto out;
 
@@ -1519,7 +1524,7 @@ netmap_get_na(struct nmreq_register *req, struct netmap_adapter **na,
 	 * This may still be a tap, a veth/epair, or even a
 	 * persistent VALE port.
 	 */
-	*ifp = ifunit_ref(req->nr_hdr.nr_name);
+	*ifp = ifunit_ref(hdr->nr_name);
 	if (*ifp == NULL) {
 		error = ENXIO;
 		goto out;
@@ -2230,16 +2235,6 @@ ring_timestamp_set(struct netmap_ring *ring)
 	}
 }
 
-static void
-nmreq_register_from_nmreq_header(const struct nmreq_header *hdr,
-				 struct nmreq_register *regreq)
-{
-	bzero(regreq, sizeof(*regreq));
-	memcpy(&regreq->nr_hdr, hdr, sizeof(regreq->nr_hdr));
-	regreq->nr_hdr.nr_reqtype = NETMAP_REQ_REGISTER;
-	regreq->nr_hdr.nr_options = NULL;
-}
-
 /*
  * ioctl(2) support for the "netmap" device.
  *
@@ -2254,7 +2249,8 @@ nmreq_register_from_nmreq_header(const struct nmreq_header *hdr,
  * Return 0 on success, errno otherwise.
  */
 int
-netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *td)
+netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
+		struct thread *td, int nr_body_is_user)
 {
 	struct mbq q;	/* packets from RX hw queues to host stack */
 	struct netmap_adapter *na = NULL;
@@ -2270,6 +2266,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 	switch (cmd) {
 	case NIOCCTRL: {
 		struct nmreq_header *hdr = (struct nmreq_header *)data;
+		size_t nr_body_size = nmreq_size_by_type(hdr->nr_reqtype);
+		/* Original hdr->nr_body to user-space pointer. */
+		char *usr_nr_body = NULL;
+
 		if (hdr->nr_version != NETMAP_API) {
 			D("API mismatch for reqtype %d: got %d need %d",
 				hdr->nr_version,
@@ -2281,13 +2281,38 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			return EINVAL;
 		}
 
+		if ((nr_body_size && hdr->nr_body == NULL) ||
+			(!nr_body_size && hdr->nr_body != NULL)) {
+			/* Request body expected, but not found; or
+			 * request body found but unexpected. */
+			return EINVAL;
+		}
+
+		if (nr_body_is_user && nr_body_size) {
+			char *ker_nr_body;
+
+			usr_nr_body = hdr->nr_body;
+			/* Make a kernel-space copy of the user-space nr_body.
+			 * It's handy to temporarily replace hdr->nr_body with
+			 * a pointer to the kernel-space nr_body. */
+			ker_nr_body = nm_os_malloc(nr_body_size);
+			if (!ker_nr_body) {
+				return ENOMEM;
+			}
+			if (copyin(usr_nr_body, ker_nr_body, nr_body_size)) {
+				nm_os_free(ker_nr_body);
+				return EFAULT;
+			}
+			hdr->nr_body = ker_nr_body;
+		}
+
 		/* Sanitize hdr->nr_name. */
 		hdr->nr_name[sizeof(hdr->nr_name) - 1] = '\0';
 
 		switch (hdr->nr_reqtype) {
 		case NETMAP_REQ_REGISTER: {
 			struct nmreq_register *req =
-				(struct nmreq_register *)hdr;
+				(struct nmreq_register *)hdr->nr_body;
 			/* Protect access to priv from concurrent requests. */
 			NMG_LOCK();
 			do {
@@ -2307,7 +2332,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 					}
 				}
 				/* find the interface and a reference */
-				error = netmap_get_na(req, &na, &ifp, nmd,
+				error = netmap_get_na(hdr, &na, &ifp, nmd,
 						      1 /* create */); /* keep reference */
 				if (error)
 					break;
@@ -2376,7 +2401,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 
 		case NETMAP_REQ_PORT_INFO_GET: {
 			struct nmreq_port_info_get *req =
-				(struct nmreq_port_info_get *)hdr;
+				(struct nmreq_port_info_get *)hdr->nr_body;
 
 			NMG_LOCK();
 			do {
@@ -2386,7 +2411,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 					/* Build a nmreq_register out of the nmreq_port_info_get,
 					 * so that we can call netmap_get_na(). */
 					struct nmreq_register regreq;
-					nmreq_register_from_nmreq_header(hdr, &regreq);
+					bzero(&regreq, sizeof(regreq));
 					regreq.nr_tx_slots = req->nr_tx_slots;
 					regreq.nr_rx_slots = req->nr_rx_slots;
 					regreq.nr_tx_rings = req->nr_tx_rings;
@@ -2394,7 +2419,11 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 					regreq.nr_mem_id = req->nr_mem_id;
 
 					/* get a refcount */
-					error = netmap_get_na(&regreq, &na, &ifp, NULL, 1 /* create */);
+					hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+					hdr->nr_body = &regreq;
+					error = netmap_get_na(hdr, &na, &ifp, NULL, 1 /* create */);
+					hdr->nr_reqtype = NETMAP_REQ_PORT_INFO_GET; /* reset type */
+					hdr->nr_body = req; /* reset nr_body */
 					if (error) {
 						na = NULL;
 						ifp = NULL;
@@ -2429,33 +2458,27 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		}
 
 		case NETMAP_REQ_VALE_ATTACH: {
-			struct nmreq_vale_attach *req =
-				(struct nmreq_vale_attach *)hdr;
-			error = nm_bdg_ctl_attach(req);
+			error = nm_bdg_ctl_attach(hdr);
 			break;
 		}
 
 		case NETMAP_REQ_VALE_DETACH: {
-			struct nmreq_vale_detach *req =
-				(struct nmreq_vale_detach *)hdr;
-			error = nm_bdg_ctl_detach(req);
+			error = nm_bdg_ctl_detach(hdr);
 			break;
 		}
 
 		case NETMAP_REQ_VALE_LIST: {
-			struct nmreq_vale_list *req =
-				(struct nmreq_vale_list *)hdr;
-			error = netmap_bdg_list(req);
+			error = netmap_bdg_list(hdr);
 			break;
 		}
 
 		case NETMAP_REQ_PORT_HDR_SET: {
 			struct nmreq_port_hdr *req =
-				(struct nmreq_port_hdr *)hdr;
+				(struct nmreq_port_hdr *)hdr->nr_body;
 			/* Build a nmreq_register out of the nmreq_port_hdr,
 			 * so that we can call netmap_get_bdg_na(). */
 			struct nmreq_register regreq;
-			nmreq_register_from_nmreq_header(hdr, &regreq);
+			bzero(&regreq, sizeof(regreq));
 			/* For now we only support virtio-net headers, and only for
 			 * VALE ports, but this may change in future. Valid lengths
 			 * for the virtio-net header are 0 (no header), 10 and 12. */
@@ -2466,8 +2489,11 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				break;
 			}
 			NMG_LOCK();
-			error = netmap_get_bdg_na((struct nmreq_header *)&regreq,
-							&na, NULL, 0);
+			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+			hdr->nr_body = &regreq;
+			error = netmap_get_bdg_na(hdr, &na, NULL, 0);
+			hdr->nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
+			hdr->nr_body = req;
 			if (na && !error) {
 				struct netmap_vp_adapter *vpna =
 					(struct netmap_vp_adapter *)na;
@@ -2487,15 +2513,19 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		case NETMAP_REQ_PORT_HDR_GET: {
 			/* Get vnet-header length for this netmap port */
 			struct nmreq_port_hdr *req =
-				(struct nmreq_port_hdr *)hdr;
+				(struct nmreq_port_hdr *)hdr->nr_body;
 			/* Build a nmreq_register out of the nmreq_port_hdr,
 			 * so that we can call netmap_get_bdg_na(). */
 			struct nmreq_register regreq;
 			struct ifnet *ifp;
-			nmreq_register_from_nmreq_header(hdr, &regreq);
 
+			bzero(&regreq, sizeof(regreq));
 			NMG_LOCK();
-			error = netmap_get_na(&regreq, &na, &ifp, NULL, 0);
+			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+			hdr->nr_body = &regreq;
+			error = netmap_get_na(hdr, &na, &ifp, NULL, 0);
+			hdr->nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
+			hdr->nr_body = req;
 			if (na && !error) {
 				req->nr_hdr_len = na->virt_hdr_len;
 			}
@@ -2506,17 +2536,21 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 
 		case NETMAP_REQ_VALE_NEWIF: {
 			struct nmreq_vale_newif *req =
-				(struct nmreq_vale_newif *)hdr;
+				(struct nmreq_vale_newif *)hdr->nr_body;
 			/* Build a nmreq_register out of the nmreq_vale_newif,
 			 * so that we can call netmap_get_bdg_na(). */
 			struct nmreq_register regreq;
-			nmreq_register_from_nmreq_header(hdr, &regreq);
+			bzero(&regreq, sizeof(regreq));
 			regreq.nr_tx_slots = req->nr_tx_slots;
 			regreq.nr_rx_slots = req->nr_rx_slots;
 			regreq.nr_tx_rings = req->nr_tx_rings;
 			regreq.nr_rx_rings = req->nr_rx_rings;
 			regreq.nr_mem_id = req->nr_mem_id;
-			error = netmap_vi_create(&regreq, 0 /* no autodelete */);
+			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+			hdr->nr_body = &regreq;
+			error = netmap_vi_create(hdr, 0 /* no autodelete */);
+			hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
+			hdr->nr_body = req;
                         /* Write back to the original struct. */
 			req->nr_tx_slots = regreq.nr_tx_slots;
 			req->nr_rx_slots = regreq.nr_rx_slots;
@@ -2527,23 +2561,19 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		}
 
 		case NETMAP_REQ_VALE_DELIF: {
-			struct nmreq_vale_delif *req =
-				(struct nmreq_vale_delif *)hdr;
-			error = nm_vi_destroy(req->nr_hdr.nr_name);
+			error = nm_vi_destroy(hdr->nr_name);
 			break;
 		}
 
 		case NETMAP_REQ_VALE_POLLING_ENABLE:
 		case NETMAP_REQ_VALE_POLLING_DISABLE: {
-			struct nmreq_vale_polling *req =
-				(struct nmreq_vale_polling *)hdr;
-			error = nm_bdg_polling(req);
+			error = nm_bdg_polling(hdr);
 			break;
 		}
 
 		case NETMAP_REQ_POOLS_INFO_GET: {
 			struct nmreq_pools_info_get *req =
-				(struct nmreq_pools_info_get *)hdr;
+				(struct nmreq_pools_info_get *)hdr->nr_body;
 			/* Get information from the memory allocator. This
 			 * netmap device must already be bound to a port.
 			 * Note that hdr->nr_name is ignored. */
@@ -2559,9 +2589,21 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		}
 
 		default: {
-			return EINVAL;
+			error = EINVAL;
 			break;
 		}
+		}
+		if (nr_body_is_user && nr_body_size) {
+			KASSERT(usr_nr_body && hdr->nr_body,
+				"nr_body pointers must not be NULL");
+			/* Write back request body to userspace and reset the
+			 * user-space pointer. */
+			if (error == 0 && copyout(hdr->nr_body,
+				usr_nr_body, nr_body_size)) {
+				error = EFAULT;
+			}
+			nm_os_free(hdr->nr_body);
+			hdr->nr_body = usr_nr_body;
 		}
 		break;
 	}
@@ -2657,7 +2699,7 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 	case NETMAP_REQ_VALE_ATTACH:
 		return sizeof(struct nmreq_vale_attach);
 	case NETMAP_REQ_VALE_DETACH:
-		return sizeof(struct nmreq_vale_detach);
+		return 0;
 	case NETMAP_REQ_VALE_LIST:
 		return sizeof(struct nmreq_vale_list);
 	case NETMAP_REQ_PORT_HDR_SET:
@@ -2666,14 +2708,14 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 	case NETMAP_REQ_VALE_NEWIF:
 		return sizeof(struct nmreq_vale_newif);
 	case NETMAP_REQ_VALE_DELIF:
-		return sizeof(struct nmreq_vale_delif);
+		return 0;
 	case NETMAP_REQ_VALE_POLLING_ENABLE:
 	case NETMAP_REQ_VALE_POLLING_DISABLE:
 		return sizeof(struct nmreq_vale_polling);
 	case NETMAP_REQ_POOLS_INFO_GET:
 		return sizeof(struct nmreq_pools_info_get);
 	case NETMAP_REQ_VALE_OPS_REGISTER:
-		return sizeof(struct nmreq_vale_ops_register);
+		return 0;
 	}
 	return 0;
 }
