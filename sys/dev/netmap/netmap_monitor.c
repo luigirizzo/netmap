@@ -826,9 +826,10 @@ netmap_monitor_dtor(struct netmap_adapter *na)
 
 /* check if req is a request for a monitor adapter that we can satisfy */
 int
-netmap_get_monitor_na(struct nmreq_register *req, struct netmap_adapter **na,
-		struct netmap_mem_d *nmd, int create)
+netmap_get_monitor_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+			struct netmap_mem_d *nmd, int create)
 {
+	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
 	struct nmreq_register preq;
 	struct netmap_adapter *pna; /* parent adapter */
 	struct netmap_monitor_adapter *mna;
@@ -846,16 +847,18 @@ netmap_get_monitor_na(struct nmreq_register *req, struct netmap_adapter **na,
 	}
 	/* this is a request for a monitor adapter */
 
-	ND("flags %x", req->nr_flags);
+	ND("flags %lx", req->nr_flags);
 
-	/* first, try to find the adapter that we want to monitor
+	/* First, try to find the adapter that we want to monitor.
 	 * We use the same req, after we have turned off the monitor flags.
 	 * In this way we can potentially monitor everything netmap understands,
 	 * except other monitors.
 	 */
 	memcpy(&preq, req, sizeof(preq));
 	preq.nr_flags &= ~(NR_MONITOR_TX | NR_MONITOR_RX | NR_ZCOPY_MON);
-	error = netmap_get_na(&preq, &pna, &ifp, nmd, create);
+	hdr->nr_body = &preq;
+	error = netmap_get_na(hdr, &pna, &ifp, nmd, create);
+	hdr->nr_body = req;
 	if (error) {
 		D("parent lookup failed: %d", error);
 		return error;

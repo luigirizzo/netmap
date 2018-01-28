@@ -527,9 +527,10 @@ netmap_pipe_dtor(struct netmap_adapter *na)
 }
 
 int
-netmap_get_pipe_na(struct nmreq_register *req, struct netmap_adapter **na,
+netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create)
 {
+	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
 	struct nmreq_register preq;
 	struct netmap_adapter *pna; /* parent adapter */
 	struct netmap_pipe_adapter *mna, *sna, *reqna;
@@ -547,14 +548,14 @@ netmap_get_pipe_na(struct nmreq_register *req, struct netmap_adapter **na,
 
 	/* first, try to find the parent adapter */
 	bzero(&preq, sizeof(preq));
-	memcpy(&preq.nr_hdr.nr_name, req->nr_hdr.nr_name,
-		sizeof(preq.nr_hdr.nr_name));
 	/* pass to parent the requested number of pipes */
 	preq.nr_pipes = req->nr_pipes;
 	for (;;) {
 		int create_error;
 
-		error = netmap_get_na(&preq, &pna, &ifp, nmd, create);
+		hdr->nr_body = &preq;
+		error = netmap_get_na(hdr, &pna, &ifp, nmd, create);
+		hdr->nr_body = req;
 		if (!error)
 			break;
 		if (error != ENXIO || retries++) {
@@ -564,7 +565,9 @@ netmap_get_pipe_na(struct nmreq_register *req, struct netmap_adapter **na,
 		ND("try to create a persistent vale port");
 		/* create a persistent vale port and try again */
 		NMG_UNLOCK();
-		create_error = netmap_vi_create(&preq, 1 /* autodelete */);
+		hdr->nr_body = &preq;
+		create_error = netmap_vi_create(hdr, 1 /* autodelete */);
+		hdr->nr_body = req;
 		NMG_LOCK();
 		if (create_error && create_error != EEXIST) {
 			if (create_error != EOPNOTSUPP) {

@@ -1012,16 +1012,16 @@ struct netmap_bwrap_adapter {
 	struct netmap_priv_d *na_kpriv;
 	struct nm_bdg_polling_state *na_polling_state;
 };
-int nm_bdg_ctl_attach(struct nmreq_vale_attach *req);
-int nm_bdg_ctl_detach(struct nmreq_vale_detach *req);
-int nm_bdg_polling(struct nmreq_vale_polling *req);
+int nm_bdg_ctl_attach(struct nmreq_header *hdr);
+int nm_bdg_ctl_detach(struct nmreq_header *hdr);
+int nm_bdg_polling(struct nmreq_header *hdr);
 int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
-int netmap_vi_create(struct nmreq_register *, int);
+int netmap_vi_create(struct nmreq_header *hdr, int);
 int nm_vi_destroy(const char *name);
-int netmap_bdg_list(struct nmreq_vale_list *req);
+int netmap_bdg_list(struct nmreq_header *hdr);
 
 #else /* !WITH_VALE */
-#define netmap_vi_create(req, a) (EOPNOTSUPP)
+#define netmap_vi_create(hdr, a) (EOPNOTSUPP)
 #endif /* WITH_VALE */
 
 #ifdef WITH_PIPES
@@ -1419,8 +1419,8 @@ int netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 void netmap_do_unregif(struct netmap_priv_d *priv);
 
 u_int nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg);
-int netmap_get_na(struct nmreq_register *req, struct netmap_adapter **na,
-		  struct ifnet **ifp, struct netmap_mem_d *nmd, int create);
+int netmap_get_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+		struct ifnet **ifp, struct netmap_mem_d *nmd, int create);
 void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
 int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
@@ -1475,26 +1475,25 @@ int netmap_bdg_config(struct nm_ifreq *nifr);
 /* max number of pipes per device */
 #define NM_MAXPIPES	64	/* XXX this should probably be a sysctl */
 void netmap_pipe_dealloc(struct netmap_adapter *);
-int netmap_get_pipe_na(struct nmreq_register *req, struct netmap_adapter **na,
-		struct netmap_mem_d *nmd, int create);
+int netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+			struct netmap_mem_d *nmd, int create);
 #else /* !WITH_PIPES */
 #define NM_MAXPIPES	0
 #define netmap_pipe_alloc(_1, _2) 	0
 #define netmap_pipe_dealloc(_1)
-#define netmap_get_pipe_na(nmr, _2, _3, _4)	\
-	({ int role__ = (nmr)->nr_flags & NR_REG_MASK; \
+#define netmap_get_pipe_na(hdr, _2, _3, _4)	\
+	({ int role__ = ((struct nmreq_register *)hdr->nr_body)->nr_flags & NR_REG_MASK; \
 	   (role__ == NR_REG_PIPE_MASTER || 	       \
 	    role__ == NR_REG_PIPE_SLAVE) ? EOPNOTSUPP : 0; })
 #endif
 
 #ifdef WITH_MONITOR
-int netmap_get_monitor_na(struct nmreq_register *req,
-		struct netmap_adapter **na, struct netmap_mem_d *nmd,
-		int create);
+int netmap_get_monitor_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+		struct netmap_mem_d *nmd, int create);
 void netmap_monitor_stop(struct netmap_adapter *na);
 #else
-#define netmap_get_monitor_na(nmr, _2, _3, _4) \
-	((nmr)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
+#define netmap_get_monitor_na(hdr, _2, _3, _4) \
+	(((struct nmreq_register *)hdr->nr_body)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
 #endif
 
 #ifdef CONFIG_NET_NS
@@ -1515,7 +1514,8 @@ void netmap_fini(void);
 int netmap_get_memory(struct netmap_priv_d* p);
 void netmap_dtor(void *data);
 
-int netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *);
+int netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
+		struct thread *, int nr_body_is_user);
 int netmap_ioctl_legacy(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			struct thread *td);
 size_t nmreq_size_by_type(uint16_t nr_reqtype);
@@ -2131,9 +2131,8 @@ struct netmap_pt_host_adapter {
 };
 
 /* ptnetmap host-side routines */
-int netmap_get_pt_host_na(struct nmreq_register *req,
-		struct netmap_adapter **na, struct netmap_mem_d * nmd,
-		int create);
+int netmap_get_pt_host_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+			struct netmap_mem_d * nmd, int create);
 int ptnetmap_ctl(const char *nr_name, int create, struct netmap_adapter *na);
 
 static inline int
@@ -2142,8 +2141,8 @@ nm_ptnetmap_host_on(struct netmap_adapter *na)
 	return na && na->na_flags & NAF_PTNETMAP_HOST;
 }
 #else /* !WITH_PTNETMAP_HOST */
-#define netmap_get_pt_host_na(nmr, _2, _3, _4) \
-	((nmr)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
+#define netmap_get_pt_host_na(hdr, _2, _3, _4) \
+	(((struct nmreq_register *)hdr->nr_body)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
 #define ptnetmap_ctl(_1, _2, _3)   EINVAL
 #define nm_ptnetmap_host_on(_1)   EINVAL
 #endif /* !WITH_PTNETMAP_HOST */

@@ -404,6 +404,7 @@ struct nmreq_header {
 #define NETMAP_REQ_IFNAMSIZ	64
 	char			nr_name[NETMAP_REQ_IFNAMSIZ]; /* port name */
 	struct nmreq_option	*nr_options;	/* command-specific options */
+	void			*nr_body;	/* ptr to nmreq_xyz struct */
 };
 
 enum {
@@ -446,7 +447,6 @@ enum {
  * Bind (register) a netmap port to this control device.
  */
 struct nmreq_register {
-	struct nmreq_header nr_hdr;
 	uint64_t	nr_offset;	/* nifp offset in the shared region */
 	uint64_t	nr_memsize;	/* size of the shared region */
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
@@ -499,7 +499,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  * Demultiplexing is done using the nr_hdr.nr_reqtype field.
  * FreeBSD uses the size value embedded in the _IOWR to determine
  * how much to copy in/out, so we define the ioctl() command
- * specifying only nmreq_header, and copyin the remainder. */
+ * specifying only nmreq_header, and copyin the rest. */
 #define NIOCCTRL	_IOWR('i', 151, struct nmreq_header)
 
 /* The ioctl commands to sync TX/RX netmap rings. */
@@ -512,7 +512,6 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  * slots per ring, id of the memory allocator, etc.
  */
 struct nmreq_port_info_get {
-	struct nmreq_header nr_hdr;
 	uint64_t	nr_offset;	/* nifp offset in the shared region */
 	uint64_t	nr_memsize;	/* size of the shared region */
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
@@ -530,19 +529,9 @@ struct nmreq_port_info_get {
  * port and the VALE switch are specified through the nr_name argument.
  */
 struct nmreq_vale_attach {
-	struct nmreq_header nr_hdr;
 	uint16_t	nr_mem_id;	/* id of the memory allocator to use */
 	uint16_t	nr_flags;	/* flags (see below) */
 #define NETMAP_BDG_HOST		0x1	/* also  attach the host rings */
-};
-
-/*
- * nr_reqtype: NETMAP_REQ_VALE_DETACH
- * Detach a netmap port from a VALE switch. Both the name of the netmap
- * port and the VALE switch are specified through the nr_name argument.
- */
-struct nmreq_vale_detach {
-	struct nmreq_header nr_hdr;
 };
 
 /*
@@ -550,7 +539,6 @@ struct nmreq_vale_detach {
  * List the ports of a VALE switch.
  */
 struct nmreq_vale_list {
-	struct nmreq_header nr_hdr;
 	/* Name of the VALE port (valeXXX:YYY) or empty. */
 	uint16_t	nr_bridge_idx;
 	uint16_t	nr_port_idx;
@@ -561,7 +549,6 @@ struct nmreq_vale_list {
  * Set the port header length.
  */
 struct nmreq_port_hdr {
-	struct nmreq_header nr_hdr;
 	uint32_t	nr_hdr_len;
 };
 
@@ -570,7 +557,6 @@ struct nmreq_port_hdr {
  * Create a new persistent VALE port.
  */
 struct nmreq_vale_newif {
-	struct nmreq_header nr_hdr;
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
 	uint32_t	nr_rx_slots;	/* slots in rx rings */
 	uint16_t	nr_tx_rings;	/* number of tx rings */
@@ -579,19 +565,10 @@ struct nmreq_vale_newif {
 };
 
 /*
- * nr_reqtype: NETMAP_REQ_VALE_DELIF
- * Delete a persistent VALE port.
- */
-struct nmreq_vale_delif {
-	struct nmreq_header nr_hdr;
-};
-
-/*
  * nr_reqtype: NETMAP_REQ_VALE_POLLING_ENABLE or NETMAP_REQ_VALE_POLLING_DISABLE
  * Enable or disable polling kthreads on a VALE port.
  */
 struct nmreq_vale_polling {
-	struct nmreq_header nr_hdr;
 	uint32_t	nr_mode;
 #define NETMAP_POLLING_MODE_SINGLE_CPU 1
 #define NETMAP_POLLING_MODE_MULTI_CPU 2
@@ -606,7 +583,6 @@ struct nmreq_vale_polling {
  * hypervisor). The nr_hdr.nr_name field is ignored.
  */
 struct nmreq_pools_info_get {
-	struct nmreq_header nr_hdr;
 	uint64_t	nr_memsize;
 	uint16_t	nr_mem_id;
 	uint64_t	nr_if_pool_offset;
@@ -618,17 +594,6 @@ struct nmreq_pools_info_get {
 	uint64_t	nr_buf_pool_offset;
 	uint32_t	nr_buf_pool_objtotal;
 	uint32_t	nr_buf_pool_objsize;
-};
-
-/*
- * nr_reqtype: NETMAP_REQ_VALE_OPS_REGISTER
- * Program a VALE switch by registering custom callbacks (e.g.
- * lookup, config and dtor). This netmap request should not
- * be called from userspace programs, but only by kernel
- * modules.
- */
-struct nmreq_vale_ops_register {
-	struct nmreq_header nr_hdr;
 };
 
 #endif /* _NET_NETMAP_H_ */
