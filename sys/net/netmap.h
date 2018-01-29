@@ -461,6 +461,9 @@ struct netmap_if {
  *
  */
 
+/* maximum size of a request, including all options */
+#define NETMAP_REQ_MAXSIZE	4096
+
 /* Header common to all request options. */
 struct nmreq_option {
 	/* Pointer ot the next option. */

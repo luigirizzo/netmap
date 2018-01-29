@@ -2239,6 +2239,9 @@ ring_timestamp_set(struct netmap_ring *ring)
 	}
 }
 
+static void *nmreq_copyin(struct nmreq_header *, size_t, int *);
+static int nmreq_copyout(struct nmreq_header *, void *, size_t);
+
 /*
  * ioctl(2) support for the "netmap" device.
  *
@@ -2295,18 +2298,14 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		if (nr_body_is_user && nr_body_size) {
 			char *ker_nr_body;
 
-			usr_nr_body = hdr->nr_body;
 			/* Make a kernel-space copy of the user-space nr_body.
 			 * It's handy to temporarily replace hdr->nr_body with
 			 * a pointer to the kernel-space nr_body. */
-			ker_nr_body = nm_os_malloc(nr_body_size);
+			ker_nr_body = nmreq_copyin(hdr, nr_body_size, &error);
 			if (!ker_nr_body) {
-				return ENOMEM;
+				return error;
 			}
-			if (copyin(usr_nr_body, ker_nr_body, nr_body_size)) {
-				nm_os_free(ker_nr_body);
-				return EFAULT;
-			}
+			usr_nr_body = hdr->nr_body;
 			hdr->nr_body = ker_nr_body;
 		}
 
@@ -2598,16 +2597,16 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 		}
 		if (nr_body_is_user && nr_body_size) {
+			char *ker_nr_body;
 			KASSERT(usr_nr_body && hdr->nr_body,
 				"nr_body pointers must not be NULL");
 			/* Write back request body to userspace and reset the
 			 * user-space pointer. */
-			if (error == 0 && copyout(hdr->nr_body,
-				usr_nr_body, nr_body_size)) {
-				error = EFAULT;
-			}
-			nm_os_free(hdr->nr_body);
+			ker_nr_body = hdr->nr_body;
 			hdr->nr_body = usr_nr_body;
+			if (error == 0) {
+				error = nmreq_copyout(hdr, ker_nr_body, nr_body_size);
+			}
 		}
 		break;
 	}
@@ -2722,6 +2721,153 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 	return 0;
 }
 
+size_t
+nmreq_opt_size_by_type(uint16_t nro_reqtype)
+{
+	return 0;
+}
+
+static void *
+nmreq_copyin(struct nmreq_header *hdr, size_t bodysz, int *perror)
+{
+	size_t bufsz, rqsz;
+	int error;
+	char *ker = NULL, *p;
+	struct nmreq_option **next, *src;
+	struct nmreq_option buf;
+	void **ptrs;
+
+	/* compute the total size of the buffer */
+	rqsz = nmreq_size_by_type(hdr->nr_reqtype);
+	if (rqsz > NETMAP_REQ_MAXSIZE) {
+		error = EMSGSIZE;
+		goto out_err;
+	}
+	bodysz = 2 * sizeof(void *) + rqsz;
+	for (src = hdr->nr_options; src; src = src->nro_next) {
+		size_t optsz;
+		error = copyin(src, &buf, sizeof(*src));
+		if (error)
+			goto out_err;
+		optsz = sizeof(*src);
+		optsz += nmreq_opt_size_by_type(buf.nro_reqtype);
+		if (rqsz + optsz > NETMAP_REQ_MAXSIZE) {
+			error = EMSGSIZE;
+			goto out_err;
+		}
+		rqsz += optsz;
+		bufsz += optsz + sizeof(void *);
+	}
+
+	bufsz = max(1024UL, roundup_pow_of_two(bodysz));
+	ker = nm_os_malloc(bufsz);
+	if (ker == NULL) {
+		error = ENOMEM;
+		goto out_err;
+	}
+	p = ker;
+
+	/* make a copy of the user pointers */
+	ptrs = (void **)p;
+	*ptrs++ = hdr->nr_body;
+	*ptrs++ = hdr->nr_options;
+	p = (char *)ptrs;
+
+	/* copy the body */
+	error = copyin(hdr->nr_body, p, rqsz);
+	if (error)
+		goto out_err;
+	p += rqsz;
+
+	/* copy the options */
+	next = &hdr->nr_options;
+	src = *next;
+	while (src) {
+		size_t optsz;
+		struct nmreq_option *opt;
+
+		/* copy the option header */
+		ptrs = (void **)p;
+		opt = (struct nmreq_option *)(ptrs + 1);
+		error = copyin(src, opt, sizeof(*src));
+		if (error)
+			goto out_err;
+		/* make a copy of the user next pointer */
+		*ptrs = opt->nro_next;
+		/* overwrite the user pointer with the in-kernel one */
+		*next = opt;
+
+		p = (char *)(opt + 1);
+
+		/* copy the option body */
+		optsz = nmreq_opt_size_by_type(opt->nro_reqtype);
+		if (optsz) {
+			/* the option body follows the option header */
+			error = copyin(src + 1, p, optsz);
+			if (error)
+				goto out_err;
+			p += optsz;
+		}
+
+		/* move to next option */
+		next = &opt->nro_next;
+		src = *next;
+	}
+	/* skip the option list head */
+	return ker + 2 * sizeof(void *);
+
+out_err:
+	if (ker)
+		nm_os_free(ker);
+	if (perror)
+		*perror = error;
+	return NULL;
+}
+
+static int
+nmreq_copyout(struct nmreq_header *hdr, void *ker, size_t bodysz)
+{
+	int error = 0;
+	struct nmreq_option *src, *dst;
+	void **ptrs = ker;
+
+	/* copy the body */
+	error = copyout(ker, *(ptrs - 2), bodysz);
+	if (error)
+		goto out;
+
+	/* copy the options */
+	dst = *(ptrs - 1);
+	src = hdr->nr_options;
+	while (src) {
+		size_t optsz;
+		struct nmreq_option *next;
+
+		/* restore the user pointer */
+		next = src->nro_next;
+		ptrs = (void **)src - 1;
+		src->nro_next = *ptrs;
+
+		/* copy the option header */
+		error = copyout(src, dst, sizeof(src));
+		if (error)
+			goto out;
+		       
+		/* copy the option body */
+		optsz = nmreq_opt_size_by_type(src->nro_reqtype);
+		if (optsz) {
+			error = copyout(dst + 1, src + 1, optsz);
+			if (error)
+				goto out;
+		}
+		src = next;
+		dst = *ptrs;
+	}
+
+out:
+	nm_os_free(ker);
+	return error;
+}
 
 /*
  * select(2) and poll(2) handlers for the "netmap" device.
