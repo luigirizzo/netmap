@@ -53,6 +53,43 @@
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 
+static void
+nmreq_register_from_legacy(struct nmreq *nmr, struct nmreq_register *req)
+{
+	req->nr_offset = nmr->nr_offset;
+	req->nr_memsize = nmr->nr_memsize;
+	req->nr_tx_slots = nmr->nr_tx_slots;
+	req->nr_rx_slots = nmr->nr_rx_slots;
+	req->nr_tx_rings = nmr->nr_tx_rings;
+	req->nr_rx_rings = nmr->nr_rx_rings;
+	req->nr_mem_id = nmr->nr_arg2;
+	req->nr_ringid = nmr->nr_ringid & NETMAP_RING_MASK;
+	if ((nmr->nr_flags & NR_REG_MASK) == NR_REG_DEFAULT) {
+		/* Convert the older nmr->nr_ringid (original
+		 * netmap control API) to nmr->nr_flags. */
+		u_int regmode = NR_REG_DEFAULT;
+		if (req->nr_ringid & NETMAP_SW_RING) {
+			regmode = NR_REG_SW;
+		} else if (req->nr_ringid & NETMAP_HW_RING) {
+			regmode = NR_REG_ONE_NIC;
+		} else {
+			regmode = NR_REG_ALL_NIC;
+		}
+		nmr->nr_flags = regmode |
+			(nmr->nr_flags & (~NR_REG_MASK));
+	}
+	req->nr_mode = nmr->nr_flags & NR_REG_MASK;
+	req->nr_flags = nmr->nr_flags & (~NR_REG_MASK);
+	if (nmr->nr_ringid & NETMAP_NO_TX_POLL) {
+		req->nr_flags |= NR_NO_TX_POLL;
+	}
+	if (nmr->nr_ringid & NETMAP_DO_RX_POLL) {
+		req->nr_flags |= NR_DO_RX_POLL;
+	}
+	/* nmr->nr_arg1 (nr_pipes) ignored */
+	req->nr_extra_bufs = nmr->nr_arg3;
+}
+
 /* Convert the legacy 'nmr' struct into one of the nmreq_xyz structs
  * (new API). The new struct is dynamically allocated. */
 static struct nmreq_header *
@@ -83,38 +120,7 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			if (!req) { goto oom; }
 			hdr->nr_body = req;
 			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-			req->nr_offset = nmr->nr_offset;
-			req->nr_memsize = nmr->nr_memsize;
-			req->nr_tx_slots = nmr->nr_tx_slots;
-			req->nr_rx_slots = nmr->nr_rx_slots;
-			req->nr_tx_rings = nmr->nr_tx_rings;
-			req->nr_rx_rings = nmr->nr_rx_rings;
-			req->nr_mem_id = nmr->nr_arg2;
-			req->nr_ringid = nmr->nr_ringid & NETMAP_RING_MASK;
-			if ((nmr->nr_flags & NR_REG_MASK) == NR_REG_DEFAULT) {
-				/* Convert the older nmr->nr_ringid (original
-				 * netmap control API) to nmr->nr_flags. */
-				u_int regmode = NR_REG_DEFAULT;
-				if (req->nr_ringid & NETMAP_SW_RING) {
-					regmode = NR_REG_SW;
-				} else if (req->nr_ringid & NETMAP_HW_RING) {
-					regmode = NR_REG_ONE_NIC;
-				} else {
-					regmode = NR_REG_ALL_NIC;
-				}
-				nmr->nr_flags = regmode |
-					(nmr->nr_flags & (~NR_REG_MASK));
-			}
-			req->nr_mode = nmr->nr_flags & NR_REG_MASK;
-			req->nr_flags = nmr->nr_flags & (~NR_REG_MASK);
-			if (nmr->nr_ringid & NETMAP_NO_TX_POLL) {
-				req->nr_flags |= NR_NO_TX_POLL;
-			}
-			if (nmr->nr_ringid & NETMAP_DO_RX_POLL) {
-				req->nr_flags |= NR_DO_RX_POLL;
-			}
-			/* nmr->nr_arg1 (nr_pipes) ignored */
-			req->nr_extra_bufs = nmr->nr_arg3;
+			nmreq_register_from_legacy(nmr, req);
 			break;
 		}
 		case NETMAP_BDG_ATTACH: {
@@ -122,8 +128,13 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			if (!req) { goto oom; }
 			hdr->nr_body = req;
 			hdr->nr_reqtype = NETMAP_REQ_VALE_ATTACH;
-			req->nr_mem_id = nmr->nr_arg2;
-			req->nr_flags = nmr->nr_arg1 & NETMAP_BDG_HOST;
+			nmreq_register_from_legacy(nmr, &req->reg);
+			/* Fix nr_mode, starting from nr_arg1. */
+			if (nmr->nr_arg1 & NETMAP_BDG_HOST) {
+				req->reg.nr_mode = NR_REG_NIC_SW;
+			} else {
+				req->reg.nr_mode = NR_REG_ALL_NIC;
+			}
 			break;
 		}
 		case NETMAP_BDG_DETACH: {
@@ -234,6 +245,27 @@ oom:
 	return NULL;
 }
 
+static void
+nmreq_register_to_legacy(const struct nmreq_register *req, struct nmreq *nmr)
+{
+	nmr->nr_offset = req->nr_offset;
+	nmr->nr_memsize = req->nr_memsize;
+	nmr->nr_tx_slots = req->nr_tx_slots;
+	nmr->nr_rx_slots = req->nr_rx_slots;
+	nmr->nr_tx_rings = req->nr_tx_rings;
+	nmr->nr_rx_rings = req->nr_rx_rings;
+	nmr->nr_arg2 = req->nr_mem_id;
+	nmr->nr_ringid = req->nr_ringid;
+	if (req->nr_flags & NR_NO_TX_POLL) {
+		nmr->nr_ringid |= NETMAP_NO_TX_POLL;
+	}
+	if (req->nr_flags & NR_DO_RX_POLL) {
+		nmr->nr_ringid |= NETMAP_DO_RX_POLL;
+	}
+	nmr->nr_flags = req->nr_mode | req->nr_flags;
+	nmr->nr_arg3 = req->nr_extra_bufs;
+}
+
 /* Convert a nmreq_xyz struct (new API) to the legacy 'nmr' struct.
  * It also frees the nmreq_xyz struct, as it was allocated by
  * nmreq_from_legacy(). */
@@ -250,22 +282,7 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 	case NETMAP_REQ_REGISTER: {
 		struct nmreq_register *req =
 			(struct nmreq_register *)hdr->nr_body;
-		nmr->nr_offset = req->nr_offset;
-		nmr->nr_memsize = req->nr_memsize;
-		nmr->nr_tx_slots = req->nr_tx_slots;
-		nmr->nr_rx_slots = req->nr_rx_slots;
-		nmr->nr_tx_rings = req->nr_tx_rings;
-		nmr->nr_rx_rings = req->nr_rx_rings;
-		nmr->nr_arg2 = req->nr_mem_id;
-		nmr->nr_ringid = req->nr_ringid;
-		if (req->nr_flags & NR_NO_TX_POLL) {
-			nmr->nr_ringid |= NETMAP_NO_TX_POLL;
-		}
-		if (req->nr_flags & NR_DO_RX_POLL) {
-			nmr->nr_ringid |= NETMAP_DO_RX_POLL;
-		}
-		nmr->nr_flags = req->nr_mode | req->nr_flags;
-		nmr->nr_arg3 = req->nr_extra_bufs;
+		nmreq_register_to_legacy(req, nmr);
 		break;
 	}
 	case NETMAP_REQ_PORT_INFO_GET: {
@@ -283,8 +300,12 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 	case NETMAP_REQ_VALE_ATTACH: {
 		struct nmreq_vale_attach *req =
 			(struct nmreq_vale_attach *)hdr->nr_body;
-		nmr->nr_arg2 = req->nr_mem_id;
-		nmr->nr_arg1 = req->nr_flags;
+		nmreq_register_to_legacy(&req->reg, nmr);
+		if (req->reg.nr_mode == NR_REG_NIC_SW) {
+			nmr->nr_arg1 = NETMAP_BDG_HOST;
+		} else {
+			nmr->nr_arg1 = 0;
+		}
 		break;
 	}
 	case NETMAP_REQ_VALE_DETACH: {

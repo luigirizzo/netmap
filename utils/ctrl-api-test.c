@@ -186,20 +186,22 @@ vale_attach(int fd, struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
 	hdr.nr_body    = &req;
 	memset(&req, 0, sizeof(req));
-	req.nr_mem_id = ctx->nr_mem_id;
-	req.nr_flags  = ctx->nr_flags;
+	req.reg.nr_mem_id = ctx->nr_mem_id;
+	if (ctx->nr_mode == 0) {
+		ctx->nr_mode = NR_REG_ALL_NIC; /* default */;
+	}
+	req.reg.nr_mode = ctx->nr_mode;
 	ret	   = ioctl(fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_ATTACH)");
 		return ret;
 	}
-	printf("nr_mem_id %u\n", req.nr_mem_id);
+	printf("nr_mem_id %u\n", req.reg.nr_mem_id);
 
-	return ((!ctx->nr_mem_id && req.nr_mem_id > 1) ||
-		(ctx->nr_mem_id == req.nr_mem_id)) &&
-			       (ctx->nr_flags == req.nr_flags)
-		       ? 0
-		       : -1;
+	return ((!ctx->nr_mem_id && req.reg.nr_mem_id > 1) ||
+		(ctx->nr_mem_id == req.reg.nr_mem_id)) &&
+			       (ctx->nr_flags == req.reg.nr_flags)
+		       ? 0 : -1;
 }
 
 /* NETMAP_REQ_VALE_DETACH */
@@ -229,6 +231,7 @@ static int
 vale_attach_detach(int fd, struct TestContext *ctx)
 {
 	int ret;
+
 	if ((ret = vale_attach(fd, ctx))) {
 		return ret;
 	}
@@ -239,7 +242,7 @@ vale_attach_detach(int fd, struct TestContext *ctx)
 static int
 vale_attach_detach_host_rings(int fd, struct TestContext *ctx)
 {
-	ctx->nr_flags = NETMAP_BDG_HOST;
+	ctx->nr_mode = NR_REG_NIC_SW;
 	return vale_attach_detach(fd, ctx);
 }
 

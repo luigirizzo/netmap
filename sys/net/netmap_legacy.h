@@ -186,6 +186,7 @@ struct nmreq {
 #define NETMAP_VNET_HDR_GET	12      /* get the port virtio-net-hdr length */
 #define NETMAP_POOLS_INFO_GET	13	/* get memory allocator pools info */
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
+#define NETMAP_BDG_HOST		1	/* nr_arg1 value for NETMAP_BDG_ATTACH */
 
 	uint16_t	nr_arg2;	/* id of the memory allocator */
 	uint32_t	nr_arg3;	/* req. extra buffers in NIOCREGIF */

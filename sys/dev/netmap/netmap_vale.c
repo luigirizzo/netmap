@@ -826,7 +826,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 			/* Check if we need to skip the host rings. */
 			struct nmreq_vale_attach *areq =
 				(struct nmreq_vale_attach *)hdr->nr_body;
-			if ((areq->nr_flags & NETMAP_BDG_HOST) == 0) {
+			if (areq->reg.nr_mode != NR_REG_NIC_SW) {
 				hostna = NULL;
 			}
 		}
@@ -872,8 +872,8 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr)
 
 	NMG_LOCK();
 
-	if (req->nr_mem_id) {
-		nmd = netmap_mem_find(req->nr_mem_id);
+	if (req->reg.nr_mem_id) {
+		nmd = netmap_mem_find(req->reg.nr_mem_id);
 		if (nmd == NULL) {
 			error = EINVAL;
 			goto unlock_exit;
@@ -2724,6 +2724,13 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 	if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
 		struct nmreq_vale_attach *req =
 			(struct nmreq_vale_attach *)hdr->nr_body;
+		if (req->reg.nr_ringid != 0 ||
+			(req->reg.nr_mode != NR_REG_ALL_NIC &&
+				req->reg.nr_mode != NR_REG_NIC_SW)) {
+			/* We only support attaching all the NIC rings
+			 * and/or the host stack. */
+			return EINVAL;
+		}
 		if (NETMAP_OWNED_BY_ANY(na)) {
 			return EBUSY;
 		}
@@ -2735,9 +2742,8 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 		if (npriv == NULL)
 			return ENOMEM;
 		npriv->np_ifp = na->ifp; /* let the priv destructor release the ref */
-		error = netmap_do_regif(npriv, na,
-			(req->nr_flags & NETMAP_BDG_HOST) ? NR_REG_NIC_SW : NR_REG_ALL_NIC,
-			0, 0);
+		error = netmap_do_regif(npriv, na, req->reg.nr_mode,
+					req->reg.nr_ringid, req->reg.nr_flags);
 		if (error) {
 			netmap_priv_delete(npriv);
 			return error;
