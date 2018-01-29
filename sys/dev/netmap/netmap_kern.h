@@ -1482,7 +1482,7 @@ int netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 #define netmap_pipe_alloc(_1, _2) 	0
 #define netmap_pipe_dealloc(_1)
 #define netmap_get_pipe_na(hdr, _2, _3, _4)	\
-	({ int role__ = ((struct nmreq_register *)hdr->nr_body)->nr_flags & NR_REG_MASK; \
+	({ int role__ = ((struct nmreq_register *)hdr->nr_body)->nr_mode; \
 	   (role__ == NR_REG_PIPE_MASTER || 	       \
 	    role__ == NR_REG_PIPE_SLAVE) ? EOPNOTSUPP : 0; })
 #endif

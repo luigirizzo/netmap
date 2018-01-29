@@ -536,10 +536,10 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	struct netmap_pipe_adapter *mna, *sna, *reqna;
 	struct ifnet *ifp = NULL;
 	u_int pipe_id;
-	int role = req->nr_flags;
+	int role = req->nr_mode;
 	int error, retries = 0;
 
-	ND("flags %x", req->nr_flags);
+	ND("flags %x", req->nr_mode);
 
 	if (role != NR_REG_PIPE_MASTER && role != NR_REG_PIPE_SLAVE) {
 		ND("not a pipe");
