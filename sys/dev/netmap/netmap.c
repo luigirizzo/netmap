@@ -2666,8 +2666,6 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 		return sizeof(struct nmreq_vale_polling);
 	case NETMAP_REQ_POOLS_INFO_GET:
 		return sizeof(struct nmreq_pools_info_get);
-	case NETMAP_REQ_VALE_OPS_REGISTER:
-		return 0;
 	}
 	return 0;
 }
