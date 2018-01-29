@@ -524,11 +524,11 @@ struct nmreq_port_info_get {
  * nr_reqtype: NETMAP_REQ_VALE_ATTACH
  * Attach a netmap port to a VALE switch. Both the name of the netmap
  * port and the VALE switch are specified through the nr_name argument.
+ * The attach operation could need to register a port, so at least
+ * the same arguments are available.
  */
 struct nmreq_vale_attach {
-	uint16_t	nr_mem_id;	/* id of the memory allocator to use */
-	uint16_t	nr_flags;	/* flags (see below) */
-#define NETMAP_BDG_HOST		0x1	/* also  attach the host rings */
+	struct nmreq_register reg;
 };
 
 /*
