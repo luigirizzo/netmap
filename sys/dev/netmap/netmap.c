@@ -2456,7 +2456,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			NMG_UNLOCK();
 			break;
 		}
-
+#ifdef WITH_VALE
 		case NETMAP_REQ_VALE_ATTACH: {
 			error = nm_bdg_ctl_attach(hdr);
 			break;
@@ -2570,7 +2570,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			error = nm_bdg_polling(hdr);
 			break;
 		}
-
+#endif  /* WITH_VALE */
 		case NETMAP_REQ_POOLS_INFO_GET: {
 			struct nmreq_pools_info_get *req =
 				(struct nmreq_pools_info_get *)hdr->nr_body;
