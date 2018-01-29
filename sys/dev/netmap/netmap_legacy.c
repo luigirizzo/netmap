@@ -30,6 +30,7 @@
 #include <sys/param.h>	/* defines used in kernel.h */
 #include <sys/filio.h>	/* FIONBIO */
 #include <sys/malloc.h>
+#include <sys/socketvar.h>	/* struct socket */
 #include <sys/socket.h> /* sockaddrs */
 #include <sys/sysctl.h>
 #include <net/if.h>
