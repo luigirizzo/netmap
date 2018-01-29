@@ -325,7 +325,7 @@ static inline void mtx_lock(safe_spinlock_t *m)
 
 static inline void mtx_unlock(safe_spinlock_t *m)
 {
-	ulong flags = ACCESS_ONCE(m->flags);
+	ulong flags = *(volatile ulong *)&m->flags;
         spin_unlock_irqrestore(&(m->sl), flags);
 }
 

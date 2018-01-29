@@ -373,7 +373,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	(void)reclaim_tx;
 	(void)report_frequency;
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
-		u32 h = ACCESS_ONCE(*ina->heads[ring_nr].phead);
+		u32 h = NM_ACCESS_ONCE(*ina->heads[ring_nr].phead);
 		ND(5, "%s: h %d", kring->name, h);
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, h), lim);
 	}
