@@ -113,7 +113,7 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			if (nmr->nr_ringid & NETMAP_DO_RX_POLL) {
 				req->nr_flags |= NR_DO_RX_POLL;
 			}
-			req->nr_pipes = nmr->nr_arg1;
+			/* nmr->nr_arg1 (nr_pipes) ignored */
 			req->nr_extra_bufs = nmr->nr_arg3;
 			break;
 		}
@@ -265,7 +265,6 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 			nmr->nr_ringid |= NETMAP_DO_RX_POLL;
 		}
 		nmr->nr_flags = req->nr_mode | req->nr_flags;
-		nmr->nr_arg1 = req->nr_pipes;
 		nmr->nr_arg3 = req->nr_extra_bufs;
 		break;
 	}

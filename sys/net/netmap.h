@@ -479,7 +479,6 @@ struct nmreq_register {
 #define NR_DO_RX_POLL		0x10000
 #define NR_NO_TX_POLL		0x20000
 
-	uint32_t	nr_pipes;	/* number of pipes to create */
 	uint32_t	nr_extra_bufs;	/* number of requested extra buffers */
 };
 

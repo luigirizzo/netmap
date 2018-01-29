@@ -531,7 +531,6 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create)
 {
 	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
-	struct nmreq_register preq;
 	struct netmap_adapter *pna; /* parent adapter */
 	struct netmap_pipe_adapter *mna, *sna, *reqna;
 	struct ifnet *ifp = NULL;
@@ -547,12 +546,11 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	}
 
 	/* first, try to find the parent adapter */
-	bzero(&preq, sizeof(preq));
-	/* pass to parent the requested number of pipes */
-	preq.nr_pipes = req->nr_pipes;
 	for (;;) {
+		struct nmreq_register preq;
 		int create_error;
 
+		bzero(&preq, sizeof(preq)); /* basic register operation */
 		hdr->nr_body = &preq;
 		error = netmap_get_na(hdr, &pna, &ifp, nmd, create);
 		hdr->nr_body = req;

@@ -20,7 +20,6 @@ struct TestContext {
 	uint16_t nr_ringid;     /* ring(s) we care about */
 	uint32_t nr_mode;       /* specify NR_REG_* modes */
 	uint64_t nr_flags;      /* additional flags (see below) */
-	uint32_t nr_pipes;      /* number of pipes to create */
 	uint32_t nr_extra_bufs; /* number of requested extra buffers */
 
 	uint32_t nr_hdr_len; /* for PORT_HDR_SET and PORT_HDR_GET */
@@ -109,7 +108,6 @@ port_register(int fd, struct TestContext *ctx)
 	req.nr_rx_slots   = ctx->nr_rx_slots;
 	req.nr_tx_rings   = ctx->nr_tx_rings;
 	req.nr_rx_rings   = ctx->nr_rx_rings;
-	req.nr_pipes      = ctx->nr_pipes;
 	req.nr_extra_bufs = ctx->nr_extra_bufs;
 	ret		  = ioctl(fd, NIOCCTRL, &hdr);
 	if (ret) {
@@ -123,7 +121,6 @@ port_register(int fd, struct TestContext *ctx)
 	printf("nr_tx_rings %u\n", req.nr_tx_rings);
 	printf("nr_rx_rings %u\n", req.nr_rx_rings);
 	printf("nr_mem_id %u\n", req.nr_mem_id);
-	printf("nr_pipes %u\n", req.nr_pipes);
 	printf("nr_extra_bufs %u\n", req.nr_extra_bufs);
 
 	return req.nr_memsize && (ctx->nr_mode == req.nr_mode) &&
@@ -139,8 +136,6 @@ port_register(int fd, struct TestContext *ctx)
 				(ctx->nr_rx_rings == req.nr_rx_rings)) &&
 			       ((!ctx->nr_mem_id && req.nr_mem_id) ||
 				(ctx->nr_mem_id == req.nr_mem_id)) &&
-			       (!ctx->nr_pipes ||
-				(ctx->nr_pipes == req.nr_pipes)) &&
 			       (ctx->nr_extra_bufs == req.nr_extra_bufs)
 		       ? 0
 		       : -1;

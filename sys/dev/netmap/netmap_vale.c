@@ -2247,9 +2247,7 @@ netmap_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	 * but probably can do with some more.
 	 * So let's use 2 as default (when 0 is supplied)
 	 */
-	npipes = req->nr_pipes;
 	nm_bound_var(&npipes, 2, 1, NM_MAXPIPES, NULL);
-	req->nr_pipes = npipes;	/* write back */
 	/* validate extra bufs */
 	nm_bound_var(&extrabufs, 0, 0,
 			128*NM_BDG_MAXSLOTS, NULL);
