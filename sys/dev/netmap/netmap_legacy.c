@@ -272,14 +272,6 @@ nmreq_register_to_legacy(const struct nmreq_register *req, struct nmreq *nmr)
 	nmr->nr_tx_rings = req->nr_tx_rings;
 	nmr->nr_rx_rings = req->nr_rx_rings;
 	nmr->nr_arg2 = req->nr_mem_id;
-	nmr->nr_ringid = req->nr_ringid;
-	if (req->nr_flags & NR_NO_TX_POLL) {
-		nmr->nr_ringid |= NETMAP_NO_TX_POLL;
-	}
-	if (req->nr_flags & NR_DO_RX_POLL) {
-		nmr->nr_ringid |= NETMAP_DO_RX_POLL;
-	}
-	nmr->nr_flags = req->nr_mode | req->nr_flags;
 	nmr->nr_arg3 = req->nr_extra_bufs;
 }
 
@@ -290,11 +282,9 @@ static int
 nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 {
 	int ret = 0;
-	/* Don't bzero 'nmr', we may need the pointers stored into
-	 * nr_arg1, nr_arg2 and nr_arg3 (see NETMAP_REQ_POOLS_INFO_GET).
-	 * Actually, we may get rid of all the write-backs that are
-	 * not needed. */
 
+	/* We only write-back the fields that the user expects to be
+	 * written back. */
 	switch (hdr->nr_reqtype) {
 	case NETMAP_REQ_REGISTER: {
 		struct nmreq_register *req =
@@ -318,11 +308,6 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 		struct nmreq_vale_attach *req =
 			(struct nmreq_vale_attach *)hdr->nr_body;
 		nmreq_register_to_legacy(&req->reg, nmr);
-		if (req->reg.nr_mode == NR_REG_NIC_SW) {
-			nmr->nr_arg1 = NETMAP_BDG_HOST;
-		} else {
-			nmr->nr_arg1 = 0;
-		}
 		break;
 	}
 	case NETMAP_REQ_VALE_DETACH: {
@@ -352,26 +337,9 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 		nmr->nr_arg2 = req->nr_mem_id;
 		break;
 	}
-	case NETMAP_REQ_VALE_DELIF: {
-		break;
-	}
+	case NETMAP_REQ_VALE_DELIF:
 	case NETMAP_REQ_VALE_POLLING_ENABLE:
 	case NETMAP_REQ_VALE_POLLING_DISABLE: {
-		struct nmreq_vale_polling *req =
-			(struct nmreq_vale_polling *)hdr->nr_body;
-		switch (req->nr_mode) {
-		default:
-			nmr->nr_flags = NR_REG_DEFAULT; /* invalid */
-			break;
-		case NETMAP_POLLING_MODE_MULTI_CPU:
-			nmr->nr_flags = NR_REG_ONE_NIC;
-			break;
-		case NETMAP_POLLING_MODE_SINGLE_CPU:
-			nmr->nr_flags = NR_REG_ALL_NIC;
-			break;
-		}
-		nmr->nr_ringid = req->nr_first_cpu_id;
-		nmr->nr_arg1 = req->nr_num_polling_cpus;
 		break;
 	}
 	}
