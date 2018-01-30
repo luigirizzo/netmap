@@ -146,8 +146,9 @@ void do_close()
 #include <net/netmap_user.h>
 #include <net/netmap_virt.h>
 
-struct nmreq curr_nmr = { .nr_version = NETMAP_API, .nr_flags = NR_REG_ALL_NIC, };
-char nmr_name[64];
+/* legacy */
+struct nmreq curr_nmr = { .nr_version = 11, .nr_flags = NR_REG_ALL_NIC, };
+char nmr_name[256];
 
 void parse_nmr_config(char* w, struct nmreq *nmr)
 {
@@ -179,7 +180,7 @@ void parse_nmr_config(char* w, struct nmreq *nmr)
 	}
 }
 
-void do_getinfo()
+void do_getinfo_legacy()
 {
 	int ret;
 	char *arg, *name;
@@ -213,7 +214,7 @@ doit:
 }
 
 
-void do_regif()
+void do_regif_legacy()
 {
 	int ret;
 	char *arg, *name;
@@ -810,7 +811,7 @@ nmr_arg_extra()
 }
 
 void
-do_nmr_dump()
+do_nmr_legacy_dump()
 {
 	u_int ringid = curr_nmr.nr_ringid & NETMAP_RING_MASK;
 	nmr_arg_interp_fun arg_interp;
@@ -953,7 +954,7 @@ do_nmr_dump()
 }
 
 void
-do_nmr_reset()
+do_nmr_legacy_reset()
 {
 	bzero(&curr_nmr, sizeof(curr_nmr));
 	curr_nmr.nr_version = NETMAP_API;
@@ -961,7 +962,7 @@ do_nmr_reset()
 }
 
 void
-do_nmr_name()
+do_nmr_legacy_name()
 {
 	char *name = nextarg();
 	if (name) {
@@ -973,7 +974,7 @@ do_nmr_name()
 }
 
 void
-do_nmr_ringid()
+do_nmr_legacy_ringid()
 {
 	char *arg;
 	uint16_t ringid = curr_nmr.nr_ringid;
@@ -998,7 +999,7 @@ do_nmr_ringid()
 }
 
 void
-do_nmr_cmd()
+do_nmr_legacy_cmd()
 {
 	char *arg = nextarg();
 	if (arg == NULL)
@@ -1032,7 +1033,7 @@ out:
 }
 
 void
-do_nmr_flags()
+do_nmr_legacy_flags()
 {
 	char *arg;
 	uint32_t flags = curr_nmr.nr_flags;
@@ -1075,54 +1076,56 @@ do_nmr_flags()
 	output("flags=%x", curr_nmr.nr_flags);
 }
 
-struct cmd_def nmr_commands[] = {
-	{ "dump",	do_nmr_dump },
-	{ "reset",	do_nmr_reset },
-	{ "name",	do_nmr_name },
-	{ "ringid",	do_nmr_ringid },
-	{ "cmd",	do_nmr_cmd },
-	{ "flags",	do_nmr_flags },
+struct cmd_def nmr_legacy_commands[] = {
+	{ "dump",	do_nmr_legacy_dump },
+	{ "reset",	do_nmr_legacy_reset },
+	{ "name",	do_nmr_legacy_name },
+	{ "ringid",	do_nmr_legacy_ringid },
+	{ "cmd",	do_nmr_legacy_cmd },
+	{ "flags",	do_nmr_legacy_flags },
 };
 
-const int N_NMR_CMDS = sizeof(nmr_commands) / sizeof(struct cmd_def);
+const int N_NMR_LEGACY_CMDS = sizeof(nmr_legacy_commands) / sizeof(struct cmd_def);
 
 int
-find_nmr_command(const char *cmd)
+find_nmr_legacy_command(const char *cmd)
 {
-	return _find_command(nmr_commands, N_NMR_CMDS, cmd);
+	return _find_command(nmr_legacy_commands, N_NMR_LEGACY_CMDS, cmd);
 }
 
-#define nmr_arg_update(f) 				\
+#define __nmr_arg_update(nmr, f) 			\
 	({						\
 		int __ret = 0;				\
 		if (strcmp(cmd, #f) == 0) {		\
 			char *arg = nextarg();		\
 			if (arg) {			\
-				curr_nmr.nr_##f = strtol(arg, NULL, 0); \
+				curr_##nmr.nr_##f = strtol(arg, NULL, 0); \
 			}				\
-			output(#f "=%d", curr_nmr.nr_##f);	\
+			output(#f "=%d", curr_##nmr.nr_##f);	\
 			__ret = 1;			\
 		} 					\
 		__ret;					\
 	})
 
+#define nmr_arg_update(f)	__nmr_arg_update(nmr, f)
+
 /* prepare the curr_nmr */
 void
-do_nmr()
+do_nmr_legacy()
 {
 	char *cmd = nextarg();
 	int i;
 
 	if (cmd == NULL) {
-		do_nmr_dump();
+		do_nmr_legacy_dump();
 		return;
 	}
 	if (cmd[0] == '.') {
 		cmd++;
 	} else {
-		i = find_nmr_command(cmd);
-		if (i < N_NMR_CMDS) {
-			nmr_commands[i].f();
+		i = find_nmr_legacy_command(cmd);
+		if (i < N_NMR_LEGACY_CMDS) {
+			nmr_legacy_commands[i].f();
 			return;
 		}
 	}
@@ -1143,14 +1146,280 @@ do_nmr()
 	output("unknown field: %s", cmd);
 }
 
+/****************************************************************
+ * new API							*
+ ****************************************************************/
+
+static struct nmreq_header curr_hdr = { .nr_version = NETMAP_API };
+static struct nmreq_register curr_register;
+static struct nmreq_port_info_get curr_port_info_get;
+static struct nmreq_vale_attach curr_vale_attach;
+static struct nmreq_vale_list curr_vale_list;
+static struct nmreq_port_hdr curr_port_hdr;
+static struct nmreq_vale_newif curr_vale_newif;
+static struct nmreq_vale_polling curr_vale_polling;
+static struct nmreq_pools_info_get curr_pools_info_get;
+
+typedef void (*nmr_body_dump_fun)(void *);
+
+static void
+nmr_body_dump_register(void *b)
+{
+	(void)b;
+}
+
+static void
+nmr_body_dump_port_info_get(void *b)
+{
+	(void)b;
+}
+
+static void
+nmr_body_dump_vale_attach(void *b)
+{
+	(void)b;
+}
+
+static void
+nmr_body_dump_vale_list(void *b)
+{
+	(void)b;
+}
+
+static void
+nmr_body_dump_port_hdr(void *b)
+{
+	(void)b;
+}
+
+static void
+nmr_body_dump_vale_newif(void *b)
+{
+	(void)b;
+}
+
+static void
+nmr_body_dump_vale_polling(void *b)
+{
+	(void)b;
+}
+
+static void
+nmr_body_dump_pools_info_get(void *b)
+{
+	(void)b;
+}
+
+static void
+nmr_option_dump(struct nmreq_option *opt)
+{
+	(void)opt;
+}
+
+static void
+do_hdr_dump()
+{
+	struct nmreq_option *opt;
+	nmr_body_dump_fun body_dump = NULL;
+
+	snprintf(nmr_name, NETMAP_REQ_IFNAMSIZ + 1, "%s", curr_hdr.nr_name);
+	nmr_name[NETMAP_REQ_IFNAMSIZ] = '\0';
+	printf("version:   %d\n", curr_hdr.nr_version);
+	printf("reqtype:   %d [", curr_hdr.nr_reqtype);
+	switch (curr_hdr.nr_reqtype) {
+	case NETMAP_REQ_REGISTER:
+		printf("register");
+		body_dump = nmr_body_dump_register;
+		break;
+	case NETMAP_REQ_PORT_INFO_GET:
+		printf("info-get");
+		body_dump = nmr_body_dump_port_info_get;
+		break;
+	case NETMAP_REQ_VALE_ATTACH:
+		printf("vale-attach");
+		body_dump = nmr_body_dump_vale_attach;
+		break;
+	case NETMAP_REQ_VALE_DETACH:
+		printf("vale-detach");
+		break;
+	case NETMAP_REQ_VALE_LIST:
+		printf("vale-list");
+		body_dump = nmr_body_dump_vale_list;
+		break;
+	case NETMAP_REQ_PORT_HDR_SET:
+		printf("port-hdr-set");
+		body_dump = nmr_body_dump_port_hdr;
+		break;
+	case NETMAP_REQ_PORT_HDR_GET:
+		printf("port-hdr-get");
+		body_dump = nmr_body_dump_port_hdr;
+		break;
+	case NETMAP_REQ_VALE_NEWIF:
+		printf("vale-newif");
+		body_dump = nmr_body_dump_vale_newif;
+		break;
+	case NETMAP_REQ_VALE_DELIF:
+		printf("vale-delif");
+		break;
+	case NETMAP_REQ_VALE_POLLING_ENABLE:
+		printf("vale-polliing-enable");
+		body_dump = nmr_body_dump_vale_polling;
+		break;
+	case NETMAP_REQ_VALE_POLLING_DISABLE:
+		printf("vale-polling-disable");
+		body_dump = nmr_body_dump_vale_polling;
+		break;
+	case NETMAP_REQ_POOLS_INFO_GET:
+		printf("pools-info-get");
+		body_dump = nmr_body_dump_pools_info_get;
+		break;
+	default:
+		printf("???");
+		break;
+	}
+	printf("]\n");
+	printf("name: %s\n", nmr_name);
+	opt = curr_hdr.nr_options;
+	printf("options:   %p\n", opt);
+	while (opt) {
+		nmr_option_dump(opt);
+		opt = opt->nro_next;
+	}
+	printf("body:	   %p\n", curr_hdr.nr_body);
+	if (body_dump)
+		body_dump(curr_hdr.nr_body);
+}
+
+static void
+do_hdr_reset()
+{
+	memset(&curr_hdr, 0, sizeof(curr_hdr));
+	curr_hdr.nr_version = NETMAP_API;
+}
+
+void
+do_hdr_name()
+{
+	char *name = nextarg();
+	if (name) {
+		strncpy(curr_hdr.nr_name, name, NETMAP_REQ_IFNAMSIZ);
+	}
+	strncpy(nmr_name, curr_hdr.nr_name, NETMAP_REQ_IFNAMSIZ);
+	nmr_name[NETMAP_REQ_IFNAMSIZ] = '\0';
+	output("name=%s", nmr_name);
+}
+
+
+static void
+do_hdr_type()
+{
+	char *type = nextarg();
+
+	if (strcmp(type, "register") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_REGISTER;
+		curr_hdr.nr_body = &curr_register;
+	} else if (strcmp(type, "info-get") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
+		curr_hdr.nr_body = &curr_port_info_get;
+	} else if (strcmp(type, "vale-attach") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
+		curr_hdr.nr_body = &curr_vale_attach;
+	} else if (strcmp(type, "vale-detach") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
+	} else if (strcmp(type, "vale-list") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_LIST;
+		curr_hdr.nr_body = &curr_vale_list;
+	} else if (strcmp(type, "port-hdr-set") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
+		curr_hdr.nr_body = &curr_port_hdr;
+	} else if (strcmp(type, "port-hdr-get") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
+		curr_hdr.nr_body = &curr_port_hdr;
+	} else if (strcmp(type, "vale-newif") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_NEWIF;
+		curr_hdr.nr_body = &curr_vale_newif;
+	} else if (strcmp(type, "vale-delif") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_DELIF;
+	} else if (strcmp(type, "vale-polliing-enable") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_ENABLE;
+		curr_hdr.nr_body = &curr_vale_polling;
+	} else if (strcmp(type, "vale-polling-disable") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_DISABLE;
+		curr_hdr.nr_body = &curr_vale_polling;
+	} else if (strcmp(type, "pools-info-get") == 0) {
+		curr_hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
+		curr_hdr.nr_body = &curr_pools_info_get;
+	} else {
+		output("unknown type: %s", type);
+	}
+}
+
+static void
+do_hdr_option()
+{
+}
+
+struct cmd_def hdr_commands[] = {
+	{ "dump",	do_hdr_dump },
+	{ "reset",	do_hdr_reset },
+	{ "name",	do_hdr_name },
+	{ "type",	do_hdr_type },
+	{ "option",	do_hdr_option },
+};
+
+const int N_HDR_CMDS = sizeof(hdr_commands) / sizeof(struct cmd_def);
+
+int
+find_hdr_command(const char *cmd)
+{
+	return _find_command(hdr_commands, N_HDR_CMDS, cmd);
+}
+
+
+
+static void
+do_hdr()
+{
+	char *cmd = nextarg();
+	int i;
+
+	if (cmd == NULL) {
+		do_hdr_dump();
+		return;
+	}
+	i = find_hdr_command(cmd);
+	if (i < N_HDR_CMDS) {
+		hdr_commands[i].f();
+		return;
+	}
+	output("unknown command: %s", cmd);
+}
+
+static void
+do_ctrl()
+{
+	char *arg;
+	int fd, ret;
+
+	arg = nextarg();
+	if (!arg) {
+		fd = last_fd;
+		goto doit;
+	}
+	fd = atoi(arg);
+doit:
+	ret = ioctl(fd, NIOCCTRL, &curr_hdr);
+	output_err(ret, "ioctl(%d, NIOCCTL, %p)=%d", fd, &curr_hdr, ret);
+
+}
 
 
 struct cmd_def commands[] = {
 	{ "open",	do_open,	},
 	{ "close", 	do_close,	},
 #ifdef TEST_NETMAP
-	{ "getinfo",	do_getinfo,	},
-	{ "regif",	do_regif,	},
+	{ "getinfo-legacy",	do_getinfo_legacy,	},
+	{ "regif-legacy",	do_regif_legacy,	},
 	{ "txsync",	do_txsync,	},
 	{ "rxsync",	do_rxsync,	},
 #endif /* TEST_NETMAP */
@@ -1166,7 +1435,9 @@ struct cmd_def commands[] = {
 	{ "ring",       do_ring,        },
 	{ "slot",       do_slot,        },
 	{ "buf",        do_buf,         },
-	{ "nmr",	do_nmr,		}
+	{ "nmr-legacy",	do_nmr_legacy,	},
+	{ "hdr",	do_hdr,		},
+	{ "ctrl",	do_ctrl		}
 };
 
 const int N_CMDS = sizeof(commands) / sizeof(struct cmd_def);
