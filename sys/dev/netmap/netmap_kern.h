@@ -825,7 +825,7 @@ struct netmap_adapter {
 	/* Offset of ethernet header for each packet. */
 	u_int virt_hdr_len;
 
-	char name[64];
+	char name[NETMAP_REQ_IFNAMSIZ]; /* used at least by pipes */
 };
 
 static __inline u_int
@@ -1029,10 +1029,12 @@ int netmap_bdg_list(struct nmreq_header *hdr);
 #define NM_MAXPIPES 	64	/* max number of pipes per adapter */
 
 struct netmap_pipe_adapter {
+	/* pipe identifier is up.name */
 	struct netmap_adapter up;
 
-	u_int id; 	/* pipe identifier */
-	int role;	/* either NR_REG_PIPE_MASTER or NR_REG_PIPE_SLAVE */
+#define NM_PIPE_ROLE_MASTER	0x1
+#define NM_PIPE_ROLE_SLAVE	0x2
+	int role;	/* either NM_PIPE_ROLE_MASTER or NM_PIPE_ROLE_SLAVE */
 
 	struct netmap_adapter *parent; /* adapter that owns the memory */
 	struct netmap_pipe_adapter *peer; /* the other end of the pipe */
@@ -1482,9 +1484,7 @@ int netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 #define netmap_pipe_alloc(_1, _2) 	0
 #define netmap_pipe_dealloc(_1)
 #define netmap_get_pipe_na(hdr, _2, _3, _4)	\
-	({ int role__ = ((struct nmreq_register *)hdr->nr_body)->nr_mode; \
-	   (role__ == NR_REG_PIPE_MASTER || 	       \
-	    role__ == NR_REG_PIPE_SLAVE) ? EOPNOTSUPP : 0; })
+	((strchr(hdr->nr_name, '{') != NULL || strchr(hdr->nr_name, '}') != NULL) ? EOPNOTSUPP : 0)
 #endif
 
 #ifdef WITH_MONITOR

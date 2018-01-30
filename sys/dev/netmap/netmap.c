@@ -1471,6 +1471,13 @@ netmap_get_na(struct nmreq_header *hdr,
 		return EINVAL;
 	}
 
+	if (req->nr_mode == NR_REG_PIPE_MASTER ||
+			req->nr_mode == NR_REG_PIPE_SLAVE) {
+		/* Do not accept deprecated pipe modes. */
+		D("Deprecated pipe nr_mode, use xx{yy or xx}yy syntax");
+		return EINVAL;
+	}
+
 	NMG_LOCK_ASSERT();
 
 	/* if the request contain a memid, try to find the

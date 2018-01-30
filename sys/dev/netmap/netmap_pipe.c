@@ -127,14 +127,19 @@ netmap_pipe_dealloc(struct netmap_adapter *na)
 
 /* find a pipe endpoint with the given id among the parent's pipes */
 static struct netmap_pipe_adapter *
-netmap_pipe_find(struct netmap_adapter *parent, u_int pipe_id)
+netmap_pipe_find(struct netmap_adapter *parent, const char *pipe_id)
 {
 	int i;
 	struct netmap_pipe_adapter *na;
 
 	for (i = 0; i < parent->na_next_pipe; i++) {
+		const char *na_pipe_id;
 		na = parent->na_pipes[i];
-		if (na->id == pipe_id) {
+		na_pipe_id = strrchr(na->up.name,
+			na->role == NM_PIPE_ROLE_MASTER ? '{' : '}');
+		KASSERT(na_pipe_id != NULL, "Invalid pipe name");
+		++na_pipe_id;
+		if (!strcmp(na_pipe_id, pipe_id)) {
 			return na;
 		}
 	}
@@ -518,7 +523,7 @@ netmap_pipe_dtor(struct netmap_adapter *na)
 		pna->peer_ref = 0;
 		netmap_adapter_put(&pna->peer->up);
 	}
-	if (pna->role == NR_REG_PIPE_MASTER)
+	if (pna->role == NM_PIPE_ROLE_MASTER)
 		netmap_pipe_remove(pna->parent, pna);
 	if (pna->parent_ifp)
 		if_rele(pna->parent_ifp);
@@ -534,26 +539,48 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	struct netmap_adapter *pna; /* parent adapter */
 	struct netmap_pipe_adapter *mna, *sna, *reqna;
 	struct ifnet *ifp = NULL;
-	u_int pipe_id;
-	int role = req->nr_mode;
+	const char *pipe_id = NULL;
+	int role = 0;
 	int error, retries = 0;
+	char *cbra;
 
-	ND("flags %x", req->nr_mode);
-
-	if (role != NR_REG_PIPE_MASTER && role != NR_REG_PIPE_SLAVE) {
-		ND("not a pipe");
-		return 0;
+	/* Try to parse the pipe syntax 'xx{yy' or 'xx}yy'. */
+	cbra = strrchr(hdr->nr_name, '{');
+	if (cbra != NULL) {
+		role = NM_PIPE_ROLE_MASTER;
+	} else {
+		cbra = strrchr(hdr->nr_name, '}');
+		if (cbra != NULL) {
+			role = NM_PIPE_ROLE_SLAVE;
+		} else {
+			ND("not a pipe");
+			return 0;
+		}
+	}
+	pipe_id = cbra + 1;
+	if (*pipe_id == '\0' || cbra == hdr->nr_name) {
+		/* Bracket is the last character, so pipe name is missing;
+		 * or bracket is the first character, so base port name
+		 * is missing. */
+		return EINVAL;
+	}
+	if (req->nr_mode != NR_REG_ALL_NIC || req->nr_ringid != 0) {
+		/* Currently we only support opening all the hw rings of
+		 * a pipe. */
+		return EINVAL;
 	}
 
 	/* first, try to find the parent adapter */
 	for (;;) {
-		struct nmreq_register preq;
+		char nr_name_orig[NETMAP_REQ_IFNAMSIZ];
 		int create_error;
 
-		bzero(&preq, sizeof(preq)); /* basic register operation */
-		hdr->nr_body = &preq;
+		/* Temporarily remove the pipe suffix. */
+		strncpy(nr_name_orig, hdr->nr_name, sizeof(nr_name_orig));
+		*cbra = '\0';
 		error = netmap_get_na(hdr, &pna, &ifp, nmd, create);
-		hdr->nr_body = req;
+		/* Restore the pipe suffix. */
+		strncpy(hdr->nr_name, nr_name_orig, sizeof(hdr->nr_name));
 		if (!error)
 			break;
 		if (error != ENXIO || retries++) {
@@ -562,11 +589,11 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		}
 		ND("try to create a persistent vale port");
 		/* create a persistent vale port and try again */
+		*cbra = '\0';
 		NMG_UNLOCK();
-		hdr->nr_body = &preq;
 		create_error = netmap_vi_create(hdr, 1 /* autodelete */);
-		hdr->nr_body = req;
 		NMG_LOCK();
+		strncpy(hdr->nr_name, nr_name_orig, sizeof(hdr->nr_name));
 		if (create_error && create_error != EEXIST) {
 			if (create_error != EOPNOTSUPP) {
 				D("failed to create a persistent vale port: %d", create_error);
@@ -583,14 +610,13 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 
 	/* next, lookup the pipe id in the parent list */
 	reqna = NULL;
-	pipe_id = req->nr_ringid;
 	mna = netmap_pipe_find(pna, pipe_id);
 	if (mna) {
 		if (mna->role == role) {
-			ND("found %d directly at %d", pipe_id, mna->parent_slot);
+			ND("found %s directly at %d", pipe_id, mna->parent_slot);
 			reqna = mna;
 		} else {
-			ND("found %d indirectly at %d", pipe_id, mna->parent_slot);
+			ND("found %s indirectly at %d", pipe_id, mna->parent_slot);
 			reqna = mna->peer;
 		}
 		/* the pipe we have found already holds a ref to the parent,
@@ -599,7 +625,7 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		netmap_unget_na(pna, ifp);
 		goto found;
 	}
-	ND("pipe %d not found, create %d", pipe_id, create);
+	ND("pipe %s not found, create %d", pipe_id, create);
 	if (!create) {
 		error = ENODEV;
 		goto put_out;
@@ -613,10 +639,9 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		error = ENOMEM;
 		goto put_out;
 	}
-	snprintf(mna->up.name, sizeof(mna->up.name), "%s{%d", pna->name, pipe_id);
+	snprintf(mna->up.name, sizeof(mna->up.name), "%s{%s", pna->name, pipe_id);
 
-	mna->id = pipe_id;
-	mna->role = NR_REG_PIPE_MASTER;
+	mna->role = NM_PIPE_ROLE_MASTER;
 	mna->parent = pna;
 	mna->parent_ifp = ifp;
 
@@ -655,8 +680,8 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	/* most fields are the same, copy from master and then fix */
 	*sna = *mna;
 	sna->up.nm_mem = netmap_mem_get(mna->up.nm_mem);
-	snprintf(sna->up.name, sizeof(sna->up.name), "%s}%d", pna->name, pipe_id);
-	sna->role = NR_REG_PIPE_SLAVE;
+	snprintf(sna->up.name, sizeof(sna->up.name), "%s}%s", pna->name, pipe_id);
+	sna->role = NM_PIPE_ROLE_SLAVE;
 	error = netmap_attach_common(&sna->up);
 	if (error)
 		goto free_sna;
@@ -673,7 +698,7 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	if (ifp)
 		if_ref(ifp);
 
-	if (role == NR_REG_PIPE_MASTER) {
+	if (role == NM_PIPE_ROLE_MASTER) {
 		reqna = mna;
 		mna->peer_ref = 1;
 		netmap_adapter_get(&sna->up);
@@ -685,8 +710,8 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	ND("created master %p and slave %p", mna, sna);
 found:
 
-	ND("pipe %d %s at %p", pipe_id,
-		(reqna->role == NR_REG_PIPE_MASTER ? "master" : "slave"), reqna);
+	ND("pipe %s %s at %p", pipe_id,
+		(reqna->role == NM_PIPE_ROLE_MASTER ? "master" : "slave"), reqna);
 	*na = &reqna->up;
 	netmap_adapter_get(*na);
 

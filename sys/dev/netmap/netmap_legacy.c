@@ -53,8 +53,9 @@
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 
-static void
-nmreq_register_from_legacy(struct nmreq *nmr, struct nmreq_register *req)
+static int
+nmreq_register_from_legacy(struct nmreq *nmr, struct nmreq_header *hdr,
+				struct nmreq_register *req)
 {
 	req->nr_offset = nmr->nr_offset;
 	req->nr_memsize = nmr->nr_memsize;
@@ -79,6 +80,22 @@ nmreq_register_from_legacy(struct nmreq *nmr, struct nmreq_register *req)
 			(nmr->nr_flags & (~NR_REG_MASK));
 	}
 	req->nr_mode = nmr->nr_flags & NR_REG_MASK;
+	/* Fix nr_name, nr_mode and nr_ringid to handle pipe requests. */
+	if (req->nr_mode == NR_REG_PIPE_MASTER ||
+			req->nr_mode == NR_REG_PIPE_SLAVE) {
+		char suffix[10];
+		snprintf(suffix, sizeof(suffix), "%c%d",
+			(req->nr_mode == NR_REG_PIPE_MASTER ? '{' : '}'),
+			req->nr_ringid);
+		if (strlen(hdr->nr_name) + strlen(suffix)
+					>= sizeof(hdr->nr_name)) {
+			/* No space for the pipe suffix. */
+			return ENOBUFS;
+		}
+		strncat(hdr->nr_name, suffix, strlen(suffix));
+		req->nr_mode = NR_REG_ALL_NIC;
+		req->nr_ringid = 0;
+	}
 	req->nr_flags = nmr->nr_flags & (~NR_REG_MASK);
 	if (nmr->nr_ringid & NETMAP_NO_TX_POLL) {
 		req->nr_flags |= NR_NO_TX_POLL;
@@ -88,6 +105,8 @@ nmreq_register_from_legacy(struct nmreq *nmr, struct nmreq_register *req)
 	}
 	/* nmr->nr_arg1 (nr_pipes) ignored */
 	req->nr_extra_bufs = nmr->nr_arg3;
+
+	return 0;
 }
 
 /* Convert the legacy 'nmr' struct into one of the nmreq_xyz structs
@@ -106,6 +125,7 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 		nmr->nr_name[sizeof(nmr->nr_name) - 1] = '\0';
 	}
 
+	/* First prepare the request header. */
 	hdr->nr_version = NETMAP_API; /* new API */
 	strncpy(hdr->nr_name, nmr->nr_name, sizeof(nmr->nr_name));
 	hdr->nr_options = NULL;
@@ -120,7 +140,9 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			if (!req) { goto oom; }
 			hdr->nr_body = req;
 			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-			nmreq_register_from_legacy(nmr, req);
+			if (nmreq_register_from_legacy(nmr, hdr, req)) {
+				goto oom;
+			}
 			break;
 		}
 		case NETMAP_BDG_ATTACH: {
@@ -128,7 +150,9 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			if (!req) { goto oom; }
 			hdr->nr_body = req;
 			hdr->nr_reqtype = NETMAP_REQ_VALE_ATTACH;
-			nmreq_register_from_legacy(nmr, &req->reg);
+			if (nmreq_register_from_legacy(nmr, hdr, &req->reg)) {
+				goto oom;
+			}
 			/* Fix nr_mode, starting from nr_arg1. */
 			if (nmr->nr_arg1 & NETMAP_BDG_HOST) {
 				req->reg.nr_mode = NR_REG_NIC_SW;
@@ -238,6 +262,9 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 	return hdr;
 oom:
 	if (hdr) {
+		if (hdr->nr_body) {
+			nm_os_free(hdr->nr_body);
+		}
 		nm_os_free(hdr);
 	}
 	D("Failed to allocate memory for nmreq_xyz struct");
@@ -274,9 +301,9 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 {
 	int ret = 0;
 	/* Don't bzero 'nmr', we may need the pointers stored into
-	 * nr_arg1, nr_arg2 and nr_arg3 (see NETMAP_REQ_POOLS_INFO_GET). */
-
-	strncpy(nmr->nr_name, hdr->nr_name, sizeof(nmr->nr_name));
+	 * nr_arg1, nr_arg2 and nr_arg3 (see NETMAP_REQ_POOLS_INFO_GET).
+	 * Actually, we may get rid of all the write-backs that are
+	 * not needed. */
 
 	switch (hdr->nr_reqtype) {
 	case NETMAP_REQ_REGISTER: {
