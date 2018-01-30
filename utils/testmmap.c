@@ -147,7 +147,6 @@ void do_close()
 #include <net/netmap_virt.h>
 
 struct nmreq curr_nmr = { .nr_version = NETMAP_API, .nr_flags = NR_REG_ALL_NIC, };
-struct netmap_pools_info curr_pools_info;
 char nmr_name[64];
 
 void parse_nmr_config(char* w, struct nmreq *nmr)
@@ -799,26 +798,6 @@ nmr_arg_error()
 }
 
 void
-nmr_pools_info_get()
-{
-	void **pp = (void **)&curr_nmr.nr_arg1;
-	struct netmap_pools_info *upi = *pp;
-
-	printf("arg1+2+3:  %p\n", *pp);
-	printf("    memsize:    %"PRIu64"\n", upi->memsize);
-	printf("    memid:      %"PRIu32"\n", upi->memid);
-	printf("    if off:     %"PRIu32"\n", upi->if_pool_offset);
-	printf("    if tot:     %"PRIu32"\n", upi->if_pool_objtotal);
-	printf("    if siz:     %"PRIu32"\n", upi->if_pool_objsize);
-	printf("    ring off:   %"PRIu32"\n", upi->ring_pool_offset);
-	printf("    ring tot:   %"PRIu32"\n", upi->ring_pool_objtotal);
-	printf("    ring siz:   %"PRIu32"\n", upi->ring_pool_objsize);
-	printf("    buf off:    %"PRIu32"\n", upi->buf_pool_offset);
-	printf("    buf tot:    %"PRIu32"\n", upi->buf_pool_objtotal);
-	printf("    buf siz:    %"PRIu32"\n", upi->buf_pool_objsize);
-}
-
-void
 nmr_arg_extra()
 {
 	printf("arg1:      %d [%sextra rings]\n", curr_nmr.nr_arg1,
@@ -915,10 +894,6 @@ do_nmr_dump()
 		case NETMAP_BDG_POLLING_OFF:
 			printf("BDG_POLLING_OFF");
 			arg_interp = nmr_arg_error;
-			break;
-		case NETMAP_POOLS_INFO_GET:
-			printf("POOLS_INFO_GET");
-			arg_interp = nmr_pools_info_get;
 			break;
 		default:
 			printf("???");
@@ -1051,9 +1026,6 @@ do_nmr_cmd()
 		curr_nmr.nr_cmd = NETMAP_PT_HOST_CREATE;
 	} else if (strcmp(arg, "pt-host-delete") == 0) {
 		curr_nmr.nr_cmd = NETMAP_PT_HOST_DELETE;
-	} else if (strcmp(arg, "pools-info-get") == 0) {
-		curr_nmr.nr_cmd = NETMAP_POOLS_INFO_GET;
-		nmreq_pointer_put(&curr_nmr, &curr_pools_info);
 	}
 out:
 	output("cmd=%x", curr_nmr.nr_cmd);
