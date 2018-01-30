@@ -111,7 +111,7 @@ struct ptnetmap_cfgentry_bhyve {
 
 /*
  * Pass a pointer to a userspace buffer to be passed to kernelspace for write
- * or read. Used by NETMAP_PT_HOST_CREATE and NETMAP_POOLS_INFO_GET.
+ * or read. Used by NETMAP_PT_HOST_CREATE.
  * XXX deprecated
  */
 static inline void

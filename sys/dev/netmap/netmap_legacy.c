@@ -214,16 +214,6 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			req->nr_num_polling_cpus = nmr->nr_arg1;
 			break;
 		}
-		case NETMAP_POOLS_INFO_GET: {
-			/* We could deny this request similar to ptnetmap requests. */
-			struct nmreq_pools_info_get *req = nm_os_malloc(sizeof(*req));
-			if (!req) { goto oom; }
-			hdr->nr_body = req;
-			hdr->nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
-			/* Most of the fields are for output (see
-			 * nmreq_to_legacy). */
-			break;
-		}
 		case NETMAP_PT_HOST_CREATE:
 		case NETMAP_PT_HOST_DELETE: {
 			D("Netmap passthrough not supported yet");
@@ -382,29 +372,6 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 		}
 		nmr->nr_ringid = req->nr_first_cpu_id;
 		nmr->nr_arg1 = req->nr_num_polling_cpus;
-		break;
-	}
-	case NETMAP_REQ_POOLS_INFO_GET: {
-		uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
-		struct netmap_pools_info *upi = (struct netmap_pools_info *)(*pp);
-		struct netmap_pools_info pi;
-		struct nmreq_pools_info_get *req =
-			(struct nmreq_pools_info_get *)hdr->nr_body;
-		pi.memsize = req->nr_memsize;
-		pi.memid = req->nr_mem_id;
-		pi.if_pool_offset = req->nr_if_pool_offset;
-		pi.if_pool_objtotal = req->nr_if_pool_objtotal;
-		pi.if_pool_objsize = req->nr_if_pool_objsize;
-		pi.ring_pool_offset = req->nr_ring_pool_offset;
-		pi.ring_pool_objtotal = req->nr_ring_pool_objtotal;
-		pi.ring_pool_objsize = req->nr_ring_pool_objsize;
-		pi.buf_pool_offset = req->nr_buf_pool_offset;
-		pi.buf_pool_objtotal = req->nr_buf_pool_objtotal;
-		pi.buf_pool_objsize = req->nr_buf_pool_objsize;
-		ret = copyout(&pi, upi, sizeof(pi));
-		if (ret) {
-			D("copyout() failed");
-		}
 		break;
 	}
 	}

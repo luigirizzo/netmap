@@ -184,7 +184,6 @@ struct nmreq {
 #define NETMAP_BDG_POLLING_ON	10	/* delete polling kthread */
 #define NETMAP_BDG_POLLING_OFF	11	/* delete polling kthread */
 #define NETMAP_VNET_HDR_GET	12      /* get the port virtio-net-hdr length */
-#define NETMAP_POOLS_INFO_GET	13	/* get memory allocator pools info */
 	uint16_t	nr_arg1;	/* reserve extra rings in NIOCREGIF */
 #define NETMAP_BDG_HOST		1	/* nr_arg1 value for NETMAP_BDG_ATTACH */
 
@@ -194,25 +193,6 @@ struct nmreq {
 #define NR_REG_MASK		0xf /* to extract NR_REG_* mode from nr_flags */
 	/* various modes, extends nr_ringid */
 	uint32_t	spare2[1];
-};
-
-/*
- * Structure filled-in by the kernel when asked for allocator info
- * through NETMAP_POOLS_INFO_GET. Used by hypervisors supporting
- * ptnetmap. XXX deprecated, 'struct nmreq_pools_info_get' should be used.
- */
-struct netmap_pools_info {
-	uint64_t memsize;	/* same as nmr->nr_memsize */
-	uint32_t memid;		/* same as nmr->nr_arg2 */
-	uint32_t if_pool_offset;
-	uint32_t if_pool_objtotal;
-	uint32_t if_pool_objsize;
-	uint32_t ring_pool_offset;
-	uint32_t ring_pool_objtotal;
-	uint32_t ring_pool_objsize;
-	uint32_t buf_pool_offset;
-	uint32_t buf_pool_objtotal;
-	uint32_t buf_pool_objsize;
 };
 
 #ifdef _WIN32
