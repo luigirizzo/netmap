@@ -188,10 +188,10 @@ vale_attach(int fd, struct TestContext *ctx)
 	memset(&req, 0, sizeof(req));
 	req.reg.nr_mem_id = ctx->nr_mem_id;
 	if (ctx->nr_mode == 0) {
-		ctx->nr_mode = NR_REG_ALL_NIC; /* default */;
+		ctx->nr_mode = NR_REG_ALL_NIC; /* default */
 	}
 	req.reg.nr_mode = ctx->nr_mode;
-	ret	   = ioctl(fd, NIOCCTRL, &hdr);
+	ret		= ioctl(fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_ATTACH)");
 		return ret;
@@ -201,7 +201,8 @@ vale_attach(int fd, struct TestContext *ctx)
 	return ((!ctx->nr_mem_id && req.reg.nr_mem_id > 1) ||
 		(ctx->nr_mem_id == req.reg.nr_mem_id)) &&
 			       (ctx->nr_flags == req.reg.nr_flags)
-		       ? 0 : -1;
+		       ? 0
+		       : -1;
 }
 
 /* NETMAP_REQ_VALE_DETACH */
@@ -418,6 +419,36 @@ register_and_pools_info_get(int fd, struct TestContext *ctx)
 	return pools_info_get(fd, ctx);
 }
 
+static int
+pipe_master(int fd, struct TestContext *ctx)
+{
+	char pipe_name[128];
+
+	snprintf(pipe_name, sizeof(pipe_name), "%s{%s", ctx->ifname, "pipeid1");
+	ctx->ifname  = pipe_name;
+	ctx->nr_mode = NR_REG_ONE_NIC;
+
+	if (port_register(fd, ctx) == 0) {
+		printf("pipes should not accept NR_REG_ONE_NIC");
+		return -1;
+	}
+	ctx->nr_mode = NR_REG_ALL_NIC;
+
+	return port_register(fd, ctx);
+}
+
+static int
+pipe_slave(int fd, struct TestContext *ctx)
+{
+	char pipe_name[128];
+
+	snprintf(pipe_name, sizeof(pipe_name), "%s}%s", ctx->ifname, "pipeid2");
+	ctx->ifname  = pipe_name;
+	ctx->nr_mode = NR_REG_ALL_NIC;
+
+	return port_register(fd, ctx);
+}
+
 /* NETMAP_REQ_VALE_POLLING_ENABLE */
 static int
 vale_polling_enable(int fd, struct TestContext *ctx)
@@ -516,6 +547,8 @@ static testfunc_t tests[] = {port_info_get,
 			     vale_ephemeral_port_hdr_manipulation,
 			     vale_persistent_port,
 			     register_and_pools_info_get,
+			     pipe_master,
+			     pipe_slave,
 			     vale_polling_enable_disable};
 
 int
