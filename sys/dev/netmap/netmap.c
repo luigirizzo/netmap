@@ -1784,8 +1784,7 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
 	enum txrx t;
 	u_int j;
 
-	if ((nr_flags & NR_PTNETMAP_HOST) && ((nr_mode != NR_REG_ALL_NIC &&
-                    nr_mode != NR_REG_PIPE_MASTER && nr_mode != NR_REG_PIPE_SLAVE) ||
+	if ((nr_flags & NR_PTNETMAP_HOST) && ((nr_mode != NR_REG_ALL_NIC) ||
 			nr_flags & (NR_RX_RINGS_ONLY|NR_TX_RINGS_ONLY))) {
 		D("Error: only NR_REG_ALL_NIC supported with netmap passthrough");
 		return EINVAL;
@@ -1798,8 +1797,6 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
 		}
 		switch (nr_mode) {
 		case NR_REG_ALL_NIC:
-		case NR_REG_PIPE_MASTER:
-		case NR_REG_PIPE_SLAVE:
 			priv->np_qfirst[t] = 0;
 			priv->np_qlast[t] = nma_get_nrings(na, t);
 			ND("ALL/PIPE: %s %d %d", nm_txrx2str(t),
