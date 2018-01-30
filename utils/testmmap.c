@@ -1213,7 +1213,23 @@ nmr_body_dump_pools_info_get(void *b)
 static void
 nmr_option_dump(struct nmreq_option *opt)
 {
-	(void)opt;
+	printf("type: %u [", opt->nro_reqtype);
+	switch (opt->nro_reqtype) {
+	case NETMAP_REQ_OPT_EXTMEM:
+		printf("extmem");
+		break;
+	default:
+#ifdef NETMAP_OPT_DEBUG
+		if (opt->nro_reqtype & NETMAP_REQ_OPT_DEBUG) {
+			printf("debug: %u",
+				(opt->nro_reqtype & ~NETMAP_REQ_OPT_DEBUG));
+			break;
+		}
+#endif /* NETMAP_OPT_DEBUG */
+		printf("???");
+	}
+	printf("]\n");
+	printf("next: %p\n", opt->nro_next);
 }
 
 static void
@@ -1293,8 +1309,15 @@ do_hdr_dump()
 static void
 do_hdr_reset()
 {
+	struct nmreq_option *opt = curr_hdr.nr_options;
+	while (opt) {
+		struct nmreq_option *next = opt->nro_next;
+		free(opt);
+		opt = next;
+	}
 	memset(&curr_hdr, 0, sizeof(curr_hdr));
 	curr_hdr.nr_version = NETMAP_API;
+
 }
 
 void
@@ -1357,6 +1380,29 @@ do_hdr_type()
 static void
 do_hdr_option()
 {
+	char *type;
+	struct nmreq_option **ptr = &curr_hdr.nr_options,
+			    *old = *ptr;
+	size_t sz = sizeof(struct nmreq_option);
+
+	while ( (type = nextarg()) ) {
+		uint16_t reqtype;
+
+		if (strcmp(type, "extmem") == 0) {
+			reqtype = NETMAP_REQ_OPT_EXTMEM;
+#ifdef NETMAP_OPT_DEBUG
+		} else {
+			reqtype = atoi(type) | NETMAP_REQ_OPT_DEBUG;
+#endif /* NETMAP_OPT_DEBUG */
+		}
+		*ptr = malloc(sz);	
+		if (*ptr == NULL) {
+			output_err(-1, "malloc");
+		}
+		(*ptr)->nro_reqtype = reqtype;
+		ptr = &(*ptr)->nro_next;
+	}
+	*ptr = old;
 }
 
 struct cmd_def hdr_commands[] = {
