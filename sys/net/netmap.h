@@ -386,6 +386,79 @@ struct netmap_if {
 /*
  * New API to control netmap control devices. New applications should only use
  * nmreq_xyz structs with the NIOCCTRL ioctl() command.
+ *
+ * NIOCCTRL takes a nmreq_header struct, which contains the required
+ * API version, the name of a netmap port, a command type, and pointers
+ * to request body and options.
+ *
+ *	nr_name	(in)
+ *		The name of the port (em0, valeXXX:YYY, eth0{pn1 etc.)
+ *
+ *	nr_version (in/out)
+ *		Must match NETMAP_API as used in the kernel, error otherwise.
+ *		Always returns the desired value on output.
+ *
+ *	nr_reqtype (in)
+ *		One of the NETMAP_REQ_* command types below
+ *
+ *	nr_body (in)
+ *		Pointer to a command-specific struct, described by one
+ *		of the struct nmreq_xyz below.
+ *
+ *	nr_options (in)
+ *		Command specific options, if any.
+ *
+ * A NETMAP_REQ_REGISTER command activates netmap mode on the netmap
+ * port (e.g. physical interface) specified by nmreq_header.nr_name.
+ * The request body (struct nmreq_register) has several arguments to
+ * specify how the port is to be registered.
+ *
+ *	nr_tx_slots, nr_tx_slots, nr_tx_rings, nr_rx_rings (in/out)
+ *		On input, non-zero values may be used to reconfigure the port
+ *		according to the requested values, but this is not guaranteed.
+ *		On output the actual values in use are reported.
+ *
+ *	nr_mode (in)
+ *		Indicate what set of rings must be bound to the netmap
+ *		device (e.g. all NIC rings, host rings only, NIC and
+ *		host rings, ...). Values are in NR_REG_*.
+ *
+ *	nr_ringid (in)
+ *		If nr_mode == NR_REG_ONE_NIC (only a single couple of TX/RX
+ *		rings), indicate which NIC TX and/or RX ring is to be bound
+ *		(0..nr_*x_rings-1).
+ *
+ *	nr_flags (in)
+ *		Indicate special options for how to open the port.
+ *
+ *		NR_NO_TX_POLL can be OR-ed to make select()/poll() push
+ *			packets on tx rings only if POLLOUT is set.
+ *			The default is to push any pending packet.
+ *
+ *		NR_DO_RX_POLL can be OR-ed to make select()/poll() release
+ *			packets on rx rings also when POLLIN is NOT set.
+ *			The default is to touch the rx ring only with POLLIN.
+ *			Note that this is the opposite of TX because it
+ *			reflects the common usage.
+ *
+ *		Other options are NR_MONITOR_TX, NR_MONITOR_RX, NR_ZCOPY_MON,
+ *		NR_EXCLUSIVE, NR_RX_RINGS_ONLY, NR_TX_RINGS_ONLY and
+ *		NR_ACCEPT_VNET_HDR.
+ *
+ *	nr_mem_id (in/out)
+ *		The identity of the memory region used.
+ *		On input, 0 means the system decides autonomously,
+ *		other values may try to select a specific region.
+ *		On return the actual value is reported.
+ *		Region '1' is the global allocator, normally shared
+ *		by all interfaces. Other values are private regions.
+ *		If two ports the same region zero-copy is possible.
+ *
+ *	nr_extra_bufs (in/out)
+ *		Number of extra buffers to be allocated.
+ *
+ * The other NETMAP_REQ_* commands are described below.
+ *
  */
 
 /* Header common to all request options. */
@@ -496,10 +569,13 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  * Demultiplexing is done using the nr_hdr.nr_reqtype field.
  * FreeBSD uses the size value embedded in the _IOWR to determine
  * how much to copy in/out, so we define the ioctl() command
- * specifying only nmreq_header, and copyin the rest. */
+ * specifying only nmreq_header, and copyin/copyout the rest. */
 #define NIOCCTRL	_IOWR('i', 151, struct nmreq_header)
 
-/* The ioctl commands to sync TX/RX netmap rings. */
+/* The ioctl commands to sync TX/RX netmap rings.
+ * NIOCTXSYNC, NIOCRXSYNC synchronize tx or rx queues,
+ *	whose identity is set in NIOCREGIF through nr_ringid.
+ *	These are non blocking and take no argument. */
 #define NIOCTXSYNC	_IO('i', 148) /* sync tx queues */
 #define NIOCRXSYNC	_IO('i', 149) /* sync rx queues */
 
