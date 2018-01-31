@@ -480,10 +480,8 @@ ports attached to the switch)
 int netmap_verbose;
 
 static int netmap_no_timestamp; /* don't timestamp on rxsync */
-int netmap_mitigate = 1;
 int netmap_no_pendintr = 1;
 int netmap_txsync_retry = 2;
-int netmap_flags = 0;	/* debug flags */
 static int netmap_fwd = 0;	/* force transparent forwarding */
 
 /*
@@ -513,7 +511,9 @@ int netmap_generic_mit = 100*1000;
  * Anyway users looking for the best performance should
  * use native adapters.
  */
+#ifdef linux
 int netmap_generic_txqdisc = 1;
+#endif
 
 /* Default number of slots and queues for generic adapters. */
 int netmap_generic_ringsize = 1024;
@@ -537,21 +537,32 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, verbose,
     CTLFLAG_RW, &netmap_verbose, 0, "Verbose mode");
 SYSCTL_INT(_dev_netmap, OID_AUTO, no_timestamp,
     CTLFLAG_RW, &netmap_no_timestamp, 0, "no_timestamp");
-SYSCTL_INT(_dev_netmap, OID_AUTO, mitigate, CTLFLAG_RW, &netmap_mitigate, 0, "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr,
-    CTLFLAG_RW, &netmap_no_pendintr, 0, "Always look for new received packets.");
+SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr, CTLFLAG_RW, &netmap_no_pendintr,
+    0, "Always look for new received packets.");
 SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
-    &netmap_txsync_retry, 0 , "Number of txsync loops in bridge's flush.");
+    &netmap_txsync_retry, 0, "Number of txsync loops in bridge's flush.");
 
-SYSCTL_INT(_dev_netmap, OID_AUTO, flags, CTLFLAG_RW, &netmap_flags, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW, &netmap_generic_ringsize, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW, &netmap_generic_rings, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW, &netmap_generic_txqdisc, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, ptnet_vnet_hdr, CTLFLAG_RW, &ptnet_vnet_hdr, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, ptnetmap_tx_workers, CTLFLAG_RW, &ptnetmap_tx_workers, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0,
+    "Force NR_FORWARD mode");
+SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0,
+    "Adapter mode. 0 selects the best option available,"
+    "1 forces native adapter, 2 forces emulated adapter");
+SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit,
+    0, "RX notification interval in nanoseconds");
+SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW,
+    &netmap_generic_ringsize, 0,
+    "Number of per-ring slots for emulated netmap mode");
+SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW,
+    &netmap_generic_rings, 0,
+    "Number of TX/RX queues for emulated netmap adapters");
+#ifdef linux
+SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW,
+    &netmap_generic_txqdisc, 0, "Use qdisc for generic adapters");
+#endif
+SYSCTL_INT(_dev_netmap, OID_AUTO, ptnet_vnet_hdr, CTLFLAG_RW, &ptnet_vnet_hdr,
+    0, "Allow ptnet devices to use virtio-net headers");
+SYSCTL_INT(_dev_netmap, OID_AUTO, ptnetmap_tx_workers, CTLFLAG_RW,
+    &ptnetmap_tx_workers, 0, "Use worker threads for pnetmap TX processing");
 
 SYSEND;
 

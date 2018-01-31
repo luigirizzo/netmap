@@ -79,7 +79,8 @@
 static int netmap_default_pipes = 0; /* ignored, kept for compatibility */
 SYSBEGIN(vars_pipes);
 SYSCTL_DECL(_dev_netmap);
-SYSCTL_INT(_dev_netmap, OID_AUTO, default_pipes, CTLFLAG_RW, &netmap_default_pipes, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, default_pipes, CTLFLAG_RW,
+    &netmap_default_pipes, 0, "For compatibility only");
 SYSEND;
 
 /* allocate the pipe array in the parent adapter */

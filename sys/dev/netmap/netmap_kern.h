@@ -1569,7 +1569,9 @@ extern int netmap_flags;
 extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
 extern int netmap_generic_rings;
+#ifdef linux
 extern int netmap_generic_txqdisc;
+#endif
 extern int ptnetmap_tx_workers;
 
 /*
