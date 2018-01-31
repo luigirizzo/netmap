@@ -1093,18 +1093,19 @@ find_nmr_legacy_command(const char *cmd)
 	return _find_command(nmr_legacy_commands, N_NMR_LEGACY_CMDS, cmd);
 }
 
-#define __nmr_arg_update(nmr, f) 			\
-	({						\
-		int __ret = 0;				\
-		if (strcmp(cmd, #f) == 0) {		\
-			char *arg = nextarg();		\
-			if (arg) {			\
-				curr_##nmr.nr_##f = strtol(arg, NULL, 0); \
-			}				\
-			output(#f "=%d", curr_##nmr.nr_##f);	\
-			__ret = 1;			\
-		} 					\
-		__ret;					\
+#define __nmr_arg_update(nmr, f) 					\
+	({								\
+		int __ret = 0;						\
+		if (strcmp(cmd, #f) == 0) {				\
+			char *arg = nextarg();				\
+			if (arg) {					\
+				curr_##nmr.nr_##f = strtol(arg, NULL, 0);\
+			}						\
+			output(#f "=%llu",				\
+				(unsigned long long)curr_##nmr.nr_##f);	\
+			__ret = 1;					\
+		} 							\
+		__ret;							\
 	})
 
 #define nmr_arg_update(f)	__nmr_arg_update(nmr, f)
@@ -1165,7 +1166,194 @@ typedef void (*nmr_body_dump_fun)(void *);
 static void
 nmr_body_dump_register(void *b)
 {
-	(void)b;
+	struct nmreq_register *r = b;
+	int flags = 0;
+	printf("offset:    %"PRIu64"\n", r->nr_offset);
+	printf("memsize:   %"PRIu64" [", r->nr_memsize);
+	if (r->nr_memsize < (1<<20)) {
+		printf("%"PRIu64" KiB", r->nr_memsize >> 10);
+	} else {
+		printf("%"PRIu64" MiB", r->nr_memsize >> 20);
+	}
+	printf("]\n");
+	printf("tx_slots:  %"PRIu16"\n", r->nr_tx_slots);
+	printf("rx_slots:  %"PRIu16"\n", r->nr_rx_slots);
+	printf("tx_rings:  %"PRIu16"\n", r->nr_tx_rings);
+	printf("rx_rings:  %"PRIu16"\n", r->nr_rx_rings);
+	printf("mem_id:    %"PRIu16" [%s memory region]\n", r->nr_mem_id,
+		(r->nr_mem_id == 0 ? "default" :
+		 r->nr_mem_id == 1 ? "global"  : "private"));
+	printf("ringid     %"PRIu16"\n", r->nr_ringid);
+	printf("mode       %"PRIu32" [", r->nr_mode);
+	switch (r->nr_mode) {
+	case NR_REG_DEFAULT:
+		printf("*DEFAULT");
+		break;
+	case NR_REG_ALL_NIC:
+		printf("ALL_NIC");
+		break;
+	case NR_REG_SW:
+		printf("SW");
+		break;
+	case NR_REG_NIC_SW:
+		printf("NIC_SW");
+		break;
+	case NR_REG_ONE_NIC:
+		printf("ONE_NIC(%"PRIu16")", r->nr_ringid);
+		break;
+	case NR_REG_PIPE_MASTER:
+		printf("*PIPE_MASTER(%d)", r->nr_ringid);
+		break;
+	case NR_REG_PIPE_SLAVE:
+		printf("*PIPE_SLAVE(%d)", r->nr_ringid);
+		break;
+	default:
+		printf("???");
+		break;
+	}
+	printf("]\n");
+	printf("flags:     %lx [", r->nr_flags);
+#define pflag(f) if (r->nr_flags & NR_##f) { printf("%s" #f, flags++ ? ", " : ""); }
+	pflag(MONITOR_TX);
+	pflag(MONITOR_RX);
+	pflag(ZCOPY_MON);
+	pflag(EXCLUSIVE);
+	pflag(PTNETMAP_HOST);
+	pflag(RX_RINGS_ONLY);
+	pflag(TX_RINGS_ONLY);
+	pflag(ACCEPT_VNET_HDR);
+	pflag(DO_RX_POLL);
+	pflag(NO_TX_POLL);
+#undef pflag
+	printf("]\n");
+	printf("extra_bufs %"PRIu32"\n", r->nr_extra_bufs);
+}
+
+static void
+do_register_dump()
+{
+	nmr_body_dump_register(&curr_register);
+}
+
+static void
+do_register_reset()
+{
+	memset(&curr_register, 0, sizeof(curr_register));
+}
+
+static void
+do_register_mode()
+{
+	char *mode = nextarg();
+
+	if (mode == NULL)
+		goto out;
+
+	if (strcmp(mode, "default") == 0) {
+		curr_register.nr_mode = NR_REG_DEFAULT;
+	} else if (strcmp(mode, "all-nic") == 0) {
+		curr_register.nr_mode = NR_REG_ALL_NIC;
+	} else if (strcmp(mode, "sw") == 0) {
+		curr_register.nr_mode = NR_REG_SW;
+	} else if (strcmp(mode, "nic-sw") == 0) {
+		curr_register.nr_mode = NR_REG_NIC_SW;
+	} else if (strcmp(mode, "one-nic") == 0) {
+		curr_register.nr_mode = NR_REG_ONE_NIC;
+	} else if (strcmp(mode, "pipe-master") == 0) {
+		curr_register.nr_mode = NR_REG_PIPE_MASTER;
+	} else if (strcmp(mode, "pipe-slave") == 0) {
+		curr_register.nr_mode = NR_REG_PIPE_SLAVE;
+	}
+
+out:
+	output("mode=%"PRIu32, curr_register.nr_mode);
+}
+
+void
+do_register_flags()
+{
+	char *arg;
+	uint64_t flags = curr_register.nr_flags;
+	int n;
+	for (n = 0, arg = nextarg(); arg; arg = nextarg(), n++) {
+		if (strcmp(arg, "monitor-tx") == 0) {
+			flags |= NR_MONITOR_TX;
+		} else if (strcmp(arg, "monitor-rx") == 0) {
+			flags |= NR_MONITOR_RX;
+		} else if (strcmp(arg, "zcopy-mon") == 0) {
+			flags |= NR_ZCOPY_MON;
+		} else if (strcmp(arg, "exclusive") == 0) {
+			flags |= NR_EXCLUSIVE;
+		} else if (strcmp(arg, "ptnetmap-host") == 0) {
+			flags |= NR_PTNETMAP_HOST;
+		} else if (strcmp(arg, "rx-rings-only") == 0) {
+			flags |= NR_RX_RINGS_ONLY;
+		} else if (strcmp(arg, "tx-rings-only") == 0) {
+			flags |= NR_TX_RINGS_ONLY;
+		} else if (strcmp(arg, "accept-vnet-hdr") == 0) {
+			flags |= NR_ACCEPT_VNET_HDR;
+		} else if (strcmp(arg, "do-rx-poll") == 0) {
+			flags |= NR_DO_RX_POLL;
+		} else if (strcmp(arg, "no-tx-poll") == 0) {
+			flags |= NR_NO_TX_POLL;
+		} else if (strcmp(arg, "reset") == 0) {
+			flags = 0;
+		}
+	}
+	if (n)
+		curr_register.nr_flags = flags;
+	output("flags=%lx", curr_register.nr_flags);
+}
+
+struct cmd_def register_commands[] = {
+	{ "dump",	do_register_dump },
+	{ "reset",	do_register_reset },
+	{ "mode",	do_register_mode },
+	{ "flags",	do_register_flags },
+};
+
+const int N_REGISTER_CMDS = sizeof(register_commands) / sizeof(struct cmd_def);
+
+int
+find_register_command(const char *cmd)
+{
+	return _find_command(register_commands, N_REGISTER_CMDS, cmd);
+}
+
+#define register_update(f) __nmr_arg_update(register, f)
+
+void
+do_register()
+{
+	char *cmd = nextarg();
+	int i;
+
+	if (cmd == NULL) {
+		do_register_dump();
+		return;
+	}
+	if (cmd[0] == '.') {
+		cmd++;
+	} else {
+		i = find_register_command(cmd);
+		if (i < N_REGISTER_CMDS) {
+			register_commands[i].f();
+			return;
+		}
+	}
+	if (register_update(offset) 
+	||  register_update(memsize) 
+	||  register_update(tx_slots) 
+	||  register_update(rx_slots) 
+	||  register_update(tx_rings) 
+	||  register_update(rx_rings) 
+	||  register_update(mem_id) 
+	||  register_update(ringid) 
+	||  register_update(mode) 
+	||  register_update(flags)
+	||  register_update(extra_bufs))
+		return;
+	output("unknown field: %s", cmd);
 }
 
 static void
@@ -1392,7 +1580,7 @@ do_hdr_option()
 			reqtype = NETMAP_REQ_OPT_EXTMEM;
 #ifdef NETMAP_OPT_DEBUG
 		} else {
-			reqtype = atoi(type) | NETMAP_REQ_OPT_DEBUG;
+			reqtype = strtol(type, NULL, 0) | NETMAP_REQ_OPT_DEBUG;
 #endif /* NETMAP_OPT_DEBUG */
 		}
 		*ptr = malloc(sz);	
@@ -1483,7 +1671,8 @@ struct cmd_def commands[] = {
 	{ "buf",        do_buf,         },
 	{ "nmr-legacy",	do_nmr_legacy,	},
 	{ "hdr",	do_hdr,		},
-	{ "ctrl",	do_ctrl		}
+	{ "ctrl",	do_ctrl		},
+	{ "register",	do_register	}
 };
 
 const int N_CMDS = sizeof(commands) / sizeof(struct cmd_def);
