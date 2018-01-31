@@ -228,7 +228,7 @@ nm_os_extmem_nr_pages(struct nm_os_extmem *e)
 
 
 struct nm_os_extmem *
-nm_os_extmem_create(unsigned long p, struct netmap_pools_info *pi, int *perror)
+nm_os_extmem_create(unsigned long p, struct nmreq_pools_info *pi, int *perror)
 {
 	unsigned long end, start;
 	int nr_pages, res;
@@ -236,7 +236,7 @@ nm_os_extmem_create(unsigned long p, struct netmap_pools_info *pi, int *perror)
 	int err;
 	struct page **pages;
 
-	end = (p + pi->memsize + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	end = (p + pi->nr_memsize + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	start = p >> PAGE_SHIFT;
 	nr_pages = end - start;
 
