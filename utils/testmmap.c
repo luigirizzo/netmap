@@ -1563,6 +1563,7 @@ do_hdr_type()
 	} else {
 		output("unknown type: %s", type);
 	}
+	output("type=%u", curr_hdr.nr_reqtype);
 }
 
 static void
