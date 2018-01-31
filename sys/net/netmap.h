@@ -482,6 +482,7 @@ struct nmreq_option {
 struct nmreq_header {
 	uint16_t		nr_version;	/* API version */
 	uint16_t		nr_reqtype;	/* nmreq type (NETMAP_REQ_*) */
+	uint32_t		nr_reserved;	/* must be zero */
 #define NETMAP_REQ_IFNAMSIZ	64
 	char			nr_name[NETMAP_REQ_IFNAMSIZ]; /* port name */
 	struct nmreq_option	*nr_options;	/* command-specific options */

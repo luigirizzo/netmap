@@ -2191,9 +2191,8 @@ ring_timestamp_set(struct netmap_ring *ring)
 	}
 }
 
-static void *nmreq_copyin(struct nmreq_header *, size_t, int *);
-static int nmreq_copyout(struct nmreq_header *, void *, size_t, int);
-struct nmreq_option * nmreq_findoption(struct nmreq_header *, uint16_t);
+static int nmreq_copyin(struct nmreq_header *, int);
+static int nmreq_copyout(struct nmreq_header *, int);
 static int nmreq_checkoptions(struct nmreq_header *);
 
 /*
@@ -2227,9 +2226,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 	switch (cmd) {
 	case NIOCCTRL: {
 		struct nmreq_header *hdr = (struct nmreq_header *)data;
-		size_t nr_body_size = nmreq_size_by_type(hdr->nr_reqtype);
-		/* Original hdr->nr_body to user-space pointer. */
-		char *usr_nr_body = NULL;
 
 		if (hdr->nr_version != NETMAP_API) {
 			D("API mismatch for reqtype %d: got %d need %d",
@@ -2242,27 +2238,15 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			return EINVAL;
 		}
 
-		if ((nr_body_size && hdr->nr_body == NULL) ||
-			(!nr_body_size && hdr->nr_body != NULL)) {
-			/* Request body expected, but not found; or
-			 * request body found but unexpected. */
-			return EINVAL;
-		}
-
-		BUG_ON(!nr_body_is_user && hdr->nr_options);
-
-		if (nr_body_is_user && nr_body_size) {
-			char *ker_nr_body;
-
-			/* Make a kernel-space copy of the user-space nr_body.
-			 * It's handy to temporarily replace hdr->nr_body with
-			 * a pointer to the kernel-space nr_body. */
-			ker_nr_body = nmreq_copyin(hdr, nr_body_size, &error);
-			if (!ker_nr_body) {
-				return error;
-			}
-			usr_nr_body = hdr->nr_body;
-			hdr->nr_body = ker_nr_body;
+		/* Make a kernel-space copy of the user-space nr_body.
+		 * For convenince, the nr_body pointer and the pointers
+		 * in the options list will be replaced with their
+		 * kernel-space counterparts. The original pointers are
+                * saved internally and later restored by nmreq_copyout
+                */
+		error = nmreq_copyin(hdr, nr_body_is_user);
+		if (error) {
+			return error;
 		}
 
 		/* Sanitize hdr->nr_name. */
@@ -2558,16 +2542,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			break;
 		}
 		}
-		if (nr_body_is_user && nr_body_size) {
-			char *ker_nr_body;
-			KASSERT(usr_nr_body && hdr->nr_body,
-				"nr_body pointers must not be NULL");
-			/* Write back request body to userspace and reset the
-			 * user-space pointer. */
-			ker_nr_body = hdr->nr_body;
-			hdr->nr_body = usr_nr_body;
-			error = nmreq_copyout(hdr, ker_nr_body, nr_body_size, error);
-		}
+		/* Write back request body to userspace and reset the
+		 * user-space pointer. */
+		error = nmreq_copyout(hdr, error);
 		break;
 	}
 
@@ -2687,15 +2664,23 @@ nmreq_opt_size_by_type(uint16_t nro_reqtype)
 	return 0;
 }
 
-static void *
-nmreq_copyin(struct nmreq_header *hdr, size_t bodysz, int *perror)
+int
+nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 {
-	size_t bufsz, rqsz;
+	size_t bufsz, rqsz, bodysz;
 	int error;
 	char *ker = NULL, *p;
 	struct nmreq_option **next, *src;
 	struct nmreq_option buf;
 	void **ptrs;
+
+	if (hdr->nr_reserved)
+		return EINVAL;
+
+	hdr->nr_reserved = nr_body_is_user;
+
+	if (!nr_body_is_user)
+		return 0;
 
 	/* compute the total size of the buffer */
 	rqsz = nmreq_size_by_type(hdr->nr_reqtype);
@@ -2703,6 +2688,14 @@ nmreq_copyin(struct nmreq_header *hdr, size_t bodysz, int *perror)
 		error = EMSGSIZE;
 		goto out_err;
 	}
+	if ((rqsz && hdr->nr_body == NULL) ||
+		(!rqsz && hdr->nr_body != NULL)) {
+		/* Request body expected, but not found; or
+		 * request body found but unexpected. */
+		error = EINVAL;
+		goto out_err;
+	}
+
 	bodysz = 2 * sizeof(void *) + rqsz;
 	for (src = hdr->nr_options; src; src = src->nro_next) {
 		size_t optsz;
@@ -2737,6 +2730,8 @@ nmreq_copyin(struct nmreq_header *hdr, size_t bodysz, int *perror)
 	error = copyin(hdr->nr_body, p, rqsz);
 	if (error)
 		goto out_err;
+	/* overwrite the user pointer with the in-kernel one */
+	hdr->nr_body = p;
 	p += rqsz;
 
 	/* copy the options */
@@ -2778,34 +2773,42 @@ nmreq_copyin(struct nmreq_header *hdr, size_t bodysz, int *perror)
 		next = &opt->nro_next;
 		src = *next;
 	}
-	/* skip the option list head */
-	return ker + 2 * sizeof(void *);
+	return 0;
 
 out_err:
 	if (ker)
 		nm_os_free(ker);
-	if (perror)
-		*perror = error;
-	return NULL;
+	return error;
 }
 
 static int
-nmreq_copyout(struct nmreq_header *hdr, void *ker, size_t bodysz, int error)
+nmreq_copyout(struct nmreq_header *hdr, int error)
 {
 	struct nmreq_option *src, *dst;
-	void **ptrs = ker;
+	void *ker = hdr->nr_body;
+	void **ptrs;
+	size_t bodysz;
+
+	if (!hdr->nr_reserved)
+		return error;
 
 	if (error)
 		goto out;
 
+	/* restore the user pointers in the header */
+	ptrs = (void **)ker;
+	hdr->nr_body = *(ptrs - 2);
+	src = hdr->nr_options;
+	hdr->nr_options = *(ptrs - 1);
+
 	/* copy the body */
-	error = copyout(ker, *(ptrs - 2), bodysz);
+	bodysz = nmreq_size_by_type(hdr->nr_reqtype);
+	error = copyout(ker, hdr->nr_body, bodysz);
 	if (error)
 		goto out;
 
 	/* copy the options */
-	dst = *(ptrs - 1);
-	src = hdr->nr_options;
+	dst = hdr->nr_options;
 	while (src) {
 		size_t optsz;
 		struct nmreq_option *next;
@@ -2830,6 +2833,8 @@ nmreq_copyout(struct nmreq_header *hdr, void *ker, size_t bodysz, int error)
 		src = next;
 		dst = *ptrs;
 	}
+
+	hdr->nr_reserved = 0;
 
 out:
 	nm_os_free(ker);
