@@ -2193,6 +2193,7 @@ ring_timestamp_set(struct netmap_ring *ring)
 
 static void *nmreq_copyin(struct nmreq_header *, size_t, int *);
 static int nmreq_copyout(struct nmreq_header *, void *, size_t, int);
+struct nmreq_option * nmreq_findoption(struct nmreq_header *, uint16_t);
 
 /*
  * ioctl(2) support for the "netmap" device.
@@ -2246,6 +2247,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			 * request body found but unexpected. */
 			return EINVAL;
 		}
+
+		BUG_ON(!nr_body_is_user && hdr->nr_options);
 
 		if (nr_body_is_user && nr_body_size) {
 			char *ker_nr_body;
@@ -2819,6 +2822,17 @@ nmreq_copyout(struct nmreq_header *hdr, void *ker, size_t bodysz, int error)
 out:
 	nm_os_free(ker);
 	return error;
+}
+
+struct nmreq_option *
+nmreq_findoption(struct nmreq_header *hdr, uint16_t reqtype)
+{
+	struct nmreq_option *opt;
+
+	for (opt = hdr->nr_options; opt; opt = opt->nro_next)
+		if (opt->nro_reqtype == reqtype)
+			return opt;
+	return NULL;
 }
 
 /*
