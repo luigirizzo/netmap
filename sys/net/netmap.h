@@ -469,7 +469,12 @@ struct nmreq_option {
 	/* Pointer ot the next option. */
 	struct nmreq_option	*nro_next;
 	/* Option type. */
-	uint16_t		nro_reqtype;
+	uint32_t		nro_reqtype;
+	/* (out) status of the option:
+	 * 0: recognized and processed
+	 * !=0: errno value
+	 */
+	uint32_t		nro_status;
 };
 
 /* Header common to all requests. Do not reorder these fields, as we need

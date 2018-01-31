@@ -2194,6 +2194,7 @@ ring_timestamp_set(struct netmap_ring *ring)
 static void *nmreq_copyin(struct nmreq_header *, size_t, int *);
 static int nmreq_copyout(struct nmreq_header *, void *, size_t, int);
 struct nmreq_option * nmreq_findoption(struct nmreq_header *, uint16_t);
+static int nmreq_checkoptions(struct nmreq_header *);
 
 /*
  * ioctl(2) support for the "netmap" device.
@@ -2341,6 +2342,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 						D("got %d extra buffers", req->nr_extra_bufs);
 				}
 				req->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
+
+				error = nmreq_checkoptions(hdr);
+				if (error) {
+					netmap_do_unregif(priv);
+					break;
+				}
 
 				/* store ifp reference so that priv destructor may release it */
 				priv->np_ifp = ifp;
@@ -2750,6 +2757,11 @@ nmreq_copyin(struct nmreq_header *hdr, size_t bodysz, int *perror)
 		/* overwrite the user pointer with the in-kernel one */
 		*next = opt;
 
+		/* initialize the option as not supported.
+		 * Recognized options will update this field.
+		 */
+		opt->nro_status = EOPNOTSUPP;
+
 		p = (char *)(opt + 1);
 
 		/* copy the option body */
@@ -2833,6 +2845,21 @@ nmreq_findoption(struct nmreq_header *hdr, uint16_t reqtype)
 		if (opt->nro_reqtype == reqtype)
 			return opt;
 	return NULL;
+}
+
+static int
+nmreq_checkoptions(struct nmreq_header *hdr)
+{
+	struct nmreq_option *opt;
+	/* return error if there is still any option
+	 * marked as not supported
+	 */
+
+	for (opt = hdr->nr_options; opt; opt = opt->nro_next)
+		if (opt->nro_status == EOPNOTSUPP)
+			return EOPNOTSUPP;
+
+	return 0;
 }
 
 /*
