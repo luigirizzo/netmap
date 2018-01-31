@@ -2008,7 +2008,7 @@ struct netmap_mem_ops netmap_mem_global_ops = {
 };
 
 int
-netmap_mem_pools_info_get(struct nmreq_pools_info_get *req,
+netmap_mem_pools_info_get(struct nmreq_pools_info *req,
 				struct netmap_mem_d *nmd)
 {
 	int ret;
@@ -2132,10 +2132,8 @@ struct netmap_mem_ops netmap_mem_ext_ops = {
 };
 
 struct netmap_mem_d *
-netmap_mem_ext_create(struct nmreq *nmr, int *perror)
+netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 {
-	uintptr_t p = *(uintptr_t *)&nmr->nr_arg1;
-	struct netmap_pools_info pi;
 	int error = 0;
 	int i, j;
 	struct netmap_mem_ext *nme;
@@ -2144,29 +2142,25 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 	struct nm_os_extmem *os = NULL;
 	int nr_pages;
 
-	error = copyin((void *)p, &pi, sizeof(pi));
-	if (error)
-		goto out;
-
 	// XXX sanity checks
-	if (pi.if_pool_objtotal == 0)
-		pi.if_pool_objtotal = netmap_min_priv_params[NETMAP_IF_POOL].num;
-	if (pi.if_pool_objsize == 0)
-		pi.if_pool_objsize = netmap_min_priv_params[NETMAP_IF_POOL].size;
-	if (pi.ring_pool_objtotal == 0)
-		pi.ring_pool_objtotal = netmap_min_priv_params[NETMAP_RING_POOL].num;
-	if (pi.ring_pool_objsize == 0)
-		pi.ring_pool_objsize = netmap_min_priv_params[NETMAP_RING_POOL].size;
-	if (pi.buf_pool_objtotal == 0)
-		pi.buf_pool_objtotal = netmap_min_priv_params[NETMAP_BUF_POOL].num;
-	if (pi.buf_pool_objsize == 0)
-		pi.buf_pool_objsize = netmap_min_priv_params[NETMAP_BUF_POOL].size;
+	if (pi->nr_if_pool_objtotal == 0)
+		pi->nr_if_pool_objtotal = netmap_min_priv_params[NETMAP_IF_POOL].num;
+	if (pi->nr_if_pool_objsize == 0)
+		pi->nr_if_pool_objsize = netmap_min_priv_params[NETMAP_IF_POOL].size;
+	if (pi->nr_ring_pool_objtotal == 0)
+		pi->nr_ring_pool_objtotal = netmap_min_priv_params[NETMAP_RING_POOL].num;
+	if (pi->nr_ring_pool_objsize == 0)
+		pi->nr_ring_pool_objsize = netmap_min_priv_params[NETMAP_RING_POOL].size;
+	if (pi->nr_buf_pool_objtotal == 0)
+		pi->nr_buf_pool_objtotal = netmap_min_priv_params[NETMAP_BUF_POOL].num;
+	if (pi->nr_buf_pool_objsize == 0)
+		pi->nr_buf_pool_objsize = netmap_min_priv_params[NETMAP_BUF_POOL].size;
 	D("if %d %d ring %d %d buf %d %d",
-			pi.if_pool_objtotal, pi.if_pool_objsize,
-			pi.ring_pool_objtotal, pi.ring_pool_objsize,
-			pi.buf_pool_objtotal, pi.buf_pool_objsize);
+			pi->nr_if_pool_objtotal, pi->nr_if_pool_objsize,
+			pi->nr_ring_pool_objtotal, pi->nr_ring_pool_objsize,
+			pi->nr_buf_pool_objtotal, pi->nr_buf_pool_objsize);
 		
-	os = nm_os_extmem_create(p, &pi, &error);
+	os = nm_os_extmem_create(usrptr, pi, &error);
 	if (os == NULL) {
 		D("os extmem creation failed");
 		goto out;
@@ -2181,9 +2175,9 @@ netmap_mem_ext_create(struct nmreq *nmr, int *perror)
 
 	nme = _netmap_mem_private_new(sizeof(*nme),
 			(struct netmap_obj_params[]){
-				{ pi.if_pool_objsize, pi.if_pool_objtotal },
-				{ pi.ring_pool_objsize, pi.ring_pool_objtotal },
-				{ pi.buf_pool_objsize, pi.buf_pool_objtotal }},
+				{ pi->nr_if_pool_objsize, pi->nr_if_pool_objtotal },
+				{ pi->nr_ring_pool_objsize, pi->nr_ring_pool_objtotal },
+				{ pi->nr_buf_pool_objsize, pi->nr_buf_pool_objtotal }},
 			&netmap_mem_ext_ops,
 			&error);
 	if (nme == NULL)

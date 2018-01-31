@@ -150,7 +150,7 @@ void __netmap_mem_put(struct netmap_mem_d *, const char *, int);
 struct netmap_mem_d* netmap_mem_find(nm_memid_t);
 
 #ifdef WITH_EXTMEM
-struct netmap_mem_d* netmap_mem_ext_create(struct nmreq *, int *);
+struct netmap_mem_d* netmap_mem_ext_create(uint64_t, struct nmreq_pools_info *, int *);
 #else /* !WITH_EXTMEM */
 #define netmap_mem_ext_create(nmr, _perr) \
 	({ int *perr = _perr; if (perr) *(perr) = EOPNOTSUPP; NULL; })
@@ -165,7 +165,7 @@ struct netmap_mem_d* netmap_mem_pt_guest_attach(struct ptnetmap_memdev *, uint16
 int netmap_mem_pt_guest_ifp_del(struct netmap_mem_d *, struct ifnet *);
 #endif /* WITH_PTNETMAP_GUEST */
 
-int netmap_mem_pools_info_get(struct nmreq_pools_info_get *,
+int netmap_mem_pools_info_get(struct nmreq_pools_info *,
 				struct netmap_mem_d *);
 
 #define NETMAP_MEM_PRIVATE	0x2	/* allocator uses private address space */
@@ -177,7 +177,7 @@ uint32_t netmap_extra_alloc(struct netmap_adapter *, uint32_t *, uint32_t n);
 #ifdef WITH_EXTMEM
 #include <net/netmap_virt.h>
 struct nm_os_extmem; /* opaque */
-struct nm_os_extmem *nm_os_extmem_create(unsigned long, struct netmap_pools_info *, int *perror);
+struct nm_os_extmem *nm_os_extmem_create(unsigned long, struct nmreq_pools_info *, int *perror);
 char *nm_os_extmem_nextpage(struct nm_os_extmem *);
 int nm_os_extmem_nr_pages(struct nm_os_extmem *);
 int nm_os_extmem_isequal(struct nm_os_extmem *, struct nm_os_extmem *);

@@ -664,7 +664,7 @@ struct nmreq_vale_polling {
  * to a given netmap control device (used i.e. by a ptnetmap-enabled
  * hypervisor). The nr_hdr.nr_name field is ignored.
  */
-struct nmreq_pools_info_get {
+struct nmreq_pools_info {
 	uint64_t	nr_memsize;
 	uint16_t	nr_mem_id;
 	uint64_t	nr_if_pool_offset;
@@ -676,6 +676,16 @@ struct nmreq_pools_info_get {
 	uint64_t	nr_buf_pool_offset;
 	uint32_t	nr_buf_pool_objtotal;
 	uint32_t	nr_buf_pool_objsize;
+};
+
+/*
+ * data for NETMAP_REQ_OPT_* options
+ */
+
+struct nmreq_opt_extmem {
+	struct nmreq_option	nro_opt;	/* common header */
+	uint64_t		nro_usrptr;	/* (in) ptr to usr memory */
+	struct nmreq_pools_info	nro_info;	/* (in/out) */
 };
 
 #endif /* _NET_NETMAP_H_ */

@@ -836,6 +836,7 @@ fail:
 static int
 nm_interp_memid(const char *memid, struct nmreq *req, char **err)
 {
+#if 0
 	int fd = -1;
 	char errmsg[MAXERRMSG] = "";
 	struct nmreq greq;
@@ -891,6 +892,12 @@ fail:
 	if (err && !*err)
 		*err = strdup(errmsg);
 	return errno;
+#else
+	(void)memid;
+	(void)req;
+	(void)err;
+	return EOPNOTSUPP;
+#endif
 }
 
 static int
@@ -943,7 +950,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 	const struct nm_desc *parent = arg;
 	char errmsg[MAXERRMSG] = "";
 	uint32_t nr_reg;
-	struct netmap_pools_info *pi = NULL;
+	struct nmreq_pools_info *pi = NULL;
 
 	if (strncmp(ifname, "netmap:", 7) &&
 			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
@@ -998,6 +1005,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 		d->self = d;
 	}
 
+#if 0
 	/* compatibility checks for POOL_SCREATE and NM_OPEN flags
 	 * the first check may be dropped once we have a larger nreq
 	 */
@@ -1019,12 +1027,14 @@ nm_open(const char *ifname, const struct nmreq *req,
 			}
 		}
 	}
+#endif
 
 	d->req.nr_version = NETMAP_API;
 	d->req.nr_ringid &= NETMAP_RING_MASK;
 
 	/* optionally import info from parent */
 	if (IS_NETMAP_DESC(parent) && new_flags) {
+#if 0
 		if (new_flags & NM_OPEN_EXTMEM) {
 			if (parent->req.nr_cmd == NETMAP_POOLS_CREATE) {
 				d->req.nr_cmd = NETMAP_POOLS_CREATE;
@@ -1033,6 +1043,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 				new_flags &= ~(NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3);
 			}
 		}
+#endif
 		if (new_flags & NM_OPEN_ARG1) {
 			D("overriding ARG1 %d", parent->req.nr_arg1);
 			d->req.nr_arg1 = parent->req.nr_arg1;
@@ -1065,9 +1076,11 @@ nm_open(const char *ifname, const struct nmreq *req,
 	/* add the *XPOLL flags */
 	d->req.nr_ringid |= new_flags & (NETMAP_NO_TX_POLL | NETMAP_DO_RX_POLL);
 
+#if 0
 	if (d->req.nr_cmd == NETMAP_POOLS_CREATE) {
 		pi = nmreq_pointer_get(&d->req);
 	}
+#endif
 
 	if (ioctl(d->fd, NIOCREGIF, &d->req)) {
 		snprintf(errmsg, MAXERRMSG, "NIOCREGIF failed: %s", strerror(errno));
@@ -1076,7 +1089,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	if (pi != NULL) {
 		d->mem = pi;
-		d->memsize = pi->memsize;
+		d->memsize = pi->nr_memsize;
 		nm_init_offsets(d);
 	} else if ((!(new_flags & NM_OPEN_NO_MMAP) || parent)) {
 		/* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */

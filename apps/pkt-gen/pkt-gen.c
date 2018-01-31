@@ -2965,7 +2965,7 @@ main(int arc, char **argv)
 		goto out;
 	}
 	g.main_fd = g.nmd->fd;
-	D("mapped %luKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
+	D("mapped %"PRIu32"KB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
 	if (g.virt_header) {
 		/* Set the virtio-net header length, since the user asked

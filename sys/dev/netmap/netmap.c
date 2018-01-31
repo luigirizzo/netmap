@@ -2260,13 +2260,26 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			NMG_LOCK();
 			do {
 				u_int memflags;
+				struct nmreq_option *opt;
 
 				if (priv->np_nifp != NULL) {	/* thread already registered */
 					error = EBUSY;
 					break;
 				}
 
-				if (req->nr_mem_id) {
+#ifdef WITH_EXTMEM
+				opt = nmreq_findoption(hdr, NETMAP_REQ_OPT_EXTMEM);
+				if (opt != NULL) {
+					struct nmreq_opt_extmem *e =
+						(struct nmreq_opt_extmem *)opt;
+					nmd = netmap_mem_ext_create(e->nro_usrptr,
+							&e->nro_info, &error);
+					if (nmd == NULL)
+						break;
+				}
+#endif /* WITH_EXTMEM */
+
+				if (nmd == NULL && req->nr_mem_id) {
 					/* find the allocator and get a reference */
 					nmd = netmap_mem_find(req->nr_mem_id);
 					if (nmd == NULL) {
@@ -2521,8 +2534,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 #endif  /* WITH_VALE */
 		case NETMAP_REQ_POOLS_INFO_GET: {
-			struct nmreq_pools_info_get *req =
-				(struct nmreq_pools_info_get *)hdr->nr_body;
+			struct nmreq_pools_info *req =
+				(struct nmreq_pools_info *)hdr->nr_body;
 			/* Get information from the memory allocator. This
 			 * netmap device must already be bound to a port.
 			 * Note that hdr->nr_name is ignored. */
@@ -2653,7 +2666,7 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 	case NETMAP_REQ_VALE_POLLING_DISABLE:
 		return sizeof(struct nmreq_vale_polling);
 	case NETMAP_REQ_POOLS_INFO_GET:
-		return sizeof(struct nmreq_pools_info_get);
+		return sizeof(struct nmreq_pools_info);
 	}
 	return 0;
 }
@@ -2661,7 +2674,20 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 size_t
 nmreq_opt_size_by_type(uint16_t nro_reqtype)
 {
-	return 0;
+	size_t rv = sizeof(struct nmreq_option);
+#ifdef NETMAP_REQ_OPT_DEBUG
+	if (nro_reqtype & NETMAP_REQ_OPT_DEBUG)
+		return (nro_reqtype & ~NETMAP_REQ_OPT_DEBUG);
+#endif /* NETMAP_REQ_OPT_DEBUG */
+	switch (nro_reqtype) {
+#ifdef WITH_EXTMEM
+	case NETMAP_REQ_OPT_EXTMEM:
+		rv = sizeof(struct nmreq_opt_extmem);
+		break;
+	}
+#endif /* WITH_EXTMEM */
+	/* subtract the common header */
+	return rv - sizeof(struct nmreq_option);
 }
 
 int
