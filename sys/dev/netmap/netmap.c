@@ -2192,7 +2192,7 @@ ring_timestamp_set(struct netmap_ring *ring)
 }
 
 static void *nmreq_copyin(struct nmreq_header *, size_t, int *);
-static int nmreq_copyout(struct nmreq_header *, void *, size_t);
+static int nmreq_copyout(struct nmreq_header *, void *, size_t, int);
 
 /*
  * ioctl(2) support for the "netmap" device.
@@ -2556,9 +2556,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			 * user-space pointer. */
 			ker_nr_body = hdr->nr_body;
 			hdr->nr_body = usr_nr_body;
-			if (error == 0) {
-				error = nmreq_copyout(hdr, ker_nr_body, nr_body_size);
-			}
+			error = nmreq_copyout(hdr, ker_nr_body, nr_body_size, error);
 		}
 		break;
 	}
@@ -2777,11 +2775,13 @@ out_err:
 }
 
 static int
-nmreq_copyout(struct nmreq_header *hdr, void *ker, size_t bodysz)
+nmreq_copyout(struct nmreq_header *hdr, void *ker, size_t bodysz, int error)
 {
-	int error = 0;
 	struct nmreq_option *src, *dst;
 	void **ptrs = ker;
+
+	if (error)
+		goto out;
 
 	/* copy the body */
 	error = copyout(ker, *(ptrs - 2), bodysz);
