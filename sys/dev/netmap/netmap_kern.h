@@ -2179,4 +2179,6 @@ void ptnet_nm_krings_delete(struct netmap_adapter *na);
 void ptnet_nm_dtor(struct netmap_adapter *na);
 #endif /* WITH_PTNETMAP_GUEST */
 
+struct nmreq_option * nmreq_findoption(struct nmreq_header *, uint16_t);
+
 #endif /* _NET_NETMAP_KERN_H_ */
