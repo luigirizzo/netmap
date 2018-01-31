@@ -90,7 +90,7 @@ SYSCTL_ULONG(_kern_test, OID_AUTO, count,
 SYSCTL_ULONG(_kern_test, OID_AUTO, cycles,
     CTLFLAG_RW, &t_delta, 0, "runtime");
 SYSCTL_STRING(_kern_test, OID_AUTO, name,
-	CTLFLAG_RW, &test_name, sizeof(test_name), "");
+	CTLFLAG_RW, &test_name, sizeof(test_name), "name of the test");
 SYSCTL_PROC(_kern_test, OID_AUTO, run,
     CTLTYPE_U64 | CTLFLAG_RW, 0, 0, test_run,
     "U64", "run the test");

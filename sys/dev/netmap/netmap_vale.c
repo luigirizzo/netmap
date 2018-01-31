@@ -160,7 +160,8 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
 static int bridge_batch = NM_BDG_BATCH; /* bridge batch size */
 SYSBEGIN(vars_vale);
 SYSCTL_DECL(_dev_netmap);
-SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0,
+    "Max batch size to be used in the bridge");
 SYSEND;
 
 static int netmap_vp_create(struct nmreq *, struct ifnet *,
