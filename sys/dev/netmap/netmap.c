@@ -2772,7 +2772,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 	}
 
 	bodysz = 2 * sizeof(void *) + rqsz;
-	for (src = hdr->nr_options; src; src = src->nro_next) {
+	for (src = hdr->nr_options; src; src = buf.nro_next) {
 		size_t optsz;
 		error = copyin(src, &buf, sizeof(*src));
 		if (error)
