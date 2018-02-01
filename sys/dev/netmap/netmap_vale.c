@@ -547,11 +547,14 @@ netmap_vp_dtor(struct netmap_adapter *na)
 		netmap_bdg_detach_common(b, vpna->bdg_port, -1);
 	}
 
-	if (vpna->autodelete && na->ifp != NULL) {
-		ND("releasing %s", na->ifp->if_xname);
-		NMG_UNLOCK();
-		nm_os_vi_detach(na->ifp);
-		NMG_LOCK();
+	if (na->ifp != NULL && !nm_iszombie(na)) {
+		WNA(na->ifp) = NULL;
+		if (vpna->autodelete) {
+			ND("releasing %s", na->ifp->if_xname);
+			NMG_UNLOCK();
+			nm_os_vi_detach(na->ifp);
+			NMG_LOCK();
+		}
 	}
 }
 
