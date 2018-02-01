@@ -2322,6 +2322,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 						(struct nmreq_opt_extmem *)opt;
 					nmd = netmap_mem_ext_create(e->nro_usrptr,
 							&e->nro_info, &error);
+					opt->nro_status = error;
 					if (nmd == NULL)
 						break;
 				}

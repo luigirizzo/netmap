@@ -1597,13 +1597,30 @@ nmr_body_dump_pools_info_get(void *b)
 	(void)b;
 }
 
+typedef void (*nmr_option_dump_fun)(struct nmreq_option *);
+
+static void
+nmr_option_dump_extmem(struct nmreq_option *opt)
+{
+	struct nmreq_opt_extmem *e =
+		(struct nmreq_opt_extmem *)opt;
+
+	printf("usrptr: %p\n", (void *)e->nro_usrptr);
+	printf("info:\n");
+	pools_info_dump(4, &e->nro_info);
+}
+
 static void
 nmr_option_dump(struct nmreq_option *opt)
 {
-	printf("type: %u [", opt->nro_reqtype);
+	nmr_option_dump_fun d = NULL;
+
+	printf("next: %p\n", opt->nro_next);
+	printf("type: %"PRIu32" [", opt->nro_reqtype);
 	switch (opt->nro_reqtype) {
 	case NETMAP_REQ_OPT_EXTMEM:
 		printf("extmem");
+		d = nmr_option_dump_extmem;
 		break;
 	default:
 #ifdef NETMAP_OPT_DEBUG
@@ -1616,7 +1633,10 @@ nmr_option_dump(struct nmreq_option *opt)
 		printf("???");
 	}
 	printf("]\n");
-	printf("next: %p\n", opt->nro_next);
+	printf("status: %"PRIu32" [%s]\n", 
+			opt->nro_status, strerror(opt->nro_status));
+	if (d)
+		d(opt);
 }
 
 static void
@@ -1765,6 +1785,17 @@ do_hdr_type()
 	output("type=%u", curr_hdr.nr_reqtype);
 }
 
+typedef void (*nmreq_opt_init)(struct nmreq_option *);
+
+static void
+nmreq_opt_extmem_init(struct nmreq_option *opt)
+{
+	struct nmreq_opt_extmem *e =
+		(struct nmreq_opt_extmem *)opt;
+	e->nro_usrptr = (uint64_t)last_mmap_addr;
+	e->nro_info.nr_memsize = last_memsize;
+}
+
 static void
 do_hdr_option()
 {
@@ -1772,12 +1803,15 @@ do_hdr_option()
 	struct nmreq_option **ptr = &curr_hdr.nr_options,
 			    *old = *ptr;
 	size_t sz = sizeof(struct nmreq_option);
+	nmreq_opt_init init = NULL;
 
 	while ( (type = nextarg()) ) {
 		uint16_t reqtype;
 
 		if (strcmp(type, "extmem") == 0) {
 			reqtype = NETMAP_REQ_OPT_EXTMEM;
+			sz = sizeof(struct nmreq_opt_extmem);
+			init = nmreq_opt_extmem_init;
 #ifdef NETMAP_OPT_DEBUG
 		} else {
 			reqtype = strtol(type, NULL, 0) | NETMAP_REQ_OPT_DEBUG;
@@ -1787,7 +1821,10 @@ do_hdr_option()
 		if (*ptr == NULL) {
 			output_err(-1, "malloc");
 		}
+		memset(*ptr, 0, sz);
 		(*ptr)->nro_reqtype = reqtype;
+		if (init)
+			init(*ptr);
 		ptr = &(*ptr)->nro_next;
 	}
 	*ptr = old;
