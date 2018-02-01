@@ -2812,21 +2812,22 @@ static int
 nmreq_copyout(struct nmreq_header *hdr, int error)
 {
 	struct nmreq_option *src, *dst;
-	void *ker = hdr->nr_body;
+	void *ker = hdr->nr_body, *bufstart;
 	void **ptrs;
 	size_t bodysz;
 
 	if (!hdr->nr_reserved)
 		return error;
 
+	/* restore the user pointers in the header */
+	ptrs = (void **)ker - 2;
+	bufstart = ptrs;
+	hdr->nr_body = *ptrs++;
+	src = hdr->nr_options;
+	hdr->nr_options = *ptrs;
+
 	if (error)
 		goto out;
-
-	/* restore the user pointers in the header */
-	ptrs = (void **)ker;
-	hdr->nr_body = *(ptrs - 2);
-	src = hdr->nr_options;
-	hdr->nr_options = *(ptrs - 1);
 
 	/* copy the body */
 	bodysz = nmreq_size_by_type(hdr->nr_reqtype);
@@ -2861,10 +2862,10 @@ nmreq_copyout(struct nmreq_header *hdr, int error)
 		dst = *ptrs;
 	}
 
-	hdr->nr_reserved = 0;
 
 out:
-	nm_os_free(ker);
+	hdr->nr_reserved = 0;
+	nm_os_free(bufstart);
 	return error;
 }
 
