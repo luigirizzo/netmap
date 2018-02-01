@@ -360,7 +360,7 @@ vale_persistent_port(int fd, struct TestContext *ctx)
 static int
 pools_info_get(int fd, struct TestContext *ctx)
 {
-	struct nmreq_pools_info_get req;
+	struct nmreq_pools_info req;
 	struct nmreq_header hdr;
 	int ret;
 

@@ -839,11 +839,11 @@ struct pools_info_field {
 	size_t off;
 	size_t size;
 };
-#define PIFD(n, f)	{ n, offsetof(struct netmap_pools_info, f), \
-	sizeof(((struct netmap_pools_info *)0)->f) }
+#define PIFD(n, f)	{ n, offsetof(struct nmreq_pools_info, nr_##f), \
+	sizeof(((struct nmreq_pools_info *)0)->nr_##f) }
 struct pools_info_field pools_info_fields[] = {
 	PIFD("memsize", memsize),
-	PIFD("memid", memid),
+	PIFD("mem_id", mem_id),
 	PIFD("if-off", if_pool_offset),
 	PIFD("if-tot", if_pool_objtotal),
 	PIFD("if-siz", if_pool_objsize),
@@ -857,7 +857,7 @@ struct pools_info_field pools_info_fields[] = {
 };
 #define PIF(t, p, o)	(*(t*)((void *)((char *)(p)+(o))))
 void
-pools_info_dump(int tab, struct netmap_pools_info *upi)
+pools_info_dump(int tab, struct nmreq_pools_info *upi)
 {
 	static const char space[] = "        ";
 	struct pools_info_field *f;
@@ -876,6 +876,9 @@ pools_info_dump(int tab, struct netmap_pools_info *upi)
 		}
 	}
 }
+
+
+static struct nmreq_pools_info curr_pools_info;
 
 /* prepare the curr_pools_info */
 void
@@ -1356,7 +1359,6 @@ static struct nmreq_vale_list curr_vale_list;
 static struct nmreq_port_hdr curr_port_hdr;
 static struct nmreq_vale_newif curr_vale_newif;
 static struct nmreq_vale_polling curr_vale_polling;
-static struct nmreq_pools_info_get curr_pools_info_get;
 
 typedef void (*nmr_body_dump_fun)(void *);
 
@@ -1756,7 +1758,7 @@ do_hdr_type()
 		curr_hdr.nr_body = &curr_vale_polling;
 	} else if (strcmp(type, "pools-info-get") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
-		curr_hdr.nr_body = &curr_pools_info_get;
+		curr_hdr.nr_body = &curr_pools_info;
 	} else {
 		output("unknown type: %s", type);
 	}

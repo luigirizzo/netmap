@@ -978,7 +978,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 	}
 
 	if (!(new_flags & NM_OPEN_IFNAME)) {
-		char *err;
+		char *err = NULL;
 		switch (nm_parse_one(ifname, &d->req, &err, 1)) {
 		case NM_PARSE_OK:
 			break;
