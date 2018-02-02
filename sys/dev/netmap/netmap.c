@@ -2854,7 +2854,7 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 		src->nro_next = *ptrs;
 
 		/* always copy the option header */
-		error = copyout(src, dst, sizeof(src));
+		error = copyout(src, dst, sizeof(*src));
 		if (error) {
 			rerror = error;
 			goto out;
