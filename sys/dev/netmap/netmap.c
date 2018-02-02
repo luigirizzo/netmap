@@ -2704,10 +2704,10 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 	if (hdr->nr_reserved)
 		return EINVAL;
 
-	hdr->nr_reserved = nr_body_is_user;
-
 	if (!nr_body_is_user)
 		return 0;
+
+	hdr->nr_reserved = nr_body_is_user;
 
 	/* compute the total size of the buffer */
 	rqsz = nmreq_size_by_type(hdr->nr_reqtype);
@@ -2754,7 +2754,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 	/* copy the body */
 	error = copyin(hdr->nr_body, p, rqsz);
 	if (error)
-		goto out_err;
+		goto out_restore;
 	/* overwrite the user pointer with the in-kernel one */
 	hdr->nr_body = p;
 	p += rqsz;
@@ -2770,7 +2770,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		opt = (struct nmreq_option *)(ptrs + 1);
 		error = copyin(src, opt, sizeof(*src));
 		if (error)
-			goto out_err;
+			goto out_restore;
 		/* make a copy of the user next pointer */
 		*ptrs = opt->nro_next;
 		/* overwrite the user pointer with the in-kernel one */
@@ -2789,7 +2789,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 			/* the option body follows the option header */
 			error = copyin(src + 1, p, optsz);
 			if (error)
-				goto out_err;
+				goto out_restore;
 			p += optsz;
 		}
 
@@ -2799,9 +2799,13 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 	}
 	return 0;
 
+out_restore:
+	ptrs = (void **)ker;
+	hdr->nr_body = *ptrs++;
+	hdr->nr_options = *ptrs++;
+	hdr->nr_reserved = 0;
+	nm_os_free(ker);
 out_err:
-	if (ker)
-		nm_os_free(ker);
 	return error;
 }
 
