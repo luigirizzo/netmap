@@ -2268,10 +2268,14 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 				}
 
 #ifdef WITH_EXTMEM
-				opt = nmreq_findoption(hdr, NETMAP_REQ_OPT_EXTMEM);
+				opt = nmreq_findoption(hdr->nr_options, NETMAP_REQ_OPT_EXTMEM);
 				if (opt != NULL) {
 					struct nmreq_opt_extmem *e =
 						(struct nmreq_opt_extmem *)opt;
+
+					error = nmreq_checkduplicate(opt);
+					if (error)
+						break;
 					nmd = netmap_mem_ext_create(e->nro_usrptr,
 							&e->nro_info, &error);
 					opt->nro_status = error;
@@ -2879,14 +2883,27 @@ out:
 }
 
 struct nmreq_option *
-nmreq_findoption(struct nmreq_header *hdr, uint16_t reqtype)
+nmreq_findoption(struct nmreq_option *opt, uint16_t reqtype)
 {
-	struct nmreq_option *opt;
-
-	for (opt = hdr->nr_options; opt; opt = opt->nro_next)
+	for ( ; opt; opt = opt->nro_next)
 		if (opt->nro_reqtype == reqtype)
 			return opt;
 	return NULL;
+}
+
+int
+nmreq_checkduplicate(struct nmreq_option *opt) {
+	struct nmreq_option *scan;
+	uint16_t type = opt->nro_reqtype;
+	int dup = 0;
+
+	for (scan = opt->nro_next; scan;
+		scan = nmreq_findoption(scan, type))
+	{
+		dup++;
+		scan->nro_status = EINVAL;
+	}
+	return (dup ? EINVAL : 0);
 }
 
 static int
