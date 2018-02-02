@@ -2858,15 +2858,16 @@ out_err:
 }
 
 static int
-nmreq_copyout(struct nmreq_header *hdr, int error)
+nmreq_copyout(struct nmreq_header *hdr, int rerror)
 {
 	struct nmreq_option *src, *dst;
 	void *ker = hdr->nr_body, *bufstart;
 	void **ptrs;
 	size_t bodysz;
+	int error;
 
 	if (!hdr->nr_reserved)
-		return error;
+		return rerror;
 
 	/* restore the user pointers in the header */
 	ptrs = (void **)ker - 2;
@@ -2875,14 +2876,15 @@ nmreq_copyout(struct nmreq_header *hdr, int error)
 	src = hdr->nr_options;
 	hdr->nr_options = *ptrs;
 
-	if (error)
-		goto out;
-
-	/* copy the body */
-	bodysz = nmreq_size_by_type(hdr->nr_reqtype);
-	error = copyout(ker, hdr->nr_body, bodysz);
-	if (error)
-		goto out;
+	if (!rerror) {
+		/* copy the body */
+		bodysz = nmreq_size_by_type(hdr->nr_reqtype);
+		error = copyout(ker, hdr->nr_body, bodysz);
+		if (error) {
+			rerror = error;
+			goto out;
+		}
+	}
 
 	/* copy the options */
 	dst = hdr->nr_options;
@@ -2895,17 +2897,23 @@ nmreq_copyout(struct nmreq_header *hdr, int error)
 		ptrs = (void **)src - 1;
 		src->nro_next = *ptrs;
 
-		/* copy the option header */
+		/* always copy the option header */
 		error = copyout(src, dst, sizeof(src));
-		if (error)
+		if (error) {
+			rerror = error;
 			goto out;
+		}
 		       
-		/* copy the option body */
-		optsz = nmreq_opt_size_by_type(src->nro_reqtype);
-		if (optsz) {
-			error = copyout(dst + 1, src + 1, optsz);
-			if (error)
-				goto out;
+		/* copy the option body only if there was no error */
+		if (!rerror && !src->nro_status) {
+			optsz = nmreq_opt_size_by_type(src->nro_reqtype);
+			if (optsz) {
+				error = copyout(dst + 1, src + 1, optsz);
+				if (error) {
+					rerror = error;
+					goto out;
+				}
+			}
 		}
 		src = next;
 		dst = *ptrs;
@@ -2915,7 +2923,7 @@ nmreq_copyout(struct nmreq_header *hdr, int error)
 out:
 	hdr->nr_reserved = 0;
 	nm_os_free(bufstart);
-	return error;
+	return rerror;
 }
 
 struct nmreq_option *
