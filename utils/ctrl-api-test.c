@@ -26,6 +26,7 @@ struct TestContext {
 
 	uint32_t nr_first_cpu_id;     /* vale polling */
 	uint32_t nr_num_polling_cpus; /* vale polling */
+	struct nmreq_option *nr_opt; /* list of options */
 };
 
 #if 0
@@ -99,6 +100,7 @@ port_register(int fd, struct TestContext *ctx)
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_REGISTER;
 	hdr.nr_body    = &req;
+	hdr.nr_options = ctx->nr_opt;
 	memset(&req, 0, sizeof(req));
 	req.nr_mem_id     = ctx->nr_mem_id;
 	req.nr_mode       = ctx->nr_mode;
@@ -532,24 +534,64 @@ vale_polling_enable_disable(int fd, struct TestContext *ctx)
 }
 
 static void
+push_option(struct nmreq_option *opt, struct TestContext *ctx)
+{
+	opt->nro_next = ctx->nr_opt;
+	ctx->nr_opt = opt;
+}
+
+static void
+clear_options(struct TestContext *ctx)
+{
+	ctx->nr_opt = NULL;
+}
+
+static int
+unsupported_option(int fd, struct TestContext *ctx)
+{
+	struct nmreq_option opt, save;
+
+	printf("Testing unsupported option on %s\n", ctx->ifname);
+
+	opt.nro_reqtype = 1234;
+	push_option(&opt, ctx);
+	save = opt;
+
+	if (!port_register_hwall(fd, ctx))
+		return 1;
+
+	clear_options(ctx);
+
+	return opt.nro_reqtype == save.nro_reqtype   &&
+	       opt.nro_next == save.nro_next &&
+	       opt.nro_status == EOPNOTSUPP;
+}
+
+static void
 usage(const char *prog)
 {
 	printf("%s -i IFNAME [-j TESTCASE]\n", prog);
 }
 
-static testfunc_t tests[] = {port_info_get,
-			     port_register_hwall_host,
-			     port_register_hwall,
-			     port_register_host,
-			     port_register_single_ring_couple,
-			     vale_attach_detach,
-			     vale_attach_detach_host_rings,
-			     vale_ephemeral_port_hdr_manipulation,
-			     vale_persistent_port,
-			     register_and_pools_info_get,
-			     pipe_master,
-			     pipe_slave,
-			     vale_polling_enable_disable};
+static testfunc_t tests[] = {
+	port_info_get,
+	port_register_hwall_host,
+	port_register_hwall,
+	port_register_host,
+	port_register_single_ring_couple,
+	vale_attach_detach,
+	vale_attach_detach_host_rings,
+	vale_ephemeral_port_hdr_manipulation,
+	vale_persistent_port,
+	register_and_pools_info_get,
+	pipe_master,
+	pipe_slave,
+	vale_polling_enable_disable,
+	unsupported_option
+//	infinite_options,
+//	extmem_option,
+//	duplicate_extmem_options
+};
 
 int
 main(int argc, char **argv)
