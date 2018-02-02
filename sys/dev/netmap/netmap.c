@@ -2742,7 +2742,7 @@ nmreq_opt_size_by_type(uint16_t nro_reqtype)
 int
 nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 {
-	size_t bufsz, rqsz, bodysz;
+	size_t rqsz, optsz, bufsz;
 	int error;
 	char *ker = NULL, *p;
 	struct nmreq_option **next, *src;
@@ -2771,23 +2771,21 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		goto out_err;
 	}
 
-	bodysz = 2 * sizeof(void *) + rqsz;
+	bufsz = 2 * sizeof(void *) + rqsz;
+	optsz = 0;
 	for (src = hdr->nr_options; src; src = buf.nro_next) {
-		size_t optsz;
 		error = copyin(src, &buf, sizeof(*src));
 		if (error)
 			goto out_err;
-		optsz = sizeof(*src);
+		optsz += sizeof(*src);
 		optsz += nmreq_opt_size_by_type(buf.nro_reqtype);
 		if (rqsz + optsz > NETMAP_REQ_MAXSIZE) {
 			error = EMSGSIZE;
 			goto out_err;
 		}
-		rqsz += optsz;
 		bufsz += optsz + sizeof(void *);
 	}
 
-	bufsz = max(1024UL, roundup_pow_of_two(bodysz));
 	ker = nm_os_malloc(bufsz);
 	if (ker == NULL) {
 		error = ENOMEM;
@@ -2813,7 +2811,6 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 	next = &hdr->nr_options;
 	src = *next;
 	while (src) {
-		size_t optsz;
 		struct nmreq_option *opt;
 
 		/* copy the option header */
