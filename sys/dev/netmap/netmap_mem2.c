@@ -2210,8 +2210,6 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 	 */
 	nme->os = os;
 	os = NULL; /* pass ownership */
-	nme->up.flags |= NETMAP_MEM_EXT;
-
 
 	clust = nm_os_extmem_nextpage(nme->os);
 	off = 0;
@@ -2283,12 +2281,6 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 		p->numclusters = p->objtotal;
 		p->memtotal = j * p->_objsize;
 		ND("%d memtotal %u", j, p->memtotal);
-	}
-
-	/* skip the first netmap_if, where the pools info reside */
-	{
-		struct netmap_obj_pool *p = &nme->up.pools[NETMAP_IF_POOL];
-		p->invalid_bitmap[0] |= 1U;
 	}
 
 	netmap_mem_ext_register(nme);
