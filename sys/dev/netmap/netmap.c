@@ -2322,8 +2322,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 						(struct nmreq_opt_extmem *)opt;
 
 					error = nmreq_checkduplicate(opt);
-					if (error)
+					if (error) {
+						opt->nro_status = error;
 						break;
+					}
 					nmd = netmap_mem_ext_create(e->nro_usrptr,
 							&e->nro_info, &error);
 					opt->nro_status = error;
@@ -2946,7 +2948,7 @@ nmreq_checkduplicate(struct nmreq_option *opt) {
 	int dup = 0;
 
 	for (scan = opt->nro_next; scan;
-		scan = nmreq_findoption(scan, type))
+		scan = nmreq_findoption(scan->nro_next, type))
 	{
 		dup++;
 		scan->nro_status = EINVAL;
