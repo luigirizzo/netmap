@@ -7,7 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <unistd.h>
+#include <inttypes.h>
 
 struct TestContext {
 	const char *ifname;
@@ -547,25 +549,240 @@ clear_options(struct TestContext *ctx)
 }
 
 static int
+checkoption(struct nmreq_option *opt, struct nmreq_option *exp)
+{
+	if (opt->nro_next != exp->nro_next) {
+		printf("nro_next %p expected %p\n",
+				opt->nro_next,
+				exp->nro_next);
+		return -1;
+	}
+	if (opt->nro_reqtype != exp->nro_reqtype) {
+		printf("nro_reqtype %u expected %u\n",
+				opt->nro_reqtype,
+				exp->nro_reqtype);
+		return -1;
+	}
+	if (opt->nro_status != exp->nro_status) {
+		printf("nro_status %u expected %u\n",
+				opt->nro_status,
+				exp->nro_status);
+		return -1;
+	}
+	return 0;
+}
+
+static int
 unsupported_option(int fd, struct TestContext *ctx)
 {
 	struct nmreq_option opt, save;
 
 	printf("Testing unsupported option on %s\n", ctx->ifname);
 
+	memset(&opt, 0, sizeof(opt));
 	opt.nro_reqtype = 1234;
 	push_option(&opt, ctx);
 	save = opt;
 
-	if (!port_register_hwall(fd, ctx))
-		return 1;
+	if (port_register_hwall(fd, ctx) >= 0)
+		return -1;
 
 	clear_options(ctx);
-
-	return opt.nro_reqtype == save.nro_reqtype   &&
-	       opt.nro_next == save.nro_next &&
-	       opt.nro_status == EOPNOTSUPP;
+	save.nro_status = EOPNOTSUPP;
+	return checkoption(&opt, &save);
 }
+
+static int
+infinite_options(int fd, struct TestContext *ctx)
+{
+	struct nmreq_option opt, save;
+
+	printf("Testing infinite list of options on %s\n", ctx->ifname);
+
+	opt.nro_reqtype = 1234;
+	push_option(&opt, ctx);
+	opt.nro_next = &opt;
+	save = opt;
+	if (port_register_hwall(fd, ctx) >= 0)
+		return -1;
+
+	clear_options(ctx);
+	save.nro_status = EOPNOTSUPP;
+	return checkoption(&opt, &save);
+}
+
+#ifdef WITH_EXTMEM
+static int
+change_param(const char *pname, unsigned long newv, unsigned long *poldv)
+{
+#ifdef linux
+	char param[256] = "/sys/module/netmap/parameters/";
+	unsigned long oldv;
+	FILE *f;
+
+	strncat(param, pname, 256);
+
+	f = fopen(param, "r+");
+	if (f == NULL) {
+		perror(param);
+		return -1;
+	}
+	if (fscanf(f, "%ld", &oldv) != 1) {
+		perror(param);
+		fclose(f);
+		return -1;
+	}
+	if (poldv)
+		*poldv = oldv;
+	rewind(f);
+	if (fprintf(f, "%ld\n", newv) < 0) {
+		perror(param);
+		fclose(f);
+		return -1;
+	}
+	fclose(f);
+	printf("change_param: %s: %ld -> %ld\n", pname, oldv, newv);
+#endif /* linux */
+	return 0;
+}
+
+
+static int
+push_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *e)
+{
+	void *addr;
+
+	addr = mmap(NULL, (1U << 22), PROT_READ | PROT_WRITE,
+			MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+	if (addr == MAP_FAILED) {
+		perror("mmap");
+		return -1;
+	}
+
+	memset(e, 0, sizeof(*e));
+	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
+	e->nro_usrptr = (uint64_t)addr;
+	e->nro_info.nr_memsize = (1U << 22);
+
+	push_option(&e->nro_opt, ctx);
+
+	return 0;
+}
+
+static int
+pop_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *exp)
+{
+	struct nmreq_opt_extmem *e;
+	int ret;
+
+	e = (struct nmreq_opt_extmem *)ctx->nr_opt;
+	ctx->nr_opt = ctx->nr_opt->nro_next;
+
+	if ((ret = checkoption(&e->nro_opt, &exp->nro_opt))) {
+		return ret;
+	}
+
+	if (e->nro_usrptr != exp->nro_usrptr) {
+		printf("usrptr %"PRIu64" expected %"PRIu64"\n",
+				e->nro_usrptr,
+				exp->nro_usrptr);
+		return -1;
+	}
+	if (e->nro_info.nr_memsize != exp->nro_info.nr_memsize) {
+		printf("memsize %"PRIu64" expected %"PRIu64"\n",
+				e->nro_info.nr_memsize,
+				exp->nro_info.nr_memsize);
+		return -1;
+	}
+
+	if ((ret = munmap((void *)e->nro_usrptr, e->nro_info.nr_memsize)))
+		return ret;
+
+	return 0;
+}
+
+static int
+_extmem_option(int fd, struct TestContext *ctx, int new_rsz)
+{
+	struct nmreq_opt_extmem e, save;
+	int ret;
+	unsigned long old_rsz;
+
+	if ((ret = push_extmem_option(ctx, &e)) < 0)
+		return ret;
+
+	save = e;
+
+	ctx->ifname = "vale0:0";
+	ctx->nr_tx_slots = 16;
+	ctx->nr_rx_slots = 16;
+
+	if ((ret = change_param("priv_ring_size", new_rsz, &old_rsz)))
+		return ret;
+
+	if ((ret = port_register_hwall(fd, ctx)))
+		return ret;
+
+	ret = pop_extmem_option(ctx, &save);
+
+	if (change_param("priv_ring_size", old_rsz, NULL) < 0)
+		return -1;
+
+	return ret;
+}
+
+static int
+extmem_option(int fd, struct TestContext *ctx)
+{
+	printf("Testing extmem option on vale0:0\n");
+
+	return _extmem_option(fd, ctx, 512);
+}
+
+static int
+bad_extmem_option(int fd, struct TestContext *ctx)
+{
+	printf("Testing bad extmem option on vale0:0\n");
+
+	return _extmem_option(fd, ctx, (1<<16)) < 0 ? 0 : -1;
+}
+
+static int
+duplicate_extmem_options(int fd, struct TestContext *ctx)
+{
+	struct nmreq_opt_extmem e1, save1, e2, save2;
+	int ret;
+
+	printf("Testing duplicate extmem option on vale0:0\n");
+
+	if ((ret = push_extmem_option(ctx, &e1)) < 0)
+		return ret;
+
+	if ((ret = push_extmem_option(ctx, &e2)) < 0) {
+		clear_options(ctx);
+		return ret;
+	}
+
+	save1 = e1;
+	save2 = e2;
+
+	ret = port_register_hwall(fd, ctx);
+	if (ret >= 0) {
+		printf("duplicate option not detected\n");
+		return -1;
+	}
+
+	save2.nro_opt.nro_status = EINVAL;
+	if ((ret = pop_extmem_option(ctx, &save2)))
+		return ret;
+
+	save1.nro_opt.nro_status = EINVAL;
+	if ((ret = pop_extmem_option(ctx, &save1)))
+		return ret;
+
+	return 0;
+}
+#endif /* WITH_EXTMEM */
 
 static void
 usage(const char *prog)
@@ -587,10 +804,13 @@ static testfunc_t tests[] = {
 	pipe_master,
 	pipe_slave,
 	vale_polling_enable_disable,
-	unsupported_option
-//	infinite_options,
-//	extmem_option,
-//	duplicate_extmem_options
+	unsupported_option,
+	infinite_options,
+#ifdef WITH_EXTMEM
+	extmem_option,
+	bad_extmem_option,
+	duplicate_extmem_options,
+#endif /* WITH_EXTMEM */
 };
 
 int
@@ -633,7 +853,7 @@ main(int argc, char **argv)
 			return -1;
 		}
 	}
-	for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+	for (i = 0; i < sizeof(tests) / sizeof(tests[0]) - 1; i++) {
 		struct TestContext ctxcopy;
 		int fd;
 		int ret;
