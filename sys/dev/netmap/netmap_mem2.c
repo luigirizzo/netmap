@@ -108,6 +108,7 @@ struct netmap_obj_pool {
 	uint32_t *bitmap;       /* one bit per buffer, 1 means free */
 	uint32_t *invalid_bitmap;/* one bit per buffer, 1 means invalid */
 	uint32_t bitmap_slots;	/* number of uint32 entries in bitmap */
+	int	alloc_done;	/* we have allocated the memory */
 	/* ---------------------------------------------------*/
 
 	/* limits */
@@ -1174,6 +1175,12 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 	if (p->invalid_bitmap)
 		nm_os_free(p->invalid_bitmap);
 	p->invalid_bitmap = NULL;
+	if (!p->alloc_done) {
+		/* allocation was done by somebody else.
+		 * Let them clean up after themselves.
+		 */
+		return;
+	}
 	if (p->lut) {
 		u_int i;
 
@@ -1193,6 +1200,7 @@ netmap_reset_obj_allocator(struct netmap_obj_pool *p)
 	p->memtotal = 0;
 	p->numclusters = 0;
 	p->objfree = 0;
+	p->alloc_done = 0;
 }
 
 /*
@@ -1304,13 +1312,20 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 	size_t n;
 
 	if (p->lut) {
-		/* already finalized, nothing to do */
+		/* if the lut is already there we assume that also all the
+		 * clusters have already been allocated, possibily by somebody
+		 * else (e.g., extmem). In the latter case, the alloc_done flag
+		 * will remain at zero, so that we will not attempt to
+		 * deallocate the clusters by ourselves in
+		 * netmap_reset_obj_allocator.
+		 */
 		return 0;
 	}
 
 	/* optimistically assume we have enough memory */
 	p->numclusters = p->_numclusters;
 	p->objtotal = p->_objtotal;
+	p->alloc_done = 1;
 
 	p->lut = nm_alloc_lut(p->objtotal);
 	if (p->lut == NULL) {
