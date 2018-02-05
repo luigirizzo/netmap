@@ -2912,7 +2912,7 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 		if (!rerror && !src->nro_status) {
 			optsz = nmreq_opt_size_by_type(src->nro_reqtype);
 			if (optsz) {
-				error = copyout(dst + 1, src + 1, optsz);
+				error = copyout(src + 1, dst + 1, optsz);
 				if (error) {
 					rerror = error;
 					goto out;
