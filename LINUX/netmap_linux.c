@@ -193,7 +193,6 @@ nm_os_extmem_nextpage(struct nm_os_extmem *e)
 {
 	if (e->mapped >= e->nr_pages)
 		return NULL;
-	D("mapping %d/%d", e->mapped, e->nr_pages);
 	return kmap(e->pages[e->mapped++]);
 }
 
