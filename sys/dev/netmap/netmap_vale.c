@@ -1319,6 +1319,7 @@ netmap_bdg_list(struct nmreq_header *hdr)
 				if (b->bdg_ports[j] == NULL)
 					continue;
 				vpna = b->bdg_ports[j];
+				/* write back the VALE switch name */
 				strncpy(hdr->nr_name, vpna->up.name,
 					(size_t)IFNAMSIZ);
 				error = 0;
