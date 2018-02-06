@@ -2260,7 +2260,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			NMG_LOCK();
 			do {
 				u_int memflags;
+#ifdef WITH_EXTMEM
 				struct nmreq_option *opt;
+#endif /* WITH_EXTMEM */
 
 				if (priv->np_nifp != NULL) {	/* thread already registered */
 					error = EBUSY;
@@ -2691,8 +2693,8 @@ nmreq_opt_size_by_type(uint16_t nro_reqtype)
 	case NETMAP_REQ_OPT_EXTMEM:
 		rv = sizeof(struct nmreq_opt_extmem);
 		break;
-	}
 #endif /* WITH_EXTMEM */
+	}
 	/* subtract the common header */
 	return rv - sizeof(struct nmreq_option);
 }
