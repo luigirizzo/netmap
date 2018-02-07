@@ -379,6 +379,7 @@ nm_find_bridge(const char *name, int create)
 			b->bdg_port_index[i] = i;
 		/* set the default function */
 		b->bdg_ops.lookup = netmap_bdg_learning;
+		/* TODO: add pointer to hash_table to bdg_ops.lookup_data here? (s.duo) */
 		NM_BNS_GET(b);
 	}
 	return b;
@@ -1609,7 +1610,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
  */
 u_int
 netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
-		struct netmap_vp_adapter *na)
+		struct netmap_vp_adapter *na, void *lookup_data)
 {
 	uint8_t *buf = ft->ft_buf;
 	u_int buf_len = ft->ft_len;
@@ -1775,7 +1776,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		   fragment nor at the very beginning of the second. */
 		if (unlikely(na->up.virt_hdr_len > ft[i].ft_len))
 			continue;
-		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na);
+		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na, b->bdg_ops.lookup_data);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
 		if (dst_port >= NM_BDG_NOPORT)

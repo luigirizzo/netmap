@@ -5,6 +5,7 @@
 *.mod.c
 *.orig
 .*.swp
+config
 tags
 modules.order
 Module.symvers
