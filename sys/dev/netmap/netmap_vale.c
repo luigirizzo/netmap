@@ -223,12 +223,13 @@ struct nm_bridge {
 	 * The function is set by netmap_bdg_regops().
 	 */
 	struct netmap_bdg_ops bdg_ops;
-
-	/* the forwarding table, MAC+ports.
-	 * XXX should be changed to an argument to be passed to
-	 * the lookup function
+	
+	/*
+	 * Contains the data structure used by the bdg_ops.lookup function.
+	 * By default it's a struct nm_hash_ent allocated on attach
+	 * otherwise will contain the data structure received by netmap_bdg_regops().
 	 */
-	struct nm_hash_ent *ht; // allocated on attach
+	void *ht;
 
 #ifdef CONFIG_NET_NS
 	struct net *ns;
@@ -379,7 +380,6 @@ nm_find_bridge(const char *name, int create)
 			b->bdg_port_index[i] = i;
 		/* set the default function */
 		b->bdg_ops.lookup = netmap_bdg_learning;
-		/* TODO: add pointer to hash_table to bdg_ops.lookup_data here? (s.duo) */
 		NM_BNS_GET(b);
 	}
 	return b;
@@ -1335,12 +1335,18 @@ netmap_bdg_list(struct nmreq_header *hdr)
  * Register callbacks to the given bridge. 'name' may be just
  * bridge's name (including ':' if it is not just NM_BDG_NAME).
  * Called without NMG_LOCK.
+ *
+ * If needed the external module will need to free the memory pointed by *lookup_data
+ * netmap_bdg_regops() writes the old lookup data structure add to *lookup_data, the exernal
+ * module will need to restore it on exit
  */
+ 
 int
-netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops)
+netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void **lookup_data)
 {
 	struct nm_bridge *b;
 	int error = 0;
+	void *old_lookup_data;
 
 	if (!bdg_ops) {
 		return EINVAL;
@@ -1351,6 +1357,9 @@ netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops)
 		error = EINVAL;
 	} else {
 		b->bdg_ops = *bdg_ops;
+	    old_lookup_data = b->ht;
+		b->ht = *lookup_data;
+		*lookup_data = old_lookup_data; /* returns old lookup data structure */
 	}
 	NMG_UNLOCK();
 
@@ -1614,7 +1623,7 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 {
 	uint8_t *buf = ft->ft_buf;
 	u_int buf_len = ft->ft_len;
-	struct nm_hash_ent *ht = na->na_bdg->ht;
+	struct nm_hash_ent *ht = lookup_data;
 	uint32_t sh, dh;
 	u_int dst, mysrc = na->bdg_port;
 	uint64_t smac, dmac;
@@ -1776,7 +1785,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		   fragment nor at the very beginning of the second. */
 		if (unlikely(na->up.virt_hdr_len > ft[i].ft_len))
 			continue;
-		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na, b->bdg_ops.lookup_data);
+		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na, b->ht);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
 		if (dst_port >= NM_BDG_NOPORT)

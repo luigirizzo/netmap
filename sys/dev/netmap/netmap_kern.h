@@ -1451,7 +1451,6 @@ struct netmap_bdg_ops {
 	bdg_lookup_fn_t lookup;
 	bdg_config_fn_t config;
 	bdg_dtor_fn_t	dtor;
-	void *lookup_data;
 };
 
 u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
@@ -1469,7 +1468,7 @@ struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
-int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops);
+int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void **lookup_data);
 int netmap_bdg_config(struct nm_ifreq *nifr);
 
 #else /* !WITH_VALE */
