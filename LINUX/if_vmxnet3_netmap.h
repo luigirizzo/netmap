@@ -166,8 +166,10 @@ static int vmxnet3_netmap_txsync(struct netmap_kring *kring, int flags)
 			union Vmxnet3_GenericDesc *eop_txd;
 
 			struct netmap_slot *slot = &ring->slot[nm_i];
+
+			dma_addr_t dma_addr;
 			u_int packet_len = slot->len;
-			void *packet_addr = NMB(na, slot);
+			void *packet_addr = PNMB(na, slot, &dma_addr);
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 
@@ -264,21 +266,8 @@ static int vmxnet3_netmap_txsync(struct netmap_kring *kring, int flags)
 
 					tbi = tq->buf_info +
 					      tq->tx_ring.next2fill;
-					tbi->map_type = VMXNET3_MAP_SINGLE;
-					tbi->dma_addr = dma_map_single(
-						&adapter->pdev->dev,
-						packet_addr + buf_offset,
-						buf_size, PCI_DMA_TODEVICE);
-
-					if (dma_mapping_error(
-						    &adapter->pdev->dev,
-						    tbi->dma_addr)) {
-						spin_unlock_irqrestore(
-							&tq->tx_lock,
-							lock_flags);
-						break;
-					}
-
+					tbi->map_type = VMXNET3_MAP_NONE;
+					tbi->dma_addr = dma_addr + buf_offset;
 					tbi->len = buf_size;
 
 					gdesc = tq->tx_ring.base +
