@@ -229,7 +229,7 @@ struct nm_bridge {
 	 * By default points to *ht which is allocated on attach and used by the default lookup
 	 * otherwise will point to the data structure received by netmap_bdg_regops().
 	 */
-    void *lookup_data;
+	void *lookup_data;
 	struct nm_hash_ent *ht;
 
 #ifdef CONFIG_NET_NS
@@ -1345,19 +1345,19 @@ netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *lookup
 	struct nm_bridge *b;
 	int error = 0;
 
-	if (!bdg_ops) {
-		return EINVAL;
-	}
 	NMG_LOCK();
 	b = nm_find_bridge(name, 0 /* don't create */);
 	if (!b) {
 		error = EINVAL;
 	} else {
-		b->bdg_ops = *bdg_ops;
-		if (bdg_ops->lookup == netmap_bdg_learning) {
-		    b->lookup_data = b->ht;
+		if (!bdg_ops) {
+			bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
+			bzero(&b->bdg_ops, sizeof(b->bdg_ops));
+			b->bdg_ops.lookup = netmap_bdg_learning;
+			b->lookup_data = b->ht;
 		} else {
-		    b->lookup_data = lookup_data;
+			b->bdg_ops = *bdg_ops;
+			b->lookup_data = lookup_data;
 		}
 	}
 	NMG_UNLOCK();
