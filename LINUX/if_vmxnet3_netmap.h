@@ -172,6 +172,8 @@ static int vmxnet3_netmap_txsync(struct netmap_kring *kring, int flags)
 			void *packet_addr = PNMB(na, slot, &dma_addr);
 
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+			netmap_sync_map(na, (bus_dma_tag_t)na->pdev, &dma_addr,
+					packet_len, NR_TX);
 
 			spin_lock_irqsave(&tq->tx_lock, lock_flags);
 
@@ -446,8 +448,14 @@ static int vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 			}
 
 			if (rcd->eop) {
+				dma_addr_t dma_addr;
+
 				slot->len = netmap_offset;
 				slot->flags = 0;
+
+				PNMB(na, slot, &dma_addr);
+				netmap_sync_map(na, (bus_dma_tag_t)na->pdev,
+						&dma_addr, slot->len, NR_TX);
 
 				num_pkts++;
 				nm_i = nm_next(nm_i, lim);
