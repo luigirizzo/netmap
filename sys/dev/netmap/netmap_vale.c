@@ -226,10 +226,11 @@ struct nm_bridge {
 	
 	/*
 	 * Contains the data structure used by the bdg_ops.lookup function.
-	 * By default it's a struct nm_hash_ent allocated on attach
-	 * otherwise will contain the data structure received by netmap_bdg_regops().
+	 * By default points to *ht which is allocated on attach and used by the default lookup
+	 * otherwise will point to the data structure received by netmap_bdg_regops().
 	 */
-	void *ht;
+    void *lookup_data;
+	struct nm_hash_ent *ht;
 
 #ifdef CONFIG_NET_NS
 	struct net *ns;
@@ -380,6 +381,7 @@ nm_find_bridge(const char *name, int create)
 			b->bdg_port_index[i] = i;
 		/* set the default function */
 		b->bdg_ops.lookup = netmap_bdg_learning;
+		b->lookup_data = b->ht;
 		NM_BNS_GET(b);
 	}
 	return b;
@@ -1335,18 +1337,13 @@ netmap_bdg_list(struct nmreq_header *hdr)
  * Register callbacks to the given bridge. 'name' may be just
  * bridge's name (including ':' if it is not just NM_BDG_NAME).
  * Called without NMG_LOCK.
- *
- * If needed the external module will need to free the memory pointed by *lookup_data
- * netmap_bdg_regops() writes the old lookup data structure add to *lookup_data, the exernal
- * module will need to restore it on exit
  */
  
 int
-netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void **lookup_data)
+netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *lookup_data)
 {
 	struct nm_bridge *b;
 	int error = 0;
-	void *old_lookup_data;
 
 	if (!bdg_ops) {
 		return EINVAL;
@@ -1357,9 +1354,11 @@ netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void **looku
 		error = EINVAL;
 	} else {
 		b->bdg_ops = *bdg_ops;
-	    old_lookup_data = b->ht;
-		b->ht = *lookup_data;
-		*lookup_data = old_lookup_data; /* returns old lookup data structure */
+		if (bdg_ops->lookup == netmap_bdg_learning) {
+		    b->lookup_data = b->ht;
+		} else {
+		    b->lookup_data = lookup_data;
+		}
 	}
 	NMG_UNLOCK();
 
@@ -1785,7 +1784,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		   fragment nor at the very beginning of the second. */
 		if (unlikely(na->up.virt_hdr_len > ft[i].ft_len))
 			continue;
-		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na, b->ht);
+		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na, b->lookup_data);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
 		if (dst_port >= NM_BDG_NOPORT)

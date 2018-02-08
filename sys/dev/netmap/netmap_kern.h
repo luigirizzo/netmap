@@ -1468,7 +1468,7 @@ struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
-int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void **lookup_data);
+int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *lookup_data);
 int netmap_bdg_config(struct nm_ifreq *nifr);
 
 #else /* !WITH_VALE */
