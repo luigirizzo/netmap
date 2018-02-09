@@ -186,6 +186,9 @@ struct nm_hash_ent {
 	uint64_t	ports;
 };
 
+/* Holds the default callbacks */
+static struct netmap_bdg_ops default_bdg_ops = {netmap_bdg_learning, NULL, NULL};
+
 /*
  * nm_bridge is a descriptor for a VALE switch.
  * Interfaces for a bridge are all in bdg_ports[].
@@ -222,7 +225,7 @@ struct nm_bridge {
 	 * different ring index.
 	 * The function is set by netmap_bdg_regops().
 	 */
-	struct netmap_bdg_ops bdg_ops;
+	struct netmap_bdg_ops *bdg_ops;
 	
 	/*
 	 * Contains the data structure used by the bdg_ops.lookup function.
@@ -380,7 +383,7 @@ nm_find_bridge(const char *name, int create)
 		for (i = 0; i < NM_BDG_MAXPORTS; i++)
 			b->bdg_port_index[i] = i;
 		/* set the default function */
-		b->bdg_ops.lookup = netmap_bdg_learning;
+		b->bdg_ops = &default_bdg_ops;
 		b->lookup_data = b->ht;
 		NM_BNS_GET(b);
 	}
@@ -496,8 +499,8 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	}
 
 	BDG_WLOCK(b);
-	if (b->bdg_ops.dtor)
-		b->bdg_ops.dtor(b->bdg_ports[s_hw]);
+	if (b->bdg_ops->dtor)
+		b->bdg_ops->dtor(b->bdg_ports[s_hw]);
 	b->bdg_ports[s_hw] = NULL;
 	if (s_sw >= 0) {
 		b->bdg_ports[s_sw] = NULL;
@@ -510,7 +513,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	if (lim == 0) {
 		ND("marking bridge %s as free", b->bdg_basename);
 		nm_os_free(b->ht);
-		bzero(&b->bdg_ops, sizeof(b->bdg_ops));
+		b->bdg_ops = NULL;
 		NM_BNS_PUT(b);
 	}
 }
@@ -1352,11 +1355,10 @@ netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *lookup
 	} else {
 		if (!bdg_ops) {
 			bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
-			bzero(&b->bdg_ops, sizeof(b->bdg_ops));
-			b->bdg_ops.lookup = netmap_bdg_learning;
+			b->bdg_ops = &default_bdg_ops;
 			b->lookup_data = b->ht;
 		} else {
-			b->bdg_ops = *bdg_ops;
+			b->bdg_ops = bdg_ops;
 			b->lookup_data = lookup_data;
 		}
 	}
@@ -1380,8 +1382,8 @@ netmap_bdg_config(struct nm_ifreq *nr)
 	NMG_UNLOCK();
 	/* Don't call config() with NMG_LOCK() held */
 	BDG_RLOCK(b);
-	if (b->bdg_ops.config != NULL)
-		error = b->bdg_ops.config(nr);
+	if (b->bdg_ops->config != NULL)
+		error = b->bdg_ops->config(nr);
 	BDG_RUNLOCK(b);
 	return error;
 }
@@ -1784,7 +1786,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		   fragment nor at the very beginning of the second. */
 		if (unlikely(na->up.virt_hdr_len > ft[i].ft_len))
 			continue;
-		dst_port = b->bdg_ops.lookup(&ft[i], &dst_ring, na, b->lookup_data);
+		dst_port = b->bdg_ops->lookup(&ft[i], &dst_ring, na, b->lookup_data);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
 		if (dst_port >= NM_BDG_NOPORT)
