@@ -291,6 +291,12 @@ pointer, prod_tail_1, used to check for expired packets. This is done lazily.
 
 #define ALIGN_CACHE	__attribute__ ((aligned (MY_CACHELINE)))
 
+struct stats {
+	uint64_t	packets;
+	uint64_t	bytes;
+	uint64_t	dropped;
+} ALIGN_CACHE;
+
 struct _qs { /* shared queue */
 	uint64_t	t0;	/* start of times */
 
@@ -308,14 +314,14 @@ struct _qs { /* shared queue */
 	struct _cfg	c_loss;
 
 	/* producer's fields */
-	uint64_t	tx ALIGN_CACHE;	/* tx counter */
-	uint64_t	prod_tail_1;	/* head of queue */
+	uint64_t	prod_tail_1 ALIGN_CACHE; /* head of queue */
 	uint64_t	prod_queued;	/* queued bytes */
 	uint64_t	prod_head;	/* cached copy */
 	uint64_t	prod_tail;	/* cached copy */
 	uint64_t	prod_now;	/* most recent producer timestamp */
 	uint64_t	prod_drop;	/* drop packet count */
 	uint64_t	prod_max_gap;	/* rx round duration */
+	struct stats	_txstats, *txstats;
 
 	/* parameters for reading from the netmap port */
 	struct nm_desc *src_port;		/* netmap descriptor */
@@ -369,14 +375,13 @@ struct _qs { /* shared queue */
 
 
 	/* consumer's fields */
-	const char *		cons_ifname;
-	uint64_t rx ALIGN_CACHE;	/* rx counter */
 //	uint64_t	cons_head;	/* cached copy */
 //	uint64_t	cons_tail;	/* cached copy */
-	uint64_t	cons_now;	/* most recent producer timestamp */
+	uint64_t	cons_now ALIGN_CACHE;	/* most recent producer timestamp */
 	uint64_t	cons_lag;	/* tail - head */
-	uint64_t	cons_drop;	/* drop packet count */
 	uint64_t	rx_wait;	/* stats */
+	const char *	cons_ifname;
+	struct stats	_rxstats, *rxstats;
 
 	/* shared fields */
 	volatile uint64_t tail ALIGN_CACHE ;	/* producer writes here */
@@ -605,7 +610,6 @@ ipv4_dump(const struct ipv4_info *i)
 
 struct ipv4_info ipv4[2];
 
-
 struct pipe_args {
 	int		zerocopy;
 	int		wait_link;
@@ -627,6 +631,9 @@ struct pipe_args {
 	struct arp_cmd_q *prod_arpq;	/* in mailbox for prod */
 	struct ipv4_info *cons_ipv4;	/* mac addr etc. */
 	struct ipv4_info *prod_ipv4;	/* mac addr etc. */
+
+	/* raw stats */
+	struct stats	*stats;
 
 	/* max delay before the consumer starts dropping packets */
 	int64_t		max_lag;
@@ -805,7 +812,8 @@ enq(struct _qs *q)
 	q->cur_len, (int)q->prod_tail, p->next,
 	p->pt_qout, p->pt_tx);
     q->prod_tail = p->next;
-    q->tx++;
+    q->txstats->packets++;
+    q->txstats->bytes += q->cur_len;
     if (q->max_bps)
 	q->prod_queued += p->pktlen;
     /* XXX update timestamps ? */
@@ -1241,7 +1249,7 @@ cons(void *_pa)
 	    continue;
 	}
 	if (delta < -pa->max_lag) {
-		q->cons_drop++;
+		q->rxstats->dropped++;
 		goto next;
 	}
 	ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
@@ -1252,7 +1260,7 @@ cons(void *_pa)
 			/* drop this packet. Any pending arp message
 			 * will be sent in the next iteration
 			 */
-			q->cons_drop++;
+			q->rxstats->dropped++;
 			goto next;
 		}
 		pending += injected;
@@ -1274,7 +1282,8 @@ cons(void *_pa)
 	    pending = 0;
 	}
 
-	q->rx++;
+	q->rxstats->packets++;
+	q->rxstats->bytes += p->pktlen;
     next:
 	q->head = p->next;
 	/* drain packets from the queue */
@@ -1515,8 +1524,10 @@ main(int argc, char **argv)
 		*gw[N_OPTS], *cd[N_OPTS];
 	int ncpus;
 	int cores[4];
-	uint64_t old_drop0 = 0, old_drop1 = 0, drop0, drop1;
 	int hugepages = 0;
+	char *statsfname = NULL;
+	int statsfd;
+	struct stats *stats = NULL;
 
 	bzero(d, sizeof(d));
 	bzero(b, sizeof(b));
@@ -1565,7 +1576,7 @@ main(int argc, char **argv)
 	// r	route mode
 	// d	max consumer delay
 
-	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:G:b:ci:vw:rd:H")) != -1) {
+	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:G:b:ci:vw:rd:Hs:")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -1643,8 +1654,18 @@ main(int argc, char **argv)
 		case 'H':
 			hugepages = 1;
 			break;
+		case 's':
+			if (statsfname != NULL) {
+				D("option 's' duplicated");
+				usage();
+			}
+			statsfname = strdup(optarg);
+			if (statsfname == NULL) {
+				D("out of memory");
+				exit(1);
+			}
+			break;
 		}
-
 	}
 
 	argc -= optind;
@@ -1920,6 +1941,36 @@ main(int argc, char **argv)
 	            exit(1);
 	        }
 	}
+
+	if (statsfname != NULL) {
+		size_t statsz = 4 * sizeof(struct stats);
+		statsfd = open(statsfname, O_RDWR | O_CREAT, 0666);
+		if (statsfd < 0) {
+			D("cannot open %s: %s", statsfname, strerror(errno));
+			exit(1);
+		}
+		if (ftruncate(statsfd, statsz) < 0) {
+			D("cannot truncate(%s, %zu): %s",
+					statsfname, statsz, strerror(errno));
+			exit(1);
+		}
+		stats = mmap(NULL, statsz,
+				PROT_READ | PROT_WRITE,
+				MAP_SHARED, statsfd, 0);
+		if (stats == MAP_FAILED) {
+			D("cannot mmap %s: %s", statsfname, strerror(errno));
+			exit(1);
+		}
+		bp[0].q.txstats = stats;
+		bp[0].q.rxstats = stats + 1;
+		bp[1].q.txstats = stats + 2;
+		bp[1].q.rxstats = stats + 3;
+	} else {
+		bp[0].q.txstats = &bp[0].q._txstats;
+		bp[0].q.rxstats = &bp[0].q._rxstats;
+		bp[1].q.txstats = &bp[1].q._txstats;
+		bp[1].q.rxstats = &bp[1].q._rxstats;
+	}
 	
 	pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
 	pthread_create(&bp[1].cons_tid, NULL, tlem_main, (void*)&bp[1]);
@@ -1927,19 +1978,22 @@ main(int argc, char **argv)
 	signal(SIGINT, sigint_h);
 	sleep(1);
 	while (!do_abort) {
-	    struct _qs olda = bp[0].q, oldb = bp[1].q;
+	    struct stats old0tx = *bp[0].q.txstats,
+			 old0rx = *bp[0].q.rxstats,
+			 old1tx = *bp[1].q.txstats,
+			 old1rx = *bp[1].q.rxstats;
 	    struct _qs *q0 = &bp[0].q, *q1 = &bp[1].q;
 
 	    sleep(1);
-	    drop0 = q0->cons_drop;
-	    drop1 = q1->cons_drop;
 	    ED("%lld -> %lld maxq %d round %lld drop %lld, %lld <- %lld maxq %d round %lld drop %lld",
-		(long long)(q0->rx - olda.rx), (long long)(q0->tx - olda.tx),
+		(long long)(q0->rxstats->packets - old0rx.packets),
+		(long long)(q0->txstats->packets - old0tx.packets),
 		q0->rx_qmax, (long long)q0->prod_max_gap,
-		(long long)(drop0 - old_drop0),
-		(long long)(q1->rx - oldb.rx), (long long)(q1->tx - oldb.tx),
+		(long long)(q0->rxstats->dropped - old0rx.dropped),
+		(long long)(q1->rxstats->packets - old1rx.packets),
+		(long long)(q1->txstats->packets - old1tx.packets),
 		q1->rx_qmax, (long long)q1->prod_max_gap,
-		(long long)(drop1 - old_drop1)
+		(long long)(q1->rxstats->dropped - old1rx.dropped)
 		);
 	    ED("plr nominal %le actual %le",
 		(double)(q0->c_loss.d[0])/(1<<24),
@@ -1949,8 +2003,6 @@ main(int argc, char **argv)
 	    bp[0].q.prod_max_gap = (bp[0].q.prod_max_gap * 7)/8; // ewma
 	    bp[1].q.rx_qmax = (bp[1].q.rx_qmax * 7)/8; // ewma
 	    bp[1].q.prod_max_gap = (bp[1].q.prod_max_gap * 7)/8; // ewma
-	    old_drop0 = drop0;
-	    old_drop1 = drop1;
 	}
 	D("exiting on abort");
 	sleep(1);
