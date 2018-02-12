@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2016 Giuseppe Lettieri
+ * Copyright (C) 2014-2018 Giuseppe Lettieri
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -75,6 +75,7 @@
 #ifdef WITH_PIPES
 
 #define NM_PIPE_MAXSLOTS	4096
+#define NM_PIPE_MAXRINGS	256
 
 static int netmap_default_pipes = 0; /* ignored, kept for compatibility */
 SYSBEGIN(vars_pipes);
@@ -564,11 +565,6 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		 * is missing. */
 		return EINVAL;
 	}
-	if (req->nr_mode != NR_REG_ALL_NIC || req->nr_ringid != 0) {
-		/* Currently we only support opening all the hw rings of
-		 * a pipe. */
-		return EINVAL;
-	}
 
 	/* first, try to find the parent adapter */
 	for (;;) {
@@ -655,8 +651,12 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	mna->up.na_flags |= NAF_MEM_OWNER;
 	mna->up.na_lut = pna->na_lut;
 
-	mna->up.num_tx_rings = 1;
-	mna->up.num_rx_rings = 1;
+	mna->up.num_tx_rings = req->nr_tx_rings;
+	nm_bound_var(&mna->up.num_tx_rings, 1,
+			1, NM_PIPE_MAXRINGS, NULL);
+	mna->up.num_rx_rings = req->nr_rx_rings;
+	nm_bound_var(&mna->up.num_rx_rings, 1,
+			1, NM_PIPE_MAXRINGS, NULL);
 	mna->up.num_tx_desc = req->nr_tx_slots;
 	nm_bound_var(&mna->up.num_tx_desc, pna->num_tx_desc,
 			1, NM_PIPE_MAXSLOTS, NULL);
@@ -680,6 +680,9 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	/* most fields are the same, copy from master and then fix */
 	*sna = *mna;
 	sna->up.nm_mem = netmap_mem_get(mna->up.nm_mem);
+	/* swap the number of tx/rx rings */
+	sna->up.num_tx_rings = mna->up.num_rx_rings;
+	sna->up.num_rx_rings = mna->up.num_tx_rings;
 	snprintf(sna->up.name, sizeof(sna->up.name), "%s}%s", pna->name, pipe_id);
 	sna->role = NM_PIPE_ROLE_SLAVE;
 	error = netmap_attach_common(&sna->up);
