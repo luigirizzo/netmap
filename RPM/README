@@ -10,10 +10,8 @@ HOWTO GENERATE RPM FILE
  ~/.rpmbuild (parameter %_topdir). Another favourite location is
  /usr/src/redhat/.
 
-3) Find result in ~/rpmbuild/RPMS
-
-4) Upload eventually to Distribution list on ShPt:
+3) Find result in ~/rpmbuild/RPMS and upload to repository
  $ cd $rpmbuild/RPMS/x86_64/
- $ ~/Astro/CTA/WWW/ShPt/Curl/uploadPortalDoc \
-  /WG/ACTL/SiteAssets/SitePages/CameraServerSetup/netmap-0.1-2.x86_64.rpm
+ $ ls -l
+ $ cp *.rpm $REPODIR/x86_64
 
