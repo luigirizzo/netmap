@@ -294,8 +294,8 @@ pointer, prod_tail_1, used to check for expired packets. This is done lazily.
 struct stats {
 	uint64_t	packets;
 	uint64_t	bytes;
-	uint64_t	dropped;
-	uint64_t	dropped_bytes;
+	uint64_t	drop_packets;
+	uint64_t	drop_bytes;
 } ALIGN_CACHE;
 
 struct _qs { /* shared queue */
@@ -1049,16 +1049,16 @@ prod(void *_pa)
 	    }
 	    q->c_loss.run(q, &q->c_loss);
 	    if (q->cur_drop) {
-		q->txstats->dropped++;	
-		q->txstats->dropped_bytes += q->cur_len;
+		q->txstats->drop_packets++;	
+		q->txstats->drop_bytes += q->cur_len;
 		continue;
 	    }
 	    if (no_room(q)) {
 		q->tail = q->prod_tail; /* notify */
 		usleep(1); // XXX give cons a chance to run ?
 		if (no_room(q)) {/* try to run drop-free once */
-		    q->txstats->dropped++;	
-		    q->txstats->dropped_bytes += q->cur_len;
+		    q->txstats->drop_packets++;	
+		    q->txstats->drop_bytes += q->cur_len;
 		    continue;
 		}
 	    }
@@ -1067,8 +1067,8 @@ prod(void *_pa)
 	    tt = q->cur_tt;
 	    q->qt_qout += tt;
 	    if (drop_after(q)) {
-		q->txstats->dropped++;	
-		q->txstats->dropped_bytes += q->cur_len;
+		q->txstats->drop_packets++;	
+		q->txstats->drop_bytes += q->cur_len;
 		continue;
 	    }
 	    q->c_delay.run(q, &q->c_delay); /* compute delay */
@@ -1259,8 +1259,8 @@ cons(void *_pa)
 	    continue;
 	}
 	if (delta < -pa->max_lag) {
-		q->rxstats->dropped++;
-		q->rxstats->dropped_bytes += p->pktlen;
+		q->rxstats->drop_packets++;
+		q->rxstats->drop_bytes += p->pktlen;
 		goto next;
 	}
 	ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
@@ -1271,7 +1271,7 @@ cons(void *_pa)
 			/* drop this packet. Any pending arp message
 			 * will be sent in the next iteration
 			 */
-			q->rxstats->dropped++;
+			q->rxstats->drop_packets++;
 			goto next;
 		}
 		pending += injected;
@@ -2000,11 +2000,11 @@ main(int argc, char **argv)
 		(long long)(q0->rxstats->packets - old0rx.packets),
 		(long long)(q0->txstats->packets - old0tx.packets),
 		q0->rx_qmax, (long long)q0->prod_max_gap,
-		(long long)(q0->rxstats->dropped - old0rx.dropped),
+		(long long)(q0->rxstats->drop_packets - old0rx.drop_packets),
 		(long long)(q1->rxstats->packets - old1rx.packets),
 		(long long)(q1->txstats->packets - old1tx.packets),
 		q1->rx_qmax, (long long)q1->prod_max_gap,
-		(long long)(q1->rxstats->dropped - old1rx.dropped)
+		(long long)(q1->rxstats->drop_packets - old1rx.drop_packets)
 		);
 	    ED("plr nominal %le actual %le",
 		(double)(q0->c_loss.d[0])/(1<<24),
