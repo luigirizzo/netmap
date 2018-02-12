@@ -268,11 +268,17 @@ nm_os_mbuf_has_offld(struct mbuf *m)
 static void
 freebsd_generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 {
-	struct netmap_generic_adapter *gna =
-			(struct netmap_generic_adapter *)NA(ifp);
-	int stolen = generic_rx_handler(ifp, m);
+	int stolen;
 
+	if (!NM_NA_VALID(ifp)) {
+		RD(1, "Warning: got RX packet for invalid emulated adapter");
+		return;
+	}
+
+	stolen = generic_rx_handler(ifp, m);
 	if (!stolen) {
+		struct netmap_generic_adapter *gna =
+				(struct netmap_generic_adapter *)NA(ifp);
 		gna->save_if_input(ifp, m);
 	}
 }
@@ -665,7 +671,7 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
 			&rid, 0, ~0, *mem_size, RF_ACTIVE);
 	if (ptn_dev->pci_mem == NULL) {
 		*nm_paddr = 0;
-		*nm_addr = 0;
+		*nm_addr = NULL;
 		return ENOMEM;
 	}
 
@@ -1002,32 +1008,32 @@ nm_os_ncpus(void)
 	return mp_maxid + 1;
 }
 
-struct nm_kthread_ctx {
+struct nm_kctx_ctx {
 	struct thread *user_td;		/* thread user-space (kthread creator) to send ioctl */
 	struct ptnetmap_cfgentry_bhyve	cfg;
 
 	/* worker function and parameter */
-	nm_kthread_worker_fn_t worker_fn;
+	nm_kctx_worker_fn_t worker_fn;
 	void *worker_private;
 
-	struct nm_kthread *nmk;
+	struct nm_kctx *nmk;
 
 	/* integer to manage multiple worker contexts (e.g., RX or TX on ptnetmap) */
 	long type;
 };
 
-struct nm_kthread {
+struct nm_kctx {
 	struct thread *worker;
 	struct mtx worker_lock;
 	uint64_t scheduled; 		/* pending wake_up request */
-	struct nm_kthread_ctx worker_ctx;
+	struct nm_kctx_ctx worker_ctx;
 	int run;			/* used to stop kthread */
 	int attach_user;		/* kthread attached to user_process */
 	int affinity;
 };
 
 void inline
-nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
+nm_os_kctx_worker_wakeup(struct nm_kctx *nmk)
 {
 	/*
 	 * There may be a race between FE and BE,
@@ -1047,9 +1053,9 @@ nm_os_kthread_wakeup_worker(struct nm_kthread *nmk)
 }
 
 void inline
-nm_os_kthread_send_irq(struct nm_kthread *nmk)
+nm_os_kctx_send_irq(struct nm_kctx *nmk)
 {
-	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
+	struct nm_kctx_ctx *ctx = &nmk->worker_ctx;
 	int err;
 
 	if (ctx->user_td && ctx->cfg.ioctl_fd > 0) {
@@ -1064,10 +1070,10 @@ nm_os_kthread_send_irq(struct nm_kthread *nmk)
 }
 
 static void
-nm_kthread_worker(void *data)
+nm_kctx_worker(void *data)
 {
-	struct nm_kthread *nmk = data;
-	struct nm_kthread_ctx *ctx = &nmk->worker_ctx;
+	struct nm_kctx *nmk = data;
+	struct nm_kctx_ctx *ctx = &nmk->worker_ctx;
 	uint64_t old_scheduled = nmk->scheduled;
 
 	if (nmk->affinity >= 0) {
@@ -1094,7 +1100,7 @@ nm_kthread_worker(void *data)
 		 * mechanism and we continually execute worker_fn()
 		 */
 		if (!ctx->cfg.wchan) {
-			ctx->worker_fn(ctx->worker_private); /* worker body */
+			ctx->worker_fn(ctx->worker_private, 1); /* worker body */
 		} else {
 			/* checks if there is a pending notification */
 			mtx_lock(&nmk->worker_lock);
@@ -1102,7 +1108,7 @@ nm_kthread_worker(void *data)
 				old_scheduled = nmk->scheduled;
 				mtx_unlock(&nmk->worker_lock);
 
-				ctx->worker_fn(ctx->worker_private); /* worker body */
+				ctx->worker_fn(ctx->worker_private, 1); /* worker body */
 
 				continue;
 			} else if (nmk->run) {
@@ -1119,16 +1125,16 @@ nm_kthread_worker(void *data)
 }
 
 void
-nm_os_kthread_set_affinity(struct nm_kthread *nmk, int affinity)
+nm_os_kctx_worker_setaff(struct nm_kctx *nmk, int affinity)
 {
 	nmk->affinity = affinity;
 }
 
-struct nm_kthread *
-nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
+struct nm_kctx *
+nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
 		     void *opaque)
 {
-	struct nm_kthread *nmk = NULL;
+	struct nm_kctx *nmk = NULL;
 
 	if (cfgtype != PTNETMAP_CFGTYPE_BHYVE) {
 		D("Unsupported cfgtype %u", cfgtype);
@@ -1157,7 +1163,7 @@ nm_os_kthread_create(struct nm_kthread_cfg *cfg, unsigned int cfgtype,
 }
 
 int
-nm_os_kthread_start(struct nm_kthread *nmk)
+nm_os_kctx_worker_start(struct nm_kctx *nmk)
 {
 	struct proc *p = NULL;
 	int error = 0;
@@ -1175,7 +1181,7 @@ nm_os_kthread_start(struct nm_kthread *nmk)
 	/* enable kthread main loop */
 	nmk->run = 1;
 	/* create kthread */
-	if((error = kthread_add(nm_kthread_worker, nmk, p,
+	if((error = kthread_add(nm_kctx_worker, nmk, p,
 			&nmk->worker, RFNOWAIT /* to be checked */, 0, "nm-kthread-%ld",
 			nmk->worker_ctx.type))) {
 		goto err;
@@ -1191,7 +1197,7 @@ err:
 }
 
 void
-nm_os_kthread_stop(struct nm_kthread *nmk)
+nm_os_kctx_worker_stop(struct nm_kctx *nmk)
 {
 	if (!nmk->worker) {
 		return;
@@ -1201,18 +1207,18 @@ nm_os_kthread_stop(struct nm_kthread *nmk)
 
 	/* wake up kthread if it sleeps */
 	kthread_resume(nmk->worker);
-	nm_os_kthread_wakeup_worker(nmk);
+	nm_os_kctx_worker_wakeup(nmk);
 
 	nmk->worker = NULL;
 }
 
 void
-nm_os_kthread_delete(struct nm_kthread *nmk)
+nm_os_kctx_destroy(struct nm_kctx *nmk)
 {
 	if (!nmk)
 		return;
 	if (nmk->worker) {
-		nm_os_kthread_stop(nmk);
+		nm_os_kctx_worker_stop(nmk);
 	}
 
 	memset(&nmk->worker_ctx.cfg, 0, sizeof(nmk->worker_ctx.cfg));

@@ -161,8 +161,6 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_paddr, addr)
 				curr->buffer_addr = htole64(paddr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
@@ -171,6 +169,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			curr->upper.data = 0;
 			curr->lower.data = htole32(adapter->txd_cmd | len | flags |
 				E1000_TXD_CMD_EOP);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -235,7 +234,6 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * First part: import newly received packets.
 	 */
 	if (netmap_no_pendintr || force_update) {
-		uint16_t slot_flags = kring->nkr_slot_flags;
 		int strip_crc = (adapter->flags2 & FLAG2_CRC_STRIPPING) ? 0 : 4;
 
 		nic_i = rxr->next_to_clean;
@@ -244,11 +242,16 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; ; n++) {
 			NM_E1K_RX_DESC_T *curr = E1000_RX_DESC_EXT(*rxr, nic_i);
 			uint32_t staterr = le32toh(curr->NM_E1R_RX_STATUS);
+			struct netmap_slot *slot = &ring->slot[nm_i];
+			uint64_t paddr;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
-			ring->slot[nm_i].len = le16toh(curr->NM_E1R_RX_LENGTH) - strip_crc;
-			ring->slot[nm_i].flags = slot_flags;
+			PNMB(na, slot, &paddr);
+			slot->len = le16toh(curr->NM_E1R_RX_LENGTH) - strip_crc;
+			slot->flags = 0;
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr,
+					slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -275,8 +278,6 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 				goto ring_reset;
 			curr->NM_E1R_RX_BUFADDR = htole64(paddr); /* reload ext.desc. addr. */
 			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_paddr, addr)
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
 			curr->NM_E1R_RX_STATUS = 0;
@@ -322,35 +323,40 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 	int i, si;
 	uint64_t paddr;
 
+	if (!nm_native_on(na))
+		return 0;
+
 	slot = netmap_reset(na, NR_RX, 0, 0);
-	if (!slot)
-		return 0;	// not in netmap native mode
-
-	adapter->alloc_rx_buf = (void*)e1000e_no_rx_alloc;
-	for (i = 0; i < rxr->count; i++) {
-		// XXX the skb check and cleanup can go away
-		struct e1000_buffer *bi = &rxr->buffer_info[i];
-		si = netmap_idx_n2k(&na->rx_rings[0], i);
-		PNMB(na, slot + si, &paddr);
-		if (bi->skb)
-			D("rx buf %d was set", i);
-		bi->skb = NULL; // XXX leak if set
-		// netmap_load_map(...)
-		E1000_RX_DESC_EXT(*rxr, i)->NM_E1R_RX_BUFADDR = htole64(paddr);
+	if (slot) {
+		/* initialize the RX ring for netmap mode */
+		adapter->alloc_rx_buf = (void*)e1000e_no_rx_alloc;
+		for (i = 0; i < rxr->count; i++) {
+			// XXX the skb check and cleanup can go away
+			struct e1000_buffer *bi = &rxr->buffer_info[i];
+			si = netmap_idx_n2k(&na->rx_rings[0], i);
+			PNMB(na, slot + si, &paddr);
+			if (bi->skb)
+				D("rx buf %d was set", i);
+			bi->skb = NULL; // XXX leak if set
+			// netmap_load_map(...)
+			E1000_RX_DESC_EXT(*rxr, i)->NM_E1R_RX_BUFADDR = htole64(paddr);
+		}
+		rxr->next_to_use = 0;
+		/* preserve buffers already made available to clients */
+		i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[0]);
+		wmb();	/* Force memory writes to complete */
+		NM_WR_RX_TAIL(i);
 	}
-	rxr->next_to_use = 0;
-	/* preserve buffers already made available to clients */
-	i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[0]);
-	wmb();	/* Force memory writes to complete */
-	NM_WR_RX_TAIL(i);
 
-	/* now initialize the tx ring */
 	slot = netmap_reset(na, NR_TX, 0, 0);
-	for (i = 0; i < na->num_tx_desc; i++) {
-		si = netmap_idx_n2k(&na->tx_rings[0], i);
-		PNMB(na, slot + si, &paddr);
-		// netmap_load_map(...)
-		E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
+	if (slot) {
+		/* initialize the tx ring for netmap mode */
+		for (i = 0; i < na->num_tx_desc; i++) {
+			si = netmap_idx_n2k(&na->tx_rings[0], i);
+			PNMB(na, slot + si, &paddr);
+			// netmap_load_map(...)
+			E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
+		}
 	}
 	return 1;
 }

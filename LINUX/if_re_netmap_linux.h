@@ -198,7 +198,6 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * is to stop right before nm_hwcur.
 	 */
 	if (netmap_no_pendintr || force_update) {
-		uint16_t slot_flags = kring->nkr_slot_flags;
 		uint32_t stop_i = nm_prev(kring->nr_hwcur, lim);
 
 		nic_i = sc->cur_rx; /* next pkt to check */
@@ -215,7 +214,7 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 			/* XXX subtract crc */
 			total_len = (total_len < 4) ? 0 : total_len - 4;
 			ring->slot[nm_i].len = total_len;
-			ring->slot[nm_i].flags = slot_flags;
+			ring->slot[nm_i].flags = 0;
 			// ifp->stats.rx_packets++;
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);

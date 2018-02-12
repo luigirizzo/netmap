@@ -36,6 +36,12 @@
 static int veth_open(struct ifnet *ifp);
 static int veth_close(struct ifnet *ifp);
 
+struct netmap_veth_adapter {
+	struct netmap_hw_adapter up;
+	struct netmap_veth_adapter *peer;
+	int peer_ref;
+};
+
 /* To be called under RCU read lock */
 static struct netmap_adapter *
 veth_get_peer_na(struct netmap_adapter *na)
@@ -43,13 +49,29 @@ veth_get_peer_na(struct netmap_adapter *na)
 	struct ifnet *ifp = na->ifp;
 	struct veth_priv *priv = netdev_priv(ifp);
 	struct ifnet *peer_ifp;
+	struct netmap_veth_adapter *vna =
+		(struct netmap_veth_adapter *)na;
 
-	peer_ifp = rcu_dereference(priv->peer);
-	if (!peer_ifp) {
-		return NULL;
+	if (vna->peer == NULL) {
+		rcu_read_lock();
+		peer_ifp = rcu_dereference(priv->peer);
+		if (!peer_ifp) {
+			rcu_read_unlock();
+			return NULL;
+		}
+		/* cache the na pointer so that we can retrieve it
+		 * and do our clean-up even when the peer_ifp is
+		 * detached from us
+		 */
+		vna->peer = (struct netmap_veth_adapter *)NA(peer_ifp);
+		netmap_adapter_get(&vna->peer->up.up);
+		vna->peer_ref = 1;
+		/* also set the cross reference from the peer_na to us */
+		vna->peer->peer = vna;
+		rcu_read_unlock();
 	}
 
-	return NA(peer_ifp);
+	return &vna->peer->up.up;
 }
 
 /*
@@ -79,6 +101,17 @@ krings_needed(struct netmap_adapter *na)
 	return false;
 }
 
+static void
+veth_netmap_dtor(struct netmap_adapter *na)
+{
+	struct netmap_veth_adapter *vna =
+		(struct netmap_veth_adapter *)na;
+	if (vna->peer_ref) {
+		vna->peer_ref = 0;
+		netmap_adapter_put(&vna->peer->up.up);
+	}
+}
+
 /*
  * Register/unregister. We are already under netmap lock.
  * This register function is similar to the one used by
@@ -90,6 +123,8 @@ krings_needed(struct netmap_adapter *na)
 static int
 veth_netmap_reg(struct netmap_adapter *na, int onoff)
 {
+	struct netmap_veth_adapter *vna =
+		(struct netmap_veth_adapter *)na;
 	struct netmap_adapter *peer_na;
 	struct ifnet *ifp = na->ifp;
 	bool was_up;
@@ -97,11 +132,8 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 	int error;
 	int i;
 
-	rcu_read_lock();
-
 	peer_na = veth_get_peer_na(na);
 	if (!peer_na) {
-		rcu_read_unlock();
 		return EINVAL;
 	}
 
@@ -127,7 +159,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		/* create all missing needed rings on the other end */
 		error = netmap_mem_rings_create(peer_na);
 		if (error) {
-			rcu_read_unlock();
 			return error;
 		}
 
@@ -173,13 +204,21 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		}
 	}
 
-	rcu_read_unlock();
-
 	if (na->active_fds == 0 && was_up) {
 		veth_open(ifp);
 	}
 
-	return error;
+	if (vna->peer_ref)
+		return 0;
+	if (onoff) {
+		vna->peer->peer_ref = 0;
+		netmap_adapter_put(na);
+	} else {
+		netmap_adapter_get(na);
+		vna->peer->peer_ref = 1;
+	}
+
+	return 0;
 }
 
 static int
@@ -295,8 +334,10 @@ veth_netmap_attach(struct ifnet *ifp)
 	na.nm_rxsync = netmap_pipe_rxsync;
 	na.nm_krings_create = veth_netmap_krings_create;
 	na.nm_krings_delete = veth_netmap_krings_delete;
+	na.nm_dtor = veth_netmap_dtor;
 	na.num_tx_rings = na.num_rx_rings = 1;
-	netmap_attach(&na);
+	netmap_attach_ext(&na, sizeof(struct netmap_veth_adapter),
+			0 /* do not ovveride reg */);
 }
 
 /* end of file */

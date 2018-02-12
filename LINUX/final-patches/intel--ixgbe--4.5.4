@@ -62,7 +62,7 @@ index c49cba8..546435f 100644
  clean:
  	@+$(call devkernelbuild,clean)
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 06017ea..5b220d4 100644
+index 06017ea..4974b37 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -747,6 +747,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
@@ -124,17 +124,18 @@ index 06017ea..5b220d4 100644
  	do {
  		union ixgbe_adv_rx_desc *rx_desc;
  		struct sk_buff *skb;
-@@ -2927,6 +2965,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
- 	} while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
- 	if (!wait_loop)
- 		hw_dbg(hw, "Could not enable Tx Queue %d\n", reg_idx);
-+#ifdef DEV_NETMAP
-+	ixgbe_netmap_configure_tx_ring(adapter, reg_idx);
-+#endif /* DEV_NETMAP */
- }
+@@ -2912,6 +2950,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  
- static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
-@@ -3476,6 +3517,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+ 	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
+ 
++#ifdef DEV_NETMAP
++	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
++#endif /* DEV_NETMAP */
++
+ 	/* enable queue */
+ 	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
+ 
+@@ -3476,6 +3518,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -145,7 +146,7 @@ index 06017ea..5b220d4 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -10436,6 +10481,10 @@ no_info_string:
+@@ -10436,6 +10482,10 @@ no_info_string:
  		hw->mac.ops.setup_eee(hw, eee_enable);
  	}
  
@@ -156,13 +157,13 @@ index 06017ea..5b220d4 100644
  	return 0;
  
  err_register:
-@@ -10481,6 +10530,11 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
+@@ -10481,6 +10531,11 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
  		return;
  
  	netdev = adapter->netdev;
 +
 +#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
++	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
  #ifdef HAVE_IXGBE_DEBUG_FS

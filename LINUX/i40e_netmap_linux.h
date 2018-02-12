@@ -55,6 +55,11 @@ extern int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
 #define NM_I40E_TX_RING(a, r)		(&(a)->tx_rings[(r)])
 #define NM_I40E_RX_RING(a, r)		(&(a)->rx_rings[(r)])
 #endif
+#ifdef NETMAP_LINUX_I40E_PTR_STATE
+#define NM_I40E_STATE(pf)		(&(pf)->state)
+#else
+#define NM_I40E_STATE(pf)		((pf)->state)
+#endif
 
 #ifdef NETMAP_I40E_MAIN
 /*
@@ -131,6 +136,26 @@ i40e_netmap_configure_tx_ring(struct i40e_ring *ring)
 	netmap_reset(na, NR_TX, ring->queue_index, 0);
 }
 
+static void
+i40e_netmap_preconfigure_rx_ring(struct i40e_ring *ring,
+		struct i40e_hmc_obj_rxq *rx_ctx)
+{
+	struct netmap_adapter *na;
+
+	if (!ring->netdev) {
+		// XXX it this possible?
+		return;
+	}
+
+	na = NA(ring->netdev);
+
+	if (netmap_reset(na, NR_RX, ring->queue_index, 0) == NULL)
+		return;	// not in native netmap mode
+
+	rx_ctx->dbuff = DIV_ROUND_UP(NETMAP_BUF_SIZE(na),
+			BIT_ULL(I40E_RXQ_CTX_DBUFF_SHIFT));
+}
+
 static int
 i40e_netmap_configure_rx_ring(struct i40e_ring *ring)
 {
@@ -182,7 +207,7 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
         struct i40e_pf   *pf = (struct i40e_pf *)vsi->back;
 	bool was_running;
 
-	while (test_and_set_bit(__I40E_CONFIG_BUSY, &pf->state))
+	while (test_and_set_bit(__I40E_CONFIG_BUSY, NM_I40E_STATE(pf)))
 			usleep_range(1000, 2000);
 
 	if ( (was_running = netif_running(vsi->netdev)) )
@@ -200,7 +225,7 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 	}
 	//set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
 
-	clear_bit(__I40E_CONFIG_BUSY, &pf->state);
+	clear_bit(__I40E_CONFIG_BUSY, NM_I40E_STATE(pf));
 
 	return 0;
 }
@@ -221,7 +246,7 @@ i40e_netmap_attach(struct i40e_vsi *vsi)
 	bzero(&na, sizeof(na));
 
 	na.ifp = vsi->netdev;
-	na.na_flags = NAF_BDG_MAYSLEEP;
+	na.pdev = &vsi->back->pdev->dev;
 	// XXX check that queues is set.
 	na.num_tx_desc = NM_I40E_TX_RING(vsi, 0)->count;
 	na.num_rx_desc = NM_I40E_RX_RING(vsi, 0)->count;
@@ -279,12 +304,14 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 	struct i40e_vsi *vsi = np->vsi;
 	struct i40e_ring *txr;
 
-	if (!netif_running(ifp))
+	if (!netif_carrier_ok(ifp))
 		return 0;
 
 	txr = NM_I40E_TX_RING(vsi, kring->ring_id);
-	if (!txr)
+	if (unlikely(!txr || !txr->desc)) {
+		RD(1, "ring %s is missing (txr=%p)", kring->name, txr);
 		return ENXIO;
+	}
 	//bus_dmamap_sync(txr->dma.tag, txr->dma.map,
 	//		BUS_DMASYNC_POSTREAD);
 
@@ -426,14 +453,14 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 		return 0;
        
 	rxr = NM_I40E_RX_RING(vsi, kring->ring_id);
-	if (!rxr)
+	if (unlikely(!rxr || !rxr->desc)) {
+		RD(1, "ring %s is missing (rxr=%p)", kring->name, rxr);
 		return ENXIO;
+	}
 
 	if (head > lim)
 		return netmap_ring_reinit(kring);
 
-	if (!rxr)
-		return ENXIO;
 	/* XXX check sync modes */
 	//bus_dmamap_sync(rxr->dma.tag, rxr->dma.map,
 	//		BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
@@ -455,7 +482,6 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	if (netmap_no_pendintr || force_update) {
 		int crclen = ix_crcstrip ? 0 : 4;
-		uint16_t slot_flags = kring->nkr_slot_flags;
 
 		nic_i = rxr->next_to_clean; // or also k2n(kring->nr_hwtail)
 		nm_i = netmap_idx_n2k(kring, nic_i);
@@ -465,13 +491,19 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint64_t qword = le64toh(curr->wb.qword1.status_error_len);
 			uint32_t staterr = (qword & I40E_RXD_QW1_STATUS_MASK)
 				 >> I40E_RXD_QW1_STATUS_SHIFT;
+		        uint16_t slot_flags = 0;
 
 			if ((staterr & (1<<I40E_RX_DESC_STATUS_DD_SHIFT)) == 0) {
 				break;
 			}
 			ring->slot[nm_i].len = ((qword & I40E_RXD_QW1_LENGTH_PBUF_MASK)
 			    >> I40E_RXD_QW1_LENGTH_PBUF_SHIFT) - crclen;
+
+			if (unlikely((staterr & (1<<I40E_RX_DESC_STATUS_EOF_SHIFT)) == 0 )) {
+				slot_flags |= NS_MOREFRAG;
+			}
 			ring->slot[nm_i].flags = slot_flags;
+
 			//bus_dmamap_sync(rxr->ptag,
 			//    rxr->buffers[nic_i].pmap, BUS_DMASYNC_POSTREAD);
 			nm_i = nm_next(nm_i, lim);
@@ -505,7 +537,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint64_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
-			union i40e_32byte_rx_desc *curr = I40E_RX_DESC(rxr, nic_i);
+			union i40e_rx_desc *curr = I40E_RX_DESC(rxr, nic_i);
 
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;

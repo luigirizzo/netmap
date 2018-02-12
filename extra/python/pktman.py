@@ -1,4 +1,10 @@
 #!/usr/bin/env python
+#
+# Packet generator written in Python, providing functionalities
+# similar to the netmap pkt-gen written in C
+#
+#   Author: Vincenzo Maffione
+#
 
 import netmap       # our module
 import time         # time measurements
@@ -48,10 +54,10 @@ def build_packet(args, parser):
     return ret
 
 
-def transmit(idx, suffix, args, parser, queue):
+def transmit(idx, ifname, args, parser, queue):
     # use nm_open() to open the netmap device and register an interface
     # using an extended interface name
-    nmd = netmap.NetmapDesc(args.interface + suffix)
+    nmd = netmap.NetmapDesc(ifname)
     time.sleep(args.wait_link)
 
     # build the packet that will be transmitted
@@ -94,10 +100,10 @@ def transmit(idx, suffix, args, parser, queue):
         pass
 
 
-def receive(idx, suffix, args, parser, queue):
+def receive(idx, ifname, args, parser, queue):
     # use nm_open() to open the netmap device and register an interface
     # using an extended interface name
-    nmd = netmap.NetmapDesc(args.interface + suffix)
+    nmd = netmap.NetmapDesc(ifname)
     time.sleep(args.wait_link)
 
     # select the right ring
@@ -137,39 +143,6 @@ def receive(idx, suffix, args, parser, queue):
         # report the result to the main process
         queue.put([cnt, time.time() - t_start])
         pass
-
-
-# How many netmap ring couples has 'ifname'?
-def netmap_max_rings(ifname):
-    if ifname.startswith('netmap:'):
-        ifname = ifname[7:]
-
-    nm = netmap.Netmap()
-    nm.open()
-    nm.if_name = ifname
-    nm.getinfo()
-
-    return nm.tx_rings
-
-# extract the (nr_ringid, nr_flags) specified by the extended
-# interface name (nm_open() ifname)
-def netmap_get_ringid(ifname):
-    if ifname.startswith('netmap:'):
-        ifname = ifname[7:]
-
-    nm = netmap.Netmap()
-    nm.open()
-    nm.if_name = ifname
-    nm.getinfo()
-
-    return nm.ringid, nm.flags
-
-def netmap_remove_ifname_suffix(ifname_ext):
-    m = re.match(r'\w+:\w+', ifname_ext)
-    if m == None:
-        return None
-
-    return m.group(0)
 
 
 ############################## MAIN ###########################
@@ -222,33 +195,24 @@ if __name__ == '__main__':
         print('Invalid number of threads\n')
         help_quit(parser)
 
-    try:
-        # compute 'ifname' removing the suffix from the extended name
-        # specified by the user
-        ifname = netmap_remove_ifname_suffix(args.interface)
-        if ifname == None:
-            print('Invalid ifname "%s"' % (args.interface, ))
-            help_quit(parser)
+    # Temporary open a netmap descriptor to get some info about
+    # number of involved rings or the specific ring couple involved
+    d = netmap.NetmapDesc(args.interface)
+    if d.getflags() in [netmap.RegAllNic, netmap.RegNicSw]:
+        max_couples = min(len(d.receive_rings), len(d.transmit_rings))
+        if d.getflags() == netmap.RegAllNic:
+            max_couples -= 1
+        ringid_offset = 0
+        suffix_required = True
+    else:
+        max_couples = 1
+        ringid_offset = d.getringid()
+        suffix_required = False
+    del d
 
-        # compute 'max_couples', which is the number of tx/rx rings couples to be registered
-        # according to 'args.interface'
-        nr_ringid, nr_flags = netmap_get_ringid(args.interface)
-        if nr_flags in [netmap.RegAllNic, netmap.RegNicSw]:
-            # ask netmap for the number of available couples
-            max_couples = netmap_max_rings(args.interface)
-            suffix_required = True
-            ringid_offset = 0
-        else:
-            # all the others netmap.Reg* specifies just one couple of rings
-            max_couples = 1
-            suffix_required = False
-            ringid_offset = nr_ringid
-        if args.threads > max_couples:
-            print('You cannot use more than %s (tx,rx) rings couples with "%s"' % (max_couples, args.interface))
-            help_quit(parser)
-    except netmap.error as e:
-        print(e)
-        quit()
+    if args.threads > max_couples:
+        print('You cannot use more than %s (tx,rx) rings couples with "%s"' % (max_couples, args.interface))
+        quit(1)
 
     jobs = []    # array of worker processes
     queues = []  # array of queues for IPC
@@ -256,20 +220,21 @@ if __name__ == '__main__':
         queue = multiprocessing.Queue()
         queues.append(queue)
 
-        # 'i_off' contains the ring idx on which the process below will operate
-        i_off = i + ringid_offset
+        # 'ring_id' contains the ring idx on which the process below will operate
+        ring_id = i + ringid_offset
         # it may also be necessary to add an extension suffix to the interface
         # name specified by the user
+        ifname = args.interface
         if suffix_required:
-            suffix = '-' + str(i_off)
-        else:
-            suffix = ''
+            ifname += '-' + str(ring_id)
+
+        print("Run worker #%d on %s, ring_id %d" % (i, ifname, ring_id))
 
         # create a new process that will execute the user-selected handler function,
         # with the arguments specified by the 'args' tuple
         job = multiprocessing.Process(name = 'worker-' + str(i),
                                         target = handler[args.function],
-                                        args = (i_off, suffix, args, parser, queue))
+                                        args = (ring_id, ifname, args, parser, queue))
         job.deamon = True   # ensure work termination
         jobs.append(job)
 

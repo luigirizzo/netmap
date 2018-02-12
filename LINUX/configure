@@ -3,6 +3,7 @@
 BUILDDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
+DEBUG=1
 
 # setelem2n <set> <elem>
 setelem2n()
@@ -106,7 +107,7 @@ subsys enable generic
 
 # available drivers
 driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
-	e1000 e1000e igb ixgbe ixgbevf i40e"
+	e1000 e1000e igb ixgbe ixgbevf i40e vmxnet3"
 # enabled drivers (bitfield)
 driver=
 drv()
@@ -145,7 +146,7 @@ update_drivers() {
 update_drivers
 
 # available apps
-application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl"
+application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl dedup"
 application=0
 app()
 {
@@ -259,6 +260,7 @@ replace_vars()
 		-e "s|@APPS_LD@|$ld|g" \
 		-e "s|@PREFIX@|$prefix|g" \
 		-e "s|@DESTDIR@|$DESTDIR|g" \
+		-e "s|@DEBUG@|$DEBUG|g" \
 		$1
 }
 
@@ -270,6 +272,8 @@ Available options:
   --help                       print this message
   --kernel-dir=                path to configured kernel directory
   --kernel-sources=            path to full kernel sources
+  --kernel-version=	       specifiy the kernel version
+  				(assuming everything is in the default place)
   --kernel-opts=	       additional options to pass to kernel make
                                (you can call this several times)
   --install-mod-path=          where the modules will be installed
@@ -279,6 +283,8 @@ Available options:
   --drivers=                   only compile the given drivers (comma sep.)
   --no-ext-drivers             do not use external drivers
   --no-ext-drivers=            do not use the given external drivers (comma sep.)
+  --select-version=	       comma sep. list of driver:version expressions
+  			       (select a different versions for external drivers)
   --no-apps	               do not compile any app
   --no-apps=                   do not compile the given apps (comma sep.)
   --apps=                      only compile the given apps (comma sep.)
@@ -299,12 +305,15 @@ Available options:
   --disable-ptnetmap           disable ptnetmap (both guest and host)
   --enable-sink   	       enable the netmap sink device
   --disable-sink   	       disable the netmap sink device
+  --force-debug	       	       build the modules w/ debug symbols (default)
+  --no-force-debug	       build the modules w/ or w/o debug symbols,
+  			       according to the kernel configuration
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
   --cc=                        C compiler to be used for the apps [$cc]
   --ld=                        linker to be used for the apps [$ld]
   --prefix=                    install path for the apps [$prefix]
-  --destir=                    destination dir for the apps [$DESTDIR]
+  --destdir=                    destination dir for the apps [$DESTDIR]
 
   --show-drivers	       print the list of available drivers and exit
   --show-ext-drivers	       print the list of available external drivers and exit
@@ -416,7 +425,6 @@ EOF
 # run_tests: run all accumulated tests and exec the pertinent
 #   success/failure actions for each one.
 run_tests() {
-	cp $BUILDDIR/default-config.mak $TMPDIR
 	ln -s $BUILDDIR/patches $TMPDIR
 	cat > $TMPDIR/Makefile <<EOF
 SRCDIR=$SRCDIR
@@ -431,6 +439,7 @@ all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 tests:
 	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
 
+-include $BUILDDIR/extdrv-versions.mak
 -include $BUILDDIR/default-config.mak
 -include $BUILDDIR/config.mak
 -include $BUILDDIR/drivers.mak
@@ -502,12 +511,15 @@ kopts=
 modpath=
 drvsuffix=
 cache=
+versions=
 for opt do
 	optarg=${opt#*=}
 	case "$opt" in
 	--kernel-dir=*) ksrc="$optarg"
 	;;
 	--kernel-sources=*) src="$optarg"
+	;;
+	--kernel-version=*) ksrc="/lib/modules/$optarg/build"
 	;;
 	--kernel-opts=*) kopts="$kopts $optarg"
 	;;
@@ -549,6 +561,13 @@ for opt do
 		for d in $(echo "$optarg" | sed 's/,/ /g'); do
 			app enable "$d"
 		done
+	;;
+	--select-version=*)
+		if [ -z "$versions" ]; then
+			versions=$optarg
+		else
+			versions="$versions,$optarg"
+		fi
 	;;
 	--cc=*) cc="$optarg"
 	;;
@@ -592,6 +611,12 @@ for opt do
 		app print
 		exit
 	;;
+	--force-debug)
+		DEBUG=1
+	;;
+	--no-force-debug)
+		DEBUG=
+	;;
 	*)
 		echo "Unrecognized option: $opt" | warning
 	;;
@@ -620,10 +645,14 @@ exec 2>> config.log
 # check for sane configuration
 ################################
 
+[ -n "$kernelver" ] || {
+	kernelver="$(uname -r)"
+}
+
 [ -n "$ksrc" ] || {
 	# user did not provide a kernel dir,
 	# we try to find one by ourselves
-	ksrc="/lib/modules/$(uname -r)/build"
+	ksrc="/lib/modules/${kernelver}/build"
 }
 
 [ -n "$src" ] || {
@@ -673,6 +702,17 @@ EOF
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
+# create the versions file
+rm -f extdrv-versions.mak
+for dv in $(echo "$versions" | sed 's/,/ /g'); do
+	d=${dv%:*}
+	v=${dv#*:}
+	if ! $(edrv enabled $d); then
+		echo "$d is not an external driver" | warning
+	fi
+	echo "$d@v := $v" >> extdrv-versions.mak
+done
+
 replace_vars $SRCDIR/default-config.mak.in_ > default-config.mak
 
 
@@ -710,7 +750,7 @@ for d in $(drv print); do
 	drv_distclean=
 	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
 	# possibly override from config.mak
-	eval $(make -nrf read-vars.mak $d@vars E_DRIVERS="$e_drivers")
+	eval $(make -snrf read-vars.mak $d@vars E_DRIVERS="$e_drivers")
 
 	# check that the original driver had been compiled as a module, otherwise
 	# skip this driver
@@ -1360,6 +1400,89 @@ EOF
 	}
 EOF
 
+# check for fault arguments
+  add_test 'have FAULT_VMA_ARG' <<EOF
+        #include <linux/mm.h>
+
+	int
+	dummy(struct vm_operations_struct *ops,
+		struct vm_area_struct *vma, struct vm_fault *vmf) {
+		return ops->fault(vma, vmf);
+	}
+EOF
+
+# check for sched/mm.h
+  add_test 'have SCHED_MM' <<EOF
+  #include <linux/sched/mm.h>
+
+  void dummy(void) {}
+EOF
+
+# check for void get_stats64
+  add_test 'have NONVOID_GET_STATS64' <<EOF
+  	#include <linux/netdevice.h>
+
+  	struct rtnl_link_stats64 *
+  	dummy(struct net_device_ops *ops, struct net_device *dev,
+		struct rtnl_link_stats64 *storage)
+	{
+		return ops->ndo_get_stats64(dev, storage);
+	}
+EOF
+
+# check for net_dev destructor
+  add_test 'have NETDEV_DTOR' <<EOF
+  	#include <linux/netdevice.h>
+
+	void
+	dummy(struct net_device *dev)
+	{
+		return dev->destructor(dev);
+	}
+EOF
+
+# wait_queue_t or wait_queue_entry_t ?
+  add_test 'have WAIT_QUEUE_ENTRY_T' <<EOF
+	#include <linux/wait.h>
+
+	void *
+	dummy(wait_queue_entry_t *wq) {
+		return wq->private;
+	}
+EOF
+
+# pci_enable_msix or pci_alloc_irq_vectors ?
+  add_test 'have PCI_ENABLE_MSIX' <<EOF
+	#include <linux/pci.h>
+
+	int
+	dummy(struct pci_dev *dev, struct msix_entry *entries, int nvec) {
+		return pci_enable_msix(dev, entries, nvec);
+	}
+EOF
+
+  # are skb->users and qdisc->refcnt atomic_t or refcount_t ?
+  add_test 'have REFCOUNT_T' <<EOF
+	#include <linux/skbuff.h>
+
+	unsigned int
+	dummy(void) {
+                struct sk_buff *skb = NULL;
+                return refcount_read(&skb->users);
+	}
+EOF
+
+  # kernels from 4.14 onwards don't have support for UDP fragmentation
+  # offload.
+  add_test 'have UFO' <<EOF
+	#include <linux/netdevice.h>
+
+	unsigned int
+	dummy(void) {
+                return NETIF_F_UFO;
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
@@ -1464,7 +1587,52 @@ EOF
  	 	ixgbe_irq_disable_queues(adapter, qmask);
  	 }
 EOF
+
+  # is next_to_alloc defined?
+  add_test "define IXGBE_HAVE_NTA" <<EOF
+  	#include "ixgbe/ixgbe.h"
+
+	u16
+	dummy(struct ixgbe_ring *ring) {
+		return ring->next_to_alloc;
+	}
+EOF
   fi # ixgbe
+
+  if drv enabled ixgbevf; then
+
+  add_file_exists_check ixgbevf/ixgbevf.h true "drv_source_error ixgbevf"
+
+  # IXGBEVF_* or IXGBE_*?
+  add_test true 'define IXGBEVF_IXGBE_MACROS' <<EOF
+  	#include "ixgbevf/ixgbevf.h"
+
+	void *
+	dummy(struct ixgbevf_ring *ring, unsigned int i)
+	{
+		return IXGBEVF_RX_DESC(ring, i);
+	}
+EOF
+
+  # array of rings or array of poiners to rings?
+  add_test 'define IXGBEVF_PTR_ARRAY' <<EOF
+  	#include "ixgbevf/ixgbevf.h"
+  
+  	struct ixgbevf_ring *
+  	dummy(struct ixgbevf_adapter *adapter) {
+  		return adapter->tx_ring[0];
+  	}
+EOF
+  # is next_to_alloc defined?
+  add_test "define IXGBEVF_HAVE_NTA" <<EOF
+  	#include "ixgbevf/ixgbevf.h"
+
+	u16
+	dummy(struct ixgbevf_ring *ring) {
+		return ring->next_to_alloc;
+	}
+EOF
+  fi
 
   if drv enabled virtio_net.c; then
   
@@ -1568,15 +1736,26 @@ EOF
   		return vsi->tx_rings[0];
   	}
 EOF
+   
+   add_test 'define I40E_PTR_STATE' <<EOF
+   	#include "i40e/i40e.h"
+	#include <linux/bitops.h>
+	#pragma GCC diagnostic error "-Wincompatible-pointer-types"
+
+	int
+	dummy(struct i40e_pf *pf) {
+		return test_and_set_bit(1, &pf->state);
+	}
+EOF
   fi # i40e
 
   if drv enabled igb; then
-    add_test 'have IGB_PHY_OPS' <<EOF
-        #include "igb/igb.h"
+    add_test 'have IGB_RD32' <<EOF
+        #include "igb/e1000_regs.h"
 
-	s32
-	dummy(struct e1000_hw *hw, u32 offset, u16 *data) {
-		return igb_read_phy_reg(hw, offset, data);
+	u32
+	dummy(struct e1000_hw *hw, u32 reg) {
+		return igb_rd32(hw, reg);
 	}
 EOF
   fi # igb

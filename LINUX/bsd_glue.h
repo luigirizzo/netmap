@@ -58,11 +58,14 @@
 #include <linux/io.h>	// virt_to_phys
 #include <linux/hrtimer.h>
 
-#define printf(fmt, arg...)	printk(KERN_ERR fmt, ##arg)
 #define KASSERT(a, b)		BUG_ON(!(a))
 
 /*----- support for compiling on older versions of linux -----*/
 #include "netmap_linux_config.h"
+
+#ifndef dma_rmb
+#define dma_rmb() rmb()
+#endif /* dma_rmb */
 
 #ifdef NETMAP_LINUX_HAVE_PAGE_REF
 #include <linux/page_ref.h>
@@ -85,6 +88,10 @@
 
 #ifndef NETMAP_LINUX_HAVE_UINTPTR
 #define uintptr_t	unsigned long
+#endif
+
+#ifdef NETMAP_LINUX_HAVE_WAIT_QUEUE_ENTRY_T
+#define wait_queue_t	wait_queue_entry_t
 #endif
 
 #ifndef NETMAP_LINUX_HAVE_QUEUE_MAPPING
@@ -183,7 +190,7 @@ typedef	int			bus_size_t;
 typedef	int			bus_dma_segment_t;
 typedef void *			bus_addr_t;
 #define vm_paddr_t		phys_addr_t
-/* XXX the 'off_t' on Linux corresponds to a 'long' */
+/* the 'off_t' on Linux corresponds to a 'long' */
 #define vm_offset_t		uint32_t
 #define vm_ooffset_t		unsigned long
 struct thread;
@@ -230,7 +237,11 @@ struct thread;
 #define	m_nextpkt		next			// chain of mbufs
 #define m_freem(m)		dev_kfree_skb_any(m)	// free a sk_buff
 
+#ifdef NETMAP_LINUX_HAVE_REFCOUNT_T
+#define MBUF_REFCNT(m)			refcount_read(&((m)->users))
+#else  /* !NETMAP_LINUX_HAVE_REFCOUNT_T */
 #define MBUF_REFCNT(m)			NM_ATOMIC_READ(&((m)->users))
+#endif /* !NETMAP_LINUX_HAVE_REFCOUNT_T */
 /*
  * on tx we force skb->queue_mapping = ring_nr,
  * but on rx it is the driver that sets the value,
@@ -257,8 +268,8 @@ struct thread;
 
 #define m_copydata(m, o, l, b)          skb_copy_bits(m, o, b, l)
 
-#define copyin(_from, _to, _len)	copy_from_user(_to, _from, _len)
-#define copyout(_from, _to, _len)	copy_to_user(_to, _from, _len)
+#define copyin(_from, _to, _len)	(copy_from_user(_to, _from, _len) ? EFAULT : 0)
+#define copyout(_from, _to, _len)	(copy_to_user(_to, _from, _len) ? EFAULT : 0)
 
 /*
  * struct ifnet is remapped into struct net_device on linux.
@@ -270,7 +281,6 @@ struct thread;
  *
  *	if_xname	name		device name
  *		we would use "features" but it is all taken.
- *		XXX check for conflict in flags use.
  *
  * In netmap we use if_pspare[0] to point to the netmap_adapter,
  * in linux we have no spares so we overload ax25_ptr, and the detection
@@ -315,12 +325,12 @@ static inline void mtx_lock(safe_spinlock_t *m)
 
 static inline void mtx_unlock(safe_spinlock_t *m)
 {
-	ulong flags = ACCESS_ONCE(m->flags);
+	ulong flags = *(volatile ulong *)&m->flags;
         spin_unlock_irqrestore(&(m->sl), flags);
 }
 
 #define mtx_init(a, b, c, d)	spin_lock_init(&((a)->sl))
-#define mtx_destroy(a)		// XXX spin_lock_destroy(a)
+#define mtx_destroy(a)
 
 #define mtx_lock_spin(a)	mtx_lock(a)
 #define mtx_unlock_spin(a)	mtx_unlock(a)
@@ -341,10 +351,6 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 #define BDG_SET_VAR(lval, p)	((lval) = (p))
 #define BDG_GET_VAR(lval)	(lval)
 
-// XXX do we need GPF_ZERO ?
-// XXX do we need GFP_DMA for slots ?
-// http://www.mjmwired.net/kernel/Documentation/DMA-API.txt
-
 #ifndef ilog2 /* not in 2.6.18 */
 static inline int ilog2(uint64_t n)
 {
@@ -355,6 +361,9 @@ static inline int ilog2(uint64_t n)
 	return i;
 }
 #endif /* ilog2 */
+
+/* XXX do we need GFP_DMA for slots ?
+ * Documentation/DMA-API.txt */
 
 #define contigmalloc(sz, ty, flags, a, b, pgsz, c) ({		\
 	unsigned int order_ =					\
@@ -379,12 +388,11 @@ static inline int ilog2(uint64_t n)
 struct nm_linux_selrecord_t;
 #define NM_SELRECORD_T	struct nm_linux_selrecord_t
 
-#define netmap_knlist_destroy(x)	// XXX todo
+#define netmap_knlist_destroy(x)	// TODO
 
 #define	tsleep(a, b, c, t)	msleep(10)
-// #define	wakeup(sw)				// XXX double check
 
-#define microtime		do_gettimeofday		// debugging
+#define microtime		do_gettimeofday		/* debugging */
 
 
 /*
@@ -393,17 +401,6 @@ struct nm_linux_selrecord_t;
  */
 #define	cdev			miscdevice
 #define	cdevsw			miscdevice
-
-
-/*
- * XXX to complete - the dmamap interface
- */
-#define	BUS_DMA_NOWAIT	0
-#define	bus_dmamap_load(_1, _2, _3, _4, _5, _6, _7)
-#define	bus_dmamap_unload(_1, _2)
-
-typedef int (d_mmap_t)(struct file *f, struct vm_area_struct *vma);
-typedef unsigned int (d_poll_t)(struct file * file, struct poll_table_struct *pwait);
 
 /*
  * make_dev_credf() will set an error and return the first argument.
@@ -414,7 +411,7 @@ typedef unsigned int (d_poll_t)(struct file * file, struct poll_table_struct *pw
  */
 #define make_dev_credf(_flags, _cdev, _zero, _cred, _uid, _gid, _perm, _name)	\
 	({error = misc_register(_cdev);				\
-	D("run mknod /dev/%s c %d %d # error %d",		\
+	D("run mknod /dev/%s c %d %d # returned %d",		\
 	    (_cdev)->name, MISC_MAJOR, (_cdev)->minor, error);	\
 	 _cdev; } )
 #define destroy_dev(_cdev)	misc_deregister(_cdev)
@@ -491,5 +488,9 @@ void netmap_bns_unregister(void);
 #endif
 
 #define if_printf(ifp, fmt, ...)  dev_info(&(ifp)->dev, fmt, ##__VA_ARGS__)
+
+#ifndef BIT_ULL
+#define BIT_ULL(nr)	(1ULL << (nr))
+#endif /* !BIT_ULL */
 
 #endif /* NETMAP_BSD_GLUE_H */

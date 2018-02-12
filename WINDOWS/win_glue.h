@@ -22,7 +22,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
- 
+
 #ifndef NETMAP_WIN_GLUE_H
 #define NETMAP_WIN_GLUE_H
 
@@ -46,7 +46,7 @@
 #pragma warning(disable:4118)	//error in between signed and unsigned
 //#pragma warning(disable:4115)	//definition of type between parenthesis
 #pragma warning(disable:4127)	//constant conditional expression
-#pragma warning(disable:4133)	//warning: uncompatible types: From <1> to <2>
+#pragma warning(disable:4133)	//warning: incompatible types: From <1> to <2>
 #pragma warning(disable:4142)	//benign type redefinition
 // #pragma warning(disable:4189)	//local variable initialized but without references
 #pragma warning(disable:4200)	//non-standard extension: matrix of zero dimension in struct/union
@@ -54,8 +54,8 @@
 #pragma warning(disable:4229)	// zero-size arrays // XXX
 #pragma warning(disable:4242)	//possible loss of data in conversion
 #pragma warning(disable:4244)	//possible loss of data in conversion
-#pragma warning(disable:4245)	//conversion from int to uint_32t: corrispondence error between signed and unsigned
-#pragma warning(disable:4389)	//wrong corrispondence between signed and unsigned
+#pragma warning(disable:4245)	//conversion from int to uint_32t: correspondence error between signed and unsigned
+#pragma warning(disable:4389)	//wrong correspondence between signed and unsigned
 
 #pragma warning(disable:4267)	//conversion from 'size_t' to <type>. possible loss of data
 
@@ -117,7 +117,7 @@ typedef char *			caddr_t;
 
 typedef PHYSICAL_ADDRESS 	vm_paddr_t;
 typedef uint32_t		vm_offset_t;
-typedef ULONG 			vm_ooffset_t; 
+typedef ULONG 			vm_ooffset_t;
 
 #define thread PIO_STACK_LOCATION
 
@@ -127,7 +127,7 @@ typedef ULONG 			vm_ooffset_t;
 /*
  *	ERRNO -> NTSTATUS TRANSLATION
  */
-#define ENOBUFS		STATUS_DEVICE_INSUFFICIENT_RESOURCES	
+#define ENOBUFS		STATUS_DEVICE_INSUFFICIENT_RESOURCES
 #define EOPNOTSUPP	STATUS_INVALID_DEVICE_REQUEST
 
 /*
@@ -215,7 +215,7 @@ typedef struct _win_SELINFO
 	KGUARDED_MUTEX mutex;
 } win_SELINFO;
 
-static void 
+static void
 nm_os_selinfo_init(win_SELINFO* queue)
 {
 	KeInitializeEvent(&queue->queue, NotificationEvent, TRUE);
@@ -266,7 +266,7 @@ static int time_uptime_w32()
 struct netmap_adapter;
 
 struct net_device {
-	char	if_xname[IFNAMSIZ];			// external name (name + unit) 
+	char	if_xname[IFNAMSIZ];			// external name (name + unit)
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter	*na;
 	void	*pfilter;
@@ -333,7 +333,7 @@ struct mbuf *win_make_mbuf(struct net_device *, uint32_t, const char *);
 	// XXX do we also need the netmap_default_mbuf_destructor ?
 
 
-static inline void 
+static inline void
 win32_ndis_packet_freem(struct mbuf* m)
 {
 	if (m != NULL) {
@@ -345,7 +345,7 @@ win32_ndis_packet_freem(struct mbuf* m)
 		ExFreeToNPagedLookasideList(&m->dev->mbuf_pool, m);
 		//free(m, M_DEVBUF);
 
-	}	
+	}
 }
 
 /*
@@ -360,6 +360,7 @@ win32_ndis_packet_freem(struct mbuf* m)
 
 struct net_device* ifunit_ref(const char *name);
 void if_rele(struct net_device *ifp);
+void if_ref(struct net_device *ifp);
 
 PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 

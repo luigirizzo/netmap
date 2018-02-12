@@ -1,0 +1,202 @@
+diff --git a/ixgbe/Makefile b/ixgbe/Makefile
+index c49cba8..546435f 100644
+--- a/ixgbe/Makefile
++++ b/ixgbe/Makefile
+@@ -28,9 +28,9 @@ ifneq ($(KERNELRELEASE),)
+ # Makefile for the Intel(R) 10GbE PCI Express Linux Network Driver
+ #
+ 
+-obj-$(CONFIG_IXGBE) += ixgbe.o
++obj-$(CONFIG_IXGBE) += ixgbe$(NETMAP_DRIVER_SUFFIX).o
+ 
+-define ixgbe-y
++define ixgbe$(NETMAP_DRIVER_SUFFIX)-y
+ 	ixgbe_main.o
+ 	ixgbe_api.o
+ 	ixgbe_common.o
+@@ -49,24 +49,24 @@ define ixgbe-y
+ 	ixgbe_x540.o
+ 	ixgbe_x550.o
+ endef
+-ixgbe-y := $(strip ${ixgbe-y})
++ixgbe$(NETMAP_DRIVER_SUFFIX)-y := $(strip ${ixgbe$(NETMAP_DRIVER_SUFFIX)-y})
+ 
+-ixgbe-${CONFIG_DCB} += ixgbe_dcb_nl.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-${CONFIG_DCB} += ixgbe_dcb_nl.o
+ 
+-ixgbe-${CONFIG_DEBUG_FS} += ixgbe_debugfs.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-${CONFIG_DEBUG_FS} += ixgbe_debugfs.o
+ 
+-ixgbe-${CONFIG_FCOE:m=y} += ixgbe_fcoe.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-${CONFIG_FCOE:m=y} += ixgbe_fcoe.o
+ 
+-ixgbe-$(CONFIG_PTP_1588_CLOCK:m=y) += ixgbe_ptp.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PTP_1588_CLOCK:m=y) += ixgbe_ptp.o
+ 
+-ixgbe-${CONFIG_SYSFS} += ixgbe_sysfs.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-${CONFIG_SYSFS} += ixgbe_sysfs.o
+ 
+-ixgbe-y += kcompat.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
+ 
+ else	# ifneq($(KERNELRELEASE),)
+ # normal makefile
+ 
+-DRIVER := ixgbe
++DRIVER := ixgbe$(NETMAP_DRIVER_SUFFIX)
+ 
+ ifeq (,$(wildcard common.mk))
+   $(error Cannot find common.mk build rules)
+@@ -127,9 +127,12 @@ ccc: clean
+ 	@+$(call devkernelbuild,modules,coccicheck MODE=report))
+ 
+ # Build manfiles
+-manfile:
++manfile: ../$(DRIVER).$(MANSECTION)
+ 	@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
+ 
++../$(DRIVER).$(MANSECTION):
++	touch $@
++
+ # Clean the module subdirectories
+ clean:
+ 	@+$(call devkernelbuild,clean)
+diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
+index 202f595..ec4f8d8 100644
+--- a/ixgbe/ixgbe_main.c
++++ b/ixgbe/ixgbe_main.c
+@@ -709,6 +709,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
+ 	}
+ }
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++/*
++ * The #ifdef DEV_NETMAP / #endif blocks in this file are meant to
++ * be a reference on how to implement netmap support in a driver.
++ * Additional comments are in ixgbe_netmap_linux.h .
++ *
++ * The code is originally developed on FreeBSD and in the interest
++ * of maintainability we try to limit differences between the two systems.
++ *
++ * <ixgbe_netmap_linux.h> contains functions for netmap support
++ * that extend the standard driver.
++ * It also defines DEV_NETMAP so further conditional sections use
++ * that instead of CONFIG_NETMAP
++ */
++#include <ixgbe_netmap_linux.h>
++#endif
++
+ /**
+  * ixgbe_clean_tx_irq - Reclaim resources after transmit completes
+  * @q_vector: structure containing interrupt and ring information
+@@ -727,6 +744,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
+ 	if (test_bit(__IXGBE_DOWN, &adapter->state))
+ 		return true;
+ 
++#ifdef DEV_NETMAP
++	/*
++	 * In netmap mode, all the work is done in the context
++	 * of the client thread. Interrupt handlers only wake up
++	 * clients, which may be sleeping on individual rings
++	 * or on a global resource for all rings.
++	 */
++	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++		return true;
++#endif /* DEV_NETMAP */
++
+ 	tx_buffer = &tx_ring->tx_buffer_info[i];
+ 	tx_desc = IXGBE_TX_DESC(tx_ring, i);
+ 	i -= tx_ring->count;
+@@ -1656,7 +1684,7 @@ static bool ixgbe_add_rx_frag(struct ixgbe_ring *rx_ring,
+ 	/* Even if we own the page, we are not allowed to use atomic_set()
+ 	 * This would break get_page_unless_zero() users.
+ 	 */
+-	atomic_inc(&page->_count);
++	atomic_inc(&page->NETMAP_LINUX_PAGE_COUNT);
+ 
+ 	return true;
+ }
+@@ -1767,6 +1795,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+ #endif /* CONFIG_FCOE */
+ 	u16 cleaned_count = ixgbe_desc_unused(rx_ring);
+ 
++#ifdef DEV_NETMAP
++	/*
++	 * 	 Same as the txeof routine: only wakeup clients on intr.
++	 */
++	int dummy, nm_irq;
++	nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy);
++	if (nm_irq != NM_IRQ_PASS)
++		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
++#endif /* DEV_NETMAP */
++
+ 	do {
+ 		union ixgbe_adv_rx_desc *rx_desc;
+ 		struct sk_buff *skb;
+@@ -2845,6 +2883,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+ 
+ 	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
+ 
++#ifdef DEV_NETMAP
++	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
++#endif /* DEV_NETMAP */
++
+ 	/* enable queue */
+ 	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
+ 
+@@ -3408,6 +3450,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+ 	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
+ 
+ 	ixgbe_rx_desc_queue_enable(adapter, ring);
++#ifdef DEV_NETMAP
++	if (ixgbe_netmap_configure_rx_ring(adapter, reg_idx))
++		return;
++#endif /* DEV_NETMAP */
+ 	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
+ }
+ 
+@@ -10104,6 +10150,10 @@ no_info_string:
+ 			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
+ 			true);
+ 
++#ifdef DEV_NETMAP
++	ixgbe_netmap_attach(adapter);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ 
+ err_register:
+@@ -10149,6 +10199,11 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
+ 		return;
+ 
+ 	netdev = adapter->netdev;
++
++#ifdef DEV_NETMAP
++	ixgbe_netmap_detach(adapter);
++#endif /* DEV_NETMAP */
++
+ #ifdef HAVE_IXGBE_DEBUG_FS
+ 	ixgbe_dbg_adapter_exit(adapter);
+ 
+diff --git a/ixgbe/kcompat.h b/ixgbe/kcompat.h
+index 048157a..2349540 100644
+--- a/ixgbe/kcompat.h
++++ b/ixgbe/kcompat.h
+@@ -25,6 +25,8 @@
+ #ifndef _KCOMPAT_H_
+ #define _KCOMPAT_H_
+ 
++#include <netmap_linux_config.h>
++
+ #ifndef LINUX_VERSION_CODE
+ #include <linux/version.h>
+ #else
+@@ -4880,7 +4882,7 @@ static inline void csum_replace_by_diff(__sum16 *sum, __wsum diff)
+ 
+ static inline void page_ref_inc(struct page *page)
+ {
+-	atomic_inc(&page->_count);
++	atomic_inc(&page->NETMAP_LINUX_PAGE_COUNT);
+ }
+ 
+ #endif /* 4.6.0 */

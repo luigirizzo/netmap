@@ -3,15 +3,15 @@
 
 # Maintainer: Vincenzo Maffione <v.maffione@gmail.com>
 pkgname=netmap
-pkgver=r1324.519c07f
+pkgver=r2392.86312f06
 pkgrel=1
-pkgdesc="Netmap is a framework for high speed network packet I/O."
+pkgdesc="A framework for high speed network packet I/O, using kernel bypass"
 arch=('any')
 url="http://info.iet.unipi.it/~luigi/netmap"
 license=('BSD')
 groups=()
-depends=('linux' 'glibc')
-makedepends=('git' 'sed' 'gzip' 'linux-headers' 'abs' 'pacman' 'xmlto' 'docbook-xsl')
+depends=('glibc')
+makedepends=('git' 'sed' 'gzip' 'linux-headers' 'abs' 'pacman' 'xmlto' 'docbook-xsl' 'patch' 'bc')
 provides=()
 conflicts=()
 replaces=()
@@ -20,7 +20,7 @@ options=()
 install="netmap.install"
 source=("netmap.install" "git+https://github.com/luigirizzo/netmap")
 noextract=()
-md5sums=("9f936e9fdd86c8a18babdc5848812f92" "SKIP")
+md5sums=("62cbf2409535cf25cb4a185d4fa21525" "SKIP")
 
 pkgver() {
         cd "$srcdir/${pkgname%-git}"
@@ -61,49 +61,30 @@ build() {
     # kernel sources downloaded in the previous steps to copy the NIC
     # drivers. Note however that the kernel modules are built against the
     # running kernel, and not against the downloaded sources.
-    msg "Starting to build netmap"
-    cd "$srcdir/netmap/LINUX"
-    ./configure --kernel-sources=$NESTEDDIR/src/linux-$KMAJVER
+    # We need to use --no-ext-drivers to make sure netmap does not
+    # download (Intel) drivers sources from the internet, we want to use the
+    # drivers sources provided by the Arch linux package.
+    # We also build and install the patched drivers with a "-netmap" suffix,
+    # so that they can be modprobed without conflicts/ambiguity with the
+    # unpatched drivers
+    msg "Starting to build netmap and netmap applications"
+    cd "$srcdir/netmap"
+    msg "PREFIX=$pkgdir/usr/local"
+    msg "INSTALL-MOD-PATH=$pkgdir"
+    ./configure --kernel-sources=$NESTEDDIR/src/linux-$KMAJVER \
+                --no-ext-drivers \
+                --driver-suffix="_netmap" \
+                --install-mod-path="$pkgdir/usr" \
+                --prefix="$pkgdir/usr/local"
     make || return 1
-    # Build pkt-gen and vale-ctl
-    cd "$srcdir/netmap/examples"
-    make clean  # amend for existing .o
-    make pkt-gen vale-ctl || return 1
     msg "Build complete"
 }
 
 package() {
-    # Compute the version numbers of the running kernel
-    KVER1=$(uname -r)
-    KVER2=$(uname -r | sed 's/\.[0-9]\+-[0-9]\+//')
-
-    # Install the netmap module into the extramodules-VERSION directory
-    mkdir -p "$pkgdir/usr/lib/modules/extramodules-${KVER2}"
-    cp "$srcdir/netmap/LINUX/netmap.ko" "$pkgdir/usr/lib/modules/extramodules-${KVER2}"
-
-    # Install pkt-gen and valectl into /usr/bin
-    mkdir -p "$pkgdir/usr/bin"
-    cp "$srcdir/netmap/examples/pkt-gen" "$pkgdir/usr/bin"
-    cp "$srcdir/netmap/examples/vale-ctl" "$pkgdir/usr/bin"
-
-    # Install the netmap public headers
-    mkdir -p "$pkgdir/usr/include/net"
-    cp "$srcdir/netmap/sys/net/netmap.h" "$srcdir/netmap/sys/net/netmap_user.h" "$pkgdir/usr/include/net"
-
-    # Install the netmap man page
-    mkdir -p "$pkgdir/usr/share/man/man4"
-    cp "$srcdir/netmap/share/man/man4/netmap.4" "$pkgdir/usr/share/man/man4"
-    gzip "$pkgdir/usr/share/man/man4/netmap.4"
-
-    #Find and install the modified NIC drivers
-    cd "$srcdir/netmap/LINUX"
-    DRIVERS=$(find . -name "*.ko" -and ! -name "netmap.ko")
-    if [ -n "$DRIVERS" ]; then
-        mkdir -p "$pkgdir/usr/lib/modules/extramodules-${KVER2}/netmap-drivers"
-        cp --parent $DRIVERS "$pkgdir/usr/lib/modules/extramodules-${KVER2}/netmap-drivers"
-        cd "$pkgdir/usr/lib/modules/extramodules-${KVER2}/netmap-drivers"
-        find . -name "*.ko" -exec sh -c "mv {} \$(echo {} | sed 's|\.ko|_netmap\.ko|g')" \;
-    fi
+    cd "$srcdir/netmap"
+    # Install netmap module, patched drivers modules, applications, headers
+    # and the man page
+    make install
 }
 
 # vim:set ts=2 sw=2 et:

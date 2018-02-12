@@ -143,7 +143,20 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: bridge [-v] [-i ifa] [-i ifb] [-b burst] [-w wait_time] [ifa [ifb [burst]]]\n");
+		"netmap bridge program: forward packets between two "
+			"network interfaces\n"
+		"    usage(1): bridge [-v] [-i ifa] [-i ifb] [-b burst] "
+			"[-w wait_time] [-L]\n"
+		"    usage(2): bridge [-v] [-w wait_time] [-L] "
+			"[ifa [ifb [burst]]]\n"
+		"\n"
+		"    ifa and ifb are specified using the nm_open() syntax.\n"
+		"    When ifb is missing (or is equal to ifa), bridge will\n"
+		"    forward between between ifa and the host stack if -L\n"
+		"    is not specified, otherwise loopback traffic on ifa.\n"
+		"\n"
+		"    example: bridge -w 10 -i netmap:eth3 -i netmap:eth1\n"
+		);
 	exit(1);
 }
 
@@ -163,14 +176,16 @@ main(int argc, char **argv)
 	struct nm_desc *pa = NULL, *pb = NULL;
 	char *ifa = NULL, *ifb = NULL;
 	char ifabuf[64] = { 0 };
+	int loopback = 0;
 
-	fprintf(stderr, "%s built %s %s\n",
-		argv[0], __DATE__, __TIME__);
+	fprintf(stderr, "%s built %s %s\n\n", argv[0], __DATE__, __TIME__);
 
-	while ( (ch = getopt(argc, argv, "b:ci:vw:")) != -1) {
+	while ((ch = getopt(argc, argv, "hb:ci:vw:L")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
+			/* fallthrough */
+		case 'h':
 			usage();
 			break;
 		case 'b':	/* burst */
@@ -193,6 +208,9 @@ main(int argc, char **argv)
 			break;
 		case 'w':
 			wait_link = atoi(optarg);
+			break;
+		case 'L':
+			loopback = 1;
 			break;
 		}
 
@@ -222,9 +240,13 @@ main(int argc, char **argv)
 		wait_link = 4;
 	}
 	if (!strcmp(ifa, ifb)) {
-		D("same interface, endpoint 0 goes to host");
-		snprintf(ifabuf, sizeof(ifabuf) - 1, "%s^", ifa);
-		ifa = ifabuf;
+		if (!loopback) {
+			D("same interface, endpoint 0 goes to host");
+			snprintf(ifabuf, sizeof(ifabuf) - 1, "%s^", ifa);
+			ifa = ifabuf;
+		} else {
+			D("same interface, loopbacking traffic");
+		}
 	} else {
 		/* two different interfaces. Take all rings on if1 */
 	}
@@ -243,7 +265,7 @@ main(int argc, char **argv)
 	zerocopy = zerocopy && (pa->mem == pb->mem);
 	D("------- zerocopy %ssupported", zerocopy ? "" : "NOT ");
 
-	/* setup poll(2) variables. */
+	/* setup poll(2) array */
 	memset(pollfd, 0, sizeof(pollfd));
 	pollfd[0].fd = pa->fd;
 	pollfd[1].fd = pb->fd;
@@ -263,18 +285,16 @@ main(int argc, char **argv)
 		n0 = pkt_queued(pa, 0);
 		n1 = pkt_queued(pb, 0);
 #if defined(_WIN32) || defined(BUSYWAIT)
-		if (n0){
+		if (n0) {
 			ioctl(pollfd[1].fd, NIOCTXSYNC, NULL);
 			pollfd[1].revents = POLLOUT;
-		}
-		else {
+		} else {
 			ioctl(pollfd[0].fd, NIOCRXSYNC, NULL);
 		}
-		if (n1){
+		if (n1) {
 			ioctl(pollfd[0].fd, NIOCTXSYNC, NULL);
 			pollfd[0].revents = POLLOUT;
-		}
-		else {
+		} else {
 			ioctl(pollfd[1].fd, NIOCRXSYNC, NULL);
 		}
 		ret = 1;
@@ -287,8 +307,10 @@ main(int argc, char **argv)
 			pollfd[0].events |= POLLOUT;
 		else
 			pollfd[1].events |= POLLIN;
+
+		/* poll() also cause kernel to txsync/rxsync the NICs */
 		ret = poll(pollfd, 2, 2500);
-#endif //defined(_WIN32) || defined(BUSYWAIT)
+#endif /* defined(_WIN32) || defined(BUSYWAIT) */
 		if (ret <= 0 || verbose)
 		    D("poll %s [0] ev %x %x rx %d@%d tx %d,"
 			     " [1] ev %x %x rx %d@%d tx %d",
@@ -316,18 +338,15 @@ main(int argc, char **argv)
 			D("error on fd1, rx [%d,%d,%d)",
 				rx->head, rx->cur, rx->tail);
 		}
-		if (pollfd[0].revents & POLLOUT) {
+		if (pollfd[0].revents & POLLOUT)
 			move(pb, pa, burst);
-			// XXX we don't need the ioctl */
-			// ioctl(me[0].fd, NIOCTXSYNC, NULL);
-		}
-		if (pollfd[1].revents & POLLOUT) {
+
+		if (pollfd[1].revents & POLLOUT)
 			move(pa, pb, burst);
-			// XXX we don't need the ioctl */
-			// ioctl(me[1].fd, NIOCTXSYNC, NULL);
-		}
+
+		/* We don't need ioctl(NIOCTXSYNC) on the two file descriptors here,
+		 * kernel will txsync on next poll(). */
 	}
-	D("exiting");
 	nm_close(pb);
 	nm_close(pa);
 

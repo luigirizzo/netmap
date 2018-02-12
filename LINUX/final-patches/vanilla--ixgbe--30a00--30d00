@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index d30fbdd..0326ffd 100644
+index d30fbdd..a6bcb88 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -248,6 +248,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
@@ -60,17 +60,18 @@ index d30fbdd..0326ffd 100644
  	do {
  		union ixgbe_adv_rx_desc *rx_desc;
  		struct sk_buff *skb;
-@@ -2905,6 +2942,9 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
- 	} while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
- 	if (!wait_loop)
- 		e_err(drv, "Could not enable Tx Queue %d\n", reg_idx);
-+#ifdef DEV_NETMAP
-+	ixgbe_netmap_configure_tx_ring(adapter, reg_idx);
-+#endif /* DEV_NETMAP */
- }
+@@ -2890,6 +2927,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  
- static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
-@@ -3266,6 +3306,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+ 	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
+ 
++#ifdef DEV_NETMAP
++	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
++#endif /* DEV_NETMAP */
++
+ 	/* enable queue */
+ 	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
+ 
+@@ -3266,6 +3307,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -81,7 +82,7 @@ index d30fbdd..0326ffd 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -5037,6 +5081,7 @@ static int ixgbe_open(struct net_device *netdev)
+@@ -5037,6 +5082,7 @@ static int ixgbe_open(struct net_device *netdev)
  
  	ixgbe_up_complete(adapter);
  
@@ -89,7 +90,7 @@ index d30fbdd..0326ffd 100644
  	return 0;
  
  err_set_queues:
-@@ -7658,6 +7703,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+@@ -7658,6 +7704,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
  			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
  			true);
  
@@ -100,12 +101,12 @@ index d30fbdd..0326ffd 100644
  	return 0;
  
  err_register:
-@@ -7692,6 +7741,10 @@ static void ixgbe_remove(struct pci_dev *pdev)
+@@ -7692,6 +7742,10 @@ static void ixgbe_remove(struct pci_dev *pdev)
  	struct ixgbe_adapter *adapter = pci_get_drvdata(pdev);
  	struct net_device *netdev = adapter->netdev;
  
 +#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
++	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
  	ixgbe_dbg_adapter_exit(adapter);

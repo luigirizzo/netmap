@@ -1,0 +1,11 @@
+BasedOnStyle: LLVM
+AllowShortIfStatementsOnASingleLine: false
+AlignConsecutiveAssignments: true
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakAfterReturnType: TopLevelDefinitions
+BreakBeforeBraces: Linux
+ConstructorInitializerIndentWidth: 8
+ContinuationIndentWidth: 8
+IndentCaseLabels: false
+IndentWidth: 8
+UseTab: Always

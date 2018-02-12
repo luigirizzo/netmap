@@ -80,7 +80,7 @@ void resetvar(int v, char *b)
 
 #define output_err(ret, format, args...)\
 	do {\
-		if (ret < 0) {\
+		if ((ret) < 0) {\
 			resetvar(curr_var, VAR_FAILED);\
 			outecho(format, ##args);\
 			outecho("error: %s", strerror(errno));\
@@ -144,8 +144,10 @@ void do_close()
 #include <sys/socket.h>
 #include <ifaddrs.h>
 #include <net/netmap_user.h>
+#include <net/netmap_virt.h>
 
 struct nmreq curr_nmr = { .nr_version = NETMAP_API, .nr_flags = NR_REG_ALL_NIC, };
+struct netmap_pools_info curr_pools_info;
 char nmr_name[64];
 
 void parse_nmr_config(char* w, struct nmreq *nmr)
@@ -586,8 +588,8 @@ do_ring()
 	}
 	printf("]\n");
 	printf("head        %u\n", ring->head);
-	printf("cur         %u\n", ring->head);
-	printf("tail        %u\n", ring->head);
+	printf("cur         %u\n", ring->cur);
+	printf("tail        %u\n", ring->tail);
 	printf("flags       %x", ring->flags);
 	if (ring->flags) {
 		printf(" [");
@@ -797,6 +799,26 @@ nmr_arg_error()
 }
 
 void
+nmr_pools_info_get()
+{
+	void **pp = (void **)&curr_nmr.nr_arg1;
+	struct netmap_pools_info *upi = *pp;
+
+	printf("arg1+2+3:  %p\n", *pp);
+	printf("    memsize:    %"PRIu64"\n", upi->memsize);
+	printf("    memid:      %"PRIu32"\n", upi->memid);
+	printf("    if off:     %"PRIu32"\n", upi->if_pool_offset);
+	printf("    if tot:     %"PRIu32"\n", upi->if_pool_objtotal);
+	printf("    if siz:     %"PRIu32"\n", upi->if_pool_objsize);
+	printf("    ring off:   %"PRIu32"\n", upi->ring_pool_offset);
+	printf("    ring tot:   %"PRIu32"\n", upi->ring_pool_objtotal);
+	printf("    ring siz:   %"PRIu32"\n", upi->ring_pool_objsize);
+	printf("    buf off:    %"PRIu32"\n", upi->buf_pool_offset);
+	printf("    buf tot:    %"PRIu32"\n", upi->buf_pool_objtotal);
+	printf("    buf siz:    %"PRIu32"\n", upi->buf_pool_objsize);
+}
+
+void
 nmr_arg_extra()
 {
 	printf("arg1:      %d [%sextra rings]\n", curr_nmr.nr_arg1,
@@ -894,6 +916,10 @@ do_nmr_dump()
 			printf("BDG_POLLING_OFF");
 			arg_interp = nmr_arg_error;
 			break;
+		case NETMAP_POOLS_INFO_GET:
+			printf("POOLS_INFO_GET");
+			arg_interp = nmr_pools_info_get;
+			break;
 		default:
 			printf("???");
 			arg_interp = nmr_arg_error;
@@ -955,6 +981,8 @@ void
 do_nmr_reset()
 {
 	bzero(&curr_nmr, sizeof(curr_nmr));
+	curr_nmr.nr_version = NETMAP_API;
+	curr_nmr.nr_flags = NR_REG_ALL_NIC;
 }
 
 void
@@ -1023,6 +1051,9 @@ do_nmr_cmd()
 		curr_nmr.nr_cmd = NETMAP_PT_HOST_CREATE;
 	} else if (strcmp(arg, "pt-host-delete") == 0) {
 		curr_nmr.nr_cmd = NETMAP_PT_HOST_DELETE;
+	} else if (strcmp(arg, "pools-info-get") == 0) {
+		curr_nmr.nr_cmd = NETMAP_POOLS_INFO_GET;
+		nmreq_pointer_put(&curr_nmr, &curr_pools_info);
 	}
 out:
 	output("cmd=%x", curr_nmr.nr_cmd);
@@ -1175,9 +1206,9 @@ int find_command(const char* cmd)
 
 #define MAX_CHAN 10
 
-void prompt()
+void prompt(FILE *f)
 {
-	if (isatty(STDIN_FILENO)) {
+	if (isatty(fileno(f))) {
 		printf("> ");
 	}
 }
@@ -1212,7 +1243,7 @@ void do_exit()
 }
 
 void
-cmd_loop()
+cmd_loop(FILE *input)
 {
 	char buf[1024];
 	int i;
@@ -1222,7 +1253,7 @@ cmd_loop()
 
 	atexit(do_exit);
 
-	for (prompt(); fgets(buf, 1024, stdin); prompt()) {
+	for (prompt(input); fgets(buf, 1024, input); prompt(input)) {
 		char *cmd;
 		int slot;
 
@@ -1389,6 +1420,9 @@ cmd_loop()
 			}
 			continue;
 		}
+		if (strcmp(cmd, "next") == 0) {
+			return;
+		}
 		i = find_command(cmd);
 		if (i < N_CMDS) {
 			commands[i].f();
@@ -1413,9 +1447,25 @@ cmd_loop()
 int
 main(int argc, char **argv)
 {
-	(void) argc;
-	(void) argv;
-	printf("testmmap\n");
-	cmd_loop();
+	int i;
+	if (argc > 1) {
+		for (i = 1; i < argc; i++) {
+			FILE *f;
+		       	if (!strcmp(argv[i], "-")) {
+				f = stdin;
+			} else {
+				f = fopen(argv[i], "r");
+				if (f == NULL) {
+					perror(argv[i]);
+					continue;
+				}
+			}
+			cmd_loop(f);
+			if (f != stdin)
+				fclose(f);
+		}
+	} else {
+		cmd_loop(stdin);
+	}
 	return 0;
 }

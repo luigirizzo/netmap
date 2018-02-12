@@ -107,7 +107,7 @@ struct {
  * the overflow queue is a circular queue of buffers
  */
 struct overflow_queue {
-	char name[MAX_IFNAMELEN];
+	char name[MAX_IFNAMELEN + 16];
 	struct netmap_slot *slots;
 	uint32_t head;
 	uint32_t tail;
@@ -788,6 +788,12 @@ run:
 			if (p->nmd == NULL) {
 				D("cannot open %s", p->interface);
 				return (1);
+			} else if (p->nmd->req.nr_arg2 != rxport->nmd->req.nr_arg2) {
+				D("failed to open pipe #%d in zero-copy mode, "
+					"please close any application that uses either pipe %s}%d, "
+				        "or %s{%d, and retry",
+					k + 1, g->pipename, g->first_id + k, g->pipename, g->first_id + k);
+				return (1);
 			} else {
 				D("successfully opened pipe #%d %s (tx slots: %d)",
 				  k + 1, p->interface, p->nmd->req.nr_tx_slots);
@@ -805,7 +811,7 @@ run:
 					extra_bufs = 0;
 				}
 				q->size = extra_bufs;
-				snprintf(q->name, MAX_IFNAMELEN, "oq %s{%d", g->pipename, k);
+				snprintf(q->name, sizeof(q->name), "oq %s{%4d", g->pipename, k);
 				p->oq = q;
 			}
 		}
@@ -850,7 +856,7 @@ run:
 
 		for (i = 0; i < npipes; ++i) {
 			struct netmap_ring *ring = ports[i].ring;
-			if (!glob_arg.busy_wait && nm_ring_next(ring, ring->tail) == ring->cur) {
+			if (!glob_arg.busy_wait && !nm_tx_pending(ring)) {
 				/* no need to poll, there are no packets pending */
 				continue;
 			}
@@ -935,7 +941,7 @@ run:
 				if (hash == 0) {
 					non_ip++; // XXX ??
 				}
-				rs->ptr = hash | (1UL << 32);
+				rs->ptr = hash | (1ULL << 32);
 				// prefetch the buffer for the next round
 				next_cur = nm_ring_next(rxring, next_cur);
 				next_slot = &rxring->slot[next_cur];

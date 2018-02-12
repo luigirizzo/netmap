@@ -139,6 +139,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 				curr->buffer_addr = htole64(paddr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 
 			/* Fill the slot in the NIC ring. */
 			curr->upper.data = 0;
@@ -210,19 +211,24 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * First part: import newly received packets.
 	 */
 	if (netmap_no_pendintr || force_update) {
-		uint16_t slot_flags = kring->nkr_slot_flags;
-
 		nic_i = rxr->next_to_clean;
 		nm_i = netmap_idx_n2k(kring, nic_i);
 
 		for (n = 0; ; n++) {
 			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, nic_i);
 			uint32_t staterr = le32toh(curr->status);
+			struct netmap_slot *slot;
+			uint64_t paddr;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
-			ring->slot[nm_i].len = le16toh(curr->length) - 4;
-			ring->slot[nm_i].flags = slot_flags;
+
+			slot = ring->slot + nm_i;
+			PNMB(na, slot, &paddr);
+			slot->len = le16toh(curr->length) - 4;
+			slot->flags = 0;
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev,
+					&paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}

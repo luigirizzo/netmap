@@ -87,9 +87,9 @@ features, namely:
 			in copy and zero-copy modes, without stopping
 			traffic).
 
-    generic (*):	the generic driver that is used to access
-			NICs without native netmap support (at reduced
-			performance).
+    generic (*):	the generic (a.k.a. emulated) netmap adapter that is
+			used to access NICs without native netmap support (at
+			reduced performance).
 
     ptnetmap-guest:	netmap passthrough support for guests
 			(including the ptnet driver).
@@ -106,10 +106,10 @@ features, namely:
   NIC drivers
   --------------
 
-  The generic driver can be used to open in netmap mode any NIC for which
-  the host OS already supplies a driver. The optimal performance, however,
-  is only obtained with netmap-enabled NIC drivers.  The configure script
-  implements two methods to obtain the netmap-enabled drivers:
+  The emulated (generic) adapter can be used to open in netmap mode any NIC
+  for which the host OS already supplies a driver. The optimal performance,
+  however, is only obtained with netmap-enabled NIC drivers.  The configure
+  script implements two methods to obtain the netmap-enabled drivers:
 
 	1. patching the native drivers that come with your kernel;
 	2. patching NIC-vendors out-of-tree drivers selected by us.
@@ -169,6 +169,14 @@ features, namely:
   to patch, LOW and HIGH are the versions to which the patch applies
   (LOW included, HIGH excluded, so vanilla--r8169.c--20638--30300 applies
   from 2.6.38 to 3.3.0 (excluded).
+
+  The patches for the external drivers are named VENDOR--DRIVER--VERSION,
+  where VENDOR is just intel as of now, and VERSION is the upstream driver
+  version number (assigned by the VENDOR). If you want to use a different
+  VERSION than the default, and the patches directory contains a patch
+  for the version you are interest in, you can use the --select-version
+  option of configure. E.g., to select the 5.2.4 version of the ixgbe
+  external driver, pass --select-version=ixgbe:5.2.4 to configure.
 
 HOW TO USE THE CODE
 -------------------
@@ -258,6 +266,19 @@ COMMON PROBLEMS
 
       # ip link set eth0 promisc on
 
+  Some drivers (e.g. the netmap-patched i40e) may disable promiscuous
+  mode during the down/up cycle that happens when putting the NIC
+  in netmap mode. This means that it may be necessary to enable
+  promiscuous mode again after starting the netmap application.
+  If the promiscuous mode was already enabled, you may need to
+  disable it before enabling it again. For these drivers, start the
+  application first, and then execute these commands:
+
+      # ip link set eth0 promisc off
+      # ip link set eth0 promisc on
+
+  or incorporate equivalent operations in your application.
+
 * if you are receiving VLAN-tagged packets, netmap applications (with
   patched drivers) may not see the VLAN tag because receive VLAN offloading
   is enabled (and so VLAN tags are stripped by the NIC). To disable it use
@@ -267,6 +288,15 @@ COMMON PROBLEMS
   In emulated netmap mode (i.e. with unpatched drivers) VLAN tags are never
   visible by the netmap application.
 
+* if you are using e1000 with netmap, you should verify the result of the patch
+  from final-patches/vanilla--e1000--20620--31200 that was applied on
+  e1000/e1000_main.c. It was observed that when using non-vanilla kernel version
+  netmap hook that needs to be applied on e1000_clean_rx_irq is actually 
+  applied on e1000_clean_jumbo_rx_irq. As a result it will end up in packets
+  going directly from NIC Rx Rings to Host stack.
+      
+      You should fix this issue by manually patching e1000/e1000_main.c to add
+  the correct netmap hook in e1000_clean_rx_irq
 
 REVISION HISTORY
 -----------------

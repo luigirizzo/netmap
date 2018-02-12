@@ -1,28 +1,111 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-
-
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Win10 Debug|Win32">
+      <Configuration>Win10 Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win10 Debug|x64">
+      <Configuration>Win10 Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win10 Release|Win32">
+      <Configuration>Win10 Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win10 Release|x64">
+      <Configuration>Win10 Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8.1 Debug|Win32">
+      <Configuration>Win8.1 Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8.1 Release|Win32">
+      <Configuration>Win8.1 Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8 Debug|Win32">
+      <Configuration>Win8 Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8 Release|Win32">
+      <Configuration>Win8 Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win7 Debug|Win32">
+      <Configuration>Win7 Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win7 Release|Win32">
+      <Configuration>Win7 Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8.1 Debug|x64">
+      <Configuration>Win8.1 Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8.1 Release|x64">
+      <Configuration>Win8.1 Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8 Debug|x64">
+      <Configuration>Win8 Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win8 Release|x64">
+      <Configuration>Win8 Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win7 Debug|x64">
+      <Configuration>Win7 Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win7 Release|x64">
+      <Configuration>Win7 Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{86BB0F88-ECD9-4E2C-AD47-AE4071D1DE10}</ProjectGuid>
     <SampleGuid>{47A52D61-9E9E-4FEA-9033-C1434C5F8870}</SampleGuid>
     <ProjectName>nm-ndis</ProjectName>
+    <WindowsTargetPlatformVersion>10.0.14393.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
-
   <PropertyGroup Label="xConfiguration">
-    <ConfigurationType>Driver</ConfigurationType> <!-- this only in the drivers -->
-    <DriverType>WDM</DriverType> <!-- this only in the drivers -->
-    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <!-- this only in the drivers -->
+    <DriverType>WDM</DriverType>
+    <!-- this only in the drivers -->
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
   </PropertyGroup>
-
   <Import Project="../my-project-cfg.props" />
   <Import Project="../my-project.props" />
-
-<!--
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Release|Win32'">
+    <EnableInf2cat>true</EnableInf2cat>
+    <OutDir>$(SolutionDir)Output-$(ConfigurationName)\tmp\$(ProjectName)-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)Output-$(ConfigurationName)\tmp\$(ProjectName)-tmp\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Debug|Win32'">
+    <EnableInf2cat>true</EnableInf2cat>
+    <OutDir>$(SolutionDir)Output-$(ConfigurationName)\tmp\$(ProjectName)-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)Output-$(ConfigurationName)\tmp\$(ProjectName)-tmp\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Release|x64'">
+    <EnableInf2cat>true</EnableInf2cat>
+    <OutDir>$(SolutionDir)Output-$(ConfigurationName)\tmp\$(ProjectName)-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)Output-$(ConfigurationName)\tmp\$(ProjectName)-tmp\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Debug|x64'">
+    <EnableInf2cat>true</EnableInf2cat>
+    <OutDir>$(SolutionDir)Output-$(ConfigurationName)\tmp\$(ProjectName)-unsigned\</OutDir>
+    <IntDir>$(SolutionDir)Output-$(ConfigurationName)\tmp\$(ProjectName)-tmp\</IntDir>
+  </PropertyGroup>
+  <!--
   <ItemGroup Label="WrappedTaskItems">
     <Inf Include="$(ProjectName).inf" />
   </ItemGroup>
 -->
-
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..;.</AdditionalIncludeDirectories>
@@ -32,8 +115,8 @@
       <PreprocessorDefinitions Condition="!(($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN8)) And (!($(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7))))">%(PreprocessorDefinitions);NDIS630=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDIS_WDM=1</PreprocessorDefinitions>
-      <TreatWarningAsError>true</TreatWarningAsError>
-      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <WarningLevel>Level3</WarningLevel>
     </ClCompile>
     <ResourceCompile>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..;.</AdditionalIncludeDirectories>
@@ -43,7 +126,6 @@
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDIS_WDM=1</PreprocessorDefinitions>
     </ResourceCompile>
-
     <Midl>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..;.</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="$(_NT_TARGET_VERSION)&lt;$(_NT_TARGET_VERSION_WIN7)">%(PreprocessorDefinitions);NDIS60=1</PreprocessorDefinitions>
@@ -52,28 +134,25 @@
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDISLWF=1</PreprocessorDefinitions>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDIS_WDM=1</PreprocessorDefinitions>
     </Midl>
-
   </ItemDefinitionGroup>
-
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
     <ClCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);_KERNEL=1;</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
-
   <!-- linker definitions -->
-
   <ItemDefinitionGroup>
     <!-- general -->
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies);$(DDK_LIB_PATH)\ndis.lib</AdditionalDependencies>
+      <ProgramDatabaseFile Condition="'$(Configuration)|$(Platform)'=='Win10 Debug|Win32'">$(SolutionDir)Output-$(ConfigurationName)\$(TargetName)-pkg\$(TargetName).pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile Condition="'$(Configuration)|$(Platform)'=='Win10 Debug|x64'">$(SolutionDir)Output-$(ConfigurationName)\$(TargetName)-pkg\$(TargetName).pdb</ProgramDatabaseFile>
     </Link>
     <ClCompile>
       <ExceptionHandling>
       </ExceptionHandling>
     </ClCompile>
   </ItemDefinitionGroup>
-
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|Win32'">
     <ClCompile>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -82,8 +161,6 @@
       <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
-
-
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Win8.1 Release'">
     <ClCompile>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -92,7 +169,20 @@
       <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
-
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Win10 Release'">
+    <ClCompile>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <Optimization>MaxSpeed</Optimization>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+    </ClCompile>
+    <Link>
+      <ProgramDatabaseFile Condition="'$(Configuration)|$(Platform)'=='Win10 Release|Win32'">$(SolutionDir)Output-$(ConfigurationName)\$(TargetName)-pkg\$(TargetName).pdb</ProgramDatabaseFile>
+    </Link>
+    <Link>
+      <ProgramDatabaseFile Condition="'$(Configuration)|$(Platform)'=='Win10 Release|x64'">$(SolutionDir)Output-$(ConfigurationName)\$(TargetName)-pkg\$(TargetName).pdb</ProgramDatabaseFile>
+    </Link>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
     <ClCompile>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -101,7 +191,6 @@
       <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
-
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|Win32'">
     <ClCompile>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -110,7 +199,6 @@
       <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
-
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|Win32'">
     <ClCompile>
       <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
@@ -120,9 +208,6 @@
       <WholeProgramOptimization>false</WholeProgramOptimization>
     </ClCompile>
   </ItemDefinitionGroup>
-
-
-
   <ItemGroup>
     <ClCompile Include="device.c">
       <AdditionalIncludeDirectories>;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -150,19 +235,15 @@
     </ClCompile>
     <ResourceCompile Include="filter.rc" />
   </ItemGroup>
-
   <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" Condition="'$(ConfigurationType)'=='Driver' or '$(ConfigurationType)'=='DynamicLibrary'" />
   </ItemGroup>
-
   <ItemGroup>
     <None Exclude="@(None)" Include="*.ico;*.cur;*.bmp;*.dlg;*.rct;*.gif;*.jpg;*.jpeg;*.wav;*.jpe;*.tiff;*.tif;*.png;*.rc2" />
     <None Exclude="@(None)" Include="*.def;*.bat;*.hpj;*.asmx" />
   </ItemGroup>
-
   <ItemGroup>
     <ClInclude Exclude="@(ClInclude)" Include="*.h;*.hpp;*.hxx;*.hm;*.inl;*.xsd" />
   </ItemGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

@@ -242,8 +242,6 @@ forcedeth_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	rmb();
 	if (netmap_no_pendintr || force_update) {
-		uint16_t slot_flags = kring->nkr_slot_flags;
-
 		nic_i = np->get_rx.ex - rxr; /* next pkt to check */
 		/* put_rx is the refill position, one before nr_hwcur.
 		 * This slot is not available
@@ -257,7 +255,7 @@ forcedeth_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if (statlen & NV_RX2_AVAIL) /* still owned by the NIC */
 				break;
 			ring->slot[nm_i].len = statlen & LEN_MASK_V2; // XXX crc?
-			ring->slot[nm_i].flags = slot_flags;
+			ring->slot[nm_i].flags = 0;
 			// ifp->stats.rx_packets++;
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);

@@ -75,6 +75,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
 #include <sys/socket.h> /* sockaddrs */
 #include <sys/selinfo.h>
 #include <net/if.h>
+#include <net/if_types.h>
 #include <net/if_var.h>
 #include <machine/bus.h>        /* bus_dmamap_* in netmap_kern.h */
 
@@ -165,10 +166,17 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
  * has a KASSERT(), checking that the mbuf dtor function is not NULL.
  */
 
+#if __FreeBSD_version <= 1200050
 static void void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { }
+#else  /* __FreeBSD_version >= 1200051 */
+/* The arg1 and arg2 pointers argument were removed by r324446, which
+ * in included since version 1200051. */
+static void void_mbuf_dtor(struct mbuf *m) { }
+#endif /* __FreeBSD_version >= 1200051 */
 
 #define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
-	(m)->m_ext.ext_free = fn ? (void *)fn : (void *)void_mbuf_dtor;	\
+	(m)->m_ext.ext_free = (fn != NULL) ?		\
+	    (void *)fn : (void *)void_mbuf_dtor;	\
 } while (0)
 
 static inline struct mbuf *
@@ -305,7 +313,7 @@ void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi)
 #endif /* !RATE */
 
 
-/* =============== GENERIC NETMAP ADAPTER SUPPORT ================= */
+/* ========== GENERIC (EMULATED) NETMAP ADAPTER SUPPORT ============= */
 
 /*
  * Wrapper used by the generic adapter layer to notify
@@ -335,7 +343,6 @@ generic_netmap_unregister(struct netmap_adapter *na)
 	int i, r;
 
 	if (na->active_fds == 0) {
-		D("Generic adapter %p goes off", na);
 		rtnl_lock();
 
 		na->na_flags &= ~NAF_NETMAP_ON;
@@ -351,14 +358,14 @@ generic_netmap_unregister(struct netmap_adapter *na)
 
 	for_each_rx_kring_h(r, kring, na) {
 		if (nm_kring_pending_off(kring)) {
-			D("RX ring %d of generic adapter %p goes off", r, na);
+			D("Emulated adapter: ring '%s' deactivated", kring->name);
 			kring->nr_mode = NKR_NETMAP_OFF;
 		}
 	}
 	for_each_tx_kring_h(r, kring, na) {
 		if (nm_kring_pending_off(kring)) {
 			kring->nr_mode = NKR_NETMAP_OFF;
-			D("TX ring %d of generic adapter %p goes off", r, na);
+			D("Emulated adapter: ring '%s' deactivated", kring->name);
 		}
 	}
 
@@ -415,6 +422,7 @@ generic_netmap_unregister(struct netmap_adapter *na)
 			del_timer(&rate_ctx.timer);
 		}
 #endif
+		D("Emulated adapter for %s deactivated", na->name);
 	}
 
 	return 0;
@@ -439,7 +447,7 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 	}
 
 	if (na->active_fds == 0) {
-		D("Generic adapter %p goes on", na);
+		D("Emulated adapter for %s activated", na->name);
 		/* Do all memory allocations when (na->active_fds == 0), to
 		 * simplify error management. */
 
@@ -484,14 +492,14 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 
 	for_each_rx_kring_h(r, kring, na) {
 		if (nm_kring_pending_on(kring)) {
-			D("RX ring %d of generic adapter %p goes on", r, na);
+			D("Emulated adapter: ring '%s' activated", kring->name);
 			kring->nr_mode = NKR_NETMAP_ON;
 		}
 
 	}
 	for_each_tx_kring_h(r, kring, na) {
 		if (nm_kring_pending_on(kring)) {
-			D("TX ring %d of generic adapter %p goes on", r, na);
+			D("Emulated adapter: ring '%s' activated", kring->name);
 			kring->nr_mode = NKR_NETMAP_ON;
 		}
 	}
@@ -622,7 +630,11 @@ generic_mbuf_destructor(struct mbuf *m)
 	 * txsync. */
 	netmap_generic_irq(na, r, NULL);
 #ifdef __FreeBSD__
+#if __FreeBSD_version <= 1200050
 	void_mbuf_dtor(m, NULL, NULL);
+#else  /* __FreeBSD_version >= 1200051 */
+	void_mbuf_dtor(m);
+#endif /* __FreeBSD_version >= 1200051 */
 #endif
 }
 
@@ -1013,7 +1025,6 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	/* Adapter-specific variables. */
-	uint16_t slot_flags = kring->nkr_slot_flags;
 	u_int nm_buf_len = NETMAP_BUF_SIZE(na);
 	struct mbq tmpq;
 	struct mbuf *m;
@@ -1092,7 +1103,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 			avail -= nm_buf_len;
 
 			ring->slot[nm_i].len = copy;
-			ring->slot[nm_i].flags = slot_flags | (mlen ? NS_MOREFRAG : 0);
+			ring->slot[nm_i].flags = (mlen ? NS_MOREFRAG : 0);
 			nm_i = nm_next(nm_i, lim);
 		}
 
@@ -1153,7 +1164,6 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	struct netmap_adapter *prev_na = gna->prev;
 
 	if (prev_na != NULL) {
-		D("Released generic NA %p", gna);
 		netmap_adapter_put(prev_na);
 		if (nm_iszombie(na)) {
 		        /*
@@ -1162,6 +1172,7 @@ generic_netmap_dtor(struct netmap_adapter *na)
 		         */
 		        netmap_adapter_put(prev_na);
 		}
+		D("Native netmap adapter %p restored", prev_na);
 	}
 	NM_ATTACH_NA(ifp, prev_na);
 	/*
@@ -1169,7 +1180,13 @@ generic_netmap_dtor(struct netmap_adapter *na)
 	 * overrides WNA(ifp) if na->ifp is not NULL.
 	 */
 	na->ifp = NULL;
-	D("Restored native NA %p", prev_na);
+	D("Emulated netmap adapter for %s destroyed", na->name);
+}
+
+int
+na_is_generic(struct netmap_adapter *na)
+{
+	return na->nm_register == generic_netmap_register;
 }
 
 /*
@@ -1190,6 +1207,22 @@ generic_netmap_attach(struct ifnet *ifp)
 	struct netmap_generic_adapter *gna;
 	int retval;
 	u_int num_tx_desc, num_rx_desc;
+
+#ifdef __FreeBSD__
+	if (ifp->if_type == IFT_LOOP) {
+		D("if_loop is not supported by %s", __func__);
+		return EINVAL;
+	}
+#endif
+
+	if (NA(ifp) && !NM_NA_VALID(ifp)) {
+		/* If NA(ifp) is not null but there is no valid netmap
+		 * adapter it means that someone else is using the same
+		 * pointer (e.g. ax25_ptr on linux). This happens for
+		 * instance when also PF_RING is in use. */
+		D("Error: netmap adapter hook is busy");
+		return EBUSY;
+	}
 
 	num_tx_desc = num_rx_desc = netmap_generic_ringsize; /* starting point */
 
@@ -1241,7 +1274,7 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	nm_os_generic_set_features(gna);
 
-	D("Created generic NA %p (prev %p)", gna, gna->prev);
+	D("Emulated adapter for %s created (prev was %p)", na->name, gna->prev);
 
 	return retval;
 }

@@ -45,36 +45,28 @@ char netmap_igb_driver_name[] = "igb" NETMAP_LINUX_DRIVER_SUFFIX;
  * E1000_TX_DESC_ADV etc. have dropped the _ADV suffix at some point.
  * Also the first argument is now a pointer not the object.
  */
-#ifdef NETMAP_LINUX_HAVE_IGB_PHY_OPS
-static inline u16 nm_igb_read(struct igb_adapter *adapter, u32 offset)
-{
-	u16 rv = 0;
-	if (igb_read_phy_reg(&adapter->hw, offset, &rv)) {
-		RD(5, "%s: read failure at offset %x",
-				adapter->netdev->name, offset);
-	}
-	return rv;
-
-}
+#ifdef NETMAP_LINUX_HAVE_IGB_RD32
+#define READ_TDH(_adapter, _txr)	igb_rd32(&(_adapter)->hw, E1000_TDH((_txr)->reg_idx))
 #elif defined(E1000_READ_REG)
-static inline u16 nm_igb_read(struct igb_adapter *adapter, u32 offset)
+#define READ_TDH(_adapter, _txr)	E1000_READ_REG(&(_adapter)->hw, E1000_TDH((_txr)->reg_idx))
+#elif defined rd32
+static inline u32 READ_TDH(struct igb_adapter *adapter, struct igb_ring *txr)
 {
-	return E1000_READ_REG(&adapter->hw, offset);
+	struct e1000_hw *hw = &adapter->hw;
+	return rd32(E1000_TDH(txr->reg_idx));
 }
 #else
-#error "I don't know how to read registers in igb"
+#define	READ_TDH(_adapter, _txr)	readl((_txr)->head)
 #endif
 
 #ifndef E1000_TX_DESC_ADV
 #define	E1000_TX_DESC_ADV(_r, _i)	IGB_TX_DESC(&(_r), _i)
 #define	E1000_RX_DESC_ADV(_r, _i)	IGB_RX_DESC(&(_r), _i)
-#define	READ_TDH(_adapter, _txr)	nm_igb_read(_adapter, E1000_TDH((_txr)->reg_idx))
 #else /* up to 3.2, approximately */
 #define	igb_tx_buffer			igb_buffer
 #define	tx_buffer_info			buffer_info
 #define	igb_rx_buffer			igb_buffer
 #define	rx_buffer_info			buffer_info
-#define	READ_TDH(_adapter, _txr)	readl((_txr)->head)
 #endif
 
 
@@ -167,6 +159,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_paddr, addr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 
 			/* Fill the slot in the NIC ring. */
 			curr->read.buffer_addr = htole64(paddr);
@@ -184,10 +177,9 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		wmb();	/* synchronize writes to the NIC ring */
 
-		txr->next_to_use = nic_i; /* XXX what for ? */
 		/* (re)start the tx unit up to slot nic_i (excluded) */
 		writel(nic_i, txr->tail);
-		mmiowb(); // XXX where do we need this ?
+		mmiowb(); // XXX why do we need this ?
 	}
 
 	/*
@@ -200,7 +192,6 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 			D("TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
-		txr->next_to_use = nic_i;
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 out:
@@ -242,8 +233,6 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * First part: import newly received packets.
 	 */
 	if (netmap_no_pendintr || force_update) {
-		uint16_t slot_flags = kring->nkr_slot_flags;
-
 		nic_i = rxr->next_to_clean;
 		nm_i = netmap_idx_n2k(kring, nic_i);
 
@@ -251,16 +240,21 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 			union e1000_adv_rx_desc *curr =
 					E1000_RX_DESC_ADV(*rxr, nic_i);
 			uint32_t staterr = le32toh(curr->wb.upper.status_error);
+			struct netmap_slot *slot = &ring->slot[nm_i];
+			uint64_t paddr;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
-			ring->slot[nm_i].len = le16toh(curr->wb.upper.length);
-			ring->slot[nm_i].flags = slot_flags;
+			PNMB(na, slot, &paddr);
+			slot->len = le16toh(curr->wb.upper.length);
+			slot->flags = 0;
+			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
+			rxr->next_to_alloc = nic_i;
 			kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
@@ -292,7 +286,6 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 		}
 		kring->nr_hwcur = head;
 		wmb();
-		rxr->next_to_use = nic_i; // XXX not really used
 		/*
 		 * IMPORTANT: we must leave one free slot in the ring,
 		 * so move nic_i back by one unit
@@ -376,7 +369,6 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 		rx_desc->read.hdr_addr = 0;
 		rx_desc->read.pkt_addr = htole64(paddr);
 	}
-	rxr->next_to_use = 0;
 	/* preserve buffers already made available to clients */
 	i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[reg_idx]);
 

@@ -1,7 +1,22 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
-
+    <ProjectConfiguration Include="Win10 Debug|Win32">
+      <Configuration>Win10 Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win10 Debug|x64">
+      <Configuration>Win10 Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win10 Release|Win32">
+      <Configuration>Win10 Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Win10 Release|x64">
+      <Configuration>Win10 Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Win8.1 Debug|Win32">
       <Configuration>Win8.1 Debug</Configuration>
       <Platform>Win32</Platform>
@@ -38,12 +53,10 @@
       <Configuration>Win7 Debug</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-
     <ProjectConfiguration Include="Win8.1 Release|x64">
       <Configuration>Win8.1 Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-
     <ProjectConfiguration Include="Win8 Release|x64">
       <Configuration>Win8 Release</Configuration>
       <Platform>x64</Platform>
@@ -53,24 +66,22 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
-
   <PropertyGroup Label="Globals">
     <ProjectGuid>{A0394AC2-3D0E-4B5E-9F5F-FA4CEE1ABBED}</ProjectGuid>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
-   <!-- set defaults to ... -->
+    <!-- set defaults to ... -->
     <Configuration Condition="'$(Configuration)' == ''">Win8.1 Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">Win32</Platform>
     <SampleGuid>{BA5AA988-42F7-47EE-8963-173B9E7F94C5}</SampleGuid>
     <ProjectName>loader</ProjectName>
+    <WindowsTargetPlatformVersion>10.0.14393.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-
   <PropertyGroup Label="Configuration">
     <DriverType />
-    <PlatformToolset>WindowsApplicationForDrivers8.1</PlatformToolset>
+    <PlatformToolset>WindowsApplicationForDrivers10.0</PlatformToolset>
     <ConfigurationType>Application</ConfigurationType>
   </PropertyGroup>
-
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Win7 Release'">
     <TargetVersion>Win7</TargetVersion>
     <UseDebugLibraries>False</UseDebugLibraries>
@@ -81,6 +92,11 @@
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Win8.1 Release'">
     <TargetVersion>WindowsV6.3</TargetVersion>
+    <UseDebugLibraries>False</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Win10 Release'" Label="Configuration">
+    <TargetVersion>
+    </TargetVersion>
     <UseDebugLibraries>False</UseDebugLibraries>
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Win7 Debug'">
@@ -95,7 +111,11 @@
     <TargetVersion>WindowsV6.3</TargetVersion>
     <UseDebugLibraries>True</UseDebugLibraries>
   </PropertyGroup>
-
+  <PropertyGroup Condition="'$(Configuration)'=='Win10 Debug'" Label="Configuration">
+    <TargetVersion>
+    </TargetVersion>
+    <UseDebugLibraries>True</UseDebugLibraries>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
     <OutDir>$(SolutionDir)\Output-$(ConfigurationName)\</OutDir>
@@ -112,8 +132,8 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <TreatWarningAsError>true</TreatWarningAsError>
-      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <WarningLevel>Level3</WarningLevel>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..\sys</AdditionalIncludeDirectories>
     </ClCompile>
     <ResourceCompile>

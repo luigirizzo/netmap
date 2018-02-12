@@ -1,8 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <TestCertificate>
-    </TestCertificate>
+    <TestCertificate>CN="WDKTestCert Ali,131544860236513530" | ECEA8629ADED6CB0522E374EB5072BC9D2D865C9</TestCertificate>
   </PropertyGroup>
   <PropertyGroup>
     <SignMode>TestSign</SignMode>

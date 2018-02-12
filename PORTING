@@ -43,7 +43,7 @@ Device driver patches
     </pre>
   The argument is either the ifnet or the private device descriptor.
   This is in foo_attach() on FreeBSD, and somewhere in the path of
-  XXX foo_open() in Linux
+  foo_probe() in Linux
 
 + near the code called on device removal, add
     <pre>
