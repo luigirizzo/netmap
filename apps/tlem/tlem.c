@@ -295,6 +295,7 @@ struct stats {
 	uint64_t	packets;
 	uint64_t	bytes;
 	uint64_t	dropped;
+	uint64_t	dropped_bytes;
 } ALIGN_CACHE;
 
 struct _qs { /* shared queue */
@@ -1250,6 +1251,7 @@ cons(void *_pa)
 	}
 	if (delta < -pa->max_lag) {
 		q->rxstats->dropped++;
+		q->rxstats->dropped_bytes += p->pktlen;
 		goto next;
 	}
 	ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
