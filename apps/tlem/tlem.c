@@ -813,8 +813,6 @@ enq(struct _qs *q)
 	q->cur_len, (int)q->prod_tail, p->next,
 	p->pt_qout, p->pt_tx);
     q->prod_tail = p->next;
-    q->txstats->packets++;
-    q->txstats->bytes += q->cur_len;
     if (q->max_bps)
 	q->prod_queued += p->pktlen;
     /* XXX update timestamps ? */
@@ -1050,26 +1048,37 @@ prod(void *_pa)
 		continue;
 	    }
 	    q->c_loss.run(q, &q->c_loss);
-	    if (q->cur_drop)
+	    if (q->cur_drop) {
+		q->txstats->dropped++;	
+		q->txstats->dropped_bytes += q->cur_len;
 		continue;
+	    }
 	    if (no_room(q)) {
 		q->tail = q->prod_tail; /* notify */
 		usleep(1); // XXX give cons a chance to run ?
-		if (no_room(q)) /* try to run drop-free once */
+		if (no_room(q)) {/* try to run drop-free once */
+		    q->txstats->dropped++;	
+		    q->txstats->dropped_bytes += q->cur_len;
 		    continue;
+		}
 	    }
 	    // XXX possibly implement c_tt for transmission time emulation
 	    q->c_bw.run(q, &q->c_bw);
 	    tt = q->cur_tt;
 	    q->qt_qout += tt;
-	    if (drop_after(q))
+	    if (drop_after(q)) {
+		q->txstats->dropped++;	
+		q->txstats->dropped_bytes += q->cur_len;
 		continue;
+	    }
 	    q->c_delay.run(q, &q->c_delay); /* compute delay */
 	    t_tx = q->qt_qout + q->cur_delay;
 	    ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
 	    /* insure no reordering and spacing by transmission time */
 	    q->qt_tx = (t_tx >= q->qt_tx + tt) ? t_tx : q->qt_tx + tt;
 	    enq(q);
+            q->txstats->packets++;
+            q->txstats->bytes += q->cur_len;
 	}
 	q->tail = q->prod_tail; /* notify */
     }
