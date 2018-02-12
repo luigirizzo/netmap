@@ -1,7 +1,9 @@
 #ifndef DEDUP_H_
 #define DEDUP_H_
 
+#ifndef _BSD_SOURCE
 #define _BSD_SOURCE
+#endif
 #include <time.h>
 #include <limits.h>
 
