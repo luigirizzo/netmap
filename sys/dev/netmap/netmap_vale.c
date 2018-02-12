@@ -1352,15 +1352,14 @@ netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *lookup
 	b = nm_find_bridge(name, 0 /* don't create */);
 	if (!b) {
 		error = EINVAL;
+	} else if (!bdg_ops) {
+		bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
+		b->bdg_ops = &default_bdg_ops;
+		b->lookup_data = b->ht;
 	} else {
-		if (!bdg_ops) {
-			bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
-			b->bdg_ops = &default_bdg_ops;
-			b->lookup_data = b->ht;
-		} else {
-			b->bdg_ops = bdg_ops;
-			b->lookup_data = lookup_data;
-		}
+		// TODO: check if another module has alredy changed the lookup functions
+		b->bdg_ops = bdg_ops;
+		b->lookup_data = lookup_data;
 	}
 	NMG_UNLOCK();
 
