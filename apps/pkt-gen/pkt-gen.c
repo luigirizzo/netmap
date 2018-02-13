@@ -2953,7 +2953,7 @@ main(int arc, char **argv)
 	 * reconfigure. We do the open here to have time to reset.
 	 */
 	flags = NM_OPEN_IFNAME | NM_OPEN_ARG1 | NM_OPEN_ARG2 |
-		NM_OPEN_ARG3 | NM_OPEN_EXTMEM | NM_OPEN_RING_CFG;
+		NM_OPEN_ARG3 | NM_OPEN_RING_CFG;
 	if (g.nthreads > 1) {
 		base_nmd.req.nr_flags &= ~NR_REG_MASK;
 		base_nmd.req.nr_flags |= NR_REG_ONE_NIC;
