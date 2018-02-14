@@ -803,6 +803,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		/* shortcut - we can skip get_hw_na(),
 		 * ownership check and nm_bdg_attach()
 		 */
+
 	} else {
 		struct netmap_adapter *hw;
 
@@ -839,6 +840,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	}
 
 	BDG_WLOCK(b);
+	vpna->up.na_vp = vpna;	// TODO: check if this makes sense
 	vpna->bdg_port = cand;
 	ND("NIC  %p to bridge port %d", vpna, cand);
 	/* bind the port to the bridge (virtual ports are not active) */
@@ -877,6 +879,7 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr)
 	int error;
 
 	NMG_LOCK();
+	req->port_index = NM_BDG_NOPORT;
 
 	if (req->reg.nr_mem_id) {
 		nmd = netmap_mem_find(req->reg.nr_mem_id);
@@ -909,6 +912,7 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr)
 			goto unref_exit;
 		ND("registered %s to netmap-mode", na->name);
 	}
+	req->port_index = na->na_vp->bdg_port;
 	NMG_UNLOCK();
 	return 0;
 

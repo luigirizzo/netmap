@@ -614,6 +614,7 @@ struct nmreq_port_info_get {
  */
 struct nmreq_vale_attach {
 	struct nmreq_register reg;
+	uint8_t port_index;
 };
 
 /*
