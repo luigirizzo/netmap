@@ -2661,7 +2661,7 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 	case NETMAP_REQ_VALE_ATTACH:
 		return sizeof(struct nmreq_vale_attach);
 	case NETMAP_REQ_VALE_DETACH:
-		return 0;
+		return sizeof(struct nmreq_vale_detach);
 	case NETMAP_REQ_VALE_LIST:
 		return sizeof(struct nmreq_vale_list);
 	case NETMAP_REQ_PORT_HDR_SET:

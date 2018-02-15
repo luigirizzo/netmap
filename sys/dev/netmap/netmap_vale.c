@@ -840,7 +840,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	}
 
 	BDG_WLOCK(b);
-	vpna->up.na_vp = vpna;	// TODO: check if this makes sense
+	//vpna->up.na_vp = vpna // TODO: should be moved inside netmap_bwrap_bdg_ctl() ?
 	vpna->bdg_port = cand;
 	ND("NIC  %p to bridge port %d", vpna, cand);
 	/* bind the port to the bridge (virtual ports are not active) */
@@ -933,6 +933,7 @@ nm_is_bwrap(struct netmap_adapter *na)
 int
 nm_bdg_ctl_detach(struct nmreq_header *hdr)
 {
+	struct nmreq_vale_detach *nmreq_det = hdr->nr_body;
 	struct netmap_adapter *na;
 	int error;
 
@@ -952,6 +953,9 @@ nm_bdg_ctl_detach(struct nmreq_header *hdr)
 		netmap_adapter_put(na);
 		goto unlock_exit;
 	}
+
+	nmreq_det->port_index = na->na_vp->bdg_port;
+
 	if (na->nm_bdg_ctl) {
 		/* remove the port from bridge. The bwrap
 		 * also needs to put the hwna in normal mode
