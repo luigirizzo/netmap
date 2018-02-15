@@ -305,14 +305,14 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		rxr = &adapter->rx_ring[r];
 
 		for (i = 0; i < rxr->count; i++) {
-			si = netmap_idx_n2k(&na->rx_rings[r], i);
+			si = netmap_idx_n2k(na->rx_rings[r], i);
 			PNMB(na, slot + si, &paddr);
 			E1000_RX_DESC(*rxr, i)->buffer_addr = htole64(paddr);
 		}
 
 		rxr->next_to_use = 0;
 		/* preserve buffers already made available to clients */
-		i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[0]);
+		i = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[0]);
 		if (i < 0) // XXX something wrong here, can it really happen ?
 			i += rxr->count;
 		wmb(); /* Force memory writes to complete */
@@ -328,7 +328,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		}
 
 		for (i = 0; i < na->num_tx_desc; i++) {
-			si = netmap_idx_n2k(&na->tx_rings[r], i);
+			si = netmap_idx_n2k(na->tx_rings[r], i);
 			PNMB(na, slot + si, &paddr);
 			E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
 		}

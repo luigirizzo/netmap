@@ -589,9 +589,9 @@ void
 netmap_set_ring(struct netmap_adapter *na, u_int ring_id, enum txrx t, int stopped)
 {
 	if (stopped)
-		netmap_disable_ring(NMR(na, t) + ring_id, stopped);
+		netmap_disable_ring(NMR(na, t)[ring_id], stopped);
 	else
-		NMR(na, t)[ring_id].nkr_stopped = 0;
+		NMR(na, t)[ring_id]->nkr_stopped = 0;
 }
 
 
@@ -825,7 +825,9 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	n[NR_TX] = na->num_tx_rings + 1;
 	n[NR_RX] = na->num_rx_rings + 1;
 
-	len = (n[NR_TX] + n[NR_RX]) * sizeof(struct netmap_kring) + tailroom;
+	len = (n[NR_TX] + n[NR_RX]) * 
+		(sizeof(struct netmap_kring) + sizeof(struct netmap_kring *))
+		+ tailroom;
 
 	na->tx_rings = nm_os_malloc((size_t)len);
 	if (na->tx_rings == NULL) {
@@ -833,6 +835,14 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 		return ENOMEM;
 	}
 	na->rx_rings = na->tx_rings + n[NR_TX];
+	na->tailroom = na->rx_rings + n[NR_RX];
+ 
+	/* link the krings in the krings array */
+	kring = (struct netmap_kring *)((char *)na->tailroom + tailroom);
+	for (i = 0; i < n[NR_TX] + n[NR_RX]; i++) {
+		na->tx_rings[i] = kring;
+		kring++;
+	}
 
 	/*
 	 * All fields in krings are 0 except the one initialized below.
@@ -841,9 +851,10 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	for_rx_tx(t) {
 		ndesc = nma_get_ndesc(na, t);
 		for (i = 0; i < n[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			bzero(kring, sizeof(*kring));
 			kring->na = na;
+			kring->notify_na = na;
 			kring->ring_id = i;
 			kring->tx = t;
 			kring->nkr_num_slots = ndesc;
@@ -872,7 +883,6 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 		nm_os_selinfo_init(&na->si[t]);
 	}
 
-	na->tailroom = na->rx_rings + n[NR_RX];
 
 	return 0;
 }
@@ -883,7 +893,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 void
 netmap_krings_delete(struct netmap_adapter *na)
 {
-	struct netmap_kring *kring = na->tx_rings;
+	struct netmap_kring **kring = na->tx_rings;
 	enum txrx t;
 
 	if (na->tx_rings == NULL) {
@@ -896,8 +906,8 @@ netmap_krings_delete(struct netmap_adapter *na)
 
 	/* we rely on the krings layout described above */
 	for ( ; kring != na->tailroom; kring++) {
-		mtx_destroy(&kring->q_lock);
-		nm_os_selinfo_uninit(&kring->si);
+		mtx_destroy((*kring)->q_lock);
+		nm_os_selinfo_uninit(&(*kring)->si);
 	}
 	nm_os_free(na->tx_rings);
 	na->tx_rings = na->rx_rings = na->tailroom = NULL;
@@ -913,7 +923,7 @@ netmap_krings_delete(struct netmap_adapter *na)
 void
 netmap_hw_krings_delete(struct netmap_adapter *na)
 {
-	struct mbq *q = &na->rx_rings[na->num_rx_rings].rx_queue;
+	struct mbq *q = &na->rx_rings[na->num_rx_rings]->rx_queue;
 
 	ND("destroy sw mbq with len %d", mbq_len(q));
 	mbq_purge(q);
@@ -1194,7 +1204,7 @@ nm_may_forward_down(struct netmap_kring *kring, int sync_flags)
 static u_int
 netmap_sw_to_nic(struct netmap_adapter *na)
 {
-	struct netmap_kring *kring = &na->rx_rings[na->num_rx_rings];
+	struct netmap_kring *kring = na->rx_rings[na->num_rx_rings];
 	struct netmap_slot *rxslot = kring->ring->slot;
 	u_int i, rxcur = kring->nr_hwcur;
 	u_int const head = kring->rhead;
@@ -1203,7 +1213,7 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 
 	/* scan rings to find space, then fill as much as possible */
 	for (i = 0; i < na->num_tx_rings; i++) {
-		struct netmap_kring *kdst = &na->tx_rings[i];
+		struct netmap_kring *kdst = na->tx_rings[i];
 		struct netmap_ring *rdst = kdst->ring;
 		u_int const dst_lim = kdst->nkr_num_slots - 1;
 
@@ -1931,7 +1941,7 @@ netmap_krings_get(struct netmap_priv_d *priv)
 	 */
 	for_rx_tx(t) {
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			if ((kring->nr_kflags & NKR_EXCLUSIVE) ||
 			    (kring->users && excl))
 			{
@@ -1946,7 +1956,7 @@ netmap_krings_get(struct netmap_priv_d *priv)
 	 */
 	for_rx_tx(t) {
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			kring->users++;
 			if (excl)
 				kring->nr_kflags |= NKR_EXCLUSIVE;
@@ -1979,7 +1989,7 @@ netmap_krings_put(struct netmap_priv_d *priv)
 
 	for_rx_tx(t) {
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			if (excl)
 				kring->nr_kflags &= ~NKR_EXCLUSIVE;
 			kring->users--;
@@ -2267,7 +2277,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 	int error = 0;
 	u_int i, qfirst, qlast;
 	struct netmap_if *nifp;
-	struct netmap_kring *krings;
+	struct netmap_kring **krings;
 	int sync_flags;
 	enum txrx t;
 
@@ -2384,7 +2394,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 				}
 				for_rx_tx(t) {
 					priv->np_si[t] = nm_si_user(priv, t) ?
-						&na->si[t] : &NMR(na, t)[priv->np_qfirst[t]].si;
+						&na->si[t] : &NMR(na, t)[priv->np_qfirst[t]]->si;
 				}
 
 				if (req->nr_extra_bufs) {
@@ -2645,7 +2655,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		sync_flags = priv->np_sync_flags;
 
 		for (i = qfirst; i < qlast; i++) {
-			struct netmap_kring *kring = krings + i;
+			struct netmap_kring *kring = krings[i];
 			struct netmap_ring *ring = kring->ring;
 
 			if (unlikely(nm_kr_tryget(kring, 1, &error))) {
@@ -3089,9 +3099,9 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 #ifdef linux
 	/* The selrecord must be unconditional on linux. */
 	nm_os_selrecord(sr, check_all_tx ?
-	    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
+	    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]]->si);
 	nm_os_selrecord(sr, check_all_rx ?
-		&na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
+		&na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]]->si);
 #endif /* linux */
 
 	/*
@@ -3111,7 +3121,7 @@ flush_tx:
 		for (i = priv->np_qfirst[NR_TX]; i < priv->np_qlast[NR_TX]; i++) {
 			int found = 0;
 
-			kring = &na->tx_rings[i];
+			kring = na->tx_rings[i];
 			ring = kring->ring;
 
 			/*
@@ -3174,7 +3184,7 @@ do_retry_rx:
 		for (i = priv->np_qfirst[NR_RX]; i < priv->np_qlast[NR_RX]; i++) {
 			int found = 0;
 
-			kring = &na->rx_rings[i];
+			kring = na->rx_rings[i];
 			ring = kring->ring;
 
 			if (unlikely(nm_kr_tryget(kring, 1, &revents)))
@@ -3254,7 +3264,7 @@ nma_intr_enable(struct netmap_adapter *na, int onoff)
 
 	for_rx_tx(t) {
 		for (i = 0; i < nma_get_nrings(na, t); i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_kring *kring = NMR(na, t)[i];
 			int on = !(kring->nr_kflags & NKR_NOINTR);
 
 			if (!!onoff != !!on) {
@@ -3290,7 +3300,7 @@ nma_intr_enable(struct netmap_adapter *na, int onoff)
 static int
 netmap_notify(struct netmap_kring *kring, int flags)
 {
-	struct netmap_adapter *na = kring->na;
+	struct netmap_adapter *na = kring->notify_na;
 	enum txrx t = kring->tx;
 
 	nm_os_selwakeup(&kring->si);
@@ -3532,7 +3542,7 @@ netmap_hw_krings_create(struct netmap_adapter *na)
 	int ret = netmap_krings_create(na, 0);
 	if (ret == 0) {
 		/* initialize the mbq for the sw rx ring */
-		mbq_safe_init(&na->rx_rings[na->num_rx_rings].rx_queue);
+		mbq_safe_init(&na->rx_rings[na->num_rx_rings]->rx_queue);
 		ND("initialized sw rx queue %d", na->num_rx_rings);
 	}
 	return ret;
@@ -3596,7 +3606,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct mbq *q;
 	int busy;
 
-	kring = &na->rx_rings[na->num_rx_rings];
+	kring = na->rx_rings[na->num_rx_rings];
 	// XXX [Linux] we do not need this lock
 	// if we follow the down/configure/up protocol -gl
 	// mtx_lock(&na->core_lock);
@@ -3611,7 +3621,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (txr >= na->num_tx_rings) {
 		txr %= na->num_tx_rings;
 	}
-	tx_kring = &NMR(na, NR_TX)[txr];
+	tx_kring = NMR(na, NR_TX)[txr];
 
 	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
 		return MBUF_TRANSMIT(na, ifp, m);
@@ -3699,7 +3709,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 		if (n >= na->num_tx_rings)
 			return NULL;
 
-		kring = na->tx_rings + n;
+		kring = na->tx_rings[n];
 
 		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
 			kring->nr_mode = NKR_NETMAP_OFF;
@@ -3711,7 +3721,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 	} else {
 		if (n >= na->num_rx_rings)
 			return NULL;
-		kring = na->rx_rings + n;
+		kring = na->rx_rings[n];
 
 		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
 			kring->nr_mode = NKR_NETMAP_OFF;
@@ -3779,7 +3789,7 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 	if (q >= nma_get_nrings(na, t))
 		return NM_IRQ_PASS; // not a physical queue
 
-	kring = NMR(na, t) + q;
+	kring = NMR(na, t)[q];
 
 	if (kring->nr_mode == NKR_NETMAP_OFF) {
 		return NM_IRQ_PASS;

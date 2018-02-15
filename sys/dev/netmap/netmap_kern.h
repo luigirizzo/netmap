@@ -448,7 +448,14 @@ struct netmap_kring {
 	NM_LOCK_T	q_lock;		/* protects kring and ring. */
 	NM_ATOMIC_T	nr_busy;	/* prevent concurrent syscalls */
 
+	/* the adapter the owns this kring */
 	struct netmap_adapter *na;
+	
+	/* the adapter that wants to be notified when this kring has
+	 * new slots avaialable. This is usually the same as the above,
+	 * but wrappers may let it point to themselves
+	 */
+	struct netmap_adapter *notify_na;
 
 	/* The following fields are for VALE switch support */
 	struct nm_bdg_fwd *nkr_ft;
@@ -688,8 +695,8 @@ struct netmap_adapter {
 	 * as a contiguous chunk of memory. Each array has
 	 * N+1 entries, for the adapter queues and for the host queue.
 	 */
-	struct netmap_kring *tx_rings; /* array of TX rings. */
-	struct netmap_kring *rx_rings; /* array of RX rings. */
+	struct netmap_kring **tx_rings; /* array of TX rings. */
+	struct netmap_kring **rx_rings; /* array of RX rings. */
 
 	void *tailroom;		       /* space below the rings array */
 				       /* (used for leases) */
@@ -854,7 +861,7 @@ nma_set_nrings(struct netmap_adapter *na, enum txrx t, u_int v)
 		na->num_rx_rings = v;
 }
 
-static __inline struct netmap_kring*
+static __inline struct netmap_kring**
 NMR(struct netmap_adapter *na, enum txrx t)
 {
 	return (t == NR_TX ? na->tx_rings : na->rx_rings);
@@ -1260,10 +1267,10 @@ static inline void
 nm_update_hostrings_mode(struct netmap_adapter *na)
 {
 	/* Process nr_mode and nr_pending_mode for host rings. */
-	na->tx_rings[na->num_tx_rings].nr_mode =
-		na->tx_rings[na->num_tx_rings].nr_pending_mode;
-	na->rx_rings[na->num_rx_rings].nr_mode =
-		na->rx_rings[na->num_rx_rings].nr_pending_mode;
+	na->tx_rings[na->num_tx_rings]->nr_mode =
+		na->tx_rings[na->num_tx_rings]->nr_pending_mode;
+	na->rx_rings[na->num_rx_rings]->nr_mode =
+		na->rx_rings[na->num_rx_rings]->nr_pending_mode;
 }
 
 /* set/clear native flags and if_transmit/netdev_ops */
@@ -1879,7 +1886,7 @@ static inline int nm_kring_pending(struct netmap_priv_d *np)
 
 	for_rx_tx(t) {
 		for (i = np->np_qfirst[t]; i < np->np_qlast[t]; i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_kring *kring = NMR(na, t)[i];
 			if (kring->nr_mode != kring->nr_pending_mode) {
 				return 1;
 			}
