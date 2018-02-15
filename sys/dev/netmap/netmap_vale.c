@@ -867,6 +867,12 @@ nm_bdg_ctl_attach(struct nmreq *nmr)
 		}
 	}
 
+	/* XXX check existing one */
+	error = netmap_get_bdg_na(nmr, &na, nmd, 0);
+	if (!error) {
+		error = EBUSY;
+		goto unref_exit;
+	}
 	error = netmap_get_bdg_na(nmr, &na, nmd, 1 /* create if not exists */);
 	if (error) /* no device */
 		goto unlock_exit;
