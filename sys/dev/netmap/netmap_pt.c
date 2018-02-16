@@ -1188,9 +1188,9 @@ netmap_get_pt_host_na(struct nmreq_header *hdr, struct netmap_adapter **na,
      */
     memcpy(&preq, req, sizeof(preq));
     preq.nr_flags &= ~(NR_PTNETMAP_HOST);
-    hdr->nr_body = &preq;
+    hdr->nr_body = (uint64_t)&preq;
     error = netmap_get_na(hdr, &parent, &ifp, nmd, create);
-    hdr->nr_body = req;
+    hdr->nr_body = (uint64_t)req;
     if (error) {
         D("parent lookup failed: %d", error);
         goto put_out_noputparent;
