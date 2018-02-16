@@ -2391,10 +2391,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 
 					/* get a refcount */
 					hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-					hdr->nr_body = &regreq;
+					hdr->nr_body = (uint64_t)&regreq;
 					error = netmap_get_na(hdr, &na, &ifp, NULL, 1 /* create */);
 					hdr->nr_reqtype = NETMAP_REQ_PORT_INFO_GET; /* reset type */
-					hdr->nr_body = req; /* reset nr_body */
+					hdr->nr_body = (uint64_t)req; /* reset nr_body */
 					if (error) {
 						na = NULL;
 						ifp = NULL;
@@ -2461,10 +2461,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			}
 			NMG_LOCK();
 			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-			hdr->nr_body = &regreq;
+			hdr->nr_body = (uint64_t)&regreq;
 			error = netmap_get_bdg_na(hdr, &na, NULL, 0);
 			hdr->nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
-			hdr->nr_body = req;
+			hdr->nr_body = (uint64_t)req;
 			if (na && !error) {
 				struct netmap_vp_adapter *vpna =
 					(struct netmap_vp_adapter *)na;
@@ -2493,10 +2493,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			bzero(&regreq, sizeof(regreq));
 			NMG_LOCK();
 			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-			hdr->nr_body = &regreq;
+			hdr->nr_body = (uint64_t)&regreq;
 			error = netmap_get_na(hdr, &na, &ifp, NULL, 0);
 			hdr->nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
-			hdr->nr_body = req;
+			hdr->nr_body = (uint64_t)req;
 			if (na && !error) {
 				req->nr_hdr_len = na->virt_hdr_len;
 			}
@@ -2518,10 +2518,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			regreq.nr_rx_rings = req->nr_rx_rings;
 			regreq.nr_mem_id = req->nr_mem_id;
 			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-			hdr->nr_body = &regreq;
+			hdr->nr_body = (uint64_t)&regreq;
 			error = netmap_vi_create(hdr, 0 /* no autodelete */);
 			hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
-			hdr->nr_body = req;
+			hdr->nr_body = (uint64_t)req;
                         /* Write back to the original struct. */
 			req->nr_tx_slots = regreq.nr_tx_slots;
 			req->nr_rx_slots = regreq.nr_rx_slots;
@@ -2707,7 +2707,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 	char *ker = NULL, *p;
 	struct nmreq_option **next, *src;
 	struct nmreq_option buf;
-	void **ptrs;
+	uint64_t *ptrs;
 
 	if (hdr->nr_reserved)
 		return EINVAL;
@@ -2723,8 +2723,8 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		error = EMSGSIZE;
 		goto out_err;
 	}
-	if ((rqsz && hdr->nr_body == NULL) ||
-		(!rqsz && hdr->nr_body != NULL)) {
+	if ((rqsz && hdr->nr_body == (uint64_t)NULL) ||
+		(!rqsz && hdr->nr_body != (uint64_t)NULL)) {
 		/* Request body expected, but not found; or
 		 * request body found but unexpected. */
 		error = EINVAL;
@@ -2733,7 +2733,9 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 
 	bufsz = 2 * sizeof(void *) + rqsz;
 	optsz = 0;
-	for (src = hdr->nr_options; src; src = buf.nro_next) {
+	for (src = (struct nmreq_option *)hdr->nr_options; src;
+	     src = (struct nmreq_option *)buf.nro_next)
+	{
 		error = copyin(src, &buf, sizeof(*src));
 		if (error)
 			goto out_err;
@@ -2754,27 +2756,27 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 	p = ker;
 
 	/* make a copy of the user pointers */
-	ptrs = (void **)p;
+	ptrs = (uint64_t*)p;
 	*ptrs++ = hdr->nr_body;
 	*ptrs++ = hdr->nr_options;
 	p = (char *)ptrs;
 
 	/* copy the body */
-	error = copyin(hdr->nr_body, p, rqsz);
+	error = copyin((void *)hdr->nr_body, p, rqsz);
 	if (error)
 		goto out_restore;
 	/* overwrite the user pointer with the in-kernel one */
-	hdr->nr_body = p;
+	hdr->nr_body = (uint64_t)p;
 	p += rqsz;
 
 	/* copy the options */
-	next = &hdr->nr_options;
+	next = (struct nmreq_option **)&hdr->nr_options;
 	src = *next;
 	while (src) {
 		struct nmreq_option *opt;
 
 		/* copy the option header */
-		ptrs = (void **)p;
+		ptrs = (uint64_t *)p;
 		opt = (struct nmreq_option *)(ptrs + 1);
 		error = copyin(src, opt, sizeof(*src));
 		if (error)
@@ -2802,13 +2804,13 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		}
 
 		/* move to next option */
-		next = &opt->nro_next;
+		next = (struct nmreq_option **)&opt->nro_next;
 		src = *next;
 	}
 	return 0;
 
 out_restore:
-	ptrs = (void **)ker;
+	ptrs = (uint64_t *)ker;
 	hdr->nr_body = *ptrs++;
 	hdr->nr_options = *ptrs++;
 	hdr->nr_reserved = 0;
@@ -2821,8 +2823,8 @@ static int
 nmreq_copyout(struct nmreq_header *hdr, int rerror)
 {
 	struct nmreq_option *src, *dst;
-	void *ker = hdr->nr_body, *bufstart;
-	void **ptrs;
+	void *ker = (void *)hdr->nr_body, *bufstart;
+	uint64_t *ptrs;
 	size_t bodysz;
 	int error;
 
@@ -2830,16 +2832,16 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 		return rerror;
 
 	/* restore the user pointers in the header */
-	ptrs = (void **)ker - 2;
+	ptrs = (uint64_t *)ker - 2;
 	bufstart = ptrs;
 	hdr->nr_body = *ptrs++;
-	src = hdr->nr_options;
+	src = (struct nmreq_option *)hdr->nr_options;
 	hdr->nr_options = *ptrs;
 
 	if (!rerror) {
 		/* copy the body */
 		bodysz = nmreq_size_by_type(hdr->nr_reqtype);
-		error = copyout(ker, hdr->nr_body, bodysz);
+		error = copyout(ker, (void *)hdr->nr_body, bodysz);
 		if (error) {
 			rerror = error;
 			goto out;
@@ -2847,14 +2849,14 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 	}
 
 	/* copy the options */
-	dst = hdr->nr_options;
+	dst = (struct nmreq_option *)hdr->nr_options;
 	while (src) {
 		size_t optsz;
-		struct nmreq_option *next;
+		uint64_t next;
 
 		/* restore the user pointer */
 		next = src->nro_next;
-		ptrs = (void **)src - 1;
+		ptrs = (uint64_t *)src - 1;
 		src->nro_next = *ptrs;
 
 		/* always copy the option header */
@@ -2875,8 +2877,8 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 				}
 			}
 		}
-		src = next;
-		dst = *ptrs;
+		src = (struct nmreq_option *)next;
+		dst = (struct nmreq_option *)*ptrs;
 	}
 
 
@@ -2889,7 +2891,7 @@ out:
 struct nmreq_option *
 nmreq_findoption(struct nmreq_option *opt, uint16_t reqtype)
 {
-	for ( ; opt; opt = opt->nro_next)
+	for ( ; opt; opt = (struct nmreq_option *)opt->nro_next)
 		if (opt->nro_reqtype == reqtype)
 			return opt;
 	return NULL;
@@ -2901,8 +2903,9 @@ nmreq_checkduplicate(struct nmreq_option *opt) {
 	uint16_t type = opt->nro_reqtype;
 	int dup = 0;
 
-	for (scan = opt->nro_next; scan;
-		scan = nmreq_findoption(scan->nro_next, type))
+	for (scan = (struct nmreq_option *)opt->nro_next; scan;
+		scan = nmreq_findoption((struct nmreq_option *)scan->nro_next,
+			type))
 	{
 		dup++;
 		scan->nro_status = EINVAL;
@@ -2918,7 +2921,8 @@ nmreq_checkoptions(struct nmreq_header *hdr)
 	 * marked as not supported
 	 */
 
-	for (opt = hdr->nr_options; opt; opt = opt->nro_next)
+	for (opt = (struct nmreq_option *)hdr->nr_options; opt;
+	     opt = (struct nmreq_option *)opt->nro_next)
 		if (opt->nro_status == EOPNOTSUPP)
 			return EOPNOTSUPP;
 
