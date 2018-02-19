@@ -2449,6 +2449,8 @@ EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
 EXPORT_SYMBOL(netmap_bdg_mod_private_data);
 EXPORT_SYMBOL(nm_bdg_ctl_attach);
 EXPORT_SYMBOL(nm_bdg_ctl_detach);
+EXPORT_SYMBOL(nm_vi_create);
+EXPORT_SYMBOL(nm_vi_destroy);
 #endif /* WITH_VALE */
 EXPORT_SYMBOL(netmap_disable_all_rings);
 EXPORT_SYMBOL(netmap_enable_all_rings);

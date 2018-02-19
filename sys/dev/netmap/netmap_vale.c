@@ -563,6 +563,36 @@ netmap_vp_dtor(struct netmap_adapter *na)
 	}
 }
 
+/* creates a persistent VALE port */
+int
+nm_vi_create(struct nmreq_header *hdr)
+{
+	struct nmreq_vale_newif *req =
+		(struct nmreq_vale_newif *)hdr->nr_body;
+	int error = 0;
+	/* Build a nmreq_register out of the nmreq_vale_newif,
+	 * so that we can call netmap_get_bdg_na(). */
+	struct nmreq_register regreq;
+	bzero(&regreq, sizeof(regreq));
+	regreq.nr_tx_slots = req->nr_tx_slots;
+	regreq.nr_rx_slots = req->nr_rx_slots;
+	regreq.nr_tx_rings = req->nr_tx_rings;
+	regreq.nr_rx_rings = req->nr_rx_rings;
+	regreq.nr_mem_id = req->nr_mem_id;
+	hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+	hdr->nr_body = &regreq;
+	error = netmap_vi_create(hdr, 0 /* no autodelete */);
+	hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
+	hdr->nr_body = req;
+        /* Write back to the original struct. */
+	req->nr_tx_slots = regreq.nr_tx_slots;
+	req->nr_rx_slots = regreq.nr_rx_slots;
+	req->nr_tx_rings = regreq.nr_tx_rings;
+	req->nr_rx_rings = regreq.nr_rx_rings;
+	req->nr_mem_id = regreq.nr_mem_id;
+	return error;
+}
+
 /* remove a persistent VALE port from the system */
 int
 nm_vi_destroy(const char *name)

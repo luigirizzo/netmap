@@ -1022,6 +1022,7 @@ int nm_bdg_ctl_detach(struct nmreq_header *hdr);
 int nm_bdg_polling(struct nmreq_header *hdr);
 int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
 int netmap_vi_create(struct nmreq_header *hdr, int);
+int nm_vi_create(struct nmreq_header *);
 int nm_vi_destroy(const char *name);
 int netmap_bdg_list(struct nmreq_header *hdr);
 

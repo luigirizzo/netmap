@@ -2506,28 +2506,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 
 		case NETMAP_REQ_VALE_NEWIF: {
-			struct nmreq_vale_newif *req =
-				(struct nmreq_vale_newif *)hdr->nr_body;
-			/* Build a nmreq_register out of the nmreq_vale_newif,
-			 * so that we can call netmap_get_bdg_na(). */
-			struct nmreq_register regreq;
-			bzero(&regreq, sizeof(regreq));
-			regreq.nr_tx_slots = req->nr_tx_slots;
-			regreq.nr_rx_slots = req->nr_rx_slots;
-			regreq.nr_tx_rings = req->nr_tx_rings;
-			regreq.nr_rx_rings = req->nr_rx_rings;
-			regreq.nr_mem_id = req->nr_mem_id;
-			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-			hdr->nr_body = &regreq;
-			error = netmap_vi_create(hdr, 0 /* no autodelete */);
-			hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
-			hdr->nr_body = req;
-                        /* Write back to the original struct. */
-			req->nr_tx_slots = regreq.nr_tx_slots;
-			req->nr_rx_slots = regreq.nr_rx_slots;
-			req->nr_tx_rings = regreq.nr_tx_rings;
-			req->nr_rx_rings = regreq.nr_rx_rings;
-			req->nr_mem_id = regreq.nr_mem_id;
+			error = nm_vi_create(hdr);
 			break;
 		}
 
