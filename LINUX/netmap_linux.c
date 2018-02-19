@@ -2445,8 +2445,8 @@ EXPORT_SYMBOL(netmap_rx_irq);	        /* default irq handler */
 EXPORT_SYMBOL(netmap_no_pendintr);	/* XXX mitigation - should go away */
 #ifdef WITH_VALE
 EXPORT_SYMBOL(netmap_bdg_regops);	/* bridge configuration routine */
-//EXPORT_SYMBOL(netmap_bdg_learning);	/* the default lookup function */
 EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
+EXPORT_SYMBOL(netmap_bdg_mod_private_data);
 EXPORT_SYMBOL(nm_bdg_ctl_attach);
 EXPORT_SYMBOL(nm_bdg_ctl_detach);
 #endif /* WITH_VALE */

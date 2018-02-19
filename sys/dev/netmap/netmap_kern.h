@@ -1444,9 +1444,10 @@ int netmap_get_hw_na(struct ifnet *ifp,
  * drop.
  */
 typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
-		struct netmap_vp_adapter *, void *lookup_data);
+		struct netmap_vp_adapter *, void *private_data);
 typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
 typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
+typedef void (*bdg_mod_private_data_fn_t)(void *private_data, void *callback_data);
 struct netmap_bdg_ops {
 	bdg_lookup_fn_t lookup;
 	bdg_config_fn_t config;
@@ -1454,7 +1455,7 @@ struct netmap_bdg_ops {
 };
 
 u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
-		struct netmap_vp_adapter *, void *lookup_data);
+		struct netmap_vp_adapter *, void *private_data);
 
 #define	NM_BRIDGES		8	/* number of bridges */
 #define	NM_BDG_MAXPORTS		254	/* up to 254 */
@@ -1468,7 +1469,8 @@ struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
-int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *lookup_data);
+int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data);
+int netmap_bdg_mod_private_data(const char *name, bdg_mod_private_data_fn_t callback, void *callback_data);
 int netmap_bdg_config(struct nm_ifreq *nifr);
 
 #else /* !WITH_VALE */
