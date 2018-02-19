@@ -146,7 +146,11 @@ update_drivers() {
 update_drivers
 
 # available apps
-application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl dedup"
+application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl"
+if [ $(uname -m) == "x86_64" ]; then
+    # dedup uses inline x86_64 assembly
+    application_avail="${application_avail} dedup"
+fi
 application=0
 app()
 {
