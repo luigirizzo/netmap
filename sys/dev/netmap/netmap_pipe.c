@@ -566,8 +566,8 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		return EINVAL;
 	}
 
-	if (req->nr_mode != NR_REG_ALL_NIC) {
-		/* For pipes we currently accept only NR_REG_ALL_NIC. */
+	if (req->nr_mode != NR_REG_ALL_NIC && req->nr_mode != NR_REG_ONE_NIC) {
+		/* We only accept modes involving hardware rings. */
 		return EINVAL;
 	}
 

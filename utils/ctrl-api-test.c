@@ -430,10 +430,10 @@ pipe_master(int fd, struct TestContext *ctx)
 
 	snprintf(pipe_name, sizeof(pipe_name), "%s{%s", ctx->ifname, "pipeid1");
 	ctx->ifname  = pipe_name;
-	ctx->nr_mode = NR_REG_ONE_NIC;
+	ctx->nr_mode = NR_REG_NIC_SW;
 
 	if (port_register(fd, ctx) == 0) {
-		printf("pipes should not accept NR_REG_ONE_NIC\n");
+		printf("pipes should not accept NR_REG_NIC_SW\n");
 		return -1;
 	}
 	ctx->nr_mode = NR_REG_ALL_NIC;
