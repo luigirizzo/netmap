@@ -615,7 +615,7 @@ struct nmreq_port_info_get {
  */
 struct nmreq_vale_attach {
 	struct nmreq_register reg;
-	uint8_t port_index;
+	uint32_t port_index;
 };
 
 /*
@@ -625,7 +625,7 @@ struct nmreq_vale_attach {
  * port_index will contain the index where the port was attached.
  */
 struct nmreq_vale_detach {
-	uint8_t port_index;
+	uint32_t port_index;
 };
 
 /*
@@ -635,7 +635,7 @@ struct nmreq_vale_detach {
 struct nmreq_vale_list {
 	/* Name of the VALE port (valeXXX:YYY) or empty. */
 	uint16_t	nr_bridge_idx;
-	uint16_t	nr_port_idx;
+	uint32_t	nr_port_idx;
 };
 
 /*

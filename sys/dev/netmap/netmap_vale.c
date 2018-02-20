@@ -755,7 +755,8 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	int error = 0;
 	struct netmap_vp_adapter *vpna, *hostna = NULL;
 	struct nm_bridge *b;
-	int i, j, cand = -1, cand2 = -1;
+	uint32_t i, j;
+	uint32_t cand = NM_BDG_NOPORT, cand2 = NM_BDG_NOPORT;
 	int needed;
 
 	*na = NULL;     /* default return value */
@@ -1394,13 +1395,20 @@ netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *privat
 	if (!b) {
 		error = EINVAL;
 	} else if (!bdg_ops) {
+		BDG_WLOCK(b);
 		bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
 		b->bdg_ops = &default_bdg_ops;
 		b->private_data = b->ht;
+		BDG_WUNLOCK(b);
 	} else {
-		/* TODO: implement ownership over bridges */
-		b->bdg_ops = bdg_ops;
-		b->private_data = private_data;
+		BDG_WLOCK(b);
+		if (b->bdg_ops != &default_bdg_ops) {
+			error = EINVAL;
+		} else {
+			b->bdg_ops = bdg_ops;
+			b->private_data = private_data;
+		}
+		BDG_WUNLOCK(b);
 	}
 	NMG_UNLOCK();
 
