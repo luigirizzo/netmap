@@ -178,7 +178,6 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 		wmb();	/* synchronize writes to the NIC ring */
 
 		/* (re)start the tx unit up to slot nic_i (excluded) */
-		txr->next_to_use = nic_i;
 		writel(nic_i, txr->tail);
 		mmiowb(); // XXX why do we need this ?
 	}
@@ -255,6 +254,7 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 		}
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
+			rxr->next_to_alloc = nic_i;
 			kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
@@ -291,7 +291,6 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 		 * so move nic_i back by one unit
 		 */
 		nic_i = nm_prev(nic_i, lim);
-		rxr->next_to_use = nic_i;
 		writel(nic_i, rxr->tail);
 	}
 
@@ -375,7 +374,6 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 
 	wmb();	/* Force memory writes to complete */
 	ND("%s rxr%d.tail %d", na->name, reg_idx, i);
-	rxr->next_to_use = i;
 	writel(i, rxr->tail);
 	return 1;	// success
 }

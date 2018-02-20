@@ -138,6 +138,7 @@ sym_hash_fn(uint32_t sip, uint32_t dip, uint16_t sp, uint32_t dp)
 
 	return rc;
 }
+static uint32_t decode_gre_hash(const uint8_t *, uint8_t, uint8_t);
 /*---------------------------------------------------------------------*/
 /**
  ** Parser + hash function for the IPv4 packet
@@ -176,8 +177,11 @@ decode_ip_n_hash(struct ip *iph, uint8_t hash_split, uint8_t seed)
 			rc = decode_ip_n_hash((struct ip *)((uint8_t *)iph + (iph->ip_hl<<2)),
 					      hash_split, seed);
 			break;
-		case IPPROTO_ICMP:
 		case IPPROTO_GRE:
+			rc = decode_gre_hash((uint8_t *)iph + (iph->ip_hl<<2),
+					hash_split, seed);
+			break;
+		case IPPROTO_ICMP:
 		case IPPROTO_ESP:
 		case IPPROTO_PIM:
 		case IPPROTO_IGMP:
@@ -249,8 +253,10 @@ decode_ipv6_n_hash(struct ip6_hdr *ipv6h, uint8_t hash_split, uint8_t seed)
 			rc = decode_ipv6_n_hash((struct ip6_hdr *)(ipv6h + 1),
 						hash_split, seed);
 			break;
-		case IPPROTO_ICMP:
 		case IPPROTO_GRE:
+			rc = decode_gre_hash((uint8_t *)(ipv6h + 1), hash_split, seed);
+			break;
+		case IPPROTO_ICMP:
 		case IPPROTO_ESP:
 		case IPPROTO_PIM:
 		case IPPROTO_IGMP:
@@ -320,6 +326,7 @@ decode_vlan_n_hash(struct ether_header *ethh, uint8_t hash_split, uint8_t seed)
 	}
 	return rc;
 }
+
 /*---------------------------------------------------------------------*/
 /**
  ** General parser + hash function...
@@ -327,7 +334,7 @@ decode_vlan_n_hash(struct ether_header *ethh, uint8_t hash_split, uint8_t seed)
 uint32_t
 pkt_hdr_hash(const unsigned char *buffer, uint8_t hash_split, uint8_t seed)
 {
-	int rc = 0;
+	uint32_t rc = 0;
 	struct ether_header *ethh = (struct ether_header *)buffer;
 
 	switch (ntohs(ethh->ether_type)) {
@@ -349,6 +356,39 @@ pkt_hdr_hash(const unsigned char *buffer, uint8_t hash_split, uint8_t seed)
 		break;
 	}
 
+	return rc;
+}
+
+/*---------------------------------------------------------------------*/
+/**
+ ** Parser + hash function for the GRE packet
+ **/
+static uint32_t
+decode_gre_hash(const uint8_t *grehdr, uint8_t hash_split, uint8_t seed)
+{
+	uint32_t rc = 0;
+	int len = 4 + 2 * (!!(*grehdr & 1) + /* Checksum */
+			   !!(*grehdr & 2) + /* Routing */
+			   !!(*grehdr & 4) + /* Key */
+			   !!(*grehdr & 8)); /* Sequence Number */
+	uint16_t proto = ntohs(*(uint16_t *)(void *)(grehdr + 2));
+
+	switch (proto) {
+	case ETHERTYPE_IP:
+		rc = decode_ip_n_hash((struct ip *)(grehdr + len),
+				      hash_split, seed);
+		break;
+	case ETHERTYPE_IPV6:
+		rc = decode_ipv6_n_hash((struct ip6_hdr *)(grehdr + len),
+					hash_split, seed);
+		break;
+	case 0x6558: /* Transparent Ethernet Bridging */
+		rc = pkt_hdr_hash(grehdr + len, hash_split, seed);
+		break;
+	default:
+		/* others */
+		break;
+	}
 	return rc;
 }
 /*---------------------------------------------------------------------*/

@@ -108,7 +108,7 @@ subsys enable generic
 
 # available drivers
 driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
-	e1000 e1000e igb ixgbe ixgbevf i40e"
+	e1000 e1000e igb ixgbe ixgbevf i40e vmxnet3"
 # enabled drivers (bitfield)
 driver=
 drv()
@@ -147,7 +147,7 @@ update_drivers() {
 update_drivers
 
 # available apps
-application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl"
+application_avail="pkt-gen bridge lb tlem nmreplay vale-ctl dedup"
 application=0
 app()
 {
@@ -642,6 +642,13 @@ rm -f config.log
 } > config.log
 
 exec 2>> config.log
+
+appl_arch=$($cc -dumpmachine | cut -d '-' -f 1)
+echo "Application arch is $appl_arch"
+if [ $appl_arch != "x86_64" ]; then
+    # dedup uses inline x86_64 assembly
+    app disable dedup
+fi
 
 ################################
 # check for sane configuration

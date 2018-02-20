@@ -734,6 +734,19 @@ err:
 	return ret;
 }
 
+static int
+ixgbe_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
+		    u_int *rxr, u_int *rxd)
+{
+	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(na->ifp);
+
+	*txr = adapter->num_tx_queues;
+	*rxr = adapter->num_rx_queues;
+	*txd = NM_IXGBE_TX_RING(adapter, 0)->count;
+	*rxd = NM_IXGBE_RX_RING(adapter, 0)->count;
+
+	return 0;
+}
 
 static void ixgbe_netmap_detach(struct NM_IXGBE_ADAPTER *adapter);
 /*
@@ -772,6 +785,7 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 	na.nm_register = ixgbe_netmap_reg;
 	na.nm_krings_create = ixgbe_netmap_krings_create;
 	na.nm_krings_delete = ixgbe_netmap_krings_delete;
+	na.nm_config = ixgbe_netmap_config;
 	na.num_tx_rings = adapter->num_tx_queues;
 	na.num_rx_rings = adapter->num_rx_queues;
 	na.nm_intr = ixgbe_netmap_intr;
