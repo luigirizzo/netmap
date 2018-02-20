@@ -1010,8 +1010,11 @@ netmap_obj_free_va(struct netmap_obj_pool *p, void *vaddr)
 	    vaddr, p->name);
 }
 
-#define netmap_mem_bufsize(n)	\
-	((n)->pools[NETMAP_BUF_POOL]._objsize)
+unsigned
+netmap_mem_bufsize(struct netmap_mem_d *nmd)
+{
+	return nmd->pools[NETMAP_BUF_POOL]._objsize;
+}
 
 #define netmap_if_malloc(n, len)	netmap_obj_malloc(&(n)->pools[NETMAP_IF_POOL], len, NULL, NULL)
 #define netmap_if_free(n, v)		netmap_obj_free_va(&(n)->pools[NETMAP_IF_POOL], (v))
