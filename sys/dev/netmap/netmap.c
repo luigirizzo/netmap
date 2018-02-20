@@ -2081,10 +2081,24 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	if (na->active_fds == 0) {
 		/*
 		 * If this is the first registration of the adapter,
-		 * create the  in-kernel view of the netmap rings,
-		 * the netmap krings.
+		 * perform sanity checks and create the in-kernel view
+		 * of the netmap rings (the netmap krings).
 		 */
-
+#ifdef linux
+		if (na->ifp) {
+			/* This netmap adapter is attached to an ifnet.
+			 * Check that netmap buffer size is at least as
+			 * big as device MTU. */
+			if (netmap_mem_bufsize(na->nm_mem) < na->ifp->mtu) {
+				D("Error: netmap buf_size (%u) smaller "
+					"than device MTU (%u)",
+					netmap_mem_bufsize(na->nm_mem),
+					na->ifp->mtu);
+				error = EINVAL;
+				goto err;
+			}
+		}
+#endif /* linux */
 		/*
 		 * Depending on the adapter, this may also create
 		 * the netmap rings themselves

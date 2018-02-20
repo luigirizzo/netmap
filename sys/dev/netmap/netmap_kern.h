@@ -702,9 +702,8 @@ struct netmap_adapter {
 	/* copy of if_input for netmap_send_up() */
 	void     (*if_input)(struct ifnet *, struct mbuf *);
 
-	/* references to the ifnet and device routines, used by
-	 * the generic netmap functions.
-	 */
+	/* Back reference to the parent ifnet struct. Used for
+	 * hardware ports (emulated netmap included). */
 	struct ifnet *ifp; /* adapter is ifp->if_softc */
 
 	/*---- callbacks for this netmap adapter -----*/
