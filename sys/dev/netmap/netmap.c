@@ -3004,6 +3004,7 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 #endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
 	}
 	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;
+	hwna->nm_ndo.ndo_change_mtu = linux_netmap_change_mtu;
 	if (ifp->ethtool_ops) {
 		hwna->nm_eto = *ifp->ethtool_ops;
 	}

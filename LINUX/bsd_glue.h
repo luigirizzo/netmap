@@ -120,8 +120,9 @@ extern struct net init_net;
 #define netdev_ops	hard_start_xmit
 struct net_device_ops {
 	int (*ndo_start_xmit)(struct sk_buff *skb, struct net_device *dev);
+	int (*ndo_change_mtu)(struct net_device *dev, int new_mtu);
 };
-#endif /* NETDEV_OPS */
+#endif /* !NETDEV_OPS */
 
 #ifndef NETMAP_LINUX_HAVE_NETDEV_TX_T
 #define netdev_tx_t	int
@@ -298,6 +299,9 @@ void if_rele(struct net_device *ifp);
 
 /* hook to send from user space */
 netdev_tx_t linux_netmap_start_xmit(struct sk_buff *, struct net_device *);
+
+/* prevent MTU changes while in netmap mode */
+int linux_netmap_change_mtu(struct net_device *dev, int new_mtu);
 
 /* prevent ring params change while in netmap mode */
 int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *);
