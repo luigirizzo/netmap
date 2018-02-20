@@ -154,6 +154,12 @@ nm_os_ifnet_fini(void)
 	}
 }
 
+unsigned
+nm_os_ifnet_mtu(struct ifnet *ifp)
+{
+	return ifp->mtu;
+}
+
 #ifdef NETMAP_LINUX_HAVE_IOMMU
 #include <linux/iommu.h>
 

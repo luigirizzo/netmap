@@ -171,6 +171,12 @@ nm_os_ifnet_fini(void)
                 nm_ifnet_dh_tag);
 }
 
+unsigned
+nm_os_ifnet_mtu(struct ifnet *ifp)
+{
+       return ifp->if_data.ifi_mtu;
+}
+
 rawsum_t
 nm_os_csum_raw(uint8_t *data, size_t len, rawsum_t cur_sum)
 {

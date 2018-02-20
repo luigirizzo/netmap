@@ -285,6 +285,8 @@ void nm_os_ifnet_fini(void);
 void nm_os_ifnet_lock(void);
 void nm_os_ifnet_unlock(void);
 
+unsigned nm_os_ifnet_mtu(struct ifnet *ifp);
+
 void nm_os_get_module(void);
 void nm_os_put_module(void);
 

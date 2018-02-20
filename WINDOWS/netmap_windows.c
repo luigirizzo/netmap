@@ -927,6 +927,12 @@ nm_os_ifnet_fini(void)
 
 }
 
+unsigned
+nm_os_ifnet_mtu(struct ifnet *ifp)
+{
+       return 1500; /* XXX hardwired */
+}
+
 /*
  * Mitigation support
  */
