@@ -566,6 +566,11 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		return EINVAL;
 	}
 
+	if (req->nr_mode != NR_REG_ALL_NIC) {
+		/* For pipes we currently accept only NR_REG_ALL_NIC. */
+		return EINVAL;
+	}
+
 	/* first, try to find the parent adapter */
 	for (;;) {
 		char nr_name_orig[NETMAP_REQ_IFNAMSIZ];
