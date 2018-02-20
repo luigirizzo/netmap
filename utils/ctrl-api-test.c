@@ -1,15 +1,15 @@
 #include <errno.h>
 #include <fcntl.h>
-#include <stdint.h>
+#include <inttypes.h>
 #include <net/if.h>
 #include <net/netmap.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <inttypes.h>
 
 struct TestContext {
 	const char *ifname;
@@ -28,7 +28,7 @@ struct TestContext {
 
 	uint32_t nr_first_cpu_id;     /* vale polling */
 	uint32_t nr_num_polling_cpus; /* vale polling */
-	struct nmreq_option *nr_opt; /* list of options */
+	struct nmreq_option *nr_opt;  /* list of options */
 };
 
 #if 0
@@ -65,7 +65,7 @@ port_info_get(int fd, struct TestContext *ctx)
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
-	hdr.nr_body    = &req;
+	hdr.nr_body    = (uint64_t)(uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	ret = ioctl(fd, NIOCCTRL, &hdr);
 	if (ret) {
@@ -101,8 +101,8 @@ port_register(int fd, struct TestContext *ctx)
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_REGISTER;
-	hdr.nr_body    = &req;
-	hdr.nr_options = ctx->nr_opt;
+	hdr.nr_body    = (uint64_t)(uintptr_t)&req;
+	hdr.nr_options = (uint64_t)(uintptr_t)ctx->nr_opt;
 	memset(&req, 0, sizeof(req));
 	req.nr_mem_id     = ctx->nr_mem_id;
 	req.nr_mode       = ctx->nr_mode;
@@ -188,7 +188,7 @@ vale_attach(int fd, struct TestContext *ctx)
 	printf("Testing NETMAP_REQ_VALE_ATTACH on '%s'\n", vpname);
 	nmreq_hdr_init(&hdr, vpname);
 	hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
-	hdr.nr_body    = &req;
+	hdr.nr_body    = (uint64_t)(uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	req.reg.nr_mem_id = ctx->nr_mem_id;
 	if (ctx->nr_mode == 0) {
@@ -264,7 +264,7 @@ port_hdr_set_and_get(int fd, struct TestContext *ctx)
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
-	hdr.nr_body    = &req;
+	hdr.nr_body    = (uint64_t)(uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	req.nr_hdr_len = ctx->nr_hdr_len;
 	ret	    = ioctl(fd, NIOCCTRL, &hdr);
@@ -330,7 +330,7 @@ vale_persistent_port(int fd, struct TestContext *ctx)
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_VALE_NEWIF;
-	hdr.nr_body    = &req;
+	hdr.nr_body    = (uint64_t)(uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	req.nr_mem_id   = ctx->nr_mem_id;
 	req.nr_tx_slots = ctx->nr_tx_slots;
@@ -348,7 +348,7 @@ vale_persistent_port(int fd, struct TestContext *ctx)
 
 	printf("Testing NETMAP_REQ_VALE_DELIF on '%s'\n", ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_VALE_DELIF;
-	hdr.nr_body    = NULL;
+	hdr.nr_body    = (uint64_t)(uintptr_t)NULL;
 	ret	    = ioctl(fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_NEWIF)");
@@ -372,7 +372,7 @@ pools_info_get(int fd, struct TestContext *ctx)
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
-	hdr.nr_body    = &req;
+	hdr.nr_body    = (uint64_t)(uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	ret = ioctl(fd, NIOCCTRL, &hdr);
 	if (ret) {
@@ -433,7 +433,7 @@ pipe_master(int fd, struct TestContext *ctx)
 	ctx->nr_mode = NR_REG_ONE_NIC;
 
 	if (port_register(fd, ctx) == 0) {
-		printf("pipes should not accept NR_REG_ONE_NIC");
+		printf("pipes should not accept NR_REG_ONE_NIC\n");
 		return -1;
 	}
 	ctx->nr_mode = NR_REG_ALL_NIC;
@@ -467,7 +467,7 @@ vale_polling_enable(int fd, struct TestContext *ctx)
 
 	nmreq_hdr_init(&hdr, vpname);
 	hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_ENABLE;
-	hdr.nr_body    = &req;
+	hdr.nr_body    = (uint64_t)(uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	req.nr_mode		= ctx->nr_mode;
 	req.nr_first_cpu_id     = ctx->nr_first_cpu_id;
@@ -499,7 +499,7 @@ vale_polling_disable(int fd, struct TestContext *ctx)
 
 	nmreq_hdr_init(&hdr, vpname);
 	hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_DISABLE;
-	hdr.nr_body    = &req;
+	hdr.nr_body    = (uint64_t)(uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	ret = ioctl(fd, NIOCCTRL, &hdr);
 	if (ret) {
@@ -538,8 +538,8 @@ vale_polling_enable_disable(int fd, struct TestContext *ctx)
 static void
 push_option(struct nmreq_option *opt, struct TestContext *ctx)
 {
-	opt->nro_next = ctx->nr_opt;
-	ctx->nr_opt = opt;
+	opt->nro_next = (uint64_t)(uintptr_t)ctx->nr_opt;
+	ctx->nr_opt   = opt;
 }
 
 static void
@@ -552,21 +552,18 @@ static int
 checkoption(struct nmreq_option *opt, struct nmreq_option *exp)
 {
 	if (opt->nro_next != exp->nro_next) {
-		printf("nro_next %p expected %p\n",
-				opt->nro_next,
-				exp->nro_next);
+		printf("nro_next %p expected %p\n", (void *)opt->nro_next,
+		       (void *)exp->nro_next);
 		return -1;
 	}
 	if (opt->nro_reqtype != exp->nro_reqtype) {
-		printf("nro_reqtype %u expected %u\n",
-				opt->nro_reqtype,
-				exp->nro_reqtype);
+		printf("nro_reqtype %u expected %u\n", opt->nro_reqtype,
+		       exp->nro_reqtype);
 		return -1;
 	}
 	if (opt->nro_status != exp->nro_status) {
-		printf("nro_status %u expected %u\n",
-				opt->nro_status,
-				exp->nro_status);
+		printf("nro_status %u expected %u\n", opt->nro_status,
+		       exp->nro_status);
 		return -1;
 	}
 	return 0;
@@ -601,8 +598,8 @@ infinite_options(int fd, struct TestContext *ctx)
 
 	opt.nro_reqtype = 1234;
 	push_option(&opt, ctx);
-	opt.nro_next = &opt;
-	save = opt;
+	opt.nro_next = (uint64_t)(uintptr_t)&opt;
+	save	 = opt;
 	if (port_register_hwall(fd, ctx) >= 0)
 		return -1;
 
@@ -646,14 +643,13 @@ change_param(const char *pname, unsigned long newv, unsigned long *poldv)
 	return 0;
 }
 
-
 static int
 push_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *e)
 {
 	void *addr;
 
 	addr = mmap(NULL, (1U << 22), PROT_READ | PROT_WRITE,
-			MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+		    MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (addr == MAP_FAILED) {
 		perror("mmap");
 		return -1;
@@ -661,7 +657,7 @@ push_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *e)
 
 	memset(e, 0, sizeof(*e));
 	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
-	e->nro_usrptr = (uint64_t)addr;
+	e->nro_usrptr	  = (uint64_t)addr;
 	e->nro_info.nr_memsize = (1U << 22);
 
 	push_option(&e->nro_opt, ctx);
@@ -675,7 +671,7 @@ pop_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *exp)
 	struct nmreq_opt_extmem *e;
 	int ret;
 
-	e = (struct nmreq_opt_extmem *)ctx->nr_opt;
+	e	   = (struct nmreq_opt_extmem *)ctx->nr_opt;
 	ctx->nr_opt = ctx->nr_opt->nro_next;
 
 	if ((ret = checkoption(&e->nro_opt, &exp->nro_opt))) {
@@ -683,15 +679,13 @@ pop_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *exp)
 	}
 
 	if (e->nro_usrptr != exp->nro_usrptr) {
-		printf("usrptr %"PRIu64" expected %"PRIu64"\n",
-				e->nro_usrptr,
-				exp->nro_usrptr);
+		printf("usrptr %" PRIu64 " expected %" PRIu64 "\n",
+		       e->nro_usrptr, exp->nro_usrptr);
 		return -1;
 	}
 	if (e->nro_info.nr_memsize != exp->nro_info.nr_memsize) {
-		printf("memsize %"PRIu64" expected %"PRIu64"\n",
-				e->nro_info.nr_memsize,
-				exp->nro_info.nr_memsize);
+		printf("memsize %" PRIu64 " expected %" PRIu64 "\n",
+		       e->nro_info.nr_memsize, exp->nro_info.nr_memsize);
 		return -1;
 	}
 
@@ -713,7 +707,7 @@ _extmem_option(int fd, struct TestContext *ctx, int new_rsz)
 
 	save = e;
 
-	ctx->ifname = "vale0:0";
+	ctx->ifname      = "vale0:0";
 	ctx->nr_tx_slots = 16;
 	ctx->nr_rx_slots = 16;
 
@@ -744,7 +738,7 @@ bad_extmem_option(int fd, struct TestContext *ctx)
 {
 	printf("Testing bad extmem option on vale0:0\n");
 
-	return _extmem_option(fd, ctx, (1<<16)) < 0 ? 0 : -1;
+	return _extmem_option(fd, ctx, (1 << 16)) < 0 ? 0 : -1;
 }
 
 static int
