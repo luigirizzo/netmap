@@ -131,13 +131,10 @@ struct nm_selinfo {
 };
 
 
-/* Linux structs, not used in FreeBSD. */
-struct net_device_ops {
-};
-struct ethtool_ops {
-};
 struct hrtimer {
+    /* Not used in FreeBSD. */
 };
+
 #define NM_BNS_GET(b)
 #define NM_BNS_PUT(b)
 
@@ -201,14 +198,6 @@ struct hrtimer {
 #define NETMAP_KERNEL_XCHANGE_POINTERS		_IO('i', 180)
 #define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL	_IO_direct('i', 195)
 
-/* Empty data structures are not allowed by MSVC compiler, so
- * we workaround. */
-struct net_device_ops{
-	char data[1];
-};
-typedef struct ethtool_ops{
-	char data[1];
-};
 typedef struct hrtimer{
 	KTIMER timer;
 	BOOLEAN active;
@@ -903,8 +892,10 @@ struct netmap_vp_adapter {	/* VALE software port */
 struct netmap_hw_adapter {	/* physical device */
 	struct netmap_adapter up;
 
-	struct net_device_ops nm_ndo; /* Linux only */
-	struct ethtool_ops    nm_eto; /* Linux only */
+#ifdef linux
+	struct net_device_ops nm_ndo;
+	struct ethtool_ops    nm_eto;
+#endif
 	const struct ethtool_ops*   save_ethtool;
 
 	int (*nm_hw_register)(struct netmap_adapter *, int onoff);
@@ -1282,12 +1273,12 @@ nm_set_native_flags(struct netmap_adapter *na)
 	ifp->if_transmit = netmap_transmit;
 #elif defined (_WIN32)
 	(void)ifp; /* prevent a warning */
-#else
+#elif defined (linux)
 	na->if_transmit = (void *)ifp->netdev_ops;
 	ifp->netdev_ops = &((struct netmap_hw_adapter *)na)->nm_ndo;
 	((struct netmap_hw_adapter *)na)->save_ethtool = ifp->ethtool_ops;
 	ifp->ethtool_ops = &((struct netmap_hw_adapter*)na)->nm_eto;
-#endif
+#endif /* linux */
 	nm_update_hostrings_mode(na);
 }
 
