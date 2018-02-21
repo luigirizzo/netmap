@@ -1,5 +1,5 @@
 diff --git a/e1000e/netdev.c b/e1000e/netdev.c
-index 2198e61..588f1ec 100644
+index 2198e615f241..3c95b385bfee 100644
 --- a/e1000e/netdev.c
 +++ b/e1000e/netdev.c
 @@ -452,6 +452,10 @@ static int e1000_desc_unused(struct e1000_ring *ring)
@@ -35,7 +35,18 @@ index 2198e61..588f1ec 100644
  	i = tx_ring->next_to_clean;
  	eop = tx_ring->buffer_info[i].next_to_watch;
  	eop_desc = E1000_TX_DESC(*tx_ring, eop);
-@@ -3177,6 +3189,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
+@@ -1355,6 +1367,10 @@ static bool e1000_clean_jumbo_rx_irq(struct e1000_adapter *adapter,
+ 	bool cleaned = false;
+ 	unsigned int total_rx_bytes=0, total_rx_packets=0;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_rx_irq(netdev, 0, work_done))
++		return 1; /* seems to be ignored */
++#endif /* DEV_NETMAP */
+ 	i = rx_ring->next_to_clean;
+ 	rx_desc = E1000_RX_DESC(*rx_ring, i);
+ 	buffer_info = &rx_ring->buffer_info[i];
+@@ -3177,6 +3193,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
  	e1000_configure_tx(adapter);
  	e1000_setup_rctl(adapter);
  	e1000_configure_rx(adapter);
@@ -46,7 +57,7 @@ index 2198e61..588f1ec 100644
  	adapter->alloc_rx_buf(adapter, e1000_desc_unused(adapter->rx_ring),
  			      GFP_KERNEL);
  }
-@@ -6147,6 +6163,9 @@ static int __devinit e1000_probe(struct pci_dev *pdev,
+@@ -6147,6 +6167,9 @@ static int __devinit e1000_probe(struct pci_dev *pdev,
  	if (err)
  		goto err_register;
  
@@ -56,7 +67,7 @@ index 2198e61..588f1ec 100644
  	/* carrier off reporting is important to ethtool even BEFORE open */
  	netif_carrier_off(netdev);
  
-@@ -6234,6 +6253,10 @@ static void __devexit e1000_remove(struct pci_dev *pdev)
+@@ -6234,6 +6257,10 @@ static void __devexit e1000_remove(struct pci_dev *pdev)
  	kfree(adapter->tx_ring);
  	kfree(adapter->rx_ring);
  
