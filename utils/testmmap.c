@@ -1,30 +1,30 @@
 #define TEST_NETMAP
 
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h> /* O_RDWR */
 #include <inttypes.h>
-#include <sys/param.h>	/* ULONG_MAX */
+#include <pthread.h>
+#include <signal.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <errno.h>
+#include <sys/mman.h>  /* PROT_* */
+#include <sys/param.h> /* ULONG_MAX */
 #include <sys/poll.h>
 #include <sys/wait.h>
-#include <sys/mman.h>	/* PROT_* */
-#include <fcntl.h>	/* O_RDWR */
-#include <pthread.h>
-#include <signal.h>
-#include <ctype.h>
-
+#include <unistd.h>
 
 #define MAX_VARS 100
 
 char *variables[MAX_VARS];
 int curr_var;
 
-#define VAR_FAILED ((void*)1)
+#define VAR_FAILED ((void *)1)
 
-char *firstarg(char *buf)
+char *
+firstarg(char *buf)
 {
 	int v;
 	char *arg = strtok(buf, " \t\n");
@@ -33,7 +33,7 @@ char *firstarg(char *buf)
 		return NULL;
 	if (arg[0] != '$' && arg[0] != '?')
 		return arg;
-	v = atoi(arg+1);
+	v = atoi(arg + 1);
 	if (v < 0 || v >= MAX_VARS)
 		return "";
 	ret = variables[v];
@@ -49,45 +49,49 @@ char *firstarg(char *buf)
 	return ret;
 }
 
-char *nextarg()
+char *
+nextarg()
 {
 	return firstarg(NULL);
 }
 
-char *restofline()
+char *
+restofline()
 {
 	return strtok(NULL, "\n");
 }
 
-void resetvar(int v, char *b)
+void
+resetvar(int v, char *b)
 {
 	if (variables[v] != VAR_FAILED)
 		free(variables[v]);
 	variables[v] = b;
 }
 
-#define outecho(format, args...) \
-	do {\
-		printf("%u:%lu: " format "\n", getpid(), (unsigned long) pthread_self(), ##args);\
-		fflush(stdout);\
+#define outecho(format, args...)                                               \
+	do {                                                                   \
+		printf("%u:%lu: " format "\n", getpid(),                       \
+		       (unsigned long)pthread_self(), ##args);                 \
+		fflush(stdout);                                                \
 	} while (0)
 
-#define output(format, args...) \
-	do {\
-		resetvar(curr_var, (char*)malloc(1024));\
-		snprintf(variables[curr_var], 1024, format, ##args);\
-		outecho(format, ##args);\
+#define output(format, args...)                                                \
+	do {                                                                   \
+		resetvar(curr_var, (char *)malloc(1024));                      \
+		snprintf(variables[curr_var], 1024, format, ##args);           \
+		outecho(format, ##args);                                       \
 	} while (0)
 
-#define output_err(ret, format, args...)\
-	do {\
-		if ((ret) < 0) {\
-			resetvar(curr_var, VAR_FAILED);\
-			outecho(format, ##args);\
-			outecho("error: %s", strerror(errno));\
-		} else {\
-			output(format, ##args);\
-		}\
+#define output_err(ret, format, args...)                                       \
+	do {                                                                   \
+		if ((ret) < 0) {                                               \
+			resetvar(curr_var, VAR_FAILED);                        \
+			outecho(format, ##args);                               \
+			outecho("error: %s", strerror(errno));                 \
+		} else {                                                       \
+			output(format, ##args);                                \
+		}                                                              \
 	} while (0)
 
 struct chan {
@@ -96,7 +100,8 @@ struct chan {
 	pthread_t tid;
 };
 
-int chan_search_free(struct chan* c[], int max)
+int
+chan_search_free(struct chan *c[], int max)
 {
 	int i;
 
@@ -106,7 +111,8 @@ int chan_search_free(struct chan* c[], int max)
 	return i;
 }
 
-void chan_clear_all(struct chan *c[], int max)
+void
+chan_clear_all(struct chan *c[], int max)
 {
 	int i;
 
@@ -119,46 +125,51 @@ void chan_clear_all(struct chan *c[], int max)
 	}
 }
 
-int last_fd = -1;
-size_t last_memsize = 0;
-void* last_mmap_addr = NULL;
-char* last_access_addr = NULL;
+int last_fd	    = -1;
+size_t last_memsize    = 0;
+void *last_mmap_addr   = NULL;
+char *last_access_addr = NULL;
 
-
-void do_open()
+void
+do_open()
 {
 	last_fd = open("/dev/netmap", O_RDWR);
 	output_err(last_fd, "open(\"/dev/netmap\", O_RDWR)=%d", last_fd);
 }
 
-void do_close()
+void
+do_close()
 {
 	int ret, fd;
 	char *arg = nextarg();
-	fd = arg ? atoi(arg) : last_fd;
-	ret = close(fd);
+	fd	= arg ? atoi(arg) : last_fd;
+	ret       = close(fd);
 	output_err(ret, "close(%d)=%d", fd, ret);
 }
 
 #ifdef TEST_NETMAP
-#include <sys/ioctl.h>
-#include <sys/socket.h>
 #include <ifaddrs.h>
 #include <net/netmap_user.h>
 #include <net/netmap_virt.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
 
 /* legacy */
-struct nmreq curr_nmr = { .nr_version = 11, .nr_flags = NR_REG_ALL_NIC, };
+struct nmreq curr_nmr = {
+	.nr_version = 11,
+	.nr_flags   = NR_REG_ALL_NIC,
+};
 char nmr_name[256];
 
-void parse_nmr_config(char* w, struct nmreq *nmr)
+void
+parse_nmr_config(char *w, struct nmreq *nmr)
 {
 	char *tok;
 	int i, v;
 
 	nmr->nr_tx_rings = nmr->nr_rx_rings = 0;
 	nmr->nr_tx_slots = nmr->nr_rx_slots = 0;
-	if (w == NULL || ! *w)
+	if (w == NULL || !*w)
 		return;
 	for (i = 0, tok = strtok(w, ","); tok; i++, tok = strtok(NULL, ",")) {
 		v = atoi(tok);
@@ -181,7 +192,8 @@ void parse_nmr_config(char* w, struct nmreq *nmr)
 	}
 }
 
-void do_getinfo_legacy()
+void
+do_getinfo_legacy()
 {
 	int ret;
 	char *arg, *name;
@@ -208,14 +220,14 @@ void do_getinfo_legacy()
 	parse_nmr_config(arg, &curr_nmr);
 
 doit:
-	ret = ioctl(fd, NIOCGINFO, &curr_nmr);
+	ret	  = ioctl(fd, NIOCGINFO, &curr_nmr);
 	last_memsize = curr_nmr.nr_memsize;
 	output_err(ret, "ioctl(%d, NIOCGINFO) for %s: region %d memsize=%zu",
-		fd, name, curr_nmr.nr_arg2, last_memsize);
+		   fd, name, curr_nmr.nr_arg2, last_memsize);
 }
 
-
-void do_regif_legacy()
+void
+do_regif_legacy()
 {
 	int ret;
 	char *arg, *name;
@@ -229,7 +241,7 @@ void do_regif_legacy()
 
 	bzero(&curr_nmr, sizeof(curr_nmr));
 	curr_nmr.nr_version = NETMAP_API;
-	curr_nmr.nr_flags = NR_REG_ALL_NIC;
+	curr_nmr.nr_flags   = NR_REG_ALL_NIC;
 	strncpy(curr_nmr.nr_name, name, sizeof(curr_nmr.nr_name));
 
 	arg = nextarg();
@@ -242,18 +254,18 @@ void do_regif_legacy()
 	parse_nmr_config(arg, &curr_nmr);
 
 doit:
-	ret = ioctl(fd, NIOCREGIF, &curr_nmr);
+	ret	  = ioctl(fd, NIOCREGIF, &curr_nmr);
 	last_memsize = curr_nmr.nr_memsize;
 	output_err(ret, "ioctl(%d, NIOCREGIF) for %s: region %d memsize=%zu",
-		fd, name, curr_nmr.nr_arg2, last_memsize);
+		   fd, name, curr_nmr.nr_arg2, last_memsize);
 }
 
 void
 do_txsync()
 {
 	char *arg = nextarg();
-	int fd = arg ? atoi(arg) : last_fd;
-	int ret = ioctl(fd, NIOCTXSYNC, NULL);
+	int fd    = arg ? atoi(arg) : last_fd;
+	int ret   = ioctl(fd, NIOCTXSYNC, NULL);
 	output_err(ret, "ioctl(%d, NIOCTXSYNC)=%d", fd, ret);
 }
 
@@ -261,14 +273,14 @@ void
 do_rxsync()
 {
 	char *arg = nextarg();
-	int fd = arg ? atoi(arg) : last_fd;
-	int ret = ioctl(fd, NIOCRXSYNC, NULL);
+	int fd    = arg ? atoi(arg) : last_fd;
+	int ret   = ioctl(fd, NIOCRXSYNC, NULL);
 	output_err(ret, "ioctl(%d, NIOCRXSYNC)=%d", fd, ret);
 }
 #endif /* TEST_NETMAP */
 
-
-void do_rd()
+void
+do_rd()
 {
 	char *arg = nextarg();
 	char *p;
@@ -286,7 +298,8 @@ void do_rd()
 }
 
 char *last_wr_byte = "x";
-void do_wr()
+void
+do_wr()
 {
 	char *arg = nextarg();
 	char *p;
@@ -304,15 +317,16 @@ void do_wr()
 	if (!arg) {
 		arg = last_wr_byte;
 	}
-	for ( ; arg; arg = nextarg()) {
+	for (; arg; arg = nextarg()) {
 		*p++ = strtoul((void *)arg, NULL, 0);
 	}
 }
 
-void do_dup()
+void
+do_dup()
 {
 	char *arg = nextarg();
-	int fd = last_fd;
+	int fd    = last_fd;
 	int ret;
 
 	if (arg) {
@@ -320,10 +334,10 @@ void do_dup()
 	}
 	ret = dup(fd);
 	output_err(ret, "dup(%d)=%d", fd, ret);
-
 }
 
-void do_mmap()
+void
+do_mmap()
 {
 	size_t memsize;
 	off_t off = 0;
@@ -333,37 +347,36 @@ void do_mmap()
 	arg = nextarg();
 	if (!arg) {
 		memsize = last_memsize;
-		fd = last_fd;
+		fd      = last_fd;
 		goto doit;
 	}
 	memsize = atoi(arg);
-	arg = nextarg();
+	arg     = nextarg();
 	if (!arg) {
 		fd = last_fd;
 		goto doit;
 	}
-	fd = atoi(arg);
+	fd  = atoi(arg);
 	arg = nextarg();
 	if (arg) {
 		off = (off_t)atol(arg);
 	}
 doit:
-	last_mmap_addr = mmap(0, memsize,
-			PROT_WRITE | PROT_READ,
-			MAP_SHARED, fd, off);
+	last_mmap_addr =
+		mmap(0, memsize, PROT_WRITE | PROT_READ, MAP_SHARED, fd, off);
 	if (last_access_addr == NULL)
 		last_access_addr = last_mmap_addr;
 	output_err(last_mmap_addr == MAP_FAILED ? -1 : 0,
-		"mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_SHARED, %d, %jd)=%p",
-		memsize, fd, (intmax_t)off, last_mmap_addr);
-
+		   "mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_SHARED, %d, %jd)=%p",
+		   memsize, fd, (intmax_t)off, last_mmap_addr);
 }
 
 #ifndef MAP_HUGETLB
 #define MAP_HUGETLB 0x40000
 #endif
 
-void do_anon_mmap()
+void
+do_anon_mmap()
 {
 	size_t memsize;
 	char *arg;
@@ -375,23 +388,23 @@ void do_anon_mmap()
 		goto doit;
 	}
 	memsize = atoi(arg);
-	arg = nextarg();
+	arg     = nextarg();
 	if (!arg)
 		goto doit;
 	flags |= MAP_HUGETLB;
 doit:
-	last_mmap_addr = mmap(0, memsize,
-			PROT_WRITE | PROT_READ,
-			MAP_SHARED | MAP_ANONYMOUS | flags, -1, 0);
+	last_mmap_addr = mmap(0, memsize, PROT_WRITE | PROT_READ,
+			      MAP_SHARED | MAP_ANONYMOUS | flags, -1, 0);
 	if (last_access_addr == NULL)
 		last_access_addr = last_mmap_addr;
 	output_err(last_mmap_addr == MAP_FAILED ? -1 : 0,
-		"mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_SHARED|MAP_ANONYMOUS%s, -1, 0)=%p",
-		memsize, (flags ? "|MAP_HUGETLB" : ""), last_mmap_addr);
-
+		   "mmap(0, %zu, PROT_WRITE|PROT_READ, "
+		   "MAP_SHARED|MAP_ANONYMOUS%s, -1, 0)=%p",
+		   memsize, (flags ? "|MAP_HUGETLB" : ""), last_mmap_addr);
 }
 
-void do_munmap()
+void
+do_munmap()
 {
 	void *mmap_addr;
 	size_t memsize;
@@ -401,11 +414,11 @@ void do_munmap()
 	arg = nextarg();
 	if (!arg) {
 		mmap_addr = last_mmap_addr;
-		memsize = last_memsize;
+		memsize   = last_memsize;
 		goto doit;
 	}
-	mmap_addr = (void*)strtoul(arg, NULL, 0);
-	arg = nextarg();
+	mmap_addr = (void *)strtoul(arg, NULL, 0);
+	arg       = nextarg();
 	if (!arg) {
 		memsize = last_memsize;
 		goto doit;
@@ -416,7 +429,8 @@ doit:
 	output_err(ret, "munmap(%p, %zu)=%d", mmap_addr, memsize, ret);
 }
 
-void do_poll()
+void
+do_poll()
 {
 	/* timeout fd fd... */
 	nfds_t nfds = 0, allocated_fds = 10, i;
@@ -433,11 +447,12 @@ void do_poll()
 		output_err(-1, "out of memory");
 		return;
 	}
-	while ( (arg = nextarg()) ) {
+	while ((arg = nextarg())) {
 		if (nfds >= allocated_fds) {
 			struct pollfd *new_fds;
 			allocated_fds *= 2;
-			new_fds = realloc(fds, allocated_fds * sizeof(struct pollfd));
+			new_fds = realloc(fds, allocated_fds *
+						       sizeof(struct pollfd));
 			if (new_fds == NULL) {
 				free(fds);
 				output_err(-1, "out of memory");
@@ -445,24 +460,22 @@ void do_poll()
 			}
 			fds = new_fds;
 		}
-		fds[nfds].fd = atoi(arg);
+		fds[nfds].fd     = atoi(arg);
 		fds[nfds].events = POLLIN;
 		nfds++;
 	}
 	ret = poll(fds, nfds, timeout);
 	for (i = 0; i < nfds; i++) {
 		output("poll(%d)=%s%s%s%s%s", fds[i].fd,
-			(fds[i].revents & POLLIN) ? "IN  " : "-   ",
-			(fds[i].revents & POLLOUT)? "OUT " : "-   ",
-			(fds[i].revents & POLLERR)? "ERR " : "-   ",
-			(fds[i].revents & POLLHUP)? "HUP " : "-   ",
-			(fds[i].revents & POLLNVAL)?"NVAL" : "-");
-
+		       (fds[i].revents & POLLIN) ? "IN  " : "-   ",
+		       (fds[i].revents & POLLOUT) ? "OUT " : "-   ",
+		       (fds[i].revents & POLLERR) ? "ERR " : "-   ",
+		       (fds[i].revents & POLLHUP) ? "HUP " : "-   ",
+		       (fds[i].revents & POLLNVAL) ? "NVAL" : "-");
 	}
 	output_err(ret, "poll(...)=%d", ret);
 	free(fds);
 }
-
 
 void
 do_expr()
@@ -473,7 +486,7 @@ do_expr()
 	int err = 0;
 
 	stack[10] = ULONG_MAX;
-	while ( (arg = nextarg()) ) {
+	while ((arg = nextarg())) {
 		errno = 0;
 		char *rest;
 		unsigned long n = strtoul(arg, &rest, 0);
@@ -488,7 +501,7 @@ do_expr()
 		if (top <= 8) {
 			unsigned long n1 = stack[top++];
 			unsigned long n2 = stack[top++];
-			unsigned long r = 0;
+			unsigned long r  = 0;
 			switch (arg[0]) {
 			case '+':
 				r = n1 + n2;
@@ -504,7 +517,7 @@ do_expr()
 					r = n1 / n2;
 				else {
 					errno = EDOM;
-					err = -1;
+					err   = -1;
 				}
 				break;
 			default:
@@ -519,8 +532,6 @@ do_expr()
 	}
 	output_err(err, "expr=%lu", stack[top]);
 }
-
-
 
 void
 do_echo()
@@ -539,7 +550,7 @@ do_vars()
 		const char *v = variables[i];
 		if (v == NULL)
 			continue;
-		printf("?%d\t%s\n", i, v == VAR_FAILED ?  "FAILED" : v);
+		printf("?%d\t%s\n", i, v == VAR_FAILED ? "FAILED" : v);
 	}
 }
 
@@ -551,7 +562,7 @@ get_if()
 	char *arg;
 
 	/* defaults */
-	off = curr_nmr.nr_offset;
+	off       = curr_nmr.nr_offset;
 	mmap_addr = last_mmap_addr;
 
 	/* first arg: if offset */
@@ -565,7 +576,7 @@ get_if()
 	if (!arg) {
 		goto doit;
 	}
-	mmap_addr = (void*)strtoul(arg, NULL, 0);
+	mmap_addr = (void *)strtoul(arg, NULL, 0);
 doit:
 	return NETMAP_IF(mmap_addr, off);
 }
@@ -621,7 +632,7 @@ doit:
 void
 dump_ring(struct netmap_ring *ring)
 {
-	printf("buf_ofs     %"PRId64"\n", ring->buf_ofs);
+	printf("buf_ofs     %" PRId64 "\n", ring->buf_ofs);
 	printf("num_slots   %u\n", ring->num_slots);
 	printf("nr_buf_size %u\n", ring->nr_buf_size);
 	printf("ringid      %d\n", ring->ringid);
@@ -653,8 +664,8 @@ dump_ring(struct netmap_ring *ring)
 		printf(" ]");
 	}
 	printf("\n");
-	printf("ts          %ld:%ld\n",
-			(long int)ring->ts.tv_sec, (long int)ring->ts.tv_usec);
+	printf("ts          %ld:%ld\n", (long int)ring->ts.tv_sec,
+	       (long int)ring->ts.tv_usec);
 }
 
 void
@@ -748,7 +759,7 @@ do_slot()
 doit:
 	ring = get_ring();
 	slot = ring->slot + index;
-	arg = nextarg();
+	arg  = nextarg();
 	if (!arg) {
 		dump_slot(slot);
 		return;
@@ -777,15 +788,15 @@ dump_payload(char *p, int len)
 	int i, j, i0;
 
 	/* hexdump routine */
-	for (i = 0; i < len; ) {
+	for (i = 0; i < len;) {
 		memset(buf, sizeof(buf), ' ');
 		sprintf(buf, "%5d: ", i);
 		i0 = i;
-		for (j=0; j < 16 && i < len; i++, j++)
-			sprintf(buf+7+j*3, "%02x ", (uint8_t)(p[i]));
+		for (j = 0; j < 16 && i < len; i++, j++)
+			sprintf(buf + 7 + j * 3, "%02x ", (uint8_t)(p[i]));
 		i = i0;
-		for (j=0; j < 16 && i < len; i++, j++)
-			sprintf(buf+7+j + 48, "%c",
+		for (j = 0; j < 16 && i < len; i++, j++)
+			sprintf(buf + 7 + j + 48, "%c",
 				isprint(p[i]) ? p[i] : '.');
 		printf("%s\n", buf);
 	}
@@ -800,7 +811,7 @@ do_buf()
 
 	/* defaults */
 	buf_idx = 2;
-	len = 64;
+	len     = 64;
 
 	arg = nextarg();
 	if (!arg)
@@ -813,7 +824,7 @@ do_buf()
 	len = strtoll(arg, NULL, 0);
 doit:
 	ring = get_ring();
-	buf = NETMAP_BUF(ring, buf_idx);
+	buf  = NETMAP_BUF(ring, buf_idx);
 	output("buf=%p", buf);
 	last_access_addr = buf;
 	dump_payload(buf, len);
@@ -824,7 +835,8 @@ struct cmd_def {
 	void (*f)(void);
 };
 
-int _find_command(const struct cmd_def *cmds, int ncmds, const char* cmd)
+int
+_find_command(const struct cmd_def *cmds, int ncmds, const char *cmd)
 {
 	int i;
 	for (i = 0; i < ncmds; i++) {
@@ -839,8 +851,11 @@ struct pools_info_field {
 	size_t off;
 	size_t size;
 };
-#define PIFD(n, f)	{ n, offsetof(struct nmreq_pools_info, nr_##f), \
-	sizeof(((struct nmreq_pools_info *)0)->nr_##f) }
+#define PIFD(n, f)                                                             \
+	{                                                                      \
+		n, offsetof(struct nmreq_pools_info, nr_##f),                  \
+			sizeof(((struct nmreq_pools_info *)0)->nr_##f)         \
+	}
 struct pools_info_field pools_info_fields[] = {
 	PIFD("memsize", memsize),
 	PIFD("mem_id", mem_id),
@@ -853,9 +868,8 @@ struct pools_info_field pools_info_fields[] = {
 	PIFD("buf-off", buf_pool_offset),
 	PIFD("buf-tot", buf_pool_objtotal),
 	PIFD("buf-siz", buf_pool_objsize),
-	{ NULL, 0, 0 }
-};
-#define PIF(t, p, o)	(*(t*)((void *)((char *)(p)+(o))))
+	{NULL, 0, 0}};
+#define PIF(t, p, o) (*(t *)((void *)((char *)(p) + (o))))
 void
 pools_info_dump(int tab, struct nmreq_pools_info *upi)
 {
@@ -865,18 +879,17 @@ pools_info_dump(int tab, struct nmreq_pools_info *upi)
 		printf("%.*s%-12s", tab, space, f->name);
 		switch (f->size) {
 		case 8:
-			printf("%"PRIu64"\n", PIF(uint64_t, upi, f->off));
+			printf("%" PRIu64 "\n", PIF(uint64_t, upi, f->off));
 			break;
 		case 4:
-			printf("%"PRIu32"\n", PIF(uint32_t, upi, f->off));
+			printf("%" PRIu32 "\n", PIF(uint32_t, upi, f->off));
 			break;
 		case 2:
-			printf("%"PRIu16"\n", PIF(uint16_t, upi, f->off));
+			printf("%" PRIu16 "\n", PIF(uint16_t, upi, f->off));
 			break;
 		}
 	}
 }
-
 
 static struct nmreq_pools_info curr_pools_info;
 
@@ -917,9 +930,9 @@ do_pools_info()
 
 typedef void (*nmr_arg_interp_fun)();
 
-#define nmr_arg_unexpected(n) \
-	printf("arg%d:      %d%s\n", n, curr_nmr.nr_arg ## n, \
-		(curr_nmr.nr_arg ## n ? "???" : ""))
+#define nmr_arg_unexpected(n)                                                  \
+	printf("arg%d:      %d%s\n", n, curr_nmr.nr_arg##n,                    \
+	       (curr_nmr.nr_arg##n ? "???" : ""))
 
 void
 nmr_arg_bdg_attach()
@@ -1002,12 +1015,13 @@ void
 nmr_arg_extra()
 {
 	printf("arg1:      %d [%sextra rings]\n", curr_nmr.nr_arg1,
-		(curr_nmr.nr_arg1 ? "" : "no "));
+	       (curr_nmr.nr_arg1 ? "" : "no "));
 	printf("arg2:      %d [%s memory allocator]\n", curr_nmr.nr_arg2,
-		(curr_nmr.nr_arg2 == 0 ? "default" :
-		 curr_nmr.nr_arg2 == 1 ? "global"  : "private"));
+	       (curr_nmr.nr_arg2 == 0
+			? "default"
+			: curr_nmr.nr_arg2 == 1 ? "global" : "private"));
 	printf("arg3:      %d [%sextra buffers]\n", curr_nmr.nr_arg3,
-		(curr_nmr.nr_arg3 ? "" : "no "));
+	       (curr_nmr.nr_arg3 ? "" : "no "));
 }
 
 void
@@ -1022,7 +1036,7 @@ do_nmr_legacy_dump()
 	printf("version:   %d\n", curr_nmr.nr_version);
 	printf("offset:    %d\n", curr_nmr.nr_offset);
 	printf("memsize:   %d [", curr_nmr.nr_memsize);
-	if (curr_nmr.nr_memsize < (1<<20)) {
+	if (curr_nmr.nr_memsize < (1 << 20)) {
 		printf("%d KiB", curr_nmr.nr_memsize >> 10);
 	} else {
 		printf("%d MiB", curr_nmr.nr_memsize >> 20);
@@ -1158,7 +1172,7 @@ do_nmr_legacy_reset()
 {
 	bzero(&curr_nmr, sizeof(curr_nmr));
 	curr_nmr.nr_version = NETMAP_API;
-	curr_nmr.nr_flags = NR_REG_ALL_NIC;
+	curr_nmr.nr_flags   = NR_REG_ALL_NIC;
 }
 
 void
@@ -1277,15 +1291,13 @@ do_nmr_legacy_flags()
 }
 
 struct cmd_def nmr_legacy_commands[] = {
-	{ "dump",	do_nmr_legacy_dump },
-	{ "reset",	do_nmr_legacy_reset },
-	{ "name",	do_nmr_legacy_name },
-	{ "ringid",	do_nmr_legacy_ringid },
-	{ "cmd",	do_nmr_legacy_cmd },
-	{ "flags",	do_nmr_legacy_flags },
+	{"dump", do_nmr_legacy_dump}, {"reset", do_nmr_legacy_reset},
+	{"name", do_nmr_legacy_name}, {"ringid", do_nmr_legacy_ringid},
+	{"cmd", do_nmr_legacy_cmd},   {"flags", do_nmr_legacy_flags},
 };
 
-const int N_NMR_LEGACY_CMDS = sizeof(nmr_legacy_commands) / sizeof(struct cmd_def);
+const int N_NMR_LEGACY_CMDS =
+	sizeof(nmr_legacy_commands) / sizeof(struct cmd_def);
 
 int
 find_nmr_legacy_command(const char *cmd)
@@ -1293,22 +1305,22 @@ find_nmr_legacy_command(const char *cmd)
 	return _find_command(nmr_legacy_commands, N_NMR_LEGACY_CMDS, cmd);
 }
 
-#define __nmr_arg_update(nmr, f) 					\
-	({								\
-		int __ret = 0;						\
-		if (strcmp(cmd, #f) == 0) {				\
-			char *arg = nextarg();				\
-			if (arg) {					\
-				curr_##nmr.nr_##f = strtol(arg, NULL, 0);\
-			}						\
-			output(#f "=%llu",				\
-				(unsigned long long)curr_##nmr.nr_##f);	\
-			__ret = 1;					\
-		} 							\
-		__ret;							\
+#define __nmr_arg_update(nmr, f)                                               \
+	({                                                                     \
+		int __ret = 0;                                                 \
+		if (strcmp(cmd, #f) == 0) {                                    \
+			char *arg = nextarg();                                 \
+			if (arg) {                                             \
+				curr_##nmr.nr_##f = strtol(arg, NULL, 0);      \
+			}                                                      \
+			output(#f "=%llu",                                     \
+			       (unsigned long long)curr_##nmr.nr_##f);         \
+			__ret = 1;                                             \
+		}                                                              \
+		__ret;                                                         \
 	})
 
-#define nmr_arg_update(f)	__nmr_arg_update(nmr, f)
+#define nmr_arg_update(f) __nmr_arg_update(nmr, f)
 
 /* prepare the curr_nmr */
 void
@@ -1330,18 +1342,12 @@ do_nmr_legacy()
 			return;
 		}
 	}
-	if (nmr_arg_update(version) ||
-	    nmr_arg_update(offset) ||
-	    nmr_arg_update(memsize) ||
-	    nmr_arg_update(tx_slots) ||
-	    nmr_arg_update(rx_slots) ||
-	    nmr_arg_update(tx_rings) ||
-	    nmr_arg_update(rx_rings) ||
-	    nmr_arg_update(ringid) ||
-	    nmr_arg_update(cmd) ||
-	    nmr_arg_update(arg1) ||
-	    nmr_arg_update(arg2) ||
-	    nmr_arg_update(arg3) ||
+	if (nmr_arg_update(version) || nmr_arg_update(offset) ||
+	    nmr_arg_update(memsize) || nmr_arg_update(tx_slots) ||
+	    nmr_arg_update(rx_slots) || nmr_arg_update(tx_rings) ||
+	    nmr_arg_update(rx_rings) || nmr_arg_update(ringid) ||
+	    nmr_arg_update(cmd) || nmr_arg_update(arg1) ||
+	    nmr_arg_update(arg2) || nmr_arg_update(arg3) ||
 	    nmr_arg_update(flags))
 		return;
 	output("unknown field: %s", cmd);
@@ -1351,7 +1357,7 @@ do_nmr_legacy()
  * new API							*
  ****************************************************************/
 
-static struct nmreq_header curr_hdr = { .nr_version = NETMAP_API };
+static struct nmreq_header curr_hdr = {.nr_version = NETMAP_API};
 static struct nmreq_register curr_register;
 static struct nmreq_port_info_get curr_port_info_get;
 static struct nmreq_vale_attach curr_vale_attach;
@@ -1366,24 +1372,24 @@ static void
 nmr_body_dump_register(void *b)
 {
 	struct nmreq_register *r = b;
-	int flags = 0;
-	printf("offset:    %"PRIu64"\n", r->nr_offset);
-	printf("memsize:   %"PRIu64" [", r->nr_memsize);
-	if (r->nr_memsize < (1<<20)) {
-		printf("%"PRIu64" KiB", r->nr_memsize >> 10);
+	int flags		 = 0;
+	printf("offset:    %" PRIu64 "\n", r->nr_offset);
+	printf("memsize:   %" PRIu64 " [", r->nr_memsize);
+	if (r->nr_memsize < (1 << 20)) {
+		printf("%" PRIu64 " KiB", r->nr_memsize >> 10);
 	} else {
-		printf("%"PRIu64" MiB", r->nr_memsize >> 20);
+		printf("%" PRIu64 " MiB", r->nr_memsize >> 20);
 	}
 	printf("]\n");
-	printf("tx_slots:  %"PRIu16"\n", r->nr_tx_slots);
-	printf("rx_slots:  %"PRIu16"\n", r->nr_rx_slots);
-	printf("tx_rings:  %"PRIu16"\n", r->nr_tx_rings);
-	printf("rx_rings:  %"PRIu16"\n", r->nr_rx_rings);
-	printf("mem_id:    %"PRIu16" [%s memory region]\n", r->nr_mem_id,
-		(r->nr_mem_id == 0 ? "default" :
-		 r->nr_mem_id == 1 ? "global"  : "private"));
-	printf("ringid     %"PRIu16"\n", r->nr_ringid);
-	printf("mode       %"PRIu32" [", r->nr_mode);
+	printf("tx_slots:  %" PRIu16 "\n", r->nr_tx_slots);
+	printf("rx_slots:  %" PRIu16 "\n", r->nr_rx_slots);
+	printf("tx_rings:  %" PRIu16 "\n", r->nr_tx_rings);
+	printf("rx_rings:  %" PRIu16 "\n", r->nr_rx_rings);
+	printf("mem_id:    %" PRIu16 " [%s memory region]\n", r->nr_mem_id,
+	       (r->nr_mem_id == 0 ? "default"
+				  : r->nr_mem_id == 1 ? "global" : "private"));
+	printf("ringid     %" PRIu16 "\n", r->nr_ringid);
+	printf("mode       %" PRIu32 " [", r->nr_mode);
 	switch (r->nr_mode) {
 	case NR_REG_DEFAULT:
 		printf("*DEFAULT");
@@ -1398,7 +1404,7 @@ nmr_body_dump_register(void *b)
 		printf("NIC_SW");
 		break;
 	case NR_REG_ONE_NIC:
-		printf("ONE_NIC(%"PRIu16")", r->nr_ringid);
+		printf("ONE_NIC(%" PRIu16 ")", r->nr_ringid);
 		break;
 	case NR_REG_PIPE_MASTER:
 		printf("*PIPE_MASTER(%d)", r->nr_ringid);
@@ -1412,7 +1418,10 @@ nmr_body_dump_register(void *b)
 	}
 	printf("]\n");
 	printf("flags:     %lx [", r->nr_flags);
-#define pflag(f) if (r->nr_flags & NR_##f) { printf("%s" #f, flags++ ? ", " : ""); }
+#define pflag(f)                                                               \
+	if (r->nr_flags & NR_##f) {                                            \
+		printf("%s" #f, flags++ ? ", " : "");                          \
+	}
 	pflag(MONITOR_TX);
 	pflag(MONITOR_RX);
 	pflag(ZCOPY_MON);
@@ -1425,7 +1434,7 @@ nmr_body_dump_register(void *b)
 	pflag(NO_TX_POLL);
 #undef pflag
 	printf("]\n");
-	printf("extra_bufs %"PRIu32"\n", r->nr_extra_bufs);
+	printf("extra_bufs %" PRIu32 "\n", r->nr_extra_bufs);
 }
 
 static void
@@ -1465,7 +1474,7 @@ do_register_mode()
 	}
 
 out:
-	output("mode=%"PRIu32, curr_register.nr_mode);
+	output("mode=%" PRIu32, curr_register.nr_mode);
 }
 
 void
@@ -1505,10 +1514,10 @@ do_register_flags()
 }
 
 struct cmd_def register_commands[] = {
-	{ "dump",	do_register_dump },
-	{ "reset",	do_register_reset },
-	{ "mode",	do_register_mode },
-	{ "flags",	do_register_flags },
+	{"dump", do_register_dump},
+	{"reset", do_register_reset},
+	{"mode", do_register_mode},
+	{"flags", do_register_flags},
 };
 
 const int N_REGISTER_CMDS = sizeof(register_commands) / sizeof(struct cmd_def);
@@ -1540,17 +1549,12 @@ do_register()
 			return;
 		}
 	}
-	if (register_update(offset) 
-	||  register_update(memsize) 
-	||  register_update(tx_slots) 
-	||  register_update(rx_slots) 
-	||  register_update(tx_rings) 
-	||  register_update(rx_rings) 
-	||  register_update(mem_id) 
-	||  register_update(ringid) 
-	||  register_update(mode) 
-	||  register_update(flags)
-	||  register_update(extra_bufs))
+	if (register_update(offset) || register_update(memsize) ||
+	    register_update(tx_slots) || register_update(rx_slots) ||
+	    register_update(tx_rings) || register_update(rx_rings) ||
+	    register_update(mem_id) || register_update(ringid) ||
+	    register_update(mode) || register_update(flags) ||
+	    register_update(extra_bufs))
 		return;
 	output("unknown field: %s", cmd);
 }
@@ -1602,8 +1606,7 @@ typedef void (*nmr_option_dump_fun)(struct nmreq_option *);
 static void
 nmr_option_dump_extmem(struct nmreq_option *opt)
 {
-	struct nmreq_opt_extmem *e =
-		(struct nmreq_opt_extmem *)opt;
+	struct nmreq_opt_extmem *e = (struct nmreq_opt_extmem *)opt;
 
 	printf("usrptr: %p\n", (void *)e->nro_usrptr);
 	printf("info:\n");
@@ -1615,8 +1618,8 @@ nmr_option_dump(struct nmreq_option *opt)
 {
 	nmr_option_dump_fun d = NULL;
 
-	printf("next: %p\n", opt->nro_next);
-	printf("type: %"PRIu32" [", opt->nro_reqtype);
+	printf("next: %p\n", (void *)opt->nro_next);
+	printf("type: %" PRIu32 " [", opt->nro_reqtype);
 	switch (opt->nro_reqtype) {
 	case NETMAP_REQ_OPT_EXTMEM:
 		printf("extmem");
@@ -1626,15 +1629,15 @@ nmr_option_dump(struct nmreq_option *opt)
 #ifdef NETMAP_OPT_DEBUG
 		if (opt->nro_reqtype & NETMAP_REQ_OPT_DEBUG) {
 			printf("debug: %u",
-				(opt->nro_reqtype & ~NETMAP_REQ_OPT_DEBUG));
+			       (opt->nro_reqtype & ~NETMAP_REQ_OPT_DEBUG));
 			break;
 		}
 #endif /* NETMAP_OPT_DEBUG */
 		printf("???");
 	}
 	printf("]\n");
-	printf("status: %"PRIu32" [%s]\n", 
-			opt->nro_status, strerror(opt->nro_status));
+	printf("status: %" PRIu32 " [%s]\n", opt->nro_status,
+	       strerror(opt->nro_status));
 	if (d)
 		d(opt);
 }
@@ -1702,29 +1705,29 @@ do_hdr_dump()
 	}
 	printf("]\n");
 	printf("name: %s\n", nmr_name);
-	opt = curr_hdr.nr_options;
+	opt = (struct nmreq_option *)curr_hdr.nr_options;
 	printf("options:   %p\n", opt);
 	while (opt) {
 		nmr_option_dump(opt);
-		opt = opt->nro_next;
+		opt = (struct nmreq_option *)opt->nro_next;
 	}
-	printf("body:	   %p\n", curr_hdr.nr_body);
+	printf("body:	   %p\n", (void *)curr_hdr.nr_body);
 	if (body_dump)
-		body_dump(curr_hdr.nr_body);
+		body_dump((void *)curr_hdr.nr_body);
 }
 
 static void
 do_hdr_reset()
 {
-	struct nmreq_option *opt = curr_hdr.nr_options;
+	struct nmreq_option *opt = (struct nmreq_option *)curr_hdr.nr_options;
 	while (opt) {
-		struct nmreq_option *next = opt->nro_next;
+		struct nmreq_option *next =
+			(struct nmreq_option *)opt->nro_next;
 		free(opt);
 		opt = next;
 	}
 	memset(&curr_hdr, 0, sizeof(curr_hdr));
 	curr_hdr.nr_version = NETMAP_API;
-
 }
 
 void
@@ -1739,7 +1742,6 @@ do_hdr_name()
 	output("name=%s", nmr_name);
 }
 
-
 static void
 do_hdr_type()
 {
@@ -1747,38 +1749,38 @@ do_hdr_type()
 
 	if (strcmp(type, "register") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_REGISTER;
-		curr_hdr.nr_body = &curr_register;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_register;
 	} else if (strcmp(type, "info-get") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
-		curr_hdr.nr_body = &curr_port_info_get;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_port_info_get;
 	} else if (strcmp(type, "vale-attach") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
-		curr_hdr.nr_body = &curr_vale_attach;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_attach;
 	} else if (strcmp(type, "vale-detach") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
 	} else if (strcmp(type, "vale-list") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_LIST;
-		curr_hdr.nr_body = &curr_vale_list;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_list;
 	} else if (strcmp(type, "port-hdr-set") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
-		curr_hdr.nr_body = &curr_port_hdr;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_port_hdr;
 	} else if (strcmp(type, "port-hdr-get") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
-		curr_hdr.nr_body = &curr_port_hdr;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_port_hdr;
 	} else if (strcmp(type, "vale-newif") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_NEWIF;
-		curr_hdr.nr_body = &curr_vale_newif;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_newif;
 	} else if (strcmp(type, "vale-delif") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_DELIF;
 	} else if (strcmp(type, "vale-polliing-enable") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_ENABLE;
-		curr_hdr.nr_body = &curr_vale_polling;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_polling;
 	} else if (strcmp(type, "vale-polling-disable") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_DISABLE;
-		curr_hdr.nr_body = &curr_vale_polling;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_polling;
 	} else if (strcmp(type, "pools-info-get") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
-		curr_hdr.nr_body = &curr_pools_info;
+		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_pools_info;
 	} else {
 		output("unknown type: %s", type);
 	}
@@ -1790,34 +1792,34 @@ typedef void (*nmreq_opt_init)(struct nmreq_option *);
 static void
 nmreq_opt_extmem_init(struct nmreq_option *opt)
 {
-	struct nmreq_opt_extmem *e =
-		(struct nmreq_opt_extmem *)opt;
-	e->nro_usrptr = (uint64_t)last_mmap_addr;
-	e->nro_info.nr_memsize = last_memsize;
+	struct nmreq_opt_extmem *e = (struct nmreq_opt_extmem *)opt;
+	e->nro_usrptr		   = (uint64_t)last_mmap_addr;
+	e->nro_info.nr_memsize     = last_memsize;
 }
 
 static void
 do_hdr_option()
 {
 	char *type;
-	struct nmreq_option **ptr = &curr_hdr.nr_options,
+	struct nmreq_option **ptr = (struct nmreq_option **)&curr_hdr
+					    .nr_options,
 			    *old = *ptr;
-	size_t sz = sizeof(struct nmreq_option);
-	nmreq_opt_init init = NULL;
+	size_t sz		 = sizeof(struct nmreq_option);
+	nmreq_opt_init init      = NULL;
 
-	while ( (type = nextarg()) ) {
+	while ((type = nextarg())) {
 		uint16_t reqtype;
 
 		if (strcmp(type, "extmem") == 0) {
 			reqtype = NETMAP_REQ_OPT_EXTMEM;
-			sz = sizeof(struct nmreq_opt_extmem);
-			init = nmreq_opt_extmem_init;
+			sz      = sizeof(struct nmreq_opt_extmem);
+			init    = nmreq_opt_extmem_init;
 #ifdef NETMAP_OPT_DEBUG
 		} else {
 			reqtype = strtol(type, NULL, 0) | NETMAP_REQ_OPT_DEBUG;
 #endif /* NETMAP_OPT_DEBUG */
 		}
-		*ptr = malloc(sz);	
+		*ptr = malloc(sz);
 		if (*ptr == NULL) {
 			output_err(-1, "malloc");
 		}
@@ -1825,17 +1827,14 @@ do_hdr_option()
 		(*ptr)->nro_reqtype = reqtype;
 		if (init)
 			init(*ptr);
-		ptr = &(*ptr)->nro_next;
+		ptr = (struct nmreq_option **)&(*ptr)->nro_next;
 	}
 	*ptr = old;
 }
 
 struct cmd_def hdr_commands[] = {
-	{ "dump",	do_hdr_dump },
-	{ "reset",	do_hdr_reset },
-	{ "name",	do_hdr_name },
-	{ "type",	do_hdr_type },
-	{ "option",	do_hdr_option },
+	{"dump", do_hdr_dump}, {"reset", do_hdr_reset},   {"name", do_hdr_name},
+	{"type", do_hdr_type}, {"option", do_hdr_option},
 };
 
 const int N_HDR_CMDS = sizeof(hdr_commands) / sizeof(struct cmd_def);
@@ -1845,8 +1844,6 @@ find_hdr_command(const char *cmd)
 {
 	return _find_command(hdr_commands, N_HDR_CMDS, cmd);
 }
-
-
 
 static void
 do_hdr()
@@ -1881,49 +1878,113 @@ do_ctrl()
 doit:
 	ret = ioctl(fd, NIOCCTRL, &curr_hdr);
 	output_err(ret, "ioctl(%d, NIOCCTL, %p)=%d", fd, &curr_hdr, ret);
-
 }
 
-
-struct cmd_def commands[] = {
-	{ "open",	do_open,	},
-	{ "close", 	do_close,	},
+struct cmd_def commands[] = {{
+				     "open",
+				     do_open,
+			     },
+			     {
+				     "close",
+				     do_close,
+			     },
 #ifdef TEST_NETMAP
-	{ "getinfo-legacy",	do_getinfo_legacy,	},
-	{ "regif-legacy",	do_regif_legacy,	},
-	{ "txsync",	do_txsync,	},
-	{ "rxsync",	do_rxsync,	},
+			     {
+				     "getinfo-legacy",
+				     do_getinfo_legacy,
+			     },
+			     {
+				     "regif-legacy",
+				     do_regif_legacy,
+			     },
+			     {
+				     "txsync",
+				     do_txsync,
+			     },
+			     {
+				     "rxsync",
+				     do_rxsync,
+			     },
 #endif /* TEST_NETMAP */
-	{ "dup",	do_dup,		},
-	{ "mmap",	do_mmap,	},
-	{ "anon-mmap",	do_anon_mmap,	},
-	{ "rd",		do_rd,		},
-	{ "wr",		do_wr,		},
-	{ "munmap",	do_munmap,	},
-	{ "poll",	do_poll,	},
-	{ "expr",	do_expr,	},
-	{ "echo",	do_echo,	},
-	{ "vars",	do_vars,	},
-	{ "if",         do_if,          },
-	{ "ring",       do_ring,        },
-	{ "slot",       do_slot,        },
-	{ "buf",        do_buf,         },
-	{ "nmr-legacy",	do_nmr_legacy,	},
-	{ "hdr",	do_hdr,		},
-	{ "ctrl",	do_ctrl		},
-	{ "register",	do_register	}
-};
+			     {
+				     "dup",
+				     do_dup,
+			     },
+			     {
+				     "mmap",
+				     do_mmap,
+			     },
+			     {
+				     "anon-mmap",
+				     do_anon_mmap,
+			     },
+			     {
+				     "rd",
+				     do_rd,
+			     },
+			     {
+				     "wr",
+				     do_wr,
+			     },
+			     {
+				     "munmap",
+				     do_munmap,
+			     },
+			     {
+				     "poll",
+				     do_poll,
+			     },
+			     {
+				     "expr",
+				     do_expr,
+			     },
+			     {
+				     "echo",
+				     do_echo,
+			     },
+			     {
+				     "vars",
+				     do_vars,
+			     },
+			     {
+				     "if",
+				     do_if,
+			     },
+			     {
+				     "ring",
+				     do_ring,
+			     },
+			     {
+				     "slot",
+				     do_slot,
+			     },
+			     {
+				     "buf",
+				     do_buf,
+			     },
+			     {
+				     "nmr-legacy",
+				     do_nmr_legacy,
+			     },
+			     {
+				     "hdr",
+				     do_hdr,
+			     },
+			     {"ctrl", do_ctrl},
+			     {"register", do_register}};
 
 const int N_CMDS = sizeof(commands) / sizeof(struct cmd_def);
 
-int find_command(const char* cmd)
+int
+find_command(const char *cmd)
 {
 	return _find_command(commands, N_CMDS, cmd);
 }
 
 #define MAX_CHAN 10
 
-void prompt(FILE *f)
+void
+prompt(FILE *f)
 {
 	if (isatty(fileno(f))) {
 		printf("> ");
@@ -1932,18 +1993,18 @@ void prompt(FILE *f)
 
 struct chan *channels[MAX_CHAN];
 
-void*
+void *
 thread_cmd_loop(void *arg)
 {
 	char buf[1024];
-	FILE *in = (FILE*)arg;
+	FILE *in = (FILE *)arg;
 
 	while (fgets(buf, 1024, in)) {
 		char *cmd;
 		int i;
 
 		cmd = firstarg(buf);
-		i = find_command(cmd);
+		i   = find_command(cmd);
 		if (i < N_CMDS) {
 			commands[i].f();
 			continue;
@@ -1954,7 +2015,8 @@ thread_cmd_loop(void *arg)
 	return NULL;
 }
 
-void do_exit()
+void
+do_exit()
 {
 	output("quit");
 }
@@ -1989,16 +2051,17 @@ cmd_loop(FILE *input)
 		}
 
 		if (strcmp(cmd, "fork") == 0) {
-			int slot = chan_search_free(channels, MAX_CHAN);
+			int slot       = chan_search_free(channels, MAX_CHAN);
 			struct chan *c = NULL;
 			pid_t pid;
-			int p1[2] = { -1, -1};
+			int p1[2] = {-1, -1};
 
 			if (slot == MAX_CHAN) {
 				output("too many channels");
 				continue;
 			}
-			c = channels[slot] = (struct chan*)malloc(sizeof(struct chan));
+			c = channels[slot] =
+				(struct chan *)malloc(sizeof(struct chan));
 			if (c == NULL) {
 				output_err(-1, "malloc");
 				continue;
@@ -2053,7 +2116,7 @@ cmd_loop(FILE *input)
 				output("invalid slot: %s", cmd);
 				continue;
 			}
-			c = channels[slot];
+			c   = channels[slot];
 			ret = kill(c->pid, SIGTERM);
 			output_err(ret, "kill(%d, SIGTERM)=%d", c->pid, ret);
 			if (ret != -1) {
@@ -2065,10 +2128,10 @@ cmd_loop(FILE *input)
 			continue;
 		}
 		if (strcmp(cmd, "thread") == 0) {
-			int slot = chan_search_free(channels, MAX_CHAN);
+			int slot       = chan_search_free(channels, MAX_CHAN);
 			struct chan *c = NULL;
 			pthread_t tid;
-			int p1[2] = { -1, -1};
+			int p1[2] = {-1, -1};
 			int ret;
 			FILE *in = NULL;
 
@@ -2076,7 +2139,8 @@ cmd_loop(FILE *input)
 				output("too many channels");
 				continue;
 			}
-			c = channels[slot] = (struct chan*)malloc(sizeof(struct chan));
+			c = channels[slot] =
+				(struct chan *)malloc(sizeof(struct chan));
 			bzero(c, sizeof(*c));
 			if (pipe(p1) < 0) {
 				output_err(-1, "pipe");
@@ -2094,7 +2158,7 @@ cmd_loop(FILE *input)
 			}
 			ret = pthread_create(&tid, NULL, thread_cmd_loop, in);
 			output_err(ret, "pthread_create() tid=%lu slot=%d",
-				(unsigned long) tid, slot);
+				   (unsigned long)tid, slot);
 			if (ret < 0)
 				goto clean2;
 			c->pid = getpid();
@@ -2125,7 +2189,7 @@ cmd_loop(FILE *input)
 			fclose(c->out);
 			ret = pthread_join(c->tid, NULL);
 			output_err(ret, "pthread_join(%lu)=%d",
-				(unsigned long) c->tid, ret);
+				   (unsigned long)c->tid, ret);
 			if (ret > 0) {
 				free(c);
 				channels[slot] = NULL;
@@ -2163,7 +2227,7 @@ main(int argc, char **argv)
 	if (argc > 1) {
 		for (i = 1; i < argc; i++) {
 			FILE *f;
-		       	if (!strcmp(argv[i], "-")) {
+			if (!strcmp(argv[i], "-")) {
 				f = stdin;
 			} else {
 				f = fopen(argv[i], "r");

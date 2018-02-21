@@ -467,7 +467,7 @@ struct netmap_if {
 /* Header common to all request options. */
 struct nmreq_option {
 	/* Pointer ot the next option. */
-	struct nmreq_option	*nro_next;
+	uint64_t		nro_next;
 	/* Option type. */
 	uint32_t		nro_reqtype;
 	/* (out) status of the option:
@@ -485,8 +485,8 @@ struct nmreq_header {
 	uint32_t		nr_reserved;	/* must be zero */
 #define NETMAP_REQ_IFNAMSIZ	64
 	char			nr_name[NETMAP_REQ_IFNAMSIZ]; /* port name */
-	struct nmreq_option	*nr_options;	/* command-specific options */
-	void			*nr_body;	/* ptr to nmreq_xyz struct */
+	uint64_t		nr_options;	/* command-specific options */
+	uint64_t		nr_body;	/* ptr to nmreq_xyz struct */
 };
 
 enum {

@@ -856,9 +856,9 @@ netmap_get_monitor_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	 */
 	memcpy(&preq, req, sizeof(preq));
 	preq.nr_flags &= ~(NR_MONITOR_TX | NR_MONITOR_RX | NR_ZCOPY_MON);
-	hdr->nr_body = &preq;
+	hdr->nr_body = (uint64_t)&preq;
 	error = netmap_get_na(hdr, &pna, &ifp, nmd, create);
-	hdr->nr_body = req;
+	hdr->nr_body = (uint64_t)req;
 	if (error) {
 		D("parent lookup failed: %d", error);
 		return error;

@@ -1,6 +1,16 @@
 #!/bin/bash -eu
 
 sudo modprobe netmap
+
+# Run control API tests
+pushd .
+cd utils
+make
+sudo ./ctrl-api-test
+popd
+
+# Transmit some packets into VALE ports or pipes, using pkt-gen
 sudo pkt-gen -i vale:x -f tx -n 100 -w0
 sudo pkt-gen -i netmap:pipe{3 -f tx -n 65 -w0
+
 sudo rmmod netmap

@@ -1564,6 +1564,7 @@ sender_body(void *data)
 
 	nifp = targ->nmd->nifp;
 	while (!targ->cancel && (n == 0 || sent < n)) {
+		int rv;
 
 		if (rate_limit && tosend <= 0) {
 			tosend = targ->g->burst;
@@ -1575,17 +1576,18 @@ sender_body(void *data)
 		 * wait for available room in the send queue(s)
 		 */
 #ifdef BUSYWAIT
+		(void)rv;
 		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
 #else /* !BUSYWAIT */
-		if (poll(&pfd, 1, 2000) <= 0) {
+		if ( (rv = poll(&pfd, 1, 2000)) <= 0) {
 			if (targ->cancel)
 				break;
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
+			D("poll error on queue %d: %s", targ->me,
+				rv ? strerror(errno) : "timeout");
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
@@ -1884,6 +1886,7 @@ txseq_body(void *data)
 		unsigned int head;
 		int fcnt;
 		uint16_t sum = 0;
+		int rv;
 
 		if (!rate_limit) {
 			budget = targ->g->burst;
@@ -1896,17 +1899,18 @@ txseq_body(void *data)
 
 		/* wait for available room in the send queue */
 #ifdef BUSYWAIT
+		(void)rv;
 		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
 #else /* !BUSYWAIT */
-		if (poll(&pfd, 1, 2000) <= 0) {
+		if ( (rv = poll(&pfd, 1, 2000)) <= 0) {
 			if (targ->cancel)
 				break;
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
+			D("poll error on queue %d: %s", targ->me,
+				rv ? strerror(errno) : "timeout");
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
@@ -2953,7 +2957,7 @@ main(int arc, char **argv)
 	 * reconfigure. We do the open here to have time to reset.
 	 */
 	flags = NM_OPEN_IFNAME | NM_OPEN_ARG1 | NM_OPEN_ARG2 |
-		NM_OPEN_ARG3 | NM_OPEN_EXTMEM | NM_OPEN_RING_CFG;
+		NM_OPEN_ARG3 | NM_OPEN_RING_CFG;
 	if (g.nthreads > 1) {
 		base_nmd.req.nr_flags &= ~NR_REG_MASK;
 		base_nmd.req.nr_flags |= NR_REG_ONE_NIC;

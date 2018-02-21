@@ -920,6 +920,12 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr)
 		}
 	}
 
+	/* Check if it already exists to prevent double attach. */
+	error = netmap_get_bdg_na(hdr, &na, nmd, 0);
+	if (!error) {
+		error = EBUSY;
+		goto unref_exit;
+	}
 	error = netmap_get_bdg_na(hdr, &na, nmd, 1 /* create if not exists */);
 	if (error) /* no device */
 		goto unlock_exit;

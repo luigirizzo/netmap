@@ -166,7 +166,13 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
  * has a KASSERT(), checking that the mbuf dtor function is not NULL.
  */
 
+#if __FreeBSD_version <= 1200050
 static void void_mbuf_dtor(struct mbuf *m, void *arg1, void *arg2) { }
+#else  /* __FreeBSD_version >= 1200051 */
+/* The arg1 and arg2 pointers argument were removed by r324446, which
+ * in included since version 1200051. */
+static void void_mbuf_dtor(struct mbuf *m) { }
+#endif /* __FreeBSD_version >= 1200051 */
 
 #define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
 	(m)->m_ext.ext_free = (fn != NULL) ?		\
@@ -624,7 +630,11 @@ generic_mbuf_destructor(struct mbuf *m)
 	 * txsync. */
 	netmap_generic_irq(na, r, NULL);
 #ifdef __FreeBSD__
+#if __FreeBSD_version <= 1200050
 	void_mbuf_dtor(m, NULL, NULL);
+#else  /* __FreeBSD_version >= 1200051 */
+	void_mbuf_dtor(m);
+#endif /* __FreeBSD_version >= 1200051 */
 #endif
 }
 
