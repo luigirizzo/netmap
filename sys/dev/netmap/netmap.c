@@ -3289,16 +3289,6 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 			kring->nr_hwtail -= lim + 1;
 	}
 
-#if 0 // def linux
-	/* XXX check that the mappings are correct */
-	/* need ring_nr, adapter->pdev, direction */
-	buffer_info->dma = dma_map_single(&pdev->dev, addr, adapter->rx_buffer_len, DMA_FROM_DEVICE);
-	if (dma_mapping_error(&adapter->pdev->dev, buffer_info->dma)) {
-		D("error mapping rx netmap buffer %d", i);
-		// XXX fix error handling
-	}
-
-#endif /* linux */
 	/*
 	 * Wakeup on the individual and global selwait
 	 * We do the wakeup here, but the ring is not yet reconfigured.
