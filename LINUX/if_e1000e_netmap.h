@@ -62,9 +62,10 @@ char netmap_e1000e_driver_name[] = "e1000e" NETMAP_LINUX_DRIVER_SUFFIX;
 #define	NM_E1R_RX_LENGTH	length
 #endif /* up to 3.2.x */
 
+/* Macros to write to the head and tail registers of TX and RX rings. */
 #ifndef NETMAP_LINUX_HAVE_E1000E_HWADDR
-#define NM_WR_TX_TAIL(_x)	writel(_x, txr->tail)	// XXX tx_ring
-#define	NM_WR_RX_TAIL(_x)	writel(_x, rxr->tail)	// XXX rx_ring
+#define NM_WR_TX_TAIL(_x)	writel(_x, txr->tail)
+#define	NM_WR_RX_TAIL(_x)	writel(_x, rxr->tail)
 #define	NM_RD_TX_HEAD()		readl(txr->head)
 #else
 #define NM_WR_TX_TAIL(_x)	writel(_x, adapter->hw.hw_addr + txr->tail)
@@ -177,19 +178,22 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		wmb();	/* synchronize writes to the NIC ring */
 
-		txr->next_to_use = nic_i;
+		txr->next_to_use = nic_i; /* for consistency */
 		NM_WR_TX_TAIL(nic_i);
-		mmiowb(); // XXX where do we need this ?
+		mmiowb(); /* needed after writing to TX ring tail */
 	}
 
 	/*
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
 	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
-		/* record completed transmissions using TDH */
-		nic_i = NM_RD_TX_HEAD();	// XXX could scan descriptors ?
-		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
-			D("TDH wrap %d", nic_i);
+		/* Record completed transmissions using TDH.
+		 * Alternative approach would be to scan descriptors and read
+		 * the DD bit until we found one that is not set. */
+		nic_i = NM_RD_TX_HEAD();
+		if (unlikely(nic_i >= kring->nkr_num_slots)) {
+			/* This should never happen. */
+			D("Warning: TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
 		txr->next_to_clean = nic_i;
@@ -285,7 +289,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			nic_i = nm_next(nic_i, lim);
 		}
 		kring->nr_hwcur = head;
-		rxr->next_to_use = nic_i; // XXX not really used
+		rxr->next_to_use = nic_i; /* for consistency */
 		wmb();
 		/*
 		 * IMPORTANT: we must leave one free slot in the ring,
@@ -306,7 +310,7 @@ ring_reset:
 /* diagnostic routine to catch errors */
 static void e1000e_no_rx_alloc(struct SOFTC_T *a, int n)
 {
-	D("e1000->alloc_rx_buf should not be called");
+	D("Error: alloc_rx_buf() should not be called");
 }
 
 
@@ -331,14 +335,11 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 		/* initialize the RX ring for netmap mode */
 		adapter->alloc_rx_buf = (void*)e1000e_no_rx_alloc;
 		for (i = 0; i < rxr->count; i++) {
-			// XXX the skb check and cleanup can go away
 			struct e1000_buffer *bi = &rxr->buffer_info[i];
 			si = netmap_idx_n2k(&na->rx_rings[0], i);
 			PNMB(na, slot + si, &paddr);
 			if (bi->skb)
-				D("rx buf %d was set", i);
-			bi->skb = NULL; // XXX leak if set
-			// netmap_load_map(...)
+				D("Warning: rx skb still set on slot #%d", i);
 			E1000_RX_DESC_EXT(*rxr, i)->NM_E1R_RX_BUFADDR = htole64(paddr);
 		}
 		rxr->next_to_use = 0;
@@ -354,7 +355,6 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 		for (i = 0; i < na->num_tx_desc; i++) {
 			si = netmap_idx_n2k(&na->tx_rings[0], i);
 			PNMB(na, slot + si, &paddr);
-			// netmap_load_map(...)
 			E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
 		}
 	}
