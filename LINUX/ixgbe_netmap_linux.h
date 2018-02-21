@@ -656,7 +656,6 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 		union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(ring, i);
 		uint64_t paddr;
 		PNMB(na, slot + si, &paddr);
-		// netmap_load_map(rxr->ptag, rxbuf->pmap, addr);
 		/* Update descriptor */
 		curr->read.pkt_addr = htole64(paddr);
 		curr->wb.upper.length = 0;
