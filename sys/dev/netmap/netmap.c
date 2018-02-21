@@ -2095,7 +2095,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 					netmap_mem_bufsize(na->nm_mem),
 					nm_os_ifnet_mtu(na->ifp));
 				error = EINVAL;
-				goto err;
+				goto err_drop_mem;
 			}
 		}
 
