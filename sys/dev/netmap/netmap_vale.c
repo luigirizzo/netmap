@@ -1440,7 +1440,7 @@ netmap_bdg_mod_private_data(const char *name, bdg_mod_private_data_fn_t callback
 	} else {
 		/* TODO: implement ownership over bridges */
 		BDG_WLOCK(b);
-		callback(b->private_data, callback_data);
+		error = callback((void **)(&b->private_data), callback_data);
 		BDG_WUNLOCK(b);
 	}
 	NMG_UNLOCK();

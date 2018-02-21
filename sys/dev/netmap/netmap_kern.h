@@ -1448,7 +1448,7 @@ typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
 		struct netmap_vp_adapter *, void *private_data);
 typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
 typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
-typedef void (*bdg_mod_private_data_fn_t)(void *private_data, void *callback_data);
+typedef int (*bdg_mod_private_data_fn_t)(void **private_data, void *callback_data);
 struct netmap_bdg_ops {
 	bdg_lookup_fn_t lookup;
 	bdg_config_fn_t config;
