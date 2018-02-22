@@ -206,13 +206,13 @@ struct nm_bridge {
 	/* XXX what is the proper alignment/layout ? */
 	BDG_RWLOCK_T	bdg_lock;	/* protects bdg_ports */
 	int		bdg_namelen;
-	uint32_t	bdg_active_ports; /* 0 means free */
+	uint32_t	bdg_active_ports;
 	char		bdg_basename[IFNAMSIZ];
 
 	/* Indexes of active ports (up to active_ports)
 	 * and all other remaining ports.
 	 */
-	uint8_t		bdg_port_index[NM_BDG_MAXPORTS];
+	uint32_t	bdg_port_index[NM_BDG_MAXPORTS];
 
 	struct netmap_vp_adapter *bdg_ports[NM_BDG_MAXPORTS];
 
@@ -234,6 +234,14 @@ struct nm_bridge {
 	 */
 	void *private_data;
 	struct nm_hash_ent *ht;
+
+	/* currently used to specify if the bridge is free and if it has been put
+	 * in exclusive mode by an external module, see netmap_bdg_regops().
+	 * NM_BDG_EXCLUSIVE == 2 (defined in netmap_kern.h)
+	 */
+#define NM_BDG_ACTIVE	1
+	uint8_t			bdg_flags;
+
 
 #ifdef CONFIG_NET_NS
 	struct net *ns;
@@ -357,7 +365,7 @@ nm_find_bridge(const char *name, int create)
 	for (i = 0; i < num_bridges; i++) {
 		struct nm_bridge *x = bridges + i;
 
-		if (x->bdg_active_ports == 0) {
+		if (!(x->bdg_flags & NM_BDG_ACTIVE)) {
 			if (create && b == NULL)
 				b = x;	/* record empty slot */
 		} else if (x->bdg_namelen != namelen) {
@@ -385,6 +393,7 @@ nm_find_bridge(const char *name, int create)
 		/* set the default function */
 		b->bdg_ops = &default_bdg_ops;
 		b->private_data = b->ht;
+		b->bdg_flags = NM_BDG_ACTIVE;
 		NM_BNS_GET(b);
 	}
 	return b;
@@ -514,7 +523,17 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 		ND("marking bridge %s as free", b->bdg_basename);
 		nm_os_free(b->ht);
 		b->bdg_ops = NULL;
+		b->bdg_flags = 0; /* marks bridge as free */
 		NM_BNS_PUT(b);
+	}
+}
+
+static void
+netmap_bdg_free(struct nm_bridge *b)
+{
+	uint32_t i;
+	for (i = 0; i < b->bdg_active_ports; ++i) {
+		netmap_bdg_detach_common(b, b->bdg_port_index[i], -1);
 	}
 }
 
@@ -580,10 +599,10 @@ nm_vi_create(struct nmreq_header *hdr)
 	regreq.nr_rx_rings = req->nr_rx_rings;
 	regreq.nr_mem_id = req->nr_mem_id;
 	hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-	hdr->nr_body = &regreq;
+	hdr->nr_body = (uint64_t)&regreq;
 	error = netmap_vi_create(hdr, 0 /* no autodelete */);
 	hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
-	hdr->nr_body = req;
+	hdr->nr_body = (uint64_t)req;
         /* Write back to the original struct. */
 	req->nr_tx_slots = regreq.nr_tx_slots;
 	req->nr_rx_slots = regreq.nr_rx_slots;
@@ -898,19 +917,28 @@ out:
 }
 
 
-/* Process NETMAP_REQ_VALE_ATTACH. */
+/* Process NETMAP_REQ_VALE_ATTACH.
+ * bdg_ops is used to check ownership over a bridge in exclusive mode,
+ * see netmap_bdg_regops() to se how it works.
+ */
 int
-nm_bdg_ctl_attach(struct nmreq_header *hdr)
+nm_bdg_ctl_attach(struct nmreq_header *hdr, struct netmap_bdg_ops *bdg_ops)
 {
 	struct nmreq_vale_attach *req =
 		(struct nmreq_vale_attach *)hdr->nr_body;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
 	struct netmap_mem_d *nmd = NULL;
+	struct nm_bridge *b = NULL;
 	int error;
 
 	NMG_LOCK();
-	req->port_index = NM_BDG_NOPORT;
+	/* permission check for modified bridges */
+	b = nm_find_bridge(hdr->nr_name, 0 /* don't create */);
+	if (b && (b->bdg_flags & NM_BDG_EXCLUSIVE) && b->bdg_ops != bdg_ops) {
+		error = EACCES;
+		goto unlock_exit;
+	}
 
 	if (req->reg.nr_mem_id) {
 		nmd = netmap_mem_find(req->reg.nr_mem_id);
@@ -927,8 +955,9 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr)
 		goto unref_exit;
 	}
 	error = netmap_get_bdg_na(hdr, &na, nmd, 1 /* create if not exists */);
-	if (error) /* no device */
+	if (error) /* no device */ {
 		goto unlock_exit;
+	}
 
 	if (na == NULL) { /* VALE prefix missing */
 		error = EINVAL;
@@ -967,16 +996,27 @@ nm_is_bwrap(struct netmap_adapter *na)
 	return na->nm_register == netmap_bwrap_reg;
 }
 
-/* Process NETMAP_REQ_VALE_DETACH. */
+/* Process NETMAP_REQ_VALE_DETACH.
+ * bdg_ops is used to check ownership over a bridge in exclusive mode,
+ * see netmap_bdg_regops() to se how it works.
+ */
 int
-nm_bdg_ctl_detach(struct nmreq_header *hdr)
+nm_bdg_ctl_detach(struct nmreq_header *hdr, struct netmap_bdg_ops *bdg_ops)
 {
-	struct nmreq_vale_detach *nmreq_det = hdr->nr_body;
+	struct nmreq_vale_detach *nmreq_det = (void *)hdr->nr_body;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
+	struct nm_bridge *b = NULL;
 	int error;
 
 	NMG_LOCK();
+	/* permission check for modified bridges */
+	b = nm_find_bridge(hdr->nr_name, 0 /* don't create */);
+	if (b && (b->bdg_flags & NM_BDG_EXCLUSIVE) && b->bdg_ops != bdg_ops) {
+		error = EACCES;
+		goto unlock_exit;
+	}
+
 	error = netmap_get_bdg_na(hdr, &na, NULL, 0 /* don't create */);
 	if (error) { /* no device, or another bridge or user owns the device */
 		goto unlock_exit;
@@ -1387,37 +1427,77 @@ netmap_bdg_list(struct nmreq_header *hdr)
  * to set configure/lookup/dtor functions of a VALE instance.
  * Register callbacks to the given bridge. 'name' may be just
  * bridge's name (including ':' if it is not just NM_BDG_NAME).
+ *
+ * bdg_flags at the moment only supports NM_BDG_EXCLUSIVE which can be specified
+ * only for not yet existing bridges (they will be created during the regops).
+ * Exclusive mode allows only the external module which regops()'ed the bridge
+ * to attach and detach its ports.
+ * The permission check is made through the second parameter of nm_bdg_ctl_attach()
+ * and nm_bdg_ctl_detach(), which for bridges with the NM_BDG_EXCLUSIVE flag is
+ * compared against the netmap_bdg_ops pointer of the bridge.
+ *
  * Called without NMG_LOCK.
  */
  
 int
-netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data)
+netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, uint8_t flags)
 {
 	struct nm_bridge *b;
 	int error = 0;
 
 	NMG_LOCK();
 	b = nm_find_bridge(name, 0 /* don't create */);
-	if (!b) {
-		error = EINVAL;
-	} else if (!bdg_ops) {
-		BDG_WLOCK(b);
-		bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
-		b->bdg_ops = &default_bdg_ops;
-		b->private_data = b->ht;
-		BDG_WUNLOCK(b);
+	if (!bdg_ops) {
+		/* resetting the bridge, it must exists */
+		if (!b) {
+			error = EINVAL;
+			goto unlock_regops;
+		}
+
+		if (b->bdg_active_ports == 0 && (b->bdg_flags & NM_BDG_EXCLUSIVE)) {
+			/* bridges in exclusive mode are created without ports attached
+			 * therefore we might receive a reset regops() while the
+			 * bridge is effectively empty, in this case we free the bridge
+			 */
+			netmap_bdg_free(b);
+		} else {
+			BDG_WLOCK(b);
+			bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
+			b->bdg_ops = &default_bdg_ops;
+			b->private_data = b->ht;
+			b->bdg_flags &= ~NM_BDG_EXCLUSIVE;
+			BDG_WUNLOCK(b);
+		}
 	} else {
+		/* modifying the bridge, if NM_BDG_EXCLUSIVE is set the bridge cannot have
+		 * ports alredy attached (aka we need to create it on the spot)
+		 */
+		if (flags & NM_BDG_EXCLUSIVE) {
+			if (b) {
+				error = EINVAL;
+				goto unlock_regops;
+			}
+
+			b = nm_find_bridge(name, 1 /* create */);
+		}
+		if (!b) {
+			error = (flags & NM_BDG_EXCLUSIVE) ? ENOMEM : EINVAL;
+			goto unlock_regops;
+		}
+
 		BDG_WLOCK(b);
 		if (b->bdg_ops != &default_bdg_ops) {
 			error = EINVAL;
 		} else {
-			b->bdg_ops = bdg_ops;
 			b->private_data = private_data;
+			b->bdg_flags |= flags;
+			b->bdg_ops = bdg_ops;
 		}
 		BDG_WUNLOCK(b);
 	}
-	NMG_UNLOCK();
 
+unlock_regops:
+	NMG_UNLOCK();
 	return error;
 }
 
@@ -1699,7 +1779,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
  * and then returns the destination port index, and the
  * ring in *dst_ring (at the moment, always use ring 0)
  */
-u_int
+uint32_t
 netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *na, void *private_data)
 {

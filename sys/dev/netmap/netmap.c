@@ -2429,12 +2429,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 #ifdef WITH_VALE
 		case NETMAP_REQ_VALE_ATTACH: {
-			error = nm_bdg_ctl_attach(hdr);
+			error = nm_bdg_ctl_attach(hdr, NULL /* userspace request */);
 			break;
 		}
 
 		case NETMAP_REQ_VALE_DETACH: {
-			error = nm_bdg_ctl_detach(hdr);
+			error = nm_bdg_ctl_detach(hdr, NULL /* userspace request */);
 			break;
 		}
 

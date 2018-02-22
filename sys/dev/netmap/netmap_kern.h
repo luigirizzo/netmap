@@ -1017,8 +1017,9 @@ struct netmap_bwrap_adapter {
 	struct netmap_priv_d *na_kpriv;
 	struct nm_bdg_polling_state *na_polling_state;
 };
-int nm_bdg_ctl_attach(struct nmreq_header *hdr);
-int nm_bdg_ctl_detach(struct nmreq_header *hdr);
+struct netmap_bdg_ops; /* forward */
+int nm_bdg_ctl_attach(struct nmreq_header *hdr, struct netmap_bdg_ops *);
+int nm_bdg_ctl_detach(struct nmreq_header *hdr, struct netmap_bdg_ops *);
 int nm_bdg_polling(struct nmreq_header *hdr);
 int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
 int netmap_vi_create(struct nmreq_header *hdr, int);
@@ -1444,7 +1445,7 @@ int netmap_get_hw_na(struct ifnet *ifp,
  * NM_BDG_MAXPORTS for broadcast, NM_BDG_MAXPORTS+1 to indicate
  * drop.
  */
-typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
+typedef uint32_t (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
 		struct netmap_vp_adapter *, void *private_data);
 typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
 typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
@@ -1455,7 +1456,7 @@ struct netmap_bdg_ops {
 	bdg_dtor_fn_t	dtor;
 };
 
-u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
+uint32_t netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *, void *private_data);
 
 #define	NM_BRIDGES		8	/* number of bridges */
@@ -1470,7 +1471,8 @@ struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
-int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data);
+#define NM_BDG_EXCLUSIVE	2
+int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, uint8_t bdg_flags);
 int netmap_bdg_mod_private_data(const char *name, bdg_mod_private_data_fn_t callback, void *callback_data);
 int netmap_bdg_config(struct nm_ifreq *nifr);
 
