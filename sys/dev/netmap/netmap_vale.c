@@ -468,7 +468,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 {
 	int s_hw = hw, s_sw = sw;
 	int i, lim =b->bdg_active_ports;
-	uint8_t tmp[NM_BDG_MAXPORTS];
+	uint32_t tmp[NM_BDG_MAXPORTS];
 
 	/*
 	New algorithm:
