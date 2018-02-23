@@ -1640,6 +1640,7 @@ nm_bdg_preflush(struct netmap_kring *kring, u_int end)
 
 		ft[ft_i].ft_len = slot->len;
 		ft[ft_i].ft_flags = slot->flags;
+		ft[ft_i].ft_offset = 0;
 
 		ND("flags is 0x%x", slot->flags);
 		/* we do not use the buf changed flag, but we still need to reset it */
@@ -1791,18 +1792,9 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	uint64_t smac, dmac;
 	uint8_t indbuf[12];
 
-	/* safety check, unfortunately we have many cases */
-	if (buf_len >= 14 + na->up.virt_hdr_len) {
-		/* virthdr + mac_hdr in the same slot */
-		buf += na->up.virt_hdr_len;
-		buf_len -= na->up.virt_hdr_len;
-	} else if (buf_len == na->up.virt_hdr_len && ft->ft_flags & NS_MOREFRAG) {
-		/* only header in first fragment */
-		ft++;
-		buf = ft->ft_buf;
-		buf_len = ft->ft_len;
-	} else {
-		RD(5, "invalid buf format, length %d", buf_len);
+	buf = ft->ft_buf + ft->ft_offset;
+	buf_len = ft->ft_len - ft->ft_offset;
+	if (buf_len < 14) {
 		return NM_BDG_NOPORT;
 	}
 
@@ -1941,13 +1933,23 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		uint8_t dst_ring = ring_nr; /* default, same ring as origin */
 		uint16_t dst_port, d_i;
 		struct nm_bdg_q *d;
+		struct nm_bdg_fwd *start_ft = NULL;
 
 		ND("slot %d frags %d", i, ft[i].ft_frags);
-		/* Drop the packet if the virtio-net header is not into the first
-		   fragment nor at the very beginning of the second. */
-		if (unlikely(na->up.virt_hdr_len > ft[i].ft_len))
+
+		if (na->up.virt_hdr_len < ft[i].ft_len) {
+			ft[i].ft_offset = na->up.virt_hdr_len;
+			start_ft = &ft[i];
+		} else if (unlikely(na->up.virt_hdr_len == ft[i].ft_len && ft[i].ft_flags & NS_MOREFRAG)) {
+			ft[i].ft_offset = ft[i].ft_len;
+			start_ft = &ft[i+1];
+		} else {
+			/* Drop the packet if the virtio-net header is not into the first
+			 * fragment nor at the very beginning of the second.
+			 */
 			continue;
-		dst_port = b->bdg_ops->lookup(&ft[i], &dst_ring, na, b->private_data);
+		}
+		dst_port = b->bdg_ops->lookup(start_ft, &dst_ring, na, b->private_data);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
 		if (dst_port >= NM_BDG_NOPORT)

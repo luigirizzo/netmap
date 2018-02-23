@@ -2000,7 +2000,7 @@ void nm_os_mitigation_cleanup(struct nm_generic_mit *mit);
 struct nm_bdg_fwd {	/* forwarding entry for a bridge */
 	void *ft_buf;		/* netmap or indirect buffer */
 	uint8_t ft_frags;	/* how many fragments (only on 1st frag) */
-	uint8_t _ft_port;	/* dst port (unused) */
+	uint16_t ft_offset;	/* dst port (unused) */
 	uint16_t ft_flags;	/* flags, e.g. indirect */
 	uint16_t ft_len;	/* src fragment len */
 	uint16_t ft_next;	/* next packet to same destination */
