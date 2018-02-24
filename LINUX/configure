@@ -1275,17 +1275,15 @@ EOF
 	}
 EOF
 
-  # arguments of qdisc_create_dflt (either 3 or 4)
-  add_test 'define QDISC_CREATE_DFLT_3ARGS' <<EOF
-	#include <net/sch_generic.h>
+  # first argument of sock_create_kern() is a 'struct net*'
+  add_test 'define SOCK_CREATE_KERN_NETNS' <<EOF
+	#include <net/sock.h>
 
-	struct Qdisc *
-	dummy(struct netdev_queue *dev_queue,
-	      struct Qdisc_ops* ops,
-	      unsigned int parent_id)
+	int
+	dummy(void)
 	{
-		return qdisc_create_dflt(dev_queue,
-					 ops, parent_id);
+		struct net *net = NULL;
+		return sock_create_kern(net, 0, 0, 0, NULL);
 	}
 EOF
 

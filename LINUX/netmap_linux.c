@@ -613,8 +613,11 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 	struct iovec iov;
 	int ret;
 
-	ret = sock_create_kern(current->nsproxy->net_ns, AF_NETLINK, SOCK_RAW,
-				NETLINK_ROUTE, &sock);
+	ret = sock_create_kern(
+#ifdef NETMAP_LINUX_SOCK_CREATE_KERN_NETNS
+				current->nsproxy->net_ns,
+#endif /* NETMAP_LINUX_SOCK_CREATE_KERN_NETNS  */
+				AF_NETLINK, SOCK_RAW, NETLINK_ROUTE, &sock);
 	if (ret) {
 		D("Failed to create netlink socket (err=%d)", ret);
 		return -ret;
