@@ -582,21 +582,39 @@ generic_qdisc_ops __read_mostly = {
 };
 
 static int
-nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
+tc_configure(struct ifnet *ifp, const char *qdisc_name,
+		uint32_t parent, uint32_t handle)
 {
-	const char *qdisc_name = intercept ? generic_qdisc_ops.id : "pfifo";
-	struct ifnet *ifp = netmap_generic_getifp(gna);
-	struct socket *sock = NULL;
 	struct sockaddr_nl saddr = {
 		.nl_family = AF_NETLINK,
 		.nl_groups = 0,
 		.nl_pid = 0,
 	};
-	int ret = 0;
-
-	if (!gna->txqdisc) {
-		return 0;
-	}
+	struct msghdr msg = {
+		.msg_name = (struct sockaddr *)&saddr,
+		.msg_namelen = sizeof(saddr),
+		.msg_flags = /* MSG_DONTWAIT */0,
+	};
+	struct {
+		struct nlmsghdr hdr;
+		struct tcmsg tcmsg;
+		char buf[64];
+	} nlreq = {
+		.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct tcmsg)),
+		.hdr.nlmsg_type = RTM_NEWQDISC,
+		.hdr.nlmsg_flags = NLM_F_REQUEST|/*NLM_F_ACK|*/NLM_F_REPLACE|NLM_F_CREATE,
+		.hdr.nlmsg_seq = 1,
+		.hdr.nlmsg_pid = 0,
+		.tcmsg.tcm_family = AF_UNSPEC,
+		.tcmsg.tcm_ifindex = ifp->ifindex,
+		.tcmsg.tcm_handle = handle,
+		.tcmsg.tcm_parent = parent,
+		.tcmsg.tcm_info = 0,
+	};
+	struct socket *sock = NULL;
+	struct nlattr *attr;
+	struct iovec iov;
+	int ret;
 
 	ret = sock_create_kern(current->nsproxy->net_ns, AF_NETLINK, SOCK_RAW,
 				NETLINK_ROUTE, &sock);
@@ -605,58 +623,75 @@ nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
 		return -ret;
 	}
 
+
 	ret = kernel_bind(sock, (struct sockaddr *)&saddr, sizeof(saddr));
 	if (ret) {
 		D("Failed to bind() netlink socket (err=%d)", ret);
 		goto release;
 	}
 
-	{
-		struct msghdr msg = {
-			.msg_name = (struct sockaddr *)&saddr,
-			.msg_namelen = sizeof(saddr),
-			.msg_flags = /* MSG_DONTWAIT */0,
-		};
-		struct {
-			struct nlmsghdr hdr;
-			struct tcmsg tcmsg;
-			char buf[64];
-		} nlreq = {
-			.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct tcmsg)),
-			.hdr.nlmsg_type = RTM_NEWQDISC,
-			.hdr.nlmsg_flags = NLM_F_REQUEST|NLM_F_ACK|NLM_F_REPLACE|NLM_F_CREATE,
-			.hdr.nlmsg_seq = 1,
-			.hdr.nlmsg_pid = 0,
-			.tcmsg.tcm_family = AF_UNSPEC,
-			.tcmsg.tcm_ifindex = ifp->ifindex,
-			.tcmsg.tcm_handle = 0,
-			.tcmsg.tcm_parent = TC_H_ROOT,
-			.tcmsg.tcm_info = 0,
-		};
-		struct nlattr *attr;
-		struct iovec iov;
+	attr = (struct nlattr *)(((void *)&nlreq.hdr) +
+				 NLMSG_ALIGN(nlreq.hdr.nlmsg_len));
+	attr->nla_len = NLA_HDRLEN + strlen(qdisc_name) + 1;
+	attr->nla_type = TCA_KIND;
+	strcpy(((void *)attr) + NLA_HDRLEN, qdisc_name);
+	nlreq.hdr.nlmsg_len = NLMSG_ALIGN(nlreq.hdr.nlmsg_len) +
+				NLA_ALIGN(attr->nla_len);
 
-		attr = (struct nlattr *)(((void *)&nlreq.hdr) +
-					 NLMSG_ALIGN(nlreq.hdr.nlmsg_len));
-		attr->nla_len = NLA_HDRLEN + strlen(qdisc_name) + 1;
-		attr->nla_type = TCA_KIND;
-		strcpy(((void *)attr) + NLA_HDRLEN, qdisc_name);
-		nlreq.hdr.nlmsg_len = NLMSG_ALIGN(nlreq.hdr.nlmsg_len) +
-					NLA_ALIGN(attr->nla_len);
-
-		iov.iov_base = (void *)&nlreq;
-		iov.iov_len = nlreq.hdr.nlmsg_len;
-		ret = kernel_sendmsg(sock, &msg, (struct kvec *)&iov, 1,
-					iov.iov_len);
-		if (ret != iov.iov_len) {
-			D("Failed to sendmsg to netlink socket (err=%d)", ret);
-			goto release;
-		}
-		ret = 0;
+	iov.iov_base = (void *)&nlreq;
+	iov.iov_len = nlreq.hdr.nlmsg_len;
+	ret = kernel_sendmsg(sock, &msg, (struct kvec *)&iov, 1,
+				iov.iov_len);
+	if (ret != iov.iov_len) {
+		D("Failed to sendmsg to netlink socket (err=%d)", ret);
+		ret = -EINVAL;
+		goto release;
 	}
+	ret = 0;
+
+	D("ifp %s qdisc %s parent %u handle %u", ifp->name, qdisc_name, parent, handle);
+
 release:
 	sock_release(sock);
-	return -ret;
+
+	return ret;
+}
+
+static int
+nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
+{
+	struct ifnet *ifp = netmap_generic_getifp(gna);
+	struct netmap_adapter *na = &gna->up.up;
+	bool multiqueue = (na->num_tx_rings > 1);
+	const char *qdisc_name;
+	static uint32_t root_handle_cnt = 18;
+	uint32_t root_handle = multiqueue ? root_handle_cnt++ : 0;
+	int ret = 0;
+
+	if (!gna->txqdisc) {
+		return 0;
+	}
+
+	qdisc_name = multiqueue ? "mq" :
+			(intercept ? generic_qdisc_ops.id : "pfifo");
+	/* Configure root qdisc.
+	 * sudo tc qdisc replace dev ifp->name root handle @root_handle: qdisc_name */
+	ret = tc_configure(ifp, qdisc_name, /*parent=*/TC_H_ROOT,
+				/*handle=*/root_handle << 16);
+	if (ret) {
+		return -ret;
+	}
+	if (intercept && multiqueue) {
+		/* Configure per-queue qdisc. */
+		int i;
+		qdisc_name = (intercept ? generic_qdisc_ops.id : "pfifo");
+		for (i = 0; i < na->num_tx_rings; i++) {
+			tc_configure(ifp, qdisc_name,
+				/*parent=*/(root_handle << 16) | (i+1),
+				/*handle=*/0);
+		}
+	}
+	return 0;
 }
 
 /* Must be called under rtnl. */
