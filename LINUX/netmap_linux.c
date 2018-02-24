@@ -476,7 +476,6 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 }
 
 struct nm_generic_qdisc {
-	unsigned int qidx;
 	unsigned int limit;
 };
 
@@ -489,21 +488,18 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 	 * always use our priv->limit, for simplicity. */
 
 	priv = qdisc_priv(qdisc);
-	priv->qidx = 0;
 	priv->limit = 1024; /* This is going to be overridden. */
 
 	if (opt) {
-		struct nm_generic_qdisc *qdiscopt = nla_data(opt);
+		uint32_t *limit = nla_data(opt);
 
-		if (nla_len(opt) < sizeof(*qdiscopt)) {
+		if (nla_len(opt) < sizeof(*limit)) {
 			D("Invalid netlink attribute");
 			return EINVAL;
 		}
 
-		priv->qidx = qdiscopt->qidx;
-		priv->limit = qdiscopt->limit;
-		D("Qdisc #%d initialized with max_len = %u", priv->qidx,
-				                             priv->limit);
+		priv->limit = *limit;
+		D("Qdisc initialized with max_len = %u", priv->limit);
 	}
 
 	/* Qdisc bypassing is not an option for now.
@@ -583,7 +579,7 @@ generic_qdisc_ops __read_mostly = {
 
 static int
 tc_configure(struct ifnet *ifp, const char *qdisc_name,
-		uint32_t parent, uint32_t handle)
+		uint32_t parent, uint32_t handle, uint32_t limit)
 {
 	struct sockaddr_nl saddr = {
 		.nl_family = AF_NETLINK,
@@ -598,7 +594,7 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 	struct {
 		struct nlmsghdr hdr;
 		struct tcmsg tcmsg;
-		char buf[64];
+		char buf[100];
 	} nlreq = {
 		.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct tcmsg)),
 		.hdr.nlmsg_type = RTM_NEWQDISC,
@@ -612,7 +608,8 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 		.tcmsg.tcm_info = 0,
 	};
 	struct socket *sock = NULL;
-	struct nlattr *attr;
+	struct nlattr *attr_kind;
+	struct nlattr *attr_opt;
 	struct iovec iov;
 	int ret;
 
@@ -630,13 +627,25 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 		goto release;
 	}
 
-	attr = (struct nlattr *)(((void *)&nlreq.hdr) +
+	/* Push TCA_KIND attr. */
+	attr_kind = (struct nlattr *)(((void *)&nlreq.hdr) +
 				 NLMSG_ALIGN(nlreq.hdr.nlmsg_len));
-	attr->nla_len = NLA_HDRLEN + strlen(qdisc_name) + 1;
-	attr->nla_type = TCA_KIND;
-	strcpy(((void *)attr) + NLA_HDRLEN, qdisc_name);
+	attr_kind->nla_len = NLA_HDRLEN + strlen(qdisc_name) + 1;
+	attr_kind->nla_type = TCA_KIND;
+	strcpy(((void *)attr_kind) + NLA_HDRLEN, qdisc_name);
 	nlreq.hdr.nlmsg_len = NLMSG_ALIGN(nlreq.hdr.nlmsg_len) +
-				NLA_ALIGN(attr->nla_len);
+				NLA_ALIGN(attr_kind->nla_len);
+
+	if (limit > 0) {
+		/* Push TCA_OPTIONS attr. */
+		attr_opt = (struct nlattr *)(((void *)&nlreq.hdr) +
+					 NLMSG_ALIGN(nlreq.hdr.nlmsg_len));
+		attr_opt->nla_len = NLA_HDRLEN + sizeof(uint32_t);
+		attr_opt->nla_type = TCA_OPTIONS;
+		*((uint32_t *)(((void *)attr_opt) + NLA_HDRLEN)) = limit;
+		nlreq.hdr.nlmsg_len = NLMSG_ALIGN(nlreq.hdr.nlmsg_len) +
+					NLA_ALIGN(attr_opt->nla_len);
+	}
 
 	iov.iov_base = (void *)&nlreq;
 	iov.iov_len = nlreq.hdr.nlmsg_len;
@@ -663,9 +672,10 @@ nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 	struct netmap_adapter *na = &gna->up.up;
 	bool multiqueue = (na->num_tx_rings > 1);
-	const char *qdisc_name;
 	static uint32_t root_handle_cnt = 18;
 	uint32_t root_handle = multiqueue ? root_handle_cnt++ : 0;
+	uint32_t limit = (!multiqueue && intercept) ? na->num_tx_desc : 0;
+	const char *qdisc_name;
 	int ret = 0;
 
 	if (!gna->txqdisc) {
@@ -677,7 +687,7 @@ nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
 	/* Configure root qdisc.
 	 * sudo tc qdisc replace dev ifp->name root handle @root_handle: qdisc_name */
 	ret = tc_configure(ifp, qdisc_name, /*parent=*/TC_H_ROOT,
-				/*handle=*/root_handle << 16);
+				/*handle=*/root_handle << 16, limit);
 	if (ret) {
 		return -ret;
 	}
@@ -685,10 +695,11 @@ nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
 		/* Configure per-queue qdisc. */
 		int i;
 		qdisc_name = (intercept ? generic_qdisc_ops.id : "pfifo");
+		limit = na->num_tx_desc;
 		for (i = 0; i < na->num_tx_rings; i++) {
 			tc_configure(ifp, qdisc_name,
 				/*parent=*/(root_handle << 16) | (i+1),
-				/*handle=*/0);
+				/*handle=*/0, limit);
 		}
 	}
 	return 0;
