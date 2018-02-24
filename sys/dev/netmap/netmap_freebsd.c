@@ -292,24 +292,30 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = na->ifp;
+	int ret = 0;
 
+	nm_os_ifnet_lock();
 	if (intercept) {
 		if (gna->save_if_input) {
 			D("cannot intercept again");
-			return EINVAL; /* already set */
+			ret = EINVAL; /* already set */
+			goto out;
 		}
 		gna->save_if_input = ifp->if_input;
 		ifp->if_input = freebsd_generic_rx_handler;
 	} else {
 		if (!gna->save_if_input){
 			D("cannot restore");
-			return EINVAL;  /* not saved */
+			ret = EINVAL;  /* not saved */
+			goto out;
 		}
 		ifp->if_input = gna->save_if_input;
 		gna->save_if_input = NULL;
 	}
+out:
+	nm_os_ifnet_unlock();
 
-	return 0;
+	return ret;
 }
 
 
@@ -325,12 +331,14 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = netmap_generic_getifp(gna);
 
+	nm_os_ifnet_lock();
 	if (intercept) {
 		na->if_transmit = ifp->if_transmit;
 		ifp->if_transmit = netmap_transmit;
 	} else {
 		ifp->if_transmit = na->if_transmit;
 	}
+	nm_os_ifnet_unlock();
 
 	return 0;
 }
