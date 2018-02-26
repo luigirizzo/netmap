@@ -1940,7 +1940,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		if (na->up.virt_hdr_len < ft[i].ft_len) {
 			ft[i].ft_offset = na->up.virt_hdr_len;
 			start_ft = &ft[i];
-		} else if (unlikely(na->up.virt_hdr_len == ft[i].ft_len && ft[i].ft_flags & NS_MOREFRAG)) {
+		} else if (na->up.virt_hdr_len == ft[i].ft_len && ft[i].ft_flags & NS_MOREFRAG) {
 			ft[i].ft_offset = ft[i].ft_len;
 			start_ft = &ft[i+1];
 		} else {
