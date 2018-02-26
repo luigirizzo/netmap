@@ -1479,8 +1479,10 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 
 		error = netmap_load_map(na, (bus_dma_tag_t) na->pdev, &lut->plut[i].paddr,
 				p->lut[i].vaddr, p->_clustsize);
-		if (error)
+		if (error) {
+			D("Failed to map cluster #%d from the %s pool", i, p->name);
 			break;
+		}
 
 		for (j = 1; j < p->_clustentries; j++) {
 			lut->plut[i + j].paddr = lut->plut[i + j - 1].paddr + p->_objsize;
