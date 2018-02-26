@@ -313,10 +313,6 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	 * need to update the buffer's physical address in the NIC slot
 	 * even NS_BUF_CHANGED is not set (PNMB computes the addresses).
 	 *
-	 * The netmap_reload_map() calls is especially expensive,
-	 * even when (as in this case) the tag is 0, so do only
-	 * when the buffer has actually changed.
-	 *
 	 * If possible do not set the report/intr bit on all slots,
 	 * but only a few times per ring or when NS_REPORT is set.
 	 *
