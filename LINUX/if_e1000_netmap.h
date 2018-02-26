@@ -127,25 +127,26 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = E1000_TX_DESC(*txr, nic_i);
-			int flags = (slot->flags & NS_REPORT ||
+			int hw_flags = (slot->flags & NS_REPORT ||
 				nic_i == 0 || nic_i == report_frequency) ?
 				E1000_TXD_CMD_RS : 0;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
+			if (!(slot->flags & NS_MOREFRAG)) {
+				hw_flags |= E1000_TXD_CMD_EOP;
+			}
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_addr, paddr);
 				curr->buffer_addr = htole64(paddr);
 			}
-			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
 			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 
 			/* Fill the slot in the NIC ring. */
 			curr->upper.data = 0;
 			curr->lower.data = htole32(adapter->txd_cmd |
-				len | flags |
-				E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS);
+				len | hw_flags | E1000_TXD_CMD_IFCS);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -254,7 +255,6 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 			if (slot->flags & NS_BUF_CHANGED) {
-				// netmap_reload_map(...)
 				curr->buffer_addr = htole64(paddr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
