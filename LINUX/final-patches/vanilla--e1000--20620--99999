@@ -1,5 +1,5 @@
 diff --git a/e1000/e1000_main.c b/e1000/e1000_main.c
-index bcd192c..013f528 100644
+index bcd192ca47b0..1e1a6b61ece4 100644
 --- a/e1000/e1000_main.c
 +++ b/e1000/e1000_main.c
 @@ -190,6 +190,10 @@ static struct pci_error_handlers e1000_err_handler = {
@@ -57,7 +57,23 @@ index bcd192c..013f528 100644
  	i = tx_ring->next_to_clean;
  	eop = tx_ring->buffer_info[i].next_to_watch;
  	eop_desc = E1000_TX_DESC(*tx_ring, eop);
-@@ -3795,6 +3815,15 @@ static bool e1000_clean_rx_irq(struct e1000_adapter *adapter,
+@@ -3614,6 +3634,15 @@ static bool e1000_clean_jumbo_rx_irq(struct e1000_adapter *adapter,
+ 	bool cleaned = false;
+ 	unsigned int total_rx_bytes=0, total_rx_packets=0;
+ 
++#ifdef DEV_NETMAP
++       int nm_irq = netmap_rx_irq(netdev, 0, work_done);
++       if (nm_irq != NM_IRQ_PASS) {
++               if (nm_irq == NM_IRQ_RESCHED) {
++                       *work_done = work_to_do;
++               }
++               return 1;
++       }
++#endif /* DEV_NETMAP */
+ 	i = rx_ring->next_to_clean;
+ 	rx_desc = E1000_RX_DESC(*rx_ring, i);
+ 	buffer_info = &rx_ring->buffer_info[i];
+@@ -3795,6 +3824,15 @@ static bool e1000_clean_rx_irq(struct e1000_adapter *adapter,
  	bool cleaned = false;
  	unsigned int total_rx_bytes=0, total_rx_packets=0;
  
