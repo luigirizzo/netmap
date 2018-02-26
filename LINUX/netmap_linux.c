@@ -654,7 +654,7 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 	iov.iov_len = nlreq.hdr.nlmsg_len;
 	ret = kernel_sendmsg(sock, &msg, (struct kvec *)&iov, 1,
 				iov.iov_len);
-	if (ret != iov.iov_len) {
+	if (ret != nlreq.hdr.nlmsg_len) {
 		D("Failed to sendmsg to netlink socket (err=%d)", ret);
 		ret = -EINVAL;
 		goto release;
