@@ -613,7 +613,8 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 
 	ret = sock_create_kern(
 #ifdef NETMAP_LINUX_SOCK_CREATE_KERN_NETNS
-				current->nsproxy->net_ns,
+				current->nsproxy ?
+					current->nsproxy->net_ns : &init_net,
 #endif /* NETMAP_LINUX_SOCK_CREATE_KERN_NETNS  */
 				AF_NETLINK, SOCK_RAW, NETLINK_ROUTE, &sock);
 	if (ret) {
