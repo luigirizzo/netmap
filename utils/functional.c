@@ -560,22 +560,25 @@ main(int argc, char **argv)
 
 	for (i = 0; i < g->num_events; i++) {
 		const struct Event *e = g->events + i;
+		unsigned j;
 
 		g->filler   = e->filler;
 		g->pktm_len = e->pkt_len;
 		build_packet(g);
 
-		if (e->evtype == EVENT_TYPE_TX) {
-			if (tx_one(g)) {
-				return -1;
-			}
+		for (j = 0; j < e->num; j++) {
+			if (e->evtype == EVENT_TYPE_TX) {
+				if (tx_one(g)) {
+					return -1;
+				}
 
-		} else if (e->evtype == EVENT_TYPE_RX) {
-			if (rx_one(g)) {
-				return -1;
-			}
-			if (rx_check(g)) {
-				return -1;
+			} else if (e->evtype == EVENT_TYPE_RX) {
+				if (rx_one(g)) {
+					return -1;
+				}
+				if (rx_check(g)) {
+					return -1;
+				}
 			}
 		}
 	}
