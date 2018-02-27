@@ -41,6 +41,15 @@
 
 #define ETH_ADDR_LEN 6
 
+struct Event {
+	unsigned evtype;
+#define EVENT_TYPE_RX 0x1
+#define EVENT_TYPE_TX 0x2
+	unsigned pkt_len;
+	char filler;
+	unsigned num;
+};
+
 struct Global {
 	struct nm_desc *nmd;
 	const char *ifname;
@@ -61,6 +70,10 @@ struct Global {
 	uint16_t src_port;
 	uint16_t dst_port;
 	char filler;
+
+#define MAX_EVENTS 64
+	unsigned num_events;
+	struct Event events[MAX_EVENTS];
 };
 
 static void
@@ -392,17 +405,67 @@ rx_check(struct Global *g)
 	return 0;
 }
 
+static int
+parse_event(const char *opt, unsigned event_type, struct Event *event)
+{
+	char *strbuf = strdup(opt);
+	char *save   = strbuf;
+	int more;
+	char *c;
+
+	if (!strbuf || strlen(strbuf) == 0) {
+		goto err;
+	}
+
+	event->evtype = event_type;
+	event->filler = 'a';
+	event->num    = 1;
+
+	for (c = strbuf; *c != '\0' && *c != ':'; c++) {
+	}
+	more	   = (*c == ':');
+	*c	     = '\0';
+	event->pkt_len = atoi(strbuf);
+	if (more) {
+		strbuf = c + 1;
+		for (c = strbuf; *c != '\0' && *c != ':'; c++) {
+		}
+		more	  = (*c == ':');
+		*c	    = '\0';
+		event->filler = strbuf[0];
+	}
+	if (more) {
+		strbuf = c + 1;
+		for (c = strbuf; *c != '\0'; c++) {
+		}
+		event->num = atoi(strbuf);
+	}
+#if 0
+	printf("parsed %u:%c:%u\n", event->pkt_len, event->filler, event->num);
+#endif
+	return 0;
+err:
+	free(save);
+	return -1;
+}
+
 static struct Global _g;
 
 static void
 usage(void)
 {
 	printf("usage: ./functional [-h]\n"
-	       "-i NETMAP_PORT\n"
-	       "[-l PACKET_LEN (=60)]\n"
-	       "[-F MAX_FRAGMENT_SIZE (=inf)]\n"
-	       "[-T TIMEOUT_SECS (=2)]\n"
-	       "[-w WAIT_LINK_SECS (=0)]\n");
+	       "    -i NETMAP_PORT\n"
+	       "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
+	       "    [-T TIMEOUT_SECS (=2)]\n"
+	       "    [-w WAIT_LINK_SECS (=0)]\n"
+	       "    [-t LEN[:FILLCHAR[:NUM]] (trasmit NUM packets with size "
+	       "LEN bytes)]\n"
+	       "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
+	       "with size LEN bytes)]\n"
+	       "\nExample:\n"
+	       "    $ ./functional -i netmap:lo -t 100 -r 100 -t 40:b:2 -r "
+	       "40:b:2\n");
 }
 
 int
@@ -410,7 +473,7 @@ main(int argc, char **argv)
 {
 	struct Global *g = &_g;
 	int opt;
-	int i;
+	unsigned int i;
 
 	g->ifname	 = NULL;
 	g->nmd		  = NULL;
@@ -422,11 +485,12 @@ main(int argc, char **argv)
 		g->src_mac[i] = 0x00;
 	for (i = 0; i < ETH_ADDR_LEN; i++)
 		g->dst_mac[i] = 0xFF;
-	g->src_ip = 0x0A000005; /* 10.0.0.5 */
-	g->dst_ip = 0x0A000007; /* 10.0.0.7 */
-	g->filler = 'a';
+	g->src_ip     = 0x0A000005; /* 10.0.0.5 */
+	g->dst_ip     = 0x0A000007; /* 10.0.0.7 */
+	g->filler     = 'a';
+	g->num_events = 0;
 
-	while ((opt = getopt(argc, argv, "hi:w:l:F:T:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:w:F:T:t:r:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -440,16 +504,25 @@ main(int argc, char **argv)
 			g->wait_link_secs = atoi(optarg);
 			break;
 
-		case 'l':
-			g->pktm_len = atoi(optarg);
-			break;
-
 		case 'F':
 			g->max_frag_size = atoi(optarg);
 			break;
 
 		case 'T':
 			g->timeout_secs = atoi(optarg);
+			break;
+
+		case 't':
+		case 'r':
+			if (parse_event(optarg,
+					(opt == 't') ? EVENT_TYPE_TX
+						     : EVENT_TYPE_RX,
+					g->events + g->num_events)) {
+				printf("Invalid event syntax '%s'\n", optarg);
+				usage();
+				return -1;
+			}
+			g->num_events++;
 			break;
 
 		default:
@@ -474,14 +547,26 @@ main(int argc, char **argv)
 		sleep(g->wait_link_secs);
 	}
 
-	build_packet(g);
+	for (i = 0; i < g->num_events; i++) {
+		const struct Event *e = g->events + i;
 
-	tx_one(g);
-	if (rx_one(g)) {
-		return -1;
-	}
-	if (rx_check(g)) {
-		return -1;
+		g->filler   = e->filler;
+		g->pktm_len = e->pkt_len;
+		build_packet(g);
+
+		if (e->evtype == EVENT_TYPE_TX) {
+			if (tx_one(g)) {
+				return -1;
+			}
+
+		} else if (e->evtype == EVENT_TYPE_RX) {
+			if (rx_one(g)) {
+				return -1;
+			}
+			if (rx_check(g)) {
+				return -1;
+			}
+		}
 	}
 
 	nm_close(g->nmd);
