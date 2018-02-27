@@ -268,7 +268,31 @@ rx_one(struct Global *g)
 
 		/* Retry after a short while. */
 		usleep(100000);
-		ioctl(nmd->fd, NIOCTXSYNC, NULL);
+		ioctl(nmd->fd, NIOCRXSYNC, NULL);
+	}
+
+	return 0;
+}
+
+static int
+rx_check(struct Global *g)
+{
+	unsigned i;
+
+	if (g->pktr_len != g->pktm_len) {
+		printf("Received packet length (%u) different from "
+		       "expected (%u bytes)\n",
+		       g->pktr_len, g->pktm_len);
+		return -1;
+	}
+
+	for (i = 0; i < g->pktr_len; i++) {
+		if (g->pktr[i] != g->pktm[i]) {
+			printf("Received packet differs from model at "
+			       "offset %u (%x!=%x)\n",
+			       i, g->pktr[i], g->pktm[i]);
+			return -1;
+		}
 	}
 
 	return 0;
@@ -345,6 +369,9 @@ main(int argc, char **argv)
 
 	tx_one(g);
 	rx_one(g);
+	if (rx_check(g)) {
+		exit(EXIT_FAILURE);
+	}
 
 	nm_close(g->nmd);
 
