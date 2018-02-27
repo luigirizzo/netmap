@@ -62,15 +62,53 @@ fill_packet_32bit(struct Global *g, unsigned offset, uint32_t val)
 	fill_packet_field(g, offset, (const char *)&val, sizeof(val));
 }
 
+/* Compute the checksum of the given ip header. */
+static uint32_t
+checksum(const void *data, uint16_t len, uint32_t sum)
+{
+	const uint8_t *addr = data;
+	uint32_t i;
+
+	/* Checksum all the pairs of bytes first... */
+	for (i = 0; i < (len & ~1U); i += 2) {
+		sum += (u_int16_t)ntohs(*((u_int16_t *)(addr + i)));
+		if (sum > 0xFFFF)
+			sum -= 0xFFFF;
+	}
+	/*
+	 * If there's a single byte left over, checksum it, too.
+	 * Network byte order is big-endian, so the remaining byte is
+	 * the high byte.
+	 */
+	if (i < len) {
+		sum += addr[i] << 8;
+		if (sum > 0xFFFF)
+			sum -= 0xFFFF;
+	}
+	return sum;
+}
+
+static uint16_t
+wrapsum(uint32_t sum)
+{
+	sum = ~sum & 0xFFFF;
+	return sum; /* htons() is called by fill_16bit */
+}
+
 static void
 build_packet(struct Global *g)
 {
-	unsigned ofs = 0, hdrofs = 0;
+	unsigned ofs = 0;
+	unsigned ethofs;
+	unsigned ipofs;
+	unsigned udpofs;
+	unsigned pldofs;
 
 	memset(g->pktm, 0, sizeof(g->pktm));
 	printf("%s: starting at ofs %u\n", __func__, ofs);
 
-	hdrofs = ofs;
+	ethofs = ofs;
+	(void)ethofs;
 	/* Ethernet destination and source MAC address plus ethertype. */
 	fill_packet_field(g, ofs, g->dst_mac, ETH_ADDR_LEN);
 	ofs += ETH_ADDR_LEN;
@@ -80,7 +118,7 @@ build_packet(struct Global *g)
 	ofs += 2;
 	printf("%s: eth done, ofs %u\n", __func__, ofs);
 
-	hdrofs = ofs;
+	ipofs = ofs;
 	/* First byte of IP header. */
 	fill_packet_8bit(g, ofs,
 			 (IPVERSION << 4) | ((sizeof(struct iphdr)) >> 2));
@@ -88,7 +126,7 @@ build_packet(struct Global *g)
 	/* Skip QoS byte. */
 	ofs += 1;
 	/* Total length. */
-	fill_packet_16bit(g, ofs, g->pktm_len - hdrofs);
+	fill_packet_16bit(g, ofs, g->pktm_len - ipofs);
 	ofs += 2;
 	/* Skip identification field. */
 	ofs += 2;
@@ -109,9 +147,13 @@ build_packet(struct Global *g)
 	/* Dst IP address. */
 	fill_packet_32bit(g, ofs, g->dst_ip);
 	ofs += 4;
+	/* Now put the checksum. */
+	fill_packet_16bit(
+		g, ipofs + 10,
+		wrapsum(checksum(g->pktm + ipofs, sizeof(struct iphdr), 0)));
 	printf("%s: ip done, ofs %u\n", __func__, ofs);
 
-	hdrofs = ofs;
+	udpofs = ofs;
 	/* UDP source port. */
 	fill_packet_16bit(g, ofs, g->src_port);
 	ofs += 2;
@@ -119,16 +161,40 @@ build_packet(struct Global *g)
 	fill_packet_16bit(g, ofs, g->dst_port);
 	ofs += 2;
 	/* UDP length (UDP header + data). */
-	fill_packet_16bit(g, ofs, g->pktm_len - hdrofs);
+	fill_packet_16bit(g, ofs, g->pktm_len - udpofs);
 	ofs += 2;
-	/* Skip checksum for now. */
+	/* Skip the UDP checksum for now. */
 	ofs += 2;
 	printf("%s: udp done, ofs %u\n", __func__, ofs);
 
 	/* Fill UDP payload. */
+	pldofs = ofs;
 	for (; ofs < g->pktm_len; ofs++) {
 		fill_packet_8bit(g, ofs, g->filler);
 	}
+
+	/* Put the UDP checksum now.
+	 * Magic: taken from sbin/dhclient/packet.c */
+	fill_packet_16bit(
+		g, udpofs + 6,
+		wrapsum(checksum(
+			g->pktm + udpofs,
+			sizeof(struct udphdr),     /* udp header */
+			checksum(g->pktm + pldofs, /* udp payload */
+				 g->pktm_len - pldofs,
+				 checksum(g->pktm + ipofs +
+						  12, /* pseudo header */
+					  2 * 4,
+					  IPPROTO_UDP +
+						  (uint32_t)ntohs(g->pktm_len -
+								  udpofs))))));
+}
+
+static int
+tx_one(struct Global *g)
+{
+	(void)g;
+	return 0;
 }
 
 static struct Global _g;
@@ -199,6 +265,8 @@ main(int argc, char **argv)
 	}
 
 	build_packet(g);
+
+	tx_one(g);
 
 	nm_close(g->nmd);
 
