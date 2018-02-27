@@ -2084,14 +2084,21 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		 * perform sanity checks and create the in-kernel view
 		 * of the netmap rings (the netmap krings).
 		 */
-		if (na->ifp) {
-			/* This netmap adapter is attached to an ifnet.
-			 * Check that netmap buffer size is at least as
-			 * big as device MTU. */
-			if (netmap_mem_bufsize(na->nm_mem) <
+		if (na->ifp && netmap_mem_bufsize(na->nm_mem) <
 					nm_os_ifnet_mtu(na->ifp)) {
-				D("Error: netmap buf_size (%u) smaller "
-					"than device MTU (%u)",
+			/* This netmap adapter is attached to an ifnet.
+			 * If netmap buffer size is smaller than device
+			 * MTU we need to make sure that the adapter
+			 * supports NS_MOREFRAG. */
+			if (na->na_flags & NAF_MOREFRAG) {
+				nm_prinf("netmap buf_size (%u) < device "
+					"MTU (%u): application may need "
+					"to use NS_MOREFRAG",
+					netmap_mem_bufsize(na->nm_mem),
+					nm_os_ifnet_mtu(na->ifp));
+			} else {
+				nm_prerr("Error: netmap buf_size (%u) < "
+					"device MTU (%u)",
 					netmap_mem_bufsize(na->nm_mem),
 					nm_os_ifnet_mtu(na->ifp));
 				error = EINVAL;
