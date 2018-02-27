@@ -247,7 +247,7 @@ i40e_netmap_attach(struct i40e_vsi *vsi)
 
 	na.ifp = vsi->netdev;
 	na.pdev = &vsi->back->pdev->dev;
-	// XXX check that queues is set.
+	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = NM_I40E_TX_RING(vsi, 0)->count;
 	na.num_rx_desc = NM_I40E_RX_RING(vsi, 0)->count;
 	na.nm_txsync = i40e_netmap_txsync;
