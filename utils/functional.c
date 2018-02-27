@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
 
@@ -64,7 +65,7 @@ fill_packet_32bit(struct Global *g, unsigned offset, uint32_t val)
 
 /* Compute the checksum of the given ip header. */
 static uint32_t
-checksum(const void *data, uint16_t len, uint32_t sum)
+checksum(const void *data, uint16_t len, uint32_t sum /* host endianness */)
 {
 	const uint8_t *addr = data;
 	uint32_t i;
@@ -89,10 +90,10 @@ checksum(const void *data, uint16_t len, uint32_t sum)
 }
 
 static uint16_t
-wrapsum(uint32_t sum)
+wrapsum(uint32_t sum /* host endianness */)
 {
 	sum = ~sum & 0xFFFF;
-	return sum; /* htons() is called by fill_16bit */
+	return sum; /* host endianness */
 }
 
 static void
@@ -172,28 +173,60 @@ build_packet(struct Global *g)
 	for (; ofs < g->pktm_len; ofs++) {
 		fill_packet_8bit(g, ofs, g->filler);
 	}
+	printf("%s: payload done, ofs %u\n", __func__, ofs);
 
 	/* Put the UDP checksum now.
 	 * Magic: taken from sbin/dhclient/packet.c */
 	fill_packet_16bit(
 		g, udpofs + 6,
 		wrapsum(checksum(
-			g->pktm + udpofs,
-			sizeof(struct udphdr),     /* udp header */
-			checksum(g->pktm + pldofs, /* udp payload */
+			/* udp header */ g->pktm + udpofs,
+			sizeof(struct udphdr),
+			checksum(/* udp payload */ g->pktm + pldofs,
 				 g->pktm_len - pldofs,
-				 checksum(g->pktm + ipofs +
-						  12, /* pseudo header */
-					  2 * 4,
-					  IPPROTO_UDP +
-						  (uint32_t)ntohs(g->pktm_len -
-								  udpofs))))));
+				 checksum(/* pseudo header */ g->pktm + ipofs +
+						  12,
+					  2 * sizeof(g->src_ip),
+					  IPPROTO_UDP + (uint32_t)(g->pktm_len -
+								   udpofs))))));
 }
 
 static int
 tx_one(struct Global *g)
 {
-	(void)g;
+	struct nm_desc *nmd = g->nmd;
+	unsigned int i;
+
+	for (;;) {
+		for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
+			struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
+			struct netmap_slot *slot = &ring->slot[ring->head];
+			char *buf = NETMAP_BUF(ring, slot->buf_idx);
+
+			if (nm_ring_empty(ring)) {
+				continue;
+			}
+			if (g->pktm_len > ring->nr_buf_size) {
+				/* Sanity check. */
+				printf("Error: len (%u) > netmap_buf_size "
+				       "(%u)\n",
+				       g->pktm_len, ring->nr_buf_size);
+				exit(EXIT_FAILURE);
+			}
+			memcpy(buf, g->pktm, g->pktm_len);
+			slot->len   = g->pktm_len;
+			slot->flags = NS_REPORT;
+			ring->head = ring->cur = ring->head + 1;
+			ioctl(nmd->fd, NIOCTXSYNC, NULL);
+			printf("packet pushed to the TX ring\n");
+			return 0;
+		}
+
+		/* Retry after a short while. */
+		usleep(100000);
+		ioctl(nmd->fd, NIOCTXSYNC, NULL);
+	}
+
 	return 0;
 }
 
