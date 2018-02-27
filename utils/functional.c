@@ -514,6 +514,11 @@ main(int argc, char **argv)
 
 		case 't':
 		case 'r':
+			if (g->num_events >= MAX_EVENTS) {
+				printf("Too many events\n");
+				return -1;
+			}
+
 			if (parse_event(optarg,
 					(opt == 't') ? EVENT_TYPE_TX
 						     : EVENT_TYPE_RX,
@@ -534,6 +539,12 @@ main(int argc, char **argv)
 
 	if (!g->ifname) {
 		printf("Missing ifname\n");
+		usage();
+		return -1;
+	}
+
+	if (g->num_events < 1) {
+		printf("No transmit/receive events specified\n");
 		usage();
 		return -1;
 	}
