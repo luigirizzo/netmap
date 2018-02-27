@@ -396,8 +396,8 @@ rx_check(struct Global *g)
 	for (i = 0; i < g->pktr_len; i++) {
 		if (g->pktr[i] != g->pktm[i]) {
 			printf("Received packet differs from model at "
-			       "offset %u (%x!=%x)\n",
-			       i, g->pktr[i], g->pktm[i]);
+			       "offset %u (0x%02x!=0x%02x)\n",
+			       i, g->pktr[i], (uint8_t)g->pktm[i]);
 			return -1;
 		}
 	}
@@ -457,7 +457,7 @@ usage(void)
 	printf("usage: ./functional [-h]\n"
 	       "    -i NETMAP_PORT\n"
 	       "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
-	       "    [-T TIMEOUT_SECS (=2)]\n"
+	       "    [-T TIMEOUT_SECS (=5)]\n"
 	       "    [-w WAIT_LINK_SECS (=0)]\n"
 	       "    [-t LEN[:FILLCHAR[:NUM]] (trasmit NUM packets with size "
 	       "LEN bytes)]\n"
@@ -477,7 +477,7 @@ main(int argc, char **argv)
 
 	g->ifname	 = NULL;
 	g->nmd		  = NULL;
-	g->timeout_secs   = 2;
+	g->timeout_secs   = 5;
 	g->wait_link_secs = 0;
 	g->pktm_len       = 60;
 	g->max_frag_size  = ~0U; /* unlimited */
