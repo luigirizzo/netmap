@@ -2318,7 +2318,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 				}
 
 #ifdef WITH_EXTMEM
-				opt = nmreq_findoption(hdr->nr_options, NETMAP_REQ_OPT_EXTMEM);
+				opt = nmreq_findoption((struct nmreq_option *)hdr->nr_options,
+						NETMAP_REQ_OPT_EXTMEM);
 				if (opt != NULL) {
 					struct nmreq_opt_extmem *e =
 						(struct nmreq_opt_extmem *)opt;
