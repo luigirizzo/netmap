@@ -17,7 +17,8 @@
 struct Global {
 	struct nm_desc *nmd;
 	const char *ifname;
-	unsigned wait_secs;
+	unsigned wait_link_secs; /* wait for link */
+	unsigned timeout_secs;   /* receive timeout */
 
 #define MAX_PKT_SIZE 65536
 	char pktm[MAX_PKT_SIZE]; /* packet model */
@@ -232,6 +233,7 @@ tx_one(struct Global *g)
 		ioctl(nmd->fd, NIOCTXSYNC, NULL);
 	}
 
+	/* never reached */
 	return 0;
 }
 
@@ -239,6 +241,8 @@ static int
 rx_one(struct Global *g)
 {
 	struct nm_desc *nmd = g->nmd;
+	unsigned elapsed_ms = 0;
+	unsigned wait_ms    = 100;
 	unsigned int i;
 
 	for (;;) {
@@ -266,8 +270,14 @@ rx_one(struct Global *g)
 			return 0;
 		}
 
+		if (elapsed_ms / 1000 > g->timeout_secs) {
+			printf("%s: Timeout\n", __func__);
+			return -1;
+		}
+
 		/* Retry after a short while. */
-		usleep(100000);
+		usleep(wait_ms * 1000);
+		elapsed_ms += wait_ms;
 		ioctl(nmd->fd, NIOCRXSYNC, NULL);
 	}
 
@@ -316,10 +326,10 @@ main(int argc, char **argv)
 	int opt;
 	int i;
 
-	g->ifname    = NULL;
-	g->nmd       = NULL;
-	g->wait_secs = 0;
-	g->pktm_len  = 60;
+	g->ifname	 = NULL;
+	g->nmd		  = NULL;
+	g->wait_link_secs = 0;
+	g->pktm_len       = 60;
 	for (i = 0; i < ETH_ADDR_LEN; i++)
 		g->src_mac[i] = 0x00;
 	for (i = 0; i < ETH_ADDR_LEN; i++)
@@ -339,7 +349,7 @@ main(int argc, char **argv)
 			break;
 
 		case 'w':
-			g->wait_secs = atoi(optarg);
+			g->wait_link_secs = atoi(optarg);
 			break;
 
 		case 'l':
@@ -364,13 +374,18 @@ main(int argc, char **argv)
 		printf("Failed to nm_open(%s)\n", g->ifname);
 		return -1;
 	}
+	if (g->wait_link_secs > 0) {
+		sleep(g->wait_link_secs);
+	}
 
 	build_packet(g);
 
 	tx_one(g);
-	rx_one(g);
+	if (rx_one(g)) {
+		return -1;
+	}
 	if (rx_check(g)) {
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	nm_close(g->nmd);
