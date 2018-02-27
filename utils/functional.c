@@ -24,6 +24,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+#include <assert.h>
 #include <net/ethernet.h>
 #include <net/if.h>
 #include <net/netmap.h>
@@ -51,6 +52,7 @@ struct Global {
 	unsigned pktm_len;       /* packet model length */
 	char pktr[MAX_PKT_SIZE]; /* packet received */
 	unsigned pktr_len;       /* length of received packet */
+	unsigned max_frag_size;  /* max bytes per netmap TX slot */
 
 	char src_mac[ETH_ADDR_LEN];
 	char dst_mac[ETH_ADDR_LEN];
@@ -222,6 +224,18 @@ build_packet(struct Global *g)
 								   udpofs))))));
 }
 
+static unsigned
+tx_bytes_avail(struct netmap_ring *ring, unsigned max_frag_size)
+{
+	unsigned avail_per_slot = ring->nr_buf_size;
+
+	if (max_frag_size < avail_per_slot) {
+		avail_per_slot = max_frag_size;
+	}
+
+	return nm_ring_space(ring) * avail_per_slot;
+}
+
 /* Transmit a single packet using any TX ring. */
 static int
 tx_one(struct Global *g)
@@ -232,26 +246,46 @@ tx_one(struct Global *g)
 	for (;;) {
 		for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
 			struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
-			struct netmap_slot *slot = &ring->slot[ring->head];
-			char *buf = NETMAP_BUF(ring, slot->buf_idx);
+			unsigned head		 = ring->head;
+			unsigned frags		 = 0;
+			unsigned ofs		 = 0;
 
-			if (nm_ring_empty(ring)) {
+			if (tx_bytes_avail(ring, g->max_frag_size) <
+			    g->pktm_len) {
 				continue;
 			}
-			if (g->pktm_len > ring->nr_buf_size) {
-				/* Sanity check. */
-				printf("Error: len (%u) > netmap_buf_size "
-				       "(%u)\n",
-				       g->pktm_len, ring->nr_buf_size);
-				exit(EXIT_FAILURE);
+
+			for (;;) {
+				struct netmap_slot *slot = &ring->slot[head];
+				char *buf = NETMAP_BUF(ring, slot->buf_idx);
+				unsigned copysize = g->pktm_len - ofs;
+
+				if (copysize > ring->nr_buf_size) {
+					copysize = ring->nr_buf_size;
+				}
+				if (copysize > g->max_frag_size) {
+					copysize = g->max_frag_size;
+				}
+
+				memcpy(buf, g->pktm + ofs, copysize);
+				ofs += copysize;
+				slot->len   = copysize;
+				slot->flags = NS_MOREFRAG;
+				head	= nm_ring_next(ring, head);
+				frags++;
+				if (ofs >= g->pktm_len) {
+					/* Last fragment. */
+					assert(ofs == g->pktm_len);
+					slot->flags = NS_REPORT;
+					break;
+				}
 			}
-			memcpy(buf, g->pktm, g->pktm_len);
-			slot->len   = g->pktm_len;
-			slot->flags = NS_REPORT;
-			ring->head = ring->cur = nm_ring_next(ring, ring->head);
+
+			ring->head = ring->cur = head;
 			ioctl(nmd->fd, NIOCTXSYNC, NULL);
-			printf("packet (%u bytes) transmitted to TX ring #%d\n",
-			       slot->len, i);
+			printf("packet (%u bytes, %u frags) transmitted to TX "
+			       "ring #%d\n",
+			       g->pktm_len, frags, i);
 			return 0;
 		}
 
@@ -357,7 +391,8 @@ usage(void)
 {
 	printf("usage: ./functional [-h]\n"
 	       "-i NETMAP_PORT\n"
-	       "[-l PACKET_LEN (=6)]\n"
+	       "[-l PACKET_LEN (=60)]\n"
+	       "[-F MAX_FRAGMENT_SIZE (=inf)]\n"
 	       "[-w WAIT_LINK_SECS (=0)]\n");
 }
 
@@ -372,6 +407,7 @@ main(int argc, char **argv)
 	g->nmd		  = NULL;
 	g->wait_link_secs = 0;
 	g->pktm_len       = 60;
+	g->max_frag_size  = ~0U; /* unlimited */
 	for (i = 0; i < ETH_ADDR_LEN; i++)
 		g->src_mac[i] = 0x00;
 	for (i = 0; i < ETH_ADDR_LEN; i++)
@@ -380,7 +416,7 @@ main(int argc, char **argv)
 	g->dst_ip = 0x0A000007; /* 10.0.0.7 */
 	g->filler = 'a';
 
-	while ((opt = getopt(argc, argv, "hi:w:l:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:w:l:F:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -396,6 +432,10 @@ main(int argc, char **argv)
 
 		case 'l':
 			g->pktm_len = atoi(optarg);
+			break;
+
+		case 'F':
+			g->max_frag_size = atoi(optarg);
 			break;
 
 		default:
