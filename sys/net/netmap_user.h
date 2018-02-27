@@ -270,8 +270,6 @@ struct nm_desc {
  * to multiple of 64 bytes and is often faster than dealing
  * with other odd sizes. We assume there is enough room
  * in the source and destination buffers.
- *
- * XXX only for multiples of 64 bytes, non overlapped.
  */
 static inline void
 nm_pkt_copy(const void *_src, void *_dst, int l)
@@ -279,7 +277,7 @@ nm_pkt_copy(const void *_src, void *_dst, int l)
 	const uint64_t *src = (const uint64_t *)_src;
 	uint64_t *dst = (uint64_t *)_dst;
 
-	if (unlikely(l >= 1024)) {
+	if (unlikely(l >= 1024 || l % 64)) {
 		memcpy(dst, src, l);
 		return;
 	}
