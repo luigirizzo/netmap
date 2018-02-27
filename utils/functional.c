@@ -57,6 +57,7 @@ struct Global {
 	unsigned wait_link_secs;    /* wait for link */
 	unsigned timeout_secs;      /* transmit/receive timeout */
 	int ignore_if_not_matching; /* ignore certain received packets */
+	int verbose;
 
 #define MAX_PKT_SIZE 65536
 	char pktm[MAX_PKT_SIZE]; /* packet model */
@@ -154,7 +155,9 @@ build_packet(struct Global *g)
 	unsigned pldofs;
 
 	memset(g->pktm, 0, sizeof(g->pktm));
-	printf("%s: starting at ofs %u\n", __func__, ofs);
+	if (g->verbose) {
+		printf("%s: starting at ofs %u\n", __func__, ofs);
+	}
 
 	ethofs = ofs;
 	(void)ethofs;
@@ -165,7 +168,9 @@ build_packet(struct Global *g)
 	ofs += ETH_ADDR_LEN;
 	fill_packet_16bit(g, ofs, ETHERTYPE_IP);
 	ofs += 2;
-	printf("%s: eth done, ofs %u\n", __func__, ofs);
+	if (g->verbose) {
+		printf("%s: eth done, ofs %u\n", __func__, ofs);
+	}
 
 	ipofs = ofs;
 	/* First byte of IP header. */
@@ -200,7 +205,9 @@ build_packet(struct Global *g)
 	fill_packet_16bit(
 		g, ipofs + 10,
 		wrapsum(checksum(g->pktm + ipofs, sizeof(struct iphdr), 0)));
-	printf("%s: ip done, ofs %u\n", __func__, ofs);
+	if (g->verbose) {
+		printf("%s: ip done, ofs %u\n", __func__, ofs);
+	}
 
 	udpofs = ofs;
 	/* UDP source port. */
@@ -214,14 +221,18 @@ build_packet(struct Global *g)
 	ofs += 2;
 	/* Skip the UDP checksum for now. */
 	ofs += 2;
-	printf("%s: udp done, ofs %u\n", __func__, ofs);
+	if (g->verbose) {
+		printf("%s: udp done, ofs %u\n", __func__, ofs);
+	}
 
 	/* Fill UDP payload. */
 	pldofs = ofs;
 	for (; ofs < g->pktm_len; ofs++) {
 		fill_packet_8bit(g, ofs, g->filler);
 	}
-	printf("%s: payload done, ofs %u\n", __func__, ofs);
+	if (g->verbose) {
+		printf("%s: payload done, ofs %u\n", __func__, ofs);
+	}
 
 	/* Put the UDP checksum now.
 	 * Magic: taken from sbin/dhclient/packet.c */
@@ -492,7 +503,8 @@ usage(void)
 	       "LEN bytes)]\n"
 	       "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
 	       "with size LEN bytes)]\n"
-	       "-I (ignore ethernet frames with src and dst MAC not matching)\n"
+	       "-I (ignore ethernet frames with unmatching header)\n"
+	       "-v (increment verbosity level)\n"
 	       "\nExample:\n"
 	       "    $ ./functional -i netmap:lo -t 100 -r 100 -t 40:b:2 -r "
 	       "40:b:2\n");
@@ -520,8 +532,9 @@ main(int argc, char **argv)
 	g->filler		  = 'a';
 	g->num_events		  = 0;
 	g->ignore_if_not_matching = /*false=*/0;
+	g->verbose		  = 0;
 
-	while ((opt = getopt(argc, argv, "hi:w:F:T:t:r:I")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:w:F:T:t:r:Iv")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -563,6 +576,10 @@ main(int argc, char **argv)
 
 		case 'I':
 			g->ignore_if_not_matching = 1;
+			break;
+
+		case 'v':
+			g->verbose++;
 			break;
 
 		default:
