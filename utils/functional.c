@@ -1,3 +1,29 @@
+/*
+ * A tool for functional testing netmap transmission and reception.
+ *
+ * Copyright (C) 2018 Vincenzo Maffione. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *   1. Redistributions of source code must retain the above copyright
+ *      notice, this list of conditions and the following disclaimer.
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
 #include <net/ethernet.h>
 #include <net/if.h>
 #include <net/netmap.h>
@@ -196,6 +222,7 @@ build_packet(struct Global *g)
 								   udpofs))))));
 }
 
+/* Transmit a single packet using any TX ring. */
 static int
 tx_one(struct Global *g)
 {
@@ -221,7 +248,7 @@ tx_one(struct Global *g)
 			memcpy(buf, g->pktm, g->pktm_len);
 			slot->len   = g->pktm_len;
 			slot->flags = NS_REPORT;
-			ring->head = ring->cur = ring->head + 1;
+			ring->head = ring->cur = nm_ring_next(ring, ring->head);
 			ioctl(nmd->fd, NIOCTXSYNC, NULL);
 			printf("packet (%u bytes) transmitted to TX ring #%d\n",
 			       slot->len, i);
@@ -237,6 +264,7 @@ tx_one(struct Global *g)
 	return 0;
 }
 
+/* Receive a single packet from any RX ring. */
 static int
 rx_one(struct Global *g)
 {
@@ -248,25 +276,39 @@ rx_one(struct Global *g)
 	for (;;) {
 		for (i = nmd->first_rx_ring; i <= nmd->last_rx_ring; i++) {
 			struct netmap_ring *ring = NETMAP_RXRING(nmd->nifp, i);
-			struct netmap_slot *slot = &ring->slot[ring->head];
-			char *buf = NETMAP_BUF(ring, slot->buf_idx);
+			unsigned int head	= ring->head;
+			unsigned int frags       = 0;
 
 			if (nm_ring_empty(ring)) {
 				continue;
 			}
-			if (ring->nr_buf_size > sizeof(g->pktr)) {
-				/* Sanity check. */
-				printf("Error: netmap_buf_size (%u) > "
-				       "receive_buf_size (%lu)\n",
-				       ring->nr_buf_size, sizeof(g->pktr));
-				exit(EXIT_FAILURE);
+
+			g->pktr_len = 0;
+			for (;;) {
+				struct netmap_slot *slot = &ring->slot[head];
+				char *buf = NETMAP_BUF(ring, slot->buf_idx);
+
+				if (g->pktr_len + slot->len > sizeof(g->pktr)) {
+					/* Sanity check. */
+					printf("Error: received packet too "
+					       "large "
+					       "(>= %u bytes) ",
+					       g->pktr_len + slot->len);
+					exit(EXIT_FAILURE);
+				}
+				memcpy(g->pktr + g->pktr_len, buf, slot->len);
+				g->pktr_len += slot->len;
+				head = nm_ring_next(ring, head);
+				frags++;
+				if (!(slot->flags & NS_MOREFRAG)) {
+					break;
+				}
 			}
-			memcpy(g->pktr, buf, slot->len);
-			g->pktr_len = slot->len;
-			ring->head = ring->cur = ring->head + 1;
+			ring->head = ring->cur = head;
 			ioctl(nmd->fd, NIOCRXSYNC, NULL);
-			printf("packet (%u bytes) received from RX ring #%d\n",
-			       g->pktr_len, i);
+			printf("packet (%u bytes, %u frags) received from RX "
+			       "ring #%d\n",
+			       g->pktr_len, frags, i);
 			return 0;
 		}
 
