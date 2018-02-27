@@ -493,13 +493,11 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 	if (opt) {
 		uint32_t *limit = nla_data(opt);
 
-		if (nla_len(opt) < sizeof(*limit)) {
+		if (nla_len(opt) < sizeof(*limit) || *limit <= 0) {
 			D("Invalid netlink attribute");
 			return EINVAL;
 		}
-
 		priv->limit = *limit;
-		D("Qdisc initialized with max_len = %u", priv->limit);
 	}
 
 	/* Qdisc bypassing is not an option for now.
