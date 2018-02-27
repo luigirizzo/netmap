@@ -773,6 +773,7 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 
 	na.ifp = adapter->netdev;
 	na.pdev = &adapter->pdev->dev;
+	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = NM_IXGBE_TX_RING(adapter, 0)->count;
 	na.num_rx_desc = NM_IXGBE_RX_RING(adapter, 0)->count;
 	na.nm_txsync = ixgbe_netmap_txsync;
