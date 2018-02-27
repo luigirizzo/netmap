@@ -18,9 +18,13 @@ struct Global {
 	struct nm_desc *nmd;
 	const char *ifname;
 	unsigned wait_secs;
+
 #define MAX_PKT_SIZE 65536
 	char pktm[MAX_PKT_SIZE]; /* packet model */
-	unsigned pktm_len;       /* packet model len */
+	unsigned pktm_len;       /* packet model length */
+	char pktr[MAX_PKT_SIZE]; /* packet received */
+	unsigned pktr_len;       /* length of received packet */
+
 	char src_mac[ETH_ADDR_LEN];
 	char dst_mac[ETH_ADDR_LEN];
 	uint32_t src_ip;
@@ -218,7 +222,47 @@ tx_one(struct Global *g)
 			slot->flags = NS_REPORT;
 			ring->head = ring->cur = ring->head + 1;
 			ioctl(nmd->fd, NIOCTXSYNC, NULL);
-			printf("packet pushed to the TX ring\n");
+			printf("packet (%u bytes) transmitted to TX ring #%d\n",
+			       slot->len, i);
+			return 0;
+		}
+
+		/* Retry after a short while. */
+		usleep(100000);
+		ioctl(nmd->fd, NIOCTXSYNC, NULL);
+	}
+
+	return 0;
+}
+
+static int
+rx_one(struct Global *g)
+{
+	struct nm_desc *nmd = g->nmd;
+	unsigned int i;
+
+	for (;;) {
+		for (i = nmd->first_rx_ring; i <= nmd->last_rx_ring; i++) {
+			struct netmap_ring *ring = NETMAP_RXRING(nmd->nifp, i);
+			struct netmap_slot *slot = &ring->slot[ring->head];
+			char *buf = NETMAP_BUF(ring, slot->buf_idx);
+
+			if (nm_ring_empty(ring)) {
+				continue;
+			}
+			if (ring->nr_buf_size > sizeof(g->pktr)) {
+				/* Sanity check. */
+				printf("Error: netmap_buf_size (%u) > "
+				       "receive_buf_size (%lu)\n",
+				       ring->nr_buf_size, sizeof(g->pktr));
+				exit(EXIT_FAILURE);
+			}
+			memcpy(g->pktr, buf, slot->len);
+			g->pktr_len = slot->len;
+			ring->head = ring->cur = ring->head + 1;
+			ioctl(nmd->fd, NIOCRXSYNC, NULL);
+			printf("packet (%u bytes) received from RX ring #%d\n",
+			       g->pktr_len, i);
 			return 0;
 		}
 
@@ -300,6 +344,7 @@ main(int argc, char **argv)
 	build_packet(g);
 
 	tx_one(g);
+	rx_one(g);
 
 	nm_close(g->nmd);
 
