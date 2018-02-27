@@ -45,7 +45,7 @@ struct Global {
 	struct nm_desc *nmd;
 	const char *ifname;
 	unsigned wait_link_secs; /* wait for link */
-	unsigned timeout_secs;   /* receive timeout */
+	unsigned timeout_secs;   /* transmit/receive timeout */
 
 #define MAX_PKT_SIZE 65536
 	char pktm[MAX_PKT_SIZE]; /* packet model */
@@ -241,6 +241,8 @@ static int
 tx_one(struct Global *g)
 {
 	struct nm_desc *nmd = g->nmd;
+	unsigned elapsed_ms = 0;
+	unsigned wait_ms    = 100;
 	unsigned int i;
 
 	for (;;) {
@@ -289,8 +291,14 @@ tx_one(struct Global *g)
 			return 0;
 		}
 
+		if (elapsed_ms > g->timeout_secs * 1000) {
+			printf("%s: Timeout\n", __func__);
+			return -1;
+		}
+
 		/* Retry after a short while. */
-		usleep(100000);
+		usleep(wait_ms * 1000);
+		elapsed_ms += wait_ms;
 		ioctl(nmd->fd, NIOCTXSYNC, NULL);
 	}
 
@@ -346,7 +354,7 @@ rx_one(struct Global *g)
 			return 0;
 		}
 
-		if (elapsed_ms / 1000 > g->timeout_secs) {
+		if (elapsed_ms > g->timeout_secs * 1000) {
 			printf("%s: Timeout\n", __func__);
 			return -1;
 		}
@@ -393,6 +401,7 @@ usage(void)
 	       "-i NETMAP_PORT\n"
 	       "[-l PACKET_LEN (=60)]\n"
 	       "[-F MAX_FRAGMENT_SIZE (=inf)]\n"
+	       "[-T TIMEOUT_SECS (=2)]\n"
 	       "[-w WAIT_LINK_SECS (=0)]\n");
 }
 
@@ -405,6 +414,7 @@ main(int argc, char **argv)
 
 	g->ifname	 = NULL;
 	g->nmd		  = NULL;
+	g->timeout_secs   = 2;
 	g->wait_link_secs = 0;
 	g->pktm_len       = 60;
 	g->max_frag_size  = ~0U; /* unlimited */
@@ -416,7 +426,7 @@ main(int argc, char **argv)
 	g->dst_ip = 0x0A000007; /* 10.0.0.7 */
 	g->filler = 'a';
 
-	while ((opt = getopt(argc, argv, "hi:w:l:F:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:w:l:F:T:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -436,6 +446,10 @@ main(int argc, char **argv)
 
 		case 'F':
 			g->max_frag_size = atoi(optarg);
+			break;
+
+		case 'T':
+			g->timeout_secs = atoi(optarg);
 			break;
 
 		default:
