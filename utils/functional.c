@@ -35,6 +35,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <unistd.h>
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
@@ -53,8 +54,9 @@ struct Event {
 struct Global {
 	struct nm_desc *nmd;
 	const char *ifname;
-	unsigned wait_link_secs; /* wait for link */
-	unsigned timeout_secs;   /* transmit/receive timeout */
+	unsigned wait_link_secs;    /* wait for link */
+	unsigned timeout_secs;      /* transmit/receive timeout */
+	int ignore_if_not_matching; /* ignore certain received packets */
 
 #define MAX_PKT_SIZE 65536
 	char pktm[MAX_PKT_SIZE]; /* packet model */
@@ -319,6 +321,24 @@ tx_one(struct Global *g)
 	return 0;
 }
 
+/* If -I option is specified, we want to ignore frames that don't match
+ * our expected ethernet header.
+ * This function currently assumes that Ethernet header starts from
+ * the beginning of the packet buffers. */
+static int
+ignore_received_frame(struct Global *g)
+{
+	if (!g->ignore_if_not_matching) {
+		return 0; /* don't ignore */
+	}
+
+	if (g->pktr_len < 14 || memcmp(g->pktm, g->pktr, 14) != 0) {
+		return 1; /* ignore */
+	}
+
+	return 0; /* don't ignore */
+}
+
 /* Receive a single packet from any RX ring. */
 static int
 rx_one(struct Global *g)
@@ -329,6 +349,7 @@ rx_one(struct Global *g)
 	unsigned int i;
 
 	for (;;) {
+	again:
 		for (i = nmd->first_rx_ring; i <= nmd->last_rx_ring; i++) {
 			struct netmap_ring *ring = NETMAP_RXRING(nmd->nifp, i);
 			unsigned int head	= ring->head;
@@ -361,7 +382,15 @@ rx_one(struct Global *g)
 			}
 			ring->head = ring->cur = head;
 			ioctl(nmd->fd, NIOCRXSYNC, NULL);
-			printf("packet (%u bytes, %u frags) received from RX "
+			if (ignore_received_frame(g)) {
+				printf("(ignoring packet with %u bytes and "
+				       "%u frags received from RX ring #%d)\n",
+				       g->pktr_len, frags, i);
+				elapsed_ms = 0;
+				goto again;
+			}
+			printf("packet (%u bytes, %u frags) received "
+			       "from RX "
 			       "ring #%d\n",
 			       g->pktr_len, frags, i);
 			return 0;
@@ -463,6 +492,7 @@ usage(void)
 	       "LEN bytes)]\n"
 	       "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
 	       "with size LEN bytes)]\n"
+	       "-I (ignore ethernet frames with src and dst MAC not matching)\n"
 	       "\nExample:\n"
 	       "    $ ./functional -i netmap:lo -t 100 -r 100 -t 40:b:2 -r "
 	       "40:b:2\n");
@@ -485,12 +515,13 @@ main(int argc, char **argv)
 		g->src_mac[i] = 0x00;
 	for (i = 0; i < ETH_ADDR_LEN; i++)
 		g->dst_mac[i] = 0xFF;
-	g->src_ip     = 0x0A000005; /* 10.0.0.5 */
-	g->dst_ip     = 0x0A000007; /* 10.0.0.7 */
-	g->filler     = 'a';
-	g->num_events = 0;
+	g->src_ip		  = 0x0A000005; /* 10.0.0.5 */
+	g->dst_ip		  = 0x0A000007; /* 10.0.0.7 */
+	g->filler		  = 'a';
+	g->num_events		  = 0;
+	g->ignore_if_not_matching = /*false=*/0;
 
-	while ((opt = getopt(argc, argv, "hi:w:F:T:t:r:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:w:F:T:t:r:I")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -528,6 +559,10 @@ main(int argc, char **argv)
 				return -1;
 			}
 			g->num_events++;
+			break;
+
+		case 'I':
+			g->ignore_if_not_matching = 1;
 			break;
 
 		default:
