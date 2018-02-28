@@ -2084,25 +2084,52 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		 * perform sanity checks and create the in-kernel view
 		 * of the netmap rings (the netmap krings).
 		 */
-		if (na->ifp && netmap_mem_bufsize(na->nm_mem) <
-					nm_os_ifnet_mtu(na->ifp)) {
-			/* This netmap adapter is attached to an ifnet.
-			 * If netmap buffer size is smaller than device
-			 * MTU we need to make sure that the adapter
-			 * supports NS_MOREFRAG. */
-			if (na->na_flags & NAF_MOREFRAG) {
-				nm_prinf("netmap buf_size (%u) < device "
-					"MTU (%u): application may need "
-					"to use NS_MOREFRAG",
-					netmap_mem_bufsize(na->nm_mem),
-					nm_os_ifnet_mtu(na->ifp));
+		if (na->ifp) {
+			/* This netmap adapter is attached to an ifnet. */
+			unsigned nbs = netmap_mem_bufsize(na->nm_mem);
+			unsigned mtu = nm_os_ifnet_mtu(na->ifp);
+			/* The maximum amount of bytes that a single
+			 * receive or transmit NIC descriptor can hold. */
+			unsigned hw_max_slot_len = 4096;
+
+			if (mtu <= hw_max_slot_len) {
+				/* The MTU fits a single NIC slot. We only
+				 * Need to check that netmap buffers are
+				 * large enough to hold an MTU. NS_MOREFRAG
+				 * cannot be used in this case. */
+				if (nbs < mtu) {
+					nm_prerr("error: netmap buf size (%u) "
+						"< device MTU (%u)", nbs, mtu);
+					error = EINVAL;
+					goto err_drop_mem;
+				}
 			} else {
-				nm_prerr("Error: netmap buf_size (%u) < "
-					"device MTU (%u)",
-					netmap_mem_bufsize(na->nm_mem),
-					nm_os_ifnet_mtu(na->ifp));
-				error = EINVAL;
-				goto err_drop_mem;
+				/* More NIC slots may be needed to receive
+				 * or transmit a single packet. Check that
+				 * the adapter supports NS_MOREFRAG and that
+				 * netmap buffers are large enough to hold
+				 * the maximum per-slot size. */
+				if (!(na->na_flags & NAF_MOREFRAG)) {
+					nm_prerr("error: large MTU (%d) needed "
+						"but %s does not support "
+						"NS_MOREFRAG", mtu,
+						na->ifp->name);
+					error = EINVAL;
+					goto err_drop_mem;
+				} else if (nbs < hw_max_slot_len) {
+					nm_prerr("error: using NS_MOREFRAG on "
+						"%s requires netmap buf size "
+						">= %u", na->ifp->name,
+						hw_max_slot_len);
+					error = EINVAL;
+					goto err_drop_mem;
+				} else {
+					nm_prinf("info: netmap application on "
+						"%s needs to support "
+						"NS_MOREFRAG "
+						"(MTU=%u,netmap_buf_size=%u",
+						na->ifp->name, mtu, nbs);
+				}
 			}
 		}
 
