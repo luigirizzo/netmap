@@ -136,7 +136,6 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 				 * at least once every half ring. */
 			}
 			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
 				curr->buffer_addr = htole64(paddr);
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
