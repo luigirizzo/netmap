@@ -161,8 +161,9 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
-			if (!(slot->flags & NS_MOREFRAG))
-				hw_flags |= E1000_TXD_CMD_EOP;
+			if (!(slot->flags & NS_MOREFRAG)) {
+				hw_flags |= adapter->txd_cmd;
+			}
 			if (slot->flags & NS_BUF_CHANGED) {
 				curr->buffer_addr = htole64(paddr);
 			}
@@ -170,7 +171,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* Fill the slot in the NIC ring. */
 			curr->upper.data = 0;
-			curr->lower.data = htole32(adapter->txd_cmd | len | hw_flags);
+			curr->lower.data = htole32(len | hw_flags | E1000_TXD_CMD_IFCS);
 			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
