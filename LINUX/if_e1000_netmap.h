@@ -221,6 +221,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
+			dma_rmb(); /* read descriptor after status DD */
 
 			slot = ring->slot + nm_i;
 			PNMB(na, slot, &paddr);
