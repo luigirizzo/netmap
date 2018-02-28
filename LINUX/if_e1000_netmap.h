@@ -100,8 +100,6 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
-	/* generate an interrupt approximately every half ring */
-	u_int report_frequency = kring->nkr_num_slots >> 1;
 
 	/* device-specific */
 	struct SOFTC_T *adapter = netdev_priv(ifp);
@@ -127,14 +125,15 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = E1000_TX_DESC(*txr, nic_i);
-			int hw_flags = (slot->flags & NS_REPORT ||
-				nic_i == 0 || nic_i == report_frequency) ?
-				E1000_TXD_CMD_RS : 0;
+			int hw_flags = E1000_TXD_CMD_IFCS;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (!(slot->flags & NS_MOREFRAG)) {
 				hw_flags |= adapter->txd_cmd;
+				/* For now E1000_TXD_CMD_RS is always set.
+				 * We may set it only if NS_REPORT is set or
+				 * at least once every half ring. */
 			}
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
@@ -145,7 +144,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* Fill the slot in the NIC ring. */
 			curr->upper.data = 0;
-			curr->lower.data = htole32(len | hw_flags | E1000_TXD_CMD_IFCS);
+			curr->lower.data = htole32(len | hw_flags);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
