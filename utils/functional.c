@@ -394,9 +394,13 @@ rx_one(struct Global *g)
 			ring->head = ring->cur = head;
 			ioctl(nmd->fd, NIOCRXSYNC, NULL);
 			if (ignore_received_frame(g)) {
-				printf("(ignoring packet with %u bytes and "
-				       "%u frags received from RX ring #%d)\n",
-				       g->pktr_len, frags, i);
+				if (g->verbose) {
+					printf("(ignoring packet with %u bytes "
+					       "and "
+					       "%u frags received from RX ring "
+					       "#%d)\n",
+					       g->pktr_len, frags, i);
+				}
 				elapsed_ms = 0;
 				goto again;
 			}
@@ -503,7 +507,8 @@ usage(void)
 	       "LEN bytes)]\n"
 	       "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
 	       "with size LEN bytes)]\n"
-	       "    [-I (ignore ethernet frames with unmatching Ethernet header)]\n"
+	       "    [-I (ignore ethernet frames with unmatching Ethernet "
+	       "header)]\n"
 	       "    [-v (increment verbosity level)]\n"
 	       "\nExample:\n"
 	       "    $ ./functional -i netmap:lo -t 100 -r 100 -t 40:b:2 -r "

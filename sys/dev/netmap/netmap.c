@@ -2127,7 +2127,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 					nm_prinf("info: netmap application on "
 						"%s needs to support "
 						"NS_MOREFRAG "
-						"(MTU=%u,netmap_buf_size=%u",
+						"(MTU=%u,netmap_buf_size=%u)",
 						na->ifp->name, mtu, nbs);
 				}
 			}
