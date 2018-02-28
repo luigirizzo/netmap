@@ -60,6 +60,7 @@ struct Event {
 struct Global {
 	struct nm_desc *nmd;
 	const char *ifname;
+	unsigned wait_link_secs;    /* wait for link */
 	unsigned timeout_secs;      /* transmit/receive timeout */
 	int ignore_if_not_matching; /* ignore certain received packets */
 	int verbose;
@@ -553,6 +554,7 @@ usage(void)
 	       "    -i NETMAP_PORT\n"
 	       "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
 	       "    [-T TIMEOUT_SECS (=5)]\n"
+	       "    [-w WAIT_FOR_LINK_SECS (=0)]\n"
 	       "    [-t LEN[:FILLCHAR[:NUM]] (trasmit NUM packets with size "
 	       "LEN bytes)]\n"
 	       "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
@@ -574,11 +576,12 @@ main(int argc, char **argv)
 	unsigned int i, c;
 	int opt;
 
-	g->ifname	= NULL;
-	g->nmd		 = NULL;
-	g->timeout_secs  = 5;
-	g->pktm_len      = 60;
-	g->max_frag_size = ~0U; /* unlimited */
+	g->ifname	 = NULL;
+	g->nmd		  = NULL;
+	g->wait_link_secs = 0;
+	g->timeout_secs   = 5;
+	g->pktm_len       = 60;
+	g->max_frag_size  = ~0U; /* unlimited */
 	for (i = 0; i < ETH_ADDR_LEN; i++)
 		g->src_mac[i] = 0x00;
 	for (i = 0; i < ETH_ADDR_LEN; i++)
@@ -591,7 +594,7 @@ main(int argc, char **argv)
 	g->verbose		  = 0;
 	g->num_loops		  = 1;
 
-	while ((opt = getopt(argc, argv, "hi:F:T:t:r:Ivp:C:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:w:F:T:t:r:Ivp:C:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -603,6 +606,10 @@ main(int argc, char **argv)
 
 		case 'F':
 			g->max_frag_size = atoi(optarg);
+			break;
+
+		case 'w':
+			g->wait_link_secs = atoi(optarg);
 			break;
 
 		case 'T':
@@ -677,6 +684,10 @@ main(int argc, char **argv)
 	if (g->nmd == NULL) {
 		printf("Failed to nm_open(%s)\n", g->ifname);
 		return -1;
+	}
+
+	if (g->wait_link_secs > 0) {
+		sleep(g->wait_link_secs);
 	}
 
 	for (c = 0; c < g->num_loops; c++) {
