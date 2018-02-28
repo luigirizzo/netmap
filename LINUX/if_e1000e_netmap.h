@@ -252,6 +252,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
+			dma_rmb();  /* read descriptor after status DD */
 			PNMB(na, slot, &paddr);
 			slot->len = le16toh(curr->NM_E1R_RX_LENGTH) - strip_crc;
 			slot->flags = (!(staterr & E1000_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
