@@ -46,15 +46,20 @@ struct Event {
 	unsigned evtype;
 #define EVENT_TYPE_RX 0x1
 #define EVENT_TYPE_TX 0x2
+#define EVENT_TYPE_PAUSE 0x3
+	unsigned num; /* > 1 if repeated event */
+
+	/* Tx and Rx event. */
 	unsigned pkt_len;
 	char filler;
-	unsigned num;
+
+	/* Pause event. */
+	unsigned long long usecs;
 };
 
 struct Global {
 	struct nm_desc *nmd;
 	const char *ifname;
-	unsigned wait_link_secs;    /* wait for link */
 	unsigned timeout_secs;      /* transmit/receive timeout */
 	int ignore_if_not_matching; /* ignore certain received packets */
 	int verbose;
@@ -450,15 +455,16 @@ rx_check(struct Global *g)
 }
 
 static int
-parse_event(const char *opt, unsigned event_type, struct Event *event)
+parse_txrx_event(const char *opt, unsigned event_type, struct Event *event)
 {
 	char *strbuf = strdup(opt);
 	char *save   = strbuf;
 	int more;
 	char *c;
+	int ret = -1;
 
 	if (!strbuf || strlen(strbuf) == 0) {
-		goto err;
+		goto out;
 	}
 
 	event->evtype = event_type;
@@ -470,6 +476,9 @@ parse_event(const char *opt, unsigned event_type, struct Event *event)
 	more	   = (*c == ':');
 	*c	     = '\0';
 	event->pkt_len = atoi(strbuf);
+	if (event->pkt_len == 0) {
+		goto out;
+	}
 	if (more) {
 		strbuf = c + 1;
 		for (c = strbuf; *c != '\0' && *c != ':'; c++) {
@@ -483,14 +492,55 @@ parse_event(const char *opt, unsigned event_type, struct Event *event)
 		for (c = strbuf; *c != '\0'; c++) {
 		}
 		event->num = atoi(strbuf);
+		if (event->num == 0) {
+			goto out;
+		}
 	}
+
+	ret = 0;
 #if 0
 	printf("parsed %u:%c:%u\n", event->pkt_len, event->filler, event->num);
 #endif
-	return 0;
-err:
+out:
+	if (save) {
+		free(save);
+	}
+	return ret;
+}
+
+static int
+parse_pause_event(const char *opt, struct Event *event)
+{
+	char *strbuf = strdup(opt);
+	char *save   = strbuf;
+	unsigned mul = 1000000;
+	int ret      = -1;
+
+	while (*strbuf != '\0' && isdigit(*strbuf)) {
+		strbuf++;
+	}
+	if (!strcmp(strbuf, "us")) {
+		mul = 1;
+	} else if (!strcmp(strbuf, "ms")) {
+		mul = 1000;
+	} else if (strcmp(strbuf, "s") && strcmp(strbuf, "")) {
+		goto out;
+	}
+
+	event->evtype = EVENT_TYPE_PAUSE;
+	event->usecs  = atoi(save);
+	if (event->usecs == 0) {
+		goto out;
+	}
+	event->usecs *= mul;
+	event->num = 1;
+	ret	= 0;
+out:
+#if 0
+	printf("parsed %llu usecs\n", event->usecs);
+#endif
 	free(save);
-	return -1;
+	return ret;
 }
 
 static struct Global _g;
@@ -502,11 +552,11 @@ usage(void)
 	       "    -i NETMAP_PORT\n"
 	       "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
 	       "    [-T TIMEOUT_SECS (=5)]\n"
-	       "    [-w WAIT_LINK_SECS (=0)]\n"
 	       "    [-t LEN[:FILLCHAR[:NUM]] (trasmit NUM packets with size "
 	       "LEN bytes)]\n"
 	       "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
-	       "with size LEN bytes)]\n"
+	       "with size LEN bytes)\n"
+	       "    [-p NUM[us|ms|s]] (pause for NUM us/ms/s)]\n"
 	       "    [-I (ignore ethernet frames with unmatching Ethernet "
 	       "header)]\n"
 	       "    [-v (increment verbosity level)]\n"
@@ -522,12 +572,11 @@ main(int argc, char **argv)
 	int opt;
 	unsigned int i;
 
-	g->ifname	 = NULL;
-	g->nmd		  = NULL;
-	g->timeout_secs   = 5;
-	g->wait_link_secs = 0;
-	g->pktm_len       = 60;
-	g->max_frag_size  = ~0U; /* unlimited */
+	g->ifname	= NULL;
+	g->nmd		 = NULL;
+	g->timeout_secs  = 5;
+	g->pktm_len      = 60;
+	g->max_frag_size = ~0U; /* unlimited */
 	for (i = 0; i < ETH_ADDR_LEN; i++)
 		g->src_mac[i] = 0x00;
 	for (i = 0; i < ETH_ADDR_LEN; i++)
@@ -539,7 +588,7 @@ main(int argc, char **argv)
 	g->ignore_if_not_matching = /*false=*/0;
 	g->verbose		  = 0;
 
-	while ((opt = getopt(argc, argv, "hi:w:F:T:t:r:Iv")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:F:T:t:r:Ivp:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -547,10 +596,6 @@ main(int argc, char **argv)
 
 		case 'i':
 			g->ifname = optarg;
-			break;
-
-		case 'w':
-			g->wait_link_secs = atoi(optarg);
 			break;
 
 		case 'F':
@@ -563,21 +608,32 @@ main(int argc, char **argv)
 
 		case 't':
 		case 'r':
+		case 'p': {
+			int ret = 0;
+
 			if (g->num_events >= MAX_EVENTS) {
 				printf("Too many events\n");
 				return -1;
 			}
 
-			if (parse_event(optarg,
+			if (opt == 'p') {
+				ret = parse_pause_event(
+					optarg, g->events + g->num_events);
+			} else {
+				ret = parse_txrx_event(
+					optarg,
 					(opt == 't') ? EVENT_TYPE_TX
 						     : EVENT_TYPE_RX,
-					g->events + g->num_events)) {
+					g->events + g->num_events);
+			}
+			if (ret) {
 				printf("Invalid event syntax '%s'\n", optarg);
 				usage();
 				return -1;
 			}
 			g->num_events++;
 			break;
+		}
 
 		case 'I':
 			g->ignore_if_not_matching = 1;
@@ -601,7 +657,7 @@ main(int argc, char **argv)
 	}
 
 	if (g->num_events < 1) {
-		printf("No transmit/receive events specified\n");
+		printf("No transmit/receive/pause events specified\n");
 		usage();
 		return -1;
 	}
@@ -611,31 +667,37 @@ main(int argc, char **argv)
 		printf("Failed to nm_open(%s)\n", g->ifname);
 		return -1;
 	}
-	if (g->wait_link_secs > 0) {
-		sleep(g->wait_link_secs);
-	}
 
 	for (i = 0; i < g->num_events; i++) {
 		const struct Event *e = g->events + i;
 		unsigned j;
 
-		g->filler   = e->filler;
-		g->pktm_len = e->pkt_len;
-		build_packet(g);
+		if (e->evtype == EVENT_TYPE_TX || e->evtype == EVENT_TYPE_RX) {
+			g->filler   = e->filler;
+			g->pktm_len = e->pkt_len;
+			build_packet(g);
+		}
 
 		for (j = 0; j < e->num; j++) {
-			if (e->evtype == EVENT_TYPE_TX) {
+			switch (e->evtype) {
+			case EVENT_TYPE_TX:
 				if (tx_one(g)) {
 					return -1;
 				}
+				break;
 
-			} else if (e->evtype == EVENT_TYPE_RX) {
+			case EVENT_TYPE_RX:
 				if (rx_one(g)) {
 					return -1;
 				}
 				if (rx_check(g)) {
 					return -1;
 				}
+				break;
+
+			case EVENT_TYPE_PAUSE:
+				usleep(e->usecs);
+				break;
 			}
 		}
 	}
