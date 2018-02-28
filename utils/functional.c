@@ -503,8 +503,8 @@ usage(void)
 	       "LEN bytes)]\n"
 	       "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
 	       "with size LEN bytes)]\n"
-	       "-I (ignore ethernet frames with unmatching header)\n"
-	       "-v (increment verbosity level)\n"
+	       "    [-I (ignore ethernet frames with unmatching Ethernet header)]\n"
+	       "    [-v (increment verbosity level)]\n"
 	       "\nExample:\n"
 	       "    $ ./functional -i netmap:lo -t 100 -r 100 -t 40:b:2 -r "
 	       "40:b:2\n");
