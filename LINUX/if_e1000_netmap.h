@@ -134,7 +134,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (!(slot->flags & NS_MOREFRAG)) {
-				hw_flags |= E1000_TXD_CMD_EOP;
+				hw_flags |= adapter->txd_cmd;
 			}
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
@@ -145,8 +145,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* Fill the slot in the NIC ring. */
 			curr->upper.data = 0;
-			curr->lower.data = htole32(adapter->txd_cmd |
-				len | hw_flags | E1000_TXD_CMD_IFCS);
+			curr->lower.data = htole32(len | hw_flags | E1000_TXD_CMD_IFCS);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
