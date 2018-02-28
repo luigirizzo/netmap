@@ -82,6 +82,7 @@ struct Global {
 #define MAX_EVENTS 64
 	unsigned num_events;
 	struct Event events[MAX_EVENTS];
+	unsigned num_loops;
 };
 
 static void
@@ -560,6 +561,7 @@ usage(void)
 	       "    [-I (ignore ethernet frames with unmatching Ethernet "
 	       "header)]\n"
 	       "    [-v (increment verbosity level)]\n"
+	       "    [-C [NUM (=1)] (how many times to run the events)]\n"
 	       "\nExample:\n"
 	       "    $ ./functional -i netmap:lo -t 100 -r 100 -t 40:b:2 -r "
 	       "40:b:2\n");
@@ -569,8 +571,8 @@ int
 main(int argc, char **argv)
 {
 	struct Global *g = &_g;
+	unsigned int i, c;
 	int opt;
-	unsigned int i;
 
 	g->ifname	= NULL;
 	g->nmd		 = NULL;
@@ -587,8 +589,9 @@ main(int argc, char **argv)
 	g->num_events		  = 0;
 	g->ignore_if_not_matching = /*false=*/0;
 	g->verbose		  = 0;
+	g->num_loops		  = 1;
 
-	while ((opt = getopt(argc, argv, "hi:F:T:t:r:Ivp:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:F:T:t:r:Ivp:C:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -643,6 +646,14 @@ main(int argc, char **argv)
 			g->verbose++;
 			break;
 
+		case 'C':
+			g->num_loops = atoi(optarg);
+			if (g->num_loops == 0) {
+				printf("Invalid -C option '%s'\n", optarg);
+				return -1;
+			}
+			break;
+
 		default:
 			printf("    Unrecognized option %c\n", opt);
 			usage();
@@ -668,36 +679,39 @@ main(int argc, char **argv)
 		return -1;
 	}
 
-	for (i = 0; i < g->num_events; i++) {
-		const struct Event *e = g->events + i;
-		unsigned j;
+	for (c = 0; c < g->num_loops; c++) {
+		for (i = 0; i < g->num_events; i++) {
+			const struct Event *e = g->events + i;
+			unsigned j;
 
-		if (e->evtype == EVENT_TYPE_TX || e->evtype == EVENT_TYPE_RX) {
-			g->filler   = e->filler;
-			g->pktm_len = e->pkt_len;
-			build_packet(g);
-		}
+			if (e->evtype == EVENT_TYPE_TX ||
+			    e->evtype == EVENT_TYPE_RX) {
+				g->filler   = e->filler;
+				g->pktm_len = e->pkt_len;
+				build_packet(g);
+			}
 
-		for (j = 0; j < e->num; j++) {
-			switch (e->evtype) {
-			case EVENT_TYPE_TX:
-				if (tx_one(g)) {
-					return -1;
+			for (j = 0; j < e->num; j++) {
+				switch (e->evtype) {
+				case EVENT_TYPE_TX:
+					if (tx_one(g)) {
+						return -1;
+					}
+					break;
+
+				case EVENT_TYPE_RX:
+					if (rx_one(g)) {
+						return -1;
+					}
+					if (rx_check(g)) {
+						return -1;
+					}
+					break;
+
+				case EVENT_TYPE_PAUSE:
+					usleep(e->usecs);
+					break;
 				}
-				break;
-
-			case EVENT_TYPE_RX:
-				if (rx_one(g)) {
-					return -1;
-				}
-				if (rx_check(g)) {
-					return -1;
-				}
-				break;
-
-			case EVENT_TYPE_PAUSE:
-				usleep(e->usecs);
-				break;
 			}
 		}
 	}
