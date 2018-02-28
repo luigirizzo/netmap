@@ -372,6 +372,7 @@ rx_one(struct Global *g)
 			struct netmap_ring *ring = NETMAP_RXRING(nmd->nifp, i);
 			unsigned int head	= ring->head;
 			unsigned int frags       = 0;
+			int truncated		 = 0;
 
 			if (nm_ring_empty(ring)) {
 				continue;
@@ -397,6 +398,16 @@ rx_one(struct Global *g)
 				if (!(slot->flags & NS_MOREFRAG)) {
 					break;
 				}
+				if (head == ring->tail) {
+					printf("warning: truncated packet "
+					       "(len=%u)\n",
+					       g->pktr_len);
+					truncated = 1;
+					break;
+				}
+			}
+			if (truncated) {
+				continue; /* skip this ring */
 			}
 			ring->head = ring->cur = head;
 			ioctl(nmd->fd, NIOCRXSYNC, NULL);
