@@ -202,12 +202,13 @@ static struct netmap_bdg_ops default_bdg_ops = {netmap_bdg_learning, NULL, NULL}
  * bdg_lock protects accesses to the bdg_ports array.
  * This is a rw lock (or equivalent).
  */
+#define NM_BDG_IFNAMSIZ IFNAMSIZ
 struct nm_bridge {
 	/* XXX what is the proper alignment/layout ? */
 	BDG_RWLOCK_T	bdg_lock;	/* protects bdg_ports */
 	int		bdg_namelen;
 	uint32_t	bdg_active_ports;
-	char		bdg_basename[IFNAMSIZ];
+	char		bdg_basename[NM_BDG_IFNAMSIZ];
 
 	/* Indexes of active ports (up to active_ports)
 	 * and all other remaining ports.
@@ -319,18 +320,17 @@ nm_vale_name_validate(const char *name)
 		return -1;
 	}
 
-	for (i = 0; name[i]; i++) {
+	for (i = 0; i < NM_BDG_IFNAMSIZ && name[i]; i++) {
 		if (name[i] == ':') {
-			if (colon_pos != -1) {
-				return -1;
-			}
 			colon_pos = i;
+			break;
 		} else if (!nm_is_id_char(name[i])) {
 			return -1;
 		}
 	}
 
-	if (i >= IFNAMSIZ) {
+	if (strlen(name) - colon_pos > IFNAMSIZ) {
+		/* interface name too long */
 		return -1;
 	}
 
@@ -365,7 +365,7 @@ nm_find_bridge(const char *name, int create)
 	for (i = 0; i < num_bridges; i++) {
 		struct nm_bridge *x = bridges + i;
 
-		if (!(x->bdg_flags & NM_BDG_ACTIVE)) {
+		if ((x->bdg_flags & NM_BDG_ACTIVE) + x->bdg_active_ports == 0) {
 			if (create && b == NULL)
 				b = x;	/* record empty slot */
 		} else if (x->bdg_namelen != namelen) {
@@ -393,7 +393,7 @@ nm_find_bridge(const char *name, int create)
 		/* set the default function */
 		b->bdg_ops = &default_bdg_ops;
 		b->private_data = b->ht;
-		b->bdg_flags = NM_BDG_ACTIVE;
+		b->bdg_flags = 0;
 		NM_BNS_GET(b);
 	}
 	return b;
@@ -519,7 +519,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	BDG_WUNLOCK(b);
 
 	ND("now %d active ports", lim);
-	if (lim == 0) {
+	if ((b->bdg_flags & NM_BDG_ACTIVE) + lim == 0) {
 		ND("marking bridge %s as free", b->bdg_basename);
 		nm_os_free(b->ht);
 		b->bdg_ops = NULL;
@@ -528,14 +528,93 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	}
 }
 
-static void
-netmap_bdg_free(struct nm_bridge *b)
+static inline void * 
+nm_bdg_get_auth_token(struct nm_bridge *b)
 {
-	uint32_t i;
-	for (i = 0; i < b->bdg_active_ports; ++i) {
-		netmap_bdg_detach_common(b, b->bdg_port_index[i], -1);
-	}
+	return b->ht;
 }
+
+/* bridge not in exclusive mode ==> always valid
+ * bridge in exclusive mode (created through netmap_bdg_create()) ==> check authentication token
+ */
+static inline int
+nm_bdg_valid_auth_token(struct nm_bridge *b, void *auth_token)
+{
+	return !(b->bdg_flags & NM_BDG_EXCLUSIVE) || b->ht == auth_token;
+}
+
+/* Allows external modules to create bridges in exclusive mode,
+ * returns the authentication token that the external module will need
+ * to provide during nm_bdg_ctl_{attach, detach}() operations.
+ * Successfully executed if ret != NULL and *return_status == 0.
+ */
+void *
+netmap_bdg_create(const char *bdg_name, int *return_status)
+{
+	struct nm_bridge *b = NULL;
+	void *ret = NULL;
+
+	NMG_LOCK();
+	b = nm_find_bridge(bdg_name, 0 /* don't create */);
+	if (b) {
+		*return_status = EEXIST;
+		goto unlock_bdg_create;
+	}
+
+	b = nm_find_bridge(bdg_name, 1 /* create */);
+	if (!b) {
+		*return_status = ENOMEM;
+		goto unlock_bdg_create;
+	}
+
+	b->bdg_flags |= NM_BDG_ACTIVE | NM_BDG_EXCLUSIVE;
+	ret = nm_bdg_get_auth_token(b);
+	*return_status = 0;
+
+unlock_bdg_create:
+	NMG_UNLOCK();
+	return ret;
+}
+
+/* Allows external modules to destroy a bridge created through
+ * netmap_bdg_create(), the bridge must be empty.
+ */
+int
+netmap_bdg_destroy(const char *bdg_name, void *auth_token)
+{
+	struct nm_bridge *b = NULL;
+	int ret = 0;
+
+	NMG_LOCK();
+	b = nm_find_bridge(bdg_name, 0 /* don't create */);
+	if (!b) {
+		ret = ENXIO;
+		goto unlock_bdg_free;
+	}
+
+
+	if (!nm_bdg_valid_auth_token(b, auth_token)) {
+		ret = EACCES;
+		goto unlock_bdg_free;
+	}
+	if (!(b->bdg_flags & NM_BDG_EXCLUSIVE)) {
+		ret = EINVAL;
+		goto unlock_bdg_free;
+	}
+	if (b->bdg_active_ports != 0) {
+		ret = EINVAL;
+		goto unlock_bdg_free;
+	}
+
+	b->bdg_flags &= ~(NM_BDG_EXCLUSIVE | NM_BDG_ACTIVE);
+	netmap_bdg_detach_common(b, -1, -1);
+
+unlock_bdg_free:
+	NMG_UNLOCK();
+	return ret;
+}
+
+
 
 /* nm_bdg_ctl callback for VALE ports */
 static int
@@ -918,11 +997,9 @@ out:
 
 
 /* Process NETMAP_REQ_VALE_ATTACH.
- * bdg_ops is used to check ownership over a bridge in exclusive mode,
- * see netmap_bdg_regops() to se how it works.
  */
 int
-nm_bdg_ctl_attach(struct nmreq_header *hdr, struct netmap_bdg_ops *bdg_ops)
+nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token)
 {
 	struct nmreq_vale_attach *req =
 		(struct nmreq_vale_attach *)hdr->nr_body;
@@ -935,7 +1012,7 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr, struct netmap_bdg_ops *bdg_ops)
 	NMG_LOCK();
 	/* permission check for modified bridges */
 	b = nm_find_bridge(hdr->nr_name, 0 /* don't create */);
-	if (b && (b->bdg_flags & NM_BDG_EXCLUSIVE) && b->bdg_ops != bdg_ops) {
+	if (b && !nm_bdg_valid_auth_token(b, auth_token)) {
 		error = EACCES;
 		goto unlock_exit;
 	}
@@ -997,11 +1074,9 @@ nm_is_bwrap(struct netmap_adapter *na)
 }
 
 /* Process NETMAP_REQ_VALE_DETACH.
- * bdg_ops is used to check ownership over a bridge in exclusive mode,
- * see netmap_bdg_regops() to se how it works.
  */
 int
-nm_bdg_ctl_detach(struct nmreq_header *hdr, struct netmap_bdg_ops *bdg_ops)
+nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token)
 {
 	struct nmreq_vale_detach *nmreq_det = (void *)hdr->nr_body;
 	struct netmap_vp_adapter *vpna;
@@ -1012,7 +1087,7 @@ nm_bdg_ctl_detach(struct nmreq_header *hdr, struct netmap_bdg_ops *bdg_ops)
 	NMG_LOCK();
 	/* permission check for modified bridges */
 	b = nm_find_bridge(hdr->nr_name, 0 /* don't create */);
-	if (b && (b->bdg_flags & NM_BDG_EXCLUSIVE) && b->bdg_ops != bdg_ops) {
+	if (b && !nm_bdg_valid_auth_token(b, auth_token)) {
 		error = EACCES;
 		goto unlock_exit;
 	}
@@ -1428,73 +1503,38 @@ netmap_bdg_list(struct nmreq_header *hdr)
  * Register callbacks to the given bridge. 'name' may be just
  * bridge's name (including ':' if it is not just NM_BDG_NAME).
  *
- * bdg_flags at the moment only supports NM_BDG_EXCLUSIVE which can be specified
- * only for not yet existing bridges (they will be created during the regops).
- * Exclusive mode allows only the external module which regops()'ed the bridge
- * to attach and detach its ports.
- * The permission check is made through the second parameter of nm_bdg_ctl_attach()
- * and nm_bdg_ctl_detach(), which for bridges with the NM_BDG_EXCLUSIVE flag is
- * compared against the netmap_bdg_ops pointer of the bridge.
- *
  * Called without NMG_LOCK.
  */
  
 int
-netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, uint8_t flags)
+netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, void *auth_token)
 {
 	struct nm_bridge *b;
 	int error = 0;
 
 	NMG_LOCK();
 	b = nm_find_bridge(name, 0 /* don't create */);
-	if (!bdg_ops) {
-		/* resetting the bridge, it must exists */
-		if (!b) {
-			error = EINVAL;
-			goto unlock_regops;
-		}
-
-		if (b->bdg_active_ports == 0 && (b->bdg_flags & NM_BDG_EXCLUSIVE)) {
-			/* bridges in exclusive mode are created without ports attached
-			 * therefore we might receive a reset regops() while the
-			 * bridge is effectively empty, in this case we free the bridge
-			 */
-			netmap_bdg_free(b);
-		} else {
-			BDG_WLOCK(b);
-			bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
-			b->bdg_ops = &default_bdg_ops;
-			b->private_data = b->ht;
-			b->bdg_flags &= ~NM_BDG_EXCLUSIVE;
-			BDG_WUNLOCK(b);
-		}
-	} else {
-		/* modifying the bridge, if NM_BDG_EXCLUSIVE is set the bridge cannot have
-		 * ports alredy attached (aka we need to create it on the spot)
-		 */
-		if (flags & NM_BDG_EXCLUSIVE) {
-			if (b) {
-				error = EINVAL;
-				goto unlock_regops;
-			}
-
-			b = nm_find_bridge(name, 1 /* create */);
-		}
-		if (!b) {
-			error = (flags & NM_BDG_EXCLUSIVE) ? ENOMEM : EINVAL;
-			goto unlock_regops;
-		}
-
-		BDG_WLOCK(b);
-		if (b->bdg_ops != &default_bdg_ops) {
-			error = EINVAL;
-		} else {
-			b->private_data = private_data;
-			b->bdg_flags |= flags;
-			b->bdg_ops = bdg_ops;
-		}
-		BDG_WUNLOCK(b);
+	if (!b) {
+		error = ENXIO;
+		goto unlock_regops;
 	}
+	if (!nm_bdg_valid_auth_token(b, auth_token)) {
+		error = EACCES;
+		goto unlock_regops;
+	}
+
+	BDG_WLOCK(b);
+	if (!bdg_ops) {
+		/* resetting the bridge */
+		bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
+		b->bdg_ops = &default_bdg_ops;
+		b->private_data = b->ht;
+	} else {
+		/* modifying the bridge */
+		b->private_data = private_data;
+		b->bdg_ops = bdg_ops;
+	}
+	BDG_WUNLOCK(b);
 
 unlock_regops:
 	NMG_UNLOCK();
@@ -1508,7 +1548,8 @@ unlock_regops:
  * Called without NMG_LOCK.
  */
 int
-netmap_bdg_mod_private_data(const char *name, bdg_mod_private_data_fn_t callback, void *callback_data)
+nm_bdg_update_private_data(const char *name, void *auth_token,
+	bdg_update_private_data_fn_t callback, void *callback_data)
 {
 	struct nm_bridge *b;
 	int error = 0;
@@ -1517,14 +1558,18 @@ netmap_bdg_mod_private_data(const char *name, bdg_mod_private_data_fn_t callback
 	b = nm_find_bridge(name, 0 /* don't create */);
 	if (!b) {
 		error = EINVAL;
-	} else {
-		/* TODO: implement ownership over bridges */
-		BDG_WLOCK(b);
-		error = callback((void **)(&b->private_data), callback_data);
-		BDG_WUNLOCK(b);
+		goto unlock_update_priv;
 	}
-	NMG_UNLOCK();
+	if (!nm_bdg_valid_auth_token(b, auth_token)) {
+		error = EACCES;
+		goto unlock_update_priv;
+	}
+	BDG_WLOCK(b);
+	error = callback((&b->private_data), callback_data);
+	BDG_WUNLOCK(b);
 
+unlock_update_priv:
+	NMG_UNLOCK();
 	return error;
 }
 
