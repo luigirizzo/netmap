@@ -784,26 +784,33 @@ usage(const char *prog)
 	printf("%s -i IFNAME [-j TESTCASE]\n", prog);
 }
 
-static testfunc_t tests[] = {
-	port_info_get,
-	port_register_hwall_host,
-	port_register_hwall,
-	port_register_host,
-	port_register_single_ring_couple,
-	vale_attach_detach,
-	vale_attach_detach_host_rings,
-	vale_ephemeral_port_hdr_manipulation,
-	vale_persistent_port,
-	register_and_pools_info_get,
-	pipe_master,
-	pipe_slave,
-	vale_polling_enable_disable,
-	unsupported_option,
-	infinite_options,
+struct mytest {
+	testfunc_t test;
+	const char *name;
+};
+
+#define decltest(f) 	{ .test = f, .name = #f }
+
+static struct mytest tests[] = {
+	decltest(port_info_get),
+	decltest(port_register_hwall_host),
+	decltest(port_register_hwall),
+	decltest(port_register_host),
+	decltest(port_register_single_ring_couple),
+	decltest(vale_attach_detach),
+	decltest(vale_attach_detach_host_rings),
+	decltest(vale_ephemeral_port_hdr_manipulation),
+	decltest(vale_persistent_port),
+	decltest(register_and_pools_info_get),
+	decltest(pipe_master),
+	decltest(pipe_slave),
+	decltest(vale_polling_enable_disable),
+	decltest(unsupported_option),
+	decltest(infinite_options),
 #ifdef WITH_EXTMEM
-	extmem_option,
-	bad_extmem_option,
-	duplicate_extmem_options,
+	decltest(extmem_option),
+	decltest(bad_extmem_option),
+	decltest(duplicate_extmem_options),
 #endif /* WITH_EXTMEM */
 };
 
@@ -854,18 +861,19 @@ main(int argc, char **argv)
 		if (j >= 0 && (unsigned)j != i) {
 			continue;
 		}
+		printf("==> Start of Test #%d -- %s\n", i + 1, tests[i].name);
 		fd = open("/dev/netmap", O_RDWR);
 		if (fd < 0) {
 			perror("open(/dev/netmap)");
 			return fd;
 		}
 		memcpy(&ctxcopy, &ctx, sizeof(ctxcopy));
-		ret = tests[i](fd, &ctxcopy);
+		ret = tests[i].test(fd, &ctxcopy);
 		if (ret) {
 			printf("Test #%d failed\n", i + 1);
 			return ret;
 		}
-		printf("Test #%d successful\n", i + 1);
+		printf("==> Test #%d successful\n", i + 1);
 		close(fd);
 	}
 
