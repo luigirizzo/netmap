@@ -672,7 +672,7 @@ pop_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *exp)
 	int ret;
 
 	e	   = (struct nmreq_opt_extmem *)ctx->nr_opt;
-	ctx->nr_opt = ctx->nr_opt->nro_next;
+	ctx->nr_opt = (struct nmreq_option *)ctx->nr_opt->nro_next;
 
 	if ((ret = checkoption(&e->nro_opt, &exp->nro_opt))) {
 		return ret;
