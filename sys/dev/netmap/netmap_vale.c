@@ -1599,7 +1599,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 		BDG_WLOCK(vpna->na_bdg);
 	if (onoff) {
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < netmap_real_rings(na, t); i++) {
 				struct netmap_kring *kring = &NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring))
@@ -1615,7 +1615,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 		if (na->active_fds == 0)
 			na->na_flags &= ~NAF_NETMAP_ON;
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < netmap_real_rings(na, t); i++) {
 				struct netmap_kring *kring = &NMR(na, t)[i];
 
 				if (nm_kring_pending_off(kring))
