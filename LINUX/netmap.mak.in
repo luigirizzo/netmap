@@ -14,11 +14,13 @@ DEBUG:=@DEBUG@
 # The following commands are needed to build the modules as out-of-tree,
 # in fact the kernel sources path must be specified.
 
+# subsystem flags
+SUBSYS_FLAGS = $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z- A-Z_))
 # Additional compile flags (e.g. header location)
 EXTRA_CFLAGS := -I$(BUILDDIR) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
-EXTRA_CFLAGS += $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z- A-Z_))
 EXTRA_CFLAGS += $(if $(DEBUG),-g)
+EXTRA_CFLAGS += $(SUBSYS_FLAGS)
 
 
 # We use KSRC for the kernel configuration and sources.
@@ -134,7 +136,7 @@ install-utils:
 clean-utils:
 else
 utils:
-	+$(MAKE) -C build-utils SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)"
+	+$(MAKE) -C build-utils SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)" SUBSYS_FLAGS="$(SUBSYS_FLAGS)"
 
 install-utils:
 	$(MAKE) -C build-utils install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"

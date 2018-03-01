@@ -608,7 +608,7 @@ infinite_options(int fd, struct TestContext *ctx)
 	return checkoption(&opt, &save);
 }
 
-#ifdef WITH_EXTMEM
+#ifdef CONFIG_NETMAP_EXTMEM
 static int
 change_param(const char *pname, unsigned long newv, unsigned long *poldv)
 {
@@ -776,7 +776,7 @@ duplicate_extmem_options(int fd, struct TestContext *ctx)
 
 	return 0;
 }
-#endif /* WITH_EXTMEM */
+#endif /* CONFIG_NETMAP_EXTMEM */
 
 static void
 usage(const char *prog)
@@ -807,11 +807,11 @@ static struct mytest tests[] = {
 	decltest(vale_polling_enable_disable),
 	decltest(unsupported_option),
 	decltest(infinite_options),
-#ifdef WITH_EXTMEM
+#ifdef CONFIG_NETMAP_EXTMEM
 	decltest(extmem_option),
 	decltest(bad_extmem_option),
 	decltest(duplicate_extmem_options),
-#endif /* WITH_EXTMEM */
+#endif /* CONFIG_NETMAP_EXTMEM */
 };
 
 int
