@@ -2541,6 +2541,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 			hwna->rx_rings[i].save_notify = NULL;
 		}
 		hwna->na_lut.lut = NULL;
+		hwna->na_lut.plut = NULL;
 		hwna->na_lut.objtotal = 0;
 		hwna->na_lut.objsize = 0;
 
