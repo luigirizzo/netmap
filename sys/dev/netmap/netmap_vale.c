@@ -544,8 +544,9 @@ nm_bdg_valid_auth_token(struct nm_bridge *b, void *auth_token)
 }
 
 /* Allows external modules to create bridges in exclusive mode,
- * returns the authentication token that the external module will need
- * to provide during nm_bdg_ctl_{attach, detach}() operations.
+ * returns an authentication token that the external module will need
+ * to provide during nm_bdg_ctl_{attach, detach}(), netmap_bdg_regops(),
+ * and nm_bdg_update_private_data() operations.
  * Successfully executed if ret != NULL and *return_status == 0.
  */
 void *
@@ -1558,9 +1559,10 @@ unlock_regops:
  * Called without NMG_LOCK.
  */
 int
-nm_bdg_update_private_data(const char *name, void *auth_token,
-	bdg_update_private_data_fn_t callback, void *callback_data)
+nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
+	void *callback_data, void *auth_token)
 {
+	void *private_data = NULL;
 	struct nm_bridge *b;
 	int error = 0;
 
@@ -1575,7 +1577,8 @@ nm_bdg_update_private_data(const char *name, void *auth_token,
 		goto unlock_update_priv;
 	}
 	BDG_WLOCK(b);
-	error = callback((&b->private_data), callback_data);
+	private_data = callback(b->private_data, callback_data, &error);
+	b->private_data = private_data;
 	BDG_WUNLOCK(b);
 
 unlock_update_priv:

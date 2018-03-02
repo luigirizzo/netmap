@@ -1451,7 +1451,7 @@ typedef uint32_t (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
 		struct netmap_vp_adapter *, void *private_data);
 typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
 typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
-typedef int (*bdg_update_private_data_fn_t)(void **private_data, void *callback_data);
+typedef void *(*bdg_update_private_data_fn_t)(void *private_data, void *callback_data, int *error);
 struct netmap_bdg_ops {
 	bdg_lookup_fn_t lookup;
 	bdg_config_fn_t config;
@@ -1475,8 +1475,8 @@ int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
 #define NM_BDG_EXCLUSIVE	2
 int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, void *auth_token);
-int nm_bdg_update_private_data(const char *name, void *auth_token,
-	bdg_update_private_data_fn_t callback, void *callback_data);
+int nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
+	void *callback_data, void *auth_token);
 int netmap_bdg_config(struct nm_ifreq *nifr);
 void *netmap_bdg_create(const char *bdg_name, int *return_status);
 int netmap_bdg_destroy(const char *bdg_name, void *auth_token);
