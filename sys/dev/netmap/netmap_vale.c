@@ -772,6 +772,9 @@ netmap_vi_create(struct nmreq_header *hdr, int autodelete)
 	/* don't include VALE prefix */
 	if (!strncmp(hdr->nr_name, NM_BDG_NAME, strlen(NM_BDG_NAME)))
 		return EINVAL;
+	if (strlen(hdr->nr_name) >= IFNAMSIZ) {
+		return EINVAL;
+	}
 	ifp = ifunit_ref(hdr->nr_name);
 	if (ifp) { /* already exist, cannot create new one */
 		error = EEXIST;
