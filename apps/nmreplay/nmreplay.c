@@ -894,9 +894,7 @@ cons(void *_pa)
 	    continue;
 	}
 	/* XXX copy is inefficient but simple */
-	pending++;
-	if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0 ||
-		pending > q->burst) {
+	if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0) {
 	    RD(1, "inject failed len %d now %ld tx %ld h %ld t %ld next %ld",
 		(int)p->pktlen, (u_long)q->cons_now, (u_long)p->pt_tx,
 		(u_long)q->_head, (u_long)q->_tail, (u_long)p->next);
@@ -904,6 +902,12 @@ cons(void *_pa)
 	    pending = 0;
 	    continue;
 	}
+	pending++;
+	if (pending > q->burst) {
+	    ioctl(pa->pb->fd, NIOCTXSYNC, 0);
+	    pending = 0;
+	}
+
 	q->cons_head = p->next;
 	/* drain packets from the queue */
 	q->rx++;
