@@ -1109,6 +1109,13 @@ nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token)
 	}
 
 	vpna = (struct netmap_vp_adapter *)na;
+	if (na->na_vp != vpna) {
+		/* trying to detach first attach of VALE persistent port attached
+		 * to 2 bridges
+		 */
+		error = EBUSY;
+		goto unlock_exit;
+	}
 	nmreq_det->port_index = vpna->bdg_port;
 
 	if (na->nm_bdg_ctl) {
@@ -2409,8 +2416,18 @@ netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 
-	if (vpna->na_bdg)
-		return netmap_bwrap_attach(name, na);
+	if (vpna->na_bdg) {
+		int error = netmap_bwrap_attach(name, na);
+		if (error == 0) {
+			/* flags the netmap_adapter of the bwrap as a second attach
+			 * of a VALE persistent port, so we can restore the na_vp
+			 * pointer of the netmap_adapter (of the first attach)
+			 * during the detach of the second
+			 */
+			na->na_vp->up.na_flags |= NAF_VP_DOUBLE_ATTACH;
+		}
+		return error;
+	}
 	na->na_vp = vpna;
 	strncpy(na->name, name, sizeof(na->name));
 	na->na_hostvp = NULL;
@@ -2562,8 +2579,14 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
 	ND("na %p", na);
 	na->ifp = NULL;
 	bna->host.up.ifp = NULL;
+	if (na->na_flags & NAF_VP_DOUBLE_ATTACH) {
+		na->na_flags &= ~NAF_VP_DOUBLE_ATTACH;
+		hwna->na_vp = (struct netmap_vp_adapter *)hwna;
+	} else {
+		hwna->na_vp = NULL;
+	}
+	hwna->na_hostvp = NULL;
 	hwna->na_private = NULL;
-	hwna->na_vp = hwna->na_hostvp = NULL;
 	hwna->na_flags &= ~NAF_BUSY;
 	netmap_adapter_put(hwna);
 
