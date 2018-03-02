@@ -879,6 +879,7 @@ cons(void *_pa)
 	     * add to q->t0 the time for the last packet
 	     */
 	    q->t0 += last_ts;
+	    set_tns_now(&q->cons_now, q->t0);
 	    q->cons_head = 0;	//restart from beginning of the queue
 	    continue;
 	}
