@@ -893,6 +893,16 @@ update_drivers
 # create the config.h file
 #################################################
 
+rm -f netmap_linux_config.h
+if [ -e "$SRCDIR/netmap_linux_config.h" ]; then
+	error <<EOF
+The '$SRCDIR' directory appears to contain leftovers from a previous
+compilation. This may break compilation in the current directory.
+Please run 'make distclean' in '$SRCDIR', or start from a clean
+repository if that fails.
+EOF
+fi
+
 if [ -d "$cache" ] && [ -f "$cache/netmap_linux_config.h" ]; then
 	cp "$cache/netmap_linux_config.h" .
 else
