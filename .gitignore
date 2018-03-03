@@ -19,6 +19,7 @@ r8169.c
 get-drivers
 igb*/
 ixgbe*/
+vmxnet*/
 log/
 scripts/conf
 virtio_net.c
