@@ -134,13 +134,10 @@ struct nm_selinfo {
 };
 
 
-/* Linux structs, not used in FreeBSD. */
-struct net_device_ops {
-};
-struct ethtool_ops {
-};
 struct hrtimer {
+    /* Not used in FreeBSD. */
 };
+
 #define NM_BNS_GET(b)
 #define NM_BNS_PUT(b)
 
@@ -204,14 +201,6 @@ struct hrtimer {
 #define NETMAP_KERNEL_XCHANGE_POINTERS		_IO('i', 180)
 #define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL	_IO_direct('i', 195)
 
-/* Empty data structures are not allowed by MSVC compiler, so
- * we workaround. */
-struct net_device_ops{
-	char data[1];
-};
-typedef struct ethtool_ops{
-	char data[1];
-};
 typedef struct hrtimer{
 	KTIMER timer;
 	BOOLEAN active;
@@ -298,6 +287,8 @@ int nm_os_ifnet_init(void);
 void nm_os_ifnet_fini(void);
 void nm_os_ifnet_lock(void);
 void nm_os_ifnet_unlock(void);
+
+unsigned nm_os_ifnet_mtu(struct ifnet *ifp);
 
 void nm_os_get_module(void);
 void nm_os_put_module(void);
@@ -457,7 +448,14 @@ struct netmap_kring {
 	NM_LOCK_T	q_lock;		/* protects kring and ring. */
 	NM_ATOMIC_T	nr_busy;	/* prevent concurrent syscalls */
 
+	/* the adapter the owns this kring */
 	struct netmap_adapter *na;
+	
+	/* the adapter that wants to be notified when this kring has
+	 * new slots avaialable. This is usually the same as the above,
+	 * but wrappers may let it point to themselves
+	 */
+	struct netmap_adapter *notify_na;
 
 	/* The following fields are for VALE switch support */
 	struct nm_bdg_fwd *nkr_ft;
@@ -678,9 +676,10 @@ struct netmap_adapter {
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
 #define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
-#define NAF_VP_DOUBLE_ATTACH 512 /* the adapter is a VALE persistent port which
-				  * has been attached to 2 bridges
-				  */
+#define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
+#define NAF_VP_DOUBLE_ATTACH 1024 /* the adapter is a VALE persistent port which
+				   * has been attached to 2 bridges
+				   */
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
@@ -699,8 +698,8 @@ struct netmap_adapter {
 	 * as a contiguous chunk of memory. Each array has
 	 * N+1 entries, for the adapter queues and for the host queue.
 	 */
-	struct netmap_kring *tx_rings; /* array of TX rings. */
-	struct netmap_kring *rx_rings; /* array of RX rings. */
+	struct netmap_kring **tx_rings; /* array of TX rings. */
+	struct netmap_kring **rx_rings; /* array of RX rings. */
 
 	void *tailroom;		       /* space below the rings array */
 				       /* (used for leases) */
@@ -721,9 +720,8 @@ struct netmap_adapter {
 	/* copy of if_input for netmap_send_up() */
 	void     (*if_input)(struct ifnet *, struct mbuf *);
 
-	/* references to the ifnet and device routines, used by
-	 * the generic netmap functions.
-	 */
+	/* Back reference to the parent ifnet struct. Used for
+	 * hardware ports (emulated netmap included). */
 	struct ifnet *ifp; /* adapter is ifp->if_softc */
 
 	/*---- callbacks for this netmap adapter -----*/
@@ -866,7 +864,7 @@ nma_set_nrings(struct netmap_adapter *na, enum txrx t, u_int v)
 		na->num_rx_rings = v;
 }
 
-static __inline struct netmap_kring*
+static __inline struct netmap_kring**
 NMR(struct netmap_adapter *na, enum txrx t)
 {
 	return (t == NR_TX ? na->tx_rings : na->rx_rings);
@@ -911,8 +909,10 @@ struct netmap_vp_adapter {	/* VALE software port */
 struct netmap_hw_adapter {	/* physical device */
 	struct netmap_adapter up;
 
-	struct net_device_ops nm_ndo; /* Linux only */
-	struct ethtool_ops    nm_eto; /* Linux only */
+#ifdef linux
+	struct net_device_ops nm_ndo;
+	struct ethtool_ops    nm_eto;
+#endif
 	const struct ethtool_ops*   save_ethtool;
 
 	int (*nm_hw_register)(struct netmap_adapter *, int onoff);
@@ -1271,10 +1271,10 @@ static inline void
 nm_update_hostrings_mode(struct netmap_adapter *na)
 {
 	/* Process nr_mode and nr_pending_mode for host rings. */
-	na->tx_rings[na->num_tx_rings].nr_mode =
-		na->tx_rings[na->num_tx_rings].nr_pending_mode;
-	na->rx_rings[na->num_rx_rings].nr_mode =
-		na->rx_rings[na->num_rx_rings].nr_pending_mode;
+	na->tx_rings[na->num_tx_rings]->nr_mode =
+		na->tx_rings[na->num_tx_rings]->nr_pending_mode;
+	na->rx_rings[na->num_rx_rings]->nr_mode =
+		na->rx_rings[na->num_rx_rings]->nr_pending_mode;
 }
 
 /* set/clear native flags and if_transmit/netdev_ops */
@@ -1298,12 +1298,12 @@ nm_set_native_flags(struct netmap_adapter *na)
 	ifp->if_transmit = netmap_transmit;
 #elif defined (_WIN32)
 	(void)ifp; /* prevent a warning */
-#else
+#elif defined (linux)
 	na->if_transmit = (void *)ifp->netdev_ops;
 	ifp->netdev_ops = &((struct netmap_hw_adapter *)na)->nm_ndo;
 	((struct netmap_hw_adapter *)na)->save_ethtool = ifp->ethtool_ops;
 	ifp->ethtool_ops = &((struct netmap_hw_adapter*)na)->nm_eto;
-#endif
+#endif /* linux */
 	nm_update_hostrings_mode(na);
 }
 
@@ -1473,7 +1473,6 @@ struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
-#define NM_BDG_EXCLUSIVE	2
 int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, void *auth_token);
 int nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
 	void *callback_data, void *auth_token);
@@ -1896,7 +1895,7 @@ static inline int nm_kring_pending(struct netmap_priv_d *np)
 
 	for_rx_tx(t) {
 		for (i = np->np_qfirst[t]; i < np->np_qlast[t]; i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_kring *kring = NMR(na, t)[i];
 			if (kring->nr_mode != kring->nr_pending_mode) {
 				return 1;
 			}

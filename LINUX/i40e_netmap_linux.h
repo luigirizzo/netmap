@@ -247,7 +247,7 @@ i40e_netmap_attach(struct i40e_vsi *vsi)
 
 	na.ifp = vsi->netdev;
 	na.pdev = &vsi->back->pdev->dev;
-	// XXX check that queues is set.
+	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = NM_I40E_TX_RING(vsi, 0)->count;
 	na.num_rx_desc = NM_I40E_RX_RING(vsi, 0)->count;
 	na.nm_txsync = i40e_netmap_txsync;
@@ -365,7 +365,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* device-specific */
 			struct i40e_tx_desc *curr = I40E_TX_DESC(txr, nic_i);
-			u64 flags = (slot->flags & NS_REPORT ||
+			u64 hw_flags = (slot->flags & NS_REPORT ||
 				nic_i == 0 || nic_i == report_frequency) ?
 				((u64)I40E_TX_DESC_CMD_RS << I40E_TXD_QW1_CMD_SHIFT) : 0;
 
@@ -375,20 +375,24 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
+			if (!(slot->flags & NS_MOREFRAG)) {
+				hw_flags |= ((u64)(I40E_TX_DESC_CMD_EOP) << I40E_TXD_QW1_CMD_SHIFT);
+			}
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
 				//netmap_reload_map(na, txr->dma.tag, txbuf->map, addr);
 			}
-			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
 
-			/* Fill the slot in the NIC ring. */
-			/* Use legacy descriptor, they are faster? */
+			/* Fill the slot in the NIC ring.
+			 * (we should investigate if using legacy descriptors
+			 * is faster). */
 			curr->buffer_addr = htole64(paddr);
 			curr->cmd_type_offset_bsz = htole64(
 			    ((u64)len << I40E_TXD_QW1_TX_BUF_SZ_SHIFT) |
-			    flags |
-			    ((u64)(I40E_TX_DESC_CMD_ICRC | I40E_TX_DESC_CMD_EOP) << I40E_TXD_QW1_CMD_SHIFT)
-			  ); // XXX more ?
+			    hw_flags |
+			    ((u64)(I40E_TX_DESC_CMD_ICRC) << I40E_TXD_QW1_CMD_SHIFT)
+			  ); /* more flags may be needed */
 
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);

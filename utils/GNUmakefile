@@ -1,7 +1,7 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
-PROGS	= test_select testmmap test_nm producer ctrl-api-test
-X86PROGS = testlock testcsum
+PROGS	= test_select testmmap test_nm functional ctrl-api-test
+X86PROGS = testlock testcsum producer
 LIBNETMAP =
 
 CLEANFILES = $(PROGS) $(X86PROGS) *.o
@@ -14,6 +14,7 @@ CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I $(SRCDIR)/sys # -I/home/luigi/FreeBSD/head/sys -I../sys
 CFLAGS += -Wextra
+CFLAGS += $(SUBSYS_FLAGS)
 ifdef WITH_PCAP
 # do not use pcap by default, as it is not always available on linux
 LDLIBS += -lpcap

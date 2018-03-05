@@ -4,6 +4,8 @@
 ## Initial setup: 
 ##
 ## - a git clone of netmap/linux with all the netmap-* branches created (GITDIR)
+##   (also make sure that you have all the git tags in place; you may need to
+##    git fetch --tags from https://github.com/torvalds/linux.git)
 ##
 ## - a directory where the linux trees for each major version of linux can 
 ##   be extracted (LINUX_SOURCES)

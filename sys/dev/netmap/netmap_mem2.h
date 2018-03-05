@@ -148,6 +148,14 @@ void	   netmap_mem_delete(struct netmap_mem_d *);
 struct netmap_mem_d* __netmap_mem_get(struct netmap_mem_d *, const char *, int);
 void __netmap_mem_put(struct netmap_mem_d *, const char *, int);
 struct netmap_mem_d* netmap_mem_find(nm_memid_t);
+unsigned netmap_mem_bufsize(struct netmap_mem_d *nmd);
+
+#ifdef WITH_EXTMEM
+struct netmap_mem_d* netmap_mem_ext_create(uint64_t, struct nmreq_pools_info *, int *);
+#else /* !WITH_EXTMEM */
+#define netmap_mem_ext_create(nmr, _perr) \
+	({ int *perr = _perr; if (perr) *(perr) = EOPNOTSUPP; NULL; })
+#endif /* WITH_EXTMEM */
 
 #ifdef WITH_EXTMEM
 struct netmap_mem_d* netmap_mem_ext_create(uint64_t, struct nmreq_pools_info *, int *);

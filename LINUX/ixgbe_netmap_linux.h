@@ -313,10 +313,6 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	 * need to update the buffer's physical address in the NIC slot
 	 * even NS_BUF_CHANGED is not set (PNMB computes the addresses).
 	 *
-	 * The netmap_reload_map() calls is especially expensive,
-	 * even when (as in this case) the tag is 0, so do only
-	 * when the buffer has actually changed.
-	 *
 	 * If possible do not set the report/intr bit on all slots,
 	 * but only a few times per ring or when NS_REPORT is set.
 	 *
@@ -339,20 +335,20 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* device-specific */
 			union ixgbe_adv_tx_desc *curr = NM_IXGBE_TX_DESC(txr, nic_i);
-			int flags = (slot->flags & NS_REPORT ||
+			int hw_flags = (slot->flags & NS_REPORT ||
 				nic_i == 0 || nic_i == report_frequency
 				) ? IXGBE_TXD_CMD_RS : 0;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (!(slot->flags & NS_MOREFRAG))
-				flags |= IXGBE_TXD_CMD_EOP;
+				hw_flags |= IXGBE_TXD_CMD_EOP;
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
 
 			/* Fill the slot in the NIC ring. */
 			curr->read.buffer_addr = htole64(paddr);
 			curr->read.olinfo_status = htole32(len << IXGBE_ADVTXD_PAYLEN_SHIFT);
-			curr->read.cmd_type_len = htole32(len | flags |
+			curr->read.cmd_type_len = htole32(len | hw_flags |
 				IXGBE_ADVTXD_DTYP_DATA | IXGBE_ADVTXD_DCMD_DEXT |
 				IXGBE_ADVTXD_DCMD_IFCS);
 			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
@@ -660,7 +656,6 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 		union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(ring, i);
 		uint64_t paddr;
 		PNMB(na, slot + si, &paddr);
-		// netmap_load_map(rxr->ptag, rxbuf->pmap, addr);
 		/* Update descriptor */
 		curr->read.pkt_addr = htole64(paddr);
 		curr->wb.upper.length = 0;
@@ -778,6 +773,7 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 
 	na.ifp = adapter->netdev;
 	na.pdev = &adapter->pdev->dev;
+	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = NM_IXGBE_TX_RING(adapter, 0)->count;
 	na.num_rx_desc = NM_IXGBE_RX_RING(adapter, 0)->count;
 	na.nm_txsync = ixgbe_netmap_txsync;

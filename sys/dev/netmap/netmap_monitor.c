@@ -167,8 +167,8 @@ netmap_monitor_krings_create(struct netmap_adapter *na)
 	if (error)
 		return error;
 	/* override the host rings callbacks */
-	na->tx_rings[na->num_tx_rings].nm_sync = netmap_monitor_txsync;
-	na->rx_rings[na->num_rx_rings].nm_sync = netmap_monitor_rxsync;
+	na->tx_rings[na->num_tx_rings]->nm_sync = netmap_monitor_txsync;
+	na->rx_rings[na->num_rx_rings]->nm_sync = netmap_monitor_rxsync;
 	return 0;
 }
 
@@ -390,7 +390,7 @@ netmap_monitor_stop(struct netmap_adapter *na)
 		u_int i;
 
 		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_kring *kring = NMR(na, t)[i];
 			struct netmap_kring *zkring;
 			u_int j;
 
@@ -456,7 +456,7 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 		}
 		for_rx_tx(t) {
 			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-				mkring = &NMR(na, t)[i];
+				mkring = NMR(na, t)[i];
 				if (!nm_kring_pending_on(mkring))
 					continue;
 				mkring->nr_mode = NKR_NETMAP_ON;
@@ -466,7 +466,7 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 					if (i > nma_get_nrings(pna, s))
 						continue;
 					if (mna->flags & nm_txrx2flag(s)) {
-						kring = &NMR(pna, s)[i];
+						kring = NMR(pna, s)[i];
 						netmap_monitor_add(mkring, kring, zmon);
 					}
 				}
@@ -478,7 +478,7 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 			na->na_flags &= ~NAF_NETMAP_ON;
 		for_rx_tx(t) {
 			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-				mkring = &NMR(na, t)[i];
+				mkring = NMR(na, t)[i];
 				if (!nm_kring_pending_off(mkring))
 					continue;
 				mkring->nr_mode = NKR_NETMAP_OFF;
@@ -494,7 +494,7 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 					if (i > nma_get_nrings(pna, s))
 						continue;
 					if (mna->flags & nm_txrx2flag(s)) {
-						kring = &NMR(pna, s)[i];
+						kring = NMR(pna, s)[i];
 						netmap_monitor_del(mkring, kring);
 					}
 				}

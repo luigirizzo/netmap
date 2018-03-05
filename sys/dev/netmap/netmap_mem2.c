@@ -1022,8 +1022,11 @@ netmap_obj_free_va(struct netmap_obj_pool *p, void *vaddr)
 	    vaddr, p->name);
 }
 
-#define netmap_mem_bufsize(n)	\
-	((n)->pools[NETMAP_BUF_POOL]._objsize)
+unsigned
+netmap_mem_bufsize(struct netmap_mem_d *nmd)
+{
+	return nmd->pools[NETMAP_BUF_POOL]._objsize;
+}
 
 #define netmap_if_malloc(n, len)	netmap_obj_malloc(&(n)->pools[NETMAP_IF_POOL], len, NULL, NULL)
 #define netmap_if_free(n, v)		netmap_obj_free_va(&(n)->pools[NETMAP_IF_POOL], (v))
@@ -1512,8 +1515,10 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 
 		error = netmap_load_map(na, (bus_dma_tag_t) na->pdev, &lut->plut[i].paddr,
 				p->lut[i].vaddr, p->_clustsize);
-		if (error)
+		if (error) {
+			D("Failed to map cluster #%d from the %s pool", i, p->name);
 			break;
+		}
 
 		for (j = 1; j < p->_clustentries; j++) {
 			lut->plut[i + j].paddr = lut->plut[i + j - 1].paddr + p->_objsize;
@@ -1789,7 +1794,7 @@ netmap_free_rings(struct netmap_adapter *na)
 	for_rx_tx(t) {
 		u_int i;
 		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_kring *kring = NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 
 			if (ring == NULL || kring->users > 0 || (kring->nr_kflags & NKR_NEEDRING)) {
@@ -1826,7 +1831,7 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 		u_int i;
 
 		for (i = 0; i <= nma_get_nrings(na, t); i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_kring *kring = NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 			u_int len, ndesc;
 
@@ -1956,10 +1961,10 @@ netmap_mem2_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
 		 * ring, like we do for buffers? */
 		ssize_t ofs = 0;
 
-		if (na->tx_rings[i].ring != NULL && i >= priv->np_qfirst[NR_TX]
+		if (na->tx_rings[i]->ring != NULL && i >= priv->np_qfirst[NR_TX]
 				&& i < priv->np_qlast[NR_TX]) {
 			ofs = netmap_ring_offset(na->nm_mem,
-						 na->tx_rings[i].ring) - base;
+						 na->tx_rings[i]->ring) - base;
 		}
 		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i] = ofs;
 	}
@@ -1968,10 +1973,10 @@ netmap_mem2_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
 		 * ring, like we do for buffers? */
 		ssize_t ofs = 0;
 
-		if (na->rx_rings[i].ring != NULL && i >= priv->np_qfirst[NR_RX]
+		if (na->rx_rings[i]->ring != NULL && i >= priv->np_qfirst[NR_RX]
 				&& i < priv->np_qlast[NR_RX]) {
 			ofs = netmap_ring_offset(na->nm_mem,
-						 na->rx_rings[i].ring) - base;
+						 na->rx_rings[i]->ring) - base;
 		}
 		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i+n[NR_TX]] = ofs;
 	}
@@ -2616,14 +2621,14 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 	/* point each kring to the corresponding backend ring */
 	nifp = (struct netmap_if *)((char *)ptnmd->nm_addr + ptif->nifp_offset);
 	for (i = 0; i <= na->num_tx_rings; i++) {
-		struct netmap_kring *kring = na->tx_rings + i;
+		struct netmap_kring *kring = na->tx_rings[i];
 		if (kring->ring)
 			continue;
 		kring->ring = (struct netmap_ring *)
 			((char *)nifp + nifp->ring_ofs[i]);
 	}
 	for (i = 0; i <= na->num_rx_rings; i++) {
-		struct netmap_kring *kring = na->rx_rings + i;
+		struct netmap_kring *kring = na->rx_rings[i];
 		if (kring->ring)
 			continue;
 		kring->ring = (struct netmap_ring *)

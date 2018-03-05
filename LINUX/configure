@@ -4,6 +4,7 @@ BUILDDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
 DEBUG=1
+UTILS=
 
 # setelem2n <set> <elem>
 setelem2n()
@@ -262,6 +263,7 @@ replace_vars()
 		-e "s|@PREFIX@|$prefix|g" \
 		-e "s|@DESTDIR@|$DESTDIR|g" \
 		-e "s|@DEBUG@|$DEBUG|g" \
+		-e "s|@UTILS@|$UTILS|g" \
 		$1
 }
 
@@ -289,6 +291,7 @@ Available options:
   --no-apps	               do not compile any app
   --no-apps=                   do not compile the given apps (comma sep.)
   --apps=                      only compile the given apps (comma sep.)
+  --utils		       also compile the utils
   --mod-name=		       netmap module name [$MODNAME]
   --enable-vale      	       enable the VALE switch
   --disable-vale      	       disable the VALE switch
@@ -312,10 +315,10 @@ Available options:
   --no-force-debug	       build the modules w/ or w/o debug symbols,
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
-  --cc=                        C compiler to be used for the apps [$cc]
-  --ld=                        linker to be used for the apps [$ld]
-  --prefix=                    install path for the apps [$prefix]
-  --destdir=                    destination dir for the apps [$DESTDIR]
+  --cc=                        C compiler to be used for the apps and utils [$cc]
+  --ld=                        linker to be used for the apps and utils [$ld]
+  --prefix=                    install path for the apps and utils [$prefix]
+  --destdir=                   destination dir for the apps and utils [$DESTDIR]
 
   --show-drivers	       print the list of available drivers and exit
   --show-ext-drivers	       print the list of available external drivers and exit
@@ -619,6 +622,9 @@ for opt do
 	--no-force-debug)
 		DEBUG=
 	;;
+	--utils)
+		UTILS=1
+		;;
 	*)
 		echo "Unrecognized option: $opt" | warning
 	;;
@@ -1277,17 +1283,15 @@ EOF
 	}
 EOF
 
-  # arguments of qdisc_create_dflt (either 3 or 4)
-  add_test 'define QDISC_CREATE_DFLT_3ARGS' <<EOF
-	#include <net/sch_generic.h>
+  # first argument of sock_create_kern() is a 'struct net*'
+  add_test 'define SOCK_CREATE_KERN_NETNS' <<EOF
+	#include <net/sock.h>
 
-	struct Qdisc *
-	dummy(struct netdev_queue *dev_queue,
-	      struct Qdisc_ops* ops,
-	      unsigned int parent_id)
+	int
+	dummy(void)
 	{
-		return qdisc_create_dflt(dev_queue,
-					 ops, parent_id);
+		struct net *net = NULL;
+		return sock_create_kern(net, 0, 0, 0, NULL);
 	}
 EOF
 
@@ -1884,6 +1888,12 @@ for a in $(app print); do
 	mkdir -p build-apps/$a
 	ln -s $SRCDIR/../apps/$a/GNUmakefile build-apps/$a/GNUmakefile 2> /dev/null || true
 done
+
+# create the build directory for the utils
+if [ -n "$UTILS" ]; then
+	mkdir -p build-utils
+	ln -s $SRCDIR/../utils/GNUmakefile build-utils/GNUmakefile 2>/dev/null || true
+fi
 
 # config.status can be used to rerun configure with the
 # same arguments
