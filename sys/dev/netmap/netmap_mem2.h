@@ -157,13 +157,6 @@ struct netmap_mem_d* netmap_mem_ext_create(uint64_t, struct nmreq_pools_info *, 
 	({ int *perr = _perr; if (perr) *(perr) = EOPNOTSUPP; NULL; })
 #endif /* WITH_EXTMEM */
 
-#ifdef WITH_EXTMEM
-struct netmap_mem_d* netmap_mem_ext_create(uint64_t, struct nmreq_pools_info *, int *);
-#else /* !WITH_EXTMEM */
-#define netmap_mem_ext_create(nmr, _perr) \
-	({ int *perr = _perr; if (perr) *(perr) = EOPNOTSUPP; NULL; })
-#endif /* WITH_EXTMEM */
-
 #ifdef WITH_PTNETMAP_GUEST
 struct netmap_mem_d* netmap_mem_pt_guest_new(struct ifnet *,
 					     unsigned int nifp_offset,
