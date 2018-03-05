@@ -1952,6 +1952,7 @@ txseq_body(void *data)
 			PKT(pkt, body, targ->g->af)[2] = (sequence >> 8) & 0xff;
 			PKT(pkt, body, targ->g->af)[3] = sequence & 0xff;
 			sum = ~cksum_add(~sum, cksum_add(~t, *w));
+			memcpy(targ->g->af == AF_INET ? &pkt->ipv4.udp.uh_sum : &pkt->ipv6.udp.uh_sum, &sum, sizeof(sum));
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == frags) {
 				update_addresses(pkt, targ->g);
@@ -1981,7 +1982,6 @@ txseq_body(void *data)
 				budget--;
 			}
 		}
-		memcpy(targ->g->af == AF_INET ? &pkt->ipv4.udp.uh_sum : &pkt->ipv6.udp.uh_sum, &sum, sizeof(sum));
 
 		ring->cur = ring->head = head;
 
