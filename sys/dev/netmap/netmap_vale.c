@@ -214,6 +214,8 @@ struct nm_bridge {
 	 * and all other remaining ports.
 	 */
 	uint32_t	bdg_port_index[NM_BDG_MAXPORTS];
+	/* used by netmap_bdg_detach_common() */
+	uint32_t	tmp_bdg_port_index[NM_BDG_MAXPORTS];
 
 	struct netmap_vp_adapter *bdg_ports[NM_BDG_MAXPORTS];
 
@@ -460,6 +462,21 @@ nm_alloc_bdgfwd(struct netmap_adapter *na)
 	return 0;
 }
 
+static int
+netmap_bdg_free(struct nm_bridge *b)
+{
+	if ((b->bdg_flags & NM_BDG_ACTIVE) + b->bdg_active_ports != 0) {
+		return EBUSY;
+	}
+
+	ND("marking bridge %s as free", b->bdg_basename);
+	nm_os_free(b->ht);
+	b->bdg_ops = NULL;
+	b->bdg_flags = 0;
+	NM_BNS_PUT(b);
+	return 0;
+}
+
 
 /* remove from bridge b the ports in slots hw and sw
  * (sw can be -1 if not needed)
@@ -469,7 +486,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 {
 	int s_hw = hw, s_sw = sw;
 	int i, lim =b->bdg_active_ports;
-	uint32_t tmp[NM_BDG_MAXPORTS];
+	uint32_t *tmp = b->tmp_bdg_port_index;
 
 	/*
 	New algorithm:
@@ -486,7 +503,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	/* make a copy of the list of active ports, update it,
 	 * and then copy back within BDG_WLOCK().
 	 */
-	memcpy(tmp, b->bdg_port_index, sizeof(tmp));
+	memcpy(b->tmp_bdg_port_index, b->bdg_port_index, sizeof(b->tmp_bdg_port_index));
 	for (i = 0; (hw >= 0 || sw >= 0) && i < lim; ) {
 		if (hw >= 0 && tmp[i] == hw) {
 			ND("detach hw %d at %d", hw, i);
@@ -515,18 +532,12 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	if (s_sw >= 0) {
 		b->bdg_ports[s_sw] = NULL;
 	}
-	memcpy(b->bdg_port_index, tmp, sizeof(tmp));
+	memcpy(b->bdg_port_index, b->tmp_bdg_port_index, sizeof(b->tmp_bdg_port_index));
 	b->bdg_active_ports = lim;
 	BDG_WUNLOCK(b);
 
 	ND("now %d active ports", lim);
-	if ((b->bdg_flags & NM_BDG_ACTIVE) + lim == 0) {
-		ND("marking bridge %s as free", b->bdg_basename);
-		nm_os_free(b->ht);
-		b->bdg_ops = NULL;
-		b->bdg_flags = 0; /* marks bridge as free */
-		NM_BNS_PUT(b);
-	}
+	netmap_bdg_free(b);
 }
 
 static inline void * 
@@ -594,7 +605,6 @@ netmap_bdg_destroy(const char *bdg_name, void *auth_token)
 		goto unlock_bdg_free;
 	}
 
-
 	if (!nm_bdg_valid_auth_token(b, auth_token)) {
 		ret = EACCES;
 		goto unlock_bdg_free;
@@ -603,13 +613,12 @@ netmap_bdg_destroy(const char *bdg_name, void *auth_token)
 		ret = EINVAL;
 		goto unlock_bdg_free;
 	}
-	if (b->bdg_active_ports != 0) {
-		ret = EINVAL;
-		goto unlock_bdg_free;
-	}
 
 	b->bdg_flags &= ~(NM_BDG_EXCLUSIVE | NM_BDG_ACTIVE);
-	netmap_bdg_detach_common(b, -1, -1);
+	ret = netmap_bdg_free(b);
+	if (ret) {
+		b->bdg_flags |= NM_BDG_EXCLUSIVE | NM_BDG_ACTIVE;
+	}
 
 unlock_bdg_free:
 	NMG_UNLOCK();
