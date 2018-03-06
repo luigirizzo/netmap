@@ -2937,16 +2937,13 @@ nmreq_findoption(struct nmreq_option *opt, uint16_t reqtype)
 
 int
 nmreq_checkduplicate(struct nmreq_option *opt) {
-	struct nmreq_option *scan;
 	uint16_t type = opt->nro_reqtype;
 	int dup = 0;
 
-	for (scan = (struct nmreq_option *)opt->nro_next; scan;
-		scan = nmreq_findoption((struct nmreq_option *)scan->nro_next,
-			type))
-	{
+	while ((opt = nmreq_findoption((struct nmreq_option *)opt->nro_next,
+			type))) {
 		dup++;
-		scan->nro_status = EINVAL;
+		opt->nro_status = EINVAL;
 	}
 	return (dup ? EINVAL : 0);
 }
