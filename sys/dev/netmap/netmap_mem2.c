@@ -1102,6 +1102,7 @@ netmap_new_bufs(struct netmap_mem_d *nmd, struct netmap_slot *slot, u_int n)
 		slot[i].buf_idx = index;
 		slot[i].len = p->_objsize;
 		slot[i].flags = 0;
+		slot[i].ptr = 0;
 	}
 
 	ND("allocated %d buffers, %d available, first at %d", n, p->objfree, pos);
