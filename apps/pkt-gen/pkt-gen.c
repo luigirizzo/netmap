@@ -1584,8 +1584,8 @@ sender_body(void *data)
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
+			D("poll error on queue %d: %s", targ->me,
+				errno ? strerror(errno) : "timeout");
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
@@ -1905,8 +1905,8 @@ txseq_body(void *data)
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
+			D("poll error on queue %d: %s", targ->me,
+				errno ? strerror(errno) : "timeout");
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
