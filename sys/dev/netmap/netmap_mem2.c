@@ -178,56 +178,66 @@ struct netmap_mem_d {
 	char name[NM_MEM_NAMESZ];
 };
 
-/*
- * XXX need to fix the case of t0 == void
- */
-#define NMD_DEFCB(t0, name) \
-t0 \
-netmap_mem_##name(struct netmap_mem_d *nmd) \
-{ \
-	return nmd->ops->nmd_##name(nmd); \
+int
+netmap_mem_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
+{
+	return nmd->ops->nmd_get_lut(nmd, lut);
 }
 
-#define NMD_DEFCB1(t0, name, t1) \
-t0 \
-netmap_mem_##name(struct netmap_mem_d *nmd, t1 a1) \
-{ \
-	return nmd->ops->nmd_##name(nmd, a1); \
+int
+netmap_mem_get_info(struct netmap_mem_d *nmd, uint64_t *size,
+		u_int *memflags, nm_memid_t *memid)
+{
+	return nmd->ops->nmd_get_info(nmd, size, memflags, memid);
 }
 
-#define NMD_DEFCB3(t0, name, t1, t2, t3) \
-t0 \
-netmap_mem_##name(struct netmap_mem_d *nmd, t1 a1, t2 a2, t3 a3) \
-{ \
-	return nmd->ops->nmd_##name(nmd, a1, a2, a3); \
+vm_paddr_t
+netmap_mem_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
+{
+	return nmd->ops->nmd_ofstophys(nmd, off);
 }
 
-#define NMD_DEFNACB(t0, name) \
-t0 \
-netmap_mem_##name(struct netmap_adapter *na) \
-{ \
-	return na->nm_mem->ops->nmd_##name(na); \
+static int
+netmap_mem_config(struct netmap_mem_d *nmd)
+{
+	return nmd->ops->nmd_config(nmd);
 }
 
-#define NMD_DEFNACB1(t0, name, t1) \
-t0 \
-netmap_mem_##name(struct netmap_adapter *na, t1 a1) \
-{ \
-	return na->nm_mem->ops->nmd_##name(na, a1); \
+ssize_t
+netmap_mem_if_offset(struct netmap_mem_d *nmd, const void *off)
+{
+	return nmd->ops->nmd_if_offset(nmd, off);
 }
 
-NMD_DEFCB1(int, get_lut, struct netmap_lut *);
-NMD_DEFCB3(int, get_info, uint64_t *, u_int *, uint16_t *);
-NMD_DEFCB1(vm_paddr_t, ofstophys, vm_ooffset_t);
-static int netmap_mem_config(struct netmap_mem_d *);
-NMD_DEFCB(int, config);
-NMD_DEFCB1(ssize_t, if_offset, const void *);
-NMD_DEFCB(void, delete);
+void
+netmap_mem_delete(struct netmap_mem_d *nmd)
+{
+	nmd->ops->nmd_delete(nmd);
+}
 
-NMD_DEFNACB1(struct netmap_if *, if_new, struct netmap_priv_d *);
-NMD_DEFNACB1(void, if_delete, struct netmap_if *);
-NMD_DEFNACB(int, rings_create);
-NMD_DEFNACB(void, rings_delete);
+struct netmap_if *
+netmap_mem_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
+{
+	return na->nm_mem->ops->nmd_if_new(na, priv);
+}
+
+void
+netmap_mem_if_delete(struct netmap_adapter *na, struct netmap_if *nif)
+{
+	na->nm_mem->ops->nmd_if_delete(na, nif);
+}
+
+int
+netmap_mem_rings_create(struct netmap_adapter *na)
+{
+	return na->nm_mem->ops->nmd_rings_create(na);
+}
+
+void
+netmap_mem_rings_delete(struct netmap_adapter *na)
+{
+	na->nm_mem->ops->nmd_rings_delete(na);
+}
 
 static int netmap_mem_map(struct netmap_obj_pool *, struct netmap_adapter *);
 static int netmap_mem_unmap(struct netmap_obj_pool *, struct netmap_adapter *);
