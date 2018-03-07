@@ -639,9 +639,9 @@ static struct netmap_kring *
 ptnetmap_kring(struct netmap_pt_host_adapter *pth_na, int k)
 {
 	if (k < pth_na->up.num_tx_rings) {
-		return pth_na->up.tx_rings + k;
+		return pth_na->up.tx_rings[k];
 	}
-	return pth_na->up.rx_rings + k - pth_na->up.num_tx_rings;
+	return pth_na->up.rx_rings[k - pth_na->up.num_tx_rings];
 }
 
 static int
@@ -847,14 +847,14 @@ ptnetmap_create(struct netmap_pt_host_adapter *pth_na,
     }
 
     for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
-        pth_na->up.rx_rings[i].save_notify =
-        	pth_na->up.rx_rings[i].nm_notify;
-        pth_na->up.rx_rings[i].nm_notify = nm_pt_host_notify;
+        pth_na->up.rx_rings[i]->save_notify =
+        	pth_na->up.rx_rings[i]->nm_notify;
+        pth_na->up.rx_rings[i]->nm_notify = nm_pt_host_notify;
     }
     for (i = 0; i < pth_na->parent->num_tx_rings; i++) {
-        pth_na->up.tx_rings[i].save_notify =
-        	pth_na->up.tx_rings[i].nm_notify;
-        pth_na->up.tx_rings[i].nm_notify = nm_pt_host_notify;
+        pth_na->up.tx_rings[i]->save_notify =
+        	pth_na->up.tx_rings[i]->nm_notify;
+        pth_na->up.tx_rings[i]->nm_notify = nm_pt_host_notify;
     }
 
 #ifdef RATE
@@ -895,14 +895,14 @@ ptnetmap_delete(struct netmap_pt_host_adapter *pth_na)
     pth_na->parent->na_flags = pth_na->parent_na_flags;
 
     for (i = 0; i < pth_na->parent->num_rx_rings; i++) {
-        pth_na->up.rx_rings[i].nm_notify =
-        	pth_na->up.rx_rings[i].save_notify;
-        pth_na->up.rx_rings[i].save_notify = NULL;
+        pth_na->up.rx_rings[i]->nm_notify =
+        	pth_na->up.rx_rings[i]->save_notify;
+        pth_na->up.rx_rings[i]->save_notify = NULL;
     }
     for (i = 0; i < pth_na->parent->num_tx_rings; i++) {
-        pth_na->up.tx_rings[i].nm_notify =
-        	pth_na->up.tx_rings[i].save_notify;
-        pth_na->up.tx_rings[i].save_notify = NULL;
+        pth_na->up.tx_rings[i]->nm_notify =
+        	pth_na->up.tx_rings[i]->save_notify;
+        pth_na->up.tx_rings[i]->save_notify = NULL;
     }
 
     /* Destroy kernel contexts. */
@@ -1079,7 +1079,7 @@ nm_pt_host_krings_create(struct netmap_adapter *na)
 	 * host rings independently on what the regif asked for:
 	 * these rings are needed by the guest ptnetmap adapter
 	 * anyway. */
-	kring = &NMR(na, t)[nma_get_nrings(na, t)];
+	kring = NMR(na, t)[nma_get_nrings(na, t)];
 	kring->nr_kflags |= NKR_NEEDRING;
     }
 
