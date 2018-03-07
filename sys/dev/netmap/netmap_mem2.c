@@ -1850,8 +1850,12 @@ netmap_free_rings(struct netmap_adapter *na)
 			}
 			if (netmap_verbose)
 				D("deleting ring %s", kring->name);
-			if (i != nma_get_nrings(na, t) || na->na_flags & NAF_HOST_RINGS)
+			if (!(kring->nr_kflags & NKR_FAKERING)) {
+				ND("freeing bufs for %s", kring->name);
 				netmap_free_bufs(na->nm_mem, ring->slot, kring->nkr_num_slots);
+			} else {
+				ND("NOT freeing bufs for %s", kring->name);
+			}
 			netmap_ring_free(na->nm_mem, ring);
 			kring->ring = NULL;
 		}
@@ -1912,14 +1916,16 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 			ND("%s h %d c %d t %d", kring->name,
 				ring->head, ring->cur, ring->tail);
 			ND("initializing slots for %s_ring", nm_txrx2str(txrx));
-			if (i != nma_get_nrings(na, t) || (na->na_flags & NAF_HOST_RINGS)) {
+			if (!(kring->nr_kflags & NKR_FAKERING)) {
 				/* this is a real ring */
+				ND("allocating buffers for %s", kring->name);
 				if (netmap_new_bufs(na->nm_mem, ring->slot, ndesc)) {
 					D("Cannot allocate buffers for %s_ring", nm_txrx2str(t));
 					goto cleanup;
 				}
 			} else {
 				/* this is a fake ring, set all indices to 0 */
+				ND("NOT allocating buffers for %s", kring->name);
 				netmap_mem_set_ring(na->nm_mem, ring->slot, ndesc, 0);
 			}
 		        /* ring info */

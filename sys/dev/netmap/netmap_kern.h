@@ -422,6 +422,7 @@ struct netmap_kring {
 					 *  by ptnetmap host ports)
 					 */
 #define NKR_NOINTR      0x10            /* don't use interrupts on this ring */
+#define NKR_FAKERING	0x20		/* don't allocate/free buffers */
 
 	uint32_t	nr_mode;
 	uint32_t	nr_pending_mode;

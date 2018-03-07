@@ -863,6 +863,8 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 			if (i < nma_get_nrings(na, t)) {
 				kring->nm_sync = (t == NR_TX ? na->nm_txsync : na->nm_rxsync);
 			} else {
+				if (!(na->na_flags & NAF_HOST_RINGS))
+					kring->nr_kflags |= NKR_FAKERING;
 				kring->nm_sync = (t == NR_TX ?
 						netmap_txsync_to_host:
 						netmap_rxsync_from_host);
