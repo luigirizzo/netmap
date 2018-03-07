@@ -545,6 +545,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 	NR_REG_ONE_NIC	= 4,
 	NR_REG_PIPE_MASTER = 5,
 	NR_REG_PIPE_SLAVE = 6,
+	NR_REG_RANGE_NIC = 7,
 };
 /* monitor uses the NR_REG to select the rings to monitor */
 #define NR_MONITOR_TX	0x100
@@ -563,6 +564,9 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  * to use those headers. If the flag is set, the application can use the
  * NETMAP_VNET_HDR_GET command to figure out the header length. */
 #define NR_ACCEPT_VNET_HDR	0x8000
+
+#define NR_RANGE_END_MASK		0xfff00000u /* values for range end parameter */
+#define NR_RANGE_END_SHIFT		__builtin_ctz(NR_RANGE_END_MASK) /* how much to shr to get the range end number */
 
 #define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
 
