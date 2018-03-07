@@ -183,63 +183,46 @@ int
 netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 {
         struct netmap_kring *rxkring = txkring->pipe;
-        u_int limit; /* slots to transfer */
-        u_int j, k, lim_tx = txkring->nkr_num_slots - 1,
-                lim_rx = rxkring->nkr_num_slots - 1;
-        int m, busy;
+        u_int k, lim = txkring->nkr_num_slots - 1;
+        int m; /* slots to transfer */
 	struct netmap_ring *txring = txkring->ring, *rxring = rxkring->ring;
 
         ND("%p: %s %x -> %s", txkring, txkring->name, flags, rxkring->name);
-        ND(2, "before: hwcur %d hwtail %d cur %d head %d tail %d", txkring->nr_hwcur, txkring->nr_hwtail,
+        ND(20, "TX before: hwcur %d hwtail %d cur %d head %d tail %d",
+		txkring->nr_hwcur, txkring->nr_hwtail,
                 txkring->rcur, txkring->rhead, txkring->rtail);
 
-        j = rxkring->nr_hwtail; /* RX */
-        k = txkring->nr_hwcur;  /* TX */
         m = txkring->rhead - txkring->nr_hwcur; /* new slots */
         if (m < 0)
                 m += txkring->nkr_num_slots;
-        limit = m;
-        m = lim_rx; /* max avail space on destination */
-        busy = j - rxkring->nr_hwcur; /* busy slots */
-	if (busy < 0)
-		busy += rxkring->nkr_num_slots;
-	m -= busy; /* subtract busy slots */
-        ND(2, "m %d limit %d", m, limit);
-        if (m < limit)
-                limit = m;
 
-	if (limit == 0) {
-		/* either the rxring is full, or nothing to send */
+	if (m == 0) {
+		/* nothing to send */
 		return 0;
 	}
 
-        while (limit-- > 0) {
-                struct netmap_slot *rs = &rxring->slot[j];
+        for (k = txkring->nr_hwcur; m; m--, k = nm_next(k, lim)) {
+                struct netmap_slot *rs = &rxring->slot[k];
                 struct netmap_slot *ts = &txring->slot[k];
-                struct netmap_slot tmp;
 
-		__builtin_prefetch(ts + 1);
+		rs->len = ts->len;
+		rs->ptr = ts->ptr;
 
-                /* swap the slots and report the buffer change */
-                tmp = *rs;
-                *rs = *ts;
-		rs->flags |= NS_BUF_CHANGED;
-                *ts = tmp;
-		ts->flags |= NS_BUF_CHANGED;
-
-                j = nm_next(j, lim_rx);
-                k = nm_next(k, lim_tx);
+		if (ts->flags & NS_BUF_CHANGED) {
+			rs->buf_idx = ts->buf_idx;
+			rs->flags |= NS_BUF_CHANGED;
+			ts->flags &= ~NS_BUF_CHANGED;
+		}
         }
 
         mb(); /* make sure the slots are updated before publishing them */
-        rxkring->nr_hwtail = j;
+        rxkring->nr_hwtail = k;
         txkring->nr_hwcur = k;
-        txkring->nr_hwtail = nm_prev(k, lim_tx);
 
-        ND(2, "after: hwcur %d hwtail %d cur %d head %d tail %d j %d", txkring->nr_hwcur, txkring->nr_hwtail,
-                txkring->rcur, txkring->rhead, txkring->rtail, j);
+        ND(20, "TX after : hwcur %d hwtail %d cur %d head %d tail %d k %d",
+		txkring->nr_hwcur, txkring->nr_hwtail,
+                txkring->rcur, txkring->rhead, txkring->rtail, k);
 
-        mb(); /* make sure rxkring->nr_hwtail is updated before notifying */
         rxkring->nm_notify(rxkring, 0);
 
 	return 0;
@@ -249,20 +232,46 @@ int
 netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
 {
         struct netmap_kring *txkring = rxkring->pipe;
-	uint32_t oldhwcur = rxkring->nr_hwcur;
+        u_int k, lim = rxkring->nkr_num_slots - 1;
+        int m; /* slots to release */
+	struct netmap_ring *txring = txkring->ring, *rxring = rxkring->ring;
 
-        ND("%s %x <- %s", rxkring->name, flags, txkring->name);
-        rxkring->nr_hwcur = rxkring->rhead; /* recover user-relased slots */
-        ND(5, "hwcur %d hwtail %d cur %d head %d tail %d", rxkring->nr_hwcur, rxkring->nr_hwtail,
+        ND("%p: %s %x -> %s", txkring, txkring->name, flags, rxkring->name);
+        ND(20, "RX before: hwcur %d hwtail %d cur %d head %d tail %d",
+		rxkring->nr_hwcur, rxkring->nr_hwtail,
                 rxkring->rcur, rxkring->rhead, rxkring->rtail);
-        mb(); /* paired with the first mb() in txsync */
 
-	if (oldhwcur != rxkring->nr_hwcur) {
-		/* we have released some slots, notify the other end */
-		mb(); /* make sure nr_hwcur is updated before notifying */
-		txkring->nm_notify(txkring, 0);
+        m = rxkring->rhead - rxkring->nr_hwcur; /* released slots */
+        if (m < 0)
+                m += rxkring->nkr_num_slots;
+
+	if (m == 0) {
+		/* nothing to release */
+		return 0;
 	}
-        return 0;
+
+        for (k = rxkring->nr_hwcur; m; m--, k = nm_next(k, lim)) {
+                struct netmap_slot *rs = &rxring->slot[k];
+                struct netmap_slot *ts = &txring->slot[k];
+
+		if (rs->flags & NS_BUF_CHANGED) {
+			/* copy the slot and report the buffer change */
+			*ts = *rs;
+			rs->flags &= ~NS_BUF_CHANGED;
+		}
+        }
+
+        mb(); /* make sure the slots are updated before publishing them */
+        txkring->nr_hwtail = nm_prev(k, lim);
+        rxkring->nr_hwcur = k;
+
+        ND(20, "RX after : hwcur %d hwtail %d cur %d head %d tail %d k %d",
+		rxkring->nr_hwcur, rxkring->nr_hwtail,
+                rxkring->rcur, rxkring->rhead, rxkring->rtail, k);
+
+        txkring->nm_notify(txkring, 0);
+
+	return 0;
 }
 
 /* Pipe endpoints are created and destroyed together, so that endopoints do not
@@ -341,6 +350,8 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				NMR(na, t)[i]->pipe = NMR(ona, r)[i];
 				NMR(ona, r)[i]->pipe = NMR(na, t)[i];
+				/* mark all peer-adapter rings as fake */
+				NMR(ona, r)[i]->nr_kflags |= NKR_FAKERING;
 			}
 		}
 
@@ -408,7 +419,10 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		/* create all missing needed rings on the other end */
+		/* create all missing needed rings on the other end.
+		 * They have all been marked as fake in the krings_create
+		 * above, so the will not be filled with buffers
+		 */
 		error = netmap_mem_rings_create(ona);
 		if (error)
 			return error;
@@ -417,8 +431,18 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 		for_rx_tx(t) {
 			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
 				struct netmap_kring *kring = NMR(na, t)[i];
-
 				if (nm_kring_pending_on(kring)) {
+					struct netmap_ring *sring = kring->ring,
+							   *dring = kring->pipe->ring;
+
+					/* copy our buffers info into the peer ring */
+					memcpy(dring->slot, sring->slot,
+							sizeof(struct netmap_slot) *
+							sring->num_slots);
+					/* mark also our ring as fake, so that buffers
+					 * will not be automatically deleted
+					 */
+					kring->nr_kflags |= NKR_FAKERING;
 					kring->nr_mode = NKR_NETMAP_ON;
 				}
 			}
@@ -434,17 +458,9 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 
 				if (nm_kring_pending_off(kring)) {
 					kring->nr_mode = NKR_NETMAP_OFF;
-					/* mark the peer ring as no longer needed by us
-					 * (it may still be kept if sombody else is using it)
-					 */
-					if (kring->pipe) {
-						kring->pipe->nr_kflags &= ~NKR_NEEDRING;
-					}
 				}
 			}
 		}
-		/* delete all the peer rings that are no longer needed */
-		netmap_mem_rings_delete(ona);
 	}
 
 	if (na->active_fds) {
@@ -495,20 +511,48 @@ netmap_pipe_krings_delete(struct netmap_adapter *na)
 	struct netmap_pipe_adapter *pna =
 		(struct netmap_pipe_adapter *)na;
 	struct netmap_adapter *ona; /* na of the other end */
+	enum txrx t;
+	int i, j;
 
 	if (!pna->peer_ref) {
 		ND("%p: case 2, kept alive by peer",  na);
 		return;
 	}
+	ona = &pna->peer->up;
 	/* case 1) above */
 	ND("%p: case 1, deleting everything", na);
+	/* zero-out one index of all shared buffers */
+	if (ona->tx_rings) {
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = NMR(na, t)[i];
+				struct netmap_ring *sring = kring->ring,
+						   *dring = kring->pipe->ring;
+
+				if (sring == NULL)
+					continue;
+
+				for (j = 0; j < sring->num_slots; j++) {
+					if (sring->slot[j].buf_idx ==
+					    dring->slot[j].buf_idx)
+						dring->slot[j].buf_idx = 0;
+				}
+				kring->nr_kflags &= ~NKR_FAKERING;
+				kring->pipe->nr_kflags &= ~NKR_FAKERING;
+			}
+
+		}
+	}
+
+	netmap_mem_rings_delete(na);
 	netmap_krings_delete(na); /* also zeroes tx_rings etc. */
-	ona = &pna->peer->up;
+	
 	if (ona->tx_rings == NULL) {
 		/* already deleted, we must be on an
                  * cleanup-after-error path */
 		return;
 	}
+	netmap_mem_rings_delete(ona);
 	netmap_krings_delete(ona);
 }
 
