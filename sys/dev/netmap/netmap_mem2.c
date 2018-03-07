@@ -209,7 +209,7 @@ netmap_mem_if_offset(struct netmap_mem_d *nmd, const void *off)
 	return nmd->ops->nmd_if_offset(nmd, off);
 }
 
-void
+static void
 netmap_mem_delete(struct netmap_mem_d *nmd)
 {
 	nmd->ops->nmd_delete(nmd);
