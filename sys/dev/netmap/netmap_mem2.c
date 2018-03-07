@@ -345,22 +345,24 @@ __netmap_mem_put(struct netmap_mem_d *nmd, const char *func, int line)
 int
 netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
+	int lasterr = 0;
 	if (nm_mem_assign_group(nmd, na->pdev) < 0) {
 		return ENOMEM;
-	} else {
-		NMA_LOCK(nmd);
-		nmd->lasterr = nmd->ops->nmd_finalize(nmd);
-		NMA_UNLOCK(nmd);
 	}
+
+	NMA_LOCK(nmd);
+	nmd->lasterr = nmd->ops->nmd_finalize(nmd);
 
 	if (!nmd->lasterr && na->pdev) {
 		nmd->lasterr = netmap_mem_map(&nmd->pools[NETMAP_BUF_POOL], na);
-		if (nmd->lasterr) {
-			netmap_mem_deref(nmd, na);
-		}
 	}
+	lasterr = nmd->lasterr;
+	NMA_UNLOCK(nmd);
 
-	return nmd->lasterr;
+	if (lasterr)
+		netmap_mem_deref(nmd, na);
+
+	return lasterr;
 }
 
 static int
