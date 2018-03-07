@@ -130,7 +130,11 @@ struct netmap_obj_pool {
 };
 
 #define NMA_LOCK_T		NM_MTX_T
-
+#define NMA_LOCK_INIT(n)	NM_MTX_INIT((n)->nm_mtx)
+#define NMA_LOCK_DESTROY(n)	NM_MTX_DESTROY((n)->nm_mtx)
+#define NMA_LOCK(n)		NM_MTX_LOCK((n)->nm_mtx)
+#define NMA_SPINLOCK(n)         NM_MTX_SPINLOCK((n)->nm_mtx)
+#define NMA_UNLOCK(n)		NM_MTX_UNLOCK((n)->nm_mtx)
 
 struct netmap_mem_ops {
 	int (*nmd_get_lut)(struct netmap_mem_d *, struct netmap_lut*);
@@ -181,20 +185,45 @@ struct netmap_mem_d {
 int
 netmap_mem_get_lut(struct netmap_mem_d *nmd, struct netmap_lut *lut)
 {
-	return nmd->ops->nmd_get_lut(nmd, lut);
+	int rv;
+
+	NMA_LOCK(nmd);
+	rv = nmd->ops->nmd_get_lut(nmd, lut);
+	NMA_UNLOCK(nmd);
+
+	return rv;
 }
 
 int
 netmap_mem_get_info(struct netmap_mem_d *nmd, uint64_t *size,
 		u_int *memflags, nm_memid_t *memid)
 {
-	return nmd->ops->nmd_get_info(nmd, size, memflags, memid);
+	int rv;
+
+	NMA_LOCK(nmd);
+	rv = nmd->ops->nmd_get_info(nmd, size, memflags, memid);
+	NMA_UNLOCK(nmd);
+
+	return rv;
 }
 
 vm_paddr_t
 netmap_mem_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
 {
-	return nmd->ops->nmd_ofstophys(nmd, off);
+	vm_paddr_t pa;
+
+#if defined(__FreeBSD__)
+	/* This function is called by netmap_dev_pager_fault(), which holds a
+	 * non-sleepable lock since FreeBSD 12. Since we cannot sleep, we
+	 * spin on the trylock. */
+	NMA_SPINLOCK(nmd);
+#else
+	NMA_LOCK(nmd);
+#endif
+	pa = nmd->ops->nmd_ofstophys(nmd, off);
+	NMA_UNLOCK(nmd);
+
+	return pa;
 }
 
 static int
@@ -206,7 +235,13 @@ netmap_mem_config(struct netmap_mem_d *nmd)
 ssize_t
 netmap_mem_if_offset(struct netmap_mem_d *nmd, const void *off)
 {
-	return nmd->ops->nmd_if_offset(nmd, off);
+	ssize_t rv;
+
+	NMA_LOCK(nmd);
+	rv = nmd->ops->nmd_if_offset(nmd, off);
+	NMA_UNLOCK(nmd);
+
+	return rv;
 }
 
 static void
@@ -218,25 +253,47 @@ netmap_mem_delete(struct netmap_mem_d *nmd)
 struct netmap_if *
 netmap_mem_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
 {
-	return na->nm_mem->ops->nmd_if_new(na, priv);
+	struct netmap_if *nifp;
+	struct netmap_mem_d *nmd = na->nm_mem;
+
+	NMA_LOCK(nmd);
+	nifp = nmd->ops->nmd_if_new(na, priv);
+	NMA_UNLOCK(nmd);
+
+	return nifp;
 }
 
 void
 netmap_mem_if_delete(struct netmap_adapter *na, struct netmap_if *nif)
 {
-	na->nm_mem->ops->nmd_if_delete(na, nif);
+	struct netmap_mem_d *nmd = na->nm_mem;
+
+	NMA_LOCK(nmd);
+	nmd->ops->nmd_if_delete(na, nif);
+	NMA_UNLOCK(nmd);
 }
 
 int
 netmap_mem_rings_create(struct netmap_adapter *na)
 {
-	return na->nm_mem->ops->nmd_rings_create(na);
+	int rv;
+	struct netmap_mem_d *nmd = na->nm_mem;
+
+	NMA_LOCK(nmd);
+	rv = nmd->ops->nmd_rings_create(na);
+	NMA_UNLOCK(nmd);
+
+	return rv;
 }
 
 void
 netmap_mem_rings_delete(struct netmap_adapter *na)
 {
-	na->nm_mem->ops->nmd_rings_delete(na);
+	struct netmap_mem_d *nmd = na->nm_mem;
+
+	NMA_LOCK(nmd);
+	nmd->ops->nmd_rings_delete(na);
+	NMA_UNLOCK(nmd);
 }
 
 static int netmap_mem_map(struct netmap_obj_pool *, struct netmap_adapter *);
@@ -249,12 +306,6 @@ netmap_mem_get_id(struct netmap_mem_d *nmd)
 {
 	return nmd->nm_id;
 }
-
-#define NMA_LOCK_INIT(n)	NM_MTX_INIT((n)->nm_mtx)
-#define NMA_LOCK_DESTROY(n)	NM_MTX_DESTROY((n)->nm_mtx)
-#define NMA_LOCK(n)		NM_MTX_LOCK((n)->nm_mtx)
-#define NMA_SPINLOCK(n)         NM_MTX_SPINLOCK((n)->nm_mtx)
-#define NMA_UNLOCK(n)		NM_MTX_UNLOCK((n)->nm_mtx)
 
 #ifdef NM_DEBUG_MEM_PUTGET
 #define NM_DBG_REFC(nmd, func, line)	\
@@ -715,14 +766,6 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 	vm_paddr_t pa;
 	struct netmap_obj_pool *p;
 
-#if defined(__FreeBSD__)
-	/* This function is called by netmap_dev_pager_fault(), which holds a
-	 * non-sleepable lock since FreeBSD 12. Since we cannot sleep, we
-	 * spin on the trylock. */
-	NMA_SPINLOCK(nmd);
-#else
-	NMA_LOCK(nmd);
-#endif
 	p = nmd->pools;
 
 	for (i = 0; i < NETMAP_POOLS_NR; offset -= p[i].memtotal, i++) {
@@ -736,7 +779,6 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 		pa = vtophys(p[i].lut[offset / p[i]._objsize].vaddr);
 		pa.QuadPart += offset % p[i]._objsize;
 #endif
-		NMA_UNLOCK(nmd);
 		return pa;
 	}
 	/* this is only in case of errors */
@@ -747,7 +789,6 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 		p[NETMAP_IF_POOL].memtotal
 			+ p[NETMAP_RING_POOL].memtotal
 			+ p[NETMAP_BUF_POOL].memtotal);
-	NMA_UNLOCK(nmd);
 #ifndef _WIN32
 	return 0; /* bad address */
 #else
@@ -860,7 +901,6 @@ netmap_mem2_get_info(struct netmap_mem_d* nmd, uint64_t* size,
 			u_int *memflags, nm_memid_t *id)
 {
 	int error = 0;
-	NMA_LOCK(nmd);
 	error = netmap_mem_config(nmd);
 	if (error)
 		goto out;
@@ -881,7 +921,6 @@ netmap_mem2_get_info(struct netmap_mem_d* nmd, uint64_t* size,
 	if (id)
 		*id = nmd->nm_id;
 out:
-	NMA_UNLOCK(nmd);
 	return error;
 }
 
@@ -925,11 +964,7 @@ netmap_obj_offset(struct netmap_obj_pool *p, const void *vaddr)
 static ssize_t
 netmap_mem2_if_offset(struct netmap_mem_d *nmd, const void *addr)
 {
-	ssize_t v;
-	NMA_LOCK(nmd);
-	v = netmap_if_offset(nmd, addr);
-	NMA_UNLOCK(nmd);
-	return v;
+	return netmap_if_offset(nmd, addr);
 }
 
 /*
@@ -1835,8 +1870,6 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 {
 	enum txrx t;
 
-	NMA_LOCK(na->nm_mem);
-
 	for_rx_tx(t) {
 		u_int i;
 
@@ -1895,14 +1928,10 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 		}
 	}
 
-	NMA_UNLOCK(na->nm_mem);
-
 	return 0;
 
 cleanup:
 	netmap_free_rings(na);
-
-	NMA_UNLOCK(na->nm_mem);
 
 	return ENOMEM;
 }
@@ -1911,11 +1940,7 @@ static void
 netmap_mem2_rings_delete(struct netmap_adapter *na)
 {
 	/* last instance, release bufs and rings */
-	NMA_LOCK(na->nm_mem);
-
 	netmap_free_rings(na);
-
-	NMA_UNLOCK(na->nm_mem);
 }
 
 
@@ -1945,8 +1970,6 @@ netmap_mem2_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
 	 * the descriptor is followed inline by an array of offsets
 	 * to the tx and rx rings in the shared memory region.
 	 */
-
-	NMA_LOCK(na->nm_mem);
 
 	len = sizeof(struct netmap_if) + (ntot * sizeof(ssize_t));
 	nifp = netmap_if_malloc(na->nm_mem, len);
@@ -1991,8 +2014,6 @@ netmap_mem2_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
 		*(ssize_t *)(uintptr_t)&nifp->ring_ofs[i+n[NR_TX]] = ofs;
 	}
 
-	NMA_UNLOCK(na->nm_mem);
-
 	return (nifp);
 }
 
@@ -2002,12 +2023,9 @@ netmap_mem2_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 	if (nifp == NULL)
 		/* nothing to do */
 		return;
-	NMA_LOCK(na->nm_mem);
 	if (nifp->ni_bufs_head)
 		netmap_extra_free(na, nifp->ni_bufs_head);
 	netmap_if_free(na->nm_mem, nifp);
-
-	NMA_UNLOCK(na->nm_mem);
 }
 
 static void
@@ -2426,8 +2444,6 @@ netmap_mem_pt_guest_get_info(struct netmap_mem_d *nmd, uint64_t *size,
 {
 	int error = 0;
 
-	NMA_LOCK(nmd);
-
 	error = nmd->ops->nmd_config(nmd);
 	if (error)
 		goto out;
@@ -2440,7 +2456,6 @@ netmap_mem_pt_guest_get_info(struct netmap_mem_d *nmd, uint64_t *size,
 		*id = nmd->nm_id;
 
 out:
-	NMA_UNLOCK(nmd);
 
 	return error;
 }
@@ -2583,8 +2598,6 @@ netmap_mem_pt_guest_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv
 	struct mem_pt_if *ptif;
 	struct netmap_if *nifp = NULL;
 
-	NMA_LOCK(na->nm_mem);
-
 	ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
 	if (ptif == NULL) {
 		D("Error: interface %p is not in passthrough", na->ifp);
@@ -2593,7 +2606,6 @@ netmap_mem_pt_guest_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv
 
 	nifp = (struct netmap_if *)((char *)(ptnmd->nm_addr) +
 				    ptif->nifp_offset);
-	NMA_UNLOCK(na->nm_mem);
 out:
 	return nifp;
 }
@@ -2603,12 +2615,10 @@ netmap_mem_pt_guest_if_delete(struct netmap_adapter *na, struct netmap_if *nifp)
 {
 	struct mem_pt_if *ptif;
 
-	NMA_LOCK(na->nm_mem);
 	ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
 	if (ptif == NULL) {
 		D("Error: interface %p is not in passthrough", na->ifp);
 	}
-	NMA_UNLOCK(na->nm_mem);
 }
 
 static int
@@ -2618,8 +2628,6 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 	struct mem_pt_if *ptif;
 	struct netmap_if *nifp;
 	int i, error = -1;
-
-	NMA_LOCK(na->nm_mem);
 
 	ptif = netmap_mem_pt_guest_ifp_lookup(na->nm_mem, na->ifp);
 	if (ptif == NULL) {
@@ -2648,8 +2656,6 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 
 	error = 0;
 out:
-	NMA_UNLOCK(na->nm_mem);
-
 	return error;
 }
 
