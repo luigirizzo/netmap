@@ -395,7 +395,7 @@ err:
  *         usr1 --> e1     e2 <-- usr2
  *
  *       and we are either e1 or e2. Add a ref from the
- *       other end and hide our rings.
+ *       other end.
  */
 static int
 netmap_pipe_reg(struct netmap_adapter *na, int onoff)
@@ -420,8 +420,8 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 		}
 
 		/* create all missing needed rings on the other end.
-		 * They have all been marked as fake in the krings_create
-		 * above, so the will not be filled with buffers
+		 * Either our end, or the other, has been marked as
+		 * fake, so the allocation will not be done twice.
 		 */
 		error = netmap_mem_rings_create(ona);
 		if (error)
@@ -432,17 +432,30 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
 				struct netmap_kring *kring = NMR(na, t)[i];
 				if (nm_kring_pending_on(kring)) {
-					struct netmap_ring *sring = kring->ring,
-							   *dring = kring->pipe->ring;
+					struct netmap_kring *sring, *dring;
 
-					/* copy our buffers info into the peer ring */
-					memcpy(dring->slot, sring->slot,
-							sizeof(struct netmap_slot) *
-							sring->num_slots);
-					/* mark also our ring as fake, so that buffers
-					 * will not be automatically deleted
+					/* copy the buffers from the non-fake ring */
+					if (kring->nr_kflags & NKR_FAKERING) {
+						sring = kring->pipe;
+						dring = kring;
+					} else {
+						sring = kring;
+						dring = kring->pipe;
+					}
+					memcpy(dring->ring->slot,
+					       sring->ring->slot,
+					       sizeof(struct netmap_slot) *
+							sring->nkr_num_slots);
+					/* mark both rings as fake and needed,
+					 * so that buffers will not be
+					 * deleted by the standard machinery
+					 * (we will delete them by ourselves in
+					 * netmap_pipe_krings_delete)
 					 */
-					kring->nr_kflags |= NKR_FAKERING;
+					sring->nr_kflags |=
+						(NKR_FAKERING | NKR_NEEDRING);
+					dring->nr_kflags |=
+						(NKR_FAKERING | NKR_NEEDRING);
 					kring->nr_mode = NKR_NETMAP_ON;
 				}
 			}
@@ -502,17 +515,16 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
  *    and we are either e1 or e2.
  *
  * In the former case we have to also delete the krings of e2;
- * in the latter case we do nothing (note that our krings
- * have already been hidden in the unregister callback).
+ * in the latter case we do nothing.
  */
 static void
 netmap_pipe_krings_delete(struct netmap_adapter *na)
 {
 	struct netmap_pipe_adapter *pna =
 		(struct netmap_pipe_adapter *)na;
-	struct netmap_adapter *ona; /* na of the other end */
+	struct netmap_adapter *sna, *ona; /* na of the other end */
 	enum txrx t;
-	int i, j;
+	int i;
 
 	if (!pna->peer_ref) {
 		ND("%p: case 2, kept alive by peer",  na);
@@ -521,27 +533,44 @@ netmap_pipe_krings_delete(struct netmap_adapter *na)
 	ona = &pna->peer->up;
 	/* case 1) above */
 	ND("%p: case 1, deleting everything", na);
-	/* zero-out one index of all shared buffers */
-	if (ona->tx_rings) {
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-				struct netmap_ring *sring = kring->ring,
-						   *dring = kring->pipe->ring;
+	/* To avoid double-frees we zero-out all the buffers in the kernel part
+	 * of each ring. The reason is this: If the user is behaving correctly,
+	 * all buffers are found in exactly one slot in the userspace part of
+	 * some ring.  If the user is not behaving correctly, we cannot release
+	 * buffers cleanly anyway. In the latter case, the allocator will
+	 * return to a clean state only when all its users will close.
+	 */
+	sna = na;
+cleanup:
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(sna, t) + 1; i++) {
+			struct netmap_kring *kring = NMR(sna, t)[i];
+			struct netmap_ring *ring = kring->ring;
+			uint32_t j, lim = kring->nkr_num_slots - 1;
 
-				if (sring == NULL)
-					continue;
+			D("%s ring %p hwtail %u hwcur %u",
+				kring->name, ring, kring->nr_hwtail, kring->nr_hwcur);
 
-				for (j = 0; j < sring->num_slots; j++) {
-					if (sring->slot[j].buf_idx ==
-					    dring->slot[j].buf_idx)
-						dring->slot[j].buf_idx = 0;
-				}
-				kring->nr_kflags &= ~NKR_FAKERING;
-				kring->pipe->nr_kflags &= ~NKR_FAKERING;
+			if (ring == NULL)
+				continue;
+
+			if (kring->nr_hwtail == kring->nr_hwcur)
+				ring->slot[kring->nr_hwtail].buf_idx = 0;
+
+			for (j = nm_next(kring->nr_hwtail, lim);
+			     j != kring->nr_hwcur;
+			     j = nm_next(j, lim))
+			{
+				ND("%s[%d] %u", kring->name, j, ring->slot[j].buf_idx);
+				ring->slot[j].buf_idx = 0;
 			}
-
+			kring->nr_kflags &= ~(NKR_FAKERING | NKR_NEEDRING);
 		}
+
+	}
+	if (sna != ona && ona->tx_rings) {
+		sna = ona;
+		goto cleanup;
 	}
 
 	netmap_mem_rings_delete(na);

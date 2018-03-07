@@ -1182,7 +1182,7 @@ netmap_new_bufs(struct netmap_mem_d *nmd, struct netmap_slot *slot, u_int n)
 		slot[i].flags = 0;
 	}
 
-	ND("allocated %d buffers, %d available, first at %d", n, p->objfree, pos);
+	ND("%s: allocated %d buffers, %d available, first at %d", p->name, n, p->objfree, pos);
 	return (0);
 
 cleanup:
@@ -1227,9 +1227,11 @@ netmap_free_bufs(struct netmap_mem_d *nmd, struct netmap_slot *slot, u_int n)
 	u_int i;
 
 	for (i = 0; i < n; i++) {
-		if (slot[i].buf_idx > 2)
+		if (slot[i].buf_idx > 1)
 			netmap_free_buf(nmd, slot[i].buf_idx);
 	}
+	ND("%s: released some buffers, available: %u",
+			p->name, p->objfree);
 }
 
 static void
