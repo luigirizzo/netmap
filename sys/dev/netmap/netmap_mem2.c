@@ -229,6 +229,13 @@ netmap_mem_ofstophys(struct netmap_mem_d *nmd, vm_ooffset_t off)
 static int
 netmap_mem_config(struct netmap_mem_d *nmd)
 {
+	if (nmd->active) {
+		/* already in use. Not fatal, but we
+		 * cannot change the configuration
+		 */
+		return 0;
+	}
+
 	return nmd->ops->nmd_config(nmd);
 }
 
@@ -351,11 +358,19 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	}
 
 	NMA_LOCK(nmd);
+
+	if (netmap_mem_config(nmd))
+		goto out;
+
+	nmd->active++;
+
 	nmd->lasterr = nmd->ops->nmd_finalize(nmd);
 
 	if (!nmd->lasterr && na->pdev) {
 		nmd->lasterr = netmap_mem_map(&nmd->pools[NETMAP_BUF_POOL], na);
 	}
+
+out:
 	lasterr = nmd->lasterr;
 	NMA_UNLOCK(nmd);
 
@@ -461,6 +476,10 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 		netmap_mem_init_bitmaps(nmd);
 	}
 	nmd->ops->nmd_deref(nmd);
+
+	nmd->active--;
+	if (!nmd->active)
+		nmd->nm_grp = -1;
 
 	NMA_UNLOCK(nmd);
 	return last_user;
@@ -1734,10 +1753,6 @@ netmap_mem2_config(struct netmap_mem_d *nmd)
 {
 	int i;
 
-	if (nmd->active)
-		/* already in use, we cannot change the configuration */
-		goto out;
-
 	if (!netmap_mem_params_changed(nmd->params))
 		goto out;
 
@@ -1766,19 +1781,8 @@ out:
 static int
 netmap_mem2_finalize(struct netmap_mem_d *nmd)
 {
-	int err;
-
-	/* update configuration if changed */
-	if (netmap_mem_config(nmd))
-		goto out1;
-
-	nmd->active++;
-
-	if (nmd->flags & NETMAP_MEM_FINALIZED) {
-		/* may happen if config is not changed */
-		D("nothing to do");
+	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		goto out;
-	}
 
 	if (netmap_mem_finalize_all(nmd))
 		goto out;
@@ -1786,13 +1790,7 @@ netmap_mem2_finalize(struct netmap_mem_d *nmd)
 	nmd->lasterr = 0;
 
 out:
-	if (nmd->lasterr)
-		nmd->active--;
-out1:
-	err = nmd->lasterr;
-
-	return err;
-
+	return nmd->lasterr;
 }
 
 static void
@@ -2034,9 +2032,6 @@ static void
 netmap_mem2_deref(struct netmap_mem_d *nmd)
 {
 
-	nmd->active--;
-	if (!nmd->active)
-		nmd->nm_grp = -1;
 	if (netmap_verbose)
 		D("active = %d", nmd->active);
 
@@ -2495,21 +2490,19 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 	int i;
 	int error = 0;
 
-	nmd->active++;
-
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		goto out;
 
 	if (ptnmd->ptn_dev == NULL) {
 		D("ptnetmap memdev not attached");
 		error = ENOMEM;
-		goto err;
+		goto out;
 	}
 	/* Map memory through ptnetmap-memdev BAR. */
 	error = nm_os_pt_memdev_iomap(ptnmd->ptn_dev, &ptnmd->nm_paddr,
 				      &ptnmd->nm_addr, &mem_size);
 	if (error)
-		goto err;
+		goto out;
 
         /* Initialize the lut using the information contained in the
 	 * ptnetmap memory device. */
@@ -2546,9 +2539,6 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 out:
-	return 0;
-err:
-	nmd->active--;
 	return error;
 }
 
@@ -2557,8 +2547,7 @@ netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 
-	nmd->active--;
-	if (nmd->active <= 0 &&
+	if (nmd->active == 1 &&
 		(nmd->flags & NETMAP_MEM_FINALIZED)) {
 	    nmd->flags  &= ~NETMAP_MEM_FINALIZED;
 	    /* unmap ptnetmap-memdev memory */
