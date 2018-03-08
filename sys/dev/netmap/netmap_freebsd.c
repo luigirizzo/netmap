@@ -177,7 +177,7 @@ nm_os_ifnet_mtu(struct ifnet *ifp)
 #if __FreeBSD_version < 1100030
        return ifp->if_data.ifi_mtu;
 #else /* __FreeBSD_version >= 1100030 */
-       return ifp->ifi_mtu;
+       return ifp->if_mtu;
 #endif
 }
 
