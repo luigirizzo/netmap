@@ -171,6 +171,7 @@ struct port_des {
 	char interface[MAX_PORTNAMELEN];
 	struct my_ctrs ctr;
 	unsigned int last_sync;
+	uint32_t last_tail;
 	struct overflow_queue *oq;
 	struct nm_desc *nmd;
 	struct netmap_ring *ring;
@@ -496,32 +497,19 @@ uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
 	 * packet still in the overflow queue (since those must
 	 * take precedence over the new one)
 	*/
-	if (nm_ring_space(ring) && (q == NULL || oq_empty(q))) {
-		struct netmap_slot *ts = &ring->slot[ring->cur];
+	if (ring->head != ring->tail && (q == NULL || oq_empty(q))) {
+		struct netmap_slot *ts = &ring->slot[ring->head];
 		struct netmap_slot old_slot = *ts;
-		uint32_t free_buf;
 
 		ts->buf_idx = rs->buf_idx;
 		ts->len = rs->len;
 		ts->flags |= NS_BUF_CHANGED;
 		ts->ptr = rs->ptr;
-		ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+		ring->head = nm_ring_next(ring, ring->head);
 		port->ctr.bytes += rs->len;
 		port->ctr.pkts++;
 		forwarded++;
-		if (old_slot.ptr && !g->last) {
-			/* old slot not empty and we are not the last group:
-			 * push it further down the chain
-			 */
-			free_buf = forward_packet(g + 1, &old_slot);
-		} else {
-			/* just return the old slot buffer: it is
-			 * either empty or already seen by everybody
-			 */
-			free_buf = old_slot.buf_idx;
-		}
-
-		return free_buf;
+		return old_slot.buf_idx;
 	}
 
 	/* use the overflow queue, if available */
@@ -798,6 +786,7 @@ run:
 				D("successfully opened pipe #%d %s (tx slots: %d)",
 				  k + 1, p->interface, p->nmd->req.nr_tx_slots);
 				p->ring = NETMAP_TXRING(p->nmd->nifp, 0);
+				p->last_tail = nm_ring_next(p->ring, p->ring->tail);
 			}
 			D("zerocopy %s",
 			  (rxport->nmd->mem == p->nmd->mem) ? "enabled" : "disabled");
@@ -856,7 +845,14 @@ run:
 
 		for (i = 0; i < npipes; ++i) {
 			struct netmap_ring *ring = ports[i].ring;
-			if (!glob_arg.busy_wait && !nm_tx_pending(ring)) {
+			int pending = nm_tx_pending(ring);
+
+			/* if there are packets pending, we want to be notified when
+			 * tail moves, so we let cur=tail
+			 */
+			ring->cur = pending ? ring->tail : ring->head;
+
+			if (!glob_arg.busy_wait && !pending) {
 				/* no need to poll, there are no packets pending */
 				continue;
 			}
@@ -879,6 +875,39 @@ run:
 			goto send_stats;
 		}
 
+		/* if there are several groups, try pushing released packets from
+		 * upstream groups to the downstream ones.
+		 *
+		 * It is important to do this before returned slots are reused
+		 * for new transmissions. For the same reason, this must be
+		 * done starting from the last group going backwards.
+		 */
+		for (i = glob_arg.num_groups - 1U; i > 0; i--) {
+			struct group_des *g = &groups[i - 1];
+			int j;
+			
+			for (j = 0; j < g->nports; j++) {
+				struct port_des *p = &g->ports[j];
+				struct netmap_ring *ring = p->ring;
+				uint32_t last = p->last_tail,
+					 stop = nm_ring_next(ring, ring->tail);
+
+				/* slight abuse of the API here: we touch the slot
+				 * pointed to by tail
+				 */
+				for ( ; last != stop; last = nm_ring_next(ring, last)) {
+					struct netmap_slot *rs = &ring->slot[last];
+					// XXX less aggressive?
+					rs->buf_idx = forward_packet(g + 1, rs);
+					rs->flags |= NS_BUF_CHANGED;
+					rs->ptr = 0;
+				}
+				p->last_tail = last;
+			}
+		}
+
+
+
 		if (oq) {
 			/* try to push packets from the overflow queues
 			 * to the corresponding pipes
@@ -886,7 +915,6 @@ run:
 			for (i = 0; i < npipes; i++) {
 				struct port_des *p = &ports[i];
 				struct overflow_queue *q = p->oq;
-				struct group_des *g = p->group;
 				uint32_t j, lim;
 				struct netmap_ring *ring;
 				struct netmap_slot *slot;
@@ -902,26 +930,17 @@ run:
 				for (j = 0; j < lim; j++) {
 					struct netmap_slot s = oq_deq(q), tmp;
 					tmp.ptr = 0;
-					slot = &ring->slot[ring->cur];
-					if (slot->ptr && !g->last) {
-						tmp.buf_idx = forward_packet(g + 1, slot);
-						/* the forwarding may have removed packets
-						 * from the current queue
-						 */
-						if (q->n < lim)
-							lim = q->n;
-					} else {
-						tmp.buf_idx = slot->buf_idx;
-					}
+					slot = &ring->slot[ring->head];
+					tmp.buf_idx = slot->buf_idx;
 					oq_enq(freeq, &tmp);
 					*slot = s;
 					slot->flags |= NS_BUF_CHANGED;
-					ring->cur = nm_ring_next(ring, ring->cur);
+					ring->head = nm_ring_next(ring, ring->head);
 				}
-				ring->head = ring->cur;
 			}
 		}
 
+		/* push any new packets from the input port to the first group */
 		int batch = 0;
 		for (i = rxport->nmd->first_rx_ring; i <= rxport->nmd->last_rx_ring; i++) {
 			struct netmap_ring *rxring = NETMAP_RXRING(rxport->nmd->nifp, i);
