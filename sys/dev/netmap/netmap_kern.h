@@ -677,9 +677,6 @@ struct netmap_adapter {
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
 #define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
 #define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
-#define NAF_VP_DOUBLE_ATTACH 1024 /* the adapter is a VALE persistent port which
-				   * has been attached to 2 bridges
-				   */
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
@@ -1019,6 +1016,10 @@ struct netmap_bwrap_adapter {
 	 */
 	struct netmap_priv_d *na_kpriv;
 	struct nm_bdg_polling_state *na_polling_state;
+	/* we overwrite the hwna->na_vp pointer, so we save
+	 * here its original value, to be restored at detach
+	 */
+	struct netmap_vp_adapter *saved_na_vp;
 };
 int nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token);
 int nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token);
