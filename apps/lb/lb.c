@@ -956,11 +956,10 @@ run:
 				received_bytes += rs->len;
 
 				// CHOOSE THE CORRECT OUTPUT PIPE
-				uint32_t hash = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
-				if (hash == 0) {
+				rs->ptr = pkt_hdr_hash((const unsigned char *)next_buf, 4, 'B');
+				if (rs->ptr == 0) {
 					non_ip++; // XXX ??
 				}
-				rs->ptr = hash | (1ULL << 32);
 				// prefetch the buffer for the next round
 				next_cur = nm_ring_next(rxring, next_cur);
 				next_slot = &rxring->slot[next_cur];
