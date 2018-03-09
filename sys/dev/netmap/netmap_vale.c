@@ -682,11 +682,11 @@ netmap_vi_create(struct nmreq_header *hdr, int autodelete)
 	if (error) {
 		goto err_2;
 	}
-	D("returning nr_mem_id %d", req->nr_mem_id);
+	ND("returning nr_mem_id %d", req->nr_mem_id);
 	if (nmd)
 		netmap_mem_put(nmd);
 	NMG_UNLOCK();
-	D("created %s", ifp->if_xname);
+	ND("created %s", ifp->if_xname);
 	return 0;
 
 err_2:
@@ -2276,7 +2276,7 @@ netmap_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	na->nm_krings_create = netmap_vp_krings_create;
 	na->nm_krings_delete = netmap_vp_krings_delete;
 	na->nm_dtor = netmap_vp_dtor;
-	D("nr_mem_id %d", req->nr_mem_id);
+	ND("nr_mem_id %d", req->nr_mem_id);
 	na->nm_mem = nmd ?
 		netmap_mem_get(nmd):
 		netmap_mem_private_new(

@@ -548,7 +548,7 @@ cleanup:
 			struct netmap_ring *ring = kring->ring;
 			uint32_t j, lim = kring->nkr_num_slots - 1;
 
-			D("%s ring %p hwtail %u hwcur %u",
+			ND("%s ring %p hwtail %u hwcur %u",
 				kring->name, ring, kring->nr_hwtail, kring->nr_hwcur);
 
 			if (ring == NULL)
