@@ -2237,6 +2237,14 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 	ptnmd->buf_lut.objsize = bufsize;
 	nmd->nm_totalsize = (unsigned int)mem_size;
 
+	/* Initialize these fields as are needed by
+	 * netmap_mem_bufsize().
+	 * XXX please improve this, why do we need this
+	 * replication? maybe we nmd->pools[] should no be
+	 * there for the guest allocator? */
+	nmd->pools[NETMAP_BUF_POOL]._objsize = bufsize;
+	nmd->pools[NETMAP_BUF_POOL]._objtotal = nbuffers;
+
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 out:
 	return 0;
