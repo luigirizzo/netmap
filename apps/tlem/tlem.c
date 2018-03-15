@@ -88,13 +88,19 @@ prod()
 			in nanoseconds. A batch of packets may
 			have the same value q->prod_now
 
-    Four functions are then called in sequence:
+    Five functions are then called in sequence:
 
     q->c_loss (set with the -L command line option) decides
     	whether the packet should be dropped before even queuing.
 	This is generally useful to emulate random loss.
 	The function is supposed to set q->c_drop = 1 if the
 	packet should be dropped, or leave it to 0 otherwise.
+
+    q-c_reorder (set with the -R command line option) decides
+        whether the packet should be temporary hold to emulate
+	packet reordering. To hold a packet, it shuld set
+	q->cur_hold_delay to a non-zero value. The packet will
+	reenter the stream once the cur_hold_delay has expired.
 
     no_room (not configurable) checks whether there is space
     	in the queue, enforcing both the queue size set with -Q
@@ -289,6 +295,15 @@ To simulate bandwidth limitations efficiently, the producer has a second
 pointer, prod_tail_1, used to check for expired packets. This is done lazily.
 
  */
+
+/* for packets hold for reorderind we only record their size and
+ * hold time.
+ */
+struct h_pkt {
+	uint64_t	pktlen;
+	uint64_t	releasetime;
+};
+
 /*
  * When sizing the buffer, we must assume some value for the bandwidth.
  * INFINITE_BW is supposed to be faster than what we support
@@ -305,6 +320,8 @@ struct stats {
 	uint64_t	bytes;
 	uint64_t	drop_packets;
 	uint64_t	drop_bytes;
+	uint64_t	reorder_packets;
+	uint64_t	reorder_bytes;
 } ALIGN_CACHE;
 
 struct _qs { /* shared queue */
@@ -316,12 +333,14 @@ struct _qs { /* shared queue */
 	/* the queue has at least 1 empty position */
 	uint64_t	max_bps;	/* bits per second */
 	uint64_t	max_delay;	/* nanoseconds */
+	uint64_t	max_hold_delay; /* nanoseconds */
 	uint64_t	qsize;	/* queue size in bytes */
 
 	/* handlers for various options */
 	struct _cfg	c_delay;
 	struct _cfg	c_bw;
 	struct _cfg	c_loss;
+	struct _cfg	c_reorder;
 
 	/* producer's fields */
 	uint64_t	prod_tail_1 ALIGN_CACHE; /* head of queue */
@@ -381,6 +400,15 @@ struct _qs { /* shared queue */
 		 * The code makes sure that there is no reordering and possibly
 		 * bumps the output time as needed.
 		 */
+
+	/* producers's fields for reordering */
+	uint64_t	cur_hold_delay; /* reordering delay (ns) from c_reorder.run() */
+	uint64_t	hold_tail, hold_head; /* pointers in the reorder queue */
+	char	       *hold_buf;	/* the reorder queue */
+	uint64_t	hold_buflen;	/* and its size */
+	uint64_t	hold_next_rt;	/* release time of the first hold packet */
+	uint64_t	hold_tail_rt;	/* release time of the last hold packet */
+	int		hold_release;   /* there are packets ready to be released */
 
 
 	/* consumer's fields */
@@ -826,7 +854,7 @@ enq(struct _qs *q)
 }
 
 
-int
+static int
 rx_queued(struct nmport_d *d)
 {
     u_int tot = 0, i;
@@ -840,6 +868,18 @@ rx_queued(struct nmport_d *d)
     return tot;
 }
 
+static inline int
+hold_update_release(struct _qs *q)
+{
+    if (q->hold_release)
+        return 1;
+    if (q->hold_next_rt && ts_cmp(q->hold_next_rt, q->prod_now) <= 0) {
+        q->hold_release = 1;
+        return 1;
+    }
+    return 0;
+}
+
 /*
  * wait for packets, then compute a timestamp in 64-bit ns
  */
@@ -851,7 +891,8 @@ wait_for_packets(struct _qs *q)
 
     ioctl(q->src_port->fd, NIOCRXSYNC, 0); /* forced */
     while (!do_abort) {
-
+        if (hold_update_release(q))
+            break;
         n0 = rx_queued(q->src_port);
         if (n0 > (int)q->rx_qmax) {
             q->rx_qmax = n0;
@@ -862,6 +903,7 @@ wait_for_packets(struct _qs *q)
         if (1) {
             usleep(5);
             ioctl(q->src_port->fd, NIOCRXSYNC, 0);
+            set_tns_now(&q->prod_now, q->t0);
         } else {
             struct pollfd pfd;
             struct netmap_ring *rx;
@@ -973,6 +1015,65 @@ got_one:
 }
 
 /*
+ * Packet reordering.
+ *
+ * Packets subject to reordering are hold in a separate FIFO queue,
+ * local to the producer thread. Note that cur_hold_delay may then be
+ * increased to make sure that no further reording is necessary
+ * in the FIFO.
+ *
+ * Once out of the queue, the hold packets reenter the stream
+ * and go through the normal processing.
+ */
+
+static inline void
+reorder_hold(struct _qs *q)
+{
+    struct h_pkt *nh;
+
+    nh = (struct h_pkt *)(q->hold_buf + q->hold_tail);
+    nm_pkt_copy(q->cur_pkt, (char *)(nh + 1), q->cur_len);
+    nh->pktlen = q->cur_len;
+    nh->releasetime = q->cur_hold_delay;
+    if (!q->hold_next_rt) {
+        q->hold_next_rt = nh->releasetime;
+    } else {
+        /* not empty, prevent further reordering */
+        if (nh->releasetime < q->hold_tail_rt)
+            nh->releasetime = q->hold_tail_rt;
+    }
+    q->hold_tail_rt = nh->releasetime;
+    q->hold_tail += sizeof(*nh) + nh->pktlen;
+    if (unlikely(q->hold_tail >= q->hold_buflen))
+        q->hold_tail = 0;
+}
+
+static int
+reorder_release(struct _qs *q)
+{
+    struct h_pkt *h;
+    if (!q->hold_release)
+        return 0;
+    h = (struct h_pkt *)(q->hold_buf + q->hold_head);
+    q->cur_pkt = q->hold_buf + q->hold_head + sizeof(*h);
+    q->cur_len = h->pktlen;
+    q->hold_head += sizeof(*h) + q->cur_len;
+    if (unlikely(q->hold_head >= q->hold_buflen))
+        q->hold_head = 0;
+    q->hold_release = 0;
+    if (q->hold_head != q->hold_tail) {
+        h = (struct h_pkt *)(q->hold_buf + q->hold_head);
+        q->hold_next_rt = h->releasetime;
+        if (ts_cmp(q->hold_next_rt, q->prod_now) < 0)
+            q->hold_release = 1;
+    } else {
+        q->hold_next_rt = 0;
+    }
+    return 1;
+}
+
+
+/*
  * simple handler for parameters not supplied
  */
 static int
@@ -1024,6 +1125,45 @@ prod_push_arp(const struct pipe_args *pa, const void *pkt)
     arpq_push(a, c);
 }
 
+static void
+prod_procpkt(struct _qs *q)
+{
+    uint64_t t_tx, tt;	/* output and transmission time */
+
+    q->c_loss.run(q, &q->c_loss);
+    if (q->cur_drop) {
+        q->txstats->drop_packets++;
+        q->txstats->drop_bytes += q->cur_len;
+        return;
+    }
+    if (no_room(q)) {
+        q->tail = q->prod_tail; /* notify */
+        usleep(1); // XXX give cons a chance to run ?
+        if (no_room(q)) {/* try to run drop-free once */
+            q->txstats->drop_packets++;
+            q->txstats->drop_bytes += q->cur_len;
+            return;
+        }
+    }
+    // XXX possibly implement c_tt for transmission time emulation
+    q->c_bw.run(q, &q->c_bw);
+    tt = q->cur_tt;
+    q->qt_qout += tt;
+    if (drop_after(q)) {
+        q->txstats->drop_packets++;
+        q->txstats->drop_bytes += q->cur_len;
+        return;
+    }
+    q->c_delay.run(q, &q->c_delay); /* compute delay */
+    t_tx = q->qt_qout + q->cur_delay;
+    ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
+    /* insure no reordering and spacing by transmission time */
+    q->qt_tx = (t_tx >= q->qt_tx + tt) ? t_tx : q->qt_tx + tt;
+    enq(q);
+    q->txstats->packets++;
+    q->txstats->bytes += q->cur_len;
+}
+
 static void *
 prod(void *_pa)
 {
@@ -1038,12 +1178,13 @@ prod(void *_pa)
         int count;
 
         wait_for_packets(q);	/* also updates prod_now */
-        // XXX optimize to flush frequently
-        for (count = 0, scan_ring(q, 0); count < q->burst && !nm_ring_empty(q->rxring);
-                count++, scan_ring(q, 1)) {
-            // transmission time
-            uint64_t t_tx, tt;	/* output and transmission time */
 
+        for (count = 0; count < q->burst && reorder_release(q); count++) {
+            prod_procpkt(q);
+        }
+        // XXX optimize to flush frequently
+        for (scan_ring(q, 0); count < q->burst && !nm_ring_empty(q->rxring);
+                count++, scan_ring(q, 1)) {
             if (q->cur_len < 60) {
                 RD(5, "short packet len %d", q->cur_len);
                 continue; // short frame
@@ -1053,38 +1194,15 @@ prod(void *_pa)
                 prod_push_arp(pa, q->cur_pkt);
                 continue;
             }
-            q->c_loss.run(q, &q->c_loss);
-            if (q->cur_drop) {
-                q->txstats->drop_packets++;
-                q->txstats->drop_bytes += q->cur_len;
+            q->c_reorder.run(q, &q->c_reorder);
+            if (q->cur_hold_delay) {
+                q->cur_hold_delay += q->prod_now;
+                q->txstats->reorder_packets++;
+                q->txstats->reorder_bytes += q->cur_len;
+                reorder_hold(q);
                 continue;
             }
-            if (no_room(q)) {
-                q->tail = q->prod_tail; /* notify */
-                usleep(1); // XXX give cons a chance to run ?
-                if (no_room(q)) {/* try to run drop-free once */
-                    q->txstats->drop_packets++;
-                    q->txstats->drop_bytes += q->cur_len;
-                    continue;
-                }
-            }
-            // XXX possibly implement c_tt for transmission time emulation
-            q->c_bw.run(q, &q->c_bw);
-            tt = q->cur_tt;
-            q->qt_qout += tt;
-            if (drop_after(q)) {
-                q->txstats->drop_packets++;
-                q->txstats->drop_bytes += q->cur_len;
-                continue;
-            }
-            q->c_delay.run(q, &q->c_delay); /* compute delay */
-            t_tx = q->qt_qout + q->cur_delay;
-            ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
-            /* insure no reordering and spacing by transmission time */
-            q->qt_tx = (t_tx >= q->qt_tx + tt) ? t_tx : q->qt_tx + tt;
-            enq(q);
-            q->txstats->packets++;
-            q->txstats->bytes += q->cur_len;
+            prod_procpkt(q);
         }
         q->tail = q->prod_tail; /* notify */
     }
@@ -1365,11 +1483,41 @@ tlem_main(void *_a)
         ED("(not fatal) failed to pin buffer memory: %s", strerror(errno));
     }
     q->buflen = need;
+
+    /* Now we allocate the hold buffer for reordering, if needed.  Since this
+     * is accessed from only one thread (the producer), there are no caching
+     * issues and no need for padding.  The header is only 8 bytes, so the
+     * worst case overhead (all minimally sized packets) is 8/64;
+     */
+    if (q->max_hold_delay) {
+        need = q->max_bps ? q->max_bps : INFINITE_BW;
+        need *= q->max_hold_delay + 1000000;
+        need /= TIME_UNITS;
+        need /= 8;
+        need *= (1 + 1.0*sizeof(struct h_pkt)/64);
+        need += 3 * MAX_PKT;
+
+        q->hold_buf = mmap(0, need, PROT_WRITE | PROT_READ, mmap_flags, -1, 0);
+        if (q->hold_buf == MAP_FAILED) {
+            ED("alloc %lld bytes for  failed, exiting", (long long)need);
+            nmport_close(a->pa);
+            nmport_close(a->pb);
+            do_abort = 1;
+            return(NULL);
+        }
+        if (mlock(q->hold_buf, need) < 0) {
+            ED("(not fatal) failed to pin hold buffer memory: %s", strerror(errno));
+        }
+        q->hold_buflen = need - (sizeof(struct h_pkt) + MAX_PKT);
+    }
+
     ED("----\n\t%s -> %s :  bps %lld delay %s loss %s queue %lld bytes"
-            "\n\tbuffer %llu bytes",
+            "\n\tbuffer   %10llu bytes\n\thold-buf %10lld bytes",
             q->prod_ifname, q->cons_ifname,
             (long long)q->max_bps, q->c_delay.optarg, q->c_loss.optarg,
-            (long long)q->qsize, (unsigned long long)q->buflen);
+            (long long)q->qsize, (unsigned long long)q->buflen,
+            (unsigned long long)q->hold_buflen);
+
 
     q->src_port = a->pa;
 
@@ -1504,6 +1652,7 @@ cmd_apply(const struct _cfg *a, const char *arg, struct _qs *q, struct _cfg *dst
 static struct _cfg delay_cfg[];
 static struct _cfg bw_cfg[];
 static struct _cfg loss_cfg[];
+static struct _cfg reorder_cfg[];
 
 static uint64_t parse_bw(const char *arg);
 static uint64_t parse_qsize(const char *arg);
@@ -1536,8 +1685,8 @@ main(int argc, char **argv)
 
 #define	N_OPTS	2
     struct pipe_args bp[N_OPTS];
-    const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS],
-    *gw[N_OPTS], *cd[N_OPTS];
+    const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *r[N_OPTS],
+    *ifname[N_OPTS], *gw[N_OPTS], *cd[N_OPTS];
     int ncpus;
     int cores[4];
     int hugepages = 0;
@@ -1551,6 +1700,7 @@ main(int argc, char **argv)
     bzero(b, sizeof(b));
     bzero(l, sizeof(l));
     bzero(q, sizeof(q));
+    bzero(r, sizeof(r));
     bzero(gw, sizeof(gw));
     bzero(cd, sizeof(cd));
     bzero(ifname, sizeof(ifname));
@@ -1567,6 +1717,8 @@ main(int argc, char **argv)
         q->c_loss.run = null_run_fn;
         q->c_bw.optarg = "0";
         q->c_bw.run = null_run_fn;
+        q->c_reorder.optarg = "0";
+        q->c_reorder.run = null_run_fn;
     }
 
     ncpus = sysconf(_SC_NPROCESSORS_ONLN);
@@ -1588,13 +1740,14 @@ main(int argc, char **argv)
     // D	delay in seconds
     // Q	qsize in bytes
     // L	loss probability
+    // R	reordering probability and delay min/max
     // i	interface name (two mandatory)
     // v	verbose
     // b	batch size
     // r	route mode
     // d	max consumer delay
 
-    while ( (ch = getopt(argc, argv, "B:C:D:L:Q:G:b:ci:vw:rd:Hs:")) != -1) {
+    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:b:ci:vw:rd:Hs:")) != -1) {
         switch (ch) {
             default:
                 D("bad option %c %s", ch, optarg);
@@ -1643,6 +1796,9 @@ main(int argc, char **argv)
 
             case 'L': /* loss probability */
                 add_to(l, N_OPTS, optarg, "-L too many times");
+                break;
+            case 'R': /* reordering */
+                add_to(r, N_OPTS, optarg, "-R too many times");
                 break;
             case 'G': /* default gateway */
                 add_to(gw, N_OPTS, optarg, "-G too many times");
@@ -1890,6 +2046,8 @@ main(int argc, char **argv)
         l[1] = l[0];
     if (cd[1] == NULL)
         cd[1] = cd[0];
+    if (r[1] == NULL)
+        r[1] = r[0];
 
     /* apply commands */
     for (i = 0; i < N_OPTS; i++) { /* once per queue */
@@ -1897,6 +2055,7 @@ main(int argc, char **argv)
         err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
         err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
         err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
+        err += cmd_apply(reorder_cfg, r[i], q, &q->c_reorder);
         if (cd[i] != NULL) {
             unsigned long max_lag = parse_time(cd[i]);
             if (max_lag == U_PARSE_ERR) {
@@ -2261,6 +2420,20 @@ BANDWIDTH emulation	-B option_arguments
     ether,b		constant bw, including ethernet framing
 			(20 bytes framing + 4 bytes crc)
 
+REORDERING emulation 	-R option_arguments
+
+    NOTE: The config function should store, in q->max_hold_delay,
+    a reasonable estimate of the maximum hold delay applied to the packets
+    as this is needed to size the memory buffer used to hold reordered
+    packets.
+
+    If the option is not supplied, the system does not reorder packets.
+
+    Currently implemented options
+
+    const,p,t		hold packets for t ns, with probability t
+
+
 #endif /* end of comment block */
 
 /*
@@ -2564,5 +2737,49 @@ static struct _cfg loss_cfg[] = {
 		"plr,prob # 0 <= prob <= 1", TLEM_CFG_END },
 	{ const_ber_parse, const_ber_run,
 		"ber,prob # 0 <= prob <= 1", TLEM_CFG_END },
+	{ NULL, NULL, NULL, TLEM_CFG_END }
+};
+
+
+/*
+ * reordering
+ */
+static int
+const_reorder_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
+{
+    double prob;
+    uint64_t delay;
+    int err;
+
+    (void)q;
+    if (strcmp(av[0], "const") != 0 && ac > 2)
+        return 2; /* not recognized */
+    if (ac > 3)
+        return 1; /* error */
+    prob = parse_gen(av[ac - 2], NULL, &err);
+    if (err || prob < 0 || prob > 1)
+        return 1;
+    dst->d[0] = prob * (1<<24);
+    if (prob != 0 && dst->d[0] == 0)
+        ED("WWW warning,  rounding %le down to 0", prob);
+    delay = parse_time(av[ac - 1]);
+    if (delay == U_PARSE_ERR)
+        return 1;
+    dst->d[1] = delay;
+    q->max_hold_delay = delay;
+    return 0;
+}
+
+static int
+const_reorder_run(struct _qs *q, struct _cfg *arg)
+{
+    uint64_t r = my_random24();
+    q->cur_hold_delay = (r < arg->d[0] ? arg->d[1] : 0);
+    return 0;
+}
+
+static struct _cfg reorder_cfg[] = {
+	{ const_reorder_parse, const_reorder_run,
+		"const,prob,delay # 0 <= prob <= 1", TLEM_CFG_END },
 	{ NULL, NULL, NULL, TLEM_CFG_END }
 };

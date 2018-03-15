@@ -38,6 +38,7 @@
 .Op Fl B Ar bandwidth
 .Op Fl D Ar delay
 .Op Fl L Ar loss
+.Op Fl R Ar reordering
 .Op Fl Q Ar queue size
 .Op Fl C Ar cpu-placement
 .Op Fl G Ar gateway
@@ -45,6 +46,7 @@
 .Op Fl w Ar wait-link
 .Op Fl v
 .Op Fl r
+.El
 .Sh DESCRIPTION
 .Nm
 implements a high speed bidirectional link emulator between netmap ports,
@@ -119,6 +121,14 @@ Optional packet or bit error rate, defaults to 0.
 Simulates packet or bit errors, causing offending packets to be dropped.
 .Ar x
 is a floating point number indicating the packet or bit error rate.
+.It Fl R Cm const, Ns Ar p, Ns Ar t
+Optional packet reordering, defaults to none.
+With probability
+.Ar p
+incoming packets are hold for the given
+.Ar t
+amount of time. The probability and time are expressed as in
+the loss and delay arguments.
 .It Fl Q Ar size
 Queue size,
 .Ar size
@@ -170,7 +180,7 @@ replying to and sending the necessary ARP messages and updating
 the destination MAC addresses. The IP addresses and subnets are
 obtained from the ports, so this mode cannot be used with
 software-only netmap ports like ephemeral VALE ports and pipes.
-
+.Pp
 There are some limitations: unresolved destinations are sent as broadcasts
 until resolution; packets destined to the same subnet as their incoming
 port are dropped; TTL is not decremented.  Each subnet may also optionally
@@ -184,7 +194,6 @@ is in the order of 30-50us provided that C states higher than C1
 are disabled, and the CPU clock is set to the maximum speed.
 Performance depends heavily on memory speed and suitable
 NICs with native netmap drivers. See the paper below for more details.
-of good network interf
 .Sh SEE ALSO
 .Pa http://info.iet.unipi.it/~luigi/netmap/
 .Pp
