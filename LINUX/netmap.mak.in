@@ -14,11 +14,13 @@ DEBUG:=@DEBUG@
 # The following commands are needed to build the modules as out-of-tree,
 # in fact the kernel sources path must be specified.
 
+# subsystem flags
+SUBSYS_FLAGS = $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z- A-Z_))
 # Additional compile flags (e.g. header location)
 EXTRA_CFLAGS := -I$(BUILDDIR) -I$(SRCDIR) -I$(SRCDIR)/../sys -I$(SRCDIR)/../sys/dev -DCONFIG_NETMAP
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
-EXTRA_CFLAGS += $(foreach s,$(SUBSYS),-DCONFIG_NETMAP_$(shell echo $s|tr a-z- A-Z_))
 EXTRA_CFLAGS += $(if $(DEBUG),-g)
+EXTRA_CFLAGS += $(SUBSYS_FLAGS)
 
 
 # We use KSRC for the kernel configuration and sources.
@@ -33,6 +35,7 @@ PATCHES = @PATCHES@
 S_DRIVERS = @S_DRIVERS@
 E_DRIVERS = @E_DRIVERS@
 DRVSUFFIX = @DRVSUFFIX@
+UTILS = @UTILS@
 
 ifeq (,$(DRVSUFFIX))
 else
@@ -71,7 +74,7 @@ endef
 .PHONY: $(foreach d,$(E_DRIVERS),build-$(d) clean-$(1) install-$(1)) netmap.ko
 
 
-all: $(S_DRIVERS:%=get-%) netmap.ko $(E_DRIVERS:%=build-%) apps
+all: $(S_DRIVERS:%=get-%) netmap.ko $(E_DRIVERS:%=build-%) apps utils
 
 netmap.ko:
 	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(patsubst %.c,%.o,$(filter-out $(DRIVERS_EXT),$(DRIVERS)))" NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
@@ -85,7 +88,7 @@ $(foreach d,$(S_DRIVERS),$(eval $(call common_driver,$(d))))
 $(foreach d,$(E_DRIVERS),$(eval $(call external_driver,$(d))))
 
 .PHONY: install install-netmap install-apps install-headers install-docs
-install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers install-docs
+install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers install-docs install-utils
 
 install-netmap:
 	$(MAKE) -C $(KSRC) M=$(BUILDDIR) CONFIG_NETMAP=m $(MOD_LIST) \
@@ -95,7 +98,7 @@ install-netmap:
 		$(if $(MODPATH),INSTALL_MOD_PATH=$(MODPATH)) \
 		modules_install
 
-clean: $(E_DRIVERS:%=clean-%) clean-apps
+clean: $(E_DRIVERS:%=clean-%) clean-apps clean-utils
 	-@ $(MAKE) -C $(KSRC) M=$(BUILDDIR) clean 2> /dev/null
 
 APPS_LIST=@APPS_LIST@
@@ -127,12 +130,28 @@ $(foreach a,$(APPS_LIST),$(eval $(call apps_actions,$(a))))
 +%:
 	@echo $($*)
 
+ifeq (,$(UTILS))
+utils:
+install-utils:
+clean-utils:
+else
+utils:
+	+$(MAKE) -C build-utils SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)" SUBSYS_FLAGS="$(SUBSYS_FLAGS)"
+
+install-utils:
+	$(MAKE) -C build-utils install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+
+clean-utils:
+	$(MAKE) -C build-utils clean SRCDIR=$(SRCDIR)/..
+endif
+
 INCLUDE_PREFIX := $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)
 
 install-headers:
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap.h
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_user.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_user.h
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_virt.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_virt.h
+	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_legacy.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_legacy.h
 
 MAN_PREFIX := $(INCLUDE_PREFIX)
 
@@ -149,6 +168,7 @@ distclean: clean $(S_DRIVERS:%=distclean-%)
 	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
 	if [ -L read-vars.mak ]; then rm read-vars.mak; fi
 	rm -rf build-apps
+	rm -rf build-utils
 
 format:
 	clang-format -i -style=file $(shell git ls-files "utils/*.[ch]" "apps/*.[ch]" "extra/*.[ch]" "LINUX/*.[ch]" "WINDOWS/*.[ch]")

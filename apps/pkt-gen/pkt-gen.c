@@ -1564,6 +1564,7 @@ sender_body(void *data)
 
 	nifp = targ->nmd->nifp;
 	while (!targ->cancel && (n == 0 || sent < n)) {
+		int rv;
 
 		if (rate_limit && tosend <= 0) {
 			tosend = targ->g->burst;
@@ -1575,17 +1576,18 @@ sender_body(void *data)
 		 * wait for available room in the send queue(s)
 		 */
 #ifdef BUSYWAIT
+		(void)rv;
 		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
 #else /* !BUSYWAIT */
-		if (poll(&pfd, 1, 2000) <= 0) {
+		if ( (rv = poll(&pfd, 1, 2000)) <= 0) {
 			if (targ->cancel)
 				break;
 			D("poll error on queue %d: %s", targ->me,
-				errno ? strerror(errno) : "timeout");
+				rv ? strerror(errno) : "timeout");
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
@@ -1623,7 +1625,7 @@ sender_body(void *data)
 			}
 			m = send_packets(txring, pkt, frame, size, targ->g,
 					 limit, options, frags);
-			ND("limit %d tail %d frags %d m %d",
+			ND("limit %lu tail %d frags %d m %d",
 				limit, txring->tail, frags, m);
 			sent += m;
 			if (m > 0) //XXX-ste: can m be 0?
@@ -1884,6 +1886,7 @@ txseq_body(void *data)
 		unsigned int head;
 		int fcnt;
 		uint16_t sum = 0;
+		int rv;
 
 		if (!rate_limit) {
 			budget = targ->g->burst;
@@ -1896,17 +1899,18 @@ txseq_body(void *data)
 
 		/* wait for available room in the send queue */
 #ifdef BUSYWAIT
+		(void)rv;
 		if (ioctl(pfd.fd, NIOCTXSYNC, NULL) < 0) {
 			D("ioctl error on queue %d: %s", targ->me,
 					strerror(errno));
 			goto quit;
 		}
 #else /* !BUSYWAIT */
-		if (poll(&pfd, 1, 2000) <= 0) {
+		if ( (rv = poll(&pfd, 1, 2000)) <= 0) {
 			if (targ->cancel)
 				break;
 			D("poll error on queue %d: %s", targ->me,
-				errno ? strerror(errno) : "timeout");
+				rv ? strerror(errno) : "timeout");
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
@@ -2965,7 +2969,7 @@ main(int arc, char **argv)
 		goto out;
 	}
 	g.main_fd = g.nmd->fd;
-	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
+	D("mapped %"PRIu32"KB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
 	if (g.virt_header) {
 		/* Set the virtio-net header length, since the user asked

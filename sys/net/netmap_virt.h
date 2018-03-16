@@ -110,33 +110,22 @@ struct ptnetmap_cfgentry_bhyve {
 };
 
 /*
- * Structure filled-in by the kernel when asked for allocator info
- * through NETMAP_POOLS_INFO_GET. Used by hypervisors supporting
- * ptnetmap.
- */
-struct netmap_pools_info {
-	uint64_t memsize;	/* same as nmr->nr_memsize */
-	uint32_t memid;		/* same as nmr->nr_arg2 */
-	uint32_t if_pool_offset;
-	uint32_t if_pool_objtotal;
-	uint32_t if_pool_objsize;
-	uint32_t ring_pool_offset;
-	uint32_t ring_pool_objtotal;
-	uint32_t ring_pool_objsize;
-	uint32_t buf_pool_offset;
-	uint32_t buf_pool_objtotal;
-	uint32_t buf_pool_objsize;
-};
-
-/*
  * Pass a pointer to a userspace buffer to be passed to kernelspace for write
- * or read. Used by NETMAP_PT_HOST_CREATE and NETMAP_POOLS_INFO_GET.
+ * or read. Used by NETMAP_PT_HOST_CREATE.
+ * XXX deprecated
  */
 static inline void
 nmreq_pointer_put(struct nmreq *nmr, void *userptr)
 {
 	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
 	*pp = (uintptr_t)userptr;
+}
+
+static inline void *
+nmreq_pointer_get(const struct nmreq *nmr)
+{
+	const uintptr_t *pp = (const uintptr_t *)&nmr->nr_arg1;
+	return (void *)*pp;
 }
 
 /* ptnetmap features */

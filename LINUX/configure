@@ -4,6 +4,7 @@ BUILDDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
 DEBUG=1
+UTILS=
 
 # setelem2n <set> <elem>
 setelem2n()
@@ -91,7 +92,8 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink"
+subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink \
+	extmem"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -261,6 +263,7 @@ replace_vars()
 		-e "s|@PREFIX@|$prefix|g" \
 		-e "s|@DESTDIR@|$DESTDIR|g" \
 		-e "s|@DEBUG@|$DEBUG|g" \
+		-e "s|@UTILS@|$UTILS|g" \
 		$1
 }
 
@@ -288,6 +291,7 @@ Available options:
   --no-apps	               do not compile any app
   --no-apps=                   do not compile the given apps (comma sep.)
   --apps=                      only compile the given apps (comma sep.)
+  --utils		       also compile the utils
   --mod-name=		       netmap module name [$MODNAME]
   --enable-vale      	       enable the VALE switch
   --disable-vale      	       disable the VALE switch
@@ -305,15 +309,16 @@ Available options:
   --disable-ptnetmap           disable ptnetmap (both guest and host)
   --enable-sink   	       enable the netmap sink device
   --disable-sink   	       disable the netmap sink device
+  --enable-extmem   	       enable the external memory allocators
+  --disable-extmem   	       disable the external memory allocators
   --force-debug	       	       build the modules w/ debug symbols (default)
   --no-force-debug	       build the modules w/ or w/o debug symbols,
-  			       according to the kernel configuration
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
-  --cc=                        C compiler to be used for the apps [$cc]
-  --ld=                        linker to be used for the apps [$ld]
-  --prefix=                    install path for the apps [$prefix]
-  --destdir=                    destination dir for the apps [$DESTDIR]
+  --cc=                        C compiler to be used for the apps and utils [$cc]
+  --ld=                        linker to be used for the apps and utils [$ld]
+  --prefix=                    install path for the apps and utils [$prefix]
+  --destdir=                   destination dir for the apps and utils [$DESTDIR]
 
   --show-drivers	       print the list of available drivers and exit
   --show-ext-drivers	       print the list of available external drivers and exit
@@ -617,6 +622,9 @@ for opt do
 	--no-force-debug)
 		DEBUG=
 	;;
+	--utils)
+		UTILS=1
+		;;
 	*)
 		echo "Unrecognized option: $opt" | warning
 	;;
@@ -1498,6 +1506,49 @@ EOF
 	}
 EOF
 
+# check for get_user_pages_unlocked number of args
+  add_test 'have GUP_4ARGS' <<EOF
+  	#include <linux/mm.h>
+
+	long
+	dummy(unsigned long start, unsigned long nr_pages,
+		struct page **pages, unsigned int gup_flags) {
+		return get_user_pages_unlocked(start, nr_pages, pages, gup_flags);
+	}
+EOF
+
+  add_test 'have GUP_5ARGS' <<EOF
+  	#include <linux/mm.h>
+
+	long
+	dummy(unsigned long start, unsigned long nr_pages,
+		int write, int force, struct page **pages) {
+		return get_user_pages_unlocked(start, nr_pages, write, force, pages);
+	}
+EOF
+
+  add_test 'have GUP_7ARGS' <<EOF
+  	#include <linux/mm.h>
+
+	long
+	dummy(struct task_struct *tsk, struct mm_struct *mm,
+		unsigned long start, unsigned long nr_pages,
+		int write, int force, struct page **pages) {
+		return get_user_pages_unlocked(tsk, mm, start, nr_pages,
+			write, force, pages);
+	}
+EOF
+
+# check for page_to_virt
+  add_test 'have PAGE_TO_VIRT' <<EOF
+  	#include <linux/mm.h>
+
+	void *
+	dummy(struct page *page) {
+		return page_to_virt(page);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
@@ -1847,6 +1898,12 @@ for a in $(app print); do
 	mkdir -p build-apps/$a
 	ln -s $SRCDIR/../apps/$a/GNUmakefile build-apps/$a/GNUmakefile 2> /dev/null || true
 done
+
+# create the build directory for the utils
+if [ -n "$UTILS" ]; then
+	mkdir -p build-utils
+	ln -s $SRCDIR/../utils/GNUmakefile build-utils/GNUmakefile 2>/dev/null || true
+fi
 
 # config.status can be used to rerun configure with the
 # same arguments

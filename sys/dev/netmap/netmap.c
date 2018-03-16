@@ -260,7 +260,7 @@ ports attached to the switch)
  *
  *  Any network interface known to the system (including a persistent VALE
  *  port) can be attached to a VALE switch by issuing the
- *  NETMAP_BDG_ATTACH subcommand. After the attachment, persistent VALE ports
+ *  NETMAP_REQ_VALE_ATTACH command. After the attachment, persistent VALE ports
  *  look exactly like ephemeral VALE ports (as created in step 2 above).  The
  *  attachment of other interfaces, instead, requires the creation of a
  *  netmap_bwrap_adapter.  Moreover, the attached interface must be put in
@@ -589,9 +589,9 @@ void
 netmap_set_ring(struct netmap_adapter *na, u_int ring_id, enum txrx t, int stopped)
 {
 	if (stopped)
-		netmap_disable_ring(NMR(na, t) + ring_id, stopped);
+		netmap_disable_ring(NMR(na, t)[ring_id], stopped);
 	else
-		NMR(na, t)[ring_id].nkr_stopped = 0;
+		NMR(na, t)[ring_id]->nkr_stopped = 0;
 }
 
 
@@ -825,7 +825,9 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	n[NR_TX] = na->num_tx_rings + 1;
 	n[NR_RX] = na->num_rx_rings + 1;
 
-	len = (n[NR_TX] + n[NR_RX]) * sizeof(struct netmap_kring) + tailroom;
+	len = (n[NR_TX] + n[NR_RX]) * 
+		(sizeof(struct netmap_kring) + sizeof(struct netmap_kring *))
+		+ tailroom;
 
 	na->tx_rings = nm_os_malloc((size_t)len);
 	if (na->tx_rings == NULL) {
@@ -833,6 +835,14 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 		return ENOMEM;
 	}
 	na->rx_rings = na->tx_rings + n[NR_TX];
+	na->tailroom = na->rx_rings + n[NR_RX];
+ 
+	/* link the krings in the krings array */
+	kring = (struct netmap_kring *)((char *)na->tailroom + tailroom);
+	for (i = 0; i < n[NR_TX] + n[NR_RX]; i++) {
+		na->tx_rings[i] = kring;
+		kring++;
+	}
 
 	/*
 	 * All fields in krings are 0 except the one initialized below.
@@ -841,9 +851,10 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	for_rx_tx(t) {
 		ndesc = nma_get_ndesc(na, t);
 		for (i = 0; i < n[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			bzero(kring, sizeof(*kring));
 			kring->na = na;
+			kring->notify_na = na;
 			kring->ring_id = i;
 			kring->tx = t;
 			kring->nkr_num_slots = ndesc;
@@ -852,6 +863,8 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 			if (i < nma_get_nrings(na, t)) {
 				kring->nm_sync = (t == NR_TX ? na->nm_txsync : na->nm_rxsync);
 			} else {
+				if (!(na->na_flags & NAF_HOST_RINGS))
+					kring->nr_kflags |= NKR_FAKERING;
 				kring->nm_sync = (t == NR_TX ?
 						netmap_txsync_to_host:
 						netmap_rxsync_from_host);
@@ -872,7 +885,6 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 		nm_os_selinfo_init(&na->si[t]);
 	}
 
-	na->tailroom = na->rx_rings + n[NR_RX];
 
 	return 0;
 }
@@ -883,7 +895,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 void
 netmap_krings_delete(struct netmap_adapter *na)
 {
-	struct netmap_kring *kring = na->tx_rings;
+	struct netmap_kring **kring = na->tx_rings;
 	enum txrx t;
 
 	if (na->tx_rings == NULL) {
@@ -896,8 +908,8 @@ netmap_krings_delete(struct netmap_adapter *na)
 
 	/* we rely on the krings layout described above */
 	for ( ; kring != na->tailroom; kring++) {
-		mtx_destroy(&kring->q_lock);
-		nm_os_selinfo_uninit(&kring->si);
+		mtx_destroy((*kring)->q_lock);
+		nm_os_selinfo_uninit(&(*kring)->si);
 	}
 	nm_os_free(na->tx_rings);
 	na->tx_rings = na->rx_rings = na->tailroom = NULL;
@@ -913,7 +925,7 @@ netmap_krings_delete(struct netmap_adapter *na)
 void
 netmap_hw_krings_delete(struct netmap_adapter *na)
 {
-	struct mbq *q = &na->rx_rings[na->num_rx_rings].rx_queue;
+	struct mbq *q = &na->rx_rings[na->num_rx_rings]->rx_queue;
 
 	ND("destroy sw mbq with len %d", mbq_len(q));
 	mbq_purge(q);
@@ -1194,7 +1206,7 @@ nm_may_forward_down(struct netmap_kring *kring, int sync_flags)
 static u_int
 netmap_sw_to_nic(struct netmap_adapter *na)
 {
-	struct netmap_kring *kring = &na->rx_rings[na->num_rx_rings];
+	struct netmap_kring *kring = na->rx_rings[na->num_rx_rings];
 	struct netmap_slot *rxslot = kring->ring->slot;
 	u_int i, rxcur = kring->nr_hwcur;
 	u_int const head = kring->rhead;
@@ -1203,7 +1215,7 @@ netmap_sw_to_nic(struct netmap_adapter *na)
 
 	/* scan rings to find space, then fill as much as possible */
 	for (i = 0; i < na->num_tx_rings; i++) {
-		struct netmap_kring *kdst = &na->tx_rings[i];
+		struct netmap_kring *kdst = na->tx_rings[i];
 		struct netmap_ring *rdst = kdst->ring;
 		u_int const dst_lim = kdst->nkr_num_slots - 1;
 
@@ -1441,7 +1453,7 @@ assign_mem:
  * MUST BE CALLED UNDER NMG_LOCK()
  *
  * Get a refcounted reference to a netmap adapter attached
- * to the interface specified by nmr.
+ * to the interface specified by req.
  * This is always called in the execution of an ioctl().
  *
  * Return ENXIO if the interface specified by the request does
@@ -1451,13 +1463,15 @@ assign_mem:
  * could not be allocated.
  * If successful, hold a reference to the netmap adapter.
  *
- * If the interface specified by nmr is a system one, also keep
+ * If the interface specified by req is a system one, also keep
  * a reference to it and return a valid *ifp.
  */
 int
-netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
-	      struct ifnet **ifp, struct netmap_mem_d *nmd, int create)
+netmap_get_na(struct nmreq_header *hdr,
+	      struct netmap_adapter **na, struct ifnet **ifp,
+	      struct netmap_mem_d *nmd, int create)
 {
+	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
 	int error = 0;
 	struct netmap_adapter *ret = NULL;
 	int nmd_ref = 0;
@@ -1465,13 +1479,24 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 	*na = NULL;     /* default return value */
 	*ifp = NULL;
 
+	if (hdr->nr_reqtype != NETMAP_REQ_REGISTER) {
+		return EINVAL;
+	}
+
+	if (req->nr_mode == NR_REG_PIPE_MASTER ||
+			req->nr_mode == NR_REG_PIPE_SLAVE) {
+		/* Do not accept deprecated pipe modes. */
+		D("Deprecated pipe nr_mode, use xx{yy or xx}yy syntax");
+		return EINVAL;
+	}
+
 	NMG_LOCK_ASSERT();
 
 	/* if the request contain a memid, try to find the
 	 * corresponding memory region
 	 */
-	if (nmd == NULL && nmr->nr_arg2) {
-		nmd = netmap_mem_find(nmr->nr_arg2);
+	if (nmd == NULL && req->nr_mem_id) {
+		nmd = netmap_mem_find(req->nr_mem_id);
 		if (nmd == NULL)
 			return EINVAL;
 		/* keep the rereference */
@@ -1490,22 +1515,22 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 	 */
 
 	/* try to see if this is a ptnetmap port */
-	error = netmap_get_pt_host_na(nmr, na, nmd, create);
+	error = netmap_get_pt_host_na(hdr, na, nmd, create);
 	if (error || *na != NULL)
 		goto out;
 
 	/* try to see if this is a monitor port */
-	error = netmap_get_monitor_na(nmr, na, nmd, create);
+	error = netmap_get_monitor_na(hdr, na, nmd, create);
 	if (error || *na != NULL)
 		goto out;
 
 	/* try to see if this is a pipe port */
-	error = netmap_get_pipe_na(nmr, na, nmd, create);
+	error = netmap_get_pipe_na(hdr, na, nmd, create);
 	if (error || *na != NULL)
 		goto out;
 
 	/* try to see if this is a bridge port */
-	error = netmap_get_bdg_na(nmr, na, nmd, create);
+	error = netmap_get_bdg_na(hdr, na, nmd, create);
 	if (error)
 		goto out;
 
@@ -1518,7 +1543,7 @@ netmap_get_na(struct nmreq *nmr, struct netmap_adapter **na,
 	 * This may still be a tap, a veth/epair, or even a
 	 * persistent VALE port.
 	 */
-	*ifp = ifunit_ref(nmr->nr_name);
+	*ifp = ifunit_ref(hdr->nr_name);
 	if (*ifp == NULL) {
 		error = ENXIO;
 		goto out;
@@ -1763,42 +1788,27 @@ netmap_ring_reinit(struct netmap_kring *kring)
  *
  */
 int
-netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags)
+netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
+			uint16_t nr_ringid, uint64_t nr_flags)
 {
 	struct netmap_adapter *na = priv->np_na;
-	u_int j, i = ringid & NETMAP_RING_MASK;
-	u_int reg = flags & NR_REG_MASK;
 	int excluded_direction[] = { NR_TX_RINGS_ONLY, NR_RX_RINGS_ONLY };
 	enum txrx t;
+	u_int j;
 
-	if (reg == NR_REG_DEFAULT) {
-		/* convert from old ringid to flags */
-		if (ringid & NETMAP_SW_RING) {
-			reg = NR_REG_SW;
-		} else if (ringid & NETMAP_HW_RING) {
-			reg = NR_REG_ONE_NIC;
-		} else {
-			reg = NR_REG_ALL_NIC;
-		}
-		D("deprecated API, old ringid 0x%x -> ringid %x reg %d", ringid, i, reg);
-	}
-
-	if ((flags & NR_PTNETMAP_HOST) && ((reg != NR_REG_ALL_NIC &&
-                    reg != NR_REG_PIPE_MASTER && reg != NR_REG_PIPE_SLAVE) ||
-			flags & (NR_RX_RINGS_ONLY|NR_TX_RINGS_ONLY))) {
+	if ((nr_flags & NR_PTNETMAP_HOST) && ((nr_mode != NR_REG_ALL_NIC) ||
+			nr_flags & (NR_RX_RINGS_ONLY|NR_TX_RINGS_ONLY))) {
 		D("Error: only NR_REG_ALL_NIC supported with netmap passthrough");
 		return EINVAL;
 	}
 
 	for_rx_tx(t) {
-		if (flags & excluded_direction[t]) {
+		if (nr_flags & excluded_direction[t]) {
 			priv->np_qfirst[t] = priv->np_qlast[t] = 0;
 			continue;
 		}
-		switch (reg) {
+		switch (nr_mode) {
 		case NR_REG_ALL_NIC:
-		case NR_REG_PIPE_MASTER:
-		case NR_REG_PIPE_SLAVE:
 			priv->np_qfirst[t] = 0;
 			priv->np_qlast[t] = nma_get_nrings(na, t);
 			ND("ALL/PIPE: %s %d %d", nm_txrx2str(t),
@@ -1810,20 +1820,21 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 				D("host rings not supported");
 				return EINVAL;
 			}
-			priv->np_qfirst[t] = (reg == NR_REG_SW ?
+			priv->np_qfirst[t] = (nr_mode == NR_REG_SW ?
 				nma_get_nrings(na, t) : 0);
 			priv->np_qlast[t] = nma_get_nrings(na, t) + 1;
-			ND("%s: %s %d %d", reg == NR_REG_SW ? "SW" : "NIC+SW",
+			ND("%s: %s %d %d", nr_mode == NR_REG_SW ? "SW" : "NIC+SW",
 				nm_txrx2str(t),
 				priv->np_qfirst[t], priv->np_qlast[t]);
 			break;
 		case NR_REG_ONE_NIC:
-			if (i >= na->num_tx_rings && i >= na->num_rx_rings) {
-				D("invalid ring id %d", i);
+			if (nr_ringid >= na->num_tx_rings &&
+					nr_ringid >= na->num_rx_rings) {
+				D("invalid ring id %d", nr_ringid);
 				return EINVAL;
 			}
 			/* if not enough rings, use the first one */
-			j = i;
+			j = nr_ringid;
 			if (j >= nma_get_nrings(na, t))
 				j = 0;
 			priv->np_qfirst[t] = j;
@@ -1832,11 +1843,11 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 				priv->np_qfirst[t], priv->np_qlast[t]);
 			break;
 		default:
-			D("invalid regif type %d", reg);
+			D("invalid regif type %d", nr_mode);
 			return EINVAL;
 		}
 	}
-	priv->np_flags = (flags & ~NR_REG_MASK) | reg;
+	priv->np_flags = nr_flags | nr_mode; // TODO
 
 	/* Allow transparent forwarding mode in the host --> nic
 	 * direction only if all the TX hw rings have been opened. */
@@ -1852,7 +1863,7 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
 			priv->np_qlast[NR_TX],
 			priv->np_qfirst[NR_RX],
 			priv->np_qlast[NR_RX],
-			i);
+			nr_ringid);
 	}
 	return 0;
 }
@@ -1863,18 +1874,19 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags
  * for all rings is the same as a single ring.
  */
 static int
-netmap_set_ringid(struct netmap_priv_d *priv, uint16_t ringid, uint32_t flags)
+netmap_set_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
+		uint16_t nr_ringid, uint64_t nr_flags)
 {
 	struct netmap_adapter *na = priv->np_na;
 	int error;
 	enum txrx t;
 
-	error = netmap_interp_ringid(priv, ringid, flags);
+	error = netmap_interp_ringid(priv, nr_mode, nr_ringid, nr_flags);
 	if (error) {
 		return error;
 	}
 
-	priv->np_txpoll = (ringid & NETMAP_NO_TX_POLL) ? 0 : 1;
+	priv->np_txpoll = (nr_flags & NR_NO_TX_POLL) ? 0 : 1;
 
 	/* optimization: count the users registered for more than
 	 * one ring, which are the ones sleeping on the global queue.
@@ -1931,7 +1943,7 @@ netmap_krings_get(struct netmap_priv_d *priv)
 	 */
 	for_rx_tx(t) {
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			if ((kring->nr_kflags & NKR_EXCLUSIVE) ||
 			    (kring->users && excl))
 			{
@@ -1946,7 +1958,7 @@ netmap_krings_get(struct netmap_priv_d *priv)
 	 */
 	for_rx_tx(t) {
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			kring->users++;
 			if (excl)
 				kring->nr_kflags |= NKR_EXCLUSIVE;
@@ -1977,10 +1989,9 @@ netmap_krings_put(struct netmap_priv_d *priv)
 			priv->np_qfirst[NR_RX],
 			priv->np_qlast[MR_RX]);
 
-
 	for_rx_tx(t) {
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			if (excl)
 				kring->nr_kflags &= ~NKR_EXCLUSIVE;
 			kring->users--;
@@ -2062,7 +2073,7 @@ netmap_krings_put(struct netmap_priv_d *priv)
  */
 int
 netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
-	uint16_t ringid, uint32_t flags)
+	uint32_t nr_mode, uint16_t nr_ringid, uint64_t nr_flags)
 {
 	struct netmap_if *nifp = NULL;
 	int error;
@@ -2071,7 +2082,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	/* ring configuration may have changed, fetch from the card */
 	netmap_update_config(na);
 	priv->np_na = na;     /* store the reference */
-	error = netmap_set_ringid(priv, ringid, flags);
+	error = netmap_set_ringid(priv, nr_mode, nr_ringid, nr_flags);
 	if (error)
 		goto err;
 	error = netmap_mem_finalize(na->nm_mem, na);
@@ -2240,231 +2251,388 @@ ring_timestamp_set(struct netmap_ring *ring)
 	}
 }
 
+static int nmreq_copyin(struct nmreq_header *, int);
+static int nmreq_copyout(struct nmreq_header *, int);
+static int nmreq_checkoptions(struct nmreq_header *);
 
 /*
  * ioctl(2) support for the "netmap" device.
  *
  * Following a list of accepted commands:
- * - NIOCGINFO
+ * - NIOCCTRL		device control API
+ * - NIOCTXSYNC		sync TX rings
+ * - NIOCRXSYNC		sync RX rings
  * - SIOCGIFADDR	just for convenience
- * - NIOCREGIF
- * - NIOCTXSYNC
- * - NIOCRXSYNC
+ * - NIOCGINFO		deprecated (legacy API)
+ * - NIOCREGIF		deprecated (legacy API)
  *
  * Return 0 on success, errno otherwise.
  */
 int
-netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread *td)
+netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
+		struct thread *td, int nr_body_is_user)
 {
 	struct mbq q;	/* packets from RX hw queues to host stack */
-	struct nmreq *nmr = (struct nmreq *) data;
 	struct netmap_adapter *na = NULL;
 	struct netmap_mem_d *nmd = NULL;
 	struct ifnet *ifp = NULL;
 	int error = 0;
 	u_int i, qfirst, qlast;
 	struct netmap_if *nifp;
-	struct netmap_kring *krings;
+	struct netmap_kring **krings;
 	int sync_flags;
 	enum txrx t;
 
-	if (cmd == NIOCGINFO || cmd == NIOCREGIF) {
-		/* truncate name */
-		nmr->nr_name[sizeof(nmr->nr_name) - 1] = '\0';
-		if (nmr->nr_version != NETMAP_API) {
-			D("API mismatch for %s got %d need %d",
-				nmr->nr_name,
-				nmr->nr_version, NETMAP_API);
-			nmr->nr_version = NETMAP_API;
+	switch (cmd) {
+	case NIOCCTRL: {
+		struct nmreq_header *hdr = (struct nmreq_header *)data;
+
+		if (hdr->nr_version != NETMAP_API) {
+			D("API mismatch for reqtype %d: got %d need %d",
+				hdr->nr_version,
+				hdr->nr_version, NETMAP_API);
+			hdr->nr_version = NETMAP_API;
 		}
-		if (nmr->nr_version < NETMAP_MIN_API ||
-		    nmr->nr_version > NETMAP_MAX_API) {
+		if (hdr->nr_version < NETMAP_MIN_API ||
+		    hdr->nr_version > NETMAP_MAX_API) {
 			return EINVAL;
 		}
-	}
 
-	switch (cmd) {
-	case NIOCGINFO:		/* return capabilities etc */
-		if (nmr->nr_cmd == NETMAP_BDG_LIST) {
-			error = netmap_bdg_ctl(nmr, NULL);
+		/* Make a kernel-space copy of the user-space nr_body.
+		 * For convenince, the nr_body pointer and the pointers
+		 * in the options list will be replaced with their
+		 * kernel-space counterparts. The original pointers are
+                * saved internally and later restored by nmreq_copyout
+                */
+		error = nmreq_copyin(hdr, nr_body_is_user);
+		if (error) {
+			return error;
+		}
+
+		/* Sanitize hdr->nr_name. */
+		hdr->nr_name[sizeof(hdr->nr_name) - 1] = '\0';
+
+		switch (hdr->nr_reqtype) {
+		case NETMAP_REQ_REGISTER: {
+			struct nmreq_register *req =
+				(struct nmreq_register *)hdr->nr_body;
+			/* Protect access to priv from concurrent requests. */
+			NMG_LOCK();
+			do {
+				u_int memflags;
+#ifdef WITH_EXTMEM
+				struct nmreq_option *opt;
+#endif /* WITH_EXTMEM */
+
+				if (priv->np_nifp != NULL) {	/* thread already registered */
+					error = EBUSY;
+					break;
+				}
+
+#ifdef WITH_EXTMEM
+				opt = nmreq_findoption((struct nmreq_option *)hdr->nr_options,
+						NETMAP_REQ_OPT_EXTMEM);
+				if (opt != NULL) {
+					struct nmreq_opt_extmem *e =
+						(struct nmreq_opt_extmem *)opt;
+
+					error = nmreq_checkduplicate(opt);
+					if (error) {
+						opt->nro_status = error;
+						break;
+					}
+					nmd = netmap_mem_ext_create(e->nro_usrptr,
+							&e->nro_info, &error);
+					opt->nro_status = error;
+					if (nmd == NULL)
+						break;
+				}
+#endif /* WITH_EXTMEM */
+
+				if (nmd == NULL && req->nr_mem_id) {
+					/* find the allocator and get a reference */
+					nmd = netmap_mem_find(req->nr_mem_id);
+					if (nmd == NULL) {
+						error = EINVAL;
+						break;
+					}
+				}
+				/* find the interface and a reference */
+				error = netmap_get_na(hdr, &na, &ifp, nmd,
+						      1 /* create */); /* keep reference */
+				if (error)
+					break;
+				if (NETMAP_OWNED_BY_KERN(na)) {
+					error = EBUSY;
+					break;
+				}
+
+				if (na->virt_hdr_len && !(req->nr_flags & NR_ACCEPT_VNET_HDR)) {
+					error = EIO;
+					break;
+				}
+
+				error = netmap_do_regif(priv, na, req->nr_mode,
+							req->nr_ringid, req->nr_flags);
+				if (error) {    /* reg. failed, release priv and ref */
+					break;
+				}
+				nifp = priv->np_nifp;
+				priv->np_td = td; /* for debugging purposes */
+
+				/* return the offset of the netmap_if object */
+				req->nr_rx_rings = na->num_rx_rings;
+				req->nr_tx_rings = na->num_tx_rings;
+				req->nr_rx_slots = na->num_rx_desc;
+				req->nr_tx_slots = na->num_tx_desc;
+				error = netmap_mem_get_info(na->nm_mem, &req->nr_memsize, &memflags,
+					&req->nr_mem_id);
+				if (error) {
+					netmap_do_unregif(priv);
+					break;
+				}
+				if (memflags & NETMAP_MEM_PRIVATE) {
+					*(uint32_t *)(uintptr_t)&nifp->ni_flags |= NI_PRIV_MEM;
+				}
+				for_rx_tx(t) {
+					priv->np_si[t] = nm_si_user(priv, t) ?
+						&na->si[t] : &NMR(na, t)[priv->np_qfirst[t]]->si;
+				}
+
+				if (req->nr_extra_bufs) {
+					if (netmap_verbose)
+						D("requested %d extra buffers",
+							req->nr_extra_bufs);
+					req->nr_extra_bufs = netmap_extra_alloc(na,
+						&nifp->ni_bufs_head, req->nr_extra_bufs);
+					if (netmap_verbose)
+						D("got %d extra buffers", req->nr_extra_bufs);
+				}
+				req->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
+
+				error = nmreq_checkoptions(hdr);
+				if (error) {
+					netmap_do_unregif(priv);
+					break;
+				}
+
+				/* store ifp reference so that priv destructor may release it */
+				priv->np_ifp = ifp;
+			} while (0);
+			if (error) {
+				netmap_unget_na(na, ifp);
+			}
+			/* release the reference from netmap_mem_find() or
+			 * netmap_mem_ext_create()
+			 */
+			if (nmd)
+				netmap_mem_put(nmd);
+			NMG_UNLOCK();
 			break;
 		}
 
-		NMG_LOCK();
-		do {
-			/* memsize is always valid */
-			u_int memflags;
-
-			if (nmr->nr_name[0] != '\0') {
-
-				/* get a refcount */
-				error = netmap_get_na(nmr, &na, &ifp, NULL, 1 /* create */);
-				if (error) {
-					na = NULL;
-					ifp = NULL;
-					break;
-				}
-				nmd = na->nm_mem; /* get memory allocator */
-			} else {
-				nmd = netmap_mem_find(nmr->nr_arg2 ? nmr->nr_arg2 : 1);
-				if (nmd == NULL) {
-					error = EINVAL;
-					break;
-				}
-			}
-
-			error = netmap_mem_get_info(nmd, &nmr->nr_memsize, &memflags,
-				&nmr->nr_arg2);
-			if (error)
-				break;
-			if (na == NULL) /* only memory info */
-				break;
-			nmr->nr_offset = 0;
-			nmr->nr_rx_slots = nmr->nr_tx_slots = 0;
-			netmap_update_config(na);
-			nmr->nr_rx_rings = na->num_rx_rings;
-			nmr->nr_tx_rings = na->num_tx_rings;
-			nmr->nr_rx_slots = na->num_rx_desc;
-			nmr->nr_tx_slots = na->num_tx_desc;
-		} while (0);
-		netmap_unget_na(na, ifp);
-		NMG_UNLOCK();
-		break;
-
-	case NIOCREGIF:
-		/*
-		 * If nmr->nr_cmd is not zero, this NIOCREGIF is not really
-		 * a regif operation, but a different one, specified by the
-		 * value of nmr->nr_cmd.
-		 */
-		i = nmr->nr_cmd;
-		if (i == NETMAP_BDG_ATTACH || i == NETMAP_BDG_DETACH
-				|| i == NETMAP_BDG_VNET_HDR
-				|| i == NETMAP_BDG_NEWIF
-				|| i == NETMAP_BDG_DELIF
-				|| i == NETMAP_BDG_POLLING_ON
-				|| i == NETMAP_BDG_POLLING_OFF) {
-			/* possibly attach/detach NIC and VALE switch */
-			error = netmap_bdg_ctl(nmr, NULL);
-			break;
-		} else if (i == NETMAP_PT_HOST_CREATE || i == NETMAP_PT_HOST_DELETE) {
-			/* forward the command to the ptnetmap subsystem */
-			error = ptnetmap_ctl(nmr, priv->np_na);
-			break;
-		} else if (i == NETMAP_VNET_HDR_GET) {
-			/* get vnet-header length for this netmap port */
-			struct ifnet *ifp;
+		case NETMAP_REQ_PORT_INFO_GET: {
+			struct nmreq_port_info_get *req =
+				(struct nmreq_port_info_get *)hdr->nr_body;
 
 			NMG_LOCK();
-			error = netmap_get_na(nmr, &na, &ifp, NULL, 0);
+			do {
+				u_int memflags;
+
+				if (hdr->nr_name[0] != '\0') {
+					/* Build a nmreq_register out of the nmreq_port_info_get,
+					 * so that we can call netmap_get_na(). */
+					struct nmreq_register regreq;
+					bzero(&regreq, sizeof(regreq));
+					regreq.nr_tx_slots = req->nr_tx_slots;
+					regreq.nr_rx_slots = req->nr_rx_slots;
+					regreq.nr_tx_rings = req->nr_tx_rings;
+					regreq.nr_rx_rings = req->nr_rx_rings;
+					regreq.nr_mem_id = req->nr_mem_id;
+
+					/* get a refcount */
+					hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+					hdr->nr_body = (uint64_t)&regreq;
+					error = netmap_get_na(hdr, &na, &ifp, NULL, 1 /* create */);
+					hdr->nr_reqtype = NETMAP_REQ_PORT_INFO_GET; /* reset type */
+					hdr->nr_body = (uint64_t)req; /* reset nr_body */
+					if (error) {
+						na = NULL;
+						ifp = NULL;
+						break;
+					}
+					nmd = na->nm_mem; /* get memory allocator */
+				} else {
+					nmd = netmap_mem_find(req->nr_mem_id ? req->nr_mem_id : 1);
+					if (nmd == NULL) {
+						error = EINVAL;
+						break;
+					}
+				}
+
+				error = netmap_mem_get_info(nmd, &req->nr_memsize, &memflags,
+					&req->nr_mem_id);
+				if (error)
+					break;
+				if (na == NULL) /* only memory info */
+					break;
+				req->nr_offset = 0;
+				req->nr_rx_slots = req->nr_tx_slots = 0;
+				netmap_update_config(na);
+				req->nr_rx_rings = na->num_rx_rings;
+				req->nr_tx_rings = na->num_tx_rings;
+				req->nr_rx_slots = na->num_rx_desc;
+				req->nr_tx_slots = na->num_tx_desc;
+			} while (0);
+			netmap_unget_na(na, ifp);
+			NMG_UNLOCK();
+			break;
+		}
+#ifdef WITH_VALE
+		case NETMAP_REQ_VALE_ATTACH: {
+			error = nm_bdg_ctl_attach(hdr);
+			break;
+		}
+
+		case NETMAP_REQ_VALE_DETACH: {
+			error = nm_bdg_ctl_detach(hdr);
+			break;
+		}
+
+		case NETMAP_REQ_VALE_LIST: {
+			error = netmap_bdg_list(hdr);
+			break;
+		}
+
+		case NETMAP_REQ_PORT_HDR_SET: {
+			struct nmreq_port_hdr *req =
+				(struct nmreq_port_hdr *)hdr->nr_body;
+			/* Build a nmreq_register out of the nmreq_port_hdr,
+			 * so that we can call netmap_get_bdg_na(). */
+			struct nmreq_register regreq;
+			bzero(&regreq, sizeof(regreq));
+			/* For now we only support virtio-net headers, and only for
+			 * VALE ports, but this may change in future. Valid lengths
+			 * for the virtio-net header are 0 (no header), 10 and 12. */
+			if (req->nr_hdr_len != 0 &&
+				req->nr_hdr_len != sizeof(struct nm_vnet_hdr) &&
+					req->nr_hdr_len != 12) {
+				error = EINVAL;
+				break;
+			}
+			NMG_LOCK();
+			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+			hdr->nr_body = (uint64_t)&regreq;
+			error = netmap_get_bdg_na(hdr, &na, NULL, 0);
+			hdr->nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
+			hdr->nr_body = (uint64_t)req;
 			if (na && !error) {
-				nmr->nr_arg1 = na->virt_hdr_len;
+				struct netmap_vp_adapter *vpna =
+					(struct netmap_vp_adapter *)na;
+				na->virt_hdr_len = req->nr_hdr_len;
+				if (na->virt_hdr_len) {
+					vpna->mfs = NETMAP_BUF_SIZE(na);
+				}
+				D("Using vnet_hdr_len %d for %p", na->virt_hdr_len, na);
+				netmap_adapter_put(na);
+			} else if (!na) {
+				error = ENXIO;
+			}
+			NMG_UNLOCK();
+			break;
+		}
+
+		case NETMAP_REQ_PORT_HDR_GET: {
+			/* Get vnet-header length for this netmap port */
+			struct nmreq_port_hdr *req =
+				(struct nmreq_port_hdr *)hdr->nr_body;
+			/* Build a nmreq_register out of the nmreq_port_hdr,
+			 * so that we can call netmap_get_bdg_na(). */
+			struct nmreq_register regreq;
+			struct ifnet *ifp;
+
+			bzero(&regreq, sizeof(regreq));
+			NMG_LOCK();
+			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+			hdr->nr_body = (uint64_t)&regreq;
+			error = netmap_get_na(hdr, &na, &ifp, NULL, 0);
+			hdr->nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
+			hdr->nr_body = (uint64_t)req;
+			if (na && !error) {
+				req->nr_hdr_len = na->virt_hdr_len;
 			}
 			netmap_unget_na(na, ifp);
 			NMG_UNLOCK();
 			break;
-		} else if (i == NETMAP_POOLS_INFO_GET) {
-			/* get information from the memory allocator */
+		}
+
+		case NETMAP_REQ_VALE_NEWIF: {
+			struct nmreq_vale_newif *req =
+				(struct nmreq_vale_newif *)hdr->nr_body;
+			/* Build a nmreq_register out of the nmreq_vale_newif,
+			 * so that we can call netmap_get_bdg_na(). */
+			struct nmreq_register regreq;
+			bzero(&regreq, sizeof(regreq));
+			regreq.nr_tx_slots = req->nr_tx_slots;
+			regreq.nr_rx_slots = req->nr_rx_slots;
+			regreq.nr_tx_rings = req->nr_tx_rings;
+			regreq.nr_rx_rings = req->nr_rx_rings;
+			regreq.nr_mem_id = req->nr_mem_id;
+			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+			hdr->nr_body = (uint64_t)&regreq;
+			error = netmap_vi_create(hdr, 0 /* no autodelete */);
+			hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
+			hdr->nr_body = (uint64_t)req;
+                        /* Write back to the original struct. */
+			req->nr_tx_slots = regreq.nr_tx_slots;
+			req->nr_rx_slots = regreq.nr_rx_slots;
+			req->nr_tx_rings = regreq.nr_tx_rings;
+			req->nr_rx_rings = regreq.nr_rx_rings;
+			req->nr_mem_id = regreq.nr_mem_id;
+			break;
+		}
+
+		case NETMAP_REQ_VALE_DELIF: {
+			error = nm_vi_destroy(hdr->nr_name);
+			break;
+		}
+
+		case NETMAP_REQ_VALE_POLLING_ENABLE:
+		case NETMAP_REQ_VALE_POLLING_DISABLE: {
+			error = nm_bdg_polling(hdr);
+			break;
+		}
+#endif  /* WITH_VALE */
+		case NETMAP_REQ_POOLS_INFO_GET: {
+			struct nmreq_pools_info *req =
+				(struct nmreq_pools_info *)hdr->nr_body;
+			/* Get information from the memory allocator. This
+			 * netmap device must already be bound to a port.
+			 * Note that hdr->nr_name is ignored. */
 			NMG_LOCK();
 			if (priv->np_na && priv->np_na->nm_mem) {
 				struct netmap_mem_d *nmd = priv->np_na->nm_mem;
-				error = netmap_mem_pools_info_get(nmr, nmd);
+				error = netmap_mem_pools_info_get(req, nmd);
 			} else {
 				error = EINVAL;
 			}
 			NMG_UNLOCK();
 			break;
-		} else if (i != 0) {
-			D("nr_cmd must be 0 not %d", i);
+		}
+
+		default: {
 			error = EINVAL;
 			break;
 		}
-
-		/* protect access to priv from concurrent NIOCREGIF */
-		NMG_LOCK();
-		do {
-			u_int memflags;
-
-			if (priv->np_nifp != NULL) {	/* thread already registered */
-				error = EBUSY;
-				break;
-			}
-
-			if (nmr->nr_arg2) {
-				/* find the allocator and get a reference */
-				nmd = netmap_mem_find(nmr->nr_arg2);
-				if (nmd == NULL) {
-					error = EINVAL;
-					break;
-				}
-			}
-			/* find the interface and a reference */
-			error = netmap_get_na(nmr, &na, &ifp, nmd,
-					      1 /* create */); /* keep reference */
-			if (error)
-				break;
-			if (NETMAP_OWNED_BY_KERN(na)) {
-				error = EBUSY;
-				break;
-			}
-
-			if (na->virt_hdr_len && !(nmr->nr_flags & NR_ACCEPT_VNET_HDR)) {
-				error = EIO;
-				break;
-			}
-
-			error = netmap_do_regif(priv, na, nmr->nr_ringid, nmr->nr_flags);
-			if (error) {    /* reg. failed, release priv and ref */
-				break;
-			}
-			nifp = priv->np_nifp;
-			priv->np_td = td; // XXX kqueue, debugging only
-
-			/* return the offset of the netmap_if object */
-			nmr->nr_rx_rings = na->num_rx_rings;
-			nmr->nr_tx_rings = na->num_tx_rings;
-			nmr->nr_rx_slots = na->num_rx_desc;
-			nmr->nr_tx_slots = na->num_tx_desc;
-			error = netmap_mem_get_info(na->nm_mem, &nmr->nr_memsize, &memflags,
-				&nmr->nr_arg2);
-			if (error) {
-				netmap_do_unregif(priv);
-				break;
-			}
-			if (memflags & NETMAP_MEM_PRIVATE) {
-				*(uint32_t *)(uintptr_t)&nifp->ni_flags |= NI_PRIV_MEM;
-			}
-			for_rx_tx(t) {
-				priv->np_si[t] = nm_si_user(priv, t) ?
-					&na->si[t] : &NMR(na, t)[priv->np_qfirst[t]].si;
-			}
-
-			if (nmr->nr_arg3) {
-				if (netmap_verbose)
-					D("requested %d extra buffers", nmr->nr_arg3);
-				nmr->nr_arg3 = netmap_extra_alloc(na,
-					&nifp->ni_bufs_head, nmr->nr_arg3);
-				if (netmap_verbose)
-					D("got %d extra buffers", nmr->nr_arg3);
-			}
-			nmr->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
-
-			/* store ifp reference so that priv destructor may release it */
-			priv->np_ifp = ifp;
-		} while (0);
-		if (error) {
-			netmap_unget_na(na, ifp);
 		}
-		/* release the reference from netmap_mem_find() or
-		 * netmap_mem_ext_create()
-		 */
-		if (nmd)
-			netmap_mem_put(nmd);
-		NMG_UNLOCK();
+		/* Write back request body to userspace and reset the
+		 * user-space pointer. */
+		error = nmreq_copyout(hdr, error);
 		break;
+	}
 
 	case NIOCTXSYNC:
-	case NIOCRXSYNC:
+	case NIOCRXSYNC: {
 		nifp = priv->np_nifp;
 
 		if (nifp == NULL) {
@@ -2489,7 +2657,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		sync_flags = priv->np_sync_flags;
 
 		for (i = qfirst; i < qlast; i++) {
-			struct netmap_kring *kring = krings + i;
+			struct netmap_kring *kring = krings[i];
 			struct netmap_ring *ring = kring->ring;
 
 			if (unlikely(nm_kr_tryget(kring, 1, &error))) {
@@ -2532,51 +2700,295 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		}
 
 		break;
+	}
 
-#ifdef WITH_VALE
-	case NIOCCONFIG:
-		error = netmap_bdg_config(nmr);
+	default: {
+		return netmap_ioctl_legacy(priv, cmd, data, td);
 		break;
-#endif
-#ifdef __FreeBSD__
-	case FIONBIO:
-	case FIOASYNC:
-		ND("FIONBIO/FIOASYNC are no-ops");
-		break;
-
-	case BIOCIMMEDIATE:
-	case BIOCGHDRCMPLT:
-	case BIOCSHDRCMPLT:
-	case BIOCSSEESENT:
-		D("ignore BIOCIMMEDIATE/BIOCSHDRCMPLT/BIOCSHDRCMPLT/BIOCSSEESENT");
-		break;
-
-	default:	/* allow device-specific ioctls */
-	    {
-		struct ifnet *ifp = ifunit_ref(nmr->nr_name);
-		if (ifp == NULL) {
-			error = ENXIO;
-		} else {
-			struct socket so;
-
-			bzero(&so, sizeof(so));
-			so.so_vnet = ifp->if_vnet;
-			// so->so_proto not null.
-			error = ifioctl(&so, cmd, data, td);
-			if_rele(ifp);
-		}
-		break;
-	    }
-
-#else /* linux */
-	default:
-		error = EOPNOTSUPP;
-#endif /* linux */
+	}
 	}
 
 	return (error);
 }
 
+size_t
+nmreq_size_by_type(uint16_t nr_reqtype)
+{
+	switch (nr_reqtype) {
+	case NETMAP_REQ_REGISTER:
+		return sizeof(struct nmreq_register);
+	case NETMAP_REQ_PORT_INFO_GET:
+		return sizeof(struct nmreq_port_info_get);
+	case NETMAP_REQ_VALE_ATTACH:
+		return sizeof(struct nmreq_vale_attach);
+	case NETMAP_REQ_VALE_DETACH:
+		return 0;
+	case NETMAP_REQ_VALE_LIST:
+		return sizeof(struct nmreq_vale_list);
+	case NETMAP_REQ_PORT_HDR_SET:
+	case NETMAP_REQ_PORT_HDR_GET:
+		return sizeof(struct nmreq_port_hdr);
+	case NETMAP_REQ_VALE_NEWIF:
+		return sizeof(struct nmreq_vale_newif);
+	case NETMAP_REQ_VALE_DELIF:
+		return 0;
+	case NETMAP_REQ_VALE_POLLING_ENABLE:
+	case NETMAP_REQ_VALE_POLLING_DISABLE:
+		return sizeof(struct nmreq_vale_polling);
+	case NETMAP_REQ_POOLS_INFO_GET:
+		return sizeof(struct nmreq_pools_info);
+	}
+	return 0;
+}
+
+size_t
+nmreq_opt_size_by_type(uint16_t nro_reqtype)
+{
+	size_t rv = sizeof(struct nmreq_option);
+#ifdef NETMAP_REQ_OPT_DEBUG
+	if (nro_reqtype & NETMAP_REQ_OPT_DEBUG)
+		return (nro_reqtype & ~NETMAP_REQ_OPT_DEBUG);
+#endif /* NETMAP_REQ_OPT_DEBUG */
+	switch (nro_reqtype) {
+#ifdef WITH_EXTMEM
+	case NETMAP_REQ_OPT_EXTMEM:
+		rv = sizeof(struct nmreq_opt_extmem);
+		break;
+#endif /* WITH_EXTMEM */
+	}
+	/* subtract the common header */
+	return rv - sizeof(struct nmreq_option);
+}
+
+int
+nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
+{
+	size_t rqsz, optsz, bufsz;
+	int error;
+	char *ker = NULL, *p;
+	struct nmreq_option **next, *src;
+	struct nmreq_option buf;
+	uint64_t *ptrs;
+
+	if (hdr->nr_reserved)
+		return EINVAL;
+
+	if (!nr_body_is_user)
+		return 0;
+
+	hdr->nr_reserved = nr_body_is_user;
+
+	/* compute the total size of the buffer */
+	rqsz = nmreq_size_by_type(hdr->nr_reqtype);
+	if (rqsz > NETMAP_REQ_MAXSIZE) {
+		error = EMSGSIZE;
+		goto out_err;
+	}
+	if ((rqsz && hdr->nr_body == (uint64_t)NULL) ||
+		(!rqsz && hdr->nr_body != (uint64_t)NULL)) {
+		/* Request body expected, but not found; or
+		 * request body found but unexpected. */
+		error = EINVAL;
+		goto out_err;
+	}
+
+	bufsz = 2 * sizeof(void *) + rqsz;
+	optsz = 0;
+	for (src = (struct nmreq_option *)hdr->nr_options; src;
+	     src = (struct nmreq_option *)buf.nro_next)
+	{
+		error = copyin(src, &buf, sizeof(*src));
+		if (error)
+			goto out_err;
+		optsz += sizeof(*src);
+		optsz += nmreq_opt_size_by_type(buf.nro_reqtype);
+		if (rqsz + optsz > NETMAP_REQ_MAXSIZE) {
+			error = EMSGSIZE;
+			goto out_err;
+		}
+		bufsz += optsz + sizeof(void *);
+	}
+
+	ker = nm_os_malloc(bufsz);
+	if (ker == NULL) {
+		error = ENOMEM;
+		goto out_err;
+	}
+	p = ker;
+
+	/* make a copy of the user pointers */
+	ptrs = (uint64_t*)p;
+	*ptrs++ = hdr->nr_body;
+	*ptrs++ = hdr->nr_options;
+	p = (char *)ptrs;
+
+	/* copy the body */
+	error = copyin((void *)hdr->nr_body, p, rqsz);
+	if (error)
+		goto out_restore;
+	/* overwrite the user pointer with the in-kernel one */
+	hdr->nr_body = (uint64_t)p;
+	p += rqsz;
+
+	/* copy the options */
+	next = (struct nmreq_option **)&hdr->nr_options;
+	src = *next;
+	while (src) {
+		struct nmreq_option *opt;
+
+		/* copy the option header */
+		ptrs = (uint64_t *)p;
+		opt = (struct nmreq_option *)(ptrs + 1);
+		error = copyin(src, opt, sizeof(*src));
+		if (error)
+			goto out_restore;
+		/* make a copy of the user next pointer */
+		*ptrs = opt->nro_next;
+		/* overwrite the user pointer with the in-kernel one */
+		*next = opt;
+
+		/* initialize the option as not supported.
+		 * Recognized options will update this field.
+		 */
+		opt->nro_status = EOPNOTSUPP;
+
+		p = (char *)(opt + 1);
+
+		/* copy the option body */
+		optsz = nmreq_opt_size_by_type(opt->nro_reqtype);
+		if (optsz) {
+			/* the option body follows the option header */
+			error = copyin(src + 1, p, optsz);
+			if (error)
+				goto out_restore;
+			p += optsz;
+		}
+
+		/* move to next option */
+		next = (struct nmreq_option **)&opt->nro_next;
+		src = *next;
+	}
+	return 0;
+
+out_restore:
+	ptrs = (uint64_t *)ker;
+	hdr->nr_body = *ptrs++;
+	hdr->nr_options = *ptrs++;
+	hdr->nr_reserved = 0;
+	nm_os_free(ker);
+out_err:
+	return error;
+}
+
+static int
+nmreq_copyout(struct nmreq_header *hdr, int rerror)
+{
+	struct nmreq_option *src, *dst;
+	void *ker = (void *)hdr->nr_body, *bufstart;
+	uint64_t *ptrs;
+	size_t bodysz;
+	int error;
+
+	if (!hdr->nr_reserved)
+		return rerror;
+
+	/* restore the user pointers in the header */
+	ptrs = (uint64_t *)ker - 2;
+	bufstart = ptrs;
+	hdr->nr_body = *ptrs++;
+	src = (struct nmreq_option *)hdr->nr_options;
+	hdr->nr_options = *ptrs;
+
+	if (!rerror) {
+		/* copy the body */
+		bodysz = nmreq_size_by_type(hdr->nr_reqtype);
+		error = copyout(ker, (void *)hdr->nr_body, bodysz);
+		if (error) {
+			rerror = error;
+			goto out;
+		}
+	}
+
+	/* copy the options */
+	dst = (struct nmreq_option *)hdr->nr_options;
+	while (src) {
+		size_t optsz;
+		uint64_t next;
+
+		/* restore the user pointer */
+		next = src->nro_next;
+		ptrs = (uint64_t *)src - 1;
+		src->nro_next = *ptrs;
+
+		/* always copy the option header */
+		error = copyout(src, dst, sizeof(*src));
+		if (error) {
+			rerror = error;
+			goto out;
+		}
+		       
+		/* copy the option body only if there was no error */
+		if (!rerror && !src->nro_status) {
+			optsz = nmreq_opt_size_by_type(src->nro_reqtype);
+			if (optsz) {
+				error = copyout(src + 1, dst + 1, optsz);
+				if (error) {
+					rerror = error;
+					goto out;
+				}
+			}
+		}
+		src = (struct nmreq_option *)next;
+		dst = (struct nmreq_option *)*ptrs;
+	}
+
+
+out:
+	hdr->nr_reserved = 0;
+	nm_os_free(bufstart);
+	return rerror;
+}
+
+struct nmreq_option *
+nmreq_findoption(struct nmreq_option *opt, uint16_t reqtype)
+{
+	for ( ; opt; opt = (struct nmreq_option *)opt->nro_next)
+		if (opt->nro_reqtype == reqtype)
+			return opt;
+	return NULL;
+}
+
+int
+nmreq_checkduplicate(struct nmreq_option *opt) {
+	struct nmreq_option *scan;
+	uint16_t type = opt->nro_reqtype;
+	int dup = 0;
+
+	for (scan = (struct nmreq_option *)opt->nro_next; scan;
+		scan = nmreq_findoption((struct nmreq_option *)scan->nro_next,
+			type))
+	{
+		dup++;
+		scan->nro_status = EINVAL;
+	}
+	return (dup ? EINVAL : 0);
+}
+
+static int
+nmreq_checkoptions(struct nmreq_header *hdr)
+{
+	struct nmreq_option *opt;
+	/* return error if there is still any option
+	 * marked as not supported
+	 */
+
+	for (opt = (struct nmreq_option *)hdr->nr_options; opt;
+	     opt = (struct nmreq_option *)opt->nro_next)
+		if (opt->nro_status == EOPNOTSUPP)
+			return EOPNOTSUPP;
+
+	return 0;
+}
 
 /*
  * select(2) and poll(2) handlers for the "netmap" device.
@@ -2689,9 +3101,9 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 #ifdef linux
 	/* The selrecord must be unconditional on linux. */
 	nm_os_selrecord(sr, check_all_tx ?
-	    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
+	    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]]->si);
 	nm_os_selrecord(sr, check_all_rx ?
-		&na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
+		&na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]]->si);
 #endif /* linux */
 
 	/*
@@ -2711,7 +3123,7 @@ flush_tx:
 		for (i = priv->np_qfirst[NR_TX]; i < priv->np_qlast[NR_TX]; i++) {
 			int found = 0;
 
-			kring = &na->tx_rings[i];
+			kring = na->tx_rings[i];
 			ring = kring->ring;
 
 			/*
@@ -2774,7 +3186,7 @@ do_retry_rx:
 		for (i = priv->np_qfirst[NR_RX]; i < priv->np_qlast[NR_RX]; i++) {
 			int found = 0;
 
-			kring = &na->rx_rings[i];
+			kring = na->rx_rings[i];
 			ring = kring->ring;
 
 			if (unlikely(nm_kr_tryget(kring, 1, &revents)))
@@ -2854,7 +3266,7 @@ nma_intr_enable(struct netmap_adapter *na, int onoff)
 
 	for_rx_tx(t) {
 		for (i = 0; i < nma_get_nrings(na, t); i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_kring *kring = NMR(na, t)[i];
 			int on = !(kring->nr_kflags & NKR_NOINTR);
 
 			if (!!onoff != !!on) {
@@ -2890,7 +3302,7 @@ nma_intr_enable(struct netmap_adapter *na, int onoff)
 static int
 netmap_notify(struct netmap_kring *kring, int flags)
 {
-	struct netmap_adapter *na = kring->na;
+	struct netmap_adapter *na = kring->notify_na;
 	enum txrx t = kring->tx;
 
 	nm_os_selwakeup(&kring->si);
@@ -2921,6 +3333,7 @@ netmap_attach_common(struct netmap_adapter *na)
 	if (na->na_flags & NAF_HOST_RINGS && na->ifp) {
 		na->if_input = na->ifp->if_input; /* for netmap_send_up */
 	}
+	na->pdev = na; /* make sure netmap_mem_map() is called */
 #endif /* __FreeBSD__ */
 	if (na->nm_krings_create == NULL) {
 		/* we assume that we have been called by a driver,
@@ -3131,7 +3544,7 @@ netmap_hw_krings_create(struct netmap_adapter *na)
 	int ret = netmap_krings_create(na, 0);
 	if (ret == 0) {
 		/* initialize the mbq for the sw rx ring */
-		mbq_safe_init(&na->rx_rings[na->num_rx_rings].rx_queue);
+		mbq_safe_init(&na->rx_rings[na->num_rx_rings]->rx_queue);
 		ND("initialized sw rx queue %d", na->num_rx_rings);
 	}
 	return ret;
@@ -3195,7 +3608,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct mbq *q;
 	int busy;
 
-	kring = &na->rx_rings[na->num_rx_rings];
+	kring = na->rx_rings[na->num_rx_rings];
 	// XXX [Linux] we do not need this lock
 	// if we follow the down/configure/up protocol -gl
 	// mtx_lock(&na->core_lock);
@@ -3210,7 +3623,7 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (txr >= na->num_tx_rings) {
 		txr %= na->num_tx_rings;
 	}
-	tx_kring = &NMR(na, NR_TX)[txr];
+	tx_kring = NMR(na, NR_TX)[txr];
 
 	if (tx_kring->nr_mode == NKR_NETMAP_OFF) {
 		return MBUF_TRANSMIT(na, ifp, m);
@@ -3298,7 +3711,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 		if (n >= na->num_tx_rings)
 			return NULL;
 
-		kring = na->tx_rings + n;
+		kring = na->tx_rings[n];
 
 		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
 			kring->nr_mode = NKR_NETMAP_OFF;
@@ -3310,7 +3723,7 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 	} else {
 		if (n >= na->num_rx_rings)
 			return NULL;
-		kring = na->rx_rings + n;
+		kring = na->rx_rings[n];
 
 		if (kring->nr_pending_mode == NKR_NETMAP_OFF) {
 			kring->nr_mode = NKR_NETMAP_OFF;
@@ -3378,7 +3791,7 @@ netmap_common_irq(struct netmap_adapter *na, u_int q, u_int *work_done)
 	if (q >= nma_get_nrings(na, t))
 		return NM_IRQ_PASS; // not a physical queue
 
-	kring = NMR(na, t) + q;
+	kring = NMR(na, t)[q];
 
 	if (kring->nr_mode == NKR_NETMAP_OFF) {
 		return NM_IRQ_PASS;

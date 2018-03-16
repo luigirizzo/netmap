@@ -52,6 +52,15 @@ nm_os_malloc(size_t size)
 }
 
 void *
+nm_os_vmalloc(size_t size)
+{
+	void *rv = vmalloc(size);
+	if (IS_ERR(rv))
+		return NULL;
+	return rv;
+}
+
+void *
 nm_os_realloc(void *addr, size_t new_size, size_t old_size)
 {
 	void *rv;
@@ -65,6 +74,11 @@ nm_os_realloc(void *addr, size_t new_size, size_t old_size)
 void
 nm_os_free(void *addr){
 	kfree(addr);
+}
+
+void
+nm_os_vfree(void *addr){
+	vfree(addr);
 }
 
 void
@@ -154,11 +168,147 @@ nm_os_ifnet_fini(void)
 	}
 }
 
+
 unsigned
 nm_os_ifnet_mtu(struct ifnet *ifp)
 {
 	return ifp->mtu;
 }
+
+#ifdef WITH_EXTMEM
+struct nm_os_extmem {
+	struct page **pages;
+	int nr_pages;
+	int mapped;
+};
+
+void
+nm_os_extmem_delete(struct nm_os_extmem *e)
+{
+	int i;
+	for (i = 0; i < e->nr_pages; i++) {
+		if (i < e->mapped)
+			kunmap(e->pages[i]);
+		put_page(e->pages[i]);
+	}
+	if (e->pages)
+		nm_os_vfree(e->pages);
+	nm_os_free(e);
+}
+
+char *
+nm_os_extmem_nextpage(struct nm_os_extmem *e)
+{
+	if (e->mapped >= e->nr_pages)
+		return NULL;
+	return kmap(e->pages[e->mapped++]);
+}
+
+int
+nm_os_extmem_isequal(struct nm_os_extmem *e1, struct nm_os_extmem *e2)
+{
+	int i;
+
+	if (e1->nr_pages != e2->nr_pages)
+		return 0;
+
+	for (i = 0; i < e1->nr_pages; i++)
+		if (e1->pages[i] != e2->pages[i])
+			return 0;
+
+	return 1;
+}
+
+int
+nm_os_extmem_nr_pages(struct nm_os_extmem *e)
+{
+	return e->nr_pages;
+}
+
+
+struct nm_os_extmem *
+nm_os_extmem_create(unsigned long p, struct nmreq_pools_info *pi, int *perror)
+{
+	unsigned long end, start;
+	int nr_pages, res;
+	struct nm_os_extmem *e = NULL;
+	int err;
+	struct page **pages;
+
+	end = (p + pi->nr_memsize + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	start = p >> PAGE_SHIFT;
+	nr_pages = end - start;
+
+	e = nm_os_malloc(sizeof(*e));
+	if (e == NULL) {
+		D("failed to allocate os_extmem");
+		err = ENOMEM;
+		goto out;
+	}
+
+	pages = nm_os_vmalloc(nr_pages * sizeof(*pages));
+	if (pages == NULL) {
+		D("failed to allocate pages array (nr_pages %d)", nr_pages);
+		err = ENOMEM;
+		goto out;
+	}
+
+	e->pages = pages;
+
+#ifdef NETMAP_LINUX_HAVE_GUP_4ARGS
+	res = get_user_pages_unlocked(
+			p,
+			nr_pages,
+			pages,
+			FOLL_WRITE | FOLL_GET | FOLL_SPLIT | FOLL_POPULATE); // XXX check other flags
+#elif defined(NETMAP_LINUX_HAVE_GUP_5ARGS)
+	res = get_user_pages_unlocked(
+			p,
+			nr_pages,
+			1, /* write */
+			0, /* don't force */
+			pages);
+#elif defined(NETMAP_LINUX_HAVE_GUP_7ARGS)
+	res = get_user_pages_unlocked(
+			current,
+			current->mm,
+			p,
+			nr_pages,
+			1, /* write */
+			0, /* don't force */
+			pages);
+#else
+	down_read(&current->mm->mmap_sem);
+	res = get_user_pages(
+			current,
+			current->mm,
+			p,
+			nr_pages,
+			1, /* write */
+			0, /* don't force */
+			pages,
+			NULL);
+	up_read(&current->mm->mmap_sem);
+#endif	/* NETMAP_LINUX_GUP */
+
+	e->nr_pages = res;
+
+	if (res < nr_pages) {
+		D("failed to get user pages: res %d nr_pages %d", res, nr_pages);
+		err = EFAULT;
+		goto out;
+	}
+
+	return e;
+
+out:
+	if (e)
+		nm_os_extmem_delete(e);
+	if (perror)
+		*perror = err;
+	return NULL;
+}
+#endif /* WITH_EXTMEM */
 
 #ifdef NETMAP_LINUX_HAVE_IOMMU
 #include <linux/iommu.h>
@@ -1032,8 +1182,9 @@ static int
 linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 {
 	int error = 0;
-	unsigned long off;
-	u_int memsize, memflags;
+	uint64_t off;
+	unsigned int memflags;
+	uint64_t memsize;
 	struct netmap_priv_d *priv = f->private_data;
 	struct netmap_adapter *na = priv->np_na;
 	/*
@@ -1057,6 +1208,8 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 			(vma->vm_end - vma->vm_start), memsize);
 	if (off + (vma->vm_end - vma->vm_start) > memsize)
 		return -EINVAL;
+	if (memflags & NETMAP_MEM_EXT)
+		return -ENODEV;
 	if (memflags & NETMAP_MEM_IO) {
 		vm_ooffset_t pa;
 
@@ -1114,7 +1267,6 @@ linux_netmap_set_channels(struct net_device *dev,
 }
 #endif
 
-
 #ifndef NETMAP_LINUX_HAVE_UNLOCKED_IOCTL
 #define LIN_IOCTL_NAME	.ioctl
 static int
@@ -1130,6 +1282,7 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 	union {
 		struct nm_ifreq ifr;
 		struct nmreq nmr;
+		struct nmreq_header hdr;
 	} arg;
 	size_t argsize = 0;
 
@@ -1140,9 +1293,14 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 	case NIOCCONFIG:
 		argsize = sizeof(arg.ifr);
 		break;
-	default:
+	case NIOCREGIF:
+	case NIOCGINFO:
 		argsize = sizeof(arg.nmr);
 		break;
+	case NIOCCTRL: {
+		argsize = sizeof(arg.hdr);
+		break;
+	}
 	}
 	if (argsize) {
 		if (!data)
@@ -1151,7 +1309,8 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 		if (copy_from_user(&arg, (void *)data, argsize) != 0)
 			return -EFAULT;
 	}
-	ret = netmap_ioctl(priv, cmd, (caddr_t)&arg, NULL);
+	ret = netmap_ioctl(priv, cmd, (caddr_t)&arg, NULL,
+			   /*nr_body_is_user=*/1);
 	if (data && copy_to_user((void*)data, &arg, argsize) != 0)
 		return -EFAULT;
 	return -ret;
@@ -1614,16 +1773,10 @@ nm_os_kctx_worker_setaff(struct nm_kctx *nmk, int affinity)
 }
 
 struct nm_kctx *
-nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
-		     void *opaque)
+nm_os_kctx_create(struct nm_kctx_cfg *cfg, void *opaque)
 {
 	struct nm_kctx *nmk = NULL;
 	int error;
-
-	if (cfgtype != PTNETMAP_CFGTYPE_QEMU) {
-		D("Unsupported cfgtype %u", cfgtype);
-		return NULL;
-	}
 
 	if (!cfg->use_kthread && cfg->notify_fn == NULL) {
 		D("Error: botify function missing with use_htead == 0");
@@ -2363,7 +2516,7 @@ EXPORT_SYMBOL(netmap_reset);		/* ring init routines */
 EXPORT_SYMBOL(netmap_rx_irq);	        /* default irq handler */
 EXPORT_SYMBOL(netmap_no_pendintr);	/* XXX mitigation - should go away */
 #ifdef WITH_VALE
-EXPORT_SYMBOL(netmap_bdg_ctl);		/* bridge configuration routine */
+EXPORT_SYMBOL(netmap_bdg_regops);	/* bridge configuration routine */
 EXPORT_SYMBOL(netmap_bdg_learning);	/* the default lookup function */
 EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
 #endif /* WITH_VALE */

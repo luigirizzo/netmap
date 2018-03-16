@@ -223,7 +223,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	int f;
 
 	a.na = &pi->ptna->dr.up;
-	kring = &a.na->tx_rings[queue_idx];
+	kring = a.na->tx_rings[queue_idx];
 	a.ring = kring->ring;
 	a.lim = kring->nkr_num_slots - 1;
 
@@ -480,7 +480,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	struct ptnet_csb_hg *pthg = pq->pthg;
 	struct ptnet_info *pi = pq->pi;
 	struct netmap_adapter *na = &pi->ptna->dr.up;
-	struct netmap_kring *kring = &na->rx_rings[pq->kring_id];
+	struct netmap_kring *kring = na->rx_rings[pq->kring_id];
 	struct netmap_ring *ring = kring->ring;
 	unsigned int const lim = kring->nkr_num_slots - 1;
 	bool have_vnet_hdr = pi->vnet_hdr_len;
@@ -1056,9 +1056,9 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 		struct netmap_kring *kring;
 
 		if (i < na->num_tx_rings) {
-			kring = na->tx_rings + i;
+			kring = na->tx_rings[i];
 		} else {
-			kring = na->rx_rings + i - na->num_tx_rings;
+			kring = na->rx_rings[i - na->num_tx_rings];
 		}
 		kring->rhead = kring->ring->head = ptgh->head;
 		kring->rcur = kring->ring->cur = ptgh->cur;
@@ -1163,7 +1163,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		if (native) {
 			for_rx_tx(t) {
 				for (i = 0; i <= nma_get_nrings(na, t); i++) {
-					struct netmap_kring *kring = &NMR(na, t)[i];
+					struct netmap_kring *kring = NMR(na, t)[i];
 
 					if (nm_kring_pending_on(kring)) {
 						kring->nr_mode = NKR_NETMAP_ON;
@@ -1178,7 +1178,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			nm_clear_native_flags(na);
 			for_rx_tx(t) {
 				for (i = 0; i <= nma_get_nrings(na, t); i++) {
-					struct netmap_kring *kring = &NMR(na, t)[i];
+					struct netmap_kring *kring = NMR(na, t)[i];
 
 					if (nm_kring_pending_off(kring)) {
 						kring->nr_mode = NKR_NETMAP_OFF;

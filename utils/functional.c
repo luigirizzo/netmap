@@ -27,7 +27,6 @@
 #include <assert.h>
 #include <net/ethernet.h>
 #include <net/if.h>
-#include <net/netmap.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
@@ -37,6 +36,7 @@
 #include <stdlib.h>
 #include <strings.h>
 #include <unistd.h>
+#include <net/netmap.h>
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
 
