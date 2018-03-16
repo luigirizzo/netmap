@@ -127,7 +127,7 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 		u16 mask = adapter->ring_feature[RING_F_RSS].mask;
 		reg_idx &= mask;
 	}
-	srrctl = IXGBE_RX_HDR_SIZE << IXGBE_SRRCTL_BSIZEHDRSIZE_SHIFT;
+	srrctl = IXGBE_RX_HDR_SIZE << 2; /*IXGBE_SRRCTL_BSIZEHDRSIZE_SHIFT */
 	srrctl |= NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT;
 	D("bufsz: %d srrctl: %d", NETMAP_BUF_SIZE(na),
 		NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT);
