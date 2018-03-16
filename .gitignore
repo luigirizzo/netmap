@@ -5,7 +5,9 @@
 *.mod.c
 *.orig
 .*.swp
+config
 tags
+cscope.*
 modules.order
 Module.symvers
 .tmp_versions

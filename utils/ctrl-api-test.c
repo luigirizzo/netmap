@@ -214,6 +214,7 @@ static int
 vale_detach(int fd, struct TestContext *ctx)
 {
 	struct nmreq_header hdr;
+	struct nmreq_vale_detach req;
 	char vpname[256];
 	int ret;
 
@@ -222,6 +223,7 @@ vale_detach(int fd, struct TestContext *ctx)
 	printf("Testing NETMAP_REQ_VALE_DETACH on '%s'\n", vpname);
 	nmreq_hdr_init(&hdr, vpname);
 	hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
+	hdr.nr_body = (uint64_t)(uintptr_t)&req;
 	ret	    = ioctl(fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_DETACH)");

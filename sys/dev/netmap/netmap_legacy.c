@@ -163,6 +163,7 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 		}
 		case NETMAP_BDG_DETACH: {
 			hdr->nr_reqtype = NETMAP_REQ_VALE_DETACH;
+			hdr->nr_body = (uint64_t)nm_os_malloc(sizeof(struct nmreq_vale_detach));
 			break;
 		}
 		case NETMAP_BDG_VNET_HDR:

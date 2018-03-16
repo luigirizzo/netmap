@@ -2490,12 +2490,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 #ifdef WITH_VALE
 		case NETMAP_REQ_VALE_ATTACH: {
-			error = nm_bdg_ctl_attach(hdr);
+			error = nm_bdg_ctl_attach(hdr, NULL /* userspace request */);
 			break;
 		}
 
 		case NETMAP_REQ_VALE_DETACH: {
-			error = nm_bdg_ctl_detach(hdr);
+			error = nm_bdg_ctl_detach(hdr, NULL /* userspace request */);
 			break;
 		}
 
@@ -2567,28 +2567,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 
 		case NETMAP_REQ_VALE_NEWIF: {
-			struct nmreq_vale_newif *req =
-				(struct nmreq_vale_newif *)hdr->nr_body;
-			/* Build a nmreq_register out of the nmreq_vale_newif,
-			 * so that we can call netmap_get_bdg_na(). */
-			struct nmreq_register regreq;
-			bzero(&regreq, sizeof(regreq));
-			regreq.nr_tx_slots = req->nr_tx_slots;
-			regreq.nr_rx_slots = req->nr_rx_slots;
-			regreq.nr_tx_rings = req->nr_tx_rings;
-			regreq.nr_rx_rings = req->nr_rx_rings;
-			regreq.nr_mem_id = req->nr_mem_id;
-			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-			hdr->nr_body = (uint64_t)&regreq;
-			error = netmap_vi_create(hdr, 0 /* no autodelete */);
-			hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
-			hdr->nr_body = (uint64_t)req;
-                        /* Write back to the original struct. */
-			req->nr_tx_slots = regreq.nr_tx_slots;
-			req->nr_rx_slots = regreq.nr_rx_slots;
-			req->nr_tx_rings = regreq.nr_tx_rings;
-			req->nr_rx_rings = regreq.nr_rx_rings;
-			req->nr_mem_id = regreq.nr_mem_id;
+			error = nm_vi_create(hdr);
 			break;
 		}
 
@@ -2722,7 +2701,7 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 	case NETMAP_REQ_VALE_ATTACH:
 		return sizeof(struct nmreq_vale_attach);
 	case NETMAP_REQ_VALE_DETACH:
-		return 0;
+		return sizeof(struct nmreq_vale_detach);
 	case NETMAP_REQ_VALE_LIST:
 		return sizeof(struct nmreq_vale_list);
 	case NETMAP_REQ_PORT_HDR_SET:
@@ -2960,16 +2939,13 @@ nmreq_findoption(struct nmreq_option *opt, uint16_t reqtype)
 
 int
 nmreq_checkduplicate(struct nmreq_option *opt) {
-	struct nmreq_option *scan;
 	uint16_t type = opt->nro_reqtype;
 	int dup = 0;
 
-	for (scan = (struct nmreq_option *)opt->nro_next; scan;
-		scan = nmreq_findoption((struct nmreq_option *)scan->nro_next,
-			type))
-	{
+	while ((opt = nmreq_findoption((struct nmreq_option *)opt->nro_next,
+			type))) {
 		dup++;
-		scan->nro_status = EINVAL;
+		opt->nro_status = EINVAL;
 	}
 	return (dup ? EINVAL : 0);
 }

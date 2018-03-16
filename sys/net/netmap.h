@@ -611,9 +611,21 @@ struct nmreq_port_info_get {
  * port and the VALE switch are specified through the nr_name argument.
  * The attach operation could need to register a port, so at least
  * the same arguments are available.
+ * port_index will contain the index where the port has been attached.
  */
 struct nmreq_vale_attach {
 	struct nmreq_register reg;
+	uint32_t port_index;
+};
+
+/*
+ * nr_reqtype: NETMAP_REQ_VALE_DETACH
+ * Detach a netmap port from a VALE switch. Both the name of the netmap
+ * port and the VALE switch are specified through the nr_name argument.
+ * port_index will contain the index where the port was attached.
+ */
+struct nmreq_vale_detach {
+	uint32_t port_index;
 };
 
 /*
@@ -623,7 +635,7 @@ struct nmreq_vale_attach {
 struct nmreq_vale_list {
 	/* Name of the VALE port (valeXXX:YYY) or empty. */
 	uint16_t	nr_bridge_idx;
-	uint16_t	nr_port_idx;
+	uint32_t	nr_port_idx;
 };
 
 /*

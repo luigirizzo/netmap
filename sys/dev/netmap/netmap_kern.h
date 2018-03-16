@@ -1017,12 +1017,17 @@ struct netmap_bwrap_adapter {
 	 */
 	struct netmap_priv_d *na_kpriv;
 	struct nm_bdg_polling_state *na_polling_state;
+	/* we overwrite the hwna->na_vp pointer, so we save
+	 * here its original value, to be restored at detach
+	 */
+	struct netmap_vp_adapter *saved_na_vp;
 };
-int nm_bdg_ctl_attach(struct nmreq_header *hdr);
-int nm_bdg_ctl_detach(struct nmreq_header *hdr);
+int nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token);
+int nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token);
 int nm_bdg_polling(struct nmreq_header *hdr);
 int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
 int netmap_vi_create(struct nmreq_header *hdr, int);
+int nm_vi_create(struct nmreq_header *);
 int nm_vi_destroy(const char *name);
 int netmap_bdg_list(struct nmreq_header *hdr);
 
@@ -1444,18 +1449,19 @@ int netmap_get_hw_na(struct ifnet *ifp,
  * NM_BDG_MAXPORTS for broadcast, NM_BDG_MAXPORTS+1 to indicate
  * drop.
  */
-typedef u_int (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
-		struct netmap_vp_adapter *);
+typedef uint32_t (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
+		struct netmap_vp_adapter *, void *private_data);
 typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
 typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
+typedef void *(*bdg_update_private_data_fn_t)(void *private_data, void *callback_data, int *error);
 struct netmap_bdg_ops {
 	bdg_lookup_fn_t lookup;
 	bdg_config_fn_t config;
 	bdg_dtor_fn_t	dtor;
 };
 
-u_int netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
-		struct netmap_vp_adapter *);
+uint32_t netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
+		struct netmap_vp_adapter *, void *private_data);
 
 #define	NM_BRIDGES		8	/* number of bridges */
 #define	NM_BDG_MAXPORTS		254	/* up to 254 */
@@ -1469,8 +1475,12 @@ struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
-int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops);
+int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, void *auth_token);
+int nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
+	void *callback_data, void *auth_token);
 int netmap_bdg_config(struct nm_ifreq *nifr);
+void *netmap_bdg_create(const char *bdg_name, int *return_status);
+int netmap_bdg_destroy(const char *bdg_name, void *auth_token);
 
 #else /* !WITH_VALE */
 #define	netmap_get_bdg_na(_1, _2, _3, _4)	0
@@ -1996,7 +2006,7 @@ void nm_os_mitigation_cleanup(struct nm_generic_mit *mit);
 struct nm_bdg_fwd {	/* forwarding entry for a bridge */
 	void *ft_buf;		/* netmap or indirect buffer */
 	uint8_t ft_frags;	/* how many fragments (only on 1st frag) */
-	uint8_t _ft_port;	/* dst port (unused) */
+	uint16_t ft_offset;	/* dst port (unused) */
 	uint16_t ft_flags;	/* flags, e.g. indirect */
 	uint16_t ft_len;	/* src fragment len */
 	uint16_t ft_next;	/* next packet to same destination */
