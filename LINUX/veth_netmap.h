@@ -90,7 +90,7 @@ krings_needed(struct netmap_adapter *na)
 
 	for_rx_tx(t) {
 		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_kring *kring = NMR(na, t)[i];
 
 			if (kring->nr_kflags & NKR_NEEDRING) {
 				return true;
@@ -147,7 +147,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 	if (onoff) {
 		for_rx_tx(t) {
 			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
+				struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring)) {
 					/* mark the peer ring as needed */
@@ -165,7 +165,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		/* In case of no error we put our rings in netmap mode */
 		for_rx_tx(t) {
 			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
+				struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring)) {
 					kring->nr_mode = NKR_NETMAP_ON;
@@ -181,7 +181,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 		for_rx_tx(t) {
 			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
+				struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_off(kring)) {
 					kring->nr_mode = NKR_NETMAP_OFF;
@@ -262,8 +262,8 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 		int i;
 
 		for (i = 0; i < nma_get_nrings(na, t); i++) {
-			NMR(na, t)[i].pipe = NMR(peer_na, r) + i;
-			NMR(peer_na, r)[i].pipe = NMR(na, t) + i;
+			NMR(na, t)[i]->pipe = NMR(peer_na, r)[i];
+			NMR(peer_na, r)[i]->pipe = NMR(na, t)[i];
 		}
 	}
 

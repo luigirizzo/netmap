@@ -274,7 +274,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	hwrings = nma_get_nrings(na, NR_TX) + nma_get_nrings(na, NR_RX);
 	for_rx_tx(t) {
 		for (i = 0; i < nma_get_nrings(na, t); i++) {
-			struct netmap_kring *kring = &NMR(na, t)[i];
+			struct netmap_kring *kring = NMR(na, t)[i];
 
 			if ((onoff && nm_kring_pending_on(kring)) ||
 				(!onoff && nm_kring_pending_off(kring))) {
@@ -341,7 +341,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		/* enable netmap mode */
 		for_rx_tx(t) {
 			for (i = 0; i <= nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
+				struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring)) {
 					kring->nr_mode = NKR_NETMAP_ON;
@@ -353,7 +353,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		nm_clear_native_flags(na);
 		for_rx_tx(t) {
 			for (i = 0; i <= nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = &NMR(na, t)[i];
+				struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_off(kring)) {
 					kring->nr_mode = NKR_NETMAP_OFF;
@@ -626,7 +626,7 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 
 	for (r = 0; r < na->num_rx_rings; r++) {
 		COMPAT_DECL_SG
-		struct netmap_ring *ring = na->rx_rings[r].ring;
+		struct netmap_ring *ring = na->rx_rings[r]->ring;
 		struct virtqueue *vq = GET_RX_VQ(vi, r);
 		struct scatterlist *sg = GET_RX_SG(vi, r);
 		struct netmap_slot* slot;

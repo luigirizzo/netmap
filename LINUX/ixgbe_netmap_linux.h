@@ -603,7 +603,7 @@ ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u3
 	 * loading the map.
 	 */
 	for (j = 0; j < na->num_tx_desc; j++) {
-		int sj = netmap_idx_n2k(&na->tx_rings[ring_nr], j);
+		int sj = netmap_idx_n2k(na->tx_rings[ring_nr], j);
 		uint64_t paddr;
 		void *addr = PNMB(na, slot + sj, &paddr);
 	}
@@ -644,7 +644,7 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 	// XXX can we move it later ?
 	ixgbe_netmap_configure_srrctl(adapter, ring);
 
-	lim = na->num_rx_desc - 1 - nm_kr_rxspace(&na->rx_rings[ring_nr]);
+	lim = na->num_rx_desc - 1 - nm_kr_rxspace(na->rx_rings[ring_nr]);
 
 	for (i = 0; i < na->num_rx_desc; i++) {
 		/*
@@ -652,7 +652,7 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 		 * considering the offset between the netmap and NIC rings
 		 * (see comment in ixgbe_setup_transmit_ring() ).
 		 */
-		int si = netmap_idx_n2k(&na->rx_rings[ring_nr], i);
+		int si = netmap_idx_n2k(na->rx_rings[ring_nr], i);
 		union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(ring, i);
 		uint64_t paddr;
 		PNMB(na, slot + si, &paddr);
@@ -719,7 +719,7 @@ ixgbe_netmap_krings_create(struct netmap_adapter *na)
 			goto err;
 		}
 		*h->phead = 0;
-		D("%s: phead %p *phead %x", na->tx_rings[i].name, h->phead, *h->phead);
+		D("%s: phead %p *phead %x", na->tx_rings[i]->name, h->phead, *h->phead);
 	}
 	return 0;
 

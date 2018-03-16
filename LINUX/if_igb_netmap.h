@@ -315,7 +315,7 @@ igb_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 		return 0;  // not in netmap native mode
 	for (i = 0; i < na->num_tx_desc; i++) {
 		union e1000_adv_tx_desc *tx_desc;
-		si = netmap_idx_n2k(&na->tx_rings[ring_nr], i);
+		si = netmap_idx_n2k(na->tx_rings[ring_nr], i);
 		addr = PNMB(na, slot + si, &paddr);
 		tx_desc = E1000_TX_DESC_ADV(*txr, i);
 		tx_desc->read.buffer_addr = htole64(paddr);
@@ -351,7 +351,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	for (i = 0; i < rxr->count; i++) {
 		union e1000_adv_rx_desc *rx_desc;
 		uint64_t paddr;
-		int si = netmap_idx_n2k(&na->rx_rings[reg_idx], i);
+		int si = netmap_idx_n2k(na->rx_rings[reg_idx], i);
 
 #if 0
 		// XXX the skb check can go away
@@ -367,7 +367,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 		rx_desc->read.pkt_addr = htole64(paddr);
 	}
 	/* preserve buffers already made available to clients */
-	i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[reg_idx]);
+	i = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[reg_idx]);
 
 	wmb();	/* Force memory writes to complete */
 	ND("%s rxr%d.tail %d", na->name, reg_idx, i);
