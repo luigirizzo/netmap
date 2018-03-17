@@ -135,6 +135,7 @@ utils:
 install-utils:
 clean-utils:
 else
+.PHONY: utils
 utils:
 	+$(MAKE) -C build-utils SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)" SUBSYS_FLAGS="$(SUBSYS_FLAGS)"
 
