@@ -1020,8 +1020,7 @@ nm_unused_notify(struct netmap_kring *kring, int flags)
 
 /* nm_config callback for bwrap */
 static int
-nm_pt_host_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
-        u_int *rxr, u_int *rxd)
+nm_pt_host_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
     struct netmap_pt_host_adapter *pth_na =
         (struct netmap_pt_host_adapter *)na;
@@ -1033,12 +1032,10 @@ nm_pt_host_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
     /* forward the request */
     error = netmap_update_config(parent);
 
-    *rxr = na->num_rx_rings = parent->num_rx_rings;
-    *txr = na->num_tx_rings = parent->num_tx_rings;
-    *txd = na->num_tx_desc = parent->num_tx_desc;
-    *rxd = na->num_rx_desc = parent->num_rx_desc;
-
-    DBG(D("rxr: %d txr: %d txd: %d rxd: %d", *rxr, *txr, *txd, *rxd));
+    info->num_rx_rings = na->num_rx_rings = parent->num_rx_rings;
+    info->num_tx_rings = na->num_tx_rings = parent->num_tx_rings;
+    info->num_tx_descs = na->num_tx_desc = parent->num_tx_desc;
+    info->num_rx_descs = na->num_rx_desc = parent->num_rx_desc;
 
     return error;
 }

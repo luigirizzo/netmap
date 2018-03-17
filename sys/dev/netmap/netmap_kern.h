@@ -633,6 +633,14 @@ struct netmap_lut {
 
 struct netmap_vp_adapter; // forward
 
+/* Struct to be filled by nm_config callbacks. */
+struct nm_config_info {
+	unsigned num_tx_rings;
+	unsigned num_rx_rings;
+	unsigned num_tx_descs;
+	unsigned num_rx_descs;
+};
+
 /*
  * The "struct netmap_adapter" extends the "struct adapter"
  * (or equivalent) device descriptor.
@@ -769,8 +777,7 @@ struct netmap_adapter {
 #define NAF_FORCE_RECLAIM   2
 #define NAF_CAN_FORWARD_DOWN 4
 	/* return configuration information */
-	int (*nm_config)(struct netmap_adapter *,
-		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd);
+	int (*nm_config)(struct netmap_adapter *, struct nm_config_info *info);
 	int (*nm_krings_create)(struct netmap_adapter *);
 	void (*nm_krings_delete)(struct netmap_adapter *);
 #ifdef WITH_VALE
@@ -1332,6 +1339,11 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	ifp->if_capenable &= ~IFCAP_NETMAP;
 #endif
 }
+
+#ifdef linux
+int netmap_linux_config(struct netmap_adapter *na,
+			struct nm_config_info *info);
+#endif /* linux */
 
 /*
  * nm_*sync_prologue() functions are used in ioctl/poll and ptnetmap

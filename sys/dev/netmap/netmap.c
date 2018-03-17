@@ -743,21 +743,23 @@ nm_dump_buf(char *p, int len, int lim, char *dst)
 int
 netmap_update_config(struct netmap_adapter *na)
 {
-	u_int txr, txd, rxr, rxd;
+	struct nm_config_info info;
 
-	txr = txd = rxr = rxd = 0;
+	bzero(&info, sizeof(info));
 	if (na->nm_config == NULL ||
-	    na->nm_config(na, &txr, &txd, &rxr, &rxd))
+	    na->nm_config(na, &info))
 	{
 		/* take whatever we had at init time */
-		txr = na->num_tx_rings;
-		txd = na->num_tx_desc;
-		rxr = na->num_rx_rings;
-		rxd = na->num_rx_desc;
+		info.num_tx_rings = na->num_tx_rings;
+		info.num_tx_descs = na->num_tx_desc;
+		info.num_rx_rings = na->num_rx_rings;
+		info.num_rx_descs = na->num_rx_desc;
 	}
 
-	if (na->num_tx_rings == txr && na->num_tx_desc == txd &&
-	    na->num_rx_rings == rxr && na->num_rx_desc == rxd)
+	if (na->num_tx_rings == info.num_tx_rings &&
+	    na->num_tx_desc == info.num_tx_descs &&
+	    na->num_rx_rings == info.num_rx_rings &&
+	    na->num_rx_desc == info.num_rx_descs)
 		return 0; /* nothing changed */
 	if (netmap_verbose || na->active_fds > 0) {
 		D("stored config %s: txring %d x %d, rxring %d x %d",
@@ -765,14 +767,15 @@ netmap_update_config(struct netmap_adapter *na)
 			na->num_tx_rings, na->num_tx_desc,
 			na->num_rx_rings, na->num_rx_desc);
 		D("new config %s: txring %d x %d, rxring %d x %d",
-			na->name, txr, txd, rxr, rxd);
+			na->name, info.num_tx_rings, info.num_tx_descs,
+			info.num_rx_rings, info.num_rx_descs);
 	}
 	if (na->active_fds == 0) {
 		D("configuration changed (but fine)");
-		na->num_tx_rings = txr;
-		na->num_tx_desc = txd;
-		na->num_rx_rings = rxr;
-		na->num_rx_desc = rxd;
+		na->num_tx_rings = info.num_tx_rings;
+		na->num_tx_desc = info.num_tx_descs;
+		na->num_rx_rings = info.num_rx_rings;
+		na->num_rx_desc = info.num_rx_descs;
 		return 0;
 	}
 	D("configuration changed while active, this is bad...");

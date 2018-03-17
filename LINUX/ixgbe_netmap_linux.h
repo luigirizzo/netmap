@@ -730,15 +730,14 @@ err:
 }
 
 static int
-ixgbe_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
-		    u_int *rxr, u_int *rxd)
+ixgbe_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(na->ifp);
 
-	*txr = adapter->num_tx_queues;
-	*rxr = adapter->num_rx_queues;
-	*txd = NM_IXGBE_TX_RING(adapter, 0)->count;
-	*rxd = NM_IXGBE_RX_RING(adapter, 0)->count;
+	info->num_tx_rings = adapter->num_tx_queues;
+	info->num_rx_rings = adapter->num_rx_queues;
+	info->num_tx_descs = NM_IXGBE_TX_RING(adapter, 0)->count;
+	info->num_rx_descs = NM_IXGBE_RX_RING(adapter, 0)->count;
 
 	return 0;
 }

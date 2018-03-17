@@ -1104,18 +1104,18 @@ ptnet_nm_ptctl(if_t ifp, uint32_t cmd)
 }
 
 static int
-ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
-		unsigned *rxr, unsigned *rxd)
+ptnet_nm_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	struct ptnet_softc *sc = if_getsoftc(na->ifp);
 
-	*txr = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
-	*rxr = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
-	*txd = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_SLOTS);
-	*rxd = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_SLOTS);
+	info->num_tx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_RINGS);
+	info->num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
+	info->num_tx_descs = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_SLOTS);
+	info->num_rx_descs = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_SLOTS);
 
 	device_printf(sc->dev, "txr %u, rxr %u, txd %u, rxd %u\n",
-		      *txr, *rxr, *txd, *rxd);
+			info->num_tx_rings, info->num_rx_rings,
+			info->num_tx_descs, info->num_rx_descs);
 
 	return 0;
 }

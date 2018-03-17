@@ -701,18 +701,18 @@ virtio_netmap_intr(struct netmap_adapter *na, int onoff)
  * the multiqueue mode.
  */
 static int
-virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
-		     u_int *rxr, u_int *rxd)
+virtio_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	struct ifnet *ifp = na->ifp;
 	struct virtnet_info *vi = netdev_priv(ifp);
 
-	*txr = ifp->real_num_tx_queues;
-	*txd = virtqueue_get_vring_size(GET_TX_VQ(vi, 0));
-	*rxr = 1;
-	*rxd = virtqueue_get_vring_size(GET_RX_VQ(vi, 0));
+	info->num_tx_rings = ifp->real_num_tx_queues;
+	info->num_tx_descs = virtqueue_get_vring_size(GET_TX_VQ(vi, 0));
+	info->num_rx_rings = 1;
+	info->num_rx_descs = virtqueue_get_vring_size(GET_RX_VQ(vi, 0));
 	D("virtio config txq=%d, txd=%d rxq=%d, rxd=%d",
-			*txr, *txd, *rxr, *rxd);
+		info->num_tx_rings, info->num_tx_descs, info->num_rx_rings,
+		info->num_rx_descs);
 
 	return 0;
 }
