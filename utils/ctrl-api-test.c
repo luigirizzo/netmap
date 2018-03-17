@@ -860,7 +860,10 @@ main(int argc, char **argv)
 		 * the NIC RX buffer size, otherwise we will fail on
 		 * registering the interface. To stay safe, let's
 		 * just use a standard MTU. */
-		system("ip link set dev lo mtu 1514");
+		if (system("ip link set dev lo mtu 1514")) {
+			perror("system(mtu=1514)");
+			return -1;
+		}
 	}
 
 	if (j >= 0) {
@@ -895,7 +898,10 @@ main(int argc, char **argv)
 	}
 out:
 	if (loopback_if) {
-		system("ip link set dev lo mtu 65536");
+		if (system("ip link set dev lo mtu 65536")) {
+			perror("system(mtu=1514)");
+			return -1;
+		}
 	}
 
 	return ret;
