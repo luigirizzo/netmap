@@ -52,6 +52,8 @@ utils/testmmap
 utils/vale-ctl
 utils/test_nm
 utils/cygwin1.dll
+utils/ctrl-api-test
+utils/functional
 examples/pkt-gen.exe
 examples/pkt-gen.exe.stackdump
 examples/pkt-gen-b.exe
