@@ -2102,11 +2102,8 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 			/* This netmap adapter is attached to an ifnet. */
 			unsigned nbs = netmap_mem_bufsize(na->nm_mem);
 			unsigned mtu = nm_os_ifnet_mtu(na->ifp);
-			/* The maximum amount of bytes that a single
-			 * receive or transmit NIC descriptor can hold. */
-			unsigned hw_max_slot_len = 4096;
 
-			if (mtu <= hw_max_slot_len) {
+			if (mtu <= na->rx_buffer_size) {
 				/* The MTU fits a single NIC slot. We only
 				 * Need to check that netmap buffers are
 				 * large enough to hold an MTU. NS_MOREFRAG
@@ -2130,11 +2127,11 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 						na->ifp->if_xname);
 					error = EINVAL;
 					goto err_drop_mem;
-				} else if (nbs < hw_max_slot_len) {
+				} else if (nbs < na->rx_buffer_size) {
 					nm_prerr("error: using NS_MOREFRAG on "
 						"%s requires netmap buf size "
 						">= %u", na->ifp->if_xname,
-						hw_max_slot_len);
+						na->rx_buffer_size);
 					error = EINVAL;
 					goto err_drop_mem;
 				} else {
@@ -3306,6 +3303,11 @@ netmap_attach_common(struct netmap_adapter *na)
 		D("%s: invalid rings tx %d rx %d",
 			na->name, na->num_tx_rings, na->num_rx_rings);
 		return EINVAL;
+	}
+
+	if (!na->rx_buffer_size) {
+		/* Set a conservative default (larger is safer). */
+		na->rx_buffer_size = PAGE_SIZE;
 	}
 
 #ifdef __FreeBSD__

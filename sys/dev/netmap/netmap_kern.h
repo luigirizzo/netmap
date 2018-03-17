@@ -639,6 +639,7 @@ struct nm_config_info {
 	unsigned num_rx_rings;
 	unsigned num_tx_descs;
 	unsigned num_rx_descs;
+	unsigned rx_buffer_size;
 };
 
 /*
@@ -832,6 +833,12 @@ struct netmap_adapter {
 
 	/* Offset of ethernet header for each packet. */
 	u_int virt_hdr_len;
+
+	/* Max number of bytes that the NIC can store in the buffer
+	 * referenced by each RX descriptor. This translates to the maximum
+	 * bytes that a single netmap slot can reference. Larger packets
+	 * require NS_MOREFRAG support. */
+	unsigned rx_buffer_size;
 
 	char name[NETMAP_REQ_IFNAMSIZ]; /* used at least by pipes */
 };
