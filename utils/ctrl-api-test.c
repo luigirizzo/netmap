@@ -223,7 +223,7 @@ vale_detach(int fd, struct TestContext *ctx)
 	printf("Testing NETMAP_REQ_VALE_DETACH on '%s'\n", vpname);
 	nmreq_hdr_init(&hdr, vpname);
 	hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
-	hdr.nr_body = (uint64_t)(uintptr_t)&req;
+	hdr.nr_body    = (uint64_t)(uintptr_t)&req;
 	ret	    = ioctl(fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_DETACH)");
@@ -791,7 +791,10 @@ struct mytest {
 	const char *name;
 };
 
-#define decltest(f) 	{ .test = f, .name = #f }
+#define decltest(f)                                                            \
+	{                                                                      \
+		.test = f, .name = #f                                          \
+	}
 
 static struct mytest tests[] = {
 	decltest(port_info_get),
@@ -821,7 +824,9 @@ main(int argc, char **argv)
 {
 	struct TestContext ctx;
 	unsigned int i;
-	int j = -1;
+	int loopback_if;
+	int ret = 0;
+	int j   = -1;
 	int opt;
 
 	memset(&ctx, 0, sizeof(ctx));
@@ -849,17 +854,26 @@ main(int argc, char **argv)
 		}
 	}
 
+	loopback_if = !strcmp(ctx.ifname, "lo");
+	if (loopback_if) {
+		/* For the tests, we need the MTU to be smaller than
+		 * the NIC RX buffer size, otherwise we will fail on
+		 * registering the interface. To stay safe, let's
+		 * just use a standard MTU. */
+		system("ip link set dev lo mtu 1514");
+	}
+
 	if (j >= 0) {
 		j--; /* one-based --> zero-based */
 		if (j >= (int)(sizeof(tests) / sizeof(tests[0]))) {
 			printf("Error: Test not in range\n");
-			return -1;
+			ret = -1;
+			goto out;
 		}
 	}
 	for (i = 0; i < sizeof(tests) / sizeof(tests[0]) - 1; i++) {
 		struct TestContext ctxcopy;
 		int fd;
-		int ret;
 		if (j >= 0 && (unsigned)j != i) {
 			continue;
 		}
@@ -867,17 +881,22 @@ main(int argc, char **argv)
 		fd = open("/dev/netmap", O_RDWR);
 		if (fd < 0) {
 			perror("open(/dev/netmap)");
-			return fd;
+			ret = fd;
+			goto out;
 		}
 		memcpy(&ctxcopy, &ctx, sizeof(ctxcopy));
 		ret = tests[i].test(fd, &ctxcopy);
 		if (ret) {
 			printf("Test #%d failed\n", i + 1);
-			return ret;
+			goto out;
 		}
 		printf("==> Test #%d successful\n", i + 1);
 		close(fd);
 	}
+out:
+	if (loopback_if) {
+		system("ip link set dev lo mtu 65536");
+	}
 
-	return 0;
+	return ret;
 }
