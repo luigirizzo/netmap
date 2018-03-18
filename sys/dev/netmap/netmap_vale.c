@@ -2777,8 +2777,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 
 /* nm_config callback for bwrap */
 static int
-netmap_bwrap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
-				    u_int *rxr, u_int *rxd)
+netmap_bwrap_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	struct netmap_bwrap_adapter *bna =
 		(struct netmap_bwrap_adapter *)na;
@@ -2786,11 +2785,12 @@ netmap_bwrap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 
 	/* forward the request */
 	netmap_update_config(hwna);
-	/* swap the results */
-	*txr = hwna->num_rx_rings;
-	*txd = hwna->num_rx_desc;
-	*rxr = hwna->num_tx_rings;
-	*rxd = hwna->num_rx_desc;
+	/* swap the results and propagate */
+	info->num_tx_rings = hwna->num_rx_rings;
+	info->num_tx_descs = hwna->num_rx_desc;
+	info->num_rx_rings = hwna->num_tx_rings;
+	info->num_rx_descs = hwna->num_tx_desc;
+	info->rx_buf_maxsize = hwna->rx_buf_maxsize;
 
 	return 0;
 }

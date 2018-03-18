@@ -743,39 +743,42 @@ nm_dump_buf(char *p, int len, int lim, char *dst)
 int
 netmap_update_config(struct netmap_adapter *na)
 {
-	u_int txr, txd, rxr, rxd;
+	struct nm_config_info info;
 
-	txr = txd = rxr = rxd = 0;
+	bzero(&info, sizeof(info));
 	if (na->nm_config == NULL ||
-	    na->nm_config(na, &txr, &txd, &rxr, &rxd))
-	{
+	    na->nm_config(na, &info)) {
 		/* take whatever we had at init time */
-		txr = na->num_tx_rings;
-		txd = na->num_tx_desc;
-		rxr = na->num_rx_rings;
-		rxd = na->num_rx_desc;
+		info.num_tx_rings = na->num_tx_rings;
+		info.num_tx_descs = na->num_tx_desc;
+		info.num_rx_rings = na->num_rx_rings;
+		info.num_rx_descs = na->num_rx_desc;
+		info.rx_buf_maxsize = na->rx_buf_maxsize;
 	}
 
-	if (na->num_tx_rings == txr && na->num_tx_desc == txd &&
-	    na->num_rx_rings == rxr && na->num_rx_desc == rxd)
+	if (na->num_tx_rings == info.num_tx_rings &&
+	    na->num_tx_desc == info.num_tx_descs &&
+	    na->num_rx_rings == info.num_rx_rings &&
+	    na->num_rx_desc == info.num_rx_descs &&
+	    na->rx_buf_maxsize == info.rx_buf_maxsize)
 		return 0; /* nothing changed */
-	if (netmap_verbose || na->active_fds > 0) {
-		D("stored config %s: txring %d x %d, rxring %d x %d",
-			na->name,
-			na->num_tx_rings, na->num_tx_desc,
-			na->num_rx_rings, na->num_rx_desc);
-		D("new config %s: txring %d x %d, rxring %d x %d",
-			na->name, txr, txd, rxr, rxd);
-	}
 	if (na->active_fds == 0) {
-		D("configuration changed (but fine)");
-		na->num_tx_rings = txr;
-		na->num_tx_desc = txd;
-		na->num_rx_rings = rxr;
-		na->num_rx_desc = rxd;
+		D("configuration changed for %s: txring %d x %d, "
+			"rxring %d x %d, rxbufsz %d",
+			na->name, na->num_tx_rings, na->num_tx_desc,
+			na->num_rx_rings, na->num_rx_desc, na->rx_buf_maxsize);
+		na->num_tx_rings = info.num_tx_rings;
+		na->num_tx_desc = info.num_tx_descs;
+		na->num_rx_rings = info.num_rx_rings;
+		na->num_rx_desc = info.num_rx_descs;
+		na->rx_buf_maxsize = info.rx_buf_maxsize;
 		return 0;
 	}
-	D("configuration changed while active, this is bad...");
+	D("WARNING: configuration changed for %s while active: "
+		"txring %d x %d, rxring %d x %d, rxbufsz %d",
+		na->name, info.num_tx_rings, info.num_tx_descs,
+		info.num_rx_rings, info.num_rx_descs,
+		info.rx_buf_maxsize);
 	return 1;
 }
 
@@ -2099,11 +2102,8 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 			/* This netmap adapter is attached to an ifnet. */
 			unsigned nbs = netmap_mem_bufsize(na->nm_mem);
 			unsigned mtu = nm_os_ifnet_mtu(na->ifp);
-			/* The maximum amount of bytes that a single
-			 * receive or transmit NIC descriptor can hold. */
-			unsigned hw_max_slot_len = 4096;
 
-			if (mtu <= hw_max_slot_len) {
+			if (mtu <= na->rx_buf_maxsize) {
 				/* The MTU fits a single NIC slot. We only
 				 * Need to check that netmap buffers are
 				 * large enough to hold an MTU. NS_MOREFRAG
@@ -2127,11 +2127,11 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 						na->ifp->if_xname);
 					error = EINVAL;
 					goto err_drop_mem;
-				} else if (nbs < hw_max_slot_len) {
+				} else if (nbs < na->rx_buf_maxsize) {
 					nm_prerr("error: using NS_MOREFRAG on "
 						"%s requires netmap buf size "
 						">= %u", na->ifp->if_xname,
-						hw_max_slot_len);
+						na->rx_buf_maxsize);
 					error = EINVAL;
 					goto err_drop_mem;
 				} else {
@@ -3303,6 +3303,11 @@ netmap_attach_common(struct netmap_adapter *na)
 		D("%s: invalid rings tx %d rx %d",
 			na->name, na->num_tx_rings, na->num_rx_rings);
 		return EINVAL;
+	}
+
+	if (!na->rx_buf_maxsize) {
+		/* Set a conservative default (larger is safer). */
+		na->rx_buf_maxsize = PAGE_SIZE;
 	}
 
 #ifdef __FreeBSD__

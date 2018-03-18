@@ -111,37 +111,6 @@ ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
 }
 #endif /* NETMAP_LINUX_IXGBE_HAVE_DISABLE */
 
-/*
- * In netmap mode, overwrite the srrctl register with netmap_buf_size
- * to properly configure the Receive Buffer Size
- */
-static void
-ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_RING *rx_ring)
-{
-	struct netmap_adapter *na = NA(adapter->netdev);
-	struct ixgbe_hw *hw = &adapter->hw;
-	u32 srrctl;
-	u8 reg_idx = rx_ring->reg_idx;
-
-	if (hw->mac.type == ixgbe_mac_82598EB) {
-		u16 mask = adapter->ring_feature[RING_F_RSS].mask;
-		reg_idx &= mask;
-	}
-	srrctl = IXGBE_RX_HDR_SIZE << 2; /*IXGBE_SRRCTL_BSIZEHDRSIZE_SHIFT */
-	srrctl |= NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT;
-	D("bufsz: %d srrctl: %d", NETMAP_BUF_SIZE(na),
-		NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT);
-	/*
-	 * XXX
-	 * With Advanced RX descriptor, the address needs to be rewritten,
-	 * but with Legacy RX descriptor, it simply has to zero the status
-	 * byte in the descriptor to make it ready for reuse by hardware.
-	 * (ixgbe datasheet - Section 7.1.9)
-	 */
-	srrctl |= IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF;
-	IXGBE_WRITE_REG(hw, IXGBE_SRRCTL(reg_idx), srrctl);
-}
-
 #ifdef NETMAP_LINUX_IXGBE_HAVE_NTA
 #define NETMAP_LINUX_HAVE_NTA
 #endif /* NETMAP_LINUX_IXGBE_HAVE_NTA */
@@ -184,13 +153,6 @@ ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
 {
 	// TODO
 	RD(5, "per-queue irq disable not supported");
-}
-
-static void
-ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_RING *rx_ring)
-{
-	// TODO
-	D("not supported");
 }
 
 #ifdef NETMAP_LINUX_IXGBEVF_HAVE_NTA
@@ -641,8 +603,6 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
         /* same as in ixgbe_setup_transmit_ring() */
 	if (!slot)
 		return 0;	// not in native netmap mode
-	// XXX can we move it later ?
-	ixgbe_netmap_configure_srrctl(adapter, ring);
 
 	lim = na->num_rx_desc - 1 - nm_kr_rxspace(na->rx_rings[ring_nr]);
 
@@ -729,19 +689,33 @@ err:
 	return ret;
 }
 
+static unsigned
+nm_ixgbe_rx_buf_maxsize(struct NM_IXGBE_ADAPTER *adapter)
+{
+#if defined(NM_IXGBEVF)
+       return IXGBEVF_RXBUFFER_2048;
+#elif defined(NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ)
+       return ixgbe_rx_bufsz(NM_IXGBE_RX_RING(adapter, 0));
+#else  /* !NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ */
+       return 4096; /* stay on the safe side */
+#endif /* !NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ */
+}
+
 static int
-ixgbe_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
-		    u_int *rxr, u_int *rxd)
+ixgbe_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(na->ifp);
+	int ret = netmap_rings_config_get(na, info);
 
-	*txr = adapter->num_tx_queues;
-	*rxr = adapter->num_rx_queues;
-	*txd = NM_IXGBE_TX_RING(adapter, 0)->count;
-	*rxd = NM_IXGBE_RX_RING(adapter, 0)->count;
+	if (ret) {
+		return ret;
+	}
+
+	info->rx_buf_maxsize = nm_ixgbe_rx_buf_maxsize(adapter);
 
 	return 0;
 }
+
 
 static void ixgbe_netmap_detach(struct NM_IXGBE_ADAPTER *adapter);
 /*
@@ -776,15 +750,17 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = NM_IXGBE_TX_RING(adapter, 0)->count;
 	na.num_rx_desc = NM_IXGBE_RX_RING(adapter, 0)->count;
+	na.num_tx_rings = adapter->num_tx_queues;
+	na.num_rx_rings = adapter->num_rx_queues;
+	na.rx_buf_maxsize = nm_ixgbe_rx_buf_maxsize(adapter);
 	na.nm_txsync = ixgbe_netmap_txsync;
 	na.nm_rxsync = ixgbe_netmap_rxsync;
 	na.nm_register = ixgbe_netmap_reg;
 	na.nm_krings_create = ixgbe_netmap_krings_create;
 	na.nm_krings_delete = ixgbe_netmap_krings_delete;
-	na.nm_config = ixgbe_netmap_config;
-	na.num_tx_rings = adapter->num_tx_queues;
-	na.num_rx_rings = adapter->num_rx_queues;
 	na.nm_intr = ixgbe_netmap_intr;
+	na.nm_config = ixgbe_netmap_config;
+
 	if (netmap_attach_ext(&na, sizeof(struct netmap_ixgbe_adapter), 1)) {
 		pr_err("netmap: failed to attach netmap adapter");
 #ifndef NM_IXGBE_USE_TDH

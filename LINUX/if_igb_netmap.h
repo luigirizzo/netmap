@@ -375,6 +375,31 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	return 1;	// success
 }
 
+static unsigned
+nm_igb_rx_buf_maxsize(struct SOFTC_T *adapter)
+{
+#if defined(NETMAP_LINUX_HAVE_IGB_RX_BUFSZ)
+	return igb_rx_bufsz(adapter->rx_ring[0]);
+#else  /* !NETMAP_LINUX_HAVE_IGB_RX_BUFSZ */
+	return 3072; /* stay on the safe side */
+#endif /* !NETMAP_LINUX_HAVE_IGB_RX_BUFSZ */
+}
+
+static int
+igb_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	struct SOFTC_T *adapter = netdev_priv(na->ifp);
+	int ret = netmap_rings_config_get(na, info);
+
+	if (ret) {
+		return ret;
+	}
+
+	info->rx_buf_maxsize = nm_igb_rx_buf_maxsize(adapter);
+
+	return 0;
+}
+
 
 static void
 igb_netmap_attach(struct SOFTC_T *adapter)
@@ -388,11 +413,13 @@ igb_netmap_attach(struct SOFTC_T *adapter)
 	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = adapter->tx_ring_count;
 	na.num_rx_desc = adapter->rx_ring_count;
+	na.num_tx_rings = adapter->num_tx_queues;
+	na.num_rx_rings = adapter->num_rx_queues;
+	na.rx_buf_maxsize = nm_igb_rx_buf_maxsize(adapter);
 	na.nm_register = igb_netmap_reg;
 	na.nm_txsync = igb_netmap_txsync;
 	na.nm_rxsync = igb_netmap_rxsync;
-	na.num_tx_rings = adapter->num_tx_queues;
-	na.num_rx_rings = adapter->num_rx_queues;
+	na.nm_config = igb_netmap_config;
 	netmap_attach(&na);
 }
 

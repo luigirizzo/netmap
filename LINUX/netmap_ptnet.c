@@ -1206,18 +1206,20 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 }
 
 static int
-ptnet_nm_config(struct netmap_adapter *na, unsigned *txr, unsigned *txd,
-		unsigned *rxr, unsigned *rxd)
+ptnet_nm_config(struct netmap_adapter *na,
+		struct nm_config_info *info)
 {
 	struct ptnet_info *pi = netdev_priv(na->ifp);
 
-	*txr = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_RINGS);
-	*rxr = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_RINGS);
-	*txd = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_SLOTS);
-	*rxd = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_SLOTS);
+	info->num_tx_rings = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_RINGS);
+	info->num_rx_rings = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_RINGS);
+	info->num_tx_descs = ioread32(pi->ioaddr + PTNET_IO_NUM_TX_SLOTS);
+	info->num_rx_descs = ioread32(pi->ioaddr + PTNET_IO_NUM_RX_SLOTS);
+	info->rx_buf_maxsize = NETMAP_BUF_SIZE(na);
 
-	pr_info("%s: txr %u, rxr %u, txd %u, rxd %u\n", __func__,
-		*txr, *rxr, *txd, *rxd);
+	pr_info("%s: txr %u, rxr %u, txd %u, rxd %u, rxbufsz %u\n", __func__,
+		info->num_tx_rings, info->num_rx_rings, info->num_tx_descs,
+		info->num_rx_descs, info->rx_buf_maxsize);
 
 	return 0;
 }

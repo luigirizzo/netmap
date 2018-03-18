@@ -633,6 +633,15 @@ struct netmap_lut {
 
 struct netmap_vp_adapter; // forward
 
+/* Struct to be filled by nm_config callbacks. */
+struct nm_config_info {
+	unsigned num_tx_rings;
+	unsigned num_rx_rings;
+	unsigned num_tx_descs;
+	unsigned num_rx_descs;
+	unsigned rx_buf_maxsize;
+};
+
 /*
  * The "struct netmap_adapter" extends the "struct adapter"
  * (or equivalent) device descriptor.
@@ -769,8 +778,7 @@ struct netmap_adapter {
 #define NAF_FORCE_RECLAIM   2
 #define NAF_CAN_FORWARD_DOWN 4
 	/* return configuration information */
-	int (*nm_config)(struct netmap_adapter *,
-		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd);
+	int (*nm_config)(struct netmap_adapter *, struct nm_config_info *info);
 	int (*nm_krings_create)(struct netmap_adapter *);
 	void (*nm_krings_delete)(struct netmap_adapter *);
 #ifdef WITH_VALE
@@ -825,6 +833,12 @@ struct netmap_adapter {
 
 	/* Offset of ethernet header for each packet. */
 	u_int virt_hdr_len;
+
+	/* Max number of bytes that the NIC can store in the buffer
+	 * referenced by each RX descriptor. This translates to the maximum
+	 * bytes that a single netmap slot can reference. Larger packets
+	 * require NS_MOREFRAG support. */
+	unsigned rx_buf_maxsize;
 
 	char name[NETMAP_REQ_IFNAMSIZ]; /* used at least by pipes */
 };
@@ -1210,6 +1224,7 @@ int netmap_transmit(struct ifnet *, struct mbuf *);
 struct netmap_slot *netmap_reset(struct netmap_adapter *na,
 	enum txrx tx, u_int n, u_int new_cur);
 int netmap_ring_reinit(struct netmap_kring *);
+int netmap_rings_config_get(struct netmap_adapter *, struct nm_config_info *);
 
 /* Return codes for netmap_*x_irq. */
 enum {
@@ -1332,6 +1347,11 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	ifp->if_capenable &= ~IFCAP_NETMAP;
 #endif
 }
+
+#ifdef linux
+int netmap_linux_config(struct netmap_adapter *na,
+			struct nm_config_info *info);
+#endif /* linux */
 
 /*
  * nm_*sync_prologue() functions are used in ioctl/poll and ptnetmap

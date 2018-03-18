@@ -1063,8 +1063,7 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 }
 
 int
-netmap_linux_config(struct netmap_adapter *na,
-		u_int *txr, u_int *txd, u_int *rxr, u_int *rxd)
+netmap_rings_config_get(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	struct ifnet *ifp = na->ifp;
 	int error = 0;
@@ -1076,17 +1075,35 @@ netmap_linux_config(struct netmap_adapter *na,
 		error = ENXIO;
 		goto out;
 	}
-	error = nm_os_generic_find_num_desc(ifp, txd, rxd);
+	error = nm_os_generic_find_num_desc(ifp, &info->num_tx_descs,
+						&info->num_rx_descs);
 	if (error)
 		goto out;
-	nm_os_generic_find_num_queues(ifp, txr, rxr);
+	nm_os_generic_find_num_queues(ifp, &info->num_tx_rings,
+					&info->num_rx_rings);
 
 out:
 	rtnl_unlock();
 
 	return error;
 }
+EXPORT_SYMBOL(netmap_rings_config_get);
 
+/* Default nm_config implementation for netmap_hw_adapter on Linux. */
+int
+netmap_linux_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	int ret = netmap_rings_config_get(na, info);
+
+	if (ret) {
+		return ret;
+	}
+
+	/* Take whatever we had at init time. */
+	info->rx_buf_maxsize = na->rx_buf_maxsize;
+
+	return 0;
+}
 
 /* ######################## FILE OPERATIONS ####################### */
 

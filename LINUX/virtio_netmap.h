@@ -695,28 +695,6 @@ virtio_netmap_intr(struct netmap_adapter *na, int onoff)
 	}
 }
 
-/* Update the virtio-net device configurations. Number of queues can
- * change dinamically, by 'ethtool --set-channels $IFNAME combined $N'.
- * This is actually the only way virtio-net can currently enable
- * the multiqueue mode.
- */
-static int
-virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
-		     u_int *rxr, u_int *rxd)
-{
-	struct ifnet *ifp = na->ifp;
-	struct virtnet_info *vi = netdev_priv(ifp);
-
-	*txr = ifp->real_num_tx_queues;
-	*txd = virtqueue_get_vring_size(GET_TX_VQ(vi, 0));
-	*rxr = 1;
-	*rxd = virtqueue_get_vring_size(GET_RX_VQ(vi, 0));
-	D("virtio config txq=%d, txd=%d rxq=%d, rxd=%d",
-			*txr, *txd, *rxr, *rxd);
-
-	return 0;
-}
-
 static void
 virtio_netmap_attach(struct virtnet_info *vi)
 {
@@ -732,7 +710,6 @@ virtio_netmap_attach(struct virtnet_info *vi)
 	na.nm_register = virtio_netmap_reg;
 	na.nm_txsync = virtio_netmap_txsync;
 	na.nm_rxsync = virtio_netmap_rxsync;
-	na.nm_config = virtio_netmap_config;
 	na.nm_intr = virtio_netmap_intr;
 
 	ret = netmap_attach_ext(&na, sizeof(struct netmap_virtio_adapter), 1);

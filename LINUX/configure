@@ -1663,6 +1663,16 @@ EOF
 		return ring->next_to_alloc;
 	}
 EOF
+
+    add_test 'have IXGBE_RX_BUFSZ' <<EOF
+       #include "ixgbe/ixgbe.h"
+
+       unsigned int
+       dummy(struct ixgbe_ring *ring) {
+               return ixgbe_rx_bufsz(ring);
+       }
+EOF
+
   fi # ixgbe
 
   if drv enabled ixgbevf; then
@@ -1823,6 +1833,15 @@ EOF
 	dummy(struct e1000_hw *hw, u32 reg) {
 		return igb_rd32(hw, reg);
 	}
+EOF
+
+    add_test 'have IGB_RX_BUFSZ' <<EOF
+       #include "igb/igb.h"
+
+       unsigned int
+       dummy(struct igb_ring *ring) {
+               return igb_rx_bufsz(ring);
+       }
 EOF
   fi # igb
   

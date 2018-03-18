@@ -482,9 +482,6 @@ int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 #define MALLOC_DECLARE(a)
 #define MALLOC_DEFINE(a, b, c)
 
-struct netmap_adapter;
-int netmap_linux_config(struct netmap_adapter *na,
-		u_int *txr, u_int *rxr, u_int *txd, u_int *rxd);
 /* ---- namespaces ------ */
 #ifdef CONFIG_NET_NS
 int netmap_bns_register(void);
