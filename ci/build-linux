@@ -8,8 +8,9 @@ readonly GCC_MAJOR_VERSION=$(echo '#include <stdio.h>
 void main() { printf("%u\n", __GNUC__); }' | gcc -x c - -o /tmp/getgccversion  && /tmp/getgccversion)
 readonly PROC_COUNT=$(grep -c '^processor' /proc/cpuinfo)
 
+sudo apt-get -qq update
+sudo apt-get install libelf-dev
 if [ ${KERNEL_VERSION} == "local" ]; then
-    sudo apt-get -qq update
     sudo apt-get install -y linux-headers-$(uname -r)
     ./configure --no-drivers
     make -j $PROC_COUNT
