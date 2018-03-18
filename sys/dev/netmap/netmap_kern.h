@@ -1224,6 +1224,7 @@ int netmap_transmit(struct ifnet *, struct mbuf *);
 struct netmap_slot *netmap_reset(struct netmap_adapter *na,
 	enum txrx tx, u_int n, u_int new_cur);
 int netmap_ring_reinit(struct netmap_kring *);
+int netmap_rings_config_get(struct netmap_adapter *, struct nm_config_info *);
 
 /* Return codes for netmap_*x_irq. */
 enum {

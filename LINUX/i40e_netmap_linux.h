@@ -230,6 +230,21 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 	return 0;
 }
 
+static int
+i40e_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	struct i40e_netdev_priv *np = netdev_priv(na->ifp);
+	struct i40e_vsi  *vsi = np->vsi;
+	int ret = netmap_rings_config_get(na, info);
+
+	if (ret) {
+		return ret;
+	}
+
+	info->rx_buffer_size = vsi->rx_buf_len;
+
+	return 0;
+}
 
 /*
  * The attach routine, called near the end of i40e_attach(),
@@ -250,10 +265,12 @@ i40e_netmap_attach(struct i40e_vsi *vsi)
 	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = NM_I40E_TX_RING(vsi, 0)->count;
 	na.num_rx_desc = NM_I40E_RX_RING(vsi, 0)->count;
+	na.num_tx_rings = na.num_rx_rings = vsi->num_queue_pairs;
+	na.rx_buffer_size = vsi->rx_buf_len;
 	na.nm_txsync = i40e_netmap_txsync;
 	na.nm_rxsync = i40e_netmap_rxsync;
 	na.nm_register = i40e_netmap_reg;
-	na.num_tx_rings = na.num_rx_rings = vsi->num_queue_pairs;
+	na.nm_config = i40e_netmap_config;
 	netmap_attach(&na);
 }
 
