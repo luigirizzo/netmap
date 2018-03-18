@@ -753,32 +753,32 @@ netmap_update_config(struct netmap_adapter *na)
 		info.num_tx_descs = na->num_tx_desc;
 		info.num_rx_rings = na->num_rx_rings;
 		info.num_rx_descs = na->num_rx_desc;
-		info.rx_buffer_size = na->rx_buffer_size;
+		info.rx_buf_maxsize = na->rx_buf_maxsize;
 	}
 
 	if (na->num_tx_rings == info.num_tx_rings &&
 	    na->num_tx_desc == info.num_tx_descs &&
 	    na->num_rx_rings == info.num_rx_rings &&
 	    na->num_rx_desc == info.num_rx_descs &&
-	    na->rx_buffer_size == info.rx_buffer_size)
+	    na->rx_buf_maxsize == info.rx_buf_maxsize)
 		return 0; /* nothing changed */
 	if (na->active_fds == 0) {
 		D("configuration changed for %s: txring %d x %d, "
 			"rxring %d x %d, rxbufsz %d",
 			na->name, na->num_tx_rings, na->num_tx_desc,
-			na->num_rx_rings, na->num_rx_desc, na->rx_buffer_size);
+			na->num_rx_rings, na->num_rx_desc, na->rx_buf_maxsize);
 		na->num_tx_rings = info.num_tx_rings;
 		na->num_tx_desc = info.num_tx_descs;
 		na->num_rx_rings = info.num_rx_rings;
 		na->num_rx_desc = info.num_rx_descs;
-		na->rx_buffer_size = info.rx_buffer_size;
+		na->rx_buf_maxsize = info.rx_buf_maxsize;
 		return 0;
 	}
 	D("WARNING: configuration changed for %s while active: "
 		"txring %d x %d, rxring %d x %d, rxbufsz %d",
 		na->name, info.num_tx_rings, info.num_tx_descs,
 		info.num_rx_rings, info.num_rx_descs,
-		info.rx_buffer_size);
+		info.rx_buf_maxsize);
 	return 1;
 }
 
@@ -2103,7 +2103,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 			unsigned nbs = netmap_mem_bufsize(na->nm_mem);
 			unsigned mtu = nm_os_ifnet_mtu(na->ifp);
 
-			if (mtu <= na->rx_buffer_size) {
+			if (mtu <= na->rx_buf_maxsize) {
 				/* The MTU fits a single NIC slot. We only
 				 * Need to check that netmap buffers are
 				 * large enough to hold an MTU. NS_MOREFRAG
@@ -2127,11 +2127,11 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 						na->ifp->if_xname);
 					error = EINVAL;
 					goto err_drop_mem;
-				} else if (nbs < na->rx_buffer_size) {
+				} else if (nbs < na->rx_buf_maxsize) {
 					nm_prerr("error: using NS_MOREFRAG on "
 						"%s requires netmap buf size "
 						">= %u", na->ifp->if_xname,
-						na->rx_buffer_size);
+						na->rx_buf_maxsize);
 					error = EINVAL;
 					goto err_drop_mem;
 				} else {
@@ -3305,9 +3305,9 @@ netmap_attach_common(struct netmap_adapter *na)
 		return EINVAL;
 	}
 
-	if (!na->rx_buffer_size) {
+	if (!na->rx_buf_maxsize) {
 		/* Set a conservative default (larger is safer). */
-		na->rx_buffer_size = PAGE_SIZE;
+		na->rx_buf_maxsize = PAGE_SIZE;
 	}
 
 #ifdef __FreeBSD__

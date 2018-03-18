@@ -241,7 +241,7 @@ i40e_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 		return ret;
 	}
 
-	info->rx_buffer_size = vsi->rx_buf_len;
+	info->rx_buf_maxsize = vsi->rx_buf_len;
 
 	return 0;
 }
@@ -266,7 +266,7 @@ i40e_netmap_attach(struct i40e_vsi *vsi)
 	na.num_tx_desc = NM_I40E_TX_RING(vsi, 0)->count;
 	na.num_rx_desc = NM_I40E_RX_RING(vsi, 0)->count;
 	na.num_tx_rings = na.num_rx_rings = vsi->num_queue_pairs;
-	na.rx_buffer_size = vsi->rx_buf_len;
+	na.rx_buf_maxsize = vsi->rx_buf_len;
 	na.nm_txsync = i40e_netmap_txsync;
 	na.nm_rxsync = i40e_netmap_rxsync;
 	na.nm_register = i40e_netmap_reg;

@@ -373,7 +373,7 @@ e1000e_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 		return ret;
 	}
 
-	info->rx_buffer_size = adapter->rx_buffer_len;
+	info->rx_buf_maxsize = adapter->rx_buffer_len;
 
 	return 0;
 }
@@ -392,7 +392,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.num_tx_desc = adapter->tx_ring->count;
 	na.num_rx_desc = adapter->rx_ring->count;
 	na.num_tx_rings = na.num_rx_rings = 1;
-	na.rx_buffer_size = adapter->rx_buffer_len;
+	na.rx_buf_maxsize = adapter->rx_buffer_len;
 	na.nm_register = e1000_netmap_reg;
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;

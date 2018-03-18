@@ -1100,7 +1100,7 @@ netmap_linux_config(struct netmap_adapter *na, struct nm_config_info *info)
 	}
 
 	/* Take what we had at init time. */
-	info->rx_buffer_size = na->rx_buffer_size;
+	info->rx_buf_maxsize = na->rx_buf_maxsize;
 
 	return 0;
 }

@@ -690,7 +690,7 @@ err:
 }
 
 static unsigned
-nm_ixgbe_rx_buffer_size(struct NM_IXGBE_ADAPTER *adapter)
+nm_ixgbe_rx_buf_maxsize(struct NM_IXGBE_ADAPTER *adapter)
 {
 #if defined(NM_IXGBEVF)
        return IXGBEVF_RXBUFFER_2048;
@@ -711,7 +711,7 @@ ixgbe_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 		return ret;
 	}
 
-	info->rx_buffer_size = nm_ixgbe_rx_buffer_size(adapter);
+	info->rx_buf_maxsize = nm_ixgbe_rx_buf_maxsize(adapter);
 
 	return 0;
 }
@@ -752,7 +752,7 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 	na.num_rx_desc = NM_IXGBE_RX_RING(adapter, 0)->count;
 	na.num_tx_rings = adapter->num_tx_queues;
 	na.num_rx_rings = adapter->num_rx_queues;
-	na.rx_buffer_size = nm_ixgbe_rx_buffer_size(adapter);
+	na.rx_buf_maxsize = nm_ixgbe_rx_buf_maxsize(adapter);
 	na.nm_txsync = ixgbe_netmap_txsync;
 	na.nm_rxsync = ixgbe_netmap_rxsync;
 	na.nm_register = ixgbe_netmap_reg;
