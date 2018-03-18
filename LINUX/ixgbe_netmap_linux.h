@@ -729,6 +729,34 @@ err:
 	return ret;
 }
 
+static unsigned
+nm_ixgbe_rx_buffer_size(struct NM_IXGBE_ADAPTER *adapter)
+{
+#if defined(NM_IXGBEVF)
+       return IXGBEVF_RXBUFFER_2048;
+#elif defined(NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ)
+       return ixgbe_rx_bufsz(NM_IXGBE_RX_RING(adapter, 0));
+#else  /* !NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ */
+       return 4096; /* stay on the safe side */
+#endif /* !NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ */
+}
+
+static int
+ixgbe_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(na->ifp);
+	int ret = netmap_rings_config_get(na, info);
+
+	if (ret) {
+		return ret;
+	}
+
+	info->rx_buffer_size = nm_ixgbe_rx_buffer_size(adapter);
+
+	return 0;
+}
+
+
 static void ixgbe_netmap_detach(struct NM_IXGBE_ADAPTER *adapter);
 /*
  * The attach routine, called near the end of ixgbe_attach(),
@@ -762,14 +790,17 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = NM_IXGBE_TX_RING(adapter, 0)->count;
 	na.num_rx_desc = NM_IXGBE_RX_RING(adapter, 0)->count;
+	na.num_tx_rings = adapter->num_tx_queues;
+	na.num_rx_rings = adapter->num_rx_queues;
+	na.rx_buffer_size = nm_ixgbe_rx_buffer_size(adapter);
 	na.nm_txsync = ixgbe_netmap_txsync;
 	na.nm_rxsync = ixgbe_netmap_rxsync;
 	na.nm_register = ixgbe_netmap_reg;
 	na.nm_krings_create = ixgbe_netmap_krings_create;
 	na.nm_krings_delete = ixgbe_netmap_krings_delete;
-	na.num_tx_rings = adapter->num_tx_queues;
-	na.num_rx_rings = adapter->num_rx_queues;
 	na.nm_intr = ixgbe_netmap_intr;
+	na.nm_config = ixgbe_netmap_config;
+
 	if (netmap_attach_ext(&na, sizeof(struct netmap_ixgbe_adapter), 1)) {
 		pr_err("netmap: failed to attach netmap adapter");
 #ifndef NM_IXGBE_USE_TDH
