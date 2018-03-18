@@ -709,7 +709,7 @@ virtio_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
 
 	*txr = ifp->real_num_tx_queues;
 	*txd = virtqueue_get_vring_size(GET_TX_VQ(vi, 0));
-	*rxr = 1;
+	*rxr = ifp->real_num_rx_queues;
 	*rxd = virtqueue_get_vring_size(GET_RX_VQ(vi, 0));
 	D("virtio config txq=%d, txd=%d rxq=%d, rxd=%d",
 			*txr, *txd, *rxr, *rxd);
