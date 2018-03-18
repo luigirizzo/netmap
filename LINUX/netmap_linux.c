@@ -1063,7 +1063,7 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 }
 
 int
-netmap_linux_config(struct netmap_adapter *na, struct nm_config_info *info)
+netmap_rings_config_get(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	struct ifnet *ifp = na->ifp;
 	int error = 0;
@@ -1087,7 +1087,23 @@ out:
 
 	return error;
 }
+EXPORT_SYMBOL(netmap_rings_config_get);
 
+/* Default nm_config implementation for netmap_hw_adapter on Linux. */
+int
+netmap_linux_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	int ret = netmap_rings_config_get(na, info);
+
+	if (ret) {
+		return ret;
+	}
+
+	/* Take what we had at init time. */
+	info->rx_buffer_size = na->rx_buffer_size;
+
+	return 0;
+}
 
 /* ######################## FILE OPERATIONS ####################### */
 
