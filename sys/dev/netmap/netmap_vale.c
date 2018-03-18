@@ -2785,11 +2785,12 @@ netmap_bwrap_config(struct netmap_adapter *na, struct nm_config_info *info)
 
 	/* forward the request */
 	netmap_update_config(hwna);
-	/* swap the results */
+	/* swap the results and propagate */
 	info->num_tx_rings = hwna->num_rx_rings;
 	info->num_tx_descs = hwna->num_rx_desc;
 	info->num_rx_rings = hwna->num_tx_rings;
 	info->num_rx_descs = hwna->num_tx_desc;
+	info->rx_buf_maxsize = hwna->rx_buf_maxsize;
 
 	return 0;
 }

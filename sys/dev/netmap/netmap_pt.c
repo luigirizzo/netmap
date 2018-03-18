@@ -1036,6 +1036,7 @@ nm_pt_host_config(struct netmap_adapter *na, struct nm_config_info *info)
     info->num_tx_rings = na->num_tx_rings = parent->num_tx_rings;
     info->num_tx_descs = na->num_tx_desc = parent->num_tx_desc;
     info->num_rx_descs = na->num_rx_desc = parent->num_rx_desc;
+    info->rx_buf_maxsize = na->rx_buf_maxsize = parent->rx_buf_maxsize;
 
     return error;
 }
