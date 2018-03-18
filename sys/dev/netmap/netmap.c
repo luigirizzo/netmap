@@ -747,38 +747,38 @@ netmap_update_config(struct netmap_adapter *na)
 
 	bzero(&info, sizeof(info));
 	if (na->nm_config == NULL ||
-	    na->nm_config(na, &info))
-	{
+	    na->nm_config(na, &info)) {
 		/* take whatever we had at init time */
 		info.num_tx_rings = na->num_tx_rings;
 		info.num_tx_descs = na->num_tx_desc;
 		info.num_rx_rings = na->num_rx_rings;
 		info.num_rx_descs = na->num_rx_desc;
+		info.rx_buffer_size = na->rx_buffer_size;
 	}
 
 	if (na->num_tx_rings == info.num_tx_rings &&
 	    na->num_tx_desc == info.num_tx_descs &&
 	    na->num_rx_rings == info.num_rx_rings &&
-	    na->num_rx_desc == info.num_rx_descs)
+	    na->num_rx_desc == info.num_rx_descs &&
+	    na->rx_buffer_size == info.rx_buffer_size)
 		return 0; /* nothing changed */
-	if (netmap_verbose || na->active_fds > 0) {
-		D("stored config %s: txring %d x %d, rxring %d x %d",
-			na->name,
-			na->num_tx_rings, na->num_tx_desc,
-			na->num_rx_rings, na->num_rx_desc);
-		D("new config %s: txring %d x %d, rxring %d x %d",
-			na->name, info.num_tx_rings, info.num_tx_descs,
-			info.num_rx_rings, info.num_rx_descs);
-	}
 	if (na->active_fds == 0) {
-		D("configuration changed (but fine)");
+		D("configuration changed for %s: txring %d x %d, "
+			"rxring %d x %d, rxbufsz %d",
+			na->name, na->num_tx_rings, na->num_tx_desc,
+			na->num_rx_rings, na->num_rx_desc, na->rx_buffer_size);
 		na->num_tx_rings = info.num_tx_rings;
 		na->num_tx_desc = info.num_tx_descs;
 		na->num_rx_rings = info.num_rx_rings;
 		na->num_rx_desc = info.num_rx_descs;
+		na->rx_buffer_size = info.rx_buffer_size;
 		return 0;
 	}
-	D("configuration changed while active, this is bad...");
+	D("WARNING: configuration changed for %s while active: "
+		"txring %d x %d, rxring %d x %d, rxbufsz %d",
+		na->name, info.num_tx_rings, info.num_tx_descs,
+		info.num_rx_rings, info.num_rx_descs,
+		info.rx_buffer_size);
 	return 1;
 }
 
