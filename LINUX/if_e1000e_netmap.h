@@ -363,6 +363,21 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 	return 1;
 }
 
+static int
+e1000e_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	struct SOFTC_T *adapter = netdev_priv(na->ifp);
+	int ret = netmap_rings_config_get(na, info);
+
+	if (ret) {
+		return ret;
+	}
+
+	info->rx_buffer_size = adapter->rx_buffer_len;
+
+	return 0;
+}
+
 
 static void
 e1000_netmap_attach(struct SOFTC_T *adapter)
@@ -376,10 +391,12 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = adapter->tx_ring->count;
 	na.num_rx_desc = adapter->rx_ring->count;
+	na.num_tx_rings = na.num_rx_rings = 1;
+	na.rx_buffer_size = adapter->rx_buffer_len;
 	na.nm_register = e1000_netmap_reg;
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;
-	na.num_tx_rings = na.num_rx_rings = 1;
+	na.nm_config = e1000e_netmap_config;
 	netmap_attach(&na);
 }
 
