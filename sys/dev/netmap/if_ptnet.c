@@ -1112,10 +1112,12 @@ ptnet_nm_config(struct netmap_adapter *na, struct nm_config_info *info)
 	info->num_rx_rings = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_RINGS);
 	info->num_tx_descs = bus_read_4(sc->iomem, PTNET_IO_NUM_TX_SLOTS);
 	info->num_rx_descs = bus_read_4(sc->iomem, PTNET_IO_NUM_RX_SLOTS);
+	info->rx_buf_maxsize = NETMAP_BUF_SIZE(na);
 
-	device_printf(sc->dev, "txr %u, rxr %u, txd %u, rxd %u\n",
+	device_printf(sc->dev, "txr %u, rxr %u, txd %u, rxd %u, rxbufsz %u\n",
 			info->num_tx_rings, info->num_rx_rings,
-			info->num_tx_descs, info->num_rx_descs);
+			info->num_tx_descs, info->num_rx_descs,
+			info->rx_buf_maxsize);
 
 	return 0;
 }
