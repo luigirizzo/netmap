@@ -365,9 +365,6 @@ struct netmap_zmon_list {
  * 	the next empty buffer as known by the hardware (next_to_check or so).
  * TX rings: hwcur + hwofs coincides with next_to_send
  *
- * For received packets, slot->flags is set to nkr_slot_flags
- * so we can provide a proper initial value.
- *
  * The following fields are used to implement lock-free copy of packets
  * from input to output ports in VALE switch:
  *	nkr_hwlease	buffer after the last one being copied.
