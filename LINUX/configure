@@ -1834,6 +1834,15 @@ EOF
 		return igb_rd32(hw, reg);
 	}
 EOF
+
+    add_test 'have IGB_RX_BUFSZ' <<EOF
+       #include "igb/igb.h"
+
+       unsigned int
+       dummy(struct igb_ring *ring) {
+               return igb_rx_bufsz(ring);
+       }
+EOF
   fi # igb
   
   # END_TESTS
