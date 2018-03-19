@@ -5,6 +5,7 @@ SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
 DEBUG=1
 UTILS=
+DRVERRFAIL=
 
 # setelem2n <set> <elem>
 setelem2n()
@@ -239,6 +240,15 @@ warning()
 	message WARNING
 }
 
+drverror() {
+	message WARNING
+	if [ -n "$DRVERRFAIL" ]; then
+		error <<EOF
+Exiting because of --fail-on-driver-errors.
+EOF
+	fi
+}
+
 replace_vars()
 {
 	sed \
@@ -288,6 +298,8 @@ Available options:
   --no-ext-drivers=            do not use the given external drivers (comma sep.)
   --select-version=	       comma sep. list of driver:version expressions
   			       (select a different versions for external drivers)
+  --fail-on-driver-errors      stop the build when a driver fails to compile,
+			       rather than disabling it
   --no-apps	               do not compile any app
   --no-apps=                   do not compile the given apps (comma sep.)
   --apps=                      only compile the given apps (comma sep.)
@@ -625,6 +637,9 @@ for opt do
 	--utils)
 		UTILS=1
 		;;
+	--fail-on-driver-errors)
+		DRVERRFAIL=1
+		;;
 	*)
 		echo "Unrecognized option: $opt" | warning
 	;;
@@ -803,7 +818,7 @@ $d using the following command:
 If this fails, please download the above file and put it
 in $SRCDIR/ext-drivers/, then run configure again.
 EOF
-		eval $drv_fetch 2>&1 || { warning <<EOF
+		eval $drv_fetch 2>&1 || { drverror <<EOF
 Unable to fetch the sources for driver $d. Disabling driver.
 EOF
 			drv disable $d
@@ -854,7 +869,7 @@ EOF
 			drv_kernel_src=$(find $src/drivers/ -name "$d" -print -quit)
 		fi
 		if [ -z "$drv_kernel_src" ]; then
-			warning <<EOF
+			drverror <<EOF
 '$d': sources not found.  Disabling driver.
 EOF
 			drv disable $d
@@ -868,7 +883,7 @@ EOF
 		# XXX the selection is based only on the kernel version
 		drv_patch=$(ls patches/vanilla--$d--* | awk -v v=$lin_ver -F -- '($3 != "*") && ($3 <= v"") && (v"" < $4)')
 		if [ -z "$drv_patch" ]; then
-			warning <<EOF
+			drverror <<EOF
 '$d': no applicable patch found and no override provided.
 Disabling driver.
 EOF
@@ -931,7 +946,7 @@ EOF
   # configured driver
   drv_source_error()
   {
-	warning <<EOF
+	drverror <<EOF
 There were problems copying the sources of driver $1.
 
 If you need this driver, please check that the $1@src variable 
@@ -950,7 +965,7 @@ EOF
   # check that we can build the unpatched external drivers
   edrv_build_error()
   {
-	warning <<EOF
+	drverror <<EOF
 There were problems building the external driver $1.
 
 Please note that this is not related to the netmap patches,
@@ -969,7 +984,7 @@ EOF
   # check that we can patch the internal drivers
   drv_patch_error()
   {
-	warning <<EOF
+	drverror <<EOF
 There were problems patching the driver $1.
 
 Disabling $1.
