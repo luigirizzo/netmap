@@ -473,7 +473,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
 			rxr->next_to_use = rxr->next_to_clean;
-#ifdef NETMAP_LINUX_IXGBE_HAVE_NTA
+#ifdef NETMAP_LINUX_HAVE_NTA
 			rxr->next_to_alloc = rxr->next_to_clean;
 #endif /* NETMAP_LINUX_HAVE_NTA */
 			kring->nr_hwtail = nm_i;
