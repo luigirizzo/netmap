@@ -252,7 +252,9 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 		}
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
+#ifdef NETMAP_LINUX_HAVE_IGB_NTA
 			rxr->next_to_alloc = nic_i;
+#endif /* NETMAP_LINUX_HAVE_IGB_NTA */
 			kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;

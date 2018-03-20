@@ -1858,6 +1858,14 @@ EOF
                return igb_rx_bufsz(ring);
        }
 EOF
+    add_test 'have IGB_NTA' <<EOF
+       #include "igb/igb.h"
+
+       unsigned int
+       dummy(struct igb_ring *ring) {
+		return ring->next_to_alloc;
+       }
+EOF
   fi # igb
   
   # END_TESTS
