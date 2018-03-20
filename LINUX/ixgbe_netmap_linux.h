@@ -693,7 +693,11 @@ static unsigned
 nm_ixgbe_rx_buf_maxsize(struct NM_IXGBE_ADAPTER *adapter)
 {
 #if defined(NM_IXGBEVF)
+#ifdef IXGBEVF_RXBUFFER_2048
        return IXGBEVF_RXBUFFER_2048;
+#else
+       return 2048;
+#endif /* IXGBEVF_RXBUFFER_2048 */
 #elif defined(NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ)
        return ixgbe_rx_bufsz(NM_IXGBE_RX_RING(adapter, 0));
 #else  /* !NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ */
