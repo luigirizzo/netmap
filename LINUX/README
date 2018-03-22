@@ -288,16 +288,6 @@ COMMON PROBLEMS
   In emulated netmap mode (i.e. with unpatched drivers) VLAN tags are never
   visible by the netmap application.
 
-* if you are using e1000 with netmap, you should verify the result of the patch
-  from final-patches/vanilla--e1000--20620--31200 that was applied on
-  e1000/e1000_main.c. It was observed that when using non-vanilla kernel version
-  netmap hook that needs to be applied on e1000_clean_rx_irq is actually 
-  applied on e1000_clean_jumbo_rx_irq. As a result it will end up in packets
-  going directly from NIC Rx Rings to Host stack.
-      
-      You should fix this issue by manually patching e1000/e1000_main.c to add
-  the correct netmap hook in e1000_clean_rx_irq
-
 REVISION HISTORY
 -----------------
 
