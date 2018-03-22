@@ -2110,7 +2110,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 				 * cannot be used in this case. */
 				if (nbs < mtu) {
 					nm_prerr("error: netmap buf size (%u) "
-						"< device MTU (%u)", nbs, mtu);
+						"< device MTU (%u)\n", nbs, mtu);
 					error = EINVAL;
 					goto err_drop_mem;
 				}
@@ -2123,14 +2123,14 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 				if (!(na->na_flags & NAF_MOREFRAG)) {
 					nm_prerr("error: large MTU (%d) needed "
 						"but %s does not support "
-						"NS_MOREFRAG", mtu,
+						"NS_MOREFRAG\n", mtu,
 						na->ifp->if_xname);
 					error = EINVAL;
 					goto err_drop_mem;
 				} else if (nbs < na->rx_buf_maxsize) {
 					nm_prerr("error: using NS_MOREFRAG on "
 						"%s requires netmap buf size "
-						">= %u", na->ifp->if_xname,
+						">= %u\n", na->ifp->if_xname,
 						na->rx_buf_maxsize);
 					error = EINVAL;
 					goto err_drop_mem;
@@ -2138,7 +2138,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 					nm_prinf("info: netmap application on "
 						"%s needs to support "
 						"NS_MOREFRAG "
-						"(MTU=%u,netmap_buf_size=%u)",
+						"(MTU=%u,netmap_buf_size=%u)\n",
 						na->ifp->if_xname, mtu, nbs);
 				}
 			}
