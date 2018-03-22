@@ -1751,16 +1751,22 @@ netmap_unload_map(struct netmap_adapter *na,
 }
 
 static inline void
-netmap_sync_map(struct netmap_adapter *na,
+netmap_sync_map_cpu(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz, enum txrx t)
 {
 	if (*map) {
-		if (t == NR_RX)
-			dma_sync_single_for_cpu(na->pdev, *map, sz,
-					DMA_FROM_DEVICE);
-		else
-			dma_sync_single_for_device(na->pdev, *map, sz,
-					DMA_TO_DEVICE);
+		dma_sync_single_for_cpu(na->pdev, *map, sz,
+			(t == NR_TX ? DMA_TO_DEVICE : DMA_FROM_DEVICE));
+	}
+}
+
+static inline void
+netmap_sync_map_dev(struct netmap_adapter *na,
+	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz, enum txrx t)
+{
+	if (*map) {
+		dma_sync_single_for_device(na->pdev, *map, sz,
+			(t == NR_TX ? DMA_TO_DEVICE : DMA_FROM_DEVICE));
 	}
 }
 
