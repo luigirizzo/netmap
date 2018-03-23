@@ -237,7 +237,6 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int ring_nr = kring->ring_id;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int nic_i;	/* index into the NIC ring */
-	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	/*
@@ -249,7 +248,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	/* device-specific */
 	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(ifp);
 	struct NM_IXGBE_RING *txr = NM_IXGBE_TX_RING(adapter, ring_nr);
-	int reclaim_tx;
+	int reclaim_tx, report;
 
 	/*
 	 * First part: process new packets to send.
@@ -289,7 +288,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
 		nic_i = netmap_idx_k2n(kring, nm_i);
-		for (n = 0; nm_i != head; n++) {
+		while (nm_i != head) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
@@ -297,22 +296,76 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* device-specific */
 			union ixgbe_adv_tx_desc *curr = NM_IXGBE_TX_DESC(txr, nic_i);
-			int hw_flags = (slot->flags & NS_REPORT ||
-				nic_i == 0 || nic_i == report_frequency
-				) ? IXGBE_TXD_CMD_RS : 0;
+			unsigned int hw_flags =	IXGBE_ADVTXD_DTYP_DATA | IXGBE_ADVTXD_DCMD_DEXT |
+				IXGBE_ADVTXD_DCMD_IFCS;
+			u_int totlen = len;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
-			if (!(slot->flags & NS_MOREFRAG))
-				hw_flags |= IXGBE_TXD_CMD_EOP;
+			report = slot->flags & NS_REPORT ||
+				nic_i == 0 ||
+				nic_i == report_frequency;
+			if (slot->flags & NS_MOREFRAG) {
+				/* There is some duplicated code here, but
+				 * mixing everything up in the outer loop makes
+				 * things less transparent, and it also adds
+				 * unnecessary instructions in the fast path
+				 */
+				union ixgbe_adv_tx_desc *first = curr;
+
+				first->read.buffer_addr = htole64(paddr);
+				first->read.cmd_type_len = htole32(len | hw_flags);
+				netmap_sync_map(na, (bus_dma_tag_t) na->pdev,
+						&paddr, len, NR_TX);
+				/* avoid setting the FCS flag in the
+				 * descriptors after the first, for safety
+				 */
+				hw_flags &= ~IXGBE_ADVTXD_DCMD_IFCS;
+				for (;;) {
+					nm_i = nm_next(nm_i, lim);
+					nic_i = nm_next(nic_i, lim);
+					/* remember that we have to ask for a
+					 * report each time we move past half a
+					 * ring
+					 */
+					report |= nic_i == 0 ||
+						nic_i == report_frequency;
+					if (nm_i == head) {
+						// XXX should we accept incomplete packets?
+						return EINVAL;
+					}
+					slot = &ring->slot[nm_i];
+					len = slot->len;
+					addr = PNMB(na, slot, &paddr);
+					NM_CHECK_ADDR_LEN(na, addr, len);
+					curr = NM_IXGBE_TX_DESC(txr, nic_i);
+					totlen += len;
+					if (!(slot->flags & NS_MOREFRAG))
+						break;
+					curr->read.buffer_addr = htole64(paddr);
+					curr->read.olinfo_status = 0;
+					curr->read.cmd_type_len = htole32(len | hw_flags);
+
+					netmap_sync_map(na, (bus_dma_tag_t) na->pdev,
+							&paddr, len, NR_TX);
+				}
+				first->read.olinfo_status =
+					htole32(totlen << IXGBE_ADVTXD_PAYLEN_SHIFT);
+				totlen = 0;
+			}
+
+			/* curr now always points to the last descriptor of a packet
+			 * (which is also the first for single-slot packets)
+			 *
+			 * EOP and RS must be set only in this descriptor.
+			 */
+			hw_flags |= IXGBE_TXD_CMD_EOP | (report ? IXGBE_TXD_CMD_RS : 0);
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
 
 			/* Fill the slot in the NIC ring. */
 			curr->read.buffer_addr = htole64(paddr);
-			curr->read.olinfo_status = htole32(len << IXGBE_ADVTXD_PAYLEN_SHIFT);
-			curr->read.cmd_type_len = htole32(len | hw_flags |
-				IXGBE_ADVTXD_DTYP_DATA | IXGBE_ADVTXD_DCMD_DEXT |
-				IXGBE_ADVTXD_DCMD_IFCS);
+			curr->read.olinfo_status = htole32(totlen << IXGBE_ADVTXD_PAYLEN_SHIFT);
+			curr->read.cmd_type_len = htole32(len | hw_flags);
 			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
@@ -329,7 +382,6 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	 */
 #ifndef NM_IXGBE_USE_TDH
 	(void)reclaim_tx;
-	(void)report_frequency;
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
 		u32 h = NM_ACCESS_ONCE(*ina->heads[ring_nr].phead);
 		ND(5, "%s: h %d", kring->name, h);
