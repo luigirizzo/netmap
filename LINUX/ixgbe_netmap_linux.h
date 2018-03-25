@@ -626,46 +626,24 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 	return 1;
 }
 
-static void
-ixgbe_netmap_krings_delete(struct netmap_adapter *na)
-{
 #ifndef NM_IXGBE_USE_TDH
-	struct netmap_ixgbe_adapter *ina =
-		(struct netmap_ixgbe_adapter *)na;
-
-	ina = (struct netmap_ixgbe_adapter *)na;
-	if (ina->heads != NULL) {
-		int i;
-
-		for (i = 0; i < na->num_tx_rings; i++) {
-			struct netmap_ixgbe_head *h = &ina->heads[i];
-			if (h->phead != NULL)
-				dma_pool_free(ina->pool, h->phead, h->map);
-			h->phead = NULL;
-		}
-		kfree(ina->heads);
-		ina->heads = NULL;
-	}
-#endif /*! NM_IXGBE_USE_TDH */
-	netmap_hw_krings_delete(na);
-}
-
+static void ixgbe_netmap_destroy_heads(struct netmap_adapter *);
 static int
-ixgbe_netmap_krings_create(struct netmap_adapter *na)
+ixgbe_netmap_create_heads(struct netmap_adapter *na)
 {
-#ifndef NM_IXGBE_USE_TDH
 	struct netmap_ixgbe_adapter *ina =
 		(struct netmap_ixgbe_adapter *)na;
 	int i;
-#endif /* !NM_IXGBE_USE_TDH */
-        int ret;
-       
-	ret = netmap_hw_krings_create(na);
-	if (ret)
-		return ret;
 
-#ifndef NM_IXGBE_USE_TDH
-	ret = ENOMEM;
+	// allocate head-writeback region
+	ina->pool = dma_pool_create("head-wb",
+			na->pdev, sizeof(u32),
+			L1_CACHE_BYTES, 0);
+	if (ina->pool == NULL) {
+		pr_err("netmap: failed to allocated head-wb pool");
+		goto err;
+	}
+
 	ina->heads = kmalloc(sizeof(struct netmap_ixgbe_head) * na->num_tx_rings,
 			GFP_KERNEL | __GFP_ZERO);
 	if (ina->heads == NULL)
@@ -679,14 +657,66 @@ ixgbe_netmap_krings_create(struct netmap_adapter *na)
 			goto err;
 		}
 		*h->phead = 0;
-		D("%s: phead %p *phead %x", na->tx_rings[i]->name, h->phead, *h->phead);
+		ND("%s: phead %p *phead %x", na->tx_rings[i].name, h->phead, *h->phead);
 	}
 	return 0;
 
 err:
-	ixgbe_netmap_krings_delete(na);
+	ixgbe_netmap_destroy_heads(na);
+	return ENOMEM;
+}
+
+static void
+ixgbe_netmap_destroy_heads(struct netmap_adapter *na)
+{
+	struct netmap_ixgbe_adapter *ina =
+		(struct netmap_ixgbe_adapter *)na;
+
+	if (ina->heads != NULL) {
+		int i;
+
+		for (i = 0; i < na->num_tx_rings; i++) {
+			struct netmap_ixgbe_head *h = &ina->heads[i];
+			if (h->phead != NULL)
+				dma_pool_free(ina->pool, h->phead, h->map);
+			h->phead = NULL;
+		}
+		kfree(ina->heads);
+		ina->heads = NULL;
+	}
+	if (ina->pool != NULL) {
+		dma_pool_destroy(ina->pool);
+		ina->pool = NULL;
+	}
+}
+#endif /* !NM_IXGBE_USE_TDH */
+
+static void
+ixgbe_netmap_krings_delete(struct netmap_adapter *na)
+{
+#ifndef NM_IXGBE_USE_TDH
+	ixgbe_netmap_destroy_heads(na);
 #endif /*! NM_IXGBE_USE_TDH */
-	return ret;
+	netmap_hw_krings_delete(na);
+}
+
+static int
+ixgbe_netmap_krings_create(struct netmap_adapter *na)
+{
+        int ret;
+       
+	ret = netmap_hw_krings_create(na);
+	if (ret)
+		return ret;
+
+#ifndef NM_IXGBE_USE_TDH
+	ret = ixgbe_netmap_create_heads(na);
+	if (ret) {
+		netmap_hw_krings_delete(na);
+		return ret;
+	}
+#endif /*! NM_IXGBE_USE_TDH */
+	return 0;
 }
 
 static unsigned
@@ -733,19 +763,6 @@ static void
 ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 {
 	struct netmap_adapter na;
-#ifndef NM_IXGBE_USE_TDH
-	struct netmap_ixgbe_adapter *ina;
-	struct dma_pool *pool;
-
-	// allocate head-writeback region
-	pool = dma_pool_create("head-wb",
-			&adapter->pdev->dev, sizeof(u32),
-			L1_CACHE_BYTES, 0);
-	if (pool == NULL) {
-		pr_err("netmap: failed to allocated head-wb pool");
-		return;
-	}
-#endif /*! NM_IXGBE_USE_TDH */
 
 	bzero(&na, sizeof(na));
 
@@ -767,31 +784,18 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 
 	if (netmap_attach_ext(&na, sizeof(struct netmap_ixgbe_adapter), 1)) {
 		pr_err("netmap: failed to attach netmap adapter");
-#ifndef NM_IXGBE_USE_TDH
-		dma_pool_destroy(pool);
-#endif /*! NM_IXGBE_USE_TDH */
 		return;
 	}
-#ifndef NM_IXGBE_USE_TDH
-	ina = (struct netmap_ixgbe_adapter *)NA(adapter->netdev);
-	ina->pool = pool;
-#endif /*! NM_IXGBE_USE_TDH */
 }
 
 static void
 ixgbe_netmap_detach(struct NM_IXGBE_ADAPTER *adapter)
 {
 #ifndef NM_IXGBE_USE_TDH
-	struct netmap_ixgbe_adapter *ina;
-
 	if (!NM_NA_VALID(adapter->netdev))
 		return;
 
-	ina = (struct netmap_ixgbe_adapter *)NA(adapter->netdev);
-	if (ina->pool != NULL) {
-		dma_pool_destroy(ina->pool);
-		ina->pool = NULL;
-	}
+	ixgbe_netmap_destroy_heads(NA(adapter->netdev));
 #endif /*! NM_IXGBE_USE_TDH */
 
 	netmap_detach(adapter->netdev);
