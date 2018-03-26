@@ -382,9 +382,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* device-specific */
 			struct i40e_tx_desc *curr = I40E_TX_DESC(txr, nic_i);
-			u64 hw_flags = (slot->flags & NS_REPORT ||
-				nic_i == 0 || nic_i == report_frequency) ?
-				((u64)I40E_TX_DESC_CMD_RS << I40E_TXD_QW1_CMD_SHIFT) : 0;
+			u64 hw_flags = 0;
 
 			/* prefetch for next round */
 			__builtin_prefetch(&ring->slot[nm_i + 1]);
@@ -393,7 +391,13 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (!(slot->flags & NS_MOREFRAG)) {
-				hw_flags |= ((u64)(I40E_TX_DESC_CMD_EOP) << I40E_TXD_QW1_CMD_SHIFT);
+				hw_flags |= ((u64)(I40E_TX_DESC_CMD_EOP) <<
+						I40E_TXD_QW1_CMD_SHIFT);
+				if (slot->flags & NS_REPORT || nic_i == 0 ||
+						nic_i == report_frequency) {
+					hwflags |= ((u64)I40E_TX_DESC_CMD_RS <<
+							I40E_TXD_QW1_CMD_SHIFT);
+				}
 			}
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
