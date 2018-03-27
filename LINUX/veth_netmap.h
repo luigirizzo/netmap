@@ -113,7 +113,7 @@ veth_netmap_dtor(struct netmap_adapter *na)
 }
 
 /*
- * Register/unregister. We are already under netmap lock.
+ * Register/unregister. We are already under RCU lock.
  * This register function is similar to the one used by
  * pipes; in addition to the regular tasks (commit the rings
  * in/out netmap node and call nm_(set|clear)_native_flags),
@@ -156,7 +156,11 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		/* create all missing needed rings on the other end */
+		/* create all missing needed rings on the other end.
+		 * They have all been marked as fake in the krings_create
+		 * above, so the will not be filled with buffers
+		 */
+
 		error = netmap_mem_rings_create(peer_na);
 		if (error) {
 			return error;
@@ -168,6 +172,30 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 				struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring)) {
+					struct netmap_kring *sring, *dring;
+
+					/* copy the buffers from the non-fake ring */
+					if (kring->nr_kflags & NKR_FAKERING) {
+						sring = kring->pipe;
+						dring = kring;
+					} else {
+						sring = kring;
+						dring = kring->pipe;
+					}
+					memcpy(dring->ring->slot,
+					       sring->ring->slot,
+					       sizeof(struct netmap_slot) *
+							sring->nkr_num_slots);
+					/* mark both rings as fake and needed,
+					 * so that buffers will not be
+					 * deleted by the standard machinery
+					 * (we will delete them by ourselves in
+					 * veth_netmap_krings_delete)
+					 */
+					sring->nr_kflags |=
+						(NKR_FAKERING | NKR_NEEDRING);
+					dring->nr_kflags |=
+						(NKR_FAKERING | NKR_NEEDRING);
 					kring->nr_mode = NKR_NETMAP_ON;
 				}
 			}
@@ -185,20 +213,9 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 				if (nm_kring_pending_off(kring)) {
 					kring->nr_mode = NKR_NETMAP_OFF;
-					/* If hw kring, mark the peer kring
-					 * as no longer needed by us (it may
-					 * still be kept if sombody else is
-					 * using it).
-					 */
-					if (kring->pipe) {
-						kring->pipe->nr_kflags &=
-								~NKR_NEEDRING;
-					}
 				}
 			}
 		}
-		/* delete all the peer rings that are no longer needed */
-		netmap_mem_rings_delete(peer_na);
 		if (netmap_verbose) {
 			D("unregistered veth %s", na->name);
 		}
@@ -221,6 +238,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 	return 0;
 }
 
+/* See netmap_pipe_krings_create(). */
 static int
 veth_netmap_krings_create(struct netmap_adapter *na)
 {
@@ -264,6 +282,8 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 		for (i = 0; i < nma_get_nrings(na, t); i++) {
 			NMR(na, t)[i]->pipe = NMR(peer_na, r)[i];
 			NMR(peer_na, r)[i]->pipe = NMR(na, t)[i];
+			/* mark all peer-adapter rings as fake */
+			NMR(peer_na, r)[i]->nr_kflags |= NKR_FAKERING;
 		}
 	}
 
@@ -282,10 +302,13 @@ err:
 	return error;
 }
 
+/* See netmap_pipe_krings_delete(). */
 static void
 veth_netmap_krings_delete(struct netmap_adapter *na)
 {
-	struct netmap_adapter *peer_na;
+	struct netmap_adapter *peer_na, *sna;
+	enum txrx t;
+	int i;
 
 	if (krings_needed(na)) {
 		/* Our krings are needed by the other peer, so we
@@ -293,7 +316,7 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 		 * our krings when it needs to destroy its krings. */
 		if (netmap_verbose) {
 			D("krings for %s are still needed by its peer",
-			  na->name);
+					na->name);
 		}
 		return;
 	}
@@ -302,10 +325,6 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 		D("Delete krings for %s and its peer", na->name);
 	}
 
-	/* Destroy my krings. */
-	netmap_krings_delete(na);
-
-	/* Destroy the krings of our peer. */
 	rcu_read_lock();
 	peer_na = veth_get_peer_na(na);
 	if (!peer_na) {
@@ -314,6 +333,49 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 		return;
 	}
 
+	sna = na;
+cleanup:
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(sna, t) + 1; i++) {
+			struct netmap_kring *kring = NMR(sna, t)[i];
+			struct netmap_ring *ring = kring->ring;
+			uint32_t j, lim = kring->nkr_num_slots - 1;
+
+			ND("%s ring %p hwtail %u hwcur %u",
+				kring->name, ring, kring->nr_hwtail, kring->nr_hwcur);
+
+			if (ring == NULL)
+				continue;
+
+			if (kring->nr_hwtail == kring->nr_hwcur)
+				ring->slot[kring->nr_hwtail].buf_idx = 0;
+
+			for (j = nm_next(kring->nr_hwtail, lim);
+			     j != kring->nr_hwcur;
+			     j = nm_next(j, lim))
+			{
+				ND("%s[%d] %u", kring->name, j, ring->slot[j].buf_idx);
+				ring->slot[j].buf_idx = 0;
+			}
+			kring->nr_kflags &= ~(NKR_FAKERING | NKR_NEEDRING);
+		}
+
+	}
+	if (sna != peer_na && peer_na->tx_rings) {
+		sna = peer_na;
+		goto cleanup;
+	}
+
+	netmap_mem_rings_delete(na);
+	netmap_krings_delete(na); /* also zeroes tx_rings etc. */
+
+	if (peer_na->tx_rings == NULL) {
+		/* already deleted, we must be on an
+                 * cleanup-after-error path */
+		rcu_read_unlock();
+		return;
+	}
+	netmap_mem_rings_delete(peer_na);
 	netmap_krings_delete(peer_na);
 	rcu_read_unlock();
 }
