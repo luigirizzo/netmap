@@ -811,22 +811,6 @@ ixgbe_netmap_krings_create(struct netmap_adapter *na)
 	return 0;
 }
 
-static unsigned
-nm_ixgbe_rx_buf_maxsize(struct NM_IXGBE_ADAPTER *adapter)
-{
-#if defined(NM_IXGBEVF)
-#ifdef IXGBEVF_RXBUFFER_2048
-       return IXGBEVF_RXBUFFER_2048;
-#else
-       return 2048;
-#endif /* IXGBEVF_RXBUFFER_2048 */
-#elif defined(NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ)
-       return ixgbe_rx_bufsz(NM_IXGBE_RX_RING(adapter, 0));
-#else  /* !NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ */
-       return 4096; /* stay on the safe side */
-#endif /* !NETMAP_LINUX_HAVE_IXGBE_RX_BUFSZ */
-}
-
 static int
 ixgbe_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
@@ -837,7 +821,7 @@ ixgbe_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 		return ret;
 	}
 
-	info->rx_buf_maxsize = nm_ixgbe_rx_buf_maxsize(adapter);
+	info->rx_buf_maxsize = NETMAP_BUF_SIZE(na);
 
 	return 0;
 }
@@ -865,7 +849,7 @@ ixgbe_netmap_attach(struct NM_IXGBE_ADAPTER *adapter)
 	na.num_rx_desc = NM_IXGBE_RX_RING(adapter, 0)->count;
 	na.num_tx_rings = adapter->num_tx_queues;
 	na.num_rx_rings = adapter->num_rx_queues;
-	na.rx_buf_maxsize = nm_ixgbe_rx_buf_maxsize(adapter);
+	na.rx_buf_maxsize = 1500; /* will be overwritten by nm_config */
 	na.nm_txsync = ixgbe_netmap_txsync;
 	na.nm_rxsync = ixgbe_netmap_rxsync;
 	na.nm_register = ixgbe_netmap_reg;
