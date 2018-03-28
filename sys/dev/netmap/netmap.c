@@ -2004,6 +2004,12 @@ netmap_krings_put(struct netmap_priv_d *priv)
 	}
 }
 
+static int
+nm_priv_rx_enabled(struct netmap_priv_d *priv)
+{
+	return (priv->np_qfirst[NR_RX] != priv->np_qlast[NR_RX]);
+}
+
 /*
  * possibly move the interface to netmap-mode.
  * If success it returns a pointer to netmap_if, otherwise NULL.
@@ -2107,10 +2113,13 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		 * perform sanity checks and create the in-kernel view
 		 * of the netmap rings (the netmap krings).
 		 */
-		if (na->ifp) {
+		if (na->ifp && nm_priv_rx_enabled(priv)) {
 			/* This netmap adapter is attached to an ifnet. */
 			unsigned nbs = netmap_mem_bufsize(na->nm_mem);
 			unsigned mtu = nm_os_ifnet_mtu(na->ifp);
+
+			ND("mtu %d rx_buf_maxsize %d netmap_buf_size %d",
+					mtu, na->rx_buf_maxsize, nbs);
 
 			if (mtu <= na->rx_buf_maxsize) {
 				/* The MTU fits a single NIC slot. We only
