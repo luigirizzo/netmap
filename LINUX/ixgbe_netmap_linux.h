@@ -127,10 +127,7 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 		u16 mask = adapter->ring_feature[RING_F_RSS].mask;
 		reg_idx &= mask;
 	}
-	srrctl = IXGBE_RX_HDR_SIZE << 2; /*IXGBE_SRRCTL_BSIZEHDRSIZE_SHIFT */
-	srrctl |= NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT;
-	D("bufsz: %d srrctl: %d", NETMAP_BUF_SIZE(na),
-		NETMAP_BUF_SIZE(na) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT);
+	srrctl = ((NETMAP_BUF_SIZE(na) + 1023) >> IXGBE_SRRCTL_BSIZEPKT_SHIFT);
 	/*
 	 * XXX
 	 * With Advanced RX descriptor, the address needs to be rewritten,
@@ -139,6 +136,7 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 	 * (ixgbe datasheet - Section 7.1.9)
 	 */
 	srrctl |= IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF;
+	ND("bufsz: %d srrctl: %x", NETMAP_BUF_SIZE(na), srrctl);
 	IXGBE_WRITE_REG(hw, IXGBE_SRRCTL(reg_idx), srrctl);
 }
 
