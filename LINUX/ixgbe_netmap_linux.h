@@ -812,7 +812,6 @@ ixgbe_netmap_krings_create(struct netmap_adapter *na)
 static int
 ixgbe_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
-	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(na->ifp);
 	int ret = netmap_rings_config_get(na, info);
 
 	if (ret) {
