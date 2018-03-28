@@ -1507,7 +1507,7 @@ netmap_mem_reset_all(struct netmap_mem_d *nmd)
 static int
 netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 {
-	int i, lim = p->_objtotal;
+	int i, lim = p->objtotal;
 	struct netmap_lut *lut = &na->na_lut;
 
 	if (na == NULL || na->pdev == NULL)
