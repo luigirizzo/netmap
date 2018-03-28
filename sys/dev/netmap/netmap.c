@@ -2004,6 +2004,12 @@ netmap_krings_put(struct netmap_priv_d *priv)
 	}
 }
 
+static int
+nm_priv_rx_enabled(struct netmap_priv_d *priv)
+{
+	return (priv->np_qfirst[NR_RX] != priv->np_qlast[NR_RX]);
+}
+
 /*
  * possibly move the interface to netmap-mode.
  * If success it returns a pointer to netmap_if, otherwise NULL.
@@ -2082,8 +2088,6 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	int error;
 
 	NMG_LOCK_ASSERT();
-	/* ring configuration may have changed, fetch from the card */
-	netmap_update_config(na);
 	priv->np_na = na;     /* store the reference */
 	error = netmap_set_ringid(priv, nr_mode, nr_ringid, nr_flags);
 	if (error)
@@ -2093,15 +2097,29 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		goto err;
 
 	if (na->active_fds == 0) {
+
+		/* cache the allocator info in the na */
+		error = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
+		if (error)
+			goto err_drop_mem;
+		ND("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
+					    na->na_lut.objsize);
+
+		/* ring configuration may have changed, fetch from the card */
+		netmap_update_config(na);
+
 		/*
 		 * If this is the first registration of the adapter,
 		 * perform sanity checks and create the in-kernel view
 		 * of the netmap rings (the netmap krings).
 		 */
-		if (na->ifp) {
+		if (na->ifp && nm_priv_rx_enabled(priv)) {
 			/* This netmap adapter is attached to an ifnet. */
 			unsigned nbs = netmap_mem_bufsize(na->nm_mem);
 			unsigned mtu = nm_os_ifnet_mtu(na->ifp);
+
+			ND("mtu %d rx_buf_maxsize %d netmap_buf_size %d",
+					mtu, na->rx_buf_maxsize, nbs);
 
 			if (mtu <= na->rx_buf_maxsize) {
 				/* The MTU fits a single NIC slot. We only
@@ -2150,7 +2168,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		 */
 		error = na->nm_krings_create(na);
 		if (error)
-			goto err_drop_mem;
+			goto err_put_lut;
 
 	}
 
@@ -2174,21 +2192,12 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		goto err_del_rings;
 	}
 
-	if (na->active_fds == 0) {
-		/* cache the allocator info in the na */
-		error = netmap_mem_get_lut(na->nm_mem, &na->na_lut);
-		if (error)
-			goto err_del_if;
-		ND("lut %p bufs %u size %u", na->na_lut.lut, na->na_lut.objtotal,
-					    na->na_lut.objsize);
-	}
-
 	if (nm_kring_pending(priv)) {
 		/* Some kring is switching mode, tell the adapter to
 		 * react on this. */
 		error = na->nm_register(na, 1);
 		if (error)
-			goto err_put_lut;
+			goto err_del_if;
 	}
 
 	/* Commit the reference. */
@@ -2204,9 +2213,6 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 
 	return 0;
 
-err_put_lut:
-	if (na->active_fds == 0)
-		memset(&na->na_lut, 0, sizeof(na->na_lut));
 err_del_if:
 	netmap_mem_if_delete(na, nifp);
 err_del_rings:
@@ -2216,6 +2222,9 @@ err_rel_excl:
 err_del_krings:
 	if (na->active_fds == 0)
 		na->nm_krings_delete(na);
+err_put_lut:
+	if (na->active_fds == 0)
+		memset(&na->na_lut, 0, sizeof(na->na_lut));
 err_drop_mem:
 	netmap_mem_drop(na);
 err:
