@@ -48,13 +48,13 @@ char netmap_e1000e_driver_name[] = "e1000e" NETMAP_LINUX_DRIVER_SUFFIX;
  * Adaptation to different versions of the driver.
  */
 #ifdef NETMAP_LINUX_HAVE_E1000E_EXT_RXDESC
-#warning this driver uses extended descriptors
+//#warning this driver uses extended descriptors
 #define NM_E1K_RX_DESC_T	union e1000_rx_desc_extended
 #define	NM_E1R_RX_STATUS	wb.upper.status_error
 #define	NM_E1R_RX_LENGTH	wb.upper.length
 #define	NM_E1R_RX_BUFADDR	read.buffer_addr
 #else
-#warning this driver uses regular descriptors
+//#warning this driver uses regular descriptors
 #define E1000_RX_DESC_EXT	E1000_RX_DESC	// XXX workaround
 #define NM_E1K_RX_DESC_T	struct e1000_rx_desc
 #define	NM_E1R_RX_STATUS	status
