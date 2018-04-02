@@ -653,7 +653,11 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt
 		uint32_t *limit = nla_data(opt);
 
 		if (nla_len(opt) < sizeof(*limit) || *limit <= 0) {
+#ifdef NETMAP_LINUX_HAVE_QDISC_EXTACK
 			NL_SET_ERR_MSG(extack, "Invalid netlink attribute");
+#else
+			D("Invalid netlink attribute");
+#endif /* NETMAP_LINUX_HAVE_QDISC_EXTACK */
 			return -EINVAL;
 		}
 		priv->limit = *limit;
