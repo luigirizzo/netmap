@@ -2335,7 +2335,9 @@ static int linux_netmap_init(void)
 #endif /* WITH_GENERIC */
 	return 0;
 
+#ifdef WITH_GENERIC
 sink_fini:
+#endif /* WITH_GENERIC */
 #ifdef WITH_SINK
 	netmap_sink_fini();
 ptnetmap_fini:
