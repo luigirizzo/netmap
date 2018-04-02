@@ -635,7 +635,11 @@ struct nm_generic_qdisc {
 };
 
 static int
-generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
+generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt
+#ifdef NETMAP_LINUX_HAVE_QDISC_EXTACK
+		, struct netlink_ext_ack *extack
+#endif /* NETMAP_LINUX_HAVE_QDISC_EXTACK */
+	)
 {
 	struct nm_generic_qdisc *priv = NULL;
 
@@ -649,8 +653,8 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 		uint32_t *limit = nla_data(opt);
 
 		if (nla_len(opt) < sizeof(*limit) || *limit <= 0) {
-			D("Invalid netlink attribute");
-			return EINVAL;
+			NL_SET_ERR_MSG(extack, "Invalid netlink attribute");
+			return -EINVAL;
 		}
 		priv->limit = *limit;
 	}
