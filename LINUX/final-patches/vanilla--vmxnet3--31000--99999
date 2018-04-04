@@ -1,7 +1,7 @@
 diff --git a/vmxnet3/vmxnet3_drv.c b/vmxnet3/vmxnet3_drv.c
 old mode 100644
 new mode 100755
-index b76f7dc..f87199a
+index b76f7dcde0db..f87199abe09e
 --- a/vmxnet3/vmxnet3_drv.c
 +++ b/vmxnet3/vmxnet3_drv.c
 @@ -308,6 +308,11 @@ static u32 get_bitfield32(const __le32 *bitfield, u32 pos, u32 size)

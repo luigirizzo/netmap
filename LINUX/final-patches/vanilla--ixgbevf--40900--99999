@@ -1,5 +1,5 @@
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index cbf70fe..724ea09 100644
+index cbf70fe4028a..724ea090a557 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
 @@ -294,6 +294,24 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
