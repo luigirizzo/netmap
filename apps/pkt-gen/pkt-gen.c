@@ -52,10 +52,12 @@
 #endif
 #include <ifaddrs.h>	/* getifaddrs */
 #include <net/ethernet.h>
+#include <net/if_arp.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netinet/ip6.h>
+#include <netinet/if_ether.h>
 #ifdef linux
 #define IPV6_VERSION	0x60
 #define IPV6_DEFHLIM	64
@@ -142,6 +144,7 @@ ether_ntoa(const struct ether_addr *n)
 #define IFF_PPROMISC   IFF_PROMISC      /* IFF_PPROMISC does not exist */
 #include <linux/ethtool.h>
 #include <linux/sockios.h>
+#include <linux/if.h>
 
 #define CLOCK_REALTIME_PRECISE CLOCK_REALTIME
 #include <netinet/ether.h>      /* ether_aton */
@@ -197,6 +200,13 @@ struct virt_header {
 
 #define MAX_BODYSIZE	16384
 
+#ifndef ETH_ALEN
+#define ETH_ALEN	6	/* ethernet address (MAC) size */
+#endif
+#ifndef IP4_ALEN
+#define IP4_ALEN	4
+#endif
+
 struct pkt {
 	struct virt_header vh;
 	struct ether_header eh;
@@ -211,11 +221,19 @@ struct pkt {
 			struct udphdr udp;
 			uint8_t body[MAX_BODYSIZE];	/* hardwired */
 		} ipv6;
+		struct ether_arp arp4;
 	};
 } __attribute__((__packed__));
 
 #define	PKT(p, f, af)	\
     ((af) == AF_INET ? (p)->ipv4.f: (p)->ipv6.f)
+
+#define ARP_SIZE(vh)	\
+    ((vh) + sizeof(struct ether_header) + sizeof(struct ether_arp))
+
+#define PKT_OVERHD(af, vh)		\
+    (sizeof(struct ether_header) + vh +	\
+     ((af) == AF_INET ? sizeof(struct ip) : sizeof(struct ip6_hdr)))
 
 struct ip_range {
 	char *name;
@@ -246,6 +264,9 @@ struct tstamp {
 	uint32_t sec;
 	uint32_t nsec;
 };
+
+#define PKT_MINSIZE(af, vh)		\
+    (PKT_OVERHD(af, vh) + sizeof(struct udphdr) + sizeof(struct tstamp))
 
 /*
  * global arguments for all threads
@@ -279,6 +300,7 @@ struct glob_arg {
 #define OPT_RANDOM_SRC  512
 #define OPT_RANDOM_DST  1024
 #define OPT_PPS_STATS   2048
+#define OPT_GARP	4096
 	int dev_type;
 #ifndef NO_PCAP
 	pcap_t *p;
@@ -295,6 +317,7 @@ struct glob_arg {
 	int td_type;
 	void *mmap_addr;
 	char ifname[MAX_IFNAMELEN];
+	char phyname[MAX_IFNAMELEN];
 	char *nmr_config;
 	int dummy_send;
 	int virt_header;	/* send also the virt_header */
@@ -305,6 +328,7 @@ struct glob_arg {
 	int win_idx;
 	int64_t win[STATS_WIN];
 	int wait_link;
+	int garp;
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
 
@@ -329,6 +353,7 @@ struct targ {
 	int me;
 	pthread_t thread;
 	int affinity;
+	int garp;
 
 	struct pkt pkt;
 	void *frame;
@@ -487,16 +512,16 @@ extract_mac_range(struct mac_range *r)
 		D("invalid MAC address '%s'", r->name);
 		return 1;
 	}
-	bcopy(e, &r->start, 6);
-	bcopy(e, &r->end, 6);
+	bcopy(e, &r->start, ETH_ALEN);
+	bcopy(e, &r->end, ETH_ALEN);
 #if 0
-	bcopy(targ->src_mac, eh->ether_shost, 6);
+	bcopy(targ->src_mac, eh->ether_shost, ETH_ALEN);
 	p = index(targ->g->src_mac, '-');
 	if (p)
 		targ->src_mac_range = atoi(p+1);
 
-	bcopy(ether_aton(targ->g->dst_mac), targ->dst_mac, 6);
-	bcopy(targ->dst_mac, eh->ether_dhost, 6);
+	bcopy(ether_aton(targ->g->dst_mac), targ->dst_mac, ETH_ALEN);
+	bcopy(targ->dst_mac, eh->ether_dhost, ETH_ALEN);
 	p = index(targ->g->dst_mac, '-');
 	if (p)
 		targ->dst_mac_range = atoi(p+1);
@@ -651,6 +676,42 @@ source_hwaddr(const char *ifname, char *buf)
 	}
 	freeifaddrs(ifaphead);
 	return ifap ? 0 : 1;
+}
+
+
+/*
+ * getifaddrs() is the easiest way to get full link state (on Linux anyway),
+ * because ifa_flags includes IFF_LOWER_UP. Contrary to netdevice(7) docs,
+ * the value is too large to fit into ifr_flags from ioctl(SIOCGIFFLAGS).
+ */
+#ifndef IFF_LOWER_UP
+#define IFF_LOWER_UP	0
+#endif
+
+static int
+check_link_up(const char *ifname)
+{
+	struct ifaddrs *ifaphead, *ifap;
+	int flags = 0, mask = IFF_UP|IFF_RUNNING|IFF_LOWER_UP;
+
+	if (getifaddrs(&ifaphead) != 0) {
+		D("getifaddrs %s failed", ifname);
+		return (-1);
+	}
+
+	for (ifap = ifaphead; ifap; ifap = ifap->ifa_next) {
+		struct sockaddr_dl *sdl =
+			(struct sockaddr_dl*)ifap->ifa_addr;
+
+		if (!sdl || sdl->sdl_family != AF_LINK)
+			continue;
+		if (!strncmp(ifap->ifa_name, ifname, IFNAMSIZ))
+			break;
+	}
+	if (ifap) flags = ifap->ifa_flags & mask;
+	freeifaddrs(ifaphead);
+
+	return (flags == mask) ? 1 : 0;
 }
 
 
@@ -983,8 +1044,8 @@ initialize_packet(struct targ *targ)
 	}
 #endif
 
-	paylen = targ->g->pkt_size - sizeof(*eh) -
-	    (targ->g->af == AF_INET ? sizeof(ip): sizeof(ip6));
+	paylen = targ->g->pkt_size -
+	    PKT_OVERHD(targ->g->af, targ->g->virt_header);
 
 	/* create a nice NUL-terminated string */
 	for (i = 0; i < paylen; i += l0) {
@@ -996,8 +1057,8 @@ initialize_packet(struct targ *targ)
 
 	/* prepare the headers */
 	eh = &pkt->eh;
-	bcopy(&targ->g->src_mac.start, eh->ether_shost, 6);
-	bcopy(&targ->g->dst_mac.start, eh->ether_dhost, 6);
+	bcopy(&targ->g->src_mac.start, eh->ether_shost, ETH_ALEN);
+	bcopy(&targ->g->dst_mac.start, eh->ether_dhost, ETH_ALEN);
 
 	if (targ->g->af == AF_INET) {
 		eh->ether_type = htons(ETHERTYPE_IP);
@@ -1033,6 +1094,7 @@ initialize_packet(struct targ *targ)
 	udp.uh_sport = htons(targ->g->src_ip.port0);
 	udp.uh_dport = htons(targ->g->dst_ip.port0);
 	udp.uh_ulen = htons(paylen);
+	udp.uh_sum = 0;
 	if (targ->g->af == AF_INET) {
 		/* Magic: taken from sbin/dhclient/packet.c */
 		udp.uh_sum = wrapsum(
@@ -1115,8 +1177,8 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		int size, struct glob_arg *g, u_int count, int options,
 		u_int nfrags)
 {
-	u_int n, sent, cur = ring->cur;
-	u_int fcnt;
+	u_int n, sent, fcnt, cur = ring->cur, vh = g->virt_header;
+	u_int arp_size = (options & OPT_GARP) ? ARP_SIZE(vh) : 0;
 
 	n = nm_ring_space(ring);
 	if (n < count)
@@ -1140,7 +1202,14 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 	for (fcnt = nfrags, sent = 0; sent < count; sent++) {
 		struct netmap_slot *slot = &ring->slot[cur];
 		char *p = NETMAP_BUF(ring, slot->buf_idx);
-		int buf_changed = slot->flags & NS_BUF_CHANGED;
+		int copy = options & OPT_COPY || slot->flags & NS_BUF_CHANGED;
+
+		/* sender_body() drops OPT_COPY after starting, but we need
+		 * to copy over any ARP packets lingering in the txring */
+		if (!copy && slot->len == arp_size) {
+			struct pkt *old = (struct pkt*)(p - sizeof(old->vh) + vh);
+			copy |= (old->eh.ether_type == htons(ETHERTYPE_ARP));
+		}
 
 		slot->flags = 0;
 		if (options & OPT_RUBBISH) {
@@ -1148,7 +1217,7 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		} else if (options & OPT_INDIRECT) {
 			slot->flags |= NS_INDIRECT;
 			slot->ptr = (uint64_t)((uintptr_t)frame);
-		} else if ((options & OPT_COPY) || buf_changed) {
+		} else if (copy) {
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == nfrags)
 				update_addresses(pkt, g);
@@ -1176,6 +1245,74 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 
 	return (sent);
 }
+
+/*
+ * Send two ARP packets: a gratuitous ARP to advertise the netmap device, and
+ * an ARP request directed at the remote party.
+ *
+ * Many switches require regular ARP traffic to keep the [mac:ip] association
+ * to the physical switch port.  When the association is lost the switch will
+ * broadcast your pkt-gen traffic to *all* ports, killng network performance.
+ * This often happens during PHY reset, when switching into netmap mode.
+ */
+static void
+send_arp(struct targ *targ)
+{
+	struct nm_desc *nmd = targ->nmd;
+	struct netmap_if *nifp = targ->nmd->nifp;
+	struct ether_addr *src_mac = &targ->g->src_mac.start;
+	uint32_t src_ip = htonl(targ->g->src_ip.ipv4.start);
+	uint32_t dst_ip = htonl(targ->g->dst_ip.ipv4.start);
+	int vhlen = targ->g->virt_header;
+	int need = 2;
+	if (!targ->garp) return;
+
+	for (int i = nmd->first_tx_ring; i <= nmd->last_tx_ring && need > 0; i++) {
+		void *frame;
+		struct pkt *pkt;
+		struct arphdr *hdr;
+		struct netmap_slot *slot;
+		struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
+
+		if (nm_ring_empty(ring))
+			continue;
+
+		slot = &ring->slot[ring->cur];
+		frame = NETMAP_BUF(ring, slot->buf_idx);
+		pkt = (struct pkt*)(frame - sizeof(pkt->vh) + vhlen);
+		hdr = &pkt->arp4.ea_hdr;
+		slot->len = ARP_SIZE(vhlen);
+		slot->ptr = 0;
+		bzero(frame, vhlen);
+
+		pkt->eh.ether_type = htons(ETHERTYPE_ARP);
+		memset(pkt->eh.ether_dhost, 0xff, ETH_ALEN);
+		bcopy(src_mac, pkt->eh.ether_shost, ETH_ALEN);
+		hdr->ar_hrd = htons(ARPHRD_ETHER);
+		hdr->ar_pro = htons(ETHERTYPE_IP);
+		hdr->ar_hln = ETH_ALEN;
+		hdr->ar_pln = IP4_ALEN;
+
+		if (need == 2) {	/* first send a GARP */
+			hdr->ar_op = htons(ARPOP_REPLY);
+			bcopy(src_mac, pkt->arp4.arp_sha, ETH_ALEN);
+			bcopy(src_mac, pkt->arp4.arp_tha, ETH_ALEN);
+			bcopy(&src_ip, pkt->arp4.arp_spa, IP4_ALEN);
+			bcopy(&src_ip, pkt->arp4.arp_spa, IP4_ALEN);
+		} else {		/* then send an ARP request */
+			hdr->ar_op = htons(ARPOP_REQUEST);
+			bcopy(src_mac, pkt->arp4.arp_sha, ETH_ALEN);
+			bzero(pkt->arp4.arp_tha, ETH_ALEN);
+			bcopy(&src_ip, pkt->arp4.arp_spa, IP4_ALEN);
+			bcopy(&dst_ip, pkt->arp4.arp_tpa, IP4_ALEN);
+		}
+
+		ring->head = ring->cur = nm_ring_next(ring, ring->cur);
+		need--;
+		i--;
+	}
+}
+
 
 /*
  * Index of the highest bit set
@@ -1496,7 +1633,6 @@ sender_body(void *data)
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLOUT };
 	struct netmap_if *nifp;
 	struct netmap_ring *txring = NULL;
-	int i;
 	uint64_t n = targ->g->npackets / targ->g->nthreads;
 	uint64_t sent = 0;
 	uint64_t event = 0;
@@ -1505,7 +1641,7 @@ sender_body(void *data)
 	int rate_limit = targ->g->tx_rate;
 	struct pkt *pkt = &targ->pkt;
 	void *frame;
-	int size;
+	int size, i;
 
 	if (targ->frame == NULL) {
 		frame = pkt;
@@ -1515,6 +1651,9 @@ sender_body(void *data)
 		frame = targ->frame;
 		size = targ->g->pkt_size;
 	}
+
+	if (targ->garp)
+		options |= OPT_GARP;
 
 	D("start, fd %d main_fd %d", targ->fd, targ->g->main_fd);
 	if (setaffinity(targ->thread, targ->affinity))
@@ -1561,6 +1700,8 @@ sender_body(void *data)
     } else {
 	int tosend = 0;
 	int frags = targ->g->frags;
+	struct timespec arptime = targ->tic;
+	struct timespec tmptime = { 0, 0};
 
 	nifp = targ->nmd->nifp;
 	while (!targ->cancel && (n == 0 || sent < n)) {
@@ -1570,6 +1711,13 @@ sender_body(void *data)
 			tosend = targ->g->burst;
 			nexttime = timespec_add(nexttime, targ->g->tx_period);
 			wait_time(nexttime);
+		}
+		if (targ->garp) {
+			clock_gettime(CLOCK_REALTIME_PRECISE, &tmptime);
+			if (tmptime.tv_sec - arptime.tv_sec >= 1) {
+				arptime = tmptime;
+				send_arp(targ);
+			}
 		}
 
 		/*
@@ -1744,6 +1892,9 @@ receiver_body(void *data)
 			D("fd error");
 			goto quit;
 		}
+		if (targ->garp)
+			send_arp(targ);
+
 		RD(1, "waiting for initial packets, poll returns %d %d",
 			i, pfd.revents);
 	}
@@ -1771,6 +1922,9 @@ receiver_body(void *data)
 #endif /* !NO_PCAP */
     } else {
 	int dump = targ->g->options & OPT_DUMP;
+	struct timespec arptime = { 0, 0};
+	struct timespec tmptime = { 0, 0};
+	clock_gettime(CLOCK_REALTIME_PRECISE, &arptime);
 
 	nifp = targ->nmd->nifp;
 	while (!targ->cancel) {
@@ -1794,6 +1948,14 @@ receiver_body(void *data)
 			goto quit;
 		}
 #endif /* !BUSYWAIT */
+		if (targ->garp) {
+			clock_gettime(CLOCK_REALTIME_PRECISE, &tmptime);
+			if (tmptime.tv_sec - arptime.tv_sec >= 1) {
+				arptime = tmptime;
+				send_arp(targ);
+			}
+		}
+
 		uint64_t cur_space = 0;
 		for (i = targ->nmd->first_rx_ring; i <= targ->nmd->last_rx_ring; i++) {
 			int m;
@@ -2291,7 +2453,7 @@ usage(int errcode)
 		     "\t-c cores		cores to use\n"
 		     "\t-p threads		processes/threads to use\n"
 		     "\t-T report_ms		milliseconds between reports\n"
-		     "\t-w wait_for_link_time	in seconds\n"
+		     "\t-w wait_for_link_time	in seconds (default 2) (0 for auto)\n"
 		     "\t-R rate			in packets per second\n"
 		     "\t-X			dump payload\n"
 		     "\t-H len			add empty virtio-net-header with size 'len'\n"
@@ -2315,10 +2477,11 @@ usage(int errcode)
 		     "\t			OPT_INDIRECT	32 (use indirect buffers)\n"
 		     "\t			OPT_DUMP	64 (dump rx/tx traffic)\n"
 		     "\t			OPT_RUBBISH	256\n"
-		     "\t			    (send wathever the buffers contain)\n"
+		     "\t			    (send whatever the buffers contain)\n"
 		     "\t			OPT_RANDOM_SRC  512\n"
 		     "\t			OPT_RANDOM_DST  1024\n"
 		     "\t			OPT_PPS_STATS   2048\n"
+		     "\t-G			send (G)ARP announcements\n"
 		     "\t-W			exit RX with no traffic\n"
 		     "\t-v			verbose (more v = more verbose)\n"
 		     "\t-C vale-config		specify a vale config\n"
@@ -2405,13 +2568,27 @@ start_threads(struct glob_arg *g) {
 		} else {
 			t->affinity = -1;
 		}
+		/* only thread 0 can send ARP */
+		t->garp = (g->garp && t->me == 0 && g->af == AF_INET);
 		/* default, init packets */
 		initialize_packet(t);
 	}
 	/* Wait for PHY reset. */
-	D("Wait %d secs for phy reset", g->wait_link);
-	sleep(g->wait_link);
-	D("Ready...");
+	if (g->wait_link || g->dev_type != DEV_NETMAP) {
+		D("Wait %d secs for phy reset", g->wait_link);
+		sleep(g->wait_link);
+		D("Ready...");
+	} else {
+		D("Wait up to 5 secs for phy reset");
+		for (i = 5*4; i > 0; i--) {
+			if (check_link_up(g->phyname)) {
+				D("Ready...");
+				break;
+			}
+			usleep(250000);
+		}
+		if (!i) D("Warning: timed out...");
+	}
 
 	for (i = 0; i < g->nthreads; i++) {
 		t = &targs[i];
@@ -2674,9 +2851,10 @@ main(int arc, char **argv)
 	g.nmr_config = "";
 	g.virt_header = 0;
 	g.wait_link = 2;
+	g.garp = 0;
 
 	while ((ch = getopt(arc, argv, "46a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:"
-	    "T:w:WvR:XC:H:e:E:m:rP:zZAh")) != -1) {
+	    "T:w:GWvR:XC:H:e:E:m:rP:zZAh")) != -1) {
 
 		switch(ch) {
 		default:
@@ -2760,6 +2938,7 @@ main(int arc, char **argv)
 			} else { /* prepend netmap: */
 				g.dev_type = DEV_NETMAP;
 				sprintf(g.ifname, "netmap:%s", optarg);
+				sprintf(g.phyname, "%s", optarg);
 			}
 			break;
 
@@ -2790,6 +2969,10 @@ main(int arc, char **argv)
 
 		case 'w':
 			g.wait_link = atoi(optarg);
+			break;
+
+		case 'G':
+			g.garp = 1;
 			break;
 
 		case 'W':
@@ -2874,16 +3057,6 @@ main(int arc, char **argv)
 	if (g.cpus == 0)
 		g.cpus = i;
 
-	if (g.pkt_size < 16 || g.pkt_size > MAX_PKTSIZE) {
-		D("bad pktsize %d [16..%d]\n", g.pkt_size, MAX_PKTSIZE);
-		usage(-1);
-	}
-
-	if (g.pkt_min_size > 0 && (g.pkt_min_size < 16 || g.pkt_min_size > g.pkt_size)) {
-		D("bad pktminsize %d [16..%d]\n", g.pkt_min_size, g.pkt_size);
-		usage(-1);
-	}
-
 	if (g.src_mac.name == NULL) {
 		static char mybuf[20] = "00:00:00:00:00:00";
 		/* retrieve source mac address. */
@@ -2902,6 +3075,18 @@ main(int arc, char **argv)
 	if (g.virt_header != 0 && g.virt_header != VIRT_HDR_1
 			&& g.virt_header != VIRT_HDR_2) {
 		D("bad virtio-net-header length");
+		usage(-1);
+	}
+
+	ch = PKT_MINSIZE(g.af, g.virt_header);
+
+	if (g.pkt_size < ch || g.pkt_size > MAX_PKTSIZE) {
+		D("bad pktsize %d [%d..%d]\n", g.pkt_size, ch, MAX_PKTSIZE);
+		usage(-1);
+	}
+
+	if (g.pkt_min_size > 0 && (g.pkt_min_size < 16 || g.pkt_min_size > g.pkt_size)) {
+		D("bad pktminsize %d [16..%d]\n", g.pkt_min_size, g.pkt_size);
 		usage(-1);
 	}
 
