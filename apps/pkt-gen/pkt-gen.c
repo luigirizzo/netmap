@@ -2646,6 +2646,7 @@ main(int arc, char **argv)
 
 	int ch;
 	int devqueues = 1;	/* how many device queues */
+	int wait_link_arg = 0;
 
 	int pkt_size_done = 0;
 
@@ -2673,7 +2674,7 @@ main(int arc, char **argv)
 	g.frags = 1;
 	g.nmr_config = "";
 	g.virt_header = 0;
-	g.wait_link = 2;
+	g.wait_link = 2;	/* wait 2 seconds for physical ports */
 
 	while ((ch = getopt(arc, argv, "46a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:"
 	    "T:w:WvR:XC:H:e:E:m:rP:zZAh")) != -1) {
@@ -2790,6 +2791,7 @@ main(int arc, char **argv)
 
 		case 'w':
 			g.wait_link = atoi(optarg);
+			wait_link_arg = 1;
 			break;
 
 		case 'W':
@@ -2873,6 +2875,10 @@ main(int arc, char **argv)
 	D("running on %d cpus (have %d)", g.cpus, i);
 	if (g.cpus == 0)
 		g.cpus = i;
+
+	if (!wait_link_arg && !strncmp(g.ifname, "vale", 4)) {
+		g.wait_link = 0;
+	}
 
 	if (g.pkt_size < 16 || g.pkt_size > MAX_PKTSIZE) {
 		D("bad pktsize %d [16..%d]\n", g.pkt_size, MAX_PKTSIZE);
