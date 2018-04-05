@@ -3115,9 +3115,9 @@ flush_tx:
 			 * Don't try to txsync this TX ring if we already found some
 			 * space in some of the TX rings (want_tx == 0) and there are no
 			 * TX slots in this ring that need to be flushed to the NIC
-			 * (cur == hwcur).
+			 * (head == hwcur).
 			 */
-			if (!send_down && !want_tx && ring->cur == kring->nr_hwcur)
+			if (!send_down && !want_tx && ring->head == kring->nr_hwcur)
 				continue;
 
 			if (nm_kr_tryget(kring, 1, &revents))

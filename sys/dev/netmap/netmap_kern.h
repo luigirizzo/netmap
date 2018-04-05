@@ -396,7 +396,7 @@ struct netmap_zmon_list {
 struct netmap_kring {
 	struct netmap_ring	*ring;
 
-	uint32_t	nr_hwcur;
+	uint32_t	nr_hwcur;  /* should be nr_hwhead */
 	uint32_t	nr_hwtail;
 
 	/*
