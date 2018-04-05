@@ -395,7 +395,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 						I40E_TXD_QW1_CMD_SHIFT);
 				if (slot->flags & NS_REPORT || nic_i == 0 ||
 						nic_i == report_frequency) {
-					hwflags |= ((u64)I40E_TX_DESC_CMD_RS <<
+					hw_flags |= ((u64)I40E_TX_DESC_CMD_RS <<
 							I40E_TXD_QW1_CMD_SHIFT);
 				}
 			}
