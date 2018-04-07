@@ -288,6 +288,14 @@ COMMON PROBLEMS
   In emulated netmap mode (i.e. with unpatched drivers) VLAN tags are never
   visible by the netmap application.
 
+* When opening a veth interface in native netmap mode, the peer veth interface
+  must also be opened in native netmap mode, otherwise the traffic won't flow.
+  In other words, one cannot use native netmap mode on a veth endpoint and
+  use the kernel network stack on the other endpoint. This is not a missing
+  feature, as the native veth datapath is implemented using netmap pipes, and
+  it does not make sense (in terms of performance) for pipes to support
+  conversion betweeen netmap buffers and skbuffs.
+
 REVISION HISTORY
 -----------------
 
