@@ -1316,9 +1316,12 @@ parse_gen(const char *arg, const struct _sm *conv, int *err)
         ED("bad argument %s", arg);
         goto error;
     }
-    /* special case, no conversion */
-    if (conv == NULL && *ep == '\0')
-        goto done;
+    if (conv == NULL) {
+        if (*ep == '\0') /* special case, no conversion */
+            goto done;
+        ED("bad suffix %s", ep);
+        goto error;
+    }
     ND("checking %s [%s]", arg, ep);
     for (;conv->s; conv++) {
         if (strchr(conv->s, *ep))
