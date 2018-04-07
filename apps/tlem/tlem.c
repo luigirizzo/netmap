@@ -1603,8 +1603,8 @@ exp_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
         return 2; /* not recognised */
     if (ac != 3)
         return 1; /* error */
-    d_av = parse_time(av[1]);
-    d_min = parse_time(av[2]);
+    d_min = parse_time(av[1]);
+    d_av = parse_time(av[2]);
     if (d_av == U_PARSE_ERR || d_min == U_PARSE_ERR || d_av < d_min)
         return 1; /* error */
     d_av -= d_min;
@@ -1628,7 +1628,7 @@ exp_delay_run(struct _qs *q, struct _cfg *arg)
 {
     uint64_t *t = (uint64_t *)arg->arg;
     q->cur_delay = t[my_random24() & (PTS_D_EXP - 1)];
-    RD(5, "delay %llu", (unsigned long long)q->cur_delay);
+    ND(5, "delay %llu", (unsigned long long)q->cur_delay);
     return 0;
 }
 
