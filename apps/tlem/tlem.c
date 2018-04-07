@@ -50,7 +50,7 @@ The producer can either wait for traffic using a blocking poll(),
 or periodically check the input around short usleep().
 The latter mechanism is the preferred one as it allows a controlled
 latency with a low interrupt load and a modest system load.
-
+/
 The queue is sized so that overflows can occur only if the consumer
 is severely backlogged, hence the only appropriate option is drop
 traffic rather than wait for space.  The case of an empty queue is
@@ -158,6 +158,7 @@ static int do_abort = 0;
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stddef.h>
 #include <pthread.h>
 #include <sys/time.h>
 
@@ -214,6 +215,25 @@ static inline void CPU_SET(uint32_t i, cpuset_t *p)
 #define	_P64	uint64_t
 #endif /* print stuff */
 
+#define	MY_CACHELINE	(128ULL)
+#define ALIGN_CACHE	__attribute__ ((aligned (MY_CACHELINE)))
+
+struct stats {
+	uint64_t	packets;
+	uint64_t	bytes;
+	uint64_t	drop_packets;
+	uint64_t	drop_bytes;
+	uint64_t	reorder_packets;
+	uint64_t	reorder_bytes;
+} ALIGN_CACHE;
+
+/* external configuration for each impairment (bw, delay, loss, reorder, ...) */
+struct _ec {
+        uint8_t         ec_valid;       /* 1 iff the other fields are valid */
+        uint8_t         ec_index;       /* impairment sub-type */
+        uint16_t        ec_datasz;      /* size of the parameters */
+        uint32_t        ec_dataoff;     /* offset of the parameters */
+};
 
 struct _qs;	/* forward */
 /*
@@ -230,10 +250,51 @@ struct _cfg {
 
     const char *optarg;	/* command line argument. Initial value is the error message */
     /* placeholders for common values */
-    void *arg;		/* allocated memory if any */
-    int arg_len;	/* size of *arg in case a realloc is needed */
-    uint64_t d[16];	/* static storage for simple cases */
+    void *arg;		/* allocated memory */
+    struct _ec *ec;     /* external configuration */
 };
+
+
+/* configuration instance. There may be one or more of these
+ * for direction. One of them is the active one, currently
+ * used by the server. Clients prepare an instance not in use,
+ * then make it active when ready.
+ */
+struct _eci {
+        struct _ec      ec_delay;
+        struct _ec      ec_bw;
+        struct _ec      ec_loss;
+        struct _ec      ec_reorder;
+#define EC_DATASZ       (1U << 14)
+        char            ec_data[EC_DATASZ];
+};
+
+/* set of configuration instances. One set per direction */
+struct _ecs {
+        /* fields only written by the server */
+	uint64_t	max_bps;	/* bits per second */
+	uint64_t	max_delay;	/* nanoseconds */
+	uint64_t	max_hold_delay; /* nanoseconds */
+        /* fields written by the server on startup, and then by
+         * the clients in mutual exclusion among themselves.
+         * The communication among the clients and the server
+         * is lockless, and based on ordered updates to the
+         * active field.
+         */
+        volatile uint64_t active; /* active configuration instance */
+#define EC_NINST      2
+        struct _eci    instances[EC_NINST];
+};
+
+/* contents of the external configuration */
+struct _ecf {
+#define EC_NOPTS      2
+	struct stats	stats[2 * EC_NOPTS];
+        uint32_t        version;
+#define EC_VERSION    1
+        struct _ecs     sets[EC_NOPTS];
+};
+#define EC_HDRSZ (offsetof(struct _ecf, sets))
 
 /*
  *
@@ -309,20 +370,8 @@ struct h_pkt {
  * INFINITE_BW is supposed to be faster than what we support
  */
 #define INFINITE_BW	(200ULL*1000000*1000)
-#define	MY_CACHELINE	(128ULL)
 #define PKT_PAD		(32)	/* padding on packets */
 #define MAX_PKT		(9200)	/* max packet size */
-
-#define ALIGN_CACHE	__attribute__ ((aligned (MY_CACHELINE)))
-
-struct stats {
-	uint64_t	packets;
-	uint64_t	bytes;
-	uint64_t	drop_packets;
-	uint64_t	drop_bytes;
-	uint64_t	reorder_packets;
-	uint64_t	reorder_bytes;
-} ALIGN_CACHE;
 
 struct _qs { /* shared queue */
 	uint64_t	t0;	/* start of times */
@@ -330,10 +379,10 @@ struct _qs { /* shared queue */
 	uint64_t 	buflen;	/* queue length */
 	char *buf;
 
+        struct _ecs    *ec;             /* external configuration set */
+        uint32_t        ec_active;      /* active instance in the set */
+        size_t          ec_nta[EC_NINST]; /* allocated byes in each instance */
 	/* the queue has at least 1 empty position */
-	uint64_t	max_bps;	/* bits per second */
-	uint64_t	max_delay;	/* nanoseconds */
-	uint64_t	max_hold_delay; /* nanoseconds */
 	uint64_t	qsize;	/* queue size in bytes */
 
 	/* handlers for various options */
@@ -349,7 +398,7 @@ struct _qs { /* shared queue */
 	uint64_t	prod_tail;	/* cached copy */
 	uint64_t	prod_now;	/* most recent producer timestamp */
 	uint64_t	prod_max_gap;	/* rx round duration */
-	struct stats	_txstats, *txstats;
+	struct stats	*txstats;
 
 	/* parameters for reading from the netmap port */
 	struct nmport_d *src_port;		/* netmap descriptor */
@@ -418,12 +467,184 @@ struct _qs { /* shared queue */
 	uint64_t	cons_lag;	/* tail - head */
 	uint64_t	rx_wait;	/* stats */
 	const char *	cons_ifname;
-	struct stats	_rxstats, *rxstats;
+	struct stats	*rxstats;
 
 	/* shared fields */
 	volatile uint64_t tail ALIGN_CACHE ;	/* producer writes here */
 	volatile uint64_t head ALIGN_CACHE ;	/* consumer reads from here */
 };
+
+static int
+ec_next(int i)
+{
+    return (i + 1) % EC_NINST;
+}
+
+/* if fname is NULL tlem will run standalone, i.e., in server mode
+ * with no possibility for clients to change the configuration.
+ * Otherwise, the first tlem instance that successully locks the
+ * first four bytes of the configuration file becomes the server.
+ * Clients write-lock the rest of the file, to guarantee mutual
+ * exclusive configuration updates among them.
+ */
+static int ecf_fd = -1;
+static struct _ecf *
+ec_map(const char *fname, int *server)
+{
+    size_t sz;
+    struct _ecf *ecf;
+    int mmap_flags;
+
+    sz = sizeof(struct _ecf);
+    if (fname) {
+        ecf_fd = open(fname, O_RDWR | O_CREAT, 0664);
+        if (ecf_fd < 0) {
+            ED("cannot open %s: %s", fname, strerror(errno));
+            return NULL;
+        }
+        if (ftruncate(ecf_fd, sz) < 0) {
+            ED("cannot truncate(%s, %zu): %s",
+                    fname, sz, strerror(errno));
+            return NULL;
+        }
+        mmap_flags = MAP_SHARED;
+
+        /* try to lock the entire file.
+         * If we succeed, we are the server.
+         */
+        if (lockf(ecf_fd, F_TLOCK, 0) == 0) {
+            *server = 1;
+            /* we will release the non-header part when
+             * we are done with the initial configuration
+             */
+        } else {
+            if (errno != EACCES && errno != EAGAIN) {
+                ED("failed to lock %s: %s", fname, strerror(errno));
+                return NULL;
+            }
+            /* we are a client. Skip the header and wait
+             * for exclusive access to the rest.
+             */
+            *server = 0;
+            if (lseek(ecf_fd, EC_HDRSZ, SEEK_SET) < 0) {
+                ED("failed to skip the header of %s: %s",
+                        fname, strerror(errno));
+                return NULL;
+            }
+            if (lockf(ecf_fd, F_LOCK, 0) < 0) {
+                ED("failed to lock the client area of %s: %s",
+                        fname, strerror(errno));
+                return NULL;
+            }
+        }
+    } else {
+        mmap_flags = MAP_ANONYMOUS | MAP_PRIVATE;
+    }
+    ecf = mmap(NULL, sz,
+            PROT_READ | PROT_WRITE,
+            mmap_flags, ecf_fd, 0);
+    /* errors are all fatal. Locks will be released on exit */
+    if (ecf == MAP_FAILED) {
+        D("cannot mmap %s: %s", fname, strerror(errno));
+        return NULL;
+    }
+    if (*server) {
+        memset(ecf, 0, sz);
+        ecf->version = EC_VERSION;
+    } else {
+        if (ecf->version != EC_VERSION) {
+            ED("Expected version %d, got %d",
+                    EC_VERSION, ecf->version);
+            return NULL;
+        }
+    }
+    return ecf;
+}
+
+static int
+ec_allowclients()
+{
+    if (ecf_fd < 0) {
+        /* OK, standalone mode */
+        return 0;
+    }
+    if (lseek(ecf_fd, EC_HDRSZ, SEEK_SET) < 0) {
+        ED("failed to skip the header: %s",
+                strerror(errno));
+        return 1;
+    }
+    if (lockf(ecf_fd, F_ULOCK, 0) < 0) {
+        ED("failed to unlock the client area: %s",
+                strerror(errno));
+        return 1;
+    }
+    return 0;
+}
+
+static void ec_activate(struct _qs *q); // foward
+static int
+ec_init(struct _qs *q, struct _ecs *ec, int server)
+{
+    int i;
+    struct _eci *ci;
+
+    q->ec = ec;
+    for (i = 0; i < EC_NINST; i++)
+        q->ec_nta[i] = 0;
+    q->ec_active = server ? 0 : ec_next(q->ec->active);
+    ci = &q->ec->instances[q->ec_active];
+    ci->ec_delay.ec_valid = 0;
+    q->c_delay.ec = &ci->ec_delay;
+    ci->ec_bw.ec_valid = 0;
+    q->c_bw.ec = &ci->ec_bw;
+    ci->ec_loss.ec_valid = 0;
+    q->c_loss.ec = &ci->ec_loss;
+    ci->ec_reorder.ec_valid = 0;
+    q->c_reorder.ec = &ci->ec_reorder;
+    return 0;
+}
+
+/* allocate sz bytes in the non-active config instance */
+static void *
+ec_alloc(struct _qs *q, struct _ec *ec, size_t sz)
+{
+    int i = q->ec_active;
+    struct _eci *a = &q->ec->instances[i];
+    size_t nta = q->ec_nta[i];
+
+    if (sz + nta >= EC_DATASZ) {
+        ED("no room for %zu bytes in external config instance %d", sz, i);
+        return NULL;
+    }
+    q->ec_nta[i] += sz;
+    ec->ec_dataoff = nta;
+    ec->ec_datasz = sz;
+    return &a->ec_data[nta];
+}
+
+static inline void
+ec_checkactive(struct _qs *q)
+{
+    uint64_t i = q->ec->active;
+    if (i != q->ec_active) {
+        asm volatile("" ::: "memory");
+        __sync_synchronize();
+        ND("switching to configuration %i", i);
+        q->ec_active = i;
+        ec_activate(q);
+    }
+}
+
+static void
+ec_switchactive(struct _qs *q)
+{
+    if (q->ec_active != q->ec->active) {
+        asm volatile("" ::: "memory");
+        __sync_synchronize();
+        ND("switching to configuration %i", q->ec_active);
+        q->ec->active = q->ec_active;
+    }
+}
 
 /* route-mode data structures and helper functions
  *
@@ -847,7 +1068,7 @@ enq(struct _qs *q)
             q->cur_len, (int)q->prod_tail, p->next,
             p->pt_qout, p->pt_tx);
     q->prod_tail = p->next;
-    if (q->max_bps)
+    if (q->ec->max_bps)
         q->prod_queued += p->pktlen;
     /* XXX update timestamps ? */
     return 0;
@@ -890,6 +1111,7 @@ wait_for_packets(struct _qs *q)
     uint64_t prev = q->prod_now;
 
     ioctl(q->src_port->fd, NIOCRXSYNC, 0); /* forced */
+    ec_checkactive(q);
     while (!do_abort) {
         if (hold_update_release(q))
             break;
@@ -903,6 +1125,7 @@ wait_for_packets(struct _qs *q)
         if (1) {
             usleep(5);
             ioctl(q->src_port->fd, NIOCRXSYNC, 0);
+            ec_checkactive(q);
             set_tns_now(&q->prod_now, q->t0);
         } else {
             struct pollfd pfd;
@@ -1456,8 +1679,8 @@ tlem_main(void *_a)
      * to the packet expansion for padding
      */
 
-    need = q->max_bps ? q->max_bps : INFINITE_BW;
-    need *= q->max_delay + 1000000;	/* delay is in nanoseconds */
+    need = q->ec->max_bps ? q->ec->max_bps : INFINITE_BW;
+    need *= q->ec->max_delay + 1000000;	/* delay is in nanoseconds */
     need /= TIME_UNITS; /* total bits */
     need /= 8; /* in bytes */
     need += q->qsize; /* in bytes */
@@ -1489,9 +1712,9 @@ tlem_main(void *_a)
      * issues and no need for padding.  The header is only 8 bytes, so the
      * worst case overhead (all minimally sized packets) is 8/64;
      */
-    if (q->max_hold_delay) {
-        need = q->max_bps ? q->max_bps : INFINITE_BW;
-        need *= q->max_hold_delay + 1000000;
+    if (q->ec->max_hold_delay) {
+        need = q->ec->max_bps ? q->ec->max_bps : INFINITE_BW;
+        need *= q->ec->max_hold_delay + 1000000;
         need /= TIME_UNITS;
         need /= 8;
         need *= (1 + 1.0*sizeof(struct h_pkt)/64);
@@ -1514,7 +1737,7 @@ tlem_main(void *_a)
     ED("----\n\t%s -> %s :  bps %lld delay %s loss %s queue %lld bytes"
             "\n\tbuffer   %10llu bytes\n\thold-buf %10lld bytes",
             q->prod_ifname, q->cons_ifname,
-            (long long)q->max_bps, q->c_delay.optarg, q->c_loss.optarg,
+            (long long)q->ec->max_bps, q->c_delay.optarg, q->c_loss.optarg,
             (long long)q->qsize, (unsigned long long)q->buflen,
             (unsigned long long)q->hold_buflen);
 
@@ -1603,7 +1826,6 @@ split_arg(const char *src, int *_ac)
     return av;
 }
 
-
 /*
  * apply a command against a set of functions,
  * install a handler in *dst
@@ -1616,22 +1838,21 @@ cmd_apply(const struct _cfg *a, const char *arg, struct _qs *q, struct _cfg *dst
     int i;
 
     if (arg == NULL || *arg == '\0')
-        return 1; /* no argument may be ok */
+        return 0; /* no argument may be ok */
     if (a == NULL || dst == NULL) {
         ED("program error - invalid arguments");
         exit(1);
     }
     av = split_arg(arg, &ac);
     if (av == NULL)
-        return 1; /* error */
+        goto out; /* error */
     for (i = 0; a[i].parse; i++) {
         struct _cfg x = a[i];
         const char *errmsg = x.optarg;
         int ret;
 
         x.arg = NULL;
-        x.arg_len = 0;
-        bzero(&x.d, sizeof(x.d));
+        x.ec = dst->ec;
         ret = x.parse(q, &x, ac, av);
         if (ret == 2) /* not recognised */
             continue;
@@ -1642,10 +1863,14 @@ cmd_apply(const struct _cfg *a, const char *arg, struct _qs *q, struct _cfg *dst
         }
         x.optarg = arg;
         *dst = x;
+        dst->ec->ec_index = i;
+        dst->ec->ec_valid = 1;
         return 0;
     }
     ED("arguments %s not recognised", arg);
     free(av);
+out:
+    dst->ec->ec_valid = 0;
     return 1;
 }
 
@@ -1678,21 +1903,66 @@ add_to(const char ** v, int l, const char *arg, const char *msg)
 
 static uint64_t parse_time(const char *arg); // forward
 
+/* set the maximum values for delay, bw and hold-time */
+static int
+set_max(const char *arg, struct _qs *q)
+{
+    int ac = 0;
+    char **av;
+    uint64_t delay = 0, bps = 0, hold = 0;
+
+    av = split_arg(arg, &ac);
+    if (av == NULL || ac < 1 || ac > 3) {
+        D("arg %p av %p ac %d", arg, av, ac);
+        ED("invalid parameters for -M: need max-delay[,max-bps[,max-hold-time]]]");
+        return 1;
+    }
+    /* first argument: max delay */
+    delay = parse_time(av[0]);
+    if (delay == U_PARSE_ERR) {
+        ED("invalid max-delay: %s", av[0]);
+        return 1;
+    }
+    if (ac > 1) {
+        /* second argument: max bw */
+        bps = parse_bw(av[1]);
+        if (bps == U_PARSE_ERR) {
+            ED("invalid max-bps: %s", av[1]);
+            return 1;
+        }
+    }
+    if (ac > 2) {
+        /* third argument: max hold time */
+        hold = parse_time(av[2]);
+        if (hold == U_PARSE_ERR) {
+            ED("invalid max-hold-time: %s", av[2]);
+            return 1;
+        }
+    }
+    if (delay > q->ec->max_delay)
+        q->ec->max_delay = delay;
+    if (bps > q->ec->max_bps)
+        q->ec->max_bps = bps;
+    if (hold > q->ec->max_hold_delay)
+        q->ec->max_hold_delay = hold;
+    return 0;
+}
+
+
 int
 main(int argc, char **argv)
 {
-    int ch, i, err=0;
+    int ch, i, j, err=0;
 
-#define	N_OPTS	2
-    struct pipe_args bp[N_OPTS];
-    const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *r[N_OPTS],
-    *ifname[N_OPTS], *gw[N_OPTS], *cd[N_OPTS];
+    struct pipe_args bp[EC_NOPTS];
+    const char *d[EC_NOPTS], *b[EC_NOPTS], *l[EC_NOPTS], *q[EC_NOPTS], *r[EC_NOPTS],
+    *ifname[EC_NOPTS], *gw[EC_NOPTS], *cd[EC_NOPTS], *m[EC_NOPTS];
     int ncpus;
     int cores[4];
     int hugepages = 0;
-    char *statsfname = NULL;
-    int statsfd;
-    struct stats *stats = NULL;
+    char *sfname = NULL; /* session file name */
+    int server = 1;
+    struct _ecf *ecf;
 
     nmctx_set_threadsafe();
 
@@ -1703,13 +1973,14 @@ main(int argc, char **argv)
     bzero(r, sizeof(r));
     bzero(gw, sizeof(gw));
     bzero(cd, sizeof(cd));
+    bzero(m, sizeof(m));
     bzero(ifname, sizeof(ifname));
 
     fprintf(stderr, "%s built %s %s\n", argv[0], __DATE__, __TIME__);
 
     bzero(&bp, sizeof(bp));	/* all data initially go here */
 
-    for (i = 0; i < N_OPTS; i++) {
+    for (i = 0; i < EC_NOPTS; i++) {
         struct _qs *q = &bp[i].q;
         q->c_delay.optarg = "0";
         q->c_delay.run = null_run_fn;
@@ -1747,7 +2018,7 @@ main(int argc, char **argv)
     // r	route mode
     // d	max consumer delay
 
-    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:b:ci:vw:rd:Hs:")) != -1) {
+    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:M:b:ci:vw:rd:Hs:l:")) != -1) {
         switch (ch) {
             default:
                 D("bad option %c %s", ch, optarg);
@@ -1783,32 +2054,35 @@ main(int argc, char **argv)
                 break;
 
             case 'B': /* bandwidth in bps */
-                add_to(b, N_OPTS, optarg, "-B too many times");
+                add_to(b, EC_NOPTS, optarg, "-B too many times");
                 break;
 
             case 'D': /* delay in seconds (float) */
-                add_to(d, N_OPTS, optarg, "-D too many times");
+                add_to(d, EC_NOPTS, optarg, "-D too many times");
                 break;
 
             case 'Q': /* qsize in bytes */
-                add_to(q, N_OPTS, optarg, "-Q too many times");
+                add_to(q, EC_NOPTS, optarg, "-Q too many times");
                 break;
 
             case 'L': /* loss probability */
-                add_to(l, N_OPTS, optarg, "-L too many times");
+                add_to(l, EC_NOPTS, optarg, "-L too many times");
                 break;
             case 'R': /* reordering */
-                add_to(r, N_OPTS, optarg, "-R too many times");
+                add_to(r, EC_NOPTS, optarg, "-R too many times");
                 break;
             case 'G': /* default gateway */
-                add_to(gw, N_OPTS, optarg, "-G too many times");
+                add_to(gw, EC_NOPTS, optarg, "-G too many times");
+                break;
+            case 'M': /* max bw, delay and hold-time */
+                add_to(m, EC_NOPTS, optarg, "-M too many times");
                 break;
             case 'b':	/* burst */
                 bp[0].q.burst = atoi(optarg);
                 break;
 
             case 'i':	/* interface */
-                add_to(ifname, N_OPTS, optarg, "-i too many times");
+                add_to(ifname, EC_NOPTS, optarg, "-i too many times");
                 break;
             case 'c':
                 bp[0].zerocopy = 0; /* do not zerocopy */
@@ -1823,21 +2097,17 @@ main(int argc, char **argv)
                 bp[0].route_mode = 1;
                 break;
             case 'd':
-                add_to(cd, N_OPTS, optarg, "-d too many times");
+                add_to(cd, EC_NOPTS, optarg, "-d too many times");
                 break;
             case 'H':
                 hugepages = 1;
                 break;
             case 's':
-                if (statsfname != NULL) {
+                if (sfname != NULL) {
                     D("option 's' duplicated");
                     usage();
                 }
-                statsfname = strdup(optarg);
-                if (statsfname == NULL) {
-                    D("out of memory");
-                    exit(1);
-                }
+                sfname = optarg;
                 break;
         }
     }
@@ -1845,197 +2115,205 @@ main(int argc, char **argv)
     argc -= optind;
     argv += optind;
 
+    /* map the session area and auto-detect wether we are server or client */
+    ecf = ec_map(sfname, &server);
+    if (ecf == NULL)
+        exit(1);
+
     /*
      * consistency checks for common arguments
      */
-    if (!ifname[0] || !ifname[1]) {
-        ED("missing interface(s)");
-        usage();
-    }
-    if (strcmp(ifname[0], ifname[1]) == 0) {
-        ED("must specify two different interfaces %s %s", ifname[0], ifname[1]);
-        usage();
-    }
-    if (bp[0].q.burst < 1 || bp[0].q.burst > 8192) {
-        ED("invalid burst %d, set to 1024", bp[0].q.burst);
-        bp[0].q.burst = 1024; // XXX 128 is probably better
-    }
-    if (bp[0].wait_link > 100) {
-        ED("invalid wait_link %d, set to 4", bp[0].wait_link);
-        bp[0].wait_link = 4;
-    }
+    if (server) {
+        if (!ifname[0] || !ifname[1]) {
+            ED("missing interface(s)");
+            usage();
+        }
+        if (strcmp(ifname[0], ifname[1]) == 0) {
+            ED("must specify two different interfaces %s %s", ifname[0], ifname[1]);
+            usage();
+        }
+        if (bp[0].q.burst < 1 || bp[0].q.burst > 8192) {
+            ED("invalid burst %d, set to 1024", bp[0].q.burst);
+            bp[0].q.burst = 1024; // XXX 128 is probably better
+        }
+        if (bp[0].wait_link > 100) {
+            ED("invalid wait_link %d, set to 4", bp[0].wait_link);
+            bp[0].wait_link = 4;
+        }
 
-    if (bp[0].route_mode) {
-        int fd;
-        struct ifreq ifr;
+        if (bp[0].route_mode) {
+            int fd;
+            struct ifreq ifr;
 #ifdef __FreeBSD__
-        struct ifaddrs *ifap, *p;
+            struct ifaddrs *ifap, *p;
 
-        if (getifaddrs(&ifap) < 0) {
-            ED("failed to get interface list: %s", strerror(errno));
-            usage();
-        }
+            if (getifaddrs(&ifap) < 0) {
+                ED("failed to get interface list: %s", strerror(errno));
+                usage();
+            }
 #endif /* __FreeBSD__ */
 
-        fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+            fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
 
-        if (fd < 0) {
-            ED("failed to open SOCK_DGRAM socket: %s", strerror(errno));
-            usage();
-        }
-
-        for (i = 0; i < 2; i++) {
-            struct ipv4_info *ip = &ipv4[i];
-            char *dst = ip->name;
-            const char *scan;
-            struct ether_header *eh;
-            struct ether_arp *ah;
-            void *hwaddr = NULL;
-
-            /* try to extract the port name */
-            if (!strncmp("vale", ifname[i], 4)) {
-                ED("route mode not supported for VALE port %s", ifname[i]);
+            if (fd < 0) {
+                ED("failed to open SOCK_DGRAM socket: %s", strerror(errno));
                 usage();
             }
-            if (strncmp("netmap:", ifname[i], 7)) {
-                ED("missing netmap: prefix in %s", ifname[i]);
-                usage();
-            }
-            scan = ifname[i] + 7;
-            if (strlen(scan) >= IFNAMSIZ) {
-                ED("name too long: %s", scan);
-                usage();
-            }
-            while (*scan && isalnum(*scan))
-                *dst++ = *scan++;
-            *dst = '\0';
-            ED("trying to get configuration for %s", ip->name);
 
-            /* MAC address */
-#ifdef linux
-            memset(&ifr, 0, sizeof(ifr));
-            strcpy(ifr.ifr_name, ip->name);
-            if (ioctl(fd, SIOCGIFHWADDR, &ifr) >= 0) {
-                hwaddr = ifr.ifr_addr.sa_data;
-            }
-#elif defined (__FreeBSD__)
-            errno = ENOENT;
-            for (p = ifap; p; p = p->ifa_next) {
+            for (i = 0; i < 2; i++) {
+                struct ipv4_info *ip = &ipv4[i];
+                char *dst = ip->name;
+                const char *scan;
+                struct ether_header *eh;
+                struct ether_arp *ah;
+                void *hwaddr = NULL;
 
-                if (!strcmp(p->ifa_name, ip->name) &&
-                        p->ifa_addr != NULL &&
-                        p->ifa_addr->sa_family == AF_LINK)
-                {
-                    struct sockaddr_dl *sdp =
-                        (struct sockaddr_dl *)p->ifa_addr;
-                    hwaddr = sdp->sdl_data + sdp->sdl_nlen;
-                    break;
+                /* try to extract the port name */
+                if (!strncmp("vale", ifname[i], 4)) {
+                    ED("route mode not supported for VALE port %s", ifname[i]);
+                    usage();
                 }
-            }
+                if (strncmp("netmap:", ifname[i], 7)) {
+                    ED("missing netmap: prefix in %s", ifname[i]);
+                    usage();
+                }
+                scan = ifname[i] + 7;
+                if (strlen(scan) >= IFNAMSIZ) {
+                    ED("name too long: %s", scan);
+                    usage();
+                }
+                while (*scan && isalnum(*scan))
+                    *dst++ = *scan++;
+                *dst = '\0';
+                ED("trying to get configuration for %s", ip->name);
+
+                /* MAC address */
+#ifdef linux
+                memset(&ifr, 0, sizeof(ifr));
+                strcpy(ifr.ifr_name, ip->name);
+                if (ioctl(fd, SIOCGIFHWADDR, &ifr) >= 0) {
+                    hwaddr = ifr.ifr_addr.sa_data;
+                }
+#elif defined (__FreeBSD__)
+                errno = ENOENT;
+                for (p = ifap; p; p = p->ifa_next) {
+
+                    if (!strcmp(p->ifa_name, ip->name) &&
+                            p->ifa_addr != NULL &&
+                            p->ifa_addr->sa_family == AF_LINK)
+                    {
+                        struct sockaddr_dl *sdp =
+                            (struct sockaddr_dl *)p->ifa_addr;
+                        hwaddr = sdp->sdl_data + sdp->sdl_nlen;
+                        break;
+                    }
+                }
 #endif /* __FreeBSD__ */
-            if (hwaddr == NULL) {
-                ED("failed to get MAC address for %s: %s",
-                        ip->name, strerror(errno));
-                usage();
-            }
-            memcpy(ip->ether_addr, hwaddr, 6);
+                if (hwaddr == NULL) {
+                    ED("failed to get MAC address for %s: %s",
+                            ip->name, strerror(errno));
+                    usage();
+                }
+                memcpy(ip->ether_addr, hwaddr, 6);
 
 #define get_ip_info(_c, _f, _m) 								\
-            memset(&ifr, 0, sizeof(ifr));						\
-            strcpy(ifr.ifr_name, ip->name);						\
-            ifr.ifr_addr.sa_family = AF_INET;					\
-            if (ioctl(fd, _c, &ifr) < 0) {						\
-                ED("failed to get IPv4 " _m " for %s: %s",			\
-                        ip->name, strerror(errno));			\
-                usage();							\
-            }									\
-            memcpy(&ip->_f, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);	\
+                memset(&ifr, 0, sizeof(ifr));						\
+                strcpy(ifr.ifr_name, ip->name);						\
+                ifr.ifr_addr.sa_family = AF_INET;					\
+                if (ioctl(fd, _c, &ifr) < 0) {						\
+                    ED("failed to get IPv4 " _m " for %s: %s",			\
+                            ip->name, strerror(errno));			\
+                    usage();							\
+                }									\
+                memcpy(&ip->_f, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);	\
 
 
-            /* IP address */
-            get_ip_info(SIOCGIFADDR, ip_addr, "address");
-            /* netmask */
-            get_ip_info(SIOCGIFNETMASK, ip_mask, "netmask");
-            /* broadcast */
-            get_ip_info(SIOCGIFBRDADDR, ip_bcast, "broadcast");
+                /* IP address */
+                get_ip_info(SIOCGIFADDR, ip_addr, "address");
+                /* netmask */
+                get_ip_info(SIOCGIFNETMASK, ip_mask, "netmask");
+                /* broadcast */
+                get_ip_info(SIOCGIFBRDADDR, ip_bcast, "broadcast");
 #undef get_ip_info
 
-            /* do we have an IP address? */
-            if (ip->ip_addr == 0) {
-                ED("no IPv4 address found for %s", ip->name);
-                usage();
-            }
-
-            /* cache the subnet */
-            ip->ip_subnet = ip->ip_addr & ip->ip_mask;
-
-            /* default gateway, if any */
-            if (gw[i]) {
-                struct ipv4_info *ip = &ipv4[i];
-                struct in_addr a;
-                if (!inet_aton(gw[i], &a)) {
-                    ED("not a valid IP address: %s", gw[i]);
+                /* do we have an IP address? */
+                if (ip->ip_addr == 0) {
+                    ED("no IPv4 address found for %s", ip->name);
                     usage();
                 }
-                if ((a.s_addr & ip->ip_mask) != ip->ip_subnet) {
-                    ED("gateway %s unreachable", gw[i]);
+
+                /* cache the subnet */
+                ip->ip_subnet = ip->ip_addr & ip->ip_mask;
+
+                /* default gateway, if any */
+                if (gw[i]) {
+                    struct ipv4_info *ip = &ipv4[i];
+                    struct in_addr a;
+                    if (!inet_aton(gw[i], &a)) {
+                        ED("not a valid IP address: %s", gw[i]);
+                        usage();
+                    }
+                    if ((a.s_addr & ip->ip_mask) != ip->ip_subnet) {
+                        ED("gateway %s unreachable", gw[i]);
+                        usage();
+                    }
+                    ip->ip_gw = a.s_addr;
+                }
+
+                ipv4_dump(ip);
+
+                /* precompute the arp reply for this interface */
+                eh = &ip->arp_reply.arp.eh;
+                ah = &ip->arp_reply.arp.ah;
+                memset(&ip->arp_reply, 0, sizeof(ip->arp_reply));
+                memcpy(eh->ether_shost, ip->ether_addr, 6);
+                eh->ether_type = htons(ETHERTYPE_ARP);
+                ah->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
+                ah->ea_hdr.ar_pro = htons(ETHERTYPE_IP);
+                ah->ea_hdr.ar_hln = 6;
+                ah->ea_hdr.ar_pln = 4;
+                ah->ea_hdr.ar_op = htons(ARPOP_REPLY);
+                memcpy(ah->arp_sha, ip->ether_addr, 6);
+                memcpy(ah->arp_spa, &ip->ip_addr, 4);
+
+                /* precompute the arp request for this interface */
+                eh = &ip->arp_request.arp.eh;
+                ah = &ip->arp_request.arp.ah;
+                memcpy(&ip->arp_request, &ip->arp_reply,
+                        sizeof(ip->arp_reply));
+                memset(eh->ether_dhost, 0xff, 6);
+                ah->ea_hdr.ar_op = htons(ARPOP_REQUEST);
+
+                /* allocate the arp table */
+                ip->arp_table = arp_table_new(ip->ip_mask);
+                if (ip->arp_table == NULL) {
+                    ED("failed to allocate the arp table for %s: %s", ip->name,
+                            strerror(errno));
                     usage();
                 }
-                ip->ip_gw = a.s_addr;
             }
 
-            ipv4_dump(ip);
-
-            /* precompute the arp reply for this interface */
-            eh = &ip->arp_reply.arp.eh;
-            ah = &ip->arp_reply.arp.ah;
-            memset(&ip->arp_reply, 0, sizeof(ip->arp_reply));
-            memcpy(eh->ether_shost, ip->ether_addr, 6);
-            eh->ether_type = htons(ETHERTYPE_ARP);
-            ah->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
-            ah->ea_hdr.ar_pro = htons(ETHERTYPE_IP);
-            ah->ea_hdr.ar_hln = 6;
-            ah->ea_hdr.ar_pln = 4;
-            ah->ea_hdr.ar_op = htons(ARPOP_REPLY);
-            memcpy(ah->arp_sha, ip->ether_addr, 6);
-            memcpy(ah->arp_spa, &ip->ip_addr, 4);
-
-            /* precompute the arp request for this interface */
-            eh = &ip->arp_request.arp.eh;
-            ah = &ip->arp_request.arp.ah;
-            memcpy(&ip->arp_request, &ip->arp_reply,
-                    sizeof(ip->arp_reply));
-            memset(eh->ether_dhost, 0xff, 6);
-            ah->ea_hdr.ar_op = htons(ARPOP_REQUEST);
-
-            /* allocate the arp table */
-            ip->arp_table = arp_table_new(ip->ip_mask);
-            if (ip->arp_table == NULL) {
-                ED("failed to allocate the arp table for %s: %s", ip->name,
-                        strerror(errno));
-                usage();
-            }
+            close(fd);
+#ifdef __FreeBSD__
+            freeifaddrs(ifap);
+#endif /* __FreeBSD__ */
         }
 
-        close(fd);
-#ifdef __FreeBSD__
-        freeifaddrs(ifap);
-#endif /* __FreeBSD__ */
+        bp[1] = bp[0]; /* copy parameters, but swap interfaces */
+        bp[0].q.prod_ifname = bp[1].q.cons_ifname = ifname[0];
+        bp[1].q.prod_ifname = bp[0].q.cons_ifname = ifname[1];
+        bp[0].prod_ipv4 = bp[1].cons_ipv4 = &ipv4[0];
+        bp[0].cons_ipv4 = bp[1].prod_ipv4 = &ipv4[1];
+
+
+        /* assign cores. prod and cons work better if on the same HT */
+        bp[0].cons_core = cores[0];
+        bp[0].prod_core = cores[1];
+        bp[1].cons_core = cores[2];
+        bp[1].prod_core = cores[3];
+        ED("running on cores %d %d %d %d", cores[0], cores[1], cores[2], cores[3]);
+
     }
-
-    bp[1] = bp[0]; /* copy parameters, but swap interfaces */
-    bp[0].q.prod_ifname = bp[1].q.cons_ifname = ifname[0];
-    bp[1].q.prod_ifname = bp[0].q.cons_ifname = ifname[1];
-    bp[0].prod_ipv4 = bp[1].cons_ipv4 = &ipv4[0];
-    bp[0].cons_ipv4 = bp[1].prod_ipv4 = &ipv4[1];
-
-
-    /* assign cores. prod and cons work better if on the same HT */
-    bp[0].cons_core = cores[0];
-    bp[0].prod_core = cores[1];
-    bp[1].cons_core = cores[2];
-    bp[1].prod_core = cores[3];
-    ED("running on cores %d %d %d %d", cores[0], cores[1], cores[2], cores[3]);
 
     /* use same parameters for both directions if needed */
     if (d[1] == NULL)
@@ -2050,8 +2328,11 @@ main(int argc, char **argv)
         r[1] = r[0];
 
     /* apply commands */
-    for (i = 0; i < N_OPTS; i++) { /* once per queue */
+    j = 0;
+    for (i = 0; i < EC_NOPTS; i++) { /* once per queue */
         struct _qs *q = &bp[i].q;
+        if (ec_init(q, &ecf->sets[i], server))
+            exit(1);
         err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
         err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
         err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
@@ -2064,6 +2345,32 @@ main(int argc, char **argv)
                 bp[i].max_lag = max_lag;
             }
         }
+        bp[i].q.txstats = &ecf->stats[j++];
+        bp[i].q.rxstats = &ecf->stats[j++];
+    }
+
+    if (err) {
+        ED("exiting due to %d error(s)", err);
+        exit(1);
+    }
+
+    if (server) {
+        /* set the maximum values */
+        if (m[0] == NULL)
+            m[0] = "0";
+        if (m[1] == NULL)
+            m[1] = m[0];
+        for (i = 0; i < EC_NOPTS; i++) {
+            if (set_max(m[i], &bp[i].q))
+                exit(1);
+        }
+        /* now the clients may send new configurations */
+        if (ec_allowclients())
+            exit(1);
+    } else {
+        for (i = 0; i < EC_NOPTS; i++)
+            ec_switchactive(&bp[i].q);
+        exit(0);
     }
 
     if (q[0] == NULL)
@@ -2082,7 +2389,7 @@ main(int argc, char **argv)
         bp[1].q.qsize = 50000;
     }
 
-    for (i = 0; i < N_OPTS; i++) {
+    for (i = 0; i < EC_NOPTS; i++) {
         if (bp[i].max_lag == 0) {
             bp[i].max_lag = 100000; /* 100 us */
         }
@@ -2126,36 +2433,6 @@ main(int argc, char **argv)
 
     }
 
-    if (statsfname != NULL) {
-        size_t statsz = 4 * sizeof(struct stats);
-        statsfd = open(statsfname, O_RDWR | O_CREAT, 0666);
-        if (statsfd < 0) {
-            D("cannot open %s: %s", statsfname, strerror(errno));
-            exit(1);
-        }
-        if (ftruncate(statsfd, statsz) < 0) {
-            D("cannot truncate(%s, %zu): %s",
-                    statsfname, statsz, strerror(errno));
-            exit(1);
-        }
-        stats = mmap(NULL, statsz,
-                PROT_READ | PROT_WRITE,
-                MAP_SHARED, statsfd, 0);
-        if (stats == MAP_FAILED) {
-            D("cannot mmap %s: %s", statsfname, strerror(errno));
-            exit(1);
-        }
-        bp[0].q.txstats = stats;
-        bp[0].q.rxstats = stats + 1;
-        bp[1].q.txstats = stats + 2;
-        bp[1].q.rxstats = stats + 3;
-    } else {
-        bp[0].q.txstats = &bp[0].q._txstats;
-        bp[0].q.rxstats = &bp[0].q._rxstats;
-        bp[1].q.txstats = &bp[1].q._txstats;
-        bp[1].q.rxstats = &bp[1].q._rxstats;
-    }
-
     pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
     pthread_create(&bp[1].cons_tid, NULL, tlem_main, (void*)&bp[1]);
 
@@ -2179,7 +2456,7 @@ main(int argc, char **argv)
                 q1->rx_qmax, (long long)q1->prod_max_gap,
                 (long long)(q1->rxstats->drop_packets - old1rx.drop_packets)
           );
-        ED("plr nominal %le actual %le",
+        ND("plr nominal %le actual %le",
                 (double)(q0->c_loss.d[0])/(1<<24),
                 q0->c_loss.d[1] == 0 ? 0 :
                 (double)(q0->c_loss.d[2])/q0->c_loss.d[1]);
@@ -2443,11 +2720,26 @@ REORDERING emulation 	-R option_arguments
  * as this is used to size the queue.
  */
 
+static int
+update_max_delay(struct _qs *q, uint64_t delay)
+{
+    if (q->ec->max_delay) {
+        if (q->ec->max_delay < delay) {
+            ED("invalid new delay %lld (max %lld)",
+                    (long long)delay, (long long)q->ec->max_delay);
+            return 1;
+        }
+    } else {
+        q->ec->max_delay = delay;
+    }
+    return 0;
+}
+
 /* constant delay, also accepts just a number */
 static int
 const_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-    uint64_t delay;
+    uint64_t delay, *d;
 
     if (strncmp(av[0], "const", 5) != 0 && ac > 1)
         return 2; /* unrecognised */
@@ -2456,8 +2748,13 @@ const_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     delay = parse_time(av[ac - 1]);
     if (delay == U_PARSE_ERR)
         return 1; /* error */
-    dst->d[0] = delay;
-    q->max_delay = delay;
+    if (update_max_delay(q, delay))
+        return 1;
+    dst->arg = ec_alloc(q, dst->ec, sizeof(uint64_t));
+    if (dst->arg == NULL)
+        return 1;
+    d = dst->arg;
+    d[0] = delay;
     return 0;	/* success */
 }
 
@@ -2465,16 +2762,16 @@ const_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 const_delay_run(struct _qs *q, struct _cfg *arg)
 {
-    q->cur_delay = arg->d[0]; /* the delay */
+    uint64_t *d = arg->arg;
+    q->cur_delay = d[0]; /* the delay */
     return 0;
 }
 
 static int
 uniform_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-    uint64_t dmin, dmax;
+    uint64_t dmin, dmax, *d;
 
-    (void)q;
     if (strcmp(av[0], "uniform") != 0)
         return 2; /* not recognised */
     if (ac != 3)
@@ -2484,18 +2781,23 @@ uniform_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     if (dmin == U_PARSE_ERR || dmax == U_PARSE_ERR || dmin > dmax)
         return 1;
     D("dmin %lld dmax %lld", (long long)dmin, (long long)dmax);
-    dst->d[0] = dmin;
-    dst->d[1] = dmax;
-    dst->d[2] = dmax - dmin;
-    q->max_delay = dmax;
+    if (update_max_delay(q, dmax))
+        return 1;
+    dst->arg = ec_alloc(q, dst->ec, 3 * sizeof(uint64_t));
+    if (dst->arg == NULL)
+        return 1;
+    d = dst->arg;
+    d[0] = dmin;
+    d[1] = dmax;
+    d[2] = dmax - dmin;
     return 0;
 }
 
 static int
 uniform_delay_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t x = my_random24();
-    q->cur_delay = arg->d[0] + ((arg->d[2] * x) >> 24);
+    uint64_t x = my_random24(), *d = arg->arg;
+    q->cur_delay = d[0] + ((d[2] * x) >> 24);
 #if 0 /* COMPUTE_STATS */
 #endif /* COMPUTE_STATS */
     return 0;
@@ -2516,9 +2818,8 @@ static int
 exp_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
 #define	PTS_D_EXP	512
-    uint64_t i, d_av, d_min, *t; /*table of values */
+    uint64_t i, d_av, d_min, d_max, *t; /*table of values */
 
-    (void)q;
     if (strcmp(av[0], "exp") != 0)
         return 2; /* not recognised */
     if (ac != 3)
@@ -2527,13 +2828,14 @@ exp_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     d_av = parse_time(av[2]);
     if (d_av == U_PARSE_ERR || d_min == U_PARSE_ERR || d_av < d_min)
         return 1; /* error */
+    d_max = d_av * 4 + d_min; /* exp(-4) */
+    if (update_max_delay(q, d_max))
+        return 1;
     d_av -= d_min;
-    dst->arg_len = PTS_D_EXP * sizeof(uint64_t);
-    dst->arg = calloc(1, dst->arg_len);
+    dst->arg = ec_alloc(q, dst->ec, PTS_D_EXP * sizeof(uint64_t));
     if (dst->arg == NULL)
         return 1; /* no memory */
     t = (uint64_t *)dst->arg;
-    q->max_delay = d_av * 4 + d_min; /* exp(-4) */
     /* tabulate -ln(1-n)*delay  for n in 0..1 */
     for (i = 0; i < PTS_D_EXP; i++) {
         double d = -log ((double)(PTS_D_EXP - i) / PTS_D_EXP) * d_av + d_min;
@@ -2553,7 +2855,7 @@ exp_delay_run(struct _qs *q, struct _cfg *arg)
 }
 
 
-#define TLEM_CFG_END	NULL, 0, {0}
+#define TLEM_CFG_END	NULL, NULL
 
 static struct _cfg delay_cfg[] = {
 	{ const_delay_parse, const_delay_run,
@@ -2565,11 +2867,26 @@ static struct _cfg delay_cfg[] = {
 	{ NULL, NULL, NULL, TLEM_CFG_END }
 };
 
+static int
+update_max_bw(struct _qs *q, uint64_t bw)
+{
+    if (q->ec->max_bps) {
+        if (q->ec->max_bps < bw) {
+            ED("invalid new bandwidth %lld (max %lld)",
+                    (long long)bw, (long long)q->ec->max_bps);
+            return 1;
+        }
+    } else {
+        q->ec->max_bps = bw;	/* bw used to determine queue size */
+    }
+    return 0;
+}
+
 /* standard bandwidth, also accepts just a number */
 static int
 const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-    uint64_t bw;
+    uint64_t bw, *d;
 
     if (strncmp(av[0], "const", 5) != 0 && ac > 1)
         return 2; /* unrecognised */
@@ -2579,8 +2896,13 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     if (bw == U_PARSE_ERR) {
         return (ac == 2) ? 1 /* error */ : 2 /* unrecognised */;
     }
-    dst->d[0] = bw;
-    q->max_bps = bw;	/* bw used to determine queue size */
+    dst->arg = ec_alloc(q, dst->ec, sizeof(uint64_t));
+    if (dst->arg == NULL)
+        return 1;
+    if (update_max_bw(q, bw))
+        return 1;
+    d = dst->arg;
+    d[0] = bw;
     return 0;	/* success */
 }
 
@@ -2589,7 +2911,7 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 const_bw_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t bps = arg->d[0];
+    uint64_t *d = arg->arg, bps = d[0];
     q->cur_tt = bps ? 8ULL* TIME_UNITS * q->cur_len / bps : 0 ;
     return 0;
 }
@@ -2598,9 +2920,8 @@ const_bw_run(struct _qs *q, struct _cfg *arg)
 static int
 ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-    uint64_t bw;
+    uint64_t bw, *d;
 
-    (void)q;
     if (strcmp(av[0], "ether") != 0)
         return 2; /* unrecognised */
     if (ac != 2)
@@ -2608,8 +2929,13 @@ ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     bw = parse_bw(av[ac - 1]);
     if (bw == U_PARSE_ERR)
         return 1; /* error */
-    dst->d[0] = bw;
-    q->max_bps = bw;	/* bw used to determine queue size */
+    if (update_max_bw(q, bw))
+        return 1;
+    dst->arg = ec_alloc(q, dst->ec, sizeof(uint64_t));
+    if (dst->arg == NULL)
+        return 1;
+    d = dst->arg;
+    d[0] = bw;
     return 0;	/* success */
 }
 
@@ -2618,7 +2944,7 @@ ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 ether_bw_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t bps = arg->d[0];
+    uint64_t *d = arg->arg, bps = d[0];
     q->cur_tt = bps ? 8ULL * TIME_UNITS * (q->cur_len + 24) / bps : 0 ;
     return 0;
 }
@@ -2639,6 +2965,7 @@ const_plr_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
     double plr;
     int err;
+    uint64_t *d;
 
     (void)q;
     if (strcmp(av[0], "plr") != 0 && ac > 1)
@@ -2649,8 +2976,12 @@ const_plr_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     plr = parse_gen(av[ac-1], NULL, &err);
     if (err || plr < 0 || plr > 1)
         return 1;
-    dst->d[0] = plr * (1<<24); /* scale is 16m */
-    if (plr != 0 && dst->d[0] == 0)
+    dst->arg = ec_alloc(q, dst->ec, 3 * sizeof(uint64_t));
+    if (dst->arg == NULL)
+        return 1;
+    d = dst->arg;
+    d[0] = plr * (1<<24); /* scale is 16m */
+    if (plr != 0 && d[0] == 0)
         ED("WWW warning,  rounding %le down to 0", plr);
     return 0;	/* success */
 }
@@ -2658,12 +2989,11 @@ const_plr_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 const_plr_run(struct _qs *q, struct _cfg *arg)
 {
-    (void)arg;
-    uint64_t r = my_random24();
-    q->cur_drop = r < arg->d[0];
+    uint64_t *d = arg->arg, r = my_random24();
+    q->cur_drop = r < d[0];
 #if 1	/* keep stats */
-    arg->d[1]++;
-    arg->d[2] += q->cur_drop;
+    d[1]++;
+    d[2] += q->cur_drop;
 #endif
     return 0;
 }
@@ -2680,6 +3010,7 @@ const_ber_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     double ber, ber8, cur;
     int i, err;
     uint32_t *plr;
+    uint64_t *d;
     const uint32_t mask = (1<<24) - 1;
 
     (void)q;
@@ -2690,11 +3021,12 @@ const_ber_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     ber = parse_gen(av[ac-1], NULL, &err);
     if (err || ber < 0 || ber > 1)
         return 1;
-    dst->arg_len = MAX_PKT * sizeof(uint32_t);
-    plr = calloc(1, dst->arg_len);
-    if (plr == NULL)
+    dst->arg = ec_alloc(q, dst->ec,
+            3 * sizeof(uint64_t) + MAX_PKT * sizeof(uint32_t));
+    if (dst->arg == NULL)
         return 1; /* no memory */
-    dst->arg = plr;
+    d = dst->arg;
+    plr = (uint32_t *)(d + 3);
     ber8 = 1 - ber;
     ber8 *= ber8; /* **2 */
     ber8 *= ber8; /* **4 */
@@ -2709,7 +3041,7 @@ const_ber_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
             RD(50,"%4d: %le %ld", i, 1.0 - cur, (_P64)plr[i]);
 #endif
     }
-    dst->d[0] = ber * (mask + 1);
+    d[0] = ber * (mask + 1);
     return 0;	/* success */
 }
 
@@ -2717,8 +3049,8 @@ static int
 const_ber_run(struct _qs *q, struct _cfg *arg)
 {
     int l = q->cur_len;
-    uint64_t r = my_random24();
-    uint32_t *plr = arg->arg;
+    uint64_t r = my_random24(), *d = arg->arg;
+    uint32_t *plr = (uint32_t *)(d + 3);
 
     if (l >= MAX_PKT) {
         RD(5, "pkt len %d too large, trim to %d", l, MAX_PKT-1);
@@ -2726,8 +3058,8 @@ const_ber_run(struct _qs *q, struct _cfg *arg)
     }
     q->cur_drop = r < plr[l];
 #if 1	/* keep stats */
-    arg->d[1] += l * 8;
-    arg->d[2] += q->cur_drop;
+    d[1] += l * 8;
+    d[2] += q->cur_drop;
 #endif
     return 0;
 }
@@ -2744,37 +3076,58 @@ static struct _cfg loss_cfg[] = {
 /*
  * reordering
  */
+
+static int
+update_max_hold_delay(struct _qs *q, uint64_t delay)
+{
+    if (q->ec->max_hold_delay) {
+        if (q->ec->max_hold_delay < delay) {
+            ED("invalid new hold delay %lld (max %lld)",
+                    (long long)delay,
+                    (long long)q->ec->max_hold_delay);
+            return 1;
+        }
+    } else {
+        q->ec->max_hold_delay = delay;
+    }
+    return 0;
+}
+
 static int
 const_reorder_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
     double prob;
-    uint64_t delay;
+    uint64_t delay, *d;
     int err;
 
-    (void)q;
     if (strcmp(av[0], "const") != 0 && ac > 2)
         return 2; /* not recognized */
     if (ac > 3)
         return 1; /* error */
+    dst->arg = ec_alloc(q, dst->ec, 2 * sizeof(uint64_t));
+    if (dst->arg == NULL)
+        return 1; /* no memory */
     prob = parse_gen(av[ac - 2], NULL, &err);
     if (err || prob < 0 || prob > 1)
         return 1;
-    dst->d[0] = prob * (1<<24);
-    if (prob != 0 && dst->d[0] == 0)
+    d = dst->arg;
+    d[0] = prob * (1<<24);
+    if (prob != 0 && d[0] == 0)
         ED("WWW warning,  rounding %le down to 0", prob);
     delay = parse_time(av[ac - 1]);
     if (delay == U_PARSE_ERR)
         return 1;
-    dst->d[1] = delay;
-    q->max_hold_delay = delay;
+    if (update_max_hold_delay(q, delay))
+        return 1;
+    d[1] = delay;
     return 0;
 }
 
 static int
 const_reorder_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t r = my_random24();
-    q->cur_hold_delay = (r < arg->d[0] ? arg->d[1] : 0);
+    uint64_t r = my_random24(), *d = arg->arg;
+    q->cur_hold_delay = (r < d[0] ? d[1] : 0);
     return 0;
 }
 
@@ -2783,3 +3136,43 @@ static struct _cfg reorder_cfg[] = {
 		"const,prob,delay # 0 <= prob <= 1", TLEM_CFG_END },
 	{ NULL, NULL, NULL, TLEM_CFG_END }
 };
+
+void
+ec_activate(struct _qs *q)
+{
+    int i = q->ec_active;
+    struct _eci *a = &q->ec->instances[i];
+
+    if (a->ec_bw.ec_valid) {
+        q->c_bw = bw_cfg[a->ec_bw.ec_index];
+        q->c_bw.arg = &a->ec_data[a->ec_bw.ec_dataoff];
+    } else {
+        q->cur_tt = 0;
+        q->c_bw.run = null_run_fn;
+    }
+    q->c_bw.ec = &a->ec_bw;
+    if (a->ec_delay.ec_valid) {
+        q->c_delay = delay_cfg[a->ec_delay.ec_index];
+        q->c_delay.arg = &a->ec_data[a->ec_delay.ec_dataoff];
+    } else {
+        q->cur_delay = 0;
+        q->c_delay.run = null_run_fn;
+    }
+    q->c_delay.ec = &a->ec_delay;
+    if (a->ec_loss.ec_valid) {
+        q->c_loss = loss_cfg[a->ec_loss.ec_index];
+        q->c_loss.arg = &a->ec_data[a->ec_loss.ec_dataoff];
+    } else {
+        q->cur_drop = 0;
+        q->c_loss.run = null_run_fn;
+    }
+    q->c_loss.ec = &a->ec_loss;
+    if (a->ec_reorder.ec_valid) {
+        q->c_reorder = reorder_cfg[a->ec_reorder.ec_index];
+        q->c_reorder.arg = &a->ec_data[a->ec_reorder.ec_dataoff];
+    } else {
+        q->cur_hold_delay = 0;
+        q->c_reorder.run = null_run_fn;
+    }
+    q->c_reorder.ec = &a->ec_reorder;
+}
