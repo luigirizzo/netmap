@@ -1651,8 +1651,7 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
     uint64_t bw;
 
-    (void)q;
-    if (strncmp(av[0], "const", 5) != 0)
+    if (strncmp(av[0], "const", 5) != 0 && ac > 1)
         return 2; /* unrecognised */
     if (ac > 2)
         return 1; /* error */
