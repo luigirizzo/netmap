@@ -2294,6 +2294,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		do {
 			/* memsize is always valid */
 			u_int memflags;
+			uint64_t memsize;
 
 			if (nmr->nr_name[0] != '\0') {
 
@@ -2313,10 +2314,11 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				}
 			}
 
-			error = netmap_mem_get_info(nmd, &nmr->nr_memsize, &memflags,
+			error = netmap_mem_get_info(nmd, &memsize, &memflags,
 				&nmr->nr_arg2);
 			if (error)
 				break;
+			nmr->nr_memsize = (uint32_t)memsize;
 			if (na == NULL) /* only memory info */
 				break;
 			nmr->nr_offset = 0;
@@ -2395,6 +2397,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		NMG_LOCK();
 		do {
 			u_int memflags;
+			uint64_t memsize;
 
 			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
@@ -2436,12 +2439,13 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			nmr->nr_tx_rings = na->num_tx_rings;
 			nmr->nr_rx_slots = na->num_rx_desc;
 			nmr->nr_tx_slots = na->num_tx_desc;
-			error = netmap_mem_get_info(na->nm_mem, &nmr->nr_memsize, &memflags,
+			error = netmap_mem_get_info(na->nm_mem, &memsize, &memflags,
 				&nmr->nr_arg2);
 			if (error) {
 				netmap_do_unregif(priv);
 				break;
 			}
+			nmr->nr_memsize = (uint32_t)memsize;
 			if (memflags & NETMAP_MEM_PRIVATE) {
 				*(uint32_t *)(uintptr_t)&nifp->ni_flags |= NI_PRIV_MEM;
 			}

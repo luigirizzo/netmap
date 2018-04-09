@@ -611,11 +611,15 @@ err:
 static int
 nm_update_info(struct nmreq *nmr, struct netmap_adapter *na)
 {
+	uint64_t memsize;
+	int ret;
 	nmr->nr_rx_rings = na->num_rx_rings;
 	nmr->nr_tx_rings = na->num_tx_rings;
 	nmr->nr_rx_slots = na->num_rx_desc;
 	nmr->nr_tx_slots = na->num_tx_desc;
-	return netmap_mem_get_info(na->nm_mem, &nmr->nr_memsize, NULL, &nmr->nr_arg2);
+	ret = netmap_mem_get_info(na->nm_mem, &memsize, NULL, &nmr->nr_arg2);
+	nmr->nr_memsize = (uint32_t)memsize;
+	return ret;
 }
 
 /*
