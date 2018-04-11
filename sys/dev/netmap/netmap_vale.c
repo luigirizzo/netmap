@@ -881,7 +881,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 
 	b = nm_find_bridge(nr_name, create);
 	if (b == NULL) {
-		D("no bridges available for '%s'", nr_name);
+		ND("no bridges available for '%s'", nr_name);
 		return (create ? ENOMEM : ENXIO);
 	}
 	if (strlen(nr_name) < b->bdg_namelen) /* impossible */
