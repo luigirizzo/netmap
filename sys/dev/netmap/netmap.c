@@ -911,7 +911,7 @@ netmap_krings_delete(struct netmap_adapter *na)
 
 	/* we rely on the krings layout described above */
 	for ( ; kring != na->tailroom; kring++) {
-		mtx_destroy((*kring)->q_lock);
+		mtx_destroy(&(*kring)->q_lock);
 		nm_os_selinfo_uninit(&(*kring)->si);
 	}
 	nm_os_free(na->tx_rings);
@@ -3154,7 +3154,7 @@ flush_tx:
 		if (want_tx && retry_tx && sr) {
 #ifndef linux
 			nm_os_selrecord(sr, check_all_tx ?
-			    &na->si[NR_TX] : na->tx_rings[priv->np_qfirst[NR_TX]].si);
+			    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]]->si);
 #endif /* !linux */
 			retry_tx = 0;
 			goto flush_tx;
@@ -3215,7 +3215,7 @@ do_retry_rx:
 #ifndef linux
 		if (retry_rx && sr) {
 			nm_os_selrecord(sr, check_all_rx ?
-			    &na->si[NR_RX] : na->rx_rings[priv->np_qfirst[NR_RX]].si);
+			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]]->si);
 		}
 #endif /* !linux */
 		if (send_down || retry_rx) {

@@ -138,7 +138,7 @@ netmap_pipe_find(struct netmap_adapter *parent, const char *pipe_id)
 		na = parent->na_pipes[i];
 		na_pipe_id = strrchr(na->up.name,
 			na->role == NM_PIPE_ROLE_MASTER ? '{' : '}');
-		KASSERT(na_pipe_id != NULL, "Invalid pipe name");
+		KASSERT(na_pipe_id != NULL, ("Invalid pipe name"));
 		++na_pipe_id;
 		if (!strcmp(na_pipe_id, pipe_id)) {
 			return na;

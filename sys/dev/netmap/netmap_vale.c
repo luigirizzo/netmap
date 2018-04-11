@@ -1852,7 +1852,7 @@ uint32_t
 netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *na, void *private_data)
 {
-	uint8_t *buf = ft->ft_buf + ft->ft_offset;
+	uint8_t *buf = ((uint8_t *)ft->ft_buf) + ft->ft_offset;
 	u_int buf_len = ft->ft_len - ft->ft_offset;
 	struct nm_hash_ent *ht = private_data;
 	uint32_t sh, dh;
