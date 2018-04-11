@@ -3060,7 +3060,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	if (want_tx) {
 		enum txrx t = NR_TX;
 		for (i = priv->np_qfirst[t]; want[t] && i < priv->np_qlast[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			/* XXX compare ring->cur and kring->tail */
 			if (!nm_ring_empty(kring->ring)) {
 				revents |= want[t];
@@ -3072,7 +3072,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 		enum txrx t = NR_RX;
 		want_rx = 0; /* look for a reason to run the handlers */
 		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = &NMR(na, t)[i];
+			kring = NMR(na, t)[i];
 			if (kring->ring->cur == kring->ring->tail /* try fetch new buffers */
 			    || kring->rhead != kring->ring->head /* release buffers */) {
 				want_rx = 1;
@@ -3154,7 +3154,7 @@ flush_tx:
 		if (want_tx && retry_tx && sr) {
 #ifndef linux
 			nm_os_selrecord(sr, check_all_tx ?
-			    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]].si);
+			    &na->si[NR_TX] : na->tx_rings[priv->np_qfirst[NR_TX]].si);
 #endif /* !linux */
 			retry_tx = 0;
 			goto flush_tx;
@@ -3215,7 +3215,7 @@ do_retry_rx:
 #ifndef linux
 		if (retry_rx && sr) {
 			nm_os_selrecord(sr, check_all_rx ?
-			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]].si);
+			    &na->si[NR_RX] : na->rx_rings[priv->np_qfirst[NR_RX]].si);
 		}
 #endif /* !linux */
 		if (send_down || retry_rx) {
