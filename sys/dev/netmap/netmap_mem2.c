@@ -1514,10 +1514,11 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 		return 0;
 
 #if defined(__FreeBSD__)
+	/* On FreeBSD mapping and unmapping is performed by the txsync
+	 * and rxsync routine, packet by packet. */
 	(void)i;
 	(void)lim;
 	(void)lut;
-	D("unsupported on FreeBSD");
 #elif defined(_WIN32)
 	(void)i;
 	(void)lim;
@@ -1549,10 +1550,11 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 		return 0;
 
 #if defined(__FreeBSD__)
+	/* On FreeBSD mapping and unmapping is performed by the txsync
+	 * and rxsync routine, packet by packet. */
 	(void)i;
 	(void)lim;
 	(void)lut;
-	D("unsupported on FreeBSD");
 #elif defined(_WIN32)
 	(void)i;
 	(void)lim;
