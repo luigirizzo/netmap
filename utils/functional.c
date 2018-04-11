@@ -25,20 +25,20 @@
  * SUCH DAMAGE.
  */
 #include <assert.h>
-#include <net/ethernet.h>
-#include <net/if.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/ip6.h>
-#include <netinet/udp.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
 #include <unistd.h>
+#include <net/ethernet.h>
+#include <net/if.h>
 #include <net/netmap.h>
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <netinet/udp.h>
 
 #define ETH_ADDR_LEN 6
 
