@@ -1808,7 +1808,7 @@ do_hdr_option()
 	nmreq_opt_init init      = NULL;
 
 	while ((type = nextarg())) {
-		uint16_t reqtype;
+		uint16_t reqtype = 0;
 
 		if (strcmp(type, "extmem") == 0) {
 			reqtype = NETMAP_REQ_OPT_EXTMEM;
