@@ -2729,7 +2729,7 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 	return 0;
 }
 
-size_t
+static size_t
 nmreq_opt_size_by_type(uint16_t nro_reqtype)
 {
 	size_t rv = sizeof(struct nmreq_option);
