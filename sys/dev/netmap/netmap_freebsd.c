@@ -659,7 +659,7 @@ nm_os_extmem_nr_pages(struct nm_os_extmem *e)
 }
 
 struct nm_os_extmem *
-nm_os_extmem_create(unsigned long p, struct netmap_pools_info *pi, int *perror)
+nm_os_extmem_create(unsigned long p, struct nmreq_pools_info *pi, int *perror)
 {
 	vm_map_t map;
 	vm_map_entry_t entry;
