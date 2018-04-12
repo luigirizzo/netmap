@@ -763,15 +763,15 @@ netmap_update_config(struct netmap_adapter *na)
 	    na->rx_buf_maxsize == info.rx_buf_maxsize)
 		return 0; /* nothing changed */
 	if (na->active_fds == 0) {
-		D("configuration changed for %s: txring %d x %d, "
-			"rxring %d x %d, rxbufsz %d",
-			na->name, na->num_tx_rings, na->num_tx_desc,
-			na->num_rx_rings, na->num_rx_desc, na->rx_buf_maxsize);
 		na->num_tx_rings = info.num_tx_rings;
 		na->num_tx_desc = info.num_tx_descs;
 		na->num_rx_rings = info.num_rx_rings;
 		na->num_rx_desc = info.num_rx_descs;
 		na->rx_buf_maxsize = info.rx_buf_maxsize;
+		D("configuration changed for %s: txring %d x %d, "
+			"rxring %d x %d, rxbufsz %d",
+			na->name, na->num_tx_rings, na->num_tx_desc,
+			na->num_rx_rings, na->num_rx_desc, na->rx_buf_maxsize);
 		return 0;
 	}
 	D("WARNING: configuration changed for %s while active: "
