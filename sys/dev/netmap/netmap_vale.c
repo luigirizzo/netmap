@@ -2782,8 +2782,14 @@ netmap_bwrap_config(struct netmap_adapter *na, struct nm_config_info *info)
 	struct netmap_bwrap_adapter *bna =
 		(struct netmap_bwrap_adapter *)na;
 	struct netmap_adapter *hwna = bna->hwna;
+	int error;
 
-	/* forward the request */
+	/* Forward the request to the hwna. It may happen that nobody
+	 * registered hwna yet, so netmap_mem_get_lut() may have not
+	 * been called yet. */
+	error = netmap_mem_get_lut(hwna->nm_mem, &hwna->na_lut);
+	if (error)
+		return error;
 	netmap_update_config(hwna);
 	/* swap the results and propagate */
 	info->num_tx_rings = hwna->num_rx_rings;
