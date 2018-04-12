@@ -2115,7 +2115,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 		 */
 		if (na->ifp && nm_priv_rx_enabled(priv)) {
 			/* This netmap adapter is attached to an ifnet. */
-			unsigned nbs = netmap_mem_bufsize(na->nm_mem);
+			unsigned nbs = NETMAP_BUF_SIZE(na);
 			unsigned mtu = nm_os_ifnet_mtu(na->ifp);
 
 			ND("%s: mtu %d rx_buf_maxsize %d netmap_buf_size %d",
