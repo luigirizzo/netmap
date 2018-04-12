@@ -2121,6 +2121,12 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 			ND("%s: mtu %d rx_buf_maxsize %d netmap_buf_size %d",
 					na->name, mtu, na->rx_buf_maxsize, nbs);
 
+			if (na->rx_buf_maxsize == 0) {
+				D("%s: error: rx_buf_maxsize == 0", na->name);
+				error = EIO;
+				goto err_drop_mem;
+			}
+
 			if (mtu <= na->rx_buf_maxsize) {
 				/* The MTU fits a single NIC slot. We only
 				 * Need to check that netmap buffers are
