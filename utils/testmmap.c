@@ -1608,7 +1608,7 @@ nmr_option_dump_extmem(struct nmreq_option *opt)
 {
 	struct nmreq_opt_extmem *e = (struct nmreq_opt_extmem *)opt;
 
-	printf("usrptr: %p\n", (void *)e->nro_usrptr);
+	printf("usrptr: %p\n", (void *)(uintptr_t)e->nro_usrptr);
 	printf("info:\n");
 	pools_info_dump(4, &e->nro_info);
 }
@@ -1618,7 +1618,7 @@ nmr_option_dump(struct nmreq_option *opt)
 {
 	nmr_option_dump_fun d = NULL;
 
-	printf("next: %p\n", (void *)opt->nro_next);
+	printf("next: %p\n", (void *)(uintptr_t)opt->nro_next);
 	printf("type: %" PRIu32 " [", opt->nro_reqtype);
 	switch (opt->nro_reqtype) {
 	case NETMAP_REQ_OPT_EXTMEM:
@@ -1705,24 +1705,24 @@ do_hdr_dump()
 	}
 	printf("]\n");
 	printf("name: %s\n", nmr_name);
-	opt = (struct nmreq_option *)curr_hdr.nr_options;
+	opt = (struct nmreq_option *)(uintptr_t)curr_hdr.nr_options;
 	printf("options:   %p\n", opt);
 	while (opt) {
 		nmr_option_dump(opt);
-		opt = (struct nmreq_option *)opt->nro_next;
+		opt = (struct nmreq_option *)(uintptr_t)opt->nro_next;
 	}
-	printf("body:	   %p\n", (void *)curr_hdr.nr_body);
+	printf("body:	   %p\n", (void *)(uintptr_t)curr_hdr.nr_body);
 	if (body_dump)
-		body_dump((void *)curr_hdr.nr_body);
+		body_dump((void *)(uintptr_t)curr_hdr.nr_body);
 }
 
 static void
 do_hdr_reset()
 {
-	struct nmreq_option *opt = (struct nmreq_option *)curr_hdr.nr_options;
+	struct nmreq_option *opt = (struct nmreq_option *)(uintptr_t)curr_hdr.nr_options;
 	while (opt) {
 		struct nmreq_option *next =
-			(struct nmreq_option *)opt->nro_next;
+			(struct nmreq_option *)(uintptr_t)opt->nro_next;
 		free(opt);
 		opt = next;
 	}
@@ -1749,38 +1749,38 @@ do_hdr_type()
 
 	if (strcmp(type, "register") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_REGISTER;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_register;
+		curr_hdr.nr_body    = (uintptr_t)&curr_register;
 	} else if (strcmp(type, "info-get") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_port_info_get;
+		curr_hdr.nr_body    = (uintptr_t)&curr_port_info_get;
 	} else if (strcmp(type, "vale-attach") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_attach;
+		curr_hdr.nr_body    = (uintptr_t)&curr_vale_attach;
 	} else if (strcmp(type, "vale-detach") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
 	} else if (strcmp(type, "vale-list") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_LIST;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_list;
+		curr_hdr.nr_body    = (uintptr_t)&curr_vale_list;
 	} else if (strcmp(type, "port-hdr-set") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_port_hdr;
+		curr_hdr.nr_body    = (uintptr_t)&curr_port_hdr;
 	} else if (strcmp(type, "port-hdr-get") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_port_hdr;
+		curr_hdr.nr_body    = (uintptr_t)&curr_port_hdr;
 	} else if (strcmp(type, "vale-newif") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_NEWIF;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_newif;
+		curr_hdr.nr_body    = (uintptr_t)&curr_vale_newif;
 	} else if (strcmp(type, "vale-delif") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_DELIF;
 	} else if (strcmp(type, "vale-polliing-enable") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_ENABLE;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_polling;
+		curr_hdr.nr_body    = (uintptr_t)&curr_vale_polling;
 	} else if (strcmp(type, "vale-polling-disable") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_DISABLE;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_vale_polling;
+		curr_hdr.nr_body    = (uintptr_t)&curr_vale_polling;
 	} else if (strcmp(type, "pools-info-get") == 0) {
 		curr_hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
-		curr_hdr.nr_body    = (uint64_t)(uintptr_t)&curr_pools_info;
+		curr_hdr.nr_body    = (uintptr_t)&curr_pools_info;
 	} else {
 		output("unknown type: %s", type);
 	}
@@ -1793,7 +1793,7 @@ static void
 nmreq_opt_extmem_init(struct nmreq_option *opt)
 {
 	struct nmreq_opt_extmem *e = (struct nmreq_opt_extmem *)opt;
-	e->nro_usrptr		   = (uint64_t)last_mmap_addr;
+	e->nro_usrptr		   = (uintptr_t)last_mmap_addr;
 	e->nro_info.nr_memsize     = last_memsize;
 }
 
