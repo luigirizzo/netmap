@@ -1526,7 +1526,7 @@ int netmap_get_monitor_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 void netmap_monitor_stop(struct netmap_adapter *na);
 #else
 #define netmap_get_monitor_na(hdr, _2, _3, _4) \
-	(((struct nmreq_register *)hdr->nr_body)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
+	(((struct nmreq_register *)(uintptr_t)hdr->nr_body)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
 #endif
 
 #ifdef CONFIG_NET_NS
@@ -2175,7 +2175,7 @@ nm_ptnetmap_host_on(struct netmap_adapter *na)
 }
 #else /* !WITH_PTNETMAP_HOST */
 #define netmap_get_pt_host_na(hdr, _2, _3, _4) \
-	(((struct nmreq_register *)hdr->nr_body)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
+	(((struct nmreq_register *)(uintptr_t)hdr->nr_body)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
 #define ptnetmap_ctl(_1, _2, _3)   EINVAL
 #define nm_ptnetmap_host_on(_1)   EINVAL
 #endif /* !WITH_PTNETMAP_HOST */

@@ -1474,7 +1474,7 @@ netmap_get_na(struct nmreq_header *hdr,
 	      struct netmap_adapter **na, struct ifnet **ifp,
 	      struct netmap_mem_d *nmd, int create)
 {
-	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
+	struct nmreq_register *req = (struct nmreq_register *)(uintptr_t)hdr->nr_body;
 	int error = 0;
 	struct netmap_adapter *ret = NULL;
 	int nmd_ref = 0;
@@ -2330,7 +2330,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		switch (hdr->nr_reqtype) {
 		case NETMAP_REQ_REGISTER: {
 			struct nmreq_register *req =
-				(struct nmreq_register *)hdr->nr_body;
+				(struct nmreq_register *)(uintptr_t)hdr->nr_body;
 			/* Protect access to priv from concurrent requests. */
 			NMG_LOCK();
 			do {
@@ -2345,7 +2345,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 				}
 
 #ifdef WITH_EXTMEM
-				opt = nmreq_findoption((struct nmreq_option *)hdr->nr_options,
+				opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
 						NETMAP_REQ_OPT_EXTMEM);
 				if (opt != NULL) {
 					struct nmreq_opt_extmem *e =
@@ -2448,7 +2448,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 
 		case NETMAP_REQ_PORT_INFO_GET: {
 			struct nmreq_port_info_get *req =
-				(struct nmreq_port_info_get *)hdr->nr_body;
+				(struct nmreq_port_info_get *)(uintptr_t)hdr->nr_body;
 
 			NMG_LOCK();
 			do {
@@ -2467,10 +2467,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 
 					/* get a refcount */
 					hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-					hdr->nr_body = (uint64_t)&regreq;
+					hdr->nr_body = (uintptr_t)&regreq;
 					error = netmap_get_na(hdr, &na, &ifp, NULL, 1 /* create */);
 					hdr->nr_reqtype = NETMAP_REQ_PORT_INFO_GET; /* reset type */
-					hdr->nr_body = (uint64_t)req; /* reset nr_body */
+					hdr->nr_body = (uintptr_t)req; /* reset nr_body */
 					if (error) {
 						na = NULL;
 						ifp = NULL;
@@ -2521,7 +2521,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 
 		case NETMAP_REQ_PORT_HDR_SET: {
 			struct nmreq_port_hdr *req =
-				(struct nmreq_port_hdr *)hdr->nr_body;
+				(struct nmreq_port_hdr *)(uintptr_t)hdr->nr_body;
 			/* Build a nmreq_register out of the nmreq_port_hdr,
 			 * so that we can call netmap_get_bdg_na(). */
 			struct nmreq_register regreq;
@@ -2537,10 +2537,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			}
 			NMG_LOCK();
 			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-			hdr->nr_body = (uint64_t)&regreq;
+			hdr->nr_body = (uintptr_t)&regreq;
 			error = netmap_get_bdg_na(hdr, &na, NULL, 0);
 			hdr->nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
-			hdr->nr_body = (uint64_t)req;
+			hdr->nr_body = (uintptr_t)req;
 			if (na && !error) {
 				struct netmap_vp_adapter *vpna =
 					(struct netmap_vp_adapter *)na;
@@ -2560,7 +2560,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		case NETMAP_REQ_PORT_HDR_GET: {
 			/* Get vnet-header length for this netmap port */
 			struct nmreq_port_hdr *req =
-				(struct nmreq_port_hdr *)hdr->nr_body;
+				(struct nmreq_port_hdr *)(uintptr_t)hdr->nr_body;
 			/* Build a nmreq_register out of the nmreq_port_hdr,
 			 * so that we can call netmap_get_bdg_na(). */
 			struct nmreq_register regreq;
@@ -2569,10 +2569,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			bzero(&regreq, sizeof(regreq));
 			NMG_LOCK();
 			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-			hdr->nr_body = (uint64_t)&regreq;
+			hdr->nr_body = (uintptr_t)&regreq;
 			error = netmap_get_na(hdr, &na, &ifp, NULL, 0);
 			hdr->nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
-			hdr->nr_body = (uint64_t)req;
+			hdr->nr_body = (uintptr_t)req;
 			if (na && !error) {
 				req->nr_hdr_len = na->virt_hdr_len;
 			}
@@ -2599,7 +2599,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 #endif  /* WITH_VALE */
 		case NETMAP_REQ_POOLS_INFO_GET: {
 			struct nmreq_pools_info *req =
-				(struct nmreq_pools_info *)hdr->nr_body;
+				(struct nmreq_pools_info *)(uintptr_t)hdr->nr_body;
 			/* Get information from the memory allocator. This
 			 * netmap device must already be bound to a port.
 			 * Note that hdr->nr_name is ignored. */
@@ -2778,8 +2778,8 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		error = EMSGSIZE;
 		goto out_err;
 	}
-	if ((rqsz && hdr->nr_body == (uint64_t)NULL) ||
-		(!rqsz && hdr->nr_body != (uint64_t)NULL)) {
+	if ((rqsz && hdr->nr_body == (uintptr_t)NULL) ||
+		(!rqsz && hdr->nr_body != (uintptr_t)NULL)) {
 		/* Request body expected, but not found; or
 		 * request body found but unexpected. */
 		error = EINVAL;
@@ -2788,8 +2788,8 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 
 	bufsz = 2 * sizeof(void *) + rqsz;
 	optsz = 0;
-	for (src = (struct nmreq_option *)hdr->nr_options; src;
-	     src = (struct nmreq_option *)buf.nro_next)
+	for (src = (struct nmreq_option *)(uintptr_t)hdr->nr_options; src;
+	     src = (struct nmreq_option *)(uintptr_t)buf.nro_next)
 	{
 		error = copyin(src, &buf, sizeof(*src));
 		if (error)
@@ -2817,11 +2817,11 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 	p = (char *)ptrs;
 
 	/* copy the body */
-	error = copyin((void *)hdr->nr_body, p, rqsz);
+	error = copyin((void *)(uintptr_t)hdr->nr_body, p, rqsz);
 	if (error)
 		goto out_restore;
 	/* overwrite the user pointer with the in-kernel one */
-	hdr->nr_body = (uint64_t)p;
+	hdr->nr_body = (uintptr_t)p;
 	p += rqsz;
 
 	/* copy the options */
@@ -2878,7 +2878,7 @@ static int
 nmreq_copyout(struct nmreq_header *hdr, int rerror)
 {
 	struct nmreq_option *src, *dst;
-	void *ker = (void *)hdr->nr_body, *bufstart;
+	void *ker = (void *)(uintptr_t)hdr->nr_body, *bufstart;
 	uint64_t *ptrs;
 	size_t bodysz;
 	int error;
@@ -2890,13 +2890,13 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 	ptrs = (uint64_t *)ker - 2;
 	bufstart = ptrs;
 	hdr->nr_body = *ptrs++;
-	src = (struct nmreq_option *)hdr->nr_options;
+	src = (struct nmreq_option *)(uintptr_t)hdr->nr_options;
 	hdr->nr_options = *ptrs;
 
 	if (!rerror) {
 		/* copy the body */
 		bodysz = nmreq_size_by_type(hdr->nr_reqtype);
-		error = copyout(ker, (void *)hdr->nr_body, bodysz);
+		error = copyout(ker, (void *)(uintptr_t)hdr->nr_body, bodysz);
 		if (error) {
 			rerror = error;
 			goto out;
@@ -2904,7 +2904,7 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 	}
 
 	/* copy the options */
-	dst = (struct nmreq_option *)hdr->nr_options;
+	dst = (struct nmreq_option *)(uintptr_t)hdr->nr_options;
 	while (src) {
 		size_t optsz;
 		uint64_t next;
@@ -2932,8 +2932,8 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 				}
 			}
 		}
-		src = (struct nmreq_option *)next;
-		dst = (struct nmreq_option *)*ptrs;
+		src = (struct nmreq_option *)(uintptr_t)next;
+		dst = (struct nmreq_option *)(uintptr_t)*ptrs;
 	}
 
 
@@ -2946,7 +2946,7 @@ out:
 struct nmreq_option *
 nmreq_findoption(struct nmreq_option *opt, uint16_t reqtype)
 {
-	for ( ; opt; opt = (struct nmreq_option *)opt->nro_next)
+	for ( ; opt; opt = (struct nmreq_option *)(uintptr_t)opt->nro_next)
 		if (opt->nro_reqtype == reqtype)
 			return opt;
 	return NULL;
@@ -2957,7 +2957,7 @@ nmreq_checkduplicate(struct nmreq_option *opt) {
 	uint16_t type = opt->nro_reqtype;
 	int dup = 0;
 
-	while ((opt = nmreq_findoption((struct nmreq_option *)opt->nro_next,
+	while ((opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)opt->nro_next,
 			type))) {
 		dup++;
 		opt->nro_status = EINVAL;
@@ -2973,8 +2973,8 @@ nmreq_checkoptions(struct nmreq_header *hdr)
 	 * marked as not supported
 	 */
 
-	for (opt = (struct nmreq_option *)hdr->nr_options; opt;
-	     opt = (struct nmreq_option *)opt->nro_next)
+	for (opt = (struct nmreq_option *)(uintptr_t)hdr->nr_options; opt;
+	     opt = (struct nmreq_option *)(uintptr_t)opt->nro_next)
 		if (opt->nro_status == EOPNOTSUPP)
 			return EOPNOTSUPP;
 

@@ -677,7 +677,7 @@ int
 nm_vi_create(struct nmreq_header *hdr)
 {
 	struct nmreq_vale_newif *req =
-		(struct nmreq_vale_newif *)hdr->nr_body;
+		(struct nmreq_vale_newif *)(uintptr_t)hdr->nr_body;
 	int error = 0;
 	/* Build a nmreq_register out of the nmreq_vale_newif,
 	 * so that we can call netmap_get_bdg_na(). */
@@ -689,10 +689,10 @@ nm_vi_create(struct nmreq_header *hdr)
 	regreq.nr_rx_rings = req->nr_rx_rings;
 	regreq.nr_mem_id = req->nr_mem_id;
 	hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-	hdr->nr_body = (uint64_t)&regreq;
+	hdr->nr_body = (uintptr_t)&regreq;
 	error = netmap_vi_create(hdr, 0 /* no autodelete */);
 	hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
-	hdr->nr_body = (uint64_t)req;
+	hdr->nr_body = (uintptr_t)req;
         /* Write back to the original struct. */
 	req->nr_tx_slots = regreq.nr_tx_slots;
 	req->nr_rx_slots = regreq.nr_rx_slots;
@@ -770,7 +770,7 @@ nm_update_info(struct nmreq_register *req, struct netmap_adapter *na)
 int
 netmap_vi_create(struct nmreq_header *hdr, int autodelete)
 {
-	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
+	struct nmreq_register *req = (struct nmreq_register *)(uintptr_t)hdr->nr_body;
 	struct ifnet *ifp;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_mem_d *nmd = NULL;
@@ -975,7 +975,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
 			/* Check if we need to skip the host rings. */
 			struct nmreq_vale_attach *areq =
-				(struct nmreq_vale_attach *)hdr->nr_body;
+				(struct nmreq_vale_attach *)(uintptr_t)hdr->nr_body;
 			if (areq->reg.nr_mode != NR_REG_NIC_SW) {
 				hostna = NULL;
 			}
@@ -1015,7 +1015,7 @@ int
 nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token)
 {
 	struct nmreq_vale_attach *req =
-		(struct nmreq_vale_attach *)hdr->nr_body;
+		(struct nmreq_vale_attach *)(uintptr_t)hdr->nr_body;
 	struct netmap_vp_adapter * vpna;
 	struct netmap_adapter *na;
 	struct netmap_mem_d *nmd = NULL;
@@ -1092,7 +1092,7 @@ nm_is_bwrap(struct netmap_adapter *na)
 int
 nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token)
 {
-	struct nmreq_vale_detach *nmreq_det = (void *)hdr->nr_body;
+	struct nmreq_vale_detach *nmreq_det = (void *)(uintptr_t)hdr->nr_body;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
 	struct nm_bridge *b = NULL;
@@ -1411,7 +1411,7 @@ int
 nm_bdg_polling(struct nmreq_header *hdr)
 {
 	struct nmreq_vale_polling *req =
-		(struct nmreq_vale_polling *)hdr->nr_body;
+		(struct nmreq_vale_polling *)(uintptr_t)hdr->nr_body;
 	struct netmap_adapter *na = NULL;
 	int error = 0;
 
@@ -1444,7 +1444,7 @@ int
 netmap_bdg_list(struct nmreq_header *hdr)
 {
 	struct nmreq_vale_list *req =
-		(struct nmreq_vale_list *)hdr->nr_body;
+		(struct nmreq_vale_list *)(uintptr_t)hdr->nr_body;
 	int namelen = strlen(hdr->nr_name);
 	struct nm_bridge *b, *bridges;
 	struct netmap_vp_adapter *vpna;
@@ -2446,7 +2446,7 @@ static int
 netmap_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_vp_adapter **ret)
 {
-	struct nmreq_register *req = (struct nmreq_register *)hdr->nr_body;
+	struct nmreq_register *req = (struct nmreq_register *)(uintptr_t)hdr->nr_body;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
 	int error = 0;
@@ -2973,7 +2973,7 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 
 	if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
 		struct nmreq_vale_attach *req =
-			(struct nmreq_vale_attach *)hdr->nr_body;
+			(struct nmreq_vale_attach *)(uintptr_t)hdr->nr_body;
 		if (req->reg.nr_ringid != 0 ||
 			(req->reg.nr_mode != NR_REG_ALL_NIC &&
 				req->reg.nr_mode != NR_REG_NIC_SW)) {
