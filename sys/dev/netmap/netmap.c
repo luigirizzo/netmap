@@ -2118,8 +2118,8 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 			unsigned nbs = netmap_mem_bufsize(na->nm_mem);
 			unsigned mtu = nm_os_ifnet_mtu(na->ifp);
 
-			ND("mtu %d rx_buf_maxsize %d netmap_buf_size %d",
-					mtu, na->rx_buf_maxsize, nbs);
+			ND("%s: mtu %d rx_buf_maxsize %d netmap_buf_size %d",
+					na->name, mtu, na->rx_buf_maxsize, nbs);
 
 			if (mtu <= na->rx_buf_maxsize) {
 				/* The MTU fits a single NIC slot. We only
