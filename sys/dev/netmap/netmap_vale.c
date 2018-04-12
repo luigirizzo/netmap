@@ -3053,6 +3053,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->pdev = hwna->pdev;
 	na->nm_mem = netmap_mem_get(hwna->nm_mem);
 	na->virt_hdr_len = hwna->virt_hdr_len;
+	na->rx_buf_maxsize = hwna->rx_buf_maxsize;
 	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
 	/* Set the mfs, needed on the VALE mismatch datapath. */
 	bna->up.mfs = NM_BDG_MFS_DEFAULT;
@@ -3085,6 +3086,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		na->na_hostvp = hwna->na_hostvp =
 			hostna->na_hostvp = &bna->host;
 		hostna->na_flags = NAF_BUSY; /* prevent NIOCREGIF */
+		hostna->rx_buf_maxsize = hwna->rx_buf_maxsize;
 		bna->host.mfs = NM_BDG_MFS_DEFAULT;
 	}
 
