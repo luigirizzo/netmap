@@ -73,7 +73,7 @@ This makes sure that there is always a free slot.
 static int
 forcedeth_netmap_reg(struct netmap_adapter *na, int onoff)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *np = netdev_priv(ifp);
 	u8 __iomem *base = get_hwbase(ifp);
 
@@ -323,7 +323,7 @@ forcedeth_netmap_tx_init(struct SOFTC_T *np)
 	struct netmap_adapter *na = NA(np->dev);
 	struct netmap_slot *slot;
 
-        slot = netmap_reset(na, NR_TX, 0, 0);
+	slot = netmap_reset(na, NR_TX, 0, 0);
 	/* slot is NULL if we are not in native netmap mode */
 	if (!slot)
 		return 0;
