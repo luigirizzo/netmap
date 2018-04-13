@@ -638,7 +638,7 @@ ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u3
 #ifndef NM_IXGBE_USE_TDH
 	/* we reset WTRESH (it must be 0 according to specs) */
 	txdctl &= ~(0x7f << 16);
-	
+
 	wba = (u64)ina->heads[ring_nr].map;
 	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAL(ring_nr),
 		(wba & DMA_BIT_MASK(32)) | IXGBE_TDWBAL_HEAD_WB_ENABLE);
