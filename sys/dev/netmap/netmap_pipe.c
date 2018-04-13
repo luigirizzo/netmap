@@ -575,7 +575,7 @@ cleanup:
 
 	netmap_mem_rings_delete(na);
 	netmap_krings_delete(na); /* also zeroes tx_rings etc. */
-	
+
 	if (ona->tx_rings == NULL) {
 		/* already deleted, we must be on an
                  * cleanup-after-error path */

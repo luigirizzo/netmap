@@ -229,7 +229,7 @@ struct nm_bridge {
 	 * The function is set by netmap_bdg_regops().
 	 */
 	struct netmap_bdg_ops *bdg_ops;
-	
+
 	/*
 	 * Contains the data structure used by the bdg_ops.lookup function.
 	 * By default points to *ht which is allocated on attach and used by the default lookup
@@ -540,7 +540,7 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	netmap_bdg_free(b);
 }
 
-static inline void * 
+static inline void *
 nm_bdg_get_auth_token(struct nm_bridge *b)
 {
 	return b->ht;
@@ -1526,7 +1526,7 @@ netmap_bdg_list(struct nmreq_header *hdr)
  *
  * Called without NMG_LOCK.
  */
- 
+
 int
 netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, void *auth_token)
 {

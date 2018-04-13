@@ -448,7 +448,7 @@ struct netmap_kring {
 
 	/* the adapter the owns this kring */
 	struct netmap_adapter *na;
-	
+
 	/* the adapter that wants to be notified when this kring has
 	 * new slots avaialable. This is usually the same as the above,
 	 * but wrappers may let it point to themselves
@@ -1821,7 +1821,7 @@ struct lut_entry {
 };
 #else /* linux & _WIN32 */
 /* dma-mapping in linux can assign a buffer a different address
- * depending on the device, so we need to have a separate 
+ * depending on the device, so we need to have a separate
  * physical-address look-up table for each na.
  * We can still share the vaddrs, though, therefore we split
  * the lut_entry structure.

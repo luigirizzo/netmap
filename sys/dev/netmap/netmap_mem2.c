@@ -1644,7 +1644,7 @@ error:
  * allocator for private memory
  */
 static void *
-_netmap_mem_private_new(size_t size, struct netmap_obj_params *p, 
+_netmap_mem_private_new(size_t size, struct netmap_obj_params *p,
 		struct netmap_mem_ops *ops, int *perr)
 {
 	struct netmap_mem_d *d = NULL;
@@ -2155,7 +2155,7 @@ netmap_mem_ext_delete(struct netmap_mem_d *d)
 
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		struct netmap_obj_pool *p = &d->pools[i];
-		
+
 		if (p->lut) {
 			nm_free_lut(p->lut, p->objtotal);
 			p->lut = NULL;
@@ -2215,7 +2215,7 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 			pi->nr_if_pool_objtotal, pi->nr_if_pool_objsize,
 			pi->nr_ring_pool_objtotal, pi->nr_ring_pool_objsize,
 			pi->nr_buf_pool_objtotal, pi->nr_buf_pool_objsize);
-		
+
 	os = nm_os_extmem_create(usrptr, pi, &error);
 	if (os == NULL) {
 		D("os extmem creation failed");
@@ -2238,7 +2238,7 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 			&error);
 	if (nme == NULL)
 		goto out_unmap;
-					
+
 	nr_pages = nm_os_extmem_nr_pages(os);
 
 	/* from now on pages will be released by nme destructor;
@@ -2262,7 +2262,7 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 			error = ENOMEM;
 			goto out_delete;
 		}
-		
+
 		p->bitmap_slots = (o->num + sizeof(uint32_t) - 1) / sizeof(uint32_t);
 		p->invalid_bitmap = nm_os_malloc(sizeof(uint32_t) * p->bitmap_slots);
 		if (p->invalid_bitmap == NULL) {

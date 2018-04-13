@@ -828,7 +828,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	n[NR_TX] = na->num_tx_rings + 1;
 	n[NR_RX] = na->num_rx_rings + 1;
 
-	len = (n[NR_TX] + n[NR_RX]) * 
+	len = (n[NR_TX] + n[NR_RX]) *
 		(sizeof(struct netmap_kring) + sizeof(struct netmap_kring *))
 		+ tailroom;
 
@@ -839,7 +839,7 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	}
 	na->rx_rings = na->tx_rings + n[NR_TX];
 	na->tailroom = na->rx_rings + n[NR_RX];
- 
+
 	/* link the krings in the krings array */
 	kring = (struct netmap_kring *)((char *)na->tailroom + tailroom);
 	for (i = 0; i < n[NR_TX] + n[NR_RX]; i++) {
@@ -2920,7 +2920,7 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 			rerror = error;
 			goto out;
 		}
-		       
+
 		/* copy the option body only if there was no error */
 		if (!rerror && !src->nro_status) {
 			optsz = nmreq_opt_size_by_type(src->nro_reqtype);
@@ -3647,9 +3647,9 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	 */
 	mbq_lock(q);
 
-        busy = kring->nr_hwtail - kring->nr_hwcur;
-        if (busy < 0)
-                busy += kring->nkr_num_slots;
+	busy = kring->nr_hwtail - kring->nr_hwcur;
+	if (busy < 0)
+		busy += kring->nkr_num_slots;
 	if (busy + mbq_len(q) >= kring->nkr_num_slots - 1) {
 		RD(2, "%s full hwcur %d hwtail %d qlen %d", na->name,
 			kring->nr_hwcur, kring->nr_hwtail, mbq_len(q));
