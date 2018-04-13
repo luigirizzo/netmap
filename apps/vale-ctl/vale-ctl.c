@@ -199,7 +199,7 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config, int nr_arg2)
 static void
 usage(int errcode)
 {
-    fprintf(stderr,
+	fprintf(stderr,
 	    "Usage:\n"
 	    "vale-ctl arguments\n"
 	    "\t-g interface	interface name to get info\n"
@@ -216,7 +216,7 @@ usage(int errcode)
 	    "\t\t z: (ONE_NIC only) num of total cores/rings\n"
 	    "\t-P interface stop polling\n"
 	    "\t-m memid to use when creating a new interface\n");
-    exit(errcode);
+	exit(errcode);
 }
 
 int
