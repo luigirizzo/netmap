@@ -103,9 +103,9 @@
 #ifndef NETMAP_LINUX_HAVE_HRTIMER_FORWARD_NOW
 /* Forward a hrtimer so it expires after the hrtimer's current now */
 static inline u64 hrtimer_forward_now(struct hrtimer *timer,
-                                      ktime_t interval)
+					ktime_t interval)
 {
-        return hrtimer_forward(timer, timer->base->get_time(), interval);
+	return hrtimer_forward(timer, timer->base->get_time(), interval);
 }
 #endif
 
@@ -323,19 +323,19 @@ int linux_netmap_set_channels(struct net_device *, struct ethtool_channels *);
  * (hard) interrupt context.
  */
 typedef struct {
-        spinlock_t      sl;
-        ulong           flags;
+	spinlock_t      sl;
+	ulong           flags;
 } safe_spinlock_t;
 
 static inline void mtx_lock(safe_spinlock_t *m)
 {
-        spin_lock_irqsave(&(m->sl), m->flags);
+	spin_lock_irqsave(&(m->sl), m->flags);
 }
 
 static inline void mtx_unlock(safe_spinlock_t *m)
 {
 	ulong flags = *(volatile ulong *)&m->flags;
-        spin_unlock_irqrestore(&(m->sl), flags);
+	spin_unlock_irqrestore(&(m->sl), flags);
 }
 
 #define mtx_init(a, b, c, d)	spin_lock_init(&((a)->sl))
@@ -458,16 +458,16 @@ extern struct kernel_param_ops generic_sysctl_ops;
 			((_mode) == CTLFLAG_RD) ? 0444: 0644 )
 
 #define SYSCTL_INT(_base, _oid, _name, _mode, _var, _val, _desc)        \
-        _SYSCTL_BASE(_name, _var, int, _mode)
+	_SYSCTL_BASE(_name, _var, int, _mode)
 
 #define SYSCTL_LONG(_base, _oid, _name, _mode, _var, _val, _desc)       \
-        _SYSCTL_BASE(_name, _var, long, _mode)
+	_SYSCTL_BASE(_name, _var, long, _mode)
 
 #define SYSCTL_ULONG(_base, _oid, _name, _mode, _var, _val, _desc)      \
-        _SYSCTL_BASE(_name, _var, ulong, _mode)
+	_SYSCTL_BASE(_name, _var, ulong, _mode)
 
 #define SYSCTL_UINT(_base, _oid, _name, _mode, _var, _val, _desc)       \
-         _SYSCTL_BASE(_name, _var, uint, _mode)
+	_SYSCTL_BASE(_name, _var, uint, _mode)
 
 // #define TUNABLE_INT(_name, _ptr)
 
@@ -475,7 +475,7 @@ extern struct kernel_param_ops generic_sysctl_ops;
 #define SYSCTL_VNET_INT                 SYSCTL_INT
 
 #define SYSCTL_HANDLER_ARGS             \
-        struct sysctl_oid *oidp, void *arg1, int arg2, struct sysctl_req *req
+	struct sysctl_oid *oidp, void *arg1, int arg2, struct sysctl_req *req
 int sysctl_handle_int(SYSCTL_HANDLER_ARGS);
 int sysctl_handle_long(SYSCTL_HANDLER_ARGS);
 

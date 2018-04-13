@@ -39,7 +39,7 @@ EOF
 fi
 
 ########### netmap specific checks ############
-files="sys/dev/netmap/netmap_vale.c sys/dev/netmap/netmap_monitor.c sys/dev/netmap/netmap_pipe.c sys/dev/netmap/netmap.c sys/dev/netmap/netmap_generic.c sys/dev/netmap/netmap_freebsd.c sys/dev/netmap/netmap_legacy.c LINUX/netmap_linux.c"
+files="sys/dev/netmap/netmap_vale.c sys/dev/netmap/netmap_monitor.c sys/dev/netmap/netmap_pipe.c sys/dev/netmap/netmap.c sys/dev/netmap/netmap_generic.c sys/dev/netmap/netmap_freebsd.c sys/dev/netmap/netmap_legacy.c LINUX/netmap_linux.c LINUX/bsd_glue.h"
 
 for f in $files; do
 git grep --quiet "^\(    \)\+" $f
