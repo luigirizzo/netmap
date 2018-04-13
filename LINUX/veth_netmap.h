@@ -333,7 +333,7 @@ cleanup:
 
 	if (peer_na->tx_rings == NULL) {
 		/* already deleted, we must be on an
-                 * cleanup-after-error path */
+		 * cleanup-after-error path */
 		return;
 	}
 	netmap_mem_rings_delete(peer_na);
