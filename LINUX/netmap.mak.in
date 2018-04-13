@@ -172,4 +172,4 @@ distclean: clean $(S_DRIVERS:%=distclean-%)
 	rm -rf build-utils
 
 format:
-	clang-format -i -style=file $(shell git ls-files "utils/*.[ch]" "apps/*.[ch]" "extra/*.[ch]" "LINUX/*.[ch]" "WINDOWS/*.[ch]")
+	clang-format -i -style=file $(shell git ls-files "utils/*.[ch]" "apps/*.[ch]" "extra/*.[ch]" "LINUX/*.[ch]" "WINDOWS/*.[ch]" "sys/*.[ch]")
