@@ -664,8 +664,9 @@ rm -f config.log
 
 exec 2>> config.log
 
+cp pre-commit .git/hooks
+
 appl_arch=$($cc -dumpmachine | cut -d '-' -f 1)
-echo "Application arch is $appl_arch"
 if [ $appl_arch != "x86_64" ]; then
     # dedup uses inline x86_64 assembly
     app disable dedup
