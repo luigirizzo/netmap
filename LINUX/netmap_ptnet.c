@@ -148,7 +148,7 @@ ptnet_sync_tail(struct ptnet_csb_hg *pthg, struct netmap_kring *kring)
 	struct netmap_ring *ring = kring->ring;
 
 	/* Update hwcur and hwtail as known by the host. */
-        ptnetmap_guest_read_kring_csb(pthg, kring);
+	ptnetmap_guest_read_kring_csb(pthg, kring);
 
 	/* nm_sync_finalize */
 	ring->tail = kring->rtail = kring->nr_hwtail;
@@ -328,19 +328,19 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 					       kring->rhead);
 	}
 
-        /* Ask for a kick from a guest to the host if needed. */
+	/* Ask for a kick from a guest to the host if needed. */
 	if (NM_ACCESS_ONCE(pthg->host_need_kick)) {
 		ptgh->sync_flags = NAF_FORCE_RECLAIM;
 		iowrite32(0, pq->kick);
 	}
 
-        /* No more TX slots for further transmissions. We have to stop the
+	/* No more TX slots for further transmissions. We have to stop the
 	 * qdisc layer and enable notifications. */
 	if (ptnet_tx_slots(a.ring) < pi->min_tx_slots) {
 		netif_stop_subqueue(netdev, pq->kring_id);
 		ptgh->guest_need_kick = 1;
 
-                /* Double check. */
+		/* Double check. */
 		ptnet_sync_tail(pthg, kring);
 		if (unlikely(ptnet_tx_slots(a.ring) >= pi->min_tx_slots)) {
 			/* More TX space came in the meanwhile. */
@@ -701,20 +701,20 @@ out_of_slots:
 		/* Budget was not fully consumed, since we have no more
 		 * completed RX slots. We can enable notifications and
 		 * exit polling mode. */
-                ptgh->guest_need_kick = 1;
+		ptgh->guest_need_kick = 1;
 #ifdef NETMAP_LINUX_HAVE_NAPI_COMPLETE_DONE
 		napi_complete_done(napi, work_done);
 #else
 		napi_complete(napi);
 #endif
 
-                /* Double check for more completed RX slots. */
+		/* Double check for more completed RX slots. */
 		ptnet_sync_tail(pthg, kring);
 		if (head != ring->tail) {
 			/* If there is more work to do, disable notifications
 			 * and reschedule. */
 			ptnet_napi_schedule(pq);
-                }
+		}
 #ifdef HANGCTRL
 		if (mod_timer(&prq->hang_timer,
 			      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
@@ -820,7 +820,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 		struct ptnet_queue *pq = pi->queues[i];
 		irq_handler_t handler = (i < pi->num_tx_rings) ?
 					ptnet_tx_intr : ptnet_rx_intr;
-                unsigned int vector = ptnet_get_irq_vector(pi, i);
+		unsigned int vector = ptnet_get_irq_vector(pi, i);
 
 		snprintf(pq->msix_name, sizeof(pq->msix_name),
 			 "%s-%d", pi->netdev->name, i);
@@ -831,7 +831,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 			goto err_irqs;
 		}
 		pr_info("%s: IRQ for ring #%d --> %u, handler %p\n",
-                        __func__, i, vector, handler);
+				__func__, i, vector, handler);
 	}
 
 	return 0;
@@ -1559,7 +1559,7 @@ ptnet_remove(struct pci_dev *pdev)
 	/* When the netdev is unregistered, ptnet_close() is invoked
 	 * for the device. Therefore, the uninitialization of the the
 	 * two netmap adapters (ptna, ptna->dr) must happen
-         * afterwards. */
+	 * afterwards. */
 	unregister_netdev(netdev);
 	pr_info("%s: device %s unregistered\n", __func__, netdev->name);
 
