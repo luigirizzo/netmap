@@ -163,18 +163,18 @@ static int do_abort = 0;
 #define cpuset_t        uint64_t        // XXX
 static inline void CPU_ZERO(cpuset_t *p)
 {
-        *p = 0;
+	*p = 0;
 }
 
 static inline void CPU_SET(uint32_t i, cpuset_t *p)
 {
-        *p |= 1<< (i & 0x3f);
+	*p |= 1<< (i & 0x3f);
 }
 
 #define pthread_setaffinity_np(a, b, c) ((void)a, 0)
 #define sched_setscheduler(a, b, c)	(1) /* error */
 #define clock_gettime(a,b)      \
-        do {struct timespec t0 = {0,0}; *(b) = t0; } while (0)
+	do {struct timespec t0 = {0,0}; *(b) = t0; } while (0)
 
 #define	_P64	unsigned long
 #endif
@@ -394,30 +394,30 @@ struct pipe_args {
 static int
 setaffinity(int i)
 {
-        cpuset_t cpumask;
+	cpuset_t cpumask;
 	struct sched_param p;
 	int error;
 
-        if (i == -1)
-                return 0;
+	if (i == -1)
+		return 0;
 
-        /* Set thread affinity affinity.*/
-        CPU_ZERO(&cpumask);
-        CPU_SET(i, &cpumask);
+	/* Set thread affinity affinity.*/
+	CPU_ZERO(&cpumask);
+	CPU_SET(i, &cpumask);
 
-        if ( (error = pthread_setaffinity_np(pthread_self(), sizeof(cpuset_t), &cpumask)) != 0) {
-                ED("Unable to set affinity to cpu %d: %s", i, strerror(error));
-        }
+	if ( (error = pthread_setaffinity_np(pthread_self(), sizeof(cpuset_t), &cpumask)) != 0) {
+		ED("Unable to set affinity to cpu %d: %s", i, strerror(error));
+	}
 	if (setpriority(PRIO_PROCESS, 0, -10)) {; // XXX not meaningful
-                ED("Unable to set priority: %s", strerror(errno));
+		ED("Unable to set priority: %s", strerror(errno));
 	}
 	bzero(&p, sizeof(p));
 	p.sched_priority = 10; // 99 on linux ?
 	// use SCHED_RR or SCHED_FIFO
 	if (sched_setscheduler(0, SCHED_RR, &p)) {
-                ED("Unable to set scheduler: %s", strerror(errno));
+		ED("Unable to set scheduler: %s", strerror(errno));
 	}
-        return 0;
+	return 0;
 }
 
 
@@ -684,7 +684,7 @@ scan_ring(struct _qs *q, int next /* bool */)
 	continue;
     }
     if (q->si > pa->last_rx_ring) { /* no data, cur == tail */
-        ND(5, "no more pkts on %s", q->prod_ifname);
+	ND(5, "no more pkts on %s", q->prod_ifname);
 	return;
     }
 got_one:
@@ -807,7 +807,7 @@ cons(void *_pa)
 	pre_end = q->buf + p->next + 2048;
 #if 1
 	/* prefetch the first line saves 4ns */
-        (void)pre_end;//   __builtin_prefetch(pre_end - 2048);
+	(void)pre_end;//   __builtin_prefetch(pre_end - 2048);
 #else
 	/* prefetch, ideally up to a full packet not just one line.
 	 * this does not seem to have a huge effect.
@@ -1588,38 +1588,38 @@ exp_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 #define	PTS_D_EXP	512
 	uint64_t i, d_av, d_min, *t; /*table of values */
 
-        (void)q;
-        if (strcmp(av[0], "exp") != 0)
+	(void)q;
+	if (strcmp(av[0], "exp") != 0)
 		return 2; /* not recognised */
-        if (ac != 3)
-                return 1; /* error */
-        d_av = parse_time(av[1]);
-        d_min = parse_time(av[2]);
-        if (d_av == U_PARSE_ERR || d_min == U_PARSE_ERR || d_av < d_min)
-                return 1; /* error */
+	if (ac != 3)
+		return 1; /* error */
+	d_av = parse_time(av[1]);
+	d_min = parse_time(av[2]);
+	if (d_av == U_PARSE_ERR || d_min == U_PARSE_ERR || d_av < d_min)
+		return 1; /* error */
 	d_av -= d_min;
 	dst->arg_len = PTS_D_EXP * sizeof(uint64_t);
 	dst->arg = calloc(1, dst->arg_len);
 	if (dst->arg == NULL)
 		return 1; /* no memory */
 	t = (uint64_t *)dst->arg;
-        q->max_delay = d_av * 4 + d_min; /* exp(-4) */
+	q->max_delay = d_av * 4 + d_min; /* exp(-4) */
 	/* tabulate -ln(1-n)*delay  for n in 0..1 */
 	for (i = 0; i < PTS_D_EXP; i++) {
 		double d = -log2 ((double)(PTS_D_EXP - i) / PTS_D_EXP) * d_av + d_min;
 		t[i] = (uint64_t)d;
 		ND(5, "%ld: %le", i, d);
 	}
-        return 0;
+	return 0;
 }
 
 static int
 exp_delay_run(struct _qs *q, struct _cfg *arg)
 {
 	uint64_t *t = (uint64_t *)arg->arg;
-        q->cur_delay = t[my_random24() & (PTS_D_EXP - 1)];
+	q->cur_delay = t[my_random24() & (PTS_D_EXP - 1)];
 	RD(5, "delay %llu", (unsigned long long)q->cur_delay);
-        return 0;
+	return 0;
 }
 
 

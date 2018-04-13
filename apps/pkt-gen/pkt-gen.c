@@ -77,12 +77,12 @@ static void usage(int);
 #define cpuset_t        DWORD_PTR   //uint64_t
 static inline void CPU_ZERO(cpuset_t *p)
 {
-        *p = 0;
+	*p = 0;
 }
 
 static inline void CPU_SET(uint32_t i, cpuset_t *p)
 {
-        *p |= 1<< (i & 0x3f);
+	*p |= 1<< (i & 0x3f);
 }
 
 #define pthread_setaffinity_np(a, b, c) !SetThreadAffinityMask(a, *c)    //((void)a, 0)
@@ -162,12 +162,12 @@ ether_ntoa(const struct ether_addr *n)
 #define cpuset_t        uint64_t        // XXX
 static inline void CPU_ZERO(cpuset_t *p)
 {
-        *p = 0;
+	*p = 0;
 }
 
 static inline void CPU_SET(uint32_t i, cpuset_t *p)
 {
-        *p |= 1<< (i & 0x3f);
+	*p |= 1<< (i & 0x3f);
 }
 
 #define pthread_setaffinity_np(a, b, c) ((void)a, 0)
@@ -176,7 +176,7 @@ static inline void CPU_SET(uint32_t i, cpuset_t *p)
 #define IFF_PPROMISC   IFF_PROMISC
 #include <net/if_dl.h>  /* LLADDR */
 #define clock_gettime(a,b)      \
-        do {struct timespec t0 = {0,0}; *(b) = t0; } while (0)
+	do {struct timespec t0 = {0,0}; *(b) = t0; } while (0)
 #endif  /* __APPLE__ */
 
 const char *default_payload="netmap pkt-gen DIRECT payload\n"
@@ -613,7 +613,7 @@ parse_nmr_config(const char* conf, struct nmreq *nmr)
 			nmr->nr_rx_rings, nmr->nr_rx_slots);
 	free(w);
 	return (nmr->nr_tx_rings || nmr->nr_tx_slots ||
-                        nmr->nr_rx_rings || nmr->nr_rx_slots) ?
+		nmr->nr_rx_rings || nmr->nr_rx_slots) ?
 		NM_OPEN_RING_CFG : 0;
 }
 
@@ -679,15 +679,15 @@ setaffinity(pthread_t me, int i)
 static uint32_t
 checksum(const void *data, uint16_t len, uint32_t sum)
 {
-        const uint8_t *addr = data;
+	const uint8_t *addr = data;
 	uint32_t i;
 
-        /* Checksum all the pairs of bytes first... */
-        for (i = 0; i < (len & ~1U); i += 2) {
-                sum += (u_int16_t)ntohs(*((u_int16_t *)(addr + i)));
-                if (sum > 0xFFFF)
-                        sum -= 0xFFFF;
-        }
+	/* Checksum all the pairs of bytes first... */
+	for (i = 0; i < (len & ~1U); i += 2) {
+		sum += (u_int16_t)ntohs(*((u_int16_t *)(addr + i)));
+		if (sum > 0xFFFF)
+			sum -= 0xFFFF;
+	}
 	/*
 	 * If there's a single byte left over, checksum it, too.
 	 * Network byte order is big-endian, so the remaining byte is
@@ -1037,7 +1037,7 @@ initialize_packet(struct targ *targ)
 		/* Magic: taken from sbin/dhclient/packet.c */
 		udp.uh_sum = wrapsum(
 		    checksum(&udp, sizeof(udp),	/* udp header */
-                    checksum(pkt->ipv4.body,	/* udp payload */
+		    checksum(pkt->ipv4.body,	/* udp payload */
 		    paylen - sizeof(udp),
 		    checksum(&pkt->ipv4.ip.ip_src, /* pseudo header */
 			2 * sizeof(pkt->ipv4.ip.ip_src),
@@ -1528,7 +1528,7 @@ sender_body(void *data)
 		wait_time(targ->tic);
 		nexttime = targ->tic;
 	}
-        if (targ->g->dev_type == DEV_TAP) {
+	if (targ->g->dev_type == DEV_TAP) {
 	    D("writing to file desc %d", targ->g->main_fd);
 
 	    for (i = 0; !targ->cancel && (n == 0 || sent < n); i++) {
@@ -1766,7 +1766,7 @@ receiver_body(void *data)
 		/* XXX should we poll ? */
 		pcap_dispatch(targ->g->p, targ->g->burst, receive_pcap,
 			(u_char *)&targ->ctr);
-                targ->ctr.events++;
+		targ->ctr.events++;
 	}
 #endif /* !NO_PCAP */
     } else {
@@ -2630,9 +2630,9 @@ tap_alloc(char *dev)
 	D("new name is %s", dev);
 #endif /* linux */
 
-        /* this is the special file descriptor that the caller will use to talk
-         * with the virtual interface */
-        return fd;
+	/* this is the special file descriptor that the caller will use to talk
+	 * with the virtual interface */
+	return fd;
 }
 
 int
@@ -2685,9 +2685,9 @@ main(int arc, char **argv)
 			usage(-1);
 			break;
 
-                case 'h':
-                        usage(0);
-                        break;
+		case 'h':
+			usage(0);
+			break;
 		case '4':
 			g.af = AF_INET;
 			break;

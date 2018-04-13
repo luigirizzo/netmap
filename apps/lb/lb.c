@@ -409,7 +409,7 @@ parse_pipes(char *spec)
 	char *end = index(spec, ':');
 	static int max_groups = 0;
 	struct group_des *g;
-       
+
 	ND("spec %s num_groups %d", spec, glob_arg.num_groups);
 	if (max_groups < glob_arg.num_groups + 1) {
 		size_t size = sizeof(*g) * (glob_arg.num_groups + 1);
@@ -655,7 +655,7 @@ int main(int argc, char **argv)
 	strncpy(glob_arg.base_name, nscan, MAX_IFNAMELEN);
 	for (nscan = glob_arg.base_name; *nscan && !index("-*^{}/@", *nscan); nscan++)
 		;
-	*nscan = '\0';	
+	*nscan = '\0';
 
 	if (glob_arg.num_groups == 0)
 		parse_pipes("");
@@ -887,7 +887,7 @@ run:
 		for (i = glob_arg.num_groups - 1U; i > 0; i--) {
 			struct group_des *g = &groups[i - 1];
 			int j;
-			
+
 			for (j = 0; j < g->nports; j++) {
 				struct port_des *p = &g->ports[j];
 				struct netmap_ring *ring = p->ring;

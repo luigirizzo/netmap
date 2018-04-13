@@ -77,7 +77,7 @@ dedup_set_fifo_buffers(struct dedup *d, struct netmap_ring *ring, uint32_t buf_h
 		return buf_head;
 	for (scan = buf_head, s = d->fifo_slot;
 	     scan != 0 && s != d->fifo_slot + d->fifo_size;
-             scan = *(uint32_t *)NETMAP_BUF(r, scan), s++) {
+	     scan = *(uint32_t *)NETMAP_BUF(r, scan), s++) {
 		s->len = r->nr_buf_size;
 		s->buf_idx = scan;
 	}
@@ -103,10 +103,10 @@ dedup_get_fifo_buffers(struct dedup *d, struct netmap_ring *ring, uint32_t *buf_
 	for (i = 0; i < d->fifo_size; i++) {
 		struct netmap_slot *s = d->fifo_slot + i;
 		uint32_t *new_head = (uint32_t *)NETMAP_BUF(r, s->buf_idx);
-		
+
 		*new_head = *buf_head;
 		*buf_head = s->buf_idx;
-	}	
+	}
 	free(d->fifo_slot);
 	d->fifo_slot = NULL;
 }
