@@ -429,64 +429,64 @@ nm_os_mbuf_has_offld(struct mbuf *m)
 static NETMAP_LINUX_TIMER_RTYPE
 generic_timer_handler(struct hrtimer *t)
 {
-    struct nm_generic_mit *mit =
-	container_of(t, struct nm_generic_mit, mit_timer);
-    u_int work_done;
+	struct nm_generic_mit *mit =
+		container_of(t, struct nm_generic_mit, mit_timer);
+	u_int work_done;
 
-    if (!mit->mit_pending) {
-        return HRTIMER_NORESTART;
-    }
+	if (!mit->mit_pending) {
+		return HRTIMER_NORESTART;
+	}
 
-    /* Some work arrived while the timer was counting down:
-     * Reset the pending work flag, restart the timer and send
-     * a notification.
-     */
-    mit->mit_pending = 0;
-    /* below is a variation of netmap_generic_irq  XXX revise */
-    if (nm_netmap_on(mit->mit_na)) {
-        netmap_common_irq(mit->mit_na, mit->mit_ring_idx, &work_done);
-        generic_rate(0, 0, 0, 0, 0, 1);
-    }
-    nm_os_mitigation_restart(mit);
+	/* Some work arrived while the timer was counting down:
+	 * Reset the pending work flag, restart the timer and send
+	 * a notification.
+	 */
+	mit->mit_pending = 0;
+	/* below is a variation of netmap_generic_irq  XXX revise */
+	if (nm_netmap_on(mit->mit_na)) {
+		netmap_common_irq(mit->mit_na, mit->mit_ring_idx, &work_done);
+		generic_rate(0, 0, 0, 0, 0, 1);
+	}
+	nm_os_mitigation_restart(mit);
 
-    return HRTIMER_RESTART;
+	return HRTIMER_RESTART;
 }
 
 
 void
 nm_os_mitigation_init(struct nm_generic_mit *mit, int idx,
-                                struct netmap_adapter *na)
+			struct netmap_adapter *na)
 {
-    hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-    mit->mit_timer.function = &generic_timer_handler;
-    mit->mit_pending = 0;
-    mit->mit_ring_idx = idx;
-    mit->mit_na = na;
+	hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	mit->mit_timer.function = &generic_timer_handler;
+	mit->mit_pending = 0;
+	mit->mit_ring_idx = idx;
+	mit->mit_na = na;
 }
 
 
 void
 nm_os_mitigation_start(struct nm_generic_mit *mit)
 {
-    hrtimer_start(&mit->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
+	hrtimer_start(&mit->mit_timer, ktime_set(0, netmap_generic_mit), HRTIMER_MODE_REL);
 }
 
 void
 nm_os_mitigation_restart(struct nm_generic_mit *mit)
 {
-    hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
+	hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
 }
 
 int
 nm_os_mitigation_active(struct nm_generic_mit *mit)
 {
-    return hrtimer_active(&mit->mit_timer);
+	return hrtimer_active(&mit->mit_timer);
 }
 
 void
 nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
 {
-    hrtimer_cancel(&mit->mit_timer);
+	hrtimer_cancel(&mit->mit_timer);
 }
 
 
@@ -567,26 +567,26 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
 #ifndef NETMAP_LINUX_HAVE_RX_REGISTER
 #warning "Packet reception with emulated (generic) mode not supported for this kernel version"
-    return 0;
+	return 0;
 #else /* HAVE_RX_REGISTER */
-    struct netmap_adapter *na = &gna->up.up;
-    struct ifnet *ifp = netmap_generic_getifp(gna);
-    int ret = 0;
+	struct netmap_adapter *na = &gna->up.up;
+	struct ifnet *ifp = netmap_generic_getifp(gna);
+	int ret = 0;
 
-    if (!ifp) {
-        D("Failed to get ifp");
-        return -EBUSY;
-    }
+	if (!ifp) {
+		D("Failed to get ifp");
+		return -EBUSY;
+	}
 
-    nm_os_ifnet_lock();
-    if (intercept) {
-        ret = -netdev_rx_handler_register(ifp,
-                &linux_generic_rx_handler, na);
-    } else {
-        netdev_rx_handler_unregister(ifp);
-    }
-    nm_os_ifnet_unlock();
-    return ret;
+	nm_os_ifnet_lock();
+	if (intercept) {
+		ret = -netdev_rx_handler_register(ifp,
+				&linux_generic_rx_handler, na);
+	} else {
+		netdev_rx_handler_unregister(ifp);
+	}
+	nm_os_ifnet_unlock();
+	return ret;
 #endif /* HAVE_RX_REGISTER */
 }
 
@@ -594,14 +594,14 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 static u16
 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m
 #if NETMAP_LINUX_SELECT_QUEUE >= 3
-                                , void *accel_priv
+			, void *accel_priv
 #if NETMAP_LINUX_SELECT_QUEUE >= 4
 				, select_queue_fallback_t fallback
 #endif /* >= 4 */
 #endif /* >= 3 */
 		)
 {
-    return skb_get_queue_mapping(m); // actually 0 on 2.6.23 and before
+	return skb_get_queue_mapping(m); // actually 0 on 2.6.23 and before
 }
 #endif /* SELECT_QUEUE */
 
@@ -703,15 +703,15 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 		return NULL;
 	}
 
-        if (unlikely(m->priority == NM_MAGIC_PRIORITY_TXQE)) {
-            /* nm_os_generic_xmit_frame() asked us an event on this mbuf.
-             * We have to set the priority to the normal TX token, so that
-             * generic_ndo_start_xmit can pass it to the driver. */
-            m->priority = NM_MAGIC_PRIORITY_TX;
-            ND(5, "Event met, notify %p", m);
-            netmap_generic_irq(NA(qdisc_dev(qdisc)),
-                               skb_get_queue_mapping(m), NULL);
-        }
+	if (unlikely(m->priority == NM_MAGIC_PRIORITY_TXQE)) {
+		/* nm_os_generic_xmit_frame() asked us an event on this mbuf.
+		 * We have to set the priority to the normal TX token, so that
+		 * generic_ndo_start_xmit can pass it to the driver. */
+		m->priority = NM_MAGIC_PRIORITY_TX;
+		ND(5, "Event met, notify %p", m);
+		netmap_generic_irq(NA(qdisc_dev(qdisc)),
+				skb_get_queue_mapping(m), NULL);
+	}
 
 	ND(5, "Dequeuing mbuf, len %u", qdisc_qlen(qdisc));
 
@@ -947,9 +947,9 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	skb_reset_tail_pointer(m);
 	skb_reset_mac_header(m);
 
-        /* Initialize the header pointers assuming this is an IPv4 packet.
-         * This is useful to make netmap interact well with TC when
-         * netmap_generic_txqdisc == 0.  */
+	/* Initialize the header pointers assuming this is an IPv4 packet.
+	 * This is useful to make netmap interact well with TC when
+	 * netmap_generic_txqdisc == 0.  */
 	skb_set_network_header(m, 14);
 	skb_set_transport_header(m, 34);
 	m->protocol = htons(ETH_P_IP);
@@ -1345,9 +1345,9 @@ linux_netmap_ioctl(struct file *file, u_int cmd, u_long data /* arg */)
 
 static long
 linux_netmap_compat_ioctl(struct file *file, unsigned int cmd,
-                          unsigned long arg)
+			unsigned long arg)
 {
-    return linux_netmap_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
+	return linux_netmap_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
 }
 #endif
 
@@ -1383,15 +1383,15 @@ out:
 
 
 static struct file_operations netmap_fops = {
-    .owner = THIS_MODULE,
-    .open = linux_netmap_open,
-    .mmap = linux_netmap_mmap,
-    LIN_IOCTL_NAME = linux_netmap_ioctl,
+	.owner = THIS_MODULE,
+	.open = linux_netmap_open,
+	.mmap = linux_netmap_mmap,
+	LIN_IOCTL_NAME = linux_netmap_ioctl,
 #ifdef CONFIG_COMPAT
-    .compat_ioctl = linux_netmap_compat_ioctl,
+	.compat_ioctl = linux_netmap_compat_ioctl,
 #endif
-    .poll = linux_netmap_poll,
-    .release = linux_netmap_release,
+	.poll = linux_netmap_poll,
+	.release = linux_netmap_release,
 };
 
 
@@ -1963,7 +1963,7 @@ struct ptnetmap_memdev
  */
 int
 nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
-                      void **nm_addr, uint64_t *mem_size)
+			void **nm_addr, uint64_t *mem_size)
 {
 	struct pci_dev *pdev = ptn_dev->pdev;
 	phys_addr_t mem_paddr;
@@ -2350,7 +2350,7 @@ sink_fini:
 	netmap_sink_fini();
 ptnetmap_fini:
 #endif /* WITH_SINK */
-        ptnetmap_guest_fini();
+	ptnetmap_guest_fini();
 netmap_fini:
 	netmap_fini();
 	return err;
@@ -2365,8 +2365,8 @@ static void linux_netmap_fini(void)
 #ifdef WITH_SINK
 	netmap_sink_fini();
 #endif /* WITH_SINK */
-        ptnetmap_guest_fini();
-        netmap_fini();
+	ptnetmap_guest_fini();
+	netmap_fini();
 }
 
 #ifndef NETMAP_LINUX_HAVE_LIVE_ADDR_CHANGE
@@ -2398,7 +2398,7 @@ static int linux_nm_vi_xmit(struct sk_buff *skb, struct net_device *netdev)
 }
 
 #ifdef NETMAP_LINUX_HAVE_GET_STATS64
-static 
+static
 #ifdef NETMAP_LINUX_HAVE_NONVOID_GET_STATS64
 struct rtnl_link_stats64 *
 #else /* !VOID */
@@ -2443,7 +2443,7 @@ linux_nm_vi_setup(struct ifnet *dev)
 	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
 #ifdef NETMAP_LINUX_HAVE_NETDEV_DTOR
 	dev->destructor = linux_nm_vi_destructor;
-#else 
+#else
 	dev->needs_free_netdev = 1;
 #endif
 	dev->tx_queue_len = 0;
