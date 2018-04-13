@@ -3,6 +3,8 @@
 os=$(uname -s)
 topdir=$(cd $(dirname $0); pwd)
 
+cp pre-commit .git/hooks
+
 case $os in
 	Linux)
 		$topdir/LINUX/configure "$@";;
