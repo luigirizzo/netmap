@@ -233,14 +233,14 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 	for ((_k)=*(_karr), (_i) = 0; (_i) < (_n); (_i)++, (_k) = (_karr)[(_i)])
 
 #define for_each_tx_kring(_i, _k, _na) \
-            for_each_kring_n(_i, _k, (_na)->tx_rings, (_na)->num_tx_rings)
+		for_each_kring_n(_i, _k, (_na)->tx_rings, (_na)->num_tx_rings)
 #define for_each_tx_kring_h(_i, _k, _na) \
-            for_each_kring_n(_i, _k, (_na)->tx_rings, (_na)->num_tx_rings + 1)
+		for_each_kring_n(_i, _k, (_na)->tx_rings, (_na)->num_tx_rings + 1)
 
 #define for_each_rx_kring(_i, _k, _na) \
-            for_each_kring_n(_i, _k, (_na)->rx_rings, (_na)->num_rx_rings)
+		for_each_kring_n(_i, _k, (_na)->rx_rings, (_na)->num_rx_rings)
 #define for_each_rx_kring_h(_i, _k, _na) \
-            for_each_kring_n(_i, _k, (_na)->rx_rings, (_na)->num_rx_rings + 1)
+		for_each_kring_n(_i, _k, (_na)->rx_rings, (_na)->num_rx_rings + 1)
 
 
 /* ======================== PERFORMANCE STATISTICS =========================== */
@@ -584,7 +584,7 @@ generic_mbuf_destructor(struct mbuf *m)
 	 * MBUF_TXQ(m) under our feet. If the match is not found
 	 * on 'r', we try to see if it belongs to some other ring.
 	 */
-        for (;;) {
+	for (;;) {
 		bool match = false;
 
 		kring = na->tx_rings[r];

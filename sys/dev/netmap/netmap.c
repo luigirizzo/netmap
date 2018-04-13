@@ -1004,9 +1004,9 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		if (netmap_verbose)
 			D("deleting last instance for %s", na->name);
 
-                if (nm_netmap_on(na)) {
-                    D("BUG: netmap on while going to delete the krings");
-                }
+		if (nm_netmap_on(na)) {
+			D("BUG: netmap on while going to delete the krings");
+		}
 
 		na->nm_krings_delete(na);
 	}
@@ -1322,7 +1322,7 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 			m_copydata(m, 0, len, NMB(na, slot));
 			ND("nm %d len %d", nm_i, len);
 			if (netmap_verbose)
-                                D("%s", nm_dump_buf(NMB(na, slot),len, 128, NULL));
+				D("%s", nm_dump_buf(NMB(na, slot),len, 128, NULL));
 
 			slot->len = len;
 			slot->flags = 0;
@@ -2317,8 +2317,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		 * For convenince, the nr_body pointer and the pointers
 		 * in the options list will be replaced with their
 		 * kernel-space counterparts. The original pointers are
-                * saved internally and later restored by nmreq_copyout
-                */
+		 * saved internally and later restored by nmreq_copyout
+		 */
 		error = nmreq_copyin(hdr, nr_body_is_user);
 		if (error) {
 			return error;

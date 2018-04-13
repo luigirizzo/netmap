@@ -671,10 +671,10 @@ nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
 static int
 nm_mem_assign_id(struct netmap_mem_d *nmd)
 {
-        int ret;
+	int ret;
 
 	NM_MTX_LOCK(nm_mem_list_lock);
-        ret = nm_mem_assign_id_locked(nmd);
+	ret = nm_mem_assign_id_locked(nmd);
 	NM_MTX_UNLOCK(nm_mem_list_lock);
 
 	return ret;
@@ -1141,7 +1141,7 @@ netmap_extra_alloc(struct netmap_adapter *na, uint32_t *head, uint32_t n)
 static void
 netmap_extra_free(struct netmap_adapter *na, uint32_t head)
 {
-        struct lut_entry *lut = na->na_lut.lut;
+	struct lut_entry *lut = na->na_lut.lut;
 	struct netmap_mem_d *nmd = na->nm_mem;
 	struct netmap_obj_pool *p = &nmd->pools[NETMAP_BUF_POOL];
 	uint32_t i, cur, *buf;
@@ -1572,7 +1572,7 @@ netmap_mem_map(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	if (lut->plut == NULL) {
 		D("Failed to allocate physical lut for %s", na->name);
 		return ENOMEM;
-        }
+	}
 
 	for (i = 0; i < lim; i += p->_clustentries) {
 		lut->plut[i].paddr = 0;
@@ -1722,16 +1722,16 @@ netmap_mem_private_new(u_int txr, u_int txd, u_int rxr, u_int rxd,
 	if (p[NETMAP_RING_POOL].size < v)
 		p[NETMAP_RING_POOL].size = v;
 	/* each pipe endpoint needs two tx rings (1 normal + 1 host, fake)
-         * and two rx rings (again, 1 normal and 1 fake host)
-         */
+	 * and two rx rings (again, 1 normal and 1 fake host)
+	 */
 	v = txr + rxr + 8 * npipes;
 	if (p[NETMAP_RING_POOL].num < v)
 		p[NETMAP_RING_POOL].num = v;
 	/* for each pipe we only need the buffers for the 4 "real" rings.
-         * On the other end, the pipe ring dimension may be different from
-         * the parent port ring dimension. As a compromise, we allocate twice the
-         * space actually needed if the pipe rings were the same size as the parent rings
-         */
+	 * On the other end, the pipe ring dimension may be different from
+	 * the parent port ring dimension. As a compromise, we allocate twice the
+	 * space actually needed if the pipe rings were the same size as the parent rings
+	 */
 	v = (4 * npipes + rxr) * rxd + (4 * npipes + txr) * txd + 2 + extra_bufs;
 		/* the +2 is for the tx and rx fake buffers (indices 0 and 1) */
 	if (p[NETMAP_BUF_POOL].num < v)
@@ -2515,11 +2515,11 @@ netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
 	if (error)
 		goto out;
 
-        /* Initialize the lut using the information contained in the
+	/* Initialize the lut using the information contained in the
 	 * ptnetmap memory device. */
-        bufsize = nm_os_pt_memdev_ioread(ptnmd->ptn_dev,
+	bufsize = nm_os_pt_memdev_ioread(ptnmd->ptn_dev,
 					 PTNET_MDEV_IO_BUF_POOL_OBJSZ);
-        nbuffers = nm_os_pt_memdev_ioread(ptnmd->ptn_dev,
+	nbuffers = nm_os_pt_memdev_ioread(ptnmd->ptn_dev,
 					 PTNET_MDEV_IO_BUF_POOL_OBJNUM);
 
 	/* allocate the lut */
@@ -2740,7 +2740,7 @@ netmap_mem_pt_guest_create(nm_memid_t mem_id)
 	ptnmd->host_mem_id = mem_id;
 	ptnmd->pt_ifs = NULL;
 
-        /* Assign new id in the guest (We have the lock) */
+	/* Assign new id in the guest (We have the lock) */
 	err = nm_mem_assign_id_locked(&ptnmd->up);
 	if (err)
 		goto error;

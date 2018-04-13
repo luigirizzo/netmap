@@ -139,7 +139,7 @@ nm_is_zmon(struct netmap_adapter *na)
 static int
 netmap_monitor_txsync(struct netmap_kring *kring, int flags)
 {
-        RD(1, "%s %x", kring->name, flags);
+	RD(1, "%s %x", kring->name, flags);
 	return EIO;
 }
 
@@ -152,10 +152,10 @@ netmap_monitor_txsync(struct netmap_kring *kring, int flags)
 static int
 netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
 {
-        ND("%s %x", kring->name, flags);
+	ND("%s %x", kring->name, flags);
 	kring->nr_hwcur = kring->rhead;
 	mb();
-        return 0;
+	return 0;
 }
 
 /* nm_krings_create callbacks for monitors.
@@ -198,7 +198,7 @@ nm_monitor_alloc(struct netmap_kring *kring, u_int n)
 		return 0;
 
 	old_len = sizeof(struct netmap_kring *)*kring->max_monitors;
-        len = sizeof(struct netmap_kring *) * n;
+	len = sizeof(struct netmap_kring *) * n;
 	nm = nm_os_realloc(kring->monitors, len, old_len);
 	if (nm == NULL)
 		return ENOMEM;
@@ -621,14 +621,14 @@ out_rxsync:
 static int
 netmap_zmon_parent_txsync(struct netmap_kring *kring, int flags)
 {
-        return netmap_zmon_parent_sync(kring, flags, NR_TX);
+	return netmap_zmon_parent_sync(kring, flags, NR_TX);
 }
 
 /* callback used to replace the nm_sync callback in the monitored rx rings */
 static int
 netmap_zmon_parent_rxsync(struct netmap_kring *kring, int flags)
 {
-        return netmap_zmon_parent_sync(kring, flags, NR_RX);
+	return netmap_zmon_parent_sync(kring, flags, NR_RX);
 }
 
 static int
@@ -802,7 +802,7 @@ netmap_monitor_parent_notify(struct netmap_kring *kring, int flags)
 		notify = kring->mon_notify;
 	}
 	nm_kr_put(kring);
-        return notify(kring, flags);
+	return notify(kring, flags);
 }
 
 
