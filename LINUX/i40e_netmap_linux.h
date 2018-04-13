@@ -77,11 +77,11 @@ extern int ix_rx_miss, ix_rx_miss_bufs, ix_crcstrip;
 SYSCTL_DECL(_dev_netmap);
 int ix_rx_miss = 0, ix_rx_miss_bufs = 0, ix_crcstrip = 1;
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_crcstrip,
-    CTLFLAG_RW, &ix_crcstrip, 1, "NIC strips CRC on rx frames");
+		CTLFLAG_RW, &ix_crcstrip, 1, "NIC strips CRC on rx frames");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss,
-    CTLFLAG_RW, &ix_rx_miss, 0, "potentially missed rx intr");
+		CTLFLAG_RW, &ix_rx_miss, 0, "potentially missed rx intr");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ix_rx_miss_bufs,
-    CTLFLAG_RW, &ix_rx_miss_bufs, 0, "potentially missed rx intr bufs");
+		CTLFLAG_RW, &ix_rx_miss_bufs, 0, "potentially missed rx intr bufs");
 
 #if 0
 static void
@@ -203,8 +203,8 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct ifnet *ifp = na->ifp;
 	struct i40e_netdev_priv *np = netdev_priv(ifp);
-        struct i40e_vsi  *vsi = np->vsi;
-        struct i40e_pf   *pf = (struct i40e_pf *)vsi->back;
+	struct i40e_vsi  *vsi = np->vsi;
+	struct i40e_pf   *pf = (struct i40e_pf *)vsi->back;
 	bool was_running;
 
 	while (test_and_set_bit(__I40E_CONFIG_BUSY, NM_I40E_STATE(pf)))
@@ -476,7 +476,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	if (!netif_running(ifp))
 		return 0;
-       
+
 	rxr = NM_I40E_RX_RING(vsi, kring->ring_id);
 	if (unlikely(!rxr || !rxr->desc)) {
 		RD(1, "ring %s is missing (rxr=%p)", kring->name, rxr);
