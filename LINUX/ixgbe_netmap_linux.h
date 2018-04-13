@@ -631,7 +631,7 @@ ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u3
 	u64 wba;
 #endif /* !NM_IXGBE_USE_TDH */
 
-        slot = netmap_reset(na, NR_TX, ring_nr, 0);
+	slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
 		return txdctl;	// not in native netmap mode
 
@@ -687,8 +687,8 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 	int lim, i;
 	struct NM_IXGBE_RING *ring = NM_IXGBE_RX_RING(adapter, ring_nr);
 
-        slot = netmap_reset(na, NR_RX, ring_nr, 0);
-        /* same as in ixgbe_setup_transmit_ring() */
+	slot = netmap_reset(na, NR_RX, ring_nr, 0);
+	/* same as in ixgbe_setup_transmit_ring() */
 	if (!slot)
 		return 0;	// not in native netmap mode
 	// XXX can we move it later ?
@@ -793,8 +793,8 @@ ixgbe_netmap_krings_delete(struct netmap_adapter *na)
 static int
 ixgbe_netmap_krings_create(struct netmap_adapter *na)
 {
-        int ret;
-       
+	int ret;
+
 	ret = netmap_hw_krings_create(na);
 	if (ret)
 		return ret;

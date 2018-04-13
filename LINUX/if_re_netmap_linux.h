@@ -278,7 +278,7 @@ re_netmap_tx_init(struct SOFTC_T *sc)
 	int i, l;
 	uint64_t paddr;
 
-        slot = netmap_reset(na, NR_TX, 0, 0);
+	slot = netmap_reset(na, NR_TX, 0, 0);
 	if (!slot)
 		return 0;	// not in native netmap mode
 
@@ -302,7 +302,7 @@ re_netmap_rx_init(struct SOFTC_T *sc)
 	int i, lim, l;
 	uint64_t paddr;
 
-        slot = netmap_reset(na, NR_RX, 0, 0);
+	slot = netmap_reset(na, NR_RX, 0, 0);
 	if (!slot)
 		return 0;  // not in native netmap mode
 	/*
