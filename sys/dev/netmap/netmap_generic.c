@@ -295,12 +295,12 @@ static struct rate_context rate_ctx;
 
 void generic_rate(int txp, int txs, int txi, int rxp, int rxs, int rxi)
 {
-    if (txp) rate_ctx.new.txpkt++;
-    if (txs) rate_ctx.new.txsync++;
-    if (txi) rate_ctx.new.txirq++;
-    if (rxp) rate_ctx.new.rxpkt++;
-    if (rxs) rate_ctx.new.rxsync++;
-    if (rxi) rate_ctx.new.rxirq++;
+	if (txp) rate_ctx.new.txpkt++;
+	if (txs) rate_ctx.new.txsync++;
+	if (txi) rate_ctx.new.txirq++;
+	if (rxp) rate_ctx.new.rxpkt++;
+	if (rxs) rate_ctx.new.rxsync++;
+	if (rxi) rate_ctx.new.rxirq++;
 }
 
 #else /* !RATE */

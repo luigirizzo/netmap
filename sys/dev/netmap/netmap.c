@@ -534,35 +534,35 @@ SYSBEGIN(main_init);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_NODE(_dev, OID_AUTO, netmap, CTLFLAG_RW, 0, "Netmap args");
 SYSCTL_INT(_dev_netmap, OID_AUTO, verbose,
-    CTLFLAG_RW, &netmap_verbose, 0, "Verbose mode");
+		CTLFLAG_RW, &netmap_verbose, 0, "Verbose mode");
 SYSCTL_INT(_dev_netmap, OID_AUTO, no_timestamp,
-    CTLFLAG_RW, &netmap_no_timestamp, 0, "no_timestamp");
+		CTLFLAG_RW, &netmap_no_timestamp, 0, "no_timestamp");
 SYSCTL_INT(_dev_netmap, OID_AUTO, no_pendintr, CTLFLAG_RW, &netmap_no_pendintr,
-    0, "Always look for new received packets.");
+		0, "Always look for new received packets.");
 SYSCTL_INT(_dev_netmap, OID_AUTO, txsync_retry, CTLFLAG_RW,
-    &netmap_txsync_retry, 0, "Number of txsync loops in bridge's flush.");
+		&netmap_txsync_retry, 0, "Number of txsync loops in bridge's flush.");
 
 SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0,
-    "Force NR_FORWARD mode");
+		"Force NR_FORWARD mode");
 SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0,
-    "Adapter mode. 0 selects the best option available,"
-    "1 forces native adapter, 2 forces emulated adapter");
+		"Adapter mode. 0 selects the best option available,"
+		"1 forces native adapter, 2 forces emulated adapter");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit,
-    0, "RX notification interval in nanoseconds");
+		0, "RX notification interval in nanoseconds");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW,
-    &netmap_generic_ringsize, 0,
-    "Number of per-ring slots for emulated netmap mode");
+		&netmap_generic_ringsize, 0,
+		"Number of per-ring slots for emulated netmap mode");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_rings, CTLFLAG_RW,
-    &netmap_generic_rings, 0,
-    "Number of TX/RX queues for emulated netmap adapters");
+		&netmap_generic_rings, 0,
+		"Number of TX/RX queues for emulated netmap adapters");
 #ifdef linux
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW,
-    &netmap_generic_txqdisc, 0, "Use qdisc for generic adapters");
+		&netmap_generic_txqdisc, 0, "Use qdisc for generic adapters");
 #endif
 SYSCTL_INT(_dev_netmap, OID_AUTO, ptnet_vnet_hdr, CTLFLAG_RW, &ptnet_vnet_hdr,
-    0, "Allow ptnet devices to use virtio-net headers");
+		0, "Allow ptnet devices to use virtio-net headers");
 SYSCTL_INT(_dev_netmap, OID_AUTO, ptnetmap_tx_workers, CTLFLAG_RW,
-    &ptnetmap_tx_workers, 0, "Use worker threads for pnetmap TX processing");
+		&ptnetmap_tx_workers, 0, "Use worker threads for pnetmap TX processing");
 
 SYSEND;
 

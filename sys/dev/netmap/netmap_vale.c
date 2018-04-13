@@ -161,7 +161,7 @@ static int bridge_batch = NM_BDG_BATCH; /* bridge batch size */
 SYSBEGIN(vars_vale);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0,
-    "Max batch size to be used in the bridge");
+		"Max batch size to be used in the bridge");
 SYSEND;
 
 static int netmap_vp_create(struct nmreq_header *hdr, struct ifnet *,
