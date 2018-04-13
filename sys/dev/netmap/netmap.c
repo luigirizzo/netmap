@@ -2089,9 +2089,6 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 
 	NMG_LOCK_ASSERT();
 	priv->np_na = na;     /* store the reference */
-	error = netmap_set_ringid(priv, nr_mode, nr_ringid, nr_flags);
-	if (error)
-		goto err;
 	error = netmap_mem_finalize(na->nm_mem, na);
 	if (error)
 		goto err;
@@ -2107,7 +2104,14 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 
 		/* ring configuration may have changed, fetch from the card */
 		netmap_update_config(na);
+	}
 
+	/* compute the range of tx and rx rings to monitor */
+	error = netmap_set_ringid(priv, nr_mode, nr_ringid, nr_flags);
+	if (error)
+		goto err_put_lut;
+
+	if (na->active_fds == 0) {
 		/*
 		 * If this is the first registration of the adapter,
 		 * perform sanity checks and create the in-kernel view
