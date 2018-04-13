@@ -171,12 +171,12 @@ i40e_netmap_configure_rx_ring(struct i40e_ring *ring)
 
 	na = NA(ring->netdev);
 	ring_nr = ring->queue_index;
-	kring = na->rx_rings[ring_nr];
 
 	slot = netmap_reset(na, NR_RX, ring_nr, 0);
 	if (!slot)
 		return 0;	// not in native netmap mode
 
+	kring = na->rx_rings[ring_nr];
 	lim = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
 
 	for (i = 0; i < na->num_rx_desc; i++) {
