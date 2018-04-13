@@ -163,7 +163,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 			// XXX check olinfo and cmd_type_len
 			curr->read.olinfo_status =
 			    htole32(olinfo_status |
-                                (len<< E1000_ADVTXD_PAYLEN_SHIFT));
+				(len<< E1000_ADVTXD_PAYLEN_SHIFT));
 			curr->read.cmd_type_len = htole32(len | hw_flags |
 				E1000_ADVTXD_DTYP_DATA | E1000_ADVTXD_DCMD_DEXT |
 				E1000_ADVTXD_DCMD_IFCS);
@@ -312,7 +312,7 @@ igb_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	void *addr;
 	uint64_t paddr;
 
-        slot = netmap_reset(na, NR_TX, ring_nr, 0);
+	slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
 		return 0;  // not in netmap native mode
 	for (i = 0; i < na->num_tx_desc; i++) {
@@ -346,7 +346,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	 *	srrctl |= E1000_SRRCTL_DESCTYPE_ADV_ONEBUF;
 	 *	srrctl |= E1000_SRRCTL_DROP_EN;
 	 */
-        slot = netmap_reset(na, NR_RX, reg_idx, 0);
+	slot = netmap_reset(na, NR_RX, reg_idx, 0);
 	if (!slot)
 		return 0;	// not in native netmap mode
 
