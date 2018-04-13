@@ -1942,7 +1942,11 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 	return 0;
 
 cleanup:
-	netmap_free_rings(na);
+	/* we cannot actually cleanup here, since we don't own kring->users
+	 * and kring->nr_klags & NKR_NEEDRING. The caller must decrement
+	 * the first or zero-out the second, then call netmap_free_rings()
+	 * to do the cleanup
+	 */
 
 	return ENOMEM;
 }

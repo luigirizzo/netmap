@@ -2199,7 +2199,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	nifp = netmap_mem_if_new(na, priv);
 	if (nifp == NULL) {
 		error = ENOMEM;
-		goto err_del_rings;
+		goto err_rel_excl;
 	}
 
 	if (nm_kring_pending(priv)) {
@@ -2225,10 +2225,9 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 
 err_del_if:
 	netmap_mem_if_delete(na, nifp);
-err_del_rings:
-	netmap_mem_rings_delete(na);
 err_rel_excl:
 	netmap_krings_put(priv);
+	netmap_mem_rings_delete(na);
 err_del_krings:
 	if (na->active_fds == 0)
 		na->nm_krings_delete(na);
