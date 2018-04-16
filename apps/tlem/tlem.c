@@ -132,11 +132,13 @@ prod()
 #define NED(_fmt, ...)	do {} while (0)
 #define ED(_fmt, ...)						\
 	do {							\
+	   if (verbose > 0) {					\
 		struct timeval _t0;				\
 		gettimeofday(&_t0, NULL);			\
 		fprintf(stderr, "%03d.%03d [%5d] \t" _fmt "\n", \
 		(int)(_t0.tv_sec % 1000), (int)_t0.tv_usec/1000, \
 		__LINE__, ##__VA_ARGS__);     \
+	   }							\
 	} while (0)
 
 #define _GNU_SOURCE	// for CPU_SET() etc
@@ -152,7 +154,7 @@ prod()
 #include <libnetmap.h>
 
 
-int verbose = 0;
+int verbose = 1;
 
 static int do_abort = 0;
 
@@ -721,7 +723,7 @@ arp_table_new(in_addr_t mask)
     // XXX this only works if mask is in CIDR form */
     size_t s = (~ntohl(mask) + 1) * sizeof(struct arp_table_entry);
     struct arp_table_entry *e;
-    D("allocating %zu bytes for arp table", s);
+    ED("allocating %zu bytes for arp table", s);
     e = mmap(NULL, s, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
     if (e == MAP_FAILED)
         return NULL;
@@ -1137,7 +1139,7 @@ wait_for_packets(struct _qs *q)
             pfd.events = POLLIN;
             ND(1, "prepare for poll on %s", q->prod_ifname);
             ret = poll(&pfd, 1, 10000);
-            if (ret <= 0 || verbose) {
+            if (ret <= 0 || verbose > 1) {
                 D("poll %s ev %x %x rx %d@%d",
                         ret <= 0 ? "timeout" : "ok",
                         pfd.events,
@@ -1819,7 +1821,8 @@ split_arg(const char *src, int *_ac)
             break;
         }
     }
-    for (i = 0; i < ac; i++) fprintf(stderr, "%d: <%s>\n", i, av[i]);
+    if (verbose > 2)
+        for (i = 0; i < ac; i++) fprintf(stderr, "%d: <%s>\n", i, av[i]);
     av[i++] = NULL;
     av[i++] = my;
     *_ac = ac;
@@ -1913,7 +1916,7 @@ set_max(const char *arg, struct _qs *q)
 
     av = split_arg(arg, &ac);
     if (av == NULL || ac < 1 || ac > 3) {
-        D("arg %p av %p ac %d", arg, av, ac);
+        ND("arg %p av %p ac %d", arg, av, ac);
         ED("invalid parameters for -M: need max-delay[,max-bps[,max-hold-time]]]");
         return 1;
     }
@@ -2018,7 +2021,7 @@ main(int argc, char **argv)
     // r	route mode
     // d	max consumer delay
 
-    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:M:b:ci:vw:rd:Hs:l:")) != -1) {
+    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:M:b:ci:vw:rd:Hs:l:q")) != -1) {
         switch (ch) {
             default:
                 D("bad option %c %s", ch, optarg);
@@ -2089,6 +2092,10 @@ main(int argc, char **argv)
                 break;
             case 'v':
                 verbose++;
+                break;
+            case 'q':
+                if (verbose > 0)
+                    verbose--;
                 break;
             case 'w':
                 bp[0].wait_link = atoi(optarg);
@@ -2417,17 +2424,17 @@ main(int argc, char **argv)
 
         a->pa = nmport_prepare(a->q.prod_ifname);
         if (a->pa == NULL) {
-            ED("cannot open %s", a->q.prod_ifname);
+            D("cannot open %s", a->q.prod_ifname);
             exit(1);
         }
         a->pa->reg.nr_flags |= NETMAP_NO_TX_POLL;
         if (nmport_open_desc(a->pa) < 0) {
-            ED("cannot open %s", a->q.prod_ifname);
+            D("cannot open %s", a->q.prod_ifname);
 	    exit(1);
         }
         a->pb = nmport_open(a->q.cons_ifname);
         if (a->pb == NULL) {
-            ED("cannot open %s", a->q.cons_ifname);
+            D("cannot open %s", a->q.cons_ifname);
             exit(1);
         }
 
@@ -2465,7 +2472,7 @@ main(int argc, char **argv)
         bp[1].q.rx_qmax = (bp[1].q.rx_qmax * 7)/8; // ewma
         bp[1].q.prod_max_gap = (bp[1].q.prod_max_gap * 7)/8; // ewma
     }
-    D("exiting on abort");
+    ED("exiting on abort");
     sleep(1);
 
     return (0);
@@ -2780,7 +2787,7 @@ uniform_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     dmax = parse_time(av[2]);
     if (dmin == U_PARSE_ERR || dmax == U_PARSE_ERR || dmin > dmax)
         return 1;
-    D("dmin %lld dmax %lld", (long long)dmin, (long long)dmax);
+    ED("dmin %lld dmax %lld", (long long)dmin, (long long)dmax);
     if (update_max_delay(q, dmax))
         return 1;
     dst->arg = ec_alloc(q, dst->ec, 3 * sizeof(uint64_t));
