@@ -383,7 +383,7 @@ vtnet_netmap_init_rx_buffers(struct SOFTC_T *sc)
 	if (!nm_native_on(na))
 		return 0;
 	for (r = 0; r < na->num_rx_rings; r++) {
-                struct netmap_kring *kring = &na->rx_rings[r];
+                struct netmap_kring *kring = na->rx_rings[r];
 		struct vtnet_rxq *rxq = &sc->vtnet_rxqs[r];
 		struct virtqueue *vq = rxq->vtnrx_vq;
 	        struct netmap_slot* slot;
