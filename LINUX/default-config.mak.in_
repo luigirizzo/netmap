@@ -21,4 +21,20 @@ $(eval $(call default,e1000e,3.3.6))
 $(eval $(call default,igb,5.3.5.12))
 $(eval $(call default,i40e,2.3.6))
 
-$(foreach d,$(E_DRIVERS),$(eval $(call intel_driver,$d,$($(d)@v))))
+$(foreach d,$(filter ixgbe ixgbevf e1000e igb i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
+
+define mellanox_driver
+$(1)@fetch	:= test -e @SRCDIR@/ext-drivers/mlnx-en-$(2).tgz || wget http://www.mellanox.com/downloads/Drivers/mlnx-en-$(2).tgz -P @SRCDIR@/ext-drivers
+$(1)@src	:= tar xf @SRCDIR@/ext-drivers/mlnx-en-$(2).tgz && tar xf mlnx-en-$(2)/SOURCES/mlnx-en_$($(1)@pv).orig.tar.gz && ln -s mlnx-en-$($(1)@pv) $(1)
+$(1)@patch	:= patches/mellanox--$(1)--$($(1)@pv)
+$(1)@build	:= (cd $(1); scripts/mlnx_en_patch.sh --without-mlx4) && make -C $(1)
+$(1)@install	:= make -C $(1) install
+$(1)@clean	:= if [ -d $(1) ]; then make -C $(1) clean; fi
+$(1)@distclean  := rm -rf mlnx-en-$($(1)@pv)
+$(1)@force	:= 1
+endef
+
+$(eval $(call default,mlx5,3.3-1.0.0.0))
+mlx5@pv		= $(firstword $(subst -, ,$(mlx5@v)))
+
+$(foreach d,$(filter mlx5,$(E_DRIVERS)),$(eval $(call mellanox_driver,$d,$($(d)@v))))

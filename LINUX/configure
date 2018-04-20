@@ -132,6 +132,7 @@ edrv enable igb
 edrv enable ixgbe
 edrv enable ixgbevf
 edrv enable i40e
+edrv enable mlx5
 
 # drivers built by patching the system drivers
 setop internal_driver new driver
