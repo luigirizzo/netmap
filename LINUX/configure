@@ -255,6 +255,7 @@ replace_vars()
 	sed \
 		-e "s|@BUILDDIR@|$BUILDDIR|g" \
 		-e "s|@SRCDIR@|$SRCDIR|g" \
+		-e "s|@TMPDIR@|$TMPDIR|g" \
 		-e "s|@KSRC@|$ksrc|g" \
 		-e "s|@SRC@|$src|g" \
 		-e "s|@KOPTS@|$kopts|g" \
@@ -468,7 +469,10 @@ get-$d:
 	\$($d@fetch)
 	\$($d@src)
 	touch get-$d
-build-$d: get-$d
+prepare-$d: get-$d
+	\$($d@prepare)
+	touch prepare-$d
+build-$d: prepare-$d
 	+\$($d@build)
 	touch build-$d
 patch-$d: get-$d
@@ -746,7 +750,6 @@ for dv in $(echo "$versions" | sed 's/,/ /g'); do
 done
 
 replace_vars $SRCDIR/default-config.mak.in_ > default-config.mak
-
 
 ###############################################################
 # Makefile creation

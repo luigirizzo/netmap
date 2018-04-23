@@ -2,6 +2,7 @@ define intel_driver
 $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz || wget https://sourceforge.net/projects/e1000/files/$(1)%20stable/$(2)/$(1)-$(2).tar.gz -P @SRCDIR@/ext-drivers/
 $(1)@src 	:= tar xf @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz && ln -s $(1)-$(2)/src $(1)
 $(1)@patch 	:= patches/intel--$(1)--$(2)
+$(1)@prepare	:=
 $(1)@build 	:= make -C $(1) CFLAGS_EXTRA="$($(1)@cflags) $(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
 $(1)@install 	:= make -C $(1) install INSTALL_MOD_PATH=@MODPATH@ CFLAGS_EXTRA="$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
 $(1)@clean 	:= if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
@@ -27,10 +28,11 @@ define mellanox_driver
 $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/mlnx-en-$(2).tgz || wget http://www.mellanox.com/downloads/Drivers/mlnx-en-$(2).tgz -P @SRCDIR@/ext-drivers
 $(1)@src	:= tar xf @SRCDIR@/ext-drivers/mlnx-en-$(2).tgz && tar xf mlnx-en-$(2)/SOURCES/mlnx-en_$($(1)@pv).orig.tar.gz && ln -s mlnx-en-$($(1)@pv) $(1)
 $(1)@patch	:= patches/mellanox--$(1)--$($(1)@pv)
-$(1)@build	:= (cd $(1); scripts/mlnx_en_patch.sh --without-mlx4) && make -C $(1)
-$(1)@install	:= make -C $(1) install
+$(1)@prepare	:= @SRCDIR@/mlx5-prepare.sh @KSRC@ @TMPDIR@
+$(1)@build	:= make -C $(1)
+$(1)@install	:= make -C $(1) install_modules INSTALL_MOD_PATH=@MODPATH@
 $(1)@clean	:= if [ -d $(1) ]; then make -C $(1) clean; fi
-$(1)@distclean  := rm -rf mlnx-en-$($(1)@pv)
+$(1)@distclean  := rm -rf mlnx-en-$($(1)@pv) mlnx-en-$(2)
 $(1)@force	:= 1
 endef
 
