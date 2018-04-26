@@ -564,6 +564,24 @@ ec_map(const char *fname, int *server)
 }
 
 static int
+ec_waitterminate()
+{
+    if (ecf_fd < 0)
+        return 0;
+    if (lseek(ecf_fd, 0, SEEK_SET) < 0) {
+        ED("failed to rewind the session file: %s",
+                strerror(errno));
+        return 1;
+    }
+    if (lockf(ecf_fd, F_LOCK, 0) < 0) {
+        ED("failed to lock the session file %s",
+                strerror(errno));
+        return 1;
+    }
+    return 0;
+}
+
+static int
 ec_allowclients()
 {
     if (ecf_fd < 0) {
@@ -606,6 +624,12 @@ ec_init(struct _qs *q, struct _ecs *ec, int server)
     return 0;
 }
 
+static void
+ec_terminate(struct _ecs *ec)
+{
+    ec->active = EC_NINST;
+}
+
 /* allocate sz bytes in the non-active config instance */
 static void *
 ec_alloc(struct _qs *q, struct _ec *ec, size_t sz)
@@ -628,6 +652,13 @@ static inline void
 ec_checkactive(struct _qs *q)
 {
     uint64_t i = q->ec->active;
+    if (unlikely(i >= EC_NINST)) {
+        /* setting ec_active to an out-of-bounds value is
+         * interpreted as an exit request
+         */
+        do_abort = 1;
+        return;
+    }
     if (i != q->ec_active) {
         asm volatile("" ::: "memory");
         __sync_synchronize();
@@ -1964,7 +1995,7 @@ main(int argc, char **argv)
     int cores[4];
     int hugepages = 0;
     char *sfname = NULL; /* session file name */
-    int server = 1;
+    int server = 1, terminate = 0;
     struct _ecf *ecf;
 
     nmctx_set_threadsafe();
@@ -2021,7 +2052,7 @@ main(int argc, char **argv)
     // r	route mode
     // d	max consumer delay
 
-    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:M:b:ci:vw:rd:Hs:l:q")) != -1) {
+    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:M:b:ci:vw:rd:Hs:l:qa")) != -1) {
         switch (ch) {
             default:
                 D("bad option %c %s", ch, optarg);
@@ -2116,6 +2147,9 @@ main(int argc, char **argv)
                 }
                 sfname = optarg;
                 break;
+            case 'a':
+                terminate = 1;
+                break;
         }
     }
 
@@ -2126,6 +2160,9 @@ main(int argc, char **argv)
     ecf = ec_map(sfname, &server);
     if (ecf == NULL)
         exit(1);
+
+    if (terminate)
+        goto skip_args;
 
     /*
      * consistency checks for common arguments
@@ -2334,12 +2371,17 @@ main(int argc, char **argv)
     if (r[1] == NULL)
         r[1] = r[0];
 
+skip_args:
     /* apply commands */
     j = 0;
     for (i = 0; i < EC_NOPTS; i++) { /* once per queue */
         struct _qs *q = &bp[i].q;
         if (ec_init(q, &ecf->sets[i], server))
             exit(1);
+        if (terminate) {
+            ec_terminate(&ecf->sets[i]);
+            continue;
+        }
         err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
         err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
         err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
@@ -2354,6 +2396,14 @@ main(int argc, char **argv)
         }
         bp[i].q.txstats = &ecf->stats[j++];
         bp[i].q.rxstats = &ecf->stats[j++];
+    }
+
+    if (terminate) {
+        int rv = 0;
+        ED("exiting due to -a");
+        if (!server)
+            rv = ec_waitterminate();
+        exit(rv);
     }
 
     if (err) {
