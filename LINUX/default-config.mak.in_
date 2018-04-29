@@ -38,5 +38,6 @@ endef
 
 $(eval $(call default,mlx5,3.3-1.0.0.0))
 mlx5@pv		= $(firstword $(subst -, ,$(mlx5@v)))
+mlx5@conf	= CONFIG_MLX5_CORE_EN
 
 $(foreach d,$(filter mlx5,$(E_DRIVERS)),$(eval $(call mellanox_driver,$d,$($(d)@v))))
