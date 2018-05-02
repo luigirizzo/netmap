@@ -372,7 +372,7 @@ struct h_pkt {
  * INFINITE_BW is supposed to be faster than what we support
  */
 #define INFINITE_BW	(200ULL*1000000*1000)
-#define PKT_PAD		(32)	/* padding on packets */
+#define PKT_PAD		(8)	/* padding on packets */
 #define MAX_PKT		(9200)	/* max packet size */
 
 struct _qs { /* shared queue */
@@ -1684,6 +1684,26 @@ next:
     return NULL;
 }
 
+static uint64_t get_bufsize(uint64_t max_bps, uint64_t max_delay, uint64_t qsize, size_t hdrsz)
+{
+    uint64_t need;
+
+    /* allocate space for the queue:
+     * compute required bw*delay (adding 1ms for good measure),
+     * then add the queue size in bytes, then account for the headers
+     * and the packet expansion for padding
+     */
+
+    need = max_bps ? max_bps : INFINITE_BW;
+    need *= max_delay + 1000000;	/* delay is in nanoseconds */
+    need /= TIME_UNITS; /* total bits */
+    need /= 8; /* in bytes */
+    need += qsize; /* in bytes */
+    need += 3 * MAX_PKT; // safety
+    need *= (1 + 1.0 * (hdrsz + PKT_PAD) / 64);
+    return need;
+}
+
 /*
  * main thread for each direction.
  * Allocates memory for the queues, creates the prod() thread,
@@ -1706,27 +1726,9 @@ tlem_main(void *_a)
 
     a->zerocopy = a->zerocopy && (a->pa->mem == a->pb->mem);
     ND("------- zerocopy %ssupported", a->zerocopy ? "" : "NOT ");
-    /* allocate space for the queue:
-     * compute required bw*delay (adding 1ms for good measure),
-     * then add the queue size i bytes, then multiply by three due
-     * to the packet expansion for padding
-     */
 
-    need = q->ec->max_bps ? q->ec->max_bps : INFINITE_BW;
-    need *= q->ec->max_delay + 1000000;	/* delay is in nanoseconds */
-    need /= TIME_UNITS; /* total bits */
-    need /= 8; /* in bytes */
-    need += q->qsize; /* in bytes */
-    need += 3 * MAX_PKT; // safety
-
-    /*
-     * This is the memory strictly for packets.
-     * The size can increase a lot if we account for descriptors and
-     * rounding.
-     * In fact, the expansion factor can be up to a factor of 3
-     * for particularly bad situations (65-byte packets)
-     */
-    need *= 3; /* room for descriptors and padding */
+    need = get_bufsize(q->ec->max_bps, q->ec->max_delay,
+            q->qsize, sizeof(struct q_pkt));
 
     q->buf = mmap(0, need, PROT_WRITE | PROT_READ, mmap_flags, -1, 0);
     if (q->buf == MAP_FAILED) {
@@ -1740,18 +1742,9 @@ tlem_main(void *_a)
     }
     q->buflen = need;
 
-    /* Now we allocate the hold buffer for reordering, if needed.  Since this
-     * is accessed from only one thread (the producer), there are no caching
-     * issues and no need for padding.  The header is only 8 bytes, so the
-     * worst case overhead (all minimally sized packets) is 8/64;
-     */
     if (q->ec->max_hold_delay) {
-        need = q->ec->max_bps ? q->ec->max_bps : INFINITE_BW;
-        need *= q->ec->max_hold_delay + 1000000;
-        need /= TIME_UNITS;
-        need /= 8;
-        need *= (1 + 1.0*sizeof(struct h_pkt)/64);
-        need += 3 * MAX_PKT;
+        need = get_bufsize(q->ec->max_bps, q->ec->max_hold_delay,
+                0, sizeof(struct h_pkt));
 
         q->hold_buf = mmap(0, need, PROT_WRITE | PROT_READ, mmap_flags, -1, 0);
         if (q->hold_buf == MAP_FAILED) {
