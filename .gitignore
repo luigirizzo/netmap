@@ -75,6 +75,7 @@ read-vars.mak
 !LINUX/default-config.mak
 !LINUX/drv-subdir.mak
 !LINUX/read-vars.mak
+!LINUX/final-patches/*
 LINUX/scripts/conf
 config.mak
 *.rej
