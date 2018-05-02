@@ -495,7 +495,7 @@ EOF
 	} >> config.log
 	(
 		cd $TMPDIR
-		make -k -j $(grep -c processor /proc/cpuinfo)
+		make -O -k -j $(grep -c processor /proc/cpuinfo)
 	) >> config.log
 	eval "$TESTPOSTPROC"
 	cat >> config.log <<EOF
