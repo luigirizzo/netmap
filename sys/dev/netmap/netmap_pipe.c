@@ -206,11 +206,11 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 		struct netmap_slot *ts = &txring->slot[k];
 
 		rs->len = ts->len;
+		rs->flags = ts->flags;
 		rs->ptr = ts->ptr;
 
 		if (ts->flags & NS_BUF_CHANGED) {
 			rs->buf_idx = ts->buf_idx;
-			rs->flags |= NS_BUF_CHANGED;
 			ts->flags &= ~NS_BUF_CHANGED;
 		}
 	}
