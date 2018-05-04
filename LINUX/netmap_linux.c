@@ -33,6 +33,7 @@
 #include <net/ip6_checksum.h>
 #include <linux/rtnetlink.h>
 #include <linux/nsproxy.h>
+#include <linux/ip.h>
 #include <net/pkt_sched.h>
 #include <net/sch_generic.h>
 #include <net/sock.h>
@@ -988,6 +989,27 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	 * destructor_arg field. */
 	m->dev = ifp;
 	skb_shinfo(m)->destructor_arg = m->dev;
+
+	/* Tell the NIC to compute checksums for outgoing TCP and UDP packets */
+	if (netmap_generic_hwcsum) {
+		uint8_t transport_proto = IPPROTO_IP;
+
+		if (m->protocol == htons(ETH_P_IPV6)) {
+			transport_proto = ((struct nm_ipv6hdr*)ip_hdr(m))->nexthdr;
+		} else if (m->protocol == htons(ETH_P_IP)) {
+			transport_proto = ((struct nm_iphdr*)ip_hdr(m))->protocol;
+		}
+
+		if (transport_proto == IPPROTO_TCP) {
+			m->ip_summed = CHECKSUM_PARTIAL;
+			m->csum_start = m->transport_header;
+			m->csum_offset = 16; /* offset to TCP checksum within TCP header */
+		} else if (transport_proto == IPPROTO_UDP) {
+			m->ip_summed = CHECKSUM_PARTIAL;
+			m->csum_start = m->transport_header;
+			m->csum_offset = 6; /* offset to UDP checksum within UDP header */
+		}
+	}
 
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
 	skb_set_queue_mapping(m, a->ring_nr);

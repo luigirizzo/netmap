@@ -519,6 +519,9 @@ int netmap_generic_txqdisc = 1;
 int netmap_generic_ringsize = 1024;
 int netmap_generic_rings = 1;
 
+/* Non-zero to enable checksum offloading in NIC drivers */
+int netmap_generic_hwcsum = 0;
+
 /* Non-zero if ptnet devices are allowed to use virtio-net headers. */
 int ptnet_vnet_hdr = 1;
 
@@ -547,6 +550,9 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, fwd, CTLFLAG_RW, &netmap_fwd, 0,
 SYSCTL_INT(_dev_netmap, OID_AUTO, admode, CTLFLAG_RW, &netmap_admode, 0,
 		"Adapter mode. 0 selects the best option available,"
 		"1 forces native adapter, 2 forces emulated adapter");
+SYSCTL_INT(_dev_netmap, OID_AUTO, generic_hwcsum, CTLFLAG_RW, &netmap_generic_hwcsum,
+		0, "Hardware checksums. 0 to disable checksum generation by the NIC (default),"
+		"1 to enable checksum generation by the NIC");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_mit, CTLFLAG_RW, &netmap_generic_mit,
 		0, "RX notification interval in nanoseconds");
 SYSCTL_INT(_dev_netmap, OID_AUTO, generic_ringsize, CTLFLAG_RW,
@@ -3637,9 +3643,11 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 		goto done;
 	}
 
-	if (nm_os_mbuf_has_offld(m)) {
-		RD(1, "%s drop mbuf that needs offloadings", na->name);
-		goto done;
+	if (!netmap_generic_hwcsum) {
+		if (nm_os_mbuf_has_offld(m)) {
+			RD(1, "%s drop mbuf that needs offloadings", na->name);
+			goto done;
+		}
 	}
 
 	/* protect against netmap_rxsync_from_host(), netmap_sw_to_nic()
