@@ -96,7 +96,7 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config, int nr_arg2)
 	bzero(&nmr, sizeof(nmr));
 	nmr.nr_version = NETMAP_API;
 	if (name != NULL) /* might be NULL */
-		strncpy(nmr.nr_name, name, sizeof(nmr.nr_name));
+		strncpy(nmr.nr_name, name, sizeof(nmr.nr_name)-1);
 	nmr.nr_cmd = nr_cmd;
 	parse_nmr_config(nmr_config, &nmr);
 	nmr.nr_arg2 = nr_arg2;
