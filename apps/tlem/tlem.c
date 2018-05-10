@@ -24,6 +24,8 @@
  * SUCH DAMAGE.
  */
 
+#define WITH_MAX_LAG
+
 #if 0 /* COMMENT */
 
 This program implements TLEM, a bandwidth and delay emulator between two
@@ -926,8 +928,10 @@ struct pipe_args {
 	/* raw stats */
 	struct stats	*stats;
 
+#ifdef WITH_MAX_LAG
 	/* max delay before the consumer starts dropping packets */
 	int64_t		max_lag;
+#endif /* WITH_MAX_LAG */
 
 	struct _qs	q;
 };
@@ -1638,11 +1642,13 @@ cons(void *_pa)
             set_tns_now(&q->cons_now, q->t0);
             continue;
         }
+#ifdef WITH_MAX_LAG
         if (delta < -pa->max_lag) {
             q->rxstats->drop_packets++;
             q->rxstats->drop_bytes += p->pktlen;
             goto next;
         }
+#endif /* WITH_MAX_LAG */
         ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
                 p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
         if (pa->route_mode && !retrying) {
@@ -1983,7 +1989,10 @@ main(int argc, char **argv)
 
     struct pipe_args bp[EC_NOPTS];
     const char *d[EC_NOPTS], *b[EC_NOPTS], *l[EC_NOPTS], *q[EC_NOPTS], *r[EC_NOPTS],
-    *ifname[EC_NOPTS], *gw[EC_NOPTS], *cd[EC_NOPTS], *m[EC_NOPTS];
+    *ifname[EC_NOPTS], *gw[EC_NOPTS], *m[EC_NOPTS];
+#ifdef WITH_MAX_LAG
+    const char *cd[EC_NOPTS];
+#endif /* WITH_MAX_LAG */
     int ncpus;
     int cores[4];
     int hugepages = 0;
@@ -1999,7 +2008,9 @@ main(int argc, char **argv)
     bzero(q, sizeof(q));
     bzero(r, sizeof(r));
     bzero(gw, sizeof(gw));
+#ifdef WITH_MAX_LAG
     bzero(cd, sizeof(cd));
+#endif /* WITH_MAX_LAG */
     bzero(m, sizeof(m));
     bzero(ifname, sizeof(ifname));
 
@@ -2127,9 +2138,15 @@ main(int argc, char **argv)
             case 'r':
                 bp[0].route_mode = 1;
                 break;
+#ifdef WITH_MAX_LAG
             case 'd':
                 add_to(cd, EC_NOPTS, optarg, "-d too many times");
                 break;
+#else /* WITH_MAX_LAG */
+            case 'd':
+                ED("option 'd' ignored");
+                break;
+#endif /* WITH_MAX_LAG */
             case 'H':
                 hugepages = 1;
                 break;
@@ -2359,8 +2376,10 @@ main(int argc, char **argv)
         b[1] = b[0];
     if (l[1] == NULL)
         l[1] = l[0];
+#ifdef WITH_MAX_LAG
     if (cd[1] == NULL)
         cd[1] = cd[0];
+#endif /* WITH_MAX_LAG */
     if (r[1] == NULL)
         r[1] = r[0];
 
@@ -2379,6 +2398,7 @@ skip_args:
         err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
         err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
         err += cmd_apply(reorder_cfg, r[i], q, &q->c_reorder);
+#ifdef WITH_MAX_LAG
         if (cd[i] != NULL) {
             unsigned long max_lag = parse_time(cd[i]);
             if (max_lag == U_PARSE_ERR) {
@@ -2387,6 +2407,7 @@ skip_args:
                 bp[i].max_lag = max_lag;
             }
         }
+#endif /* WITH_MAX_LAG */
         bp[i].q.txstats = &ecf->stats[j++];
         bp[i].q.rxstats = &ecf->stats[j++];
     }
@@ -2439,11 +2460,13 @@ skip_args:
         bp[1].q.qsize = 50000;
     }
 
+#ifdef WITH_MAX_LAG
     for (i = 0; i < EC_NOPTS; i++) {
         if (bp[i].max_lag == 0) {
             bp[i].max_lag = 100000; /* 100 us */
         }
     }
+#endif /* WITH_MAX_LAG */
 
     /* assign arp command queues for route mode */
     bp[0].prod_arpq = &arpq[0];
