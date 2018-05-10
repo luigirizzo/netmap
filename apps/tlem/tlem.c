@@ -1399,6 +1399,7 @@ prod_procpkt(struct _qs *q)
     if (no_room(q)) {
         q->tail = q->prod_tail; /* notify */
         usleep(1); // XXX give cons a chance to run ?
+        set_tns_now(&q->prod_now, q->t0);
         if (no_room(q)) {/* try to run drop-free once */
             q->txstats->drop_packets++;
             q->txstats->drop_bytes += q->cur_len;
