@@ -25,7 +25,7 @@ $(eval $(call default,i40e,2.3.6))
 $(foreach d,$(filter ixgbe ixgbevf e1000e igb i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
 
 define mellanox_driver
-$(1)@fetch	:= test -e @SRCDIR@/ext-drivers/mlnx-en-$(2).tgz || wget http://www.mellanox.com/downloads/Drivers/mlnx-en-$(2).tgz -P @SRCDIR@/ext-drivers
+$(1)@fetch	:= test -e @SRCDIR@/ext-drivers/mlnx-en-$(2).tgz || wget http://content.mellanox.com/Drivers/mlnx-en-$(2).tgz -P @SRCDIR@/ext-drivers
 $(1)@src	:= tar xf @SRCDIR@/ext-drivers/mlnx-en-$(2).tgz && tar xf mlnx-en-$(2)/SOURCES/mlnx-en_$($(1)@pv).orig.tar.gz && ln -s mlnx-en-$($(1)@pv) $(1)
 $(1)@patch	:= patches/mellanox--$(1)--$($(1)@pv)
 $(1)@prepare	:= @SRCDIR@/mlx5-prepare.sh @KSRC@ @TMPDIR@
