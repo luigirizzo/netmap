@@ -493,10 +493,18 @@ EOF
 ##############################################################################
 EOF
 	} >> config.log
+	NPROC=$(grep -c processor /proc/cpuinfo)
 	(
 		cd $TMPDIR
-		make -O -k -j $(grep -c processor /proc/cpuinfo)
+		LANG=C make -O -k -j $NPROC
 	) >> config.log
+	if grep -q ": invalid option -- 'O'" config.log; then
+		# let us try again without -O
+		(
+			cd $TMPDIR
+			make -k -j $NPROC
+		) >> config.log
+	fi
 	eval "$TESTPOSTPROC"
 	cat >> config.log <<EOF
 ##############################################################################
