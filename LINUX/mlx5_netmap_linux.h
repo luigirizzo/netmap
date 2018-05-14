@@ -87,8 +87,6 @@
 
 #ifdef NETMAP_MLX5_MAIN
 
-#include "en.h"
-
 #define NM_MLX5E_ADAPTER mlx5e_priv
 
 /* These functions are in en_rx.c but needed here to
