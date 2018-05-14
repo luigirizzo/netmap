@@ -1854,8 +1854,8 @@ split_arg(const char *src, int *_ac)
     }
     if (verbose > 2)
         for (i = 0; i < ac; i++) fprintf(stderr, "%d: <%s>\n", i, av[i]);
-    av[i++] = NULL;
-    av[i++] = my;
+    av[ac] = NULL;
+    av[ac+1] = my;
     *_ac = ac;
     return av;
 }
