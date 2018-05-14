@@ -662,7 +662,7 @@ int mlx5e_netmap_configure_rx_ring(struct mlx5e_rq *rq, int ring_nr) {
   if (!slot)
     return 0; /* not in native netmap mode */
 
-  lim = na->num_rx_desc - 1 - nm_kr_rxspace(&na->rx_rings[ring_nr]);
+  lim = na->num_rx_desc - 1 - nm_kr_rxspace(na->rx_rings[ring_nr]);
 
   while (!mlx5_wq_ll_is_full(wq) && (count < lim)) {
 
@@ -680,7 +680,7 @@ int mlx5e_netmap_configure_rx_ring(struct mlx5e_rq *rq, int ring_nr) {
   D("populated %d WQEs in ring %d", count, ring_nr);
 
   /* tell netmap how many buffers we have prepared */
-  (na->rx_rings[ring_nr]).nr_hwcur = count;
+  na->rx_rings[ring_nr]->nr_hwcur = count;
 
   /* ensure wqes are visible to device before updating doorbell record */
   wmb();
