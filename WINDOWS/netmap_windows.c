@@ -1017,7 +1017,13 @@ nm_os_ncpus(void)
 }
 
 int
-nm_os_mbuf_has_offld(struct mbuf *m)
+nm_os_mbuf_has_csum_offld(struct mbuf *m)
+{
+	return 0;  // TODO
+}
+
+int
+nm_os_mbuf_has_seg_offld(struct mbuf *m)
 {
 	return 0;  // TODO
 }

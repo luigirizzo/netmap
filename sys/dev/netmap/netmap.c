@@ -3644,10 +3644,15 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	if (!netmap_generic_hwcsum) {
-		if (nm_os_mbuf_has_offld(m)) {
-			RD(1, "%s drop mbuf that needs offloadings", na->name);
+		if (nm_os_mbuf_has_csum_offld(m)) {
+			RD(1, "%s drop mbuf that needs checksum offload", na->name);
 			goto done;
 		}
+	}
+
+	if (nm_os_mbuf_has_seg_offld(m)) {
+		RD(1, "%s drop mbuf that needs generic segmentation offload", na->name);
+		goto done;
 	}
 
 	/* protect against netmap_rxsync_from_host(), netmap_sw_to_nic()
