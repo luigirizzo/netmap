@@ -269,7 +269,7 @@ struct _eci {
         struct _ec      ec_bw;
         struct _ec      ec_loss;
         struct _ec      ec_reorder;
-#define EC_DATASZ       (1U << 14)
+#define EC_DATASZ       (1U << 16)
         char            ec_data[EC_DATASZ];
 };
 
