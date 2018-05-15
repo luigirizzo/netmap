@@ -268,11 +268,17 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 }
 
 int
-nm_os_mbuf_has_offld(struct mbuf *m)
+nm_os_mbuf_has_csum_offld(struct mbuf *m)
 {
 	return m->m_pkthdr.csum_flags & (CSUM_TCP | CSUM_UDP | CSUM_SCTP |
 					 CSUM_TCP_IPV6 | CSUM_UDP_IPV6 |
-					 CSUM_SCTP_IPV6 | CSUM_TSO);
+					 CSUM_SCTP_IPV6);
+}
+
+int
+nm_os_mbuf_has_seg_offld(struct mbuf *m)
+{
+	return m->m_pkthdr.csum_flags & CSUM_TSO;
 }
 
 static void

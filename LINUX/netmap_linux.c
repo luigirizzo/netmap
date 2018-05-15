@@ -408,9 +408,15 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 }
 
 int
-nm_os_mbuf_has_offld(struct mbuf *m)
+nm_os_mbuf_has_csum_offld(struct mbuf *m)
 {
-	return m->ip_summed == CHECKSUM_PARTIAL || skb_is_gso(m);
+	return m->ip_summed == CHECKSUM_PARTIAL;
+}
+
+int
+nm_os_mbuf_has_seg_offld(struct mbuf *m)
+{
+	return skb_is_gso(m);
 }
 
 #ifdef WITH_GENERIC
