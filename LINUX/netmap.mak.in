@@ -163,7 +163,8 @@ install-docs:
 
 distclean: clean $(S_DRIVERS:%=distclean-%)
 	rm -f config.status config.log netmap_linux_config.h \
-		patches drivers.mak Kbuild netmap.mak default-config.mak
+		patches drivers.mak Kbuild netmap.mak default-config.mak \
+		extdrv-versions.mak
 	rm -rf netmap-tmpdir
 	rm -f *.orig *.rej
 	if [ -L GNUmakefile ]; then rm GNUmakefile; fi
