@@ -2709,7 +2709,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 	/* pass down the pending ring state information */
 	for_rx_tx(t) {
 		for (i = 0; i < nma_get_nrings(na, t) + 1; i++)
-			NMR(hwna, t)[i]->nr_pending_mode =
+			NMR(hwna, nm_txrx_swap(t))[i]->nr_pending_mode =
 				NMR(na, t)[i]->nr_pending_mode;
 	}
 
@@ -2721,7 +2721,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 	/* copy up the current ring state information */
 	for_rx_tx(t) {
 		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
-			struct netmap_kring *kring = NMR(hwna, t)[i];
+			struct netmap_kring *kring = NMR(hwna, nm_txrx_swap(t))[i];
 			NMR(na, t)[i]->nr_mode = kring->nr_mode;
 		}
 	}
