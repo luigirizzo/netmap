@@ -171,7 +171,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* Fill the slot in the NIC ring. */
 			curr->upper.data = 0;
 			curr->lower.data = htole32(len | hw_flags);
-			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -188,6 +188,8 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
 	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+		u_int tosync;
+
 		/* Record completed transmissions using TDH.
 		 * Alternative approach would be to scan descriptors and read
 		 * the DD bit until we found one that is not set. */
@@ -197,8 +199,19 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			D("Warning: TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
+		nm_i = netmap_idx_n2k(kring, nic_i);
 		txr->next_to_clean = nic_i;
-		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
+		tosync = nm_next(kring->nr_hwtail, lim);
+		/* sync all buffers that we are returning to userspace */
+		for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
+			struct netmap_slot *slot = &ring->slot[tosync];
+			uint64_t paddr;
+			(void)PNMB(na, slot, &paddr);
+
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+					&paddr, slot->len, NR_TX);
+		}
+		kring->nr_hwtail = nm_prev(nm_i, lim);
 	}
 out:
 
@@ -256,7 +269,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			PNMB(na, slot, &paddr);
 			slot->len = le16toh(curr->NM_E1R_RX_LENGTH) - strip_crc;
 			slot->flags = (!(staterr & E1000_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
-			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr,
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev, &paddr,
 					slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
@@ -282,6 +295,8 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
+					&paddr, NETMAP_BUF_SIZE(na), NR_RX);
 			curr->NM_E1R_RX_BUFADDR = htole64(paddr); /* reload ext.desc. addr. */
 			if (slot->flags & NS_BUF_CHANGED) {
 				slot->flags &= ~NS_BUF_CHANGED;

@@ -329,8 +329,6 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 		RD(1, "ring %s is missing (txr=%p)", kring->name, txr);
 		return ENXIO;
 	}
-	//bus_dmamap_sync(txr->dma.tag, txr->dma.map,
-	//		BUS_DMASYNC_POSTREAD);
 
 	/*
 	 * First part: process new packets to send.
@@ -405,6 +403,8 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
 
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
+					&paddr, len, NR_TX);
 			/* Fill the slot in the NIC ring.
 			 * (we should investigate if using legacy descriptors
 			 * is faster). */
@@ -434,9 +434,22 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 	 */
 	nic_i = i40e_netmap_read_hwtail(txr->desc, kring->nkr_num_slots);
 	if (nic_i != txr->next_to_clean) {
+		u_int tosync;
+		nm_i = netmap_idx_n2k(kring, nic_i);
+
 		/* some tx completed, increment avail */
 		txr->next_to_clean = nic_i;
-		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
+		tosync = nm_next(kring->nr_hwtail, lim);
+		/* sync all buffers that we are returning to userspace */
+		for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
+			struct netmap_slot *slot = &ring->slot[tosync];
+			uint64_t paddr;
+			(void)PNMB(na, slot, &paddr);
+
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+					&paddr, slot->len, NR_TX);
+		}
+		kring->nr_hwtail = nm_prev(nm_i, lim);
 	}
 
 	return 0;
@@ -517,20 +530,24 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint32_t staterr = (qword & I40E_RXD_QW1_STATUS_MASK)
 				 >> I40E_RXD_QW1_STATUS_SHIFT;
 		        uint16_t slot_flags = 0;
+			struct netmap_slot *slot;
+			uint64_t paddr;
 
 			if ((staterr & (1<<I40E_RX_DESC_STATUS_DD_SHIFT)) == 0) {
 				break;
 			}
-			ring->slot[nm_i].len = ((qword & I40E_RXD_QW1_LENGTH_PBUF_MASK)
+			slot = ring->slot + nm_i;
+			slot->len = ((qword & I40E_RXD_QW1_LENGTH_PBUF_MASK)
 			    >> I40E_RXD_QW1_LENGTH_PBUF_SHIFT) - crclen;
 
 			if (unlikely((staterr & (1<<I40E_RX_DESC_STATUS_EOF_SHIFT)) == 0 )) {
 				slot_flags |= NS_MOREFRAG;
 			}
-			ring->slot[nm_i].flags = slot_flags;
+			slot->flags = slot_flags;
+			PNMB(na, slot, &paddr);
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+					&paddr, slot->len, NR_RX);
 
-			//bus_dmamap_sync(rxr->ptag,
-			//    rxr->buffers[nic_i].pmap, BUS_DMASYNC_POSTREAD);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -574,15 +591,13 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			}
 			curr->read.pkt_addr = htole64(paddr);
 			curr->read.hdr_addr = 0; // XXX needed
-			//bus_dmamap_sync(rxr->ptag, rxbuf->pmap,
-			//    BUS_DMASYNC_PREREAD);
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
+					&paddr, NETMAP_BUF_SIZE(na), NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
 		kring->nr_hwcur = head;
 
-		//bus_dmamap_sync(rxr->dma.tag, rxr->dma.map,
-		//    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 		/*
 		 * IMPORTANT: we must leave one free slot in the ring,
 		 * so move nic_i back by one unit

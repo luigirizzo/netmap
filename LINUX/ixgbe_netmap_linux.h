@@ -275,6 +275,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int nic_i;	/* index into the NIC ring */
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
+	u_int tosync;
 	/*
 	 * interrupts on every tx packet are expensive so request
 	 * them every half ring, or where NS_REPORT is set
@@ -351,7 +352,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 
 				first->read.buffer_addr = htole64(paddr);
 				first->read.cmd_type_len = htole32(len | hw_flags);
-				netmap_sync_map(na, (bus_dma_tag_t) na->pdev,
+				netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
 						&paddr, len, NR_TX);
 				/* avoid setting the FCS flag in the
 				 * descriptors after the first, for safety
@@ -382,7 +383,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 					curr->read.olinfo_status = 0;
 					curr->read.cmd_type_len = htole32(len | hw_flags);
 
-					netmap_sync_map(na, (bus_dma_tag_t) na->pdev,
+					netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
 							&paddr, len, NR_TX);
 				}
 				first->read.olinfo_status =
@@ -402,7 +403,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			curr->read.buffer_addr = htole64(paddr);
 			curr->read.olinfo_status = htole32(totlen << IXGBE_ADVTXD_PAYLEN_SHIFT);
 			curr->read.cmd_type_len = htole32(len | hw_flags);
-			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -416,12 +417,14 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	/*
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
+	tosync = nm_next(kring->nr_hwtail, lim);
 #ifndef NM_IXGBE_USE_TDH
 	(void)reclaim_tx;
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
-		u32 h = NM_ACCESS_ONCE(*ina->heads[ring_nr].phead);
+		nic_i = NM_ACCESS_ONCE(*ina->heads[ring_nr].phead);
+		nm_i = netmap_idx_n2k(kring, nic_i);
 		ND(5, "%s: h %d", kring->name, h);
-		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, h), lim);
+		kring->nr_hwtail = nm_prev(nm_i, lim);
 	}
 #else /* NM_IXGBE_USE_TDH */
 	/*
@@ -468,11 +471,22 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 			D("TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
+		nm_i = netmap_idx_n2k(kring, nic_i);
 		txr->next_to_clean = nic_i;
 		txr->next_to_use = txr->next_to_clean;
-		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
+		kring->nr_hwtail = nm_prev(nm_i, lim);
 	}
 #endif /* NM_IXGBE_USE_TDH */
+	/* sync all buffers that we are returning to userspace.
+	 */
+	for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
+		struct netmap_slot *slot = &ring->slot[tosync];
+		uint64_t paddr;
+		(void)PNMB(na, slot, &paddr);
+
+		netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+				&paddr, slot->len, NR_TX);
+	}
 out:
 
 	return 0;
@@ -553,7 +567,8 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			slot->len = size;
 			slot->flags = (!(staterr & IXGBE_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
 			PNMB(na, slot, &paddr);
-			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, size, NR_RX);
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+					&paddr, size, NR_RX);
 
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
@@ -592,6 +607,8 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if (slot->flags & NS_BUF_CHANGED) {
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
+					&paddr, NETMAP_BUF_SIZE(na), NR_RX);
 			curr->wb.upper.length = 0;
 			curr->wb.upper.status_error = 0;
 			curr->read.pkt_addr = htole64(paddr);

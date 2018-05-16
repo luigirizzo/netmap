@@ -156,7 +156,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 				hw_flags |= E1000_TXD_CMD_EOP;
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
-			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 
 			/* Fill the slot in the NIC ring. */
 			curr->read.buffer_addr = htole64(paddr);
@@ -183,13 +183,26 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
 	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+		u_int tosync;
+
 		/* record completed transmissions using TDH */
 		nic_i = READ_TDH(adapter, txr);
 		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
 			D("TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
-		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
+		nm_i = netmap_idx_n2k(kring, nic_i);
+		tosync = nm_next(kring->nr_hwtail, lim);
+		/* sync all buffers that we are returning to userspace */
+		for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
+			struct netmap_slot *slot = &ring->slot[tosync];
+			uint64_t paddr;
+			(void)PNMB(na, slot, &paddr);
+
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+					&paddr, slot->len, NR_TX);
+		}
+		kring->nr_hwtail = nm_prev(nm_i, lim);
 	}
 out:
 
@@ -246,7 +259,7 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 			PNMB(na, slot, &paddr);
 			slot->len = le16toh(curr->wb.upper.length);
 			slot->flags = (!(staterr & E1000_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
-			netmap_sync_map(na, (bus_dma_tag_t) na->pdev, &paddr, slot->len, NR_RX);
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev, &paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -278,6 +291,8 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if (slot->flags & NS_BUF_CHANGED) {
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
+					&paddr, NETMAP_BUF_SIZE(na), NR_RX);
 			curr->read.pkt_addr = htole64(paddr);
 			curr->read.hdr_addr = 0;
 			nm_i = nm_next(nm_i, lim);
