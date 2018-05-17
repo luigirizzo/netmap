@@ -311,7 +311,8 @@ void nm_os_vfree(void *);
  */
 void *nm_os_send_up(struct ifnet *, struct mbuf *m, struct mbuf *prev);
 
-int nm_os_mbuf_has_offld(struct mbuf *m);
+int nm_os_mbuf_has_seg_offld(struct mbuf *m);
+int nm_os_mbuf_has_csum_offld(struct mbuf *m);
 
 #include "netmap_mbq.h"
 
@@ -1609,6 +1610,7 @@ enum {                                  /* verbose flags */
 
 extern int netmap_txsync_retry;
 extern int netmap_flags;
+extern int netmap_generic_hwcsum;
 extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
 extern int netmap_generic_rings;

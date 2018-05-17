@@ -33,6 +33,7 @@
 #include <net/ip6_checksum.h>
 #include <linux/rtnetlink.h>
 #include <linux/nsproxy.h>
+#include <linux/ip.h>
 #include <net/pkt_sched.h>
 #include <net/sch_generic.h>
 #include <net/sock.h>
@@ -407,9 +408,15 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 }
 
 int
-nm_os_mbuf_has_offld(struct mbuf *m)
+nm_os_mbuf_has_csum_offld(struct mbuf *m)
 {
-	return m->ip_summed == CHECKSUM_PARTIAL || skb_is_gso(m);
+	return m->ip_summed == CHECKSUM_PARTIAL;
+}
+
+int
+nm_os_mbuf_has_seg_offld(struct mbuf *m)
+{
+	return skb_is_gso(m);
 }
 
 #ifdef WITH_GENERIC
@@ -920,6 +927,9 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 	return 0;
 }
 
+/* Used to cover cases where ETH_P_802_3_MIN is undefined */
+#define NM_ETH_P_802_3_MIN 0x0600
+
 /* Transmit routine used by generic_netmap_txsync(). Returns 0 on success
    and -1 on error (which may be packet drops or other errors). */
 int
@@ -929,6 +939,7 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	struct ifnet *ifp = a->ifp;
 	u_int len = a->len;
 	netdev_tx_t ret;
+	uint16_t ethertype;
 
 	/* We know that the driver needs to prepend ifp->needed_headroom bytes
 	 * to each packet to be transmitted. We then reset the mbuf pointers
@@ -947,18 +958,27 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	skb_reset_tail_pointer(m);
 	skb_reset_mac_header(m);
 
-	/* Initialize the header pointers assuming this is an IPv4 packet.
-	 * This is useful to make netmap interact well with TC when
-	 * netmap_generic_txqdisc == 0.  */
-	skb_set_network_header(m, 14);
-	skb_set_transport_header(m, 34);
-	m->protocol = htons(ETH_P_IP);
-	m->pkt_type = PACKET_HOST;
-
 	/* Copy a netmap buffer into the mbuf.
 	 * TODO Support the slot flags (NS_MOREFRAG, NS_INDIRECT). */
 	skb_copy_to_linear_data(m, a->addr, len); // skb_store_bits(m, 0, addr, len);
 	skb_put(m, len);
+
+	/* Initialize the header pointers assuming this is an IP packet.
+	 * This is useful to make netmap interact well with TC when
+	 * netmap_generic_txqdisc == 0.  */
+	skb_set_network_header(m, ETH_HLEN);
+	ethertype = *((uint16_t*)(m->data + ETH_ALEN * 2));
+	m->protocol = ntohs(ethertype) >= NM_ETH_P_802_3_MIN ? ethertype : htons(ETH_P_802_3);
+	m->pkt_type = PACKET_HOST;
+	m->ip_summed = CHECKSUM_NONE;
+
+	if (m->protocol == htons(ETH_P_IPV6)) {
+		skb_set_transport_header(m, ETH_HLEN + sizeof(struct nm_ipv6hdr));
+	} else if (m->protocol == htons(ETH_P_IP)) {
+		skb_set_transport_header(m, ETH_HLEN + sizeof(struct nm_iphdr));
+	} else {
+		skb_reset_transport_header(m);
+	}
 
 	/* Hold a reference on this, we are going to recycle mbufs as
 	 * much as possible. */
@@ -975,6 +995,27 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	 * destructor_arg field. */
 	m->dev = ifp;
 	skb_shinfo(m)->destructor_arg = m->dev;
+
+	/* Tell the NIC to compute checksums for outgoing TCP and UDP packets */
+	if (netmap_generic_hwcsum) {
+		uint8_t transport_proto = IPPROTO_IP;
+
+		if (m->protocol == htons(ETH_P_IPV6)) {
+			transport_proto = ((struct nm_ipv6hdr*)ip_hdr(m))->nexthdr;
+		} else if (m->protocol == htons(ETH_P_IP)) {
+			transport_proto = ((struct nm_iphdr*)ip_hdr(m))->protocol;
+		}
+
+		if (transport_proto == IPPROTO_TCP) {
+			m->ip_summed = CHECKSUM_PARTIAL;
+			m->csum_start = m->transport_header;
+			m->csum_offset = 16; /* offset to TCP checksum within TCP header */
+		} else if (transport_proto == IPPROTO_UDP) {
+			m->ip_summed = CHECKSUM_PARTIAL;
+			m->csum_start = m->transport_header;
+			m->csum_offset = 6; /* offset to UDP checksum within UDP header */
+		}
+	}
 
 	/* Tell generic_ndo_start_xmit() to pass this mbuf to the driver. */
 	skb_set_queue_mapping(m, a->ring_nr);
