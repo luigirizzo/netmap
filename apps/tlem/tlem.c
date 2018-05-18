@@ -1695,7 +1695,7 @@ next:
 
 static uint64_t get_bufsize(uint64_t max_bps, uint64_t max_delay, uint64_t qsize, size_t hdrsz)
 {
-    uint64_t need;
+    double need;
 
     /* allocate space for the queue:
      * compute required bw*delay (adding 1ms for good measure),
