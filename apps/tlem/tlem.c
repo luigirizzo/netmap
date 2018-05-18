@@ -1741,9 +1741,15 @@ tlem_main(void *_a)
             q->qsize, sizeof(struct q_pkt));
     norm(b1, need, 1);
 
+retry:
     q->buf = mmap(0, need, PROT_WRITE | PROT_READ, mmap_flags, -1, 0);
     if (q->buf == MAP_FAILED) {
         ED("alloc %s bytes for queue failed, exiting", b1);
+        if (mmap_flags & MAP_HUGETLB) {
+            ED("trying again without hugepages");
+            mmap_flags &= ~MAP_HUGETLB;
+            goto retry;
+        }
         nmport_close(a->pa);
         nmport_close(a->pb);
         do_abort = 1;
@@ -1759,9 +1765,15 @@ tlem_main(void *_a)
                 0, sizeof(struct h_pkt));
         norm(b2, need, 1);
 
+retry2:
         q->hold_buf = mmap(0, need, PROT_WRITE | PROT_READ, mmap_flags, -1, 0);
         if (q->hold_buf == MAP_FAILED) {
-            ED("alloc %s bytes for  failed, exiting", b2);
+            ED("alloc %s bytes for hold-buf failed, exiting", b2);
+            if (mmap_flags & MAP_HUGETLB) {
+                ED("trying again without hugepages");
+                mmap_flags &= ~MAP_HUGETLB;
+                goto retry2;
+            }
             nmport_close(a->pa);
             nmport_close(a->pb);
             do_abort = 1;
