@@ -191,6 +191,8 @@ static int do_abort = 0;
 #endif
 #endif
 
+#include "ctrs.h"	/* norm() */
+
 #ifdef __APPLE__
 #define cpuset_t        uint64_t        // XXX
 static inline void CPU_ZERO(cpuset_t *p)
@@ -1723,6 +1725,7 @@ tlem_main(void *_a)
     struct _qs *q = &a->q;
     uint64_t need;
     int mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS;
+    char b1[40], b2[40] = "0";
 
     setaffinity(a->cons_core);
     set_tns_now(&q->t0, 0); /* starting reference */
@@ -1736,12 +1739,14 @@ tlem_main(void *_a)
 
     need = get_bufsize(q->ec->max_bps, q->ec->max_delay,
             q->qsize, sizeof(struct q_pkt));
+    norm(b1, need, 1);
 
     q->buf = mmap(0, need, PROT_WRITE | PROT_READ, mmap_flags, -1, 0);
     if (q->buf == MAP_FAILED) {
-        ED("alloc %lld bytes for queue failed, exiting", (long long)need);
+        ED("alloc %s bytes for queue failed, exiting", b1);
         nmport_close(a->pa);
         nmport_close(a->pb);
+        do_abort = 1;
         return(NULL);
     }
     if (mlock(q->buf, need) < 0) {
@@ -1752,10 +1757,11 @@ tlem_main(void *_a)
     if (q->ec->max_hold_delay) {
         need = get_bufsize(q->ec->max_bps, q->ec->max_hold_delay,
                 0, sizeof(struct h_pkt));
+        norm(b2, need, 1);
 
         q->hold_buf = mmap(0, need, PROT_WRITE | PROT_READ, mmap_flags, -1, 0);
         if (q->hold_buf == MAP_FAILED) {
-            ED("alloc %lld bytes for  failed, exiting", (long long)need);
+            ED("alloc %s bytes for  failed, exiting", b2);
             nmport_close(a->pa);
             nmport_close(a->pb);
             do_abort = 1;
@@ -1768,11 +1774,11 @@ tlem_main(void *_a)
     }
 
     ED("----\n\t%s -> %s :  bps %lld delay %s loss %s queue %lld bytes"
-            "\n\tbuffer   %10llu bytes\n\thold-buf %10lld bytes",
+            "\n\tbuffer   %s bytes\n\thold-buf %s bytes",
             q->prod_ifname, q->cons_ifname,
             (long long)q->ec->max_bps, q->c_delay.optarg, q->c_loss.optarg,
-            (long long)q->qsize, (unsigned long long)q->buflen,
-            (unsigned long long)q->hold_buflen);
+            (long long)q->qsize, b1,
+            b2);
 
 
     q->src_port = a->pa;
