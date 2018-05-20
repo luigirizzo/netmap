@@ -1,0 +1,110 @@
+diff --git a/e1000e/Makefile b/e1000e/Makefile
+index 9bfa024..2c106f0 100644
+--- a/e1000e/Makefile
++++ b/e1000e/Makefile
+@@ -36,7 +36,7 @@ ifeq (,$(BUILD_KERNEL))
+ BUILD_KERNEL=$(shell uname -r)
+ endif
+ 
+-DRIVER_NAME = e1000e
++DRIVER_NAME = e1000e$(NETMAP_DRIVER_SUFFIX)
+ 
+ ###########################################################################
+ # Environment tests
+@@ -139,7 +139,7 @@ ifeq ($(ARCH),ppc64)
+ endif
+ 
+ # extra flags for module builds
+-EXTRA_CFLAGS += -DDRIVER_$(shell echo $(DRIVER_NAME) | tr '[a-z]' '[A-Z]')
++EXTRA_CFLAGS += -DDRIVER_$(shell echo $(DRIVER_NAME) | tr '[a-z-]' '[A-Z_]')
+ EXTRA_CFLAGS += -DDRIVER_NAME=$(DRIVER_NAME)
+ EXTRA_CFLAGS += -DDRIVER_NAME_CAPS=$(shell echo $(DRIVER_NAME) | tr '[a-z]' '[A-Z]')
+ # standard flags for module builds
+@@ -345,6 +345,9 @@ DEPVER := $(shell /sbin/depmod -V 2>/dev/null | \
+ $(MANFILE).gz: ../$(MANFILE)
+ 	gzip -c $< > $@
+ 
++../$(MANFILE):
++	touch $@
++
+ install: default $(MANFILE).gz
+ 	# remove all old versions of the driver
+ 	find $(INSTALL_MOD_PATH)/lib/modules/$(KVER) -name $(TARGET) -exec rm -f {} \; || true
+diff --git a/e1000e/netdev.c b/e1000e/netdev.c
+index 09c8487..fd3c723 100644
+--- a/e1000e/netdev.c
++++ b/e1000e/netdev.c
+@@ -500,6 +500,10 @@ static int e1000_desc_unused(struct e1000_ring *ring)
+ 	return ring->count + ring->next_to_clean - ring->next_to_use - 1;
+ }
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <if_e1000e_netmap.h>
++#endif
++
+ #ifdef HAVE_HW_TIME_STAMP
+ /**
+  * e1000e_systim_to_hwtstamp - convert system time value to hw time stamp
+@@ -1023,6 +1027,17 @@ static bool e1000_clean_rx_irq(struct e1000_ring *rx_ring)
+ 	bool cleaned = false;
+ 	unsigned int total_rx_bytes = 0, total_rx_packets = 0;
+ 
++#ifdef DEV_NETMAP
++#ifdef CONFIG_E1000E_NAPI
++#define NETMAP_DUMMY work_done
++#else
++	int dummy;
++#define NETMAP_DUMMY &dummy
++#endif
++	if (netmap_rx_irq(netdev, 0, NETMAP_DUMMY))
++		return true;
++#endif /* DEV_NETMAP */
++
+ 	i = rx_ring->next_to_clean;
+ 	rx_desc = E1000_RX_DESC_EXT(*rx_ring, i);
+ 	staterr = le32_to_cpu(rx_desc->wb.upper.status_error);
+@@ -1340,6 +1355,11 @@ static bool e1000_clean_tx_irq(struct e1000_ring *tx_ring)
+ 	unsigned int total_tx_bytes = 0, total_tx_packets = 0;
+ 	unsigned int bytes_compl = 0, pkts_compl = 0;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_tx_irq(netdev, 0))
++		return true; /* cleaned ok */
++#endif /* DEV_NETMAP */
++
+ 	i = tx_ring->next_to_clean;
+ 	eop = tx_ring->buffer_info[i].next_to_watch;
+ 	eop_desc = E1000_TX_DESC(*tx_ring, eop);
+@@ -4256,6 +4276,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
+ #endif
+ 	e1000_setup_rctl(adapter);
+ 	e1000_configure_rx(adapter);
++#ifdef DEV_NETMAP
++	if (e1000e_netmap_init_buffers(adapter))
++		return;
++#endif /* DEV_NETMAP */
+ 	adapter->alloc_rx_buf(rx_ring, e1000_desc_unused(rx_ring), GFP_KERNEL);
+ }
+ 
+@@ -8456,6 +8480,10 @@ static int e1000_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	if (err)
+ 		goto err_register;
+ 
++#ifdef DEV_NETMAP
++	e1000_netmap_attach(adapter);
++#endif /* DEV_NETMAP */
++
+ 	/* carrier off reporting is important to ethtool even BEFORE open */
+ 	netif_carrier_off(netdev);
+ 
+@@ -8557,6 +8585,10 @@ static void e1000_remove(struct pci_dev *pdev)
+ 	kfree(adapter->tx_ring);
+ 	kfree(adapter->rx_ring);
+ 
++#ifdef DEV_NETMAP
++	netmap_detach(netdev);
++#endif /* DEV_NETMAP */
++
+ 	iounmap(adapter->hw.hw_addr);
+ 	if ((adapter->hw.flash_address) &&
+ 	    (adapter->hw.mac.type < e1000_pch_spt))
