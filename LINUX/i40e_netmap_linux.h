@@ -477,6 +477,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i;	/* index into the netmap ring */
 	u_int nic_i;	/* index into the NIC ring */
+	u_int ntail;	/* new tail for the user */
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
@@ -520,9 +521,13 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	if (netmap_no_pendintr || force_update) {
 		int crclen = ix_crcstrip ? 0 : 4;
+		int complete;
 
 		nic_i = rxr->next_to_clean; // or also k2n(kring->nr_hwtail)
 		nm_i = netmap_idx_n2k(kring, nic_i);
+		/* we advance tail only when we see a complete packet */
+		ntail = lim + 1;
+		complete = 0;
 
 		for (n = 0; ; n++) {
 			union i40e_rx_desc *curr = I40E_RX_DESC(rxr, nic_i);
@@ -533,6 +538,11 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot;
 			uint64_t paddr;
 
+			if (likely(complete)) {
+				ntail = nm_i;
+				complete = 0;
+			}
+
 			if ((staterr & (1<<I40E_RX_DESC_STATUS_DD_SHIFT)) == 0) {
 				break;
 			}
@@ -541,7 +551,9 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			    >> I40E_RXD_QW1_LENGTH_PBUF_SHIFT) - crclen;
 
 			if (unlikely((staterr & (1<<I40E_RX_DESC_STATUS_EOF_SHIFT)) == 0 )) {
-				slot_flags |= NS_MOREFRAG;
+				slot_flags = NS_MOREFRAG;
+			} else {
+				complete = 1;
 			}
 			slot->flags = slot_flags;
 			PNMB(na, slot, &paddr);
@@ -558,7 +570,10 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 				ix_rx_miss_bufs += n;
 			}
 			rxr->next_to_clean = nic_i;
-			kring->nr_hwtail = nm_i;
+			if (likely(ntail <= lim)) {
+				kring->nr_hwtail = ntail;
+				ND("%s: nic_i %u nm_i %u ntail %u n %u", ifp->if_xname, nic_i, nm_i, ntail, n);
+			}
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
