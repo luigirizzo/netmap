@@ -1451,6 +1451,16 @@ EOF
 	}
 EOF
 
+# check for redhat ndo_change_mtu_rh74
+  add_test 'define CHANGE_MTU ndo_change_mtu_rh74' 'define CHANGE_MTU ndo_change_mtu' <<EOF
+	#include <linux/netdevice.h>
+
+	int
+	dummy(struct net_device_ops *ops, struct net_device *dev) {
+		return ops->ndo_change_mtu_rh74(dev, 0);
+	}
+EOF
+
 # check for fault arguments
   add_test 'have FAULT_VMA_ARG' <<EOF
         #include <linux/mm.h>

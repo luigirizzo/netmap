@@ -2469,7 +2469,7 @@ static const struct net_device_ops nm_vi_ops = {
 	.ndo_stop = linux_nm_vi_stop,
 	.ndo_start_xmit = linux_nm_vi_xmit,
 	.ndo_set_mac_address = eth_mac_addr,
-	.ndo_change_mtu = linux_nm_vi_change_mtu,
+	.NETMAP_LINUX_CHANGE_MTU = linux_nm_vi_change_mtu,
 #ifdef NETMAP_LINUX_HAVE_GET_STATS64
 	.ndo_get_stats64 = linux_nm_vi_get_stats,
 #endif
