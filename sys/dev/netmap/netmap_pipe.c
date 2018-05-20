@@ -183,8 +183,9 @@ int
 netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 {
 	struct netmap_kring *rxkring = txkring->pipe;
-	u_int k, lim = txkring->nkr_num_slots - 1;
+	u_int k, lim = txkring->nkr_num_slots - 1, nk;
 	int m; /* slots to transfer */
+	int complete; /* did we see a complete packet ? */
 	struct netmap_ring *txring = txkring->ring, *rxring = rxkring->ring;
 
 	ND("%p: %s %x -> %s", txkring, txkring->name, flags, rxkring->name);
@@ -201,7 +202,8 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 		return 0;
 	}
 
-	for (k = txkring->nr_hwcur; m; m--, k = nm_next(k, lim)) {
+	for (k = txkring->nr_hwcur, nk = lim + 1, complete = 0; m;
+			m--, k = nm_next(k, lim), nk = (complete ? k : nk)) {
 		struct netmap_slot *rs = &rxring->slot[k];
 		struct netmap_slot *ts = &txring->slot[k];
 
@@ -209,17 +211,20 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 		if (ts->flags & NS_BUF_CHANGED) {
 			ts->flags &= ~NS_BUF_CHANGED;
 		}
+		complete = !(ts->flags & NS_MOREFRAG);
 	}
 
-	mb(); /* make sure the slots are updated before publishing them */
-	rxkring->nr_hwtail = k;
 	txkring->nr_hwcur = k;
 
 	ND(20, "TX after : hwcur %d hwtail %d cur %d head %d tail %d k %d",
 		txkring->nr_hwcur, txkring->nr_hwtail,
 		txkring->rcur, txkring->rhead, txkring->rtail, k);
 
-	rxkring->nm_notify(rxkring, 0);
+	if (likely(nk <= lim)) {
+		mb(); /* make sure the slots are updated before publishing them */
+		rxkring->nr_hwtail = nk; /* only publish complete packets */
+		rxkring->nm_notify(rxkring, 0);
+	}
 
 	return 0;
 }
