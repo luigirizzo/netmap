@@ -378,6 +378,12 @@ struct h_pkt {
 #define INFINITE_BW	(200ULL*1000000*1000)
 #define PKT_PAD		(8)	/* padding on packets */
 #define MAX_PKT		(9200)	/* max packet size */
+#define MAX_FRAGS       (1000)  /* max number of fragments */
+
+struct _frag {
+       char           *buf;
+       unsigned int    len;
+};
 
 struct _qs { /* shared queue */
 	uint64_t	t0;	/* start of times */
@@ -432,6 +438,8 @@ struct _qs { /* shared queue */
 	/* producer's fields controlling the queueing */
 	char *		cur_pkt;	/* current packet being analysed */
 	uint32_t	cur_len;	/* length of current packet */
+        struct _frag    cur_frags[MAX_FRAGS];
+        int             cur_nfrags;
 
 	int		cur_drop;	/* 1 if current  packet should be dropped. */
 		/*
@@ -1097,9 +1105,19 @@ static inline int
 enq(struct _qs *q)
 {
     struct q_pkt *p = pkt_at(q, q->prod_tail);
+    char *dst = (char *)(p + 1);
+    unsigned int len = q->cur_frags[0].len;
+    int i;
 
     /* hopefully prefetch has been done ahead */
-    nm_pkt_copy(q->cur_pkt, (char *)(p+1), q->cur_len);
+    nm_pkt_copy(q->cur_pkt, dst, len);
+    /* copy the fragments, if any */
+    for (i = 1; i < q->cur_nfrags; i++) {
+        dst += len;
+        len = q->cur_frags[i].len;
+        /* we cannot use nm_pkt_copy, since dst may be unaligned */
+        memcpy(dst, q->cur_frags[i].buf, len);
+    }
     p->pktlen = q->cur_len;
     p->pt_qout = q->qt_qout;
     p->pt_tx = q->qt_tx;
@@ -1234,6 +1252,7 @@ scan_ring(struct _qs *q, int next /* bool */)
     struct netmap_slot *rs;
     struct netmap_ring *rxr = q->rxring; /* invalid if next == 0 */
     struct nmport_d *pa = q->src_port;
+    int nfrags;
 
     /* fast path for the first two */
     if (likely(next != 0)) { /* current ring */
@@ -1268,8 +1287,27 @@ got_one:
         D("wrong len rx[%d] len %d", rxr->cur, rs->len);
         rs->len = 0;
     }
-    q->cur_pkt = NETMAP_BUF(rxr, rs->buf_idx);
-    q->cur_len = rs->len;
+    /* netmap makes sure that we do not receive incomplete packets */
+    nfrags = 0;
+    q->cur_len = 0;
+    do {
+        struct _frag *f = &q->cur_frags[nfrags];
+        f->buf = NETMAP_BUF(rxr, rs->buf_idx);
+        f->len = rs->len;
+        q->cur_len += f->len;
+        nfrags++;
+        if (!(rs->flags & NS_MOREFRAG))
+            break;
+        rxr->cur = nm_ring_next(rxr, rxr->cur);
+        rs = &rxr->slot[rxr->cur];
+    } while (nfrags < MAX_FRAGS);
+    if (unlikely(nfrags >= MAX_FRAGS)) {
+        RD(5, "WARNING: too many fragments: truncating packet");
+        // XXX do something here
+    }
+    q->cur_pkt = q->cur_frags[0].buf;
+    q->cur_nfrags = nfrags;
+    rxr->head = rxr->cur;
     //prefetch_packet(rxr, 1); not much better than prefetching q->cur_pkt, one line
     __builtin_prefetch(q->cur_pkt);
     __builtin_prefetch(rs+1); /* one row ahead ? */
@@ -1319,6 +1357,9 @@ reorder_release(struct _qs *q)
     h = (struct h_pkt *)(q->hold_buf + q->hold_head);
     q->cur_pkt = q->hold_buf + q->hold_head + sizeof(*h);
     q->cur_len = h->pktlen;
+    q->cur_frags[0].buf = q->cur_pkt;
+    q->cur_frags[0].len = q->cur_len;
+    q->cur_nfrags = 1;
     q->hold_head += sizeof(*h) + q->cur_len;
     if (unlikely(q->hold_head >= q->hold_buflen))
         q->hold_head = 0;
