@@ -1777,6 +1777,7 @@ netmap_unload_map(struct netmap_adapter *na,
 	}
 }
 
+#ifdef NETMAP_LINUX_HAVE_DMASYNC
 static inline void
 netmap_sync_map_cpu(struct netmap_adapter *na,
 	bus_dma_tag_t tag, bus_dmamap_t map, u_int sz, enum txrx t)
@@ -1811,6 +1812,10 @@ netmap_reload_map(struct netmap_adapter *na,
 	*map = dma_map_single(na->pdev, buf, sz,
 				DMA_BIDIRECTIONAL);
 }
+#else /* !NETMAP_LINUX_HAVE_DMASYNC */
+#define netmap_sync_map_cpu(na, tag, map, sz, t)
+#define netmap_sync_map_dev(na, tag, map, sz, t)
+#endif /* NETMAP_LINUX_HAVE_DMASYNC */
 
 #endif /* linux */
 
