@@ -87,8 +87,6 @@
 
 #ifdef NETMAP_MLX5_MAIN
 
-#include "en.h"
-
 #define NM_MLX5E_ADAPTER mlx5e_priv
 
 /* These functions are in en_rx.c but needed here to
@@ -662,7 +660,7 @@ int mlx5e_netmap_configure_rx_ring(struct mlx5e_rq *rq, int ring_nr) {
   if (!slot)
     return 0; /* not in native netmap mode */
 
-  lim = na->num_rx_desc - 1 - nm_kr_rxspace(&na->rx_rings[ring_nr]);
+  lim = na->num_rx_desc - 1 - nm_kr_rxspace(na->rx_rings[ring_nr]);
 
   while (!mlx5_wq_ll_is_full(wq) && (count < lim)) {
 
@@ -680,7 +678,7 @@ int mlx5e_netmap_configure_rx_ring(struct mlx5e_rq *rq, int ring_nr) {
   D("populated %d WQEs in ring %d", count, ring_nr);
 
   /* tell netmap how many buffers we have prepared */
-  (na->rx_rings[ring_nr]).nr_hwcur = count;
+  na->rx_rings[ring_nr]->nr_hwcur = count;
 
   /* ensure wqes are visible to device before updating doorbell record */
   wmb();
@@ -689,19 +687,14 @@ int mlx5e_netmap_configure_rx_ring(struct mlx5e_rq *rq, int ring_nr) {
   return 1;
 }
 
-int mlx5e_netmap_config(struct netmap_adapter *na, u_int *txr, u_int *txd,
-                        u_int *rxr, u_int *rxd) {
-  struct ifnet *ifp = na->ifp;
-  struct NM_MLX5E_ADAPTER *adapter = netdev_priv(ifp);
+int mlx5e_netmap_config(struct netmap_adapter *na, struct nm_config_info *info) {
+  int ret = netmap_rings_config_get(na, info);
 
-  /* each channel has 1 rx ring and a tx for each tc */
-  *txr = adapter->params.num_channels * adapter->params.num_tc;
-  *rxr = adapter->params.num_channels;
-  *txd = (1 << adapter->params.log_sq_size);
-  *rxd = (1 << adapter->params.log_rq_size);
+  if (ret) {
+    return ret;
+  }
 
-  D("TX: %d rings with %d slots;  RX: %d rings with %d slots", *txr, *txd, *rxr,
-    *rxd);
+  info->rx_buf_maxsize = NETMAP_BUF_SIZE(na);
 
   return 0;
 }
@@ -729,6 +722,7 @@ void mlx5e_netmap_attach(struct NM_MLX5E_ADAPTER *adapter) {
   /* each channel has 1 rx ring and a tx for each tc */
   na.num_tx_rings = adapter->params.num_channels * adapter->params.num_tc;
   na.num_rx_rings = adapter->params.num_channels;
+  na.rx_buf_maxsize = 1500; /* will be overwritten by nm_config */
   netmap_attach(&na);
 }
 
