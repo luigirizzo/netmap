@@ -269,6 +269,39 @@ tx_bytes_avail(struct netmap_ring *ring, unsigned max_frag_size)
 	return nm_ring_space(ring) * avail_per_slot;
 }
 
+static int
+tx_flush(struct Global *g)
+{
+	struct nm_desc *nmd = g->nmd;
+	unsigned elapsed_ms = 0;
+	unsigned wait_ms    = 100;
+	int i;
+
+	for (;;) {
+		int pending = 0;
+		for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
+			struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
+
+			pending += nm_tx_pending(ring);
+		}
+
+		if (!pending)
+			return 0;
+
+		if (elapsed_ms > g->timeout_secs * 1000) {
+			printf("%s: Timeout\n", __func__);
+			return -1;
+		}
+
+		if (elapsed_ms > 0) {
+			usleep(wait_ms * 1000);
+			elapsed_ms += wait_ms;
+		}
+
+		ioctl(nmd->fd, NIOCTXSYNC, NULL);
+	}
+}
+
 /* Transmit a single packet using any TX ring. */
 static int
 tx_one(struct Global *g)
@@ -714,6 +747,7 @@ main(int argc, char **argv)
 			}
 
 			for (j = 0; j < e->num; j++) {
+				printf("%d: ", j);
 				switch (e->evtype) {
 				case EVENT_TYPE_TX:
 					if (tx_one(g)) {
@@ -737,6 +771,9 @@ main(int argc, char **argv)
 			}
 		}
 	}
+
+	/* if we have sent something, wait for all tx to complete */
+	tx_flush(g);
 
 	nm_close(g->nmd);
 
