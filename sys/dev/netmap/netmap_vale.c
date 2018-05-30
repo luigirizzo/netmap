@@ -79,6 +79,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
 #include <machine/bus.h>	/* bus_dmamap_* */
 #include <sys/endian.h>
 #include <sys/refcount.h>
+#include <sys/smp.h>
 
 
 #define BDG_RWLOCK_T		struct rwlock // struct rwlock
@@ -2708,9 +2709,10 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 
 	/* pass down the pending ring state information */
 	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(na, t) + 1; i++)
+		for (i = 0; i < netmap_all_rings(na, t); i++) {
 			NMR(hwna, nm_txrx_swap(t))[i]->nr_pending_mode =
 				NMR(na, t)[i]->nr_pending_mode;
+		}
 	}
 
 	/* forward the request to the hwna */
@@ -2720,7 +2722,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 
 	/* copy up the current ring state information */
 	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+		for (i = 0; i < netmap_all_rings(na, t); i++) {
 			struct netmap_kring *kring = NMR(hwna, nm_txrx_swap(t))[i];
 			NMR(na, t)[i]->nr_mode = kring->nr_mode;
 		}
@@ -2740,10 +2742,15 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 		}
 		i = hwna->num_rx_rings; /* for safety */
 		/* save the host ring notify unconditionally */
-		hwna->rx_rings[i]->save_notify = hwna->rx_rings[i]->nm_notify;
-		if (hostna->na_bdg) {
-			/* also intercept the host ring notify */
-			hwna->rx_rings[i]->nm_notify = netmap_bwrap_intr_notify;
+		for (; i < netmap_real_rings(hwna, NR_RX); i++) {
+			hwna->rx_rings[i]->save_notify =
+				hwna->rx_rings[i]->nm_notify;
+			if (hostna->na_bdg) {
+				/* also intercept the host ring notify */
+				hwna->rx_rings[i]->nm_notify =
+					netmap_bwrap_intr_notify;
+				na->tx_rings[i]->nm_sync = na->nm_txsync;
+			}
 		}
 		if (na->active_fds == 0)
 			na->na_flags |= NAF_NETMAP_ON;
@@ -2754,8 +2761,9 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 			na->na_flags &= ~NAF_NETMAP_ON;
 
 		/* reset all notify callbacks (including host ring) */
-		for (i = 0; i <= hwna->num_rx_rings; i++) {
-			hwna->rx_rings[i]->nm_notify = hwna->rx_rings[i]->save_notify;
+		for (i = 0; i < netmap_all_rings(hwna, NR_RX); i++) {
+			hwna->rx_rings[i]->nm_notify =
+				hwna->rx_rings[i]->save_notify;
 			hwna->rx_rings[i]->save_notify = NULL;
 		}
 		hwna->na_lut.lut = NULL;
@@ -2765,7 +2773,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 
 		/* pass ownership of the netmap rings to the hwna */
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < netmap_all_rings(na, t); i++) {
 				NMR(na, t)[i]->ring = NULL;
 			}
 		}
@@ -2813,8 +2821,6 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	int i, error = 0;
 	enum txrx t;
 
-	ND("%s", na->name);
-
 	/* impersonate a netmap_vp_adapter */
 	error = netmap_vp_krings_create(na);
 	if (error)
@@ -2827,8 +2833,8 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	}
 
 	/* increment the usage counter for all the hwna krings */
-	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(hwna, t) + 1; i++) {
+        for_rx_tx(t) {
+                for (i = 0; i < netmap_all_rings(hwna, t); i++) {
 			NMR(hwna, t)[i]->users++;
 		}
 	}
@@ -2845,7 +2851,7 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	 */
 	for_rx_tx(t) {
 		enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
-		for (i = 0; i < nma_get_nrings(hwna, r) + 1; i++) {
+		for (i = 0; i < netmap_all_rings(hwna, r); i++) {
 			NMR(na, t)[i]->nkr_num_slots = NMR(hwna, r)[i]->nkr_num_slots;
 			NMR(na, t)[i]->ring = NMR(hwna, r)[i]->ring;
 		}
@@ -2857,9 +2863,12 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 		 * hostna
 		 */
 		hostna->tx_rings = &na->tx_rings[na->num_tx_rings];
-		hostna->tx_rings[0]->na = hostna;
 		hostna->rx_rings = &na->rx_rings[na->num_rx_rings];
-		hostna->rx_rings[0]->na = hostna;
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(hostna, t); i++) {
+				NMR(hostna, t)[i]->na = hostna;
+			}
+		}
 	}
 
 	return 0;
@@ -2889,7 +2898,7 @@ netmap_bwrap_krings_delete(struct netmap_adapter *na)
 
 	/* decrement the usage counter for all the hwna krings */
 	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(hwna, t) + 1; i++) {
+		for (i = 0; i < netmap_all_rings(hwna, t); i++) {
 			NMR(hwna, t)[i]->users--;
 		}
 	}
@@ -3081,6 +3090,7 @@ netmap_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		for_rx_tx(t) {
 			enum txrx r = nm_txrx_swap(t);
 			nma_set_nrings(hostna, t, 1);
+			nma_set_host_nrings(na, t, 1);
 			nma_set_ndesc(hostna, t, nma_get_ndesc(hwna, r));
 		}
 		// hostna->nm_txsync = netmap_bwrap_host_txsync;

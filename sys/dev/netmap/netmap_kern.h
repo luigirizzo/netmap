@@ -695,6 +695,8 @@ struct netmap_adapter {
 
 	u_int num_rx_rings; /* number of adapter receive rings */
 	u_int num_tx_rings; /* number of adapter transmit rings */
+	u_int num_host_rx_rings; /* number of host receive rings */
+	u_int num_host_tx_rings; /* number of host transmit rings */
 
 	u_int num_tx_desc;  /* number of descriptor in each queue */
 	u_int num_rx_desc;
@@ -865,6 +867,12 @@ nma_get_nrings(struct netmap_adapter *na, enum txrx t)
 	return (t == NR_TX ? na->num_tx_rings : na->num_rx_rings);
 }
 
+static __inline u_int
+nma_get_host_nrings(struct netmap_adapter *na, enum txrx t)
+{
+	return (t == NR_TX ? na->num_host_tx_rings : na->num_host_rx_rings);
+}
+
 static __inline void
 nma_set_nrings(struct netmap_adapter *na, enum txrx t, u_int v)
 {
@@ -872,6 +880,15 @@ nma_set_nrings(struct netmap_adapter *na, enum txrx t, u_int v)
 		na->num_tx_rings = v;
 	else
 		na->num_rx_rings = v;
+}
+
+static __inline void
+nma_set_host_nrings(struct netmap_adapter *na, enum txrx t, u_int v)
+{
+	if (t == NR_TX)
+		na->num_host_tx_rings = v;
+	else
+		na->num_host_rx_rings = v;
 }
 
 static __inline struct netmap_kring**
@@ -963,10 +980,18 @@ struct netmap_generic_adapter {	/* emulated device */
 };
 #endif  /* WITH_GENERIC */
 
-static __inline int
+static __inline u_int
 netmap_real_rings(struct netmap_adapter *na, enum txrx t)
 {
-	return nma_get_nrings(na, t) + !!(na->na_flags & NAF_HOST_RINGS);
+	return nma_get_nrings(na, t) +
+		!!(na->na_flags & NAF_HOST_RINGS) * nma_get_host_nrings(na, t);
+}
+
+/* account for fake rings */
+static __inline u_int
+netmap_all_rings(struct netmap_adapter *na, enum txrx t)
+{
+	return max(nma_get_nrings(na, t) + 1, netmap_real_rings(na, t));
 }
 
 #ifdef WITH_VALE
