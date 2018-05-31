@@ -1048,7 +1048,7 @@ nm_inject(struct nm_desc *d, const void *buf, size_t size)
 			ring->slot[i].flags = NS_MOREFRAG;
 			nm_pkt_copy(buf, NETMAP_BUF(ring, idx), ring->nr_buf_size);
 			i = nm_ring_next(ring, i);
-			buf += ring->nr_buf_size;
+			*((char **)buf) += ring->nr_buf_size;
 		}
 		idx = ring->slot[i].buf_idx;
 		ring->slot[i].len = rem;
