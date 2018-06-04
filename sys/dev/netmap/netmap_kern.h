@@ -1669,6 +1669,8 @@ extern int ptnetmap_tx_workers;
 			((uint32_t)(uintptr_t)NA(ifp)) ^ NETMAP_MAGIC;	\
 } while(0)
 
+#define NM_DETACH_NA(ifp)	do { WNA(ifp) = NULL; } while (0)
+
 #define NM_IS_NATIVE(ifp)	(NM_NA_VALID(ifp) && NA(ifp)->nm_dtor == netmap_hw_dtor)
 
 #if defined(__FreeBSD__)

@@ -3409,7 +3409,7 @@ netmap_hw_dtor(struct netmap_adapter *na)
 	if (nm_iszombie(na) || na->ifp == NULL)
 		return;
 
-	WNA(na->ifp) = NULL;
+	NM_DETACH_NA(na->ifp);
 }
 
 

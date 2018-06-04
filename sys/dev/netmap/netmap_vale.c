@@ -663,7 +663,7 @@ netmap_vp_dtor(struct netmap_adapter *na)
 	}
 
 	if (na->ifp != NULL && !nm_iszombie(na)) {
-		WNA(na->ifp) = NULL;
+		NM_DETACH_NA(na->ifp);
 		if (vpna->autodelete) {
 			ND("releasing %s", na->ifp->if_xname);
 			NMG_UNLOCK();
