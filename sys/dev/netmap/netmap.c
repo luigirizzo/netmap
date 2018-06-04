@@ -3406,7 +3406,7 @@ out:
 static void
 netmap_hw_dtor(struct netmap_adapter *na)
 {
-	if (nm_iszombie(na) || na->ifp == NULL)
+	if (na->ifp == NULL)
 		return;
 
 	NM_DETACH_NA(na->ifp);
