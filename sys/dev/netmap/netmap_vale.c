@@ -2833,8 +2833,8 @@ netmap_bwrap_krings_create(struct netmap_adapter *na)
 	}
 
 	/* increment the usage counter for all the hwna krings */
-        for_rx_tx(t) {
-                for (i = 0; i < netmap_all_rings(hwna, t); i++) {
+	for_rx_tx(t) {
+		for (i = 0; i < netmap_all_rings(hwna, t); i++) {
 			NMR(hwna, t)[i]->users++;
 		}
 	}
