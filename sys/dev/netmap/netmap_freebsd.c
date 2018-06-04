@@ -1544,6 +1544,28 @@ out:
 	return error;
 }
 
+void
+nm_os_onattach(struct ifnet *ifp)
+{
+}
+
+void
+nm_os_onenter(struct ifnet *ifp)
+{
+	struct netmap_adapter *na = NA(ifp);
+
+	na->if_transmit = ifp->if_transmit;
+	ifp->if_transmit = netmap_transmit;
+	ifp->if_capenable |= IFCAP_NETMAP;
+}
+
+void
+nm_os_onexit(struct ifnet *ifp)
+{
+	ifp->if_transmit = na->if_transmit;
+	ifp->if_capenable &= ~IFCAP_NETMAP;
+}
+
 extern struct cdevsw netmap_cdevsw; /* XXX used in netmap.c, should go elsewhere */
 struct cdevsw netmap_cdevsw = {
 	.d_version = D_VERSION,

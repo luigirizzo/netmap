@@ -1139,7 +1139,7 @@ out:
 EXPORT_SYMBOL(netmap_rings_config_get);
 
 /* Default nm_config implementation for netmap_hw_adapter on Linux. */
-int
+static int
 netmap_linux_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	int ret = netmap_rings_config_get(na, info);
@@ -2558,6 +2558,56 @@ nm_os_selrecord(NM_SELRECORD_T *sr, NM_SELINFO_T *si)
 	poll_wait(sr->file, si, sr->pwait);
 }
 
+void
+nm_os_onattach(struct ifnet *ifp)
+{
+	struct netmap_adapter *na = NA(ifp);
+	struct netmap_hw_adapter *hwna = (struct netmap_hw_adapter *)na;
+
+#ifdef NETMAP_LINUX_HAVE_NETDEV_OPS
+	if (ifp->netdev_ops) {
+		/* prepare a clone of the netdev ops */
+		hwna->nm_ndo = *ifp->netdev_ops;
+	}
+#endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
+	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;
+	hwna->nm_ndo.NETMAP_LINUX_CHANGE_MTU = linux_netmap_change_mtu;
+	if (ifp->ethtool_ops) {
+		hwna->nm_eto = *ifp->ethtool_ops;
+	}
+	hwna->nm_eto.set_ringparam = linux_netmap_set_ringparam;
+#ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
+	hwna->nm_eto.set_channels = linux_netmap_set_channels;
+#endif /* NETMAP_LINUX_HAVE_SET_CHANNELS */
+	if (na->nm_config == NULL) {
+		hwna->up.nm_config = netmap_linux_config;
+	}
+}
+
+void
+nm_os_onenter(struct ifnet *ifp)
+{
+	struct netmap_adapter *na = NA(ifp);
+	struct netmap_hw_adapter *hwna = (struct netmap_hw_adapter *)na;
+
+	na->if_transmit = (void *)ifp->netdev_ops;
+	ifp->netdev_ops = &hwna->nm_ndo;
+	hwna->save_ethtool = ifp->ethtool_ops;
+	ifp->ethtool_ops = &hwna->nm_eto;
+
+}
+
+void
+nm_os_onexit(struct ifnet *ifp)
+{
+	struct netmap_adapter *na = NA(ifp);
+	struct netmap_hw_adapter *hwna = (struct netmap_hw_adapter *)na;
+
+	ifp->netdev_ops = (void *)na->if_transmit;
+	ifp->ethtool_ops = hwna->save_ethtool;
+}
+
+
 module_init(linux_netmap_init);
 module_exit(linux_netmap_fini);
 
@@ -2606,6 +2656,8 @@ EXPORT_SYMBOL(netmap_pipe_txsync);	/* used by veth module */
 EXPORT_SYMBOL(netmap_pipe_rxsync);	/* used by veth module */
 #endif /* WITH_PIPES */
 EXPORT_SYMBOL(netmap_verbose);
+EXPORT_SYMBOL(nm_set_native_flags);
+EXPORT_SYMBOL(nm_clear_native_flags);
 
 MODULE_AUTHOR("http://info.iet.unipi.it/~luigi/netmap/");
 MODULE_DESCRIPTION("The netmap packet I/O framework");

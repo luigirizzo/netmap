@@ -3464,26 +3464,8 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 
 	NM_ATTACH_NA(ifp, &hwna->up);
 
-#ifdef linux
-#ifdef NETMAP_LINUX_HAVE_NETDEV_OPS
-	if (ifp->netdev_ops) {
-		/* prepare a clone of the netdev ops */
-		hwna->nm_ndo = *ifp->netdev_ops;
-	}
-#endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
-	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;
-	hwna->nm_ndo.NETMAP_LINUX_CHANGE_MTU = linux_netmap_change_mtu;
-	if (ifp->ethtool_ops) {
-		hwna->nm_eto = *ifp->ethtool_ops;
-	}
-	hwna->nm_eto.set_ringparam = linux_netmap_set_ringparam;
-#ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
-	hwna->nm_eto.set_channels = linux_netmap_set_channels;
-#endif /* NETMAP_LINUX_HAVE_SET_CHANNELS */
-	if (arg->nm_config == NULL) {
-		hwna->up.nm_config = netmap_linux_config;
-	}
-#endif /* linux */
+	nm_os_onattach(ifp);
+
 	if (arg->nm_dtor == NULL) {
 		hwna->up.nm_dtor = netmap_hw_dtor;
 	}
@@ -3862,6 +3844,40 @@ netmap_rx_irq(struct ifnet *ifp, u_int q, u_int *work_done)
 	}
 
 	return netmap_common_irq(na, q, work_done);
+}
+
+/* set/clear native flags and if_transmit/netdev_ops */
+void
+nm_set_native_flags(struct netmap_adapter *na)
+{
+	struct ifnet *ifp = na->ifp;
+
+	/* We do the setup for intercepting packets only if we are the
+	 * first user of this adapapter. */
+	if (na->active_fds > 0) {
+		return;
+	}
+
+	na->na_flags |= NAF_NETMAP_ON;
+	nm_os_onenter(ifp);
+	nm_update_hostrings_mode(na);
+}
+
+void
+nm_clear_native_flags(struct netmap_adapter *na)
+{
+	struct ifnet *ifp = na->ifp;
+
+	/* We undo the setup for intercepting packets only if we are the
+	 * last user of this adapapter. */
+	if (na->active_fds > 0) {
+		return;
+	}
+
+	nm_update_hostrings_mode(na);
+	nm_os_onexit(ifp);
+
+	na->na_flags &= ~NAF_NETMAP_ON;
 }
 
 

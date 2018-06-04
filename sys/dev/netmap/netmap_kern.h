@@ -303,6 +303,12 @@ void *nm_os_realloc(void *, size_t new_size, size_t old_size);
 void nm_os_free(void *);
 void nm_os_vfree(void *);
 
+/* os specific attach/detach enter/exit-netmap-mode routines */
+void nm_os_onattach(struct ifnet *);
+void nm_os_ondetach(struct ifnet *);
+void nm_os_onenter(struct ifnet *);
+void nm_os_onexit(struct ifnet *);
+
 /* passes a packet up to the host stack.
  * If the packet is sent (or dropped) immediately it returns NULL,
  * otherwise it links the packet to prev and returns m.
@@ -1317,67 +1323,8 @@ nm_update_hostrings_mode(struct netmap_adapter *na)
 		na->rx_rings[na->num_rx_rings]->nr_pending_mode;
 }
 
-/* set/clear native flags and if_transmit/netdev_ops */
-static inline void
-nm_set_native_flags(struct netmap_adapter *na)
-{
-	struct ifnet *ifp = na->ifp;
-
-	/* We do the setup for intercepting packets only if we are the
-	 * first user of this adapapter. */
-	if (na->active_fds > 0) {
-		return;
-	}
-
-	na->na_flags |= NAF_NETMAP_ON;
-#ifdef IFCAP_NETMAP /* or FreeBSD ? */
-	ifp->if_capenable |= IFCAP_NETMAP;
-#endif
-#if defined (__FreeBSD__)
-	na->if_transmit = ifp->if_transmit;
-	ifp->if_transmit = netmap_transmit;
-#elif defined (_WIN32)
-	(void)ifp; /* prevent a warning */
-#elif defined (linux)
-	na->if_transmit = (void *)ifp->netdev_ops;
-	ifp->netdev_ops = &((struct netmap_hw_adapter *)na)->nm_ndo;
-	((struct netmap_hw_adapter *)na)->save_ethtool = ifp->ethtool_ops;
-	ifp->ethtool_ops = &((struct netmap_hw_adapter*)na)->nm_eto;
-#endif /* linux */
-	nm_update_hostrings_mode(na);
-}
-
-static inline void
-nm_clear_native_flags(struct netmap_adapter *na)
-{
-	struct ifnet *ifp = na->ifp;
-
-	/* We undo the setup for intercepting packets only if we are the
-	 * last user of this adapapter. */
-	if (na->active_fds > 0) {
-		return;
-	}
-
-	nm_update_hostrings_mode(na);
-
-#if defined(__FreeBSD__)
-	ifp->if_transmit = na->if_transmit;
-#elif defined(_WIN32)
-	(void)ifp; /* prevent a warning */
-#else
-	ifp->netdev_ops = (void *)na->if_transmit;
-	ifp->ethtool_ops = ((struct netmap_hw_adapter*)na)->save_ethtool;
-#endif
-	na->na_flags &= ~NAF_NETMAP_ON;
-#ifdef IFCAP_NETMAP /* or FreeBSD ? */
-	ifp->if_capenable &= ~IFCAP_NETMAP;
-#endif
-}
-
-#ifdef linux
-int netmap_linux_config(struct netmap_adapter *na,
-			struct nm_config_info *info);
-#endif /* linux */
+void nm_set_native_flags(struct netmap_adapter *);
+void nm_clear_native_flags(struct netmap_adapter *);
 
 /*
  * nm_*sync_prologue() functions are used in ioctl/poll and ptnetmap
