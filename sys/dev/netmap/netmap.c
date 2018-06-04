@@ -3433,7 +3433,7 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 	}
 
 	if (arg == NULL || arg->ifp == NULL)
-		goto fail;
+		return EINVAL;
 
 	ifp = arg->ifp;
 	if (NA(ifp) && !NM_NA_VALID(ifp)) {
