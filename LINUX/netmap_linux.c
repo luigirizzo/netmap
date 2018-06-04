@@ -1315,12 +1315,24 @@ linux_netmap_change_mtu(struct net_device *dev, int new_mtu)
 
 /* while in netmap mode, we cannot tolerate any change in the
  * number of rx/tx rings and descriptors
+ *
+ * Linux calls this while holding the rtnl_lock().
  */
 int
 linux_netmap_set_ringparam(struct net_device *dev,
 	struct ethtool_ringparam *e)
 {
+#ifdef NETMAP_LINUX_HAVE_AX25_PTR
 	return -EBUSY;
+#else /* !NETMAP_LINUX_HAVE_AX25_PTR */
+	struct netmap_adapter *na = NA(dev);
+
+	if (nm_netmap_on(na))
+		return -EBUSY;
+	if (na->magic.save_eto->set_ringparam)
+		return na->magic.save_eto->set_ringparam(dev, e);
+	return -EOPNOTSUPP;
+#endif /* NETMAP_LINUX_HAVE_AX25_PTR */
 }
 
 #ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
@@ -1328,7 +1340,17 @@ int
 linux_netmap_set_channels(struct net_device *dev,
 	struct ethtool_channels *e)
 {
+#ifdef NETMAP_LINUX_HAVE_AX25_PTR
 	return -EBUSY;
+#else /* !NETMAP_LINUX_HAVE_AX25_PTR */
+	struct netmap_adapter *na = NA(dev);
+
+	if (nm_netmap_on(na))
+		return -EBUSY;
+	if (na->magic.save_eto->set_channels)
+		return na->magic.save_eto->set_channels(dev, e);
+	return -EOPNOTSUPP;
+#endif /* NETMAP_LINUX_HAVE_AX25_PTR */
 }
 #endif
 
@@ -2572,6 +2594,7 @@ nm_os_onattach(struct ifnet *ifp)
 #endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
 	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;
 	hwna->nm_ndo.NETMAP_LINUX_CHANGE_MTU = linux_netmap_change_mtu;
+#ifdef NETMAP_LINUX_HAVE_AX25PTR
 	if (ifp->ethtool_ops) {
 		hwna->nm_eto = *ifp->ethtool_ops;
 	}
@@ -2579,6 +2602,11 @@ nm_os_onattach(struct ifnet *ifp)
 #ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
 	hwna->nm_eto.set_channels = linux_netmap_set_channels;
 #endif /* NETMAP_LINUX_HAVE_SET_CHANNELS */
+#else /* !NETMAP_LINUX_HAVE_AX25PTR */
+#ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
+	na->magic.eto.set_channels = linux_netmap_set_channels;
+#endif /* NETMAP_LINUX_HAVE_SET_CHANNELS */
+#endif /* NETMAP_LINUX_HAVE_AX25PTR */
 	if (na->nm_config == NULL) {
 		hwna->up.nm_config = netmap_linux_config;
 	}
@@ -2592,9 +2620,12 @@ nm_os_onenter(struct ifnet *ifp)
 
 	na->if_transmit = (void *)ifp->netdev_ops;
 	ifp->netdev_ops = &hwna->nm_ndo;
+#ifdef NETMAP_LINUX_HAVE_AX25PTR
 	hwna->save_ethtool = ifp->ethtool_ops;
 	ifp->ethtool_ops = &hwna->nm_eto;
-
+#else /* NETMAP_LINUX_HAVE_AX25PTR */
+	(void)hwna;
+#endif /* NETMAP_LINUX_HAVE_AX25PTR */
 }
 
 void
@@ -2604,9 +2635,12 @@ nm_os_onexit(struct ifnet *ifp)
 	struct netmap_hw_adapter *hwna = (struct netmap_hw_adapter *)na;
 
 	ifp->netdev_ops = (void *)na->if_transmit;
+#ifdef NETMAP_LINUX_HAVE_AX25PTR
 	ifp->ethtool_ops = hwna->save_ethtool;
+#else /* NETMAP_LINUX_HAVE_AX25PTR */
+	(void)hwna;
+#endif /* NETMAP_LINUX_HAVE_AX25PTR */
 }
-
 
 module_init(linux_netmap_init);
 module_exit(linux_netmap_fini);

@@ -650,6 +650,14 @@ struct nm_config_info {
 };
 
 /*
+ * default type for the magic field.
+ * May be overriden in glue code.
+ */
+#ifndef NM_OS_MAGIC
+#define NM_OS_MAGIC uint32_t
+#endif /* !NM_OS_MAGIC */
+
+/*
  * The "struct netmap_adapter" extends the "struct adapter"
  * (or equivalent) device descriptor.
  * It contains all base fields needed to support netmap operation.
@@ -665,7 +673,7 @@ struct netmap_adapter {
 	 * always exists and is at least 32 bits) contains a magic
 	 * value which we can use to detect that the interface is good.
 	 */
-	uint32_t magic;
+	NM_OS_MAGIC magic;
 	uint32_t na_flags;	/* enabled, and other flags */
 #define NAF_SKIP_INTR	1	/* use the regular interrupt handler.
 				 * useful during initialization
@@ -1592,11 +1600,17 @@ extern int netmap_generic_txqdisc;
 extern int ptnetmap_tx_workers;
 
 /*
- * NA returns a pointer to the struct netmap adapter from the ifp,
- * WNA is used to write it.
+ * NA returns a pointer to the struct netmap adapter from the ifp.
+ * WNA is os-specific and must be defined in glue code.
  */
 #define	NA(_ifp)	((struct netmap_adapter *)WNA(_ifp))
 
+/*
+ * we provide a default implementation of NM_ATTACH_NA/NM_DETACH_NA
+ * based on the WNA field.
+ * Glue code may override this by defining its own NM_ATTACH_NA
+ */
+#ifndef NM_ATTACH_NA
 /*
  * On old versions of FreeBSD, NA(ifp) is a pspare. On linux we
  * overload another pointer in the netdev.
@@ -1617,6 +1631,9 @@ extern int ptnetmap_tx_workers;
 } while(0)
 
 #define NM_DETACH_NA(ifp)	do { WNA(ifp) = NULL; } while (0)
+#define NM_NA_CLASH(ifp)	(NA(ifp) && !NM_NA_VALID(ifp))
+#endif /* !NM_ATTACH_NA */
+
 
 #define NM_IS_NATIVE(ifp)	(NM_NA_VALID(ifp) && NA(ifp)->nm_dtor == netmap_hw_dtor)
 

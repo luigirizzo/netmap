@@ -1015,6 +1015,16 @@ EOF
 	  add_file_exists_check patch-$d true "drv_patch_error $d"
   done
 
+  # ax25_ptr
+  add_test 'have AX25PTR' <<EOF
+	#include <linux/netdevice.h>
+
+	void * dummy(struct net_device *dev)
+	{
+		return dev->ax25_ptr;
+	}
+EOF
+
   # iommu support
   add_test 'have IOMMU' <<EOF
 	#include <linux/iommu.h>

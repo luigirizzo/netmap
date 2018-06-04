@@ -277,6 +277,8 @@ struct thread;
 #define copyin(_from, _to, _len)	(copy_from_user(_to, _from, _len) ? EFAULT : 0)
 #define copyout(_from, _to, _len)	(copy_to_user(_to, _from, _len) ? EFAULT : 0)
 
+/* na attach/detach routines */
+#ifdef NETMAP_LINUX_HAVE_AX25_PTR
 /*
  * struct ifnet is remapped into struct net_device on linux.
  * ifnet has an if_softc field pointing to the device-specific struct
@@ -293,6 +295,40 @@ struct thread;
  * for netmap-capable is some magic in the area pointed by that.
  */
 #define WNA(_ifp)		(_ifp)->ax25_ptr
+/* use the default NM_ATTACH_NA/NM_DETACH_NA defined in netmap_kernel.h */
+#else /* !NETMAP_LINUX_HAVE_AX25_PTR */
+/*
+ * We hide behind the ethtool_ops
+ */
+int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *);
+struct netmap_linux_magic {
+	struct ethtool_ops eto;
+	const struct ethtool_ops *save_eto;
+};
+#define NM_OS_MAGIC	struct netmap_linux_magic
+#define WNA(ifp)	(ifp->ethtool_ops)
+#define NM_DETACH_NA(ifp)  do {						\
+	(ifp)->ethtool_ops = NA(ifp)->magic.save_eto;			\
+} while (0)
+#define NM_ATTACH_NA(ifp, na) do {					\
+	if ((na)->magic.save_eto == &(na)->magic.eto) {			\
+		NM_DETACH_NA(ifp);					\
+		break;							\
+	}								\
+	if ((ifp)->ethtool_ops) {					\
+		(na)->magic.eto = *(ifp)->ethtool_ops;			\
+		(na)->magic.save_eto = (ifp)->ethtool_ops;		\
+	} else {							\
+		memset(&(na)->magic, 0, sizeof((na)->magic));		\
+	}								\
+	(na)->magic.eto.set_ringparam = linux_netmap_set_ringparam;	\
+	(ifp)->ethtool_ops = &(na)->magic.eto;				\
+} while (0)
+#define NM_NA_VALID(ifp)						\
+	(NA(ifp) && NA(ifp)->magic.eto.set_ringparam == 		\
+		linux_netmap_set_ringparam)
+#define NM_NA_CLASH(ifp)	(0)	// XXX
+#endif /* NETAP_LINUX_HAVE_AX25_PTR */
 
 #define ifnet           	net_device      /* remap */
 #define	if_xname		name		/* field ifnet-> net_device */

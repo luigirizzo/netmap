@@ -3436,7 +3436,7 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 		return EINVAL;
 
 	ifp = arg->ifp;
-	if (NA(ifp) && !NM_NA_VALID(ifp)) {
+	if (NM_NA_CLASH(ifp)) {
 		/* If NA(ifp) is not null but there is no valid netmap
 		 * adapter it means that someone else is using the same
 		 * pointer (e.g. ax25_ptr on linux). This happens for
