@@ -2457,7 +2457,7 @@ main(int argc, char **argv)
         bp[0].prod_core = cores[1];
         bp[1].cons_core = cores[2];
         bp[1].prod_core = cores[3];
-        ED("running on cores %d %d %d %d", cores[0], cores[1], cores[2], cores[3]);
+        ED("running on cores %d->%d %d->%d", cores[1], cores[0], cores[3], cores[2]);
 
     }
 
