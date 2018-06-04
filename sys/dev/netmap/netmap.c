@@ -3465,14 +3465,12 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 	NM_ATTACH_NA(ifp, &hwna->up);
 
 #ifdef linux
+#ifdef NETMAP_LINUX_HAVE_NETDEV_OPS
 	if (ifp->netdev_ops) {
 		/* prepare a clone of the netdev ops */
-#ifndef NETMAP_LINUX_HAVE_NETDEV_OPS
-		hwna->nm_ndo.ndo_start_xmit = ifp->netdev_ops;
-#else
 		hwna->nm_ndo = *ifp->netdev_ops;
-#endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
 	}
+#endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
 	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;
 	hwna->nm_ndo.NETMAP_LINUX_CHANGE_MTU = linux_netmap_change_mtu;
 	if (ifp->ethtool_ops) {
