@@ -1616,7 +1616,7 @@ exp_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     q->max_delay = d_av * 4 + d_min; /* exp(-4) */
     /* tabulate -ln(1-n)*delay  for n in 0..1 */
     for (i = 0; i < PTS_D_EXP; i++) {
-        double d = -log2 ((double)(PTS_D_EXP - i) / PTS_D_EXP) * d_av + d_min;
+        double d = -log ((double)(PTS_D_EXP - i) / PTS_D_EXP) * d_av + d_min;
         t[i] = (uint64_t)d;
         ND(5, "%ld: %le", i, d);
     }
