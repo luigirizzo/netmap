@@ -1562,6 +1562,8 @@ nm_os_onenter(struct ifnet *ifp)
 void
 nm_os_onexit(struct ifnet *ifp)
 {
+	struct netmap_adapter *na = NA(ifp);
+
 	ifp->if_transmit = na->if_transmit;
 	ifp->if_capenable &= ~IFCAP_NETMAP;
 }
