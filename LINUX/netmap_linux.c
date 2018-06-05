@@ -1322,9 +1322,9 @@ int
 linux_netmap_set_ringparam(struct net_device *dev,
 	struct ethtool_ringparam *e)
 {
-#ifdef NETMAP_LINUX_HAVE_AX25_PTR
+#ifdef NETMAP_LINUX_HAVE_AX25PTR
 	return -EBUSY;
-#else /* !NETMAP_LINUX_HAVE_AX25_PTR */
+#else /* !NETMAP_LINUX_HAVE_AX25PTR */
 	struct netmap_adapter *na = NA(dev);
 
 	if (nm_netmap_on(na))
@@ -1332,7 +1332,7 @@ linux_netmap_set_ringparam(struct net_device *dev,
 	if (na->magic.save_eto->set_ringparam)
 		return na->magic.save_eto->set_ringparam(dev, e);
 	return -EOPNOTSUPP;
-#endif /* NETMAP_LINUX_HAVE_AX25_PTR */
+#endif /* NETMAP_LINUX_HAVE_AX25PTR */
 }
 
 #ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
@@ -1340,9 +1340,9 @@ int
 linux_netmap_set_channels(struct net_device *dev,
 	struct ethtool_channels *e)
 {
-#ifdef NETMAP_LINUX_HAVE_AX25_PTR
+#ifdef NETMAP_LINUX_HAVE_AX25PTR
 	return -EBUSY;
-#else /* !NETMAP_LINUX_HAVE_AX25_PTR */
+#else /* !NETMAP_LINUX_HAVE_AX25PTR */
 	struct netmap_adapter *na = NA(dev);
 
 	if (nm_netmap_on(na))
@@ -1350,7 +1350,7 @@ linux_netmap_set_channels(struct net_device *dev,
 	if (na->magic.save_eto->set_channels)
 		return na->magic.save_eto->set_channels(dev, e);
 	return -EOPNOTSUPP;
-#endif /* NETMAP_LINUX_HAVE_AX25_PTR */
+#endif /* NETMAP_LINUX_HAVE_AX25PTR */
 }
 #endif
 
@@ -2692,6 +2692,9 @@ EXPORT_SYMBOL(netmap_pipe_rxsync);	/* used by veth module */
 EXPORT_SYMBOL(netmap_verbose);
 EXPORT_SYMBOL(nm_set_native_flags);
 EXPORT_SYMBOL(nm_clear_native_flags);
+#ifndef NETMAP_LINUX_HAVE_AX25PTR
+EXPORT_SYMBOL(netmap_linux_set_ringparam);
+#endif /* NETMAP_LINUX_HAVE_AX25PTR */
 
 MODULE_AUTHOR("http://info.iet.unipi.it/~luigi/netmap/");
 MODULE_DESCRIPTION("The netmap packet I/O framework");

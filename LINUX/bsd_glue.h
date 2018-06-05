@@ -278,7 +278,7 @@ struct thread;
 #define copyout(_from, _to, _len)	(copy_to_user(_to, _from, _len) ? EFAULT : 0)
 
 /* na attach/detach routines */
-#ifdef NETMAP_LINUX_HAVE_AX25_PTR
+#ifdef NETMAP_LINUX_HAVE_AX25PTR
 /*
  * struct ifnet is remapped into struct net_device on linux.
  * ifnet has an if_softc field pointing to the device-specific struct
@@ -296,7 +296,7 @@ struct thread;
  */
 #define WNA(_ifp)		(_ifp)->ax25_ptr
 /* use the default NM_ATTACH_NA/NM_DETACH_NA defined in netmap_kernel.h */
-#else /* !NETMAP_LINUX_HAVE_AX25_PTR */
+#else /* !NETMAP_LINUX_HAVE_AX25PTR */
 /*
  * We hide behind the ethtool_ops
  */
@@ -328,7 +328,7 @@ struct netmap_linux_magic {
 	(NA(ifp) && NA(ifp)->magic.eto.set_ringparam == 		\
 		linux_netmap_set_ringparam)
 #define NM_NA_CLASH(ifp)	(0)	// XXX
-#endif /* NETAP_LINUX_HAVE_AX25_PTR */
+#endif /* NETAP_LINUX_HAVE_AX25PTR */
 
 #define ifnet           	net_device      /* remap */
 #define	if_xname		name		/* field ifnet-> net_device */
