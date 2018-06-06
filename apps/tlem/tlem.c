@@ -271,6 +271,7 @@ struct _eci {
         struct _ec      ec_bw;
         struct _ec      ec_loss;
         struct _ec      ec_reorder;
+	int		ec_allow_drop;
 #define EC_DATASZ       (1U << 16)
         char            ec_data[EC_DATASZ];
 };
@@ -462,6 +463,21 @@ struct _qs { /* shared queue */
 		 * applied to the packet.
 		 * The code makes sure that there is no reordering and possibly
 		 * bumps the output time as needed.
+		 */
+	int		allow_drop;	/* improve delay accuracy by dropping packets */
+		/*
+		 * by default, TLEM adjusts the cur_delay of each packet to
+		 * avoid reordering, thus sacrificing the delay emulation
+		 * accuracy.  In 'allow_drop' mode we try to improve the
+		 * accuracy by dropping the packets that should be reordered,
+		 * instead of queueing them.
+		 */
+	int		reuse_delay;	/* reuse the last computed delay */
+		/*
+		 * In 'allow_drop' mode we reuse the last computed delay until
+		 * we find a packet that can be sent in order. If we kept
+		 * recomputing the delay, instead, we would skew the
+		 * distribution towards larger values.
 		 */
 
 	/* producers's fields for reordering */
@@ -1458,11 +1474,23 @@ prod_procpkt(struct _qs *q)
         q->txstats->drop_bytes += q->cur_len;
         return;
     }
-    q->c_delay.run(q, &q->c_delay); /* compute delay */
+    if (!q->reuse_delay)
+        q->c_delay.run(q, &q->c_delay); /* compute delay */
     t_tx = q->qt_qout + q->cur_delay;
     ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
     /* insure no reordering and spacing by transmission time */
-    q->qt_tx = (t_tx >= q->qt_tx + tt) ? t_tx : q->qt_tx + tt;
+    if (t_tx < q->qt_tx + tt) {
+        if (q->allow_drop) {
+            q->qt_qout -= tt;
+            q->txstats->drop_packets++;
+            q->txstats->drop_bytes += q->cur_len;
+            q->reuse_delay = 1;
+            return;
+        }
+        t_tx = q->qt_tx + tt;
+    }
+    q->reuse_delay = 0;
+    q->qt_tx = t_tx;
     enq(q);
     q->txstats->packets++;
     q->txstats->bytes += q->cur_len;
@@ -2049,7 +2077,7 @@ main(int argc, char **argv)
 
     struct pipe_args bp[EC_NOPTS];
     const char *d[EC_NOPTS], *b[EC_NOPTS], *l[EC_NOPTS], *q[EC_NOPTS], *r[EC_NOPTS],
-    *ifname[EC_NOPTS], *gw[EC_NOPTS], *m[EC_NOPTS];
+    *ifname[EC_NOPTS], *gw[EC_NOPTS], *m[EC_NOPTS], *p[EC_NOPTS];
 #ifdef WITH_MAX_LAG
     const char *cd[EC_NOPTS];
 #endif /* WITH_MAX_LAG */
@@ -2072,6 +2100,7 @@ main(int argc, char **argv)
     bzero(cd, sizeof(cd));
 #endif /* WITH_MAX_LAG */
     bzero(m, sizeof(m));
+    bzero(p, sizeof(p));
     bzero(ifname, sizeof(ifname));
 
     fprintf(stderr, "%s built %s %s\n", argv[0], __DATE__, __TIME__);
@@ -2116,7 +2145,7 @@ main(int argc, char **argv)
     // r	route mode
     // d	max consumer delay
 
-    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:M:b:ci:vw:rd:Hs:l:qa")) != -1) {
+    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:M:P:b:ci:vw:rd:Hs:l:qap")) != -1) {
         switch (ch) {
             default:
                 D("bad option %c %s", ch, optarg);
@@ -2174,6 +2203,9 @@ main(int argc, char **argv)
                 break;
             case 'M': /* max bw, delay and hold-time */
                 add_to(m, EC_NOPTS, optarg, "-M too many times");
+                break;
+            case 'P': /* allow dropping to obtain precise delay */
+                add_to(p, EC_NOPTS, optarg, "-P too many times");
                 break;
             case 'b':	/* burst */
                 bp[0].q.burst = atoi(optarg);
@@ -2442,6 +2474,8 @@ main(int argc, char **argv)
 #endif /* WITH_MAX_LAG */
     if (r[1] == NULL)
         r[1] = r[0];
+    if (p[1] == NULL)
+        p[1] = p[0];
 
 skip_args:
     /* apply commands */
@@ -2468,6 +2502,17 @@ skip_args:
             }
         }
 #endif /* WITH_MAX_LAG */
+        if (p[i] != NULL) {
+            int j = bp[i].q.ec_active;
+            struct _eci *a = &bp[i].q.ec->instances[j];
+            if (!strcmp(p[i], "0") || !strcmp(p[i], "1")) {
+                a->ec_allow_drop = atoi(p[i]);
+                bp[i].q.allow_drop = a->ec_allow_drop;
+            } else {
+                ED("-P expects either 0 or 1");
+                err++;
+            }
+        }
         bp[i].q.txstats = &ecf->stats[j++];
         bp[i].q.rxstats = &ecf->stats[j++];
     }
@@ -3308,4 +3353,5 @@ ec_activate(struct _qs *q)
         q->c_reorder.run = null_run_fn;
     }
     q->c_reorder.ec = &a->ec_reorder;
+    q->allow_drop = a->ec_allow_drop;
 }
