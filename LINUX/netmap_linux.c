@@ -2693,7 +2693,7 @@ EXPORT_SYMBOL(netmap_verbose);
 EXPORT_SYMBOL(nm_set_native_flags);
 EXPORT_SYMBOL(nm_clear_native_flags);
 #ifndef NETMAP_LINUX_HAVE_AX25PTR
-EXPORT_SYMBOL(netmap_linux_set_ringparam);
+EXPORT_SYMBOL(linux_netmap_set_ringparam);
 #endif /* NETMAP_LINUX_HAVE_AX25PTR */
 
 MODULE_AUTHOR("http://info.iet.unipi.it/~luigi/netmap/");
