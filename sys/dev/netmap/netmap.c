@@ -3343,6 +3343,12 @@ netmap_attach_common(struct netmap_adapter *na)
 	}
 	na->pdev = na; /* make sure netmap_mem_map() is called */
 #endif /* __FreeBSD__ */
+	if (na->na_flags & NAF_HOST_RINGS) {
+		if (na->num_host_rx_rings == 0)
+			na->num_host_rx_rings = 1;
+		if (na->num_host_tx_rings == 0)
+			na->num_host_tx_rings = 1;
+	}
 	if (na->nm_krings_create == NULL) {
 		/* we assume that we have been called by a driver,
 		 * since other port types all provide their own
@@ -3450,7 +3456,6 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 		goto fail;
 	hwna->up = *arg;
 	hwna->up.na_flags |= NAF_HOST_RINGS | NAF_NATIVE;
-	hwna->up.num_host_tx_rings = hwna->up.num_host_rx_rings = 1;
 	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
 	if (override_reg) {
 		hwna->nm_hw_register = hwna->up.nm_register;
