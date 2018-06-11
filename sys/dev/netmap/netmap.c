@@ -3602,6 +3602,9 @@ netmap_transmit(struct ifnet *ifp, struct mbuf *m)
 	u_int i;
 
 	i = MBUF_TXQ(m);
+	if (i >= na->num_host_rx_rings) {
+		i = i % na->num_host_rx_rings;
+	}
 	kring = NMR(na, NR_RX)[nma_get_nrings(na, NR_RX) + i];
 
 	// XXX [Linux] we do not need this lock
