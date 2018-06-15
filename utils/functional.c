@@ -48,7 +48,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/wait.h>
-#include "file_des.h"
+#include "fd_server.h"
 
 #define ETH_ADDR_LEN 6
 
@@ -96,13 +96,13 @@ struct Global {
 	unsigned num_loops;
 };
 
-void release_if_file_des(const char *);
+void release_if_fd(const char *);
 
 void
 clean_exit(struct Global *g)
 {
 
-	release_if_file_des(g->ifname);
+	release_if_fd(g->ifname);
 	exit(EXIT_FAILURE);
 }
 
@@ -487,7 +487,6 @@ rx_one(struct Global *g)
 			return -1;
 		}
 
-		printf("sleeping\n");
 		/* Retry after a short while. */
 		usleep(wait_ms * 1000);
 		elapsed_ms += wait_ms;
@@ -674,7 +673,7 @@ fill_nm_desc(struct nm_desc *des, struct nmreq *req, int fd)
 #define MS_WAIT 50
 
 void
-start_file_des_server(void)
+start_fd_server(void)
 {
 	pid_t pid;
 
@@ -692,9 +691,7 @@ start_file_des_server(void)
 		return;
 	}
 
-	execl("file_des_server",
-		"file_des_server",
-		(char *)NULL);
+	execl("fd_server", "fd_server", (char *)NULL);
 }
 
 #define SOCKET_NAME "/tmp/my_unix_socket"
@@ -724,7 +721,7 @@ connect_to_fd_server(void)
 	}
 	perror("connect()");
 
-	start_file_des_server();
+	start_fd_server();
 	ret = connect(socket_fd, (const struct sockaddr *)&name,
 		sizeof(struct sockaddr_un));
 	if (ret == -1) {
@@ -789,7 +786,7 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 }
 
 int
-get_if_file_des(const char *if_name, struct nm_desc *nmd)
+get_if_fd(const char *if_name, struct nm_desc *nmd)
 {
 	struct fd_response res;
 	struct fd_request req;
@@ -826,7 +823,7 @@ get_if_file_des(const char *if_name, struct nm_desc *nmd)
 }
 
 void
-release_if_file_des(const char *if_name)
+release_if_fd(const char *if_name)
 {
 	struct fd_request req;
 	int socket_fd;
@@ -847,7 +844,7 @@ release_if_file_des(const char *if_name)
 }
 
 void
-stop_file_des_server(void)
+stop_fd_server(void)
 {
 	struct fd_request req;
 	int socket_fd;
@@ -865,11 +862,23 @@ stop_file_des_server(void)
 }
 
 int
+parse_mac_address(const char *opt, char *mac)
+{
+	if (6 == sscanf(opt, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+			&mac[0], &mac[1], &mac[2],
+			&mac[3], &mac[4], &mac[5])) {
+		return 0;
+	}
+	return -1;
+}
+
+int
 main(int argc, char **argv)
 {
 	struct Global *g = &_g;
 	unsigned int i, c;
 	int opt;
+	int ret;
 
 	g->ifname	 = NULL;
 	g->wait_link_secs = 0;
@@ -889,14 +898,31 @@ main(int argc, char **argv)
 	g->num_loops		  = 1;
 	memset(&g->nmd, 0, sizeof(struct nm_desc));
 
-	while ((opt = getopt(argc, argv, "hsi:w:F:T:t:r:Ivp:C:")) != -1) {
+	while ((opt = getopt(argc, argv, "hcs:d:i:w:F:T:t:r:Ivp:C:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
 			return 0;
-		case 's':
-			stop_file_des_server();
+
+		case 'c':
+			stop_fd_server();
 			return 0;
+
+		case 's':
+			ret = parse_mac_address(optarg, g->src_mac);
+			if (ret == -1) {
+				printf("Invalid source MAC address\n");
+				exit(EXIT_FAILURE);
+			}
+			break;
+
+		case 'd':
+			ret = parse_mac_address(optarg, g->dst_mac);
+			if (ret == -1) {
+				printf("Invalid destination MAC address\n");
+				exit(EXIT_FAILURE);
+			}
+			break;
 
 		case 'i':
 			g->ifname = optarg;
@@ -978,7 +1004,7 @@ main(int argc, char **argv)
 		return -1;
 	}
 
-	if (get_if_file_des(g->ifname, &g->nmd) < 0) {
+	if (get_if_fd(g->ifname, &g->nmd) < 0) {
 		printf("Failed to nm_open(%s)\n", g->ifname);
 		return -1;
 	}
@@ -1004,16 +1030,16 @@ main(int argc, char **argv)
 				switch (e->evtype) {
 				case EVENT_TYPE_TX:
 					if (tx_one(g)) {
-						return -1;
+						clean_exit(g);
 					}
 					break;
 
 				case EVENT_TYPE_RX:
 					if (rx_one(g)) {
-						return -1;
+						clean_exit(g);
 					}
 					if (rx_check(g)) {
-						return -1;
+						clean_exit(g);
 					}
 					break;
 
@@ -1028,7 +1054,7 @@ main(int argc, char **argv)
 	/* if we have sent something, wait for all tx to complete */
 	tx_flush(g);
 
-	release_if_file_des(g->ifname);
+	release_if_fd(g->ifname);
 
 	return 0;
 }
