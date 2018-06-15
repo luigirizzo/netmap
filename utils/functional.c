@@ -73,6 +73,7 @@ struct Global {
 	unsigned wait_link_secs;    /* wait for link */
 	unsigned timeout_secs;      /* transmit/receive timeout */
 	int ignore_if_not_matching; /* ignore certain received packets */
+	int success_if_no_receive;
 	int verbose;
 
 #define MAX_PKT_SIZE 65536
@@ -479,12 +480,12 @@ rx_one(struct Global *g)
 			       "from RX "
 			       "ring #%d\n",
 			       g->pktr_len, frags, i);
-			return 0;
+			return g->success_if_no_receive == 1 ? -1 : 0;
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
 			printf("%s: Timeout\n", __func__);
-			return -1;
+			return g->success_if_no_receive == 1 ? 0 : -1;
 		}
 
 		/* Retry after a short while. */
@@ -719,8 +720,8 @@ connect_to_fd_server(void)
 	if (ret == 0) {
 		return socket_fd;
 	}
-	perror("connect()");
 
+	printf("fd_server down, trying to start it\n");
 	start_fd_server();
 	ret = connect(socket_fd, (const struct sockaddr *)&name,
 		sizeof(struct sockaddr_un));
@@ -851,6 +852,7 @@ stop_fd_server(void)
 	int ret;
 
 	socket_fd = connect_to_fd_server();
+	printf("shutting down fd_server\n");
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_STOP;
@@ -894,11 +896,12 @@ main(int argc, char **argv)
 	g->filler		  = 'a';
 	g->num_events		  = 0;
 	g->ignore_if_not_matching = /*false=*/0;
+	g->success_if_no_receive  = /*false=*/0;
 	g->verbose		  = 0;
 	g->num_loops		  = 1;
 	memset(&g->nmd, 0, sizeof(struct nm_desc));
 
-	while ((opt = getopt(argc, argv, "hcs:d:i:w:F:T:t:r:Ivp:C:")) != -1) {
+	while ((opt = getopt(argc, argv, "hcns:d:i:w:F:T:t:r:Ivp:C:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -906,6 +909,11 @@ main(int argc, char **argv)
 
 		case 'c':
 			stop_fd_server();
+			return 0;
+
+		case 'n':
+			/* Not receiving means timing out */
+			g->success_if_no_receive = 1;
 			return 0;
 
 		case 's':
