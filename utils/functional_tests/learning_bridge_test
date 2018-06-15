@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+./functional -c &>/dev/null
+sleep 0.1s
+echo "First send, every port should receive the frame."
+./functional -i vale:v0 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
+p1=$!
+echo "PID 1: $p1"
+./functional -i vale:v1 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
+p2=$!
+echo "PID 2: $p2"
+./functional -p 1s -i vale:v2 -t 100:c -s 10:10:10:10:10:10 &>/dev/null
+wait $p1
+e1=$?
+wait $p2
+e2=$?
+echo "Exit value 1: $e1"
+echo "Exit value 2: $e2"
+
+echo "Second send, only v2 should receive the frame."
+./functional -i vale:v2 -r 100:c -d 10:10:10:10:10:10 -T 1 &>/dev/null &
+p3=$!
+./functional -n -i vale:v1 -r 100:c -T 1 -d 10:10:10:10:10:10 &>/dev/null &
+p4=$!
+./functional -i vale:v0 -t 100:c -d 10:10:10:10:10:10 &>/dev/null
+wait $p3
+e3=$?
+wait $p4
+e4=$?
+echo "Exit value 1: $e3"
+echo "Exit value 2: $e4"
+echo "=============================================="
+result=$(($e1 + $e2 + $e3 + $e4))
+if [ $result = 0 ] ; then
+	echo "Test successful"
+	exit 0
+else
+	echo "Test failed"
+	exit 1
+fi
