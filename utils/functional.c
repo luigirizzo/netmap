@@ -39,6 +39,16 @@
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/udp.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/un.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/wait.h>
+#include "file_des.h"
 
 #define ETH_ADDR_LEN 6
 
@@ -58,7 +68,7 @@ struct Event {
 };
 
 struct Global {
-	struct nm_desc *nmd;
+	struct nm_desc nmd;
 	const char *ifname;
 	unsigned wait_link_secs;    /* wait for link */
 	unsigned timeout_secs;      /* transmit/receive timeout */
@@ -86,6 +96,16 @@ struct Global {
 	unsigned num_loops;
 };
 
+void release_if_file_des(const char *);
+
+void
+clean_exit(struct Global *g)
+{
+
+	release_if_file_des(g->ifname);
+	exit(EXIT_FAILURE);
+}
+
 static void
 fill_packet_field(struct Global *g, unsigned offset, const char *content,
 		  unsigned content_len)
@@ -93,7 +113,7 @@ fill_packet_field(struct Global *g, unsigned offset, const char *content,
 	if (offset + content_len > sizeof(g->pktm)) {
 		printf("Packet layout overflow: %u + %u > %lu\n", offset,
 		       content_len, sizeof(g->pktm));
-		exit(EXIT_FAILURE);
+		clean_exit(g);
 	}
 
 	memcpy(g->pktm + offset, content, content_len);
@@ -272,7 +292,7 @@ tx_bytes_avail(struct netmap_ring *ring, unsigned max_frag_size)
 static int
 tx_flush(struct Global *g)
 {
-	struct nm_desc *nmd = g->nmd;
+	struct nm_desc *nmd = &g->nmd;
 	unsigned elapsed_ms = 0;
 	unsigned wait_ms    = 100;
 	int i;
@@ -306,7 +326,7 @@ tx_flush(struct Global *g)
 static int
 tx_one(struct Global *g)
 {
-	struct nm_desc *nmd = g->nmd;
+	struct nm_desc *nmd = &g->nmd;
 	unsigned elapsed_ms = 0;
 	unsigned wait_ms    = 100;
 	unsigned int i;
@@ -394,7 +414,7 @@ ignore_received_frame(struct Global *g)
 static int
 rx_one(struct Global *g)
 {
-	struct nm_desc *nmd = g->nmd;
+	struct nm_desc *nmd = &g->nmd;
 	unsigned elapsed_ms = 0;
 	unsigned wait_ms    = 100;
 	unsigned int i;
@@ -422,7 +442,7 @@ rx_one(struct Global *g)
 					       "large "
 					       "(>= %u bytes) ",
 					       g->pktr_len + slot->len);
-					exit(EXIT_FAILURE);
+					clean_exit(g);
 				}
 				memcpy(g->pktr + g->pktr_len, buf, slot->len);
 				g->pktr_len += slot->len;
@@ -467,6 +487,7 @@ rx_one(struct Global *g)
 			return -1;
 		}
 
+		printf("sleeping\n");
 		/* Retry after a short while. */
 		usleep(wait_ms * 1000);
 		elapsed_ms += wait_ms;
@@ -594,7 +615,8 @@ static struct Global _g;
 static void
 usage(void)
 {
-	printf("usage: ./functional [-h]\n"
+	printf("usage: ./functional [-h] "
+	       "[-s (shuts down the file descriptor server)]\n"
 	       "    -i NETMAP_PORT\n"
 	       "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
 	       "    [-T TIMEOUT_SECS (=5)]\n"
@@ -613,6 +635,235 @@ usage(void)
 	       "40:b:2\n");
 }
 
+
+/* Copied from nm_open() */
+void
+fill_nm_desc(struct nm_desc *des, struct nmreq *req, int fd)
+{
+	uint32_t nr_reg;
+
+	memset(des, 0, sizeof(*des));
+	des->self = des;
+	des->fd = fd;
+	memcpy(&des->req, req, sizeof(des->req));
+	nr_reg = req->nr_flags & NR_REG_MASK;
+
+	if (nr_reg == NR_REG_SW) { /* host stack */
+		des->first_tx_ring = des->last_tx_ring = des->req.nr_tx_rings;
+		des->first_rx_ring = des->last_rx_ring = des->req.nr_rx_rings;
+	} else if (nr_reg ==  NR_REG_ALL_NIC) { /* only nic */
+		des->first_tx_ring = 0;
+		des->first_rx_ring = 0;
+		des->last_tx_ring = des->req.nr_tx_rings - 1;
+		des->last_rx_ring = des->req.nr_rx_rings - 1;
+	} else if (nr_reg ==  NR_REG_NIC_SW) {
+		des->first_tx_ring = 0;
+		des->first_rx_ring = 0;
+		des->last_tx_ring = des->req.nr_tx_rings;
+		des->last_rx_ring = des->req.nr_rx_rings;
+	} else if (nr_reg == NR_REG_ONE_NIC) {
+		/* XXX check validity */
+		des->first_tx_ring = des->last_tx_ring =
+		des->first_rx_ring = des->last_rx_ring = des->req.nr_ringid & NETMAP_RING_MASK;
+	} else { /* pipes */
+		des->first_tx_ring = des->last_tx_ring = 0;
+		des->first_rx_ring = des->last_rx_ring = 0;
+	}
+}
+
+#define MS_WAIT 50
+
+void
+start_file_des_server(void)
+{
+	pid_t pid;
+
+	pid = fork();
+	if (pid < 0) {
+		perror("fork()");
+		exit(EXIT_FAILURE);
+	}
+	if (pid > 0) {
+		/* The fd_server needs to create the unix socket. Sleeping does
+		 * not guarantee a correct synchronization, but should be good
+		 * enough.
+		 */
+		usleep(MS_WAIT * 1000);
+		return;
+	}
+
+	execl("file_des_server",
+		"file_des_server",
+		(char *)NULL);
+}
+
+#define SOCKET_NAME "/tmp/my_unix_socket"
+
+int
+connect_to_fd_server(void)
+{
+	struct sockaddr_un name;
+	int socket_fd;
+	int ret;
+
+	socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+	if (socket_fd == -1) {
+		perror("socket()");
+		return -1;
+	}
+
+	memset(&name, 0, sizeof(struct sockaddr_un));
+	name.sun_family = AF_UNIX;
+	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
+	name.sun_path[sizeof(name.sun_path) - 1] = '\0';
+
+	ret = connect(socket_fd, (const struct sockaddr *)&name,
+		sizeof(struct sockaddr_un));
+	if (ret == 0) {
+		return socket_fd;
+	}
+	perror("connect()");
+
+	start_file_des_server();
+	ret = connect(socket_fd, (const struct sockaddr *)&name,
+		sizeof(struct sockaddr_un));
+	if (ret == -1) {
+		perror("Cannot connect to fd_server even after starting it");
+		return -1;
+	}
+
+	return socket_fd;
+}
+
+int
+recv_fd(int socket, int *fd, void *buf, size_t buf_size)
+{
+	union {
+		char buf[CMSG_SPACE(sizeof(int))];
+		struct cmsghdr align;
+	} ancillary;
+	struct fd_response *res;
+	struct cmsghdr *cmsg;
+	struct iovec iov[1];
+	struct msghdr msg;
+	int amount;
+
+	errno = 0;
+
+	iov[0].iov_base = buf;
+	iov[0].iov_len = buf_size;
+
+	memset(&msg, 0, sizeof(struct msghdr));
+	msg.msg_iov = iov;
+	msg.msg_iovlen = 1;
+
+	memset(ancillary.buf, 0, sizeof(ancillary.buf));
+	msg.msg_control = ancillary.buf;
+	msg.msg_controllen = sizeof(ancillary.buf);
+
+	cmsg = CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = SOL_SOCKET;
+	cmsg->cmsg_type = SCM_RIGHTS;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+
+	amount = recvmsg(socket, &msg, 0);
+	if (amount < 0) {
+		return amount;
+	}
+
+	res = iov[0].iov_base;
+	if (res->result != 0) {
+		errno = res->result;
+		return -1;
+	}
+
+	/* If res->result == 0, we know for sure that a file descriptor has been
+	 * sent through the ancillary data.
+	 */
+	if (amount > 0) {
+		cmsg = CMSG_FIRSTHDR(&msg);
+		*fd = *(int *)CMSG_DATA(cmsg);
+	}
+
+	return amount;
+}
+
+int
+get_if_file_des(const char *if_name, struct nm_desc *nmd)
+{
+	struct fd_response res;
+	struct fd_request req;
+	int socket_fd;
+	int new_fd;
+	int ret;
+
+	socket_fd = connect_to_fd_server();
+
+	memset(&req, 0, sizeof(req));
+	req.action = FD_GET;
+	strncpy(req.if_name, if_name, sizeof(req.if_name));
+	ret = send(socket_fd, &req, sizeof(struct fd_request), 0);
+	if (ret < 0) {
+		perror("send()");
+		return -1;
+	}
+
+	memset(&res, 0, sizeof(res));
+	ret = recv_fd(socket_fd, &new_fd, &res, sizeof(struct fd_response));
+	if (ret < 0) {
+		perror("recv_fd()");
+		return -1;
+	}
+
+	fill_nm_desc(nmd, &res.req, new_fd);
+	if (nm_mmap(nmd, NULL) != 0) {
+		perror("nm_mmap()");
+		return -1;
+	}
+
+	close(socket_fd);
+	return 0;
+}
+
+void
+release_if_file_des(const char *if_name)
+{
+	struct fd_request req;
+	int socket_fd;
+	int ret;
+
+	socket_fd = connect_to_fd_server();
+
+	memset(&req, 0, sizeof(req));
+	req.action = FD_RELEASE;
+	strncpy(req.if_name, if_name, sizeof(req.if_name));
+
+	ret = send(socket_fd, &req, sizeof(struct fd_request), 0);
+	if (ret <= 0) {
+		perror("send()");
+	}
+
+	close(socket_fd);
+}
+
+void
+stop_file_des_server(void)
+{
+	struct fd_request req;
+	int socket_fd;
+	int ret;
+
+	socket_fd = connect_to_fd_server();
+
+	memset(&req, 0, sizeof(req));
+	req.action = FD_STOP;
+	ret = send(socket_fd, &req, sizeof(struct fd_request), 0);
+	if (ret <= 0) {
+		perror("send()");
+	}
+	close(socket_fd);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -621,7 +872,6 @@ main(int argc, char **argv)
 	int opt;
 
 	g->ifname	 = NULL;
-	g->nmd		  = NULL;
 	g->wait_link_secs = 0;
 	g->timeout_secs   = 5;
 	g->pktm_len       = 60;
@@ -637,11 +887,15 @@ main(int argc, char **argv)
 	g->ignore_if_not_matching = /*false=*/0;
 	g->verbose		  = 0;
 	g->num_loops		  = 1;
+	memset(&g->nmd, 0, sizeof(struct nm_desc));
 
-	while ((opt = getopt(argc, argv, "hi:w:F:T:t:r:Ivp:C:")) != -1) {
+	while ((opt = getopt(argc, argv, "hsi:w:F:T:t:r:Ivp:C:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
+			return 0;
+		case 's':
+			stop_file_des_server();
 			return 0;
 
 		case 'i':
@@ -724,8 +978,7 @@ main(int argc, char **argv)
 		return -1;
 	}
 
-	g->nmd = nm_open(g->ifname, NULL, 0, NULL);
-	if (g->nmd == NULL) {
+	if (get_if_file_des(g->ifname, &g->nmd) < 0) {
 		printf("Failed to nm_open(%s)\n", g->ifname);
 		return -1;
 	}
@@ -775,7 +1028,7 @@ main(int argc, char **argv)
 	/* if we have sent something, wait for all tx to complete */
 	tx_flush(g);
 
-	nm_close(g->nmd);
+	release_if_file_des(g->ifname);
 
 	return 0;
 }
