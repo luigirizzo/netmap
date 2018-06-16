@@ -671,7 +671,7 @@ fill_nm_desc(struct nm_desc *des, struct nmreq *req, int fd)
 	}
 }
 
-#define MS_WAIT 50
+#define MS_WAIT 10
 
 void
 start_fd_server(void)
@@ -714,23 +714,14 @@ connect_to_fd_server(void)
 	name.sun_family = AF_UNIX;
 	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
 	name.sun_path[sizeof(name.sun_path) - 1] = '\0';
-
 	ret = connect(socket_fd, (const struct sockaddr *)&name,
 		sizeof(struct sockaddr_un));
 	if (ret == 0) {
 		return socket_fd;
 	}
 
-	printf("fd_server down, trying to start it\n");
-	start_fd_server();
-	ret = connect(socket_fd, (const struct sockaddr *)&name,
-		sizeof(struct sockaddr_un));
-	if (ret == -1) {
-		perror("Cannot connect to fd_server even after starting it");
-		return -1;
-	}
-
-	return socket_fd;
+	printf("fd_server offline\n");
+	return ret;
 }
 
 int
@@ -852,6 +843,10 @@ stop_fd_server(void)
 	int ret;
 
 	socket_fd = connect_to_fd_server();
+	if (socket_fd == -1) {
+		printf("server alredy down\n");
+		return;
+	}
 	printf("shutting down fd_server\n");
 
 	memset(&req, 0, sizeof(req));
@@ -901,7 +896,7 @@ main(int argc, char **argv)
 	g->num_loops		  = 1;
 	memset(&g->nmd, 0, sizeof(struct nm_desc));
 
-	while ((opt = getopt(argc, argv, "hcns:d:i:w:F:T:t:r:Ivp:C:")) != -1) {
+	while ((opt = getopt(argc, argv, "hcons:d:i:w:F:T:t:r:Ivp:C:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -909,6 +904,10 @@ main(int argc, char **argv)
 
 		case 'c':
 			stop_fd_server();
+			return 0;
+
+		case 'o':
+			start_fd_server();
 			return 0;
 
 		case 'n':
