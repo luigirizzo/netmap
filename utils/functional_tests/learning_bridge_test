@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-./functional -c &>/dev/null
-sleep 0.1s
+./functional -c
+./functional -o
 echo "First send, every port should receive the frame."
 ./functional -i vale:v0 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
 p1=$!
@@ -8,7 +8,8 @@ echo "PID 1: $p1"
 ./functional -i vale:v1 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
 p2=$!
 echo "PID 2: $p2"
-./functional -p 1s -i vale:v2 -t 100:c -s 10:10:10:10:10:10 &>/dev/null
+sleep 0.1s
+./functional -i vale:v2 -t 100:c -s 10:10:10:10:10:10 &>/dev/null
 wait $p1
 e1=$?
 wait $p2
