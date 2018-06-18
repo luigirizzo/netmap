@@ -1,19 +1,18 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/uio.h>
-#include <sys/stat.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <sys/un.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <syslog.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <sys/un.h>
 #include <sys/wait.h>
+#include <syslog.h>
+#include <unistd.h>
 
 #include "fd_server.h"
-
 
 struct nmd_entry {
 	struct nm_desc *nmd;
@@ -21,28 +20,24 @@ struct nmd_entry {
 	uint8_t is_open;
 };
 
-
 #define SOCKET_NAME "/tmp/my_unix_socket"
 #define MAX_OPEN_IF 128
 struct nmd_entry entries[MAX_OPEN_IF];
 int num_entries = 0;
-
-
 
 static void
 print_request(struct fd_request *req)
 {
 
 	syslog(LOG_NOTICE, "d action: %s, if_name: %s\n",
-		req->action == FD_GET ? "FD_GET" :
-		req->action == FD_RELEASE ? "FD_RELEASE" :
-		req->action == FD_CLOSE ? "FD_CLOSE" :
-		"FD_STOP",
-		req->if_name
-	);
+	       req->action == FD_GET
+		       ? "FD_GET"
+		       : req->action == FD_RELEASE
+				 ? "FD_RELEASE"
+				 : req->action == FD_CLOSE ? "FD_CLOSE"
+							   : "FD_STOP",
+	       req->if_name);
 }
-
-
 
 struct nmd_entry *
 search_des(const char *if_name)
@@ -51,7 +46,7 @@ search_des(const char *if_name)
 
 	for (i = 0; i < num_entries; ++i) {
 		struct nmd_entry *entry = &entries[i];
-		struct nm_desc *nmd = entry->nmd;
+		struct nm_desc *nmd     = entry->nmd;
 
 		if (entry->is_open == 0) {
 			continue;
@@ -65,8 +60,6 @@ search_des(const char *if_name)
 	return NULL;
 }
 
-
-
 struct nmd_entry *
 get_free_des(int *ret)
 {
@@ -79,8 +72,6 @@ get_free_des(int *ret)
 	*ret = 0;
 	return &entries[num_entries++];
 }
-
-
 
 int
 get_fd(const char *if_name, struct fd_response *res)
@@ -108,18 +99,17 @@ get_fd(const char *if_name, struct fd_response *res)
 
 	entry->nmd = nm_open(if_name, NULL, 0, NULL);
 	if (entry->nmd == NULL) {
-		syslog(LOG_NOTICE, "Failed to nm_open(%s) with error %d\n", if_name, errno);
+		syslog(LOG_NOTICE, "Failed to nm_open(%s) with error %d\n",
+		       if_name, errno);
 		res->result = errno;
 		return -1;
 	}
 
 	memcpy(&res->req, &entry->nmd->req, sizeof(entry->nmd->req));
 	entry->is_in_use = 1;
-	entry->is_open = 1;
+	entry->is_open   = 1;
 	return entry->nmd->fd;
 }
-
-
 
 void
 release_fd(const char *if_name, struct fd_response *res)
@@ -135,8 +125,6 @@ release_fd(const char *if_name, struct fd_response *res)
 
 	entry->is_in_use = 0;
 }
-
-
 
 void
 close_fd(const char *if_name, struct fd_response *res)
@@ -156,17 +144,15 @@ close_fd(const char *if_name, struct fd_response *res)
 		return;
 	}
 
-	ret = nm_close(entry->nmd);
+	ret	 = nm_close(entry->nmd);
 	res->result = ret;
 	if (ret != 0) {
 		syslog(LOG_NOTICE, "error while close interface %s\n", if_name);
 		return;
 	}
 	entry->is_in_use = 0;
-	entry->is_open = 0;
+	entry->is_open   = 0;
 }
-
-
 
 int
 send_fd(int socket, int fd, void *buf, size_t buf_size)
@@ -180,30 +166,28 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 	struct msghdr msg;
 
 	iov[0].iov_base = buf;
-	iov[0].iov_len = buf_size;
+	iov[0].iov_len  = buf_size;
 
 	memset(&msg, 0, sizeof(struct msghdr));
-	msg.msg_iov = iov;
+	msg.msg_iov    = iov;
 	msg.msg_iovlen = 1;
 
 	if (fd >= 0) {
 		/* We need the ancillary data only when we're sending a file
 		 * descriptor, and a file descriptor cannot be negative.
 		 */
-		msg.msg_control = ancillary.buf;
+		msg.msg_control    = ancillary.buf;
 		msg.msg_controllen = sizeof(ancillary.buf);
 
-		cmsg = CMSG_FIRSTHDR(&msg);
-		cmsg->cmsg_level = SOL_SOCKET;
-		cmsg->cmsg_type = SCM_RIGHTS;
-		cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+		cmsg			= CMSG_FIRSTHDR(&msg);
+		cmsg->cmsg_level	= SOL_SOCKET;
+		cmsg->cmsg_type		= SCM_RIGHTS;
+		cmsg->cmsg_len		= CMSG_LEN(sizeof(int));
 		*(int *)CMSG_DATA(cmsg) = fd;
 	}
 
 	return sendmsg(socket, &msg, 0);
 }
-
-
 
 int
 handle_request(int socket)
@@ -263,7 +247,7 @@ main_loop(void)
 	name.sun_family = AF_UNIX;
 	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
 	ret = bind(socket_fd, (const struct sockaddr *)&name,
-		sizeof(struct sockaddr_un));
+		   sizeof(struct sockaddr_un));
 	if (ret == -1) {
 		syslog(LOG_NOTICE, "error during bind()");
 		exit(EXIT_FAILURE);
@@ -282,7 +266,7 @@ main_loop(void)
 		conn_fd = accept(socket_fd, NULL, NULL);
 		if (conn_fd == -1) {
 			syslog(LOG_NOTICE,
-				"error during accept(), shutting down");
+			       "error during accept(), shutting down");
 			exit(EXIT_FAILURE);
 		}
 
@@ -333,7 +317,6 @@ daemonize(void)
 
 	openlog("nm_fd_server", LOG_PID, LOG_DAEMON);
 }
-
 
 int
 main()

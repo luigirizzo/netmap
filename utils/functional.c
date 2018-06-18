@@ -25,30 +25,30 @@
  * SUCH DAMAGE.
  */
 #include <assert.h>
+#include <net/ethernet.h>
+#include <net/if.h>
+#include <net/netmap.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
 #include <unistd.h>
-#include <net/ethernet.h>
-#include <net/if.h>
-#include <net/netmap.h>
 #define NETMAP_WITH_LIBS
+#include "fd_server.h"
+#include <errno.h>
+#include <fcntl.h>
 #include <net/netmap_user.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/udp.h>
+#include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/uio.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <sys/un.h>
-#include <string.h>
-#include <errno.h>
 #include <sys/wait.h>
-#include "fd_server.h"
 
 #define ETH_ADDR_LEN 6
 
@@ -635,7 +635,6 @@ usage(void)
 	       "40:b:2\n");
 }
 
-
 /* Copied from nm_open() */
 void
 fill_nm_desc(struct nm_desc *des, struct nmreq *req, int fd)
@@ -644,27 +643,28 @@ fill_nm_desc(struct nm_desc *des, struct nmreq *req, int fd)
 
 	memset(des, 0, sizeof(*des));
 	des->self = des;
-	des->fd = fd;
+	des->fd   = fd;
 	memcpy(&des->req, req, sizeof(des->req));
 	nr_reg = req->nr_flags & NR_REG_MASK;
 
 	if (nr_reg == NR_REG_SW) { /* host stack */
 		des->first_tx_ring = des->last_tx_ring = des->req.nr_tx_rings;
 		des->first_rx_ring = des->last_rx_ring = des->req.nr_rx_rings;
-	} else if (nr_reg ==  NR_REG_ALL_NIC) { /* only nic */
+	} else if (nr_reg == NR_REG_ALL_NIC) { /* only nic */
 		des->first_tx_ring = 0;
 		des->first_rx_ring = 0;
-		des->last_tx_ring = des->req.nr_tx_rings - 1;
-		des->last_rx_ring = des->req.nr_rx_rings - 1;
-	} else if (nr_reg ==  NR_REG_NIC_SW) {
+		des->last_tx_ring  = des->req.nr_tx_rings - 1;
+		des->last_rx_ring  = des->req.nr_rx_rings - 1;
+	} else if (nr_reg == NR_REG_NIC_SW) {
 		des->first_tx_ring = 0;
 		des->first_rx_ring = 0;
-		des->last_tx_ring = des->req.nr_tx_rings;
-		des->last_rx_ring = des->req.nr_rx_rings;
+		des->last_tx_ring  = des->req.nr_tx_rings;
+		des->last_rx_ring  = des->req.nr_rx_rings;
 	} else if (nr_reg == NR_REG_ONE_NIC) {
 		/* XXX check validity */
-		des->first_tx_ring = des->last_tx_ring =
-		des->first_rx_ring = des->last_rx_ring = des->req.nr_ringid & NETMAP_RING_MASK;
+		des->first_tx_ring = des->last_tx_ring = des->first_rx_ring =
+			des->last_rx_ring =
+				des->req.nr_ringid & NETMAP_RING_MASK;
 	} else { /* pipes */
 		des->first_tx_ring = des->last_tx_ring = 0;
 		des->first_rx_ring = des->last_rx_ring = 0;
@@ -715,7 +715,7 @@ connect_to_fd_server(void)
 	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
 	name.sun_path[sizeof(name.sun_path) - 1] = '\0';
 	ret = connect(socket_fd, (const struct sockaddr *)&name,
-		sizeof(struct sockaddr_un));
+		      sizeof(struct sockaddr_un));
 	if (ret == 0) {
 		return socket_fd;
 	}
@@ -740,20 +740,20 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	errno = 0;
 
 	iov[0].iov_base = buf;
-	iov[0].iov_len = buf_size;
+	iov[0].iov_len  = buf_size;
 
 	memset(&msg, 0, sizeof(struct msghdr));
-	msg.msg_iov = iov;
+	msg.msg_iov    = iov;
 	msg.msg_iovlen = 1;
 
 	memset(ancillary.buf, 0, sizeof(ancillary.buf));
-	msg.msg_control = ancillary.buf;
+	msg.msg_control    = ancillary.buf;
 	msg.msg_controllen = sizeof(ancillary.buf);
 
-	cmsg = CMSG_FIRSTHDR(&msg);
+	cmsg		 = CMSG_FIRSTHDR(&msg);
 	cmsg->cmsg_level = SOL_SOCKET;
-	cmsg->cmsg_type = SCM_RIGHTS;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+	cmsg->cmsg_type  = SCM_RIGHTS;
+	cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
 
 	amount = recvmsg(socket, &msg, 0);
 	if (amount < 0) {
@@ -771,7 +771,7 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	 */
 	if (amount > 0) {
 		cmsg = CMSG_FIRSTHDR(&msg);
-		*fd = *(int *)CMSG_DATA(cmsg);
+		*fd  = *(int *)CMSG_DATA(cmsg);
 	}
 
 	return amount;
@@ -851,7 +851,7 @@ stop_fd_server(void)
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_STOP;
-	ret = send(socket_fd, &req, sizeof(struct fd_request), 0);
+	ret	= send(socket_fd, &req, sizeof(struct fd_request), 0);
 	if (ret <= 0) {
 		perror("send()");
 	}
@@ -861,9 +861,8 @@ stop_fd_server(void)
 int
 parse_mac_address(const char *opt, char *mac)
 {
-	if (6 == sscanf(opt, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-			&mac[0], &mac[1], &mac[2],
-			&mac[3], &mac[4], &mac[5])) {
+	if (6 == sscanf(opt, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &mac[0], &mac[1],
+			&mac[2], &mac[3], &mac[4], &mac[5])) {
 		return 0;
 	}
 	return -1;
@@ -882,10 +881,10 @@ main(int argc, char **argv)
 	g->timeout_secs   = 5;
 	g->pktm_len       = 60;
 	g->max_frag_size  = ~0U; /* unlimited */
-	for (i = 0; i < ETH_ADDR_LEN; i++)
+	for (i		      = 0; i < ETH_ADDR_LEN; i++)
 		g->src_mac[i] = 0x00;
-	for (i = 0; i < ETH_ADDR_LEN; i++)
-		g->dst_mac[i] = 0xFF;
+	for (i			  = 0; i < ETH_ADDR_LEN; i++)
+		g->dst_mac[i]     = 0xFF;
 	g->src_ip		  = 0x0A000005; /* 10.0.0.5 */
 	g->dst_ip		  = 0x0A000007; /* 10.0.0.7 */
 	g->filler		  = 'a';
