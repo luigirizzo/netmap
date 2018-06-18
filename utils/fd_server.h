@@ -16,7 +16,7 @@ struct fd_request {
 #define FD_CLOSE 3
 #define FD_STOP 4
 	uint8_t action;
-	char if_name[IFNAMSIZ];
+	char if_name[NETMAP_REQ_IFNAMSIZ];
 };
 
 struct fd_response {
