@@ -132,7 +132,7 @@ close_fd(const char *if_name, struct fd_response *res)
 	struct nmd_entry *entry;
 	int ret;
 
-	if (if_name == NULL || strnlen(if_name, IFNAMSIZ) == 0) {
+	if (if_name == NULL || strnlen(if_name, NETMAP_REQ_IFNAMSIZ) == 0) {
 		res->result = EINVAL;
 		return;
 	}
