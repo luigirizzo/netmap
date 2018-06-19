@@ -10,7 +10,6 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <syslog.h>
-#include <unistd.h>
 
 #include "fd_server.h"
 
@@ -19,6 +18,8 @@ struct nmd_entry {
 	uint8_t is_in_use;
 	uint8_t is_open;
 };
+
+#define printf(format, ...) syslog(LOG_NOTICE, format, ##__VA_ARGS__)
 
 #define SOCKET_NAME "/tmp/my_unix_socket"
 #define MAX_OPEN_IF 128
@@ -29,7 +30,7 @@ static void
 print_request(struct fd_request *req)
 {
 
-	syslog(LOG_NOTICE, "d action: %s, if_name: %s\n",
+	printf("d action: %s, if_name: %s\n",
 	       req->action == FD_GET
 	               ? "FD_GET"
 	               : req->action == FD_RELEASE
@@ -82,7 +83,7 @@ get_fd(const char *if_name, struct fd_response *res)
 	entry = search_des(if_name);
 	if (entry != NULL) {
 		if (entry->is_in_use == 1) {
-			syslog(LOG_NOTICE, "if_name %s is in use\n", if_name);
+			printf("if_name %s is in use\n", if_name);
 			res->result = EBUSY;
 			return -1;
 		}
@@ -92,14 +93,14 @@ get_fd(const char *if_name, struct fd_response *res)
 
 	entry = get_free_des(&ret);
 	if (ret == -1) {
-		syslog(LOG_NOTICE, "Out of memory\n");
+		printf("Out of memory\n");
 		res->result = ENOMEM;
 		return -1;
 	}
 
 	entry->nmd = nm_open(if_name, NULL, 0, NULL);
 	if (entry->nmd == NULL) {
-		syslog(LOG_NOTICE, "Failed to nm_open(%s) with error %d\n",
+		printf("Failed to nm_open(%s) with error %d",
 		       if_name, errno);
 		res->result = errno;
 		return -1;
@@ -118,7 +119,7 @@ release_fd(const char *if_name, struct fd_response *res)
 
 	entry = search_des(if_name);
 	if (entry == NULL) {
-		syslog(LOG_NOTICE, "if_name %s isn't open\n", if_name);
+		printf("if_name %s isn't open", if_name);
 		res->result = ENOENT;
 		return;
 	}
@@ -140,14 +141,14 @@ close_fd(const char *if_name, struct fd_response *res)
 	entry = search_des(if_name);
 	if (entry == NULL) {
 		res->result = ENOENT;
-		syslog(LOG_NOTICE, "if_name %s hasn't been opened\n", if_name);
+		printf("if_name %s hasn't been opened", if_name);
 		return;
 	}
 
 	ret         = nm_close(entry->nmd);
 	res->result = ret;
 	if (ret != 0) {
-		syslog(LOG_NOTICE, "error while close interface %s\n", if_name);
+		printf("error while close interface %s", if_name);
 		return;
 	}
 	entry->is_in_use = 0;
@@ -164,6 +165,7 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 	struct cmsghdr *cmsg;
 	struct iovec iov[1];
 	struct msghdr msg;
+	int ret;
 
 	iov[0].iov_base = buf;
 	iov[0].iov_len  = buf_size;
@@ -186,7 +188,12 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 		*(int *)CMSG_DATA(cmsg) = fd;
 	}
 
-	return sendmsg(socket, &msg, 0);
+	ret = sendmsg(socket, &msg, 0);
+	if (ret == -1) {
+		return -1;
+	}
+
+	return ret;
 }
 
 int
@@ -194,15 +201,16 @@ handle_request(int socket)
 {
 	struct fd_response res;
 	struct fd_request req;
-	int amount;
 	int fd = -1;
+	int amount;
+	int ret;
 
 	memset(&res, 0, sizeof(res));
 	memset(&req, 0, sizeof(req));
 
 	amount = recv(socket, &req, sizeof(struct fd_request), 0);
 	if (amount == -1) {
-		syslog(LOG_NOTICE, "error during recv()");
+		printf("error while receiving the request\n");
 		return -1;
 	}
 
@@ -219,14 +227,18 @@ handle_request(int socket)
 		close_fd(req.if_name, &res);
 		return 0;
 	case FD_STOP:
-		syslog(LOG_NOTICE, "shutting down");
+		printf("shutting down\n");
 		exit(EXIT_SUCCESS);
 		break;
 	default:
 		res.result = EOPNOTSUPP;
 	}
 
-	return send_fd(socket, fd, &res, sizeof(struct fd_response));
+	ret = send_fd(socket, fd, &res, sizeof(struct fd_response));
+	if (ret == -1) {
+		printf("error while sending the reponse\n");
+	}
+	return ret;
 }
 
 void
@@ -236,26 +248,29 @@ main_loop(void)
 	int socket_fd;
 	int ret;
 
+	if (unlink(SOCKET_NAME) == -1) {
+		printf("error during unlink()");
+		exit(EXIT_FAILURE);
+	}
 	socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
 	if (socket_fd == -1) {
-		syslog(LOG_NOTICE, "error during socket()");
+		printf("error during socket()\n");
 		exit(EXIT_FAILURE);
 	}
 
-	unlink(SOCKET_NAME);
 	memset(&name, 0, sizeof(struct sockaddr_un));
 	name.sun_family = AF_UNIX;
 	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
 	ret = bind(socket_fd, (const struct sockaddr *)&name,
 	           sizeof(struct sockaddr_un));
 	if (ret == -1) {
-		syslog(LOG_NOTICE, "error during bind()");
+		printf("error during bind()\n");
 		exit(EXIT_FAILURE);
 	}
 
 	ret = listen(socket_fd, 2);
 	if (ret == -1) {
-		syslog(LOG_NOTICE, "error during listen()");
+		printf("error during listen()");
 		exit(EXIT_FAILURE);
 	}
 
@@ -265,13 +280,14 @@ main_loop(void)
 
 		conn_fd = accept(socket_fd, NULL, NULL);
 		if (conn_fd == -1) {
-			syslog(LOG_NOTICE,
-			       "error during accept(), shutting down");
+			printf("error during accept(), shutting down\n");
 			exit(EXIT_FAILURE);
 		}
 
-		syslog(LOG_NOTICE, "handling a request");
 		ret = handle_request(conn_fd);
+		if (ret == -1) {
+			printf("error while handling a request\n");
+		}
 		(void)ret;
 		close(conn_fd);
 	}

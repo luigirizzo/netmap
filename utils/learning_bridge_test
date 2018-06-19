@@ -1,23 +1,33 @@
 #!/usr/bin/env bash
-./functional -c
-./functional -o
-echo "First send, every port should receive the frame."
+# restarting fd_server
+./functional -c &>/dev/null
+./functional -o &>/dev/null
+sleep 0.2s
+
+# echo "First send, every port should receive the frame."
 ./functional -i vale:v0 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
 p1=$!
-echo "PID 1: $p1"
 ./functional -i vale:v1 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
 p2=$!
-echo "PID 2: $p2"
-sleep 0.1s
+# At the moment there's a race condition between the 2 background receiving
+# processes and the foreground receiving process.
+# If the sending process manages to send the frame before one of the background
+# process retrieves the file descriptor, the bg process will not receive the
+# frame and therefore the test will fail.
+# Sleeping basically prevents the race condition from happening 99.9999% of the
+# times.
+# For a more robust approach, functional.c should send a signal after receiving
+# the file descriptor and we should wait for that signal to send the frame.
+sleep 0.2s
 ./functional -i vale:v2 -t 100:c -s 10:10:10:10:10:10 &>/dev/null
 wait $p1
 e1=$?
 wait $p2
 e2=$?
-echo "Exit value 1: $e1"
-echo "Exit value 2: $e2"
+# echo "Exit value 1: $e1"
+# echo "Exit value 2: $e2"
 
-echo "Second send, only v2 should receive the frame."
+# echo "Second send, only v2 should receive the frame."
 ./functional -i vale:v2 -r 100:c -d 10:10:10:10:10:10 -T 1 &>/dev/null &
 p3=$!
 ./functional -n -i vale:v1 -r 100:c -T 1 -d 10:10:10:10:10:10 &>/dev/null &
@@ -27,9 +37,9 @@ wait $p3
 e3=$?
 wait $p4
 e4=$?
-echo "Exit value 1: $e3"
-echo "Exit value 2: $e4"
-echo "=============================================="
+# echo "Exit value 1: $e3"
+# echo "Exit value 2: $e4"
+# echo "=============================================="
 result=$(($e1 + $e2 + $e3 + $e4))
 if [ $result = 0 ] ; then
 	echo "Test successful"
