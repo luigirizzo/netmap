@@ -9,10 +9,10 @@
 function check_exit() {
 	local exit_value="$1"
 	if [ $exit_value != 0 ] ; then
-		echo "$2 has failed with exit value = $exit_value."
+		echo "$2 FAIL($exit_value)."
 		exit 1
-	else
-		echo "$2 was successful."
+	# else
+		# echo "$2 was successful."
 	fi
 }
 
