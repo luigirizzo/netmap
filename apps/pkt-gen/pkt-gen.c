@@ -1361,7 +1361,7 @@ ping_body(void *data)
 		if (ts.tv_sec >= 1) {
 			D("count %d RTT: min %d av %d ns",
 				(int)count, (int)t_min, (int)(av/count));
-			int k, j, kmin;
+			int k, j, kmin, off;
 			char buf[512];
 
 			for (kmin = 0; kmin < 64; kmin ++)
@@ -1371,8 +1371,10 @@ ping_body(void *data)
 				if (buckets[k])
 					break;
 			buf[0] = '\0';
-			for (j = kmin; j <= k; j++)
-				sprintf(buf, "%s %5d", buf, (int)buckets[j]);
+			off = 0;
+			for (j = kmin; j <= k; j++) {
+				off += sprintf(buf + off, " %5d", (int)buckets[j]);
+			}
 			D("k: %d .. %d\n\t%s", 1<<kmin, 1<<k, buf);
 			bzero(&buckets, sizeof(buckets));
 			count = 0;
@@ -2434,7 +2436,7 @@ main_thread(struct glob_arg *g)
 	prev.pkts = prev.bytes = prev.events = 0;
 	gettimeofday(&prev.t, NULL);
 	for (;;) {
-		char b1[40], b2[40], b3[40], b4[70];
+		char b1[40], b2[40], b3[40], b4[100];
 		uint64_t pps, usec;
 		struct my_ctrs x;
 		double abs;
@@ -2612,7 +2614,12 @@ tap_alloc(char *dev)
 		/* if a device name was specified, put it in the structure; otherwise,
 		* the kernel will try to allocate the "next" device of the
 		* specified type */
-		strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+		size_t len = strlen(dev);
+		if (len > IFNAMSIZ) {
+			D("%s too long", dev);
+			return -1;
+		}
+		memcpy(ifr.ifr_name, dev, len);
 	}
 
 	/* try to create the device */
