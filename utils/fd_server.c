@@ -241,6 +241,7 @@ main_loop(void)
 	int socket_fd;
 	int ret;
 
+	printf("starting up.\n");
 	if (unlink(SOCKET_NAME) == -1) {
 		printf("error during unlink()");
 		exit(EXIT_FAILURE);
@@ -267,6 +268,7 @@ main_loop(void)
 		exit(EXIT_FAILURE);
 	}
 
+	printf("listening\n");
 	for (;;) {
 		int conn_fd;
 		int ret;
@@ -300,7 +302,7 @@ daemonize(void)
 		exit(EXIT_SUCCESS);
 	}
 
-	if (setsid() < 0) {
+	if (setsid() == -1) {
 		exit(EXIT_FAILURE);
 	}
 
@@ -316,10 +318,11 @@ daemonize(void)
 	}
 
 	umask(0);
+
 	if (chdir("/") == -1) {
-		perror("chdir()");
 		exit(EXIT_FAILURE);
 	}
+
 	for (i = sysconf(_SC_OPEN_MAX); i >= 0; i--) {
 		close(i);
 	}

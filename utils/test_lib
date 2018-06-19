@@ -25,5 +25,8 @@ function check_exit() {
 function create_vale_persistent_port() {
 	local if_name="$1"
 	vale-ctl -n "$if_name"
+	# The interface might still be opened by the fd_server, if that's the
+	# case we can't remove the VALE persistent port.
+	# TODO: decide what to do (we can call ./functional -c)
 	trap "vale-ctl -r $if_name" EXIT
 }

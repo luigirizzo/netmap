@@ -866,9 +866,17 @@ stop_fd_server(struct Global *g)
 	memset(&req, 0, sizeof(req));
 	req.action = FD_STOP;
 	ret        = send(socket_fd, &req, sizeof(struct fd_request), 0);
-	if (ret <= 0) {
+	if (ret == -1) {
 		perror("send()");
 	}
+	/* By calling recv() we synchronize with the fd_server closing the
+	 * socket.
+	 * This way we're sure that during the next call to ./functional
+	 * the fd_server has alredy closed its end and we avoid a possible race
+	 * condition. Otherwise the call to functional might connect to the
+	 * previous fd_server backlog.
+	 */
+	recv(socket_fd, &req, sizeof(struct fd_request), 0);
 	close(socket_fd);
 }
 
