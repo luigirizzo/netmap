@@ -109,7 +109,7 @@ clean_exit(struct Global *g)
 
 static void
 fill_packet_field(struct Global *g, unsigned offset, const char *content,
-		  unsigned content_len)
+                  unsigned content_len)
 {
 	if (offset + content_len > sizeof(g->pktm)) {
 		printf("Packet layout overflow: %u + %u > %lu\n", offset,
@@ -150,8 +150,9 @@ checksum(const void *data, uint16_t len, uint32_t sum /* host endianness */)
 	/* Checksum all the pairs of bytes first... */
 	for (i = 0; i < (len & ~1U); i += 2) {
 		sum += (u_int16_t)ntohs(*((u_int16_t *)(addr + i)));
-		if (sum > 0xFFFF)
+		if (sum > 0xFFFF) {
 			sum -= 0xFFFF;
+		}
 	}
 	/*
 	 * If there's a single byte left over, checksum it, too.
@@ -160,8 +161,9 @@ checksum(const void *data, uint16_t len, uint32_t sum /* host endianness */)
 	 */
 	if (i < len) {
 		sum += addr[i] << 8;
-		if (sum > 0xFFFF)
+		if (sum > 0xFFFF) {
 			sum -= 0xFFFF;
+		}
 	}
 	return sum;
 }
@@ -203,7 +205,7 @@ build_packet(struct Global *g)
 	ipofs = ofs;
 	/* First byte of IP header. */
 	fill_packet_8bit(g, ofs,
-			 (IPVERSION << 4) | ((sizeof(struct iphdr)) >> 2));
+	                 (IPVERSION << 4) | ((sizeof(struct iphdr)) >> 2));
 	ofs += 1;
 	/* Skip QoS byte. */
 	ofs += 1;
@@ -231,8 +233,8 @@ build_packet(struct Global *g)
 	ofs += 4;
 	/* Now put the checksum. */
 	fill_packet_16bit(
-		g, ipofs + 10,
-		wrapsum(checksum(g->pktm + ipofs, sizeof(struct iphdr), 0)));
+	        g, ipofs + 10,
+	        wrapsum(checksum(g->pktm + ipofs, sizeof(struct iphdr), 0)));
 	if (g->verbose) {
 		printf("%s: ip done, ofs %u\n", __func__, ofs);
 	}
@@ -265,17 +267,17 @@ build_packet(struct Global *g)
 	/* Put the UDP checksum now.
 	 * Magic: taken from sbin/dhclient/packet.c */
 	fill_packet_16bit(
-		g, udpofs + 6,
-		wrapsum(checksum(
-			/* udp header */ g->pktm + udpofs,
-			sizeof(struct udphdr),
-			checksum(/* udp payload */ g->pktm + pldofs,
-				 g->pktm_len - pldofs,
-				 checksum(/* pseudo header */ g->pktm + ipofs +
-						  12,
-					  2 * sizeof(g->src_ip),
-					  IPPROTO_UDP + (uint32_t)(g->pktm_len -
-								   udpofs))))));
+	        g, udpofs + 6,
+	        wrapsum(checksum(
+	                /* udp header */ g->pktm + udpofs,
+	                sizeof(struct udphdr),
+	                checksum(/* udp payload */ g->pktm + pldofs,
+	                         g->pktm_len - pldofs,
+	                         checksum(/* pseudo header */ g->pktm + ipofs +
+	                                          12,
+	                                  2 * sizeof(g->src_ip),
+	                                  IPPROTO_UDP + (uint32_t)(g->pktm_len -
+	                                                           udpofs))))));
 }
 
 static unsigned
@@ -306,8 +308,9 @@ tx_flush(struct Global *g)
 			pending += nm_tx_pending(ring);
 		}
 
-		if (!pending)
+		if (!pending) {
 			return 0;
+		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
 			printf("%s: Timeout\n", __func__);
@@ -335,9 +338,9 @@ tx_one(struct Global *g)
 	for (;;) {
 		for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
 			struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
-			unsigned head		 = ring->head;
-			unsigned frags		 = 0;
-			unsigned ofs		 = 0;
+			unsigned head            = ring->head;
+			unsigned frags           = 0;
+			unsigned ofs             = 0;
 
 			if (tx_bytes_avail(ring, g->max_frag_size) <
 			    g->pktm_len) {
@@ -360,7 +363,7 @@ tx_one(struct Global *g)
 				ofs += copysize;
 				slot->len   = copysize;
 				slot->flags = NS_MOREFRAG;
-				head	= nm_ring_next(ring, head);
+				head        = nm_ring_next(ring, head);
 				frags++;
 				if (ofs >= g->pktm_len) {
 					/* Last fragment. */
@@ -424,9 +427,9 @@ rx_one(struct Global *g)
 	again:
 		for (i = nmd->first_rx_ring; i <= nmd->last_rx_ring; i++) {
 			struct netmap_ring *ring = NETMAP_RXRING(nmd->nifp, i);
-			unsigned int head	= ring->head;
+			unsigned int head        = ring->head;
 			unsigned int frags       = 0;
-			int truncated		 = 0;
+			int truncated            = 0;
 
 			if (nm_ring_empty(ring)) {
 				continue;
@@ -540,8 +543,8 @@ parse_txrx_event(const char *opt, unsigned event_type, struct Event *event)
 
 	for (c = strbuf; *c != '\0' && *c != ':'; c++) {
 	}
-	more	   = (*c == ':');
-	*c	     = '\0';
+	more           = (*c == ':');
+	*c             = '\0';
 	event->pkt_len = atoi(strbuf);
 	if (event->pkt_len == 0) {
 		goto out;
@@ -550,8 +553,8 @@ parse_txrx_event(const char *opt, unsigned event_type, struct Event *event)
 		strbuf = c + 1;
 		for (c = strbuf; *c != '\0' && *c != ':'; c++) {
 		}
-		more	  = (*c == ':');
-		*c	    = '\0';
+		more          = (*c == ':');
+		*c            = '\0';
 		event->filler = strbuf[0];
 	}
 	if (more) {
@@ -601,7 +604,7 @@ parse_pause_event(const char *opt, struct Event *event)
 	}
 	event->usecs *= mul;
 	event->num = 1;
-	ret	= 0;
+	ret        = 0;
 out:
 #if 0
 	printf("parsed %llu usecs\n", event->usecs);
@@ -663,8 +666,8 @@ fill_nm_desc(struct nm_desc *des, struct nmreq *req, int fd)
 	} else if (nr_reg == NR_REG_ONE_NIC) {
 		/* XXX check validity */
 		des->first_tx_ring = des->last_tx_ring = des->first_rx_ring =
-			des->last_rx_ring =
-				des->req.nr_ringid & NETMAP_RING_MASK;
+		        des->last_rx_ring =
+		                des->req.nr_ringid & NETMAP_RING_MASK;
 	} else { /* pipes */
 		des->first_tx_ring = des->last_tx_ring = 0;
 		des->first_rx_ring = des->last_rx_ring = 0;
@@ -715,7 +718,7 @@ connect_to_fd_server(void)
 	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
 	name.sun_path[sizeof(name.sun_path) - 1] = '\0';
 	ret = connect(socket_fd, (const struct sockaddr *)&name,
-		      sizeof(struct sockaddr_un));
+	              sizeof(struct sockaddr_un));
 	if (ret == 0) {
 		return socket_fd;
 	}
@@ -750,7 +753,7 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	msg.msg_control    = ancillary.buf;
 	msg.msg_controllen = sizeof(ancillary.buf);
 
-	cmsg		 = CMSG_FIRSTHDR(&msg);
+	cmsg             = CMSG_FIRSTHDR(&msg);
 	cmsg->cmsg_level = SOL_SOCKET;
 	cmsg->cmsg_type  = SCM_RIGHTS;
 	cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
@@ -851,7 +854,7 @@ stop_fd_server(void)
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_STOP;
-	ret	= send(socket_fd, &req, sizeof(struct fd_request), 0);
+	ret        = send(socket_fd, &req, sizeof(struct fd_request), 0);
 	if (ret <= 0) {
 		perror("send()");
 	}
@@ -862,7 +865,7 @@ int
 parse_mac_address(const char *opt, char *mac)
 {
 	if (6 == sscanf(opt, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &mac[0], &mac[1],
-			&mac[2], &mac[3], &mac[4], &mac[5])) {
+	                &mac[2], &mac[3], &mac[4], &mac[5])) {
 		return 0;
 	}
 	return -1;
@@ -876,23 +879,25 @@ main(int argc, char **argv)
 	int opt;
 	int ret;
 
-	g->ifname	 = NULL;
+	g->ifname         = NULL;
 	g->wait_link_secs = 0;
 	g->timeout_secs   = 5;
 	g->pktm_len       = 60;
 	g->max_frag_size  = ~0U; /* unlimited */
-	for (i		      = 0; i < ETH_ADDR_LEN; i++)
+	for (i = 0; i < ETH_ADDR_LEN; i++) {
 		g->src_mac[i] = 0x00;
-	for (i			  = 0; i < ETH_ADDR_LEN; i++)
-		g->dst_mac[i]     = 0xFF;
-	g->src_ip		  = 0x0A000005; /* 10.0.0.5 */
-	g->dst_ip		  = 0x0A000007; /* 10.0.0.7 */
-	g->filler		  = 'a';
-	g->num_events		  = 0;
+	}
+	for (i = 0; i < ETH_ADDR_LEN; i++) {
+		g->dst_mac[i] = 0xFF;
+	}
+	g->src_ip                 = 0x0A000005; /* 10.0.0.5 */
+	g->dst_ip                 = 0x0A000007; /* 10.0.0.7 */
+	g->filler                 = 'a';
+	g->num_events             = 0;
 	g->ignore_if_not_matching = /*false=*/0;
 	g->success_if_no_receive  = /*false=*/0;
-	g->verbose		  = 0;
-	g->num_loops		  = 1;
+	g->verbose                = 0;
+	g->num_loops              = 1;
 	memset(&g->nmd, 0, sizeof(struct nm_desc));
 
 	while ((opt = getopt(argc, argv, "hcons:d:i:w:F:T:t:r:Ivp:C:")) != -1) {
@@ -958,13 +963,13 @@ main(int argc, char **argv)
 
 			if (opt == 'p') {
 				ret = parse_pause_event(
-					optarg, g->events + g->num_events);
+				        optarg, g->events + g->num_events);
 			} else {
 				ret = parse_txrx_event(
-					optarg,
-					(opt == 't') ? EVENT_TYPE_TX
-						     : EVENT_TYPE_RX,
-					g->events + g->num_events);
+				        optarg,
+				        (opt == 't') ? EVENT_TYPE_TX
+				                     : EVENT_TYPE_RX,
+				        g->events + g->num_events);
 			}
 			if (ret) {
 				printf("Invalid event syntax '%s'\n", optarg);
