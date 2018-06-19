@@ -31,11 +31,11 @@ print_request(struct fd_request *req)
 
 	syslog(LOG_NOTICE, "d action: %s, if_name: %s\n",
 	       req->action == FD_GET
-		       ? "FD_GET"
-		       : req->action == FD_RELEASE
-				 ? "FD_RELEASE"
-				 : req->action == FD_CLOSE ? "FD_CLOSE"
-							   : "FD_STOP",
+	               ? "FD_GET"
+	               : req->action == FD_RELEASE
+	                         ? "FD_RELEASE"
+	                         : req->action == FD_CLOSE ? "FD_CLOSE"
+	                                                   : "FD_STOP",
 	       req->if_name);
 }
 
@@ -144,7 +144,7 @@ close_fd(const char *if_name, struct fd_response *res)
 		return;
 	}
 
-	ret	 = nm_close(entry->nmd);
+	ret         = nm_close(entry->nmd);
 	res->result = ret;
 	if (ret != 0) {
 		syslog(LOG_NOTICE, "error while close interface %s\n", if_name);
@@ -179,10 +179,10 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 		msg.msg_control    = ancillary.buf;
 		msg.msg_controllen = sizeof(ancillary.buf);
 
-		cmsg			= CMSG_FIRSTHDR(&msg);
-		cmsg->cmsg_level	= SOL_SOCKET;
-		cmsg->cmsg_type		= SCM_RIGHTS;
-		cmsg->cmsg_len		= CMSG_LEN(sizeof(int));
+		cmsg                    = CMSG_FIRSTHDR(&msg);
+		cmsg->cmsg_level        = SOL_SOCKET;
+		cmsg->cmsg_type         = SCM_RIGHTS;
+		cmsg->cmsg_len          = CMSG_LEN(sizeof(int));
 		*(int *)CMSG_DATA(cmsg) = fd;
 	}
 
@@ -247,7 +247,7 @@ main_loop(void)
 	name.sun_family = AF_UNIX;
 	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
 	ret = bind(socket_fd, (const struct sockaddr *)&name,
-		   sizeof(struct sockaddr_un));
+	           sizeof(struct sockaddr_un));
 	if (ret == -1) {
 		syslog(LOG_NOTICE, "error during bind()");
 		exit(EXIT_FAILURE);
