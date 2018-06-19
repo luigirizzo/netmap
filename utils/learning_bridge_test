@@ -1,46 +1,48 @@
 #!/usr/bin/env bash
 # restarting fd_server
-./functional -c &>/dev/null
-./functional -o &>/dev/null
-sleep 0.2s
+./functional -c
+./functional -o
+echo "Server restarted"
+
+# preopening interface that will be needed
+./functional -i vale0:v0
+./functional -i vale0:v1
+./functional -i vale0:v2
+echo "Interfaces preopened"
 
 # echo "First send, every port should receive the frame."
-./functional -i vale:v0 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
+./functional -i vale0:v0 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
 p1=$!
-./functional -i vale:v1 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
+./functional -i vale0:v1 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
 p2=$!
-# At the moment there's a race condition between the 2 background receiving
-# processes and the foreground receiving process.
-# If the sending process manages to send the frame before one of the background
-# process retrieves the file descriptor, the bg process will not receive the
-# frame and therefore the test will fail.
-# Sleeping basically prevents the race condition from happening 99.9999% of the
-# times.
-# For a more robust approach, functional.c should send a signal after receiving
-# the file descriptor and we should wait for that signal to send the frame.
-sleep 0.2s
-./functional -i vale:v2 -t 100:c -s 10:10:10:10:10:10 &>/dev/null
+./functional -i vale0:v2 -t 100:c -s 10:10:10:10:10:10 &>/dev/null
+e3=$?
+
 wait $p1
 e1=$?
 wait $p2
 e2=$?
-# echo "Exit value 1: $e1"
-# echo "Exit value 2: $e2"
+echo "Exit value 1: $e1"
+echo "Exit value 2: $e2"
+echo "Exit value 3: $e3"
 
 # echo "Second send, only v2 should receive the frame."
-./functional -i vale:v2 -r 100:c -d 10:10:10:10:10:10 -T 1 &>/dev/null &
-p3=$!
-./functional -n -i vale:v1 -r 100:c -T 1 -d 10:10:10:10:10:10 &>/dev/null &
+./functional -i vale0:v2 -r 100:c -T 1 -d 10:10:10:10:10:10 &>/dev/null &
 p4=$!
-./functional -i vale:v0 -t 100:c -d 10:10:10:10:10:10 &>/dev/null
-wait $p3
-e3=$?
+./functional -i vale0:v1 -r 100:c -T 1 -d 10:10:10:10:10:10 -n &>/dev/null &
+p5=$!
+./functional -i vale0:v0 -t 100:c -d 10:10:10:10:10:10 &>/dev/null
+e6=$?
+
 wait $p4
 e4=$?
-# echo "Exit value 1: $e3"
-# echo "Exit value 2: $e4"
-# echo "=============================================="
-result=$(($e1 + $e2 + $e3 + $e4))
+wait $p5
+e5=$?
+echo "Exit value 4: $e4"
+echo "Exit value 5: $e5"
+echo "Exit value 6: $e6"
+echo "=============================================="
+result=$(($e1 + $e2 + $e3 + $e4 + $e5 + $e6))
 if [ $result = 0 ] ; then
 	echo "Test successful"
 	exit 0

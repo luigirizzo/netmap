@@ -30,7 +30,7 @@ static void
 print_request(struct fd_request *req)
 {
 
-	printf("d action: %s, if_name: %s\n",
+	printf("action: %s, if_name: %s\n",
 	       req->action == FD_GET
 	               ? "FD_GET"
 	               : req->action == FD_RELEASE
@@ -100,8 +100,7 @@ get_fd(const char *if_name, struct fd_response *res)
 
 	entry->nmd = nm_open(if_name, NULL, 0, NULL);
 	if (entry->nmd == NULL) {
-		printf("Failed to nm_open(%s) with error %d",
-		       if_name, errno);
+		printf("Failed to nm_open(%s) with error %d", if_name, errno);
 		res->result = errno;
 		return -1;
 	}
@@ -169,7 +168,6 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 
 	iov[0].iov_base = buf;
 	iov[0].iov_len  = buf_size;
-
 	memset(&msg, 0, sizeof(struct msghdr));
 	msg.msg_iov    = iov;
 	msg.msg_iovlen = 1;
@@ -178,9 +176,8 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 		/* We need the ancillary data only when we're sending a file
 		 * descriptor, and a file descriptor cannot be negative.
 		 */
-		msg.msg_control    = ancillary.buf;
-		msg.msg_controllen = sizeof(ancillary.buf);
-
+		msg.msg_control         = ancillary.buf;
+		msg.msg_controllen      = sizeof(ancillary.buf);
 		cmsg                    = CMSG_FIRSTHDR(&msg);
 		cmsg->cmsg_level        = SOL_SOCKET;
 		cmsg->cmsg_type         = SCM_RIGHTS;
@@ -189,10 +186,6 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 	}
 
 	ret = sendmsg(socket, &msg, 0);
-	if (ret == -1) {
-		return -1;
-	}
-
 	return ret;
 }
 
