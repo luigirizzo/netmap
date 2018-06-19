@@ -313,14 +313,12 @@ tx_flush(struct Global *g)
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			printf("%s: Timeout (connecting to server)\n", __func__);
+			printf("%s: Timeout\n", __func__);
 			return -1;
 		}
 
-		if (elapsed_ms > 0) {
-			usleep(wait_ms * 1000);
-			elapsed_ms += wait_ms;
-		}
+		usleep(wait_ms * 1000);
+		elapsed_ms += wait_ms;
 
 		ioctl(nmd->fd, NIOCTXSYNC, NULL);
 	}
@@ -483,12 +481,22 @@ rx_one(struct Global *g)
 			       "from RX "
 			       "ring #%d\n",
 			       g->pktr_len, frags, i);
-			return g->success_if_no_receive == 1 ? -1 : 0;
+			/* frame received */
+			if (g->success_if_no_receive == 1) {
+				return -1;
+			} else {
+				return -0;
+			}
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
 			printf("%s: Timeout\n", __func__);
-			return g->success_if_no_receive == 1 ? 0 : -1;
+			/* frame not received */
+			if (g->success_if_no_receive == 1) {
+				return 0;
+			} else {
+				return -1;
+			}
 		}
 
 		/* Retry after a short while. */
@@ -674,11 +682,44 @@ fill_nm_desc(struct nm_desc *des, struct nmreq *req, int fd)
 	}
 }
 
-#define MS_WAIT 10
+#define SOCKET_NAME "/tmp/my_unix_socket"
+
+int
+connect_to_fd_server(struct Global *g)
+{
+	struct sockaddr_un name;
+	unsigned elapsed_ms = 0;
+	unsigned wait_ms    = 100;
+	int socket_fd;
+
+	socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+	if (socket_fd == -1) {
+		perror("socket()");
+		return -1;
+	}
+
+	memset(&name, 0, sizeof(struct sockaddr_un));
+	name.sun_family = AF_UNIX;
+	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
+	name.sun_path[sizeof(name.sun_path) - 1] = '\0';
+	while (connect(socket_fd, (const struct sockaddr *)&name,
+	               sizeof(struct sockaddr_un)) == -1) {
+		if (elapsed_ms > g->timeout_secs * 1000) {
+			printf("%s: Timeout\n", __func__);
+			return -1;
+		}
+
+		usleep(wait_ms * 1000);
+		elapsed_ms += wait_ms;
+	}
+
+	return socket_fd;
+}
 
 void
-start_fd_server(void)
+start_fd_server(struct Global *g)
 {
+	int socket_fd;
 	pid_t pid;
 
 	pid = fork();
@@ -695,40 +736,13 @@ start_fd_server(void)
 		perror("exec()");
 		exit(EXIT_FAILURE);
 	}
-}
 
-#define SOCKET_NAME "/tmp/my_unix_socket"
-
-int
-connect_to_fd_server(struct Global *g)
-{
-	struct sockaddr_un name;
-	unsigned elapsed_ms = 0;
-	unsigned wait_ms = 100;
-	int socket_fd;
-
-	socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+	socket_fd = connect_to_fd_server(g);
 	if (socket_fd == -1) {
-		perror("socket()");
-		return -1;
+		printf("Couldn't connect to fd_server after starting it\n");
+		exit(EXIT_FAILURE);
 	}
-
-	memset(&name, 0, sizeof(struct sockaddr_un));
-	name.sun_family = AF_UNIX;
-	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
-	name.sun_path[sizeof(name.sun_path) - 1] = '\0';
-	while (connect(socket_fd, (const struct sockaddr *)&name,
-	              sizeof(struct sockaddr_un)) == -1) {
-		if (elapsed_ms > g->timeout_secs * 1000) {
-			printf("%s: Timeout\n", __func__);
-			return -1;
-		}
-
-		usleep(wait_ms * 1000);
-		elapsed_ms += wait_ms;
-	}
-
-	return socket_fd;
+	close(socket_fd);
 }
 
 int
@@ -744,7 +758,7 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	struct msghdr msg;
 	int amount;
 
-	errno = 0;
+	errno           = 0;
 	iov[0].iov_base = buf;
 	iov[0].iov_len  = buf_size;
 	memset(&msg, 0, sizeof(struct msghdr));
@@ -753,11 +767,11 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	memset(ancillary.buf, 0, sizeof(ancillary.buf));
 	msg.msg_control    = ancillary.buf;
 	msg.msg_controllen = sizeof(ancillary.buf);
-	cmsg             = CMSG_FIRSTHDR(&msg);
-	cmsg->cmsg_level = SOL_SOCKET;
-	cmsg->cmsg_type  = SCM_RIGHTS;
-	cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
-	amount = recvmsg(socket, &msg, 0);
+	cmsg               = CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level   = SOL_SOCKET;
+	cmsg->cmsg_type    = SCM_RIGHTS;
+	cmsg->cmsg_len     = CMSG_LEN(sizeof(int));
+	amount             = recvmsg(socket, &msg, 0);
 	if (amount == -1) {
 		return -1;
 	}
@@ -908,13 +922,13 @@ main(int argc, char **argv)
 			return 0;
 
 		case 'o':
-			start_fd_server();
+			start_fd_server(g);
 			return 0;
 
 		case 'n':
 			/* Not receiving means timing out */
-			g->success_if_no_receive = 1;
-			return 0;
+			g->success_if_no_receive = /*true=*/1;
+			break;
 
 		case 's':
 			ret = parse_mac_address(optarg, g->src_mac);
@@ -1006,11 +1020,11 @@ main(int argc, char **argv)
 		return -1;
 	}
 
-	if (g->num_events < 1) {
-		printf("No transmit/receive/pause events specified\n");
-		usage();
-		return -1;
-	}
+	// if (g->num_events < 1) {
+	// 	printf("No transmit/receive/pause events specified\n");
+	// 	usage();
+	// 	return -1;
+	// }
 
 	if (get_if_fd(g, g->ifname, &g->nmd) < 0) {
 		printf("Failed to nm_open(%s)\n", g->ifname);
@@ -1046,7 +1060,8 @@ main(int argc, char **argv)
 					if (rx_one(g)) {
 						clean_exit(g);
 					}
-					if (rx_check(g)) {
+					if (g->success_if_no_receive == 0 &&
+					    rx_check(g)) {
 						clean_exit(g);
 					}
 					break;
