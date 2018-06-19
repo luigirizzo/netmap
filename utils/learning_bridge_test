@@ -3,21 +3,19 @@
 source test_lib
 
 # Restarting fd_server.
-./functional -c
+./functional -c &>/dev/null
 check_exit $? "close_server"
-./functional -o
+./functional -o &>/dev/null
 check_exit $? "start_server"
-echo "Server restarted"
 
-# Preopening interface that will be needed. This is needed to avoid a race
+# Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-./functional -i vale0:v0
-check_exit $? "open vale0:v0"
-./functional -i vale0:v1
-check_exit $? "open vale0:v1"
-./functional -i vale0:v2
-check_exit $? "open vale0:v2"
-echo "Interfaces preopened"
+./functional -i vale0:v0 &>/dev/null
+check_exit $? "pre-open vale0:v0"
+./functional -i vale0:v1 &>/dev/null
+check_exit $? "pre-open vale0:v1"
+./functional -i vale0:v2 &>/dev/null
+check_exit $? "pre-open vale0:v2"
 
 # First send, every port should receive the frame.
 ./functional -i vale0:v0 -r 100:c -T 1 -s 10:10:10:10:10:10 &>/dev/null &
@@ -49,6 +47,6 @@ check_exit $e1 "receive vale0:v0"
 check_exit $e2 "receive vale0:v1"
 check_exit $e3 "send vale0:v2"
 
-echo "================================================================================"
-echo "Test successful"
+# echo "================================================================================"
+echo "Test successful."
 exit 0
