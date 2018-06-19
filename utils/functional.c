@@ -97,13 +97,13 @@ struct Global {
 	unsigned num_loops;
 };
 
-void release_if_fd(const char *);
+void release_if_fd(struct Global *, const char *);
 
 void
 clean_exit(struct Global *g)
 {
 
-	release_if_fd(g->ifname);
+	release_if_fd(g, g->ifname);
 	exit(EXIT_FAILURE);
 }
 
@@ -313,7 +313,7 @@ tx_flush(struct Global *g)
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			printf("%s: Timeout\n", __func__);
+			printf("%s: Timeout (connecting to server)\n", __func__);
 			return -1;
 		}
 
@@ -687,25 +687,25 @@ start_fd_server(void)
 		exit(EXIT_FAILURE);
 	}
 	if (pid > 0) {
-		/* The fd_server needs to create the unix socket. Sleeping does
-		 * not guarantee a correct synchronization, but should be good
-		 * enough.
-		 */
-		usleep(MS_WAIT * 1000);
+		wait(NULL);
 		return;
 	}
 
-	execl("fd_server", "fd_server", (char *)NULL);
+	if (execl("fd_server", "./fd_server", (char *)NULL)) {
+		perror("exec()");
+		exit(EXIT_FAILURE);
+	}
 }
 
 #define SOCKET_NAME "/tmp/my_unix_socket"
 
 int
-connect_to_fd_server(void)
+connect_to_fd_server(struct Global *g)
 {
 	struct sockaddr_un name;
+	unsigned elapsed_ms = 0;
+	unsigned wait_ms = 100;
 	int socket_fd;
-	int ret;
 
 	socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
 	if (socket_fd == -1) {
@@ -717,14 +717,18 @@ connect_to_fd_server(void)
 	name.sun_family = AF_UNIX;
 	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
 	name.sun_path[sizeof(name.sun_path) - 1] = '\0';
-	ret = connect(socket_fd, (const struct sockaddr *)&name,
-	              sizeof(struct sockaddr_un));
-	if (ret == 0) {
-		return socket_fd;
+	while (connect(socket_fd, (const struct sockaddr *)&name,
+	              sizeof(struct sockaddr_un)) == -1) {
+		if (elapsed_ms > g->timeout_secs * 1000) {
+			printf("%s: Timeout\n", __func__);
+			return -1;
+		}
+
+		usleep(wait_ms * 1000);
+		elapsed_ms += wait_ms;
 	}
 
-	printf("fd_server offline\n");
-	return ret;
+	return socket_fd;
 }
 
 int
@@ -741,26 +745,21 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	int amount;
 
 	errno = 0;
-
 	iov[0].iov_base = buf;
 	iov[0].iov_len  = buf_size;
-
 	memset(&msg, 0, sizeof(struct msghdr));
 	msg.msg_iov    = iov;
 	msg.msg_iovlen = 1;
-
 	memset(ancillary.buf, 0, sizeof(ancillary.buf));
 	msg.msg_control    = ancillary.buf;
 	msg.msg_controllen = sizeof(ancillary.buf);
-
 	cmsg             = CMSG_FIRSTHDR(&msg);
 	cmsg->cmsg_level = SOL_SOCKET;
 	cmsg->cmsg_type  = SCM_RIGHTS;
 	cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
-
 	amount = recvmsg(socket, &msg, 0);
-	if (amount < 0) {
-		return amount;
+	if (amount == -1) {
+		return -1;
 	}
 
 	res = iov[0].iov_base;
@@ -772,16 +771,14 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	/* If res->result == 0, we know for sure that a file descriptor has been
 	 * sent through the ancillary data.
 	 */
-	if (amount > 0) {
-		cmsg = CMSG_FIRSTHDR(&msg);
-		*fd  = *(int *)CMSG_DATA(cmsg);
-	}
+	cmsg = CMSG_FIRSTHDR(&msg);
+	*fd  = *(int *)CMSG_DATA(cmsg);
 
 	return amount;
 }
 
 int
-get_if_fd(const char *if_name, struct nm_desc *nmd)
+get_if_fd(struct Global *g, const char *if_name, struct nm_desc *nmd)
 {
 	struct fd_response res;
 	struct fd_request req;
@@ -789,7 +786,7 @@ get_if_fd(const char *if_name, struct nm_desc *nmd)
 	int new_fd;
 	int ret;
 
-	socket_fd = connect_to_fd_server();
+	socket_fd = connect_to_fd_server(g);
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_GET;
@@ -802,7 +799,7 @@ get_if_fd(const char *if_name, struct nm_desc *nmd)
 
 	memset(&res, 0, sizeof(res));
 	ret = recv_fd(socket_fd, &new_fd, &res, sizeof(struct fd_response));
-	if (ret < 0) {
+	if (ret == -1) {
 		perror("recv_fd()");
 		return -1;
 	}
@@ -818,13 +815,13 @@ get_if_fd(const char *if_name, struct nm_desc *nmd)
 }
 
 void
-release_if_fd(const char *if_name)
+release_if_fd(struct Global *g, const char *if_name)
 {
 	struct fd_request req;
 	int socket_fd;
 	int ret;
 
-	socket_fd = connect_to_fd_server();
+	socket_fd = connect_to_fd_server(g);
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_RELEASE;
@@ -839,13 +836,13 @@ release_if_fd(const char *if_name)
 }
 
 void
-stop_fd_server(void)
+stop_fd_server(struct Global *g)
 {
 	struct fd_request req;
 	int socket_fd;
 	int ret;
 
-	socket_fd = connect_to_fd_server();
+	socket_fd = connect_to_fd_server(g);
 	if (socket_fd == -1) {
 		printf("server alredy down\n");
 		return;
@@ -907,7 +904,7 @@ main(int argc, char **argv)
 			return 0;
 
 		case 'c':
-			stop_fd_server();
+			stop_fd_server(g);
 			return 0;
 
 		case 'o':
@@ -1015,7 +1012,7 @@ main(int argc, char **argv)
 		return -1;
 	}
 
-	if (get_if_fd(g->ifname, &g->nmd) < 0) {
+	if (get_if_fd(g, g->ifname, &g->nmd) < 0) {
 		printf("Failed to nm_open(%s)\n", g->ifname);
 		return -1;
 	}
@@ -1065,7 +1062,7 @@ main(int argc, char **argv)
 	/* if we have sent something, wait for all tx to complete */
 	tx_flush(g);
 
-	release_if_fd(g->ifname);
+	release_if_fd(g, g->ifname);
 
 	return 0;
 }
