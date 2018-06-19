@@ -10,7 +10,7 @@ check_exit $? "start_server"
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-./functional -i vale0:v0 &>/dev/null
+./functional -i vale0:v0
 check_exit $? "pre-open vale0:v0"
 ./functional -i vale0:v1 &>/dev/null
 check_exit $? "pre-open vale0:v1"
