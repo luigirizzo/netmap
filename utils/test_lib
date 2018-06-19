@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+################################################################################
+# Checks the exit value, if it's != 0 cleans up and terminates the script.
+# Arguments:
+#   $1 -> exit value to check
+#   $2 -> string printed
+################################################################################
+function check_exit() {
+	local exit_value="$1"
+	if [ $exit_value != 0 ] ; then
+		echo "$2 has failed with exit value = $exit_value."
+		exit 1
+	else
+		echo "$2 was successful."
+	fi
+}
+
+################################################################################
+# Creates a VALE persistent port, and sets a cleanup handler which will be
+# called when the script exits.
+# Arguments:
+#   $1 -> name of the VALE persistent port
+################################################################################
+function create_vale_persistent_port() {
+	local if_name="$1"
+	vale-ctl -n "$if_name"
+	trap "vale-ctl -r $if_name" EXIT
+}
