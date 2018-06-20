@@ -8,6 +8,7 @@
 ################################################################################
 function check_exit() {
 	local exit_value="$1"
+
 	if [ $exit_value != 0 ] ; then
 		echo "$2 FAIL($exit_value)."
 		exit 1
@@ -17,16 +18,60 @@ function check_exit() {
 }
 
 ################################################################################
+# Set a trap while maintaining the one currently set. The new one will be
+# executed first.
+# Arguments:
+#   $1 -> new command to execute during the trap
+#   $2 -> signal to trap
+################################################################################
+function cumulative_trap() {
+	local new_command="$1"
+	local signal="$2"
+	local current_command=""
+
+	# https://unix.stackexchange.com/a/334593
+	shopt -s lastpipe
+	trap -p "$signal" | read current_command
+	shopt -u lastpipe
+
+	current_command="$(echo $current_command | awk -F\' '{print $2}')"
+	new_command="$new_command; $current_command"
+	trap "$new_command" "$signal"
+}
+
+################################################################################
 # Creates a VALE persistent port, and sets a cleanup handler which will be
 # called when the script exits.
 # Arguments:
 #   $1 -> name of the VALE persistent port
+#   $2 -> name of the VALE switch that the port will be to be attached to
 ################################################################################
 function create_vale_persistent_port() {
 	local if_name="$1"
+	local bdg_name="$2"
+
 	vale-ctl -n "$if_name"
-	# The interface might still be opened by the fd_server, if that's the
-	# case we can't remove the VALE persistent port.
-	# TODO: decide what to do (we can call ./functional -c)
-	trap "vale-ctl -r $if_name" EXIT
+	check_exit $? "create $if_name"
+	cumulative_trap "vale-ctl -r $if_name" "EXIT"
+	check_exit $? "trap-remove $if_name"
+
+	vale-ctl -a "$bdg_name:$if_name"
+	check_exit $? "attach $bdg_name:$if_name"
+	cumulative_trap "vale-ctl -d $bdg_name:$if_name" "EXIT"
+	# We first need to close the file descriptor of the interface, otherwise
+	# the detach will fail. To accomplish that we shut down fd_server
+	cumulative_trap "./functional -c" "EXIT"
+	check_exit $? "trap-detach $bdg_name:$if_name"
+}
+
+################################################################################
+# Restarts the file descriptor server.
+# Arguments:
+#   None
+################################################################################
+function restart_fd_server() {
+	./functional -c &>/dev/null
+	check_exit $? "close_server"
+	./functional -o &>/dev/null
+	check_exit $? "start_server"
 }

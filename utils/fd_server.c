@@ -242,8 +242,8 @@ main_loop(void)
 	int ret;
 
 	printf("starting up.\n");
-	if (unlink(SOCKET_NAME) == -1) {
-		printf("error during unlink()");
+	if (unlink(SOCKET_NAME) == -1 && errno != ENOENT) {
+		printf("error %d during unlink()", errno);
 		exit(EXIT_FAILURE);
 	}
 	socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
