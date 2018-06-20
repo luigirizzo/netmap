@@ -32,7 +32,7 @@ e2=$?
 wait $p1
 e1=$?
 check_exit $e1 "no-receive netmap:pipe{1"
-check_exit $e2 "send vale0:v1"
+check_exit $e2 "send netmap:pipe{1"
 
 # Now we receive with the monitor, therefore pipe{1 should receive the frame.
 ./functional -i "netmap:pipe{1"   -r 150:d &>/dev/null &
