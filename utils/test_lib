@@ -1,4 +1,33 @@
 #!/usr/bin/env bash
+################################################################################
+# Closes the file descriptor server.
+# Arguments:
+#   None
+################################################################################
+function close_fd_server() {
+	./functional -c &>/dev/null
+	check_exit $? "close_fd_server"
+}
+
+################################################################################
+# Starts the file descriptor server.
+# Arguments:
+#   None
+################################################################################
+function start_fd_server() {
+	./functional -o &>/dev/null
+	check_exit $? "start_fd_server"
+}
+
+################################################################################
+# Restarts the file descriptor server.
+# Arguments:
+#   None
+################################################################################
+function restart_fd_server() {
+	close_fd_server
+	start_fd_server
+}
 
 ################################################################################
 # Checks the exit value, if it's != 0 cleans up and terminates the script.
@@ -29,6 +58,8 @@ function cumulative_trap() {
 	local signal="$2"
 	local current_command=""
 
+	# If we run "trap -p SIGNAL" in a subshell we read the traps for that
+	# subshell, instead of the current one.
 	# https://unix.stackexchange.com/a/334593
 	shopt -s lastpipe
 	trap -p "$signal" | read current_command
@@ -40,7 +71,7 @@ function cumulative_trap() {
 }
 
 ################################################################################
-# Creates a VALE persistent port, and sets a cleanup handler which will be
+# Creates a VALE persistent port and sets a cleanup handler which will be
 # called when the script exits.
 # Arguments:
 #   $1 -> name of the VALE persistent port
@@ -59,19 +90,29 @@ function create_vale_persistent_port() {
 	check_exit $? "attach $bdg_name:$if_name"
 	cumulative_trap "vale-ctl -d $bdg_name:$if_name" "EXIT"
 	# We first need to close the file descriptor of the interface, otherwise
-	# the detach will fail. To accomplish that we shut down fd_server
-	cumulative_trap "./functional -c" "EXIT"
+	# the detach will fail. To accomplish that we shut down fd_server.
+	cumulative_trap "close_fd_server" "EXIT"
 	check_exit $? "trap-detach $bdg_name:$if_name"
 }
 
 ################################################################################
-# Restarts the file descriptor server.
+# Creates a pair of veth interfaces and sets a cleanup handler which will be
+# called when the script exits.
 # Arguments:
-#   None
+#   $1 -> base name of the veth devices
 ################################################################################
-function restart_fd_server() {
-	./functional -c &>/dev/null
-	check_exit $? "close_server"
-	./functional -o &>/dev/null
-	check_exit $? "start_server"
+function create_veth_interfaces() {
+	local if_name="$1"
+	local if_name1="${if_name}A"
+	local if_name2="${if_name}B"
+
+	ip link add "$if_name1" type veth peer name "$if_name2"
+	check_exit $? "create $if_name"
+	# We first need to close the file descriptor of the interfaces,
+	# otherwise the delete will fail. To accomplish that we shut down
+	# fd_server.
+	cumulative_trap "ip link delete $if_name1" "EXIT"
+	check_exit $? "trap-delete $if_name1"
+	cumulative_trap "close_fd_server" "EXIT"
+	check_exit $? "trap-detach $bdg_name:$if_name"
 }
