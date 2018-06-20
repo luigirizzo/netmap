@@ -1253,7 +1253,7 @@ ping_body(void *data)
 		nexttime = targ->tic;
 	}
 	while (!targ->cancel && (n == 0 || sent < n)) {
-		struct netmap_ring *ring = NETMAP_TXRING(nifp, 0);
+		struct netmap_ring *ring = NETMAP_TXRING(nifp, targ->nmd->first_tx_ring);
 		struct netmap_slot *slot;
 		char *p;
 		int rv;
@@ -1436,7 +1436,7 @@ pong_body(void *data)
 			continue;
 		}
 #endif
-		txring = NETMAP_TXRING(nifp, 0);
+		txring = NETMAP_TXRING(nifp, targ->nmd->first_tx_ring);
 		txcur = txring->cur;
 		txavail = nm_ring_space(txring);
 		/* see what we got back */
