@@ -630,7 +630,7 @@ usage(void)
 	       "[-s (shuts down the file descriptor server)]\n"
 	       "    -i NETMAP_PORT\n"
 	       "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
-	       "    [-T TIMEOUT_SECS (=5)]\n"
+	       "    [-T TIMEOUT_SECS (=1)]\n"
 	       "    [-w WAIT_FOR_LINK_SECS (=0)]\n"
 	       "    [-t LEN[:FILLCHAR[:NUM]] (trasmit NUM packets with size "
 	       "LEN bytes)]\n"
@@ -900,7 +900,7 @@ main(int argc, char **argv)
 
 	g->ifname         = NULL;
 	g->wait_link_secs = 0;
-	g->timeout_secs   = 5;
+	g->timeout_secs   = 1;
 	g->pktm_len       = 60;
 	g->max_frag_size  = ~0U; /* unlimited */
 	for (i = 0; i < ETH_ADDR_LEN; i++) {
