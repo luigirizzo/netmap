@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if receiving copy monitors correctly block VALE ports
+#                 from receiving.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create a persistent VALE port (v0).
+# 2) connect v0 and a VALE ephimeral port (v1) to the same VALE switch.
+# 3) open a receiving copy monitor for v0/r.
+# 4) send from v1 without receiving from v0/r, check that v0 doesn't receive
+#    the frame.
+# 5) receive from v0/r, check that v0 receives the frame.
+################################################################################
+source test_lib
+
+restart_fd_server
+
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+create_vale_persistent_port "v0" "vale0"
+./functional -i vale0:v0    &>/dev/null
+check_exit $? "pre-open vale0:v0"
+# Receiving copy monitor for vale0:v0
+./functional -i netmap:v0/r &>/dev/null
+check_exit $? "pre-open netmap:v0/r"
+./functional -i vale0:v1    &>/dev/null
+check_exit $? "pre-open vale0:v1"
+
+# Initially we don't receive with the monitor, therefore vale0:v1 should not
+# receive the frame.
+./functional -i vale0:v0 -r 150:d -n &>/dev/null &
+p1=$!
+./functional -i vale0:v1 -t 150:d    &>/dev/null
+e2=$?
+wait $p1
+e1=$?
+check_exit $e1 "no-receive vale0:v0"
+check_exit $e2 "send vale0:v1"
+
+# Now we receive with the monitor, therefore vale0:v1 should receive the frame.
+./functional -i vale0:v0    -r 150:d &>/dev/null &
+p3=$!
+./functional -i netmap:v0/r -r 150:d &>/dev/null
+p4=$!
+wait $p3
+e3=$?
+wait $p4
+e4=$?
+check_exit $e3 "receive vale:v0"
+check_exit $e4 "receive netmap:v0/r"
+
+echo "Test successful."

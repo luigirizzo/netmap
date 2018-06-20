@@ -14,6 +14,7 @@
 #include "fd_server.h"
 
 struct nmd_entry {
+	char if_name[NETMAP_REQ_IFNAMSIZ];
 	struct nm_desc *nmd;
 	uint8_t is_in_use;
 	uint8_t is_open;
@@ -30,7 +31,7 @@ static void
 print_request(struct fd_request *req)
 {
 
-	printf("action: %s, if_name: %s\n",
+	printf("action: %s, if_name: '%s'\n",
 	       req->action == FD_GET
 	               ? "FD_GET"
 	               : req->action == FD_RELEASE
@@ -45,32 +46,34 @@ search_des(const char *if_name)
 {
 	int i;
 
+	// printf("searching %s\n", if_name);
 	for (i = 0; i < num_entries; ++i) {
 		struct nmd_entry *entry = &entries[i];
-		struct nm_desc *nmd     = entry->nmd;
+
+		// printf("i=%d, is_open=%d, is_in_use=%d, if_name=%s\n",
+		// 	i, entry->is_open, entry->is_in_use, entry->if_name);
 
 		if (entry->is_open == 0) {
 			continue;
 		}
 
-		if (strcmp(nmd->req.nr_name, if_name) == 0) {
+		if (strncmp(entry->if_name, if_name, IFNAMSIZ) == 0) {
+			// printf("finished searching with a match\n");
 			return entry;
 		}
 	}
 
+	// printf("finished searching without a match\n");
 	return NULL;
 }
 
 struct nmd_entry *
-get_free_des(int *ret)
+get_free_des(void)
 {
-
 	if (num_entries == MAX_OPEN_IF) {
-		*ret = -1;
 		return NULL;
 	}
 
-	*ret = 0;
 	return &entries[num_entries++];
 }
 
@@ -78,7 +81,6 @@ int
 get_fd(const char *if_name, struct fd_response *res)
 {
 	struct nmd_entry *entry;
-	int ret;
 
 	entry = search_des(if_name);
 	if (entry != NULL) {
@@ -91,8 +93,8 @@ get_fd(const char *if_name, struct fd_response *res)
 		return entry->nmd->fd;
 	}
 
-	entry = get_free_des(&ret);
-	if (ret == -1) {
+	entry = get_free_des();
+	if (entry == NULL) {
 		printf("Out of memory\n");
 		res->result = ENOMEM;
 		return -1;
@@ -100,10 +102,12 @@ get_fd(const char *if_name, struct fd_response *res)
 
 	entry->nmd = nm_open(if_name, NULL, 0, NULL);
 	if (entry->nmd == NULL) {
-		printf("Failed to nm_open(%s) with error %d", if_name, errno);
+		printf("Failed to nm_open(%s) with error %d\n", if_name, errno);
 		res->result = errno;
 		return -1;
 	}
+	strncpy(entry->if_name, if_name, sizeof(entry->if_name));
+	entry->if_name[sizeof(entry->if_name) - 1] = '\0';
 
 	memcpy(&res->req, &entry->nmd->req, sizeof(entry->nmd->req));
 	entry->is_in_use = 1;
@@ -118,7 +122,7 @@ release_fd(const char *if_name, struct fd_response *res)
 
 	entry = search_des(if_name);
 	if (entry == NULL) {
-		printf("if_name %s isn't open", if_name);
+		printf("if_name %s isn't open\n", if_name);
 		res->result = ENOENT;
 		return;
 	}
@@ -140,14 +144,14 @@ close_fd(const char *if_name, struct fd_response *res)
 	entry = search_des(if_name);
 	if (entry == NULL) {
 		res->result = ENOENT;
-		printf("if_name %s hasn't been opened", if_name);
+		printf("if_name %s hasn't been opened\n", if_name);
 		return;
 	}
 
 	ret         = nm_close(entry->nmd);
 	res->result = ret;
 	if (ret != 0) {
-		printf("error while close interface %s", if_name);
+		printf("error while close interface %s\n", if_name);
 		return;
 	}
 	entry->is_in_use = 0;
@@ -176,6 +180,7 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 		/* We need the ancillary data only when we're sending a file
 		 * descriptor, and a file descriptor cannot be negative.
 		 */
+		printf("sending a file descriptor\n");
 		msg.msg_control         = ancillary.buf;
 		msg.msg_controllen      = sizeof(ancillary.buf);
 		cmsg                    = CMSG_FIRSTHDR(&msg);
@@ -333,7 +338,6 @@ daemonize(void)
 int
 main()
 {
-
 	daemonize();
 	main_loop();
 	return 0;

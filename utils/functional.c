@@ -852,11 +852,14 @@ release_if_fd(struct Global *g, const char *if_name)
 void
 stop_fd_server(struct Global *g)
 {
+	unsigned old_timeout_secs = g->timeout_secs;
 	struct fd_request req;
 	int socket_fd;
 	int ret;
 
-	socket_fd = connect_to_fd_server(g);
+	g->timeout_secs = 0;
+	socket_fd       = connect_to_fd_server(g);
+	g->timeout_secs = old_timeout_secs;
 	if (socket_fd == -1) {
 		printf("server alredy down\n");
 		return;
