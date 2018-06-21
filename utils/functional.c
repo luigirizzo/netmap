@@ -37,6 +37,7 @@
 #include "fd_server.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <net/netmap_user.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
@@ -280,17 +281,17 @@ build_packet(struct Global *g)
 	                                                           udpofs))))));
 }
 
-static unsigned
-tx_bytes_avail(struct netmap_ring *ring, unsigned max_frag_size)
-{
-	unsigned avail_per_slot = ring->nr_buf_size;
+// static unsigned
+// tx_bytes_avail(struct netmap_ring *ring, unsigned max_frag_size)
+// {
+// 	unsigned avail_per_slot = ring->nr_buf_size;
 
-	if (max_frag_size < avail_per_slot) {
-		avail_per_slot = max_frag_size;
-	}
+// 	if (max_frag_size < avail_per_slot) {
+// 		avail_per_slot = max_frag_size;
+// 	}
 
-	return nm_ring_space(ring) * avail_per_slot;
-}
+// 	return nm_ring_space(ring) * avail_per_slot;
+// }
 
 static int
 tx_flush(struct Global *g)
@@ -324,59 +325,81 @@ tx_flush(struct Global *g)
 	}
 }
 
-/* Transmit a single packet using any TX ring. */
+uint64_t
+ring_avail_sends(struct netmap_ring *ring, unsigned pkt_len)
+{
+	uint64_t slot_per_packet;
+
+	slot_per_packet = ceil((double)pkt_len / (double)ring->nr_buf_size);
+	return nm_ring_space(ring) / slot_per_packet;
+}
+
+uint64_t
+adapter_avail_sends(struct nm_desc *nmd, unsigned pkt_len)
+{
+	uint64_t sends_available = 0;
+	unsigned int i;
+
+	for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
+		struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
+
+		sends_available += ring_avail_sends(ring, pkt_len);
+	}
+
+	return sends_available;
+}
+
+void
+put_one_packet(struct Global *g, struct netmap_ring *ring)
+{
+	unsigned head  = ring->head;
+	unsigned frags = 0;
+	unsigned ofs   = 0;
+
+	for (;;) {
+		struct netmap_slot *slot = &ring->slot[head];
+		char *buf                = NETMAP_BUF(ring, slot->buf_idx);
+		unsigned copysize        = g->pktm_len - ofs;
+
+		if (copysize > ring->nr_buf_size) {
+			copysize = ring->nr_buf_size;
+		}
+		if (copysize > g->max_frag_size) {
+			copysize = g->max_frag_size;
+		}
+
+		memcpy(buf, g->pktm + ofs, copysize);
+		ofs += copysize;
+		slot->len   = copysize;
+		slot->flags = NS_MOREFRAG;
+		head        = nm_ring_next(ring, head);
+		frags++;
+		if (ofs >= g->pktm_len) {
+			/* Last fragment. */
+			assert(ofs == g->pktm_len);
+			slot->flags = NS_REPORT;
+			break;
+		}
+	}
+
+	ring->head = ring->cur = head;
+	printf("packet (%u bytes, %u frags) placed to TX\n", g->pktm_len,
+	       frags);
+}
+
+/* Transmit packets_num packets using any combination of TX rings. */
 static int
-tx_one(struct Global *g)
+tx(struct Global *g, unsigned packets_num)
 {
 	struct nm_desc *nmd = &g->nmd;
 	unsigned elapsed_ms = 0;
 	unsigned wait_ms    = 100;
 	unsigned int i;
 
+	/* We cycle here until either we timeout or we find enough space. */
 	for (;;) {
-		for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
-			struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
-			unsigned head            = ring->head;
-			unsigned frags           = 0;
-			unsigned ofs             = 0;
-
-			if (tx_bytes_avail(ring, g->max_frag_size) <
-			    g->pktm_len) {
-				continue;
-			}
-
-			for (;;) {
-				struct netmap_slot *slot = &ring->slot[head];
-				char *buf = NETMAP_BUF(ring, slot->buf_idx);
-				unsigned copysize = g->pktm_len - ofs;
-
-				if (copysize > ring->nr_buf_size) {
-					copysize = ring->nr_buf_size;
-				}
-				if (copysize > g->max_frag_size) {
-					copysize = g->max_frag_size;
-				}
-
-				memcpy(buf, g->pktm + ofs, copysize);
-				ofs += copysize;
-				slot->len   = copysize;
-				slot->flags = NS_MOREFRAG;
-				head        = nm_ring_next(ring, head);
-				frags++;
-				if (ofs >= g->pktm_len) {
-					/* Last fragment. */
-					assert(ofs == g->pktm_len);
-					slot->flags = NS_REPORT;
-					break;
-				}
-			}
-
-			ring->head = ring->cur = head;
-			ioctl(nmd->fd, NIOCTXSYNC, NULL);
-			printf("packet (%u bytes, %u frags) transmitted to TX "
-			       "ring #%d\n",
-			       g->pktm_len, frags, i);
-			return 0;
+		if (adapter_avail_sends(nmd, g->pktm_len) >= packets_num) {
+			break;
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
@@ -390,7 +413,27 @@ tx_one(struct Global *g)
 		ioctl(nmd->fd, NIOCTXSYNC, NULL);
 	}
 
-	/* never reached */
+	/* Once we have enough space, we start filling slots. We might use
+	 * multiple rings.
+	 */
+	for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
+		struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
+		uint64_t num_ring_sends;
+
+		for (num_ring_sends = ring_avail_sends(ring, g->pktm_len);
+		     num_ring_sends > 0 && packets_num > 0;
+		     --num_ring_sends, --packets_num) {
+			put_one_packet(g, ring);
+		}
+
+		if (packets_num == 0) {
+			break;
+		}
+	}
+
+	assert(packets_num == 0);
+	/* Once we're done we sync, sending all packets at once. */
+	ioctl(nmd->fd, NIOCTXSYNC, NULL);
 	return 0;
 }
 
@@ -1031,12 +1074,6 @@ main(int argc, char **argv)
 		return -1;
 	}
 
-	// if (g->num_events < 1) {
-	// 	printf("No transmit/receive/pause events specified\n");
-	// 	usage();
-	// 	return -1;
-	// }
-
 	if (get_if_fd(g, g->ifname, &g->nmd) < 0) {
 		printf("Failed to nm_open(%s)\n", g->ifname);
 		return -1;
@@ -1049,7 +1086,6 @@ main(int argc, char **argv)
 	for (c = 0; c < g->num_loops; c++) {
 		for (i = 0; i < g->num_events; i++) {
 			const struct Event *e = g->events + i;
-			unsigned j;
 
 			if (e->evtype == EVENT_TYPE_TX ||
 			    e->evtype == EVENT_TYPE_RX) {
@@ -1058,29 +1094,26 @@ main(int argc, char **argv)
 				build_packet(g);
 			}
 
-			for (j = 0; j < e->num; j++) {
-				printf("%d: ", j);
-				switch (e->evtype) {
-				case EVENT_TYPE_TX:
-					if (tx_one(g)) {
-						clean_exit(g);
-					}
-					break;
-
-				case EVENT_TYPE_RX:
-					if (rx_one(g)) {
-						clean_exit(g);
-					}
-					if (g->success_if_no_receive == 0 &&
-					    rx_check(g)) {
-						clean_exit(g);
-					}
-					break;
-
-				case EVENT_TYPE_PAUSE:
-					usleep(e->usecs);
-					break;
+			switch (e->evtype) {
+			case EVENT_TYPE_TX:
+				if (tx(g, e->num)) {
+					clean_exit(g);
 				}
+				break;
+
+			case EVENT_TYPE_RX:
+				if (rx_one(g)) {
+					clean_exit(g);
+				}
+				if (g->success_if_no_receive == 0 &&
+				    rx_check(g)) {
+					clean_exit(g);
+				}
+				break;
+
+			case EVENT_TYPE_PAUSE:
+				usleep(e->usecs);
+				break;
 			}
 		}
 	}
