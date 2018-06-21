@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 ################################################################################
-# Test objective: check if receive copy monitors receives frames when its
-#                 monitored VALE pipe is receiving.
+# Test objective: check if a receive copy monitor receives frames when its
+#                 monitored VALE pipe is receiving, even if the monitored pipe
+#                 hasn't yet read the frame.
 # Operations:
 # 0) restart fd_server to have a clean starting state
 # 1) create a pair of VALE pipes (pipe{1, pipe}1).
 # 2) open a receive copy monitor pipe{1/r for pipe{1.
-# 3) send from pipe}1, check that both pipe{1/r and pipe{1 receive the frame.
+# 3) send from pipe}1 and don't read from pipe{1, check that pipe{1/r receives
+#    the frame.
+# 4) receive from pipe{1.
 ################################################################################
 source test_lib
 
@@ -21,19 +24,19 @@ check_exit $? "pre-open netmap:pipe{1/r"
 ./functional -i "netmap:pipe}1"   &>/dev/null
 check_exit $? "pre-open netmap:pipe}1"
 
-
+# First we send without reading from pipe{1
 ./functional -i "netmap:pipe{1/r" -r 150:d &>/dev/null &
 p1=$!
-./functional -i "netmap:pipe{1"   -r 150:d &>/dev/null &
-p2=$!
 ./functional -i "netmap:pipe}1"   -t 150:d &>/dev/null
-e3=$?
+e2=$?
 wait $p1
 e1=$?
-wait $p2
-e2=$?
 check_exit $e1 "receive netmap:pipe{1/r"
-check_exit $e2 "receive netmap:pipe{1"
-check_exit $e3 "send netmap:pipe{1"
+check_exit $e2 "send netmap:pipe}1"
+
+# Then we read from pipe{1
+./functional -i "netmap:pipe{1"   -r 150:d &>/dev/null
+e3=$?
+check_exit $e3 "receive netmap:pipe{1"
 
 echo "Test successful."
