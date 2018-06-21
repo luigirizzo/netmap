@@ -25,11 +25,13 @@ check_exit $? "pre-open vale0:v0/z"
 ./functional -i "vale0:v1"   &>/dev/null
 check_exit $? "pre-open vale0:v1"
 
+fill='d'
+len=150
 # Initially we don't receive with the monitored VALE port v0, therefore the
 # monitor should not receive the frame.
-./functional -i vale0:v0/z -r 150:d -n &>/dev/null &
+./functional -i vale0:v0/z -r "${len}:${fill}" -n &>/dev/null &
 p1=$!
-./functional -i vale0:v1   -t 150:d    &>/dev/null
+./functional -i vale0:v1   -t "${len}:${fill}"    &>/dev/null
 e2=$?
 wait $p1
 e1=$?
@@ -38,9 +40,9 @@ check_exit $e2 "send vale0:v0"
 
 # Now we receive with the monitored VALE port v0, therefore the monitor should
 # receive the frame.
-./functional -i "vale0:v0"   -r 150:d &>/dev/null &
+./functional -i "vale0:v0"   -r "${len}:${fill}" &>/dev/null &
 p3=$!
-./functional -i "vale0:v0/z" -r 150:d &>/dev/null
+./functional -i "vale0:v0/z" -r "${len}:${fill}" &>/dev/null
 e4=$?
 wait $p3
 e3=$?

@@ -25,10 +25,12 @@ check_exit $? "pre-open netmap:v0/r"
 ./functional -i vale0:v1    &>/dev/null
 check_exit $? "pre-open vale0:v1"
 
+fill='d'
+len=150
 # First we send without reading from v0
-./functional -i netmap:v0/r -r 150:d &>/dev/null &
+./functional -i netmap:v0/r -r "${len}:${fill}" &>/dev/null &
 p1=$!
-./functional -i vale0:v1    -t 150:d &>/dev/null
+./functional -i vale0:v1    -t "${len}:${fill}" &>/dev/null
 e2=$?
 wait $p1
 e1=$?
@@ -36,7 +38,7 @@ check_exit $e1 "receive netmap:v0/r"
 check_exit $e2 "send vale0:v1"
 
 # Then we read from v0
-./functional -i vale0:v0    -r 150:d &>/dev/null
+./functional -i vale0:v0    -r "${len}:${fill}" &>/dev/null
 e3=$?
 check_exit $e3 "receive vale0:v0"
 
