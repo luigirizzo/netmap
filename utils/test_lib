@@ -37,9 +37,10 @@ function restart_fd_server() {
 ################################################################################
 function check_exit() {
 	local exit_value="$1"
+	local string_to_print="$2"
 
 	if [ $exit_value != 0 ] ; then
-		echo "$2 FAIL($exit_value)."
+		echo "$string_to_print FAIL($exit_value)."
 		exit 1
 	# else
 		# echo "$2 was successful."
