@@ -117,3 +117,40 @@ function create_veth_interfaces() {
 	cumulative_trap "close_fd_server" "EXIT"
 	check_exit $? "trap-detach $bdg_name:$if_name"
 }
+
+
+
+################################################################################
+# Prints general tests usage.
+# Arguments:
+#   None
+################################################################################
+function parse_arguments_usage() {
+	echo "usage: [-h] "
+	echo "       [-l packet_length]"
+	echo "       [-f fill_character]"
+	echo "       [-n packets_to_send]"
+}
+
+
+################################################################################
+# Parse the command line arguments of the calling script.
+# Arguments:
+#   It must be always called like like this 'parse_arguments "$@"'
+################################################################################
+function parse_arguments() {
+	while getopts "hl:f:n:" opt; do
+		case $opt in
+			l) len="$OPTARG"
+			;;
+			f) fill="$OPTARG"
+			;;
+			n) num="$OPTARG"
+			;;
+			h) parse_arguments_usage ; exit 0
+			;;
+			\?) parse_arguments_usage ; exit 1
+			;;
+		esac
+	done
+}
