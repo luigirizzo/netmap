@@ -326,7 +326,7 @@ tx_flush(struct Global *g)
 }
 
 uint64_t
-ring_avail_sends(struct netmap_ring *ring, unsigned pkt_len)
+ring_avail_packets(struct netmap_ring *ring, unsigned pkt_len)
 {
 	uint64_t slot_per_packet;
 
@@ -343,7 +343,7 @@ adapter_avail_sends(struct nm_desc *nmd, unsigned pkt_len)
 	for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
 		struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
 
-		sends_available += ring_avail_sends(ring, pkt_len);
+		sends_available += ring_avail_packets(ring, pkt_len);
 	}
 
 	return sends_available;
@@ -420,7 +420,7 @@ tx(struct Global *g, unsigned packets_num)
 		struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
 		uint64_t num_ring_sends;
 
-		for (num_ring_sends = ring_avail_sends(ring, g->pktm_len);
+		for (num_ring_sends = ring_avail_packets(ring, g->pktm_len);
 		     num_ring_sends > 0 && packets_num > 0;
 		     --num_ring_sends, --packets_num) {
 			put_one_packet(g, ring);
@@ -455,27 +455,89 @@ ignore_received_frame(struct Global *g)
 	return 0; /* don't ignore */
 }
 
-/* Receive a single packet from any RX ring. */
+uint64_t
+adapter_avail_receives(struct nm_desc *nmd, unsigned pkt_len)
+{
+	uint64_t receives_available = 0;
+	unsigned int i;
+
+	for (i = nmd->first_rx_ring; i <= nmd->last_rx_ring; i++) {
+		struct netmap_ring *ring = NETMAP_RXRING(nmd->nifp, i);
+
+		receives_available += ring_avail_packets(ring, pkt_len);
+	}
+
+	return receives_available;
+}
+
 static int
-rx_one(struct Global *g)
+rx_check(struct Global *g)
+{
+	unsigned i;
+
+	if (g->pktr_len != g->pktm_len) {
+		printf("Received packet length (%u) different from "
+		       "expected (%u bytes)\n",
+		       g->pktr_len, g->pktm_len);
+		return -1;
+	}
+
+	for (i = 0; i < g->pktr_len; i++) {
+		if (g->pktr[i] != g->pktm[i]) {
+			printf("Received packet differs from model at "
+			       "offset %u (0x%02x!=0x%02x)\n",
+			       i, g->pktr[i], (uint8_t)g->pktm[i]);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+/* Receive packets_num packets from any combination of RX rings. */
+static int
+rx(struct Global *g, unsigned packets_num)
 {
 	struct nm_desc *nmd = &g->nmd;
 	unsigned elapsed_ms = 0;
-	unsigned wait_ms    = 100;
+	unsigned wait_ms = 100;
 	unsigned int i;
 
+	/* We cycle here until either we timeout or we find enough space. */
 	for (;;) {
 	again:
-		for (i = nmd->first_rx_ring; i <= nmd->last_rx_ring; i++) {
-			struct netmap_ring *ring = NETMAP_RXRING(nmd->nifp, i);
-			unsigned int head        = ring->head;
-			unsigned int frags       = 0;
-			int truncated            = 0;
+		if (adapter_avail_receives(nmd, g->pktm_len) >= packets_num) {
+			break;
+		}
 
-			if (nm_ring_empty(ring)) {
-				continue;
-			}
+		if (elapsed_ms > g->timeout_secs * 1000) {
+			printf("%s: Timeout\n", __func__);
+			/* -n flag */
+			return g->success_if_no_receive == 1 ? 0 : -1;
+		}
 
+		/* Retry after a short while. */
+		usleep(wait_ms * 1000);
+		elapsed_ms += wait_ms;
+		ioctl(nmd->fd, NIOCRXSYNC, NULL);
+	}
+
+
+	/* Once we have enough space, we start reading packets. We might use
+	 * multiple rings.
+	 */
+	for (i = nmd->first_rx_ring; i <= nmd->last_rx_ring; i++) {
+		struct netmap_ring *ring = NETMAP_RXRING(nmd->nifp, i);
+		unsigned head = ring->head;
+		uint64_t num_ring_receives;
+
+		for (num_ring_receives = ring_avail_packets(ring, g->pktm_len);
+		     num_ring_receives > 0 && packets_num > 0;
+		     --num_ring_receives, --packets_num) {
+			unsigned int frags = 0;
+			int truncated = 0;
+
+			/* Read one packet from the ring. */
 			g->pktr_len = 0;
 			for (;;) {
 				struct netmap_slot *slot = &ring->slot[head];
@@ -504,11 +566,13 @@ rx_one(struct Global *g)
 					break;
 				}
 			}
-			if (truncated) {
-				continue; /* skip this ring */
-			}
+
+			/* Update ring status, without telling netmap. */
 			ring->head = ring->cur = head;
-			ioctl(nmd->fd, NIOCRXSYNC, NULL);
+			if (truncated) {
+				break; /* skip this ring */
+			}
+
 			if (ignore_received_frame(g)) {
 				if (g->verbose) {
 					printf("(ignoring packet with %u bytes "
@@ -518,60 +582,30 @@ rx_one(struct Global *g)
 					       g->pktr_len, frags, i);
 				}
 				elapsed_ms = 0;
+				/* We can go back there, because we're
+				 * decrementing packets_num each time, therefore
+				 * the we will wait only for the remaining
+				 * packets.
+				 */
 				goto again;
 			}
-			printf("packet (%u bytes, %u frags) received "
-			       "from RX "
-			       "ring #%d\n",
-			       g->pktr_len, frags, i);
-			/* frame received */
-			if (g->success_if_no_receive == 1) {
-				return -1;
-			} else {
-				return -0;
+
+			/* As soon as we find a packet wich doesn't match our
+			 * packet model we exit with status EXIT_FAILURE.
+			 */
+			if (rx_check(g)) {
+				clean_exit(g);
 			}
 		}
 
-		if (elapsed_ms > g->timeout_secs * 1000) {
-			printf("%s: Timeout\n", __func__);
-			/* frame not received */
-			if (g->success_if_no_receive == 1) {
-				return 0;
-			} else {
-				return -1;
-			}
-		}
-
-		/* Retry after a short while. */
-		usleep(wait_ms * 1000);
-		elapsed_ms += wait_ms;
-		ioctl(nmd->fd, NIOCRXSYNC, NULL);
-	}
-
-	return 0;
-}
-
-static int
-rx_check(struct Global *g)
-{
-	unsigned i;
-
-	if (g->pktr_len != g->pktm_len) {
-		printf("Received packet length (%u) different from "
-		       "expected (%u bytes)\n",
-		       g->pktr_len, g->pktm_len);
-		return -1;
-	}
-
-	for (i = 0; i < g->pktr_len; i++) {
-		if (g->pktr[i] != g->pktm[i]) {
-			printf("Received packet differs from model at "
-			       "offset %u (0x%02x!=0x%02x)\n",
-			       i, g->pktr[i], (uint8_t)g->pktm[i]);
-			return -1;
+		if (packets_num == 0) {
+			break;
 		}
 	}
 
+	assert(packets_num == 0);
+	/* Once we're done we sync, freeing all slots at once. */
+	ioctl(nmd->fd, NIOCRXSYNC, NULL);
 	return 0;
 }
 
@@ -1102,11 +1136,7 @@ main(int argc, char **argv)
 				break;
 
 			case EVENT_TYPE_RX:
-				if (rx_one(g)) {
-					clean_exit(g);
-				}
-				if (g->success_if_no_receive == 0 &&
-				    rx_check(g)) {
+				if (rx(g, e->num)) {
 					clean_exit(g);
 				}
 				break;
