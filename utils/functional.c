@@ -418,11 +418,11 @@ tx(struct Global *g, unsigned packets_num)
 	 */
 	for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
 		struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
-		uint64_t num_ring_sends;
+		uint64_t ring_sends_num;
 
-		for (num_ring_sends = ring_avail_packets(ring, g->pktm_len);
-		     num_ring_sends > 0 && packets_num > 0;
-		     --num_ring_sends, --packets_num) {
+		for (ring_sends_num = ring_avail_packets(ring, g->pktm_len);
+		     ring_sends_num > 0 && packets_num > 0;
+		     --ring_sends_num, --packets_num) {
 			put_one_packet(g, ring);
 		}
 
@@ -494,13 +494,55 @@ rx_check(struct Global *g)
 	return 0;
 }
 
+int
+read_one_packet(struct Global *g, struct netmap_ring *ring)
+{
+	unsigned head = ring->head;
+	int frags     = 0;
+
+	g->pktr_len = 0;
+	for (;;) {
+		struct netmap_slot *slot = &ring->slot[head];
+		char *buf                = NETMAP_BUF(ring, slot->buf_idx);
+
+		if (g->pktr_len + slot->len > sizeof(g->pktr)) {
+			/* Sanity check. */
+			printf("Error: received packet too "
+			       "large "
+			       "(>= %u bytes) ",
+			       g->pktr_len + slot->len);
+			clean_exit(g);
+		}
+		memcpy(g->pktr + g->pktr_len, buf, slot->len);
+		g->pktr_len += slot->len;
+		head = nm_ring_next(ring, head);
+		frags++;
+		if (!(slot->flags & NS_MOREFRAG)) {
+			break;
+		}
+		if (head == ring->tail) {
+			printf("warning: truncated packet "
+			       "(len=%u)\n",
+			       g->pktr_len);
+			frags = -1;
+			break;
+		}
+	}
+
+	ring->head = ring->cur = head;
+	printf("packet (%u bytes, %d frags) received "
+	       "from RX\n",
+	       g->pktr_len, frags);
+	return frags;
+}
+
 /* Receive packets_num packets from any combination of RX rings. */
 static int
 rx(struct Global *g, unsigned packets_num)
 {
 	struct nm_desc *nmd = &g->nmd;
 	unsigned elapsed_ms = 0;
-	unsigned wait_ms = 100;
+	unsigned wait_ms    = 100;
 	unsigned int i;
 
 	/* We cycle here until either we timeout or we find enough space. */
@@ -522,62 +564,28 @@ rx(struct Global *g, unsigned packets_num)
 		ioctl(nmd->fd, NIOCRXSYNC, NULL);
 	}
 
-
 	/* Once we have enough space, we start reading packets. We might use
 	 * multiple rings.
 	 */
 	for (i = nmd->first_rx_ring; i <= nmd->last_rx_ring; i++) {
 		struct netmap_ring *ring = NETMAP_RXRING(nmd->nifp, i);
-		unsigned head = ring->head;
-		uint64_t num_ring_receives;
+		uint64_t ring_receives_num;
 
-		for (num_ring_receives = ring_avail_packets(ring, g->pktm_len);
-		     num_ring_receives > 0 && packets_num > 0;
-		     --num_ring_receives, --packets_num) {
-			unsigned int frags = 0;
-			int truncated = 0;
+		for (ring_receives_num = ring_avail_packets(ring, g->pktm_len);
+		     ring_receives_num > 0 && packets_num > 0;
+		     --ring_receives_num, --packets_num) {
+			int frags = 0;
 
-			/* Read one packet from the ring. */
-			g->pktr_len = 0;
-			for (;;) {
-				struct netmap_slot *slot = &ring->slot[head];
-				char *buf = NETMAP_BUF(ring, slot->buf_idx);
-
-				if (g->pktr_len + slot->len > sizeof(g->pktr)) {
-					/* Sanity check. */
-					printf("Error: received packet too "
-					       "large "
-					       "(>= %u bytes) ",
-					       g->pktr_len + slot->len);
-					clean_exit(g);
-				}
-				memcpy(g->pktr + g->pktr_len, buf, slot->len);
-				g->pktr_len += slot->len;
-				head = nm_ring_next(ring, head);
-				frags++;
-				if (!(slot->flags & NS_MOREFRAG)) {
-					break;
-				}
-				if (head == ring->tail) {
-					printf("warning: truncated packet "
-					       "(len=%u)\n",
-					       g->pktr_len);
-					truncated = 1;
-					break;
-				}
-			}
-
-			/* Update ring status, without telling netmap. */
-			ring->head = ring->cur = head;
-			if (truncated) {
-				break; /* skip this ring */
+			frags = read_one_packet(g, ring);
+			if (frags == -1) {
+				break; /* Truncated packet, skip this ring. */
 			}
 
 			if (ignore_received_frame(g)) {
 				if (g->verbose) {
 					printf("(ignoring packet with %u bytes "
 					       "and "
-					       "%u frags received from RX ring "
+					       "%d frags received from RX ring "
 					       "#%d)\n",
 					       g->pktr_len, frags, i);
 				}
