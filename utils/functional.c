@@ -34,7 +34,6 @@
 #include <strings.h>
 #include <unistd.h>
 #define NETMAP_WITH_LIBS
-#include "fd_server.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -50,6 +49,8 @@
 #include <sys/uio.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+
+#include "fd_server.h"
 
 #define ETH_ADDR_LEN 6
 
@@ -886,6 +887,9 @@ get_if_fd(struct Global *g, const char *if_name, struct nm_desc *nmd)
 	int ret;
 
 	socket_fd = connect_to_fd_server(g);
+	if (socket_fd == -1) {
+		exit(EXIT_FAILURE);
+	}
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_GET;
@@ -921,6 +925,9 @@ release_if_fd(struct Global *g, const char *if_name)
 	int ret;
 
 	socket_fd = connect_to_fd_server(g);
+	if (socket_fd == -1) {
+		exit(EXIT_FAILURE);
+	}
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_RELEASE;

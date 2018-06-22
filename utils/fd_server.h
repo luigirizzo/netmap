@@ -1,15 +1,6 @@
 #ifndef FD_LIB_H
 #define FD_LIB_H
 
-#include <errno.h>
-#include <net/if.h>
-#include <stdint.h>
-#include <sys/socket.h>
-
-#include <net/netmap.h>
-#define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
-
 struct fd_request {
 #define FD_GET 1
 #define FD_RELEASE 2

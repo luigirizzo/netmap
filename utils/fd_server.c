@@ -10,6 +10,14 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <syslog.h>
+#include <errno.h>
+#include <net/if.h>
+#include <stdint.h>
+#include <sys/socket.h>
+
+#include <net/netmap.h>
+#define NETMAP_WITH_LIBS
+#include <net/netmap_user.h>
 
 #include "fd_server.h"
 
@@ -203,9 +211,7 @@ handle_request(int socket)
 	int amount;
 	int ret;
 
-	memset(&res, 0, sizeof(res));
 	memset(&req, 0, sizeof(req));
-
 	amount = recv(socket, &req, sizeof(struct fd_request), 0);
 	if (amount == -1) {
 		printf("error while receiving the request\n");
