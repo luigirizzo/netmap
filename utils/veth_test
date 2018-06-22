@@ -18,15 +18,18 @@ check_exit $? "pre-open netmap:veth1A"
 ./functional -i netmap:veth1B &>/dev/null
 check_exit $? "pre-open netmap:veth1B"
 
+fill='d'
+len=150
+num=1
 # During the first send we don't receive with the monitor, vale0:v1 should not
 # receive the frame.
-./functional -i netmap:veth1A -r 150:d &>/dev/null &
+./functional -i netmap:veth1A -r "${len}:${fill}:${num}" &>/dev/null &
 p1=$!
-./functional -i netmap:veth1B -t 150:d &>/dev/null
+./functional -i netmap:veth1B -t "${len}:${fill}:${num}" &>/dev/null
 e2=$?
 wait $p1
 e1=$?
-check_exit $e1 "receive netmap:veth1A"
-check_exit $e2 "send netmap:veth1B"
+check_exit $e1 "receive-${num} netmap:veth1A"
+check_exit $e2 "send-${num} netmap:veth1B"
 
 echo "Test successful."

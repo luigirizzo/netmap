@@ -26,26 +26,27 @@ check_exit $? "pre-open netmap:pipe}1"
 
 fill='d'
 len=150
+num=1
 # Initially we don't receive with the non-monitored pipe end, therefore the
 # monitor should not receive the frame.
-./functional -i "netmap:pipe{1/z" -r "${len}:${fill}" -n &>/dev/null &
+./functional -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" -n &>/dev/null &
 p1=$!
-./functional -i "netmap:pipe{1"   -t "${len}:${fill}"    &>/dev/null
+./functional -i "netmap:pipe{1"   -t "${len}:${fill}:${num}"    &>/dev/null
 e2=$?
 wait $p1
 e1=$?
-check_exit $e1 "no-receive netmap:pipe{1/z"
-check_exit $e2 "send netmap:pipe{1"
+check_exit $e1 "no-receive-${num} netmap:pipe{1/z"
+check_exit $e2 "send-${num} netmap:pipe{1"
 
 # Now we receive with the non-monitored pipe end, therefore the monitor should
 # receive the frame.
-./functional -i "netmap:pipe{1/z" -r "${len}:${fill}" &>/dev/null &
+./functional -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" &>/dev/null &
 p3=$!
-./functional -i "netmap:pipe}1"   -r "${len}:${fill}" &>/dev/null
+./functional -i "netmap:pipe}1"   -r "${len}:${fill}:${num}" &>/dev/null
 e4=$?
 wait $p3
 e3=$?
-check_exit $e3 "receive netmap:pipe{1/z"
-check_exit $e4 "receive netmap:pipe}1"
+check_exit $e3 "receive-${num} netmap:pipe{1/z"
+check_exit $e4 "receive-${num} netmap:pipe}1"
 
 echo "Test successful."
