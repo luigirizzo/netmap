@@ -26,19 +26,20 @@ check_exit $? "pre-open netmap:pipe}1"
 
 fill='d'
 len=150
+num=1
 # First we send without reading from pipe}1
-./functional -i "netmap:pipe{1/t" -r "${len}:${fill}" &>/dev/null &
+./functional -i "netmap:pipe{1/t" -r "${len}:${fill}:${num}" &>/dev/null &
 p1=$!
-./functional -i "netmap:pipe{1"   -t "${len}:${fill}" &>/dev/null
+./functional -i "netmap:pipe{1"   -t "${len}:${fill}:${num}" &>/dev/null
 e2=$?
 wait $p1
 e1=$?
-check_exit $e1 "receive netmap:pipe{1/t"
-check_exit $e2 "send netmap:pipe{1"
+check_exit $e1 "receive-${num} netmap:pipe{1/t"
+check_exit $e2 "send-${num} netmap:pipe{1"
 
 # Then we read from pipe}1
-./functional -i "netmap:pipe}1" -r "${len}:${fill}" &>/dev/null
+./functional -i "netmap:pipe}1" -r "${len}:${fill}:${num}" &>/dev/null
 e3=$?
-check_exit $e3 "receive netmap:pipe}1"
+check_exit $e3 "receive-${num} netmap:pipe}1"
 
 echo "Test successful."

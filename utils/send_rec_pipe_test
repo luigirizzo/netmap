@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if we can send and receive multiple packet at once
+#                 through netmap pipes.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create a pair of netmap pipes (pipeA{1, pipeA}1).
+# 2) send multiple packets from pipeA{1 and check if pipeA}1 receives them.
+# 2) send multiple packets from pipeA}1 and check if pipeA{1 receives them.
+################################################################################
+source test_lib
+
+restart_fd_server
+
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+./functional -i "netmap:pipeA{1" &>/dev/null
+check_exit $? "pre-open netmap:pipeA{1"
+./functional -i "netmap:pipeA}1" &>/dev/null
+check_exit $? "pre-open netmap:pipeA}1"
+
+fill='h'
+len=274
+num=10
+# pipeA}1 ---> pipeA{1
+./functional -i "netmap:pipeA{1" -r "${len}:${fill}:${num}" &>/dev/null &
+p1=$!
+./functional -i "netmap:pipeA}1" -t "${len}:${fill}:${num}" &>/dev/null
+e2=$?
+wait $p1
+e1=$?
+check_exit $e1 "receive-${num} netmap:pipeA{1"
+check_exit $e2 "send-${num} netmap:pipeA}1"
+
+# pipeA{1 ---> pipeA}1
+./functional -i "netmap:pipeA}1" -r "${len}:${fill}:${num}" &>/dev/null &
+p1=$!
+./functional -i "netmap:pipeA{1" -t "${len}:${fill}:${num}" &>/dev/null
+e2=$?
+wait $p1
+e1=$?
+check_exit $e1 "receive-${num} netmap:pipeA}1"
+check_exit $e2 "send-${num} netmap:pipeA{1"
+
+echo "Test successful."
