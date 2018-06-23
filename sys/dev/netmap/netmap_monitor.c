@@ -244,6 +244,33 @@ static int netmap_monitor_parent_txsync(struct netmap_kring *, int);
 static int netmap_monitor_parent_rxsync(struct netmap_kring *, int);
 static int netmap_monitor_parent_notify(struct netmap_kring *, int);
 
+static void
+nm_monitor_intercept_callbacks(struct netmap_kring *kring)
+{
+	ND("intercept callbacks on %s", kring->name);
+	kring->mon_sync = kring->nm_sync;
+	kring->mon_notify = kring->nm_notify;
+	if (kring->tx == NR_TX) {
+		kring->nm_sync = netmap_monitor_parent_txsync;
+	} else {
+		kring->nm_sync = netmap_monitor_parent_rxsync;
+		kring->nm_notify = netmap_monitor_parent_notify;
+		kring->mon_tail = kring->nr_hwtail;
+	}
+}
+
+static void
+nm_monitor_restore_callbacks(struct netmap_kring *kring)
+{
+	ND("restoring callbacks on %s", kring->name);
+	kring->nm_sync = kring->mon_sync;
+	kring->mon_sync = NULL;
+	if (kring->tx == NR_RX) {
+		kring->nm_notify = kring->mon_notify;
+	}
+	kring->mon_notify = NULL;
+}
+
 /* add the monitor mkring to the list of monitors of kring.
  * If this is the first monitor, intercept the callbacks
  */
@@ -265,17 +292,8 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 	nm_kr_stop(kring, NM_KR_LOCKED);
 
 	if (nm_monitor_none(kring)) {
-		/* this is the first monitor, intercept callbacks */
-		ND("intercept callbacks on %s", kring->name);
-		kring->mon_sync = kring->nm_sync;
-		kring->mon_notify = kring->nm_notify;
-		if (kring->tx == NR_TX) {
-			kring->nm_sync = netmap_monitor_parent_txsync;
-		} else {
-			kring->nm_sync = netmap_monitor_parent_rxsync;
-			kring->nm_notify = netmap_monitor_parent_notify;
-			kring->mon_tail = kring->nr_hwtail;
-		}
+		/* this is the first monitor, intercept the callbacks */
+		nm_monitor_intercept_callbacks(kring);
 	}
 
 	if (zmon) {
@@ -336,11 +354,13 @@ netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring)
 			mz->prev->zmon_list[kring->tx].next = mz->next;
 		else
 			kring->zmon_list[kring->tx].next = mz->next;
+		mz->prev = NULL;
 		if (mz->next != NULL) {
 			mz->next->zmon_list[kring->tx].prev = mz->prev;
 		} else {
 			kring->zmon_list[kring->tx].prev = mz->prev;
 		}
+		mz->next = NULL;
 	} else {
 		/* this is a copy monitor */
 		uint32_t mon_pos = mkring->mon_pos[kring->tx];
@@ -358,16 +378,7 @@ netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring)
 
 	if (nm_monitor_none(kring)) {
 		/* this was the last monitor, restore the callbacks */
-		ND("%s: restoring sync on %s: %p", mkring->name, kring->name,
-				kring->mon_sync);
-		kring->nm_sync = kring->mon_sync;
-		kring->mon_sync = NULL;
-		if (kring->tx == NR_RX) {
-			ND("%s: restoring notify on %s: %p",
-					mkring->name, kring->name, kring->mon_notify);
-			kring->nm_notify = kring->mon_notify;
-			kring->mon_notify = NULL;
-		}
+		nm_monitor_restore_callbacks(kring);
 	}
 
 	nm_kr_start(kring);
@@ -404,29 +415,40 @@ netmap_monitor_stop(struct netmap_adapter *na)
 					netmap_adapter_put(mna->priv.np_na);
 					mna->priv.np_na = NULL;
 				}
+				kring->monitors[j] = NULL;
 			}
 
 			zkring = kring->zmon_list[kring->tx].next;
 			if (zkring != NULL) {
 				struct netmap_monitor_adapter *next =
 					(struct netmap_monitor_adapter *)zkring->na;
-				struct netmap_monitor_adapter *this =
-						(struct netmap_monitor_adapter *)na;
-				struct netmap_adapter *pna = this->priv.np_na;
 				/* let the next monitor forget about us */
 				if (next->priv.np_na != NULL) {
 					netmap_adapter_put(next->priv.np_na);
+					next->priv.np_na = NULL;
 				}
-				if (pna != NULL && nm_is_zmon(na)) {
+				if (nm_is_zmon(na)) {
+					struct netmap_monitor_adapter *this =
+							(struct netmap_monitor_adapter *)na;
+					struct netmap_adapter *pna = this->priv.np_na;
 					/* we are a monitor ourselves and we may
 					 * need to pass down the reference to
 					 * the previous adapter in the chain
 					 */
-					netmap_adapter_get(pna);
-					next->priv.np_na = pna;
-					continue;
+					if (pna != NULL) {
+						netmap_adapter_get(pna);
+						next->priv.np_na = pna;
+					}
 				}
-				next->priv.np_na = NULL;
+			}
+
+			if (!nm_monitor_none(kring)) {
+				struct netmap_zmon_list *z = &kring->zmon_list[t];
+
+				z->next = z->prev = NULL;
+				kring->n_monitors = 0;
+				nm_monitor_dealloc(kring);
+				nm_monitor_restore_callbacks(kring);
 			}
 		}
 	}
