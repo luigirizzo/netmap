@@ -512,6 +512,7 @@ struct netmap_kring {
 	struct netmap_kring *pipe;	/* if this is a pipe ring,
 					 * pointer to the other end
 					 */
+	uint32_t pipe_tail;		/* hwtail updated by the other end */
 #endif /* WITH_PIPES */
 
 #ifdef WITH_VALE

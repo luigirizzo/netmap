@@ -193,6 +193,9 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 		txkring->nr_hwcur, txkring->nr_hwtail,
 		txkring->rcur, txkring->rhead, txkring->rtail);
 
+	/* update the hwtail */
+	txkring->nr_hwtail = txkring->pipe_tail;
+
 	m = txkring->rhead - txkring->nr_hwcur; /* new slots */
 	if (m < 0)
 		m += txkring->nkr_num_slots;
@@ -222,7 +225,7 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 
 	if (likely(nk <= lim)) {
 		mb(); /* make sure the slots are updated before publishing them */
-		rxkring->nr_hwtail = nk; /* only publish complete packets */
+		rxkring->pipe_tail = nk; /* only publish complete packets */
 		rxkring->nm_notify(rxkring, 0);
 	}
 
@@ -241,6 +244,9 @@ netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
 	ND(20, "RX before: hwcur %d hwtail %d cur %d head %d tail %d",
 		rxkring->nr_hwcur, rxkring->nr_hwtail,
 		rxkring->rcur, rxkring->rhead, rxkring->rtail);
+
+	/* update the hwtail */
+	rxkring->nr_hwtail = rxkring->pipe_tail;
 
 	m = rxkring->rhead - rxkring->nr_hwcur; /* released slots */
 	if (m < 0)
@@ -263,7 +269,7 @@ netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
 	}
 
 	mb(); /* make sure the slots are updated before publishing them */
-	txkring->nr_hwtail = nm_prev(k, lim);
+	txkring->pipe_tail = nm_prev(k, lim);
 	rxkring->nr_hwcur = k;
 
 	ND(20, "RX after : hwcur %d hwtail %d cur %d head %d tail %d k %d",
@@ -345,14 +351,19 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 		if (error)
 			goto del_krings1;
 
-		/* cross link the krings */
+		/* cross link the krings and initialize the pipe_tails */
 		for_rx_tx(t) {
 			enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
 			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				NMR(na, t)[i]->pipe = NMR(ona, r)[i];
-				NMR(ona, r)[i]->pipe = NMR(na, t)[i];
+				struct netmap_kring *k1 = NMR(na, t)[i],
+					            *k2 = NMR(ona, r)[i];
+				k1->pipe = k2;
+				k2->pipe = k1;
 				/* mark all peer-adapter rings as fake */
-				NMR(ona, r)[i]->nr_kflags |= NKR_FAKERING;
+				k2->nr_kflags |= NKR_FAKERING;
+				/* init tails */
+				k1->pipe_tail = k1->nr_hwtail;
+				k2->pipe_tail = k2->nr_hwtail;
 			}
 		}
 
