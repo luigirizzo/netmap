@@ -8,6 +8,11 @@
 ################################################################################
 source test_lib
 
+parse_send_recv_arguments "$@"
+fill="${fill:-d}"
+len="${len:-150}"
+num="${num:-1}"
+
 restart_fd_server
 
 create_veth_interfaces "veth1"
@@ -18,9 +23,6 @@ check_exit $? "pre-open netmap:veth1A"
 ./functional -i netmap:veth1B &>/dev/null
 check_exit $? "pre-open netmap:veth1B"
 
-fill='d'
-len=150
-num=1
 # During the first send we don't receive with the monitor, vale0:v1 should not
 # receive the frame.
 ./functional -i netmap:veth1A -r "${len}:${fill}:${num}" &>/dev/null &

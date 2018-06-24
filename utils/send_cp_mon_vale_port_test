@@ -11,6 +11,11 @@
 ################################################################################
 source test_lib
 
+parse_send_recv_arguments "$@"
+fill="${fill:-d}"
+len="${len:-150}"
+num="${num:-1}"
+
 restart_fd_server
 
 create_vale_persistent_port "v0" "vale0"
@@ -23,9 +28,6 @@ check_exit $? "pre-open netmap:v0/t"
 ./functional -i vale0:v1    &>/dev/null
 check_exit $? "pre-open vale0:v1"
 
-fill='d'
-len=150
-num=1
 # First we send without reading from v1
 ./functional -i netmap:v0/t -r "${len}:${fill}:${num}" &>/dev/null &
 p1=$!

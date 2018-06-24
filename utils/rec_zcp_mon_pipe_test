@@ -12,6 +12,11 @@
 ################################################################################
 source test_lib
 
+parse_send_recv_arguments "$@"
+fill="${fill:-d}"
+len="${len:-150}"
+num="${num:-1}"
+
 restart_fd_server
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
@@ -23,10 +28,6 @@ check_exit $? "pre-open netmap:pipe{1/z"
 ./functional -i "netmap:pipe}1"   &>/dev/null
 check_exit $? "pre-open netmap:pipe}1"
 
-parse_arguments "$@"
-fill="${fill:-d}"
-len="${len:-150}"
-num="${num:-1}"
 # Initially we don't receive with the monitored pipe pipe{1, therefore the
 # monitor should not receive the frame.
 ./functional -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" -n &>/dev/null &
