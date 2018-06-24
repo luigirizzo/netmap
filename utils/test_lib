@@ -128,6 +128,7 @@ function send_recv_usage() {
 	echo "       [-l packet_length]"
 	echo "       [-f fill_character]"
 	echo "       [-n packets_to_send]"
+	echo "       [-q (sequential send/read)]"
 }
 
 ################################################################################
@@ -136,13 +137,15 @@ function send_recv_usage() {
 #   It must be always called like like this 'parse_arguments "$@"'
 ################################################################################
 function parse_send_recv_arguments() {
-	while getopts "hl:f:n:" opt; do
+	while getopts "hql:f:n:" opt; do
 		case $opt in
 			l) len="$OPTARG"
 			;;
 			f) fill="$OPTARG"
 			;;
 			n) num="$OPTARG"
+			;;
+			q) seq="-q"
 			;;
 			h) send_recv_usage ; exit 0
 			;;

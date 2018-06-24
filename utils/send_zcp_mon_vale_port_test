@@ -18,6 +18,7 @@ parse_send_recv_arguments "$@"
 fill="${fill:-d}"
 len="${len:-150}"
 num="${num:-1}"
+seq="${seq:-}"
 
 restart_fd_server
 
@@ -32,9 +33,9 @@ check_exit $? "pre-open netmap:v0/z"
 check_exit $? "pre-open vale0:v1"
 
 # First we send without reading from v1
-./functional -i netmap:v0/z -r "${len}:${fill}:${num}" &>/dev/null &
+./functional -i netmap:v0/z -r "${len}:${fill}:${num}" "$seq" &>/dev/null &
 p1=$!
-./functional -i vale0:v0    -t "${len}:${fill}:${num}" &>/dev/null
+./functional -i vale0:v0    -t "${len}:${fill}:${num}" "$seq" &>/dev/null
 e2=$?
 wait $p1
 e1=$?
@@ -42,7 +43,7 @@ check_exit $e1 "receive-${num} netmap:v0/z"
 check_exit $e2 "send-${num} vale0:v0"
 
 # Then we read from v1
-./functional -i vale0:v1 -r "${len}:${fill}:${num}" &>/dev/null
+./functional -i vale0:v1 -r "${len}:${fill}:${num}" "$seq" &>/dev/null
 e3=$?
 check_exit $e3 "receive-${num} vale0:v1"
 

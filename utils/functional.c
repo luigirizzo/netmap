@@ -76,6 +76,7 @@ struct Global {
 	unsigned timeout_secs;      /* transmit/receive timeout */
 	int ignore_if_not_matching; /* ignore certain received packets */
 	int success_if_no_receive;
+	int sequential_fill;
 	int verbose;
 
 #define MAX_PKT_SIZE 65536
@@ -388,6 +389,16 @@ put_one_packet(struct Global *g, struct netmap_ring *ring)
 	       frags);
 }
 
+char
+next_fill(char cur_fill)
+{
+	if (cur_fill == 'z')
+		return 'a';
+	if (cur_fill == 'Z')
+		return 'A';
+	return ++cur_fill;
+}
+
 /* Transmit packets_num packets using any combination of TX rings. */
 static int
 tx(struct Global *g, unsigned packets_num)
@@ -425,6 +436,13 @@ tx(struct Global *g, unsigned packets_num)
 		     ring_sends_num > 0 && packets_num > 0;
 		     --ring_sends_num, --packets_num) {
 			put_one_packet(g, ring);
+
+			if (g->sequential_fill == 1) {
+				g->filler = next_fill(g->filler);
+				build_packet(g);
+			}
+
+
 		}
 
 		if (packets_num == 0) {
@@ -605,6 +623,11 @@ rx(struct Global *g, unsigned packets_num)
 			if (rx_check(g)) {
 				clean_exit(g);
 			}
+
+			if (g->sequential_fill == 1) {
+				g->filler = next_fill(g->filler);
+				build_packet(g);
+			}
 		}
 
 		if (packets_num == 0) {
@@ -729,6 +752,7 @@ usage(void)
 	       "    [-I (ignore ethernet frames with unmatching Ethernet "
 	       "header)]\n"
 	       "    [-n (exit status = 0 <==> no frames were received)]\n"
+	       "    [-q (during multi-packets send/receive increments fill character after each operation)]\n"
 	       "    [-v (increment verbosity level)]\n"
 	       "    [-C [NUM (=1)] (how many times to run the events)]\n"
 	       "\nExample:\n"
@@ -1014,11 +1038,12 @@ main(int argc, char **argv)
 	g->num_events             = 0;
 	g->ignore_if_not_matching = /*false=*/0;
 	g->success_if_no_receive  = /*false=*/0;
+	g->sequential_fill  = /*false=*/0;
 	g->verbose                = 0;
 	g->num_loops              = 1;
 	memset(&g->nmd, 0, sizeof(struct nm_desc));
 
-	while ((opt = getopt(argc, argv, "hcons:d:i:w:F:T:t:r:Ivp:C:")) != -1) {
+	while ((opt = getopt(argc, argv, "hconqs:d:i:w:F:T:t:r:Ivp:C:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -1033,8 +1058,11 @@ main(int argc, char **argv)
 			return 0;
 
 		case 'n':
-			/* Not receiving means timing out */
 			g->success_if_no_receive = /*true=*/1;
+			break;
+
+		case 'q':
+			g->sequential_fill = /*true=*/1;
 			break;
 
 		case 's':
