@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 ################################################################################
-# Test objective: check if we can send and receive multiple packet at once
-#                 through netmap pipes.
+# Test objective: check if we can send and receive packets through netmap pipes.
 # Operations:
 # 0) restart fd_server to have a clean starting state
 # 1) create a pair of netmap pipes (pipeA{1, pipeA}1).
@@ -9,6 +8,11 @@
 # 2) send multiple packets from pipeA}1 and check if pipeA{1 receives them.
 ################################################################################
 source test_lib
+
+parse_send_recv_arguments "$@"
+fill="${fill:-c}"
+len="${len:-274}"
+num="${num:-1}"
 
 restart_fd_server
 
@@ -19,9 +23,6 @@ check_exit $? "pre-open netmap:pipeA{1"
 ./functional -i "netmap:pipeA}1" &>/dev/null
 check_exit $? "pre-open netmap:pipeA}1"
 
-fill='h'
-len=274
-num=10
 # pipeA}1 ---> pipeA{1
 ./functional -i "netmap:pipeA{1" -r "${len}:${fill}:${num}" &>/dev/null &
 p1=$!

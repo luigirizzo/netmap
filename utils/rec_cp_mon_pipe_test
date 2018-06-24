@@ -13,6 +13,11 @@
 ################################################################################
 source test_lib
 
+parse_send_recv_arguments "$@"
+fill="${fill:-d}"
+len="${len:-150}"
+num="${num:-1}"
+
 restart_fd_server
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
@@ -24,9 +29,6 @@ check_exit $? "pre-open netmap:pipe{1/r"
 ./functional -i "netmap:pipe}1"   &>/dev/null
 check_exit $? "pre-open netmap:pipe}1"
 
-fill='d'
-len=150
-num=1
 # First we send without reading from pipe{1
 ./functional -i "netmap:pipe{1/r" -r "${len}:${fill}:${num}" &>/dev/null &
 p1=$!
