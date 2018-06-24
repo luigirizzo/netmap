@@ -17,6 +17,7 @@ parse_send_recv_arguments "$@"
 fill="${fill:-d}"
 len="${len:-150}"
 num="${num:-1}"
+seq="${seq:-}"
 
 restart_fd_server
 
@@ -32,9 +33,9 @@ check_exit $? "pre-open vale0:v1"
 
 # Initially we don't receive with the monitored VALE port v0, therefore the
 # monitor should not receive the frame.
-./functional -i vale0:v0/z -r "${len}:${fill}:${num}" -n &>/dev/null &
+./functional -i vale0:v0/z -r "${len}:${fill}:${num}" "$seq" -n &>/dev/null &
 p1=$!
-./functional -i vale0:v1   -t "${len}:${fill}:${num}"    &>/dev/null
+./functional -i vale0:v1   -t "${len}:${fill}:${num}" "$seq"    &>/dev/null
 e2=$?
 wait $p1
 e1=$?
@@ -43,9 +44,9 @@ check_exit $e2 "send-${num} vale0:v0"
 
 # Now we receive with the monitored VALE port v0, therefore the monitor should
 # receive the frame.
-./functional -i "vale0:v0"   -r "${len}:${fill}:${num}" &>/dev/null &
+./functional -i "vale0:v0"   -r "${len}:${fill}:${num}" "$seq" &>/dev/null &
 p3=$!
-./functional -i "vale0:v0/z" -r "${len}:${fill}:${num}" &>/dev/null
+./functional -i "vale0:v0/z" -r "${len}:${fill}:${num}" "$seq" &>/dev/null
 e4=$?
 wait $p3
 e3=$?

@@ -13,6 +13,7 @@ parse_send_recv_arguments "$@"
 fill="${fill:-c}"
 len="${len:-274}"
 num="${num:-1}"
+seq="${seq:-}"
 
 restart_fd_server
 
@@ -24,9 +25,9 @@ check_exit $? "pre-open netmap:pipeA{1"
 check_exit $? "pre-open netmap:pipeA}1"
 
 # pipeA}1 ---> pipeA{1
-./functional -i "netmap:pipeA{1" -r "${len}:${fill}:${num}" &>/dev/null &
+./functional -i "netmap:pipeA{1" -r "${len}:${fill}:${num}" "$seq" -q &>/dev/null &
 p1=$!
-./functional -i "netmap:pipeA}1" -t "${len}:${fill}:${num}" &>/dev/null
+./functional -i "netmap:pipeA}1" -t "${len}:${fill}:${num}" "$seq" -q &>/dev/null
 e2=$?
 wait $p1
 e1=$?
@@ -34,9 +35,9 @@ check_exit $e1 "receive-${num} netmap:pipeA{1"
 check_exit $e2 "send-${num} netmap:pipeA}1"
 
 # pipeA{1 ---> pipeA}1
-./functional -i "netmap:pipeA}1" -r "${len}:${fill}:${num}" &>/dev/null &
+./functional -i "netmap:pipeA}1" -r "${len}:${fill}:${num}" "$seq" -q &>/dev/null &
 p1=$!
-./functional -i "netmap:pipeA{1" -t "${len}:${fill}:${num}" &>/dev/null
+./functional -i "netmap:pipeA{1" -t "${len}:${fill}:${num}" "$seq" -q &>/dev/null
 e2=$?
 wait $p1
 e1=$?
