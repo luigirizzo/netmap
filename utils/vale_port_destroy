@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check that we can't create two VALE persistent ports with the
+#                 same name.
+################################################################################
+source test_lib
+
+redirect_std
+
+bridge="vale0"
+bridgeA="${bridge}A"
+bridgeB="${bridge}B"
+port="v0"
+
+create_vale_persistent_port "$port" 0
+destroy_vale_persistent_port "$port" 0
+
+create_vale_persistent_port "$port" 0
+
+attach_to_vale_bridge "$bridgeA" "$port" 0
+destroy_vale_persistent_port "$port" 1
+
+attach_to_vale_bridge "$bridgeB" "$port" 0
+destroy_vale_persistent_port "$port" 1
+
+detach_from_vale_bridge "$bridgeB" "$port" 0
+destroy_vale_persistent_port "$port" 1
+
+detach_from_vale_bridge "$bridgeA" "$port" 0
+destroy_vale_persistent_port "$port" 0
+
+stdout_echo "Test successful."
