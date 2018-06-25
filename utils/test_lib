@@ -1,12 +1,35 @@
 #!/usr/bin/env bash
 ################################################################################
+# Creates the new file descriptor "3" and redirects it to stdout, then redirects
+# stderr e stdout to /dev/null. This way only the stuff we redirect to 3 is
+# printed simplifying the work required to filter our output.
+# Arguments:
+#   None
+################################################################################
+function redirect_std() {
+	exec 3>&1
+	exec 1>/dev/null
+	exec 2>&1
+}
+
+################################################################################
+# Calls echo on the correct file descriptor (it needs to match the new file
+# descriptor created by redirect_std()).
+# Arguments:
+#   None
+################################################################################
+function stdout_echo() {
+	echo "$@" 1>&3
+}
+
+################################################################################
 # Closes the file descriptor server.
 # Arguments:
 #   None
 ################################################################################
 function close_fd_server() {
 	./functional -c &>/dev/null
-	check_exit $? "close_fd_server"
+	check_success "$?" "close_fd_server"
 }
 
 ################################################################################
@@ -16,7 +39,7 @@ function close_fd_server() {
 ################################################################################
 function start_fd_server() {
 	./functional -o &>/dev/null
-	check_exit $? "start_fd_server"
+	check_success "$?" "start_fd_server"
 }
 
 ################################################################################
@@ -30,21 +53,49 @@ function restart_fd_server() {
 }
 
 ################################################################################
-# Checks the exit value, if it's != 0 cleans up and terminates the script.
+# Checks the exit value, if it's different from the expected exit value
+# terminates the script.
+# Arguments:
+#   $1 -> exit value to check
+#   $2 -> expected exit value to check against
+#   $3 -> string printed
+################################################################################
+function check_exit() {
+	local exit_value="$1"
+	local expected_value="$2"
+	local string_to_print="$3"
+
+	if [ $exit_value != $expected_value ] ; then
+		stdout_echo "$string_to_print FAIL($exit_value != $expected_value)."
+		exit 1
+	fi
+}
+
+################################################################################
+# Checks the exit value, if it's different from 0 terminates the script.
 # Arguments:
 #   $1 -> exit value to check
 #   $2 -> string printed
 ################################################################################
-function check_exit() {
+function check_success() {
 	local exit_value="$1"
 	local string_to_print="$2"
 
-	if [ $exit_value != 0 ] ; then
-		echo "$string_to_print FAIL($exit_value)."
-		exit 1
-	# else
-		# echo "$2 was successful."
-	fi
+	check_exit "$exit_value" 0 "$string_to_print"
+}
+
+################################################################################
+# Checks the exit value, if it's different from 1 (only 1 is considered failure
+# at the moment) terminates the script.
+# Arguments:
+#   $1 -> exit value to check
+#   $2 -> string printed
+################################################################################
+function check_failure() {
+	local exit_value="$1"
+	local string_to_print="$2"
+
+	check_exit "$exit_value" 1 "$string_to_print"
 }
 
 ################################################################################
@@ -76,24 +127,57 @@ function cumulative_trap() {
 # called when the script exits.
 # Arguments:
 #   $1 -> name of the VALE persistent port
-#   $2 -> name of the VALE switch that the port will be to be attached to
+#   $2 -> expected exit value of vale-ctl (optional, default = 0)
 ################################################################################
 function create_vale_persistent_port() {
 	local if_name="$1"
-	local bdg_name="$2"
+	local create_exit_value="$2"
+	create_exit_value="${create_exit_value:-0}"
 
-	vale-ctl -n "$if_name"
-	check_exit $? "create $if_name"
+	vale-ctl -n "$if_name" &>/dev/null
+	check_exit "$?" "$create_exit_value" "create $if_name"
 	cumulative_trap "vale-ctl -r $if_name" "EXIT"
-	check_exit $? "trap-remove $if_name"
+	check_success "$?" "trap-remove $if_name"
+}
+
+################################################################################
+# Attaches an interface registered to the os to a VALE bridge and sets a cleanup
+# handler which will be called when the script exits.
+# Arguments:
+#   $1 -> name of the VALE bridge that the port will be to be attached to
+#   $2 -> name of the interface
+#   $3 -> expected exit value of vale-ctl (optional, default = 0)
+################################################################################
+function attach_to_vale_bridge() {
+	local bdg_name="$1"
+	local if_name="$2"
+	local attach_exit_value="$3"
+	attach_exit_value="${attach_exit_value:-0}"
 
 	vale-ctl -a "$bdg_name:$if_name"
-	check_exit $? "attach $bdg_name:$if_name"
+	check_exit "$?" "$attach_exit_value" "attach $bdg_name:$if_name"
 	cumulative_trap "vale-ctl -d $bdg_name:$if_name" "EXIT"
 	# We first need to close the file descriptor of the interface, otherwise
 	# the detach will fail. To accomplish that we shut down fd_server.
 	cumulative_trap "close_fd_server" "EXIT"
-	check_exit $? "trap-detach $bdg_name:$if_name"
+	check_success "$?" "trap-detach $bdg_name:$if_name"
+}
+
+################################################################################
+# Detaches an interface registered to the os from a VALE bridge.
+# Arguments:
+#   $1 -> name of the VALE bridge that the port will be to be attached to
+#   $2 -> name of the interface
+#   $3 -> expected exit value of vale-ctl (optional, default = 0)
+################################################################################
+function detach_from_vale_bridge() {
+	local bdg_name="$1"
+	local if_name="$2"
+	local detach_exit_value="$3"
+	detach_exit_value="${detach_exit_value:-0}"
+
+	vale-ctl -d "$bdg_name:$if_name"
+	check_exit "$?" "$detach_exit_value" "detach $bdg_name:$if_name"
 }
 
 ################################################################################
@@ -108,14 +192,14 @@ function create_veth_interfaces() {
 	local if_name2="${if_name}B"
 
 	ip link add "$if_name1" type veth peer name "$if_name2"
-	check_exit $? "create $if_name"
+	check_success "$?" "create $if_name"
 	# We first need to close the file descriptor of the interfaces,
 	# otherwise the delete will fail. To accomplish that we shut down
 	# fd_server.
 	cumulative_trap "ip link delete $if_name1" "EXIT"
-	check_exit $? "trap-delete $if_name1"
+	check_success "$?" "trap-delete $if_name1"
 	cumulative_trap "close_fd_server" "EXIT"
-	check_exit $? "trap-detach $bdg_name:$if_name"
+	check_success "$?" "trap-detach $bdg_name:$if_name"
 }
 
 ################################################################################
@@ -124,11 +208,11 @@ function create_veth_interfaces() {
 #   None
 ################################################################################
 function send_recv_usage() {
-	echo "usage: [-h] "
-	echo "       [-l packet_length]"
-	echo "       [-f fill_character]"
-	echo "       [-n packets_to_send]"
-	echo "       [-q (sequential send/read)]"
+	stdout_echo "usage: [-h] "
+	stdout_echo "       [-l packet_length]"
+	stdout_echo "       [-f fill_character]"
+	stdout_echo "       [-n packets_to_send]"
+	stdout_echo "       [-q (sequential send/read)]"
 }
 
 ################################################################################
