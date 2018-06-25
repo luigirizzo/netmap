@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 ################################################################################
 # Creates the new file descriptor "3" and redirects it to stdout, then redirects
-# stderr e stdout to /dev/null. This way only the stuff we redirect to 3 is
+# stderr e stdout to /dev/null. This way only the stuff we redirect to fd 3 is
 # printed simplifying the work required to filter our output.
 # Arguments:
 #   None
@@ -28,7 +28,7 @@ function stdout_echo() {
 #   None
 ################################################################################
 function close_fd_server() {
-	./functional -c &>/dev/null
+	./functional -c
 	check_success "$?" "close_fd_server"
 }
 
@@ -38,7 +38,7 @@ function close_fd_server() {
 #   None
 ################################################################################
 function start_fd_server() {
-	./functional -o &>/dev/null
+	./functional -o
 	check_success "$?" "start_fd_server"
 }
 
@@ -134,10 +134,25 @@ function create_vale_persistent_port() {
 	local create_exit_value="$2"
 	create_exit_value="${create_exit_value:-0}"
 
-	vale-ctl -n "$if_name" &>/dev/null
+	vale-ctl -n "$if_name"
 	check_exit "$?" "$create_exit_value" "create $if_name"
 	cumulative_trap "vale-ctl -r $if_name" "EXIT"
 	check_success "$?" "trap-remove $if_name"
+}
+
+################################################################################
+# Destroys a VALE persistent port.
+# Arguments:
+#   $1 -> name of the VALE persistent port
+#   $2 -> expected exit value of vale-ctl (optional, default = 0)
+################################################################################
+function destroy_vale_persistent_port() {
+	local if_name="$1"
+	local destroy_exit_value="$2"
+	destroy_exit_value="${destroy_exit_value:-0}"
+
+	vale-ctl -r "$if_name"
+	check_exit "$?" "$destroy_exit_value" "create $if_name"
 }
 
 ################################################################################
