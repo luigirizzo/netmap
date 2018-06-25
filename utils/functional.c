@@ -75,8 +75,9 @@ struct Global {
 	unsigned wait_link_secs;    /* wait for link */
 	unsigned timeout_secs;      /* transmit/receive timeout */
 	int ignore_if_not_matching; /* ignore certain received packets */
-	int success_if_no_receive;
-	int sequential_fill;
+	int success_if_no_receive;  /* exit status 0 if we receive no packets */
+	int sequential_fill;        /* increment fill char for multi-packets operations */
+	int request_from_fd_server;
 	int verbose;
 
 #define MAX_PKT_SIZE 65536
@@ -739,6 +740,7 @@ usage(void)
 	       "    [-c (shuts down the fd server)]\n"
 	       "    [-o (starts the fd server)]\n"
 	       "    [-i NETMAP_PORT (requests the interface from the fd server)]\n"
+	       "    [-I NETMAP_PORT (directly opens the interface)]\n"
 	       "    [-s source MAC address (=0:0:0:0:0:0)]\n"
 	       "    [-d destination MAC address (=FF:FF:FF:FF:FF:FF)]\n"
 	       "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
@@ -749,7 +751,7 @@ usage(void)
 	       "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
 	       "with size LEN bytes)]\n"
 	       "    [-p NUM[us|ms|s]] (pause for NUM us/ms/s)]\n"
-	       "    [-I (ignore ethernet frames with unmatching Ethernet "
+	       "    [-g (ignore ethernet frames with unmatching Ethernet "
 	       "header)]\n"
 	       "    [-n (exit status = 0 <==> no frames were received)]\n"
 	       "    [-q (during multi-packets send/receive increments fill character after each operation)]\n"
@@ -1016,6 +1018,7 @@ parse_mac_address(const char *opt, char *mac)
 int
 main(int argc, char **argv)
 {
+	struct nm_desc *nmd = NULL;
 	struct Global *g = &_g;
 	unsigned int i, c;
 	int opt;
@@ -1038,12 +1041,13 @@ main(int argc, char **argv)
 	g->num_events             = 0;
 	g->ignore_if_not_matching = /*false=*/0;
 	g->success_if_no_receive  = /*false=*/0;
+	g->request_from_fd_server = /*true=*/1;
 	g->sequential_fill  = /*false=*/0;
 	g->verbose                = 0;
 	g->num_loops              = 1;
 	memset(&g->nmd, 0, sizeof(struct nm_desc));
 
-	while ((opt = getopt(argc, argv, "hconqs:d:i:w:F:T:t:r:Ivp:C:")) != -1) {
+	while ((opt = getopt(argc, argv, "hconqs:d:i:I:w:F:T:t:r:gvp:C:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -1085,6 +1089,11 @@ main(int argc, char **argv)
 			g->ifname = optarg;
 			break;
 
+		case 'I':
+			g->ifname = optarg;
+			g->request_from_fd_server = /*false=*/0;
+			break;
+
 		case 'F':
 			g->max_frag_size = atoi(optarg);
 			break;
@@ -1104,7 +1113,7 @@ main(int argc, char **argv)
 
 			if (g->num_events >= MAX_EVENTS) {
 				printf("Too many events\n");
-				return -1;
+				exit(EXIT_FAILURE);
 			}
 
 			if (opt == 'p') {
@@ -1120,13 +1129,13 @@ main(int argc, char **argv)
 			if (ret) {
 				printf("Invalid event syntax '%s'\n", optarg);
 				usage();
-				return -1;
+				exit(EXIT_FAILURE);
 			}
 			g->num_events++;
 			break;
 		}
 
-		case 'I':
+		case 'g':
 			g->ignore_if_not_matching = 1;
 			break;
 
@@ -1138,26 +1147,38 @@ main(int argc, char **argv)
 			g->num_loops = atoi(optarg);
 			if (g->num_loops == 0) {
 				printf("Invalid -C option '%s'\n", optarg);
-				return -1;
+				exit(EXIT_FAILURE);
 			}
 			break;
 
 		default:
 			printf("    Unrecognized option %c\n", opt);
 			usage();
-			return -1;
+			exit(EXIT_FAILURE);
 		}
 	}
 
 	if (!g->ifname) {
 		printf("Missing ifname\n");
 		usage();
-		return -1;
+		exit(EXIT_FAILURE);
 	}
 
-	if (get_if_fd(g, g->ifname, &g->nmd) < 0) {
+	ret = 0;
+	if (g->request_from_fd_server == 0) {
+		/* We directly open the file descriptor. */
+		nmd = nm_open(g->ifname, NULL, 0, NULL);
+		if (nmd == NULL) {
+			ret = -1;
+		} else {
+			memcpy(&g->nmd, nmd, sizeof(struct nm_desc));
+		}
+	} else {
+		ret = get_if_fd(g, g->ifname, &g->nmd);
+	}
+	if (ret == -1) {
 		printf("Failed to nm_open(%s)\n", g->ifname);
-		return -1;
+		exit(EXIT_FAILURE);
 	}
 
 	if (g->wait_link_secs > 0) {
@@ -1198,7 +1219,16 @@ main(int argc, char **argv)
 	/* if we have sent something, wait for all tx to complete */
 	tx_flush(g);
 
-	release_if_fd(g, g->ifname);
+	if (g->request_from_fd_server == 0) {
+		ret = nm_close(nmd);
+	} else {
+		release_if_fd(g, g->ifname);
+		ret = 0;
+	}
+
+	if (ret == -1) {
+		printf("Failed to nm_close(%s)\n", g->ifname);
+	}
 
 	return 0;
 }
