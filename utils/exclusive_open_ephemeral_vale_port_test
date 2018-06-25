@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check that an ephemeral VALE port opened with the exclusive
+#                 flag can't be opened again.
+################################################################################
+source test_lib
+
+redirect_std
+
+restart_fd_server
+
+bridge="vale0"
+port="v0"
+# We open ${bridge}:${port} with the exclusive flag from the file descriptor.
+./functional -i "${bridge}:${port}/x"
+check_success $? "exclusive-open ${bridge}:${port}/x"
+
+# Then we open the same interface again, this time without requesting it from
+# the file descriptor, causing a second nm_open().
+./functional -I "${bridge}:${port}"
+check_failure $? "no-open ${bridge}:${port}"
+
+# Check that another exclusive open request fails.
+./functional -I "${bridge}:${port}/x"
+check_failure $? "no-open ${bridge}:${port}/x"
+
+stdout_echo "Test successful."
