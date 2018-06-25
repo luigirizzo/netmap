@@ -12,6 +12,8 @@
 ################################################################################
 source test_lib
 
+redirect_std
+
 parse_send_recv_arguments "$@"
 fill="${fill:-d}"
 len="${len:-150}"
@@ -22,33 +24,33 @@ restart_fd_server
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-./functional -i "netmap:pipe{1"   &>/dev/null
-check_exit $? "pre-open netmap:pipe{1"
-./functional -i "netmap:pipe{1/z" &>/dev/null
-check_exit $? "pre-open netmap:pipe{1/z"
-./functional -i "netmap:pipe}1"   &>/dev/null
-check_exit $? "pre-open netmap:pipe}1"
+./functional -i "netmap:pipe{1"
+check_success $? "pre-open netmap:pipe{1"
+./functional -i "netmap:pipe{1/z"
+check_success $? "pre-open netmap:pipe{1/z"
+./functional -i "netmap:pipe}1"
+check_success $? "pre-open netmap:pipe}1"
 
 # Initially we don't receive with the monitored pipe pipe{1, therefore the
 # monitor should not receive the frame.
-./functional -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" "$seq" -n &>/dev/null &
+./functional -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" "$seq" -n &
 p1=$!
-./functional -i "netmap:pipe}1"   -t "${len}:${fill}:${num}" "$seq"    &>/dev/null
+./functional -i "netmap:pipe}1"   -t "${len}:${fill}:${num}" "$seq"
 e2=$?
 wait $p1
 e1=$?
-check_exit $e1 "no-receive-${num} netmap:pipe{1"
-check_exit $e2 "send-${num} netmap:pipe{1"
+check_success $e1 "no-receive-${num} netmap:pipe{1"
+check_success $e2 "send-${num} netmap:pipe{1"
 
 # Now we receive with the monitored pipe pipe{1, therefore the monitor should
 # receive the frame.
-./functional -i "netmap:pipe{1"   -r "${len}:${fill}:${num}" "$seq" &>/dev/null &
+./functional -i "netmap:pipe{1"   -r "${len}:${fill}:${num}" "$seq" &
 p3=$!
-./functional -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" "$seq" &>/dev/null
+./functional -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" "$seq"
 e4=$?
 wait $p3
 e3=$?
-check_exit $e3 "receive-${num} netmap:pipe{1"
-check_exit $e4 "receive-${num} netmap:pipe{1/z"
+check_success $e3 "receive-${num} netmap:pipe{1"
+check_success $e4 "receive-${num} netmap:pipe{1/z"
 
-echo "Test successful."
+stdout_echo "Test successful."

@@ -13,6 +13,8 @@
 ################################################################################
 source test_lib
 
+redirect_std
+
 parse_send_recv_arguments "$@"
 fill="${fill:-d}"
 len="${len:-150}"
@@ -23,26 +25,26 @@ restart_fd_server
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-./functional -i "netmap:pipe{1"   &>/dev/null
-check_exit $? "pre-open netmap:pipe{1"
-./functional -i "netmap:pipe{1/t" &>/dev/null
-check_exit $? "pre-open netmap:pipe{1/t"
-./functional -i "netmap:pipe}1"   &>/dev/null
-check_exit $? "pre-open netmap:pipe}1"
+./functional -i "netmap:pipe{1"
+check_success $? "pre-open netmap:pipe{1"
+./functional -i "netmap:pipe{1/t"
+check_success $? "pre-open netmap:pipe{1/t"
+./functional -i "netmap:pipe}1"
+check_success $? "pre-open netmap:pipe}1"
 
 # First we send without reading from pipe}1
-./functional -i "netmap:pipe{1/t" -r "${len}:${fill}:${num}" "$seq" &>/dev/null &
+./functional -i "netmap:pipe{1/t" -r "${len}:${fill}:${num}" "$seq" &
 p1=$!
-./functional -i "netmap:pipe{1"   -t "${len}:${fill}:${num}" "$seq" &>/dev/null
+./functional -i "netmap:pipe{1"   -t "${len}:${fill}:${num}" "$seq"
 e2=$?
 wait $p1
 e1=$?
-check_exit $e1 "receive-${num} netmap:pipe{1/t"
-check_exit $e2 "send-${num} netmap:pipe{1"
+check_success $e1 "receive-${num} netmap:pipe{1/t"
+check_success $e2 "send-${num} netmap:pipe{1"
 
 # Then we read from pipe}1
-./functional -i "netmap:pipe}1" -r "${len}:${fill}:${num}" "$seq" &>/dev/null
+./functional -i "netmap:pipe}1" -r "${len}:${fill}:${num}" "$seq"
 e3=$?
-check_exit $e3 "receive-${num} netmap:pipe}1"
+check_success $e3 "receive-${num} netmap:pipe}1"
 
-echo "Test successful."
+stdout_echo "Test successful."
