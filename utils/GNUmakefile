@@ -1,6 +1,6 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
-PROGS	= test_select testmmap test_nm functional ctrl-api-test fd_server
+PROGS	= test_select testmmap test_nm functional ctrl-api-test fd_server get_tx_rings_avail_sends get_tx_rings_max_sends
 X86PROGS = testlock testcsum producer
 LIBNETMAP =
 
