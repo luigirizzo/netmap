@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if we can send and receive through netmap pipes.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create a pair of netmap pipes (${pipe}{1, ${pipe}}1).
+# 2) send from ${pipe}{1 and check if ${pipe}}1 receives it.
+# 2) send from ${pipe}}1 and check if ${pipe}{1 receives it.
+################################################################################
+source test_lib
+
+redirect_std
+
+restart_fd_server
+
+fill='h'
+len=274
+num_send=10
+num_recv=7
+pipe="pipeA"
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+./functional -i "netmap:${pipe}{1"
+check_success $? "pre-open netmap:${pipe}{1"
+./functional -i "netmap:${pipe}}1"
+check_success $? "pre-open netmap:${pipe}}1"
+
+# ${pipe}}1 ---> ${pipe}{1
+./functional -i "netmap:${pipe}{1" -r "${len}:${fill}:${num_recv}" &
+p1=$!
+./functional -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}"
+e2=$?
+wait $p1
+e1=$?
+check_success $e1 "receive-7 netmap:${pipe}{1"
+check_success $e2 "send-10 netmap:${pipe}}1"
+
+# At the moment get_tx_rings_max_sends and get_tx_rings_avail_sends do not
+# get the interface fd from fd_server, but they still read the correct values
+# from the rings. I don't know if that's something we can relay on.
+exit_status=0
+ring_max_sends=$(./get_tx_rings_max_sends "netmap:${pipe}}1" "$len") 1>&3
+if [ $ring_max_sends = -1 ] ; then
+	exit_status=1
+fi
+check_success $exit_status "get_tx_rings_max_sends netmap:${pipe}}1 $len"
+
+exit_status=0
+ring_avail_sends=$(./get_tx_rings_avail_sends "netmap:${pipe}}1" "$len")
+if [ $ring_avail_sends = -1 ] ; then
+	exit_status=1
+fi
+check_success $exit_status "get_tx_rings_avail_sends netmap:${pipe}}1 $len"
+
+exit_status=0
+ring_used_sends="$(($ring_max_sends - $ring_avail_sends))"
+pending_sends="$(($num_send - $num_recv))"
+if [ $ring_used_sends != $pending_sends ] ; then
+	exit_status = 1
+fi
+check_exit $pending_sends $ring_used_sends "pending_sends=ring_used_sends"
+
+
+num_send="$(($ring_avail_sends + 1))"
+./functional -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}"
+check_failure $? "send-${num_send} netmap:${pipe}}1"
+
+stdout_echo "Test successful."
