@@ -39,12 +39,12 @@ p1=$!
 e2=$?
 wait $p1
 e1=$?
-check_success $e1 "receive-${num} netmap:pipe{1/r"
-check_success $e2 "send-${num} netmap:pipe}1"
+check_success $e1 "receive-${num}${seq} netmap:pipe{1/r"
+check_success $e2 "send-${num}${seq} netmap:pipe}1"
 
 # Then we read from pipe{1
 ./functional -i "netmap:pipe{1"   -r "${len}:${fill}:${num}" "$seq"
 e3=$?
-check_success $e3 "receive-${num} netmap:pipe{1"
+check_success $e3 "receive-${num}${seq} netmap:pipe{1"
 
-stdout_echo "Test successful."
+test_successful "rec_cp_mon_pipe_test"

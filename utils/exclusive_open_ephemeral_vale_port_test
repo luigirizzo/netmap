@@ -24,4 +24,4 @@ check_failure $? "no-open ${bridge}:${port}"
 ./functional -I "${bridge}:${port}/x"
 check_failure $? "no-open ${bridge}:${port}/x"
 
-stdout_echo "Test successful."
+test_successful "exclusive_open_ephemeral_vale_port_test"

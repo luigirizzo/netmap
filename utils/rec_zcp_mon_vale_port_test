@@ -56,4 +56,4 @@ e3=$?
 check_success $e3 "receive-${num} vale0:v0"
 check_success $e4 "receive-${num} vale0:v0/z"
 
-stdout_echo "Test successful."
+test_successful "rec_zcp_mon_vale_port_test"

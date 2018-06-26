@@ -37,4 +37,4 @@ e1=$?
 check_success $e1 "receive-${num} netmap:veth1A"
 check_success $e2 "send-${num} netmap:veth1B"
 
-stdout_echo "Test successful."
+test_successful "send_rec_veth_test"
