@@ -7,8 +7,8 @@
  *    $2 -> packet length
  */
 #include <inttypes.h>
-#include <net/if.h>
 #include <math.h>
+#include <net/if.h>
 
 #include <net/netmap.h>
 #define NETMAP_WITH_LIBS
@@ -29,7 +29,6 @@ ring_max_sends(struct netmap_ring *ring, unsigned pkt_len)
 
 	return (ring->num_slots - 1) / slot_per_send(ring, pkt_len);
 }
-
 
 uint64_t
 adapter_max_sends(struct nm_desc *nmd, unsigned pkt_len)
@@ -69,7 +68,7 @@ main(int argc, char **argv)
 
 	fclose(stderr);
 	if_name = argv[1];
-	nmd = nm_open(if_name, NULL, 0, NULL);
+	nmd     = nm_open(if_name, NULL, 0, NULL);
 	if (nmd == NULL) {
 		printf("-1");
 		exit(EXIT_FAILURE);

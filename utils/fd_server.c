@@ -1,5 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <net/if.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,10 +12,6 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <syslog.h>
-#include <errno.h>
-#include <net/if.h>
-#include <stdint.h>
-#include <sys/socket.h>
 
 #include <net/netmap.h>
 #define NETMAP_WITH_LIBS
