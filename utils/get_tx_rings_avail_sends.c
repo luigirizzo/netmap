@@ -1,3 +1,12 @@
+/* Given an interface name and a packet length (optional), prints to stdout
+ * the number of packets that can be send through the interface rings. If the
+ * packet length is missing, the number of available slot is printed instead.
+ * Prints "-1" if something went wrong.
+ * Arguments:
+ *    $1 -> interface name
+ *    $2 -> packet length
+ */
+
 #include <inttypes.h>
 #include <net/if.h>
 #include <math.h>
