@@ -44,10 +44,15 @@ and in section 7 of this document.
 2. Configure Linux host and QEMU for ptnetmap
 ---------------------------------------------------------------------------
 
+(Warning! For ptnetmap use v11.4.
+In the current master, ptnetmap is disabled.
+Support for the current master will be re-added as soon as possible)
+
 On the Linux host, configure, build and install netmap with ptnetmap support:
 
     $ git clone https://github.com/luigirizzo/netmap.git
     $ cd netmap
+    $ git checkout v11.4
     $ ./configure --enable-ptnetmap [other options]
     $ make
     $ sudo make install
@@ -55,7 +60,8 @@ On the Linux host, configure, build and install netmap with ptnetmap support:
 Download, build and install the ptnetmap-enabled QEMU:
 
     $ git clone https://github.com/vmaffione/qemu
-    $ ./configure --target-list=x86_64-softmmu --enable-kvm --enable-vhost-net --disable-werror --enable-netmap --enable-ptnetmap
+    $ cd qemu
+    $ ./configure --target-list=x86_64-softmmu --enable-kvm --enable-vhost-net --disable-werror --enable-netmap
     $ make
     $ sudo make install
 
@@ -257,4 +263,3 @@ are used for guest-to-host notifications.
 The ptnetmap kthread infrastructure, moreover, has been already extended to
 suppor an arbitrary number of rings, where currently each ring is served
 by a different kernel thread.
-
