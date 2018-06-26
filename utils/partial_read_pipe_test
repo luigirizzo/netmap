@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 ################################################################################
-# Test objective: check if we can send and receive through netmap pipes.
+# Test objective: check that if the receiving pipe receives less than the
+#                 sending pipe sent, the non-received slot are left inside the
+#                 sending pipe ring.
 # Operations:
 # 0) restart fd_server to have a clean starting state
-# 1) create a pair of netmap pipes (${pipe}{1, ${pipe}}1).
-# 2) send from ${pipe}{1 and check if ${pipe}}1 receives it.
-# 2) send from ${pipe}}1 and check if ${pipe}{1 receives it.
+# 1) create a pair of netmap pipes (pipe{1, pipe}1).
+# 2) send X packets from pipe{1 and receive X-Y packets from pipe}1.
+# 2) check that pipe{1 still has X-Y slots pending for transmission.
 ################################################################################
 source test_lib
 
@@ -25,7 +27,6 @@ check_success $? "pre-open netmap:${pipe}{1"
 ./functional -i "netmap:${pipe}}1"
 check_success $? "pre-open netmap:${pipe}}1"
 
-# ${pipe}}1 ---> ${pipe}{1
 ./functional -i "netmap:${pipe}{1" -r "${len}:${fill}:${num_recv}" &
 p1=$!
 ./functional -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}"
@@ -36,8 +37,13 @@ check_success $e1 "receive-7 netmap:${pipe}{1"
 check_success $e2 "send-10 netmap:${pipe}}1"
 
 # At the moment get_tx_rings_max_sends and get_tx_rings_avail_sends do not
-# get the interface fd from fd_server, but they still read the correct values
-# from the rings. I don't know if that's something we can relay on.
+# get the interface fd from fd_server, they request it directly through an
+# nm_open(), but they still read the correct values stored inside each struct
+# netmap ring. This only happens if the multiple processes / threads synchronize
+# with each other when sharing the same netmap interface. This happens
+# implicitly for us because get_tx_rings_max_sends and get_tx_rings_avail_sends
+# are called after the first send-receive action, and the second one doesn't
+# happen until they terminate.
 exit_status=0
 ring_max_sends=$(./get_tx_rings_max_sends "netmap:${pipe}}1" "$len") 1>&3
 if [ $ring_max_sends = -1 ] ; then
