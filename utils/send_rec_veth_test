@@ -4,7 +4,8 @@
 # Operations:
 # 0) restart fd_server to have a clean starting state
 # 1) create a pair of veth interfaces (veth1A, veth1B).
-# 2) send from veth1A and check if veth1B receives.
+# 2) send from veth1B and check if veth1A receives.
+# 3) send from veth1A and check if veth1B receives.
 ################################################################################
 source test_lib
 
