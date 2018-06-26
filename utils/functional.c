@@ -533,6 +533,7 @@ read_one_packet(struct Global *g, struct netmap_ring *ring)
 			       g->pktr_len + slot->len);
 			clean_exit(g);
 		}
+
 		memcpy(g->pktr + g->pktr_len, buf, slot->len);
 		g->pktr_len += slot->len;
 		head = nm_ring_next(ring, head);
@@ -540,6 +541,7 @@ read_one_packet(struct Global *g, struct netmap_ring *ring)
 		if (!(slot->flags & NS_MOREFRAG)) {
 			break;
 		}
+
 		if (head == ring->tail) {
 			printf("warning: truncated packet "
 			       "(len=%u)\n",

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+################################################################################
+# Runs all the tests using randomized values for number of packets, fill
+# character and packets length.
+################################################################################
+
+random_num="$((65 + $RANDOM % 58))"
+# https://stackoverflow.com/a/10503163
+random_fill=$(printf \\$(printf '%03o' $random_num))
+# We need to make sure that we can send this number of packets with this length
+# at once. At the moment i just put max values which works for the defaults
+# number of rings and buffer size.
+random_len="$((50 + $RANDOM % 10000))"
+random_packet_num="$((1 + $RANDOM % 100))"
+# Use and empty string instead of "-q" if you don't want to perform a sequential
+# send/receive check
+seq_check="-q"
+echo "Running tests with"
+echo "   number of packets: ${random_packet_num}"
+echo "   fill character   : ${random_fill}"
+echo "   sequence check   : ${seq_check}"
+echo "   packet length    : ${random_len}"
+echo ""
+
+echo "send/receive pipe"
+./send_rec_pipe_test          -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+echo "partial read pipe"
+./partial_read_pipe_test
+# echo "send/receive veth"
+# ./send_rec_veth_test          -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+
+echo "destroy VALE port"
+./vale_port_destroy
+echo "double create VALE port"
+./vale_port_double_create
+echo "double attach VALE port"
+./vale_port_double_attach
+
+echo "exclusive open ephemeral VALE port"
+./exclusive_open_ephemeral_vale_port_test
+echo "exclusive open persistent VALE port"
+./exclusive_open_persistent_vale_port_test
+echo "exclusive open pipe"
+./exclusive_open_pipe_test
+
+echo "receive copy monitor attached to pipe"
+./rec_cp_mon_pipe_test        -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+echo "receive copy monitor attached to persistent VALE port"
+./rec_cp_mon_vale_port_test   -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+echo "zero-copy monitor attached to receiving pipe"
+./rec_zcp_mon_pipe_test       -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+echo "zero-copy monitor attached to receiving persistent VALE port"
+./rec_zcp_mon_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+
+echo "send copy monitor attached to pipe"
+./send_cp_mon_pipe_test       -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+echo "send copy monitor attached to persistent VALE port"
+./send_cp_mon_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+echo "zero-copy monitor attached to sending pipe"
+./send_zcp_mon_pipe_test      -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+echo "zero-copy monitor attached to sending persistent VALE port"
+./send_zcp_mon_vale_port_test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+
+echo "learning bridge algorithm"
+./learning_bridge_test                              -l $random_len -f $random_fill

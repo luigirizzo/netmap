@@ -23,4 +23,4 @@ check_failure $? "no-open netmap:${pipe}"
 ./functional -I "netmap:${pipe}/x"
 check_failure $? "no-open netmap:${pipe}/x"
 
-stdout_echo "Test successful."
+test_successful "exclusive_open_pipe_test"
