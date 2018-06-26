@@ -640,6 +640,7 @@ netmap_zmon_parent_sync(struct netmap_kring *kring, int flags, enum txrx tx)
 		ms->len = s->len;
 		s->len = tmp;
 
+		ms->flags = s->flags;
 		s->flags |= NS_BUF_CHANGED;
 
 		beg = nm_next(beg, lim);
@@ -757,6 +758,7 @@ netmap_monitor_parent_sync(struct netmap_kring *kring, u_int first_new, int new_
 
 			memcpy(dst, src, copy_len);
 			ms->len = copy_len;
+			ms->flags = s->flags;
 			sent++;
 
 			beg = nm_next(beg, lim);
