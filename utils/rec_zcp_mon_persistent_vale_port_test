@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 ################################################################################
 # Test objective: check if a zero-copy monitor is correctly blocked until the
-#                 monitored VALE port reads the frame.
+#                 monitored persistent VALE port reads the frame.
 # Operations:
 # 0) restart fd_server to have a clean starting state
 # 1) create a persistent VALE port (v0).
@@ -29,31 +29,31 @@ attach_to_vale_bridge "vale0" "v0"
 # condition between the sending and receiving ports.
 ./functional -i "vale0:v0"
 check_success $? "pre-open vale0:v0"
-./functional -i "vale0:v0/z"
-check_success $? "pre-open vale0:v0/z"
+./functional -i "netmap:v0/z"
+check_success $? "pre-open netmap:v0/z"
 ./functional -i "vale0:v1"
 check_success $? "pre-open vale0:v1"
 
 # Initially we don't receive with the monitored VALE port v0, therefore the
 # monitor should not receive the frame.
-./functional -i vale0:v0/z -r "${len}:${fill}:${num}" "$seq" -n &
+./functional -i netmap:v0/z -r "${len}:${fill}:${num}" "$seq" -n &
 p1=$!
 ./functional -i vale0:v1   -t "${len}:${fill}:${num}" "$seq"
 e2=$?
 wait $p1
 e1=$?
-check_success $e1 "no-receive-${num} vale0:v0/z"
+check_success $e1 "no-receive-${num} netmap:v0/z"
 check_success $e2 "send-${num} vale0:v0"
 
 # Now we receive with the monitored VALE port v0, therefore the monitor should
 # receive the frame.
 ./functional -i "vale0:v0"   -r "${len}:${fill}:${num}" "$seq" &
 p3=$!
-./functional -i "vale0:v0/z" -r "${len}:${fill}:${num}" "$seq"
+./functional -i "netmap:v0/z" -r "${len}:${fill}:${num}" "$seq"
 e4=$?
 wait $p3
 e3=$?
 check_success $e3 "receive-${num} vale0:v0"
-check_success $e4 "receive-${num} vale0:v0/z"
+check_success $e4 "receive-${num} netmap:v0/z"
 
-test_successful "rec_zcp_mon_vale_port_test"
+test_successful "rec_zcp_mon_persistent_vale_port_test"
