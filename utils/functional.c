@@ -76,7 +76,9 @@ struct Global {
 	unsigned timeout_secs;      /* transmit/receive timeout */
 	int ignore_if_not_matching; /* ignore certain received packets */
 	int success_if_no_receive;  /* exit status 0 if we receive no packets */
-	int sequential_fill;        /* increment fill char for multi-packets operations */
+	int
+	        sequential_fill; /* increment fill char for multi-packets
+	                            operations */
 	int request_from_fd_server;
 	int verbose;
 
@@ -442,8 +444,6 @@ tx(struct Global *g, unsigned packets_num)
 				g->filler = next_fill(g->filler);
 				build_packet(g);
 			}
-
-
 		}
 
 		if (packets_num == 0) {
@@ -741,7 +741,8 @@ usage(void)
 	printf("usage: ./functional [-h]\n"
 	       "    [-c (shuts down the fd server)]\n"
 	       "    [-o (starts the fd server)]\n"
-	       "    [-i NETMAP_PORT (requests the interface from the fd server)]\n"
+	       "    [-i NETMAP_PORT (requests the interface from the fd "
+	       "server)]\n"
 	       "    [-I NETMAP_PORT (directly opens the interface)]\n"
 	       "    [-s source MAC address (=0:0:0:0:0:0)]\n"
 	       "    [-d destination MAC address (=FF:FF:FF:FF:FF:FF)]\n"
@@ -756,7 +757,8 @@ usage(void)
 	       "    [-g (ignore ethernet frames with unmatching Ethernet "
 	       "header)]\n"
 	       "    [-n (exit status = 0 <==> no frames were received)]\n"
-	       "    [-q (during multi-packets send/receive increments fill character after each operation)]\n"
+	       "    [-q (during multi-packets send/receive increments fill "
+	       "character after each operation)]\n"
 	       "    [-v (increment verbosity level)]\n"
 	       "    [-C [NUM (=1)] (how many times to run the events)]\n"
 	       "\nExample:\n"
@@ -1021,7 +1023,7 @@ int
 main(int argc, char **argv)
 {
 	struct nm_desc *nmd = NULL;
-	struct Global *g = &_g;
+	struct Global *g    = &_g;
 	unsigned int i, c;
 	int opt;
 	int ret;
@@ -1044,12 +1046,13 @@ main(int argc, char **argv)
 	g->ignore_if_not_matching = /*false=*/0;
 	g->success_if_no_receive  = /*false=*/0;
 	g->request_from_fd_server = /*true=*/1;
-	g->sequential_fill  = /*false=*/0;
+	g->sequential_fill        = /*false=*/0;
 	g->verbose                = 0;
 	g->num_loops              = 1;
 	memset(&g->nmd, 0, sizeof(struct nm_desc));
 
-	while ((opt = getopt(argc, argv, "hconqs:d:i:I:w:F:T:t:r:gvp:C:")) != -1) {
+	while ((opt = getopt(argc, argv, "hconqs:d:i:I:w:F:T:t:r:gvp:C:")) !=
+	       -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -1092,7 +1095,7 @@ main(int argc, char **argv)
 			break;
 
 		case 'I':
-			g->ifname = optarg;
+			g->ifname                 = optarg;
 			g->request_from_fd_server = /*false=*/0;
 			break;
 
