@@ -273,6 +273,7 @@ struct netmap_adapter;
 struct nm_bdg_fwd;
 struct nm_bridge;
 struct netmap_priv_d;
+struct nm_bdg_args;
 
 /* os-specific NM_SELINFO_T initialzation/destruction functions */
 void nm_os_selinfo_init(NM_SELINFO_T *);
@@ -815,7 +816,8 @@ struct netmap_adapter {
 	 *      initializations
 	 *      Called with NMG_LOCK held.
 	 */
-	int (*nm_bdg_attach)(const char *bdg_name, struct netmap_adapter *);
+	int (*nm_bdg_attach)(const char *bdg_name, struct netmap_adapter *,
+			struct nm_bdg_args *);
 	int (*nm_bdg_ctl)(struct nmreq_header *, struct netmap_adapter *);
 
 	/* adapter used to attach this adapter to a VALE switch (if any) */
@@ -1077,7 +1079,7 @@ struct netmap_bwrap_adapter {
 int nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token);
 int nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token);
 int nm_bdg_polling(struct nmreq_header *hdr);
-int netmap_bwrap_attach(const char *name, struct netmap_adapter *);
+int netmap_bwrap_attach(const char *name, struct netmap_adapter *, struct nm_bdg_args *);
 int netmap_vi_create(struct nmreq_header *hdr, int);
 int nm_vi_create(struct nmreq_header *);
 int nm_vi_destroy(const char *name);
@@ -1458,6 +1460,7 @@ struct netmap_bdg_ops {
 	bdg_config_fn_t config;
 	bdg_dtor_fn_t	dtor;
 };
+int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, void *auth_token);
 
 uint32_t netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *, void *private_data);
@@ -1468,13 +1471,12 @@ uint32_t netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 #define	NM_BDG_NOPORT		(NM_BDG_MAXPORTS+1)
 
 /* these are redefined in case of no VALE support */
-int netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+int netmap_get_vale_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create);
 struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
-int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, void *auth_token);
 int nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
 	void *callback_data, void *auth_token);
 int netmap_bdg_config(struct nm_ifreq *nifr);
@@ -1482,7 +1484,7 @@ void *netmap_bdg_create(const char *bdg_name, int *return_status);
 int netmap_bdg_destroy(const char *bdg_name, void *auth_token);
 
 #else /* !WITH_VALE */
-#define	netmap_get_bdg_na(_1, _2, _3, _4)	0
+#define	netmap_get_vale_na(_1, _2, _3, _4)	0
 #define netmap_init_bridges(_1) 0
 #define netmap_uninit_bridges()
 #define	netmap_bdg_regops(_1, _2)	EINVAL
