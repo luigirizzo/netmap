@@ -8,7 +8,7 @@ SRCDIR:=@SRCDIR@
 # the source is not here so we need to specify a dependency
 $(foreach s,$(SUBSYS),$(eval CONFIG_NETMAP_$(shell echo $s|tr a-z- A-Z_)=y))
 
-remoteobjs-y := netmap_mem2.o netmap_mbq.o netmap_legacy.o
+remoteobjs-y := netmap_mem2.o netmap_mbq.o netmap_legacy.o netmap_bdg.o
 
 remoteobjs-$(CONFIG_NETMAP_VALE)    += netmap_vale.o netmap_offloadings.o
 remoteobjs-$(CONFIG_NETMAP_PIPE)    += netmap_pipe.o
