@@ -566,10 +566,10 @@ cleanup:
 			if (ring == NULL)
 				continue;
 
-			if (kring->nr_hwtail == kring->nr_hwcur)
-				ring->slot[kring->nr_hwtail].buf_idx = 0;
+			if (kring->pipe_tail == kring->nr_hwcur)
+				ring->slot[kring->pipe_tail].buf_idx = 0;
 
-			for (j = nm_next(kring->nr_hwtail, lim);
+			for (j = nm_next(kring->pipe_tail, lim);
 			     j != kring->nr_hwcur;
 			     j = nm_next(j, lim))
 			{
