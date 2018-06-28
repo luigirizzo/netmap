@@ -446,6 +446,16 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 				if (nm_kring_pending_on(kring)) {
 					struct netmap_kring *sring, *dring;
 
+					kring->nr_mode = NKR_NETMAP_ON;
+					if ((kring->nr_kflags & NKR_FAKERING) &&
+					    (kring->pipe->nr_kflags & NKR_FAKERING)) {
+						/* this is a re-open of a pipe
+						 * end-point kept alive by the other end.
+						 * We need to leave everything as it is
+						 */
+						continue;
+					}
+
 					/* copy the buffers from the non-fake ring */
 					if (kring->nr_kflags & NKR_FAKERING) {
 						sring = kring->pipe;
