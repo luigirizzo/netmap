@@ -28,7 +28,6 @@ struct nmd_entry {
 
 #define printf(format, ...) syslog(LOG_NOTICE, format, ##__VA_ARGS__)
 
-#define SOCKET_NAME "/tmp/my_unix_socket"
 #define MAX_OPEN_IF 128
 struct nmd_entry entries[MAX_OPEN_IF];
 int num_entries = 0;

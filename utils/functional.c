@@ -43,6 +43,7 @@
 #include <netinet/ip6.h>
 #include <netinet/udp.h>
 #include <string.h>
+#include <sys/queue.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -69,18 +70,32 @@ struct Event {
 	unsigned long long usecs;
 };
 
+struct swapped_out_buf {
+	uint32_t buf_idx;
+	LIST_ENTRY(swapped_out_buf) list_entry;
+};
+
+;
+
 struct Global {
-	struct nm_desc nmd;
+	struct nm_desc *nmd;
 	const char *ifname;
 	unsigned wait_link_secs;    /* wait for link */
 	unsigned timeout_secs;      /* transmit/receive timeout */
 	int ignore_if_not_matching; /* ignore certain received packets */
 	int success_if_no_receive;  /* exit status 0 if we receive no packets */
-	int
-	        sequential_fill; /* increment fill char for multi-packets
+	int sequential_fill;        /* increment fill char for multi-packets
 	                            operations */
-	int request_from_fd_server;
+	int request_from_fd_server; /* false --> directly open the interface */
 	int verbose;
+
+	/* List of currently not in use normal buffers. */
+	LIST_HEAD(n_buf_head, swapped_out_buf) normal_buffers_head;
+	/* List of currently not in use extra buffers. */
+	LIST_HEAD(e_buf_head, swapped_out_buf) extra_buffers_head;
+	/* Points to an array containing all extra buffer indexes */
+	uint32_t *extra_buffers_indexes;
+	unsigned extra_buffers_num; /* number of granted extra buffers */
 
 #define MAX_PKT_SIZE 65536
 	char pktm[MAX_PKT_SIZE]; /* packet model */
@@ -104,13 +119,20 @@ struct Global {
 };
 
 void release_if_fd(struct Global *, const char *);
+void release_extra_buffers(struct Global *);
 
 void
-clean_exit(struct Global *g)
+cleanup(struct Global *g)
 {
+	if (g->extra_buffers_num > 0) {
+		release_extra_buffers(g);
+	}
 
-	release_if_fd(g, g->ifname);
-	exit(EXIT_FAILURE);
+	if (g->request_from_fd_server) {
+		release_if_fd(g, g->ifname);
+	} else {
+		nm_close(g->nmd);
+	}
 }
 
 static void
@@ -120,7 +142,8 @@ fill_packet_field(struct Global *g, unsigned offset, const char *content,
 	if (offset + content_len > sizeof(g->pktm)) {
 		printf("Packet layout overflow: %u + %u > %lu\n", offset,
 		       content_len, sizeof(g->pktm));
-		clean_exit(g);
+		cleanup(g);
+		exit(EXIT_FAILURE);
 	}
 
 	memcpy(g->pktm + offset, content, content_len);
@@ -301,7 +324,7 @@ build_packet(struct Global *g)
 static int
 tx_flush(struct Global *g)
 {
-	struct nm_desc *nmd = &g->nmd;
+	struct nm_desc *nmd = g->nmd;
 	unsigned elapsed_ms = 0;
 	unsigned wait_ms    = 100;
 	int i;
@@ -406,7 +429,7 @@ next_fill(char cur_fill)
 static int
 tx(struct Global *g, unsigned packets_num)
 {
-	struct nm_desc *nmd = &g->nmd;
+	struct nm_desc *nmd = g->nmd;
 	unsigned elapsed_ms = 0;
 	unsigned wait_ms    = 100;
 	unsigned int i;
@@ -531,7 +554,8 @@ read_one_packet(struct Global *g, struct netmap_ring *ring)
 			       "large "
 			       "(>= %u bytes) ",
 			       g->pktr_len + slot->len);
-			clean_exit(g);
+			cleanup(g);
+			exit(EXIT_FAILURE);
 		}
 
 		memcpy(g->pktr + g->pktr_len, buf, slot->len);
@@ -562,7 +586,7 @@ read_one_packet(struct Global *g, struct netmap_ring *ring)
 static int
 rx(struct Global *g, unsigned packets_num)
 {
-	struct nm_desc *nmd = &g->nmd;
+	struct nm_desc *nmd = g->nmd;
 	unsigned elapsed_ms = 0;
 	unsigned wait_ms    = 100;
 	unsigned int i;
@@ -624,7 +648,8 @@ rx(struct Global *g, unsigned packets_num)
 			 * packet model we exit with status EXIT_FAILURE.
 			 */
 			if (rx_check(g)) {
-				clean_exit(g);
+				cleanup(g);
+				exit(EXIT_FAILURE);
 			}
 
 			if (g->sequential_fill == 1) {
@@ -759,6 +784,8 @@ usage(void)
 	       "    [-n (exit status = 0 <==> no frames were received)]\n"
 	       "    [-q (during multi-packets send/receive increments fill "
 	       "character after each operation)]\n"
+	       "    [-e (use extra buffers to send packets, "
+	       "can only be used when directly opening an interface)]\n"
 	       "    [-v (increment verbosity level)]\n"
 	       "    [-C [NUM (=1)] (how many times to run the events)]\n"
 	       "\nExample:\n"
@@ -802,8 +829,6 @@ fill_nm_desc(struct nm_desc *des, struct nmreq *req, int fd)
 	}
 }
 
-#define SOCKET_NAME "/tmp/my_unix_socket"
-
 int
 connect_to_fd_server(struct Global *g)
 {
@@ -818,7 +843,7 @@ connect_to_fd_server(struct Global *g)
 		return -1;
 	}
 
-	memset(&name, 0, sizeof(struct sockaddr_un));
+	memset(&name, 0, sizeof(name));
 	name.sun_family = AF_UNIX;
 	strncpy(name.sun_path, SOCKET_NAME, sizeof(name.sun_path) - 1);
 	name.sun_path[sizeof(name.sun_path) - 1] = '\0';
@@ -881,7 +906,7 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	errno           = 0;
 	iov[0].iov_base = buf;
 	iov[0].iov_len  = buf_size;
-	memset(&msg, 0, sizeof(struct msghdr));
+	memset(&msg, 0, sizeof(msg));
 	msg.msg_iov    = iov;
 	msg.msg_iovlen = 1;
 	memset(ancillary.buf, 0, sizeof(ancillary.buf));
@@ -911,11 +936,12 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	return amount;
 }
 
-int
-get_if_fd(struct Global *g, const char *if_name, struct nm_desc *nmd)
+struct nm_desc *
+get_if_fd(struct Global *g, const char *if_name)
 {
 	struct fd_response res;
 	struct fd_request req;
+	struct nm_desc *nmd;
 	int socket_fd;
 	int new_fd;
 	int ret;
@@ -928,27 +954,33 @@ get_if_fd(struct Global *g, const char *if_name, struct nm_desc *nmd)
 	memset(&req, 0, sizeof(req));
 	req.action = FD_GET;
 	strncpy(req.if_name, if_name, sizeof(req.if_name));
-	ret = send(socket_fd, &req, sizeof(struct fd_request), 0);
+	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret < 0) {
 		perror("send()");
-		return -1;
+		return NULL;
 	}
 
 	memset(&res, 0, sizeof(res));
-	ret = recv_fd(socket_fd, &new_fd, &res, sizeof(struct fd_response));
+	ret = recv_fd(socket_fd, &new_fd, &res, sizeof(res));
 	if (ret == -1) {
 		perror("recv_fd()");
-		return -1;
+		return NULL;
+	}
+	close(socket_fd);
+
+	nmd = malloc(sizeof(*nmd));
+	if (nmd == NULL) {
+		perror("malloc()");
+		return NULL;
 	}
 
 	fill_nm_desc(nmd, &res.req, new_fd);
 	if (nm_mmap(nmd, NULL) != 0) {
 		perror("nm_mmap()");
-		return -1;
+		return NULL;
 	}
 
-	close(socket_fd);
-	return 0;
+	return nmd;
 }
 
 void
@@ -967,7 +999,7 @@ release_if_fd(struct Global *g, const char *if_name)
 	req.action = FD_RELEASE;
 	strncpy(req.if_name, if_name, sizeof(req.if_name));
 
-	ret = send(socket_fd, &req, sizeof(struct fd_request), 0);
+	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret <= 0) {
 		perror("send()");
 	}
@@ -994,7 +1026,7 @@ stop_fd_server(struct Global *g)
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_STOP;
-	ret        = send(socket_fd, &req, sizeof(struct fd_request), 0);
+	ret        = send(socket_fd, &req, sizeof(req), 0);
 	if (ret == -1) {
 		perror("send()");
 	}
@@ -1005,7 +1037,7 @@ stop_fd_server(struct Global *g)
 	 * condition. Otherwise the call to functional might connect to the
 	 * previous fd_server backlog.
 	 */
-	recv(socket_fd, &req, sizeof(struct fd_request), 0);
+	recv(socket_fd, &req, sizeof(req), 0);
 	close(socket_fd);
 }
 
@@ -1019,15 +1051,133 @@ parse_mac_address(const char *opt, char *mac)
 	return -1;
 }
 
+/* Uses the first adapter slot (any will do) to save the extra buffers indexes.
+ */
+int
+parse_extra_buffers_indexes(struct Global *g)
+{
+	struct netmap_if *nifp   = g->nmd->nifp;
+	struct netmap_ring *ring = NETMAP_TXRING(nifp, g->nmd->first_tx_ring);
+	struct netmap_slot *slot = &ring->slot[ring->head];
+	uint32_t e_buf_index     = nifp->ni_bufs_head;
+	uint32_t real_index      = slot->buf_idx;
+	struct swapped_out_buf *u_buf;
+	unsigned i;
+
+	for (i = 0; i < g->extra_buffers_num; i++) {
+		if (e_buf_index == 0) {
+			printf("Extra buffer index = 0\n");
+			return -1;
+		}
+
+		u_buf = malloc(sizeof(*u_buf));
+		if (u_buf == NULL) {
+			perror("malloc()");
+			return -1;
+		}
+		u_buf->buf_idx = e_buf_index;
+		LIST_INSERT_HEAD(&g->extra_buffers_head, u_buf, list_entry);
+		g->extra_buffers_indexes[i] = e_buf_index;
+		slot->buf_idx               = e_buf_index;
+		e_buf_index = *(uint32_t *)NETMAP_BUF(ring, slot->buf_idx);
+	}
+	slot->buf_idx = real_index;
+
+	return 0;
+}
+
+/* Loops through the adapter slots, swapping the default buffers with the
+ * extra buffers. Keeps going until we run out of extra buffers, or adapter
+ * slots.
+ */
+int
+swap_in_extra_buffers(struct Global *g)
+{
+	unsigned int i;
+
+	for (i = g->nmd->first_tx_ring; i <= g->nmd->last_tx_ring; i++) {
+		struct netmap_ring *ring = NETMAP_TXRING(g->nmd->nifp, i);
+		unsigned head;
+
+		for (head = ring->head; head != ring->tail;
+		     head = nm_ring_next(ring, head)) {
+			struct swapped_out_buf *u_buf =
+			        LIST_FIRST(&g->extra_buffers_head);
+			struct netmap_slot *slot = &ring->slot[head];
+			uint32_t real_index      = slot->buf_idx;
+
+			if (u_buf == NULL) {
+				/* We finished swapping in extra buffers */
+				return 0;
+			}
+
+			slot->buf_idx = u_buf->buf_idx;
+			slot->flags |= NS_BUF_CHANGED;
+			u_buf->buf_idx = real_index;
+			LIST_REMOVE(u_buf, list_entry);
+			LIST_INSERT_HEAD(&g->normal_buffers_head, u_buf,
+			                 list_entry);
+		}
+	}
+
+	if (!LIST_EMPTY(&g->extra_buffers_head)) {
+		/* This happens if the number of slots in our adapter is less
+		 * than the number of extra buffers requested, thus should not
+		 * be regarded as an error (?)
+		 */
+		return 0;
+	}
+
+	return 0;
+}
+
+/* We only re-build the extra buffers list, as requested from netmap. We don't
+ * undo the swapping that we did at the start of the program to swap in the
+ * extra buffer. This probably leaves the netmap adapter in an incosistent
+ * state, that's why we only support this option for interfaces requested
+ * directly.
+ */
+void
+release_extra_buffers(struct Global *g)
+{
+	struct netmap_if *nifp   = g->nmd->nifp;
+	struct netmap_ring *ring = NETMAP_TXRING(nifp, g->nmd->first_tx_ring);
+	struct netmap_slot *slot = &ring->slot[ring->head];
+	uint32_t real_index      = slot->buf_idx;
+	unsigned i;
+
+	nifp->ni_bufs_head = g->extra_buffers_indexes[0];
+	for (i = 0; i < g->extra_buffers_num; i++) {
+		uint32_t *extra_buffer;
+
+		slot->buf_idx = g->extra_buffers_indexes[i];
+		extra_buffer  = (uint32_t *)NETMAP_BUF(ring, slot->buf_idx);
+		if (i == g->extra_buffers_num - 1) {
+			*extra_buffer = 0;
+		} else {
+			*extra_buffer = g->extra_buffers_indexes[i + 1];
+		}
+	}
+	slot->buf_idx = real_index;
+
+	while (!LIST_EMPTY(&g->extra_buffers_head)) {
+		struct swapped_out_buf *u_buf =
+		        LIST_FIRST(&g->extra_buffers_head);
+
+		LIST_REMOVE(u_buf, list_entry);
+		free(u_buf);
+	}
+}
+
 int
 main(int argc, char **argv)
 {
-	struct nm_desc *nmd = NULL;
-	struct Global *g    = &_g;
+	struct Global *g = &_g;
 	unsigned int i, c;
 	int opt;
 	int ret;
 
+	g->nmd            = NULL;
 	g->ifname         = NULL;
 	g->wait_link_secs = 0;
 	g->timeout_secs   = 1;
@@ -1047,11 +1197,14 @@ main(int argc, char **argv)
 	g->success_if_no_receive  = /*false=*/0;
 	g->request_from_fd_server = /*true=*/1;
 	g->sequential_fill        = /*false=*/0;
+	g->extra_buffers_num      = 0;
 	g->verbose                = 0;
 	g->num_loops              = 1;
-	memset(&g->nmd, 0, sizeof(struct nm_desc));
+	g->extra_buffers_num      = 0;
+	LIST_INIT(&g->normal_buffers_head);
+	LIST_INIT(&g->extra_buffers_head);
 
-	while ((opt = getopt(argc, argv, "hconqs:d:i:I:w:F:T:t:r:gvp:C:")) !=
+	while ((opt = getopt(argc, argv, "hconqe:s:d:i:I:w:F:T:t:r:gvp:C:")) !=
 	       -1) {
 		switch (opt) {
 		case 'h':
@@ -1072,6 +1225,15 @@ main(int argc, char **argv)
 
 		case 'q':
 			g->sequential_fill = /*true=*/1;
+			break;
+
+		case 'e':
+			printf("sdsdas\n");
+			g->extra_buffers_num = atoi(optarg);
+			if (g->extra_buffers_num <= 0) {
+				printf("Invalid number of extra buffers\n");
+				exit(EXIT_FAILURE);
+			};
 			break;
 
 		case 's':
@@ -1157,7 +1319,7 @@ main(int argc, char **argv)
 			break;
 
 		default:
-			printf("    Unrecognized option %c\n", opt);
+			printf("Unrecognized option %c\n", opt);
 			usage();
 			exit(EXIT_FAILURE);
 		}
@@ -1169,21 +1331,50 @@ main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	ret = 0;
+	if (g->request_from_fd_server == 1 && g->extra_buffers_num > 0) {
+		printf("Extra buffers can only be used when requesting an "
+		       "interface directly\n");
+		exit(EXIT_FAILURE);
+	}
+
 	if (g->request_from_fd_server == 0) {
 		/* We directly open the file descriptor. */
-		nmd = nm_open(g->ifname, NULL, 0, NULL);
-		if (nmd == NULL) {
-			ret = -1;
+		if (g->extra_buffers_num > 0) {
+			struct nmreq req;
+
+			memset(&req, 0, sizeof(req));
+			req.nr_arg3 = g->extra_buffers_num;
+			g->nmd      = nm_open(g->ifname, &req, 0, NULL);
 		} else {
-			memcpy(&g->nmd, nmd, sizeof(struct nm_desc));
+			g->nmd = nm_open(g->ifname, NULL, 0, NULL);
 		}
 	} else {
-		ret = get_if_fd(g, g->ifname, &g->nmd);
+		g->nmd = get_if_fd(g, g->ifname);
 	}
-	if (ret == -1) {
+	if (g->nmd == NULL) {
+		;
 		printf("Failed to nm_open(%s)\n", g->ifname);
 		exit(EXIT_FAILURE);
+	}
+
+	if (g->extra_buffers_num > 0) {
+		g->extra_buffers_num = g->nmd->req.nr_arg3; /* Stores the real
+		                                               number of extra
+		                                               buffers. */
+		g->extra_buffers_indexes =
+		        malloc(g->extra_buffers_num * sizeof(uint32_t));
+		if (g->extra_buffers_indexes == NULL) {
+			perror("malloc()");
+			exit(EXIT_FAILURE);
+		}
+
+		ret = parse_extra_buffers_indexes(g);
+		if (ret == -1) {
+			cleanup(g);
+			exit(EXIT_FAILURE);
+		}
+
+		swap_in_extra_buffers(g);
 	}
 
 	if (g->wait_link_secs > 0) {
@@ -1204,13 +1395,15 @@ main(int argc, char **argv)
 			switch (e->evtype) {
 			case EVENT_TYPE_TX:
 				if (tx(g, e->num)) {
-					clean_exit(g);
+					cleanup(g);
+					exit(EXIT_FAILURE);
 				}
 				break;
 
 			case EVENT_TYPE_RX:
 				if (rx(g, e->num)) {
-					clean_exit(g);
+					cleanup(g);
+					exit(EXIT_FAILURE);
 				}
 				break;
 
@@ -1223,17 +1416,6 @@ main(int argc, char **argv)
 
 	/* if we have sent something, wait for all tx to complete */
 	tx_flush(g);
-
-	if (g->request_from_fd_server == 0) {
-		ret = nm_close(nmd);
-	} else {
-		release_if_fd(g, g->ifname);
-		ret = 0;
-	}
-
-	if (ret == -1) {
-		printf("Failed to nm_close(%s)\n", g->ifname);
-	}
-
+	cleanup(g);
 	return 0;
 }
