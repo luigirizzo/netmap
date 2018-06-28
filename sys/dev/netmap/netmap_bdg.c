@@ -510,7 +510,7 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token)
 	struct nmreq_vale_attach *req =
 		(struct nmreq_vale_attach *)(uintptr_t)hdr->nr_body;
 	struct netmap_vp_adapter * vpna;
-	struct netmap_adapter *na;
+	struct netmap_adapter *na = NULL;
 	struct netmap_mem_d *nmd = NULL;
 	struct nm_bridge *b = NULL;
 	int error;
@@ -533,7 +533,7 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token)
 
 	/* check for existing one */
 	error = netmap_get_vale_na(hdr, &na, nmd, 0);
-	if (!error) {
+	if (na) {
 		error = EBUSY;
 		goto unref_exit;
 	}
