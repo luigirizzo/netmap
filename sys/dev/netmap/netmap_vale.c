@@ -120,6 +120,11 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0,
 		"Max batch size to be used in the bridge");
 SYSEND;
 
+static int netmap_vp_create(struct nmreq_header *hdr, struct ifnet *,
+		struct netmap_mem_d *nmd, struct netmap_vp_adapter **);
+static int netmap_vp_bdg_attach(const char *, struct netmap_adapter *,
+		struct nm_bridge *);
+static int netmap_vale_bwrap_attach(const char *, struct netmap_adapter *);
 
 /*
  * For each output interface, nm_bdg_q is used to construct a list.
@@ -133,8 +138,14 @@ struct nm_bdg_q {
 };
 
 /* Holds the default callbacks */
-struct netmap_bdg_ops default_bdg_ops = {netmap_bdg_learning, NULL, NULL};
-
+struct netmap_bdg_ops vale_bdg_ops = {
+	.lookup = netmap_bdg_learning,
+	.config = NULL,
+	.dtor = NULL,
+	.vp_create = netmap_vp_create,
+	.bwrap_attach = netmap_vale_bwrap_attach,
+	.name = NM_BDG_NAME,
+};
 
 /*
  * this is a slightly optimized copy routine which rounds
@@ -225,6 +236,77 @@ nm_alloc_bdgfwd(struct netmap_adapter *na)
 	return 0;
 }
 
+/* Allows external modules to create bridges in exclusive mode,
+ * returns an authentication token that the external module will need
+ * to provide during nm_bdg_ctl_{attach, detach}(), netmap_bdg_regops(),
+ * and nm_bdg_update_private_data() operations.
+ * Successfully executed if ret != NULL and *return_status == 0.
+ */
+void *
+netmap_vale_create(const char *bdg_name, int *return_status)
+{
+	struct nm_bridge *b = NULL;
+	void *ret = NULL;
+
+	NMG_LOCK();
+	b = nm_find_bridge(bdg_name, 0 /* don't create */, NULL);
+	if (b) {
+		*return_status = EEXIST;
+		goto unlock_bdg_create;
+	}
+
+	b = nm_find_bridge(bdg_name, 1 /* create */, &vale_bdg_ops);
+	if (!b) {
+		*return_status = ENOMEM;
+		goto unlock_bdg_create;
+	}
+
+	b->bdg_flags |= NM_BDG_ACTIVE | NM_BDG_EXCLUSIVE;
+	ret = nm_bdg_get_auth_token(b);
+	*return_status = 0;
+
+unlock_bdg_create:
+	NMG_UNLOCK();
+	return ret;
+}
+
+/* Allows external modules to destroy a bridge created through
+ * netmap_bdg_create(), the bridge must be empty.
+ */
+int
+netmap_vale_destroy(const char *bdg_name, void *auth_token)
+{
+	struct nm_bridge *b = NULL;
+	int ret = 0;
+
+	NMG_LOCK();
+	b = nm_find_bridge(bdg_name, 0 /* don't create */, NULL);
+	if (!b) {
+		ret = ENXIO;
+		goto unlock_bdg_free;
+	}
+
+	if (!nm_bdg_valid_auth_token(b, auth_token)) {
+		ret = EACCES;
+		goto unlock_bdg_free;
+	}
+	if (!(b->bdg_flags & NM_BDG_EXCLUSIVE)) {
+		ret = EINVAL;
+		goto unlock_bdg_free;
+	}
+
+	b->bdg_flags &= ~(NM_BDG_EXCLUSIVE | NM_BDG_ACTIVE);
+	ret = netmap_bdg_free(b);
+	if (ret) {
+		b->bdg_flags |= NM_BDG_EXCLUSIVE | NM_BDG_ACTIVE;
+	}
+
+unlock_bdg_free:
+	NMG_UNLOCK();
+	return ret;
+}
+
+
 
 /* nm_dtor callback for ephemeral VALE ports */
 static void
@@ -250,182 +332,6 @@ netmap_vp_dtor(struct netmap_adapter *na)
 	}
 }
 
-/* creates a persistent VALE port */
-int
-nm_vi_create(struct nmreq_header *hdr)
-{
-	struct nmreq_vale_newif *req =
-		(struct nmreq_vale_newif *)(uintptr_t)hdr->nr_body;
-	int error = 0;
-	/* Build a nmreq_register out of the nmreq_vale_newif,
-	 * so that we can call netmap_get_bdg_na(). */
-	struct nmreq_register regreq;
-	bzero(&regreq, sizeof(regreq));
-	regreq.nr_tx_slots = req->nr_tx_slots;
-	regreq.nr_rx_slots = req->nr_rx_slots;
-	regreq.nr_tx_rings = req->nr_tx_rings;
-	regreq.nr_rx_rings = req->nr_rx_rings;
-	regreq.nr_mem_id = req->nr_mem_id;
-	hdr->nr_reqtype = NETMAP_REQ_REGISTER;
-	hdr->nr_body = (uintptr_t)&regreq;
-	error = netmap_vi_create(hdr, 0 /* no autodelete */);
-	hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
-	hdr->nr_body = (uintptr_t)req;
-	/* Write back to the original struct. */
-	req->nr_tx_slots = regreq.nr_tx_slots;
-	req->nr_rx_slots = regreq.nr_rx_slots;
-	req->nr_tx_rings = regreq.nr_tx_rings;
-	req->nr_rx_rings = regreq.nr_rx_rings;
-	req->nr_mem_id = regreq.nr_mem_id;
-	return error;
-}
-
-/* remove a persistent VALE port from the system */
-int
-nm_vi_destroy(const char *name)
-{
-	struct ifnet *ifp;
-	struct netmap_vp_adapter *vpna;
-	int error;
-
-	ifp = ifunit_ref(name);
-	if (!ifp)
-		return ENXIO;
-	NMG_LOCK();
-	/* make sure this is actually a VALE port */
-	if (!NM_NA_VALID(ifp) || NA(ifp)->nm_register != netmap_vp_reg) {
-		error = EINVAL;
-		goto err;
-	}
-
-	vpna = (struct netmap_vp_adapter *)NA(ifp);
-
-	/* we can only destroy ports that were created via NETMAP_BDG_NEWIF */
-	if (vpna->autodelete) {
-		error = EINVAL;
-		goto err;
-	}
-
-	/* also make sure that nobody is using the inferface */
-	if (NETMAP_OWNED_BY_ANY(&vpna->up) ||
-	    vpna->up.na_refcount > 1 /* any ref besides the one in nm_vi_create()? */) {
-		error = EBUSY;
-		goto err;
-	}
-
-	NMG_UNLOCK();
-
-	D("destroying a persistent vale interface %s", ifp->if_xname);
-	/* Linux requires all the references are released
-	 * before unregister
-	 */
-	netmap_detach(ifp);
-	if_rele(ifp);
-	nm_os_vi_detach(ifp);
-	return 0;
-
-err:
-	NMG_UNLOCK();
-	if_rele(ifp);
-	return error;
-}
-
-static int
-nm_update_info(struct nmreq_register *req, struct netmap_adapter *na)
-{
-	req->nr_rx_rings = na->num_rx_rings;
-	req->nr_tx_rings = na->num_tx_rings;
-	req->nr_rx_slots = na->num_rx_desc;
-	req->nr_tx_slots = na->num_tx_desc;
-	return netmap_mem_get_info(na->nm_mem, &req->nr_memsize, NULL,
-					&req->nr_mem_id);
-}
-
-/*
- * Create a virtual interface registered to the system.
- * The interface will be attached to a bridge later.
- */
-int
-netmap_vi_create(struct nmreq_header *hdr, int autodelete)
-{
-	struct nmreq_register *req = (struct nmreq_register *)(uintptr_t)hdr->nr_body;
-	struct ifnet *ifp;
-	struct netmap_vp_adapter *vpna;
-	struct netmap_mem_d *nmd = NULL;
-	int error;
-
-	if (hdr->nr_reqtype != NETMAP_REQ_REGISTER) {
-		return EINVAL;
-	}
-
-	/* don't include VALE prefix */
-	if (!strncmp(hdr->nr_name, NM_BDG_NAME, strlen(NM_BDG_NAME)))
-		return EINVAL;
-	if (strlen(hdr->nr_name) >= IFNAMSIZ) {
-		return EINVAL;
-	}
-	ifp = ifunit_ref(hdr->nr_name);
-	if (ifp) { /* already exist, cannot create new one */
-		error = EEXIST;
-		NMG_LOCK();
-		if (NM_NA_VALID(ifp)) {
-			int update_err = nm_update_info(req, NA(ifp));
-			if (update_err)
-				error = update_err;
-		}
-		NMG_UNLOCK();
-		if_rele(ifp);
-		return error;
-	}
-	error = nm_os_vi_persist(hdr->nr_name, &ifp);
-	if (error)
-		return error;
-
-	NMG_LOCK();
-	if (req->nr_mem_id) {
-		nmd = netmap_mem_find(req->nr_mem_id);
-		if (nmd == NULL) {
-			error = EINVAL;
-			goto err_1;
-		}
-	}
-	/* netmap_vp_create creates a struct netmap_vp_adapter */
-	error = netmap_vp_create(hdr, ifp, nmd, &vpna);
-	if (error) {
-		D("error %d", error);
-		goto err_1;
-	}
-	/* persist-specific routines */
-	vpna->up.nm_bdg_ctl = netmap_vp_bdg_ctl;
-	if (!autodelete) {
-		netmap_adapter_get(&vpna->up);
-	} else {
-		vpna->autodelete = 1;
-	}
-	NM_ATTACH_NA(ifp, &vpna->up);
-	/* return the updated info */
-	error = nm_update_info(req, &vpna->up);
-	if (error) {
-		goto err_2;
-	}
-	ND("returning nr_mem_id %d", req->nr_mem_id);
-	if (nmd)
-		netmap_mem_put(nmd);
-	NMG_UNLOCK();
-	ND("created %s", ifp->if_xname);
-	return 0;
-
-err_2:
-	netmap_detach(ifp);
-err_1:
-	if (nmd)
-		netmap_mem_put(nmd);
-	NMG_UNLOCK();
-	nm_os_vi_detach(ifp);
-
-	return error;
-}
-
 
 /* Called by external kernel modules (e.g., Openvswitch).
  * to modify the private data previously given to regops().
@@ -442,7 +348,7 @@ nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callba
 	int error = 0;
 
 	NMG_LOCK();
-	b = nm_find_bridge(name, 0 /* don't create */);
+	b = nm_find_bridge(name, 0 /* don't create */, NULL);
 	if (!b) {
 		error = EINVAL;
 		goto unlock_update_priv;
@@ -466,7 +372,7 @@ unlock_update_priv:
  * Calls the standard netmap_krings_create, then adds leases on rx
  * rings and bdgfwd on tx rings.
  */
-int
+static int
 netmap_vp_krings_create(struct netmap_adapter *na)
 {
 	u_int tailroom;
@@ -501,7 +407,7 @@ netmap_vp_krings_create(struct netmap_adapter *na)
 
 
 /* nm_krings_delete callback for VALE ports. */
-void
+static void
 netmap_vp_krings_delete(struct netmap_adapter *na)
 {
 	nm_free_bdgfwd(na);
@@ -1122,7 +1028,7 @@ cleanup:
 }
 
 /* nm_txsync callback for VALE ports */
-int
+static int
 netmap_vp_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_vp_adapter *na =
@@ -1160,7 +1066,7 @@ done:
 /* create a netmap_vp_adapter that describes a VALE port.
  * Only persistent VALE ports have a non-null ifp.
  */
-int
+static int
 netmap_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_vp_adapter **ret)
 {
@@ -1252,5 +1158,270 @@ err:
 	return error;
 }
 
+/* nm_bdg_attach callback for VALE ports
+ * The na_vp port is this same netmap_adapter. There is no host port.
+ */
+static int
+netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na,
+		struct nm_bridge *b)
+{
+	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
+
+	if (b->bdg_ops != &vale_bdg_ops) {
+		return NM_NEED_BWRAP;
+	}
+	if (vpna->na_bdg) {
+		return NM_NEED_BWRAP;
+	}
+	na->na_vp = vpna;
+	strncpy(na->name, name, sizeof(na->name));
+	na->na_hostvp = NULL;
+	return 0;
+}
+
+static int
+netmap_vale_bwrap_krings_create(struct netmap_adapter *na)
+{
+	int error;
+
+	/* impersonate a netmap_vp_adapter */
+	error = netmap_vp_krings_create(na);
+	if (error)
+		return error;
+	error = netmap_bwrap_krings_create_common(na);
+	if (error) {
+		netmap_vp_krings_delete(na);
+	}
+	return error;
+}
+
+static void
+netmap_vale_bwrap_krings_delete(struct netmap_adapter *na)
+{
+	netmap_bwrap_krings_delete_common(na);
+	netmap_vp_krings_delete(na);
+}
+
+static int
+netmap_vale_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
+{
+	struct netmap_bwrap_adapter *bna;
+	struct netmap_adapter *na = NULL;
+	struct netmap_adapter *hostna = NULL;
+	int error;
+
+	bna = nm_os_malloc(sizeof(*bna));
+	if (bna == NULL) {
+		return ENOMEM;
+	}
+	na = &bna->up.up;
+	strncpy(na->name, nr_name, sizeof(na->name));
+	na->nm_register = netmap_bwrap_reg;
+	na->nm_txsync = netmap_vp_txsync;
+	// na->nm_rxsync = netmap_bwrap_rxsync;
+	na->nm_krings_create = netmap_vale_bwrap_krings_create;
+	na->nm_krings_delete = netmap_vale_bwrap_krings_delete;
+	na->nm_notify = netmap_bwrap_notify;
+	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
+	/* Set the mfs, needed on the VALE mismatch datapath. */
+	bna->up.mfs = NM_BDG_MFS_DEFAULT;
+
+	if (hwna->na_flags & NAF_HOST_RINGS) {
+		hostna = &bna->host.up;
+		hostna->nm_notify = netmap_bwrap_notify;
+		bna->host.mfs = NM_BDG_MFS_DEFAULT;
+	}
+
+	error = netmap_bwrap_attach_common(na, hwna);
+	if (error) {
+		nm_os_free(bna);
+	}
+	return error;
+}
+
+int
+netmap_get_vale_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+		struct netmap_mem_d *nmd, int create)
+{
+	return netmap_get_bdg_na(hdr, na, nmd, create, &vale_bdg_ops);
+}
+
+
+/* creates a persistent VALE port */
+int
+nm_vi_create(struct nmreq_header *hdr)
+{
+	struct nmreq_vale_newif *req =
+		(struct nmreq_vale_newif *)(uintptr_t)hdr->nr_body;
+	int error = 0;
+	/* Build a nmreq_register out of the nmreq_vale_newif,
+	 * so that we can call netmap_get_bdg_na(). */
+	struct nmreq_register regreq;
+	bzero(&regreq, sizeof(regreq));
+	regreq.nr_tx_slots = req->nr_tx_slots;
+	regreq.nr_rx_slots = req->nr_rx_slots;
+	regreq.nr_tx_rings = req->nr_tx_rings;
+	regreq.nr_rx_rings = req->nr_rx_rings;
+	regreq.nr_mem_id = req->nr_mem_id;
+	hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+	hdr->nr_body = (uintptr_t)&regreq;
+	error = netmap_vi_create(hdr, 0 /* no autodelete */);
+	hdr->nr_reqtype = NETMAP_REQ_VALE_NEWIF;
+	hdr->nr_body = (uintptr_t)req;
+	/* Write back to the original struct. */
+	req->nr_tx_slots = regreq.nr_tx_slots;
+	req->nr_rx_slots = regreq.nr_rx_slots;
+	req->nr_tx_rings = regreq.nr_tx_rings;
+	req->nr_rx_rings = regreq.nr_rx_rings;
+	req->nr_mem_id = regreq.nr_mem_id;
+	return error;
+}
+
+/* remove a persistent VALE port from the system */
+int
+nm_vi_destroy(const char *name)
+{
+	struct ifnet *ifp;
+	struct netmap_vp_adapter *vpna;
+	int error;
+
+	ifp = ifunit_ref(name);
+	if (!ifp)
+		return ENXIO;
+	NMG_LOCK();
+	/* make sure this is actually a VALE port */
+	if (!NM_NA_VALID(ifp) || NA(ifp)->nm_register != netmap_vp_reg) {
+		error = EINVAL;
+		goto err;
+	}
+
+	vpna = (struct netmap_vp_adapter *)NA(ifp);
+
+	/* we can only destroy ports that were created via NETMAP_BDG_NEWIF */
+	if (vpna->autodelete) {
+		error = EINVAL;
+		goto err;
+	}
+
+	/* also make sure that nobody is using the inferface */
+	if (NETMAP_OWNED_BY_ANY(&vpna->up) ||
+	    vpna->up.na_refcount > 1 /* any ref besides the one in nm_vi_create()? */) {
+		error = EBUSY;
+		goto err;
+	}
+
+	NMG_UNLOCK();
+
+	D("destroying a persistent vale interface %s", ifp->if_xname);
+	/* Linux requires all the references are released
+	 * before unregister
+	 */
+	netmap_detach(ifp);
+	if_rele(ifp);
+	nm_os_vi_detach(ifp);
+	return 0;
+
+err:
+	NMG_UNLOCK();
+	if_rele(ifp);
+	return error;
+}
+
+static int
+nm_update_info(struct nmreq_register *req, struct netmap_adapter *na)
+{
+	req->nr_rx_rings = na->num_rx_rings;
+	req->nr_tx_rings = na->num_tx_rings;
+	req->nr_rx_slots = na->num_rx_desc;
+	req->nr_tx_slots = na->num_tx_desc;
+	return netmap_mem_get_info(na->nm_mem, &req->nr_memsize, NULL,
+					&req->nr_mem_id);
+}
+
+
+/*
+ * Create a virtual interface registered to the system.
+ * The interface will be attached to a bridge later.
+ */
+int
+netmap_vi_create(struct nmreq_header *hdr, int autodelete)
+{
+	struct nmreq_register *req = (struct nmreq_register *)(uintptr_t)hdr->nr_body;
+	struct ifnet *ifp;
+	struct netmap_vp_adapter *vpna;
+	struct netmap_mem_d *nmd = NULL;
+	int error;
+
+	if (hdr->nr_reqtype != NETMAP_REQ_REGISTER) {
+		return EINVAL;
+	}
+
+	/* don't include VALE prefix */
+	if (!strncmp(hdr->nr_name, NM_BDG_NAME, strlen(NM_BDG_NAME)))
+		return EINVAL;
+	if (strlen(hdr->nr_name) >= IFNAMSIZ) {
+		return EINVAL;
+	}
+	ifp = ifunit_ref(hdr->nr_name);
+	if (ifp) { /* already exist, cannot create new one */
+		error = EEXIST;
+		NMG_LOCK();
+		if (NM_NA_VALID(ifp)) {
+			int update_err = nm_update_info(req, NA(ifp));
+			if (update_err)
+				error = update_err;
+		}
+		NMG_UNLOCK();
+		if_rele(ifp);
+		return error;
+	}
+	error = nm_os_vi_persist(hdr->nr_name, &ifp);
+	if (error)
+		return error;
+
+	NMG_LOCK();
+	if (req->nr_mem_id) {
+		nmd = netmap_mem_find(req->nr_mem_id);
+		if (nmd == NULL) {
+			error = EINVAL;
+			goto err_1;
+		}
+	}
+	/* netmap_vp_create creates a struct netmap_vp_adapter */
+	error = netmap_vp_create(hdr, ifp, nmd, &vpna);
+	if (error) {
+		D("error %d", error);
+		goto err_1;
+	}
+	/* persist-specific routines */
+	vpna->up.nm_bdg_ctl = netmap_vp_bdg_ctl;
+	if (!autodelete) {
+		netmap_adapter_get(&vpna->up);
+	} else {
+		vpna->autodelete = 1;
+	}
+	NM_ATTACH_NA(ifp, &vpna->up);
+	/* return the updated info */
+	error = nm_update_info(req, &vpna->up);
+	if (error) {
+		goto err_2;
+	}
+	ND("returning nr_mem_id %d", req->nr_mem_id);
+	if (nmd)
+		netmap_mem_put(nmd);
+	NMG_UNLOCK();
+	ND("created %s", ifp->if_xname);
+	return 0;
+
+err_2:
+	netmap_detach(ifp);
+err_1:
+	if (nmd)
+		netmap_mem_put(nmd);
+	NMG_UNLOCK();
+	nm_os_vi_detach(ifp);
+
+	return error;
+}
 
 #endif /* WITH_VALE */

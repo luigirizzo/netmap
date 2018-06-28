@@ -1542,7 +1542,7 @@ netmap_get_na(struct nmreq_header *hdr,
 		goto out;
 
 	/* try to see if this is a bridge port */
-	error = netmap_get_bdg_na(hdr, na, nmd, create);
+	error = netmap_get_vale_na(hdr, na, nmd, create);
 	if (error)
 		goto out;
 
@@ -2550,7 +2550,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			NMG_LOCK();
 			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
 			hdr->nr_body = (uintptr_t)&regreq;
-			error = netmap_get_bdg_na(hdr, &na, NULL, 0);
+			error = netmap_get_vale_na(hdr, &na, NULL, 0);
 			hdr->nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
 			hdr->nr_body = (uintptr_t)req;
 			if (na && !error) {
@@ -3370,7 +3370,7 @@ netmap_attach_common(struct netmap_adapter *na)
 		/* no special nm_bdg_attach callback. On VALE
 		 * attach, we need to interpose a bwrap
 		 */
-		na->nm_bdg_attach = netmap_bwrap_attach;
+		na->nm_bdg_attach = netmap_default_bdg_attach;
 #endif
 
 	return 0;
