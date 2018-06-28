@@ -1,6 +1,8 @@
 #ifndef FD_LIB_H
 #define FD_LIB_H
 
+#define SOCKET_NAME "/tmp/my_unix_socket"
+
 struct fd_request {
 #define FD_GET 1
 #define FD_RELEASE 2
