@@ -120,6 +120,11 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0,
 		"Max batch size to be used in the bridge");
 SYSEND;
 
+static int netmap_vp_create(struct nmreq_header *hdr, struct ifnet *,
+		struct netmap_mem_d *nmd, struct netmap_vp_adapter **);
+static int netmap_vp_bdg_attach(const char *, struct netmap_adapter *,
+		struct nm_bridge *);
+static int netmap_vale_bwrap_attach(const char *, struct netmap_adapter *);
 
 /*
  * For each output interface, nm_bdg_q is used to construct a list.
@@ -133,8 +138,14 @@ struct nm_bdg_q {
 };
 
 /* Holds the default callbacks */
-struct netmap_bdg_ops default_bdg_ops = {netmap_bdg_learning, NULL, NULL};
-
+struct netmap_bdg_ops vale_bdg_ops = {
+	.lookup = netmap_bdg_learning,
+	.config = NULL,
+	.dtor = NULL,
+	.vp_create = netmap_vp_create,
+	.bwrap_attach = netmap_vale_bwrap_attach,
+	.name = NM_BDG_NAME,
+};
 
 /*
  * this is a slightly optimized copy routine which rounds
@@ -225,6 +236,77 @@ nm_alloc_bdgfwd(struct netmap_adapter *na)
 	return 0;
 }
 
+/* Allows external modules to create bridges in exclusive mode,
+ * returns an authentication token that the external module will need
+ * to provide during nm_bdg_ctl_{attach, detach}(), netmap_bdg_regops(),
+ * and nm_bdg_update_private_data() operations.
+ * Successfully executed if ret != NULL and *return_status == 0.
+ */
+void *
+netmap_vale_create(const char *bdg_name, int *return_status)
+{
+	struct nm_bridge *b = NULL;
+	void *ret = NULL;
+
+	NMG_LOCK();
+	b = nm_find_bridge(bdg_name, 0 /* don't create */, NULL);
+	if (b) {
+		*return_status = EEXIST;
+		goto unlock_bdg_create;
+	}
+
+	b = nm_find_bridge(bdg_name, 1 /* create */, &vale_bdg_ops);
+	if (!b) {
+		*return_status = ENOMEM;
+		goto unlock_bdg_create;
+	}
+
+	b->bdg_flags |= NM_BDG_ACTIVE | NM_BDG_EXCLUSIVE;
+	ret = nm_bdg_get_auth_token(b);
+	*return_status = 0;
+
+unlock_bdg_create:
+	NMG_UNLOCK();
+	return ret;
+}
+
+/* Allows external modules to destroy a bridge created through
+ * netmap_bdg_create(), the bridge must be empty.
+ */
+int
+netmap_vale_destroy(const char *bdg_name, void *auth_token)
+{
+	struct nm_bridge *b = NULL;
+	int ret = 0;
+
+	NMG_LOCK();
+	b = nm_find_bridge(bdg_name, 0 /* don't create */, NULL);
+	if (!b) {
+		ret = ENXIO;
+		goto unlock_bdg_free;
+	}
+
+	if (!nm_bdg_valid_auth_token(b, auth_token)) {
+		ret = EACCES;
+		goto unlock_bdg_free;
+	}
+	if (!(b->bdg_flags & NM_BDG_EXCLUSIVE)) {
+		ret = EINVAL;
+		goto unlock_bdg_free;
+	}
+
+	b->bdg_flags &= ~(NM_BDG_EXCLUSIVE | NM_BDG_ACTIVE);
+	ret = netmap_bdg_free(b);
+	if (ret) {
+		b->bdg_flags |= NM_BDG_EXCLUSIVE | NM_BDG_ACTIVE;
+	}
+
+unlock_bdg_free:
+	NMG_UNLOCK();
+	return ret;
+}
+
+
 
 /* nm_dtor callback for ephemeral VALE ports */
 static void
@@ -266,7 +348,7 @@ nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callba
 	int error = 0;
 
 	NMG_LOCK();
-	b = nm_find_bridge(name, 0 /* don't create */);
+	b = nm_find_bridge(name, 0 /* don't create */, NULL);
 	if (!b) {
 		error = EINVAL;
 		goto unlock_update_priv;
@@ -290,7 +372,7 @@ unlock_update_priv:
  * Calls the standard netmap_krings_create, then adds leases on rx
  * rings and bdgfwd on tx rings.
  */
-int
+static int
 netmap_vp_krings_create(struct netmap_adapter *na)
 {
 	u_int tailroom;
@@ -325,7 +407,7 @@ netmap_vp_krings_create(struct netmap_adapter *na)
 
 
 /* nm_krings_delete callback for VALE ports. */
-void
+static void
 netmap_vp_krings_delete(struct netmap_adapter *na)
 {
 	nm_free_bdgfwd(na);
@@ -946,7 +1028,7 @@ cleanup:
 }
 
 /* nm_txsync callback for VALE ports */
-int
+static int
 netmap_vp_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_vp_adapter *na =
@@ -1061,6 +1143,7 @@ netmap_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 			req->nr_extra_bufs, npipes, &error);
 	if (na->nm_mem == NULL)
 		goto err;
+	na->nm_bdg_attach = netmap_vp_bdg_attach;
 	/* other nmd fields are set in the common routine */
 	error = netmap_attach_common(na);
 	if (error)
@@ -1073,6 +1156,27 @@ err:
 		netmap_mem_put(na->nm_mem);
 	nm_os_free(vpna);
 	return error;
+}
+
+/* nm_bdg_attach callback for VALE ports
+ * The na_vp port is this same netmap_adapter. There is no host port.
+ */
+static int
+netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na,
+		struct nm_bridge *b)
+{
+	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
+
+	if (b->bdg_ops != &vale_bdg_ops) {
+		return NM_NEED_BWRAP;
+	}
+	if (vpna->na_bdg) {
+		return NM_NEED_BWRAP;
+	}
+	na->na_vp = vpna;
+	strncpy(na->name, name, sizeof(na->name));
+	na->na_hostvp = NULL;
+	return 0;
 }
 
 static int
@@ -1113,7 +1217,7 @@ netmap_vale_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na = &bna->up.up;
 	strncpy(na->name, nr_name, sizeof(na->name));
 	na->nm_register = netmap_bwrap_reg;
-	// na->nm_txsync = netmap_bwrap_txsync;
+	na->nm_txsync = netmap_vp_txsync;
 	// na->nm_rxsync = netmap_bwrap_rxsync;
 	na->nm_krings_create = netmap_vale_bwrap_krings_create;
 	na->nm_krings_delete = netmap_vale_bwrap_krings_delete;
@@ -1135,17 +1239,11 @@ netmap_vale_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	return error;
 }
 
-struct nm_bdg_args vale_args = {
-	.name = NM_BDG_NAME,
-	.vp_attach = netmap_vp_create,
-	.bwrap_attach = netmap_vale_bwrap_attach,
-};
-
 int
 netmap_get_vale_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create)
 {
-	return netmap_get_bdg_na(hdr, na, nmd, create, &vale_args);
+	return netmap_get_bdg_na(hdr, na, nmd, create, &vale_bdg_ops);
 }
 
 
@@ -1239,6 +1337,7 @@ nm_update_info(struct nmreq_register *req, struct netmap_adapter *na)
 	return netmap_mem_get_info(na->nm_mem, &req->nr_memsize, NULL,
 					&req->nr_mem_id);
 }
+
 
 /*
  * Create a virtual interface registered to the system.

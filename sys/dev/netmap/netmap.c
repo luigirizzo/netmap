@@ -3370,7 +3370,7 @@ netmap_attach_common(struct netmap_adapter *na)
 		/* no special nm_bdg_attach callback. On VALE
 		 * attach, we need to interpose a bwrap
 		 */
-		na->nm_bdg_attach = netmap_bwrap_attach;
+		na->nm_bdg_attach = netmap_default_bdg_attach;
 #endif
 
 	return 0;

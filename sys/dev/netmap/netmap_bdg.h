@@ -90,13 +90,6 @@ struct nm_bridge {
 #endif /* CONFIG_NET_NS */
 };
 
-struct nm_bdg_args {
-	char name[IFNAMSIZ];
-	int (*vp_attach)(struct nmreq_header *hdr, struct ifnet *ifp,
-		struct netmap_mem_d *nmd, struct netmap_vp_adapter **ret);
-	int (*bwrap_attach)(const char *nr_name, struct netmap_adapter *hwna);
-};
-
 static inline void *
 nm_bdg_get_auth_token(struct nm_bridge *b)
 {
@@ -113,30 +106,21 @@ nm_bdg_valid_auth_token(struct nm_bridge *b, void *auth_token)
 }
 
 int netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
-		struct netmap_mem_d *nmd, int create, struct nm_bdg_args *args);
+	struct netmap_mem_d *nmd, int create, struct netmap_bdg_ops *ops);
 
-struct nm_bridge *nm_find_bridge(const char *name, int create);
+struct nm_bridge *nm_find_bridge(const char *name, int create, struct netmap_bdg_ops *ops);
+int netmap_bdg_free(struct nm_bridge *b);
 void netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw);
 int netmap_vp_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na);
 int netmap_vp_reg(struct netmap_adapter *na, int onoff);
 int netmap_bwrap_reg(struct netmap_adapter *, int onoff);
 int netmap_vp_reg(struct netmap_adapter *na, int onoff);
 int netmap_vp_rxsync(struct netmap_kring *kring, int flags);
-int netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na,
-		struct nm_bdg_args *args);
 int netmap_bwrap_notify(struct netmap_kring *kring, int flags);
 int netmap_bwrap_attach_common(struct netmap_adapter *na,
 		struct netmap_adapter *hwna);
 int netmap_bwrap_krings_create_common(struct netmap_adapter *na);
 void netmap_bwrap_krings_delete_common(struct netmap_adapter *na);
-/* XXX Should go away after fixing find_bridge() - Michio */
-#ifdef WITH_VALE
-extern struct netmap_bdg_ops default_bdg_ops;
-#endif
-/* XXX Below functions should be static after modularizing vp creation - Michio */
-int
-netmap_vp_txsync(struct netmap_kring *kring, int flags);
-int netmap_vp_krings_create(struct netmap_adapter *na);
-void netmap_vp_krings_delete(struct netmap_adapter *na);
+#define NM_NEED_BWRAP (-2)
 #endif /* _NET_NETMAP_BDG_H_ */
 
