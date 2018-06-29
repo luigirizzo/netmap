@@ -60,7 +60,7 @@ function restart_fd_server() {
 ################################################################################
 function test_successful() {
 	local test_name="$1"
-	stdout_echo "   Success."
+	stdout_echo "$test_name: success."
 }
 
 ################################################################################
@@ -70,14 +70,16 @@ function test_successful() {
 #   $1 -> exit value to check
 #   $2 -> expected exit value to check against
 #   $3 -> string printed
+#   $4 -> string containing the test script name
 ################################################################################
 function check_exit() {
 	local exit_value="$1"
 	local expected_value="$2"
 	local string_to_print="$3"
+	local test_name="$0"
 
 	if [ $exit_value != $expected_value ] ; then
-		stdout_echo "   $string_to_print FAIL($exit_value != $expected_value)."
+		stdout_echo "$test_name: $string_to_print FAIL($exit_value != $expected_value)."
 		exit 1
 	fi
 }

@@ -71,4 +71,4 @@ num_send="$(($ring_avail_sends + 1))"
 ./functional -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}"
 check_failure $? "send-${num_send} netmap:${pipe}}1"
 
-test_successful "partial_read_pipe_test"
+test_successful "$0"

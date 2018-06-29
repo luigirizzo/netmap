@@ -47,4 +47,4 @@ e3=$?
 check_success $e3 "receive-${num} netmap:veth1B"
 check_success $e4 "send-${num} netmap:veth1A"
 
-test_successful "send_rec_veth_test"
+test_successful "$0"
