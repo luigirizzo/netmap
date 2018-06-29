@@ -25,6 +25,7 @@
  * SUCH DAMAGE.
  */
 #include <assert.h>
+#include <sys/types.h>
 #include <net/ethernet.h>
 #include <net/if.h>
 #include <net/netmap.h>
@@ -46,7 +47,6 @@
 #include <sys/queue.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/un.h>
 #include <sys/wait.h>
@@ -234,7 +234,7 @@ build_packet(struct Global *g)
 	ipofs = ofs;
 	/* First byte of IP header. */
 	fill_packet_8bit(g, ofs,
-	                 (IPVERSION << 4) | ((sizeof(struct iphdr)) >> 2));
+	                 (IPVERSION << 4) | ((sizeof(struct ip)) >> 2));
 	ofs += 1;
 	/* Skip QoS byte. */
 	ofs += 1;
@@ -263,7 +263,7 @@ build_packet(struct Global *g)
 	/* Now put the checksum. */
 	fill_packet_16bit(
 	        g, ipofs + 10,
-	        wrapsum(checksum(g->pktm + ipofs, sizeof(struct iphdr), 0)));
+	        wrapsum(checksum(g->pktm + ipofs, sizeof(struct ip), 0)));
 	if (g->verbose) {
 		printf("%s: ip done, ofs %u\n", __func__, ofs);
 	}
