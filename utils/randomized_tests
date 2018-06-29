@@ -22,37 +22,6 @@ echo "   sequence check   : ${seq_check}"
 echo "   packet length    : ${random_len}"
 echo ""
 
-./persistent_vale_port_destroy
-./persistent_vale_port_double_create
-./persistent_vale_port_double_attach
-
-./exclusive_open_ephemeral_vale_port_test
-./exclusive_open_persistent_vale_port_test
-./exclusive_open_pipe_test
-
-./learning_bridge_test -l $random_len -f $random_fill
-
-./send_rec_pipe_test                  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./send_rec_ephemeral_vale_ports_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./send_rec_persistent_vale_ports_test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-# ./send_rec_veth_test                 -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./partial_read_pipe_test              -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-
-./rec_cp_mon_pipe_test                  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./rec_cp_mon_persistent_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./rec_cp_mon_ephemeral_vale_port_test   -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./rec_zcp_mon_pipe_test                 -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./rec_zcp_mon_persistent_vale_port_test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./rec_zcp_mon_ephemeral_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-
-./send_cp_mon_pipe_test                  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./send_cp_mon_persistent_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./send_cp_mon_ephemeral_vale_port_test   -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./send_zcp_mon_pipe_test                 -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./send_zcp_mon_persistent_vale_port_test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./send_zcp_mon_ephemeral_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-
-
-./extra_buf_send_rec_pipe_test                  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./extra_buf_send_rec_ephemeral_vale_ports_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-./extra_buf_send_rec_persistent_vale_ports_test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+for test in tests/*_test ; do
+	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+done

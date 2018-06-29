@@ -28,7 +28,7 @@ function stdout_echo() {
 #   None
 ################################################################################
 function close_fd_server() {
-	./functional -c
+	functional -c
 	check_success "$?" "close_fd_server"
 }
 
@@ -38,7 +38,7 @@ function close_fd_server() {
 #   None
 ################################################################################
 function start_fd_server() {
-	./functional -o
+	functional -o
 	check_success "$?" "start_fd_server"
 }
 

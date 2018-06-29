@@ -1,6 +1,10 @@
 #ifndef FD_LIB_H
 #define FD_LIB_H
 
+#include <inttypes.h>
+#include <net/if.h>
+#include <net/netmap.h>
+
 #define SOCKET_NAME "/tmp/my_unix_socket"
 
 struct fd_request {

@@ -15,16 +15,16 @@ create_vale_persistent_port "$port"
 attach_to_vale_bridge "$bridge" "$port"
 
 # We open the persistent port with the exclusive flag from the file descriptor.
-./functional -i "${bridge}:${port}/x"
+functional -i "${bridge}:${port}/x"
 check_success $? "exclusive-open ${bridge}:${port}/x"
 
 # Then we open the same interface again, this time without requesting it from
 # the file descriptor, causing a second nm_open().
-./functional -I "${bridge}:${port}"
+functional -I "${bridge}:${port}"
 check_failure $? "no-open ${bridge}:${port}"
 
 # Check that another exclusive open request fails.
-./functional -I "${bridge}:${port}/x"
+functional -I "${bridge}:${port}/x"
 check_failure $? "no-open ${bridge}:${port}/x"
 
 test_successful "$0"
