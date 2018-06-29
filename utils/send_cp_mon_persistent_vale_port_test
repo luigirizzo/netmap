@@ -47,4 +47,4 @@ check_success $e2 "send-${num} vale0:v0"
 e3=$?
 check_success $e3 "receive-${num} vale0:v1"
 
-test_successful "send_cp_mon_persistent_vale_port_test"
+test_successful "$0"

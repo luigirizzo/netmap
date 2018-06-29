@@ -54,4 +54,4 @@ e3=$?
 check_success $e3 "receive-${num} netmap:pipe{1/z"
 check_success $e4 "receive-${num} netmap:pipe}1"
 
-test_successful "send_zcp_mon_pipe_test"
+test_successful "$0"

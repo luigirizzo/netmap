@@ -22,64 +22,37 @@ echo "   sequence check   : ${seq_check}"
 echo "   packet length    : ${random_len}"
 echo ""
 
-echo "destroy persistent VALE port"
 ./persistent_vale_port_destroy
-echo "double create persistent VALE port"
 ./persistent_vale_port_double_create
-echo "double attach persistent VALE port"
 ./persistent_vale_port_double_attach
 
-echo "exclusive open ephemeral VALE port"
 ./exclusive_open_ephemeral_vale_port_test
-echo "exclusive open persistent VALE port"
 ./exclusive_open_persistent_vale_port_test
-echo "exclusive open pipe"
 ./exclusive_open_pipe_test
 
-echo "learning bridge algorithm"
 ./learning_bridge_test -l $random_len -f $random_fill
 
-echo "send/receive pipes"
 ./send_rec_pipe_test                  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "send/receive ephemeral VALE ports"
 ./send_rec_ephemeral_vale_ports_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "send/receive persistent VALE ports"
 ./send_rec_persistent_vale_ports_test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-# echo "send/receive veth"
 # ./send_rec_veth_test                 -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "partial read pipe"
 ./partial_read_pipe_test              -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
 
-echo "receive copy monitor attached to pipe"
 ./rec_cp_mon_pipe_test                  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "receive copy monitor attached to persistent VALE port"
 ./rec_cp_mon_persistent_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "receive copy monitor attached to ephemeral VALE port"
 ./rec_cp_mon_ephemeral_vale_port_test   -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "zero-copy monitor attached to receiving pipe"
 ./rec_zcp_mon_pipe_test                 -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "zero-copy monitor attached to receiving persistent VALE port"
 ./rec_zcp_mon_persistent_vale_port_test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "zero-copy monitor attached to receiving ephemeral VALE port"
 ./rec_zcp_mon_ephemeral_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
 
-echo "send copy monitor attached to pipe"
 ./send_cp_mon_pipe_test                  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "send copy monitor attached to persistent VALE port"
 ./send_cp_mon_persistent_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "send copy monitor attached to ephemeral VALE port"
 ./send_cp_mon_ephemeral_vale_port_test   -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "zero-copy monitor attached to sending pipe"
 ./send_zcp_mon_pipe_test                 -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "zero-copy monitor attached to sending persistent VALE port"
 ./send_zcp_mon_persistent_vale_port_test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "zero-copy monitor attached to sending ephemeral VALE port"
 ./send_zcp_mon_ephemeral_vale_port_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
 
 
-echo "extra buffer send/receive pipes"
 ./extra_buf_send_rec_pipe_test                  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "extra buffer send/receive ephemeral VALE ports"
 ./extra_buf_send_rec_ephemeral_vale_ports_test  -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-echo "extra buffer send/receive persistent VALE ports"
 ./extra_buf_send_rec_persistent_vale_ports_test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"

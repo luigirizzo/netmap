@@ -21,4 +21,4 @@ create_vale_persistent_port "$port" 1
 attach_to_vale_bridge "$bridgeB" "$port" 0
 create_vale_persistent_port "$port" 1
 
-test_successful "persistent_vale_port_double_create"
+test_successful "$0"

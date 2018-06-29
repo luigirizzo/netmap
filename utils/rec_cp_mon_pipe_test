@@ -47,4 +47,4 @@ check_success $e2 "send-${num}${seq} netmap:pipe}1"
 e3=$?
 check_success $e3 "receive-${num}${seq} netmap:pipe{1"
 
-test_successful "rec_cp_mon_pipe_test"
+test_successful "$0"

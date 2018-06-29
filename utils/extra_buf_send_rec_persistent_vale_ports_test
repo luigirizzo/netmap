@@ -50,4 +50,4 @@ check_success $e1 "receive-${num} vale0:v0"
 check_success $e2 "receive-${num} vale0:v1"
 check_success $e3 "send-${num} vale0:v2"
 
-test_successful "extra_buf_send_rec_persistent_vale_ports_test"
+test_successful "$0"

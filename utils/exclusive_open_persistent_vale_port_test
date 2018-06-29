@@ -27,4 +27,4 @@ check_failure $? "no-open ${bridge}:${port}"
 ./functional -I "${bridge}:${port}/x"
 check_failure $? "no-open ${bridge}:${port}/x"
 
-test_successful "exclusive_open_persistent_vale_port_test"
+test_successful "$0"

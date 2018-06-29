@@ -29,4 +29,4 @@ destroy_vale_persistent_port "$port" 1
 detach_from_vale_bridge "$bridgeA" "$port" 0
 destroy_vale_persistent_port "$port" 0
 
-test_successful "persistent_vale_port_destroy"
+test_successful "$0"
