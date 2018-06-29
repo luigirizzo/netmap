@@ -22,9 +22,9 @@ else
 CFLAGS += -DNO_PCAP
 endif
 
-LDLIBS += -lpthread
+LDLIBS += -lpthread -lm
 ifeq ($(shell uname),Linux)
-	LDLIBS += -lrt -lm	# on linux
+	LDLIBS += -lrt 	# on linux
 endif
 #SRCS = pkt-gen.c
 
