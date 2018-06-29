@@ -1529,7 +1529,9 @@ netmap_bwrap_krings_create_common(struct netmap_adapter *na)
 
 err_dec_users:
 	for_rx_tx(t) {
-		NMR(hwna, t)[i]->users--;
+		for (i = 0; i < netmap_all_rings(hwna, t); i++) {
+			NMR(hwna, t)[i]->users--;
+		}
 	}
 	hwna->nm_krings_delete(hwna);
 	return error;
