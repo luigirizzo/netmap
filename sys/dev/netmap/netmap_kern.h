@@ -858,6 +858,10 @@ struct netmap_adapter {
 	unsigned rx_buf_maxsize;
 
 	char name[NETMAP_REQ_IFNAMSIZ]; /* used at least by pipes */
+
+#ifdef WITH_MONITOR
+	unsigned long	monitor_id;	/* debugging */
+#endif
 };
 
 static __inline u_int

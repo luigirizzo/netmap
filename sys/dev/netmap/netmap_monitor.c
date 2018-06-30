@@ -888,7 +888,6 @@ netmap_get_monitor_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	struct ifnet *ifp = NULL;
 	int  error;
 	int zcopy = (req->nr_flags & NR_ZCOPY_MON);
-	char monsuff[10] = "";
 
 	if (zcopy) {
 		req->nr_flags |= (NR_MONITOR_TX | NR_MONITOR_RX);
@@ -942,14 +941,11 @@ netmap_get_monitor_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		D("ringid error");
 		goto free_out;
 	}
-	if (mna->priv.np_qlast[NR_TX] - mna->priv.np_qfirst[NR_TX] == 1) {
-		snprintf(monsuff, 10, "-%d", mna->priv.np_qfirst[NR_TX]);
-	}
-	snprintf(mna->up.name, sizeof(mna->up.name), "%s%s/%s%s%s", pna->name,
-			monsuff,
+	snprintf(mna->up.name, sizeof(mna->up.name), "%s/%s%s%s#%lu", pna->name,
 			zcopy ? "z" : "",
 			(req->nr_flags & NR_MONITOR_RX) ? "r" : "",
-			(req->nr_flags & NR_MONITOR_TX) ? "t" : "");
+			(req->nr_flags & NR_MONITOR_TX) ? "t" : "",
+			pna->monitor_id++);
 
 	/* the monitor supports the host rings iff the parent does */
 	mna->up.na_flags |= (pna->na_flags & NAF_HOST_RINGS);
