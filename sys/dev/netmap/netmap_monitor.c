@@ -152,6 +152,12 @@ netmap_monitor_txsync(struct netmap_kring *kring, int flags)
 static int
 netmap_monitor_rxsync(struct netmap_kring *kring, int flags)
 {
+	struct netmap_monitor_adapter *mna =
+		(struct netmap_monitor_adapter *)kring->na;
+	if (unlikely(mna->priv.np_na == NULL)) {
+		/* parent left netmap mode */
+		return EIO;
+	}
 	ND("%s %x", kring->name, flags);
 	kring->nr_hwcur = kring->rhead;
 	mb();
@@ -315,10 +321,6 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 
 	if (zmon) {
 		/* append the zmon to the list */
-		struct netmap_monitor_adapter *mna =
-			(struct netmap_monitor_adapter *)mkring->na;
-		struct netmap_adapter *pna;
-
 		ikring->zmon_list[t].next = mkring;
 		z->prev = mkring; /* new tail */
 		mz->prev = ikring;
@@ -327,10 +329,7 @@ netmap_monitor_add(struct netmap_kring *mkring, struct netmap_kring *kring, int 
 		 * in the chain (this may be the monitored port
 		 * or another zero-copy monitor)
 		 */
-		pna = ikring->na;
-		netmap_adapter_get(pna);
-		netmap_adapter_put(mna->priv.np_na);
-		mna->priv.np_na = pna;
+		netmap_adapter_get(ikring->na);
 	} else {
 		/* make sure the monitor array exists and is big enough */
 		error = nm_monitor_alloc(kring, kring->n_monitors + 1);
@@ -371,26 +370,19 @@ netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring, enum
 		nm_kr_stop(kring, NM_KR_LOCKED);
 
 	if (zmon) {
-		struct netmap_monitor_adapter *mna =
-			(struct netmap_monitor_adapter *)mkring->na;
-
 		/* remove the monitor from the list */
 		if (mz->prev != NULL) {
 			mz->prev->zmon_list[t].next = mz->next;
 		}
 		if (mz->next != NULL) {
-			struct netmap_adapter *pna = mna->priv.np_na;
-			struct netmap_monitor_adapter *next =
-				(struct netmap_monitor_adapter *)mz->next->na;
 			mz->next->zmon_list[t].prev = mz->prev;
 			/* we also need to let the next monitor drop the
 			 * reference to us and grab the reference to the
 			 * previous ring owner, instead
 			 */
-			if (pna != NULL)
-				netmap_adapter_get(pna);
-			netmap_adapter_put(next->priv.np_na); /* nop if null */
-			next->priv.np_na = pna;
+			if (mz->prev != NULL)
+				netmap_adapter_get(mz->prev->na);
+			netmap_adapter_put(mkring->na);
 		} else if (kring != NULL) {
 			/* in the monitored kring, prev is actually the
 			 * pointer to the tail of the list
@@ -460,16 +452,19 @@ netmap_monitor_stop(struct netmap_adapter *na)
 
 			if (!nm_is_zmon(na)) {
 				/* we are the head of at most one list */
-				struct netmap_kring *zkring = z->next;
-				if (zkring != NULL) {
+				struct netmap_kring *zkring;
+				for (zkring = z->next; zkring != NULL;
+						zkring = zkring->zmon_list[t].next)
+				{
 					struct netmap_monitor_adapter *next =
 						(struct netmap_monitor_adapter *)zkring->na;
-					/* let the next monitor forget about us */
-					netmap_adapter_put(next->priv.np_na);
+					/* let the monitor forget about us */
+					netmap_adapter_put(next->priv.np_na); /* nop if null */
 					next->priv.np_na = NULL;
-					/* orhpan the zmon list */
-					zkring->zmon_list[t].prev = NULL;
 				}
+				/* orhpan the zmon list */
+				if (z->next != NULL)
+					z->next->zmon_list[t].prev = NULL;
 				z->next = NULL;
 				z->prev = NULL;
 			}
