@@ -440,7 +440,7 @@ netmap_monitor_stop(struct netmap_adapter *na)
 	for_rx_tx(t) {
 		u_int i;
 
-		for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+		for (i = 0; i < netmap_all_rings(na, t); i++) {
 			struct netmap_kring *kring = NMR(na, t)[i];
 			struct netmap_zmon_list *z = &kring->zmon_list[t];
 			u_int j;
@@ -507,7 +507,7 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 			return ENXIO;
 		}
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < netmap_all_rings(na, t); i++) {
 				mkring = NMR(na, t)[i];
 				if (!nm_kring_pending_on(mkring))
 					continue;
@@ -529,7 +529,7 @@ netmap_monitor_reg_common(struct netmap_adapter *na, int onoff, int zmon)
 		if (na->active_fds == 0)
 			na->na_flags &= ~NAF_NETMAP_ON;
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < netmap_all_rings(na, t); i++) {
 				mkring = NMR(na, t)[i];
 				if (!nm_kring_pending_off(mkring))
 					continue;
