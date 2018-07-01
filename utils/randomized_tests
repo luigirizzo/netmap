@@ -22,6 +22,11 @@ echo "   sequence check   : ${seq_check}"
 echo "   packet length    : ${random_len}"
 echo ""
 
+# We add the current directory to the PATH. This way we can directly run
+# functional, get_tx_rings_avail_sends and get_tx_rings_max_sends from the test
+# scripts.
+PATH="$(pwd):${PATH}"
+
 for test in tests/*_test ; do
 	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
 done
