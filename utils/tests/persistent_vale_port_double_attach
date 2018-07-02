@@ -6,7 +6,8 @@
 ################################################################################
 source test_lib
 
-redirect_std
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
 
 bridge="vale0"
 bridgeA="${bridge}A"

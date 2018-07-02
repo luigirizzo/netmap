@@ -11,25 +11,27 @@
 ################################################################################
 source test_lib
 
-redirect_std
-
-restart_fd_server
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
 
 fill='h'
 len=274
 num_send=10
 num_recv=7
 pipe="pipeA"
+
+restart_fd_server
+
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-functional -i "netmap:${pipe}{1"
+functional "$verbosity" -i "netmap:${pipe}{1"
 check_success $? "pre-open netmap:${pipe}{1"
-functional -i "netmap:${pipe}}1"
+functional "$verbosity" -i "netmap:${pipe}}1"
 check_success $? "pre-open netmap:${pipe}}1"
 
-functional -i "netmap:${pipe}{1" -r "${len}:${fill}:${num_recv}" &
+functional "$verbosity" -i "netmap:${pipe}{1" -r "${len}:${fill}:${num_recv}" &
 p1=$!
-functional -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}"
+functional "$verbosity" -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}"
 e2=$?
 wait $p1
 e1=$?
@@ -68,7 +70,7 @@ check_exit $pending_sends $ring_used_sends "pending_sends=ring_used_sends"
 
 
 num_send="$(($ring_avail_sends + 1))"
-functional -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}"
+functional "$verbosity" -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}"
 check_failure $? "send-${num_send} netmap:${pipe}}1"
 
 test_successful "$0"
