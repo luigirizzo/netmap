@@ -438,6 +438,7 @@ put_one_packet(struct Global *g, struct netmap_ring *ring)
 	              frags);
 }
 
+/* Used for multi-packets sequential send/receive actions */
 char
 next_fill(char cur_fill)
 {
@@ -824,6 +825,7 @@ usage(FILE *stream)
 	        "40:b:2\n");
 }
 
+/* TODO: Move functions to communicate to the fd_server to another file */
 /* Copied from nm_open() */
 void
 fill_nm_desc(struct nm_desc *des, struct nmreq *req, int fd)
@@ -1248,10 +1250,12 @@ main(int argc, char **argv)
 			usage(stdout);
 			return 0;
 
+		/* TODO: move this option to fd_server */
 		case 'c':
 			stop_fd_server(g);
 			return 0;
 
+		/* TODO: move this option to fd_server */
 		case 'o':
 			start_fd_server(g);
 			return 0;
