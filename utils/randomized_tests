@@ -3,6 +3,10 @@
 # Runs all the tests using randomized values for number of packets, fill
 # character and packets length.
 ################################################################################
+source test_lib
+
+modprobe netmap
+check_success $? "Failed to load netmap."
 
 random_num="$((65 + $RANDOM % 58))"
 # https://stackoverflow.com/a/10503163
@@ -28,5 +32,14 @@ echo ""
 PATH="$(pwd):${PATH}"
 
 for test in tests/*_test ; do
-	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
+	if [ $? != 0 ] ; then
+		# Select verbosity of output during after an error occurred:
+		#    -v    -> prints error messages
+		#    -vv   -> -v, send and receive actions
+		#    -vvv  -> -vv and packet building
+		#    -vvvv -> -vvv and arguments parsing
+		$test -v -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+		exit $?
+	fi
 done

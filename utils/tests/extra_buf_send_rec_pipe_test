@@ -9,9 +9,8 @@
 ################################################################################
 source test_lib
 
-redirect_std
-
 parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
 fill="${fill:-c}"
 len="${len:-274}"
 num="${num:-1}"
@@ -23,13 +22,13 @@ restart_fd_server
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-functional -i "netmap:pipeA{1"
+functional "$verbosity" -i "netmap:pipeA{1"
 check_success $? "pre-open netmap:pipeA{1"
 
 # pipeA}1 ---> pipeA{1
-functional -i "netmap:pipeA{1" -r "${len}:${fill}:${num}" "$seq" &
+functional "$verbosity" -i "netmap:pipeA{1" -r "${len}:${fill}:${num}" "$seq" &
 p1=$!
-functional -I "netmap:pipeA}1" -t "${len}:${fill}:${num}" "$seq" -e "$e_buf_num"
+functional "$verbosity" -I "netmap:pipeA}1" -t "${len}:${fill}:${num}" "$seq" -e "$e_buf_num"
 e2=$?
 wait $p1
 e1=$?

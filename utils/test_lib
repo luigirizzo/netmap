@@ -19,7 +19,7 @@ function redirect_std() {
 #   None
 ################################################################################
 function stdout_echo() {
-	echo "$@" 1>&3
+	echo "$@"
 }
 
 ################################################################################
@@ -241,6 +241,7 @@ function send_recv_usage() {
 	stdout_echo "       [-f fill_character]"
 	stdout_echo "       [-n packets_to_send]"
 	stdout_echo "       [-q (sequential send/read)]"
+	stdout_echo "       [-v (increases verbosity level)]"
 }
 
 ################################################################################
@@ -249,7 +250,7 @@ function send_recv_usage() {
 #   It must be always called like like this 'parse_arguments "$@"'
 ################################################################################
 function parse_send_recv_arguments() {
-	while getopts "hql:f:n:" opt; do
+	while getopts "hvql:f:n:" opt; do
 		case $opt in
 			l) len="$OPTARG"
 			;;
@@ -258,6 +259,12 @@ function parse_send_recv_arguments() {
 			n) num="$OPTARG"
 			;;
 			q) seq="-q"
+			;;
+			v) if [ -z $verbosity ] ; then
+					verbosity="-v"
+				else
+					erbosity="${verbosity}v"
+			   fi
 			;;
 			h) send_recv_usage ; exit 0
 			;;

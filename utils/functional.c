@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <strings.h>
 #include <unistd.h>
 #define NETMAP_WITH_LIBS
@@ -87,7 +88,11 @@ struct Global {
 	int sequential_fill;        /* increment fill char for multi-packets
 	                            operations */
 	int request_from_fd_server; /* false --> directly open the interface */
-	int verbose;
+#define LV_ERROR_MSG 1
+#define LV_DEBUG_SEND_RECV 2
+#define LV_DEBUG_BUILD_PACKET 3
+#define LV_DEBUG_PARSE_ARGS 4
+	int verbosity_level;
 
 	/* List of currently not in use normal buffers. */
 	LIST_HEAD(n_buf_head, swapped_out_buf) normal_buffers_head;
@@ -135,13 +140,35 @@ cleanup(struct Global *g)
 	}
 }
 
+void
+verbose_print(int current_verbosity, int required_verbosity, char *format, ...)
+{
+	va_list args;
+
+	va_start(args, format);
+	if (current_verbosity >= required_verbosity) {
+		vprintf(format, args);
+	}
+
+	va_end(args);
+}
+
+void
+verbose_perror(int current_verbosity, int required_verbosity, char *str)
+{
+	if (current_verbosity >= required_verbosity) {
+		perror(str);
+	}
+}
+
 static void
 fill_packet_field(struct Global *g, unsigned offset, const char *content,
                   unsigned content_len)
 {
 	if (offset + content_len > sizeof(g->pktm)) {
-		printf("Packet layout overflow: %u + %u > %lu\n", offset,
-		       content_len, sizeof(g->pktm));
+		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+		              "Packet layout overflow: %u + %u > %lu\n", offset,
+		              content_len, sizeof(g->pktm));
 		cleanup(g);
 		exit(EXIT_FAILURE);
 	}
@@ -214,9 +241,8 @@ build_packet(struct Global *g)
 	unsigned pldofs;
 
 	memset(g->pktm, 0, sizeof(g->pktm));
-	if (g->verbose) {
-		printf("%s: starting at ofs %u\n", __func__, ofs);
-	}
+	verbose_print(g->verbosity_level, LV_DEBUG_BUILD_PACKET,
+	              "%s: starting at ofs %u\n", __func__, ofs);
 
 	ethofs = ofs;
 	(void)ethofs;
@@ -227,14 +253,12 @@ build_packet(struct Global *g)
 	ofs += ETH_ADDR_LEN;
 	fill_packet_16bit(g, ofs, ETHERTYPE_IP);
 	ofs += 2;
-	if (g->verbose) {
-		printf("%s: eth done, ofs %u\n", __func__, ofs);
-	}
+	verbose_print(g->verbosity_level, LV_DEBUG_BUILD_PACKET,
+	              "%s: eth done, ofs %u\n", __func__, ofs);
 
 	ipofs = ofs;
 	/* First byte of IP header. */
-	fill_packet_8bit(g, ofs,
-	                 (IPVERSION << 4) | ((sizeof(struct ip)) >> 2));
+	fill_packet_8bit(g, ofs, (IPVERSION << 4) | ((sizeof(struct ip)) >> 2));
 	ofs += 1;
 	/* Skip QoS byte. */
 	ofs += 1;
@@ -264,9 +288,8 @@ build_packet(struct Global *g)
 	fill_packet_16bit(
 	        g, ipofs + 10,
 	        wrapsum(checksum(g->pktm + ipofs, sizeof(struct ip), 0)));
-	if (g->verbose) {
-		printf("%s: ip done, ofs %u\n", __func__, ofs);
-	}
+	verbose_print(g->verbosity_level, LV_DEBUG_BUILD_PACKET,
+	              "%s: ip done, ofs %u\n", __func__, ofs);
 
 	udpofs = ofs;
 	/* UDP source port. */
@@ -280,18 +303,16 @@ build_packet(struct Global *g)
 	ofs += 2;
 	/* Skip the UDP checksum for now. */
 	ofs += 2;
-	if (g->verbose) {
-		printf("%s: udp done, ofs %u\n", __func__, ofs);
-	}
+	verbose_print(g->verbosity_level, LV_DEBUG_BUILD_PACKET,
+	              "%s: udp done, ofs %u\n", __func__, ofs);
 
 	/* Fill UDP payload. */
 	pldofs = ofs;
 	for (; ofs < g->pktm_len; ofs++) {
 		fill_packet_8bit(g, ofs, g->filler);
 	}
-	if (g->verbose) {
-		printf("%s: payload done, ofs %u\n", __func__, ofs);
-	}
+	verbose_print(g->verbosity_level, LV_DEBUG_BUILD_PACKET,
+	              "%s: payload done, ofs %u\n", __func__, ofs);
 
 	/* Put the UDP checksum now.
 	 * Magic: taken from sbin/dhclient/packet.c */
@@ -342,7 +363,8 @@ tx_flush(struct Global *g)
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			printf("%s: Timeout\n", __func__);
+			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			              "%s: Timeout\n", __func__);
 			return -1;
 		}
 
@@ -411,8 +433,9 @@ put_one_packet(struct Global *g, struct netmap_ring *ring)
 	}
 
 	ring->head = ring->cur = head;
-	printf("packet (%u bytes, %u frags) placed to TX\n", g->pktm_len,
-	       frags);
+	verbose_print(g->verbosity_level, LV_DEBUG_SEND_RECV,
+	              "packet (%u bytes, %u frags) placed to TX\n", g->pktm_len,
+	              frags);
 }
 
 char
@@ -441,7 +464,8 @@ tx(struct Global *g, unsigned packets_num)
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			printf("%s: Timeout\n", __func__);
+			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			              "%s: Timeout\n", __func__);
 			return -1;
 		}
 
@@ -519,17 +543,19 @@ rx_check(struct Global *g)
 	unsigned i;
 
 	if (g->pktr_len != g->pktm_len) {
-		printf("Received packet length (%u) different from "
-		       "expected (%u bytes)\n",
-		       g->pktr_len, g->pktm_len);
+		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+		              "Received packet length (%u) different from "
+		              "expected (%u bytes)\n",
+		              g->pktr_len, g->pktm_len);
 		return -1;
 	}
 
 	for (i = 0; i < g->pktr_len; i++) {
 		if (g->pktr[i] != g->pktm[i]) {
-			printf("Received packet differs from model at "
-			       "offset %u (0x%02x!=0x%02x)\n",
-			       i, g->pktr[i], (uint8_t)g->pktm[i]);
+			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			              "Received packet differs from model at "
+			              "offset %u (0x%02x!=0x%02x)\n",
+			              i, g->pktr[i], (uint8_t)g->pktm[i]);
 			return -1;
 		}
 	}
@@ -550,10 +576,11 @@ read_one_packet(struct Global *g, struct netmap_ring *ring)
 
 		if (g->pktr_len + slot->len > sizeof(g->pktr)) {
 			/* Sanity check. */
-			printf("Error: received packet too "
-			       "large "
-			       "(>= %u bytes) ",
-			       g->pktr_len + slot->len);
+			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			              "Error: received packet too "
+			              "large "
+			              "(>= %u bytes) ",
+			              g->pktr_len + slot->len);
 			cleanup(g);
 			exit(EXIT_FAILURE);
 		}
@@ -567,18 +594,20 @@ read_one_packet(struct Global *g, struct netmap_ring *ring)
 		}
 
 		if (head == ring->tail) {
-			printf("warning: truncated packet "
-			       "(len=%u)\n",
-			       g->pktr_len);
+			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			              "warning: truncated packet "
+			              "(len=%u)\n",
+			              g->pktr_len);
 			frags = -1;
 			break;
 		}
 	}
 
 	ring->head = ring->cur = head;
-	printf("packet (%u bytes, %d frags) received "
-	       "from RX\n",
-	       g->pktr_len, frags);
+	verbose_print(g->verbosity_level, LV_DEBUG_SEND_RECV,
+	              "packet (%u bytes, %d frags) received "
+	              "from RX\n",
+	              g->pktr_len, frags);
 	return frags;
 }
 
@@ -599,7 +628,8 @@ rx(struct Global *g, unsigned packets_num)
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			printf("%s: Timeout\n", __func__);
+			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			              "%s: Timeout\n", __func__);
 			/* -n flag */
 			return g->success_if_no_receive == 1 ? 0 : -1;
 		}
@@ -628,13 +658,13 @@ rx(struct Global *g, unsigned packets_num)
 			}
 
 			if (ignore_received_frame(g)) {
-				if (g->verbose) {
-					printf("(ignoring packet with %u bytes "
-					       "and "
-					       "%d frags received from RX ring "
-					       "#%d)\n",
-					       g->pktr_len, frags, i);
-				}
+				verbose_print(g->verbosity_level,
+				              LV_DEBUG_SEND_RECV,
+				              "(ignoring packet with %u bytes "
+				              "and "
+				              "%d frags received from RX ring "
+				              "#%d)\n",
+				              g->pktr_len, frags, i);
 				elapsed_ms = 0;
 				/* We can go back there, because we're
 				 * decrementing packets_num each time, therefore
@@ -670,7 +700,8 @@ rx(struct Global *g, unsigned packets_num)
 }
 
 static int
-parse_txrx_event(const char *opt, unsigned event_type, struct Event *event)
+parse_txrx_event(const char *opt, unsigned event_type, struct Event *event,
+                 int verbosity_level)
 {
 	char *strbuf = strdup(opt);
 	char *save   = strbuf;
@@ -713,9 +744,8 @@ parse_txrx_event(const char *opt, unsigned event_type, struct Event *event)
 	}
 
 	ret = 0;
-#if 0
-	printf("parsed %u:%c:%u\n", event->pkt_len, event->filler, event->num);
-#endif
+	verbose_print(verbosity_level, LV_DEBUG_PARSE_ARGS, "parsed %u:%c:%u\n",
+	              event->pkt_len, event->filler, event->num);
 out:
 	if (save) {
 		free(save);
@@ -724,7 +754,7 @@ out:
 }
 
 static int
-parse_pause_event(const char *opt, struct Event *event)
+parse_pause_event(const char *opt, struct Event *event, int verbosity_level)
 {
 	char *strbuf = strdup(opt);
 	char *save   = strbuf;
@@ -747,13 +777,13 @@ parse_pause_event(const char *opt, struct Event *event)
 	if (event->usecs == 0) {
 		goto out;
 	}
+
 	event->usecs *= mul;
 	event->num = 1;
 	ret        = 0;
+	verbose_print(verbosity_level, LV_DEBUG_PARSE_ARGS,
+	              "parsed %llu usecs\n", event->usecs);
 out:
-#if 0
-	printf("parsed %llu usecs\n", event->usecs);
-#endif
 	free(save);
 	return ret;
 }
@@ -761,36 +791,37 @@ out:
 static struct Global _g;
 
 static void
-usage(void)
+usage(FILE *stream)
 {
-	printf("usage: ./functional [-h]\n"
-	       "    [-c (shuts down the fd server)]\n"
-	       "    [-o (starts the fd server)]\n"
-	       "    [-i NETMAP_PORT (requests the interface from the fd "
-	       "server)]\n"
-	       "    [-I NETMAP_PORT (directly opens the interface)]\n"
-	       "    [-s source MAC address (=0:0:0:0:0:0)]\n"
-	       "    [-d destination MAC address (=FF:FF:FF:FF:FF:FF)]\n"
-	       "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
-	       "    [-T TIMEOUT_SECS (=1)]\n"
-	       "    [-w WAIT_FOR_LINK_SECS (=0)]\n"
-	       "    [-t LEN[:FILLCHAR[:NUM]] (trasmit NUM packets with size "
-	       "LEN bytes)]\n"
-	       "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
-	       "with size LEN bytes)]\n"
-	       "    [-p NUM[us|ms|s]] (pause for NUM us/ms/s)]\n"
-	       "    [-g (ignore ethernet frames with unmatching Ethernet "
-	       "header)]\n"
-	       "    [-n (exit status = 0 <==> no frames were received)]\n"
-	       "    [-q (during multi-packets send/receive increments fill "
-	       "character after each operation)]\n"
-	       "    [-e (use extra buffers to send packets, "
-	       "can only be used when directly opening an interface)]\n"
-	       "    [-v (increment verbosity level)]\n"
-	       "    [-C [NUM (=1)] (how many times to run the events)]\n"
-	       "\nExample:\n"
-	       "    $ ./functional -i netmap:lo -t 100 -r 100 -t 40:b:2 -r "
-	       "40:b:2\n");
+	fprintf(stream,
+	        "usage: ./functional [-h]\n"
+	        "    [-c (shuts down the fd server)]\n"
+	        "    [-o (starts the fd server)]\n"
+	        "    [-i NETMAP_PORT (requests the interface from the fd "
+	        "server)]\n"
+	        "    [-I NETMAP_PORT (directly opens the interface)]\n"
+	        "    [-s source MAC address (=0:0:0:0:0:0)]\n"
+	        "    [-d destination MAC address (=FF:FF:FF:FF:FF:FF)]\n"
+	        "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
+	        "    [-T TIMEOUT_SECS (=1)]\n"
+	        "    [-w WAIT_FOR_LINK_SECS (=0)]\n"
+	        "    [-t LEN[:FILLCHAR[:NUM]] (trasmit NUM packets with size "
+	        "LEN bytes)]\n"
+	        "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
+	        "with size LEN bytes)]\n"
+	        "    [-p NUM[us|ms|s]] (pause for NUM us/ms/s)]\n"
+	        "    [-g (ignore ethernet frames with unmatching Ethernet "
+	        "header)]\n"
+	        "    [-n (exit status = 0 <==> no frames were received)]\n"
+	        "    [-q (during multi-packets send/receive increments fill "
+	        "character after each operation)]\n"
+	        "    [-e (use extra buffers to send packets, "
+	        "can only be used when directly opening an interface)]\n"
+	        "    [-v (increment verbosity level)]\n"
+	        "    [-C [NUM (=1)] (how many times to run the events)]\n"
+	        "\nExample:\n"
+	        "    $ ./functional -i netmap:lo -t 100 -r 100 -t 40:b:2 -r "
+	        "40:b:2\n");
 }
 
 /* Copied from nm_open() */
@@ -839,7 +870,7 @@ connect_to_fd_server(struct Global *g)
 
 	socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
 	if (socket_fd == -1) {
-		perror("socket()");
+		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "socket()");
 		return -1;
 	}
 
@@ -850,7 +881,8 @@ connect_to_fd_server(struct Global *g)
 	while (connect(socket_fd, (const struct sockaddr *)&name,
 	               sizeof(struct sockaddr_un)) == -1) {
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			printf("%s: Timeout\n", __func__);
+			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			              "%s: Timeout\n", __func__);
 			return -1;
 		}
 
@@ -869,7 +901,7 @@ start_fd_server(struct Global *g)
 
 	pid = fork();
 	if (pid < 0) {
-		perror("fork()");
+		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "fork()");
 		exit(EXIT_FAILURE);
 	}
 	if (pid > 0) {
@@ -877,14 +909,15 @@ start_fd_server(struct Global *g)
 		return;
 	}
 
-	if (execl("fd_server", "./fd_server", (char *)NULL)) {
-		perror("exec()");
+	if (execl("fd_server", "fd_server", (char *)NULL)) {
+		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "exec()");
 		exit(EXIT_FAILURE);
 	}
 
 	socket_fd = connect_to_fd_server(g);
 	if (socket_fd == -1) {
-		printf("Couldn't connect to fd_server after starting it\n");
+		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+		              "Can't connect to fd_server\n");
 		exit(EXIT_FAILURE);
 	}
 	close(socket_fd);
@@ -956,27 +989,27 @@ get_if_fd(struct Global *g, const char *if_name)
 	strncpy(req.if_name, if_name, sizeof(req.if_name));
 	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret < 0) {
-		perror("send()");
+		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "send()");
 		return NULL;
 	}
 
 	memset(&res, 0, sizeof(res));
 	ret = recv_fd(socket_fd, &new_fd, &res, sizeof(res));
 	if (ret == -1) {
-		perror("recv_fd()");
+		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "recv_fd()");
 		return NULL;
 	}
 	close(socket_fd);
 
 	nmd = malloc(sizeof(*nmd));
 	if (nmd == NULL) {
-		perror("malloc()");
+		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "malloc()");
 		return NULL;
 	}
 
 	fill_nm_desc(nmd, &res.req, new_fd);
 	if (nm_mmap(nmd, NULL) != 0) {
-		perror("nm_mmap()");
+		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "nm_mmap()");
 		return NULL;
 	}
 
@@ -1001,7 +1034,7 @@ release_if_fd(struct Global *g, const char *if_name)
 
 	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret <= 0) {
-		perror("send()");
+		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "send()");
 	}
 
 	close(socket_fd);
@@ -1019,16 +1052,18 @@ stop_fd_server(struct Global *g)
 	socket_fd       = connect_to_fd_server(g);
 	g->timeout_secs = old_timeout_secs;
 	if (socket_fd == -1) {
-		printf("server alredy down\n");
+		verbose_print(g->verbosity_level, LV_DEBUG_SEND_RECV,
+		              "fd_server alredy down\n");
 		return;
 	}
-	printf("shutting down fd_server\n");
+	verbose_print(g->verbosity_level, LV_DEBUG_SEND_RECV,
+	              "Shutting down fd_server\n");
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_STOP;
 	ret        = send(socket_fd, &req, sizeof(req), 0);
 	if (ret == -1) {
-		perror("send()");
+		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "send()");
 	}
 	/* By calling recv() we synchronize with the fd_server closing the
 	 * socket.
@@ -1066,13 +1101,15 @@ parse_extra_buffers_indexes(struct Global *g)
 
 	for (i = 0; i < g->extra_buffers_num; i++) {
 		if (e_buf_index == 0) {
-			printf("Extra buffer index = 0\n");
+			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			              "Extra buffer index = 0\n");
 			return -1;
 		}
 
 		u_buf = malloc(sizeof(*u_buf));
 		if (u_buf == NULL) {
-			perror("malloc()");
+			verbose_perror(g->verbosity_level, LV_ERROR_MSG,
+			               "malloc()");
 			return -1;
 		}
 		u_buf->buf_idx = e_buf_index;
@@ -1198,7 +1235,7 @@ main(int argc, char **argv)
 	g->request_from_fd_server = /*true=*/1;
 	g->sequential_fill        = /*false=*/0;
 	g->extra_buffers_num      = 0;
-	g->verbose                = 0;
+	g->verbosity_level        = 0;
 	g->num_loops              = 1;
 	g->extra_buffers_num      = 0;
 	LIST_INIT(&g->normal_buffers_head);
@@ -1208,7 +1245,7 @@ main(int argc, char **argv)
 	       -1) {
 		switch (opt) {
 		case 'h':
-			usage();
+			usage(stdout);
 			return 0;
 
 		case 'c':
@@ -1228,10 +1265,11 @@ main(int argc, char **argv)
 			break;
 
 		case 'e':
-			printf("sdsdas\n");
 			g->extra_buffers_num = atoi(optarg);
 			if (g->extra_buffers_num <= 0) {
-				printf("Invalid number of extra buffers\n");
+				verbose_print(
+				        g->verbosity_level, LV_ERROR_MSG,
+				        "Invalid number of extra buffers\n");
 				exit(EXIT_FAILURE);
 			};
 			break;
@@ -1239,7 +1277,8 @@ main(int argc, char **argv)
 		case 's':
 			ret = parse_mac_address(optarg, g->src_mac);
 			if (ret == -1) {
-				printf("Invalid source MAC address\n");
+				verbose_print(g->verbosity_level, LV_ERROR_MSG,
+				              "Invalid source MAC address\n");
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -1247,7 +1286,9 @@ main(int argc, char **argv)
 		case 'd':
 			ret = parse_mac_address(optarg, g->dst_mac);
 			if (ret == -1) {
-				printf("Invalid destination MAC address\n");
+				verbose_print(
+				        g->verbosity_level, LV_ERROR_MSG,
+				        "Invalid destination MAC address\n");
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -1279,23 +1320,28 @@ main(int argc, char **argv)
 			int ret = 0;
 
 			if (g->num_events >= MAX_EVENTS) {
-				printf("Too many events\n");
+				verbose_print(g->verbosity_level, LV_ERROR_MSG,
+				              "Too many events\n");
 				exit(EXIT_FAILURE);
 			}
 
 			if (opt == 'p') {
 				ret = parse_pause_event(
-				        optarg, g->events + g->num_events);
+				        optarg, g->events + g->num_events,
+				        g->verbosity_level);
 			} else {
 				ret = parse_txrx_event(
 				        optarg,
 				        (opt == 't') ? EVENT_TYPE_TX
 				                     : EVENT_TYPE_RX,
-				        g->events + g->num_events);
+				        g->events + g->num_events,
+				        g->verbosity_level);
 			}
 			if (ret) {
-				printf("Invalid event syntax '%s'\n", optarg);
-				usage();
+				verbose_print(g->verbosity_level, LV_ERROR_MSG,
+				              "Invalid event syntax '%s'\n",
+				              optarg);
+				usage(stderr);
 				exit(EXIT_FAILURE);
 			}
 			g->num_events++;
@@ -1307,33 +1353,39 @@ main(int argc, char **argv)
 			break;
 
 		case 'v':
-			g->verbose++;
+			g->verbosity_level++;
 			break;
 
 		case 'C':
 			g->num_loops = atoi(optarg);
 			if (g->num_loops == 0) {
-				printf("Invalid -C option '%s'\n", optarg);
+				verbose_print(g->verbosity_level, LV_ERROR_MSG,
+				              "Invalid -C option '%s'\n",
+				              optarg);
 				exit(EXIT_FAILURE);
 			}
 			break;
 
 		default:
-			printf("Unrecognized option %c\n", opt);
-			usage();
+			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			              "Unrecognized option %c\n", opt);
+			usage(stderr);
 			exit(EXIT_FAILURE);
 		}
 	}
 
 	if (!g->ifname) {
-		printf("Missing ifname\n");
-		usage();
+		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+		              "Missing ifname\n");
+		usage(stderr);
 		exit(EXIT_FAILURE);
 	}
 
 	if (g->request_from_fd_server == 1 && g->extra_buffers_num > 0) {
-		printf("Extra buffers can only be used when requesting an "
-		       "interface directly\n");
+		verbose_print(
+		        g->verbosity_level, LV_ERROR_MSG,
+		        "Extra buffers can only be used when requesting an "
+		        "interface directly\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -1352,8 +1404,8 @@ main(int argc, char **argv)
 		g->nmd = get_if_fd(g, g->ifname);
 	}
 	if (g->nmd == NULL) {
-		;
-		printf("Failed to nm_open(%s)\n", g->ifname);
+		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+		              "Failed to nm_open(%s)\n", g->ifname);
 		exit(EXIT_FAILURE);
 	}
 
@@ -1364,7 +1416,8 @@ main(int argc, char **argv)
 		g->extra_buffers_indexes =
 		        malloc(g->extra_buffers_num * sizeof(uint32_t));
 		if (g->extra_buffers_indexes == NULL) {
-			perror("malloc()");
+			verbose_perror(g->verbosity_level, LV_ERROR_MSG,
+			               "malloc()");
 			exit(EXIT_FAILURE);
 		}
 

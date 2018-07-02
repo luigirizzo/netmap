@@ -9,9 +9,8 @@
 ################################################################################
 source test_lib
 
-redirect_std
-
 parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
 fill="${fill:-d}"
 len="${len:-150}"
 num="${num:-1}"
@@ -24,15 +23,15 @@ exit 0
 create_veth_interfaces "veth1"
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-functional -i netmap:veth1A
+functional "$verbosity" -i netmap:veth1A
 check_success $? "pre-open netmap:veth1A"
-functional -i netmap:veth1B
+functional "$verbosity" -i netmap:veth1B
 check_success $? "pre-open netmap:veth1B"
 
 # veth1B --> veth1A
-functional -i netmap:veth1A -r "${len}:${fill}:${num}" "$seq" &
+functional "$verbosity" -i netmap:veth1A -r "${len}:${fill}:${num}" "$seq" &
 p1=$!
-functional -i netmap:veth1B -t "${len}:${fill}:${num}" "$seq"
+functional "$verbosity" -i netmap:veth1B -t "${len}:${fill}:${num}" "$seq"
 e2=$?
 wait $p1
 e1=$?
@@ -40,9 +39,9 @@ check_success $e1 "receive-${num} netmap:veth1A"
 check_success $e2 "send-${num} netmap:veth1B"
 
 # veth1A --> veth1B
-functional -i netmap:veth1B -r "${len}:${fill}:${num}" "$seq" &
+functional "$verbosity" -i netmap:veth1B -r "${len}:${fill}:${num}" "$seq" &
 p3=$!
-functional -i netmap:veth1A -t "${len}:${fill}:${num}" "$seq"
+functional "$verbosity" -i netmap:veth1A -t "${len}:${fill}:${num}" "$seq"
 e4=$?
 wait $p3
 e3=$?
