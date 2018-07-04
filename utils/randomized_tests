@@ -3,11 +3,6 @@
 # Runs all the tests using randomized values for number of packets, fill
 # character and packets length.
 ################################################################################
-source test_lib
-
-modprobe netmap
-check_success $? "Failed to load netmap."
-
 random_num="$((65 + $RANDOM % 58))"
 # https://stackoverflow.com/a/10503163
 random_fill=$(printf \\$(printf '%03o' $random_num))

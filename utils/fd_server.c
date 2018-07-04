@@ -200,7 +200,7 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 }
 
 int
-handle_request(int socket)
+handle_request(int accept_socket, int listen_socket)
 {
 	struct fd_response res;
 	struct fd_request req;
@@ -209,7 +209,7 @@ handle_request(int socket)
 	int ret;
 
 	memset(&req, 0, sizeof(req));
-	amount = recv(socket, &req, sizeof(struct fd_request), 0);
+	amount = recv(accept_socket, &req, sizeof(struct fd_request), 0);
 	if (amount == -1) {
 		printf("error while receiving the request\n");
 		return -1;
@@ -229,13 +229,15 @@ handle_request(int socket)
 		return 0;
 	case FD_STOP:
 		printf("shutting down\n");
+		close(accept_socket);
+		close(listen_socket);
 		exit(EXIT_SUCCESS);
 		break;
 	default:
 		res.result = EOPNOTSUPP;
 	}
 
-	ret = send_fd(socket, fd, &res, sizeof(struct fd_response));
+	ret = send_fd(accept_socket, fd, &res, sizeof(struct fd_response));
 	if (ret == -1) {
 		printf("error while sending the reponse\n");
 	}
@@ -287,7 +289,7 @@ main_loop(void)
 			exit(EXIT_FAILURE);
 		}
 
-		ret = handle_request(conn_fd);
+		ret = handle_request(conn_fd, socket_fd);
 		if (ret == -1) {
 			printf("error while handling a request\n");
 		}
