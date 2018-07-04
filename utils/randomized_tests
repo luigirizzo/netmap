@@ -29,6 +29,7 @@ PATH="$(pwd):${PATH}"
 for test in tests/*_test ; do
 	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
 	if [ $? != 0 ] ; then
+		echo "Rerunning the test that just failed with -v"
 		# Select verbosity of output during after an error occurred:
 		#    -v    -> prints error messages
 		#    -vv   -> -v, send and receive actions
