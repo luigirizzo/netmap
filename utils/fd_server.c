@@ -229,8 +229,8 @@ handle_request(int accept_socket, int listen_socket)
 		return 0;
 	case FD_STOP:
 		printf("shutting down\n");
-		close(accept_socket);
 		close(listen_socket);
+		close(accept_socket);
 		exit(EXIT_SUCCESS);
 		break;
 	default:
