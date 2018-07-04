@@ -170,11 +170,20 @@ static int
 netmap_monitor_krings_create(struct netmap_adapter *na)
 {
 	int error = netmap_krings_create(na, 0);
+	enum txrx t;
+
 	if (error)
 		return error;
 	/* override the host rings callbacks */
-	na->tx_rings[na->num_tx_rings]->nm_sync = netmap_monitor_txsync;
-	na->rx_rings[na->num_rx_rings]->nm_sync = netmap_monitor_rxsync;
+	for_rx_tx(t) {
+		int i;
+		u_int first = nma_get_nrings(na, t);
+		for (i = 0; i < nma_get_host_nrings(na, t); i++) {
+			struct netmap_kring *kring = NMR(na, t)[first + i];
+			kring->nm_sync = t == NR_TX ? netmap_monitor_txsync :
+						      netmap_monitor_rxsync;
+		}
+	}
 	return 0;
 }
 
