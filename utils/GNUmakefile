@@ -36,11 +36,8 @@ PREFIX ?= /usr/local
 all: $(PROGS)
 
 inttest:
+	$(shell if [ "$(shell uname)" = "Linux" ] ; then modprobe netmap ;fi)
 	./randomized_tests
-
-functional: fd_server.h
-
-fd_server: fd_server.h
 
 all-x86: $(PROGS) $(X86PROGS)
 

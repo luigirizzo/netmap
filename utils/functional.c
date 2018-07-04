@@ -166,7 +166,7 @@ fill_packet_field(struct Global *g, unsigned offset, const char *content,
                   unsigned content_len)
 {
 	if (offset + content_len > sizeof(g->pktm)) {
-		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+		verbose_print(g->verbosity_level, 0 /*change after */,
 		              "Packet layout overflow: %u + %u > %lu\n", offset,
 		              content_len, sizeof(g->pktm));
 		cleanup(g);
@@ -363,7 +363,7 @@ tx_flush(struct Global *g)
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			verbose_print(g->verbosity_level, 0 /*change after */,
 			              "%s: Timeout\n", __func__);
 			return -1;
 		}
@@ -465,7 +465,7 @@ tx(struct Global *g, unsigned packets_num)
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			verbose_print(g->verbosity_level, 0 /*change after */,
 			              "%s: Timeout\n", __func__);
 			return -1;
 		}
@@ -544,7 +544,7 @@ rx_check(struct Global *g)
 	unsigned i;
 
 	if (g->pktr_len != g->pktm_len) {
-		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+		verbose_print(g->verbosity_level, 0 /*change after */,
 		              "Received packet length (%u) different from "
 		              "expected (%u bytes)\n",
 		              g->pktr_len, g->pktm_len);
@@ -553,7 +553,7 @@ rx_check(struct Global *g)
 
 	for (i = 0; i < g->pktr_len; i++) {
 		if (g->pktr[i] != g->pktm[i]) {
-			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			verbose_print(g->verbosity_level, 0 /*change after */,
 			              "Received packet differs from model at "
 			              "offset %u (0x%02x!=0x%02x)\n",
 			              i, g->pktr[i], (uint8_t)g->pktm[i]);
@@ -577,7 +577,7 @@ read_one_packet(struct Global *g, struct netmap_ring *ring)
 
 		if (g->pktr_len + slot->len > sizeof(g->pktr)) {
 			/* Sanity check. */
-			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			verbose_print(g->verbosity_level, 0 /*change after */,
 			              "Error: received packet too "
 			              "large "
 			              "(>= %u bytes) ",
@@ -595,7 +595,7 @@ read_one_packet(struct Global *g, struct netmap_ring *ring)
 		}
 
 		if (head == ring->tail) {
-			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			verbose_print(g->verbosity_level, 0 /*change after */,
 			              "warning: truncated packet "
 			              "(len=%u)\n",
 			              g->pktr_len);
@@ -629,7 +629,7 @@ rx(struct Global *g, unsigned packets_num)
 		}
 
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			verbose_print(g->verbosity_level, 0 /*change after */,
 			              "%s: Timeout\n", __func__);
 			/* -n flag */
 			return g->success_if_no_receive == 1 ? 0 : -1;
@@ -874,7 +874,7 @@ connect_to_fd_server(struct Global *g)
 
 	socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
 	if (socket_fd == -1) {
-		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "socket()");
+		verbose_perror(g->verbosity_level, 0 /*change after */, "socket()");
 		return -1;
 	}
 
@@ -885,7 +885,7 @@ connect_to_fd_server(struct Global *g)
 	while (connect(socket_fd, (const struct sockaddr *)&name,
 	               sizeof(struct sockaddr_un)) == -1) {
 		if (elapsed_ms > g->timeout_secs * 1000) {
-			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			verbose_print(g->verbosity_level, 0 /*change after */,
 			              "%s: Timeout\n", __func__);
 			return -1;
 		}
@@ -905,7 +905,7 @@ start_fd_server(struct Global *g)
 
 	pid = fork();
 	if (pid < 0) {
-		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "fork()");
+		verbose_perror(g->verbosity_level, 0 /*change after */, "fork()");
 		exit(EXIT_FAILURE);
 	}
 	if (pid > 0) {
@@ -914,13 +914,13 @@ start_fd_server(struct Global *g)
 	}
 
 	if (execl("fd_server", "fd_server", (char *)NULL)) {
-		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "exec()");
+		verbose_perror(g->verbosity_level, 0 /*change after */, "exec()");
 		exit(EXIT_FAILURE);
 	}
 
 	socket_fd = connect_to_fd_server(g);
 	if (socket_fd == -1) {
-		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+		verbose_print(g->verbosity_level, 0 /*change after */,
 		              "Can't connect to fd_server\n");
 		exit(EXIT_FAILURE);
 	}
@@ -993,27 +993,27 @@ get_if_fd(struct Global *g, const char *if_name)
 	strncpy(req.if_name, if_name, sizeof(req.if_name));
 	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret < 0) {
-		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "send()");
+		verbose_perror(g->verbosity_level, 0 /*change after */, "send()");
 		return NULL;
 	}
 
 	memset(&res, 0, sizeof(res));
 	ret = recv_fd(socket_fd, &new_fd, &res, sizeof(res));
 	if (ret == -1) {
-		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "recv_fd()");
+		verbose_perror(g->verbosity_level, 0 /*change after */, "recv_fd()");
 		return NULL;
 	}
 	close(socket_fd);
 
 	nmd = malloc(sizeof(*nmd));
 	if (nmd == NULL) {
-		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "malloc()");
+		verbose_perror(g->verbosity_level, 0 /*change after */, "malloc()");
 		return NULL;
 	}
 
 	fill_nm_desc(nmd, &res.req, new_fd);
 	if (nm_mmap(nmd, NULL) != 0) {
-		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "nm_mmap()");
+		verbose_perror(g->verbosity_level, 0 /*change after */, "nm_mmap()");
 		return NULL;
 	}
 
@@ -1038,7 +1038,7 @@ release_if_fd(struct Global *g, const char *if_name)
 
 	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret <= 0) {
-		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "send()");
+		verbose_perror(g->verbosity_level, 0 /*change after */, "send()");
 	}
 
 	close(socket_fd);
@@ -1047,14 +1047,11 @@ release_if_fd(struct Global *g, const char *if_name)
 void
 stop_fd_server(struct Global *g)
 {
-	unsigned old_timeout_secs = g->timeout_secs;
 	struct fd_request req;
 	int socket_fd;
 	int ret;
 
-	g->timeout_secs = 0;
-	socket_fd       = connect_to_fd_server(g);
-	g->timeout_secs = old_timeout_secs;
+	socket_fd = connect_to_fd_server(g);
 	if (socket_fd == -1) {
 		verbose_print(g->verbosity_level, LV_DEBUG_SEND_RECV,
 		              "fd_server alredy down\n");
@@ -1067,7 +1064,7 @@ stop_fd_server(struct Global *g)
 	req.action = FD_STOP;
 	ret        = send(socket_fd, &req, sizeof(req), 0);
 	if (ret == -1) {
-		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "send()");
+		verbose_perror(g->verbosity_level, 0 /*change after */, "send()");
 	}
 	/* By calling recv() we synchronize with the fd_server closing the
 	 * socket.
@@ -1105,14 +1102,14 @@ parse_extra_buffers_indexes(struct Global *g)
 
 	for (i = 0; i < g->extra_buffers_num; i++) {
 		if (e_buf_index == 0) {
-			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			verbose_print(g->verbosity_level, 0 /*change after */,
 			              "Extra buffer index = 0\n");
 			return -1;
 		}
 
 		u_buf = malloc(sizeof(*u_buf));
 		if (u_buf == NULL) {
-			verbose_perror(g->verbosity_level, LV_ERROR_MSG,
+			verbose_perror(g->verbosity_level, 0 /*change after */,
 			               "malloc()");
 			return -1;
 		}
@@ -1274,7 +1271,7 @@ main(int argc, char **argv)
 			g->extra_buffers_num = atoi(optarg);
 			if (g->extra_buffers_num <= 0) {
 				verbose_print(
-				        g->verbosity_level, LV_ERROR_MSG,
+				        g->verbosity_level, 0 /*change after */,
 				        "Invalid number of extra buffers\n");
 				exit(EXIT_FAILURE);
 			};
@@ -1283,7 +1280,7 @@ main(int argc, char **argv)
 		case 's':
 			ret = parse_mac_address(optarg, g->src_mac);
 			if (ret == -1) {
-				verbose_print(g->verbosity_level, LV_ERROR_MSG,
+				verbose_print(g->verbosity_level, 0 /*change after */,
 				              "Invalid source MAC address\n");
 				exit(EXIT_FAILURE);
 			}
@@ -1293,7 +1290,7 @@ main(int argc, char **argv)
 			ret = parse_mac_address(optarg, g->dst_mac);
 			if (ret == -1) {
 				verbose_print(
-				        g->verbosity_level, LV_ERROR_MSG,
+				        g->verbosity_level, 0 /*change after */,
 				        "Invalid destination MAC address\n");
 				exit(EXIT_FAILURE);
 			}
@@ -1301,6 +1298,7 @@ main(int argc, char **argv)
 
 		case 'i':
 			g->ifname = optarg;
+			printf("g->if_name = %s\n", g->ifname);
 			break;
 
 		case 'I':
@@ -1326,7 +1324,7 @@ main(int argc, char **argv)
 			int ret = 0;
 
 			if (g->num_events >= MAX_EVENTS) {
-				verbose_print(g->verbosity_level, LV_ERROR_MSG,
+				verbose_print(g->verbosity_level, 0 /*change after */,
 				              "Too many events\n");
 				exit(EXIT_FAILURE);
 			}
@@ -1344,7 +1342,7 @@ main(int argc, char **argv)
 				        g->verbosity_level);
 			}
 			if (ret) {
-				verbose_print(g->verbosity_level, LV_ERROR_MSG,
+				verbose_print(g->verbosity_level, 0 /*change after */,
 				              "Invalid event syntax '%s'\n",
 				              optarg);
 				usage(stderr);
@@ -1365,7 +1363,7 @@ main(int argc, char **argv)
 		case 'C':
 			g->num_loops = atoi(optarg);
 			if (g->num_loops == 0) {
-				verbose_print(g->verbosity_level, LV_ERROR_MSG,
+				verbose_print(g->verbosity_level, 0 /*change after */,
 				              "Invalid -C option '%s'\n",
 				              optarg);
 				exit(EXIT_FAILURE);
@@ -1373,15 +1371,15 @@ main(int argc, char **argv)
 			break;
 
 		default:
-			verbose_print(g->verbosity_level, LV_ERROR_MSG,
+			verbose_print(g->verbosity_level, 0 /*change after */,
 			              "Unrecognized option %c\n", opt);
 			usage(stderr);
 			exit(EXIT_FAILURE);
 		}
 	}
 
-	if (!g->ifname) {
-		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+	if (g->ifname == NULL) {
+		verbose_print(g->verbosity_level, 0 /*change after */,
 		              "Missing ifname\n");
 		usage(stderr);
 		exit(EXIT_FAILURE);
@@ -1389,7 +1387,7 @@ main(int argc, char **argv)
 
 	if (g->request_from_fd_server == 1 && g->extra_buffers_num > 0) {
 		verbose_print(
-		        g->verbosity_level, LV_ERROR_MSG,
+		        g->verbosity_level, 0 /*change after */,
 		        "Extra buffers can only be used when requesting an "
 		        "interface directly\n");
 		exit(EXIT_FAILURE);
@@ -1410,7 +1408,7 @@ main(int argc, char **argv)
 		g->nmd = get_if_fd(g, g->ifname);
 	}
 	if (g->nmd == NULL) {
-		verbose_print(g->verbosity_level, LV_ERROR_MSG,
+		verbose_print(g->verbosity_level, 0 /*change after */,
 		              "Failed to nm_open(%s)\n", g->ifname);
 		exit(EXIT_FAILURE);
 	}
@@ -1422,7 +1420,7 @@ main(int argc, char **argv)
 		g->extra_buffers_indexes =
 		        malloc(g->extra_buffers_num * sizeof(uint32_t));
 		if (g->extra_buffers_indexes == NULL) {
-			verbose_perror(g->verbosity_level, LV_ERROR_MSG,
+			verbose_perror(g->verbosity_level, 0 /*change after */,
 			               "malloc()");
 			exit(EXIT_FAILURE);
 		}
