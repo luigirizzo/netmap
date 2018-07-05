@@ -263,7 +263,7 @@ function parse_send_recv_arguments() {
 			v) if [ -z $verbosity ] ; then
 					verbosity="-v"
 				else
-					erbosity="${verbosity}v"
+					verbosity="${verbosity}v"
 			   fi
 			;;
 			h) send_recv_usage ; exit 0
