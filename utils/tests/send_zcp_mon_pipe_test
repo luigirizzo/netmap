@@ -13,8 +13,6 @@
 ################################################################################
 source test_lib
 
-exit 0 # Test currently disabled.
-
 parse_send_recv_arguments "$@"
 verbosity="${verbosity:-}"
 fill="${fill:-d}"
