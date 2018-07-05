@@ -1048,7 +1048,7 @@ generic_netmap_dtor(struct netmap_adapter *na)
 		}
 		D("Native netmap adapter %p restored", prev_na);
 	}
-	NM_ATTACH_NA(ifp, prev_na);
+	NM_RESTORE_NA(ifp, prev_na);
 	/*
 	 * netmap_detach_common(), that it's called after this function,
 	 * overrides WNA(ifp) if na->ifp is not NULL.
@@ -1089,7 +1089,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	}
 #endif
 
-	if (NA(ifp) && !NM_NA_VALID(ifp)) {
+	if (NM_NA_CLASH(ifp)) {
 		/* If NA(ifp) is not null but there is no valid netmap
 		 * adapter it means that someone else is using the same
 		 * pointer (e.g. ax25_ptr on linux). This happens for
@@ -1140,8 +1140,8 @@ generic_netmap_attach(struct ifnet *ifp)
 		return retval;
 	}
 
-	gna->prev = NA(ifp); /* save old na */
-	if (gna->prev != NULL) {
+	if (NM_NA_VALID(ifp)) {
+		gna->prev = NA(ifp); /* save old na */
 		netmap_adapter_get(gna->prev);
 	}
 	NM_ATTACH_NA(ifp, na);

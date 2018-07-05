@@ -1642,6 +1642,7 @@ extern int ptnetmap_tx_workers;
 		NA(ifp)->magic = 					\
 			((uint32_t)(uintptr_t)NA(ifp)) ^ NETMAP_MAGIC;	\
 } while(0)
+#define NM_RESTORE_NA(ifp, na) 	WNA(ifp) = na;
 
 #define NM_DETACH_NA(ifp)	do { WNA(ifp) = NULL; } while (0)
 #define NM_NA_CLASH(ifp)	(NA(ifp) && !NM_NA_VALID(ifp))
