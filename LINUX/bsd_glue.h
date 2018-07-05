@@ -311,10 +311,6 @@ struct netmap_linux_magic {
 	(ifp)->ethtool_ops = NA(ifp)->magic.save_eto;			\
 } while (0)
 #define NM_ATTACH_NA(ifp, na) do {					\
-	if ((na)->magic.save_eto == &(na)->magic.eto) {			\
-		NM_DETACH_NA(ifp);					\
-		break;							\
-	}								\
 	if ((ifp)->ethtool_ops) {					\
 		(na)->magic.eto = *(ifp)->ethtool_ops;			\
 		(na)->magic.save_eto = (ifp)->ethtool_ops;		\
@@ -323,6 +319,13 @@ struct netmap_linux_magic {
 	}								\
 	(na)->magic.eto.set_ringparam = linux_netmap_set_ringparam;	\
 	(ifp)->ethtool_ops = &(na)->magic.eto;				\
+} while (0)
+#define NM_RESTORE_NA(ifp, na) do {					\
+	if (na == NULL) {						\
+		NM_DETACH_NA(ifp);					\
+	} else {							\
+		(ifp)->ethtool_ops = &(na)->magic.eto;			\
+	}								\
 } while (0)
 #define NM_NA_VALID(ifp)						\
 	(NA(ifp) && NA(ifp)->magic.eto.set_ringparam == 		\

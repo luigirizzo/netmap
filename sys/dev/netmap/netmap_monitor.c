@@ -371,9 +371,6 @@ netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring, enum
 
 	if (zmon) {
 		/* remove the monitor from the list */
-		if (mz->prev != NULL) {
-			mz->prev->zmon_list[t].next = mz->next;
-		}
 		if (mz->next != NULL) {
 			mz->next->zmon_list[t].prev = mz->prev;
 			/* we also need to let the next monitor drop the
@@ -389,6 +386,10 @@ netmap_monitor_del(struct netmap_kring *mkring, struct netmap_kring *kring, enum
 			 */
 			kring->zmon_list[t].prev =
 				(mz->prev != kring ? mz->prev : NULL);
+		}
+		if (mz->prev != NULL) {
+			netmap_adapter_put(mz->prev->na);
+			mz->prev->zmon_list[t].next = mz->next;
 		}
 		mz->prev = NULL;
 		mz->next = NULL;
