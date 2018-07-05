@@ -68,7 +68,6 @@ if [ $ring_used_sends != $pending_sends ] ; then
 fi
 check_exit $pending_sends $ring_used_sends "pending_sends=ring_used_sends"
 
-
 num_send="$(($ring_avail_sends + 1))"
 functional $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}"
 check_failure $? "send-${num_send} netmap:${pipe}}1"
