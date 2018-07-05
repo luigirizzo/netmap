@@ -192,7 +192,7 @@ send_fd(int socket, int fd, void *buf, size_t buf_size)
 		cmsg->cmsg_level        = SOL_SOCKET;
 		cmsg->cmsg_type         = SCM_RIGHTS;
 		cmsg->cmsg_len          = CMSG_LEN(sizeof(int));
-		*(int *)CMSG_DATA(cmsg) = fd;
+		memcpy(CMSG_DATA(cmsg), &fd, sizeof(int));
 	}
 
 	ret = sendmsg(socket, &msg, 0);

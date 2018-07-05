@@ -966,7 +966,7 @@ recv_fd(int socket, int *fd, void *buf, size_t buf_size)
 	 * sent through the ancillary data.
 	 */
 	cmsg = CMSG_FIRSTHDR(&msg);
-	*fd  = *(int *)CMSG_DATA(cmsg);
+	memcpy(fd, CMSG_DATA(cmsg), sizeof(int));
 
 	return amount;
 }
