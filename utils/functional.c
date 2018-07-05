@@ -28,8 +28,8 @@
 #include <sys/types.h>
 #include <net/ethernet.h>
 #include <net/if.h>
-#include <net/netmap.h>
 #include <stdint.h>
+#include <net/netmap.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
