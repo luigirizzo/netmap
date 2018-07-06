@@ -576,7 +576,7 @@ cleanup:
 			if (ring == NULL)
 				continue;
 
-			if (kring->pipe_tail == kring->nr_hwcur)
+			if (kring->tx == NR_RX)
 				ring->slot[kring->pipe_tail].buf_idx = 0;
 
 			for (j = nm_next(kring->pipe_tail, lim);
