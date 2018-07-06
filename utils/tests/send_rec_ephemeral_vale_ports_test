@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if we can send and receive packets through ephimeral
+#                 VALE ports.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) send from vale0:v2 and check that both, vale0:v0 and vale0:v1, receive.
+# 2) send from vale0:v0 and check that both, vale0:v1 and vale0:v2, receive.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+fill="${fill:-c}"
+len="${len:-274}"
+num="${num:-1}"
+seq="${seq:-}"
+
+restart_fd_server
+
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+functional $verbosity -i "vale0:v0"
+check_success $? "pre-open vale0:v0"
+functional $verbosity -i "vale0:v1"
+check_success $? "pre-open vale0:v1"
+functional $verbosity -i "vale0:v2"
+check_success $? "pre-open vale0:v2"
+
+# v2 ---> v0, v1
+functional $verbosity -i "vale0:v0" -r "${len}:${fill}:${num}" $seq &
+p1=$!
+functional $verbosity -i "vale0:v1" -r "${len}:${fill}:${num}" $seq &
+p2=$!
+functional $verbosity -i "vale0:v2" -t "${len}:${fill}:${num}" $seq
+e3=$?
+wait $p1
+e1=$?
+wait $p2
+e2=$?
+check_success $e1 "receive-${num} vale0:v0"
+check_success $e2 "receive-${num} vale0:v1"
+check_success $e3 "send-${num} vale0:v2"
+
+# v0 ---> v1, v2
+functional $verbosity -i "vale0:v1" -r "${len}:${fill}:${num}" $seq &
+p4=$!
+functional $verbosity -i "vale0:v2" -r "${len}:${fill}:${num}" $seq &
+p5=$!
+functional $verbosity -i "vale0:v0" -t "${len}:${fill}:${num}" $seq
+e6=$?
+wait $p4
+e4=$?
+wait $p5
+e5=$?
+check_success $e4 "receive-${num} vale0:v1"
+check_success $e5 "receive-${num} vale0:v2"
+check_success $e6 "send-${num} vale0:v0"
+
+test_successful "$0"

@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+################################################################################
+# Creates the new file descriptor "3" and redirects it to stdout, then redirects
+# stderr e stdout to /dev/null. This way only the stuff we redirect to fd 3 is
+# printed simplifying the work required to filter our output.
+# Arguments:
+#   None
+################################################################################
+function redirect_std() {
+	exec 3>&1
+	exec 1>/dev/null
+	exec 2>&1
+}
+
+################################################################################
+# Calls echo on the correct file descriptor (it needs to match the new file
+# descriptor created by redirect_std()).
+# Arguments:
+#   None
+################################################################################
+function stdout_echo() {
+	echo "$@"
+}
+
+################################################################################
+# Closes the file descriptor server.
+# Arguments:
+#   None
+################################################################################
+function close_fd_server() {
+	functional -c
+	check_success "$?" "close_fd_server"
+}
+
+################################################################################
+# Starts the file descriptor server.
+# Arguments:
+#   None
+################################################################################
+function start_fd_server() {
+	functional -o
+	check_success "$?" "start_fd_server"
+}
+
+################################################################################
+# Restarts the file descriptor server.
+# Arguments:
+#   None
+################################################################################
+function restart_fd_server() {
+	close_fd_server
+	start_fd_server
+}
+
+################################################################################
+# Can be called, when a test script successfully terminates, to perform a
+# specific action.
+# Arguments:
+#   $1 -> string containing the test script name
+################################################################################
+function test_successful() {
+	local test_name="$1"
+	stdout_echo "$test_name: success."
+}
+
+################################################################################
+# Checks the exit value, if it's different from the expected exit value
+# terminates the script.
+# Arguments:
+#   $1 -> exit value to check
+#   $2 -> expected exit value to check against
+#   $3 -> string printed
+#   $4 -> string containing the test script name
+################################################################################
+function check_exit() {
+	local exit_value="$1"
+	local expected_value="$2"
+	local string_to_print="$3"
+	local test_name="$0"
+
+	if [ $exit_value != $expected_value ] ; then
+		stdout_echo "$test_name: $string_to_print FAIL($exit_value != $expected_value)."
+		exit 1
+	fi
+}
+
+################################################################################
+# Checks the exit value, if it's different from 0 terminates the script.
+# Arguments:
+#   $1 -> exit value to check
+#   $2 -> string printed
+################################################################################
+function check_success() {
+	local exit_value="$1"
+	local string_to_print="$2"
+
+	check_exit "$exit_value" 0 "$string_to_print"
+}
+
+################################################################################
+# Checks the exit value, if it's different from 1 (only 1 is considered failure
+# at the moment) terminates the script.
+# Arguments:
+#   $1 -> exit value to check
+#   $2 -> string printed
+################################################################################
+function check_failure() {
+	local exit_value="$1"
+	local string_to_print="$2"
+
+	check_exit "$exit_value" 1 "$string_to_print"
+}
+
+################################################################################
+# Set a trap while maintaining the one currently set. The new one will be
+# executed first.
+# Arguments:
+#   $1 -> new command to execute during the trap
+#   $2 -> signal to trap
+################################################################################
+function cumulative_trap() {
+	local new_command="$1"
+	local signal="$2"
+	local current_command=""
+
+	# If we run "trap -p SIGNAL" in a subshell we read the traps for that
+	# subshell, instead of the current one.
+	# https://unix.stackexchange.com/a/334593
+	shopt -s lastpipe
+	trap -p "$signal" | read current_command
+	shopt -u lastpipe
+
+	current_command="$(echo $current_command | awk -F\' '{print $2}')"
+	new_command="$new_command; $current_command"
+	trap "$new_command" "$signal"
+}
+
+################################################################################
+# Creates a VALE persistent port and sets a cleanup handler which will be
+# called when the script exits.
+# Arguments:
+#   $1 -> name of the VALE persistent port
+#   $2 -> expected exit value of vale-ctl (optional, default = 0)
+################################################################################
+function create_vale_persistent_port() {
+	local if_name="$1"
+	local create_exit_value="$2"
+	create_exit_value="${create_exit_value:-0}"
+
+	vale-ctl -n "$if_name"
+	check_exit "$?" "$create_exit_value" "create $if_name"
+	cumulative_trap "vale-ctl -r $if_name" "EXIT"
+	check_success "$?" "trap-remove $if_name"
+}
+
+################################################################################
+# Destroys a VALE persistent port.
+# Arguments:
+#   $1 -> name of the VALE persistent port
+#   $2 -> expected exit value of vale-ctl (optional, default = 0)
+################################################################################
+function destroy_vale_persistent_port() {
+	local if_name="$1"
+	local destroy_exit_value="$2"
+	destroy_exit_value="${destroy_exit_value:-0}"
+
+	vale-ctl -r "$if_name"
+	check_exit "$?" "$destroy_exit_value" "create $if_name"
+}
+
+################################################################################
+# Attaches an interface registered to the os to a VALE bridge and sets a cleanup
+# handler which will be called when the script exits.
+# Arguments:
+#   $1 -> name of the VALE bridge that the port will be to be attached to
+#   $2 -> name of the interface
+#   $3 -> expected exit value of vale-ctl (optional, default = 0)
+################################################################################
+function attach_to_vale_bridge() {
+	local bdg_name="$1"
+	local if_name="$2"
+	local attach_exit_value="$3"
+	attach_exit_value="${attach_exit_value:-0}"
+
+	vale-ctl -a "$bdg_name:$if_name"
+	check_exit "$?" "$attach_exit_value" "attach $bdg_name:$if_name"
+	cumulative_trap "vale-ctl -d $bdg_name:$if_name" "EXIT"
+	# We first need to close the file descriptor of the interface, otherwise
+	# the detach will fail. To accomplish that we shut down fd_server.
+	cumulative_trap "close_fd_server" "EXIT"
+	check_success "$?" "trap-detach $bdg_name:$if_name"
+}
+
+################################################################################
+# Detaches an interface registered to the os from a VALE bridge.
+# Arguments:
+#   $1 -> name of the VALE bridge that the port will be to be attached to
+#   $2 -> name of the interface
+#   $3 -> expected exit value of vale-ctl (optional, default = 0)
+################################################################################
+function detach_from_vale_bridge() {
+	local bdg_name="$1"
+	local if_name="$2"
+	local detach_exit_value="$3"
+	detach_exit_value="${detach_exit_value:-0}"
+
+	vale-ctl -d "$bdg_name:$if_name"
+	check_exit "$?" "$detach_exit_value" "detach $bdg_name:$if_name"
+}
+
+################################################################################
+# Creates a pair of veth interfaces and sets a cleanup handler which will be
+# called when the script exits.
+# Arguments:
+#   $1 -> base name of the veth devices
+################################################################################
+function create_veth_interfaces() {
+	local if_name="$1"
+	local if_name1="${if_name}A"
+	local if_name2="${if_name}B"
+
+	ip link add "$if_name1" type veth peer name "$if_name2"
+	check_success "$?" "create $if_name"
+	# We first need to close the file descriptor of the interfaces,
+	# otherwise the delete will fail. To accomplish that we shut down
+	# fd_server.
+	cumulative_trap "ip link delete $if_name1" "EXIT"
+	check_success "$?" "trap-delete $if_name1"
+	cumulative_trap "close_fd_server" "EXIT"
+	check_success "$?" "trap-detach $bdg_name:$if_name"
+}
+
+################################################################################
+# Prints accepted command line arguments.
+# Arguments:
+#   None
+################################################################################
+function send_recv_usage() {
+	stdout_echo "usage: [-h] "
+	stdout_echo "       [-l packet_length]"
+	stdout_echo "       [-f fill_character]"
+	stdout_echo "       [-n packets_to_send]"
+	stdout_echo "       [-q (sequential send/read)]"
+	stdout_echo "       [-v (increases verbosity level)]"
+}
+
+################################################################################
+# Parse the command line arguments of the calling script.
+# Arguments:
+#   It must be always called like like this 'parse_arguments "$@"'
+################################################################################
+function parse_send_recv_arguments() {
+	while getopts "hvql:f:n:" opt; do
+		case $opt in
+			l) len="$OPTARG"
+			;;
+			f) fill="$OPTARG"
+			;;
+			n) num="$OPTARG"
+			;;
+			q) seq="-q"
+			;;
+			v) if [ -z $verbosity ] ; then
+					verbosity="-v"
+				else
+					verbosity="${verbosity}v"
+			   fi
+			;;
+			h) send_recv_usage ; exit 0
+			;;
+			\?) send_recv_usage ; exit 1
+			;;
+		esac
+	done
+}
+
+
+################################################################################
+# Prints to stdout the hexadecimal representation of the received integer.
+# Arguments:
+#   $1 -> integer to translate
+################################################################################
+# https://superuser.com/a/218349
+int_to_hex() {
+	local my_int=$1
+	echo $(echo "obase=16; $my_int" | bc)
+}
+
+################################################################################
+# Prints to stdout a random MAC address. FF:FF:FF:FF:FF:FF and 0:0:0:0:0:0 are
+# excluded.
+# Arguments:
+#   None
+################################################################################
+# https://superuser.com/a/218349
+function get_random_MAC() {
+	local range=256
+	local MAC1=$(int_to_hex $((RANDOM % range)))
+	local MAC2=$(int_to_hex $((RANDOM % range)))
+	local MAC3=$(int_to_hex $((RANDOM % range)))
+	local MAC4=$(int_to_hex $((RANDOM % range)))
+	local MAC5=$(int_to_hex $((RANDOM % range)))
+	local MAC6=$(int_to_hex $((RANDOM % range)))
+	local MAC="${MAC1}:${MAC2}:${MAC3}:${MAC4}:${MAC5}:${MAC6}"
+	if [ $MAC = "FF:FF:FF:FF:FF:FF" ] || [ $MAC = "0:0:0:0:0:0" ] ; then
+		get_random_MAC
+	else
+		echo "$MAC"
+	fi
+}

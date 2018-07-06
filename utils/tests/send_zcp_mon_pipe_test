@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if a zero-copy monitor is correctly blocked until the
+#                 non-monitored netmap pipe reads the frame (and the slot is
+#                 given back to the sending pipe).
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create a pair of netmap pipes (pipe{1, pipe}1).
+# 2) open a zero-copy monitor pipe{1/z for pipe{1.
+# 3) send from pipe{1 without receiving from pipe}1, check that pipe{1/z doesn't
+#    receive the frame.
+# 4) receive from pipe}1, send again from pipe{1 (slots are returned during a
+#    txsync action) and check that pipe{1/z receives the frame.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+fill="${fill:-d}"
+len="${len:-150}"
+num="${num:-1}"
+seq="${seq:-}"
+
+restart_fd_server
+
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+functional $verbosity -i "netmap:pipe{1"
+check_success $? "pre-open netmap:pipe{1"
+functional $verbosity -i "netmap:pipe{1/z"
+check_success $? "pre-open netmap:pipe{1/z"
+functional $verbosity -i "netmap:pipe}1"
+check_success $? "pre-open netmap:pipe}1"
+
+# Initially we don't receive with the non-monitored pipe end, therefore the
+# monitor should not receive the frame.
+functional $verbosity -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" $seq -n &
+p1=$!
+functional $verbosity -i "netmap:pipe{1"   -t "${len}:${fill}:${num}" $seq
+e2=$?
+wait $p1
+e1=$?
+check_success $e1 "no-receive-${num} netmap:pipe{1/z"
+check_success $e2 "send-${num} netmap:pipe{1"
+
+# Now we receive with the non-monitored pipe end. We need to send again with the
+# monitored pipe otherwise the zero-copy monitor won't be able to see the
+# packet, as the slot is returned to the monitored pipe only during a txsync
+# action.
+functional $verbosity -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" $seq &
+p3=$!
+functional $verbosity -i "netmap:pipe}1"   -r "${len}:${fill}:${num}" $seq
+e4=$?
+functional $verbosity -i "netmap:pipe{1"   -t "${len}:${fill}:${num}" $seq
+e5=$?
+wait $p3
+e3=$?
+check_success $e4 "receive-${num} netmap:pipe}1"
+check_success $e5 "send-${num} netmap:pipe{1"
+check_success $e3 "receive-${num} netmap:pipe{1/z"
+
+test_successful "$0"

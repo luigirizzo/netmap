@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check that an ephemeral VALE port opened with the exclusive
+#                 flag can't be opened again.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+
+bridge="vale0"
+port="v0"
+
+restart_fd_server
+
+# We open ${bridge}:${port} with the exclusive flag from the file descriptor.
+functional $verbosity -i "${bridge}:${port}/x"
+check_success $? "exclusive-open ${bridge}:${port}/x"
+
+# Then we open the same interface again, this time without requesting it from
+# the file descriptor, causing a second nm_open().
+functional $verbosity -I "${bridge}:${port}"
+check_failure $? "no-open ${bridge}:${port}"
+
+# Check that another exclusive open request fails.
+functional $verbosity -I "${bridge}:${port}/x"
+check_failure $? "no-open ${bridge}:${port}/x"
+
+test_successful "$0"

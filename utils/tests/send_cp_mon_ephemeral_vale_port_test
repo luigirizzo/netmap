@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if a send copy monitor receives frames when its
+#                 monitored ephemeral VALE port is sending.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create a persistent VALE port (v0).
+# 2) open a send copy monitor v0/t for v0.
+# 3) send from v0, check that both v0/t and v1 receive the frame.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+fill="${fill:-d}"
+len="${len:-150}"
+num="${num:-1}"
+seq="${seq:-}"
+
+restart_fd_server
+
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+functional $verbosity -i vale0:v0
+check_success $? "pre-open vale0:v0"
+functional $verbosity -i vale0:v0/t
+check_success $? "pre-open vale0:v0/t"
+functional $verbosity -i vale0:v1
+check_success $? "pre-open vale0:v1"
+
+# First we send without reading from v1
+functional $verbosity -i vale0:v0/t  -r "${len}:${fill}:${num}" $seq &
+p1=$!
+functional $verbosity -i vale0:v0    -t "${len}:${fill}:${num}" $seq
+e2=$?
+wait $p1
+e1=$?
+check_success $e1 "receive-${num} vale0:v0/t"
+check_success $e2 "send-${num} vale0:v0"
+
+# Then we read from v1
+functional $verbosity -i vale0:v1 -r "${len}:${fill}:${num}" $seq
+e3=$?
+check_success $e3 "receive-${num} vale0:v1"
+
+test_successful "$0"

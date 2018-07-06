@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+################################################################################
+# Runs all the tests using randomized values for number of packets, fill
+# character and packets length.
+################################################################################
+random_num="$((65 + $RANDOM % 58))"
+# https://stackoverflow.com/a/10503163
+random_fill=$(printf \\$(printf '%03o' $random_num))
+# We need to make sure that we can send this number of packets with this length
+# at once. At the moment i just put max values which works for the defaults
+# number of rings and buffer size.
+random_len="$((50 + $RANDOM % 10000))"
+random_packet_num="$((1 + $RANDOM % 100))"
+# Use and empty string instead of "-q" if you don't want to perform a sequential
+# send/receive check
+seq_check="-q"
+echo "Running tests with"
+echo "   number of packets: ${random_packet_num}"
+echo "   fill character   : ${random_fill}"
+echo "   sequence check   : ${seq_check}"
+echo "   packet length    : ${random_len}"
+echo ""
+
+# We add the current directory to the PATH. This way we can directly run
+# functional, get_tx_rings_avail_sends and get_tx_rings_max_sends from the test
+# scripts.
+PATH="$(pwd):${PATH}"
+
+for test in tests/*_test ; do
+	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
+	if [ $? != 0 ] ; then
+		echo "Rerunning the test that just failed with -v"
+		# Select verbosity of output during after an error occurred:
+		#    -v    -> prints error messages
+		#    -vv   -> -v, send and receive actions
+		#    -vvv  -> -vv and packet building
+		#    -vvvv -> -vvv and arguments parsing
+		$test -v -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+		exit $?
+	fi
+done

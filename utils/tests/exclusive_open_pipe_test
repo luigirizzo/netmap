@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check that a netmap pipe opened with the exclusive flag can't
+#                 be opened again.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+
+pipe="pipeA{1"
+
+restart_fd_server
+
+# We open pipeA{1 with the exclusive flag from the file descriptor.
+functional $verbosity -i "netmap:${pipe}/x"
+check_success $? "exclusive-open netmap:${pipe}/x"
+
+# Then we open the same interface again, this time without requesting it from
+# the file descriptor, causing a second nm_open().
+functional $verbosity -I "netmap:${pipe}"
+check_failure $? "no-open netmap:${pipe}"
+
+# Check that another exclusive open request fails.
+functional $verbosity -I "netmap:${pipe}/x"
+check_failure $? "no-open netmap:${pipe}/x"
+
+test_successful "$0"

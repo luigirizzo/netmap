@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check that we can't create two persistent VALE ports with the
+#                 same name.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+
+bridge="vale0"
+bridgeA="${bridge}A"
+bridgeB="${bridge}B"
+port="v0"
+
+restart_fd_server
+
+create_vale_persistent_port "$port" 0
+create_vale_persistent_port "$port" 1
+
+attach_to_vale_bridge "$bridgeA" "$port" 0
+create_vale_persistent_port "$port" 1
+
+attach_to_vale_bridge "$bridgeB" "$port" 0
+create_vale_persistent_port "$port" 1
+
+test_successful "$0"
