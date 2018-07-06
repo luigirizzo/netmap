@@ -71,9 +71,9 @@ struct Event {
 	unsigned long long usecs;
 };
 
-struct swapped_out_buf {
+struct extra_buffer {
 	uint32_t buf_idx;
-	LIST_ENTRY(swapped_out_buf) list_entry;
+	TAILQ_ENTRY(extra_buffer) list_entry;
 };
 
 ;
@@ -88,18 +88,16 @@ struct Global {
 	int sequential_fill;        /* increment fill char for multi-packets
 	                            operations */
 	int request_from_fd_server; /* false --> directly open the interface */
+
 #define LV_ERROR_MSG 1
 #define LV_DEBUG_SEND_RECV 2
-#define LV_DEBUG_BUILD_PACKET 3
-#define LV_DEBUG_PARSE_ARGS 4
+#define LV_DEBUG_EXTRA_BUF 3
+#define LV_DEBUG_BUILD_PACKET 4
+#define LV_DEBUG_PARSE_ARGS 5
 	int verbosity_level;
 
 	/* List of currently not in use normal buffers. */
-	LIST_HEAD(n_buf_head, swapped_out_buf) normal_buffers_head;
-	/* List of currently not in use extra buffers. */
-	LIST_HEAD(e_buf_head, swapped_out_buf) extra_buffers_head;
-	/* Points to an array containing all extra buffer indexes */
-	uint32_t *extra_buffers_indexes;
+	TAILQ_HEAD(extra_buf_head, extra_buffer) extra_buffers_head;
 	unsigned extra_buffers_num; /* number of granted extra buffers */
 
 #define MAX_PKT_SIZE 65536
@@ -127,20 +125,6 @@ void release_if_fd(struct Global *, const char *);
 void release_extra_buffers(struct Global *);
 
 void
-cleanup(struct Global *g)
-{
-	if (g->extra_buffers_num > 0) {
-		release_extra_buffers(g);
-	}
-
-	if (g->request_from_fd_server) {
-		release_if_fd(g, g->ifname);
-	} else {
-		nm_close(g->nmd);
-	}
-}
-
-void
 verbose_print(int current_verbosity, int required_verbosity, char *format, ...)
 {
 	va_list args;
@@ -158,6 +142,20 @@ verbose_perror(int current_verbosity, int required_verbosity, char *str)
 {
 	if (current_verbosity >= required_verbosity) {
 		perror(str);
+	}
+}
+
+void
+cleanup(struct Global *g)
+{
+	if (g->extra_buffers_num > 0) {
+		release_extra_buffers(g);
+	}
+
+	if (g->request_from_fd_server) {
+		release_if_fd(g, g->ifname);
+	} else {
+		nm_close(g->nmd);
 	}
 }
 
@@ -1095,17 +1093,19 @@ parse_extra_buffers_indexes(struct Global *g)
 	struct netmap_if *nifp   = g->nmd->nifp;
 	struct netmap_ring *ring = NETMAP_TXRING(nifp, g->nmd->first_tx_ring);
 	struct netmap_slot *slot = &ring->slot[ring->head];
-	uint32_t e_buf_index     = nifp->ni_bufs_head;
+	uint32_t extra_buf_index = nifp->ni_bufs_head;
 	uint32_t real_index      = slot->buf_idx;
-	struct swapped_out_buf *u_buf;
+	struct extra_buffer *u_buf;
 	unsigned i;
 
+	verbose_print(g->verbosity_level, LV_DEBUG_EXTRA_BUF, "Parsing %u extra buffers:\n", g->extra_buffers_num);
 	for (i = 0; i < g->extra_buffers_num; i++) {
-		if (e_buf_index == 0) {
+		if (extra_buf_index == 0) {
 			verbose_print(g->verbosity_level, LV_ERROR_MSG,
-			              "Extra buffer index = 0\n");
+			              "   error, index = 0\n");
 			return -1;
 		}
+		verbose_print(g->verbosity_level, LV_DEBUG_EXTRA_BUF, "   index = %u\n", extra_buf_index);
 
 		u_buf = malloc(sizeof(*u_buf));
 		if (u_buf == NULL) {
@@ -1113,11 +1113,10 @@ parse_extra_buffers_indexes(struct Global *g)
 			               "malloc()");
 			return -1;
 		}
-		u_buf->buf_idx = e_buf_index;
-		LIST_INSERT_HEAD(&g->extra_buffers_head, u_buf, list_entry);
-		g->extra_buffers_indexes[i] = e_buf_index;
-		slot->buf_idx               = e_buf_index;
-		e_buf_index = *(uint32_t *)NETMAP_BUF(ring, slot->buf_idx);
+		u_buf->buf_idx = extra_buf_index;
+		TAILQ_INSERT_HEAD(&g->extra_buffers_head, u_buf, list_entry);
+		slot->buf_idx   = extra_buf_index;
+		extra_buf_index = *(uint32_t *)NETMAP_BUF(ring, slot->buf_idx);
 	}
 	slot->buf_idx = real_index;
 
@@ -1131,6 +1130,7 @@ parse_extra_buffers_indexes(struct Global *g)
 int
 swap_in_extra_buffers(struct Global *g)
 {
+	unsigned extra_buffers_num = g->extra_buffers_num;
 	unsigned int i;
 
 	for (i = g->nmd->first_tx_ring; i <= g->nmd->last_tx_ring; i++) {
@@ -1139,8 +1139,8 @@ swap_in_extra_buffers(struct Global *g)
 
 		for (head = ring->head; head != ring->tail;
 		     head = nm_ring_next(ring, head)) {
-			struct swapped_out_buf *u_buf =
-			        LIST_FIRST(&g->extra_buffers_head);
+			struct extra_buffer *u_buf =
+			        TAILQ_FIRST(&g->extra_buffers_head);
 			struct netmap_slot *slot = &ring->slot[head];
 			uint32_t real_index      = slot->buf_idx;
 
@@ -1152,20 +1152,20 @@ swap_in_extra_buffers(struct Global *g)
 			slot->buf_idx = u_buf->buf_idx;
 			slot->flags |= NS_BUF_CHANGED;
 			u_buf->buf_idx = real_index;
-			LIST_REMOVE(u_buf, list_entry);
-			LIST_INSERT_HEAD(&g->normal_buffers_head, u_buf,
+			TAILQ_REMOVE(&g->extra_buffers_head, u_buf, list_entry);
+			TAILQ_INSERT_TAIL(&g->extra_buffers_head, u_buf,
 			                 list_entry);
+
+			if (--extra_buffers_num == 0) {
+				return 0;
+			}
 		}
 	}
 
-	if (!LIST_EMPTY(&g->extra_buffers_head)) {
-		/* This happens if the number of slots in our adapter is less
-		 * than the number of extra buffers requested, thus should not
-		 * be regarded as an error (?)
-		 */
-		return 0;
-	}
-
+	/* This is reached if the adapter has less slots than the number of
+	 * requested extra buffers. Nevertheless this is not a problem as the
+	 * not in use extra buffers will will be released during cleanup().
+	 */
 	return 0;
 }
 
@@ -1182,29 +1182,33 @@ release_extra_buffers(struct Global *g)
 	struct netmap_ring *ring = NETMAP_TXRING(nifp, g->nmd->first_tx_ring);
 	struct netmap_slot *slot = &ring->slot[ring->head];
 	uint32_t real_index      = slot->buf_idx;
-	unsigned i;
+	struct extra_buffer *u_buf;
+	uint32_t *next_extra_buffer;
 
-	nifp->ni_bufs_head = g->extra_buffers_indexes[0];
-	for (i = 0; i < g->extra_buffers_num; i++) {
-		uint32_t *extra_buffer;
-
-		slot->buf_idx = g->extra_buffers_indexes[i];
-		extra_buffer  = (uint32_t *)NETMAP_BUF(ring, slot->buf_idx);
-		if (i == g->extra_buffers_num - 1) {
-			*extra_buffer = 0;
-		} else {
-			*extra_buffer = g->extra_buffers_indexes[i + 1];
-		}
+	verbose_print(g->verbosity_level, LV_DEBUG_EXTRA_BUF, "Releasing %u extra buffers:\n", g->extra_buffers_num);
+	if (TAILQ_EMPTY(&g->extra_buffers_head)) {
+		return;
 	}
-	slot->buf_idx = real_index;
 
-	while (!LIST_EMPTY(&g->extra_buffers_head)) {
-		struct swapped_out_buf *u_buf =
-		        LIST_FIRST(&g->extra_buffers_head);
+	u_buf = TAILQ_FIRST(&g->extra_buffers_head);
+	nifp->ni_bufs_head = u_buf->buf_idx;
+	verbose_print(g->verbosity_level, LV_DEBUG_EXTRA_BUF, "   head index %u\n", nifp->ni_bufs_head);
+	slot->buf_idx = u_buf->buf_idx;
+	TAILQ_REMOVE(&g->extra_buffers_head, u_buf, list_entry);
+	free(u_buf);
 
-		LIST_REMOVE(u_buf, list_entry);
+	while (!TAILQ_EMPTY(&g->extra_buffers_head)) {
+		next_extra_buffer = (uint32_t *)NETMAP_BUF(ring, slot->buf_idx);
+		u_buf = TAILQ_FIRST(&g->extra_buffers_head);
+		verbose_print(g->verbosity_level, LV_DEBUG_EXTRA_BUF, "   index = %u\n", u_buf->buf_idx);
+		*next_extra_buffer = u_buf->buf_idx;
+		slot->buf_idx = u_buf->buf_idx;
+		TAILQ_REMOVE(&g->extra_buffers_head, u_buf, list_entry);
 		free(u_buf);
 	}
+	next_extra_buffer = (uint32_t *)NETMAP_BUF(ring, slot->buf_idx);
+	*next_extra_buffer = 0;
+	slot->buf_idx = real_index;
 }
 
 int
@@ -1239,8 +1243,7 @@ main(int argc, char **argv)
 	g->verbosity_level        = 0;
 	g->num_loops              = 1;
 	g->extra_buffers_num      = 0;
-	LIST_INIT(&g->normal_buffers_head);
-	LIST_INIT(&g->extra_buffers_head);
+	TAILQ_INIT(&g->extra_buffers_head);
 
 	while ((opt = getopt(argc, argv, "hconqe:s:d:i:I:w:F:T:t:r:gvp:C:")) !=
 	       -1) {
@@ -1275,6 +1278,7 @@ main(int argc, char **argv)
 				        "Invalid number of extra buffers\n");
 				exit(EXIT_FAILURE);
 			};
+			verbose_print(g->verbosity_level, LV_DEBUG_EXTRA_BUF, "Requesting %u extra buffers\n", g->extra_buffers_num);
 			break;
 
 		case 's':
@@ -1413,17 +1417,9 @@ main(int argc, char **argv)
 	}
 
 	if (g->extra_buffers_num > 0) {
-		g->extra_buffers_num = g->nmd->req.nr_arg3; /* Stores the real
-		                                               number of extra
-		                                               buffers. */
-		g->extra_buffers_indexes =
-		        malloc(g->extra_buffers_num * sizeof(uint32_t));
-		if (g->extra_buffers_indexes == NULL) {
-			verbose_perror(g->verbosity_level, LV_ERROR_MSG,
-			               "malloc()");
-			exit(EXIT_FAILURE);
-		}
-
+		/* Stores the real number of extra buffers. */
+		g->extra_buffers_num = g->nmd->req.nr_arg3;
+		verbose_print(g->verbosity_level, LV_DEBUG_EXTRA_BUF, "Received %u extra buffers\n", g->extra_buffers_num);
 		ret = parse_extra_buffers_indexes(g);
 		if (ret == -1) {
 			cleanup(g);

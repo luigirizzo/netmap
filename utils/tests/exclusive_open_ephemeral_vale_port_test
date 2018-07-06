@@ -5,13 +5,14 @@
 ################################################################################
 source test_lib
 
-restart_fd_server
-
 parse_send_recv_arguments "$@"
 verbosity="${verbosity:-}"
 
 bridge="vale0"
 port="v0"
+
+restart_fd_server
+
 # We open ${bridge}:${port} with the exclusive flag from the file descriptor.
 functional $verbosity -i "${bridge}:${port}/x"
 check_success $? "exclusive-open ${bridge}:${port}/x"

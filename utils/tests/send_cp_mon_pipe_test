@@ -32,9 +32,9 @@ functional $verbosity -i "netmap:pipe}1"
 check_success $? "pre-open netmap:pipe}1"
 
 # First we send without reading from pipe}1
-functional $verbosity -i "netmap:pipe{1/t" -r "${len}:${fill}:${num}" "$seq" &
+functional $verbosity -i "netmap:pipe{1/t" -r "${len}:${fill}:${num}" $seq &
 p1=$!
-functional $verbosity -i "netmap:pipe{1"   -t "${len}:${fill}:${num}" "$seq"
+functional $verbosity -i "netmap:pipe{1"   -t "${len}:${fill}:${num}" $seq
 e2=$?
 wait $p1
 e1=$?
@@ -42,7 +42,7 @@ check_success $e1 "receive-${num} netmap:pipe{1/t"
 check_success $e2 "send-${num} netmap:pipe{1"
 
 # Then we read from pipe}1
-functional $verbosity -i "netmap:pipe}1" -r "${len}:${fill}:${num}" "$seq"
+functional $verbosity -i "netmap:pipe}1" -r "${len}:${fill}:${num}" $seq
 e3=$?
 check_success $e3 "receive-${num} netmap:pipe}1"
 

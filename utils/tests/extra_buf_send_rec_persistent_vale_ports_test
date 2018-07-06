@@ -35,11 +35,11 @@ functional $verbosity -i "vale0:v1"
 check_success $? "pre-open vale0:v1"
 
 # v2 ---> v0, v1
-functional $verbosity -i "vale0:v0" -r "${len}:${fill}:${num}" "$seq" &
+functional $verbosity -i "vale0:v0" -r "${len}:${fill}:${num}" $seq &
 p1=$!
-functional $verbosity -i "vale0:v1" -r "${len}:${fill}:${num}" "$seq" &
+functional $verbosity -i "vale0:v1" -r "${len}:${fill}:${num}" $seq &
 p2=$!
-functional $verbosity -I "vale0:v2" -t "${len}:${fill}:${num}" "$seq" -e "$e_buf_num"
+functional $verbosity -I "vale0:v2" -t "${len}:${fill}:${num}" -e "$e_buf_num" $seq
 e3=$?
 wait $p1
 e1=$?
