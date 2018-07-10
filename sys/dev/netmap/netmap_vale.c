@@ -101,9 +101,8 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z gle
 #define NM_BDG_MAXSLOTS		4096	/* XXX same as above */
 #define NM_BRIDGE_RINGSIZE	1024	/* in the device */
 #define NM_BDG_BATCH		1024	/* entries in the forwarding buffer */
-#define NM_MULTISEG		64	/* max size of a chain of bufs */
 /* actual size of the tables */
-#define NM_BDG_BATCH_MAX	(NM_BDG_BATCH + NM_MULTISEG)
+#define NM_BDG_BATCH_MAX	(NM_BDG_BATCH + NETMAP_MAX_FRAGS)
 /* NM_FT_NULL terminates a list of slots in the ft */
 #define NM_FT_NULL		NM_BDG_BATCH_MAX
 
