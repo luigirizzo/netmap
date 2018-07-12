@@ -2010,11 +2010,11 @@ static uint64_t parse_qsize(const char *arg);
  */
 
 static void
-add_to(const char ** v, int l, const char *arg, const char *msg)
+add_to(const char ** v, int l, const char *arg, char opt)
 {
     for (; l > 0 && *v != NULL ; l--, v++);
     if (l == 0) {
-        ED("%s %s", msg, arg);
+        ED("-%c too many times: %s", opt, arg);
         exit(1);
     }
     *v = arg;
@@ -2031,6 +2031,9 @@ set_max(const char *arg, struct _qs *q)
     int ac = 0;
     char **av;
     uint64_t delay = 0, bps = 0, hold = 0;
+
+    if (arg == NULL)
+        return 0;
 
     av = split_arg(arg, &ac);
     if (av == NULL || ac < 1 || ac > 3) {
@@ -2069,6 +2072,16 @@ set_max(const char *arg, struct _qs *q)
     return 0;
 }
 
+/* otions that can be specified for each direction */
+struct dir_opt {
+    char opt;
+    int  flags;
+#define DOPT_CLONE  1	/* clone if only one is given */
+#define DOPT_IGNOR  2	/* ignore the option */
+    const char *arg[EC_NOPTS];
+};
+#define MAXOPTS 1024
+#define DOPT(a, f)  { .opt = a, .flags = f, .arg = { NULL, NULL } }
 
 int
 main(int argc, char **argv)
@@ -2076,32 +2089,44 @@ main(int argc, char **argv)
     int ch, i, j, err=0;
 
     struct pipe_args bp[EC_NOPTS];
-    const char *d[EC_NOPTS], *b[EC_NOPTS], *l[EC_NOPTS], *q[EC_NOPTS], *r[EC_NOPTS],
-    *ifname[EC_NOPTS], *gw[EC_NOPTS], *m[EC_NOPTS], *p[EC_NOPTS];
+    struct dir_opt dopt[] = {
+        DOPT('B', DOPT_CLONE), /* bandwidth in bps */
+        DOPT('D', DOPT_CLONE), /* delay in seconds (float) */
+        DOPT('Q', DOPT_CLONE), /* qsize in bytes */
+        DOPT('L', DOPT_CLONE), /* loss probability */
+        DOPT('R', DOPT_CLONE), /* reordering */
+        DOPT('G', 0),	       /* default gateway */
+        DOPT('M', DOPT_CLONE), /* max bw, delay and hold-time */
+        DOPT('P', DOPT_CLONE), /* allow dropping to obtain precise delay */
+        DOPT('i', 0),	       /* interface */
 #ifdef WITH_MAX_LAG
-    const char *cd[EC_NOPTS];
+        DOPT('d', DOPT_CLONE),
+#else
+        DOPT('d', DOPT_IGNOR),
 #endif /* WITH_MAX_LAG */
+        DOPT(0, 0)  /* end of options */
+    };
+    struct dir_opt *invdopt[256], *scandopt;
     int ncpus;
     int cores[4];
     int hugepages = 0;
     char *sfname = NULL; /* session file name */
     int server = 1, terminate = 0;
     struct _ecf *ecf;
+    char doptstr[MAXOPTS], *strp = doptstr;
+    const char **ifname;
 
     nmctx_set_threadsafe();
 
-    bzero(d, sizeof(d));
-    bzero(b, sizeof(b));
-    bzero(l, sizeof(l));
-    bzero(q, sizeof(q));
-    bzero(r, sizeof(r));
-    bzero(gw, sizeof(gw));
-#ifdef WITH_MAX_LAG
-    bzero(cd, sizeof(cd));
-#endif /* WITH_MAX_LAG */
-    bzero(m, sizeof(m));
-    bzero(p, sizeof(p));
-    bzero(ifname, sizeof(ifname));
+    bzero(invdopt, sizeof(invdopt));
+    for (scandopt = dopt; scandopt->opt; scandopt++) {
+        bzero(scandopt->arg, sizeof(scandopt->arg));
+        invdopt[(unsigned int)scandopt->opt] = scandopt;
+        *strp++ = scandopt->opt;
+        *strp++ = ':';
+    }
+    *strp = '\0';
+    ifname = invdopt['i']->arg;
 
     fprintf(stderr, "%s built %s %s\n", argv[0], __DATE__, __TIME__);
 
@@ -2145,13 +2170,12 @@ main(int argc, char **argv)
     // r	route mode
     // d	max consumer delay
 
-    while ( (ch = getopt(argc, argv, "B:C:D:L:R:Q:G:M:P:b:ci:vw:rd:Hs:l:qap")) != -1) {
+    strcat(doptstr, "C:b:cvw:rHs:qa");
+    while ( (ch = getopt(argc, argv, doptstr)) != -1) {
         switch (ch) {
-            default:
-                D("bad option %c %s", ch, optarg);
-                usage();
+            case '?':
+                ED("unknown option '-%c'", optopt);
                 break;
-
             case 'C': /* CPU placement, up to 4 arguments */
                 {
                     int ac = 0;
@@ -2180,40 +2204,10 @@ main(int argc, char **argv)
                 }
                 break;
 
-            case 'B': /* bandwidth in bps */
-                add_to(b, EC_NOPTS, optarg, "-B too many times");
-                break;
-
-            case 'D': /* delay in seconds (float) */
-                add_to(d, EC_NOPTS, optarg, "-D too many times");
-                break;
-
-            case 'Q': /* qsize in bytes */
-                add_to(q, EC_NOPTS, optarg, "-Q too many times");
-                break;
-
-            case 'L': /* loss probability */
-                add_to(l, EC_NOPTS, optarg, "-L too many times");
-                break;
-            case 'R': /* reordering */
-                add_to(r, EC_NOPTS, optarg, "-R too many times");
-                break;
-            case 'G': /* default gateway */
-                add_to(gw, EC_NOPTS, optarg, "-G too many times");
-                break;
-            case 'M': /* max bw, delay and hold-time */
-                add_to(m, EC_NOPTS, optarg, "-M too many times");
-                break;
-            case 'P': /* allow dropping to obtain precise delay */
-                add_to(p, EC_NOPTS, optarg, "-P too many times");
-                break;
             case 'b':	/* burst */
                 bp[0].q.burst = atoi(optarg);
                 break;
 
-            case 'i':	/* interface */
-                add_to(ifname, EC_NOPTS, optarg, "-i too many times");
-                break;
             case 'c':
                 bp[0].zerocopy = 0; /* do not zerocopy */
                 break;
@@ -2230,15 +2224,6 @@ main(int argc, char **argv)
             case 'r':
                 bp[0].route_mode = 1;
                 break;
-#ifdef WITH_MAX_LAG
-            case 'd':
-                add_to(cd, EC_NOPTS, optarg, "-d too many times");
-                break;
-#else /* WITH_MAX_LAG */
-            case 'd':
-                ED("option 'd' ignored");
-                break;
-#endif /* WITH_MAX_LAG */
             case 'H':
                 hugepages = 1;
                 break;
@@ -2252,6 +2237,17 @@ main(int argc, char **argv)
             case 'a':
                 terminate = 1;
                 break;
+            default:
+                if (invdopt[ch]) {
+                    struct dir_opt *o = invdopt[ch];
+                    if (!(o->flags & DOPT_IGNOR)) {
+                        add_to(o->arg, EC_NOPTS, optarg, o->opt);
+                    } else {
+                        ED("option '-%c' ignored", o->opt);
+                    }
+                } else {
+                    ED("unknown option '-%c'", ch);
+                }
         }
     }
 
@@ -2392,15 +2388,16 @@ main(int argc, char **argv)
                 ip->ip_subnet = ip->ip_addr & ip->ip_mask;
 
                 /* default gateway, if any */
-                if (gw[i]) {
+                if (invdopt['G']->arg[i]) {
+                    const char *gw = invdopt['G']->arg[i];
                     struct ipv4_info *ip = &ipv4[i];
                     struct in_addr a;
-                    if (!inet_aton(gw[i], &a)) {
-                        ED("not a valid IP address: %s", gw[i]);
+                    if (!inet_aton(gw, &a)) {
+                        ED("not a valid IP address: %s", gw);
                         usage();
                     }
                     if ((a.s_addr & ip->ip_mask) != ip->ip_subnet) {
-                        ED("gateway %s unreachable", gw[i]);
+                        ED("gateway %s unreachable", gw);
                         usage();
                     }
                     ip->ip_gw = a.s_addr;
@@ -2462,20 +2459,14 @@ main(int argc, char **argv)
     }
 
     /* use same parameters for both directions if needed */
-    if (d[1] == NULL)
-        d[1] = d[0];
-    if (b[1] == NULL)
-        b[1] = b[0];
-    if (l[1] == NULL)
-        l[1] = l[0];
-#ifdef WITH_MAX_LAG
-    if (cd[1] == NULL)
-        cd[1] = cd[0];
-#endif /* WITH_MAX_LAG */
-    if (r[1] == NULL)
-        r[1] = r[0];
-    if (p[1] == NULL)
-        p[1] = p[0];
+    if (invdopt['Q']->arg[0] == NULL)
+        invdopt['Q']->arg[0] = "0";
+    for (scandopt = dopt; scandopt->opt; scandopt++) {
+        if (!(scandopt->flags & DOPT_CLONE))
+            continue;
+        if (scandopt->arg[1] == NULL)
+            scandopt->arg[1] = scandopt->arg[0];
+    }
 
 skip_args:
     /* apply commands */
@@ -2488,13 +2479,13 @@ skip_args:
             ec_terminate(&ecf->sets[i]);
             continue;
         }
-        err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
-        err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
-        err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
-        err += cmd_apply(reorder_cfg, r[i], q, &q->c_reorder);
+        err += cmd_apply(delay_cfg, invdopt['D']->arg[i], q, &q->c_delay);
+        err += cmd_apply(bw_cfg, invdopt['B']->arg[i], q, &q->c_bw);
+        err += cmd_apply(loss_cfg, invdopt['L']->arg[i], q, &q->c_loss);
+        err += cmd_apply(reorder_cfg, invdopt['R']->arg[i], q, &q->c_reorder);
 #ifdef WITH_MAX_LAG
-        if (cd[i] != NULL) {
-            unsigned long max_lag = parse_time(cd[i]);
+        if (invdopt['d']->arg[i] != NULL) {
+            unsigned long max_lag = parse_time(invdopt[(int)'d']->arg[i]);
             if (max_lag == U_PARSE_ERR) {
                 err++;
             } else {
@@ -2502,11 +2493,12 @@ skip_args:
             }
         }
 #endif /* WITH_MAX_LAG */
-        if (p[i] != NULL) {
+        if (invdopt['P']->arg[i] != NULL) {
+            const char *p = invdopt['P']->arg[i];
             int j = bp[i].q.ec_active;
             struct _eci *a = &bp[i].q.ec->instances[j];
-            if (!strcmp(p[i], "0") || !strcmp(p[i], "1")) {
-                a->ec_allow_drop = atoi(p[i]);
+            if (!strcmp(p, "0") || !strcmp(p, "1")) {
+                a->ec_allow_drop = atoi(p);
                 bp[i].q.allow_drop = a->ec_allow_drop;
             } else {
                 ED("-P expects either 0 or 1");
@@ -2532,12 +2524,8 @@ skip_args:
 
     if (server) {
         /* set the maximum values */
-        if (m[0] == NULL)
-            m[0] = "0";
-        if (m[1] == NULL)
-            m[1] = m[0];
         for (i = 0; i < EC_NOPTS; i++) {
-            if (set_max(m[i], &bp[i].q))
+            if (set_max(invdopt['M']->arg[i], &bp[i].q))
                 exit(1);
         }
         /* now the clients may send new configurations */
@@ -2549,12 +2537,8 @@ skip_args:
         exit(0);
     }
 
-    if (q[0] == NULL)
-        q[0] = "0";
-    if (q[1] == NULL)
-        q[1] = q[0];
-    bp[0].q.qsize = parse_qsize(q[0]);
-    bp[1].q.qsize = parse_qsize(q[1]);
+    bp[0].q.qsize = parse_qsize(invdopt['Q']->arg[0]);
+    bp[1].q.qsize = parse_qsize(invdopt['Q']->arg[1]);
 
     if (bp[0].q.qsize == 0) {
         ED("qsize= 0 is not valid, set to 50k");
