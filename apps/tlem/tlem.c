@@ -1,3 +1,4 @@
+/* vim: set shiftwidth=4 softtabstop=4 :*/
 /*
  * Copyright (C) 2016 Universita` di Pisa. All rights reserved.
  *
