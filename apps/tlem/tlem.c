@@ -271,7 +271,8 @@ struct _eci {
         struct _ec      ec_bw;
         struct _ec      ec_loss;
         struct _ec      ec_reorder;
-	int		ec_allow_drop;
+	uint64_t	ec_delay_offset;
+	long		ec_allow_drop;
 #define EC_DATASZ       (1U << 16)
         char            ec_data[EC_DATASZ];
 };
@@ -479,6 +480,7 @@ struct _qs { /* shared queue */
 		 * recomputing the delay, instead, we would skew the
 		 * distribution towards larger values.
 		 */
+	uint64_t	delay_offset;	/* to be subtracted from cur_delay */
 
 	/* producers's fields for reordering */
 	uint64_t	cur_hold_delay; /* reordering delay (ns) from c_reorder.run() */
@@ -1474,8 +1476,14 @@ prod_procpkt(struct _qs *q)
         q->txstats->drop_bytes += q->cur_len;
         return;
     }
-    if (!q->reuse_delay)
+    if (!q->reuse_delay) {
         q->c_delay.run(q, &q->c_delay); /* compute delay */
+        if (q->delay_offset > q->cur_delay) {
+            q->cur_delay = 0;
+        } else {
+            q->cur_delay -= q->delay_offset;
+        }
+    }
     t_tx = q->qt_qout + q->cur_delay;
     ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
     /* insure no reordering and spacing by transmission time */
@@ -2099,6 +2107,7 @@ main(int argc, char **argv)
         DOPT('M', DOPT_CLONE), /* max bw, delay and hold-time */
         DOPT('P', DOPT_CLONE), /* allow dropping to obtain precise delay */
         DOPT('i', 0),	       /* interface */
+        DOPT('O', DOPT_CLONE), /* delay offset */
 #ifdef WITH_MAX_LAG
         DOPT('d', DOPT_CLONE),
 #else
@@ -2473,12 +2482,15 @@ skip_args:
     j = 0;
     for (i = 0; i < EC_NOPTS; i++) { /* once per queue */
         struct _qs *q = &bp[i].q;
+        struct _eci *a;
+
         if (ec_init(q, &ecf->sets[i], server))
             exit(1);
         if (terminate) {
             ec_terminate(&ecf->sets[i]);
             continue;
         }
+        a = &q->ec->instances[q->ec_active];
         err += cmd_apply(delay_cfg, invdopt['D']->arg[i], q, &q->c_delay);
         err += cmd_apply(bw_cfg, invdopt['B']->arg[i], q, &q->c_bw);
         err += cmd_apply(loss_cfg, invdopt['L']->arg[i], q, &q->c_loss);
@@ -2495,15 +2507,17 @@ skip_args:
 #endif /* WITH_MAX_LAG */
         if (invdopt['P']->arg[i] != NULL) {
             const char *p = invdopt['P']->arg[i];
-            int j = bp[i].q.ec_active;
-            struct _eci *a = &bp[i].q.ec->instances[j];
             if (!strcmp(p, "0") || !strcmp(p, "1")) {
                 a->ec_allow_drop = atoi(p);
-                bp[i].q.allow_drop = a->ec_allow_drop;
+                q->allow_drop = a->ec_allow_drop;
             } else {
                 ED("-P expects either 0 or 1");
                 err++;
             }
+        }
+        if (invdopt['O']->arg[i] != NULL) {
+            a->ec_delay_offset = parse_time(invdopt['O']->arg[i]);
+            q->delay_offset = a->ec_delay_offset;
         }
         bp[i].q.txstats = &ecf->stats[j++];
         bp[i].q.rxstats = &ecf->stats[j++];
@@ -3338,4 +3352,5 @@ ec_activate(struct _qs *q)
     }
     q->c_reorder.ec = &a->ec_reorder;
     q->allow_drop = a->ec_allow_drop;
+    q->delay_offset = a->ec_delay_offset;
 }
