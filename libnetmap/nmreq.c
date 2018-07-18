@@ -403,6 +403,11 @@ main(int argc, char *argv[])
 	struct nmreq_register r;
 	struct nmreq_opt_extmem e;
 
+	if (argc < 2) {
+		fprintf(stderr, "usage: %s netmap-expr\n", argv[0]);
+		return 1;
+	}
+
 	if (nmreq_register_decode(argv[1], &h, &r, &e) < 0) {
 		perror("nmreq");
 		return 1;
