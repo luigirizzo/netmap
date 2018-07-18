@@ -199,7 +199,7 @@ nmreq_mem_id_parse(const char *mem_id, struct nmreq_header *h,
 		if (ioctl(fd, NIOCCTRL, &gh) < 0) {
 			if (errno == ENOENT || errno == ENXIO)
 				goto try_external;
-			nmreq_ferror("cannot get info for %s: %s", mem_id, strerror(errno));
+			nmreq_ferror("cannot get info for '%s': %s", mem_id, strerror(errno));
 			goto fail;
 		}
 		r->nr_mem_id = gb.nr_mem_id;
@@ -216,17 +216,17 @@ try_external:
 	}
 	fd = open(mem_id, O_RDWR);
 	if (fd < 0) {
-		nmreq_ferror("cannot open %s: %s", mem_id, strerror(errno));
+		nmreq_ferror("cannot open '%s': %s", mem_id, strerror(errno));
 		goto fail;
 	}
 	mapsize = lseek(fd, 0, SEEK_END);
 	if (mapsize < 0) {
-		nmreq_ferror("failed to obtain filesize of %s: %s", mem_id, strerror(errno));
+		nmreq_ferror("failed to obtain filesize of '%s': %s", mem_id, strerror(errno));
 		goto fail;
 	}
 	p = mmap(0, mapsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (p == MAP_FAILED) {
-		nmreq_ferror("cannot mmap %s: %s", mem_id, strerror(errno));
+		nmreq_ferror("cannot mmap '%s': %s", mem_id, strerror(errno));
 		goto fail;
 	}
 	memset(e, 0, sizeof(*e));
