@@ -189,6 +189,10 @@ nmreq_mem_id_parse(const char *mem_id, struct nmreq_header *h,
 	rv = nmreq_header_decode(mem_id, &gh);
 	nmreq_set_error_callback(old);
 	if (rv != NULL) {
+		if (*rv != '\0') {
+			nmreq_ferror("unexpected characters '%s' in mem_id spec", rv);
+			goto fail;
+		}
 		gh.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
 		memset(&gb, 0, sizeof(gb));
 		gh.nr_body = (uintptr_t)&gb;
@@ -386,7 +390,7 @@ fail:
 	return -1;
 }
 
-#if 0
+#if 1
 #include <inttypes.h>
 int
 main(int argc, char *argv[])
