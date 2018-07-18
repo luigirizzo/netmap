@@ -308,6 +308,10 @@ nmreq_register_decode(const char *ifname, struct nmreq_header *h,
 			scan++;
 			break;
 		case P_GETNUM:
+			if (!isdigit(*scan)) {
+				nmreq_ferror("got '%s' while expecting a number", scan);
+				goto fail;
+			}
 			num = strtol(scan, (char **)&scan, 10);
 			if (num < 0 || num >= NETMAP_RING_MASK) {
 				nmreq_ferror("'%ld' out of range [0, %d)",
@@ -355,16 +359,16 @@ nmreq_register_decode(const char *ifname, struct nmreq_header *h,
 				nmreq_ferror("double setting of mem_id");
 				goto fail;
 			}
-			num = strtol(scan, (char **)&scan, 10);
-			if (num <= 0) {
+			if (isdigit(*scan)) {
+				num = strtol(scan, (char **)&scan, 10);
+				r->nr_mem_id = num;
+				memid_allowed = 0;
+				p_state = P_RNGSFXOK;
+			} else {
 				ED("non-numeric mem_id '%s'", scan);
 				if (nmreq_mem_id_parse(scan, h, r, e) < 0)
 					goto fail;
 				goto out;
-			} else {
-				r->nr_mem_id = num;
-				memid_allowed = 0;
-				p_state = P_RNGSFXOK;
 			}
 			break;
 		}
