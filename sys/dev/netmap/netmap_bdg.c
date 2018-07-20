@@ -1436,6 +1436,10 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 				NMR(na, t)[i]->ring = NULL;
 			}
 		}
+		/* reset the number of host rings to default */
+		for_rx_tx(t) {
+			nma_set_host_nrings(hwna, t, 1);
+		}
 
 	}
 
@@ -1722,12 +1726,24 @@ netmap_bwrap_attach_common(struct netmap_adapter *na,
 			na->na_flags |= NAF_SW_ONLY;
 		na->na_flags |= NAF_HOST_RINGS;
 		hostna = &bna->host.up;
+
+		/* limit the number of host rings to that of hw */
+		nm_bound_var(&hostna->num_tx_rings, 1, 1,
+				nma_get_nrings(hwna, NR_TX), NULL);
+		nm_bound_var(&hostna->num_rx_rings, 1, 1,
+				nma_get_nrings(hwna, NR_RX), NULL);
+
 		snprintf(hostna->name, sizeof(hostna->name), "%s^", na->name);
 		hostna->ifp = hwna->ifp;
 		for_rx_tx(t) {
 			enum txrx r = nm_txrx_swap(t);
-			nma_set_nrings(hostna, t, 1);
-			nma_set_host_nrings(na, t, 1);
+			u_int nr = nma_get_nrings(hostna, t);
+
+			nma_set_nrings(hostna, t, nr);
+			nma_set_host_nrings(na, t, nr);
+			if (nma_get_host_nrings(hwna, t) < nr) {
+				nma_set_host_nrings(hwna, t, nr);
+			}
 			nma_set_ndesc(hostna, t, nma_get_ndesc(hwna, r));
 		}
 		// hostna->nm_txsync = netmap_bwrap_host_txsync;
