@@ -1488,16 +1488,17 @@ prod_procpkt(struct _qs *q)
     ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
     /* insure no reordering and spacing by transmission time */
     if (t_tx < q->qt_tx + tt) {
+        q->reuse_delay = 1;
         if (q->allow_drop) {
             q->qt_qout -= tt;
             q->txstats->drop_packets++;
             q->txstats->drop_bytes += q->cur_len;
-            q->reuse_delay = 1;
             return;
         }
         t_tx = q->qt_tx + tt;
+    } else {
+        q->reuse_delay = 0;
     }
-    q->reuse_delay = 0;
     q->qt_tx = t_tx;
     enq(q);
     q->txstats->packets++;
