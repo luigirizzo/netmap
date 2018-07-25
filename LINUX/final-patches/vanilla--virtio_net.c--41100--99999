@@ -1,0 +1,98 @@
+diff --git a/virtio_net.c b/virtio_net.c
+index 032e1ac10a30..522036830681 100644
+--- a/virtio_net.c
++++ b/virtio_net.c
+@@ -212,6 +212,10 @@ struct virtnet_info {
+ 	unsigned long guest_offloads;
+ };
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <virtio_netmap.h>
++#endif
++
+ struct padded_vnet_hdr {
+ 	struct virtio_net_hdr_mrg_rxbuf hdr;
+ 	/*
+@@ -308,6 +312,11 @@ static void skb_xmit_done(struct virtqueue *vq)
+ 	/* Suppress further interrupts. */
+ 	virtqueue_disable_cb(vq);
+ 
++#ifdef DEV_NETMAP
++        if (netmap_tx_irq(vi->dev, vq2txq(vq)))
++		return;
++#endif
++
+ 	if (napi->weight)
+ 		virtqueue_napi_schedule(napi, vq);
+ 	else
+@@ -1277,6 +1286,18 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+ 	unsigned int received, qp;
+ 	bool xdp_xmit = false;
+ 
++#ifdef DEV_NETMAP
++        int work_done = 0;
++	int nm_irq = netmap_rx_irq(vi->dev, vq2rxq(rq->vq), &work_done);
++
++	if (nm_irq == NM_IRQ_COMPLETED) {
++		napi_complete(napi);
++                return 1;
++        } else if (nm_irq == NM_IRQ_RESCHED) {
++		return budget;
++	}
++#endif
++
+ 	virtnet_poll_cleantx(rq);
+ 
+ 	received = virtnet_receive(rq, budget, &xdp_xmit);
+@@ -1300,6 +1321,15 @@ static int virtnet_open(struct net_device *dev)
+ {
+ 	struct virtnet_info *vi = netdev_priv(dev);
+ 	int i, err;
++#ifdef DEV_NETMAP
++        int ok = virtio_netmap_init_buffers(vi);
++
++        if (ok) {
++            for (i = 0; i < vi->max_queue_pairs; i++)
++		virtnet_napi_enable(vi->rq[i].vq, &vi->rq[i].napi);
++            return 0;
++        }
++#endif
+ 
+ 	for (i = 0; i < vi->max_queue_pairs; i++) {
+ 		if (i < vi->curr_queue_pairs)
+@@ -2871,6 +2901,10 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 
+ 	virtnet_set_queues(vi, vi->curr_queue_pairs);
+ 
++#ifdef DEV_NETMAP
++        virtio_netmap_attach(vi);
++#endif
++
+ 	/* Assume link up if device can't report link status,
+ 	   otherwise get link status from config. */
+ 	netif_carrier_off(dev);
+@@ -2921,7 +2955,14 @@ static void remove_vq_common(struct virtnet_info *vi)
+ static void virtnet_remove(struct virtio_device *vdev)
+ {
+ 	struct virtnet_info *vi = vdev->priv;
++#ifdef DEV_NETMAP
++	/* Save the pointer, will go away after netmap_detach(). */
++	struct netmap_adapter *token = NA(vi->dev);
+ 
++	netmap_detach(vi->dev);
++	virtio_netmap_clean_used_rings(vi, token);
++	virtio_netmap_reclaim_unused(vi);
++#endif
+ 	virtnet_cpu_notif_remove(vi);
+ 
+ 	/* Make sure no work handler is accessing the device. */
+@@ -2988,6 +3029,9 @@ static unsigned int features_legacy[] = {
+ 	VIRTNET_FEATURES,
+ 	VIRTIO_NET_F_GSO,
+ 	VIRTIO_F_ANY_LAYOUT,
++#ifdef VIRTIO_NET_F_PTNETMAP
++	VIRTIO_NET_F_PTNETMAP,
++#endif
+ };
+ 
+ static struct virtio_driver virtio_net_driver = {
