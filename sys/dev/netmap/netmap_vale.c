@@ -611,11 +611,15 @@ err:
 static int
 nm_update_info(struct nmreq *nmr, struct netmap_adapter *na)
 {
+	uint64_t memsize;
+	int ret;
 	nmr->nr_rx_rings = na->num_rx_rings;
 	nmr->nr_tx_rings = na->num_tx_rings;
 	nmr->nr_rx_slots = na->num_rx_desc;
 	nmr->nr_tx_slots = na->num_tx_desc;
-	return netmap_mem_get_info(na->nm_mem, &nmr->nr_memsize, NULL, &nmr->nr_arg2);
+	ret = netmap_mem_get_info(na->nm_mem, &memsize, NULL, &nmr->nr_arg2);
+	nmr->nr_memsize = (uint32_t)memsize;
+	return ret;
 }
 
 /*
@@ -867,6 +871,12 @@ nm_bdg_ctl_attach(struct nmreq *nmr)
 		}
 	}
 
+	/* XXX check existing one */
+	error = netmap_get_bdg_na(nmr, &na, nmd, 0);
+	if (!error) {
+		error = EBUSY;
+		goto unref_exit;
+	}
 	error = netmap_get_bdg_na(nmr, &na, nmd, 1 /* create if not exists */);
 	if (error) /* no device */
 		goto unlock_exit;
@@ -1593,7 +1603,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 		BDG_WLOCK(vpna->na_bdg);
 	if (onoff) {
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < netmap_real_rings(na, t); i++) {
 				struct netmap_kring *kring = &NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring))
@@ -1609,7 +1619,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 		if (na->active_fds == 0)
 			na->na_flags &= ~NAF_NETMAP_ON;
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < netmap_real_rings(na, t); i++) {
 				struct netmap_kring *kring = &NMR(na, t)[i];
 
 				if (nm_kring_pending_off(kring))

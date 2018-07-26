@@ -57,6 +57,7 @@
 
 #include <linux/io.h>	// virt_to_phys
 #include <linux/hrtimer.h>
+#include <linux/highmem.h> // kmap
 
 #define KASSERT(a, b)		BUG_ON(!(a))
 
@@ -120,8 +121,9 @@ extern struct net init_net;
 #define netdev_ops	hard_start_xmit
 struct net_device_ops {
 	int (*ndo_start_xmit)(struct sk_buff *skb, struct net_device *dev);
+	int (*ndo_change_mtu)(struct net_device *dev, int new_mtu);
 };
-#endif /* NETDEV_OPS */
+#endif /* !NETDEV_OPS */
 
 #ifndef NETMAP_LINUX_HAVE_NETDEV_TX_T
 #define netdev_tx_t	int
@@ -179,6 +181,10 @@ static inline int skb_checksum_start_offset(const struct sk_buff *skb) {
 #define NM_REG_NETDEV_NOTIF(nb)		register_netdevice_notifier(nb)
 #define NM_UNREG_NETDEV_NOTIF(nb)	unregister_netdevice_notifier(nb)
 #endif /* NETMAP_LINUX_HAVE_REG_NOTIF_RH */
+
+#ifndef NETMAP_LINUX_HAVE_PAGE_TO_VIRT
+#define page_to_virt(p) 		phys_to_virt(page_to_phys(p))
+#endif /* NETMAP_LINUX_HAVE_PAGE_TO_VIRT */
 
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 
@@ -298,6 +304,9 @@ void if_rele(struct net_device *ifp);
 
 /* hook to send from user space */
 netdev_tx_t linux_netmap_start_xmit(struct sk_buff *, struct net_device *);
+
+/* prevent MTU changes while in netmap mode */
+int linux_netmap_change_mtu(struct net_device *dev, int new_mtu);
 
 /* prevent ring params change while in netmap mode */
 int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *);

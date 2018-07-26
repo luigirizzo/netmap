@@ -37,6 +37,9 @@
 
 #if defined(linux)
 
+#if defined(CONFIG_NETMAP_EXTMEM)
+#define WITH_EXTMEM
+#endif
 #if  defined(CONFIG_NETMAP_VALE)
 #define WITH_VALE
 #endif
@@ -131,13 +134,10 @@ struct nm_selinfo {
 };
 
 
-/* Linux structs, not used in FreeBSD. */
-struct net_device_ops {
-};
-struct ethtool_ops {
-};
 struct hrtimer {
+    /* Not used in FreeBSD. */
 };
+
 #define NM_BNS_GET(b)
 #define NM_BNS_PUT(b)
 
@@ -201,14 +201,6 @@ struct hrtimer {
 #define NETMAP_KERNEL_XCHANGE_POINTERS		_IO('i', 180)
 #define NETMAP_KERNEL_SEND_SHUTDOWN_SIGNAL	_IO_direct('i', 195)
 
-/* Empty data structures are not allowed by MSVC compiler, so
- * we workaround. */
-struct net_device_ops{
-	char data[1];
-};
-typedef struct ethtool_ops{
-	char data[1];
-};
 typedef struct hrtimer{
 	KTIMER timer;
 	BOOLEAN active;
@@ -296,6 +288,8 @@ void nm_os_ifnet_fini(void);
 void nm_os_ifnet_lock(void);
 void nm_os_ifnet_unlock(void);
 
+unsigned nm_os_ifnet_mtu(struct ifnet *ifp);
+
 void nm_os_get_module(void);
 void nm_os_put_module(void);
 
@@ -304,8 +298,10 @@ void netmap_undo_zombie(struct ifnet *);
 
 /* os independent alloc/realloc/free */
 void *nm_os_malloc(size_t);
+void *nm_os_vmalloc(size_t);
 void *nm_os_realloc(void *, size_t new_size, size_t old_size);
 void nm_os_free(void *);
+void nm_os_vfree(void *);
 
 /* passes a packet up to the host stack.
  * If the packet is sent (or dropped) immediately it returns NULL,
@@ -673,6 +669,7 @@ struct netmap_adapter {
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
 #define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
+#define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
@@ -713,9 +710,8 @@ struct netmap_adapter {
 	/* copy of if_input for netmap_send_up() */
 	void     (*if_input)(struct ifnet *, struct mbuf *);
 
-	/* references to the ifnet and device routines, used by
-	 * the generic netmap functions.
-	 */
+	/* Back reference to the parent ifnet struct. Used for
+	 * hardware ports (emulated netmap included). */
 	struct ifnet *ifp; /* adapter is ifp->if_softc */
 
 	/*---- callbacks for this netmap adapter -----*/
@@ -903,8 +899,10 @@ struct netmap_vp_adapter {	/* VALE software port */
 struct netmap_hw_adapter {	/* physical device */
 	struct netmap_adapter up;
 
-	struct net_device_ops nm_ndo; /* Linux only */
-	struct ethtool_ops    nm_eto; /* Linux only */
+#ifdef linux
+	struct net_device_ops nm_ndo;
+	struct ethtool_ops    nm_eto;
+#endif
 	const struct ethtool_ops*   save_ethtool;
 
 	int (*nm_hw_register)(struct netmap_adapter *, int onoff);
@@ -1282,12 +1280,12 @@ nm_set_native_flags(struct netmap_adapter *na)
 	ifp->if_transmit = netmap_transmit;
 #elif defined (_WIN32)
 	(void)ifp; /* prevent a warning */
-#else
+#elif defined (linux)
 	na->if_transmit = (void *)ifp->netdev_ops;
 	ifp->netdev_ops = &((struct netmap_hw_adapter *)na)->nm_ndo;
 	((struct netmap_hw_adapter *)na)->save_ethtool = ifp->ethtool_ops;
 	ifp->ethtool_ops = &((struct netmap_hw_adapter*)na)->nm_eto;
-#endif
+#endif /* linux */
 	nm_update_hostrings_mode(na);
 }
 

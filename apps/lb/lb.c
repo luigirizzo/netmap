@@ -779,7 +779,9 @@ run:
 		int k;
 		for (k = 0; k < g->nports; ++k) {
 			struct port_des *p = &g->ports[k];
-			snprintf(p->interface, MAX_PORTNAMELEN, "netmap:%s{%d/xT@%d", g->pipename, g->first_id + k,
+			snprintf(p->interface, MAX_PORTNAMELEN, "%s%s{%d/xT@%d",
+					(strncmp(g->pipename, "vale", 4) ? "netmap:" : ""),
+					g->pipename, g->first_id + k,
 					rxport->nmd->req.nr_arg2);
 			D("opening pipe named %s", p->interface);
 

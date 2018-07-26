@@ -35,6 +35,7 @@
 #include <linux/nsproxy.h>
 #include <net/pkt_sched.h>
 #include <net/sch_generic.h>
+#include <net/sock.h>
 #ifdef NETMAP_LINUX_HAVE_SCHED_MM
 #include <linux/sched/mm.h>
 #endif /* NETMAP_LINUX_HAVE_SCHED_MM */
@@ -45,6 +46,15 @@ void *
 nm_os_malloc(size_t size)
 {
 	void *rv = kmalloc(size, GFP_ATOMIC | __GFP_ZERO);
+	if (IS_ERR(rv))
+		return NULL;
+	return rv;
+}
+
+void *
+nm_os_vmalloc(size_t size)
+{
+	void *rv = vmalloc(size);
 	if (IS_ERR(rv))
 		return NULL;
 	return rv;
@@ -64,6 +74,11 @@ nm_os_realloc(void *addr, size_t new_size, size_t old_size)
 void
 nm_os_free(void *addr){
 	kfree(addr);
+}
+
+void
+nm_os_vfree(void *addr){
+	vfree(addr);
 }
 
 void
@@ -151,6 +166,12 @@ nm_os_ifnet_fini(void)
 		NM_UNREG_NETDEV_NOTIF(&linux_netmap_netdev_notifier);
 		nm_os_ifnet_registered = 0;
 	}
+}
+
+unsigned
+nm_os_ifnet_mtu(struct ifnet *ifp)
+{
+	return ifp->mtu;
 }
 
 #ifdef NETMAP_LINUX_HAVE_IOMMU
@@ -415,19 +436,22 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 #else /* HAVE_RX_REGISTER */
     struct netmap_adapter *na = &gna->up.up;
     struct ifnet *ifp = netmap_generic_getifp(gna);
+    int ret = 0;
 
     if (!ifp) {
         D("Failed to get ifp");
         return -EBUSY;
     }
 
+    nm_os_ifnet_lock();
     if (intercept) {
-        return -netdev_rx_handler_register(ifp,
+        ret = -netdev_rx_handler_register(ifp,
                 &linux_generic_rx_handler, na);
     } else {
         netdev_rx_handler_unregister(ifp);
-        return 0;
     }
+    nm_os_ifnet_unlock();
+    return ret;
 #endif /* HAVE_RX_REGISTER */
 }
 
@@ -472,7 +496,6 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 }
 
 struct nm_generic_qdisc {
-	unsigned int qidx;
 	unsigned int limit;
 };
 
@@ -485,21 +508,16 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt)
 	 * always use our priv->limit, for simplicity. */
 
 	priv = qdisc_priv(qdisc);
-	priv->qidx = 0;
 	priv->limit = 1024; /* This is going to be overridden. */
 
 	if (opt) {
-		struct nm_generic_qdisc *qdiscopt = nla_data(opt);
+		uint32_t *limit = nla_data(opt);
 
-		if (nla_len(opt) < sizeof(*qdiscopt)) {
+		if (nla_len(opt) < sizeof(*limit) || *limit <= 0) {
 			D("Invalid netlink attribute");
 			return EINVAL;
 		}
-
-		priv->qidx = qdiscopt->qidx;
-		priv->limit = qdiscopt->limit;
-		D("Qdisc #%d initialized with max_len = %u", priv->qidx,
-				                             priv->limit);
+		priv->limit = *limit;
 	}
 
 	/* Qdisc bypassing is not an option for now.
@@ -557,124 +575,156 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 	return m;
 }
 
+static struct mbuf *
+generic_qdisc_peek(struct Qdisc *qdisc)
+{
+	return qdisc_peek_head(qdisc);
+}
+
 static struct Qdisc_ops
 generic_qdisc_ops __read_mostly = {
-	.id		= "netmap_generic",
+	.id		= "netmapemu",
 	.priv_size	= sizeof(struct nm_generic_qdisc),
+	.enqueue	= generic_qdisc_enqueue,
+	.dequeue	= generic_qdisc_dequeue,
+	.peek		= generic_qdisc_peek,
 	.init		= generic_qdisc_init,
 	.reset		= qdisc_reset_queue,
 	.change		= generic_qdisc_init,
-	.enqueue	= generic_qdisc_enqueue,
-	.dequeue	= generic_qdisc_dequeue,
 	.dump		= NULL,
 	.owner		= THIS_MODULE,
 };
 
 static int
+tc_configure(struct ifnet *ifp, const char *qdisc_name,
+		uint32_t parent, uint32_t handle, uint32_t limit)
+{
+	struct sockaddr_nl saddr = {
+		.nl_family = AF_NETLINK,
+		.nl_groups = 0,
+		.nl_pid = 0,
+	};
+	struct msghdr msg = {
+		.msg_name = (struct sockaddr *)&saddr,
+		.msg_namelen = sizeof(saddr),
+		.msg_flags = /* MSG_DONTWAIT */0,
+	};
+	struct {
+		struct nlmsghdr hdr;
+		struct tcmsg tcmsg;
+		char buf[100];
+	} nlreq = {
+		.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct tcmsg)),
+		.hdr.nlmsg_type = RTM_NEWQDISC,
+		.hdr.nlmsg_flags = NLM_F_REQUEST|/*NLM_F_ACK|*/NLM_F_REPLACE|NLM_F_CREATE,
+		.hdr.nlmsg_seq = 1,
+		.hdr.nlmsg_pid = 0,
+		.tcmsg.tcm_family = AF_UNSPEC,
+		.tcmsg.tcm_ifindex = ifp->ifindex,
+		.tcmsg.tcm_handle = handle,
+		.tcmsg.tcm_parent = parent,
+		.tcmsg.tcm_info = 0,
+	};
+	struct socket *sock = NULL;
+	struct nlattr *attr_kind;
+	struct nlattr *attr_opt;
+	struct iovec iov;
+	int ret;
+
+	ret = sock_create_kern(
+#ifdef NETMAP_LINUX_SOCK_CREATE_KERN_NETNS
+				current->nsproxy ?
+					current->nsproxy->net_ns : &init_net,
+#endif /* NETMAP_LINUX_SOCK_CREATE_KERN_NETNS  */
+				AF_NETLINK, SOCK_RAW, NETLINK_ROUTE, &sock);
+	if (ret) {
+		D("Failed to create netlink socket (err=%d)", ret);
+		return -ret;
+	}
+
+
+	ret = kernel_bind(sock, (struct sockaddr *)&saddr, sizeof(saddr));
+	if (ret) {
+		D("Failed to bind() netlink socket (err=%d)", ret);
+		goto release;
+	}
+
+	/* Push TCA_KIND attr. */
+	attr_kind = (struct nlattr *)(((void *)&nlreq.hdr) +
+				 NLMSG_ALIGN(nlreq.hdr.nlmsg_len));
+	attr_kind->nla_len = NLA_HDRLEN + strlen(qdisc_name) + 1;
+	attr_kind->nla_type = TCA_KIND;
+	strcpy(((void *)attr_kind) + NLA_HDRLEN, qdisc_name);
+	nlreq.hdr.nlmsg_len = NLMSG_ALIGN(nlreq.hdr.nlmsg_len) +
+				NLA_ALIGN(attr_kind->nla_len);
+
+	if (limit > 0) {
+		/* Push TCA_OPTIONS attr. */
+		attr_opt = (struct nlattr *)(((void *)&nlreq.hdr) +
+					 NLMSG_ALIGN(nlreq.hdr.nlmsg_len));
+		attr_opt->nla_len = NLA_HDRLEN + sizeof(uint32_t);
+		attr_opt->nla_type = TCA_OPTIONS;
+		*((uint32_t *)(((void *)attr_opt) + NLA_HDRLEN)) = limit;
+		nlreq.hdr.nlmsg_len = NLMSG_ALIGN(nlreq.hdr.nlmsg_len) +
+					NLA_ALIGN(attr_opt->nla_len);
+	}
+
+	iov.iov_base = (void *)&nlreq;
+	iov.iov_len = nlreq.hdr.nlmsg_len;
+	ret = kernel_sendmsg(sock, &msg, (struct kvec *)&iov, 1,
+				iov.iov_len);
+	if (ret != nlreq.hdr.nlmsg_len) {
+		D("Failed to sendmsg to netlink socket (err=%d)", ret);
+		ret = -EINVAL;
+		goto release;
+	}
+	ret = 0;
+
+	D("ifp %s qdisc %s parent %u handle %u", ifp->name, qdisc_name, parent, handle);
+
+release:
+	sock_release(sock);
+
+	return ret;
+}
+
+static int
 nm_os_catch_qdisc(struct netmap_generic_adapter *gna, int intercept)
 {
-	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = netmap_generic_getifp(gna);
-	struct nm_generic_qdisc *qdiscopt = NULL;
-	struct Qdisc *fqdisc = NULL;
-	struct nlattr *nla = NULL;
-	struct netdev_queue *txq;
-	unsigned int i;
+	struct netmap_adapter *na = &gna->up.up;
+	bool multiqueue = (na->num_tx_rings > 1);
+	static uint32_t root_handle_cnt = 18;
+	uint32_t root_handle = multiqueue ? root_handle_cnt++ : 0;
+	uint32_t limit = (!multiqueue && intercept) ? na->num_tx_desc : 0;
+	const char *qdisc_name;
+	int ret = 0;
 
 	if (!gna->txqdisc) {
 		return 0;
 	}
 
-	if (intercept) {
-		nla = kmalloc(nla_attr_size(sizeof(*qdiscopt)),
-				GFP_KERNEL);
-		if (!nla) {
-			D("Failed to allocate netlink attribute");
-			return -1;
+	qdisc_name = multiqueue ? "mq" :
+			(intercept ? generic_qdisc_ops.id : "pfifo");
+	/* Configure root qdisc.
+	 * sudo tc qdisc replace dev ifp->name root handle @root_handle: qdisc_name */
+	ret = tc_configure(ifp, qdisc_name, /*parent=*/TC_H_ROOT,
+				/*handle=*/root_handle << 16, limit);
+	if (ret) {
+		return -ret;
+	}
+	if (intercept && multiqueue) {
+		/* Configure per-queue qdisc. */
+		int i;
+		qdisc_name = (intercept ? generic_qdisc_ops.id : "pfifo");
+		limit = na->num_tx_desc;
+		for (i = 0; i < na->num_tx_rings; i++) {
+			tc_configure(ifp, qdisc_name,
+				/*parent=*/(root_handle << 16) | (i+1),
+				/*handle=*/0, limit);
 		}
-		nla->nla_type = RTM_NEWQDISC;
-		nla->nla_len = nla_attr_size(sizeof(*qdiscopt));
-		qdiscopt = (struct nm_generic_qdisc *)nla_data(nla);
-		memset(qdiscopt, 0, sizeof(*qdiscopt));
-		qdiscopt->limit = na->num_tx_desc;
 	}
-
-	if (ifp->flags & IFF_UP) {
-		dev_deactivate(ifp);
-	}
-
-	/* Replace the current qdiscs with our own. */
-	for (i = 0; i < ifp->real_num_tx_queues; i++) {
-		struct Qdisc *nqdisc = NULL;
-		struct Qdisc *oqdisc;
-		int err;
-
-		txq = netdev_get_tx_queue(ifp, i);
-
-		if (intercept) {
-			/* This takes a refcount to netmap module, alloc the
-			 * qdisc and calls the init() op with NULL netlink
-			 * attribute. */
-			nqdisc = qdisc_create_dflt(
-#ifndef NETMAP_LINUX_QDISC_CREATE_DFLT_3ARGS
-					ifp,
-#endif  /* NETMAP_LINUX_QDISC_CREATE_DFLT_3ARGS */
-					txq, &generic_qdisc_ops,
-					TC_H_UNSPEC);
-			if (!nqdisc) {
-				D("Failed to create qdisc");
-				goto qdisc_create;
-			}
-			fqdisc = fqdisc ?: nqdisc;
-
-			/* Call the change() op passing a valid netlink
-			 * attribute. This is used to set the queue idx. */
-			qdiscopt->qidx = i;
-			err = nqdisc->ops->change(nqdisc, nla);
-			if (err) {
-				D("Failed to init qdisc");
-				goto qdisc_create;
-			}
-		}
-
-		oqdisc = dev_graft_qdisc(txq, nqdisc);
-		/* We can call this also with
-		 * odisc == &noop_qdisc, since the noop
-		 * qdisc has the TCQ_F_BUILTIN flag set,
-		 * and so qdisc_destroy will skip it. */
-		qdisc_destroy(oqdisc);
-	}
-
-	kfree(nla);
-
-	if (ifp->qdisc) {
-		qdisc_destroy(ifp->qdisc);
-	}
-	if (intercept) {
-#ifdef NETMAP_LINUX_HAVE_REFCOUNT_T
-		refcount_inc(&fqdisc->refcnt);
-#else  /* !NETMAP_LINUX_HAVE_REFCOUNT_T */
-		atomic_inc(&fqdisc->refcnt);
-#endif /* !NETMAP_LINUX_HAVE_REFCOUNT_T */
-		ifp->qdisc = fqdisc;
-	} else {
-		ifp->qdisc = &noop_qdisc;
-	}
-
-	if (ifp->flags & IFF_UP) {
-		dev_activate(ifp);
-	}
-
 	return 0;
-
-qdisc_create:
-	if (nla) {
-		kfree(nla);
-	}
-
-	nm_os_catch_qdisc(gna, 0);
-
-	return -1;
 }
 
 /* Must be called under rtnl. */
@@ -694,6 +744,8 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 	if (err) {
 		return err;
 	}
+
+	nm_os_ifnet_lock();
 
 	if (intercept) {
 		/*
@@ -719,6 +771,8 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 		/* Restore the original netdev_ops. */
 		ifp->netdev_ops = (void *)na->if_transmit;
 	}
+
+	nm_os_ifnet_unlock();
 
 	return 0;
 }
@@ -993,7 +1047,8 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 {
 	int error = 0;
 	unsigned long off;
-	u_int memsize, memflags;
+	uint64_t memsize;
+	u_int memflags;
 	struct netmap_priv_d *priv = f->private_data;
 	struct netmap_adapter *na = priv->np_na;
 	/*
@@ -1017,6 +1072,8 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 			(vma->vm_end - vma->vm_start), memsize);
 	if (off + (vma->vm_end - vma->vm_start) > memsize)
 		return -EINVAL;
+	if (memflags & NETMAP_MEM_EXT)
+		return -ENODEV;
 	if (memflags & NETMAP_MEM_IO) {
 		vm_ooffset_t pa;
 
@@ -1047,6 +1104,12 @@ linux_netmap_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	netmap_transmit(dev, skb);
 	return (NETDEV_TX_OK);
+}
+
+int
+linux_netmap_change_mtu(struct net_device *dev, int new_mtu)
+{
+	return -EBUSY;
 }
 
 /* while in netmap mode, we cannot tolerate any change in the
@@ -2042,7 +2105,7 @@ netmap_sink_init(void)
 
 	netdev = alloc_etherdev(0);
 	if (!netdev) {
-		return ENOMEM;
+		return -ENOMEM;
 	}
 	netdev->netdev_ops = &nm_sink_netdev_ops ;
 	strncpy(netdev->name, "nmsink", sizeof(netdev->name) - 1);
@@ -2102,20 +2165,41 @@ static int linux_netmap_init(void)
 
 	err = ptnetmap_guest_init();
 	if (err) {
-		return err;
+		goto netmap_fini;
 	}
 #ifdef WITH_SINK
 	err = netmap_sink_init();
 	if (err) {
-		D("Warning: could not init netmap sink interface");
+		D("Error: could not init netmap sink interface");
+		goto ptnetmap_fini;
 	}
 #endif /* WITH_SINK */
+#ifdef WITH_GENERIC
+	err = register_qdisc(&generic_qdisc_ops);
+	if (err) {
+		D("Error: failed to register qdisc for emulated netmap (err=%d)", err);
+		goto sink_fini;
+	}
+#endif /* WITH_GENERIC */
 	return 0;
+
+sink_fini:
+#ifdef WITH_SINK
+	netmap_sink_fini();
+ptnetmap_fini:
+#endif /* WITH_SINK */
+        ptnetmap_guest_fini();
+netmap_fini:
+	netmap_fini();
+	return err;
 }
 
 
 static void linux_netmap_fini(void)
 {
+#ifdef WITH_GENERIC
+	unregister_qdisc(&generic_qdisc_ops);
+#endif /* WITH_GENERIC */
 #ifdef WITH_SINK
 	netmap_sink_fini();
 #endif /* WITH_SINK */

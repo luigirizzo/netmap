@@ -1,7 +1,7 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
-PROGS	= test_select testmmap test_nm producer
-X86PROGS = testlock testcsum
+PROGS	= test_select testmmap test_nm functional
+X86PROGS = testlock testcsum producer
 LIBNETMAP =
 
 CLEANFILES = $(PROGS) $(X86PROGS) *.o

@@ -2,6 +2,7 @@
 
 #include <inttypes.h>
 #include <sys/param.h>	/* ULONG_MAX */
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -267,8 +268,7 @@ do_rxsync()
 #endif /* TEST_NETMAP */
 
 
-volatile char tmp1;
-void do_access()
+void do_rd()
 {
 	char *arg = nextarg();
 	char *p;
@@ -282,7 +282,31 @@ void do_access()
 		p = (char *)strtoul((void *)arg, NULL, 0);
 	}
 	last_access_addr = p + 4096;
-	tmp1 = *p;
+	output("%2x", *p);
+}
+
+char *last_wr_byte = "x";
+void do_wr()
+{
+	char *arg = nextarg();
+	char *p;
+	if (!arg) {
+		if (!last_access_addr) {
+			output("missing address");
+			return;
+		}
+		p = last_access_addr;
+		last_access_addr += 4096;
+	} else {
+		p = (char *)strtoul((void *)arg, NULL, 0);
+	}
+	arg = nextarg();
+	if (!arg) {
+		arg = last_wr_byte;
+	}
+	for ( ; arg; arg = nextarg()) {
+		*p++ = strtoul((void *)arg, NULL, 0);
+	}
 }
 
 void do_dup()
@@ -332,6 +356,38 @@ doit:
 	output_err(last_mmap_addr == MAP_FAILED ? -1 : 0,
 		"mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_SHARED, %d, %jd)=%p",
 		memsize, fd, (intmax_t)off, last_mmap_addr);
+
+}
+
+#ifndef MAP_HUGETLB
+#define MAP_HUGETLB 0x40000
+#endif
+
+void do_anon_mmap()
+{
+	size_t memsize;
+	char *arg;
+	int flags = 0;
+
+	arg = nextarg();
+	if (!arg) {
+		memsize = last_memsize;
+		goto doit;
+	}
+	memsize = atoi(arg);
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	flags |= MAP_HUGETLB;
+doit:
+	last_mmap_addr = mmap(0, memsize,
+			PROT_WRITE | PROT_READ,
+			MAP_SHARED | MAP_ANONYMOUS | flags, -1, 0);
+	if (last_access_addr == NULL)
+		last_access_addr = last_mmap_addr;
+	output_err(last_mmap_addr == MAP_FAILED ? -1 : 0,
+		"mmap(0, %zu, PROT_WRITE|PROT_READ, MAP_SHARED|MAP_ANONYMOUS%s, -1, 0)=%p",
+		memsize, (flags ? "|MAP_HUGETLB" : ""), last_mmap_addr);
 
 }
 
@@ -500,7 +556,7 @@ get_if()
 
 	/* first arg: if offset */
 	arg = nextarg();
-	if (!arg) {
+	if (!arg || (strcmp(arg, "-") == 0)) {
 		goto doit;
 	}
 	off = strtoul(arg, NULL, 0);
@@ -562,14 +618,9 @@ doit:
 	return NETMAP_TXRING(nifp, ringid);
 }
 
-
 void
-do_ring()
+dump_ring(struct netmap_ring *ring)
 {
-	struct netmap_ring *ring;
-
-	ring = get_ring();
-
 	printf("buf_ofs     %"PRId64"\n", ring->buf_ofs);
 	printf("num_slots   %u\n", ring->num_slots);
 	printf("nr_buf_size %u\n", ring->nr_buf_size);
@@ -607,23 +658,46 @@ do_ring()
 }
 
 void
-do_slot()
+do_ring()
 {
 	struct netmap_ring *ring;
-	struct netmap_slot *slot;
-	long int index;
 	char *arg;
+	int upd = -1;
+	unsigned int v;
 
-	/* defaults */
-	index = 0;
+	ring = get_ring();
 
 	arg = nextarg();
-	if (!arg)
-		goto doit;
-	index = strtoll(arg, NULL, 0);
-doit:
-	ring = get_ring();
-	slot = ring->slot + index;
+	if (!arg) {
+		dump_ring(ring);
+		return;
+	}
+	if (strcmp(arg, "head") == 0) {
+		upd = 1;
+	} else if (strcmp(arg, "cur") == 0) {
+		upd = 2;
+	} else if (strcmp(arg, "both") == 0) {
+		upd = 3;
+	} else {
+		return;
+	}
+	arg = nextarg();
+	if (!arg) {
+		v = ring->cur + 1;
+		if (ring->cur >= ring->num_slots)
+			ring->cur = 0;
+	} else {
+		v = strtoul((void *)arg, NULL, 0);
+	}
+	if (upd & 1)
+		ring->head = v;
+	if (upd & 2)
+		ring->cur = v;
+}
+
+void
+dump_slot(struct netmap_slot *slot)
+{
 	printf("buf_idx       %u\n", slot->buf_idx);
 	printf("len           %u\n", slot->len);
 	printf("flags         %x", slot->flags);
@@ -647,10 +721,53 @@ doit:
 		if (slot->flags & NS_MOREFRAG) {
 			printf(" MOREFRAG");
 		}
+		if (NS_RFRAGS(slot)) {
+			printf(" fragments=%u", NS_RFRAGS(slot));
+		}
 		printf(" ]");
 	}
 	printf("\n");
 	printf("ptr           %lx\n", (long)slot->ptr);
+}
+
+void
+do_slot()
+{
+	struct netmap_ring *ring;
+	struct netmap_slot *slot;
+	long int index;
+	char *arg;
+
+	/* defaults */
+	index = 0;
+
+	arg = nextarg();
+	if (!arg)
+		goto doit;
+	index = strtoll(arg, NULL, 0);
+doit:
+	ring = get_ring();
+	slot = ring->slot + index;
+	arg = nextarg();
+	if (!arg) {
+		dump_slot(slot);
+		return;
+	}
+	if (strcmp(arg, "buf_idx") == 0) {
+		arg = nextarg();
+		if (!arg) {
+			output("buf_idx=%u", slot->buf_idx);
+			return;
+		}
+		slot->buf_idx = strtoul((void *)arg, NULL, 0);
+	} else if (strcmp(arg, "len") == 0) {
+		arg = nextarg();
+		if (!arg) {
+			output("len=%u", slot->len);
+			return;
+		}
+		slot->len = strtoul((void *)arg, NULL, 0);
+	}
 }
 
 static void
@@ -697,6 +814,8 @@ do_buf()
 doit:
 	ring = get_ring();
 	buf = NETMAP_BUF(ring, buf_idx);
+	output("buf=%p", buf);
+	last_access_addr = buf;
 	dump_payload(buf, len);
 }
 
@@ -713,6 +832,84 @@ int _find_command(const struct cmd_def *cmds, int ncmds, const char* cmd)
 			break;
 	}
 	return i;
+}
+
+struct pools_info_field {
+	char *name;
+	size_t off;
+	size_t size;
+};
+#define PIFD(n, f)	{ n, offsetof(struct netmap_pools_info, f), \
+	sizeof(((struct netmap_pools_info *)0)->f) }
+struct pools_info_field pools_info_fields[] = {
+	PIFD("memsize", memsize),
+	PIFD("memid", memid),
+	PIFD("if-off", if_pool_offset),
+	PIFD("if-tot", if_pool_objtotal),
+	PIFD("if-siz", if_pool_objsize),
+	PIFD("ring-off", ring_pool_offset),
+	PIFD("ring-tot", ring_pool_objtotal),
+	PIFD("ring-siz", ring_pool_objsize),
+	PIFD("buf-off", buf_pool_offset),
+	PIFD("buf-tot", buf_pool_objtotal),
+	PIFD("buf-siz", buf_pool_objsize),
+	{ NULL, 0, 0 }
+};
+#define PIF(t, p, o)	(*(t*)((void *)((char *)(p)+(o))))
+void
+pools_info_dump(int tab, struct netmap_pools_info *upi)
+{
+	static const char space[] = "        ";
+	struct pools_info_field *f;
+	for (f = pools_info_fields; f->name; f++) {
+		printf("%.*s%-12s", tab, space, f->name);
+		switch (f->size) {
+		case 8:
+			printf("%"PRIu64"\n", PIF(uint64_t, upi, f->off));
+			break;
+		case 4:
+			printf("%"PRIu32"\n", PIF(uint32_t, upi, f->off));
+			break;
+		case 2:
+			printf("%"PRIu16"\n", PIF(uint16_t, upi, f->off));
+			break;
+		}
+	}
+}
+
+/* prepare the curr_pools_info */
+void
+do_pools_info()
+{
+	char *cmd = nextarg();
+	unsigned long long v;
+
+	if (cmd == NULL) {
+		pools_info_dump(0, &curr_pools_info);
+		return;
+	}
+	struct pools_info_field *f = NULL;
+	for (f = pools_info_fields; f->name; f++) {
+		if (strcmp(f->name, cmd) == 0)
+			break;
+	}
+	if (f == NULL)
+		return;
+	cmd = nextarg();
+	if (cmd == NULL)
+		return;
+	v = strtoll(cmd, NULL, 0);
+	switch (f->size) {
+	case 8:
+		PIF(uint64_t, &curr_pools_info, f->off) = v;
+		break;
+	case 4:
+		PIF(uint32_t, &curr_pools_info, f->off) = v;
+		break;
+	case 2:
+		PIF(uint16_t, &curr_pools_info, f->off) = v;
+		break;
+	}
 }
 
 typedef void (*nmr_arg_interp_fun)();
@@ -801,21 +998,9 @@ nmr_arg_error()
 void
 nmr_pools_info_get()
 {
-	void **pp = (void **)&curr_nmr.nr_arg1;
-	struct netmap_pools_info *upi = *pp;
-
-	printf("arg1+2+3:  %p\n", *pp);
-	printf("    memsize:    %"PRIu64"\n", upi->memsize);
-	printf("    memid:      %"PRIu32"\n", upi->memid);
-	printf("    if off:     %"PRIu32"\n", upi->if_pool_offset);
-	printf("    if tot:     %"PRIu32"\n", upi->if_pool_objtotal);
-	printf("    if siz:     %"PRIu32"\n", upi->if_pool_objsize);
-	printf("    ring off:   %"PRIu32"\n", upi->ring_pool_offset);
-	printf("    ring tot:   %"PRIu32"\n", upi->ring_pool_objtotal);
-	printf("    ring siz:   %"PRIu32"\n", upi->ring_pool_objsize);
-	printf("    buf off:    %"PRIu32"\n", upi->buf_pool_offset);
-	printf("    buf tot:    %"PRIu32"\n", upi->buf_pool_objtotal);
-	printf("    buf siz:    %"PRIu32"\n", upi->buf_pool_objsize);
+	struct netmap_pools_info *upi = nmreq_pointer_get(&curr_nmr);
+	printf("arg1+2+3:  %p\n", upi);
+	pools_info_dump(4, upi);
 }
 
 void
@@ -918,6 +1103,10 @@ do_nmr_dump()
 			break;
 		case NETMAP_POOLS_INFO_GET:
 			printf("POOLS_INFO_GET");
+			arg_interp = nmr_pools_info_get;
+			break;
+		case NETMAP_POOLS_CREATE:
+			printf("POOLS_CREATE");
 			arg_interp = nmr_pools_info_get;
 			break;
 		default:
@@ -1054,6 +1243,10 @@ do_nmr_cmd()
 	} else if (strcmp(arg, "pools-info-get") == 0) {
 		curr_nmr.nr_cmd = NETMAP_POOLS_INFO_GET;
 		nmreq_pointer_put(&curr_nmr, &curr_pools_info);
+	} else if (strcmp(arg, "pools-create") == 0) {
+		curr_nmr.nr_cmd = NETMAP_POOLS_CREATE;
+		memcpy(last_mmap_addr, &curr_pools_info, sizeof(curr_pools_info));
+		nmreq_pointer_put(&curr_nmr, last_mmap_addr);
 	}
 out:
 	output("cmd=%x", curr_nmr.nr_cmd);
@@ -1184,7 +1377,9 @@ struct cmd_def commands[] = {
 #endif /* TEST_NETMAP */
 	{ "dup",	do_dup,		},
 	{ "mmap",	do_mmap,	},
-	{ "access",	do_access,	},
+	{ "anon-mmap",	do_anon_mmap,	},
+	{ "rd",		do_rd,		},
+	{ "wr",		do_wr,		},
 	{ "munmap",	do_munmap,	},
 	{ "poll",	do_poll,	},
 	{ "expr",	do_expr,	},
@@ -1194,7 +1389,8 @@ struct cmd_def commands[] = {
 	{ "ring",       do_ring,        },
 	{ "slot",       do_slot,        },
 	{ "buf",        do_buf,         },
-	{ "nmr",	do_nmr,		}
+	{ "nmr",	do_nmr,		},
+	{ "pools-info", do_pools_info   }
 };
 
 const int N_CMDS = sizeof(commands) / sizeof(struct cmd_def);
@@ -1302,13 +1498,8 @@ cmd_loop(FILE *input)
 				output_err(-1, "fork");
 				goto clean1;
 			case 0:
-				fclose(stdin);
-				if (dup(p1[0]) < 0) {
-					output_err(-1, "dup");
-					exit(1);
-				}
 				close(p1[1]);
-				stdin = fdopen(0, "r");
+				input = fdopen(p1[0], "r");
 				chan_clear_all(channels, MAX_CHAN);
 				goto out;
 			default:

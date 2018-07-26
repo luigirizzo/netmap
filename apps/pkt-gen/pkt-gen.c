@@ -1584,8 +1584,8 @@ sender_body(void *data)
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
+			D("poll error on queue %d: %s", targ->me,
+				errno ? strerror(errno) : "timeout");
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
@@ -1623,7 +1623,7 @@ sender_body(void *data)
 			}
 			m = send_packets(txring, pkt, frame, size, targ->g,
 					 limit, options, frags);
-			ND("limit %d tail %d frags %d m %d",
+			ND("limit %lu tail %d frags %d m %d",
 				limit, txring->tail, frags, m);
 			sent += m;
 			if (m > 0) //XXX-ste: can m be 0?
@@ -1905,8 +1905,8 @@ txseq_body(void *data)
 		if (poll(&pfd, 1, 2000) <= 0) {
 			if (targ->cancel)
 				break;
-			D("poll error/timeout on queue %d: %s", targ->me,
-				strerror(errno));
+			D("poll error on queue %d: %s", targ->me,
+				errno ? strerror(errno) : "timeout");
 			// goto quit;
 		}
 		if (pfd.revents & POLLERR) {
@@ -1952,6 +1952,7 @@ txseq_body(void *data)
 			PKT(pkt, body, targ->g->af)[2] = (sequence >> 8) & 0xff;
 			PKT(pkt, body, targ->g->af)[3] = sequence & 0xff;
 			sum = ~cksum_add(~sum, cksum_add(~t, *w));
+			memcpy(targ->g->af == AF_INET ? &pkt->ipv4.udp.uh_sum : &pkt->ipv6.udp.uh_sum, &sum, sizeof(sum));
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == frags) {
 				update_addresses(pkt, targ->g);
@@ -1981,7 +1982,6 @@ txseq_body(void *data)
 				budget--;
 			}
 		}
-		memcpy(targ->g->af == AF_INET ? &pkt->ipv4.udp.uh_sum : &pkt->ipv6.udp.uh_sum, &sum, sizeof(sum));
 
 		ring->cur = ring->head = head;
 
@@ -2953,7 +2953,7 @@ main(int arc, char **argv)
 	 * reconfigure. We do the open here to have time to reset.
 	 */
 	flags = NM_OPEN_IFNAME | NM_OPEN_ARG1 | NM_OPEN_ARG2 |
-		NM_OPEN_ARG3 | NM_OPEN_RING_CFG;
+		NM_OPEN_ARG3 | NM_OPEN_EXTMEM | NM_OPEN_RING_CFG;
 	if (g.nthreads > 1) {
 		base_nmd.req.nr_flags &= ~NR_REG_MASK;
 		base_nmd.req.nr_flags |= NR_REG_ONE_NIC;
@@ -2965,7 +2965,7 @@ main(int arc, char **argv)
 		goto out;
 	}
 	g.main_fd = g.nmd->fd;
-	D("mapped %dKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
+	D("mapped %uKB at %p", g.nmd->req.nr_memsize>>10, g.nmd->mem);
 
 	if (g.virt_header) {
 		/* Set the virtio-net header length, since the user asked

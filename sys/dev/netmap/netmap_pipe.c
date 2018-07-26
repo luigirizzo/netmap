@@ -216,10 +216,10 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 
                 /* swap the slots and report the buffer change */
                 tmp = *rs;
+		tmp.flags |= NS_BUF_CHANGED;
                 *rs = *ts;
 		rs->flags |= NS_BUF_CHANGED;
                 *ts = tmp;
-		ts->flags |= NS_BUF_CHANGED;
 
                 j = nm_next(j, lim_rx);
                 k = nm_next(k, lim_tx);

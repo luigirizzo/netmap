@@ -91,7 +91,8 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink"
+subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink \
+	extmem"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -305,9 +306,10 @@ Available options:
   --disable-ptnetmap           disable ptnetmap (both guest and host)
   --enable-sink   	       enable the netmap sink device
   --disable-sink   	       disable the netmap sink device
+  --enable-extmem   	       enable the external memory allocators
+  --disable-extmem   	       disable the external memory allocators
   --force-debug	       	       build the modules w/ debug symbols (default)
   --no-force-debug	       build the modules w/ or w/o debug symbols,
-  			       according to the kernel configuration
   --cache=		       dir for reusing/caching of netmap_linux_config.h
 
   --cc=                        C compiler to be used for the apps [$cc]
@@ -641,6 +643,13 @@ rm -f config.log
 
 exec 2>> config.log
 
+appl_arch=$($cc -dumpmachine | cut -d '-' -f 1)
+echo "Application arch is $appl_arch"
+if [ $appl_arch != "x86_64" ]; then
+    # dedup uses inline x86_64 assembly
+    app disable dedup
+fi
+
 ################################
 # check for sane configuration
 ################################
@@ -885,6 +894,16 @@ update_drivers
 #################################################
 # create the config.h file
 #################################################
+
+rm -f netmap_linux_config.h
+if [ -e "$SRCDIR/netmap_linux_config.h" ]; then
+	error <<EOF
+The '$SRCDIR' directory appears to contain leftovers from a previous
+compilation. This may break compilation in the current directory.
+Please run 'make distclean' in '$SRCDIR', or start from a clean
+repository if that fails.
+EOF
+fi
 
 if [ -d "$cache" ] && [ -f "$cache/netmap_linux_config.h" ]; then
 	cp "$cache/netmap_linux_config.h" .
@@ -1268,17 +1287,15 @@ EOF
 	}
 EOF
 
-  # arguments of qdisc_create_dflt (either 3 or 4)
-  add_test 'define QDISC_CREATE_DFLT_3ARGS' <<EOF
-	#include <net/sch_generic.h>
+  # first argument of sock_create_kern() is a 'struct net*'
+  add_test 'define SOCK_CREATE_KERN_NETNS' <<EOF
+	#include <net/sock.h>
 
-	struct Qdisc *
-	dummy(struct netdev_queue *dev_queue,
-	      struct Qdisc_ops* ops,
-	      unsigned int parent_id)
+	int
+	dummy(void)
 	{
-		return qdisc_create_dflt(dev_queue,
-					 ops, parent_id);
+		struct net *net = NULL;
+		return sock_create_kern(net, 0, 0, 0, NULL);
 	}
 EOF
 
@@ -1480,6 +1497,49 @@ EOF
 	unsigned int
 	dummy(void) {
                 return NETIF_F_UFO;
+	}
+EOF
+
+# check for get_user_pages_unlocked number of args
+  add_test 'have GUP_4ARGS' <<EOF
+  	#include <linux/mm.h>
+
+	long
+	dummy(unsigned long start, unsigned long nr_pages,
+		struct page **pages, unsigned int gup_flags) {
+		return get_user_pages_unlocked(start, nr_pages, pages, gup_flags);
+	}
+EOF
+
+  add_test 'have GUP_5ARGS' <<EOF
+  	#include <linux/mm.h>
+
+	long
+	dummy(unsigned long start, unsigned long nr_pages,
+		int write, int force, struct page **pages) {
+		return get_user_pages_unlocked(start, nr_pages, write, force, pages);
+	}
+EOF
+
+  add_test 'have GUP_7ARGS' <<EOF
+  	#include <linux/mm.h>
+
+	long
+	dummy(struct task_struct *tsk, struct mm_struct *mm,
+		unsigned long start, unsigned long nr_pages,
+		int write, int force, struct page **pages) {
+		return get_user_pages_unlocked(tsk, mm, start, nr_pages,
+			write, force, pages);
+	}
+EOF
+
+# check for page_to_virt
+  add_test 'have PAGE_TO_VIRT' <<EOF
+  	#include <linux/mm.h>
+
+	void *
+	dummy(struct page *page) {
+		return page_to_virt(page);
 	}
 EOF
 

@@ -84,8 +84,6 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 
-#define rtnl_lock()	ND("rtnl_lock called")
-#define rtnl_unlock()	ND("rtnl_unlock called")
 #define MBUF_RXQ(m)	((m)->m_pkthdr.flowid)
 #define smp_mb()
 
@@ -204,8 +202,6 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 
 #include "win_glue.h"
 
-#define rtnl_lock()	ND("rtnl_lock called")
-#define rtnl_unlock()	ND("rtnl_unlock called")
 #define MBUF_TXQ(m) 	0//((m)->m_pkthdr.flowid)
 #define MBUF_RXQ(m)	    0//((m)->m_pkthdr.flowid)
 #define smp_mb()		//XXX: to be correctly defined
@@ -214,7 +210,6 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 
 #include "bsd_glue.h"
 
-#include <linux/rtnetlink.h>    /* rtnl_[un]lock() */
 #include <linux/ethtool.h>      /* struct ethtool_ops, get_ringparam */
 #include <linux/hrtimer.h>
 
@@ -343,17 +338,13 @@ generic_netmap_unregister(struct netmap_adapter *na)
 	int i, r;
 
 	if (na->active_fds == 0) {
-		rtnl_lock();
-
 		na->na_flags &= ~NAF_NETMAP_ON;
-
-		/* Release packet steering control. */
-		nm_os_catch_tx(gna, 0);
 
 		/* Stop intercepting packets on the RX path. */
 		nm_os_catch_rx(gna, 0);
 
-		rtnl_unlock();
+		/* Release packet steering control. */
+		nm_os_catch_tx(gna, 0);
 	}
 
 	for_each_rx_kring_h(r, kring, na) {
@@ -514,23 +505,19 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 	}
 
 	if (na->active_fds == 0) {
-		rtnl_lock();
-
 		/* Prepare to intercept incoming traffic. */
 		error = nm_os_catch_rx(gna, 1);
 		if (error) {
 			D("nm_os_catch_rx(1) failed (%d)", error);
-			goto register_handler;
+			goto free_tx_pools;
 		}
 
-		/* Make netmap control the packet steering. */
+		/* Let netmap control the packet steering. */
 		error = nm_os_catch_tx(gna, 1);
 		if (error) {
 			D("nm_os_catch_tx(1) failed (%d)", error);
 			goto catch_rx;
 		}
-
-		rtnl_unlock();
 
 		na->na_flags |= NAF_NETMAP_ON;
 
@@ -552,8 +539,6 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 	/* Here (na->active_fds == 0) holds. */
 catch_rx:
 	nm_os_catch_rx(gna, 0);
-register_handler:
-	rtnl_unlock();
 free_tx_pools:
 	for_each_tx_kring(r, kring, na) {
 		mtx_destroy(&kring->tx_event_lock);

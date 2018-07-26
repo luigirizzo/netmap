@@ -2081,9 +2081,57 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	if (na->active_fds == 0) {
 		/*
 		 * If this is the first registration of the adapter,
-		 * create the  in-kernel view of the netmap rings,
-		 * the netmap krings.
+		 * perform sanity checks and create the in-kernel view
+		 * of the netmap rings (the netmap krings).
 		 */
+		if (na->ifp) {
+			/* This netmap adapter is attached to an ifnet. */
+			unsigned nbs = netmap_mem_bufsize(na->nm_mem);
+			unsigned mtu = nm_os_ifnet_mtu(na->ifp);
+			/* The maximum amount of bytes that a single
+			 * receive or transmit NIC descriptor can hold. */
+			unsigned hw_max_slot_len = 4096;
+
+			if (mtu <= hw_max_slot_len) {
+				/* The MTU fits a single NIC slot. We only
+				 * Need to check that netmap buffers are
+				 * large enough to hold an MTU. NS_MOREFRAG
+				 * cannot be used in this case. */
+				if (nbs < mtu) {
+					nm_prerr("error: netmap buf size (%u) "
+						"< device MTU (%u)", nbs, mtu);
+					error = EINVAL;
+					goto err_drop_mem;
+				}
+			} else {
+				/* More NIC slots may be needed to receive
+				 * or transmit a single packet. Check that
+				 * the adapter supports NS_MOREFRAG and that
+				 * netmap buffers are large enough to hold
+				 * the maximum per-slot size. */
+				if (!(na->na_flags & NAF_MOREFRAG)) {
+					nm_prerr("error: large MTU (%d) needed "
+						"but %s does not support "
+						"NS_MOREFRAG", mtu,
+						na->ifp->if_xname);
+					error = EINVAL;
+					goto err_drop_mem;
+				} else if (nbs < hw_max_slot_len) {
+					nm_prerr("error: using NS_MOREFRAG on "
+						"%s requires netmap buf size "
+						">= %u", na->ifp->if_xname,
+						hw_max_slot_len);
+					error = EINVAL;
+					goto err_drop_mem;
+				} else {
+					nm_prinf("info: netmap application on "
+						"%s needs to support "
+						"NS_MOREFRAG "
+						"(MTU=%u,netmap_buf_size=%u)",
+						na->ifp->if_xname, mtu, nbs);
+				}
+			}
+		}
 
 		/*
 		 * Depending on the adapter, this may also create
@@ -2246,6 +2294,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		do {
 			/* memsize is always valid */
 			u_int memflags;
+			uint64_t memsize;
 
 			if (nmr->nr_name[0] != '\0') {
 
@@ -2265,10 +2314,11 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 				}
 			}
 
-			error = netmap_mem_get_info(nmd, &nmr->nr_memsize, &memflags,
+			error = netmap_mem_get_info(nmd, &memsize, &memflags,
 				&nmr->nr_arg2);
 			if (error)
 				break;
+			nmr->nr_memsize = (uint32_t)memsize;
 			if (na == NULL) /* only memory info */
 				break;
 			nmr->nr_offset = 0;
@@ -2326,6 +2376,17 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			}
 			NMG_UNLOCK();
 			break;
+		} else if (i == NETMAP_POOLS_CREATE) {
+			nmd = netmap_mem_ext_create(nmr, &error);
+			if (nmd == NULL)
+				break;
+			/* reset the fields used by POOLS_CREATE to
+			 * avoid confusing the rest of the code
+			 */
+			nmr->nr_cmd = 0;
+			nmr->nr_arg1 = 0;
+			nmr->nr_arg2 = 0;
+			nmr->nr_arg3 = 0;
 		} else if (i != 0) {
 			D("nr_cmd must be 0 not %d", i);
 			error = EINVAL;
@@ -2336,6 +2397,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 		NMG_LOCK();
 		do {
 			u_int memflags;
+			uint64_t memsize;
 
 			if (priv->np_nifp != NULL) {	/* thread already registered */
 				error = EBUSY;
@@ -2377,12 +2439,13 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data, struct thread
 			nmr->nr_tx_rings = na->num_tx_rings;
 			nmr->nr_rx_slots = na->num_rx_desc;
 			nmr->nr_tx_slots = na->num_tx_desc;
-			error = netmap_mem_get_info(na->nm_mem, &nmr->nr_memsize, &memflags,
+			error = netmap_mem_get_info(na->nm_mem, &memsize, &memflags,
 				&nmr->nr_arg2);
 			if (error) {
 				netmap_do_unregif(priv);
 				break;
 			}
+			nmr->nr_memsize = (uint32_t)memsize;
 			if (memflags & NETMAP_MEM_PRIVATE) {
 				*(uint32_t *)(uintptr_t)&nifp->ni_flags |= NI_PRIV_MEM;
 			}
@@ -2873,6 +2936,7 @@ netmap_attach_common(struct netmap_adapter *na)
 	if (na->na_flags & NAF_HOST_RINGS && na->ifp) {
 		na->if_input = na->ifp->if_input; /* for netmap_send_up */
 	}
+	na->pdev = na; /* make sure netmap_mem_map() is called */
 #endif /* __FreeBSD__ */
 	if (na->nm_krings_create == NULL) {
 		/* we assume that we have been called by a driver,
@@ -3004,6 +3068,7 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 #endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
 	}
 	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;
+	hwna->nm_ndo.ndo_change_mtu = linux_netmap_change_mtu;
 	if (ifp->ethtool_ops) {
 		hwna->nm_eto = *ifp->ethtool_ops;
 	}
@@ -3289,16 +3354,6 @@ netmap_reset(struct netmap_adapter *na, enum txrx tx, u_int n,
 			kring->nr_hwtail -= lim + 1;
 	}
 
-#if 0 // def linux
-	/* XXX check that the mappings are correct */
-	/* need ring_nr, adapter->pdev, direction */
-	buffer_info->dma = dma_map_single(&pdev->dev, addr, adapter->rx_buffer_len, DMA_FROM_DEVICE);
-	if (dma_mapping_error(&adapter->pdev->dev, buffer_info->dma)) {
-		D("error mapping rx netmap buffer %d", i);
-		// XXX fix error handling
-	}
-
-#endif /* linux */
 	/*
 	 * Wakeup on the individual and global selwait
 	 * We do the wakeup here, but the ring is not yet reconfigured.

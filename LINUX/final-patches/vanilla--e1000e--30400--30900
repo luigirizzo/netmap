@@ -1,5 +1,5 @@
 diff --git a/e1000e/netdev.c b/e1000e/netdev.c
-index 9520a6a..bf94805 100644
+index 9520a6ac1f30..244e75747e16 100644
 --- a/e1000e/netdev.c
 +++ b/e1000e/netdev.c
 @@ -467,6 +467,10 @@ static int e1000_desc_unused(struct e1000_ring *ring)
@@ -35,7 +35,29 @@ index 9520a6a..bf94805 100644
  	i = tx_ring->next_to_clean;
  	eop = tx_ring->buffer_info[i].next_to_watch;
  	eop_desc = E1000_TX_DESC(*tx_ring, eop);
-@@ -3358,6 +3370,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
+@@ -1433,6 +1445,10 @@ static bool e1000_clean_jumbo_rx_irq(struct e1000_ring *rx_ring, int *work_done,
+ 	bool cleaned = false;
+ 	unsigned int total_rx_bytes=0, total_rx_packets=0;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_rx_irq(netdev, 0, work_done))
++		return 1; /* seems to be ignored */
++#endif /* DEV_NETMAP */
+ 	i = rx_ring->next_to_clean;
+ 	rx_desc = E1000_RX_DESC_EXT(*rx_ring, i);
+ 	staterr = le32_to_cpu(rx_desc->wb.upper.status_error);
+@@ -2976,6 +2992,10 @@ static void e1000_setup_rctl(struct e1000_adapter *adapter)
+ 		adapter->rx_ps_pages = pages;
+ 	else
+ 		adapter->rx_ps_pages = 0;
++#ifdef DEV_NETMAP
++	/* Keep packet-split disabled with netmap. */
++	adapter->rx_ps_pages = 0;
++#endif /* DEV_NETMAP */
+ 
+ 	if (adapter->rx_ps_pages) {
+ 		u32 psrctl = 0;
+@@ -3358,6 +3378,10 @@ static void e1000_configure(struct e1000_adapter *adapter)
  		e1000e_setup_rss_hash(adapter);
  	e1000_setup_rctl(adapter);
  	e1000_configure_rx(adapter);
@@ -46,7 +68,7 @@ index 9520a6a..bf94805 100644
  	adapter->alloc_rx_buf(rx_ring, e1000_desc_unused(rx_ring), GFP_KERNEL);
  }
  
-@@ -6417,6 +6433,9 @@ static int __devinit e1000_probe(struct pci_dev *pdev,
+@@ -6417,6 +6441,9 @@ static int __devinit e1000_probe(struct pci_dev *pdev,
  	if (err)
  		goto err_register;
  
@@ -56,7 +78,7 @@ index 9520a6a..bf94805 100644
  	/* carrier off reporting is important to ethtool even BEFORE open */
  	netif_carrier_off(netdev);
  
-@@ -6504,6 +6523,10 @@ static void __devexit e1000_remove(struct pci_dev *pdev)
+@@ -6504,6 +6531,10 @@ static void __devexit e1000_remove(struct pci_dev *pdev)
  	kfree(adapter->tx_ring);
  	kfree(adapter->rx_ring);
  
