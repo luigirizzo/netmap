@@ -1117,6 +1117,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	na->ifp = ifp;
 	na->num_tx_desc = num_tx_desc;
 	na->num_rx_desc = num_rx_desc;
+   na->rx_buf_maxsize = 32768;
 	na->nm_register = &generic_netmap_register;
 	na->nm_txsync = &generic_netmap_txsync;
 	na->nm_rxsync = &generic_netmap_rxsync;
