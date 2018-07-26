@@ -75,3 +75,8 @@ LINUX/scripts/conf
 config.mak
 *.rej
 utils/producer
+e1000e
+i40e
+igb
+ixgbe
+ixgbevf

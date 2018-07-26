@@ -5,7 +5,9 @@ HOWTO GENERATE RPM FILE
 1) Edit netmap.spec! Increase at least revision number, but also add
  something useful to the %changelog section.
 
-2) $ rpmbuild -ba RPM/netmap.spec
+2) Commit the changes. The RPM build will clone a fresh copy from git.
+
+3) $ rpmbuild -ba RPM/netmap.spec
  This (default) directory for your RPM builds may have been changed in
  ~/.rpmbuild (parameter %_topdir). Another favourite location is
  /usr/src/redhat/.

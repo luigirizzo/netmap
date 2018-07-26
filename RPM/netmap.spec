@@ -1,7 +1,7 @@
 # RPMBUILD file for netmap in NectarCAM
 # Dirk Hoffmann -CPPM-, 2014-2018
 Name:           netmap
-Version:        2.0
+Version:        11.4
 Release:        1%{?dist}
 Summary:        Netmap distribution for CTA-North EVB
 License:        GPL
@@ -11,13 +11,13 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildRequires:  linuxptp
 BuildRequires:  kernel-devel
-Requires:       kernel-x86_64 = 3.10.0-693.17.8
+Requires:       kernel-x86_64 = 3.10.0-693.17.1
 Requires:       module-init-tools
 Requires:       kernel-devel
 
 %description
 The netmap driver with adapted network interface drivers e1000e, i40e, igb,
-ixgbe, ixgbevf for CentOS/EL/SL 7.4 prepared for Cherenkov Telescope Array
+ixgbe, ixgbevf for CentOS/EL/SL 7 prepared for Cherenkov Telescope Array
 by Julien Houles and Dirk Hoffmann -CPPM-.
 
 %define kver     %(uname -r)
@@ -69,14 +69,17 @@ rm -rf %{buildroot}
 %exclude %{kmod_dir}/modules.*
 
 %changelog
+* Fri Jul 27 2018 Dirk Hoffmann <hoffmann@cppm.in2p3.fr> - 11.4
+- Bumping to the official netmap version (tag) number
+- One (tiny) step back in kernel release number
 * Mon Feb 12 2018 Dirk Hoffmann <hoffmann@cppm.in2p3.fr> - 2.0
- - Pulled latest version from github
- - Adapted to CentOS 7.4
+- Pulled latest version from github
+- Adapted to CentOS 7.4
 * Mon Mar 14 2016 Dirk Hoffmann <hoffmann@cppm.in2p3.fr> 
- - Adapted to the "git-way of netmap distribution"
+- Adapted to the "git-way of netmap distribution"
 * Mon Sep 15 2014 Dirk Hoffmann <hoffmann@cppm.in2p3.fr>
- - Binary is now suid'd
- - Requiring kernel 3.16.2
+- Binary is now suid'd
+- Requiring kernel 3.16.2
 * Wed Sep 10 2014 Dirk Hoffmann <hoffmann@cppm.in2p3.fr> - 1.0
- - Initial version of the package
+- Initial version of the package
 
