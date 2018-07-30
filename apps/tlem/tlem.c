@@ -1973,6 +1973,10 @@ cmd_apply(const struct _cfg *a, const char *arg, struct _qs *q, struct _cfg *dst
         ED("program error - invalid arguments");
         exit(1);
     }
+    if (!strcmp(arg, "none")) {
+        dst->ec->ec_valid = 0; /* use default */
+        return 0;
+    }
     av = split_arg(arg, &ac);
     if (av == NULL)
         goto out; /* error */
