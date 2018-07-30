@@ -3035,6 +3035,48 @@ exp_delay_run(struct _qs *q, struct _cfg *arg)
     return 0;
 }
 
+static int
+interpacket_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
+{
+    uint64_t delay, gmin, gmax, *d;
+    if (strcmp(av[0], "inter-packet") != 0)
+        return 2; /* not recognized */
+    if (ac != 4)
+        return 1; /* error */
+    gmin = parse_time(av[1]);
+    gmax = parse_time(av[2]);
+    delay = parse_time(av[3]);
+    if (gmin == U_PARSE_ERR || gmax == U_PARSE_ERR || delay == U_PARSE_ERR
+            || gmin > gmax)
+        return 1;
+    ED("min-gap %lld max-gap %lld delay %lld",
+            (long long)gmin, (long long)gmax, (long long)delay);
+    if (update_max_delay(q, delay))
+        return 1;
+    dst->arg = ec_alloc(q, dst->ec, 4 * sizeof(uint64_t));
+    if (dst->arg == NULL)
+        return 1;
+    d = dst->arg;
+    d[0] = gmin;
+    d[1] = gmax;
+    d[2] = gmax - gmin;
+    d[3] = delay;
+    return 0;
+}
+
+static int
+interpacket_delay_run(struct _qs *q, struct _cfg *arg)
+{
+    uint64_t x = my_random24(), *d = arg->arg;
+    uint64_t gap = d[0] + ((d[2] * x) >> 24);
+    uint64_t base = q->qt_tx;
+    if (base < q->prod_now) {
+        base = q->prod_now;
+        gap = d[3];
+    }
+    q->cur_delay = (base - q->prod_now) + gap;
+    return 0;
+}
 
 #define TLEM_CFG_END	NULL, NULL
 
@@ -3045,6 +3087,8 @@ static struct _cfg delay_cfg[] = {
 		"uniform,dmin,dmax # dmin <= dmax", TLEM_CFG_END },
 	{ exp_delay_parse, exp_delay_run,
 		"exp,dmin,davg # dmin <= davg", TLEM_CFG_END },
+	{ interpacket_delay_parse, interpacket_delay_run,
+	        "inter-packet,min-gap,max-gap,delay # min-gap <= max-gap", TLEM_CFG_END },
 	{ NULL, NULL, NULL, TLEM_CFG_END }
 };
 
