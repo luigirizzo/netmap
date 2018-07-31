@@ -1328,8 +1328,11 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 			int len = MBUF_LEN(m);
 			struct netmap_slot *slot = &ring->slot[nm_i];
 
-			m_copydata(m, 0, len, NMB(na, slot));
-			ND("nm %d len %d", nm_i, len);
+			ND("head %p data %p to %p type 0x%x", m->head, m->data,
+				NMB(na, slot) + na->virt_hdr_len,
+				ntohs(*(uint16_t *)(m->data+12)));
+			m_copydata(m, 0, len,
+				(char *)NMB(na, slot) + na->virt_hdr_len);
 			if (netmap_verbose)
 				D("%s", nm_dump_buf(NMB(na, slot),len, 128, NULL));
 
@@ -1541,12 +1544,20 @@ netmap_get_na(struct nmreq_header *hdr,
 	if (error || *na != NULL)
 		goto out;
 
-	/* try to see if this is a bridge port */
+	/* try to see if this is a vale port */
 	error = netmap_get_vale_na(hdr, na, nmd, create);
 	if (error)
 		goto out;
 
 	if (*na != NULL) /* valid match in netmap_get_bdg_na() */
+		goto out;
+
+	/* try to see if this is a stack port */
+	error = netmap_get_stack_na(hdr, na, nmd, create);
+	if (error)
+		goto out;
+
+	if (*na != NULL) /* valid match (same as vale) */
 		goto out;
 
 	/*
@@ -2515,7 +2526,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			NMG_UNLOCK();
 			break;
 		}
-#ifdef WITH_VALE
 		case NETMAP_REQ_VALE_ATTACH: {
 			error = nm_bdg_ctl_attach(hdr, NULL /* userspace request */);
 			break;
@@ -2593,6 +2603,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			break;
 		}
 
+#ifdef WITH_VALE
 		case NETMAP_REQ_VALE_NEWIF: {
 			error = nm_vi_create(hdr);
 			break;
@@ -2602,13 +2613,13 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			error = nm_vi_destroy(hdr->nr_name);
 			break;
 		}
+#endif  /* WITH_VALE */
 
 		case NETMAP_REQ_VALE_POLLING_ENABLE:
 		case NETMAP_REQ_VALE_POLLING_DISABLE: {
 			error = nm_bdg_polling(hdr);
 			break;
 		}
-#endif  /* WITH_VALE */
 		case NETMAP_REQ_POOLS_INFO_GET: {
 			struct nmreq_pools_info *req =
 				(struct nmreq_pools_info *)(uintptr_t)hdr->nr_body;
@@ -3365,13 +3376,11 @@ netmap_attach_common(struct netmap_adapter *na)
 		/* use the global allocator */
 		na->nm_mem = netmap_mem_get(&nm_mem);
 	}
-#ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
 		/* no special nm_bdg_attach callback. On VALE
 		 * attach, we need to interpose a bwrap
 		 */
 		na->nm_bdg_attach = netmap_default_bdg_attach;
-#endif
 
 	return 0;
 }

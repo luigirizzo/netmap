@@ -112,7 +112,7 @@
 	nifp, (nifp)->ring_ofs[index + (nifp)->ni_tx_rings + 1] )
 
 #define NETMAP_BUF(ring, index)				\
-	((char *)(ring) + (ring)->buf_ofs + ((index)*(ring)->nr_buf_size))
+	((char *)(ring) + (ring)->buf_ofs + ((unsigned long)(index)*(ring)->nr_buf_size))
 
 #define NETMAP_BUF_IDX(ring, buf)			\
 	( ((char *)(buf) - ((char *)(ring) + (ring)->buf_ofs) ) / \
@@ -222,12 +222,19 @@ struct nm_desc {
 	struct nm_desc *self; /* point to self if netmap. */
 	int fd;
 	void *mem;
-	uint32_t memsize;
+	uint64_t memsize;
 	int done_mmap;	/* set if mem is the result of mmap */
 	struct netmap_if * const nifp;
 	uint16_t first_tx_ring, last_tx_ring, cur_tx_ring;
 	uint16_t first_rx_ring, last_rx_ring, cur_rx_ring;
-	struct nmreq req;	/* also contains the nr_name = ifname */
+	union {
+		struct nmreq req;	/* also contains the nr_name = ifname */
+		struct {
+			struct nmreq_header hdr;
+			struct nmreq_register reg;
+			struct nmreq_opt_extmem ext;
+		} nr;
+	};
 	struct nm_pkthdr hdr;
 
 	/*
@@ -348,7 +355,10 @@ enum {
 	NM_OPEN_ARG2 =		0x200000,
 	NM_OPEN_ARG3 =		0x400000,
 	NM_OPEN_RING_CFG =	0x800000, /* tx|rx rings|slots */
+	NM_OPEN_NO_DECODE =	0x010000, /* prevent nmreq_open() from parse */
 };
+#define NM_OPEN_MEMID	NM_OPEN_ARG2
+#define NM_OPEN_EXTRA	NM_OPEN_ARG3
 
 
 /*
@@ -625,7 +635,7 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 
 	errno = 0;
 
-	is_vale = (ifname[0] == 'v');
+	is_vale = (ifname[0] == 'v') || (ifname[0] == 's');
 	if (is_vale) {
 		port = index(ifname, ':');
 		if (port == NULL) {
@@ -634,7 +644,8 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 			goto fail;
 		}
 
-		if (!nm_is_identifier(ifname + 4, port)) {
+		if (!nm_is_identifier(ifname + 4, port) &&
+		    !nm_is_identifier(ifname + 5, port)) {
 			snprintf(errmsg, MAXERRMSG, "invalid bridge name");
 			goto fail;
 		}
@@ -818,7 +829,8 @@ nm_open(const char *ifname, const struct nmreq *req,
 	uint32_t nr_reg;
 
 	if (strncmp(ifname, "netmap:", 7) &&
-			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
+			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME)) &&
+			strncmp(ifname, NM_STACK_NAME, strlen(NM_STACK_NAME))) {
 		errno = 0; /* name not recognised, not an error */
 		return NULL;
 	}

@@ -40,6 +40,9 @@
 #ifdef NETMAP_LINUX_HAVE_SCHED_MM
 #include <linux/sched/mm.h>
 #endif /* NETMAP_LINUX_HAVE_SCHED_MM */
+#ifdef WITH_STACK
+#include <net/sock.h> // sock_owned_by_user
+#endif /* WITH_STACK */
 
 #include "netmap_linux_config.h"
 
@@ -1058,6 +1061,321 @@ nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 	gna->txqdisc = netmap_generic_txqdisc;
 }
 #endif /* WITH_GENERIC */
+
+#ifdef WITH_STACK
+
+netdev_tx_t
+linux_st_start_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	netmap_stack_transmit(dev, skb);
+	return (NETDEV_TX_OK);
+}
+
+/* We have no way to track subsequent fragments, but such fragments 
+ * are always sent after queueing.
+ * XXX !zerocopy_success might need to be handled explicitly
+ */
+void
+nm_os_st_mbuf_data_destructor(struct ubuf_info *uarg,
+	bool zerocopy_success)
+{
+	struct nmcb *cb;
+	struct nm_ubuf_info *u = (struct nm_ubuf_info *)uarg;
+
+	cb = container_of(u, struct nmcb, ui);
+	if (unlikely(nmcb_gone(cb))) {
+		nmcb_wstate(cb, MB_NOREF); // XXX also clear GONE
+		return;
+	}
+	nmcb_wstate(cb, MB_NOREF);
+	st_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
+}
+
+static void
+nm_os_st_mbuf_destructor(struct sk_buff *skb)
+{
+	struct nmcb *cb = NMCB(skb);
+
+	if (likely(nmcb_valid(cb))) {
+		nm_set_mbuf_data_destructor(skb, &cb->ui,
+				nm_os_st_mbuf_data_destructor);
+	} else {
+		RD(1, "invalid cb in our mbuf destructor");
+	}
+}
+
+extern int stack_no_runtocomp;
+void
+nm_os_st_upcall(NM_SOCK_T *sk)
+{
+	struct sk_buff_head *queue = &sk->sk_receive_queue;
+	struct sk_buff *m, *tmp;
+//	unsigned long cpu_flags;
+	struct netmap_kring *kring = NULL;
+
+	//if (stack_no_runtocomp)
+	//	spin_lock_irqsave(&queue->lock, cpu_flags);
+	/* OOO segment(s) might have been enqueued in the same rxsync round */
+	skb_queue_walk_safe(queue, m, tmp) {
+		struct nmcb *cb = NMCB(m);
+		struct netmap_slot *slot;
+		int queued = 0;
+//
+//		if (unlikely(!nmcb_valid(nmcb))) {
+//			D("invalid nmcb %p (m %p len %u cpu %d)",
+//				nmcb, m, skb_headlen(m), smp_processor_id());
+//			goto ignore;
+//		}
+		if (unlikely(!kring)) {
+			kring = nmcb_kring(cb);
+			/* XXX this happens when stack goes away.
+			 * We need better workaround */
+			if (unlikely(!kring)) {
+				RD(1, "WARNING: no kring");
+//ignore:
+				SET_MBUF_DESTRUCTOR(m, NULL);
+				nm_set_mbuf_data_destructor(m, &cb->ui, NULL);
+				sk_eat_skb(sk, m);
+				continue;
+			}
+		}
+		/* append this buffer to the scratchpad */
+		slot = nmcb_slot(cb);
+		if (unlikely(slot == NULL)) {
+			RD(1, "no slot");
+			continue;
+		}
+		if (unlikely(m->sk == NULL || st_so(m->sk) == NULL)) {
+			D("null m->sk or soa");
+			continue;
+		}
+		//slot->fd = st_so(m->sk)->fd;
+		slot->fd = st_so(sk)->fd;
+		slot->len = skb_headroom(m) + skb_headlen(m);
+		slot->offset = skb_headroom(m) - VHLEN(kring->na); // XXX
+		/*
+		 * We might have leftover for the previous connection with
+		 * the same fd value. Overwrite it if this is new connection.
+		 */
+		st_fdtable_add(cb, kring);
+		/* see comment in st_transmit() */
+#ifdef STACK_RECYCLE
+		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
+			ND("fd %d ring_id %u", slot->fd, kring->ring_id);
+			queued = 1;
+		}
+#endif
+		nmcb_wstate(cb, MB_TXREF);
+#ifdef STACK_RECYCLE
+		if (likely(!queued)) {
+			__skb_unlink(m, queue);
+			skb_orphan(m);
+		} else
+#endif
+		sk_eat_skb(sk, m);
+		ND("ate %p state %x", m, nmcb_rstate(cb));
+	}
+	//if (stack_no_runtocomp)
+	//	spin_unlock_irqrestore(&queue->lock, cpu_flags);
+}
+
+NM_SOCK_T *
+nm_os_sock_fget(int fd, void **f)
+{
+	int err;
+	struct socket *sock = sockfd_lookup(fd, &err);
+
+	return sock ? sock->sk : NULL;
+}
+
+void
+nm_os_sock_fput(NM_SOCK_T *sk, void *dummy)
+{
+	sockfd_put(sk->sk_socket);
+}
+
+void
+nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
+{
+	struct mbuf *m;
+
+	/* XXX All the packets must be originated from netmap */
+	m = skb_peek(&sk->sk_receive_queue);
+	if (!m)
+		return;
+	if (!nmcb_valid(NMCB(m)))
+		return;
+	/* No need for BDG_RLOCK() - we don't move packets to stack na */
+	nm_os_st_upcall(sk);
+}
+
+static inline int
+nm_os_mbuf_valid(struct mbuf *m)
+{
+	return likely(*(int *)(&m->users) != 0);
+}
+
+static struct mbuf *
+nm_os_build_mbuf(struct netmap_kring *kring, char *buf, u_int len)
+{
+	struct netmap_adapter *na = kring->na;
+	struct mbuf *m;
+	struct page *page;
+	int alen = NETMAP_BUF_SIZE(na) - sizeof(struct nmcb);
+
+#ifdef STACK_RECYCLE
+	m = kring->tx_pool[1];
+	if (m) {
+		struct skb_shared_info *shinfo;
+
+		*m = *kring->tx_pool[0];
+		m->head = m->data = buf;
+		skb_reset_tail_pointer(m);
+		shinfo = skb_shinfo(m);
+		bzero(shinfo, offsetof(struct skb_shared_info, dataref));
+		*(int *)(&shinfo->dataref) = 1;
+	} else
+#endif
+	{
+		m = build_skb(buf, alen);
+		m->dev = na->ifp;
+	}
+	if (unlikely(!m))
+		return NULL;
+#ifdef STACK_RECYCLE
+	else if (unlikely(!nm_os_mbuf_valid(kring->tx_pool[0]))) {
+		*kring->tx_pool[0] = *m;
+	}
+#endif
+	page = virt_to_page(buf);
+	get_page(page); // survive __kfree_skb()
+	skb_reserve(m, VHLEN(na)); // m->data and tail
+	skb_put(m, len - VHLEN(na)); // advance m->tail and m->len
+	return m;
+}
+
+int
+nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	char *nmb = NMB(na, slot);
+	struct nmcb *cb = NMCB_BUF(nmb);
+	struct mbuf *m;
+	int ret = 0;
+
+	slot->len += VHLEN(na); // Ugly to do here...
+
+	m = nm_os_build_mbuf(kring, nmb, slot->len);
+	if (unlikely(!m))
+		return 0; // drop and skip
+
+	nmcb_wstate(cb, MB_STACK);
+	//m->ip_summed = CHECKSUM_UNNECESSARY;
+	m->protocol = eth_type_trans(m, m->dev);
+	/* have orphan() set data_destructor */
+	SET_MBUF_DESTRUCTOR(m, nm_os_st_mbuf_destructor);
+#ifdef NETMAP_LINUX_HAVE_IP_RCV
+	if (ntohs(m->protocol) == ETH_P_IP) {
+		skb_reset_network_header(m);
+		skb_reset_mac_len(m);
+		m->skb_iif = na->ifp->ifindex;
+		rcu_read_lock();
+		ip_rcv(m, na->ifp, NULL, na->ifp);
+		rcu_read_unlock();
+	} else
+#endif /* NETMAP_LINUX_HAVE_IP_RCV */
+	netif_receive_skb(m);
+
+	/* setting data destructor is safe only after skb_orphan_frag()
+	 * in __netif_receive_skb_core().
+	 */
+	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
+		nmcb_wstate(cb, MB_QUEUED);
+		if (st_extra_enq(kring, slot)) {
+			ret = -EBUSY;
+		}
+	}
+
+#ifdef STACK_RECYCLE
+	/* XXX avoid refcount_read... */
+	if (nmcb_rstate(cb) == MB_TXREF && likely(!skb_shared(m))) {
+		/* we can recycle this mbuf (see nm_os_st_data_ready) */
+		struct ubuf_info *uarg = skb_shinfo(m)->destructor_arg;
+
+		if (likely(uarg->callback)) {
+			uarg->callback(uarg, true);
+		} else {
+			D("WARNING: no destructor on recycling mbuf!");
+		}
+		kring->tx_pool[1] = m;
+	} else {
+		kring->tx_pool[1] = NULL;
+	}
+#endif
+	return ret;
+}
+
+int
+nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	struct st_so_adapter *soa;
+	struct nmcb *cb;
+	struct page *page;
+	u_int poff, len;
+	NM_SOCK_T *sk;
+	void *nmb;
+	int err, pageref = 0;
+
+	nmb = NMB(na, slot);
+	soa = st_soa_from_fd(na, slot->fd);
+	if (unlikely(!soa)) {
+		D("no soa for fd %d (na %s)", slot->fd, na->name);
+		return 0;
+	}
+	sk = soa->so;
+
+	page = virt_to_page(nmb);
+	get_page(page); // survive __kfree_skb()
+	pageref = page_ref_count(page);
+	poff = nmb - page_to_virt(page) + VHLEN(na) + slot->offset;
+	len = slot->len - VHLEN(na) - slot->offset;
+	cb = NMCB_BUF(nmb);
+	nmcb_wstate(cb, MB_STACK);
+
+	if (unlikely(!sk)) {
+		D("WARNING: NULL sk");
+		return 0;
+	} else if (unlikely(!sk->sk_socket)) {
+		D("WARNING: NULL sk->sk_socket");
+		return 0;
+	}
+	err = kernel_sendpage(sk->sk_socket, page, poff, len, MSG_DONTWAIT);
+	if (unlikely(err < 0)) {
+		/* XXX check if it is enough to assume EAGAIN only */
+		ND(1, "error %d in sendpage() slot %ld",
+				err, slot - kring->ring->slot);
+		nmcb_invalidate(cb);
+		return -EAGAIN;
+	}
+
+	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
+		/* The stack might have just dropped a page reference (e.g.,
+		 * linearized in skb_checksum_help() in __dev_queue_xmit().
+		 */
+		if (unlikely(pageref == page_ref_count(page))) {
+			D("WARNING: just dropped frag ref (fd %d)", slot->fd);
+			nmcb_invalidate(cb);
+			return 0;
+		}
+		nmcb_wstate(cb, MB_QUEUED);
+		if (likely(st_extra_enq(kring, slot))) {
+			return -EBUSY;
+		}
+	} /* usually MB_TXREF (TCP) or MB_NOREF (UDP) */
+	return 0;
+}
+#endif /* WITH_STACK */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
    rings can have the same lengths. */

@@ -102,6 +102,10 @@ features, namely:
     sink:		a dummy drop-everything device with native netmap
 			support.  It can emulate a link with configurable
 			packet rate.
+    stack:		PASTE (a zero-copy datapath thouroughout the netmap
+			API, kernel TCP/IP stack, NIC and optionally
+			non-volatile main memory).
+
 
   NIC drivers
   --------------

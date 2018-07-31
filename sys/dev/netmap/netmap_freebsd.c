@@ -36,6 +36,7 @@
 #include <sys/conf.h>	/* DEV_MODULE_ORDERED */
 #include <sys/endian.h>
 #include <sys/syscallsubr.h> /* kern_ioctl() */
+#include <sys/capsicum.h> /* cap_rights_t */
 
 #include <sys/rwlock.h>
 
@@ -46,16 +47,20 @@
 #include <vm/vm_page.h>
 #include <vm/vm_pager.h>
 #include <vm/uma.h>
+//#include <vm/vm_kern.h> /* kernel_map */
+//#include <vm/vm_map.h>	/* vm_map_lookup */
 
 
 #include <sys/malloc.h>
 #include <sys/socket.h> /* sockaddrs */
+#include <sys/socketvar.h> /* getsock_cap() */
 #include <sys/selinfo.h>
 #include <sys/kthread.h> /* kthread_add() */
 #include <sys/proc.h> /* PROC_LOCK() */
 #include <sys/unistd.h> /* RFNOWAIT */
 #include <sys/sched.h> /* sched_bind() */
 #include <sys/smp.h> /* mp_maxid */
+#include <sys/uio.h> /* struct uio */
 #include <net/if.h>
 #include <net/if_var.h>
 #include <net/if_types.h> /* IFT_ETHER */
@@ -64,6 +69,7 @@
 #include <machine/bus.h>        /* bus_dmamap_* */
 #include <netinet/in.h>		/* in6_cksum_pseudo() */
 #include <machine/in_cksum.h>  /* in_pseudo(), in_cksum_hdr() */
+#include <netinet/in_var.h>	/* ip_input() */
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
@@ -931,6 +937,268 @@ ptn_memdev_shutdown(device_t dev)
 }
 
 #endif /* WITH_PTNETMAP_GUEST */
+
+#ifdef WITH_STACK
+int
+nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
+{
+	struct mbuf *m;
+	struct sockbuf *sb = &so->so_rcv;
+	struct nmcb *cb;
+
+	if (unlikely(!sbavail(sb))) {
+		return 0;
+	}
+	m = sb->sb_mb;
+	cb = NMCB(m);
+	if (nmcb_valid(cb)) {
+		nmcb_kring(cb)->nkr_leases = (void *)so;
+	}
+	return 0;
+}
+
+static int
+freebsd_upcall(struct nmcb *cb)
+{
+	NM_SOCK_T *so;
+	struct mbuf *m0 = NULL, *m, *tmp;
+	int error;
+	struct netmap_kring *kring = NULL;
+	struct uio uio;
+	int flags = MSG_DONTWAIT | MSG_EOR;
+	int rlen = 65535; // XXX
+
+	if (!nmcb_valid(cb))
+		return 0;
+	else if (!nmcb_kring(cb))
+		return 0;
+	kring = nmcb_kring(cb);
+	so = (NM_SOCK_T *)kring->nkr_leases;
+	if (!so)
+		return 0;
+	kring->nkr_leases = NULL;
+
+	if (!sbavail(&so->so_rcv)) {
+		return 0;
+	}
+	bzero(&uio, sizeof(uio));
+	uio.uio_resid = rlen;
+	error = soreceive(so, NULL, &uio, &m0, NULL, &flags);
+	if (unlikely(error)) {
+		D("error on soreceive() (%d)", error);
+		return error;
+	}
+	rlen = rlen - uio.uio_resid;
+	/* XXX soreceive() has already iterated the mbuf chain.
+	 * We may have a room for optimization
+	 */
+	for (m = m0; m; m = tmp) {
+		struct nmcb *cb = NMCB(m);
+		struct netmap_slot *slot;
+#ifdef STACK_RECYCLE
+		int queued = 0;
+#endif
+		tmp = m->m_next;
+		slot = nmcb_slot(cb);
+		if (unlikely(slot == NULL)) {
+			RD(1, "no slot");
+			m_free(m);
+			continue;
+		}
+		slot->fd = st_so(so)->fd;
+		/* m_data points payload */
+		slot->offset = m->m_data - M_START(m) - VHLEN(kring->na);
+		/* XXX just leave the original ? */
+		slot->len = m->m_len + slot->offset + VHLEN(kring->na);
+		st_fdtable_add(cb, kring);
+#ifdef STACK_RECYCLE
+		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
+			queued = 1;
+		}
+#endif /* STACK_RECYCLE */
+		nmcb_wstate(cb, MB_TXREF);
+#ifdef STACK_RECYCLE
+		if (likely(!queued)) {
+			nm_os_st_mbuf_data_destructor(m);
+			kring->tx_pool[1] = m;
+		} else
+#endif /* STACK_RECYCLE */
+		m_free(m);
+	}
+	return 0;
+}
+
+NM_SOCK_T *
+nm_os_sock_fget(int fd, void **f)
+{
+	int err;
+	cap_rights_t rights;
+	struct file *fp;
+	u_int fflag;
+
+	err = getsock_cap(curthread, fd, cap_rights_init(&rights, CAP_IOCTL),
+			&fp, &fflag, NULL);
+	*f = fp;
+	return err ? NULL : fp->f_data;
+}
+
+#define container_of(ptr, type, member) ({                      \
+	const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
+	(type *)( (char *)__mptr - offsetof(type,member) );})
+void
+nm_os_sock_fput(NM_SOCK_T *so, void *f)
+{
+	//fp = container_of((void *)&so, struct file, f_data); // XXX do better...
+	fdrop((struct file *)f, curthread);
+}
+
+void
+nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
+{
+	struct mbuf * m;
+	struct nmcb *cb;
+
+	if (!sbavail(&so->so_rcv))
+		return;
+	m = so->so_rcv.sb_mb;
+	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
+	if (!nmcb_valid(cb)) {
+		D("invalid cb");
+		return;
+	}
+	ND("next nm_os_st_data_ready (SCB %p %d", cb, nmcb_rstate(cb));
+	nm_os_st_upcall(so, NULL, 0);
+	freebsd_upcall(cb);
+}
+
+void
+nm_os_st_mbuf_data_destructor(struct mbuf *m)
+{
+	struct nmcb *cb = NMCB(m);
+
+	if (unlikely(nmcb_gone(cb))) {
+		return;
+	}
+	nmcb_wstate(cb, MB_NOREF);
+	st_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
+}
+
+#ifdef STACK_RECYCLE
+static inline int
+nm_os_mbuf_valid(struct mbuf *m)
+{
+	return (likely(m->m_flags & M_EXT) &&
+		likely(m->m_ext.ext_flags & EXT_FLAG_EMBREF));
+}
+#endif /* STACK_RECYCLE */
+
+static struct mbuf *
+maybe_new_mbuf(struct netmap_kring *kring)
+{
+	struct netmap_adapter *na = kring->na;
+	struct mbuf *m;
+
+#ifdef STACK_RECYCLE
+	m = kring->tx_pool[1];
+	if (m) {
+		kring->tx_pool[1] = NULL;
+		*m = *kring->tx_pool[0];
+	} else
+#endif
+	m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
+	if (unlikely(!m))
+		return NULL;
+#ifdef STACK_RECYCLE
+	else if (unlikely(!nm_os_mbuf_valid(kring->tx_pool[0]))) {
+		*kring->tx_pool[0] = *m;
+	}
+#endif /* STACK_RECYCLE */
+	return m;
+}
+
+int
+nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	struct ifnet *ifp = na->ifp;
+	char *nmb = NMB(na, slot);
+	struct nmcb *cb = NMCB_BUF(nmb);
+	struct mbuf *m;
+	int ret = 0;
+
+	slot->len += VHLEN(na); // Ugly to do here...
+	m = maybe_new_mbuf(kring);
+	if (unlikely(m == NULL)) {
+		return 0; // drop and skip
+	}
+	m->m_ext.ext_buf = nmb;
+	m->m_ext.ext_size = slot->len;
+	m->m_ext.ext_free = nm_os_st_mbuf_data_destructor;
+	m->m_ext.ext_arg2 = NULL;
+	m->m_len = m->m_pkthdr.len = slot->len;
+	m->m_pkthdr.flowid = kring->ring_id;
+	m->m_pkthdr.rcvif = ifp;
+	m->m_data = nmb + VHLEN(na);
+
+	nmcbw(cb, kring, slot);
+	nmcb_wstate(cb, MB_STACK);
+	na->if_input(ifp, m);
+
+	freebsd_upcall(cb);
+
+	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
+		nmcb_wstate(cb, MB_QUEUED);
+		if (st_extra_enq(kring, slot)) {
+			ret = -EBUSY;
+		}
+	}
+	return 0;
+}
+
+int
+nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	struct st_so_adapter *soa;
+	struct mbuf *m;
+	char *nmb = NMB(na, slot);
+	int err;
+	struct nmcb *cb = NMCB_BUF(nmb);
+	int flags = MSG_DONTWAIT | MSG_DONTROUTE;
+
+	/* Link to the external mbuf storage */
+	m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
+	if (unlikely(m == NULL)) {
+		return 0; // XXX
+	}
+	m->m_ext.ext_buf = m->m_data = nmb;
+	m->m_ext.ext_size = slot->len;
+	m->m_ext.ext_free = nm_os_st_mbuf_data_destructor;
+	m->m_len = m->m_pkthdr.len = slot->len - slot->offset - VHLEN(na);
+	m->m_data = nmb + VHLEN(na) + slot->offset;
+
+	nmcb_wstate(cb, MB_STACK);
+
+	soa = st_soa_from_fd(na, slot->fd);
+	if (unlikely(!soa)) {
+		D("no soa for fd %d (na %s)", slot->fd, na->name);
+		return 0;
+	}
+	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);
+	if (unlikely(err < 0)) {
+		D("error %d", err);
+		nmcb_invalidate(cb);
+	}
+
+	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
+		nmcb_wstate(cb, MB_QUEUED);
+		if (likely(st_extra_enq(kring, slot))) {
+			return -EBUSY;
+		}
+	}
+	return 0;
+}
+#endif /* WITH_STACK */
 
 /*
  * In order to track whether pages are still mapped, we hook into

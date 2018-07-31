@@ -538,6 +538,21 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token)
 		goto unref_exit;
 	}
 	error = netmap_get_vale_na(hdr, &na,
+			nmd, 1 /* create if not exists */);
+	if (error) { /* no device */
+		goto unlock_exit;
+	}
+	if (na) {
+		goto found;
+	}
+
+	/* check for existing one */
+	error = netmap_get_stack_na(hdr, &na, nmd, 0);
+	if (na) {
+		error = EBUSY;
+		goto unref_exit;
+	}
+	error = netmap_get_stack_na(hdr, &na,
 				nmd, 1 /* create if not exists */);
 	if (error) { /* no device */
 		goto unlock_exit;
@@ -547,6 +562,7 @@ nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token)
 		error = EINVAL;
 		goto unlock_exit;
 	}
+found:
 
 	if (NETMAP_OWNED_BY_ANY(na)) {
 		error = EBUSY;
@@ -585,28 +601,45 @@ nm_is_bwrap(struct netmap_adapter *na)
 int
 nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token)
 {
+	int error;
+
+	NMG_LOCK();
+	error = nm_bdg_ctl_detach_locked(hdr, auth_token);
+	NMG_UNLOCK();
+	return error;
+}
+
+int
+nm_bdg_ctl_detach_locked(struct nmreq_header *hdr, void *auth_token)
+{
 	struct nmreq_vale_detach *nmreq_det = (void *)(uintptr_t)hdr->nr_body;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
 	struct nm_bridge *b = NULL;
 	int error;
 
-	NMG_LOCK();
 	/* permission check for modified bridges */
 	b = nm_find_bridge(hdr->nr_name, 0 /* don't create */, NULL);
 	if (b && !nm_bdg_valid_auth_token(b, auth_token)) {
 		error = EACCES;
-		goto unlock_exit;
+		goto error_exit;
 	}
 
 	error = netmap_get_vale_na(hdr, &na, NULL, 0 /* don't create */);
 	if (error) { /* no device, or another bridge or user owns the device */
-		goto unlock_exit;
+		goto error_exit;
+	} else if (na != NULL) {
+		goto found;
+	}
+	error = netmap_get_stack_na(hdr, &na, NULL, 0 /* don't create */);
+	if (error) { /* no device, or another bridge or user owns the device */
+		goto error_exit;
 	}
 
-	if (na == NULL) { /* VALE prefix missing */
+found:
+	if (na == NULL) { /* bridge prefix missing */
 		error = EINVAL;
-		goto unlock_exit;
+		goto error_exit;
 	} else if (nm_is_bwrap(na) &&
 		   ((struct netmap_bwrap_adapter *)na)->na_polling_state) {
 		/* Don't detach a NIC with polling */
@@ -633,8 +666,7 @@ nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token)
 
 unref_exit:
 	netmap_adapter_put(na);
-unlock_exit:
-	NMG_UNLOCK();
+error_exit:
 	return error;
 
 }
@@ -1272,7 +1304,7 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
  * hwna rx ring.
  * The bridge wrapper then sends the packets through the bridge.
  */
-static int
+int
 netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
@@ -1397,7 +1429,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 		/* intercept the hwna nm_nofify callback on the hw rings */
 		for (i = 0; i < hwna->num_rx_rings; i++) {
 			hwna->rx_rings[i]->save_notify = hwna->rx_rings[i]->nm_notify;
-			hwna->rx_rings[i]->nm_notify = netmap_bwrap_intr_notify;
+			hwna->rx_rings[i]->nm_notify = bna->nm_intr_notify;
 		}
 		i = hwna->num_rx_rings; /* for safety */
 		/* save the host ring notify unconditionally */

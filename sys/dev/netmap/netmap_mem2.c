@@ -99,7 +99,7 @@ struct netmap_obj_pool {
 	/* these are only meaningful if the pool is finalized */
 	/* (see 'finalized' field in netmap_mem_d)            */
 	u_int objtotal;         /* actual total number of objects. */
-	u_int memtotal;		/* actual total memory space */
+	uint64_t memtotal;		/* actual total memory space */
 	u_int numclusters;	/* actual number of clusters */
 
 	u_int objfree;          /* number of free objects. */
@@ -157,7 +157,7 @@ struct netmap_mem_ops {
 
 struct netmap_mem_d {
 	NMA_LOCK_T nm_mtx;  /* protect the allocator */
-	u_int nm_totalsize; /* shorthand */
+	uint64_t nm_totalsize; /* shorthand */
 
 	u_int flags;
 #define NETMAP_MEM_FINALIZED	0x1	/* preallocation done */
@@ -597,7 +597,7 @@ static const struct netmap_mem_d nm_blueprint = {
 			.objminsize = 64,
 			.objmaxsize = 65536,
 			.nummin     = 4,
-			.nummax	    = 1000000, /* one million! */
+			.nummax	    = 1000000000, /* one billion! */
 		},
 	},
 
@@ -803,7 +803,7 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 		return pa;
 	}
 	/* this is only in case of errors */
-	D("invalid ofs 0x%x out of 0x%x 0x%x 0x%x", (u_int)o,
+	D("invalid ofs 0x%x out of 0x%lx 0x%lx 0x%lx", (u_int)o,
 		p[NETMAP_IF_POOL].memtotal,
 		p[NETMAP_IF_POOL].memtotal
 			+ p[NETMAP_RING_POOL].memtotal,
@@ -933,7 +933,7 @@ netmap_mem2_get_info(struct netmap_mem_d* nmd, uint64_t* size,
 			*size = 0;
 			for (i = 0; i < NETMAP_POOLS_NR; i++) {
 				struct netmap_obj_pool *p = nmd->pools + i;
-				*size += (p->_numclusters * p->_clustsize);
+				*size += ((uint64_t)p->_numclusters * p->_clustsize);
 			}
 		}
 	}
@@ -1462,11 +1462,11 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 #endif
 		}
 	}
-	p->memtotal = p->numclusters * p->_clustsize;
+	p->memtotal = (uint64_t)p->numclusters * p->_clustsize;
 	if (netmap_verbose)
 		D("Pre-allocated %d clusters (%d/%dKB) for '%s'",
 		    p->numclusters, p->_clustsize >> 10,
-		    p->memtotal >> 10, p->name);
+		    (int)(p->memtotal >> 10), p->name);
 
 	return 0;
 
@@ -1625,7 +1625,7 @@ netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 
 	if (netmap_verbose)
-		D("interfaces %d KB, rings %d KB, buffers %d MB",
+		D("interfaces %lu KB, rings %lu KB, buffers %lu MB",
 		    nmd->pools[NETMAP_IF_POOL].memtotal >> 10,
 		    nmd->pools[NETMAP_RING_POOL].memtotal >> 10,
 		    nmd->pools[NETMAP_BUF_POOL].memtotal >> 20);
@@ -2319,8 +2319,8 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 		}
 		p->objtotal = j;
 		p->numclusters = p->objtotal;
-		p->memtotal = j * p->_objsize;
-		ND("%d memtotal %u", j, p->memtotal);
+		p->memtotal = (uint64_t)j * p->_objsize;
+		D("%d memtotal %lu", j, p->memtotal);
 	}
 
 	netmap_mem_ext_register(nme);

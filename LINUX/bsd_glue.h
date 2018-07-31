@@ -58,6 +58,11 @@
 #include <linux/io.h>	// virt_to_phys
 #include <linux/hrtimer.h>
 #include <linux/highmem.h> // kmap
+#include <linux/file.h> // sockfd_put()/fput()
+#include <net/ip.h>	// struct ipcm_cookie
+#include <uapi/linux/udp.h>	// struct udphdr
+#include <net/route.h>	// RTO_ONLINK
+#include <net/udp.h>	// udp_push_pending_frames
 
 #define KASSERT(a, b)		BUG_ON(!(a))
 
@@ -71,6 +76,10 @@
 #ifdef NETMAP_LINUX_HAVE_PAGE_REF
 #include <linux/page_ref.h>
 #endif /* NETMAP_LINUX_HAVE_PAGE_REF */
+
+#ifndef NETMAP_LINUX_HAVE_PAGE_TO_VIRT
+#define page_to_virt(x)	__va(PFN_PHYS(page_to_pfn(x)))
+#endif /* NETMAP_LINUX_HAVE_PAGE_TO_VIRT */
 
 #ifndef NETMAP_LINUX_HAVE_HRTIMER_MODE_REL
 #define HRTIMER_MODE_REL	HRTIMER_REL
@@ -538,4 +547,125 @@ void netmap_bns_unregister(void);
 #define BIT_ULL(nr)	(1ULL << (nr))
 #endif /* !BIT_ULL */
 
+#define strdup(s, type)		  kstrdup(s, GFP_ATOMIC)
+#define curcpu         smp_processor_id()
+#define mp_maxid       (num_online_cpus() - 1) // XXX num_possible_cpus()?
+
+/* used for paste */
+#define NM_LIST_INIT(_head)	INIT_HLIST_HEAD(_head)
+#define NM_LIST_ENTRY(_type)	struct hlist_node
+#define NM_LIST_ADD(_head, _n, _pos) 	hlist_add_head_rcu(&((_n)->_pos), _head)
+#define NM_LIST_DEL(_n, _pos)	hlist_del_init_rcu(&((_n)->_pos))
+#define NM_LIST_FOREACH(_n, _head, _pos)		hlist_for_each_entry_rcu(_n, _head, _pos)
+#define NM_LIST_FOREACH_SAFE(_n, _head, _pos, _tvar)	hlist_for_each_entry_rcu(_n, _head, _pos)
+#define NM_LIST_HEAD	struct hlist_head
+
+#define NM_SOCK_T	struct sock
+#define NM_SOCK_LOCK(_s)	lock_sock(_s)
+#define NM_SOCK_UNLOCK(_s)	release_sock(_s)
+#define	SOCKBUF_LOCK(sb)
+#define	SOCKBUF_UNLOCK(sb)
+
+/* NMCB() is only valid for mbuf populated by nm_os_build_mbuf() */
+#define NMCB(_m) ((struct nmcb *)(_m)->head)
+#define NMCB_BUF(_buf) ((struct nmcb *)(_buf))
+#define NMCB_EXT(_m, _i, _bufsiz) \
+	NMCB_BUF(page_address(\
+		skb_frag_page(&skb_shinfo((_m))->frags[_i])) + \
+		_bufsiz * (skb_shinfo((_m))->frags[_i].page_offset / _bufsiz))
+
+struct nm_ubuf_info {
+	struct ubuf_info ubuf;
+};
+
+#define nmcb_kring(nmcb)	((struct netmap_kring *)(nmcb)->ui.ubuf.ctx)
+#define nmcb_slot(nmcb)	((struct netmap_slot *)(uintptr_t)(nmcb)->ui.ubuf.desc)
+#define nmcbw(cb, kring, slot)	do {\
+	(cb)->ui.ubuf.ctx = (kring);\
+	(cb)->ui.ubuf.desc = (uintptr_t)(slot);\
+} while (0)
+
+typedef u_int	register_t;
+static inline register_t
+intr_disable(void)
+{
+	local_bh_disable();
+	return 0;
+}
+
+static inline void
+intr_restore(register_t intr)
+{
+	local_bh_enable();
+}
+
+
+static inline void
+nm_set_mbuf_data_destructor(struct mbuf *m,
+	struct nm_ubuf_info *ui, void *cb)
+{
+	ui->ubuf.callback = cb;
+	if (cb != NULL) {
+		skb_shinfo(m)->destructor_arg = ui;
+		skb_shinfo(m)->tx_flags |= SKBTX_DEV_ZEROCOPY;
+	} else {
+		skb_shinfo(m)->destructor_arg = NULL;
+		skb_shinfo(m)->tx_flags &= ~SKBTX_DEV_ZEROCOPY;
+	}
+}
+
+static inline struct st_so_adapter *
+st_so(NM_SOCK_T *sk)
+{
+	return (struct st_so_adapter *)sk->sk_user_data;
+}
+
+ /* We overwrite sk->sk_cookie as it appear not to be used */
+static inline void
+st_wso(struct st_so_adapter *soa, NM_SOCK_T *sk)
+{
+	sk->sk_user_data = soa;
+}
+
+#define ETH_HDR_LEN	ETH_HLEN
+
+/* Since FreeBSD doesn't have generic callback for a receive-data-ready event,
+ * we so far use a bit high level macro, also for destructor..
+ */
+#define SAVE_SOUPCALL(sk, soa) \
+	(soa)->save_soupcall = (sk)->sk_data_ready
+#define RESTORE_SOUPCALL(sk, soa) \
+	(sk)->sk_data_ready = (void *)(soa)->save_soupcall
+#define SAVE_SODTOR(sk, soa) \
+	(soa)->save_sodtor = (sk)->sk_destruct
+#define RESTORE_SODTOR(sk, soa) \
+	(sk)->sk_destruct = (void *)(soa)->save_sodtor
+#define SET_SOUPCALL(sk, f) \
+	(sk)->sk_data_ready = (void *)f
+#define SET_SODTOR(sk, f) \
+	(sk)->sk_destruct = (void *)f
+#define so_dtor sk_destruct
+#define MBUF_HEADLEN(m)		skb_headlen(m) /* m->pkthdr.len in FreeBSD */
+#define MBUF_NETWORK_HEADER(m)		skb_network_header(m)
+#define MBUF_NETWORK_OFFSET(m)		skb_network_offset(m)
+#define MBUF_TRANSPORT_HEADER(m)	skb_transport_header(m)
+#define MBUF_TRANSPORT_OFFSET(m)	skb_transport_offset(m)
+#define MBUF_NONLINEAR(m)		skb_is_nonlinear(m)
+#define MBUF_LINEARIZE(m)		skb_linearize(m)
+#define MBUF_TAIL_POINTER(m)		skb_tail_pointer(m)
+#define MBUF_CLUSTERS(m)		skb_shinfo((m))->nr_frags
+#define MBUF_DATA(m)			(m)->data
+enum sopt_dir { SOPT_GET, SOPT_SET };
+struct sockopt {
+	enum    sopt_dir sopt_dir; /* is this a get or a set? */
+	int     sopt_level;     /* second arg of [gs]etsockopt */
+	int     sopt_name;      /* third arg of [gs]etsockopt */
+	void   *sopt_val;       /* fourth arg of [gs]etsockopt */
+	size_t  sopt_valsize;   /* (almost) fifth arg of [gs]etsockopt */
+	struct  thread *sopt_td; /* calling thread or null if kernel */
+};
+#define sosetopt(_a, _b)	\
+	kernel_setsockopt((_a)->sk_socket, SOL_TCP, (_b)->sopt_name, \
+			(_b)->sopt_val, (_b)->sopt_valsize)
+#define	MBUF_PROTO_HEADERS(m)
 #endif /* NETMAP_BSD_GLUE_H */

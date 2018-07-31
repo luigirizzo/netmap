@@ -1221,6 +1221,7 @@ netmap_vale_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->nm_krings_create = netmap_vale_bwrap_krings_create;
 	na->nm_krings_delete = netmap_vale_bwrap_krings_delete;
 	na->nm_notify = netmap_bwrap_notify;
+	bna->nm_intr_notify = netmap_bwrap_intr_notify;
 	bna->up.retry = 1; /* XXX maybe this should depend on the hwna */
 	/* Set the mfs, needed on the VALE mismatch datapath. */
 	bna->up.mfs = NM_BDG_MFS_DEFAULT;

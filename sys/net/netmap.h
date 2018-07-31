@@ -166,7 +166,14 @@ struct netmap_slot {
 	uint32_t buf_idx;	/* buffer index */
 	uint16_t len;		/* length for this slot */
 	uint16_t flags;		/* buf changed, etc. */
-	uint64_t ptr;		/* pointer for indirect buffers */
+	union {
+		uint64_t ptr;		/* pointer for indirect buffers */
+		struct {
+			int32_t fd;
+			uint16_t offset;
+			uint16_t next;
+		};
+	};
 };
 
 /*
@@ -605,7 +612,8 @@ struct nmreq_port_info_get {
 	uint16_t	nr_mem_id;	/* id of the memory allocator */
 };
 
-#define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
+#define	NM_BDG_NAME		"vale"	/* prefix for vale port name */
+#define	NM_STACK_NAME		"stack"	/* prefix for stack port name */
 
 /*
  * nr_reqtype: NETMAP_REQ_VALE_ATTACH

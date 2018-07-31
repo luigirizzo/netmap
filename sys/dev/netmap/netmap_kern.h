@@ -61,6 +61,9 @@
 #if defined(CONFIG_NETMAP_SINK)
 #define WITH_SINK
 #endif
+#if defined(CONFIG_NETMAP_STACK)
+#define WITH_STACK
+#endif
 
 #elif defined (_WIN32)
 #define WITH_VALE	// comment out to disable VALE support
@@ -76,10 +79,12 @@
 #define WITH_PTNETMAP_HOST	/* ptnetmap host support */
 #define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
 #define WITH_EXTMEM
+#define WITH_STACK
 #endif
 
 #if defined(__FreeBSD__)
 #include <sys/selinfo.h>
+#include <netinet/tcp.h>       /* TCP_NODELAY */
 
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)
@@ -140,6 +145,30 @@ struct hrtimer {
 
 #define NM_BNS_GET(b)
 #define NM_BNS_PUT(b)
+
+#ifdef WITH_STACK
+#define NM_SOCK_LOCK(_s)	so_lock(_s)
+#define NM_SOCK_UNLOCK(_s)	so_unlock(_s)
+#define MBUF_NETWORK_OFFSET(m)	(m)->m_pkthdr.l2hlen
+#define MBUF_TRANSPORT_OFFSET(m)	(MBUF_NETWORK_OFFSET(m) + (m)->m_pkthdr.l3hlen)
+#define MBUF_NETWORK_HEADER(m)	mtodo((m), MBUF_NETWORK_OFFSET(m))
+#define MBUF_TRANSPORT_HEADER(m)	mtodo((m), MBUF_TRANSPORT_OFFSET(m))
+#define MBUF_NONLINEAR(m)	(m->m_next != NULL)
+#define MBUF_LINEARIZE(m)	// XXX
+#define MBUF_TAIL_POINTER(m)	mtod(m) + skb_tail_pointer(m) // XXX
+#define MBUF_CLUSTERS(m)	skb_shinfo((m))->nr_frags
+#define MBUF_DATA(m)		(m)->m_data
+
+#define NM_SOCK_T struct socket
+#define SAVE_SOUPCALL(so, soa)
+#define RESTORE_SOUPCALL(so, soa)    soupcall_clear(so, SO_RCV)
+#define SAVE_SODTOR(so, soa)	(soa)->save_sodtor = (so)->so_dtor
+#define RESTORE_SODTOR(so, soa)	sodtor_set(so, (soa)->save_sodtor)
+#define SET_SOUPCALL(so, f)	soupcall_set(so, SO_RCV, f, NULL)
+#define SET_SODTOR(so, f)	sodtor_set(so, f)
+//#define MBUF_HEADLEN(m)	((m)->m_pkthdr.len)
+#define MBUF_HEADLEN(m)	((m)->m_len)
+#endif /* WITH_STACK */
 
 #elif defined (linux)
 
@@ -273,7 +302,6 @@ struct netmap_adapter;
 struct nm_bdg_fwd;
 struct nm_bridge;
 struct netmap_priv_d;
-struct nm_bdg_args;
 
 /* os-specific NM_SELINFO_T initialzation/destruction functions */
 void nm_os_selinfo_init(NM_SELINFO_T *);
@@ -538,6 +566,11 @@ struct netmap_kring {
 	int (*mon_notify)(struct netmap_kring *kring, int flags);
 
 #endif
+
+#ifdef WITH_STACK
+	struct st_extra_pool  *extra;
+#endif /* WITH_STACK */
+
 }
 #ifdef _WIN32
 __declspec(align(64));
@@ -1077,6 +1110,9 @@ struct netmap_bwrap_adapter {
 	 * here its original value, to be restored at detach
 	 */
 	struct netmap_vp_adapter *saved_na_vp;
+	/* XXX applied only to non-host rings */
+	int (*nm_intr_notify)(struct netmap_kring *kring, int flags);
+
 };
 int nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token);
 int nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token);
@@ -1113,6 +1149,155 @@ struct netmap_pipe_adapter {
 
 #endif /* WITH_PIPES */
 
+#ifdef WITH_STACK
+#define STACK_RECYCLE
+#define VHLEN(_na)	((_na)->virt_hdr_len)
+struct st_extra_pool;
+
+struct st_so_adapter {
+	NM_SOCK_T *so;
+	int32_t fd;
+	/* 32 bit hole */
+	struct netmap_adapter *na;
+#ifdef linux
+	void (*save_soupcall)(NM_SOCK_T *);
+	void (*save_sodtor)(NM_SOCK_T *);
+#else
+	int (*save_soupcall)(NM_SOCK_T *, void *, int);
+	void (*save_sodtor)(NM_SOCK_T *);
+#endif
+};
+
+struct netmap_stack_adapter {
+	struct netmap_vp_adapter up;
+	//NM_LIST_HEAD so_adapters;
+	int (*save_reg)(struct netmap_adapter *na, int onoff);
+#ifdef linux
+	struct net_device_ops stack_ndo;
+#endif /* linux */
+	struct st_so_adapter **so_adapters;
+#define DEFAULT_SK_ADAPTERS	65535
+	u_int so_adapters_max;
+};
+
+/* to be embedded in the buf */
+/* struct skb_shared_info takes 320 byte so far.
+ * Just for the case we would keep occupancy to 1600 Byte before this
+ * We have budget of 40 byte for each of msghdr and cb
+ * after 1520 data+headroom
+ */
+enum {
+	MB_STACK=1,
+	MB_QUEUED,
+	MB_TXREF,
+	MB_NOREF,
+};
+
+#if defined(__FreeBSD__)
+struct nm_ubuf_info {
+	void *ctx;
+	void *desc;
+};
+#endif /* FreeBSD */
+
+struct nmcb {
+	struct nm_ubuf_info ui; /* ctx keeps kring and desc keeps slot */
+#define MB_MAGIC		0x12345600	/* XXX do better */
+#define MB_MAGIC_MASK	0xffffff00	/* XXX do better */
+#define SCB_GONE		0x00000010
+	uint32_t flags;
+	uint32_t next;
+} __attribute__((__packed__)); /* 32 byte */
+static inline void
+nmcb_wstate(struct nmcb *cb, u_int newstate)
+{
+	cb->flags = (MB_MAGIC | newstate);
+}
+
+static inline void
+nmcb_invalidate(struct nmcb *cb)
+{
+	cb->flags = 0;
+}
+
+static inline int
+nmcb_valid(struct nmcb *cb)
+{
+	return ((cb->flags & MB_MAGIC_MASK) == MB_MAGIC);
+}
+
+static inline int
+nmcb_gone(struct nmcb *cb)
+{
+	return !!(cb->flags & SCB_GONE);
+}
+
+static inline void
+nmcb_set_gone(struct nmcb *cb)
+{
+	cb->flags |= SCB_GONE;
+}
+
+static inline void
+nmcb_clr_gone(struct nmcb *cb)
+{
+	cb->flags &= ~SCB_GONE;
+}
+
+static inline int
+nmcb_rstate(struct nmcb *cb)
+{
+	return likely(nmcb_valid(cb)) ?
+		(cb->flags & ~MB_MAGIC_MASK) : 0;
+}
+
+NM_SOCK_T *nm_os_sock_fget(int, void **);
+void nm_os_sock_fput(NM_SOCK_T *, void *);
+void nm_os_st_sbdrain(struct netmap_adapter *, NM_SOCK_T *);
+#ifdef linux
+void nm_os_st_upcall(NM_SOCK_T *);
+netdev_tx_t linux_st_start_xmit(struct mbuf *, struct ifnet *);
+void nm_os_st_mbuf_data_destructor(struct ubuf_info *, bool);
+#else /* linux */
+int nm_os_st_upcall(NM_SOCK_T *, void *, int);
+void nm_os_st_mbuf_data_destructor(struct mbuf *);
+#include <sys/socketvar.h> /* struct socket */
+#define NMCB(_m) ((struct nmcb *)M_START(_m))
+#define NMCB_BUF(_buf) ((struct nmcb *)(_buf))
+#define NMCB_EXT(_m, _i, _bufsiz) \
+	NMCB_BUF((_m)->m_ext.ext_buf)
+
+#define nmcb_kring(cb)	((struct netmap_kring *)(cb)->ui.ctx)
+#define nmcb_slot(cb)	((struct netmap_slot *)(cb)->ui.desc)
+#define nmcbw(cb, kring, slot)	do {\
+	(cb)->ui.ctx = (kring);\
+	(cb)->ui.desc = (slot);\
+} while (0)
+
+static inline struct st_so_adapter *
+st_so(NM_SOCK_T *so)
+{
+	return (struct st_so_adapter *)so->so_emuldata;
+}
+
+static inline void
+st_wso(struct st_so_adapter *soa, NM_SOCK_T *so)
+{
+	so->so_emuldata = (void *)soa;
+}
+#endif
+extern int stack_no_runtocomp;
+/* these functions are non-static just beause netmap_linux.c refers them */
+int nm_os_st_rx(struct netmap_kring *, struct netmap_slot *);
+int nm_os_st_tx(struct netmap_kring *, struct netmap_slot *);
+struct st_so_adapter * st_soa_from_fd(struct netmap_adapter *, int);
+int st_extra_enq(struct netmap_kring *, struct netmap_slot *);
+void st_extra_deq(struct netmap_kring *, struct netmap_slot *);
+void st_fdtable_add(struct nmcb *, struct netmap_kring *);
+int netmap_stack_transmit(struct ifnet *, struct mbuf *);
+
+
+#endif /* WITH_STACK */
 
 /* return slots reserved to rx clients; used in drivers */
 static inline uint32_t
@@ -1499,6 +1684,12 @@ int netmap_vale_destroy(const char *bdg_name, void *auth_token);
 #define netmap_bdg_create(_1, _2)	NULL
 #define netmap_bdg_destroy(_1, _2)	0
 #endif /* !WITH_VALE */
+#ifdef WITH_STACK
+int netmap_get_stack_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+		struct netmap_mem_d *nmd, int create);
+#else /* !WITH_STACK */
+#define	netmap_get_stack_na(_1, _2, _3, _4)	0
+#endif /* !WITH_STACK */
 
 #ifdef WITH_PIPES
 /* max number of pipes per device */
@@ -1875,11 +2066,12 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 	struct lut_entry *lut = na->na_lut.lut;
 	struct plut_entry *plut = na->na_lut.plut;
 	void *ret = (i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr;
+	u_int offset = na->virt_hdr_len;
 
 #ifdef _WIN32
 	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)plut[0].paddr.QuadPart : (uint64_t)plut[i].paddr.QuadPart;
 #else
-	*pp = (i >= na->na_lut.objtotal) ? plut[0].paddr : plut[i].paddr;
+	*pp = (i >= na->na_lut.objtotal) ? plut[0].paddr + offset : plut[i].paddr + offset;
 #endif
 	return ret;
 }

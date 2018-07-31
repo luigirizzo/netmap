@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
 
 #ifdef NMREQ_DEBUG
@@ -36,7 +37,7 @@ static nmreq_error_callback_t nmreq_error_callback = nmreq_error_stderr;
  * underscores
  */
 static int
-nm_is_identifier(const char *s, const char *e)
+nmreq_is_identifier(const char *s, const char *e)
 {
 	for (; s != e; s++) {
 		if (!isalnum(*s) && *s != '_') {
@@ -54,7 +55,9 @@ nmreq_error_callback_t nmreq_set_error_callback(nmreq_error_callback_t f)
 	return old;
 }
 
+#ifndef MAXERRMSG
 #define MAXERRMSG 1000
+#endif
 static void
 nmreq_ferror(const char *fmt, ...)
 {
@@ -95,12 +98,13 @@ nmreq_header_decode(const char *ifname, struct nmreq_header *h)
 	static size_t NM_BDG_NAMSZ = strlen(NM_BDG_NAME);
 
 	if (strncmp(ifname, "netmap:", 7) &&
-			strncmp(ifname, NM_BDG_NAME, NM_BDG_NAMSZ)) {
+			strncmp(ifname, NM_BDG_NAME, NM_BDG_NAMSZ) &&
+			strncmp(ifname, NM_STACK_NAME, strlen(NM_STACK_NAME))) {
 		nmreq_ferror("invalid request '%s' (must begin with 'netmap:' or '" NM_BDG_NAME "')", ifname);
 		goto fail;
 	}
 
-	is_vale = (ifname[0] == 'v');
+	is_vale = (ifname[0] == 'v') || ifname[0] == 's';
 	if (is_vale) {
 		scan = index(ifname, ':');
 		if (scan == NULL) {
@@ -108,7 +112,7 @@ nmreq_header_decode(const char *ifname, struct nmreq_header *h)
 			goto fail;
 		}
 
-		if (!nm_is_identifier(ifname + NM_BDG_NAMSZ, scan)) {
+		if (!nmreq_is_identifier(ifname + NM_BDG_NAMSZ, scan)) {
 			nmreq_ferror("invalid VALE bridge name '%.*s'",
 					(scan - ifname - NM_BDG_NAMSZ), ifname + NM_BDG_NAMSZ);
 			goto fail;
@@ -394,7 +398,200 @@ fail:
 	return -1;
 }
 
-#if 1
+static int
+nmreq_mmap(struct nm_desc *d, const struct nm_desc *parent)
+{
+	//XXX TODO: check if mmap is already done
+
+	if (IS_NETMAP_DESC(parent) && parent->mem &&
+	    parent->nr.reg.nr_mem_id == d->nr.reg.nr_mem_id) {
+		/* do not mmap, inherit from parent */
+		D("do not mmap, inherit from parent");
+		d->memsize = parent->memsize;
+		d->mem = parent->mem;
+	} else {
+		/* XXX TODO: check if memsize is too large (or there is overflow) */
+		d->memsize = d->nr.reg.nr_memsize;
+		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
+				d->fd, 0);
+		if (d->mem == MAP_FAILED) {
+			goto fail;
+		}
+		d->done_mmap = 1;
+	}
+	{
+		struct netmap_if *nifp = NETMAP_IF(d->mem, d->nr.reg.nr_offset);
+		struct netmap_ring *r = NETMAP_RXRING(nifp, d->first_rx_ring);
+		if ((void *)r == (void *)nifp) {
+			/* the descriptor is open for TX only */
+			r = NETMAP_TXRING(nifp, d->first_tx_ring);
+		}
+
+		*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
+		*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
+		*(void **)(uintptr_t)&d->buf_start = NETMAP_BUF(r, 0);
+		*(void **)(uintptr_t)&d->buf_end =
+			(char *)d->mem + d->memsize;
+	}
+
+	return 0;
+
+fail:
+	return EINVAL;
+}
+
+int
+nmreq_close(struct nm_desc *d)
+{
+	/*
+	 * ugly trick to avoid unused warnings
+	 */
+	static void *__xxzt[] __attribute__ ((unused))  =
+		{ (void *)nm_open, (void *)nm_inject,
+		  (void *)nm_dispatch, (void *)nm_nextpkt } ;
+
+	if (d == NULL || d->self != d)
+		return EINVAL;
+	if (d->done_mmap && d->mem)
+		munmap(d->mem, d->memsize);
+	if (d->fd != -1) {
+		close(d->fd);
+	}
+
+	bzero(d, sizeof(*d));
+	free(d);
+	return 0;
+}
+
+struct nm_desc *
+nmreq_open(const char *ifname, uint64_t new_flags, const struct nm_desc *arg)
+{
+	struct nm_desc *d = NULL;
+	const struct nm_desc *parent = arg;
+	uint32_t nr_reg;
+
+	d = (struct nm_desc *)calloc(1, sizeof(*d));
+	if (d == NULL) {
+		nmreq_ferror("nm_desc alloc failure");
+		errno = ENOMEM;
+		return NULL;
+	}
+	d->self = d;	/* set this early so nmreq_close() works */
+	d->fd = open(NETMAP_DEVICE_NAME, O_RDWR);
+	if (d->fd < 0) {
+		nmreq_ferror("cannot open /dev/netmap: %s",
+				strerror(errno));
+		goto fail;
+	}
+
+	/* import extmem request before decode */
+	if (!(new_flags & NM_OPEN_NO_MMAP) && parent &&
+	    parent->nr.ext.nro_opt.nro_reqtype == NETMAP_REQ_OPT_EXTMEM) {
+		memcpy(&d->nr.ext, &parent->nr.ext, sizeof(parent->nr.ext));
+	}
+
+	/* ifname may contain suffix and removed is stored in hdr.nr_name */
+	if (!(new_flags & NM_OPEN_NO_DECODE)) {
+		if (nmreq_register_decode(ifname,
+		    &d->nr.hdr, &d->nr.reg, &d->nr.ext) < 0) {
+			goto fail;
+		}
+	}
+
+	d->nr.reg.nr_ringid &= NETMAP_RING_MASK;
+
+	/* optionally import info from parent */
+	if (IS_NETMAP_DESC(parent) && new_flags) {
+		if (new_flags & NM_OPEN_MEMID) {
+			D("overriding MEMID %d", parent->nr.reg.nr_mem_id);
+			d->nr.reg.nr_mem_id = parent->nr.reg.nr_mem_id;
+		}
+		if (new_flags & NM_OPEN_EXTRA)
+			D("overriding EXTRA %d", parent->nr.reg.nr_extra_bufs);
+		d->nr.reg.nr_extra_bufs = new_flags & NM_OPEN_ARG3 ?
+			parent->nr.reg.nr_extra_bufs : 0;
+		if (new_flags & NM_OPEN_RING_CFG) {
+			D("overriding RING_CFG");
+			d->nr.reg.nr_tx_slots = parent->nr.reg.nr_tx_slots;
+			d->nr.reg.nr_rx_slots = parent->nr.reg.nr_rx_slots;
+			d->nr.reg.nr_tx_rings = parent->nr.reg.nr_tx_rings;
+			d->nr.reg.nr_rx_rings = parent->nr.reg.nr_rx_rings;
+		}
+		if (new_flags & NM_OPEN_IFNAME) {
+			D("overriding ringid 0x%x flags 0x%lx",
+			    parent->nr.reg.nr_ringid, parent->nr.reg.nr_flags);
+			d->nr.reg.nr_ringid = parent->nr.reg.nr_ringid;
+			d->nr.reg.nr_flags = parent->nr.reg.nr_flags;
+			d->nr.reg.nr_mode = parent->nr.reg.nr_mode;
+		}
+		if (new_flags & NM_OPEN_NO_DECODE) {
+			if (nmreq_header_decode(ifname, &d->nr.hdr) == NULL) {
+				D("failed to header_decode on NO_DECODE");
+				goto fail;
+			}
+			d->nr.hdr.nr_options = (uintptr_t)NULL;
+		}
+	}
+
+	/* import extmem configuration if it has been decoded */
+	if (d->nr.ext.nro_opt.nro_reqtype == NETMAP_REQ_OPT_EXTMEM) {
+#define C(_d, _s, _w) ((_d)->nr.ext.nro_info._w = (_s)->nr.ext.nro_info._w)
+		C(d, parent, nr_if_pool_objtotal);
+		C(d, parent, nr_ring_pool_objtotal);
+		C(d, parent, nr_ring_pool_objsize);
+		C(d, parent, nr_buf_pool_objtotal);
+#undef C
+	}
+
+	/* add the *XPOLL flags */
+	d->nr.reg.nr_ringid |=
+		new_flags & (NETMAP_NO_TX_POLL | NETMAP_DO_RX_POLL);
+
+	d->nr.hdr.nr_reqtype = NETMAP_REQ_REGISTER;
+	d->nr.hdr.nr_body = (uintptr_t)&d->nr.reg;
+
+	if (ioctl(d->fd, NIOCCTRL, &d->nr.hdr)) {
+		nmreq_ferror("NIOCCTRL failed: %s", strerror(errno));
+		goto fail;
+	}
+
+	nr_reg = d->nr.reg.nr_mode;
+
+	if (nr_reg == NR_REG_SW) { /* host stack */
+		d->first_tx_ring = d->last_tx_ring = d->nr.reg.nr_tx_rings;
+		d->first_rx_ring = d->last_rx_ring = d->nr.reg.nr_rx_rings;
+	} else if (nr_reg ==  NR_REG_ALL_NIC) { /* only nic */
+		d->first_tx_ring = 0;
+		d->first_rx_ring = 0;
+		d->last_tx_ring = d->nr.reg.nr_tx_rings - 1;
+		d->last_rx_ring = d->nr.reg.nr_rx_rings - 1;
+	} else if (nr_reg ==  NR_REG_NIC_SW) {
+		d->first_tx_ring = 0;
+		d->first_rx_ring = 0;
+		d->last_tx_ring = d->nr.reg.nr_tx_rings;
+		d->last_rx_ring = d->nr.reg.nr_rx_rings;
+	} else if (nr_reg == NR_REG_ONE_NIC) {
+		/* XXX check validity */
+		d->first_tx_ring = d->last_tx_ring =
+		d->first_rx_ring = d->last_rx_ring = d->nr.reg.nr_ringid & NETMAP_RING_MASK;
+	} else { /* pipes */
+		d->first_tx_ring = d->last_tx_ring = 0;
+		d->first_rx_ring = d->last_rx_ring = 0;
+	}
+
+        /* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
+	if ((!(new_flags & NM_OPEN_NO_MMAP) || parent) && nmreq_mmap(d, parent)) {
+	        nmreq_ferror("mmap failed: %s", strerror(errno));
+		goto fail;
+	}
+
+	return d;
+fail:
+	nmreq_close(d);
+	return NULL;
+}
+
+#ifndef LIB
 #include <inttypes.h>
 int
 main(int argc, char *argv[])
@@ -402,11 +599,15 @@ main(int argc, char *argv[])
 	struct nmreq_header h;
 	struct nmreq_register r;
 	struct nmreq_opt_extmem e;
+	u_int flags = 0;
+	struct nm_desc *d, base_nmd;
+	size_t memsize;
 
 	if (argc < 2) {
 		fprintf(stderr, "usage: %s netmap-expr\n", argv[0]);
 		return 1;
 	}
+
 
 	if (nmreq_register_decode(argv[1], &h, &r, &e) < 0) {
 		perror("nmreq");
@@ -432,6 +633,30 @@ main(int argc, char *argv[])
 	printf("   nro_opt.nro_reqtype: %"PRIu32"\n", e.nro_opt.nro_reqtype);
 	printf("   nro_usrptr:          %lx\n", (unsigned long)e.nro_usrptr);
 	printf("   nro_info.nr_memsize  %"PRIu64"\n", e.nro_info.nr_memsize);
+
+	/* start another test */
+
+	bzero(&base_nmd, sizeof(base_nmd));
+	base_nmd.self = &base_nmd;
+	memcpy(base_nmd.nr.hdr.nr_name, argv[1], sizeof(base_nmd.nr.hdr.nr_name));
+	base_nmd.nr.reg.nr_flags |= NR_ACCEPT_VNET_HDR;
+
+	flags = NM_OPEN_IFNAME | NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3 |
+		NM_OPEN_RING_CFG;
+
+	memsize = (size_t)atoi(argv[2]) * 1000000;
+	base_nmd.nr.ext.nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
+	base_nmd.nr.ext.nro_info.nr_if_pool_objtotal = 128;
+	base_nmd.nr.ext.nro_info.nr_ring_pool_objtotal = 512;
+	base_nmd.nr.ext.nro_info.nr_ring_pool_objsize = 33024;
+	base_nmd.nr.ext.nro_info.nr_buf_pool_objtotal = (memsize / 2048) * 9 / 10;
+
+	d = nmreq_open(argv[1], flags, &base_nmd);
+        if (d == NULL) {
+		perror("nmreq_open");
+		return 1;
+	}
+
 	return 0;
 }
 #endif
