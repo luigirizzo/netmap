@@ -29,7 +29,6 @@
 #include <netmap/netmap_mem2.h>
 #include <linux/virtio_ring.h>
 
-
 static int virtnet_close(struct ifnet *ifp);
 static int virtnet_open(struct ifnet *ifp);
 static void free_receive_bufs(struct virtnet_info *vi);
@@ -81,6 +80,7 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #define virtqueue_get_vring_size(_vq)	({ (void)(_vq); 256; })
 #endif  /* !VIRTIO_GET_VRSIZE */
 
+#define TX_ONLY
 
 #ifndef NETMAP_LINUX_VIRTIO_FREE_PAGES
 static struct page *get_a_page(struct virtnet_info *vi, gfp_t gfp_mask);
@@ -149,9 +149,10 @@ virtio_netmap_init_sgs(struct virtnet_info *vi)
 
 	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++)
 		sg_init_table(GET_TX_SG(vi, i), 2);
-
+#ifndef TX_ONLY
 	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++)
 		sg_init_table(GET_RX_SG(vi, i), 2);
+#endif
 }
 
 #else  /* !MULTI_QUEUE && !SG */
@@ -201,7 +202,7 @@ virtio_netmap_clean_used_rings(struct virtnet_info *vi,
 		}
 		D("got %d used bufs on queue tx-%d", n, i);
 	}
-
+#ifndef TX_ONLY
 	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
 		struct virtqueue *vq = GET_RX_VQ(vi, i);
 		unsigned int wlen;
@@ -214,6 +215,7 @@ virtio_netmap_clean_used_rings(struct virtnet_info *vi,
 		}
 		D("got %d used bufs on queue rx-%d", n, i);
 	}
+#endif
 }
 
 
@@ -240,7 +242,7 @@ virtio_netmap_reclaim_unused(struct virtnet_info *vi)
 		}
 		D("detached %d pending bufs on queue tx-%d", n, i);
 	}
-
+#ifndef TX_ONLY
 	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
 		struct virtqueue *vq = GET_RX_VQ(vi, i);
 		void *token;
@@ -252,6 +254,7 @@ virtio_netmap_reclaim_unused(struct virtnet_info *vi)
 		}
 		D("detached %d pending bufs on queue rx-%d", n, i);
 	}
+#endif
 }
 
 /* Register and unregister. */
@@ -271,22 +274,34 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	 * (modifications would be needed to free_unused_bufs()
 	 * free_receive_bufs()). As a result, we fail here if we detect
 	 * the user is trying to open or close only a subset of the rings. */
-	hwrings = nma_get_nrings(na, NR_TX) + nma_get_nrings(na, NR_RX);
+    hwrings = nma_get_nrings(na, NR_TX) + nma_get_nrings(na, NR_RX);
+#ifdef TX_ONLY
+    // not sure how to dynamically check -- hard coding TX
+    t = NR_TX; 
+#endif
+
+#ifndef TX_ONLY
 	for_rx_tx(t) {
 		for (i = 0; i < nma_get_nrings(na, t); i++) {
+#else
+			i = 0;
+#endif
 			struct netmap_kring *kring = NMR(na, t)[i];
 
 			if ((onoff && nm_kring_pending_on(kring)) ||
 				(!onoff && nm_kring_pending_off(kring))) {
 				hwrings_pending ++;
 			}
+#ifndef TX_ONLY
 		}
 	}
+#endif
 
 	if (!(hwrings_pending == 0 || hwrings_pending == hwrings)) {
-		D("virtio-net native adapter can only open "
-		  "all RX and TX hw rings");
-		return EINVAL;
+		D("not all TX/RX rings are pending %d/%d", hwrings_pending, hwrings);
+#ifndef TX_ONLY
+        return EINVAL;
+#endif
 	}
 
 	/* It's important to make sure each virtnet_close() matches
@@ -300,12 +315,14 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (onoff) {
 		if (hwrings_pending) {
-			/* TX shared virtio-net header must be zeroed because its
-			 * content is exposed to the host. RX shared virtio-net
-			 * header is zeroed only for security reasons. */
+			/* TX shared virtio-net header must be zeroed
+             * because its content is exposed to the host.
+             * RX shared virtio-net header is zeroed only
+             * for security reasons. */
 			memset(&vna->shared_txvhdr, 0, sizeof(vna->shared_txvhdr));
+#ifndef TX_ONLY
 			memset(&vna->shared_rxvhdr, 0, sizeof(vna->shared_rxvhdr));
-
+#endif
 			/* Get and free any used buffers. This is necessary
 			 * before calling free_unused_bufs(), that uses
 			 * virtqueue_detach_unused_buf(). */
@@ -339,27 +356,39 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		}
 
 		/* enable netmap mode */
-		for_rx_tx(t) {
+#ifndef TX_ONLY 
+        for_rx_tx(t) {
 			for (i = 0; i <= nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
+#else
+			    i = 0;
+#endif
+            	struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_on(kring)) {
 					kring->nr_mode = NKR_NETMAP_ON;
 				}
+#ifndef TX_ONLY
 			}
 		}
+#endif
 		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
+#ifndef TX_ONLY
 		for_rx_tx(t) {
 			for (i = 0; i <= nma_get_nrings(na, t); i++) {
+#else
+                i = 0;
+#endif
 				struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_off(kring)) {
 					kring->nr_mode = NKR_NETMAP_OFF;
 				}
+#ifndef TX_ONLY
 			}
 		}
+#endif
 
 		if (hwrings_pending) {
 			/* Get and free any used buffer. This is necessary
