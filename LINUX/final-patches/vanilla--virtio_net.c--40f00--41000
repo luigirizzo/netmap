@@ -81,8 +81,8 @@ index 559b215c0169..00aad16f3aa2 100644
 +	struct netmap_adapter *token = NA(vi->dev);
  
 +	netmap_detach(vi->dev);
-+	virtio_netmap_clean_used_rings(vi, token);
-+	virtio_netmap_reclaim_unused(vi);
++	virtio_netmap_clean_used_rings(vi, token, NR_TXRX);
++	virtio_netmap_reclaim_unused(vi, NR_TXRX);
 +#endif
  	virtnet_cpu_notif_remove(vi);
  
