@@ -81,7 +81,6 @@ static void free_unused_bufs(struct virtnet_info *vi);
 #define virtqueue_get_vring_size(_vq)	({ (void)(_vq); 256; })
 #endif  /* !VIRTIO_GET_VRSIZE */
 
-#define TX_ONLY
 
 #ifndef NETMAP_LINUX_VIRTIO_FREE_PAGES
 static struct page *get_a_page(struct virtnet_info *vi, gfp_t gfp_mask);
