@@ -29,6 +29,7 @@
 #include <netmap/netmap_mem2.h>
 #include <linux/virtio_ring.h>
 
+
 static int virtnet_close(struct ifnet *ifp);
 static int virtnet_open(struct ifnet *ifp);
 static void free_receive_bufs(struct virtnet_info *vi);
@@ -274,7 +275,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	 * (modifications would be needed to free_unused_bufs()
 	 * free_receive_bufs()). As a result, we fail here if we detect
 	 * the user is trying to open or close only a subset of the rings. */
-    hwrings = nma_get_nrings(na, NR_TX) + nma_get_nrings(na, NR_RX);
+	hwrings = nma_get_nrings(na, NR_TX) + nma_get_nrings(na, NR_RX);
 #ifdef TX_ONLY
     // not sure how to dynamically check -- hard coding TX
     t = NR_TX; 
@@ -298,7 +299,8 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 #endif
 
 	if (!(hwrings_pending == 0 || hwrings_pending == hwrings)) {
-		D("not all TX/RX rings are pending %d/%d", hwrings_pending, hwrings);
+		D("virtio-net native adapter can only open "
+		  "all RX and TX hw rings");
 #ifndef TX_ONLY
         return EINVAL;
 #endif
@@ -315,10 +317,9 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (onoff) {
 		if (hwrings_pending) {
-			/* TX shared virtio-net header must be zeroed
-             * because its content is exposed to the host.
-             * RX shared virtio-net header is zeroed only
-             * for security reasons. */
+			/* TX shared virtio-net header must be zeroed because its
+			 * content is exposed to the host. RX shared virtio-net
+			 * header is zeroed only for security reasons. */
 			memset(&vna->shared_txvhdr, 0, sizeof(vna->shared_txvhdr));
 #ifndef TX_ONLY
 			memset(&vna->shared_rxvhdr, 0, sizeof(vna->shared_rxvhdr));
