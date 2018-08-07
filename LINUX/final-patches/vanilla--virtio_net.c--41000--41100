@@ -82,7 +82,7 @@ index 23374603e4d9..fc0d8be71d4e 100644
  
 +	netmap_detach(vi->dev);
 +	virtio_netmap_clean_used_rings(vi, token);
-+	virtio_netmap_reclaim_unused(vi, NR_TXRX);
++	virtio_netmap_reclaim_unused(vi);
 +#endif
  	virtnet_cpu_notif_remove(vi);
  
