@@ -1869,7 +1869,7 @@ NMB(struct netmap_adapter *na, struct netmap_slot *slot)
 }
 
 static inline void *
-PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
+PNMB(struct netmap_adapter *na, struct netmap_slot *slot, phys_addr_t *pp)
 {
 	uint32_t i = slot->buf_idx;
 	struct lut_entry *lut = na->na_lut.lut;

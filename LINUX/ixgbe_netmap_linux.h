@@ -328,7 +328,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		while (nm_i != head) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
-			uint64_t paddr;
+			phys_addr_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
@@ -481,7 +481,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	 */
 	for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
 		struct netmap_slot *slot = &ring->slot[tosync];
-		uint64_t paddr;
+		phys_addr_t paddr;
 		(void)PNMB(na, slot, &paddr);
 
 		netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
@@ -554,7 +554,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(rxr, nic_i);
 			uint32_t staterr;
 			u_int size = le16toh(curr->wb.upper.length);
-			uint64_t paddr;
+			phys_addr_t paddr;
 			struct netmap_slot *slot = &ring->slot[nm_i];
 
 			if (!size)
@@ -597,7 +597,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 		nic_i = netmap_idx_k2n(kring, nm_i);
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
-			uint64_t paddr;
+			phys_addr_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
 			union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(rxr, nic_i);
@@ -721,7 +721,7 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 		 */
 		int si = netmap_idx_n2k(na->rx_rings[ring_nr], i);
 		union ixgbe_adv_rx_desc *curr = NM_IXGBE_RX_DESC(ring, i);
-		uint64_t paddr;
+		phys_addr_t paddr;
 		PNMB(na, slot + si, &paddr);
 		/* Update descriptor */
 		curr->read.pkt_addr = htole64(paddr);

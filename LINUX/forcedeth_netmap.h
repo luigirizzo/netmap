@@ -154,7 +154,7 @@ forcedeth_netmap_txsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
-			uint64_t paddr;
+			phys_addr_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
@@ -274,7 +274,7 @@ forcedeth_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
-			uint64_t paddr;
+			phys_addr_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
 			struct ring_desc_ex *desc = rxr + nic_i;
@@ -335,7 +335,7 @@ forcedeth_netmap_tx_init(struct SOFTC_T *np)
 	/* l points in the netmap ring, i points in the NIC ring */
 	for (i = 0; i < n; i++) {
 		int l = netmap_idx_n2k(na->tx_rings[0], i);
-		uint64_t paddr;
+		phys_addr_t paddr;
 		PNMB(na, slot + l, &paddr);
 		desc[i].flaglen = 0;
 		desc[i].bufhigh = htole32(dma_high(paddr));
@@ -363,7 +363,7 @@ forcedeth_netmap_rx_init(struct SOFTC_T *np)
 	lim = np->rx_ring_size - 1 - nm_kr_rxspace(na->rx_rings[0]);
 	for (i = 0; i < np->rx_ring_size; i++) {
 		void *addr;
-		uint64_t paddr;
+		phys_addr_t paddr;
 		int l = netmap_idx_n2k(na->rx_rings[0], i);
 
 		addr = PNMB(na, slot + l, &paddr);

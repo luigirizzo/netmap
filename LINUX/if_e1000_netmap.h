@@ -120,7 +120,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
-			uint64_t paddr;
+			phys_addr_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
@@ -174,7 +174,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 		/* sync all buffers that we are returning to userspace */
 		for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
 			struct netmap_slot *slot = &ring->slot[tosync];
-			uint64_t paddr;
+			phys_addr_t paddr;
 			(void)PNMB(na, slot, &paddr);
 
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
@@ -229,7 +229,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, nic_i);
 			uint32_t staterr = le32toh(curr->status);
 			struct netmap_slot *slot;
-			uint64_t paddr;
+			phys_addr_t paddr;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
@@ -259,7 +259,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 		nic_i = netmap_idx_k2n(kring, nm_i);
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
-			uint64_t paddr;
+			phys_addr_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, nic_i);
 
@@ -305,7 +305,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	struct netmap_slot* slot;
 	struct e1000_tx_ring* txr = &adapter->tx_ring[0];
 	unsigned int i, r, si;
-	uint64_t paddr;
+	phys_addr_t paddr;
 
 	if (!nm_native_on(na))
 		return 0;
