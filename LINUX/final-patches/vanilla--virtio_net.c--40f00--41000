@@ -61,7 +61,61 @@ index 559b215c0169..00aad16f3aa2 100644
  
  	for (i = 0; i < vi->max_queue_pairs; i++) {
  		if (i < vi->curr_queue_pairs)
-@@ -2685,6 +2716,10 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -2219,31 +2250,36 @@ static bool is_xdp_raw_buffer_queue(struct virtnet_info *vi, int q)
+ 		return false;
+ }
+ 
+-static void free_unused_bufs(struct virtnet_info *vi)
++static void free_unused_bufs(struct virtnet_info *vi, int flag)
+ {
+ 	void *buf;
+ 	int i;
+ 
+-	for (i = 0; i < vi->max_queue_pairs; i++) {
+-		struct virtqueue *vq = vi->sq[i].vq;
++	if (flag == 1 || flag == 2) {
++		for (i = 0; i < vi->max_queue_pairs; i++) {
++			struct virtqueue *vq = vi->sq[i].vq;
++
+ 		while ((buf = virtqueue_detach_unused_buf(vq)) != NULL) {
+-			if (!is_xdp_raw_buffer_queue(vi, i))
+-				dev_kfree_skb(buf);
+-			else
+-				put_page(virt_to_head_page(buf));
++				if (!is_xdp_raw_buffer_queue(vi, i))
++					dev_kfree_skb(buf);
++				else
++					put_page(virt_to_head_page(buf));
++			}
+ 		}
+ 	}
+ 
+-	for (i = 0; i < vi->max_queue_pairs; i++) {
+-		struct virtqueue *vq = vi->rq[i].vq;
+-
+-		while ((buf = virtqueue_detach_unused_buf(vq)) != NULL) {
+-			if (vi->mergeable_rx_bufs) {
+-				put_page(virt_to_head_page(buf));
+-			} else if (vi->big_packets) {
+-				give_pages(&vi->rq[i], buf);
+-			} else {
+-				put_page(virt_to_head_page(buf));
++	if (flag == 0 || flag == 2) {
++		for (i = 0; i < vi->max_queue_pairs; i++) {
++			struct virtqueue *vq = vi->rq[i].vq;
++
++			while ((buf = virtqueue_detach_unused_buf(vq)) != NULL) {
++				if (vi->mergeable_rx_bufs) {
++					put_page(virt_to_head_page(buf));
++				} else if (vi->big_packets) {
++					give_pages(&vi->rq[i], buf);
++				} else {
++					put_page(virt_to_head_page(buf));
++				}
+ 			}
+ 		}
+ 	}
+@@ -2685,6 +2721,10 @@ static int virtnet_probe(struct virtio_device *vdev)
  
  	virtnet_set_queues(vi, vi->curr_queue_pairs);
  
@@ -72,7 +126,16 @@ index 559b215c0169..00aad16f3aa2 100644
  	/* Assume link up if device can't report link status,
  	   otherwise get link status from config. */
  	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_STATUS)) {
-@@ -2736,7 +2771,14 @@ static void remove_vq_common(struct virtnet_info *vi)
+@@ -2724,7 +2764,7 @@ static void remove_vq_common(struct virtnet_info *vi)
+ 	vi->vdev->config->reset(vi->vdev);
+ 
+ 	/* Free unused buffers in both send and recv, if any. */
+-	free_unused_bufs(vi);
++	free_unused_bufs(vi, 3);
+ 
+ 	free_receive_bufs(vi);
+ 
+@@ -2736,7 +2776,14 @@ static void remove_vq_common(struct virtnet_info *vi)
  static void virtnet_remove(struct virtio_device *vdev)
  {
  	struct virtnet_info *vi = vdev->priv;
@@ -81,13 +144,13 @@ index 559b215c0169..00aad16f3aa2 100644
 +	struct netmap_adapter *token = NA(vi->dev);
  
 +	netmap_detach(vi->dev);
-+	virtio_netmap_clean_used_rings(vi, token);
-+	virtio_netmap_reclaim_unused(vi);
++	virtio_netmap_clean_used_rings(vi, token, 3);
++	virtio_netmap_reclaim_unused(vi, 3);
 +#endif
  	virtnet_cpu_notif_remove(vi);
  
  	/* Make sure no work handler is accessing the device. */
-@@ -2803,6 +2845,9 @@ static unsigned int features_legacy[] = {
+@@ -2803,6 +2850,9 @@ static unsigned int features_legacy[] = {
  	VIRTNET_FEATURES,
  	VIRTIO_NET_F_GSO,
  	VIRTIO_F_ANY_LAYOUT,

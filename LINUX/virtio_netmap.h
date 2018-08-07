@@ -33,7 +33,7 @@
 static int virtnet_close(struct ifnet *ifp);
 static int virtnet_open(struct ifnet *ifp);
 static void free_receive_bufs(struct virtnet_info *vi);
-static void free_unused_bufs(struct virtnet_info *vi);
+static void free_unused_bufs(struct virtnet_info *vi, int flag);
 
 #define DEV_NUM_TX_QUEUES(_netdev)	(_netdev)->num_tx_queues
 
@@ -147,10 +147,11 @@ virtio_netmap_init_sgs(struct virtnet_info *vi, enum txrx t)
 {
 	int i;
 
-	if (t == NR_TX) {
+	if (t == NR_TX || t == NR_TXRX) {
 		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++)
 			sg_init_table(GET_TX_SG(vi, i), 2);
-	} else if (t == NR_RX) {
+	}
+	if (t == NR_RX || t == NR_TXRX) {
 		for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++)
 			sg_init_table(GET_RX_SG(vi, i), 2);
 	}
@@ -186,6 +187,7 @@ virtio_netmap_clean_used_rings(struct virtnet_info *vi,
 			       struct netmap_adapter *na, enum txrx t)
 {
 	int i;
+
 	if (t == NR_TX || t == NR_TXRX) {
 		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
 			struct virtqueue *vq = GET_TX_VQ(vi, i);
@@ -311,48 +313,41 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (onoff) {
 		if (pending) {
-			if (hwrings_pending[NR_TX]) {
+			if (hwrings_pending[NR_TX] && hwrings_pending[NR_RX])
+				t = NR_TXRX;
+			else if (hwrings_pending[NR_TX])
+				t = NR_TX;
+			else if (hwrings_pending[NR_RX])
+				t = NR_RX;
 
-				/* TX shared virtio-net header must be zeroed because its
-				 * content is exposed to the host. */
+			/* TX shared virtio-net header must be zeroed because its
+			 * content is exposed to the host. */
+			if (t == NR_TX)
 				memset(&vna->shared_txvhdr, 0, sizeof(vna->shared_txvhdr));
 
-				/* Get and free any used TX buffers. This is necessary
-				 * before calling free_unused_bufs(), that uses
-				 * virtqueue_detach_unused_buf(). */
-				virtio_netmap_clean_used_rings(vi, na, NR_TX);
-
-				/* Initialize scatter-gather lists used to publish netmap
-				 * buffers through virtio descriptors, in such a way that each
-				 * each scatter-gather list contains exactly one descriptor
-				 * (which can point to a netmap buffer). This initialization is
-				 * necessary to prevent the virtio frontend (host) to think
-				 * we are using multi-descriptors scatter-gather lists. */
-				virtio_netmap_init_sgs(vi, NR_TX);
-			}
-			if (hwrings_pending[NR_RX]) {
-			
-				/* RX shared virtio-net header is zeroed only for
-				 * security reasons. */
+			/* RX shared virtio-net header is zeroed only for
+			 * security reasons. */
+			if (t == NR_RX || t == NR_TXRX)
 				memset(&vna->shared_rxvhdr, 0, sizeof(vna->shared_rxvhdr));
 
-				/* Get and free any used RX buffers. This is necessary
-				 * before calling free_unused_bufs(), that uses
-				 * virtqueue_detach_unused_buf(). */
-				virtio_netmap_clean_used_rings(vi, na, NR_RX);
+			/* Get and free any used TX buffers. This is necessary
+			 * before calling free_unused_bufs(), that uses
+			 * virtqueue_detach_unused_buf(). */
+			virtio_netmap_clean_used_rings(vi, na, t);
 
-				/* Initialize scatter-gather lists used to publish netmap
-				 * buffers through virtio descriptors, in such a way that each
-				 * each scatter-gather list contains exactly one descriptor
-				 * (which can point to a netmap buffer). This initialization is
-				 * necessary to prevent the virtio frontend (host) to think
-				 * we are using multi-descriptors scatter-gather lists. */
-				virtio_netmap_init_sgs(vi, NR_RX);
+			/* Initialize scatter-gather lists used to publish netmap
+			 * buffers through virtio descriptors, in such a way that each
+			 * each scatter-gather list contains exactly one descriptor
+			 * (which can point to a netmap buffer). This initialization is
+			 * necessary to prevent the virtio frontend (host) to think
+			 * we are using multi-descriptors scatter-gather lists. */
+			virtio_netmap_init_sgs(vi, t);
 
-				/* Also free the pages allocated by the driver. Since
-				 * Linux 4.10, free_receive_bufs() takes the rtnl lock
-				 * to support XDP. To avoid deadlock, we temporarily
-				 * release the lock during this call. */
+			/* Also free the pages allocated by the driver. Since
+			 * Linux 4.10, free_receive_bufs() takes the rtnl lock
+			 * to support XDP. To avoid deadlock, we temporarily
+			 * release the lock during this call. */
+			if (t == NR_RX || t == NR_TXRX) {
 				rtnl_unlock();
 				free_receive_bufs(vi);
 				rtnl_lock();
@@ -366,7 +361,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 			 * the virtio-driver (e.g. sk_buffs). We need to free that
 			 * memory, otherwise we have leakage.
 			 */
-			free_unused_bufs(vi);
+			free_unused_bufs(vi, t);
 		}
 
 		/* enable netmap mode */
