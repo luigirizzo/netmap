@@ -181,7 +181,7 @@ i40e_netmap_configure_rx_ring(struct i40e_ring *ring)
 
 	for (i = 0; i < na->num_rx_desc; i++) {
 		int si = netmap_idx_n2k(kring, i);
-		uint64_t paddr;
+		phys_addr_t paddr;
 		union i40e_rx_desc *rx = I40E_RX_DESC(ring, i);
 		PNMB(na, slot + si, &paddr);
 
@@ -375,7 +375,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
-			uint64_t paddr;
+			phys_addr_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
 			/* device-specific */
@@ -443,7 +443,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 		/* sync all buffers that we are returning to userspace */
 		for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
 			struct netmap_slot *slot = &ring->slot[tosync];
-			uint64_t paddr;
+			phys_addr_t paddr;
 			(void)PNMB(na, slot, &paddr);
 
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
@@ -536,7 +536,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 				 >> I40E_RXD_QW1_STATUS_SHIFT;
 		        uint16_t slot_flags = 0;
 			struct netmap_slot *slot;
-			uint64_t paddr;
+			phys_addr_t paddr;
 
 			if (likely(complete)) {
 				ntail = nm_i;
@@ -591,7 +591,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 		nic_i = netmap_idx_k2n(kring, nm_i);
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
-			uint64_t paddr;
+			phys_addr_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
 			union i40e_rx_desc *curr = I40E_RX_DESC(rxr, nic_i);

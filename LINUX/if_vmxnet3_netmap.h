@@ -514,7 +514,7 @@ static int vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &nmring->slot[nm_i];
-			uint64_t paddr;
+			phys_addr_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
 			if (addr == NETMAP_BUF_BASE(na)) // bad buf
