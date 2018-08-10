@@ -1920,7 +1920,7 @@ netmap_mem2_rings_create(struct netmap_adapter *na)
 				netmap_mem_bufsize(na->nm_mem);
 			ND("%s h %d c %d t %d", kring->name,
 				ring->head, ring->cur, ring->tail);
-			ND("initializing slots for %s_ring", nm_txrx2str(txrx));
+			ND("initializing slots for %s_ring", nm_txrx2str(t));
 			if (!(kring->nr_kflags & NKR_FAKERING)) {
 				/* this is a real ring */
 				ND("allocating buffers for %s", kring->name);
