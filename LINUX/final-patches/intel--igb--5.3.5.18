@@ -9,7 +9,8 @@ index 02d49bb..47fd630 100644
 -obj-$(CONFIG_IGB) += igb.o
 +obj-$(CONFIG_IGB) += igb$(NETMAP_DRIVER_SUFFIX).o
  
- define igb-y
+-define igb-y
++define igb$(NETMAP_DRIVER_SUFFIX)-y
  	igb_main.o
 @@ -46,19 +46,19 @@ define igb-y
  	e1000_82575.o
