@@ -1,0 +1,12 @@
+#!/bin/bash -eu
+
+sudo modprobe netmap
+
+# Run control API tests
+pushd .
+cd utils
+make
+sudo ./ctrl-api-test
+popd
+
+sudo rmmod netmap

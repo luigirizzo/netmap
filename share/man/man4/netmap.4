@@ -27,7 +27,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd March 2, 2017
+.Dd January 31, 2018
 .Dt NETMAP 4
 .Os
 .Sh NAME
@@ -266,14 +266,26 @@ normally depends on the hardware.
 NICs also have an extra tx/rx ring pair connected to the host stack.
 .Em NIOCREGIF
 can also request additional unbound buffers in the same memory space,
-to be used as temporary storage for packets.
+to be used as temporary storage for packets. The number of extra
+buffers is specified in the
+.Va arg.nr_arg3
+field. On success, the kernel writes back to
+.Va arg.nr_arg3
+the number of extra buffers actually allocated (they may be less
+than the amount requested if the memory space ran out of buffers).
 .Pa ni_bufs_head
-contains the index of the first of these free rings,
+contains the index of the first of these extra buffers,
 which are connected in a list (the first uint32_t of each
 buffer being the index of the next buffer in the list).
 A
 .Dv 0
-indicates the end of the list.
+indicates the end of the list. The application is free to modify
+this list and use the buffers (i.e., binding them to the slots of a
+netmap ring). When closing the netmap file descriptor,
+the kernel frees the buffers contained in the list pointed by
+.Pa ni_bufs_head
+, irrespectively of the buffers originally provided by the kernel on
+.Em NIOCREGIF.
 .It Dv struct netmap_ring (one per ring)
 .Bd -literal
 struct netmap_ring {
@@ -498,10 +510,9 @@ can be delayed indefinitely.
 This flag helps detect
 when packets have been sent and a file descriptor can be closed.
 .It NS_FORWARD
-When a ring is in 'transparent' mode (see
-.Sx TRANSPARENT MODE ) ,
-packets marked with this flag are forwarded to the other endpoint
-at the next system call, thus restoring (in a selective way)
+When a ring is in 'transparent' mode,
+packets marked with this flag by the user application are forwarded to the
+other endpoint at the next system call, thus restoring (in a selective way)
 the connection between a NIC and the host stack.
 .It NS_NO_LEARN
 tells the forwarding code that the source MAC address for this
@@ -861,6 +872,8 @@ Controls the use of native or emulated adapter mode.
 1 forces native mode and fails if not available;
 .Pp
 2 forces emulated hence never fails.
+.It Va dev.netmap.generic_rings: 1
+Number of rings used for emulated netmap mode
 .It Va dev.netmap.generic_ringsize: 1024
 Ring size used for emulated netmap mode
 .It Va dev.netmap.generic_mit: 100000
@@ -902,6 +915,10 @@ Batch size used when moving packets across a
 switch.
 Values above 64 generally guarantee good
 performance.
+.It Va dev.netmap.ptnet_vnet_hdr: 1
+Allow ptnet devices to use virtio-net headers
+.It Va dev.netmap.ptnetmap_tx_workers: 1
+Use worker threads for ptnetmap TX processing
 .El
 .Sh SYSTEM CALLS
 .Nm

@@ -5,7 +5,7 @@
 [Version]
 Signature="$WINDOWS NT$"
 Class=System
-ClassGuid={9BF68A6C-4C18-4FB4-A2FD-0E54B36F9252}
+ClassGuid={4d36e97d-e325-11ce-bfc1-08002be10318}
 Provider=%ManufacturerName%
 DriverVer=05/18/2015,0.0.1.1
 CatalogFile=Netmap.cat
@@ -46,7 +46,7 @@ DelService=netmap,0x200 ; SPSVCINST_STOPSERVICE
 [Netmap_Service_Inst]
 DisplayName    = %ClassName%
 ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
-StartType      = 2               ; SERVICE_AUTO_START 
+StartType      = 2               ; SERVICE_AUTO_START
 ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
 ServiceBinary  = %12%\netmap.sys
 ;LoadOrderGroup = Extended Base

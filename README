@@ -16,6 +16,8 @@ This repository, hosted at https://github.com/luigirizzo/netmap , contains
 source code (BSD-Copyright) for FreeBSD, Linux and Windows.
 Note that recent FreeBSD distributions already include both NETMAP and VALE.
 
+A netmap tutorial is avaliable at https://github.com/vmaffione/netmap-tutorial.
+
 
 What is this good for
 ---------------------

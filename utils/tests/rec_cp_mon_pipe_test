@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if a receive copy monitor receives frames when its
+#                 monitored netmap pipe is receiving, even if the monitored pipe
+#                 hasn't yet read the frame.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create a pair of netmap pipes (pipe{1, pipe}1).
+# 2) open a receive copy monitor pipe{1/r for pipe{1.
+# 3) send from pipe}1 and don't read from pipe{1, check that pipe{1/r receives
+#    the frame.
+# 4) receive from pipe{1.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+fill="${fill:-d}"
+len="${len:-150}"
+num="${num:-1}"
+seq="${seq:-}"
+
+restart_fd_server
+
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+functional $verbosity -i "netmap:pipe{1"
+check_success $? "pre-open netmap:pipe{1"
+functional $verbosity -i "netmap:pipe{1/r"
+check_success $? "pre-open netmap:pipe{1/r"
+functional $verbosity -i "netmap:pipe}1"
+check_success $? "pre-open netmap:pipe}1"
+
+# First we send without reading from pipe{1
+functional $verbosity -i "netmap:pipe{1/r" -r "${len}:${fill}:${num}" $seq &
+p1=$!
+functional $verbosity -i "netmap:pipe}1"   -t "${len}:${fill}:${num}" $seq
+e2=$?
+wait $p1
+e1=$?
+check_success $e1 "receive-${num}${seq} netmap:pipe{1/r"
+check_success $e2 "send-${num}${seq} netmap:pipe}1"
+
+# Then we read from pipe{1
+functional $verbosity -i "netmap:pipe{1"   -r "${len}:${fill}:${num}" $seq
+e3=$?
+check_success $e3 "receive-${num}${seq} netmap:pipe{1"
+
+test_successful "$0"

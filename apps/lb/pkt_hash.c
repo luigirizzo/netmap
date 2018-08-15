@@ -48,6 +48,9 @@
 /* for memset */
 #include <string.h>
 
+#include <stdio.h>
+#include <assert.h>
+
 //#include <libnet.h>
 /*---------------------------------------------------------------------*/
 /**
@@ -57,36 +60,49 @@
 static void
 build_sym_key_cache(uint32_t *cache, int cache_len)
 {
-	static const uint8_t key[] = {
-		0x50, 0x6d, 0x50, 0x6d,
-                0x50, 0x6d, 0x50, 0x6d,
-                0x50, 0x6d, 0x50, 0x6d,
-                0x50, 0x6d, 0x50, 0x6d,
-                0xcb, 0x2b, 0x5a, 0x5a,
-		0xb4, 0x30, 0x7b, 0xae,
-                0xa3, 0x2d, 0xcb, 0x77,
-                0x0c, 0xf2, 0x30, 0x80,
-                0x3b, 0xb7, 0x42, 0x6a,
-                0xfa, 0x01, 0xac, 0xbe};
+	static const uint8_t key[] = { 0x50, 0x6d };
 
         uint32_t result = (((uint32_t)key[0]) << 24) |
                 (((uint32_t)key[1]) << 16) |
-                (((uint32_t)key[2]) << 8)  |
-                ((uint32_t)key[3]);
+                (((uint32_t)key[0]) << 8)  |
+                ((uint32_t)key[1]);
 
         uint32_t idx = 32;
         int i;
 
         for (i = 0; i < cache_len; i++, idx++) {
-                uint8_t shift = (idx % (sizeof(uint8_t) * 8));
+                uint8_t shift = (idx % 8);
                 uint32_t bit;
 
                 cache[i] = result;
-                bit = ((key[idx/(sizeof(uint8_t) * 8)] << shift)
-		       & 0x80) ? 1 : 0;
+                bit = ((key[(idx/8) & 1] << shift) & 0x80) ? 1 : 0;
                 result = ((result << 1) | bit);
         }
 }
+
+static void
+build_byte_cache(uint32_t byte_cache[256][4])
+{
+#define KEY_CACHE_LEN			96
+	int i, j, k;
+	uint32_t key_cache[KEY_CACHE_LEN];
+
+	build_sym_key_cache(key_cache, KEY_CACHE_LEN);
+
+	for (i = 0; i < 4; i++) {
+		for (j = 0; j < 256; j++) {
+			uint8_t b = j;
+			byte_cache[j][i] = 0;
+			for (k = 0; k < 8; k++) {
+				if (b & 0x80)
+					byte_cache[j][i] ^= key_cache[8 * i + k];
+				b <<= 1U;
+			}
+		}
+	}
+}
+
+
 /*---------------------------------------------------------------------*/
 /**
  ** Computes symmetric hash based on the 4-tuple header data
@@ -94,43 +110,35 @@ build_sym_key_cache(uint32_t *cache, int cache_len)
 static uint32_t
 sym_hash_fn(uint32_t sip, uint32_t dip, uint16_t sp, uint32_t dp)
 {
-#define MSB32				0x80000000
-#define MSB16				0x8000
-#define KEY_CACHE_LEN			96
-
 	uint32_t rc = 0;
-	int i;
 	static int first_time = 1;
-	static uint32_t key_cache[KEY_CACHE_LEN] = {0};
+	static uint32_t byte_cache[256][4];
+	uint8_t *sip_b = (uint8_t *)&sip,
+		*dip_b = (uint8_t *)&dip,
+		*sp_b  = (uint8_t *)&sp,
+		*dp_b  = (uint8_t *)&dp;
 
 	if (first_time) {
-		build_sym_key_cache(key_cache, KEY_CACHE_LEN);
+		build_byte_cache(byte_cache);
 		first_time = 0;
 	}
 
-	for (i = 0; i < 32; i++) {
-                if (sip & MSB32)
-                        rc ^= key_cache[i];
-                sip <<= 1;
-        }
-        for (i = 0; i < 32; i++) {
-                if (dip & MSB32)
-			rc ^= key_cache[32+i];
-                dip <<= 1;
-        }
-        for (i = 0; i < 16; i++) {
-		if (sp & MSB16)
-                        rc ^= key_cache[64+i];
-                sp <<= 1;
-        }
-        for (i = 0; i < 16; i++) {
-                if (dp & MSB16)
-                        rc ^= key_cache[80+i];
-                dp <<= 1;
-        }
+	rc = byte_cache[sip_b[3]][0] ^
+	     byte_cache[sip_b[2]][1] ^
+	     byte_cache[sip_b[1]][2] ^
+	     byte_cache[sip_b[0]][3] ^
+	     byte_cache[dip_b[3]][0] ^
+	     byte_cache[dip_b[2]][1] ^
+	     byte_cache[dip_b[1]][2] ^
+	     byte_cache[dip_b[0]][3] ^
+	     byte_cache[sp_b[1]][0] ^
+	     byte_cache[sp_b[0]][1] ^
+	     byte_cache[dp_b[1]][2] ^
+	     byte_cache[dp_b[0]][3];
 
 	return rc;
 }
+static uint32_t decode_gre_hash(const uint8_t *, uint8_t, uint8_t);
 /*---------------------------------------------------------------------*/
 /**
  ** Parser + hash function for the IPv4 packet
@@ -169,8 +177,11 @@ decode_ip_n_hash(struct ip *iph, uint8_t hash_split, uint8_t seed)
 			rc = decode_ip_n_hash((struct ip *)((uint8_t *)iph + (iph->ip_hl<<2)),
 					      hash_split, seed);
 			break;
-		case IPPROTO_ICMP:
 		case IPPROTO_GRE:
+			rc = decode_gre_hash((uint8_t *)iph + (iph->ip_hl<<2),
+					hash_split, seed);
+			break;
+		case IPPROTO_ICMP:
 		case IPPROTO_ESP:
 		case IPPROTO_PIM:
 		case IPPROTO_IGMP:
@@ -242,8 +253,10 @@ decode_ipv6_n_hash(struct ip6_hdr *ipv6h, uint8_t hash_split, uint8_t seed)
 			rc = decode_ipv6_n_hash((struct ip6_hdr *)(ipv6h + 1),
 						hash_split, seed);
 			break;
-		case IPPROTO_ICMP:
 		case IPPROTO_GRE:
+			rc = decode_gre_hash((uint8_t *)(ipv6h + 1), hash_split, seed);
+			break;
+		case IPPROTO_ICMP:
 		case IPPROTO_ESP:
 		case IPPROTO_PIM:
 		case IPPROTO_IGMP:
@@ -313,6 +326,7 @@ decode_vlan_n_hash(struct ether_header *ethh, uint8_t hash_split, uint8_t seed)
 	}
 	return rc;
 }
+
 /*---------------------------------------------------------------------*/
 /**
  ** General parser + hash function...
@@ -320,7 +334,7 @@ decode_vlan_n_hash(struct ether_header *ethh, uint8_t hash_split, uint8_t seed)
 uint32_t
 pkt_hdr_hash(const unsigned char *buffer, uint8_t hash_split, uint8_t seed)
 {
-	int rc = 0;
+	uint32_t rc = 0;
 	struct ether_header *ethh = (struct ether_header *)buffer;
 
 	switch (ntohs(ethh->ether_type)) {
@@ -342,6 +356,39 @@ pkt_hdr_hash(const unsigned char *buffer, uint8_t hash_split, uint8_t seed)
 		break;
 	}
 
+	return rc;
+}
+
+/*---------------------------------------------------------------------*/
+/**
+ ** Parser + hash function for the GRE packet
+ **/
+static uint32_t
+decode_gre_hash(const uint8_t *grehdr, uint8_t hash_split, uint8_t seed)
+{
+	uint32_t rc = 0;
+	int len = 4 + 2 * (!!(*grehdr & 1) + /* Checksum */
+			   !!(*grehdr & 2) + /* Routing */
+			   !!(*grehdr & 4) + /* Key */
+			   !!(*grehdr & 8)); /* Sequence Number */
+	uint16_t proto = ntohs(*(uint16_t *)(void *)(grehdr + 2));
+
+	switch (proto) {
+	case ETHERTYPE_IP:
+		rc = decode_ip_n_hash((struct ip *)(grehdr + len),
+				      hash_split, seed);
+		break;
+	case ETHERTYPE_IPV6:
+		rc = decode_ipv6_n_hash((struct ip6_hdr *)(grehdr + len),
+					hash_split, seed);
+		break;
+	case 0x6558: /* Transparent Ethernet Bridging */
+		rc = pkt_hdr_hash(grehdr + len, hash_split, seed);
+		break;
+	default:
+		/* others */
+		break;
+	}
 	return rc;
 }
 /*---------------------------------------------------------------------*/

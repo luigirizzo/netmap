@@ -565,7 +565,7 @@ ioctlDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 		}
 
 		ret = netmap_ioctl(priv, irpSp->Parameters.DeviceIoControl.IoControlCode,
-			(caddr_t)&arg, NULL);
+			(caddr_t)&arg, NULL, 1);
 		if (NT_SUCCESS(ret)) {
 			if (data && !NT_SUCCESS(copy_to_user((void*)data, &arg, argsize, Irp))) {
 				DbgPrint("Netmap.sys: ioctl failure/cannot copy data to user");
@@ -885,6 +885,16 @@ bdg_mismatch_datapath(struct netmap_vp_adapter *na,
     DbgPrint("bdg_mismatch_datapath unimplemented!!!\n");
 }
 
+void if_ref(struct net_device *ifp)
+{
+	/*
+	* XXX This is just to shut up the compiler.
+	* I wouldn't know what to out in here yet...
+	*/
+	DbgPrint("unimplemented if_ref!!!\n");
+/* 	dev_hold(ifp); */
+}
+
 void
 if_rele(struct net_device *ifp)
 {
@@ -915,6 +925,12 @@ void
 nm_os_ifnet_fini(void)
 {
 
+}
+
+unsigned
+nm_os_ifnet_mtu(struct ifnet *ifp)
+{
+       return 1500; /* XXX hardwired */
 }
 
 /*
@@ -1001,7 +1017,13 @@ nm_os_ncpus(void)
 }
 
 int
-nm_os_mbuf_has_offld(struct mbuf *m)
+nm_os_mbuf_has_csum_offld(struct mbuf *m)
+{
+	return 0;  // TODO
+}
+
+int
+nm_os_mbuf_has_seg_offld(struct mbuf *m)
 {
 	return 0;  // TODO
 }
@@ -1030,8 +1052,7 @@ nm_os_kctx_worker_setaff(struct nm_kctx *nmk, int affinity)
 }
 
 struct nm_kctx *
-nm_os_kctx_create(struct nm_kctx_cfg *cfg, unsigned int cfgtype,
-		     void *opaque)
+nm_os_kctx_create(struct nm_kctx_cfg *cfg, void *opaque)
 {
 	// TODO
 	return NULL;

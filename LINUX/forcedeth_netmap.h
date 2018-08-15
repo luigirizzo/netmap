@@ -73,7 +73,7 @@ This makes sure that there is always a free slot.
 static int
 forcedeth_netmap_reg(struct netmap_adapter *na, int onoff)
 {
-        struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = na->ifp;
 	struct SOFTC_T *np = netdev_priv(ifp);
 	u8 __iomem *base = get_hwbase(ifp);
 
@@ -242,8 +242,6 @@ forcedeth_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	rmb();
 	if (netmap_no_pendintr || force_update) {
-		uint16_t slot_flags = kring->nkr_slot_flags;
-
 		nic_i = np->get_rx.ex - rxr; /* next pkt to check */
 		/* put_rx is the refill position, one before nr_hwcur.
 		 * This slot is not available
@@ -257,7 +255,7 @@ forcedeth_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if (statlen & NV_RX2_AVAIL) /* still owned by the NIC */
 				break;
 			ring->slot[nm_i].len = statlen & LEN_MASK_V2; // XXX crc?
-			ring->slot[nm_i].flags = slot_flags;
+			ring->slot[nm_i].flags = 0;
 			// ifp->stats.rx_packets++;
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
@@ -325,7 +323,7 @@ forcedeth_netmap_tx_init(struct SOFTC_T *np)
 	struct netmap_adapter *na = NA(np->dev);
 	struct netmap_slot *slot;
 
-        slot = netmap_reset(na, NR_TX, 0, 0);
+	slot = netmap_reset(na, NR_TX, 0, 0);
 	/* slot is NULL if we are not in native netmap mode */
 	if (!slot)
 		return 0;
@@ -336,7 +334,7 @@ forcedeth_netmap_tx_init(struct SOFTC_T *np)
 
 	/* l points in the netmap ring, i points in the NIC ring */
 	for (i = 0; i < n; i++) {
-		int l = netmap_idx_n2k(&na->tx_rings[0], i);
+		int l = netmap_idx_n2k(na->tx_rings[0], i);
 		uint64_t paddr;
 		PNMB(na, slot + l, &paddr);
 		desc[i].flaglen = 0;
@@ -362,11 +360,11 @@ forcedeth_netmap_rx_init(struct SOFTC_T *np)
 	 * Do not release the slots owned by userspace,
 	 * and also keep one empty.
 	 */
-	lim = np->rx_ring_size - 1 - nm_kr_rxspace(&na->rx_rings[0]);
+	lim = np->rx_ring_size - 1 - nm_kr_rxspace(na->rx_rings[0]);
 	for (i = 0; i < np->rx_ring_size; i++) {
 		void *addr;
 		uint64_t paddr;
-		int l = netmap_idx_n2k(&na->rx_rings[0], i);
+		int l = netmap_idx_n2k(na->rx_rings[0], i);
 
 		addr = PNMB(na, slot + l, &paddr);
 		//netmap_reload_map(np->rl_ldata.rl_rx_mtag,

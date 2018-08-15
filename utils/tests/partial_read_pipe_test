@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check that if the receiving pipe receives less than the
+#                 sending pipe sent, the non-received slot are left inside the
+#                 sending pipe ring.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create a pair of netmap pipes (pipe{1, pipe}1).
+# 2) send X packets from pipe{1 and receive X-Y packets from pipe}1.
+# 2) check that pipe{1 still has X-Y slots pending for transmission.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+seq="${seq:-}"
+
+fill='h'
+len=274
+num_send=10
+num_recv=7
+pipe="pipeA"
+
+restart_fd_server
+
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+functional $verbosity -i "netmap:${pipe}{1"
+check_success $? "pre-open netmap:${pipe}{1"
+functional $verbosity -i "netmap:${pipe}}1"
+check_success $? "pre-open netmap:${pipe}}1"
+
+functional $verbosity -i "netmap:${pipe}{1" -r "${len}:${fill}:${num_recv}" $seq &
+p1=$!
+functional $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}" $seq
+e2=$?
+wait $p1
+e1=$?
+check_success $e1 "receive-7 netmap:${pipe}{1"
+check_success $e2 "send-10 netmap:${pipe}}1"
+
+# At the moment get_tx_rings_max_sends and get_tx_rings_avail_sends do not
+# get the interface fd from fd_server, they request it directly through an
+# nm_open(), but they still read the correct values stored inside each struct
+# netmap ring. This only happens if the multiple processes / threads synchronize
+# with each other when sharing the same netmap interface. This happens
+# implicitly for us because get_tx_rings_max_sends and get_tx_rings_avail_sends
+# are called after the first send-receive action, and the second one doesn't
+# happen until they terminate.
+exit_status=0
+ring_max_sends=$(./get_tx_rings_max_sends "netmap:${pipe}}1" "$len")
+if [ $ring_max_sends = -1 ] ; then
+	exit_status=1
+fi
+check_success $exit_status "get_tx_rings_max_sends netmap:${pipe}}1 $len"
+
+exit_status=0
+ring_avail_sends=$(./get_tx_rings_avail_sends "netmap:${pipe}}1" "$len")
+if [ $ring_avail_sends = -1 ] ; then
+	exit_status=1
+fi
+check_success $exit_status "get_tx_rings_avail_sends netmap:${pipe}}1 $len"
+
+exit_status=0
+ring_used_sends="$(($ring_max_sends - $ring_avail_sends))"
+pending_sends="$(($num_send - $num_recv))"
+if [ $ring_used_sends != $pending_sends ] ; then
+	exit_status = 1
+fi
+check_exit $pending_sends $ring_used_sends "pending_sends=ring_used_sends"
+
+num_send="$(($ring_avail_sends + 1))"
+functional $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}" $seq
+check_failure $? "send-${num_send} netmap:${pipe}}1"
+
+test_successful "$0"

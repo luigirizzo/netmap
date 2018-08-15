@@ -1,5 +1,5 @@
 diff --git a/forcedeth.c b/forcedeth.c
-index 9c0b1ba..b081d6b 100644
+index 9c0b1bac6af6..b081d6ba11a2 100644
 --- a/forcedeth.c
 +++ b/forcedeth.c
 @@ -1865,12 +1865,25 @@ static void nv_init_tx(struct net_device *dev)

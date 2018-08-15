@@ -100,8 +100,6 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
-	/* generate an interrupt approximately every half ring */
-	u_int report_frequency = kring->nkr_num_slots >> 1;
 
 	/* device-specific */
 	struct SOFTC_T *adapter = netdev_priv(ifp);
@@ -127,24 +125,25 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = E1000_TX_DESC(*txr, nic_i);
-			int flags = (slot->flags & NS_REPORT ||
-				nic_i == 0 || nic_i == report_frequency) ?
-				E1000_TXD_CMD_RS : 0;
+			int hw_flags = E1000_TXD_CMD_IFCS;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
+			if (!(slot->flags & NS_MOREFRAG)) {
+				hw_flags |= adapter->txd_cmd;
+				/* For now E1000_TXD_CMD_RS is always set.
+				 * We may set it only if NS_REPORT is set or
+				 * at least once every half ring. */
+			}
 			if (slot->flags & NS_BUF_CHANGED) {
-				/* buffer has changed, reload map */
-				// netmap_reload_map(pdev, DMA_TO_DEVICE, old_addr, paddr);
 				curr->buffer_addr = htole64(paddr);
 			}
-			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 
 			/* Fill the slot in the NIC ring. */
 			curr->upper.data = 0;
-			curr->lower.data = htole32(adapter->txd_cmd |
-				len | flags |
-				E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS);
+			curr->lower.data = htole32(len | hw_flags);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -161,13 +160,26 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
 	if (flags & NAF_FORCE_RECLAIM || nm_kr_txempty(kring)) {
+		u_int tosync;
+
 		/* record completed transmissions using TDH */
 		nic_i = readl(adapter->hw.hw_addr + txr->tdh);
 		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
 			D("TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
+		nm_i = netmap_idx_n2k(kring, nic_i);
 		txr->next_to_clean = nic_i;
+		tosync = nm_next(kring->nr_hwtail, lim);
+		/* sync all buffers that we are returning to userspace */
+		for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
+			struct netmap_slot *slot = &ring->slot[tosync];
+			uint64_t paddr;
+			(void)PNMB(na, slot, &paddr);
+
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+					&paddr, slot->len, NR_TX);
+		}
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 out:
@@ -210,19 +222,25 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * First part: import newly received packets.
 	 */
 	if (netmap_no_pendintr || force_update) {
-		uint16_t slot_flags = kring->nkr_slot_flags;
-
 		nic_i = rxr->next_to_clean;
 		nm_i = netmap_idx_n2k(kring, nic_i);
 
 		for (n = 0; ; n++) {
 			struct e1000_rx_desc *curr = E1000_RX_DESC(*rxr, nic_i);
 			uint32_t staterr = le32toh(curr->status);
+			struct netmap_slot *slot;
+			uint64_t paddr;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
-			ring->slot[nm_i].len = le16toh(curr->length) - 4;
-			ring->slot[nm_i].flags = slot_flags;
+			dma_rmb(); /* read descriptor after status DD */
+
+			slot = ring->slot + nm_i;
+			PNMB(na, slot, &paddr);
+			slot->len = le16toh(curr->length) - 4;
+			slot->flags = (!(staterr & E1000_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+					&paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -248,10 +266,11 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
 			if (slot->flags & NS_BUF_CHANGED) {
-				// netmap_reload_map(...)
 				curr->buffer_addr = htole64(paddr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
+					&paddr, NETMAP_BUF_SIZE(na), NR_RX);
 			curr->status = 0;
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
@@ -301,18 +320,16 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		rxr = &adapter->rx_ring[r];
 
 		for (i = 0; i < rxr->count; i++) {
-			si = netmap_idx_n2k(&na->rx_rings[r], i);
+			si = netmap_idx_n2k(na->rx_rings[r], i);
 			PNMB(na, slot + si, &paddr);
-			// netmap_load_map(...)
 			E1000_RX_DESC(*rxr, i)->buffer_addr = htole64(paddr);
 		}
 
 		rxr->next_to_use = 0;
 		/* preserve buffers already made available to clients */
-		i = rxr->count - 1 - nm_kr_rxspace(&na->rx_rings[0]);
+		i = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[0]);
 		if (i < 0) // XXX something wrong here, can it really happen ?
 			i += rxr->count;
-		D("i now is %d", i);
 		wmb(); /* Force memory writes to complete */
 		writel(i, hw->hw_addr + rxr->rdt);
 	}
@@ -326,14 +343,28 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		}
 
 		for (i = 0; i < na->num_tx_desc; i++) {
-			si = netmap_idx_n2k(&na->tx_rings[r], i);
+			si = netmap_idx_n2k(na->tx_rings[r], i);
 			PNMB(na, slot + si, &paddr);
-			// netmap_load_map(...)
 			E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
 		}
 	}
 
 	return 1;
+}
+
+static int
+e1000_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	struct SOFTC_T *adapter = netdev_priv(na->ifp);
+	int ret = netmap_rings_config_get(na, info);
+
+	if (ret) {
+		return ret;
+	}
+
+	info->rx_buf_maxsize = adapter->rx_buffer_len;
+
+	return 0;
 }
 
 static void
@@ -345,13 +376,16 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 
 	na.ifp = adapter->netdev;
 	na.pdev = &adapter->pdev->dev;
+	na.na_flags = NAF_MOREFRAG;
 	na.num_tx_desc = adapter->tx_ring[0].count;
 	na.num_rx_desc = adapter->rx_ring[0].count;
+	na.num_tx_rings = na.num_rx_rings = 1;
+	na.rx_buf_maxsize = adapter->rx_buffer_len;
 	na.nm_register = e1000_netmap_reg;
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;
-	na.num_tx_rings = na.num_rx_rings = 1;
 	na.nm_intr = e1000_netmap_intr;
+	na.nm_config = e1000_netmap_config;
 
 	netmap_attach(&na);
 }

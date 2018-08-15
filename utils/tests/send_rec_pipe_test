@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if we can send and receive packets through netmap pipes.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create a pair of netmap pipes (pipeA{1, pipeA}1).
+# 2) send from pipeA{1 and check if pipeA}1 receives.
+# 3) send from pipeA}1 and check if pipeA{1 receives.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+fill="${fill:-c}"
+len="${len:-274}"
+num="${num:-1}"
+seq="${seq:-}"
+
+restart_fd_server
+
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+functional $verbosity -i "netmap:pipeA{1"
+check_success $? "pre-open netmap:pipeA{1"
+functional $verbosity -i "netmap:pipeA}1"
+check_success $? "pre-open netmap:pipeA}1"
+
+# pipeA}1 ---> pipeA{1
+functional $verbosity -i "netmap:pipeA{1" -r "${len}:${fill}:${num}" $seq &
+p1=$!
+functional $verbosity -i "netmap:pipeA}1" -t "${len}:${fill}:${num}" $seq
+e2=$?
+wait $p1
+e1=$?
+check_success $e1 "receive-${num} netmap:pipeA{1"
+check_success $e2 "send-${num} netmap:pipeA}1"
+
+# pipeA{1 ---> pipeA}1
+functional $verbosity -i "netmap:pipeA}1" -r "${len}:${fill}:${num}" $seq &
+p3=$!
+functional $verbosity -i "netmap:pipeA{1" -t "${len}:${fill}:${num}" $seq
+e4=$?
+wait $p3
+e2=$?
+check_success $e2 "receive-${num} netmap:pipeA}1"
+check_success $e4 "send-${num} netmap:pipeA{1"
+
+test_successful "$0"

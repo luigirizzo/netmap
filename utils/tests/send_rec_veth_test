@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if we can send and receive through veth interfaces.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create a pair of veth interfaces (veth1A, veth1B).
+# 2) send from veth1B and check if veth1A receives.
+# 3) send from veth1A and check if veth1B receives.
+################################################################################
+source test_lib
+
+exit 0 # Test currently disabled.
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+fill="${fill:-d}"
+len="${len:-150}"
+num="${num:-1}"
+seq="${seq:-}"
+
+restart_fd_server
+
+create_veth_interfaces "veth1"
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+functional $verbosity -i netmap:veth1A
+check_success $? "pre-open netmap:veth1A"
+functional $verbosity -i netmap:veth1B
+check_success $? "pre-open netmap:veth1B"
+
+# veth1B --> veth1A
+functional $verbosity -i netmap:veth1A -r "${len}:${fill}:${num}" $seq &
+p1=$!
+functional $verbosity -i netmap:veth1B -t "${len}:${fill}:${num}" $seq
+e2=$?
+wait $p1
+e1=$?
+check_success $e1 "receive-${num} netmap:veth1A"
+check_success $e2 "send-${num} netmap:veth1B"
+
+# veth1A --> veth1B
+functional $verbosity -i netmap:veth1B -r "${len}:${fill}:${num}" $seq &
+p3=$!
+functional $verbosity -i netmap:veth1A -t "${len}:${fill}:${num}" $seq
+e4=$?
+wait $p3
+e3=$?
+check_success $e3 "receive-${num} netmap:veth1B"
+check_success $e4 "send-${num} netmap:veth1A"
+
+test_successful "$0"

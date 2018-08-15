@@ -1,5 +1,5 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 74d9b6d..db08827 100644
+index 74d9b6df3029..803bc4befaa2 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -214,6 +214,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
@@ -108,7 +108,7 @@ index 74d9b6d..db08827 100644
  	struct ixgbe_adapter *adapter = netdev_priv(netdev);
  
 +#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
++	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
  	set_bit(__IXGBE_DOWN, &adapter->state);

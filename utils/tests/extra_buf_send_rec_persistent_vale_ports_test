@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check if we can send packets through persistent VALE ports
+#                 while using extra buffers.
+# Operations:
+# 0) restart fd_server to have a clean starting state
+# 1) create 3 persistent VALE ports (v0, v1, v2) and attach them to vale0.
+# 2) send from vale0:v2 using extra buffers, and check that both, vale0:v0 and
+#    vale0:v1, receive.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+fill="${fill:-c}"
+len="${len:-274}"
+num="${num:-1}"
+seq="${seq:-}"
+
+e_buf_num="${e_buf_num:-12}"
+
+restart_fd_server
+
+create_vale_persistent_port "v0"
+create_vale_persistent_port "v1"
+create_vale_persistent_port "v2"
+attach_to_vale_bridge "vale0" "v0"
+attach_to_vale_bridge "vale0" "v1"
+attach_to_vale_bridge "vale0" "v2"
+# Pre-opening interface that will be needed. This is needed to avoid a race
+# condition between the sending and receiving ports.
+functional $verbosity -i "vale0:v0"
+check_success $? "pre-open vale0:v0"
+functional $verbosity -i "vale0:v1"
+check_success $? "pre-open vale0:v1"
+
+# v2 ---> v0, v1
+functional $verbosity -i "vale0:v0" -r "${len}:${fill}:${num}" $seq &
+p1=$!
+functional $verbosity -i "vale0:v1" -r "${len}:${fill}:${num}" $seq &
+p2=$!
+functional $verbosity -I "vale0:v2" -t "${len}:${fill}:${num}" -e "$e_buf_num" $seq
+e3=$?
+wait $p1
+e1=$?
+wait $p2
+e2=$?
+check_success $e1 "receive-${num} vale0:v0"
+check_success $e2 "receive-${num} vale0:v1"
+check_success $e3 "send-${num} vale0:v2"
+
+test_successful "$0"
