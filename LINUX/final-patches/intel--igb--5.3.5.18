@@ -1,16 +1,19 @@
 diff --git a/igb/Makefile b/igb/Makefile
-index 02d49bb..47fd630 100644
+index 02d49bb..1267d14 100644
 --- a/igb/Makefile
 +++ b/igb/Makefile
-@@ -28,7 +28,7 @@ ifneq ($(KERNELRELEASE),)
+@@ -28,9 +28,9 @@ ifneq ($(KERNELRELEASE),)
  # Makefile for the Intel(R) Gigabit Ethernet Linux Driver
  #
  
 -obj-$(CONFIG_IGB) += igb.o
 +obj-$(CONFIG_IGB) += igb$(NETMAP_DRIVER_SUFFIX).o
  
- define igb-y
+-define igb-y
++define igb$(NETMAP_DRIVER_SUFFIX)-y
  	igb_main.o
+ 	e1000_api.o
+ 	igb_ethtool.o
 @@ -46,19 +46,19 @@ define igb-y
  	e1000_82575.o
  	e1000_i210.o
