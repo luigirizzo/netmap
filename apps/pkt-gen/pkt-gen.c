@@ -954,7 +954,7 @@ initialize_packet(struct targ *targ)
 	struct udphdr udp;
 	void *udp_ptr;
 	uint16_t paylen;
-	uint32_t csum;
+	uint32_t csum = 0;
 	const char *payload = targ->g->options & OPT_INDIRECT ?
 		indirect_payload : default_payload;
 	int i, l0 = strlen(payload);
