@@ -2627,14 +2627,16 @@ skip_args:
         struct _qs *q0 = &bp[0].q, *q1 = &bp[1].q;
 
         sleep(1);
-        ED("%lld -> %lld maxq %d round %lld drop %lld, %lld <- %lld maxq %d round %lld drop %lld",
+        ED("%lld -> %lld maxq %d round %lld drop %lld/%lld, %lld <- %lld maxq %d round %lld drop %lld/%lld",
                 (long long)(q0->rxstats->packets - old0rx.packets),
                 (long long)(q0->txstats->packets - old0tx.packets),
                 q0->rx_qmax, (long long)q0->prod_max_gap,
+                (long long)(q0->txstats->drop_packets - old0tx.drop_packets),
                 (long long)(q0->rxstats->drop_packets - old0rx.drop_packets),
                 (long long)(q1->rxstats->packets - old1rx.packets),
                 (long long)(q1->txstats->packets - old1tx.packets),
                 q1->rx_qmax, (long long)q1->prod_max_gap,
+                (long long)(q1->txstats->drop_packets - old1tx.drop_packets),
                 (long long)(q1->rxstats->drop_packets - old1rx.drop_packets)
           );
         ND("plr nominal %le actual %le",
