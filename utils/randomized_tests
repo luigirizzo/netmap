@@ -3,6 +3,12 @@
 # Runs all the tests using randomized values for number of packets, fill
 # character and packets length.
 ################################################################################
+
+if [ "$EUID" -ne "0" ]; then
+   echo "This script must be run as root"
+   exit 1
+fi
+
 random_num="$((65 + $RANDOM % 58))"
 # https://stackoverflow.com/a/10503163
 random_fill=$(printf \\$(printf '%03o' $random_num))
@@ -14,6 +20,7 @@ random_packet_num="$((1 + $RANDOM % 100))"
 # Use and empty string instead of "-q" if you don't want to perform a sequential
 # send/receive check
 seq_check="-q"
+
 echo "Running tests with"
 echo "   number of packets: ${random_packet_num}"
 echo "   fill character   : ${random_fill}"
