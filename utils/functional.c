@@ -988,7 +988,7 @@ get_if_fd(struct Global *g, const char *if_name)
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_GET;
-	strncpy(req.if_name, if_name, sizeof(req.if_name));
+	strncpy(req.if_name, if_name, sizeof(req.if_name)-1);
 	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret < 0) {
 		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "send()");
@@ -1032,7 +1032,7 @@ release_if_fd(struct Global *g, const char *if_name)
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_RELEASE;
-	strncpy(req.if_name, if_name, sizeof(req.if_name));
+	strncpy(req.if_name, if_name, sizeof(req.if_name)-1);
 
 	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret <= 0) {

@@ -50,7 +50,7 @@ nmreq_hdr_init(struct nmreq_header *hdr, const char *ifname)
 {
 	memset(hdr, 0, sizeof(*hdr));
 	hdr->nr_version = NETMAP_API;
-	strncpy(hdr->nr_name, ifname, sizeof(hdr->nr_name));
+	strncpy(hdr->nr_name, ifname, sizeof(hdr->nr_name)-1);
 }
 
 /* Single NETMAP_REQ_PORT_INFO_GET. */

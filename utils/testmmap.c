@@ -204,7 +204,7 @@ do_getinfo_legacy()
 
 	name = nextarg();
 	if (name) {
-		strncpy(curr_nmr.nr_name, name, sizeof(curr_nmr.nr_name));
+		strncpy(curr_nmr.nr_name, name, sizeof(curr_nmr.nr_name)-1);
 	} else {
 		name = "any";
 	}
@@ -242,7 +242,7 @@ do_regif_legacy()
 	bzero(&curr_nmr, sizeof(curr_nmr));
 	curr_nmr.nr_version = NETMAP_API;
 	curr_nmr.nr_flags   = NR_REG_ALL_NIC;
-	strncpy(curr_nmr.nr_name, name, sizeof(curr_nmr.nr_name));
+	strncpy(curr_nmr.nr_name, name, sizeof(curr_nmr.nr_name)-1);
 
 	arg = nextarg();
 	if (!arg) {
@@ -1180,7 +1180,7 @@ do_nmr_legacy_name()
 {
 	char *name = nextarg();
 	if (name) {
-		strncpy(curr_nmr.nr_name, name, IFNAMSIZ);
+		strncpy(curr_nmr.nr_name, name, IFNAMSIZ-1);
 	}
 	strncpy(nmr_name, curr_nmr.nr_name, IFNAMSIZ);
 	nmr_name[IFNAMSIZ] = '\0';
@@ -1735,7 +1735,7 @@ do_hdr_name()
 {
 	char *name = nextarg();
 	if (name) {
-		strncpy(curr_hdr.nr_name, name, NETMAP_REQ_IFNAMSIZ);
+		strncpy(curr_hdr.nr_name, name, NETMAP_REQ_IFNAMSIZ-1);
 	}
 	strncpy(nmr_name, curr_hdr.nr_name, NETMAP_REQ_IFNAMSIZ);
 	nmr_name[NETMAP_REQ_IFNAMSIZ] = '\0';
