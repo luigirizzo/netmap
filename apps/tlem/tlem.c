@@ -2613,6 +2613,7 @@ skip_args:
         }
 
     }
+    sleep(bp[0].wait_link);
 
     pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
     pthread_create(&bp[1].cons_tid, NULL, tlem_main, (void*)&bp[1]);
