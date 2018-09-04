@@ -630,7 +630,7 @@ struct nm_os_extmem {
 	vm_object_t obj;
 	vm_offset_t kva;
 	vm_offset_t size;
-	vm_pindex_t scan;
+	uintptr_t scan;
 };
 
 void
