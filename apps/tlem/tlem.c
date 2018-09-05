@@ -1138,7 +1138,7 @@ enq(struct _qs *q)
     }
     p->pktlen = q->cur_len;
     p->pt_qout = q->qt_qout;
-    p->pt_tx = q->qt_tx;
+    p->pt_tx = q->qt_tx - q->cur_tt;
     ND(1, "enqueue len %d at %d new tail %ld qout %ld tx %ld",
             q->cur_len, (int)q->prod_tail, p->next,
             p->pt_qout, p->pt_tx);
