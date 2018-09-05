@@ -30,6 +30,7 @@
 #include <dev/netmap/netmap_kern.h>
 #include <net/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
+#include <dev/netmap/netmap_bdg.h>
 #include <net/ip6_checksum.h>
 #include <linux/rtnetlink.h>
 #include <linux/nsproxy.h>
