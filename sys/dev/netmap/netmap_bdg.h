@@ -157,7 +157,7 @@ int netmap_bwrap_krings_create_common(struct netmap_adapter *na);
 void netmap_bwrap_krings_delete_common(struct netmap_adapter *na);
 struct nm_bridge *netmap_init_bridges2(u_int);
 void netmap_uninit_bridges2(struct nm_bridge *, u_int);
-int nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
+int netmap_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
 	void *callback_data, void *auth_token);
 int netmap_bdg_config(struct nm_ifreq *nifr);
 int nm_is_bwrap(struct netmap_adapter *);

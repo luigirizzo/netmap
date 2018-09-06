@@ -2668,7 +2668,7 @@ EXPORT_SYMBOL(netmap_no_pendintr);	/* XXX mitigation - should go away */
 #ifdef WITH_VALE
 EXPORT_SYMBOL(netmap_bdg_regops);	/* bridge configuration routine */
 EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
-EXPORT_SYMBOL(nm_bdg_update_private_data);
+EXPORT_SYMBOL(netmap_bdg_update_private_data);
 EXPORT_SYMBOL(netmap_vale_create);
 EXPORT_SYMBOL(netmap_vale_destroy);
 EXPORT_SYMBOL(netmap_vale_attach);

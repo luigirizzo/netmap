@@ -254,7 +254,7 @@ netmap_bdg_free(struct nm_bridge *b)
  * Called without NMG_LOCK.
  */
 int
-nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
+netmap_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
 	void *callback_data, void *auth_token)
 {
 	void *private_data = NULL;
