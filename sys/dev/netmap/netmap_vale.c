@@ -126,11 +126,11 @@ static int netmap_vp_bdg_attach(const char *, struct netmap_adapter *,
 static int netmap_vale_bwrap_attach(const char *, struct netmap_adapter *);
 
 /*
- * For each output interface, nm_bdg_q is used to construct a list.
+ * For each output interface, nm_vale_q is used to construct a list.
  * bq_len is the number of output buffers (we can have coalescing
  * during the copy).
  */
-struct nm_bdg_q {
+struct nm_vale_q {
 	uint16_t bq_head;
 	uint16_t bq_tail;
 	uint32_t bq_len;	/* number of buffers */
@@ -210,14 +210,14 @@ nm_alloc_bdgfwd(struct netmap_adapter *na)
 	/* all port:rings + broadcast */
 	num_dstq = NM_BDG_MAXPORTS * NM_BDG_MAXRINGS + 1;
 	l = sizeof(struct nm_bdg_fwd) * NM_BDG_BATCH_MAX;
-	l += sizeof(struct nm_bdg_q) * num_dstq;
+	l += sizeof(struct nm_vale_q) * num_dstq;
 	l += sizeof(uint16_t) * NM_BDG_BATCH_MAX;
 
 	nrings = netmap_real_rings(na, NR_TX);
 	kring = na->tx_rings;
 	for (i = 0; i < nrings; i++) {
 		struct nm_bdg_fwd *ft;
-		struct nm_bdg_q *dstq;
+		struct nm_vale_q *dstq;
 		int j;
 
 		ft = nm_os_malloc(l);
@@ -225,7 +225,7 @@ nm_alloc_bdgfwd(struct netmap_adapter *na)
 			nm_free_bdgfwd(na);
 			return ENOMEM;
 		}
-		dstq = (struct nm_bdg_q *)(ft + NM_BDG_BATCH_MAX);
+		dstq = (struct nm_vale_q *)(ft + NM_BDG_BATCH_MAX);
 		for (j = 0; j < num_dstq; j++) {
 			dstq[j].bq_head = dstq[j].bq_tail = NM_FT_NULL;
 			dstq[j].bq_len = 0;
@@ -591,7 +591,7 @@ netmap_vp_krings_delete(struct netmap_adapter *na)
 
 
 static int
-nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n,
+nm_vale_flush(struct nm_bdg_fwd *ft, u_int n,
 	struct netmap_vp_adapter *na, u_int ring_nr);
 
 
@@ -603,7 +603,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n,
  * Returns the next position in the ring.
  */
 static int
-nm_bdg_preflush(struct netmap_kring *kring, u_int end)
+nm_vale_preflush(struct netmap_kring *kring, u_int end)
 {
 	struct netmap_vp_adapter *na =
 		(struct netmap_vp_adapter*)kring->na;
@@ -662,7 +662,7 @@ nm_bdg_preflush(struct netmap_kring *kring, u_int end)
 		ft[ft_i - frags].ft_frags = frags;
 		frags = 1;
 		if (unlikely((int)ft_i >= bridge_batch))
-			ft_i = nm_bdg_flush(ft, ft_i, na, ring_nr);
+			ft_i = nm_vale_flush(ft, ft_i, na, ring_nr);
 	}
 	if (frags > 1) {
 		/* Here ft_i > 0, ft[ft_i-1].flags has NS_MOREFRAG, and we
@@ -673,7 +673,7 @@ nm_bdg_preflush(struct netmap_kring *kring, u_int end)
 		D("Truncate incomplete fragment at %d (%d frags)", ft_i, frags);
 	}
 	if (ft_i)
-		ft_i = nm_bdg_flush(ft, ft_i, na, ring_nr);
+		ft_i = nm_vale_flush(ft, ft_i, na, ring_nr);
 	BDG_RUNLOCK(b);
 	return j;
 }
@@ -856,10 +856,10 @@ nm_kr_lease(struct netmap_kring *k, u_int n, int is_rx)
  * number of ports, and lets us replace the learn and dispatch functions.
  */
 int
-nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
+nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		u_int ring_nr)
 {
-	struct nm_bdg_q *dst_ents, *brddst;
+	struct nm_vale_q *dst_ents, *brddst;
 	uint16_t num_dsts = 0, *dsts;
 	struct nm_bridge *b = na->na_bdg;
 	u_int i, me = na->bdg_port;
@@ -870,14 +870,14 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 	 * queues per port plus one for the broadcast traffic.
 	 * Then we have an array of destination indexes.
 	 */
-	dst_ents = (struct nm_bdg_q *)(ft + NM_BDG_BATCH_MAX);
+	dst_ents = (struct nm_vale_q *)(ft + NM_BDG_BATCH_MAX);
 	dsts = (uint16_t *)(dst_ents + NM_BDG_MAXPORTS * NM_BDG_MAXRINGS + 1);
 
 	/* first pass: find a destination for each packet in the batch */
 	for (i = 0; likely(i < n); i += ft[i].ft_frags) {
 		uint8_t dst_ring = ring_nr; /* default, same ring as origin */
 		uint16_t dst_port, d_i;
-		struct nm_bdg_q *d;
+		struct nm_vale_q *d;
 		struct nm_bdg_fwd *start_ft = NULL;
 
 		ND("slot %d frags %d", i, ft[i].ft_frags);
@@ -952,7 +952,7 @@ nm_bdg_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		u_int dst_nr, lim, j, d_i, next, brd_next;
 		u_int needed, howmany;
 		int retry = netmap_txsync_retry;
-		struct nm_bdg_q *d;
+		struct nm_vale_q *d;
 		uint32_t my_start = 0, lease_idx = 0;
 		int nrings;
 		int virt_hdr_mismatch = 0;
@@ -1223,7 +1223,7 @@ netmap_vp_txsync(struct netmap_kring *kring, int flags)
 	if (bridge_batch > NM_BDG_BATCH)
 		bridge_batch = NM_BDG_BATCH;
 
-	done = nm_bdg_preflush(kring, head);
+	done = nm_vale_preflush(kring, head);
 done:
 	if (done != head)
 		D("early break at %d/ %d, tail %d", done, head, kring->nr_hwtail);
