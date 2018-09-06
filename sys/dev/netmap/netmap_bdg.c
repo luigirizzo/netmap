@@ -247,6 +247,41 @@ netmap_bdg_free(struct nm_bridge *b)
 	return 0;
 }
 
+/* Called by external kernel modules (e.g., Openvswitch).
+ * to modify the private data previously given to regops().
+ * 'name' may be just bridge's name (including ':' if it
+ * is not just NM_BDG_NAME).
+ * Called without NMG_LOCK.
+ */
+int
+nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
+	void *callback_data, void *auth_token)
+{
+	void *private_data = NULL;
+	struct nm_bridge *b;
+	int error = 0;
+
+	NMG_LOCK();
+	b = nm_find_bridge(name, 0 /* don't create */, NULL);
+	if (!b) {
+		error = EINVAL;
+		goto unlock_update_priv;
+	}
+	if (!nm_bdg_valid_auth_token(b, auth_token)) {
+		error = EACCES;
+		goto unlock_update_priv;
+	}
+	BDG_WLOCK(b);
+	private_data = callback(b->private_data, callback_data, &error);
+	b->private_data = private_data;
+	BDG_WUNLOCK(b);
+
+unlock_update_priv:
+	NMG_UNLOCK();
+	return error;
+}
+
+
 
 /* remove from bridge b the ports in slots hw and sw
  * (sw can be -1 if not needed)
