@@ -119,7 +119,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	/* generate an interrupt approximately every half ring */
-	u_int report_frequency = kring->nkr_num_slots >> 1;
+	u_int report_frequency = kring->nkr_num_slots >> 1, report;
 
 	/* device-specific */
 	struct SOFTC_T *adapter = netdev_priv(ifp);
@@ -134,8 +134,6 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
-		uint32_t olinfo_status=0;
-
 		nic_i = netmap_idx_k2n(kring, nm_i);
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
@@ -146,27 +144,77 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* device-specific */
 			union e1000_adv_tx_desc *curr =
 			    E1000_TX_DESC_ADV(*txr, nic_i);
-			int hw_flags = (slot->flags & NS_REPORT ||
-				nic_i == 0 || nic_i == report_frequency) ?
-				E1000_TXD_CMD_RS : 0;
+			int hw_flags = E1000_ADVTXD_DTYP_DATA |  E1000_ADVTXD_DCMD_DEXT |
+				E1000_ADVTXD_DCMD_IFCS;
+			u_int totlen = len;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
-			if (!(slot->flags & NS_MOREFRAG)) {
-				hw_flags |= E1000_TXD_CMD_EOP;
+			report = slot->flags & NS_REPORT ||
+				nic_i == 0 ||
+				nic_i == report_frequency;
+			if (slot->flags & NS_MOREFRAG) {
+				/* There is some duplicated code here, but
+				 * mixing everything up in the outer loop makes
+				 * things less transparent, and it also adds
+				 * unnecessary instructions in the fast path
+				 */
+				union e1000_adv_tx_desc *first = curr;
+
+				first->read.buffer_addr = htole64(paddr);
+				first->read.cmd_type_len = htole32(len | hw_flags);
+				netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
+						&paddr, len, NR_TX);
+				/* avoid setting the FCS flag in the
+				 * descriptors after the first, for safety
+				 */
+				hw_flags &= ~E1000_ADVTXD_DCMD_IFCS;
+				for (;;) {
+					nm_i = nm_next(nm_i, lim);
+					nic_i = nm_next(nic_i, lim);
+					/* remember that we have to ask for a
+					 * report each time we move past half a
+					 * ring
+					 */
+					report |= nic_i == 0 ||
+						nic_i == report_frequency;
+					if (nm_i == head) {
+						// XXX should we accept incomplete packets?
+						return EINVAL;
+					}
+					slot = &ring->slot[nm_i];
+					len = slot->len;
+					addr = PNMB(na, slot, &paddr);
+					NM_CHECK_ADDR_LEN(na, addr, len);
+					curr = E1000_TX_DESC_ADV(*txr, nic_i);
+					totlen += len;
+					if (!(slot->flags & NS_MOREFRAG))
+						break;
+					curr->read.buffer_addr = htole64(paddr);
+					curr->read.olinfo_status = 0;
+					curr->read.cmd_type_len = htole32(len | hw_flags);
+
+					netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
+							&paddr, len, NR_TX);
+				}
+				first->read.olinfo_status =
+					htole32(totlen << E1000_ADVTXD_PAYLEN_SHIFT);
+				totlen = 0;
 			}
+			/* curr now always points to the last descriptor of a packet
+			 * (which is also the first for single-slot packets)
+			 *
+			 * EOP and RS must be set only in this descriptor.
+			 */
+			hw_flags |= E1000_TXD_CMD_EOP | (report ? E1000_TXD_CMD_RS : 0);
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
-			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 
 			/* Fill the slot in the NIC ring. */
 			curr->read.buffer_addr = htole64(paddr);
 			// XXX check olinfo and cmd_type_len
-			curr->read.olinfo_status =
-			    htole32(olinfo_status |
-				(len<< E1000_ADVTXD_PAYLEN_SHIFT));
-			curr->read.cmd_type_len = htole32(len | hw_flags |
-				E1000_ADVTXD_DTYP_DATA | E1000_ADVTXD_DCMD_DEXT |
-				E1000_ADVTXD_DCMD_IFCS);
+			curr->read.olinfo_status = htole32(totlen<< E1000_ADVTXD_PAYLEN_SHIFT);
+			curr->read.cmd_type_len = htole32(len | hw_flags);
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
