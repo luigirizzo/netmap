@@ -139,15 +139,15 @@ nm_is_id_char(const char c)
 	       (c == '_');
 }
 
-/* Validate the name of a VALE bridge port and return the
+/* Validate the name of a bdg port and return the
  * position of the ":" character. */
 static int
-nm_vale_name_validate(const char *name)
+nm_bdg_name_validate(const char *name, size_t prefixlen)
 {
 	int colon_pos = -1;
 	int i;
 
-	if (!name || strlen(name) < strlen(NM_BDG_NAME)) {
+	if (!name || strlen(name) < prefixlen) {
 		return -1;
 	}
 
@@ -186,7 +186,8 @@ nm_find_bridge(const char *name, int create, struct netmap_bdg_ops *ops)
 
 	netmap_bns_getbridges(&bridges, &num_bridges);
 
-	namelen = nm_vale_name_validate(name);
+	namelen = nm_bdg_name_validate(name,
+			(ops != NULL ? strlen(ops->name) : 0));
 	if (namelen < 0) {
 		D("invalid bridge name %s", name ? name : NULL);
 		return NULL;
