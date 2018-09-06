@@ -119,9 +119,9 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, bridge_batch, CTLFLAG_RW, &bridge_batch, 0,
 		"Max batch size to be used in the bridge");
 SYSEND;
 
-static int netmap_vp_create(struct nmreq_header *hdr, struct ifnet *,
+static int netmap_vale_vp_create(struct nmreq_header *hdr, struct ifnet *,
 		struct netmap_mem_d *nmd, struct netmap_vp_adapter **);
-static int netmap_vp_bdg_attach(const char *, struct netmap_adapter *,
+static int netmap_vale_vp_bdg_attach(const char *, struct netmap_adapter *,
 		struct nm_bridge *);
 static int netmap_vale_bwrap_attach(const char *, struct netmap_adapter *);
 
@@ -141,7 +141,7 @@ struct netmap_bdg_ops vale_bdg_ops = {
 	.lookup = netmap_bdg_learning,
 	.config = NULL,
 	.dtor = NULL,
-	.vp_create = netmap_vp_create,
+	.vp_create = netmap_vale_vp_create,
 	.bwrap_attach = netmap_vale_bwrap_attach,
 	.name = NM_BDG_NAME,
 };
@@ -519,7 +519,7 @@ unlock_exit:
 
 /* nm_dtor callback for ephemeral VALE ports */
 static void
-netmap_vp_dtor(struct netmap_adapter *na)
+netmap_vale_vp_dtor(struct netmap_adapter *na)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter*)na;
 	struct nm_bridge *b = vpna->na_bdg;
@@ -548,7 +548,7 @@ netmap_vp_dtor(struct netmap_adapter *na)
  * rings and bdgfwd on tx rings.
  */
 static int
-netmap_vp_krings_create(struct netmap_adapter *na)
+netmap_vale_vp_krings_create(struct netmap_adapter *na)
 {
 	u_int tailroom;
 	int error, i;
@@ -583,7 +583,7 @@ netmap_vp_krings_create(struct netmap_adapter *na)
 
 /* nm_krings_delete callback for VALE ports. */
 static void
-netmap_vp_krings_delete(struct netmap_adapter *na)
+netmap_vale_vp_krings_delete(struct netmap_adapter *na)
 {
 	nm_free_bdgfwd(na);
 	netmap_krings_delete(na);
@@ -702,7 +702,7 @@ do {                                                                    \
 
 
 static __inline uint32_t
-nm_bridge_rthash(const uint8_t *addr)
+nm_vale_rthash(const uint8_t *addr)
 {
 	uint32_t a = 0x9e3779b9, b = 0x9e3779b9, c = 0; // hask key
 
@@ -728,7 +728,7 @@ nm_bridge_rthash(const uint8_t *addr)
  * ring in *dst_ring (at the moment, always use ring 0)
  */
 uint32_t
-netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
+netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *na, void *private_data)
 {
 	uint8_t *buf = ((uint8_t *)ft->ft_buf) + ft->ft_offset;
@@ -760,7 +760,7 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	 */
 	if (((buf[6] & 1) == 0) && (na->last_smac != smac)) { /* valid src */
 		uint8_t *s = buf+6;
-		sh = nm_bridge_rthash(s); /* hash of source */
+		sh = nm_vale_rthash(s); /* hash of source */
 		/* update source port forwarding entry */
 		na->last_smac = ht[sh].mac = smac;	/* XXX expire ? */
 		ht[sh].ports = mysrc;
@@ -770,7 +770,7 @@ netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 	}
 	dst = NM_BDG_BROADCAST;
 	if ((buf[0] & 1) == 0) { /* unicast */
-		dh = nm_bridge_rthash(buf); /* hash of dst */
+		dh = nm_vale_rthash(buf); /* hash of dst */
 		if (ht[dh].mac == dmac) {	/* found dst */
 			dst = ht[dh].ports;
 		}
@@ -1204,7 +1204,7 @@ cleanup:
 
 /* nm_txsync callback for VALE ports */
 static int
-netmap_vp_txsync(struct netmap_kring *kring, int flags)
+netmap_vale_vp_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_vp_adapter *na =
 		(struct netmap_vp_adapter *)kring->na;
@@ -1242,7 +1242,7 @@ done:
  * Only persistent VALE ports have a non-null ifp.
  */
 static int
-netmap_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
+netmap_vale_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_vp_adapter **ret)
 {
 	struct nmreq_register *req = (struct nmreq_register *)(uintptr_t)hdr->nr_body;
@@ -1303,12 +1303,12 @@ netmap_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	 */
 	if (ifp)
 		na->na_flags |= NAF_NATIVE;
-	na->nm_txsync = netmap_vp_txsync;
-	na->nm_rxsync = netmap_vp_rxsync;
-	na->nm_register = netmap_vp_reg;
-	na->nm_krings_create = netmap_vp_krings_create;
-	na->nm_krings_delete = netmap_vp_krings_delete;
-	na->nm_dtor = netmap_vp_dtor;
+	na->nm_txsync = netmap_vale_vp_txsync;
+	na->nm_rxsync = netmap_vp_rxsync; /* use the one provided by bdg */
+	na->nm_register = netmap_vp_reg;  /* use the one provided by bdg */
+	na->nm_krings_create = netmap_vale_vp_krings_create;
+	na->nm_krings_delete = netmap_vale_vp_krings_delete;
+	na->nm_dtor = netmap_vale_vp_dtor;
 	ND("nr_mem_id %d", req->nr_mem_id);
 	na->nm_mem = nmd ?
 		netmap_mem_get(nmd):
@@ -1318,7 +1318,7 @@ netmap_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 			req->nr_extra_bufs, npipes, &error);
 	if (na->nm_mem == NULL)
 		goto err;
-	na->nm_bdg_attach = netmap_vp_bdg_attach;
+	na->nm_bdg_attach = netmap_vale_vp_bdg_attach;
 	/* other nmd fields are set in the common routine */
 	error = netmap_attach_common(na);
 	if (error)
@@ -1337,7 +1337,7 @@ err:
  * The na_vp port is this same netmap_adapter. There is no host port.
  */
 static int
-netmap_vp_bdg_attach(const char *name, struct netmap_adapter *na,
+netmap_vale_vp_bdg_attach(const char *name, struct netmap_adapter *na,
 		struct nm_bridge *b)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
@@ -1360,12 +1360,12 @@ netmap_vale_bwrap_krings_create(struct netmap_adapter *na)
 	int error;
 
 	/* impersonate a netmap_vp_adapter */
-	error = netmap_vp_krings_create(na);
+	error = netmap_vale_vp_krings_create(na);
 	if (error)
 		return error;
 	error = netmap_bwrap_krings_create_common(na);
 	if (error) {
-		netmap_vp_krings_delete(na);
+		netmap_vale_vp_krings_delete(na);
 	}
 	return error;
 }
@@ -1374,7 +1374,7 @@ static void
 netmap_vale_bwrap_krings_delete(struct netmap_adapter *na)
 {
 	netmap_bwrap_krings_delete_common(na);
-	netmap_vp_krings_delete(na);
+	netmap_vale_vp_krings_delete(na);
 }
 
 static int
@@ -1392,7 +1392,7 @@ netmap_vale_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na = &bna->up.up;
 	strncpy(na->name, nr_name, sizeof(na->name));
 	na->nm_register = netmap_bwrap_reg;
-	na->nm_txsync = netmap_vp_txsync;
+	na->nm_txsync = netmap_vale_vp_txsync;
 	// na->nm_rxsync = netmap_bwrap_rxsync;
 	na->nm_krings_create = netmap_vale_bwrap_krings_create;
 	na->nm_krings_delete = netmap_vale_bwrap_krings_delete;
@@ -1563,7 +1563,7 @@ netmap_vi_create(struct nmreq_header *hdr, int autodelete)
 		}
 	}
 	/* netmap_vp_create creates a struct netmap_vp_adapter */
-	error = netmap_vp_create(hdr, ifp, nmd, &vpna);
+	error = netmap_vale_vp_create(hdr, ifp, nmd, &vpna);
 	if (error) {
 		D("error %d", error);
 		goto err_1;
