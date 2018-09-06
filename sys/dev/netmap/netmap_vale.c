@@ -138,7 +138,7 @@ struct nm_vale_q {
 
 /* Holds the default callbacks */
 struct netmap_bdg_ops vale_bdg_ops = {
-	.lookup = netmap_bdg_learning,
+	.lookup = netmap_vale_learning,
 	.config = NULL,
 	.dtor = NULL,
 	.vp_create = netmap_vale_vp_create,

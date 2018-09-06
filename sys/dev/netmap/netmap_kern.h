@@ -1442,7 +1442,7 @@ int netmap_get_hw_na(struct ifnet *ifp,
 
 
 #ifdef WITH_VALE
-uint32_t netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
+uint32_t netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *, void *private_data);
 
 /* these are redefined in case of no VALE support */
