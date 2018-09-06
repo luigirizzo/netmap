@@ -894,7 +894,7 @@ nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 			 */
 			continue;
 		}
-		dst_port = b->bdg_ops->lookup(start_ft, &dst_ring, na, b->private_data);
+		dst_port = b->bdg_ops.lookup(start_ft, &dst_ring, na, b->private_data);
 		if (netmap_verbose > 255)
 			RD(5, "slot %d port %d -> %d", i, me, dst_port);
 		if (dst_port >= NM_BDG_NOPORT)
@@ -1342,10 +1342,7 @@ netmap_vale_vp_bdg_attach(const char *name, struct netmap_adapter *na,
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 
-	if (b->bdg_ops != &vale_bdg_ops) {
-		return NM_NEED_BWRAP;
-	}
-	if (vpna->na_bdg) {
+	if ((b->bdg_flags & NM_BDG_NEED_BWRAP) || vpna->na_bdg) {
 		return NM_NEED_BWRAP;
 	}
 	na->na_vp = vpna;

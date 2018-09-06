@@ -100,7 +100,8 @@ struct nm_bridge {
 	 * different ring index.
 	 * The function is set by netmap_bdg_regops().
 	 */
-	struct netmap_bdg_ops* bdg_ops;
+	struct netmap_bdg_ops bdg_ops;
+	struct netmap_bdg_ops bdg_saved_ops;
 
 	/*
 	 * Contains the data structure used by the bdg_ops.lookup function.
@@ -116,6 +117,7 @@ struct nm_bridge {
 	 */
 #define NM_BDG_ACTIVE		1
 #define NM_BDG_EXCLUSIVE	2
+#define NM_BDG_NEED_BWRAP	4
 	uint8_t			bdg_flags;
 
 

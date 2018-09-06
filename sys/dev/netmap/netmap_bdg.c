@@ -223,7 +223,7 @@ nm_find_bridge(const char *name, int create, struct netmap_bdg_ops *ops)
 		for (i = 0; i < NM_BDG_MAXPORTS; i++)
 			b->bdg_port_index[i] = i;
 		/* set the default function */
-		b->bdg_ops = ops;
+		b->bdg_ops = b->bdg_saved_ops = *ops;
 		b->private_data = b->ht;
 		b->bdg_flags = 0;
 		NM_BNS_GET(b);
@@ -241,7 +241,8 @@ netmap_bdg_free(struct nm_bridge *b)
 
 	ND("marking bridge %s as free", b->bdg_basename);
 	nm_os_free(b->ht);
-	b->bdg_ops = NULL;
+	memset(&b->bdg_ops, 0, sizeof(b->bdg_ops));
+	memset(&b->bdg_saved_ops, 0, sizeof(b->bdg_saved_ops));
 	b->bdg_flags = 0;
 	NM_BNS_PUT(b);
 	return 0;
@@ -331,8 +332,8 @@ netmap_bdg_detach_common(struct nm_bridge *b, int hw, int sw)
 	}
 
 	BDG_WLOCK(b);
-	if (b->bdg_ops->dtor)
-		b->bdg_ops->dtor(b->bdg_ports[s_hw]);
+	if (b->bdg_ops.dtor)
+		b->bdg_ops.dtor(b->bdg_ports[s_hw]);
 	b->bdg_ports[s_hw] = NULL;
 	if (s_sw >= 0) {
 		b->bdg_ports[s_sw] = NULL;
@@ -464,7 +465,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		}
 
 		/* bdg_netmap_attach creates a struct netmap_adapter */
-		error = b->bdg_ops->vp_create(hdr, NULL, nmd, &vpna);
+		error = b->bdg_ops.vp_create(hdr, NULL, nmd, &vpna);
 		if (error) {
 			D("error %d", error);
 			goto out;
@@ -495,7 +496,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		/* host adapter might not be created */
 		error = hw->nm_bdg_attach(nr_name, hw, b);
 		if (error == NM_NEED_BWRAP) {
-			error = b->bdg_ops->bwrap_attach(nr_name, hw);
+			error = b->bdg_ops.bwrap_attach(nr_name, hw);
 		}
 		if (error)
 			goto out;
@@ -868,12 +869,19 @@ netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *privat
 	if (!bdg_ops) {
 		/* resetting the bridge */
 		bzero(b->ht, sizeof(struct nm_hash_ent) * NM_BDG_HASH);
-		b->bdg_ops = NULL;
+		b->bdg_ops = b->bdg_saved_ops;
 		b->private_data = b->ht;
 	} else {
 		/* modifying the bridge */
 		b->private_data = private_data;
-		b->bdg_ops = bdg_ops;
+#define nm_bdg_override(m) if (bdg_ops->m) b->bdg_ops.m = bdg_ops->m
+		nm_bdg_override(lookup);
+		nm_bdg_override(config);
+		nm_bdg_override(dtor);
+		nm_bdg_override(vp_create);
+		nm_bdg_override(bwrap_attach);
+#undef nm_bdg_override
+
 	}
 	BDG_WUNLOCK(b);
 
@@ -898,8 +906,8 @@ netmap_bdg_config(struct nm_ifreq *nr)
 	NMG_UNLOCK();
 	/* Don't call config() with NMG_LOCK() held */
 	BDG_RLOCK(b);
-	if (b->bdg_ops->config != NULL)
-		error = b->bdg_ops->config(nr);
+	if (b->bdg_ops.config != NULL)
+		error = b->bdg_ops.config(nr);
 	BDG_RUNLOCK(b);
 	return error;
 }
