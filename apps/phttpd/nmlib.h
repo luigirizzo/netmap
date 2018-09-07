@@ -939,6 +939,9 @@ do_setsockopt(int fd)
 {
 	if (soopton(fd, SOL_SOCKET, SO_REUSEADDR) ||
 	    soopton(fd, SOL_SOCKET, SO_REUSEPORT) ||
+#ifdef __FreeBSD__
+	    //soopton(fd, SOL_SOCKET, SO_REUSEPORT_LB) ||
+#endif /* __FreeBSD__ */
 	    soopton(fd, SOL_TCP, TCP_NODELAY))
 		return -EFAULT;
 	if (ioctl(fd, FIONBIO, &(int){1}) < 0) {

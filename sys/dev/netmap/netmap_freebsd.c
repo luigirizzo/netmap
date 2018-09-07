@@ -66,6 +66,7 @@
 #include <net/if_types.h> /* IFT_ETHER */
 #include <net/ethernet.h> /* ether_ifdetach */
 #include <net/if_dl.h> /* LLADDR */
+#include <net/netisr.h> /* netisr_dispatch() */
 #include <machine/bus.h>        /* bus_dmamap_* */
 #include <netinet/in.h>		/* in6_cksum_pseudo() */
 #include <machine/in_cksum.h>  /* in_pseudo(), in_cksum_hdr() */
@@ -1142,7 +1143,17 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	nmcbw(cb, kring, slot);
 	nmcb_wstate(cb, MB_STACK);
-	na->if_input(ifp, m);
+	if (ntohs(*(uint16_t *)((char *)m->m_data + 12)) == ETHERTYPE_IP) {
+		CURVNET_SET_QUIET(ifp->if_vnet);
+		M_SETFIB(m, ifp->if_fib);
+		m_clrprotoflags(m);
+		m_adj(m, ETHER_HDR_LEN);
+		//netisr_dispatch(NETISR_IP, m);
+		ip_input(m);
+		CURVNET_RESTORE();
+	} else {
+		na->if_input(ifp, m);
+	}
 
 	freebsd_upcall(cb);
 
