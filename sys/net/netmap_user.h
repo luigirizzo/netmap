@@ -109,7 +109,7 @@
 	nifp, (nifp)->ring_ofs[index] )
 
 #define NETMAP_RXRING(nifp, index) _NETMAP_OFFSET(struct netmap_ring *,	\
-	nifp, (nifp)->ring_ofs[index + (nifp)->ni_tx_rings + 1] )
+	nifp, (nifp)->ring_ofs[((size_t)index) + (nifp)->ni_tx_rings + 1] )
 
 #define NETMAP_BUF(ring, index)				\
 	((char *)(ring) + (ring)->buf_ofs + ((index)*(ring)->nr_buf_size))
@@ -140,10 +140,10 @@ nm_tx_pending(struct netmap_ring *r)
 static inline uint32_t
 nm_ring_space(struct netmap_ring *ring)
 {
-        int ret = ring->tail - ring->cur;
+        int ret = ((int)ring->tail) - ((int)ring->cur);
         if (ret < 0)
-                ret += ring->num_slots;
-        return ret;
+                ret += ((int)ring->num_slots);
+        return (uint32_t)ret;
 }
 
 
@@ -278,7 +278,7 @@ nm_pkt_copy(const void *_src, void *_dst, int l)
 	uint64_t *dst = (uint64_t *)_dst;
 
 	if (unlikely(l >= 1024 || l % 64)) {
-		memcpy(dst, src, l);
+		memcpy(dst, src, (size_t)l);
 		return;
 	}
 	for (; likely(l > 0); l-=64) {
@@ -1021,7 +1021,7 @@ fail:
 static int
 nm_inject(struct nm_desc *d, const void *buf, size_t size)
 {
-	u_int c, n = d->last_tx_ring - d->first_tx_ring + 1,
+	u_int c, n = (u_int)d->last_tx_ring - (u_int)d->first_tx_ring + 1,
 		ri = d->cur_tx_ring;
 
 	for (c = 0; c < n ; c++, ri++) {
@@ -1046,7 +1046,7 @@ nm_inject(struct nm_desc *d, const void *buf, size_t size)
 			idx = ring->slot[i].buf_idx;
 			ring->slot[i].len = ring->nr_buf_size;
 			ring->slot[i].flags = NS_MOREFRAG;
-			nm_pkt_copy(buf, NETMAP_BUF(ring, idx), ring->nr_buf_size);
+			nm_pkt_copy(buf, NETMAP_BUF(ring, idx), (int)ring->nr_buf_size);
 			i = nm_ring_next(ring, i);
 			buf = (char *)buf + ring->nr_buf_size;
 		}
