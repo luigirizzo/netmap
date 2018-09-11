@@ -478,8 +478,10 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	nmd->ops->nmd_deref(nmd);
 
 	nmd->active--;
-	if (!nmd->active)
+	if (last_user) {
 		nmd->nm_grp = -1;
+		nmd->lasterr = 0;
+	}
 
 	NMA_UNLOCK(nmd);
 	return last_user;
