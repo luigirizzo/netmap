@@ -412,6 +412,7 @@ struct _qs { /* shared queue */
 	uint64_t	prod_tail;	/* cached copy */
 	uint64_t	prod_now;	/* most recent producer timestamp */
 	uint64_t	prod_max_gap;	/* rx round duration */
+	unsigned short	prod_seed[3];
 	struct stats	*txstats;
 
 	/* parameters for reading from the netmap port */
@@ -2148,6 +2149,8 @@ main(int argc, char **argv)
 
     for (i = 0; i < EC_NOPTS; i++) {
         struct _qs *q = &bp[i].q;
+        uint64_t seed = time(0);
+        memcpy(q->prod_seed, &seed, sizeof(q->prod_seed));
         q->c_delay.optarg = "0";
         q->c_delay.run = null_run_fn;
         q->c_loss.optarg = "0";
@@ -2761,9 +2764,9 @@ parse_qsize(const char *arg)
 
 #include <math.h> /* log, exp etc. */
 static inline uint64_t
-my_random24(void)	/* 24 useful bits */
+my_random24(struct _qs *q)	/* 24 useful bits */
 {
-    return random() & ((1<<24) - 1);
+    return nrand48(q->prod_seed) & ((1<<24) - 1);
 }
 
 
@@ -2980,7 +2983,7 @@ uniform_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 uniform_delay_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t x = my_random24(), *d = arg->arg;
+    uint64_t x = my_random24(q), *d = arg->arg;
     q->cur_delay = d[0] + ((d[2] * x) >> 24);
 #if 0 /* COMPUTE_STATS */
 #endif /* COMPUTE_STATS */
@@ -3033,7 +3036,7 @@ static int
 exp_delay_run(struct _qs *q, struct _cfg *arg)
 {
     uint64_t *t = (uint64_t *)arg->arg;
-    q->cur_delay = t[my_random24() & (PTS_D_EXP - 1)];
+    q->cur_delay = t[my_random24(q) & (PTS_D_EXP - 1)];
     ND(5, "delay %llu", (unsigned long long)q->cur_delay);
     return 0;
 }
@@ -3070,7 +3073,7 @@ interpacket_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 interpacket_delay_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t x = my_random24(), *d = arg->arg;
+    uint64_t x = my_random24(q), *d = arg->arg;
     uint64_t gap = d[0] + ((d[2] * x) >> 24);
     uint64_t base = q->qt_tx;
     if (base < q->prod_now) {
@@ -3217,7 +3220,7 @@ const_plr_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 const_plr_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t *d = arg->arg, r = my_random24();
+    uint64_t *d = arg->arg, r = my_random24(q);
     q->cur_drop = r < d[0];
 #if 1	/* keep stats */
     d[1]++;
@@ -3277,7 +3280,7 @@ static int
 const_ber_run(struct _qs *q, struct _cfg *arg)
 {
     int l = q->cur_len;
-    uint64_t r = my_random24(), *d = arg->arg;
+    uint64_t r = my_random24(q), *d = arg->arg;
     uint32_t *plr = (uint32_t *)(d + 3);
 
     if (l >= MAX_PKT) {
@@ -3354,7 +3357,7 @@ const_reorder_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 const_reorder_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t r = my_random24(), *d = arg->arg;
+    uint64_t r = my_random24(q), *d = arg->arg;
     q->cur_hold_delay = (r < d[0] ? d[1] : 0);
     return 0;
 }
