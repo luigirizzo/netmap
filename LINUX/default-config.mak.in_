@@ -19,7 +19,7 @@ igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
 $(eval $(call default,ixgbe,5.3.7))
 $(eval $(call default,ixgbevf,4.3.2))
 $(eval $(call default,e1000e,3.4.0.2))
-$(eval $(call default,igb,5.3.5.12))
+$(eval $(call default,igb,5.3.5.20))
 $(eval $(call default,i40e,2.4.6))
 
 $(foreach d,$(filter ixgbe ixgbevf e1000e igb i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
