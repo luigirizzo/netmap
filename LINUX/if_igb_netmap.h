@@ -58,6 +58,20 @@ static inline u32 READ_TDH(struct igb_adapter *adapter, struct igb_ring *txr)
 #else
 #define	READ_TDH(_adapter, _txr)	readl((_txr)->head)
 #endif
+#ifdef E1000_WRITE_REG
+#define NM_WRITE_SRRCTL(_adapter, _rxr, _srrctl)	\
+	E1000_WRITE_REG(&(_adapter)->hw, E1000_SRRCTL((_rxr)->reg_idx), (srrctl))
+#elif defined(wr32)
+static inline void NM_WRITE_SRRCTL(struct igb_adapter *adapter, struct igb_ring *txr,
+	u32 srrctl)
+{
+	struct e1000_hw *hw = &adapter->hw;
+	wr32(E1000_TDH(txr->reg_idx), srrctl);
+}
+#else
+#define NM_WRITE_SRRCTL(_adapter, _rxr, _srrctl)	\
+	writel(E1000_SRRCTL((_rxr)->reg_idx, (_srrctl))
+#endif
 
 #ifndef E1000_TX_DESC_ADV
 #define	E1000_TX_DESC_ADV(_r, _i)	IGB_TX_DESC(&(_r), _i)
@@ -395,13 +409,12 @@ igb_netmap_configure_srrctl(struct igb_ring *rxr)
 	struct ifnet *ifp = rxr->netdev;
 	struct netmap_adapter* na = NA(ifp);
 	struct igb_adapter *adapter = netdev_priv(ifp);
-	struct e1000_hw *hw = &adapter->hw;
 	u32 srrctl;
 
 	srrctl = ALIGN(NETMAP_BUF_SIZE(na), 1024) >> E1000_SRRCTL_BSIZEPKT_SHIFT;
 	srrctl |= E1000_SRRCTL_DESCTYPE_ADV_ONEBUF;
 	srrctl |= E1000_SRRCTL_DROP_EN;
-	E1000_WRITE_REG(hw, E1000_SRRCTL(rxr->reg_idx), srrctl);
+	NM_WRITE_SRRCTL(adapter, rxr, srrctl);
 }
 
 
