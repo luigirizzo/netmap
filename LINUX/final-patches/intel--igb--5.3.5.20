@@ -1,5 +1,5 @@
 diff --git a/igb/Makefile b/igb/Makefile
-index 02d49bb..8a35007 100644
+index 02d49bb..1c88549 100644
 --- a/igb/Makefile
 +++ b/igb/Makefile
 @@ -28,9 +28,9 @@ ifneq ($(KERNELRELEASE),)
@@ -39,8 +39,12 @@ index 02d49bb..8a35007 100644
  
  ifeq (,$(wildcard common.mk))
    $(error Cannot find common.mk build rules)
-@@ -118,6 +118,9 @@ ccc: clean
- manfile:
+@@ -115,9 +115,12 @@ ccc: clean
+ 	@+$(call devkernelbuild,modules,coccicheck MODE=report))
+ 
+ # Build manfiles
+-manfile:
++manfile: ../$(DRIVER).$(MANSECTION)
  	@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
  
 +../$(DRIVER).$(MANSECTION):
