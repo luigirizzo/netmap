@@ -54,6 +54,9 @@ utils/test_nm
 utils/cygwin1.dll
 utils/ctrl-api-test
 utils/functional
+utils/fd_server
+utils/get_tx_rings_avail_sends
+utils/get_tx_rings_max_sends
 examples/pkt-gen.exe
 examples/pkt-gen.exe.stackdump
 examples/pkt-gen-b.exe
