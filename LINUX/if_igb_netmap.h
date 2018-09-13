@@ -288,6 +288,7 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
+	int complete; /* did we see a complete packet ? */
 
 	/* device-specific */
 	struct SOFTC_T *adapter = netdev_priv(ifp);
@@ -320,7 +321,8 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 			dma_rmb(); /* read descriptor after status DD */
 			PNMB(na, slot, &paddr);
 			slot->len = le16toh(curr->wb.upper.length);
-			slot->flags = (!(staterr & E1000_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
+			complete = (staterr & E1000_RXD_STAT_EOP);
+			slot->flags = complete ? 0 : NS_MOREFRAG;
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev, &paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
@@ -330,7 +332,8 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 #ifdef NETMAP_LINUX_HAVE_IGB_NTA
 			rxr->next_to_alloc = nic_i;
 #endif /* NETMAP_LINUX_HAVE_IGB_NTA */
-			kring->nr_hwtail = nm_i;
+			if (complete)
+				kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
