@@ -95,6 +95,8 @@ process_rings(struct netmap_ring *rxring, struct netmap_ring *txring,
 			/* report the buffer change. */
 			ts->flags |= NS_BUF_CHANGED;
 			rs->flags |= NS_BUF_CHANGED;
+			/* copy the NS_MOREFRAG */
+			rs->flags = (rs->flags & ~NS_MOREFRAG) | (ts->flags & NS_MOREFRAG);
 		} else {
 			char *rxbuf = NETMAP_BUF(rxring, rs->buf_idx);
 			char *txbuf = NETMAP_BUF(txring, ts->buf_idx);
