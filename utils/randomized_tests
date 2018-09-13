@@ -52,3 +52,6 @@ for test in tests/*_test ; do
 		exit $?
 	fi
 done
+
+# Wait for the fd_server to terminate and release its references
+sleep 0.5
