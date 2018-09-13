@@ -17,8 +17,6 @@ len="${len:-274}"
 num="${num:-1}"
 seq="${seq:-}"
 
-restart_fd_server
-
 create_vale_persistent_port "v0"
 create_vale_persistent_port "v1"
 create_vale_persistent_port "v2"

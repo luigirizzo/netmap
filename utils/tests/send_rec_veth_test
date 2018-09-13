@@ -18,8 +18,6 @@ len="${len:-150}"
 num="${num:-1}"
 seq="${seq:-}"
 
-restart_fd_server
-
 create_veth_interfaces "veth1"
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.

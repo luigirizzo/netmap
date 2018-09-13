@@ -18,8 +18,6 @@ len="${len:-150}"
 num="${num:-1}"
 seq="${seq:-}"
 
-restart_fd_server
-
 create_vale_persistent_port "v0"
 attach_to_vale_bridge "vale0" "v0"
 # Pre-opening interface that will be needed. This is needed to avoid a race
