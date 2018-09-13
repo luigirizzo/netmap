@@ -81,7 +81,7 @@ process_rings(struct netmap_ring *rxring, struct netmap_ring *txring,
 			sleep(2);
 		}
 		/* copy the packet length. */
-		if (rs->len > 2048) {
+		if (rs->len > rxring->nr_buf_size) {
 			D("wrong len %d rx[%d] -> tx[%d]", rs->len, j, k);
 			rs->len = 0;
 		} else if (verbose > 1) {
