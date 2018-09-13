@@ -33,8 +33,11 @@ echo ""
 # scripts.
 PATH="$(pwd):${PATH}"
 
+source test_lib
+
 for test in tests/*_test ; do
 	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
+	close_fd_server
 	if [ $? != 0 ] ; then
 		echo "Rerunning the test that just failed with -v"
 		# Select verbosity of output during after an error occurred:
@@ -43,6 +46,7 @@ for test in tests/*_test ; do
 		#    -vvv  -> -vv and packet building
 		#    -vvvv -> -vvv and arguments parsing
 		$test -v -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+		close_fd_server
 		exit $?
 	fi
 done
