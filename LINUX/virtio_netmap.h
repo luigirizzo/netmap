@@ -720,6 +720,6 @@ virtio_netmap_attach(struct virtnet_info *vi)
 
 	D("virtio attached txq=%d, txd=%d rxq=%d, rxd=%d",
 			na.num_tx_rings, na.num_tx_desc,
-			na.num_tx_rings, na.num_rx_desc);
+			na.num_rx_rings, na.num_rx_desc);
 }
 /* end of file */
