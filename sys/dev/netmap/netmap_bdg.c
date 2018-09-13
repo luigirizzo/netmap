@@ -1593,8 +1593,8 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 	ND("%s[%d] PRE rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",
 		na->name, ring_n,
 		kring->nr_hwcur, kring->nr_hwtail, kring->nkr_hwlease,
-		ring->head, ring->cur, ring->tail,
-		hw_kring->nr_hwcur, hw_kring->nr_hwtail, hw_ring->rtail);
+		kring->rhead, kring->rcur, kring->rtail,
+		hw_kring->nr_hwcur, hw_kring->nr_hwtail, hw_kring->rtail);
 	/* second step: the new packets are sent on the tx ring
 	 * (which is actually the same ring)
 	 */
@@ -1612,7 +1612,7 @@ netmap_bwrap_notify(struct netmap_kring *kring, int flags)
 	ND("%s[%d] PST rx(c%3d t%3d l%3d) ring(h%3d c%3d t%3d) tx(c%3d ht%3d t%3d)",
 		na->name, ring_n,
 		kring->nr_hwcur, kring->nr_hwtail, kring->nkr_hwlease,
-		ring->head, ring->cur, ring->tail,
+		kring->rhead, kring->rcur, kring->rtail,
 		hw_kring->nr_hwcur, hw_kring->nr_hwtail, hw_kring->rtail);
 put_out:
 	nm_kr_put(hw_kring);
