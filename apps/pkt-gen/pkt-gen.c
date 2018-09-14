@@ -305,6 +305,7 @@ struct glob_arg {
 	int win_idx;
 	int64_t win[STATS_WIN];
 	int wait_link;
+	int framing;		/* #bits of framing (for bw output) */
 };
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_PCAP, DEV_TAP };
 
@@ -2339,6 +2340,7 @@ usage(int errcode)
 		     "\t			assigned to both #tx-rings and #rx-rings.\n"
 #endif
 		     "\t-e extra-bufs		extra_bufs - goes in nr_arg3\n"
+		     "\t-B                      account for ethernet framing when showing bps\n"
 		     "\t-m			ignored\n"
 		     "",
 		cmd);
@@ -2504,7 +2506,7 @@ main_thread(struct glob_arg *g)
 		D("%spps %s(%spkts %sbps in %llu usec) %.2f avg_batch %d min_space",
 			norm(b1, pps, normalize), b4,
 			norm(b2, (double)x.pkts, normalize),
-			norm(b3, (double)x.bytes*8, normalize),
+			norm(b3, (double)x.bytes*8+(double)x.pkts*g->framing, normalize),
 			(unsigned long long)usec,
 			abs, (int)cur.min_space);
 		prev = cur;
@@ -2689,7 +2691,7 @@ main(int arc, char **argv)
 	g.wait_link = 2;	/* wait 2 seconds for physical ports */
 
 	while ((ch = getopt(arc, argv, "46a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:"
-	    "T:w:WvR:XC:H:e:E:m:rP:zZAh")) != -1) {
+	    "T:w:WvR:XC:H:e:E:m:rP:zZAhB")) != -1) {
 
 		switch(ch) {
 		default:
@@ -2865,6 +2867,10 @@ main(int arc, char **argv)
 			break;
 		case 'A':
 			g.options |= OPT_PPS_STATS;
+			break;
+		case 'B':
+			// XXX maybe add an option to pass the IFG
+			g.framing = 24 * 8;
 			break;
 		}
 	}
