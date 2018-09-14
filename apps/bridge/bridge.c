@@ -76,13 +76,13 @@ process_rings(struct netmap_ring *rxring, struct netmap_ring *txring,
 
 		/* swap packets */
 		if (ts->buf_idx < 2 || rs->buf_idx < 2) {
-			D("wrong index rx[%d] = %d  -> tx[%d] = %d",
+			RD(5, "wrong index rx[%d] = %d  -> tx[%d] = %d",
 				j, rs->buf_idx, k, ts->buf_idx);
 			sleep(2);
 		}
 		/* copy the packet length. */
 		if (rs->len > rxring->nr_buf_size) {
-			D("wrong len %d rx[%d] -> tx[%d]", rs->len, j, k);
+			RD(5, "wrong len %d rx[%d] -> tx[%d]", rs->len, j, k);
 			rs->len = 0;
 		} else if (verbose > 1) {
 			D("%s send len %d rx[%d] -> tx[%d]", msg, rs->len, j, k);
