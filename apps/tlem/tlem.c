@@ -1743,12 +1743,15 @@ cons(void *_pa)
             ND(4, "                 >>>> TXSYNC, pkt not ready yet h %ld t %ld now %ld tx %ld",
                     h, t, q->cons_now, p->pt_tx);
             q->rx_wait++;
-            /* this also sends any pending arp messages from this or
-             * previous loop iterations
-             */
-            ioctl(pa->pb->fd, NIOCTXSYNC, 0);
-            pending = 0;
-            usleep(5);
+            if (pending > 0) {
+                /* this also sends any pending arp messages from this or
+                 * previous loop iterations
+                 */
+                ioctl(pa->pb->fd, NIOCTXSYNC, 0);
+                pending = 0;
+            } else {
+                usleep(5);
+            }
             set_tns_now(&q->cons_now, q->t0);
             continue;
         }
