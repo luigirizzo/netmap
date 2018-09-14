@@ -1691,6 +1691,7 @@ receive_packets(struct netmap_ring *ring, u_int limit, int dump, uint64_t *bytes
 {
 	u_int cur, rx, n;
 	uint64_t b = 0;
+	u_int complete = 0;
 
 	if (bytes == NULL)
 		bytes = &b;
@@ -1706,12 +1707,14 @@ receive_packets(struct netmap_ring *ring, u_int limit, int dump, uint64_t *bytes
 		*bytes += slot->len;
 		if (dump)
 			dump_payload(p, slot->len, ring, cur);
+		if (!(slot->flags & NS_MOREFRAG))
+			complete++;
 
 		cur = nm_ring_next(ring, cur);
 	}
 	ring->head = ring->cur = cur;
 
-	return (rx);
+	return (complete);
 }
 
 static void *
