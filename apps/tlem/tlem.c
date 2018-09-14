@@ -160,6 +160,34 @@ int verbose = 1;
 
 static int do_abort = 0;
 
+#ifdef linux
+static int latency_fd = -1;
+static void latency_reduction_start(void)
+{
+    uint32_t target = 0;
+
+    if (latency_fd >= 0)
+        return;
+    latency_fd = open("/dev/cpu_dma_latency", O_RDWR);
+    if (latency_fd < 0) {
+        ED("WARNING: failed to setup low latency: %s", strerror(errno));
+        return;
+    }
+    if (write(latency_fd, &target, sizeof(target)) < 0) {
+        ED("WARNING: failed to setup low latency: %s", strerror(errno));
+    }
+    ED("latency reduction started");
+}
+static void latency_reduction_stop(void)
+{
+    if (latency_fd >= 0)
+        close(latency_fd);
+}
+#else
+#define latency_reduction_start()
+#define latency_reduction_stop()
+#endif /* linux */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -2618,6 +2646,8 @@ skip_args:
     }
     sleep(bp[0].wait_link);
 
+    latency_reduction_start();
+
     pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
     pthread_create(&bp[1].cons_tid, NULL, tlem_main, (void*)&bp[1]);
 
@@ -2654,6 +2684,8 @@ skip_args:
     }
     ED("exiting on abort");
     sleep(1);
+
+    latency_reduction_stop();
 
     return (0);
 }
