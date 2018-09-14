@@ -332,6 +332,7 @@ struct targ {
 
 	struct pkt pkt;
 	void *frame;
+	uint16_t seed[3];
 };
 
 static __inline uint16_t
@@ -751,8 +752,9 @@ dump_payload(const char *_p, int len, struct netmap_ring *ring, int cur)
 #endif /* linux */
 
 static void
-update_ip(struct pkt *pkt, struct glob_arg *g)
+update_ip(struct pkt *pkt, struct targ *t)
 {
+	struct glob_arg *g = t->g;
 	struct ip ip;
 	struct udphdr udp;
 	uint32_t oaddr, naddr;
@@ -766,8 +768,8 @@ update_ip(struct pkt *pkt, struct glob_arg *g)
 		naddr = oaddr = ntohl(ip.ip_src.s_addr);
 		nport = oport = ntohs(udp.uh_sport);
 		if (g->options & OPT_RANDOM_SRC) {
-			ip.ip_src.s_addr = random();
-			udp.uh_sport = random();
+			ip.ip_src.s_addr = nrand48(t->seed);
+			udp.uh_sport = nrand48(t->seed);
 			naddr = ntohl(ip.ip_src.s_addr);
 			nport = ntohs(udp.uh_sport);
 			break;
@@ -802,8 +804,8 @@ update_ip(struct pkt *pkt, struct glob_arg *g)
 		naddr = oaddr = ntohl(ip.ip_dst.s_addr);
 		nport = oport = ntohs(udp.uh_dport);
 		if (g->options & OPT_RANDOM_DST) {
-			ip.ip_dst.s_addr = random();
-			udp.uh_dport = random();
+			ip.ip_dst.s_addr = nrand48(t->seed);
+			udp.uh_dport = nrand48(t->seed);
 			naddr = ntohl(ip.ip_dst.s_addr);
 			nport = ntohs(udp.uh_dport);
 			break;
@@ -848,8 +850,9 @@ update_ip(struct pkt *pkt, struct glob_arg *g)
 #define	s6_addr16	__u6_addr.__u6_addr16
 #endif
 static void
-update_ip6(struct pkt *pkt, struct glob_arg *g)
+update_ip6(struct pkt *pkt, struct targ *t)
 {
+	struct glob_arg *g = t->g;
 	struct ip6_hdr ip6;
 	struct udphdr udp;
 	uint16_t udp_sum;
@@ -865,8 +868,8 @@ update_ip6(struct pkt *pkt, struct glob_arg *g)
 		naddr = oaddr = ntohs(ip6.ip6_src.s6_addr16[group]);
 		nport = oport = ntohs(udp.uh_sport);
 		if (g->options & OPT_RANDOM_SRC) {
-			ip6.ip6_src.s6_addr16[group] = random();
-			udp.uh_sport = random();
+			ip6.ip6_src.s6_addr16[group] = nrand48(t->seed);
+			udp.uh_sport = nrand48(t->seed);
 			naddr = ntohs(ip6.ip6_src.s6_addr16[group]);
 			nport = ntohs(udp.uh_sport);
 			break;
@@ -897,8 +900,8 @@ update_ip6(struct pkt *pkt, struct glob_arg *g)
 		naddr = oaddr = ntohs(ip6.ip6_dst.s6_addr16[group]);
 		nport = oport = ntohs(udp.uh_dport);
 		if (g->options & OPT_RANDOM_DST) {
-			ip6.ip6_dst.s6_addr16[group] = random();
-			udp.uh_dport = random();
+			ip6.ip6_dst.s6_addr16[group] = nrand48(t->seed);
+			udp.uh_dport = nrand48(t->seed);
 			naddr = ntohs(ip6.ip6_dst.s6_addr16[group]);
 			nport = ntohs(udp.uh_dport);
 			break;
@@ -932,13 +935,13 @@ update_ip6(struct pkt *pkt, struct glob_arg *g)
 }
 
 static void
-update_addresses(struct pkt *pkt, struct glob_arg *g)
+update_addresses(struct pkt *pkt, struct targ *t)
 {
 
-	if (g->af == AF_INET)
-		update_ip(pkt, g);
+	if (t->g->af == AF_INET)
+		update_ip(pkt, t);
 	else
-		update_ip6(pkt, g);
+		update_ip6(pkt, t);
 }
 /*
  * initialize one packet and prepare for the next one.
@@ -1112,7 +1115,7 @@ set_vnet_hdr_len(struct glob_arg *g)
  */
 static int
 send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
-		int size, struct glob_arg *g, u_int count, int options,
+		int size, struct targ *t, u_int count, int options,
 		u_int nfrags)
 {
 	u_int n, sent, cur = ring->cur;
@@ -1151,11 +1154,11 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		} else if ((options & OPT_COPY) || buf_changed) {
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == nfrags)
-				update_addresses(pkt, g);
+				update_addresses(pkt, t);
 		} else if (options & OPT_MEMCPY) {
 			memcpy(p, frame, size);
 			if (fcnt == nfrags)
-				update_addresses(pkt, g);
+				update_addresses(pkt, t);
 		} else if (options & OPT_PREFETCH) {
 			__builtin_prefetch(p);
 		}
@@ -1534,7 +1537,7 @@ sender_body(void *data)
 	    for (i = 0; !targ->cancel && (n == 0 || sent < n); i++) {
 		if (write(targ->g->main_fd, frame, size) != -1)
 			sent++;
-		update_addresses(pkt, targ->g);
+		update_addresses(pkt, targ);
 		if (i > 10000) {
 			targ->ctr.pkts = sent;
 			targ->ctr.bytes = sent*size;
@@ -1619,11 +1622,11 @@ sender_body(void *data)
 				limit = ((limit + frags - 1) / frags) * frags;
 
 			if (targ->g->pkt_min_size > 0) {
-				size = random() %
+				size = nrand48(targ->seed) %
 					(targ->g->pkt_size - targ->g->pkt_min_size) +
 					targ->g->pkt_min_size;
 			}
-			m = send_packets(txring, pkt, frame, size, targ->g,
+			m = send_packets(txring, pkt, frame, size, targ,
 					 limit, options, frags);
 			ND("limit %lu tail %d frags %d m %d",
 				limit, txring->tail, frags, m);
@@ -1961,7 +1964,7 @@ txseq_body(void *data)
 			memcpy(targ->g->af == AF_INET ? &pkt->ipv4.udp.uh_sum : &pkt->ipv6.udp.uh_sum, &sum, sizeof(sum));
 			nm_pkt_copy(frame, p, size);
 			if (fcnt == frags) {
-				update_addresses(pkt, targ->g);
+				update_addresses(pkt, targ);
 			}
 
 			if (options & OPT_DUMP) {
@@ -2359,11 +2362,13 @@ start_threads(struct glob_arg *g) {
 	 * using a single descriptor.
 	 */
 	for (i = 0; i < g->nthreads; i++) {
+		unsigned int seed = time(0);
 		t = &targs[i];
 
 		bzero(t, sizeof(*t));
 		t->fd = -1; /* default, with pcap */
 		t->g = g;
+		memcpy(t->seed, &seed, sizeof(t->seed));
 
 		if (g->dev_type == DEV_NETMAP) {
 			struct nm_desc nmd = *g->nmd; /* copy, we overwrite ringid */
