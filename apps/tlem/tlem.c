@@ -2680,10 +2680,10 @@ skip_args:
                 (double)(q0->c_loss.d[0])/(1<<24),
                 q0->c_loss.d[1] == 0 ? 0 :
                 (double)(q0->c_loss.d[2])/q0->c_loss.d[1]);
-        bp[0].q.rx_qmax = (bp[0].q.rx_qmax * 7)/8; // ewma
-        bp[0].q.prod_max_gap = (bp[0].q.prod_max_gap * 7)/8; // ewma
-        bp[1].q.rx_qmax = (bp[1].q.rx_qmax * 7)/8; // ewma
-        bp[1].q.prod_max_gap = (bp[1].q.prod_max_gap * 7)/8; // ewma
+        bp[0].q.rx_qmax = 0;
+        bp[0].q.prod_max_gap = 0;
+        bp[1].q.rx_qmax = 0;
+        bp[1].q.prod_max_gap = 0;
     }
     ED("exiting on abort");
     sleep(1);
