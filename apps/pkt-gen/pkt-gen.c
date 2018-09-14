@@ -1634,7 +1634,7 @@ sender_body(void *data)
 			if (m > 0) //XXX-ste: can m be 0?
 				event++;
 			targ->ctr.pkts = sent;
-			targ->ctr.bytes = sent*size;
+			targ->ctr.bytes += m*size;
 			targ->ctr.events = event;
 			if (rate_limit) {
 				tosend -= m;
