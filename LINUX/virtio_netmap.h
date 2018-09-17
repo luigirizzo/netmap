@@ -33,7 +33,7 @@
 static int virtnet_close(struct ifnet *ifp);
 static int virtnet_open(struct ifnet *ifp);
 static void free_receive_bufs(struct virtnet_info *vi);
-static void free_unused_bufs(struct virtnet_info *vi);
+static void free_unused_bufs(struct virtnet_info *vi, int flag);
 
 #define DEV_NUM_TX_QUEUES(_netdev)	(_netdev)->num_tx_queues
 
@@ -143,15 +143,18 @@ free_receive_bufs(struct virtnet_info *vi)
 #define COMPAT_DECL_SG
 #define COMPAT_INIT_SG(_sgl)
 static void
-virtio_netmap_init_sgs(struct virtnet_info *vi)
+virtio_netmap_init_sgs(struct virtnet_info *vi, enum txrx t)
 {
 	int i;
 
-	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++)
-		sg_init_table(GET_TX_SG(vi, i), 2);
-
-	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++)
-		sg_init_table(GET_RX_SG(vi, i), 2);
+	if (t == NR_TX || t == NR_TXRX) {
+		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++)
+			sg_init_table(GET_TX_SG(vi, i), 2);
+	}
+	if (t == NR_RX || t == NR_TXRX) {
+		for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++)
+			sg_init_table(GET_RX_SG(vi, i), 2);
+	}
 }
 
 #else  /* !MULTI_QUEUE && !SG */
@@ -181,44 +184,47 @@ struct netmap_virtio_adapter {
 
 static void
 virtio_netmap_clean_used_rings(struct virtnet_info *vi,
-			       struct netmap_adapter *na)
+			       struct netmap_adapter *na, enum txrx t)
 {
 	int i;
 
-	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
-		struct virtqueue *vq = GET_TX_VQ(vi, i);
-		unsigned int wlen;
-		void *token;
-		int n = 0;
+	if (t == NR_TX || t == NR_TXRX) {
+		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+			struct virtqueue *vq = GET_TX_VQ(vi, i);
+			unsigned int wlen;
+			void *token;
+			int n = 0;
 
-		while ((token = virtqueue_get_buf(vq, &wlen)) != NULL) {
-			if (token != na) {
-				/* Not ours, it's a sk_buff,
-				 * let's free. */
-				dev_kfree_skb(token);
+			while ((token = virtqueue_get_buf(vq, &wlen)) != NULL) {
+				if (token != na) {
+					/* Not ours, it's a sk_buff,
+					 * let's free. */
+					dev_kfree_skb(token);
+				}
+				n++;
 			}
-			n++;
+			D("got %d used bufs on queue tx-%d", n, i);
 		}
-		D("got %d used bufs on queue tx-%d", n, i);
 	}
+	if (t == NR_RX || t == NR_TXRX) {
+		for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
+			struct virtqueue *vq = GET_RX_VQ(vi, i);
+			unsigned int wlen;
+			void *token;
+			int n = 0;
 
-	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
-		struct virtqueue *vq = GET_RX_VQ(vi, i);
-		unsigned int wlen;
-		void *token;
-		int n = 0;
-
-		while ((token = virtqueue_get_buf(vq, &wlen)) != NULL) {
-			n++;
-			RXNUM_DEC(vi, i);
+			while ((token = virtqueue_get_buf(vq, &wlen)) != NULL) {
+				n++;
+				RXNUM_DEC(vi, i);
+			}
+			D("got %d used bufs on queue rx-%d", n, i);
 		}
-		D("got %d used bufs on queue rx-%d", n, i);
 	}
 }
 
 
 static void
-virtio_netmap_reclaim_unused(struct virtnet_info *vi)
+virtio_netmap_reclaim_unused(struct virtnet_info *vi, enum txrx t)
 {
 	int i;
 
@@ -230,27 +236,30 @@ virtio_netmap_reclaim_unused(struct virtnet_info *vi)
 	 * activated (by 'ethtool --set-channels eth0 combined $N').
 	 */
 
-	for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
-		struct virtqueue *vq = GET_TX_VQ(vi, i);
-		void *token;
-		int n = 0;
+	if (t == NR_TX || t == NR_TXRX) {
+		for (i = 0; i < DEV_NUM_TX_QUEUES(vi->dev); i++) {
+			struct virtqueue *vq = GET_TX_VQ(vi, i);
+			void *token;
+			int n = 0;
 
-		while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
-			n++;
+			while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
+				n++;
+			}
+			D("detached %d pending bufs on queue tx-%d", n, i);
 		}
-		D("detached %d pending bufs on queue tx-%d", n, i);
 	}
+	if (t == NR_RX || t == NR_TXRX) {
+		for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
+			struct virtqueue *vq = GET_RX_VQ(vi, i);
+			void *token;
+			int n = 0;
 
-	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
-		struct virtqueue *vq = GET_RX_VQ(vi, i);
-		void *token;
-		int n = 0;
-
-		while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
-			RXNUM_DEC(vi, i);
-			n++;
+			while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
+				RXNUM_DEC(vi, i);
+				n++;
+			}
+			D("detached %d pending bufs on queue rx-%d", n, i);
 		}
-		D("detached %d pending bufs on queue rx-%d", n, i);
 	}
 }
 
@@ -261,7 +270,8 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct netmap_virtio_adapter *vna = (struct netmap_virtio_adapter *)na;
 	struct ifnet *ifp = na->ifp;
 	struct virtnet_info *vi = netdev_priv(ifp);
-	int hwrings_pending = 0, hwrings;
+	int hwrings, pending = 0;
+	int hwrings_pending[] = {0, 0, 0};
 	bool was_up = false;
 	int error = 0;
 	enum txrx t;
@@ -278,38 +288,52 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 
 			if ((onoff && nm_kring_pending_on(kring)) ||
 				(!onoff && nm_kring_pending_off(kring))) {
-				hwrings_pending ++;
+				hwrings_pending[t]++;
+				pending++;
 			}
 		}
 	}
 
+/*
 	if (!(hwrings_pending == 0 || hwrings_pending == hwrings)) {
 		D("virtio-net native adapter can only open "
 		  "all RX and TX hw rings");
-		return EINVAL;
+        return EINVAL;
 	}
+*/
 
 	/* It's important to make sure each virtnet_close() matches
 	 * a virtnet_open(), otherwise a napi_disable() is not matched by
 	 * a napi_enable(), which results in a deadlock. */
-	if (hwrings_pending && netif_running(ifp)) {
+	if (pending && netif_running(ifp)) {
 		was_up = true;
 		/* Down the interface. This also disables napi. */
 		virtnet_close(ifp);
 	}
 
 	if (onoff) {
-		if (hwrings_pending) {
-			/* TX shared virtio-net header must be zeroed because its
-			 * content is exposed to the host. RX shared virtio-net
-			 * header is zeroed only for security reasons. */
-			memset(&vna->shared_txvhdr, 0, sizeof(vna->shared_txvhdr));
-			memset(&vna->shared_rxvhdr, 0, sizeof(vna->shared_rxvhdr));
+		if (pending) {
+			if (hwrings_pending[NR_TX] && hwrings_pending[NR_RX])
+				t = NR_TXRX;
+			else if (hwrings_pending[NR_TX])
+				t = NR_TX;
+			else if (hwrings_pending[NR_RX])
+				t = NR_RX;
 
-			/* Get and free any used buffers. This is necessary
+			/* TX shared virtio-net header must be zeroed because its
+			 * content is exposed to the host. */
+			if (t == NR_TX)
+				memset(&vna->shared_txvhdr, 0, sizeof(vna->shared_txvhdr));
+
+			/* RX shared virtio-net header is zeroed only for
+			 * security reasons. */
+			if (t == NR_RX || t == NR_TXRX)
+				memset(&vna->shared_rxvhdr, 0, sizeof(vna->shared_rxvhdr));
+
+			/* Get and free any used TX buffers. This is necessary
 			 * before calling free_unused_bufs(), that uses
 			 * virtqueue_detach_unused_buf(). */
-			virtio_netmap_clean_used_rings(vi, na);
+			virtio_netmap_clean_used_rings(vi, na, t);
 
 			/* Initialize scatter-gather lists used to publish netmap
 			 * buffers through virtio descriptors, in such a way that each
@@ -317,7 +341,17 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 			 * (which can point to a netmap buffer). This initialization is
 			 * necessary to prevent the virtio frontend (host) to think
 			 * we are using multi-descriptors scatter-gather lists. */
-			virtio_netmap_init_sgs(vi);
+			virtio_netmap_init_sgs(vi, t);
+
+			/* Also free the pages allocated by the driver. Since
+			 * Linux 4.10, free_receive_bufs() takes the rtnl lock
+			 * to support XDP. To avoid deadlock, we temporarily
+			 * release the lock during this call. */
+			if (t == NR_RX || t == NR_TXRX) {
+				rtnl_unlock();
+				free_receive_bufs(vi);
+				rtnl_lock();
+			}
 
 			/* We have to drain the RX virtqueues, otherwise the
 			 * virtio_netmap_init_buffer() called by the subsequent
@@ -327,24 +361,18 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 			 * the virtio-driver (e.g. sk_buffs). We need to free that
 			 * memory, otherwise we have leakage.
 			 */
-			free_unused_bufs(vi);
-
-			/* Also free the pages allocated by the driver. Since
-			 * Linux 4.10, free_receive_bufs() takes the rtnl lock
-			 * to support XDP. To avoid deadlock, we temporarily
-			 * release the lock during this call. */
-			rtnl_unlock();
-			free_receive_bufs(vi);
-			rtnl_lock();
+			free_unused_bufs(vi, t);
 		}
 
 		/* enable netmap mode */
-		for_rx_tx(t) {
-			for (i = 0; i <= nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
+        for_rx_tx(t) {
+			if (hwrings_pending[t]) {
+				for (i = 0; i <= nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = NMR(na, t)[i];
 
-				if (nm_kring_pending_on(kring)) {
-					kring->nr_mode = NKR_NETMAP_ON;
+					if (nm_kring_pending_on(kring)) {
+						kring->nr_mode = NKR_NETMAP_ON;
+					}
 				}
 			}
 		}
@@ -352,21 +380,30 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		nm_clear_native_flags(na);
 		for_rx_tx(t) {
-			for (i = 0; i <= nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
+			if (hwrings_pending[t]) {
+				for (i = 0; i <= nma_get_nrings(na, t); i++) {
+					struct netmap_kring *kring = NMR(na, t)[i];
 
-				if (nm_kring_pending_off(kring)) {
-					kring->nr_mode = NKR_NETMAP_OFF;
+					if (nm_kring_pending_off(kring)) {
+						kring->nr_mode = NKR_NETMAP_OFF;
+					}
 				}
 			}
 		}
 
-		if (hwrings_pending) {
-			/* Get and free any used buffer. This is necessary
-			 * before calling virtqueue_detach_unused_buf(). */
-			virtio_netmap_clean_used_rings(vi, na);
-
-			virtio_netmap_reclaim_unused(vi);
+		if (pending) {
+			if (hwrings_pending[NR_TX]) {
+				/* Get and free any used TX buffer. This is necessary
+				 * before calling virtqueue_detach_unused_buf(). */
+				virtio_netmap_clean_used_rings(vi, na, NR_TX);
+				virtio_netmap_reclaim_unused(vi, NR_TX);
+			}
+			if (hwrings_pending[NR_RX]) {
+				/* Get and free any used RX buffer. This is necessary
+				 * before calling virtqueue_detach_unused_buf(). */
+				virtio_netmap_clean_used_rings(vi, na, NR_RX);
+				virtio_netmap_reclaim_unused(vi, NR_RX);
+			}
 		}
 	}
 
