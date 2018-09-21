@@ -2364,7 +2364,7 @@ start_threads(struct glob_arg *g) {
 	 * using a single descriptor.
 	 */
 	for (i = 0; i < g->nthreads; i++) {
-		unsigned int seed = time(0);
+		uint64_t seed = time(0) | (time(0) << 32);
 		t = &targs[i];
 
 		bzero(t, sizeof(*t));
