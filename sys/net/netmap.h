@@ -516,6 +516,13 @@ enum {
 	NETMAP_REQ_VALE_POLLING_DISABLE,
 	/* Get info about the pools of a memory allocator. */
 	NETMAP_REQ_POOLS_INFO_GET,
+	/* Start an in-kernel loop that syncs the rings periodically or
+	 * on notifications. The loop runs in the context of the ioctl
+	 * syscall, and only stops on NETMAP_REQ_KSYNC_LOOP_STOP. */
+	NETMAP_REQ_KSYNC_LOOP_START,
+	/* Stops the thread executing the in-kernel loop. The thread
+	 * returns from the ioctl syscall. */
+	NETMAP_REQ_KSYNC_LOOP_STOP,
 };
 
 enum {
