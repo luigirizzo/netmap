@@ -274,7 +274,6 @@ function parse_send_recv_arguments() {
 	done
 }
 
-
 ################################################################################
 # Prints to stdout the hexadecimal representation of the received integer.
 # Arguments:
@@ -307,4 +306,46 @@ function get_random_MAC() {
 	else
 		echo "$MAC"
 	fi
+}
+
+################################################################################
+# Loads the netmap module, if needed.
+# Arguments:
+#   None
+################################################################################
+function netmap_load() {
+	os=$(uname -s)
+	case $os in
+		Linux)
+			modprobe netmap
+			;;
+		FreeBSD)
+			# Nothing to do. We assume it is built in-kernel.
+			;;
+		*)
+			echo "$os not supported"
+			exit 1
+			;;
+	esac
+}
+
+################################################################################
+# Unloads the netmap module, if needed.
+# Arguments:
+#   None
+################################################################################
+function netmap_unload() {
+	os=$(uname -s)
+	case $os in
+		Linux)
+			rmmod netmap
+			;;
+		FreeBSD)
+			# Nothing to do.
+			;;
+		*)
+			echo "$os not supported"
+			exit 1
+			;;
+	esac
 }

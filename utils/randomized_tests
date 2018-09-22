@@ -28,12 +28,18 @@ echo "   sequence check   : ${seq_check}"
 echo "   packet length    : ${random_len}"
 echo ""
 
-# We add the current directory to the PATH. This way we can directly run
+# Save current directory and enter the utils/ directory.
+pushd $(pwd)
+cd $(dirname $0)
+
+# Add the current directory to the PATH. In this way we can easily invoke
 # functional, get_tx_rings_avail_sends and get_tx_rings_max_sends from the test
 # scripts.
 PATH="$(pwd):${PATH}"
 
 source test_lib
+
+netmap_load
 
 for test in tests/*_test ; do
 	restart_fd_server
@@ -49,9 +55,13 @@ for test in tests/*_test ; do
 		restart_fd_server
 		$test -v -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
 		close_fd_server
+		popd
 		exit $?
 	fi
 done
 
 # Wait for the fd_server to terminate and release its references
 sleep 0.5
+
+netmap_unload
+popd
