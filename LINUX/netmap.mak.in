@@ -135,6 +135,7 @@ ifeq (,$(UTILS))
 utils:
 install-utils:
 clean-utils:
+intest:
 else
 .PHONY: utils
 utils:
@@ -145,6 +146,9 @@ install-utils:
 
 clean-utils:
 	$(MAKE) -C build-utils clean SRCDIR=$(SRCDIR)/..
+
+intest: utils
+	utils/randomized_tests
 endif
 
 INCLUDE_PREFIX := $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)
