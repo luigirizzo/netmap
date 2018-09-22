@@ -2627,6 +2627,16 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			break;
 		}
 
+		case NETMAP_REQ_KSYNC_LOOP_START: {
+			error = ENOSYS;
+			break;
+		}
+
+		case NETMAP_REQ_KSYNC_LOOP_STOP: {
+			error = ENOSYS;
+			break;
+		}
+
 		default: {
 			error = EINVAL;
 			break;
@@ -2736,6 +2746,8 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 	case NETMAP_REQ_VALE_NEWIF:
 		return sizeof(struct nmreq_vale_newif);
 	case NETMAP_REQ_VALE_DELIF:
+	case NETMAP_REQ_KSYNC_LOOP_START:
+	case NETMAP_REQ_KSYNC_LOOP_STOP:
 		return 0;
 	case NETMAP_REQ_VALE_POLLING_ENABLE:
 	case NETMAP_REQ_VALE_POLLING_DISABLE:
