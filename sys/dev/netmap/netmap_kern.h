@@ -2123,6 +2123,8 @@ void nm_os_kctx_send_irq(struct nm_kctx *);
 void nm_os_kctx_worker_setaff(struct nm_kctx *, int);
 u_int nm_os_ncpus(void);
 
+int netmap_sync_kloop(struct nmreq_sync_kloop_start *req);
+
 #ifdef WITH_PTNETMAP_HOST
 /*
  * netmap adapter for host ptnetmap ports
