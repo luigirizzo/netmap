@@ -3907,7 +3907,6 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 	struct netmap_adapter *na;
 
 	if (priv->np_nifp == NULL) {
-		D("No if registered");
 		return ENXIO;
 	}
 	mb(); /* make sure following reads are not from cache */
@@ -3915,6 +3914,32 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 	na = priv->np_na;
 	if (!nm_netmap_on(na)) {
 		return ENXIO;
+	}
+
+	/* Validate the CSB entries for both directions. */
+	{
+		struct nm_csb_atok *csb_atok =
+			(struct nm_csb_atok *)(uintptr_t)req->csb_atok;
+		unsigned int num_entries;
+		size_t csb_size;
+		int err;
+
+		num_entries = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX] +
+			      priv->np_qlast[NR_TX] - priv->np_qfirst[NR_TX];
+		csb_size = num_entries * sizeof(*csb_atok);
+
+		if (csb_size) {
+			void *tmp = nm_os_malloc(csb_size);
+			if (!tmp) {
+				return ENOMEM;
+			}
+			err = copyin(csb_atok, tmp, csb_size);
+			nm_os_free(tmp);
+			if (err) {
+				nm_prerr("Invalid CSB address\n");
+				return err;
+			}
+		}
 	}
 
 	return ENOSYS;
