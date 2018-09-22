@@ -1925,7 +1925,7 @@ netmap_unset_ringid(struct netmap_priv_d *priv)
 	}
 	priv->np_flags = 0;
 	priv->np_txpoll = 0;
-	priv->np_kloop_on = 0;
+	priv->np_kloop_state = NM_SYNC_KLOOP_NONE;
 }
 
 
@@ -3920,12 +3920,13 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		return ENXIO;
 	}
 
-	/* Make sure that there is no kloop already active. */
+	/* Make sure that no kloop is active or about to stop. */
 	NMG_LOCK();
-	if (priv->np_kloop_on) {
+	if (priv->np_kloop_state != NM_SYNC_KLOOP_NONE) {
 		err = EBUSY;
+	} else {
+		priv->np_kloop_state = NM_SYNC_KLOOP_ACTIVE;
 	}
-	priv->np_kloop_on = 1;
 	NMG_UNLOCK();
 	if (err) {
 		return err;
@@ -3976,7 +3977,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		}
 	}
 
-	while (NM_ACCESS_ONCE(priv->np_kloop_on)) {
+	while (likely(NM_ACCESS_ONCE(priv->np_kloop_state) != NM_SYNC_KLOOP_STOPPING)) {
 		unsigned int i;
 
 		for (i = priv->np_qfirst[NR_TX]; i < priv->np_qlast[NR_TX]; i++) {
@@ -3990,6 +3991,11 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		}
 		break;
 	}
+
+	/* Reset the kloop state. */
+	NMG_LOCK();
+	priv->np_kloop_state = NM_SYNC_KLOOP_NONE;
+	NMG_UNLOCK();
 
 	return 0;
 }
