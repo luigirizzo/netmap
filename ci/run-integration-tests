@@ -12,7 +12,4 @@ popd
 sudo rmmod netmap
 
 # Run integration tests
-pushd .
-cd utils
-sudo ./randomized_tests
-popd
+sudo make intest
