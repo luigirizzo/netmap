@@ -627,7 +627,7 @@ for opt do
 	;;
 	--cache=*) cache="$optarg"
 	;;
-	--help)
+	--help | -h)
 		print_help
 		exit
 	;;
