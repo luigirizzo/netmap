@@ -369,8 +369,8 @@ netmap_vale_list(struct nmreq_header *hdr)
 					continue;
 				vpna = b->bdg_ports[j];
 				/* write back the VALE switch name */
-				strncpy(hdr->nr_name, vpna->up.name,
-					(size_t)IFNAMSIZ);
+				strlcpy(hdr->nr_name, vpna->up.name,
+					sizeof(hdr->nr_name));
 				error = 0;
 				goto out;
 			}
@@ -1346,7 +1346,7 @@ netmap_vale_vp_bdg_attach(const char *name, struct netmap_adapter *na,
 		return NM_NEED_BWRAP;
 	}
 	na->na_vp = vpna;
-	strncpy(na->name, name, sizeof(na->name));
+	strlcpy(na->name, name, sizeof(na->name));
 	na->na_hostvp = NULL;
 	return 0;
 }
@@ -1387,7 +1387,7 @@ netmap_vale_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		return ENOMEM;
 	}
 	na = &bna->up.up;
-	strncpy(na->name, nr_name, sizeof(na->name));
+	strlcpy(na->name, nr_name, sizeof(na->name));
 	na->nm_register = netmap_bwrap_reg;
 	na->nm_txsync = netmap_vale_vp_txsync;
 	// na->nm_rxsync = netmap_bwrap_rxsync;

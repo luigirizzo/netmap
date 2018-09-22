@@ -128,7 +128,7 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 
 	/* First prepare the request header. */
 	hdr->nr_version = NETMAP_API; /* new API */
-	strncpy(hdr->nr_name, nmr->nr_name, sizeof(nmr->nr_name));
+	strlcpy(hdr->nr_name, nmr->nr_name, sizeof(nmr->nr_name));
 	hdr->nr_options = (uintptr_t)NULL;
 	hdr->nr_body = (uintptr_t)NULL;
 
@@ -318,7 +318,7 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 	case NETMAP_REQ_VALE_LIST: {
 		struct nmreq_vale_list *req =
 			(struct nmreq_vale_list *)(uintptr_t)hdr->nr_body;
-		strncpy(nmr->nr_name, hdr->nr_name, sizeof(nmr->nr_name));
+		strlcpy(nmr->nr_name, hdr->nr_name, sizeof(nmr->nr_name));
 		nmr->nr_arg1 = req->nr_bridge_idx;
 		nmr->nr_arg2 = req->nr_port_idx;
 		break;

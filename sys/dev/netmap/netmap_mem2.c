@@ -1998,7 +1998,7 @@ netmap_mem2_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
 	/* initialize base fields -- override const */
 	*(u_int *)(uintptr_t)&nifp->ni_tx_rings = na->num_tx_rings;
 	*(u_int *)(uintptr_t)&nifp->ni_rx_rings = na->num_rx_rings;
-	strncpy(nifp->ni_name, na->name, (size_t)IFNAMSIZ);
+	strlcpy(nifp->ni_name, na->name, sizeof(nifp->ni_name));
 
 	/*
 	 * fill the slots for the rx and tx rings. They contain the offset
