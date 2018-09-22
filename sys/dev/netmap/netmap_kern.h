@@ -1868,6 +1868,7 @@ struct netmap_priv_d {
 	u_int		np_qfirst[NR_TXRX],
 			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
 	uint16_t	np_txpoll;
+	uint16_t        np_kloop_on;	/* use with NMG_LOCK held */
 	int             np_sync_flags; /* to be passed to nm_sync */
 
 	int		np_refs;	/* use with NMG_LOCK held */
