@@ -2630,7 +2630,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		case NETMAP_REQ_SYNC_KLOOP_START: {
 			struct nmreq_sync_kloop_start *req =
 				(struct nmreq_sync_kloop_start *)(uintptr_t)hdr->nr_body;
-			error = netmap_sync_kloop(req);
+			error = netmap_sync_kloop(priv, req);
 			break;
 		}
 
@@ -3902,8 +3902,21 @@ nm_clear_native_flags(struct netmap_adapter *na)
 }
 
 int
-netmap_sync_kloop(struct nmreq_sync_kloop_start *req)
+netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req)
 {
+	struct netmap_adapter *na;
+
+	if (priv->np_nifp == NULL) {
+		D("No if registered");
+		return ENXIO;
+	}
+	mb(); /* make sure following reads are not from cache */
+
+	na = priv->np_na;
+	if (!nm_netmap_on(na)) {
+		return ENXIO;
+	}
+
 	return ENOSYS;
 }
 
