@@ -1486,6 +1486,7 @@ struct net *netmap_bns_get(void);
 void netmap_bns_put(struct net *);
 void netmap_bns_getbridges(struct nm_bridge **, u_int *);
 #else
+extern struct nm_bridge *nm_bridges;
 #define netmap_bns_get()
 #define netmap_bns_put(_1)
 #define netmap_bns_getbridges(b, n) \

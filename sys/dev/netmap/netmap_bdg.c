@@ -126,7 +126,7 @@ netmap_bdg_name(struct netmap_vp_adapter *vp)
  * Right now we have a static array and deletions are protected
  * by an exclusive lock.
  */
-static struct nm_bridge *nm_bridges;
+struct nm_bridge *nm_bridges;
 #endif /* !CONFIG_NET_NS */
 
 
