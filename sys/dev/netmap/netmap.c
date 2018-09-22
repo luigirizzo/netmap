@@ -2636,7 +2636,17 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 
 		case NETMAP_REQ_SYNC_KLOOP_STOP: {
-			error = ENOSYS;
+			NMG_LOCK();
+			switch (priv->np_kloop_state) {
+			case NM_SYNC_KLOOP_NONE:
+				error = ENXIO;
+				break;
+			case NM_SYNC_KLOOP_ACTIVE:
+			case NM_SYNC_KLOOP_STOPPING:
+				priv->np_kloop_state = NM_SYNC_KLOOP_STOPPING;
+				break;
+			}
+			NMG_UNLOCK();
 			break;
 		}
 
