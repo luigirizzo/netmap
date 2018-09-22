@@ -4,7 +4,7 @@ BUILDDIR=$PWD
 SRCDIR=$(cd $(dirname $0); pwd)
 MODNAME=netmap
 DEBUG=1
-UTILS=
+UTILS=1
 DRVERRFAIL=
 DMASYNC=1
 
@@ -306,7 +306,7 @@ Available options:
   --no-apps	               do not compile any app
   --no-apps=                   do not compile the given apps (comma sep.)
   --apps=                      only compile the given apps (comma sep.)
-  --utils		       also compile the utils
+  --no-utils		       do not compile the utils
   --mod-name=		       netmap module name [$MODNAME]
   --enable-vale      	       enable the VALE switch
   --disable-vale      	       disable the VALE switch
@@ -649,8 +649,8 @@ for opt do
 	--no-force-debug)
 		DEBUG=
 	;;
-	--utils)
-		UTILS=1
+	--no-utils)
+		UTILS=
 		;;
 	--fail-on-driver-errors)
 		DRVERRFAIL=1
