@@ -2305,7 +2305,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 	struct ifnet *ifp = NULL;
 	int error = 0;
 	u_int i, qfirst, qlast;
-	struct netmap_if *nifp;
 	struct netmap_kring **krings;
 	int sync_flags;
 	enum txrx t;
@@ -2343,6 +2342,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		case NETMAP_REQ_REGISTER: {
 			struct nmreq_register *req =
 				(struct nmreq_register *)(uintptr_t)hdr->nr_body;
+			struct netmap_if *nifp;
+
 			/* Protect access to priv from concurrent requests. */
 			NMG_LOCK();
 			do {
@@ -2639,9 +2640,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 
 	case NIOCTXSYNC:
 	case NIOCRXSYNC: {
-		nifp = priv->np_nifp;
-
-		if (nifp == NULL) {
+		if (priv->np_nifp == NULL) {
 			error = ENXIO;
 			break;
 		}
