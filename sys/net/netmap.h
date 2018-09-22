@@ -518,11 +518,11 @@ enum {
 	NETMAP_REQ_POOLS_INFO_GET,
 	/* Start an in-kernel loop that syncs the rings periodically or
 	 * on notifications. The loop runs in the context of the ioctl
-	 * syscall, and only stops on NETMAP_REQ_KSYNC_LOOP_STOP. */
-	NETMAP_REQ_KSYNC_LOOP_START,
+	 * syscall, and only stops on NETMAP_REQ_SYNC_KLOOP_STOP. */
+	NETMAP_REQ_SYNC_KLOOP_START,
 	/* Stops the thread executing the in-kernel loop. The thread
 	 * returns from the ioctl syscall. */
-	NETMAP_REQ_KSYNC_LOOP_STOP,
+	NETMAP_REQ_SYNC_KLOOP_STOP,
 };
 
 enum {
@@ -697,6 +697,23 @@ struct nmreq_pools_info {
 	uint64_t	nr_buf_pool_offset;
 	uint32_t	nr_buf_pool_objtotal;
 	uint32_t	nr_buf_pool_objsize;
+};
+
+/*
+ * nr_reqtype: NETMAP_REQ_SYNC_KLOOP_START
+ * Start an in-kernel loop that syncs the rings periodically or on
+ * notifications. The loop runs in the context of the ioctl syscall,
+ * and only stops on NETMAP_REQ_SYNC_KLOOP_STOP.
+ * The user must specify the start address of the Communication Status Block
+ * (CSB) entries to be used for both directions (kernel read application
+ * writes, and kernel writes application read). The number of entries
+ * must agree with the number of rings bound to the netmap file descriptor.
+ */
+struct nmreq_sync_kloop_start {
+	/* CSB entries for application --> kernel communication (N entries). */
+	uint64_t csb_atok;
+	/* CSB for kernel --> application communication (N entries). */
+	uint64_t csb_ktoa;
 };
 
 /*
