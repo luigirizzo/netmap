@@ -3916,28 +3916,44 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		return ENXIO;
 	}
 
-	/* Validate the CSB entries for both directions. */
+	/* Validate the CSB entries for both directions (atok and ktoa). */
 	{
-		struct nm_csb_atok *csb_atok =
-			(struct nm_csb_atok *)(uintptr_t)req->csb_atok;
-		unsigned int num_entries;
-		size_t csb_size;
-		int err;
+		int num_entries;
 
 		num_entries = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX] +
 			      priv->np_qlast[NR_TX] - priv->np_qfirst[NR_TX];
-		csb_size = num_entries * sizeof(*csb_atok);
 
-		if (csb_size) {
-			void *tmp = nm_os_malloc(csb_size);
-			if (!tmp) {
-				return ENOMEM;
-			}
-			err = copyin(csb_atok, tmp, csb_size);
-			nm_os_free(tmp);
-			if (err) {
-				nm_prerr("Invalid CSB address\n");
-				return err;
+		if (num_entries > 0) {
+			size_t entry_size[2];
+			int err;
+			int i;
+
+			entry_size[0] = sizeof(struct nm_csb_atok);
+			entry_size[1] = sizeof(struct nm_csb_ktoa);
+
+			for (i = 0; i < 2; i++) {
+				size_t csb_size = num_entries * entry_size[i];
+				void *tmp = nm_os_malloc(csb_size);
+				void *csb_ptr;
+
+				if (!tmp) {
+					return ENOMEM;
+				}
+				if (i == 0) {
+					csb_ptr = (void *)(uintptr_t)req->csb_atok;
+					/* Application --> kernel direction. */
+					err = copyin(csb_ptr, tmp, csb_size);
+				} else {
+					/* Kernel --> application direction. */
+					memset(tmp, 0, csb_size);
+					csb_ptr = (void *)(uintptr_t)req->csb_ktoa;
+					err = copyout(tmp, csb_ptr, csb_size);
+				}
+				nm_os_free(tmp);
+				if (err) {
+					nm_prerr("Invalid CSB address\n");
+					return err;
+				}
 			}
 		}
 	}
