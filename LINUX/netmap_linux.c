@@ -2330,7 +2330,7 @@ netmap_sink_init(void)
 		return -ENOMEM;
 	}
 	netdev->netdev_ops = &nm_sink_netdev_ops ;
-	strncpy(netdev->name, "nmsink", sizeof(netdev->name) - 1);
+	strlcpy(netdev->name, "nmsink", sizeof(netdev->name));
 	netdev->features = NETIF_F_HIGHDMA;
 	strcpy(netdev->name, "nmsink%d");
 	err = register_netdev(netdev);

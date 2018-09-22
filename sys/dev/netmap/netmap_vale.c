@@ -1263,7 +1263,7 @@ netmap_vale_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
  	na = &vpna->up;
 
 	na->ifp = ifp;
-	strncpy(na->name, hdr->nr_name, sizeof(na->name));
+	strlcpy(na->name, hdr->nr_name, sizeof(na->name));
 
 	/* bound checking */
 	na->num_tx_rings = req->nr_tx_rings;

@@ -3456,7 +3456,7 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 		goto fail;
 	hwna->up = *arg;
 	hwna->up.na_flags |= NAF_HOST_RINGS | NAF_NATIVE;
-	strncpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
+	strlcpy(hwna->up.name, ifp->if_xname, sizeof(hwna->up.name));
 	if (override_reg) {
 		hwna->nm_hw_register = hwna->up.nm_register;
 		hwna->up.nm_register = netmap_hw_reg;
