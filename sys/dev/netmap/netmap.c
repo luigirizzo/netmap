@@ -1925,6 +1925,7 @@ netmap_unset_ringid(struct netmap_priv_d *priv)
 	}
 	priv->np_flags = 0;
 	priv->np_txpoll = 0;
+	priv->np_kloop_on = 0;
 }
 
 
@@ -3907,6 +3908,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 	struct netmap_adapter *na;
 	struct nm_csb_atok* csb_atok;
 	struct nm_csb_ktoa* csb_ktoa;
+	int err = 0;
 
 	if (priv->np_nifp == NULL) {
 		return ENXIO;
@@ -3916,6 +3918,17 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 	na = priv->np_na;
 	if (!nm_netmap_on(na)) {
 		return ENXIO;
+	}
+
+	/* Make sure that there is no kloop already active. */
+	NMG_LOCK();
+	if (priv->np_kloop_on) {
+		err = EBUSY;
+	}
+	priv->np_kloop_on = 1;
+	NMG_UNLOCK();
+	if (err) {
+		return err;
 	}
 
 	csb_atok = (struct nm_csb_atok *)(uintptr_t)req->csb_atok;
@@ -3930,8 +3943,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 
 		if (num_entries > 0) {
 			size_t entry_size[2];
-			int err;
-			int i;
+			unsigned int i;
 
 			entry_size[0] = sizeof(*csb_atok);
 			entry_size[1] = sizeof(*csb_ktoa);
@@ -3964,7 +3976,22 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		}
 	}
 
-	return ENOSYS;
+	while (NM_ACCESS_ONCE(priv->np_kloop_on)) {
+		unsigned int i;
+
+		for (i = priv->np_qfirst[NR_TX]; i < priv->np_qlast[NR_TX]; i++) {
+			struct netmap_kring *kring = NMR(na, NR_TX)[i];
+
+			if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
+				continue;
+			}
+
+			nm_kr_put(kring);
+		}
+		break;
+	}
+
+	return 0;
 }
 
 /*
