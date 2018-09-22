@@ -3905,6 +3905,8 @@ int
 netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req)
 {
 	struct netmap_adapter *na;
+	struct nm_csb_atok* csb_atok;
+	struct nm_csb_ktoa* csb_ktoa;
 
 	if (priv->np_nifp == NULL) {
 		return ENXIO;
@@ -3915,6 +3917,9 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 	if (!nm_netmap_on(na)) {
 		return ENXIO;
 	}
+
+	csb_atok = (struct nm_csb_atok *)(uintptr_t)req->csb_atok;
+	csb_ktoa = (struct nm_csb_ktoa *)(uintptr_t)req->csb_ktoa;
 
 	/* Validate the CSB entries for both directions (atok and ktoa). */
 	{
@@ -3928,26 +3933,27 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 			int err;
 			int i;
 
-			entry_size[0] = sizeof(struct nm_csb_atok);
-			entry_size[1] = sizeof(struct nm_csb_ktoa);
+			entry_size[0] = sizeof(*csb_atok);
+			entry_size[1] = sizeof(*csb_ktoa);
 
 			for (i = 0; i < 2; i++) {
+				/* On Linux we could use access_ok() to simplify
+				 * the validation. However, the advantage of
+				 * this approach is that it works also on
+				 * FreeBSD. */
 				size_t csb_size = num_entries * entry_size[i];
 				void *tmp = nm_os_malloc(csb_size);
-				void *csb_ptr;
 
 				if (!tmp) {
 					return ENOMEM;
 				}
 				if (i == 0) {
-					csb_ptr = (void *)(uintptr_t)req->csb_atok;
 					/* Application --> kernel direction. */
-					err = copyin(csb_ptr, tmp, csb_size);
+					err = copyin(csb_atok, tmp, csb_size);
 				} else {
 					/* Kernel --> application direction. */
 					memset(tmp, 0, csb_size);
-					csb_ptr = (void *)(uintptr_t)req->csb_ktoa;
-					err = copyout(tmp, csb_ptr, csb_size);
+					err = copyout(tmp, csb_ktoa, csb_size);
 				}
 				nm_os_free(tmp);
 				if (err) {
