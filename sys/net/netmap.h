@@ -716,6 +716,21 @@ struct nmreq_sync_kloop_start {
 	uint64_t csb_ktoa;
 };
 
+struct nm_csb_atok {
+	uint32_t head;		  /* AW+ KR+ the head of the appl netmap_ring */
+	uint32_t cur;		  /* AW+ KR+ the cur of the appl netmap_ring */
+	uint32_t appl_need_kick; /* AW+ KR+ kern --> appl notification enable */
+	uint32_t sync_flags;	  /* AW+ KR+ the flags of the appl [tx|rx]sync() */
+	char pad[48];		  /* pad to a 64 bytes cacheline */
+};
+
+struct nm_csb_ktoa {
+	uint32_t hwcur;		  /* AR+ KW+ the hwcur of the kern netmap_kring */
+	uint32_t hwtail;	  /* AR+ KW+ the hwtail of the kern netmap_kring */
+	uint32_t kern_need_kick;  /* AR+ KW+ appl-->kern notification enable */
+	char pad[4+48];
+};
+
 /*
  * data for NETMAP_REQ_OPT_* options
  */
