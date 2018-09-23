@@ -136,6 +136,7 @@ utils:
 install-utils:
 clean-utils:
 intest:
+unitest:
 else
 .PHONY: utils
 utils:
@@ -149,6 +150,8 @@ clean-utils:
 
 intest: utils
 	utils/randomized_tests
+unitest: utils
+	build-utils/ctrl-api-test
 endif
 
 INCLUDE_PREFIX := $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)
