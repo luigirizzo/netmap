@@ -10,9 +10,10 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <pthread.h>
 
 struct TestContext {
-	int fd;                 /* netmap file descriptor */
+	int fd; /* netmap file descriptor */
 	const char *ifname;
 	const char *bdgname;
 	uint32_t nr_tx_slots;   /* slots in tx rings */
@@ -798,6 +799,82 @@ duplicate_extmem_options(struct TestContext *ctx)
 }
 #endif /* CONFIG_NETMAP_EXTMEM */
 
+static void *
+sync_kloop_worker(void *opaque)
+{
+	struct TestContext *ctx = opaque;
+	size_t num_entries      = ctx->nr_rx_rings + ctx->nr_tx_rings;
+	struct nmreq_sync_kloop_start req;
+	struct nmreq_header hdr;
+	void *csb;
+	int ret;
+
+	csb = malloc((sizeof(struct nm_csb_atok) + sizeof(struct nm_csb_ktoa)) *
+	             num_entries);
+	if (!csb) {
+		printf("Failed to allocate CSB memory\n");
+		return NULL;
+	}
+
+	printf("Testing NETMAP_REQ_SYNC_KLOOP_START on '%s'\n", ctx->ifname);
+
+	nmreq_hdr_init(&hdr, ctx->ifname);
+	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_START;
+	hdr.nr_body    = (uintptr_t)&req;
+	hdr.nr_options = (uintptr_t)ctx->nr_opt;
+	memset(&req, 0, sizeof(req));
+	req.csb_atok = (uintptr_t)csb;
+	req.csb_ktoa =
+	        (uintptr_t)(csb + sizeof(struct nm_csb_atok) * num_entries);
+	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
+		return NULL;
+	}
+
+	free(csb);
+
+	return NULL;
+}
+
+static int
+sync_kloop(struct TestContext *ctx)
+{
+	int ret = port_register_hwall(ctx);
+	pthread_t th;
+
+	if (ret) {
+		return ret;
+	}
+
+	ret = pthread_create(&th, NULL, sync_kloop_worker, ctx);
+	if (ret) {
+		printf("pthread_create(kloop): %s\n", strerror(ret));
+		return -1;
+	}
+
+	sleep(1);
+
+	{
+		struct nmreq_header hdr;
+
+		nmreq_hdr_init(&hdr, ctx->ifname);
+		hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_STOP;
+		ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
+		if (ret) {
+			perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_STOP)");
+			return ret;
+		}
+	}
+
+	ret = pthread_join(th, NULL);
+	if (ret) {
+		printf("pthread_join(kloop): %s\n", strerror(ret));
+	}
+
+	return 0;
+}
+
 static void
 usage(const char *prog)
 {
@@ -835,6 +912,7 @@ static struct mytest tests[] = {
 	decltest(bad_extmem_option),
 	decltest(duplicate_extmem_options),
 #endif /* CONFIG_NETMAP_EXTMEM */
+	decltest(sync_kloop),
 };
 
 int
