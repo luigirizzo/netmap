@@ -1987,7 +1987,8 @@ done
 
 # create the build directory for the utils
 if [ -n "$UTILS" ]; then
-	ln -s $SRCDIR/../utils/ build-utils 2>/dev/null || true
+	mkdir -p build-utils
+	ln -s $SRCDIR/../utils/GNUmakefile build-utils/GNUmakefile 2>/dev/null || true
 fi
 
 # config.status can be used to rerun configure with the
