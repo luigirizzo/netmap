@@ -800,6 +800,22 @@ duplicate_extmem_options(struct TestContext *ctx)
 }
 #endif /* CONFIG_NETMAP_EXTMEM */
 
+static int
+sync_kloop_stop(struct TestContext *ctx)
+{
+	struct nmreq_header hdr;
+	int ret;
+
+	nmreq_hdr_init(&hdr, ctx->ifname);
+	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_STOP;
+	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_STOP)");
+	}
+
+	return ret;
+}
+
 static void *
 sync_kloop_worker(void *opaque)
 {
@@ -857,16 +873,9 @@ sync_kloop(struct TestContext *ctx)
 		return -1;
 	}
 
-	{
-		struct nmreq_header hdr;
-
-		nmreq_hdr_init(&hdr, ctx->ifname);
-		hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_STOP;
-		ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
-		if (ret) {
-			perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_STOP)");
-			return ret;
-		}
+	ret = sync_kloop_stop(ctx);
+	if (ret) {
+		return ret;
 	}
 
 	ret = pthread_join(th, (void **)&thret);
@@ -904,16 +913,9 @@ sync_kloop_conflict(struct TestContext *ctx)
 	 * after that th2 starts the loop successfully. */
 	usleep(500000);
 
-	{
-		struct nmreq_header hdr;
-
-		nmreq_hdr_init(&hdr, ctx->ifname);
-		hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_STOP;
-		ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
-		if (ret) {
-			perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_STOP)");
-			return ret;
-		}
+	ret = sync_kloop_stop(ctx);
+	if (ret) {
+		return ret;
 	}
 
 	ret = pthread_join(th1, (void **)&thret1);
@@ -929,6 +931,33 @@ sync_kloop_conflict(struct TestContext *ctx)
 	/* Check that one of the two failed, while the other one succeeded. */
 	return ((thret1 == 0 && thret2 != 0) ||
 		(thret1 != 0 && thret2 == 0)) ? 0 : -1;
+}
+
+static int
+sync_kloop_invalid_csb(struct TestContext *ctx)
+{
+	int ret = port_register_hwall(ctx);
+	struct nmreq_sync_kloop_start req;
+	struct nmreq_header hdr;
+
+	/* Post a stop request first. */
+	ret = sync_kloop_stop(ctx);
+	if (ret) {
+		return ret;
+	}
+
+	nmreq_hdr_init(&hdr, ctx->ifname);
+	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_START;
+	hdr.nr_body    = (uintptr_t)&req;
+	memset(&req, 0, sizeof(req));
+	req.csb_atok = (uintptr_t)0x10;
+	req.csb_ktoa = (uintptr_t)0x800;
+	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
+	}
+
+	return (ret < 0) ? 0 : -1;
 }
 
 static void
@@ -970,6 +999,7 @@ static struct mytest tests[] = {
 #endif /* CONFIG_NETMAP_EXTMEM */
 	decltest(sync_kloop),
 	decltest(sync_kloop_conflict),
+	decltest(sync_kloop_invalid_csb),
 };
 
 int
