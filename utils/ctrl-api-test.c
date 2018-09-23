@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <assert.h>
 
 struct TestContext {
 	int fd; /* netmap file descriptor */
@@ -806,17 +807,21 @@ sync_kloop_worker(void *opaque)
 	size_t num_entries      = ctx->nr_rx_rings + ctx->nr_tx_rings;
 	struct nmreq_sync_kloop_start req;
 	struct nmreq_header hdr;
+	size_t csb_size;
 	void *csb;
 	int ret;
 
-	csb = malloc((sizeof(struct nm_csb_atok) + sizeof(struct nm_csb_ktoa)) *
-	             num_entries);
+	csb_size = (sizeof(struct nm_csb_atok) + sizeof(struct nm_csb_ktoa)) *
+	             num_entries;
+	assert(csb_size > 0);
+	csb = malloc(csb_size);
 	if (!csb) {
 		printf("Failed to allocate CSB memory\n");
 		return NULL;
 	}
 
-	printf("Testing NETMAP_REQ_SYNC_KLOOP_START on '%s'\n", ctx->ifname);
+	printf("Testing NETMAP_REQ_SYNC_KLOOP_START(csb_size=%u) on '%s'\n",
+		(unsigned)csb_size, ctx->ifname);
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_START;
