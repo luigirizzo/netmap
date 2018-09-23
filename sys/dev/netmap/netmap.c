@@ -3945,10 +3945,13 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 
 		if (num_entries > 0) {
 			size_t entry_size[2];
+			void *csb_start[2];
 			unsigned int i;
 
 			entry_size[0] = sizeof(*csb_atok);
 			entry_size[1] = sizeof(*csb_ktoa);
+			csb_start[0] = (void *)csb_atok;
+			csb_start[1] = (void *)csb_ktoa;
 
 			for (i = 0; i < 2; i++) {
 				/* On Linux we could use access_ok() to simplify
@@ -3956,18 +3959,24 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 				 * this approach is that it works also on
 				 * FreeBSD. */
 				size_t csb_size = num_entries * entry_size[i];
-				void *tmp = nm_os_malloc(csb_size);
+				void *tmp;
 
+				if ((uintptr_t)csb_start[i] & (entry_size[i]-1)) {
+					nm_prerr("Unaligned CSB address\n");
+					return EINVAL;
+				}
+
+				tmp = nm_os_malloc(csb_size);
 				if (!tmp) {
 					return ENOMEM;
 				}
 				if (i == 0) {
 					/* Application --> kernel direction. */
-					err = copyin(csb_atok, tmp, csb_size);
+					err = copyin(csb_start[i], tmp, csb_size);
 				} else {
 					/* Kernel --> application direction. */
 					memset(tmp, 0, csb_size);
-					err = copyout(tmp, csb_ktoa, csb_size);
+					err = copyout(tmp, csb_start[i], csb_size);
 				}
 				nm_os_free(tmp);
 				if (err) {

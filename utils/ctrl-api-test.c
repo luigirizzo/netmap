@@ -830,8 +830,8 @@ sync_kloop_worker(void *opaque)
 	csb_size = (sizeof(struct nm_csb_atok) + sizeof(struct nm_csb_ktoa)) *
 	             num_entries;
 	assert(csb_size > 0);
-	csb = malloc(csb_size);
-	if (!csb) {
+	ret = posix_memalign(&csb, sizeof(struct nm_csb_atok), csb_size);
+	if (ret) {
 		printf("Failed to allocate CSB memory\n");
 		pthread_exit((void *)-1);
 	}
