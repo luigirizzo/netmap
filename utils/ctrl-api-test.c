@@ -94,6 +94,7 @@ port_register(struct TestContext *ctx)
 {
 	struct nmreq_register req;
 	struct nmreq_header hdr;
+	int success;
 	int ret;
 
 	printf("Testing NETMAP_REQ_REGISTER(mode=%d,ringid=%d,"
@@ -128,7 +129,7 @@ port_register(struct TestContext *ctx)
 	printf("nr_mem_id %u\n", req.nr_mem_id);
 	printf("nr_extra_bufs %u\n", req.nr_extra_bufs);
 
-	return req.nr_memsize && (ctx->nr_mode == req.nr_mode) &&
+	success = req.nr_memsize && (ctx->nr_mode == req.nr_mode) &&
 	                       (ctx->nr_ringid == req.nr_ringid) &&
 	                       (ctx->nr_flags == req.nr_flags) &&
 	                       ((!ctx->nr_tx_slots && req.nr_tx_slots) ||
@@ -141,9 +142,20 @@ port_register(struct TestContext *ctx)
 	                        (ctx->nr_rx_rings == req.nr_rx_rings)) &&
 	                       ((!ctx->nr_mem_id && req.nr_mem_id) ||
 	                        (ctx->nr_mem_id == req.nr_mem_id)) &&
-	                       (ctx->nr_extra_bufs == req.nr_extra_bufs)
-	               ? 0
-	               : -1;
+	                       (ctx->nr_extra_bufs == req.nr_extra_bufs);
+	if (!success) {
+		return -1;
+	}
+
+	/* Write back results to the context structure.*/
+	ctx->nr_tx_slots = req.nr_tx_slots;
+	ctx->nr_rx_slots = req.nr_rx_slots;
+	ctx->nr_tx_rings = req.nr_tx_rings;
+	ctx->nr_rx_rings = req.nr_rx_rings;
+	ctx->nr_mem_id = req.nr_mem_id;
+	ctx->nr_extra_bufs = req.nr_extra_bufs;
+
+	return -0;
 }
 
 static int
