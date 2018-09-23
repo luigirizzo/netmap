@@ -3999,7 +3999,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 
 			nm_kr_put(kring);
 		}
-		break;
+		usleep_range(2000, 2000);
 	}
 
 	/* Reset the kloop state. */
