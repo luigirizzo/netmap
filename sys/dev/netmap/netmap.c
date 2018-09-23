@@ -4120,8 +4120,8 @@ sync_kloop_norxslots(struct netmap_kring *kring, uint32_t g_head)
 
 static void
 netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
-		struct nm_csb_atok *csb_atok,
-		struct nm_csb_ktoa *csb_ktoa)
+			  struct nm_csb_atok *csb_atok,
+			  struct nm_csb_ktoa *csb_ktoa)
 {
 	struct netmap_ring shadow_ring; /* shadow copy of the netmap_ring */
 	int dry_cycles = 0;
@@ -4135,7 +4135,7 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 
 	/* Disable notifications. */
 	csb_ktoa_kick_enable(csb_ktoa, 0);
-	/* Copy the guest kring pointers from the CSB */
+	/* Copy the application kring pointers from the CSB */
 	sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
 
 	for (;;) {
@@ -4163,7 +4163,7 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 
 		/*
 		 * Finalize
-		 * Copy host hwcur and hwtail into the CSB for the guest sync()
+		 * Copy kernel hwcur and hwtail into the CSB for the application sync()
 		 */
 		hwtail = NM_ACCESS_ONCE(kring->nr_hwtail);
 		sync_kloop_write_kring_csb(csb_ktoa, kring->nr_hwcur, hwtail);
@@ -4180,9 +4180,9 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 		}
 
 #ifndef BUSY_WAIT
-		/* Interrupt the guest if needed. */
+		/* Interrupt the application if needed. */
 		if (some_recvd && csb_atok_intr_enabled(csb_atok)) {
-			/* Disable guest kick to avoid sending unnecessary kicks */
+			/* Disable application kick to avoid sending unnecessary kicks */
 			//nm_os_kctx_send_irq(kth); // TODO
 			some_recvd = false;
 		}
@@ -4193,7 +4193,7 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 		if (sync_kloop_norxslots(kring, shadow_ring.head)) {
 			/*
 			 * No more slots available for reception. We enable notification and
-			 * go to sleep, waiting for a kick from the guest when new receive
+			 * go to sleep, waiting for a kick from the application when new receive
 			 * slots are available.
 			 */
 			usleep_range(1,1);
@@ -4224,7 +4224,7 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 
 	nm_kr_put(kring);
 
-	/* Interrupt the guest if needed. */
+	/* Interrupt the application if needed. */
 	if (some_recvd && csb_atok_intr_enabled(csb_atok)) {
 		//nm_os_kctx_send_irq(kth); // TODO
 	}
