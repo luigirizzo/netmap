@@ -911,7 +911,7 @@ start_fd_server(struct Global *g)
 		return;
 	}
 
-	if (execl("fd_server", "fd_server", (char *)NULL)) {
+	if (execlp("fd_server", "fd_server", (char *)NULL)) {
 		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "exec()");
 		exit(EXIT_FAILURE);
 	}
