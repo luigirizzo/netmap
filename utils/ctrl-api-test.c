@@ -900,6 +900,10 @@ sync_kloop_conflict(struct TestContext *ctx)
 		return -1;
 	}
 
+	/* Try to avoid a race condition where th1 starts the loop and stops, and
+	 * after that th2 starts the loop successfully. */
+	usleep(500000);
+
 	{
 		struct nmreq_header hdr;
 
@@ -922,6 +926,7 @@ sync_kloop_conflict(struct TestContext *ctx)
 		printf("pthread_join(kloop2): %s\n", strerror(ret));
 	}
 
+	/* Check that one of the two failed, while the other one succeeded. */
 	return ((thret1 == 0 && thret2 != 0) ||
 		(thret1 != 0 && thret2 == 0)) ? 0 : -1;
 }
