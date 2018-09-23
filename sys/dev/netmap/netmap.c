@@ -3904,12 +3904,217 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	na->na_flags &= ~NAF_NETMAP_ON;
 }
 
+/* Functions to read and write CSB fields from the kernel. */
+#if defined (linux)
+#define CSB_READ(csb, field, r) (get_user(r, &csb->field))
+#define CSB_WRITE(csb, field, v) (put_user(v, &csb->field))
+#else  /* ! linux */
+#define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
+#define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
+#endif /* ! linux */
+
+/* Write kring pointers (hwcur, hwtail) to the CSB.
+ * This routine is coupled with ptnetmap_guest_read_kring_csb(). */
+static inline void
+sync_kloop_write_kring_csb(struct nm_csb_ktoa __user *ptr, uint32_t hwcur,
+			   uint32_t hwtail)
+{
+	/*
+	 * The same scheme used in ptnetmap_guest_write_kring_csb() applies here.
+	 * We allow the guest to read a value of hwcur more recent than the value
+	 * of hwtail, since this would anyway result in a consistent view of the
+	 * ring state (and hwcur can never wraparound hwtail, since hwcur must be
+	 * behind head).
+	 *
+	 * The following memory barrier scheme is used to make this happen:
+	 *
+	 *          Guest                Host
+	 *
+	 *          STORE(hwcur)         LOAD(hwtail)
+	 *          mb() <-------------> mb()
+	 *          STORE(hwtail)        LOAD(hwcur)
+	 */
+	CSB_WRITE(ptr, hwcur, hwcur);
+	mb();
+	CSB_WRITE(ptr, hwtail, hwtail);
+}
+
+/* Read kring pointers (head, cur, sync_flags) from the CSB.
+ * This routine is coupled with ptnetmap_guest_write_kring_csb(). */
+static inline void
+sync_kloop_read_kring_csb(struct nm_csb_atok __user *ptr,
+			  struct netmap_ring *shadow_ring,
+			  uint32_t num_slots)
+{
+	/*
+	 * We place a memory barrier to make sure that the update of head never
+	 * overtakes the update of cur.
+	 * (see explanation in ptnetmap_guest_write_kring_csb).
+	 */
+	CSB_READ(ptr, head, shadow_ring->head);
+	mb();
+	CSB_READ(ptr, cur, shadow_ring->cur);
+	CSB_READ(ptr, sync_flags, shadow_ring->flags);
+}
+
+/* Enable or disable guest --> host kicks. */
+static inline void
+csb_ktoa_kick_enable(struct nm_csb_ktoa __user *csb_ktoa, uint32_t val)
+{
+	CSB_WRITE(csb_ktoa, kern_need_kick, val);
+}
+
+/* Are guest interrupt enabled or disabled? */
+static inline uint32_t
+csb_atok_intr_enabled(struct nm_csb_atok __user *csb_atok)
+{
+	uint32_t v;
+
+	CSB_READ(csb_atok, appl_need_kick, v);
+
+	return v;
+}
+
+static inline void
+sync_kloop_kring_dump(const char *title, const struct netmap_kring *kring)
+{
+	D("%s - name: %s hwcur: %d hwtail: %d rhead: %d rcur: %d"
+		" rtail: %d head: %d cur: %d tail: %d",
+		title, kring->name, kring->nr_hwcur,
+		kring->nr_hwtail, kring->rhead, kring->rcur, kring->rtail,
+		kring->ring->head, kring->ring->cur, kring->ring->tail);
+}
+
+static void
+netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
+			  struct nm_csb_atok *csb_atok,
+			  struct nm_csb_ktoa *csb_ktoa)
+{
+	struct netmap_ring shadow_ring; /* shadow copy of the netmap_ring */
+	bool more_txspace = false;
+	uint32_t num_slots;
+	int batch;
+
+	num_slots = kring->nkr_num_slots;
+
+	/* Disable guest --> host notifications. */
+	csb_ktoa_kick_enable(csb_ktoa, 0);
+	/* Copy the guest kring pointers from the CSB */
+	sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+
+	for (;;) {
+		batch = shadow_ring.head - kring->nr_hwcur;
+		if (batch < 0)
+			batch += num_slots;
+
+#ifdef PTN_TX_BATCH_LIM
+		if (batch > PTN_TX_BATCH_LIM(num_slots)) {
+			/* If guest moves ahead too fast, let's cut the move so
+			 * that we don't exceed our batch limit. */
+			uint32_t head_lim = kring->nr_hwcur + PTN_TX_BATCH_LIM(num_slots);
+
+			if (head_lim >= num_slots)
+				head_lim -= num_slots;
+			ND(1, "batch: %d head: %d head_lim: %d", batch, shadow_ring.head,
+					head_lim);
+			shadow_ring.head = head_lim;
+			batch = PTN_TX_BATCH_LIM(num_slots);
+		}
+#endif /* PTN_TX_BATCH_LIM */
+
+		if (nm_kr_txspace(kring) <= (num_slots >> 1)) {
+			shadow_ring.flags |= NAF_FORCE_RECLAIM;
+		}
+
+		/* Netmap prologue */
+		shadow_ring.tail = kring->rtail;
+		if (unlikely(nm_txsync_prologue(kring, &shadow_ring) >= num_slots)) {
+			/* Reinit ring and enable notifications. */
+			netmap_ring_reinit(kring);
+			csb_ktoa_kick_enable(csb_ktoa, 1);
+			break;
+		}
+
+		if (unlikely(netmap_verbose & NM_VERB_TXSYNC)) {
+			sync_kloop_kring_dump("pre txsync", kring);
+		}
+
+		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
+			/* Reenable notifications. */
+			csb_ktoa_kick_enable(csb_ktoa, 1);
+			D("ERROR txsync()");
+			break;
+		}
+
+		/*
+		 * Finalize
+		 * Copy host hwcur and hwtail into the CSB for the guest sync(), and
+		 * do the nm_sync_finalize.
+		 */
+		sync_kloop_write_kring_csb(csb_ktoa, kring->nr_hwcur,
+				kring->nr_hwtail);
+		if (kring->rtail != kring->nr_hwtail) {
+			/* Some more room available in the parent adapter. */
+			kring->rtail = kring->nr_hwtail;
+			more_txspace = true;
+		}
+
+		if (unlikely(netmap_verbose & NM_VERB_TXSYNC)) {
+			sync_kloop_kring_dump("post txsync", kring);
+		}
+
+#ifndef BUSY_WAIT
+		/* Interrupt the guest if needed. */
+		if (more_txspace && csb_atok_intr_enabled(csb_atok)) {
+			/* Disable guest kick to avoid sending unnecessary kicks */
+			// nm_os_kctx_send_irq(kth); // TODO
+			more_txspace = false;
+		}
+#endif
+		/* Read CSB to see if there is more work to do. */
+		sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+#ifndef BUSY_WAIT
+		if (shadow_ring.head == kring->rhead) {
+			/*
+			 * No more packets to transmit. We enable notifications and
+			 * go to sleep, waiting for a kick from the guest when new
+			 * new slots are ready for transmission.
+			 */
+			usleep_range(1,1);
+			/* Reenable notifications. */
+			csb_ktoa_kick_enable(csb_ktoa, 1);
+			/* Doublecheck. */
+			sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+			if (shadow_ring.head != kring->rhead) {
+				/* We won the race condition, there are more packets to
+				 * transmit. Disable notifications and do another cycle */
+				csb_ktoa_kick_enable(csb_ktoa, 0);
+				continue;
+			}
+			break;
+		}
+
+		if (nm_kr_txempty(kring)) {
+			/* No more available TX slots. We stop waiting for a notification
+			 * from the backend (netmap_tx_irq). */
+			ND(1, "TX ring");
+			break;
+		}
+#endif
+	}
+
+	if (more_txspace && csb_atok_intr_enabled(csb_atok)) {
+		// nm_os_kctx_send_irq(kth); // TODO
+	}
+}
+
 int
 netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req)
 {
+	struct nm_csb_atok* csb_atok_base;
+	struct nm_csb_ktoa* csb_ktoa_base;
+	int num_rx_rings, num_tx_rings;
 	struct netmap_adapter *na;
-	struct nm_csb_atok* csb_atok;
-	struct nm_csb_ktoa* csb_ktoa;
 	int err = 0;
 
 	if (priv->np_nifp == NULL) {
@@ -3933,25 +4138,24 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		return err;
 	}
 
-	csb_atok = (struct nm_csb_atok *)(uintptr_t)req->csb_atok;
-	csb_ktoa = (struct nm_csb_ktoa *)(uintptr_t)req->csb_ktoa;
+	csb_atok_base = (struct nm_csb_atok *)(uintptr_t)req->csb_atok;
+	csb_ktoa_base = (struct nm_csb_ktoa *)(uintptr_t)req->csb_ktoa;
+	num_rx_rings = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX];
+	num_tx_rings = priv->np_qlast[NR_TX] - priv->np_qfirst[NR_TX];
 
 	/* Validate the CSB entries for both directions (atok and ktoa). */
 	{
-		int num_entries;
-
-		num_entries = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX] +
-			      priv->np_qlast[NR_TX] - priv->np_qfirst[NR_TX];
+		int num_entries = num_rx_rings + num_tx_rings;
 
 		if (num_entries > 0) {
 			size_t entry_size[2];
 			void *csb_start[2];
 			unsigned int i;
 
-			entry_size[0] = sizeof(*csb_atok);
-			entry_size[1] = sizeof(*csb_ktoa);
-			csb_start[0] = (void *)csb_atok;
-			csb_start[1] = (void *)csb_ktoa;
+			entry_size[0] = sizeof(*csb_atok_base);
+			entry_size[1] = sizeof(*csb_ktoa_base);
+			csb_start[0] = (void *)csb_atok_base;
+			csb_start[1] = (void *)csb_ktoa_base;
 
 			for (i = 0; i < 2; i++) {
 				/* On Linux we could use access_ok() to simplify
@@ -3990,16 +4194,21 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 	for (;;) {
 		unsigned int i;
 
-		for (i = priv->np_qfirst[NR_TX]; i < priv->np_qlast[NR_TX]; i++) {
-			struct netmap_kring *kring = NMR(na, NR_TX)[i];
+		for (i = 0; i < num_tx_rings; i++) {
+			struct netmap_kring *kring =
+				NMR(na, NR_TX)[i + priv->np_qfirst[NR_TX]];
+			struct nm_csb_atok* csb_atok = csb_atok_base + i;
+			struct nm_csb_ktoa* csb_ktoa = csb_ktoa_base + i;
 
 			if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
 				continue;
 			}
-
+			netmap_sync_kloop_tx_ring(kring, csb_atok, csb_ktoa);
 			nm_kr_put(kring);
 		}
+
 		usleep_range(2000, 2000);
+
 		if (unlikely(NM_ACCESS_ONCE(priv->np_kloop_state) & NM_SYNC_KLOOP_STOPPING)) {
 			break;
 		}
