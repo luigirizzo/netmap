@@ -32,6 +32,8 @@ struct TestContext {
 	uint32_t nr_first_cpu_id;     /* vale polling */
 	uint32_t nr_num_polling_cpus; /* vale polling */
 	struct nmreq_option *nr_opt;  /* list of options */
+
+	int retcode;
 };
 
 #if 0
@@ -811,6 +813,8 @@ sync_kloop_worker(void *opaque)
 	void *csb;
 	int ret;
 
+	ctx->retcode = -1;
+
 	csb_size = (sizeof(struct nm_csb_atok) + sizeof(struct nm_csb_ktoa)) *
 	             num_entries;
 	assert(csb_size > 0);
@@ -838,6 +842,7 @@ sync_kloop_worker(void *opaque)
 	}
 
 	free(csb);
+	ctx->retcode = 0;
 
 	return NULL;
 }
@@ -858,8 +863,6 @@ sync_kloop(struct TestContext *ctx)
 		return -1;
 	}
 
-	sleep(1);
-
 	{
 		struct nmreq_header hdr;
 
@@ -877,7 +880,7 @@ sync_kloop(struct TestContext *ctx)
 		printf("pthread_join(kloop): %s\n", strerror(ret));
 	}
 
-	return 0;
+	return ctx->retcode;
 }
 
 static void
