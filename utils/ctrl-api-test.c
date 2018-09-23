@@ -32,8 +32,6 @@ struct TestContext {
 	uint32_t nr_first_cpu_id;     /* vale polling */
 	uint32_t nr_num_polling_cpus; /* vale polling */
 	struct nmreq_option *nr_opt;  /* list of options */
-
-	int retcode;
 };
 
 #if 0
@@ -813,15 +811,13 @@ sync_kloop_worker(void *opaque)
 	void *csb;
 	int ret;
 
-	ctx->retcode = -1;
-
 	csb_size = (sizeof(struct nm_csb_atok) + sizeof(struct nm_csb_ktoa)) *
 	             num_entries;
 	assert(csb_size > 0);
 	csb = malloc(csb_size);
 	if (!csb) {
 		printf("Failed to allocate CSB memory\n");
-		return NULL;
+		pthread_exit((void *)-1);
 	}
 
 	printf("Testing NETMAP_REQ_SYNC_KLOOP_START(csb_size=%u) on '%s'\n",
@@ -838,13 +834,10 @@ sync_kloop_worker(void *opaque)
 	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
-		return NULL;
 	}
-
 	free(csb);
-	ctx->retcode = 0;
 
-	return NULL;
+	pthread_exit((void *)(uintptr_t)ret);
 }
 
 static int
@@ -852,6 +845,7 @@ sync_kloop(struct TestContext *ctx)
 {
 	int ret = port_register_hwall(ctx);
 	pthread_t th;
+	int thret;
 
 	if (ret) {
 		return ret;
@@ -875,12 +869,61 @@ sync_kloop(struct TestContext *ctx)
 		}
 	}
 
-	ret = pthread_join(th, NULL);
+	ret = pthread_join(th, (void **)&thret);
 	if (ret) {
 		printf("pthread_join(kloop): %s\n", strerror(ret));
 	}
 
-	return ctx->retcode;
+	return thret;
+}
+
+static int
+sync_kloop_conflict(struct TestContext *ctx)
+{
+	int ret = port_register_hwall(ctx);
+	pthread_t th1, th2;
+	int thret1, thret2;
+
+	if (ret) {
+		return ret;
+	}
+
+	ret = pthread_create(&th1, NULL, sync_kloop_worker, ctx);
+	if (ret) {
+		printf("pthread_create(kloop1): %s\n", strerror(ret));
+		return -1;
+	}
+
+	ret = pthread_create(&th2, NULL, sync_kloop_worker, ctx);
+	if (ret) {
+		printf("pthread_create(kloop2): %s\n", strerror(ret));
+		return -1;
+	}
+
+	{
+		struct nmreq_header hdr;
+
+		nmreq_hdr_init(&hdr, ctx->ifname);
+		hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_STOP;
+		ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
+		if (ret) {
+			perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_STOP)");
+			return ret;
+		}
+	}
+
+	ret = pthread_join(th1, (void **)&thret1);
+	if (ret) {
+		printf("pthread_join(kloop1): %s\n", strerror(ret));
+	}
+
+	ret = pthread_join(th2, (void **)&thret2);
+	if (ret) {
+		printf("pthread_join(kloop2): %s\n", strerror(ret));
+	}
+
+	return ((thret1 == 0 && thret2 != 0) ||
+		(thret1 != 0 && thret2 == 0)) ? 0 : -1;
 }
 
 static void
@@ -921,6 +964,7 @@ static struct mytest tests[] = {
 	decltest(duplicate_extmem_options),
 #endif /* CONFIG_NETMAP_EXTMEM */
 	decltest(sync_kloop),
+	decltest(sync_kloop_conflict),
 };
 
 int
