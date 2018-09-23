@@ -32,10 +32,10 @@ echo ""
 pushd $(pwd)
 cd $(dirname $0)
 
-# Add the current directory to the PATH. In this way we can easily invoke
-# functional, get_tx_rings_avail_sends and get_tx_rings_max_sends from the test
-# scripts.
-PATH="$(pwd):${PATH}"
+# Add the current directory (and build-utils) to the PATH. In this way we can
+# easily invoke functional, get_tx_rings_avail_sends and the other executables
+# from the test scripts.
+PATH="$(pwd)/../build-utils:$(pwd):${PATH}"
 
 source test_lib
 
