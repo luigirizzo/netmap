@@ -4108,6 +4108,128 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 	}
 }
 
+/* RX cycle without receive any packets */
+#define SYNC_LOOP_RX_DRY_CYCLES_MAX	2
+
+static inline int
+sync_kloop_norxslots(struct netmap_kring *kring, uint32_t g_head)
+{
+	return (NM_ACCESS_ONCE(kring->nr_hwtail) == nm_prev(g_head,
+				kring->nkr_num_slots - 1));
+}
+
+static void
+netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
+		struct nm_csb_atok *csb_atok,
+		struct nm_csb_ktoa *csb_ktoa)
+{
+	struct netmap_ring shadow_ring; /* shadow copy of the netmap_ring */
+	int dry_cycles = 0;
+	bool some_recvd = false;
+	uint32_t num_slots;
+
+	num_slots = kring->nkr_num_slots;
+
+	/* Get RX csb_atok and csb_ktoa pointers from the CSB. */
+	num_slots = kring->nkr_num_slots;
+
+	/* Disable notifications. */
+	csb_ktoa_kick_enable(csb_ktoa, 0);
+	/* Copy the guest kring pointers from the CSB */
+	sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+
+	for (;;) {
+		uint32_t hwtail;
+
+		/* Netmap prologue */
+		shadow_ring.tail = kring->rtail;
+		if (unlikely(nm_rxsync_prologue(kring, &shadow_ring) >= num_slots)) {
+			/* Reinit ring and enable notifications. */
+			netmap_ring_reinit(kring);
+			csb_ktoa_kick_enable(csb_ktoa, 1);
+			break;
+		}
+
+		if (unlikely(netmap_verbose & NM_VERB_RXSYNC)) {
+			sync_kloop_kring_dump("pre rxsync", kring);
+		}
+
+		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
+			/* Reenable notifications. */
+			csb_ktoa_kick_enable(csb_ktoa, 1);
+			D("ERROR rxsync()");
+			break;
+		}
+
+		/*
+		 * Finalize
+		 * Copy host hwcur and hwtail into the CSB for the guest sync()
+		 */
+		hwtail = NM_ACCESS_ONCE(kring->nr_hwtail);
+		sync_kloop_write_kring_csb(csb_ktoa, kring->nr_hwcur, hwtail);
+		if (kring->rtail != hwtail) {
+			kring->rtail = hwtail;
+			some_recvd = true;
+			dry_cycles = 0;
+		} else {
+			dry_cycles++;
+		}
+
+		if (unlikely(netmap_verbose & NM_VERB_RXSYNC)) {
+			sync_kloop_kring_dump("post rxsync", kring);
+		}
+
+#ifndef BUSY_WAIT
+		/* Interrupt the guest if needed. */
+		if (some_recvd && csb_atok_intr_enabled(csb_atok)) {
+			/* Disable guest kick to avoid sending unnecessary kicks */
+			//nm_os_kctx_send_irq(kth); // TODO
+			some_recvd = false;
+		}
+#endif
+		/* Read CSB to see if there is more work to do. */
+		sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+#ifndef BUSY_WAIT
+		if (sync_kloop_norxslots(kring, shadow_ring.head)) {
+			/*
+			 * No more slots available for reception. We enable notification and
+			 * go to sleep, waiting for a kick from the guest when new receive
+			 * slots are available.
+			 */
+			usleep_range(1,1);
+			/* Reenable notifications. */
+			csb_ktoa_kick_enable(csb_ktoa, 1);
+			/* Doublecheck. */
+			sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+			if (!sync_kloop_norxslots(kring, shadow_ring.head)) {
+				/* We won the race condition, more slots are available. Disable
+				 * notifications and do another cycle. */
+				csb_ktoa_kick_enable(csb_ktoa, 0);
+				continue;
+			}
+			break;
+		}
+
+		hwtail = NM_ACCESS_ONCE(kring->nr_hwtail);
+		if (unlikely(hwtail == kring->rhead ||
+					dry_cycles >= SYNC_LOOP_RX_DRY_CYCLES_MAX)) {
+			/* No more packets to be read from the backend. We stop and
+			 * wait for a notification from the backend (netmap_rx_irq). */
+			ND(1, "nr_hwtail: %d rhead: %d dry_cycles: %d",
+					hwtail, kring->rhead, dry_cycles);
+			break;
+		}
+#endif
+	}
+
+	nm_kr_put(kring);
+
+	/* Interrupt the guest if needed. */
+	if (some_recvd && csb_atok_intr_enabled(csb_atok)) {
+		//nm_os_kctx_send_irq(kth); // TODO
+	}
+}
+
 int
 netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req)
 {
@@ -4209,7 +4331,19 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 			nm_kr_put(kring);
 		}
 
-		/* TODO process all the RX rings */
+		/* Process all the RX rings bound to this file descriptor. */
+		for (i = 0; i < num_rx_rings; i++) {
+			struct netmap_kring *kring =
+				NMR(na, NR_RX)[i + priv->np_qfirst[NR_RX]];
+			struct nm_csb_atok* csb_atok = csb_atok_base + num_tx_rings + i;
+			struct nm_csb_ktoa* csb_ktoa = csb_ktoa_base + num_tx_rings + i;
+
+			if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
+				continue;
+			}
+			netmap_sync_kloop_rx_ring(kring, csb_atok, csb_ktoa);
+			nm_kr_put(kring);
+		}
 
 		/* TODO replace with proper notifications and/or configurable
 		 * sleep interval. */
