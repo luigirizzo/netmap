@@ -3921,14 +3921,14 @@ sync_kloop_write_kring_csb(struct nm_csb_ktoa __user *ptr, uint32_t hwcur,
 {
 	/*
 	 * The same scheme used in ptnetmap_guest_write_kring_csb() applies here.
-	 * We allow the guest to read a value of hwcur more recent than the value
+	 * We allow the application to read a value of hwcur more recent than the value
 	 * of hwtail, since this would anyway result in a consistent view of the
 	 * ring state (and hwcur can never wraparound hwtail, since hwcur must be
 	 * behind head).
 	 *
 	 * The following memory barrier scheme is used to make this happen:
 	 *
-	 *          Guest                Host
+	 *          Application          Kernel
 	 *
 	 *          STORE(hwcur)         LOAD(hwtail)
 	 *          mb() <-------------> mb()
@@ -3957,14 +3957,14 @@ sync_kloop_read_kring_csb(struct nm_csb_atok __user *ptr,
 	CSB_READ(ptr, sync_flags, shadow_ring->flags);
 }
 
-/* Enable or disable guest --> host kicks. */
+/* Enable or disable application --> kernel kicks. */
 static inline void
 csb_ktoa_kick_enable(struct nm_csb_ktoa __user *csb_ktoa, uint32_t val)
 {
 	CSB_WRITE(csb_ktoa, kern_need_kick, val);
 }
 
-/* Are guest interrupt enabled or disabled? */
+/* Are application interrupt enabled or disabled? */
 static inline uint32_t
 csb_atok_intr_enabled(struct nm_csb_atok __user *csb_atok)
 {
@@ -3997,9 +3997,9 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 
 	num_slots = kring->nkr_num_slots;
 
-	/* Disable guest --> host notifications. */
+	/* Disable application --> kernel notifications. */
 	csb_ktoa_kick_enable(csb_ktoa, 0);
-	/* Copy the guest kring pointers from the CSB */
+	/* Copy the application kring pointers from the CSB */
 	sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
 
 	for (;;) {
@@ -4009,7 +4009,7 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 
 #ifdef PTN_TX_BATCH_LIM
 		if (batch > PTN_TX_BATCH_LIM(num_slots)) {
-			/* If guest moves ahead too fast, let's cut the move so
+			/* If application moves ahead too fast, let's cut the move so
 			 * that we don't exceed our batch limit. */
 			uint32_t head_lim = kring->nr_hwcur + PTN_TX_BATCH_LIM(num_slots);
 
@@ -4048,7 +4048,7 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 
 		/*
 		 * Finalize
-		 * Copy host hwcur and hwtail into the CSB for the guest sync(), and
+		 * Copy kernel hwcur and hwtail into the CSB for the application sync(), and
 		 * do the nm_sync_finalize.
 		 */
 		sync_kloop_write_kring_csb(csb_ktoa, kring->nr_hwcur,
@@ -4064,9 +4064,9 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 		}
 
 #ifndef BUSY_WAIT
-		/* Interrupt the guest if needed. */
+		/* Interrupt the application if needed. */
 		if (more_txspace && csb_atok_intr_enabled(csb_atok)) {
-			/* Disable guest kick to avoid sending unnecessary kicks */
+			/* Disable application kick to avoid sending unnecessary kicks */
 			// nm_os_kctx_send_irq(kth); // TODO
 			more_txspace = false;
 		}
@@ -4077,7 +4077,7 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 		if (shadow_ring.head == kring->rhead) {
 			/*
 			 * No more packets to transmit. We enable notifications and
-			 * go to sleep, waiting for a kick from the guest when new
+			 * go to sleep, waiting for a kick from the application when new
 			 * new slots are ready for transmission.
 			 */
 			usleep_range(1,1);
@@ -4127,7 +4127,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		return ENXIO;
 	}
 
-	/* Make sure that no kloop is active or about to stop. */
+	/* Make sure that no kloop is currently running. */
 	NMG_LOCK();
 	if (priv->np_kloop_state & NM_SYNC_KLOOP_RUNNING) {
 		err = EBUSY;
@@ -4191,9 +4191,11 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		}
 	}
 
+	/* Main loop. */
 	for (;;) {
 		unsigned int i;
 
+		/* Process all the TX rings bound to this file descriptor. */
 		for (i = 0; i < num_tx_rings; i++) {
 			struct netmap_kring *kring =
 				NMR(na, NR_TX)[i + priv->np_qfirst[NR_TX]];
@@ -4207,6 +4209,10 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 			nm_kr_put(kring);
 		}
 
+		/* TODO process all the RX rings */
+
+		/* TODO replace with proper notifications and/or configurable
+		 * sleep interval. */
 		usleep_range(2000, 2000);
 
 		if (unlikely(NM_ACCESS_ONCE(priv->np_kloop_state) & NM_SYNC_KLOOP_STOPPING)) {
