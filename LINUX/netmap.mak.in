@@ -143,7 +143,8 @@ utils:
 	+$(MAKE) -C build-utils SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)" SUBSYS_FLAGS="$(SUBSYS_FLAGS)"
 
 install-utils:
-	$(MAKE) -C build-utils install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+# Do not install the utils, because they are only used for testing.
+#	$(MAKE) -C build-utils install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
 
 clean-utils:
 	$(MAKE) -C build-utils clean SRCDIR=$(SRCDIR)/..
