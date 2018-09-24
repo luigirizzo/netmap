@@ -4063,17 +4063,15 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 			sync_kloop_kring_dump("post txsync", kring);
 		}
 
-#ifndef BUSY_WAIT
 		/* Interrupt the application if needed. */
 		if (more_txspace && csb_atok_intr_enabled(csb_atok)) {
 			/* Disable application kick to avoid sending unnecessary kicks */
 			// nm_os_kctx_send_irq(kth); // TODO
 			more_txspace = false;
 		}
-#endif
+
 		/* Read CSB to see if there is more work to do. */
 		sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
-#ifndef BUSY_WAIT
 		if (shadow_ring.head == kring->rhead) {
 			/*
 			 * No more packets to transmit. We enable notifications and
@@ -4100,7 +4098,6 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 			ND(1, "TX ring");
 			break;
 		}
-#endif
 	}
 
 	if (more_txspace && csb_atok_intr_enabled(csb_atok)) {
@@ -4179,17 +4176,15 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 			sync_kloop_kring_dump("post rxsync", kring);
 		}
 
-#ifndef BUSY_WAIT
 		/* Interrupt the application if needed. */
 		if (some_recvd && csb_atok_intr_enabled(csb_atok)) {
 			/* Disable application kick to avoid sending unnecessary kicks */
 			//nm_os_kctx_send_irq(kth); // TODO
 			some_recvd = false;
 		}
-#endif
+
 		/* Read CSB to see if there is more work to do. */
 		sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
-#ifndef BUSY_WAIT
 		if (sync_kloop_norxslots(kring, shadow_ring.head)) {
 			/*
 			 * No more slots available for reception. We enable notification and
@@ -4219,7 +4214,6 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 					hwtail, kring->rhead, dry_cycles);
 			break;
 		}
-#endif
 	}
 
 	nm_kr_put(kring);
