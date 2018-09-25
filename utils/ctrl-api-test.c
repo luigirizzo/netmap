@@ -608,26 +608,17 @@ unsupported_option(struct TestContext *ctx)
 static int
 infinite_options(struct TestContext *ctx)
 {
-	struct nmreq_option opt, save;
+	struct nmreq_option opt;
 
 	printf("Testing infinite list of options on %s\n", ctx->ifname);
 
 	opt.nro_reqtype = 1234;
 	push_option(&opt, ctx);
 	opt.nro_next = (uintptr_t)&opt;
-	save         = opt;
 	if (port_register_hwall(ctx) >= 0)
 		return -1;
-
 	clear_options(ctx);
-	save.nro_status = EOPNOTSUPP;
-#if 0
-	return checkoption(&opt, &save);
-#else
-	/* TODO the checkoption above fails */
-	(void)save;
-	return 0;
-#endif
+	return (errno == EMSGSIZE ? 0 : -1);
 }
 
 #ifdef CONFIG_NETMAP_EXTMEM
