@@ -163,12 +163,12 @@ static int do_abort = 0;
 #define cpuset_t        uint64_t        // XXX
 static inline void CPU_ZERO(cpuset_t *p)
 {
-	*p = 0;
+    *p = 0;
 }
 
 static inline void CPU_SET(uint32_t i, cpuset_t *p)
 {
-	*p |= 1<< (i & 0x3f);
+    *p |= 1<< (i & 0x3f);
 }
 
 #define pthread_setaffinity_np(a, b, c) ((void)a, 0)
@@ -394,30 +394,30 @@ struct pipe_args {
 static int
 setaffinity(int i)
 {
-	cpuset_t cpumask;
-	struct sched_param p;
-	int error;
+    cpuset_t cpumask;
+    struct sched_param p;
+    int error;
 
-	if (i == -1)
-		return 0;
+    if (i == -1)
+        return 0;
 
-	/* Set thread affinity affinity.*/
-	CPU_ZERO(&cpumask);
-	CPU_SET(i, &cpumask);
+    /* Set thread affinity affinity.*/
+    CPU_ZERO(&cpumask);
+    CPU_SET(i, &cpumask);
 
-	if ( (error = pthread_setaffinity_np(pthread_self(), sizeof(cpuset_t), &cpumask)) != 0) {
-		ED("Unable to set affinity to cpu %d: %s", i, strerror(error));
-	}
-	if (setpriority(PRIO_PROCESS, 0, -10)) {; // XXX not meaningful
-		ED("Unable to set priority: %s", strerror(errno));
-	}
-	bzero(&p, sizeof(p));
-	p.sched_priority = 10; // 99 on linux ?
-	// use SCHED_RR or SCHED_FIFO
-	if (sched_setscheduler(0, SCHED_RR, &p)) {
-		ED("Unable to set scheduler: %s", strerror(errno));
-	}
-	return 0;
+    if ( (error = pthread_setaffinity_np(pthread_self(), sizeof(cpuset_t), &cpumask)) != 0) {
+        ED("Unable to set affinity to cpu %d: %s", i, strerror(error));
+    }
+    if (setpriority(PRIO_PROCESS, 0, -10)) {; // XXX not meaningful
+        ED("Unable to set priority: %s", strerror(errno));
+    }
+    bzero(&p, sizeof(p));
+    p.sched_priority = 10; // 99 on linux ?
+    // use SCHED_RR or SCHED_FIFO
+    if (sched_setscheduler(0, SCHED_RR, &p)) {
+        ED("Unable to set scheduler: %s", strerror(errno));
+    }
+    return 0;
 }
 
 
@@ -434,14 +434,14 @@ set_tns_now(uint64_t *now, uint64_t t0)
 
 static inline int pad(int x)
 {
-	return ((x) + PKT_PAD - 1) & ~(PKT_PAD - 1) ;
+    return ((x) + PKT_PAD - 1) & ~(PKT_PAD - 1) ;
 }
 
 /* compare two timestamps */
 static inline int64_t
 ts_cmp(uint64_t a, uint64_t b)
 {
-	return (int64_t)(a - b);
+    return (int64_t)(a - b);
 }
 
 /* create a packet descriptor */
@@ -459,17 +459,17 @@ pkt_at(struct _qs *q, uint64_t ofs)
 static int
 q_reclaim(struct _qs *q)
 {
-	struct q_pkt *p0, *p;
+    struct q_pkt *p0, *p;
 
-	p = p0 = pkt_at(q, q->prod_tail_1);
-	/* always reclaim queued packets */
-	while (ts_cmp(p->pt_qout, q->prod_now) <= 0 && q->prod_queued > 0) {
-	    ND(1, "reclaim pkt at %ld len %d left %ld", q->prod_tail_1, p->pktlen, q->prod_queued);
-	    q->prod_queued -= p->pktlen;
-	    q->prod_tail_1 = p->next;
-	    p = pkt_at(q, q->prod_tail_1);
-	}
-	return p != p0;
+    p = p0 = pkt_at(q, q->prod_tail_1);
+    /* always reclaim queued packets */
+    while (ts_cmp(p->pt_qout, q->prod_now) <= 0 && q->prod_queued > 0) {
+        ND(1, "reclaim pkt at %ld len %d left %ld", q->prod_tail_1, p->pktlen, q->prod_queued);
+        q->prod_queued -= p->pktlen;
+        q->prod_tail_1 = p->next;
+        p = pkt_at(q, q->prod_tail_1);
+    }
+    return p != p0;
 }
 
 /*
@@ -504,29 +504,29 @@ no_room(struct _qs *q)
     uint64_t new_t = t + need;
 
     if (q->buflen - new_t < MAX_PKT + sizeof(*p))
-	new_t = 0; /* further padding */
+        new_t = 0; /* further padding */
 
     /* XXX let the queue overflow once, otherwise it is complex
      * to deal with 0-sized queues
      */
     if (q->prod_queued > q->qsize) {
-	q_reclaim(q);
-	if (q->prod_queued > q->qsize) {
-	    q->prod_drop++;
-	    RD(1, "too many bytes queued %llu, drop %llu",
-		(unsigned long long)q->prod_queued, (unsigned long long)q->prod_drop);
-	    return 1;
-	}
+        q_reclaim(q);
+        if (q->prod_queued > q->qsize) {
+            q->prod_drop++;
+            RD(1, "too many bytes queued %llu, drop %llu",
+                    (unsigned long long)q->prod_queued, (unsigned long long)q->prod_drop);
+            return 1;
+        }
     }
 
     if ((h <= t && new_t == 0 && h == 0) || (h > t && (new_t == 0 || new_t >= h)) ) {
-	h = q->prod_head = q->head; /* re-read head, just in case */
-	/* repeat the test */
-	if ((h <= t && new_t == 0 && h == 0) || (h > t && (new_t == 0 || new_t >= h)) ) {
-	    ND(1, "no room for insert h %lld t %lld new_t %lld",
-		(long long)h, (long long)t, (long long)new_t);
-	    return 1; /* no room for insert */
-	}
+        h = q->prod_head = q->head; /* re-read head, just in case */
+        /* repeat the test */
+        if ((h <= t && new_t == 0 && h == 0) || (h > t && (new_t == 0 || new_t >= h)) ) {
+            ND(1, "no room for insert h %lld t %lld new_t %lld",
+                    (long long)h, (long long)t, (long long)new_t);
+            return 1; /* no room for insert */
+        }
     }
     p->next = new_t; /* prepare for queueing */
     p->pktlen = 0;
@@ -548,12 +548,12 @@ enq(struct _qs *q)
     p->pt_qout = q->qt_qout;
     p->pt_tx = q->qt_tx;
     ND(1, "enqueue len %d at %d new tail %ld qout %ld tx %ld",
-	q->cur_len, (int)q->prod_tail, p->next,
-	p->pt_qout, p->pt_tx);
+            q->cur_len, (int)q->prod_tail, p->next,
+            p->pt_qout, p->pt_tx);
     q->prod_tail = p->next;
     q->tx++;
     if (q->max_bps)
-	q->prod_queued += p->pktlen;
+        q->prod_queued += p->pktlen;
     /* XXX update timestamps ? */
     return 0;
 }
@@ -564,11 +564,11 @@ rx_queued(struct nm_desc *d)
 {
     u_int tot = 0, i;
     for (i = d->first_rx_ring; i <= d->last_rx_ring; i++) {
-	struct netmap_ring *rxr = NETMAP_RXRING(d->nifp, i);
+        struct netmap_ring *rxr = NETMAP_RXRING(d->nifp, i);
 
-	ND(5, "ring %d h %d cur %d tail %d", i,
-		rxr->head, rxr->cur, rxr->tail);
-	tot += nm_ring_space(rxr);
+        ND(5, "ring %d h %d cur %d tail %d", i,
+                rxr->head, rxr->cur, rxr->tail);
+        tot += nm_ring_space(rxr);
     }
     return tot;
 }
@@ -585,52 +585,52 @@ wait_for_packets(struct _qs *q)
     ioctl(q->src_port->fd, NIOCRXSYNC, 0); /* forced */
     while (!do_abort) {
 
-	n0 = rx_queued(q->src_port);
-	if (n0 > (int)q->rx_qmax) {
-	    q->rx_qmax = n0;
-	}
-	if (n0)
-	    break;
-	prev = 0; /* we slept */
-	if (1) {
-	    usleep(5);
-	    ioctl(q->src_port->fd, NIOCRXSYNC, 0);
-	} else {
-	    struct pollfd pfd;
-	    struct netmap_ring *rx;
-	    int ret;
+        n0 = rx_queued(q->src_port);
+        if (n0 > (int)q->rx_qmax) {
+            q->rx_qmax = n0;
+        }
+        if (n0)
+            break;
+        prev = 0; /* we slept */
+        if (1) {
+            usleep(5);
+            ioctl(q->src_port->fd, NIOCRXSYNC, 0);
+        } else {
+            struct pollfd pfd;
+            struct netmap_ring *rx;
+            int ret;
 
-	    pfd.fd = q->src_port->fd;
-	    pfd.revents = 0;
-	    pfd.events = POLLIN;
-	    ND(1, "prepare for poll on %s", q->prod_ifname);
-	    ret = poll(&pfd, 1, 10000);
-	    if (ret <= 0 || verbose) {
-		D("poll %s ev %x %x rx %d@%d",
-		    ret <= 0 ? "timeout" : "ok",
-		    pfd.events,
-		    pfd.revents,
-		    rx_queued(q->src_port),
-		    NETMAP_RXRING(q->src_port->nifp, q->src_port->first_rx_ring)->cur
-		);
-	    }
-	    if (pfd.revents & POLLERR) {
-		rx = NETMAP_RXRING(q->src_port->nifp, q->src_port->first_rx_ring);
-		D("error on fd0, rx [%d,%d,%d)",
-		    rx->head, rx->cur, rx->tail);
-		sleep(1);
-	    }
-	}
+            pfd.fd = q->src_port->fd;
+            pfd.revents = 0;
+            pfd.events = POLLIN;
+            ND(1, "prepare for poll on %s", q->prod_ifname);
+            ret = poll(&pfd, 1, 10000);
+            if (ret <= 0 || verbose) {
+                D("poll %s ev %x %x rx %d@%d",
+                        ret <= 0 ? "timeout" : "ok",
+                        pfd.events,
+                        pfd.revents,
+                        rx_queued(q->src_port),
+                        NETMAP_RXRING(q->src_port->nifp, q->src_port->first_rx_ring)->cur
+                 );
+            }
+            if (pfd.revents & POLLERR) {
+                rx = NETMAP_RXRING(q->src_port->nifp, q->src_port->first_rx_ring);
+                D("error on fd0, rx [%d,%d,%d)",
+                        rx->head, rx->cur, rx->tail);
+                sleep(1);
+            }
+        }
     }
     set_tns_now(&q->prod_now, q->t0);
     if (ts_cmp(q->qt_qout, q->prod_now) < 0) {
-	q->qt_qout = q->prod_now;
+        q->qt_qout = q->prod_now;
     }
     if (prev > 0 && (prev = q->prod_now - prev) > q->prod_max_gap) {
-	q->prod_max_gap = prev;
+        q->prod_max_gap = prev;
     }
     ND(10, "%s %d queued packets at %ld ms",
-	q->prod_ifname, n0, (q->prod_now/1000000) % 10000);
+            q->prod_ifname, n0, (q->prod_now/1000000) % 10000);
 }
 
 /*
@@ -646,12 +646,12 @@ prefetch_packet(struct netmap_ring *rxr, int pos)
     const char *buf;
 
     if (ofs >= rxr->num_slots)
-	return;
+        return;
     rs = &rxr->slot[ofs];
     buf = NETMAP_BUF(rxr, rs->buf_idx);
     l = rs->len;
     for (i = 0; i < l; i += 64)
-	__builtin_prefetch(buf + i);
+        __builtin_prefetch(buf + i);
 }
 
 /*
@@ -666,36 +666,36 @@ scan_ring(struct _qs *q, int next /* bool */)
 
     /* fast path for the first two */
     if (likely(next != 0)) { /* current ring */
-	ND(10, "scan next");
-	/* advance */
-	rxr->head = rxr->cur = nm_ring_next(rxr, rxr->cur);
-	if (!nm_ring_empty(rxr)) /* good one */
-	    goto got_one;
-	q->si++;	/* otherwise update and fallthrough */
+        ND(10, "scan next");
+        /* advance */
+        rxr->head = rxr->cur = nm_ring_next(rxr, rxr->cur);
+        if (!nm_ring_empty(rxr)) /* good one */
+            goto got_one;
+        q->si++;	/* otherwise update and fallthrough */
     } else { /* scan from beginning */
-	q->si = pa->first_rx_ring;
-	ND(10, "scanning first ring %d", q->si);
+        q->si = pa->first_rx_ring;
+        ND(10, "scanning first ring %d", q->si);
     }
     while (q->si <= pa->last_rx_ring) {
-	q->rxring = rxr = NETMAP_RXRING(pa->nifp, q->si);
-	if (!nm_ring_empty(rxr))
-	    break;
-	q->si++;
-	continue;
+        q->rxring = rxr = NETMAP_RXRING(pa->nifp, q->si);
+        if (!nm_ring_empty(rxr))
+            break;
+        q->si++;
+        continue;
     }
     if (q->si > pa->last_rx_ring) { /* no data, cur == tail */
-	ND(5, "no more pkts on %s", q->prod_ifname);
-	return;
+        ND(5, "no more pkts on %s", q->prod_ifname);
+        return;
     }
 got_one:
     rs = &rxr->slot[rxr->cur];
     if (unlikely(rs->buf_idx < 2)) {
-	D("wrong index rx[%d] = %d", rxr->cur, rs->buf_idx);
-	sleep(2);
+        D("wrong index rx[%d] = %d", rxr->cur, rs->buf_idx);
+        sleep(2);
     }
     if (unlikely(rs->len > MAX_PKT)) { // XXX
-	D("wrong len rx[%d] len %d", rxr->cur, rs->len);
-	rs->len = 0;
+        D("wrong len rx[%d] len %d", rxr->cur, rs->len);
+        rs->len = 0;
     }
     q->cur_pkt = NETMAP_BUF(rxr, rs->buf_idx);
     q->cur_len = rs->len;
@@ -720,8 +720,8 @@ null_run_fn(struct _qs *q, struct _cfg *cfg)
 static int
 drop_after(struct _qs *q)
 {
-	(void)q; // XXX
-	return 0;
+    (void)q; // XXX
+    return 0;
 }
 
 
@@ -736,42 +736,42 @@ prod(void *_pa)
     q->qt_qout = q->qt_tx = q->prod_now;
     ND("start times %ld", q->prod_now);
     while (!do_abort) { /* producer, infinite */
-	int count;
+        int count;
 
-	wait_for_packets(q);	/* also updates prod_now */
-	// XXX optimize to flush frequently
-	for (count = 0, scan_ring(q, 0); count < q->burst && !nm_ring_empty(q->rxring);
-		count++, scan_ring(q, 1)) {
-	    // transmission time
-	    uint64_t t_tx, tt;	/* output and transmission time */
+        wait_for_packets(q);	/* also updates prod_now */
+        // XXX optimize to flush frequently
+        for (count = 0, scan_ring(q, 0); count < q->burst && !nm_ring_empty(q->rxring);
+                count++, scan_ring(q, 1)) {
+            // transmission time
+            uint64_t t_tx, tt;	/* output and transmission time */
 
-	    if (q->cur_len < 60) {
-		RD(5, "short packet len %d", q->cur_len);
-		continue; // short frame
-	    }
-	    q->c_loss.run(q, &q->c_loss);
-	    if (q->cur_drop)
-		continue;
-	    if (no_room(q)) {
-		q->tail = q->prod_tail; /* notify */
-		usleep(1); // XXX give cons a chance to run ?
-		if (no_room(q)) /* try to run drop-free once */
-		    continue;
-	    }
-	    // XXX possibly implement c_tt for transmission time emulation
-	    q->c_bw.run(q, &q->c_bw);
-	    tt = q->cur_tt;
-	    q->qt_qout += tt;
-	    if (drop_after(q))
-		continue;
-	    q->c_delay.run(q, &q->c_delay); /* compute delay */
-	    t_tx = q->qt_qout + q->cur_delay;
-	    ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
-	    /* insure no reordering and spacing by transmission time */
-	    q->qt_tx = (t_tx >= q->qt_tx + tt) ? t_tx : q->qt_tx + tt;
-	    enq(q);
-	}
-	q->tail = q->prod_tail; /* notify */
+            if (q->cur_len < 60) {
+                RD(5, "short packet len %d", q->cur_len);
+                continue; // short frame
+            }
+            q->c_loss.run(q, &q->c_loss);
+            if (q->cur_drop)
+                continue;
+            if (no_room(q)) {
+                q->tail = q->prod_tail; /* notify */
+                usleep(1); // XXX give cons a chance to run ?
+                if (no_room(q)) /* try to run drop-free once */
+                    continue;
+            }
+            // XXX possibly implement c_tt for transmission time emulation
+            q->c_bw.run(q, &q->c_bw);
+            tt = q->cur_tt;
+            q->qt_qout += tt;
+            if (drop_after(q))
+                continue;
+            q->c_delay.run(q, &q->c_delay); /* compute delay */
+            t_tx = q->qt_qout + q->cur_delay;
+            ND(5, "tt %ld qout %ld tx %ld qt_tx %ld", tt, q->qt_qout, t_tx, q->qt_tx);
+            /* insure no reordering and spacing by transmission time */
+            q->qt_tx = (t_tx >= q->qt_tx + tt) ? t_tx : q->qt_tx + tt;
+            enq(q);
+        }
+        q->tail = q->prod_tail; /* notify */
     }
     D("exiting on abort");
     return NULL;
@@ -800,53 +800,53 @@ cons(void *_pa)
     (void)cycles; // XXX disable warning
     set_tns_now(&q->cons_now, q->t0);
     while (!do_abort) { /* consumer, infinite */
-	struct q_pkt *p = (struct q_pkt *)(q->buf + q->head);
-	if (p->next < q->head) { /* wrap around prefetch */
-	    pre_start = q->buf + p->next;
-	}
-	pre_end = q->buf + p->next + 2048;
+        struct q_pkt *p = (struct q_pkt *)(q->buf + q->head);
+        if (p->next < q->head) { /* wrap around prefetch */
+            pre_start = q->buf + p->next;
+        }
+        pre_end = q->buf + p->next + 2048;
 #if 1
-	/* prefetch the first line saves 4ns */
-	(void)pre_end;//   __builtin_prefetch(pre_end - 2048);
+        /* prefetch the first line saves 4ns */
+        (void)pre_end;//   __builtin_prefetch(pre_end - 2048);
 #else
-	/* prefetch, ideally up to a full packet not just one line.
-	 * this does not seem to have a huge effect.
-	 * 4ns out of 198 on 1500 byte packets
-	 */
-	for (; pre_start < pre_end; pre_start += 64)
-	    __builtin_prefetch(pre_start);
+        /* prefetch, ideally up to a full packet not just one line.
+         * this does not seem to have a huge effect.
+         * 4ns out of 198 on 1500 byte packets
+         */
+        for (; pre_start < pre_end; pre_start += 64)
+            __builtin_prefetch(pre_start);
 #endif
 
-	if (q->head == q->tail || ts_cmp(p->pt_tx, q->cons_now) > 0) {
-	    ND(4, "                 >>>> TXSYNC, pkt not ready yet h %ld t %ld now %ld tx %ld",
-		q->head, q->tail, q->cons_now, p->pt_tx);
-	    q->rx_wait++;
-	    ioctl(pa->pb->fd, NIOCTXSYNC, 0); // XXX just in case
-	    pending = 0;
-	    usleep(5);
-	    set_tns_now(&q->cons_now, q->t0);
-	    continue;
-	}
-	ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
-		p->pktlen, q->cons_now, p->pt_tx, q->head, q->tail, p->next);
-	/* XXX inefficient but simple */
-	if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0) {
-	    ND(5, "inject failed len %d now %ld tx %ld h %ld t %ld next %ld",
-		(int)p->pktlen, q->cons_now, p->pt_tx, q->head, q->tail, p->next);
-	    ioctl(pa->pb->fd, NIOCTXSYNC, 0);
-	    pending = 0;
-	    continue;
-	}
-	pending++;
-	if (pending > q->burst) {
-	    ioctl(pa->pb->fd, NIOCTXSYNC, 0);
-	    pending = 0;
-	}
+        if (q->head == q->tail || ts_cmp(p->pt_tx, q->cons_now) > 0) {
+            ND(4, "                 >>>> TXSYNC, pkt not ready yet h %ld t %ld now %ld tx %ld",
+                    q->head, q->tail, q->cons_now, p->pt_tx);
+            q->rx_wait++;
+            ioctl(pa->pb->fd, NIOCTXSYNC, 0); // XXX just in case
+            pending = 0;
+            usleep(5);
+            set_tns_now(&q->cons_now, q->t0);
+            continue;
+        }
+        ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
+                p->pktlen, q->cons_now, p->pt_tx, q->head, q->tail, p->next);
+        /* XXX inefficient but simple */
+        if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0) {
+            ND(5, "inject failed len %d now %ld tx %ld h %ld t %ld next %ld",
+                    (int)p->pktlen, q->cons_now, p->pt_tx, q->head, q->tail, p->next);
+            ioctl(pa->pb->fd, NIOCTXSYNC, 0);
+            pending = 0;
+            continue;
+        }
+        pending++;
+        if (pending > q->burst) {
+            ioctl(pa->pb->fd, NIOCTXSYNC, 0);
+            pending = 0;
+        }
 
-	q->head = p->next;
-	/* drain packets from the queue */
-	q->rx++;
-	// XXX barrier
+        q->head = p->next;
+        /* drain packets from the queue */
+        q->rx++;
+        // XXX barrier
     }
     D("exiting on abort");
     return NULL;
@@ -870,15 +870,15 @@ tlem_main(void *_a)
 
     a->pa = nm_open(q->prod_ifname, NULL, NETMAP_NO_TX_POLL, NULL);
     if (a->pa == NULL) {
-	ED("cannot open %s", q->prod_ifname);
-	return NULL;
+        ED("cannot open %s", q->prod_ifname);
+        return NULL;
     }
     // XXX use a single mmap ?
     a->pb = nm_open(q->cons_ifname, NULL, NM_OPEN_NO_MMAP, a->pa);
     if (a->pb == NULL) {
-	ED("cannot open %s", q->cons_ifname);
-	nm_close(a->pa);
-	return NULL;
+        ED("cannot open %s", q->cons_ifname);
+        nm_close(a->pa);
+        return NULL;
     }
     a->zerocopy = a->zerocopy && (a->pa->mem == a->pb->mem);
     ND("------- zerocopy %ssupported", a->zerocopy ? "" : "NOT ");
@@ -906,17 +906,17 @@ tlem_main(void *_a)
 
     q->buf = calloc(1, need);
     if (q->buf == NULL) {
-	ED("alloc %lld bytes for queue failed, exiting", (long long)need);
-	nm_close(a->pa);
-	nm_close(a->pb);
-	return(NULL);
+        ED("alloc %lld bytes for queue failed, exiting", (long long)need);
+        nm_close(a->pa);
+        nm_close(a->pb);
+        return(NULL);
     }
     q->buflen = need;
     ED("----\n\t%s -> %s :  bps %lld delay %s loss %s queue %lld bytes"
-	"\n\tbuffer %llu bytes",
-	q->prod_ifname, q->cons_ifname,
-	(long long)q->max_bps, q->c_delay.optarg, q->c_loss.optarg,
-	(long long)q->qsize, (unsigned long long)q->buflen);
+            "\n\tbuffer %llu bytes",
+            q->prod_ifname, q->cons_ifname,
+            (long long)q->max_bps, q->c_delay.optarg, q->c_loss.optarg,
+            (long long)q->qsize, (unsigned long long)q->buflen);
 
     q->src_port = a->pa;
 
@@ -932,9 +932,9 @@ tlem_main(void *_a)
 static void
 sigint_h(int sig)
 {
-	(void)sig;	/* UNUSED */
-	do_abort = 1;
-	signal(SIGINT, SIG_DFL);
+    (void)sig;	/* UNUSED */
+    do_abort = 1;
+    signal(SIGINT, SIG_DFL);
 }
 
 
@@ -942,10 +942,10 @@ sigint_h(int sig)
 static void
 usage(void)
 {
-	fprintf(stderr,
-	    "usage: tlem [-v] [-D delay] [-B bps] [-L loss] [-Q qsize] \n"
-	    "\t[-b burst] [-w wait_time] -i ifa -i ifb\n");
-	exit(1);
+    fprintf(stderr,
+            "usage: tlem [-v] [-D delay] [-B bps] [-L loss] [-Q qsize] \n"
+            "\t[-b burst] [-w wait_time] -i ifa -i ifb\n");
+    exit(1);
 }
 
 
@@ -962,38 +962,38 @@ split_arg(const char *src, int *_ac)
     int l, i, ac; /* number of entries */
 
     if (!src)
-	return NULL;
+        return NULL;
     l = strlen(src);
     /* in the first pass we count fields, in the second pass
      * we allocate the av[] array and a copy of the string
      * and fill av[]. av[ac] = NULL, av[ac+1]
      */
     for (;;) {
-	i = ac = 0;
-	ND("start pass %d: <%s>", av ? 1 : 0, my);
-	while (i < l) {
-	    /* trim leading separator */
-	    while (i <l && strchr(seps, src[i]))
-		i++;
-	    if (i >= l)
-		break;
-	    ND("   pass %d arg %d: <%s>", av ? 1 : 0, ac, src+i);
-	    if (av) /* in the second pass, set the result */
-		av[ac] = my+i;
-	    ac++;
-	    /* skip string */
-	    while (i <l && !strchr(seps, src[i])) i++;
-	    if (av)
-		my[i] = '\0'; /* write marker */
-	}
-	if (!av) { /* end of first pass */
-	    ND("ac is %d", ac);
-	    av = calloc(1, (l+1) + (ac + 2)*sizeof(char *));
-	    my = (char *)&(av[ac+2]);
-	    strcpy(my, src);
-	} else {
-	    break;
-	}
+        i = ac = 0;
+        ND("start pass %d: <%s>", av ? 1 : 0, my);
+        while (i < l) {
+            /* trim leading separator */
+            while (i <l && strchr(seps, src[i]))
+                i++;
+            if (i >= l)
+                break;
+            ND("   pass %d arg %d: <%s>", av ? 1 : 0, ac, src+i);
+            if (av) /* in the second pass, set the result */
+                av[ac] = my+i;
+            ac++;
+            /* skip string */
+            while (i <l && !strchr(seps, src[i])) i++;
+            if (av)
+                my[i] = '\0'; /* write marker */
+        }
+        if (!av) { /* end of first pass */
+            ND("ac is %d", ac);
+            av = calloc(1, (l+1) + (ac + 2)*sizeof(char *));
+            my = (char *)&(av[ac+2]);
+            strcpy(my, src);
+        } else {
+            break;
+        }
     }
     for (i = 0; i < ac; i++) fprintf(stderr, "%d: <%s>\n", i, av[i]);
     av[i++] = NULL;
@@ -1010,42 +1010,42 @@ split_arg(const char *src, int *_ac)
 static int
 cmd_apply(const struct _cfg *a, const char *arg, struct _qs *q, struct _cfg *dst)
 {
-	int ac = 0;
-	char **av;
-	int i;
+    int ac = 0;
+    char **av;
+    int i;
 
-	if (arg == NULL || *arg == '\0')
-		return 1; /* no argument may be ok */
-	if (a == NULL || dst == NULL) {
-		ED("program error - invalid arguments");
-		exit(1);
-	}
-	av = split_arg(arg, &ac);
-	if (av == NULL)
-		return 1; /* error */
-	for (i = 0; a[i].parse; i++) {
-		struct _cfg x = a[i];
-		const char *errmsg = x.optarg;
-		int ret;
+    if (arg == NULL || *arg == '\0')
+        return 1; /* no argument may be ok */
+    if (a == NULL || dst == NULL) {
+        ED("program error - invalid arguments");
+        exit(1);
+    }
+    av = split_arg(arg, &ac);
+    if (av == NULL)
+        return 1; /* error */
+    for (i = 0; a[i].parse; i++) {
+        struct _cfg x = a[i];
+        const char *errmsg = x.optarg;
+        int ret;
 
-		x.arg = NULL;
-		x.arg_len = 0;
-		bzero(&x.d, sizeof(x.d));
-		ret = x.parse(q, &x, ac, av);
-		if (ret == 2) /* not recognised */
-			continue;
-		if (ret == 1) {
-			ED("invalid arguments: need '%s' have '%s'",
-				errmsg, arg);
-			break;
-		}
-		x.optarg = arg;
-		*dst = x;
-		return 0;
-	}
-	ED("arguments %s not recognised", arg);
-	free(av);
-	return 1;
+        x.arg = NULL;
+        x.arg_len = 0;
+        bzero(&x.d, sizeof(x.d));
+        ret = x.parse(q, &x, ac, av);
+        if (ret == 2) /* not recognised */
+            continue;
+        if (ret == 1) {
+            ED("invalid arguments: need '%s' have '%s'",
+                    errmsg, arg);
+            break;
+        }
+        x.optarg = arg;
+        *dst = x;
+        return 0;
+    }
+    ED("arguments %s not recognised", arg);
+    free(av);
+    return 1;
 }
 
 static struct _cfg delay_cfg[];
@@ -1064,219 +1064,219 @@ static uint64_t parse_qsize(const char *arg);
 static void
 add_to(const char ** v, int l, const char *arg, const char *msg)
 {
-	for (; l > 0 && *v != NULL ; l--, v++);
-	if (l == 0) {
-		ED("%s %s", msg, arg);
-		exit(1);
-	}
-	*v = arg;
+    for (; l > 0 && *v != NULL ; l--, v++);
+    if (l == 0) {
+        ED("%s %s", msg, arg);
+        exit(1);
+    }
+    *v = arg;
 }
 
 int
 main(int argc, char **argv)
 {
-	int ch, i, err=0;
+    int ch, i, err=0;
 
 #define	N_OPTS	2
-	struct pipe_args bp[N_OPTS];
-	const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS];
-	int cores[4] = { 2, 8, 4, 10 }; /* default values */
+    struct pipe_args bp[N_OPTS];
+    const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS];
+    int cores[4] = { 2, 8, 4, 10 }; /* default values */
 
-	bzero(d, sizeof(d));
-	bzero(b, sizeof(b));
-	bzero(l, sizeof(l));
-	bzero(q, sizeof(q));
-	bzero(ifname, sizeof(ifname));
+    bzero(d, sizeof(d));
+    bzero(b, sizeof(b));
+    bzero(l, sizeof(l));
+    bzero(q, sizeof(q));
+    bzero(ifname, sizeof(ifname));
 
-	fprintf(stderr, "%s built %s %s\n", argv[0], __DATE__, __TIME__);
+    fprintf(stderr, "%s built %s %s\n", argv[0], __DATE__, __TIME__);
 
-	bzero(&bp, sizeof(bp));	/* all data initially go here */
+    bzero(&bp, sizeof(bp));	/* all data initially go here */
 
-	for (i = 0; i < N_OPTS; i++) {
-	    struct _qs *q = &bp[i].q;
-	    q->c_delay.optarg = "0";
-	    q->c_delay.run = null_run_fn;
-	    q->c_loss.optarg = "0";
-	    q->c_loss.run = null_run_fn;
-	    q->c_bw.optarg = "0";
-	    q->c_bw.run = null_run_fn;
-	}
+    for (i = 0; i < N_OPTS; i++) {
+        struct _qs *q = &bp[i].q;
+        q->c_delay.optarg = "0";
+        q->c_delay.run = null_run_fn;
+        q->c_loss.optarg = "0";
+        q->c_loss.run = null_run_fn;
+        q->c_bw.optarg = "0";
+        q->c_bw.run = null_run_fn;
+    }
 
-	// Options:
-	// B	bandwidth in bps
-	// D	delay in seconds
-	// Q	qsize in bytes
-	// L	loss probability
-	// i	interface name (two mandatory)
-	// v	verbose
-	// b	batch size
+    // Options:
+    // B	bandwidth in bps
+    // D	delay in seconds
+    // Q	qsize in bytes
+    // L	loss probability
+    // i	interface name (two mandatory)
+    // v	verbose
+    // b	batch size
 
-	while ( (ch = getopt(argc, argv, "B:C:D:L:Q:b:ci:vw:")) != -1) {
-		switch (ch) {
-		default:
-			D("bad option %c %s", ch, optarg);
-			usage();
-			break;
+    while ( (ch = getopt(argc, argv, "B:C:D:L:Q:b:ci:vw:")) != -1) {
+        switch (ch) {
+            default:
+                D("bad option %c %s", ch, optarg);
+                usage();
+                break;
 
-		case 'C': /* CPU placement, up to 4 arguments */
-			{
-				int ac = 0;
-				char **av = split_arg(optarg, &ac);
-				if (ac == 1) { /* sequential after the first */
-					cores[0] = atoi(av[0]);
-					cores[1] = cores[0] + 1;
-					cores[2] = cores[1] + 1;
-					cores[3] = cores[2] + 1;
-				} else if (ac == 2) { /* two sequential pairs */
-					cores[0] = atoi(av[0]);
-					cores[1] = cores[0] + 1;
-					cores[2] = atoi(av[1]);
-					cores[3] = cores[2] + 1;
-				} else if (ac == 4) { /* four values */
-					cores[0] = atoi(av[0]);
-					cores[1] = atoi(av[1]);
-					cores[2] = atoi(av[2]);
-					cores[3] = atoi(av[3]);
-				} else {
-					ED(" -C accepts 1, 2 or 4 comma separated arguments");
-					usage();
-				}
-				if (av)
-					free(av);
-			}
-			break;
+            case 'C': /* CPU placement, up to 4 arguments */
+                {
+                    int ac = 0;
+                    char **av = split_arg(optarg, &ac);
+                    if (ac == 1) { /* sequential after the first */
+                        cores[0] = atoi(av[0]);
+                        cores[1] = cores[0] + 1;
+                        cores[2] = cores[1] + 1;
+                        cores[3] = cores[2] + 1;
+                    } else if (ac == 2) { /* two sequential pairs */
+                        cores[0] = atoi(av[0]);
+                        cores[1] = cores[0] + 1;
+                        cores[2] = atoi(av[1]);
+                        cores[3] = cores[2] + 1;
+                    } else if (ac == 4) { /* four values */
+                        cores[0] = atoi(av[0]);
+                        cores[1] = atoi(av[1]);
+                        cores[2] = atoi(av[2]);
+                        cores[3] = atoi(av[3]);
+                    } else {
+                        ED(" -C accepts 1, 2 or 4 comma separated arguments");
+                        usage();
+                    }
+                    if (av)
+                        free(av);
+                }
+                break;
 
-		case 'B': /* bandwidth in bps */
-			add_to(b, N_OPTS, optarg, "-B too many times");
-			break;
+            case 'B': /* bandwidth in bps */
+                add_to(b, N_OPTS, optarg, "-B too many times");
+                break;
 
-		case 'D': /* delay in seconds (float) */
-			add_to(d, N_OPTS, optarg, "-D too many times");
-			break;
+            case 'D': /* delay in seconds (float) */
+                add_to(d, N_OPTS, optarg, "-D too many times");
+                break;
 
-		case 'Q': /* qsize in bytes */
-			add_to(q, N_OPTS, optarg, "-Q too many times");
-			break;
+            case 'Q': /* qsize in bytes */
+                add_to(q, N_OPTS, optarg, "-Q too many times");
+                break;
 
-		case 'L': /* loss probability */
-			add_to(l, N_OPTS, optarg, "-L too many times");
-			break;
+            case 'L': /* loss probability */
+                add_to(l, N_OPTS, optarg, "-L too many times");
+                break;
 
-		case 'b':	/* burst */
-			bp[0].q.burst = atoi(optarg);
-			break;
+            case 'b':	/* burst */
+                bp[0].q.burst = atoi(optarg);
+                break;
 
-		case 'i':	/* interface */
-			add_to(ifname, N_OPTS, optarg, "-i too many times");
-			break;
-		case 'c':
-			bp[0].zerocopy = 0; /* do not zerocopy */
-			break;
-		case 'v':
-			verbose++;
-			break;
-		case 'w':
-			bp[0].wait_link = atoi(optarg);
-			break;
-		}
+            case 'i':	/* interface */
+                add_to(ifname, N_OPTS, optarg, "-i too many times");
+                break;
+            case 'c':
+                bp[0].zerocopy = 0; /* do not zerocopy */
+                break;
+            case 'v':
+                verbose++;
+                break;
+            case 'w':
+                bp[0].wait_link = atoi(optarg);
+                break;
+        }
 
-	}
+    }
 
-	argc -= optind;
-	argv += optind;
+    argc -= optind;
+    argv += optind;
 
-	/*
-	 * consistency checks for common arguments
-	 */
-	if (!ifname[0] || !ifname[0]) {
-		ED("missing interface(s)");
-		usage();
-	}
-	if (strcmp(ifname[0], ifname[1]) == 0) {
-		ED("must specify two different interfaces %s %s", ifname[0], ifname[1]);
-		usage();
-	}
-	if (bp[0].q.burst < 1 || bp[0].q.burst > 8192) {
-		ED("invalid burst %d, set to 1024", bp[0].q.burst);
-		bp[0].q.burst = 1024; // XXX 128 is probably better
-	}
-	if (bp[0].wait_link > 100) {
-		ED("invalid wait_link %d, set to 4", bp[0].wait_link);
-		bp[0].wait_link = 4;
-	}
+    /*
+     * consistency checks for common arguments
+     */
+    if (!ifname[0] || !ifname[0]) {
+        ED("missing interface(s)");
+        usage();
+    }
+    if (strcmp(ifname[0], ifname[1]) == 0) {
+        ED("must specify two different interfaces %s %s", ifname[0], ifname[1]);
+        usage();
+    }
+    if (bp[0].q.burst < 1 || bp[0].q.burst > 8192) {
+        ED("invalid burst %d, set to 1024", bp[0].q.burst);
+        bp[0].q.burst = 1024; // XXX 128 is probably better
+    }
+    if (bp[0].wait_link > 100) {
+        ED("invalid wait_link %d, set to 4", bp[0].wait_link);
+        bp[0].wait_link = 4;
+    }
 
-	bp[1] = bp[0]; /* copy parameters, but swap interfaces */
-	bp[0].q.prod_ifname = bp[1].q.cons_ifname = ifname[0];
-	bp[1].q.prod_ifname = bp[0].q.cons_ifname = ifname[1];
+    bp[1] = bp[0]; /* copy parameters, but swap interfaces */
+    bp[0].q.prod_ifname = bp[1].q.cons_ifname = ifname[0];
+    bp[1].q.prod_ifname = bp[0].q.cons_ifname = ifname[1];
 
-	/* assign cores. prod and cons work better if on the same HT */
-	bp[0].cons_core = cores[0];
-	bp[0].prod_core = cores[1];
-	bp[1].cons_core = cores[2];
-	bp[1].prod_core = cores[3];
-	ED("running on cores %d %d %d %d", cores[0], cores[1], cores[2], cores[3]);
+    /* assign cores. prod and cons work better if on the same HT */
+    bp[0].cons_core = cores[0];
+    bp[0].prod_core = cores[1];
+    bp[1].cons_core = cores[2];
+    bp[1].prod_core = cores[3];
+    ED("running on cores %d %d %d %d", cores[0], cores[1], cores[2], cores[3]);
 
-	/* use same parameters for both directions if needed */
-	if (d[1] == NULL)
-		d[1] = d[0];
-	if (b[1] == NULL)
-		b[1] = b[0];
-	if (l[1] == NULL)
-		l[1] = l[0];
+    /* use same parameters for both directions if needed */
+    if (d[1] == NULL)
+        d[1] = d[0];
+    if (b[1] == NULL)
+        b[1] = b[0];
+    if (l[1] == NULL)
+        l[1] = l[0];
 
-	/* apply commands */
-	for (i = 0; i < N_OPTS; i++) { /* once per queue */
-		struct _qs *q = &bp[i].q;
-		err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
-		err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
-		err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
-	}
+    /* apply commands */
+    for (i = 0; i < N_OPTS; i++) { /* once per queue */
+        struct _qs *q = &bp[i].q;
+        err += cmd_apply(delay_cfg, d[i], q, &q->c_delay);
+        err += cmd_apply(bw_cfg, b[i], q, &q->c_bw);
+        err += cmd_apply(loss_cfg, l[i], q, &q->c_loss);
+    }
 
-	if (q[0] == NULL)
-		q[0] = "0";
-	if (q[1] == NULL)
-		q[1] = q[0];
-	bp[0].q.qsize = parse_qsize(q[0]);
-	bp[1].q.qsize = parse_qsize(q[1]);
+    if (q[0] == NULL)
+        q[0] = "0";
+    if (q[1] == NULL)
+        q[1] = q[0];
+    bp[0].q.qsize = parse_qsize(q[0]);
+    bp[1].q.qsize = parse_qsize(q[1]);
 
-	if (bp[0].q.qsize == 0) {
-		ED("qsize= 0 is not valid, set to 50k");
-		bp[0].q.qsize = 50000;
-	}
-	if (bp[1].q.qsize == 0) {
-		ED("qsize= 0 is not valid, set to 50k");
-		bp[1].q.qsize = 50000;
-	}
+    if (bp[0].q.qsize == 0) {
+        ED("qsize= 0 is not valid, set to 50k");
+        bp[0].q.qsize = 50000;
+    }
+    if (bp[1].q.qsize == 0) {
+        ED("qsize= 0 is not valid, set to 50k");
+        bp[1].q.qsize = 50000;
+    }
 
-	pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
-	pthread_create(&bp[1].cons_tid, NULL, tlem_main, (void*)&bp[1]);
+    pthread_create(&bp[0].cons_tid, NULL, tlem_main, (void*)&bp[0]);
+    pthread_create(&bp[1].cons_tid, NULL, tlem_main, (void*)&bp[1]);
 
-	signal(SIGINT, sigint_h);
-	sleep(1);
-	while (!do_abort) {
-	    struct _qs olda = bp[0].q, oldb = bp[1].q;
-	    struct _qs *q0 = &bp[0].q, *q1 = &bp[1].q;
+    signal(SIGINT, sigint_h);
+    sleep(1);
+    while (!do_abort) {
+        struct _qs olda = bp[0].q, oldb = bp[1].q;
+        struct _qs *q0 = &bp[0].q, *q1 = &bp[1].q;
 
-	    sleep(1);
-	    ED("%lld -> %lld maxq %d round %lld, %lld <- %lld maxq %d round %lld",
-		(long long)(q0->rx - olda.rx), (long long)(q0->tx - olda.tx),
-		q0->rx_qmax, (long long)q0->prod_max_gap,
-		(long long)(q1->rx - oldb.rx), (long long)(q1->tx - oldb.tx),
-		q1->rx_qmax, (long long)q1->prod_max_gap
-		);
-	    ED("plr nominal %le actual %le",
-		(double)(q0->c_loss.d[0])/(1<<24),
-		q0->c_loss.d[1] == 0 ? 0 :
-		(double)(q0->c_loss.d[2])/q0->c_loss.d[1]);
-	    bp[0].q.rx_qmax = (bp[0].q.rx_qmax * 7)/8; // ewma
-	    bp[0].q.prod_max_gap = (bp[0].q.prod_max_gap * 7)/8; // ewma
-	    bp[1].q.rx_qmax = (bp[1].q.rx_qmax * 7)/8; // ewma
-	    bp[1].q.prod_max_gap = (bp[1].q.prod_max_gap * 7)/8; // ewma
-	}
-	D("exiting on abort");
-	sleep(1);
+        sleep(1);
+        ED("%lld -> %lld maxq %d round %lld, %lld <- %lld maxq %d round %lld",
+                (long long)(q0->rx - olda.rx), (long long)(q0->tx - olda.tx),
+                q0->rx_qmax, (long long)q0->prod_max_gap,
+                (long long)(q1->rx - oldb.rx), (long long)(q1->tx - oldb.tx),
+                q1->rx_qmax, (long long)q1->prod_max_gap
+          );
+        ED("plr nominal %le actual %le",
+                (double)(q0->c_loss.d[0])/(1<<24),
+                q0->c_loss.d[1] == 0 ? 0 :
+                (double)(q0->c_loss.d[2])/q0->c_loss.d[1]);
+        bp[0].q.rx_qmax = (bp[0].q.rx_qmax * 7)/8; // ewma
+        bp[0].q.prod_max_gap = (bp[0].q.prod_max_gap * 7)/8; // ewma
+        bp[1].q.rx_qmax = (bp[1].q.rx_qmax * 7)/8; // ewma
+        bp[1].q.prod_max_gap = (bp[1].q.prod_max_gap * 7)/8; // ewma
+    }
+    D("exiting on abort");
+    sleep(1);
 
-	return (0);
+    return (0);
 }
 
 /* conversion factor for numbers.
@@ -1295,39 +1295,39 @@ struct _sm {	/* string and multiplier */
 static double
 parse_gen(const char *arg, const struct _sm *conv, int *err)
 {
-	double d;
-	char *ep;
-	int dummy;
+    double d;
+    char *ep;
+    int dummy;
 
-	if (err == NULL)
-		err = &dummy;
-	*err = 0;
-	if (arg == NULL)
-		goto error;
-	d = strtod(arg, &ep);
-	if (ep == arg) { /* no value */
-		ED("bad argument %s", arg);
-		goto error;
-	}
-	/* special case, no conversion */
-	if (conv == NULL && *ep == '\0')
-		goto done;
-	ND("checking %s [%s]", arg, ep);
-	for (;conv->s; conv++) {
-		if (strchr(conv->s, *ep))
-			goto done;
-	}
+    if (err == NULL)
+        err = &dummy;
+    *err = 0;
+    if (arg == NULL)
+        goto error;
+    d = strtod(arg, &ep);
+    if (ep == arg) { /* no value */
+        ED("bad argument %s", arg);
+        goto error;
+    }
+    /* special case, no conversion */
+    if (conv == NULL && *ep == '\0')
+        goto done;
+    ND("checking %s [%s]", arg, ep);
+    for (;conv->s; conv++) {
+        if (strchr(conv->s, *ep))
+            goto done;
+    }
 error:
-	*err = 1;	/* unrecognised */
-	return 0;
+    *err = 1;	/* unrecognised */
+    return 0;
 
 done:
-	if (conv) {
-		ND("scale is %s %lf", conv->s, conv->m);
-		d *= conv->m; /* apply default conversion */
-	}
-	ND("returning %lf", d);
-	return d;
+    if (conv) {
+        ND("scale is %s %lf", conv->s, conv->m);
+        d *= conv->m; /* apply default conversion */
+    }
+    ND("returning %lf", d);
+    return d;
 }
 
 #define U_PARSE_ERR ~(0ULL)
@@ -1337,10 +1337,10 @@ static uint64_t
 parse_time(const char *arg)
 {
     struct _sm a[] = {
-	{"", 1000000000 /* seconds */},
-	{"n", 1 /* nanoseconds */}, {"u", 1000 /* microseconds */},
-	{"m", 1000000 /* milliseconds */}, {"s", 1000000000 /* seconds */},
-	{NULL, 0 /* seconds */}
+        {"", 1000000000 /* seconds */},
+        {"n", 1 /* nanoseconds */}, {"u", 1000 /* microseconds */},
+        {"m", 1000000 /* milliseconds */}, {"s", 1000000000 /* seconds */},
+        {NULL, 0 /* seconds */}
     };
     int err;
     uint64_t ret = (uint64_t)parse_gen(arg, a, &err);
@@ -1355,7 +1355,7 @@ static uint64_t
 parse_bw(const char *arg)
 {
     struct _sm a[] = {
-	{"", 1}, {"kK", 1000}, {"mM", 1000000}, {"gG", 1000000000}, {NULL, 0}
+        {"", 1}, {"kK", 1000}, {"mM", 1000000}, {"gG", 1000000000}, {NULL, 0}
     };
     int err;
     uint64_t ret = (uint64_t)parse_gen(arg, a, &err);
@@ -1369,7 +1369,7 @@ static uint64_t
 parse_qsize(const char *arg)
 {
     struct _sm a[] = {
-	{"", 1}, {"kK", 1024}, {"mM", 1024*1024}, {"gG", 1024*1024*1024}, {NULL, 0}
+        {"", 1}, {"kK", 1024}, {"mM", 1024*1024}, {"gG", 1024*1024*1024}, {NULL, 0}
     };
     int err;
     uint64_t ret = (uint64_t)parse_gen(arg, a, &err);
@@ -1386,7 +1386,7 @@ parse_qsize(const char *arg)
 static inline uint64_t
 my_random24(void)	/* 24 useful bits */
 {
-	return random() & ((1<<24) - 1);
+    return random() & ((1<<24) - 1);
 }
 
 
@@ -1517,58 +1517,58 @@ BANDWIDTH emulation	-B option_arguments
 static int
 const_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-	uint64_t delay;
+    uint64_t delay;
 
-	if (strncmp(av[0], "const", 5) != 0 && ac > 1)
-		return 2; /* unrecognised */
-	if (ac > 2)
-		return 1; /* error */
-	delay = parse_time(av[ac - 1]);
-	if (delay == U_PARSE_ERR)
-		return 1; /* error */
-	dst->d[0] = delay;
-	q->max_delay = delay;
-	return 0;	/* success */
+    if (strncmp(av[0], "const", 5) != 0 && ac > 1)
+        return 2; /* unrecognised */
+    if (ac > 2)
+        return 1; /* error */
+    delay = parse_time(av[ac - 1]);
+    if (delay == U_PARSE_ERR)
+        return 1; /* error */
+    dst->d[0] = delay;
+    q->max_delay = delay;
+    return 0;	/* success */
 }
 
 /* runtime function, store the delay into q->cur_delay */
 static int
 const_delay_run(struct _qs *q, struct _cfg *arg)
 {
-	q->cur_delay = arg->d[0]; /* the delay */
-	return 0;
+    q->cur_delay = arg->d[0]; /* the delay */
+    return 0;
 }
 
 static int
 uniform_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-	uint64_t dmin, dmax;
+    uint64_t dmin, dmax;
 
-	(void)q;
-	if (strcmp(av[0], "uniform") != 0)
-		return 2; /* not recognised */
-	if (ac != 3)
-		return 1; /* error */
-	dmin = parse_time(av[1]);
-	dmax = parse_time(av[2]);
-	if (dmin == U_PARSE_ERR || dmax == U_PARSE_ERR || dmin > dmax)
-		return 1;
-	D("dmin %lld dmax %lld", (long long)dmin, (long long)dmax);
-	dst->d[0] = dmin;
-	dst->d[1] = dmax;
-	dst->d[2] = dmax - dmin;
-	q->max_delay = dmax;
-	return 0;
+    (void)q;
+    if (strcmp(av[0], "uniform") != 0)
+        return 2; /* not recognised */
+    if (ac != 3)
+        return 1; /* error */
+    dmin = parse_time(av[1]);
+    dmax = parse_time(av[2]);
+    if (dmin == U_PARSE_ERR || dmax == U_PARSE_ERR || dmin > dmax)
+        return 1;
+    D("dmin %lld dmax %lld", (long long)dmin, (long long)dmax);
+    dst->d[0] = dmin;
+    dst->d[1] = dmax;
+    dst->d[2] = dmax - dmin;
+    q->max_delay = dmax;
+    return 0;
 }
 
 static int
 uniform_delay_run(struct _qs *q, struct _cfg *arg)
 {
-	uint64_t x = my_random24();
-	q->cur_delay = arg->d[0] + ((arg->d[2] * x) >> 24);
+    uint64_t x = my_random24();
+    q->cur_delay = arg->d[0] + ((arg->d[2] * x) >> 24);
 #if 0 /* COMPUTE_STATS */
 #endif /* COMPUTE_STATS */
-	return 0;
+    return 0;
 }
 
 /*
@@ -1586,40 +1586,40 @@ static int
 exp_delay_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
 #define	PTS_D_EXP	512
-	uint64_t i, d_av, d_min, *t; /*table of values */
+    uint64_t i, d_av, d_min, *t; /*table of values */
 
-	(void)q;
-	if (strcmp(av[0], "exp") != 0)
-		return 2; /* not recognised */
-	if (ac != 3)
-		return 1; /* error */
-	d_av = parse_time(av[1]);
-	d_min = parse_time(av[2]);
-	if (d_av == U_PARSE_ERR || d_min == U_PARSE_ERR || d_av < d_min)
-		return 1; /* error */
-	d_av -= d_min;
-	dst->arg_len = PTS_D_EXP * sizeof(uint64_t);
-	dst->arg = calloc(1, dst->arg_len);
-	if (dst->arg == NULL)
-		return 1; /* no memory */
-	t = (uint64_t *)dst->arg;
-	q->max_delay = d_av * 4 + d_min; /* exp(-4) */
-	/* tabulate -ln(1-n)*delay  for n in 0..1 */
-	for (i = 0; i < PTS_D_EXP; i++) {
-		double d = -log2 ((double)(PTS_D_EXP - i) / PTS_D_EXP) * d_av + d_min;
-		t[i] = (uint64_t)d;
-		ND(5, "%ld: %le", i, d);
-	}
-	return 0;
+    (void)q;
+    if (strcmp(av[0], "exp") != 0)
+        return 2; /* not recognised */
+    if (ac != 3)
+        return 1; /* error */
+    d_av = parse_time(av[1]);
+    d_min = parse_time(av[2]);
+    if (d_av == U_PARSE_ERR || d_min == U_PARSE_ERR || d_av < d_min)
+        return 1; /* error */
+    d_av -= d_min;
+    dst->arg_len = PTS_D_EXP * sizeof(uint64_t);
+    dst->arg = calloc(1, dst->arg_len);
+    if (dst->arg == NULL)
+        return 1; /* no memory */
+    t = (uint64_t *)dst->arg;
+    q->max_delay = d_av * 4 + d_min; /* exp(-4) */
+    /* tabulate -ln(1-n)*delay  for n in 0..1 */
+    for (i = 0; i < PTS_D_EXP; i++) {
+        double d = -log2 ((double)(PTS_D_EXP - i) / PTS_D_EXP) * d_av + d_min;
+        t[i] = (uint64_t)d;
+        ND(5, "%ld: %le", i, d);
+    }
+    return 0;
 }
 
 static int
 exp_delay_run(struct _qs *q, struct _cfg *arg)
 {
-	uint64_t *t = (uint64_t *)arg->arg;
-	q->cur_delay = t[my_random24() & (PTS_D_EXP - 1)];
-	RD(5, "delay %llu", (unsigned long long)q->cur_delay);
-	return 0;
+    uint64_t *t = (uint64_t *)arg->arg;
+    q->cur_delay = t[my_random24() & (PTS_D_EXP - 1)];
+    RD(5, "delay %llu", (unsigned long long)q->cur_delay);
+    return 0;
 }
 
 
@@ -1639,20 +1639,20 @@ static struct _cfg delay_cfg[] = {
 static int
 const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-	uint64_t bw;
+    uint64_t bw;
 
-	(void)q;
-	if (strncmp(av[0], "const", 5) != 0)
-		return 2; /* unrecognised */
-	if (ac > 2)
-		return 1; /* error */
-	bw = parse_bw(av[ac - 1]);
-	if (bw == U_PARSE_ERR) {
-		return (ac == 2) ? 1 /* error */ : 2 /* unrecognised */;
-	}
-	dst->d[0] = bw;
-	q->max_bps = bw;	/* bw used to determine queue size */
-	return 0;	/* success */
+    (void)q;
+    if (strncmp(av[0], "const", 5) != 0)
+        return 2; /* unrecognised */
+    if (ac > 2)
+        return 1; /* error */
+    bw = parse_bw(av[ac - 1]);
+    if (bw == U_PARSE_ERR) {
+        return (ac == 2) ? 1 /* error */ : 2 /* unrecognised */;
+    }
+    dst->d[0] = bw;
+    q->max_bps = bw;	/* bw used to determine queue size */
+    return 0;	/* success */
 }
 
 
@@ -1660,28 +1660,28 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 const_bw_run(struct _qs *q, struct _cfg *arg)
 {
-	uint64_t bps = arg->d[0];
-	q->cur_tt = bps ? 8ULL* TIME_UNITS * q->cur_len / bps : 0 ;
-	return 0;
+    uint64_t bps = arg->d[0];
+    q->cur_tt = bps ? 8ULL* TIME_UNITS * q->cur_len / bps : 0 ;
+    return 0;
 }
 
 /* ethernet bandwidth, add 672 bits per packet */
 static int
 ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-	uint64_t bw;
+    uint64_t bw;
 
-	(void)q;
-	if (strcmp(av[0], "ether") != 0)
-		return 2; /* unrecognised */
-	if (ac != 2)
-		return 1; /* error */
-	bw = parse_bw(av[ac - 1]);
-	if (bw == U_PARSE_ERR)
-		return 1; /* error */
-	dst->d[0] = bw;
-	q->max_bps = bw;	/* bw used to determine queue size */
-	return 0;	/* success */
+    (void)q;
+    if (strcmp(av[0], "ether") != 0)
+        return 2; /* unrecognised */
+    if (ac != 2)
+        return 1; /* error */
+    bw = parse_bw(av[ac - 1]);
+    if (bw == U_PARSE_ERR)
+        return 1; /* error */
+    dst->d[0] = bw;
+    q->max_bps = bw;	/* bw used to determine queue size */
+    return 0;	/* success */
 }
 
 
@@ -1689,9 +1689,9 @@ ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 ether_bw_run(struct _qs *q, struct _cfg *arg)
 {
-	uint64_t bps = arg->d[0];
-	q->cur_tt = bps ? 8ULL * TIME_UNITS * (q->cur_len + 24) / bps : 0 ;
-	return 0;
+    uint64_t bps = arg->d[0];
+    q->cur_tt = bps ? 8ULL * TIME_UNITS * (q->cur_len + 24) / bps : 0 ;
+    return 0;
 }
 
 static struct _cfg bw_cfg[] = {
@@ -1708,35 +1708,35 @@ static struct _cfg bw_cfg[] = {
 static int
 const_plr_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-	double plr;
-	int err;
+    double plr;
+    int err;
 
-	(void)q;
-	if (strcmp(av[0], "plr") != 0 && ac > 1)
-		return 2; /* unrecognised */
-	if (ac > 2)
-		return 1; /* error */
-	// XXX to be completed
-	plr = parse_gen(av[ac-1], NULL, &err);
-	if (err || plr < 0 || plr > 1)
-		return 1;
-	dst->d[0] = plr * (1<<24); /* scale is 16m */
-	if (plr != 0 && dst->d[0] == 0)
-		ED("WWW warning,  rounding %le down to 0", plr);
-	return 0;	/* success */
+    (void)q;
+    if (strcmp(av[0], "plr") != 0 && ac > 1)
+        return 2; /* unrecognised */
+    if (ac > 2)
+        return 1; /* error */
+    // XXX to be completed
+    plr = parse_gen(av[ac-1], NULL, &err);
+    if (err || plr < 0 || plr > 1)
+        return 1;
+    dst->d[0] = plr * (1<<24); /* scale is 16m */
+    if (plr != 0 && dst->d[0] == 0)
+        ED("WWW warning,  rounding %le down to 0", plr);
+    return 0;	/* success */
 }
 
 static int
 const_plr_run(struct _qs *q, struct _cfg *arg)
 {
-	(void)arg;
-	uint64_t r = my_random24();
-	q->cur_drop = r < arg->d[0];
+    (void)arg;
+    uint64_t r = my_random24();
+    q->cur_drop = r < arg->d[0];
 #if 1	/* keep stats */
-	arg->d[1]++;
-	arg->d[2] += q->cur_drop;
+    arg->d[1]++;
+    arg->d[2] += q->cur_drop;
 #endif
-	return 0;
+    return 0;
 }
 
 
@@ -1748,59 +1748,59 @@ const_plr_run(struct _qs *q, struct _cfg *arg)
 static int
 const_ber_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-	double ber, ber8, cur;
-	int i, err;
-	uint32_t *plr;
-	const uint32_t mask = (1<<24) - 1;
+    double ber, ber8, cur;
+    int i, err;
+    uint32_t *plr;
+    const uint32_t mask = (1<<24) - 1;
 
-	(void)q;
-	if (strcmp(av[0], "ber") != 0)
-		return 2; /* unrecognised */
-	if (ac != 2)
-		return 1; /* error */
-	ber = parse_gen(av[ac-1], NULL, &err);
-	if (err || ber < 0 || ber > 1)
-		return 1;
-	dst->arg_len = MAX_PKT * sizeof(uint32_t);
-	plr = calloc(1, dst->arg_len);
-	if (plr == NULL)
-		return 1; /* no memory */
-	dst->arg = plr;
-	ber8 = 1 - ber;
-	ber8 *= ber8; /* **2 */
-	ber8 *= ber8; /* **4 */
-	ber8 *= ber8; /* **8 */
-	cur = 1;
-	for (i=0; i < MAX_PKT; i++, cur *= ber8) {
-		plr[i] = (mask + 1)*(1 - cur);
-		if (plr[i] > mask)
-			plr[i] = mask;
+    (void)q;
+    if (strcmp(av[0], "ber") != 0)
+        return 2; /* unrecognised */
+    if (ac != 2)
+        return 1; /* error */
+    ber = parse_gen(av[ac-1], NULL, &err);
+    if (err || ber < 0 || ber > 1)
+        return 1;
+    dst->arg_len = MAX_PKT * sizeof(uint32_t);
+    plr = calloc(1, dst->arg_len);
+    if (plr == NULL)
+        return 1; /* no memory */
+    dst->arg = plr;
+    ber8 = 1 - ber;
+    ber8 *= ber8; /* **2 */
+    ber8 *= ber8; /* **4 */
+    ber8 *= ber8; /* **8 */
+    cur = 1;
+    for (i=0; i < MAX_PKT; i++, cur *= ber8) {
+        plr[i] = (mask + 1)*(1 - cur);
+        if (plr[i] > mask)
+            plr[i] = mask;
 #if 0
-		if (i>= 60) //  && plr[i] < mask/2)
-			RD(50,"%4d: %le %ld", i, 1.0 - cur, (_P64)plr[i]);
+        if (i>= 60) //  && plr[i] < mask/2)
+            RD(50,"%4d: %le %ld", i, 1.0 - cur, (_P64)plr[i]);
 #endif
-	}
-	dst->d[0] = ber * (mask + 1);
-	return 0;	/* success */
+    }
+    dst->d[0] = ber * (mask + 1);
+    return 0;	/* success */
 }
 
 static int
 const_ber_run(struct _qs *q, struct _cfg *arg)
 {
-	int l = q->cur_len;
-	uint64_t r = my_random24();
-	uint32_t *plr = arg->arg;
+    int l = q->cur_len;
+    uint64_t r = my_random24();
+    uint32_t *plr = arg->arg;
 
-	if (l >= MAX_PKT) {
-		RD(5, "pkt len %d too large, trim to %d", l, MAX_PKT-1);
-		l = MAX_PKT-1;
-	}
-	q->cur_drop = r < plr[l];
+    if (l >= MAX_PKT) {
+        RD(5, "pkt len %d too large, trim to %d", l, MAX_PKT-1);
+        l = MAX_PKT-1;
+    }
+    q->cur_drop = r < plr[l];
 #if 1	/* keep stats */
-	arg->d[1] += l * 8;
-	arg->d[2] += q->cur_drop;
+    arg->d[1] += l * 8;
+    arg->d[2] += q->cur_drop;
 #endif
-	return 0;
+    return 0;
 }
 
 static struct _cfg loss_cfg[] = {
