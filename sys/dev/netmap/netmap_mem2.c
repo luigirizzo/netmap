@@ -395,7 +395,7 @@ netmap_init_obj_allocator_bitmap(struct netmap_obj_pool *p)
 	if (p->bitmap == NULL) {
 		/* Allocate the bitmap */
 		n = (p->objtotal + 31) / 32;
-		p->bitmap = nm_os_malloc(sizeof(uint32_t) * n);
+		p->bitmap = nm_os_malloc(sizeof(p->bitmap[0]) * n);
 		if (p->bitmap == NULL) {
 			D("Unable to create bitmap (%d entries) for allocator '%s'", (int)n,
 			    p->name);
@@ -403,7 +403,7 @@ netmap_init_obj_allocator_bitmap(struct netmap_obj_pool *p)
 		}
 		p->bitmap_slots = n;
 	} else {
-		memset(p->bitmap, 0, p->bitmap_slots);
+		memset(p->bitmap, 0, p->bitmap_slots * sizeof(p->bitmap[0]));
 	}
 
 	p->objfree = 0;
