@@ -8,6 +8,18 @@
 #include <pthread.h>
 #include <string.h>
 #include <assert.h>
+#include <signal.h>
+
+#define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
+
+static int stop = 0;
+
+static void
+sigint_handler(int signum)
+{
+	(void)signum;
+	ACCESS_ONCE(stop) = 1;
+}
 
 struct context {
 	struct nm_desc *nmd;
@@ -20,6 +32,8 @@ kloop_worker(void *opaque)
 	struct context *ctx = opaque;
 	struct nm_desc *nmd = ctx->nmd;
 	struct nmreq_sync_kloop_start req;
+	struct nm_csb_atok *atok_base;
+	struct nm_csb_ktoa *ktoa_base;
 	struct nmreq_header hdr;
 	size_t num_entries;
 	size_t csb_size;
@@ -37,6 +51,7 @@ kloop_worker(void *opaque)
 		printf("Failed to allocate CSB memory\n");
 		return NULL;
 	}
+	memset(csb, 0, csb_size);
 
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.nr_version = NETMAP_API;
@@ -51,6 +66,53 @@ kloop_worker(void *opaque)
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
 	}
+
+	atok_base = (struct nm_csb_atok *)csb;
+	ktoa_base = (struct nm_csb_ktoa *)(atok_base + num_entries);
+
+	if (!strcmp(ctx->func, "tx")) {
+		while (!ACCESS_ONCE(stop)) {
+			uint16_t r;
+
+			for (r = nmd->first_tx_ring; r <= nmd->last_tx_ring;
+			     r++) {
+				struct netmap_ring *ring =
+				        NETMAP_TXRING(nmd->nifp, r);
+				struct nm_csb_atok *atok = atok_base + r;
+				struct nm_csb_ktoa *ktoa = ktoa_base + r;
+				struct netmap_slot *slot;
+				uint32_t hwtail, head;
+
+				head   = atok->head;
+				hwtail = ACCESS_ONCE(ktoa->hwtail);
+
+				if (head == hwtail) {
+					continue;
+				}
+
+				slot        = ring->slot + head;
+				slot->len   = 60;
+				slot->flags = 0;
+				{
+					char *buf =
+					        NETMAP_BUF(ring, slot->buf_idx);
+					memset(buf, 0xFF, 6);
+					memset(buf + 6, 0, 6);
+					buf[12] = 0x08;
+					buf[13] = 0x00;
+					memset(buf + 14, 'x', slot->len - 14);
+				}
+				ACCESS_ONCE(atok->head) =
+				        ACCESS_ONCE(atok->cur) =
+				                nm_ring_next(ring, head);
+				printf("ring #%u, head %u, hwtail %u\n",
+				       (unsigned int)r, (unsigned int)head,
+				       (unsigned int)hwtail);
+			}
+			usleep(1000000);
+		}
+	}
+
 	free(csb);
 
 	return NULL;
@@ -74,6 +136,18 @@ main(int argc, char **argv)
 	pthread_t th;
 	int opt;
 	int ret;
+
+	{
+		struct sigaction sa;
+
+		sa.sa_handler = sigint_handler;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_RESTART;
+		if (sigaction(SIGINT, &sa, NULL)) {
+			perror("sigaction(SIGINT)");
+			exit(EXIT_FAILURE);
+		}
+	}
 
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.func = "rx";
