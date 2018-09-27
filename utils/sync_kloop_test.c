@@ -9,10 +9,16 @@
 #include <string.h>
 #include <assert.h>
 
+struct context {
+	struct nm_desc *nmd;
+	const char *func;
+};
+
 static void *
 kloop_worker(void *opaque)
 {
-	struct nm_desc *nmd = opaque;
+	struct context *ctx = opaque;
+	struct nm_desc *nmd = ctx->nmd;
 	struct nmreq_sync_kloop_start req;
 	struct nmreq_header hdr;
 	size_t num_entries;
@@ -55,6 +61,7 @@ usage(const char *progname)
 {
 	printf("%s\n"
 	       "[-h (show this help and exit)]\n"
+	       "[-f FUNCTION (rx,tx)]\n"
 	       "-i NETMAP_PORT\n",
 	       progname);
 }
@@ -63,12 +70,15 @@ int
 main(int argc, char **argv)
 {
 	const char *ifname = NULL;
-	struct nm_desc *nmd;
+	struct context ctx;
 	pthread_t th;
 	int opt;
 	int ret;
 
-	while ((opt = getopt(argc, argv, "hi:")) != -1) {
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.func = "rx";
+
+	while ((opt = getopt(argc, argv, "hi:f:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage(argv[0]);
@@ -76,6 +86,14 @@ main(int argc, char **argv)
 
 		case 'i':
 			ifname = optarg;
+			break;
+
+		case 'f':
+			ctx.func = optarg;
+			if (strcmp(optarg, "tx") && strcmp(optarg, "rx")) {
+				printf("    Unknown function %s\n", optarg);
+				return -1;
+			}
 			break;
 
 		default:
@@ -92,16 +110,16 @@ main(int argc, char **argv)
 	}
 
 	printf("ifname %s\n", ifname);
-	nmd = nm_open(ifname, NULL, 0, NULL);
-	if (!nmd) {
+	ctx.nmd = nm_open(ifname, NULL, 0, NULL);
+	if (!ctx.nmd) {
 		printf("nm_open(%s) failed\n", ifname);
 		return -1;
 	}
 
-	ret = pthread_create(&th, NULL, kloop_worker, nmd);
+	ret = pthread_create(&th, NULL, kloop_worker, &ctx);
 	if (ret) {
 		printf("pthread_create() failed: %s\n", strerror(ret));
-		nm_close(nmd);
+		nm_close(ctx.nmd);
 		return -1;
 	}
 
@@ -112,7 +130,7 @@ main(int argc, char **argv)
 		memset(&hdr, 0, sizeof(hdr));
 		hdr.nr_version = NETMAP_API;
 		hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_STOP;
-		ret            = ioctl(nmd->fd, NIOCCTRL, &hdr);
+		ret            = ioctl(ctx.nmd->fd, NIOCCTRL, &hdr);
 		if (ret) {
 			perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_STOP)");
 		}
@@ -123,7 +141,7 @@ main(int argc, char **argv)
 		printf("pthread_join() failed: %s\n", strerror(ret));
 	}
 
-	nm_close(nmd);
+	nm_close(ctx.nmd);
 
 	return 0;
 }
