@@ -3916,7 +3916,7 @@ nm_clear_native_flags(struct netmap_adapter *na)
 /* Write kring pointers (hwcur, hwtail) to the CSB.
  * This routine is coupled with ptnetmap_guest_read_kring_csb(). */
 static inline void
-sync_kloop_write_kring_csb(struct nm_csb_ktoa __user *ptr, uint32_t hwcur,
+sync_kloop_kernel_write(struct nm_csb_ktoa __user *ptr, uint32_t hwcur,
 			   uint32_t hwtail)
 {
 	/*
@@ -3942,7 +3942,7 @@ sync_kloop_write_kring_csb(struct nm_csb_ktoa __user *ptr, uint32_t hwcur,
 /* Read kring pointers (head, cur, sync_flags) from the CSB.
  * This routine is coupled with ptnetmap_guest_write_kring_csb(). */
 static inline void
-sync_kloop_read_kring_csb(struct nm_csb_atok __user *ptr,
+sync_kloop_kernel_read(struct nm_csb_atok __user *ptr,
 			  struct netmap_ring *shadow_ring,
 			  uint32_t num_slots)
 {
@@ -4000,7 +4000,7 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 	/* Disable application --> kernel notifications. */
 	csb_ktoa_kick_enable(csb_ktoa, 0);
 	/* Copy the application kring pointers from the CSB */
-	sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+	sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 
 	for (;;) {
 		batch = shadow_ring.head - kring->nr_hwcur;
@@ -4051,7 +4051,7 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 		 * Copy kernel hwcur and hwtail into the CSB for the application sync(), and
 		 * do the nm_sync_finalize.
 		 */
-		sync_kloop_write_kring_csb(csb_ktoa, kring->nr_hwcur,
+		sync_kloop_kernel_write(csb_ktoa, kring->nr_hwcur,
 				kring->nr_hwtail);
 		if (kring->rtail != kring->nr_hwtail) {
 			/* Some more room available in the parent adapter. */
@@ -4071,7 +4071,7 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 		}
 
 		/* Read CSB to see if there is more work to do. */
-		sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+		sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 		if (shadow_ring.head == kring->rhead) {
 			/*
 			 * No more packets to transmit. We enable notifications and
@@ -4082,7 +4082,7 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
 			/* Doublecheck. */
-			sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+			sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 			if (shadow_ring.head != kring->rhead) {
 				/* We won the race condition, there are more packets to
 				 * transmit. Disable notifications and do another cycle */
@@ -4133,7 +4133,7 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 	/* Disable notifications. */
 	csb_ktoa_kick_enable(csb_ktoa, 0);
 	/* Copy the application kring pointers from the CSB */
-	sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+	sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 
 	for (;;) {
 		uint32_t hwtail;
@@ -4163,7 +4163,7 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 		 * Copy kernel hwcur and hwtail into the CSB for the application sync()
 		 */
 		hwtail = NM_ACCESS_ONCE(kring->nr_hwtail);
-		sync_kloop_write_kring_csb(csb_ktoa, kring->nr_hwcur, hwtail);
+		sync_kloop_kernel_write(csb_ktoa, kring->nr_hwcur, hwtail);
 		if (kring->rtail != hwtail) {
 			kring->rtail = hwtail;
 			some_recvd = true;
@@ -4184,7 +4184,7 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 		}
 
 		/* Read CSB to see if there is more work to do. */
-		sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+		sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 		if (sync_kloop_norxslots(kring, shadow_ring.head)) {
 			/*
 			 * No more slots available for reception. We enable notification and
@@ -4195,7 +4195,7 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
 			/* Doublecheck. */
-			sync_kloop_read_kring_csb(csb_atok, &shadow_ring, num_slots);
+			sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 			if (!sync_kloop_norxslots(kring, shadow_ring.head)) {
 				/* We won the race condition, more slots are available. Disable
 				 * notifications and do another cycle. */
