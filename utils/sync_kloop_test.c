@@ -88,9 +88,9 @@ main(int argc, char **argv)
 {
 	int num_entries, num_tx_entries;
 	unsigned long long bytes = 0;
-	unsigned long long pkts = 0;
-	const char *ifname = NULL;
-	void *csb          = NULL;
+	unsigned long long pkts  = 0;
+	const char *ifname       = NULL;
+	void *csb                = NULL;
 	struct context ctx;
 	struct nm_desc *nmd;
 	double rate = 1.0 /* pps */;
@@ -111,9 +111,9 @@ main(int argc, char **argv)
 	}
 
 	memset(&ctx, 0, sizeof(ctx));
-	ctx.func = "rx";
+	ctx.func    = "rx";
 	ctx.verbose = 0;
-	ctx.batch = 1;
+	ctx.batch   = 1;
 
 	while ((opt = getopt(argc, argv, "hi:f:vR:b:")) != -1) {
 		switch (opt) {
@@ -134,7 +134,7 @@ main(int argc, char **argv)
 			break;
 
 		case 'v':
-			ctx.verbose ++;
+			ctx.verbose++;
 			break;
 
 		case 'R':
@@ -178,8 +178,8 @@ main(int argc, char **argv)
 		size_t csb_size;
 
 		num_tx_entries = nmd->last_tx_ring - nmd->first_tx_ring + 1;
-		num_entries = num_tx_entries +
-				nmd->last_rx_ring - nmd->first_rx_ring + 1;
+		num_entries    = num_tx_entries + nmd->last_rx_ring -
+		              nmd->first_rx_ring + 1;
 		printf("Number of CSB entries = %d\n", (int)num_entries);
 		csb_size = (sizeof(struct nm_csb_atok) +
 		            sizeof(struct nm_csb_ktoa)) *
@@ -225,8 +225,9 @@ main(int argc, char **argv)
 				/* For convenience we reuse the netmap_ring
 				 * header to store hwtail and hwcur, since the
 				 * cur, head and tail fields are not used. */
-				nm_sync_kloop_appl_read(ktoa, /*hwtail=*/&ring->tail,
-							/*hwcur=*/&ring->cur);
+				nm_sync_kloop_appl_read(ktoa,
+				                        /*hwtail=*/&ring->tail,
+				                        /*hwcur=*/&ring->cur);
 				batch = ringspace(ring, head);
 				if (batch == 0) {
 					continue;
@@ -242,20 +243,22 @@ main(int argc, char **argv)
 					slot->flags = 0;
 					bytes += slot->len;
 					{
-						char *buf =
-							NETMAP_BUF(ring, slot->buf_idx);
+						char *buf = NETMAP_BUF(
+						        ring, slot->buf_idx);
 						memset(buf, 0xFF, 6);
 						memset(buf + 6, 0, 6);
 						buf[12] = 0x08;
 						buf[13] = 0x00;
-						memset(buf + 14, 'x', slot->len - 14);
+						memset(buf + 14, 'x',
+						       slot->len - 14);
 					}
 					head = nm_ring_next(ring, head);
 				}
 				nm_sync_kloop_appl_write(atok, head, head);
 				printf("ring #%u, hwcur %u, head %u, hwtail "
 				       "%u\n",
-				       (unsigned int)r, ring->cur, head, ring->tail);
+				       (unsigned int)r, ring->cur, head,
+				       ring->tail);
 			}
 			usleep(1000000);
 		}
@@ -269,8 +272,10 @@ main(int argc, char **argv)
 			     r++) {
 				struct netmap_ring *ring =
 				        NETMAP_RXRING(nmd->nifp, r);
-				struct nm_csb_atok *atok = ctx.atok_base + num_tx_entries + r;
-				struct nm_csb_ktoa *ktoa = ctx.ktoa_base + num_tx_entries + r;
+				struct nm_csb_atok *atok =
+				        ctx.atok_base + num_tx_entries + r;
+				struct nm_csb_ktoa *ktoa =
+				        ctx.ktoa_base + num_tx_entries + r;
 				struct netmap_slot *slot;
 				uint32_t head;
 				int batch;
@@ -279,8 +284,9 @@ main(int argc, char **argv)
 				/* For convenience we reuse the netmap_ring
 				 * header to store hwtail and hwcur, since the
 				 * cur, head and tail fields are not used. */
-				nm_sync_kloop_appl_read(ktoa, /*hwtail=*/&ring->tail,
-							/*hwcur=*/&ring->cur);
+				nm_sync_kloop_appl_read(ktoa,
+				                        /*hwtail=*/&ring->tail,
+				                        /*hwcur=*/&ring->cur);
 				batch = ringspace(ring, head);
 				if (batch == 0) {
 					continue;
@@ -291,14 +297,17 @@ main(int argc, char **argv)
 
 				pkts += batch;
 				while (--batch >= 0) {
-					slot        = ring->slot + head;
+					slot = ring->slot + head;
 					bytes += slot->len;
 					if (ctx.verbose) {
-						char *buf =
-							NETMAP_BUF(ring, slot->buf_idx);
+						char *buf = NETMAP_BUF(
+						        ring, slot->buf_idx);
 						int i;
-						for (i = 0; i < slot->len; i++) {
-							printf(" %02x", (unsigned char)buf[i]);
+						for (i = 0; i < slot->len;
+						     i++) {
+							printf(" %02x",
+							       (unsigned char)
+							               buf[i]);
 						}
 						printf("\n");
 					}
@@ -307,7 +316,8 @@ main(int argc, char **argv)
 				nm_sync_kloop_appl_write(atok, head, head);
 				printf("ring #%u, hwcur %u, head %u, hwtail "
 				       "%u\n",
-				       (unsigned int)r, ring->cur, head, ring->tail);
+				       (unsigned int)r, ring->cur, head,
+				       ring->tail);
 			}
 			usleep(1000000);
 		}
