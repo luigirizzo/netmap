@@ -26,7 +26,7 @@ struct context {
 	const char *func;
 	struct nm_csb_atok *atok_base;
 	struct nm_csb_ktoa *ktoa_base;
-	size_t num_entries;
+	int verbose;
 };
 
 static void *
@@ -63,6 +63,7 @@ usage(const char *progname)
 	printf("%s\n"
 	       "[-h (show this help and exit)]\n"
 	       "[-f FUNCTION (rx,tx)]\n"
+	       "[-v (be more verbose)]\n"
 	       "-i NETMAP_PORT\n",
 	       progname);
 }
@@ -70,6 +71,9 @@ usage(const char *progname)
 int
 main(int argc, char **argv)
 {
+	int num_entries, num_tx_entries;
+	unsigned long long bytes = 0;
+	unsigned long long pkts = 0;
 	const char *ifname = NULL;
 	void *csb          = NULL;
 	struct context ctx;
@@ -92,8 +96,9 @@ main(int argc, char **argv)
 
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.func = "rx";
+	ctx.verbose = 0;
 
-	while ((opt = getopt(argc, argv, "hi:f:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:f:v")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage(argv[0]);
@@ -109,6 +114,10 @@ main(int argc, char **argv)
 				printf("    Unknown function %s\n", optarg);
 				return -1;
 			}
+			break;
+
+		case 'v':
+			ctx.verbose ++;
 			break;
 
 		default:
@@ -135,12 +144,13 @@ main(int argc, char **argv)
 	{
 		size_t csb_size;
 
-		ctx.num_entries = nmd->last_tx_ring - nmd->first_tx_ring + 1 +
-		                  nmd->last_rx_ring - nmd->first_rx_ring + 1;
-		printf("Number of CSB entries = %d\n", (int)ctx.num_entries);
+		num_tx_entries = nmd->last_tx_ring - nmd->first_tx_ring + 1;
+		num_entries = num_tx_entries +
+				nmd->last_rx_ring - nmd->first_rx_ring + 1;
+		printf("Number of CSB entries = %d\n", (int)num_entries);
 		csb_size = (sizeof(struct nm_csb_atok) +
 		            sizeof(struct nm_csb_ktoa)) *
-		           ctx.num_entries;
+		           num_entries;
 		assert(csb_size > 0);
 		ret = posix_memalign(&csb, sizeof(struct nm_csb_atok),
 		                     csb_size);
@@ -152,7 +162,7 @@ main(int argc, char **argv)
 
 		ctx.atok_base = (struct nm_csb_atok *)csb;
 		ctx.ktoa_base =
-		        (struct nm_csb_ktoa *)(ctx.atok_base + ctx.num_entries);
+		        (struct nm_csb_ktoa *)(ctx.atok_base + num_entries);
 	}
 
 	/* Start the kernel worker thread. */
@@ -191,6 +201,8 @@ main(int argc, char **argv)
 				slot        = ring->slot + head;
 				slot->len   = 60;
 				slot->flags = 0;
+				bytes += slot->len;
+				pkts++;
 				{
 					char *buf =
 					        NETMAP_BUF(ring, slot->buf_idx);
@@ -199,6 +211,52 @@ main(int argc, char **argv)
 					buf[12] = 0x08;
 					buf[13] = 0x00;
 					memset(buf + 14, 'x', slot->len - 14);
+				}
+				head = nm_ring_next(ring, head);
+				nm_sync_kloop_appl_write(atok, head, head);
+				printf("ring #%u, hwcur %u, head %u, hwtail "
+				       "%u\n",
+				       (unsigned int)r, ring->cur, head, ring->tail);
+			}
+			usleep(1000000);
+		}
+
+	} else if (!strcmp(ctx.func, "rx")) {
+
+		while (!ACCESS_ONCE(stop)) {
+			uint16_t r;
+
+			for (r = nmd->first_rx_ring; r <= nmd->last_rx_ring;
+			     r++) {
+				struct netmap_ring *ring =
+				        NETMAP_RXRING(nmd->nifp, r);
+				struct nm_csb_atok *atok = ctx.atok_base + num_tx_entries + r;
+				struct nm_csb_ktoa *ktoa = ctx.ktoa_base + num_tx_entries + r;
+				struct netmap_slot *slot;
+				uint32_t head;
+
+				head = atok->head;
+				/* For convenience we reuse the netmap_ring
+				 * header to store hwtail and hwcur, since the
+				 * cur, head and tail fields are not used. */
+				nm_sync_kloop_appl_read(ktoa, /*hwtail=*/&ring->tail,
+							/*hwcur=*/&ring->cur);
+
+				if (head == ring->tail) {
+					continue;
+				}
+
+				slot        = ring->slot + head;
+				bytes += slot->len;
+				pkts++;
+				if (ctx.verbose) {
+					char *buf =
+					        NETMAP_BUF(ring, slot->buf_idx);
+					int i;
+					for (i = 0; i < slot->len; i++) {
+						printf(" %02x", (unsigned char)buf[i]);
+					}
+					printf("\n");
 				}
 				head = nm_ring_next(ring, head);
 				nm_sync_kloop_appl_write(atok, head, head);
