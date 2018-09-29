@@ -27,7 +27,7 @@ struct context {
 	struct nm_csb_atok *atok_base;
 	struct nm_csb_ktoa *ktoa_base;
 	int verbose;
-	unsigned batch;
+	int batch;
 };
 
 static void *
@@ -56,6 +56,18 @@ kloop_worker(void *opaque)
 	}
 
 	return NULL;
+}
+
+inline int
+ringspace(struct netmap_ring *ring, uint32_t head)
+{
+	int space = ring->tail - head;
+
+	if (space < 0) {
+		space += ring->num_slots;
+	}
+
+	return space;
 }
 
 static void
@@ -207,6 +219,7 @@ main(int argc, char **argv)
 				struct nm_csb_ktoa *ktoa = ctx.ktoa_base + r;
 				struct netmap_slot *slot;
 				uint32_t head;
+				int batch;
 
 				head = atok->head;
 				/* For convenience we reuse the netmap_ring
@@ -214,26 +227,31 @@ main(int argc, char **argv)
 				 * cur, head and tail fields are not used. */
 				nm_sync_kloop_appl_read(ktoa, /*hwtail=*/&ring->tail,
 							/*hwcur=*/&ring->cur);
-
-				if (head == ring->tail) {
+				batch = ringspace(ring, head);
+				if (batch == 0) {
 					continue;
 				}
-
-				slot        = ring->slot + head;
-				slot->len   = 60;
-				slot->flags = 0;
-				bytes += slot->len;
-				pkts++;
-				{
-					char *buf =
-					        NETMAP_BUF(ring, slot->buf_idx);
-					memset(buf, 0xFF, 6);
-					memset(buf + 6, 0, 6);
-					buf[12] = 0x08;
-					buf[13] = 0x00;
-					memset(buf + 14, 'x', slot->len - 14);
+				if (batch > ctx.batch) {
+					batch = ctx.batch;
 				}
-				head = nm_ring_next(ring, head);
+
+				pkts += batch;
+				while (--batch >= 0) {
+					slot        = ring->slot + head;
+					slot->len   = 60;
+					slot->flags = 0;
+					bytes += slot->len;
+					{
+						char *buf =
+							NETMAP_BUF(ring, slot->buf_idx);
+						memset(buf, 0xFF, 6);
+						memset(buf + 6, 0, 6);
+						buf[12] = 0x08;
+						buf[13] = 0x00;
+						memset(buf + 14, 'x', slot->len - 14);
+					}
+					head = nm_ring_next(ring, head);
+				}
 				nm_sync_kloop_appl_write(atok, head, head);
 				printf("ring #%u, hwcur %u, head %u, hwtail "
 				       "%u\n",
@@ -255,6 +273,7 @@ main(int argc, char **argv)
 				struct nm_csb_ktoa *ktoa = ctx.ktoa_base + num_tx_entries + r;
 				struct netmap_slot *slot;
 				uint32_t head;
+				int batch;
 
 				head = atok->head;
 				/* For convenience we reuse the netmap_ring
@@ -262,24 +281,29 @@ main(int argc, char **argv)
 				 * cur, head and tail fields are not used. */
 				nm_sync_kloop_appl_read(ktoa, /*hwtail=*/&ring->tail,
 							/*hwcur=*/&ring->cur);
-
-				if (head == ring->tail) {
+				batch = ringspace(ring, head);
+				if (batch == 0) {
 					continue;
 				}
-
-				slot        = ring->slot + head;
-				bytes += slot->len;
-				pkts++;
-				if (ctx.verbose) {
-					char *buf =
-					        NETMAP_BUF(ring, slot->buf_idx);
-					int i;
-					for (i = 0; i < slot->len; i++) {
-						printf(" %02x", (unsigned char)buf[i]);
-					}
-					printf("\n");
+				if (batch > ctx.batch) {
+					batch = ctx.batch;
 				}
-				head = nm_ring_next(ring, head);
+
+				pkts += batch;
+				while (--batch >= 0) {
+					slot        = ring->slot + head;
+					bytes += slot->len;
+					if (ctx.verbose) {
+						char *buf =
+							NETMAP_BUF(ring, slot->buf_idx);
+						int i;
+						for (i = 0; i < slot->len; i++) {
+							printf(" %02x", (unsigned char)buf[i]);
+						}
+						printf("\n");
+					}
+					head = nm_ring_next(ring, head);
+				}
 				nm_sync_kloop_appl_write(atok, head, head);
 				printf("ring #%u, hwcur %u, head %u, hwtail "
 				       "%u\n",
