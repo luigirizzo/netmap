@@ -9,6 +9,8 @@
 #include <string.h>
 #include <assert.h>
 #include <signal.h>
+#include <math.h>
+#include <sys/time.h>
 
 #define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
 
@@ -100,7 +102,13 @@ main(int argc, char **argv)
 	uint16_t first_ring, last_ring;
 	struct context ctx;
 	struct nm_desc *nmd;
-	double rate = 1.0 /* pps */;
+
+	double rate                = 1.0 /* pps */;
+	unsigned int period_us     = 0;
+	unsigned int period_budget = 0;
+	struct timeval next_time;
+	int packet_budget;
+
 	function_t func;
 	pthread_t th;
 	int opt;
@@ -217,6 +225,20 @@ main(int argc, char **argv)
 		return -1;
 	}
 
+	/* Compute variables for rate limiting. */
+	if (rate != 0.0) {
+		double us = 1000000.0 / rate;
+		double b  = 1.0;
+		if (us < 50.0) {
+			b = ceil(50.0 / us);
+			us *= b;
+		}
+		period_us     = (unsigned int)us;
+		period_budget = (unsigned int)b;
+	}
+#if 0
+	printf("period us %u batch %u\n", period_us, period_budget);
+#endif
 	if (func == F_RX) {
 		atok_base += num_tx_entries;
 		ktoa_base += num_tx_entries;
@@ -227,9 +249,28 @@ main(int argc, char **argv)
 		last_ring  = nmd->last_tx_ring;
 	}
 
+	gettimeofday(&next_time, NULL);
+	packet_budget = 0;
+
 	/* Run the application loop. */
 	while (!ACCESS_ONCE(stop)) {
 		uint16_t r;
+
+		if (period_us != 0) {
+			struct timeval now, diff;
+
+			next_time.tv_usec += period_us;
+			if (next_time.tv_usec > 1000000) {
+				next_time.tv_usec -= 1000000;
+				next_time.tv_sec++;
+			}
+			packet_budget = period_budget;
+			gettimeofday(&now, NULL);
+			timersub(&next_time, &now, &diff);
+			usleep(diff.tv_usec);
+		} else {
+			packet_budget = 0xfffffff; /* infinite */
+		}
 
 		for (r = first_ring; r <= last_ring; r++) {
 			struct nm_csb_atok *atok = atok_base + r;
@@ -253,6 +294,9 @@ main(int argc, char **argv)
 			                        /*hwtail=*/&ring->tail,
 			                        /*hwcur=*/&ring->cur);
 			batch = ringspace(ring, head);
+			if (batch > packet_budget) { /* rate limiting */
+				batch = packet_budget;
+			}
 			if (batch == 0) {
 				continue;
 			}
@@ -261,6 +305,7 @@ main(int argc, char **argv)
 			}
 
 			pkts += batch;
+			packet_budget -= batch;
 			while (--batch >= 0) {
 				slot = ring->slot + head;
 				if (func == F_TX) {
@@ -298,7 +343,6 @@ main(int argc, char **argv)
 			       "%u\n",
 			       (unsigned int)r, ring->cur, head, ring->tail);
 		}
-		usleep(1000000);
 	}
 
 	/* Stop the kernel worker thread. */
