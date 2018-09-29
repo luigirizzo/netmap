@@ -23,7 +23,6 @@ sigint_handler(int signum)
 
 struct context {
 	struct nm_desc *nmd;
-	const char *func;
 	struct nm_csb_atok *atok_base;
 	struct nm_csb_ktoa *ktoa_base;
 	int verbose;
@@ -83,21 +82,31 @@ usage(const char *progname)
 	       progname);
 }
 
+typedef enum {
+	F_TX = 0,
+	F_RX,
+} function_t;
+
 int
 main(int argc, char **argv)
 {
+	struct nm_csb_atok *atok_base = NULL;
+	struct nm_csb_ktoa *ktoa_base = NULL;
 	int num_entries, num_tx_entries;
 	unsigned long long bytes = 0;
 	unsigned long long pkts  = 0;
 	const char *ifname       = NULL;
 	void *csb                = NULL;
+	uint16_t first_ring, last_ring;
 	struct context ctx;
 	struct nm_desc *nmd;
 	double rate = 1.0 /* pps */;
+	function_t func;
 	pthread_t th;
 	int opt;
 	int ret;
 
+	/* Register a signal handler to stop the program on SIGINT. */
 	{
 		struct sigaction sa;
 
@@ -111,7 +120,7 @@ main(int argc, char **argv)
 	}
 
 	memset(&ctx, 0, sizeof(ctx));
-	ctx.func    = "rx";
+	func        = F_RX;
 	ctx.verbose = 0;
 	ctx.batch   = 1;
 
@@ -126,10 +135,12 @@ main(int argc, char **argv)
 			break;
 
 		case 'f':
-			ctx.func = optarg;
-			if (strcmp(optarg, "tx") && strcmp(optarg, "rx")) {
+			if (!strcmp(optarg, "tx")) {
+				func = F_TX;
+			} else if (!strcmp(optarg, "rx")) {
+				func = F_RX;
+			} else {
 				printf("    Unknown function %s\n", optarg);
-				return -1;
 			}
 			break;
 
@@ -193,8 +204,8 @@ main(int argc, char **argv)
 		}
 		memset(csb, 0, csb_size);
 
-		ctx.atok_base = (struct nm_csb_atok *)csb;
-		ctx.ktoa_base =
+		atok_base = ctx.atok_base = (struct nm_csb_atok *)csb;
+		ktoa_base                 = ctx.ktoa_base =
 		        (struct nm_csb_ktoa *)(ctx.atok_base + num_entries);
 	}
 
@@ -206,42 +217,55 @@ main(int argc, char **argv)
 		return -1;
 	}
 
+	if (func == F_RX) {
+		atok_base += num_tx_entries;
+		ktoa_base += num_tx_entries;
+		first_ring = nmd->first_rx_ring;
+		last_ring  = nmd->last_rx_ring;
+	} else {
+		first_ring = nmd->first_tx_ring;
+		last_ring  = nmd->last_tx_ring;
+	}
+
 	/* Run the application loop. */
-	if (!strcmp(ctx.func, "tx")) {
-		while (!ACCESS_ONCE(stop)) {
-			uint16_t r;
+	while (!ACCESS_ONCE(stop)) {
+		uint16_t r;
 
-			for (r = nmd->first_tx_ring; r <= nmd->last_tx_ring;
-			     r++) {
-				struct netmap_ring *ring =
-				        NETMAP_TXRING(nmd->nifp, r);
-				struct nm_csb_atok *atok = ctx.atok_base + r;
-				struct nm_csb_ktoa *ktoa = ctx.ktoa_base + r;
-				struct netmap_slot *slot;
-				uint32_t head;
-				int batch;
+		for (r = first_ring; r <= last_ring; r++) {
+			struct nm_csb_atok *atok = atok_base + r;
+			struct nm_csb_ktoa *ktoa = ktoa_base + r;
+			struct netmap_ring *ring;
+			struct netmap_slot *slot;
+			uint32_t head;
+			int batch;
 
-				head = atok->head;
-				/* For convenience we reuse the netmap_ring
-				 * header to store hwtail and hwcur, since the
-				 * cur, head and tail fields are not used. */
-				nm_sync_kloop_appl_read(ktoa,
-				                        /*hwtail=*/&ring->tail,
-				                        /*hwcur=*/&ring->cur);
-				batch = ringspace(ring, head);
-				if (batch == 0) {
-					continue;
-				}
-				if (batch > ctx.batch) {
-					batch = ctx.batch;
-				}
+			if (func == F_TX) {
+				ring = NETMAP_TXRING(nmd->nifp, r);
+			} else {
+				ring = NETMAP_RXRING(nmd->nifp, r);
+			}
 
-				pkts += batch;
-				while (--batch >= 0) {
-					slot        = ring->slot + head;
+			head = atok->head;
+			/* For convenience we reuse the netmap_ring
+			 * header to store hwtail and hwcur, since the
+			 * cur, head and tail fields are not used. */
+			nm_sync_kloop_appl_read(ktoa,
+			                        /*hwtail=*/&ring->tail,
+			                        /*hwcur=*/&ring->cur);
+			batch = ringspace(ring, head);
+			if (batch == 0) {
+				continue;
+			}
+			if (batch > ctx.batch) {
+				batch = ctx.batch;
+			}
+
+			pkts += batch;
+			while (--batch >= 0) {
+				slot = ring->slot + head;
+				if (func == F_TX) {
 					slot->len   = 60;
 					slot->flags = 0;
-					bytes += slot->len;
 					{
 						char *buf = NETMAP_BUF(
 						        ring, slot->buf_idx);
@@ -252,53 +276,7 @@ main(int argc, char **argv)
 						memset(buf + 14, 'x',
 						       slot->len - 14);
 					}
-					head = nm_ring_next(ring, head);
-				}
-				nm_sync_kloop_appl_write(atok, head, head);
-				printf("ring #%u, hwcur %u, head %u, hwtail "
-				       "%u\n",
-				       (unsigned int)r, ring->cur, head,
-				       ring->tail);
-			}
-			usleep(1000000);
-		}
-
-	} else if (!strcmp(ctx.func, "rx")) {
-
-		while (!ACCESS_ONCE(stop)) {
-			uint16_t r;
-
-			for (r = nmd->first_rx_ring; r <= nmd->last_rx_ring;
-			     r++) {
-				struct netmap_ring *ring =
-				        NETMAP_RXRING(nmd->nifp, r);
-				struct nm_csb_atok *atok =
-				        ctx.atok_base + num_tx_entries + r;
-				struct nm_csb_ktoa *ktoa =
-				        ctx.ktoa_base + num_tx_entries + r;
-				struct netmap_slot *slot;
-				uint32_t head;
-				int batch;
-
-				head = atok->head;
-				/* For convenience we reuse the netmap_ring
-				 * header to store hwtail and hwcur, since the
-				 * cur, head and tail fields are not used. */
-				nm_sync_kloop_appl_read(ktoa,
-				                        /*hwtail=*/&ring->tail,
-				                        /*hwcur=*/&ring->cur);
-				batch = ringspace(ring, head);
-				if (batch == 0) {
-					continue;
-				}
-				if (batch > ctx.batch) {
-					batch = ctx.batch;
-				}
-
-				pkts += batch;
-				while (--batch >= 0) {
-					slot = ring->slot + head;
-					bytes += slot->len;
+				} else {
 					if (ctx.verbose) {
 						char *buf = NETMAP_BUF(
 						        ring, slot->buf_idx);
@@ -311,16 +289,16 @@ main(int argc, char **argv)
 						}
 						printf("\n");
 					}
-					head = nm_ring_next(ring, head);
 				}
-				nm_sync_kloop_appl_write(atok, head, head);
-				printf("ring #%u, hwcur %u, head %u, hwtail "
-				       "%u\n",
-				       (unsigned int)r, ring->cur, head,
-				       ring->tail);
+				bytes += slot->len;
+				head = nm_ring_next(ring, head);
 			}
-			usleep(1000000);
+			nm_sync_kloop_appl_write(atok, head, head);
+			printf("ring #%u, hwcur %u, head %u, hwtail "
+			       "%u\n",
+			       (unsigned int)r, ring->cur, head, ring->tail);
 		}
+		usleep(1000000);
 	}
 
 	/* Stop the kernel worker thread. */
