@@ -27,6 +27,7 @@ struct context {
 	struct nm_csb_atok *atok_base;
 	struct nm_csb_ktoa *ktoa_base;
 	int verbose;
+	unsigned batch;
 };
 
 static void *
@@ -64,6 +65,8 @@ usage(const char *progname)
 	       "[-h (show this help and exit)]\n"
 	       "[-f FUNCTION (rx,tx)]\n"
 	       "[-v (be more verbose)]\n"
+	       "[-R RATE_PPS (0 = infinite)]\n"
+	       "[-b BATCH_SIZE (in packets)]\n"
 	       "-i NETMAP_PORT\n",
 	       progname);
 }
@@ -78,6 +81,7 @@ main(int argc, char **argv)
 	void *csb          = NULL;
 	struct context ctx;
 	struct nm_desc *nmd;
+	double rate = 1.0 /* pps */;
 	pthread_t th;
 	int opt;
 	int ret;
@@ -97,8 +101,9 @@ main(int argc, char **argv)
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.func = "rx";
 	ctx.verbose = 0;
+	ctx.batch = 1;
 
-	while ((opt = getopt(argc, argv, "hi:f:v")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:f:vR:b:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage(argv[0]);
@@ -118,6 +123,22 @@ main(int argc, char **argv)
 
 		case 'v':
 			ctx.verbose ++;
+			break;
+
+		case 'R':
+			rate = atof(optarg);
+			if (rate < 0.0) {
+				printf("    Invalid rate %s\n", optarg);
+				return -1;
+			}
+			break;
+
+		case 'b':
+			ctx.batch = atoi(optarg);
+			if (ctx.batch <= 0) {
+				printf("    Invalid batch %s\n", optarg);
+				return -1;
+			}
 			break;
 
 		default:
