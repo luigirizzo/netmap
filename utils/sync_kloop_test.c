@@ -230,12 +230,14 @@ main(int argc, char **argv)
 	if (rate != 0.0) {
 		double us = 1000000.0 / rate;
 		double b  = 1.0;
-		if (us < 50.0) {
-			b = ceil(50.0 / us);
+#define MIN_USLEEP 50.0
+		if (us < MIN_USLEEP) {
+			b = ceil(MIN_USLEEP / us);
 			us *= b;
 		}
 		period_us     = (unsigned int)us;
 		period_budget = (unsigned int)b;
+#undef MIN_USLEEP
 	}
 #if 0
 	printf("period us %u batch %u\n", period_us, period_budget);
@@ -257,7 +259,9 @@ main(int argc, char **argv)
 	while (!ACCESS_ONCE(stop)) {
 		uint16_t r;
 
-		if (period_us != 0) {
+		if (period_us == 0) {
+			packet_budget = 0xfffffff; /* infinite */
+		} else {
 			struct timeval now, diff;
 
 			next_time.tv_usec += period_us;
@@ -266,15 +270,25 @@ main(int argc, char **argv)
 				next_time.tv_sec++;
 			}
 			packet_budget = period_budget;
-			gettimeofday(&now, NULL);
-			/* if now < next_time ... */
-			if (timercmp(&now, &next_time, <)) {
-				/* diff = next_time - now */
-				timersub(&next_time, &now, &diff);
-				usleep(diff.tv_usec);
+			if (period_budget > 1) {
+				/* Busy wait. */
+				for (;;) {
+					gettimeofday(&now, NULL);
+					/* if now >= next_time */
+					if (!timercmp(&now, &next_time, <)) {
+						break;
+					}
+				}
+			} else {
+				/* Sleep. */
+				gettimeofday(&now, NULL);
+				/* if now < next_time ... */
+				if (timercmp(&now, &next_time, <)) {
+					/* diff = next_time - now */
+					timersub(&next_time, &now, &diff);
+					usleep(diff.tv_usec);
+				}
 			}
-		} else {
-			packet_budget = 0xfffffff; /* infinite */
 		}
 
 		for (r = first_ring; r <= last_ring; r++) {
