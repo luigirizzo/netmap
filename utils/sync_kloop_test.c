@@ -109,6 +109,7 @@ main(int argc, char **argv)
 	struct timeval next_time;
 	int packet_budget;
 
+	int init_tx_payload = 1;
 	function_t func;
 	pthread_t th;
 	int opt;
@@ -309,9 +310,9 @@ main(int argc, char **argv)
 			while (--batch >= 0) {
 				slot = ring->slot + head;
 				if (func == F_TX) {
-					slot->len   = 60;
-					slot->flags = 0;
-					{
+					slot->len = 60;
+					if ((slot->flags & NS_BUF_CHANGED) ||
+					    init_tx_payload) {
 						char *buf = NETMAP_BUF(
 						        ring, slot->buf_idx);
 						memset(buf, 0xFF, 6);
@@ -320,7 +321,17 @@ main(int argc, char **argv)
 						buf[13] = 0x00;
 						memset(buf + 14, 'x',
 						       slot->len - 14);
+						/* Drop the copy once we are
+						 * confident that we have filled
+						 * all the buffers in the TX
+						 * ring. */
+						if (pkts > 20000) {
+							printf("Stop to init "
+							       "packets\n");
+							init_tx_payload = 0;
+						}
 					}
+					slot->flags = 0;
 				} else {
 					if (ctx.verbose) {
 						char *buf = NETMAP_BUF(
@@ -339,9 +350,12 @@ main(int argc, char **argv)
 				head = nm_ring_next(ring, head);
 			}
 			nm_sync_kloop_appl_write(atok, head, head);
-			printf("ring #%u, hwcur %u, head %u, hwtail "
-			       "%u\n",
-			       (unsigned int)r, ring->cur, head, ring->tail);
+			if (ctx.verbose) {
+				printf("ring #%u, hwcur %u, head %u, hwtail "
+				       "%u\n",
+				       (unsigned int)r, ring->cur, head,
+				       ring->tail);
+			}
 		}
 	}
 
