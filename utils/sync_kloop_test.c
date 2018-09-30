@@ -133,9 +133,9 @@ main(int argc, char **argv)
 	}
 
 	memset(&ctx, 0, sizeof(ctx));
-	func        = F_RX;
-	ctx.verbose = 0;
-	ctx.batch   = 1;
+	func         = F_RX;
+	ctx.verbose  = 0;
+	ctx.batch    = 1;
 	ctx.sleep_us = 500;
 
 	while ((opt = getopt(argc, argv, "hi:f:vR:b:u:")) != -1) {
@@ -199,11 +199,17 @@ main(int argc, char **argv)
 		return -1;
 	}
 
-	/* Open the netmap port. */
-	ctx.nmd = nmd = nm_open(ifname, NULL, 0, NULL);
-	if (!nmd) {
-		printf("nm_open(%s) failed\n", ifname);
-		return -1;
+	{
+		/* Open the netmap port with NR_EXCLUSIVE. */
+		struct nmreq nmr;
+
+		memset(&nmr, 0, sizeof(nmr));
+		nmr.nr_flags = NR_EXCLUSIVE;
+		ctx.nmd = nmd = nm_open(ifname, &nmr, 0, NULL);
+		if (!nmd) {
+			printf("nm_open(%s) failed\n", ifname);
+			return -1;
+		}
 	}
 
 	/* Allocate CSB entries. */
