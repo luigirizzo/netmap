@@ -4225,11 +4225,17 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 int
 netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req)
 {
+	uint32_t sleep_us = req->sleep_us;
 	struct nm_csb_atok* csb_atok_base;
 	struct nm_csb_ktoa* csb_ktoa_base;
 	int num_rx_rings, num_tx_rings;
 	struct netmap_adapter *na;
 	int err = 0;
+
+	if (sleep_us > 1000000) {
+		/* We do not accept sleeping for more than a second. */
+		return EINVAL;
+	}
 
 	if (priv->np_nifp == NULL) {
 		return ENXIO;
@@ -4337,9 +4343,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 			nm_kr_put(kring);
 		}
 
-		/* TODO replace with proper notifications and/or configurable
-		 * sleep interval. */
-		usleep_range(2000, 2000);
+		/* Default synchronization method: sleep for a while. */
+		usleep_range(sleep_us, sleep_us);
 
 		if (unlikely(NM_ACCESS_ONCE(priv->np_kloop_state) & NM_SYNC_KLOOP_STOPPING)) {
 			break;

@@ -847,6 +847,7 @@ sync_kloop_worker(void *opaque)
 	req.csb_atok = (uintptr_t)csb;
 	req.csb_ktoa =
 	        (uintptr_t)(csb + sizeof(struct nm_csb_atok) * num_entries);
+	req.sleep_us = 500;
 	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
