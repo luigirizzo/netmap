@@ -714,6 +714,10 @@ struct nmreq_sync_kloop_start {
 	uint64_t csb_atok;
 	/* CSB for kernel --> application communication (N entries). */
 	uint64_t csb_ktoa;
+	/* Sleeping is the default synchronization method for the kloop.
+	 * The 'sleep_us' field specifies how many microsconds to sleep
+	 * waiting for more work to come. */
+	uint32_t sleep_us;
 };
 
 struct nm_csb_atok {
