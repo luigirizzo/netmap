@@ -103,11 +103,12 @@ main(int argc, char **argv)
 	struct context ctx;
 	struct nm_desc *nmd;
 
-	double rate                = 1.0 /* pps */;
+	double target_rate         = 1.0 /* pps */;
 	unsigned int period_us     = 0;
 	unsigned int period_budget = 0;
 	struct timeval next_time;
 	int packet_budget;
+	struct timeval loop_begin, loop_end;
 
 	int init_tx_payload = 1;
 	function_t func;
@@ -158,8 +159,8 @@ main(int argc, char **argv)
 			break;
 
 		case 'R':
-			rate = atof(optarg);
-			if (rate < 0.0) {
+			target_rate = atof(optarg);
+			if (target_rate < 0.0) {
 				printf("    Invalid rate %s\n", optarg);
 				return -1;
 			}
@@ -227,8 +228,8 @@ main(int argc, char **argv)
 	}
 
 	/* Compute variables for rate limiting. */
-	if (rate != 0.0) {
-		double us = 1000000.0 / rate;
+	if (target_rate != 0.0) {
+		double us = 1000000.0 / target_rate;
 		double b  = 1.0;
 #define MIN_USLEEP 50.0
 		if (us < MIN_USLEEP) {
@@ -253,6 +254,7 @@ main(int argc, char **argv)
 	}
 
 	gettimeofday(&next_time, NULL);
+	loop_begin    = next_time;
 	packet_budget = 0;
 
 	/* Run the application loop. */
@@ -375,6 +377,19 @@ main(int argc, char **argv)
 				       ring->tail);
 			}
 		}
+	}
+
+	/* Measure average rate. */
+	gettimeofday(&loop_end, NULL);
+	{
+		struct timeval duration;
+		unsigned long udiff;
+		double measured_rate;
+
+		timersub(&loop_end, &loop_begin, &duration);
+		udiff         = duration.tv_sec * 1000000 + duration.tv_usec;
+		measured_rate = (double)pkts / (double)udiff;
+		printf("Measured rate: %.6f Mpps\n", measured_rate);
 	}
 
 	/* Stop the kernel worker thread. */
