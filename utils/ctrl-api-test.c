@@ -828,7 +828,7 @@ sync_kloop_worker(void *opaque)
 	int ret;
 
 	csb_size = (sizeof(struct nm_csb_atok) + sizeof(struct nm_csb_ktoa)) *
-	             num_entries;
+	           num_entries;
 	assert(csb_size > 0);
 	ret = posix_memalign(&csb, sizeof(struct nm_csb_atok), csb_size);
 	if (ret) {
@@ -837,7 +837,7 @@ sync_kloop_worker(void *opaque)
 	}
 
 	printf("Testing NETMAP_REQ_SYNC_KLOOP_START(csb_size=%u) on '%s'\n",
-		(unsigned)csb_size, ctx->ifname);
+	       (unsigned)csb_size, ctx->ifname);
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_START;
@@ -848,7 +848,7 @@ sync_kloop_worker(void *opaque)
 	req.csb_ktoa =
 	        (uintptr_t)(csb + sizeof(struct nm_csb_atok) * num_entries);
 	req.sleep_us = 500;
-	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
+	ret          = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
 	}
@@ -860,10 +860,12 @@ sync_kloop_worker(void *opaque)
 static int
 sync_kloop(struct TestContext *ctx)
 {
-	int ret = port_register_hwall(ctx);
+	int ret;
 	pthread_t th;
 	int thret;
 
+	ctx->nr_flags = NR_EXCLUSIVE;
+	ret           = port_register_hwall(ctx);
 	if (ret) {
 		return ret;
 	}
@@ -890,10 +892,12 @@ sync_kloop(struct TestContext *ctx)
 static int
 sync_kloop_conflict(struct TestContext *ctx)
 {
-	int ret = port_register_hwall(ctx);
+	int ret;
 	pthread_t th1, th2;
 	int thret1, thret2;
 
+	ctx->nr_flags = NR_EXCLUSIVE;
+	ret           = port_register_hwall(ctx);
 	if (ret) {
 		return ret;
 	}
@@ -910,8 +914,8 @@ sync_kloop_conflict(struct TestContext *ctx)
 		return -1;
 	}
 
-	/* Try to avoid a race condition where th1 starts the loop and stops, and
-	 * after that th2 starts the loop successfully. */
+	/* Try to avoid a race condition where th1 starts the loop and stops,
+	 * and after that th2 starts the loop successfully. */
 	usleep(500000);
 
 	ret = sync_kloop_stop(ctx);
@@ -930,16 +934,20 @@ sync_kloop_conflict(struct TestContext *ctx)
 	}
 
 	/* Check that one of the two failed, while the other one succeeded. */
-	return ((thret1 == 0 && thret2 != 0) ||
-		(thret1 != 0 && thret2 == 0)) ? 0 : -1;
+	return ((thret1 == 0 && thret2 != 0) || (thret1 != 0 && thret2 == 0))
+	               ? 0
+	               : -1;
 }
 
 static int
 sync_kloop_invalid_csb(struct TestContext *ctx)
 {
-	int ret = port_register_hwall(ctx);
+	int ret;
 	struct nmreq_sync_kloop_start req;
 	struct nmreq_header hdr;
+
+	ctx->nr_flags = NR_EXCLUSIVE;
+	ret           = port_register_hwall(ctx);
 
 	/* Post a stop request first. */
 	ret = sync_kloop_stop(ctx);
@@ -953,7 +961,7 @@ sync_kloop_invalid_csb(struct TestContext *ctx)
 	memset(&req, 0, sizeof(req));
 	req.csb_atok = (uintptr_t)0x10;
 	req.csb_ktoa = (uintptr_t)0x800;
-	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
+	ret          = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
 	}
@@ -1076,7 +1084,7 @@ main(int argc, char **argv)
 		}
 		memcpy(&ctxcopy, &ctx, sizeof(ctxcopy));
 		ctxcopy.fd = fd;
-		ret = tests[i].test(&ctxcopy);
+		ret        = tests[i].test(&ctxcopy);
 		if (ret) {
 			printf("Test #%d failed\n", i + 1);
 			goto out;

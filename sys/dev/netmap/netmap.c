@@ -4247,6 +4247,11 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		return ENXIO;
 	}
 
+	if (!(priv->np_flags & NR_EXCLUSIVE)) {
+		nm_prerr("sync-kloop on %s requires NR_EXCLUSIVE\n", na->name);
+		return EINVAL;
+	}
+
 	/* Make sure that no kloop is currently running. */
 	NMG_LOCK();
 	if (priv->np_kloop_state & NM_SYNC_KLOOP_RUNNING) {
