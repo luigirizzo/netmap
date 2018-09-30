@@ -267,8 +267,12 @@ main(int argc, char **argv)
 			}
 			packet_budget = period_budget;
 			gettimeofday(&now, NULL);
-			timersub(&next_time, &now, &diff);
-			usleep(diff.tv_usec);
+			/* if now < next_time ... */
+			if (timercmp(&now, &next_time, <)) {
+				/* diff = next_time - now */
+				timersub(&next_time, &now, &diff);
+				usleep(diff.tv_usec);
+			}
 		} else {
 			packet_budget = 0xfffffff; /* infinite */
 		}
