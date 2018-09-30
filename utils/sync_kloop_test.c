@@ -27,6 +27,7 @@ struct context {
 	struct nm_desc *nmd;
 	struct nm_csb_atok *atok_base;
 	struct nm_csb_ktoa *ktoa_base;
+	int sleep_us;
 	int verbose;
 	int batch;
 };
@@ -50,6 +51,7 @@ kloop_worker(void *opaque)
 	memset(&req, 0, sizeof(req));
 	req.csb_atok = (uintptr_t)ctx->atok_base;
 	req.csb_ktoa = (uintptr_t)ctx->ktoa_base;
+	req.sleep_us = (uint32_t)ctx->sleep_us;
 	ret          = ioctl(nmd->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
@@ -80,6 +82,7 @@ usage(const char *progname)
 	       "[-v (be more verbose)]\n"
 	       "[-R RATE_PPS (0 = infinite)]\n"
 	       "[-b BATCH_SIZE (in packets)]\n"
+	       "[-u KLOOP_SLEEP_US (in microseconds)]\n"
 	       "-i NETMAP_PORT\n",
 	       progname);
 }
@@ -133,8 +136,9 @@ main(int argc, char **argv)
 	func        = F_RX;
 	ctx.verbose = 0;
 	ctx.batch   = 1;
+	ctx.sleep_us = 500;
 
-	while ((opt = getopt(argc, argv, "hi:f:vR:b:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:f:vR:b:u:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage(argv[0]);
@@ -170,6 +174,14 @@ main(int argc, char **argv)
 			ctx.batch = atoi(optarg);
 			if (ctx.batch <= 0) {
 				printf("    Invalid batch %s\n", optarg);
+				return -1;
+			}
+			break;
+
+		case 'u':
+			ctx.sleep_us = atoi(optarg);
+			if (ctx.sleep_us < 0) {
+				printf("    Invalid sleep_us %s\n", optarg);
 				return -1;
 			}
 			break;
