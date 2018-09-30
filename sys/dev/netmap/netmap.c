@@ -1859,7 +1859,7 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
 			return EINVAL;
 		}
 	}
-	priv->np_flags = nr_flags | nr_mode; // TODO
+	priv->np_flags = nr_flags;
 
 	/* Allow transparent forwarding mode in the host --> nic
 	 * direction only if all the TX hw rings have been opened. */
