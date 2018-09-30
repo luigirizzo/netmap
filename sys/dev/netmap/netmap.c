@@ -3012,7 +3012,8 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	struct netmap_adapter *na;
 	struct netmap_kring *kring;
 	struct netmap_ring *ring;
-	u_int i, check_all_tx, check_all_rx, want[NR_TXRX], revents = 0;
+	u_int i, want[NR_TXRX], revents = 0;
+	NM_SELINFO_T *si[NR_TXRX];
 #define want_tx want[NR_TX]
 #define want_rx want[NR_RX]
 	struct mbq q;	/* packets from RX hw queues to host stack */
@@ -3052,10 +3053,10 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	want_rx = events & (POLLIN | POLLRDNORM);
 
 	/*
-	 * check_all_{tx|rx} are set if the card has more than one queue AND
-	 * the file descriptor is bound to all of them. If so, we sleep on
-	 * the "global" selinfo, otherwise we sleep on individual selinfo
-	 * (FreeBSD only allows two selinfo's per file descriptor).
+	 * If the card has more than one queue AND the file descriptor is
+	 * bound to all of them, we sleep on the "global" selinfo, otherwise
+	 * we sleep on individual selinfo (FreeBSD only allows two selinfo's
+	 * per file descriptor).
 	 * The interrupt routine in the driver wake one or the other
 	 * (or both) depending on which clients are active.
 	 *
@@ -3064,8 +3065,10 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	 * there are pending packets to send. The latter can be disabled
 	 * passing NETMAP_NO_TX_POLL in the NIOCREG call.
 	 */
-	check_all_tx = nm_si_user(priv, NR_TX);
-	check_all_rx = nm_si_user(priv, NR_RX);
+	si[NR_RX] = nm_si_user(priv, NR_RX) ? &na->si[NR_RX] :
+				&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
+	si[NR_TX] = nm_si_user(priv, NR_TX) ? &na->si[NR_TX] :
+				&na->tx_rings[priv->np_qfirst[NR_TX]]->si;
 
 #ifdef __FreeBSD__
 	/*
@@ -3102,10 +3105,8 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 
 #ifdef linux
 	/* The selrecord must be unconditional on linux. */
-	nm_os_selrecord(sr, check_all_tx ?
-	    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]]->si);
-	nm_os_selrecord(sr, check_all_rx ?
-		&na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]]->si);
+	nm_os_selrecord(sr, si[NR_RX]);
+	nm_os_selrecord(sr, si[NR_TX]);
 #endif /* linux */
 
 	/*
@@ -3170,8 +3171,7 @@ flush_tx:
 		send_down = 0;
 		if (want_tx && retry_tx && sr) {
 #ifndef linux
-			nm_os_selrecord(sr, check_all_tx ?
-			    &na->si[NR_TX] : &na->tx_rings[priv->np_qfirst[NR_TX]]->si);
+			nm_os_selrecord(sr, si[NR_TX]);
 #endif /* !linux */
 			retry_tx = 0;
 			goto flush_tx;
@@ -3231,8 +3231,7 @@ do_retry_rx:
 
 #ifndef linux
 		if (retry_rx && sr) {
-			nm_os_selrecord(sr, check_all_rx ?
-			    &na->si[NR_RX] : &na->rx_rings[priv->np_qfirst[NR_RX]]->si);
+			nm_os_selrecord(sr, si[NR_RX]);
 		}
 #endif /* !linux */
 		if (send_down || retry_rx) {
