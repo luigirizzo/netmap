@@ -1865,7 +1865,7 @@ nm_os_kctx_create(struct nm_kctx_cfg *cfg, void *opaque)
 	int error;
 
 	if (!cfg->use_kthread && cfg->notify_fn == NULL) {
-		D("Error: botify function missing with use_htead == 0");
+		D("Error: notify function missing with use_kthread == 0");
 		return NULL;
 	}
 
