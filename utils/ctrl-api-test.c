@@ -530,6 +530,7 @@ vale_polling_enable_disable(struct TestContext *ctx)
 {
 	int ret = 0;
 
+
 	if ((ret = vale_attach(ctx))) {
 		return ret;
 	}
@@ -539,6 +540,12 @@ vale_polling_enable_disable(struct TestContext *ctx)
 	ctx->nr_first_cpu_id     = 0;
 	if ((ret = vale_polling_enable(ctx))) {
 		vale_detach(ctx);
+#ifdef __FreeBSD__
+		/* NETMAP_REQ_VALE_POLLING_DISABLE is disabled on FreeBSD,
+		 * because it is currently broken. We are happy to see that
+		 * it fails. */
+		return 0;
+#endif
 		return ret;
 	}
 
