@@ -3875,7 +3875,7 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	struct ifnet *ifp = na->ifp;
 
 	/* We undo the setup for intercepting packets only if we are the
-	 * last user of this adapapter. */
+	 * last user of this adapter. */
 	if (na->active_fds > 0) {
 		return;
 	}
