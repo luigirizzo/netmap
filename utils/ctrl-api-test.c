@@ -530,7 +530,6 @@ vale_polling_enable_disable(struct TestContext *ctx)
 {
 	int ret = 0;
 
-
 	if ((ret = vale_attach(ctx))) {
 		return ret;
 	}
