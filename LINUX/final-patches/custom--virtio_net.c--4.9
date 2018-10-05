@@ -1,0 +1,237 @@
+diff --git a/virtio_net.c/Makefile b/virtio_net.c/Makefile
+new file mode 100644
+index 0000000..189f5cb
+--- /dev/null
++++ b/virtio_net.c/Makefile
+@@ -0,0 +1,24 @@
++ifneq ($(KERNELRELEASE),)
++
++# virtio_net_src.c is just a symbolic link to virtio_net.c
++# This workaround is needed because when defining modulename-y
++# it is not possible to have a source called "modulename.c".
++# Note that this is a problem only when NETMAP_DRIVER_SUFFIX
++# is empty.
++obj-m := virtio_net$(NETMAP_DRIVER_SUFFIX).o
++virtio_net$(NETMAP_DRIVER_SUFFIX)-y := virtio_net_src.o
++
++else
++
++KSRC ?= /lib/modules/$(shell uname -r)/build
++
++all: virtio_net.c
++	$(MAKE) -C "${KSRC}" M=$(shell pwd) modules
++
++install:
++	$(MAKE) -C "${KSRC}" M=$(shell pwd) modules_install
++
++clean:
++	$(MAKE) -C "${KSRC}" M=$(shell pwd) clean
++
++endif
+diff --git a/virtio_net.c/virtio_net.c b/virtio_net.c/virtio_net.c
+index cbf1c61..0f3bd18 100644
+--- a/virtio_net.c/virtio_net.c
++++ b/virtio_net.c/virtio_net.c
+@@ -637,7 +637,6 @@ static bool try_fill_recv(struct virtnet_info *vi, struct receive_queue *rq,
+ 	int err;
+ 	bool oom;
+ 
+-	gfp |= __GFP_COLD;
+ 	do {
+ 		if (vi->mergeable_rx_bufs)
+ 			err = add_recvbuf_mergeable(rq, gfp);
+@@ -746,43 +745,6 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+ 	return received;
+ }
+ 
+-#ifdef CONFIG_NET_RX_BUSY_POLL
+-/* must be called with local_bh_disable()d */
+-static int virtnet_busy_poll(struct napi_struct *napi)
+-{
+-	struct receive_queue *rq =
+-		container_of(napi, struct receive_queue, napi);
+-	struct virtnet_info *vi = rq->vq->vdev->priv;
+-	int r, received = 0, budget = 4;
+-
+-	if (!(vi->status & VIRTIO_NET_S_LINK_UP))
+-		return LL_FLUSH_FAILED;
+-
+-	if (!napi_schedule_prep(napi))
+-		return LL_FLUSH_BUSY;
+-
+-	virtqueue_disable_cb(rq->vq);
+-
+-again:
+-	received += virtnet_receive(rq, budget);
+-
+-	r = virtqueue_enable_cb_prepare(rq->vq);
+-	clear_bit(NAPI_STATE_SCHED, &napi->state);
+-	if (unlikely(virtqueue_poll(rq->vq, r)) &&
+-	    napi_schedule_prep(napi)) {
+-		virtqueue_disable_cb(rq->vq);
+-		if (received < budget) {
+-			budget -= received;
+-			goto again;
+-		} else {
+-			__napi_schedule(napi);
+-		}
+-	}
+-
+-	return received;
+-}
+-#endif	/* CONFIG_NET_RX_BUSY_POLL */
+-
+ static int virtnet_open(struct net_device *dev)
+ {
+ 	struct virtnet_info *vi = netdev_priv(dev);
+@@ -840,7 +802,16 @@ static int xmit_skb(struct send_queue *sq, struct sk_buff *skb)
+ 		hdr = skb_vnet_hdr(skb);
+ 
+ 	if (virtio_net_hdr_from_skb(skb, &hdr->hdr,
+-				    virtio_is_little_endian(vi->vdev)))
++				    virtio_is_little_endian(vi->vdev)
++#define HAVE_DATA_VALID_ARG
++#define HAVE_VLAN_HLEN_ARG
++#ifdef  HAVE_DATA_VALID_ARG
++		, false
++#endif
++#ifdef  HAVE_VLAN_HLEN_ARG
++		, 0
++#endif
++))
+ 		BUG();
+ 
+ 	if (vi->mergeable_rx_bufs)
+@@ -1009,8 +980,13 @@ out:
+ 	return ret;
+ }
+ 
+-static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
+-					       struct rtnl_link_stats64 *tot)
++#undef HAVE_VNET_STATS_RETURN
++#ifdef HAVE_VNET_STATS_RETURN
++static struct rtnl_link_stats64 *
++#else
++static void
++#endif
++virtnet_stats(struct net_device *dev, struct rtnl_link_stats64 *tot)
+ {
+ 	struct virtnet_info *vi = netdev_priv(dev);
+ 	int cpu;
+@@ -1043,8 +1019,9 @@ static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
+ 	tot->rx_dropped = dev->stats.rx_dropped;
+ 	tot->rx_length_errors = dev->stats.rx_length_errors;
+ 	tot->rx_frame_errors = dev->stats.rx_frame_errors;
+-
++#ifdef HAVE_VNET_STATS_RETURN
+ 	return tot;
++#endif
+ }
+ 
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+@@ -1453,9 +1430,6 @@ static const struct net_device_ops virtnet_netdev = {
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+ 	.ndo_poll_controller = virtnet_netpoll,
+ #endif
+-#ifdef CONFIG_NET_RX_BUSY_POLL
+-	.ndo_busy_poll		= virtnet_busy_poll,
+-#endif
+ };
+ 
+ static void virtnet_config_changed_work(struct work_struct *work)
+@@ -1615,7 +1589,17 @@ static int virtnet_find_vqs(struct virtnet_info *vi)
+ 	}
+ 
+ 	ret = vi->vdev->config->find_vqs(vi->vdev, total_vqs, vqs, callbacks,
+-					 names);
++					 names
++#define HAVE_FIND_VQS_CTX_ARG
++#define HAVE_FIND_VQS_IRQ_AFFINITY_ARG
++#ifdef HAVE_FIND_VQS_CTX_ARG
++					, NULL
++#endif
++#ifdef HAVE_FIND_VQS_IRQ_AFFINITY_ARG
++					, NULL
++#endif
++
++					);
+ 	if (ret)
+ 		goto err_find;
+ 
+@@ -1701,33 +1685,6 @@ err:
+ 	return ret;
+ }
+ 
+-#ifdef CONFIG_SYSFS
+-static ssize_t mergeable_rx_buffer_size_show(struct netdev_rx_queue *queue,
+-		struct rx_queue_attribute *attribute, char *buf)
+-{
+-	struct virtnet_info *vi = netdev_priv(queue->dev);
+-	unsigned int queue_index = get_netdev_rx_queue_index(queue);
+-	struct ewma_pkt_len *avg;
+-
+-	BUG_ON(queue_index >= vi->max_queue_pairs);
+-	avg = &vi->rq[queue_index].mrg_avg_pkt_len;
+-	return sprintf(buf, "%u\n", get_mergeable_buf_len(avg));
+-}
+-
+-static struct rx_queue_attribute mergeable_rx_buffer_size_attribute =
+-	__ATTR_RO(mergeable_rx_buffer_size);
+-
+-static struct attribute *virtio_net_mrg_rx_attrs[] = {
+-	&mergeable_rx_buffer_size_attribute.attr,
+-	NULL
+-};
+-
+-static const struct attribute_group virtio_net_mrg_rx_group = {
+-	.name = "virtio_net",
+-	.attrs = virtio_net_mrg_rx_attrs
+-};
+-#endif
+-
+ static bool virtnet_fail_on_feature(struct virtio_device *vdev,
+ 				    unsigned int fbit,
+ 				    const char *fname, const char *dname)
+@@ -1811,7 +1768,7 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 			dev->features |= NETIF_F_HW_CSUM | NETIF_F_SG;
+ 
+ 		if (virtio_has_feature(vdev, VIRTIO_NET_F_GSO)) {
+-			dev->hw_features |= NETIF_F_TSO | NETIF_F_UFO
++			dev->hw_features |= NETIF_F_TSO
+ 				| NETIF_F_TSO_ECN | NETIF_F_TSO6;
+ 		}
+ 		/* Individual feature bits: what can host handle? */
+@@ -1821,13 +1778,11 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 			dev->hw_features |= NETIF_F_TSO6;
+ 		if (virtio_has_feature(vdev, VIRTIO_NET_F_HOST_ECN))
+ 			dev->hw_features |= NETIF_F_TSO_ECN;
+-		if (virtio_has_feature(vdev, VIRTIO_NET_F_HOST_UFO))
+-			dev->hw_features |= NETIF_F_UFO;
+ 
+ 		dev->features |= NETIF_F_GSO_ROBUST;
+ 
+ 		if (gso)
+-			dev->features |= dev->hw_features & (NETIF_F_ALL_TSO|NETIF_F_UFO);
++			dev->features |= dev->hw_features & (NETIF_F_ALL_TSO);
+ 		/* (!csum && gso) case will be fixed by register_netdev() */
+ 	}
+ 	if (virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_CSUM))
+@@ -1905,10 +1860,6 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 	if (err)
+ 		goto free_stats;
+ 
+-#ifdef CONFIG_SYSFS
+-	if (vi->mergeable_rx_bufs)
+-		dev->sysfs_rx_queue_group = &virtio_net_mrg_rx_group;
+-#endif
+ 	netif_set_real_num_tx_queues(dev, vi->curr_queue_pairs);
+ 	netif_set_real_num_rx_queues(dev, vi->curr_queue_pairs);
+ 
+diff --git a/virtio_net.c/virtio_net_src.c b/virtio_net.c/virtio_net_src.c
+new file mode 120000
+index 0000000..e2a5c2a
+--- /dev/null
++++ b/virtio_net.c/virtio_net_src.c
+@@ -0,0 +1 @@
++virtio_net.c
+\ No newline at end of file

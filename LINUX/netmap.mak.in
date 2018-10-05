@@ -53,7 +53,7 @@ define common_driver
 get-$(1):
 	$($(1)@fetch)
 	$($(1)@src)
-	$(foreach p,$($(1)@patch),patch --posix --quiet --force -p1 < $(p);)
+	$(foreach p,$($(1)@patch),patch --quiet --force -p1 < $(p);)
 	$($(1)@prepare)
 	$(if $($(1)@build),,$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,))
 	touch get-$(1)

@@ -134,6 +134,7 @@ edrv enable ixgbe
 edrv enable ixgbevf
 edrv enable i40e
 edrv enable mlx5
+edrv enable virtio_net.c
 
 # drivers built by patching the system drivers
 setop internal_driver new driver
@@ -479,7 +480,7 @@ build-$d: prepare-$d
 	+\$($d@build)
 	touch build-$d
 patch-$d: get-$d
-	\$(foreach p,\$($d@patch),patch --posix --quiet --force -p1 < \$(p);)
+	\$(foreach p,\$($d@patch),patch --quiet --force -p1 < \$(p);)
 	touch patch-$d
 EOF
 	done
@@ -997,6 +998,13 @@ EOF
   }	
 
   for d in $(edrv print); do
+	if [ "$d" == virtio_net.c ]; then
+		# virtio_net.c as an external driver does not need to
+		# build unpatched, because it's tailored to a specific
+		# kernel version.
+		# TODO better solution? maybe generalize?
+		continue
+	fi
 	add_file_exists_check build-$d true "edrv_build_error $d"
   done
 
@@ -1776,7 +1784,7 @@ EOF
 
   if drv enabled virtio_net.c; then
   
-    add_file_exists_check virtio_net.c true "drv_source_error virtio_net.c"
+    add_file_exists_check virtio_net.c/virtio_net.c true "drv_source_error virtio_net.c"
   
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
@@ -1797,7 +1805,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_FREE_PAGES' <<EOF
-  	#include "virtio_net.c"
+	#include "virtio_net.c/virtio_net.c"
   
   	void
   	dummy(struct virtnet_info *vi) {
@@ -1830,7 +1838,7 @@ EOF
   done
   
     add_test 'define VIRTIO_MULTI_QUEUE' <<EOF
-  	#include "virtio_net.c"
+	#include "virtio_net.c/virtio_net.c"
   
   	struct virtqueue *
   	dummy(struct virtnet_info *vi) {
@@ -1839,7 +1847,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_RQ_NUM' <<EOF
-  	#include "virtio_net.c"
+	#include "virtio_net.c/virtio_net.c"
   
   	int
   	dummy(struct virtnet_info *vi) {
@@ -1848,7 +1856,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_SG' <<EOF
-  	#include "virtio_net.c"
+	#include "virtio_net.c/virtio_net.c"
   
   	struct scatterlist *
   	dummy(struct virtnet_info *vi) {
