@@ -111,8 +111,8 @@ virtio_net.c@fetch	:= test -e @SRCDIR@/ext-drivers/virtio_net.c || wget https://
 virtio_net.c@src	:= mkdir -p virtio_net.c && cp @SRCDIR@/ext-drivers/virtio_net.c virtio_net.c/
 virtio_net.c@patch	:= patches/custom--virtio_net.c--4.9
 virtio_net.c@prepare	:=
-virtio_net.c@build 	:= make -C virtio_net.c CFLAGS_EXTRA="$(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
-virtio_net.c@install 	:= make -C virtio_net.c install INSTALL_MOD_PATH=@MODPATH@ CFLAGS_EXTRA="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
-virtio_net.c@clean 	:= if [ -d virtio_net.c ]; then make -C virtio_net.c clean CFLAGS_EXTRA="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
+virtio_net.c@build 	:= make -C virtio_net.c EXTRA_CFLAGS="$(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
+virtio_net.c@install 	:= make -C virtio_net.c install INSTALL_MOD_PATH=@MODPATH@ EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
+virtio_net.c@clean 	:= if [ -d virtio_net.c ]; then make -C virtio_net.c clean EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
 virtio_net.c@distclean	:=
 virtio_net.c@force	:= 1

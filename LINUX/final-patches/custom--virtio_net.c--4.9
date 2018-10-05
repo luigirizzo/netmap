@@ -1,6 +1,6 @@
 diff --git a/virtio_net.c/Makefile b/virtio_net.c/Makefile
 new file mode 100644
-index 0000000..cf1c844
+index 0000000..2c88957
 --- /dev/null
 +++ b/virtio_net.c/Makefile
 @@ -0,0 +1,25 @@
@@ -11,7 +11,7 @@ index 0000000..cf1c844
 +# it is not possible to have a source called "modulename.c".
 +# Note that this is a problem only when NETMAP_DRIVER_SUFFIX
 +# is empty.
-+EXTRA_CFLAGS := "${CFLAGS_EXTRA}"
++EXTRA_CFLAGS += "${EXTRA_CFLAGS}"
 +obj-m := virtio_net$(NETMAP_DRIVER_SUFFIX).o
 +virtio_net$(NETMAP_DRIVER_SUFFIX)-y := virtio_net_src.o
 +
