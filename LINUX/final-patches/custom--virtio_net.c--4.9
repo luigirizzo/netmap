@@ -30,7 +30,7 @@ index 0000000..2c88957
 +
 +endif
 diff --git a/virtio_net.c/virtio_net.c b/virtio_net.c/virtio_net.c
-index cbf1c61..d9d7e73 100644
+index cbf1c61..3399011 100644
 --- a/virtio_net.c/virtio_net.c
 +++ b/virtio_net.c/virtio_net.c
 @@ -29,6 +29,10 @@
@@ -44,7 +44,21 @@ index cbf1c61..d9d7e73 100644
  static int napi_weight = NAPI_POLL_WEIGHT;
  module_param(napi_weight, int, 0444);
  
-@@ -263,7 +267,13 @@ static struct sk_buff *page_to_skb(struct virtnet_info *vi,
+@@ -135,13 +139,6 @@ struct virtnet_info {
+ 	/* Work struct for config space updates */
+ 	struct work_struct config_work;
+ 
+-	/* Does the affinity hint is set for virtqueues? */
+-	bool affinity_hint_set;
+-
+-	/* CPU hotplug instances for online & dead */
+-	struct hlist_node node;
+-	struct hlist_node node_dead;
+-
+ 	/* Control VQ buffers: protected by the rtnl lock */
+ 	struct virtio_net_ctrl_hdr ctrl_hdr;
+ 	virtio_net_ctrl_ack ctrl_status;
+@@ -263,7 +260,13 @@ static struct sk_buff *page_to_skb(struct virtnet_info *vi,
  	p = page_address(page) + offset;
  
  	/* copy small packet so we can reuse these pages for small data */
@@ -58,7 +72,7 @@ index cbf1c61..d9d7e73 100644
  	if (unlikely(!skb))
  		return NULL;
  
-@@ -637,7 +647,6 @@ static bool try_fill_recv(struct virtnet_info *vi, struct receive_queue *rq,
+@@ -637,7 +640,6 @@ static bool try_fill_recv(struct virtnet_info *vi, struct receive_queue *rq,
  	int err;
  	bool oom;
  
@@ -66,7 +80,7 @@ index cbf1c61..d9d7e73 100644
  	do {
  		if (vi->mergeable_rx_bufs)
  			err = add_recvbuf_mergeable(rq, gfp);
-@@ -735,7 +744,11 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+@@ -735,7 +737,11 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
  	/* Out of packets? */
  	if (received < budget) {
  		r = virtqueue_enable_cb_prepare(rq->vq);
@@ -78,7 +92,7 @@ index cbf1c61..d9d7e73 100644
  		if (unlikely(virtqueue_poll(rq->vq, r)) &&
  		    napi_schedule_prep(napi)) {
  			virtqueue_disable_cb(rq->vq);
-@@ -746,43 +759,6 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+@@ -746,43 +752,6 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
  	return received;
  }
  
@@ -122,7 +136,7 @@ index cbf1c61..d9d7e73 100644
  static int virtnet_open(struct net_device *dev)
  {
  	struct virtnet_info *vi = netdev_priv(dev);
-@@ -840,7 +816,14 @@ static int xmit_skb(struct send_queue *sq, struct sk_buff *skb)
+@@ -840,7 +809,14 @@ static int xmit_skb(struct send_queue *sq, struct sk_buff *skb)
  		hdr = skb_vnet_hdr(skb);
  
  	if (virtio_net_hdr_from_skb(skb, &hdr->hdr,
@@ -138,7 +152,7 @@ index cbf1c61..d9d7e73 100644
  		BUG();
  
  	if (vi->mergeable_rx_bufs)
-@@ -866,7 +849,11 @@ static netdev_tx_t start_xmit(struct sk_buff *skb, struct net_device *dev)
+@@ -866,7 +842,11 @@ static netdev_tx_t start_xmit(struct sk_buff *skb, struct net_device *dev)
  	struct send_queue *sq = &vi->sq[qnum];
  	int err;
  	struct netdev_queue *txq = netdev_get_tx_queue(dev, qnum);
@@ -150,7 +164,7 @@ index cbf1c61..d9d7e73 100644
  
  	/* Free up any pending old buffers before queueing new ones. */
  	free_old_xmit_skbs(sq);
-@@ -1009,8 +996,13 @@ out:
+@@ -1009,8 +989,13 @@ out:
  	return ret;
  }
  
@@ -166,7 +180,7 @@ index cbf1c61..d9d7e73 100644
  {
  	struct virtnet_info *vi = netdev_priv(dev);
  	int cpu;
-@@ -1043,9 +1035,11 @@ static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
+@@ -1043,9 +1028,11 @@ static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
  	tot->rx_dropped = dev->stats.rx_dropped;
  	tot->rx_length_errors = dev->stats.rx_length_errors;
  	tot->rx_frame_errors = dev->stats.rx_frame_errors;
@@ -179,7 +193,112 @@ index cbf1c61..d9d7e73 100644
  
  #ifdef CONFIG_NET_POLL_CONTROLLER
  static void virtnet_netpoll(struct net_device *dev)
-@@ -1446,16 +1440,15 @@ static const struct net_device_ops virtnet_netdev = {
+@@ -1207,95 +1194,6 @@ static int virtnet_vlan_rx_kill_vid(struct net_device *dev,
+ 	return 0;
+ }
+ 
+-static void virtnet_clean_affinity(struct virtnet_info *vi, long hcpu)
+-{
+-	int i;
+-
+-	if (vi->affinity_hint_set) {
+-		for (i = 0; i < vi->max_queue_pairs; i++) {
+-			virtqueue_set_affinity(vi->rq[i].vq, -1);
+-			virtqueue_set_affinity(vi->sq[i].vq, -1);
+-		}
+-
+-		vi->affinity_hint_set = false;
+-	}
+-}
+-
+-static void virtnet_set_affinity(struct virtnet_info *vi)
+-{
+-	int i;
+-	int cpu;
+-
+-	/* In multiqueue mode, when the number of cpu is equal to the number of
+-	 * queue pairs, we let the queue pairs to be private to one cpu by
+-	 * setting the affinity hint to eliminate the contention.
+-	 */
+-	if (vi->curr_queue_pairs == 1 ||
+-	    vi->max_queue_pairs != num_online_cpus()) {
+-		virtnet_clean_affinity(vi, -1);
+-		return;
+-	}
+-
+-	i = 0;
+-	for_each_online_cpu(cpu) {
+-		virtqueue_set_affinity(vi->rq[i].vq, cpu);
+-		virtqueue_set_affinity(vi->sq[i].vq, cpu);
+-		netif_set_xps_queue(vi->dev, cpumask_of(cpu), i);
+-		i++;
+-	}
+-
+-	vi->affinity_hint_set = true;
+-}
+-
+-static int virtnet_cpu_online(unsigned int cpu, struct hlist_node *node)
+-{
+-	struct virtnet_info *vi = hlist_entry_safe(node, struct virtnet_info,
+-						   node);
+-	virtnet_set_affinity(vi);
+-	return 0;
+-}
+-
+-static int virtnet_cpu_dead(unsigned int cpu, struct hlist_node *node)
+-{
+-	struct virtnet_info *vi = hlist_entry_safe(node, struct virtnet_info,
+-						   node_dead);
+-	virtnet_set_affinity(vi);
+-	return 0;
+-}
+-
+-static int virtnet_cpu_down_prep(unsigned int cpu, struct hlist_node *node)
+-{
+-	struct virtnet_info *vi = hlist_entry_safe(node, struct virtnet_info,
+-						   node);
+-
+-	virtnet_clean_affinity(vi, cpu);
+-	return 0;
+-}
+-
+-static enum cpuhp_state virtionet_online;
+-
+-static int virtnet_cpu_notif_add(struct virtnet_info *vi)
+-{
+-	int ret;
+-
+-	ret = cpuhp_state_add_instance_nocalls(virtionet_online, &vi->node);
+-	if (ret)
+-		return ret;
+-	ret = cpuhp_state_add_instance_nocalls(CPUHP_VIRT_NET_DEAD,
+-					       &vi->node_dead);
+-	if (!ret)
+-		return ret;
+-	cpuhp_state_remove_instance_nocalls(virtionet_online, &vi->node);
+-	return ret;
+-}
+-
+-static void virtnet_cpu_notif_remove(struct virtnet_info *vi)
+-{
+-	cpuhp_state_remove_instance_nocalls(virtionet_online, &vi->node);
+-	cpuhp_state_remove_instance_nocalls(CPUHP_VIRT_NET_DEAD,
+-					    &vi->node_dead);
+-}
+-
+ static void virtnet_get_ringparam(struct net_device *dev,
+ 				struct ethtool_ringparam *ring)
+ {
+@@ -1342,8 +1240,6 @@ static int virtnet_set_channels(struct net_device *dev,
+ 	if (!err) {
+ 		netif_set_real_num_tx_queues(dev, queue_pairs);
+ 		netif_set_real_num_rx_queues(dev, queue_pairs);
+-
+-		virtnet_set_affinity(vi);
+ 	}
+ 	put_online_cpus();
+ 
+@@ -1446,16 +1342,15 @@ static const struct net_device_ops virtnet_netdev = {
  	.ndo_validate_addr   = eth_validate_addr,
  	.ndo_set_mac_address = virtnet_set_mac_address,
  	.ndo_set_rx_mode     = virtnet_set_rx_mode,
@@ -199,7 +318,16 @@ index cbf1c61..d9d7e73 100644
  };
  
  static void virtnet_config_changed_work(struct work_struct *work)
-@@ -1615,7 +1608,15 @@ static int virtnet_find_vqs(struct virtnet_info *vi)
+@@ -1565,8 +1460,6 @@ static void virtnet_del_vqs(struct virtnet_info *vi)
+ {
+ 	struct virtio_device *vdev = vi->vdev;
+ 
+-	virtnet_clean_affinity(vi, -1);
+-
+ 	vdev->config->del_vqs(vdev);
+ 
+ 	virtnet_free_queues(vi);
+@@ -1615,7 +1508,15 @@ static int virtnet_find_vqs(struct virtnet_info *vi)
  	}
  
  	ret = vi->vdev->config->find_vqs(vi->vdev, total_vqs, vqs, callbacks,
@@ -216,7 +344,18 @@ index cbf1c61..d9d7e73 100644
  	if (ret)
  		goto err_find;
  
-@@ -1701,33 +1702,6 @@ err:
+@@ -1689,10 +1590,6 @@ static int init_vqs(struct virtnet_info *vi)
+ 	if (ret)
+ 		goto err_free;
+ 
+-	get_online_cpus();
+-	virtnet_set_affinity(vi);
+-	put_online_cpus();
+-
+ 	return 0;
+ 
+ err_free:
+@@ -1701,33 +1598,6 @@ err:
  	return ret;
  }
  
@@ -250,7 +389,7 @@ index cbf1c61..d9d7e73 100644
  static bool virtnet_fail_on_feature(struct virtio_device *vdev,
  				    unsigned int fbit,
  				    const char *fname, const char *dname)
-@@ -1811,7 +1785,7 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1811,7 +1681,7 @@ static int virtnet_probe(struct virtio_device *vdev)
  			dev->features |= NETIF_F_HW_CSUM | NETIF_F_SG;
  
  		if (virtio_has_feature(vdev, VIRTIO_NET_F_GSO)) {
@@ -259,7 +398,7 @@ index cbf1c61..d9d7e73 100644
  				| NETIF_F_TSO_ECN | NETIF_F_TSO6;
  		}
  		/* Individual feature bits: what can host handle? */
-@@ -1821,13 +1795,11 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1821,13 +1691,11 @@ static int virtnet_probe(struct virtio_device *vdev)
  			dev->hw_features |= NETIF_F_TSO6;
  		if (virtio_has_feature(vdev, VIRTIO_NET_F_HOST_ECN))
  			dev->hw_features |= NETIF_F_TSO_ECN;
@@ -274,7 +413,7 @@ index cbf1c61..d9d7e73 100644
  		/* (!csum && gso) case will be fixed by register_netdev() */
  	}
  	if (virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_CSUM))
-@@ -1905,10 +1877,6 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1905,10 +1773,6 @@ static int virtnet_probe(struct virtio_device *vdev)
  	if (err)
  		goto free_stats;
  
@@ -285,6 +424,102 @@ index cbf1c61..d9d7e73 100644
  	netif_set_real_num_tx_queues(dev, vi->curr_queue_pairs);
  	netif_set_real_num_rx_queues(dev, vi->curr_queue_pairs);
  
+@@ -1922,12 +1786,6 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 
+ 	virtio_device_ready(vdev);
+ 
+-	err = virtnet_cpu_notif_add(vi);
+-	if (err) {
+-		pr_debug("virtio_net: registering cpu notifier failed\n");
+-		goto free_unregister_netdev;
+-	}
+-
+ 	/* Assume link up if device can't report link status,
+ 	   otherwise get link status from config. */
+ 	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_STATUS)) {
+@@ -1943,10 +1801,6 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 
+ 	return 0;
+ 
+-free_unregister_netdev:
+-	vi->vdev->config->reset(vdev);
+-
+-	unregister_netdev(dev);
+ free_vqs:
+ 	cancel_delayed_work_sync(&vi->refill);
+ 	free_receive_page_frags(vi);
+@@ -1976,8 +1830,6 @@ static void virtnet_remove(struct virtio_device *vdev)
+ {
+ 	struct virtnet_info *vi = vdev->priv;
+ 
+-	virtnet_cpu_notif_remove(vi);
+-
+ 	/* Make sure no work handler is accessing the device. */
+ 	flush_work(&vi->config_work);
+ 
+@@ -1995,8 +1847,6 @@ static int virtnet_freeze(struct virtio_device *vdev)
+ 	struct virtnet_info *vi = vdev->priv;
+ 	int i;
+ 
+-	virtnet_cpu_notif_remove(vi);
+-
+ 	/* Make sure no work handler is accessing the device */
+ 	flush_work(&vi->config_work);
+ 
+@@ -2039,10 +1889,6 @@ static int virtnet_restore(struct virtio_device *vdev)
+ 	virtnet_set_queues(vi, vi->curr_queue_pairs);
+ 	rtnl_unlock();
+ 
+-	err = virtnet_cpu_notif_add(vi);
+-	if (err)
+-		return err;
+-
+ 	return 0;
+ }
+ #endif
+@@ -2091,41 +1937,7 @@ static struct virtio_driver virtio_net_driver = {
+ #endif
+ };
+ 
+-static __init int virtio_net_driver_init(void)
+-{
+-	int ret;
+-
+-	ret = cpuhp_setup_state_multi(CPUHP_AP_ONLINE_DYN, "AP_VIRT_NET_ONLINE",
+-				      virtnet_cpu_online,
+-				      virtnet_cpu_down_prep);
+-	if (ret < 0)
+-		goto out;
+-	virtionet_online = ret;
+-	ret = cpuhp_setup_state_multi(CPUHP_VIRT_NET_DEAD, "VIRT_NET_DEAD",
+-				      NULL, virtnet_cpu_dead);
+-	if (ret)
+-		goto err_dead;
+-
+-        ret = register_virtio_driver(&virtio_net_driver);
+-	if (ret)
+-		goto err_virtio;
+-	return 0;
+-err_virtio:
+-	cpuhp_remove_multi_state(CPUHP_VIRT_NET_DEAD);
+-err_dead:
+-	cpuhp_remove_multi_state(virtionet_online);
+-out:
+-	return ret;
+-}
+-module_init(virtio_net_driver_init);
+-
+-static __exit void virtio_net_driver_exit(void)
+-{
+-	cpuhp_remove_multi_state(CPUHP_VIRT_NET_DEAD);
+-	cpuhp_remove_multi_state(virtionet_online);
+-	unregister_virtio_driver(&virtio_net_driver);
+-}
+-module_exit(virtio_net_driver_exit);
++module_virtio_driver(virtio_net_driver);
+ 
+ MODULE_DEVICE_TABLE(virtio, id_table);
+ MODULE_DESCRIPTION("Virtio network driver");
 diff --git a/virtio_net.c/virtio_net_src.c b/virtio_net.c/virtio_net_src.c
 new file mode 120000
 index 0000000..e2a5c2a
