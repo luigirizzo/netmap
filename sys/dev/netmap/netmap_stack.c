@@ -590,15 +590,6 @@ st_prestack(struct netmap_kring *kring)
 	return k;
 }
 
-
-static int
-nombq_rxsync(struct netmap_kring *kring, int flags)
-{
-	(void)kring;
-	(void)flags;
-	return 0;
-}
-
 static int
 nombq(struct netmap_adapter *na, struct mbuf *m)
 {
@@ -614,9 +605,11 @@ nombq(struct netmap_adapter *na, struct mbuf *m)
 	nm_i = kring->nr_hwtail;
 	/* check space */
 	if (unlikely(nm_i == nm_prev(kring->nr_hwcur, lim))) {
-		RD(1, "kring full");
-		m_freem(m);
-		return EBUSY;
+		netmap_bwrap_intr_notify(kring, 0);
+		if (kring->nr_hwtail == nm_prev(kring->nr_hwcur, lim)) {
+			m_freem(m);
+			return EBUSY;
+		}
 	} else if (unlikely(!nm_netmap_on(na))) {
 		m_freem(m);
 		return ENXIO;
@@ -1016,7 +1009,7 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 		/* set void callback on host rings */
 		for (i = nma_get_nrings(hwna, NR_RX);
 		     i < netmap_real_rings(hwna, NR_RX); i++) {
-			NMR(hwna, NR_RX)[i]->nm_sync = nombq_rxsync;
+			NMR(hwna, NR_RX)[i]->nm_sync = netmap_vp_rxsync;
 		}
 	} else {
 #ifdef linux
