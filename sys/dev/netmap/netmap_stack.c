@@ -471,12 +471,12 @@ st_poststack(struct netmap_kring *kring)
 		}
 	} else {
 		int n = 0;
-		while (n < ft->nfds && howmany) {
+		while (n < ft->nfds && likely(howmany)) {
 			int fd = ft->fds[n];
 			struct st_fdt_q *fq = ft->fde + fd;
 			uint32_t next = fq->fq_head;
 
-			while (next != NM_FDT_NULL && howmany) {
+			while (next != NM_FDT_NULL && likely(howmany)) {
 				struct netmap_slot tmp, *ts, *rs;
 				struct nmcb *cb;
 
@@ -523,7 +523,7 @@ skip:
 	rxr->nkr_hwlease = rxr->nr_hwcur;
 
 	/* swap out packets still referred by the stack */
-	for (j = 0; j < nonfree_num; j++) {
+	for (j = 0; likely(j < nonfree_num); j++) {
 		struct netmap_slot *slot = &rxr->ring->slot[nonfree[j]];
 
 		if (unlikely(st_extra_enq(rxr, slot))) {

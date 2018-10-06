@@ -1344,10 +1344,10 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	nmcb_wstate(cb, MB_STACK);
 
 	if (unlikely(!sk)) {
-		D("WARNING: NULL sk");
+		RD(1, "WARNING: NULL sk");
 		return 0;
 	} else if (unlikely(!sk->sk_socket)) {
-		D("WARNING: NULL sk->sk_socket");
+		RD(1, "WARNING: NULL sk->sk_socket");
 		return 0;
 	}
 	err = kernel_sendpage(sk->sk_socket, page, poff, len, MSG_DONTWAIT);
