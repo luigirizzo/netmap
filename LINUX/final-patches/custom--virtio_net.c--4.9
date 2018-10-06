@@ -30,7 +30,7 @@ index 0000000..2c88957
 +
 +endif
 diff --git a/virtio_net.c/virtio_net.c b/virtio_net.c/virtio_net.c
-index cbf1c61..6d170f7 100644
+index cbf1c61..d9d7e73 100644
 --- a/virtio_net.c/virtio_net.c
 +++ b/virtio_net.c/virtio_net.c
 @@ -29,6 +29,10 @@
@@ -44,7 +44,21 @@ index cbf1c61..6d170f7 100644
  static int napi_weight = NAPI_POLL_WEIGHT;
  module_param(napi_weight, int, 0444);
  
-@@ -637,7 +641,6 @@ static bool try_fill_recv(struct virtnet_info *vi, struct receive_queue *rq,
+@@ -263,7 +267,13 @@ static struct sk_buff *page_to_skb(struct virtnet_info *vi,
+ 	p = page_address(page) + offset;
+ 
+ 	/* copy small packet so we can reuse these pages for small data */
++#ifdef NETMAP_LINUX_HAVE_NAPI_ALLOC_SKB
+ 	skb = napi_alloc_skb(&rq->napi, GOOD_COPY_LEN);
++#elif defined(NETMAP_LINUX_HAVE_ALLOC_SKB_IP_ALIGN)
++	skb = netdev_alloc_skb_ip_align(vi->dev, GOOD_COPY_LEN);
++#else
++	skb = netdev_alloc_csb(vi->dev, GOOD_COPY_LEN);
++#endif
+ 	if (unlikely(!skb))
+ 		return NULL;
+ 
+@@ -637,7 +647,6 @@ static bool try_fill_recv(struct virtnet_info *vi, struct receive_queue *rq,
  	int err;
  	bool oom;
  
@@ -52,7 +66,19 @@ index cbf1c61..6d170f7 100644
  	do {
  		if (vi->mergeable_rx_bufs)
  			err = add_recvbuf_mergeable(rq, gfp);
-@@ -746,43 +749,6 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+@@ -735,7 +744,11 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+ 	/* Out of packets? */
+ 	if (received < budget) {
+ 		r = virtqueue_enable_cb_prepare(rq->vq);
++#ifdef NETMAP_LINUX_HAVE_NAPI_COMPLETE_DONE
+ 		napi_complete_done(napi, received);
++#else  /* !NETMAP_LINUX_HAVE_NAPI_COMPLETE_DONE */
++		napi_complete(napi);
++#endif /* !NETMAP_LINUX_HAVE_NAPI_COMPLETE_DONE */
+ 		if (unlikely(virtqueue_poll(rq->vq, r)) &&
+ 		    napi_schedule_prep(napi)) {
+ 			virtqueue_disable_cb(rq->vq);
+@@ -746,43 +759,6 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
  	return received;
  }
  
@@ -96,7 +122,7 @@ index cbf1c61..6d170f7 100644
  static int virtnet_open(struct net_device *dev)
  {
  	struct virtnet_info *vi = netdev_priv(dev);
-@@ -840,7 +806,14 @@ static int xmit_skb(struct send_queue *sq, struct sk_buff *skb)
+@@ -840,7 +816,14 @@ static int xmit_skb(struct send_queue *sq, struct sk_buff *skb)
  		hdr = skb_vnet_hdr(skb);
  
  	if (virtio_net_hdr_from_skb(skb, &hdr->hdr,
@@ -112,36 +138,53 @@ index cbf1c61..6d170f7 100644
  		BUG();
  
  	if (vi->mergeable_rx_bufs)
-@@ -1009,8 +982,12 @@ out:
+@@ -866,7 +849,11 @@ static netdev_tx_t start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	struct send_queue *sq = &vi->sq[qnum];
+ 	int err;
+ 	struct netdev_queue *txq = netdev_get_tx_queue(dev, qnum);
++#ifdef NETMAP_LINUX_HAVE_XMIT_MORE
+ 	bool kick = !skb->xmit_more;
++#else  /* !NETMAP_LINUX_HAVE_XMIT_MORE */
++	bool kick = true;
++#endif /* !NETMAP_LINUX_HAVE_XMIT_MORE */
+ 
+ 	/* Free up any pending old buffers before queueing new ones. */
+ 	free_old_xmit_skbs(sq);
+@@ -1009,8 +996,13 @@ out:
  	return ret;
  }
  
 -static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
 -					       struct rtnl_link_stats64 *tot)
++#ifdef NETMAP_LINUX_HAVE_GET_STATS64
 +#ifdef NETMAP_LINUX_HAVE_NONVOID_GET_STATS64
 +static struct rtnl_link_stats64 *
-+#else
++#else  /* !NETMAP_LINUX_HAVE_NONVOID_GET_STATS64 */
 +static void
-+#endif
++#endif /* !NETMAP_LINUX_HAVE_NONVOID_GET_STATS64 */
 +virtnet_stats(struct net_device *dev, struct rtnl_link_stats64 *tot)
  {
  	struct virtnet_info *vi = netdev_priv(dev);
  	int cpu;
-@@ -1043,8 +1020,9 @@ static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
+@@ -1043,9 +1035,11 @@ static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
  	tot->rx_dropped = dev->stats.rx_dropped;
  	tot->rx_length_errors = dev->stats.rx_length_errors;
  	tot->rx_frame_errors = dev->stats.rx_frame_errors;
 -
 +#ifdef NETMAP_LINUX_HAVE_NONVOID_GET_STATS64
  	return tot;
-+#endif
++#endif  /* NETMAP_LINUX_HAVE_NONVOID_GET_STATS64 */
  }
++#endif  /* NETMAP_LINUX_HAVE_GET_STATS64 */
  
  #ifdef CONFIG_NET_POLL_CONTROLLER
-@@ -1447,15 +1425,14 @@ static const struct net_device_ops virtnet_netdev = {
+ static void virtnet_netpoll(struct net_device *dev)
+@@ -1446,16 +1440,15 @@ static const struct net_device_ops virtnet_netdev = {
+ 	.ndo_validate_addr   = eth_validate_addr,
  	.ndo_set_mac_address = virtnet_set_mac_address,
  	.ndo_set_rx_mode     = virtnet_set_rx_mode,
- 	.ndo_change_mtu	     = virtnet_change_mtu,
+-	.ndo_change_mtu	     = virtnet_change_mtu,
++	.NETMAP_LINUX_CHANGE_MTU = virtnet_change_mtu,
 +#ifdef NETMAP_LINUX_HAVE_GET_STATS64
  	.ndo_get_stats64     = virtnet_stats,
 +#endif
@@ -156,7 +199,7 @@ index cbf1c61..6d170f7 100644
  };
  
  static void virtnet_config_changed_work(struct work_struct *work)
-@@ -1615,7 +1592,15 @@ static int virtnet_find_vqs(struct virtnet_info *vi)
+@@ -1615,7 +1608,15 @@ static int virtnet_find_vqs(struct virtnet_info *vi)
  	}
  
  	ret = vi->vdev->config->find_vqs(vi->vdev, total_vqs, vqs, callbacks,
@@ -173,7 +216,7 @@ index cbf1c61..6d170f7 100644
  	if (ret)
  		goto err_find;
  
-@@ -1701,33 +1686,6 @@ err:
+@@ -1701,33 +1702,6 @@ err:
  	return ret;
  }
  
@@ -207,7 +250,7 @@ index cbf1c61..6d170f7 100644
  static bool virtnet_fail_on_feature(struct virtio_device *vdev,
  				    unsigned int fbit,
  				    const char *fname, const char *dname)
-@@ -1811,7 +1769,7 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1811,7 +1785,7 @@ static int virtnet_probe(struct virtio_device *vdev)
  			dev->features |= NETIF_F_HW_CSUM | NETIF_F_SG;
  
  		if (virtio_has_feature(vdev, VIRTIO_NET_F_GSO)) {
@@ -216,7 +259,7 @@ index cbf1c61..6d170f7 100644
  				| NETIF_F_TSO_ECN | NETIF_F_TSO6;
  		}
  		/* Individual feature bits: what can host handle? */
-@@ -1821,13 +1779,11 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1821,13 +1795,11 @@ static int virtnet_probe(struct virtio_device *vdev)
  			dev->hw_features |= NETIF_F_TSO6;
  		if (virtio_has_feature(vdev, VIRTIO_NET_F_HOST_ECN))
  			dev->hw_features |= NETIF_F_TSO_ECN;
@@ -231,7 +274,7 @@ index cbf1c61..6d170f7 100644
  		/* (!csum && gso) case will be fixed by register_netdev() */
  	}
  	if (virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_CSUM))
-@@ -1905,10 +1861,6 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1905,10 +1877,6 @@ static int virtnet_probe(struct virtio_device *vdev)
  	if (err)
  		goto free_stats;
  
