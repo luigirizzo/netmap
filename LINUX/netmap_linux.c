@@ -2965,6 +2965,8 @@ module_exit(linux_netmap_fini);
 /* export certain symbols to other modules */
 EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
 EXPORT_SYMBOL(netmap_attach_ext);
+EXPORT_SYMBOL(netmap_bdg_attach);
+EXPORT_SYMBOL(netmap_bdg_detach);
 #ifdef NM_DEBUG_PUTGET
 EXPORT_SYMBOL(__netmap_adapter_get);
 EXPORT_SYMBOL(__netmap_adapter_put);
@@ -2989,8 +2991,6 @@ EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
 EXPORT_SYMBOL(netmap_bdg_update_private_data);
 EXPORT_SYMBOL(netmap_vale_create);
 EXPORT_SYMBOL(netmap_vale_destroy);
-EXPORT_SYMBOL(netmap_vale_attach);
-EXPORT_SYMBOL(netmap_vale_detach);
 EXPORT_SYMBOL(nm_vi_create);
 EXPORT_SYMBOL(nm_vi_destroy);
 #endif /* WITH_VALE */

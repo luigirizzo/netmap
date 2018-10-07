@@ -1258,7 +1258,7 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 			hdr.nr_reqtype = NETMAP_REQ_BDG_DETACH;
 			hdr.nr_version = NETMAP_API;
 			hdr.nr_body = (uintptr_t)&req;
-			nm_bdg_ctl_detach_locked(&hdr, NULL);
+			netmap_bdg_detach_locked(&hdr, NULL);
 		}
 		st_extra_free(na);
 	}

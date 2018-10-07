@@ -1176,6 +1176,7 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 			slot->ptr = (uint64_t)((uintptr_t)frame);
 		} else if ((options & OPT_COPY) || buf_changed) {
 			u_int o = 0;
+			struct glob_arg *g = t->g;
 
 			if (g->soff) {
 				o = g->virt_header + g->soff;

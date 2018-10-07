@@ -2528,12 +2528,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			break;
 		}
 		case NETMAP_REQ_VALE_ATTACH: {
-			error = netmap_vale_attach(hdr, NULL /* userspace request */);
+			error = netmap_bdg_attach(hdr, NULL /* userspace request */);
 			break;
 		}
 
 		case NETMAP_REQ_VALE_DETACH: {
-			error = netmap_vale_detach(hdr, NULL /* userspace request */);
+			error = netmap_bdg_detach(hdr, NULL /* userspace request */);
 			break;
 		}
 

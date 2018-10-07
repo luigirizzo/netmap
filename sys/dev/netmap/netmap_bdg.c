@@ -539,11 +539,174 @@ out:
 	return error;
 }
 
+/* Process NETMAP_REQ_VALE_ATTACH.
+ */
+int
+netmap_bdg_attach(struct nmreq_header *hdr, void *auth_token)
+{
+	struct nmreq_vale_attach *req =
+		(struct nmreq_vale_attach *)(uintptr_t)hdr->nr_body;
+	struct netmap_vp_adapter * vpna;
+	struct netmap_adapter *na = NULL;
+	struct netmap_mem_d *nmd = NULL;
+	struct nm_bridge *b = NULL;
+	int error;
+
+	NMG_LOCK();
+	/* permission check for modified bridges */
+	b = nm_find_bridge(hdr->nr_name, 0 /* don't create */, NULL);
+	if (b && !nm_bdg_valid_auth_token(b, auth_token)) {
+		error = EACCES;
+		goto unlock_exit;
+	}
+
+	if (req->reg.nr_mem_id) {
+		nmd = netmap_mem_find(req->reg.nr_mem_id);
+		if (nmd == NULL) {
+			error = EINVAL;
+			goto unlock_exit;
+		}
+	}
+
+	/* check for existing one */
+	error = netmap_get_vale_na(hdr, &na, nmd, 0);
+	if (na) {
+		error = EBUSY;
+		goto unref_exit;
+	}
+	error = netmap_get_vale_na(hdr, &na,
+				nmd, 1 /* create if not exists */);
+	if (error) { /* no device */
+		goto unlock_exit;
+	}
+	if (na) {
+		goto found;
+	}
+
+	/* check for existing one */
+	error = netmap_get_stack_na(hdr, &na, nmd, 0);
+	if (na) {
+		error = EBUSY;
+		goto unref_exit;
+	}
+	error = netmap_get_stack_na(hdr, &na,
+				nmd, 1 /* create if not exists */);
+	if (error) { /* no device */
+		goto unlock_exit;
+	}
+
+	if (na == NULL) { /* any prefix missing */
+		error = EINVAL;
+		goto unlock_exit;
+	}
+found:
+
+	if (NETMAP_OWNED_BY_ANY(na)) {
+		error = EBUSY;
+		goto unref_exit;
+	}
+
+	if (na->nm_bdg_ctl) {
+		/* nop for VALE ports. The bwrap needs to put the hwna
+		 * in netmap mode (see netmap_bwrap_bdg_ctl)
+		 */
+		error = na->nm_bdg_ctl(hdr, na);
+		if (error)
+			goto unref_exit;
+		ND("registered %s to netmap-mode", na->name);
+	}
+	vpna = (struct netmap_vp_adapter *)na;
+	req->port_index = vpna->bdg_port;
+	NMG_UNLOCK();
+	return 0;
+
+unref_exit:
+	netmap_adapter_put(na);
+unlock_exit:
+	NMG_UNLOCK();
+	return error;
+}
+
 
 int
 nm_is_bwrap(struct netmap_adapter *na)
 {
 	return na->nm_register == netmap_bwrap_reg;
+}
+
+/* Process NETMAP_REQ_VALE_DETACH.
+ */
+int
+netmap_bdg_detach(struct nmreq_header *hdr, void *auth_token)
+{
+	int error;
+
+	NMG_LOCK();
+	error = netmap_bdg_detach_locked(hdr, auth_token);
+	NMG_UNLOCK();
+	return error;
+}
+
+int
+netmap_bdg_detach_locked(struct nmreq_header *hdr, void *auth_token)
+{
+	struct nmreq_vale_detach *nmreq_det = (void *)(uintptr_t)hdr->nr_body;
+	struct netmap_vp_adapter *vpna;
+	struct netmap_adapter *na;
+	struct nm_bridge *b = NULL;
+	int error;
+
+	/* permission check for modified bridges */
+	b = nm_find_bridge(hdr->nr_name, 0 /* don't create */, NULL);
+	if (b && !nm_bdg_valid_auth_token(b, auth_token)) {
+		error = EACCES;
+		goto error_exit;
+	}
+
+	error = netmap_get_vale_na(hdr, &na, NULL, 0 /* don't create */);
+	if (error) { /* no device, or another bridge or user owns the device */
+		goto error_exit;
+	} else if (na != NULL) {
+		goto found;
+	}
+	error = netmap_get_stack_na(hdr, &na, NULL, 0 /* don't create */);
+	if (error) { /* no device, or another bridge or user owns the device */
+		goto error_exit;
+	}
+found:
+
+	if (na == NULL) { /* VALE prefix missing */
+		error = EINVAL;
+		goto error_exit;
+	} else if (nm_is_bwrap(na) &&
+		   ((struct netmap_bwrap_adapter *)na)->na_polling_state) {
+		/* Don't detach a NIC with polling */
+		error = EBUSY;
+		goto unref_exit;
+	}
+
+	vpna = (struct netmap_vp_adapter *)na;
+	if (na->na_vp != vpna) {
+		/* trying to detach first attach of VALE persistent port attached
+		 * to 2 bridges
+		 */
+		error = EBUSY;
+		goto unref_exit;
+	}
+	nmreq_det->port_index = vpna->bdg_port;
+
+	if (na->nm_bdg_ctl) {
+		/* remove the port from bridge. The bwrap
+		 * also needs to put the hwna in normal mode
+		 */
+		error = na->nm_bdg_ctl(hdr, na);
+	}
+
+unref_exit:
+	netmap_adapter_put(na);
+error_exit:
+	return error;
+
 }
 
 
