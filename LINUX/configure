@@ -1808,6 +1808,16 @@ EOF
 	}
 EOF
 
+    add_test 'define VIRTIO_NET_HDR_FROM_SKB_3ARGS' <<EOF
+	#include <linux/virtio_net.h>
+
+	int
+	dummy(const struct sk_buff *skb, struct virtio_net_hdr *hdr,
+		bool little_endian) {
+		return virtio_net_hdr_from_skb(skb, hdr, little_endian);
+	}
+EOF
+
   add_test 'have FIND_VQS_CTX_ARG' <<EOF
 	#include <linux/virtio_config.h>
 
