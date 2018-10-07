@@ -3,6 +3,12 @@
 # Runs all the tests using randomized values for number of packets, fill
 # character and packets length.
 ################################################################################
+
+if [ "$EUID" -ne "0" ]; then
+   echo "This script must be run as root"
+   exit 1
+fi
+
 random_num="$((65 + $RANDOM % 58))"
 # https://stackoverflow.com/a/10503163
 random_fill=$(printf \\$(printf '%03o' $random_num))
@@ -14,6 +20,7 @@ random_packet_num="$((1 + $RANDOM % 100))"
 # Use and empty string instead of "-q" if you don't want to perform a sequential
 # send/receive check
 seq_check="-q"
+
 echo "Running tests with"
 echo "   number of packets: ${random_packet_num}"
 echo "   fill character   : ${random_fill}"
@@ -21,21 +28,40 @@ echo "   sequence check   : ${seq_check}"
 echo "   packet length    : ${random_len}"
 echo ""
 
-# We add the current directory to the PATH. This way we can directly run
-# functional, get_tx_rings_avail_sends and get_tx_rings_max_sends from the test
-# scripts.
-PATH="$(pwd):${PATH}"
+# Save current directory and enter the utils/ directory.
+pushd $(pwd)
+cd $(dirname $0)
+
+# Add the current directory (and build-utils) to the PATH. In this way we can
+# easily invoke functional, get_tx_rings_avail_sends and the other executables
+# from the test scripts.
+PATH="$(pwd)/../build-utils:$(pwd):${PATH}"
+
+source test_lib
+
+netmap_load
 
 for test in tests/*_test ; do
+	restart_fd_server
 	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
+	close_fd_server
 	if [ $? != 0 ] ; then
 		echo "Rerunning the test that just failed with -v"
-		# Select verbosity of output during after an error occurred:
+		# Select verbosity of output after an error occurred:
 		#    -v    -> prints error messages
 		#    -vv   -> -v, send and receive actions
 		#    -vvv  -> -vv and packet building
 		#    -vvvv -> -vvv and arguments parsing
+		restart_fd_server
 		$test -v -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+		close_fd_server
+		popd
 		exit $?
 	fi
 done
+
+# Wait for the fd_server to terminate and release its references
+sleep 0.5
+
+netmap_unload
+popd

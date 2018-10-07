@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 struct TestContext {
+	int fd;                 /* netmap file descriptor */
 	const char *ifname;
 	const char *bdgname;
 	uint32_t nr_tx_slots;   /* slots in tx rings */
@@ -43,19 +44,19 @@ ctx_reset(struct TestContext *ctx)
 }
 #endif
 
-typedef int (*testfunc_t)(int fd, struct TestContext *ctx);
+typedef int (*testfunc_t)(struct TestContext *ctx);
 
 static void
 nmreq_hdr_init(struct nmreq_header *hdr, const char *ifname)
 {
 	memset(hdr, 0, sizeof(*hdr));
 	hdr->nr_version = NETMAP_API;
-	strncpy(hdr->nr_name, ifname, sizeof(hdr->nr_name));
+	strncpy(hdr->nr_name, ifname, sizeof(hdr->nr_name) - 1);
 }
 
 /* Single NETMAP_REQ_PORT_INFO_GET. */
 static int
-port_info_get(int fd, struct TestContext *ctx)
+port_info_get(struct TestContext *ctx)
 {
 	struct nmreq_port_info_get req;
 	struct nmreq_header hdr;
@@ -67,7 +68,7 @@ port_info_get(int fd, struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
-	ret = ioctl(fd, NIOCCTRL, &hdr);
+	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_INFO_GET)");
 		return ret;
@@ -81,18 +82,19 @@ port_info_get(int fd, struct TestContext *ctx)
 	printf("nr_mem_id %u\n", req.nr_mem_id);
 
 	return req.nr_memsize && req.nr_tx_slots && req.nr_rx_slots &&
-			       req.nr_tx_rings && req.nr_rx_rings &&
-			       req.nr_tx_rings
-		       ? 0
-		       : -1;
+	                       req.nr_tx_rings && req.nr_rx_rings &&
+	                       req.nr_tx_rings
+	               ? 0
+	               : -1;
 }
 
 /* Single NETMAP_REQ_REGISTER, no use. */
 static int
-port_register(int fd, struct TestContext *ctx)
+port_register(struct TestContext *ctx)
 {
 	struct nmreq_register req;
 	struct nmreq_header hdr;
+	int success;
 	int ret;
 
 	printf("Testing NETMAP_REQ_REGISTER(mode=%d,ringid=%d,"
@@ -113,7 +115,7 @@ port_register(int fd, struct TestContext *ctx)
 	req.nr_tx_rings   = ctx->nr_tx_rings;
 	req.nr_rx_rings   = ctx->nr_rx_rings;
 	req.nr_extra_bufs = ctx->nr_extra_bufs;
-	ret		  = ioctl(fd, NIOCCTRL, &hdr);
+	ret               = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, REGISTER)");
 		return ret;
@@ -127,56 +129,67 @@ port_register(int fd, struct TestContext *ctx)
 	printf("nr_mem_id %u\n", req.nr_mem_id);
 	printf("nr_extra_bufs %u\n", req.nr_extra_bufs);
 
-	return req.nr_memsize && (ctx->nr_mode == req.nr_mode) &&
-			       (ctx->nr_ringid == req.nr_ringid) &&
-			       (ctx->nr_flags == req.nr_flags) &&
-			       ((!ctx->nr_tx_slots && req.nr_tx_slots) ||
-				(ctx->nr_tx_slots == req.nr_tx_slots)) &&
-			       ((!ctx->nr_rx_slots && req.nr_rx_slots) ||
-				(ctx->nr_rx_slots == req.nr_rx_slots)) &&
-			       ((!ctx->nr_tx_rings && req.nr_tx_rings) ||
-				(ctx->nr_tx_rings == req.nr_tx_rings)) &&
-			       ((!ctx->nr_rx_rings && req.nr_rx_rings) ||
-				(ctx->nr_rx_rings == req.nr_rx_rings)) &&
-			       ((!ctx->nr_mem_id && req.nr_mem_id) ||
-				(ctx->nr_mem_id == req.nr_mem_id)) &&
-			       (ctx->nr_extra_bufs == req.nr_extra_bufs)
-		       ? 0
-		       : -1;
+	success = req.nr_memsize && (ctx->nr_mode == req.nr_mode) &&
+	                       (ctx->nr_ringid == req.nr_ringid) &&
+	                       (ctx->nr_flags == req.nr_flags) &&
+	                       ((!ctx->nr_tx_slots && req.nr_tx_slots) ||
+	                        (ctx->nr_tx_slots == req.nr_tx_slots)) &&
+	                       ((!ctx->nr_rx_slots && req.nr_rx_slots) ||
+	                        (ctx->nr_rx_slots == req.nr_rx_slots)) &&
+	                       ((!ctx->nr_tx_rings && req.nr_tx_rings) ||
+	                        (ctx->nr_tx_rings == req.nr_tx_rings)) &&
+	                       ((!ctx->nr_rx_rings && req.nr_rx_rings) ||
+	                        (ctx->nr_rx_rings == req.nr_rx_rings)) &&
+	                       ((!ctx->nr_mem_id && req.nr_mem_id) ||
+	                        (ctx->nr_mem_id == req.nr_mem_id)) &&
+	                       (ctx->nr_extra_bufs == req.nr_extra_bufs);
+	if (!success) {
+		return -1;
+	}
+
+	/* Write back results to the context structure.*/
+	ctx->nr_tx_slots = req.nr_tx_slots;
+	ctx->nr_rx_slots = req.nr_rx_slots;
+	ctx->nr_tx_rings = req.nr_tx_rings;
+	ctx->nr_rx_rings = req.nr_rx_rings;
+	ctx->nr_mem_id = req.nr_mem_id;
+	ctx->nr_extra_bufs = req.nr_extra_bufs;
+
+	return -0;
 }
 
 static int
-port_register_hwall_host(int fd, struct TestContext *ctx)
+port_register_hwall_host(struct TestContext *ctx)
 {
 	ctx->nr_mode = NR_REG_NIC_SW;
-	return port_register(fd, ctx);
+	return port_register(ctx);
 }
 
 static int
-port_register_host(int fd, struct TestContext *ctx)
+port_register_host(struct TestContext *ctx)
 {
 	ctx->nr_mode = NR_REG_SW;
-	return port_register(fd, ctx);
+	return port_register(ctx);
 }
 
 static int
-port_register_hwall(int fd, struct TestContext *ctx)
+port_register_hwall(struct TestContext *ctx)
 {
 	ctx->nr_mode = NR_REG_ALL_NIC;
-	return port_register(fd, ctx);
+	return port_register(ctx);
 }
 
 static int
-port_register_single_ring_couple(int fd, struct TestContext *ctx)
+port_register_single_ring_couple(struct TestContext *ctx)
 {
 	ctx->nr_mode   = NR_REG_ONE_NIC;
 	ctx->nr_ringid = 0;
-	return port_register(fd, ctx);
+	return port_register(ctx);
 }
 
 /* NETMAP_REQ_VALE_ATTACH */
 static int
-vale_attach(int fd, struct TestContext *ctx)
+vale_attach(struct TestContext *ctx)
 {
 	struct nmreq_vale_attach req;
 	struct nmreq_header hdr;
@@ -195,7 +208,7 @@ vale_attach(int fd, struct TestContext *ctx)
 		ctx->nr_mode = NR_REG_ALL_NIC; /* default */
 	}
 	req.reg.nr_mode = ctx->nr_mode;
-	ret		= ioctl(fd, NIOCCTRL, &hdr);
+	ret             = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_ATTACH)");
 		return ret;
@@ -203,15 +216,15 @@ vale_attach(int fd, struct TestContext *ctx)
 	printf("nr_mem_id %u\n", req.reg.nr_mem_id);
 
 	return ((!ctx->nr_mem_id && req.reg.nr_mem_id > 1) ||
-		(ctx->nr_mem_id == req.reg.nr_mem_id)) &&
-			       (ctx->nr_flags == req.reg.nr_flags)
-		       ? 0
-		       : -1;
+	        (ctx->nr_mem_id == req.reg.nr_mem_id)) &&
+	                       (ctx->nr_flags == req.reg.nr_flags)
+	               ? 0
+	               : -1;
 }
 
 /* NETMAP_REQ_VALE_DETACH */
 static int
-vale_detach(int fd, struct TestContext *ctx)
+vale_detach(struct TestContext *ctx)
 {
 	struct nmreq_header hdr;
 	struct nmreq_vale_detach req;
@@ -224,7 +237,7 @@ vale_detach(int fd, struct TestContext *ctx)
 	nmreq_hdr_init(&hdr, vpname);
 	hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
 	hdr.nr_body    = (uintptr_t)&req;
-	ret	    = ioctl(fd, NIOCCTRL, &hdr);
+	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_DETACH)");
 		return ret;
@@ -235,28 +248,28 @@ vale_detach(int fd, struct TestContext *ctx)
 
 /* First NETMAP_REQ_VALE_ATTACH, then NETMAP_REQ_VALE_DETACH. */
 static int
-vale_attach_detach(int fd, struct TestContext *ctx)
+vale_attach_detach(struct TestContext *ctx)
 {
 	int ret;
 
-	if ((ret = vale_attach(fd, ctx))) {
+	if ((ret = vale_attach(ctx))) {
 		return ret;
 	}
 
-	return vale_detach(fd, ctx);
+	return vale_detach(ctx);
 }
 
 static int
-vale_attach_detach_host_rings(int fd, struct TestContext *ctx)
+vale_attach_detach_host_rings(struct TestContext *ctx)
 {
 	ctx->nr_mode = NR_REG_NIC_SW;
-	return vale_attach_detach(fd, ctx);
+	return vale_attach_detach(ctx);
 }
 
 /* First NETMAP_REQ_PORT_HDR_SET and the NETMAP_REQ_PORT_HDR_GET
  * to check that we get the same value. */
 static int
-port_hdr_set_and_get(int fd, struct TestContext *ctx)
+port_hdr_set_and_get(struct TestContext *ctx)
 {
 	struct nmreq_port_hdr req;
 	struct nmreq_header hdr;
@@ -269,7 +282,7 @@ port_hdr_set_and_get(int fd, struct TestContext *ctx)
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	req.nr_hdr_len = ctx->nr_hdr_len;
-	ret	    = ioctl(fd, NIOCCTRL, &hdr);
+	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_HDR_SET)");
 		return ret;
@@ -282,7 +295,7 @@ port_hdr_set_and_get(int fd, struct TestContext *ctx)
 	printf("Testing NETMAP_REQ_PORT_HDR_GET on '%s'\n", ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
 	req.nr_hdr_len = 0;
-	ret	    = ioctl(fd, NIOCCTRL, &hdr);
+	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_HDR_SET)");
 		return ret;
@@ -293,33 +306,33 @@ port_hdr_set_and_get(int fd, struct TestContext *ctx)
 }
 
 static int
-vale_ephemeral_port_hdr_manipulation(int fd, struct TestContext *ctx)
+vale_ephemeral_port_hdr_manipulation(struct TestContext *ctx)
 {
 	int ret;
 
 	ctx->ifname  = "vale:eph0";
 	ctx->nr_mode = NR_REG_ALL_NIC;
-	if ((ret = port_register(fd, ctx))) {
+	if ((ret = port_register(ctx))) {
 		return ret;
 	}
 	/* Try to set and get all the acceptable values. */
 	ctx->nr_hdr_len = 12;
-	if ((ret = port_hdr_set_and_get(fd, ctx))) {
+	if ((ret = port_hdr_set_and_get(ctx))) {
 		return ret;
 	}
 	ctx->nr_hdr_len = 0;
-	if ((ret = port_hdr_set_and_get(fd, ctx))) {
+	if ((ret = port_hdr_set_and_get(ctx))) {
 		return ret;
 	}
 	ctx->nr_hdr_len = 10;
-	if ((ret = port_hdr_set_and_get(fd, ctx))) {
+	if ((ret = port_hdr_set_and_get(ctx))) {
 		return ret;
 	}
 	return 0;
 }
 
 static int
-vale_persistent_port(int fd, struct TestContext *ctx)
+vale_persistent_port(struct TestContext *ctx)
 {
 	struct nmreq_vale_newif req;
 	struct nmreq_header hdr;
@@ -339,19 +352,19 @@ vale_persistent_port(int fd, struct TestContext *ctx)
 	req.nr_rx_slots = ctx->nr_rx_slots;
 	req.nr_tx_rings = ctx->nr_tx_rings;
 	req.nr_rx_rings = ctx->nr_rx_rings;
-	ret		= ioctl(fd, NIOCCTRL, &hdr);
+	ret             = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_NEWIF)");
 		return ret;
 	}
 
 	/* Attach the persistent VALE port to a switch and then detach. */
-	result = vale_attach_detach(fd, ctx);
+	result = vale_attach_detach(ctx);
 
 	printf("Testing NETMAP_REQ_VALE_DELIF on '%s'\n", ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_VALE_DELIF;
 	hdr.nr_body    = (uintptr_t)NULL;
-	ret	    = ioctl(fd, NIOCCTRL, &hdr);
+	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_NEWIF)");
 		if (result == 0) {
@@ -364,7 +377,7 @@ vale_persistent_port(int fd, struct TestContext *ctx)
 
 /* Single NETMAP_REQ_POOLS_INFO_GET. */
 static int
-pools_info_get(int fd, struct TestContext *ctx)
+pools_info_get(struct TestContext *ctx)
 {
 	struct nmreq_pools_info req;
 	struct nmreq_header hdr;
@@ -376,7 +389,7 @@ pools_info_get(int fd, struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
-	ret = ioctl(fd, NIOCCTRL, &hdr);
+	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, POOLS_INFO_GET)");
 		return ret;
@@ -394,21 +407,21 @@ pools_info_get(int fd, struct TestContext *ctx)
 	printf("nr_buf_pool_objsize %u\n", req.nr_buf_pool_objsize);
 
 	return req.nr_memsize && req.nr_if_pool_objtotal &&
-			       req.nr_if_pool_objsize &&
-			       req.nr_ring_pool_objtotal &&
-			       req.nr_ring_pool_objsize &&
-			       req.nr_buf_pool_objtotal &&
-			       req.nr_buf_pool_objsize
-		       ? 0
-		       : -1;
+	                       req.nr_if_pool_objsize &&
+	                       req.nr_ring_pool_objtotal &&
+	                       req.nr_ring_pool_objsize &&
+	                       req.nr_buf_pool_objtotal &&
+	                       req.nr_buf_pool_objsize
+	               ? 0
+	               : -1;
 }
 
 static int
-register_and_pools_info_get(int fd, struct TestContext *ctx)
+register_and_pools_info_get(struct TestContext *ctx)
 {
 	int ret;
 
-	ret = pools_info_get(fd, ctx);
+	ret = pools_info_get(ctx);
 	if (ret == 0) {
 		printf("Failed: POOLS_INFO_GET didn't fail on unbound "
 		       "netmap device\n");
@@ -416,17 +429,17 @@ register_and_pools_info_get(int fd, struct TestContext *ctx)
 	}
 
 	ctx->nr_mode = NR_REG_ONE_NIC;
-	ret	  = port_register(fd, ctx);
+	ret          = port_register(ctx);
 	if (ret) {
 		return ret;
 	}
 	ctx->nr_mem_id = 1;
 
-	return pools_info_get(fd, ctx);
+	return pools_info_get(ctx);
 }
 
 static int
-pipe_master(int fd, struct TestContext *ctx)
+pipe_master(struct TestContext *ctx)
 {
 	char pipe_name[128];
 
@@ -434,17 +447,17 @@ pipe_master(int fd, struct TestContext *ctx)
 	ctx->ifname  = pipe_name;
 	ctx->nr_mode = NR_REG_NIC_SW;
 
-	if (port_register(fd, ctx) == 0) {
+	if (port_register(ctx) == 0) {
 		printf("pipes should not accept NR_REG_NIC_SW\n");
 		return -1;
 	}
 	ctx->nr_mode = NR_REG_ALL_NIC;
 
-	return port_register(fd, ctx);
+	return port_register(ctx);
 }
 
 static int
-pipe_slave(int fd, struct TestContext *ctx)
+pipe_slave(struct TestContext *ctx)
 {
 	char pipe_name[128];
 
@@ -452,12 +465,12 @@ pipe_slave(int fd, struct TestContext *ctx)
 	ctx->ifname  = pipe_name;
 	ctx->nr_mode = NR_REG_ALL_NIC;
 
-	return port_register(fd, ctx);
+	return port_register(ctx);
 }
 
 /* NETMAP_REQ_VALE_POLLING_ENABLE */
 static int
-vale_polling_enable(int fd, struct TestContext *ctx)
+vale_polling_enable(struct TestContext *ctx)
 {
 	struct nmreq_vale_polling req;
 	struct nmreq_header hdr;
@@ -471,25 +484,25 @@ vale_polling_enable(int fd, struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_ENABLE;
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
-	req.nr_mode		= ctx->nr_mode;
+	req.nr_mode             = ctx->nr_mode;
 	req.nr_first_cpu_id     = ctx->nr_first_cpu_id;
 	req.nr_num_polling_cpus = ctx->nr_num_polling_cpus;
-	ret			= ioctl(fd, NIOCCTRL, &hdr);
+	ret                     = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_POLLING_ENABLE)");
 		return ret;
 	}
 
 	return (req.nr_mode == ctx->nr_mode &&
-		req.nr_first_cpu_id == ctx->nr_first_cpu_id &&
-		req.nr_num_polling_cpus == ctx->nr_num_polling_cpus)
-		       ? 0
-		       : -1;
+	        req.nr_first_cpu_id == ctx->nr_first_cpu_id &&
+	        req.nr_num_polling_cpus == ctx->nr_num_polling_cpus)
+	               ? 0
+	               : -1;
 }
 
 /* NETMAP_REQ_VALE_POLLING_DISABLE */
 static int
-vale_polling_disable(int fd, struct TestContext *ctx)
+vale_polling_disable(struct TestContext *ctx)
 {
 	struct nmreq_vale_polling req;
 	struct nmreq_header hdr;
@@ -503,7 +516,7 @@ vale_polling_disable(int fd, struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_VALE_POLLING_DISABLE;
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
-	ret = ioctl(fd, NIOCCTRL, &hdr);
+	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_POLLING_DISABLE)");
 		return ret;
@@ -513,28 +526,34 @@ vale_polling_disable(int fd, struct TestContext *ctx)
 }
 
 static int
-vale_polling_enable_disable(int fd, struct TestContext *ctx)
+vale_polling_enable_disable(struct TestContext *ctx)
 {
 	int ret = 0;
 
-	if ((ret = vale_attach(fd, ctx))) {
+	if ((ret = vale_attach(ctx))) {
 		return ret;
 	}
 
-	ctx->nr_mode		 = NETMAP_POLLING_MODE_SINGLE_CPU;
+	ctx->nr_mode             = NETMAP_POLLING_MODE_SINGLE_CPU;
 	ctx->nr_num_polling_cpus = 1;
 	ctx->nr_first_cpu_id     = 0;
-	if ((ret = vale_polling_enable(fd, ctx))) {
-		vale_detach(fd, ctx);
+	if ((ret = vale_polling_enable(ctx))) {
+		vale_detach(ctx);
+#ifdef __FreeBSD__
+		/* NETMAP_REQ_VALE_POLLING_DISABLE is disabled on FreeBSD,
+		 * because it is currently broken. We are happy to see that
+		 * it fails. */
+		return 0;
+#endif
 		return ret;
 	}
 
-	if ((ret = vale_polling_disable(fd, ctx))) {
-		vale_detach(fd, ctx);
+	if ((ret = vale_polling_disable(ctx))) {
+		vale_detach(ctx);
 		return ret;
 	}
 
-	return vale_detach(fd, ctx);
+	return vale_detach(ctx);
 }
 
 static void
@@ -555,8 +574,8 @@ checkoption(struct nmreq_option *opt, struct nmreq_option *exp)
 {
 	if (opt->nro_next != exp->nro_next) {
 		printf("nro_next %p expected %p\n",
-			(void *)(uintptr_t)opt->nro_next,
-			(void *)(uintptr_t)exp->nro_next);
+		       (void *)(uintptr_t)opt->nro_next,
+		       (void *)(uintptr_t)exp->nro_next);
 		return -1;
 	}
 	if (opt->nro_reqtype != exp->nro_reqtype) {
@@ -573,7 +592,7 @@ checkoption(struct nmreq_option *opt, struct nmreq_option *exp)
 }
 
 static int
-unsupported_option(int fd, struct TestContext *ctx)
+unsupported_option(struct TestContext *ctx)
 {
 	struct nmreq_option opt, save;
 
@@ -584,7 +603,7 @@ unsupported_option(int fd, struct TestContext *ctx)
 	push_option(&opt, ctx);
 	save = opt;
 
-	if (port_register_hwall(fd, ctx) >= 0)
+	if (port_register_hwall(ctx) >= 0)
 		return -1;
 
 	clear_options(ctx);
@@ -593,22 +612,19 @@ unsupported_option(int fd, struct TestContext *ctx)
 }
 
 static int
-infinite_options(int fd, struct TestContext *ctx)
+infinite_options(struct TestContext *ctx)
 {
-	struct nmreq_option opt, save;
+	struct nmreq_option opt;
 
 	printf("Testing infinite list of options on %s\n", ctx->ifname);
 
 	opt.nro_reqtype = 1234;
 	push_option(&opt, ctx);
 	opt.nro_next = (uintptr_t)&opt;
-	save	 = opt;
-	if (port_register_hwall(fd, ctx) >= 0)
+	if (port_register_hwall(ctx) >= 0)
 		return -1;
-
 	clear_options(ctx);
-	save.nro_status = EOPNOTSUPP;
-	return checkoption(&opt, &save);
+	return (errno == EMSGSIZE ? 0 : -1);
 }
 
 #ifdef CONFIG_NETMAP_EXTMEM
@@ -652,7 +668,7 @@ push_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *e)
 	void *addr;
 
 	addr = mmap(NULL, (1U << 22), PROT_READ | PROT_WRITE,
-		    MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+	            MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (addr == MAP_FAILED) {
 		perror("mmap");
 		return -1;
@@ -660,7 +676,7 @@ push_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *e)
 
 	memset(e, 0, sizeof(*e));
 	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
-	e->nro_usrptr	  = (uintptr_t)addr;
+	e->nro_usrptr          = (uintptr_t)addr;
 	e->nro_info.nr_memsize = (1U << 22);
 
 	push_option(&e->nro_opt, ctx);
@@ -674,7 +690,7 @@ pop_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *exp)
 	struct nmreq_opt_extmem *e;
 	int ret;
 
-	e	   = (struct nmreq_opt_extmem *)(uintptr_t)ctx->nr_opt;
+	e           = (struct nmreq_opt_extmem *)(uintptr_t)ctx->nr_opt;
 	ctx->nr_opt = (struct nmreq_option *)(uintptr_t)ctx->nr_opt->nro_next;
 
 	if ((ret = checkoption(&e->nro_opt, &exp->nro_opt))) {
@@ -692,14 +708,15 @@ pop_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *exp)
 		return -1;
 	}
 
-	if ((ret = munmap((void *)(uintptr_t)e->nro_usrptr, e->nro_info.nr_memsize)))
+	if ((ret = munmap((void *)(uintptr_t)e->nro_usrptr,
+	                  e->nro_info.nr_memsize)))
 		return ret;
 
 	return 0;
 }
 
 static int
-_extmem_option(int fd, struct TestContext *ctx, int new_rsz)
+_extmem_option(struct TestContext *ctx, int new_rsz)
 {
 	struct nmreq_opt_extmem e, save;
 	int ret;
@@ -717,7 +734,7 @@ _extmem_option(int fd, struct TestContext *ctx, int new_rsz)
 	if ((ret = change_param("priv_ring_size", new_rsz, &old_rsz)))
 		return ret;
 
-	if ((ret = port_register_hwall(fd, ctx)))
+	if ((ret = port_register_hwall(ctx)))
 		return ret;
 
 	ret = pop_extmem_option(ctx, &save);
@@ -729,23 +746,23 @@ _extmem_option(int fd, struct TestContext *ctx, int new_rsz)
 }
 
 static int
-extmem_option(int fd, struct TestContext *ctx)
+extmem_option(struct TestContext *ctx)
 {
 	printf("Testing extmem option on vale0:0\n");
 
-	return _extmem_option(fd, ctx, 512);
+	return _extmem_option(ctx, 512);
 }
 
 static int
-bad_extmem_option(int fd, struct TestContext *ctx)
+bad_extmem_option(struct TestContext *ctx)
 {
 	printf("Testing bad extmem option on vale0:0\n");
 
-	return _extmem_option(fd, ctx, (1 << 16)) < 0 ? 0 : -1;
+	return _extmem_option(ctx, (1 << 16)) < 0 ? 0 : -1;
 }
 
 static int
-duplicate_extmem_options(int fd, struct TestContext *ctx)
+duplicate_extmem_options(struct TestContext *ctx)
 {
 	struct nmreq_opt_extmem e1, save1, e2, save2;
 	int ret;
@@ -763,7 +780,7 @@ duplicate_extmem_options(int fd, struct TestContext *ctx)
 	save1 = e1;
 	save2 = e2;
 
-	ret = port_register_hwall(fd, ctx);
+	ret = port_register_hwall(ctx);
 	if (ret >= 0) {
 		printf("duplicate option not detected\n");
 		return -1;
@@ -824,10 +841,11 @@ int
 main(int argc, char **argv)
 {
 	struct TestContext ctx;
-	unsigned int i;
 	int loopback_if;
+	int num_tests;
 	int ret = 0;
 	int j   = -1;
+	int i;
 	int opt;
 
 	memset(&ctx, 0, sizeof(ctx));
@@ -867,18 +885,20 @@ main(int argc, char **argv)
 		}
 	}
 
+	num_tests = sizeof(tests) / sizeof(tests[0]);
+
 	if (j >= 0) {
 		j--; /* one-based --> zero-based */
-		if (j >= (int)(sizeof(tests) / sizeof(tests[0]))) {
+		if (j >= num_tests) {
 			printf("Error: Test not in range\n");
 			ret = -1;
 			goto out;
 		}
 	}
-	for (i = 0; i < sizeof(tests) / sizeof(tests[0]) - 1; i++) {
+	for (i = 0; i < num_tests; i++) {
 		struct TestContext ctxcopy;
 		int fd;
-		if (j >= 0 && (unsigned)j != i) {
+		if (j >= 0 && j != i) {
 			continue;
 		}
 		printf("==> Start of Test #%d -- %s\n", i + 1, tests[i].name);
@@ -889,7 +909,8 @@ main(int argc, char **argv)
 			goto out;
 		}
 		memcpy(&ctxcopy, &ctx, sizeof(ctxcopy));
-		ret = tests[i].test(fd, &ctxcopy);
+		ctxcopy.fd = fd;
+		ret = tests[i].test(&ctxcopy);
 		if (ret) {
 			printf("Test #%d failed\n", i + 1);
 			goto out;

@@ -1113,7 +1113,7 @@ generic_netmap_attach(struct ifnet *ifp)
 		return ENOMEM;
 	}
 	na = (struct netmap_adapter *)gna;
-	strncpy(na->name, ifp->if_xname, sizeof(na->name));
+	strlcpy(na->name, ifp->if_xname, sizeof(na->name));
 	na->ifp = ifp;
 	na->num_tx_desc = num_tx_desc;
 	na->num_rx_desc = num_rx_desc;

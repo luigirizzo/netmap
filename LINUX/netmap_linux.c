@@ -30,6 +30,7 @@
 #include <dev/netmap/netmap_kern.h>
 #include <net/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
+#include <dev/netmap/netmap_bdg.h>
 #include <net/ip6_checksum.h>
 #include <linux/rtnetlink.h>
 #include <linux/nsproxy.h>
@@ -2182,7 +2183,7 @@ nm_os_kctx_create(struct nm_kctx_cfg *cfg, void *opaque)
 	int error;
 
 	if (!cfg->use_kthread && cfg->notify_fn == NULL) {
-		D("Error: botify function missing with use_htead == 0");
+		D("Error: notify function missing with use_kthread == 0");
 		return NULL;
 	}
 
@@ -2647,7 +2648,7 @@ netmap_sink_init(void)
 		return -ENOMEM;
 	}
 	netdev->netdev_ops = &nm_sink_netdev_ops ;
-	strncpy(netdev->name, "nmsink", sizeof(netdev->name) - 1);
+	strlcpy(netdev->name, "nmsink", sizeof(netdev->name));
 	netdev->features = NETIF_F_HIGHDMA;
 	strcpy(netdev->name, "nmsink%d");
 	err = register_netdev(netdev);
@@ -2985,11 +2986,11 @@ EXPORT_SYMBOL(netmap_no_pendintr);	/* XXX mitigation - should go away */
 #ifdef WITH_VALE
 EXPORT_SYMBOL(netmap_bdg_regops);	/* bridge configuration routine */
 EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
-EXPORT_SYMBOL(nm_bdg_update_private_data);
+EXPORT_SYMBOL(netmap_bdg_update_private_data);
 EXPORT_SYMBOL(netmap_vale_create);
 EXPORT_SYMBOL(netmap_vale_destroy);
-EXPORT_SYMBOL(nm_bdg_ctl_attach);
-EXPORT_SYMBOL(nm_bdg_ctl_detach);
+EXPORT_SYMBOL(netmap_vale_attach);
+EXPORT_SYMBOL(netmap_vale_detach);
 EXPORT_SYMBOL(nm_vi_create);
 EXPORT_SYMBOL(nm_vi_destroy);
 #endif /* WITH_VALE */

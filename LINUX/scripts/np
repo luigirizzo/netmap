@@ -420,7 +420,7 @@ function check-patch()
 	# extract the driver name
 	local driver=$(scripts/vers $_patch -s -p -p)
 	# possibly extract the selected driver version
-	driver_version=${driver#*:}
+	driver_version=$(echo "$driver" | sed -n 's/^.*://p')
 	driver=${driver%%:*}
 	# extract the driver type (vanilla or external)
 	local dtype=$(scripts/vers $_patch -s -p -p -p)

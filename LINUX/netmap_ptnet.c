@@ -1439,7 +1439,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		netif_napi_add(netdev, &prq->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
 	}
 
-	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
+	strlcpy(netdev->name, pci_name(pdev), sizeof(netdev->name));
 
 	/* Read MAC address from device and put it into the netdev struct. */
 	macreg = ioread32(ioaddr + PTNET_IO_MAC_HI);

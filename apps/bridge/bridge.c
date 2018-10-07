@@ -76,13 +76,13 @@ process_rings(struct netmap_ring *rxring, struct netmap_ring *txring,
 
 		/* swap packets */
 		if (ts->buf_idx < 2 || rs->buf_idx < 2) {
-			D("wrong index rx[%d] = %d  -> tx[%d] = %d",
+			RD(5, "wrong index rx[%d] = %d  -> tx[%d] = %d",
 				j, rs->buf_idx, k, ts->buf_idx);
 			sleep(2);
 		}
 		/* copy the packet length. */
-		if (rs->len > 2048) {
-			D("wrong len %d rx[%d] -> tx[%d]", rs->len, j, k);
+		if (rs->len > rxring->nr_buf_size) {
+			RD(5, "wrong len %d rx[%d] -> tx[%d]", rs->len, j, k);
 			rs->len = 0;
 		} else if (verbose > 1) {
 			D("%s send len %d rx[%d] -> tx[%d]", msg, rs->len, j, k);
@@ -95,6 +95,8 @@ process_rings(struct netmap_ring *rxring, struct netmap_ring *txring,
 			/* report the buffer change. */
 			ts->flags |= NS_BUF_CHANGED;
 			rs->flags |= NS_BUF_CHANGED;
+			/* copy the NS_MOREFRAG */
+			rs->flags = (rs->flags & ~NS_MOREFRAG) | (ts->flags & NS_MOREFRAG);
 		} else {
 			char *rxbuf = NETMAP_BUF(rxring, rs->buf_idx);
 			char *txbuf = NETMAP_BUF(txring, ts->buf_idx);

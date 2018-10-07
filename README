@@ -199,7 +199,7 @@ be computed with the formula:
 
 where "line_rate" is the nominal link rate (e.g 10 Gbit/s) and
 pkt_size is the actual packet size including MAC headers and CRC.
-The following table summarizes some results
+The following table summarizes some results (in Mpps)
 
 			LINE RATE
     pkt_size \	100M	1G	10G	40G

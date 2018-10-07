@@ -19,8 +19,6 @@ len="${len:-150}"
 s_MAC=$(get_random_MAC)
 d_MAC="FF:FF:FF:FF:FF:FF"
 
-restart_fd_server
-
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
 functional $verbosity -i vale0:v0

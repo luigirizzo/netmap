@@ -14,8 +14,6 @@ bridgeA="${bridge}A"
 bridgeB="${bridge}B"
 port="v0"
 
-restart_fd_server
-
 create_vale_persistent_port "$port" 0
 attach_to_vale_bridge "$bridgeA" "$port" 0
 attach_to_vale_bridge "$bridgeA" "$port" 1

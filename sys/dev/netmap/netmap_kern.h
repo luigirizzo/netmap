@@ -1114,12 +1114,12 @@ struct netmap_bwrap_adapter {
 	int (*nm_intr_notify)(struct netmap_kring *kring, int flags);
 
 };
-int nm_bdg_ctl_attach(struct nmreq_header *hdr, void *auth_token);
-int nm_bdg_ctl_detach(struct nmreq_header *hdr, void *auth_token);
 int nm_bdg_polling(struct nmreq_header *hdr);
-int netmap_bdg_list(struct nmreq_header *hdr);
 
 #ifdef WITH_VALE
+int netmap_vale_attach(struct nmreq_header *hdr, void *auth_token);
+int netmap_vale_detach(struct nmreq_header *hdr, void *auth_token);
+int netmap_vale_list(struct nmreq_header *hdr);
 int netmap_vi_create(struct nmreq_header *hdr, int);
 int nm_vi_create(struct nmreq_header *);
 int nm_vi_destroy(const char *name);
@@ -1626,50 +1626,8 @@ int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
 
 
-/*
- * The following bridge-related functions are used by other
- * kernel modules.
- *
- * VALE only supports unicast or broadcast. The lookup
- * function can return 0 .. NM_BDG_MAXPORTS-1 for regular ports,
- * NM_BDG_MAXPORTS for broadcast, NM_BDG_MAXPORTS+1 to indicate
- * drop.
- */
-typedef uint32_t (*bdg_lookup_fn_t)(struct nm_bdg_fwd *ft, uint8_t *ring_nr,
-		struct netmap_vp_adapter *, void *private_data);
-typedef int (*bdg_config_fn_t)(struct nm_ifreq *);
-typedef void (*bdg_dtor_fn_t)(const struct netmap_vp_adapter *);
-typedef void *(*bdg_update_private_data_fn_t)(void *private_data, void *callback_data, int *error);
-typedef int (*bdg_vp_create_fn_t)(struct nmreq_header *hdr,
-		struct ifnet *ifp, struct netmap_mem_d *nmd,
-		struct netmap_vp_adapter **ret);
-typedef int (*bdg_bwrap_attach_fn_t)(const char *nr_name, struct netmap_adapter *hwna);
-struct netmap_bdg_ops {
-	bdg_lookup_fn_t lookup;
-	bdg_config_fn_t config;
-	bdg_dtor_fn_t	dtor;
-	bdg_vp_create_fn_t	vp_create;
-	bdg_bwrap_attach_fn_t	bwrap_attach;
-	char name[IFNAMSIZ];
-};
-int netmap_bwrap_attach(const char *name, struct netmap_adapter *, struct netmap_bdg_ops *);
-int netmap_bdg_regops(const char *name, struct netmap_bdg_ops *bdg_ops, void *private_data, void *auth_token);
-
-#define	NM_BRIDGES		8	/* number of bridges */
-#define	NM_BDG_MAXPORTS		254	/* up to 254 */
-#define	NM_BDG_BROADCAST	NM_BDG_MAXPORTS
-#define	NM_BDG_NOPORT		(NM_BDG_MAXPORTS+1)
-
-struct nm_bridge *netmap_init_bridges2(u_int);
-void netmap_uninit_bridges2(struct nm_bridge *, u_int);
-int netmap_init_bridges(void);
-void netmap_uninit_bridges(void);
-int nm_bdg_update_private_data(const char *name, bdg_update_private_data_fn_t callback,
-	void *callback_data, void *auth_token);
-int netmap_bdg_config(struct nm_ifreq *nifr);
-
 #ifdef WITH_VALE
-uint32_t netmap_bdg_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
+uint32_t netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *, void *private_data);
 
 /* these are redefined in case of no VALE support */
@@ -1719,6 +1677,7 @@ struct net *netmap_bns_get(void);
 void netmap_bns_put(struct net *);
 void netmap_bns_getbridges(struct nm_bridge **, u_int *);
 #else
+extern struct nm_bridge *nm_bridges;
 #define netmap_bns_get()
 #define netmap_bns_put(_1)
 #define netmap_bns_getbridges(b, n) \
@@ -2544,5 +2503,8 @@ nm_os_get_mbuf(struct ifnet *ifp, int len)
 
 struct nmreq_option * nmreq_findoption(struct nmreq_option *, uint16_t);
 int nmreq_checkduplicate(struct nmreq_option *);
+
+int netmap_init_bridges(void);
+void netmap_uninit_bridges(void);
 
 #endif /* _NET_NETMAP_KERN_H_ */

@@ -911,7 +911,7 @@ start_fd_server(struct Global *g)
 		return;
 	}
 
-	if (execl("fd_server", "fd_server", (char *)NULL)) {
+	if (execlp("fd_server", "fd_server", (char *)NULL)) {
 		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "exec()");
 		exit(EXIT_FAILURE);
 	}
@@ -988,7 +988,7 @@ get_if_fd(struct Global *g, const char *if_name)
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_GET;
-	strncpy(req.if_name, if_name, sizeof(req.if_name));
+	strncpy(req.if_name, if_name, sizeof(req.if_name)-1);
 	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret < 0) {
 		verbose_perror(g->verbosity_level, LV_ERROR_MSG, "send()");
@@ -1032,7 +1032,7 @@ release_if_fd(struct Global *g, const char *if_name)
 
 	memset(&req, 0, sizeof(req));
 	req.action = FD_RELEASE;
-	strncpy(req.if_name, if_name, sizeof(req.if_name));
+	strncpy(req.if_name, if_name, sizeof(req.if_name)-1);
 
 	ret = send(socket_fd, &req, sizeof(req), 0);
 	if (ret <= 0) {
@@ -1375,7 +1375,7 @@ main(int argc, char **argv)
 
 		default:
 			verbose_print(g->verbosity_level, LV_ERROR_MSG,
-			              "Unrecognized option %c\n", opt);
+			              "Unrecognized option %c\n", optopt);
 			usage(stderr);
 			exit(EXIT_FAILURE);
 		}
