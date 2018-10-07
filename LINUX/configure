@@ -1862,6 +1862,16 @@ EOF
 	}
 EOF
 
+  add_test 'have VIRTIO_BYTEORDER' <<EOF
+	#include <linux/virtio_byteorder.h>
+
+	u16
+	dummy(bool little_endian, __virtio16 val)
+	{
+		return __virtio16_to_cpu(little_endian, val);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   
