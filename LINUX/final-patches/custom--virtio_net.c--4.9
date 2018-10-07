@@ -30,7 +30,7 @@ index 0000000..2c88957
 +
 +endif
 diff --git a/virtio_net.c/virtio_net.c b/virtio_net.c/virtio_net.c
-index cbf1c61..60a0898 100644
+index cbf1c61..17a3e2d 100644
 --- a/virtio_net.c/virtio_net.c
 +++ b/virtio_net.c/virtio_net.c
 @@ -27,7 +27,10 @@
@@ -130,7 +130,7 @@ index cbf1c61..60a0898 100644
 +
 +	if (skb->ip_summed == CHECKSUM_PARTIAL) {
 +		hdr->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
-+		if (skb_vlan_tag_present(skb))
++		if (skb->vlan_tci & VLAN_TAG_PRESENT)
 +			hdr->csum_start = __cpu_to_virtio16(little_endian,
 +				skb_checksum_start_offset(skb) + VLAN_HLEN);
 +		else
