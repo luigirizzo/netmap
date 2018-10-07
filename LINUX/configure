@@ -1875,10 +1875,10 @@ EOF
   add_test 'have VIRTIO_MEMORY_ACCESSORS' <<EOF
 	#include <linux/virtio_config.h>
 
-	bool
+	u16
 	dummy(struct virtio_device *vdev)
 	{
-		return virtio_is_little_endian(vdev) + virtio16_to_cpu(vdev, 0);
+		return virtio16_to_cpu(vdev, 0);
 	}
 EOF
 

@@ -157,15 +157,6 @@ typedef __u16 __bitwise__ __virtio16;
 typedef __u32 __bitwise__ __virtio32;
 typedef __u64 __bitwise__ __virtio64;
 
-static inline bool virtio_legacy_is_little_endian(void)
-{
-#ifdef __LITTLE_ENDIAN
-	return true;
-#else
-	return false;
-#endif
-}
-
 static inline u16 __virtio16_to_cpu(bool little_endian, __virtio16 val)
 {
 	if (little_endian)
@@ -216,6 +207,15 @@ static inline __virtio64 __cpu_to_virtio64(bool little_endian, u64 val)
 #endif  /* NETMAP_LINUX_HAVE_VIRTIO_BYTEORDER */
 
 #ifndef NETMAP_LINUX_HAVE_VIRTIO_MEMORY_ACCESSORS
+static inline bool virtio_legacy_is_little_endian(void)
+{
+#ifdef __LITTLE_ENDIAN
+	return true;
+#else
+	return false;
+#endif
+}
+
 static inline bool virtio_is_little_endian(struct virtio_device *vdev)
 {
 	return virtio_has_feature(vdev, VIRTIO_F_VERSION_1) ||
