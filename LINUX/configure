@@ -1632,6 +1632,15 @@ EOF
 	}
 EOF
 
+# check for ethtool_validate_speed() and ethtool_validate_duplex()
+  add_test 'have ETHTOOL_VALIDATE' <<EOF
+	#include <linux/ethtool.h>
+
+	int
+	dummy(void) {
+		return ethtool_validate_speed(0) + ethtool_validate_duplex(0);
+	}
+EOF
 
   #####################################################
   # checks related to drivers                         #
