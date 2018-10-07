@@ -40,9 +40,10 @@ then
 fi
 make mrproper
 make -j $PROC_COUNT ARCH=${ARCH} defconfig
-grep CONFIG_VIRTIO_NET .config
-sed -i '|CONFIG_VIRTIO_NET=.|CONFIG_VIRTIO_NET=m|' .config
-grep CONFIG_VIRTIO_NET .config
+echo "Grepping for CONFIG_VIRTIO_NET"
+grep CONFIG_VIRTIO_NET .config || true
+sed -i '|CONFIG_VIRTIO_NET=.|CONFIG_VIRTIO_NET=m|' .config || true
+grep CONFIG_VIRTIO_NET .config || true
 make -j $PROC_COUNT ARCH=${ARCH} modules_prepare
 popd
 
