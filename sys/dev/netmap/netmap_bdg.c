@@ -1270,7 +1270,7 @@ netmap_bwrap_dtor(struct netmap_adapter *na)
  * hwna rx ring.
  * The bridge wrapper then sends the packets through the bridge.
  */
-static int
+int
 netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
@@ -1395,7 +1395,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 		/* intercept the hwna nm_nofify callback on the hw rings */
 		for (i = 0; i < hwna->num_rx_rings; i++) {
 			hwna->rx_rings[i]->save_notify = hwna->rx_rings[i]->nm_notify;
-			hwna->rx_rings[i]->nm_notify = netmap_bwrap_intr_notify;
+			hwna->rx_rings[i]->nm_notify = bna->nm_intr_notify;
 		}
 		i = hwna->num_rx_rings; /* for safety */
 		/* save the host ring notify unconditionally */
