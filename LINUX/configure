@@ -1621,6 +1621,18 @@ EOF
 	}
 EOF
 
+# check for <linux/average.h>
+  add_test 'have AVERAGE_H' <<EOF
+	#include <linux/average.h>
+
+	DECLARE_EWMA(myname, 1, 64);
+	int
+	dummy(struct ewma_myname *x) {
+		ewma_myname_add(x, 18);
+	}
+EOF
+
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
