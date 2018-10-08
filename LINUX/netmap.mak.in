@@ -129,7 +129,7 @@ endef
 $(foreach a,$(APPS_LIST),$(eval $(call apps_actions,$(a))))
 
 +%:
-	@echo $($*)
+	@echo '$($*)'
 
 ifeq (,$(UTILS))
 utils:
