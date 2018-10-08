@@ -255,6 +255,11 @@ static inline __virtio64 cpu_to_virtio64(struct virtio_device *vdev, u64 val)
 }
 #endif  /* NETMAP_LINUX_HAVE_VIRTIO_MEMORY_ACCESSORS */
 
+#ifndef NETMAP_LINUX_VIRTIO_GET_VRSIZE
+/* Not yet found a way to find out virtqueue length in these
+   kernel series. Use the virtio default value. */
+#define virtqueue_get_vring_size(_vq)	({ (void)(_vq); 256; })
+#endif  /* !VIRTIO_GET_VRSIZE */
 
 /*************************************************************************/
 /* NETMAP SUPPORT                                                        */
@@ -269,11 +274,11 @@ virtio_net_netmap_attach(struct virtnet_info *vi)
 
 	na.ifp = vi->dev;
 	na.na_flags = 0;
-	na.num_tx_desc = 1;
-	na.num_rx_desc = 1;
-	na.num_tx_rings = na.num_rx_rings = 1;
+	na.num_tx_desc = virtqueue_get_vring_size(vi->sq[0].vq);
+	na.num_rx_desc = virtqueue_get_vring_size(vi->rq[0].vq);
+	na.num_tx_rings = na.num_rx_rings = vi->max_queue_pairs;
 	na.rx_buf_maxsize = 0;
-	na.nm_register = NULL;
+	na.nm_register = virtio_net_netmap_reg;
 	na.nm_txsync = NULL;
 	na.nm_rxsync = NULL;
 	na.nm_intr = NULL;
