@@ -206,7 +206,7 @@ static inline __virtio64 __cpu_to_virtio64(bool little_endian, u64 val)
 }
 #endif  /* NETMAP_LINUX_HAVE_VIRTIO_BYTEORDER */
 
-#ifndef NETMAP_LINUX_HAVE_VIRTIO_MEMORY_ACCESSORS
+#ifndef NETMAP_LINUX_HAVE_VIRTIO_IS_LITTLE_ENDIAN
 static inline bool virtio_legacy_is_little_endian(void)
 {
 #ifdef __LITTLE_ENDIAN
@@ -221,7 +221,9 @@ static inline bool virtio_is_little_endian(struct virtio_device *vdev)
 	return virtio_has_feature(vdev, VIRTIO_F_VERSION_1) ||
 		virtio_legacy_is_little_endian();
 }
+#endif  /* NETMAP_LINUX_HAVE_VIRTIO_IS_LITTLE_ENDIAN */
 
+#ifndef NETMAP_LINUX_HAVE_VIRTIO_MEMORY_ACCESSORS
 static inline u16 virtio16_to_cpu(struct virtio_device *vdev, __virtio16 val)
 {
 	return __virtio16_to_cpu(virtio_is_little_endian(vdev), val);

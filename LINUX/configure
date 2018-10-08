@@ -1872,6 +1872,16 @@ EOF
 	}
 EOF
 
+  add_test 'have VIRTIO_IS_LITTLE_ENDIAN' <<EOF
+	#include <linux/virtio_config.h>
+
+	bool
+	dummy(struct virtio_device *vdev)
+	{
+		return virtio_is_little_endian(vdev);
+	}
+EOF
+
   add_test 'have VIRTIO_MEMORY_ACCESSORS' <<EOF
 	#include <linux/virtio_config.h>
 
