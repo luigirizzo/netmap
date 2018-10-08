@@ -998,13 +998,6 @@ EOF
   }	
 
   for d in $(edrv print); do
-	if [ "$d" == virtio_net.c ]; then
-		# virtio_net.c as an external driver does not need to
-		# build unpatched, because it's tailored to a specific
-		# kernel version.
-		# TODO better solution? maybe generalize?
-		continue
-	fi
 	add_file_exists_check build-$d true "edrv_build_error $d"
   done
 
