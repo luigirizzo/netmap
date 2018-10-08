@@ -1885,6 +1885,16 @@ EOF
 	}
 EOF
 
+  add_test 'have VIRTIO_DRIVER_FEATURE_TABLE_LEGACY' <<EOF
+	#include <linux/virtio.h>
+
+	bool
+	dummy(struct virtio_driver *vdr)
+	{
+		return vdr->feature_table_legacy != NULL;
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   

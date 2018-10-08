@@ -30,7 +30,7 @@ index 0000000..2c88957
 +
 +endif
 diff --git a/virtio_net.c/virtio_net.c b/virtio_net.c/virtio_net.c
-index cbf1c61..cc598ef 100644
+index cbf1c61..e292ba1 100644
 --- a/virtio_net.c/virtio_net.c
 +++ b/virtio_net.c/virtio_net.c
 @@ -26,8 +26,8 @@
@@ -613,7 +613,7 @@ index cbf1c61..cc598ef 100644
  	return 0;
  }
  #endif
-@@ -2061,15 +1978,20 @@ static struct virtio_device_id id_table[] = {
+@@ -2061,24 +1978,34 @@ static struct virtio_device_id id_table[] = {
  	VIRTIO_NET_F_MRG_RXBUF, VIRTIO_NET_F_STATUS, VIRTIO_NET_F_CTRL_VQ, \
  	VIRTIO_NET_F_CTRL_RX, VIRTIO_NET_F_CTRL_VLAN, \
  	VIRTIO_NET_F_GUEST_ANNOUNCE, VIRTIO_NET_F_MQ, \
@@ -636,7 +636,21 @@ index cbf1c61..cc598ef 100644
  	VIRTIO_NET_F_GSO,
  	VIRTIO_F_ANY_LAYOUT,
  };
-@@ -2091,41 +2013,7 @@ static struct virtio_driver virtio_net_driver = {
+ 
+ static struct virtio_driver virtio_net_driver = {
++#ifdef NETMAP_LINUX_HAVE_VIRTIO_DRIVER_FEATURE_TABLE_LEGACY
+ 	.feature_table = features,
+ 	.feature_table_size = ARRAY_SIZE(features),
+ 	.feature_table_legacy = features_legacy,
+ 	.feature_table_size_legacy = ARRAY_SIZE(features_legacy),
++#else  /* !NETMAP_LINUX_HAVE_VIRTIO_DRIVER_FEATURE_TABLE_LEGACY */
++	.feature_table = features_legacy,
++	.feature_table_size = ARRAY_SIZE(features_legacy),
++#endif /* !NETMAP_LINUX_HAVE_VIRTIO_DRIVER_FEATURE_TABLE_LEGACY */
+ 	.driver.name =	KBUILD_MODNAME,
+ 	.driver.owner =	THIS_MODULE,
+ 	.id_table =	id_table,
+@@ -2091,41 +2018,7 @@ static struct virtio_driver virtio_net_driver = {
  #endif
  };
  
