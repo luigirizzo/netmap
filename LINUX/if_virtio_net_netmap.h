@@ -265,6 +265,129 @@ static inline int virtio_net_hdr_from_skb(const struct sk_buff *skb,
 /* NETMAP SUPPORT                                                        */
 /*************************************************************************/
 
+static int virtnet_open(struct net_device *dev);
+static int virtnet_close(struct net_device *dev);
+
+static void
+virtio_net_netmap_free_unused(struct virtnet_info *vi, enum txrx t, int i)
+{
+	struct virtqueue* vq = (t == NR_RX) ? vi->rq[i].vq : vi->sq[i].vq;
+	void *buf;
+
+	while ((buf = virtqueue_detach_unused_buf(vq)) != NULL) {
+		if (t == NR_TX)
+			dev_kfree_skb(buf);
+		else {
+			if (vi->mergeable_rx_bufs) {
+				unsigned long ctx = (unsigned long)buf;
+				void *base = mergeable_ctx_to_buf_address(ctx);
+				put_page(virt_to_head_page(base));
+			} else if (vi->big_packets) {
+				give_pages(&vi->rq[i], buf);
+			} else {
+				dev_kfree_skb(buf);
+			}
+		}
+	}
+}
+
+static void
+virtio_net_netmap_drain_used(struct virtnet_info *vi, enum txrx t, int i)
+{
+	struct virtqueue* vq = (t == NR_RX) ? vi->rq[i].vq : vi->sq[i].vq;
+	unsigned int len;
+	void *buf;
+
+	while ((buf = virtqueue_get_buf(vq, &len)) != NULL) {
+	}
+}
+
+/* Initialize scatter-gather lists used to publish netmap
+ * buffers through virtio descriptors, in such a way that each
+ * each scatter-gather list contains exactly two descriptors
+ * (which can point to a netmap buffer). This initialization is
+ * necessary to prevent the virtio frontend (host) to think
+ * we are using multi-descriptors scatter-gather lists. */
+static void
+virtio_net_netmap_init_sgs(struct virtnet_info *vi)
+{
+	int i;
+
+	for (i = 0; i < vi->max_queue_pairs; i++) {
+		sg_init_table(vi->sq[i].sg, 2);
+		sg_init_table(vi->rq[i].sg, 2);
+	}
+}
+
+/* Register and unregister. */
+static int
+virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
+{
+	struct ifnet *ifp = na->ifp;
+	struct virtnet_info *vi = netdev_priv(ifp);
+	bool was_up = false;
+	int error = 0;
+	enum txrx t;
+	int i;
+
+	/* It's important to make sure each virtnet_close() matches
+	 * a virtnet_open(), otherwise a napi_disable() is not matched by
+	 * a napi_enable(), which results in a deadlock. */
+	if (netif_running(ifp)) {
+		was_up = true;
+		/* Down the interface. This also disables napi. */
+		virtnet_close(ifp);
+	}
+
+	if (onoff) {
+		/* enable netmap mode */
+		for_rx_tx(t) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = NMR(na, t)[i];
+
+				if (!nm_kring_pending_on(kring))
+					continue;
+
+				/* Detach and free any unused buffers. */
+				virtio_net_netmap_free_unused(vi, t, i);
+
+				/* Initialize scatter-gater buffers for
+				 * netmap mode. */
+				virtio_net_netmap_init_sgs(vi);
+
+				kring->nr_mode = NKR_NETMAP_ON;
+			}
+		}
+
+		nm_set_native_flags(na);
+	} else {
+		nm_clear_native_flags(na);
+		for_rx_tx(t) {
+			for (i = 0; i <= nma_get_nrings(na, t); i++) {
+				struct netmap_kring *kring = NMR(na, t)[i];
+
+				if (!nm_kring_pending_off(kring))
+					continue;
+
+				/* Get used netmap buffers. */
+				virtio_net_netmap_drain_used(vi, t, i);
+
+				/* Detach and free any unused buffers. */
+				virtio_net_netmap_free_unused(vi, t, i);
+
+				kring->nr_mode = NKR_NETMAP_OFF;
+			}
+		}
+	}
+
+	if (was_up) {
+		/* Up the interface. This also enables the napi. */
+		virtnet_open(ifp);
+	}
+
+	return (error);
+}
+
 static void
 virtio_net_netmap_attach(struct virtnet_info *vi)
 {
@@ -278,7 +401,7 @@ virtio_net_netmap_attach(struct virtnet_info *vi)
 	na.num_rx_desc = virtqueue_get_vring_size(vi->rq[0].vq);
 	na.num_tx_rings = na.num_rx_rings = vi->max_queue_pairs;
 	na.rx_buf_maxsize = 0;
-	na.nm_register = NULL;
+	na.nm_register = virtio_net_netmap_reg;
 	na.nm_txsync = NULL;
 	na.nm_rxsync = NULL;
 	na.nm_intr = NULL;

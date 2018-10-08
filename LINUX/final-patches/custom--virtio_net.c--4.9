@@ -30,7 +30,7 @@ index 0000000..2c88957
 +
 +endif
 diff --git a/virtio_net.c/virtio_net.c b/virtio_net.c/virtio_net.c
-index cbf1c61..c94e92b 100644
+index cbf1c61..cc598ef 100644
 --- a/virtio_net.c/virtio_net.c
 +++ b/virtio_net.c/virtio_net.c
 @@ -26,8 +26,8 @@
@@ -109,17 +109,7 @@ index cbf1c61..c94e92b 100644
  	/* Control VQ buffers: protected by the rtnl lock */
  	struct virtio_net_ctrl_hdr ctrl_hdr;
  	virtio_net_ctrl_ack ctrl_status;
-@@ -220,13 +257,20 @@ static struct page *get_a_page(struct receive_queue *rq, gfp_t gfp_mask)
- 	return p;
- }
- 
-+#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
-+#include <if_virtio_net_netmap.h>
-+#endif
-+
- static void skb_xmit_done(struct virtqueue *vq)
- {
- 	struct virtnet_info *vi = vq->vdev->priv;
+@@ -226,7 +263,10 @@ static void skb_xmit_done(struct virtqueue *vq)
  
  	/* Suppress further interrupts. */
  	virtqueue_disable_cb(vq);
@@ -131,6 +121,17 @@ index cbf1c61..c94e92b 100644
  	/* We were probably waiting for more output buffers. */
  	netif_wake_subqueue(vi->dev, vq2txq(vq));
  }
+@@ -249,6 +289,10 @@ static unsigned long mergeable_buf_to_ctx(void *buf, unsigned int truesize)
+ 	return (unsigned long)buf | (size - 1);
+ }
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <if_virtio_net_netmap.h>
++#endif
++
+ /* Called from bottom half context */
+ static struct sk_buff *page_to_skb(struct virtnet_info *vi,
+ 				   struct receive_queue *rq,
 @@ -263,7 +307,13 @@ static struct sk_buff *page_to_skb(struct virtnet_info *vi,
  	p = page_address(page) + offset;
  
