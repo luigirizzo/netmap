@@ -1,5 +1,21 @@
 #!/bin/bash -eu
 
+function set_config_variable()
+{
+	local varname=$1
+	local varvalue=$2
+
+	cnt=$(grep ${varname}.config || true)
+	if [ "$cnt" == 0 ]; then
+		echo "Appending"
+		echo "${varname}=${varvalue}" >> .config
+	else
+		echo "Modifying"
+		sed -i "s/^${varname}=./${varname}=${varvalue}/" .config
+	fi
+	grep "${varname}=${varvalue}" .config || echo "Failed to modify .config"
+}
+
 set -o pipefail
 
 readonly KERNEL_VERSION=${1:?}
@@ -40,7 +56,9 @@ then
 fi
 make mrproper
 make -j $PROC_COUNT ARCH=${ARCH} defconfig
-echo 'CONFIG_VIRTIO_NET=m' >> .config
+set_config_variable CONFIG_VIRTIO y
+set_config_variable CONFIG_VIRTIO_PCI y
+set_config_variable CONFIG_VIRTIO_NET m
 make -j $PROC_COUNT ARCH=${ARCH} modules_prepare
 popd
 
