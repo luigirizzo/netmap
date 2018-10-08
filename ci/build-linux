@@ -5,7 +5,7 @@ function set_config_variable()
 	local varname=$1
 	local varvalue=$2
 
-	cnt=$(grep ${varname}.config || true)
+	cnt=$(grep ${varname} .config || true)
 	if [ "$cnt" == 0 ]; then
 		echo "Appending"
 		echo "${varname}=${varvalue}" >> .config
