@@ -392,6 +392,62 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (error);
 }
 
+/* Prepare an RX virtqueue for netmap operation. Returns true if
+ * the queue is ready for netmap and false if it is not going to
+ * work in netmap mode. */
+static bool
+virtio_net_netmap_init_buffers(struct virtnet_info *vi, int r)
+{
+	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
+				sizeof(vi->rq[r].shared_rxvhdr) :
+				sizeof(vi->rq[r].shared_rxvhdr.hdr);
+	struct netmap_adapter *na = NA(vi->dev);
+	struct netmap_kring *kring;
+	int i;
+
+	if (!nm_netmap_on(na)) {
+		return false;
+	}
+
+	kring = na->rx_rings[r];
+	if (kring->nr_mode != NKR_NETMAP_ON) {
+		return false;
+	}
+
+	/*
+	 * Add exactly na->num_rx_desc descriptor chains to this RX
+	 * virtqueue, as virtio_netmap_rxsync() assumes the chains
+	 * are returned in the same order by virtqueue_get_buf().
+	 * It is technically possible that the hypervisor returns
+	 * na->num_rx_desc chains before the user can consume them,
+	 * so virtio_netmap_rxsync() must prevent ring->tail to
+	 * wrap around ring->head.
+	 */
+	for (i = 0; i < na->num_rx_desc; i++) {
+		struct netmap_ring *ring = kring->ring;
+		struct virtqueue *vq = vi->rq[r].vq;
+		struct scatterlist *sg = vi->rq[r].sg;
+		struct netmap_slot *slot;
+		void *addr;
+		int err;
+
+		slot = &ring->slot[i];
+		addr = NMB(na, slot);
+		sg_set_buf(sg, &vi->rq[r].shared_rxvhdr, vnet_hdr_len);
+		sg_set_buf(sg + 1, addr, NETMAP_BUF_SIZE(na));
+		err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
+		if (err < 0) {
+			nm_prerr("virtqueue_add_inbuf() failed\n");
+			return 0;
+		}
+
+		if (vq->num_free == 0)
+			break;
+	}
+
+	return true;
+}
+
 static void
 virtio_net_netmap_attach(struct virtnet_info *vi)
 {
