@@ -10,8 +10,6 @@ verbosity="${verbosity:-}"
 
 pipe="pipeA{1"
 
-restart_fd_server
-
 # We open pipeA{1 with the exclusive flag from the file descriptor.
 functional $verbosity -i "netmap:${pipe}/x"
 check_success $? "exclusive-open netmap:${pipe}/x"

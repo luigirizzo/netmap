@@ -13,8 +13,6 @@ bridgeA="${bridge}A"
 bridgeB="${bridge}B"
 port="v0"
 
-restart_fd_server
-
 create_vale_persistent_port "$port" 0
 destroy_vale_persistent_port "$port" 0
 

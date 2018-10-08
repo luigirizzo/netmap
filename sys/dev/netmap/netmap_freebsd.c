@@ -1296,6 +1296,11 @@ nm_os_kctx_worker_start(struct nm_kctx *nmk)
 	struct proc *p = NULL;
 	int error = 0;
 
+	/* Temporarily disable this function as it is currently broken
+	 * and causes kernel crashes. The failure can be triggered by
+	 * the "vale_polling_enable_disable" test in ctrl-api-test.c. */
+	return EOPNOTSUPP;
+
 	if (nmk->worker) {
 		return EBUSY;
 	}

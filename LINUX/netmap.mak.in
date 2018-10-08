@@ -89,7 +89,7 @@ $(foreach d,$(S_DRIVERS),$(eval $(call common_driver,$(d))))
 $(foreach d,$(E_DRIVERS),$(eval $(call external_driver,$(d))))
 
 .PHONY: install install-netmap install-apps install-headers install-docs
-install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers install-docs install-utils
+install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers install-docs
 
 install-netmap:
 	$(MAKE) -C $(KSRC) M=$(BUILDDIR) CONFIG_NETMAP=m $(MOD_LIST) \
@@ -135,6 +135,8 @@ ifeq (,$(UTILS))
 utils:
 install-utils:
 clean-utils:
+intest:
+unitest:
 else
 .PHONY: utils
 utils:
@@ -145,6 +147,11 @@ install-utils:
 
 clean-utils:
 	$(MAKE) -C build-utils clean SRCDIR=$(SRCDIR)/..
+
+intest: utils
+	utils/randomized_tests
+unitest: utils
+	build-utils/ctrl-api-test
 endif
 
 INCLUDE_PREFIX := $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)

@@ -395,7 +395,7 @@ netmap_init_obj_allocator_bitmap(struct netmap_obj_pool *p)
 	if (p->bitmap == NULL) {
 		/* Allocate the bitmap */
 		n = (p->objtotal + 31) / 32;
-		p->bitmap = nm_os_malloc(sizeof(uint32_t) * n);
+		p->bitmap = nm_os_malloc(sizeof(p->bitmap[0]) * n);
 		if (p->bitmap == NULL) {
 			D("Unable to create bitmap (%d entries) for allocator '%s'", (int)n,
 			    p->name);
@@ -403,7 +403,7 @@ netmap_init_obj_allocator_bitmap(struct netmap_obj_pool *p)
 		}
 		p->bitmap_slots = n;
 	} else {
-		memset(p->bitmap, 0, p->bitmap_slots);
+		memset(p->bitmap, 0, p->bitmap_slots * sizeof(p->bitmap[0]));
 	}
 
 	p->objfree = 0;
@@ -478,8 +478,10 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 	nmd->ops->nmd_deref(nmd);
 
 	nmd->active--;
-	if (!nmd->active)
+	if (last_user) {
 		nmd->nm_grp = -1;
+		nmd->lasterr = 0;
+	}
 
 	NMA_UNLOCK(nmd);
 	return last_user;
@@ -1996,7 +1998,7 @@ netmap_mem2_if_new(struct netmap_adapter *na, struct netmap_priv_d *priv)
 	/* initialize base fields -- override const */
 	*(u_int *)(uintptr_t)&nifp->ni_tx_rings = na->num_tx_rings;
 	*(u_int *)(uintptr_t)&nifp->ni_rx_rings = na->num_rx_rings;
-	strncpy(nifp->ni_name, na->name, (size_t)IFNAMSIZ);
+	strlcpy(nifp->ni_name, na->name, sizeof(nifp->ni_name));
 
 	/*
 	 * fill the slots for the rx and tx rings. They contain the offset

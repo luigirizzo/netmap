@@ -18,8 +18,6 @@ seq="${seq:-}"
 
 e_buf_num="${e_buf_num:-12}"
 
-restart_fd_server
-
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
 functional $verbosity -i "vale0:v1"

@@ -672,11 +672,11 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		int create_error;
 
 		/* Temporarily remove the pipe suffix. */
-		strncpy(nr_name_orig, hdr->nr_name, sizeof(nr_name_orig));
+		strlcpy(nr_name_orig, hdr->nr_name, sizeof(nr_name_orig));
 		*cbra = '\0';
 		error = netmap_get_na(hdr, &pna, &ifp, nmd, create);
 		/* Restore the pipe suffix. */
-		strncpy(hdr->nr_name, nr_name_orig, sizeof(hdr->nr_name));
+		strlcpy(hdr->nr_name, nr_name_orig, sizeof(hdr->nr_name));
 		if (!error)
 			break;
 		if (error != ENXIO || retries++) {
@@ -689,7 +689,7 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		NMG_UNLOCK();
 		create_error = netmap_vi_create(hdr, 1 /* autodelete */);
 		NMG_LOCK();
-		strncpy(hdr->nr_name, nr_name_orig, sizeof(hdr->nr_name));
+		strlcpy(hdr->nr_name, nr_name_orig, sizeof(hdr->nr_name));
 		if (create_error && create_error != EEXIST) {
 			if (create_error != EOPNOTSUPP) {
 				D("failed to create a persistent vale port: %d", create_error);

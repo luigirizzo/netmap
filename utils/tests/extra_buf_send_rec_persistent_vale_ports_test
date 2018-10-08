@@ -19,8 +19,6 @@ seq="${seq:-}"
 
 e_buf_num="${e_buf_num:-12}"
 
-restart_fd_server
-
 create_vale_persistent_port "v0"
 create_vale_persistent_port "v1"
 create_vale_persistent_port "v2"

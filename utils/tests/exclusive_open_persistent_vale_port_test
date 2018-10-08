@@ -11,8 +11,6 @@ verbosity="${verbosity:-}"
 bridge="vale0"
 port="v0"
 
-restart_fd_server
-
 create_vale_persistent_port "$port"
 attach_to_vale_bridge "$bridge" "$port"
 
