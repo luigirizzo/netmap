@@ -452,6 +452,7 @@ SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
+EXTRA_CFLAGS :=
 S_DRIVERS := $(drv print)
 E_DRIVERS := $(edrv print)
 I_DRIVERS := $(idrv print)
