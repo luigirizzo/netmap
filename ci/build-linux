@@ -53,7 +53,7 @@ then
   popd
 fi
 make mrproper
-make -j $PROC_COUNT ARCH=${ARCH} defconfig
+make -j $PROC_COUNT ARCH=${ARCH} allmodconfig
 make -j $PROC_COUNT ARCH=${ARCH} modules_prepare
 popd
 
