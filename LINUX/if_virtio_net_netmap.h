@@ -696,6 +696,29 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
+/* Enable/disable interrupts on all virtqueues. */
+static void
+virtio_net_netmap_intr(struct netmap_adapter *na, int onoff)
+{
+	struct virtnet_info *vi = netdev_priv(na->ifp);
+	enum txrx t;
+	int i;
+
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t); i++) {
+			struct virtqueue *vq;
+
+			vq = t == NR_RX ? vi->rq[i].vq : vi->sq[i].vq;
+
+			if (onoff) {
+				virtqueue_enable_cb(vq);
+			} else {
+				virtqueue_disable_cb(vq);
+			}
+		}
+	}
+}
+
 static void
 virtio_net_netmap_attach(struct virtnet_info *vi)
 {
@@ -712,7 +735,7 @@ virtio_net_netmap_attach(struct virtnet_info *vi)
 	na.nm_register = virtio_net_netmap_reg;
 	na.nm_txsync = virtio_net_netmap_txsync;
 	na.nm_rxsync = virtio_net_netmap_rxsync;
-	na.nm_intr = NULL;
+	na.nm_intr = virtio_net_netmap_intr;
 	na.nm_config = NULL;
 
 	netmap_attach(&na);
