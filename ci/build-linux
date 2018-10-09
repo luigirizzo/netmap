@@ -16,6 +16,8 @@ function set_config_variable()
 
 set -o pipefail
 
+git clean -fdx
+
 readonly KERNEL_VERSION=${1:?}
 readonly ARCH=${2:?}
 readonly GCC_MAJOR_VERSION=$(echo '#include <stdio.h>
@@ -61,6 +63,9 @@ popd
 echo "Building vanilla-only drivers"
 ./configure --no-ext-drivers --driver-suffix=_netmap --kernel-dir=$PWD/linux-${KERNEL_VERSION} --drivers=r8169.c,virtio_net.c,forcedeth.c,veth.c,e1000,vmxnet3 --enable-ptnetmap
 make -j $PROC_COUNT
+
+# TODO remove
+ls -l
 
 # Then build external intel drivers
 make distclean
