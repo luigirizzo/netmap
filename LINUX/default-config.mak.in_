@@ -107,6 +107,7 @@ mlx5@conf	= CONFIG_MLX5_CORE_EN
 
 $(foreach d,$(filter mlx5,$(E_DRIVERS)),$(eval $(call mellanox_driver,$d,$($(d)@v))))
 
+define virtio_net
 virtio_net.c@fetch	:= test -e @SRCDIR@/ext-drivers/virtio_net.c || wget https://raw.githubusercontent.com/torvalds/linux/v4.9/drivers/net/virtio_net.c -P @SRCDIR@/ext-drivers/
 virtio_net.c@src	:= mkdir -p virtio_net.c && cp @SRCDIR@/ext-drivers/virtio_net.c virtio_net.c/
 virtio_net.c@patch	:= patches/custom--virtio_net.c--4.9
@@ -116,3 +117,6 @@ virtio_net.c@install 	:= make -C virtio_net.c install INSTALL_MOD_PATH=@MODPATH@
 virtio_net.c@clean 	:= if [ -d virtio_net.c ]; then make -C virtio_net.c clean EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
 virtio_net.c@distclean	:=
 virtio_net.c@force	:= 1
+endef
+
+$(foreach d,$(filter virtio_net.c,$(E_DRIVERS)),$(eval $(call virtio_net)))
