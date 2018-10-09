@@ -298,15 +298,20 @@ static int virtnet_open(struct net_device *dev);
 static int virtnet_close(struct net_device *dev);
 
 static void
-virtio_net_netmap_free_unused(struct virtnet_info *vi, enum txrx t, int i)
+virtio_net_netmap_free_unused(struct virtnet_info *vi, bool onoff,
+				enum txrx t, int i)
 {
 	struct virtqueue* vq = (t == NR_RX) ? vi->rq[i].vq : vi->sq[i].vq;
+	unsigned int n = 0;
 	void *buf;
 
 	while ((buf = virtqueue_detach_unused_buf(vq)) != NULL) {
-		if (t == NR_TX)
+		if (!onoff) {
+			/* This vq contains netmap buffers, so there
+			 * is nothing to do */
+		} else if (t == NR_TX) {
 			dev_kfree_skb(buf);
-		else {
+		} else {
 			if (vi->mergeable_rx_bufs) {
 				unsigned long ctx = (unsigned long)buf;
 				void *base = mergeable_ctx_to_buf_address(ctx);
@@ -317,18 +322,26 @@ virtio_net_netmap_free_unused(struct virtnet_info *vi, enum txrx t, int i)
 				dev_kfree_skb(buf);
 			}
 		}
+		n++;
 	}
+
+	if (i)
+		nm_prinf("%d sgs detached on %s-%d\n", n, nm_txrx2str(t), i);
 }
 
 static void
 virtio_net_netmap_drain_used(struct virtnet_info *vi, enum txrx t, int i)
 {
 	struct virtqueue* vq = (t == NR_RX) ? vi->rq[i].vq : vi->sq[i].vq;
-	unsigned int len;
+	unsigned int len, n = 0;
 	void *buf;
 
 	while ((buf = virtqueue_get_buf(vq, &len)) != NULL) {
+		n++;
 	}
+
+	if (i)
+		nm_prinf("%d sgs drained on %s-%d\n", n, nm_txrx2str(t), i);
 }
 
 /* Initialize scatter-gather lists used to publish netmap
@@ -378,7 +391,7 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 					continue;
 
 				/* Detach and free any unused buffers. */
-				virtio_net_netmap_free_unused(vi, t, i);
+				virtio_net_netmap_free_unused(vi, onoff, t, i);
 
 				/* Initialize scatter-gater buffers for
 				 * netmap mode. */
@@ -402,7 +415,7 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 				virtio_net_netmap_drain_used(vi, t, i);
 
 				/* Detach and free any unused buffers. */
-				virtio_net_netmap_free_unused(vi, t, i);
+				virtio_net_netmap_free_unused(vi, onoff, t, i);
 
 				kring->nr_mode = NKR_NETMAP_OFF;
 			}
