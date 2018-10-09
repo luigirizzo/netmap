@@ -325,7 +325,7 @@ virtio_net_netmap_free_unused(struct virtnet_info *vi, bool onoff,
 		n++;
 	}
 
-	if (i)
+	if (n)
 		nm_prinf("%d sgs detached on %s-%d\n", n, nm_txrx2str(t), i);
 }
 
@@ -340,7 +340,7 @@ virtio_net_netmap_drain_used(struct virtnet_info *vi, enum txrx t, int i)
 		n++;
 	}
 
-	if (i)
+	if (n)
 		nm_prinf("%d sgs drained on %s-%d\n", n, nm_txrx2str(t), i);
 }
 
