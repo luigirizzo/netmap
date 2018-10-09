@@ -285,6 +285,11 @@ void virtio_device_ready(struct virtio_device *dev)
 #define virtqueue_is_broken(_x)	false
 #endif  /* NETMAP_LINUX_HAVE_VIRTQUEUE_IS_BROKEN */
 
+#ifndef NETMAP_LINUX_VIRTIO_CB_DELAYED
+/* The delayed optimization did not exists before version 3.0. */
+#define virtqueue_enable_cb_delayed(_vq)	virtqueue_enable_cb(_vq)
+#endif  /* !VIRTIO_CB_DELAYED */
+
 /*************************************************************************/
 /* NETMAP SUPPORT                                                        */
 /*************************************************************************/
@@ -464,8 +469,231 @@ virtio_net_netmap_init_buffers(struct virtnet_info *vi, int r)
 		if (vq->num_free == 0)
 			break;
 	}
+	nm_prinf("%s-rx-%d: %d netmap buffers published\n", na->name,
+			r, i);
 
 	return true;
+}
+
+/* Reconcile kernel and user view of the transmit ring. */
+static int
+virtio_net_netmap_txsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	struct ifnet *ifp = na->ifp;
+	struct netmap_ring *ring = kring->ring;
+	u_int ring_nr = kring->ring_id;
+	u_int nm_i;	/* index into the netmap ring */
+	u_int nic_i;	/* index into the NIC ring */
+	u_int n;
+	u_int const lim = kring->nkr_num_slots - 1;
+	u_int const head = kring->rhead;
+
+	/* device-specific */
+	struct virtnet_info *vi = netdev_priv(ifp);
+	struct send_queue *sq = vi->sq + ring_nr;
+	struct virtqueue *vq = sq->vq;
+	struct scatterlist *sg = sq->sg;
+	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
+				sizeof(sq->shared_txvhdr) :
+				sizeof(sq->shared_txvhdr.hdr);
+	struct netmap_adapter *token;
+	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
+	int nospace = 0;
+
+	virtqueue_disable_cb(vq);
+
+	/* Free used slots. We only consider our own used buffers, recognized
+	 * by the token we passed to virtqueue_add_outbuf.
+	 */
+	n = 0;
+	for (;;) {
+		token = virtqueue_get_buf(vq, &nic_i); /* dummy 2nd arg */
+		if (token == NULL)
+			break;
+		if (likely(token == na))
+			n++;
+	}
+	kring->nr_hwtail += n;
+	if (kring->nr_hwtail > lim)
+		kring->nr_hwtail -= lim + 1;
+
+	/*
+	 * First part: process new packets to send.
+	 */
+	rmb();
+
+	if (!netif_running(ifp)) {
+		/* All the new slots are now unavailable. */
+		goto out;
+	}
+
+	nm_i = kring->nr_hwcur;
+	if (nm_i != head) {	/* we have new packets to send */
+		nic_i = netmap_idx_k2n(kring, nm_i);
+		for (n = 0; nm_i != head; n++) {
+			struct netmap_slot *slot = &ring->slot[nm_i];
+			u_int len = slot->len;
+			void *addr = NMB(na, slot);
+
+			NM_CHECK_ADDR_LEN(na, addr, len);
+
+			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
+			/* Initialize the scatterlist and expose it to
+			 * the hypervisor. */
+			sg_set_buf(sg, &sq->shared_txvhdr, vnet_hdr_len);
+			sg_set_buf(sg + 1, addr, len);
+			nospace = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
+			if (nospace) {
+				RD(3, "virtqueue_add_outbuf failed [err=%d]",
+				   nospace);
+				break;
+			}
+
+			nm_i = nm_next(nm_i, lim);
+			nic_i = nm_next(nic_i, lim);
+		}
+
+		virtqueue_kick(vq);
+
+		/* Update hwcur depending on where we stopped. */
+		kring->nr_hwcur = nm_i; /* note we migth break early */
+	}
+out:
+	/* No more free virtio descriptors or netmap slots? Ask the
+	 * hypervisor for notifications, possibly only when it has
+	 * freed a considerable amount of pending descriptors.
+	 */
+	if (interrupts && (nm_kr_txempty(kring) || nospace)) {
+		virtqueue_enable_cb_delayed(vq);
+	}
+
+	return 0;
+}
+
+/* Reconcile kernel and user view of the receive ring. */
+static int
+virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+	struct ifnet *ifp = na->ifp;
+	struct netmap_ring *ring = kring->ring;
+	u_int ring_nr = kring->ring_id;
+	u_int nm_i;	/* index into the netmap ring */
+	u_int n;
+	u_int const lim = kring->nkr_num_slots - 1;
+	u_int const head = kring->rhead;
+	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
+
+	/* device-specific */
+	struct virtnet_info *vi = netdev_priv(ifp);
+	struct receive_queue *rq = vi->rq + ring_nr;
+	struct virtqueue *vq = rq->vq;
+	struct scatterlist *sg = rq->sg;
+	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
+				sizeof(rq->shared_rxvhdr) :
+				sizeof(rq->shared_rxvhdr.hdr);
+	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
+
+	/* XXX netif_carrier_ok ? */
+
+	if (head > lim)
+		return netmap_ring_reinit(kring);
+
+	virtqueue_disable_cb(vq);
+
+	rmb();
+	/*
+	 * First part: import newly received packets.
+	 * Only accept our own buffers (matching the token). We should only get
+	 * matching buffers, because of virtio_net_netmap_free_unused and
+	 * virtio_net_netmap_init_buffers(). We may need to stop early to avoid
+	 * hwtail to overrun hwcur;
+	 */
+	if (netmap_no_pendintr || force_update) {
+		uint32_t hwtail_lim = nm_prev(kring->nr_hwcur, lim);
+		struct netmap_adapter *token;
+
+
+		nm_i = kring->nr_hwtail;
+		n = 0;
+		while (nm_i != hwtail_lim) {
+			int len;
+			token = virtqueue_get_buf(vq, &len);
+			if (token == NULL)
+				break;
+
+			if (unlikely(token != na)) {
+				RD(5, "Received unexpected virtqueue token %p\n",
+						token);
+			} else {
+				/* Skip the virtio-net header. */
+				len -= vnet_hdr_len;
+				if (unlikely(len < 0)) {
+					RD(5, "Truncated virtio-net-header, missing %d"
+							" bytes", -len);
+					len = 0;
+				}
+
+				ring->slot[nm_i].len = len;
+				ring->slot[nm_i].flags = 0;
+				nm_i = nm_next(nm_i, lim);
+				n++;
+			}
+		}
+		kring->nr_hwtail = nm_i;
+		kring->nr_kflags &= ~NKR_PENDINTR;
+	}
+	ND("[B] h %d c %d hwcur %d hwtail %d",
+			ring->head, ring->cur, kring->nr_hwcur,
+			kring->nr_hwtail);
+
+	/*
+	 * Second part: skip past packets that userspace has released.
+	 */
+	nm_i = kring->nr_hwcur; /* netmap ring index */
+	if (nm_i != head) {
+		int nospace = 0;
+
+		for (n = 0; nm_i != head; n++) {
+			struct netmap_slot *slot = &ring->slot[nm_i];
+			void *addr = NMB(na, slot);
+
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
+				return netmap_ring_reinit(kring);
+
+			slot->flags &= ~NS_BUF_CHANGED;
+
+			/* Initialize the scatterlist and expose it to
+			 * the hypervisor. */
+			sg_set_buf(sg, &rq->shared_rxvhdr, vnet_hdr_len);
+			sg_set_buf(sg + 1, addr, NETMAP_BUF_SIZE(na));
+			nospace = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
+			if (nospace) {
+				RD(3, "virtqueue_add_inbuf failed [err=%d]",
+				   nospace);
+				break;
+			}
+			nm_i = nm_next(nm_i, lim);
+		}
+		virtqueue_kick(vq);
+		kring->nr_hwcur = head;
+	}
+
+	/* We have finished processing used RX buffers, so we have to tell
+	 * the hypervisor to make a call when more used RX buffers will be
+	 * ready.
+	 */
+	if (interrupts) {
+		virtqueue_enable_cb(vq);
+	}
+
+
+	ND("[C] h %d c %d t %d hwcur %d hwtail %d",
+			ring->head, ring->cur, ring->tail,
+			kring->nr_hwcur, kring->nr_hwtail);
+
+	return 0;
 }
 
 static void
@@ -482,8 +710,8 @@ virtio_net_netmap_attach(struct virtnet_info *vi)
 	na.num_tx_rings = na.num_rx_rings = vi->max_queue_pairs;
 	na.rx_buf_maxsize = 0;
 	na.nm_register = virtio_net_netmap_reg;
-	na.nm_txsync = NULL;
-	na.nm_rxsync = NULL;
+	na.nm_txsync = virtio_net_netmap_txsync;
+	na.nm_rxsync = virtio_net_netmap_rxsync;
 	na.nm_intr = NULL;
 	na.nm_config = NULL;
 
