@@ -265,6 +265,17 @@ static inline int virtio_net_hdr_from_skb(const struct sk_buff *skb,
 #define virtqueue_get_vring_size(_vq)	({ (void)(_vq); 256; })
 #endif  /* !VIRTIO_GET_VRSIZE */
 
+#ifndef NETMAP_LINUX_HAVE_VIRTIO_DEVICE_READY
+static inline
+void virtio_device_ready(struct virtio_device *dev)
+{
+	unsigned status = dev->config->get_status(dev);
+
+	BUG_ON(status & VIRTIO_CONFIG_S_DRIVER_OK);
+	dev->config->set_status(dev, status | VIRTIO_CONFIG_S_DRIVER_OK);
+}
+#endif  /* NETMAP_LINUX_HAVE_VIRTIO_DEVICE_READY */
+
 /*************************************************************************/
 /* NETMAP SUPPORT                                                        */
 /*************************************************************************/

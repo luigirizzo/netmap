@@ -1895,6 +1895,16 @@ EOF
 	}
 EOF
 
+  add_test 'have VIRTIO_DEVICE_READY' <<EOF
+	#include <linux/virtio_config.h>
+
+	void
+	dummy(struct virtio_device *vdev)
+	{
+		virtio_device_ready(vdev);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   
