@@ -564,9 +564,8 @@ out:
 	 * hypervisor for notifications, possibly only when it has
 	 * freed a considerable amount of pending descriptors.
 	 */
-	if (interrupts && (nm_kr_txempty(kring) || nospace)) {
+	if (interrupts && (nm_kr_txempty(kring) || nospace))
 		virtqueue_enable_cb_delayed(vq);
-	}
 
 	return 0;
 }
@@ -684,9 +683,8 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * the hypervisor to make a call when more used RX buffers will be
 	 * ready.
 	 */
-	if (interrupts) {
+	if (interrupts)
 		virtqueue_enable_cb(vq);
-	}
 
 
 	ND("[C] h %d c %d t %d hwcur %d hwtail %d",
@@ -710,11 +708,10 @@ virtio_net_netmap_intr(struct netmap_adapter *na, int onoff)
 
 			vq = t == NR_RX ? vi->rq[i].vq : vi->sq[i].vq;
 
-			if (onoff) {
+			if (onoff)
 				virtqueue_enable_cb(vq);
-			} else {
+			else
 				virtqueue_disable_cb(vq);
-			}
 		}
 	}
 }
