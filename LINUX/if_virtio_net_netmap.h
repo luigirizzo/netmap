@@ -281,6 +281,10 @@ void virtio_device_ready(struct virtio_device *dev)
 #define u64_stats_fetch_retry_irq	u64_stats_fetch_retry_bh
 #endif  /* NETMAP_LINUX_HAVE_U64_STATS_IRQ */
 
+#ifndef NETMAP_LINUX_HAVE_VIRTQUEUE_IS_BROKEN
+#define virtqueue_is_broken(_x)	false
+#endif  /* NETMAP_LINUX_HAVE_VIRTQUEUE_IS_BROKEN */
+
 /*************************************************************************/
 /* NETMAP SUPPORT                                                        */
 /*************************************************************************/

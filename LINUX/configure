@@ -1914,6 +1914,16 @@ EOF
 	}
 EOF
 
+  add_test 'have VIRTQUEUE_IS_BROKEN' <<EOF
+	#include <linux/virtio.h>
+
+	bool
+	dummy(struct virtqueue *vq)
+	{
+		return virtqueue_is_broken(vq);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   
