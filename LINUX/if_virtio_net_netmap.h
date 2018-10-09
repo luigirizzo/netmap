@@ -276,6 +276,11 @@ void virtio_device_ready(struct virtio_device *dev)
 }
 #endif  /* NETMAP_LINUX_HAVE_VIRTIO_DEVICE_READY */
 
+#ifndef NETMAP_LINUX_HAVE_U64_STATS_IRQ
+#define u64_stats_fetch_begin_irq	u64_stats_fetch_begin_bh
+#define u64_stats_fetch_retry_irq	u64_stats_fetch_retry_bh
+#endif  /* NETMAP_LINUX_HAVE_U64_STATS_IRQ */
+
 /*************************************************************************/
 /* NETMAP SUPPORT                                                        */
 /*************************************************************************/

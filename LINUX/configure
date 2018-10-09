@@ -1635,6 +1635,15 @@ EOF
 	}
 EOF
 
+  add_test 'have U64_STATS_IRQ' <<EOF
+	#include <linux/u64_stats_sync.h>
+
+	unsigned int
+	dummy(const struct u64_stats_sync *x) {
+		return u64_stats_fetch_begin_irq(x);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
