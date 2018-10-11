@@ -44,8 +44,6 @@ function set_config_variable()
 
 set -o pipefail
 
-git clean -fdx
-
 readonly KERNEL_VERSION=${1:?}
 readonly ARCH=${2:?}
 readonly GCC_MAJOR_VERSION=$(echo '#include <stdio.h>
