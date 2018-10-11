@@ -27,6 +27,12 @@
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
 
+/* Netmap support for the virtio-net driver build from fixed "external"
+ * sources (currently taken from Linux 4.9, and patched by
+ * patches/custom--virtio_net.c--4.9). This driver should be preferred
+ * to the one included with the running Linux version.
+ */
+
 /*************************************************************************/
 /* COMPATIBILITY LAYER                                                   */
 /*************************************************************************/
