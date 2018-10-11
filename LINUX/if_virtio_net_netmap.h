@@ -534,35 +534,17 @@ virtio_net_netmap_txsync(struct netmap_kring *kring, int flags)
 				sizeof(sq->shared_txvhdr) :
 				sizeof(sq->shared_txvhdr.hdr);
 	struct netmap_adapter *token;
-	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
-
-	virtqueue_disable_cb(vq);
-
-	/* Free used slots. We only consider our own used buffers, recognized
-	 * by the token we passed to virtqueue_add_outbuf.
-	 */
-	n = 0;
-	for (;;) {
-		token = virtqueue_get_buf(vq, &nic_i); /* dummy 2nd arg */
-		if (token == NULL)
-			break;
-		if (likely(token == na))
-			n++;
-	}
-	kring->nr_hwtail += n;
-	if (kring->nr_hwtail > lim)
-		kring->nr_hwtail -= lim + 1;
-
-	/*
-	 * First part: process new packets to send.
-	 */
-	rmb();
 
 	if (!netif_running(ifp)) {
 		/* All the new slots are now unavailable. */
 		goto out;
 	}
 
+	virtqueue_enable_cb(vq);
+
+	/*
+	 * First part: process new packets to send.
+	 */
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
 		nic_i = netmap_idx_k2n(kring, nm_i);
@@ -581,8 +563,8 @@ virtio_net_netmap_txsync(struct netmap_kring *kring, int flags)
 			sg_set_buf(sg + 1, addr, len);
 			nospace = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (nospace) {
-				RD(3, "virtqueue_add_outbuf failed [err=%d]",
-				   nospace);
+				nm_prerr("virtqueue_add_outbuf failed [err=%d]",
+					nospace);
 				break;
 			}
 
@@ -590,18 +572,31 @@ virtio_net_netmap_txsync(struct netmap_kring *kring, int flags)
 			nic_i = nm_next(nic_i, lim);
 		}
 
+		virtqueue_enable_cb(vq);
 		virtqueue_kick(vq);
 
 		/* Update hwcur depending on where we stopped. */
 		kring->nr_hwcur = nm_i; /* note we migth break early */
 	}
 out:
-	/* No more free virtio descriptors or netmap slots? Ask the
-	 * hypervisor for notifications, possibly only when it has
-	 * freed a considerable amount of pending descriptors.
+	/* Free used slots. We only consider our own used buffers, recognized
+	 * by the token we passed to virtqueue_add_outbuf.
 	 */
-	if (interrupts && (vq->num_free <= 2 || nm_kr_txempty(kring)))
-		virtqueue_enable_cb_delayed(vq);
+	n = 0;
+	for (;;) {
+		token = virtqueue_get_buf(vq, &nic_i); /* dummy 2nd arg */
+		if (token == NULL)
+			break;
+		if (unlikely(token != na))
+			nm_prerr("BUG: token mismatch\n");
+		else
+			n++;
+	}
+	if (n > 0) {
+		kring->nr_hwtail += n;
+		if (kring->nr_hwtail > lim)
+			kring->nr_hwtail -= lim + 1;
+	}
 
 	return 0;
 }
