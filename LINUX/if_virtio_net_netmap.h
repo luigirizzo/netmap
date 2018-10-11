@@ -326,7 +326,8 @@ virtio_net_netmap_free_unused(struct virtnet_info *vi, bool onoff,
 	}
 
 	if (n)
-		nm_prinf("%d sgs detached on %s-%d\n", n, nm_txrx2str(t), i);
+		nm_prinf("%d sgs detached on %s-%d (onoff=%d)\n",
+			 n, nm_txrx2str(t), i, onoff);
 }
 
 static void
@@ -441,6 +442,7 @@ virtio_net_netmap_init_buffers(struct virtnet_info *vi, int r)
 				sizeof(vi->rq[r].shared_rxvhdr.hdr);
 	struct netmap_adapter *na = NA(vi->dev);
 	struct netmap_kring *kring;
+	struct virtqueue *vq;
 	int i;
 
 	if (!nm_netmap_on(na)) {
@@ -452,6 +454,8 @@ virtio_net_netmap_init_buffers(struct virtnet_info *vi, int r)
 		return false;
 	}
 
+	vq = vi->rq[r].vq;
+
 	/*
 	 * Add exactly na->num_rx_desc descriptor chains to this RX
 	 * virtqueue, as virtio_netmap_rxsync() assumes the chains
@@ -461,9 +465,8 @@ virtio_net_netmap_init_buffers(struct virtnet_info *vi, int r)
 	 * so virtio_netmap_rxsync() must prevent ring->tail to
 	 * wrap around ring->head.
 	 */
-	for (i = 0; i < na->num_rx_desc; i++) {
+	for (i = 0; i < na->num_rx_desc && vq->num_free > 0; i++) {
 		struct netmap_ring *ring = kring->ring;
-		struct virtqueue *vq = vi->rq[r].vq;
 		struct scatterlist *sg = vi->rq[r].sg;
 		struct netmap_slot *slot;
 		void *addr;
@@ -478,9 +481,6 @@ virtio_net_netmap_init_buffers(struct virtnet_info *vi, int r)
 			nm_prerr("virtqueue_add_inbuf() failed\n");
 			return 0;
 		}
-
-		if (vq->num_free == 0)
-			break;
 	}
 	nm_prinf("%s-rx-%d: %d netmap buffers published\n", na->name,
 			r, i);
