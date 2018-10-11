@@ -307,8 +307,8 @@ virtio_net_netmap_free_unused(struct virtnet_info *vi, bool onoff,
 
 	while ((buf = virtqueue_detach_unused_buf(vq)) != NULL) {
 		if (!onoff) {
-			/* This vq contains netmap buffers, so there
-			 * is nothing to do */
+			/* This is a netmap buffer, so there is
+			 * nothing to do. */
 		} else if (t == NR_TX) {
 			dev_kfree_skb(buf);
 		} else {
@@ -331,18 +331,33 @@ virtio_net_netmap_free_unused(struct virtnet_info *vi, bool onoff,
 }
 
 static void
-virtio_net_netmap_drain_used(struct virtnet_info *vi, enum txrx t, int i)
+virtio_net_netmap_drain_used(struct virtnet_info *vi, bool onoff,
+				enum txrx t, int i)
 {
 	struct virtqueue* vq = (t == NR_RX) ? vi->rq[i].vq : vi->sq[i].vq;
 	unsigned int len, n = 0;
 	void *buf;
 
+	if (onoff && t == NR_RX) {
+		/* An RX kring is entering netmap mode. Since NAPI has
+		 * been disabled, there cannot be any pending used
+		 * buffers. */
+		return;
+	}
+
 	while ((buf = virtqueue_get_buf(vq, &len)) != NULL) {
+		if (!onoff) {
+			/* This is a netmap buffer, so there is
+			 * nothing to do. */
+		} else if (t == NR_TX) {
+			dev_kfree_skb(buf);
+		}
 		n++;
 	}
 
 	if (n)
-		nm_prinf("%d sgs drained on %s-%d\n", n, nm_txrx2str(t), i);
+		nm_prinf("%d sgs drained on %s-%d (onoff=%d)\n",
+			n, nm_txrx2str(t), i, onoff);
 }
 
 /* Initialize scatter-gather lists used to publish netmap
@@ -393,7 +408,10 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 				if (!nm_kring_pending_on(kring))
 					continue;
 
-				/* Detach and free any unused buffers. */
+				/* Get used OS buffers. */
+				virtio_net_netmap_drain_used(vi, onoff, t, i);
+
+				/* Detach and free any unused OS buffers. */
 				virtio_net_netmap_free_unused(vi, onoff, t, i);
 
 				/* Initialize scatter-gater buffers for
@@ -412,9 +430,9 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 					continue;
 
 				/* Get used netmap buffers. */
-				virtio_net_netmap_drain_used(vi, t, i);
+				virtio_net_netmap_drain_used(vi, onoff, t, i);
 
-				/* Detach and free any unused buffers. */
+				/* Detach and free any unused netmap buffers. */
 				virtio_net_netmap_free_unused(vi, onoff, t, i);
 
 				kring->nr_mode = NKR_NETMAP_OFF;
