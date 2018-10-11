@@ -384,7 +384,6 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct ifnet *ifp = na->ifp;
 	struct virtnet_info *vi = netdev_priv(ifp);
 	bool was_up = false;
-	int error = 0;
 	enum txrx t;
 	int i;
 
@@ -452,7 +451,7 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 		virtnet_open(ifp);
 	}
 
-	return (error);
+	return 0;
 }
 
 /* Prepare an RX virtqueue for netmap operation. Returns true if
