@@ -630,11 +630,6 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 				sizeof(rq->shared_rxvhdr.hdr);
 	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
 
-	/* XXX netif_carrier_ok ? */
-
-	if (head > lim)
-		return netmap_ring_reinit(kring);
-
 	virtqueue_disable_cb(vq);
 
 	rmb();
