@@ -577,7 +577,7 @@ virtio_net_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwcur = nm_i; /* note we migth break early */
 	}
 out:
-	if (interrupts)
+	if (interrupts && vq->num_free < 32)
 		virtqueue_enable_cb_delayed(vq);
 
 	/* Free used slots. We only consider our own used buffers, recognized
