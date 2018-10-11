@@ -384,6 +384,8 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	if (onoff) {
 		/* enable netmap mode */
+		nm_set_native_flags(na);
+
 		for_rx_tx(t) {
 			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = NMR(na, t)[i];
@@ -401,10 +403,7 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 				kring->nr_mode = NKR_NETMAP_ON;
 			}
 		}
-
-		nm_set_native_flags(na);
 	} else {
-		nm_clear_native_flags(na);
 		for_rx_tx(t) {
 			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = NMR(na, t)[i];
@@ -421,6 +420,8 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 				kring->nr_mode = NKR_NETMAP_OFF;
 			}
 		}
+
+		nm_clear_native_flags(na);
 	}
 
 	if (was_up) {
