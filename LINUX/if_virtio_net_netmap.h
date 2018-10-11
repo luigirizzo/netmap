@@ -298,7 +298,7 @@ static int virtnet_open(struct net_device *dev);
 static int virtnet_close(struct net_device *dev);
 
 static void
-virtio_net_netmap_free_unused(struct virtnet_info *vi, bool onoff,
+virtio_net_netmap_detach_unused(struct virtnet_info *vi, bool onoff,
 				enum txrx t, int i)
 {
 	struct virtqueue* vq = (t == NR_RX) ? vi->rq[i].vq : vi->sq[i].vq;
@@ -398,7 +398,9 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 	}
 
 	if (onoff) {
-		/* enable netmap mode */
+		/* Enable netmap mode before draining and detaching OS
+		 * buffers, to prevent the OS to transmit packets
+		 * while we are doing that. */
 		nm_set_native_flags(na);
 
 		for_rx_tx(t) {
@@ -412,7 +414,7 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 				virtio_net_netmap_drain_used(vi, onoff, t, i);
 
 				/* Detach and free any unused OS buffers. */
-				virtio_net_netmap_free_unused(vi, onoff, t, i);
+				virtio_net_netmap_detach_unused(vi, onoff, t, i);
 
 				/* Initialize scatter-gater buffers for
 				 * netmap mode. */
@@ -433,12 +435,15 @@ virtio_net_netmap_reg(struct netmap_adapter *na, int onoff)
 				virtio_net_netmap_drain_used(vi, onoff, t, i);
 
 				/* Detach and free any unused netmap buffers. */
-				virtio_net_netmap_free_unused(vi, onoff, t, i);
+				virtio_net_netmap_detach_unused(vi, onoff, t, i);
 
 				kring->nr_mode = NKR_NETMAP_OFF;
 			}
 		}
 
+		/* Disable netmap mode after netmap buffers have been drained
+		 * and detached, to prevent the OS to start transmitting while
+		 * we are doing that. */
 		nm_clear_native_flags(na);
 	}
 
@@ -637,7 +642,7 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 	/*
 	 * First part: import newly received packets.
 	 * Only accept our own buffers (matching the token). We should only get
-	 * matching buffers, because of virtio_net_netmap_free_unused and
+	 * matching buffers, because of virtio_net_netmap_detach_unused() and
 	 * virtio_net_netmap_init_buffers(). We may need to stop early to avoid
 	 * hwtail to overrun hwcur;
 	 */
