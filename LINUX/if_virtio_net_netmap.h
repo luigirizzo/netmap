@@ -533,14 +533,13 @@ virtio_net_netmap_txsync(struct netmap_kring *kring, int flags)
 	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
 				sizeof(sq->shared_txvhdr) :
 				sizeof(sq->shared_txvhdr.hdr);
+	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
 	struct netmap_adapter *token;
 
 	if (!netif_running(ifp)) {
 		/* All the new slots are now unavailable. */
 		goto out;
 	}
-
-	virtqueue_enable_cb(vq);
 
 	/*
 	 * First part: process new packets to send.
@@ -572,13 +571,15 @@ virtio_net_netmap_txsync(struct netmap_kring *kring, int flags)
 			nic_i = nm_next(nic_i, lim);
 		}
 
-		virtqueue_enable_cb(vq);
 		virtqueue_kick(vq);
 
 		/* Update hwcur depending on where we stopped. */
 		kring->nr_hwcur = nm_i; /* note we migth break early */
 	}
 out:
+	if (interrupts)
+		virtqueue_enable_cb_delayed(vq);
+
 	/* Free used slots. We only consider our own used buffers, recognized
 	 * by the token we passed to virtqueue_add_outbuf.
 	 */
