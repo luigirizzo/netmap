@@ -535,7 +535,6 @@ virtio_net_netmap_txsync(struct netmap_kring *kring, int flags)
 				sizeof(sq->shared_txvhdr.hdr);
 	struct netmap_adapter *token;
 	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
-	int nospace = 0;
 
 	virtqueue_disable_cb(vq);
 
@@ -571,6 +570,7 @@ virtio_net_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			void *addr = NMB(na, slot);
+			int nospace;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
@@ -600,7 +600,7 @@ out:
 	 * hypervisor for notifications, possibly only when it has
 	 * freed a considerable amount of pending descriptors.
 	 */
-	if (interrupts && (nm_kr_txempty(kring) || nospace))
+	if (interrupts && (vq->num_free <= 2 || nm_kr_txempty(kring)))
 		virtqueue_enable_cb_delayed(vq);
 
 	return 0;
