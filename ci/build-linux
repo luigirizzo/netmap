@@ -1,5 +1,47 @@
 #!/bin/bash -eu
 
+function kverval() {
+	local kver="$1"
+	local val="0"
+	local components
+
+	# Parse kernel version
+	IFS='.' read -ra components <<< "${kver}"
+	for x in ${components[@]}; do
+		val=$((val * 100))
+		val=$((val + x))
+	done
+	echo $val
+}
+
+function kverless() {
+	local kver1="$1"
+	local kver2="$2"
+
+	kval1=$(kverval $kver1)
+	kval2=$(kverval $kver2)
+
+	if [ "$kval1" -lt "$kval2" ]; then
+		echo "0"
+	else
+		echo "1"
+	fi
+}
+
+function set_config_variable()
+{
+	local varname=$1
+	local varvalue=$2
+
+	cnt=$(grep ${varname} .config || true)
+	if [ "$cnt" == 0 ]; then
+		echo "${varname}=${varvalue}" >> .config
+	else
+		sed -i "s/^${varname}=./${varname}=${varvalue}/" .config
+	fi
+	grep "${varname}=${varvalue}" .config || echo "Failed to modify .config"
+}
+
 set -o pipefail
 
 readonly KERNEL_VERSION=${1:?}
@@ -39,23 +81,29 @@ then
   popd
 fi
 make mrproper
-make -j $PROC_COUNT ARCH=${ARCH} defconfig
+make -j $PROC_COUNT ARCH=${ARCH} allmodconfig
 make -j $PROC_COUNT ARCH=${ARCH} modules_prepare
 popd
 
 # First build in-tree-only drivers
 echo "Building vanilla-only drivers"
-./configure --no-ext-drivers --kernel-dir=$PWD/linux-${KERNEL_VERSION} --drivers=r8169.c,virtio_net.c,forcedeth.c,veth.c,e1000,vmxnet3 --enable-ptnetmap
+./configure --no-ext-drivers --driver-suffix=_netmap --kernel-dir=$PWD/linux-${KERNEL_VERSION} --drivers=r8169.c,virtio_net.c,forcedeth.c,veth.c,e1000,vmxnet3 --enable-ptnetmap
 make -j $PROC_COUNT
 
 # Then build external intel drivers
 make distclean
-echo "Building external intel drivers"
-./configure --kernel-dir=$PWD/linux-${KERNEL_VERSION} --drivers=e1000e,igb,ixgbe,i40e
+echo "Building external intel drivers (and virtio_net.c)"
+EXTDRIVERS="e1000e,igb,ixgbe,i40e"
+# For kernels >= 3.13 we support virtio_net.c as an external driver
+cmp=$(kverless $KERNEL_VERSION 3.13)
+if [ "$cmp" == "1" ]; then
+	EXTDRIVERS="${EXTDRIVERS},virtio_net.c"
+fi
+./configure --kernel-dir=$PWD/linux-${KERNEL_VERSION} --driver-suffix=_netmap --drivers=${EXTDRIVERS}
 make -j $PROC_COUNT
 
 # Then build vanilla intel drivers
 make distclean
 echo "Building vanilla intel drivers"
-./configure --no-ext-drivers --kernel-dir=$PWD/linux-${KERNEL_VERSION} --drivers=e1000e,igb,ixgbe,i40e
+./configure --no-ext-drivers --kernel-dir=$PWD/linux-${KERNEL_VERSION} --driver-suffix=_netmap --drivers=e1000e,igb,ixgbe,i40e
 make -j $PROC_COUNT

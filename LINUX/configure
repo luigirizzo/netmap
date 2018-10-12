@@ -134,6 +134,7 @@ edrv enable ixgbe
 edrv enable ixgbevf
 edrv enable i40e
 edrv enable mlx5
+edrv enable virtio_net.c
 
 # drivers built by patching the system drivers
 setop internal_driver new driver
@@ -479,7 +480,7 @@ build-$d: prepare-$d
 	+\$($d@build)
 	touch build-$d
 patch-$d: get-$d
-	\$(foreach p,\$($d@patch),patch --posix --quiet --force -p1 < \$(p);)
+	\$(foreach p,\$($d@patch),patch --quiet --force -p1 < \$(p);)
 	touch patch-$d
 EOF
 	done
@@ -1613,6 +1614,36 @@ EOF
 	}
 EOF
 
+# check for <linux/average.h>
+  add_test 'have AVERAGE_H' <<EOF
+	#include <linux/average.h>
+
+	DECLARE_EWMA(myname, 1, 64);
+	int
+	dummy(struct ewma_myname *x) {
+		ewma_myname_add(x, 18);
+	}
+EOF
+
+# check for ethtool_validate_speed() and ethtool_validate_duplex()
+  add_test 'have ETHTOOL_VALIDATE' <<EOF
+	#include <linux/ethtool.h>
+
+	int
+	dummy(void) {
+		return ethtool_validate_speed(0) + ethtool_validate_duplex(0);
+	}
+EOF
+
+  add_test 'have U64_STATS_IRQ' <<EOF
+	#include <linux/u64_stats_sync.h>
+
+	unsigned int
+	dummy(const struct u64_stats_sync *x) {
+		return u64_stats_fetch_begin_irq(x);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
@@ -1775,9 +1806,129 @@ EOF
   fi
 
   if drv enabled virtio_net.c; then
+
+    VNETDIR=""
+    if edrv enabled virtio_net.c; then
+        VNETDIR="virtio_net.c/"
+    fi
   
-    add_file_exists_check virtio_net.c true "drv_source_error virtio_net.c"
+    add_file_exists_check ${VNETDIR}virtio_net.c true "drv_source_error virtio_net.c"
   
+    add_test 'define VIRTIO_NET_HDR_FROM_SKB_5ARGS' <<EOF
+	#include <linux/virtio_net.h>
+
+	int
+	dummy(const struct sk_buff *skb, struct virtio_net_hdr *hdr,
+		bool little_endian, bool has_data_valid, int vlan_hlen) {
+		return virtio_net_hdr_from_skb(skb, hdr, little_endian,
+					has_data_valid, vlan_hlen);
+	}
+EOF
+
+    add_test 'define VIRTIO_NET_HDR_FROM_SKB_4ARGS' <<EOF
+	#include <linux/virtio_net.h>
+
+	int
+	dummy(const struct sk_buff *skb, struct virtio_net_hdr *hdr,
+		bool little_endian, bool has_data_valid) {
+		return virtio_net_hdr_from_skb(skb, hdr, little_endian,
+					has_data_valid);
+	}
+EOF
+
+    add_test 'define VIRTIO_NET_HDR_FROM_SKB_3ARGS' <<EOF
+	#include <linux/virtio_net.h>
+
+	int
+	dummy(const struct sk_buff *skb, struct virtio_net_hdr *hdr,
+		bool little_endian) {
+		return virtio_net_hdr_from_skb(skb, hdr, little_endian);
+	}
+EOF
+
+  add_test 'have FIND_VQS_CTX_ARG' <<EOF
+	#include <linux/virtio_config.h>
+
+	int
+	dummy(struct virtio_config_ops *ops, const bool *ctx,
+		struct irq_affinity *desc)
+	{
+		return ops->find_vqs(NULL, 0, NULL, NULL, NULL,
+					ctx, desc);
+	}
+EOF
+
+  add_test 'have FIND_VQS_IRQAFF_ARG' <<EOF
+	#include <linux/virtio_config.h>
+
+	int
+	dummy(struct virtio_config_ops *ops, struct irq_affinity *desc)
+	{
+		return ops->find_vqs(NULL, 0, NULL, NULL, NULL,
+					desc);
+	}
+EOF
+
+  add_test 'have VIRTIO_BYTEORDER' <<EOF
+	#include <linux/virtio_byteorder.h>
+
+	u16
+	dummy(bool little_endian, __virtio16 val)
+	{
+		return __virtio16_to_cpu(little_endian, val);
+	}
+EOF
+
+  add_test 'have VIRTIO_IS_LITTLE_ENDIAN' <<EOF
+	#include <linux/virtio_config.h>
+
+	bool
+	dummy(struct virtio_device *vdev)
+	{
+		return virtio_is_little_endian(vdev);
+	}
+EOF
+
+  add_test 'have VIRTIO_MEMORY_ACCESSORS' <<EOF
+	#include <linux/virtio_config.h>
+
+	u16
+	dummy(struct virtio_device *vdev)
+	{
+		return virtio16_to_cpu(vdev, 0);
+	}
+EOF
+
+  add_test 'have VIRTIO_DRIVER_FEATURE_TABLE_LEGACY' <<EOF
+	#include <linux/virtio.h>
+
+	bool
+	dummy(struct virtio_driver *vdr)
+	{
+		return vdr->feature_table_legacy != NULL;
+	}
+EOF
+
+  add_test 'have VIRTIO_DEVICE_READY' <<EOF
+	#include <linux/virtio_config.h>
+
+	void
+	dummy(struct virtio_device *vdev)
+	{
+		virtio_device_ready(vdev);
+	}
+EOF
+
+  add_test 'have VIRTQUEUE_IS_BROKEN' <<EOF
+	#include <linux/virtio.h>
+
+	bool
+	dummy(struct virtqueue *vq)
+	{
+		return virtqueue_is_broken(vq);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   
@@ -1797,7 +1948,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_FREE_PAGES' <<EOF
-  	#include "virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	void
   	dummy(struct virtnet_info *vi) {
@@ -1830,7 +1981,7 @@ EOF
   done
   
     add_test 'define VIRTIO_MULTI_QUEUE' <<EOF
-  	#include "virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	struct virtqueue *
   	dummy(struct virtnet_info *vi) {
@@ -1839,7 +1990,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_RQ_NUM' <<EOF
-  	#include "virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	int
   	dummy(struct virtnet_info *vi) {
@@ -1848,7 +1999,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_SG' <<EOF
-  	#include "virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	struct scatterlist *
   	dummy(struct virtnet_info *vi) {
