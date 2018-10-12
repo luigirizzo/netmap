@@ -2576,6 +2576,10 @@ skip_args:
     }
 
     if (server) {
+	/* lock everything in core */
+	if (mlockall(MCL_CURRENT | MCL_FUTURE) < 0) {
+	    ED("failed to lock memory: %s", strerror(errno));
+	}
         /* set the maximum values */
         for (i = 0; i < EC_NOPTS; i++) {
             if (set_max(invdopt['M']->arg[i], &bp[i].q))
