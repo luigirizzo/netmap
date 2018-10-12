@@ -1806,8 +1806,13 @@ EOF
   fi
 
   if drv enabled virtio_net.c; then
+
+    VNETDIR=""
+    if edrv enabled virtio_net.c; then
+        VNETDIR="virtio_net.c/"
+    fi
   
-    add_file_exists_check virtio_net.c/virtio_net.c true "drv_source_error virtio_net.c"
+    add_file_exists_check ${VNETDIR}virtio_net.c true "drv_source_error virtio_net.c"
   
     add_test 'define VIRTIO_NET_HDR_FROM_SKB_5ARGS' <<EOF
 	#include <linux/virtio_net.h>
@@ -1943,7 +1948,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_FREE_PAGES' <<EOF
-	#include "virtio_net.c/virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	void
   	dummy(struct virtnet_info *vi) {
@@ -1976,7 +1981,7 @@ EOF
   done
   
     add_test 'define VIRTIO_MULTI_QUEUE' <<EOF
-	#include "virtio_net.c/virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	struct virtqueue *
   	dummy(struct virtnet_info *vi) {
@@ -1985,7 +1990,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_RQ_NUM' <<EOF
-	#include "virtio_net.c/virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	int
   	dummy(struct virtnet_info *vi) {
@@ -1994,7 +1999,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_SG' <<EOF
-	#include "virtio_net.c/virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	struct scatterlist *
   	dummy(struct virtnet_info *vi) {
