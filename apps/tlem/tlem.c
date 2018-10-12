@@ -1855,7 +1855,7 @@ retry:
     q->buf = mmap(0, need, PROT_WRITE | PROT_READ, mmap_flags, -1, 0);
     if (q->buf == MAP_FAILED) {
         ED("alloc %s bytes for queue failed, exiting", b1);
-        if (mmap_flags & MAP_HUGETLB) {
+        if (mmap_flags & MAP_HUGETLB && a->hugepages < 2) {
             ED("trying again without hugepages");
             mmap_flags &= ~MAP_HUGETLB;
             goto retry;
@@ -2273,7 +2273,7 @@ main(int argc, char **argv)
                 bp[0].route_mode = 1;
                 break;
             case 'H':
-                hugepages = 1;
+                hugepages++;
                 break;
             case 's':
                 if (sfname != NULL) {
@@ -2620,7 +2620,7 @@ skip_args:
     if (hugepages) {
 #ifdef MAP_HUGETLB
         ED("using hugepages");
-        bp[0].hugepages = bp[1].hugepages = 1;
+        bp[0].hugepages = bp[1].hugepages = hugepages;
 #else /* !MAP_HUGETLB */
         ED("WARNING: hugepages not supported");
         hugepages = 0;
