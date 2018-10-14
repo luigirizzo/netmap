@@ -1009,7 +1009,7 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 		/* set void callback on host rings */
 		for (i = nma_get_nrings(hwna, NR_RX);
 		     i < netmap_real_rings(hwna, NR_RX); i++) {
-			NMR(hwna, NR_RX)[i]->nm_sync = netmap_vp_rxsync;
+			NMR(hwna, NR_RX)[i]->nm_sync = netmap_vp_rxsync_locked;
 		}
 	} else {
 #ifdef linux
@@ -1247,8 +1247,10 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 
 		for_bdg_ports(i, b) {
 			struct netmap_vp_adapter *s;
+			struct netmap_adapter *slvna;
 			struct nmreq_header hdr;
 			struct nmreq_port_hdr req;
+			int err;
 
 			if (i == 0)
 				continue;
@@ -1258,7 +1260,12 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 			hdr.nr_reqtype = NETMAP_REQ_BDG_DETACH;
 			hdr.nr_version = NETMAP_API;
 			hdr.nr_body = (uintptr_t)&req;
-			netmap_bdg_detach_locked(&hdr, NULL);
+			slvna = &s->up;
+			netmap_adapter_get(slvna);
+			if (slvna->nm_bdg_ctl) {
+				err = slvna->nm_bdg_ctl(&hdr, slvna);
+			}
+			netmap_adapter_put(slvna);
 		}
 		st_extra_free(na);
 	}
@@ -1283,6 +1290,7 @@ netmap_stack_txsync(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
+/* We can call rxsync without locks because of run-to-completion */
 static int
 netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 {
@@ -1293,7 +1301,7 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 	register_t	intr;
 
 	/* TODO scan only necessary ports */
-	err = netmap_vp_rxsync(kring, flags); // reclaim buffers released
+	err = netmap_vp_rxsync_locked(kring, flags); // reclaim buffers released
 	if (err)
 		return err;
 	if (stack_no_runtocomp)
@@ -1342,7 +1350,7 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 		}
 	}
 	intr_restore(intr);
-	return netmap_vp_rxsync(kring, flags);
+	return netmap_vp_rxsync_locked(kring, flags);
 }
 
 static void

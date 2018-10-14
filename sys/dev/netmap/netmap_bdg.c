@@ -1125,7 +1125,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 /* rxsync code used by VALE ports nm_rxsync callback and also
  * internally by the brwap
  */
-static int
+int
 netmap_vp_rxsync_locked(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;

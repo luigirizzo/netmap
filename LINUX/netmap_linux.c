@@ -1285,7 +1285,8 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		rcu_read_unlock();
 	} else
 #endif /* NETMAP_LINUX_HAVE_IP_RCV */
-	netif_receive_skb(m);
+	//netif_receive_skb(m);
+	netif_receive_skb_core(m);
 
 	/* setting data destructor is safe only after skb_orphan_frag()
 	 * in __netif_receive_skb_core().
@@ -1351,7 +1352,12 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		RD(1, "WARNING: NULL sk->sk_socket");
 		return 0;
 	}
-	err = kernel_sendpage(sk->sk_socket, page, poff, len, MSG_DONTWAIT);
+	/*
+	 * We don't really own lock. But since we only actively receive packets,
+	 * the RX path never tries to lock the socket.
+	 */
+	//err = kernel_sendpage(sk->sk_socket, page, poff, len, MSG_DONTWAIT);
+	err = kernel_sendpage_locked(sk, page, poff, len, MSG_DONTWAIT);
 	if (unlikely(err < 0)) {
 		/* XXX check if it is enough to assume EAGAIN only */
 		ND(1, "error %d in sendpage() slot %ld",
@@ -1837,7 +1843,8 @@ netmap_bns_put(struct net *net_ns)
 void
 netmap_bns_getbridges(struct nm_bridge **b, u_int *n)
 {
-	struct net *net_ns = current->nsproxy->net_ns;
+	struct nsproxy *nsproxy = current->nsproxy;
+	struct net *net_ns = nsproxy->net_ns;
 	struct netmap_bns *ns = net_generic(net_ns, netmap_bns_id);
 
 	*b = ns->bridges;
