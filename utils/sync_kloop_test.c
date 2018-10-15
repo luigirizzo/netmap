@@ -106,7 +106,7 @@ main(int argc, char **argv)
 	struct context ctx;
 	struct nm_desc *nmd;
 
-	double target_rate         = 1.0 /* pps */;
+	double target_rate         = 0.0 /* pps */;
 	unsigned int period_us     = 0;
 	unsigned int period_budget = 0;
 	struct timeval next_time;
