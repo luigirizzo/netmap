@@ -1881,6 +1881,9 @@ struct netmap_priv_d {
 	 */
 	NM_SELINFO_T *np_si[NR_TXRX];
 	struct thread	*np_td;		/* kqueue, just debugging */
+#ifdef linux
+	struct file	*filp;  /* used by sync kloop */
+#endif /* linux */
 };
 
 struct netmap_priv_d *netmap_priv_new(void);
