@@ -4222,6 +4222,40 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 	}
 }
 
+//#define SYNC_KLOOP_POLL
+#ifdef SYNC_KLOOP_POLL
+struct sync_kloop_poll_entry {
+	wait_queue_entry_t wait;
+	wait_queue_head_t *wqh;
+};
+
+struct sync_kloop_poll_ctx {
+	struct netmap_priv_d *priv;
+	NM_SELINFO_T *si[NR_TXRX];
+	poll_table wait_table;
+	unsigned int next_entry;
+	unsigned int num_entries;
+	struct sync_kloop_poll_entry entries[4];
+};
+
+static void
+sync_kloop_poll_table_queue_proc(struct file *file, wait_queue_head_t *wqh,
+				poll_table *pt)
+{
+	struct sync_kloop_poll_ctx *ctx = container_of(pt, struct sync_kloop_poll_ctx,
+							wait_table);
+	struct sync_kloop_poll_entry *entry = ctx->entries + ctx->next_entry;
+
+	BUG_ON(ctx->next_entry >= ctx->num_entries);
+	entry->wqh = wqh;
+	/* Use the default wake up function. */
+	init_waitqueue_entry(&entry->wait, current);
+	add_wait_queue(wqh, &entry->wait);
+	ctx->next_entry++;
+	nm_prinf("POLL ENTRY %d FILLED\n", ctx->next_entry);
+}
+#endif  /* SYNC_KLOOP_POLL */
+
 int
 netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req)
 {
@@ -4230,7 +4264,12 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 	struct nm_csb_ktoa* csb_ktoa_base;
 	int num_rx_rings, num_tx_rings;
 	struct netmap_adapter *na;
+	unsigned int i;
 	int err = 0;
+
+#ifdef SYNC_KLOOP_POLL
+	struct sync_kloop_poll_ctx ctx;
+#endif  /* SYNC_KLOOP_POLL */
 
 	if (sleep_us > 1000000) {
 		/* We do not accept sleeping for more than a second. */
@@ -4275,7 +4314,6 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		if (num_entries > 0) {
 			size_t entry_size[2];
 			void *csb_start[2];
-			unsigned int i;
 
 			entry_size[0] = sizeof(*csb_atok_base);
 			entry_size[1] = sizeof(*csb_ktoa_base);
@@ -4316,9 +4354,25 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		}
 	}
 
+#ifdef SYNC_KLOOP_POLL
+	memset(&ctx, 0, sizeof(ctx));
+	init_poll_funcptr(&ctx.wait_table, sync_kloop_poll_table_queue_proc);
+	ctx.num_entries = sizeof(ctx.entries)/sizeof(ctx.entries[0]);
+	ctx.next_entry = 0;
+	ctx.priv = priv;
+	ctx.si[NR_RX] = nm_si_user(priv, NR_RX) ? &na->si[NR_RX] :
+				&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
+	ctx.si[NR_TX] = nm_si_user(priv, NR_TX) ? &na->si[NR_TX] :
+				&na->tx_rings[priv->np_qfirst[NR_TX]]->si;
+	poll_wait(priv->filp, ctx.si[NR_RX], &ctx.wait_table);
+	poll_wait(priv->filp, ctx.si[NR_TX], &ctx.wait_table);
+#endif  /* SYNC_KLOOP_POLL */
+
 	/* Main loop. */
 	for (;;) {
-		unsigned int i;
+#ifdef SYNC_KLOOP_POLL
+		__set_current_state(TASK_INTERRUPTIBLE);
+#endif  /* SYNC_KLOOP_POLL */
 
 		/* Process all the TX rings bound to this file descriptor. */
 		for (i = 0; i < num_tx_rings; i++) {
@@ -4348,13 +4402,32 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 			nm_kr_put(kring);
 		}
 
+#ifdef SYNC_KLOOP_POLL
+		{
+			long remt;
+
+			nm_prinf("about to sleep\n");
+			remt = schedule_timeout_interruptible(msecs_to_jiffies(3000));
+			nm_prinf("woken up (%ld)\n", remt);
+		}
+#else  /* SYNC_KLOOP_POLL */
 		/* Default synchronization method: sleep for a while. */
 		usleep_range(sleep_us, sleep_us);
+#endif /* SYNC_KLOOP_POLL */
 
 		if (unlikely(NM_ACCESS_ONCE(priv->np_kloop_state) & NM_SYNC_KLOOP_STOPPING)) {
 			break;
 		}
 	}
+
+#ifdef SYNC_KLOOP_POLL
+	__set_current_state(TASK_RUNNING);
+	for (i = 0; i < ctx.next_entry; i++) {
+		struct sync_kloop_poll_entry *entry = ctx.entries + i;
+
+		remove_wait_queue(entry->wqh, &entry->wait);
+	}
+#endif /* SYNC_KLOOP_POLL */
 
 	/* Reset the kloop state. */
 	NMG_LOCK();
