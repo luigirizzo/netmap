@@ -4252,7 +4252,7 @@ sync_kloop_poll_table_queue_proc(struct file *file, wait_queue_head_t *wqh,
 	init_waitqueue_entry(&entry->wait, current);
 	add_wait_queue(wqh, &entry->wait);
 	ctx->next_entry++;
-	nm_prinf("POLL ENTRY %d FILLED\n", ctx->next_entry);
+	nm_prinf("poll entry #%d filled\n", ctx->next_entry);
 }
 #endif  /* SYNC_KLOOP_POLL */
 
@@ -4403,13 +4403,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		}
 
 #ifdef SYNC_KLOOP_POLL
-		{
-			long remt;
-
-			nm_prinf("about to sleep\n");
-			remt = schedule_timeout_interruptible(msecs_to_jiffies(3000));
-			nm_prinf("woken up (%ld)\n", remt);
-		}
+		schedule_timeout_interruptible(msecs_to_jiffies(1000));
 #else  /* SYNC_KLOOP_POLL */
 		/* Default synchronization method: sleep for a while. */
 		usleep_range(sleep_us, sleep_us);
