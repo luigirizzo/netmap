@@ -1526,11 +1526,6 @@ netmap_get_na(struct nmreq_header *hdr,
 	 *  !0    !NULL		impossible
 	 */
 
-	/* try to see if this is a ptnetmap port */
-	error = netmap_get_pt_host_na(hdr, na, nmd, create);
-	if (error || *na != NULL)
-		goto out;
-
 	/* try to see if this is a monitor port */
 	error = netmap_get_monitor_na(hdr, na, nmd, create);
 	if (error || *na != NULL)
@@ -1807,12 +1802,6 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
 	int excluded_direction[] = { NR_TX_RINGS_ONLY, NR_RX_RINGS_ONLY };
 	enum txrx t;
 	u_int j;
-
-	if ((nr_flags & NR_PTNETMAP_HOST) && ((nr_mode != NR_REG_ALL_NIC) ||
-			nr_flags & (NR_RX_RINGS_ONLY|NR_TX_RINGS_ONLY))) {
-		D("Error: only NR_REG_ALL_NIC supported with netmap passthrough");
-		return EINVAL;
-	}
 
 	for_rx_tx(t) {
 		if (nr_flags & excluded_direction[t]) {

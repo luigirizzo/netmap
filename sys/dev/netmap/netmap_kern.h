@@ -55,9 +55,6 @@
 #if defined(CONFIG_NETMAP_PTNETMAP_GUEST)
 #define WITH_PTNETMAP_GUEST
 #endif
-#if defined(CONFIG_NETMAP_PTNETMAP_HOST)
-#define WITH_PTNETMAP_HOST
-#endif
 #if defined(CONFIG_NETMAP_SINK)
 #define WITH_SINK
 #endif
@@ -73,7 +70,6 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
-#define WITH_PTNETMAP_HOST	/* ptnetmap host support */
 #define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
 #define WITH_EXTMEM
 #endif
@@ -698,7 +694,7 @@ struct netmap_adapter {
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
-#define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
+/* free */
 #define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
@@ -2131,40 +2127,6 @@ u_int nm_os_ncpus(void);
 
 int netmap_sync_kloop(struct netmap_priv_d *priv,
 		      struct nmreq_header *hdr);
-
-#ifdef WITH_PTNETMAP_HOST
-/*
- * netmap adapter for host ptnetmap ports
- */
-struct netmap_pt_host_adapter {
-	struct netmap_adapter up;
-
-	/* the passed-through adapter */
-	struct netmap_adapter *parent;
-	/* parent->na_flags, saved at NETMAP_PT_HOST_CREATE time,
-	 * and restored at NETMAP_PT_HOST_DELETE time */
-	uint32_t parent_na_flags;
-
-	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
-	void *ptns;
-};
-
-/* ptnetmap host-side routines */
-int netmap_get_pt_host_na(struct nmreq_header *hdr, struct netmap_adapter **na,
-			struct netmap_mem_d * nmd, int create);
-int ptnetmap_ctl(const char *nr_name, int create, struct netmap_adapter *na);
-
-static inline int
-nm_ptnetmap_host_on(struct netmap_adapter *na)
-{
-	return na && na->na_flags & NAF_PTNETMAP_HOST;
-}
-#else /* !WITH_PTNETMAP_HOST */
-#define netmap_get_pt_host_na(hdr, _2, _3, _4) \
-	(((struct nmreq_register *)(uintptr_t)hdr->nr_body)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
-#define ptnetmap_ctl(_1, _2, _3)   EINVAL
-#define nm_ptnetmap_host_on(_1)   EINVAL
-#endif /* !WITH_PTNETMAP_HOST */
 
 #ifdef WITH_PTNETMAP_GUEST
 /* ptnetmap GUEST routines */
