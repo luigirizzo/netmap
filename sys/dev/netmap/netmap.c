@@ -4077,11 +4077,13 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		}
 
 		/* Interrupt the application if needed. */
-		if (more_txspace && csb_atok_intr_enabled(csb_atok)) {
+#ifdef SYNC_KLOOP_POLL
+		if (a->irq_ctx && more_txspace && csb_atok_intr_enabled(csb_atok)) {
 			/* Disable application kick to avoid sending unnecessary kicks */
-			// nm_os_kctx_send_irq(kth); // TODO
+			eventfd_signal(a->irq_ctx, 1);
 			more_txspace = false;
 		}
+#endif /* SYNC_KLOOP_POLL */
 
 		/* Read CSB to see if there is more work to do. */
 		sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
@@ -4112,9 +4114,11 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		}
 	}
 
-	if (more_txspace && csb_atok_intr_enabled(csb_atok)) {
-		// nm_os_kctx_send_irq(kth); // TODO
+#ifdef SYNC_KLOOP_POLL
+	if (a->irq_ctx && more_txspace && csb_atok_intr_enabled(csb_atok)) {
+		eventfd_signal(a->irq_ctx, 1);
 	}
+#endif /* SYNC_KLOOP_POLL */
 }
 
 /* RX cycle without receive any packets */
@@ -4190,12 +4194,14 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 			sync_kloop_kring_dump("post rxsync", kring);
 		}
 
+#ifdef SYNC_KLOOP_POLL
 		/* Interrupt the application if needed. */
-		if (some_recvd && csb_atok_intr_enabled(csb_atok)) {
+		if (a->irq_ctx && some_recvd && csb_atok_intr_enabled(csb_atok)) {
 			/* Disable application kick to avoid sending unnecessary kicks */
-			//nm_os_kctx_send_irq(kth); // TODO
+			eventfd_signal(a->irq_ctx, 1);
 			some_recvd = false;
 		}
+#endif /* SYNC_KLOOP_POLL */
 
 		/* Read CSB to see if there is more work to do. */
 		sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
@@ -4231,10 +4237,12 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 
 	nm_kr_put(kring);
 
+#ifdef SYNC_KLOOP_POLL
 	/* Interrupt the application if needed. */
-	if (some_recvd && csb_atok_intr_enabled(csb_atok)) {
-		//nm_os_kctx_send_irq(kth); // TODO
+	if (a->irq_ctx && some_recvd && csb_atok_intr_enabled(csb_atok)) {
+		eventfd_signal(a->irq_ctx, 1);
 	}
+#endif /* SYNC_KLOOP_POLL */
 }
 
 #ifdef SYNC_KLOOP_POLL
