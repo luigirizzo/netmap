@@ -126,6 +126,7 @@ main(int argc, char **argv)
 {
 	struct nm_csb_atok *atok_base = NULL;
 	struct nm_csb_ktoa *ktoa_base = NULL;
+	struct eventfds *eventfds_base = NULL;
 	int num_tx_entries;
 	unsigned long long bytes = 0;
 	unsigned long long pkts  = 0;
@@ -322,9 +323,11 @@ main(int argc, char **argv)
 #if 0
 	printf("period us %u batch %u\n", period_us, period_budget);
 #endif
+	eventfds_base = ctx.eventfds;
 	if (func == F_RX) {
 		atok_base += num_tx_entries;
 		ktoa_base += num_tx_entries;
+		eventfds_base += num_tx_entries;
 		first_ring = nmd->first_rx_ring;
 		last_ring  = nmd->last_rx_ring;
 	} else {
@@ -373,6 +376,8 @@ main(int argc, char **argv)
 		}
 
 		for (r = first_ring; r <= last_ring; r++) {
+			struct eventfds *evfds = ctx.eventfds ?
+					(eventfds_base + r) : NULL;
 			struct nm_csb_atok *atok = atok_base + r;
 			struct nm_csb_ktoa *ktoa = ktoa_base + r;
 			struct netmap_ring *ring;
@@ -448,7 +453,18 @@ main(int argc, char **argv)
 				bytes += slot->len;
 				head = nm_ring_next(ring, head);
 			}
+			/* Write updated information for the kernel. */
 			nm_sync_kloop_appl_write(atok, head, head);
+			/* Notify the kernel if needed. */
+			if (evfds && ACCESS_ONCE(ktoa->kern_need_kick)) {
+				uint64_t x = 1;
+				int n = write(evfds->ioeventfd, &x, sizeof(x));
+
+				assert(n == sizeof(x));
+				if (ctx.verbose) {
+					printf("Kernel notified\n");
+				}
+			}
 			if (ctx.verbose) {
 				printf("ring #%u, hwcur %u, head %u, hwtail "
 				       "%u\n",
