@@ -1438,7 +1438,7 @@ linux_netmap_open(struct inode *inode, struct file *file)
 		error = -ENOMEM;
 		goto out;
 	}
-	priv->filp = file;
+	priv->np_filp = file;
 	file->private_data = priv;
 out:
 	NMG_UNLOCK();

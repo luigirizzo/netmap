@@ -477,6 +477,8 @@ struct nmreq_option {
 	 * !=0: errno value
 	 */
 	uint32_t		nro_status;
+	/* Option size, used only by variable-size options. */
+	uint64_t		nro_size;
 };
 
 /* Header common to all requests. Do not reorder these fields, as we need
@@ -529,6 +531,10 @@ enum {
 	/* On NETMAP_REQ_REGISTER, ask netmap to use memory allocated
 	 * from user-space allocated memory pools (e.g. hugepages). */
 	NETMAP_REQ_OPT_EXTMEM = 1,
+	/* ON NETMAP_REQ_SYNC_KLOOP_START, ask netmap to use eventfd-based
+	 * notifications to synchronize the kernel loop with the application.
+	 */
+	NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS,
 };
 
 /*
@@ -795,6 +801,18 @@ nm_sync_kloop_appl_read(struct nm_csb_ktoa *ktoa, uint32_t *hwtail,
 /*
  * data for NETMAP_REQ_OPT_* options
  */
+
+struct nmreq_opt_sync_kloop_eventfds {
+	struct nmreq_option	nro_opt;	/* common header */
+	/* An array of N entries for bidirectional notifications between
+	 * the kernel loop and the application. The number of entries must
+	 * agree with the number of rings bound to the netmap file descriptor.
+	 */
+	struct {
+		int32_t ioeventfd;
+		int32_t irqfd;
+	} eventfds[0];
+};
 
 struct nmreq_opt_extmem {
 	struct nmreq_option	nro_opt;	/* common header */

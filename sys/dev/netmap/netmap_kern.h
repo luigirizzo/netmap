@@ -1882,7 +1882,7 @@ struct netmap_priv_d {
 	NM_SELINFO_T *np_si[NR_TXRX];
 	struct thread	*np_td;		/* kqueue, just debugging */
 #ifdef linux
-	struct file	*filp;  /* used by sync kloop */
+	struct file	*np_filp;  /* used by sync kloop */
 #endif /* linux */
 };
 
@@ -2130,7 +2130,7 @@ void nm_os_kctx_worker_setaff(struct nm_kctx *, int);
 u_int nm_os_ncpus(void);
 
 int netmap_sync_kloop(struct netmap_priv_d *priv,
-		      struct nmreq_sync_kloop_start *req);
+		      struct nmreq_header *hdr);
 
 #ifdef WITH_PTNETMAP_HOST
 /*
