@@ -4489,6 +4489,9 @@ out:
 			if (entry->wqh) {
 				remove_wait_queue(entry->wqh, &entry->wait);
 			}
+			/* We did not get a reference to the eventfds, but
+			 * don't do that on netmap file descriptors (since
+			 * a reference was not taken. */
 			if (entry->filp && entry->filp != priv->np_filp) {
 				fput(entry->filp);
 			}
