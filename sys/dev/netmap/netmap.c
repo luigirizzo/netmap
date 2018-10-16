@@ -4234,7 +4234,6 @@ struct sync_kloop_poll_entry {
 };
 
 struct sync_kloop_poll_ctx {
-	NM_SELINFO_T *si[NR_TXRX];
 	poll_table wait_table;
 	unsigned int next_entry;
 	unsigned int num_entries;
@@ -4367,6 +4366,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
 				NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS);
 	if (opt != NULL) {
+		NM_SELINFO_T *si[NR_TXRX];
+
 		err = nmreq_checkduplicate(opt);
 		if (err) {
 			opt->nro_status = err;
@@ -4391,14 +4392,6 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 					sync_kloop_poll_table_queue_proc);
 		poll_ctx->num_entries = 2 + num_rings;
 		poll_ctx->next_entry = 0;
-		poll_ctx->si[NR_RX] = nm_si_user(priv, NR_RX) ? &na->si[NR_RX] :
-					&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
-		poll_ctx->si[NR_TX] = nm_si_user(priv, NR_TX) ? &na->si[NR_TX] :
-					&na->tx_rings[priv->np_qfirst[NR_TX]]->si;
-		/* Poll for notifications coming from the netmap rings bound to
-		 * this file descriptor. */
-		poll_wait(priv->np_filp, poll_ctx->si[NR_RX], &poll_ctx->wait_table);
-		poll_wait(priv->np_filp, poll_ctx->si[NR_TX], &poll_ctx->wait_table);
 		/* Poll for notifications coming from the applications through
 		 * eventfds . */
 		for (i = 0; i < num_rings; i++) {
@@ -4416,6 +4409,14 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 				goto out;
 			}
 		}
+		/* Poll for notifications coming from the netmap rings bound to
+		 * this file descriptor. */
+		si[NR_RX] = nm_si_user(priv, NR_RX) ? &na->si[NR_RX] :
+					&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
+		si[NR_TX] = nm_si_user(priv, NR_TX) ? &na->si[NR_TX] :
+					&na->tx_rings[priv->np_qfirst[NR_TX]]->si;
+		poll_wait(priv->np_filp, si[NR_RX], &poll_ctx->wait_table);
+		poll_wait(priv->np_filp, si[NR_TX], &poll_ctx->wait_table);
 #else   /* SYNC_KLOOP_POLL */
 		opt->nro_status = EOPNOTSUPP;
 		goto out;
