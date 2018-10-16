@@ -4226,7 +4226,7 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 	}
 }
 
-//#define SYNC_KLOOP_POLL
+#define SYNC_KLOOP_POLL
 #ifdef SYNC_KLOOP_POLL
 #include <linux/file.h>
 struct sync_kloop_poll_entry {
@@ -4397,8 +4397,12 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 					&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
 		poll_ctx->si[NR_TX] = nm_si_user(priv, NR_TX) ? &na->si[NR_TX] :
 					&na->tx_rings[priv->np_qfirst[NR_TX]]->si;
+		/* Poll for notifications coming from the netmap rings bound to
+		 * this file descriptor. */
 		poll_wait(priv->np_filp, poll_ctx->si[NR_RX], &poll_ctx->wait_table);
 		poll_wait(priv->np_filp, poll_ctx->si[NR_TX], &poll_ctx->wait_table);
+		/* Poll for notifications coming from the applications through
+		 * eventfds . */
 		for (i = 0; i < num_rings; i++) {
 			struct file *filp;
 			unsigned long mask;
@@ -4456,9 +4460,12 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		}
 
 #ifdef SYNC_KLOOP_POLL
-		if (poll_ctx)
+		if (poll_ctx) {
+			/* If a poll context is present, yield to the scheduler
+			 * waiting for a notification to come either from
+			 * netmap or the application. */
 			schedule_timeout_interruptible(msecs_to_jiffies(1000));
-		else
+		} else
 #endif /* SYNC_KLOOP_POLL */
 		{
 			/* Default synchronization method: sleep for a while. */
@@ -4472,6 +4479,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 out:
 #ifdef SYNC_KLOOP_POLL
 	if (poll_ctx) {
+		/* Stop polling from netmap and the eventfds, and deallocate
+		 * the poll context. */
 		__set_current_state(TASK_RUNNING);
 		for (i = 0; i < poll_ctx->next_entry; i++) {
 			struct sync_kloop_poll_entry *entry =
