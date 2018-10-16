@@ -4228,9 +4228,15 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 #ifdef SYNC_KLOOP_POLL
 #include <linux/file.h>
 struct sync_kloop_poll_entry {
+	/* Support for receiving notifications from
+	 * a netmap ring or from the application. */
 	struct file *filp;
 	wait_queue_entry_t wait;
 	wait_queue_head_t *wqh;
+
+	/* Support for sending notifications to the application. */
+	struct eventfd_ctx *irq_ctx;
+	struct file *irq_filp;
 };
 
 struct sync_kloop_poll_ctx {
@@ -4395,6 +4401,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		/* Poll for notifications coming from the applications through
 		 * eventfds . */
 		for (i = 0; i < num_rings; i++) {
+			struct eventfd_ctx *irq;
 			struct file *filp;
 			unsigned long mask;
 
@@ -4408,6 +4415,19 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 				err = EINVAL;
 				goto out;
 			}
+
+			filp = eventfd_fget(eventfds_opt->eventfds[i].irqfd);
+			if (IS_ERR(filp)) {
+				err = PTR_ERR(filp);
+				goto out;
+			}
+			poll_ctx->entries[i].irq_filp = filp;
+			irq = eventfd_ctx_fileget(filp);
+			if (IS_ERR(irq)) {
+				err = PTR_ERR(irq);
+				goto out;
+			}
+			poll_ctx->entries[i].irq_ctx = irq;
 		}
 		/* Poll for notifications coming from the netmap rings bound to
 		 * this file descriptor. */
@@ -4485,15 +4505,17 @@ out:
 			struct sync_kloop_poll_entry *entry =
 						poll_ctx->entries + i;
 
-			if (entry->wqh) {
+			if (entry->wqh)
 				remove_wait_queue(entry->wqh, &entry->wait);
-			}
 			/* We did not get a reference to the eventfds, but
 			 * don't do that on netmap file descriptors (since
 			 * a reference was not taken. */
-			if (entry->filp && entry->filp != priv->np_filp) {
+			if (entry->filp && entry->filp != priv->np_filp)
 				fput(entry->filp);
-			}
+			if (entry->irq_ctx)
+				eventfd_ctx_put(entry->irq_ctx);
+			if (entry->irq_filp)
+				fput(entry->irq_filp);
 		}
 		nm_os_free(poll_ctx);
 		poll_ctx = NULL;
