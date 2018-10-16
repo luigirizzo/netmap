@@ -4080,7 +4080,6 @@ netmap_sync_kloop_tx_ring(struct netmap_kring *kring,
 			 * go to sleep, waiting for a kick from the application when new
 			 * new slots are ready for transmission.
 			 */
-			usleep_range(1,1);
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
 			/* Doublecheck. */
@@ -4193,7 +4192,6 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 			 * go to sleep, waiting for a kick from the application when new receive
 			 * slots are available.
 			 */
-			usleep_range(1,1);
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
 			/* Doublecheck. */
