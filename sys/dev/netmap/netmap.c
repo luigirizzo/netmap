@@ -2629,9 +2629,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 
 		case NETMAP_REQ_SYNC_KLOOP_START: {
-			struct nmreq_sync_kloop_start *req =
-				(struct nmreq_sync_kloop_start *)(uintptr_t)hdr->nr_body;
-			error = netmap_sync_kloop(priv, req);
+			error = netmap_sync_kloop(priv, hdr);
 			break;
 		}
 
@@ -2765,7 +2763,7 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 }
 
 static size_t
-nmreq_opt_size_by_type(uint16_t nro_reqtype)
+nmreq_opt_size_by_type(uint32_t nro_reqtype, uint64_t nro_size)
 {
 	size_t rv = sizeof(struct nmreq_option);
 #ifdef NETMAP_REQ_OPT_DEBUG
@@ -2778,6 +2776,10 @@ nmreq_opt_size_by_type(uint16_t nro_reqtype)
 		rv = sizeof(struct nmreq_opt_extmem);
 		break;
 #endif /* WITH_EXTMEM */
+	case NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS:
+		if (nro_size >= rv)
+			rv = nro_size;
+		break;
 	}
 	/* subtract the common header */
 	return rv - sizeof(struct nmreq_option);
@@ -2824,7 +2826,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		if (error)
 			goto out_err;
 		optsz += sizeof(*src);
-		optsz += nmreq_opt_size_by_type(buf.nro_reqtype);
+		optsz += nmreq_opt_size_by_type(buf.nro_reqtype, buf.nro_size);
 		if (rqsz + optsz > NETMAP_REQ_MAXSIZE) {
 			error = EMSGSIZE;
 			goto out_err;
@@ -2878,7 +2880,8 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		p = (char *)(opt + 1);
 
 		/* copy the option body */
-		optsz = nmreq_opt_size_by_type(opt->nro_reqtype);
+		optsz = nmreq_opt_size_by_type(opt->nro_reqtype,
+						opt->nro_size);
 		if (optsz) {
 			/* the option body follows the option header */
 			error = copyin(src + 1, p, optsz);
@@ -2952,7 +2955,8 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 
 		/* copy the option body only if there was no error */
 		if (!rerror && !src->nro_status) {
-			optsz = nmreq_opt_size_by_type(src->nro_reqtype);
+			optsz = nmreq_opt_size_by_type(src->nro_reqtype,
+							src->nro_size);
 			if (optsz) {
 				error = copyout(src + 1, dst + 1, optsz);
 				if (error) {
@@ -4224,52 +4228,58 @@ netmap_sync_kloop_rx_ring(struct netmap_kring *kring,
 
 //#define SYNC_KLOOP_POLL
 #ifdef SYNC_KLOOP_POLL
+#include <linux/file.h>
 struct sync_kloop_poll_entry {
+	struct file *filp;
 	wait_queue_entry_t wait;
 	wait_queue_head_t *wqh;
 };
 
 struct sync_kloop_poll_ctx {
-	struct netmap_priv_d *priv;
 	NM_SELINFO_T *si[NR_TXRX];
 	poll_table wait_table;
 	unsigned int next_entry;
 	unsigned int num_entries;
-	struct sync_kloop_poll_entry entries[4];
+	struct sync_kloop_poll_entry entries[0];
 };
 
 static void
 sync_kloop_poll_table_queue_proc(struct file *file, wait_queue_head_t *wqh,
 				poll_table *pt)
 {
-	struct sync_kloop_poll_ctx *ctx = container_of(pt, struct sync_kloop_poll_ctx,
-							wait_table);
-	struct sync_kloop_poll_entry *entry = ctx->entries + ctx->next_entry;
+	struct sync_kloop_poll_ctx *poll_ctx =
+		container_of(pt, struct sync_kloop_poll_ctx, wait_table);
+	struct sync_kloop_poll_entry *entry = poll_ctx->entries +
+						poll_ctx->next_entry;
 
-	BUG_ON(ctx->next_entry >= ctx->num_entries);
+	BUG_ON(poll_ctx->next_entry >= poll_ctx->num_entries);
 	entry->wqh = wqh;
+	entry->filp = file;
 	/* Use the default wake up function. */
 	init_waitqueue_entry(&entry->wait, current);
 	add_wait_queue(wqh, &entry->wait);
-	ctx->next_entry++;
-	nm_prinf("poll entry #%d filled\n", ctx->next_entry);
+	poll_ctx->next_entry++;
+	nm_prinf("poll entry #%d filled\n", poll_ctx->next_entry);
 }
 #endif  /* SYNC_KLOOP_POLL */
 
 int
-netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req)
+netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 {
+	struct nmreq_sync_kloop_start *req =
+		(struct nmreq_sync_kloop_start *)(uintptr_t)hdr->nr_body;
+	struct nmreq_opt_sync_kloop_eventfds *eventfds_opt = NULL;
+#ifdef SYNC_KLOOP_POLL
+	struct sync_kloop_poll_ctx *poll_ctx = NULL;
+#endif  /* SYNC_KLOOP_POLL */
+	int num_rx_rings, num_tx_rings, num_rings;
 	uint32_t sleep_us = req->sleep_us;
 	struct nm_csb_atok* csb_atok_base;
 	struct nm_csb_ktoa* csb_ktoa_base;
-	int num_rx_rings, num_tx_rings;
 	struct netmap_adapter *na;
-	unsigned int i;
+	struct nmreq_option *opt;
 	int err = 0;
-
-#ifdef SYNC_KLOOP_POLL
-	struct sync_kloop_poll_ctx ctx;
-#endif  /* SYNC_KLOOP_POLL */
+	int i;
 
 	if (sleep_us > 1000000) {
 		/* We do not accept sleeping for more than a second. */
@@ -4306,12 +4316,11 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 	csb_ktoa_base = (struct nm_csb_ktoa *)(uintptr_t)req->csb_ktoa;
 	num_rx_rings = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX];
 	num_tx_rings = priv->np_qlast[NR_TX] - priv->np_qfirst[NR_TX];
+	num_rings = num_tx_rings + num_rx_rings;
 
 	/* Validate the CSB entries for both directions (atok and ktoa). */
 	{
-		int num_entries = num_rx_rings + num_tx_rings;
-
-		if (num_entries > 0) {
+		if (num_rings > 0) {
 			size_t entry_size[2];
 			void *csb_start[2];
 
@@ -4325,17 +4334,19 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 				 * the validation. However, the advantage of
 				 * this approach is that it works also on
 				 * FreeBSD. */
-				size_t csb_size = num_entries * entry_size[i];
+				size_t csb_size = num_rings * entry_size[i];
 				void *tmp;
 
 				if ((uintptr_t)csb_start[i] & (entry_size[i]-1)) {
 					nm_prerr("Unaligned CSB address\n");
-					return EINVAL;
+					err = EINVAL;
+					goto out;
 				}
 
 				tmp = nm_os_malloc(csb_size);
 				if (!tmp) {
-					return ENOMEM;
+					err = ENOMEM;
+					goto out;
 				}
 				if (i == 0) {
 					/* Application --> kernel direction. */
@@ -4348,30 +4359,72 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 				nm_os_free(tmp);
 				if (err) {
 					nm_prerr("Invalid CSB address\n");
-					return err;
+					goto out;
 				}
 			}
 		}
 	}
 
+	/* Validate notification options. */
+	opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
+				NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS);
+	if (opt != NULL) {
+		err = nmreq_checkduplicate(opt);
+		if (err) {
+			opt->nro_status = err;
+			goto out;
+		}
+		if (opt->nro_size != sizeof(*eventfds_opt) +
+			sizeof(eventfds_opt->eventfds[0]) * num_rings) {
+			/* Option size not consistent with the number of
+			 * entries. */
+			opt->nro_status = err = EINVAL;
+			goto out;
+		}
 #ifdef SYNC_KLOOP_POLL
-	memset(&ctx, 0, sizeof(ctx));
-	init_poll_funcptr(&ctx.wait_table, sync_kloop_poll_table_queue_proc);
-	ctx.num_entries = sizeof(ctx.entries)/sizeof(ctx.entries[0]);
-	ctx.next_entry = 0;
-	ctx.priv = priv;
-	ctx.si[NR_RX] = nm_si_user(priv, NR_RX) ? &na->si[NR_RX] :
-				&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
-	ctx.si[NR_TX] = nm_si_user(priv, NR_TX) ? &na->si[NR_TX] :
-				&na->tx_rings[priv->np_qfirst[NR_TX]]->si;
-	poll_wait(priv->filp, ctx.si[NR_RX], &ctx.wait_table);
-	poll_wait(priv->filp, ctx.si[NR_TX], &ctx.wait_table);
+		eventfds_opt = (struct nmreq_opt_sync_kloop_eventfds *)opt;
+		opt->nro_status = 0;
+		/* We need 2 poll entries for TX and RX notifications coming
+		 * from the netmap adapter, plus one entries per ring for the
+		 * notifications coming from the application. */
+		poll_ctx = nm_os_malloc(sizeof(*poll_ctx) +
+				(2 + num_rings) * sizeof(poll_ctx->entries[0]));
+		init_poll_funcptr(&poll_ctx->wait_table,
+					sync_kloop_poll_table_queue_proc);
+		poll_ctx->num_entries = 2 + num_rings;
+		poll_ctx->next_entry = 0;
+		poll_ctx->si[NR_RX] = nm_si_user(priv, NR_RX) ? &na->si[NR_RX] :
+					&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
+		poll_ctx->si[NR_TX] = nm_si_user(priv, NR_TX) ? &na->si[NR_TX] :
+					&na->tx_rings[priv->np_qfirst[NR_TX]]->si;
+		poll_wait(priv->np_filp, poll_ctx->si[NR_RX], &poll_ctx->wait_table);
+		poll_wait(priv->np_filp, poll_ctx->si[NR_TX], &poll_ctx->wait_table);
+		for (i = 0; i < num_rings; i++) {
+			struct file *filp;
+			unsigned long mask;
+
+			filp = eventfd_fget(eventfds_opt->eventfds[i].ioeventfd);
+			if (IS_ERR(filp)) {
+				err = PTR_ERR(filp);
+				goto out;
+			}
+			mask = filp->f_op->poll(filp, &poll_ctx->wait_table);
+			if (mask & POLLERR) {
+				err = EINVAL;
+				goto out;
+			}
+		}
+#else   /* SYNC_KLOOP_POLL */
+		opt->nro_status = EOPNOTSUPP;
+		goto out;
 #endif  /* SYNC_KLOOP_POLL */
+	}
 
 	/* Main loop. */
 	for (;;) {
 #ifdef SYNC_KLOOP_POLL
-		__set_current_state(TASK_INTERRUPTIBLE);
+		if (poll_ctx)
+			__set_current_state(TASK_INTERRUPTIBLE);
 #endif  /* SYNC_KLOOP_POLL */
 
 		/* Process all the TX rings bound to this file descriptor. */
@@ -4403,23 +4456,36 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 		}
 
 #ifdef SYNC_KLOOP_POLL
-		schedule_timeout_interruptible(msecs_to_jiffies(1000));
-#else  /* SYNC_KLOOP_POLL */
-		/* Default synchronization method: sleep for a while. */
-		usleep_range(sleep_us, sleep_us);
+		if (poll_ctx)
+			schedule_timeout_interruptible(msecs_to_jiffies(1000));
+		else
 #endif /* SYNC_KLOOP_POLL */
+		{
+			/* Default synchronization method: sleep for a while. */
+			usleep_range(sleep_us, sleep_us);
+		}
 
 		if (unlikely(NM_ACCESS_ONCE(priv->np_kloop_state) & NM_SYNC_KLOOP_STOPPING)) {
 			break;
 		}
 	}
-
+out:
 #ifdef SYNC_KLOOP_POLL
-	__set_current_state(TASK_RUNNING);
-	for (i = 0; i < ctx.next_entry; i++) {
-		struct sync_kloop_poll_entry *entry = ctx.entries + i;
+	if (poll_ctx) {
+		__set_current_state(TASK_RUNNING);
+		for (i = 0; i < poll_ctx->next_entry; i++) {
+			struct sync_kloop_poll_entry *entry =
+						poll_ctx->entries + i;
 
-		remove_wait_queue(entry->wqh, &entry->wait);
+			if (entry->wqh) {
+				remove_wait_queue(entry->wqh, &entry->wait);
+			}
+			if (entry->filp && entry->filp != priv->np_filp) {
+				fput(entry->filp);
+			}
+		}
+		nm_os_free(poll_ctx);
+		poll_ctx = NULL;
 	}
 #endif /* SYNC_KLOOP_POLL */
 
@@ -4428,7 +4494,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_sync_kloop_start *req
 	priv->np_kloop_state = 0;
 	NMG_UNLOCK();
 
-	return 0;
+	return err;
 }
 
 /*
