@@ -560,9 +560,7 @@ struct nmreq_register {
 #define NR_ZCOPY_MON	0x400
 /* request exclusive access to the selected rings */
 #define NR_EXCLUSIVE	0x800
-/* request ptnetmap host support */
-#define NR_PASSTHROUGH_HOST	NR_PTNETMAP_HOST /* deprecated */
-#define NR_PTNETMAP_HOST	0x1000
+/* 0x1000 unused */
 #define NR_RX_RINGS_ONLY	0x2000
 #define NR_TX_RINGS_ONLY	0x4000
 /* Applications set this flag if they are able to deal with virtio-net headers,

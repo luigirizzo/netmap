@@ -1160,9 +1160,6 @@ do_nmr_legacy_dump()
 	if (curr_nmr.nr_flags & NR_EXCLUSIVE) {
 		printf(", EXCLUSIVE");
 	}
-	if (curr_nmr.nr_flags & NR_PTNETMAP_HOST) {
-		printf(", PTNETMAP_HOST");
-	}
 	printf("]\n");
 	printf("spare2[0]: %x\n", curr_nmr.spare2[0]);
 }
@@ -1279,8 +1276,6 @@ do_nmr_legacy_flags()
 			flags |= NR_ZCOPY_MON;
 		} else if (strcmp(arg, "exclusive") == 0) {
 			flags |= NR_EXCLUSIVE;
-		} else if (strcmp(arg, "ptnetmap-host") == 0) {
-			flags |= NR_PTNETMAP_HOST;
 		} else if (strcmp(arg, "default") == 0) {
 			flags = 0;
 		}
@@ -1426,7 +1421,6 @@ nmr_body_dump_register(void *b)
 	pflag(MONITOR_RX);
 	pflag(ZCOPY_MON);
 	pflag(EXCLUSIVE);
-	pflag(PTNETMAP_HOST);
 	pflag(RX_RINGS_ONLY);
 	pflag(TX_RINGS_ONLY);
 	pflag(ACCEPT_VNET_HDR);
@@ -1492,8 +1486,6 @@ do_register_flags()
 			flags |= NR_ZCOPY_MON;
 		} else if (strcmp(arg, "exclusive") == 0) {
 			flags |= NR_EXCLUSIVE;
-		} else if (strcmp(arg, "ptnetmap-host") == 0) {
-			flags |= NR_PTNETMAP_HOST;
 		} else if (strcmp(arg, "rx-rings-only") == 0) {
 			flags |= NR_RX_RINGS_ONLY;
 		} else if (strcmp(arg, "tx-rings-only") == 0) {

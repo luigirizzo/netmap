@@ -270,10 +270,6 @@ static struct NetmapConst netmap_constants[] = {
         .name = "RegExclusive",
         .value = NR_EXCLUSIVE,
     },
-    {
-        .name = "RegPTNetmapHost",
-        .value = NR_PTNETMAP_HOST,
-    },
     /* Add 'netmap_rings.flags' constants to the module. */
     {
         .name = "NrTimestamp",
