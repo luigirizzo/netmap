@@ -166,7 +166,7 @@ main(int argc, char **argv)
 	func         = F_RX;
 	ctx.verbose  = 0;
 	ctx.batch    = 1;
-	ctx.sleep_us = 500;
+	ctx.sleep_us = 100;
 
 	while ((opt = getopt(argc, argv, "hi:f:vR:b:u:k")) != -1) {
 		switch (opt) {
