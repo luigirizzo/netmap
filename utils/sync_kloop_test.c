@@ -11,6 +11,9 @@
 #include <signal.h>
 #include <math.h>
 #include <sys/time.h>
+#ifdef __linux__
+#include <sys/eventfd.h>
+#endif /* __linux__ */
 
 #define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
 
@@ -23,6 +26,11 @@ sigint_handler(int signum)
 	ACCESS_ONCE(stop) = 1;
 }
 
+struct eventfds {
+	int ioeventfd;
+	int irqfd;
+};
+
 struct context {
 	struct nm_desc *nmd;
 	struct nm_csb_atok *atok_base;
@@ -30,16 +38,36 @@ struct context {
 	int sleep_us;
 	int verbose;
 	int batch;
+	int num_entries;
+	struct eventfds *eventfds;
 };
 
 static void *
 kloop_worker(void *opaque)
 {
-	struct context *ctx = opaque;
-	struct nm_desc *nmd = ctx->nmd;
+	struct nmreq_opt_sync_kloop_eventfds *opt = NULL;
+	struct context *ctx                       = opaque;
+	struct nm_desc *nmd                       = ctx->nmd;
 	struct nmreq_sync_kloop_start req;
 	struct nmreq_header hdr;
 	int ret;
+
+	if (ctx->eventfds) {
+		size_t opt_size = sizeof(*opt) +
+		                  ctx->num_entries * sizeof(opt->eventfds[0]);
+		int i;
+
+		opt = malloc(opt_size);
+		memset(opt, 0, opt_size);
+		opt->nro_opt.nro_next    = 0;
+		opt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS;
+		opt->nro_opt.nro_status  = 0;
+		opt->nro_opt.nro_size    = opt_size;
+		for (i = 0; i < ctx->num_entries; i++) {
+			opt->eventfds[i].ioeventfd = ctx->eventfds[i].ioeventfd;
+			opt->eventfds[i].irqfd     = ctx->eventfds[i].irqfd;
+		}
+	}
 
 	/* The ioctl() returns on failure or when some other thread
 	 * stops the kernel loop. */
@@ -47,7 +75,7 @@ kloop_worker(void *opaque)
 	hdr.nr_version = NETMAP_API;
 	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_START;
 	hdr.nr_body    = (uintptr_t)&req;
-	hdr.nr_options = (uintptr_t)NULL;
+	hdr.nr_options = (uintptr_t)opt;
 	memset(&req, 0, sizeof(req));
 	req.csb_atok = (uintptr_t)ctx->atok_base;
 	req.csb_ktoa = (uintptr_t)ctx->ktoa_base;
@@ -83,6 +111,7 @@ usage(const char *progname)
 	       "[-R RATE_PPS (0 = infinite)]\n"
 	       "[-b BATCH_SIZE (in packets)]\n"
 	       "[-u KLOOP_SLEEP_US (in microseconds)]\n"
+	       "[-k (use eventfd-based notifications)]\n"
 	       "-i NETMAP_PORT\n",
 	       progname);
 }
@@ -97,7 +126,7 @@ main(int argc, char **argv)
 {
 	struct nm_csb_atok *atok_base = NULL;
 	struct nm_csb_ktoa *ktoa_base = NULL;
-	int num_entries, num_tx_entries;
+	int num_tx_entries;
 	unsigned long long bytes = 0;
 	unsigned long long pkts  = 0;
 	const char *ifname       = NULL;
@@ -112,6 +141,7 @@ main(int argc, char **argv)
 	struct timeval next_time;
 	int packet_budget;
 	struct timeval loop_begin, loop_end;
+	int use_eventfds = 0;
 
 	int init_tx_payload = 1;
 	function_t func;
@@ -138,7 +168,7 @@ main(int argc, char **argv)
 	ctx.batch    = 1;
 	ctx.sleep_us = 500;
 
-	while ((opt = getopt(argc, argv, "hi:f:vR:b:u:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:f:vR:b:u:k")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage(argv[0]);
@@ -186,6 +216,10 @@ main(int argc, char **argv)
 			}
 			break;
 
+		case 'k':
+			use_eventfds = 1;
+			break;
+
 		default:
 			printf("    Unrecognized option %c\n", opt);
 			usage(argv[0]);
@@ -216,13 +250,13 @@ main(int argc, char **argv)
 	{
 		size_t csb_size;
 
-		num_tx_entries = nmd->last_tx_ring - nmd->first_tx_ring + 1;
-		num_entries    = num_tx_entries + nmd->last_rx_ring -
-		              nmd->first_rx_ring + 1;
-		printf("Number of CSB entries = %d\n", (int)num_entries);
+		num_tx_entries  = nmd->last_tx_ring - nmd->first_tx_ring + 1;
+		ctx.num_entries = num_tx_entries + nmd->last_rx_ring -
+		                  nmd->first_rx_ring + 1;
+		printf("Number of CSB entries = %d\n", (int)ctx.num_entries);
 		csb_size = (sizeof(struct nm_csb_atok) +
 		            sizeof(struct nm_csb_ktoa)) *
-		           num_entries;
+		           ctx.num_entries;
 		assert(csb_size > 0);
 		ret = posix_memalign(&csb, sizeof(struct nm_csb_atok),
 		                     csb_size);
@@ -234,7 +268,34 @@ main(int argc, char **argv)
 
 		atok_base = ctx.atok_base = (struct nm_csb_atok *)csb;
 		ktoa_base                 = ctx.ktoa_base =
-		        (struct nm_csb_ktoa *)(ctx.atok_base + num_entries);
+		        (struct nm_csb_ktoa *)(ctx.atok_base + ctx.num_entries);
+	}
+
+	/* Allocate eventfds. */
+	if (use_eventfds) {
+#ifdef __linux__
+		int i;
+
+		ctx.eventfds =
+		        malloc(ctx.num_entries * sizeof(ctx.eventfds[0]));
+		for (i = 0; i < ctx.num_entries; i++) {
+			int efd;
+
+			efd = eventfd(0, 0);
+			if (efd < 0) {
+				perror("eventfd()");
+			}
+			ctx.eventfds[i].ioeventfd = efd;
+			efd                       = eventfd(0, 0);
+			if (efd < 0) {
+				perror("eventfd()");
+			}
+			ctx.eventfds[i].irqfd = efd;
+		}
+#else  /* !__linux__ */
+		printf("Eventfds not supported on this platform\n");
+		return -1;
+#endif /* !__linux__ */
 	}
 
 	/* Start the kernel worker thread. */
