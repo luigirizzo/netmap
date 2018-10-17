@@ -169,6 +169,22 @@ port_register(struct TestContext *ctx)
 	return -0;
 }
 
+/* Only valid after a successful port_register(). */
+static int
+num_registered_rings(struct TestContext *ctx)
+{
+	assert(ctx->nr_tx_slots > 0 && ctx->nr_rx_slots > 0 &&
+		ctx->nr_tx_rings > 0 && ctx->nr_rx_rings > 0);
+	if (ctx->nr_flags & NR_TX_RINGS_ONLY) {
+		return ctx->nr_tx_rings;
+	}
+	if (ctx->nr_flags & NR_RX_RINGS_ONLY) {
+		return ctx->nr_rx_rings;
+	}
+
+	return ctx->nr_tx_rings + ctx->nr_rx_rings;
+}
+
 static int
 port_register_hwall_host(struct TestContext *ctx)
 {
@@ -195,6 +211,14 @@ port_register_single_ring_couple(struct TestContext *ctx)
 {
 	ctx->nr_mode   = NR_REG_ONE_NIC;
 	ctx->nr_ringid = 0;
+	return port_register(ctx);
+}
+
+static int
+port_register_hwall_tx(struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_ALL_NIC;
+	ctx->nr_flags |= NR_TX_RINGS_ONLY;
 	return port_register(ctx);
 }
 
@@ -829,7 +853,7 @@ static void *
 sync_kloop_worker(void *opaque)
 {
 	struct TestContext *ctx = opaque;
-	size_t num_entries      = ctx->nr_rx_rings + ctx->nr_tx_rings;
+	size_t num_entries      = num_registered_rings(ctx);
 	struct nmreq_sync_kloop_start req;
 	struct nmreq_header hdr;
 	size_t csb_size;
@@ -916,13 +940,7 @@ sync_kloop_eventfds(struct TestContext *ctx)
 	size_t opt_size;
 	int ret, i;
 
-	ctx->nr_flags = NR_EXCLUSIVE;
-	ret           = port_register_hwall(ctx);
-	if (ret) {
-		return ret;
-	}
-
-	num_entries = ctx->nr_rx_rings + ctx->nr_tx_rings;
+	num_entries = num_registered_rings(ctx);
 	opt_size = sizeof(*opt) + num_entries * sizeof(opt->eventfds[0]);
 	opt = malloc(opt_size);
 	memset(opt, 0, opt_size);
@@ -953,6 +971,36 @@ sync_kloop_eventfds(struct TestContext *ctx)
 	save.nro_status = 0;
 
 	return checkoption(&opt->nro_opt, &save);
+}
+
+static int
+sync_kloop_eventfds_all(struct TestContext *ctx)
+{
+	int ret;
+
+	ctx->nr_flags = NR_EXCLUSIVE;
+	ret           = port_register_hwall(ctx);
+	if (ret) {
+		return ret;
+	}
+
+	return sync_kloop_eventfds(ctx);
+
+}
+
+static int
+sync_kloop_eventfds_all_tx(struct TestContext *ctx)
+{
+	int ret;
+
+	ctx->nr_flags = NR_EXCLUSIVE;
+	ret           = port_register_hwall_tx(ctx);
+	if (ret) {
+		return ret;
+	}
+
+	return sync_kloop_eventfds(ctx);
+
 }
 
 static int
@@ -1073,7 +1121,8 @@ static struct mytest tests[] = {
 	decltest(duplicate_extmem_options),
 #endif /* CONFIG_NETMAP_EXTMEM */
 	decltest(sync_kloop),
-	decltest(sync_kloop_eventfds),
+	decltest(sync_kloop_eventfds_all),
+	decltest(sync_kloop_eventfds_all_tx),
 	decltest(sync_kloop_conflict),
 	decltest(sync_kloop_invalid_csb),
 };
