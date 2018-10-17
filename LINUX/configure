@@ -94,7 +94,7 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink \
+subsystem_avail="vale pipe monitor generic ptnetmap sink \
 	extmem"
 #enabled subsystems (bitfield)
 subsystem=0
@@ -317,12 +317,8 @@ Available options:
   --disable-monitor   	       disable the nemtap monitors
   --enable-generic   	       enable the generic netmap adapter
   --disable-generic   	       disable the generic netmap adapter
-  --enable-ptnetmap-guest      enable ptnetmap for guest kernel
-  --disable-ptnetmap-guest     disable ptnetmap for guest kernel
-  --enable-ptnetmap-host       enable ptnetmap for host kernel
-  --disable-ptnetmap-host      disable ptnetmap for host kernel
-  --enable-ptnetmap            enable ptnetmap (both guest and host)
-  --disable-ptnetmap           disable ptnetmap (both guest and host)
+  --enable-ptnetmap            enable ptnetmap
+  --disable-ptnetmap           disable ptnetmap
   --enable-sink   	       enable the netmap sink device
   --disable-sink   	       disable the netmap sink device
   --enable-extmem   	       enable the external memory allocators
@@ -612,14 +608,6 @@ for opt do
 	--destdir=*) DESTDIR="$optarg"
 	;;
 	--mod-name=*) MODNAME="$optarg"
-	;;
-	--enable-ptnetmap)
-		subsys enable ptnetmap-guest
-		subsys enable ptnetmap-host
-	;;
-	--disable-ptnetmap)
-		subsys disable ptnetmap-guest
-		subsys disable ptnetmap-host
 	;;
 	--disable-*)
 		subsys disable "${opt#--disable-}"

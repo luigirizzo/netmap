@@ -1031,14 +1031,6 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 	priv->np_nifp = NULL;
 }
 
-/* call with NMG_LOCK held */
-static __inline int
-nm_si_user(struct netmap_priv_d *priv, enum txrx t)
-{
-	return (priv->np_na != NULL &&
-		(priv->np_qlast[t] - priv->np_qfirst[t] > 1));
-}
-
 struct netmap_priv_d*
 netmap_priv_new(void)
 {

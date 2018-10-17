@@ -2343,7 +2343,7 @@ out:
 #endif /* WITH_EXTMEM */
 
 
-#ifdef WITH_PTNETMAP_GUEST
+#ifdef WITH_PTNETMAP
 struct mem_pt_if {
 	struct mem_pt_if *next;
 	struct ifnet *ifp;
@@ -2832,4 +2832,4 @@ netmap_mem_pt_guest_new(struct ifnet *ifp,
 	return nmd;
 }
 
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */

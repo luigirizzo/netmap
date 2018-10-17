@@ -172,7 +172,7 @@ struct ptnet_csb_hg {
 	char pad[4+48];
 };
 
-#ifdef WITH_PTNETMAP_GUEST
+#ifdef WITH_PTNETMAP
 
 /* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
 struct ptnetmap_memdev;
@@ -227,6 +227,6 @@ ptnetmap_guest_read_kring_csb(struct ptnet_csb_hg *pthg, struct netmap_kring *kr
     kring->nr_hwcur = pthg->hwcur;
 }
 
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */
 
 #endif /* NETMAP_VIRT_H */
