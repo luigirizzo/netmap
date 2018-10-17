@@ -397,7 +397,7 @@ struct sync_kloop_poll_entry {
 	/* Support for receiving notifications from
 	 * a netmap ring or from the application. */
 	struct file *filp;
-	wait_queue_entry_t wait;
+	wait_queue_t wait;
 	wait_queue_head_t *wqh;
 
 	/* Support for sending notifications to the application. */
