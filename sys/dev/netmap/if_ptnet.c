@@ -128,8 +128,8 @@ struct ptnet_queue {
 	struct				resource *irq;
 	void				*cookie;
 	int				kring_id;
-	struct ptnet_csb_gh		*ptgh;
-	struct ptnet_csb_hg		*pthg;
+	struct nm_csb_atok		*atok;
+	struct nm_csb_ktoa		*ktoa;
 	unsigned int			kick;
 	struct mtx			lock;
 	struct buf_ring			*bufring; /* for TX queues */
@@ -166,8 +166,8 @@ struct ptnet_softc {
 	unsigned int		num_tx_rings;
 	struct ptnet_queue	*queues;
 	struct ptnet_queue	*rxqueues;
-	struct ptnet_csb_gh    *csb_gh;
-	struct ptnet_csb_hg    *csb_hg;
+	struct nm_csb_atok	*csb_gh;
+	struct nm_csb_ktoa	*csb_hg;
 
 	unsigned int		min_tx_space;
 
@@ -327,7 +327,7 @@ ptnet_attach(device_t dev)
 	sc->num_rings = num_tx_rings + num_rx_rings;
 	sc->num_tx_rings = num_tx_rings;
 
-	if (sc->num_rings * sizeof(struct ptnet_csb_gh) > PAGE_SIZE) {
+	if (sc->num_rings * sizeof(struct nm_csb_atok) > PAGE_SIZE) {
 		device_printf(dev, "CSB cannot handle that many rings (%u)\n",
 				sc->num_rings);
 		err = ENOMEM;
@@ -342,7 +342,7 @@ ptnet_attach(device_t dev)
 		err = ENOMEM;
 		goto err_path;
 	}
-	sc->csb_hg = (struct ptnet_csb_hg *)(((char *)sc->csb_gh) + PAGE_SIZE);
+	sc->csb_hg = (struct nm_csb_ktoa *)(((char *)sc->csb_gh) + PAGE_SIZE);
 
 	{
 		/*
@@ -379,8 +379,8 @@ ptnet_attach(device_t dev)
 		pq->sc = sc;
 		pq->kring_id = i;
 		pq->kick = PTNET_IO_KICK_BASE + 4 * i;
-		pq->ptgh = sc->csb_gh + i;
-		pq->pthg = sc->csb_hg + i;
+		pq->atok = sc->csb_gh + i;
+		pq->ktoa = sc->csb_hg + i;
 		snprintf(pq->lock_name, sizeof(pq->lock_name), "%s-%d",
 			 device_get_nameunit(dev), i);
 		mtx_init(&pq->lock, pq->lock_name, NULL, MTX_DEF);
@@ -796,7 +796,7 @@ ptnet_ioctl(if_t ifp, u_long cmd, caddr_t data)
 					/* Make sure the worker sees the
 					 * IFF_DRV_RUNNING down. */
 					PTNET_Q_LOCK(pq);
-					pq->ptgh->guest_need_kick = 0;
+					pq->atok->appl_need_kick = 0;
 					PTNET_Q_UNLOCK(pq);
 					/* Wait for rescheduling to finish. */
 					if (pq->taskq) {
@@ -810,7 +810,7 @@ ptnet_ioctl(if_t ifp, u_long cmd, caddr_t data)
 				for (i = 0; i < sc->num_rings; i++) {
 					pq = sc-> queues + i;
 					PTNET_Q_LOCK(pq);
-					pq->ptgh->guest_need_kick = 1;
+					pq->atok->appl_need_kick = 1;
 					PTNET_Q_UNLOCK(pq);
 				}
 			}
@@ -1130,8 +1130,8 @@ ptnet_sync_from_csb(struct ptnet_softc *sc, struct netmap_adapter *na)
 	/* Sync krings from the host, reading from
 	 * CSB. */
 	for (i = 0; i < sc->num_rings; i++) {
-		struct ptnet_csb_gh *ptgh = sc->queues[i].ptgh;
-		struct ptnet_csb_hg *pthg = sc->queues[i].pthg;
+		struct nm_csb_atok *atok = sc->queues[i].atok;
+		struct nm_csb_ktoa *ktoa = sc->queues[i].ktoa;
 		struct netmap_kring *kring;
 
 		if (i < na->num_tx_rings) {
@@ -1139,15 +1139,15 @@ ptnet_sync_from_csb(struct ptnet_softc *sc, struct netmap_adapter *na)
 		} else {
 			kring = na->rx_rings[i - na->num_tx_rings];
 		}
-		kring->rhead = kring->ring->head = ptgh->head;
-		kring->rcur = kring->ring->cur = ptgh->cur;
-		kring->nr_hwcur = pthg->hwcur;
+		kring->rhead = kring->ring->head = atok->head;
+		kring->rcur = kring->ring->cur = atok->cur;
+		kring->nr_hwcur = ktoa->hwcur;
 		kring->nr_hwtail = kring->rtail =
-			kring->ring->tail = pthg->hwtail;
+			kring->ring->tail = ktoa->hwtail;
 
 		ND("%d,%d: csb {hc %u h %u c %u ht %u}", t, i,
-		   pthg->hwcur, ptgh->head, ptgh->cur,
-		   pthg->hwtail);
+		   ktoa->hwcur, atok->head, atok->cur,
+		   ktoa->hwtail);
 		ND("%d,%d: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
 		   t, i, kring->nr_hwcur, kring->rhead, kring->rcur,
 		   kring->ring->head, kring->ring->cur, kring->nr_hwtail,
@@ -1191,7 +1191,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		D("Exit netmap mode, re-enable interrupts");
 		for (i = 0; i < sc->num_rings; i++) {
 			pq = sc->queues + i;
-			pq->ptgh->guest_need_kick = 1;
+			pq->atok->appl_need_kick = 1;
 		}
 	}
 
@@ -1200,8 +1200,8 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			/* Initialize notification enable fields in the CSB. */
 			for (i = 0; i < sc->num_rings; i++) {
 				pq = sc->queues + i;
-				pq->pthg->host_need_kick = 1;
-				pq->ptgh->guest_need_kick =
+				pq->ktoa->kern_need_kick = 1;
+				pq->atok->appl_need_kick =
 					(!(ifp->if_capenable & IFCAP_POLLING)
 						&& i >= sc->num_tx_rings);
 			}
@@ -1279,7 +1279,7 @@ ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 	struct ptnet_queue *pq = sc->queues + kring->ring_id;
 	bool notify;
 
-	notify = netmap_pt_guest_txsync(pq->ptgh, pq->pthg, kring, flags);
+	notify = netmap_pt_guest_txsync(pq->atok, pq->ktoa, kring, flags);
 	if (notify) {
 		ptnet_kick(pq);
 	}
@@ -1294,7 +1294,7 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 	struct ptnet_queue *pq = sc->rxqueues + kring->ring_id;
 	bool notify;
 
-	notify = netmap_pt_guest_rxsync(pq->ptgh, pq->pthg, kring, flags);
+	notify = netmap_pt_guest_rxsync(pq->atok, pq->ktoa, kring, flags);
 	if (notify) {
 		ptnet_kick(pq);
 	}
@@ -1310,7 +1310,7 @@ ptnet_nm_intr(struct netmap_adapter *na, int onoff)
 
 	for (i = 0; i < sc->num_rings; i++) {
 		struct ptnet_queue *pq = sc->queues + i;
-		pq->ptgh->guest_need_kick = onoff;
+		pq->atok->appl_need_kick = onoff;
 	}
 }
 
@@ -1677,12 +1677,12 @@ ptnet_rx_csum(struct mbuf *m, struct virtio_net_hdr *hdr)
 /* End of offloading-related functions to be shared with vtnet. */
 
 static inline void
-ptnet_sync_tail(struct ptnet_csb_hg *pthg, struct netmap_kring *kring)
+ptnet_sync_tail(struct nm_csb_ktoa *ktoa, struct netmap_kring *kring)
 {
 	struct netmap_ring *ring = kring->ring;
 
 	/* Update hwcur and hwtail as known by the host. */
-        ptnetmap_guest_read_kring_csb(pthg, kring);
+        ptnetmap_guest_read_kring_csb(ktoa, kring);
 
 	/* nm_sync_finalize */
 	ring->tail = kring->rtail = kring->nr_hwtail;
@@ -1693,8 +1693,8 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 		  unsigned int head, unsigned int sync_flags)
 {
 	struct netmap_ring *ring = kring->ring;
-	struct ptnet_csb_gh *ptgh = pq->ptgh;
-	struct ptnet_csb_hg *pthg = pq->pthg;
+	struct nm_csb_atok *atok = pq->atok;
+	struct nm_csb_ktoa *ktoa = pq->ktoa;
 
 	/* Some packets have been pushed to the netmap ring. We have
 	 * to tell the host to process the new packets, updating cur
@@ -1704,11 +1704,11 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 	/* Mimic nm_txsync_prologue/nm_rxsync_prologue. */
 	kring->rcur = kring->rhead = head;
 
-	ptnetmap_guest_write_kring_csb(ptgh, kring->rcur, kring->rhead);
+	ptnetmap_guest_write_kring_csb(atok, kring->rcur, kring->rhead);
 
 	/* Kick the host if needed. */
-	if (NM_ACCESS_ONCE(pthg->host_need_kick)) {
-		ptgh->sync_flags = sync_flags;
+	if (NM_ACCESS_ONCE(ktoa->kern_need_kick)) {
+		atok->sync_flags = sync_flags;
 		ptnet_kick(pq);
 	}
 }
@@ -1728,8 +1728,8 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
 	struct netmap_adapter *na = &sc->ptna->dr.up;
 	if_t ifp = sc->ifp;
 	unsigned int batch_count = 0;
-	struct ptnet_csb_gh *ptgh;
-	struct ptnet_csb_hg *pthg;
+	struct nm_csb_atok *atok;
+	struct nm_csb_ktoa *ktoa;
 	struct netmap_kring *kring;
 	struct netmap_ring *ring;
 	struct netmap_slot *slot;
@@ -1758,8 +1758,8 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
 		return ENETDOWN;
 	}
 
-	ptgh = pq->ptgh;
-	pthg = pq->pthg;
+	atok = pq->atok;
+	ktoa = pq->ktoa;
 	kring = na->tx_rings[pq->kring_id];
 	ring = kring->ring;
 	lim = kring->nkr_num_slots - 1;
@@ -1771,17 +1771,17 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
 			/* We ran out of slot, let's see if the host has
 			 * freed up some, by reading hwcur and hwtail from
 			 * the CSB. */
-			ptnet_sync_tail(pthg, kring);
+			ptnet_sync_tail(ktoa, kring);
 
 			if (PTNET_TX_NOSPACE(head, kring, minspace)) {
 				/* Still no slots available. Reactivate the
 				 * interrupts so that we can be notified
 				 * when some free slots are made available by
 				 * the host. */
-				ptgh->guest_need_kick = 1;
+				atok->appl_need_kick = 1;
 
 				/* Double-check. */
-				ptnet_sync_tail(pthg, kring);
+				ptnet_sync_tail(ktoa, kring);
 				if (likely(PTNET_TX_NOSPACE(head, kring,
 							    minspace))) {
 					break;
@@ -1790,7 +1790,7 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
 				RD(1, "Found more slots by doublecheck");
 				/* More slots were freed before reactivating
 				 * the interrupts. */
-				ptgh->guest_need_kick = 0;
+				atok->appl_need_kick = 0;
 			}
 		}
 
@@ -2020,8 +2020,8 @@ ptnet_rx_eof(struct ptnet_queue *pq, unsigned int budget, bool may_resched)
 {
 	struct ptnet_softc *sc = pq->sc;
 	bool have_vnet_hdr = sc->vnet_hdr_len;
-	struct ptnet_csb_gh *ptgh = pq->ptgh;
-	struct ptnet_csb_hg *pthg = pq->pthg;
+	struct nm_csb_atok *atok = pq->atok;
+	struct nm_csb_ktoa *ktoa = pq->ktoa;
 	struct netmap_adapter *na = &sc->ptna->dr.up;
 	struct netmap_kring *kring = na->rx_rings[pq->kring_id];
 	struct netmap_ring *ring = kring->ring;
@@ -2053,21 +2053,21 @@ host_sync:
 			/* We ran out of slot, let's see if the host has
 			 * added some, by reading hwcur and hwtail from
 			 * the CSB. */
-			ptnet_sync_tail(pthg, kring);
+			ptnet_sync_tail(ktoa, kring);
 
 			if (head == ring->tail) {
 				/* Still no slots available. Reactivate
 				 * interrupts as they were disabled by the
 				 * host thread right before issuing the
 				 * last interrupt. */
-				ptgh->guest_need_kick = 1;
+				atok->appl_need_kick = 1;
 
 				/* Double-check. */
-				ptnet_sync_tail(pthg, kring);
+				ptnet_sync_tail(ktoa, kring);
 				if (likely(head == ring->tail)) {
 					break;
 				}
-				ptgh->guest_need_kick = 0;
+				atok->appl_need_kick = 0;
 			}
 		}
 

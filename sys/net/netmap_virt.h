@@ -64,70 +64,6 @@
 #define PTNET_MDEV_IO_BUF_POOL_OBJSZ	96
 #define PTNET_MDEV_IO_END		100
 
-/*
- * ptnetmap configuration
- *
- * The ptnet kthreads (running in host kernel-space) need to be configured
- * in order to know how to intercept guest kicks (I/O register writes) and
- * how to inject MSI-X interrupts to the guest. The configuration may vary
- * depending on the hypervisor. Currently, we support QEMU/KVM on Linux and
- * and bhyve on FreeBSD.
- * The configuration is passed by the hypervisor to the host netmap module
- * by means of an ioctl() with nr_cmd=NETMAP_PT_HOST_CREATE, and it is
- * specified by the ptnetmap_cfg struct. This struct contains an header
- * with general informations and an array of entries whose size depends
- * on the hypervisor. The NETMAP_PT_HOST_CREATE command is issued every
- * time the kthreads are started.
- */
-struct ptnetmap_cfg {
-#define PTNETMAP_CFGTYPE_QEMU		0x1
-#define PTNETMAP_CFGTYPE_BHYVE		0x2
-	uint16_t cfgtype;	/* how to interpret the cfg entries */
-	uint16_t entry_size;	/* size of a config entry */
-	uint32_t num_rings;	/* number of config entries */
-	void *csb_gh;		/* CSB for guest --> host communication */
-	void *csb_hg;		/* CSB for host --> guest communication */
-	/* Configuration entries are allocated right after the struct. */
-};
-
-/* Configuration of a ptnetmap ring for QEMU. */
-struct ptnetmap_cfgentry_qemu {
-	uint32_t ioeventfd;	/* to intercept guest register access */
-	uint32_t irqfd;		/* to inject guest interrupts */
-};
-
-/* Configuration of a ptnetmap ring for bhyve. */
-struct ptnetmap_cfgentry_bhyve {
-	uint64_t wchan;		/* tsleep() parameter, to wake up kthread */
-	uint32_t ioctl_fd;	/* ioctl fd */
-	/* ioctl parameters to send irq */
-	uint32_t ioctl_cmd;
-	/* vmm.ko MSIX parameters for IOCTL */
-	struct {
-		uint64_t        msg_data;
-		uint64_t        addr;
-	} ioctl_data;
-};
-
-/*
- * Pass a pointer to a userspace buffer to be passed to kernelspace for write
- * or read. Used by NETMAP_PT_HOST_CREATE.
- * XXX deprecated
- */
-static inline void
-nmreq_pointer_put(struct nmreq *nmr, void *userptr)
-{
-	uintptr_t *pp = (uintptr_t *)&nmr->nr_arg1;
-	*pp = (uintptr_t)userptr;
-}
-
-static inline void *
-nmreq_pointer_get(const struct nmreq *nmr)
-{
-	const uintptr_t *pp = (const uintptr_t *)&nmr->nr_arg1;
-	return (void *)*pp;
-}
-
 /* ptnetmap features */
 #define PTNETMAP_F_VNET_HDR        1
 
@@ -157,21 +93,6 @@ nmreq_pointer_get(const struct nmreq *nmr)
 #define PTNETMAP_PTCTL_CREATE		1
 #define PTNETMAP_PTCTL_DELETE		2
 
-/* ptnetmap synchronization variables shared between guest and host */
-struct ptnet_csb_gh {
-	uint32_t head;		  /* GW+ HR+ the head of the guest netmap_ring */
-	uint32_t cur;		  /* GW+ HR+ the cur of the guest netmap_ring */
-	uint32_t guest_need_kick; /* GW+ HR+ host-->guest notification enable */
-	uint32_t sync_flags;	  /* GW+ HR+ the flags of the guest [tx|rx]sync() */
-	char pad[48];		  /* pad to a 64 bytes cacheline */
-};
-struct ptnet_csb_hg {
-	uint32_t hwcur;		  /* GR+ HW+ the hwcur of the host netmap_kring */
-	uint32_t hwtail;	  /* GR+ HW+ the hwtail of the host netmap_kring */
-	uint32_t host_need_kick;  /* GR+ HW+ guest-->host notification enable */
-	char pad[4+48];
-};
-
 #ifdef WITH_PTNETMAP
 
 /* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
@@ -184,7 +105,7 @@ uint32_t nm_os_pt_memdev_ioread(struct ptnetmap_memdev *, unsigned int);
 /* Guest driver: Write kring pointers (cur, head) to the CSB.
  * This routine is coupled with ptnetmap_host_read_kring_csb(). */
 static inline void
-ptnetmap_guest_write_kring_csb(struct ptnet_csb_gh *ptr, uint32_t cur,
+ptnetmap_guest_write_kring_csb(struct nm_csb_atok *atok, uint32_t cur,
 			       uint32_t head)
 {
     /*
@@ -207,24 +128,25 @@ ptnetmap_guest_write_kring_csb(struct ptnet_csb_gh *ptr, uint32_t cur,
      *          mb() <-----------> mb()
      *          STORE(head)        LOAD(cur)
      */
-    ptr->cur = cur;
+    atok->cur = cur;
     mb();
-    ptr->head = head;
+    atok->head = head;
 }
 
 /* Guest driver: Read kring pointers (hwcur, hwtail) from the CSB.
  * This routine is coupled with ptnetmap_host_write_kring_csb(). */
 static inline void
-ptnetmap_guest_read_kring_csb(struct ptnet_csb_hg *pthg, struct netmap_kring *kring)
+ptnetmap_guest_read_kring_csb(struct nm_csb_ktoa *ktoa,
+                              struct netmap_kring *kring)
 {
     /*
      * We place a memory barrier to make sure that the update of hwtail never
      * overtakes the update of hwcur.
      * (see explanation in ptnetmap_host_write_kring_csb).
      */
-    kring->nr_hwtail = pthg->hwtail;
+    kring->nr_hwtail = ktoa->hwtail;
     mb();
-    kring->nr_hwcur = pthg->hwcur;
+    kring->nr_hwcur = ktoa->hwcur;
 }
 
 #endif /* WITH_PTNETMAP */

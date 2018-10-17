@@ -726,26 +726,26 @@ out:
  * block (no space in the ring).
  */
 bool
-netmap_pt_guest_txsync(struct ptnet_csb_gh *ptgh, struct ptnet_csb_hg *pthg,
+netmap_pt_guest_txsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 			struct netmap_kring *kring, int flags)
 {
 	bool notify = false;
 
 	/* Disable notifications */
-	ptgh->guest_need_kick = 0;
+	atok->appl_need_kick = 0;
 
 	/*
 	 * First part: tell the host (updating the CSB) to process the new
 	 * packets.
 	 */
-	kring->nr_hwcur = pthg->hwcur;
-	ptnetmap_guest_write_kring_csb(ptgh, kring->rcur, kring->rhead);
+	kring->nr_hwcur = ktoa->hwcur;
+	ptnetmap_guest_write_kring_csb(atok, kring->rcur, kring->rhead);
 
         /* Ask for a kick from a guest to the host if needed. */
 	if (((kring->rhead != kring->nr_hwcur || nm_kr_txempty(kring))
-		&& NM_ACCESS_ONCE(pthg->host_need_kick)) ||
+		&& NM_ACCESS_ONCE(ktoa->kern_need_kick)) ||
 			(flags & NAF_FORCE_RECLAIM)) {
-		ptgh->sync_flags = flags;
+		atok->sync_flags = flags;
 		notify = true;
 	}
 
@@ -753,7 +753,7 @@ netmap_pt_guest_txsync(struct ptnet_csb_gh *ptgh, struct ptnet_csb_hg *pthg,
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
 	if (nm_kr_txempty(kring) || (flags & NAF_FORCE_RECLAIM)) {
-                ptnetmap_guest_read_kring_csb(pthg, kring);
+                ptnetmap_guest_read_kring_csb(ktoa, kring);
 	}
 
         /*
@@ -763,17 +763,17 @@ netmap_pt_guest_txsync(struct ptnet_csb_gh *ptgh, struct ptnet_csb_hg *pthg,
          */
 	if (nm_kr_txempty(kring) && !(kring->nr_kflags & NKR_NOINTR)) {
 		/* Reenable notifications. */
-		ptgh->guest_need_kick = 1;
+		atok->appl_need_kick = 1;
                 /* Double check */
-                ptnetmap_guest_read_kring_csb(pthg, kring);
+                ptnetmap_guest_read_kring_csb(ktoa, kring);
                 /* If there is new free space, disable notifications */
 		if (unlikely(!nm_kr_txempty(kring))) {
-			ptgh->guest_need_kick = 0;
+			atok->appl_need_kick = 0;
 		}
 	}
 
 	ND(1, "%s CSB(head:%u cur:%u hwtail:%u) KRING(head:%u cur:%u tail:%u)",
-		kring->name, ptgh->head, ptgh->cur, pthg->hwtail,
+		kring->name, atok->head, atok->cur, ktoa->hwtail,
 		kring->rhead, kring->rcur, kring->nr_hwtail);
 
 	return notify;
@@ -791,20 +791,20 @@ netmap_pt_guest_txsync(struct ptnet_csb_gh *ptgh, struct ptnet_csb_hg *pthg,
  * block (no more completed slots in the ring).
  */
 bool
-netmap_pt_guest_rxsync(struct ptnet_csb_gh *ptgh, struct ptnet_csb_hg *pthg,
+netmap_pt_guest_rxsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 			struct netmap_kring *kring, int flags)
 {
 	bool notify = false;
 
         /* Disable notifications */
-	ptgh->guest_need_kick = 0;
+	atok->appl_need_kick = 0;
 
 	/*
 	 * First part: import newly received packets, by updating the kring
 	 * hwtail to the hwtail known from the host (read from the CSB).
 	 * This also updates the kring hwcur.
 	 */
-        ptnetmap_guest_read_kring_csb(pthg, kring);
+        ptnetmap_guest_read_kring_csb(ktoa, kring);
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
 	/*
@@ -812,11 +812,11 @@ netmap_pt_guest_rxsync(struct ptnet_csb_gh *ptgh, struct ptnet_csb_hg *pthg,
 	 * released, by updating cur and head in the CSB.
 	 */
 	if (kring->rhead != kring->nr_hwcur) {
-		ptnetmap_guest_write_kring_csb(ptgh, kring->rcur,
+		ptnetmap_guest_write_kring_csb(atok, kring->rcur,
 					       kring->rhead);
                 /* Ask for a kick from the guest to the host if needed. */
-		if (NM_ACCESS_ONCE(pthg->host_need_kick)) {
-			ptgh->sync_flags = flags;
+		if (NM_ACCESS_ONCE(ktoa->kern_need_kick)) {
+			atok->sync_flags = flags;
 			notify = true;
 		}
 	}
@@ -828,17 +828,17 @@ netmap_pt_guest_rxsync(struct ptnet_csb_gh *ptgh, struct ptnet_csb_hg *pthg,
          */
 	if (nm_kr_rxempty(kring) && !(kring->nr_kflags & NKR_NOINTR)) {
 		/* Reenable notifications. */
-                ptgh->guest_need_kick = 1;
+                atok->appl_need_kick = 1;
                 /* Double check */
-                ptnetmap_guest_read_kring_csb(pthg, kring);
+                ptnetmap_guest_read_kring_csb(ktoa, kring);
                 /* If there are new slots, disable notifications. */
 		if (!nm_kr_rxempty(kring)) {
-                        ptgh->guest_need_kick = 0;
+                        atok->appl_need_kick = 0;
                 }
         }
 
 	ND(1, "%s CSB(head:%u cur:%u hwtail:%u) KRING(head:%u cur:%u tail:%u)",
-		kring->name, ptgh->head, ptgh->cur, pthg->hwtail,
+		kring->name, atok->head, atok->cur, ktoa->hwtail,
 		kring->rhead, kring->rcur, kring->nr_hwtail);
 
 	return notify;

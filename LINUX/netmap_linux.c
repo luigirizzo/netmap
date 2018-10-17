@@ -1784,7 +1784,6 @@ static int
 nm_kctx_open_files(struct nm_kctx *nmk, void *opaque)
 {
 	struct file *file;
-	struct ptnetmap_cfgentry_qemu *ring_cfg = opaque;
 
 	nmk->ioevent_file = NULL;
 	nmk->irq_file = NULL;
@@ -1793,15 +1792,15 @@ nm_kctx_open_files(struct nm_kctx *nmk, void *opaque)
 		return 0;
 	}
 
-	if (ring_cfg->ioeventfd) {
-		file = eventfd_fget(ring_cfg->ioeventfd);
+	if (0 /* TODO cleanup */) {
+		file = eventfd_fget(-1);
 		if (IS_ERR(file))
 			goto err;
 		nmk->ioevent_file = file;
 	}
 
-	if (ring_cfg->irqfd) {
-		file = eventfd_fget(ring_cfg->irqfd);
+	if (0 /* TODO cleanup */) {
+		file = eventfd_fget(-1);
 		if (IS_ERR(file))
 			goto err;
 		nmk->irq_file = file;
