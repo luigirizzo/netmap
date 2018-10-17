@@ -1273,7 +1273,6 @@ nm_os_kctx_worker_stop(struct nm_kctx *nmk)
 
 	/* wake up kthread if it sleeps */
 	kthread_resume(nmk->worker);
-	nm_os_kctx_worker_wakeup(nmk);
 
 	nmk->worker = NULL;
 }
@@ -1286,8 +1285,6 @@ nm_os_kctx_destroy(struct nm_kctx *nmk)
 
 	if (nmk->worker)
 		nm_os_kctx_worker_stop(nmk);
-
-	memset(&nmk->worker_ctx.cfg, 0, sizeof(nmk->worker_ctx.cfg));
 
 	free(nmk, M_DEVBUF);
 }
