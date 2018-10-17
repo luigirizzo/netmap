@@ -911,6 +911,7 @@ static int
 sync_kloop_eventfds(struct TestContext *ctx)
 {
 	struct nmreq_opt_sync_kloop_eventfds *opt = NULL;
+	struct nmreq_option save;
 	int num_entries;
 	size_t opt_size;
 	int ret, i;
@@ -939,12 +940,19 @@ sync_kloop_eventfds(struct TestContext *ctx)
 		opt->eventfds[i].irqfd     = efd;
 	}
 
-	push_option((struct nmreq_option *)opt, ctx);
+	push_option(&opt->nro_opt, ctx);
+	save = opt->nro_opt;
 
-	// TODO check for failure ifdef __FreeBSD__
-	// TODO use checkoption
-	return sync_kloop_start_stop(ctx);
+	ret = sync_kloop_start_stop(ctx);
+	if (ret) {
+#ifdef __FreeBSD__
+		return 0;
+#endif /* __FreeBSD__ */
+		return ret;
+	}
+	save.nro_status = 0;
 
+	return checkoption(&opt->nro_opt, &save);
 }
 
 static int
