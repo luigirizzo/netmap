@@ -525,9 +525,6 @@ int netmap_generic_hwcsum = 0;
 /* Non-zero if ptnet devices are allowed to use virtio-net headers. */
 int ptnet_vnet_hdr = 1;
 
-/* 0 if ptnetmap should not use worker threads for TX processing */
-int ptnetmap_tx_workers = 1;
-
 /*
  * SYSCTL calls are grouped between SYSBEGIN and SYSEND to be emulated
  * in some other operating systems
@@ -567,8 +564,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW,
 #endif
 SYSCTL_INT(_dev_netmap, OID_AUTO, ptnet_vnet_hdr, CTLFLAG_RW, &ptnet_vnet_hdr,
 		0, "Allow ptnet devices to use virtio-net headers");
-SYSCTL_INT(_dev_netmap, OID_AUTO, ptnetmap_tx_workers, CTLFLAG_RW,
-		&ptnetmap_tx_workers, 0, "Use worker threads for pnetmap TX processing");
 
 SYSEND;
 

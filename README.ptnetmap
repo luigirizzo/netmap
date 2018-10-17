@@ -130,18 +130,6 @@ kernel.
 6. ptnetmap tunables
 ----------------------------------------------------------------------
 
-By default ptnetmap uses dedicated host kernel threads to transmit and
-receive packets for the VM (i.e. to run NIOCTXSYNC and NIOCRXSYNC on
-the passed-through netmap ports). It is possible to disable TX kernel
-threads by setting the ptnetmap_tx_workers sysctl to zero on the host
-machine, e.g.
-
-    # echo 0 > /sys/module/netmap/parameters/ptnetmap_tx_workers
-
-so that transmissions are perfomed directly by the VM vCPU threads.
-Depending on your workload, disabling TX kernel threads can result to
-improved performance (throughput/latency) and/or improved CPU utilization.
-
 While ptnetmap is mainly designed for the VMs to run middleboxes applications
 (e.g. firewall, DDoS prevention, load balancing, IDS, typically carried out
 by network operators), it also offers good performance when VMs run TCP/UDP

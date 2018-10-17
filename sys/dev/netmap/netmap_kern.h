@@ -1564,7 +1564,6 @@ extern int netmap_generic_rings;
 #ifdef linux
 extern int netmap_generic_txqdisc;
 #endif
-extern int ptnetmap_tx_workers;
 
 /*
  * NA returns a pointer to the struct netmap adapter from the ifp.
@@ -2109,17 +2108,14 @@ void nm_os_vi_init_index(void);
  * kernel thread routines
  */
 struct nm_kctx; /* OS-specific kernel context - opaque */
-typedef void (*nm_kctx_worker_fn_t)(void *data, int is_kthread);
-typedef void (*nm_kctx_notify_fn_t)(void *data);
+typedef void (*nm_kctx_worker_fn_t)(void *data);
 
 /* kthread configuration */
 struct nm_kctx_cfg {
 	long			type;		/* kthread type/identifier */
 	nm_kctx_worker_fn_t	worker_fn;	/* worker function */
 	void			*worker_private;/* worker parameter */
-	nm_kctx_notify_fn_t	notify_fn;	/* notify function */
 	int			attach_user;	/* attach kthread to user process */
-	int			use_kthread;	/* use a kthread for the context */
 };
 /* kthread configuration */
 struct nm_kctx *nm_os_kctx_create(struct nm_kctx_cfg *cfg,
@@ -2127,8 +2123,6 @@ struct nm_kctx *nm_os_kctx_create(struct nm_kctx_cfg *cfg,
 int nm_os_kctx_worker_start(struct nm_kctx *);
 void nm_os_kctx_worker_stop(struct nm_kctx *);
 void nm_os_kctx_destroy(struct nm_kctx *);
-void nm_os_kctx_worker_wakeup(struct nm_kctx *nmk);
-void nm_os_kctx_send_irq(struct nm_kctx *);
 void nm_os_kctx_worker_setaff(struct nm_kctx *, int);
 u_int nm_os_ncpus(void);
 

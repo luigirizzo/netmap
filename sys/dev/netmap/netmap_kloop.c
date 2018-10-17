@@ -131,7 +131,8 @@ csb_atok_intr_enabled(struct nm_csb_atok __user *csb_atok)
 static inline void
 sync_kloop_kring_dump(const char *title, const struct netmap_kring *kring)
 {
-	D("%s - name: %s hwcur: %d hwtail: %d rhead: %d rcur: %d rtail: %d",
+	nm_prinf("sync_kloop: %s - name: %s hwcur: %d hwtail: %d "
+		"rhead: %d rcur: %d rtail: %d\n",
 		title, kring->name, kring->nr_hwcur, kring->nr_hwtail,
 		kring->rhead, kring->rcur, kring->rtail);
 }
@@ -203,7 +204,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
-			D("ERROR txsync()");
+			nm_prerr("sync_kloop: txsync() failed\n");
 			break;
 		}
 
@@ -320,7 +321,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
-			D("ERROR rxsync()");
+			nm_prerr("sync_kloop: rxsync() failed\n");
 			break;
 		}
 
