@@ -51,6 +51,11 @@
 #include <net/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
 
+/* Support for eventfd-based notifications. */
+#if defined(linux)
+#define SYNC_KLOOP_POLL
+#endif
+
 /* Functions to read and write CSB fields from the kernel. */
 #if defined (linux)
 #define CSB_READ(csb, field, r) (get_user(r, &csb->field))
@@ -130,7 +135,6 @@ sync_kloop_kring_dump(const char *title, const struct netmap_kring *kring)
 		kring->rhead, kring->rcur, kring->rtail);
 }
 
-#define SYNC_KLOOP_POLL
 struct sync_kloop_ring_args {
 	struct netmap_kring *kring;
 	struct nm_csb_atok *csb_atok;
