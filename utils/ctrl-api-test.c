@@ -13,6 +13,15 @@
 #include <pthread.h>
 #include <assert.h>
 
+#ifdef __linux__
+#include <sys/eventfd.h>
+#else
+static int eventfd(int x, int y)
+{
+	return 19;
+}
+#endif /* __linux__ */
+
 struct TestContext {
 	int fd; /* netmap file descriptor */
 	const char *ifname;
@@ -633,7 +642,7 @@ infinite_options(struct TestContext *ctx)
 static int
 change_param(const char *pname, unsigned long newv, unsigned long *poldv)
 {
-#ifdef linux
+#ifdef __linux__
 	char param[256] = "/sys/module/netmap/parameters/";
 	unsigned long oldv;
 	FILE *f;
@@ -660,7 +669,7 @@ change_param(const char *pname, unsigned long newv, unsigned long *poldv)
 	}
 	fclose(f);
 	printf("change_param: %s: %ld -> %ld\n", pname, oldv, newv);
-#endif /* linux */
+#endif /* __linux__ */
 	return 0;
 }
 
@@ -858,17 +867,11 @@ sync_kloop_worker(void *opaque)
 }
 
 static int
-sync_kloop(struct TestContext *ctx)
+sync_kloop_start_stop(struct TestContext *ctx)
 {
-	int ret;
 	pthread_t th;
 	int thret;
-
-	ctx->nr_flags = NR_EXCLUSIVE;
-	ret           = port_register_hwall(ctx);
-	if (ret) {
-		return ret;
-	}
+	int ret;
 
 	ret = pthread_create(&th, NULL, sync_kloop_worker, ctx);
 	if (ret) {
@@ -887,6 +890,61 @@ sync_kloop(struct TestContext *ctx)
 	}
 
 	return thret;
+}
+
+static int
+sync_kloop(struct TestContext *ctx)
+{
+	int ret;
+
+	ctx->nr_flags = NR_EXCLUSIVE;
+	ret           = port_register_hwall(ctx);
+	if (ret) {
+		return ret;
+	}
+
+	return sync_kloop_start_stop(ctx);
+
+}
+
+static int
+sync_kloop_eventfds(struct TestContext *ctx)
+{
+	struct nmreq_opt_sync_kloop_eventfds *opt = NULL;
+	int num_entries;
+	size_t opt_size;
+	int ret, i;
+
+	ctx->nr_flags = NR_EXCLUSIVE;
+	ret           = port_register_hwall(ctx);
+	if (ret) {
+		return ret;
+	}
+
+	num_entries = ctx->nr_rx_rings + ctx->nr_tx_rings;
+	opt_size = sizeof(*opt) + num_entries * sizeof(opt->eventfds[0]);
+	opt = malloc(opt_size);
+	memset(opt, 0, opt_size);
+	opt->nro_opt.nro_next    = 0;
+	opt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS;
+	opt->nro_opt.nro_status  = 0;
+	opt->nro_opt.nro_size    = opt_size;
+	for (i = 0; i < num_entries; i++) {
+		int efd = eventfd(0, 0);
+
+		assert(efd >= 0);
+		opt->eventfds[i].ioeventfd = efd;
+		efd = eventfd(0, 0);
+		assert(efd >= 0);
+		opt->eventfds[i].irqfd     = efd;
+	}
+
+	push_option((struct nmreq_option *)opt, ctx);
+
+	// TODO check for failure ifdef __FreeBSD__
+	// TODO use checkoption
+	return sync_kloop_start_stop(ctx);
+
 }
 
 static int
@@ -1007,6 +1065,7 @@ static struct mytest tests[] = {
 	decltest(duplicate_extmem_options),
 #endif /* CONFIG_NETMAP_EXTMEM */
 	decltest(sync_kloop),
+	decltest(sync_kloop_eventfds),
 	decltest(sync_kloop_conflict),
 	decltest(sync_kloop_invalid_csb),
 };
