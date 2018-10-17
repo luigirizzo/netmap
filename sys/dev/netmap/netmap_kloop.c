@@ -41,6 +41,9 @@
 #include <net/if_var.h>
 #include <machine/bus.h>
 
+#define usleep_range(_1, _2) \
+        pause_sbt("sync-kloop-sleep", SBT_1US * _1, SBT_1US * 1, C_ABSOLUTE)
+
 #elif defined(linux)
 #include <bsd_glue.h>
 #include <linux/file.h>
