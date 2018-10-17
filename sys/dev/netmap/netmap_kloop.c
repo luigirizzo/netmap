@@ -44,6 +44,7 @@
 #elif defined(linux)
 #include <bsd_glue.h>
 #include <linux/file.h>
+#include <linux/eventfd.h>
 #endif
 
 #include <net/netmap.h>
