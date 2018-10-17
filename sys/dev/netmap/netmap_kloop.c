@@ -1,6 +1,6 @@
 /*
+ * Copyright (C) 2016-2018 Vincenzo Maffione
  * Copyright (C) 2015 Stefano Garzarella
- * Copyright (C) 2016 Vincenzo Maffione
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without

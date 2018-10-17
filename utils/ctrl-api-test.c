@@ -222,6 +222,14 @@ port_register_hwall_tx(struct TestContext *ctx)
 	return port_register(ctx);
 }
 
+static int
+port_register_hwall_rx(struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_ALL_NIC;
+	ctx->nr_flags |= NR_RX_RINGS_ONLY;
+	return port_register(ctx);
+}
+
 /* NETMAP_REQ_VALE_ATTACH */
 static int
 vale_attach(struct TestContext *ctx)
@@ -1083,6 +1091,26 @@ sync_kloop_invalid_csb(struct TestContext *ctx)
 	return (ret < 0) ? 0 : -1;
 }
 
+static int
+sync_kloop_eventfds_mismatch(struct TestContext *ctx)
+{
+	int ret;
+
+	ctx->nr_flags = NR_EXCLUSIVE;
+	ret           = port_register_hwall_rx(ctx);
+	if (ret) {
+		return ret;
+	}
+	/* Deceive num_registered_rings() to trigger a failure of
+	 * sync_kloop_eventfds(). The latter will think that all the
+	 * rings were registered, and allocate the wrong number of
+	 * eventfds and CSB entries. */
+	ctx->nr_flags &= ~NR_RX_RINGS_ONLY;
+
+	return (sync_kloop_eventfds(ctx) != 0) ? 0 : -1;
+
+}
+
 static void
 usage(const char *prog)
 {
@@ -1125,6 +1153,7 @@ static struct mytest tests[] = {
 	decltest(sync_kloop_eventfds_all_tx),
 	decltest(sync_kloop_conflict),
 	decltest(sync_kloop_invalid_csb),
+	decltest(sync_kloop_eventfds_mismatch),
 };
 
 int
