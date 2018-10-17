@@ -1134,7 +1134,7 @@ main(int argc, char **argv)
 		if (j >= 0 && j != i) {
 			continue;
 		}
-		printf("==> Start of Test #%d -- %s\n", i + 1, tests[i].name);
+		printf("==> Start of Test #%d [%s]\n", i + 1, tests[i].name);
 		fd = open("/dev/netmap", O_RDWR);
 		if (fd < 0) {
 			perror("open(/dev/netmap)");
@@ -1145,10 +1145,10 @@ main(int argc, char **argv)
 		ctxcopy.fd = fd;
 		ret        = tests[i].test(&ctxcopy);
 		if (ret) {
-			printf("Test #%d failed\n", i + 1);
+			printf("Test #%d [%s] failed\n", i + 1, tests[i].name);
 			goto out;
 		}
-		printf("==> Test #%d successful\n", i + 1);
+		printf("==> Test #%d [%s] successful\n", i + 1, tests[i].name);
 		close(fd);
 	}
 out:
