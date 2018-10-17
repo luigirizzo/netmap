@@ -2386,7 +2386,8 @@ netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 
 	NMA_UNLOCK(nmd);
 
-	D("added (ifp=%p,nifp_offset=%u)", ptif->ifp, ptif->nifp_offset);
+	nm_prinf("added (ifp=%s,nifp_offset=%u)", ptif->ifp->if_xname,
+						ptif->nifp_offset);
 
 	return 0;
 }
