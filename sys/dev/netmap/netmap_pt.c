@@ -703,7 +703,7 @@ out:
 	return err;
 }
 
-#ifdef WITH_PTNETMAP_GUEST
+#ifdef WITH_PTNETMAP
 /*
  * Guest ptnetmap txsync()/rxsync() routines, used in ptnet device drivers.
  * These routines are reused across the different operating systems supported
@@ -933,4 +933,4 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 	return 0;
 }
 
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */

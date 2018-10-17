@@ -1980,8 +1980,8 @@ nm_os_kctx_destroy(struct nm_kctx *nmk)
 	kfree(nmk);
 }
 
-/* ##################### PTNETMAP SUPPORT ##################### */
-#ifdef WITH_PTNETMAP_GUEST
+/* ################## PTNETMAP GUEST SUPPORT ################## */
+#ifdef WITH_PTNETMAP
 /*
  * ptnetmap memory device (memdev) for linux guest
  * Used to expose host memory to the guest through PCI-BAR
@@ -2204,10 +2204,10 @@ ptnetmap_guest_fini(void)
 	pci_unregister_driver(&ptnetmap_guest_drivers);
 }
 
-#else /* !WITH_PTNETMAP_GUEST */
+#else /* !WITH_PTNETMAP */
 #define ptnetmap_guest_init()		0
 #define ptnetmap_guest_fini()
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */
 
 #ifdef WITH_SINK
 
@@ -2655,12 +2655,12 @@ EXPORT_SYMBOL(__netmap_adapter_put);
 EXPORT_SYMBOL(netmap_adapter_get);
 EXPORT_SYMBOL(netmap_adapter_put);
 #endif /* NM_DEBUG_PUTGET */
-#ifdef WITH_PTNETMAP_GUEST
+#ifdef WITH_PTNETMAP
 EXPORT_SYMBOL(netmap_pt_guest_attach);	/* ptnetmap driver attach routine */
 EXPORT_SYMBOL(netmap_pt_guest_rxsync);	/* ptnetmap generic rxsync */
 EXPORT_SYMBOL(netmap_pt_guest_txsync);	/* ptnetmap generic txsync */
 EXPORT_SYMBOL(netmap_mem_pt_guest_ifp_del); /* unlink passthrough interface */
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */
 EXPORT_SYMBOL(netmap_detach);		/* driver detach routines */
 EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */
 EXPORT_SYMBOL(netmap_reset);		/* ring init routines */

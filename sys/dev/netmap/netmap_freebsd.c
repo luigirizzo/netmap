@@ -733,9 +733,9 @@ out:
 }
 #endif /* WITH_EXTMEM */
 
-/* ======================== PTNETMAP SUPPORT ========================== */
+/* ================== PTNETMAP GUEST SUPPORT ==================== */
 
-#ifdef WITH_PTNETMAP_GUEST
+#ifdef WITH_PTNETMAP
 #include <sys/bus.h>
 #include <sys/rman.h>
 #include <machine/bus.h>        /* bus_dmamap_* */
@@ -930,7 +930,7 @@ ptn_memdev_shutdown(device_t dev)
 	return bus_generic_shutdown(dev);
 }
 
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */
 
 /*
  * In order to track whether pages are still mapped, we hook into

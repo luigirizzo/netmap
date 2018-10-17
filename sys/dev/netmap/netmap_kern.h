@@ -52,8 +52,8 @@
 #if defined(CONFIG_NETMAP_GENERIC)
 #define WITH_GENERIC
 #endif
-#if defined(CONFIG_NETMAP_PTNETMAP_GUEST)
-#define WITH_PTNETMAP_GUEST
+#if defined(CONFIG_NETMAP_PTNETMAP)
+#define WITH_PTNETMAP
 #endif
 #if defined(CONFIG_NETMAP_SINK)
 #define WITH_SINK
@@ -70,7 +70,7 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
-#define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
+#define WITH_PTNETMAP	/* ptnetmap guest support */
 #define WITH_EXTMEM
 #endif
 
@@ -1436,7 +1436,6 @@ void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
 int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
 
-
 #ifdef WITH_VALE
 uint32_t netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *, void *private_data);
@@ -1902,6 +1901,14 @@ static inline int nm_kring_pending(struct netmap_priv_d *np)
 	return 0;
 }
 
+/* call with NMG_LOCK held */
+static __inline int
+nm_si_user(struct netmap_priv_d *priv, enum txrx t)
+{
+	return (priv->np_na != NULL &&
+		(priv->np_qlast[t] - priv->np_qfirst[t] > 1));
+}
+
 #ifdef WITH_PIPES
 int netmap_pipe_txsync(struct netmap_kring *txkring, int flags);
 int netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags);
@@ -2128,7 +2135,7 @@ u_int nm_os_ncpus(void);
 int netmap_sync_kloop(struct netmap_priv_d *priv,
 		      struct nmreq_header *hdr);
 
-#ifdef WITH_PTNETMAP_GUEST
+#ifdef WITH_PTNETMAP
 /* ptnetmap GUEST routines */
 
 /*
@@ -2165,7 +2172,7 @@ bool netmap_pt_guest_rxsync(struct ptnet_csb_gh *ptgh,
 int ptnet_nm_krings_create(struct netmap_adapter *na);
 void ptnet_nm_krings_delete(struct netmap_adapter *na);
 void ptnet_nm_dtor(struct netmap_adapter *na);
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */
 
 #ifdef __FreeBSD__
 /*

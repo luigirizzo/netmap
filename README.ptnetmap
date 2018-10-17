@@ -44,16 +44,11 @@ and in section 7 of this document.
 2. Configure Linux host and QEMU for ptnetmap
 ---------------------------------------------------------------------------
 
-(Warning! For ptnetmap use v11.4.
-In the current master, ptnetmap is disabled.
-Support for the current master will be re-added as soon as possible)
-
-On the Linux host, configure, build and install netmap with ptnetmap support:
+On the Linux host, configure, build and install netmap normally:
 
     $ git clone https://github.com/luigirizzo/netmap.git
     $ cd netmap
-    $ git checkout v11.4
-    $ ./configure --enable-ptnetmap [other options]
+    $ ./configure [options]
     $ make
     $ sudo make install
 
@@ -65,9 +60,8 @@ Download, build and install the ptnetmap-enabled QEMU:
     $ make
     $ sudo make install
 
-Load the ptnetmap-enabled netmap
+Load the netmap
 
-    $ sudo rmmod netmap  # Possibly remove a previous netmap module:
     $ sudo modprobe netmap
 
 Example to run a VM passing through a VALE port (vale1:10):
