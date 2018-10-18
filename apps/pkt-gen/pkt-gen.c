@@ -1553,7 +1553,7 @@ sender_body(void *data)
 	    for (i = 0; !targ->cancel && (n == 0 || sent < n); i++) {
 		if (pcap_inject(p, frame, size) != -1)
 			sent++;
-		update_addresses(pkt, targ->g);
+		update_addresses(pkt, targ);
 		if (i > 10000) {
 			targ->ctr.pkts = sent;
 			targ->ctr.bytes = sent*size;
