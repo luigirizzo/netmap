@@ -739,6 +739,37 @@ struct nm_csb_ktoa {
 	char pad[4+48];
 };
 
+#ifdef __linux__
+
+#ifdef __KERNEL__
+#define nm_stst_barrier smp_wmb
+#else  /* !__KERNEL__ */
+static inline void nm_stst_barrier(void)
+{
+	/* TODO: This implementation works for x86 because of total store
+	 * ordering. Only a compiler barrier is needed. What we really
+	 * need here in the general case is a portable store-store barrier,
+	 * to prevent the two stores from being reordered (e.g. a "release"
+	 * barrier would be ok). */
+	asm volatile("" ::: "memory");
+}
+#endif /* !__KERNEL__ */
+
+#elif defined(__FreeBSD__)
+
+#ifdef _KERNEL
+#define nm_stst_barrier	atomic_thread_fence_rel
+#else  /* !_KERNEL */
+static inline void nm_stst_barrier(void)
+{
+	asm volatile("" ::: "memory");
+}
+#endif /* !_KERNEL */
+
+#else  /* !__linux__ && !__FreeBSD__ */
+#error "OS not supported"
+#endif /* !__linux__ && !__FreeBSD__ */
+
 /* Application side of sync-kloop: Write ring pointers (cur, head) to the CSB.
  * This routine is coupled with sync_kloop_kernel_read(). */
 static inline void
@@ -765,14 +796,9 @@ nm_sync_kloop_appl_write(struct nm_csb_atok *atok, uint32_t cur,
 	 *          mb() <-----------> mb()
 	 *          STORE(head)        LOAD(cur)
 	 *
-	 * TODO: This implementation work for x86 because of total store
-	 * ordering. Only a compiler barrier is needed. What we really
-	 * need here in the general case is a portable store-store barrier,
-	 * to prevent the two stores from being reordered (e.g. a "release"
-	 * barrier would be ok).
 	 */
 	atok->cur = cur;
-	asm volatile("" ::: "memory");
+	nm_stst_barrier();
 	atok->head = head;
 }
 
@@ -786,13 +812,9 @@ nm_sync_kloop_appl_read(struct nm_csb_ktoa *ktoa, uint32_t *hwtail,
 	 * We place a memory barrier to make sure that the update of hwtail never
 	 * overtakes the update of hwcur.
 	 * (see explanation in sync_kloop_kernel_write).
-	 *
-	 * TODO: This implementation works for x86 because loads are not reordered
-	 * after loads. What we need here is a portable load-load barrier, e.g.
-	 * an "acquire" barrier would be ok.
 	 */
 	*hwtail = ktoa->hwtail;
-	asm volatile("" ::: "memory");
+	nm_stst_barrier();
 	*hwcur = ktoa->hwcur;
 }
 

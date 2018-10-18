@@ -18,6 +18,8 @@
 #else
 static int eventfd(int x, int y)
 {
+	(void) x;
+	(void) y;
 	return 19;
 }
 #endif /* __linux__ */
@@ -1008,7 +1010,6 @@ sync_kloop_eventfds_all_tx(struct TestContext *ctx)
 	}
 
 	return sync_kloop_eventfds(ctx);
-
 }
 
 static int

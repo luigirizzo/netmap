@@ -712,9 +712,9 @@ struct netmap_adapter {
 	u_int num_tx_desc;  /* number of descriptor in each queue */
 	u_int num_rx_desc;
 
-	/* tx_rings and rx_rings are private but allocated
-	 * as a contiguous chunk of memory. Each array has
-	 * N+1 entries, for the adapter queues and for the host queue.
+	/* tx_rings and rx_rings are private but allocated as a
+	 * contiguous chunk of memory. Each array has N+K entries,
+	 * N for the hardware rings and K for the host rings.
 	 */
 	struct netmap_kring **tx_rings; /* array of TX rings. */
 	struct netmap_kring **rx_rings; /* array of RX rings. */

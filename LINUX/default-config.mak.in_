@@ -80,7 +80,7 @@ e1000e@cflags := -fno-pie
 igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
 
 # set all the default versions (can be overrided by --select-version=)
-$(eval $(call default,ixgbe,5.3.7))
+$(eval $(call default,ixgbe,5.3.8))
 $(eval $(call default,ixgbevf,4.3.2))
 $(eval $(call default,e1000e,3.4.0.2))
 $(eval $(call default,igb,5.3.5.20))
