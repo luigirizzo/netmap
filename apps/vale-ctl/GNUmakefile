@@ -37,3 +37,4 @@ install: $(PROGS:%=install-%)
 
 install-%:
 	install -D $* $(DESTDIR)/$(PREFIX)/bin/$*
+	-install -D -m 644 $(SRCDIR)/apps/vale-ctl/vale-ctl.8 $(DESTDIR)/$(MAN_PREFIX)/man8/vale-ctl.8

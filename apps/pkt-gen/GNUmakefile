@@ -37,6 +37,7 @@ install: $(PROGS:%=install-%)
 
 install-%:
 	install -D $* $(DESTDIR)/$(PREFIX)/bin/$*
+	-install -D -m 644 $(SRCDIR)/apps/pkt-gen/pkt-gen.8 $(DESTDIR)/$(MAN_PREFIX)/man8/pkt-gen.8
 
 pkt-gen-b: pkt-gen-b.o
 
