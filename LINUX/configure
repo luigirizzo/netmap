@@ -1487,6 +1487,26 @@ EOF
 	}
 EOF
 
+# check for kernel_sendpage_locked
+  add_test 'have KERNEL_SENDPAGE_LOCKED' <<EOF
+	#include <linux/net.h>
+
+	int
+	dummy(struct sock *sk) {
+		return kernel_sendpage_locked(sk, NULL, 0, 0, 0);
+	}
+EOF
+
+# check for netif_receive_skb_core
+  add_test 'have NETIF_RECEIVE_SKB_CORE' <<EOF
+	#include <linux/netdevice.h>
+
+	int
+	dummy(struct sk_buff *skb) {
+		return netif_receive_skb_core(skb);
+	}
+EOF
+
 # check for fault arguments
   add_test 'have FAULT_VMA_ARG' <<EOF
         #include <linux/mm.h>

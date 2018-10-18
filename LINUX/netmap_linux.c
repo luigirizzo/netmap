@@ -1285,8 +1285,11 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		rcu_read_unlock();
 	} else
 #endif /* NETMAP_LINUX_HAVE_IP_RCV */
-	//netif_receive_skb(m);
+#ifdef NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE
 	netif_receive_skb_core(m);
+#else
+	netif_receive_skb(m);
+#endif /* NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE */
 
 	/* setting data destructor is safe only after skb_orphan_frag()
 	 * in __netif_receive_skb_core().
@@ -1352,12 +1355,15 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		RD(1, "WARNING: NULL sk->sk_socket");
 		return 0;
 	}
+#ifdef NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED
 	/*
 	 * We don't really own lock. But since we only actively receive packets,
 	 * the RX path never tries to lock the socket.
 	 */
-	//err = kernel_sendpage(sk->sk_socket, page, poff, len, MSG_DONTWAIT);
 	err = kernel_sendpage_locked(sk, page, poff, len, MSG_DONTWAIT);
+#else
+	err = kernel_sendpage(sk->sk_socket, page, poff, len, MSG_DONTWAIT);
+#endif /* NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED */
 	if (unlikely(err < 0)) {
 		/* XXX check if it is enough to assume EAGAIN only */
 		ND(1, "error %d in sendpage() slot %ld",
