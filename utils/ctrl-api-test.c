@@ -18,6 +18,8 @@
 #else
 static int eventfd(int x, int y)
 {
+	(void) x;
+	(void) y;
 	return 19;
 }
 #endif /* __linux__ */
