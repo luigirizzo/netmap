@@ -304,10 +304,29 @@ static int virtnet_open(struct net_device *dev);
 static int virtnet_close(struct net_device *dev);
 
 static void
-virtio_net_netmap_detach_unused(struct virtnet_info *vi, bool onoff,
-				enum txrx t, int i)
+virtio_net_netmap_free_os_buf(struct virtnet_info *vi, enum txrx t,
+			      int idx, void *buf)
 {
-	struct virtqueue* vq = (t == NR_RX) ? vi->rq[i].vq : vi->sq[i].vq;
+	if (t == NR_TX) {
+		dev_kfree_skb(buf);
+	} else {
+		if (vi->mergeable_rx_bufs) {
+			unsigned long ctx = (unsigned long)buf;
+			void *base = mergeable_ctx_to_buf_address(ctx);
+			put_page(virt_to_head_page(base));
+		} else if (vi->big_packets) {
+			give_pages(&vi->rq[idx], buf);
+		} else {
+			dev_kfree_skb(buf);
+		}
+	}
+}
+
+static void
+virtio_net_netmap_detach_unused(struct virtnet_info *vi, bool onoff,
+				enum txrx t, int idx)
+{
+	struct virtqueue* vq = (t == NR_RX) ? vi->rq[idx].vq : vi->sq[idx].vq;
 	unsigned int n = 0;
 	void *buf;
 
@@ -315,55 +334,38 @@ virtio_net_netmap_detach_unused(struct virtnet_info *vi, bool onoff,
 		if (!onoff) {
 			/* This is a netmap buffer, so there is
 			 * nothing to do. */
-		} else if (t == NR_TX) {
-			dev_kfree_skb(buf);
 		} else {
-			if (vi->mergeable_rx_bufs) {
-				unsigned long ctx = (unsigned long)buf;
-				void *base = mergeable_ctx_to_buf_address(ctx);
-				put_page(virt_to_head_page(base));
-			} else if (vi->big_packets) {
-				give_pages(&vi->rq[i], buf);
-			} else {
-				dev_kfree_skb(buf);
-			}
+			virtio_net_netmap_free_os_buf(vi, t, idx, buf);
 		}
 		n++;
 	}
 
 	if (n)
 		nm_prinf("%d sgs detached on %s-%d (onoff=%d)\n",
-			 n, nm_txrx2str(t), i, onoff);
+			 n, nm_txrx2str(t), idx, onoff);
 }
 
 static void
 virtio_net_netmap_drain_used(struct virtnet_info *vi, bool onoff,
-				enum txrx t, int i)
+				enum txrx t, int idx)
 {
-	struct virtqueue* vq = (t == NR_RX) ? vi->rq[i].vq : vi->sq[i].vq;
+	struct virtqueue* vq = (t == NR_RX) ? vi->rq[idx].vq : vi->sq[idx].vq;
 	unsigned int len, n = 0;
 	void *buf;
-
-	if (onoff && t == NR_RX) {
-		/* An RX kring is entering netmap mode. Since NAPI has
-		 * been disabled, there cannot be any pending used
-		 * buffers. */
-		return;
-	}
 
 	while ((buf = virtqueue_get_buf(vq, &len)) != NULL) {
 		if (!onoff) {
 			/* This is a netmap buffer, so there is
 			 * nothing to do. */
-		} else if (t == NR_TX) {
-			dev_kfree_skb(buf);
+		} else {
+			virtio_net_netmap_free_os_buf(vi, t, idx, buf);
 		}
 		n++;
 	}
 
 	if (n)
 		nm_prinf("%d sgs drained on %s-%d (onoff=%d)\n",
-			n, nm_txrx2str(t), i, onoff);
+			n, nm_txrx2str(t), idx, onoff);
 }
 
 /* Initialize scatter-gather lists used to publish netmap
