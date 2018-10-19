@@ -984,7 +984,10 @@ freebsd_upcall(struct nmcb *cb)
 	}
 	bzero(&uio, sizeof(uio));
 	uio.uio_resid = rlen;
-	error = soreceive(so, NULL, &uio, &m0, NULL, &flags);
+	//error = soreceive(so, NULL, &uio, &m0, NULL, &flags);
+	CURVNET_SET(so->so_vnet);
+	error = soreceive_stream(so, NULL, &uio, &m0, NULL, &flags);
+	CURVNET_RESTORE();
 	if (unlikely(error)) {
 		D("error on soreceive() (%d)", error);
 		return error;
