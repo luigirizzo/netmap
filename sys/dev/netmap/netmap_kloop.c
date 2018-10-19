@@ -433,7 +433,6 @@ sync_kloop_poll_table_queue_proc(struct file *file, wait_queue_head_t *wqh,
 	init_waitqueue_entry(&entry->wait, current);
 	add_wait_queue(wqh, &entry->wait);
 	poll_ctx->next_entry++;
-	nm_prinf("poll entry #%d filled\n", poll_ctx->next_entry);
 }
 #endif  /* SYNC_KLOOP_POLL */
 
