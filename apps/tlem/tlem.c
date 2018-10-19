@@ -2099,6 +2099,14 @@ set_max(const char *arg, struct _qs *q)
             ED("invalid max-bps: %s", av[1]);
             return 1;
         }
+	/* if we did not get any bw limitation from -B, use this one */
+	if (q->c_bw.run == null_run_fn) {
+	    if (cmd_apply(bw_cfg, av[1], q, &q->c_bw)) {
+		ED("warning: failed to set default bandwidth limitation to %s", av[1]);
+	    } else {
+		ED("set maximum bandwidth to %s", av[1]);
+	    }
+	}
     }
     if (ac > 2) {
         /* third argument: max hold time */
