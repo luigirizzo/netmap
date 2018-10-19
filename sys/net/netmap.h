@@ -750,12 +750,10 @@ struct nm_csb_ktoa {
 #else  /* !__KERNEL__ */
 static inline void nm_stst_barrier(void)
 {
-	/* TODO: This implementation works for x86 because of total store
-	 * ordering. Only a compiler barrier is needed. What we really
-	 * need here in the general case is a portable store-store barrier,
-	 * to prevent the two stores from being reordered (e.g. a "release"
-	 * barrier would be ok). */
-	asm volatile("" ::: "memory");
+	/* A memory barrier with release semantic has the combined
+	 * effect of a store-store barrier and a load-store barrier,
+	 * which is fine for us. */
+	__atomic_thread_fence(__ATOMIC_RELEASE);
 }
 #endif /* !__KERNEL__ */
 
@@ -766,7 +764,7 @@ static inline void nm_stst_barrier(void)
 #else  /* !_KERNEL */
 static inline void nm_stst_barrier(void)
 {
-	asm volatile("" ::: "memory");
+	__atomic_thread_fence(__ATOMIC_RELEASE);
 }
 #endif /* !_KERNEL */
 
