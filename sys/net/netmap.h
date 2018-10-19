@@ -477,7 +477,9 @@ struct nmreq_option {
 	 * !=0: errno value
 	 */
 	uint32_t		nro_status;
-	/* Option size, used only by variable-size options. */
+	/* Option size, used only for options that can have variable size
+	 * (e.g. because they contain arrays). For fixed-size options this
+	 * field should be set to zero. */
 	uint64_t		nro_size;
 };
 
