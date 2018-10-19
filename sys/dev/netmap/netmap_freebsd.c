@@ -71,6 +71,7 @@
 #include <netinet/in.h>		/* in6_cksum_pseudo() */
 #include <machine/in_cksum.h>  /* in_pseudo(), in_cksum_hdr() */
 #include <netinet/in_var.h>	/* ip_input() */
+/* just for debugging */
 
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
@@ -940,59 +941,58 @@ ptn_memdev_shutdown(device_t dev)
 #endif /* WITH_PTNETMAP_GUEST */
 
 #ifdef WITH_STACK
+#define TCP_RCVD
+#include <sys/protosw.h>
+
 int
 nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 {
-	struct mbuf *m;
+	struct mbuf *m, *n, *tmp;
 	struct sockbuf *sb = &so->so_rcv;
 	struct nmcb *cb;
+	struct netmap_kring *kring = NULL;
 
 	if (unlikely(!sbavail(sb))) {
+		ND("!sbavail so %p soa %p cantrcv %d port %u sblastrec %p", so, st_so(so), !!(so->so_rcv.sb_state & SBS_CANTRCVMORE), ntohs(sotoinpcb(so)->inp_fport), sb->sb_lastrecord);
+		/* XXX We need trick to set zero-length buffer */
+		struct st_so_adapter *soa = st_so(so);
+		if (likely(soa)) {
+			struct netmap_stack_adapter *sna =
+				(struct netmap_stack_adapter *)soa->na;
+			sna->eventso[curcpu] = soa;
+		}
 		return 0;
 	}
 	m = sb->sb_mb;
 	cb = NMCB(m);
-	if (nmcb_valid(cb)) {
-		nmcb_kring(cb)->nkr_leases = (void *)so;
-	}
-	return 0;
-}
-
-static int
-freebsd_upcall(struct nmcb *cb)
-{
-	NM_SOCK_T *so;
-	struct mbuf *m0 = NULL, *m, *tmp;
-	int error;
-	struct netmap_kring *kring = NULL;
-	struct uio uio;
-	int flags = MSG_DONTWAIT | MSG_EOR;
-	int rlen = 65535; // XXX
-
 	if (!nmcb_valid(cb))
 		return 0;
-	else if (!nmcb_kring(cb))
-		return 0;
 	kring = nmcb_kring(cb);
-	so = (NM_SOCK_T *)kring->nkr_leases;
-	if (!so)
-		return 0;
-	kring->nkr_leases = NULL;
+	struct mbuf *m0 = NULL;
+#ifdef TCP_RCVD
+	int flags = MSG_DONTWAIT | MSG_EOR;
+#endif /* TCP_RCVD */
+	m0 = m;
+	for (; m != NULL ; m = m->m_next) {
+		sbfree(sb, m);
+		n = m;
+	}
+	n->m_next = NULL;
+	sb->sb_mb = m;
+	sb->sb_lastrecord = sb->sb_mb;
+	if (sb->sb_mb == NULL) {
+		SB_EMPTY_FIXUP(sb);
+	}
+#ifdef TCP_RCVD
+	if ((so->so_proto->pr_flags & PR_WANTRCVD) &&
+		((flags & MSG_WAITALL) || !(flags & MSG_SOCALLBCK))) {
+		SOCKBUF_UNLOCK(sb);
+		(*so->so_proto->pr_usrreqs->pru_rcvd)(so, flags);
+		SOCKBUF_LOCK(sb);
+	}
+#endif
 
-	if (!sbavail(&so->so_rcv)) {
-		return 0;
-	}
-	bzero(&uio, sizeof(uio));
-	uio.uio_resid = rlen;
-	//error = soreceive(so, NULL, &uio, &m0, NULL, &flags);
-	CURVNET_SET(so->so_vnet);
-	error = soreceive_stream(so, NULL, &uio, &m0, NULL, &flags);
-	CURVNET_RESTORE();
-	if (unlikely(error)) {
-		D("error on soreceive() (%d)", error);
-		return error;
-	}
-	rlen = rlen - uio.uio_resid;
+
 	/* XXX soreceive() has already iterated the mbuf chain.
 	 * We may have a room for optimization
 	 */
@@ -1056,23 +1056,29 @@ nm_os_sock_fput(NM_SOCK_T *so, void *f)
 	fdrop((struct file *)f, curthread);
 }
 
-void
+int
 nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 {
 	struct mbuf * m;
 	struct nmcb *cb;
+	int error = 0;
 
-	if (!sbavail(&so->so_rcv))
-		return;
+	if (!sbavail(&so->so_rcv)) {
+		if (so->so_rcv.sb_state & SBS_CANTRCVMORE) {
+			error = ENOTCONN;
+		}
+		return error;
+	}
 	m = so->so_rcv.sb_mb;
 	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
 	if (!nmcb_valid(cb)) {
 		D("invalid cb");
-		return;
+		return error;
 	}
-	ND("next nm_os_st_data_ready (SCB %p %d", cb, nmcb_rstate(cb));
-	nm_os_st_upcall(so, NULL, 0);
-	freebsd_upcall(cb);
+	SOCKBUF_LOCK(&so->so_rcv);
+	error = nm_os_st_upcall(so, NULL, 0);
+	SOCKBUF_UNLOCK(&so->so_rcv);
+	return error;
 }
 
 void
@@ -1129,6 +1135,11 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct nmcb *cb = NMCB_BUF(nmb);
 	struct mbuf *m;
 	int ret = 0;
+#ifdef __FreeBSD__
+	struct netmap_stack_adapter *sna =
+		(struct netmap_stack_adapter *)stna(na);
+	sna->eventso[curcpu] = NULL;
+#endif /* __FreeBSD__ */
 
 	slot->len += VHLEN(na); // Ugly to do here...
 	m = maybe_new_mbuf(kring);
@@ -1157,9 +1168,25 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	} else {
 		na->if_input(ifp, m);
 	}
+#ifdef __FreeBSD__
+	/*
+	 * The buffer might have triggered the socket upcall without
+	 * passing the mbuf.
+	 */
+	if (unlikely(sna->eventso[curcpu] != NULL)) {
+		struct st_so_adapter *soa = sna->eventso[curcpu];
 
-	freebsd_upcall(cb);
-
+		sna->eventso[curcpu] = NULL;
+		if (nmcb_rstate(cb) == MB_NOREF) {
+			slot->fd = soa->fd;
+			slot->len = VHLEN(na);
+			slot->offset = 0;
+			st_fdtable_add(cb, kring);
+		} else {
+			D("strange, eventso %d but not MB_NOREF", slot->fd);
+		}
+	}
+#endif /* __FreeBSD__ */
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
 		if (st_extra_enq(kring, slot)) {

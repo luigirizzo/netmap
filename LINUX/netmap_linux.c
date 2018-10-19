@@ -1195,7 +1195,7 @@ nm_os_sock_fput(NM_SOCK_T *sk, void *dummy)
 	sockfd_put(sk->sk_socket);
 }
 
-void
+int
 nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 {
 	struct mbuf *m;
@@ -1203,11 +1203,12 @@ nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 	/* XXX All the packets must be originated from netmap */
 	m = skb_peek(&sk->sk_receive_queue);
 	if (!m)
-		return;
+		return 0;
 	if (!nmcb_valid(NMCB(m)))
-		return;
+		return 0;
 	/* No need for BDG_RLOCK() - we don't move packets to stack na */
 	nm_os_st_upcall(sk);
+	return 0;
 }
 
 static inline int

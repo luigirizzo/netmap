@@ -1125,8 +1125,10 @@ netmap_worker(void *data)
 				}
 				memcpy(ifreq->data, &newfd, sizeof(newfd));
 				if (ioctl(t->fd, NIOCCONFIG, ifreq)) {
-					perror("ioctl");
-					if (errno == -ENOMEM) {
+					if (errno == ENOTCONN) {
+						perror("ioctl");
+						close(newfd);
+					} else if (errno == ENOMEM) {
 						perror("ioctl");
 						close(newfd);
 close_pfds:

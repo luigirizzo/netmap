@@ -112,7 +112,7 @@ rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 	return i;
 }
 
-static inline struct netmap_adapter *
+struct netmap_adapter *
 stna(const struct netmap_adapter *slave)
 {
 	const struct netmap_vp_adapter *vpna;
@@ -1134,6 +1134,7 @@ st_register_fd(struct netmap_adapter *na, int fd)
 	struct netmap_stack_adapter *sna = (struct netmap_stack_adapter *)na;
 	int on = 1;
 	struct sockopt sopt;
+	int error;
 
 	if (unlikely(fd > NM_ST_FD_MAX)) {
 		return ENOMEM;
@@ -1195,10 +1196,10 @@ st_register_fd(struct netmap_adapter *na, int fd)
 	st_wso(soa, so);
 	sna->so_adapters[fd] = soa;
 	SOCKBUF_UNLOCK(&so->so_rcv);
-	nm_os_st_sbdrain(na, so);
+	error = nm_os_st_sbdrain(na, so);
 	NM_SOCK_UNLOCK(so);
 	nm_os_sock_fput(so, file);
-	return 0;
+	return error;
 }
 
 static int

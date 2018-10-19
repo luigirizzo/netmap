@@ -1178,7 +1178,11 @@ struct netmap_stack_adapter {
 	struct st_so_adapter **so_adapters;
 #define DEFAULT_SK_ADAPTERS	65535
 	u_int so_adapters_max;
+#ifdef __FreeBSD__
+	void *eventso[64];
+#endif
 };
+struct netmap_adapter *stna(const struct netmap_adapter *slave);
 
 /* to be embedded in the buf */
 /* struct skb_shared_info takes 320 byte so far.
@@ -1253,7 +1257,7 @@ nmcb_rstate(struct nmcb *cb)
 
 NM_SOCK_T *nm_os_sock_fget(int, void **);
 void nm_os_sock_fput(NM_SOCK_T *, void *);
-void nm_os_st_sbdrain(struct netmap_adapter *, NM_SOCK_T *);
+int nm_os_st_sbdrain(struct netmap_adapter *, NM_SOCK_T *);
 #ifdef linux
 void nm_os_st_upcall(NM_SOCK_T *);
 netdev_tx_t linux_st_start_xmit(struct mbuf *, struct ifnet *);
