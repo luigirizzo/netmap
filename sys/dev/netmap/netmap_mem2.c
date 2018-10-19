@@ -2343,7 +2343,7 @@ out:
 #endif /* WITH_EXTMEM */
 
 
-#ifdef WITH_PTNETMAP_GUEST
+#ifdef WITH_PTNETMAP
 struct mem_pt_if {
 	struct mem_pt_if *next;
 	struct ifnet *ifp;
@@ -2386,7 +2386,8 @@ netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 
 	NMA_UNLOCK(nmd);
 
-	D("added (ifp=%p,nifp_offset=%u)", ptif->ifp, ptif->nifp_offset);
+	nm_prinf("ptnet if added (ifp=%s,nifp_offset=%u)\n",
+		ptif->ifp->if_xname, ptif->nifp_offset);
 
 	return 0;
 }
@@ -2832,4 +2833,4 @@ netmap_mem_pt_guest_new(struct ifnet *ifp,
 	return nmd;
 }
 
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */

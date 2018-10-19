@@ -52,11 +52,8 @@
 #if defined(CONFIG_NETMAP_GENERIC)
 #define WITH_GENERIC
 #endif
-#if defined(CONFIG_NETMAP_PTNETMAP_GUEST)
-#define WITH_PTNETMAP_GUEST
-#endif
-#if defined(CONFIG_NETMAP_PTNETMAP_HOST)
-#define WITH_PTNETMAP_HOST
+#if defined(CONFIG_NETMAP_PTNETMAP)
+#define WITH_PTNETMAP
 #endif
 #if defined(CONFIG_NETMAP_SINK)
 #define WITH_SINK
@@ -73,8 +70,7 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
-#define WITH_PTNETMAP_HOST	/* ptnetmap host support */
-#define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
+#define WITH_PTNETMAP	/* ptnetmap guest support */
 #define WITH_EXTMEM
 #endif
 
@@ -698,7 +694,7 @@ struct netmap_adapter {
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
-#define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
+/* free */
 #define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
@@ -1440,7 +1436,6 @@ void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
 int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
 
-
 #ifdef WITH_VALE
 uint32_t netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *, void *private_data);
@@ -1569,7 +1564,6 @@ extern int netmap_generic_rings;
 #ifdef linux
 extern int netmap_generic_txqdisc;
 #endif
-extern int ptnetmap_tx_workers;
 
 /*
  * NA returns a pointer to the struct netmap adapter from the ifp.
@@ -1868,6 +1862,9 @@ struct netmap_priv_d {
 	u_int		np_qfirst[NR_TXRX],
 			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
 	uint16_t	np_txpoll;
+	uint16_t        np_kloop_state;	/* use with NMG_LOCK held */
+#define NM_SYNC_KLOOP_RUNNING	(1 << 0)
+#define NM_SYNC_KLOOP_STOPPING	(1 << 1)
 	int             np_sync_flags; /* to be passed to nm_sync */
 
 	int		np_refs;	/* use with NMG_LOCK held */
@@ -1878,6 +1875,9 @@ struct netmap_priv_d {
 	 */
 	NM_SELINFO_T *np_si[NR_TXRX];
 	struct thread	*np_td;		/* kqueue, just debugging */
+#ifdef linux
+	struct file	*np_filp;  /* used by sync kloop */
+#endif /* linux */
 };
 
 struct netmap_priv_d *netmap_priv_new(void);
@@ -1898,6 +1898,14 @@ static inline int nm_kring_pending(struct netmap_priv_d *np)
 		}
 	}
 	return 0;
+}
+
+/* call with NMG_LOCK held */
+static __inline int
+nm_si_user(struct netmap_priv_d *priv, enum txrx t)
+{
+	return (priv->np_na != NULL &&
+		(priv->np_qlast[t] - priv->np_qfirst[t] > 1));
 }
 
 #ifdef WITH_PIPES
@@ -2100,17 +2108,14 @@ void nm_os_vi_init_index(void);
  * kernel thread routines
  */
 struct nm_kctx; /* OS-specific kernel context - opaque */
-typedef void (*nm_kctx_worker_fn_t)(void *data, int is_kthread);
-typedef void (*nm_kctx_notify_fn_t)(void *data);
+typedef void (*nm_kctx_worker_fn_t)(void *data);
 
 /* kthread configuration */
 struct nm_kctx_cfg {
 	long			type;		/* kthread type/identifier */
 	nm_kctx_worker_fn_t	worker_fn;	/* worker function */
 	void			*worker_private;/* worker parameter */
-	nm_kctx_notify_fn_t	notify_fn;	/* notify function */
 	int			attach_user;	/* attach kthread to user process */
-	int			use_kthread;	/* use a kthread for the context */
 };
 /* kthread configuration */
 struct nm_kctx *nm_os_kctx_create(struct nm_kctx_cfg *cfg,
@@ -2118,46 +2123,13 @@ struct nm_kctx *nm_os_kctx_create(struct nm_kctx_cfg *cfg,
 int nm_os_kctx_worker_start(struct nm_kctx *);
 void nm_os_kctx_worker_stop(struct nm_kctx *);
 void nm_os_kctx_destroy(struct nm_kctx *);
-void nm_os_kctx_worker_wakeup(struct nm_kctx *nmk);
-void nm_os_kctx_send_irq(struct nm_kctx *);
 void nm_os_kctx_worker_setaff(struct nm_kctx *, int);
 u_int nm_os_ncpus(void);
 
-#ifdef WITH_PTNETMAP_HOST
-/*
- * netmap adapter for host ptnetmap ports
- */
-struct netmap_pt_host_adapter {
-	struct netmap_adapter up;
+int netmap_sync_kloop(struct netmap_priv_d *priv,
+		      struct nmreq_header *hdr);
 
-	/* the passed-through adapter */
-	struct netmap_adapter *parent;
-	/* parent->na_flags, saved at NETMAP_PT_HOST_CREATE time,
-	 * and restored at NETMAP_PT_HOST_DELETE time */
-	uint32_t parent_na_flags;
-
-	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
-	void *ptns;
-};
-
-/* ptnetmap host-side routines */
-int netmap_get_pt_host_na(struct nmreq_header *hdr, struct netmap_adapter **na,
-			struct netmap_mem_d * nmd, int create);
-int ptnetmap_ctl(const char *nr_name, int create, struct netmap_adapter *na);
-
-static inline int
-nm_ptnetmap_host_on(struct netmap_adapter *na)
-{
-	return na && na->na_flags & NAF_PTNETMAP_HOST;
-}
-#else /* !WITH_PTNETMAP_HOST */
-#define netmap_get_pt_host_na(hdr, _2, _3, _4) \
-	(((struct nmreq_register *)(uintptr_t)hdr->nr_body)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
-#define ptnetmap_ctl(_1, _2, _3)   EINVAL
-#define nm_ptnetmap_host_on(_1)   EINVAL
-#endif /* !WITH_PTNETMAP_HOST */
-
-#ifdef WITH_PTNETMAP_GUEST
+#ifdef WITH_PTNETMAP
 /* ptnetmap GUEST routines */
 
 /*
@@ -2182,19 +2154,16 @@ struct netmap_pt_guest_adapter {
 int netmap_pt_guest_attach(struct netmap_adapter *na,
 			unsigned int nifp_offset,
 			unsigned int memid);
-struct ptnet_csb_gh;
-struct ptnet_csb_hg;
-bool netmap_pt_guest_txsync(struct ptnet_csb_gh *ptgh,
-			struct ptnet_csb_hg *pthg,
-			struct netmap_kring *kring,
-			int flags);
-bool netmap_pt_guest_rxsync(struct ptnet_csb_gh *ptgh,
-			struct ptnet_csb_hg *pthg,
+bool netmap_pt_guest_txsync(struct nm_csb_atok *atok,
+			struct nm_csb_ktoa *ktoa,
+			struct netmap_kring *kring, int flags);
+bool netmap_pt_guest_rxsync(struct nm_csb_atok *atok,
+			struct nm_csb_ktoa *ktoa,
 			struct netmap_kring *kring, int flags);
 int ptnet_nm_krings_create(struct netmap_adapter *na);
 void ptnet_nm_krings_delete(struct netmap_adapter *na);
 void ptnet_nm_dtor(struct netmap_adapter *na);
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */
 
 #ifdef __FreeBSD__
 /*

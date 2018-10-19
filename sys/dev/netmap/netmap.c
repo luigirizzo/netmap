@@ -525,9 +525,6 @@ int netmap_generic_hwcsum = 0;
 /* Non-zero if ptnet devices are allowed to use virtio-net headers. */
 int ptnet_vnet_hdr = 1;
 
-/* 0 if ptnetmap should not use worker threads for TX processing */
-int ptnetmap_tx_workers = 1;
-
 /*
  * SYSCTL calls are grouped between SYSBEGIN and SYSEND to be emulated
  * in some other operating systems
@@ -567,8 +564,6 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, generic_txqdisc, CTLFLAG_RW,
 #endif
 SYSCTL_INT(_dev_netmap, OID_AUTO, ptnet_vnet_hdr, CTLFLAG_RW, &ptnet_vnet_hdr,
 		0, "Allow ptnet devices to use virtio-net headers");
-SYSCTL_INT(_dev_netmap, OID_AUTO, ptnetmap_tx_workers, CTLFLAG_RW,
-		&ptnetmap_tx_workers, 0, "Use worker threads for pnetmap TX processing");
 
 SYSEND;
 
@@ -1029,14 +1024,6 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 	/* mark the priv as unregistered */
 	priv->np_na = NULL;
 	priv->np_nifp = NULL;
-}
-
-/* call with NMG_LOCK held */
-static __inline int
-nm_si_user(struct netmap_priv_d *priv, enum txrx t)
-{
-	return (priv->np_na != NULL &&
-		(priv->np_qlast[t] - priv->np_qfirst[t] > 1));
 }
 
 struct netmap_priv_d*
@@ -1526,11 +1513,6 @@ netmap_get_na(struct nmreq_header *hdr,
 	 *  !0    !NULL		impossible
 	 */
 
-	/* try to see if this is a ptnetmap port */
-	error = netmap_get_pt_host_na(hdr, na, nmd, create);
-	if (error || *na != NULL)
-		goto out;
-
 	/* try to see if this is a monitor port */
 	error = netmap_get_monitor_na(hdr, na, nmd, create);
 	if (error || *na != NULL)
@@ -1808,12 +1790,6 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
 	enum txrx t;
 	u_int j;
 
-	if ((nr_flags & NR_PTNETMAP_HOST) && ((nr_mode != NR_REG_ALL_NIC) ||
-			nr_flags & (NR_RX_RINGS_ONLY|NR_TX_RINGS_ONLY))) {
-		D("Error: only NR_REG_ALL_NIC supported with netmap passthrough");
-		return EINVAL;
-	}
-
 	for_rx_tx(t) {
 		if (nr_flags & excluded_direction[t]) {
 			priv->np_qfirst[t] = priv->np_qlast[t] = 0;
@@ -1925,6 +1901,7 @@ netmap_unset_ringid(struct netmap_priv_d *priv)
 	}
 	priv->np_flags = 0;
 	priv->np_txpoll = 0;
+	priv->np_kloop_state = 0;
 }
 
 
@@ -2627,6 +2604,18 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			break;
 		}
 
+		case NETMAP_REQ_SYNC_KLOOP_START: {
+			error = netmap_sync_kloop(priv, hdr);
+			break;
+		}
+
+		case NETMAP_REQ_SYNC_KLOOP_STOP: {
+			NMG_LOCK();
+			priv->np_kloop_state |= NM_SYNC_KLOOP_STOPPING;
+			NMG_UNLOCK();
+			break;
+		}
+
 		default: {
 			error = EINVAL;
 			break;
@@ -2736,18 +2725,21 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 	case NETMAP_REQ_VALE_NEWIF:
 		return sizeof(struct nmreq_vale_newif);
 	case NETMAP_REQ_VALE_DELIF:
+	case NETMAP_REQ_SYNC_KLOOP_STOP:
 		return 0;
 	case NETMAP_REQ_VALE_POLLING_ENABLE:
 	case NETMAP_REQ_VALE_POLLING_DISABLE:
 		return sizeof(struct nmreq_vale_polling);
 	case NETMAP_REQ_POOLS_INFO_GET:
 		return sizeof(struct nmreq_pools_info);
+	case NETMAP_REQ_SYNC_KLOOP_START:
+		return sizeof(struct nmreq_sync_kloop_start);
 	}
 	return 0;
 }
 
 static size_t
-nmreq_opt_size_by_type(uint16_t nro_reqtype)
+nmreq_opt_size_by_type(uint32_t nro_reqtype, uint64_t nro_size)
 {
 	size_t rv = sizeof(struct nmreq_option);
 #ifdef NETMAP_REQ_OPT_DEBUG
@@ -2760,6 +2752,10 @@ nmreq_opt_size_by_type(uint16_t nro_reqtype)
 		rv = sizeof(struct nmreq_opt_extmem);
 		break;
 #endif /* WITH_EXTMEM */
+	case NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS:
+		if (nro_size >= rv)
+			rv = nro_size;
+		break;
 	}
 	/* subtract the common header */
 	return rv - sizeof(struct nmreq_option);
@@ -2806,7 +2802,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		if (error)
 			goto out_err;
 		optsz += sizeof(*src);
-		optsz += nmreq_opt_size_by_type(buf.nro_reqtype);
+		optsz += nmreq_opt_size_by_type(buf.nro_reqtype, buf.nro_size);
 		if (rqsz + optsz > NETMAP_REQ_MAXSIZE) {
 			error = EMSGSIZE;
 			goto out_err;
@@ -2860,7 +2856,8 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		p = (char *)(opt + 1);
 
 		/* copy the option body */
-		optsz = nmreq_opt_size_by_type(opt->nro_reqtype);
+		optsz = nmreq_opt_size_by_type(opt->nro_reqtype,
+						opt->nro_size);
 		if (optsz) {
 			/* the option body follows the option header */
 			error = copyin(src + 1, p, optsz);
@@ -2934,7 +2931,8 @@ nmreq_copyout(struct nmreq_header *hdr, int rerror)
 
 		/* copy the option body only if there was no error */
 		if (!rerror && !src->nro_status) {
-			optsz = nmreq_opt_size_by_type(src->nro_reqtype);
+			optsz = nmreq_opt_size_by_type(src->nro_reqtype,
+							src->nro_size);
 			if (optsz) {
 				error = copyout(src + 1, dst + 1, optsz);
 				if (error) {
@@ -3885,7 +3883,6 @@ nm_clear_native_flags(struct netmap_adapter *na)
 
 	na->na_flags &= ~NAF_NETMAP_ON;
 }
-
 
 /*
  * Module loader and unloader

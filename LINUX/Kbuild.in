@@ -8,15 +8,12 @@ SRCDIR:=@SRCDIR@
 # the source is not here so we need to specify a dependency
 $(foreach s,$(SUBSYS),$(eval CONFIG_NETMAP_$(shell echo $s|tr a-z- A-Z_)=y))
 
-remoteobjs-y := netmap_mem2.o netmap_mbq.o netmap_legacy.o netmap_bdg.o
+remoteobjs-y := netmap_mem2.o netmap_mbq.o netmap_legacy.o netmap_bdg.o netmap_kloop.o
 
 remoteobjs-$(CONFIG_NETMAP_VALE)    += netmap_vale.o netmap_offloadings.o
 remoteobjs-$(CONFIG_NETMAP_PIPE)    += netmap_pipe.o
 remoteobjs-$(CONFIG_NETMAP_MONITOR) += netmap_monitor.o
 remoteobjs-$(CONFIG_NETMAP_GENERIC) += netmap_generic.o
-remoteobjs-ptnetmap-$(CONFIG_NETMAP_PTNETMAP_GUEST) = netmap_pt.o
-remoteobjs-ptnetmap-$(CONFIG_NETMAP_PTNETMAP_HOST)  = netmap_pt.o
-remoteobjs-y += $(remoteobjs-ptnetmap-y)
 
 define remote_template
 $$(obj)/$(1): %.o: $$(SRCDIR)/../sys/dev/netmap/$(2) FORCE
@@ -33,7 +30,7 @@ $(obj)/netmap_linux.o: %.o: $(SRCDIR)/netmap_linux.c FORCE
 # all objects
 $(MODNAME)-objs := $(remoteobjs-y) netmap_common.o netmap_linux.o
 
-ifdef CONFIG_NETMAP_PTNETMAP_GUEST
+ifdef CONFIG_NETMAP_PTNETMAP
 $(obj)/netmap_ptnet.o: %.o: $(SRCDIR)/netmap_ptnet.c FORCE
 	$(call if_changed_rule,cc_o_c)
 

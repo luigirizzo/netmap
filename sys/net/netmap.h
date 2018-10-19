@@ -477,6 +477,10 @@ struct nmreq_option {
 	 * !=0: errno value
 	 */
 	uint32_t		nro_status;
+	/* Option size, used only for options that can have variable size
+	 * (e.g. because they contain arrays). For fixed-size options this
+	 * field should be set to zero. */
+	uint64_t		nro_size;
 };
 
 /* Header common to all requests. Do not reorder these fields, as we need
@@ -516,12 +520,23 @@ enum {
 	NETMAP_REQ_VALE_POLLING_DISABLE,
 	/* Get info about the pools of a memory allocator. */
 	NETMAP_REQ_POOLS_INFO_GET,
+	/* Start an in-kernel loop that syncs the rings periodically or
+	 * on notifications. The loop runs in the context of the ioctl
+	 * syscall, and only stops on NETMAP_REQ_SYNC_KLOOP_STOP. */
+	NETMAP_REQ_SYNC_KLOOP_START,
+	/* Stops the thread executing the in-kernel loop. The thread
+	 * returns from the ioctl syscall. */
+	NETMAP_REQ_SYNC_KLOOP_STOP,
 };
 
 enum {
 	/* On NETMAP_REQ_REGISTER, ask netmap to use memory allocated
 	 * from user-space allocated memory pools (e.g. hugepages). */
 	NETMAP_REQ_OPT_EXTMEM = 1,
+	/* ON NETMAP_REQ_SYNC_KLOOP_START, ask netmap to use eventfd-based
+	 * notifications to synchronize the kernel loop with the application.
+	 */
+	NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS,
 };
 
 /*
@@ -547,9 +562,7 @@ struct nmreq_register {
 #define NR_ZCOPY_MON	0x400
 /* request exclusive access to the selected rings */
 #define NR_EXCLUSIVE	0x800
-/* request ptnetmap host support */
-#define NR_PASSTHROUGH_HOST	NR_PTNETMAP_HOST /* deprecated */
-#define NR_PTNETMAP_HOST	0x1000
+/* 0x1000 unused */
 #define NR_RX_RINGS_ONLY	0x2000
 #define NR_TX_RINGS_ONLY	0x4000
 /* Applications set this flag if they are able to deal with virtio-net headers,
@@ -693,8 +706,141 @@ struct nmreq_pools_info {
 };
 
 /*
+ * nr_reqtype: NETMAP_REQ_SYNC_KLOOP_START
+ * Start an in-kernel loop that syncs the rings periodically or on
+ * notifications. The loop runs in the context of the ioctl syscall,
+ * and only stops on NETMAP_REQ_SYNC_KLOOP_STOP.
+ * The user must specify the start address of two arrays of Communication
+ * Status Block (CSB) entries, for the two directions (kernel read
+ * application write, and kernel write application read). The number of
+ * entries must agree with the number of rings bound to the netmap file
+ * descriptor. The entries corresponding to the TX rings are laid out before
+ * the ones corresponding to the RX rings.
+ */
+struct nmreq_sync_kloop_start {
+	/* Array of CSB entries for application --> kernel communication
+	 * (N entries). */
+	uint64_t csb_atok;
+	/* Array of CSB entries for kernel --> application communication
+	 * (N entries). */
+	uint64_t csb_ktoa;
+	/* Sleeping is the default synchronization method for the kloop.
+	 * The 'sleep_us' field specifies how many microsconds to sleep
+	 * waiting for more work to come. */
+	uint32_t sleep_us;
+};
+
+struct nm_csb_atok {
+	uint32_t head;		  /* AW+ KR+ the head of the appl netmap_ring */
+	uint32_t cur;		  /* AW+ KR+ the cur of the appl netmap_ring */
+	uint32_t appl_need_kick;  /* AW+ KR+ kern --> appl notification enable */
+	uint32_t sync_flags;	  /* AW+ KR+ the flags of the appl [tx|rx]sync() */
+	char pad[48];		  /* pad to a 64 bytes cacheline */
+};
+
+struct nm_csb_ktoa {
+	uint32_t hwcur;		  /* AR+ KW+ the hwcur of the kern netmap_kring */
+	uint32_t hwtail;	  /* AR+ KW+ the hwtail of the kern netmap_kring */
+	uint32_t kern_need_kick;  /* AR+ KW+ appl-->kern notification enable */
+	char pad[4+48];
+};
+
+#ifdef __linux__
+
+#ifdef __KERNEL__
+#define nm_stst_barrier smp_wmb
+#else  /* !__KERNEL__ */
+static inline void nm_stst_barrier(void)
+{
+	/* A memory barrier with release semantic has the combined
+	 * effect of a store-store barrier and a load-store barrier,
+	 * which is fine for us. */
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+}
+#endif /* !__KERNEL__ */
+
+#elif defined(__FreeBSD__)
+
+#ifdef _KERNEL
+#define nm_stst_barrier	atomic_thread_fence_rel
+#else  /* !_KERNEL */
+static inline void nm_stst_barrier(void)
+{
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+}
+#endif /* !_KERNEL */
+
+#else  /* !__linux__ && !__FreeBSD__ */
+#error "OS not supported"
+#endif /* !__linux__ && !__FreeBSD__ */
+
+/* Application side of sync-kloop: Write ring pointers (cur, head) to the CSB.
+ * This routine is coupled with sync_kloop_kernel_read(). */
+static inline void
+nm_sync_kloop_appl_write(struct nm_csb_atok *atok, uint32_t cur,
+			 uint32_t head)
+{
+	/*
+	 * We need to write cur and head to the CSB but we cannot do it atomically.
+	 * There is no way we can prevent the host from reading the updated value
+	 * of one of the two and the old value of the other. However, if we make
+	 * sure that the host never reads a value of head more recent than the
+	 * value of cur we are safe. We can allow the host to read a value of cur
+	 * more recent than the value of head, since in the netmap ring cur can be
+	 * ahead of head and cur cannot wrap around head because it must be behind
+	 * tail. Inverting the order of writes below could instead result into the
+	 * host to think head went ahead of cur, which would cause the sync
+	 * prologue to fail.
+	 *
+	 * The following memory barrier scheme is used to make this happen:
+	 *
+	 *          Guest              Host
+	 *
+	 *          STORE(cur)         LOAD(head)
+	 *          mb() <-----------> mb()
+	 *          STORE(head)        LOAD(cur)
+	 *
+	 */
+	atok->cur = cur;
+	nm_stst_barrier();
+	atok->head = head;
+}
+
+/* Application side of sync-kloop: Read kring pointers (hwcur, hwtail) from
+ * the CSB. This routine is coupled with sync_kloop_kernel_write(). */
+static inline void
+nm_sync_kloop_appl_read(struct nm_csb_ktoa *ktoa, uint32_t *hwtail,
+			uint32_t *hwcur)
+{
+	/*
+	 * We place a memory barrier to make sure that the update of hwtail never
+	 * overtakes the update of hwcur.
+	 * (see explanation in sync_kloop_kernel_write).
+	 */
+	*hwtail = ktoa->hwtail;
+	nm_stst_barrier();
+	*hwcur = ktoa->hwcur;
+}
+
+/*
  * data for NETMAP_REQ_OPT_* options
  */
+
+struct nmreq_opt_sync_kloop_eventfds {
+	struct nmreq_option	nro_opt;	/* common header */
+	/* An array of N entries for bidirectional notifications between
+	 * the kernel loop and the application. The number of entries and
+	 * their order must agree with the CSB arrays passed in the
+	 * NETMAP_REQ_SYNC_KLOOP_START message. Each entry contains a file
+	 * descriptor backed by an eventfd.
+	 */
+	struct {
+		/* Notifier for the application --> kernel loop direction. */
+		int32_t ioeventfd;
+		/* Notifier for the kernel loop --> application direction. */
+		int32_t irqfd;
+	} eventfds[0];
+};
 
 struct nmreq_opt_extmem {
 	struct nmreq_option	nro_opt;	/* common header */
