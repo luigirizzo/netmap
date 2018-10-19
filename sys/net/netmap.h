@@ -708,15 +708,19 @@ struct nmreq_pools_info {
  * Start an in-kernel loop that syncs the rings periodically or on
  * notifications. The loop runs in the context of the ioctl syscall,
  * and only stops on NETMAP_REQ_SYNC_KLOOP_STOP.
- * The user must specify the start address of the Communication Status Block
- * (CSB) entries to be used for both directions (kernel read application
- * writes, and kernel writes application read). The number of entries
- * must agree with the number of rings bound to the netmap file descriptor.
+ * The user must specify the start address of two arrays of Communication
+ * Status Block (CSB) entries, for the two directions (kernel read
+ * application write, and kernel write application read). The number of
+ * entries must agree with the number of rings bound to the netmap file
+ * descriptor. The entries corresponding to the TX rings are laid out before
+ * the ones corresponding to the RX rings.
  */
 struct nmreq_sync_kloop_start {
-	/* CSB entries for application --> kernel communication (N entries). */
+	/* Array of CSB entries for application --> kernel communication
+	 * (N entries). */
 	uint64_t csb_atok;
-	/* CSB for kernel --> application communication (N entries). */
+	/* Array of CSB entries for kernel --> application communication
+	 * (N entries). */
 	uint64_t csb_ktoa;
 	/* Sleeping is the default synchronization method for the kloop.
 	 * The 'sleep_us' field specifies how many microsconds to sleep
@@ -825,11 +829,15 @@ nm_sync_kloop_appl_read(struct nm_csb_ktoa *ktoa, uint32_t *hwtail,
 struct nmreq_opt_sync_kloop_eventfds {
 	struct nmreq_option	nro_opt;	/* common header */
 	/* An array of N entries for bidirectional notifications between
-	 * the kernel loop and the application. The number of entries must
-	 * agree with the number of rings bound to the netmap file descriptor.
+	 * the kernel loop and the application. The number of entries and
+	 * their order must agree with the CSB arrays passed in the
+	 * NETMAP_REQ_SYNC_KLOOP_START message. Each entry contains a file
+	 * descriptor backed by an eventfd.
 	 */
 	struct {
+		/* Notifier for the application --> kernel loop direction. */
 		int32_t ioeventfd;
+		/* Notifier for the kernel loop --> application direction. */
 		int32_t irqfd;
 	} eventfds[0];
 };
