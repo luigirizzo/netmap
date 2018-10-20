@@ -273,7 +273,8 @@ copy_to_nm(struct netmap_ring *ring, int virt_header, const char *data,
 	while (likely(cur != tail) && copied < len) {
 		struct netmap_slot *slot = &ring->slot[cur];
 		char *p = NETMAP_BUF(ring, slot->buf_idx) + off0;
-		int l = min(MAX_PAYLOAD, len - copied);
+		/* off0 contains some payload */
+		int l = min(MAX_PAYLOAD - (off0 - off), len - copied);
 
 		if (data) {
 			nm_pkt_copy(data + copied, p, l);
