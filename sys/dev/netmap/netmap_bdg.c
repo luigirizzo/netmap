@@ -1590,6 +1590,8 @@ netmap_bwrap_attach_common(struct netmap_adapter *na,
 		hostna->na_flags = NAF_BUSY; /* prevent NIOCREGIF */
 		hostna->rx_buf_maxsize = hwna->rx_buf_maxsize;
 	}
+	if (hwna->na_flags & NAF_MOREFRAG)
+		na->na_flags |= NAF_MOREFRAG;
 
 	ND("%s<->%s txr %d txd %d rxr %d rxd %d",
 		na->name, ifp->if_xname,
