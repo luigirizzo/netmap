@@ -1156,23 +1156,22 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		} else if (frags > 1) {
 			u_int i;
 			const char *f = frame;
-			struct netmap_slot *fslot = slot;
 			char *fp = p;
 			for (i = 0; i < frags - 1; i++) {
 				memcpy(fp, f, frag_size);
-				fslot->len = frag_size;
-				fslot->flags = NS_MOREFRAG;
+				slot->len = frag_size;
+				slot->flags = NS_MOREFRAG;
 				if (options & OPT_DUMP)
 					dump_payload(fp, frag_size, ring, cur);
 				tosend -= frag_size;
 				f += frag_size;
 				cur = nm_ring_next(ring, cur);
-				fslot = &ring->slot[cur];
-				fp = NETMAP_BUF(ring, fslot->buf_idx);
+				slot = &ring->slot[cur];
+				fp = NETMAP_BUF(ring, slot->buf_idx);
 			}
 			n -= (frags - 1);
 			p = fp;
-			fslot->flags = 0;
+			slot->flags = 0;
 			memcpy(p, f, tosend);
 			update_addresses(pkt, t);
 		} else if ((options & (OPT_COPY | OPT_MEMCPY)) || buf_changed) {
