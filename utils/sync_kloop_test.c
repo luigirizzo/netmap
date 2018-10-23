@@ -32,7 +32,7 @@ struct eventfds {
 };
 
 struct context {
-	struct nm_desc *nmd;
+	int fd; /* netmap file descriptor */
 	struct nm_csb_atok *atok_base;
 	struct nm_csb_ktoa *ktoa_base;
 	int sleep_us;
@@ -47,7 +47,6 @@ kloop_worker(void *opaque)
 {
 	struct nmreq_opt_sync_kloop_eventfds *opt = NULL;
 	struct context *ctx                       = opaque;
-	struct nm_desc *nmd                       = ctx->nmd;
 	struct nmreq_sync_kloop_start req;
 	struct nmreq_header hdr;
 	int ret;
@@ -77,10 +76,8 @@ kloop_worker(void *opaque)
 	hdr.nr_body    = (uintptr_t)&req;
 	hdr.nr_options = (uintptr_t)opt;
 	memset(&req, 0, sizeof(req));
-	req.csb_atok = (uintptr_t)ctx->atok_base;
-	req.csb_ktoa = (uintptr_t)ctx->ktoa_base;
 	req.sleep_us = (uint32_t)ctx->sleep_us;
-	ret          = ioctl(nmd->fd, NIOCCTRL, &hdr);
+	ret          = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
 		exit(EXIT_FAILURE);
@@ -127,14 +124,14 @@ main(int argc, char **argv)
 	struct nm_csb_atok *atok_base = NULL;
 	struct nm_csb_ktoa *ktoa_base = NULL;
 	struct eventfds *eventfds_base = NULL;
-	int num_tx_entries;
+	int num_tx_entries, num_rx_entries;
 	unsigned long long bytes = 0;
 	unsigned long long pkts  = 0;
 	const char *ifname       = NULL;
 	void *csb                = NULL;
 	uint16_t first_ring, last_ring;
+	struct netmap_if *nifp = NULL;
 	struct context ctx;
-	struct nm_desc *nmd;
 
 	double target_rate         = 0.0 /* pps */;
 	unsigned int period_us     = 0;
@@ -234,26 +231,38 @@ main(int argc, char **argv)
 		return -1;
 	}
 
-	{
-		/* Open the netmap port with NR_EXCLUSIVE. */
-		struct nmreq nmr;
+	ctx.fd = open("/dev/netmap", O_RDWR);
+	if (ctx.fd < 0) {
+		perror("open(/dev/netmap)");
+		return ctx.fd;
+	}
 
-		memset(&nmr, 0, sizeof(nmr));
-		nmr.nr_flags = NR_EXCLUSIVE;
-		ctx.nmd = nmd = nm_open(ifname, &nmr, 0, NULL);
-		if (!nmd) {
-			printf("nm_open(%s) failed\n", ifname);
-			return -1;
+	/* Get the number of TX and RX rings. */
+	{
+		struct nmreq_port_info_get req;
+		struct nmreq_header hdr;
+
+		memset(&hdr, 0, sizeof(hdr));
+		hdr.nr_version = NETMAP_API;
+		strncpy(hdr.nr_name, ifname, sizeof(hdr.nr_name) - 1);
+		hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
+		hdr.nr_body    = (uintptr_t)&req;
+		memset(&req, 0, sizeof(req));
+		ret = ioctl(ctx.fd, NIOCCTRL, &hdr);
+		if (ret) {
+			perror("ioctl(/dev/netmap, NIOCCTRL, PORT_INFO_GET)");
+			return ret;
 		}
+
+		num_tx_entries = req.nr_tx_rings;
+		num_rx_entries = req.nr_rx_rings;
+		ctx.num_entries = num_tx_entries + num_rx_entries;
 	}
 
 	/* Allocate CSB entries. */
 	{
 		size_t csb_size;
 
-		num_tx_entries  = nmd->last_tx_ring - nmd->first_tx_ring + 1;
-		ctx.num_entries = num_tx_entries + nmd->last_rx_ring -
-		                  nmd->first_rx_ring + 1;
 		printf("Number of CSB entries = %d\n", (int)ctx.num_entries);
 		csb_size = (sizeof(struct nm_csb_atok) +
 		            sizeof(struct nm_csb_ktoa)) *
@@ -270,6 +279,43 @@ main(int argc, char **argv)
 		atok_base = ctx.atok_base = (struct nm_csb_atok *)csb;
 		ktoa_base                 = ctx.ktoa_base =
 		        (struct nm_csb_ktoa *)(ctx.atok_base + ctx.num_entries);
+	}
+
+	{
+		/* Open the netmap port with NR_EXCLUSIVE and with
+		 * the CSB option. */
+		struct nmreq_register req;
+		struct nmreq_opt_csb opt;
+		struct nmreq_header hdr;
+		void *mem;
+
+		memset(&opt, 0, sizeof(opt));
+		opt.nro_opt.nro_reqtype = NETMAP_REQ_OPT_CSB;
+		opt.csb_atok = (uintptr_t)atok_base;
+		opt.csb_ktoa = (uintptr_t)ktoa_base;
+
+		memset(&hdr, 0, sizeof(hdr));
+		hdr.nr_version = NETMAP_API;
+		strncpy(hdr.nr_name, ifname, sizeof(hdr.nr_name) - 1);
+		hdr.nr_reqtype = NETMAP_REQ_REGISTER;
+		hdr.nr_body    = (uintptr_t)&req;
+		hdr.nr_options = (uintptr_t)&opt.nro_opt;
+		memset(&req, 0, sizeof(req));
+		req.nr_mode       = NR_REG_ALL_NIC;
+		req.nr_flags      |= NR_EXCLUSIVE;
+		ret               = ioctl(ctx.fd, NIOCCTRL, &hdr);
+		if (ret) {
+			perror("ioctl(/dev/netmap, NIOCCTRL, REGISTER)");
+			return ret;
+		}
+
+		mem = mmap(0, req.nr_memsize, PROT_WRITE | PROT_READ,
+				MAP_SHARED, ctx.fd, 0);
+		if (mem == MAP_FAILED) {
+			perror("mmap()");
+			return -1;
+		}
+		nifp = NETMAP_IF(mem, req.nr_offset);
 	}
 
 	/* Allocate eventfds. */
@@ -303,7 +349,6 @@ main(int argc, char **argv)
 	ret = pthread_create(&th, NULL, kloop_worker, &ctx);
 	if (ret) {
 		printf("pthread_create() failed: %s\n", strerror(ret));
-		nm_close(nmd);
 		return -1;
 	}
 
@@ -328,11 +373,11 @@ main(int argc, char **argv)
 		atok_base += num_tx_entries;
 		ktoa_base += num_tx_entries;
 		eventfds_base += num_tx_entries;
-		first_ring = nmd->first_rx_ring;
-		last_ring  = nmd->last_rx_ring;
+		first_ring = 0;
+		last_ring  = num_tx_entries-1;
 	} else {
-		first_ring = nmd->first_tx_ring;
-		last_ring  = nmd->last_tx_ring;
+		first_ring = 0;
+		last_ring  = num_rx_entries-1;
 	}
 
 	gettimeofday(&next_time, NULL);
@@ -386,9 +431,9 @@ main(int argc, char **argv)
 			int batch;
 
 			if (func == F_TX) {
-				ring = NETMAP_TXRING(nmd->nifp, r);
+				ring = NETMAP_TXRING(nifp, r);
 			} else {
-				ring = NETMAP_RXRING(nmd->nifp, r);
+				ring = NETMAP_RXRING(nifp, r);
 			}
 
 			head = atok->head;
@@ -495,7 +540,7 @@ main(int argc, char **argv)
 		memset(&hdr, 0, sizeof(hdr));
 		hdr.nr_version = NETMAP_API;
 		hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_STOP;
-		ret            = ioctl(nmd->fd, NIOCCTRL, &hdr);
+		ret            = ioctl(ctx.fd, NIOCCTRL, &hdr);
 		if (ret) {
 			perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_STOP)");
 		}
@@ -508,8 +553,6 @@ main(int argc, char **argv)
 	}
 
 	free(csb);
-
-	nm_close(nmd);
 
 	return 0;
 }

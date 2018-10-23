@@ -1874,6 +1874,22 @@ struct netmap_priv_d {
 	 * number of rings.
 	 */
 	NM_SELINFO_T *np_si[NR_TXRX];
+
+	/* In the optional CSB mode, the user must specify the start address
+	 * of two arrays of Communication Status Block (CSB) entries, for the
+	 * two directions (kernel read application write, and kernel write
+	 * application read).
+	 * The number of entries must agree with the number of rings bound to
+	 * the netmap file descriptor. The entries corresponding to the TX
+	 * rings are laid out before the ones corresponding to the RX rings.
+	 *
+	 * Array of CSB entries for application --> kernel communication
+	 * (N entries). */
+	struct nm_csb_atok	*np_csb_atok_base;
+	/* Array of CSB entries for kernel --> application communication
+	 * (N entries). */
+	struct nm_csb_ktoa	*np_csb_ktoa_base;
+
 	struct thread	*np_td;		/* kqueue, just debugging */
 #ifdef linux
 	struct file	*np_filp;  /* used by sync kloop */

@@ -42,6 +42,7 @@ struct TestContext {
 
 	uint32_t nr_first_cpu_id;     /* vale polling */
 	uint32_t nr_num_polling_cpus; /* vale polling */
+	void *csb; /* CSB entries (atok and ktoa) */
 	struct nmreq_option *nr_opt;  /* list of options */
 };
 
@@ -73,6 +74,7 @@ port_info_get(struct TestContext *ctx)
 {
 	struct nmreq_port_info_get req;
 	struct nmreq_header hdr;
+	int success;
 	int ret;
 
 	printf("Testing NETMAP_REQ_PORT_INFO_GET on '%s'\n", ctx->ifname);
@@ -94,11 +96,21 @@ port_info_get(struct TestContext *ctx)
 	printf("nr_rx_rings %u\n", req.nr_rx_rings);
 	printf("nr_mem_id %u\n", req.nr_mem_id);
 
-	return req.nr_memsize && req.nr_tx_slots && req.nr_rx_slots &&
+	success = req.nr_memsize && req.nr_tx_slots && req.nr_rx_slots &&
 	                       req.nr_tx_rings && req.nr_rx_rings &&
-	                       req.nr_tx_rings
-	               ? 0
-	               : -1;
+	                       req.nr_tx_rings;
+	if (!success) {
+		return -1;
+	}
+
+	/* Write back results to the context structure.*/
+	ctx->nr_tx_slots = req.nr_tx_slots;
+	ctx->nr_rx_slots = req.nr_rx_slots;
+	ctx->nr_tx_rings = req.nr_tx_rings;
+	ctx->nr_rx_rings = req.nr_rx_rings;
+	ctx->nr_mem_id = req.nr_mem_id;
+
+	return 0;
 }
 
 /* Single NETMAP_REQ_REGISTER, no use. */
@@ -844,6 +856,81 @@ duplicate_extmem_options(struct TestContext *ctx)
 #endif /* CONFIG_NETMAP_EXTMEM */
 
 static int
+push_csb_option(struct TestContext *ctx, struct nmreq_opt_csb *opt)
+{
+	size_t csb_size;
+	int num_entries;
+	int ret;
+
+	ctx->nr_flags |= NR_EXCLUSIVE;
+
+	/* Get port info in order to use num_registered_rings(). */
+	ret = port_info_get(ctx);
+	if (ret) {
+		return ret;
+	}
+	num_entries = num_registered_rings(ctx);
+
+	csb_size = (sizeof(struct nm_csb_atok) + sizeof(struct nm_csb_ktoa)) *
+	           num_entries;
+	assert(csb_size > 0);
+	if (ctx->csb) {
+		free(ctx->csb);
+	}
+	ret = posix_memalign(&ctx->csb, sizeof(struct nm_csb_atok), csb_size);
+	if (ret) {
+		printf("Failed to allocate CSB memory\n");
+		exit(EXIT_FAILURE);
+	}
+
+	memset(opt, 0, sizeof(*opt));
+	opt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_CSB;
+	opt->csb_atok = (uintptr_t)ctx->csb;
+	opt->csb_ktoa = (uintptr_t)
+			(ctx->csb + sizeof(struct nm_csb_atok) * num_entries);
+
+	push_option(&opt->nro_opt, ctx);
+
+	return 0;
+}
+
+static int
+csb_mode(struct TestContext *ctx)
+{
+	struct nmreq_opt_csb opt;
+	int ret;
+
+	ret = push_csb_option(ctx, &opt);
+	if (ret) {
+		return ret;
+	}
+
+	ret = port_register_hwall(ctx);
+	clear_options(ctx);
+
+	return ret;
+}
+
+static int
+csb_mode_invalid_memory(struct TestContext *ctx)
+{
+	struct nmreq_opt_csb opt;
+	int ret;
+
+	memset(&opt, 0, sizeof(opt));
+	opt.nro_opt.nro_reqtype = NETMAP_REQ_OPT_CSB;
+	opt.csb_atok = (uintptr_t)0x10;
+	opt.csb_ktoa = (uintptr_t)0x800;
+	push_option(&opt.nro_opt, ctx);
+
+	ctx->nr_flags = NR_EXCLUSIVE;
+	ret           = port_register_hwall(ctx);
+	clear_options(ctx);
+
+	return (ret < 0) ? 0 : -1;
+}
+
+static int
 sync_kloop_stop(struct TestContext *ctx)
 {
 	struct nmreq_header hdr;
@@ -863,39 +950,23 @@ static void *
 sync_kloop_worker(void *opaque)
 {
 	struct TestContext *ctx = opaque;
-	size_t num_entries      = num_registered_rings(ctx);
 	struct nmreq_sync_kloop_start req;
 	struct nmreq_header hdr;
-	size_t csb_size;
-	void *csb;
 	int ret;
 
-	csb_size = (sizeof(struct nm_csb_atok) + sizeof(struct nm_csb_ktoa)) *
-	           num_entries;
-	assert(csb_size > 0);
-	ret = posix_memalign(&csb, sizeof(struct nm_csb_atok), csb_size);
-	if (ret) {
-		printf("Failed to allocate CSB memory\n");
-		pthread_exit((void *)-1);
-	}
-
-	printf("Testing NETMAP_REQ_SYNC_KLOOP_START(csb_size=%u) on '%s'\n",
-	       (unsigned)csb_size, ctx->ifname);
+	printf("Testing NETMAP_REQ_SYNC_KLOOP_START on '%s'\n",
+	       ctx->ifname);
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_START;
 	hdr.nr_body    = (uintptr_t)&req;
 	hdr.nr_options = (uintptr_t)ctx->nr_opt;
 	memset(&req, 0, sizeof(req));
-	req.csb_atok = (uintptr_t)csb;
-	req.csb_ktoa =
-	        (uintptr_t)(csb + sizeof(struct nm_csb_atok) * num_entries);
 	req.sleep_us = 500;
 	ret          = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
 	}
-	free(csb);
 
 	pthread_exit((void *)(uintptr_t)ret);
 }
@@ -931,8 +1002,7 @@ sync_kloop(struct TestContext *ctx)
 {
 	int ret;
 
-	ctx->nr_flags = NR_EXCLUSIVE;
-	ret           = port_register_hwall(ctx);
+	ret = csb_mode(ctx);
 	if (ret) {
 		return ret;
 	}
@@ -988,8 +1058,7 @@ sync_kloop_eventfds_all(struct TestContext *ctx)
 {
 	int ret;
 
-	ctx->nr_flags = NR_EXCLUSIVE;
-	ret           = port_register_hwall(ctx);
+	ret = csb_mode(ctx);
 	if (ret) {
 		return ret;
 	}
@@ -1001,13 +1070,19 @@ sync_kloop_eventfds_all(struct TestContext *ctx)
 static int
 sync_kloop_eventfds_all_tx(struct TestContext *ctx)
 {
+	struct nmreq_opt_csb opt;
 	int ret;
 
-	ctx->nr_flags = NR_EXCLUSIVE;
+	ret = push_csb_option(ctx, &opt);
+	if (ret) {
+		return ret;
+	}
+
 	ret           = port_register_hwall_tx(ctx);
 	if (ret) {
 		return ret;
 	}
+	clear_options(ctx);
 
 	return sync_kloop_eventfds(ctx);
 }
@@ -1015,15 +1090,21 @@ sync_kloop_eventfds_all_tx(struct TestContext *ctx)
 static int
 sync_kloop_conflict(struct TestContext *ctx)
 {
-	int ret;
+	struct nmreq_opt_csb opt;
 	pthread_t th1, th2;
 	int thret1, thret2;
+	int ret;
 
-	ctx->nr_flags = NR_EXCLUSIVE;
+	ret = push_csb_option(ctx, &opt);
+	if (ret) {
+		return ret;
+	}
+
 	ret           = port_register_hwall(ctx);
 	if (ret) {
 		return ret;
 	}
+	clear_options(ctx);
 
 	ret = pthread_create(&th1, NULL, sync_kloop_worker, ctx);
 	if (ret) {
@@ -1063,49 +1144,26 @@ sync_kloop_conflict(struct TestContext *ctx)
 }
 
 static int
-sync_kloop_invalid_csb(struct TestContext *ctx)
+sync_kloop_eventfds_mismatch(struct TestContext *ctx)
 {
+	struct nmreq_opt_csb opt;
 	int ret;
-	struct nmreq_sync_kloop_start req;
-	struct nmreq_header hdr;
 
-	ctx->nr_flags = NR_EXCLUSIVE;
-	ret           = port_register_hwall(ctx);
-
-	/* Post a stop request first. */
-	ret = sync_kloop_stop(ctx);
+	ret = push_csb_option(ctx, &opt);
 	if (ret) {
 		return ret;
 	}
 
-	nmreq_hdr_init(&hdr, ctx->ifname);
-	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_START;
-	hdr.nr_body    = (uintptr_t)&req;
-	memset(&req, 0, sizeof(req));
-	req.csb_atok = (uintptr_t)0x10;
-	req.csb_ktoa = (uintptr_t)0x800;
-	ret          = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
-		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
-	}
-
-	return (ret < 0) ? 0 : -1;
-}
-
-static int
-sync_kloop_eventfds_mismatch(struct TestContext *ctx)
-{
-	int ret;
-
-	ctx->nr_flags = NR_EXCLUSIVE;
 	ret           = port_register_hwall_rx(ctx);
 	if (ret) {
 		return ret;
 	}
+	clear_options(ctx);
+
 	/* Deceive num_registered_rings() to trigger a failure of
 	 * sync_kloop_eventfds(). The latter will think that all the
 	 * rings were registered, and allocate the wrong number of
-	 * eventfds and CSB entries. */
+	 * eventfds. */
 	ctx->nr_flags &= ~NR_RX_RINGS_ONLY;
 
 	return (sync_kloop_eventfds(ctx) != 0) ? 0 : -1;
@@ -1149,13 +1207,25 @@ static struct mytest tests[] = {
 	decltest(bad_extmem_option),
 	decltest(duplicate_extmem_options),
 #endif /* CONFIG_NETMAP_EXTMEM */
+	decltest(csb_mode),
+	decltest(csb_mode_invalid_memory),
 	decltest(sync_kloop),
 	decltest(sync_kloop_eventfds_all),
 	decltest(sync_kloop_eventfds_all_tx),
 	decltest(sync_kloop_conflict),
-	decltest(sync_kloop_invalid_csb),
 	decltest(sync_kloop_eventfds_mismatch),
 };
+
+static void
+context_cleanup(struct TestContext *ctx)
+{
+	if (ctx->csb) {
+		free(ctx->csb);
+		ctx->csb = NULL;
+	}
+
+	close(ctx->fd);
+}
 
 int
 main(int argc, char **argv)
@@ -1236,7 +1306,7 @@ main(int argc, char **argv)
 			goto out;
 		}
 		printf("==> Test #%d [%s] successful\n", i + 1, tests[i].name);
-		close(fd);
+		context_cleanup(&ctxcopy);
 	}
 out:
 	if (loopback_if) {

@@ -533,10 +533,17 @@ enum {
 	/* On NETMAP_REQ_REGISTER, ask netmap to use memory allocated
 	 * from user-space allocated memory pools (e.g. hugepages). */
 	NETMAP_REQ_OPT_EXTMEM = 1,
+
 	/* ON NETMAP_REQ_SYNC_KLOOP_START, ask netmap to use eventfd-based
 	 * notifications to synchronize the kernel loop with the application.
 	 */
 	NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS,
+
+	/* On NETMAP_REQ_REGISTER, ask netmap to work in CSB mode, where
+	 * head, cur and tail pointers are not exchanged through the
+	 * struct netmap_ring header, but rather using an user-provided
+	 * memory area (see struct nm_csb_atok and struct nm_csb_ktoa). */
+	NETMAP_REQ_OPT_CSB,
 };
 
 /*
@@ -710,26 +717,16 @@ struct nmreq_pools_info {
  * Start an in-kernel loop that syncs the rings periodically or on
  * notifications. The loop runs in the context of the ioctl syscall,
  * and only stops on NETMAP_REQ_SYNC_KLOOP_STOP.
- * The user must specify the start address of two arrays of Communication
- * Status Block (CSB) entries, for the two directions (kernel read
- * application write, and kernel write application read). The number of
- * entries must agree with the number of rings bound to the netmap file
- * descriptor. The entries corresponding to the TX rings are laid out before
- * the ones corresponding to the RX rings.
+ * The netmap port must be open in CSB mode.
  */
 struct nmreq_sync_kloop_start {
-	/* Array of CSB entries for application --> kernel communication
-	 * (N entries). */
-	uint64_t csb_atok;
-	/* Array of CSB entries for kernel --> application communication
-	 * (N entries). */
-	uint64_t csb_ktoa;
 	/* Sleeping is the default synchronization method for the kloop.
 	 * The 'sleep_us' field specifies how many microsconds to sleep
 	 * waiting for more work to come. */
 	uint32_t sleep_us;
 };
 
+/* A CSB entry for the application --> kernel direction. */
 struct nm_csb_atok {
 	uint32_t head;		  /* AW+ KR+ the head of the appl netmap_ring */
 	uint32_t cur;		  /* AW+ KR+ the cur of the appl netmap_ring */
@@ -738,6 +735,7 @@ struct nm_csb_atok {
 	char pad[48];		  /* pad to a 64 bytes cacheline */
 };
 
+/* A CSB entry for the application <-- kernel direction. */
 struct nm_csb_ktoa {
 	uint32_t hwcur;		  /* AR+ KW+ the hwcur of the kern netmap_kring */
 	uint32_t hwtail;	  /* AR+ KW+ the hwtail of the kern netmap_kring */
@@ -831,8 +829,8 @@ struct nmreq_opt_sync_kloop_eventfds {
 	/* An array of N entries for bidirectional notifications between
 	 * the kernel loop and the application. The number of entries and
 	 * their order must agree with the CSB arrays passed in the
-	 * NETMAP_REQ_SYNC_KLOOP_START message. Each entry contains a file
-	 * descriptor backed by an eventfd.
+	 * NETMAP_REQ_OPT_CSB option. Each entry contains a file descriptor
+	 * backed by an eventfd.
 	 */
 	struct {
 		/* Notifier for the application --> kernel loop direction. */
@@ -846,6 +844,18 @@ struct nmreq_opt_extmem {
 	struct nmreq_option	nro_opt;	/* common header */
 	uint64_t		nro_usrptr;	/* (in) ptr to usr memory */
 	struct nmreq_pools_info	nro_info;	/* (in/out) */
+};
+
+struct nmreq_opt_csb {
+	struct nmreq_option	nro_opt;
+
+	/* Array of CSB entries for application --> kernel communication
+	 * (N entries). */
+	uint64_t		csb_atok;
+
+	/* Array of CSB entries for kernel --> application communication
+	 * (N entries). */
+	uint64_t		csb_ktoa;
 };
 
 #endif /* _NET_NETMAP_H_ */

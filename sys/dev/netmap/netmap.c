@@ -1996,6 +1996,71 @@ nm_priv_rx_enabled(struct netmap_priv_d *priv)
 	return (priv->np_qfirst[NR_RX] != priv->np_qlast[NR_RX]);
 }
 
+/* Validate the CSB entries for both directions (atok and ktoa). */
+static int
+netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
+{
+	int num_rings = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX] +
+			priv->np_qlast[NR_TX] - priv->np_qfirst[NR_TX];
+	struct nm_csb_atok *csb_atok_base =
+		(struct nm_csb_atok *)(uintptr_t)csbo->csb_atok;
+	struct nm_csb_ktoa *csb_ktoa_base =
+		(struct nm_csb_ktoa *)(uintptr_t)csbo->csb_ktoa;
+	size_t entry_size[2];
+	void *csb_start[2];
+	int i;
+
+	if (num_rings <= 0)
+		return 0;
+
+	if (!(priv->np_flags & NR_EXCLUSIVE)) {
+		nm_prerr("CSB mode requires NR_EXCLUSIVE\n");
+		return EINVAL;
+	}
+
+	entry_size[0] = sizeof(*csb_atok_base);
+	entry_size[1] = sizeof(*csb_ktoa_base);
+	csb_start[0] = (void *)csb_atok_base;
+	csb_start[1] = (void *)csb_ktoa_base;
+
+	for (i = 0; i < 2; i++) {
+		/* On Linux we could use access_ok() to simplify
+		 * the validation. However, the advantage of
+		 * this approach is that it works also on
+		 * FreeBSD. */
+		size_t csb_size = num_rings * entry_size[i];
+		void *tmp;
+		int err;
+
+		if ((uintptr_t)csb_start[i] & (entry_size[i]-1)) {
+			nm_prerr("Unaligned CSB address\n");
+			return EINVAL;
+		}
+
+		tmp = nm_os_malloc(csb_size);
+		if (!tmp)
+			return ENOMEM;
+		if (i == 0) {
+			/* Application --> kernel direction. */
+			err = copyin(csb_start[i], tmp, csb_size);
+		} else {
+			/* Kernel --> application direction. */
+			memset(tmp, 0, csb_size);
+			err = copyout(tmp, csb_start[i], csb_size);
+		}
+		nm_os_free(tmp);
+		if (err) {
+			nm_prerr("Invalid CSB address\n");
+			return err;
+		}
+	}
+
+	priv->np_csb_atok_base = csb_atok_base;
+	priv->np_csb_ktoa_base = csb_ktoa_base;
+
+	return 0;
+}
+
 /*
  * possibly move the interface to netmap-mode.
  * If success it returns a pointer to netmap_if, otherwise NULL.
@@ -2324,9 +2389,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			/* Protect access to priv from concurrent requests. */
 			NMG_LOCK();
 			do {
+				struct nmreq_option *opt;
 				u_int memflags;
 #ifdef WITH_EXTMEM
-				struct nmreq_option *opt;
 #endif /* WITH_EXTMEM */
 
 				if (priv->np_nifp != NULL) {	/* thread already registered */
@@ -2382,6 +2447,23 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 				if (error) {    /* reg. failed, release priv and ref */
 					break;
 				}
+
+				opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
+							NETMAP_REQ_OPT_CSB);
+				if (opt != NULL) {
+					struct nmreq_opt_csb *csbo =
+						(struct nmreq_opt_csb *)opt;
+					error = nmreq_checkduplicate(opt);
+					if (!error) {
+						error = netmap_csb_validate(priv, csbo);
+					}
+					opt->nro_status = error;
+					if (error) {
+						netmap_do_unregif(priv);
+						break;
+					}
+				}
+
 				nifp = priv->np_nifp;
 				priv->np_td = td; /* for debugging purposes */
 
@@ -2755,6 +2837,9 @@ nmreq_opt_size_by_type(uint32_t nro_reqtype, uint64_t nro_size)
 	case NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS:
 		if (nro_size >= rv)
 			rv = nro_size;
+		break;
+	case NETMAP_REQ_OPT_CSB:
+		rv = sizeof(struct nmreq_opt_csb);
 		break;
 	}
 	/* subtract the common header */

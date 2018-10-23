@@ -469,8 +469,12 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		return ENXIO;
 	}
 
-	if (!(priv->np_flags & NR_EXCLUSIVE)) {
-		nm_prerr("sync-kloop on %s requires NR_EXCLUSIVE\n", na->name);
+	/* Make sure the application is working in CSB mode. */
+	csb_atok_base = priv->np_csb_atok_base;
+	csb_ktoa_base = priv->np_csb_ktoa_base;
+	if (!csb_atok_base || !csb_ktoa_base) {
+		nm_prerr("sync-kloop on %s requires NETMAP_REQ_OPT_CSB "
+			"option\n", na->name);
 		return EINVAL;
 	}
 
@@ -485,58 +489,9 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		return err;
 	}
 
-	csb_atok_base = (struct nm_csb_atok *)(uintptr_t)req->csb_atok;
-	csb_ktoa_base = (struct nm_csb_ktoa *)(uintptr_t)req->csb_ktoa;
 	num_rx_rings = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX];
 	num_tx_rings = priv->np_qlast[NR_TX] - priv->np_qfirst[NR_TX];
 	num_rings = num_tx_rings + num_rx_rings;
-
-	/* Validate the CSB entries for both directions (atok and ktoa). */
-	{
-		if (num_rings > 0) {
-			size_t entry_size[2];
-			void *csb_start[2];
-
-			entry_size[0] = sizeof(*csb_atok_base);
-			entry_size[1] = sizeof(*csb_ktoa_base);
-			csb_start[0] = (void *)csb_atok_base;
-			csb_start[1] = (void *)csb_ktoa_base;
-
-			for (i = 0; i < 2; i++) {
-				/* On Linux we could use access_ok() to simplify
-				 * the validation. However, the advantage of
-				 * this approach is that it works also on
-				 * FreeBSD. */
-				size_t csb_size = num_rings * entry_size[i];
-				void *tmp;
-
-				if ((uintptr_t)csb_start[i] & (entry_size[i]-1)) {
-					nm_prerr("Unaligned CSB address\n");
-					err = EINVAL;
-					goto out;
-				}
-
-				tmp = nm_os_malloc(csb_size);
-				if (!tmp) {
-					err = ENOMEM;
-					goto out;
-				}
-				if (i == 0) {
-					/* Application --> kernel direction. */
-					err = copyin(csb_start[i], tmp, csb_size);
-				} else {
-					/* Kernel --> application direction. */
-					memset(tmp, 0, csb_size);
-					err = copyout(tmp, csb_start[i], csb_size);
-				}
-				nm_os_free(tmp);
-				if (err) {
-					nm_prerr("Invalid CSB address\n");
-					goto out;
-				}
-			}
-		}
-	}
 
 	/* Validate notification options. */
 	opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
