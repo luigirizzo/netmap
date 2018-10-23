@@ -262,7 +262,8 @@ struct glob_arg {
 	int burst;
 	int forever;
 	uint64_t npackets;	/* total packets to send */
-	int frags;	/* fragments per packet */
+	int frags;		/* fragments per packet */
+	u_int mtu;		/* size of each fragment */
 	int nthreads;
 	int cpus;	/* cpus used for running */
 	int system_cpus;	/* cpus on the system */
@@ -334,6 +335,8 @@ struct targ {
 	struct pkt pkt;
 	void *frame;
 	uint16_t seed[3];
+	u_int frags;
+	u_int frag_size;
 };
 
 static __inline uint16_t
@@ -1108,7 +1111,6 @@ set_vnet_hdr_len(struct glob_arg *g)
 	}
 }
 
-
 /*
  * create and enqueue a batch of packets on a ring.
  * On the last one set NS_REPORT to tell the driver to generate
@@ -1116,19 +1118,14 @@ set_vnet_hdr_len(struct glob_arg *g)
  */
 static int
 send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
-		int size, struct targ *t, u_int count, int options,
-		u_int nfrags)
+		int size, struct targ *t, u_int count, int options)
 {
 	u_int n, sent, cur = ring->cur;
-	u_int fcnt;
+	u_int frags = t->frags;
+	u_int frag_size = t->frag_size;
+	struct netmap_slot *slot = &ring->slot[cur];
 
 	n = nm_ring_space(ring);
-	if (n < count)
-		count = n;
-	if (count < nfrags) {
-		D("truncating packet, no room for frags %d %d",
-				count, nfrags);
-	}
 #if 0
 	if (options & (OPT_COPY | OPT_PREFETCH) ) {
 		for (sent = 0; sent < count; sent++) {
@@ -1141,10 +1138,14 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		cur = ring->cur;
 	}
 #endif
-	for (fcnt = nfrags, sent = 0; sent < count; sent++) {
-		struct netmap_slot *slot = &ring->slot[cur];
-		char *p = NETMAP_BUF(ring, slot->buf_idx);
-		int buf_changed = slot->flags & NS_BUF_CHANGED;
+	for (sent = 0; sent < count && n >= frags; sent++, n--) {
+		char *p;
+		int buf_changed;
+		u_int tosend = size;
+
+		slot = &ring->slot[cur];
+		p = NETMAP_BUF(ring, slot->buf_idx);
+		buf_changed = slot->flags & NS_BUF_CHANGED;
 
 		slot->flags = 0;
 		if (options & OPT_RUBBISH) {
@@ -1152,31 +1153,46 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		} else if (options & OPT_INDIRECT) {
 			slot->flags |= NS_INDIRECT;
 			slot->ptr = (uint64_t)((uintptr_t)frame);
-		} else if ((options & OPT_COPY) || buf_changed) {
-			nm_pkt_copy(frame, p, size);
-			if (fcnt == nfrags)
-				update_addresses(pkt, t);
-		} else if (options & OPT_MEMCPY) {
-			memcpy(p, frame, size);
-			if (fcnt == nfrags)
-				update_addresses(pkt, t);
+		} else if (frags > 1) {
+			u_int i;
+			const char *f = frame;
+			struct netmap_slot *fslot = slot;
+			char *fp = p;
+			for (i = 0; i < frags - 1; i++) {
+				memcpy(fp, f, frag_size);
+				fslot->len = frag_size;
+				fslot->flags = NS_MOREFRAG;
+				if (options & OPT_DUMP)
+					dump_payload(fp, frag_size, ring, cur);
+				tosend -= frag_size;
+				f += frag_size;
+				cur = nm_ring_next(ring, cur);
+				fslot = &ring->slot[cur];
+				fp = NETMAP_BUF(ring, fslot->buf_idx);
+			}
+			n -= (frags - 1);
+			p = fp;
+			fslot->flags = 0;
+			memcpy(p, f, tosend);
+			update_addresses(pkt, t);
+		} else if ((options & (OPT_COPY | OPT_MEMCPY)) || buf_changed) {
+			if (options & OPT_COPY)
+				nm_pkt_copy(frame, p, size);
+			else
+				memcpy(p, frame, size);
+			update_addresses(pkt, t);
 		} else if (options & OPT_PREFETCH) {
 			__builtin_prefetch(p);
 		}
+		slot->len = tosend;
 		if (options & OPT_DUMP)
-			dump_payload(p, size, ring, cur);
-		slot->len = size;
-		if (--fcnt > 0)
-			slot->flags |= NS_MOREFRAG;
-		else
-			fcnt = nfrags;
-		if (sent == count - 1) {
-			slot->flags &= ~NS_MOREFRAG;
-			slot->flags |= NS_REPORT;
-		}
+			dump_payload(p, tosend, ring, cur);
 		cur = nm_ring_next(ring, cur);
 	}
-	ring->head = ring->cur = cur;
+	if (sent) {
+		slot->flags |= NS_REPORT;
+		ring->head = ring->cur = cur;
+	}
 
 	return (sent);
 }
@@ -1564,9 +1580,21 @@ sender_body(void *data)
 #endif /* NO_PCAP */
     } else {
 	int tosend = 0;
-	int frags = targ->g->frags;
+	u_int bufsz, mtu = targ->g->mtu;
 
 	nifp = targ->nmd->nifp;
+	txring = NETMAP_TXRING(nifp, targ->nmd->first_tx_ring);
+	bufsz = txring->nr_buf_size;
+	if (bufsz < mtu)
+		mtu = bufsz;
+	targ->frag_size = targ->g->pkt_size / targ->frags;
+	if (targ->frag_size > mtu) {
+		targ->frags = targ->g->pkt_size / mtu;
+		targ->frag_size = mtu;
+		if (targ->g->pkt_size % mtu != 0)
+			targ->frags++;
+	}
+	D("frags %u frag_size %u", targ->frags, targ->frag_size);
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		int rv;
 
@@ -1619,8 +1647,6 @@ sender_body(void *data)
 			txring = NETMAP_TXRING(nifp, i);
 			if (nm_ring_empty(txring))
 				continue;
-			if (frags > 1)
-				limit = ((limit + frags - 1) / frags) * frags;
 
 			if (targ->g->pkt_min_size > 0) {
 				size = nrand48(targ->seed) %
@@ -1628,9 +1654,9 @@ sender_body(void *data)
 					targ->g->pkt_min_size;
 			}
 			m = send_packets(txring, pkt, frame, size, targ,
-					 limit, options, frags);
-			ND("limit %lu tail %d frags %d m %d",
-				limit, txring->tail, frags, m);
+					 limit, options);
+			ND("limit %lu tail %d m %d",
+				limit, txring->tail, m);
 			sent += m;
 			if (m > 0) //XXX-ste: can m be 0?
 				event++;
@@ -2307,6 +2333,7 @@ usage(int errcode)
 		     "\t-z			use random IPv4 src address/port\n"
 		     "\t-Z			use random IPv4 dst address/port\n"
 		     "\t-F num_frags		send multi-slot packets\n"
+		     "\t-M			set MTU\n"
 		     "\t-A			activate pps stats on receiver\n"
 		     "\t-4			IPv4\n"
 		     "\t-6			IPv6\n"
@@ -2403,7 +2430,7 @@ start_threads(struct glob_arg *g) {
 				t->nmd = g->nmd;
 			}
 			t->fd = t->nmd->fd;
-
+			t->frags = g->frags;
 		} else {
 			targs[i].fd = g->main_fd;
 		}
@@ -2685,13 +2712,14 @@ main(int arc, char **argv)
 	g.cpus = 1;		/* default */
 	g.forever = 1;
 	g.tx_rate = 0;
-	g.frags = 1;
+	g.frags =1;
+	g.mtu = 1500;
 	g.nmr_config = "";
 	g.virt_header = 0;
 	g.wait_link = 2;	/* wait 2 seconds for physical ports */
 
 	while ((ch = getopt(arc, argv, "46a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:"
-	    "T:w:WvR:XC:H:e:E:m:rP:zZAhB")) != -1) {
+	    "T:w:WvR:XC:H:e:E:m:rP:zZAhBM:")) != -1) {
 
 		switch(ch) {
 		default:
@@ -2725,6 +2753,10 @@ main(int arc, char **argv)
 				break;
 			}
 			g.frags = i;
+			break;
+
+		case 'M':
+			g.mtu = atoi(optarg);
 			break;
 
 		case 'f':
@@ -3082,8 +3114,8 @@ out:
 		int lim = (g.tx_rate)/300;
 		if (g.burst > lim)
 			g.burst = lim;
-		if (g.burst < g.frags)
-			g.burst = g.frags;
+		if (g.burst == 0)
+			g.burst = 1;
 		x = ((uint64_t)1000000000 * (uint64_t)g.burst) / (uint64_t) g.tx_rate;
 		g.tx_period.tv_nsec = x;
 		g.tx_period.tv_sec = g.tx_period.tv_nsec / 1000000000;
