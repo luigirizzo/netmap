@@ -1036,7 +1036,7 @@ retry:
 
 		if (dst_na->retry && retry) {
 			/* try to get some free slot from the previous run */
-			kring->nm_notify(kring, 0);
+			kring->nm_notify(kring, NAF_FORCE_RECLAIM);
 			/* actually useful only for bwraps, since there
 			 * the notify will trigger a txsync on the hwna. VALE ports
 			 * have dst_na->retry == 0
