@@ -1192,6 +1192,10 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		slot->flags |= NS_REPORT;
 		ring->head = ring->cur = cur;
 	}
+	if (sent < count) {
+		/* tell netmap that we need more slots */
+		ring->cur = ring->tail;
+	}
 
 	return (sent);
 }
