@@ -602,7 +602,7 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 static u16
 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m
 #if NETMAP_LINUX_SELECT_QUEUE >= 3
-			, void *accel_priv
+			, NETMAP_LINUX_SELECT_QUEUE_PARM3 accel_priv
 #if NETMAP_LINUX_SELECT_QUEUE >= 4
 				, select_queue_fallback_t fallback
 #endif /* >= 4 */
