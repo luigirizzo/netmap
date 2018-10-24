@@ -2670,18 +2670,44 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 #endif  /* WITH_VALE */
 		case NETMAP_REQ_POOLS_INFO_GET: {
+			/* Get information from the memory allocator used for
+			 * hdr->nr_name. */
 			struct nmreq_pools_info *req =
 				(struct nmreq_pools_info *)(uintptr_t)hdr->nr_body;
-			/* Get information from the memory allocator. This
-			 * netmap device must already be bound to a port.
-			 * Note that hdr->nr_name is ignored. */
 			NMG_LOCK();
-			if (priv->np_na && priv->np_na->nm_mem) {
-				struct netmap_mem_d *nmd = priv->np_na->nm_mem;
+			do {
+				/* Build a nmreq_register out of the nmreq_pools_info,
+				 * so that we can call netmap_get_na(). */
+				struct nmreq_register regreq;
+				bzero(&regreq, sizeof(regreq));
+				regreq.nr_mem_id = req->nr_mem_id;
+
+				hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+				hdr->nr_body = (uintptr_t)&regreq;
+				error = netmap_get_na(hdr, &na, &ifp, NULL, 1 /* create */);
+				hdr->nr_reqtype = NETMAP_REQ_POOLS_INFO_GET; /* reset type */
+				hdr->nr_body = (uintptr_t)req; /* reset nr_body */
+				if (error) {
+					na = NULL;
+					ifp = NULL;
+					break;
+				}
+				nmd = na->nm_mem; /* grab the memory allocator */
+				if (nmd == NULL) {
+					error = EINVAL;
+					break;
+				}
+
+				/* Finalize the memory allocator, get the pools
+				 * information and release the allocator. */
+				error = netmap_mem_finalize(nmd, na);
+				if (error) {
+					break;
+				}
 				error = netmap_mem_pools_info_get(req, nmd);
-			} else {
-				error = EINVAL;
-			}
+				netmap_mem_drop(na);
+			} while (0);
+			netmap_unget_na(na, ifp);
 			NMG_UNLOCK();
 			break;
 		}

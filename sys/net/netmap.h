@@ -613,7 +613,9 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 /*
  * nr_reqtype: NETMAP_REQ_PORT_INFO_GET
  * Get information about a netmap port, including number of rings.
- * slots per ring, id of the memory allocator, etc.
+ * slots per ring, id of the memory allocator, etc. The netmap
+ * control device used for this operation does not need to be bound
+ * to a netmap port.
  */
 struct nmreq_port_info_get {
 	uint64_t	nr_offset;	/* nifp offset in the shared region */
@@ -622,7 +624,7 @@ struct nmreq_port_info_get {
 	uint32_t	nr_rx_slots;	/* slots in rx rings */
 	uint16_t	nr_tx_rings;	/* number of tx rings */
 	uint16_t	nr_rx_rings;	/* number of rx rings */
-	uint16_t	nr_mem_id;	/* id of the memory allocator */
+	uint16_t	nr_mem_id;	/* memory allocator id (in/out) */
 };
 
 #define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
@@ -694,13 +696,14 @@ struct nmreq_vale_polling {
 
 /*
  * nr_reqtype: NETMAP_REQ_POOLS_INFO_GET
- * Get info about the pools of the memory allocator of the port bound
- * to a given netmap control device (used i.e. by a ptnetmap-enabled
- * hypervisor). The nr_hdr.nr_name field is ignored.
+ * Get info about the pools of the memory allocator of the netmap
+ * port specified by nr_hdr.nr_name and nr_mem_id. The netmap control
+ * device used for this operation does not need to be bound to a netmap
+ * port.
  */
 struct nmreq_pools_info {
 	uint64_t	nr_memsize;
-	uint16_t	nr_mem_id;
+	uint16_t	nr_mem_id; /* in/out argument */
 	uint64_t	nr_if_pool_offset;
 	uint32_t	nr_if_pool_objtotal;
 	uint32_t	nr_if_pool_objsize;

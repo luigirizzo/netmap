@@ -446,6 +446,7 @@ pools_info_get(struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_POOLS_INFO_GET;
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
+	req.nr_mem_id = ctx->nr_mem_id;
 	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, POOLS_INFO_GET)");
@@ -474,15 +475,15 @@ pools_info_get(struct TestContext *ctx)
 }
 
 static int
-register_and_pools_info_get(struct TestContext *ctx)
+pools_info_get_and_register(struct TestContext *ctx)
 {
 	int ret;
 
+	/* Check that we can get pools info before we register
+	 * a netmap interface. */
 	ret = pools_info_get(ctx);
-	if (ret == 0) {
-		printf("Failed: POOLS_INFO_GET didn't fail on unbound "
-		       "netmap device\n");
-		return -1;
+	if (ret) {
+		return ret;
 	}
 
 	ctx->nr_mode = NR_REG_ONE_NIC;
@@ -492,6 +493,7 @@ register_and_pools_info_get(struct TestContext *ctx)
 	}
 	ctx->nr_mem_id = 1;
 
+	/* Check that we can get pools info also after we register. */
 	return pools_info_get(ctx);
 }
 
@@ -1212,7 +1214,7 @@ static struct mytest tests[] = {
 	decltest(vale_attach_detach_host_rings),
 	decltest(vale_ephemeral_port_hdr_manipulation),
 	decltest(vale_persistent_port),
-	decltest(register_and_pools_info_get),
+	decltest(pools_info_get_and_register),
 	decltest(pipe_master),
 	decltest(pipe_slave),
 	decltest(vale_polling_enable_disable),
