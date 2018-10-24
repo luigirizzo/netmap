@@ -26,6 +26,7 @@ CFLAGS += -DNO_PCAP
 endif
 
 PREFIX ?= /usr/local
+MAN_PREFIX = $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)/share/man
 
 all: $(PROGS)
 
