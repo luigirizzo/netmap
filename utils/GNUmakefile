@@ -14,7 +14,7 @@ NO_MAN=
 CFLAGS  = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I $(SRCDIR)/sys # -I/home/luigi/FreeBSD/head/sys -I../sys
-CFLAGS += -Wextra
+CFLAGS += -Wextra -g
 CFLAGS += $(SUBSYS_FLAGS)
 ifdef WITH_PCAP
 # do not use pcap by default, as it is not always available on linux

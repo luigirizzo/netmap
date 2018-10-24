@@ -26,7 +26,7 @@ static int eventfd(int x, int y)
 
 struct TestContext {
 	int fd; /* netmap file descriptor */
-	const char *ifname;
+	char *ifname;
 	const char *bdgname;
 	uint32_t nr_tx_slots;   /* slots in tx rings */
 	uint32_t nr_rx_slots;   /* slots in rx rings */
@@ -495,6 +495,13 @@ pools_info_get_and_register(struct TestContext *ctx)
 
 	/* Check that we can get pools info also after we register. */
 	return pools_info_get(ctx);
+}
+
+static int
+pools_info_get_empty_ifname(struct TestContext *ctx)
+{
+	ctx->ifname = "";
+	return pools_info_get(ctx) != 0 ? 0 : -1;
 }
 
 static int
@@ -1215,6 +1222,7 @@ static struct mytest tests[] = {
 	decltest(vale_ephemeral_port_hdr_manipulation),
 	decltest(vale_persistent_port),
 	decltest(pools_info_get_and_register),
+	decltest(pools_info_get_empty_ifname),
 	decltest(pipe_master),
 	decltest(pipe_slave),
 	decltest(vale_polling_enable_disable),
