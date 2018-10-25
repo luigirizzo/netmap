@@ -299,8 +299,6 @@ struct glob_arg {
 	char *nmr_config;
 	int dummy_send;
 	int virt_header;	/* send also the virt_header */
-	int extra_bufs;		/* goes in nr_arg3 */
-	int extra_pipes;	/* goes in nr_arg1 */
 	char *packet_file;	/* -P option */
 #define	STATS_WIN	15
 	int win_idx;
@@ -2364,7 +2362,6 @@ usage(int errcode)
 		     "\t			If there is no 4th number, then the 3rd is\n"
 		     "\t			assigned to both #tx-rings and #rx-rings.\n"
 #endif
-		     "\t-e extra-bufs		extra_bufs - goes in nr_arg3\n"
 		     "\t-B                      account for ethernet framing when showing bps\n"
 		     "",
 		cmd);
@@ -2716,7 +2713,7 @@ main(int arc, char **argv)
 	g.wait_link = 2;	/* wait 2 seconds for physical ports */
 
 	while ((ch = getopt(arc, argv, "46a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:"
-	    "T:w:WvR:XC:H:e:E:rP:zZAhBM:")) != -1) {
+	    "T:w:WvR:XC:H:rP:zZAhBM:")) != -1) {
 
 		switch(ch) {
 		default:
@@ -2874,12 +2871,6 @@ main(int arc, char **argv)
 		case 'H':
 			g.virt_header = atoi(optarg);
 			break;
-		case 'e': /* extra bufs */
-			g.extra_bufs = atoi(optarg);
-			break;
-		case 'E':
-			g.extra_pipes = atoi(optarg);
-			break;
 		case 'P':
 			g.packet_file = strdup(optarg);
 			break;
@@ -2987,12 +2978,6 @@ main(int arc, char **argv)
 	bzero(&base_nmd, sizeof(base_nmd));
 
 	parse_nmr_config(g.nmr_config, &base_nmd.req);
-	if (g.extra_bufs) {
-		base_nmd.req.nr_arg3 = g.extra_bufs;
-	}
-	if (g.extra_pipes) {
-	    base_nmd.req.nr_arg1 = g.extra_pipes;
-	}
 
 	base_nmd.req.nr_flags |= NR_ACCEPT_VNET_HDR;
 
