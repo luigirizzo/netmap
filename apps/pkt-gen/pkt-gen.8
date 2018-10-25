@@ -92,7 +92,7 @@ for reception,
 for client-side ping-pong operation, and
 .Ar pong
 for server-side ping-pong operation.
-.It Fl n count
+.It Fl n Ar count
 Number of iterations of the
 .Nm
 function, with 0 meaning infinite).
@@ -110,6 +110,8 @@ or
 is the number of ping-pong transactions.
 .It Fl l Ar pkt_size
 Packet size in bytes excluding CRC.
+If passed a second time, use random sizes larger or equal than the
+second one and lower than the first one.
 .It Fl b Ar burst_size
 Transmit or receive up to
 .Ar burst_size
