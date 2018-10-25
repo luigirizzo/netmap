@@ -664,7 +664,8 @@ struct nmreq_vale_list {
 
 /*
  * nr_reqtype: NETMAP_REQ_PORT_HDR_SET or NETMAP_REQ_PORT_HDR_GET
- * Set the port header length.
+ * Set or get the port header length of the port identified by nr_hdr.nr_name.
+ * The control device does not need to be bound to a netmap port.
  */
 struct nmreq_port_hdr {
 	uint32_t	nr_hdr_len;
