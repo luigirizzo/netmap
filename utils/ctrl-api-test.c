@@ -16,10 +16,11 @@
 #ifdef __linux__
 #include <sys/eventfd.h>
 #else
-static int eventfd(int x, int y)
+static int
+eventfd(int x, int y)
 {
-	(void) x;
-	(void) y;
+	(void)x;
+	(void)y;
 	return 19;
 }
 #endif /* __linux__ */
@@ -42,7 +43,7 @@ struct TestContext {
 
 	uint32_t nr_first_cpu_id;     /* vale polling */
 	uint32_t nr_num_polling_cpus; /* vale polling */
-	void *csb; /* CSB entries (atok and ktoa) */
+	void *csb;                    /* CSB entries (atok and ktoa) */
 	struct nmreq_option *nr_opt;  /* list of options */
 };
 
@@ -84,7 +85,7 @@ port_info_get(struct TestContext *ctx)
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	req.nr_mem_id = ctx->nr_mem_id;
-	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
+	ret           = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_INFO_GET)");
 		return ret;
@@ -98,8 +99,7 @@ port_info_get(struct TestContext *ctx)
 	printf("nr_mem_id %u\n", req.nr_mem_id);
 
 	success = req.nr_memsize && req.nr_tx_slots && req.nr_rx_slots &&
-	                       req.nr_tx_rings && req.nr_rx_rings &&
-	                       req.nr_tx_rings;
+	          req.nr_tx_rings && req.nr_rx_rings && req.nr_tx_rings;
 	if (!success) {
 		return -1;
 	}
@@ -109,7 +109,7 @@ port_info_get(struct TestContext *ctx)
 	ctx->nr_rx_slots = req.nr_rx_slots;
 	ctx->nr_tx_rings = req.nr_tx_rings;
 	ctx->nr_rx_rings = req.nr_rx_rings;
-	ctx->nr_mem_id = req.nr_mem_id;
+	ctx->nr_mem_id   = req.nr_mem_id;
 
 	return 0;
 }
@@ -174,11 +174,11 @@ port_register(struct TestContext *ctx)
 	}
 
 	/* Write back results to the context structure.*/
-	ctx->nr_tx_slots = req.nr_tx_slots;
-	ctx->nr_rx_slots = req.nr_rx_slots;
-	ctx->nr_tx_rings = req.nr_tx_rings;
-	ctx->nr_rx_rings = req.nr_rx_rings;
-	ctx->nr_mem_id = req.nr_mem_id;
+	ctx->nr_tx_slots   = req.nr_tx_slots;
+	ctx->nr_rx_slots   = req.nr_rx_slots;
+	ctx->nr_tx_rings   = req.nr_tx_rings;
+	ctx->nr_rx_rings   = req.nr_rx_rings;
+	ctx->nr_mem_id     = req.nr_mem_id;
 	ctx->nr_extra_bufs = req.nr_extra_bufs;
 
 	return -0;
@@ -189,7 +189,7 @@ static int
 num_registered_rings(struct TestContext *ctx)
 {
 	assert(ctx->nr_tx_slots > 0 && ctx->nr_rx_slots > 0 &&
-		ctx->nr_tx_rings > 0 && ctx->nr_rx_rings > 0);
+	       ctx->nr_tx_rings > 0 && ctx->nr_rx_rings > 0);
 	if (ctx->nr_flags & NR_TX_RINGS_ONLY) {
 		return ctx->nr_tx_rings;
 	}
@@ -448,7 +448,7 @@ pools_info_get(struct TestContext *ctx)
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	req.nr_mem_id = ctx->nr_mem_id;
-	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
+	ret           = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, POOLS_INFO_GET)");
 		return ret;
@@ -543,7 +543,7 @@ pipe_port_info_get(struct TestContext *ctx)
 	char pipe_name[128];
 
 	snprintf(pipe_name, sizeof(pipe_name), "%s}%s", ctx->ifname, "pipeid3");
-	ctx->ifname  = pipe_name;
+	ctx->ifname = pipe_name;
 
 	return port_info_get(ctx);
 }
@@ -554,7 +554,7 @@ pipe_pools_info_get(struct TestContext *ctx)
 	char pipe_name[128];
 
 	snprintf(pipe_name, sizeof(pipe_name), "%s{%s", ctx->ifname, "xid");
-	ctx->ifname  = pipe_name;
+	ctx->ifname = pipe_name;
 
 	return pools_info_get(ctx);
 }
@@ -727,7 +727,7 @@ change_param(const char *pname, unsigned long newv, unsigned long *poldv)
 	unsigned long oldv;
 	FILE *f;
 
-	strncat(param, pname, sizeof(param)-1);
+	strncat(param, pname, sizeof(param) - 1);
 
 	f = fopen(param, "r+");
 	if (f == NULL) {
@@ -919,9 +919,9 @@ push_csb_option(struct TestContext *ctx, struct nmreq_opt_csb *opt)
 
 	memset(opt, 0, sizeof(*opt));
 	opt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_CSB;
-	opt->csb_atok = (uintptr_t)ctx->csb;
-	opt->csb_ktoa = (uintptr_t)
-			(ctx->csb + sizeof(struct nm_csb_atok) * num_entries);
+	opt->csb_atok            = (uintptr_t)ctx->csb;
+	opt->csb_ktoa            = (uintptr_t)(ctx->csb +
+                                    sizeof(struct nm_csb_atok) * num_entries);
 
 	push_option(&opt->nro_opt, ctx);
 
@@ -953,8 +953,8 @@ csb_mode_invalid_memory(struct TestContext *ctx)
 
 	memset(&opt, 0, sizeof(opt));
 	opt.nro_opt.nro_reqtype = NETMAP_REQ_OPT_CSB;
-	opt.csb_atok = (uintptr_t)0x10;
-	opt.csb_ktoa = (uintptr_t)0x800;
+	opt.csb_atok            = (uintptr_t)0x10;
+	opt.csb_ktoa            = (uintptr_t)0x800;
 	push_option(&opt.nro_opt, ctx);
 
 	ctx->nr_flags = NR_EXCLUSIVE;
@@ -988,8 +988,7 @@ sync_kloop_worker(void *opaque)
 	struct nmreq_header hdr;
 	int ret;
 
-	printf("Testing NETMAP_REQ_SYNC_KLOOP_START on '%s'\n",
-	       ctx->ifname);
+	printf("Testing NETMAP_REQ_SYNC_KLOOP_START on '%s'\n", ctx->ifname);
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_START;
@@ -1042,7 +1041,6 @@ sync_kloop(struct TestContext *ctx)
 	}
 
 	return sync_kloop_start_stop(ctx);
-
 }
 
 static int
@@ -1055,8 +1053,8 @@ sync_kloop_eventfds(struct TestContext *ctx)
 	int ret, i;
 
 	num_entries = num_registered_rings(ctx);
-	opt_size = sizeof(*opt) + num_entries * sizeof(opt->eventfds[0]);
-	opt = malloc(opt_size);
+	opt_size    = sizeof(*opt) + num_entries * sizeof(opt->eventfds[0]);
+	opt         = malloc(opt_size);
 	memset(opt, 0, opt_size);
 	opt->nro_opt.nro_next    = 0;
 	opt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS;
@@ -1067,9 +1065,9 @@ sync_kloop_eventfds(struct TestContext *ctx)
 
 		assert(efd >= 0);
 		opt->eventfds[i].ioeventfd = efd;
-		efd = eventfd(0, 0);
+		efd                        = eventfd(0, 0);
 		assert(efd >= 0);
-		opt->eventfds[i].irqfd     = efd;
+		opt->eventfds[i].irqfd = efd;
 	}
 
 	push_option(&opt->nro_opt, ctx);
@@ -1098,7 +1096,6 @@ sync_kloop_eventfds_all(struct TestContext *ctx)
 	}
 
 	return sync_kloop_eventfds(ctx);
-
 }
 
 static int
@@ -1112,7 +1109,7 @@ sync_kloop_eventfds_all_tx(struct TestContext *ctx)
 		return ret;
 	}
 
-	ret           = port_register_hwall_tx(ctx);
+	ret = port_register_hwall_tx(ctx);
 	if (ret) {
 		return ret;
 	}
@@ -1134,7 +1131,6 @@ sync_kloop_nocsb(struct TestContext *ctx)
 	/* Sync kloop must fail because we did not use
 	 * NETMAP_REQ_OPT_CSB. */
 	return sync_kloop_start_stop(ctx) != 0 ? 0 : -1;
-
 }
 
 static int
@@ -1155,7 +1151,6 @@ sync_kloop_csb_on_start(struct TestContext *ctx)
 	}
 
 	return sync_kloop_start_stop(ctx);
-
 }
 
 static int
@@ -1171,7 +1166,7 @@ sync_kloop_conflict(struct TestContext *ctx)
 		return ret;
 	}
 
-	ret           = port_register_hwall(ctx);
+	ret = port_register_hwall(ctx);
 	if (ret) {
 		return ret;
 	}
@@ -1225,7 +1220,7 @@ sync_kloop_eventfds_mismatch(struct TestContext *ctx)
 		return ret;
 	}
 
-	ret           = port_register_hwall_rx(ctx);
+	ret = port_register_hwall_rx(ctx);
 	if (ret) {
 		return ret;
 	}
@@ -1238,16 +1233,15 @@ sync_kloop_eventfds_mismatch(struct TestContext *ctx)
 	ctx->nr_flags &= ~NR_RX_RINGS_ONLY;
 
 	return (sync_kloop_eventfds(ctx) != 0) ? 0 : -1;
-
 }
 
 static void
 usage(const char *prog)
 {
 	printf("%s -i IFNAME\n"
-		"[-j TESTCASE_NUM]\n"
-		"[-l (list test cases)]\n",
-		prog);
+	       "[-j TESTCASE_NUM]\n"
+	       "[-l (list test cases)]\n",
+	       prog);
 }
 
 struct mytest {
@@ -1312,8 +1306,8 @@ main(int argc, char **argv)
 	struct TestContext ctx;
 	int loopback_if;
 	int num_tests;
-	int ret = 0;
-	int j   = -1;
+	int ret  = 0;
+	int j    = -1;
 	int list = 0;
 	int opt;
 	int i;
