@@ -2742,19 +2742,19 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 
 	case NIOCTXSYNC:
 	case NIOCRXSYNC: {
-		if (priv->np_nifp == NULL) {
+		if (unlikely(priv->np_nifp == NULL)) {
 			error = ENXIO;
 			break;
 		}
 		mb(); /* make sure following reads are not from cache */
 
-		na = priv->np_na;      /* we have a reference */
-
-		if (na == NULL) {
-			D("Internal error: nifp != NULL && na == NULL");
-			error = ENXIO;
+		if (unlikely(priv->np_csb_atok_base)) {
+			nm_prerr("Invalid sync in CSB mode\n");
+			error = EBUSY;
 			break;
 		}
+
+		na = priv->np_na;      /* we have a reference */
 
 		mbq_init(&q);
 		t = (cmd == NIOCTXSYNC ? NR_TX : NR_RX);
@@ -3150,16 +3150,20 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 
 	mbq_init(&q);
 
-	if (priv->np_nifp == NULL) {
-		D("No if registered");
+	if (unlikely(priv->np_nifp == NULL)) {
 		return POLLERR;
 	}
 	mb(); /* make sure following reads are not from cache */
 
 	na = priv->np_na;
 
-	if (!nm_netmap_on(na))
+	if (unlikely(!nm_netmap_on(na)))
 		return POLLERR;
+
+	if (unlikely(priv->np_csb_atok_base)) {
+		nm_prerr("Invalid poll in CSB mode\n");
+		return POLLERR;
+	}
 
 	if (netmap_verbose & 0x8000)
 		D("device %s events 0x%x", na->name, events);
