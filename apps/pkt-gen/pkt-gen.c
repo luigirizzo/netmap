@@ -2309,10 +2309,6 @@ usage(int errcode)
 		     "\t-i interface		interface name\n"
 		     "\t-f function		tx rx ping pong txseq rxseq\n"
 		     "\t-n count		number of iterations (can be 0)\n"
-#ifdef notyet
-		     "\t-t pkts_to_send		also forces tx mode\n"
-		     "\t-r pkts_to_receive	also forces rx mode\n"
-#endif
 		     "\t-l pkt_size		in bytes excluding CRC\n"
 		     "\t			(if passed a second time, use random sizes\n"
 		     "\t			 bigger than the second one and lower than\n"
@@ -2371,7 +2367,6 @@ usage(int errcode)
 #endif
 		     "\t-e extra-bufs		extra_bufs - goes in nr_arg3\n"
 		     "\t-B                      account for ethernet framing when showing bps\n"
-		     "\t-m			ignored\n"
 		     "",
 		cmd);
 	exit(errcode);
@@ -2440,7 +2435,7 @@ start_threads(struct glob_arg *g) {
 		t->used = 1;
 		t->me = i;
 		if (g->affinity >= 0) {
-			t->affinity = (g->affinity + i) % g->system_cpus;
+			t->affinity = (g->affinity + i) % g->cpus;
 		} else {
 			t->affinity = -1;
 		}
@@ -2722,7 +2717,7 @@ main(int arc, char **argv)
 	g.wait_link = 2;	/* wait 2 seconds for physical ports */
 
 	while ((ch = getopt(arc, argv, "46a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:"
-	    "T:w:WvR:XC:H:e:E:m:rP:zZAhBM:")) != -1) {
+	    "T:w:WvR:XC:H:e:E:rP:zZAhBM:")) != -1) {
 
 		switch(ch) {
 		default:
@@ -2733,6 +2728,7 @@ main(int arc, char **argv)
 		case 'h':
 			usage(0);
 			break;
+
 		case '4':
 			g.af = AF_INET;
 			break;
@@ -2887,9 +2883,6 @@ main(int arc, char **argv)
 			break;
 		case 'P':
 			g.packet_file = strdup(optarg);
-			break;
-		case 'm':
-			/* ignored */
 			break;
 		case 'r':
 			g.options |= OPT_RUBBISH;
