@@ -572,7 +572,7 @@ system_ncpus(void)
 /*
  * parse the vale configuration in conf and put it in nmr.
  * Return the flag set if necessary.
- * The configuration may consist of 0 to 4 numbers separated
+ * The configuration may consist of 1 to 4 numbers separated
  * by commas: #tx-slots,#rx-slots,#tx-rings,#rx-rings.
  * Missing numbers or zeroes stand for default values.
  * As an additional convenience, if exactly one number
@@ -2323,7 +2323,6 @@ usage(int errcode)
 		     "\t-R rate			in packets per second\n"
 		     "\t-X			dump payload\n"
 		     "\t-H len			add empty virtio-net-header with size 'len'\n"
-		     "\t-E pipes		allocate extra space for a number of pipes\n"
 		     "\t-r			do not touch the buffers (send rubbish)\n"
 	             "\t-P file			load packet from pcap file\n"
 		     "\t-z			use random IPv4 src address/port\n"
@@ -2350,9 +2349,9 @@ usage(int errcode)
 		     "\t			OPT_PPS_STATS   2048\n"
 		     "\t-W			exit RX with no traffic\n"
 		     "\t-v			verbose (more v = more verbose)\n"
+		     "\t-B                      account for ethernet framing when showing bps\n"
 		     "\t-C vale-config		specify a vale config\n"
-#ifdef notyet
-		     "\t			The configuration may consist of 0 to 4\n"
+		     "\t			The configuration may consist of 1 to 4\n"
 		     "\t			numbers separated by commas:\n"
 		     "\t			#tx-slots,#rx-slots,#tx-rings,#rx-rings.\n"
 		     "\t			Missing numbers or zeroes stand for default\n"
@@ -2361,8 +2360,6 @@ usage(int errcode)
 		     "\t			is assigned to both #tx-slots and #rx-slots.\n"
 		     "\t			If there is no 4th number, then the 3rd is\n"
 		     "\t			assigned to both #tx-rings and #rx-rings.\n"
-#endif
-		     "\t-B                      account for ethernet framing when showing bps\n"
 		     "",
 		cmd);
 	exit(errcode);
