@@ -597,7 +597,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 };
 
 /* A single ioctl number is shared by all the new API command.
- * Demultiplexing is done using the nr_hdr.nr_reqtype field.
+ * Demultiplexing is done using the hdr.nr_reqtype field.
  * FreeBSD uses the size value embedded in the _IOWR to determine
  * how much to copy in/out, so we define the ioctl() command
  * specifying only nmreq_header, and copyin/copyout the rest. */
@@ -664,7 +664,7 @@ struct nmreq_vale_list {
 
 /*
  * nr_reqtype: NETMAP_REQ_PORT_HDR_SET or NETMAP_REQ_PORT_HDR_GET
- * Set or get the port header length of the port identified by nr_hdr.nr_name.
+ * Set or get the port header length of the port identified by hdr.nr_name.
  * The control device does not need to be bound to a netmap port.
  */
 struct nmreq_port_hdr {
@@ -698,7 +698,7 @@ struct nmreq_vale_polling {
 /*
  * nr_reqtype: NETMAP_REQ_POOLS_INFO_GET
  * Get info about the pools of the memory allocator of the netmap
- * port specified by nr_hdr.nr_name and nr_mem_id. The netmap control
+ * port specified by hdr.nr_name and nr_mem_id. The netmap control
  * device used for this operation does not need to be bound to a netmap
  * port.
  */
