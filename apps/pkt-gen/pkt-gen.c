@@ -2267,7 +2267,7 @@ quit:
 
 
 static void
-tx_output(struct my_ctrs *cur, double delta, const char *msg)
+tx_output(struct glob_arg *g, struct my_ctrs *cur, double delta, const char *msg)
 {
 	double bw, raw_bw, pps, abs;
 	char b1[40], b2[80], b3[80];
@@ -2291,8 +2291,7 @@ tx_output(struct my_ctrs *cur, double delta, const char *msg)
 		size = 60;
 	pps = cur->pkts / delta;
 	bw = (8.0 * cur->bytes) / delta;
-	/* raw packets have4 bytes crc + 20 bytes framing */
-	raw_bw = (8.0 * (cur->pkts * 24 + cur->bytes)) / delta;
+	raw_bw = (8.0 * cur->bytes + cur->pkts * g->framing) / delta;
 	abs = cur->pkts / (double)(cur->events);
 
 	printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
@@ -2585,9 +2584,9 @@ main_thread(struct glob_arg *g)
 	timersub(&toc, &tic, &toc);
 	delta_t = toc.tv_sec + 1e-6* toc.tv_usec;
 	if (g->td_type == TD_TYPE_SENDER)
-		tx_output(&cur, delta_t, "Sent");
+		tx_output(g, &cur, delta_t, "Sent");
 	else if (g->td_type == TD_TYPE_RECEIVER)
-		tx_output(&cur, delta_t, "Received");
+		tx_output(g, &cur, delta_t, "Received");
 }
 
 struct td_desc {
@@ -2897,6 +2896,7 @@ main(int arc, char **argv)
 			g.options |= OPT_PPS_STATS;
 			break;
 		case 'B':
+			/* raw packets have4 bytes crc + 20 bytes framing */
 			// XXX maybe add an option to pass the IFG
 			g.framing = 24 * 8;
 			break;
