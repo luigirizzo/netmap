@@ -91,7 +91,7 @@ sync_kloop_kernel_write(struct nm_csb_ktoa __user *ptr, uint32_t hwcur,
 	 *          STORE(hwtail)        LOAD(hwcur)
 	 */
 	CSB_WRITE(ptr, hwcur, hwcur);
-	mb();
+	nm_stst_barrier();
 	CSB_WRITE(ptr, hwtail, hwtail);
 }
 
@@ -108,7 +108,7 @@ sync_kloop_kernel_read(struct nm_csb_atok __user *ptr,
 	 * (see explanation in ptnetmap_guest_write_kring_csb).
 	 */
 	CSB_READ(ptr, head, shadow_ring->head);
-	mb();
+	nm_stst_barrier();
 	CSB_READ(ptr, cur, shadow_ring->cur);
 	CSB_READ(ptr, sync_flags, shadow_ring->flags);
 }
