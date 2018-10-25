@@ -1916,6 +1916,9 @@ static inline int nm_kring_pending(struct netmap_priv_d *np)
 	return 0;
 }
 
+int netmap_csb_validate(struct netmap_priv_d *priv,
+			struct nmreq_opt_csb *csbo);
+
 /* call with NMG_LOCK held */
 static __inline int
 nm_si_user(struct netmap_priv_d *priv, enum txrx t)

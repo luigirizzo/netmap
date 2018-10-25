@@ -1997,7 +1997,7 @@ nm_priv_rx_enabled(struct netmap_priv_d *priv)
 }
 
 /* Validate the CSB entries for both directions (atok and ktoa). */
-static int
+int
 netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 {
 	int num_rings = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX] +
