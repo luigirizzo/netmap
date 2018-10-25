@@ -83,6 +83,7 @@ port_info_get(struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
+	req.nr_mem_id = ctx->nr_mem_id;
 	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
 	if (ret) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_INFO_GET)");
@@ -532,6 +533,30 @@ pipe_slave(struct TestContext *ctx)
 	ctx->nr_mode = NR_REG_ALL_NIC;
 
 	return port_register(ctx);
+}
+
+/* Test PORT_INFO_GET and POOLS_INFO_GET on a pipe. This is useful to test the
+ * registration request used internall by netmap. */
+static int
+pipe_port_info_get(struct TestContext *ctx)
+{
+	char pipe_name[128];
+
+	snprintf(pipe_name, sizeof(pipe_name), "%s}%s", ctx->ifname, "pipeid3");
+	ctx->ifname  = pipe_name;
+
+	return port_info_get(ctx);
+}
+
+static int
+pipe_pools_info_get(struct TestContext *ctx)
+{
+	char pipe_name[128];
+
+	snprintf(pipe_name, sizeof(pipe_name), "%s{%s", ctx->ifname, "xid");
+	ctx->ifname  = pipe_name;
+
+	return pools_info_get(ctx);
 }
 
 /* NETMAP_REQ_VALE_POLLING_ENABLE */
@@ -1246,6 +1271,8 @@ static struct mytest tests[] = {
 	decltest(pools_info_get_empty_ifname),
 	decltest(pipe_master),
 	decltest(pipe_slave),
+	decltest(pipe_port_info_get),
+	decltest(pipe_pools_info_get),
 	decltest(vale_polling_enable_disable),
 	decltest(unsupported_option),
 	decltest(infinite_options),
