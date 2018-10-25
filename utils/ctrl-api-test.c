@@ -1244,7 +1244,10 @@ sync_kloop_eventfds_mismatch(struct TestContext *ctx)
 static void
 usage(const char *prog)
 {
-	printf("%s -i IFNAME [-j TESTCASE]\n", prog);
+	printf("%s -i IFNAME\n"
+		"[-j TESTCASE_NUM]\n"
+		"[-l (list test cases)]\n",
+		prog);
 }
 
 struct mytest {
@@ -1311,14 +1314,15 @@ main(int argc, char **argv)
 	int num_tests;
 	int ret = 0;
 	int j   = -1;
-	int i;
+	int list = 0;
 	int opt;
+	int i;
 
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.ifname  = "lo";
 	ctx.bdgname = "vale1x2";
 
-	while ((opt = getopt(argc, argv, "hi:j:")) != -1) {
+	while ((opt = getopt(argc, argv, "hi:j:l")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage(argv[0]);
@@ -1332,11 +1336,25 @@ main(int argc, char **argv)
 			j = atoi(optarg);
 			break;
 
+		case 'l':
+			list = 1;
+			break;
+
 		default:
 			printf("    Unrecognized option %c\n", opt);
 			usage(argv[0]);
 			return -1;
 		}
+	}
+
+	num_tests = sizeof(tests) / sizeof(tests[0]);
+
+	if (list) {
+		printf("Available tests:\n");
+		for (i = 0; i < num_tests; i++) {
+			printf("#%03d: %s\n", i + 1, tests[i].name);
+		}
+		return 0;
 	}
 
 	loopback_if = !strcmp(ctx.ifname, "lo");
@@ -1350,8 +1368,6 @@ main(int argc, char **argv)
 			return -1;
 		}
 	}
-
-	num_tests = sizeof(tests) / sizeof(tests[0]);
 
 	if (j >= 0) {
 		j--; /* one-based --> zero-based */
