@@ -1113,6 +1113,27 @@ sync_kloop_nocsb(struct TestContext *ctx)
 }
 
 static int
+sync_kloop_csb_on_start(struct TestContext *ctx)
+{
+	struct nmreq_opt_csb opt;
+	int ret;
+
+	ctx->nr_flags |= NR_EXCLUSIVE;
+	ret = port_register_hwall(ctx);
+	if (ret) {
+		return ret;
+	}
+
+	ret = push_csb_option(ctx, &opt);
+	if (ret) {
+		return ret;
+	}
+
+	return sync_kloop_start_stop(ctx);
+
+}
+
+static int
 sync_kloop_conflict(struct TestContext *ctx)
 {
 	struct nmreq_opt_csb opt;
@@ -1239,6 +1260,7 @@ static struct mytest tests[] = {
 	decltest(sync_kloop_eventfds_all),
 	decltest(sync_kloop_eventfds_all_tx),
 	decltest(sync_kloop_nocsb),
+	decltest(sync_kloop_csb_on_start),
 	decltest(sync_kloop_conflict),
 	decltest(sync_kloop_eventfds_mismatch),
 };
