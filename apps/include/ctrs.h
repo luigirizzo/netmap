@@ -1,6 +1,8 @@
 #ifndef CTRS_H_
 #define CTRS_H_
 
+/* $FreeBSD$ */
+
 #include <sys/time.h>
 
 /* counters to accumulate statistics */
