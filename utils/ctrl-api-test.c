@@ -702,7 +702,7 @@ change_param(const char *pname, unsigned long newv, unsigned long *poldv)
 	unsigned long oldv;
 	FILE *f;
 
-	strncat(param, pname, 256);
+	strncat(param, pname, sizeof(param)-1);
 
 	f = fopen(param, "r+");
 	if (f == NULL) {
