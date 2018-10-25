@@ -2531,6 +2531,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 					 * so that we can call netmap_get_na(). */
 					struct nmreq_register regreq;
 					bzero(&regreq, sizeof(regreq));
+					regreq.nr_mode = NR_REG_ALL_NIC;
 					regreq.nr_tx_slots = req->nr_tx_slots;
 					regreq.nr_rx_slots = req->nr_rx_slots;
 					regreq.nr_tx_rings = req->nr_tx_rings;
@@ -2598,6 +2599,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			 * so that we can call netmap_get_bdg_na(). */
 			struct nmreq_register regreq;
 			bzero(&regreq, sizeof(regreq));
+			regreq.nr_mode = NR_REG_ALL_NIC;
+
 			/* For now we only support virtio-net headers, and only for
 			 * VALE ports, but this may change in future. Valid lengths
 			 * for the virtio-net header are 0 (no header), 10 and 12. */
@@ -2639,6 +2642,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			struct ifnet *ifp;
 
 			bzero(&regreq, sizeof(regreq));
+			regreq.nr_mode = NR_REG_ALL_NIC;
 			NMG_LOCK();
 			hdr->nr_reqtype = NETMAP_REQ_REGISTER;
 			hdr->nr_body = (uintptr_t)&regreq;
@@ -2681,6 +2685,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 				struct nmreq_register regreq;
 				bzero(&regreq, sizeof(regreq));
 				regreq.nr_mem_id = req->nr_mem_id;
+				regreq.nr_mode = NR_REG_ALL_NIC;
 
 				hdr->nr_reqtype = NETMAP_REQ_REGISTER;
 				hdr->nr_body = (uintptr_t)&regreq;
