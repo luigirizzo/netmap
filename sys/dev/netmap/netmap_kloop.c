@@ -60,15 +60,6 @@
 #define SYNC_KLOOP_POLL
 #endif
 
-/* Functions to read and write CSB fields from the kernel. */
-#if defined (linux)
-#define CSB_READ(csb, field, r) (get_user(r, &csb->field))
-#define CSB_WRITE(csb, field, v) (put_user(v, &csb->field))
-#else  /* ! linux */
-#define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
-#define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
-#endif /* ! linux */
-
 /* Write kring pointers (hwcur, hwtail) to the CSB.
  * This routine is coupled with ptnetmap_guest_read_kring_csb(). */
 static inline void

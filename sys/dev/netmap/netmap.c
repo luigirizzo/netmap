@@ -2000,17 +2000,22 @@ nm_priv_rx_enabled(struct netmap_priv_d *priv)
 int
 netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 {
-	int num_rings = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX] +
-			priv->np_qlast[NR_TX] - priv->np_qfirst[NR_TX];
 	struct nm_csb_atok *csb_atok_base =
 		(struct nm_csb_atok *)(uintptr_t)csbo->csb_atok;
 	struct nm_csb_ktoa *csb_ktoa_base =
 		(struct nm_csb_ktoa *)(uintptr_t)csbo->csb_ktoa;
+	enum txrx t;
+	int num_rings[NR_TXRX], tot_rings;
 	size_t entry_size[2];
 	void *csb_start[2];
 	int i;
 
-	if (num_rings <= 0)
+	tot_rings = 0;
+	for_rx_tx(t) {
+		num_rings[t] = priv->np_qlast[t] - priv->np_qfirst[t];
+		tot_rings += num_rings[t];
+	}
+	if (tot_rings <= 0)
 		return 0;
 
 	if (!(priv->np_flags & NR_EXCLUSIVE)) {
@@ -2028,7 +2033,7 @@ netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 		 * the validation. However, the advantage of
 		 * this approach is that it works also on
 		 * FreeBSD. */
-		size_t csb_size = num_rings * entry_size[i];
+		size_t csb_size = tot_rings * entry_size[i];
 		void *tmp;
 		int err;
 
@@ -2057,6 +2062,34 @@ netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 
 	priv->np_csb_atok_base = csb_atok_base;
 	priv->np_csb_ktoa_base = csb_ktoa_base;
+
+	/* Initialize the CSB. */
+	for_rx_tx(t) {
+		for (i = 0; i < num_rings[t]; i++) {
+			struct netmap_kring *kring =
+				NMR(priv->np_na, t)[i + priv->np_qfirst[t]];
+			struct nm_csb_atok *csb_atok = csb_atok_base + i;
+			struct nm_csb_ktoa *csb_ktoa = csb_ktoa_base + i;
+
+			if (t == NR_RX) {
+				csb_atok += num_rings[NR_TX];
+				csb_ktoa += num_rings[NR_TX];
+			}
+
+			CSB_WRITE(csb_atok, head, kring->rhead);
+			CSB_WRITE(csb_atok, cur, kring->rcur);
+			CSB_WRITE(csb_atok, appl_need_kick, 1);
+			CSB_WRITE(csb_atok, sync_flags, 1);
+			CSB_WRITE(csb_ktoa, hwcur, kring->nr_hwcur);
+			CSB_WRITE(csb_ktoa, hwtail, kring->nr_hwtail);
+			CSB_WRITE(csb_ktoa, kern_need_kick, 1);
+
+			nm_prinf("csb_init for kring %s: head %u, cur %u, "
+				"hwcur %u, hwtail %u\n", kring->name,
+				kring->rhead, kring->rcur, kring->nr_hwcur,
+				kring->nr_hwtail);
+		}
+	}
 
 	return 0;
 }

@@ -2303,4 +2303,13 @@ int nmreq_checkduplicate(struct nmreq_option *);
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
 
+/* Functions to read and write CSB fields from the kernel. */
+#if defined (linux)
+#define CSB_READ(csb, field, r) (get_user(r, &csb->field))
+#define CSB_WRITE(csb, field, v) (put_user(v, &csb->field))
+#else  /* ! linux */
+#define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
+#define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
+#endif /* ! linux */
+
 #endif /* _NET_NETMAP_KERN_H_ */
