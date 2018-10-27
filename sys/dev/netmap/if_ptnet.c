@@ -1215,13 +1215,9 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			if (ret) {
 				return ret;
 			}
-		}
 
-		/* Sync from CSB must be done after REGIF PTCTL. Skip this
-		 * step only if this is a netmap client and it is not the
-		 * first one. */
-		if ((!native && sc->ptna->backend_regifs == 0) ||
-				(native && na->active_fds == 0)) {
+			/* Align the guest krings and rings to the state stored
+			 * in the CSB. */
 			ptnet_sync_from_csb(sc, na);
 		}
 
@@ -1252,12 +1248,6 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 					}
 				}
 			}
-		}
-
-		/* Sync from CSB must be done before UNREGIF PTCTL, on the last
-		 * netmap client. */
-		if (native && na->active_fds == 0) {
-			ptnet_sync_from_csb(sc, na);
 		}
 
 		if (sc->ptna->backend_regifs == 0) {
