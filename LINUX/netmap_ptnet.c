@@ -1060,8 +1060,8 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 		} else {
 			kring = na->rx_rings[i - na->num_tx_rings];
 		}
-		kring->rhead = kring->ring->head = atok->head;
-		kring->rcur = kring->ring->cur = atok->cur;
+		kring->rhead = atok->head;
+		kring->rcur = atok->cur;
 		kring->nr_hwcur = ktoa->hwcur;
 		kring->nr_hwtail = kring->rtail =
 			kring->ring->tail = ktoa->hwtail;
@@ -1148,13 +1148,13 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			if (ret) {
 				return ret;
 			}
-		}
 
-		/* Sync from CSB must be done after REGIF PTCTL. Skip this
-		 * step only if this is a netmap client and it is not the
-		 * first one. */
-		if ((!native && pi->ptna->backend_regifs == 0) ||
-				(native && na->active_fds == 0)) {
+			/* Wait for a while to make sure that the CSB has been
+			 * initialized. TODO fix the need for this */
+			usleep_range(5000, 6000);
+
+			/* Align the guest krings and rings to the state stored
+			 * in the CSB. */
 			ptnet_sync_from_csb(pi, na);
 		}
 
@@ -1185,12 +1185,6 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 					}
 				}
 			}
-		}
-
-		/* Sync from CSB must be done before UNREGIF PTCTL, on the last
-		 * netmap client. */
-		if (native && na->active_fds == 0) {
-			ptnet_sync_from_csb(pi, na);
 		}
 
 		if (pi->ptna->backend_regifs == 0) {
