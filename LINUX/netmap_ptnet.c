@@ -830,8 +830,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 				__func__, ret);
 			goto err_irqs;
 		}
-		pr_info("%s: IRQ for ring #%d --> %u, handler %p\n",
-				__func__, i, vector, handler);
+		pr_info("%s: IRQ for ring #%d --> %u\n", __func__, i, vector);
 	}
 
 	return 0;
