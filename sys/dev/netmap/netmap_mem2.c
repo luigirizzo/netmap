@@ -2668,7 +2668,7 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 			continue;
 		kring->ring = (struct netmap_ring *)
 			((char *)nifp +
-			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
+			 nifp->ring_ofs[netmap_all_rings(na, NR_TX) + i]);
 	}
 
 	error = 0;
