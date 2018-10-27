@@ -90,7 +90,6 @@ port_info_get(struct TestContext *ctx)
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_INFO_GET)");
 		return ret;
 	}
-	printf("nr_offset 0x%lx\n", req.nr_offset);
 	printf("nr_memsize %lu\n", req.nr_memsize);
 	printf("nr_tx_slots %u\n", req.nr_tx_slots);
 	printf("nr_rx_slots %u\n", req.nr_rx_slots);

@@ -239,7 +239,6 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			if (!req) { goto oom; }
 			hdr->nr_body = (uintptr_t)req;
 			hdr->nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
-			req->nr_offset = nmr->nr_offset;
 			req->nr_memsize = nmr->nr_memsize;
 			req->nr_tx_slots = nmr->nr_tx_slots;
 			req->nr_rx_slots = nmr->nr_rx_slots;
@@ -297,7 +296,6 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 	case NETMAP_REQ_PORT_INFO_GET: {
 		struct nmreq_port_info_get *req =
 			(struct nmreq_port_info_get *)(uintptr_t)hdr->nr_body;
-		nmr->nr_offset = req->nr_offset;
 		nmr->nr_memsize = req->nr_memsize;
 		nmr->nr_tx_slots = req->nr_tx_slots;
 		nmr->nr_rx_slots = req->nr_rx_slots;

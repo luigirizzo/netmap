@@ -2597,7 +2597,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 					break;
 				if (na == NULL) /* only memory info */
 					break;
-				req->nr_offset = 0;
 				netmap_update_config(na);
 				req->nr_rx_rings = na->num_rx_rings;
 				req->nr_tx_rings = na->num_tx_rings;

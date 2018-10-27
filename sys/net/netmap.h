@@ -618,7 +618,6 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
  * to a netmap port.
  */
 struct nmreq_port_info_get {
-	uint64_t	nr_offset;	/* nifp offset in the shared region */
 	uint64_t	nr_memsize;	/* size of the shared region */
 	uint32_t	nr_tx_slots;	/* slots in tx rings */
 	uint32_t	nr_rx_slots;	/* slots in rx rings */
