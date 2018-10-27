@@ -1066,11 +1066,11 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 		kring->nr_hwtail = kring->rtail =
 			kring->ring->tail = ktoa->hwtail;
 
-		ND("%d,%d: csb {hc %u h %u c %u ht %u}", t, i,
+		ND("%s: csb {hc %u h %u c %u ht %u}", kring->name,
 		   ktoa->hwcur, atok->head, atok->cur,
 		   ktoa->hwtail);
-		ND("%d,%d: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
-		   t, i, kring->nr_hwcur, kring->rhead, kring->rcur,
+		ND("%s: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
+		   kring->name, kring->nr_hwcur, kring->rhead, kring->rcur,
 		   kring->ring->head, kring->ring->cur, kring->nr_hwtail,
 		   kring->rtail, kring->ring->tail);
 	}
