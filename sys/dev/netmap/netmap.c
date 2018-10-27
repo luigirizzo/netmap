@@ -1719,7 +1719,7 @@ nm_rxsync_prologue(struct netmap_kring *kring, struct netmap_ring *ring)
 
 /*
  * Error routine called when txsync/rxsync detects an error.
- * Can't do much more than resetting head =cur = hwcur, tail = hwtail
+ * Can't do much more than resetting head = cur = hwcur, tail = hwtail
  * Return 1 on reinit.
  *
  * This routine is only called by the upper half of the kernel.
