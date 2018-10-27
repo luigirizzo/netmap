@@ -1059,8 +1059,8 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 		} else {
 			kring = na->rx_rings[i - na->num_tx_rings];
 		}
-		kring->rhead = atok->head;
-		kring->rcur = atok->cur;
+		kring->rhead = kring->ring->head = atok->head;
+		kring->rcur = kring->ring->cur = atok->cur;
 		kring->nr_hwcur = ktoa->hwcur;
 		kring->nr_hwtail = kring->rtail =
 			kring->ring->tail = ktoa->hwtail;
