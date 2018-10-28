@@ -505,11 +505,24 @@ err_path:
 	return err;
 }
 
+/* Stop host sync-kloop if it was running. */
+static void
+ptnet_device_shutdown(struct ptnet_softc *sc)
+{
+	ptnet_nm_ptctl(sc->ifp, PTNETMAP_PTCTL_DELETE);
+	bus_write_4(sc->iomem, PTNET_IO_CSB_GH_BAH, 0);
+	bus_write_4(sc->iomem, PTNET_IO_CSB_GH_BAL, 0);
+	bus_write_4(sc->iomem, PTNET_IO_CSB_HG_BAH, 0);
+	bus_write_4(sc->iomem, PTNET_IO_CSB_HG_BAL, 0);
+}
+
 static int
 ptnet_detach(device_t dev)
 {
 	struct ptnet_softc *sc = device_get_softc(dev);
 	int i;
+
+	ptnet_device_shutdown(sc);
 
 #ifdef DEVICE_POLLING
 	if (sc->ifp->if_capenable & IFCAP_POLLING) {
@@ -543,10 +556,6 @@ ptnet_detach(device_t dev)
 	ptnet_irqs_fini(sc);
 
 	if (sc->csb_gh) {
-		bus_write_4(sc->iomem, PTNET_IO_CSB_GH_BAH, 0);
-		bus_write_4(sc->iomem, PTNET_IO_CSB_GH_BAL, 0);
-		bus_write_4(sc->iomem, PTNET_IO_CSB_HG_BAH, 0);
-		bus_write_4(sc->iomem, PTNET_IO_CSB_HG_BAL, 0);
 		contigfree(sc->csb_gh, 2*PAGE_SIZE, M_DEVBUF);
 		sc->csb_gh = NULL;
 		sc->csb_hg = NULL;
@@ -583,9 +592,8 @@ ptnet_detach(device_t dev)
 static int
 ptnet_suspend(device_t dev)
 {
-	struct ptnet_softc *sc;
+	struct ptnet_softc *sc = device_get_softc(dev);
 
-	sc = device_get_softc(dev);
 	(void)sc;
 
 	return (0);
@@ -594,9 +602,8 @@ ptnet_suspend(device_t dev)
 static int
 ptnet_resume(device_t dev)
 {
-	struct ptnet_softc *sc;
+	struct ptnet_softc *sc = device_get_softc(dev);
 
-	sc = device_get_softc(dev);
 	(void)sc;
 
 	return (0);
@@ -605,11 +612,11 @@ ptnet_resume(device_t dev)
 static int
 ptnet_shutdown(device_t dev)
 {
-	/*
-	 * Suspend already does all of what we need to
-	 * do here; we just never expect to be resumed.
-	 */
-	return (ptnet_suspend(dev));
+	struct ptnet_softc *sc = device_get_softc(dev);
+
+	ptnet_device_shutdown(sc);
+
+	return (0);
 }
 
 static int
