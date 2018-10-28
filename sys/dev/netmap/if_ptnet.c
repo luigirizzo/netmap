@@ -1672,18 +1672,6 @@ ptnet_rx_csum(struct mbuf *m, struct virtio_net_hdr *hdr)
 }
 /* End of offloading-related functions to be shared with vtnet. */
 
-static inline void
-ptnet_sync_tail(struct nm_csb_ktoa *ktoa, struct netmap_kring *kring)
-{
-	struct netmap_ring *ring = kring->ring;
-
-	/* Update hwcur and hwtail as known by the host. */
-        ptnetmap_guest_read_kring_csb(ktoa, kring);
-
-	/* nm_sync_finalize */
-	ring->tail = kring->rtail = kring->nr_hwtail;
-}
-
 static void
 ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 		  unsigned int head, unsigned int sync_flags)

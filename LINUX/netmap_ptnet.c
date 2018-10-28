@@ -142,18 +142,6 @@ hang_tmr_callback(unsigned long arg)
 }
 #endif
 
-static inline void
-ptnet_sync_tail(struct nm_csb_ktoa *ktoa, struct netmap_kring *kring)
-{
-	struct netmap_ring *ring = kring->ring;
-
-	/* Update hwcur and hwtail as known by the host. */
-	ptnetmap_guest_read_kring_csb(ktoa, kring);
-
-	/* nm_sync_finalize */
-	ring->tail = kring->rtail = kring->nr_hwtail;
-}
-
 static inline int
 ptnet_tx_slots(struct netmap_ring *ring)
 {
