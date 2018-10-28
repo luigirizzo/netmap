@@ -1996,7 +1996,8 @@ nm_priv_rx_enabled(struct netmap_priv_d *priv)
 	return (priv->np_qfirst[NR_RX] != priv->np_qlast[NR_RX]);
 }
 
-/* Validate the CSB entries for both directions (atok and ktoa). */
+/* Validate the CSB entries for both directions (atok and ktoa).
+ * To be called under NMG_LOCK(). */
 static int
 netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 {
@@ -2010,8 +2011,8 @@ netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 	void *csb_start[2];
 	int i;
 
-	if (priv->np_csb_atok_base || priv->np_csb_ktoa_base) {
-		nm_prerr("CSB mode already set\n");
+	if (priv->np_kloop_state & NM_SYNC_KLOOP_RUNNING) {
+		nm_prerr("Cannot update CSB while kloop is running\n");
 		return EBUSY;
 	}
 
@@ -2765,7 +2766,9 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 					(struct nmreq_opt_csb *)opt;
 				error = nmreq_checkduplicate(opt);
 				if (!error) {
+					NMG_LOCK();
 					error = netmap_csb_validate(priv, csbo);
+					NMG_UNLOCK();
 				}
 				opt->nro_status = error;
 			}

@@ -460,8 +460,10 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		return ENXIO;
 	}
 
+	NMG_LOCK();
 	/* Make sure the application is working in CSB mode. */
 	if (!priv->np_csb_atok_base || !priv->np_csb_ktoa_base) {
+		NMG_UNLOCK();
 		nm_prerr("sync-kloop on %s requires "
 				"NETMAP_REQ_OPT_CSB option\n", na->name);
 		return EINVAL;
@@ -471,7 +473,6 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	csb_ktoa_base = priv->np_csb_ktoa_base;
 
 	/* Make sure that no kloop is currently running. */
-	NMG_LOCK();
 	if (priv->np_kloop_state & NM_SYNC_KLOOP_RUNNING) {
 		err = EBUSY;
 	}
