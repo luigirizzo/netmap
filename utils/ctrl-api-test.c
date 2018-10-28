@@ -1357,7 +1357,7 @@ main(int argc, char **argv)
 		 * registering the interface. To stay safe, let's
 		 * just use a standard MTU. */
 		if (system("ip link set dev lo mtu 1514")) {
-			perror("system(mtu=1514)");
+			printf("system(%s, mtu=1514) failed\n", ctx.ifname);
 			return -1;
 		}
 	}
