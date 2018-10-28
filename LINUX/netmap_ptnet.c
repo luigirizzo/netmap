@@ -896,7 +896,7 @@ ptnet_open(struct net_device *netdev)
 		goto err_mem_finalize;
 	}
 
-	if (pi->ptna->backend_regifs == 0) {
+	if (pi->ptna->backend_users == 0) {
 		ret = ptnet_nm_krings_create(na_nm);
 		if (ret) {
 			pr_err("%s: ptnet_nm_krings_create() failed\n",
@@ -1010,7 +1010,7 @@ ptnet_close(struct net_device *netdev)
 
 	ptnet_nm_register(na_dr, 0 /* off */);
 
-	if (pi->ptna->backend_regifs == 0) {
+	if (pi->ptna->backend_users == 0) {
 		netmap_mem_rings_delete(na_dr);
 		ptnet_nm_krings_delete(na_nm);
 	}
@@ -1102,7 +1102,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	BUG_ON(!(na == &pi->ptna->hwup.up || na == &pi->ptna->dr.up));
 
 	if (!onoff) {
-		pi->ptna->backend_regifs--;
+		pi->ptna->backend_users--;
 	}
 
 	/* If this is the last netmap client, guest interrupt enable flags may
@@ -1129,7 +1129,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	}
 
 	if (onoff) {
-		if (pi->ptna->backend_regifs == 0) {
+		if (pi->ptna->backend_users == 0) {
 			/* Initialize notification enable fields in the CSB. */
 			for (i = 0; i < pi->num_rings; i++) {
 				atok = pi->queues[i]->atok;
@@ -1186,13 +1186,13 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		if (pi->ptna->backend_regifs == 0) {
+		if (pi->ptna->backend_users == 0) {
 			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_DELETE);
 		}
 	}
 
 	if (onoff) {
-		pi->ptna->backend_regifs++;
+		pi->ptna->backend_users++;
 	}
 
 	return ret;

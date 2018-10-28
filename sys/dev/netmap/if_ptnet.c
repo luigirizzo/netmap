@@ -881,7 +881,7 @@ ptnet_init_locked(struct ptnet_softc *sc)
 		return ret;
 	}
 
-	if (sc->ptna->backend_regifs == 0) {
+	if (sc->ptna->backend_users == 0) {
 		ret = ptnet_nm_krings_create(na_nm);
 		if (ret) {
 			device_printf(sc->dev, "ptnet_nm_krings_create() "
@@ -962,7 +962,7 @@ ptnet_stop(struct ptnet_softc *sc)
 
 	ptnet_nm_register(na_dr, 0 /* off */);
 
-	if (sc->ptna->backend_regifs == 0) {
+	if (sc->ptna->backend_users == 0) {
 		netmap_mem_rings_delete(na_dr);
 		ptnet_nm_krings_delete(na_nm);
 	}
@@ -1178,7 +1178,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	int i;
 
 	if (!onoff) {
-		sc->ptna->backend_regifs--;
+		sc->ptna->backend_users--;
 	}
 
 	/* If this is the last netmap client, guest interrupt enable flags may
@@ -1196,7 +1196,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	}
 
 	if (onoff) {
-		if (sc->ptna->backend_regifs == 0) {
+		if (sc->ptna->backend_users == 0) {
 			/* Initialize notification enable fields in the CSB. */
 			for (i = 0; i < sc->num_rings; i++) {
 				pq = sc->queues + i;
@@ -1250,13 +1250,13 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		if (sc->ptna->backend_regifs == 0) {
+		if (sc->ptna->backend_users == 0) {
 			ret = ptnet_nm_ptctl(ifp, PTNETMAP_PTCTL_DELETE);
 		}
 	}
 
 	if (onoff) {
-		sc->ptna->backend_regifs++;
+		sc->ptna->backend_users++;
 	}
 
 	return ret;

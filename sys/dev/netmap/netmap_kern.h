@@ -2166,7 +2166,7 @@ struct netmap_pt_guest_adapter {
 	 * network stack and netmap clients.
 	 * Used to decide when we need (de)allocate krings/rings and
 	 * start (stop) ptnetmap kthreads. */
-	int backend_regifs;
+	int backend_users;
 
 };
 

@@ -830,7 +830,7 @@ ptnet_nm_krings_create(struct netmap_adapter *na)
 	struct netmap_adapter *na_dr = &ptna->dr.up;
 	int ret;
 
-	if (ptna->backend_regifs) {
+	if (ptna->backend_users) {
 		return 0;
 	}
 
@@ -855,7 +855,7 @@ ptnet_nm_krings_delete(struct netmap_adapter *na)
 	struct netmap_adapter *na_nm = &ptna->hwup.up;
 	struct netmap_adapter *na_dr = &ptna->dr.up;
 
-	if (ptna->backend_regifs) {
+	if (ptna->backend_users) {
 		return;
 	}
 
@@ -904,7 +904,7 @@ netmap_pt_guest_attach(struct netmap_adapter *arg,
 	ptna->dr.up.nm_mem = netmap_mem_get(ptna->hwup.up.nm_mem);
         ptna->dr.up.nm_config = ptna->hwup.up.nm_config;
 
-	ptna->backend_regifs = 0;
+	ptna->backend_users = 0;
 
 	return 0;
 }
