@@ -1032,10 +1032,8 @@ static const struct net_device_ops ptnet_netdev_ops = {
 
 
 static uint32_t
-ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
+ptnet_nm_ptctl(struct ptnet_info *pi, uint32_t cmd)
 {
-	struct ptnet_info *pi = netdev_priv(netdev);
-
 	/* Write a command and read back error status,
 	 * with zero meaning success. */
 	iowrite32(cmd, pi->ioaddr + PTNET_IO_PTCTL);
@@ -1143,7 +1141,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 
 			/* Make sure the host adapter passed through is ready
 			 * for txsync/rxsync. */
-			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_CREATE);
+			ret = ptnet_nm_ptctl(pi, PTNETMAP_PTCTL_CREATE);
 			if (ret) {
 				return ret;
 			}
@@ -1183,7 +1181,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		}
 
 		if (pi->ptna->backend_users == 0) {
-			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_DELETE);
+			ret = ptnet_nm_ptctl(pi, PTNETMAP_PTCTL_DELETE);
 		}
 	}
 
@@ -1532,7 +1530,7 @@ err_pci_reg:
 static void
 ptnet_device_shutdown(struct ptnet_info *pi)
 {
-	ptnet_nm_ptctl(pi->netdev, PTNETMAP_PTCTL_DELETE);
+	ptnet_nm_ptctl(pi, PTNETMAP_PTCTL_DELETE);
 	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAH);
 	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAL);
 	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_HG_BAH);
