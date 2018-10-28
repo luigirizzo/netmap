@@ -1528,6 +1528,17 @@ err_pci_reg:
 	return err;
 }
 
+static void
+ptnet_device_shutdown(struct ptnet_info *pi)
+{
+	/* Stop the host sync-kloop in case it was running. */
+	ptnet_nm_ptctl(pi->netdev, PTNETMAP_PTCTL_DELETE);
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAH);
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAL);
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_HG_BAH);
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_HG_BAL);
+}
+
 /*
  * ptnet_remove - Device Removal Routine
  *
@@ -1561,24 +1572,21 @@ ptnet_remove(struct pci_dev *pdev)
 		netif_napi_del(&prq->napi);
 	}
 
+	/* Deallocate resources and disable the device. */
 	ptnet_irqs_fini(pi);
-
+	ptnet_device_shutdown(pi);
 	iounmap(pi->ioaddr);
-	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAH);
-	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAL);
-	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_HG_BAH);
-	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_HG_BAL);
 	put_page(pi->csb_pages);
 	pci_release_selected_regions(pdev, pi->bars);
 	free_netdev(netdev);
 	pci_disable_device(pdev);
 }
 
-#if 0
-static void
+void
 ptnet_shutdown(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
+	struct ptnet_info *pi = netdev_priv(netdev);
 
 	netif_device_detach(netdev);
 
@@ -1586,6 +1594,6 @@ ptnet_shutdown(struct pci_dev *pdev)
 		ptnet_close(netdev);
 	}
 
+	ptnet_device_shutdown(pi);
 	pci_disable_device(pdev);
 }
-#endif

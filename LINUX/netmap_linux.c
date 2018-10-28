@@ -1757,6 +1757,7 @@ nm_os_kctx_destroy(struct nm_kctx *nmk)
 
 int ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *id);
 void ptnet_remove(struct pci_dev *pdev);
+void ptnet_shutdown(struct pci_dev *pdev);
 
 /*
  * PCI Device ID Table
@@ -1928,6 +1929,15 @@ ptnetmap_guest_remove(struct pci_dev *pdev)
 	kfree(ptn_dev);
 }
 
+static void
+ptnetmap_guest_shutdown(struct pci_dev *pdev)
+{
+	if (pdev->device == PTNETMAP_PCI_NETIF_ID) {
+		/* Shutdown the ptnet device. */
+		ptnet_shutdown(pdev);
+	}
+}
+
 /*
  * pci driver information
  */
@@ -1936,6 +1946,7 @@ static struct pci_driver ptnetmap_guest_drivers = {
 	.id_table   = ptnetmap_guest_device_table,
 	.probe      = ptnetmap_guest_probe,
 	.remove     = ptnetmap_guest_remove,
+	.shutdown   = ptnetmap_guest_shutdown,
 };
 
 /*
