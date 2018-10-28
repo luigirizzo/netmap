@@ -1148,10 +1148,6 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 				return ret;
 			}
 
-			/* Wait for a while to make sure that the CSB has been
-			 * initialized. TODO fix the need for this */
-			usleep_range(5000, 6000);
-
 			/* Align the guest krings and rings to the state stored
 			 * in the CSB. */
 			ptnet_sync_from_csb(pi, na);
