@@ -2010,6 +2010,11 @@ netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 	void *csb_start[2];
 	int i;
 
+	if (priv->np_csb_atok_base || priv->np_csb_ktoa_base) {
+		nm_prerr("CSB mode already set\n");
+		return EBUSY;
+	}
+
 	tot_rings = 0;
 	for_rx_tx(t) {
 		num_rings[t] = priv->np_qlast[t] - priv->np_qfirst[t];
