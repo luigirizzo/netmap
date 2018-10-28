@@ -1837,7 +1837,7 @@ nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *ptn_dev)
 }
 
 /*
- * Device Initialization Routine
+ * Device initialization routine
  *
  * Returns 0 on success, negative on failure
  */
@@ -1903,7 +1903,7 @@ err:
 }
 
 /*
- * Device Removal Routine
+ * Device removal routine.
  */
 static void
 ptnetmap_guest_remove(struct pci_dev *pdev)
@@ -1929,6 +1929,10 @@ ptnetmap_guest_remove(struct pci_dev *pdev)
 	kfree(ptn_dev);
 }
 
+/*
+ * Device shutdown routine, called when the system is going to power
+ * off or reboot.
+ */
 static void
 ptnetmap_guest_shutdown(struct pci_dev *pdev)
 {
@@ -1936,6 +1940,9 @@ ptnetmap_guest_shutdown(struct pci_dev *pdev)
 		/* Shutdown the ptnet device. */
 		ptnet_shutdown(pdev);
 	}
+
+	/* Shutdown the memdev device. */
+	pci_disable_device(pdev);
 }
 
 /*

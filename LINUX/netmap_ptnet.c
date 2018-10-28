@@ -1267,7 +1267,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 };
 
 /*
- * ptnet_probe - Device Initialization Routine
+ * ptnet_probe - Device initialization routine
  * @ent: entry in ptnet_pci_table
  *
  * Returns 0 on success, negative on failure
@@ -1528,10 +1528,10 @@ err_pci_reg:
 	return err;
 }
 
+/* Stop the host sync-kloop in case it was running. */
 static void
 ptnet_device_shutdown(struct ptnet_info *pi)
 {
-	/* Stop the host sync-kloop in case it was running. */
 	ptnet_nm_ptctl(pi->netdev, PTNETMAP_PTCTL_DELETE);
 	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAH);
 	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAL);
@@ -1540,7 +1540,7 @@ ptnet_device_shutdown(struct ptnet_info *pi)
 }
 
 /*
- * ptnet_remove - Device Removal Routine
+ * ptnet_remove - Device removal routine
  *
  * ptnet_remove is called by the PCI subsystem to alert the driver
  * that it should release a PCI device.  The could be caused by a
@@ -1553,6 +1553,9 @@ ptnet_remove(struct pci_dev *pdev)
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int i;
+
+	/* Stop the host sync-kloop. */
+	ptnet_device_shutdown(pi);
 
 	netif_carrier_off(netdev);
 
@@ -1574,7 +1577,6 @@ ptnet_remove(struct pci_dev *pdev)
 
 	/* Deallocate resources and disable the device. */
 	ptnet_irqs_fini(pi);
-	ptnet_device_shutdown(pi);
 	iounmap(pi->ioaddr);
 	put_page(pi->csb_pages);
 	pci_release_selected_regions(pdev, pi->bars);
@@ -1582,18 +1584,22 @@ ptnet_remove(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
+/*
+ * Device shutdown routine, called when the system is going to
+ * power off or reboot.
+ */
 void
 ptnet_shutdown(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct ptnet_info *pi = netdev_priv(netdev);
 
-	netif_device_detach(netdev);
+	/* Stop the host sync-kloop. */
+	ptnet_device_shutdown(pi);
 
+	netif_device_detach(netdev);
 	if (netif_running(netdev)) {
 		ptnet_close(netdev);
 	}
-
-	ptnet_device_shutdown(pi);
 	pci_disable_device(pdev);
 }
