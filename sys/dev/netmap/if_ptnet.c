@@ -209,7 +209,7 @@ static void	ptnet_tick(void *opaque);
 static int	ptnet_irqs_init(struct ptnet_softc *sc);
 static void	ptnet_irqs_fini(struct ptnet_softc *sc);
 
-static uint32_t ptnet_nm_ptctl(if_t ifp, uint32_t cmd);
+static uint32_t ptnet_nm_ptctl(struct ptnet_softc *sc, uint32_t cmd);
 static int      ptnet_nm_config(struct netmap_adapter *na,
 				struct nm_config_info *info);
 static void	ptnet_update_vnet_hdr(struct ptnet_softc *sc);
@@ -509,7 +509,7 @@ err_path:
 static void
 ptnet_device_shutdown(struct ptnet_softc *sc)
 {
-	ptnet_nm_ptctl(sc->ifp, PTNETMAP_PTCTL_DELETE);
+	ptnet_nm_ptctl(sc, PTNETMAP_PTCTL_DELETE);
 	bus_write_4(sc->iomem, PTNET_IO_CSB_GH_BAH, 0);
 	bus_write_4(sc->iomem, PTNET_IO_CSB_GH_BAL, 0);
 	bus_write_4(sc->iomem, PTNET_IO_CSB_HG_BAH, 0);
@@ -1099,9 +1099,8 @@ ptnet_media_status(if_t ifp, struct ifmediareq *ifmr)
 }
 
 static uint32_t
-ptnet_nm_ptctl(if_t ifp, uint32_t cmd)
+ptnet_nm_ptctl(struct ptnet_softc *sc, uint32_t cmd)
 {
-	struct ptnet_softc *sc = if_getsoftc(ifp);
 	/*
 	 * Write a command and read back error status,
 	 * with zero meaning success.
@@ -1218,7 +1217,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 
 			/* Make sure the host adapter passed through is ready
 			 * for txsync/rxsync. */
-			ret = ptnet_nm_ptctl(ifp, PTNETMAP_PTCTL_CREATE);
+			ret = ptnet_nm_ptctl(sc, PTNETMAP_PTCTL_CREATE);
 			if (ret) {
 				return ret;
 			}
@@ -1258,7 +1257,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		}
 
 		if (sc->ptna->backend_users == 0) {
-			ret = ptnet_nm_ptctl(ifp, PTNETMAP_PTCTL_DELETE);
+			ret = ptnet_nm_ptctl(sc, PTNETMAP_PTCTL_DELETE);
 		}
 	}
 
