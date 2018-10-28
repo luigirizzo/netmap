@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2013-2016 Luigi Rizzo
  * Copyright (C) 2013-2016 Giuseppe Lettieri
- * Copyright (C) 2013-2016 Vincenzo Maffione
+ * Copyright (C) 2013-2018 Vincenzo Maffione
  * Copyright (C) 2015 Stefano Garzarella
  * All rights reserved.
  *
@@ -33,14 +33,15 @@
 #define NETMAP_VIRT_H
 
 /*
- * ptnetmap_memdev: device used to expose memory into the guest VM
+ * Register offsets and other macros for the ptnetmap paravirtual devices:
+ *   ptnetmap-memdev: device used to expose memory into the guest
+ *   ptnet: paravirtualized NIC exposing a netmap port in the guest
  *
  * These macros are used in the hypervisor frontend (QEMU, bhyve) and in the
  * guest device driver.
  */
 
-/* PCI identifiers and PCI BARs for the ptnetmap memdev
- * and ptnetmap network interface. */
+/* PCI identifiers and PCI BARs for ptnetmap-memdev and ptnet. */
 #define PTNETMAP_MEMDEV_NAME            "ptnetmap-memdev"
 #define PTNETMAP_PCI_VENDOR_ID          0x1b36  /* QEMU virtual devices */
 #define PTNETMAP_PCI_DEVICE_ID          0x000c  /* memory device */
@@ -49,7 +50,7 @@
 #define PTNETMAP_MEM_PCI_BAR            1
 #define PTNETMAP_MSIX_PCI_BAR           2
 
-/* Registers for the ptnetmap memdev */
+/* Device registers for ptnetmap-memdev */
 #define PTNET_MDEV_IO_MEMSIZE_LO	0	/* netmap memory size (low) */
 #define PTNET_MDEV_IO_MEMSIZE_HI	4	/* netmap_memory_size (high) */
 #define PTNET_MDEV_IO_MEMID		8	/* memory allocator ID in the host */
@@ -67,7 +68,7 @@
 /* ptnetmap features */
 #define PTNETMAP_F_VNET_HDR        1
 
-/* I/O registers for the ptnet device. */
+/* Device registers for the ptnet network device. */
 #define PTNET_IO_PTFEAT		0
 #define PTNET_IO_PTCTL		4
 #define PTNET_IO_MAC_LO		8
@@ -89,79 +90,11 @@
 #define PTNET_IO_KICK_BASE	128
 #define PTNET_IO_MASK		0xff
 
-/* ptnetmap control commands (values for PTCTL register) */
+/* ptnet control commands (values for PTCTL register):
+ *   - CREATE starts the host sync-kloop
+ *   - DELETE stops the host sync-kloop
+ */
 #define PTNETMAP_PTCTL_CREATE		1
 #define PTNETMAP_PTCTL_DELETE		2
-
-#ifdef WITH_PTNETMAP
-
-/* ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver */
-struct ptnetmap_memdev;
-int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **,
-                          uint64_t *);
-void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
-uint32_t nm_os_pt_memdev_ioread(struct ptnetmap_memdev *, unsigned int);
-
-/* Guest driver: Write kring pointers (cur, head) to the CSB.
- * This routine is coupled with ptnetmap_host_read_kring_csb(). */
-static inline void
-ptnetmap_guest_write_kring_csb(struct nm_csb_atok *atok, uint32_t cur,
-			       uint32_t head)
-{
-    /*
-     * We need to write cur and head to the CSB but we cannot do it atomically.
-     * There is no way we can prevent the host from reading the updated value
-     * of one of the two and the old value of the other. However, if we make
-     * sure that the host never reads a value of head more recent than the
-     * value of cur we are safe. We can allow the host to read a value of cur
-     * more recent than the value of head, since in the netmap ring cur can be
-     * ahead of head and cur cannot wrap around head because it must be behind
-     * tail. Inverting the order of writes below could instead result into the
-     * host to think head went ahead of cur, which would cause the sync
-     * prologue to fail.
-     *
-     * The following memory barrier scheme is used to make this happen:
-     *
-     *          Guest              Host
-     *
-     *          STORE(cur)         LOAD(head)
-     *          mb() <-----------> mb()
-     *          STORE(head)        LOAD(cur)
-     */
-    atok->cur = cur;
-    mb();
-    atok->head = head;
-}
-
-/* Guest driver: Read kring pointers (hwcur, hwtail) from the CSB.
- * This routine is coupled with ptnetmap_host_write_kring_csb(). */
-static inline void
-ptnetmap_guest_read_kring_csb(struct nm_csb_ktoa *ktoa,
-                              struct netmap_kring *kring)
-{
-    /*
-     * We place a memory barrier to make sure that the update of hwtail never
-     * overtakes the update of hwcur.
-     * (see explanation in ptnetmap_host_write_kring_csb).
-     */
-    kring->nr_hwtail = ktoa->hwtail;
-    mb();
-    kring->nr_hwcur = ktoa->hwcur;
-}
-
-/* Helper function wrapping ptnetmap_guest_read_kring_csb(). */
-static inline void
-ptnet_sync_tail(struct nm_csb_ktoa *ktoa, struct netmap_kring *kring)
-{
-	struct netmap_ring *ring = kring->ring;
-
-	/* Update hwcur and hwtail as known by the host. */
-        ptnetmap_guest_read_kring_csb(ktoa, kring);
-
-	/* nm_sync_finalize */
-	ring->tail = kring->rtail = kring->nr_hwtail;
-}
-
-#endif /* WITH_PTNETMAP */
 
 #endif /* NETMAP_VIRT_H */
