@@ -922,6 +922,7 @@ push_csb_option(struct TestContext *ctx, struct nmreq_opt_csb *opt)
 	opt->csb_ktoa            = (uintptr_t)(ctx->csb +
                                     sizeof(struct nm_csb_atok) * num_entries);
 
+	printf("Pushing option NETMAP_REQ_OPT_CSB\n");
 	push_option(&opt->nro_opt, ctx);
 
 	return 0;
@@ -968,6 +969,8 @@ sync_kloop_stop(struct TestContext *ctx)
 {
 	struct nmreq_header hdr;
 	int ret;
+
+	printf("Testing NETMAP_REQ_SYNC_KLOOP_STOP on '%s'\n", ctx->ifname);
 
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_STOP;
@@ -1128,14 +1131,47 @@ sync_kloop_nocsb(struct TestContext *ctx)
 	}
 
 	/* Sync kloop must fail because we did not use
-	 * NETMAP_REQ_OPT_CSB. */
+	 * NETMAP_REQ_CSB_ENABLE. */
 	return sync_kloop_start_stop(ctx) != 0 ? 0 : -1;
 }
 
 static int
-sync_kloop_csb_on_start(struct TestContext *ctx)
+csb_enable(struct TestContext *ctx)
 {
+	struct nmreq_option saveopt;
 	struct nmreq_opt_csb opt;
+	struct nmreq_header hdr;
+	int ret;
+
+	ret = push_csb_option(ctx, &opt);
+	if (ret) {
+		return ret;
+	}
+	saveopt = opt.nro_opt;
+	saveopt.nro_status = 0;
+
+	nmreq_hdr_init(&hdr, ctx->ifname);
+	hdr.nr_reqtype = NETMAP_REQ_CSB_ENABLE;
+	hdr.nr_options = (uintptr_t)ctx->nr_opt;
+	hdr.nr_body = (uintptr_t)NULL;
+
+	printf("Testing NETMAP_REQ_CSB_ENABLE on '%s'\n", ctx->ifname);
+
+	ret           = ioctl(ctx->fd, NIOCCTRL, &hdr);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCCTRL, CSB_ENABLE)");
+		return ret;
+	}
+
+	ret = checkoption(&opt.nro_opt, &saveopt);
+	clear_options(ctx);
+
+	return ret;
+}
+
+static int
+sync_kloop_csb_enable(struct TestContext *ctx)
+{
 	int ret;
 
 	ctx->nr_flags |= NR_EXCLUSIVE;
@@ -1144,7 +1180,7 @@ sync_kloop_csb_on_start(struct TestContext *ctx)
 		return ret;
 	}
 
-	ret = push_csb_option(ctx, &opt);
+	ret = csb_enable(ctx);
 	if (ret) {
 		return ret;
 	}
@@ -1283,7 +1319,7 @@ static struct mytest tests[] = {
 	decltest(sync_kloop_eventfds_all),
 	decltest(sync_kloop_eventfds_all_tx),
 	decltest(sync_kloop_nocsb),
-	decltest(sync_kloop_csb_on_start),
+	decltest(sync_kloop_csb_enable),
 	decltest(sync_kloop_conflict),
 	decltest(sync_kloop_eventfds_mismatch),
 };

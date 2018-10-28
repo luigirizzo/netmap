@@ -527,6 +527,8 @@ enum {
 	/* Stops the thread executing the in-kernel loop. The thread
 	 * returns from the ioctl syscall. */
 	NETMAP_REQ_SYNC_KLOOP_STOP,
+	/* Enable CSB mode on a registered netmap control device. */
+	NETMAP_REQ_CSB_ENABLE,
 };
 
 enum {

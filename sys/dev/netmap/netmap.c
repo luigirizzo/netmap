@@ -1997,7 +1997,7 @@ nm_priv_rx_enabled(struct netmap_priv_d *priv)
 }
 
 /* Validate the CSB entries for both directions (atok and ktoa). */
-int
+static int
 netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 {
 	struct nm_csb_atok *csb_atok_base =
@@ -2753,6 +2753,25 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			break;
 		}
 
+		case NETMAP_REQ_CSB_ENABLE: {
+			struct nmreq_option *opt;
+
+			opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
+						NETMAP_REQ_OPT_CSB);
+			if (opt == NULL) {
+				error = EINVAL;
+			} else {
+				struct nmreq_opt_csb *csbo =
+					(struct nmreq_opt_csb *)opt;
+				error = nmreq_checkduplicate(opt);
+				if (!error) {
+					error = netmap_csb_validate(priv, csbo);
+				}
+				opt->nro_status = error;
+			}
+			break;
+		}
+
 		case NETMAP_REQ_SYNC_KLOOP_START: {
 			error = netmap_sync_kloop(priv, hdr);
 			break;
@@ -2875,6 +2894,7 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 		return sizeof(struct nmreq_vale_newif);
 	case NETMAP_REQ_VALE_DELIF:
 	case NETMAP_REQ_SYNC_KLOOP_STOP:
+	case NETMAP_REQ_CSB_ENABLE:
 		return 0;
 	case NETMAP_REQ_VALE_POLLING_ENABLE:
 	case NETMAP_REQ_VALE_POLLING_DISABLE:
