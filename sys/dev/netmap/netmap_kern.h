@@ -2216,7 +2216,7 @@ ptnetmap_guest_write_kring_csb(struct nm_csb_atok *atok, uint32_t cur,
      *          STORE(head)        LOAD(cur)
      */
     atok->cur = cur;
-    mb();
+    nm_stst_barrier();
     atok->head = head;
 }
 
@@ -2232,7 +2232,7 @@ ptnetmap_guest_read_kring_csb(struct nm_csb_ktoa *ktoa,
      * (see explanation in ptnetmap_host_write_kring_csb).
      */
     kring->nr_hwtail = ktoa->hwtail;
-    mb();
+    nm_stst_barrier();
     kring->nr_hwcur = ktoa->hwcur;
 }
 
