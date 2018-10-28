@@ -567,6 +567,10 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 
 	/* Main loop. */
 	for (;;) {
+		if (unlikely(NM_ACCESS_ONCE(priv->np_kloop_state) & NM_SYNC_KLOOP_STOPPING)) {
+			break;
+		}
+
 #ifdef SYNC_KLOOP_POLL
 		if (poll_ctx)
 			__set_current_state(TASK_INTERRUPTIBLE);
@@ -623,10 +627,6 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			/* Default synchronization method: sleep for a while. */
 			usleep_range(sleep_us, sleep_us);
 		}
-
-		if (unlikely(NM_ACCESS_ONCE(priv->np_kloop_state) & NM_SYNC_KLOOP_STOPPING)) {
-			break;
-		}
 	}
 out:
 #ifdef SYNC_KLOOP_POLL
@@ -659,6 +659,26 @@ out:
 	NMG_LOCK();
 	priv->np_kloop_state = 0;
 	NMG_UNLOCK();
+
+	return err;
+}
+
+int
+netmap_sync_kloop_stop(struct netmap_priv_d *priv)
+{
+	bool running = true;
+	int err = 0;
+
+	NMG_LOCK();
+	priv->np_kloop_state |= NM_SYNC_KLOOP_STOPPING;
+	NMG_UNLOCK();
+	while (running) {
+		usleep_range(1000, 1500);
+		NMG_LOCK();
+		running = (NM_ACCESS_ONCE(priv->np_kloop_state)
+				& NM_SYNC_KLOOP_RUNNING);
+		NMG_UNLOCK();
+	}
 
 	return err;
 }

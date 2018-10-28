@@ -2144,6 +2144,7 @@ u_int nm_os_ncpus(void);
 
 int netmap_sync_kloop(struct netmap_priv_d *priv,
 		      struct nmreq_header *hdr);
+int netmap_sync_kloop_stop(struct netmap_priv_d *priv);
 
 #ifdef WITH_PTNETMAP
 /* ptnetmap guest routines */

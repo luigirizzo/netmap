@@ -722,12 +722,13 @@ struct nmreq_pools_info {
  * Start an in-kernel loop that syncs the rings periodically or on
  * notifications. The loop runs in the context of the ioctl syscall,
  * and only stops on NETMAP_REQ_SYNC_KLOOP_STOP.
- * The netmap port must be open in CSB mode.
+ * The registered netmap port must be open in CSB mode.
  */
 struct nmreq_sync_kloop_start {
 	/* Sleeping is the default synchronization method for the kloop.
-	 * The 'sleep_us' field specifies how many microsconds to sleep
-	 * waiting for more work to come. */
+	 * The 'sleep_us' field specifies how many microsconds to sleep for
+	 * when there is no work to do, before doing another kloop iteration.
+	 */
 	uint32_t sleep_us;
 };
 
