@@ -54,14 +54,17 @@ Command line options are listed below.
 Name of a netmap port.
 It must be supplied exactly once to identify
 the input port.
-Any netmap port type (physical interface, VALE switch, pipe, monitor port...)
-can be used.
-.It Fl p Ar name:number | number
+Any netmap port type (e.g., physical interface, VALE switch, pipe,
+monitor port) can be used.
+.It Fl p Ar name Ns Cm : Ns Ar number | number
 Add a new pipe group of the given number of pipes.
 The pipe group will receive all the packets read from the input port, balanced
 among the available pipes.
 The receiving ends of the pipes
-will be called name}0 to name}number-1.
+will be called
+.Dq Ar name Ns Em }0
+to
+.Dq Ar name No Ns Em } Ns Aq Ar number No - 1 .
 The name is optional and defaults to
 the name of the input port (stripped down of any netmap operator).
 If the name is omitted, also the colon can be omitted.
@@ -69,7 +72,9 @@ If the name is omitted, also the colon can be omitted.
 This option can be supplied multiple times to define a sequence of pipe groups,
 each group receiving all the packets in turn.
 .Pp
-If no -p option is given, a single group of two pipes with default name is assumed.
+If no
+.Fl p
+option is given, a single group of two pipes with default name is assumed.
 .Pp
 It is allowed to use the same name for several groups.
 The pipe numbering in each
@@ -110,7 +115,6 @@ Please use
 to remove any stale persistent VALE port.
 .Sh SEE ALSO
 .Xr netmap 4 ,
-.Xr vale-ctl 4 ,
 .Xr bridge 8 ,
 .Xr pkt-gen 8
 .Pp
