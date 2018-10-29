@@ -2394,14 +2394,10 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 	case NIOCCTRL: {
 		struct nmreq_header *hdr = (struct nmreq_header *)data;
 
-		if (hdr->nr_version != NETMAP_API) {
-			D("API mismatch for reqtype %d: got %d need %d",
-				hdr->nr_version,
-				hdr->nr_version, NETMAP_API);
-			hdr->nr_version = NETMAP_API;
-		}
 		if (hdr->nr_version < NETMAP_MIN_API ||
 		    hdr->nr_version > NETMAP_MAX_API) {
+			D("API mismatch: got %d need %d",
+				hdr->nr_version, NETMAP_API);
 			return EINVAL;
 		}
 

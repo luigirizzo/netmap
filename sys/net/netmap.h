@@ -39,9 +39,9 @@
 #ifndef _NET_NETMAP_H_
 #define _NET_NETMAP_H_
 
-#define	NETMAP_API	12		/* current API version */
+#define	NETMAP_API	13		/* current API version */
 
-#define	NETMAP_MIN_API	11		/* min and max versions accepted */
+#define	NETMAP_MIN_API	13		/* min and max versions accepted */
 #define	NETMAP_MAX_API	15
 /*
  * Some fields should be cache-aligned to reduce contention.
@@ -481,7 +481,7 @@ struct nmreq_option {
 	 * (e.g. because they contain arrays). For fixed-size options this
 	 * field should be set to zero. */
 	uint64_t		nro_size;
-};
+} __attribute__((__packed__));
 
 /* Header common to all requests. Do not reorder these fields, as we need
  * the second one (nr_reqtype) to know how much to copy from/to userspace. */
@@ -493,7 +493,7 @@ struct nmreq_header {
 	char			nr_name[NETMAP_REQ_IFNAMSIZ]; /* port name */
 	uint64_t		nr_options;	/* command-specific options */
 	uint64_t		nr_body;	/* ptr to nmreq_xyz struct */
-};
+} __attribute__((__packed__));
 
 enum {
 	/* Register a netmap port with the device. */
@@ -563,6 +563,7 @@ struct nmreq_register {
 	uint16_t	nr_mem_id;	/* id of the memory allocator */
 	uint16_t	nr_ringid;	/* ring(s) we care about */
 	uint32_t	nr_mode;	/* specify NR_REG_* modes */
+	uint32_t	nr_extra_bufs;	/* number of requested extra buffers */
 
 	uint64_t	nr_flags;	/* additional flags (see below) */
 /* monitors use nr_ringid and nr_mode to select the rings to monitor */
@@ -584,9 +585,7 @@ struct nmreq_register {
  * NETMAP_DO_RX_POLL. */
 #define NR_DO_RX_POLL		0x10000
 #define NR_NO_TX_POLL		0x20000
-
-	uint32_t	nr_extra_bufs;	/* number of requested extra buffers */
-};
+} __attribute__((__packed__));
 
 /* Valid values for nmreq_register.nr_mode (see above). */
 enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
@@ -626,7 +625,8 @@ struct nmreq_port_info_get {
 	uint16_t	nr_tx_rings;	/* number of tx rings */
 	uint16_t	nr_rx_rings;	/* number of rx rings */
 	uint16_t	nr_mem_id;	/* memory allocator id (in/out) */
-};
+	uint16_t	pad1;
+} __attribute__((__packed__));
 
 #define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
 
@@ -641,7 +641,8 @@ struct nmreq_port_info_get {
 struct nmreq_vale_attach {
 	struct nmreq_register reg;
 	uint32_t port_index;
-};
+	uint32_t pad1;
+} __attribute__((__packed__));
 
 /*
  * nr_reqtype: NETMAP_REQ_VALE_DETACH
@@ -651,7 +652,8 @@ struct nmreq_vale_attach {
  */
 struct nmreq_vale_detach {
 	uint32_t port_index;
-};
+	uint32_t pad1;
+} __attribute__((__packed__));
 
 /*
  * nr_reqtype: NETMAP_REQ_VALE_LIST
@@ -660,8 +662,9 @@ struct nmreq_vale_detach {
 struct nmreq_vale_list {
 	/* Name of the VALE port (valeXXX:YYY) or empty. */
 	uint16_t	nr_bridge_idx;
+	uint16_t	pad1;
 	uint32_t	nr_port_idx;
-};
+} __attribute__((__packed__));
 
 /*
  * nr_reqtype: NETMAP_REQ_PORT_HDR_SET or NETMAP_REQ_PORT_HDR_GET
@@ -670,7 +673,8 @@ struct nmreq_vale_list {
  */
 struct nmreq_port_hdr {
 	uint32_t	nr_hdr_len;
-};
+	uint32_t	pad1;
+} __attribute__((__packed__));
 
 /*
  * nr_reqtype: NETMAP_REQ_VALE_NEWIF
@@ -682,7 +686,8 @@ struct nmreq_vale_newif {
 	uint16_t	nr_tx_rings;	/* number of tx rings */
 	uint16_t	nr_rx_rings;	/* number of rx rings */
 	uint16_t	nr_mem_id;	/* id of the memory allocator */
-};
+	uint16_t	pad1;
+} __attribute__((__packed__));
 
 /*
  * nr_reqtype: NETMAP_REQ_VALE_POLLING_ENABLE or NETMAP_REQ_VALE_POLLING_DISABLE
@@ -694,7 +699,8 @@ struct nmreq_vale_polling {
 #define NETMAP_POLLING_MODE_MULTI_CPU 2
 	uint32_t	nr_first_cpu_id;
 	uint32_t	nr_num_polling_cpus;
-};
+	uint32_t	pad1;
+} __attribute__((__packed__));
 
 /*
  * nr_reqtype: NETMAP_REQ_POOLS_INFO_GET
@@ -706,6 +712,7 @@ struct nmreq_vale_polling {
 struct nmreq_pools_info {
 	uint64_t	nr_memsize;
 	uint16_t	nr_mem_id; /* in/out argument */
+	uint16_t	pad1[3];
 	uint64_t	nr_if_pool_offset;
 	uint32_t	nr_if_pool_objtotal;
 	uint32_t	nr_if_pool_objsize;
@@ -715,7 +722,7 @@ struct nmreq_pools_info {
 	uint64_t	nr_buf_pool_offset;
 	uint32_t	nr_buf_pool_objtotal;
 	uint32_t	nr_buf_pool_objsize;
-};
+} __attribute__((__packed__));
 
 /*
  * nr_reqtype: NETMAP_REQ_SYNC_KLOOP_START
@@ -729,8 +736,9 @@ struct nmreq_sync_kloop_start {
 	 * The 'sleep_us' field specifies how many microsconds to sleep for
 	 * when there is no work to do, before doing another kloop iteration.
 	 */
-	uint32_t sleep_us;
-};
+	uint32_t	sleep_us;
+	uint32_t	pad1;
+} __attribute__((__packed__));
 
 /* A CSB entry for the application --> kernel direction. */
 struct nm_csb_atok {
@@ -738,16 +746,16 @@ struct nm_csb_atok {
 	uint32_t cur;		  /* AW+ KR+ the cur of the appl netmap_ring */
 	uint32_t appl_need_kick;  /* AW+ KR+ kern --> appl notification enable */
 	uint32_t sync_flags;	  /* AW+ KR+ the flags of the appl [tx|rx]sync() */
-	char pad[48];		  /* pad to a 64 bytes cacheline */
-};
+	uint32_t pad[12];	  /* pad to a 64 bytes cacheline */
+} __attribute__((__packed__));
 
 /* A CSB entry for the application <-- kernel direction. */
 struct nm_csb_ktoa {
 	uint32_t hwcur;		  /* AR+ KW+ the hwcur of the kern netmap_kring */
 	uint32_t hwtail;	  /* AR+ KW+ the hwtail of the kern netmap_kring */
 	uint32_t kern_need_kick;  /* AR+ KW+ appl-->kern notification enable */
-	char pad[4+48];
-};
+	uint32_t pad[13];
+} __attribute__((__packed__));
 
 #ifdef __linux__
 
@@ -844,13 +852,13 @@ struct nmreq_opt_sync_kloop_eventfds {
 		/* Notifier for the kernel loop --> application direction. */
 		int32_t irqfd;
 	} eventfds[0];
-};
+} __attribute__((__packed__));
 
 struct nmreq_opt_extmem {
 	struct nmreq_option	nro_opt;	/* common header */
 	uint64_t		nro_usrptr;	/* (in) ptr to usr memory */
 	struct nmreq_pools_info	nro_info;	/* (in/out) */
-};
+} __attribute__((__packed__));
 
 struct nmreq_opt_csb {
 	struct nmreq_option	nro_opt;
@@ -862,6 +870,6 @@ struct nmreq_opt_csb {
 	/* Array of CSB entries for kernel --> application communication
 	 * (N entries). */
 	uint64_t		csb_ktoa;
-};
+} __attribute__((__packed__));
 
 #endif /* _NET_NETMAP_H_ */
