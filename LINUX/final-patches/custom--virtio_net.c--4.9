@@ -30,7 +30,7 @@ index 0000000..2c88957
 +
 +endif
 diff --git a/virtio_net.c/virtio_net.c b/virtio_net.c/virtio_net.c
-index cbf1c61..50449af 100644
+index cbf1c61..6478226 100644
 --- a/virtio_net.c/virtio_net.c
 +++ b/virtio_net.c/virtio_net.c
 @@ -26,8 +26,8 @@
@@ -114,7 +114,7 @@ index cbf1c61..50449af 100644
  	/* Control VQ buffers: protected by the rtnl lock */
  	struct virtio_net_ctrl_hdr ctrl_hdr;
  	virtio_net_ctrl_ack ctrl_status;
-@@ -220,17 +248,6 @@ static struct page *get_a_page(struct receive_queue *rq, gfp_t gfp_mask)
+@@ -220,35 +248,44 @@ static struct page *get_a_page(struct receive_queue *rq, gfp_t gfp_mask)
  	return p;
  }
  
@@ -129,10 +129,24 @@ index cbf1c61..50449af 100644
 -	netif_wake_subqueue(vi->dev, vq2txq(vq));
 -}
 -
- static unsigned int mergeable_ctx_to_buf_truesize(unsigned long mrg_ctx)
+-static unsigned int mergeable_ctx_to_buf_truesize(unsigned long mrg_ctx)
++unsigned int mergeable_ctx_to_buf_truesize(unsigned long mrg_ctx)
  {
  	unsigned int truesize = mrg_ctx & (MERGEABLE_BUFFER_ALIGN - 1);
-@@ -249,6 +266,26 @@ static unsigned long mergeable_buf_to_ctx(void *buf, unsigned int truesize)
+ 	return (truesize + 1) * MERGEABLE_BUFFER_ALIGN;
+ }
+ 
+-static void *mergeable_ctx_to_buf_address(unsigned long mrg_ctx)
++void *mergeable_ctx_to_buf_address(unsigned long mrg_ctx)
+ {
+ 	return (void *)(mrg_ctx & -MERGEABLE_BUFFER_ALIGN);
+ 
+ }
+ 
+-static unsigned long mergeable_buf_to_ctx(void *buf, unsigned int truesize)
++unsigned long mergeable_buf_to_ctx(void *buf, unsigned int truesize)
+ {
+ 	unsigned int size = truesize / MERGEABLE_BUFFER_ALIGN;
  	return (unsigned long)buf | (size - 1);
  }
  
@@ -189,6 +203,15 @@ index cbf1c61..50449af 100644
  	return NULL;
  }
  
+@@ -579,7 +624,7 @@ static int add_recvbuf_big(struct virtnet_info *vi, struct receive_queue *rq,
+ 	return err;
+ }
+ 
+-static unsigned int get_mergeable_buf_len(struct ewma_pkt_len *avg_pkt_len)
++unsigned int get_mergeable_buf_len(struct ewma_pkt_len *avg_pkt_len)
+ {
+ 	const size_t hdr_len = sizeof(struct virtio_net_hdr_mrg_rxbuf);
+ 	unsigned int len;
 @@ -591,6 +636,7 @@ static unsigned int get_mergeable_buf_len(struct ewma_pkt_len *avg_pkt_len)
  
  static int add_recvbuf_mergeable(struct receive_queue *rq, gfp_t gfp)
