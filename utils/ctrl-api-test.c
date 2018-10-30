@@ -1077,12 +1077,13 @@ sync_kloop_eventfds(struct TestContext *ctx)
 
 	ret = sync_kloop_start_stop(ctx);
 	if (ret) {
-#ifdef __FreeBSD__
-		return 0;
-#endif /* __FreeBSD__ */
 		return ret;
 	}
+#ifdef __linux__
 	save.nro_status = 0;
+#else  /* !__linux__ */
+	save.nro_status = EOPNOTSUPP;
+#endif /* !__linux__ */
 
 	return checkoption(&opt->nro_opt, &save);
 }
