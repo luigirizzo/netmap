@@ -1946,6 +1946,16 @@ EOF
 	}
 EOF
 
+  add_test 'have VIRTIO_CONFIG_ACCESSORS' <<EOF
+	#include <linux/virtio_config.h>
+
+	u16
+	dummy(struct virtio_device *vdev, unsigned int offset)
+	{
+		return virtio_cread16(vdev, offset);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   
