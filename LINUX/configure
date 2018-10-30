@@ -1966,6 +1966,16 @@ EOF
 	}
 EOF
 
+  add_test 'have NAPI_HASH_DEL' <<EOF
+	#include <linux/netdevice.h>
+
+	void
+	dummy(struct napi_struct *napi)
+	{
+		napi_hash_del(napi);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   
