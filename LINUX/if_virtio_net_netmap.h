@@ -41,6 +41,10 @@
 #define VIRTIO_F_VERSION_1		32
 #endif
 
+#ifndef VIRTIO_F_ANY_LAYOUT
+#define VIRTIO_F_ANY_LAYOUT		27
+#endif
+
 #ifndef NETMAP_LINUX_HAVE_ETHTOOL_VALIDATE
 static inline int ethtool_validate_speed(__u32 speed)
 {
