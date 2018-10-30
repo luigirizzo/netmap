@@ -60,6 +60,15 @@ static inline int ethtool_validate_duplex(__u8 duplex)
 }
 #endif  /* NETMAP_LINUX_HAVE_ETHTOOL_VALIDATE */
 
+#ifndef NETMAP_LINUX_HAVE_U64_STATS_IRQ
+#define u64_stats_fetch_begin_irq	u64_stats_fetch_begin_bh
+#define u64_stats_fetch_retry_irq	u64_stats_fetch_retry_bh
+#endif  /* NETMAP_LINUX_HAVE_U64_STATS_IRQ */
+
+#ifdef NETMAP_LINUX_HAVE_SKB_COALESCE_RX_FRAG
+#define WITH_MERGEABLE_RX_BUFS
+#endif  /* NETMAP_LINUX_HAVE_SKB_COALESCE_RX_FRAG */
+
 #ifndef NETMAP_LINUX_HAVE_VIRTIO_BYTEORDER
 #include <linux/types.h>
 
@@ -281,11 +290,6 @@ void virtio_device_ready(struct virtio_device *dev)
 	dev->config->set_status(dev, status | VIRTIO_CONFIG_S_DRIVER_OK);
 }
 #endif  /* NETMAP_LINUX_HAVE_VIRTIO_DEVICE_READY */
-
-#ifndef NETMAP_LINUX_HAVE_U64_STATS_IRQ
-#define u64_stats_fetch_begin_irq	u64_stats_fetch_begin_bh
-#define u64_stats_fetch_retry_irq	u64_stats_fetch_retry_bh
-#endif  /* NETMAP_LINUX_HAVE_U64_STATS_IRQ */
 
 #ifndef NETMAP_LINUX_HAVE_VIRTQUEUE_IS_BROKEN
 #define virtqueue_is_broken(_x)	false

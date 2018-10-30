@@ -1935,6 +1935,17 @@ EOF
 	}
 EOF
 
+  add_test 'have SKB_COALESCE_RX_FRAG' <<EOF
+	#include <linux/skbuff.h>
+
+	void
+	dummy(struct sk_buff *skb, int i, int size,
+		unsigned int truesize)
+	{
+		skb_coalesce_rx_frag(skb, i, size, truesize);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   
