@@ -1956,6 +1956,16 @@ EOF
 	}
 EOF
 
+  add_test 'have U64_STATS_INIT' <<EOF
+	#include <linux/u64_stats_sync.h>
+
+	void
+	dummy(struct u64_stats_sync *syncp)
+	{
+		u64_stats_init(syncp);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   
