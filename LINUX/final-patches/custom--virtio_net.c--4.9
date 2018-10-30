@@ -30,7 +30,7 @@ index 0000000..2c88957
 +
 +endif
 diff --git a/virtio_net.c/virtio_net.c b/virtio_net.c/virtio_net.c
-index cbf1c61..6478226 100644
+index cbf1c61..84ab0fa 100644
 --- a/virtio_net.c/virtio_net.c
 +++ b/virtio_net.c/virtio_net.c
 @@ -26,8 +26,8 @@
@@ -784,7 +784,8 @@ index cbf1c61..6478226 100644
 -	VIRTIO_NET_F_MTU
 +	VIRTIO_NET_F_CTRL_MAC_ADDR
  
- static unsigned int features[] = {
+-static unsigned int features[] = {
++unsigned int features[] = {
  	VIRTNET_FEATURES,
 +#ifdef VIRTIO_NET_F_MTU
 +	VIRTIO_NET_F_MTU,
