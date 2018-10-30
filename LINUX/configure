@@ -1935,6 +1935,47 @@ EOF
 	}
 EOF
 
+  add_test 'have SKB_COALESCE_RX_FRAG' <<EOF
+	#include <linux/skbuff.h>
+
+	void
+	dummy(struct sk_buff *skb, int i, int size,
+		unsigned int truesize)
+	{
+		skb_coalesce_rx_frag(skb, i, size, truesize);
+	}
+EOF
+
+  add_test 'have VIRTIO_CONFIG_ACCESSORS' <<EOF
+	#include <linux/virtio_config.h>
+
+	u16
+	dummy(struct virtio_device *vdev, unsigned int offset)
+	{
+		return virtio_cread16(vdev, offset);
+	}
+EOF
+
+  add_test 'have U64_STATS_INIT' <<EOF
+	#include <linux/u64_stats_sync.h>
+
+	void
+	dummy(struct u64_stats_sync *syncp)
+	{
+		u64_stats_init(syncp);
+	}
+EOF
+
+  add_test 'have NAPI_HASH_DEL' <<EOF
+	#include <linux/netdevice.h>
+
+	void
+	dummy(struct napi_struct *napi)
+	{
+		napi_hash_del(napi);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   

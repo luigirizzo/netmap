@@ -41,6 +41,10 @@
 #define VIRTIO_F_VERSION_1		32
 #endif
 
+#ifndef VIRTIO_F_ANY_LAYOUT
+#define VIRTIO_F_ANY_LAYOUT		27
+#endif
+
 #ifndef NETMAP_LINUX_HAVE_ETHTOOL_VALIDATE
 static inline int ethtool_validate_speed(__u32 speed)
 {
@@ -59,6 +63,19 @@ static inline int ethtool_validate_duplex(__u8 duplex)
 	return 0;
 }
 #endif  /* NETMAP_LINUX_HAVE_ETHTOOL_VALIDATE */
+
+#ifndef NETMAP_LINUX_HAVE_U64_STATS_INIT
+#define u64_stats_init(x)
+#endif  /* !NETMAP_LINUX_HAVE_U64_STATS_INIT */
+
+#ifndef NETMAP_LINUX_HAVE_U64_STATS_IRQ
+#define u64_stats_fetch_begin_irq	u64_stats_fetch_begin_bh
+#define u64_stats_fetch_retry_irq	u64_stats_fetch_retry_bh
+#endif  /* !NETMAP_LINUX_HAVE_U64_STATS_IRQ */
+
+#ifdef NETMAP_LINUX_HAVE_SKB_COALESCE_RX_FRAG
+#define WITH_MERGEABLE_RX_BUFS
+#endif  /* !NETMAP_LINUX_HAVE_SKB_COALESCE_RX_FRAG */
 
 #ifndef NETMAP_LINUX_HAVE_VIRTIO_BYTEORDER
 #include <linux/types.h>
@@ -282,11 +299,6 @@ void virtio_device_ready(struct virtio_device *dev)
 }
 #endif  /* NETMAP_LINUX_HAVE_VIRTIO_DEVICE_READY */
 
-#ifndef NETMAP_LINUX_HAVE_U64_STATS_IRQ
-#define u64_stats_fetch_begin_irq	u64_stats_fetch_begin_bh
-#define u64_stats_fetch_retry_irq	u64_stats_fetch_retry_bh
-#endif  /* NETMAP_LINUX_HAVE_U64_STATS_IRQ */
-
 #ifndef NETMAP_LINUX_HAVE_VIRTQUEUE_IS_BROKEN
 #define virtqueue_is_broken(_x)	false
 #endif  /* NETMAP_LINUX_HAVE_VIRTQUEUE_IS_BROKEN */
@@ -295,6 +307,142 @@ void virtio_device_ready(struct virtio_device *dev)
 /* The delayed optimization did not exists before version 3.0. */
 #define virtqueue_enable_cb_delayed(_vq)	virtqueue_enable_cb(_vq)
 #endif  /* !VIRTIO_CB_DELAYED */
+
+#ifndef NETMAP_LINUX_HAVE_VIRTIO_CONFIG_ACCESSORS
+#define virtio_cread(vdev, structname, member, ptr)			\
+	do {								\
+		/* Must match the member's type, and be integer */	\
+		if (!typecheck(typeof((((structname*)0)->member)), *(ptr))) \
+			(*ptr) = 1;					\
+									\
+		switch (sizeof(*ptr)) {					\
+		case 1:							\
+			*(ptr) = virtio_cread8(vdev,			\
+					       offsetof(structname, member)); \
+			break;						\
+		case 2:							\
+			*(ptr) = virtio_cread16(vdev,			\
+						offsetof(structname, member)); \
+			break;						\
+		case 4:							\
+			*(ptr) = virtio_cread32(vdev,			\
+						offsetof(structname, member)); \
+			break;						\
+		case 8:							\
+			*(ptr) = virtio_cread64(vdev,			\
+						offsetof(structname, member)); \
+			break;						\
+		default:						\
+			BUG();						\
+		}							\
+	} while(0)
+
+/* Config space accessors. */
+#define virtio_cwrite(vdev, structname, member, ptr)			\
+	do {								\
+		/* Must match the member's type, and be integer */	\
+		if (!typecheck(typeof((((structname*)0)->member)), *(ptr))) \
+			BUG_ON((*ptr) == 1);				\
+									\
+		switch (sizeof(*ptr)) {					\
+		case 1:							\
+			virtio_cwrite8(vdev,				\
+				       offsetof(structname, member),	\
+				       *(ptr));				\
+			break;						\
+		case 2:							\
+			virtio_cwrite16(vdev,				\
+					offsetof(structname, member),	\
+					*(ptr));			\
+			break;						\
+		case 4:							\
+			virtio_cwrite32(vdev,				\
+					offsetof(structname, member),	\
+					*(ptr));			\
+			break;						\
+		case 8:							\
+			virtio_cwrite64(vdev,				\
+					offsetof(structname, member),	\
+					*(ptr));			\
+			break;						\
+		default:						\
+			BUG();						\
+		}							\
+	} while(0)
+
+static inline u8 virtio_cread8(struct virtio_device *vdev, unsigned int offset)
+{
+	u8 ret;
+	vdev->config->get(vdev, offset, &ret, sizeof(ret));
+	return ret;
+}
+
+static inline void virtio_cread_bytes(struct virtio_device *vdev,
+				      unsigned int offset,
+				      void *buf, size_t len)
+{
+	vdev->config->get(vdev, offset, buf, len);
+}
+
+static inline void virtio_cwrite8(struct virtio_device *vdev,
+				  unsigned int offset, u8 val)
+{
+	vdev->config->set(vdev, offset, &val, sizeof(val));
+}
+
+static inline u16 virtio_cread16(struct virtio_device *vdev,
+				 unsigned int offset)
+{
+	u16 ret;
+	vdev->config->get(vdev, offset, &ret, sizeof(ret));
+	return ret;
+}
+
+static inline void virtio_cwrite16(struct virtio_device *vdev,
+				   unsigned int offset, u16 val)
+{
+	vdev->config->set(vdev, offset, &val, sizeof(val));
+}
+
+static inline u32 virtio_cread32(struct virtio_device *vdev,
+				 unsigned int offset)
+{
+	u32 ret;
+	vdev->config->get(vdev, offset, &ret, sizeof(ret));
+	return ret;
+}
+
+static inline void virtio_cwrite32(struct virtio_device *vdev,
+				   unsigned int offset, u32 val)
+{
+	vdev->config->set(vdev, offset, &val, sizeof(val));
+}
+
+static inline u64 virtio_cread64(struct virtio_device *vdev,
+				 unsigned int offset)
+{
+	u64 ret;
+	vdev->config->get(vdev, offset, &ret, sizeof(ret));
+	return ret;
+}
+
+static inline void virtio_cwrite64(struct virtio_device *vdev,
+				   unsigned int offset, u64 val)
+{
+	vdev->config->set(vdev, offset, &val, sizeof(val));
+}
+
+/* Conditional config space accessors. */
+#define virtio_cread_feature(vdev, fbit, structname, member, ptr)	\
+	({								\
+		int _r = 0;						\
+		if (!virtio_has_feature(vdev, fbit))			\
+			_r = -ENOENT;					\
+		else							\
+			virtio_cread((vdev), structname, member, ptr);	\
+		_r;							\
+	})
+#endif  /* !NETMAP_LINUX_HAVE_VIRTIO_CONFIG_ACCESSORS */
 
 /*************************************************************************/
 /* NETMAP SUPPORT                                                        */

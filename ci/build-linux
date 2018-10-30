@@ -95,7 +95,7 @@ make distclean
 echo "Building external intel drivers (and virtio_net.c)"
 EXTDRIVERS="e1000e,igb,ixgbe,i40e"
 # For kernels >= 3.13 we support virtio_net.c as an external driver
-cmp=$(kverless $KERNEL_VERSION 3.13)
+cmp=$(kverless $KERNEL_VERSION 3.10)
 if [ "$cmp" == "1" ]; then
 	EXTDRIVERS="${EXTDRIVERS},virtio_net.c"
 fi
