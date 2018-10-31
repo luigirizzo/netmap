@@ -860,7 +860,7 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 	if (nm_i != head) {
 		int nospace = 0;
 
-		for (n = 0; nm_i != head; n++) {
+		for (; nm_i != head; nm_i = nm_next(nm_i, lim)) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			void *addr = NMB(na, slot);
 
@@ -879,10 +879,9 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 				   nospace);
 				break;
 			}
-			nm_i = nm_next(nm_i, lim);
 		}
 		virtqueue_kick(vq);
-		kring->nr_hwcur = head;
+		kring->nr_hwcur = nm_i;
 	}
 
 	/* We have finished processing used RX buffers, so we have to tell
