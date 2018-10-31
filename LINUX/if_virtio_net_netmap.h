@@ -792,7 +792,9 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
-	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
+	int force_update = (flags & NAF_FORCE_READ) ||
+				(kring->nr_kflags & NKR_PENDINTR);
+	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
 
 	/* device-specific */
 	struct virtnet_info *vi = netdev_priv(ifp);
@@ -802,7 +804,6 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 	size_t vnet_hdr_len = vi->mergeable_rx_bufs ?
 				sizeof(rq->shared_rxvhdr) :
 				sizeof(rq->shared_rxvhdr.hdr);
-	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
 
 	virtqueue_disable_cb(vq);
 
