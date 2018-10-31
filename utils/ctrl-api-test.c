@@ -1077,6 +1077,8 @@ sync_kloop_eventfds(struct TestContext *ctx)
 
 	ret = sync_kloop_start_stop(ctx);
 	if (ret) {
+		free(opt);
+		clear_options(ctx);
 		return ret;
 	}
 #ifdef __linux__
@@ -1085,7 +1087,11 @@ sync_kloop_eventfds(struct TestContext *ctx)
 	save.nro_status = EOPNOTSUPP;
 #endif /* !__linux__ */
 
-	return checkoption(&opt->nro_opt, &save);
+	ret = checkoption(&opt->nro_opt, &save);
+	free(opt);
+	clear_options(ctx);
+
+	return ret;
 }
 
 static int
