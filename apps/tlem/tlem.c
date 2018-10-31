@@ -3167,6 +3167,7 @@ static int
 const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
     uint64_t bw, *d;
+    int i;
 
     if (strncmp(av[0], "const", 5) != 0 && ac > 1)
         return 2; /* unrecognised */
@@ -3176,13 +3177,15 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     if (bw == U_PARSE_ERR) {
         return (ac == 2) ? 1 /* error */ : 2 /* unrecognised */;
     }
-    dst->arg = ec_alloc(q, dst->ec, sizeof(uint64_t));
+    dst->arg = ec_alloc(q, dst->ec, MAX_PKT * sizeof(uint32_t));
     if (dst->arg == NULL)
         return 1;
     if (update_max_bw(q, bw))
         return 1;
     d = dst->arg;
-    d[0] = bw;
+    for (i = 0; i < MAX_PKT; i++) {
+        d[i] = bw ? 8ULL * TIME_UNITS * i / bw : 0;
+    }
     return 0;	/* success */
 }
 
@@ -3191,8 +3194,8 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 const_bw_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t *d = arg->arg, bps = d[0];
-    q->cur_tt = bps ? 8ULL* TIME_UNITS * q->cur_len / bps : 0 ;
+    uint64_t *d = arg->arg;
+    q->cur_tt = d[q->cur_len];
     return 0;
 }
 
@@ -3201,6 +3204,7 @@ static int
 ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
     uint64_t bw, *d;
+    int i;
 
     if (strcmp(av[0], "ether") != 0)
         return 2; /* unrecognised */
@@ -3211,11 +3215,13 @@ ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
         return 1; /* error */
     if (update_max_bw(q, bw))
         return 1;
-    dst->arg = ec_alloc(q, dst->ec, sizeof(uint64_t));
+    dst->arg = ec_alloc(q, dst->ec, MAX_PKT * sizeof(uint32_t));
     if (dst->arg == NULL)
         return 1;
     d = dst->arg;
-    d[0] = bw;
+    for (i = 0; i < MAX_PKT; i++) {
+        d[i] = bw ? 8ULL * TIME_UNITS * (i + 24) / bw : 0;
+    }
     return 0;	/* success */
 }
 
@@ -3224,8 +3230,8 @@ ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 ether_bw_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t *d = arg->arg, bps = d[0];
-    q->cur_tt = bps ? 8ULL * TIME_UNITS * (q->cur_len + 24) / bps : 0 ;
+    uint64_t *d = arg->arg;
+    q->cur_tt = d[q->cur_len];
     return 0;
 }
 
