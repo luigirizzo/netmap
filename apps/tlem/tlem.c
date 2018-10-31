@@ -300,7 +300,8 @@ struct _eci {
         struct _ec      ec_loss;
         struct _ec      ec_reorder;
 	uint64_t	ec_delay_offset;
-	long		ec_allow_drop;
+	int		ec_allow_drop;
+	uint32_t	ec_qsize;
 #define EC_DATASZ       (1U << 16)
         char            ec_data[EC_DATASZ];
 };
@@ -1172,7 +1173,7 @@ enq(struct _qs *q)
             q->cur_len, (int)q->prod_tail, p->next,
             p->pt_qout, p->pt_tx);
     q->prod_tail = p->next;
-    if (q->ec->max_bps)
+    if (q->qsize)
         q->prod_queued += p->pktlen;
     /* XXX update timestamps ? */
     return 0;
@@ -2566,6 +2567,10 @@ skip_args:
             a->ec_delay_offset = parse_time(invdopt['O']->arg[i]);
             q->delay_offset = a->ec_delay_offset;
         }
+	if (invdopt['Q']->arg[i] != NULL) {
+            a->ec_qsize = parse_qsize(invdopt['Q']->arg[0]);
+            q->qsize = a->ec_qsize;
+	}
         bp[i].q.txstats = &ecf->stats[j++];
         bp[i].q.rxstats = &ecf->stats[j++];
     }
@@ -2602,17 +2607,14 @@ skip_args:
         exit(0);
     }
 
-    bp[0].q.qsize = parse_qsize(invdopt['Q']->arg[0]);
-    bp[1].q.qsize = parse_qsize(invdopt['Q']->arg[1]);
-
-    if (bp[0].q.qsize == 0) {
-        ED("qsize= 0 is not valid, set to 50k");
-        bp[0].q.qsize = 50000;
-    }
-    if (bp[1].q.qsize == 0) {
-        ED("qsize= 0 is not valid, set to 50k");
-        bp[1].q.qsize = 50000;
-    }
+    //if (bp[0].q.qsize == 0) {
+    //    ED("qsize= 0 is not valid, set to 50k");
+    //    bp[0].q.qsize = 50000;
+    //}
+    //if (bp[1].q.qsize == 0) {
+    //    ED("qsize= 0 is not valid, set to 50k");
+    //    bp[1].q.qsize = 50000;
+    //}
 
 #ifdef WITH_MAX_LAG
     for (i = 0; i < EC_NOPTS; i++) {
@@ -3455,4 +3457,5 @@ ec_activate(struct _qs *q)
     q->c_reorder.ec = &a->ec_reorder;
     q->allow_drop = a->ec_allow_drop;
     q->delay_offset = a->ec_delay_offset;
+    q->qsize = a->ec_qsize;
 }
