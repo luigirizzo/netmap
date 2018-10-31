@@ -813,7 +813,7 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * Only accept our own buffers (matching the token). We should only get
 	 * matching buffers, because of virtio_net_netmap_detach_unused() and
 	 * virtio_net_netmap_init_buffers(). We may need to stop early to avoid
-	 * hwtail to overrun hwcur;
+	 * hwtail to overrun hwcur.
 	 */
 	if (netmap_no_pendintr || force_update) {
 		uint32_t hwtail_lim = nm_prev(kring->nr_hwcur, lim);
@@ -835,7 +835,7 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 				/* Skip the virtio-net header. */
 				len -= vnet_hdr_len;
 				if (unlikely(len < 0)) {
-					RD(5, "Truncated virtio-net-header, missing %d"
+					RD(1, "Truncated virtio-net-header, missing %d"
 							" bytes", -len);
 					len = 0;
 				}
