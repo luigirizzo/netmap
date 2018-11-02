@@ -2516,8 +2516,6 @@ main(int argc, char **argv)
     }
 
     /* use same parameters for both directions if needed */
-    if (invdopt['Q']->arg[0] == NULL)
-        invdopt['Q']->arg[0] = "0";
     for (scandopt = dopt; scandopt->opt; scandopt++) {
         if (!(scandopt->flags & DOPT_CLONE))
             continue;
@@ -2570,6 +2568,17 @@ skip_args:
 	if (invdopt['Q']->arg[i] != NULL) {
             a->ec_qsize = parse_qsize(invdopt['Q']->arg[0]);
             q->qsize = a->ec_qsize;
+	} else if (invdopt['B']->arg[i] != NULL) {
+	    /* we need e small finite queue for bandwidth emulation,
+	     * otherwise delay is unbounded
+	     */
+	    ED("setting qsize to 50k");
+	    a->ec_qsize = 50000;
+	    q->qsize = 50000;
+	} else {
+	    ED("using unlimited qsize");
+	    a->ec_qsize = 0;
+	    q->qsize = 0; /* infinite */
 	}
         bp[i].q.txstats = &ecf->stats[j++];
         bp[i].q.rxstats = &ecf->stats[j++];
@@ -2606,15 +2615,6 @@ skip_args:
             ec_switchactive(&bp[i].q);
         exit(0);
     }
-
-    //if (bp[0].q.qsize == 0) {
-    //    ED("qsize= 0 is not valid, set to 50k");
-    //    bp[0].q.qsize = 50000;
-    //}
-    //if (bp[1].q.qsize == 0) {
-    //    ED("qsize= 0 is not valid, set to 50k");
-    //    bp[1].q.qsize = 50000;
-    //}
 
 #ifdef WITH_MAX_LAG
     for (i = 0; i < EC_NOPTS; i++) {
