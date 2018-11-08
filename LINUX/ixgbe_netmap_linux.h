@@ -421,10 +421,13 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 #ifndef NM_IXGBE_USE_TDH
 	(void)reclaim_tx;
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
+		u_int tail_i;
 		nic_i = NM_ACCESS_ONCE(*ina->heads[ring_nr].phead);
 		nm_i = netmap_idx_n2k(kring, nic_i);
 		ND(5, "%s: h %d", kring->name, h);
-		kring->nr_hwtail = nm_prev(nm_i, lim);
+		tail_i = nm_prev(nm_i, lim);
+		if (tail_i != kring->nr_hwcur)
+			kring->nr_hwtail = tail_i;
 	}
 #else /* NM_IXGBE_USE_TDH */
 	/*
