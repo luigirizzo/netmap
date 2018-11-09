@@ -2473,6 +2473,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 				}
 
 				if (na->virt_hdr_len && !(req->nr_flags & NR_ACCEPT_VNET_HDR)) {
+					D("virt_hdr_len=%d, but application does "
+						"not accept it", na->virt_hdr_len);
 					error = EIO;
 					break;
 				}
