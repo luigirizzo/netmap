@@ -595,6 +595,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 	NR_REG_ONE_NIC	= 4,
 	NR_REG_PIPE_MASTER = 5, /* deprecated, use "x{y" port name syntax */
 	NR_REG_PIPE_SLAVE = 6,  /* deprecated, use "x}y" port name syntax */
+	NR_REG_NULL     = 7,
 };
 
 /* A single ioctl number is shared by all the new API command.

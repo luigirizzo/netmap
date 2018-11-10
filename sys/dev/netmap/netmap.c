@@ -1512,6 +1512,9 @@ netmap_get_na(struct nmreq_header *hdr,
 	 *   0	  !NULL		type matches and na created/found
 	 *  !0    !NULL		impossible
 	 */
+	error = netmap_get_null_na(hdr, na, nmd, create);
+	if (error || *na != NULL)
+		goto out;
 
 	/* try to see if this is a monitor port */
 	error = netmap_get_monitor_na(hdr, na, nmd, create);
@@ -1797,6 +1800,7 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
 		}
 		switch (nr_mode) {
 		case NR_REG_ALL_NIC:
+		case NR_REG_NULL:
 			priv->np_qfirst[t] = 0;
 			priv->np_qlast[t] = nma_get_nrings(na, t);
 			ND("ALL/PIPE: %s %d %d", nm_txrx2str(t),
@@ -3497,12 +3501,6 @@ netmap_notify(struct netmap_kring *kring, int flags)
 int
 netmap_attach_common(struct netmap_adapter *na)
 {
-	if (na->num_tx_rings == 0 || na->num_rx_rings == 0) {
-		D("%s: invalid rings tx %d rx %d",
-			na->name, na->num_tx_rings, na->num_rx_rings);
-		return EINVAL;
-	}
-
 	if (!na->rx_buf_maxsize) {
 		/* Set a conservative default (larger is safer). */
 		na->rx_buf_maxsize = PAGE_SIZE;
@@ -3611,6 +3609,12 @@ netmap_attach_ext(struct netmap_adapter *arg, size_t size, int override_reg)
 
 	if (arg == NULL || arg->ifp == NULL)
 		return EINVAL;
+
+	if (arg->num_tx_rings == 0 || arg->num_rx_rings == 0) {
+		D("%s: invalid rings tx %d rx %d",
+			arg->name, arg->num_tx_rings, arg->num_rx_rings);
+		return EINVAL;
+	}
 
 	ifp = arg->ifp;
 	if (NM_NA_CLASH(ifp)) {

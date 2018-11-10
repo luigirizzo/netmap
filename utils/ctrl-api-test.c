@@ -1277,6 +1277,64 @@ sync_kloop_eventfds_mismatch(struct TestContext *ctx)
 	return (sync_kloop_eventfds(ctx) != 0) ? 0 : -1;
 }
 
+static int
+null_port(struct TestContext *ctx)
+{
+	int ret;
+
+	ctx->nr_mem_id = 1;
+	ctx->nr_mode = NR_REG_NULL;
+	ctx->nr_tx_rings = 10;
+	ctx->nr_rx_rings = 5;
+	ctx->nr_tx_slots = 256;
+	ctx->nr_rx_slots = 100;
+	ret = port_register(ctx);
+	if (ret) {
+		return ret;
+	}
+	return 0;
+}
+
+static int
+null_port_all_zero(struct TestContext *ctx)
+{
+	int ret;
+
+	ctx->nr_mem_id = 1;
+	ctx->nr_mode = NR_REG_NULL;
+	ctx->nr_tx_rings = 0;
+	ctx->nr_rx_rings = 0;
+	ctx->nr_tx_slots = 0;
+	ctx->nr_rx_slots = 0;
+	ret = port_register(ctx);
+	if (ret) {
+		return ret;
+	}
+	return 0;
+}
+
+static int
+null_port_sync(struct TestContext *ctx)
+{
+	int ret;
+
+	ctx->nr_mem_id = 1;
+	ctx->nr_mode = NR_REG_NULL;
+	ctx->nr_tx_rings = 10;
+	ctx->nr_rx_rings = 5;
+	ctx->nr_tx_slots = 256;
+	ctx->nr_rx_slots = 100;
+	ret = port_register(ctx);
+	if (ret) {
+		return ret;
+	}
+	ret = ioctl(ctx->fd, NIOCTXSYNC, 0);
+	if (ret) {
+		return ret;
+	}
+	return 0;
+}
+
 static void
 usage(const char *prog)
 {
@@ -1329,6 +1387,9 @@ static struct mytest tests[] = {
 	decltest(sync_kloop_csb_enable),
 	decltest(sync_kloop_conflict),
 	decltest(sync_kloop_eventfds_mismatch),
+	decltest(null_port),
+	decltest(null_port_all_zero),
+	decltest(null_port_sync),
 };
 
 static void
