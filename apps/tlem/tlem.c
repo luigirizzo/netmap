@@ -3166,7 +3166,8 @@ update_max_bw(struct _qs *q, uint64_t bw)
 static int
 const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-    uint64_t bw, *d;
+    uint64_t bw;
+    uint32_t *d;
     int i;
 
     if (strncmp(av[0], "const", 5) != 0 && ac > 1)
@@ -3194,7 +3195,7 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 const_bw_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t *d = arg->arg;
+    uint32_t *d = arg->arg;
     q->cur_tt = d[q->cur_len];
     return 0;
 }
@@ -3203,7 +3204,8 @@ const_bw_run(struct _qs *q, struct _cfg *arg)
 static int
 ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 {
-    uint64_t bw, *d;
+    uint64_t bw;
+    uint32_t *d;
     int i;
 
     if (strcmp(av[0], "ether") != 0)
@@ -3230,7 +3232,7 @@ ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
 static int
 ether_bw_run(struct _qs *q, struct _cfg *arg)
 {
-    uint64_t *d = arg->arg;
+    uint32_t *d = arg->arg;
     q->cur_tt = d[q->cur_len];
     return 0;
 }
