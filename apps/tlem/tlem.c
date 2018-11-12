@@ -286,6 +286,7 @@ struct _cfg {
     /* placeholders for common values */
     void *arg;		/* allocated memory */
     struct _ec *ec;     /* external configuration */
+    uint64_t def_qsize; /* default qsize (for bw configs) */
 };
 
 
@@ -1439,8 +1440,9 @@ null_run_fn(struct _qs *q, struct _cfg *cfg)
 static int
 drop_after(struct _qs *q)
 {
-    (void)q; // XXX
-    return 0;
+    int drop = q->cur_drop;
+    q->cur_drop = 0;
+    return drop;
 }
 
 /* poducer: send the proper command depending on the contents of the received
@@ -1502,6 +1504,7 @@ prod_procpkt(struct _qs *q)
     tt = q->cur_tt;
     q->qt_qout += tt;
     if (drop_after(q)) {
+	q->qt_qout -= tt;
         q->txstats->drop_packets++;
         q->txstats->drop_bytes += q->cur_len;
         return;
@@ -2572,9 +2575,9 @@ skip_args:
 	    /* we need e small finite queue for bandwidth emulation,
 	     * otherwise delay is unbounded
 	     */
-	    ED("setting qsize to 50k");
-	    a->ec_qsize = 50000;
-	    q->qsize = 50000;
+	    ED("setting qsize to %lluB", (unsigned long long)q->c_bw.def_qsize);
+	    a->ec_qsize = q->c_bw.def_qsize;
+	    q->qsize = q->c_bw.def_qsize;
 	} else {
 	    ED("using unlimited qsize");
 	    a->ec_qsize = 0;
@@ -3133,7 +3136,7 @@ interpacket_delay_run(struct _qs *q, struct _cfg *arg)
     return 0;
 }
 
-#define TLEM_CFG_END	NULL, NULL
+#define TLEM_CFG_END	NULL, NULL, 0
 
 static struct _cfg delay_cfg[] = {
 	{ const_delay_parse, const_delay_run,
@@ -3187,6 +3190,7 @@ const_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     for (i = 0; i < MAX_PKT; i++) {
         d[i] = bw ? 8ULL * TIME_UNITS * i / bw : 0;
     }
+    dst->def_qsize = 50000;
     return 0;	/* success */
 }
 
@@ -3197,6 +3201,7 @@ const_bw_run(struct _qs *q, struct _cfg *arg)
 {
     uint32_t *d = arg->arg;
     q->cur_tt = d[q->cur_len];
+    q->cur_drop = 0;
     return 0;
 }
 
@@ -3224,6 +3229,7 @@ ether_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     for (i = 0; i < MAX_PKT; i++) {
         d[i] = bw ? 8ULL * TIME_UNITS * (i + 24) / bw : 0;
     }
+    dst->def_qsize = 50000;
     return 0;	/* success */
 }
 
@@ -3234,6 +3240,79 @@ ether_bw_run(struct _qs *q, struct _cfg *arg)
 {
     uint32_t *d = arg->arg;
     q->cur_tt = d[q->cur_len];
+    q->cur_drop = 0;
+    return 0;
+}
+
+/* token bucket. We don't limit the transmission time of
+ * each packet, but non-conforming packets are dropped
+ */
+#define WSHIFT 20
+struct avgbw_arg {
+    uint64_t token;
+    uint64_t bucket;
+    uint64_t depth;
+    uint64_t last_token;
+};
+static int
+avg_bw_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
+{
+    double bw, token;
+    struct avgbw_arg *d;
+
+    if (strcmp(av[0], "avg") != 0)
+        return 2; /* unrecognised */
+    if (ac != 2)
+        return 1; /* error */
+    bw = parse_bw(av[ac - 1]);
+    if (bw == U_PARSE_ERR)
+        return 1; /* error */
+    if (update_max_bw(q, bw))
+        return 1;
+    token = (bw / 8) * (1UL << WSHIFT) / 1e9;
+    dst->arg = ec_alloc(q, dst->ec, sizeof(*d));
+    if (dst->arg == NULL)
+        return 1;
+    d = dst->arg;
+    d->token = token;
+    d->bucket = 0;
+    d->depth = 4 * token;
+    if (d->depth < 2*MAX_PKT)
+	d->depth = 2*MAX_PKT;
+    d->last_token = 0;
+    dst->def_qsize = 0; /* skip the queue emulation */
+    D("token %lluB/%.2fms depth %llu",
+	    (unsigned long long)d->token, (1UL << WSHIFT)/1e6,
+	    (unsigned long long)d->depth);
+    return 0;	/* success */
+
+}
+
+static int
+avg_bw_run(struct _qs *q, struct _cfg *arg)
+{
+    struct avgbw_arg *d = arg->arg;
+    uint64_t now = (q->prod_now >> WSHIFT);
+    uint64_t sz = q->cur_len + 24;
+    uint64_t tokens;
+
+    /* insert all the necessary tokens */
+    tokens = (now - d->last_token) * d->token;
+    d->last_token = now;
+    d->bucket += tokens;
+    if (d->bucket > d->depth)
+	d->bucket = d->depth;
+    ND(1, "%llu: now %llu last %llu tokens %llu bucket %llu",
+		(unsigned long long)q->prod_now,
+		(unsigned long long)now,
+		(unsigned long long)d->last_token,
+		(unsigned long long)tokens,
+		(unsigned long long)d->bucket);
+    q->cur_tt = 0;
+    q->cur_drop = sz > d->bucket;
+    if (!q->cur_drop)
+	d->bucket -= sz;
+    //printf("%llu %llu\n", (unsigned long long)q->prod_now, (unsigned long long)d->bucket);
     return 0;
 }
 
@@ -3242,6 +3321,7 @@ static struct _cfg bw_cfg[] = {
 		"constant,bps", TLEM_CFG_END },
 	{ ether_bw_parse, ether_bw_run,
 		"ether,bps", TLEM_CFG_END },
+	{ avg_bw_parse, avg_bw_run, "avg,bps", TLEM_CFG_END },
 	{ NULL, NULL, NULL, TLEM_CFG_END }
 };
 
@@ -3351,6 +3431,7 @@ const_ber_run(struct _qs *q, struct _cfg *arg)
 #endif
     return 0;
 }
+
 
 static struct _cfg loss_cfg[] = {
 	{ const_plr_parse, const_plr_run,
