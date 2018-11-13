@@ -447,19 +447,12 @@ netmap_vale_attach(struct nmreq_header *hdr, void *auth_token)
 	}
 	vpna = (struct netmap_vp_adapter *)na;
 	req->port_index = vpna->bdg_port;
-
-	if (nmd)
-		netmap_mem_put(nmd);
-
 	NMG_UNLOCK();
 	return 0;
 
 unref_exit:
 	netmap_adapter_put(na);
 unlock_exit:
-	if (nmd)
-		netmap_mem_put(nmd);
-
 	NMG_UNLOCK();
 	return error;
 }
