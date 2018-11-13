@@ -58,12 +58,16 @@
 #if defined(CONFIG_NETMAP_SINK)
 #define WITH_SINK
 #endif
+#if defined(CONFIG_NETMAP_NULL)
+#define WITH_NMNULL
+#endif
 
 #elif defined (_WIN32)
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
+#define WITH_NMNULL
 
 #else	/* neither linux nor windows */
 #define WITH_VALE	// comment out to disable VALE support
@@ -72,6 +76,7 @@
 #define WITH_GENERIC
 #define WITH_PTNETMAP	/* ptnetmap guest support */
 #define WITH_EXTMEM
+#define WITH_NMNULL
 #endif
 
 #if defined(__FreeBSD__)
@@ -1109,6 +1114,12 @@ struct netmap_pipe_adapter {
 
 #endif /* WITH_PIPES */
 
+#ifdef WITH_NMNULL
+struct netmap_null_adapter {
+	struct netmap_adapter up;
+};
+#endif /* WITH_NMNULL */
+
 
 /* return slots reserved to rx clients; used in drivers */
 static inline uint32_t
@@ -1475,6 +1486,14 @@ void netmap_monitor_stop(struct netmap_adapter *na);
 #define netmap_get_monitor_na(hdr, _2, _3, _4) \
 	(((struct nmreq_register *)(uintptr_t)hdr->nr_body)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
 #endif
+
+#ifdef WITH_NMNULL
+int netmap_get_null_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+		struct netmap_mem_d *nmd, int create);
+#else /* !WITH_NMNULL */
+#define netmap_get_null_na(hdr, _2, _3, _4) \
+	(((struct nmreq_register *)(uintptr_t)hdr->nr_body)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
+#endif /* WITH_NMNULL */
 
 #ifdef CONFIG_NET_NS
 struct net *netmap_bns_get(void);

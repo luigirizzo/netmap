@@ -12,7 +12,7 @@ VPATH   = $(SRCDIR)/utils
 
 NO_MAN=
 CFLAGS  = -O2 -pipe
-CFLAGS += -Werror -Wall -Wunused-function -fsanitize=address
+CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I $(SRCDIR)/sys # -I/home/luigi/FreeBSD/head/sys -I../sys
 CFLAGS += -Wextra -g
 CFLAGS += $(SUBSYS_FLAGS)

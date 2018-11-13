@@ -95,7 +95,7 @@ setop()
 
 # available subsystems
 subsystem_avail="vale pipe monitor generic ptnetmap sink \
-	extmem"
+	extmem null"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -108,6 +108,7 @@ subsys enable vale
 subsys enable pipe
 subsys enable monitor
 subsys enable generic
+subsys enable null
 
 # available drivers
 driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
