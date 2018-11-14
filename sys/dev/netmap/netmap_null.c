@@ -131,7 +131,7 @@ netmap_get_null_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	int error;
 
 	if (req->nr_mode != NR_REG_NULL) {
-		D("not a null port");
+		ND("not a null port");
 		return 0;
 	}
 
