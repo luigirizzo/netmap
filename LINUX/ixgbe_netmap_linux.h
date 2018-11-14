@@ -650,6 +650,7 @@ ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u3
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct netmap_ixgbe_adapter *ina = (struct netmap_ixgbe_adapter *)na;
 	u64 wba;
+	struct netmap_ixgbe_head *h;
 #endif /* !NM_IXGBE_USE_TDH */
 
 	slot = netmap_reset(na, NR_TX, ring_nr, 0);
@@ -664,6 +665,9 @@ ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u3
 	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAL(ring_nr),
 		(wba & DMA_BIT_MASK(32)) | IXGBE_TDWBAL_HEAD_WB_ENABLE);
 	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAH(ring_nr), wba >> 32);
+	/* reset all heads */
+	h = &ina->heads[ring_nr];
+	*h->phead = 0;
 #endif /* !NM_IXGBE_USE_TDH */
 
 #if 0
