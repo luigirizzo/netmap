@@ -211,15 +211,16 @@ niocregif(struct TestContext *ctx, int netmap_api)
 	}
 
 	printf("nr_offset 0x%x\n", req.nr_offset);
-	printf("nr_memsize %u\n", req.nr_memsize);
+	printf("nr_memsize  %u\n", req.nr_memsize);
 	printf("nr_tx_slots %u\n", req.nr_tx_slots);
 	printf("nr_rx_slots %u\n", req.nr_rx_slots);
 	printf("nr_tx_rings %u\n", req.nr_tx_rings);
 	printf("nr_rx_rings %u\n", req.nr_rx_rings);
-	printf("nr_ringid %x\n", req.nr_ringid);
-	printf("nr_flags %x\n", req.nr_flags);
-	printf("nr_arg2 %u\n", req.nr_arg2);
-	printf("nr_arg3 %u\n", req.nr_arg3);
+	printf("nr_version  %d\n", req.nr_version);
+	printf("nr_ringid   %x\n", req.nr_ringid);
+	printf("nr_flags    %x\n", req.nr_flags);
+	printf("nr_arg2     %u\n", req.nr_arg2);
+	printf("nr_arg3     %u\n", req.nr_arg3);
 
 	success = req.nr_memsize &&
 	       (ctx->nr_ringid == req.nr_ringid) &&
@@ -250,8 +251,9 @@ niocregif(struct TestContext *ctx, int netmap_api)
 	return ret;
 }
 
-/* Use the 11 API, which is the one right before the introduction
- * of the new NIOCCTRL API. */
+/* The 11 ABI is the one right before the introduction of the new NIOCCTRL
+ * ABI. The 11 ABI is useful to perform tests with legacy applications
+ * (which use the 11 ABI) and new kernel (which uses 12, or higher). */
 #define NETMAP_API_NIOCREGIF	11
 
 static int
@@ -272,6 +274,16 @@ legacy_regif_sw(struct TestContext *ctx)
 {
 	ctx->nr_mode = NR_REG_SW;
 	return niocregif(ctx,  NETMAP_API_NIOCREGIF);
+}
+
+static int
+legacy_regif_future(struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_NIC_SW;
+	/* Test forward compatibility for the legacy ABI. This means
+	 * using an older kernel (with ABI 12 or higher) and a newer
+	 * application (with ABI greater than NETMAP_API). */
+	return niocregif(ctx, NETMAP_API+2);
 }
 
 /* Only valid after a successful port_register(). */
@@ -1484,6 +1496,7 @@ static struct mytest tests[] = {
 	decltest(legacy_regif_default),
 	decltest(legacy_regif_all_nic),
 	decltest(legacy_regif_sw),
+	decltest(legacy_regif_future),
 };
 
 static void
