@@ -242,14 +242,14 @@ nm_os_extmem_create(unsigned long p, struct nmreq_pools_info *pi, int *perror)
 
 	e = nm_os_malloc(sizeof(*e));
 	if (e == NULL) {
-		D("failed to allocate os_extmem");
+		nm_prerr("failed to allocate os_extmem");
 		err = ENOMEM;
 		goto out;
 	}
 
 	pages = nm_os_vmalloc(nr_pages * sizeof(*pages));
 	if (pages == NULL) {
-		D("failed to allocate pages array (nr_pages %d)", nr_pages);
+		nm_prerr("failed to allocate pages array (nr_pages %d)", nr_pages);
 		err = ENOMEM;
 		goto out;
 	}
@@ -295,7 +295,7 @@ nm_os_extmem_create(unsigned long p, struct nmreq_pools_info *pi, int *perror)
 	e->nr_pages = res;
 
 	if (res < nr_pages) {
-		D("failed to get user pages: res %d nr_pages %d", res, nr_pages);
+		nm_prerr("failed to get user pages: res %d nr_pages %d", res, nr_pages);
 		err = EFAULT;
 		goto out;
 	}
@@ -582,7 +582,7 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 	int ret = 0;
 
 	if (!ifp) {
-		D("Failed to get ifp");
+		nm_prerr("Failed to get ifp");
 		return -EBUSY;
 	}
 
@@ -664,7 +664,7 @@ generic_qdisc_init(struct Qdisc *qdisc, struct nlattr *opt
 #ifdef NETMAP_LINUX_HAVE_QDISC_EXTACK
 			NL_SET_ERR_MSG(extack, "Invalid netlink attribute");
 #else
-			D("Invalid netlink attribute");
+			nm_prerr("Invalid netlink attribute");
 #endif /* NETMAP_LINUX_HAVE_QDISC_EXTACK */
 			return -EINVAL;
 		}
@@ -687,7 +687,7 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc
 	struct nm_generic_qdisc *priv = qdisc_priv(qdisc);
 
 	if (unlikely(qdisc_qlen(qdisc) >= priv->limit)) {
-		RD(5, "dropping mbuf");
+		nm_prlim(5, "dropping mbuf");
 
 		return qdisc_drop(m, qdisc
 #ifdef NETMAP_LINUX_HAVE_QDISC_ENQUEUE_TOFREE
@@ -697,7 +697,7 @@ generic_qdisc_enqueue(struct mbuf *m, struct Qdisc *qdisc
 		/* or qdisc_reshape_fail() ? */
 	}
 
-	ND(5, "Enqueuing mbuf, len %u", qdisc_qlen(qdisc));
+	nm_prdis(5, "Enqueuing mbuf, len %u", qdisc_qlen(qdisc));
 
 	return qdisc_enqueue_tail(m, qdisc);
 }
@@ -716,12 +716,12 @@ generic_qdisc_dequeue(struct Qdisc *qdisc)
 		 * We have to set the priority to the normal TX token, so that
 		 * generic_ndo_start_xmit can pass it to the driver. */
 		m->priority = NM_MAGIC_PRIORITY_TX;
-		ND(5, "Event met, notify %p", m);
+		nm_prdis(5, "Event met, notify %p", m);
 		netmap_generic_irq(NA(qdisc_dev(qdisc)),
 				skb_get_queue_mapping(m), NULL);
 	}
 
-	ND(5, "Dequeuing mbuf, len %u", qdisc_qlen(qdisc));
+	nm_prdis(5, "Dequeuing mbuf, len %u", qdisc_qlen(qdisc));
 
 	return m;
 }
@@ -789,14 +789,14 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 #endif /* NETMAP_LINUX_SOCK_CREATE_KERN_NETNS  */
 				AF_NETLINK, SOCK_RAW, NETLINK_ROUTE, &sock);
 	if (ret) {
-		D("Failed to create netlink socket (err=%d)", ret);
+		nm_prerr("Failed to create netlink socket (err=%d)", ret);
 		return -ret;
 	}
 
 
 	ret = kernel_bind(sock, (struct sockaddr *)&saddr, sizeof(saddr));
 	if (ret) {
-		D("Failed to bind() netlink socket (err=%d)", ret);
+		nm_prerr("Failed to bind() netlink socket (err=%d)", ret);
 		goto release;
 	}
 
@@ -825,13 +825,13 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 	ret = kernel_sendmsg(sock, &msg, (struct kvec *)&iov, 1,
 				iov.iov_len);
 	if (ret != nlreq.hdr.nlmsg_len) {
-		D("Failed to sendmsg to netlink socket (err=%d)", ret);
+		nm_prerr("Failed to sendmsg to netlink socket (err=%d)", ret);
 		ret = -EINVAL;
 		goto release;
 	}
 	ret = 0;
 
-	D("ifp %s qdisc %s parent %u handle %u", ifp->name, qdisc_name, parent, handle);
+	nm_prinf("ifp %s qdisc %s parent %u handle %u", ifp->name, qdisc_name, parent, handle);
 
 release:
 	sock_release(sock);
@@ -887,7 +887,7 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 	int err;
 
 	if (!ifp) {
-		D("Failed to get ifp");
+		nm_prerr("Failed to get ifp");
 		return -1;
 	}
 
@@ -912,7 +912,7 @@ nm_os_catch_tx(struct netmap_generic_adapter *gna, int intercept)
 		gna->up.nm_ndo = *ifp->netdev_ops; /* copy all, replace some */
 		gna->up.nm_ndo.ndo_start_xmit = &generic_ndo_start_xmit;
 #ifndef NETMAP_LINUX_SELECT_QUEUE
-		D("No packet steering support");
+		nm_prerr("No packet steering support");
 #else
 		gna->up.nm_ndo.ndo_select_queue = &generic_ndo_select_queue;
 #endif
@@ -1023,7 +1023,7 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	m->priority = a->qevent ? NM_MAGIC_PRIORITY_TXQE : NM_MAGIC_PRIORITY_TX;
 
 	if (unlikely(m->next)) {
-		RD(1, "Warning: resetting skb->next as it is not NULL\n");
+		nm_prlim(1, "Warning: resetting skb->next as it is not NULL\n");
 		m->next = NULL;
 	}
 
@@ -1045,7 +1045,7 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 		 * field), and so the temporary noop qdisc enqueue
 		 * method will drop the packet and return NET_XMIT_CN.
 		 */
-		RD(3, "Warning: dev_queue_xmit() is dropping [%d]", ret);
+		nm_prlim(3, "Warning: dev_queue_xmit() is dropping [%d]", ret);
 		return -1;
 	}
 
@@ -1074,11 +1074,11 @@ nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *r
 		*tx = rp.tx_pending ? rp.tx_pending : rp.tx_max_pending;
 		*rx = rp.rx_pending ? rp.rx_pending : rp.rx_max_pending;
 		if (*rx < 3) {
-			D("Invalid RX ring size %u, using default", *rx);
+			nm_prerr("Invalid RX ring size %u, using default", *rx);
 			*rx = netmap_generic_ringsize;
 		}
 		if (*tx < 3) {
-			D("Invalid TX ring size %u, using default", *tx);
+			nm_prerr("Invalid TX ring size %u, using default", *tx);
 			*tx = netmap_generic_ringsize;
 		}
 		error = 0;
@@ -1121,7 +1121,7 @@ netmap_rings_config_get(struct netmap_adapter *na, struct nm_config_info *info)
 	rtnl_lock();
 
 	if (ifp == NULL) {
-		D("zombie adapter");
+		nm_prerr("zombie adapter");
 		error = ENXIO;
 		goto out;
 	}
@@ -1228,7 +1228,7 @@ linux_netmap_fault(struct vm_fault *vmf)
 	unsigned long pa, pfn;
 
 	pa = netmap_mem_ofstophys(na->nm_mem, off);
-	ND("fault off %lx -> phys addr %lx", off, pa);
+	nm_prdis("fault off %lx -> phys addr %lx", off, pa);
 	if (pa == 0)
 		return VM_FAULT_SIGBUS;
 	pfn = pa >> PAGE_SHIFT;
@@ -1266,11 +1266,11 @@ linux_netmap_mmap(struct file *f, struct vm_area_struct *vma)
 
 	/* check that [off, off + vsize) is within our memory */
 	error = netmap_mem_get_info(na->nm_mem, &memsize, &memflags, NULL);
-	ND("get_info returned %d", error);
+	nm_prdis("get_info returned %d", error);
 	if (error)
 		return -error;
 	off = vma->vm_pgoff << PAGE_SHIFT;
-	ND("off %lx size %lx memsize %x", off,
+	nm_prdis("off %lx size %lx memsize %x", off,
 			(vma->vm_end - vma->vm_start), memsize);
 	if (off + (vma->vm_end - vma->vm_start) > memsize)
 		return -EINVAL;
@@ -1801,7 +1801,7 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
 	*mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_LO) |
 		(*mem_size << 32);
 
-	D("=== BAR %d start %llx len %llx mem_size %lx ===",
+	nm_prinf("=== BAR %d start %llx len %llx mem_size %lx ===",
 			PTNETMAP_MEM_PCI_BAR,
 			pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
 			pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
@@ -1969,7 +1969,7 @@ ptnetmap_guest_init(void)
 	/* register pci driver */
 	ret = pci_register_driver(&ptnetmap_guest_drivers);
 	if (ret < 0) {
-		D("Failed to register drivers");
+		nm_prerr("Failed to register drivers");
 		return ret;
 	}
 
@@ -2175,14 +2175,14 @@ static int linux_netmap_init(void)
 #ifdef WITH_SINK
 	err = netmap_sink_init();
 	if (err) {
-		D("Error: could not init netmap sink interface");
+		nm_prerr("Error: could not init netmap sink interface");
 		goto ptnetmap_fini;
 	}
 #endif /* WITH_SINK */
 #ifdef WITH_GENERIC
 	err = register_qdisc(&generic_qdisc_ops);
 	if (err) {
-		D("Error: failed to register qdisc for emulated netmap (err=%d)", err);
+		nm_prerr("Error: failed to register qdisc for emulated netmap (err=%d)", err);
 		goto sink_fini;
 	}
 #endif /* WITH_GENERIC */
@@ -2325,7 +2325,7 @@ nm_os_vi_persist(const char *name, struct ifnet **ret)
 	ifp->dev.driver = &linux_dummy_drv;
 	error = register_netdev(ifp);
 	if (error < 0) {
-		D("error %d", error);
+		nm_prerr("error %d", error);
 		error = -error;
 		goto err_free;
 	}
