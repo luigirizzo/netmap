@@ -268,18 +268,11 @@ typedef struct hrtimer{
 		__LINE__, __FUNCTION__, ##__VA_ARGS__);		\
 	} while (0)
 
-#define ND(format, ...)
-#define D(format, ...)						\
-	do {							\
-		struct timeval __xxts;				\
-		microtime(&__xxts);				\
-		nm_prerr_int("%03d.%06d [%4d] %-25s " format "\n",\
-		(int)__xxts.tv_sec % 1000, (int)__xxts.tv_usec,	\
-		__LINE__, __FUNCTION__, ##__VA_ARGS__);		\
-	} while (0)
+/* Disabled printf (used to be ND). */
+#define nm_prdis(format, ...)
 
-/* rate limited, lps indicates how many per second */
-#define RD(lps, format, ...)					\
+/* Rate limited, lps indicates how many per second. */
+#define nm_prlim(lps, format, ...)				\
 	do {							\
 		static int t0, __cnt;				\
 		if (t0 != time_second) {			\
@@ -289,6 +282,11 @@ typedef struct hrtimer{
 		if (__cnt++ < lps)				\
 			nm_prinf(format, ##__VA_ARGS__);	\
 	} while (0)
+
+/* Old macros. */
+#define ND	nm_prdis
+#define D	nm_prerr
+#define RD	nm_prlim
 
 struct netmap_adapter;
 struct nm_bdg_fwd;

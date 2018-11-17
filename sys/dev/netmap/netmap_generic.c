@@ -487,7 +487,7 @@ generic_mbuf_destructor(struct mbuf *m)
 
 		if (match) {
 			if (r != r_orig) {
-				RD(1, "event %p migrated: ring %u --> %u",
+				nm_prlim(1, "event %p migrated: ring %u --> %u",
 				      m, r_orig, r);
 			}
 			break;
@@ -496,7 +496,7 @@ generic_mbuf_destructor(struct mbuf *m)
 		if (++r == na->num_tx_rings) r = 0;
 
 		if (r == r_orig) {
-			RD(1, "Cannot match event %p", m);
+			nm_prlim(1, "Cannot match event %p", m);
 			return;
 		}
 	}
@@ -527,7 +527,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 	u_int n = 0;
 	struct mbuf **tx_pool = kring->tx_pool;
 
-	ND("hwcur = %d, hwtail = %d", kring->nr_hwcur, kring->nr_hwtail);
+	nm_prdis("hwcur = %d, hwtail = %d", kring->nr_hwcur, kring->nr_hwtail);
 
 	while (nm_i != hwcur) { /* buffers not completed */
 		struct mbuf *m = tx_pool[nm_i];
@@ -536,7 +536,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 			if (m == NULL) {
 				/* Nothing to do, this is going
 				 * to be replenished. */
-				RD(3, "Is this happening?");
+				nm_prlim(3, "Is this happening?");
 
 			} else if (MBUF_QUEUED(m)) {
 				break; /* Not dequeued yet. */
@@ -575,7 +575,7 @@ generic_netmap_tx_clean(struct netmap_kring *kring, int txqdisc)
 		nm_i = nm_next(nm_i, lim);
 	}
 	kring->nr_hwtail = nm_prev(nm_i, lim);
-	ND("tx completed [%d] -> hwtail %d", n, kring->nr_hwtail);
+	nm_prdis("tx completed [%d] -> hwtail %d", n, kring->nr_hwtail);
 
 	return n;
 }
@@ -653,7 +653,7 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 
 	kring->tx_pool[e] = NULL;
 
-	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? MBUF_REFCNT(m) : -2 );
+	nm_prdis("Request Event at %d mbuf %p refcnt %d", e, m, m ? MBUF_REFCNT(m) : -2 );
 
 	/* Decrement the refcount. This will free it if we lose the race
 	 * with the driver. */
@@ -698,7 +698,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * but only when cur == hwtail, which means that the
 			 * client is going to block. */
 			event = ring_middle(nm_i, head, lim);
-			ND(3, "Place txqdisc event (hwcur=%u,event=%u,"
+			nm_prdis("Place txqdisc event (hwcur=%u,event=%u,"
 			      "head=%u,hwtail=%u)", nm_i, event, head,
 			      kring->nr_hwtail);
 		}
@@ -724,7 +724,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 				kring->tx_pool[nm_i] = m =
 					nm_os_get_mbuf(ifp, NETMAP_BUF_SIZE(na));
 				if (m == NULL) {
-					RD(2, "Failed to replenish mbuf");
+					nm_prlim(2, "Failed to replenish mbuf");
 					/* Here we could schedule a timer which
 					 * retries to replenish after a while,
 					 * and notifies the client when it
@@ -853,7 +853,7 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 		/* This may happen when GRO/LRO features are enabled for
 		 * the NIC driver when the generic adapter does not
 		 * support RX scatter-gather. */
-		RD(2, "Warning: driver pushed up big packet "
+		nm_prlim(2, "Warning: driver pushed up big packet "
 				"(size=%d)", (int)MBUF_LEN(m));
 		m_freem(m);
 	} else if (unlikely(mbq_len(&kring->rx_queue) > 1024)) {
@@ -1127,10 +1127,10 @@ generic_netmap_attach(struct ifnet *ifp)
 	 */
 	na->na_flags = NAF_SKIP_INTR | NAF_HOST_RINGS;
 
-	ND("[GNA] num_tx_queues(%d), real_num_tx_queues(%d), len(%lu)",
+	nm_prdis("[GNA] num_tx_queues(%d), real_num_tx_queues(%d), len(%lu)",
 			ifp->num_tx_queues, ifp->real_num_tx_queues,
 			ifp->tx_queue_len);
-	ND("[GNA] num_rx_queues(%d), real_num_rx_queues(%d)",
+	nm_prdis("[GNA] num_rx_queues(%d), real_num_rx_queues(%d)",
 			ifp->num_rx_queues, ifp->real_num_rx_queues);
 
 	nm_os_generic_find_num_queues(ifp, &na->num_tx_rings, &na->num_rx_rings);
