@@ -77,10 +77,11 @@ nmreq_register_from_legacy(struct nmreq *nmr, struct nmreq_header *hdr,
 		} else {
 			regmode = NR_REG_ALL_NIC;
 		}
-		nmr->nr_flags = regmode |
-			(nmr->nr_flags & (~NR_REG_MASK));
+		req->nr_mode = regmode;
+	} else {
+		req->nr_mode = nmr->nr_flags & NR_REG_MASK;
 	}
-	req->nr_mode = nmr->nr_flags & NR_REG_MASK;
+
 	/* Fix nr_name, nr_mode and nr_ringid to handle pipe requests. */
 	if (req->nr_mode == NR_REG_PIPE_MASTER ||
 			req->nr_mode == NR_REG_PIPE_SLAVE) {

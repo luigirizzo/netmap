@@ -183,6 +183,81 @@ port_register(struct TestContext *ctx)
 	return -0;
 }
 
+static int
+niocregif(struct TestContext *ctx, int netmap_api)
+{
+	struct nmreq req;
+	int success;
+	int ret;
+
+	printf("Testing legacy NIOCREGIF on '%s'\n", ctx->ifname);
+
+	memset(&req, 0, sizeof(req));
+	strncpy(req.nr_name, ctx->ifname, sizeof(req.nr_name)-1);
+	req.nr_version = netmap_api;
+	req.nr_ringid     = ctx->nr_ringid;
+	req.nr_flags      = ctx->nr_mode | ctx->nr_flags;
+	req.nr_tx_slots   = ctx->nr_tx_slots;
+	req.nr_rx_slots   = ctx->nr_rx_slots;
+	req.nr_tx_rings   = ctx->nr_tx_rings;
+	req.nr_rx_rings   = ctx->nr_rx_rings;
+	req.nr_arg2     = ctx->nr_mem_id;
+	req.nr_arg3 = ctx->nr_extra_bufs;
+
+	ret = ioctl(ctx->fd, NIOCREGIF, &req);
+	if (ret) {
+		perror("ioctl(/dev/netmap, NIOCREGIF)");
+		return ret;
+	}
+
+	printf("nr_offset 0x%x\n", req.nr_offset);
+	printf("nr_memsize %u\n", req.nr_memsize);
+	printf("nr_tx_slots %u\n", req.nr_tx_slots);
+	printf("nr_rx_slots %u\n", req.nr_rx_slots);
+	printf("nr_tx_rings %u\n", req.nr_tx_rings);
+	printf("nr_rx_rings %u\n", req.nr_rx_rings);
+	printf("nr_ringid %x\n", req.nr_ringid);
+	printf("nr_flags %x\n", req.nr_flags);
+	printf("nr_arg2 %u\n", req.nr_arg2);
+	printf("nr_arg3 %u\n", req.nr_arg3);
+
+	success = req.nr_memsize &&
+	       (ctx->nr_ringid == req.nr_ringid) &&
+	       ((ctx->nr_mode | ctx->nr_flags) == req.nr_flags) &&
+	       ((!ctx->nr_tx_slots && req.nr_tx_slots) ||
+		(ctx->nr_tx_slots == req.nr_tx_slots)) &&
+	       ((!ctx->nr_rx_slots && req.nr_rx_slots) ||
+		(ctx->nr_rx_slots == req.nr_rx_slots)) &&
+	       ((!ctx->nr_tx_rings && req.nr_tx_rings) ||
+		(ctx->nr_tx_rings == req.nr_tx_rings)) &&
+	       ((!ctx->nr_rx_rings && req.nr_rx_rings) ||
+		(ctx->nr_rx_rings == req.nr_rx_rings)) &&
+	       ((!ctx->nr_mem_id && req.nr_arg2) ||
+		(ctx->nr_mem_id == req.nr_arg2)) &&
+	       (ctx->nr_extra_bufs == req.nr_arg3);
+	if (!success) {
+		return -1;
+	}
+
+	/* Write back results to the context structure.*/
+	ctx->nr_tx_slots   = req.nr_tx_slots;
+	ctx->nr_rx_slots   = req.nr_rx_slots;
+	ctx->nr_tx_rings   = req.nr_tx_rings;
+	ctx->nr_rx_rings   = req.nr_rx_rings;
+	ctx->nr_mem_id     = req.nr_arg2;
+	ctx->nr_extra_bufs = req.nr_arg3;
+
+	return ret;
+}
+
+static int
+legacy_regif(struct TestContext *ctx)
+{
+	/* Use the 11 API, which is the one right before the introduction
+	 * of the new NIOCCTRL API. */
+	return niocregif(ctx, 11);
+}
+
 /* Only valid after a successful port_register(). */
 static int
 num_registered_rings(struct TestContext *ctx)
@@ -1390,6 +1465,7 @@ static struct mytest tests[] = {
 	decltest(null_port),
 	decltest(null_port_all_zero),
 	decltest(null_port_sync),
+	decltest(legacy_regif),
 };
 
 static void
