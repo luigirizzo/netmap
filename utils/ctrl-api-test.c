@@ -270,6 +270,13 @@ legacy_regif_all_nic(struct TestContext *ctx)
 }
 
 static int
+legacy_regif_12(struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_ALL_NIC;
+	return niocregif(ctx, NETMAP_API_NIOCREGIF+1);
+}
+
+static int
 legacy_regif_sw(struct TestContext *ctx)
 {
 	ctx->nr_mode = NR_REG_SW;
@@ -1495,6 +1502,7 @@ static struct mytest tests[] = {
 	decltest(null_port_sync),
 	decltest(legacy_regif_default),
 	decltest(legacy_regif_all_nic),
+	decltest(legacy_regif_12),
 	decltest(legacy_regif_sw),
 	decltest(legacy_regif_future),
 };
