@@ -250,12 +250,28 @@ niocregif(struct TestContext *ctx, int netmap_api)
 	return ret;
 }
 
+/* Use the 11 API, which is the one right before the introduction
+ * of the new NIOCCTRL API. */
+#define NETMAP_API_NIOCREGIF	11
+
 static int
-legacy_regif(struct TestContext *ctx)
+legacy_regif_default(struct TestContext *ctx)
 {
-	/* Use the 11 API, which is the one right before the introduction
-	 * of the new NIOCCTRL API. */
-	return niocregif(ctx, 11);
+	return niocregif(ctx, NETMAP_API_NIOCREGIF);
+}
+
+static int
+legacy_regif_all_nic(struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_ALL_NIC;
+	return niocregif(ctx, NETMAP_API);
+}
+
+static int
+legacy_regif_sw(struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_SW;
+	return niocregif(ctx,  NETMAP_API_NIOCREGIF);
 }
 
 /* Only valid after a successful port_register(). */
@@ -1465,7 +1481,9 @@ static struct mytest tests[] = {
 	decltest(null_port),
 	decltest(null_port_all_zero),
 	decltest(null_port_sync),
-	decltest(legacy_regif),
+	decltest(legacy_regif_default),
+	decltest(legacy_regif_all_nic),
+	decltest(legacy_regif_sw),
 };
 
 static void
