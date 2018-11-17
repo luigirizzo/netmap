@@ -132,17 +132,17 @@ netmap_get_null_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	int error;
 
 	if (req->nr_mode != NR_REG_NULL) {
-		ND("not a null port");
+		nm_prdis("not a null port");
 		return 0;
 	}
 
 	if (!create) {
-		D("null ports cannot be re-opened");
+		nm_prerr("null ports cannot be re-opened");
 		return EINVAL;
 	}
 
 	if (nmd == NULL) {
-		D("null ports must use an existing allocator");
+		nm_prerr("null ports must use an existing allocator");
 		return EINVAL;
 	}
 
@@ -169,7 +169,7 @@ netmap_get_null_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	if (error)
 		goto free_nna;
 	*na = &nna->up;
-	D("created null %s", nna->up.name);
+	nm_prdis("created null %s", nna->up.name);
 
 	return 0;
 
