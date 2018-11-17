@@ -171,7 +171,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 
 			if (head_lim >= num_slots)
 				head_lim -= num_slots;
-			ND(1, "batch: %d head: %d head_lim: %d", batch, shadow_ring.head,
+			nm_prdis(1, "batch: %d head: %d head_lim: %d", batch, shadow_ring.head,
 					head_lim);
 			shadow_ring.head = head_lim;
 			batch = PTN_TX_BATCH_LIM(num_slots);
@@ -252,7 +252,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		if (nm_kr_txempty(kring)) {
 			/* No more available TX slots. We stop waiting for a notification
 			 * from the backend (netmap_tx_irq). */
-			ND(1, "TX ring");
+			nm_prdis(1, "TX ring");
 			break;
 		}
 	}
@@ -372,7 +372,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 					dry_cycles >= SYNC_LOOP_RX_DRY_CYCLES_MAX)) {
 			/* No more packets to be read from the backend. We stop and
 			 * wait for a notification from the backend (netmap_rx_irq). */
-			ND(1, "nr_hwtail: %d rhead: %d dry_cycles: %d",
+			nm_prdis(1, "nr_hwtail: %d rhead: %d dry_cycles: %d",
 					hwtail, kring->rhead, dry_cycles);
 			break;
 		}
@@ -750,7 +750,7 @@ netmap_pt_guest_txsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 		}
 	}
 
-	ND(1, "%s CSB(head:%u cur:%u hwtail:%u) KRING(head:%u cur:%u tail:%u)",
+	nm_prdis(1, "%s CSB(head:%u cur:%u hwtail:%u) KRING(head:%u cur:%u tail:%u)",
 		kring->name, atok->head, atok->cur, ktoa->hwtail,
 		kring->rhead, kring->rcur, kring->nr_hwtail);
 
@@ -815,7 +815,7 @@ netmap_pt_guest_rxsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
                 }
         }
 
-	ND(1, "%s CSB(head:%u cur:%u hwtail:%u) KRING(head:%u cur:%u tail:%u)",
+	nm_prdis(1, "%s CSB(head:%u cur:%u hwtail:%u) KRING(head:%u cur:%u tail:%u)",
 		kring->name, atok->head, atok->cur, ktoa->hwtail,
 		kring->rhead, kring->rcur, kring->nr_hwtail);
 
