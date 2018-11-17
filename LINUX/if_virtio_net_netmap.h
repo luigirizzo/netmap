@@ -489,7 +489,7 @@ virtio_net_netmap_detach_unused(struct virtnet_info *vi, bool onoff,
 	}
 
 	if (n)
-		nm_prinf("%d sgs detached on %s-%d (onoff=%d)\n",
+		nm_prinf("%d sgs detached on %s-%d (onoff=%d)",
 			 n, nm_txrx2str(t), idx, onoff);
 }
 
@@ -512,7 +512,7 @@ virtio_net_netmap_drain_used(struct virtnet_info *vi, bool onoff,
 	}
 
 	if (n)
-		nm_prinf("%d sgs drained on %s-%d (onoff=%d)\n",
+		nm_prinf("%d sgs drained on %s-%d (onoff=%d)",
 			n, nm_txrx2str(t), idx, onoff);
 }
 
@@ -679,11 +679,11 @@ virtio_net_netmap_init_buffers(struct virtnet_info *vi, int r)
 		sg_set_buf(sg + 1, addr, NETMAP_BUF_SIZE(na));
 		err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
 		if (err < 0) {
-			nm_prerr("virtqueue_add_inbuf() failed\n");
+			nm_prerr("virtqueue_add_inbuf() failed");
 			return 0;
 		}
 	}
-	nm_prinf("%s-rx-%d: %d netmap buffers published\n", na->name,
+	nm_prinf("%s-rx-%d: %d netmap buffers published", na->name,
 			r, i);
 
 	return true;
@@ -767,7 +767,7 @@ out:
 		if (token == NULL)
 			break;
 		if (unlikely(token != na))
-			nm_prerr("BUG: token mismatch\n");
+			nm_prerr("BUG: token mismatch");
 		else
 			n++;
 	}

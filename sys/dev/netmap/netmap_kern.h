@@ -240,22 +240,40 @@ typedef struct hrtimer{
 #define	NMG_LOCK_ASSERT()	NM_MTX_ASSERT(netmap_global_lock)
 
 #if defined(__FreeBSD__)
-#define nm_prerr	printf
-#define nm_prinf	printf
+#define nm_prerr_int	printf
+#define nm_prinf_int	printf
 #elif defined (_WIN32)
-#define nm_prerr	DbgPrint
-#define nm_prinf	DbgPrint
+#define nm_prerr_int	DbgPrint
+#define nm_prinf_int	DbgPrint
 #elif defined(linux)
-#define nm_prerr(fmt, arg...)    printk(KERN_ERR fmt, ##arg)
-#define nm_prinf(fmt, arg...)    printk(KERN_INFO fmt, ##arg)
+#define nm_prerr_int(fmt, arg...)    printk(KERN_ERR fmt, ##arg)
+#define nm_prinf_int(fmt, arg...)    printk(KERN_INFO fmt, ##arg)
 #endif
+
+#define nm_prinf(format, ...)					\
+	do {							\
+		struct timeval __xxts;				\
+		microtime(&__xxts);				\
+		nm_prinf_int("%03d.%06d [%4d] %-25s " format "\n",\
+		(int)__xxts.tv_sec % 1000, (int)__xxts.tv_usec,	\
+		__LINE__, __FUNCTION__, ##__VA_ARGS__);		\
+	} while (0)
+
+#define nm_prerr(format, ...)					\
+	do {							\
+		struct timeval __xxts;				\
+		microtime(&__xxts);				\
+		nm_prerr_int("%03d.%06d [%4d] %-25s " format "\n",\
+		(int)__xxts.tv_sec % 1000, (int)__xxts.tv_usec,	\
+		__LINE__, __FUNCTION__, ##__VA_ARGS__);		\
+	} while (0)
 
 #define ND(format, ...)
 #define D(format, ...)						\
 	do {							\
 		struct timeval __xxts;				\
 		microtime(&__xxts);				\
-		nm_prerr("%03d.%06d [%4d] %-25s " format "\n",	\
+		nm_prerr_int("%03d.%06d [%4d] %-25s " format "\n",\
 		(int)__xxts.tv_sec % 1000, (int)__xxts.tv_usec,	\
 		__LINE__, __FUNCTION__, ##__VA_ARGS__);		\
 	} while (0)
@@ -269,7 +287,7 @@ typedef struct hrtimer{
 			__cnt = 0;				\
 		}						\
 		if (__cnt++ < lps)				\
-			D(format, ##__VA_ARGS__);		\
+			nm_prinf(format, ##__VA_ARGS__);	\
 	} while (0)
 
 struct netmap_adapter;

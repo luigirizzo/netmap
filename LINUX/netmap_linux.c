@@ -1107,7 +1107,7 @@ nm_os_generic_find_num_queues(struct ifnet *ifp, u_int *txq, u_int *rxq)
 #else
 		*rxq = 1;
 		nm_prinf("WARNING: netmap will use only the first "
-			 "RX queue of %s\n", ifp->name);
+			 "RX queue of %s", ifp->name);
 #endif /* HAVE_REAL_NUM_RX_QUEUES */
 	}
 }

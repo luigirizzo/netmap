@@ -125,8 +125,8 @@ csb_atok_intr_enabled(struct nm_csb_atok __user *csb_atok)
 static inline void
 sync_kloop_kring_dump(const char *title, const struct netmap_kring *kring)
 {
-	nm_prinf("sync_kloop: %s - name: %s hwcur: %d hwtail: %d "
-		"rhead: %d rcur: %d rtail: %d\n",
+	nm_prinf("%s - name: %s hwcur: %d hwtail: %d "
+		"rhead: %d rcur: %d rtail: %d",
 		title, kring->name, kring->nr_hwcur, kring->nr_hwtail,
 		kring->rhead, kring->rcur, kring->rtail);
 }
@@ -198,7 +198,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
-			nm_prerr("sync_kloop: txsync() failed\n");
+			nm_prerr("txsync() failed");
 			break;
 		}
 
@@ -315,7 +315,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
-			nm_prerr("sync_kloop: rxsync() failed\n");
+			nm_prerr("rxsync() failed");
 			break;
 		}
 
@@ -465,7 +465,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	if (!priv->np_csb_atok_base || !priv->np_csb_ktoa_base) {
 		NMG_UNLOCK();
 		nm_prerr("sync-kloop on %s requires "
-				"NETMAP_REQ_OPT_CSB option\n", na->name);
+				"NETMAP_REQ_OPT_CSB option", na->name);
 		return EINVAL;
 	}
 

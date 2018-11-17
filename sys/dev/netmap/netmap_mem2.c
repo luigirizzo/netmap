@@ -318,7 +318,7 @@ netmap_mem_get_id(struct netmap_mem_d *nmd)
 
 #ifdef NM_DEBUG_MEM_PUTGET
 #define NM_DBG_REFC(nmd, func, line)	\
-	nm_prinf("%s:%d mem[%d] -> %d\n", func, line, (nmd)->nm_id, (nmd)->refcount);
+	nm_prinf("%d mem[%d] -> %d", line, (nmd)->nm_id, (nmd)->refcount);
 #else
 #define NM_DBG_REFC(nmd, func, line)
 #endif
@@ -2388,7 +2388,7 @@ netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 
 	NMA_UNLOCK(nmd);
 
-	nm_prinf("ptnet if added (ifp=%s,nifp_offset=%u)\n",
+	nm_prinf("ifp=%s,nifp_offset=%u",
 		ptif->ifp->if_xname, ptif->nifp_offset);
 
 	return 0;

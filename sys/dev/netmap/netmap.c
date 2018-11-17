@@ -687,7 +687,7 @@ nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg)
 		op = "Clamp";
 	}
 	if (op && msg)
-		nm_prinf("%s %s to %d (was %d)\n", op, msg, *v, oldv);
+		nm_prinf("%s %s to %d (was %d)", op, msg, *v, oldv);
 	return *v;
 }
 
@@ -2018,7 +2018,7 @@ netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 	int i;
 
 	if (priv->np_kloop_state & NM_SYNC_KLOOP_RUNNING) {
-		nm_prerr("Cannot update CSB while kloop is running\n");
+		nm_prerr("Cannot update CSB while kloop is running");
 		return EBUSY;
 	}
 
@@ -2031,7 +2031,7 @@ netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 		return 0;
 
 	if (!(priv->np_flags & NR_EXCLUSIVE)) {
-		nm_prerr("CSB mode requires NR_EXCLUSIVE\n");
+		nm_prerr("CSB mode requires NR_EXCLUSIVE");
 		return EINVAL;
 	}
 
@@ -2050,7 +2050,7 @@ netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 		int err;
 
 		if ((uintptr_t)csb_start[i] & (entry_size[i]-1)) {
-			nm_prerr("Unaligned CSB address\n");
+			nm_prerr("Unaligned CSB address");
 			return EINVAL;
 		}
 
@@ -2067,7 +2067,7 @@ netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 		}
 		nm_os_free(tmp);
 		if (err) {
-			nm_prerr("Invalid CSB address\n");
+			nm_prerr("Invalid CSB address");
 			return err;
 		}
 	}
@@ -2097,7 +2097,7 @@ netmap_csb_validate(struct netmap_priv_d *priv, struct nmreq_opt_csb *csbo)
 			CSB_WRITE(csb_ktoa, kern_need_kick, 1);
 
 			nm_prinf("csb_init for kring %s: head %u, cur %u, "
-				"hwcur %u, hwtail %u\n", kring->name,
+				"hwcur %u, hwtail %u", kring->name,
 				kring->rhead, kring->rcur, kring->nr_hwcur,
 				kring->nr_hwtail);
 		}
@@ -2234,7 +2234,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 				 * cannot be used in this case. */
 				if (nbs < mtu) {
 					nm_prerr("error: netmap buf size (%u) "
-						"< device MTU (%u)\n", nbs, mtu);
+						"< device MTU (%u)", nbs, mtu);
 					error = EINVAL;
 					goto err_drop_mem;
 				}
@@ -2247,14 +2247,14 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 				if (!(na->na_flags & NAF_MOREFRAG)) {
 					nm_prerr("error: large MTU (%d) needed "
 						"but %s does not support "
-						"NS_MOREFRAG\n", mtu,
+						"NS_MOREFRAG", mtu,
 						na->ifp->if_xname);
 					error = EINVAL;
 					goto err_drop_mem;
 				} else if (nbs < na->rx_buf_maxsize) {
 					nm_prerr("error: using NS_MOREFRAG on "
 						"%s requires netmap buf size "
-						">= %u\n", na->ifp->if_xname,
+						">= %u", na->ifp->if_xname,
 						na->rx_buf_maxsize);
 					error = EINVAL;
 					goto err_drop_mem;
@@ -2262,7 +2262,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 					nm_prinf("info: netmap application on "
 						"%s needs to support "
 						"NS_MOREFRAG "
-						"(MTU=%u,netmap_buf_size=%u)\n",
+						"(MTU=%u,netmap_buf_size=%u)",
 						na->ifp->if_xname, mtu, nbs);
 				}
 			}
@@ -2809,7 +2809,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		mb(); /* make sure following reads are not from cache */
 
 		if (unlikely(priv->np_csb_atok_base)) {
-			nm_prerr("Invalid sync in CSB mode\n");
+			nm_prerr("Invalid sync in CSB mode");
 			error = EBUSY;
 			break;
 		}
@@ -3222,7 +3222,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 		return POLLERR;
 
 	if (unlikely(priv->np_csb_atok_base)) {
-		nm_prerr("Invalid poll in CSB mode\n");
+		nm_prerr("Invalid poll in CSB mode");
 		return POLLERR;
 	}
 
@@ -4089,7 +4089,7 @@ netmap_fini(void)
 	netmap_uninit_bridges();
 	netmap_mem_fini();
 	NMG_LOCK_DESTROY();
-	nm_prinf("netmap: unloaded module.\n");
+	nm_prinf("netmap: unloaded module.");
 }
 
 
@@ -4126,7 +4126,7 @@ netmap_init(void)
 	if (error)
 		goto fail;
 
-	nm_prinf("netmap: loaded module\n");
+	nm_prinf("netmap: loaded module");
 	return (0);
 fail:
 	netmap_fini();
