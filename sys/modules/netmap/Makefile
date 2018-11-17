@@ -23,6 +23,7 @@ SRCS	+= netmap_monitor.c
 SRCS	+= netmap_kloop.c
 SRCS	+= netmap_legacy.c
 SRCS	+= netmap_bdg.c
+SRCS	+= netmap_null.c
 SRCS	+= if_ptnet.c
 SRCS	+= opt_inet.h opt_inet6.h
 
