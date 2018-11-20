@@ -229,15 +229,13 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 static int
 i40e_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
-	struct i40e_netdev_priv *np = netdev_priv(na->ifp);
-	struct i40e_vsi  *vsi = np->vsi;
 	int ret = netmap_rings_config_get(na, info);
 
 	if (ret) {
 		return ret;
 	}
 
-	info->rx_buf_maxsize = vsi->rx_buf_len;
+	info->rx_buf_maxsize = NETMAP_BUF_SIZE(na);
 
 	return 0;
 }
