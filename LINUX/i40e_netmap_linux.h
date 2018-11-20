@@ -62,6 +62,9 @@ extern int ix_crcstrip;
 #endif
 
 #ifdef NETMAP_I40E_MAIN
+
+#define i40e_driver_name netmap_i40e_driver_name
+char i40e_driver_name[] = "i40e" NETMAP_LINUX_DRIVER_SUFFIX;
 /*
  * device-specific sysctl variables:
  *
