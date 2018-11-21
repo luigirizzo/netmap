@@ -1008,11 +1008,11 @@ ptnet_close(struct net_device *netdev)
 }
 
 static const struct net_device_ops ptnet_netdev_ops = {
-	.ndo_open		= ptnet_open,
-	.ndo_stop		= ptnet_close,
-	.ndo_start_xmit		= ptnet_start_xmit,
-	.ndo_get_stats		= ptnet_get_stats,
-	.ndo_change_mtu		= ptnet_change_mtu,
+	.ndo_open			= ptnet_open,
+	.ndo_stop			= ptnet_close,
+	.ndo_start_xmit			= ptnet_start_xmit,
+	.ndo_get_stats			= ptnet_get_stats,
+	.NETMAP_LINUX_CHANGE_MTU	= ptnet_change_mtu,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= ptnet_netpoll,
 #endif
