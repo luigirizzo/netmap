@@ -31,20 +31,20 @@ index 8e962f7..2c10939 100644
  	install -D -m 644 $(TARGET) $(INSTALL_MOD_PATH)$(INSTDIR)/$(TARGET)
  ifeq (,$(INSTALL_MOD_PATH))
 diff --git a/igb/igb_main.c b/igb/igb_main.c
-index 2dff0f4..d848e34 100644
+index 2dff0f4..251b755 100644
 --- a/igb/igb_main.c
 +++ b/igb/igb_main.c
-@@ -318,6 +318,10 @@ static int debug = NETIF_MSG_DRV | NETIF_MSG_PROBE;
- module_param(debug, int, 0);
- MODULE_PARM_DESC(debug, "Debug level (0=none, ..., 16=all)");
+@@ -259,6 +259,10 @@ static struct pci_error_handlers igb_err_handler = {
+ static void igb_init_fw(struct igb_adapter *adapter);
+ static void igb_init_dmac(struct igb_adapter *adapter, u32 pba);
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
 +#include <if_igb_netmap.h>
 +#endif
 +
- /**
-  * igb_init_module - Driver Registration Routine
-  *
+ static struct pci_driver igb_driver = {
+ 	.name     = igb_driver_name,
+ 	.id_table = igb_pci_tbl,
 @@ -3041,6 +3045,10 @@ static int igb_probe(struct pci_dev *pdev,
  	/* carrier off reporting is important to ethtool even BEFORE open */
  	netif_carrier_off(netdev);
