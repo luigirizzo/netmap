@@ -223,7 +223,7 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 		}
 		case NETMAP_PT_HOST_CREATE:
 		case NETMAP_PT_HOST_DELETE: {
-			D("Netmap passthrough not supported yet");
+			nm_prerr("Netmap passthrough not supported yet");
 			return NULL;
 			break;
 		}
@@ -263,7 +263,7 @@ oom:
 		}
 		nm_os_free(hdr);
 	}
-	D("Failed to allocate memory for nmreq_xyz struct");
+	nm_prerr("Failed to allocate memory for nmreq_xyz struct");
 
 	return NULL;
 }

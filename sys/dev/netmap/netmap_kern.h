@@ -1580,16 +1580,23 @@ int netmap_adapter_put(struct netmap_adapter *na);
 #define NETMAP_BUF_SIZE(_na)	((_na)->na_lut.objsize)
 extern int netmap_no_pendintr;
 extern int netmap_mitigate;
-extern int netmap_verbose;		/* for debugging */
-enum {                                  /* verbose flags */
-	NM_VERB_ON = 1,                 /* generic verbose */
-	NM_VERB_HOST = 0x2,             /* verbose host stack */
-	NM_VERB_RXSYNC = 0x10,          /* verbose on rxsync/txsync */
-	NM_VERB_TXSYNC = 0x20,
-	NM_VERB_RXINTR = 0x100,         /* verbose on rx/tx intr (driver) */
-	NM_VERB_TXINTR = 0x200,
-	NM_VERB_NIC_RXSYNC = 0x1000,    /* verbose on rx/tx intr (driver) */
-	NM_VERB_NIC_TXSYNC = 0x2000,
+extern int netmap_verbose;
+#ifdef CONFIG_NETMAP_DEBUG
+extern int netmap_debug;		/* for debugging */
+#else /* !CONFIG_NETMAP_DEBUG */
+#define netmap_debug (0)
+#endif /* !CONFIG_NETMAP_DEBUG */
+enum {                                  /* debug flags */
+	NM_DEBUG_ON = 1,		/* generic debug messsages */
+	NM_DEBUG_HOST = 0x2,            /* debug host stack */
+	NM_DEBUG_RXSYNC = 0x10,         /* debug on rxsync/txsync */
+	NM_DEBUG_TXSYNC = 0x20,
+	NM_DEBUG_RXINTR = 0x100,        /* debug on rx/tx intr (driver) */
+	NM_DEBUG_TXINTR = 0x200,
+	NM_DEBUG_NIC_RXSYNC = 0x1000,   /* debug on rx/tx intr (driver) */
+	NM_DEBUG_NIC_TXSYNC = 0x2000,
+	NM_DEBUG_MEM = 0x4000,		/* verbose memory allocations/deallocations */
+	NM_DEBUG_MEM_DEBUG = 0x8000,	/* debug messages from memory allocators */
 };
 
 extern int netmap_txsync_retry;

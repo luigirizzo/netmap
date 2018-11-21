@@ -191,7 +191,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 			break;
 		}
 
-		if (unlikely(netmap_verbose & NM_VERB_TXSYNC)) {
+		if (unlikely(netmap_debug & NM_DEBUG_TXSYNC)) {
 			sync_kloop_kring_dump("pre txsync", kring);
 		}
 
@@ -215,7 +215,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 			more_txspace = true;
 		}
 
-		if (unlikely(netmap_verbose & NM_VERB_TXSYNC)) {
+		if (unlikely(netmap_debug & NM_DEBUG_TXSYNC)) {
 			sync_kloop_kring_dump("post txsync", kring);
 		}
 
@@ -308,7 +308,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 			break;
 		}
 
-		if (unlikely(netmap_verbose & NM_VERB_RXSYNC)) {
+		if (unlikely(netmap_debug & NM_DEBUG_RXSYNC)) {
 			sync_kloop_kring_dump("pre rxsync", kring);
 		}
 
@@ -333,7 +333,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 			dry_cycles++;
 		}
 
-		if (unlikely(netmap_verbose & NM_VERB_RXSYNC)) {
+		if (unlikely(netmap_debug & NM_DEBUG_RXSYNC)) {
 			sync_kloop_kring_dump("post rxsync", kring);
 		}
 
