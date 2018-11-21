@@ -1626,7 +1626,7 @@ EOF
 	#include <linux/average.h>
 
 	DECLARE_EWMA(myname, 1, 64);
-	int
+	void
 	dummy(struct ewma_myname *x) {
 		ewma_myname_add(x, 18);
 	}
