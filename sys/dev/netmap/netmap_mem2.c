@@ -426,8 +426,11 @@ netmap_init_obj_allocator_bitmap(struct netmap_obj_pool *p)
 
 	if (netmap_verbose)
 		nm_prinf("%s free %u", p->name, p->objfree);
-	if (p->objfree == 0)
+	if (p->objfree == 0) {
+		if (netmap_verbose)
+			nm_prerr("%s: no objects available", p->name);
 		return ENOMEM;
+	}
 
 	return 0;
 }
@@ -449,6 +452,7 @@ netmap_mem_init_bitmaps(struct netmap_mem_d *nmd)
 	 * buffers 0 and 1 are reserved
 	 */
 	if (nmd->pools[NETMAP_BUF_POOL].objfree < 2) {
+		nm_prerr("%s: not enough buffers", nmd->pools[NETMAP_BUF_POOL].name);
 		return ENOMEM;
 	}
 
