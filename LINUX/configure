@@ -457,7 +457,7 @@ I_DRIVERS := $(idrv print)
 all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 
 tests:
-	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
+	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS=-Werror $kopts
 
 -include $BUILDDIR/extdrv-versions.mak
 -include $BUILDDIR/default-config.mak
