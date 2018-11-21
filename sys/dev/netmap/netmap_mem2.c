@@ -2227,7 +2227,7 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 		pi->nr_buf_pool_objtotal = netmap_min_priv_params[NETMAP_BUF_POOL].num;
 	if (pi->nr_buf_pool_objsize == 0)
 		pi->nr_buf_pool_objsize = netmap_min_priv_params[NETMAP_BUF_POOL].size;
-	if (netmap_verbose & NM_VERB_MEM)
+	if (netmap_verbose & NM_DEBUG_MEM)
 		nm_prinf("if %d %d ring %d %d buf %d %d",
 			pi->nr_if_pool_objtotal, pi->nr_if_pool_objsize,
 			pi->nr_ring_pool_objtotal, pi->nr_ring_pool_objsize,
@@ -2244,7 +2244,7 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 		nm_os_extmem_delete(os);
 		return &nme->up;
 	}
-	if (netmap_verbose & NM_VERB_MEM_DEBUG)
+	if (netmap_verbose & NM_DEBUG_MEM)
 		nm_prinf("not found, creating new");
 
 	nme = _netmap_mem_private_new(sizeof(*nme),
