@@ -340,7 +340,7 @@ netmap_vale_list(struct nmreq_header *hdr)
 			i = b->bdg_port_index[j];
 			vpna = b->bdg_ports[i];
 			if (vpna == NULL) {
-				D("This should not happen");
+				nm_prerr("This should not happen");
 				continue;
 			}
 			/* the former and the latter identify a
@@ -653,7 +653,7 @@ nm_vale_preflush(struct netmap_kring *kring, u_int end)
 		buf = ft[ft_i].ft_buf = (slot->flags & NS_INDIRECT) ?
 			(void *)(uintptr_t)slot->ptr : NMB(&na->up, slot);
 		if (unlikely(buf == NULL)) {
-			RD(5, "NULL %s buffer pointer from %s slot %d len %d",
+			nm_prlim(5, "NULL %s buffer pointer from %s slot %d len %d",
 				(slot->flags & NS_INDIRECT) ? "INDIRECT" : "DIRECT",
 				kring->name, j, ft[ft_i].ft_len);
 			buf = ft[ft_i].ft_buf = NETMAP_BUF_BASE(&na->up);
@@ -679,7 +679,7 @@ nm_vale_preflush(struct netmap_kring *kring, u_int end)
 		frags--;
 		ft[ft_i - 1].ft_flags &= ~NS_MOREFRAG;
 		ft[ft_i - frags].ft_frags = frags;
-		D("Truncate incomplete fragment at %d (%d frags)", ft_i, frags);
+		nm_prlim(5, "Truncate incomplete fragment at %d (%d frags)", ft_i, frags);
 	}
 	if (ft_i)
 		ft_i = nm_vale_flush(ft, ft_i, na, ring_nr);
@@ -773,8 +773,8 @@ netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		/* update source port forwarding entry */
 		na->last_smac = ht[sh].mac = smac;	/* XXX expire ? */
 		ht[sh].ports = mysrc;
-		if (netmap_verbose)
-		    D("src %02x:%02x:%02x:%02x:%02x:%02x on port %d",
+		if (netmap_debug & NM_DEBUG_VALE)
+		    nm_prinf("src %02x:%02x:%02x:%02x:%02x:%02x on port %d",
 			s[0], s[1], s[2], s[3], s[4], s[5], mysrc);
 	}
 	dst = NM_BDG_BROADCAST;
@@ -838,24 +838,28 @@ nm_kr_lease(struct netmap_kring *k, u_int n, int is_rx)
 	k->nkr_leases[lease_idx] = NR_NOSLOT;
 	k->nkr_lease_idx = nm_next(lease_idx, lim);
 
+#ifdef CONFIG_NETMAP_DEBUG
 	if (n > nm_kr_space(k, is_rx)) {
-		D("invalid request for %d slots", n);
+		nm_prerr("invalid request for %d slots", n);
 		panic("x");
 	}
+#endif /* CONFIG NETMAP_DEBUG */
 	/* XXX verify that there are n slots */
 	k->nkr_hwlease += n;
 	if (k->nkr_hwlease > lim)
 		k->nkr_hwlease -= lim + 1;
 
+#ifdef CONFIG_NETMAP_DEBUG
 	if (k->nkr_hwlease >= k->nkr_num_slots ||
 		k->nr_hwcur >= k->nkr_num_slots ||
 		k->nr_hwtail >= k->nkr_num_slots ||
 		k->nkr_lease_idx >= k->nkr_num_slots) {
-		D("invalid kring %s, cur %d tail %d lease %d lease_idx %d lim %d",
+		nm_prerr("invalid kring %s, cur %d tail %d lease %d lease_idx %d lim %d",
 			k->na->name,
 			k->nr_hwcur, k->nr_hwtail, k->nkr_hwlease,
 			k->nkr_lease_idx, k->nkr_num_slots);
 	}
+#endif /* CONFIG_NETMAP_DEBUG */
 	return lease_idx;
 }
 
@@ -1235,14 +1239,14 @@ netmap_vale_vp_txsync(struct netmap_kring *kring, int flags)
 	done = nm_vale_preflush(kring, head);
 done:
 	if (done != head)
-		D("early break at %d/ %d, tail %d", done, head, kring->nr_hwtail);
+		nm_prerr("early break at %d/ %d, tail %d", done, head, kring->nr_hwtail);
 	/*
 	 * packets between 'done' and 'cur' are left unsent.
 	 */
 	kring->nr_hwcur = done;
 	kring->nr_hwtail = nm_prev(done, lim);
-	if (netmap_verbose)
-		D("%s ring %d flags %d", na->up.name, kring->ring_id, flags);
+	if (netmap_debug & NM_DEBUG_TXSYNC)
+		nm_prinf("%s ring %d flags %d", na->up.name, kring->ring_id, flags);
 	return 0;
 }
 
@@ -1304,7 +1308,7 @@ netmap_vale_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	/*if (vpna->mfs > netmap_buf_size)  TODO netmap_buf_size is zero??
 		vpna->mfs = netmap_buf_size; */
 	if (netmap_verbose)
-		D("max frame size %u", vpna->mfs);
+		nm_prinf("max frame size %u", vpna->mfs);
 
 	na->na_flags |= NAF_BDG_MAYSLEEP;
 	/* persistent VALE ports look like hw devices
@@ -1493,7 +1497,8 @@ nm_vi_destroy(const char *name)
 
 	NMG_UNLOCK();
 
-	D("destroying a persistent vale interface %s", ifp->if_xname);
+	if (netmap_verbose)
+		nm_prinf("destroying a persistent vale interface %s", ifp->if_xname);
 	/* Linux requires all the references are released
 	 * before unregister
 	 */
@@ -1571,7 +1576,8 @@ netmap_vi_create(struct nmreq_header *hdr, int autodelete)
 	/* netmap_vp_create creates a struct netmap_vp_adapter */
 	error = netmap_vale_vp_create(hdr, ifp, nmd, &vpna);
 	if (error) {
-		D("error %d", error);
+		if (netmap_debug & NM_DEBUG_VALE)
+			nm_prerr("error %d", error);
 		goto err_1;
 	}
 	/* persist-specific routines */

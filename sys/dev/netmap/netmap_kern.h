@@ -1596,7 +1596,8 @@ enum {                                  /* debug flags */
 	NM_DEBUG_NIC_RXSYNC = 0x1000,   /* debug on rx/tx intr (driver) */
 	NM_DEBUG_NIC_TXSYNC = 0x2000,
 	NM_DEBUG_MEM = 0x4000,		/* verbose memory allocations/deallocations */
-	NM_DEBUG_MEM_DEBUG = 0x8000,	/* debug messages from memory allocators */
+	NM_DEBUG_VALE = 0x8000,		/* debug messages from memory allocators */
+	NM_DEBUG_BDG = NM_DEBUG_VALE,
 };
 
 extern int netmap_txsync_retry;
