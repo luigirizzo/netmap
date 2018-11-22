@@ -30,7 +30,7 @@ index 0000000..2c88957
 +
 +endif
 diff --git a/virtio_net.c/virtio_net.c b/virtio_net.c/virtio_net.c
-index cbf1c61..53f8779 100644
+index cbf1c61..b1528eb 100644
 --- a/virtio_net.c/virtio_net.c
 +++ b/virtio_net.c/virtio_net.c
 @@ -26,8 +26,12 @@
@@ -242,7 +242,7 @@ index cbf1c61..53f8779 100644
  	do {
  		if (vi->mergeable_rx_bufs)
  			err = add_recvbuf_mergeable(rq, gfp);
-@@ -729,16 +781,32 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+@@ -729,59 +781,38 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
  	struct receive_queue *rq =
  		container_of(napi, struct receive_queue, napi);
  	unsigned int r, received;
@@ -275,14 +275,13 @@ index cbf1c61..53f8779 100644
 +		if (unlikely(virtqueue_poll(vq, r)) &&
  		    napi_schedule_prep(napi)) {
 -			virtqueue_disable_cb(rq->vq);
-+			virtqueue_disable_cb(vq);
- 			__napi_schedule(napi);
- 		}
- 	}
-@@ -746,53 +814,19 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
- 	return received;
- }
- 
+-			__napi_schedule(napi);
+-		}
+-	}
+-
+-	return received;
+-}
+-
 -#ifdef CONFIG_NET_RX_BUSY_POLL
 -/* must be called with local_bh_disable()d */
 -static int virtnet_busy_poll(struct napi_struct *napi)
@@ -312,17 +311,18 @@ index cbf1c61..53f8779 100644
 -			budget -= received;
 -			goto again;
 -		} else {
--			__napi_schedule(napi);
--		}
--	}
--
--	return received;
--}
++			virtqueue_disable_cb(vq);
+ 			__napi_schedule(napi);
+ 		}
+ 	}
+ 
+ 	return received;
+ }
 -#endif	/* CONFIG_NET_RX_BUSY_POLL */
--
+ 
  static int virtnet_open(struct net_device *dev)
  {
- 	struct virtnet_info *vi = netdev_priv(dev);
+@@ -789,10 +820,13 @@ static int virtnet_open(struct net_device *dev)
  	int i;
  
  	for (i = 0; i < vi->max_queue_pairs; i++) {
@@ -613,17 +613,18 @@ index cbf1c61..53f8779 100644
  static bool virtnet_fail_on_feature(struct virtio_device *vdev,
  				    unsigned int fbit,
  				    const char *fname, const char *dname)
-@@ -1768,7 +1704,9 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1768,7 +1704,10 @@ static int virtnet_probe(struct virtio_device *vdev)
  	struct net_device *dev;
  	struct virtnet_info *vi;
  	u16 max_queue_pairs;
 +#ifdef VIRTIO_NET_F_MTU
  	int mtu;
 +#endif  /* VIRTIO_NET_F_MTU */
++	bool mrg_rxbuf = false;
  
  	if (!vdev->config->get) {
  		dev_err(&vdev->dev, "%s failure: config access disabled\n",
-@@ -1804,6 +1742,7 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1804,6 +1743,7 @@ static int virtnet_probe(struct virtio_device *vdev)
  	SET_NETDEV_DEV(dev, &vdev->dev);
  
  	/* Do we support "hardware" checksums? */
@@ -631,7 +632,7 @@ index cbf1c61..53f8779 100644
  	if (virtio_has_feature(vdev, VIRTIO_NET_F_CSUM)) {
  		/* This opens up the world of extra features. */
  		dev->hw_features |= NETIF_F_HW_CSUM | NETIF_F_SG;
-@@ -1811,7 +1750,7 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1811,7 +1751,7 @@ static int virtnet_probe(struct virtio_device *vdev)
  			dev->features |= NETIF_F_HW_CSUM | NETIF_F_SG;
  
  		if (virtio_has_feature(vdev, VIRTIO_NET_F_GSO)) {
@@ -640,7 +641,7 @@ index cbf1c61..53f8779 100644
  				| NETIF_F_TSO_ECN | NETIF_F_TSO6;
  		}
  		/* Individual feature bits: what can host handle? */
-@@ -1821,17 +1760,16 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1821,17 +1761,16 @@ static int virtnet_probe(struct virtio_device *vdev)
  			dev->hw_features |= NETIF_F_TSO6;
  		if (virtio_has_feature(vdev, VIRTIO_NET_F_HOST_ECN))
  			dev->hw_features |= NETIF_F_TSO_ECN;
@@ -660,7 +661,7 @@ index cbf1c61..53f8779 100644
  
  	dev->vlan_features = dev->features;
  
-@@ -1863,11 +1801,13 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1863,16 +1802,21 @@ static int virtnet_probe(struct virtio_device *vdev)
  	INIT_WORK(&vi->config_work, virtnet_config_changed_work);
  
  	/* If we can receive ANY GSO packets, we must allocate large ones. */
@@ -672,9 +673,19 @@ index cbf1c61..53f8779 100644
  		vi->big_packets = true;
 +#endif  /* !DEV_NETMAP */
  
- 	if (virtio_has_feature(vdev, VIRTIO_NET_F_MRG_RXBUF))
+-	if (virtio_has_feature(vdev, VIRTIO_NET_F_MRG_RXBUF))
++#ifdef WITH_MERGEABLE_RX_BUFS
++	mrg_rxbuf = virtio_has_feature(vdev, VIRTIO_NET_F_MRG_RXBUF);
++#endif
++	if (mrg_rxbuf)
  		vi->mergeable_rx_bufs = true;
-@@ -1885,6 +1825,7 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 
+-	if (virtio_has_feature(vdev, VIRTIO_NET_F_MRG_RXBUF) ||
++	if (mrg_rxbuf ||
+ 	    virtio_has_feature(vdev, VIRTIO_F_VERSION_1))
+ 		vi->hdr_len = sizeof(struct virtio_net_hdr_mrg_rxbuf);
+ 	else
+@@ -1885,6 +1829,7 @@ static int virtnet_probe(struct virtio_device *vdev)
  	if (virtio_has_feature(vdev, VIRTIO_NET_F_CTRL_VQ))
  		vi->has_cvq = true;
  
@@ -682,7 +693,7 @@ index cbf1c61..53f8779 100644
  	if (virtio_has_feature(vdev, VIRTIO_NET_F_MTU)) {
  		mtu = virtio_cread16(vdev,
  				     offsetof(struct virtio_net_config,
-@@ -1892,6 +1833,7 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1892,6 +1837,7 @@ static int virtnet_probe(struct virtio_device *vdev)
  		if (virtnet_change_mtu(dev, mtu))
  			__virtio_clear_bit(vdev, VIRTIO_NET_F_MTU);
  	}
@@ -690,7 +701,7 @@ index cbf1c61..53f8779 100644
  
  	if (vi->any_header_sg)
  		dev->needed_headroom = vi->hdr_len;
-@@ -1905,10 +1847,6 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1905,10 +1851,6 @@ static int virtnet_probe(struct virtio_device *vdev)
  	if (err)
  		goto free_stats;
  
@@ -701,7 +712,7 @@ index cbf1c61..53f8779 100644
  	netif_set_real_num_tx_queues(dev, vi->curr_queue_pairs);
  	netif_set_real_num_rx_queues(dev, vi->curr_queue_pairs);
  
-@@ -1920,13 +1858,11 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1920,13 +1862,11 @@ static int virtnet_probe(struct virtio_device *vdev)
  		goto free_vqs;
  	}
  
@@ -719,7 +730,7 @@ index cbf1c61..53f8779 100644
  
  	/* Assume link up if device can't report link status,
  	   otherwise get link status from config. */
-@@ -1943,10 +1879,6 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1943,10 +1883,6 @@ static int virtnet_probe(struct virtio_device *vdev)
  
  	return 0;
  
@@ -730,7 +741,7 @@ index cbf1c61..53f8779 100644
  free_vqs:
  	cancel_delayed_work_sync(&vi->refill);
  	free_receive_page_frags(vi);
-@@ -1976,11 +1908,13 @@ static void virtnet_remove(struct virtio_device *vdev)
+@@ -1976,11 +1912,13 @@ static void virtnet_remove(struct virtio_device *vdev)
  {
  	struct virtnet_info *vi = vdev->priv;
  
@@ -746,7 +757,7 @@ index cbf1c61..53f8779 100644
  	unregister_netdev(vi->dev);
  
  	remove_vq_common(vi);
-@@ -1995,8 +1929,6 @@ static int virtnet_freeze(struct virtio_device *vdev)
+@@ -1995,8 +1933,6 @@ static int virtnet_freeze(struct virtio_device *vdev)
  	struct virtnet_info *vi = vdev->priv;
  	int i;
  
@@ -755,7 +766,7 @@ index cbf1c61..53f8779 100644
  	/* Make sure no work handler is accessing the device */
  	flush_work(&vi->config_work);
  
-@@ -2039,10 +1971,6 @@ static int virtnet_restore(struct virtio_device *vdev)
+@@ -2039,10 +1975,6 @@ static int virtnet_restore(struct virtio_device *vdev)
  	virtnet_set_queues(vi, vi->curr_queue_pairs);
  	rtnl_unlock();
  
@@ -766,7 +777,7 @@ index cbf1c61..53f8779 100644
  	return 0;
  }
  #endif
-@@ -2052,33 +1980,60 @@ static struct virtio_device_id id_table[] = {
+@@ -2052,33 +1984,60 @@ static struct virtio_device_id id_table[] = {
  	{ 0 },
  };
  
@@ -834,7 +845,7 @@ index cbf1c61..53f8779 100644
  	.driver.name =	KBUILD_MODNAME,
  	.driver.owner =	THIS_MODULE,
  	.id_table =	id_table,
-@@ -2091,41 +2046,7 @@ static struct virtio_driver virtio_net_driver = {
+@@ -2091,41 +2050,7 @@ static struct virtio_driver virtio_net_driver = {
  #endif
  };
  
