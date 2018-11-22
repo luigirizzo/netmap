@@ -109,6 +109,7 @@ subsys enable pipe
 subsys enable monitor
 subsys enable generic
 subsys enable null
+subsys enable ptnetmap
 
 # available drivers
 driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
