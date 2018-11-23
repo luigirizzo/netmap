@@ -135,9 +135,12 @@ prod()
 
 #define _GNU_SOURCE	// for CPU_SET() etc
 #include <stdio.h>
-#define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
 #include <sys/poll.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#include <unistd.h>
+#include <signal.h>
+#include <libnetmap.h>
 
 
 int verbose = 0;
@@ -307,7 +310,7 @@ struct _qs { /* shared queue */
 	uint64_t	prod_max_gap;	/* rx round duration */
 
 	/* parameters for reading from the netmap port */
-	struct nm_desc *src_port;		/* netmap descriptor */
+	struct nmport_d *src_port;		/* netmap descriptor */
 	const char *	prod_ifname;	/* interface name */
 	struct netmap_ring *rxring;	/* current ring being handled */
 	uint32_t	si;		/* ring index */
@@ -382,8 +385,8 @@ struct pipe_args {
 	int		cons_core;	/* core for cons() */
 	int		prod_core;	/* core for prod() */
 
-	struct nm_desc *pa;		/* netmap descriptor */
-	struct nm_desc *pb;
+	struct nmport_d *pa;		/* netmap descriptor */
+	struct nmport_d *pb;
 
 	struct _qs	q;
 };
@@ -567,7 +570,7 @@ enq(struct _qs *q)
 
 
 int
-rx_queued(struct nm_desc *d)
+rx_queued(struct nmport_d *d)
 {
     u_int tot = 0, i;
     for (i = d->first_rx_ring; i <= d->last_rx_ring; i++) {
@@ -669,7 +672,7 @@ scan_ring(struct _qs *q, int next /* bool */)
 {
     struct netmap_slot *rs;
     struct netmap_ring *rxr = q->rxring; /* invalid if next == 0 */
-    struct nm_desc *pa = q->src_port;
+    struct nmport_d *pa = q->src_port;
 
     /* fast path for the first two */
     if (likely(next != 0)) { /* current ring */
@@ -843,7 +846,7 @@ cons(void *_pa)
         ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
                 p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
         /* XXX inefficient but simple */
-        if (nm_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0) {
+        if (nmport_inject(pa->pb, (char *)(p + 1), p->pktlen) == 0) {
             ND(5, "inject failed len %d now %ld tx %ld h %ld t %ld next %ld",
                     (int)p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
             ioctl(pa->pb->fd, NIOCTXSYNC, 0);
@@ -881,16 +884,19 @@ tlem_main(void *_a)
     setaffinity(a->cons_core);
     set_tns_now(&q->t0, 0); /* starting reference */
 
-    a->pa = nm_open(q->prod_ifname, NULL, NETMAP_NO_TX_POLL, NULL);
+    a->pa = nmport_prepare(q->prod_ifname);
     if (a->pa == NULL) {
         ED("cannot open %s", q->prod_ifname);
         return NULL;
     }
-    // XXX use a single mmap ?
-    a->pb = nm_open(q->cons_ifname, NULL, NM_OPEN_NO_MMAP, a->pa);
+    a->pa->reg.nr_flags |= NETMAP_NO_TX_POLL;
+    if (nmport_open_desc(a->pa) < 0) {
+	ED("cannot open %s", q->prod_ifname);
+    }
+    a->pb = nmport_open(q->cons_ifname);
     if (a->pb == NULL) {
         ED("cannot open %s", q->cons_ifname);
-        nm_close(a->pa);
+        nmport_close(a->pa);
         return NULL;
     }
     a->zerocopy = a->zerocopy && (a->pa->mem == a->pb->mem);
@@ -920,8 +926,8 @@ tlem_main(void *_a)
     q->buf = calloc(1, need);
     if (q->buf == NULL) {
         ED("alloc %lld bytes for queue failed, exiting", (long long)need);
-        nm_close(a->pa);
-        nm_close(a->pb);
+        nmport_close(a->pa);
+        nmport_close(a->pb);
         return(NULL);
     }
     q->buflen = need;
@@ -1095,6 +1101,8 @@ main(int argc, char **argv)
     const char *d[N_OPTS], *b[N_OPTS], *l[N_OPTS], *q[N_OPTS], *ifname[N_OPTS];
     int ncpus;
     int cores[4];
+
+    nmctx_set_threadsafe();
 
     bzero(d, sizeof(d));
     bzero(b, sizeof(b));
