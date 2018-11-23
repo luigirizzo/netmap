@@ -10,11 +10,13 @@ VPATH = $(SRCDIR)/apps/pkt-gen
 
 NO_MAN=
 CFLAGS = -O2 -pipe
+CFLAGS = -g
 CFLAGS += -Werror -Wall -Wunused-function
-CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include
+CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include -I $(SRCDIR)/libnetmap
 CFLAGS += -Wextra
 
-LDLIBS += -lpthread -lm
+LDFLAGS = -L $(BUILDDIR)/build-libnetmap
+LDLIBS += -lpthread -lm -lnetmap
 ifeq ($(shell uname),Linux)
 	LDLIBS += -lrt	# on linux
 endif
