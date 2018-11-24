@@ -1296,6 +1296,7 @@ netmap_vale_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	 */
 	nm_bound_var(&npipes, 2, 1, NM_MAXPIPES, NULL);
 	/* validate extra bufs */
+	extrabufs = req->nr_extra_bufs;
 	nm_bound_var(&extrabufs, 0, 0,
 			128*NM_BDG_MAXSLOTS, NULL);
 	req->nr_extra_bufs = extrabufs; /* write back */
