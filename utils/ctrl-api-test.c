@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -45,6 +46,8 @@ struct TestContext {
 	uint32_t nr_num_polling_cpus; /* vale polling */
 	void *csb;                    /* CSB entries (atok and ktoa) */
 	struct nmreq_option *nr_opt;  /* list of options */
+
+	struct nmport_d *nmport;      /* nmport descriptor from libnetmap */
 };
 
 #if 0
@@ -1449,7 +1452,7 @@ static void
 usage(const char *prog)
 {
 	printf("%s -i IFNAME\n"
-	       "[-j TESTCASE_NUM]\n"
+	       "[-j TESTCASE_INTERVAL]\n"
 	       "[-l (list test cases)]\n",
 	       prog);
 }
@@ -1518,6 +1521,43 @@ context_cleanup(struct TestContext *ctx)
 	close(ctx->fd);
 }
 
+static int
+parse_interval(const char *arg, int *j, int *k)
+{
+	const char *scan = arg;
+	char *rest;
+
+	*j = 0;
+	*k = -1;
+	if (*scan == '-') {
+		scan++;
+		goto get_k;
+	}
+	if (!isdigit(*scan))
+		goto err;
+	*k = strtol(scan, &rest, 10);
+	*j = *k - 1;
+	scan = rest;
+	if (*scan == '-') {
+		*k = -1;
+		scan++;
+	}
+get_k:
+	if (*scan == '\0')
+		return 0;
+	if (!isdigit(*scan))
+		goto err;
+	*k = strtol(scan, &rest, 10);
+	scan = rest;
+	if (!*scan == '\0')
+		goto err;
+	return 0;
+
+err:
+	fprintf(stderr, "syntax error in '%s', must be num[-[num]] or -[num]\n", arg);
+	return -1;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1525,7 +1565,8 @@ main(int argc, char **argv)
 	int loopback_if;
 	int num_tests;
 	int ret  = 0;
-	int j    = -1;
+	int j    = 0;
+	int k    = -1;
 	int list = 0;
 	int opt;
 	int i;
@@ -1545,7 +1586,10 @@ main(int argc, char **argv)
 			break;
 
 		case 'j':
-			j = atoi(optarg);
+			if (parse_interval(optarg, &j, &k) < 0) {
+				usage(argv[0]);
+				return -1;
+			}
 			break;
 
 		case 'l':
@@ -1560,6 +1604,14 @@ main(int argc, char **argv)
 	}
 
 	num_tests = sizeof(tests) / sizeof(tests[0]);
+
+	if (j < 0 || j >= num_tests || k > num_tests) {
+		fprintf(stderr, "%d-%d out of range (%d-%d)\n",
+				j + 1, k, 1, num_tests + 1);
+	}
+
+	if (k < 0)
+		k = num_tests;
 
 	if (list) {
 		printf("Available tests:\n");
@@ -1581,20 +1633,9 @@ main(int argc, char **argv)
 		}
 	}
 
-	if (j >= 0) {
-		j--; /* one-based --> zero-based */
-		if (j >= num_tests) {
-			printf("Error: Test not in range\n");
-			ret = -1;
-			goto out;
-		}
-	}
-	for (i = 0; i < num_tests; i++) {
+	for (i = j; i < k; i++) {
 		struct TestContext ctxcopy;
 		int fd;
-		if (j >= 0 && j != i) {
-			continue;
-		}
 		printf("==> Start of Test #%d [%s]\n", i + 1, tests[i].name);
 		fd = open("/dev/netmap", O_RDWR);
 		if (fd < 0) {
