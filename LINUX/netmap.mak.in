@@ -149,7 +149,7 @@ clean-utils:
 	$(MAKE) -C build-utils clean SRCDIR=$(SRCDIR)/..
 
 intest: utils
-	utils/randomized_tests
+	$(SRCDIR)/../utils/randomized_tests
 unitest: utils
 	build-utils/ctrl-api-test
 endif
@@ -177,6 +177,7 @@ distclean: clean $(S_DRIVERS:%=distclean-%)
 	if [ -L GNUmakefile ]; then rm GNUmakefile; fi
 	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
 	if [ -L read-vars.mak ]; then rm read-vars.mak; fi
+	if [ -L tests ]; then rm tests; fi
 	rm -rf build-apps
 	rm -rf build-utils
 
