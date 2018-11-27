@@ -57,8 +57,8 @@ struct ptnet_info;
 /* Per-ring data structure. */
 struct ptnet_queue {
 	struct ptnet_info *pi;
-	struct ptnet_csb_gh *ptgh;
-	struct ptnet_csb_hg *pthg;
+	struct nm_csb_atok *atok;
+	struct nm_csb_ktoa *ktoa;
 	int kring_id;
 	u8* __iomem kick;
 
@@ -107,8 +107,8 @@ struct ptnet_info {
 	/* CSB memory to be used for producer/consumer state
 	 * synchronization. */
 	struct page *csb_pages;
-	struct ptnet_csb_gh *csb_gh;
-	struct ptnet_csb_hg *csb_hg;
+	struct nm_csb_atok *csb_gh;
+	struct nm_csb_ktoa *csb_hg;
 
 	int min_tx_slots;
 
@@ -131,9 +131,9 @@ hang_tmr_callback(unsigned long arg)
 	struct netmap_ring *ring = kring->ring;
 
 	pr_info("PTNET HANG RX#%d: hwc %u h %u c %u hwt %u t %u"
-		" rx.guest_need_kick %u\n",
+		" rx.appl_need_kick %u\n",
 		kring->ring_id, kring->nr_hwcur, ring->head, ring->cur,
-		kring->nr_hwtail, ring->tail, prq->q.ptgh->guest_need_kick);
+		kring->nr_hwtail, ring->tail, prq->q.atok->appl_need_kick);
 
 	if (mod_timer(&prq->hang_timer,
 		      jiffies + msecs_to_jiffies(HANG_INTVAL_MS))) {
@@ -141,18 +141,6 @@ hang_tmr_callback(unsigned long arg)
 	}
 }
 #endif
-
-static inline void
-ptnet_sync_tail(struct ptnet_csb_hg *pthg, struct netmap_kring *kring)
-{
-	struct netmap_ring *ring = kring->ring;
-
-	/* Update hwcur and hwtail as known by the host. */
-	ptnetmap_guest_read_kring_csb(pthg, kring);
-
-	/* nm_sync_finalize */
-	ring->tail = kring->rtail = kring->nr_hwtail;
-}
 
 static inline int
 ptnet_tx_slots(struct netmap_ring *ring)
@@ -216,8 +204,8 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	int nfrags = skb_shinfo(skb)->nr_frags;
 	int queue_idx = skb_get_queue_mapping(skb);
 	struct ptnet_queue *pq = pi->queues[queue_idx];
-	struct ptnet_csb_gh *ptgh = pq->ptgh;
-	struct ptnet_csb_hg *pthg = pq->pthg;
+	struct nm_csb_atok *atok = pq->atok;
+	struct nm_csb_ktoa *ktoa = pq->ktoa;
 	struct netmap_kring *kring;
 	struct xmit_copy_args a;
 	int f;
@@ -231,7 +219,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 	/* Update hwcur and hwtail (completed TX slots) as known by the host,
 	 * by reading from CSB. */
-	ptnet_sync_tail(pthg, kring);
+	ptnet_sync_tail(ktoa, kring);
 
 	if (unlikely(ptnet_tx_slots(a.ring) < pi->min_tx_slots)) {
 		ND(1, "TX ring unexpected overflow, requeuing");
@@ -324,13 +312,13 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	if (!XMIT_MORE(skb)) {
 		/* Tell the host to process the new packets, updating cur and
 		 * head in the CSB. */
-		ptnetmap_guest_write_kring_csb(ptgh, kring->rcur,
+		ptnetmap_guest_write_kring_csb(atok, kring->rcur,
 					       kring->rhead);
 	}
 
 	/* Ask for a kick from a guest to the host if needed. */
-	if (NM_ACCESS_ONCE(pthg->host_need_kick)) {
-		ptgh->sync_flags = NAF_FORCE_RECLAIM;
+	if (NM_ACCESS_ONCE(ktoa->kern_need_kick)) {
+		atok->sync_flags = NAF_FORCE_RECLAIM;
 		iowrite32(0, pq->kick);
 	}
 
@@ -338,14 +326,14 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	 * qdisc layer and enable notifications. */
 	if (ptnet_tx_slots(a.ring) < pi->min_tx_slots) {
 		netif_stop_subqueue(netdev, pq->kring_id);
-		ptgh->guest_need_kick = 1;
+		atok->appl_need_kick = 1;
 
 		/* Double check. */
-		ptnet_sync_tail(pthg, kring);
+		ptnet_sync_tail(ktoa, kring);
 		if (unlikely(ptnet_tx_slots(a.ring) >= pi->min_tx_slots)) {
 			/* More TX space came in the meanwhile. */
 			netif_start_subqueue(netdev, pq->kring_id);
-			ptgh->guest_need_kick = 0;
+			atok->appl_need_kick = 0;
 		}
 	}
 
@@ -413,13 +401,13 @@ ptnet_napi_schedule(struct ptnet_queue *pq)
 	/* Disable RX interrupts and schedule NAPI. */
 
 	if (likely(napi_schedule_prep(&prq->napi))) {
-		/* It's good thing to reset rx.guest_need_kick as soon as
+		/* It's good thing to reset rx.appl_need_kick as soon as
 		 * possible. */
-		pq->ptgh->guest_need_kick = 0;
+		pq->atok->appl_need_kick = 0;
 		__napi_schedule(&prq->napi);
 	} else {
 		/* NAPI is already scheduled and we are ok with it. */
-		pq->ptgh->guest_need_kick = 1;
+		pq->atok->appl_need_kick = 1;
 	}
 }
 
@@ -476,8 +464,8 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 	struct ptnet_rx_queue *prq = container_of(napi, struct ptnet_rx_queue,
 					          napi);
 	struct ptnet_queue *pq = (struct ptnet_queue *)prq;
-	struct ptnet_csb_gh *ptgh = pq->ptgh;
-	struct ptnet_csb_hg *pthg = pq->pthg;
+	struct nm_csb_atok *atok = pq->atok;
+	struct nm_csb_ktoa *ktoa = pq->ktoa;
 	struct ptnet_info *pi = pq->pi;
 	struct netmap_adapter *na = &pi->ptna->dr.up;
 	struct netmap_kring *kring = na->rx_rings[pq->kring_id];
@@ -504,7 +492,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
 	/* Update hwtail, rtail, tail and hwcur to what is known from the host,
 	 * reading from CSB. */
-	ptnet_sync_tail(pthg, kring);
+	ptnet_sync_tail(ktoa, kring);
 
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
@@ -701,7 +689,7 @@ out_of_slots:
 		/* Budget was not fully consumed, since we have no more
 		 * completed RX slots. We can enable notifications and
 		 * exit polling mode. */
-		ptgh->guest_need_kick = 1;
+		atok->appl_need_kick = 1;
 #ifdef NETMAP_LINUX_HAVE_NAPI_COMPLETE_DONE
 		napi_complete_done(napi, work_done);
 #else
@@ -709,7 +697,7 @@ out_of_slots:
 #endif
 
 		/* Double check for more completed RX slots. */
-		ptnet_sync_tail(pthg, kring);
+		ptnet_sync_tail(ktoa, kring);
 		if (head != ring->tail) {
 			/* If there is more work to do, disable notifications
 			 * and reschedule. */
@@ -730,11 +718,11 @@ out_of_slots:
 		ring->head = ring->cur = head;
 		kring->rcur = ring->cur;
 		kring->rhead = ring->head;
-		ptnetmap_guest_write_kring_csb(ptgh, kring->rcur,
+		ptnetmap_guest_write_kring_csb(atok, kring->rcur,
 					       kring->rhead);
 		/* Kick the host if needed. */
-		if (NM_ACCESS_ONCE(pthg->host_need_kick)) {
-			ptgh->sync_flags = NAF_FORCE_READ;
+		if (NM_ACCESS_ONCE(ktoa->kern_need_kick)) {
+			atok->sync_flags = NAF_FORCE_READ;
 			iowrite32(0, pq->kick);
 		}
 	}
@@ -830,8 +818,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 				__func__, ret);
 			goto err_irqs;
 		}
-		pr_info("%s: IRQ for ring #%d --> %u, handler %p\n",
-				__func__, i, vector, handler);
+		pr_info("%s: IRQ for ring #%d --> %u\n", __func__, i, vector);
 	}
 
 	return 0;
@@ -897,7 +884,7 @@ ptnet_open(struct net_device *netdev)
 		goto err_mem_finalize;
 	}
 
-	if (pi->ptna->backend_regifs == 0) {
+	if (pi->ptna->backend_users == 0) {
 		ret = ptnet_nm_krings_create(na_nm);
 		if (ret) {
 			pr_err("%s: ptnet_nm_krings_create() failed\n",
@@ -1011,7 +998,7 @@ ptnet_close(struct net_device *netdev)
 
 	ptnet_nm_register(na_dr, 0 /* off */);
 
-	if (pi->ptna->backend_regifs == 0) {
+	if (pi->ptna->backend_users == 0) {
 		netmap_mem_rings_delete(na_dr);
 		ptnet_nm_krings_delete(na_nm);
 	}
@@ -1021,11 +1008,11 @@ ptnet_close(struct net_device *netdev)
 }
 
 static const struct net_device_ops ptnet_netdev_ops = {
-	.ndo_open		= ptnet_open,
-	.ndo_stop		= ptnet_close,
-	.ndo_start_xmit		= ptnet_start_xmit,
-	.ndo_get_stats		= ptnet_get_stats,
-	.ndo_change_mtu		= ptnet_change_mtu,
+	.ndo_open			= ptnet_open,
+	.ndo_stop			= ptnet_close,
+	.ndo_start_xmit			= ptnet_start_xmit,
+	.ndo_get_stats			= ptnet_get_stats,
+	.NETMAP_LINUX_CHANGE_MTU	= ptnet_change_mtu,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= ptnet_netpoll,
 #endif
@@ -1033,10 +1020,8 @@ static const struct net_device_ops ptnet_netdev_ops = {
 
 
 static uint32_t
-ptnet_nm_ptctl(struct net_device *netdev, uint32_t cmd)
+ptnet_nm_ptctl(struct ptnet_info *pi, uint32_t cmd)
 {
-	struct ptnet_info *pi = netdev_priv(netdev);
-
 	/* Write a command and read back error status,
 	 * with zero meaning success. */
 	iowrite32(cmd, pi->ioaddr + PTNET_IO_PTCTL);
@@ -1051,8 +1036,8 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 	/* Sync krings from the host, reading from
 	 * CSB. */
 	for (i = 0; i < pi->num_rings; i++) {
-		struct ptnet_csb_gh *ptgh = pi->queues[i]->ptgh;
-		struct ptnet_csb_hg *pthg = pi->queues[i]->pthg;
+		struct nm_csb_atok *atok = pi->queues[i]->atok;
+		struct nm_csb_ktoa *ktoa = pi->queues[i]->ktoa;
 		struct netmap_kring *kring;
 
 		if (i < na->num_tx_rings) {
@@ -1060,17 +1045,17 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 		} else {
 			kring = na->rx_rings[i - na->num_tx_rings];
 		}
-		kring->rhead = kring->ring->head = ptgh->head;
-		kring->rcur = kring->ring->cur = ptgh->cur;
-		kring->nr_hwcur = pthg->hwcur;
+		kring->rhead = kring->ring->head = atok->head;
+		kring->rcur = kring->ring->cur = atok->cur;
+		kring->nr_hwcur = ktoa->hwcur;
 		kring->nr_hwtail = kring->rtail =
-			kring->ring->tail = pthg->hwtail;
+			kring->ring->tail = ktoa->hwtail;
 
-		ND("%d,%d: csb {hc %u h %u c %u ht %u}", t, i,
-		   pthg->hwcur, ptgh->head, ptgh->cur,
-		   pthg->hwtail);
-		ND("%d,%d: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
-		   t, i, kring->nr_hwcur, kring->rhead, kring->rcur,
+		ND("%s: csb {hc %u h %u c %u ht %u}", kring->name,
+		   ktoa->hwcur, atok->head, atok->cur,
+		   ktoa->hwtail);
+		ND("%s: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
+		   kring->name, kring->nr_hwcur, kring->rhead, kring->rcur,
 		   kring->ring->head, kring->ring->cur, kring->nr_hwtail,
 		   kring->rtail, kring->ring->tail);
 	}
@@ -1094,8 +1079,8 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	struct net_device *netdev = na->ifp;
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int native = (na == &pi->ptna->hwup.up);
-	struct ptnet_csb_gh *ptgh;
-	struct ptnet_csb_hg *pthg;
+	struct nm_csb_atok *atok;
+	struct nm_csb_ktoa *ktoa;
 	enum txrx t;
 	int ret = 0;
 	int i;
@@ -1103,7 +1088,7 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	BUG_ON(!(na == &pi->ptna->hwup.up || na == &pi->ptna->dr.up));
 
 	if (!onoff) {
-		pi->ptna->backend_regifs--;
+		pi->ptna->backend_users--;
 	}
 
 	/* If this is the last netmap client, guest interrupt enable flags may
@@ -1116,8 +1101,8 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		pr_info("%s: Exit netmap mode, re-enable interrupts\n",
 			__func__);
 		for (i = 0; i < pi->num_rings; i++) {
-			ptgh = pi->queues[i]->ptgh;
-			ptgh->guest_need_kick = 1;
+			atok = pi->queues[i]->atok;
+			atok->appl_need_kick = 1;
 		}
 		if (netif_running(netdev)) {
 			pr_info("%s: Exit netmap mode, schedule NAPI to flush RX ring\n",
@@ -1130,13 +1115,13 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	}
 
 	if (onoff) {
-		if (pi->ptna->backend_regifs == 0) {
+		if (pi->ptna->backend_users == 0) {
 			/* Initialize notification enable fields in the CSB. */
 			for (i = 0; i < pi->num_rings; i++) {
-				ptgh = pi->queues[i]->ptgh;
-				pthg = pi->queues[i]->pthg;
-				ptgh->guest_need_kick = (i >= pi->num_tx_rings);
-				pthg->host_need_kick = 1;
+				atok = pi->queues[i]->atok;
+				ktoa = pi->queues[i]->ktoa;
+				atok->appl_need_kick = (i >= pi->num_tx_rings);
+				ktoa->kern_need_kick = 1;
 			}
 
 			/* Set the virtio-net header length. */
@@ -1144,17 +1129,13 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 
 			/* Make sure the host adapter passed through is ready
 			 * for txsync/rxsync. */
-			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_CREATE);
+			ret = ptnet_nm_ptctl(pi, PTNETMAP_PTCTL_CREATE);
 			if (ret) {
 				return ret;
 			}
-		}
 
-		/* Sync from CSB must be done after REGIF PTCTL. Skip this
-		 * step only if this is a netmap client and it is not the
-		 * first one. */
-		if ((!native && pi->ptna->backend_regifs == 0) ||
-				(native && na->active_fds == 0)) {
+			/* Align the guest krings and rings to the state stored
+			 * in the CSB. */
 			ptnet_sync_from_csb(pi, na);
 		}
 
@@ -1187,19 +1168,13 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 			}
 		}
 
-		/* Sync from CSB must be done before UNREGIF PTCTL, on the last
-		 * netmap client. */
-		if (native && na->active_fds == 0) {
-			ptnet_sync_from_csb(pi, na);
-		}
-
-		if (pi->ptna->backend_regifs == 0) {
-			ret = ptnet_nm_ptctl(netdev, PTNETMAP_PTCTL_DELETE);
+		if (pi->ptna->backend_users == 0) {
+			ret = ptnet_nm_ptctl(pi, PTNETMAP_PTCTL_DELETE);
 		}
 	}
 
 	if (onoff) {
-		pi->ptna->backend_regifs++;
+		pi->ptna->backend_users++;
 	}
 
 	return ret;
@@ -1231,7 +1206,7 @@ ptnet_nm_txsync(struct netmap_kring *kring, int flags)
 	struct ptnet_queue *pq = pi->queues[kring->ring_id];
 	bool notify;
 
-	notify = netmap_pt_guest_txsync(pq->ptgh, pq->pthg, kring, flags);
+	notify = netmap_pt_guest_txsync(pq->atok, pq->ktoa, kring, flags);
 	if (notify) {
 		iowrite32(0, pq->kick);
 	}
@@ -1246,7 +1221,7 @@ ptnet_nm_rxsync(struct netmap_kring *kring, int flags)
 	struct ptnet_queue *pq = pi->rxqueues[kring->ring_id];
 	bool notify;
 
-	notify = netmap_pt_guest_rxsync(pq->ptgh, pq->pthg, kring, flags);
+	notify = netmap_pt_guest_rxsync(pq->atok, pq->ktoa, kring, flags);
 	if (notify) {
 		iowrite32(0, pq->kick);
 	}
@@ -1262,7 +1237,7 @@ ptnet_nm_intr(struct netmap_adapter *na, int onoff)
 
 	for (i = 0; i < pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues[i];
-		pq->ptgh->guest_need_kick = onoff;
+		pq->atok->appl_need_kick = onoff;
 	}
 }
 
@@ -1278,7 +1253,7 @@ static struct netmap_adapter ptnet_nm_ops = {
 };
 
 /*
- * ptnet_probe - Device Initialization Routine
+ * ptnet_probe - Device initialization routine
  * @ent: entry in ptnet_pci_table
  *
  * Returns 0 on success, negative on failure
@@ -1368,7 +1343,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pi->num_rings = num_tx_rings + num_rx_rings;
 	pi->num_tx_rings = num_tx_rings;
 
-	if (pi->num_rings * sizeof(struct ptnet_csb_gh) > PAGE_SIZE) {
+	if (pi->num_rings * sizeof(struct nm_csb_atok) > PAGE_SIZE) {
 		pr_err("%s: CSB for device %s cannot handle too many "
 			"rings (%u)\n",__func__, netdev->name, pi->num_rings);
 		goto err_ptfeat;
@@ -1427,8 +1402,8 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 			pq->kring_id -= num_tx_rings;
 		}
 		pq->kick = ioaddr + PTNET_IO_KICK_BASE + 4 * i;
-		pq->ptgh = pi->csb_gh + i;
-		pq->pthg = pi->csb_hg + i;
+		pq->atok = pi->csb_gh + i;
+		pq->ktoa = pi->csb_hg + i;
 	}
 
 	netdev->netdev_ops = &ptnet_netdev_ops;
@@ -1539,8 +1514,19 @@ err_pci_reg:
 	return err;
 }
 
+/* Stop the host sync-kloop in case it was running. */
+static void
+ptnet_device_shutdown(struct ptnet_info *pi)
+{
+	ptnet_nm_ptctl(pi, PTNETMAP_PTCTL_DELETE);
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAH);
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAL);
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_HG_BAH);
+	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_HG_BAL);
+}
+
 /*
- * ptnet_remove - Device Removal Routine
+ * ptnet_remove - Device removal routine
  *
  * ptnet_remove is called by the PCI subsystem to alert the driver
  * that it should release a PCI device.  The could be caused by a
@@ -1553,6 +1539,9 @@ ptnet_remove(struct pci_dev *pdev)
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct ptnet_info *pi = netdev_priv(netdev);
 	int i;
+
+	/* Stop the host sync-kloop. */
+	ptnet_device_shutdown(pi);
 
 	netif_carrier_off(netdev);
 
@@ -1572,31 +1561,31 @@ ptnet_remove(struct pci_dev *pdev)
 		netif_napi_del(&prq->napi);
 	}
 
+	/* Deallocate resources and disable the device. */
 	ptnet_irqs_fini(pi);
-
 	iounmap(pi->ioaddr);
-	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAH);
-	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_GH_BAL);
-	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_HG_BAH);
-	iowrite32(0, pi->ioaddr + PTNET_IO_CSB_HG_BAL);
 	put_page(pi->csb_pages);
 	pci_release_selected_regions(pdev, pi->bars);
 	free_netdev(netdev);
 	pci_disable_device(pdev);
 }
 
-#if 0
-static void
+/*
+ * Device shutdown routine, called when the system is going to
+ * power off or reboot.
+ */
+void
 ptnet_shutdown(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
+	struct ptnet_info *pi = netdev_priv(netdev);
+
+	/* Stop the host sync-kloop. */
+	ptnet_device_shutdown(pi);
 
 	netif_device_detach(netdev);
-
 	if (netif_running(netdev)) {
 		ptnet_close(netdev);
 	}
-
 	pci_disable_device(pdev);
 }
-#endif

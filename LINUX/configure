@@ -94,8 +94,8 @@ setop()
 }
 
 # available subsystems
-subsystem_avail="vale pipe monitor generic ptnetmap-guest ptnetmap-host sink \
-	extmem"
+subsystem_avail="vale pipe monitor generic ptnetmap sink \
+	extmem null"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -108,6 +108,8 @@ subsys enable vale
 subsys enable pipe
 subsys enable monitor
 subsys enable generic
+subsys enable null
+subsys enable ptnetmap
 
 # available drivers
 driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
@@ -134,6 +136,7 @@ edrv enable ixgbe
 edrv enable ixgbevf
 edrv enable i40e
 edrv enable mlx5
+edrv enable virtio_net.c
 
 # drivers built by patching the system drivers
 setop internal_driver new driver
@@ -316,12 +319,8 @@ Available options:
   --disable-monitor   	       disable the nemtap monitors
   --enable-generic   	       enable the generic netmap adapter
   --disable-generic   	       disable the generic netmap adapter
-  --enable-ptnetmap-guest      enable ptnetmap for guest kernel
-  --disable-ptnetmap-guest     disable ptnetmap for guest kernel
-  --enable-ptnetmap-host       enable ptnetmap for host kernel
-  --disable-ptnetmap-host      disable ptnetmap for host kernel
-  --enable-ptnetmap            enable ptnetmap (both guest and host)
-  --disable-ptnetmap           disable ptnetmap (both guest and host)
+  --enable-ptnetmap            enable ptnetmap
+  --disable-ptnetmap           disable ptnetmap
   --enable-sink   	       enable the netmap sink device
   --disable-sink   	       disable the netmap sink device
   --enable-extmem   	       enable the external memory allocators
@@ -452,13 +451,14 @@ SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
+EXTRA_CFLAGS :=
 S_DRIVERS := $(drv print)
 E_DRIVERS := $(edrv print)
 I_DRIVERS := $(idrv print)
 all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 
 tests:
-	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
+	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS=-Werror $kopts
 
 -include $BUILDDIR/extdrv-versions.mak
 -include $BUILDDIR/default-config.mak
@@ -478,7 +478,7 @@ build-$d: prepare-$d
 	+\$($d@build)
 	touch build-$d
 patch-$d: get-$d
-	\$(foreach p,\$($d@patch),patch --posix --quiet --force -p1 < \$(p);)
+	\$(foreach p,\$($d@patch),patch --quiet --force -p1 < \$(p);)
 	touch patch-$d
 EOF
 	done
@@ -610,14 +610,6 @@ for opt do
 	--destdir=*) DESTDIR="$optarg"
 	;;
 	--mod-name=*) MODNAME="$optarg"
-	;;
-	--enable-ptnetmap)
-		subsys enable ptnetmap-guest
-		subsys enable ptnetmap-host
-	;;
-	--disable-ptnetmap)
-		subsys disable ptnetmap-guest
-		subsys disable ptnetmap-host
 	;;
 	--disable-*)
 		subsys disable "${opt#--disable-}"
@@ -1092,6 +1084,24 @@ EOF
 EOF
 	params="NULL, $params"
   done
+
+  # type of the 3rd param of ndo_select_queue
+  add_test 'define SELECT_QUEUE_PARM3 "struct net_device*"' 'define SELECT_QUEUE_PARM3 "void*"' <<EOF
+	#include <linux/netdevice.h>
+
+	static u16 myselect(struct net_device *dev, struct sk_buff *skb,
+		struct net_device *sb_dev, select_queue_fallback_t fallback)
+	{
+		(void)dev;
+		(void)skb;
+		(void)sb_dev;
+		(void)fallback;
+		return 0;
+	}
+	struct net_device_ops ndo = {
+		.ndo_select_queue = myselect,
+	};
+EOF
 
   # ethtool get_ringparam
   add_test 'have GET_RINGPARAM' <<EOF
@@ -1612,6 +1622,36 @@ EOF
 	}
 EOF
 
+# check for <linux/average.h>
+  add_test 'have AVERAGE_H' <<EOF
+	#include <linux/average.h>
+
+	DECLARE_EWMA(myname, 1, 64);
+	void
+	dummy(struct ewma_myname *x) {
+		ewma_myname_add(x, 18);
+	}
+EOF
+
+# check for ethtool_validate_speed() and ethtool_validate_duplex()
+  add_test 'have ETHTOOL_VALIDATE' <<EOF
+	#include <linux/ethtool.h>
+
+	int
+	dummy(void) {
+		return ethtool_validate_speed(0) + ethtool_validate_duplex(0);
+	}
+EOF
+
+  add_test 'have U64_STATS_IRQ' <<EOF
+	#include <linux/u64_stats_sync.h>
+
+	unsigned int
+	dummy(const struct u64_stats_sync *x) {
+		return u64_stats_fetch_begin_irq(x);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
@@ -1774,9 +1814,170 @@ EOF
   fi
 
   if drv enabled virtio_net.c; then
+
+    VNETDIR=""
+    if edrv enabled virtio_net.c; then
+        VNETDIR="virtio_net.c/"
+    fi
   
-    add_file_exists_check virtio_net.c true "drv_source_error virtio_net.c"
+    add_file_exists_check ${VNETDIR}virtio_net.c true "drv_source_error virtio_net.c"
   
+    add_test 'define VIRTIO_NET_HDR_FROM_SKB_5ARGS' <<EOF
+	#include <linux/virtio_net.h>
+
+	int
+	dummy(const struct sk_buff *skb, struct virtio_net_hdr *hdr,
+		bool little_endian, bool has_data_valid, int vlan_hlen) {
+		return virtio_net_hdr_from_skb(skb, hdr, little_endian,
+					has_data_valid, vlan_hlen);
+	}
+EOF
+
+    add_test 'define VIRTIO_NET_HDR_FROM_SKB_4ARGS' <<EOF
+	#include <linux/virtio_net.h>
+
+	int
+	dummy(const struct sk_buff *skb, struct virtio_net_hdr *hdr,
+		bool little_endian, bool has_data_valid) {
+		return virtio_net_hdr_from_skb(skb, hdr, little_endian,
+					has_data_valid);
+	}
+EOF
+
+    add_test 'define VIRTIO_NET_HDR_FROM_SKB_3ARGS' <<EOF
+	#include <linux/virtio_net.h>
+
+	int
+	dummy(const struct sk_buff *skb, struct virtio_net_hdr *hdr,
+		bool little_endian) {
+		return virtio_net_hdr_from_skb(skb, hdr, little_endian);
+	}
+EOF
+
+  add_test 'have FIND_VQS_CTX_ARG' <<EOF
+	#include <linux/virtio_config.h>
+
+	int
+	dummy(struct virtio_config_ops *ops, const bool *ctx,
+		struct irq_affinity *desc)
+	{
+		return ops->find_vqs(NULL, 0, NULL, NULL, NULL,
+					ctx, desc);
+	}
+EOF
+
+  add_test 'have FIND_VQS_IRQAFF_ARG' <<EOF
+	#include <linux/virtio_config.h>
+
+	int
+	dummy(struct virtio_config_ops *ops, struct irq_affinity *desc)
+	{
+		return ops->find_vqs(NULL, 0, NULL, NULL, NULL,
+					desc);
+	}
+EOF
+
+  add_test 'have VIRTIO_BYTEORDER' <<EOF
+	#include <linux/virtio_byteorder.h>
+
+	u16
+	dummy(bool little_endian, __virtio16 val)
+	{
+		return __virtio16_to_cpu(little_endian, val);
+	}
+EOF
+
+  add_test 'have VIRTIO_IS_LITTLE_ENDIAN' <<EOF
+	#include <linux/virtio_config.h>
+
+	bool
+	dummy(struct virtio_device *vdev)
+	{
+		return virtio_is_little_endian(vdev);
+	}
+EOF
+
+  add_test 'have VIRTIO_MEMORY_ACCESSORS' <<EOF
+	#include <linux/virtio_config.h>
+
+	u16
+	dummy(struct virtio_device *vdev)
+	{
+		return virtio16_to_cpu(vdev, 0);
+	}
+EOF
+
+  add_test 'have VIRTIO_DRIVER_FEATURE_TABLE_LEGACY' <<EOF
+	#include <linux/virtio.h>
+
+	bool
+	dummy(struct virtio_driver *vdr)
+	{
+		return vdr->feature_table_legacy != NULL;
+	}
+EOF
+
+  add_test 'have VIRTIO_DEVICE_READY' <<EOF
+	#include <linux/virtio_config.h>
+
+	void
+	dummy(struct virtio_device *vdev)
+	{
+		virtio_device_ready(vdev);
+	}
+EOF
+
+  add_test 'have VIRTQUEUE_IS_BROKEN' <<EOF
+	#include <linux/virtio.h>
+
+	bool
+	dummy(struct virtqueue *vq)
+	{
+		return virtqueue_is_broken(vq);
+	}
+EOF
+
+  add_test 'have SKB_COALESCE_RX_FRAG' <<EOF
+	#include <linux/skbuff.h>
+
+	void
+	dummy(struct sk_buff *skb, int i, int size,
+		unsigned int truesize)
+	{
+		skb_coalesce_rx_frag(skb, i, size, truesize);
+	}
+EOF
+
+  add_test 'have VIRTIO_CONFIG_ACCESSORS' <<EOF
+	#include <linux/virtio_config.h>
+
+	u16
+	dummy(struct virtio_device *vdev, unsigned int offset)
+	{
+		return virtio_cread16(vdev, offset);
+	}
+EOF
+
+  add_test 'have U64_STATS_INIT' <<EOF
+	#include <linux/u64_stats_sync.h>
+
+	void
+	dummy(struct u64_stats_sync *syncp)
+	{
+		u64_stats_init(syncp);
+	}
+EOF
+
+  add_test 'have NAPI_HASH_DEL' <<EOF
+	#include <linux/netdevice.h>
+
+	void
+	dummy(struct napi_struct *napi)
+	{
+		napi_hash_del(napi);
+	}
+EOF
+
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
   
@@ -1796,7 +1997,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_FREE_PAGES' <<EOF
-  	#include "virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	void
   	dummy(struct virtnet_info *vi) {
@@ -1829,7 +2030,7 @@ EOF
   done
   
     add_test 'define VIRTIO_MULTI_QUEUE' <<EOF
-  	#include "virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	struct virtqueue *
   	dummy(struct virtnet_info *vi) {
@@ -1838,7 +2039,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_RQ_NUM' <<EOF
-  	#include "virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	int
   	dummy(struct virtnet_info *vi) {
@@ -1847,7 +2048,7 @@ EOF
 EOF
   
     add_test 'define VIRTIO_SG' <<EOF
-  	#include "virtio_net.c"
+	#include "${VNETDIR}virtio_net.c"
   
   	struct scatterlist *
   	dummy(struct virtnet_info *vi) {
@@ -1989,6 +2190,7 @@ done
 if [ -n "$UTILS" ]; then
 	mkdir -p build-utils
 	ln -s $SRCDIR/../utils/GNUmakefile build-utils/GNUmakefile 2>/dev/null || true
+	ln -s $SRCDIR/../utils/tests 2>/dev/null || true
 fi
 
 # config.status can be used to rerun configure with the

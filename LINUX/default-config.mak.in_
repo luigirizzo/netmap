@@ -1,3 +1,63 @@
+###############################################################################
+# This files defines the default values of the external-drivers variables,
+# used by the configure script and the generated netmap.mak makefile.
+#
+# The variables are as follows:
+#
+# driver@v		the driver version
+# driver@fetch		how to fetch the sources into the ext-drivers directory
+# driver@src		how to extract the sources
+# driver@patch		which patch(es) to apply (whitespace-separated)
+# driver@prepare	how to prepare the sources for compilation
+# driver@build		how to build the driver
+# driver@install	how to install the driver
+# driver@clean		how to clean the driver build directory
+# driver@disclean	how to completely remove the driver build directory(ies)
+# driver@force		configure refuses to build drivers which are not
+# 			configured as modules in the kernel ".config". A 1 here
+# 			forces configure to skip this check.
+#
+# In the configuration phase, the configure script tries to determine whether
+# the external driver compiles by itself (i.e., independently of the netmap
+# patch) by running the driver@fetch; driver@src; driver@prepare; driver@build
+# commands (i.e., skipping the driver@patch). If this fails, a warning is
+# printed and the driver is disabled.
+#
+# During the build phase the same commands are executed again, but this time
+# the driver@patch is applied after driver@src and before driver@prepare.
+#
+# There should be no need to change this file if you just want to customize
+# these variables for a particular build: put the overrides into a config.mak
+# file in the build directory, before running configure.
+#
+# If you just want to select a different external-driver version, among the
+# ones for which there is a patch in LINUX/final-patches, use the
+# --select-version=driver:version option of configure.
+#
+#################################################################################
+
+
+# default-config.mak is generated from default-config.mak_ in the LINUX directory,
+# by replacing the recognized @VAR@ strings with the value of the named VAR
+# in the configure scripts. The most important recognized variables are
+#
+# SRCDIR	absolute path of the netmap/LINUX directory
+# KSRC		source directory of the linux kernel (headers should be sufficient
+# 		for external drivers)
+# KOPTS		options intended for the linux make (accumulated via the
+# 		--kernel-opts= configure option
+# DRVSUFFIX	the netmap driver suffix (--driver-suffix= configure option)
+# MODPATH	where to install the modules (--install-mod-path= from configure)
+# TMPDIR	the temporary directory where configure runs its tests (including
+# 		the test build of the unpatched driver)
+#
+# In the build phase, the EXTRA_CFLAGS variable will contain the values assigned
+# in the netmap.mak makefile. This is intended for options needed by the patched
+# driver. During the configure phase the variable is empty.
+
+
+# all the intel drivers are compiled in much the same way, so we factor them
+# here. $(1) is the driver name, while $(2) is the driver version
 define intel_driver
 $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz || wget https://sourceforge.net/projects/e1000/files/$(1)%20stable/$(2)/$(1)-$(2).tar.gz -P @SRCDIR@/ext-drivers/
 $(1)@src 	:= tar xf @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz && ln -s $(1)-$(2)/src $(1)
@@ -10,18 +70,23 @@ $(1)@distclean	:= rm -rf $(1)-$(2)
 $(1)@force	:= 1
 endef
 
+# set driver@v is not yet defined
 define default
 $(1)@v := $(if $($(1)@v),$($(1)@v),$(2))
 endef
 
+# some additional, driver-specific CFLAGS (used in the @build variable above)
 e1000e@cflags := -fno-pie
 igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
-$(eval $(call default,ixgbe,5.3.7))
+
+# set all the default versions (can be overrided by --select-version=)
+$(eval $(call default,ixgbe,5.3.8))
 $(eval $(call default,ixgbevf,4.3.2))
 $(eval $(call default,e1000e,3.4.0.2))
 $(eval $(call default,igb,5.3.5.20))
 $(eval $(call default,i40e,2.4.6))
 
+# only define the drivers that are selected after the --(no-)ext-drivers= processing (variable E_DRIVERS)
 $(foreach d,$(filter ixgbe ixgbevf e1000e igb i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
 
 define mellanox_driver
@@ -41,3 +106,17 @@ mlx5@pv		= $(firstword $(subst -, ,$(mlx5@v)))
 mlx5@conf	= CONFIG_MLX5_CORE_EN
 
 $(foreach d,$(filter mlx5,$(E_DRIVERS)),$(eval $(call mellanox_driver,$d,$($(d)@v))))
+
+define virtio_net
+virtio_net.c@fetch	:= test -e @SRCDIR@/ext-drivers/virtio_net.c || wget https://raw.githubusercontent.com/torvalds/linux/v4.9/drivers/net/virtio_net.c -P @SRCDIR@/ext-drivers/
+virtio_net.c@src	:= mkdir -p virtio_net.c && cp @SRCDIR@/ext-drivers/virtio_net.c virtio_net.c/
+virtio_net.c@patch	:= patches/custom--virtio_net.c--4.9
+virtio_net.c@prepare	:=
+virtio_net.c@build 	:= [ -z "$(EXTRA_CFLAGS)" ] || make -C virtio_net.c EXTRA_CFLAGS="$(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
+virtio_net.c@install 	:= make -C virtio_net.c install INSTALL_MOD_PATH=@MODPATH@ EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
+virtio_net.c@clean 	:= if [ -d virtio_net.c ]; then make -C virtio_net.c clean EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
+virtio_net.c@distclean	:=
+virtio_net.c@force	:= 1
+endef
+
+$(foreach d,$(filter virtio_net.c,$(E_DRIVERS)),$(eval $(call virtio_net)))

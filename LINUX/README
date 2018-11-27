@@ -91,13 +91,8 @@ features, namely:
 			used to access NICs without native netmap support (at
 			reduced performance).
 
-    ptnetmap-guest:	netmap passthrough support for guests
+    ptnetmap:		netmap passthrough support for guests
 			(including the ptnet driver).
-
-    ptnetmap-host:	netmap passthrough support for the host
-
-    ptnetmap:		shortcut to include both ptnetmap-guest and
-			ptnetmap-host.
 
     sink:		a dummy drop-everything device with native netmap
 			support.  It can emulate a link with configurable

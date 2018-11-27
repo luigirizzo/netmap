@@ -53,7 +53,7 @@ define common_driver
 get-$(1):
 	$($(1)@fetch)
 	$($(1)@src)
-	$(foreach p,$($(1)@patch),patch --posix --quiet --force -p1 < $(p);)
+	$(foreach p,$($(1)@patch),patch --quiet --force -p1 < $(p);)
 	$($(1)@prepare)
 	$(if $($(1)@build),,$(if $(filter-out %.c,$(1)),mv $(1)/Makefile $(1)/orig.mak || mv $(1)/Kbuild $(1)/orig.mak; cp drv-subdir.mak $(1)/Makefile,))
 	touch get-$(1)
@@ -129,7 +129,7 @@ endef
 $(foreach a,$(APPS_LIST),$(eval $(call apps_actions,$(a))))
 
 +%:
-	@echo $($*)
+	@echo '$($*)'
 
 ifeq (,$(UTILS))
 utils:
@@ -149,7 +149,7 @@ clean-utils:
 	$(MAKE) -C build-utils clean SRCDIR=$(SRCDIR)/..
 
 intest: utils
-	utils/randomized_tests
+	$(SRCDIR)/../utils/randomized_tests
 unitest: utils
 	build-utils/ctrl-api-test
 endif
@@ -177,6 +177,7 @@ distclean: clean $(S_DRIVERS:%=distclean-%)
 	if [ -L GNUmakefile ]; then rm GNUmakefile; fi
 	if [ -L drv-subdir.mak ]; then rm drv-subdir.mak; fi
 	if [ -L read-vars.mak ]; then rm read-vars.mak; fi
+	if [ -L tests ]; then rm tests; fi
 	rm -rf build-apps
 	rm -rf build-utils
 

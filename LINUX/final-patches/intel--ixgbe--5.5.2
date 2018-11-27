@@ -1,0 +1,171 @@
+diff --git a/ixgbe/Makefile b/ixgbe/Makefile
+index 0bf12f5..fa05036 100644
+--- a/ixgbe/Makefile
++++ b/ixgbe/Makefile
+@@ -7,9 +7,9 @@ ifneq ($(KERNELRELEASE),)
+ # Makefile for the Intel(R) 10GbE PCI Express Linux Network Driver
+ #
+ 
+-obj-$(CONFIG_IXGBE) += ixgbe.o
++obj-$(CONFIG_IXGBE) += ixgbe$(NETMAP_DRIVER_SUFFIX).o
+ 
+-define ixgbe-y
++define ixgbe$(NETMAP_DRIVER_SUFFIX)-y
+ 	ixgbe_main.o
+ 	ixgbe_api.o
+ 	ixgbe_common.o
+@@ -28,24 +28,24 @@ define ixgbe-y
+ 	ixgbe_x540.o
+ 	ixgbe_x550.o
+ endef
+-ixgbe-y := $(strip ${ixgbe-y})
++ixgbe$(NETMAP_DRIVER_SUFFIX)-y := $(strip ${ixgbe$(NETMAP_DRIVER_SUFFIX)-y})
+ 
+-ixgbe-${CONFIG_DCB} += ixgbe_dcb_nl.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-${CONFIG_DCB} += ixgbe_dcb_nl.o
+ 
+-ixgbe-${CONFIG_DEBUG_FS} += ixgbe_debugfs.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-${CONFIG_DEBUG_FS} += ixgbe_debugfs.o
+ 
+-ixgbe-${CONFIG_FCOE:m=y} += ixgbe_fcoe.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-${CONFIG_FCOE:m=y} += ixgbe_fcoe.o
+ 
+-ixgbe-$(CONFIG_PTP_1588_CLOCK:m=y) += ixgbe_ptp.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PTP_1588_CLOCK:m=y) += ixgbe_ptp.o
+ 
+-ixgbe-${CONFIG_SYSFS} += ixgbe_sysfs.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-${CONFIG_SYSFS} += ixgbe_sysfs.o
+ 
+-ixgbe-y += kcompat.o
++ixgbe$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
+ 
+ else	# ifneq($(KERNELRELEASE),)
+ # normal makefile
+ 
+-DRIVER := ixgbe
++DRIVER := ixgbe$(NETMAP_DRIVER_SUFFIX)
+ 
+ ifeq (,$(wildcard common.mk))
+   $(error Cannot find common.mk build rules)
+@@ -106,9 +106,12 @@ ccc: clean
+ 	@+$(call devkernelbuild,modules,coccicheck MODE=report))
+ 
+ # Build manfiles
+-manfile:
++manfile: ../$(DRIVER).$(MANSECTION)
+ 	@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
+ 
++../$(DRIVER).$(MANSECTION):
++	touch $@
++
+ # Clean the module subdirectories
+ clean:
+ 	@+$(call devkernelbuild,clean)
+diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
+index 903d688..bf03742 100644
+--- a/ixgbe/ixgbe_main.c
++++ b/ixgbe/ixgbe_main.c
+@@ -694,6 +694,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
+ 	}
+ }
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++/*
++ * The #ifdef DEV_NETMAP / #endif blocks in this file are meant to
++ * be a reference on how to implement netmap support in a driver.
++ * Additional comments are in ixgbe_netmap_linux.h .
++ *
++ * The code is originally developed on FreeBSD and in the interest
++ * of maintainability we try to limit differences between the two systems.
++ *
++ * <ixgbe_netmap_linux.h> contains functions for netmap support
++ * that extend the standard driver.
++ * It also defines DEV_NETMAP so further conditional sections use
++ * that instead of CONFIG_NETMAP
++ */
++#include <ixgbe_netmap_linux.h>
++#endif
++
+ /**
+  * ixgbe_clean_tx_irq - Reclaim resources after transmit completes
+  * @q_vector: structure containing interrupt and ring information
+@@ -713,6 +730,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
+ 	if (test_bit(__IXGBE_DOWN, &adapter->state))
+ 		return true;
+ 
++#ifdef DEV_NETMAP
++	/*
++	 * In netmap mode, all the work is done in the context
++	 * of the client thread. Interrupt handlers only wake up
++	 * clients, which may be sleeping on individual rings
++	 * or on a global resource for all rings.
++	 */
++	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++		return true;
++#endif /* DEV_NETMAP */
++
+ 	tx_buffer = &tx_ring->tx_buffer_info[i];
+ 	tx_desc = IXGBE_TX_DESC(tx_ring, i);
+ 	i -= tx_ring->count;
+@@ -2192,6 +2220,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+ 	bool xdp_xmit = false;
+ 	struct xdp_buff xdp;
+ 
++#ifdef DEV_NETMAP
++	/*
++	 * 	 Same as the txeof routine: only wakeup clients on intr.
++	 */
++	int dummy, nm_irq;
++	nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy);
++	if (nm_irq != NM_IRQ_PASS)
++		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
++#endif /* DEV_NETMAP */
++
+ 	xdp.data = NULL;
+ 	xdp.data_end = NULL;
+ #ifdef HAVE_XDP_BUFF_RXQ
+@@ -3624,6 +3662,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+ 	memset(ring->tx_buffer_info, 0,
+ 	       sizeof(struct ixgbe_tx_buffer) * ring->count);
+ 
++#ifdef DEV_NETMAP
++	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
++#endif /* DEV_NETMAP */
++
+ 	/* enable queue */
+ 	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
+ 
+@@ -4245,6 +4287,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+ 	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
+ 
+ 	ixgbe_rx_desc_queue_enable(adapter, ring);
++#ifdef DEV_NETMAP
++	if (ixgbe_netmap_configure_rx_ring(adapter, reg_idx))
++		return;
++#endif /* DEV_NETMAP */
+ 	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
+ }
+ 
+@@ -12102,6 +12148,10 @@ no_info_string:
+ 		hw->mac.ops.setup_eee(hw, eee_enable);
+ 	}
+ 
++#ifdef DEV_NETMAP
++	ixgbe_netmap_attach(adapter);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ 
+ err_register:
+@@ -12151,6 +12201,11 @@ static void ixgbe_remove(struct pci_dev *pdev)
+ 		return;
+ 
+ 	netdev = adapter->netdev;
++
++#ifdef DEV_NETMAP
++	ixgbe_netmap_detach(adapter);
++#endif /* DEV_NETMAP */
++
+ #ifdef HAVE_IXGBE_DEBUG_FS
+ 	ixgbe_dbg_adapter_exit(adapter);
+ 

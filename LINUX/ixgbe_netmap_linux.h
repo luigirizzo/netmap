@@ -518,6 +518,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
+	int complete; /* did we see a complete packet ? */
 
 	/* device-specific */
 	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(ifp);
@@ -565,7 +566,8 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			staterr = le32toh(curr->wb.upper.status_error);
 
 			slot->len = size;
-			slot->flags = (!(staterr & IXGBE_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
+			complete = staterr & IXGBE_RXD_STAT_EOP;
+			slot->flags = complete ? 0 : NS_MOREFRAG;
 			PNMB(na, slot, &paddr);
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
 					&paddr, size, NR_RX);
@@ -580,6 +582,8 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			rxr->next_to_alloc = rxr->next_to_clean;
 #endif /* NETMAP_LINUX_HAVE_NTA */
 			kring->nr_hwtail = nm_i;
+			if (complete)
+				kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
@@ -646,6 +650,7 @@ ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u3
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct netmap_ixgbe_adapter *ina = (struct netmap_ixgbe_adapter *)na;
 	u64 wba;
+	struct netmap_ixgbe_head *h;
 #endif /* !NM_IXGBE_USE_TDH */
 
 	slot = netmap_reset(na, NR_TX, ring_nr, 0);
@@ -660,6 +665,9 @@ ixgbe_netmap_configure_tx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr, u3
 	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAL(ring_nr),
 		(wba & DMA_BIT_MASK(32)) | IXGBE_TDWBAL_HEAD_WB_ENABLE);
 	IXGBE_WRITE_REG(hw, NM_IXGBE_TDWBAH(ring_nr), wba >> 32);
+	/* reset all heads */
+	h = &ina->heads[ring_nr];
+	*h->phead = 0;
 #endif /* !NM_IXGBE_USE_TDH */
 
 #if 0

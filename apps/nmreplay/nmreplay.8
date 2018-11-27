@@ -25,7 +25,7 @@
 .\" $FreeBSD$
 .\"
 .Dd February 16, 2016
-.Dt NMREPLAY 1
+.Dt NMREPLAY 8
 .Os
 .Sh NAME
 .Nm nmreplay
@@ -62,7 +62,9 @@ Command line options are as follows
 .It Fl f Ar pcap-file
 Name of the pcap file to replay.
 .It Fl i Ar interface
-Name of the netmap interface to use as output.
+Name of the netmap interface to use as output. See
+.Xr netmap 4
+for interface name format.
 .It Fl v
 Enable verbose mode
 .It Fl b Ar batch-size

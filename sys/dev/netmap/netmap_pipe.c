@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (C) 2014-2018 Giuseppe Lettieri
  * All rights reserved.
  *
@@ -441,7 +443,7 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 
 		/* In case of no error we put our rings in netmap mode */
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = NMR(na, t)[i];
 				if (nm_kring_pending_on(kring)) {
 					struct netmap_kring *sring, *dring;
@@ -488,7 +490,7 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 		if (na->active_fds == 0)
 			na->na_flags &= ~NAF_NETMAP_ON;
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_off(kring)) {
@@ -565,7 +567,7 @@ netmap_pipe_krings_delete(struct netmap_adapter *na)
 	sna = na;
 cleanup:
 	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(sna, t) + 1; i++) {
+		for (i = 0; i < nma_get_nrings(sna, t); i++) {
 			struct netmap_kring *kring = NMR(sna, t)[i];
 			struct netmap_ring *ring = kring->ring;
 			uint32_t j, lim = kring->nkr_num_slots - 1;

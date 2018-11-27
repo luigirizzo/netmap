@@ -403,24 +403,6 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 				sizeof(vna->shared_txvhdr.hdr);
 	struct netmap_adapter *token;
 	int interrupts = !(kring->nr_kflags & NKR_NOINTR);
-	int nospace = 0;
-
-	virtqueue_disable_cb(vq);
-
-	/* Free used slots. We only consider our own used buffers, recognized
-	 * by the token we passed to virtqueue_add_outbuf.
-	 */
-	n = 0;
-	for (;;) {
-		token = virtqueue_get_buf(vq, &nic_i); /* dummy 2nd arg */
-		if (token == NULL)
-			break;
-		if (likely(token == na))
-			n++;
-	}
-	kring->nr_hwtail += n;
-	if (kring->nr_hwtail > lim)
-		kring->nr_hwtail -= lim + 1;
 
 	/*
 	 * First part: process new packets to send.
@@ -439,6 +421,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			void *addr = NMB(na, slot);
+			int nospace;
 
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
@@ -465,12 +448,27 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwcur = nm_i; /* note we migth break early */
 	}
 out:
-	/* No more free virtio descriptors or netmap slots? Ask the
-	 * hypervisor for notifications, possibly only when it has
-	 * freed a considerable amount of pending descriptors.
-	 */
-	if (interrupts && (nm_kr_txempty(kring) || nospace)) {
+	/* Ask the hypervisor for notifications, possibly only when it has
+	 * freed a considerable amount of pending descriptors. */
+	if (interrupts) {
 		virtqueue_enable_cb_delayed(vq);
+	}
+
+	/* Free used slots. We only consider our own used buffers, recognized
+	 * by the token we passed to virtqueue_add_outbuf.
+	 */
+	n = 0;
+	for (;;) {
+		token = virtqueue_get_buf(vq, &nic_i); /* dummy 2nd arg */
+		if (token == NULL)
+			break;
+		if (likely(token == na))
+			n++;
+	}
+	if (n) {
+		kring->nr_hwtail += n;
+		if (kring->nr_hwtail > lim)
+			kring->nr_hwtail -= lim + 1;
 	}
 
 	return 0;

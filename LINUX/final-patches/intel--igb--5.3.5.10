@@ -1,4 +1,4 @@
-diff --git a/igb/Makefile b/src/Makefile
+diff --git a/igb/Makefile b/igb/Makefile
 index e3bd4f3..ef900a4 100644
 --- a/igb/Makefile
 +++ b/igb/Makefile
@@ -50,21 +50,21 @@ index e3bd4f3..ef900a4 100644
  # Clean the module subdirectories
  clean:
  	@+$(call devkernelbuild,clean)
-diff --git a/igb/igb_main.c b/src/igb_main.c
-index 3ee1ec7..b6809c6 100644
+diff --git a/igb/igb_main.c b/igb/igb_main.c
+index 3ee1ec7..3746d0b 100644
 --- a/igb/igb_main.c
 +++ b/igb/igb_main.c
-@@ -317,6 +317,10 @@ static int debug = NETIF_MSG_DRV | NETIF_MSG_PROBE;
- module_param(debug, int, 0);
- MODULE_PARM_DESC(debug, "Debug level (0=none, ..., 16=all)");
+@@ -258,6 +258,10 @@ static struct pci_error_handlers igb_err_handler = {
+ static void igb_init_fw(struct igb_adapter *adapter);
+ static void igb_init_dmac(struct igb_adapter *adapter, u32 pba);
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
 +#include <if_igb_netmap.h>
 +#endif
 +
- /**
-  * igb_init_module - Driver Registration Routine
-  *
+ static struct pci_driver igb_driver = {
+ 	.name     = igb_driver_name,
+ 	.id_table = igb_pci_tbl,
 @@ -3052,6 +3056,10 @@ static int igb_probe(struct pci_dev *pdev,
  	/* carrier off reporting is important to ethtool even BEFORE open */
  	netif_carrier_off(netdev);

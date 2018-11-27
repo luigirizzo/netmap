@@ -262,7 +262,8 @@ struct glob_arg {
 	int burst;
 	int forever;
 	uint64_t npackets;	/* total packets to send */
-	int frags;	/* fragments per packet */
+	int frags;		/* fragments per packet */
+	u_int mtu;		/* size of each fragment */
 	int nthreads;
 	int cpus;	/* cpus used for running */
 	int system_cpus;	/* cpus on the system */
@@ -298,8 +299,6 @@ struct glob_arg {
 	char *nmr_config;
 	int dummy_send;
 	int virt_header;	/* send also the virt_header */
-	int extra_bufs;		/* goes in nr_arg3 */
-	int extra_pipes;	/* goes in nr_arg1 */
 	char *packet_file;	/* -P option */
 #define	STATS_WIN	15
 	int win_idx;
@@ -334,6 +333,8 @@ struct targ {
 	struct pkt pkt;
 	void *frame;
 	uint16_t seed[3];
+	u_int frags;
+	u_int frag_size;
 };
 
 static __inline uint16_t
@@ -571,7 +572,7 @@ system_ncpus(void)
 /*
  * parse the vale configuration in conf and put it in nmr.
  * Return the flag set if necessary.
- * The configuration may consist of 0 to 4 numbers separated
+ * The configuration may consist of 1 to 4 numbers separated
  * by commas: #tx-slots,#rx-slots,#tx-rings,#rx-rings.
  * Missing numbers or zeroes stand for default values.
  * As an additional convenience, if exactly one number
@@ -1108,7 +1109,6 @@ set_vnet_hdr_len(struct glob_arg *g)
 	}
 }
 
-
 /*
  * create and enqueue a batch of packets on a ring.
  * On the last one set NS_REPORT to tell the driver to generate
@@ -1116,19 +1116,14 @@ set_vnet_hdr_len(struct glob_arg *g)
  */
 static int
 send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
-		int size, struct targ *t, u_int count, int options,
-		u_int nfrags)
+		int size, struct targ *t, u_int count, int options)
 {
 	u_int n, sent, cur = ring->cur;
-	u_int fcnt;
+	u_int frags = t->frags;
+	u_int frag_size = t->frag_size;
+	struct netmap_slot *slot = &ring->slot[cur];
 
 	n = nm_ring_space(ring);
-	if (n < count)
-		count = n;
-	if (count < nfrags) {
-		D("truncating packet, no room for frags %d %d",
-				count, nfrags);
-	}
 #if 0
 	if (options & (OPT_COPY | OPT_PREFETCH) ) {
 		for (sent = 0; sent < count; sent++) {
@@ -1141,10 +1136,14 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		cur = ring->cur;
 	}
 #endif
-	for (fcnt = nfrags, sent = 0; sent < count; sent++) {
-		struct netmap_slot *slot = &ring->slot[cur];
-		char *p = NETMAP_BUF(ring, slot->buf_idx);
-		int buf_changed = slot->flags & NS_BUF_CHANGED;
+	for (sent = 0; sent < count && n >= frags; sent++, n--) {
+		char *p;
+		int buf_changed;
+		u_int tosend = size;
+
+		slot = &ring->slot[cur];
+		p = NETMAP_BUF(ring, slot->buf_idx);
+		buf_changed = slot->flags & NS_BUF_CHANGED;
 
 		slot->flags = 0;
 		if (options & OPT_RUBBISH) {
@@ -1152,31 +1151,49 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		} else if (options & OPT_INDIRECT) {
 			slot->flags |= NS_INDIRECT;
 			slot->ptr = (uint64_t)((uintptr_t)frame);
-		} else if ((options & OPT_COPY) || buf_changed) {
-			nm_pkt_copy(frame, p, size);
-			if (fcnt == nfrags)
-				update_addresses(pkt, t);
-		} else if (options & OPT_MEMCPY) {
-			memcpy(p, frame, size);
-			if (fcnt == nfrags)
-				update_addresses(pkt, t);
+		} else if (frags > 1) {
+			u_int i;
+			const char *f = frame;
+			char *fp = p;
+			for (i = 0; i < frags - 1; i++) {
+				memcpy(fp, f, frag_size);
+				slot->len = frag_size;
+				slot->flags = NS_MOREFRAG;
+				if (options & OPT_DUMP)
+					dump_payload(fp, frag_size, ring, cur);
+				tosend -= frag_size;
+				f += frag_size;
+				cur = nm_ring_next(ring, cur);
+				slot = &ring->slot[cur];
+				fp = NETMAP_BUF(ring, slot->buf_idx);
+			}
+			n -= (frags - 1);
+			p = fp;
+			slot->flags = 0;
+			memcpy(p, f, tosend);
+			update_addresses(pkt, t);
+		} else if ((options & (OPT_COPY | OPT_MEMCPY)) || buf_changed) {
+			if (options & OPT_COPY)
+				nm_pkt_copy(frame, p, size);
+			else
+				memcpy(p, frame, size);
+			update_addresses(pkt, t);
 		} else if (options & OPT_PREFETCH) {
 			__builtin_prefetch(p);
 		}
+		slot->len = tosend;
 		if (options & OPT_DUMP)
-			dump_payload(p, size, ring, cur);
-		slot->len = size;
-		if (--fcnt > 0)
-			slot->flags |= NS_MOREFRAG;
-		else
-			fcnt = nfrags;
-		if (sent == count - 1) {
-			slot->flags &= ~NS_MOREFRAG;
-			slot->flags |= NS_REPORT;
-		}
+			dump_payload(p, tosend, ring, cur);
 		cur = nm_ring_next(ring, cur);
 	}
-	ring->head = ring->cur = cur;
+	if (sent) {
+		slot->flags |= NS_REPORT;
+		ring->head = ring->cur = cur;
+	}
+	if (sent < count) {
+		/* tell netmap that we need more slots */
+		ring->cur = ring->tail;
+	}
 
 	return (sent);
 }
@@ -1553,7 +1570,7 @@ sender_body(void *data)
 	    for (i = 0; !targ->cancel && (n == 0 || sent < n); i++) {
 		if (pcap_inject(p, frame, size) != -1)
 			sent++;
-		update_addresses(pkt, targ->g);
+		update_addresses(pkt, targ);
 		if (i > 10000) {
 			targ->ctr.pkts = sent;
 			targ->ctr.bytes = sent*size;
@@ -1564,9 +1581,21 @@ sender_body(void *data)
 #endif /* NO_PCAP */
     } else {
 	int tosend = 0;
-	int frags = targ->g->frags;
+	u_int bufsz, mtu = targ->g->mtu;
 
 	nifp = targ->nmd->nifp;
+	txring = NETMAP_TXRING(nifp, targ->nmd->first_tx_ring);
+	bufsz = txring->nr_buf_size;
+	if (bufsz < mtu)
+		mtu = bufsz;
+	targ->frag_size = targ->g->pkt_size / targ->frags;
+	if (targ->frag_size > mtu) {
+		targ->frags = targ->g->pkt_size / mtu;
+		targ->frag_size = mtu;
+		if (targ->g->pkt_size % mtu != 0)
+			targ->frags++;
+	}
+	D("frags %u frag_size %u", targ->frags, targ->frag_size);
 	while (!targ->cancel && (n == 0 || sent < n)) {
 		int rv;
 
@@ -1619,8 +1648,6 @@ sender_body(void *data)
 			txring = NETMAP_TXRING(nifp, i);
 			if (nm_ring_empty(txring))
 				continue;
-			if (frags > 1)
-				limit = ((limit + frags - 1) / frags) * frags;
 
 			if (targ->g->pkt_min_size > 0) {
 				size = nrand48(targ->seed) %
@@ -1628,9 +1655,9 @@ sender_body(void *data)
 					targ->g->pkt_min_size;
 			}
 			m = send_packets(txring, pkt, frame, size, targ,
-					 limit, options, frags);
-			ND("limit %lu tail %d frags %d m %d",
-				limit, txring->tail, frags, m);
+					 limit, options);
+			ND("limit %lu tail %d m %d",
+				limit, txring->tail, m);
 			sent += m;
 			if (m > 0) //XXX-ste: can m be 0?
 				event++;
@@ -2238,7 +2265,7 @@ quit:
 
 
 static void
-tx_output(struct my_ctrs *cur, double delta, const char *msg)
+tx_output(struct glob_arg *g, struct my_ctrs *cur, double delta, const char *msg)
 {
 	double bw, raw_bw, pps, abs;
 	char b1[40], b2[80], b3[80];
@@ -2262,8 +2289,7 @@ tx_output(struct my_ctrs *cur, double delta, const char *msg)
 		size = 60;
 	pps = cur->pkts / delta;
 	bw = (8.0 * cur->bytes) / delta;
-	/* raw packets have4 bytes crc + 20 bytes framing */
-	raw_bw = (8.0 * (cur->pkts * 24 + cur->bytes)) / delta;
+	raw_bw = (8.0 * cur->bytes + cur->pkts * g->framing) / delta;
 	abs = cur->pkts / (double)(cur->events);
 
 	printf("Speed: %spps Bandwidth: %sbps (raw %sbps). Average batch: %.2f pkts\n",
@@ -2273,75 +2299,143 @@ tx_output(struct my_ctrs *cur, double delta, const char *msg)
 static void
 usage(int errcode)
 {
+/* This usage is generated from the pkt-gen man page:
+ *   $ man pkt-gen > x
+ * and pasted here adding the string terminators and endlines with simple
+ * regular expressions. */
 	const char *cmd = "pkt-gen";
 	fprintf(stderr,
 		"Usage:\n"
 		"%s arguments\n"
-		     "\t-i interface		interface name\n"
-		     "\t-f function		tx rx ping pong txseq rxseq\n"
-		     "\t-n count		number of iterations (can be 0)\n"
-#ifdef notyet
-		     "\t-t pkts_to_send		also forces tx mode\n"
-		     "\t-r pkts_to_receive	also forces rx mode\n"
-#endif
-		     "\t-l pkt_size		in bytes excluding CRC\n"
-		     "\t			(if passed a second time, use random sizes\n"
-		     "\t			 bigger than the second one and lower than\n"
-		     "\t			 the first one)\n"
-		     "\t-d dst_ip[:port[-dst_ip:port]]   single or range\n"
-		     "\t-s src_ip[:port[-src_ip:port]]   single or range\n"
-		     "\t-D dst-mac\n"
-		     "\t-S src-mac\n"
-		     "\t-a cpu_id		use setaffinity\n"
-		     "\t-b burst size		testing, mostly\n"
-		     "\t-c cores		cores to use\n"
-		     "\t-p threads		processes/threads to use\n"
-		     "\t-T report_ms		milliseconds between reports\n"
-		     "\t-w wait_for_link_time	in seconds\n"
-		     "\t-R rate			in packets per second\n"
-		     "\t-X			dump payload\n"
-		     "\t-H len			add empty virtio-net-header with size 'len'\n"
-		     "\t-E pipes		allocate extra space for a number of pipes\n"
-		     "\t-r			do not touch the buffers (send rubbish)\n"
-	             "\t-P file			load packet from pcap file\n"
-		     "\t-z			use random IPv4 src address/port\n"
-		     "\t-Z			use random IPv4 dst address/port\n"
-		     "\t-F num_frags		send multi-slot packets\n"
-		     "\t-A			activate pps stats on receiver\n"
-		     "\t-4			IPv4\n"
-		     "\t-6			IPv6\n"
-		     "\t-N			don't normalize units (Kbps/Mbps/etc)\n"
-		     "\t-I			use indirect buffers, tx only\n"
-		     "\t-o options		data generation options (parsed using atoi)\n"
-		     "\t			OPT_PREFETCH	1\n"
-		     "\t			OPT_ACCESS	2\n"
-		     "\t			OPT_COPY	4\n"
-		     "\t			OPT_MEMCPY	8\n"
-		     "\t			OPT_TS		16 (add a timestamp)\n"
-		     "\t			OPT_INDIRECT	32 (use indirect buffers)\n"
-		     "\t			OPT_DUMP	64 (dump rx/tx traffic)\n"
-		     "\t			OPT_RUBBISH	256\n"
-		     "\t			    (send wathever the buffers contain)\n"
-		     "\t			OPT_RANDOM_SRC  512\n"
-		     "\t			OPT_RANDOM_DST  1024\n"
-		     "\t			OPT_PPS_STATS   2048\n"
-		     "\t-W			exit RX with no traffic\n"
-		     "\t-v			verbose (more v = more verbose)\n"
-		     "\t-C vale-config		specify a vale config\n"
-#ifdef notyet
-		     "\t			The configuration may consist of 0 to 4\n"
-		     "\t			numbers separated by commas:\n"
-		     "\t			#tx-slots,#rx-slots,#tx-rings,#rx-rings.\n"
-		     "\t			Missing numbers or zeroes stand for default\n"
-		     "\t			values. As an additional convenience, if\n"
-		     "\t			exactly one number is specified, then this\n"
-		     "\t			is assigned to both #tx-slots and #rx-slots.\n"
-		     "\t			If there is no 4th number, then the 3rd is\n"
-		     "\t			assigned to both #tx-rings and #rx-rings.\n"
-#endif
-		     "\t-e extra-bufs		extra_bufs - goes in nr_arg3\n"
-		     "\t-B                      account for ethernet framing when showing bps\n"
-		     "\t-m			ignored\n"
+"     -h      Show program usage and exit.\n"
+"\n"
+"     -i interface\n"
+"             Name of the network interface that pkt-gen operates on.  It can be a system network interface\n"
+"             (e.g., em0), the name of a vale(4) port (e.g., valeSSS:PPP), the name of a netmap pipe or\n"
+"             monitor, or any valid netmap port name accepted by the nm_open library function, as docu-\n"
+"             mented in netmap(4) (NIOCREGIF section).\n"
+"\n"
+"     -f function\n"
+"             The function to be executed by pkt-gen.  Specify tx for transmission, rx for reception, ping\n"
+"             for client-side ping-pong operation, and pong for server-side ping-pong operation.\n"
+"\n"
+"     -n count\n"
+"             Number of iterations of the pkt-gen function, with 0 meaning infinite).  In case of tx or rx,\n"
+"             count is the number of packets to receive or transmit.  In case of ping or pong, count is the\n"
+"             number of ping-pong transactions.\n"
+"\n"
+"     -l pkt_size\n"
+"             Packet size in bytes excluding CRC.  If passed a second time, use random sizes larger or\n"
+"             equal than the second one and lower than the first one.\n"
+"\n"
+"     -b burst_size\n"
+"             Transmit or receive up to burst_size packets at a time.\n"
+"\n"
+"     -4      Use IPv4 addresses.\n"
+"\n"
+"     -6      Use IPv6 addresses.\n"
+"\n"
+"     -d dst_ip[:port[-dst_ip:port]]\n"
+"             Destination IPv4/IPv6 address and port, single or range.\n"
+"\n"
+"     -s src_ip[:port[-src_ip:port]]\n"
+"             Source IPv4/IPv6 address and port, single or range.\n"
+"\n"
+"     -D dst_mac\n"
+"             Destination MAC address in colon notation (e.g., aa:bb:cc:dd:ee:00).\n"
+"\n"
+"     -S src_mac\n"
+"             Source MAC address in colon notation.\n"
+"\n"
+"     -a cpu_id\n"
+"             Pin the first thread of pkt-gen to a particular CPU using pthread_setaffinity_np(3).  If more\n"
+"             threads are used, they are pinned to the subsequent CPUs, one per thread.\n"
+"\n"
+"     -c cpus\n"
+"             Maximum number of CPUs to use (0 means to use all the available ones).\n"
+"\n"
+"     -p threads\n"
+"             Number of threads to use.  By default, only a single thread is used to handle all the netmap\n"
+"             rings.  If threads is larger than one, each thread handles a single TX ring (in tx mode), a\n"
+"             single RX ring (in rx mode), or a TX/RX ring couple.  The number of threads must be less or\n"
+"             equal than the number of TX (or RX) ring available in the device specified by interface.\n"
+"\n"
+"     -T report_ms\n"
+"             Number of milliseconds between reports.\n"
+"\n"
+"     -w wait_for_link_time\n"
+"             Number of seconds to wait before starting the pkt-gen function, useuful to make sure that the\n"
+"             network link is up.  A network device driver may take some time to enter netmap mode, or to\n"
+"             create a new transmit/receive ring pair when netmap(4) requests one.\n"
+"\n"
+"     -R rate\n"
+"             Packet transmission rate.  Not setting the packet transmission rate tells pkt-gen to transmit\n"
+"             packets as quickly as possible.  On servers from 2010 on-wards netmap(4) is able to com-\n"
+"             pletely use all of the bandwidth of a 10 or 40Gbps link, so this option should be used unless\n"
+"             your intention is to saturate the link.\n"
+"\n"
+"     -X      Dump payload of each packet transmitted or received.\n"
+"\n"
+"     -H len  Add empty virtio-net-header with size 'len'.  Valid sizes are 0, 10 and 12.  This option is\n"
+"             only used with Virtual Machine technologies that use virtio as a network interface.\n"
+"\n"
+"     -P file\n"
+"             Load the packet to be transmitted from a pcap file rather than constructing it within\n"
+"             pkt-gen.\n"
+"\n"
+"     -z      Use random IPv4/IPv6 src address/port.\n"
+"\n"
+"     -Z      Use random IPv4/IPv6 dst address/port.\n"
+"\n"
+"     -N      Do not normalize units (i.e., use bps, pps instead of Mbps, Kpps, etc.).\n"
+"\n"
+"     -F num_frags\n"
+"             Send multi-slot packets, each one with num_frags fragments.  A multi-slot packet is repre-\n"
+"             sented by two or more consecutive netmap slots with the NS_MOREFRAG flag set (except for the\n"
+"             last slot).  This is useful to transmit or receive packets larger than the netmap buffer\n"
+"             size.\n"
+"\n"
+"     -M frag_size\n"
+"             In multi-slot mode, frag_size specifies the size of each fragment, if smaller than the packet\n"
+"             length divided by num_frags.\n"
+"\n"
+"     -I      Use indirect buffers.  It is only valid for transmitting on VALE ports, and it is implemented\n"
+"             by setting the NS_INDIRECT flag in the netmap slots.\n"
+"\n"
+"     -W      Exit immediately if all the RX rings are empty the first time they are examined.\n"
+"\n"
+"     -v      Increase the verbosity level.\n"
+"\n"
+"     -r      In tx mode, do not initialize packets, but send whatever the content of the uninitialized\n"
+"             netmap buffers is (rubbish mode).\n"
+"\n"
+"     -A      Compute mean and standard deviation (over a sliding window) for the transmit or receive rate.\n"
+"\n"
+"     -B      Take Ethernet framing and CRC into account when computing the average bps.  This adds 4 bytes\n"
+"             of CRC and 20 bytes of framing to each packet.\n"
+"\n"
+"     -C tx_slots[,rx_slots[,tx_rings[,rx_rings]]]\n"
+"             Configuration in terms of number of rings and slots to be used when opening the netmap port.\n"
+"             Such configuration has effect on software ports created on the fly, such as VALE ports and\n"
+"             netmap pipes.  The configuration may consist of 1 to 4 numbers separated by commas: tx_slots,\n"
+"             rx_slots, tx_rings, rx_rings.  Missing numbers or zeroes stand for default values.  As an\n"
+"             additional convenience, if exactly one number is specified, then this is assigned to both\n"
+"             tx_slots and rx_slots.  If there is no fourth number, then the third one is assigned to both\n"
+"             tx_rings and rx_rings.\n"
+"\n"
+"     -o options		data generation options (parsed using atoi)\n"
+"				OPT_PREFETCH	1\n"
+"				OPT_ACCESS	2\n"
+"				OPT_COPY	4\n"
+"				OPT_MEMCPY	8\n"
+"				OPT_TS		16 (add a timestamp)\n"
+"				OPT_INDIRECT	32 (use indirect buffers)\n"
+"				OPT_DUMP	64 (dump rx/tx traffic)\n"
+"				OPT_RUBBISH	256\n"
+"					(send wathever the buffers contain)\n"
+"				OPT_RANDOM_SRC  512\n"
+"				OPT_RANDOM_DST  1024\n"
+"				OPT_PPS_STATS   2048\n"
 		     "",
 		cmd);
 	exit(errcode);
@@ -2403,14 +2497,14 @@ start_threads(struct glob_arg *g) {
 				t->nmd = g->nmd;
 			}
 			t->fd = t->nmd->fd;
-
+			t->frags = g->frags;
 		} else {
 			targs[i].fd = g->main_fd;
 		}
 		t->used = 1;
 		t->me = i;
 		if (g->affinity >= 0) {
-			t->affinity = (g->affinity + i) % g->system_cpus;
+			t->affinity = (g->affinity + i) % g->cpus;
 		} else {
 			t->affinity = -1;
 		}
@@ -2560,9 +2654,9 @@ main_thread(struct glob_arg *g)
 	timersub(&toc, &tic, &toc);
 	delta_t = toc.tv_sec + 1e-6* toc.tv_usec;
 	if (g->td_type == TD_TYPE_SENDER)
-		tx_output(&cur, delta_t, "Sent");
+		tx_output(g, &cur, delta_t, "Sent");
 	else if (g->td_type == TD_TYPE_RECEIVER)
-		tx_output(&cur, delta_t, "Received");
+		tx_output(g, &cur, delta_t, "Received");
 }
 
 struct td_desc {
@@ -2685,13 +2779,14 @@ main(int arc, char **argv)
 	g.cpus = 1;		/* default */
 	g.forever = 1;
 	g.tx_rate = 0;
-	g.frags = 1;
+	g.frags =1;
+	g.mtu = 1500;
 	g.nmr_config = "";
 	g.virt_header = 0;
 	g.wait_link = 2;	/* wait 2 seconds for physical ports */
 
 	while ((ch = getopt(arc, argv, "46a:f:F:Nn:i:Il:d:s:D:S:b:c:o:p:"
-	    "T:w:WvR:XC:H:e:E:m:rP:zZAhB")) != -1) {
+	    "T:w:WvR:XC:H:rP:zZAhBM:")) != -1) {
 
 		switch(ch) {
 		default:
@@ -2702,6 +2797,7 @@ main(int arc, char **argv)
 		case 'h':
 			usage(0);
 			break;
+
 		case '4':
 			g.af = AF_INET;
 			break;
@@ -2725,6 +2821,10 @@ main(int arc, char **argv)
 				break;
 			}
 			g.frags = i;
+			break;
+
+		case 'M':
+			g.mtu = atoi(optarg);
 			break;
 
 		case 'f':
@@ -2844,17 +2944,8 @@ main(int arc, char **argv)
 		case 'H':
 			g.virt_header = atoi(optarg);
 			break;
-		case 'e': /* extra bufs */
-			g.extra_bufs = atoi(optarg);
-			break;
-		case 'E':
-			g.extra_pipes = atoi(optarg);
-			break;
 		case 'P':
 			g.packet_file = strdup(optarg);
-			break;
-		case 'm':
-			/* ignored */
 			break;
 		case 'r':
 			g.options |= OPT_RUBBISH;
@@ -2869,6 +2960,7 @@ main(int arc, char **argv)
 			g.options |= OPT_PPS_STATS;
 			break;
 		case 'B':
+			/* raw packets have4 bytes crc + 20 bytes framing */
 			// XXX maybe add an option to pass the IFG
 			g.framing = 24 * 8;
 			break;
@@ -2959,12 +3051,6 @@ main(int arc, char **argv)
 	bzero(&base_nmd, sizeof(base_nmd));
 
 	parse_nmr_config(g.nmr_config, &base_nmd.req);
-	if (g.extra_bufs) {
-		base_nmd.req.nr_arg3 = g.extra_bufs;
-	}
-	if (g.extra_pipes) {
-	    base_nmd.req.nr_arg1 = g.extra_pipes;
-	}
 
 	base_nmd.req.nr_flags |= NR_ACCEPT_VNET_HDR;
 
@@ -3082,8 +3168,8 @@ out:
 		int lim = (g.tx_rate)/300;
 		if (g.burst > lim)
 			g.burst = lim;
-		if (g.burst < g.frags)
-			g.burst = g.frags;
+		if (g.burst == 0)
+			g.burst = 1;
 		x = ((uint64_t)1000000000 * (uint64_t)g.burst) / (uint64_t) g.tx_rate;
 		g.tx_period.tv_nsec = x;
 		g.tx_period.tv_sec = g.tx_period.tv_nsec / 1000000000;

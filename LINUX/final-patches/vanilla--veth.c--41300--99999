@@ -1,0 +1,42 @@
+diff --git a/veth.c b/veth.c
+index 41a00cd76955..ce884d392a01 100644
+--- a/veth.c
++++ b/veth.c
+@@ -60,6 +60,10 @@ struct veth_priv {
+ 	unsigned int		requested_headroom;
+ };
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <veth_netmap.h>
++#endif
++
+ /*
+  * ethtool interface
+  */
+@@ -765,7 +769,6 @@ static int veth_open(struct net_device *dev)
+ 		netif_carrier_on(dev);
+ 		netif_carrier_on(peer);
+ 	}
+-
+ 	return 0;
+ }
+ 
+@@ -825,12 +828,18 @@ static int veth_dev_init(struct net_device *dev)
+ 		return err;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	veth_netmap_attach(dev);
++#endif /* DEV_NETMAP */
+ 	return 0;
+ }
+ 
+ static void veth_dev_free(struct net_device *dev)
+ {
+ 	veth_free_queues(dev);
++#ifdef DEV_NETMAP
++	netmap_detach(dev);
++#endif /* DEV_NETMAP */
+ 	free_percpu(dev->vstats);
+ }
+ 
