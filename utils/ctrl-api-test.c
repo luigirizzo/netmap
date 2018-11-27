@@ -317,6 +317,13 @@ legacy_regif_extra_bufs_pipe(struct TestContext *ctx)
 	return niocregif(ctx, NETMAP_API_NIOCREGIF);
 }
 
+static int
+legacy_regif_extra_bufs_pipe_vale(struct TestContext *ctx)
+{
+	ctx->ifname = "valeX1:Y4";
+	return legacy_regif_extra_bufs_pipe(ctx);
+}
+
 /* Only valid after a successful port_register(). */
 static int
 num_registered_rings(struct TestContext *ctx)
@@ -1531,6 +1538,7 @@ static struct mytest tests[] = {
 	decltest(legacy_regif_future),
 	decltest(legacy_regif_extra_bufs),
 	decltest(legacy_regif_extra_bufs_pipe),
+	decltest(legacy_regif_extra_bufs_pipe_vale),
 };
 
 static void
