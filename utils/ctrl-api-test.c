@@ -1473,7 +1473,7 @@ static void
 usage(const char *prog)
 {
 	printf("%s -i IFNAME\n"
-	       "[-j TESTCASE_INTERVAL]\n"
+	       "[-j TEST_NUM1[-[TEST_NUM2]] | -[TEST_NUM_2]]\n"
 	       "[-l (list test cases)]\n",
 	       prog);
 }
