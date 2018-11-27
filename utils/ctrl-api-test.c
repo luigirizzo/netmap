@@ -1574,6 +1574,7 @@ get_k:
 	scan = rest;
 	if (!*scan == '\0')
 		goto err;
+
 	return 0;
 
 err:
@@ -1631,6 +1632,7 @@ main(int argc, char **argv)
 	if (j < 0 || j >= num_tests || k > num_tests) {
 		fprintf(stderr, "%d-%d out of range (%d-%d)\n",
 				j + 1, k, 1, num_tests + 1);
+		return -1;
 	}
 
 	if (k < 0)
