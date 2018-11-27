@@ -84,3 +84,5 @@ LINUX/scripts/conf
 config.mak
 *.rej
 utils/producer
+.cache.mk
+utils/sync_kloop_test
