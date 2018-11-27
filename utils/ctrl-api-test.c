@@ -293,6 +293,27 @@ legacy_regif_future(struct TestContext *ctx)
 	return niocregif(ctx, NETMAP_API+2);
 }
 
+static int
+legacy_regif_extra_bufs(struct TestContext *ctx)
+{
+	ctx->nr_mode = NR_REG_ALL_NIC;
+	ctx->nr_extra_bufs = 20;
+	return niocregif(ctx, NETMAP_API_NIOCREGIF);
+}
+
+static int
+legacy_regif_extra_bufs_pipe(struct TestContext *ctx)
+{
+	char pipe_name[128];
+
+	snprintf(pipe_name, sizeof(pipe_name), "%s{%s", ctx->ifname, "pipeexbuf");
+	ctx->ifname  = pipe_name;
+	ctx->nr_mode = NR_REG_ALL_NIC;
+	ctx->nr_extra_bufs = 20;
+
+	return niocregif(ctx, NETMAP_API_NIOCREGIF);
+}
+
 /* Only valid after a successful port_register(). */
 static int
 num_registered_rings(struct TestContext *ctx)
@@ -1505,6 +1526,8 @@ static struct mytest tests[] = {
 	decltest(legacy_regif_12),
 	decltest(legacy_regif_sw),
 	decltest(legacy_regif_future),
+	decltest(legacy_regif_extra_bufs),
+	decltest(legacy_regif_extra_bufs_pipe),
 };
 
 static void
