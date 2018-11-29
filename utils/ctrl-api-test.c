@@ -1638,7 +1638,7 @@ main(int argc, char **argv)
 	num_tests = sizeof(tests) / sizeof(tests[0]);
 
 	if (j < 0 || j >= num_tests || k > num_tests) {
-		fprintf(stderr, "%d-%d out of range (%d-%d)\n",
+		fprintf(stderr, "Test interval %d-%d out of range (%d-%d)\n",
 				j + 1, k, 1, num_tests + 1);
 		return -1;
 	}
