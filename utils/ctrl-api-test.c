@@ -1580,7 +1580,7 @@ get_k:
 		goto err;
 	*k = strtol(scan, &rest, 10);
 	scan = rest;
-	if (!*scan == '\0')
+	if (!(*scan == '\0'))
 		goto err;
 
 	return 0;
