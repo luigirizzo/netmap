@@ -184,7 +184,7 @@ i40e_netmap_configure_rx_ring(struct i40e_ring *ring)
 		rx->read.pkt_addr = htole64(paddr);
 		rx->read.hdr_addr = 0;
 	}
-	ring->next_to_clean = netmap_idx_k2n(kring, 0);
+	ring->next_to_clean = 0;
 	wmb();
 	writel(lim, ring->tail);
 	return 1;
