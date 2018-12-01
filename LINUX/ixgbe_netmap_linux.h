@@ -518,7 +518,6 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
-	int complete; /* did we see a complete packet ? */
 
 	/* device-specific */
 	struct NM_IXGBE_ADAPTER *adapter = netdev_priv(ifp);
@@ -548,6 +547,8 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * rxr->next_to_clean is set to 0 on a ring reinit
 	 */
 	if (netmap_no_pendintr || force_update) {
+		u_int new_hwtail = (u_int)-1;
+
 		nic_i = rxr->next_to_clean;
 		nm_i = netmap_idx_n2k(kring, nic_i);
 
@@ -557,6 +558,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			u_int size = le16toh(curr->wb.upper.length);
 			uint64_t paddr;
 			struct netmap_slot *slot = &ring->slot[nm_i];
+			int complete; /* did we see a complete packet ? */
 
 			if (!size)
 				break;
@@ -574,6 +576,9 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
+
+			if (complete)
+				new_hwtail = nm_i;
 		}
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
@@ -581,9 +586,8 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 #ifdef NETMAP_LINUX_HAVE_NTA
 			rxr->next_to_alloc = rxr->next_to_clean;
 #endif /* NETMAP_LINUX_HAVE_NTA */
-			kring->nr_hwtail = nm_i;
-			if (complete)
-				kring->nr_hwtail = nm_i;
+			if (new_hwtail != (u_int)-1)
+				kring->nr_hwtail = new_hwtail;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
