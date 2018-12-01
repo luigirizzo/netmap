@@ -558,7 +558,7 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 			u_int size = le16toh(curr->wb.upper.length);
 			uint64_t paddr;
 			struct netmap_slot *slot = &ring->slot[nm_i];
-			int complete; /* did we see a complete packet ? */
+			int complete;
 
 			if (!size)
 				break;
@@ -586,8 +586,11 @@ ixgbe_netmap_rxsync(struct netmap_kring *kring, int flags)
 #ifdef NETMAP_LINUX_HAVE_NTA
 			rxr->next_to_alloc = rxr->next_to_clean;
 #endif /* NETMAP_LINUX_HAVE_NTA */
-			if (new_hwtail != (u_int)-1)
+			if (new_hwtail != (u_int)-1) {
+				/* Update nr_hwtail only if we saw a complete
+				 * packet in the previous loop. */
 				kring->nr_hwtail = new_hwtail;
+			}
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
