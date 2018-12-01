@@ -1805,6 +1805,11 @@ static inline int
 netmap_idx_n2k(struct netmap_kring *kr, int idx)
 {
 	int n = kr->nkr_num_slots;
+
+	if (likely(kr->nkr_hwofs == 0)) {
+		return idx;
+	}
+
 	idx += kr->nkr_hwofs;
 	if (idx < 0)
 		return idx + n;
@@ -1819,6 +1824,11 @@ static inline int
 netmap_idx_k2n(struct netmap_kring *kr, int idx)
 {
 	int n = kr->nkr_num_slots;
+
+	if (likely(kr->nkr_hwofs == 0)) {
+		return idx;
+	}
+
 	idx -= kr->nkr_hwofs;
 	if (idx < 0)
 		return idx + n;
