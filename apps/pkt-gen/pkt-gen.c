@@ -263,7 +263,7 @@ struct glob_arg {
 	int forever;
 	uint64_t npackets;	/* total packets to send */
 	int frags;		/* fragments per packet */
-	u_int mtu;		/* size of each fragment */
+	u_int frag_size;	/* size of each fragment */
 	int nthreads;
 	int cpus;	/* cpus used for running */
 	int system_cpus;	/* cpus on the system */
@@ -1581,18 +1581,18 @@ sender_body(void *data)
 #endif /* NO_PCAP */
     } else {
 	int tosend = 0;
-	u_int bufsz, mtu = targ->g->mtu;
+	u_int bufsz, frag_size = targ->g->frag_size;
 
 	nifp = targ->nmd->nifp;
 	txring = NETMAP_TXRING(nifp, targ->nmd->first_tx_ring);
 	bufsz = txring->nr_buf_size;
-	if (bufsz < mtu)
-		mtu = bufsz;
+	if (bufsz < frag_size)
+		frag_size = bufsz;
 	targ->frag_size = targ->g->pkt_size / targ->frags;
-	if (targ->frag_size > mtu) {
-		targ->frags = targ->g->pkt_size / mtu;
-		targ->frag_size = mtu;
-		if (targ->g->pkt_size % mtu != 0)
+	if (targ->frag_size > frag_size) {
+		targ->frags = targ->g->pkt_size / frag_size;
+		targ->frag_size = frag_size;
+		if (targ->g->pkt_size % frag_size != 0)
 			targ->frags++;
 	}
 	D("frags %u frag_size %u", targ->frags, targ->frag_size);
@@ -2779,8 +2779,8 @@ main(int arc, char **argv)
 	g.cpus = 1;		/* default */
 	g.forever = 1;
 	g.tx_rate = 0;
-	g.frags =1;
-	g.mtu = 1500;
+	g.frags = 1;
+	g.frag_size = (u_int)-1;	/* use the netmap buffer size by default */
 	g.nmr_config = "";
 	g.virt_header = 0;
 	g.wait_link = 2;	/* wait 2 seconds for physical ports */
@@ -2824,7 +2824,7 @@ main(int arc, char **argv)
 			break;
 
 		case 'M':
-			g.mtu = atoi(optarg);
+			g.frag_size = atoi(optarg);
 			break;
 
 		case 'f':
