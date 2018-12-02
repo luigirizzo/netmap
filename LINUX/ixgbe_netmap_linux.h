@@ -467,8 +467,8 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		 * good way.
 		 */
 		nic_i = IXGBE_READ_REG(&adapter->hw, NM_IXGBE_TDH(ring_nr));
-		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
-			D("TDH wrap %d", nic_i);
+		if (unlikely(nic_i >= kring->nkr_num_slots)) {
+			nm_prerr("%s: TDH overflow (%d)", kring->name, nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
 		nm_i = netmap_idx_n2k(kring, nic_i);
