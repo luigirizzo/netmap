@@ -453,7 +453,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		nic_i = (nic_i < kring->nkr_num_slots / 4 ||
 			 nic_i >= kring->nkr_num_slots*3/4) ?
 			0 : report_frequency;
-		reclaim_tx = txd[nic_i].wb.status & IXGBE_TXD_STAT_DD;	// XXX cpu_to_le32 ?
+		reclaim_tx = le32toh(txd[nic_i].wb.status) & IXGBE_TXD_STAT_DD;
 	}
 	if (reclaim_tx) {
 		/*
@@ -467,8 +467,8 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		 * good way.
 		 */
 		nic_i = IXGBE_READ_REG(&adapter->hw, NM_IXGBE_TDH(ring_nr));
-		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
-			D("TDH wrap %d", nic_i);
+		if (unlikely(nic_i >= kring->nkr_num_slots)) {
+			nm_prerr("%s: TDH overflow (%d)", kring->name, nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
 		nm_i = netmap_idx_n2k(kring, nic_i);
