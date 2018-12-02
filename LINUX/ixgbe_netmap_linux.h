@@ -453,7 +453,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		nic_i = (nic_i < kring->nkr_num_slots / 4 ||
 			 nic_i >= kring->nkr_num_slots*3/4) ?
 			0 : report_frequency;
-		reclaim_tx = txd[nic_i].wb.status & IXGBE_TXD_STAT_DD;	// XXX cpu_to_le32 ?
+		reclaim_tx = le32toh(txd[nic_i].wb.status) & IXGBE_TXD_STAT_DD;
 	}
 	if (reclaim_tx) {
 		/*
