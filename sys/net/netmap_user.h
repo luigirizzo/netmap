@@ -138,11 +138,12 @@ nm_tx_pending(struct netmap_ring *r)
 	return nm_ring_next(r, r->tail) != r->head;
 }
 
-
+/* Compute the number of slots available in the netmap ring. We use
+ * ring->head as explained in the comment above nm_ring_empty(). */
 static inline uint32_t
 nm_ring_space(struct netmap_ring *ring)
 {
-        int ret = ring->tail - ring->cur;
+        int ret = ring->tail - ring->head;
         if (ret < 0)
                 ret += ring->num_slots;
         return ret;

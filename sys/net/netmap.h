@@ -333,12 +333,17 @@ struct netmap_ring {
  */
 
 /*
- * check if space is available in the ring.
+ * Check if space is available in the ring. We use ring->head, which
+ * points to the next netmap slot to be published to netmap. It is
+ * possible that the applications moves ring->cur ahead of ring->tail
+ * (e.g., by setting ring->cur <== ring->tail), if it wants more slots
+ * than the ones currently available, and it wants to be notified when
+ * more arrive. See netmap(4) for more details and examples.
  */
 static inline int
 nm_ring_empty(struct netmap_ring *ring)
 {
-	return (ring->cur == ring->tail);
+	return (ring->head == ring->tail);
 }
 
 /*
