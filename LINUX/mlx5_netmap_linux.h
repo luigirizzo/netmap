@@ -89,15 +89,13 @@
 
 #define NM_MLX5E_ADAPTER mlx5e_priv
 
-/* These functions are in en_rx.c but needed here to
+/* This function is in en_rx.c but needed here to
  * deal with compressed CQEs
  */
-inline void mlx5e_read_cqe_slot(struct mlx5e_cq *cq, u32 cc, void *data);
-inline void mlx5e_write_cqe_slot(struct mlx5e_cq *cq, u32 cc, void *data);
-inline void mlx5e_decompress_cqe(struct mlx5e_cq *cq, struct mlx5_cqe64 *title,
-                                 struct mlx5_mini_cqe8 *mini, u16 wqe_counter,
-                                 int i);
-void mlx5e_decompress_cqes(struct mlx5e_cq *cq);
+u32 mlx5e_decompress_cqes_start(struct mlx5e_rq *rq,
+                          struct mlx5e_cq *cq,
+                          int budget_rem);
+
 
 /*
  * Register/unregister. We are already under netmap lock.
@@ -139,6 +137,10 @@ int mlx5e_netmap_reg(struct netmap_adapter *na, int onoff) {
   return err;
 }
 
+#define MLX5E_SQ_NOPS_ROOM  MLX5_SEND_WQE_MAX_WQEBBS
+#define MLX5E_SQ_STOP_ROOM (MLX5_SEND_WQE_MAX_WQEBBS +\
+                MLX5E_SQ_NOPS_ROOM)
+
 /*
  * Reconcile kernel and user view of the transmit ring.
  *
@@ -168,7 +170,8 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
   /* device-specific */
   struct NM_MLX5E_ADAPTER *priv = netdev_priv(ifp);
 
-  struct mlx5e_sq *sq = priv->txq_to_sq_map[ring_nr];
+  struct mlx5e_txqsq *sq = priv->txq2sq[ring_nr];
+  struct mlx5_wq_cyc *wq = &sq->wq;
   struct mlx5e_cq *cq = &(sq->cq);
   struct mlx5e_tx_wqe *wqe = NULL;
   struct mlx5_cqe64 *cqe = NULL;
@@ -200,6 +203,9 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
      */
 
     for (n = 0; nm_i != head; n++) {
+      if (unlikely(!mlx5e_wqc_has_room_for(wq, sq->cc, sq->pc, MLX5E_SQ_STOP_ROOM))) {
+          break;
+      }
 
       struct netmap_slot *slot = &ring->slot[nm_i];
       u_int len = slot->len;
@@ -208,8 +214,7 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
 
       /* Code below based on mlx5e_sq_xmit() in en_tx.c */
 
-      struct mlx5_wq_cyc *wq = &sq->wq;
-      u16 pi = sq->pc & wq->sz_m1; /* producer index */
+      u16 pi = sq->pc & wq->fbc.sz_m1; /* producer index */
 
       u8 opcode = MLX5_OPCODE_SEND;
       u16 ds_cnt;
@@ -231,16 +236,16 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
       eseg->cs_flags = MLX5_ETH_WQE_L3_CSUM | MLX5_ETH_WQE_L4_CSUM;
 
       /* Use minimum inline header to minimise data copying */
-      ihs = ETH_HLEN + 2; /* MAC + MAC + VLAN + Ethertype = 16 bytes */
+      ihs = ETH_HLEN;
 
       if (unlikely(ihs > len))
         ihs = len; /* whole packet fits inline */
 
-      memcpy(eseg->inline_hdr_start, addr, ihs);
-      eseg->inline_hdr_sz = cpu_to_be16(ihs);
+      memcpy(eseg->inline_hdr.start, addr, ihs);
+      eseg->inline_hdr.sz = cpu_to_be16(ihs);
 
       ds_cnt +=
-          DIV_ROUND_UP(ihs - sizeof(eseg->inline_hdr_start), MLX5_SEND_WQE_DS);
+          DIV_ROUND_UP(ihs - sizeof(eseg->inline_hdr.start), MLX5_SEND_WQE_DS);
 
       dseg = (struct mlx5_wqe_data_seg *)cseg + ds_cnt;
 
@@ -266,28 +271,18 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
        *   - slot number in the netmap kring that this wqe is sending
        *           (in bottom 24 bits)
        */
-      sq->skb[pi] = (void *)(uintptr_t)(nm_i & 0x00FFFFFF) +
-                    ((uintptr_t)num_wqebbs << 24);
+      sq->db.wqe_info[pi].skb = (void *)(uintptr_t)(nm_i & 0x00FFFFFF);
+      sq->db.wqe_info[pi].num_wqebbs = num_wqebbs;
 
-      /* fill sq edge with nops to avoid wqe wrap around */
-      while ((sq->pc & wq->sz_m1) > sq->edge)
-        mlx5e_send_nop(sq, false);
+      mlx5e_notify_hw(&sq->wq, sq->pc, sq->uar_map, cseg);
 
-      sq->stats.packets++;
+      sq->stats->packets++;
 
       /* next netmap slot */
       nm_i = nm_next(nm_i, lim);
     } /* next packet */
 
-    /* Wake up the hardware if any packets enqueued */
-    if (wqe) {
-      /* Request a CQE when the final WQE has completed */
-      cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
-
-      mlx5e_tx_notify_hw(sq, wqe, 0);
-    }
-
-    kring->nr_hwcur = head;
+    kring->nr_hwcur = nm_i;
   }
 
   /*
@@ -301,7 +296,7 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
    * otherwise a cq overrun may occur */
   sqcc = sq->cc;
 
-  cqe = mlx5e_get_cqe(cq);
+  cqe = mlx5_cqwq_get_cqe(&cq->wq);
 
   while (cqe) {
     u16 wqe_counter;
@@ -309,27 +304,25 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
 
     cqe_found = 1;
     mlx5_cqwq_pop(&cq->wq);
-    mlx5e_prefetch_cqe(cq);
 
     /* this cqe could relate to many wqes */
     wqe_counter = be16_to_cpu(cqe->wqe_counter);
 
     do {
-      u16 ci = sqcc & sq->wq.sz_m1;
-      void *skb = sq->skb[ci];
-      u8 num_wqebbs;
+      u16 ci = sqcc & sq->wq.fbc.sz_m1;
+      void *skb = sq->db.wqe_info[ci].skb;
+      u8 num_wqebbs = sq->db.wqe_info[ci].num_wqebbs;
       u32 nm_i_done;
 
       last_wqe = (sqcc == wqe_counter);
 
       if (unlikely(!skb)) { /* nop */
-        sq->stats.nop++;
+        sq->stats->nop++;
         sqcc++;
         continue;
       }
 
-      /* unpack num_wqebbs and slot number from skb pointer */
-      num_wqebbs = (u8)((uintptr_t)skb >> 24);
+      /* unpack slot number from skb pointer */
       nm_i_done = (u32)((uintptr_t)skb & 0x00FFFFFF);
 
       sqcc += num_wqebbs;
@@ -337,7 +330,7 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
 
     } while (!last_wqe);
 
-    cqe = mlx5e_get_cqe(cq);
+    cqe = mlx5_cqwq_get_cqe(&cq->wq);
   }
 
   if (cqe_found) {
@@ -379,17 +372,17 @@ int mlx5e_netmap_rxsync(struct netmap_kring *kring, int flags) {
 
   /* device-specific */
   struct NM_MLX5E_ADAPTER *priv = netdev_priv(ifp);
-  struct mlx5e_rq *rq = &(priv->channel[ring_nr]->rq);
+  struct mlx5e_rq *rq = &(priv->channels.c[ring_nr]->rq);
   struct mlx5e_cq *cq = &(rq->cq);
   struct mlx5_cqe64 *cqe = NULL;
   int cqe_found = 0;
-
+/*
   if (unlikely(rq->rq_type == RQ_TYPE_STRIDE)) {
     netdev_err(ifp,
                "RQ type is STRIDING - this is not supported in netmap mode\n");
     return 0;
   }
-
+*/
   if (!netif_carrier_ok(ifp))
     return 0;
 
@@ -408,14 +401,13 @@ int mlx5e_netmap_rxsync(struct netmap_kring *kring, int flags) {
   nm_i = kring->nr_hwcur;
 
   if (nm_i != head) {
-
-    struct mlx5_wq_ll *wq = &rq->wq;
-    struct mlx5e_rx_wqe *wqe = mlx5_wq_ll_get_wqe(wq, wq->head);
+    struct mlx5_wq_cyc *wq = &rq->wqe.wq;
+    struct mlx5e_rx_wqe_cyc *wqe = mlx5_wq_cyc_get_wqe(wq, mlx5_wq_cyc_get_head(wq));
     struct netmap_slot *slot;
     uint64_t paddr;
     void *addr;
 
-    while (nm_i != head && !mlx5_wq_ll_is_full(wq)) {
+    while (nm_i != head && !mlx5_wq_cyc_is_full(wq)) {
 
       slot = &ring->slot[nm_i];
       addr = PNMB(na, slot, &paddr); /* find phys address */
@@ -430,10 +422,10 @@ int mlx5e_netmap_rxsync(struct netmap_kring *kring, int flags) {
         slot->flags &= ~NS_BUF_CHANGED;
       }
 
-      wqe = mlx5_wq_ll_get_wqe(wq, wq->head);
-      wqe->data.addr = cpu_to_be64(paddr);
+      wqe = mlx5_wq_cyc_get_wqe(wq, mlx5_wq_cyc_get_head(wq));
+      wqe->data->addr = cpu_to_be64(paddr);
 
-      mlx5_wq_ll_push(wq, be16_to_cpu(wqe->next.next_wqe_index));
+      mlx5_wq_cyc_push(wq);
 
       nm_i = nm_next(nm_i, lim);
     }
@@ -442,7 +434,7 @@ int mlx5e_netmap_rxsync(struct netmap_kring *kring, int flags) {
 
     /* ensure wqes are visible to device before updating doorbell record */
     wmb();
-    mlx5_wq_ll_update_db_record(wq);
+    mlx5_wq_cyc_update_db_record(wq);
   }
 
   /*
@@ -453,36 +445,34 @@ int mlx5e_netmap_rxsync(struct netmap_kring *kring, int flags) {
    */
   nm_i = kring->nr_hwtail;
 
-  cqe = mlx5e_get_cqe(cq);
+  cqe = mlx5_cqwq_get_cqe(&cq->wq);
 
   while (cqe) {
-    struct mlx5e_rx_wqe *wqe;
+    struct mlx5e_rx_wqe_cyc *wqe;
     u16 bytes_recv = 0;
     __be16 wqe_id_be;
     u16 wqe_counter;
 
     cqe_found = 1;
-
     if (mlx5_get_cqe_format(cqe) == MLX5_COMPRESSED)
-      mlx5e_decompress_cqes(&rq->cq);
+        mlx5e_decompress_cqes_start(rq, &rq->cq, 1024);
 
     mlx5_cqwq_pop(&cq->wq);
-    mlx5e_prefetch_cqe(cq);
 
     wqe_id_be = cqe->wqe_counter;
     wqe_counter = be16_to_cpu(wqe_id_be);
-    wqe = mlx5_wq_ll_get_wqe(&rq->wq, wqe_counter);
+    wqe = mlx5_wq_cyc_get_wqe( &rq->wqe.wq, wqe_counter);
     bytes_recv = be32_to_cpu(cqe->byte_cnt);
 
     if (unlikely((cqe->op_own >> 4) != MLX5_CQE_RESP_SEND)) {
-      rq->stats.wqe_err++;
+      rq->stats->wqe_err++;
       netdev_warn(ifp, "Bad response found in CQE for RQ %u\n", ring_nr);
-      goto wq_ll_pop;
+      goto wq_cyc_pop;
     }
 
-    rq->stats.packets++;
+    rq->stats->packets++;
     if (cqe->hds_ip_ext & CQE_L4_OK)
-      rq->stats.csum_good++;
+      rq->stats->csum_unnecessary++;
 
     /* could analyse checksums more thoroughly using flags in
      * l4_hdr_type_etc that us which checksums are applicable
@@ -500,9 +490,9 @@ int mlx5e_netmap_rxsync(struct netmap_kring *kring, int flags) {
     ring->slot[nm_i].flags = slot_flags;
     nm_i = nm_next(nm_i, lim);
 
-  wq_ll_pop:
-    cqe = mlx5e_get_cqe(cq);
-    mlx5_wq_ll_pop(&rq->wq, wqe_id_be, &wqe->next.next_wqe_index);
+  wq_cyc_pop:
+    cqe = mlx5_cqwq_get_cqe(&cq->wq);
+    mlx5_wq_cyc_pop(&rq->wqe.wq);
   }
 
   if (cqe_found) {
@@ -527,7 +517,7 @@ ring_reset:
 /*
  * Acknowledge and clear all CQEs when TX queue is closing down
  */
-int mlx5e_netmap_tx_flush(struct mlx5e_sq *sq) {
+int mlx5e_netmap_tx_flush(struct mlx5e_txqsq *sq) {
   struct mlx5e_cq *cq = &(sq->cq);
   struct mlx5_cqe64 *cqe;
   u16 sqcc;
@@ -539,36 +529,35 @@ int mlx5e_netmap_tx_flush(struct mlx5e_sq *sq) {
   sqcc = sq->cc;
 
   /* Any completed jobs in the CQ? */
-  cqe = mlx5e_get_cqe(cq);
+  cqe = mlx5_cqwq_get_cqe(&cq->wq);
 
   while (cqe) {
     u16 wqe_counter;
     bool last_wqe;
 
     mlx5_cqwq_pop(&cq->wq);
-    mlx5e_prefetch_cqe(cq);
 
     /* this cqe could relate to many wqes */
     wqe_counter = be16_to_cpu(cqe->wqe_counter);
 
     do {
-      u16 ci = sqcc & sq->wq.sz_m1;
-      void *skb = sq->skb[ci];
+      u16 ci = sqcc & sq->wq.fbc.sz_m1;
+      void *skb = sq->db.wqe_info[ci].skb;
+      u8 num_wqebbs = sq->db.wqe_info[ci].num_wqebbs;
 
       last_wqe = (sqcc == wqe_counter);
 
       if (unlikely(!skb)) { /* nop */
-        sq->stats.nop++;
+        sq->stats->nop++;
         sqcc++;
         continue;
       }
 
-      /* extract num_wqebbs from skb pointer */
-      sqcc += (u8)((uintptr_t)skb >> 24);
+      sqcc += num_wqebbs;
 
     } while (!last_wqe);
 
-    cqe = mlx5e_get_cqe(cq);
+    cqe = mlx5_cqwq_get_cqe(&cq->wq);
   }
 
   mlx5_cqwq_update_db_record(&cq->wq);
@@ -589,25 +578,24 @@ int mlx5e_netmap_rx_flush(struct mlx5e_rq *rq) {
 
   rmb();
 
-  cqe = mlx5e_get_cqe(cq);
+  cqe = mlx5_cqwq_get_cqe(&cq->wq);
 
   while (cqe) {
-    struct mlx5e_rx_wqe *wqe;
+    struct mlx5e_rx_wqe_cyc *wqe;
     __be16 wqe_id_be;
     u16 wqe_counter;
 
     if (mlx5_get_cqe_format(cqe) == MLX5_COMPRESSED)
-      mlx5e_decompress_cqes(&rq->cq);
+        mlx5e_decompress_cqes_start(rq, &rq->cq, 1024);
 
     mlx5_cqwq_pop(&cq->wq);
-    mlx5e_prefetch_cqe(cq);
 
     wqe_id_be = cqe->wqe_counter;
     wqe_counter = be16_to_cpu(wqe_id_be);
-    wqe = mlx5_wq_ll_get_wqe(&rq->wq, wqe_counter);
+    wqe = mlx5_wq_cyc_get_wqe(&rq->wqe.wq, wqe_counter);
 
-    cqe = mlx5e_get_cqe(cq);
-    mlx5_wq_ll_pop(&rq->wq, wqe_id_be, &wqe->next.next_wqe_index);
+    cqe = mlx5_cqwq_get_cqe(&cq->wq);
+    mlx5_wq_cyc_pop(&rq->wqe.wq);
   }
 
   mlx5_cqwq_update_db_record(&cq->wq);
@@ -654,7 +642,7 @@ int mlx5e_netmap_configure_rx_ring(struct mlx5e_rq *rq, int ring_nr) {
   int lim; /* number of WQEs to prepare */
   int count = 0;
 
-  struct mlx5_wq_ll *wq = &rq->wq;
+  struct mlx5_wq_cyc *wq = &rq->wqe.wq;
 
   slot = netmap_reset(na, NR_RX, ring_nr, 0);
   if (!slot)
@@ -662,16 +650,16 @@ int mlx5e_netmap_configure_rx_ring(struct mlx5e_rq *rq, int ring_nr) {
 
   lim = na->num_rx_desc - 1 - nm_kr_rxspace(na->rx_rings[ring_nr]);
 
-  while (!mlx5_wq_ll_is_full(wq) && (count < lim)) {
+  while (!mlx5_wq_cyc_is_full(wq) && (count < lim)) {
 
-    struct mlx5e_rx_wqe *wqe = mlx5_wq_ll_get_wqe(wq, wq->head);
+    struct mlx5e_rx_wqe_cyc *wqe = mlx5_wq_cyc_get_wqe(wq, mlx5_wq_cyc_get_head(wq));
 
     uint64_t paddr;
     PNMB(na, slot + count, &paddr);
 
-    wqe->data.addr = cpu_to_be64(paddr);
+    wqe->data->addr = cpu_to_be64(paddr);
 
-    mlx5_wq_ll_push(wq, be16_to_cpu(wqe->next.next_wqe_index));
+    mlx5_wq_cyc_push(wq);
     count++;
   }
 
@@ -682,7 +670,7 @@ int mlx5e_netmap_configure_rx_ring(struct mlx5e_rq *rq, int ring_nr) {
 
   /* ensure wqes are visible to device before updating doorbell record */
   wmb();
-  mlx5_wq_ll_update_db_record(wq);
+  mlx5_wq_cyc_update_db_record(wq);
 
   return 1;
 }
@@ -712,16 +700,16 @@ void mlx5e_netmap_attach(struct NM_MLX5E_ADAPTER *adapter) {
 
   na.ifp = adapter->netdev;
   na.pdev = &adapter->mdev->pdev->dev;
-  na.num_tx_desc = (1 << adapter->params.log_sq_size);
-  na.num_rx_desc = (1 << adapter->params.log_rq_size);
+  na.num_tx_desc = (1 << adapter->channels.params.log_sq_size);
+  na.num_rx_desc = (1 << adapter->channels.params.log_rq_mtu_frames);
   na.nm_txsync = mlx5e_netmap_txsync;
   na.nm_rxsync = mlx5e_netmap_rxsync;
   na.nm_register = mlx5e_netmap_reg;
   na.nm_config = mlx5e_netmap_config;
 
   /* each channel has 1 rx ring and a tx for each tc */
-  na.num_tx_rings = adapter->params.num_channels * adapter->params.num_tc;
-  na.num_rx_rings = adapter->params.num_channels;
+  na.num_tx_rings = adapter->channels.params.num_channels * adapter->channels.params.num_tc;
+  na.num_rx_rings = adapter->channels.params.num_channels;
   na.rx_buf_maxsize = 1500; /* will be overwritten by nm_config */
   netmap_attach(&na);
 }
