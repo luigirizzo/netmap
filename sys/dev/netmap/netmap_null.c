@@ -169,6 +169,7 @@ netmap_get_null_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	if (error)
 		goto free_nna;
 	*na = &nna->up;
+	netmap_adapter_get(*na);
 	nm_prdis("created null %s", nna->up.name);
 
 	return 0;
