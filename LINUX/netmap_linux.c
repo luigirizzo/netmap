@@ -1308,11 +1308,19 @@ linux_netmap_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	return (NETDEV_TX_OK);
 }
 
+#define native_change_mtu(na, dev, mtu)					\
+	(((struct net_device_ops *)(na)->if_transmit)->NETMAP_LINUX_CHANGE_MTU(dev, mtu))
+
 int
 linux_netmap_change_mtu(struct net_device *dev, int new_mtu)
 {
-	return -EBUSY;
+	struct netmap_adapter *na = NA(dev);
+
+	if (netmap_buf_size_validate(na, new_mtu))
+		return -EINVAL;
+	return native_change_mtu(na, dev, new_mtu);
 }
+
 
 /* while in netmap mode, we cannot tolerate any change in the
  * number of rx/tx rings and descriptors
