@@ -86,7 +86,7 @@ kloop_worker(void *opaque)
 	return NULL;
 }
 
-inline int
+static inline int
 ringspace(struct netmap_ring *ring, uint32_t head)
 {
 	int space = ring->tail - head;
