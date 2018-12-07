@@ -26,6 +26,9 @@ eventfd(int x, int y)
 }
 #endif /* __linux__ */
 
+#define THRET_SUCCESS	((void *)128)
+#define THRET_FAILURE	((void *)0)
+
 struct TestContext {
 	int fd; /* netmap file descriptor */
 	char *ifname;
@@ -1144,14 +1147,14 @@ sync_kloop_worker(void *opaque)
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
 	}
 
-	pthread_exit((void *)(uintptr_t)ret);
+	pthread_exit(ret ? (void *)THRET_FAILURE : (void *)THRET_SUCCESS);
 }
 
 static int
 sync_kloop_start_stop(struct TestContext *ctx)
 {
 	pthread_t th;
-	int thret;
+	void *thret = THRET_FAILURE;
 	int ret;
 
 	ret = pthread_create(&th, NULL, sync_kloop_worker, ctx);
@@ -1165,12 +1168,12 @@ sync_kloop_start_stop(struct TestContext *ctx)
 		return ret;
 	}
 
-	ret = pthread_join(th, (void **)&thret);
+	ret = pthread_join(th, &thret);
 	if (ret) {
 		printf("pthread_join(kloop): %s\n", strerror(ret));
 	}
 
-	return thret;
+	return thret == THRET_SUCCESS ? 0 : -1;
 }
 
 static int
@@ -1341,7 +1344,7 @@ sync_kloop_conflict(struct TestContext *ctx)
 {
 	struct nmreq_opt_csb opt;
 	pthread_t th1, th2;
-	int thret1, thret2;
+	void *thret1 = THRET_FAILURE, *thret2 = THRET_FAILURE;
 	int ret;
 
 	ret = push_csb_option(ctx, &opt);
@@ -1376,18 +1379,19 @@ sync_kloop_conflict(struct TestContext *ctx)
 		return ret;
 	}
 
-	ret = pthread_join(th1, (void **)&thret1);
+	ret = pthread_join(th1, &thret1);
 	if (ret) {
 		printf("pthread_join(kloop1): %s\n", strerror(ret));
 	}
 
-	ret = pthread_join(th2, (void **)&thret2);
+	ret = pthread_join(th2, &thret2);
 	if (ret) {
-		printf("pthread_join(kloop2): %s\n", strerror(ret));
+		printf("pthread_join(kloop2): %s %d\n", strerror(ret), ret);
 	}
 
 	/* Check that one of the two failed, while the other one succeeded. */
-	return ((thret1 == 0 && thret2 != 0) || (thret1 != 0 && thret2 == 0))
+	return ((thret1 == THRET_SUCCESS && thret2 == THRET_FAILURE) ||
+			(thret1 == THRET_FAILURE && thret2 == THRET_SUCCESS))
 	               ? 0
 	               : -1;
 }
