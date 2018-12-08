@@ -31,7 +31,7 @@ eventfd(int x, int y)
 
 struct TestContext {
 	int fd; /* netmap file descriptor */
-	char *ifname;
+	const char *ifname;
 	const char *bdgname;
 	uint32_t nr_tx_slots;   /* slots in tx rings */
 	uint32_t nr_rx_slots;   /* slots in rx rings */
