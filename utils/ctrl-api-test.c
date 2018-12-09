@@ -1063,7 +1063,7 @@ push_csb_option(struct TestContext *ctx, struct nmreq_opt_csb *opt)
 	memset(opt, 0, sizeof(*opt));
 	opt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_CSB;
 	opt->csb_atok            = (uintptr_t)ctx->csb;
-	opt->csb_ktoa            = (uintptr_t)(ctx->csb +
+	opt->csb_ktoa            = (uintptr_t)(((uint8_t *)ctx->csb) +
                                     sizeof(struct nm_csb_atok) * num_entries);
 
 	printf("Pushing option NETMAP_REQ_OPT_CSB\n");
