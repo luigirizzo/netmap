@@ -1598,17 +1598,17 @@ int
 main(int argc, char **argv)
 {
 	struct TestContext ctx;
-	int loopback_if;
 	int num_tests;
 	int ret  = 0;
 	int j    = 0;
 	int k    = -1;
 	int list = 0;
+	int create_tap = 1;
 	int opt;
 	int i;
 
 	memset(&ctx, 0, sizeof(ctx));
-	ctx.ifname  = "lo";
+	ctx.ifname  = "tap931";
 	ctx.bdgname = "vale1x2";
 
 	while ((opt = getopt(argc, argv, "hi:j:l")) != -1) {
@@ -1619,6 +1619,7 @@ main(int argc, char **argv)
 
 		case 'i':
 			ctx.ifname = optarg;
+			create_tap = 0;
 			break;
 
 		case 'j':
@@ -1658,14 +1659,15 @@ main(int argc, char **argv)
 		return 0;
 	}
 
-	loopback_if = !strcmp(ctx.ifname, "lo");
-	if (loopback_if) {
-		/* For the tests, we need the MTU to be smaller than
-		 * the NIC RX buffer size, otherwise we will fail on
-		 * registering the interface. To stay safe, let's
-		 * just use a standard MTU. */
-		if (system("ip link set dev lo mtu 1514")) {
-			printf("system(%s, mtu=1514) failed\n", ctx.ifname);
+	if (create_tap) {
+		char cmdbuf[64];
+#ifdef __FreeBSD__
+		snprintf(cmdbuf, sizeof(cmdbuf), "ifconfig %s create up", ctx.ifname);
+#else
+		snprintf(cmdbuf, sizeof(cmdbuf), "ip tuntap add mode tap name %s", ctx.ifname);
+#endif
+		if (system(cmdbuf)) {
+			printf("%s: failed\n", cmdbuf);
 			return -1;
 		}
 	}
@@ -1691,9 +1693,15 @@ main(int argc, char **argv)
 		context_cleanup(&ctxcopy);
 	}
 out:
-	if (loopback_if) {
-		if (system("ip link set dev lo mtu 65536")) {
-			perror("system(mtu=1514)");
+	if (create_tap) {
+		char cmdbuf[64];
+#ifdef __FreeBSD__
+		snprintf(cmdbuf, sizeof(cmdbuf), "ifconfig %s destroy", ctx.ifname);
+#else
+		snprintf(cmdbuf, sizeof(cmdbuf), "ip link del %s", ctx.ifname);
+#endif
+		if (system(cmdbuf)) {
+			printf("%s: failed\n", cmdbuf);
 			return -1;
 		}
 	}
