@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <assert.h>
+#include <time.h>
 
 #ifdef __linux__
 #include <sys/eventfd.h>
@@ -1598,17 +1599,25 @@ int
 main(int argc, char **argv)
 {
 	struct TestContext ctx;
+	int create_tap = 1;
+	char tapname[64];
 	int num_tests;
 	int ret  = 0;
 	int j    = 0;
 	int k    = -1;
 	int list = 0;
-	int create_tap = 1;
 	int opt;
 	int i;
 
+	{
+		int tapidx;
+		srand(time(0));
+		tapidx = rand() % 8000 + 100;
+		snprintf(tapname, sizeof(tapname), "tap%d", tapidx);
+	}
+
 	memset(&ctx, 0, sizeof(ctx));
-	ctx.ifname  = "tap931";
+	ctx.ifname  = tapname;
 	ctx.bdgname = "vale1x2";
 
 	while ((opt = getopt(argc, argv, "hi:j:l")) != -1) {
