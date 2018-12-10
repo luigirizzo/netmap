@@ -32,8 +32,8 @@ eventfd(int x, int y)
 
 struct TestContext {
 	int fd; /* netmap file descriptor */
-	const char *ifname;
-	const char *bdgname;
+	char ifname[128];
+	char bdgname[64];
 	uint32_t nr_tx_slots;   /* slots in tx rings */
 	uint32_t nr_rx_slots;   /* slots in rx rings */
 	uint16_t nr_tx_rings;   /* number of tx rings */
@@ -188,7 +188,8 @@ niocregif(struct TestContext *ctx, int netmap_api)
 	printf("Testing legacy NIOCREGIF on '%s'\n", ctx->ifname);
 
 	memset(&req, 0, sizeof(req));
-	strncpy(req.nr_name, ctx->ifname, sizeof(req.nr_name)-1);
+	memcpy(req.nr_name, ctx->ifname, sizeof(req.nr_name));
+	req.nr_name[sizeof(req.nr_name) - 1] = '\0';
 	req.nr_version = netmap_api;
 	req.nr_ringid     = ctx->nr_ringid;
 	req.nr_flags      = ctx->nr_mode | ctx->nr_flags;
@@ -299,10 +300,7 @@ legacy_regif_extra_bufs(struct TestContext *ctx)
 static int
 legacy_regif_extra_bufs_pipe(struct TestContext *ctx)
 {
-	char pipe_name[128];
-
-	snprintf(pipe_name, sizeof(pipe_name), "%s{%s", ctx->ifname, "pipeexbuf");
-	ctx->ifname  = pipe_name;
+	strncat(ctx->ifname, "{pipeexbuf", sizeof(ctx->ifname));
 	ctx->nr_mode = NR_REG_ALL_NIC;
 	ctx->nr_extra_bufs = 20;
 
@@ -312,7 +310,7 @@ legacy_regif_extra_bufs_pipe(struct TestContext *ctx)
 static int
 legacy_regif_extra_bufs_pipe_vale(struct TestContext *ctx)
 {
-	ctx->ifname = "valeX1:Y4";
+	strncpy(ctx->ifname, "valeX1:Y4", sizeof(ctx->ifname));
 	return legacy_regif_extra_bufs_pipe(ctx);
 }
 
@@ -500,7 +498,7 @@ vale_ephemeral_port_hdr_manipulation(struct TestContext *ctx)
 {
 	int ret;
 
-	ctx->ifname  = "vale:eph0";
+	strncpy(ctx->ifname, "vale:eph0", sizeof(ctx->ifname));
 	ctx->nr_mode = NR_REG_ALL_NIC;
 	if ((ret = port_register(ctx))) {
 		return ret;
@@ -529,7 +527,7 @@ vale_persistent_port(struct TestContext *ctx)
 	int result;
 	int ret;
 
-	ctx->ifname = "per4";
+	strncpy(ctx->ifname, "per4", sizeof(ctx->ifname));
 
 	printf("Testing NETMAP_REQ_VALE_NEWIF on '%s'\n", ctx->ifname);
 
@@ -633,17 +631,14 @@ pools_info_get_and_register(struct TestContext *ctx)
 static int
 pools_info_get_empty_ifname(struct TestContext *ctx)
 {
-	ctx->ifname = "";
+	strncpy(ctx->ifname, "", sizeof(ctx->ifname));
 	return pools_info_get(ctx) != 0 ? 0 : -1;
 }
 
 static int
 pipe_master(struct TestContext *ctx)
 {
-	char pipe_name[128];
-
-	snprintf(pipe_name, sizeof(pipe_name), "%s{%s", ctx->ifname, "pipeid1");
-	ctx->ifname  = pipe_name;
+	strncat(ctx->ifname, "{pipeid1", sizeof(ctx->ifname));
 	ctx->nr_mode = NR_REG_NIC_SW;
 
 	if (port_register(ctx) == 0) {
@@ -658,10 +653,7 @@ pipe_master(struct TestContext *ctx)
 static int
 pipe_slave(struct TestContext *ctx)
 {
-	char pipe_name[128];
-
-	snprintf(pipe_name, sizeof(pipe_name), "%s}%s", ctx->ifname, "pipeid2");
-	ctx->ifname  = pipe_name;
+	strncat(ctx->ifname, "}pipeid2", sizeof(ctx->ifname));
 	ctx->nr_mode = NR_REG_ALL_NIC;
 
 	return port_register(ctx);
@@ -672,10 +664,7 @@ pipe_slave(struct TestContext *ctx)
 static int
 pipe_port_info_get(struct TestContext *ctx)
 {
-	char pipe_name[128];
-
-	snprintf(pipe_name, sizeof(pipe_name), "%s}%s", ctx->ifname, "pipeid3");
-	ctx->ifname = pipe_name;
+	strncat(ctx->ifname, "}pipeid3", sizeof(ctx->ifname));
 
 	return port_info_get(ctx);
 }
@@ -683,10 +672,7 @@ pipe_port_info_get(struct TestContext *ctx)
 static int
 pipe_pools_info_get(struct TestContext *ctx)
 {
-	char pipe_name[128];
-
-	snprintf(pipe_name, sizeof(pipe_name), "%s{%s", ctx->ifname, "xid");
-	ctx->ifname = pipe_name;
+	strncat(ctx->ifname, "{xid", sizeof(ctx->ifname));
 
 	return pools_info_get(ctx);
 }
@@ -950,7 +936,7 @@ _extmem_option(struct TestContext *ctx, int new_rsz)
 
 	save = e;
 
-	ctx->ifname      = "vale0:0";
+	strncpy(ctx->ifname, "vale0:0", sizeof(ctx->ifname));
 	ctx->nr_tx_slots = 16;
 	ctx->nr_rx_slots = 16;
 
@@ -1587,7 +1573,6 @@ main(int argc, char **argv)
 {
 	struct TestContext ctx;
 	int create_tap = 1;
-	char tapname[64];
 	int num_tests;
 	int ret  = 0;
 	int j    = 0;
@@ -1596,16 +1581,17 @@ main(int argc, char **argv)
 	int opt;
 	int i;
 
-	{
-		int tapidx;
-		srand(time(0));
-		tapidx = rand() % 8000 + 100;
-		snprintf(tapname, sizeof(tapname), "tap%d", tapidx);
-	}
-
 	memset(&ctx, 0, sizeof(ctx));
-	ctx.ifname  = tapname;
-	ctx.bdgname = "vale1x2";
+
+	{
+		int idx;
+
+		srand(time(0));
+		idx = rand() % 8000 + 100;
+		snprintf(ctx.ifname, sizeof(ctx.ifname), "tap%d", idx);
+		idx = rand() % 800 + 100;
+		snprintf(ctx.bdgname, sizeof(ctx.bdgname), "vale%d", idx);
+	}
 
 	while ((opt = getopt(argc, argv, "hi:j:l")) != -1) {
 		switch (opt) {
@@ -1614,7 +1600,7 @@ main(int argc, char **argv)
 			return 0;
 
 		case 'i':
-			ctx.ifname = optarg;
+			strncpy(ctx.ifname, optarg, sizeof(ctx.ifname) - 1);
 			create_tap = 0;
 			break;
 
@@ -1656,11 +1642,13 @@ main(int argc, char **argv)
 	}
 
 	if (create_tap) {
-		char cmdbuf[64];
+		char cmdbuf[256];
 #ifdef __FreeBSD__
-		snprintf(cmdbuf, sizeof(cmdbuf), "ifconfig %s create up", ctx.ifname);
+		snprintf(cmdbuf, sizeof(cmdbuf), "ifconfig %s create up",
+			ctx.ifname);
 #else
-		snprintf(cmdbuf, sizeof(cmdbuf), "ip tuntap add mode tap name %s", ctx.ifname);
+		snprintf(cmdbuf, sizeof(cmdbuf),
+			"ip tuntap add mode tap name %s", ctx.ifname);
 #endif
 		if (system(cmdbuf)) {
 			printf("%s: failed\n", cmdbuf);
@@ -1690,11 +1678,13 @@ main(int argc, char **argv)
 	}
 out:
 	if (create_tap) {
-		char cmdbuf[64];
+		char cmdbuf[256];
 #ifdef __FreeBSD__
-		snprintf(cmdbuf, sizeof(cmdbuf), "ifconfig %s destroy", ctx.ifname);
+		snprintf(cmdbuf, sizeof(cmdbuf), "ifconfig %s destroy",
+			ctx.ifname);
 #else
-		snprintf(cmdbuf, sizeof(cmdbuf), "ip link del %s", ctx.ifname);
+		snprintf(cmdbuf, sizeof(cmdbuf), "ip link del %s",
+			ctx.ifname);
 #endif
 		if (system(cmdbuf)) {
 			printf("%s: failed\n", cmdbuf);
