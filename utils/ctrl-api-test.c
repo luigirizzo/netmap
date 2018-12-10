@@ -1610,9 +1610,11 @@ main(int argc, char **argv)
 	memset(&ctx, 0, sizeof(ctx));
 
 	{
+		struct timespec t;
 		int idx;
 
-		srand(time(0));
+		clock_gettime(CLOCK_REALTIME, &t);
+		srand((unsigned int)t.tv_nsec);
 		idx = rand() % 8000 + 100;
 		snprintf(ctx.ifname, sizeof(ctx.ifname), "tap%d", idx);
 		idx = rand() % 800 + 100;
