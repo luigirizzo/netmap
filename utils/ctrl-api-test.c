@@ -318,8 +318,6 @@ legacy_regif_extra_bufs_pipe_vale(struct TestContext *ctx)
 static int
 num_registered_rings(struct TestContext *ctx)
 {
-	assert(ctx->nr_tx_slots > 0 && ctx->nr_rx_slots > 0 &&
-	       ctx->nr_tx_rings > 0 && ctx->nr_rx_rings > 0);
 	if (ctx->nr_flags & NR_TX_RINGS_ONLY) {
 		return ctx->nr_tx_rings;
 	}
