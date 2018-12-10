@@ -15,6 +15,7 @@
 #include <assert.h>
 #include <time.h>
 #include <semaphore.h>
+#include <sys/wait.h>
 
 #ifdef __linux__
 #include <sys/eventfd.h>
@@ -27,6 +28,48 @@ eventfd(int x, int y)
 	return 19;
 }
 #endif /* __linux__ */
+
+static int
+exec_command(int argc, char *argv[])
+{
+	pid_t child_pid;
+	int child_status;
+	int i;
+
+	printf("Executing command: ");
+	for (i = 0; i < argc - 1; i++) {
+		if (i) {
+			putchar(' ');
+		}
+		printf("%s", argv[i]);
+	}
+	putchar('\n');
+
+	child_pid = fork();
+	if (child_pid == 0) {
+		/* Child process. Redirect stdin, stdout
+		 * and stderr. */
+		close(0);
+		close(1);
+		close(2);
+		if (open("/dev/null", O_RDONLY) < 0 ||
+			open("/dev/null", O_RDONLY) < 0 ||
+			open("/dev/null", O_RDONLY) < 0) {
+			return -1;
+		}
+		execvp(argv[0], argv);
+		perror("execvp()");
+		exit(EXIT_FAILURE);
+	}
+
+	waitpid(child_pid, &child_status, 0);
+	if (WIFEXITED(child_status)) {
+		return WEXITSTATUS(child_status);
+	}
+
+	return -1;
+}
+
 
 #define THRET_SUCCESS	((void *)128)
 #define THRET_FAILURE	((void *)0)
@@ -1641,6 +1684,7 @@ main(int argc, char **argv)
 
 		case 'l':
 			list = 1;
+			create_tap = 0;
 			break;
 
 		default:
@@ -1670,16 +1714,25 @@ main(int argc, char **argv)
 	}
 
 	if (create_tap) {
-		char cmdbuf[256];
+		char *av[16];
+		int ac = 0;
 #ifdef __FreeBSD__
-		snprintf(cmdbuf, sizeof(cmdbuf), "ifconfig %s create up",
-			ctx.ifname);
+		av[ac++] = "ifconfig";
+		av[ac++] = ctx.ifname;
+		av[ac++] = "create";
+		av[ac++] = "up";
 #else
-		snprintf(cmdbuf, sizeof(cmdbuf),
-			"ip tuntap add mode tap name %s", ctx.ifname);
+		av[ac++] = "ip";
+		av[ac++] = "tuntap";
+		av[ac++] = "add";
+		av[ac++] = "mode";
+		av[ac++] = "tap";
+		av[ac++] = "name";
+		av[ac++] = ctx.ifname;
 #endif
-		if (system(cmdbuf)) {
-			printf("%s: failed\n", cmdbuf);
+		av[ac++] = NULL;
+		if (exec_command(ac, av)) {
+			printf("Failed to create tap interface\n");
 			return -1;
 		}
 	}
@@ -1706,16 +1759,21 @@ main(int argc, char **argv)
 	}
 out:
 	if (create_tap) {
-		char cmdbuf[256];
+		char *av[16];
+		int ac = 0;
 #ifdef __FreeBSD__
-		snprintf(cmdbuf, sizeof(cmdbuf), "ifconfig %s destroy",
-			ctx.ifname);
+		av[ac++] = "ifconfig";
+		av[ac++] = ctx.ifname;
+		av[ac++] = "destroy";
 #else
-		snprintf(cmdbuf, sizeof(cmdbuf), "ip link del %s",
-			ctx.ifname);
+		av[ac++] = "ip";
+		av[ac++] = "link";
+		av[ac++] = "del";
+		av[ac++] = ctx.ifname;
 #endif
-		if (system(cmdbuf)) {
-			printf("%s: failed\n", cmdbuf);
+		av[ac++] = NULL;
+		if (exec_command(ac, av)) {
+			printf("Failed to destroy tap interface\n");
 			return -1;
 		}
 	}
