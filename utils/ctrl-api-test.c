@@ -1201,8 +1201,7 @@ sync_kloop_eventfds(struct TestContext *ctx)
 
 	num_entries = num_registered_rings(ctx);
 	opt_size    = sizeof(*opt) + num_entries * sizeof(opt->eventfds[0]);
-	opt         = malloc(opt_size);
-	memset(opt, 0, opt_size);
+	opt = calloc(1, opt_size);
 	opt->nro_opt.nro_next    = 0;
 	opt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS;
 	opt->nro_opt.nro_status  = 0;
