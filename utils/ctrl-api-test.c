@@ -54,18 +54,6 @@ struct TestContext {
 	struct nmport_d *nmport;      /* nmport descriptor from libnetmap */
 };
 
-#if 0
-static void
-ctx_reset(struct TestContext *ctx)
-{
-	const char *tmp1 = ctx->ifname;
-	const char *tmp2 = ctx->bdgname;
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->ifname = tmp1;
-	ctx->bdgname = tmp2;
-}
-#endif
-
 typedef int (*testfunc_t)(struct TestContext *ctx);
 
 static void
