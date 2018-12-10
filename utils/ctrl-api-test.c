@@ -30,7 +30,7 @@ eventfd(int x, int y)
 #endif /* __linux__ */
 
 static int
-exec_command(int argc, char *argv[])
+exec_command(int argc, const char *const argv[])
 {
 	pid_t child_pid;
 	int child_status;
@@ -38,7 +38,11 @@ exec_command(int argc, char *argv[])
 
 	printf("Executing command: ");
 	for (i = 0; i < argc - 1; i++) {
-		if (i) {
+		if (!argv[i]) {
+			/* Invalid argument. */
+			return -1;
+		}
+		if (i > 0) {
 			putchar(' ');
 		}
 		printf("%s", argv[i]);
@@ -47,6 +51,8 @@ exec_command(int argc, char *argv[])
 
 	child_pid = fork();
 	if (child_pid == 0) {
+		char **av;
+
 		/* Child process. Redirect stdin, stdout
 		 * and stderr. */
 		close(0);
@@ -57,7 +63,19 @@ exec_command(int argc, char *argv[])
 			open("/dev/null", O_RDONLY) < 0) {
 			return -1;
 		}
-		execvp(argv[0], argv);
+
+		/* Make a copy of the arguments, passing them to execvp. */
+		av = calloc(argc, sizeof(av[0]));
+		if (!av) {
+			exit(EXIT_FAILURE);
+		}
+		for (i = 0; i < argc - 1; i++) {
+			av[i] = strdup(argv[i]);
+			if (!av[i]) {
+				exit(EXIT_FAILURE);
+			}
+		}
+		execvp(av[0], av);
 		perror("execvp()");
 		exit(EXIT_FAILURE);
 	}
@@ -1731,7 +1749,7 @@ main(int argc, char **argv)
 		av[ac++] = ctx.ifname;
 #endif
 		av[ac++] = NULL;
-		if (exec_command(ac, (char **)av)) {
+		if (exec_command(ac, av)) {
 			printf("Failed to create tap interface\n");
 			return -1;
 		}
@@ -1772,7 +1790,7 @@ out:
 		av[ac++] = ctx.ifname;
 #endif
 		av[ac++] = NULL;
-		if (exec_command(ac, (char **)av)) {
+		if (exec_command(ac, av)) {
 			printf("Failed to destroy tap interface\n");
 			return -1;
 		}
