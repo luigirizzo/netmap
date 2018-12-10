@@ -875,9 +875,11 @@ change_param(const char *pname, unsigned long newv, unsigned long *poldv)
 static int
 push_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *e)
 {
+	/* 4MiB is enough for netmap memory-mapped data structures. */
+	const size_t memsize = (1U << 22);
 	void *addr;
 
-	addr = mmap(NULL, (1U << 22), PROT_READ | PROT_WRITE,
+	addr = mmap(NULL, memsize, PROT_READ | PROT_WRITE,
 	            MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (addr == MAP_FAILED) {
 		perror("mmap");
@@ -887,7 +889,7 @@ push_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *e)
 	memset(e, 0, sizeof(*e));
 	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
 	e->nro_usrptr          = (uintptr_t)addr;
-	e->nro_info.nr_memsize = (1U << 22);
+	e->nro_info.nr_memsize = memsize;
 
 	push_option(&e->nro_opt, ctx);
 
