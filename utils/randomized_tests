@@ -119,6 +119,7 @@ source test_lib
 
 netmap_load
 
+RET=0
 i=0
 for t in tests/*_test ; do
 	i=$((i + 1))
@@ -136,8 +137,8 @@ for t in tests/*_test ; do
 		echo -e "${GREEN}>>> Test #${i} PASSED${NOC}"
 	else
 		echo -e "${RED}>>> Test #${i} FAILED${NOC}"
-		popd
-		exit 1
+		RET="1"
+		break
 	fi
 done
 
@@ -145,4 +146,6 @@ done
 sleep 0.5
 
 netmap_unload
+
 popd
+exit ${RET}
