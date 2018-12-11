@@ -2,7 +2,6 @@
 ################################################################################
 # Test objective: check if the switch learning algorithm is working.
 # Operations:
-# 0) restart fd_server to have a clean starting state
 # 1) connect 3 ephemeral VALE ports (v0, v1, v2) to the same VALE switch.
 # 2) send from v2 specifying a source MAC address and check that v0 and v1
 #    receive the frame.

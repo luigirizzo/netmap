@@ -2,7 +2,6 @@
 ################################################################################
 # Test objective: check if we can send and receive packets through netmap pipes.
 # Operations:
-# 0) restart fd_server to have a clean starting state
 # 1) create a pair of netmap pipes (pipeA{1, pipeA}1).
 # 2) send from pipeA{1 and check if pipeA}1 receives.
 # 3) send from pipeA}1 and check if pipeA{1 receives.

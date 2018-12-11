@@ -3,7 +3,6 @@
 # Test objective: check if we can send and receive packets through persistent
 #                 VALE ports.
 # Operations:
-# 0) restart fd_server to have a clean starting state
 # 1) create 3 persistent VALE ports (v0, v1, v2) and attach them to vale0.
 # 2) send from vale0:v2 and check that both, vale0:v0 and vale0:v1, receive.
 # 3) send from vale0:v0 and check that both, vale0:v1 and vale0:v2, receive.

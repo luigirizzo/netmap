@@ -4,7 +4,6 @@
 #                 sending pipe sent, the non-received slot are left inside the
 #                 sending pipe ring.
 # Operations:
-# 0) restart fd_server to have a clean starting state
 # 1) create a pair of netmap pipes (pipe{1, pipe}1).
 # 2) send X packets from pipe{1 and receive X-Y packets from pipe}1.
 # 2) check that pipe{1 still has X-Y slots pending for transmission.

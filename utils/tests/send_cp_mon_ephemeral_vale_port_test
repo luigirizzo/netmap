@@ -3,7 +3,6 @@
 # Test objective: check if a send copy monitor receives frames when its
 #                 monitored ephemeral VALE port is sending.
 # Operations:
-# 0) restart fd_server to have a clean starting state
 # 1) create a persistent VALE port (v0).
 # 2) open a send copy monitor v0/t for v0.
 # 3) send from v0, check that both v0/t and v1 receive the frame.
