@@ -42,7 +42,8 @@ line in your kernel configuration file:
 The
 .Nm
 device driver provides direct access to host netmap ports,
-from within a Virtual Machine (VM). Applications running inside
+from within a Virtual Machine (VM).
+Applications running inside
 the VM can access the TX/RX rings and buffers of a netmap port
 that the hypervisor has passed-through to the VM.
 Hypervisor support for
@@ -57,7 +58,8 @@ ports, netmap pipes, etc.
 The main use-case for netmap passthrough is Network Function
 Virtualization (NFV), where middlebox applications running within
 VMs may want to process very high packet rates (e.g., 1-10 millions
-packets per second or more). Note, however, that those applications
+packets per second or more).
+Note, however, that those applications
 must use the device in netmap mode in order to achieve such rates.
 In addition to the general advantages of netmap, the improved
 performance of
@@ -78,14 +80,15 @@ The overhead of format conversions (and packet copies, in same cases) is not
 incured by
 .Nm
 in netmap mode, because mbufs are not used at all, and the packet format
-is the one defined by netmap (e.g.
+is the one defined by netmap (e.g.,
 .Ar struct netmap_slot )
-along the whole data-path. No format conversions or copies
-happen.
-
+along the whole data-path.
+No format conversions or copies happen.
+.Pp
 It is also possible to use a
 .Nm
-device like a regular network interface, which interacts with the FreeBSD
+device like a regular network interface, which interacts with the
+.Fx
 network stack (i.e., not in netmap mode).
 However, in that case it is necessary to pay the cost of data copies
 between mbufs and netmap buffers, which generally results in lower
@@ -124,10 +127,10 @@ The default value is 1.
 .Sh SEE ALSO
 .Xr netintro 4 ,
 .Xr netmap 4 ,
-.Xr ifconfig 8 ,
 .Xr vale 4 ,
 .Xr virtio 4 ,
-.Xr vmx 4
+.Xr vmx 4 ,
+.Xr ifconfig 8
 .Sh HISTORY
 The
 .Nm
