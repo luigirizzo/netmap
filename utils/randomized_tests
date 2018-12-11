@@ -52,6 +52,13 @@ do
 	shift
 done
 
+# Support for colored output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+ORANGE='\033[0;33m'
+NOC='\033[0m' # No Color
+
 if [ -n "$LIST" ]; then
 	echo "Available tests:"
 	i="1"
@@ -113,11 +120,16 @@ for t in tests/*_test ; do
 	[ -n "$TESTID" ] && [ "$i" != "$TESTID" ] && continue
 
 	# Run this test
-	echo "Running test #${i}: ${t}"
+	echo -e "${ORANGE}>>> Running test #${i}: ${CYAN}\"${t}\"${NOC}"
 	restart_fd_server
 	$t -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
+	res="$?"
 	close_fd_server
-	echo "Test #${i} ran successfully"
+	if [ "$res" == 0 ]; then
+		echo -e "${GREEN}>>> Test #${i} PASSED${NOC}"
+	else
+		echo -e "${RED}>>> Test #${i} FAILED${NOC}"
+	fi
 	if [ $? != 0 ] ; then
 		echo "Rerunning the test that just failed with -v"
 		# Select verbosity of output after an error occurred:
