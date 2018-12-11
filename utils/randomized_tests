@@ -11,10 +11,12 @@ randomized_tests:
 	-h		Show this help and exit
 	-j ID		Run only the test specified by ID
 	-l		List available tests and exit
+	-v		Increase verbosity of the tests
 EOF
 }
 
 # Option parsing
+OUTPUT="/dev/null"
 while [[ $# > 0 ]]
 do
 	key="$1"
@@ -35,7 +37,7 @@ do
 			shift
 		else
 			echo "-j requires an ID argument"
-			exit 255
+			exit 1
 		fi
 		;;
 
@@ -43,10 +45,23 @@ do
 		LIST="y"
 		;;
 
+	"-v")
+		# Select verbosity:
+		#    -v    -> prints error messages
+		#    -vv   -> -v, send and receive actions
+		#    -vvv  -> -vv and packet building
+		#    -vvvv -> -vvv and arguments parsing
+		if [ -z "$VERB" ]; then
+			VERB="-"
+		fi
+		VERB="${VERB}v"
+		OUTPUT="/dev/stdout"
+		;;
+
 	*)
 		echo "Unknown option '$key'"
 		echo "Try $0 -h"
-		exit 255
+		exit 1
 		;;
 	esac
 	shift
@@ -122,26 +137,15 @@ for t in tests/*_test ; do
 	# Run this test
 	echo -e "${ORANGE}>>> Running test #${i}: ${CYAN}\"${t}\"${NOC}"
 	restart_fd_server
-	$t -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
+	$t $VERB -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>${OUTPUT}
 	res="$?"
 	close_fd_server
 	if [ "$res" == 0 ]; then
 		echo -e "${GREEN}>>> Test #${i} PASSED${NOC}"
 	else
 		echo -e "${RED}>>> Test #${i} FAILED${NOC}"
-	fi
-	if [ $? != 0 ] ; then
-		echo "Rerunning the test that just failed with -v"
-		# Select verbosity of output after an error occurred:
-		#    -v    -> prints error messages
-		#    -vv   -> -v, send and receive actions
-		#    -vvv  -> -vv and packet building
-		#    -vvvv -> -vvv and arguments parsing
-		restart_fd_server
-		$t -v -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-		close_fd_server
-		popd
-		exit $?
+		# popd
+		# exit 1
 	fi
 done
 
