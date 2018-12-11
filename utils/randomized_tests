@@ -105,10 +105,19 @@ source test_lib
 
 netmap_load
 
+i=0
 for t in tests/*_test ; do
+	i=$((i + 1))
+
+	# Possibly filter tests by TESTID
+	[ -n "$TESTID" ] && [ "$i" != "$TESTID" ] && continue
+
+	# Run this test
+	echo "Running test #${i}: ${t}"
 	restart_fd_server
 	$t -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
 	close_fd_server
+	echo "Test #${i} ran successfully"
 	if [ $? != 0 ] ; then
 		echo "Rerunning the test that just failed with -v"
 		# Select verbosity of output after an error occurred:
