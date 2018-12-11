@@ -17,35 +17,27 @@ EOF
 
 # Option parsing
 OUTPUT="/dev/null"
-while [[ $# > 0 ]]
-do
-	key="$1"
-	case $key in
-	"-h")
+while getopts "hlvj:" opt; do
+	case $opt in
+	"h")
 		usage
 		exit 0
 		;;
 
-	"--help")
-		usage
-		exit 0
-		;;
-
-	"-j")
+	"j")
 		if [ -n "$2" ]; then
-			TESTID=$2
-			shift
+			TESTID=${OPTARG}
 		else
 			echo "-j requires an ID argument"
 			exit 1
 		fi
 		;;
 
-	"-l")
+	"l")
 		LIST="y"
 		;;
 
-	"-v")
+	"v")
 		# Select verbosity:
 		#    -v    -> prints error messages
 		#    -vv   -> -v, send and receive actions
@@ -58,13 +50,13 @@ do
 		OUTPUT="/dev/stdout"
 		;;
 
-	*)
-		echo "Unknown option '$key'"
-		echo "Try $0 -h"
+	\?)
+		echo "Unknown option '$opt'"
+		echo ""
+		usage
 		exit 1
 		;;
 	esac
-	shift
 done
 
 # Support for colored output
