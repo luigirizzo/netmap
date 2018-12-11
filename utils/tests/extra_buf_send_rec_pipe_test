@@ -31,5 +31,3 @@ wait $p1
 e1=$?
 check_success $e1 "receive-${num} netmap:pipeA{1"
 check_success $e2 "send-${num} netmap:pipeA}1"
-
-test_successful "$0"

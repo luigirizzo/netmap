@@ -18,5 +18,3 @@ create_vale_persistent_port "$port" 0
 attach_to_vale_bridge "$bridgeA" "$port" 0
 attach_to_vale_bridge "$bridgeA" "$port" 1
 attach_to_vale_bridge "$bridgeB" "$port" 0
-
-test_successful "$0"

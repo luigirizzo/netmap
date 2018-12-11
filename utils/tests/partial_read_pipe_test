@@ -65,5 +65,3 @@ check_exit $pending_transmissions $pending_packets "pending_transmissions=pendin
 num_send="$(($avail_packets + 1))"
 functional $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}" $seq
 check_failure $? "send-${num_send} netmap:${pipe}}1"
-
-test_successful "$0"

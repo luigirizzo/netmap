@@ -48,5 +48,3 @@ wait $p3
 e3=$?
 check_success $e3 "receive-${num} vale0:v0"
 check_success $e4 "receive-${num} vale0:v0/z"
-
-test_successful "$0"

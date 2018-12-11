@@ -45,5 +45,3 @@ check_success $e2 "send-${num} vale0:v0"
 functional $verbosity -i vale0:v1 -r "${len}:${fill}:${num}" $seq
 e3=$?
 check_success $e3 "receive-${num} vale0:v1"
-
-test_successful "$0"
