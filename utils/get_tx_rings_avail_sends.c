@@ -1,7 +1,9 @@
 /* Given an interface name and a packet length (optional), prints to stdout
- * the number of packets that can be send through the interface rings. If the
- * packet length is missing, the number of available slot is printed instead.
- * Prints "-1" if something went wrong.
+ * the maximum number of packets (each within that length) that fits in the
+ * currently available TX slots. If the packet length is not specified, it
+ * is assumed that any packet to be transmitted fits within a single netmap
+ * slot, hence printing the number of available TX slots.
+ * On error, "-1" is printed.
  * Arguments:
  *    $1 -> interface name
  *    $2 -> packet length
@@ -16,40 +18,40 @@
 #include <net/netmap_user.h>
 
 uint64_t
-slot_per_send(struct netmap_ring *ring, unsigned pkt_len)
+slots_per_packet(struct netmap_ring *ring, unsigned pkt_len)
 {
 	return (uint64_t)(ceil((double)pkt_len / (double)ring->nr_buf_size));
 }
 
 uint64_t
-ring_avail_sends(struct netmap_ring *ring, unsigned pkt_len)
+ring_avail_tx_packets(struct netmap_ring *ring, unsigned pkt_len)
 {
 	if (pkt_len == 0) {
 		return nm_ring_space(ring);
 	}
 
-	return nm_ring_space(ring) / slot_per_send(ring, pkt_len);
+	return nm_ring_space(ring) / slots_per_packet(ring, pkt_len);
 }
 
 uint64_t
-adapter_avail_sends(struct nm_desc *nmd, unsigned pkt_len)
+nmport_avail_tx_packets(struct nm_desc *nmd, unsigned pkt_len)
 {
-	uint64_t sends_available = 0;
+	uint64_t total = 0;
 	unsigned int i;
 
 	for (i = nmd->first_tx_ring; i <= nmd->last_tx_ring; i++) {
 		struct netmap_ring *ring = NETMAP_TXRING(nmd->nifp, i);
 
-		sends_available += ring_avail_sends(ring, pkt_len);
+		total += ring_avail_tx_packets(ring, pkt_len);
 	}
 
-	return sends_available;
+	return total;
 }
 
 int
 main(int argc, char **argv)
 {
-	uint64_t avail_sends;
+	uint64_t avail_tx_packets;
 	struct nm_desc *nmd;
 	const char *if_name;
 	uint64_t pkt_len;
@@ -75,7 +77,8 @@ main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	avail_sends = adapter_avail_sends(nmd, pkt_len);
-	printf("%" PRId64, avail_sends);
+	avail_tx_packets = nmport_avail_tx_packets(nmd, pkt_len);
+	printf("%" PRId64, avail_tx_packets);
+
 	return 0;
 }
