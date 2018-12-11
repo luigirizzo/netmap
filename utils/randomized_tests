@@ -1,8 +1,66 @@
 #!/usr/bin/env bash
+
 ################################################################################
-# Runs all the tests using randomized values for number of packets, fill
-# character and packets length.
+# Run all the tests using randomized values for number of packets, fill
+# character and packet length.
 ################################################################################
+
+usage() {
+    cat <<EOF
+randomized_tests:
+	-h		Show this help and exit
+	-j ID		Run only the test specified by ID
+	-l		List available tests and exit
+EOF
+}
+
+# Option parsing
+while [[ $# > 0 ]]
+do
+	key="$1"
+	case $key in
+	"-h")
+		usage
+		exit 0
+		;;
+
+	"--help")
+		usage
+		exit 0
+		;;
+
+	"-j")
+		if [ -n "$2" ]; then
+			TESTID=$2
+			shift
+		else
+			echo "-j requires an ID argument"
+			exit 255
+		fi
+		;;
+
+	"-l")
+		LIST="y"
+		;;
+
+	*)
+		echo "Unknown option '$key'"
+		echo "Try $0 -h"
+		exit 255
+		;;
+	esac
+	shift
+done
+
+if [ -n "$LIST" ]; then
+	echo "Available tests:"
+	i="1"
+	for t in tests/*_test ; do
+		echo "    #${i}:  ${t}"
+		i=$((i + 1))
+	done
+	exit 0
+fi
 
 if [ "$EUID" -ne "0" ]; then
 	echo "This script must be run as root"
@@ -47,9 +105,9 @@ source test_lib
 
 netmap_load
 
-for test in tests/*_test ; do
+for t in tests/*_test ; do
 	restart_fd_server
-	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
+	$t -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
 	close_fd_server
 	if [ $? != 0 ] ; then
 		echo "Rerunning the test that just failed with -v"
@@ -59,7 +117,7 @@ for test in tests/*_test ; do
 		#    -vvv  -> -vv and packet building
 		#    -vvvv -> -vvv and arguments parsing
 		restart_fd_server
-		$test -v -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
+		$t -v -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
 		close_fd_server
 		popd
 		exit $?
