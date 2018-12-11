@@ -39,7 +39,7 @@ pushd $(pwd)
 cd $(dirname $0)
 
 # Add the current directory (and build-utils) to the PATH. In this way we can
-# easily invoke functional, get_tx_rings_avail_sends and the other executables
+# easily invoke functional, get_avail_tx_packets and the other executables
 # from the test scripts.
 PATH="$(pwd)/../build-utils:$(pwd):${PATH}"
 

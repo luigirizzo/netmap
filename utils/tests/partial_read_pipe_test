@@ -37,27 +37,27 @@ e1=$?
 check_success $e1 "receive-7 netmap:${pipe}{1"
 check_success $e2 "send-10 netmap:${pipe}}1"
 
-# At the moment get_tx_rings_max_sends and get_tx_rings_avail_sends do not
+# At the moment get_max_tx_packets and get_avail_tx_packets do not
 # get the interface fd from fd_server, they request it directly through an
 # nm_open(), but they still read the correct values stored inside each struct
 # netmap ring. This only happens if the multiple processes / threads synchronize
 # with each other when sharing the same netmap interface. This happens
-# implicitly for us because get_tx_rings_max_sends and get_tx_rings_avail_sends
+# implicitly for us because get_max_tx_packets and get_avail_tx_packets
 # are called after the first send-receive action, and the second one doesn't
 # happen until they terminate.
 exit_status=0
-ring_max_sends=$(./get_tx_rings_max_sends "netmap:${pipe}}1" "$len")
+ring_max_sends=$(./get_max_tx_packets "netmap:${pipe}}1" "$len")
 if [ $ring_max_sends = -1 ] ; then
 	exit_status=1
 fi
-check_success $exit_status "get_tx_rings_max_sends netmap:${pipe}}1 $len"
+check_success $exit_status "get_max_tx_packets netmap:${pipe}}1 $len"
 
 exit_status=0
-ring_avail_sends=$(./get_tx_rings_avail_sends "netmap:${pipe}}1" "$len")
+ring_avail_sends=$(./get_avail_tx_packets "netmap:${pipe}}1" "$len")
 if [ $ring_avail_sends = -1 ] ; then
 	exit_status=1
 fi
-check_success $exit_status "get_tx_rings_avail_sends netmap:${pipe}}1 $len"
+check_success $exit_status "get_avail_tx_packets netmap:${pipe}}1 $len"
 
 exit_status=0
 ring_used_sends="$(($ring_max_sends - $ring_avail_sends))"
