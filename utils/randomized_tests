@@ -144,8 +144,8 @@ for t in tests/*_test ; do
 		echo -e "${GREEN}>>> Test #${i} PASSED${NOC}"
 	else
 		echo -e "${RED}>>> Test #${i} FAILED${NOC}"
-		# popd
-		# exit 1
+		popd
+		exit 1
 	fi
 done
 
