@@ -71,7 +71,7 @@ if [ -n "$LIST" ]; then
 	cd $(dirname $0)
 	echo "Available tests:"
 	i="1"
-	for t in tests/*_test ; do
+	for t in tests/* ; do
 		printf "    #%03d: %s\n" $i $t
 		i=$((i + 1))
 	done
@@ -124,7 +124,7 @@ netmap_load
 
 RET=0
 i=0
-for t in tests/*_test ; do
+for t in tests/* ; do
 	i=$((i + 1))
 
 	# Possibly filter tests by TESTID
