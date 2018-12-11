@@ -41,13 +41,13 @@ line in your kernel configuration file:
 .Sh DESCRIPTION
 The
 .Nm
-device driver provides direct access to an host netmap port,
-from within a Virtual Machine (VM). An application running inside
-the VM can access the transmit and receive rings of a netmap port
+device driver provides direct access to host netmap ports,
+from within a Virtual Machine (VM). Applications running inside
+the VM can access the TX/RX rings and buffers of a netmap port
 that the hypervisor has passed-through to the VM.
 Hypervisor support for
 .Nm
-is currently only available for QEMU/KVM.
+is currently available for QEMU/KVM.
 Any
 .Xr netmap 4
 port can be passed-through, including physical NICs,
@@ -59,7 +59,8 @@ Virtualization (NFV), where middlebox applications running within
 VMs may want to process very high packet rates (e.g., 1-10 millions
 packets per second or more). Note, however, that those applications
 must use the device in netmap mode in order to achieve such rates.
-The improved performance of
+In addition to the general advantages of netmap, the improved
+performance of
 .Nm
 when compared to hypervisor device emulation or paravirtualization (e.g.,
 .Xr vtnet 4 ,
@@ -67,26 +68,28 @@ when compared to hypervisor device emulation or paravirtualization (e.g.,
 comes from the hypervisor being completely bypassed in the data-path.
 For example, when using
 .Xr vtnet 4
-the VM has to convert each mbuf to a VirtIO-specific packet representation
+the VM has to convert each
+.Xr mbuf 9
+to a VirtIO-specific packet representation
 and publish that to a VirtIO queue; on the hypervisor side, the
 packet is extracted from the VirtIO queue and converted to an
 hypervisor-specific packet representation.
 The overhead of format conversions (and packet copies, in same cases) is not
 incured by
 .Nm
-in netmap mode, because mbufs are not used, and the packet format is
-the one defined by netmap (e.g.
+in netmap mode, because mbufs are not used at all, and the packet format
+is the one defined by netmap (e.g.
 .Ar struct netmap_slot )
 along the whole data-path. No format conversions or copies
-happen, similarly to what happens with PCI passthrough.
+happen.
 
 It is also possible to use a
 .Nm
-device as a regular network interface, interacting with the FreeBSD
+device like a regular network interface, which interacts with the FreeBSD
 network stack (i.e., not in netmap mode).
-However, in that case it is necessary to pay the cost of a copy between
-the mbuf and the netmap buffer, which generally results in lower TCP/UDP
-performance than
+However, in that case it is necessary to pay the cost of data copies
+between mbufs and netmap buffers, which generally results in lower
+TCP/UDP performance than
 .Xr vtnet 4
 or other paravirtualized network devices.
 If the passed-through netmap port supports the VirtIO network header,
@@ -94,10 +97,11 @@ If the passed-through netmap port supports the VirtIO network header,
 is able to use it, and support TCP/UDP checksum offload (for both transmit
 and receive), TCP segmentation offload (TSO) and TCP large receive offload
 (LRO).
-Currently, only
+Currently,
 .Xr vale 4
 ports support the header.
-Note that for NFV use-cases the VirtIO network header should not be used.
+Note that the VirtIO network header is generally not used in NFV
+use-cases, because middleboxes are not endpoint of TCP/UDP connections.
 .Sh TUNABLES
 Tunables can be set at the
 .Xr loader 8
@@ -105,7 +109,7 @@ prompt before booting the kernel or stored in
 .Xr loader.conf 5 .
 .Bl -tag -width "xxxxxx"
 .It Va dev.netmap.ptnet_vnet_hdr
-This tunable enables (1) or disables (0) the virtio-net header.
+This tunable enables (1) or disables (0) the VirtIO network header.
 If enabled,
 .Nm
 uses the same header used by
@@ -113,7 +117,7 @@ uses the same header used by
 to exchange offload metadata with the hypervisor.
 If disabled, no header is prepended to transmitted and received
 packets.
-The metadata is necessary to enable TCP/UDP checksum offloads,
+The metadata is necessary to support TCP/UDP checksum offloads,
 TSO, and LRO.
 The default value is 1.
 .El
