@@ -74,7 +74,7 @@ the VM has to convert each
 .Xr mbuf 9
 to a VirtIO-specific packet representation
 and publish that to a VirtIO queue; on the hypervisor side, the
-packet is extracted from the VirtIO queue and converted to an
+packet is extracted from the VirtIO queue and converted to a
 hypervisor-specific packet representation.
 The overhead of format conversions (and packet copies, in same cases) is not
 incured by
@@ -104,7 +104,7 @@ Currently,
 .Xr vale 4
 ports support the header.
 Note that the VirtIO network header is generally not used in NFV
-use-cases, because middleboxes are not endpoint of TCP/UDP connections.
+use-cases, because middleboxes are not endpoints of TCP/UDP connections.
 .Sh TUNABLES
 Tunables can be set at the
 .Xr loader 8
