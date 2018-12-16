@@ -1288,10 +1288,8 @@ sync_kloop_eventfds(struct TestContext *ctx)
 	for (i = 0; i < num_entries; i++) {
 		int efd = eventfd(0, 0);
 
-		assert(efd >= 0);
 		opt->eventfds[i].ioeventfd = efd;
 		efd                        = eventfd(0, 0);
-		assert(efd >= 0);
 		opt->eventfds[i].irqfd = efd;
 	}
 
