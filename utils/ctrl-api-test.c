@@ -1771,7 +1771,7 @@ main(int argc, char **argv)
 	}
 
 	if (create_tap) {
-		const char *av[16];
+		const char *av[8];
 		int ac = 0;
 #ifdef __FreeBSD__
 		av[ac++] = "ifconfig";
@@ -1788,6 +1788,7 @@ main(int argc, char **argv)
 		av[ac++] = ctx.ifname;
 #endif
 		av[ac++] = NULL;
+		assert(ac <= (int)(sizeof(av) / sizeof(av[0])));
 		if (exec_command(ac, av)) {
 			printf("Failed to create tap interface\n");
 			return -1;
@@ -1816,7 +1817,7 @@ main(int argc, char **argv)
 	}
 out:
 	if (create_tap) {
-		const char *av[16];
+		const char *av[8];
 		int ac = 0;
 #ifdef __FreeBSD__
 		av[ac++] = "ifconfig";
@@ -1829,6 +1830,7 @@ out:
 		av[ac++] = ctx.ifname;
 #endif
 		av[ac++] = NULL;
+		assert(ac <= (int)(sizeof(av) / sizeof(av[0])));
 		if (exec_command(ac, av)) {
 			printf("Failed to destroy tap interface\n");
 			return -1;
