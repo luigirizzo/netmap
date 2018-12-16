@@ -1,31 +1,58 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
+ * Copyright (C) 2018 Vincenzo Maffione
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *   1. Redistributions of source code must retain the above copyright
+ *      notice, this list of conditions and the following disclaimer.
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *      documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
+
+#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <net/if.h>
 #include <net/netmap.h>
+#include <pthread.h>
+#include <semaphore.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <assert.h>
 #include <time.h>
-#include <semaphore.h>
-#include <sys/wait.h>
+#include <unistd.h>
 
 #ifdef __linux__
 #include <sys/eventfd.h>
 #else
 static int
-eventfd(int x, int y)
+eventfd(int x __unused, int y __unused)
 {
-	(void)x;
-	(void)y;
-	return 19;
+	errno = ENODEV;
+	return -1;
 }
 #endif /* __linux__ */
 
@@ -33,6 +60,7 @@ static int
 exec_command(int argc, const char *const argv[])
 {
 	pid_t child_pid;
+	pid_t wret;
 	int child_status;
 	int i;
 
@@ -80,7 +108,11 @@ exec_command(int argc, const char *const argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	waitpid(child_pid, &child_status, 0);
+	wret = waitpid(child_pid, &child_status, 0);
+	if (wret < 0) {
+		fprintf(stderr, "waitpid() failed: %s\n", strerror(errno));
+		return wret;
+	}
 	if (WIFEXITED(child_status)) {
 		return WEXITSTATUS(child_status);
 	}
@@ -93,7 +125,6 @@ exec_command(int argc, const char *const argv[])
 #define THRET_FAILURE	((void *)0)
 
 struct TestContext {
-	int fd; /* netmap file descriptor */
 	char ifname[128];
 	char bdgname[64];
 	uint32_t nr_tx_slots;   /* slots in tx rings */
@@ -103,18 +134,16 @@ struct TestContext {
 	uint16_t nr_mem_id;     /* id of the memory allocator */
 	uint16_t nr_ringid;     /* ring(s) we care about */
 	uint32_t nr_mode;       /* specify NR_REG_* modes */
-	uint64_t nr_flags;      /* additional flags (see below) */
 	uint32_t nr_extra_bufs; /* number of requested extra buffers */
-
+	uint64_t nr_flags;      /* additional flags (see below) */
 	uint32_t nr_hdr_len; /* for PORT_HDR_SET and PORT_HDR_GET */
-
 	uint32_t nr_first_cpu_id;     /* vale polling */
 	uint32_t nr_num_polling_cpus; /* vale polling */
+	int fd; /* netmap file descriptor */
+
 	void *csb;                    /* CSB entries (atok and ktoa) */
 	struct nmreq_option *nr_opt;  /* list of options */
-
 	sem_t *sem;	/* for thread synchronization */
-
 	struct nmport_d *nmport;      /* nmport descriptor from libnetmap */
 };
 
@@ -145,7 +174,7 @@ port_info_get(struct TestContext *ctx)
 	memset(&req, 0, sizeof(req));
 	req.nr_mem_id = ctx->nr_mem_id;
 	ret           = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_INFO_GET)");
 		return ret;
 	}
@@ -162,7 +191,7 @@ port_info_get(struct TestContext *ctx)
 		return -1;
 	}
 
-	/* Write back results to the context structure.*/
+	/* Write back results to the context structure. */
 	ctx->nr_tx_slots = req.nr_tx_slots;
 	ctx->nr_rx_slots = req.nr_rx_slots;
 	ctx->nr_tx_rings = req.nr_tx_rings;
@@ -200,7 +229,7 @@ port_register(struct TestContext *ctx)
 	req.nr_rx_rings   = ctx->nr_rx_rings;
 	req.nr_extra_bufs = ctx->nr_extra_bufs;
 	ret               = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, REGISTER)");
 		return ret;
 	}
@@ -239,7 +268,7 @@ port_register(struct TestContext *ctx)
 	ctx->nr_mem_id     = req.nr_mem_id;
 	ctx->nr_extra_bufs = req.nr_extra_bufs;
 
-	return -0;
+	return 0;
 }
 
 static int
@@ -265,7 +294,7 @@ niocregif(struct TestContext *ctx, int netmap_api)
 	req.nr_arg3 = ctx->nr_extra_bufs;
 
 	ret = ioctl(ctx->fd, NIOCREGIF, &req);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCREGIF)");
 		return ret;
 	}
@@ -357,7 +386,7 @@ static int
 legacy_regif_extra_bufs(struct TestContext *ctx)
 {
 	ctx->nr_mode = NR_REG_ALL_NIC;
-	ctx->nr_extra_bufs = 20;
+	ctx->nr_extra_bufs = 20;	/* arbitrary number of extra bufs */
 	return niocregif(ctx, NETMAP_API_NIOCREGIF);
 }
 
@@ -366,7 +395,7 @@ legacy_regif_extra_bufs_pipe(struct TestContext *ctx)
 {
 	strncat(ctx->ifname, "{pipeexbuf", sizeof(ctx->ifname));
 	ctx->nr_mode = NR_REG_ALL_NIC;
-	ctx->nr_extra_bufs = 20;
+	ctx->nr_extra_bufs = 58;	/* arbitrary number of extra bufs */
 
 	return niocregif(ctx, NETMAP_API_NIOCREGIF);
 }
@@ -443,7 +472,7 @@ vale_attach(struct TestContext *ctx)
 {
 	struct nmreq_vale_attach req;
 	struct nmreq_header hdr;
-	char vpname[256];
+	char vpname[sizeof(ctx->bdgname) + 1 + sizeof(ctx->ifname)];
 	int ret;
 
 	snprintf(vpname, sizeof(vpname), "%s:%s", ctx->bdgname, ctx->ifname);
@@ -459,7 +488,7 @@ vale_attach(struct TestContext *ctx)
 	}
 	req.reg.nr_mode = ctx->nr_mode;
 	ret             = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_ATTACH)");
 		return ret;
 	}
@@ -488,7 +517,7 @@ vale_detach(struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_VALE_DETACH;
 	hdr.nr_body    = (uintptr_t)&req;
 	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_DETACH)");
 		return ret;
 	}
@@ -502,7 +531,7 @@ vale_attach_detach(struct TestContext *ctx)
 {
 	int ret;
 
-	if ((ret = vale_attach(ctx))) {
+	if ((ret = vale_attach(ctx)) != 0) {
 		return ret;
 	}
 
@@ -533,7 +562,7 @@ port_hdr_set_and_get(struct TestContext *ctx)
 	memset(&req, 0, sizeof(req));
 	req.nr_hdr_len = ctx->nr_hdr_len;
 	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_HDR_SET)");
 		return ret;
 	}
@@ -546,7 +575,7 @@ port_hdr_set_and_get(struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
 	req.nr_hdr_len = 0;
 	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_HDR_SET)");
 		return ret;
 	}
@@ -554,6 +583,14 @@ port_hdr_set_and_get(struct TestContext *ctx)
 
 	return (req.nr_hdr_len == ctx->nr_hdr_len) ? 0 : -1;
 }
+
+/*
+ * Possible lengths for the VirtIO network header, as specified by
+ * the standard:
+ *    http://docs.oasis-open.org/virtio/virtio/v1.0/cs04/virtio-v1.0-cs04.html
+ */
+#define VIRTIO_NET_HDR_LEN				10
+#define VIRTIO_NET_HDR_LEN_WITH_MERGEABLE_RXBUFS	12
 
 static int
 vale_ephemeral_port_hdr_manipulation(struct TestContext *ctx)
@@ -566,7 +603,7 @@ vale_ephemeral_port_hdr_manipulation(struct TestContext *ctx)
 		return ret;
 	}
 	/* Try to set and get all the acceptable values. */
-	ctx->nr_hdr_len = 12;
+	ctx->nr_hdr_len = VIRTIO_NET_HDR_LEN_WITH_MERGEABLE_RXBUFS;
 	if ((ret = port_hdr_set_and_get(ctx))) {
 		return ret;
 	}
@@ -574,7 +611,7 @@ vale_ephemeral_port_hdr_manipulation(struct TestContext *ctx)
 	if ((ret = port_hdr_set_and_get(ctx))) {
 		return ret;
 	}
-	ctx->nr_hdr_len = 10;
+	ctx->nr_hdr_len = VIRTIO_NET_HDR_LEN;
 	if ((ret = port_hdr_set_and_get(ctx))) {
 		return ret;
 	}
@@ -603,7 +640,7 @@ vale_persistent_port(struct TestContext *ctx)
 	req.nr_tx_rings = ctx->nr_tx_rings;
 	req.nr_rx_rings = ctx->nr_rx_rings;
 	ret             = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_NEWIF)");
 		return ret;
 	}
@@ -615,7 +652,7 @@ vale_persistent_port(struct TestContext *ctx)
 	hdr.nr_reqtype = NETMAP_REQ_VALE_DELIF;
 	hdr.nr_body    = (uintptr_t)NULL;
 	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_NEWIF)");
 		if (result == 0) {
 			result = ret;
@@ -641,7 +678,7 @@ pools_info_get(struct TestContext *ctx)
 	memset(&req, 0, sizeof(req));
 	req.nr_mem_id = ctx->nr_mem_id;
 	ret           = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, POOLS_INFO_GET)");
 		return ret;
 	}
@@ -675,13 +712,13 @@ pools_info_get_and_register(struct TestContext *ctx)
 	/* Check that we can get pools info before we register
 	 * a netmap interface. */
 	ret = pools_info_get(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
 	ctx->nr_mode = NR_REG_ONE_NIC;
 	ret          = port_register(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	ctx->nr_mem_id = 1;
@@ -759,7 +796,7 @@ vale_polling_enable(struct TestContext *ctx)
 	req.nr_first_cpu_id     = ctx->nr_first_cpu_id;
 	req.nr_num_polling_cpus = ctx->nr_num_polling_cpus;
 	ret                     = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_POLLING_ENABLE)");
 		return ret;
 	}
@@ -788,7 +825,7 @@ vale_polling_disable(struct TestContext *ctx)
 	hdr.nr_body    = (uintptr_t)&req;
 	memset(&req, 0, sizeof(req));
 	ret = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, VALE_POLLING_DISABLE)");
 		return ret;
 	}
@@ -801,7 +838,7 @@ vale_polling_enable_disable(struct TestContext *ctx)
 {
 	int ret = 0;
 
-	if ((ret = vale_attach(ctx))) {
+	if ((ret = vale_attach(ctx)) != 0) {
 		return ret;
 	}
 
@@ -1082,7 +1119,7 @@ push_csb_option(struct TestContext *ctx, struct nmreq_opt_csb *opt)
 
 	/* Get port info in order to use num_registered_rings(). */
 	ret = port_info_get(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	num_entries = num_registered_rings(ctx);
@@ -1094,7 +1131,7 @@ push_csb_option(struct TestContext *ctx, struct nmreq_opt_csb *opt)
 		free(ctx->csb);
 	}
 	ret = posix_memalign(&ctx->csb, sizeof(struct nm_csb_atok), csb_size);
-	if (ret) {
+	if (ret != 0) {
 		printf("Failed to allocate CSB memory\n");
 		exit(EXIT_FAILURE);
 	}
@@ -1118,7 +1155,7 @@ csb_mode(struct TestContext *ctx)
 	int ret;
 
 	ret = push_csb_option(ctx, &opt);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
@@ -1158,7 +1195,7 @@ sync_kloop_stop(struct TestContext *ctx)
 	nmreq_hdr_init(&hdr, ctx->ifname);
 	hdr.nr_reqtype = NETMAP_REQ_SYNC_KLOOP_STOP;
 	ret            = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_STOP)");
 	}
 
@@ -1182,7 +1219,7 @@ sync_kloop_worker(void *opaque)
 	memset(&req, 0, sizeof(req));
 	req.sleep_us = 500;
 	ret          = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, SYNC_KLOOP_START)");
 	}
 
@@ -1201,18 +1238,18 @@ sync_kloop_start_stop(struct TestContext *ctx)
 	int ret;
 
 	ret = pthread_create(&th, NULL, sync_kloop_worker, ctx);
-	if (ret) {
+	if (ret != 0) {
 		printf("pthread_create(kloop): %s\n", strerror(ret));
 		return -1;
 	}
 
 	ret = sync_kloop_stop(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
 	ret = pthread_join(th, &thret);
-	if (ret) {
+	if (ret != 0) {
 		printf("pthread_join(kloop): %s\n", strerror(ret));
 	}
 
@@ -1225,7 +1262,7 @@ sync_kloop(struct TestContext *ctx)
 	int ret;
 
 	ret = csb_mode(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
@@ -1262,7 +1299,7 @@ sync_kloop_eventfds(struct TestContext *ctx)
 	save = opt->nro_opt;
 
 	ret = sync_kloop_start_stop(ctx);
-	if (ret) {
+	if (ret != 0) {
 		free(opt);
 		clear_options(ctx);
 		return ret;
@@ -1286,7 +1323,7 @@ sync_kloop_eventfds_all(struct TestContext *ctx)
 	int ret;
 
 	ret = csb_mode(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
@@ -1300,12 +1337,12 @@ sync_kloop_eventfds_all_tx(struct TestContext *ctx)
 	int ret;
 
 	ret = push_csb_option(ctx, &opt);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
 	ret = port_register_hwall_tx(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	clear_options(ctx);
@@ -1319,7 +1356,7 @@ sync_kloop_nocsb(struct TestContext *ctx)
 	int ret;
 
 	ret = port_register_hwall(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
@@ -1337,7 +1374,7 @@ csb_enable(struct TestContext *ctx)
 	int ret;
 
 	ret = push_csb_option(ctx, &opt);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	saveopt = opt.nro_opt;
@@ -1351,7 +1388,7 @@ csb_enable(struct TestContext *ctx)
 	printf("Testing NETMAP_REQ_CSB_ENABLE on '%s'\n", ctx->ifname);
 
 	ret           = ioctl(ctx->fd, NIOCCTRL, &hdr);
-	if (ret) {
+	if (ret != 0) {
 		perror("ioctl(/dev/netmap, NIOCCTRL, CSB_ENABLE)");
 		return ret;
 	}
@@ -1369,12 +1406,12 @@ sync_kloop_csb_enable(struct TestContext *ctx)
 
 	ctx->nr_flags |= NR_EXCLUSIVE;
 	ret = port_register_hwall(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
 	ret = csb_enable(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
@@ -1393,28 +1430,32 @@ sync_kloop_conflict(struct TestContext *ctx)
 	int ret;
 
 	ret = push_csb_option(ctx, &opt);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
 	ret = port_register_hwall(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	clear_options(ctx);
 
-	sem_init(&sem, 0, 0);
+	ret = sem_init(&sem, 0, 0);
+	if (ret != 0) {
+		printf("sem_init() failed: %s\n", strerror(ret));
+		return ret;
+	}
 	ctx->sem = &sem;
 
 	ret = pthread_create(&th1, NULL, sync_kloop_worker, ctx);
 	err |= ret;
-	if (ret) {
+	if (ret != 0) {
 		printf("pthread_create(kloop1): %s\n", strerror(ret));
 	}
 
 	ret = pthread_create(&th2, NULL, sync_kloop_worker, ctx);
 	err |= ret;
-	if (ret) {
+	if (ret != 0) {
 		printf("pthread_create(kloop2): %s\n", strerror(ret));
 	}
 
@@ -1425,7 +1466,7 @@ sync_kloop_conflict(struct TestContext *ctx)
 	to.tv_sec += 2;
 	ret = sem_timedwait(&sem, &to);
 	err |= ret;
-	if (ret) {
+	if (ret != 0) {
 		printf("sem_timedwait() failed: %s\n", strerror(errno));
 	}
 
@@ -1433,13 +1474,13 @@ sync_kloop_conflict(struct TestContext *ctx)
 
 	ret = pthread_join(th1, &thret1);
 	err |= ret;
-	if (ret) {
+	if (ret != 0) {
 		printf("pthread_join(kloop1): %s\n", strerror(ret));
 	}
 
 	ret = pthread_join(th2, &thret2);
 	err |= ret;
-	if (ret) {
+	if (ret != 0) {
 		printf("pthread_join(kloop2): %s %d\n", strerror(ret), ret);
 	}
 
@@ -1463,12 +1504,12 @@ sync_kloop_eventfds_mismatch(struct TestContext *ctx)
 	int ret;
 
 	ret = push_csb_option(ctx, &opt);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 
 	ret = port_register_hwall_rx(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	clear_options(ctx);
@@ -1494,7 +1535,7 @@ null_port(struct TestContext *ctx)
 	ctx->nr_tx_slots = 256;
 	ctx->nr_rx_slots = 100;
 	ret = port_register(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	return 0;
@@ -1512,7 +1553,7 @@ null_port_all_zero(struct TestContext *ctx)
 	ctx->nr_tx_slots = 0;
 	ctx->nr_rx_slots = 0;
 	ret = port_register(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	return 0;
@@ -1530,11 +1571,11 @@ null_port_sync(struct TestContext *ctx)
 	ctx->nr_tx_slots = 256;
 	ctx->nr_rx_slots = 100;
 	ret = port_register(ctx);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	ret = ioctl(ctx->fd, NIOCTXSYNC, 0);
-	if (ret) {
+	if (ret != 0) {
 		return ret;
 	}
 	return 0;
@@ -1768,7 +1809,7 @@ main(int argc, char **argv)
 		memcpy(&ctxcopy, &ctx, sizeof(ctxcopy));
 		ctxcopy.fd = fd;
 		ret        = tests[i].test(&ctxcopy);
-		if (ret) {
+		if (ret != 0) {
 			printf("Test #%d [%s] failed\n", i + 1, tests[i].name);
 			goto out;
 		}
