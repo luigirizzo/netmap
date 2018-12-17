@@ -936,7 +936,7 @@ infinite_options(struct TestContext *ctx)
 }
 
 #ifdef CONFIG_NETMAP_EXTMEM
-static int
+int
 change_param(const char *pname, unsigned long newv, unsigned long *poldv)
 {
 #ifdef __linux__
@@ -971,13 +971,12 @@ change_param(const char *pname, unsigned long newv, unsigned long *poldv)
 }
 
 static int
-push_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *e)
+push_extmem_option(struct TestContext *ctx, const struct nmreq_pools_info *pi,
+		struct nmreq_opt_extmem *e)
 {
-	/* 4MiB is enough for netmap memory-mapped data structures. */
-	const size_t memsize = (1U << 22);
 	void *addr;
 
-	addr = mmap(NULL, memsize, PROT_READ | PROT_WRITE,
+	addr = mmap(NULL, pi->nr_memsize, PROT_READ | PROT_WRITE,
 	            MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (addr == MAP_FAILED) {
 		perror("mmap");
@@ -986,8 +985,8 @@ push_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *e)
 
 	memset(e, 0, sizeof(*e));
 	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
+	e->nro_info = *pi;
 	e->nro_usrptr          = (uintptr_t)addr;
-	e->nro_info.nr_memsize = memsize;
 
 	push_option(&e->nro_opt, ctx);
 
@@ -1026,13 +1025,13 @@ pop_extmem_option(struct TestContext *ctx, struct nmreq_opt_extmem *exp)
 }
 
 static int
-_extmem_option(struct TestContext *ctx, int new_rsz)
+_extmem_option(struct TestContext *ctx,
+		const struct nmreq_pools_info *pi)
 {
 	struct nmreq_opt_extmem e, save;
 	int ret;
-	unsigned long old_rsz;
 
-	if ((ret = push_extmem_option(ctx, &e)) < 0)
+	if ((ret = push_extmem_option(ctx, pi, &e)) < 0)
 		return ret;
 
 	save = e;
@@ -1041,48 +1040,85 @@ _extmem_option(struct TestContext *ctx, int new_rsz)
 	ctx->nr_tx_slots = 16;
 	ctx->nr_rx_slots = 16;
 
-	if ((ret = change_param("priv_ring_size", new_rsz, &old_rsz)))
-		return ret;
-
 	if ((ret = port_register_hwall(ctx)))
 		return ret;
 
 	ret = pop_extmem_option(ctx, &save);
 
-	if (change_param("priv_ring_size", old_rsz, NULL) < 0)
-		return -1;
-
 	return ret;
+}
+
+static size_t
+pools_info_min_memsize(const struct nmreq_pools_info *pi)
+{
+	size_t tot = 0;
+
+	tot += pi->nr_if_pool_objtotal * pi->nr_if_pool_objsize;
+	tot += pi->nr_ring_pool_objtotal * pi->nr_ring_pool_objsize;
+	tot += pi->nr_buf_pool_objtotal * pi->nr_buf_pool_objsize;
+
+	return tot;
+}
+
+/*
+ * Fill the specification of a netmap memory allocator to be
+ * used with the 'struct nmreq_opt_extmem' option. Arbitrary
+ * values are used for the parameters, but with enough netmap
+ * rings, netmap ifs, and buffers to support a VALE port.
+ */
+static void
+pools_info_fill(struct nmreq_pools_info *pi)
+{
+	pi->nr_if_pool_objtotal = 2;
+	pi->nr_if_pool_objsize = 1024;
+	pi->nr_ring_pool_objtotal = 64;
+	pi->nr_ring_pool_objsize = 512;
+	pi->nr_buf_pool_objtotal = 4096;
+	pi->nr_buf_pool_objsize = 2048;
+	pi->nr_memsize = pools_info_min_memsize(pi);
 }
 
 static int
 extmem_option(struct TestContext *ctx)
 {
-	printf("Testing extmem option on vale0:0\n");
+	struct nmreq_pools_info	pools_info;
 
-	return _extmem_option(ctx, 512);
+	pools_info_fill(&pools_info);
+
+	printf("Testing extmem option on vale0:0\n");
+	return _extmem_option(ctx, &pools_info);
 }
 
 static int
 bad_extmem_option(struct TestContext *ctx)
 {
+	struct nmreq_pools_info	pools_info;
+
 	printf("Testing bad extmem option on vale0:0\n");
 
-	return _extmem_option(ctx, (1 << 16)) < 0 ? 0 : -1;
+	pools_info_fill(&pools_info);
+	/* Request a large ring size, to make sure that the kernel
+	 * rejects our request. */
+	pools_info.nr_ring_pool_objsize = (1 << 16);
+
+	return _extmem_option(ctx, &pools_info) < 0 ? 0 : -1;
 }
 
 static int
 duplicate_extmem_options(struct TestContext *ctx)
 {
 	struct nmreq_opt_extmem e1, save1, e2, save2;
+	struct nmreq_pools_info	pools_info;
 	int ret;
 
 	printf("Testing duplicate extmem option on vale0:0\n");
 
-	if ((ret = push_extmem_option(ctx, &e1)) < 0)
+	pools_info_fill(&pools_info);
+
+	if ((ret = push_extmem_option(ctx, &pools_info, &e1)) < 0)
 		return ret;
 
-	if ((ret = push_extmem_option(ctx, &e2)) < 0) {
+	if ((ret = push_extmem_option(ctx, &pools_info, &e2)) < 0) {
 		clear_options(ctx);
 		return ret;
 	}
