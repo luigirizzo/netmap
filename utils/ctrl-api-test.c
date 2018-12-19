@@ -1730,6 +1730,12 @@ err:
 	return -1;
 }
 
+#define ARGV_APPEND(_av, _ac, _x)\
+	do {\
+		assert((int)(_ac) < (int)(sizeof(_av)/sizeof((_av)[0])));\
+		(_av)[(_ac)++] = _x;\
+	} while (0)
+
 int
 main(int argc, char **argv)
 {
@@ -1810,21 +1816,20 @@ main(int argc, char **argv)
 		const char *av[8];
 		int ac = 0;
 #ifdef __FreeBSD__
-		av[ac++] = "ifconfig";
-		av[ac++] = ctx.ifname;
-		av[ac++] = "create";
-		av[ac++] = "up";
+		ARGV_APPEND(av, ac, "ifconfig");
+		ARGV_APPEND(av, ac, ctx.ifname);
+		ARGV_APPEND(av, ac, "create");
+		ARGV_APPEND(av, ac, "up");
 #else
-		av[ac++] = "ip";
-		av[ac++] = "tuntap";
-		av[ac++] = "add";
-		av[ac++] = "mode";
-		av[ac++] = "tap";
-		av[ac++] = "name";
-		av[ac++] = ctx.ifname;
+		ARGV_APPEND(av, ac, "ip");
+		ARGV_APPEND(av, ac, "tuntap");
+		ARGV_APPEND(av, ac, "add");
+		ARGV_APPEND(av, ac, "mode");
+		ARGV_APPEND(av, ac, "tap");
+		ARGV_APPEND(av, ac, "name");
+		ARGV_APPEND(av, ac, ctx.ifname);
 #endif
-		av[ac++] = NULL;
-		assert(ac <= (int)(sizeof(av) / sizeof(av[0])));
+		ARGV_APPEND(av, ac, NULL);
 		if (exec_command(ac, av)) {
 			printf("Failed to create tap interface\n");
 			return -1;
@@ -1856,17 +1861,16 @@ out:
 		const char *av[8];
 		int ac = 0;
 #ifdef __FreeBSD__
-		av[ac++] = "ifconfig";
-		av[ac++] = ctx.ifname;
-		av[ac++] = "destroy";
+		ARGV_APPEND(av, ac, "ifconfig");
+		ARGV_APPEND(av, ac, ctx.ifname);
+		ARGV_APPEND(av, ac, "destroy");
 #else
-		av[ac++] = "ip";
-		av[ac++] = "link";
-		av[ac++] = "del";
-		av[ac++] = ctx.ifname;
+		ARGV_APPEND(av, ac, "ip");
+		ARGV_APPEND(av, ac, "link");
+		ARGV_APPEND(av, ac, "del");
+		ARGV_APPEND(av, ac, ctx.ifname);
 #endif
-		av[ac++] = NULL;
-		assert(ac <= (int)(sizeof(av) / sizeof(av[0])));
+		ARGV_APPEND(av, ac, NULL);
 		if (exec_command(ac, av)) {
 			printf("Failed to destroy tap interface\n");
 			return -1;
