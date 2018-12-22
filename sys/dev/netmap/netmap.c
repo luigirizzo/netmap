@@ -3292,7 +3292,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 	 * that we must call nm_os_selrecord() unconditionally.
 	 */
 	if (want_tx) {
-		enum txrx t = NR_TX;
+		const enum txrx t = NR_TX;
 		for (i = priv->np_qfirst[t]; want[t] && i < priv->np_qlast[t]; i++) {
 			kring = NMR(na, t)[i];
 			/* XXX compare ring->cur and kring->tail */
@@ -3303,7 +3303,7 @@ netmap_poll(struct netmap_priv_d *priv, int events, NM_SELRECORD_T *sr)
 		}
 	}
 	if (want_rx) {
-		enum txrx t = NR_RX;
+		const enum txrx t = NR_RX;
 		int rxsync_needed = 0;
 
 		/* look for a reason to run the handlers */
