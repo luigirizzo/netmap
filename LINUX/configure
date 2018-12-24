@@ -7,6 +7,7 @@ DEBUG=1
 UTILS=1
 DRVERRFAIL=
 DMASYNC=1
+VALE_ZERO_COPY=0
 
 # setelem2n <set> <elem>
 setelem2n()
@@ -280,6 +281,7 @@ replace_vars()
 		-e "s|@DESTDIR@|$DESTDIR|g" \
 		-e "s|@DEBUG@|$DEBUG|g" \
 		-e "s|@UTILS@|$UTILS|g" \
+		-e "s|@VALE_ZERO_COPY@|$VALE_ZERO_COPY|g" \
 		$1
 }
 
@@ -329,6 +331,7 @@ Available options:
   --no-force-debug	       build the modules w/ or w/o debug symbols,
   --cache=		       dir for reusing/caching of netmap_linux_config.h
   --without-dmasync	       use this if you are on x86 with a recent NIC and no IOMMU
+  --vale-zero-copy	       enable zero copy between nic and host rings
 
   --cc=                        C compiler to be used for the apps and utils [$cc]
   --ld=                        linker to be used for the apps and utils [$ld]
@@ -649,6 +652,9 @@ for opt do
 		;;
 	--without-dmasync)
 		DMASYNC=
+		;;
+	--vale-zero-copy)
+		VALE_ZERO_COPY=1
 		;;
 	*)
 		echo "Unrecognized option: $opt" | warning
