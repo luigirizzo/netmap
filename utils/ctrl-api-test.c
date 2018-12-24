@@ -145,7 +145,7 @@ struct TestContext {
 	struct nmreq_option *nr_opt;  /* list of options */
 	sem_t *sem;	/* for thread synchronization */
 	struct nmport_d *nmport;      /* nmport descriptor from libnetmap */
-} ctx;
+} ctx_;
 
 typedef int (*testfunc_t)(struct TestContext *ctx);
 
@@ -1745,13 +1745,13 @@ tap_cleanup(int signo)
 	(void)signo;
 #ifdef __FreeBSD__
 	ARGV_APPEND(av, ac, "ifconfig");
-	ARGV_APPEND(av, ac, ctx.ifname);
+	ARGV_APPEND(av, ac, ctx_.ifname);
 	ARGV_APPEND(av, ac, "destroy");
 #else
 	ARGV_APPEND(av, ac, "ip");
 	ARGV_APPEND(av, ac, "link");
 	ARGV_APPEND(av, ac, "del");
-	ARGV_APPEND(av, ac, ctx.ifname);
+	ARGV_APPEND(av, ac, ctx_.ifname);
 #endif
 	ARGV_APPEND(av, ac, NULL);
 	if (exec_command(ac, av)) {
@@ -1771,7 +1771,7 @@ main(int argc, char **argv)
 	int opt;
 	int i;
 
-	memset(&ctx, 0, sizeof(ctx));
+	memset(&ctx_, 0, sizeof(ctx_));
 
 	{
 		struct timespec t;
@@ -1780,9 +1780,9 @@ main(int argc, char **argv)
 		clock_gettime(CLOCK_REALTIME, &t);
 		srand((unsigned int)t.tv_nsec);
 		idx = rand() % 8000 + 100;
-		snprintf(ctx.ifname, sizeof(ctx.ifname), "tap%d", idx);
+		snprintf(ctx_.ifname, sizeof(ctx_.ifname), "tap%d", idx);
 		idx = rand() % 800 + 100;
-		snprintf(ctx.bdgname, sizeof(ctx.bdgname), "vale%d", idx);
+		snprintf(ctx_.bdgname, sizeof(ctx_.bdgname), "vale%d", idx);
 	}
 
 	while ((opt = getopt(argc, argv, "hi:j:l")) != -1) {
@@ -1792,7 +1792,7 @@ main(int argc, char **argv)
 			return 0;
 
 		case 'i':
-			strncpy(ctx.ifname, optarg, sizeof(ctx.ifname) - 1);
+			strncpy(ctx_.ifname, optarg, sizeof(ctx_.ifname) - 1);
 			create_tap = 0;
 			break;
 
@@ -1840,7 +1840,7 @@ main(int argc, char **argv)
 		int ac = 0;
 #ifdef __FreeBSD__
 		ARGV_APPEND(av, ac, "ifconfig");
-		ARGV_APPEND(av, ac, ctx.ifname);
+		ARGV_APPEND(av, ac, ctx_.ifname);
 		ARGV_APPEND(av, ac, "create");
 		ARGV_APPEND(av, ac, "up");
 #else
@@ -1850,7 +1850,7 @@ main(int argc, char **argv)
 		ARGV_APPEND(av, ac, "mode");
 		ARGV_APPEND(av, ac, "tap");
 		ARGV_APPEND(av, ac, "name");
-		ARGV_APPEND(av, ac, ctx.ifname);
+		ARGV_APPEND(av, ac, ctx_.ifname);
 #endif
 		ARGV_APPEND(av, ac, NULL);
 		if (exec_command(ac, av)) {
@@ -1883,7 +1883,7 @@ main(int argc, char **argv)
 			ret = fd;
 			goto out;
 		}
-		memcpy(&ctxcopy, &ctx, sizeof(ctxcopy));
+		memcpy(&ctxcopy, &ctx_, sizeof(ctxcopy));
 		ctxcopy.fd = fd;
 		ret        = tests[i].test(&ctxcopy);
 		if (ret != 0) {
