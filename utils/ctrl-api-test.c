@@ -145,7 +145,7 @@ struct TestContext {
 	struct nmreq_option *nr_opt;  /* list of options */
 	sem_t *sem;	/* for thread synchronization */
 	struct nmport_d *nmport;      /* nmport descriptor from libnetmap */
-};
+} ctx;
 
 typedef int (*testfunc_t)(struct TestContext *ctx);
 
@@ -1736,10 +1736,32 @@ err:
 		(_av)[(_ac)++] = _x;\
 	} while (0)
 
+static void
+tap_cleanup(int signo)
+{
+	const char *av[8];
+	int ac = 0;
+
+	(void)signo;
+#ifdef __FreeBSD__
+	ARGV_APPEND(av, ac, "ifconfig");
+	ARGV_APPEND(av, ac, ctx.ifname);
+	ARGV_APPEND(av, ac, "destroy");
+#else
+	ARGV_APPEND(av, ac, "ip");
+	ARGV_APPEND(av, ac, "link");
+	ARGV_APPEND(av, ac, "del");
+	ARGV_APPEND(av, ac, ctx.ifname);
+#endif
+	ARGV_APPEND(av, ac, NULL);
+	if (exec_command(ac, av)) {
+		printf("Failed to destroy tap interface\n");
+	}
+}
+
 int
 main(int argc, char **argv)
 {
-	struct TestContext ctx;
 	int create_tap = 1;
 	int num_tests;
 	int ret  = 0;
@@ -1813,6 +1835,7 @@ main(int argc, char **argv)
 	}
 
 	if (create_tap) {
+		struct sigaction sa;
 		const char *av[8];
 		int ac = 0;
 #ifdef __FreeBSD__
@@ -1833,6 +1856,20 @@ main(int argc, char **argv)
 		if (exec_command(ac, av)) {
 			printf("Failed to create tap interface\n");
 			return -1;
+		}
+
+		sa.sa_handler = tap_cleanup;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_RESTART;
+		ret         = sigaction(SIGINT, &sa, NULL);
+		if (ret) {
+			perror("sigaction(SIGINT)");
+			goto out;
+		}
+		ret = sigaction(SIGTERM, &sa, NULL);
+		if (ret) {
+			perror("sigaction(SIGTERM)");
+			goto out;
 		}
 	}
 
@@ -1857,25 +1894,7 @@ main(int argc, char **argv)
 		context_cleanup(&ctxcopy);
 	}
 out:
-	if (create_tap) {
-		const char *av[8];
-		int ac = 0;
-#ifdef __FreeBSD__
-		ARGV_APPEND(av, ac, "ifconfig");
-		ARGV_APPEND(av, ac, ctx.ifname);
-		ARGV_APPEND(av, ac, "destroy");
-#else
-		ARGV_APPEND(av, ac, "ip");
-		ARGV_APPEND(av, ac, "link");
-		ARGV_APPEND(av, ac, "del");
-		ARGV_APPEND(av, ac, ctx.ifname);
-#endif
-		ARGV_APPEND(av, ac, NULL);
-		if (exec_command(ac, av)) {
-			printf("Failed to destroy tap interface\n");
-			return -1;
-		}
-	}
+	tap_cleanup(0);
 
 	return ret;
 }
