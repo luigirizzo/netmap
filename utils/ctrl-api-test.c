@@ -44,6 +44,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <signal.h>
 
 #ifdef __linux__
 #include <sys/eventfd.h>
