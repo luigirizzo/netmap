@@ -146,7 +146,9 @@ struct TestContext {
 	struct nmreq_option *nr_opt;  /* list of options */
 	sem_t *sem;	/* for thread synchronization */
 	struct nmport_d *nmport;      /* nmport descriptor from libnetmap */
-} ctx_;
+};
+
+static struct TestContext ctx_;
 
 typedef int (*testfunc_t)(struct TestContext *ctx);
 
