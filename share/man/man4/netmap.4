@@ -913,8 +913,6 @@ Values above 64 generally guarantee good
 performance.
 .It Va dev.netmap.ptnet_vnet_hdr: 1
 Allow ptnet devices to use virtio-net headers
-.It Va dev.netmap.ptnetmap_tx_workers: 1
-Use worker threads for ptnetmap TX processing
 .El
 .Sh SYSTEM CALLS
 .Nm
@@ -1292,6 +1290,13 @@ Note as with other
 , at this point checksum and segmentation offloading features
 must be disabled. These features will be supported in the future.
 .Sh SEE ALSO
+.Xr vale 4 ,
+.Xr vale-ctl 4 ,
+.Xr bridge 8 ,
+.Xr lb 8 ,
+.Xr nmreplay 8 ,
+.Xr pkt-gen 8
+.Pp
 .Pa http://info.iet.unipi.it/~luigi/netmap/
 .Pp
 Luigi Rizzo, Revisiting network I/O APIs: the netmap framework,

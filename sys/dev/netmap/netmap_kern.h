@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo
  * Copyright (C) 2013-2016 Universita` di Pisa
  * All rights reserved.
@@ -52,11 +54,8 @@
 #if defined(CONFIG_NETMAP_GENERIC)
 #define WITH_GENERIC
 #endif
-#if defined(CONFIG_NETMAP_PTNETMAP_GUEST)
-#define WITH_PTNETMAP_GUEST
-#endif
-#if defined(CONFIG_NETMAP_PTNETMAP_HOST)
-#define WITH_PTNETMAP_HOST
+#if defined(CONFIG_NETMAP_PTNETMAP)
+#define WITH_PTNETMAP
 #endif
 #if defined(CONFIG_NETMAP_SINK)
 #define WITH_SINK
@@ -64,22 +63,26 @@
 #if defined(CONFIG_NETMAP_STACK)
 #define WITH_STACK
 #endif
+#if defined(CONFIG_NETMAP_NULL)
+#define WITH_NMNULL
+#endif
 
 #elif defined (_WIN32)
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
+#define WITH_NMNULL
 
 #else	/* neither linux nor windows */
 #define WITH_VALE	// comment out to disable VALE support
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
-#define WITH_PTNETMAP_HOST	/* ptnetmap host support */
-#define WITH_PTNETMAP_GUEST	/* ptnetmap guest support */
+#define WITH_PTNETMAP	/* ptnetmap guest support */
 #define WITH_EXTMEM
 #define WITH_STACK
+#define WITH_NMNULL
 #endif
 
 #if defined(__FreeBSD__)
@@ -266,28 +269,39 @@ typedef struct hrtimer{
 #define	NMG_LOCK_ASSERT()	NM_MTX_ASSERT(netmap_global_lock)
 
 #if defined(__FreeBSD__)
-#define nm_prerr	printf
-#define nm_prinf	printf
+#define nm_prerr_int	printf
+#define nm_prinf_int	printf
 #elif defined (_WIN32)
-#define nm_prerr	DbgPrint
-#define nm_prinf	DbgPrint
+#define nm_prerr_int	DbgPrint
+#define nm_prinf_int	DbgPrint
 #elif defined(linux)
-#define nm_prerr(fmt, arg...)    printk(KERN_ERR fmt, ##arg)
-#define nm_prinf(fmt, arg...)    printk(KERN_INFO fmt, ##arg)
+#define nm_prerr_int(fmt, arg...)    printk(KERN_ERR fmt, ##arg)
+#define nm_prinf_int(fmt, arg...)    printk(KERN_INFO fmt, ##arg)
 #endif
 
-#define ND(format, ...)
-#define D(format, ...)						\
+#define nm_prinf(format, ...)					\
 	do {							\
 		struct timeval __xxts;				\
 		microtime(&__xxts);				\
-		nm_prerr("%03d.%06d [%4d] %-25s " format "\n",	\
+		nm_prinf_int("%03d.%06d [%4d] %-25s " format "\n",\
 		(int)__xxts.tv_sec % 1000, (int)__xxts.tv_usec,	\
 		__LINE__, __FUNCTION__, ##__VA_ARGS__);		\
 	} while (0)
 
-/* rate limited, lps indicates how many per second */
-#define RD(lps, format, ...)					\
+#define nm_prerr(format, ...)					\
+	do {							\
+		struct timeval __xxts;				\
+		microtime(&__xxts);				\
+		nm_prerr_int("%03d.%06d [%4d] %-25s " format "\n",\
+		(int)__xxts.tv_sec % 1000, (int)__xxts.tv_usec,	\
+		__LINE__, __FUNCTION__, ##__VA_ARGS__);		\
+	} while (0)
+
+/* Disabled printf (used to be ND). */
+#define nm_prdis(format, ...)
+
+/* Rate limited, lps indicates how many per second. */
+#define nm_prlim(lps, format, ...)				\
 	do {							\
 		static int t0, __cnt;				\
 		if (t0 != time_second) {			\
@@ -295,8 +309,13 @@ typedef struct hrtimer{
 			__cnt = 0;				\
 		}						\
 		if (__cnt++ < lps)				\
-			D(format, ##__VA_ARGS__);		\
+			nm_prinf(format, ##__VA_ARGS__);	\
 	} while (0)
+
+/* Old macros. */
+#define ND	nm_prdis
+#define D	nm_prerr
+#define RD	nm_prlim
 
 struct netmap_adapter;
 struct nm_bdg_fwd;
@@ -731,7 +750,7 @@ struct netmap_adapter {
 				 */
 #define NAF_HOST_RINGS  64	/* the adapter supports the host rings */
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
-#define NAF_PTNETMAP_HOST 256	/* the adapter supports ptnetmap in the host */
+/* free */
 #define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
@@ -749,9 +768,9 @@ struct netmap_adapter {
 	u_int num_tx_desc;  /* number of descriptor in each queue */
 	u_int num_rx_desc;
 
-	/* tx_rings and rx_rings are private but allocated
-	 * as a contiguous chunk of memory. Each array has
-	 * N+1 entries, for the adapter queues and for the host queue.
+	/* tx_rings and rx_rings are private but allocated as a
+	 * contiguous chunk of memory. Each array has N+K entries,
+	 * N for the hardware rings and K for the host rings.
 	 */
 	struct netmap_kring **tx_rings; /* array of TX rings. */
 	struct netmap_kring **rx_rings; /* array of RX rings. */
@@ -1302,6 +1321,12 @@ int netmap_stack_transmit(struct ifnet *, struct mbuf *);
 
 
 #endif /* WITH_STACK */
+#ifdef WITH_NMNULL
+struct netmap_null_adapter {
+	struct netmap_adapter up;
+};
+#endif /* WITH_NMNULL */
+
 
 /* return slots reserved to rx clients; used in drivers */
 static inline uint32_t
@@ -1629,7 +1654,6 @@ void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
 int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
 
-
 #ifdef WITH_VALE
 uint32_t netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		struct netmap_vp_adapter *, void *private_data);
@@ -1675,6 +1699,14 @@ void netmap_monitor_stop(struct netmap_adapter *na);
 #define netmap_get_monitor_na(hdr, _2, _3, _4) \
 	(((struct nmreq_register *)(uintptr_t)hdr->nr_body)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
 #endif
+
+#ifdef WITH_NMNULL
+int netmap_get_null_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+		struct netmap_mem_d *nmd, int create);
+#else /* !WITH_NMNULL */
+#define netmap_get_null_na(hdr, _2, _3, _4) \
+	(((struct nmreq_register *)(uintptr_t)hdr->nr_body)->nr_flags & (NR_MONITOR_TX | NR_MONITOR_RX) ? EOPNOTSUPP : 0)
+#endif /* WITH_NMNULL */
 
 #ifdef CONFIG_NET_NS
 struct net *netmap_bns_get(void);
@@ -1764,7 +1796,6 @@ extern int netmap_generic_rings;
 #ifdef linux
 extern int netmap_generic_txqdisc;
 #endif
-extern int ptnetmap_tx_workers;
 
 /*
  * NA returns a pointer to the struct netmap adapter from the ifp.
@@ -2064,6 +2095,9 @@ struct netmap_priv_d {
 	u_int		np_qfirst[NR_TXRX],
 			np_qlast[NR_TXRX]; /* range of tx/rx rings to scan */
 	uint16_t	np_txpoll;
+	uint16_t        np_kloop_state;	/* use with NMG_LOCK held */
+#define NM_SYNC_KLOOP_RUNNING	(1 << 0)
+#define NM_SYNC_KLOOP_STOPPING	(1 << 1)
 	int             np_sync_flags; /* to be passed to nm_sync */
 
 	int		np_refs;	/* use with NMG_LOCK held */
@@ -2073,7 +2107,26 @@ struct netmap_priv_d {
 	 * number of rings.
 	 */
 	NM_SELINFO_T *np_si[NR_TXRX];
+
+	/* In the optional CSB mode, the user must specify the start address
+	 * of two arrays of Communication Status Block (CSB) entries, for the
+	 * two directions (kernel read application write, and kernel write
+	 * application read).
+	 * The number of entries must agree with the number of rings bound to
+	 * the netmap file descriptor. The entries corresponding to the TX
+	 * rings are laid out before the ones corresponding to the RX rings.
+	 *
+	 * Array of CSB entries for application --> kernel communication
+	 * (N entries). */
+	struct nm_csb_atok	*np_csb_atok_base;
+	/* Array of CSB entries for kernel --> application communication
+	 * (N entries). */
+	struct nm_csb_ktoa	*np_csb_ktoa_base;
+
 	struct thread	*np_td;		/* kqueue, just debugging */
+#ifdef linux
+	struct file	*np_filp;  /* used by sync kloop */
+#endif /* linux */
 };
 
 struct netmap_priv_d *netmap_priv_new(void);
@@ -2094,6 +2147,14 @@ static inline int nm_kring_pending(struct netmap_priv_d *np)
 		}
 	}
 	return 0;
+}
+
+/* call with NMG_LOCK held */
+static __inline int
+nm_si_user(struct netmap_priv_d *priv, enum txrx t)
+{
+	return (priv->np_na != NULL &&
+		(priv->np_qlast[t] - priv->np_qfirst[t] > 1));
 }
 
 #ifdef WITH_PIPES
@@ -2296,17 +2357,14 @@ void nm_os_vi_init_index(void);
  * kernel thread routines
  */
 struct nm_kctx; /* OS-specific kernel context - opaque */
-typedef void (*nm_kctx_worker_fn_t)(void *data, int is_kthread);
-typedef void (*nm_kctx_notify_fn_t)(void *data);
+typedef void (*nm_kctx_worker_fn_t)(void *data);
 
 /* kthread configuration */
 struct nm_kctx_cfg {
 	long			type;		/* kthread type/identifier */
 	nm_kctx_worker_fn_t	worker_fn;	/* worker function */
 	void			*worker_private;/* worker parameter */
-	nm_kctx_notify_fn_t	notify_fn;	/* notify function */
 	int			attach_user;	/* attach kthread to user process */
-	int			use_kthread;	/* use a kthread for the context */
 };
 /* kthread configuration */
 struct nm_kctx *nm_os_kctx_create(struct nm_kctx_cfg *cfg,
@@ -2314,47 +2372,24 @@ struct nm_kctx *nm_os_kctx_create(struct nm_kctx_cfg *cfg,
 int nm_os_kctx_worker_start(struct nm_kctx *);
 void nm_os_kctx_worker_stop(struct nm_kctx *);
 void nm_os_kctx_destroy(struct nm_kctx *);
-void nm_os_kctx_worker_wakeup(struct nm_kctx *nmk);
-void nm_os_kctx_send_irq(struct nm_kctx *);
 void nm_os_kctx_worker_setaff(struct nm_kctx *, int);
 u_int nm_os_ncpus(void);
 
-#ifdef WITH_PTNETMAP_HOST
+int netmap_sync_kloop(struct netmap_priv_d *priv,
+		      struct nmreq_header *hdr);
+int netmap_sync_kloop_stop(struct netmap_priv_d *priv);
+
+#ifdef WITH_PTNETMAP
+/* ptnetmap guest routines */
+
 /*
- * netmap adapter for host ptnetmap ports
+ * ptnetmap_memdev routines used to talk with ptnetmap_memdev device driver
  */
-struct netmap_pt_host_adapter {
-	struct netmap_adapter up;
-
-	/* the passed-through adapter */
-	struct netmap_adapter *parent;
-	/* parent->na_flags, saved at NETMAP_PT_HOST_CREATE time,
-	 * and restored at NETMAP_PT_HOST_DELETE time */
-	uint32_t parent_na_flags;
-
-	int (*parent_nm_notify)(struct netmap_kring *kring, int flags);
-	void *ptns;
-};
-
-/* ptnetmap host-side routines */
-int netmap_get_pt_host_na(struct nmreq_header *hdr, struct netmap_adapter **na,
-			struct netmap_mem_d * nmd, int create);
-int ptnetmap_ctl(const char *nr_name, int create, struct netmap_adapter *na);
-
-static inline int
-nm_ptnetmap_host_on(struct netmap_adapter *na)
-{
-	return na && na->na_flags & NAF_PTNETMAP_HOST;
-}
-#else /* !WITH_PTNETMAP_HOST */
-#define netmap_get_pt_host_na(hdr, _2, _3, _4) \
-	(((struct nmreq_register *)(uintptr_t)hdr->nr_body)->nr_flags & (NR_PTNETMAP_HOST) ? EOPNOTSUPP : 0)
-#define ptnetmap_ctl(_1, _2, _3)   EINVAL
-#define nm_ptnetmap_host_on(_1)   EINVAL
-#endif /* !WITH_PTNETMAP_HOST */
-
-#ifdef WITH_PTNETMAP_GUEST
-/* ptnetmap GUEST routines */
+struct ptnetmap_memdev;
+int nm_os_pt_memdev_iomap(struct ptnetmap_memdev *, vm_paddr_t *, void **,
+                          uint64_t *);
+void nm_os_pt_memdev_iounmap(struct ptnetmap_memdev *);
+uint32_t nm_os_pt_memdev_ioread(struct ptnetmap_memdev *, unsigned int);
 
 /*
  * netmap adapter for guest ptnetmap ports
@@ -2371,26 +2406,83 @@ struct netmap_pt_guest_adapter {
 	 * network stack and netmap clients.
 	 * Used to decide when we need (de)allocate krings/rings and
 	 * start (stop) ptnetmap kthreads. */
-	int backend_regifs;
+	int backend_users;
 
 };
 
 int netmap_pt_guest_attach(struct netmap_adapter *na,
 			unsigned int nifp_offset,
 			unsigned int memid);
-struct ptnet_csb_gh;
-struct ptnet_csb_hg;
-bool netmap_pt_guest_txsync(struct ptnet_csb_gh *ptgh,
-			struct ptnet_csb_hg *pthg,
-			struct netmap_kring *kring,
-			int flags);
-bool netmap_pt_guest_rxsync(struct ptnet_csb_gh *ptgh,
-			struct ptnet_csb_hg *pthg,
+bool netmap_pt_guest_txsync(struct nm_csb_atok *atok,
+			struct nm_csb_ktoa *ktoa,
+			struct netmap_kring *kring, int flags);
+bool netmap_pt_guest_rxsync(struct nm_csb_atok *atok,
+			struct nm_csb_ktoa *ktoa,
 			struct netmap_kring *kring, int flags);
 int ptnet_nm_krings_create(struct netmap_adapter *na);
 void ptnet_nm_krings_delete(struct netmap_adapter *na);
 void ptnet_nm_dtor(struct netmap_adapter *na);
-#endif /* WITH_PTNETMAP_GUEST */
+
+/* Guest driver: Write kring pointers (cur, head) to the CSB.
+ * This routine is coupled with ptnetmap_host_read_kring_csb(). */
+static inline void
+ptnetmap_guest_write_kring_csb(struct nm_csb_atok *atok, uint32_t cur,
+			       uint32_t head)
+{
+    /*
+     * We need to write cur and head to the CSB but we cannot do it atomically.
+     * There is no way we can prevent the host from reading the updated value
+     * of one of the two and the old value of the other. However, if we make
+     * sure that the host never reads a value of head more recent than the
+     * value of cur we are safe. We can allow the host to read a value of cur
+     * more recent than the value of head, since in the netmap ring cur can be
+     * ahead of head and cur cannot wrap around head because it must be behind
+     * tail. Inverting the order of writes below could instead result into the
+     * host to think head went ahead of cur, which would cause the sync
+     * prologue to fail.
+     *
+     * The following memory barrier scheme is used to make this happen:
+     *
+     *          Guest              Host
+     *
+     *          STORE(cur)         LOAD(head)
+     *          mb() <-----------> mb()
+     *          STORE(head)        LOAD(cur)
+     */
+    atok->cur = cur;
+    nm_stst_barrier();
+    atok->head = head;
+}
+
+/* Guest driver: Read kring pointers (hwcur, hwtail) from the CSB.
+ * This routine is coupled with ptnetmap_host_write_kring_csb(). */
+static inline void
+ptnetmap_guest_read_kring_csb(struct nm_csb_ktoa *ktoa,
+                              struct netmap_kring *kring)
+{
+    /*
+     * We place a memory barrier to make sure that the update of hwtail never
+     * overtakes the update of hwcur.
+     * (see explanation in ptnetmap_host_write_kring_csb).
+     */
+    kring->nr_hwtail = ktoa->hwtail;
+    nm_stst_barrier();
+    kring->nr_hwcur = ktoa->hwcur;
+}
+
+/* Helper function wrapping ptnetmap_guest_read_kring_csb(). */
+static inline void
+ptnet_sync_tail(struct nm_csb_ktoa *ktoa, struct netmap_kring *kring)
+{
+	struct netmap_ring *ring = kring->ring;
+
+	/* Update hwcur and hwtail as known by the host. */
+        ptnetmap_guest_read_kring_csb(ktoa, kring);
+
+	/* nm_sync_finalize */
+	ring->tail = kring->rtail = kring->nr_hwtail;
+}
+#endif /* WITH_PTNETMAP */
 
 #ifdef __FreeBSD__
 /*
@@ -2510,5 +2602,14 @@ int nmreq_checkduplicate(struct nmreq_option *);
 
 int netmap_init_bridges(void);
 void netmap_uninit_bridges(void);
+
+/* Functions to read and write CSB fields from the kernel. */
+#if defined (linux)
+#define CSB_READ(csb, field, r) (get_user(r, &csb->field))
+#define CSB_WRITE(csb, field, v) (put_user(v, &csb->field))
+#else  /* ! linux */
+#define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
+#define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
+#endif /* ! linux */
 
 #endif /* _NET_NETMAP_KERN_H_ */

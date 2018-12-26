@@ -265,6 +265,16 @@ LOWER SPEED THAN LINE RATE
     e1000/e1000e vary between 1.15 and 1.32 Mpps. re/r8169 is
     extremely slow in sending (max 4-500 Kpps)
 
+HOST RINGS DO NOT WORK
+  + disable NIC offloads, because netmap does not support them and
+    packets exchanged between netmap and the kernel stack can be dropped
+    because of invalid checksums. On FreeBSD offloads can be disabled with
+    a command like
+
+      # ifconfig vtnet0 -txcsum -rxcsum -tso4 -tso6 -lro -txcsum6 -rxcsum6
+
+    See LINUX/README for the corresponding Linux command.
+
 
 Credits
 -------

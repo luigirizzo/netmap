@@ -26,6 +26,7 @@ CFLAGS += -DNO_PCAP
 endif
 
 PREFIX ?= /usr/local
+MAN_PREFIX = $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)/share/man
 
 all: $(PROGS)
 
@@ -37,3 +38,4 @@ install: $(PROGS:%=install-%)
 
 install-%:
 	install -D $* $(DESTDIR)/$(PREFIX)/bin/$*
+	-install -D -m 644 $(SRCDIR)/apps/vale-ctl/vale-ctl.4 $(DESTDIR)/$(MAN_PREFIX)/man4/vale-ctl.4

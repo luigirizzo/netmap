@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (C) 2012-2014 Matteo Landi
  * Copyright (C) 2012-2016 Luigi Rizzo
  * Copyright (C) 2012-2016 Giuseppe Lettieri
@@ -316,7 +318,7 @@ netmap_mem_get_id(struct netmap_mem_d *nmd)
 
 #ifdef NM_DEBUG_MEM_PUTGET
 #define NM_DBG_REFC(nmd, func, line)	\
-	nm_prinf("%s:%d mem[%d] -> %d\n", func, line, (nmd)->nm_id, (nmd)->refcount);
+	nm_prinf("%d mem[%d] -> %d", line, (nmd)->nm_id, (nmd)->refcount);
 #else
 #define NM_DBG_REFC(nmd, func, line)
 #endif
@@ -2343,7 +2345,7 @@ out:
 #endif /* WITH_EXTMEM */
 
 
-#ifdef WITH_PTNETMAP_GUEST
+#ifdef WITH_PTNETMAP
 struct mem_pt_if {
 	struct mem_pt_if *next;
 	struct ifnet *ifp;
@@ -2386,7 +2388,8 @@ netmap_mem_pt_guest_ifp_add(struct netmap_mem_d *nmd, struct ifnet *ifp,
 
 	NMA_UNLOCK(nmd);
 
-	D("added (ifp=%p,nifp_offset=%u)", ptif->ifp, ptif->nifp_offset);
+	nm_prinf("ifp=%s,nifp_offset=%u",
+		ptif->ifp->if_xname, ptif->nifp_offset);
 
 	return 0;
 }
@@ -2667,7 +2670,7 @@ netmap_mem_pt_guest_rings_create(struct netmap_adapter *na)
 			continue;
 		kring->ring = (struct netmap_ring *)
 			((char *)nifp +
-			 nifp->ring_ofs[i + na->num_tx_rings + 1]);
+			 nifp->ring_ofs[netmap_all_rings(na, NR_TX) + i]);
 	}
 
 	error = 0;
@@ -2832,4 +2835,4 @@ netmap_mem_pt_guest_new(struct ifnet *ifp,
 	return nmd;
 }
 
-#endif /* WITH_PTNETMAP_GUEST */
+#endif /* WITH_PTNETMAP */
