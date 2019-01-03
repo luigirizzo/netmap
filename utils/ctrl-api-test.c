@@ -84,7 +84,6 @@ exec_command(int argc, const char *const argv[])
 	if (child_pid == 0) {
 		char **av;
 		int fds[3];
-		int i;
 
 		/* Child process. Redirect stdin, stdout
 		 * and stderr. */
