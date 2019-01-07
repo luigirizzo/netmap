@@ -87,7 +87,8 @@ util_load_vp (const char *path)
 void
 util_unload_vp (gfile_t *vp)
 {
-	ftruncate (vp->v_fd, vp->v_used);
+	if (ftruncate (vp->v_fd, vp->v_used) < 0)
+		perror("ftruncate");
 
 	munmap (vp->v_base, vp->v_size);
 	close (vp->v_fd);
