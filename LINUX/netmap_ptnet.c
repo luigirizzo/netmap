@@ -64,7 +64,6 @@ struct ptnet_queue {
 
 	/* MSI-X interrupt data structures. */
 	char msix_name[64];
-	cpumask_var_t msix_affinity_mask;
 };
 
 struct ptnet_rx_queue {
@@ -796,16 +795,6 @@ ptnet_irqs_init(struct ptnet_info *pi)
 
 	for (i=0; i<pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues[i];
-
-		memset(&pq->msix_affinity_mask, 0, sizeof(pq->msix_affinity_mask));
-		if (!alloc_cpumask_var(&pq->msix_affinity_mask, GFP_KERNEL)) {
-			pr_err("%s: Failed to alloc cpumask var\n", __func__);
-			goto err_masks;
-		}
-	}
-
-	for (i=0; i<pi->num_rings; i++) {
-		struct ptnet_queue *pq = pi->queues[i];
 		irq_handler_t handler = (i < pi->num_tx_rings) ?
 					ptnet_tx_intr : ptnet_rx_intr;
 		unsigned int vector = ptnet_get_irq_vector(pi, i);
@@ -828,10 +817,6 @@ err_irqs:
 		free_irq(ptnet_get_irq_vector(pi, i), pi->queues[i]);
 	}
 	i = pi->num_rings-1;
-err_masks:
-	for (; i>=0; i--) {
-		free_cpumask_var(pi->queues[i]->msix_affinity_mask);
-	}
 err_alloc:
 #ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
 	kfree(pi->msix_entries);
@@ -850,9 +835,6 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 		struct ptnet_queue *pq = pi->queues[i];
 
 		free_irq(ptnet_get_irq_vector(pi, i), pq);
-		if (pq->msix_affinity_mask) {
-			free_cpumask_var(pq->msix_affinity_mask);
-		}
 	}
 #ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
 	pci_disable_msix(pi->pdev);
