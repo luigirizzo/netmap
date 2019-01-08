@@ -824,7 +824,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	return 0;
 
 err_irqs:
-	for (; i>=0; i--) {
+	for (i--; i>=0; i--) {
 		free_irq(ptnet_get_irq_vector(pi, i), pi->queues[i]);
 	}
 	i = pi->num_rings-1;
@@ -835,6 +835,8 @@ err_masks:
 err_alloc:
 #ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
 	kfree(pi->msix_entries);
+#else
+	pci_free_irq_vectors(pi->pdev);
 #endif
 	return ret;
 }
