@@ -752,6 +752,7 @@ struct netmap_adapter {
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
 /* free */
 #define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
+#define NAF_CSUM	1024
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
@@ -1230,6 +1231,8 @@ struct nmcb {
 #define SCB_GONE		0x00000010
 	uint32_t flags;
 	uint32_t next;
+	uint32_t cmd;
+	uint32_t off;
 } __attribute__((__packed__)); /* 32 byte */
 static inline void
 nmcb_wstate(struct nmcb *cb, u_int newstate)

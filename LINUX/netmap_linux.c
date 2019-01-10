@@ -1272,7 +1272,10 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		return 0; // drop and skip
 
 	nmcb_wstate(cb, MB_STACK);
-	//m->ip_summed = CHECKSUM_UNNECESSARY;
+	if (slot->flags & NS_CSUM) {
+		m->ip_summed = CHECKSUM_UNNECESSARY;
+		slot->flags &= ~NS_CSUM;
+	}
 	m->protocol = eth_type_trans(m, m->dev);
 	/* have orphan() set data_destructor */
 	SET_MBUF_DESTRUCTOR(m, nm_os_st_mbuf_destructor);

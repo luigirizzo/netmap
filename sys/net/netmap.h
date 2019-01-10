@@ -229,6 +229,7 @@ struct netmap_slot {
 	 * Set on all but the last slot of a multi-segment packet.
 	 * The 'len' field refers to the individual fragment.
 	 */
+#define NS_CSUM		0x0040
 
 #define	NS_PORT_SHIFT	8
 #define	NS_PORT_MASK	(0xff << NS_PORT_SHIFT)
