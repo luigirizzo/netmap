@@ -831,11 +831,13 @@ phttpd_data(struct nm_msg *m)
 			copy_and_log(db->paddr, &db->cur, dbsiz, buf,
 				thisclen, thisclen, is_pm(db) ? 0 : db->pgsiz,
 				is_pm(db), db->vp, key);
-		} else {
+		} else if (db->fd > 0) {
 			if (writesync(buf, len, dbsiz, db->fd,
 				      &db->cur, flags & DF_FDSYNC)) {
 				return; // XXX notify error
 			}
+		} else {
+			RD(1, "no db to save POST");
 		}
 		break;
 	case GET:
@@ -958,11 +960,13 @@ int phttpd_read(int fd, struct nm_targ *targ)
 				copy_and_log(db->paddr, &db->cur, db->size,
 				    readmmap ? NULL : rxbuf, clen, db->pgsiz,
 				    pm ? 0 : db->pgsiz, pm, db->vp, key);
-			} else {
+			} else if (db->fd > 0) {
 				if (writesync(rxbuf, len, db->size, db->fd,
 				    &db->cur, db->flags & DF_FDSYNC)) {
 					return -1;
 				}
+			} else {
+				RD(1, "no db to save POST");
 			}
 		}
 #ifdef WITH_SQLITE
@@ -1038,9 +1042,9 @@ init_db(struct dbctx *db, int i, const char *dir, int type, int flags, size_t si
 	int fd = 0;
 	char path[64];
 
+	bzero(db, sizeof(*db));
 	if (type == DT_NONE)
 		return 0;
-	bzero(db, sizeof(*db));
 	db->type = type;
 	db->flags = flags;
 	db->size = size;
