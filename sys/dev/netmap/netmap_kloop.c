@@ -439,6 +439,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	struct sync_kloop_poll_ctx *poll_ctx = NULL;
 #endif  /* SYNC_KLOOP_POLL */
 	int num_rx_rings, num_tx_rings, num_rings;
+	struct sync_kloop_ring_args *args = NULL;
 	uint32_t sleep_us = req->sleep_us;
 	struct nm_csb_atok* csb_atok_base;
 	struct nm_csb_ktoa* csb_ktoa_base;
@@ -487,6 +488,12 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	num_rx_rings = priv->np_qlast[NR_RX] - priv->np_qfirst[NR_RX];
 	num_tx_rings = priv->np_qlast[NR_TX] - priv->np_qfirst[NR_TX];
 	num_rings = num_tx_rings + num_rx_rings;
+
+	args = nm_os_malloc(num_rings * sizeof(args[0]));
+	if (!args) {
+		err = ENOMEM;
+		goto out;
+	}
 
 	/* Validate notification options. */
 	opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
@@ -567,6 +574,31 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 #endif  /* SYNC_KLOOP_POLL */
 	}
 
+	/* Prepare the arguments for netmap_sync_kloop_tx_ring()
+	 * and netmap_sync_kloop_rx_ring(). */
+	for (i = 0; i < num_tx_rings; i++) {
+		struct sync_kloop_ring_args *a = args + i;
+
+		a->kring = NMR(na, NR_TX)[i + priv->np_qfirst[NR_TX]];
+		a->csb_atok = csb_atok_base + i;
+		a->csb_ktoa = csb_ktoa_base + i;
+#ifdef SYNC_KLOOP_POLL
+		if (poll_ctx)
+			a->irq_ctx = poll_ctx->entries[i].irq_ctx;
+#endif /* SYNC_KLOOP_POLL */
+	}
+	for (i = 0; i < num_rx_rings; i++) {
+		struct sync_kloop_ring_args *a = args + num_tx_rings + i;
+
+		a->kring = NMR(na, NR_RX)[i + priv->np_qfirst[NR_RX]];
+		a->csb_atok = csb_atok_base + num_tx_rings + i;
+		a->csb_ktoa = csb_ktoa_base + num_tx_rings + i;
+#ifdef SYNC_KLOOP_POLL
+		if (poll_ctx)
+			a->irq_ctx = poll_ctx->entries[num_tx_rings + i].irq_ctx;
+#endif /* SYNC_KLOOP_POLL */
+	}
+
 	/* Main loop. */
 	for (;;) {
 		if (unlikely(NM_ACCESS_ONCE(priv->np_kloop_state) & NM_SYNC_KLOOP_STOPPING)) {
@@ -590,41 +622,24 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 
 		/* Process all the TX rings bound to this file descriptor. */
 		for (i = 0; i < num_tx_rings; i++) {
-			struct sync_kloop_ring_args a = {
-				.kring = NMR(na, NR_TX)[i + priv->np_qfirst[NR_TX]],
-				.csb_atok = csb_atok_base + i,
-				.csb_ktoa = csb_ktoa_base + i,
-			};
+			struct sync_kloop_ring_args *a = args + i;
 
-#ifdef SYNC_KLOOP_POLL
-			if (poll_ctx)
-				a.irq_ctx = poll_ctx->entries[i].irq_ctx;
-#endif /* SYNC_KLOOP_POLL */
-			if (unlikely(nm_kr_tryget(a.kring, 1, NULL))) {
+			if (unlikely(nm_kr_tryget(a->kring, 1, NULL))) {
 				continue;
 			}
-			netmap_sync_kloop_tx_ring(&a);
-			nm_kr_put(a.kring);
+			netmap_sync_kloop_tx_ring(a);
+			nm_kr_put(a->kring);
 		}
 
 		/* Process all the RX rings bound to this file descriptor. */
 		for (i = 0; i < num_rx_rings; i++) {
-			struct sync_kloop_ring_args a = {
-				.kring = NMR(na, NR_RX)[i + priv->np_qfirst[NR_RX]],
-				.csb_atok = csb_atok_base + num_tx_rings + i,
-				.csb_ktoa = csb_ktoa_base + num_tx_rings + i,
-			};
+			struct sync_kloop_ring_args *a = args + num_tx_rings + i;
 
-#ifdef SYNC_KLOOP_POLL
-			if (poll_ctx)
-				a.irq_ctx = poll_ctx->entries[num_tx_rings + i].irq_ctx;
-#endif /* SYNC_KLOOP_POLL */
-
-			if (unlikely(nm_kr_tryget(a.kring, 1, NULL))) {
+			if (unlikely(nm_kr_tryget(a->kring, 1, NULL))) {
 				continue;
 			}
-			netmap_sync_kloop_rx_ring(&a);
-			nm_kr_put(a.kring);
+			netmap_sync_kloop_rx_ring(a);
+			nm_kr_put(a->kring);
 		}
 
 #ifdef SYNC_KLOOP_POLL
@@ -666,6 +681,11 @@ out:
 		poll_ctx = NULL;
 	}
 #endif /* SYNC_KLOOP_POLL */
+
+	if (args) {
+		nm_os_free(args);
+		args = NULL;
+	}
 
 	/* Reset the kloop state. */
 	NMG_LOCK();
