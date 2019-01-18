@@ -127,8 +127,8 @@ csb_atok_intr_enabled(struct nm_csb_atok __user *csb_atok)
 static inline void
 sync_kloop_kring_dump(const char *title, const struct netmap_kring *kring)
 {
-	nm_prinf("%s - %s hwcur: %d rhead: %d "
-		"rcur: %d rtail: %d hwtail: %d",
+	nm_prinf("%s, kring %s, hwcur %d, rhead %d, "
+		"rcur %d, rtail %d, hwtail %d",
 		title, kring->name, kring->nr_hwcur, kring->rhead,
 		kring->rcur, kring->rtail, kring->nr_hwtail);
 }
