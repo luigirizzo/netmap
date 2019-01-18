@@ -558,8 +558,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			si[NR_TX] = nm_si_user(priv, NR_TX) ? &na->si[NR_TX] :
 				&na->tx_rings[priv->np_qfirst[NR_TX]]->si;
 			NMG_UNLOCK();
-			poll_wait(priv->np_filp, si[NR_RX], &poll_ctx->wait_table);
 			poll_wait(priv->np_filp, si[NR_TX], &poll_ctx->wait_table);
+			poll_wait(priv->np_filp, si[NR_RX], &poll_ctx->wait_table);
 		}
 #else   /* SYNC_KLOOP_POLL */
 		opt->nro_status = EOPNOTSUPP;
