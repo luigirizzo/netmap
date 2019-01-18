@@ -1159,7 +1159,7 @@ nm_kr_rxspace(struct netmap_kring *k)
 static inline int
 nm_kr_txempty(struct netmap_kring *kring)
 {
-	return kring->rcur == kring->nr_hwtail;
+	return kring->rhead == kring->nr_hwtail;
 }
 
 /* True if no more completed slots in the rx ring, only valid after
