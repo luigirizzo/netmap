@@ -574,8 +574,18 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		}
 
 #ifdef SYNC_KLOOP_POLL
-		if (poll_ctx)
-			__set_current_state(TASK_INTERRUPTIBLE);
+		if (poll_ctx) {
+			/* It is important to set the task state as
+			 * interruptible before processing any TX/RX ring,
+			 * so that if a notification on ring Y comes after
+			 * we have processed ring Y, but before we call
+			 * schedule(), we don't miss it. This is true because
+			 * the wake up function will change the the task state,
+			 * and therefore the schedule_timeout() call below
+			 * will observe the change).
+			 */
+			set_current_state(TASK_INTERRUPTIBLE);
+		}
 #endif  /* SYNC_KLOOP_POLL */
 
 		/* Process all the TX rings bound to this file descriptor. */
@@ -622,7 +632,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			/* If a poll context is present, yield to the scheduler
 			 * waiting for a notification to come either from
 			 * netmap or the application. */
-			schedule_timeout_interruptible(msecs_to_jiffies(1000));
+			schedule_timeout(msecs_to_jiffies(20000));
 		} else
 #endif /* SYNC_KLOOP_POLL */
 		{
