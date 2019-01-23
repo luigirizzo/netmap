@@ -1764,7 +1764,12 @@ ptnet_drain_transmit_queue(struct ptnet_queue *pq, unsigned int budget,
 				 * the host. */
 				atok->appl_need_kick = 1;
 
-				/* Double-check. */
+				/* Double check. We need a full barrier to
+				 * prevent the store to atok->appl_need_kick
+				 * to be reordered with the load from
+				 * ktoa->hwcur and ktoa->hwtail (store-load
+				 * barrier). */
+				atomic_thread_fence_seq_cst();
 				ptnet_sync_tail(ktoa, kring);
 				if (likely(PTNET_TX_NOSPACE(head, kring,
 							    minspace))) {
@@ -2046,7 +2051,12 @@ host_sync:
 				 * last interrupt. */
 				atok->appl_need_kick = 1;
 
-				/* Double-check. */
+				/* Double check for more completed RX slots.
+				 * We need a full barrier to prevent the store
+				 * to atok->appl_need_kick to be reordered with
+				 * the load from ktoa->hwcur and ktoa->hwtail
+				 * (store-load barrier). */
+				atomic_thread_fence_seq_cst();
 				ptnet_sync_tail(ktoa, kring);
 				if (likely(head == ring->tail)) {
 					break;

@@ -769,6 +769,7 @@ struct nm_csb_ktoa {
 
 #ifdef __KERNEL__
 #define nm_stst_barrier smp_wmb
+#define nm_ldld_barrier smp_rmb
 #else  /* !__KERNEL__ */
 static inline void nm_stst_barrier(void)
 {
@@ -777,17 +778,29 @@ static inline void nm_stst_barrier(void)
 	 * which is fine for us. */
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 }
+static inline void nm_ldld_barrier(void)
+{
+	/* A memory barrier with acquire semantic has the combined
+	 * effect of a load-load barrier and a store-load barrier,
+	 * which is fine for us. */
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+}
 #endif /* !__KERNEL__ */
 
 #elif defined(__FreeBSD__)
 
 #ifdef _KERNEL
 #define nm_stst_barrier	atomic_thread_fence_rel
+#define nm_stst_barrier	atomic_thread_fence_acq
 #else  /* !_KERNEL */
 #include <stdatomic.h>
 static inline void nm_stst_barrier(void)
 {
 	atomic_thread_fence(memory_order_release);
+}
+static inline void nm_ldld_barrier(void)
+{
+	atomic_thread_fence(memory_order_acquire);
 }
 #endif /* !_KERNEL */
 
