@@ -792,8 +792,8 @@ static inline void nm_ldld_barrier(void)
 
 #ifdef _KERNEL
 #define nm_stst_barrier	atomic_thread_fence_rel
-#define nm_stst_barrier	atomic_thread_fence_acq
-#define nm_stld_barrier atomic_thread_fence_seq_cst
+#define nm_ldld_barrier	atomic_thread_fence_acq
+#define nm_stld_barrier	atomic_thread_fence_seq_cst
 #else  /* !_KERNEL */
 #include <stdatomic.h>
 static inline void nm_stst_barrier(void)

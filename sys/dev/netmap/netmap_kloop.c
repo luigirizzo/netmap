@@ -773,7 +773,7 @@ netmap_pt_guest_txsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
 	if (nm_kr_txempty(kring) || (flags & NAF_FORCE_RECLAIM)) {
-                nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail,
+		nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail,
 					&kring->nr_hwcur);
 	}
 
@@ -787,7 +787,7 @@ netmap_pt_guest_txsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 		atok->appl_need_kick = 1;
                 /* Double check, with store-load memory barrier. */
 		nm_stld_barrier();
-                nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail,
+		nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail,
 					&kring->nr_hwcur);
                 /* If there is new free space, disable notifications */
 		if (unlikely(!nm_kr_txempty(kring))) {
