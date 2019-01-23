@@ -816,6 +816,10 @@ static inline void
 nm_sync_kloop_appl_write(struct nm_csb_atok *atok, uint32_t cur,
 			 uint32_t head)
 {
+	/* Issue a first store-store barrier to make sure writes to the
+	 * netmap ring do not overcome updates on atok->cur and atok->head. */
+	nm_stst_barrier();
+
 	/*
 	 * We need to write cur and head to the CSB but we cannot do it atomically.
 	 * There is no way we can prevent the host from reading the updated value
@@ -830,11 +834,11 @@ nm_sync_kloop_appl_write(struct nm_csb_atok *atok, uint32_t cur,
 	 *
 	 * The following memory barrier scheme is used to make this happen:
 	 *
-	 *          Guest              Host
+	 *          Guest                Host
 	 *
-	 *          STORE(cur)         LOAD(head)
-	 *          mb() <-----------> mb()
-	 *          STORE(head)        LOAD(cur)
+	 *          STORE(cur)           LOAD(head)
+	 *          wmb() <----------->  rmb()
+	 *          STORE(head)          LOAD(cur)
 	 *
 	 */
 	atok->cur = cur;
@@ -854,8 +858,12 @@ nm_sync_kloop_appl_read(struct nm_csb_ktoa *ktoa, uint32_t *hwtail,
 	 * (see explanation in sync_kloop_kernel_write).
 	 */
 	*hwtail = ktoa->hwtail;
-	nm_stst_barrier();
+	nm_ldld_barrier();
 	*hwcur = ktoa->hwcur;
+
+	/* Make sure that loads from ktoa->hwtail and ktoa->hwcur are not delayed
+	 * after the loads from the netmap ring. */
+	nm_ldld_barrier();
 }
 
 /*

@@ -311,8 +311,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	if (!XMIT_MORE(skb)) {
 		/* Tell the host to process the new packets, updating cur and
 		 * head in the CSB. */
-		ptnetmap_guest_write_kring_csb(atok, kring->rcur,
-					       kring->rhead);
+		nm_sync_kloop_appl_write(atok, kring->rcur, kring->rhead);
 	}
 
 	/* Ask for a kick from a guest to the host if needed. */
@@ -724,8 +723,7 @@ out_of_slots:
 		ring->head = ring->cur = head;
 		kring->rcur = ring->cur;
 		kring->rhead = ring->head;
-		ptnetmap_guest_write_kring_csb(atok, kring->rcur,
-					       kring->rhead);
+		nm_sync_kloop_appl_write(atok, kring->rcur, kring->rhead);
 		/* Kick the host if needed. */
 		if (NM_ACCESS_ONCE(ktoa->kern_need_kick)) {
 			atok->sync_flags = NAF_FORCE_READ;

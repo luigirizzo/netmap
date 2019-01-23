@@ -1688,7 +1688,7 @@ ptnet_ring_update(struct ptnet_queue *pq, struct netmap_kring *kring,
 	/* Mimic nm_txsync_prologue/nm_rxsync_prologue. */
 	kring->rcur = kring->rhead = head;
 
-	ptnetmap_guest_write_kring_csb(atok, kring->rcur, kring->rhead);
+	ptnetmap_sync_kloop_appl_write(atok, kring->rcur, kring->rhead);
 
 	/* Kick the host if needed. */
 	if (NM_ACCESS_ONCE(ktoa->kern_need_kick)) {

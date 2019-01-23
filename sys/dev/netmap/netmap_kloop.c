@@ -749,7 +749,7 @@ netmap_pt_guest_txsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 	 * packets.
 	 */
 	kring->nr_hwcur = ktoa->hwcur;
-	ptnetmap_guest_write_kring_csb(atok, kring->rcur, kring->rhead);
+	nm_sync_kloop_appl_write(atok, kring->rcur, kring->rhead);
 
         /* Ask for a kick from a guest to the host if needed. */
 	if (((kring->rhead != kring->nr_hwcur || nm_kr_txempty(kring))
@@ -763,7 +763,8 @@ netmap_pt_guest_txsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
 	if (nm_kr_txempty(kring) || (flags & NAF_FORCE_RECLAIM)) {
-                ptnetmap_guest_read_kring_csb(ktoa, kring);
+                nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail,
+					&kring->nr_hwcur);
 	}
 
         /*
@@ -775,7 +776,8 @@ netmap_pt_guest_txsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 		/* Reenable notifications. */
 		atok->appl_need_kick = 1;
                 /* Double check */
-                ptnetmap_guest_read_kring_csb(ktoa, kring);
+                nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail,
+					&kring->nr_hwcur);
                 /* If there is new free space, disable notifications */
 		if (unlikely(!nm_kr_txempty(kring))) {
 			atok->appl_need_kick = 0;
@@ -814,7 +816,7 @@ netmap_pt_guest_rxsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 	 * hwtail to the hwtail known from the host (read from the CSB).
 	 * This also updates the kring hwcur.
 	 */
-        ptnetmap_guest_read_kring_csb(ktoa, kring);
+	nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail, &kring->nr_hwcur);
 	kring->nr_kflags &= ~NKR_PENDINTR;
 
 	/*
@@ -822,8 +824,7 @@ netmap_pt_guest_rxsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 	 * released, by updating cur and head in the CSB.
 	 */
 	if (kring->rhead != kring->nr_hwcur) {
-		ptnetmap_guest_write_kring_csb(atok, kring->rcur,
-					       kring->rhead);
+		nm_sync_kloop_appl_write(atok, kring->rcur, kring->rhead);
                 /* Ask for a kick from the guest to the host if needed. */
 		if (NM_ACCESS_ONCE(ktoa->kern_need_kick)) {
 			atok->sync_flags = flags;
@@ -840,7 +841,8 @@ netmap_pt_guest_rxsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 		/* Reenable notifications. */
                 atok->appl_need_kick = 1;
                 /* Double check */
-                ptnetmap_guest_read_kring_csb(ktoa, kring);
+		nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail,
+					&kring->nr_hwcur);
                 /* If there are new slots, disable notifications. */
 		if (!nm_kr_rxempty(kring)) {
                         atok->appl_need_kick = 0;
