@@ -66,8 +66,12 @@ static inline void
 sync_kloop_kernel_write(struct nm_csb_ktoa __user *ptr, uint32_t hwcur,
 			   uint32_t hwtail)
 {
+	/* Issue a first store-store barrier to make sure writes to the
+	 * netmap ring do not overcome updates on ktoa->hwcur and ktoa->hwtail. */
+	nm_stst_barrier();
+
 	/*
-	 * The same scheme used in ptnetmap_guest_write_kring_csb() applies here.
+	 * The same scheme used in nm_sync_kloop_appl_write() applies here.
 	 * We allow the application to read a value of hwcur more recent than the value
 	 * of hwtail, since this would anyway result in a consistent view of the
 	 * ring state (and hwcur can never wraparound hwtail, since hwcur must be
@@ -75,11 +79,11 @@ sync_kloop_kernel_write(struct nm_csb_ktoa __user *ptr, uint32_t hwcur,
 	 *
 	 * The following memory barrier scheme is used to make this happen:
 	 *
-	 *          Application          Kernel
+	 *          Application            Kernel
 	 *
-	 *          STORE(hwcur)         LOAD(hwtail)
-	 *          mb() <-------------> mb()
-	 *          STORE(hwtail)        LOAD(hwcur)
+	 *          STORE(hwcur)           LOAD(hwtail)
+	 *          wmb() <------------->  rmb()
+	 *          STORE(hwtail)          LOAD(hwcur)
 	 */
 	CSB_WRITE(ptr, hwcur, hwcur);
 	nm_stst_barrier();
@@ -96,12 +100,16 @@ sync_kloop_kernel_read(struct nm_csb_atok __user *ptr,
 	/*
 	 * We place a memory barrier to make sure that the update of head never
 	 * overtakes the update of cur.
-	 * (see explanation in ptnetmap_guest_write_kring_csb).
+	 * (see explanation in sync_kloop_kernel_write).
 	 */
 	CSB_READ(ptr, head, shadow_ring->head);
-	nm_stst_barrier();
+	nm_ldld_barrier();
 	CSB_READ(ptr, cur, shadow_ring->cur);
 	CSB_READ(ptr, sync_flags, shadow_ring->flags);
+
+	/* Make sure that loads from atok->head and atok->cur are not delayed
+	 * after the loads from the netmap ring. */
+	nm_ldld_barrier();
 }
 
 /* Enable or disable application --> kernel kicks. */
@@ -240,7 +248,8 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 			 */
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
-			/* Doublecheck. */
+			/* Double check, with store-load memory barrier. */
+			nm_stld_barrier();
 			sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 			if (shadow_ring.head != kring->rhead) {
 				/* We won the race condition, there are more packets to
@@ -358,7 +367,8 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 			 */
 			/* Reenable notifications. */
 			csb_ktoa_kick_enable(csb_ktoa, 1);
-			/* Doublecheck. */
+			/* Double check, with store-load memory barrier. */
+			nm_stld_barrier();
 			sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 			if (!sync_kloop_norxslots(kring, shadow_ring.head)) {
 				/* We won the race condition, more slots are available. Disable
@@ -775,7 +785,8 @@ netmap_pt_guest_txsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 	if (nm_kr_txempty(kring) && !(kring->nr_kflags & NKR_NOINTR)) {
 		/* Reenable notifications. */
 		atok->appl_need_kick = 1;
-                /* Double check */
+                /* Double check, with store-load memory barrier. */
+		nm_stld_barrier();
                 nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail,
 					&kring->nr_hwcur);
                 /* If there is new free space, disable notifications */
@@ -840,7 +851,8 @@ netmap_pt_guest_rxsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 	if (nm_kr_rxempty(kring) && !(kring->nr_kflags & NKR_NOINTR)) {
 		/* Reenable notifications. */
                 atok->appl_need_kick = 1;
-                /* Double check */
+                /* Double check, with store-load memory barrier. */
+		nm_stld_barrier();
 		nm_sync_kloop_appl_read(ktoa, &kring->nr_hwtail,
 					&kring->nr_hwcur);
                 /* If there are new slots, disable notifications. */
