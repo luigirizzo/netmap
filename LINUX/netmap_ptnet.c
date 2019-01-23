@@ -330,7 +330,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		/* Double check. We need a full barrier to prevent the store
 		 * to atok->appl_need_kick to be reordered with the load from
 		 * ktoa->hwcur and ktoa->hwtail (store-load barrier). */
-		smp_mb();
+		nm_stld_barrier();
 		ptnet_sync_tail(ktoa, kring);
 		if (unlikely(ptnet_tx_slots(a.ring) >= pi->min_tx_slots)) {
 			/* More TX space came in the meanwhile. */
@@ -702,7 +702,7 @@ out_of_slots:
 		 * We need a full barrier to prevent the store to
 		 * atok->appl_need_kick to be reordered with the load from
 		 * ktoa->hwcur and ktoa->hwtail (store-load barrier). */
-		smp_mb();
+		nm_stld_barrier();
 		ptnet_sync_tail(ktoa, kring);
 		if (head != ring->tail) {
 			/* If there is more work to do, disable notifications

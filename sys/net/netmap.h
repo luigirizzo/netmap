@@ -770,6 +770,7 @@ struct nm_csb_ktoa {
 #ifdef __KERNEL__
 #define nm_stst_barrier smp_wmb
 #define nm_ldld_barrier smp_rmb
+#define nm_stld_barrier smp_mb
 #else  /* !__KERNEL__ */
 static inline void nm_stst_barrier(void)
 {
@@ -792,6 +793,7 @@ static inline void nm_ldld_barrier(void)
 #ifdef _KERNEL
 #define nm_stst_barrier	atomic_thread_fence_rel
 #define nm_stst_barrier	atomic_thread_fence_acq
+#define nm_stld_barrier atomic_thread_fence_seq_cst
 #else  /* !_KERNEL */
 #include <stdatomic.h>
 static inline void nm_stst_barrier(void)
