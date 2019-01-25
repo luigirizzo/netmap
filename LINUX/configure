@@ -914,7 +914,7 @@ EOF
 	cat >> drivers.mak <<EOF
 $d@conf := $drv_conf
 $d@src := $drv_src
-$d@patch := $drv_patch
+$d@patch := $(echo $drv_patch)
 EOF
 done
 
