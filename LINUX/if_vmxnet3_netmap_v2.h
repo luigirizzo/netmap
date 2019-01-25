@@ -206,9 +206,8 @@ vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 	static const u32 rxprod_reg[] = {VMXNET3_REG_RXPROD,
 	                                 VMXNET3_REG_RXPROD2};
 
-	u_int num_pkts = 0;
 	u_int nm_i;
-	u_int n;
+	u_int nic_i;
 
 	struct netmap_adapter *na  = kring->na;
 	struct ifnet *ifp          = na->ifp;
@@ -223,6 +222,7 @@ vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 	struct Vmxnet3_RxCompDesc *rcd;
 	struct SOFTC_T *adapter     = netdev_priv(ifp);
 	struct vmxnet3_rx_queue *rq = &adapter->rx_queue[ring_nr];
+	struct vmxnet3_cmd_ring *cmd_ring = rq->rx_ring;
 
 	if (!netif_carrier_ok(ifp))
 		return 0;
@@ -235,15 +235,11 @@ vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 	//
 
 	if (netmap_no_pendintr || force_update) {
-		u_int hwtail_lim = nm_prev(kring->nr_hwcur, lim);
-		nm_i             = kring->nr_hwtail;
-
-		for (n = 0; nm_i != hwtail_lim; n++) {
+		nm_i   = kring->nr_hwtail;
+		nic_i  = netmap_idx_k2n(kring, nm_i);
+		for (;;) {
 			struct netmap_slot *slot;
-			struct vmxnet3_cmd_ring *cmd_ring;
 			u_int rx_idx;
-			u_int ring_idx;
-			u_int num_to_alloc;
 			uint64_t paddr;
 
 			vmxnet3_getRxComp(
@@ -257,9 +253,6 @@ vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 			dma_rmb();
 
-			slot = nmring->slot + nm_i;
-			PNMB(na, slot, &paddr);
-
 			// data ring has been disabled on device init
 			BUG_ON(rcd->rqID != rq->qid && rcd->rqID != rq->qid2);
 
@@ -269,18 +262,36 @@ vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 			 */
 			BUG_ON(!(rcd->sop && rcd->eop));
 			BUG_ON(rcd->len > NETMAP_BUF_SIZE(na));
+			BUG_ON(VMXNET3_GET_RING_IDX(adapter, rcd->rqID) != 0);
 
-			ring_idx = VMXNET3_GET_RING_IDX(adapter, rcd->rqID);
 			rx_idx   = rcd->rxdIdx;
-			cmd_ring = rq->rx_ring + ring_idx;
+
+			/* device may have skipped some rx descs */
+			while (unlikely(nic_i != rx_idx)) {
+				D("%u skipped! rx_idx %u", nic_i, rx_idx);
+				/* the nic has skipped some slots because who
+				 * knows why. To shelter the application from
+				 * this we would need to rotate the
+				 * kernel-owned segments of the netmap and nic
+				 * rings.  For now, we just set len=0 in the
+				 * skipped slots and hope that this never
+				 * happens.
+				 */
+
+				nmring->slot[nm_i].len = 0;
+				nm_i = nm_next(nm_i, lim);
+				nic_i = nm_next(nic_i, lim);
+			}
+
+			slot = nmring->slot + nm_i;
+			PNMB(na, slot, &paddr);
 
 			slot->len   = rcd->len;
 			slot->flags = 0;
 			netmap_sync_map_cpu(na, (bus_dma_tag_t)na->pdev, &paddr,
 			                    slot->len, NR_RX);
-			num_pkts++;
-
 			nm_i = nm_next(nm_i, lim);
+			nic_i = nm_next(nic_i, lim);
 
 			/* XXX can this ever happen with all offloads disabled?
 			 */
@@ -292,48 +303,10 @@ vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 					rq->stats.drop_fcs++;
 			}
 
-			/* device may have skipped some rx descs */
-			cmd_ring->next2comp = rx_idx;
-			num_to_alloc = vmxnet3_cmd_ring_desc_avail(cmd_ring);
-
-			/* Ensure that the writes to rxd->gen bits will be
-			 * observed after all other writes to rxd objects.
-			 */
-			dma_wmb();
-
-			while (num_to_alloc) {
-				struct Vmxnet3_RxDesc *rxd;
-
-				vmxnet3_getRxDesc(
-				        rxd,
-				        &cmd_ring->base[cmd_ring->next2fill]
-				                 .rxd,
-				        &rxCmdDesc);
-				BUG_ON(!rxd->addr);
-
-				/* Recv desc is ready to be used by the device
-				 */
-				rxd->gen = cmd_ring->gen;
-				vmxnet3_cmd_ring_adv_next2fill(cmd_ring);
-				num_to_alloc--;
-			}
-
-			/* if needed, update the register */
-			if (unlikely(rq->shared->updateRxProd)) {
-				VMXNET3_WRITE_BAR0_REG(
-				        adapter,
-				        rxprod_reg[ring_idx] +
-				                rq->qid * VMXNET3_REG_ALIGN,
-				        cmd_ring->next2fill);
-			}
-
 			vmxnet3_comp_ring_adv_next2proc(&rq->comp_ring);
 		}
 
-		if (num_pkts) {
-			kring->nr_hwtail = nm_i;
-		}
-
+		kring->nr_hwtail = nm_i;
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
 
@@ -344,22 +317,53 @@ vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 	nm_i = kring->nr_hwcur;
 
 	if (nm_i != head) {
-		for (n = 0; nm_i != head; n++) {
+		nic_i = netmap_idx_k2n(kring, nm_i);
+		while (nm_i != head) {
 			struct netmap_slot *slot = &nmring->slot[nm_i];
+			struct Vmxnet3_RxDesc *rxd;
 			uint64_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
 
-			if (addr == NETMAP_BUF_BASE(na)) // bad buf
-				goto ring_reset;
+			if (slot->flags & NS_BUF_CHANGED) {
 
-			slot->flags &= ~NS_BUF_CHANGED;
+				if (addr == NETMAP_BUF_BASE(na)) // bad buf
+					goto ring_reset;
 
-			netmap_sync_map_dev(na, (bus_dma_tag_t)na->pdev, &paddr,
-			                    NETMAP_BUF_SIZE(na), NR_RX);
+				vmxnet3_getRxDesc(
+					rxd,
+					&cmd_ring->base[nic_i].rxd,
+					&rxCmdDesc);
 
+				rxd->addr = paddr;
+				slot->flags &= ~NS_BUF_CHANGED;
+				/* Ensure that the writes to rxd->gen bits will be
+				 * observed after all other writes to rxd objects.
+				 */
+				dma_wmb();
+			}
+			netmap_sync_map_dev(na,
+					(bus_dma_tag_t)na->pdev, &paddr,
+					    NETMAP_BUF_SIZE(na), NR_RX);
+
+			vmxnet3_getRxDesc(
+				rxd,
+				&cmd_ring->base[cmd_ring->next2fill].rxd,
+				&rxCmdDesc);
+			rxd->gen = cmd_ring->gen;
+			vmxnet3_cmd_ring_adv_next2fill(cmd_ring);
 			nm_i = nm_next(nm_i, lim);
+			nic_i = nm_next(nic_i, lim);
 		}
 		kring->nr_hwcur = head;
+
+		/* if needed, update the register */
+		if (unlikely(rq->shared->updateRxProd)) {
+			VMXNET3_WRITE_BAR0_REG(
+				adapter,
+				rxprod_reg[kring->ring_id] +
+					rq->qid * VMXNET3_REG_ALIGN,
+				cmd_ring->next2fill);
+		}
 	}
 
 	return 0;
