@@ -567,16 +567,12 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		/* Poll for notifications coming from the netmap rings bound to
 		 * this file descriptor. */
 		{
-			NM_SELINFO_T *si[NR_TXRX];
-
 			NMG_LOCK();
-			si[NR_RX] = nm_si_user(priv, NR_RX) ? &na->si[NR_RX] :
-				&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
-			si[NR_TX] = nm_si_user(priv, NR_TX) ? &na->si[NR_TX] :
-				&na->tx_rings[priv->np_qfirst[NR_TX]]->si;
+			poll_wait(priv->np_filp, priv->np_si[NR_TX],
+			    &poll_ctx->wait_table);
+			poll_wait(priv->np_filp, priv->np_si[NR_RX],
+			    &poll_ctx->wait_table);
 			NMG_UNLOCK();
-			poll_wait(priv->np_filp, si[NR_TX], &poll_ctx->wait_table);
-			poll_wait(priv->np_filp, si[NR_RX], &poll_ctx->wait_table);
 		}
 #else   /* SYNC_KLOOP_POLL */
 		opt->nro_status = EOPNOTSUPP;
@@ -710,7 +706,6 @@ netmap_sync_kloop_stop(struct netmap_priv_d *priv)
 {
 	struct netmap_adapter *na;
 	bool running = true;
-	NM_SELINFO_T *si;
 	int err = 0;
 
 	if (priv->np_nifp == NULL) {
@@ -731,9 +726,7 @@ netmap_sync_kloop_stop(struct netmap_priv_d *priv)
 	/* Send a notification to the kloop, in case it is blocked in
 	 * schedule_timeout(). We can use either RX or TX, because the
 	 * kloop is waiting on both. */
-	si = nm_si_user(priv, NR_RX) ? &na->si[NR_RX] :
-		&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
-	nm_os_selwakeup(si);
+	nm_os_selwakeup(priv->np_si[NR_RX]);
 
 	/* Wait for the kloop to actually terminate. */
 	while (running) {
