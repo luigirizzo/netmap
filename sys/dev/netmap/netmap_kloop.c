@@ -708,12 +708,34 @@ out:
 int
 netmap_sync_kloop_stop(struct netmap_priv_d *priv)
 {
+	struct netmap_adapter *na;
 	bool running = true;
+	NM_SELINFO_T *si;
 	int err = 0;
 
+	if (priv->np_nifp == NULL) {
+		return ENXIO;
+	}
+	mb(); /* make sure following reads are not from cache */
+
+	na = priv->np_na;
+	if (!nm_netmap_on(na)) {
+		return ENXIO;
+	}
+
+	/* Set the kloop stopping flag. */
 	NMG_LOCK();
 	priv->np_kloop_state |= NM_SYNC_KLOOP_STOPPING;
 	NMG_UNLOCK();
+
+	/* Send a notification to the kloop, in case it is blocked in
+	 * schedule_timeout(). We can use either RX or TX, because the
+	 * kloop is waiting on both. */
+	si = nm_si_user(priv, NR_RX) ? &na->si[NR_RX] :
+		&na->rx_rings[priv->np_qfirst[NR_RX]]->si;
+	nm_os_selwakeup(si);
+
+	/* Wait for the kloop to actually terminate. */
 	while (running) {
 		usleep_range(1000, 1500);
 		NMG_LOCK();
