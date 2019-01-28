@@ -657,7 +657,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			/* If a poll context is present, yield to the scheduler
 			 * waiting for a notification to come either from
 			 * netmap or the application. */
-			schedule_timeout(msecs_to_jiffies(20000));
+			schedule_timeout(msecs_to_jiffies(3000));
 		} else
 #endif /* SYNC_KLOOP_POLL */
 		{
