@@ -1947,10 +1947,10 @@ ptnetmap_guest_shutdown(struct pci_dev *pdev)
 	if (pdev->device == PTNETMAP_PCI_NETIF_ID) {
 		/* Shutdown the ptnet device. */
 		ptnet_shutdown(pdev);
+	} else if (pdev->device == PTNETMAP_PCI_DEVICE_ID) {
+		/* Shutdown the memdev device. */
+		pci_disable_device(pdev);
 	}
-
-	/* Shutdown the memdev device. */
-	pci_disable_device(pdev);
 }
 
 /*
