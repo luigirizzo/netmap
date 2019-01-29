@@ -553,6 +553,11 @@ enum {
 	 * struct netmap_ring header, but rather using an user-provided
 	 * memory area (see struct nm_csb_atok and struct nm_csb_ktoa). */
 	NETMAP_REQ_OPT_CSB,
+
+	/* Like NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS, but the 'ioeventfd'
+	 * are mandatory (cannot be < 0), and the TX ring is synced in
+	 * the context of the VM exit. */
+	NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT,
 };
 
 /*
@@ -877,6 +882,12 @@ struct nmreq_opt_sync_kloop_eventfds {
 	 * their order must agree with the CSB arrays passed in the
 	 * NETMAP_REQ_OPT_CSB option. Each entry contains a file descriptor
 	 * backed by an eventfd.
+	 *
+	 * If any of the 'ioeventfd' entries is < 0, the event loop uses
+	 * the sleeping synchronization strategy (according to sleep_us),
+	 * and keeps kern_need_kick always disabled.
+	 * Each 'irqfd' can be < 0, and in that case the corresponding queue
+	 * is never notified.
 	 */
 	struct {
 		/* Notifier for the application --> kernel loop direction. */
