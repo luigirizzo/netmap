@@ -83,10 +83,11 @@ nm_os_vfree(void *addr){
 	vfree(addr);
 }
 
-void
-nm_os_selinfo_init(NM_SELINFO_T *si)
+int
+nm_os_selinfo_init(NM_SELINFO_T *si, const char *name)
 {
 	init_waitqueue_head(si);
+	return 0;
 }
 
 void

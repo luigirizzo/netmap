@@ -215,11 +215,12 @@ typedef struct _win_SELINFO
 	KGUARDED_MUTEX mutex;
 } win_SELINFO;
 
-static void
-nm_os_selinfo_init(win_SELINFO* queue)
+static int
+nm_os_selinfo_init(win_SELINFO* queue, const char *name)
 {
 	KeInitializeEvent(&queue->queue, NotificationEvent, TRUE);
 	KeInitializeGuardedMutex(&queue->mutex);
+	return 0;
 }
 
 static void nm_os_selinfo_uninit(win_SELINFO *queue) { /* XXX nothing to do here? */ }
