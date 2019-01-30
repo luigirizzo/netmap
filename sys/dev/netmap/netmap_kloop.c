@@ -418,6 +418,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 }
 
 #ifdef SYNC_KLOOP_POLL
+struct sync_kloop_poll_ctx;
 struct sync_kloop_poll_entry {
 	/* Support for receiving notifications from
 	 * a netmap ring or from the application. */
@@ -428,6 +429,12 @@ struct sync_kloop_poll_entry {
 	/* Support for sending notifications to the application. */
 	struct eventfd_ctx *irq_ctx;
 	struct file *irq_filp;
+
+	/* Arguments for the ring processing function. Useful
+	 * in case of custom wake-up function. */
+	struct sync_kloop_ring_args *args;
+	struct sync_kloop_poll_ctx *parent;
+
 };
 
 struct sync_kloop_poll_ctx {
@@ -435,6 +442,10 @@ struct sync_kloop_poll_ctx {
 	unsigned int next_entry;
 	int (*next_wake_fun)(wait_queue_t *, unsigned, int, void *);
 	unsigned int num_entries;
+	unsigned int num_tx_rings;
+	/* First num_tx_rings entries are for the TX kicks.
+	 * Then the RX kicks entries follow. The last two
+	 * entries are for TX irq, and RX irq. */
 	struct sync_kloop_poll_entry entries[0];
 };
 
@@ -459,6 +470,38 @@ sync_kloop_poll_table_queue_proc(struct file *file, wait_queue_head_t *wqh,
 	}
 	add_wait_queue(wqh, &entry->wait);
 }
+
+static int
+sync_kloop_tx_kick_wake_fun(wait_queue_t *wait, unsigned mode,
+    int wake_flags, void *key)
+{
+	struct sync_kloop_poll_entry *entry =
+	    container_of(wait, struct sync_kloop_poll_entry, wait);
+
+	netmap_sync_kloop_tx_ring(entry->args);
+
+	return 0;
+}
+
+static int
+sync_kloop_tx_irq_wake_fun(wait_queue_t *wait, unsigned mode,
+    int wake_flags, void *key)
+{
+	struct sync_kloop_poll_entry *entry =
+	    container_of(wait, struct sync_kloop_poll_entry, wait);
+	struct sync_kloop_poll_ctx *poll_ctx = entry->parent;
+	int i;
+
+	for (i = 0; i < poll_ctx->num_tx_rings; i++) {
+		struct eventfd_ctx *irq_ctx = poll_ctx->entries[i].irq_ctx;
+
+		if (irq_ctx) {
+			eventfd_signal(irq_ctx, 1);
+		}
+	}
+
+	return 0;
+}
 #endif  /* SYNC_KLOOP_POLL */
 
 int
@@ -478,6 +521,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	struct netmap_adapter *na;
 	struct nmreq_option *opt;
 	bool use_sleep = true;
+	bool direct = false;
 	int err = 0;
 	int i;
 
@@ -528,6 +572,25 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		goto out;
 	}
 
+	/* Prepare the arguments for netmap_sync_kloop_tx_ring()
+	 * and netmap_sync_kloop_rx_ring(). */
+	for (i = 0; i < num_tx_rings; i++) {
+		struct sync_kloop_ring_args *a = args + i;
+
+		a->kring = NMR(na, NR_TX)[i + priv->np_qfirst[NR_TX]];
+		a->csb_atok = csb_atok_base + i;
+		a->csb_ktoa = csb_ktoa_base + i;
+		a->use_kicks = false;
+	}
+	for (i = 0; i < num_rx_rings; i++) {
+		struct sync_kloop_ring_args *a = args + num_tx_rings + i;
+
+		a->kring = NMR(na, NR_RX)[i + priv->np_qfirst[NR_RX]];
+		a->csb_atok = csb_atok_base + num_tx_rings + i;
+		a->csb_ktoa = csb_ktoa_base + num_tx_rings + i;
+		a->use_kicks = false;
+	}
+
 	/* Validate notification options. */
 	opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
 				NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS);
@@ -536,8 +599,6 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 				(uintptr_t)hdr->nr_options,
 				NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT);
 	if (opt != NULL) {
-		bool direct;
-
 		err = nmreq_checkduplicate(opt);
 		if (err) {
 			opt->nro_status = err;
@@ -578,12 +639,18 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		 * from the netmap adapter, plus one entries per ring for the
 		 * notifications coming from the application. */
 		poll_ctx = nm_os_malloc(sizeof(*poll_ctx) +
-				(2 + num_rings) * sizeof(poll_ctx->entries[0]));
+				(num_rings + 2) * sizeof(poll_ctx->entries[0]));
 		init_poll_funcptr(&poll_ctx->wait_table,
 					sync_kloop_poll_table_queue_proc);
 		poll_ctx->num_entries = 2 + num_rings;
+		poll_ctx->num_tx_rings = num_tx_rings;
 		poll_ctx->next_entry = 0;
 		poll_ctx->next_wake_fun = NULL;
+
+		for (i = 0; i < num_rings + 2; i++) {
+			poll_ctx->entries[i].args = args + i;
+			poll_ctx->entries[i].parent = poll_ctx;
+		}
 
 		/* Poll for notifications coming from the applications through
 		 * eventfds . */
@@ -607,6 +674,11 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			}
 			poll_ctx->entries[i].irq_filp = filp;
 			poll_ctx->entries[i].irq_ctx = irq;
+			/* Don't let netmap_sync_kloop_tx_ring() use
+			 * IRQs in direct mode. */
+			poll_ctx->entries[i].args->irq_ctx =
+			    direct ? NULL : poll_ctx->entries[i].irq_ctx;
+			poll_ctx->entries[i].args->use_kicks = !use_sleep;
 
 			if (eventfds_opt->eventfds[i].ioeventfd >= 0) {
 				filp = eventfd_fget(
@@ -616,6 +688,12 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 					goto out;
 				}
 				if (direct && i < num_tx_rings) {
+					/* Override the wake up function
+					 * so that it can directly call
+					 * netmap_sync_kloop_tx_ring().
+					 */
+					poll_ctx->next_wake_fun =
+					    sync_kloop_tx_kick_wake_fun;
 				} else {
 					poll_ctx->next_wake_fun = NULL;
 				}
@@ -632,9 +710,16 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		 * this file descriptor. */
 		if (!use_sleep) {
 			NMG_LOCK();
+			/* In direct mode, override the wake up function so
+			 * that it can forward the netmap_tx_irq() to the
+			 * guest. */
+			poll_ctx->next_wake_fun = direct ?
+			    sync_kloop_tx_irq_wake_fun : NULL;
 			poll_wait(priv->np_filp, priv->np_si[NR_TX],
 			    &poll_ctx->wait_table);
 			poll_ctx->next_entry++;
+
+			poll_ctx->next_wake_fun = NULL;
 			poll_wait(priv->np_filp, priv->np_si[NR_RX],
 			    &poll_ctx->wait_table);
 			poll_ctx->next_entry++;
@@ -646,32 +731,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 #endif  /* SYNC_KLOOP_POLL */
 	}
 
-	/* Prepare the arguments for netmap_sync_kloop_tx_ring()
-	 * and netmap_sync_kloop_rx_ring(). */
-	for (i = 0; i < num_tx_rings; i++) {
-		struct sync_kloop_ring_args *a = args + i;
-
-		a->kring = NMR(na, NR_TX)[i + priv->np_qfirst[NR_TX]];
-		a->csb_atok = csb_atok_base + i;
-		a->csb_ktoa = csb_ktoa_base + i;
-#ifdef SYNC_KLOOP_POLL
-		if (poll_ctx)
-			a->irq_ctx = poll_ctx->entries[i].irq_ctx;
-#endif /* SYNC_KLOOP_POLL */
-		a->use_kicks = !use_sleep;
-	}
-	for (i = 0; i < num_rx_rings; i++) {
-		struct sync_kloop_ring_args *a = args + num_tx_rings + i;
-
-		a->kring = NMR(na, NR_RX)[i + priv->np_qfirst[NR_RX]];
-		a->csb_atok = csb_atok_base + num_tx_rings + i;
-		a->csb_ktoa = csb_ktoa_base + num_tx_rings + i;
-#ifdef SYNC_KLOOP_POLL
-		if (poll_ctx)
-			a->irq_ctx = poll_ctx->entries[num_tx_rings + i].irq_ctx;
-#endif /* SYNC_KLOOP_POLL */
-		a->use_kicks = !use_sleep;
-	}
+	nm_prinf("kloop sleep: %u direct %u", use_sleep, direct);
 
 	/* Main loop. */
 	for (;;) {
@@ -695,7 +755,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 #endif  /* SYNC_KLOOP_POLL */
 
 		/* Process all the TX rings bound to this file descriptor. */
-		for (i = 0; i < num_tx_rings; i++) {
+		for (i = 0; !direct && i < num_tx_rings; i++) {
 			struct sync_kloop_ring_args *a = args + i;
 
 			if (unlikely(nm_kr_tryget(a->kring, 1, NULL))) {

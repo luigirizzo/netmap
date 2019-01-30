@@ -2965,6 +2965,7 @@ nmreq_opt_size_by_type(uint32_t nro_reqtype, uint64_t nro_size)
 		break;
 #endif /* WITH_EXTMEM */
 	case NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS:
+	case NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT:
 		if (nro_size >= rv)
 			rv = nro_size;
 		break;
