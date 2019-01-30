@@ -687,7 +687,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			/* Don't let netmap_sync_kloop_tx_ring() use
 			 * IRQs in direct mode. */
 			poll_ctx->entries[i].args->irq_ctx =
-			    direct ? NULL : poll_ctx->entries[i].irq_ctx;
+			    (direct && i < num_tx_rings) ? NULL :
+			    poll_ctx->entries[i].irq_ctx;
 			poll_ctx->entries[i].args->use_kicks = !use_sleep;
 
 			if (eventfds_opt->eventfds[i].ioeventfd >= 0) {
