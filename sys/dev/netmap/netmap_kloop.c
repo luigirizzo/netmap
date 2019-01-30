@@ -148,6 +148,7 @@ struct sync_kloop_ring_args {
 #ifdef SYNC_KLOOP_POLL
 	struct eventfd_ctx *irq_ctx;
 #endif /* SYNC_KLOOP_POLL */
+	bool use_kicks;
 };
 
 static void
@@ -197,7 +198,9 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		if (unlikely(nm_txsync_prologue(kring, &shadow_ring) >= num_slots)) {
 			/* Reinit ring and enable notifications. */
 			netmap_ring_reinit(kring);
-			csb_ktoa_kick_enable(csb_ktoa, 1);
+			if (a->use_kicks) {
+				csb_ktoa_kick_enable(csb_ktoa, 1);
+			}
 			break;
 		}
 
@@ -206,8 +209,10 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		}
 
 		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
-			/* Reenable notifications. */
-			csb_ktoa_kick_enable(csb_ktoa, 1);
+			if (a->use_kicks) {
+				/* Reenable notifications. */
+				csb_ktoa_kick_enable(csb_ktoa, 1);
+			}
 			nm_prerr("txsync() failed");
 			break;
 		}
@@ -232,7 +237,8 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		/* Interrupt the application if needed. */
 #ifdef SYNC_KLOOP_POLL
 		if (a->irq_ctx && more_txspace && csb_atok_intr_enabled(csb_atok)) {
-			/* Disable application kick to avoid sending unnecessary kicks */
+			/* We could disable kernel --> application kicks here,
+			 * to avoid spurious interrupts. */
 			eventfd_signal(a->irq_ctx, 1);
 			more_txspace = false;
 		}
@@ -241,6 +247,9 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		/* Read CSB to see if there is more work to do. */
 		sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 		if (shadow_ring.head == kring->rhead) {
+			if (!a->use_kicks) {
+				break;
+			}
 			/*
 			 * No more packets to transmit. We enable notifications and
 			 * go to sleep, waiting for a kick from the application when new
@@ -315,7 +324,9 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		if (unlikely(nm_rxsync_prologue(kring, &shadow_ring) >= num_slots)) {
 			/* Reinit ring and enable notifications. */
 			netmap_ring_reinit(kring);
-			csb_ktoa_kick_enable(csb_ktoa, 1);
+			if (a->use_kicks) {
+				csb_ktoa_kick_enable(csb_ktoa, 1);
+			}
 			break;
 		}
 
@@ -324,8 +335,10 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		}
 
 		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
-			/* Reenable notifications. */
-			csb_ktoa_kick_enable(csb_ktoa, 1);
+			if (a->use_kicks) {
+				/* Reenable notifications. */
+				csb_ktoa_kick_enable(csb_ktoa, 1);
+			}
 			nm_prerr("rxsync() failed");
 			break;
 		}
@@ -351,7 +364,8 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 #ifdef SYNC_KLOOP_POLL
 		/* Interrupt the application if needed. */
 		if (a->irq_ctx && some_recvd && csb_atok_intr_enabled(csb_atok)) {
-			/* Disable application kick to avoid sending unnecessary kicks */
+			/* We could disable kernel --> application kicks here,
+			 * to avoid spurious interrupts. */
 			eventfd_signal(a->irq_ctx, 1);
 			some_recvd = false;
 		}
@@ -360,6 +374,9 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		/* Read CSB to see if there is more work to do. */
 		sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 		if (sync_kloop_norxslots(kring, shadow_ring.head)) {
+			if (!a->use_kicks) {
+				break;
+			}
 			/*
 			 * No more slots available for reception. We enable notification and
 			 * go to sleep, waiting for a kick from the application when new receive
@@ -435,7 +452,6 @@ sync_kloop_poll_table_queue_proc(struct file *file, wait_queue_head_t *wqh,
 	/* Use the default wake up function. */
 	init_waitqueue_entry(&entry->wait, current);
 	add_wait_queue(wqh, &entry->wait);
-	poll_ctx->next_entry++;
 }
 #endif  /* SYNC_KLOOP_POLL */
 
@@ -455,6 +471,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	struct nm_csb_ktoa* csb_ktoa_base;
 	struct netmap_adapter *na;
 	struct nmreq_option *opt;
+	bool use_sleep = true;
 	int err = 0;
 	int i;
 
@@ -508,6 +525,10 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	/* Validate notification options. */
 	opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
 				NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS);
+	if (opt == NULL)
+		opt = nmreq_findoption((struct nmreq_option *)
+				(uintptr_t)hdr->nr_options,
+				NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT);
 	if (opt != NULL) {
 		err = nmreq_checkduplicate(opt);
 		if (err) {
@@ -524,6 +545,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 #ifdef SYNC_KLOOP_POLL
 		eventfds_opt = (struct nmreq_opt_sync_kloop_eventfds *)opt;
 		opt->nro_status = 0;
+
 		/* We need 2 poll entries for TX and RX notifications coming
 		 * from the netmap adapter, plus one entries per ring for the
 		 * notifications coming from the application. */
@@ -533,45 +555,66 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 					sync_kloop_poll_table_queue_proc);
 		poll_ctx->num_entries = 2 + num_rings;
 		poll_ctx->next_entry = 0;
+
+		/* Check if some ioeventfd entry is not defined, and force sleep
+		 * synchronization in that case. */
+		use_sleep = false;
+		for (i = 0; i < num_rings; i++) {
+			if (eventfds_opt->eventfds[i].ioeventfd < 0) {
+				use_sleep = true;
+				break;
+			}
+		}
+
 		/* Poll for notifications coming from the applications through
 		 * eventfds . */
-		for (i = 0; i < num_rings; i++) {
-			struct eventfd_ctx *irq;
-			struct file *filp;
+		for (i = 0; i < num_rings; i++, poll_ctx->next_entry++) {
+			struct eventfd_ctx *irq = NULL;
+			struct file *filp = NULL;
 			unsigned long mask;
 
-			filp = eventfd_fget(eventfds_opt->eventfds[i].ioeventfd);
-			if (IS_ERR(filp)) {
-				err = PTR_ERR(filp);
-				goto out;
-			}
-			mask = filp->f_op->poll(filp, &poll_ctx->wait_table);
-			if (mask & POLLERR) {
-				err = EINVAL;
-				goto out;
-			}
-
-			filp = eventfd_fget(eventfds_opt->eventfds[i].irqfd);
-			if (IS_ERR(filp)) {
-				err = PTR_ERR(filp);
-				goto out;
+			if (eventfds_opt->eventfds[i].irqfd >= 0) {
+				filp = eventfd_fget(
+				    eventfds_opt->eventfds[i].irqfd);
+				if (IS_ERR(filp)) {
+					err = PTR_ERR(filp);
+					goto out;
+				}
+				irq = eventfd_ctx_fileget(filp);
+				if (IS_ERR(irq)) {
+					err = PTR_ERR(irq);
+					goto out;
+				}
 			}
 			poll_ctx->entries[i].irq_filp = filp;
-			irq = eventfd_ctx_fileget(filp);
-			if (IS_ERR(irq)) {
-				err = PTR_ERR(irq);
-				goto out;
-			}
 			poll_ctx->entries[i].irq_ctx = irq;
+
+			if (eventfds_opt->eventfds[i].ioeventfd >= 0) {
+				filp = eventfd_fget(
+				    eventfds_opt->eventfds[i].ioeventfd);
+				if (IS_ERR(filp)) {
+					err = PTR_ERR(filp);
+					goto out;
+				}
+				mask = filp->f_op->poll(filp,
+				    &poll_ctx->wait_table);
+				if (mask & POLLERR) {
+					err = EINVAL;
+					goto out;
+				}
+			}
 		}
+
 		/* Poll for notifications coming from the netmap rings bound to
 		 * this file descriptor. */
-		{
+		if (!use_sleep) {
 			NMG_LOCK();
 			poll_wait(priv->np_filp, priv->np_si[NR_TX],
 			    &poll_ctx->wait_table);
+			poll_ctx->next_entry++;
 			poll_wait(priv->np_filp, priv->np_si[NR_RX],
 			    &poll_ctx->wait_table);
+			poll_ctx->next_entry++;
 			NMG_UNLOCK();
 		}
 #else   /* SYNC_KLOOP_POLL */
@@ -592,6 +635,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		if (poll_ctx)
 			a->irq_ctx = poll_ctx->entries[i].irq_ctx;
 #endif /* SYNC_KLOOP_POLL */
+		a->use_kicks = !use_sleep;
 	}
 	for (i = 0; i < num_rx_rings; i++) {
 		struct sync_kloop_ring_args *a = args + num_tx_rings + i;
@@ -603,6 +647,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		if (poll_ctx)
 			a->irq_ctx = poll_ctx->entries[num_tx_rings + i].irq_ctx;
 #endif /* SYNC_KLOOP_POLL */
+		a->use_kicks = !use_sleep;
 	}
 
 	/* Main loop. */
@@ -612,7 +657,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		}
 
 #ifdef SYNC_KLOOP_POLL
-		if (poll_ctx) {
+		if (!use_sleep) {
 			/* It is important to set the task state as
 			 * interruptible before processing any TX/RX ring,
 			 * so that if a notification on ring Y comes after
@@ -648,25 +693,26 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			nm_kr_put(a->kring);
 		}
 
-#ifdef SYNC_KLOOP_POLL
-		if (poll_ctx) {
-			/* If a poll context is present, yield to the scheduler
-			 * waiting for a notification to come either from
-			 * netmap or the application. */
-			schedule_timeout(msecs_to_jiffies(3000));
-		} else
-#endif /* SYNC_KLOOP_POLL */
-		{
+		if (use_sleep) {
 			/* Default synchronization method: sleep for a while. */
 			usleep_range(sleep_us, sleep_us);
 		}
+#ifdef SYNC_KLOOP_POLL
+		else {
+			/* Yield to the scheduler waiting for a notification
+			 * to come either from netmap or the application. */
+			schedule_timeout(msecs_to_jiffies(3000));
+		}
+#endif /* SYNC_KLOOP_POLL */
 	}
 out:
 #ifdef SYNC_KLOOP_POLL
 	if (poll_ctx) {
 		/* Stop polling from netmap and the eventfds, and deallocate
 		 * the poll context. */
-		__set_current_state(TASK_RUNNING);
+		if (!use_sleep) {
+			__set_current_state(TASK_RUNNING);
+		}
 		for (i = 0; i < poll_ctx->next_entry; i++) {
 			struct sync_kloop_poll_entry *entry =
 						poll_ctx->entries + i;
