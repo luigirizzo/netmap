@@ -433,6 +433,7 @@ struct sync_kloop_poll_entry {
 struct sync_kloop_poll_ctx {
 	poll_table wait_table;
 	unsigned int next_entry;
+	int (*next_wake_fun)(wait_queue_t *, unsigned, int, void *);
 	unsigned int num_entries;
 	struct sync_kloop_poll_entry entries[0];
 };
@@ -450,7 +451,12 @@ sync_kloop_poll_table_queue_proc(struct file *file, wait_queue_head_t *wqh,
 	entry->wqh = wqh;
 	entry->filp = file;
 	/* Use the default wake up function. */
-	init_waitqueue_entry(&entry->wait, current);
+	if (poll_ctx->next_wake_fun == NULL) {
+		init_waitqueue_entry(&entry->wait, current);
+	} else {
+		init_waitqueue_func_entry(&entry->wait,
+		    poll_ctx->next_wake_fun);
+	}
 	add_wait_queue(wqh, &entry->wait);
 }
 #endif  /* SYNC_KLOOP_POLL */
@@ -530,6 +536,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 				(uintptr_t)hdr->nr_options,
 				NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT);
 	if (opt != NULL) {
+		bool direct;
+
 		err = nmreq_checkduplicate(opt);
 		if (err) {
 			opt->nro_status = err;
@@ -546,16 +554,6 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		eventfds_opt = (struct nmreq_opt_sync_kloop_eventfds *)opt;
 		opt->nro_status = 0;
 
-		/* We need 2 poll entries for TX and RX notifications coming
-		 * from the netmap adapter, plus one entries per ring for the
-		 * notifications coming from the application. */
-		poll_ctx = nm_os_malloc(sizeof(*poll_ctx) +
-				(2 + num_rings) * sizeof(poll_ctx->entries[0]));
-		init_poll_funcptr(&poll_ctx->wait_table,
-					sync_kloop_poll_table_queue_proc);
-		poll_ctx->num_entries = 2 + num_rings;
-		poll_ctx->next_entry = 0;
-
 		/* Check if some ioeventfd entry is not defined, and force sleep
 		 * synchronization in that case. */
 		use_sleep = false;
@@ -565,6 +563,27 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 				break;
 			}
 		}
+
+		direct = (opt->nro_reqtype ==
+		    NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT);
+
+		if (use_sleep && direct) {
+			/* For 'direct' processing we need all the
+			 * ioeventfds to be valid. */
+			opt->nro_status = err = EINVAL;
+			goto out;
+		}
+
+		/* We need 2 poll entries for TX and RX notifications coming
+		 * from the netmap adapter, plus one entries per ring for the
+		 * notifications coming from the application. */
+		poll_ctx = nm_os_malloc(sizeof(*poll_ctx) +
+				(2 + num_rings) * sizeof(poll_ctx->entries[0]));
+		init_poll_funcptr(&poll_ctx->wait_table,
+					sync_kloop_poll_table_queue_proc);
+		poll_ctx->num_entries = 2 + num_rings;
+		poll_ctx->next_entry = 0;
+		poll_ctx->next_wake_fun = NULL;
 
 		/* Poll for notifications coming from the applications through
 		 * eventfds . */
@@ -595,6 +614,10 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 				if (IS_ERR(filp)) {
 					err = PTR_ERR(filp);
 					goto out;
+				}
+				if (direct && i < num_tx_rings) {
+				} else {
+					poll_ctx->next_wake_fun = NULL;
 				}
 				mask = filp->f_op->poll(filp,
 				    &poll_ctx->wait_table);
