@@ -520,6 +520,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	struct nm_csb_ktoa* csb_ktoa_base;
 	struct netmap_adapter *na;
 	struct nmreq_option *opt;
+	bool na_could_sleep = false;
 	bool use_sleep = true;
 	bool direct = false;
 	int err = 0;
@@ -647,6 +648,15 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		poll_ctx->next_entry = 0;
 		poll_ctx->next_wake_fun = NULL;
 
+		if (direct && (na->na_flags & NAF_BDG_MAYSLEEP)) {
+			/* In direct mode, VALE txsync is called from
+			 * wake-up context, where it is not possible
+			 * to sleep.
+			 */
+			na->na_flags &= ~NAF_BDG_MAYSLEEP;
+			na_could_sleep = true;
+		}
+
 		for (i = 0; i < num_rings + 2; i++) {
 			poll_ctx->entries[i].args = args + i;
 			poll_ctx->entries[i].parent = poll_ctx;
@@ -731,7 +741,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 #endif  /* SYNC_KLOOP_POLL */
 	}
 
-	nm_prinf("kloop sleep: %u direct %u", use_sleep, direct);
+	nm_prinf("kloop use_sleep %u, direct %u, na_could_sleep %u",
+	    use_sleep, direct, na_could_sleep);
 
 	/* Main loop. */
 	for (;;) {
@@ -825,6 +836,9 @@ out:
 	/* Reset the kloop state. */
 	NMG_LOCK();
 	priv->np_kloop_state = 0;
+	if (na_could_sleep) {
+		na->na_flags |= NAF_BDG_MAYSLEEP;
+	}
 	NMG_UNLOCK();
 
 	return err;
