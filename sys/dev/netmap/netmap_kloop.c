@@ -995,11 +995,6 @@ netmap_pt_guest_rxsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
 	 */
 	if (kring->rhead != kring->nr_hwcur) {
 		nm_sync_kloop_appl_write(atok, kring->rcur, kring->rhead);
-                /* Ask for a kick from the guest to the host if needed. */
-		if (NM_ACCESS_ONCE(ktoa->kern_need_kick)) {
-			atok->sync_flags = flags;
-			notify = true;
-		}
 	}
 
         /*
@@ -1019,6 +1014,13 @@ netmap_pt_guest_rxsync(struct nm_csb_atok *atok, struct nm_csb_ktoa *ktoa,
                         atok->appl_need_kick = 0;
                 }
         }
+
+	/* Ask for a kick from the guest to the host if needed. */
+	if ((kring->rhead != kring->nr_hwcur || nm_kr_wouldblock(kring))
+		&& NM_ACCESS_ONCE(ktoa->kern_need_kick)) {
+		atok->sync_flags = flags;
+		notify = true;
+	}
 
 	nm_prdis(1, "%s CSB(head:%u cur:%u hwtail:%u) KRING(head:%u cur:%u tail:%u)",
 		kring->name, atok->head, atok->cur, ktoa->hwtail,
