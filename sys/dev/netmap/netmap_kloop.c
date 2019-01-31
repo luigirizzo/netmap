@@ -603,8 +603,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		a->kring = NMR(na, NR_TX)[i + priv->np_qfirst[NR_TX]];
 		a->csb_atok = csb_atok_base + i;
 		a->csb_ktoa = csb_ktoa_base + i;
-		a->busy_wait = false;
-		a->direct = false;
+		a->busy_wait = use_sleep;
+		a->direct = direct;
 	}
 	for (i = 0; i < num_rx_rings; i++) {
 		struct sync_kloop_ring_args *a = args + num_tx_rings + i;
@@ -612,8 +612,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		a->kring = NMR(na, NR_RX)[i + priv->np_qfirst[NR_RX]];
 		a->csb_atok = csb_atok_base + num_tx_rings + i;
 		a->csb_ktoa = csb_ktoa_base + num_tx_rings + i;
-		a->busy_wait = false;
-		a->direct = false;
+		a->busy_wait = use_sleep;
+		a->direct = direct;
 	}
 
 	/* Validate notification options. */
@@ -687,7 +687,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		}
 
 		/* Poll for notifications coming from the applications through
-		 * eventfds . */
+		 * eventfds. */
 		for (i = 0; i < num_rings; i++, poll_ctx->next_entry++) {
 			struct eventfd_ctx *irq = NULL;
 			struct file *filp = NULL;
