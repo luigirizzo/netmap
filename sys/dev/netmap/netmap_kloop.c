@@ -717,7 +717,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			poll_ctx->entries[i].args->direct =
 			    (direct && i < num_tx_rings);
 
-			if (eventfds_opt->eventfds[i].ioeventfd >= 0) {
+			if (!use_sleep) {
 				filp = eventfd_fget(
 				    eventfds_opt->eventfds[i].ioeventfd);
 				if (IS_ERR(filp)) {
