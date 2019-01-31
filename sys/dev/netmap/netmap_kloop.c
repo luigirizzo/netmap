@@ -657,6 +657,11 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 
 		direct_tx = !!(mode_opt->mode & NM_OPT_SYNC_KLOOP_DIRECT_TX);
 		direct_rx = !!(mode_opt->mode & NM_OPT_SYNC_KLOOP_DIRECT_RX);
+		if (mode_opt->mode & ~(NM_OPT_SYNC_KLOOP_DIRECT_TX |
+		    NM_OPT_SYNC_KLOOP_DIRECT_RX)) {
+			opt->nro_status = err = EINVAL;
+			goto out;
+		}
 		opt->nro_status = 0;
 	}
 	opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
