@@ -463,6 +463,7 @@ struct sync_kloop_poll_ctx {
 	int (*next_wake_fun)(wait_queue_t *, unsigned, int, void *);
 	unsigned int num_entries;
 	unsigned int num_tx_rings;
+	unsigned int num_rings;
 	/* First num_tx_rings entries are for the TX kicks.
 	 * Then the RX kicks entries follow. The last two
 	 * entries are for TX irq, and RX irq. */
@@ -513,6 +514,38 @@ sync_kloop_tx_irq_wake_fun(wait_queue_t *wait, unsigned mode,
 	int i;
 
 	for (i = 0; i < poll_ctx->num_tx_rings; i++) {
+		struct eventfd_ctx *irq_ctx = poll_ctx->entries[i].irq_ctx;
+
+		if (irq_ctx) {
+			eventfd_signal(irq_ctx, 1);
+		}
+	}
+
+	return 0;
+}
+
+static int
+sync_kloop_rx_kick_wake_fun(wait_queue_t *wait, unsigned mode,
+    int wake_flags, void *key)
+{
+	struct sync_kloop_poll_entry *entry =
+	    container_of(wait, struct sync_kloop_poll_entry, wait);
+
+	netmap_sync_kloop_rx_ring(entry->args);
+
+	return 0;
+}
+
+static int
+sync_kloop_rx_irq_wake_fun(wait_queue_t *wait, unsigned mode,
+    int wake_flags, void *key)
+{
+	struct sync_kloop_poll_entry *entry =
+	    container_of(wait, struct sync_kloop_poll_entry, wait);
+	struct sync_kloop_poll_ctx *poll_ctx = entry->parent;
+	int i;
+
+	for (i = poll_ctx->num_tx_rings; i < poll_ctx->num_rings; i++) {
 		struct eventfd_ctx *irq_ctx = poll_ctx->entries[i].irq_ctx;
 
 		if (irq_ctx) {
@@ -667,6 +700,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 					sync_kloop_poll_table_queue_proc);
 		poll_ctx->num_entries = 2 + num_rings;
 		poll_ctx->num_tx_rings = num_tx_rings;
+		poll_ctx->num_rings = num_rings;
 		poll_ctx->next_entry = 0;
 		poll_ctx->next_wake_fun = NULL;
 
@@ -709,11 +743,11 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			/* Don't let netmap_sync_kloop_tx_ring() use
 			 * IRQs in direct mode. */
 			poll_ctx->entries[i].args->irq_ctx =
-			    (direct && i < num_tx_rings) ? NULL :
+			    (direct) ? NULL :
 			    poll_ctx->entries[i].irq_ctx;
 			poll_ctx->entries[i].args->busy_wait = busy_wait;
 			poll_ctx->entries[i].args->direct =
-			    (direct && i < num_tx_rings);
+			    (direct);
 
 			if (!busy_wait) {
 				filp = eventfd_fget(
@@ -729,6 +763,9 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 					 */
 					poll_ctx->next_wake_fun =
 					    sync_kloop_tx_kick_wake_fun;
+				} else if (direct) {
+					poll_ctx->next_wake_fun =
+					    sync_kloop_rx_kick_wake_fun;
 				} else {
 					poll_ctx->next_wake_fun = NULL;
 				}
@@ -754,7 +791,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			    &poll_ctx->wait_table);
 			poll_ctx->next_entry++;
 
-			poll_ctx->next_wake_fun = NULL;
+			poll_ctx->next_wake_fun = direct ?
+			    sync_kloop_rx_irq_wake_fun : NULL;
 			poll_wait(priv->np_filp, priv->np_si[NR_RX],
 			    &poll_ctx->wait_table);
 			poll_ctx->next_entry++;
@@ -797,7 +835,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		}
 
 		/* Process all the RX rings bound to this file descriptor. */
-		for (i = 0; i < num_rx_rings; i++) {
+		for (i = 0; !direct && i < num_rx_rings; i++) {
 			struct sync_kloop_ring_args *a = args + num_tx_rings + i;
 			netmap_sync_kloop_rx_ring(a);
 		}

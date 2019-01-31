@@ -555,8 +555,8 @@ enum {
 	NETMAP_REQ_OPT_CSB,
 
 	/* Like NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS, but the 'ioeventfd'
-	 * are mandatory (cannot be < 0), and the TX ring is synced in
-	 * the context of the VM exit. */
+	 * fields are mandatory (cannot be < 0), and the TX and/or RX rings
+	 * are synced in the context of the VM exit. */
 	NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT,
 };
 
