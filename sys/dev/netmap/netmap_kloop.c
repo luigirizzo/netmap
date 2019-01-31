@@ -141,6 +141,9 @@ sync_kloop_kring_dump(const char *title, const struct netmap_kring *kring)
 		kring->rcur, kring->rtail, kring->nr_hwtail);
 }
 
+/* Arguments for netmap_sync_kloop_tx_ring() and
+ * netmap_sync_kloop_rx_ring().
+ */
 struct sync_kloop_ring_args {
 	struct netmap_kring *kring;
 	struct nm_csb_atok *csb_atok;
@@ -148,7 +151,10 @@ struct sync_kloop_ring_args {
 #ifdef SYNC_KLOOP_POLL
 	struct eventfd_ctx *irq_ctx;
 #endif /* SYNC_KLOOP_POLL */
-	bool use_kicks;
+	/* Are we busy waiting rather than using a schedule() loop ? */
+	bool busy_wait;
+	/* Are we processing in the context of VM exit ? */
+	bool direct;
 };
 
 static void
@@ -162,10 +168,16 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 	uint32_t num_slots;
 	int batch;
 
+	if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
+		return;
+	}
+
 	num_slots = kring->nkr_num_slots;
 
 	/* Disable application --> kernel notifications. */
-	csb_ktoa_kick_enable(csb_ktoa, 0);
+	if (!a->direct) {
+		csb_ktoa_kick_enable(csb_ktoa, 0);
+	}
 	/* Copy the application kring pointers from the CSB */
 	sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 
@@ -198,7 +210,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		if (unlikely(nm_txsync_prologue(kring, &shadow_ring) >= num_slots)) {
 			/* Reinit ring and enable notifications. */
 			netmap_ring_reinit(kring);
-			if (a->use_kicks) {
+			if (!a->busy_wait) {
 				csb_ktoa_kick_enable(csb_ktoa, 1);
 			}
 			break;
@@ -209,7 +221,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		}
 
 		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
-			if (a->use_kicks) {
+			if (!a->busy_wait) {
 				/* Reenable notifications. */
 				csb_ktoa_kick_enable(csb_ktoa, 1);
 			}
@@ -247,7 +259,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		/* Read CSB to see if there is more work to do. */
 		sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 		if (shadow_ring.head == kring->rhead) {
-			if (!a->use_kicks) {
+			if (a->busy_wait) {
 				break;
 			}
 			/*
@@ -282,6 +294,8 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		eventfd_signal(a->irq_ctx, 1);
 	}
 #endif /* SYNC_KLOOP_POLL */
+
+	nm_kr_put(kring);
 }
 
 /* RX cycle without receive any packets */
@@ -306,13 +320,19 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 	bool some_recvd = false;
 	uint32_t num_slots;
 
+	if (unlikely(nm_kr_tryget(kring, 1, NULL))) {
+		return;
+	}
+
 	num_slots = kring->nkr_num_slots;
 
 	/* Get RX csb_atok and csb_ktoa pointers from the CSB. */
 	num_slots = kring->nkr_num_slots;
 
 	/* Disable notifications. */
-	csb_ktoa_kick_enable(csb_ktoa, 0);
+	if (!a->direct) {
+		csb_ktoa_kick_enable(csb_ktoa, 0);
+	}
 	/* Copy the application kring pointers from the CSB */
 	sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 
@@ -324,7 +344,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		if (unlikely(nm_rxsync_prologue(kring, &shadow_ring) >= num_slots)) {
 			/* Reinit ring and enable notifications. */
 			netmap_ring_reinit(kring);
-			if (a->use_kicks) {
+			if (!a->busy_wait) {
 				csb_ktoa_kick_enable(csb_ktoa, 1);
 			}
 			break;
@@ -335,7 +355,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		}
 
 		if (unlikely(kring->nm_sync(kring, shadow_ring.flags))) {
-			if (a->use_kicks) {
+			if (!a->busy_wait) {
 				/* Reenable notifications. */
 				csb_ktoa_kick_enable(csb_ktoa, 1);
 			}
@@ -374,7 +394,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		/* Read CSB to see if there is more work to do. */
 		sync_kloop_kernel_read(csb_atok, &shadow_ring, num_slots);
 		if (sync_kloop_norxslots(kring, shadow_ring.head)) {
-			if (!a->use_kicks) {
+			if (a->busy_wait) {
 				break;
 			}
 			/*
@@ -415,6 +435,8 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		eventfd_signal(a->irq_ctx, 1);
 	}
 #endif /* SYNC_KLOOP_POLL */
+
+	nm_kr_put(kring);
 }
 
 #ifdef SYNC_KLOOP_POLL
@@ -581,7 +603,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		a->kring = NMR(na, NR_TX)[i + priv->np_qfirst[NR_TX]];
 		a->csb_atok = csb_atok_base + i;
 		a->csb_ktoa = csb_ktoa_base + i;
-		a->use_kicks = false;
+		a->busy_wait = false;
+		a->direct = false;
 	}
 	for (i = 0; i < num_rx_rings; i++) {
 		struct sync_kloop_ring_args *a = args + num_tx_rings + i;
@@ -589,7 +612,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		a->kring = NMR(na, NR_RX)[i + priv->np_qfirst[NR_RX]];
 		a->csb_atok = csb_atok_base + num_tx_rings + i;
 		a->csb_ktoa = csb_ktoa_base + num_tx_rings + i;
-		a->use_kicks = false;
+		a->busy_wait = false;
+		a->direct = false;
 	}
 
 	/* Validate notification options. */
@@ -689,7 +713,9 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			poll_ctx->entries[i].args->irq_ctx =
 			    (direct && i < num_tx_rings) ? NULL :
 			    poll_ctx->entries[i].irq_ctx;
-			poll_ctx->entries[i].args->use_kicks = !use_sleep;
+			poll_ctx->entries[i].args->busy_wait = use_sleep;
+			poll_ctx->entries[i].args->direct =
+			    (direct && i < num_tx_rings);
 
 			if (eventfds_opt->eventfds[i].ioeventfd >= 0) {
 				filp = eventfd_fget(
@@ -769,23 +795,13 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		/* Process all the TX rings bound to this file descriptor. */
 		for (i = 0; !direct && i < num_tx_rings; i++) {
 			struct sync_kloop_ring_args *a = args + i;
-
-			if (unlikely(nm_kr_tryget(a->kring, 1, NULL))) {
-				continue;
-			}
 			netmap_sync_kloop_tx_ring(a);
-			nm_kr_put(a->kring);
 		}
 
 		/* Process all the RX rings bound to this file descriptor. */
 		for (i = 0; i < num_rx_rings; i++) {
 			struct sync_kloop_ring_args *a = args + num_tx_rings + i;
-
-			if (unlikely(nm_kr_tryget(a->kring, 1, NULL))) {
-				continue;
-			}
 			netmap_sync_kloop_rx_ring(a);
-			nm_kr_put(a->kring);
 		}
 
 		if (use_sleep) {
