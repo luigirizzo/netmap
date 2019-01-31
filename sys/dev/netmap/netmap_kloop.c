@@ -289,13 +289,13 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		}
 	}
 
+	nm_kr_put(kring);
+
 #ifdef SYNC_KLOOP_POLL
 	if (a->irq_ctx && more_txspace && csb_atok_intr_enabled(csb_atok)) {
 		eventfd_signal(a->irq_ctx, 1);
 	}
 #endif /* SYNC_KLOOP_POLL */
-
-	nm_kr_put(kring);
 }
 
 /* RX cycle without receive any packets */
@@ -435,8 +435,6 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		eventfd_signal(a->irq_ctx, 1);
 	}
 #endif /* SYNC_KLOOP_POLL */
-
-	nm_kr_put(kring);
 }
 
 #ifdef SYNC_KLOOP_POLL
