@@ -575,7 +575,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	struct nmreq_option *opt;
 	bool na_could_sleep = false;
 	bool busy_wait = true;
-	bool direct = false;
+	bool direct_tx = false;
+	bool direct_rx = false;
 	int err = 0;
 	int i;
 
@@ -635,7 +636,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		a->csb_atok = csb_atok_base + i;
 		a->csb_ktoa = csb_ktoa_base + i;
 		a->busy_wait = busy_wait;
-		a->direct = direct;
+		a->direct = direct_tx;
 	}
 	for (i = 0; i < num_rx_rings; i++) {
 		struct sync_kloop_ring_args *a = args + num_tx_rings + i;
@@ -644,16 +645,22 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		a->csb_atok = csb_atok_base + num_tx_rings + i;
 		a->csb_ktoa = csb_ktoa_base + num_tx_rings + i;
 		a->busy_wait = busy_wait;
-		a->direct = direct;
+		a->direct = direct_rx;
 	}
 
 	/* Validate notification options. */
 	opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
+				NETMAP_REQ_OPT_SYNC_KLOOP_MODE);
+	if (opt != NULL) {
+		struct nmreq_opt_sync_kloop_mode *mode_opt =
+		    (struct nmreq_opt_sync_kloop_mode *)opt;
+
+		direct_tx = !!(mode_opt->mode & NM_OPT_SYNC_KLOOP_DIRECT_TX);
+		direct_rx = !!(mode_opt->mode & NM_OPT_SYNC_KLOOP_DIRECT_RX);
+		opt->nro_status = 0;
+	}
+	opt = nmreq_findoption((struct nmreq_option *)(uintptr_t)hdr->nr_options,
 				NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS);
-	if (opt == NULL)
-		opt = nmreq_findoption((struct nmreq_option *)
-				(uintptr_t)hdr->nr_options,
-				NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT);
 	if (opt != NULL) {
 		err = nmreq_checkduplicate(opt);
 		if (err) {
@@ -681,11 +688,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			}
 		}
 
-		direct = (opt->nro_reqtype ==
-		    NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT);
-
-		if (busy_wait && direct) {
-			/* For 'direct' processing we need all the
+		if (busy_wait && (direct_tx || direct_rx)) {
+			/* For direct processing we need all the
 			 * ioeventfds to be valid. */
 			opt->nro_status = err = EINVAL;
 			goto out;
@@ -704,7 +708,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		poll_ctx->next_entry = 0;
 		poll_ctx->next_wake_fun = NULL;
 
-		if (direct && (na->na_flags & NAF_BDG_MAYSLEEP)) {
+		if (direct_tx && (na->na_flags & NAF_BDG_MAYSLEEP)) {
 			/* In direct mode, VALE txsync is called from
 			 * wake-up context, where it is not possible
 			 * to sleep.
@@ -724,6 +728,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			struct eventfd_ctx *irq = NULL;
 			struct file *filp = NULL;
 			unsigned long mask;
+			bool tx_ring = (i < num_tx_rings);
 
 			if (eventfds_opt->eventfds[i].irqfd >= 0) {
 				filp = eventfd_fget(
@@ -740,14 +745,15 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			}
 			poll_ctx->entries[i].irq_filp = filp;
 			poll_ctx->entries[i].irq_ctx = irq;
-			/* Don't let netmap_sync_kloop_tx_ring() use
+			poll_ctx->entries[i].args->busy_wait = busy_wait;
+			/* Don't let netmap_sync_kloop_*x_ring() use
 			 * IRQs in direct mode. */
 			poll_ctx->entries[i].args->irq_ctx =
-			    (direct) ? NULL :
+			    ((tx_ring && direct_tx) ||
+			    (!tx_ring && direct_rx)) ? NULL :
 			    poll_ctx->entries[i].irq_ctx;
-			poll_ctx->entries[i].args->busy_wait = busy_wait;
 			poll_ctx->entries[i].args->direct =
-			    (direct);
+			    (tx_ring ? direct_tx : direct_rx);
 
 			if (!busy_wait) {
 				filp = eventfd_fget(
@@ -756,14 +762,15 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 					err = PTR_ERR(filp);
 					goto out;
 				}
-				if (direct && i < num_tx_rings) {
+				if (tx_ring && direct_tx) {
 					/* Override the wake up function
 					 * so that it can directly call
 					 * netmap_sync_kloop_tx_ring().
 					 */
 					poll_ctx->next_wake_fun =
 					    sync_kloop_tx_kick_wake_fun;
-				} else if (direct) {
+				} else if (!tx_ring && direct_rx) {
+					/* Same for direct RX. */
 					poll_ctx->next_wake_fun =
 					    sync_kloop_rx_kick_wake_fun;
 				} else {
@@ -785,13 +792,13 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			/* In direct mode, override the wake up function so
 			 * that it can forward the netmap_tx_irq() to the
 			 * guest. */
-			poll_ctx->next_wake_fun = direct ?
+			poll_ctx->next_wake_fun = direct_tx ?
 			    sync_kloop_tx_irq_wake_fun : NULL;
 			poll_wait(priv->np_filp, priv->np_si[NR_TX],
 			    &poll_ctx->wait_table);
 			poll_ctx->next_entry++;
 
-			poll_ctx->next_wake_fun = direct ?
+			poll_ctx->next_wake_fun = direct_rx ?
 			    sync_kloop_rx_irq_wake_fun : NULL;
 			poll_wait(priv->np_filp, priv->np_si[NR_RX],
 			    &poll_ctx->wait_table);
@@ -804,8 +811,9 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 #endif  /* SYNC_KLOOP_POLL */
 	}
 
-	nm_prinf("kloop busy_wait %u, direct %u, na_could_sleep %u",
-	    busy_wait, direct, na_could_sleep);
+	nm_prinf("kloop busy_wait %u, direct_tx %u, direct_rx %u, "
+	    "na_could_sleep %u", busy_wait, direct_tx, direct_rx,
+	    na_could_sleep);
 
 	/* Main loop. */
 	for (;;) {
@@ -829,13 +837,13 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 #endif  /* SYNC_KLOOP_POLL */
 
 		/* Process all the TX rings bound to this file descriptor. */
-		for (i = 0; !direct && i < num_tx_rings; i++) {
+		for (i = 0; !direct_tx && i < num_tx_rings; i++) {
 			struct sync_kloop_ring_args *a = args + i;
 			netmap_sync_kloop_tx_ring(a);
 		}
 
 		/* Process all the RX rings bound to this file descriptor. */
-		for (i = 0; !direct && i < num_rx_rings; i++) {
+		for (i = 0; !direct_rx && i < num_rx_rings; i++) {
 			struct sync_kloop_ring_args *a = args + num_tx_rings + i;
 			netmap_sync_kloop_rx_ring(a);
 		}
