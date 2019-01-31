@@ -146,6 +146,7 @@ struct TestContext {
 	uint32_t nr_hdr_len; /* for PORT_HDR_SET and PORT_HDR_GET */
 	uint32_t nr_first_cpu_id;     /* vale polling */
 	uint32_t nr_num_polling_cpus; /* vale polling */
+	uint32_t sync_kloop_mode; /* sync-kloop */
 	int fd; /* netmap file descriptor */
 
 	void *csb;                    /* CSB entries (atok and ktoa) */
@@ -1322,51 +1323,58 @@ sync_kloop(struct TestContext *ctx)
 static int
 sync_kloop_eventfds(struct TestContext *ctx)
 {
-	struct nmreq_opt_sync_kloop_eventfds *opt = NULL;
-	struct nmreq_option save;
+	struct nmreq_opt_sync_kloop_eventfds *evopt = NULL;
+	struct nmreq_opt_sync_kloop_mode modeopt;
+	struct nmreq_option evsave;
 	int num_entries;
 	size_t opt_size;
 	int ret, i;
 
+	memset(&modeopt, 0, sizeof(modeopt));
+	modeopt.nro_opt.nro_reqtype = NETMAP_REQ_OPT_SYNC_KLOOP_MODE;
+	modeopt.mode = ctx->sync_kloop_mode;
+	push_option(&modeopt.nro_opt, ctx);
+
 	num_entries = num_registered_rings(ctx);
-	opt_size    = sizeof(*opt) + num_entries * sizeof(opt->eventfds[0]);
-	opt = calloc(1, opt_size);
-	opt->nro_opt.nro_next    = 0;
-	opt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS;
-	opt->nro_opt.nro_status  = 0;
-	opt->nro_opt.nro_size    = opt_size;
+	opt_size    = sizeof(*evopt) + num_entries * sizeof(evopt->eventfds[0]);
+	evopt = calloc(1, opt_size);
+	evopt->nro_opt.nro_next    = 0;
+	evopt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS;
+	evopt->nro_opt.nro_status  = 0;
+	evopt->nro_opt.nro_size    = opt_size;
 	for (i = 0; i < num_entries; i++) {
 		int efd = eventfd(0, 0);
 
-		opt->eventfds[i].ioeventfd = efd;
+		evopt->eventfds[i].ioeventfd = efd;
 		efd                        = eventfd(0, 0);
-		opt->eventfds[i].irqfd = efd;
+		evopt->eventfds[i].irqfd = efd;
 	}
 
-	push_option(&opt->nro_opt, ctx);
-	save = opt->nro_opt;
+	push_option(&evopt->nro_opt, ctx);
+	evsave = evopt->nro_opt;
 
 	ret = sync_kloop_start_stop(ctx);
 	if (ret != 0) {
-		free(opt);
+		free(evopt);
 		clear_options(ctx);
 		return ret;
 	}
 #ifdef __linux__
-	save.nro_status = 0;
+	evsave.nro_status = 0;
 #else  /* !__linux__ */
-	save.nro_status = EOPNOTSUPP;
+	evsave.nro_status = EOPNOTSUPP;
 #endif /* !__linux__ */
 
-	ret = checkoption(&opt->nro_opt, &save);
-	free(opt);
+	ret = checkoption(&evopt->nro_opt, &evsave);
+	free(evopt);
 	clear_options(ctx);
 
 	return ret;
 }
 
 static int
-sync_kloop_eventfds_all(struct TestContext *ctx)
+sync_kloop_eventfds_all_mode(struct TestContext *ctx,
+			     uint32_t sync_kloop_mode)
 {
 	int ret;
 
@@ -1375,7 +1383,15 @@ sync_kloop_eventfds_all(struct TestContext *ctx)
 		return ret;
 	}
 
+	ctx->sync_kloop_mode = sync_kloop_mode;
+
 	return sync_kloop_eventfds(ctx);
+}
+
+static int
+sync_kloop_eventfds_all(struct TestContext *ctx)
+{
+	return sync_kloop_eventfds_all_mode(ctx, 0);
 }
 
 static int
@@ -1396,6 +1412,27 @@ sync_kloop_eventfds_all_tx(struct TestContext *ctx)
 	clear_options(ctx);
 
 	return sync_kloop_eventfds(ctx);
+}
+
+static int
+sync_kloop_eventfds_all_direct(struct TestContext *ctx)
+{
+	return sync_kloop_eventfds_all_mode(ctx,
+	    NM_OPT_SYNC_KLOOP_DIRECT_TX | NM_OPT_SYNC_KLOOP_DIRECT_RX);
+}
+
+static int
+sync_kloop_eventfds_all_direct_tx(struct TestContext *ctx)
+{
+	return sync_kloop_eventfds_all_mode(ctx,
+	    NM_OPT_SYNC_KLOOP_DIRECT_TX);
+}
+
+static int
+sync_kloop_eventfds_all_direct_rx(struct TestContext *ctx)
+{
+	return sync_kloop_eventfds_all_mode(ctx,
+	    NM_OPT_SYNC_KLOOP_DIRECT_RX);
 }
 
 static int
@@ -1677,6 +1714,9 @@ static struct mytest tests[] = {
 	decltest(sync_kloop),
 	decltest(sync_kloop_eventfds_all),
 	decltest(sync_kloop_eventfds_all_tx),
+	decltest(sync_kloop_eventfds_all_direct),
+	decltest(sync_kloop_eventfds_all_direct_tx),
+	decltest(sync_kloop_eventfds_all_direct_rx),
 	decltest(sync_kloop_nocsb),
 	decltest(sync_kloop_csb_enable),
 	decltest(sync_kloop_conflict),
