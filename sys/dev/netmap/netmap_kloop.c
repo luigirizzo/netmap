@@ -541,7 +541,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	struct netmap_adapter *na;
 	struct nmreq_option *opt;
 	bool na_could_sleep = false;
-	bool use_sleep = true;
+	bool busy_wait = true;
 	bool direct = false;
 	int err = 0;
 	int i;
@@ -601,7 +601,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		a->kring = NMR(na, NR_TX)[i + priv->np_qfirst[NR_TX]];
 		a->csb_atok = csb_atok_base + i;
 		a->csb_ktoa = csb_ktoa_base + i;
-		a->busy_wait = use_sleep;
+		a->busy_wait = busy_wait;
 		a->direct = direct;
 	}
 	for (i = 0; i < num_rx_rings; i++) {
@@ -610,7 +610,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		a->kring = NMR(na, NR_RX)[i + priv->np_qfirst[NR_RX]];
 		a->csb_atok = csb_atok_base + num_tx_rings + i;
 		a->csb_ktoa = csb_ktoa_base + num_tx_rings + i;
-		a->busy_wait = use_sleep;
+		a->busy_wait = busy_wait;
 		a->direct = direct;
 	}
 
@@ -640,10 +640,10 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 
 		/* Check if some ioeventfd entry is not defined, and force sleep
 		 * synchronization in that case. */
-		use_sleep = false;
+		busy_wait = false;
 		for (i = 0; i < num_rings; i++) {
 			if (eventfds_opt->eventfds[i].ioeventfd < 0) {
-				use_sleep = true;
+				busy_wait = true;
 				break;
 			}
 		}
@@ -651,7 +651,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		direct = (opt->nro_reqtype ==
 		    NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS_DIRECT);
 
-		if (use_sleep && direct) {
+		if (busy_wait && direct) {
 			/* For 'direct' processing we need all the
 			 * ioeventfds to be valid. */
 			opt->nro_status = err = EINVAL;
@@ -711,11 +711,11 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			poll_ctx->entries[i].args->irq_ctx =
 			    (direct && i < num_tx_rings) ? NULL :
 			    poll_ctx->entries[i].irq_ctx;
-			poll_ctx->entries[i].args->busy_wait = use_sleep;
+			poll_ctx->entries[i].args->busy_wait = busy_wait;
 			poll_ctx->entries[i].args->direct =
 			    (direct && i < num_tx_rings);
 
-			if (!use_sleep) {
+			if (!busy_wait) {
 				filp = eventfd_fget(
 				    eventfds_opt->eventfds[i].ioeventfd);
 				if (IS_ERR(filp)) {
@@ -743,7 +743,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 
 		/* Poll for notifications coming from the netmap rings bound to
 		 * this file descriptor. */
-		if (!use_sleep) {
+		if (!busy_wait) {
 			NMG_LOCK();
 			/* In direct mode, override the wake up function so
 			 * that it can forward the netmap_tx_irq() to the
@@ -766,8 +766,8 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 #endif  /* SYNC_KLOOP_POLL */
 	}
 
-	nm_prinf("kloop use_sleep %u, direct %u, na_could_sleep %u",
-	    use_sleep, direct, na_could_sleep);
+	nm_prinf("kloop busy_wait %u, direct %u, na_could_sleep %u",
+	    busy_wait, direct, na_could_sleep);
 
 	/* Main loop. */
 	for (;;) {
@@ -776,7 +776,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 		}
 
 #ifdef SYNC_KLOOP_POLL
-		if (!use_sleep) {
+		if (!busy_wait) {
 			/* It is important to set the task state as
 			 * interruptible before processing any TX/RX ring,
 			 * so that if a notification on ring Y comes after
@@ -802,7 +802,7 @@ netmap_sync_kloop(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			netmap_sync_kloop_rx_ring(a);
 		}
 
-		if (use_sleep) {
+		if (busy_wait) {
 			/* Default synchronization method: sleep for a while. */
 			usleep_range(sleep_us, sleep_us);
 		}
@@ -819,7 +819,7 @@ out:
 	if (poll_ctx) {
 		/* Stop polling from netmap and the eventfds, and deallocate
 		 * the poll context. */
-		if (!use_sleep) {
+		if (!busy_wait) {
 			__set_current_state(TASK_RUNNING);
 		}
 		for (i = 0; i < poll_ctx->next_entry; i++) {
