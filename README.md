@@ -40,8 +40,10 @@ a userspace version of ipfw and dummynet which can handle several
 million packets per second in a single thread
 
 QEMU has native netmap support, so it can interconnect VMs at high speed
-through netmap ports. There is experimental netmap support in the FreeBSD's
-bhyve hypervisor.
+through netmap ports (e.g., using VALE ports or netmap pipes).
+For maximum performance, it is also possible to pass-through any netmap port
+into a QEMU VM, as described [here](README.ptnetmap.md).
+Also the FreeBSD bhyve hypervisor has native support for netmap.
 
 Netmap alone **does not** accelerate your TCP. For that you need to implement
 your own tcp/ip stack probably using some of the techniques indicated
@@ -96,7 +98,7 @@ repository, or in `src/tools/tools/netmap/` in the FreeBSD source tree.
 The `./configure && make` build system in the LINUX/
 directory will let you patch device driver sources and build
 some netmap-enabled device drivers.
-Please look at `LINUX/README.md` for more instructions.
+Please look [here](LINUX/README.md) for more instructions.
 
 Make sure you have kernel headers matching your installed kernel.
 The sources for e1000e, igb, ixgbe and i40e will be downloaded
@@ -147,7 +149,7 @@ command above. The new drivers will then be called `e1000e-netmap`,
 ### Windows
 
 Netmap has been ported to Windows in summer 2015 by Alessio Faina as part of
-his Master thesis. Please look at `WINDOWS/README.txt` for details.
+his Master thesis. Please look [here](WINDOWS/README.txt) for details.
 
 ## Applications
 
@@ -257,7 +259,7 @@ a command like
 
 	sudo ifconfig vtnet0 -txcsum -rxcsum -tso4 -tso6 -lro -txcsum6 -rxcsum6
 
-See `LINUX/README.md` for the corresponding Linux command.
+Check [here](LINUX/README.md) for the corresponding Linux command.
 
 
 ## Credits

@@ -1,10 +1,6 @@
-===========================================================================
-                        NETMAP PASSTHROUGH HOWTO
-===========================================================================
+# Netmap passthrough howto
 
----------------------------------------------------------------------------
-1. Introduction
----------------------------------------------------------------------------
+## 1. Introduction
 
 This document describes how to configure netmap passthrough, a technology
 that enables very fast network I/O (up to 30 Mpps and more) for QEMU Virtual
@@ -31,91 +27,83 @@ directly passing a dedicated physical netmap port to a VM.
 
 More information about ptnetmap are available in these slides:
 
-    * https://github.com/vmaffione/netmap-tutorial/blob/master/virtualization.pdf
+* https://github.com/vmaffione/netmap-tutorial/blob/master/virtualization.pdf
 
 and in these papers
 
-    * http://info.iet.unipi.it/~luigi/papers/20160613-ptnet.pdf
-    * http://info.iet.unipi.it/~luigi/papers/20150315-netmap-passthrough.pdf (older)
+* http://info.iet.unipi.it/~luigi/papers/20160613-ptnet.pdf
+* http://info.iet.unipi.it/~luigi/papers/20150315-netmap-passthrough.pdf (older)
 
 and in section 7 of this document.
 
----------------------------------------------------------------------------
-2. Configure Linux host and QEMU for ptnetmap
----------------------------------------------------------------------------
+## 2. Configure Linux host and QEMU for ptnetmap
 
 On the Linux host, configure, build and install netmap normally:
 
-    $ git clone https://github.com/luigirizzo/netmap.git
-    $ cd netmap
-    $ ./configure [options]
-    $ make
-    $ sudo make install
+	git clone https://github.com/luigirizzo/netmap.git
+	cd netmap
+	./configure [options]
+	make
+	sudo make install
 
 Download, build and install the ptnetmap-enabled QEMU:
 
-    $ git clone https://github.com/vmaffione/qemu
-    $ cd qemu
-    $ ./configure --target-list=x86_64-softmmu --enable-kvm --enable-vhost-net --disable-werror --enable-netmap
-    $ make
-    $ sudo make install
+	git clone https://github.com/netmap-unipi/qemu
+	cd qemu
+	./configure --target-list=x86_64-softmmu --enable-kvm --enable-vhost-net --disable-werror --enable-netmap
+	make
+	sudo make install
 
 Load the netmap
 
-    $ sudo modprobe netmap
+	sudo modprobe netmap
 
 Example to run a VM passing through a VALE port (vale1:10):
 
-    $ sudo qemu-system-x86_64 img.qcow2 -enable-kvm -smp 2 -m 2G -vga std -device ptnet-pci,netdev=data10,mac=00:AA:BB:CC:0a:0a -netdev netmap,ifname=vale1:10,id=data10,passthrough=on
+	sudo qemu-system-x86_64 img.qcow2 -enable-kvm -smp 2 -m 2G -vga std -device ptnet-pci,netdev=data10,mac=00:AA:BB:CC:0a:0a -netdev netmap,ifname=vale1:10,id=data10,passthrough=on
 
 Example to run a VM passing though the "left" endpoints of two pipes endpoints
 (the "right" endpoints can be connected to other VMs or netmap programs running
 directly on the host.
 
-    $ sudo qemu-system-x86_64 img.qcow2 -enable-kvm -smp 2 -m 2G -vga std -device ptnet-pci,netdev=data1,mac=00:AA:BB:CC:0b:01 -netdev netmap,ifname=netmap:pipe0{1,id=data1,passthrough=on -device ptnet-pci,netdev=data1,mac=00:AA:BB:CC:0b:02 -netdev netmap,ifname=netmap:pipe1{1,id=data1,passthrough=on
+	sudo qemu-system-x86_64 img.qcow2 -enable-kvm -smp 2 -m 2G -vga std -device ptnet-pci,netdev=data1,mac=00:AA:BB:CC:0b:01 -netdev netmap,ifname=netmap:pipe0{1,id=data1,passthrough=on -device ptnet-pci,netdev=data1,mac=00:AA:BB:CC:0b:02 -netdev netmap,ifname=netmap:pipe1{1,id=data1,passthrough=on
 
 
----------------------------------------------------------------------------
-3. Configure FreeBSD host and bhyve for ptnetmap
----------------------------------------------------------------------------
+## 3. Configure FreeBSD host and bhyve for ptnetmap
 TODO
 
 
----------------------------------------------------------------------------
-4. Configure Linux guest for ptnetmap
----------------------------------------------------------------------------
+## 4. Configure Linux guest for ptnetmap
 
 In the Linux guest, compile, build and install netmap with ptnetmap support:
 
-    $ git clone https://github.com/luigirizzo/netmap.git
-    $ cd netmap
-    $ ./configure --enable-ptnetmap
-    $ make
-    $ sudo make install
+	git clone https://github.com/luigirizzo/netmap.git
+	cd netmap
+	./configure --enable-ptnetmap
+	make
+	sudo make install
 
 Load netmap module
 
-    $ sudo rmmod netmap  # Possibly remove a previous netmap module:
-    $ sudo modprobe netmap
+	sudo rmmod netmap  # Possibly remove a previous netmap module:
+	sudo modprobe netmap
 
 As the netmap module is loaded, a new network interface will show up for each
 passed-through netmap port, (e.g. 'ens4'). You can check that an interface is
 a netmap passthrough one checking the driver:
 
-    $ ethtool -i ens4
-    driver: ptnetmap-guest-drivers
-    version:
-    [...]
+	ethtool -i ens4
+	  driver: ptnetmap-guest-drivers
+	  version:
+	  [...]
 
 A guest ptnetmap port behaves like any other netmap ports. You can use pkt-gen
 to test transmission;
 
-    $ sudo pkt-gen -i ens4 -f tx
+	sudo pkt-gen -i ens4 -f tx
 
 
----------------------------------------------------------------------------
-5. Use ptnetmap with FreeBSD guests
----------------------------------------------------------------------------
+## 5. Use ptnetmap with FreeBSD guests
 
 Netmap passthrough guest drivers are already included with netmap from FreeBSD
 12 versions. When running FreeBSD guest with ptnetmap ports (e.g. using QEMU as
@@ -126,9 +114,7 @@ FreeBSD source tree with the updated netmap code from github and rebuild your
 kernel.
 
 
-----------------------------------------------------------------------
-6. ptnetmap tunables
-----------------------------------------------------------------------
+## 6. ptnetmap tunables
 
 While ptnetmap is mainly designed for the VMs to run middleboxes applications
 (e.g. firewall, DDoS prevention, load balancing, IDS, typically carried out
@@ -148,16 +134,14 @@ If you want to use ptnetmap mainly to run middleboxes application (which
 is the common case), you should disable the virtio-net header in the guest
 OS:
 
-    # echo 0 > /sys/module/netmap/parameters/ptnet_vnet_hdr
+	# echo 0 > /sys/module/netmap/parameters/ptnet_vnet_hdr
 
 This step is needed to avoid performance issues in case your datapath exits the
 hypervisor host through a physical NIC or goes through netmap ports that don't
 support the virtio-net header.
 
 
----------------------------------------------------------------------------
-7. Some background about ptnetmap
----------------------------------------------------------------------------
+## 7. Some background about ptnetmap
 
 Netmap is a framework for high performance network I/O. It exposes an
 hardware-independent API which allows userspace application to directly interact

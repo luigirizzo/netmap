@@ -149,12 +149,8 @@ for the version you are interest in, you can use the `--select-version`
 option of configure. E.g., to select the 5.2.4 version of the ixgbe
 external driver, pass `--select-version=ixgbe:5.2.4` to configure.
 
-## How to use the code
+## How to load netmap in your system
 
-Disclaimer: _This is experimental code which may crash your system.
-use it at your own risk._
-
-The following steps can be used for initial testing.
 Unload any modules for the network cards you want to use, e.g.
 
 	sudo rmmod ixgbe
