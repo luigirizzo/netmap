@@ -141,11 +141,20 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 		/* In case of no error we put our rings in netmap mode */
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = NMR(na, t)[i];
-
 				if (nm_kring_pending_on(kring)) {
 					struct netmap_kring *sring, *dring;
+
+					kring->nr_mode = NKR_NETMAP_ON;
+					if ((kring->nr_kflags & NKR_FAKERING) &&
+					    (kring->pipe->nr_kflags & NKR_FAKERING)) {
+						/* this is a re-open of a pipe
+						 * end-point kept alive by the other end.
+						 * We need to leave everything as it is
+						 */
+						continue;
+					}
 
 					/* copy the buffers from the non-fake ring */
 					if (kring->nr_kflags & NKR_FAKERING) {
@@ -181,7 +190,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		nm_clear_native_flags(na);
 
 		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t) + 1; i++) {
+			for (i = 0; i < nma_get_nrings(na, t); i++) {
 				struct netmap_kring *kring = NMR(na, t)[i];
 
 				if (nm_kring_pending_off(kring)) {
@@ -233,6 +242,7 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 	}
 
 	if (vna->peer_ref) {
+		int i;
 
 		/* create my krings */
 		error = netmap_krings_create(na, 0);
@@ -248,13 +258,16 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 		 * the host krings) */
 		for_rx_tx(t) {
 			enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
-			int i;
-
 			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				NMR(na, t)[i]->pipe = NMR(peer_na, r)[i];
-				NMR(peer_na, r)[i]->pipe = NMR(na, t)[i];
+				struct netmap_kring *k1 = NMR(na, t)[i],
+					            *k2 = NMR(peer_na, r)[i];
+				k1->pipe = k2;
+				k2->pipe = k1;
 				/* mark all peer-adapter rings as fake */
-				NMR(peer_na, r)[i]->nr_kflags |= NKR_FAKERING;
+				k2->nr_kflags |= NKR_FAKERING;
+				/* init tails */
+				k1->pipe_tail = k1->nr_hwtail;
+				k2->pipe_tail = k2->nr_hwtail;
 			}
 		}
 
@@ -309,7 +322,7 @@ cleanup:
 			if (ring == NULL)
 				continue;
 
-			if (kring->nr_hwtail == kring->nr_hwcur)
+			if (kring->tx == NR_RX)
 				ring->slot[kring->nr_hwtail].buf_idx = 0;
 
 			for (j = nm_next(kring->nr_hwtail, lim);
