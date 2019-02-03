@@ -2,23 +2,26 @@
 
 ## Introduction
 
-Netmap is a framework for very fast packet I/O from userspace.
+Netmap is a an framework for very fast packet I/O from userspace.
 VALE is an equally fast in-kernel L2 software switch using the netmap API.
 Both are implemented as a single kernel module for FreeBSD and Linux.
 Netmap/VALE can handle tens of millions of packets per second, matching
 the speed of 10G and 40G ports even with minimum sized frames.
-More information is available at http://info.iet.unipi.it/~luigi/netmap/
-and in the [references](#references).
+
+To learn about netmap, you can use the following resources:
+
+* the man pages (https://www.freebsd.org/cgi/man.cgi?query=netmap&sektion=4 or
+`share/man/man4/netmap.4` in this repository)
+* the [papers](#references).
+* the tutorials, available at https://github.com/netmap-unipi/netmap-tutorial
 
 This repository contains source code (BSD-Copyright) for FreeBSD, Linux and
 Windows.
 Note that recent FreeBSD distributions (>= 10.x) already include both
 Netmap and VALE.
 
-A netmap tutorial is avaliable at https://github.com/vmaffione/netmap-tutorial.
 
-
-## What this is good for
+## Why should I use netmap?
 
 Netmap is mostly useful for userspace applications that must deal with raw
 packets: traffic generators, sinks, monitors, loggers, software switches
@@ -77,15 +80,15 @@ ixl (10/40G), e1000/e1000e/igb (1G), Realtek 8169 (1G) and Nvidia (1G).
 FreeBSD has also native netmap support in the Chelsio 10/40G cards.
 
 ### FreeBSD
-Since recent FreeBSD distributions already include netmap, you only
-need build the new kernel or modules as below:
+FreeBSD already includes netmap kernel support by
+default since version 11.
+If your kernel configuration does not include netmap, you can enable it
+by adding a `dev netmap` line, and rebuilding the kernel.
+Alternatively, you can build standalone modules (netmap, ixgbe, em, lem,
+re, igb, ...).
 
-* add 'device netmap' to your kernel config file and rebuild a kernel.
-  This will include the netmap module and netmap support in the device
-  drivers.  Alternatively, you can build standalone modules
-  (netmap, ixgbe, em, lem, re, igb)
-* sample applications are in the `apps/` directory in this repository,
-  or in `src/tools/tools/netmap/` in FreeBSD distributions
+Example applications are available in the `apps/` directory in this
+repository, or in `src/tools/tools/netmap/` in the FreeBSD source tree.
 
 
 ### Linux
@@ -93,7 +96,7 @@ need build the new kernel or modules as below:
 The `./configure && make` build system in the LINUX/
 directory will let you patch device driver sources and build
 some netmap-enabled device drivers.
-Please look at `LINUX/README.md` for details.
+Please look at `LINUX/README.md` for more instructions.
 
 Make sure you have kernel headers matching your installed kernel.
 The sources for e1000e, igb, ixgbe and i40e will be downloaded
