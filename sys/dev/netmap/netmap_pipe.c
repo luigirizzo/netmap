@@ -527,41 +527,15 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 	return error;
 }
 
-/* netmap_pipe_krings_delete.
- *
- * There are two cases:
- *
- * 1) state is
- *
- *                usr1 --> e1 --> e2
- *
- *    and we are e1 (e2 is not registered, so krings_delete cannot be
- *    called on it);
- *
- * 2) state is
- *
- *                usr1 --> e1     e2 <-- usr2
- *
- *    and we are either e1 or e2.
- *
- * In the former case we have to also delete the krings of e2;
- * in the latter case we do nothing.
- */
-static void
-netmap_pipe_krings_delete(struct netmap_adapter *na)
+void
+netmap_pipe_krings_delete_both(struct netmap_adapter *na,
+			       struct netmap_adapter *ona)
 {
-	struct netmap_pipe_adapter *pna =
-		(struct netmap_pipe_adapter *)na;
-	struct netmap_adapter *sna, *ona; /* na of the other end */
+	struct netmap_adapter *sna;
 	enum txrx t;
 	int i;
 
-	if (!pna->peer_ref) {
-		ND("%p: case 2, kept alive by peer",  na);
-		return;
-	}
-	ona = &pna->peer->up;
-	/* case 1) above */
+	/* case 1) below */
 	ND("%p: case 1, deleting everything", na);
 	/* To avoid double-frees we zero-out all the buffers in the kernel part
 	 * of each ring. The reason is this: If the user is behaving correctly,
@@ -613,6 +587,41 @@ cleanup:
 	}
 	netmap_mem_rings_delete(ona);
 	netmap_krings_delete(ona);
+}
+
+/* netmap_pipe_krings_delete.
+ *
+ * There are two cases:
+ *
+ * 1) state is
+ *
+ *                usr1 --> e1 --> e2
+ *
+ *    and we are e1 (e2 is not registered, so krings_delete cannot be
+ *    called on it);
+ *
+ * 2) state is
+ *
+ *                usr1 --> e1     e2 <-- usr2
+ *
+ *    and we are either e1 or e2.
+ *
+ * In the former case we have to also delete the krings of e2;
+ * in the latter case we do nothing.
+ */
+static void
+netmap_pipe_krings_delete(struct netmap_adapter *na)
+{
+	struct netmap_pipe_adapter *pna =
+		(struct netmap_pipe_adapter *)na;
+	struct netmap_adapter *ona; /* na of the other end */
+
+	if (!pna->peer_ref) {
+		ND("%p: case 2, kept alive by peer",  na);
+		return;
+	}
+	ona = &pna->peer->up;
+	netmap_pipe_krings_delete_both(na, ona);
 }
 
 

@@ -1996,6 +1996,8 @@ int netmap_pipe_txsync(struct netmap_kring *txkring, int flags);
 int netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags);
 int netmap_pipe_krings_create_both(struct netmap_adapter *na,
 				  struct netmap_adapter *ona);
+void netmap_pipe_krings_delete_both(struct netmap_adapter *na,
+				    struct netmap_adapter *ona);
 #endif /* WITH_PIPES */
 
 #ifdef WITH_MONITOR

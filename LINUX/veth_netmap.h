@@ -250,9 +250,7 @@ static void
 veth_netmap_krings_delete(struct netmap_adapter *na)
 {
 	struct netmap_veth_adapter *vna = (struct netmap_veth_adapter *)na;
-	struct netmap_adapter *peer_na, *sna;
-	enum txrx t;
-	int i;
+	struct netmap_adapter *peer_na;
 
 	if (!vna->peer_ref) {
 		return;
@@ -270,49 +268,7 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 		return;
 	}
 
-	sna = na;
-cleanup:
-	for_rx_tx(t) {
-		for (i = 0; i < nma_get_nrings(sna, t) + 1; i++) {
-			struct netmap_kring *kring = NMR(sna, t)[i];
-			struct netmap_ring *ring = kring->ring;
-			uint32_t j, lim = kring->nkr_num_slots - 1;
-
-			ND("%s ring %p hwtail %u hwcur %u",
-				kring->name, ring, kring->nr_hwtail, kring->nr_hwcur);
-
-			if (ring == NULL)
-				continue;
-
-			if (kring->tx == NR_RX)
-				ring->slot[kring->nr_hwtail].buf_idx = 0;
-
-			for (j = nm_next(kring->nr_hwtail, lim);
-			     j != kring->nr_hwcur;
-			     j = nm_next(j, lim))
-			{
-				ND("%s[%d] %u", kring->name, j, ring->slot[j].buf_idx);
-				ring->slot[j].buf_idx = 0;
-			}
-			kring->nr_kflags &= ~(NKR_FAKERING | NKR_NEEDRING);
-		}
-
-	}
-	if (sna != peer_na && peer_na->tx_rings) {
-		sna = peer_na;
-		goto cleanup;
-	}
-
-	netmap_mem_rings_delete(na);
-	netmap_krings_delete(na); /* also zeroes tx_rings etc. */
-
-	if (peer_na->tx_rings == NULL) {
-		/* already deleted, we must be on an
-		 * cleanup-after-error path */
-		return;
-	}
-	netmap_mem_rings_delete(peer_na);
-	netmap_krings_delete(peer_na);
+	netmap_pipe_krings_delete_both(na, peer_na);
 }
 
 static void
