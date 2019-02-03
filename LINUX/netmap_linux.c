@@ -2481,6 +2481,7 @@ EXPORT_SYMBOL(netmap_pipe_txsync);	/* used by veth module */
 EXPORT_SYMBOL(netmap_pipe_rxsync);	/* used by veth module */
 EXPORT_SYMBOL(netmap_pipe_krings_create_both);
 EXPORT_SYMBOL(netmap_pipe_krings_delete_both);
+EXPORT_SYMBOL(netmap_pipe_reg_both);
 #endif /* WITH_PIPES */
 EXPORT_SYMBOL(netmap_verbose);
 EXPORT_SYMBOL(nm_set_native_flags);

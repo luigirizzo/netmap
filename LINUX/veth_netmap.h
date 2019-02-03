@@ -101,9 +101,7 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct netmap_adapter *peer_na;
 	struct ifnet *ifp = na->ifp;
 	bool was_up;
-	enum txrx t;
 	int error;
-	int i;
 
 	peer_na = veth_get_peer_na(na);
 	if (!peer_na) {
@@ -118,75 +116,18 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	/* Enable or disable flags and callbacks in na and ifp. */
 	if (onoff) {
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_on(kring)) {
-					/* mark the peer ring as needed */
-					kring->pipe->nr_kflags |= NKR_NEEDRING;
-				}
-			}
-		}
-
-		/* create all missing needed rings on the other end.
-		 * They have all been marked as fake in the krings_create
-		 * above, so the will not be filled with buffers
-		 */
-
-		error = netmap_mem_rings_create(peer_na);
+		error = netmap_pipe_reg_both(na, peer_na);
 		if (error) {
 			return error;
-		}
-
-		/* In case of no error we put our rings in netmap mode */
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-				if (nm_kring_pending_on(kring)) {
-					struct netmap_kring *sring, *dring;
-
-					kring->nr_mode = NKR_NETMAP_ON;
-					if ((kring->nr_kflags & NKR_FAKERING) &&
-					    (kring->pipe->nr_kflags & NKR_FAKERING)) {
-						/* this is a re-open of a pipe
-						 * end-point kept alive by the other end.
-						 * We need to leave everything as it is
-						 */
-						continue;
-					}
-
-					/* copy the buffers from the non-fake ring */
-					if (kring->nr_kflags & NKR_FAKERING) {
-						sring = kring->pipe;
-						dring = kring;
-					} else {
-						sring = kring;
-						dring = kring->pipe;
-					}
-					memcpy(dring->ring->slot,
-					       sring->ring->slot,
-					       sizeof(struct netmap_slot) *
-							sring->nkr_num_slots);
-					/* mark both rings as fake and needed,
-					 * so that buffers will not be
-					 * deleted by the standard machinery
-					 * (we will delete them by ourselves in
-					 * veth_netmap_krings_delete)
-					 */
-					sring->nr_kflags |=
-						(NKR_FAKERING | NKR_NEEDRING);
-					dring->nr_kflags |=
-						(NKR_FAKERING | NKR_NEEDRING);
-					kring->nr_mode = NKR_NETMAP_ON;
-				}
-			}
 		}
 		nm_set_native_flags(na);
 		if (netmap_verbose) {
 			D("registered veth %s", na->name);
 		}
 	} else {
+		enum txrx t;
+		int i;
+
 		nm_clear_native_flags(na);
 
 		for_rx_tx(t) {
@@ -221,7 +162,6 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 	return 0;
 }
 
-/* See netmap_pipe_krings_create(). */
 static int
 veth_netmap_krings_create(struct netmap_adapter *na)
 {
@@ -245,7 +185,6 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 	return 0;
 }
 
-/* See netmap_pipe_krings_delete(). */
 static void
 veth_netmap_krings_delete(struct netmap_adapter *na)
 {

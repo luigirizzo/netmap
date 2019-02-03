@@ -384,6 +384,78 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 	return 0;
 }
 
+int
+netmap_pipe_reg_both(struct netmap_adapter *na, struct netmap_adapter *ona)
+{
+	int i, error = 0;
+	enum txrx t;
+
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t); i++) {
+			struct netmap_kring *kring = NMR(na, t)[i];
+
+			if (nm_kring_pending_on(kring)) {
+				/* mark the peer ring as needed */
+				kring->pipe->nr_kflags |= NKR_NEEDRING;
+			}
+		}
+	}
+
+	/* create all missing needed rings on the other end.
+	 * Either our end, or the other, has been marked as
+	 * fake, so the allocation will not be done twice.
+	 */
+	error = netmap_mem_rings_create(ona);
+	if (error)
+		return error;
+
+	/* In case of no error we put our rings in netmap mode */
+	for_rx_tx(t) {
+		for (i = 0; i < nma_get_nrings(na, t); i++) {
+			struct netmap_kring *kring = NMR(na, t)[i];
+			if (nm_kring_pending_on(kring)) {
+				struct netmap_kring *sring, *dring;
+
+				kring->nr_mode = NKR_NETMAP_ON;
+				if ((kring->nr_kflags & NKR_FAKERING) &&
+				    (kring->pipe->nr_kflags & NKR_FAKERING)) {
+					/* this is a re-open of a pipe
+					 * end-point kept alive by the other end.
+					 * We need to leave everything as it is
+					 */
+					continue;
+				}
+
+				/* copy the buffers from the non-fake ring */
+				if (kring->nr_kflags & NKR_FAKERING) {
+					sring = kring->pipe;
+					dring = kring;
+				} else {
+					sring = kring;
+					dring = kring->pipe;
+				}
+				memcpy(dring->ring->slot,
+				       sring->ring->slot,
+				       sizeof(struct netmap_slot) *
+						sring->nkr_num_slots);
+				/* mark both rings as fake and needed,
+				 * so that buffers will not be
+				 * deleted by the standard machinery
+				 * (we will delete them by ourselves in
+				 * netmap_pipe_krings_delete)
+				 */
+				sring->nr_kflags |=
+					(NKR_FAKERING | NKR_NEEDRING);
+				dring->nr_kflags |=
+					(NKR_FAKERING | NKR_NEEDRING);
+				kring->nr_mode = NKR_NETMAP_ON;
+			}
+		}
+	}
+
+	return 0;
+}
+
 /* netmap_pipe_reg.
  *
  * There are two cases on registration (onoff==1)
@@ -423,76 +495,20 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 	struct netmap_pipe_adapter *pna =
 		(struct netmap_pipe_adapter *)na;
 	struct netmap_adapter *ona = &pna->peer->up;
-	int i, error = 0;
-	enum txrx t;
+	int error = 0;
 
 	ND("%p: onoff %d", na, onoff);
 	if (onoff) {
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_on(kring)) {
-					/* mark the peer ring as needed */
-					kring->pipe->nr_kflags |= NKR_NEEDRING;
-				}
-			}
-		}
-
-		/* create all missing needed rings on the other end.
-		 * Either our end, or the other, has been marked as
-		 * fake, so the allocation will not be done twice.
-		 */
-		error = netmap_mem_rings_create(ona);
-		if (error)
+		error = netmap_pipe_reg_both(na, ona);
+		if (error) {
 			return error;
-
-		/* In case of no error we put our rings in netmap mode */
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-				if (nm_kring_pending_on(kring)) {
-					struct netmap_kring *sring, *dring;
-
-					kring->nr_mode = NKR_NETMAP_ON;
-					if ((kring->nr_kflags & NKR_FAKERING) &&
-					    (kring->pipe->nr_kflags & NKR_FAKERING)) {
-						/* this is a re-open of a pipe
-						 * end-point kept alive by the other end.
-						 * We need to leave everything as it is
-						 */
-						continue;
-					}
-
-					/* copy the buffers from the non-fake ring */
-					if (kring->nr_kflags & NKR_FAKERING) {
-						sring = kring->pipe;
-						dring = kring;
-					} else {
-						sring = kring;
-						dring = kring->pipe;
-					}
-					memcpy(dring->ring->slot,
-					       sring->ring->slot,
-					       sizeof(struct netmap_slot) *
-							sring->nkr_num_slots);
-					/* mark both rings as fake and needed,
-					 * so that buffers will not be
-					 * deleted by the standard machinery
-					 * (we will delete them by ourselves in
-					 * netmap_pipe_krings_delete)
-					 */
-					sring->nr_kflags |=
-						(NKR_FAKERING | NKR_NEEDRING);
-					dring->nr_kflags |=
-						(NKR_FAKERING | NKR_NEEDRING);
-					kring->nr_mode = NKR_NETMAP_ON;
-				}
-			}
 		}
 		if (na->active_fds == 0)
 			na->na_flags |= NAF_NETMAP_ON;
 	} else {
+		enum txrx t;
+		int i;
+
 		if (na->active_fds == 0)
 			na->na_flags &= ~NAF_NETMAP_ON;
 		for_rx_tx(t) {
