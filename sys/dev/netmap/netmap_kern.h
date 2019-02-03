@@ -1994,6 +1994,8 @@ nm_si_user(struct netmap_priv_d *priv, enum txrx t)
 #ifdef WITH_PIPES
 int netmap_pipe_txsync(struct netmap_kring *txkring, int flags);
 int netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags);
+int netmap_pipe_krings_create_both(struct netmap_adapter *na,
+				  struct netmap_adapter *ona);
 #endif /* WITH_PIPES */
 
 #ifdef WITH_MONITOR

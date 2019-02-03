@@ -2479,6 +2479,7 @@ EXPORT_SYMBOL(netmap_mem_rings_delete);	/* used by veth module */
 #ifdef WITH_PIPES
 EXPORT_SYMBOL(netmap_pipe_txsync);	/* used by veth module */
 EXPORT_SYMBOL(netmap_pipe_rxsync);	/* used by veth module */
+EXPORT_SYMBOL(netmap_pipe_krings_create_both);
 #endif /* WITH_PIPES */
 EXPORT_SYMBOL(netmap_verbose);
 EXPORT_SYMBOL(nm_set_native_flags);

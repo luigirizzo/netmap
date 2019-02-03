@@ -227,8 +227,6 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 {
 	struct netmap_veth_adapter *vna = (struct netmap_veth_adapter *)na;
 	struct netmap_adapter *peer_na;
-	int error = 0;
-	enum txrx t;
 
 	/* The nm_krings_create callback is called first in netmap_do_regif(),
 	 * so the the cross linking happens now (if this is the first endpoint
@@ -237,50 +235,14 @@ veth_netmap_krings_create(struct netmap_adapter *na)
 	peer_na = veth_get_peer_na(na);
 	rcu_read_unlock();
 	if (!peer_na) {
-		D("veth peer not found");
+		nm_prerr("veth peer not found for %s", na->name);
 		return ENXIO;
 	}
 
-	if (vna->peer_ref) {
-		int i;
-
-		/* create my krings */
-		error = netmap_krings_create(na, 0);
-		if (error)
-			return error;
-
-		/* create the krings of the other end */
-		error = netmap_krings_create(peer_na, 0);
-		if (error)
-			goto del_krings1;
-
-		/* cross link the krings (only the hw ones, not
-		 * the host krings) */
-		for_rx_tx(t) {
-			enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *k1 = NMR(na, t)[i],
-					            *k2 = NMR(peer_na, r)[i];
-				k1->pipe = k2;
-				k2->pipe = k1;
-				/* mark all peer-adapter rings as fake */
-				k2->nr_kflags |= NKR_FAKERING;
-				/* init tails */
-				k1->pipe_tail = k1->nr_hwtail;
-				k2->pipe_tail = k2->nr_hwtail;
-			}
-		}
-
-		if (netmap_verbose) {
-			D("created krings for %s and its peer", na->name);
-		}
-	}
+	if (vna->peer_ref)
+		return netmap_pipe_krings_create_both(na, peer_na);
 
 	return 0;
-
-del_krings1:
-	netmap_krings_delete(na);
-	return error;
 }
 
 /* See netmap_pipe_krings_delete(). */

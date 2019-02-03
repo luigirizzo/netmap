@@ -312,6 +312,47 @@ netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
  */
 
 
+int netmap_pipe_krings_create_both(struct netmap_adapter *na,
+				  struct netmap_adapter *ona)
+{
+	enum txrx t;
+	int error;
+	int i;
+
+	/* case 1) below */
+	ND("%p: case 1, create both ends", na);
+	error = netmap_krings_create(na, 0);
+	if (error)
+		return error;
+
+	/* create the krings of the other end */
+	error = netmap_krings_create(ona, 0);
+	if (error)
+		goto del_krings1;
+
+	/* cross link the krings and initialize the pipe_tails */
+	for_rx_tx(t) {
+		enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
+		for (i = 0; i < nma_get_nrings(na, t); i++) {
+			struct netmap_kring *k1 = NMR(na, t)[i],
+					    *k2 = NMR(ona, r)[i];
+			k1->pipe = k2;
+			k2->pipe = k1;
+			/* mark all peer-adapter rings as fake */
+			k2->nr_kflags |= NKR_FAKERING;
+			/* init tails */
+			k1->pipe_tail = k1->nr_hwtail;
+			k2->pipe_tail = k2->nr_hwtail;
+		}
+	}
+
+	return 0;
+
+del_krings1:
+	netmap_krings_delete(na);
+	return error;
+}
+
 /* netmap_pipe_krings_create.
  *
  * There are two cases:
@@ -336,46 +377,11 @@ netmap_pipe_krings_create(struct netmap_adapter *na)
 	struct netmap_pipe_adapter *pna =
 		(struct netmap_pipe_adapter *)na;
 	struct netmap_adapter *ona = &pna->peer->up;
-	int error = 0;
-	enum txrx t;
 
-	if (pna->peer_ref) {
-		int i;
+	if (pna->peer_ref)
+		return netmap_pipe_krings_create_both(na, ona);
 
-		/* case 1) above */
-		ND("%p: case 1, create both ends", na);
-		error = netmap_krings_create(na, 0);
-		if (error)
-			goto err;
-
-		/* create the krings of the other end */
-		error = netmap_krings_create(ona, 0);
-		if (error)
-			goto del_krings1;
-
-		/* cross link the krings and initialize the pipe_tails */
-		for_rx_tx(t) {
-			enum txrx r = nm_txrx_swap(t); /* swap NR_TX <-> NR_RX */
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *k1 = NMR(na, t)[i],
-					            *k2 = NMR(ona, r)[i];
-				k1->pipe = k2;
-				k2->pipe = k1;
-				/* mark all peer-adapter rings as fake */
-				k2->nr_kflags |= NKR_FAKERING;
-				/* init tails */
-				k1->pipe_tail = k1->nr_hwtail;
-				k2->pipe_tail = k2->nr_hwtail;
-			}
-		}
-
-	}
 	return 0;
-
-del_krings1:
-	netmap_krings_delete(na);
-err:
-	return error;
 }
 
 /* netmap_pipe_reg.
