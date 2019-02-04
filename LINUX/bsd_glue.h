@@ -532,8 +532,6 @@ void netmap_bns_unregister(void);
 #define NM_BNS_PUT(b)   do { (void)(b); } while (0)
 #endif
 
-#define if_printf(ifp, fmt, ...)  dev_info(&(ifp)->dev, fmt, ##__VA_ARGS__)
-
 #ifndef BIT_ULL
 #define BIT_ULL(nr)	(1ULL << (nr))
 #endif /* !BIT_ULL */
