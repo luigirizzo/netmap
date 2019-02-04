@@ -363,7 +363,7 @@ vtnet_netmap_rxsync(struct netmap_kring *kring, int flags)
 				/* Skip the virtio-net header. */
 				len -= sc->vtnet_hdr_size;
 				if (unlikely(len < 0)) {
-					RD(1, "Truncated virtio-net-header, "
+					nm_prlim(1, "Truncated virtio-net-header, "
 						"missing %d bytes", -len);
 					len = 0;
 				}
@@ -375,7 +375,7 @@ vtnet_netmap_rxsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_i;
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
-	ND("[B] h %d c %d hwcur %d hwtail %d", ring->head, ring->cur,
+	nm_prdis("[B] h %d c %d hwcur %d hwtail %d", ring->head, ring->cur,
 				kring->nr_hwcur, kring->nr_hwtail);
 
 	/*
@@ -390,7 +390,7 @@ vtnet_netmap_rxsync(struct netmap_kring *kring, int flags)
 		virtqueue_notify(vq);
 	}
 
-	ND("[C] h %d c %d t %d hwcur %d hwtail %d", ring->head, ring->cur,
+	nm_prdis("[C] h %d c %d t %d hwcur %d hwtail %d", ring->head, ring->cur,
 		ring->tail, kring->nr_hwcur, kring->nr_hwtail);
 
 	return 0;

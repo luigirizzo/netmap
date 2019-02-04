@@ -107,7 +107,7 @@ int mlx5e_netmap_reg(struct netmap_adapter *na, int onoff) {
   int err = 0;
   int was_opened;
 
-  D("mlx5e switching %s native netmap mode", onoff ? "into" : "out of");
+  nm_printf("mlx5e switching %s native netmap mode", onoff ? "into" : "out of");
 
   /* Should we check and wait for any reset in progress to complete? */
   mutex_lock(&adapter->state_lock);
@@ -198,7 +198,7 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
 
   if (nm_i != head) { /* we have new packets to send */
 
-    /* D("TX ring %u sending slots %u to %u",
+    /* nm_prinf("TX ring %u sending slots %u to %u",
      *            ring_nr, nm_i, nm_prev(head, lim));
      */
 
@@ -663,7 +663,7 @@ int mlx5e_netmap_configure_rx_ring(struct mlx5e_rq *rq, int ring_nr) {
     count++;
   }
 
-  D("populated %d WQEs in ring %d", count, ring_nr);
+  nm_prinf("populated %d WQEs in ring %d", count, ring_nr);
 
   /* tell netmap how many buffers we have prepared */
   na->rx_rings[ring_nr]->nr_hwcur = count;

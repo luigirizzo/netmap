@@ -221,7 +221,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	ptnet_sync_tail(ktoa, kring);
 
 	if (unlikely(ptnet_tx_slots(a.ring) < pi->min_tx_slots)) {
-		ND(1, "TX ring unexpected overflow, requeuing");
+		nm_prdis(1, "TX ring unexpected overflow, requeuing");
 
 		return NETDEV_TX_BUSY;
 	}
@@ -270,7 +270,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 		vh->num_buffers = 0; /* unused */
 
-		ND(1, "%s: vnet hdr: flags %x csum_start %u csum_ofs %u hdr_len = "
+		nm_prdis(1, "%s: vnet hdr: flags %x csum_start %u csum_ofs %u hdr_len = "
 		      "%u gso_size %u gso_type %x", __func__, vh->hdr.flags,
 		      vh->hdr.csum_start, vh->hdr.csum_offset, vh->hdr.hdr_len,
 		      vh->hdr.gso_size, vh->hdr.gso_type);
@@ -297,7 +297,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	a.ring->head = a.ring->cur = nm_next(a.head, a.lim);
 
 	if (skb_shinfo(skb)->nr_frags) {
-		ND(1, "TX frags #%u lfsz %u tsz %d gso_segs %d gso_size %d", skb_shinfo(skb)->nr_frags,
+		nm_prdis(1, "TX frags #%u lfsz %u tsz %d gso_segs %d gso_size %d", skb_shinfo(skb)->nr_frags,
 		skb_frag_size(&skb_shinfo(skb)->frags[skb_shinfo(skb)->nr_frags-1]),
 		(int)skb->len, skb_shinfo(skb)->gso_segs, skb_shinfo(skb)->gso_size);
 	}
@@ -517,7 +517,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
 		vh = nmbuf;
 		if (likely(have_vnet_hdr)) {
-			ND(1, "%s: vnet hdr: flags %x csum_start %u "
+			nm_prdis(1, "%s: vnet hdr: flags %x csum_start %u "
 			      "csum_ofs %u hdr_len = %u gso_size %u "
 			      "gso_type %x", __func__, vh->hdr.flags,
 			      vh->hdr.csum_start, vh->hdr.csum_offset,
@@ -546,7 +546,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			head = nm_next(head, lim);
 			nns++;
 			if (unlikely(head == ring->tail)) {
-				ND(1, "Warning: truncated packet, retrying");
+				nm_prdis(1, "Warning: truncated packet, retrying");
 				dev_kfree_skb_any(skb);
 				work_done ++;
 				pi->netdev->stats.rx_frame_errors ++;
@@ -562,7 +562,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			do {
 				if (!skbdata_avail) {
 					if (skbpage) {
-						ND(1, "add f #%u fsz %lu tsz %d", skb_shinfo(skb)->nr_frags,
+						nm_prdis(1, "add f #%u fsz %lu tsz %d", skb_shinfo(skb)->nr_frags,
 								PAGE_SIZE - skbdata_avail, (int)skb->len);
 						skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
 								skbpage, 0, PAGE_SIZE - skbdata_avail
@@ -599,7 +599,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 					, PAGE_SIZE
 #endif
 					);
-			ND(1, "RX frags #%u lfsz %lu tsz %d nns %d",
+			nm_prdis(1, "RX frags #%u lfsz %lu tsz %d nns %d",
 			   skb_shinfo(skb)->nr_frags,
 			   PAGE_SIZE - skbdata_avail, (int)skb->len, nns);
 		}
@@ -1040,10 +1040,10 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 		kring->nr_hwtail = kring->rtail =
 			kring->ring->tail = ktoa->hwtail;
 
-		ND("%s: csb {hc %u h %u c %u ht %u}", kring->name,
+		nm_prdis("%s: csb {hc %u h %u c %u ht %u}", kring->name,
 		   ktoa->hwcur, atok->head, atok->cur,
 		   ktoa->hwtail);
-		ND("%s: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
+		nm_prdis("%s: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
 		   kring->name, kring->nr_hwcur, kring->rhead, kring->rcur,
 		   kring->ring->head, kring->ring->cur, kring->nr_hwtail,
 		   kring->rtail, kring->ring->tail);

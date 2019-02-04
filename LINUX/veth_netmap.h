@@ -137,13 +137,13 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		}
 		nm_set_native_flags(na);
 		if (netmap_verbose) {
-			D("registered veth %s", na->name);
+			nm_prinf("registered veth %s", na->name);
 		}
 	} else {
 		nm_clear_native_flags(na);
 		netmap_krings_mode_commit(na, onoff);
 		if (netmap_verbose) {
-			D("unregistered veth %s", na->name);
+			nm_prinf("unregistered veth %s", na->name);
 		}
 	}
 
@@ -199,14 +199,14 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 	}
 
 	if (netmap_verbose) {
-		D("Delete krings for %s and its peer", na->name);
+		nm_prinf("Delete krings for %s and its peer", na->name);
 	}
 
 	rcu_read_lock();
 	peer_na = veth_get_peer_na(na);
 	rcu_read_unlock();
 	if (!peer_na) {
-		D("veth peer not found");
+		nm_prinf("veth peer not found");
 		return;
 	}
 

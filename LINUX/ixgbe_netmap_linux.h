@@ -107,7 +107,7 @@ ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
 static void
 ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
 {
-	RD(5, "per-queue irq disable not supported");
+	nm_prlim(1, "per-queue irq disable not supported");
 }
 #endif /* NETMAP_LINUX_IXGBE_HAVE_DISABLE */
 
@@ -136,7 +136,7 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 	 * (ixgbe datasheet - Section 7.1.9)
 	 */
 	srrctl |= IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF;
-	ND("bufsz: %d srrctl: %x", NETMAP_BUF_SIZE(na), srrctl);
+	nm_prdis("bufsz: %d srrctl: %x", NETMAP_BUF_SIZE(na), srrctl);
 	IXGBE_WRITE_REG(hw, IXGBE_SRRCTL(reg_idx), srrctl);
 }
 
@@ -181,14 +181,14 @@ static void
 ixgbe_netmap_intr(struct netmap_adapter *na, int onoff)
 {
 	// TODO
-	RD(5, "per-queue irq disable not supported");
+	nm_prlim(5, "per-queue irq disable not supported");
 }
 
 static void
 ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_RING *rx_ring)
 {
 	// TODO
-	D("not supported");
+	nm_prerr("not supported");
 }
 
 #ifdef NETMAP_LINUX_IXGBEVF_HAVE_NTA
@@ -423,7 +423,7 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 	if ((flags & NAF_FORCE_RECLAIM) || nm_kr_txempty(kring)) {
 		nic_i = NM_ACCESS_ONCE(*ina->heads[ring_nr].phead);
 		nm_i = netmap_idx_n2k(kring, nic_i);
-		ND(5, "%s: h %d", kring->name, h);
+		nm_prdis(5, "%s: h %d", kring->name, h);
 		kring->nr_hwtail = nm_prev(nm_i, lim);
 	}
 #else /* NM_IXGBE_USE_TDH */
@@ -779,7 +779,7 @@ ixgbe_netmap_create_heads(struct netmap_adapter *na)
 			goto err;
 		}
 		*h->phead = 0;
-		ND("%s: phead %p *phead %x", na->tx_rings[i].name, h->phead, *h->phead);
+		nm_prdis("%s: phead %p *phead %x", na->tx_rings[i].name, h->phead, *h->phead);
 	}
 	return 0;
 

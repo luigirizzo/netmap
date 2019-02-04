@@ -268,7 +268,7 @@ vmxnet3_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 			/* device may have skipped some rx descs */
 			while (unlikely(nic_i != rx_idx)) {
-				D("%u skipped! rx_idx %u", nic_i, rx_idx);
+				nm_prinf("%u skipped! rx_idx %u", nic_i, rx_idx);
 				/* the nic has skipped some slots because who
 				 * knows why. To shelter the application from
 				 * this we would need to rotate the

@@ -228,7 +228,7 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 				break;
 			len = le16toh(curr->length) - 4; // CRC
 			if (len < 0) {
-				RD(5, "bogus pkt (%d) size %d nic idx %d", n, len, nic_i);
+				nm_prlim(2, "bogus pkt (%d) size %d nic idx %d", n, len, nic_i);
 				len = 0;
 			}
 			ring->slot[nm_i].len = len;
