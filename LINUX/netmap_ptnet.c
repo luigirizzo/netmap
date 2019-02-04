@@ -45,9 +45,9 @@ module_param(ptnet_gso, bool, 0644);
 //#define HANGCTRL
 
 #if 0  /* Switch to 1 to enable per-packet logs. */
-#define DBG D
+#define DBG nm_prinf
 #else
-#define DBG ND
+#define DBG nm_prdis
 #endif
 
 #define PTNET_DRV_NAME "ptnet"

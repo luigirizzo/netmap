@@ -397,14 +397,14 @@ netmap_ioctl_legacy(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 #ifdef __FreeBSD__
 	case FIONBIO:
 	case FIOASYNC:
-		ND("FIONBIO/FIOASYNC are no-ops");
+		/* FIONBIO/FIOASYNC are no-ops. */
 		break;
 
 	case BIOCIMMEDIATE:
 	case BIOCGHDRCMPLT:
 	case BIOCSHDRCMPLT:
 	case BIOCSSEESENT:
-		D("ignore BIOCIMMEDIATE/BIOCSHDRCMPLT/BIOCSHDRCMPLT/BIOCSSEESENT");
+		/* Ignore these commands. */
 		break;
 
 	default:	/* allow device-specific ioctls */

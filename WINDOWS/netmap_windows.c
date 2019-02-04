@@ -90,12 +90,12 @@ ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 	    status = STATUS_INSUFFICIENT_RESOURCES;
 	} else {
 	    priv->np_refs = 1;
-	    D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refs);
+	    nm_prinf("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refs);
 	    irpSp->FileObject->FsContext = priv;
 	}
     } else {
 	priv->np_refs += 1;
-	D("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refs);
+	nm_prinf("Netmap.sys: ioctlCreate::priv->np_refcount = %i", priv->np_refs);
     }
     NMG_UNLOCK();
 
@@ -611,7 +611,7 @@ ifunit_ref(const char* name)
     struct net_device *	ifp = NULL;
 
     if (strlen(name) < 4 || _strnicmp(name, "eth", 3) != 0) {
-	D("not a NIC");
+	nm_prerr("not a NIC");
 	return NULL;
     }
 	if (ndis_hooks.ndis_regif == NULL)
@@ -694,19 +694,19 @@ windows_netmap_mmap(PIRP Irp)
 	priv = irpSp->FileObject->FsContext;
 
 	if (priv == NULL) {
-		D("no priv");
+		nm_prerr("no priv");
 		return STATUS_DEVICE_DATA_ERROR;
 	}
 	na = priv->np_na;
 	if (na == NULL) {
-		D("na not attached");
+		nm_prerr("na not attached");
 		return STATUS_DEVICE_DATA_ERROR;
 	}
 	mb(); /* XXX really ? */
 
 	mdl = win32_build_user_vm_map(na->nm_mem);
 	if (mdl == NULL) {
-		D("failed building memory map");
+		nm_prerr("failed building memory map");
 		return STATUS_DEVICE_DATA_ERROR;
 	}
 

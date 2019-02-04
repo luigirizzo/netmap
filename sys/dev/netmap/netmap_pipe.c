@@ -118,8 +118,8 @@ netmap_pipe_dealloc(struct netmap_adapter *na)
 {
 	if (na->na_pipes) {
 		if (na->na_next_pipe > 0) {
-			D("freeing not empty pipe array for %s (%d dangling pipes)!", na->name,
-					na->na_next_pipe);
+			nm_prerr("freeing not empty pipe array for %s (%d dangling pipes)!",
+			    na->name, na->na_next_pipe);
 		}
 		nm_os_free(na->na_pipes);
 		na->na_pipes = NULL;
@@ -190,8 +190,8 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 	int complete; /* did we see a complete packet ? */
 	struct netmap_ring *txring = txkring->ring, *rxring = rxkring->ring;
 
-	ND("%p: %s %x -> %s", txkring, txkring->name, flags, rxkring->name);
-	ND(20, "TX before: hwcur %d hwtail %d cur %d head %d tail %d",
+	nm_prdis("%p: %s %x -> %s", txkring, txkring->name, flags, rxkring->name);
+	nm_prdis(20, "TX before: hwcur %d hwtail %d cur %d head %d tail %d",
 		txkring->nr_hwcur, txkring->nr_hwtail,
 		txkring->rcur, txkring->rhead, txkring->rtail);
 
@@ -221,7 +221,7 @@ netmap_pipe_txsync(struct netmap_kring *txkring, int flags)
 
 	txkring->nr_hwcur = k;
 
-	ND(20, "TX after : hwcur %d hwtail %d cur %d head %d tail %d k %d",
+	nm_prdis(20, "TX after : hwcur %d hwtail %d cur %d head %d tail %d k %d",
 		txkring->nr_hwcur, txkring->nr_hwtail,
 		txkring->rcur, txkring->rhead, txkring->rtail, k);
 
@@ -242,8 +242,8 @@ netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
 	int m; /* slots to release */
 	struct netmap_ring *txring = txkring->ring, *rxring = rxkring->ring;
 
-	ND("%p: %s %x -> %s", txkring, txkring->name, flags, rxkring->name);
-	ND(20, "RX before: hwcur %d hwtail %d cur %d head %d tail %d",
+	nm_prdis("%p: %s %x -> %s", txkring, txkring->name, flags, rxkring->name);
+	nm_prdis(20, "RX before: hwcur %d hwtail %d cur %d head %d tail %d",
 		rxkring->nr_hwcur, rxkring->nr_hwtail,
 		rxkring->rcur, rxkring->rhead, rxkring->rtail);
 
@@ -274,7 +274,7 @@ netmap_pipe_rxsync(struct netmap_kring *rxkring, int flags)
 	txkring->pipe_tail = nm_prev(k, lim);
 	rxkring->nr_hwcur = k;
 
-	ND(20, "RX after : hwcur %d hwtail %d cur %d head %d tail %d k %d",
+	nm_prdis(20, "RX after : hwcur %d hwtail %d cur %d head %d tail %d k %d",
 		rxkring->nr_hwcur, rxkring->nr_hwtail,
 		rxkring->rcur, rxkring->rhead, rxkring->rtail, k);
 
@@ -320,7 +320,7 @@ int netmap_pipe_krings_create_both(struct netmap_adapter *na,
 	int i;
 
 	/* case 1) below */
-	ND("%p: case 1, create both ends", na);
+	nm_prdis("%p: case 1, create both ends", na);
 	error = netmap_krings_create(na, 0);
 	if (error)
 		return error;
@@ -497,7 +497,7 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 	struct netmap_adapter *ona = &pna->peer->up;
 	int error = 0;
 
-	ND("%p: onoff %d", na, onoff);
+	nm_prdis("%p: onoff %d", na, onoff);
 	if (onoff) {
 		error = netmap_pipe_reg_both(na, ona);
 		if (error) {
@@ -512,20 +512,20 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 	}
 
 	if (na->active_fds) {
-		ND("active_fds %d", na->active_fds);
+		nm_prdis("active_fds %d", na->active_fds);
 		return 0;
 	}
 
 	if (pna->peer_ref) {
-		ND("%p: case 1.a or 2.a, nothing to do", na);
+		nm_prdis("%p: case 1.a or 2.a, nothing to do", na);
 		return 0;
 	}
 	if (onoff) {
-		ND("%p: case 1.b, drop peer", na);
+		nm_prdis("%p: case 1.b, drop peer", na);
 		pna->peer->peer_ref = 0;
 		netmap_adapter_put(na);
 	} else {
-		ND("%p: case 2.b, grab peer", na);
+		nm_prdis("%p: case 2.b, grab peer", na);
 		netmap_adapter_get(na);
 		pna->peer->peer_ref = 1;
 	}
@@ -541,7 +541,7 @@ netmap_pipe_krings_delete_both(struct netmap_adapter *na,
 	int i;
 
 	/* case 1) below */
-	ND("%p: case 1, deleting everything", na);
+	nm_prdis("%p: case 1, deleting everything", na);
 	/* To avoid double-frees we zero-out all the buffers in the kernel part
 	 * of each ring. The reason is this: If the user is behaving correctly,
 	 * all buffers are found in exactly one slot in the userspace part of
@@ -557,7 +557,7 @@ cleanup:
 			struct netmap_ring *ring = kring->ring;
 			uint32_t j, lim = kring->nkr_num_slots - 1;
 
-			ND("%s ring %p hwtail %u hwcur %u",
+			nm_prdis("%s ring %p hwtail %u hwcur %u",
 				kring->name, ring, kring->nr_hwtail, kring->nr_hwcur);
 
 			if (ring == NULL)
@@ -570,7 +570,7 @@ cleanup:
 			     j != kring->nr_hwcur;
 			     j = nm_next(j, lim))
 			{
-				ND("%s[%d] %u", kring->name, j, ring->slot[j].buf_idx);
+				nm_prdis("%s[%d] %u", kring->name, j, ring->slot[j].buf_idx);
 				ring->slot[j].buf_idx = 0;
 			}
 			kring->nr_kflags &= ~(NKR_FAKERING | NKR_NEEDRING);
@@ -622,7 +622,7 @@ netmap_pipe_krings_delete(struct netmap_adapter *na)
 	struct netmap_adapter *ona; /* na of the other end */
 
 	if (!pna->peer_ref) {
-		ND("%p: case 2, kept alive by peer",  na);
+		nm_prdis("%p: case 2, kept alive by peer",  na);
 		return;
 	}
 	ona = &pna->peer->up;
@@ -635,9 +635,9 @@ netmap_pipe_dtor(struct netmap_adapter *na)
 {
 	struct netmap_pipe_adapter *pna =
 		(struct netmap_pipe_adapter *)na;
-	ND("%p %p", na, pna->parent_ifp);
+	nm_prdis("%p %p", na, pna->parent_ifp);
 	if (pna->peer_ref) {
-		ND("%p: clean up peer", na);
+		nm_prdis("%p: clean up peer", na);
 		pna->peer_ref = 0;
 		netmap_adapter_put(&pna->peer->up);
 	}
@@ -671,7 +671,7 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		if (cbra != NULL) {
 			role = NM_PIPE_ROLE_SLAVE;
 		} else {
-			ND("not a pipe");
+			nm_prdis("not a pipe");
 			return 0;
 		}
 	}
@@ -702,10 +702,10 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		if (!error)
 			break;
 		if (error != ENXIO || retries++) {
-			ND("parent lookup failed: %d", error);
+			nm_prdis("parent lookup failed: %d", error);
 			return error;
 		}
-		ND("try to create a persistent vale port");
+		nm_prdis("try to create a persistent vale port");
 		/* create a persistent vale port and try again */
 		*cbra = '\0';
 		NMG_UNLOCK();
@@ -714,14 +714,15 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		strlcpy(hdr->nr_name, nr_name_orig, sizeof(hdr->nr_name));
 		if (create_error && create_error != EEXIST) {
 			if (create_error != EOPNOTSUPP) {
-				D("failed to create a persistent vale port: %d", create_error);
+				nm_prerr("failed to create a persistent vale port: %d",
+				    create_error);
 			}
 			return error;
 		}
 	}
 
 	if (NETMAP_OWNED_BY_KERN(pna)) {
-		ND("parent busy");
+		nm_prdis("parent busy");
 		error = EBUSY;
 		goto put_out;
 	}
@@ -731,10 +732,10 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	mna = netmap_pipe_find(pna, pipe_id);
 	if (mna) {
 		if (mna->role == role) {
-			ND("found %s directly at %d", pipe_id, mna->parent_slot);
+			nm_prdis("found %s directly at %d", pipe_id, mna->parent_slot);
 			reqna = mna;
 		} else {
-			ND("found %s indirectly at %d", pipe_id, mna->parent_slot);
+			nm_prdis("found %s indirectly at %d", pipe_id, mna->parent_slot);
 			reqna = mna->peer;
 		}
 		/* the pipe we have found already holds a ref to the parent,
@@ -743,7 +744,7 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		netmap_unget_na(pna, ifp);
 		goto found;
 	}
-	ND("pipe %s not found, create %d", pipe_id, create);
+	nm_prdis("pipe %s not found, create %d", pipe_id, create);
 	if (!create) {
 		error = ENODEV;
 		goto put_out;
@@ -834,10 +835,10 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		sna->peer_ref = 1;
 		netmap_adapter_get(&mna->up);
 	}
-	ND("created master %p and slave %p", mna, sna);
+	nm_prdis("created master %p and slave %p", mna, sna);
 found:
 
-	ND("pipe %s %s at %p", pipe_id,
+	nm_prdis("pipe %s %s at %p", pipe_id,
 		(reqna->role == NM_PIPE_ROLE_MASTER ? "master" : "slave"), reqna);
 	*na = &reqna->up;
 	netmap_adapter_get(*na);
