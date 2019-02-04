@@ -2457,6 +2457,7 @@ EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */
 EXPORT_SYMBOL(netmap_reset);		/* ring init routines */
 EXPORT_SYMBOL(netmap_rx_irq);	        /* default irq handler */
 EXPORT_SYMBOL(netmap_no_pendintr);	/* XXX mitigation - should go away */
+EXPORT_SYMBOL(netmap_krings_mode_commit);
 #ifdef WITH_VALE
 EXPORT_SYMBOL(netmap_bdg_regops);	/* bridge configuration routine */
 EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */

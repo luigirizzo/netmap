@@ -132,44 +132,11 @@ vtnet_netmap_reg(struct netmap_adapter *na, int state)
 	success = (ifp->if_drv_flags & IFF_DRV_RUNNING) ? 0 : ENXIO;
 
 	if (state) {
-		for_rx_tx(t) {
-			/* Hardware rings. */
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_on(kring))
-					kring->nr_mode = NKR_NETMAP_ON;
-			}
-
-			/* Host rings. */
-			for (i = 0; i < nma_get_host_nrings(na, t); i++) {
-				struct netmap_kring *kring =
-					NMR(na, t)[nma_get_nrings(na, t) + i];
-
-				if (nm_kring_pending_on(kring))
-					kring->nr_mode = NKR_NETMAP_ON;
-			}
-		}
+		netmap_krings_mode_commit(na, onoff);
+		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
-		for_rx_tx(t) {
-			/* Hardware rings. */
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_off(kring))
-					kring->nr_mode = NKR_NETMAP_OFF;
-			}
-
-			/* Host rings. */
-			for (i = 0; i < nma_get_host_nrings(na, t); i++) {
-				struct netmap_kring *kring =
-					NMR(na, t)[nma_get_nrings(na, t) + i];
-
-				if (nm_kring_pending_off(kring))
-					kring->nr_mode = NKR_NETMAP_OFF;
-			}
-		}
+		netmap_krings_mode_commit(na, onoff);
 	}
 
 	VTNET_CORE_UNLOCK(sc);

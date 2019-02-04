@@ -506,20 +506,9 @@ netmap_pipe_reg(struct netmap_adapter *na, int onoff)
 		if (na->active_fds == 0)
 			na->na_flags |= NAF_NETMAP_ON;
 	} else {
-		enum txrx t;
-		int i;
-
 		if (na->active_fds == 0)
 			na->na_flags &= ~NAF_NETMAP_ON;
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_off(kring)) {
-					kring->nr_mode = NKR_NETMAP_OFF;
-				}
-			}
-		}
+		netmap_krings_mode_commit(na, onoff);
 	}
 
 	if (na->active_fds) {

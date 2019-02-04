@@ -1375,6 +1375,8 @@ nm_update_hostrings_mode(struct netmap_adapter *na)
 void nm_set_native_flags(struct netmap_adapter *);
 void nm_clear_native_flags(struct netmap_adapter *);
 
+void netmap_krings_mode_commit(struct netmap_adapter *na, int onoff);
+
 /*
  * nm_*sync_prologue() functions are used in ioctl/poll and ptnetmap
  * kthreads.

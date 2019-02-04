@@ -4129,6 +4129,25 @@ nm_clear_native_flags(struct netmap_adapter *na)
 	na->na_flags &= ~NAF_NETMAP_ON;
 }
 
+void
+netmap_krings_mode_commit(struct netmap_adapter *na, int onoff)
+{
+	enum txrx t;
+
+	for_rx_tx(t) {
+		int i;
+
+		for (i = 0; i < netmap_real_rings(na, t); i++) {
+			struct netmap_kring *kring = NMR(na, t)[i];
+
+			if (onoff && nm_kring_pending_on(kring))
+				kring->nr_mode = NKR_NETMAP_ON;
+			else if (!onoff && nm_kring_pending_off(kring))
+				kring->nr_mode = NKR_NETMAP_OFF;
+		}
+	}
+}
+
 /*
  * Module loader and unloader
  *

@@ -339,27 +339,11 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		}
 
 		/* enable netmap mode */
-		for_rx_tx(t) {
-			for (i = 0; i <= nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_on(kring)) {
-					kring->nr_mode = NKR_NETMAP_ON;
-				}
-			}
-		}
+		netmap_krings_mode_commit(na, onoff);
 		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
-		for_rx_tx(t) {
-			for (i = 0; i <= nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_off(kring)) {
-					kring->nr_mode = NKR_NETMAP_OFF;
-				}
-			}
-		}
+		netmap_krings_mode_commit(na, onoff);
 
 		if (hwrings_pending) {
 			/* Get and free any used buffer. This is necessary

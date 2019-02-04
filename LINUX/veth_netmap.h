@@ -116,29 +116,32 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	/* Enable or disable flags and callbacks in na and ifp. */
 	if (onoff) {
+		enum txrx t;
+
 		error = netmap_pipe_reg_both(na, peer_na);
 		if (error) {
 			return error;
+		}
+		for_rx_tx(t) {
+			int i;
+
+			for (i = nma_get_nrings(na, t);
+			    i < netmap_real_rings(na, t); i++) {
+				struct netmap_kring *kring = NMR(na, t)[i];
+
+				if (nm_kring_pending_on(kring)) {
+					/* mark the peer ring as needed */
+					kring->nr_mode |= NKR_NETMAP_ON	;
+				}
+			}
 		}
 		nm_set_native_flags(na);
 		if (netmap_verbose) {
 			D("registered veth %s", na->name);
 		}
 	} else {
-		enum txrx t;
-		int i;
-
 		nm_clear_native_flags(na);
-
-		for_rx_tx(t) {
-			for (i = 0; i < nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_off(kring)) {
-					kring->nr_mode = NKR_NETMAP_OFF;
-				}
-			}
-		}
+		netmap_krings_mode_commit(na, onoff);
 		if (netmap_verbose) {
 			D("unregistered veth %s", na->name);
 		}

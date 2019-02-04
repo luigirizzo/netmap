@@ -1179,7 +1179,6 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	struct ptnet_softc *sc = if_getsoftc(ifp);
 	int native = (na == &sc->ptna->hwup.up);
 	struct ptnet_queue *pq;
-	enum txrx t;
 	int ret = 0;
 	int i;
 
@@ -1230,30 +1229,14 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		/* If not native, don't call nm_set_native_flags, since we don't want
 		 * to replace if_transmit method, nor set NAF_NETMAP_ON */
 		if (native) {
-			for_rx_tx(t) {
-				for (i = 0; i <= nma_get_nrings(na, t); i++) {
-					struct netmap_kring *kring = NMR(na, t)[i];
-
-					if (nm_kring_pending_on(kring)) {
-						kring->nr_mode = NKR_NETMAP_ON;
-					}
-				}
-			}
+			netmap_krings_mode_commit(na, onoff);
 			nm_set_native_flags(na);
 		}
 
 	} else {
 		if (native) {
 			nm_clear_native_flags(na);
-			for_rx_tx(t) {
-				for (i = 0; i <= nma_get_nrings(na, t); i++) {
-					struct netmap_kring *kring = NMR(na, t)[i];
-
-					if (nm_kring_pending_off(kring)) {
-						kring->nr_mode = NKR_NETMAP_OFF;
-					}
-				}
-			}
+			netmap_krings_mode_commit(na, onoff);
 		}
 
 		if (sc->ptna->backend_users == 0) {
