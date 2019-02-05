@@ -2065,6 +2065,16 @@ EOF
   	}
 EOF
   
+     add_test 'have GET_LINK_KSETTINGS' <<EOF
+	#include <linux/ethtool.h>
+
+	int
+	dummy(struct ethtool_ops *ops, struct ethtool_link_ksettings *l)
+	{
+		return ops->get_link_ksettings(NULL, l);
+	}
+EOF
+
   fi # virtio-net
   
   if drv enabled i40e; then

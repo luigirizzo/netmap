@@ -100,7 +100,7 @@ ioctlCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     NMG_UNLOCK();
 
     //--------------------------------------------------------
-    //D("Netmap.sys: Pid %i attached: memory allocated @%p", currentProcId, priv);
+    //nm_prinf("Netmap.sys: Pid %i attached: memory allocated @%p", currentProcId, priv);
 
     Irp->IoStatus.Status = status;
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
