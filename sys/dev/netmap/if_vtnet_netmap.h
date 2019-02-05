@@ -90,7 +90,6 @@ vtnet_netmap_reg(struct netmap_adapter *na, int state)
 	struct ifnet *ifp = na->ifp;
 	struct vtnet_softc *sc = ifp->if_softc;
 	int success;
-	enum txrx t;
 	int i;
 
 	/* Drain the taskqueues to make sure that there are no worker threads
@@ -132,11 +131,11 @@ vtnet_netmap_reg(struct netmap_adapter *na, int state)
 	success = (ifp->if_drv_flags & IFF_DRV_RUNNING) ? 0 : ENXIO;
 
 	if (state) {
-		netmap_krings_mode_commit(na, onoff);
+		netmap_krings_mode_commit(na, state);
 		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
-		netmap_krings_mode_commit(na, onoff);
+		netmap_krings_mode_commit(na, state);
 	}
 
 	VTNET_CORE_UNLOCK(sc);
