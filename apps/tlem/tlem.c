@@ -303,7 +303,7 @@ struct _eci {
 	uint64_t	ec_delay_offset;
 	int		ec_allow_drop;
 	uint32_t	ec_qsize;
-#define EC_DATASZ       (1U << 16)
+#define EC_DATASZ       (1U << 17)
         char            ec_data[EC_DATASZ];
 };
 
