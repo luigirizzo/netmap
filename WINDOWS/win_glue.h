@@ -153,6 +153,7 @@ static void panic(const char *fmt, ...)
 	NT_ASSERT(1);
 }
 
+#define if_printf	DbgPrint
 #define __assert	NT_ASSERT
 #define assert		NT_ASSERT
 
