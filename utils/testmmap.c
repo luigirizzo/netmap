@@ -1407,6 +1407,9 @@ nmr_body_dump_register(void *b)
 	case NR_REG_PIPE_SLAVE:
 		printf("*PIPE_SLAVE(%d)", r->nr_ringid);
 		break;
+	case NR_REG_NULL:
+		printf("NULL");
+		break;
 	default:
 		printf("???");
 		break;
@@ -1465,6 +1468,8 @@ do_register_mode()
 		curr_register.nr_mode = NR_REG_PIPE_MASTER;
 	} else if (strcmp(mode, "pipe-slave") == 0) {
 		curr_register.nr_mode = NR_REG_PIPE_SLAVE;
+	} else if (strcmp(mode, "null") == 0) {
+		curr_register.nr_mode = NR_REG_NULL;
 	}
 
 out:
