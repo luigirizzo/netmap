@@ -68,6 +68,8 @@ nmreq_register_from_legacy(struct nmreq *nmr, struct nmreq_header *hdr,
 	req->nr_rx_slots = nmr->nr_rx_slots;
 	req->nr_tx_rings = nmr->nr_tx_rings;
 	req->nr_rx_rings = nmr->nr_rx_rings;
+	req->nr_host_tx_rings = 0;
+	req->nr_host_rx_rings = 0;
 	req->nr_mem_id = nmr->nr_arg2;
 	req->nr_ringid = nmr->nr_ringid & NETMAP_RING_MASK;
 	if ((nmr->nr_flags & NR_REG_MASK) == NR_REG_DEFAULT) {
@@ -249,6 +251,8 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			req->nr_rx_slots = nmr->nr_rx_slots;
 			req->nr_tx_rings = nmr->nr_tx_rings;
 			req->nr_rx_rings = nmr->nr_rx_rings;
+			req->nr_host_tx_rings = 0;
+			req->nr_host_rx_rings = 0;
 			req->nr_mem_id = nmr->nr_arg2;
 		}
 		break;

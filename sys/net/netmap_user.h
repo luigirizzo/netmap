@@ -111,7 +111,8 @@
 	nifp, (nifp)->ring_ofs[index] )
 
 #define NETMAP_RXRING(nifp, index) _NETMAP_OFFSET(struct netmap_ring *,	\
-	nifp, (nifp)->ring_ofs[index + (nifp)->ni_tx_rings + 1] )
+	nifp, (nifp)->ring_ofs[index + (nifp)->ni_tx_rings + 		\
+		(nifp)->ni_host_tx_rings] )
 
 #define NETMAP_BUF(ring, index)				\
 	((char *)(ring) + (ring)->buf_ofs + ((index)*(ring)->nr_buf_size))

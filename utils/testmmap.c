@@ -603,7 +603,7 @@ do_if()
 	printf("tx_rings   %u\n", nifp->ni_tx_rings);
 	printf("rx_rings   %u\n", nifp->ni_rx_rings);
 	printf("bufs_head  %u\n", nifp->ni_bufs_head);
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < 3; i++)
 		printf("spare1[%d]  %u\n", i, nifp->ni_spare1[i]);
 	for (i = 0; i < (nifp->ni_tx_rings + nifp->ni_rx_rings + 2); i++)
 		printf("ring_ofs[%d] %zd\n", i, nifp->ring_ofs[i]);

@@ -41,9 +41,9 @@
 #ifndef _NET_NETMAP_H_
 #define _NET_NETMAP_H_
 
-#define	NETMAP_API	13		/* current API version */
+#define	NETMAP_API	14		/* current API version */
 
-#define	NETMAP_MIN_API	13		/* min and max versions accepted */
+#define	NETMAP_MIN_API	14		/* min and max versions accepted */
 #define	NETMAP_MAX_API	15
 /*
  * Some fields should be cache-aligned to reduce contention.
@@ -374,7 +374,9 @@ struct netmap_if {
 	const uint32_t	ni_rx_rings;	/* number of HW rx rings */
 
 	uint32_t	ni_bufs_head;	/* head index for extra bufs */
-	uint32_t	ni_spare1[5];
+	const uint32_t	ni_host_tx_rings; /* number of SW tx rings */
+	const uint32_t	ni_host_rx_rings; /* number of SW rx rings */
+	uint32_t	ni_spare1[3];
 	/*
 	 * The following array contains the offset of each netmap ring
 	 * from this structure, in the following order:
@@ -574,6 +576,8 @@ struct nmreq_register {
 	uint32_t	nr_rx_slots;	/* slots in rx rings */
 	uint16_t	nr_tx_rings;	/* number of tx rings */
 	uint16_t	nr_rx_rings;	/* number of rx rings */
+	uint16_t	nr_host_tx_rings; /* number of host tx rings */
+	uint16_t	nr_host_rx_rings; /* number of host rx rings */
 
 	uint16_t	nr_mem_id;	/* id of the memory allocator */
 	uint16_t	nr_ringid;	/* ring(s) we care about */
@@ -611,6 +615,7 @@ enum {	NR_REG_DEFAULT	= 0,	/* backward compat, should not be used. */
 	NR_REG_PIPE_MASTER = 5, /* deprecated, use "x{y" port name syntax */
 	NR_REG_PIPE_SLAVE = 6,  /* deprecated, use "x}y" port name syntax */
 	NR_REG_NULL     = 7,
+	NR_REG_ONE_SW	= 8,
 };
 
 /* A single ioctl number is shared by all the new API command.
@@ -640,8 +645,10 @@ struct nmreq_port_info_get {
 	uint32_t	nr_rx_slots;	/* slots in rx rings */
 	uint16_t	nr_tx_rings;	/* number of tx rings */
 	uint16_t	nr_rx_rings;	/* number of rx rings */
+	uint16_t	nr_host_tx_rings; /* number of host tx rings */
+	uint16_t	nr_host_rx_rings; /* number of host rx rings */
 	uint16_t	nr_mem_id;	/* memory allocator id (in/out) */
-	uint16_t	pad1;
+	uint16_t	pad[3];
 };
 
 #define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
