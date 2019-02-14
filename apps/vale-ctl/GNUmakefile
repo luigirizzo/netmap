@@ -11,20 +11,11 @@ VPATH = $(SRCDIR)/apps/vale-ctl
 NO_MAN=
 CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
-CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include
+CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include -I $(SRCDIR)/libnetmap
 CFLAGS += -Wextra
 
-LDLIBS += -lpthread -lm
-ifeq ($(shell uname),Linux)
-	LDLIBS += -lrt	# on linux
-endif
-
-ifdef WITH_PCAP
-LDLIBS += -lpcap
-else
-CFLAGS += -DNO_PCAP
-endif
-
+LDFLAGS += -L $(BUILDDIR)/build-libnetmap
+LDLIBS = -lnetmap
 PREFIX ?= /usr/local
 MAN_PREFIX = $(if $(filter-out /,$(PREFIX)),$(PREFIX),/usr)/share/man
 
