@@ -72,7 +72,8 @@ struct nmem_d;
  *
  * The "mode" can be one of the following:
  *
- *	^		bind the host (sw) ring pair
+ *	^		bind all host (sw) ring pairs
+ *	^NN		bind individual host ring pair
  *	*		bind host and NIC ring pairs
  *	-NN		bind individual NIC ring pair
  *	@NN		open the port in the NN memory region
@@ -119,13 +120,16 @@ struct nmem_d;
  *  		       *rings		number of tx and rx rings
  *  			tx-rings	number of tx rings
  *  			rx-rings	number of rx rings
+ *			host-rings	number of tx and rx host rings
+ *  			host-tx-rings	number of host tx rings
+ *  			host-rx-rings	number of host rx rings
  *  			slots		number of slots in each tx and rx
  *  					ring
  *  			tx-slots	number of slots in each tx ring
  *  			rx-slots	numner of slots in each rx ring
  *
  *  			(more specific keys override the less specific ones)
- *			All keys default to zero not assigned, and the
+ *			All keys default to zero if not assigned, and the
  *			corresponding value will be chosen by netmap.
  *
  *  extmem (multi-key)
@@ -194,7 +198,7 @@ struct nmport_d {
  * The rings available for tx are in the [first_tx_ring, last_tx_ring]
  * interval, and similarly for rx. One or both intervals may be empty.
  *
- * When done using it, the nmport_d descriptor must free closed using
+ * When done using it, the nmport_d descriptor must be closed using
  * nmport_close().
  *
  * In case of error, NULL is returned, errno is set to some error, and an

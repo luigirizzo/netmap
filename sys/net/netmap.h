@@ -424,7 +424,8 @@ struct netmap_if {
  * The request body (struct nmreq_register) has several arguments to
  * specify how the port is to be registered.
  *
- *	nr_tx_slots, nr_tx_slots, nr_tx_rings, nr_rx_rings (in/out)
+ *	nr_tx_slots, nr_tx_slots, nr_tx_rings, nr_rx_rings,
+ *	nr_host_tx_rings, nr_host_rx_rings (in/out)
  *		On input, non-zero values may be used to reconfigure the port
  *		according to the requested values, but this is not guaranteed.
  *		On output the actual values in use are reported.
