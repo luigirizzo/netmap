@@ -14,6 +14,7 @@ NO_MAN=
 CFLAGS  = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I $(SRCDIR)/sys # -I/home/luigi/FreeBSD/head/sys -I../sys
+CFLAGS += -I $(SRCDIR)/libnetmap
 CFLAGS += -Wextra -g
 CFLAGS += $(SUBSYS_FLAGS)
 ifdef WITH_PCAP
@@ -23,7 +24,8 @@ else
 CFLAGS += -DNO_PCAP
 endif
 
-LDLIBS += -lpthread -lm
+LDFLAGS += -L $(BUILDDIR)/build-libnetmap
+LDLIBS += -lnetmap -lpthread -lm
 ifeq ($(shell uname),Linux)
 	LDLIBS += -lrt 	# on linux
 endif
