@@ -296,6 +296,7 @@ struct glob_arg {
 	int affinity;
 	int main_fd;
 	struct nmport_d *nmd;
+	uint32_t orig_mode;
 	int report_interval;		/* milliseconds between prints */
 	void *(*td_body)(void *);
 	int td_type;
@@ -2503,14 +2504,34 @@ start_threads(struct glob_arg *g) {
 		memcpy(t->seed, &seed, sizeof(t->seed));
 
 		if (g->dev_type == DEV_NETMAP) {
+			int m = -1;
+
+			/*
+			 * if the user wants both HW and SW rings, we need to
+			 * know when to switch from NR_REG_ONE_NIC to NR_REG_ONE_SW
+			 */
+			if (g->orig_mode == NR_REG_NIC_SW) {
+				m = (g->td_type == TD_TYPE_RECEIVER ?
+						g->nmd->reg.nr_rx_rings :
+						g->nmd->reg.nr_tx_rings);
+			}
+
 			if (i > 0) {
+				int j;
 				/* the first thread uses the fd opened by the main
 				 * thread, the other threads re-open /dev/netmap
 				 */
 				t->nmd = nmport_clone(g->nmd);
 				if (t->nmd == NULL)
 					return -1;
-				t->nmd->reg.nr_ringid = i & NETMAP_RING_MASK;
+
+				j = i;
+				if (m > 0 && j >= m) {
+					/* switch to the software rings */
+					t->nmd->reg.nr_mode = NR_REG_ONE_SW;
+					j -= m;
+				}
+				t->nmd->reg.nr_ringid = j & NETMAP_RING_MASK;
 				/* Only touch one of the rings (rx is already ok) */
 				if (g->td_type == TD_TYPE_RECEIVER)
 					t->nmd->reg.nr_flags |= NETMAP_NO_TX_POLL;
@@ -3089,8 +3110,19 @@ main(int arc, char **argv)
 	 * which in turn may take some time for the PHY to
 	 * reconfigure. We do the open here to have time to reset.
 	 */
+	g.orig_mode = g.nmd->reg.nr_mode;
 	if (g.nthreads > 1) {
-		g.nmd->reg.nr_mode = NR_REG_ONE_NIC;
+		switch (g.orig_mode) {
+		case NR_REG_ALL_NIC:
+		case NR_REG_NIC_SW:
+			g.nmd->reg.nr_mode = NR_REG_ONE_NIC;
+			break;
+		case NR_REG_SW:
+			g.nmd->reg.nr_mode = NR_REG_ONE_SW;
+			break;
+		default:
+			break;
+		}
 		g.nmd->reg.nr_ringid = 0;
 	}
 	if (nmport_open_desc(g.nmd) < 0)
@@ -3111,9 +3143,9 @@ main(int arc, char **argv)
 
 	/* get num of queues in tx or rx */
 	if (g.td_type == TD_TYPE_SENDER)
-		devqueues = g.nmd->reg.nr_tx_rings;
+		devqueues = g.nmd->reg.nr_tx_rings + g.nmd->reg.nr_host_tx_rings;
 	else
-		devqueues = g.nmd->reg.nr_rx_rings;
+		devqueues = g.nmd->reg.nr_rx_rings + g.nmd->reg.nr_host_rx_rings;
 
 	/* validate provided nthreads. */
 	if (g.nthreads < 1 || g.nthreads > devqueues) {
@@ -3138,12 +3170,12 @@ main(int arc, char **argv)
 		D("nifp at offset %"PRIu64", %d tx %d rx region %d",
 		    req->nr_offset, req->nr_tx_rings, req->nr_rx_rings,
 		    req->nr_mem_id);
-		for (i = 0; i <= req->nr_tx_rings; i++) {
+		for (i = 0; i < req->nr_tx_rings + req->nr_host_tx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
 			D("   TX%d at 0x%p slots %d", i,
 			    (void *)((char *)ring - (char *)nifp), ring->num_slots);
 		}
-		for (i = 0; i <= req->nr_rx_rings; i++) {
+		for (i = 0; i < req->nr_rx_rings + req->nr_host_rx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_RXRING(nifp, i);
 			D("   RX%d at 0x%p slots %d", i,
 			    (void *)((char *)ring - (char *)nifp), ring->num_slots);
