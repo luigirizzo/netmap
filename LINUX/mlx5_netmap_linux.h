@@ -107,7 +107,7 @@ int mlx5e_netmap_reg(struct netmap_adapter *na, int onoff) {
   int err = 0;
   int was_opened;
 
-  nm_printf("mlx5e switching %s native netmap mode", onoff ? "into" : "out of");
+  nm_prinf("mlx5e switching %s native netmap mode", onoff ? "into" : "out of");
 
   /* Should we check and wait for any reset in progress to complete? */
   mutex_lock(&adapter->state_lock);
