@@ -8,6 +8,7 @@ LIBNETMAP =
 CLEANFILES = $(PROGS) $(X86PROGS) *.o
 
 SRCDIR ?= ..
+PREFIX ?= usr/local
 VPATH   = $(SRCDIR)/utils
 
 NO_MAN=
@@ -24,7 +25,11 @@ else
 CFLAGS += -DNO_PCAP
 endif
 
+ifdef BULDDIR
 LDFLAGS += -L $(BUILDDIR)/build-libnetmap
+else
+LDFLAGS += -L $(SRCDIR)/libnetmap
+endif
 LDLIBS += -lnetmap -lpthread -lm
 ifeq ($(shell uname),Linux)
 	LDLIBS += -lrt 	# on linux
