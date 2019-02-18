@@ -25,7 +25,7 @@ else
 CFLAGS += -DNO_PCAP
 endif
 
-ifdef BULDDIR
+ifdef BUILDDIR
 LDFLAGS += -L $(BUILDDIR)/build-libnetmap
 else
 LDFLAGS += -L $(SRCDIR)/libnetmap
