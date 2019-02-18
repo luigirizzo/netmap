@@ -284,7 +284,7 @@ re_netmap_tx_init(struct SOFTC_T *sc)
 
 	/* l points in the netmap ring, i points in the NIC ring */
 	for (i = 0; i < na->num_tx_desc; i++) {
-		l = netmap_idx_n2k(&na->tx_rings[0], i);
+		l = netmap_idx_n2k(na->tx_rings[0], i);
 		PNMB(na, slot + l, &paddr);
 		desc[i].addr = htole64(paddr);
 	}
@@ -312,7 +312,7 @@ re_netmap_rx_init(struct SOFTC_T *sc)
 	 */
 	lim = na->num_rx_desc /* - 1 */ - nm_kr_rxspace(&na->rx_rings[0]);
 	for (i = 0; i < na->num_rx_desc; i++) {
-		l = netmap_idx_n2k(&na->rx_rings[0], i);
+		l = netmap_idx_n2k(na->rx_rings[0], i);
 		PNMB(na, slot + l, &paddr);
 		cmdstat = NETMAP_BUF_SIZE(na);
 		if (i == na->num_rx_desc - 1)
