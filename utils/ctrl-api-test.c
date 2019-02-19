@@ -357,8 +357,11 @@ niocregif(struct TestContext *ctx, int netmap_api)
 
 /* The 11 ABI is the one right before the introduction of the new NIOCCTRL
  * ABI. The 11 ABI is useful to perform tests with legacy applications
- * (which use the 11 ABI) and new kernel (which uses 12, or higher). */
-#define NETMAP_API_NIOCREGIF	11
+ * (which use the 11 ABI) and new kernel (which uses 12, or higher).
+ * However, version 14 introduced a change in the layout of struct netmap_if,
+ * so that binary backward compatibility to 11 is not supported anymore.
+ */
+#define NETMAP_API_NIOCREGIF	14
 
 static int
 legacy_regif_default(struct TestContext *ctx)

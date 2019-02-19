@@ -371,8 +371,8 @@ netmap_ioctl_legacy(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		struct nmreq *nmr = (struct nmreq *) data;
 		struct nmreq_header *hdr;
 
-		if (nmr->nr_version < 11) {
-			nm_prerr("Minimum supported API is 11 (requested %u)",
+		if (nmr->nr_version < 14) {
+			nm_prerr("Minimum supported API is 14 (requested %u)",
 			    nmr->nr_version);
 			return EINVAL;
 		}
