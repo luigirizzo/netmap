@@ -73,7 +73,7 @@ NetmapRing_repr(NetmapRing *self)
                         sizeof(nr_flag_values)/sizeof(*nr_flag_values));
 
     result = PyString_FromFormat(
-            "buf_ofs:       0x%016x\n"
+            "buf_ofs:       0x%016lx\n"
             "num_slots:     %u\n"
             "nr_buf_size:   %u\n"
             "ringid:        %u\n"
@@ -82,10 +82,10 @@ NetmapRing_repr(NetmapRing *self)
             "cur:           %u\n"
             "tail:          %u\n"
             "flags:         [0x%08x] %s\n"
-            "tv_sec:        %u\n"
-            "tv_usec:       %u\n"
+            "tv_sec:        %ld\n"
+            "tv_usec:       %ld\n"
             /* TODO sem */,
-            ring->buf_ofs,
+            (long unsigned)ring->buf_ofs,
             ring->num_slots,
             ring->nr_buf_size,
             ring->ringid,
