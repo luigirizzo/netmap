@@ -1016,8 +1016,7 @@ nmr_arg_error()
 void
 nmr_arg_extra()
 {
-	printf("arg1:      %d [%sextra rings]\n", curr_nmr.nr_arg1,
-	       (curr_nmr.nr_arg1 ? "" : "no "));
+	printf("arg1:      %d [reserved]\n", curr_nmr.nr_arg1);
 	printf("arg2:      %d [%s memory allocator]\n", curr_nmr.nr_arg2,
 	       (curr_nmr.nr_arg2 == 0
 			? "default"

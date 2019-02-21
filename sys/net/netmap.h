@@ -117,11 +117,6 @@
  *   as the index. On close, ni_bufs_head must point to the list of
  *   buffers to be released.
  *
- * + NIOCREGIF can request space for extra rings (and buffers)
- *   allocated in the same memory space. The number of extra rings
- *   is in nr_arg1, and is advisory. This is a no-op on NICs where
- *   the size of the memory space is fixed.
- *
  * + NIOCREGIF can attach to PIPE rings sharing the same memory
  *   space with a parent device. The ifname indicates the parent device,
  *   which must already exist. Flags in nr_flags indicate if we want to
@@ -383,10 +378,8 @@ struct netmap_if {
 	 * from this structure, in the following order:
 	 *     - NIC tx rings (ni_tx_rings);
 	 *     - host tx rings (ni_host_tx_rings);
-	 *     - extra tx rings;
 	 *     - NIC rx rings (ni_rx_rings);
 	 *     - host rx ring (ni_host_rx_rings);
-	 *     - extra rx rings.
 	 *
 	 * The area is filled up by the kernel on NETMAP_REQ_REGISTER,
 	 * and then only read by userspace code.
