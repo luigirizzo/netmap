@@ -2238,9 +2238,9 @@ ln -s $SRCDIR/drv-subdir.mak || true
 
 report
 
-# create the build directory for libnetmap
-mkdir -p build-libnetmap
-ln -s $SRCDIR/../libnetmap/GNUmakefile build-libnetmap 2>/dev/null || true
+## create the build directory for libnetmap
+#mkdir -p build-libnetmap
+#ln -s $SRCDIR/../libnetmap/GNUmakefile build-libnetmap 2>/dev/null || true
 
 # create the build directory for the examples
 mkdir -p build-apps
