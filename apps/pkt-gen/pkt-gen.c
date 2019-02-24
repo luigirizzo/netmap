@@ -1732,12 +1732,13 @@ sender_body(void *data)
 			} else {
 				struct glob_arg *g = targ->g;
 				struct nm_ifreq ifreq;
-				char *p;
+				size_t len;
 
 				bzero(&ifreq, sizeof(ifreq));
-				p = g->ifname;
-				strncpy(ifreq.nifr_name, p, strlen(p));
-				D("connected, registering %s", p);
+				len = sizeof(ifreq.nifr_name);
+				if (sizeof(g->ifname) < len)
+					len = sizeof(g->ifname);
+				memcpy(ifreq.nifr_name, g->ifname, len);
 				memcpy(ifreq.data, &pfd[1].fd, sizeof(int));
 				if (ioctl(g->nmd->fd, NIOCCONFIG, &ifreq)) {
 					perror("ioctl");
@@ -3401,7 +3402,7 @@ main(int arc, char **argv)
 
 		bzero(&req, sizeof(req));
 		req.nr_version = NETMAP_API;
-		strncpy(req.nr_name, g.ifname, sizeof(req.nr_name));
+		memcpy(req.nr_name, g.ifname, sizeof(req.nr_name));
 		error = ioctl(g.main_fd, NIOCGINFO, &req);
 		if (error < 0) {
 			perror("ioctl");
@@ -3417,7 +3418,7 @@ main(int arc, char **argv)
 		req.nr_flags = NR_REG_ALL_NIC;
 		req.nr_arg1 = NETMAP_BDG_HOST;
 		req.nr_arg2 = memid;
-		strncpy(req.nr_name, g.ifname2, sizeof(req.nr_name));
+		memcpy(req.nr_name, g.ifname2, sizeof(req.nr_name));
 		error = ioctl(g.main_fd, NIOCREGIF, &req);
 		if (error < 0) {
 			nm_close(g.nmd);

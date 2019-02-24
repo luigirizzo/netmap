@@ -614,7 +614,7 @@ found:
 		error = na->nm_bdg_ctl(hdr, na);
 		if (error)
 			goto unref_exit;
-		ND("registered %s to netmap-mode", na->name);
+		nm_prdis("registered %s to netmap-mode", na->name);
 	}
 	vpna = (struct netmap_vp_adapter *)na;
 	req->port_index = vpna->bdg_port;

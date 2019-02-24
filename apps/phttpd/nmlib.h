@@ -17,10 +17,13 @@
 #include <sys/epoll.h>
 #endif /* __linux__ */
 
+#if 0
 /* prototypes for libnetmap/nmreq.c */
 const char *nmreq_header_decode(const char *, struct nmreq_header *);
 struct nm_desc * nmreq_open(const char *, uint64_t, const struct nm_desc *);
 int nmreq_close(struct nm_desc *);
+#endif /* 0 */
+#include <libnetmap.h>
 
 #ifndef D
 #define D(fmt, ...) \
@@ -436,7 +439,7 @@ nm_main_thread(struct nm_garg *g)
 	prev.pkts = prev.bytes = prev.events = 0;
 	gettimeofday(&prev.t, NULL);
 	for (;;) {
-		char b1[40], b2[40], b3[40], b4[70];
+		char b1[40], b2[40], b3[40], b4[100];
 		uint64_t pps, usec;
 		struct my_ctrs x;
 		double abs;
@@ -623,14 +626,23 @@ nm_start(struct nm_garg *g)
 			sizeof(base_nmd.nr.hdr.nr_name));
 	if (g->extmem) {
 		struct nmreq_pools_info *pi = &base_nmd.nr.ext.nro_info;
+		size_t o;
 
 		pi->nr_memsize = g->extmem_siz;
 		pi->nr_if_pool_objtotal = IF_OBJTOTAL;
 		pi->nr_ring_pool_objtotal = RING_OBJTOTAL;
 		pi->nr_ring_pool_objsize = RING_OBJSIZE;
 		pi->nr_buf_pool_objtotal = g->extra_bufs + 320000;
-		strncat(g->ifname, "@", 1);
-		strncat(g->ifname, g->extmem, strlen(g->extmem));
+		strncat(g->ifname, "@", 2);
+
+		o = strlen(g->ifname);
+		if (sizeof(g->ifname) > o + strlen(g->extmem)) {
+			memcpy(g->ifname + o, g->extmem, strlen(g->extmem));
+			g->ifname[o + strlen(g->extmem)] = '\0';
+		} else {
+			D("bad buffer length: maybe bad string");
+			goto out;
+		}
 		D("requesting buf_pool_objtotal %u (extra %u)",
 				pi->nr_buf_pool_objtotal, g->extra_bufs);
 	}
@@ -691,11 +703,18 @@ nm_start(struct nm_garg *g)
 		struct nmreq_header hdr;
 		struct nmreq_vale_attach reg;
 		int error;
+		size_t l = strlen("stack:") + strlen(g->ifname2);
 
+		if (l + 1 > sizeof(hdr.nr_name)) {
+			g->main_fd = -1;
+			nmreq_close(g->nmd);
+			goto nonetmap;
+		}
 		bzero(&hdr, sizeof(hdr));
-		strncpy(hdr.nr_name, "stack:", sizeof(hdr.nr_name));
-		strncat(hdr.nr_name, g->ifname2,
-			sizeof(hdr.nr_name) - strlen("stack:"));
+		memcpy(hdr.nr_name, "stack:", strlen("stack:"));
+		memcpy(hdr.nr_name + strlen(hdr.nr_name), g->ifname2,
+		       strlen(g->ifname2));
+		hdr.nr_name[l] = '\0';
 		hdr.nr_version = NETMAP_API;
 		hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
 		hdr.nr_body = (uintptr_t)&reg;
@@ -1317,7 +1336,7 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 		strncpy(g->ifname2, ifname, sizeof(g->ifname2));
 		/* pre-initialize ifreq for accept() */
 		bzero(r, sizeof(*r));
-		strncpy(r->nifr_name, hdr.nr_name, sizeof(r->nifr_name));
+		memcpy(r->nifr_name, hdr.nr_name, sizeof(r->nifr_name));
 	}
 	g->garg_private = garg_private;
 	*error = nm_start(g);

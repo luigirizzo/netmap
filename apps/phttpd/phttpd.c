@@ -1173,6 +1173,7 @@ clean_dir(char *dirpath)
 	}
 	while ((ent = readdir(dp))) {
 		char fullp[256]; // XXX
+		size_t l;
 
 		if (ent->d_name[0] == '.')
 			continue;
@@ -1180,8 +1181,12 @@ clean_dir(char *dirpath)
 			 strstr(ent->d_name, BPLUSFILE) == NULL &&
 			 strstr(ent->d_name, DATAFILE) == NULL)
 			continue;
-		strncat(strncpy(fullp, dirpath, sizeof(fullp)-2), "/", 1);
-		strncat(fullp, ent->d_name, sizeof(fullp) - strlen(fullp) - 1);
+		strncat(strncpy(fullp, dirpath, sizeof(fullp) - 2), "/", 2);
+		l = strlen(fullp) + strlen(ent->d_name) + 1;
+		if (l < sizeof(fullp)) {
+			strncat(fullp, ent->d_name, l);
+		}
+		//strncat(fullp, ent->d_name, sizeof(fullp) - strlen(fullp) - 1);
 		D("removing %s", fullp);
 		if (unlink(fullp))
 			perror("unlink");
@@ -1264,6 +1269,8 @@ main(int argc, char **argv)
 			break;
 		case 'i':
 			nmg.dev_type = DEV_NETMAP;
+			if (sizeof(pg.ifname) < strlen(optarg) + 1)
+				break;
 			strncpy(pg.ifname, optarg, sizeof(pg.ifname));
 			e.read = NULL;
 			e.data = phttpd_data;
