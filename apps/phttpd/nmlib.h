@@ -17,13 +17,11 @@
 #include <sys/epoll.h>
 #endif /* __linux__ */
 
-#if 0
 /* prototypes for libnetmap/nmreq.c */
 const char *nmreq_header_decode(const char *, struct nmreq_header *);
 struct nm_desc * nmreq_open(const char *, uint64_t, const struct nm_desc *);
 int nmreq_close(struct nm_desc *);
-#endif /* 0 */
-#include <libnetmap.h>
+//#include <libnetmap.h>
 
 #ifndef D
 #define D(fmt, ...) \
