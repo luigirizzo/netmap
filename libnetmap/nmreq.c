@@ -2,27 +2,42 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <ctype.h>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-
-//#define NMREQ_DEBUG
-#ifdef NMREQ_DEBUG
 #define NETMAP_WITH_LIBS
+#include <net/netmap_user.h>
+
+#ifdef NMREQ_DEBUG
 #define ED(...)	D(__VA_ARGS__)
 #else
 #define ED(...)
+#endif /* NMREQ_DEBUG */
+
+static void
+nmreq_error_stderr(const char *errmsg)
+{
+	fprintf(stderr, "%s\n", errmsg);
+}
+
+static void
+nmreq_error_ignore(const char *errmsg)
+{
+	(void)errmsg;
+}
+
+typedef void (*nmreq_error_callback_t)(const char *);
+static nmreq_error_callback_t nmreq_error_callback = nmreq_error_stderr;
+
 /* an identifier is a possibly empty sequence of alphanum characters and
  * underscores
  */
 static int
-nm_is_identifier(const char *s, const char *e)
+nmreq_is_identifier(const char *s, const char *e)
 {
 	for (; s != e; s++) {
 		if (!isalnum(*s) && *s != '_') {
@@ -32,11 +47,38 @@ nm_is_identifier(const char *s, const char *e)
 
 	return 1;
 }
-#endif /* NMREQ_DEBUG */
 
-#include <net/netmap_user.h>
-#define LIBNETMAP_NOTHREADSAFE
-#include "libnetmap.h"
+nmreq_error_callback_t nmreq_set_error_callback(nmreq_error_callback_t f)
+{
+	nmreq_error_callback_t old = nmreq_error_callback;
+	nmreq_error_callback = f;
+	return old;
+}
+
+#ifndef MAXERRMSG
+#define MAXERRMSG 1000
+#endif
+static void
+nmreq_ferror(const char *fmt, ...)
+{
+	char errmsg[MAXERRMSG];
+	va_list ap;
+	int rv;
+
+	va_start(ap, fmt);
+	rv = vsnprintf(errmsg, MAXERRMSG, fmt, ap);
+	va_end(ap);
+
+	if (rv > 0) {
+		if (rv < MAXERRMSG) {
+			nmreq_error_callback(errmsg);
+		} else {
+			nmreq_error_callback("error message too long");
+		}
+	} else {
+		nmreq_error_callback("internal error");
+	}
+}
 
 void
 nmreq_push_option(struct nmreq_header *h, struct nmreq_option *o)
@@ -45,80 +87,43 @@ nmreq_push_option(struct nmreq_header *h, struct nmreq_option *o)
 	h->nr_options = (uintptr_t)o;
 }
 
-struct nmreq_prefix {
-	const char *prefix;		/* the constant part of the prefix */
-	size_t	    len;		/* its strlen() */
-	uint32_t    flags;
-#define	NR_P_ID		(1U << 0)	/* whether an identifier is needed */
-#define NR_P_SKIP	(1U << 1)	/* whether the scope must be passed to netmap */
-#define NR_P_EMPTYID	(1U << 2)	/* whether an empty identifier is allowed */
-};
-
-#define declprefix(prefix, flags)	{ (prefix), (sizeof(prefix) - 1), (flags) }
-
-static struct nmreq_prefix nmreq_prefixes[] = {
-	declprefix("netmap", NR_P_SKIP),
-	declprefix(NM_BDG_NAME,	NR_P_ID|NR_P_EMPTYID),
-	declprefix(NM_STACK_NAME, NR_P_ID|NR_P_EMPTYID),
-	{ NULL } /* terminate the list */
-};
-
-void
-nmreq_header_init(struct nmreq_header *h, uint16_t reqtype, void *body)
+const char *
+nmreq_header_decode(const char *ifname, struct nmreq_header *h)
 {
-	memset(h, 0, sizeof(*h));
-	h->nr_version = NETMAP_API;
-	h->nr_reqtype = reqtype;
-	h->nr_body = (uintptr_t)body;
-}
-
-int
-nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *ctx)
-{
+	int is_vale;
 	const char *scan = NULL;
 	const char *vpname = NULL;
 	const char *pipesep = NULL;
 	u_int namelen;
-	const char *ifname = *pifname;
-	struct nmreq_prefix *p;
+	static size_t NM_BDG_NAMSZ = strlen(NM_BDG_NAME);
 
-	scan = ifname;
-	for (p = nmreq_prefixes; p->prefix != NULL; p++) {
-		if (!strncmp(scan, p->prefix, p->len))
-			break;
-	}
-	if (p->prefix == NULL) {
-		nmctx_ferror(ctx, "%s: invalid request, prefix unknown or missing", *pifname);
+	if (strncmp(ifname, "netmap:", 7) &&
+			strncmp(ifname, NM_BDG_NAME, NM_BDG_NAMSZ) &&
+			strncmp(ifname, NM_STACK_NAME, strlen(NM_STACK_NAME))) {
+		nmreq_ferror("invalid request '%s' (must begin with 'netmap:' or '" NM_BDG_NAME "')", ifname);
 		goto fail;
 	}
-	scan += p->len;
 
-	vpname = index(scan, ':');
-	if (vpname == NULL) {
-		nmctx_ferror(ctx, "%s: missing ':'", ifname);
-		goto fail;
-	}
-	if (vpname != scan) {
-		/* there is an identifier, can we accept it? */
-		if (!(p->flags & NR_P_ID)) {
-			nmctx_ferror(ctx, "%s: no identifier allowed between '%s' and ':'", *pifname, p->prefix);
+	is_vale = (ifname[0] == 'v') || ifname[0] == 's';
+	if (is_vale) {
+		scan = index(ifname, ':');
+		if (scan == NULL) {
+			nmreq_ferror("missing ':' in VALE name '%s'", ifname);
 			goto fail;
 		}
 
-		if (!nm_is_identifier(scan, vpname)) {
-			nmctx_ferror(ctx, "%s: invalid identifier '%.*s'", *pifname, vpname - scan, scan);
+		if (!nmreq_is_identifier(ifname + NM_BDG_NAMSZ, scan)) {
+			nmreq_ferror("invalid VALE bridge name '%.*s'",
+					(scan - ifname - NM_BDG_NAMSZ), ifname + NM_BDG_NAMSZ);
 			goto fail;
 		}
+
+		vpname = ++scan;
 	} else {
-		if ((p->flags & NR_P_ID) && !(p->flags & NR_P_EMPTYID)) {
-			nmctx_ferror(ctx, "%s: identifier is missing between '%s' and ':'", *pifname, p->prefix);
-			goto fail;
-		}
+		ifname += 7;
+		scan = ifname;
+		vpname = ifname;
 	}
-	++vpname; /* skip the colon */
-	if (p->flags & NR_P_SKIP)
-		ifname = vpname;
-	scan = vpname;
 
 	/* scan for a separator */
 	for (; *scan && !index("-*^/@", *scan); scan++)
@@ -129,83 +134,112 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *
 		;
 
 	if (!nm_is_identifier(vpname, pipesep)) {
-		nmctx_ferror(ctx, "%s: invalid port name '%.*s'", *pifname,
+		nmreq_ferror("invalid %sport name '%.*s'", (is_vale ? "VALE " : ""),
 				pipesep - vpname, vpname);
 		goto fail;
 	}
 	if (pipesep != scan) {
 		pipesep++;
-		if (*pipesep == '\0') {
-			nmctx_ferror(ctx, "%s: invalid empty pipe name", *pifname);
-			goto fail;
-		}
 		if (!nm_is_identifier(pipesep, scan)) {
-			nmctx_ferror(ctx, "%s: invalid pipe name '%.*s'", *pifname, scan - pipesep, pipesep);
+			nmreq_ferror("invalid pipe name '%.*s'", scan - pipesep, pipesep);
 			goto fail;
 		}
 	}
 
 	namelen = scan - ifname;
 	if (namelen >= sizeof(h->nr_name)) {
-		nmctx_ferror(ctx, "name '%.*s' too long", namelen, ifname);
-		goto fail;
-	}
-	if (namelen == 0) {
-		nmctx_ferror(ctx, "%s: invalid empty port name", *pifname);
+		nmreq_ferror("name '%.*s' too long", namelen, ifname);
 		goto fail;
 	}
 
 	/* fill the header */
+	memset(h, 0, sizeof(*h));
+	h->nr_version = NETMAP_API;
 	memcpy(h->nr_name, ifname, namelen);
 	h->nr_name[namelen] = '\0';
 	ED("name %s", h->nr_name);
 
-	*pifname = scan;
-
-	return 0;
+	return scan;
 fail:
 	errno = EINVAL;
-	return -1;
+	return NULL;
 }
 
 
-/*
- * 0 not recognized
- * -1 error
- *  >= 0 mem_id
- */
-int32_t
-nmreq_get_mem_id(const char **pifname, struct nmctx *ctx)
+static int
+nmreq_mem_id_parse(const char *mem_id, struct nmreq_header *h,
+		struct nmreq_register *r, struct nmreq_opt_extmem *e)
 {
 	int fd = -1;
 	struct nmreq_header gh;
 	struct nmreq_port_info_get gb;
-	const char *ifname;
+	off_t mapsize;
+	const char *rv;
+	nmreq_error_callback_t old;
+	void *p;
+
+	if (mem_id == NULL)
+		return 0;
 
 	errno = 0;
-	ifname = *pifname;
 
-	if (ifname == NULL)
-		goto fail;
-
-	/* try to look for a netmap port with this name */
-	fd = open("/dev/netmap", O_RDWR);
+	/* first, try to look for a netmap port with this name */
+	fd = open("/dev/netmap", O_RDONLY);
 	if (fd < 0) {
-		nmctx_ferror(ctx, "cannot open /dev/netmap: %s", strerror(errno));
+		nmreq_ferror("cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;
 	}
-	nmreq_header_init(&gh, NETMAP_REQ_PORT_INFO_GET, &gb);
-	if (nmreq_header_decode(&ifname, &gh, ctx) < 0) {
-		goto fail;
+	old = nmreq_set_error_callback(nmreq_error_ignore);
+	rv = nmreq_header_decode(mem_id, &gh);
+	nmreq_set_error_callback(old);
+	if (rv != NULL) {
+		if (*rv != '\0') {
+			nmreq_ferror("unexpected characters '%s' in mem_id spec", rv);
+			goto fail;
+		}
+		gh.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
+		memset(&gb, 0, sizeof(gb));
+		gh.nr_body = (uintptr_t)&gb;
+		if (ioctl(fd, NIOCCTRL, &gh) < 0) {
+			if (errno == ENOENT || errno == ENXIO)
+				goto try_external;
+			nmreq_ferror("cannot get info for '%s': %s", mem_id, strerror(errno));
+			goto fail;
+		}
+		r->nr_mem_id = gb.nr_mem_id;
+		close(fd);
+		return 0;
 	}
-	memset(&gb, 0, sizeof(gb));
-	if (ioctl(fd, NIOCCTRL, &gh) < 0) {
-		nmctx_ferror(ctx, "cannot get info for '%s': %s", *pifname, strerror(errno));
-		goto fail;
-	}
-	*pifname = ifname;
+
+try_external:
 	close(fd);
-	return gb.nr_mem_id;
+	ED("trying with external memory");
+	if (e == NULL) {
+		nmreq_ferror("external memory request, but no option struct provided");
+		goto fail;
+	}
+	fd = open(mem_id, O_RDWR);
+	if (fd < 0) {
+		nmreq_ferror("cannot open '%s': %s", mem_id, strerror(errno));
+		goto fail;
+	}
+	mapsize = lseek(fd, 0, SEEK_END);
+	if (mapsize < 0) {
+		nmreq_ferror("failed to obtain filesize of '%s': %s", mem_id, strerror(errno));
+		goto fail;
+	}
+	p = mmap(0, mapsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED) {
+		nmreq_ferror("cannot mmap '%s': %s", mem_id, strerror(errno));
+		goto fail;
+	}
+	memset(e, 0, sizeof(*e));
+	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
+	e->nro_usrptr = (uintptr_t)p;
+	e->nro_info.nr_memsize = mapsize;
+	nmreq_push_option(h, &e->nro_opt);
+	ED("mapped %zu bytes at %p from file %s", mapsize, pi, mem_id);
+	return 0;
 
 fail:
 	if (fd >= 0)
@@ -215,40 +249,40 @@ fail:
 	return -1;
 }
 
-
 int
-nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmctx *ctx)
+nmreq_register_decode(const char *ifname, struct nmreq_header *h,
+		struct nmreq_register *r, struct nmreq_opt_extmem *e)
 {
-	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID, P_ONESW } p_state;
+	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID } p_state;
 	long num;
-	const char *scan = *pifname;
-	uint32_t nr_mode;
-	uint16_t nr_mem_id;
-	uint16_t nr_ringid;
-	uint64_t nr_flags;
+	const char *scan;
+	int memid_allowed = 1;
+
+	scan = nmreq_header_decode(ifname, h);
+	if (scan == NULL)
+		goto fail;
+
+	h->nr_body = (uintptr_t)r;
 
 	/* fill the request */
+	memset(r, 0, sizeof(*r));
 
 	p_state = P_START;
-	/* defaults */
-	nr_mode = NR_REG_ALL_NIC; /* default for no suffix */
-	nr_mem_id = r->nr_mem_id; /* if non-zero, further updates are disabled */
-	nr_ringid = 0;
-	nr_flags = 0;
+	r->nr_mode = NR_REG_ALL_NIC; /* default for no suffix */
 	while (*scan) {
 		switch (p_state) {
 		case P_START:
 			switch (*scan) {
 			case '^': /* only SW ring */
-				nr_mode = NR_REG_SW;
-				p_state = P_ONESW;
+				r->nr_mode = NR_REG_SW;
+				p_state = P_RNGSFXOK;
 				break;
 			case '*': /* NIC and SW */
-				nr_mode = NR_REG_NIC_SW;
+				r->nr_mode = NR_REG_NIC_SW;
 				p_state = P_RNGSFXOK;
 				break;
 			case '-': /* one NIC ring pair */
-				nr_mode = NR_REG_ONE_NIC;
+				r->nr_mode = NR_REG_ONE_NIC;
 				p_state = P_GETNUM;
 				break;
 			case '/': /* start of flags */
@@ -258,7 +292,7 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 				p_state = P_MEMID;
 				break;
 			default:
-				nmctx_ferror(ctx, "unknown modifier: '%c'", *scan);
+				nmreq_ferror("unknown modifier: '%c'", *scan);
 				goto fail;
 			}
 			scan++;
@@ -272,106 +306,90 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 				p_state = P_MEMID;
 				break;
 			default:
-				nmctx_ferror(ctx, "unexpected character: '%c'", *scan);
+				nmreq_ferror("unexpected character: '%c'", *scan);
 				goto fail;
 			}
 			scan++;
 			break;
 		case P_GETNUM:
 			if (!isdigit(*scan)) {
-				nmctx_ferror(ctx, "got '%s' while expecting a number", scan);
+				nmreq_ferror("got '%s' while expecting a number", scan);
 				goto fail;
 			}
 			num = strtol(scan, (char **)&scan, 10);
 			if (num < 0 || num >= NETMAP_RING_MASK) {
-				nmctx_ferror(ctx, "'%ld' out of range [0, %d)",
+				nmreq_ferror("'%ld' out of range [0, %d)",
 						num, NETMAP_RING_MASK);
 				goto fail;
 			}
-			nr_ringid = num & NETMAP_RING_MASK;
+			r->nr_ringid = num & NETMAP_RING_MASK;
 			p_state = P_RNGSFXOK;
 			break;
 		case P_FLAGS:
 		case P_FLAGSOK:
-			switch (*scan) {
-			case '@':
-				p_state = P_MEMID;
+			if (*scan == '@') {
 				scan++;
-				continue;
+				p_state = P_MEMID;
+				break;
+			}
+			switch (*scan) {
 			case 'x':
-				nr_flags |= NR_EXCLUSIVE;
+				r->nr_flags |= NR_EXCLUSIVE;
 				break;
 			case 'z':
-				nr_flags |= NR_ZCOPY_MON;
+				r->nr_flags |= NR_ZCOPY_MON;
 				break;
 			case 't':
-				nr_flags |= NR_MONITOR_TX;
+				r->nr_flags |= NR_MONITOR_TX;
 				break;
 			case 'r':
-				nr_flags |= NR_MONITOR_RX;
+				r->nr_flags |= NR_MONITOR_RX;
 				break;
 			case 'R':
-				nr_flags |= NR_RX_RINGS_ONLY;
+				r->nr_flags |= NR_RX_RINGS_ONLY;
 				break;
 			case 'T':
-				nr_flags |= NR_TX_RINGS_ONLY;
+				r->nr_flags |= NR_TX_RINGS_ONLY;
 				break;
 			default:
-				nmctx_ferror(ctx, "unrecognized flag: '%c'", *scan);
+				nmreq_ferror("unrecognized flag: '%c'", *scan);
 				goto fail;
 			}
 			scan++;
 			p_state = P_FLAGSOK;
 			break;
 		case P_MEMID:
-			if (!isdigit(*scan)) {
-				scan--;	/* escape to options */
-				goto out;
-			}
-			num = strtol(scan, (char **)&scan, 10);
-			if (num <= 0) {
-				nmctx_ferror(ctx, "invalid mem_id: '%ld'", num);
+			if (!memid_allowed) {
+				nmreq_ferror("double setting of mem_id");
 				goto fail;
 			}
-			if (nr_mem_id && nr_mem_id != num) {
-				nmctx_ferror(ctx, "invalid setting of mem_id to %ld (already set to %"PRIu16")", num, nr_mem_id);
-				goto fail;
-			}
-			nr_mem_id = num;
-			p_state = P_RNGSFXOK;
-			break;
-		case P_ONESW:
-			if (!isdigit(*scan)) {
+			if (isdigit(*scan)) {
+				num = strtol(scan, (char **)&scan, 10);
+				r->nr_mem_id = num;
+				memid_allowed = 0;
 				p_state = P_RNGSFXOK;
 			} else {
-				nr_mode = NR_REG_ONE_SW;
-				p_state = P_GETNUM;
+				ED("non-numeric mem_id '%s'", scan);
+				if (nmreq_mem_id_parse(scan, h, r, e) < 0)
+					goto fail;
+				goto out;
 			}
 			break;
 		}
 	}
-	if (p_state == P_MEMID && !*scan) {
-		nmctx_ferror(ctx, "invalid empty mem_id");
-		goto fail;
-	}
 	if (p_state != P_START && p_state != P_RNGSFXOK &&
-	    p_state != P_FLAGSOK && p_state != P_MEMID && p_state != P_ONESW) {
-		nmctx_ferror(ctx, "unexpected end of request");
+	    p_state != P_FLAGSOK && p_state != P_MEMID) {
+		nmreq_ferror("unexpected end of request");
 		goto fail;
 	}
 out:
 	ED("flags: %s %s %s %s %s %s",
-			(nr_flags & NR_EXCLUSIVE) ? "EXCLUSIVE" : "",
-			(nr_flags & NR_ZCOPY_MON) ? "ZCOPY_MON" : "",
-			(nr_flags & NR_MONITOR_TX) ? "MONITOR_TX" : "",
-			(nr_flags & NR_MONITOR_RX) ? "MONITOR_RX" : "",
-			(nr_flags & NR_RX_RINGS_ONLY) ? "RX_RINGS_ONLY" : "",
-			(nr_flags & NR_TX_RINGS_ONLY) ? "TX_RINGS_ONLY" : "");
-	r->nr_mode = nr_mode;
-	r->nr_ringid = nr_ringid;
-	r->nr_flags = nr_flags;
-	r->nr_mem_id = nr_mem_id;
-	*pifname = scan;
+			(r->nr_flags & NR_EXCLUSIVE) ? "EXCLUSIVE" : "",
+			(r->nr_flags & NR_ZCOPY_MON) ? "ZCOPY_MON" : "",
+			(r->nr_flags & NR_MONITOR_TX) ? "MONITOR_TX" : "",
+			(r->nr_flags & NR_MONITOR_RX) ? "MONITOR_RX" : "",
+			(r->nr_flags & NR_RX_RINGS_ONLY) ? "RX_RINGS_ONLY" : "",
+			(r->nr_flags & NR_TX_RINGS_ONLY) ? "TX_RINGS_ONLY" : "");
 	return 0;
 
 fail:
@@ -380,287 +398,263 @@ fail:
 	return -1;
 }
 
-
 static int
-nmreq_option_parsekeys(const char *prefix, char *body, struct nmreq_opt_parser *p,
-		struct nmreq_parse_ctx *pctx)
+nmreq_mmap(struct nm_desc *d, const struct nm_desc *parent)
 {
-	char *scan;
-	char delim1;
-	struct nmreq_opt_key *k;
+	//XXX TODO: check if mmap is already done
 
-	scan = body;
-	delim1 = *scan;
-	while (delim1 != '\0') {
-		char *key, *value;
-		char delim;
-		size_t vlen;
-
-		key = scan;
-		for ( scan++; *scan != '\0' && *scan != '=' && *scan != ','; scan++) {
-			if (*scan == '-')
-				*scan = '_';
+	if (IS_NETMAP_DESC(parent) && parent->mem &&
+	    parent->nr.reg.nr_mem_id == d->nr.reg.nr_mem_id) {
+		/* do not mmap, inherit from parent */
+		D("do not mmap, inherit from parent");
+		d->memsize = parent->memsize;
+		d->mem = parent->mem;
+	} else {
+		/* XXX TODO: check if memsize is too large (or there is overflow) */
+		d->memsize = d->nr.reg.nr_memsize;
+		d->mem = mmap(0, d->memsize, PROT_WRITE | PROT_READ, MAP_SHARED,
+				d->fd, 0);
+		if (d->mem == MAP_FAILED) {
+			goto fail;
 		}
-		delim = *scan;
-		*scan = '\0';
-		scan++;
-		for (k = p->keys; (k - p->keys) < NMREQ_OPT_MAXKEYS && k->key != NULL;
-				k++) {
-			if (!strcmp(k->key, key))
-				goto found;
-
-		}
-		nmctx_ferror(pctx->ctx, "unknown key: '%s'", key);
-		errno = EINVAL;
-		return -1;
-	found:
-		if (pctx->keys[k->id] != NULL) {
-			nmctx_ferror(pctx->ctx, "option '%s': duplicate key '%s', already set to '%s'",
-					prefix, key, pctx->keys[k->id]);
-			errno = EINVAL;
-			return -1;
-		}
-		value = scan;
-		for ( ; *scan != '\0' && *scan != ','; scan++)
-			;
-		delim1 = *scan;
-		*scan = '\0';
-		vlen = scan - value;
-		scan++;
-		if (delim == '=') {
-			pctx->keys[k->id] = (vlen ? value : NULL);
-		} else {
-			if (!(k->flags & NMREQ_OPTK_ALLOWEMPTY)) {
-				nmctx_ferror(pctx->ctx, "option '%s': missing '=value' for key '%s'",
-						prefix, key);
-				errno = EINVAL;
-				return -1;
-			}
-			pctx->keys[k->id] = key;
-		}
+		d->done_mmap = 1;
 	}
-	/* now check that all no-default keys have been assigned */
-	for (k = p->keys; (k - p->keys) < NMREQ_OPT_MAXKEYS && k->key != NULL; k++) {
-		if ((k->flags & NMREQ_OPTK_NODEFAULT) && pctx->keys[k->id] == NULL) {
-			nmctx_ferror(pctx->ctx, "option '%s': mandatory key '%s' not assigned",
-					prefix, k->key);
-			errno = EINVAL;
-			return -1;
+	{
+		struct netmap_if *nifp = NETMAP_IF(d->mem, d->nr.reg.nr_offset);
+		struct netmap_ring *r = NETMAP_RXRING(nifp, d->first_rx_ring);
+		if ((void *)r == (void *)nifp) {
+			/* the descriptor is open for TX only */
+			r = NETMAP_TXRING(nifp, d->first_tx_ring);
 		}
+
+		*(struct netmap_if **)(uintptr_t)&(d->nifp) = nifp;
+		*(struct netmap_ring **)(uintptr_t)&d->some_ring = r;
+		*(void **)(uintptr_t)&d->buf_start = NETMAP_BUF(r, 0);
+		*(void **)(uintptr_t)&d->buf_end =
+			(char *)d->mem + d->memsize;
 	}
+
 	return 0;
-}
 
-
-static int
-nmreq_option_decode1(char *opt, struct nmreq_opt_parser parsers[], int nparsers,
-		void *token, struct nmctx *ctx)
-{
-	struct nmreq_opt_parser *p;
-	const char *prefix;
-	char *scan;
-	char delim;
-	int i;
-	struct nmreq_parse_ctx pctx;
-
-	prefix = opt;
-	/* find the delimiter */
-	for (scan = opt; *scan != '\0' && *scan != ':' && *scan != '='; scan++)
-		;
-	delim = *scan;
-	*scan = '\0';
-	scan++;
-	/* find the prefix */
-	for (i = 0; i < nparsers; i++) {
-		if (!strcmp(prefix, parsers[i].prefix))
-			break;
-	}
-	if (i == nparsers) {
-		nmctx_ferror(ctx, "unknown option: '%s'", prefix);
-		errno = EINVAL;
-		return -1;
-	}
-	p = parsers + i; /* shortcut */
-	if (p->flags & NMREQ_OPTF_DISABLED) {
-		nmctx_ferror(ctx, "option '%s' is not supported", prefix);
-		errno = EOPNOTSUPP;
-		return -1;
-	}
-	/* prepare the parse context */
-	pctx.ctx = ctx;
-	pctx.token = token;
-	for (i = 0; i < NMREQ_OPT_MAXKEYS; i++)
-		pctx.keys[i] = NULL;
-	switch (delim) {
-	case '\0':
-		/* no body */
-		if (!(p->flags & NMREQ_OPTF_ALLOWEMPTY)) {
-			nmctx_ferror(ctx, "syntax error: missing body after '%s'",
-					prefix);
-			errno = EINVAL;
-			return -1;
-		}
-		break;
-	case '=': /* the body goes to the default option key, if any */
-		if (p->default_key < 0 || p->default_key >= NMREQ_OPT_MAXKEYS) {
-			nmctx_ferror(ctx, "syntax error: '=' not valid after '%s'",
-					prefix);
-			errno = EINVAL;
-			return -1;
-		}
-		if (*scan == '\0') {
-			nmctx_ferror(ctx, "missing value for option '%s'", prefix);
-			errno = EINVAL;
-			return -1;
-		}
-		pctx.keys[p->default_key] = scan;
-		break;
-	case ':': /* parse 'key=value' strings */
-		if (nmreq_option_parsekeys(prefix, scan, p, &pctx) < 0)
-			return -1;
-		break;
-	}
-	return p->parse(&pctx);
+fail:
+	return EINVAL;
 }
 
 int
-nmreq_options_decode(const char *opt, struct nmreq_opt_parser parsers[],
-		int nparsers, void *token, struct nmctx *ctx)
+nmreq_close(struct nm_desc *d)
 {
-	const char *scan, *opt1;
-	char *w;
-	size_t len;
-	int ret;
+	/*
+	 * ugly trick to avoid unused warnings
+	 */
+	static void *__xxzt[] __attribute__ ((unused))  =
+		{ (void *)nm_open, (void *)nm_inject,
+		  (void *)nm_dispatch, (void *)nm_nextpkt } ;
 
-	if (*opt == '\0')
-		return 0; /* empty list, OK */
-
-	if (*opt != '@') {
-		nmctx_ferror(ctx, "option list does not start with '@'");
-		errno = EINVAL;
-		return -1;
+	if (d == NULL || d->self != d)
+		return EINVAL;
+	if (d->done_mmap && d->mem)
+		munmap(d->mem, d->memsize);
+	if (d->fd != -1) {
+		close(d->fd);
 	}
 
-	scan = opt;
-	do {
-		scan++; /* skip the plus */
-		opt1 = scan; /* start of option */
-		/* find the end of the option */
-		for ( ; *scan != '\0' && *scan != '@'; scan++)
-			;
-		len = scan - opt1;
-		if (len == 0) {
-			nmctx_ferror(ctx, "invalid empty option");
-			errno = EINVAL;
-			return -1;
-		}
-		w = nmctx_malloc(ctx, len + 1);
-		if (w == NULL) {
-			nmctx_ferror(ctx, "out of memory");
-			errno = ENOMEM;
-			return -1;
-		}
-		memcpy(w, opt1, len);
-		w[len] = '\0';
-		ret = nmreq_option_decode1(w, parsers, nparsers, token, ctx);
-		nmctx_free(ctx, w);
-		if (ret < 0)
-			return -1;
-	} while (*scan != '\0');
-
+	bzero(d, sizeof(*d));
+	free(d);
 	return 0;
 }
 
-struct nmreq_option *
-nmreq_find_option(struct nmreq_header *h, uint32_t t)
+struct nm_desc *
+nmreq_open(const char *ifname, uint64_t new_flags, const struct nm_desc *arg)
 {
-	struct nmreq_option *o;
+	struct nm_desc *d = NULL;
+	const struct nm_desc *parent = arg;
+	uint32_t nr_reg;
 
-	for (o = (struct nmreq_option *)h->nr_options; o != NULL;
-			o = (struct nmreq_option *)o->nro_next) {
-		if (o->nro_reqtype == t)
-			break;
+	d = (struct nm_desc *)calloc(1, sizeof(*d));
+	if (d == NULL) {
+		nmreq_ferror("nm_desc alloc failure");
+		errno = ENOMEM;
+		return NULL;
 	}
-	return o;
-}
+	d->self = d;	/* set this early so nmreq_close() works */
+	d->fd = open(NETMAP_DEVICE_NAME, O_RDWR);
+	if (d->fd < 0) {
+		nmreq_ferror("cannot open /dev/netmap: %s",
+				strerror(errno));
+		goto fail;
+	}
 
-void
-nmreq_remove_option(struct nmreq_header *h, struct nmreq_option *o)
-{
-	uintptr_t *scan;
+	/* import extmem request before decode */
+	if (!(new_flags & NM_OPEN_NO_MMAP) && parent &&
+	    parent->nr.ext.nro_opt.nro_reqtype == NETMAP_REQ_OPT_EXTMEM) {
+		memcpy(&d->nr.ext, &parent->nr.ext, sizeof(parent->nr.ext));
+	}
 
-	for (scan = &h->nr_options; *scan;
-			scan = &((struct nmreq_option *)*scan)->nro_next) {
-		if (*scan == (uintptr_t)o) {
-			*scan = o->nro_next;
-			o->nro_next = 0;
-			break;
+	/* ifname may contain suffix and removed is stored in hdr.nr_name */
+	if (!(new_flags & NM_OPEN_NO_DECODE)) {
+		if (nmreq_register_decode(ifname,
+		    &d->nr.hdr, &d->nr.reg, &d->nr.ext) < 0) {
+			goto fail;
 		}
 	}
-}
 
-void
-nmreq_free_options(struct nmreq_header *h)
-{
-	struct nmreq_option *o, *next;
+	d->nr.reg.nr_ringid &= NETMAP_RING_MASK;
 
-	for (o = (struct nmreq_option *)h->nr_options; o != NULL; o = next) {
-		next = (struct nmreq_option *)o->nro_next;
-		free(o);
+	/* optionally import info from parent */
+	if (IS_NETMAP_DESC(parent) && new_flags) {
+		if (new_flags & NM_OPEN_MEMID) {
+			D("overriding MEMID %d", parent->nr.reg.nr_mem_id);
+			d->nr.reg.nr_mem_id = parent->nr.reg.nr_mem_id;
+		}
+		if (new_flags & NM_OPEN_EXTRA)
+			D("overriding EXTRA %d", parent->nr.reg.nr_extra_bufs);
+		d->nr.reg.nr_extra_bufs = new_flags & NM_OPEN_ARG3 ?
+			parent->nr.reg.nr_extra_bufs : 0;
+		if (new_flags & NM_OPEN_RING_CFG) {
+			D("overriding RING_CFG");
+			d->nr.reg.nr_tx_slots = parent->nr.reg.nr_tx_slots;
+			d->nr.reg.nr_rx_slots = parent->nr.reg.nr_rx_slots;
+			d->nr.reg.nr_tx_rings = parent->nr.reg.nr_tx_rings;
+			d->nr.reg.nr_rx_rings = parent->nr.reg.nr_rx_rings;
+		}
+		if (new_flags & NM_OPEN_IFNAME) {
+			D("overriding ringid 0x%x flags 0x%lx",
+			    parent->nr.reg.nr_ringid, parent->nr.reg.nr_flags);
+			d->nr.reg.nr_ringid = parent->nr.reg.nr_ringid;
+			d->nr.reg.nr_flags = parent->nr.reg.nr_flags;
+			d->nr.reg.nr_mode = parent->nr.reg.nr_mode;
+		}
+		if (new_flags & NM_OPEN_NO_DECODE) {
+			if (nmreq_header_decode(ifname, &d->nr.hdr) == NULL) {
+				D("failed to header_decode on NO_DECODE");
+				goto fail;
+			}
+			d->nr.hdr.nr_options = (uintptr_t)NULL;
+		}
 	}
+
+	/* import extmem configuration if it has been decoded */
+	if (d->nr.ext.nro_opt.nro_reqtype == NETMAP_REQ_OPT_EXTMEM) {
+#define C(_d, _s, _w) ((_d)->nr.ext.nro_info._w = (_s)->nr.ext.nro_info._w)
+		C(d, parent, nr_if_pool_objtotal);
+		C(d, parent, nr_ring_pool_objtotal);
+		C(d, parent, nr_ring_pool_objsize);
+		C(d, parent, nr_buf_pool_objtotal);
+#undef C
+	}
+
+	/* add the *XPOLL flags */
+	d->nr.reg.nr_ringid |=
+		new_flags & (NETMAP_NO_TX_POLL | NETMAP_DO_RX_POLL);
+
+	d->nr.hdr.nr_reqtype = NETMAP_REQ_REGISTER;
+	d->nr.hdr.nr_body = (uintptr_t)&d->nr.reg;
+
+	if (ioctl(d->fd, NIOCCTRL, &d->nr.hdr)) {
+		nmreq_ferror("NIOCCTRL failed: %s", strerror(errno));
+		goto fail;
+	}
+
+	nr_reg = d->nr.reg.nr_mode;
+
+	if (nr_reg == NR_REG_SW) { /* host stack */
+		d->first_tx_ring = d->last_tx_ring = d->nr.reg.nr_tx_rings;
+		d->first_rx_ring = d->last_rx_ring = d->nr.reg.nr_rx_rings;
+	} else if (nr_reg ==  NR_REG_ALL_NIC) { /* only nic */
+		d->first_tx_ring = 0;
+		d->first_rx_ring = 0;
+		d->last_tx_ring = d->nr.reg.nr_tx_rings - 1;
+		d->last_rx_ring = d->nr.reg.nr_rx_rings - 1;
+	} else if (nr_reg ==  NR_REG_NIC_SW) {
+		d->first_tx_ring = 0;
+		d->first_rx_ring = 0;
+		d->last_tx_ring = d->nr.reg.nr_tx_rings;
+		d->last_rx_ring = d->nr.reg.nr_rx_rings;
+	} else if (nr_reg == NR_REG_ONE_NIC) {
+		/* XXX check validity */
+		d->first_tx_ring = d->last_tx_ring =
+		d->first_rx_ring = d->last_rx_ring = d->nr.reg.nr_ringid & NETMAP_RING_MASK;
+	} else { /* pipes */
+		d->first_tx_ring = d->last_tx_ring = 0;
+		d->first_rx_ring = d->last_rx_ring = 0;
+	}
+
+        /* if parent is defined, do nm_mmap() even if NM_OPEN_NO_MMAP is set */
+	if ((!(new_flags & NM_OPEN_NO_MMAP) || parent) && nmreq_mmap(d, parent)) {
+	        nmreq_ferror("mmap failed: %s", strerror(errno));
+		goto fail;
+	}
+
+	return d;
+fail:
+	nmreq_close(d);
+	return NULL;
 }
 
-#if 0
+#ifndef LIB
 #include <inttypes.h>
-static void
-nmreq_dump(struct nmport_d *d)
-{
-	printf("header:\n");
-	printf("   nr_version:  %"PRIu16"\n", d->hdr.nr_version);
-	printf("   nr_reqtype:  %"PRIu16"\n", d->hdr.nr_reqtype);
-	printf("   nr_reserved: %"PRIu32"\n", d->hdr.nr_reserved);
-	printf("   nr_name:     %s\n", d->hdr.nr_name);
-	printf("   nr_options:  %lx\n", (unsigned long)d->hdr.nr_options);
-	printf("   nr_body:     %lx\n", (unsigned long)d->hdr.nr_body);
-	printf("\n");
-	printf("register (%p):\n", (void *)d->hdr.nr_body);
-	printf("   nr_mem_id:   %"PRIu16"\n", d->reg.nr_mem_id);
-	printf("   nr_ringid:   %"PRIu16"\n", d->reg.nr_ringid);
-	printf("   nr_mode:     %lx\n", (unsigned long)d->reg.nr_mode);
-	printf("   nr_flags:    %lx\n", (unsigned long)d->reg.nr_flags);
-	printf("\n");
-	if (d->hdr.nr_options) {
-		struct nmreq_opt_extmem *e = (struct nmreq_opt_extmem *)d->hdr.nr_options;
-		printf("opt_extmem (%p):\n", e);
-		printf("   nro_opt.nro_next:    %lx\n", (unsigned long)e->nro_opt.nro_next);
-		printf("   nro_opt.nro_reqtype: %"PRIu32"\n", e->nro_opt.nro_reqtype);
-		printf("   nro_usrptr:          %lx\n", (unsigned long)e->nro_usrptr);
-		printf("   nro_info.nr_memsize  %"PRIu64"\n", e->nro_info.nr_memsize);
-	}
-	printf("\n");
-	printf("mem (%p):\n", d->mem);
-	printf("   refcount:   %d\n", d->mem->refcount);
-	printf("   mem:        %p\n", d->mem->mem);
-	printf("   size:       %zu\n", d->mem->size);
-	printf("\n");
-	printf("rings:\n");
-	printf("   tx:   [%d, %d]\n", d->first_tx_ring, d->last_tx_ring);
-	printf("   rx:   [%d, %d]\n", d->first_rx_ring, d->last_rx_ring);
-}
 int
 main(int argc, char *argv[])
 {
-	struct nmport_d *d;
+	struct nmreq_header h;
+	struct nmreq_register r;
+	struct nmreq_opt_extmem e;
+	u_int flags = 0;
+	struct nm_desc *d, base_nmd;
+	size_t memsize;
 
 	if (argc < 2) {
 		fprintf(stderr, "usage: %s netmap-expr\n", argv[0]);
 		return 1;
 	}
 
-	d = nmport_open(argv[1]);
-	if (d != NULL) {
-		nmreq_dump(d);
-		nmport_close(d);
+
+	if (nmreq_register_decode(argv[1], &h, &r, &e) < 0) {
+		perror("nmreq");
+		return 1;
+	}
+
+	printf("header:\n");
+	printf("   nr_version:  %"PRIu16"\n", h.nr_version);
+	printf("   nr_reqtype:  %"PRIu16"\n", h.nr_reqtype);
+	printf("   nr_reserved: %"PRIu32"\n", h.nr_reserved);
+	printf("   nr_name:     %s\n", h.nr_name);
+	printf("   nr_options:  %lx\n", (unsigned long)h.nr_options);
+	printf("   nr_body:     %lx\n", (unsigned long)h.nr_body);
+	printf("\n");
+	printf("register (%p):\n", &r);
+	printf("   nr_mem_id:   %"PRIu16"\n", r.nr_mem_id);
+	printf("   nr_ringid:   %"PRIu16"\n", r.nr_ringid);
+	printf("   nr_mode:     %lx\n", (unsigned long)r.nr_mode);
+	printf("   nr_flags:    %lx\n", (unsigned long)r.nr_flags);
+	printf("\n");
+	printf("opt_extmem (%p):\n", &e);
+	printf("   nro_opt.nro_next:    %lx\n", (unsigned long)e.nro_opt.nro_next);
+	printf("   nro_opt.nro_reqtype: %"PRIu32"\n", e.nro_opt.nro_reqtype);
+	printf("   nro_usrptr:          %lx\n", (unsigned long)e.nro_usrptr);
+	printf("   nro_info.nr_memsize  %"PRIu64"\n", e.nro_info.nr_memsize);
+
+	/* start another test */
+
+	bzero(&base_nmd, sizeof(base_nmd));
+	base_nmd.self = &base_nmd;
+	memcpy(base_nmd.nr.hdr.nr_name, argv[1], sizeof(base_nmd.nr.hdr.nr_name));
+	base_nmd.nr.reg.nr_flags |= NR_ACCEPT_VNET_HDR;
+
+	flags = NM_OPEN_IFNAME | NM_OPEN_ARG1 | NM_OPEN_ARG2 | NM_OPEN_ARG3 |
+		NM_OPEN_RING_CFG;
+
+	memsize = (size_t)atoi(argv[2]) * 1000000;
+	base_nmd.nr.ext.nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
+	base_nmd.nr.ext.nro_info.nr_if_pool_objtotal = 128;
+	base_nmd.nr.ext.nro_info.nr_ring_pool_objtotal = 512;
+	base_nmd.nr.ext.nro_info.nr_ring_pool_objsize = 33024;
+	base_nmd.nr.ext.nro_info.nr_buf_pool_objtotal = (memsize / 2048) * 9 / 10;
+
+	d = nmreq_open(argv[1], flags, &base_nmd);
+        if (d == NULL) {
+		perror("nmreq_open");
+		return 1;
 	}
 
 	return 0;
