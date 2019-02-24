@@ -1,4 +1,4 @@
-dist: trusty
+dist: xenial
 sudo: required
 language: c
 env:
@@ -42,6 +42,8 @@ env:
   - KERNEL_VERSION=4.16  ARCH=x86_64
   - KERNEL_VERSION=4.17  ARCH=x86_64
   - KERNEL_VERSION=4.18  ARCH=x86_64
+  - KERNEL_VERSION=4.19  ARCH=x86_64
+  - KERNEL_VERSION=4.20  ARCH=x86_64
   - KERNEL_VERSION=3.16  ARCH=i386
 script:
   - "./ci/build-linux $KERNEL_VERSION $ARCH"

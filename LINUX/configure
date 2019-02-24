@@ -109,6 +109,7 @@ subsys enable pipe
 subsys enable monitor
 subsys enable generic
 subsys enable null
+subsys enable ptnetmap
 
 # available drivers
 driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
@@ -459,7 +460,7 @@ I_DRIVERS := $(idrv print)
 all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 
 tests:
-	\$(MAKE) -C $ksrc M=\$\$PWD $kopts
+	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS=-Werror $kopts
 
 -include $BUILDDIR/extdrv-versions.mak
 -include $BUILDDIR/default-config.mak
@@ -915,7 +916,7 @@ EOF
 	cat >> drivers.mak <<EOF
 $d@conf := $drv_conf
 $d@src := $drv_src
-$d@patch := $drv_patch
+$d@patch := $(echo $drv_patch)
 EOF
 done
 
@@ -1666,7 +1667,7 @@ EOF
 	#include <linux/average.h>
 
 	DECLARE_EWMA(myname, 1, 64);
-	int
+	void
 	dummy(struct ewma_myname *x) {
 		ewma_myname_add(x, 18);
 	}
@@ -2104,6 +2105,16 @@ EOF
   	}
 EOF
   
+     add_test 'have GET_LINK_KSETTINGS' <<EOF
+	#include <linux/ethtool.h>
+
+	int
+	dummy(struct ethtool_ops *ops, struct ethtool_link_ksettings *l)
+	{
+		return ops->get_link_ksettings(NULL, l);
+	}
+EOF
+
   fi # virtio-net
   
   if drv enabled i40e; then
@@ -2218,6 +2229,10 @@ ln -s $SRCDIR/drv-subdir.mak || true
 
 report
 
+# create the build directory for libnetmap
+mkdir -p build-libnetmap
+ln -s $SRCDIR/../libnetmap/GNUmakefile build-libnetmap 2>/dev/null || true
+
 # create the build directory for the examples
 mkdir -p build-apps
 for a in $(app print); do
@@ -2229,6 +2244,7 @@ done
 if [ -n "$UTILS" ]; then
 	mkdir -p build-utils
 	ln -s $SRCDIR/../utils/GNUmakefile build-utils/GNUmakefile 2>/dev/null || true
+	ln -s $SRCDIR/../utils/tests 2>/dev/null || true
 fi
 
 # config.status can be used to rerun configure with the

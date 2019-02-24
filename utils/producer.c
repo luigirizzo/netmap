@@ -77,6 +77,7 @@ tsc_sleep_till(uint64_t when)
         barrier();
 #undef barrier
 }
+
 int main(int argc, char **argv)
 {
 	const char *ifname = "netmap:nmsink0";

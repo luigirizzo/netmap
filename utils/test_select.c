@@ -12,8 +12,9 @@
 #include <poll.h>
 #include <inttypes.h>
 
-enum { M_SELECT =0 , M_POLL, M_USLEEP };
+enum { M_SELECT = 0 , M_POLL, M_USLEEP };
 static const char *names[] = { "select", "poll", "usleep" };
+
 int
 main(int argc, char *argv[])
 {

@@ -164,8 +164,8 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		/* record completed transmissions using TDH */
 		nic_i = readl(adapter->hw.hw_addr + txr->tdh);
-		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
-			D("TDH wrap %d", nic_i);
+		if (unlikely(nic_i >= kring->nkr_num_slots)) {
+			nm_prerr("TDH wrap %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
 		nm_i = netmap_idx_n2k(kring, nic_i);
@@ -314,7 +314,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		struct e1000_rx_ring *rxr;
 		slot = netmap_reset(na, NR_RX, r, 0);
 		if (!slot) {
-			D("Skipping RX ring %d, netmap mode not requested", r);
+			nm_prinf("Skipping RX ring %d, netmap mode not requested", r);
 			continue;
 		}
 		rxr = &adapter->rx_ring[r];
@@ -338,7 +338,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	for (r = 0; r < na->num_tx_rings; r++) {
 		slot = netmap_reset(na, NR_TX, r, 0);
 		if (!slot) {
-			D("Skipping TX ring %d, netmap mode not requested", r);
+			nm_prinf("Skipping TX ring %d, netmap mode not requested", r);
 			continue;
 		}
 

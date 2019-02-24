@@ -829,13 +829,13 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 				break;
 
 			if (unlikely(token != na)) {
-				RD(5, "Received unexpected virtqueue token %p\n",
+				nm_prlim(5, "Received unexpected virtqueue token %p\n",
 						token);
 			} else {
 				/* Skip the virtio-net header. */
 				len -= vnet_hdr_len;
 				if (unlikely(len < 0)) {
-					RD(1, "Truncated virtio-net-header, missing %d"
+					nm_prlim(1, "Truncated virtio-net-header, missing %d"
 							" bytes", -len);
 					len = 0;
 				}
@@ -849,7 +849,7 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_i;
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
-	ND("[B] h %d c %d hwcur %d hwtail %d",
+	nm_prdis("[B] h %d c %d hwcur %d hwtail %d",
 			ring->head, ring->cur, kring->nr_hwcur,
 			kring->nr_hwtail);
 
@@ -875,7 +875,7 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 			sg_set_buf(sg + 1, addr, NETMAP_BUF_SIZE(na));
 			nospace = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (nospace) {
-				RD(3, "virtqueue_add_inbuf failed [err=%d]",
+				nm_prlim(2, "virtqueue_add_inbuf failed [err=%d]",
 				   nospace);
 				break;
 			}
@@ -892,7 +892,7 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 		virtqueue_enable_cb(vq);
 
 
-	ND("[C] h %d c %d t %d hwcur %d hwtail %d",
+	nm_prdis("[C] h %d c %d t %d hwcur %d hwtail %d",
 			ring->head, ring->cur, ring->tail,
 			kring->nr_hwcur, kring->nr_hwtail);
 

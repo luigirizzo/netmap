@@ -1,8 +1,83 @@
 #!/usr/bin/env bash
+
 ################################################################################
-# Runs all the tests using randomized values for number of packets, fill
-# character and packets length.
+# Run all the tests using randomized values for number of packets, fill
+# character and packet length.
 ################################################################################
+
+usage() {
+    cat <<EOF
+randomized_tests:
+	-h		Show this help and exit
+	-j ID		Run only the test specified by ID
+	-l		List available tests and exit
+	-v		Increase verbosity of the tests
+EOF
+}
+
+# Option parsing
+OUTPUT="/dev/null"
+while getopts "hlvj:" opt; do
+	case $opt in
+	"h")
+		usage
+		exit 0
+		;;
+
+	"j")
+		if [ -n "$2" ]; then
+			TESTID=${OPTARG}
+		else
+			echo "-j requires an ID argument"
+			exit 1
+		fi
+		;;
+
+	"l")
+		LIST="y"
+		;;
+
+	"v")
+		# Select verbosity:
+		#    -v    -> prints error messages
+		#    -vv   -> -v, send and receive actions
+		#    -vvv  -> -vv and packet building
+		#    -vvvv -> -vvv and arguments parsing
+		if [ -z "$VERB" ]; then
+			VERB="-"
+		fi
+		VERB="${VERB}v"
+		OUTPUT="/dev/stdout"
+		;;
+
+	\?)
+		echo "Unknown option '$opt'"
+		echo ""
+		usage
+		exit 1
+		;;
+	esac
+done
+
+# Support for colored output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+ORANGE='\033[0;33m'
+NOC='\033[0m' # No Color
+
+if [ -n "$LIST" ]; then
+	pushd $(pwd)
+	cd $(dirname $0)
+	echo "Available tests:"
+	i="1"
+	for t in tests/* ; do
+		printf "    #%03d: %s\n" $i $t
+		i=$((i + 1))
+	done
+	popd
+	exit 0
+fi
 
 if [ "$EUID" -ne "0" ]; then
 	echo "This script must be run as root"
@@ -39,7 +114,7 @@ pushd $(pwd)
 cd $(dirname $0)
 
 # Add the current directory (and build-utils) to the PATH. In this way we can
-# easily invoke functional, get_tx_rings_avail_sends and the other executables
+# easily invoke functional, get_avail_tx_packets and the other executables
 # from the test scripts.
 PATH="$(pwd)/../build-utils:$(pwd):${PATH}"
 
@@ -47,22 +122,26 @@ source test_lib
 
 netmap_load
 
-for test in tests/*_test ; do
+RET=0
+i=0
+for t in tests/* ; do
+	i=$((i + 1))
+
+	# Possibly filter tests by TESTID
+	[ -n "$TESTID" ] && [ "$i" != "$TESTID" ] && continue
+
+	# Run this test
+	echo -e "${ORANGE}>>> Running test #${i}: ${CYAN}\"${t}\"${NOC}"
 	restart_fd_server
-	$test -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>/dev/null
+	$t $VERB -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>${OUTPUT}
+	res="$?"
 	close_fd_server
-	if [ $? != 0 ] ; then
-		echo "Rerunning the test that just failed with -v"
-		# Select verbosity of output after an error occurred:
-		#    -v    -> prints error messages
-		#    -vv   -> -v, send and receive actions
-		#    -vvv  -> -vv and packet building
-		#    -vvvv -> -vvv and arguments parsing
-		restart_fd_server
-		$test -v -n $random_packet_num -l $random_len -f $random_fill "$seq_check"
-		close_fd_server
-		popd
-		exit $?
+	if [ "$res" == 0 ]; then
+		echo -e "${GREEN}>>> Test #${i} PASSED${NOC}"
+	else
+		echo -e "${RED}>>> Test #${i} FAILED${NOC}"
+		RET="1"
+		break
 	fi
 done
 
@@ -70,4 +149,6 @@ done
 sleep 0.5
 
 netmap_unload
+
 popd
+exit ${RET}

@@ -468,7 +468,7 @@ struct nm_linux_selrecord_t;
  */
 #define make_dev_credf(_flags, _cdev, _zero, _cred, _uid, _gid, _perm, _name)	\
 	({error = misc_register(_cdev);				\
-	D("run mknod /dev/%s c %d %d # returned %d",		\
+	nm_prinf("run mknod /dev/%s c %d %d # returned %d",	\
 	    (_cdev)->name, MISC_MAJOR, (_cdev)->minor, error);	\
 	 _cdev; } )
 #define destroy_dev(_cdev)	misc_deregister(_cdev)

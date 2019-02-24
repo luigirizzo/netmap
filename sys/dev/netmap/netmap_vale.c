@@ -340,7 +340,7 @@ netmap_vale_list(struct nmreq_header *hdr)
 			i = b->bdg_port_index[j];
 			vpna = b->bdg_ports[i];
 			if (vpna == NULL) {
-				D("This should not happen");
+				nm_prerr("This should not happen");
 				continue;
 			}
 			/* the former and the latter identify a
@@ -395,7 +395,7 @@ netmap_vale_vp_dtor(struct netmap_adapter *na)
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter*)na;
 	struct nm_bridge *b = vpna->na_bdg;
 
-	ND("%s has %d references", na->name, na->na_refcount);
+	nm_prdis("%s has %d references", na->name, na->na_refcount);
 
 	if (b) {
 		netmap_bdg_detach_common(b, vpna->bdg_port, -1);
@@ -404,7 +404,7 @@ netmap_vale_vp_dtor(struct netmap_adapter *na)
 	if (na->ifp != NULL && !nm_iszombie(na)) {
 		NM_DETACH_NA(na->ifp);
 		if (vpna->autodelete) {
-			ND("releasing %s", na->ifp->if_xname);
+			nm_prdis("releasing %s", na->ifp->if_xname);
 			NMG_UNLOCK();
 			nm_os_vi_detach(na->ifp);
 			NMG_LOCK();
@@ -490,12 +490,12 @@ nm_vale_preflush(struct netmap_kring *kring, u_int end)
 	 * shared lock, waiting if we can sleep (if the source port is
 	 * attached to a user process) or with a trylock otherwise (NICs).
 	 */
-	ND("wait rlock for %d packets", ((j > end ? lim+1 : 0) + end) - j);
+	nm_prdis("wait rlock for %d packets", ((j > end ? lim+1 : 0) + end) - j);
 	if (na->up.na_flags & NAF_BDG_MAYSLEEP)
 		BDG_RLOCK(b);
 	else if (!BDG_RTRYLOCK(b))
 		return j;
-	ND(5, "rlock acquired for %d packets", ((j > end ? lim+1 : 0) + end) - j);
+	nm_prdis(5, "rlock acquired for %d packets", ((j > end ? lim+1 : 0) + end) - j);
 	ft = kring->nkr_ft;
 
 	for (; likely(j != end); j = nm_next(j, lim)) {
@@ -506,7 +506,7 @@ nm_vale_preflush(struct netmap_kring *kring, u_int end)
 		ft[ft_i].ft_flags = slot->flags;
 		ft[ft_i].ft_offset = 0;
 
-		ND("flags is 0x%x", slot->flags);
+		nm_prdis("flags is 0x%x", slot->flags);
 		/* we do not use the buf changed flag, but we still need to reset it */
 		slot->flags &= ~NS_BUF_CHANGED;
 
@@ -515,7 +515,7 @@ nm_vale_preflush(struct netmap_kring *kring, u_int end)
 		buf = ft[ft_i].ft_buf = (slot->flags & NS_INDIRECT) ?
 			(void *)(uintptr_t)slot->ptr : NMB(&na->up, slot);
 		if (unlikely(buf == NULL)) {
-			RD(5, "NULL %s buffer pointer from %s slot %d len %d",
+			nm_prlim(5, "NULL %s buffer pointer from %s slot %d len %d",
 				(slot->flags & NS_INDIRECT) ? "INDIRECT" : "DIRECT",
 				kring->name, j, ft[ft_i].ft_len);
 			buf = ft[ft_i].ft_buf = NETMAP_BUF_BASE(&na->up);
@@ -529,7 +529,7 @@ nm_vale_preflush(struct netmap_kring *kring, u_int end)
 			continue;
 		}
 		if (unlikely(netmap_verbose && frags > 1))
-			RD(5, "%d frags at %d", frags, ft_i - frags);
+			nm_prlim(5, "%d frags at %d", frags, ft_i - frags);
 		ft[ft_i - frags].ft_frags = frags;
 		frags = 1;
 		if (unlikely((int)ft_i >= bridge_batch))
@@ -541,7 +541,7 @@ nm_vale_preflush(struct netmap_kring *kring, u_int end)
 		frags--;
 		ft[ft_i - 1].ft_flags &= ~NS_MOREFRAG;
 		ft[ft_i - frags].ft_frags = frags;
-		D("Truncate incomplete fragment at %d (%d frags)", ft_i, frags);
+		nm_prlim(5, "Truncate incomplete fragment at %d (%d frags)", ft_i, frags);
 	}
 	if (ft_i)
 		ft_i = nm_vale_flush(ft, ft_i, na, ring_nr);
@@ -635,8 +635,8 @@ netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
 		/* update source port forwarding entry */
 		na->last_smac = ht[sh].mac = smac;	/* XXX expire ? */
 		ht[sh].ports = mysrc;
-		if (netmap_verbose)
-		    D("src %02x:%02x:%02x:%02x:%02x:%02x on port %d",
+		if (netmap_debug & NM_DEBUG_VALE)
+		    nm_prinf("src %02x:%02x:%02x:%02x:%02x:%02x on port %d",
 			s[0], s[1], s[2], s[3], s[4], s[5], mysrc);
 	}
 	dst = NM_BDG_BROADCAST;
@@ -677,8 +677,9 @@ nm_kr_space(struct netmap_kring *k, int is_rx)
 		k->nr_tail >= k->nkr_num_slots ||
 		busy < 0 ||
 		busy >= k->nkr_num_slots) {
-		D("invalid kring, cur %d tail %d lease %d lease_idx %d lim %d",			k->nr_hwcur, k->nr_hwtail, k->nkr_hwlease,
-			k->nkr_lease_idx, k->nkr_num_slots);
+		nm_prerr("invalid kring, cur %d tail %d lease %d lease_idx %d lim %d",
+		    k->nr_hwcur, k->nr_hwtail, k->nkr_hwlease,
+		    k->nkr_lease_idx, k->nkr_num_slots);
 	}
 #endif
 	return space;
@@ -700,24 +701,28 @@ nm_kr_lease(struct netmap_kring *k, u_int n, int is_rx)
 	k->nkr_leases[lease_idx] = NR_NOSLOT;
 	k->nkr_lease_idx = nm_next(lease_idx, lim);
 
+#ifdef CONFIG_NETMAP_DEBUG
 	if (n > nm_kr_space(k, is_rx)) {
-		D("invalid request for %d slots", n);
+		nm_prerr("invalid request for %d slots", n);
 		panic("x");
 	}
+#endif /* CONFIG NETMAP_DEBUG */
 	/* XXX verify that there are n slots */
 	k->nkr_hwlease += n;
 	if (k->nkr_hwlease > lim)
 		k->nkr_hwlease -= lim + 1;
 
+#ifdef CONFIG_NETMAP_DEBUG
 	if (k->nkr_hwlease >= k->nkr_num_slots ||
 		k->nr_hwcur >= k->nkr_num_slots ||
 		k->nr_hwtail >= k->nkr_num_slots ||
 		k->nkr_lease_idx >= k->nkr_num_slots) {
-		D("invalid kring %s, cur %d tail %d lease %d lease_idx %d lim %d",
+		nm_prerr("invalid kring %s, cur %d tail %d lease %d lease_idx %d lim %d",
 			k->na->name,
 			k->nr_hwcur, k->nr_hwtail, k->nkr_hwlease,
 			k->nkr_lease_idx, k->nkr_num_slots);
 	}
+#endif /* CONFIG_NETMAP_DEBUG */
 	return lease_idx;
 }
 
@@ -751,7 +756,7 @@ nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		struct nm_vale_q *d;
 		struct nm_bdg_fwd *start_ft = NULL;
 
-		ND("slot %d frags %d", i, ft[i].ft_frags);
+		nm_prdis("slot %d frags %d", i, ft[i].ft_frags);
 
 		if (na->up.virt_hdr_len < ft[i].ft_len) {
 			ft[i].ft_offset = na->up.virt_hdr_len;
@@ -767,7 +772,7 @@ nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		}
 		dst_port = b->bdg_ops.lookup(start_ft, &dst_ring, na, b->private_data);
 		if (netmap_verbose > 255)
-			RD(5, "slot %d port %d -> %d", i, me, dst_port);
+			nm_prlim(5, "slot %d port %d -> %d", i, me, dst_port);
 		if (dst_port >= NM_BDG_NOPORT)
 			continue; /* this packet is identified to be dropped */
 		else if (dst_port == NM_BDG_BROADCAST)
@@ -814,7 +819,7 @@ nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		}
 	}
 
-	ND(5, "pass 1 done %d pkts %d dsts", n, num_dsts);
+	nm_prdis(5, "pass 1 done %d pkts %d dsts", n, num_dsts);
 	/* second pass: scan destinations */
 	for (i = 0; i < num_dsts; i++) {
 		struct netmap_vp_adapter *dst_na;
@@ -829,7 +834,7 @@ nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		int virt_hdr_mismatch = 0;
 
 		d_i = dsts[i];
-		ND("second pass %d port %d", i, d_i);
+		nm_prdis("second pass %d port %d", i, d_i);
 		d = dst_ents + d_i;
 		// XXX fix the division
 		dst_na = b->bdg_ports[d_i/NM_BDG_MAXRINGS];
@@ -846,7 +851,7 @@ nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		 * - when na is being deactivated but is still attached.
 		 */
 		if (unlikely(!nm_netmap_on(&dst_na->up))) {
-			ND("not in netmap mode!");
+			nm_prdis("not in netmap mode!");
 			goto cleanup;
 		}
 
@@ -864,7 +869,7 @@ nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 
 		if (unlikely(dst_na->up.virt_hdr_len != na->up.virt_hdr_len)) {
 			if (netmap_verbose) {
-				RD(3, "virt_hdr_mismatch, src %d dst %d", na->up.virt_hdr_len,
+				nm_prlim(3, "virt_hdr_mismatch, src %d dst %d", na->up.virt_hdr_len,
 						dst_na->up.virt_hdr_len);
 			}
 			/* There is a virtio-net header/offloadings mismatch between
@@ -886,11 +891,11 @@ nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 				KASSERT(dst_na->mfs > 0, ("vpna->mfs is 0"));
 				needed = (needed * na->mfs) /
 						(dst_na->mfs - WORST_CASE_GSO_HEADER) + 1;
-				ND(3, "srcmtu=%u, dstmtu=%u, x=%u", na->mfs, dst_na->mfs, needed);
+				nm_prdis(3, "srcmtu=%u, dstmtu=%u, x=%u", na->mfs, dst_na->mfs, needed);
 			}
 		}
 
-		ND(5, "pass 2 dst %d is %x %s",
+		nm_prdis(5, "pass 2 dst %d is %x %s",
 			i, d_i, is_vp ? "virtual" : "nic/host");
 		dst_nr = d_i & (NM_BDG_MAXRINGS-1);
 		nrings = dst_na->up.num_rx_rings;
@@ -956,7 +961,7 @@ retry:
 			if (unlikely(cnt > howmany))
 			    break; /* no more space */
 			if (netmap_verbose && cnt > 1)
-				RD(5, "rx %d frags to %d", cnt, j);
+				nm_prlim(5, "rx %d frags to %d", cnt, j);
 			ft_end = ft_p + cnt;
 			if (unlikely(virt_hdr_mismatch)) {
 				bdg_mismatch_datapath(na, dst_na, ft_p, ring, &j, lim, &howmany);
@@ -969,7 +974,7 @@ retry:
 					slot = &ring->slot[j];
 					dst = NMB(&dst_na->up, slot);
 
-					ND("send [%d] %d(%d) bytes at %s:%d",
+					nm_prdis("send [%d] %d(%d) bytes at %s:%d",
 							i, (int)copy_len, (int)dst_len,
 							NM_IFPNAME(dst_ifp), j);
 					/* round to a multiple of 64 */
@@ -977,7 +982,7 @@ retry:
 
 					if (unlikely(copy_len > NETMAP_BUF_SIZE(&dst_na->up) ||
 						     copy_len > NETMAP_BUF_SIZE(&na->up))) {
-						RD(5, "invalid len %d, down to 64", (int)copy_len);
+						nm_prlim(5, "invalid len %d, down to 64", (int)copy_len);
 						copy_len = dst_len = 64; // XXX
 					}
 					if (ft_p->ft_flags & NS_INDIRECT) {
@@ -1013,10 +1018,10 @@ retry:
 			 * i can recover the slots, otherwise must
 			 * fill them with 0 to mark empty packets.
 			 */
-			ND("leftover %d bufs", howmany);
+			nm_prdis("leftover %d bufs", howmany);
 			if (nm_next(lease_idx, lim) == kring->nkr_lease_idx) {
 			    /* yes i am the last one */
-			    ND("roll back nkr_hwlease to %d", j);
+			    nm_prdis("roll back nkr_hwlease to %d", j);
 			    kring->nkr_hwlease = j;
 			} else {
 			    while (howmany-- > 0) {
@@ -1097,14 +1102,14 @@ netmap_vale_vp_txsync(struct netmap_kring *kring, int flags)
 	done = nm_vale_preflush(kring, head);
 done:
 	if (done != head)
-		D("early break at %d/ %d, tail %d", done, head, kring->nr_hwtail);
+		nm_prerr("early break at %d/ %d, tail %d", done, head, kring->nr_hwtail);
 	/*
 	 * packets between 'done' and 'cur' are left unsent.
 	 */
 	kring->nr_hwcur = done;
 	kring->nr_hwtail = nm_prev(done, lim);
-	if (netmap_verbose)
-		D("%s ring %d flags %d", na->up.name, kring->ring_id, flags);
+	if (netmap_debug & NM_DEBUG_TXSYNC)
+		nm_prinf("%s ring %d flags %d", na->up.name, kring->ring_id, flags);
 	return 0;
 }
 
@@ -1154,6 +1159,7 @@ netmap_vale_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	 */
 	nm_bound_var(&npipes, 2, 1, NM_MAXPIPES, NULL);
 	/* validate extra bufs */
+	extrabufs = req->nr_extra_bufs;
 	nm_bound_var(&extrabufs, 0, 0,
 			128*NM_BDG_MAXSLOTS, NULL);
 	req->nr_extra_bufs = extrabufs; /* write back */
@@ -1166,7 +1172,7 @@ netmap_vale_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	/*if (vpna->mfs > netmap_buf_size)  TODO netmap_buf_size is zero??
 		vpna->mfs = netmap_buf_size; */
 	if (netmap_verbose)
-		D("max frame size %u", vpna->mfs);
+		nm_prinf("max frame size %u", vpna->mfs);
 
 	na->na_flags |= NAF_BDG_MAYSLEEP;
 	/* persistent VALE ports look like hw devices
@@ -1180,7 +1186,7 @@ netmap_vale_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	na->nm_krings_create = netmap_vale_vp_krings_create;
 	na->nm_krings_delete = netmap_vale_vp_krings_delete;
 	na->nm_dtor = netmap_vale_vp_dtor;
-	ND("nr_mem_id %d", req->nr_mem_id);
+	nm_prdis("nr_mem_id %d", req->nr_mem_id);
 	na->nm_mem = nmd ?
 		netmap_mem_get(nmd):
 		netmap_mem_private_new(
@@ -1356,7 +1362,8 @@ nm_vi_destroy(const char *name)
 
 	NMG_UNLOCK();
 
-	D("destroying a persistent vale interface %s", ifp->if_xname);
+	if (netmap_verbose)
+		nm_prinf("destroying a persistent vale interface %s", ifp->if_xname);
 	/* Linux requires all the references are released
 	 * before unregister
 	 */
@@ -1434,7 +1441,8 @@ netmap_vi_create(struct nmreq_header *hdr, int autodelete)
 	/* netmap_vp_create creates a struct netmap_vp_adapter */
 	error = netmap_vale_vp_create(hdr, ifp, nmd, &vpna);
 	if (error) {
-		D("error %d", error);
+		if (netmap_debug & NM_DEBUG_VALE)
+			nm_prerr("error %d", error);
 		goto err_1;
 	}
 	/* persist-specific routines */
@@ -1450,11 +1458,11 @@ netmap_vi_create(struct nmreq_header *hdr, int autodelete)
 	if (error) {
 		goto err_2;
 	}
-	ND("returning nr_mem_id %d", req->nr_mem_id);
+	nm_prdis("returning nr_mem_id %d", req->nr_mem_id);
 	if (nmd)
 		netmap_mem_put(nmd);
 	NMG_UNLOCK();
-	ND("created %s", ifp->if_xname);
+	nm_prdis("created %s", ifp->if_xname);
 	return 0;
 
 err_2:

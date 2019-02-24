@@ -86,10 +86,11 @@ nm_os_vfree(void *addr){
 	vfree(addr);
 }
 
-void
-nm_os_selinfo_init(NM_SELINFO_T *si)
+int
+nm_os_selinfo_init(NM_SELINFO_T *si, const char *name)
 {
 	init_waitqueue_head(si);
+	return 0;
 }
 
 void
@@ -1642,11 +1643,19 @@ linux_netmap_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	return (NETDEV_TX_OK);
 }
 
+#define native_change_mtu(na, dev, mtu)					\
+	(((struct net_device_ops *)(na)->if_transmit)->NETMAP_LINUX_CHANGE_MTU(dev, mtu))
+
 int
 linux_netmap_change_mtu(struct net_device *dev, int new_mtu)
 {
-	return -EBUSY;
+	struct netmap_adapter *na = NA(dev);
+
+	if (netmap_buf_size_validate(na, new_mtu))
+		return -EINVAL;
+	return native_change_mtu(na, dev, new_mtu);
 }
+
 
 /* while in netmap mode, we cannot tolerate any change in the
  * number of rx/tx rings and descriptors
@@ -2274,10 +2283,10 @@ ptnetmap_guest_shutdown(struct pci_dev *pdev)
 	if (pdev->device == PTNETMAP_PCI_NETIF_ID) {
 		/* Shutdown the ptnet device. */
 		ptnet_shutdown(pdev);
+	} else if (pdev->device == PTNETMAP_PCI_DEVICE_ID) {
+		/* Shutdown the memdev device. */
+		pci_disable_device(pdev);
 	}
-
-	/* Shutdown the memdev device. */
-	pci_disable_device(pdev);
 }
 
 /*
@@ -2785,6 +2794,7 @@ EXPORT_SYMBOL(netmap_ring_reinit);	/* ring init on error */
 EXPORT_SYMBOL(netmap_reset);		/* ring init routines */
 EXPORT_SYMBOL(netmap_rx_irq);	        /* default irq handler */
 EXPORT_SYMBOL(netmap_no_pendintr);	/* XXX mitigation - should go away */
+EXPORT_SYMBOL(netmap_krings_mode_commit);
 #ifdef WITH_VALE
 EXPORT_SYMBOL(netmap_bdg_regops);	/* bridge configuration routine */
 EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
@@ -2805,6 +2815,9 @@ EXPORT_SYMBOL(netmap_mem_rings_delete);	/* used by veth module */
 #ifdef WITH_PIPES
 EXPORT_SYMBOL(netmap_pipe_txsync);	/* used by veth module */
 EXPORT_SYMBOL(netmap_pipe_rxsync);	/* used by veth module */
+EXPORT_SYMBOL(netmap_pipe_krings_create_both);
+EXPORT_SYMBOL(netmap_pipe_krings_delete_both);
+EXPORT_SYMBOL(netmap_pipe_reg_both);
 #endif /* WITH_PIPES */
 EXPORT_SYMBOL(netmap_verbose);
 EXPORT_SYMBOL(nm_set_native_flags);

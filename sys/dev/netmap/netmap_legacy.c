@@ -68,6 +68,8 @@ nmreq_register_from_legacy(struct nmreq *nmr, struct nmreq_header *hdr,
 	req->nr_rx_slots = nmr->nr_rx_slots;
 	req->nr_tx_rings = nmr->nr_tx_rings;
 	req->nr_rx_rings = nmr->nr_rx_rings;
+	req->nr_host_tx_rings = 0;
+	req->nr_host_rx_rings = 0;
 	req->nr_mem_id = nmr->nr_arg2;
 	req->nr_ringid = nmr->nr_ringid & NETMAP_RING_MASK;
 	if ((nmr->nr_flags & NR_REG_MASK) == NR_REG_DEFAULT) {
@@ -223,7 +225,7 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 		}
 		case NETMAP_PT_HOST_CREATE:
 		case NETMAP_PT_HOST_DELETE: {
-			D("Netmap passthrough not supported yet");
+			nm_prerr("Netmap passthrough not supported yet");
 			return NULL;
 			break;
 		}
@@ -249,6 +251,8 @@ nmreq_from_legacy(struct nmreq *nmr, u_long ioctl_cmd)
 			req->nr_rx_slots = nmr->nr_rx_slots;
 			req->nr_tx_rings = nmr->nr_tx_rings;
 			req->nr_rx_rings = nmr->nr_rx_rings;
+			req->nr_host_tx_rings = 0;
+			req->nr_host_rx_rings = 0;
 			req->nr_mem_id = nmr->nr_arg2;
 		}
 		break;
@@ -263,7 +267,7 @@ oom:
 		}
 		nm_os_free(hdr);
 	}
-	D("Failed to allocate memory for nmreq_xyz struct");
+	nm_prerr("Failed to allocate memory for nmreq_xyz struct");
 
 	return NULL;
 }
@@ -365,7 +369,14 @@ netmap_ioctl_legacy(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		/* Request for the legacy control API. Convert it to a
 		 * NIOCCTRL request. */
 		struct nmreq *nmr = (struct nmreq *) data;
-		struct nmreq_header *hdr = nmreq_from_legacy(nmr, cmd);
+		struct nmreq_header *hdr;
+
+		if (nmr->nr_version < 14) {
+			nm_prerr("Minimum supported API is 14 (requested %u)",
+			    nmr->nr_version);
+			return EINVAL;
+		}
+		hdr = nmreq_from_legacy(nmr, cmd);
 		if (hdr == NULL) { /* out of memory */
 			return ENOMEM;
 		}
@@ -390,14 +401,14 @@ netmap_ioctl_legacy(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 #ifdef __FreeBSD__
 	case FIONBIO:
 	case FIOASYNC:
-		ND("FIONBIO/FIOASYNC are no-ops");
+		/* FIONBIO/FIOASYNC are no-ops. */
 		break;
 
 	case BIOCIMMEDIATE:
 	case BIOCGHDRCMPLT:
 	case BIOCSHDRCMPLT:
 	case BIOCSSEESENT:
-		D("ignore BIOCIMMEDIATE/BIOCSHDRCMPLT/BIOCSHDRCMPLT/BIOCSSEESENT");
+		/* Ignore these commands. */
 		break;
 
 	default:	/* allow device-specific ioctls */

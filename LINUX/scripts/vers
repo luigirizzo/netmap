@@ -59,6 +59,12 @@ sub next
 		} else {
 			return "4.0";
 		}
+	} elsif ($may == 4) {
+		if ($min < 20) {
+			return "4." . ($min + 1);
+		} else {
+			return "5.0";
+		}
 	} else {
 		return "$may." . ($min + 1);
 	}
@@ -74,6 +80,8 @@ sub prev
 			return "2.6.39";
 		} elsif ($may == 4) {
 			return "3.19";
+		} elsif ($may == 5) {
+			return "4.20";
 		} else {
 			die "Unknown version: $v";
 		}

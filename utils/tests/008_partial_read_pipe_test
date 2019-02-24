@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+################################################################################
+# Test objective: check that if the receiving pipe receives less than the
+#                 sending pipe sent, the non-received slot are left inside the
+#                 sending pipe ring.
+# Operations:
+# 1) create a pair of netmap pipes (pipe{1, pipe}1).
+# 2) send X packets to pipe}1 and receive X-Y packets from pipe{1.
+# 2) check that pipe{1 still has X-Y slots pending for transmission.
+################################################################################
+source test_lib
+
+parse_send_recv_arguments "$@"
+verbosity="${verbosity:-}"
+seq="${seq:-}"
+
+fill='h'
+len=274
+num_send=10
+num_recv=7
+pipe="pipeA"
+
+# Pre-open netmap ports for the test. This is needed to avoid a race
+# condition between the sending and receiving ports.
+functional $verbosity -i "netmap:${pipe}{1"
+check_success $? "pre-open netmap:${pipe}{1"
+functional $verbosity -i "netmap:${pipe}}1"
+check_success $? "pre-open netmap:${pipe}}1"
+
+functional $verbosity -i "netmap:${pipe}{1" -r "${len}:${fill}:${num_recv}" $seq &
+p1=$!
+functional $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}" $seq
+e2=$?
+wait $p1
+e1=$?
+check_success $e1 "receive-7 netmap:${pipe}{1"
+check_success $e2 "send-10 netmap:${pipe}}1"
+
+# At the moment get_max_tx_packets and get_avail_tx_packets do not get the
+# netmap port fd from fd_server. They request it directly through nm_open().
+# However, they still read the correct values stored inside each struct
+# netmap ring, because the netmap ports have not been closed in the meanwhile.
+exit_status=0
+max_packets=$(get_max_tx_packets "netmap:${pipe}}1" "$len")
+if [ "$max_packets" == -1 ] ; then
+	exit_status=1
+fi
+check_success $exit_status "get_max_tx_packets netmap:${pipe}}1 $len"
+
+exit_status=0
+avail_packets=$(get_avail_tx_packets "netmap:${pipe}}1" "$len")
+if [ "$avail_packets" == -1 ] ; then
+	exit_status=1
+fi
+check_success $exit_status "get_avail_tx_packets netmap:${pipe}}1 $len"
+
+exit_status=0
+pending_packets="$(($max_packets - $avail_packets))"
+pending_transmissions="$(($num_send - $num_recv))"
+if [ $pending_packets != $pending_transmissions ] ; then
+	exit_status = 1
+fi
+check_exit $pending_transmissions $pending_packets "pending_transmissions=pending_packets"
+
+num_send="$(($avail_packets + 1))"
+functional $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}" $seq
+check_failure $? "send-${num_send} netmap:${pipe}}1"

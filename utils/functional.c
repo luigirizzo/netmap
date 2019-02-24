@@ -328,18 +328,6 @@ build_packet(struct Global *g)
 	                                                           udpofs))))));
 }
 
-// static unsigned
-// tx_bytes_avail(struct netmap_ring *ring, unsigned max_frag_size)
-// {
-// 	unsigned avail_per_slot = ring->nr_buf_size;
-
-// 	if (max_frag_size < avail_per_slot) {
-// 		avail_per_slot = max_frag_size;
-// 	}
-
-// 	return nm_ring_space(ring) * avail_per_slot;
-// }
-
 static int
 tx_flush(struct Global *g)
 {

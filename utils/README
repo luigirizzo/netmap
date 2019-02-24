@@ -1,5 +1,25 @@
-$FreeBSD: head/tools/tools/netmap/README 227614 2011-11-17 12:17:39Z luigi $
+$FreeBSD$
 
-This directory contains examples that use netmap
+This directory contains miscellaneous programs related to netmap
 
-	click*		various click examples
+	ctrl-api-test.c		suite of unit tests for the netmap control ABI
+	sync_kloop_test.c	example program for the CSB mode with sync-kloop
+	extmem-example.c	example program for the extmem feature
+	producer.c		transmitter example with constant per-packet
+				work
+	testmmap.c		test program for interactively test the netmap
+				control ABI (open, mmap, NIOCREGIF, NIOCGETINFO)
+	test_nm.c		example program for nm_inject and nm_dispatch
+	fd_server.[ch]		helper program for integration tests
+	get_avail_tx_packets.c	"
+	get_max_tx_packets.c	"
+	functional.c		"
+	tests/			suite of integration tests (shell scripts)
+	test_lib		helper shell functions for integration tests
+	randomized_tests	script to run all the integration tests
+	switch-modules/		(old) patches for Open VSwitch to use netmap
+	click-test.cfg		(old) simple click example
+	testcsum.c		(old) benchmarks for checksum computation
+	testlock.c		(old) benchmarks for locks and concurrency
+	test_select.c		(old) benchmarks for select() and poll()
+	testmod/		(old) benchmarks for FreeBSD kernel

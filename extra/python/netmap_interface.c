@@ -58,29 +58,23 @@ NetmapInterface_repr(NetmapInterface *self)
     }
 
     result = PyString_FromFormat(
-            "name: '%s'\n"
-            "version:    %u\n"
-            "flags:      0x%08x\n"
-            "tx_rings:   %u\n"
-            "rx_rings:   %u\n"
-            "bufs_head:  %u\n"
-            "spare1[0]:  0x%08x\n"
-            "spare1[1]:  0x%08x\n"
-            "spare1[2]:  0x%08x\n"
-            "spare1[3]:  0x%08x\n"
-            "spare1[4]:  0x%08x\n",
+            "name:           '%s'\n"
+            "version:        %u\n"
+            "flags:          0x%08x\n"
+            "tx_rings:       %u\n"
+            "rx_rings:       %u\n"
+            "bufs_head:      %u\n"
+            "host_tx_rings:  %u\n"
+            "host_rx_rings:  %u\n",
             nifp->ni_name,
             nifp->ni_version,
             nifp->ni_flags,
             nifp->ni_tx_rings,
             nifp->ni_rx_rings,
             nifp->ni_bufs_head,
-            nifp->ni_spare1[0],
-            nifp->ni_spare1[1],
-            nifp->ni_spare1[2],
-            nifp->ni_spare1[3],
-            nifp->ni_spare1[4]
-                );
+            nifp->ni_host_tx_rings,
+            nifp->ni_host_rx_rings
+            );
 
     return result;
 }

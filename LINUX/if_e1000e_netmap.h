@@ -196,7 +196,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 		nic_i = NM_RD_TX_HEAD();
 		if (unlikely(nic_i >= kring->nkr_num_slots)) {
 			/* This should never happen. */
-			D("Warning: TDH wrap %d", nic_i);
+			nm_prerr("TDH wrap at idx %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
 		nm_i = netmap_idx_n2k(kring, nic_i);
@@ -327,7 +327,7 @@ ring_reset:
 /* diagnostic routine to catch errors */
 static void e1000e_no_rx_alloc(struct SOFTC_T *a, int n)
 {
-	D("Error: alloc_rx_buf() should not be called");
+	nm_prerr("alloc_rx_buf() should not be called");
 }
 
 
@@ -356,7 +356,7 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 			si = netmap_idx_n2k(na->rx_rings[0], i);
 			PNMB(na, slot + si, &paddr);
 			if (bi->skb)
-				D("Warning: rx skb still set on slot #%d", i);
+				nm_prerr("Warning: rx skb still set on slot #%d", i);
 			E1000_RX_DESC_EXT(*rxr, i)->NM_E1R_RX_BUFADDR = htole64(paddr);
 		}
 		rxr->next_to_use = 0;

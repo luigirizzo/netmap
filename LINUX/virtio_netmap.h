@@ -199,7 +199,7 @@ virtio_netmap_clean_used_rings(struct virtnet_info *vi,
 			}
 			n++;
 		}
-		D("got %d used bufs on queue tx-%d", n, i);
+		nm_prinf("got %d used bufs on queue tx-%d", n, i);
 	}
 
 	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
@@ -212,7 +212,7 @@ virtio_netmap_clean_used_rings(struct virtnet_info *vi,
 			n++;
 			RXNUM_DEC(vi, i);
 		}
-		D("got %d used bufs on queue rx-%d", n, i);
+		nm_prinf("got %d used bufs on queue rx-%d", n, i);
 	}
 }
 
@@ -238,7 +238,7 @@ virtio_netmap_reclaim_unused(struct virtnet_info *vi)
 		while ((token = virtqueue_detach_unused_buf(vq)) != NULL) {
 			n++;
 		}
-		D("detached %d pending bufs on queue tx-%d", n, i);
+		nm_prinf("detached %d pending bufs on queue tx-%d", n, i);
 	}
 
 	for (i = 0; i < DEV_NUM_RX_QUEUES(vi->dev); i++) {
@@ -250,7 +250,7 @@ virtio_netmap_reclaim_unused(struct virtnet_info *vi)
 			RXNUM_DEC(vi, i);
 			n++;
 		}
-		D("detached %d pending bufs on queue rx-%d", n, i);
+		nm_prinf("detached %d pending bufs on queue rx-%d", n, i);
 	}
 }
 
@@ -284,7 +284,7 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 	}
 
 	if (!(hwrings_pending == 0 || hwrings_pending == hwrings)) {
-		D("virtio-net native adapter can only open "
+		nm_prerr("virtio-net native adapter can only open "
 		  "all RX and TX hw rings");
 		return EINVAL;
 	}
@@ -339,27 +339,11 @@ virtio_netmap_reg(struct netmap_adapter *na, int onoff)
 		}
 
 		/* enable netmap mode */
-		for_rx_tx(t) {
-			for (i = 0; i <= nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_on(kring)) {
-					kring->nr_mode = NKR_NETMAP_ON;
-				}
-			}
-		}
+		netmap_krings_mode_commit(na, onoff);
 		nm_set_native_flags(na);
 	} else {
 		nm_clear_native_flags(na);
-		for_rx_tx(t) {
-			for (i = 0; i <= nma_get_nrings(na, t); i++) {
-				struct netmap_kring *kring = NMR(na, t)[i];
-
-				if (nm_kring_pending_off(kring)) {
-					kring->nr_mode = NKR_NETMAP_OFF;
-				}
-			}
-		}
+		netmap_krings_mode_commit(na, onoff);
 
 		if (hwrings_pending) {
 			/* Get and free any used buffer. This is necessary
@@ -433,7 +417,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 			sg_set_buf(sg + 1, addr, len);
 			nospace = virtqueue_add_outbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (nospace) {
-				RD(3, "virtqueue_add_outbuf failed [err=%d]",
+				nm_prlim(2, "virtqueue_add_outbuf failed [err=%d]",
 				   nospace);
 				break;
 			}
@@ -532,13 +516,13 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			RXNUM_DEC(vi, ring_nr);
 
 			if (unlikely(token != na)) {
-				RD(5, "Received unexpected virtqueue token %p\n",
+				nm_prlim(2, "Received unexpected virtqueue token %p\n",
 						token);
 			} else {
 				/* Skip the virtio-net header. */
 				len -= vnet_hdr_len;
 				if (unlikely(len < 0)) {
-					RD(5, "Truncated virtio-net-header, missing %d"
+					nm_prlim(2, "Truncated virtio-net-header, missing %d"
 							" bytes", -len);
 					len = 0;
 				}
@@ -552,7 +536,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_i;
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}
-	ND("[B] h %d c %d hwcur %d hwtail %d",
+	nm_prdis("[B] h %d c %d hwcur %d hwtail %d",
 			ring->head, ring->cur, kring->nr_hwcur,
 			kring->nr_hwtail);
 
@@ -579,7 +563,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 			sg_set_buf(sg + 1, addr, NETMAP_BUF_SIZE(na));
 			nospace = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (nospace) {
-				RD(3, "virtqueue_add_inbuf failed [err=%d]",
+				nm_prlim(2, "virtqueue_add_inbuf failed [err=%d]",
 				   nospace);
 				break;
 			}
@@ -599,7 +583,7 @@ virtio_netmap_rxsync(struct netmap_kring *kring, int flags)
 	}
 
 
-	ND("[C] h %d c %d t %d hwcur %d hwtail %d",
+	nm_prdis("[C] h %d c %d t %d hwcur %d hwtail %d",
 			ring->head, ring->cur, ring->tail,
 			kring->nr_hwcur, kring->nr_hwtail);
 
@@ -655,7 +639,7 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 			sg_set_buf(sg + 1, addr, NETMAP_BUF_SIZE(na));
 			err = virtqueue_add_inbuf(vq, sg, 2, na, GFP_ATOMIC);
 			if (err < 0) {
-				D("virtqueue_add_inbuf failed");
+				nm_prerr("virtqueue_add_inbuf failed");
 
 				return 0;
 			}
@@ -664,7 +648,7 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 			if (VQ_FULL(vq, err))
 				break;
 		}
-		D("added %d inbufs on queue %d", i, r);
+		nm_prinf("added %d inbufs on queue %d", i, r);
 		virtqueue_kick(vq);
 	}
 	return 1;
@@ -712,11 +696,11 @@ virtio_netmap_attach(struct virtnet_info *vi)
 
 	ret = netmap_attach_ext(&na, sizeof(struct netmap_virtio_adapter), 1);
 	if (ret) {
-		D("Failed to attach virtio-net interface");
+		nm_prerr("Failed to attach virtio-net interface");
 		return;
 	}
 
-	D("virtio attached txq=%d, txd=%d rxq=%d, rxd=%d",
+	nm_prinf("virtio attached txq=%d, txd=%d rxq=%d, rxd=%d",
 			na.num_tx_rings, na.num_tx_desc,
 			na.num_rx_rings, na.num_rx_desc);
 }

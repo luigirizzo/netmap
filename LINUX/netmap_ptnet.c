@@ -45,9 +45,9 @@ module_param(ptnet_gso, bool, 0644);
 //#define HANGCTRL
 
 #if 0  /* Switch to 1 to enable per-packet logs. */
-#define DBG D
+#define DBG nm_prinf
 #else
-#define DBG ND
+#define DBG nm_prdis
 #endif
 
 #define PTNET_DRV_NAME "ptnet"
@@ -64,7 +64,6 @@ struct ptnet_queue {
 
 	/* MSI-X interrupt data structures. */
 	char msix_name[64];
-	cpumask_var_t msix_affinity_mask;
 };
 
 struct ptnet_rx_queue {
@@ -222,7 +221,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	ptnet_sync_tail(ktoa, kring);
 
 	if (unlikely(ptnet_tx_slots(a.ring) < pi->min_tx_slots)) {
-		ND(1, "TX ring unexpected overflow, requeuing");
+		nm_prdis(1, "TX ring unexpected overflow, requeuing");
 
 		return NETDEV_TX_BUSY;
 	}
@@ -271,7 +270,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 		vh->num_buffers = 0; /* unused */
 
-		ND(1, "%s: vnet hdr: flags %x csum_start %u csum_ofs %u hdr_len = "
+		nm_prdis(1, "%s: vnet hdr: flags %x csum_start %u csum_ofs %u hdr_len = "
 		      "%u gso_size %u gso_type %x", __func__, vh->hdr.flags,
 		      vh->hdr.csum_start, vh->hdr.csum_offset, vh->hdr.hdr_len,
 		      vh->hdr.gso_size, vh->hdr.gso_type);
@@ -298,7 +297,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	a.ring->head = a.ring->cur = nm_next(a.head, a.lim);
 
 	if (skb_shinfo(skb)->nr_frags) {
-		ND(1, "TX frags #%u lfsz %u tsz %d gso_segs %d gso_size %d", skb_shinfo(skb)->nr_frags,
+		nm_prdis(1, "TX frags #%u lfsz %u tsz %d gso_segs %d gso_size %d", skb_shinfo(skb)->nr_frags,
 		skb_frag_size(&skb_shinfo(skb)->frags[skb_shinfo(skb)->nr_frags-1]),
 		(int)skb->len, skb_shinfo(skb)->gso_segs, skb_shinfo(skb)->gso_size);
 	}
@@ -312,8 +311,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	if (!XMIT_MORE(skb)) {
 		/* Tell the host to process the new packets, updating cur and
 		 * head in the CSB. */
-		ptnetmap_guest_write_kring_csb(atok, kring->rcur,
-					       kring->rhead);
+		nm_sync_kloop_appl_write(atok, kring->rcur, kring->rhead);
 	}
 
 	/* Ask for a kick from a guest to the host if needed. */
@@ -328,7 +326,10 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		netif_stop_subqueue(netdev, pq->kring_id);
 		atok->appl_need_kick = 1;
 
-		/* Double check. */
+		/* Double check. We need a full barrier to prevent the store
+		 * to atok->appl_need_kick to be reordered with the load from
+		 * ktoa->hwcur and ktoa->hwtail (store-load barrier). */
+		nm_stld_barrier();
 		ptnet_sync_tail(ktoa, kring);
 		if (unlikely(ptnet_tx_slots(a.ring) >= pi->min_tx_slots)) {
 			/* More TX space came in the meanwhile. */
@@ -516,7 +517,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 
 		vh = nmbuf;
 		if (likely(have_vnet_hdr)) {
-			ND(1, "%s: vnet hdr: flags %x csum_start %u "
+			nm_prdis(1, "%s: vnet hdr: flags %x csum_start %u "
 			      "csum_ofs %u hdr_len = %u gso_size %u "
 			      "gso_type %x", __func__, vh->hdr.flags,
 			      vh->hdr.csum_start, vh->hdr.csum_offset,
@@ -545,7 +546,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			head = nm_next(head, lim);
 			nns++;
 			if (unlikely(head == ring->tail)) {
-				ND(1, "Warning: truncated packet, retrying");
+				nm_prdis(1, "Warning: truncated packet, retrying");
 				dev_kfree_skb_any(skb);
 				work_done ++;
 				pi->netdev->stats.rx_frame_errors ++;
@@ -561,7 +562,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 			do {
 				if (!skbdata_avail) {
 					if (skbpage) {
-						ND(1, "add f #%u fsz %lu tsz %d", skb_shinfo(skb)->nr_frags,
+						nm_prdis(1, "add f #%u fsz %lu tsz %d", skb_shinfo(skb)->nr_frags,
 								PAGE_SIZE - skbdata_avail, (int)skb->len);
 						skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
 								skbpage, 0, PAGE_SIZE - skbdata_avail
@@ -598,7 +599,7 @@ ptnet_rx_poll(struct napi_struct *napi, int budget)
 					, PAGE_SIZE
 #endif
 					);
-			ND(1, "RX frags #%u lfsz %lu tsz %d nns %d",
+			nm_prdis(1, "RX frags #%u lfsz %lu tsz %d nns %d",
 			   skb_shinfo(skb)->nr_frags,
 			   PAGE_SIZE - skbdata_avail, (int)skb->len, nns);
 		}
@@ -696,7 +697,11 @@ out_of_slots:
 		napi_complete(napi);
 #endif
 
-		/* Double check for more completed RX slots. */
+		/* Double check for more completed RX slots.
+		 * We need a full barrier to prevent the store to
+		 * atok->appl_need_kick to be reordered with the load from
+		 * ktoa->hwcur and ktoa->hwtail (store-load barrier). */
+		nm_stld_barrier();
 		ptnet_sync_tail(ktoa, kring);
 		if (head != ring->tail) {
 			/* If there is more work to do, disable notifications
@@ -718,8 +723,7 @@ out_of_slots:
 		ring->head = ring->cur = head;
 		kring->rcur = ring->cur;
 		kring->rhead = ring->head;
-		ptnetmap_guest_write_kring_csb(atok, kring->rcur,
-					       kring->rhead);
+		nm_sync_kloop_appl_write(atok, kring->rcur, kring->rhead);
 		/* Kick the host if needed. */
 		if (NM_ACCESS_ONCE(ktoa->kern_need_kick)) {
 			atok->sync_flags = NAF_FORCE_READ;
@@ -796,16 +800,6 @@ ptnet_irqs_init(struct ptnet_info *pi)
 
 	for (i=0; i<pi->num_rings; i++) {
 		struct ptnet_queue *pq = pi->queues[i];
-
-		memset(&pq->msix_affinity_mask, 0, sizeof(pq->msix_affinity_mask));
-		if (!alloc_cpumask_var(&pq->msix_affinity_mask, GFP_KERNEL)) {
-			pr_err("%s: Failed to alloc cpumask var\n", __func__);
-			goto err_masks;
-		}
-	}
-
-	for (i=0; i<pi->num_rings; i++) {
-		struct ptnet_queue *pq = pi->queues[i];
 		irq_handler_t handler = (i < pi->num_tx_rings) ?
 					ptnet_tx_intr : ptnet_rx_intr;
 		unsigned int vector = ptnet_get_irq_vector(pi, i);
@@ -824,17 +818,15 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	return 0;
 
 err_irqs:
-	for (; i>=0; i--) {
+	for (i--; i>=0; i--) {
 		free_irq(ptnet_get_irq_vector(pi, i), pi->queues[i]);
 	}
 	i = pi->num_rings-1;
-err_masks:
-	for (; i>=0; i--) {
-		free_cpumask_var(pi->queues[i]->msix_affinity_mask);
-	}
 err_alloc:
 #ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
 	kfree(pi->msix_entries);
+#else
+	pci_free_irq_vectors(pi->pdev);
 #endif
 	return ret;
 }
@@ -848,9 +840,6 @@ ptnet_irqs_fini(struct ptnet_info *pi)
 		struct ptnet_queue *pq = pi->queues[i];
 
 		free_irq(ptnet_get_irq_vector(pi, i), pq);
-		if (pq->msix_affinity_mask) {
-			free_cpumask_var(pq->msix_affinity_mask);
-		}
 	}
 #ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
 	pci_disable_msix(pi->pdev);
@@ -1008,11 +997,11 @@ ptnet_close(struct net_device *netdev)
 }
 
 static const struct net_device_ops ptnet_netdev_ops = {
-	.ndo_open		= ptnet_open,
-	.ndo_stop		= ptnet_close,
-	.ndo_start_xmit		= ptnet_start_xmit,
-	.ndo_get_stats		= ptnet_get_stats,
-	.ndo_change_mtu		= ptnet_change_mtu,
+	.ndo_open			= ptnet_open,
+	.ndo_stop			= ptnet_close,
+	.ndo_start_xmit			= ptnet_start_xmit,
+	.ndo_get_stats			= ptnet_get_stats,
+	.NETMAP_LINUX_CHANGE_MTU	= ptnet_change_mtu,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= ptnet_netpoll,
 #endif
@@ -1051,10 +1040,10 @@ ptnet_sync_from_csb(struct ptnet_info *pi, struct netmap_adapter *na)
 		kring->nr_hwtail = kring->rtail =
 			kring->ring->tail = ktoa->hwtail;
 
-		ND("%s: csb {hc %u h %u c %u ht %u}", kring->name,
+		nm_prdis("%s: csb {hc %u h %u c %u ht %u}", kring->name,
 		   ktoa->hwcur, atok->head, atok->cur,
 		   ktoa->hwtail);
-		ND("%s: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
+		nm_prdis("%s: kring {hc %u rh %u rc %u h %u c %u ht %u rt %u t %u}",
 		   kring->name, kring->nr_hwcur, kring->rhead, kring->rcur,
 		   kring->ring->head, kring->ring->cur, kring->nr_hwtail,
 		   kring->rtail, kring->ring->tail);
@@ -1081,7 +1070,6 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 	int native = (na == &pi->ptna->hwup.up);
 	struct nm_csb_atok *atok;
 	struct nm_csb_ktoa *ktoa;
-	enum txrx t;
 	int ret = 0;
 	int i;
 
@@ -1142,30 +1130,14 @@ ptnet_nm_register(struct netmap_adapter *na, int onoff)
 		/* If not native, don't call nm_set_native_flags, since we don't want
 		 * to replace ndo_start_xmit method, nor set NAF_NETMAP_ON */
 		if (native) {
-			for_rx_tx(t) {
-				for (i = 0; i <= nma_get_nrings(na, t); i++) {
-					struct netmap_kring *kring = NMR(na, t)[i];
-
-					if (nm_kring_pending_on(kring)) {
-						kring->nr_mode = NKR_NETMAP_ON;
-					}
-				}
-			}
+			netmap_krings_mode_commit(na, onoff);
 			nm_set_native_flags(na);
 		}
 
 	} else {
 		if (native) {
 			nm_clear_native_flags(na);
-			for_rx_tx(t) {
-				for (i = 0; i <= nma_get_nrings(na, t); i++) {
-					struct netmap_kring *kring = NMR(na, t)[i];
-
-					if (nm_kring_pending_off(kring)) {
-						kring->nr_mode = NKR_NETMAP_OFF;
-					}
-				}
-			}
+			netmap_krings_mode_commit(na, onoff);
 		}
 
 		if (pi->ptna->backend_users == 0) {

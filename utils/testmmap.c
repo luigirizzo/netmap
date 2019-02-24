@@ -600,12 +600,14 @@ do_if()
 		printf(" ]");
 	}
 	printf("\n");
-	printf("tx_rings   %u\n", nifp->ni_tx_rings);
-	printf("rx_rings   %u\n", nifp->ni_rx_rings);
-	printf("bufs_head  %u\n", nifp->ni_bufs_head);
-	for (i = 0; i < 5; i++)
+	printf("tx_rings        %u\n", nifp->ni_tx_rings);
+	printf("rx_rings        %u\n", nifp->ni_rx_rings);
+	printf("bufs_head       %u\n", nifp->ni_bufs_head);
+	printf("host_tx_rings   %u\n", nifp->ni_host_tx_rings);
+	printf("host_rx_rings   %u\n", nifp->ni_host_rx_rings);
+	for (i = 0; i < 3; i++)
 		printf("spare1[%d]  %u\n", i, nifp->ni_spare1[i]);
-	for (i = 0; i < (nifp->ni_tx_rings + nifp->ni_rx_rings + 2); i++)
+	for (i = 0; i < (nifp->ni_tx_rings + nifp->ni_rx_rings + nifp->ni_host_tx_rings + nifp->ni_host_rx_rings); i++)
 		printf("ring_ofs[%d] %zd\n", i, nifp->ring_ofs[i]);
 }
 
@@ -789,7 +791,7 @@ dump_payload(char *p, int len)
 
 	/* hexdump routine */
 	for (i = 0; i < len;) {
-		memset(buf, sizeof(buf), ' ');
+		memset(buf, ' ', sizeof(buf));
 		sprintf(buf, "%5d: ", i);
 		i0 = i;
 		for (j = 0; j < 16 && i < len; i++, j++)
@@ -1014,8 +1016,7 @@ nmr_arg_error()
 void
 nmr_arg_extra()
 {
-	printf("arg1:      %d [%sextra rings]\n", curr_nmr.nr_arg1,
-	       (curr_nmr.nr_arg1 ? "" : "no "));
+	printf("arg1:      %d [reserved]\n", curr_nmr.nr_arg1);
 	printf("arg2:      %d [%s memory allocator]\n", curr_nmr.nr_arg2,
 	       (curr_nmr.nr_arg2 == 0
 			? "default"
@@ -1368,23 +1369,25 @@ nmr_body_dump_register(void *b)
 {
 	struct nmreq_register *r = b;
 	int flags		 = 0;
-	printf("offset:    %" PRIu64 "\n", r->nr_offset);
-	printf("memsize:   %" PRIu64 " [", r->nr_memsize);
+	printf("offset:         %" PRIu64 "\n", r->nr_offset);
+	printf("memsize:        %" PRIu64 " [", r->nr_memsize);
 	if (r->nr_memsize < (1 << 20)) {
 		printf("%" PRIu64 " KiB", r->nr_memsize >> 10);
 	} else {
 		printf("%" PRIu64 " MiB", r->nr_memsize >> 20);
 	}
 	printf("]\n");
-	printf("tx_slots:  %" PRIu16 "\n", r->nr_tx_slots);
-	printf("rx_slots:  %" PRIu16 "\n", r->nr_rx_slots);
-	printf("tx_rings:  %" PRIu16 "\n", r->nr_tx_rings);
-	printf("rx_rings:  %" PRIu16 "\n", r->nr_rx_rings);
-	printf("mem_id:    %" PRIu16 " [%s memory region]\n", r->nr_mem_id,
+	printf("tx_slots:       %" PRIu16 "\n", r->nr_tx_slots);
+	printf("rx_slots:       %" PRIu16 "\n", r->nr_rx_slots);
+	printf("tx_rings:       %" PRIu16 "\n", r->nr_tx_rings);
+	printf("rx_rings:       %" PRIu16 "\n", r->nr_rx_rings);
+	printf("host_tx_rings:  %" PRIu16 "\n", r->nr_host_tx_rings);
+	printf("host_rx_rings:  %" PRIu16 "\n", r->nr_host_rx_rings);
+	printf("mem_id:         %" PRIu16 " [%s memory region]\n", r->nr_mem_id,
 	       (r->nr_mem_id == 0 ? "default"
 				  : r->nr_mem_id == 1 ? "global" : "private"));
-	printf("ringid     %" PRIu16 "\n", r->nr_ringid);
-	printf("mode       %" PRIu32 " [", r->nr_mode);
+	printf("ringid          %" PRIu16 "\n", r->nr_ringid);
+	printf("mode            %" PRIu32 " [", r->nr_mode);
 	switch (r->nr_mode) {
 	case NR_REG_DEFAULT:
 		printf("*DEFAULT");
@@ -1406,6 +1409,12 @@ nmr_body_dump_register(void *b)
 		break;
 	case NR_REG_PIPE_SLAVE:
 		printf("*PIPE_SLAVE(%d)", r->nr_ringid);
+		break;
+	case NR_REG_NULL:
+		printf("NULL");
+		break;
+	case NR_REG_ONE_SW:
+		printf("ONE_SW(%d)", r->nr_ringid);
 		break;
 	default:
 		printf("???");
@@ -1465,6 +1474,10 @@ do_register_mode()
 		curr_register.nr_mode = NR_REG_PIPE_MASTER;
 	} else if (strcmp(mode, "pipe-slave") == 0) {
 		curr_register.nr_mode = NR_REG_PIPE_SLAVE;
+	} else if (strcmp(mode, "null") == 0) {
+		curr_register.nr_mode = NR_REG_NULL;
+	} else if (strcmp(mode, "one-sw") == 0) {
+		curr_register.nr_mode = NR_REG_ONE_SW;
 	}
 
 out:
@@ -1544,6 +1557,7 @@ do_register()
 	if (register_update(offset) || register_update(memsize) ||
 	    register_update(tx_slots) || register_update(rx_slots) ||
 	    register_update(tx_rings) || register_update(rx_rings) ||
+	    register_update(host_tx_rings) || register_update(host_rx_rings) ||
 	    register_update(mem_id) || register_update(ringid) ||
 	    register_update(mode) || register_update(flags) ||
 	    register_update(extra_bufs))
@@ -1554,7 +1568,27 @@ do_register()
 static void
 nmr_body_dump_port_info_get(void *b)
 {
-	(void)b;
+	struct nmreq_port_info_get *r = b;
+	int i;
+
+	printf("memsize:        %" PRIu64 " [", r->nr_memsize);
+	if (r->nr_memsize < (1 << 20)) {
+		printf("%" PRIu64 " KiB", r->nr_memsize >> 10);
+	} else {
+		printf("%" PRIu64 " MiB", r->nr_memsize >> 20);
+	}
+	printf("]\n");
+	printf("tx_slots:       %" PRIu16 "\n", r->nr_tx_slots);
+	printf("rx_slots:       %" PRIu16 "\n", r->nr_rx_slots);
+	printf("tx_rings:       %" PRIu16 "\n", r->nr_tx_rings);
+	printf("rx_rings:       %" PRIu16 "\n", r->nr_rx_rings);
+	printf("host_tx_rings:  %" PRIu16 "\n", r->nr_host_tx_rings);
+	printf("host_rx_rings:  %" PRIu16 "\n", r->nr_host_rx_rings);
+	printf("mem_id:         %" PRIu16 " [%s memory region]\n", r->nr_mem_id,
+	       (r->nr_mem_id == 0 ? "default"
+				  : r->nr_mem_id == 1 ? "global" : "private"));
+	for (i = 0; i < 3; i++)
+		printf("pad[%d]         %" PRIu16 "\n", i, r->pad[i]);
 }
 
 static void
@@ -1866,9 +1900,19 @@ do_ctrl()
 		fd = last_fd;
 		goto doit;
 	}
-	fd = atoi(arg);
+	last_fd = fd = atoi(arg);
 doit:
 	ret = ioctl(fd, NIOCCTRL, &curr_hdr);
+	switch (curr_hdr.nr_reqtype) {
+	case NETMAP_REQ_REGISTER:
+		last_memsize = curr_register.nr_memsize;
+		break;
+	case NETMAP_REQ_PORT_INFO_GET:
+		last_memsize = curr_port_info_get.nr_memsize;
+		break;
+	default:
+		break;
+	}
 	output_err(ret, "ioctl(%d, NIOCCTL, %p)=%d", fd, &curr_hdr, ret);
 }
 

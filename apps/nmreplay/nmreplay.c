@@ -21,6 +21,8 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ * $FreeBSD$
  */
 
 
@@ -972,7 +974,7 @@ usage(void)
 {
 	fprintf(stderr,
 	    "usage: nmreplay [-v] [-D delay] [-B {[constant,]bps|ether,bps|real,speedup}] [-L loss]\n"
-	    "\t[-b burst] -f pcap-file -i ifb\n");
+	    "\t[-b burst] -f pcap-file -i <netmap:ifname|valeSSS:PPP>\n");
 	exit(1);
 }
 

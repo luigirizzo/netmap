@@ -249,8 +249,8 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		/* record completed transmissions using TDH */
 		nic_i = READ_TDH(adapter, txr);
-		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
-			D("TDH wrap %d", nic_i);
+		if (unlikely(nic_i >= kring->nkr_num_slots)) {
+			nm_prerr("TDH wrap at idx %d", nic_i);
 			nic_i -= kring->nkr_num_slots;
 		}
 		nm_i = netmap_idx_n2k(kring, nic_i);
@@ -451,14 +451,6 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 		uint64_t paddr;
 		int si = netmap_idx_n2k(na->rx_rings[reg_idx], i);
 
-#if 0
-		// XXX the skb check can go away
-		struct igb_rx_buffer *bi = &rxr->rx_buffer_info[i];
-		if (bi->skb)
-			D("rx buf %d was set", i);
-		bi->skb = NULL; // XXX leak if set
-#endif /* useless */
-
 		PNMB(na, slot + si, &paddr);
 		rx_desc = E1000_RX_DESC_ADV(*rxr, i);
 		rx_desc->read.hdr_addr = 0;
@@ -468,7 +460,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	i = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[reg_idx]);
 
 	wmb();	/* Force memory writes to complete */
-	ND("%s rxr%d.tail %d", na->name, reg_idx, i);
+	nm_prdis("%s rxr%d.tail %d", na->name, reg_idx, i);
 	writel(i, rxr->tail);
 	return 1;	// success
 }
