@@ -624,7 +624,6 @@ nombq(struct netmap_adapter *na, struct mbuf *m)
 		kring->nr_hwcur = head;
 	}
 	if (!stack_host_batch) {
-		ND(1, "done - notify proto 0x%02x", ntohs(*(uint16_t *)(NMB(na, hslot) + na->virt_hdr_len + 12)));
 		netmap_bwrap_intr_notify(kring, 0);
 	}
 	/* as if netmap_transmit + rxsync_from_host done */
@@ -742,6 +741,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct netmap_slot *slot;
 	char *nmb;
 	int mismatch;
+	const u_int bufsize = NETMAP_BUF_SIZE(na);
 
 #ifdef linux
 	/* txsync-ing TX packets are always frags */
@@ -750,17 +750,17 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		return 0;
 	}
 
-	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
+	cb = NMCB_EXT(m, 0, bufsize);
 #else
 	struct mbuf *md = m;
 
 	/* M_EXT or multiple mbufs (i.e., chain) */
 	if ((m->m_flags & M_EXT)) { // not TCP case
-		cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
+		cb = NMCB_EXT(m, 0, bufsize);
 	}
 	if (!cb || !nmcb_valid(cb)) { // TCP case
 		if (MBUF_NONLINEAR(m) && (m->m_next->m_flags & M_EXT)) {
-			cb = NMCB_EXT(m->m_next, 0, NETMAP_BUF_SIZE(na));
+			cb = NMCB_EXT(m->m_next, 0, bufsize);
 		}
 		md = m->m_next;
 	}
@@ -789,7 +789,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		int i, n = MBUF_CLUSTERS(m);
 
 		for (i = 0; i < n; i++) {
-			cb2 = NMCB_EXT(m, i, NETMAP_BUF_SIZE(na));
+			cb2 = NMCB_EXT(m, i, bufsize);
 			nmcb_wstate(cb2, MB_NOREF);
 		}
 #else
@@ -805,7 +805,6 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	/* bring protocol headers in */
 	mismatch = MBUF_HEADLEN(m) - (int)slot->offset;
-
 	if (!mismatch) {
 		/* Length has already been validated */
 		memcpy(nmb + VHLEN(na), MBUF_DATA(m), slot->offset);
@@ -824,19 +823,24 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		iph = (struct nm_iphdr *)(nmb + v + MBUF_NETWORK_OFFSET(m));
 		tcph = (struct nm_tcphdr *)(nmb + v + MBUF_TRANSPORT_OFFSET(m));
 
+#ifdef linux
 		if (na->na_flags & NAF_CSUM) {
 			if (likely(!csum_ctx(&cb->cmd, &cb->off, iph, tcph))) {
 				slot->flags |= NS_CSUM;
 				goto csum_done;
 			}
 		}
+		m->ip_summed = CHECKSUM_COMPLETE;
+#endif
 
 		check = &tcph->check;
 		*check = 0;
 		len = slot->len - v - MBUF_TRANSPORT_OFFSET(m);
 		nm_os_csum_tcpudp_ipv4(iph, tcph, len, check);
 	}
+#ifdef linux
 csum_done:
+#endif
 
 	st_fdtable_add(cb, nmcb_kring(cb));
 
