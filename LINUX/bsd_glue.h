@@ -440,7 +440,16 @@ struct nm_linux_selrecord_t;
 
 #define	tsleep(a, b, c, t)	msleep(10)
 
+#ifdef NETMAP_LINUX_HAVE_DO_GETTIMEOFDAY
 #define microtime		do_gettimeofday		/* debugging */
+#else
+#define microtime(tv)	do {					\
+	struct timespec64 now;					\
+	ktime_get_real_ts64(&now);				\
+	(tv)->tv_sec = now.tv_sec;				\
+	(tv)->tv_usec = now.tv_nsec/1000;			\
+} while (0)
+#endif
 
 
 /*

@@ -1652,6 +1652,15 @@ EOF
 	}
 EOF
 
+  add_test 'have DO_GETTIMEOFDAY' <<EOF
+	#include <linux/time.h>
+
+	void
+	dummy(struct timeval *tv) {
+		do_gettimeofday(tv);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
