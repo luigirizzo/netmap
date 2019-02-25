@@ -933,7 +933,6 @@ int phttpd_read(int fd, struct nm_targ *targ)
 		close(fd);
 		return 0;
 	} else if (unlikely(len < 0)) {
-		perror("read");
 		close(fd);
 		return -1;
 	}
@@ -1138,8 +1137,8 @@ error:
 			close(fd);
 			return -1;
 		}
-		db->paddr += sizeof(struct wal_hdr);
-		db->size -= sizeof(struct wal_hdr);
+		//db->paddr += sizeof(struct wal_hdr);
+		//db->size -= sizeof(struct wal_hdr);
 	}
 	db->fd = fd;
 	return 0;
