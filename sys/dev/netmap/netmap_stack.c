@@ -304,6 +304,7 @@ st_fdtable_alloc(struct netmap_adapter *na)
 			return ENOMEM;
 		}
 		NMR(na, NR_TX)[i]->nkr_ft = (struct nm_bdg_fwd *)ft;
+		nm_prerr("kring %p ft %p", NMR(na, NR_TX)[i], ft);
 	}
 	return 0;
 }
@@ -318,6 +319,7 @@ st_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
 	int i = slot->buf_idx;
 
 	cb->next = NM_FDT_NULL;
+	nm_prerr("kring %p ft %p fde %p fd %d", kring, ft, fde, fd);
 	if (fde->fq_head == NM_FDT_NULL) {
 		fde->fq_head = fde->fq_tail = i;
 		ft->fds[ft->nfds++] = fd;
@@ -691,7 +693,7 @@ csum_ctx(uint32_t *cmd, uint32_t *off,
 		return -1;
 	*cmd = *off = 0;
 	*cmd |= I40E_TX_DESC_CMD_IIPT_IPV4; /* no tso */
-	*off |= (ETH_HDR_LEN >> 1) << I40E_TX_DESC_LENGTH_MACLEN_SHIFT;
+	*off |= (ETHER_HDR_LEN >> 1) << I40E_TX_DESC_LENGTH_MACLEN_SHIFT;
 	*off |= ((4 * (iph->version_ihl & 0x0F)) >> 2)
 		<< I40E_TX_DESC_LENGTH_IPLEN_SHIFT;
 
@@ -760,6 +762,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 	if (!cb || !nmcb_valid(cb)) { // TCP case
 		if (MBUF_NONLINEAR(m) && (m->m_next->m_flags & M_EXT)) {
+			(void)bufsize;
 			cb = NMCB_EXT(m->m_next, 0, bufsize);
 		}
 		md = m->m_next;

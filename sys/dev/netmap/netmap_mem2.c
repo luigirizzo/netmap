@@ -817,7 +817,7 @@ netmap_mem2_ofstophys(struct netmap_mem_d* nmd, vm_ooffset_t offset)
 		return pa;
 	}
 	/* this is only in case of errors */
-	nm_prerr("invalid ofs 0x%x out of 0x%llx 0x%llx 0x%llx", (u_int)o,
+	nm_prerr("invalid ofs 0x%x out of 0x%lx 0x%lx 0x%lx", (u_int)o,
 		p[NETMAP_IF_POOL].memtotal,
 		p[NETMAP_IF_POOL].memtotal
 			+ p[NETMAP_RING_POOL].memtotal,
@@ -1639,7 +1639,7 @@ netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 	nmd->flags |= NETMAP_MEM_FINALIZED;
 
 	if (netmap_verbose)
-		nm_prinf("interfaces %llu KB, rings %llu KB, buffers %llu MB",
+		nm_prinf("interfaces %lu KB, rings %lu KB, buffers %lu MB",
 		    nmd->pools[NETMAP_IF_POOL].memtotal >> 10,
 		    nmd->pools[NETMAP_RING_POOL].memtotal >> 10,
 		    nmd->pools[NETMAP_BUF_POOL].memtotal >> 20);

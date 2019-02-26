@@ -986,7 +986,7 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 	struct netmap_kring *kring = NULL;
 
 	if (unlikely(!sbavail(sb))) {
-		ND("!sbavail so %p soa %p cantrcv %d port %u sblastrec %p", so, st_so(so), !!(so->so_rcv.sb_state & SBS_CANTRCVMORE), ntohs(sotoinpcb(so)->inp_fport), sb->sb_lastrecord);
+		nm_prdis("!sbavail so %p soa %p cantrcv %d port %u sblastrec %p", so, st_so(so), !!(so->so_rcv.sb_state & SBS_CANTRCVMORE), ntohs(sotoinpcb(so)->inp_fport), sb->sb_lastrecord);
 		/* XXX We need trick to set zero-length buffer */
 		struct st_so_adapter *soa = st_so(so);
 		if (likely(soa)) {
@@ -1038,7 +1038,7 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 		tmp = m->m_next;
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
-			RD(1, "no slot");
+			nm_prlim(1, "no slot");
 			m_free(m);
 			continue;
 		}
@@ -1105,7 +1105,7 @@ nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 	m = so->so_rcv.sb_mb;
 	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
 	if (!nmcb_valid(cb)) {
-		D("invalid cb");
+		nm_prinf("invalid cb");
 		return error;
 	}
 	SOCKBUF_LOCK(&so->so_rcv);
@@ -1216,7 +1216,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 			slot->offset = 0;
 			st_fdtable_add(cb, kring);
 		} else {
-			D("strange, eventso %d but not MB_NOREF", slot->fd);
+			nm_prinf("strange, eventso %d but not MB_NOREF", slot->fd);
 		}
 	}
 #endif /* __FreeBSD__ */
@@ -1255,12 +1255,12 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	soa = st_soa_from_fd(na, slot->fd);
 	if (unlikely(!soa)) {
-		D("no soa for fd %d (na %s)", slot->fd, na->name);
+		nm_prinf("no soa for fd %d (na %s)", slot->fd, na->name);
 		return 0;
 	}
 	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);
 	if (unlikely(err < 0)) {
-		D("error %d", err);
+		nm_prinf("error %d", err);
 		nmcb_invalidate(cb);
 	}
 
