@@ -986,13 +986,16 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 	struct netmap_kring *kring = NULL;
 
 	if (unlikely(!sbavail(sb))) {
-		nm_prdis("!sbavail so %p soa %p cantrcv %d port %u sblastrec %p", so, st_so(so), !!(so->so_rcv.sb_state & SBS_CANTRCVMORE), ntohs(sotoinpcb(so)->inp_fport), sb->sb_lastrecord);
+		nm_prdis("!sbavail so %p soa %p cantrcv %d sblastrec %p",
+			 so, st_so(so),
+			 !!(so->so_rcv.sb_state & SBS_CANTRCVMORE),
+			 sb->sb_lastrecord);
 		/* XXX We need trick to set zero-length buffer */
 		struct st_so_adapter *soa = st_so(so);
 		if (likely(soa)) {
 			struct netmap_stack_adapter *sna =
 				(struct netmap_stack_adapter *)soa->na;
-			sna->eventso[curcpu] = soa;
+			sna->eventso[curcpu] = so;
 		}
 		return 0;
 	}
@@ -1207,16 +1210,17 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	 * passing the mbuf.
 	 */
 	if (unlikely(sna->eventso[curcpu] != NULL)) {
-		struct st_so_adapter *soa = sna->eventso[curcpu];
+		NM_SOCK_T *so = sna->eventso[curcpu];
+		struct st_so_adapter *soa = st_so(so);
 
 		sna->eventso[curcpu] = NULL;
-		if (nmcb_rstate(cb) == MB_NOREF) {
+		/* soa is NULL when the soupcall() context closed the socket */
+		if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {
 			slot->fd = soa->fd;
+			nm_prdis("soa %p soa->fd %d", soa, soa->fd);
 			slot->len = VHLEN(na);
 			slot->offset = 0;
 			st_fdtable_add(cb, kring);
-		} else {
-			nm_prinf("strange, eventso %d but not MB_NOREF", slot->fd);
 		}
 	}
 #endif /* __FreeBSD__ */

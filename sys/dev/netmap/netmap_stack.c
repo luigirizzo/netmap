@@ -304,7 +304,7 @@ st_fdtable_alloc(struct netmap_adapter *na)
 			return ENOMEM;
 		}
 		NMR(na, NR_TX)[i]->nkr_ft = (struct nm_bdg_fwd *)ft;
-		nm_prerr("kring %p ft %p", NMR(na, NR_TX)[i], ft);
+		nm_prdis("kring %p ft %p", NMR(na, NR_TX)[i], ft);
 	}
 	return 0;
 }
@@ -319,7 +319,7 @@ st_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
 	int i = slot->buf_idx;
 
 	cb->next = NM_FDT_NULL;
-	nm_prerr("kring %p ft %p fde %p fd %d", kring, ft, fde, fd);
+	nm_prdis("kring %p ft %p fde %p fd %d", kring, ft, fde, fd);
 	if (fde->fq_head == NM_FDT_NULL) {
 		fde->fq_head = fde->fq_tail = i;
 		ft->fds[ft->nfds++] = fd;
@@ -1137,17 +1137,18 @@ st_unregister_socket(struct st_so_adapter *soa)
 	NM_SOCK_T *so = soa->so;
 	struct netmap_stack_adapter *sna = (struct netmap_stack_adapter *)soa->na;
 
+	nm_prdis("so %p soa %p fd %d", so, soa, soa->fd);
 	if (!sna) {
-		nm_prinf("no sna");
+		nm_prerr("no sna");
 		//nm_os_free(soa);
 		return;
 	}
 	if (!soa) {
-		nm_prinf("no soa");
+		nm_prerr("no soa");
 		return;
 	}
 	if (soa->fd >= sna->so_adapters_max) {
-		nm_prinf("WARNING: non-registered or invalid fd %d", soa->fd);
+		nm_prerr("WARNING: non-registered or invalid fd %d", soa->fd);
 	} else {
 		sna->so_adapters[soa->fd] = NULL;
 		NM_SOCK_LOCK(so);
