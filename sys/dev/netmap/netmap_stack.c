@@ -306,7 +306,7 @@ st_fdtable_alloc(struct netmap_adapter *na)
 		}
 		NMR(na, NR_TX)[i]->nkr_ft = (struct nm_bdg_fwd *)ft;
 		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prinfo("kring %p ft %p", NMR(na, NR_TX)[i], ft);
+			nm_prinf("kring %p ft %p", NMR(na, NR_TX)[i], ft);
 	}
 	return 0;
 }
@@ -496,7 +496,8 @@ st_poststack(struct netmap_kring *kring)
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
 					if (netmap_debug & NM_DEBUG_STACK)
-						nm_prlim("null ts %p next %u",
+						nm_prlim(1,
+							"null ts %p next %u",
 							ts, next);
 					goto skip;
 				}

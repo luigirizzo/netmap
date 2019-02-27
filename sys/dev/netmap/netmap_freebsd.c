@@ -1195,6 +1195,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	nmcbw(cb, kring, slot);
 	nmcb_wstate(cb, MB_STACK);
+	slot->fd = 0;
 	if (ntohs(*(uint16_t *)((char *)m->m_data + 12)) == ETHERTYPE_IP) {
 		CURVNET_SET_QUIET(ifp->if_vnet);
 		M_SETFIB(m, ifp->if_fib);
@@ -1215,6 +1216,9 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		NM_SOCK_T *so = sna->eventso[curcpu];
 		struct st_so_adapter *soa = st_so(so);
 
+		if (unlikely(slot->fd != 0)) {
+			panic("eventso with slot fd set");
+		}
 		sna->eventso[curcpu] = NULL;
 		/* soa is NULL when the soupcall() context closed the socket */
 		if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {

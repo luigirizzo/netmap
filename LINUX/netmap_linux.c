@@ -1280,6 +1280,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		return 0; // drop and skip
 
 	nmcb_wstate(cb, MB_STACK);
+	slot->fd = 0;
 	if (slot->flags & NS_CSUM) {
 		m->ip_summed = CHECKSUM_UNNECESSARY;
 		slot->flags &= ~NS_CSUM;
