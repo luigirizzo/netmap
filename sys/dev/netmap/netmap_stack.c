@@ -201,7 +201,8 @@ st_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 		return;
 	} else if (!(likely((uintptr_t)slot >= (uintptr_t)slots) &&
 	      likely((uintptr_t)slot < (uintptr_t)(slots + pool->num)))) {
-		nm_prinf("WARNING: invalid slot");
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prerr("cannot dequeue slot not in the extra pool");
 		return;
 	}
 
@@ -304,7 +305,8 @@ st_fdtable_alloc(struct netmap_adapter *na)
 			return ENOMEM;
 		}
 		NMR(na, NR_TX)[i]->nkr_ft = (struct nm_bdg_fwd *)ft;
-		nm_prdis("kring %p ft %p", NMR(na, NR_TX)[i], ft);
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prinfo("kring %p ft %p", NMR(na, NR_TX)[i], ft);
 	}
 	return 0;
 }
@@ -417,7 +419,8 @@ st_poststack(struct netmap_kring *kring)
 
 	/* XXX perhaps this is handled later? */
 	if (unlikely(b->bdg_active_ports < 3)) {
-		nm_prlim(1, "only 1 or 2 active ports");
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prlim(1, "only 1 or 2 active ports");
 		goto runlock;
 	}
 	/* Now, we know how many packets go to the receiver */
@@ -492,7 +495,9 @@ st_poststack(struct netmap_kring *kring)
 				next = cb->next;
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
-					nm_prdis(1, "null ts %p next %u", ts, next);
+					if (netmap_debug & NM_DEBUG_STACK)
+						nm_prlim("null ts %p next %u",
+							ts, next);
 					goto skip;
 				}
 				if (nmcb_rstate(cb) == MB_TXREF) {
@@ -931,8 +936,10 @@ st_extra_alloc(struct netmap_adapter *na)
 			kring->extra = pool;
 
 			n = netmap_extra_alloc(na, &next, want);
-			if (n < want)
-				nm_prinf("allocated only %u bufs", n);
+			if (n < want) {
+				if (netmap_debug & NM_DEBUG_STACK)
+					nm_prinf("allocated only %u bufs", n);
+			}
 			kring->extra->num = n;
 
 			if (n) {
@@ -980,7 +987,8 @@ st_mbufpool_alloc(struct netmap_adapter *na)
 			nm_os_malloc(na->num_tx_desc *
 				sizeof(struct mbuf *));
 		if (!kring->tx_pool) {
-			nm_prinf("tx_pool allocation failed");
+			if (netmap_debug & NM_DEBUG_STACK)
+				nm_prinf("tx_pool allocation failed");
 			error = ENOMEM;
 			break;
 		}
@@ -1037,7 +1045,8 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 		int i, error;
 
 		if (bna->up.na_bdg->bdg_active_ports > 3) {
-			nm_prinf("%s: stack port at this point supports only one NIC",
+			if (netmap_debug & NM_DEBUG_STACK)
+				nm_prinf("%s: only one NIC is supported now",
 					na->name);
 			return ENOTSUP;
 		}
@@ -1060,12 +1069,14 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 			return error;
 
 		if (st_extra_alloc(na)) {
-			nm_prinf("extra_alloc failed for slave");
+			if (netmap_debug & NM_DEBUG_STACK)
+				nm_prinf("extra_alloc failed for slave");
 			netmap_bwrap_reg(na, 0);
 			return ENOMEM;
 		}
 		if (st_mbufpool_alloc(na)) {
-			nm_prinf("mbufpool_alloc failed for slave");
+			if (netmap_debug & NM_DEBUG_STACK)
+				nm_prinf("mbufpool_alloc failed for slave");
 			st_extra_free(na);
 			netmap_bwrap_reg(na, 0);
 			return ENOMEM;
@@ -1139,16 +1150,19 @@ st_unregister_socket(struct st_so_adapter *soa)
 
 	nm_prdis("so %p soa %p fd %d", so, soa, soa->fd);
 	if (!sna) {
-		nm_prerr("no sna");
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prerr("no sna");
 		//nm_os_free(soa);
 		return;
 	}
 	if (!soa) {
-		nm_prerr("no soa");
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prerr("no soa");
 		return;
 	}
 	if (soa->fd >= sna->so_adapters_max) {
-		nm_prerr("WARNING: non-registered or invalid fd %d", soa->fd);
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prerr("non-registered or invalid fd %d", soa->fd);
 	} else {
 		sna->so_adapters[soa->fd] = NULL;
 		NM_SOCK_LOCK(so);
@@ -1223,7 +1237,8 @@ st_register_fd(struct netmap_adapter *na, int fd)
 
 		new = nm_os_malloc(sizeof(new) * newsize);
 		if (!new) {
-			nm_prinf("failed to extend fd->so_adapter table");
+			if (netmap_debug & NM_DEBUG_STACK)
+				nm_prerr("failed to extend fdtable");
 			NMG_UNLOCK();
 			return ENOMEM;
 		}
@@ -1245,7 +1260,8 @@ st_register_fd(struct netmap_adapter *na, int fd)
 	sopt.sopt_val = &on;
 	sopt.sopt_valsize = sizeof(on);
 	if (sosetopt(so, &sopt) < 0) {
-		nm_prlim(1, "WARNING: failed sosetopt(TCP_NODELAY)");
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prlim(1, "failed to set TCP_NODELAY");
 	}
 	/*serialize simultaneous accept/config */
 	NM_SOCK_LOCK(so); // sosetopt() internally locks socket
@@ -1539,8 +1555,6 @@ netmap_stack_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	 */
 	vpna->mfs = NM_BDG_MFS_DEFAULT;
 	vpna->last_smac = ~0llu;
-	if (netmap_verbose)
-		nm_prinf("max frame size %u", vpna->mfs);
 
 	na->na_flags |= NAF_BDG_MAYSLEEP;
 	/*

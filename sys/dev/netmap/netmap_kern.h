@@ -1809,6 +1809,7 @@ enum {                                  /* debug flags */
 	NM_DEBUG_MEM = 0x4000,		/* verbose memory allocations/deallocations */
 	NM_DEBUG_VALE = 0x8000,		/* debug messages from memory allocators */
 	NM_DEBUG_BDG = NM_DEBUG_VALE,
+	NM_DEBUG_STACK = 0x10000,
 };
 
 extern int netmap_txsync_retry;

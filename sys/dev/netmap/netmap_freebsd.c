@@ -1041,7 +1041,8 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 		tmp = m->m_next;
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
-			nm_prlim(1, "no slot");
+			if (netmap_debug & NM_DEBUG_STACK)
+				nm_prlim(1, "no slot");
 			m_free(m);
 			continue;
 		}
@@ -1108,7 +1109,8 @@ nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 	m = so->so_rcv.sb_mb;
 	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
 	if (!nmcb_valid(cb)) {
-		nm_prinf("invalid cb");
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prinf("invalid cb");
 		return error;
 	}
 	SOCKBUF_LOCK(&so->so_rcv);
@@ -1259,12 +1261,14 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	soa = st_soa_from_fd(na, slot->fd);
 	if (unlikely(!soa)) {
-		nm_prinf("no soa for fd %d (na %s)", slot->fd, na->name);
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prinf("no soa of fd %d (na %s)", slot->fd, na->name);
 		return 0;
 	}
 	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);
 	if (unlikely(err < 0)) {
-		nm_prinf("error %d", err);
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prinf("error %d", err);
 		nmcb_invalidate(cb);
 	}
 
