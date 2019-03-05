@@ -441,7 +441,16 @@ struct nm_linux_selrecord_t;
 #define	tsleep(a, b, c, t)	msleep(10)
 
 #define microtime		do_gettimeofday		/* debugging */
-
+#ifndef NETMAP_LINUX_HAVE_DO_GETTIMEOFDAY
+#define do_gettimeofday(tv_)					\
+	do {							\
+		struct timespec64 now_;				\
+								\
+		ktime_get_real_ts64(&now_);			\
+		(tv_)->tv_sec = now_.tv_sec;			\
+		(tv_)->tv_usec = now_.tv_nsec/1000;		\
+	} while (0)
+#endif /* !NETMAP_LINUX_HAVE_DO_GETTIMEOFDAY */
 
 /*
  * The following trick is to map a struct cdev into a struct miscdevice
