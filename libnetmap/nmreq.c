@@ -452,15 +452,15 @@ nmreq_option_parsekeys(const char *prefix, char *body, struct nmreq_opt_parser *
 
 
 static int
-nmreq_option_decode1(char *opt, struct nmreq_opt_parser parsers[], int nparsers,
+nmreq_option_decode1(char *opt, struct nmreq_opt_parser *parsers,
 		void *token, struct nmctx *ctx)
 {
 	struct nmreq_opt_parser *p;
 	const char *prefix;
 	char *scan;
 	char delim;
-	int i;
 	struct nmreq_parse_ctx pctx;
+	int i;
 
 	prefix = opt;
 	/* find the delimiter */
@@ -470,16 +470,15 @@ nmreq_option_decode1(char *opt, struct nmreq_opt_parser parsers[], int nparsers,
 	*scan = '\0';
 	scan++;
 	/* find the prefix */
-	for (i = 0; i < nparsers; i++) {
-		if (!strcmp(prefix, parsers[i].prefix))
+	for (p = parsers; p != NULL; p = p->next) {
+		if (!strcmp(prefix, p->prefix))
 			break;
 	}
-	if (i == nparsers) {
+	if (p == NULL) {
 		nmctx_ferror(ctx, "unknown option: '%s'", prefix);
 		errno = EINVAL;
 		return -1;
 	}
-	p = parsers + i; /* shortcut */
 	if (p->flags & NMREQ_OPTF_DISABLED) {
 		nmctx_ferror(ctx, "option '%s' is not supported", prefix);
 		errno = EOPNOTSUPP;
@@ -524,7 +523,7 @@ nmreq_option_decode1(char *opt, struct nmreq_opt_parser parsers[], int nparsers,
 
 int
 nmreq_options_decode(const char *opt, struct nmreq_opt_parser parsers[],
-		int nparsers, void *token, struct nmctx *ctx)
+		void *token, struct nmctx *ctx)
 {
 	const char *scan, *opt1;
 	char *w;
@@ -561,7 +560,7 @@ nmreq_options_decode(const char *opt, struct nmreq_opt_parser parsers[],
 		}
 		memcpy(w, opt1, len);
 		w[len] = '\0';
-		ret = nmreq_option_decode1(w, parsers, nparsers, token, ctx);
+		ret = nmreq_option_decode1(w, parsers, token, ctx);
 		nmctx_free(ctx, w);
 		if (ret < 0)
 			return -1;

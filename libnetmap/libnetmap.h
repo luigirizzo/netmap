@@ -468,7 +468,6 @@ int nmreq_register_decode(const char **pmode, struct nmreq_register *reg,
 /* nmreq_options_decode - parse the "options" part of the portspec
  * @opt:	pointer to the option list
  * @parsers:	list of option parsers
- * @nr_parsers:	number of parsers in the list
  * @token:	token to pass to each parser
  * @ctx:	pointer to the nmctx to use (for errors and malloc/free)
  *
@@ -484,7 +483,7 @@ int nmreq_register_decode(const char **pmode, struct nmreq_register *reg,
  */
 struct nmreq_opt_parser;
 int nmreq_options_decode(const char *opt, struct nmreq_opt_parser *parsers,
-		int nr_parsers, void *token, struct nmctx *ctx);
+		void *token, struct nmctx *ctx);
 
 struct nmreq_parse_ctx;
 /* type of the option-parsers callbacks */
@@ -511,6 +510,8 @@ struct nmreq_opt_parser {
 	unsigned int flags;
 #define NMREQ_OPTF_DISABLED     (1U << 0)
 #define NMREQ_OPTF_ALLOWEMPTY	(1U << 1)	/* =value can be omitted */
+
+	struct nmreq_opt_parser *next;	/* list of options */
 
 	/* recognized keys */
 	struct nmreq_opt_key keys[NMREQ_OPT_MAXKEYS];

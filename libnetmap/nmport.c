@@ -137,35 +137,60 @@ nmport_undo_extmem(struct nmport_d *d)
 	d->extmem_autounmap = 0;
 }
 
+/* head of the list of options */
+static struct nmreq_opt_parser *nmport_opt_parsers;
+
 #define NPOPT_PARSER(o)		nmport_opt_##o##_parser
 #define NPOPT_DESC(o)		nmport_opt_##o##_desc
 #define NPOPT_DECL(o, f, d)						\
 static int NPOPT_PARSER(o)(struct nmreq_parse_ctx *);			\
-static struct nmreq_opt_parser __attribute__((section(".npopts"),used))	\
-	NPOPT_DESC(o) = {						\
+static struct nmreq_opt_parser NPOPT_DESC(o) = {			\
 	.prefix = #o,							\
 	.parse = NPOPT_PARSER(o),					\
 	.flags = (f),							\
 	.default_key = (d),						\
 	.nr_keys = 0,							\
-};
+	.next = NULL,							\
+};									\
+static void __attribute__((constructor))				\
+nmport_opt_##o##_ctor(void)						\
+{									\
+	NPOPT_DESC(o).next = nmport_opt_parsers;			\
+	nmport_opt_parsers = &NPOPT_DESC(o);				\
+}
 struct nmport_key_desc {
 	struct nmreq_opt_parser *option;
 	const char *key;
 	unsigned int flags;
-	int *id;
+	int id;
 };
-#define NPKEY_ID(o, k)		nmport_opt_##o##_key_##k##_id
+static void
+nmport_opt_key_ctor(struct nmport_key_desc *k)
+{
+	struct nmreq_opt_parser *o = k->option;
+	struct nmreq_opt_key *ok;
+
+	k->id = o->nr_keys;
+	ok = &o->keys[k->id];
+	ok->key = k->key;
+	ok->id = k->id;
+	ok->flags = k->flags;
+	o->nr_keys++;
+}
 #define NPKEY_DESC(o, k)	nmport_opt_##o##_key_##k##_desc
+#define NPKEY_ID(o, k)		(NPKEY_DESC(o, k).id)
 #define NPKEY_DECL(o, k, f)						\
-static int NPKEY_ID(o, k);						\
-static struct nmport_key_desc __attribute__((section(".npkeys"),used))	\
-	NPKEY_DESC(o, k) = {						\
+static struct nmport_key_desc NPKEY_DESC(o, k) = {			\
 	.option = &NPOPT_DESC(o),					\
 	.key = #k,							\
 	.flags = (f),							\
-	.id = &NPKEY_ID(o, k),						\
-};
+	.id = -1,							\
+};									\
+static void __attribute__((constructor))				\
+nmport_opt_##o##_key_##k##_ctor(void)					\
+{									\
+	nmport_opt_key_ctor(&NPKEY_DESC(o, k));				\
+}
 #define nmport_key(p, o, k)	((p)->keys[NPKEY_ID(o, k)])
 #define nmport_defkey(p, o)	((p)->keys[NPOPT_DESC(o).default_key])
 
@@ -189,8 +214,6 @@ NPOPT_DECL(conf, 0, -1)
 	NPKEY_DECL(conf, tx_slots, 0)
 	NPKEY_DECL(conf, rx_slots, 0)
 
-static struct nmreq_opt_parser *nmport_opt_parsers;
-static int nmport_opt_parsers_n;
 
 static int
 NPOPT_PARSER(share)(struct nmreq_parse_ctx *p)
@@ -299,11 +322,9 @@ NPOPT_PARSER(conf)(struct nmreq_parse_ctx *p)
 void
 nmport_disable_opt(const char *opt)
 {
-	int i;
+	struct nmreq_opt_parser *p;
 
-	for (i = 0; i < nmport_opt_parsers_n; i++) {
-		struct nmreq_opt_parser *p =
-			nmport_opt_parsers + i;
+	for (p = nmport_opt_parsers; p != NULL; p = p->next) {
 		if (!strcmp(p->prefix, opt)) {
 			p->flags |= NMREQ_OPTF_DISABLED;
 		}
@@ -313,11 +334,9 @@ nmport_disable_opt(const char *opt)
 int
 nmport_enable_opt(const char *opt)
 {
-	int i;
+	struct nmreq_opt_parser *p;
 
-	for (i = 0; i < nmport_opt_parsers_n; i++) {
-		struct nmreq_opt_parser *p =
-			nmport_opt_parsers + i;
+	for (p = nmport_opt_parsers; p != NULL; p = p->next) {
 		if (!strcmp(p->prefix, opt)) {
 			p->flags &= ~NMREQ_OPTF_DISABLED;
 			return 0;
@@ -343,8 +362,7 @@ nmport_parse(struct nmport_d *d, const char *ifname)
 	}
 
 	/* parse the options, if any */
-	if (nmreq_options_decode(scan, nmport_opt_parsers,
-				nmport_opt_parsers_n, d, d->ctx) < 0) {
+	if (nmreq_options_decode(scan, nmport_opt_parsers, d, d->ctx) < 0) {
 		goto err;
 	}
 	return 0;
@@ -696,26 +714,4 @@ nmport_inject(struct nmport_d *d, const void *buf, size_t size)
 		return size;
 	}
 	return 0; /* fail */
-}
-
-static void __attribute__((constructor)) nmport_init(void)
-{
-	extern struct nmreq_opt_parser npopts_start, npopts_end;
-	extern struct nmport_key_desc npkeys_start, npkeys_end;
-	struct nmport_key_desc *k;
-
-	nmport_opt_parsers = &npopts_start;
-	nmport_opt_parsers_n = &npopts_end - &npopts_start;
-	for (k = &npkeys_start; k != &npkeys_end; k++) {
-		struct nmreq_opt_parser *o = k->option;
-		struct nmreq_opt_key *ok;
-		int id = o->nr_keys;
-		//printf("key %s of option %s id %d\n", k->key, o->prefix, id);
-		*k->id = id;
-		ok = &o->keys[id];
-		ok->key = k->key;
-		ok->id = id;
-		ok->flags = k->flags;
-		o->nr_keys++;
-	}
 }

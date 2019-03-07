@@ -5,14 +5,11 @@ CFLAGS=-g
 CFLAGS += -I $(SRCDIR)/sys
 VPATH = $(SRCDIR)/libnetmap
 SRCS=$(notdir $(wildcard $(SRCDIR)/libnetmap/*.c))
-OBJS=$(filter-out nmport.o,$(SRCS:.c=.o)) nmport2.o
+OBJS=$(SRCS:.c=.o)
 
 all: libnetmap.a
 
 $(OBJS): libnetmap.h
-
-nmport2.o: nmport.o
-	$(LD) -r -T $(VPATH)/npopts.lds nmport.o -o $@
 
 libnetmap.a: $(OBJS)
 	$(AR) r $@ $^
