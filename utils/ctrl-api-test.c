@@ -1121,7 +1121,7 @@ bad_extmem_option(struct TestContext *ctx)
 	pools_info_fill(&pools_info);
 	/* Request a large ring size, to make sure that the kernel
 	 * rejects our request. */
-	pools_info.nr_ring_pool_objsize = (1 << 16);
+	pools_info.nr_ring_pool_objsize = (1 << 20);
 
 	return _extmem_option(ctx, &pools_info) < 0 ? 0 : -1;
 }
@@ -1147,6 +1147,10 @@ duplicate_extmem_options(struct TestContext *ctx)
 
 	save1 = e1;
 	save2 = e2;
+
+	strncpy(ctx->ifname_ext, "vale0:0", sizeof(ctx->ifname_ext));
+	ctx->nr_tx_slots = 16;
+	ctx->nr_rx_slots = 16;
 
 	ret = port_register_hwall(ctx);
 	if (ret >= 0) {
