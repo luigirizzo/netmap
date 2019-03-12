@@ -1829,13 +1829,15 @@ netmap_ring_reinit(struct netmap_kring *kring)
  *
  */
 int
-netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
-			uint16_t nr_ringid, uint64_t nr_flags)
+netmap_interp_ringid(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 {
 	struct netmap_adapter *na = priv->np_na;
+	struct nmreq_register *reg = (struct nmreq_register *)hdr->nr_body;
 	int excluded_direction[] = { NR_TX_RINGS_ONLY, NR_RX_RINGS_ONLY };
 	enum txrx t;
 	u_int j;
+	u_int nr_flags = reg->nr_flags, nr_mode = reg->nr_mode,
+	      nr_ringid = reg->nr_ringid;
 
 	for_rx_tx(t) {
 		if (nr_flags & excluded_direction[t]) {
@@ -1929,19 +1931,19 @@ netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
  * for all rings is the same as a single ring.
  */
 static int
-netmap_set_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
-		uint16_t nr_ringid, uint64_t nr_flags)
+netmap_set_ringid(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 {
 	struct netmap_adapter *na = priv->np_na;
+	struct nmreq_register *reg = (struct nmreq_register *)hdr->nr_body;
 	int error;
 	enum txrx t;
 
-	error = netmap_interp_ringid(priv, nr_mode, nr_ringid, nr_flags);
+	error = netmap_interp_ringid(priv, hdr);
 	if (error) {
 		return error;
 	}
 
-	priv->np_txpoll = (nr_flags & NR_NO_TX_POLL) ? 0 : 1;
+	priv->np_txpoll = (reg->nr_flags & NR_NO_TX_POLL) ? 0 : 1;
 
 	/* optimization: count the users registered for more than
 	 * one ring, which are the ones sleeping on the global queue.
@@ -2286,7 +2288,7 @@ netmap_buf_size_validate(const struct netmap_adapter *na, unsigned mtu) {
  */
 int
 netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
-	uint32_t nr_mode, uint16_t nr_ringid, uint64_t nr_flags)
+	struct nmreq_header *hdr)
 {
 	struct netmap_if *nifp = NULL;
 	int error;
@@ -2311,7 +2313,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	}
 
 	/* compute the range of tx and rx rings to monitor */
-	error = netmap_set_ringid(priv, nr_mode, nr_ringid, nr_flags);
+	error = netmap_set_ringid(priv, hdr);
 	if (error)
 		goto err_put_lut;
 
@@ -2552,8 +2554,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 					break;
 				}
 
-				error = netmap_do_regif(priv, na, req->nr_mode,
-							req->nr_ringid, req->nr_flags);
+				error = netmap_do_regif(priv, na, hdr);
 				if (error) {    /* reg. failed, release priv and ref */
 					break;
 				}
