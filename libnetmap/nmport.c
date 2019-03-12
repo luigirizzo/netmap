@@ -216,6 +216,27 @@ nmport_extmem_getinfo(struct nmport_d *d)
 	return &d->extmem->nro_info;
 }
 
+int
+nmport_offset(struct nmport_d *d, uint64_t initial, uint64_t maxoff, uint64_t bits)
+{
+	struct nmctx *ctx = d->ctx;
+	struct nmreq_opt_offsets *opt;
+
+	opt = nmctx_malloc(ctx, sizeof(*opt));
+	if (opt == NULL) {
+		nmctx_ferror(ctx, "%s: cannot allocate offset option", d->hdr.nr_name);
+		errno = ENOMEM;
+		return -1;
+	}
+	memset(opt, 0, sizeof(*opt));
+	opt->nro_opt.nro_reqtype = NETMAP_REQ_OPT_OFFSETS;
+	opt->nro_offset_bits = bits;
+	opt->nro_initial_offset = initial;
+	opt->nro_max_offset = maxoff;
+	nmreq_push_option(&d->hdr, &opt->nro_opt);
+	return 0;
+}
+
 /* head of the list of options */
 static struct nmreq_opt_parser *nmport_opt_parsers;
 
@@ -295,6 +316,9 @@ NPOPT_DECL(conf, 0)
 	NPKEY_DECL(conf, host_rx_rings, 0)
 	NPKEY_DECL(conf, tx_slots, 0)
 	NPKEY_DECL(conf, rx_slots, 0)
+NPOPT_DECL(offset, NMREQ_OPTF_DISABLED)
+	NPKEY_DECL(offset, initial, NMREQ_OPTK_DEFAULT|NMREQ_OPTK_MUSTSET)
+	NPKEY_DECL(offset, bits, 0)
 
 
 static int
@@ -398,6 +422,22 @@ NPOPT_PARSER(conf)(struct nmreq_parse_ctx *p)
 		d->reg.nr_rx_slots = atoi(nmport_key(p, conf, rx_slots));
 	}
 	return 0;
+}
+
+static int
+NPOPT_PARSER(offset)(struct nmreq_parse_ctx *p)
+{
+	struct nmport_d *d;
+	uint64_t initial, bits;
+
+	d = p->token;
+
+	initial = atoi(nmport_key(p, offset, initial));
+	bits = 0;
+	if (nmport_key(p, offset, bits) != NULL)
+		bits = atoi(nmport_key(p, offset, bits));
+
+	return nmport_offset(d, initial, initial, bits);
 }
 
 

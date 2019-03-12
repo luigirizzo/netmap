@@ -149,6 +149,23 @@ struct nmem_d;
  *			file must be assigned. The other keys default to zero,
  *			causing netmap to take the corresponding values from
  *			the priv_{if,ring,buf}_{num,size} sysctls.
+ *
+ *  offset (multi-key)
+ *			reserve (part of) the ptr fields as an offset field
+ *			and write an initial offset into them.
+ *
+ *			The keys are:
+ *
+ *		        bits		number of bits of ptr to use
+ *		       *initial		initial offset value
+ *
+ *		        initial must be assigned. If bits is omitted, it
+ *		        defaults to the entire ptr field. The max offset is set
+ *		        at the same value as the initial offset. Note that the
+ *		        actual values may be increased by the kernel.
+ *
+ *		        This option is disabled by default (see
+ *			nmport_enable_option() below)
  */
 
 
@@ -394,6 +411,15 @@ int nmport_extmem_from_file(struct nmport_d *d, const char *fname);
  * registration.
  */
 struct nmreq_pools_info* nmport_extmem_getinfo(struct nmport_d *d);
+
+
+/* nmport_offset - use offsets for this port
+ * @initial	the initial offset for all the slots
+ * @maxoff	the maximum offset
+ * @bits	the number of bits of slot->ptr to use for the offsets
+ */
+int nmport_offset(struct nmport_d *d, uint64_t initial, uint64_t maxoff,
+		uint64_t bits);
 
 /* enable/disable options
  *

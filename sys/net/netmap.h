@@ -297,11 +297,24 @@ struct netmap_ring {
 
 	struct timeval	ts;		/* (k) time of last *sync() */
 
+	/* offset_mask is used to isolate the part of the ptr field
+	 * in the slots used to contain an offset in the buffer.
+	 * It is zero if the ring has not be opened using the
+	 * NETMAP_REQ_OPT_OFFSETS option.
+	 */
+	const uint64_t	offset_mask;
+	/* the alignment requirement, in bytes, for the start
+	 * of the packets inside the buffers.
+	 * User programs should take this alignment into
+	 * account when specifing buffer-offsets in TX slots.
+	 */
+	const uint64_t	buf_align;
+
 	/* opaque room for a mutex or similar object */
 #if !defined(_WIN32) || defined(__CYGWIN__)
-	uint8_t	__attribute__((__aligned__(NM_CACHE_ALIGN))) sem[128];
+	uint8_t	__attribute__((__aligned__(NM_CACHE_ALIGN))) sem[112];
 #else
-	uint8_t	__declspec(align(NM_CACHE_ALIGN)) sem[128];
+	uint8_t	__declspec(align(NM_CACHE_ALIGN)) sem[112];
 #endif
 
 	/* the slots follow. This struct has variable size */
@@ -562,6 +575,12 @@ enum {
 	 * This requires the 'ioeventfd' fields to be valid (cannot be < 0).
 	 */
 	NETMAP_REQ_OPT_SYNC_KLOOP_MODE,
+
+	/* On NETMAP_REQ_REGISTER, ask for (part of) the ptr field in the
+	 * slots of the registered rings to be used as an offset field
+	 * for the start of the packets inside the netmap buffer.
+	 */
+	NETMAP_REQ_OPT_OFFSETS,
 
 	/* This is a marker to count the number of available options.
 	 * New options must be added above it. */
@@ -933,6 +952,14 @@ struct nmreq_opt_csb {
 	/* Array of CSB entries for kernel --> application communication
 	 * (N entries). */
 	uint64_t		csb_ktoa;
+};
+
+struct nmreq_opt_offsets {
+	struct nmreq_option	nro_opt;
+	uint64_t		nro_max_offset;
+	uint64_t		nro_initial_offset;
+	uint32_t		nro_offset_bits;
+	uint32_t		nro_tx_align;
 };
 
 #endif /* _NET_NETMAP_H_ */

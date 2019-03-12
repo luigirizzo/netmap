@@ -798,6 +798,18 @@ netmap_update_config(struct netmap_adapter *na)
 static int netmap_txsync_to_host(struct netmap_kring *kring, int flags);
 static int netmap_rxsync_from_host(struct netmap_kring *kring, int flags);
 
+static int
+netmap_default_bufcfg(struct netmap_kring *kring, int flags)
+{
+	struct netmap_adapter *na = kring->na;
+
+	(void)flags;
+
+	kring->hwbuf_len = NETMAP_BUF_SIZE(na) - kring->offset_max;
+	kring->buf_align = 0; /* no alignment */
+	return 0;
+}
+
 /* create the krings array and initialize the fields common to all adapters.
  * The array layout is this:
  *
@@ -878,12 +890,16 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 			kring->nr_pending_mode = NKR_NETMAP_OFF;
 			if (i < nma_get_nrings(na, t)) {
 				kring->nm_sync = (t == NR_TX ? na->nm_txsync : na->nm_rxsync);
+				kring->nm_bufcfg = na->nm_bufcfg;
+				if (kring->nm_bufcfg == NULL)
+					kring->nm_bufcfg = netmap_default_bufcfg;
 			} else {
 				if (!(na->na_flags & NAF_HOST_RINGS))
 					kring->nr_kflags |= NKR_FAKERING;
 				kring->nm_sync = (t == NR_TX ?
 						netmap_txsync_to_host:
 						netmap_rxsync_from_host);
+				kring->nm_bufcfg = netmap_default_bufcfg;
 			}
 			kring->nm_notify = na->nm_notify;
 			kring->rhead = kring->rcur = kring->nr_hwcur = 0;
@@ -2218,6 +2234,176 @@ netmap_buf_size_validate(const struct netmap_adapter *na, unsigned mtu) {
 	return 0;
 }
 
+/* Handle the offset option, if present in the hdr.
+ * Returns 0 on success, or an error.
+ */
+static int
+netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
+{
+	struct nmreq_opt_offsets *opt;
+	struct netmap_adapter *na = priv->np_na;
+	struct netmap_kring *kring;
+	uint64_t mask = 0, bits = 0, maxbits = sizeof(uint64_t) * 8,
+		 max_offset = 0, initial_offset = 0;
+	u_int i;
+	enum txrx t;
+	int error = 0;
+
+	opt = (struct nmreq_opt_offsets *)
+		nmreq_getoption(hdr, NETMAP_REQ_OPT_OFFSETS);
+	if (opt == NULL)
+		return 0;
+
+	if (!(na->na_flags & NAF_OFFSETS)) {
+		if (netmap_verbose)
+			nm_prerr("%s does not support offsets",
+				na->name);
+		error = EOPNOTSUPP;
+		goto out;
+	}
+
+	/* check sanity of the opt values */
+	max_offset = opt->nro_max_offset;
+	initial_offset = opt->nro_initial_offset;
+	bits = opt->nro_offset_bits;
+
+	if (bits > maxbits) {
+		if (netmap_verbose)
+			nm_prerr("bits: %llu too large (max %llu)",
+				bits, maxbits);
+		error = EINVAL;
+		goto out;
+	}
+	/* we take bits == 0 as a request to use the entire field */
+	if (bits == 0 || bits == maxbits) {
+		/* shifting a type by sizeof(type) is undefined */
+		bits = maxbits;
+		mask = 0xffffffffffffffff;
+	} else {
+		mask = (1ULL << bits) - 1;
+	}
+	if (max_offset > NETMAP_BUF_SIZE(na)) {
+		if (netmap_verbose)
+			nm_prerr("max offset %llu > buf size %u",
+				max_offset, NETMAP_BUF_SIZE(na));
+		error = EINVAL;
+		goto out;
+	}
+	if ((max_offset & mask) != max_offset) {
+		if (netmap_verbose)
+			nm_prerr("max offset %llu to large for %llu bits",
+				max_offset, bits);
+		error = EINVAL;
+		goto out;
+	}
+	if (initial_offset > max_offset) {
+		if (netmap_verbose)
+			nm_prerr("initial offset %llu > max offset %llu",
+				initial_offset, max_offset);
+		error = EINVAL;
+		goto out;
+	}
+
+	/* initialize the kring and ring fields. */
+	foreach_selected_ring(priv, t, i, kring) {
+		struct netmap_kring *kring = NMR(na, t)[i];
+		struct netmap_ring *ring = kring->ring;
+		u_int j;
+
+		/* it the ring is already in use we check that the
+		 * new request is compatible with the existing one
+		 */
+		if (kring->offset_mask) {
+			if ((kring->offset_mask & mask) != mask ||
+			     kring->offset_max < max_offset) {
+				if (netmap_verbose)
+					nm_prinf("%s: cannot decrease"
+						 "offset mask and/or max"
+						 "(current: mask=%llx,max=%llu",
+							kring->name,
+							kring->offset_mask,
+							kring->offset_max);
+				error = EBUSY;
+				goto out;
+			}
+			mask = kring->offset_mask;
+			max_offset = kring->offset_max;
+		} else {
+			kring->offset_mask = mask;
+			*(uint64_t *)&ring->offset_mask = mask;
+			kring->offset_max = max_offset;
+		}
+
+		/* if there is an initial offset, put it into
+		 * all the slots
+		 *
+		 * Note: we cannot change the offsets if the
+		 * ring is already in use.
+		 */
+		if (!initial_offset || kring->users > 1)
+			continue;
+
+		for (j = 0; j < kring->nkr_num_slots; j++) {
+			struct netmap_slot *slot = ring->slot + j;
+
+			nm_write_offset(kring, slot, initial_offset);
+		}
+	}
+
+out:
+	opt->nro_opt.nro_status = error;
+	if (!error) {
+		opt->nro_max_offset = max_offset;
+	}
+	return error;
+
+}
+
+static int
+netmap_compute_buf_len(struct netmap_priv_d *priv)
+{
+	enum txrx t;
+	u_int i;
+	struct netmap_kring *kring;
+	int error = 0;
+	unsigned mtu = 0;
+	struct netmap_adapter *na = priv->np_na;
+
+	if (na->ifp != NULL)
+		mtu = nm_os_ifnet_mtu(na->ifp);
+
+	foreach_selected_ring(priv, t, i, kring) {
+
+		if (kring->users > 1)
+			continue;
+
+		error = kring->nm_bufcfg(kring, 0);
+		if (error)
+			goto out;
+
+		*(uint64_t *)&kring->ring->buf_align = kring->buf_align;
+
+		if (mtu && t == NR_RX && kring->hwbuf_len < mtu) {
+			if (!(na->na_flags & NAF_MOREFRAG)) {
+				nm_prerr("error: large MTU (%d) needed "
+					 "but %s does not support "
+					 "NS_MOREFRAG", mtu,
+					 na->name);
+				error = EINVAL;
+				goto out;
+			} else {
+				nm_prinf("info: netmap application on "
+					 "%s needs to support "
+					 "NS_MOREFRAG "
+					 "(MTU=%u,buf_size=%llu)",
+					 kring->name, mtu, kring->hwbuf_len);
+			}
+		}
+	}
+out:
+	return error;
+}
+
 /*
  * possibly move the interface to netmap-mode.
  * If success it returns a pointer to netmap_if, otherwise NULL.
@@ -2363,6 +2549,16 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 
 	/* create all needed missing netmap rings */
 	error = netmap_mem_rings_create(na);
+	if (error)
+		goto err_rel_excl;
+
+	/* initialize offsets if requested */
+	error = netmap_offsets_init(priv, hdr);
+	if (error)
+		goto err_rel_excl;
+
+	/* compute and validate the buf lenghts */
+	error = netmap_compute_buf_len(priv);
 	if (error)
 		goto err_rel_excl;
 
@@ -3010,6 +3206,8 @@ nmreq_opt_size_by_type(uint32_t nro_reqtype, uint64_t nro_size)
 	case NETMAP_REQ_OPT_SYNC_KLOOP_MODE:
 		rv = sizeof(struct nmreq_opt_sync_kloop_mode);
 		break;
+	case NETMAP_REQ_OPT_OFFSETS:
+		rv = sizeof(struct nmreq_opt_offsets);
 	}
 	/* subtract the common header */
 	return rv - sizeof(struct nmreq_option);
