@@ -237,8 +237,12 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 			slot = ring->slot + nm_i;
 			PNMB(na, slot, &paddr);
-			slot->len = le16toh(curr->length) - 4;
-			slot->flags = (!(staterr & E1000_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
+			slot->len = le16toh(curr->length);
+			slot->flags = NS_MOREFRAG;
+			if (staterr & E1000_RXD_STAT_EOP) {
+				slot->len -= 4; /* exclude the CRC */
+				slot->flags = 0;
+			}
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
 					&paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
