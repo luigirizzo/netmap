@@ -1973,6 +1973,19 @@ netmap_unset_ringid(struct netmap_priv_d *priv)
 	priv->np_kloop_state = 0;
 }
 
+#define within_sel(p_, t_, i_)					  	  \
+	((i_) < (p_)->np_qlast[(t_)])
+#define nonempty_sel(p_, t_)						  \
+	(within_sel((p_), (t_), (p_)->np_qfirst[(t_)]))
+#define foreach_selected_ring(p_, t_, i_, kring_)			  \
+	for ((t_) = nonempty_sel((p_), NR_RX) ? NR_RX : NR_TX,		  \
+	     (i_) = (p_)->np_qfirst[(t_)];				  \
+	     (t_ == NR_RX ||						  \
+	      (t == NR_TX && within_sel((p_), (t_), (i_)))) &&     	  \
+	      ((kring_) = NMR((p_)->np_na, (t_))[(i_)]); 		  \
+	     (i_) = within_sel((p_), (t_), (i_) + 1) ? (i_) + 1 :         \
+		(++(t_) < NR_TXRX ? (p_)->np_qfirst[(t_)] : (i_)))
+
 
 /* Set the nr_pending_mode for the requested rings.
  * If requested, also try to get exclusive access to the rings, provided
@@ -1999,29 +2012,23 @@ netmap_krings_get(struct netmap_priv_d *priv)
 	 * are neither alread exclusively owned, nor we
 	 * want exclusive ownership when they are already in use
 	 */
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = NMR(na, t)[i];
-			if ((kring->nr_kflags & NKR_EXCLUSIVE) ||
-			    (kring->users && excl))
-			{
-				nm_prdis("ring %s busy", kring->name);
-				return EBUSY;
-			}
+	foreach_selected_ring(priv, t, i, kring) {
+		if ((kring->nr_kflags & NKR_EXCLUSIVE) ||
+		    (kring->users && excl))
+		{
+			nm_prdis("ring %s busy", kring->name);
+			return EBUSY;
 		}
 	}
 
 	/* second round: increment usage count (possibly marking them
 	 * as exclusive) and set the nr_pending_mode
 	 */
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = NMR(na, t)[i];
-			kring->users++;
-			if (excl)
-				kring->nr_kflags |= NKR_EXCLUSIVE;
-	                kring->nr_pending_mode = NKR_NETMAP_ON;
-		}
+	foreach_selected_ring(priv, t, i, kring) {
+		kring->users++;
+		if (excl)
+			kring->nr_kflags |= NKR_EXCLUSIVE;
+		kring->nr_pending_mode = NKR_NETMAP_ON;
 	}
 
 	return 0;
@@ -2034,7 +2041,6 @@ netmap_krings_get(struct netmap_priv_d *priv)
 static void
 netmap_krings_put(struct netmap_priv_d *priv)
 {
-	struct netmap_adapter *na = priv->np_na;
 	u_int i;
 	struct netmap_kring *kring;
 	int excl = (priv->np_flags & NR_EXCLUSIVE);
@@ -2047,15 +2053,12 @@ netmap_krings_put(struct netmap_priv_d *priv)
 			priv->np_qfirst[NR_RX],
 			priv->np_qlast[MR_RX]);
 
-	for_rx_tx(t) {
-		for (i = priv->np_qfirst[t]; i < priv->np_qlast[t]; i++) {
-			kring = NMR(na, t)[i];
-			if (excl)
-				kring->nr_kflags &= ~NKR_EXCLUSIVE;
-			kring->users--;
-			if (kring->users == 0)
-				kring->nr_pending_mode = NKR_NETMAP_OFF;
-		}
+	foreach_selected_ring(priv, t, i, kring) {
+		if (excl)
+			kring->nr_kflags &= ~NKR_EXCLUSIVE;
+		kring->users--;
+		if (kring->users == 0)
+			kring->nr_pending_mode = NKR_NETMAP_OFF;
 	}
 }
 
@@ -2214,7 +2217,6 @@ netmap_buf_size_validate(const struct netmap_adapter *na, unsigned mtu) {
 	}
 	return 0;
 }
-
 
 /*
  * possibly move the interface to netmap-mode.
