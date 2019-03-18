@@ -414,7 +414,6 @@ netmap_pipe_reg_both(struct netmap_adapter *na, struct netmap_adapter *ona)
 		for (i = 0; i < nma_get_nrings(na, t); i++) {
 			struct netmap_kring *kring = NMR(na, t)[i];
 			if (nm_kring_pending_on(kring)) {
-				struct netmap_kring *sring, *dring;
 
 				kring->nr_mode = NKR_NETMAP_ON;
 				if ((kring->nr_kflags & NKR_FAKERING) &&
@@ -427,26 +426,17 @@ netmap_pipe_reg_both(struct netmap_adapter *na, struct netmap_adapter *ona)
 				}
 
 				/* copy the buffers from the non-fake ring */
-				if (kring->nr_kflags & NKR_FAKERING) {
-					sring = kring->pipe;
-					dring = kring;
-				} else {
-					sring = kring;
-					dring = kring->pipe;
-				}
-				memcpy(dring->ring->slot,
-				       sring->ring->slot,
+				memcpy(kring->pipe->ring->slot,
+				       kring->ring->slot,
 				       sizeof(struct netmap_slot) *
-						sring->nkr_num_slots);
+						kring->nkr_num_slots);
 				/* mark both rings as fake and needed,
 				 * so that buffers will not be
 				 * deleted by the standard machinery
 				 * (we will delete them by ourselves in
 				 * netmap_pipe_krings_delete)
 				 */
-				sring->nr_kflags |=
-					(NKR_FAKERING | NKR_NEEDRING);
-				dring->nr_kflags |=
+				kring->nr_kflags |=
 					(NKR_FAKERING | NKR_NEEDRING);
 				kring->nr_mode = NKR_NETMAP_ON;
 			}
