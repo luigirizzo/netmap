@@ -142,13 +142,13 @@ static struct nmreq_opt_parser *nmport_opt_parsers;
 
 #define NPOPT_PARSER(o)		nmport_opt_##o##_parser
 #define NPOPT_DESC(o)		nmport_opt_##o##_desc
-#define NPOPT_DECL(o, f, d)						\
+#define NPOPT_DECL(o, f)						\
 static int NPOPT_PARSER(o)(struct nmreq_parse_ctx *);			\
 static struct nmreq_opt_parser NPOPT_DESC(o) = {			\
 	.prefix = #o,							\
 	.parse = NPOPT_PARSER(o),					\
 	.flags = (f),							\
-	.default_key = (d),						\
+	.default_key = -1,						\
 	.nr_keys = 0,							\
 	.next = NULL,							\
 };									\
@@ -176,6 +176,8 @@ nmport_opt_key_ctor(struct nmport_key_desc *k)
 	ok->id = k->id;
 	ok->flags = k->flags;
 	o->nr_keys++;
+	if (ok->flags & NMREQ_OPTK_DEFAULT)
+		o->default_key = ok->id;
 }
 #define NPKEY_DESC(o, k)	nmport_opt_##o##_key_##k##_desc
 #define NPKEY_ID(o, k)		(NPKEY_DESC(o, k).id)
@@ -194,16 +196,16 @@ nmport_opt_##o##_key_##k##_ctor(void)					\
 #define nmport_key(p, o, k)	((p)->keys[NPKEY_ID(o, k)])
 #define nmport_defkey(p, o)	((p)->keys[NPOPT_DESC(o).default_key])
 
-NPOPT_DECL(share, 0, 0)
-NPOPT_DECL(extmem, 0, 0)
-	NPKEY_DECL(extmem, file, NMREQ_OPTK_NODEFAULT)
+NPOPT_DECL(share, 0)
+NPOPT_DECL(extmem, 0)
+	NPKEY_DECL(extmem, file, NMREQ_OPTK_DEFAULT|NMREQ_OPTK_MUSTSET)
 	NPKEY_DECL(extmem, if_num, 0)
 	NPKEY_DECL(extmem, if_size, 0)
 	NPKEY_DECL(extmem, ring_num, 0)
 	NPKEY_DECL(extmem, ring_size, 0)
 	NPKEY_DECL(extmem, buf_num, 0)
 	NPKEY_DECL(extmem, buf_size, 0)
-NPOPT_DECL(conf, 0, -1)
+NPOPT_DECL(conf, 0)
 	NPKEY_DECL(conf, rings, 0)
 	NPKEY_DECL(conf, host_rings, 0)
 	NPKEY_DECL(conf, slots, 0)
