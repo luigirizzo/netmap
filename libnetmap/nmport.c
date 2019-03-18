@@ -320,7 +320,7 @@ NPOPT_PARSER(conf)(struct nmreq_parse_ctx *p)
 
 
 void
-nmport_disable_opt(const char *opt)
+nmport_disable_option(const char *opt)
 {
 	struct nmreq_opt_parser *p;
 
@@ -332,7 +332,7 @@ nmport_disable_opt(const char *opt)
 }
 
 int
-nmport_enable_opt(const char *opt)
+nmport_enable_option(const char *opt)
 {
 	struct nmreq_opt_parser *p;
 
