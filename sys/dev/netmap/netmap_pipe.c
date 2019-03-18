@@ -660,7 +660,7 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 	const char *pipe_id = NULL;
 	int role = 0;
 	int error, retries = 0;
-	char *cbra;
+	char *cbra, pipe_char;
 
 	/* Try to parse the pipe syntax 'xx{yy' or 'xx}yy'. */
 	cbra = strrchr(hdr->nr_name, '{');
@@ -675,6 +675,7 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 			return 0;
 		}
 	}
+	pipe_char = *cbra;
 	pipe_id = cbra + 1;
 	if (*pipe_id == '\0' || cbra == hdr->nr_name) {
 		/* Bracket is the last character, so pipe name is missing;
@@ -690,15 +691,13 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 
 	/* first, try to find the parent adapter */
 	for (;;) {
-		char nr_name_orig[NETMAP_REQ_IFNAMSIZ];
 		int create_error;
 
 		/* Temporarily remove the pipe suffix. */
-		strlcpy(nr_name_orig, hdr->nr_name, sizeof(nr_name_orig));
 		*cbra = '\0';
 		error = netmap_get_na(hdr, &pna, &ifp, nmd, create);
 		/* Restore the pipe suffix. */
-		strlcpy(hdr->nr_name, nr_name_orig, sizeof(hdr->nr_name));
+		*cbra = pipe_char;
 		if (!error)
 			break;
 		if (error != ENXIO || retries++) {
@@ -711,7 +710,7 @@ netmap_get_pipe_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		NMG_UNLOCK();
 		create_error = netmap_vi_create(hdr, 1 /* autodelete */);
 		NMG_LOCK();
-		strlcpy(hdr->nr_name, nr_name_orig, sizeof(hdr->nr_name));
+		*cbra = pipe_char;
 		if (create_error && create_error != EEXIST) {
 			if (create_error != EOPNOTSUPP) {
 				nm_prerr("failed to create a persistent vale port: %d",
