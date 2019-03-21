@@ -440,7 +440,7 @@ nmreq_option_parsekeys(const char *prefix, char *body, struct nmreq_opt_parser *
 	}
 	/* now check that all no-default keys have been assigned */
 	for (k = p->keys; (k - p->keys) < NMREQ_OPT_MAXKEYS && k->key != NULL; k++) {
-		if ((k->flags & NMREQ_OPTK_NODEFAULT) && pctx->keys[k->id] == NULL) {
+		if ((k->flags & NMREQ_OPTK_MUSTSET) && pctx->keys[k->id] == NULL) {
 			nmctx_ferror(pctx->ctx, "option '%s': mandatory key '%s' not assigned",
 					prefix, k->key);
 			errno = EINVAL;

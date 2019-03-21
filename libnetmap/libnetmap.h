@@ -497,7 +497,8 @@ struct nmreq_opt_key {
 	int id;			/* its position in the parse context */
 	unsigned int flags;
 #define NMREQ_OPTK_ALLOWEMPTY 	(1U << 0) /* =value may be omitted */
-#define NMREQ_OPTK_NODEFAULT	(1U << 1) /* the key is mandatory */
+#define NMREQ_OPTK_MUSTSET	(1U << 1) /* the key is mandatory */
+#define NMREQ_OPTK_DEFAULT	(1U << 2) /* this is the default key */
 };
 
 /* struct nmreq_opt_parser - describes an option parser */

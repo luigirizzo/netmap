@@ -1037,8 +1037,13 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 		na->nm_krings_delete(na);
 
 		/* restore the default number of host tx and rx rings */
-		na->num_host_tx_rings = 1;
-		na->num_host_rx_rings = 1;
+		if (na->na_flags & NAF_HOST_RINGS) {
+			na->num_host_tx_rings = 1;
+			na->num_host_rx_rings = 1;
+		} else {
+			na->num_host_tx_rings = 0;
+			na->num_host_rx_rings = 0;
+		}
 	}
 
 	/* possibily decrement counter of tx_si/rx_si users */
