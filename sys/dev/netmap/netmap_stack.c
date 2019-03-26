@@ -90,6 +90,14 @@ nm_swap(struct netmap_slot *s, struct netmap_slot *d)
 	d->flags |= NS_BUF_CHANGED;
 }
 
+static inline void
+nm_swap_reset(struct netmap_slot *s, struct netmap_slot *d)
+{
+	nm_swap(s, d);
+	s->len = s->offset = 0;
+	s->fd = 0;
+}
+
 static inline u_int
 rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 {
@@ -262,10 +270,7 @@ st_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 	pool->busy_tail = pos;
 
 	cb = NMCB_BUF(NMB(na, slot));
-	nm_swap(slot, &xtra->slot);
-	slot->len = slot->offset = slot->next = 0;
-	slot->fd = 0;
-
+	nm_swap_reset(slot, &xtra->slot);
 	nmcbw(cb, kring, &xtra->slot);
 
 	return 0;
@@ -505,9 +510,7 @@ st_poststack(struct netmap_kring *kring)
 					nonfree[nonfree_num++] = j;
 				}
 				nmcbw(cb, rxr, rs);
-				nm_swap(ts, rs);
-				ts->len = ts->offset = 0;
-				ts->fd = 0;
+				nm_swap_reset(ts, rs);
 skip:
 				j = nm_next(j, lim_rx);
 				sent++;
@@ -624,6 +627,8 @@ nombq(struct netmap_adapter *na, struct mbuf *m)
 	}
 	hslot = &kring->ring->slot[nm_i];
 	m_copydata(m, 0, len, (char *)NMB(na, hslot) + VHLEN(na));
+	if ((netmap_debug & NM_DEBUG_STACK) && (len > 14 + 40 + 12))
+		nm_prinf("%u bytes", len);
 	hslot->len = len;
 	kring->nr_hwtail = nm_next(nm_i, lim);
 
@@ -654,7 +659,6 @@ mbuf_proto_headers(struct mbuf *m)
 }
 #else
 #define mbuf_proto_headers(m)
-#endif /* __FreeBSD__ */
 
 #define I40E_TXD_QW1_CMD_SHIFT	4
 #define I40E_TXD_QW1_CMD_MASK	(0x3FFUL << I40E_TXD_QW1_CMD_SHIFT)
@@ -699,7 +703,7 @@ csum_ctx(uint32_t *cmd, uint32_t *off,
 		return -1;
 	*cmd = *off = 0;
 	*cmd |= I40E_TX_DESC_CMD_IIPT_IPV4; /* no tso */
-	*off |= (ETHER_HDR_LEN >> 1) << I40E_TX_DESC_LENGTH_MACLEN_SHIFT;
+	*off |= (ETH_HDR_LEN >> 1) << I40E_TX_DESC_LENGTH_MACLEN_SHIFT;
 	*off |= ((4 * (iph->version_ihl & 0x0F)) >> 2)
 		<< I40E_TX_DESC_LENGTH_IPLEN_SHIFT;
 
@@ -707,6 +711,7 @@ csum_ctx(uint32_t *cmd, uint32_t *off,
 	*off |= ((4 * (th->doff >> 4)) >> 2) << I40E_TX_DESC_LENGTH_L4_FC_LEN_SHIFT;
 	return 0;
 }
+#endif /* !FreeBSD */
 
 static void
 csum_transmit(struct netmap_adapter *na, struct mbuf *m)
@@ -817,9 +822,13 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (!mismatch) {
 		/* Length has already been validated */
 		memcpy(nmb + VHLEN(na), MBUF_DATA(m), slot->offset);
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prlim(1, "zero copy tx");
 	} else {
 		m_copydata(m, 0, MBUF_LEN(m), nmb + VHLEN(na));
 		slot->len += mismatch;
+		if (netmap_debug & NM_DEBUG_STACK)
+			nm_prlim(1, "copy tx");
 	}
 
 	if (nm_os_mbuf_has_csum_offld(m)) {

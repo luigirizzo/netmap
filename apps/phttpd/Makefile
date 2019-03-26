@@ -1,4 +1,4 @@
-CFLAGS += -Werror -Wall -O2 -g
+CFLAGS += -Werror -Wall -O2 -g -fsanitize=address
 NMLIB = ../../libnetmap/libnetmap.a
 LDFLAGS += $(NMLIB) -lpthread -lm # sqlite requires them
 #CFLAGS += -I/usr/local/include -I../libsqlite/include

@@ -169,7 +169,7 @@ struct netmap_slot {
 		struct {
 			int32_t fd;
 			uint16_t offset;
-			uint16_t next;
+			uint16_t unused;
 		};
 	};
 };

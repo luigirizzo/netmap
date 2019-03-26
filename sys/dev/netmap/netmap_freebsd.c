@@ -981,17 +981,15 @@ int
 nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 {
 	struct mbuf *m, *n, *tmp;
+	struct mbuf *m0 = NULL;
 	struct sockbuf *sb = &so->so_rcv;
 	struct nmcb *cb;
 	struct netmap_kring *kring = NULL;
 
 	if (unlikely(!sbavail(sb))) {
-		nm_prdis("!sbavail so %p soa %p cantrcv %d sblastrec %p",
-			 so, st_so(so),
-			 !!(so->so_rcv.sb_state & SBS_CANTRCVMORE),
-			 sb->sb_lastrecord);
-		/* XXX We need trick to set zero-length buffer */
 		struct st_so_adapter *soa = st_so(so);
+
+		/* XXX We need trick to set zero-length buffer */
 		if (likely(soa)) {
 			struct netmap_stack_adapter *sna =
 				(struct netmap_stack_adapter *)soa->na;
@@ -1004,7 +1002,6 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 	if (!nmcb_valid(cb))
 		return 0;
 	kring = nmcb_kring(cb);
-	struct mbuf *m0 = NULL;
 #ifdef TCP_RCVD
 	int flags = MSG_DONTWAIT | MSG_EOR;
 #endif /* TCP_RCVD */
@@ -1107,6 +1104,7 @@ nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 		return error;
 	}
 	m = so->so_rcv.sb_mb;
+	//nm_prinf("m %p m_ext.ext_buf %p", m, m->m_ext.ext_buf);
 	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
 	if (!nmcb_valid(cb)) {
 		if (netmap_debug & NM_DEBUG_STACK)
@@ -1207,7 +1205,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	} else {
 		na->if_input(ifp, m);
 	}
-#ifdef __FreeBSD__
+
 	/*
 	 * The buffer might have triggered the socket upcall without
 	 * passing the mbuf.
@@ -1229,7 +1227,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 			st_fdtable_add(cb, kring);
 		}
 	}
-#endif /* __FreeBSD__ */
+
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
 		if (st_extra_enq(kring, slot)) {
