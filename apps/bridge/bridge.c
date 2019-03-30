@@ -61,8 +61,8 @@ process_rings(struct netmap_ring *rxring, struct netmap_ring *txring,
 	if (rxring->flags || txring->flags)
 		D("%s rxflags %x txflags %x",
 			msg, rxring->flags, txring->flags);
-	j = rxring->cur; /* RX */
-	k = txring->cur; /* TX */
+	j = rxring->head; /* RX */
+	k = txring->head; /* TX */
 	m = nm_ring_space(rxring);
 	if (m < limit)
 		limit = m;
@@ -320,12 +320,12 @@ main(int argc, char **argv)
 				pollfd[0].events,
 				pollfd[0].revents,
 				pkt_queued(pa, 0),
-				NETMAP_RXRING(pa->nifp, pa->cur_rx_ring)->cur,
+				NETMAP_RXRING(pa->nifp, pa->cur_rx_ring)->head,
 				pkt_queued(pa, 1),
 				pollfd[1].events,
 				pollfd[1].revents,
 				pkt_queued(pb, 0),
-				NETMAP_RXRING(pb->nifp, pb->cur_rx_ring)->cur,
+				NETMAP_RXRING(pb->nifp, pb->cur_rx_ring)->head,
 				pkt_queued(pb, 1)
 			);
 		if (ret < 0)

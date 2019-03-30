@@ -139,6 +139,8 @@ struct TestContext {
 	uint32_t nr_rx_slots;   /* slots in rx rings */
 	uint16_t nr_tx_rings;   /* number of tx rings */
 	uint16_t nr_rx_rings;   /* number of rx rings */
+	uint16_t nr_host_tx_rings;   /* number of host tx rings */
+	uint16_t nr_host_rx_rings;   /* number of host rx rings */
 	uint16_t nr_mem_id;     /* id of the memory allocator */
 	uint16_t nr_ringid;     /* ring(s) we care about */
 	uint32_t nr_mode;       /* specify NR_REG_* modes */
@@ -241,6 +243,8 @@ port_register(struct TestContext *ctx)
 	req.nr_tx_slots   = ctx->nr_tx_slots;
 	req.nr_rx_slots   = ctx->nr_rx_slots;
 	req.nr_tx_rings   = ctx->nr_tx_rings;
+	req.nr_host_tx_rings = ctx->nr_host_tx_rings;
+	req.nr_host_rx_rings = ctx->nr_host_rx_rings;
 	req.nr_rx_rings   = ctx->nr_rx_rings;
 	req.nr_extra_bufs = ctx->nr_extra_bufs;
 	ret               = ioctl(ctx->fd, NIOCCTRL, &hdr);
@@ -254,23 +258,29 @@ port_register(struct TestContext *ctx)
 	printf("nr_rx_slots %u\n", req.nr_rx_slots);
 	printf("nr_tx_rings %u\n", req.nr_tx_rings);
 	printf("nr_rx_rings %u\n", req.nr_rx_rings);
+	printf("nr_host_tx_rings %u\n", req.nr_host_tx_rings);
+	printf("nr_host_rx_rings %u\n", req.nr_host_rx_rings);
 	printf("nr_mem_id %u\n", req.nr_mem_id);
 	printf("nr_extra_bufs %u\n", req.nr_extra_bufs);
 
 	success = req.nr_memsize && (ctx->nr_mode == req.nr_mode) &&
-	                       (ctx->nr_ringid == req.nr_ringid) &&
-	                       (ctx->nr_flags == req.nr_flags) &&
-	                       ((!ctx->nr_tx_slots && req.nr_tx_slots) ||
-	                        (ctx->nr_tx_slots == req.nr_tx_slots)) &&
-	                       ((!ctx->nr_rx_slots && req.nr_rx_slots) ||
-	                        (ctx->nr_rx_slots == req.nr_rx_slots)) &&
-	                       ((!ctx->nr_tx_rings && req.nr_tx_rings) ||
-	                        (ctx->nr_tx_rings == req.nr_tx_rings)) &&
-	                       ((!ctx->nr_rx_rings && req.nr_rx_rings) ||
-	                        (ctx->nr_rx_rings == req.nr_rx_rings)) &&
-	                       ((!ctx->nr_mem_id && req.nr_mem_id) ||
-	                        (ctx->nr_mem_id == req.nr_mem_id)) &&
-	                       (ctx->nr_extra_bufs == req.nr_extra_bufs);
+		       (ctx->nr_ringid == req.nr_ringid) &&
+		       (ctx->nr_flags == req.nr_flags) &&
+		       ((!ctx->nr_tx_slots && req.nr_tx_slots) ||
+			(ctx->nr_tx_slots == req.nr_tx_slots)) &&
+		       ((!ctx->nr_rx_slots && req.nr_rx_slots) ||
+			(ctx->nr_rx_slots == req.nr_rx_slots)) &&
+		       ((!ctx->nr_tx_rings && req.nr_tx_rings) ||
+			(ctx->nr_tx_rings == req.nr_tx_rings)) &&
+		       ((!ctx->nr_rx_rings && req.nr_rx_rings) ||
+			(ctx->nr_rx_rings == req.nr_rx_rings)) &&
+		       ((!ctx->nr_host_tx_rings && req.nr_host_tx_rings) ||
+			(ctx->nr_host_tx_rings == req.nr_host_tx_rings)) &&
+		       ((!ctx->nr_host_rx_rings && req.nr_host_rx_rings) ||
+			(ctx->nr_host_rx_rings == req.nr_host_rx_rings)) &&
+		       ((!ctx->nr_mem_id && req.nr_mem_id) ||
+			(ctx->nr_mem_id == req.nr_mem_id)) &&
+		       (ctx->nr_extra_bufs == req.nr_extra_bufs);
 	if (!success) {
 		return -1;
 	}
@@ -280,6 +290,8 @@ port_register(struct TestContext *ctx)
 	ctx->nr_rx_slots   = req.nr_rx_slots;
 	ctx->nr_tx_rings   = req.nr_tx_rings;
 	ctx->nr_rx_rings   = req.nr_rx_rings;
+	ctx->nr_host_tx_rings = req.nr_host_tx_rings;
+	ctx->nr_host_rx_rings = req.nr_host_rx_rings;
 	ctx->nr_mem_id     = req.nr_mem_id;
 	ctx->nr_extra_bufs = req.nr_extra_bufs;
 
@@ -447,7 +459,7 @@ port_register_hwall_host(struct TestContext *ctx)
 }
 
 static int
-port_register_host(struct TestContext *ctx)
+port_register_hostall(struct TestContext *ctx)
 {
 	ctx->nr_mode = NR_REG_SW;
 	return port_register(ctx);
@@ -461,10 +473,29 @@ port_register_hwall(struct TestContext *ctx)
 }
 
 static int
-port_register_single_ring_couple(struct TestContext *ctx)
+port_register_single_hw_pair(struct TestContext *ctx)
 {
 	ctx->nr_mode   = NR_REG_ONE_NIC;
 	ctx->nr_ringid = 0;
+	return port_register(ctx);
+}
+
+static int
+port_register_single_host_pair(struct TestContext *ctx)
+{
+	ctx->nr_mode   = NR_REG_ONE_SW;
+	ctx->nr_host_tx_rings = 2;
+	ctx->nr_host_rx_rings = 2;
+	ctx->nr_ringid = 1;
+	return port_register(ctx);
+}
+
+static int
+port_register_hostall_many(struct TestContext *ctx)
+{
+	ctx->nr_mode   = NR_REG_SW;
+	ctx->nr_host_tx_rings = 5;
+	ctx->nr_host_rx_rings = 4;
 	return port_register(ctx);
 }
 
@@ -1121,7 +1152,7 @@ bad_extmem_option(struct TestContext *ctx)
 	pools_info_fill(&pools_info);
 	/* Request a large ring size, to make sure that the kernel
 	 * rejects our request. */
-	pools_info.nr_ring_pool_objsize = (1 << 16);
+	pools_info.nr_ring_pool_objsize = (1 << 20);
 
 	return _extmem_option(ctx, &pools_info) < 0 ? 0 : -1;
 }
@@ -1147,6 +1178,10 @@ duplicate_extmem_options(struct TestContext *ctx)
 
 	save1 = e1;
 	save2 = e2;
+
+	strncpy(ctx->ifname_ext, "vale0:0", sizeof(ctx->ifname_ext));
+	ctx->nr_tx_slots = 16;
+	ctx->nr_rx_slots = 16;
 
 	ret = port_register_hwall(ctx);
 	if (ret >= 0) {
@@ -1930,8 +1965,10 @@ static struct mytest tests[] = {
 	decltest(port_info_get),
 	decltest(port_register_hwall_host),
 	decltest(port_register_hwall),
-	decltest(port_register_host),
-	decltest(port_register_single_ring_couple),
+	decltest(port_register_hostall),
+	decltest(port_register_single_hw_pair),
+	decltest(port_register_single_host_pair),
+	decltest(port_register_hostall_many),
 	decltest(vale_attach_detach),
 	decltest(vale_attach_detach_host_rings),
 	decltest(vale_ephemeral_port_hdr_manipulation),
