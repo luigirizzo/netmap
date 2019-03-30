@@ -1168,7 +1168,7 @@ nm_os_st_upcall(NM_SOCK_T *sk)
 		/* see comment in st_transmit() */
 #ifdef STACK_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
-			if (netmap_debug & NM_DEBUG_STACK) {
+			if (netmap_debug & NM_DEBUG_STACK)
 				nm_prlim(1, "fd %d ring_id %u",
 					slot->fd, kring->ring_id);
 			queued = 1;
