@@ -404,6 +404,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 			 * (we should investigate if using legacy descriptors
 			 * is faster). */
 			curr->buffer_addr = htole64(paddr);
+#ifdef WITH_STACK
 			if (slot->flags & NS_CSUM) {
 				u32 cmd = NMCB_BUF(NMB(na, slot))->cmd;
 				u32 off = NMCB_BUF(NMB(na, slot))->off;
@@ -412,6 +413,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 				    ((u64)off << I40E_TXD_QW1_OFFSET_SHIFT);
 				slot->flags &= ~NS_CSUM;
 			}
+#endif /* WITH_STACK */
 			curr->cmd_type_offset_bsz = htole64(
 			    ((u64)len << I40E_TXD_QW1_TX_BUF_SZ_SHIFT) |
 			    hw_flags |
