@@ -1,6 +1,7 @@
-CFLAGS += -Werror -Wall -O2 -g -fsanitize=address
+#CFLAGS += -Werror -Wall -O2 -g -fsanitize=address
+CFLAGS += -Werror -Wall -O2 -g
 NMLIB = ../../libnetmap/libnetmap.a
-LDFLAGS += $(NMLIB) -lpthread -lm # sqlite requires them
+LDFLAGS += $(NMLIB) -lpthread -lm -lbsd # sqlite requires them
 #CFLAGS += -I/usr/local/include -I../libsqlite/include
 OBJS = phttpd-b.o phttpd-k.o phttpd-f.o bplus_support.o bplus_impl.o
 #OPT = -DWITH_SQLITE

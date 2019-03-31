@@ -59,6 +59,7 @@ struct nmreq_prefix {
 static struct nmreq_prefix nmreq_prefixes[] = {
 	declprefix("netmap", NR_P_SKIP),
 	declprefix(NM_BDG_NAME,	NR_P_ID|NR_P_EMPTYID),
+	declprefix("stack",	NR_P_ID|NR_P_EMPTYID),
 	{ NULL } /* terminate the list */
 };
 
@@ -315,6 +316,9 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			case 'T':
 				nr_flags |= NR_TX_RINGS_ONLY;
 				break;
+			case 'V':
+				nr_flags |= NR_ACCEPT_VNET_HDR;
+				break;
 			default:
 				nmctx_ferror(ctx, "unrecognized flag: '%c'", *scan);
 				goto fail;
@@ -323,6 +327,7 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			p_state = P_FLAGSOK;
 			break;
 		case P_MEMID:
+			nmctx_ferror(ctx, "scan %s", scan);
 			if (!isdigit(*scan)) {
 				scan--;	/* escape to options */
 				goto out;

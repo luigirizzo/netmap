@@ -15,13 +15,14 @@
 #include <sys/poll.h>
 #ifdef __linux__
 #include <sys/epoll.h>
+#include <bsd/string.h>
 #endif /* __linux__ */
 
 /* prototypes for libnetmap/nmreq.c */
-const char *nmreq_header_decode(const char *, struct nmreq_header *);
-struct nm_desc * nmreq_open(const char *, uint64_t, const struct nm_desc *);
-int nmreq_close(struct nm_desc *);
-//#include <libnetmap.h>
+//const char *nmreq_header_decode(const char *, struct nmreq_header *);
+//struct nm_desc * nmreq_open(const char *, uint64_t, const struct nm_desc *);
+//int nmreq_close(struct nm_desc *);
+#include <libnetmap.h>
 
 #ifndef D
 #define D(fmt, ...) \
@@ -107,8 +108,8 @@ struct nm_msg {
 };
 
 struct nm_garg {
-	char ifname[NETMAP_REQ_IFNAMSIZ]; // must be here
-	struct nm_desc *nmd;
+	char ifname[NETMAP_REQ_IFNAMSIZ*2]; // must be here
+	struct nmport_d *nmd;
 	void *(*td_body)(void *);
 	int nthreads;
 	int affinity;
@@ -151,7 +152,7 @@ struct nm_garg {
 
 struct nm_targ {
 	struct nm_garg *g;
-	struct nm_desc *nmd;
+	struct nmport_d *nmd;
 	/* these ought to be volatile, but they are
 	 * only sampled and errors should not accumulate
 	 */
@@ -231,6 +232,7 @@ system_ncpus(void)
 	return (ncpus);
 }
 
+#if 0
 static int
 nm_parse_nmr_config(const char* conf, struct nmreq_register *reg)
 {
@@ -270,6 +272,7 @@ nm_parse_nmr_config(const char* conf, struct nmreq_register *reg)
                         reg->nr_rx_rings || reg->nr_rx_slots) ?
 		NM_OPEN_RING_CFG : 0;
 }
+#endif
 
 static void
 get_vnet_hdr_len(struct nm_garg *g)
@@ -280,7 +283,7 @@ get_vnet_hdr_len(struct nm_garg *g)
 
 	bzero(&hdr, sizeof(hdr));
 	hdr.nr_body = (uintptr_t)&req;
-	strncpy(hdr.nr_name, g->nmd->nr.hdr.nr_name, sizeof(hdr.nr_name));
+	strncpy(hdr.nr_name, g->nmd->hdr.nr_name, sizeof(hdr.nr_name));
 	hdr.nr_version = NETMAP_API;
 	hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
 
@@ -293,27 +296,6 @@ get_vnet_hdr_len(struct nm_garg *g)
 	if (g->virt_header) {
 		D("Port requires virtio-net header, length = %d",
 		  g->virt_header);
-	}
-}
-
-static void
-set_vnet_hdr_len(struct nm_garg *g)
-{
-	struct nmreq_header hdr;
-	struct nmreq_port_hdr req = {0};
-	int err, l = g->virt_header;
-
-	if (l == 0)
-		return;
-	bzero(&hdr, sizeof(hdr));
-	hdr.nr_body = (uintptr_t)&req;
-	strncpy(hdr.nr_name, g->nmd->nr.hdr.nr_name, sizeof(hdr.nr_name));
-	hdr.nr_version = NETMAP_API;
-	hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
-
-	err = ioctl(g->main_fd, NIOCCTRL, &hdr);
-	if (err) {
-		D("Unable to set virtio-net header length %d", l);
 	}
 }
 
@@ -357,21 +339,22 @@ nm_start_threads(struct nm_garg *g)
 
 		if (g->dev_type == DEV_NETMAP) {
 			/* copy, we overwrite ringid */
-			struct nm_desc nmd = *g->nmd;
-			uint64_t nmd_flags = 0;
-			nmd.self = &nmd;
+			t->nmd = nmport_clone(g->nmd);
+			//uint64_t nmd_flags = 0;
 
 			if (i > 0) {
 				/* the first thread uses the fd opened by the
 				 * main thread, the other threads re-open
 				 * /dev/netmap
 				 */
+				int error;
+#if 0
 				if (g->nthreads > 1) {
 					nmd.nr.reg.nr_flags =
 					    g->nmd->nr.reg.nr_flags & ~NR_REG_MASK;
-					nmd.nr.reg.nr_mode = NR_REG_ONE_NIC;
-					nmd.nr.reg.nr_ringid = i;
-					if (nmd.nr.reg.nr_extra_bufs) {
+					nmd.reg.nr_mode = NR_REG_ONE_NIC;
+					nmd.reg.nr_ringid = i;
+					if (nmd.reg.nr_extra_bufs) {
 						D("setting nmd_flags NM_OPEN_EXTRA for %u", nmd.nr.reg.nr_extra_bufs);
 						nmd_flags |= NM_OPEN_EXTRA;
 					}
@@ -383,17 +366,41 @@ nm_start_threads(struct nm_garg *g)
 					nmd_flags |= NETMAP_NO_TX_POLL;
 
 				/* register interface. Override ifname and ringid etc. */
-				t->nmd = nmreq_open(t->g->ifname, nmd_flags
-						| NM_OPEN_IFNAME
-						| NM_OPEN_NO_DECODE
-						| NM_OPEN_NO_MMAP, &nmd);
-				if (t->nmd == NULL) {
+				t->nmd = nmport_open(t->g->ifname);
+#endif
+				/* register one NIC only
+				 * We don't need header_decode() */
+				char name[NETMAP_REQ_IFNAMSIZ];
+				char suff[NETMAP_REQ_IFNAMSIZ];
+				size_t nl = strlen(t->nmd->hdr.nr_name);
+
+				snprintf(suff, sizeof(suff), "-%d", i);
+				if (sizeof(name) < nl + strlen(suff) + 1) {
+					D("no space %s", t->nmd->hdr.nr_name);
+					continue;
+				}
+				D("t->nmd->hdr.nr_name %s", t->nmd->hdr.nr_name);
+				strlcpy(mempcpy(name, t->nmd->hdr.nr_name, nl),
+						suff, sizeof(name));
+				//error = nmreq_register_decode(&name,
+				//		&t->nmd->reg, &ctx);
+				strlcat(name, "/V", sizeof(name));
+				D("nmport_parse %s", name);
+				error = nmport_parse(t->nmd, name);
+				if (error) {
+					D("failed in nmport_parse %s", name);
+					continue;
+				}
+				D("nmport_register, %s", t->nmd->hdr.nr_name);
+				error = nmport_open_desc(t->nmd);
+				if (error) {
 					D("Unable to open %s: %s", t->g->ifname,
 						       	strerror(errno));
 					continue;
 				}
+				D("memid %u", t->nmd->reg.nr_mem_id);
 				D("got %u extra bufs at %u",
-				    t->nmd->nr.reg.nr_extra_bufs,
+				    t->nmd->reg.nr_extra_bufs,
 				    t->nmd->nifp->ni_bufs_head);
 			} else {
 				t->nmd = g->nmd;
@@ -523,7 +530,7 @@ nm_main_thread(struct nm_garg *g)
 		if (targs[i].used)
 			pthread_join(targs[i].thread, NULL); /* blocking */
 		if (g->dev_type == DEV_NETMAP) {
-			nmreq_close(targs[i].nmd);
+			nmport_close(targs[i].nmd);
 			targs[i].nmd = NULL;
 		} else if (targs[i].fd > 2) {
 			close(targs[i].fd);
@@ -566,10 +573,9 @@ static int
 nm_start(struct nm_garg *g)
 {
 	int i, devqueues = 0;
-	struct nm_desc base_nmd;
 	struct sigaction sa;
 	sigset_t ss;
-	u_int flags;
+	int error;
 
 	g->main_fd = -1;
 	g->wait_link = 3;
@@ -588,14 +594,71 @@ nm_start(struct nm_garg *g)
 	if (g->dev_type != DEV_NETMAP)
 		goto nonetmap;
 
-	if (g->virt_header != 0 && g->virt_header != VIRT_HDR_1
-			&& g->virt_header != VIRT_HDR_2) {
-		D("bad virtio-net-header length");
+	if (g->nthreads > 1) {
+		/* register only one ring */
+		if (strlen(g->ifname) + 2 > sizeof(g->ifname) - 1) {
+			D("no space in g->ifname");
+			return -EINVAL;
+		}
+		strlcat(g->ifname, "-0", sizeof(g->ifname));
+	}
+
+	if (strlen(g->ifname) + 2 < sizeof(g->ifname) - 1) {
+		strlcat(g->ifname, "/V", sizeof(g->ifname));
+	} else {
+		D("no space in g->ifname");
 		return -EINVAL;
 	}
 
-	bzero(&base_nmd, sizeof(base_nmd));
+	if (g->nthreads > 1) {
+		char conf[32];
+		/* create multiple rings */
+		snprintf(conf, sizeof(conf), "@conf:rings=%d", g->nthreads);
+		strlcat(g->ifname, conf, sizeof(g->ifname));
+	}
+	if (g->extmem) {
+		char extm[128], kv[32];
+		size_t lim = sizeof(extm);
 
+		snprintf(extm, sizeof(extm), "@extmem:file=%s", g->extmem);
+		lim -= strlen(extm);
+		bzero(kv, sizeof(kv));
+		snprintf(kv, sizeof(kv), ",if-num=%u", IF_OBJTOTAL);
+		if (lim > strlen(kv)) {
+			strlcat(extm, kv, sizeof(extm));
+			lim -= strlen(kv);
+		} else
+			return -EINVAL;
+		bzero(kv, sizeof(kv));
+		snprintf(kv, sizeof(kv), ",ring-num=%u", RING_OBJTOTAL);
+		if (lim > strlen(kv)) {
+			strlcat(extm, kv, sizeof(extm));
+			lim -= strlen(kv);
+		} else
+			return -EINVAL;
+		bzero(kv, sizeof(kv));
+		snprintf(kv, sizeof(kv), ",ring-size=%u", RING_OBJSIZE);
+		if (lim > strlen(kv)) {
+			strlcat(extm, kv, sizeof(extm));
+			lim -= strlen(kv);
+		} else
+			return -EINVAL;
+		bzero(kv, sizeof(kv));
+		snprintf(kv, sizeof(kv), ",buf-num=%lu",
+				(uint64_t)g->extra_bufs + 320000);
+		if (lim > strlen(kv)) {
+			strlcat(extm, kv, sizeof(extm));
+			lim -= strlen(kv);
+		} else
+			return -EINVAL;
+		if (strlen(extm) < sizeof(g->ifname) - strlen(g->ifname)) {
+			strlcat(g->ifname, extm, sizeof(g->ifname));
+		} else {
+			D("no space strlen(extm) %lu sizeof(g->ifname) %lu strlen(g->ifname) %lu g->ifname %s extmem %s", strlen(extm), sizeof(g->ifname), strlen(g->ifname), g->ifname, extm);
+		}
+		D("g->ifname w/ extmem %s", g->ifname);
+	}
+#if 0
 	nm_parse_nmr_config(g->nmr_config, &base_nmd.nr.reg);
 	if (g->extra_bufs) {
 		base_nmd.nr.reg.nr_extra_bufs = g->extra_bufs / g->nthreads;
@@ -644,33 +707,39 @@ nm_start(struct nm_garg *g)
 		D("requesting buf_pool_objtotal %u (extra %u)",
 				pi->nr_buf_pool_objtotal, g->extra_bufs);
 	}
-
-	g->nmd = nmreq_open(g->ifname, flags, &base_nmd);
+#endif
+	/* internally nmport_parse() */
+	D("now nmport_open %s", g->ifname);
+	//g->nmd = nmport_open(g->ifname);
+	g->nmd = nmport_prepare(g->ifname);
 	if (g->nmd == NULL) {
-		D("Unable to open %s: %s", g->ifname, strerror(errno));
+		D("Unable to prepare %s: %s", g->ifname, strerror(errno));
 		goto out;
 	}
-	ND("got %u extra bufs at %u", g->nmd->nr.reg.nr_extra_bufs,
+	if (g->extra_bufs) {
+		g->nmd->reg.nr_extra_bufs = g->extra_bufs;
+	}
+	error = nmport_open_desc(g->nmd);
+	if (error) {
+		D("Unable to open_desc %s: %s", g->ifname, strerror(errno));
+		goto out;
+	}
+	D("memid %u", g->nmd->reg.nr_mem_id);
+	D("got %u extra bufs at %u", g->nmd->reg.nr_extra_bufs,
 			g->nmd->nifp->ni_bufs_head);
 
 	g->main_fd = g->nmd->fd;
-	D("mapped %lu at %p", (unsigned long)g->nmd->nr.reg.nr_memsize>>10, g->nmd->mem);
+	D("mapped %lu at %p", (unsigned long)g->nmd->reg.nr_memsize>>10, g->nmd->mem);
 
-	if (g->virt_header) {
-		/* Set the virtio-net header length, since the user asked
-		 * for it explicitely. */
-		set_vnet_hdr_len(g);
-	} else {
-		/* Check whether the netmap port we opened requires us to send
-		 * and receive frames with virtio-net header. */
-		get_vnet_hdr_len(g);
-	}
+	/* Check whether the netmap port we opened requires us to send
+	 * and receive frames with virtio-net header. */
+	get_vnet_hdr_len(g);
 
 	/* get num of queues in tx or rx */
 	if (g->td_type == TD_TYPE_SENDER)
-		devqueues = g->nmd->nr.reg.nr_tx_rings;
+		devqueues = g->nmd->reg.nr_tx_rings;
 	else
-		devqueues = g->nmd->nr.reg.nr_rx_rings;
+		devqueues = g->nmd->reg.nr_rx_rings;
 
 	/* validate provided nthreads. */
 	if (g->nthreads < 1 || g->nthreads > devqueues) {
@@ -680,7 +749,7 @@ nm_start(struct nm_garg *g)
 
 	if (g->verbose) {
 		struct netmap_if *nifp = g->nmd->nifp;
-		struct nmreq_register *reg = &g->nmd->nr.reg;
+		struct nmreq_register *reg = &g->nmd->reg;
 
 		D("nifp at offset %lu, %d tx %d rx region %d",
 		    reg->nr_offset, reg->nr_tx_rings, reg->nr_rx_rings,
@@ -705,7 +774,7 @@ nm_start(struct nm_garg *g)
 
 		if (l + 1 > sizeof(hdr.nr_name)) {
 			g->main_fd = -1;
-			nmreq_close(g->nmd);
+			nmport_close(g->nmd);
 			goto nonetmap;
 		}
 		bzero(&hdr, sizeof(hdr));
@@ -718,13 +787,13 @@ nm_start(struct nm_garg *g)
 		hdr.nr_body = (uintptr_t)&reg;
 
 		bzero(&reg, sizeof(reg));
-		reg.reg.nr_mem_id = g->nmd->nr.reg.nr_mem_id;
+		reg.reg.nr_mem_id = g->nmd->reg.nr_mem_id;
 		reg.reg.nr_mode = NR_REG_NIC_SW;
 		error = ioctl(g->main_fd, NIOCCTRL, &hdr);
 		if (error < 0) {
 			perror("ioctl");
 			D("failed in attach ioctl");
-			nmreq_close(g->nmd);
+			nmport_close(g->nmd);
 			g->main_fd = -1;
 		}
 	}
@@ -1011,7 +1080,7 @@ netmap_worker(void *data)
 {
 	struct nm_targ *t = (struct nm_targ *) data;
 	struct nm_garg *g = t->g;
-	struct nm_desc *nmd = t->nmd;
+	struct nmport_d *nmd = t->nmd;
 	struct pollfd pfd[2] = {{ .fd = t->fd }}; // XXX make variable size
 #if DEBUG_SOCKET
 	int acceptfds[DEFAULT_NFDS];
@@ -1037,14 +1106,15 @@ netmap_worker(void *data)
 
 	/* import extra buffers */
 	if (g->dev_type == DEV_NETMAP) {
-		const struct nmreq_register *reg = &nmd->nr.reg;
+		const struct nmreq_register *reg = &nmd->reg;
 		const struct netmap_if *nifp = nmd->nifp;
-		const struct netmap_ring *any_ring = nmd->some_ring;
+		//const struct netmap_ring *any_ring = nmd->some_ring;
+		const struct netmap_ring *any_ring = NETMAP_TXRING(nmd->nifp, nmd->first_tx_ring);
 		uint32_t next = nifp->ni_bufs_head;
 		const u_int n = reg->nr_extra_bufs;
 		uint32_t i;
 
-		D("have %u extra buffers from %u ring %p", n, next, any_ring);
+		ND("have %u extra buffers from %u ring %p", n, next, any_ring);
 		t->extra = calloc(sizeof(*t->extra), n);
 		if (!t->extra) {
 			perror("calloc");
@@ -1276,6 +1346,8 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 	struct nm_garg *g = calloc(1, sizeof(*g));
 	int i;
 	struct nmreq_header hdr;
+	struct nmctx ctx;
+	const char *namep = name;
 
 	*error = 0;
 	if (!g) {
@@ -1322,12 +1394,14 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 	signal(SIGPIPE, SIG_IGN);
 
 	/* Ensure correct name. Suffix may be added in nm_start() later */
-	if (nmreq_header_decode(name, &hdr) == NULL) {
+	bzero(&ctx, sizeof(ctx));
+	if (nmreq_header_decode(&namep, &hdr, &ctx) < 0) {
 		*error = -EINVAL;
 		return;
 	}
-	strncpy(g->ifname, name, sizeof(g->ifname));
 
+	strncpy(g->ifname, name, sizeof(g->ifname) - 1);
+	D("name %s g->ifname %s ifname %s", name, g->ifname, ifname);
 	if (ifname && strlen(ifname)) {
 		struct nm_ifreq *r = &g->ifreq;
 
