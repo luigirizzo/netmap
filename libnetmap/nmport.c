@@ -89,7 +89,6 @@ nmport_extmem_from_file(struct nmport_d *d, const char *fname)
 	off_t mapsize;
 	void *p;
 
-	printf("nmport_extmem_from_file fname %s\n", fname);
 	fd = open(fname, O_RDWR);
 	if (fd < 0) {
 		nmctx_ferror(ctx, "cannot open '%s': %s", fname, strerror(errno));

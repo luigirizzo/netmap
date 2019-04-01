@@ -232,48 +232,6 @@ system_ncpus(void)
 	return (ncpus);
 }
 
-#if 0
-static int
-nm_parse_nmr_config(const char* conf, struct nmreq_register *reg)
-{
-	char *w, *tok;
-	int i, v;
-
-	reg->nr_tx_rings = reg->nr_rx_rings = 0;
-	reg->nr_tx_slots = reg->nr_rx_slots = 0;
-	if (conf == NULL || ! *conf)
-		return 0;
-	w = strdup(conf);
-	for (i = 0, tok = strtok(w, ","); tok; i++, tok = strtok(NULL, ",")) {
-		v = atoi(tok);
-		switch (i) {
-		case 0:
-			reg->nr_tx_slots = reg->nr_rx_slots = v;
-			break;
-		case 1:
-			reg->nr_rx_slots = v;
-			break;
-		case 2:
-			reg->nr_tx_rings = reg->nr_rx_rings = v;
-			break;
-		case 3:
-			reg->nr_rx_rings = v;
-			break;
-		default:
-			D("ignored config: %s", tok);
-			break;
-		}
-	}
-	D("txr %d txd %d rxr %d rxd %d",
-			reg->nr_tx_rings, reg->nr_tx_slots,
-			reg->nr_rx_rings, reg->nr_rx_slots);
-	free(w);
-	return (reg->nr_tx_rings || reg->nr_tx_slots ||
-                        reg->nr_rx_rings || reg->nr_rx_slots) ?
-		NM_OPEN_RING_CFG : 0;
-}
-#endif
-
 static void
 get_vnet_hdr_len(struct nm_garg *g)
 {
@@ -338,38 +296,9 @@ nm_start_threads(struct nm_garg *g)
 		}
 
 		if (g->dev_type == DEV_NETMAP) {
-			/* copy, we overwrite ringid */
 			t->nmd = nmport_clone(g->nmd);
-			//uint64_t nmd_flags = 0;
-
 			if (i > 0) {
-				/* the first thread uses the fd opened by the
-				 * main thread, the other threads re-open
-				 * /dev/netmap
-				 */
-				int error;
-#if 0
-				if (g->nthreads > 1) {
-					nmd.nr.reg.nr_flags =
-					    g->nmd->nr.reg.nr_flags & ~NR_REG_MASK;
-					nmd.reg.nr_mode = NR_REG_ONE_NIC;
-					nmd.reg.nr_ringid = i;
-					if (nmd.reg.nr_extra_bufs) {
-						D("setting nmd_flags NM_OPEN_EXTRA for %u", nmd.nr.reg.nr_extra_bufs);
-						nmd_flags |= NM_OPEN_EXTRA;
-					}
-				}
-				/* Only touch one of the rings
-				 * (rx is already ok)
-				 */
-				if (g->td_type == TD_TYPE_RECEIVER)
-					nmd_flags |= NETMAP_NO_TX_POLL;
-
-				/* register interface. Override ifname and ringid etc. */
-				t->nmd = nmport_open(t->g->ifname);
-#endif
-				/* register one NIC only
-				 * We don't need header_decode() */
+				/* register one NIC only */
 				char name[NETMAP_REQ_IFNAMSIZ];
 				char suff[NETMAP_REQ_IFNAMSIZ];
 				size_t nl = strlen(t->nmd->hdr.nr_name);
@@ -379,27 +308,20 @@ nm_start_threads(struct nm_garg *g)
 					D("no space %s", t->nmd->hdr.nr_name);
 					continue;
 				}
-				D("t->nmd->hdr.nr_name %s", t->nmd->hdr.nr_name);
+				/* let nmport_parse() handle errors */
 				strlcpy(mempcpy(name, t->nmd->hdr.nr_name, nl),
-						suff, sizeof(name));
-				//error = nmreq_register_decode(&name,
-				//		&t->nmd->reg, &ctx);
+						suff, sizeof(name) - nl);
 				strlcat(name, "/V", sizeof(name));
-				D("nmport_parse %s", name);
-				error = nmport_parse(t->nmd, name);
-				if (error) {
+				if (nmport_parse(t->nmd, name)) {
 					D("failed in nmport_parse %s", name);
 					continue;
 				}
-				D("nmport_register, %s", t->nmd->hdr.nr_name);
-				error = nmport_open_desc(t->nmd);
-				if (error) {
+				if (nmport_open_desc(t->nmd)) {
 					D("Unable to open %s: %s", t->g->ifname,
 						       	strerror(errno));
 					continue;
 				}
-				D("memid %u", t->nmd->reg.nr_mem_id);
-				D("got %u extra bufs at %u",
+				D("thread %d %u extra bufs at %u", i,
 				    t->nmd->reg.nr_extra_bufs,
 				    t->nmd->nifp->ni_bufs_head);
 			} else {
@@ -618,96 +540,26 @@ nm_start(struct nm_garg *g)
 	}
 	if (g->extmem) {
 		char extm[128], kv[32];
-		size_t lim = sizeof(extm);
+		char *prms[4] = {",if-num=%u", ",ring-num=%u", ",ring-size=%u",
+			",buf-num=%u"};
+		u_int32_t prmvals[4] = {IF_OBJTOTAL, RING_OBJTOTAL,
+			RING_OBJSIZE, (uint32_t)g->extra_bufs + 320000};
+		int i;
 
 		snprintf(extm, sizeof(extm), "@extmem:file=%s", g->extmem);
-		lim -= strlen(extm);
-		bzero(kv, sizeof(kv));
-		snprintf(kv, sizeof(kv), ",if-num=%u", IF_OBJTOTAL);
-		if (lim > strlen(kv)) {
-			strlcat(extm, kv, sizeof(extm));
-			lim -= strlen(kv);
-		} else
-			return -EINVAL;
-		bzero(kv, sizeof(kv));
-		snprintf(kv, sizeof(kv), ",ring-num=%u", RING_OBJTOTAL);
-		if (lim > strlen(kv)) {
-			strlcat(extm, kv, sizeof(extm));
-			lim -= strlen(kv);
-		} else
-			return -EINVAL;
-		bzero(kv, sizeof(kv));
-		snprintf(kv, sizeof(kv), ",ring-size=%u", RING_OBJSIZE);
-		if (lim > strlen(kv)) {
-			strlcat(extm, kv, sizeof(extm));
-			lim -= strlen(kv);
-		} else
-			return -EINVAL;
-		bzero(kv, sizeof(kv));
-		snprintf(kv, sizeof(kv), ",buf-num=%lu",
-				(uint64_t)g->extra_bufs + 320000);
-		if (lim > strlen(kv)) {
-			strlcat(extm, kv, sizeof(extm));
-			lim -= strlen(kv);
-		} else
-			return -EINVAL;
-		if (strlen(extm) < sizeof(g->ifname) - strlen(g->ifname)) {
-			strlcat(g->ifname, extm, sizeof(g->ifname));
-		} else {
-			D("no space strlen(extm) %lu sizeof(g->ifname) %lu strlen(g->ifname) %lu g->ifname %s extmem %s", strlen(extm), sizeof(g->ifname), strlen(g->ifname), g->ifname, extm);
+		for (i = 0; i < 4; i++) {
+			snprintf(kv, sizeof(kv), prms[i], prmvals[i]);
+			if (strlcat(extm, kv, sizeof(extm)) >= sizeof(extm)) {
+				D("no space for %s", kv);
+				return -EINVAL;
+			}
 		}
-		D("g->ifname w/ extmem %s", g->ifname);
-	}
-#if 0
-	nm_parse_nmr_config(g->nmr_config, &base_nmd.nr.reg);
-	if (g->extra_bufs) {
-		base_nmd.nr.reg.nr_extra_bufs = g->extra_bufs / g->nthreads;
-	}
-	base_nmd.nr.reg.nr_flags |= NR_ACCEPT_VNET_HDR;
-	/* NM_OPEN_IFNAME overrides nmreq_register_decode() result */
-	base_nmd.nr.reg.nr_mode = NR_REG_ALL_NIC;
-
-	/*
-	 * Open the netmap device using nmreq_open().
-	 *
-	 * protocol stack and may cause a reset of the card,
-	 * which in turn may take some time for the PHY to
-	 * reconfigure. We do the open here to have time to reset.
-	 */
-	flags = NM_OPEN_IFNAME | NM_OPEN_RING_CFG;
-	flags |= NM_OPEN_ARG1 | NM_OPEN_MEMID | NM_OPEN_EXTRA;
-	if (g->nthreads > 1) {
-		base_nmd.nr.reg.nr_flags &= ~NR_REG_MASK;
-		base_nmd.nr.reg.nr_mode = NR_REG_ONE_NIC;
-		base_nmd.nr.reg.nr_ringid = 0;
-	}
-
-	base_nmd.self = &base_nmd;
-	memcpy(base_nmd.nr.hdr.nr_name, g->ifname,
-			sizeof(base_nmd.nr.hdr.nr_name));
-	if (g->extmem) {
-		struct nmreq_pools_info *pi = &base_nmd.nr.ext.nro_info;
-		size_t o;
-
-		pi->nr_memsize = g->extmem_siz;
-		pi->nr_if_pool_objtotal = IF_OBJTOTAL;
-		pi->nr_ring_pool_objtotal = RING_OBJTOTAL;
-		pi->nr_ring_pool_objsize = RING_OBJSIZE;
-		pi->nr_buf_pool_objtotal = g->extra_bufs + 320000;
-		strncat(g->ifname, "@", 2);
-
-		o = strlen(g->ifname);
-		if (sizeof(g->ifname) > o + strlen(g->extmem)) {
-			memcpy(g->ifname + o, g->extmem, strlen(g->extmem));
-			g->ifname[o + strlen(g->extmem)] = '\0';
-		} else {
-			D("bad buffer length: maybe bad string");
-			goto out;
+		if (strlcat(g->ifname, extm, sizeof(g->ifname)) >=
+		    sizeof(g->ifname)) {
+			D("no space for %s", extm);
+			return -EINVAL;
 		}
-		D("requesting buf_pool_objtotal %u (extra %u)",
-				pi->nr_buf_pool_objtotal, g->extra_bufs);
 	}
-#endif
 	/* internally nmport_parse() */
 	D("now nmport_open %s", g->ifname);
 	//g->nmd = nmport_open(g->ifname);
@@ -717,14 +569,13 @@ nm_start(struct nm_garg *g)
 		goto out;
 	}
 	if (g->extra_bufs) {
-		g->nmd->reg.nr_extra_bufs = g->extra_bufs;
+		g->nmd->reg.nr_extra_bufs = g->extra_bufs / g->nthreads;
 	}
 	error = nmport_open_desc(g->nmd);
 	if (error) {
 		D("Unable to open_desc %s: %s", g->ifname, strerror(errno));
 		goto out;
 	}
-	D("memid %u", g->nmd->reg.nr_mem_id);
 	D("got %u extra bufs at %u", g->nmd->reg.nr_extra_bufs,
 			g->nmd->nifp->ni_bufs_head);
 

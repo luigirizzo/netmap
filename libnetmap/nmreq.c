@@ -327,7 +327,6 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			p_state = P_FLAGSOK;
 			break;
 		case P_MEMID:
-			nmctx_ferror(ctx, "scan %s", scan);
 			if (!isdigit(*scan)) {
 				scan--;	/* escape to options */
 				goto out;
