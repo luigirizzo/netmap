@@ -4,7 +4,6 @@ NMLIB = ../../libnetmap/libnetmap.a
 LDFLAGS += $(NMLIB) -lpthread -lm -lbsd # sqlite requires them
 #CFLAGS += -I/usr/local/include -I../libsqlite/include
 OBJS = phttpd-b.o phttpd-k.o phttpd-f.o bplus_support.o bplus_impl.o
-#OPT = -DWITH_SQLITE
 SPATH ?= -I../../sys/ -I../include -I../../libnetmap -DNETMAP_WITH_LIBS
 BOPT = -DWITH_BPLUS -I./
 FOPT = -DWITH_NOFLUSH

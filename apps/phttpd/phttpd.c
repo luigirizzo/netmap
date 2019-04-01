@@ -55,9 +55,6 @@
 #include <fcntl.h>
 #include <time.h>	// clock_gettime()
 #include <netinet/tcp.h>
-#ifdef WITH_SQLITE
-#include <sqlite3.h>
-#endif /* WITH_SQLITE */
 #include <pthread.h>
 #include <net/netmap.h>
 #include <net/netmap_user.h>
@@ -139,9 +136,6 @@ struct dbctx {
 	size_t pgsiz;
 	int i;
 	union {
-#ifdef WITH_SQLITE
-		sqlite3 *sql_conn;
-#endif
 		int	fd;
 	};
 	char *paddr;
@@ -183,7 +177,7 @@ struct wal_hdr { // so far organized for Paste but it is dummy anyways.
 	uint32_t buf_ofs;
 };
 
-enum { DT_NONE=0, DT_DUMB, DT_SQLITE};
+enum { DT_NONE=0, DT_DUMB};
 const char *SQLDBTABLE = "tinytable";
 
 #if 0
@@ -193,64 +187,6 @@ static u_int stat_maxnfds;
 static u_int stat_minnfds;
 static uint64_t stat_vnfds;
 #endif /* 0 */
-
-#if 0
-void
-close_db(struct dbctx *db)
-{
-	struct stat st;
-#ifdef WITH_SQLITE
-	char path_wal[64], path_shm[64];
-#endif
-
-	/* close reference */
-	if (db->type == DT_DUMB) {
-		if (db->paddr) {
-			db->paddr -= sizeof(struct wal_hdr);
-			db->size += sizeof(struct wal_hdr);
-			if (munmap(db->paddr, db->size))
-				perror("munmap");
-		}
-		if (db->fd > 0) {
-			D("closing db's fd");
-			close(db->fd);
-		}
-	}
-#ifdef WITH_SQLITE
-	else if (db->type == DT_SQLITE) {
-		D("closing sqlite3 obj");
-		sqlite3_close_v2(dbi->sql_conn);
-	}
-#endif
-	/* remove file */
-	if (!strlen(db->path) || !strncmp(db->path, ":memory:", 8)) {
-		D("No dbfile to remove");
-		return;
-	}
-	bzero(&st, sizeof(st));
-	stat(db->path, &st);
-#ifdef WITH_SQLITE
-	if (dbip->type == DT_SQLITE) {
-		strncpy(path_wal, path, sizeof(path_wal));
-		strcat(path_wal, "-wal");
-	//	remove(path_wal);
-		strncpy(path_shm, path, sizeof(path_wal));
-		strcat(path_shm, "-shm");
-	//	remove(path_shm);
-	}
-#endif
-	//remove(db->path);
-}
-#endif /* 0 */
-
-#ifdef WITH_SQLITE
-int
-print_resp(void *get_prm, int n, char **txts, char **col)
-{
-	printf("%s : %s\n", txts[0], txts[1]);
-	return 0;
-}
-#endif
 
 static int
 copy_to_nm(struct netmap_ring *ring, int virt_header, const char *data,
@@ -902,9 +838,6 @@ int phttpd_read(int fd, struct nm_targ *targ)
 {
 	char buf[MAXQUERYLEN];
 	char *rxbuf;
-#ifdef WITH_SQLITE
-	static u_int seq = 0;
-#endif
 	ssize_t len = 0, written;
 	struct nm_garg *g = targ->g;
 	struct phttpd_global *tg = (struct phttpd_global *)g->garg_private;
@@ -968,26 +901,6 @@ int phttpd_read(int fd, struct nm_targ *targ)
 				RD(1, "no db to save POST");
 			}
 		}
-#ifdef WITH_SQLITE
-		else if (db->type == DT_SQLITE) {
-			char query[MAXQUERYLEN];
-			int ret;
-			char *err_msg;
-
-			snprintf(query, sizeof(query),
-				"BEGIN TRANSACTION; insert into %s values (%d, '%s'); COMMIT;",
-				SQLDBTABLE, seq++, rxbuf);
-			ret = sqlite3_exec(tp->sql_conn, query, print_resp,
-					NULL, &err_msg);
-			if (ret != SQLITE_OK) {
-				D("%s", err_msg);
-				sqlite3_close(tp->sql_conn);
-				sqlite3_free(err_msg);
-				err_msg = NULL;
-				return -1;
-			}
-		}
-#endif /* SQLITE */
 		break;
 	case GET:
 #ifdef WITH_BPLUS
@@ -1050,62 +963,6 @@ init_db(struct dbctx *db, int i, const char *dir, int type, int flags, size_t si
 	db->pgsiz = getpagesize();
 
 	ND("map %p", map);
-#ifdef WITH_SQLITE
-	if (db->type == DT_SQLITE) {
-	    do {
-		char *err_msg;
-		char create_tbl_stmt[128];
-		char *journal_wal_stmt = "PRAGMA journal_mode = WAL";
-		char *excl_lock_stmt = "PRAGMA locking_mode = EXCLUSIVE";
-		char *synchronous_stmt = "PRAGMA synchronous = FULL";
-		sqlite3 *sql_conn = NULL;
-
-		if (dir == NULL) {
-			strncpy(db->path, ":memory:", sizeof(db->dir));
-		}
-		/* open db file and get handle */
-		ret = sqlite3_open_v2(db->path, &sql_conn,
-			SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |
-			SQLITE_OPEN_WAL, NULL);
-		if (SQLITE_OK != ret) {
-			D("sqlite3_open_v2 failed");
-			break;
-		}
-		/* enable wal */
-		ret = sqlite3_exec(sql_conn, journal_wal_stmt,
-					NULL, NULL, &err_msg);
-		if (SQLITE_OK != ret)
-			goto error;
-		/* avoiding shared memory cuts 4 us */
-		ret = sqlite3_exec(sql_conn, excl_lock_stmt,
-					NULL, NULL, &err_msg);
-		if (SQLITE_OK != ret)
-			goto error;
-		/* flush every commit onto the disk */
-		ret = sqlite3_exec(sql_conn, synchronous_stmt,
-				NULL, NULL, &err_msg);
-		if (SQLITE_OK != ret)
-			goto error;
-
-		/* create a table */
-		snprintf(create_tbl_stmt, sizeof(create_tbl_stmt),
-				"CREATE TABLE IF NOT EXISTS %s "
-				"(id INTEGER, "
-				"name BINARY(2048))", SQLDBTABLE);
-		ret = sqlite3_exec(sql_conn, create_tbl_stmt,
-				NULL, NULL, &err_msg);
-		if (SQLITE_OK != ret ) {
-error:
-			D("%s", err_msg);
-			sqlite3_free(err_msg);
-			err_msg = NULL;
-			break;
-		}
-		db->sql_conn = sql_conn;
-	    } while (0);
-	    return 0;
-	}
-#endif /* WITH_SQLITE */
 #ifdef WITH_BPLUS
 	/* need B+tree ? */
 	if (db->flags & DF_BPLUS) {
@@ -1200,9 +1057,6 @@ main(int argc, char **argv)
 	int port = 60000;
 	struct phttpd_global pg;
 	struct nm_garg nmg, *g;
-#ifdef WITH_SQLITE
-	int ret = 0;
-#endif /* WITH_SQLITE */
 	int error = 0;
 	struct netmap_events e;
 
