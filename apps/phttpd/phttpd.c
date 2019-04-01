@@ -135,9 +135,7 @@ struct dbctx {
 	size_t size;
 	size_t pgsiz;
 	int i;
-	union {
-		int	fd;
-	};
+	int	fd;
 	char *paddr;
 	void *vp; // gfile_t
 	size_t cur;
@@ -170,12 +168,6 @@ get_aligned(size_t len, size_t align)
 	size_t d = len & (align - 1);
 	return d ? len + align - d : len;
 }
-
-struct wal_hdr { // so far organized for Paste but it is dummy anyways.
-	char ifname[IFNAMSIZ + 64];
-	char path[256];
-	uint32_t buf_ofs;
-};
 
 enum { DT_NONE=0, DT_DUMB};
 const char *SQLDBTABLE = "tinytable";
@@ -994,8 +986,6 @@ init_db(struct dbctx *db, int i, const char *dir, int type, int flags, size_t si
 			close(fd);
 			return -1;
 		}
-		//db->paddr += sizeof(struct wal_hdr);
-		//db->size -= sizeof(struct wal_hdr);
 	}
 	db->fd = fd;
 	return 0;
@@ -1074,9 +1064,6 @@ main(int argc, char **argv)
 
 	bzero(&pg, sizeof(pg));
 	pg.msglen = 64;
-
-
-	//signal(SIGPIPE, SIG_IGN); // XXX
 
 	while ((ch = getopt(argc, argv,
 			    "P:l:b:md:DNi:PcC:a:p:x:L:BkFe:h")) != -1) {
@@ -1177,6 +1164,9 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
+	/*
+	 * Check invariants
+	 */
 	if (!port || !pg.msglen)
 		usage();
 	else if (pg.dba.flags & DF_PASTE && strlen(pg.ifname) == 0)
@@ -1197,7 +1187,7 @@ main(int argc, char **argv)
 	if (nmg.dev_type != DEV_NETMAP && nmg.polltimeo >= 0) {
 		struct timespec *x = calloc(1, sizeof(*x));
 		if (!x) {
-			perror("malloc");
+			perror("calloc");
 			usage();
 		}
 		x->tv_sec = nmg.polltimeo / 1000;

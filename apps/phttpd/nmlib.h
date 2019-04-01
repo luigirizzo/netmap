@@ -18,10 +18,6 @@
 #include <bsd/string.h>
 #endif /* __linux__ */
 
-/* prototypes for libnetmap/nmreq.c */
-//const char *nmreq_header_decode(const char *, struct nmreq_header *);
-//struct nm_desc * nmreq_open(const char *, uint64_t, const struct nm_desc *);
-//int nmreq_close(struct nm_desc *);
 #include <libnetmap.h>
 
 #ifndef D
@@ -31,9 +27,6 @@
 
 int normalize = 1;
 
-#define VIRT_HDR_1	10	/* length of a base vnet-hdr */
-#define VIRT_HDR_2	12	/* length of the extenede vnet-hdr */
-#define VIRT_HDR_MAX	VIRT_HDR_2
 #define EPOLLEVENTS 2048
 #define DEBUG_SOCKET	1
 #ifndef linux
@@ -299,11 +292,13 @@ nm_start_threads(struct nm_garg *g)
 			t->nmd = nmport_clone(g->nmd);
 			if (i > 0) {
 				/* register one NIC only */
-				char name[NETMAP_REQ_IFNAMSIZ];
-				char suff[NETMAP_REQ_IFNAMSIZ];
+				char name[NETMAP_REQ_IFNAMSIZ], *suff;
 				size_t nl = strlen(t->nmd->hdr.nr_name);
 
-				snprintf(suff, sizeof(suff), "-%d", i);
+				if (asprintf(&suff, "-%d", i) < 0) {
+					perror("asprintf");
+					continue;
+				}
 				if (sizeof(name) < nl + strlen(suff) + 1) {
 					D("no space %s", t->nmd->hdr.nr_name);
 					continue;
@@ -311,6 +306,7 @@ nm_start_threads(struct nm_garg *g)
 				/* let nmport_parse() handle errors */
 				strlcpy(mempcpy(name, t->nmd->hdr.nr_name, nl),
 						suff, sizeof(name) - nl);
+				free(suff);
 				strlcat(name, "/V", sizeof(name));
 				if (nmport_parse(t->nmd, name)) {
 					D("failed in nmport_parse %s", name);
