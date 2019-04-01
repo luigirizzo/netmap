@@ -670,58 +670,34 @@ leftover_post(int *fde, const ssize_t len, const ssize_t clen,
 	}
 }
 
-void
-phttpd_data(struct nm_msg *m)
+static int
+phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
+		ssize_t *msglen, char **content, u_int off,
+		struct netmap_ring *txr, struct netmap_ring *rxr,
+		struct netmap_slot *rxs)
 {
-	struct nm_targ *targ = m->targ;
-	struct nm_garg *g = targ->g;
-	struct phttpd_global *pg = (struct phttpd_global *)g->garg_private;
-	struct dbctx *db = targ->opaque;
-
-	struct netmap_ring *rxr = m->rxring;
-	struct netmap_ring *txr = m->txring;
-	struct netmap_slot *rxs = m->slot;
-	ssize_t msglen = pg->msglen;
+	struct dbctx *db = (struct dbctx *)targ->opaque;
+	int *fde = &targ->fdtable[fd];
+	int readmmap = !!(db->flags & DF_READMMAP);
 
 	const int flags = db->flags;
 	const size_t dbsiz = db->size;
 
-	int off, len, thisclen = 0, no_ok = 0;
-	int *fde = &targ->fdtable[rxs->fd];
-	char *buf, *content = NULL;
-#ifdef MYHZ
-	struct timespec ts1, ts2, ts3;
-	user_clock_gettime(&ts1);
-#endif
-	off = g->virt_header + rxs->offset;
-	buf = NETMAP_BUF(rxr, rxs->buf_idx) + off;
-	len = rxs->len - off;
-	if (unlikely(len == 0)) {
-		close(rxs->fd);
-		return;
-	}
+	*no_ok = 0;
 
-	switch (httpreq(buf)) {
+	switch (httpreq(rxbuf)) {
 	uint64_t key;
-	int coff, clen;
-#ifdef WITH_BPLUS
-	uint64_t datum;
-	int rc;
-	enum slot t;
-	uint32_t _idx;
-	uint16_t _off, _len;
-	struct netmap_slot *s;
-	char *_buf;
-#endif
+	int coff, clen, thisclen;
+
 	case NONE:
-		leftover(fde, len, &no_ok, &thisclen);
+		leftover(fde, len, no_ok, &thisclen);
 		break;
 	case POST:
-		clen = parse_post(buf, &coff, &key);
+		clen = parse_post(rxbuf, &coff, &key);
 		if (unlikely(clen < 0))
-			return;
-		buf += coff;
-		leftover_post(fde, len, clen, coff, &thisclen, &no_ok);
+			return 0;
+		rxbuf += coff;
+		leftover_post(fde, len, clen, coff, &thisclen, no_ok);
 
 		if (flags & DF_PASTE) {
 			u_int i = 0;
@@ -730,7 +706,7 @@ phttpd_data(struct nm_msg *m)
 
 				/* flush data buffer */
 			for (; i < thisclen; i += CLSIZ) {
-				_mm_clflush(buf + i);
+				_mm_clflush(rxbuf + i);
 			}
 #ifdef WITH_BPLUS
 			if (db->vp) {
@@ -753,16 +729,18 @@ phttpd_data(struct nm_msg *m)
 
 			/* record current slot */
 			if (db->flags & DF_KVS) {
-				embed(extra, buf);
+				embed(extra, rxbuf);
 			}
 		} else if (db->paddr) {
-			copy_and_log(db->paddr, &db->cur, dbsiz, buf,
-				thisclen, thisclen, is_pm(db) ? 0 : db->pgsiz,
-				is_pm(db), db->vp, key);
+			if (readmmap)
+				rxbuf = NULL;
+			copy_and_log(db->paddr, &db->cur, dbsiz, rxbuf,
+			    thisclen, db->pgsiz, is_pm(db) ? 0 : db->pgsiz,
+			    is_pm(db), db->vp, key);
 		} else if (db->fd > 0) {
-			if (writesync(buf, len, dbsiz, db->fd,
-				      &db->cur, flags & DF_FDSYNC)) {
-				return; // XXX notify error
+			if (writesync(rxbuf, len, dbsiz, db->fd,
+			    &db->cur, flags & DF_FDSYNC)) {
+				return -1;
 			}
 		} else {
 			RD(1, "no db to save POST");
@@ -770,48 +748,94 @@ phttpd_data(struct nm_msg *m)
 		break;
 	case GET:
 #ifdef WITH_BPLUS
-		if (!(flags & DF_KVS) || !db->vp)
+	{
+		uint32_t _idx;
+		uint16_t _off, _len;
+		uint64_t datam = 0;
+		int rc;
+
+		if (flags & DF_KVS || !db->vp)
 			break;
-		key = parse_get_key(buf);
-		rc = btree_lookup(db->vp, key, &datum);
+		key = parse_get_key(rxbuf);
+		rc = btree_lookup(db->vp, key, &datam);
 		if (rc == ENOENT)
 			break;
-		unpack(datum, &_idx, &_off, &_len);
+		unpack(datam, &_idx, &_off, &_len);
 		ND("found key %lu val %lu idx %u off %lu len %lu",
 			key, datum, _idx, _off, _len);
 
-		if (!(flags & DF_PASTE)) {
-			content = db->paddr + NETMAP_BUF_SIZE * _idx;
-			msglen = _len;
+		if (!(flags & DF_PASTE)) { /* just to align with phttpd_data */
+			*content = db->paddr + NETMAP_BUF_SIZE * _idx;
+			*msglen = _len;
 			break;
-		}
+		} else {
+			enum slot t;
+			struct netmap_slot *s;
+			char *_buf;
 
-		_buf = NETMAP_BUF(rxr, _idx);
-		s = unembed(_buf, _off);
-		t = whose_slot(s, txr, targ->extra, targ->extra_num);
-		if (t == SLOT_UNKNOWN) {
-			msglen = _len;
-		} else if (t == SLOT_KERNEL || s->flags & NS_BUF_CHANGED) {
-			msglen = _len;
-			content = _buf + _off;
-		} else { // zero copy
-			struct netmap_slot *txs;
-			u_int hlen;
+			_buf = NETMAP_BUF(rxr, _idx);
+			s = unembed(_buf, _off);
+			t = whose_slot(s, txr, targ->extra, targ->extra_num);
+			if (t == SLOT_UNKNOWN) {
+				*msglen = _len;
+			} else if (t == SLOT_KERNEL ||
+				   s->flags & NS_BUF_CHANGED) {
+				*msglen = _len;
+				*content = _buf + _off;
+			} else { // zero copy
+				struct netmap_slot *txs;
+				u_int hlen;
 
-			txs = set_to_nm(txr, s);
-			txs->fd = rxs->fd;
-			txs->len = _off + _len; // XXX
-			embed(txs, _buf + _off);
-			hlen = generate_httphdr(_len, _buf + off);
-			if (unlikely(hlen != _off - off)) {
-				RD(1, "mismatch");
+				txs = set_to_nm(txr, s);
+				txs->fd = rxs->fd;
+				txs->len = _off + _len; // XXX
+				embed(txs, _buf + _off);
+				hlen = generate_httphdr(_len, _buf + off);
+				if (unlikely(hlen != _off - off)) {
+					RD(1, "mismatch");
+				}
+				*no_ok = 1;
 			}
-			no_ok = 1;
 		}
+	}
 #endif /* WITH_BPLUS */
 		break;
 	default:
 		break;
+	}
+	return 0;
+}
+
+int
+phttpd_data(struct nm_msg *m)
+{
+	struct nm_targ *targ = m->targ;
+	struct nm_garg *g = targ->g;
+	struct phttpd_global *pg = (struct phttpd_global *)g->garg_private;
+
+	struct netmap_ring *rxr = m->rxring;
+	struct netmap_ring *txr = m->txring;
+	struct netmap_slot *rxs = m->slot;
+	ssize_t msglen = pg->msglen;
+
+	int off, len, no_ok = 0;
+	char *rxbuf, *content = NULL;
+	int error;
+#ifdef MYHZ
+	struct timespec ts1, ts2, ts3;
+	user_clock_gettime(&ts1);
+#endif
+	off = g->virt_header + rxs->offset;
+	rxbuf = NETMAP_BUF(rxr, rxs->buf_idx) + off;
+	len = rxs->len - off;
+	if (unlikely(len == 0)) {
+		close(rxs->fd);
+		return 0;
+	}
+
+	error = phttpd_req(rxbuf, rxs->fd, len, targ, &no_ok, &msglen, &content, off, txr, rxr, rxs);
+	if (error) {
+		return error;
 	}
 
 	if (!no_ok) {
@@ -822,7 +846,7 @@ phttpd_data(struct nm_msg *m)
 	user_clock_gettime(&ts2);
 	ts3 = timespec_sub(ts2, ts1);
 #endif /* MYHZ */
-	return;
+	return 0;
 }
 
 /* We assume GET/POST appears in the beginning of netmap buffer */
@@ -837,16 +861,18 @@ int phttpd_read(int fd, struct nm_targ *targ)
 	size_t lim;
 	int readmmap = !!(db->flags & DF_READMMAP);
 	char *content = NULL;
-	int *fde = &targ->fdtable[fd];
 	int no_ok = 0;
 	ssize_t msglen = tg->msglen;
+	int error;
+
+	const size_t dbsiz = db->size;
 
 	if (readmmap) {
 		size_t cur = db->cur;
-		lim = db->size - cur - sizeof(uint64_t);
+		lim = dbsiz - cur - sizeof(uint64_t);
 		if (unlikely(lim < db->pgsiz)) {
 			cur = 0;
-			lim = db->size;
+			lim = dbsiz;
 		}
 		rxbuf = db->paddr + db->cur + sizeof(uint64_t);// metadata space
 	} else {
@@ -862,59 +888,10 @@ int phttpd_read(int fd, struct nm_targ *targ)
 		return -1;
 	}
 
-	switch (httpreq(rxbuf)) {
-	uint64_t key;
-	int coff, clen, thisclen;
-
-	case NONE:
-		leftover(fde, len, &no_ok, &thisclen);
-		break;
-	case POST:
-		clen = parse_post(rxbuf, &coff, &key);
-		if (unlikely(clen < 0)) {
-			RD(1, "invalid clen");
-			return 0;
-		}
-		rxbuf += coff;
-		leftover_post(fde, len, clen, coff, &thisclen, &no_ok);
-
-		if (db->type == DT_DUMB) {
-			int pm = is_pm(db);
-			if (db->paddr) {
-				copy_and_log(db->paddr, &db->cur, db->size,
-				    readmmap ? NULL : rxbuf, clen, db->pgsiz,
-				    pm ? 0 : db->pgsiz, pm, db->vp, key);
-			} else if (db->fd > 0) {
-				if (writesync(rxbuf, len, db->size, db->fd,
-				    &db->cur, db->flags & DF_FDSYNC)) {
-					return -1;
-				}
-			} else {
-				RD(1, "no db to save POST");
-			}
-		}
-		break;
-	case GET:
-#ifdef WITH_BPLUS
-		if (db->flags & DF_KVS)
-			break;
-		key = parse_get_key(rxbuf);
-		if (db->vp) {
-			uint32_t _idx;
-			uint16_t _off, _len;
-			uint64_t datam = 0;
-			int rc = btree_lookup(db->vp, key, &datam);
-
-			if (rc != ENOENT) {
-				unpack(datam, &_idx, &_off, &_len);
-				content = db->paddr + NETMAP_BUF_SIZE * _idx;
-				msglen = _len;
-			}
-		}
-#endif /* WITH_BPLUS */
-		break;
-	default:
-		return 0;
+	error = phttpd_req(rxbuf, fd, len, targ, &no_ok, &msglen, &content, 0,
+		       	NULL, NULL, NULL);
+	if (error) {
+		return error;
 	}
 
 	if (no_ok)

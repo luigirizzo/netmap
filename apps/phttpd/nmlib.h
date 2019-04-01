@@ -132,7 +132,7 @@ struct nm_garg {
 	int targ_opaque_len; // passed down to targ
 
 	struct nm_ifreq ifreq;
-	void (*data)(struct nm_msg *);
+	int (*data)(struct nm_msg *);
 	void (*connection)(struct nm_msg *);
 	int (*read)(int, struct nm_targ *);
 	int (*thread)(struct nm_targ *);
@@ -1170,7 +1170,7 @@ do_mmap(int fd, size_t len)
 
 
 struct netmap_events {
-	void (*data)(struct nm_msg *);
+	int (*data)(struct nm_msg *);
 	int (*read)(int, struct nm_targ *);
 	void (*connection)(struct nm_msg *);
 	int (*thread)(struct nm_targ *targ);
