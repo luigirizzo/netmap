@@ -1922,6 +1922,9 @@ struct plut_entry {
 
 struct netmap_obj_pool;
 
+/* alignment for netmap buffers */
+#define NM_BUF_ALIGN	64
+
 /*
  * NMB return the virtual address of a buffer (buffer 0 on bad index)
  * PNMB also fills the physical address
@@ -1968,6 +1971,12 @@ nm_get_offset(struct netmap_kring *kring, struct netmap_slot *slot)
 	return offset;
 }
 
+static inline void *
+NMB_O(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	void *addr = NMB(kring->na, slot);
+	return (char *)addr + nm_get_offset(kring, slot);
+}
 
 static inline void *
 PNMB_O(struct netmap_kring *kring, struct netmap_slot *slot, uint64_t *pp)

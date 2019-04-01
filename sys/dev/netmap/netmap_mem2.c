@@ -1330,7 +1330,7 @@ netmap_config_obj_allocator(struct netmap_obj_pool *p, u_int objtotal, u_int obj
 	p->r_objsize = objsize;
 
 #define MAX_CLUSTSIZE	(1<<22)		// 4 MB
-#define LINE_ROUND	NM_CACHE_ALIGN	// 64
+#define LINE_ROUND	NM_BUF_ALIGN	// 64
 	if (objsize >= MAX_CLUSTSIZE) {
 		/* we could do it but there is no point */
 		nm_prerr("unsupported allocation for %d bytes", objsize);
