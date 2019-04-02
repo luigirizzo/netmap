@@ -26,56 +26,26 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <sys/poll.h>
-#ifdef linux
-#include <sys/epoll.h>
-#else
+#ifdef __FreeBSD__
 #include <sys/event.h>
-#endif /* linux */
 #include <sys/stat.h>
-
-#include <sys/socket.h>
-#include <sys/mman.h>
+#endif /* __FreeBSD__ */
 #include <net/if.h>
-#include <net/ethernet.h>
 #include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include <dirent.h>
-#include <errno.h>
-#include <stddef.h>	// typeof
 #include <x86intrin.h>
-#include <time.h>
-
-#include <sys/ioctl.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <time.h>	// clock_gettime()
-#include <netinet/tcp.h>
-#include <pthread.h>
-#include <net/netmap.h>
-#include <net/netmap_user.h>
-
-#include<sched.h>
 #define NMLIB_EXTRA_SLOT 1
 #include "nmlib.h"
-
-
 #ifdef WITH_BPLUS
 #include <bplus_support.h>
 #include <bplus_common.h>
 #endif /* WITH_BPLUS */
-
 #ifdef WITH_NOFLUSH
 #define _mm_clflush(p) (void)(p)
 #endif
 #ifdef WITH_CLFLUSHOPT
 #define _mm_clflush(p) _mm_clflushopt(p)
 #endif
-
 
 //#define MYHZ	2400000000
 #ifdef MYHZ
@@ -170,7 +140,6 @@ get_aligned(size_t len, size_t align)
 }
 
 enum { DT_NONE=0, DT_DUMB};
-const char *SQLDBTABLE = "tinytable";
 
 #if 0
 static u_int stat_nfds;
@@ -249,34 +218,6 @@ generate_httphdr(size_t content_length, char *buf)
 	*c++ = '\n';
 	return c - buf;
 }
-
-#if 0
-#ifdef linux
-#define mempcpy(d, s, l)	(memcpy(d, s, l) + l)
-#endif
-ssize_t
-generate_httphdr(ssize_t content_length, char *buf)
-{
-	char *p = buf;
-	static const char *lines[5] = {
-	 "HTTP/1.1 200 OK\r\n",
-	 "Connection: keep-alive\r\n",
-	 "Content-Length: "};
-	ssize_t l;
-	const size_t l0 = 17, l1 = 24, l2 = 16;
-
-	//l0 = strlen(lines[0]);
-	p = mempcpy(p, lines[0], l0);
-	//l1 = strlen(lines[1]);
-	p = mempcpy(p, lines[1], l1);
-	//l2 = strlen(lines[2]);
-	p = mempcpy(p, lines[2], l2);
-	l = sprintf(p, "%lu\r\n\r", content_length);
-	p += l;
-	*p++ = '\n';
-	return p - buf;
-}
-#endif /* 0 */
 
 static int
 generate_http(int content_length, char *buf, char *content)
@@ -704,7 +645,7 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 			struct netmap_slot tmp, *extra;
 			uint32_t extra_i = netmap_extra_next(targ, &db->cur, 1);
 
-				/* flush data buffer */
+			/* flush data buffer */
 			for (; i < thisclen; i += CLSIZ) {
 				_mm_clflush(rxbuf + i);
 			}
@@ -764,11 +705,7 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 		ND("found key %lu val %lu idx %u off %lu len %lu",
 			key, datum, _idx, _off, _len);
 
-		if (!(flags & DF_PASTE)) { /* just to align with phttpd_data */
-			*content = db->paddr + NETMAP_BUF_SIZE * _idx;
-			*msglen = _len;
-			break;
-		} else {
+		if (flags & DF_PASTE) {
 			enum slot t;
 			struct netmap_slot *s;
 			char *_buf;
@@ -796,6 +733,9 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 				}
 				*no_ok = 1;
 			}
+		} else {
+			*content = db->paddr + NETMAP_BUF_SIZE * _idx;
+			*msglen = _len;
 		}
 	}
 #endif /* WITH_BPLUS */
@@ -833,11 +773,11 @@ phttpd_data(struct nm_msg *m)
 		return 0;
 	}
 
-	error = phttpd_req(rxbuf, rxs->fd, len, targ, &no_ok, &msglen, &content, off, txr, rxr, rxs);
+	error = phttpd_req(rxbuf, rxs->fd, len, targ, &no_ok,&msglen,
+			&content, off, txr, rxr, rxs);
 	if (error) {
 		return error;
 	}
-
 	if (!no_ok) {
 		generate_http_nm(msglen, txr, g->virt_header, IPV4TCP_HDRLEN,
 				 rxs->fd, pg->http, pg->httplen, content);
@@ -858,42 +798,33 @@ int phttpd_read(int fd, struct nm_targ *targ)
 	struct nm_garg *g = targ->g;
 	struct phttpd_global *tg = (struct phttpd_global *)g->garg_private;
 	struct dbctx *db = (struct dbctx *)targ->opaque;
-	size_t lim;
 	int readmmap = !!(db->flags & DF_READMMAP);
 	char *content = NULL;
 	int no_ok = 0;
 	ssize_t msglen = tg->msglen;
 	int error;
 
-	const size_t dbsiz = db->size;
-
 	if (readmmap) {
-		size_t cur = db->cur;
-		lim = dbsiz - cur - sizeof(uint64_t);
-		if (unlikely(lim < db->pgsiz)) {
-			cur = 0;
-			lim = dbsiz;
+		len = db->size - db->cur - sizeof(uint64_t);
+		if (unlikely(len < db->pgsiz)) {
+			db->cur = 0;
+			len = db->size - sizeof(uint64_t);
 		}
 		rxbuf = db->paddr + db->cur + sizeof(uint64_t);// metadata space
 	} else {
 		rxbuf = buf;
-		lim = sizeof(buf);
+		len = sizeof(buf);
 	}
-	len = read(fd, rxbuf, lim);
-	if (len == 0) {
+	len = read(fd, rxbuf, len);
+	if (len <= 0) {
 		close(fd);
-		return 0;
-	} else if (unlikely(len < 0)) {
-		close(fd);
-		return -1;
+		return len == 0 ? 0 : -1;
 	}
 
 	error = phttpd_req(rxbuf, fd, len, targ, &no_ok, &msglen, &content, 0,
 		       	NULL, NULL, NULL);
-	if (error) {
+	if (error)
 		return error;
-	}
-
 	if (no_ok)
 		return 0;
 	if (tg->httplen && content == NULL) {
@@ -1189,7 +1120,6 @@ main(int argc, char **argv)
 		perror("socket");
 		return 0;
 	}
-
 	if (do_setsockopt(pg.sd)) {
 		goto close_socket;
 	}

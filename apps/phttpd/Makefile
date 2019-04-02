@@ -1,7 +1,11 @@
 #CFLAGS += -Werror -Wall -O2 -g -fsanitize=address
 CFLAGS += -Werror -Wall -O2 -g
 NMLIB = ../../libnetmap/libnetmap.a
-LDFLAGS += $(NMLIB) -lpthread -lm -lbsd # sqlite requires them
+LDFLAGS += $(NMLIB) -lpthread -lm
+UNAME := $(shell uname)
+ifeq ($(UNAME), Linux)
+LDFLAGS += -lbsd
+endif
 #CFLAGS += -I/usr/local/include -I../libsqlite/include
 OBJS = phttpd-b.o phttpd-k.o phttpd-f.o bplus_support.o bplus_impl.o
 SPATH ?= -I../../sys/ -I../include -I../../libnetmap -DNETMAP_WITH_LIBS
