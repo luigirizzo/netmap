@@ -984,11 +984,7 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 
 	/* Hold a reference on this, we are going to recycle mbufs as
 	 * much as possible. */
-#ifdef NETMAP_LINUX_HAVE_REFCOUNT_T
-	refcount_inc(&m->users);
-#else  /* !NETMAP_LINUX_HAVE_REFCOUNT_T */
-	atomic_inc(&m->users);
-#endif /* !NETMAP_LINUX_HAVE_REFCOUNT_T */
+	skb_get(m);
 
 	/* On linux m->dev is not reliable, since it can be changed by the
 	 * ndo_start_xmit() callback. This happens, for instance, with veth
