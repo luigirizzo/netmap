@@ -1156,7 +1156,6 @@ nm_os_st_upcall(NM_SOCK_T *sk)
 					m->sk, m->sk ? st_so(m->sk) : NULL);
 			continue;
 		}
-		//slot->fd = st_so(m->sk)->fd;
 		slot->fd = st_so(sk)->fd;
 		slot->len = skb_headroom(m) + skb_headlen(m);
 		slot->offset = skb_headroom(m) - VHLEN(kring->na); // XXX
@@ -1184,8 +1183,6 @@ nm_os_st_upcall(NM_SOCK_T *sk)
 		sk_eat_skb(sk, m);
 		nm_prdis("ate %p state %x", m, nmcb_rstate(cb));
 	}
-	//if (stack_no_runtocomp)
-	//	spin_unlock_irqrestore(&queue->lock, cpu_flags);
 }
 
 NM_SOCK_T *
@@ -1212,7 +1209,7 @@ nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 	m = skb_peek(&sk->sk_receive_queue);
 	if (!m)
 		return 0;
-	if (!nmcb_valid(NMCB(m)))
+	else if (!nmcb_valid(NMCB(m)))
 		return 0;
 	/* No need for BDG_RLOCK() - we don't move packets to stack na */
 	nm_os_st_upcall(sk);
@@ -1298,11 +1295,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		rcu_read_unlock();
 	} else
 #endif /* NETMAP_LINUX_HAVE_IP_RCV */
-#ifdef NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE
 	netif_receive_skb_core(m);
-#else
-	netif_receive_skb(m);
-#endif /* NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE */
 
 	/* setting data destructor is safe only after skb_orphan_frag()
 	 * in __netif_receive_skb_core().

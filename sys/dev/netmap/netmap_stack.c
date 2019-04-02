@@ -771,14 +771,14 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	if ((m->m_flags & M_EXT)) { // not TCP case
 		cb = NMCB_EXT(m, 0, bufsize);
 	}
-	if (!cb || !nmcb_valid(cb)) { // TCP case
+	if (!(cb && nmcb_valid(cb)) { // TCP case
 		if (MBUF_NONLINEAR(m) && (m->m_next->m_flags & M_EXT)) {
 			(void)bufsize;
 			cb = NMCB_EXT(m->m_next, 0, bufsize);
 		}
 		md = m->m_next;
 	}
-	if (!cb || !nmcb_valid(cb)) {
+	if (!(cb && nmcb_valid(cb)) {
 		csum_transmit(na, m);
 		return 0;
 	}
@@ -809,14 +809,12 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 #else
 		/* To be done */
 #endif /* linux */
-		slot->len = 0; // XXX
 		MBUF_LINEARIZE(m);
 		csum_transmit(na, m);
 		return 0;
 	}
 
 	nmb = NMB(na, slot);
-
 	/* bring protocol headers in */
 	mismatch = MBUF_HEADLEN(m) - (int)slot->offset;
 	if (!mismatch) {
@@ -850,7 +848,6 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		}
 		m->ip_summed = CHECKSUM_COMPLETE;
 #endif
-
 		check = &tcph->check;
 		*check = 0;
 		len = slot->len - v - MBUF_TRANSPORT_OFFSET(m);
@@ -868,8 +865,7 @@ csum_done:
 	nmcb_wstate(cb, MB_TXREF);
 #ifdef linux
 	/* for FreeBSD mbuf comes from our code */
-	nm_set_mbuf_data_destructor(m, &cb->ui,
-			nm_os_st_mbuf_data_destructor);
+	nm_set_mbuf_data_destructor(m, &cb->ui, nm_os_st_mbuf_data_destructor);
 
 #endif /* linux */
 	m_freem(m);
@@ -893,9 +889,7 @@ st_extra_free(struct netmap_adapter *na)
 			/* True on do_unregif() after reg failure
 			 * (e.g., for allocating some netmap object
 			 */
-			if (kring->nr_mode == NKR_NETMAP_OFF)
-				continue;
-			if (!kring->extra)
+			if (kring->nr_mode == NKR_NETMAP_OFF || !kring->extra)
 				continue;
 			extra = kring->extra;
 
@@ -1002,13 +996,11 @@ st_mbufpool_alloc(struct netmap_adapter *na)
 			error = ENOMEM;
 			break;
 		}
-		bzero(kring->tx_pool, na->num_tx_desc * sizeof(struct mbuf *));
 		kring->tx_pool[0] = nm_os_malloc(sizeof(struct mbuf));
 		if (!kring->tx_pool[0]) {
 			error = ENOMEM;
 			break;
 		}
-		bzero(kring->tx_pool[0], sizeof(struct mbuf));
 	}
 	if (error) {
 		for (i = 0; i < nma_get_nrings(na, NR_TX); i++) {

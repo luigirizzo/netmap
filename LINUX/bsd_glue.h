@@ -677,4 +677,8 @@ struct sockopt {
 	kernel_setsockopt((_a)->sk_socket, SOL_TCP, (_b)->sopt_name, \
 			(_b)->sopt_val, (_b)->sopt_valsize)
 #define	MBUF_PROTO_HEADERS(m)
+
+#ifndef NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE
+#define netif_receive_skb_core	netif_receive_skb
+#endif /* NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE */
 #endif /* NETMAP_BSD_GLUE_H */
