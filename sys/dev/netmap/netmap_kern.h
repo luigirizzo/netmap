@@ -1172,6 +1172,18 @@ struct netmap_pipe_adapter {
 #endif /* WITH_PIPES */
 
 #ifdef WITH_STACK
+#define	STACK_DBG(format, ...)					\
+	do {							\
+		if (netmap_debug & NM_DEBUG_STACK) {		\
+			nm_prinf(format, ##__VA_ARGS__);	\
+		}						\
+	} while (0)
+#define	STACK_DBG_LIM(format, ...)				\
+	do {							\
+		if (netmap_debug & NM_DEBUG_STACK) {		\
+			nm_prlim(1, format, ##__VA_ARGS__);	\
+		}						\
+	} while (0)
 #define STACK_RECYCLE
 #define VHLEN(_na)	((_na)->virt_hdr_len)
 struct st_extra_pool;

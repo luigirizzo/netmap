@@ -1107,8 +1107,7 @@ nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 	//nm_prinf("m %p m_ext.ext_buf %p", m, m->m_ext.ext_buf);
 	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
 	if (!nmcb_valid(cb)) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prinf("invalid cb");
+		STACK_DBG("invalid cb");
 		return error;
 	}
 	SOCKBUF_LOCK(&so->so_rcv);
@@ -1263,14 +1262,12 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	soa = st_soa_from_fd(na, slot->fd);
 	if (unlikely(!soa)) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prinf("no soa of fd %d (na %s)", slot->fd, na->name);
+		STACK_DBG("no soa of fd %d (na %s)", slot->fd, na->name);
 		return 0;
 	}
 	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);
 	if (unlikely(err < 0)) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prinf("error %d", err);
+		STACK_DBG("error %d", err);
 		nmcb_invalidate(cb);
 	}
 

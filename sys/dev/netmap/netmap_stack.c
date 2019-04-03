@@ -25,30 +25,15 @@
  */
 
 #if defined(__FreeBSD__)
-#include <sys/cdefs.h>
-
-#include <sys/types.h>
-#include <sys/errno.h>
-#include <sys/errno.h>
 #include <sys/param.h>	/* defines used in kernel.h */
-#include <sys/kernel.h>	/* types used in module initialization */
-#include <sys/conf.h>	/* cdevsw struct, UID, GID */
-#include <sys/sockio.h>
 #include <sys/socketvar.h>	/* struct socket */
-#include <sys/malloc.h>
-#include <sys/poll.h>
-#include <sys/rwlock.h>
 #include <sys/socket.h> /* sockaddrs */
-#include <sys/selinfo.h>
 #include <sys/sysctl.h>
 #include <net/if.h>
 #include <net/if_var.h>
-#include <net/bpf.h>		/* BIOCIMMEDIATE */
 #include <net/ethernet.h>	/* struct ether_header */
 #include <netinet/in.h>		/* IPPROTO_UDP */
 #include <machine/bus.h>	/* bus_dmamap_* */
-#include <sys/endian.h>
-#include <sys/refcount.h>
 
 #elif defined(linux)
 #include "bsd_glue.h"
@@ -147,7 +132,6 @@ is_host(struct netmap_adapter *na)
 #define NM_ST_FD_MAX	65535
 #define NM_ST_BATCH_MAX	2048
 
-
 /* Buffers sorted by file descriptors */
 struct st_fdt_q {
 	uint32_t fq_head;
@@ -177,7 +161,20 @@ struct st_extra_pool {
 	uint32_t busy;
 	uint32_t busy_tail;
 };
+
 #define NM_EXT_NULL	((uint16_t)~0)
+#define EXTRA_APPEND(name) \
+	do {							\
+		xtra->next = NM_EXT_NULL;			\
+		if (pool->name == NM_EXT_NULL) {		\
+			pool->name = pos;			\
+		} else {					\
+			slots[pool->name##_tail].next = pos;	\
+		}						\
+		xtra->prev = pool->name##_tail;			\
+		pool->name##_tail = pos;			\
+	} while (0)						\
+
 void
 st_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 {
@@ -209,8 +206,7 @@ st_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 		return;
 	} else if (!(likely((uintptr_t)slot >= (uintptr_t)slots) &&
 	      likely((uintptr_t)slot < (uintptr_t)(slots + pool->num)))) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prerr("cannot dequeue slot not in the extra pool");
+		STACK_DBG("cannot dequeue slot not in the extra pool");
 		return;
 	}
 
@@ -226,15 +222,8 @@ st_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 		pool->busy = xtra->next; // might be NM_EXT_NULL
 	else
 		slots[xtra->prev].next = xtra->next; // might be NM_EXT_NULL
-
 	/* append to free list */
-	xtra->next = NM_EXT_NULL;
-	if (unlikely(pool->free == NM_EXT_NULL))
-		pool->free = pos;
-	else
-		slots[pool->free_tail].next = pos;
-	xtra->prev = pool->free_tail; // can be NM_EXT_NULL
-	pool->free_tail = pos;
+	EXTRA_APPEND(free);
 }
 
 int
@@ -258,16 +247,8 @@ st_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 		pool->free = NM_EXT_NULL;
 	else
 		slots[xtra->prev].next = NM_EXT_NULL;
-
 	/* append to busy list */
-	xtra->next = NM_EXT_NULL;
-	if (pool->busy == NM_EXT_NULL) {
-		pool->busy = pos;
-	} else {
-		slots[pool->busy_tail].next = pos;
-	}
-	xtra->prev = pool->busy_tail;
-	pool->busy_tail = pos;
+	EXTRA_APPEND(busy);
 
 	cb = NMCB_BUF(NMB(na, slot));
 	nm_swap_reset(slot, &xtra->slot);
@@ -275,6 +256,7 @@ st_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	return 0;
 }
+#undef EXTRA_APPEND
 
 static inline struct st_fdtable *
 st_fdt(struct netmap_kring *kring)
@@ -310,8 +292,7 @@ st_fdtable_alloc(struct netmap_adapter *na)
 			return ENOMEM;
 		}
 		NMR(na, NR_TX)[i]->nkr_ft = (struct nm_bdg_fwd *)ft;
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prinf("kring %p ft %p", NMR(na, NR_TX)[i], ft);
+		STACK_DBG("kring %p ft %p", NMR(na, NR_TX)[i], ft);
 	}
 	return 0;
 }
@@ -424,8 +405,7 @@ st_poststack(struct netmap_kring *kring)
 
 	/* XXX perhaps this is handled later? */
 	if (unlikely(b->bdg_active_ports < 3)) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prlim(1, "only 1 or 2 active ports");
+		STACK_DBG_LIM("only 1 or 2 active ports");
 		goto runlock;
 	}
 	/* Now, we know how many packets go to the receiver */
@@ -500,10 +480,7 @@ st_poststack(struct netmap_kring *kring)
 				next = cb->next;
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
-					if (netmap_debug & NM_DEBUG_STACK)
-						nm_prlim(1,
-							"null ts %p next %u",
-							ts, next);
+					STACK_DBG_LIM("null ts nxt %u", next);
 					goto skip;
 				}
 				if (nmcb_rstate(cb) == MB_TXREF) {
@@ -723,9 +700,6 @@ csum_transmit(struct netmap_adapter *na, struct mbuf *m)
 
 		mbuf_proto_headers(m);
 		iph = (struct nm_iphdr *)MBUF_NETWORK_HEADER(m);
-		KASSERT(iph != NULL, ("NULL iph"));
-		th = MBUF_TRANSPORT_HEADER(m);
-		KASSERT(th != NULL, ("NULL th"));
 		th = MBUF_TRANSPORT_HEADER(m);
 		if (iph->protocol == IPPROTO_UDP) {
 			check = &((struct nm_udphdr *)th)->check;
@@ -771,14 +745,14 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	if ((m->m_flags & M_EXT)) { // not TCP case
 		cb = NMCB_EXT(m, 0, bufsize);
 	}
-	if (!(cb && nmcb_valid(cb)) { // TCP case
+	if (!(cb && nmcb_valid(cb))) { // TCP case
 		if (MBUF_NONLINEAR(m) && (m->m_next->m_flags & M_EXT)) {
 			(void)bufsize;
 			cb = NMCB_EXT(m->m_next, 0, bufsize);
 		}
 		md = m->m_next;
 	}
-	if (!(cb && nmcb_valid(cb)) {
+	if (!(cb && nmcb_valid(cb))) {
 		csum_transmit(na, m);
 		return 0;
 	}
@@ -799,11 +773,10 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		 * or txring slot. The backend might drop this packet.
 		 */
 #ifdef linux
-		struct nmcb *cb2;
 		int i, n = MBUF_CLUSTERS(m);
 
 		for (i = 0; i < n; i++) {
-			cb2 = NMCB_EXT(m, i, bufsize);
+			struct nmcb *cb2 = NMCB_EXT(m, i, bufsize);
 			nmcb_wstate(cb2, MB_NOREF);
 		}
 #else
@@ -820,13 +793,11 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (!mismatch) {
 		/* Length has already been validated */
 		memcpy(nmb + VHLEN(na), MBUF_DATA(m), slot->offset);
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prlim(1, "zero copy tx");
+		STACK_DBG_LIM("zero copy tx");
 	} else {
 		m_copydata(m, 0, MBUF_LEN(m), nmb + VHLEN(na));
 		slot->len += mismatch;
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prlim(1, "copy tx");
+		STACK_DBG_LIM("copy tx");
 	}
 
 	if (nm_os_mbuf_has_csum_offld(m)) {
@@ -838,7 +809,6 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		mbuf_proto_headers(m);
 		iph = (struct nm_iphdr *)(nmb + v + MBUF_NETWORK_OFFSET(m));
 		tcph = (struct nm_tcphdr *)(nmb + v + MBUF_TRANSPORT_OFFSET(m));
-
 #ifdef linux
 		if (na->na_flags & NAF_CSUM) {
 			if (likely(!csum_ctx(&cb->cmd, &cb->off, iph, tcph))) {
@@ -856,17 +826,13 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 #ifdef linux
 csum_done:
 #endif
-
 	st_fdtable_add(cb, nmcb_kring(cb));
 
-	/* We don't know when the stack actually releases the data;
-	 * it might holds reference via clone.
-	 */
+	/* the stack might hold reference via clone, so let's see */
 	nmcb_wstate(cb, MB_TXREF);
 #ifdef linux
 	/* for FreeBSD mbuf comes from our code */
 	nm_set_mbuf_data_destructor(m, &cb->ui, nm_os_st_mbuf_data_destructor);
-
 #endif /* linux */
 	m_freem(m);
 	return 0;
@@ -941,11 +907,9 @@ st_extra_alloc(struct netmap_adapter *na)
 
 			n = netmap_extra_alloc(na, &next, want);
 			if (n < want) {
-				if (netmap_debug & NM_DEBUG_STACK)
-					nm_prinf("allocated only %u bufs", n);
+				STACK_DBG("allocated only %u bufs", n);
 			}
 			kring->extra->num = n;
-
 			if (n) {
 				extra_slots = nm_os_malloc(sizeof(*extra_slots)
 						* n);
@@ -988,11 +952,9 @@ st_mbufpool_alloc(struct netmap_adapter *na)
 	for (i = 0; i < nma_get_nrings(na, NR_TX); i++) {
 		kring = NMR(na, NR_TX)[i];
 		kring->tx_pool =
-			nm_os_malloc(na->num_tx_desc *
-				sizeof(struct mbuf *));
+			nm_os_malloc(na->num_tx_desc * sizeof(struct mbuf *));
 		if (!kring->tx_pool) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prinf("tx_pool allocation failed");
+			STACK_DBG("tx_pool allocation failed");
 			error = ENOMEM;
 			break;
 		}
@@ -1047,9 +1009,7 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 		int i, error;
 
 		if (bna->up.na_bdg->bdg_active_ports > 3) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prinf("%s: only one NIC is supported now",
-					na->name);
+			STACK_DBG("%s: only one NIC is supported", na->name);
 			return ENOTSUP;
 		}
 
@@ -1069,16 +1029,13 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 		error = netmap_bwrap_reg(na, onoff);
 		if (error)
 			return error;
-
 		if (st_extra_alloc(na)) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prinf("extra_alloc failed for slave");
+			STACK_DBG("extra_alloc failed for slave");
 			netmap_bwrap_reg(na, 0);
 			return ENOMEM;
 		}
 		if (st_mbufpool_alloc(na)) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prinf("mbufpool_alloc failed for slave");
+			STACK_DBG("mbufpool_alloc failed for slave");
 			st_extra_free(na);
 			netmap_bwrap_reg(na, 0);
 			return ENOMEM;
@@ -1152,19 +1109,16 @@ st_unregister_socket(struct st_so_adapter *soa)
 
 	nm_prdis("so %p soa %p fd %d", so, soa, soa->fd);
 	if (!sna) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prerr("no sna");
+		STACK_DBG("no sna");
 		//nm_os_free(soa);
 		return;
 	}
 	if (!soa) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prerr("no soa");
+		STACK_DBG("no soa");
 		return;
 	}
 	if (soa->fd >= sna->so_adapters_max) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prerr("non-registered or invalid fd %d", soa->fd);
+		STACK_DBG("non-registered or invalid fd %d", soa->fd);
 	} else {
 		sna->so_adapters[soa->fd] = NULL;
 		NM_SOCK_LOCK(so);
@@ -1239,8 +1193,7 @@ st_register_fd(struct netmap_adapter *na, int fd)
 
 		new = nm_os_malloc(sizeof(new) * newsize);
 		if (!new) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prerr("failed to extend fdtable");
+			STACK_DBG("failed to extend fdtable");
 			NMG_UNLOCK();
 			return ENOMEM;
 		}
@@ -1262,8 +1215,7 @@ st_register_fd(struct netmap_adapter *na, int fd)
 	sopt.sopt_val = &on;
 	sopt.sopt_valsize = sizeof(on);
 	if (sosetopt(so, &sopt) < 0) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prlim(1, "failed to set TCP_NODELAY");
+		STACK_DBG_LIM("failed to set TCP_NODELAY");
 	}
 	/*serialize simultaneous accept/config */
 	NM_SOCK_LOCK(so); // sosetopt() internally locks socket
@@ -1395,7 +1347,7 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 	register_t	intr;
 
 	/* TODO scan only necessary ports */
-	err = netmap_vp_rxsync_locked(kring, flags); // reclaim buffers released
+	err = netmap_vp_rxsync_locked(kring, flags); // reclaim buffers
 	if (err)
 		return err;
 	if (stack_no_runtocomp)
@@ -1413,7 +1365,6 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 			continue;
 		else if (is_host(na))
 			continue;
-
 		hwna = ((struct netmap_bwrap_adapter *)vpna)->hwna;
 
 		/* hw ring(s) to scan */
@@ -1471,9 +1422,8 @@ netmap_stack_krings_delete(struct netmap_adapter *na)
 static int
 netmap_stack_krings_create(struct netmap_adapter *na)
 {
-	int error;
+	int error = netmap_krings_create(na, 0);
 
-	error = netmap_krings_create(na, 0);
 	if (error)
 		return error;
 	error = st_fdtable_alloc(na);
@@ -1492,10 +1442,8 @@ netmap_stack_bwrap_krings_delete(struct netmap_adapter *na)
 static int
 netmap_stack_bwrap_krings_create(struct netmap_adapter *na)
 {
-	int error;
+	int error = netmap_stack_krings_create(na);
 
-	/* impersonate a netmap_vp_adapter */
-	error = netmap_stack_krings_create(na);
 	if (error)
 		return error;
 	error = netmap_bwrap_krings_create_common(na);
@@ -1529,7 +1477,6 @@ netmap_stack_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 
 	na->ifp = ifp;
 	strncpy(na->name, hdr->nr_name, sizeof(na->name));
-
 	na->num_tx_rings = req->nr_tx_rings;
 	nm_bound_var(&na->num_tx_rings, 1, 1, NM_ST_MAXRINGS, NULL);
 	req->nr_tx_rings = na->num_tx_rings; /* write back */
@@ -1541,23 +1488,10 @@ netmap_stack_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	na->num_tx_desc = req->nr_tx_slots;
 	nm_bound_var(&req->nr_rx_slots, NM_ST_RINGSIZE,
 			1, NM_ST_MAXSLOTS, NULL);
-	/*
-	 * validate number of pipes. We want at least 1,
-	 * but probably can do with some more.
-	 * So let's use 2 as default (when 0 is supplied)
-	 */
-	nm_bound_var(&npipes, 2, 1, NM_MAXPIPES, NULL);
+	nm_bound_var(&npipes, 2, 1, NM_MAXPIPES, NULL); /* do we need this? */
 
 	/* XXX should we check extra bufs? */
 	na->num_rx_desc = req->nr_rx_slots;
-	/*
-	 * Set the mfs to a default value, as it is needed on the VALE
-	 * mismatch datapath. XXX We should set it according to the MTU
-	 * known to the kernel.
-	 */
-	vpna->mfs = NM_BDG_MFS_DEFAULT;
-	vpna->last_smac = ~0llu;
-
 	na->na_flags |= NAF_BDG_MAYSLEEP;
 	/*
 	 * persistent VALE ports look like hw devices

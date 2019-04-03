@@ -1102,8 +1102,7 @@ nm_os_st_mbuf_destructor(struct sk_buff *skb)
 		nm_set_mbuf_data_destructor(skb, &cb->ui,
 				nm_os_st_mbuf_data_destructor);
 	} else {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prlim(1, "invalid cb in our mbuf destructor");
+		STACK_DBG_LIM("invalid cb in our mbuf destructor");
 	}
 }
 
@@ -1134,9 +1133,7 @@ nm_os_st_upcall(NM_SOCK_T *sk)
 			/* XXX this happens when stack goes away.
 			 * We need better workaround */
 			if (unlikely(!kring)) {
-				if (netmap_debug & NM_DEBUG_STACK)
-					nm_prlim(1, "WARNING: no kring");
-//ignore:
+				STACK_DBG_LIM("WARNING: no kring");
 				SET_MBUF_DESTRUCTOR(m, NULL);
 				nm_set_mbuf_data_destructor(m, &cb->ui, NULL);
 				sk_eat_skb(sk, m);
@@ -1146,13 +1143,11 @@ nm_os_st_upcall(NM_SOCK_T *sk)
 		/* append this buffer to the scratchpad */
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prlim(1, "no slot");
+			STACK_DBG_LIM("no slot");
 			continue;
 		}
 		if (unlikely(m->sk == NULL || st_so(m->sk) == NULL)) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prlim(1, "m->sk %p soa %p",
+			STACK_DBG_LIM("m->sk %p soa %p",
 					m->sk, m->sk ? st_so(m->sk) : NULL);
 			continue;
 		}
@@ -1167,8 +1162,7 @@ nm_os_st_upcall(NM_SOCK_T *sk)
 		/* see comment in st_transmit() */
 #ifdef STACK_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prlim(1, "fd %d ring_id %u",
+			STACK_DBG_LIM("fd %d ring_id %u",
 					slot->fd, kring->ring_id);
 			queued = 1;
 		}
@@ -1316,8 +1310,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		if (likely(uarg->callback)) {
 			uarg->callback(uarg, true);
 		} else {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prerr("no destructor in recycling m %p", m);
+			STACK_DBG("no destructor in recycling m %p", m);
 		}
 		kring->tx_pool[1] = m;
 	} else {
@@ -1342,8 +1335,7 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	nmb = NMB(na, slot);
 	soa = st_soa_from_fd(na, slot->fd);
 	if (unlikely(!soa)) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prlim(1, "no soa of fd %d", slot->fd);
+		STACK_DBG_LIM("no soa of fd %d", slot->fd);
 		return 0;
 	}
 	sk = soa->so;
@@ -1357,12 +1349,10 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	nmcb_wstate(cb, MB_STACK);
 
 	if (unlikely(!sk)) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prlim(1, "NULL sk");
+		STACK_DBG_LIM("NULL sk");
 		return 0;
 	} else if (unlikely(!sk->sk_socket)) {
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prlim(1, "NULL sk->sk_socket");
+		STACK_DBG_LIM("NULL sk->sk_socket");
 		return 0;
 	}
 #ifdef NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED
@@ -1376,8 +1366,7 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 #endif /* NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED */
 	if (unlikely(err < 0)) {
 		/* XXX check if it is enough to assume EAGAIN only */
-		if (netmap_debug & NM_DEBUG_STACK)
-			nm_prlim(1, "error %d in sendpage() slot %ld",
+		STACK_DBG_LIM("error %d in sendpage() slot %ld",
 				err, slot - kring->ring->slot);
 		nmcb_invalidate(cb);
 		return -EAGAIN;
@@ -1388,8 +1377,7 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		 * linearized in skb_checksum_help() in __dev_queue_xmit().
 		 */
 		if (unlikely(pageref == page_ref_count(page))) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prerr("dropped frag ref (fd %d)", slot->fd);
+			STACK_DBG("dropped frag ref (fd %d)", slot->fd);
 			nmcb_invalidate(cb);
 			return 0;
 		}
