@@ -1079,6 +1079,8 @@ main(int argc, char **argv)
 		usage();
 	else if (pg.dba.flags & DF_PASTE && strlen(pg.ifname) == 0)
 		usage();
+	else if (pg.dba.type != DT_NONE && pg.dba.size == 0)
+		usage();
 	else if (pg.dba.type != DT_DUMB && pg.dba.flags)
 		usage();
 	else if (pg.dba.flags & DF_READMMAP && !(pg.dba.flags & DF_MMAP))
