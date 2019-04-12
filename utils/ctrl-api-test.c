@@ -2104,6 +2104,11 @@ main(int argc, char **argv)
 	int opt;
 	int i;
 
+#ifdef __FreeBSD__
+	PLAIN_REQUIRE_KERNEL_MODULE("if_tap", 0);
+	PLAIN_REQUIRE_KERNEL_MODULE("netmap", 0);
+#endif
+
 	memset(&ctx_, 0, sizeof(ctx_));
 
 	{
