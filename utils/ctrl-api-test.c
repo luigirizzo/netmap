@@ -59,16 +59,18 @@
 #include <signal.h>
 #include "libnetmap.h"
 
-#ifdef __linux__
-#include <sys/eventfd.h>
-#else
+#ifdef __FreeBSD__
+#include "freebsd_test_suite/macros.h"
+
 static int
 eventfd(int x __unused, int y __unused)
 {
 	errno = ENODEV;
 	return -1;
 }
-#endif /* __linux__ */
+#else /* __linux__ */
+#include <sys/eventfd.h>
+#endif
 
 static int
 exec_command(int argc, const char *const argv[])
