@@ -451,7 +451,7 @@ SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
-EXTRA_CFLAGS := -Werror -Wno-error=unused-but-set-variable
+EXTRA_CFLAGS := -Werror -Wno-error=unused-but-set-variable -Wno-error=attributes -Wno-error=packed-not-aligned
 S_DRIVERS := $(drv print)
 E_DRIVERS := $(edrv print)
 I_DRIVERS := $(idrv print)
