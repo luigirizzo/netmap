@@ -526,10 +526,11 @@ nmport_mmap(struct nmport_d *d)
 	for ( ; i < num_tx && d->nifp->ring_ofs[i]; i++)
 		;
 	d->last_tx_ring = i - 1;
+
+	num_rx = d->reg.nr_rx_rings + d->nifp->ni_host_rx_rings;
 	for (i = 0; i < num_rx && !d->nifp->ring_ofs[i + num_tx]; i++)
 		;
 	d->first_rx_ring = i;
-	num_rx = d->reg.nr_rx_rings + d->nifp->ni_host_rx_rings;
 	for ( ; i < num_rx && d->nifp->ring_ofs[i + num_tx]; i++)
 		;
 	d->last_rx_ring = i - 1;
