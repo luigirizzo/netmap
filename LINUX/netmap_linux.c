@@ -1209,7 +1209,11 @@ linux_netmap_poll(struct file *file, struct poll_table_struct *pwait)
 	return netmap_poll(priv, events, &sr);
 }
 
+#ifdef NETMAP_LINUX_HAVE_VMFAULT_T
+static vm_fault_t
+#else
 static int
+#endif /* NETMAP_LINUX_HAVE_VMFAULT_T */
 #ifdef NETMAP_LINUX_HAVE_FAULT_VMA_ARG
 linux_netmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {

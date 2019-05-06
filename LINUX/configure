@@ -1661,6 +1661,15 @@ EOF
 	}
 EOF
 
+   # is vm_fault_t defined?
+   add_test 'have VMFAULT_T' <<EOF
+	#include <linux/mm.h>
+
+	vm_fault_t dummy(void) {
+		return 0;
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
