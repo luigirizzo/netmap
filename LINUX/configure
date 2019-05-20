@@ -446,12 +446,17 @@ EOF
 #   success/failure actions for each one.
 run_tests() {
 	ln -s $BUILDDIR/patches $TMPDIR
+	echo 'int main(){return 0;}' > $TMPDIR/dummy.c
+	echo 'gcc -Wno-error=$1 dummy.c >/dev/null 2>&1 && echo ok' > $TMPDIR/dummy.sh
+	chmod +x $TMPDIR/dummy.sh
 	cat > $TMPDIR/Makefile <<EOF
 SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
-EXTRA_CFLAGS := -Werror -Wno-error=unused-but-set-variable -Wno-error=attributes -Wno-error=packed-not-aligned
+DISABLED_WARNINGS := unused-but-set-variable attributes packed-not-aligned
+REC_DISABLED_WARNINGS := \$(foreach w,\$(DISABLED_WARNINGS),\$(if \$(shell ./dummy.sh \$(w)),\$(w),))
+EXTRA_CFLAGS := -Werror \$(addprefix -Wno-error=,\$(REC_DISABLED_WARNINGS))
 S_DRIVERS := $(drv print)
 E_DRIVERS := $(edrv print)
 I_DRIVERS := $(idrv print)
