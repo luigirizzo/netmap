@@ -351,12 +351,14 @@ e1000_netmap_bufcfg(struct netmap_kring *kring, int flags)
 			bufsz = sz->bufsize;
 			break;
 		}
-	if (bufsz) {
-		target >>= 10;
-		if (target < 1 || target > 15)
-			return EINVAL;
-
-		bufsz = target << 10;
+	if (!bufsz)
+		return EINVAL;
+	/* check if we can find a better size using 1K increments */
+	target >>= 10;
+	if (target >= 1 && target <= 15) {
+		target <<= 10;
+		if (target > bufsz)
+			bufsz = target;
 	}
 	kring->hwbuf_len = bufsz;
 	kring->buf_align = 0; /* no alignment */
