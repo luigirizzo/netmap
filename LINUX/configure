@@ -454,7 +454,6 @@ EOF
 		if [ -e $TMPDIR/extra.mk ]; then cat $TMPDIR/extra.mk; fi
 		cat <<EOF
 else
-EXTRA_CFLAGS := -Werror
 
 all:
 	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(EXTRA_CFLAGS)" $kopts
