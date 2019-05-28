@@ -396,9 +396,9 @@ EOF
 add_named_test() {
 	{
 		cat <<EOF
-			#include <linux/module.h>
-			#include <linux/kernel.h>
-			#include <linux/init.h>
+	#include <linux/module.h>
+	#include <linux/kernel.h>
+	#include <linux/init.h>
 EOF
 		cat	# output the test code read from stdin
 	} > $TMPDIR/$1.c
