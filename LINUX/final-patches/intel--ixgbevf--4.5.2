@@ -46,7 +46,7 @@ index b37fbce..f3cdb26 100644
  clean:
  	@+$(call kernelbuild,clean)
 diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
-index 05fb3b2..2c86986 100644
+index 05fb3b2..a3896de 100644
 --- a/ixgbevf/ixgbevf_main.c
 +++ b/ixgbevf/ixgbevf_main.c
 @@ -338,6 +338,23 @@ static void ixgbevf_tx_timeout(struct net_device *netdev)
@@ -91,9 +91,9 @@ index 05fb3b2..2c86986 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBEVF_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -1361,6 +1389,16 @@ static int ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
- 	xdp.rxq = &rx_ring->xdp_rxq;
- #endif /* HAVE_XDP_BUFF_RXQ */
+@@ -1355,6 +1383,16 @@ static int ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
+ 	bool xdp_xmit = false;
+ 	struct xdp_buff xdp;
  
 +#ifdef DEV_NETMAP
 +	/*
@@ -105,9 +105,9 @@ index 05fb3b2..2c86986 100644
 +		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
 +#endif /* DEV_NETMAP */
 +
- 	while (likely(total_rx_packets < budget)) {
- 		struct ixgbevf_rx_buffer *rx_buffer;
- 		union ixgbe_adv_rx_desc *rx_desc;
+ 	xdp.data = NULL;
+ 	xdp.data_end = NULL;
+ #ifdef HAVE_XDP_BUFF_RXQ
 @@ -2053,6 +2091,10 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
  	clear_bit(__IXGBEVF_HANG_CHECK_ARMED, &ring->state);
  	clear_bit(__IXGBEVF_TX_XDP_RING_PRIMED, &ring->state);
