@@ -123,7 +123,7 @@ index 6d2e21d..9845b9d 100644
  
  err_rings:
 diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
-index 1859d78..ea1be59 100644
+index 1859d78..4d19c85 100644
 --- a/i40e/i40e_txrx.c
 +++ b/i40e/i40e_txrx.c
 @@ -9,6 +9,10 @@
@@ -149,9 +149,9 @@ index 1859d78..ea1be59 100644
  	tx_buf = &tx_ring->tx_bi[i];
  	tx_desc = I40E_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -2555,6 +2564,15 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
- 	xdp.rxq = &rx_ring->xdp_rxq;
- #endif
+@@ -2551,6 +2560,14 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
+ 	bool failure = false, xdp_xmit = false;
+ 	struct xdp_buff xdp;
  
 +#ifdef DEV_NETMAP
 +	int dummy, nm_irq;
@@ -161,7 +161,6 @@ index 1859d78..ea1be59 100644
 +	}
 +#endif /* DEV_NETMAP */
 +
-+
- 	while (likely(total_rx_packets < (unsigned int)budget)) {
- 		struct i40e_rx_buffer *rx_buffer;
- 		union i40e_rx_desc *rx_desc;
+ #ifdef HAVE_XDP_BUFF_RXQ
+ 	xdp.rxq = &rx_ring->xdp_rxq;
+ #endif

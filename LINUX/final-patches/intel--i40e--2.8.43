@@ -1,5 +1,5 @@
 diff --git a/i40e/Makefile b/i40e/Makefile
-index ba722c7..56fc6ac 100644
+index 5b3ca74..79db7aa 100644
 --- a/i40e/Makefile
 +++ b/i40e/Makefile
 @@ -10,9 +10,9 @@ ifneq ($(KERNELRELEASE),)
@@ -14,7 +14,7 @@ index ba722c7..56fc6ac 100644
  	i40e_ethtool.o \
  	i40e_adminq.o \
  	i40e_common.o \
-@@ -27,14 +27,14 @@ i40e-y := i40e_main.o \
+@@ -28,14 +28,14 @@ i40e-y := i40e_main.o \
  	i40e_client.o \
  	i40e_virtchnl_pf.o
  
@@ -33,7 +33,7 @@ index ba722c7..56fc6ac 100644
  
  # If the user just wants to print the help output, don't include common.mk or
  # perform any other checks. This ensures that running "make help" will always
-@@ -88,9 +88,12 @@ ccc: clean
+@@ -89,9 +89,12 @@ ccc: clean
  	@+$(call kernelbuild,modules,coccicheck MODE=report)
  
  # Build manfiles
@@ -48,10 +48,10 @@ index ba722c7..56fc6ac 100644
  clean:
  	@+$(call kernelbuild,clean)
 diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
-index 86d76c0..5629a97 100644
+index 54940ba..f9e79b7 100644
 --- a/i40e/i40e_main.c
 +++ b/i40e/i40e_main.c
-@@ -132,6 +132,11 @@ MODULE_VERSION(DRV_VERSION);
+@@ -136,6 +136,11 @@ MODULE_VERSION(DRV_VERSION);
  
  static struct workqueue_struct *i40e_wq;
  
@@ -63,7 +63,7 @@ index 86d76c0..5629a97 100644
  /**
   * i40e_get_lump - find a lump of free generic resource
   * @pf: board private structure
-@@ -3442,6 +3447,10 @@ static int i40e_configure_tx_ring(struct i40e_ring *ring)
+@@ -3481,6 +3486,10 @@ static int i40e_configure_tx_ring(struct i40e_ring *ring)
  	/* cache tail off for easier writes later */
  	ring->tail = hw->hw_addr + I40E_QTX_TAIL(pf_q);
  
@@ -74,7 +74,7 @@ index 86d76c0..5629a97 100644
  	return 0;
  }
  
-@@ -3495,6 +3504,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+@@ -3534,6 +3543,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
  	/* set the prefena field to 1 because the manual says to */
  	rx_ctx.prefena = 1;
  
@@ -85,7 +85,7 @@ index 86d76c0..5629a97 100644
  	/* clear the context in the HMC */
  	err = i40e_clear_lan_rx_queue_context(hw, pf_q);
  	if (err) {
-@@ -3523,6 +3536,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+@@ -3562,6 +3575,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
  	ring->tail = hw->hw_addr + I40E_QRX_TAIL(pf_q);
  	writel(0, ring->tail);
  
@@ -97,7 +97,7 @@ index 86d76c0..5629a97 100644
  	i40e_alloc_rx_buffers(ring, I40E_DESC_UNUSED(ring));
  
  	return 0;
-@@ -13429,6 +13447,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
+@@ -13729,6 +13747,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
  		return -ENODEV;
  	}
  
@@ -109,7 +109,7 @@ index 86d76c0..5629a97 100644
  	uplink_seid = vsi->uplink_seid;
  	if (vsi->type != I40E_VSI_SRIOV) {
  		if (vsi->netdev_registered) {
-@@ -13801,6 +13824,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
+@@ -14101,6 +14124,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
  	    (vsi->type == I40E_VSI_VMDQ2)) {
  		ret = i40e_vsi_config_rss(vsi);
  	}
@@ -123,7 +123,7 @@ index 86d76c0..5629a97 100644
  
  err_rings:
 diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
-index 1859d78..4d19c85 100644
+index c3ebcd7..ea86118 100644
 --- a/i40e/i40e_txrx.c
 +++ b/i40e/i40e_txrx.c
 @@ -9,6 +9,10 @@
@@ -137,7 +137,7 @@ index 1859d78..4d19c85 100644
  static inline __le64 build_ctob(u32 td_cmd, u32 td_offset, unsigned int size,
  				u32 td_tag)
  {
-@@ -783,6 +787,11 @@ static bool i40e_clean_tx_irq(struct i40e_vsi *vsi,
+@@ -784,6 +788,11 @@ static bool i40e_clean_tx_irq(struct i40e_vsi *vsi,
  	unsigned int total_bytes = 0, total_packets = 0;
  	unsigned int budget = vsi->work_limit;
  
@@ -149,8 +149,8 @@ index 1859d78..4d19c85 100644
  	tx_buf = &tx_ring->tx_bi[i];
  	tx_desc = I40E_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -2551,6 +2560,14 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
- 	bool failure = false, xdp_xmit = false;
+@@ -2554,6 +2563,14 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
+ 	bool failure = false;
  	struct xdp_buff xdp;
  
 +#ifdef DEV_NETMAP
