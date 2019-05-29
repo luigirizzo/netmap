@@ -27,6 +27,16 @@
  * $FreeBSD$
  */
 
+/*
+ * This program contains a suite of unit tests for the netmap control device.
+ *
+ * On FreeBSD, you can run these tests with Kyua once installed in the system:
+ *     # kyua test -k /usr/tests/sys/netmap/Kyuafile
+ *
+ * On Linux, you can run them directly:
+ *     # ./ctrl-api-test
+ */
+
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
@@ -49,16 +59,18 @@
 #include <signal.h>
 #include "libnetmap.h"
 
-#ifdef __linux__
-#include <sys/eventfd.h>
-#else
+#ifdef __FreeBSD__
+#include "freebsd_test_suite/macros.h"
+
 static int
 eventfd(int x __unused, int y __unused)
 {
 	errno = ENODEV;
 	return -1;
 }
-#endif /* __linux__ */
+#else /* __linux__ */
+#include <sys/eventfd.h>
+#endif
 
 static int
 exec_command(int argc, const char *const argv[])
@@ -2103,6 +2115,11 @@ main(int argc, char **argv)
 	int list = 0;
 	int opt;
 	int i;
+
+#ifdef __FreeBSD__
+	PLAIN_REQUIRE_KERNEL_MODULE("if_tap", 0);
+	PLAIN_REQUIRE_KERNEL_MODULE("netmap", 0);
+#endif
 
 	memset(&ctx_, 0, sizeof(ctx_));
 

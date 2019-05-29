@@ -90,6 +90,12 @@ if [ "$?" != "0" ]; then
 	exit 1
 fi
 
+which bc
+if [ "$?" != "0" ]; then
+	echo "bc program not not found"
+	exit 1
+fi
+
 random_num="$((65 + $RANDOM % 58))"
 # https://stackoverflow.com/a/10503163
 random_fill=$(printf \\$(printf '%03o' $random_num))
