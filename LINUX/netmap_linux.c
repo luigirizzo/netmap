@@ -1132,7 +1132,8 @@ nm_os_st_upcall(NM_SOCK_T *sk)
 				STACK_DBG_LIM("WARNING: no kring");
 				SET_MBUF_DESTRUCTOR(m, NULL);
 				nm_set_mbuf_data_destructor(m, &cb->ui, NULL);
-				sk_eat_skb(sk, m);
+				__skb_unlink(m, queue);
+				__kfree_skb(m);
 				continue;
 			}
 		}
@@ -1164,13 +1165,15 @@ nm_os_st_upcall(NM_SOCK_T *sk)
 		}
 #endif
 		nmcb_wstate(cb, MB_TXREF);
+
+		/* XXX use new sk_eat_skb() > 5.1 */
+		__skb_unlink(m, queue);
 #ifdef STACK_RECYCLE
 		if (likely(!queued)) {
-			__skb_unlink(m, queue);
 			skb_orphan(m);
 		} else
 #endif
-		sk_eat_skb(sk, m);
+			__kfree_skb(m);
 		nm_prdis("ate %p state %x", m, nmcb_rstate(cb));
 	}
 }
