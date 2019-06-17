@@ -643,6 +643,7 @@ nm_vale_preflush(struct netmap_kring *kring, u_int end)
 		ft[ft_i].ft_len = slot->len;
 		ft[ft_i].ft_flags = slot->flags;
 		ft[ft_i].ft_offset = 0;
+		ft[ft_i].ft_src_slot = slot;
 
 		nm_prdis("flags is 0x%x", slot->flags);
 		/* we do not use the buf changed flag, but we still need to reset it */
@@ -1081,6 +1082,7 @@ retry:
 			struct netmap_slot *slot;
 			struct nm_bdg_fwd *ft_p, *ft_end;
 			u_int cnt;
+			bool is_bdcast = false;
 
 			/* find the queue from which we pick next packet.
 			 * NM_FT_NULL is always higher than valid indexes
@@ -1092,6 +1094,7 @@ retry:
 				ft_p = ft + next;
 				next = ft_p->ft_next;
 			} else { /* insert broadcast */
+				is_bdcast = true;
 				ft_p = ft + brd_next;
 				brd_next = ft_p->ft_next;
 			}
@@ -1129,8 +1132,32 @@ retry:
 							dst_len = 0;
 						}
 					} else {
+
+#if VALE_ZERO_COPY
+						/* do zero copy only under the following conditions :
+						   1. not a broadacast packet
+						   2. if both src and dst slots are in the same memory region
+						 */
+						if(likely(!is_bdcast &&
+							 (na->up.nm_mem == dst_na->up.nm_mem))) {
+							struct netmap_slot *src_slot, *dst_slot;
+							struct netmap_slot tmp;
+							dst_slot = slot;
+							src_slot = ft_p->ft_src_slot;
+							tmp = *dst_slot;
+							*dst_slot = *src_slot;
+							*src_slot = tmp;
+							dst_slot->flags |= NS_BUF_CHANGED;
+							src_slot->flags |= NS_BUF_CHANGED;
+						} else {
+							//memcpy(dst, src, copy_len);
+							pkt_copy(src, dst, (int)copy_len);
+						}
+#else
 						//memcpy(dst, src, copy_len);
 						pkt_copy(src, dst, (int)copy_len);
+#endif
+
 					}
 					slot->len = dst_len;
 					slot->flags = (cnt << 8)| NS_MOREFRAG;
