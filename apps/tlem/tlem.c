@@ -1240,37 +1240,10 @@ wait_for_packets(struct _qs *q)
         if (n0)
             break;
         prev = 0; /* we slept */
-        if (1) {
-            usleep(5);
-            ioctl(q->src_port->fd, NIOCRXSYNC, 0);
-            ec_checkactive(q);
-            set_tns_now(&q->prod_now, q->t0);
-        } else {
-            struct pollfd pfd;
-            struct netmap_ring *rx;
-            int ret;
-
-            pfd.fd = q->src_port->fd;
-            pfd.revents = 0;
-            pfd.events = POLLIN;
-            ND(1, "prepare for poll on %s", q->prod_ifname);
-            ret = poll(&pfd, 1, 10000);
-            if (ret <= 0 || verbose > 1) {
-                D("poll %s ev %x %x rx %d@%d",
-                        ret <= 0 ? "timeout" : "ok",
-                        pfd.events,
-                        pfd.revents,
-                        rx_queued(q->src_port),
-                        NETMAP_RXRING(q->src_port->nifp, q->src_port->first_rx_ring)->cur
-                 );
-            }
-            if (pfd.revents & POLLERR) {
-                rx = NETMAP_RXRING(q->src_port->nifp, q->src_port->first_rx_ring);
-                D("error on fd0, rx [%d,%d,%d)",
-                        rx->head, rx->cur, rx->tail);
-                sleep(1);
-            }
-        }
+        usleep(5);
+        ioctl(q->src_port->fd, NIOCRXSYNC, 0);
+        ec_checkactive(q);
+        set_tns_now(&q->prod_now, q->t0);
     }
     set_tns_now(&q->prod_now, q->t0);
     if (ts_cmp(q->qt_qout, q->prod_now) < 0) {
