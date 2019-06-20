@@ -289,6 +289,14 @@ struct _cfg {
     uint64_t def_qsize; /* default qsize (for bw configs) */
 };
 
+/* impairments */
+enum {
+	I_DELAY = 0,
+	I_BW,
+	I_LOSS,
+	I_REORDER,
+	I_NUM
+};
 
 /* configuration instance. There may be one or more of these
  * for direction. One of them is the active one, currently
@@ -296,10 +304,7 @@ struct _cfg {
  * then make it active when ready.
  */
 struct _eci {
-        struct _ec      ec_delay;
-        struct _ec      ec_bw;
-        struct _ec      ec_loss;
-        struct _ec      ec_reorder;
+        struct _ec      ec_imp[I_NUM];
 	uint64_t	ec_delay_offset;
 	int		ec_allow_drop;
 	uint32_t	ec_qsize;
@@ -430,10 +435,7 @@ struct _qs { /* shared queue */
 	uint64_t	qsize;	/* queue size in bytes */
 
 	/* handlers for various options */
-	struct _cfg	c_delay;
-	struct _cfg	c_bw;
-	struct _cfg	c_loss;
-	struct _cfg	c_reorder;
+	struct _cfg	c_imp[I_NUM];
 
 	/* producer's fields */
 	uint64_t	prod_tail_1 ALIGN_CACHE; /* head of queue */
@@ -671,17 +673,13 @@ ec_init(struct _qs *q, struct _ecs *ec, int server)
 
     q->ec = ec;
     for (i = 0; i < EC_NINST; i++)
-        q->ec_nta[i] = 0;
+	q->ec_nta[i] = 0;
     q->ec_active = server ? 0 : ec_next(q->ec->active);
     ci = &q->ec->instances[q->ec_active];
-    ci->ec_delay.ec_valid = 0;
-    q->c_delay.ec = &ci->ec_delay;
-    ci->ec_bw.ec_valid = 0;
-    q->c_bw.ec = &ci->ec_bw;
-    ci->ec_loss.ec_valid = 0;
-    q->c_loss.ec = &ci->ec_loss;
-    ci->ec_reorder.ec_valid = 0;
-    q->c_reorder.ec = &ci->ec_reorder;
+    for (i = 0; i < I_NUM; i++) {
+	ci->ec_imp[i].ec_valid = 0;
+	q->c_imp[i].ec = &ci->ec_imp[i];
+    }
     return 0;
 }
 
@@ -1468,7 +1466,7 @@ prod_procpkt(struct _qs *q)
 {
     uint64_t t_tx, tt;	/* output and transmission time */
 
-    q->c_loss.run(q, &q->c_loss);
+    q->c_imp[I_LOSS].run(q, &q->c_imp[I_LOSS]);
     if (q->cur_drop) {
         q->txstats->drop_packets++;
         q->txstats->drop_bytes += q->cur_len;
@@ -1485,7 +1483,7 @@ prod_procpkt(struct _qs *q)
         }
     }
     // XXX possibly implement c_tt for transmission time emulation
-    q->c_bw.run(q, &q->c_bw);
+    q->c_imp[I_BW].run(q, &q->c_imp[I_BW]);
     tt = q->cur_tt;
     q->qt_qout += tt;
     if (drop_after(q)) {
@@ -1495,7 +1493,7 @@ prod_procpkt(struct _qs *q)
         return;
     }
     if (!q->reuse_delay) {
-        q->c_delay.run(q, &q->c_delay); /* compute delay */
+        q->c_imp[I_DELAY].run(q, &q->c_imp[I_DELAY]); /* compute delay */
         if (q->delay_offset > q->cur_delay) {
             q->cur_delay = 0;
         } else {
@@ -1553,7 +1551,7 @@ prod(void *_pa)
                 prod_push_arp(pa, q->cur_pkt);
                 continue;
             }
-            q->c_reorder.run(q, &q->c_reorder);
+            q->c_imp[I_REORDER].run(q, &q->c_imp[I_REORDER]);
             if (q->cur_hold_delay) {
                 q->cur_hold_delay += q->prod_now;
                 q->txstats->reorder_packets++;
@@ -1896,8 +1894,8 @@ retry2:
     ED("----\n\t%s -> %s :  bps %lld delay %s loss %s reorder %s queue %lld bytes"
             "\n\tbuffer   %s bytes\n\thold-buf %s bytes",
             q->prod_ifname, q->cons_ifname,
-            (long long)q->ec->max_bps, q->c_delay.optarg, q->c_loss.optarg,
-	    q->c_reorder.optarg,
+            (long long)q->ec->max_bps, q->c_imp[I_DELAY].optarg, q->c_imp[I_LOSS].optarg,
+	    q->c_imp[I_REORDER].optarg,
             (long long)q->qsize, b1,
             b2);
 
@@ -2099,8 +2097,8 @@ set_max(const char *arg, struct _qs *q)
             return 1;
         }
 	/* if we did not get any bw limitation from -B, use this one */
-	if (q->c_bw.run == null_run_fn) {
-	    if (cmd_apply(bw_cfg, av[1], q, &q->c_bw)) {
+	if (q->c_imp[I_BW].run == null_run_fn) {
+	    if (cmd_apply(bw_cfg, av[1], q, &q->c_imp[I_BW])) {
 		ED("warning: failed to set default bandwidth limitation to %s", av[1]);
 	    } else {
 		ED("set maximum bandwidth to %s", av[1]);
@@ -2134,6 +2132,19 @@ struct dir_opt {
 };
 #define MAXOPTS 1024
 #define DOPT(a, f)  { .opt = a, .flags = f, .arg = { NULL, NULL } }
+
+/* mapping between options and configurations */
+struct cfg_opt {
+    int opt;
+    struct _cfg *c;
+};
+
+struct cfg_opt all_cfgs[] = {
+    [I_DELAY]	= { 'D', delay_cfg },
+    [I_BW]    	= { 'B', bw_cfg },
+    [I_LOSS]  	= { 'L', loss_cfg },
+    [I_REORDER]	= { 'R', reorder_cfg },
+};
 
 int
 main(int argc, char **argv)
@@ -2188,15 +2199,13 @@ main(int argc, char **argv)
     for (i = 0; i < EC_NOPTS; i++) {
         struct _qs *q = &bp[i].q;
         uint64_t seed = time(0);
+	int j;
+
         memcpy(q->prod_seed, &seed, sizeof(q->prod_seed));
-        q->c_delay.optarg = "0";
-        q->c_delay.run = null_run_fn;
-        q->c_loss.optarg = "0";
-        q->c_loss.run = null_run_fn;
-        q->c_bw.optarg = "0";
-        q->c_bw.run = null_run_fn;
-        q->c_reorder.optarg = "0";
-        q->c_reorder.run = null_run_fn;
+	for (j = 0; j < I_NUM; j++) {
+	    q->c_imp[j].optarg = "0";
+	    q->c_imp[j].run = null_run_fn;
+	}
     }
 
     ncpus = sysconf(_SC_NPROCESSORS_ONLN);
@@ -2527,6 +2536,7 @@ skip_args:
     for (i = 0; i < EC_NOPTS; i++) { /* once per queue */
         struct _qs *q = &bp[i].q;
         struct _eci *a;
+	int k;
 
         if (ec_init(q, &ecf->sets[i], server))
             exit(1);
@@ -2535,10 +2545,9 @@ skip_args:
             continue;
         }
         a = &q->ec->instances[q->ec_active];
-        err += cmd_apply(delay_cfg, invdopt['D']->arg[i], q, &q->c_delay);
-        err += cmd_apply(bw_cfg, invdopt['B']->arg[i], q, &q->c_bw);
-        err += cmd_apply(loss_cfg, invdopt['L']->arg[i], q, &q->c_loss);
-        err += cmd_apply(reorder_cfg, invdopt['R']->arg[i], q, &q->c_reorder);
+	for (k = 0; k < I_NUM; k++) {
+	    err += cmd_apply(all_cfgs[k].c, invdopt[all_cfgs[k].opt]->arg[i], q, &q->c_imp[k]);
+	}
 #ifdef WITH_MAX_LAG
         if (invdopt['d']->arg[i] != NULL) {
             unsigned long max_lag = parse_time(invdopt[(int)'d']->arg[i]);
@@ -2570,9 +2579,9 @@ skip_args:
 	    /* we need e small finite queue for bandwidth emulation,
 	     * otherwise delay is unbounded
 	     */
-	    ED("setting qsize to %lluB", (unsigned long long)q->c_bw.def_qsize);
-	    a->ec_qsize = q->c_bw.def_qsize;
-	    q->qsize = q->c_bw.def_qsize;
+	    ED("setting qsize to %lluB", (unsigned long long)q->c_imp[I_BW].def_qsize);
+	    a->ec_qsize = q->c_imp[I_BW].def_qsize;
+	    q->qsize = q->c_imp[I_BW].def_qsize;
 	} else {
 	    ED("using unlimited qsize");
 	    a->ec_qsize = 0;
@@ -3504,41 +3513,32 @@ static struct _cfg reorder_cfg[] = {
 void
 ec_activate(struct _qs *q)
 {
-    int i = q->ec_active;
+    int i = q->ec_active, j;
     struct _eci *a = &q->ec->instances[i];
 
-    if (a->ec_bw.ec_valid) {
-        q->c_bw = bw_cfg[a->ec_bw.ec_index];
-        q->c_bw.arg = &a->ec_data[a->ec_bw.ec_dataoff];
-    } else {
-        q->cur_tt = 0;
-        q->c_bw.run = null_run_fn;
+    for (j = 0; j < I_NUM; j++) {
+	if (a->ec_imp[j].ec_valid) {
+	    q->c_imp[j] = all_cfgs[j].c[a->ec_imp[j].ec_index];
+	    q->c_imp[j].arg = &a->ec_data[a->ec_imp[j].ec_dataoff];
+	} else {
+	    switch (j) {
+	    case I_DELAY:
+	        q->cur_delay = 0;
+	        break;
+	    case I_BW:
+		q->cur_tt = 0;
+	        break;
+	    case I_LOSS:
+		q->cur_drop = 0;
+	        break;
+	    case I_REORDER:
+		q->cur_hold_delay = 0;
+	        break;
+	    }
+	    q->c_imp[j].run = null_run_fn;
+	}
+	q->c_imp[j].ec = &a->ec_imp[j];
     }
-    q->c_bw.ec = &a->ec_bw;
-    if (a->ec_delay.ec_valid) {
-        q->c_delay = delay_cfg[a->ec_delay.ec_index];
-        q->c_delay.arg = &a->ec_data[a->ec_delay.ec_dataoff];
-    } else {
-        q->cur_delay = 0;
-        q->c_delay.run = null_run_fn;
-    }
-    q->c_delay.ec = &a->ec_delay;
-    if (a->ec_loss.ec_valid) {
-        q->c_loss = loss_cfg[a->ec_loss.ec_index];
-        q->c_loss.arg = &a->ec_data[a->ec_loss.ec_dataoff];
-    } else {
-        q->cur_drop = 0;
-        q->c_loss.run = null_run_fn;
-    }
-    q->c_loss.ec = &a->ec_loss;
-    if (a->ec_reorder.ec_valid) {
-        q->c_reorder = reorder_cfg[a->ec_reorder.ec_index];
-        q->c_reorder.arg = &a->ec_data[a->ec_reorder.ec_dataoff];
-    } else {
-        q->cur_hold_delay = 0;
-        q->c_reorder.run = null_run_fn;
-    }
-    q->c_reorder.ec = &a->ec_reorder;
     q->allow_drop = a->ec_allow_drop;
     q->delay_offset = a->ec_delay_offset;
     q->qsize = a->ec_qsize;
