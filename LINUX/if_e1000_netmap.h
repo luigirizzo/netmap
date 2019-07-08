@@ -153,7 +153,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 		txr->next_to_use = nic_i; /* XXX what for ? */
 		/* (re)start the tx unit up to slot nic_i (excluded) */
 		writel(nic_i, adapter->hw.hw_addr + txr->tdt);
-		mmiowb(); // XXX where do we need this ?
+		wmb(); // XXX where do we need this ?
 	}
 
 	/*
