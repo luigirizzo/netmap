@@ -280,6 +280,7 @@ replace_vars()
 		-e "s|@DESTDIR@|$DESTDIR|g" \
 		-e "s|@DEBUG@|$DEBUG|g" \
 		-e "s|@UTILS@|$UTILS|g" \
+		-e "s|@REC_DISABLED_WARNINGS@|$REC_DISABLED_WARNINGS|g" \
 		$1
 }
 
@@ -981,7 +982,7 @@ EOF
 
   add_test true broken_buildsystem < /dev/null
 
-DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned"
+DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned stringop-truncation"
 REC_DISABLED_WARNINGS=
 disable_warning() {
 	REC_DISABLED_WARNINGS="$1 $REC_DISABLED_WARNINGS"

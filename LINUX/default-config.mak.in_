@@ -78,6 +78,7 @@ endef
 # some additional, driver-specific CFLAGS (used in the @build variable above)
 e1000e@cflags := -fno-pie
 igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
+ixgbe@cflags := @REC_DISABLED_WARNINGS@
 
 # set all the default versions (can be overrided by --select-version=)
 $(eval $(call default,ixgbe,5.3.8))
