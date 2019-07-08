@@ -238,7 +238,7 @@ igb_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		/* (re)start the tx unit up to slot nic_i (excluded) */
 		writel(nic_i, txr->tail);
-		mmiowb();
+		wmb();
 	}
 
 	/*
