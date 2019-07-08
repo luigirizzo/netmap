@@ -181,7 +181,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		txr->next_to_use = nic_i; /* for consistency */
 		NM_WR_TX_TAIL(nic_i);
-		mmiowb(); /* needed after writing to TX ring tail */
+		wmb(); /* needed after writing to TX ring tail */
 	}
 
 	/*
