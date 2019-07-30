@@ -206,7 +206,7 @@ port_info_get(struct TestContext *ctx)
 		perror("ioctl(/dev/netmap, NIOCCTRL, PORT_INFO_GET)");
 		return ret;
 	}
-	printf("nr_memsize %llu\n", (unsigned long long)req.nr_memsize);
+	printf("nr_memsize %zu\n", req.nr_memsize);
 	printf("nr_tx_slots %u\n", req.nr_tx_slots);
 	printf("nr_rx_slots %u\n", req.nr_rx_slots);
 	printf("nr_tx_rings %u\n", req.nr_tx_rings);
@@ -265,7 +265,7 @@ port_register(struct TestContext *ctx)
 		return ret;
 	}
 	printf("nr_offset 0x%llx\n", (unsigned long long)req.nr_offset);
-	printf("nr_memsize %llu\n", (unsigned long long)req.nr_memsize);
+	printf("nr_memsize %zu\n", req.nr_memsize);
 	printf("nr_tx_slots %u\n", req.nr_tx_slots);
 	printf("nr_rx_slots %u\n", req.nr_rx_slots);
 	printf("nr_tx_rings %u\n", req.nr_tx_rings);
@@ -339,7 +339,7 @@ niocregif(struct TestContext *ctx, int netmap_api)
 	}
 
 	printf("nr_offset 0x%x\n", req.nr_offset);
-	printf("nr_memsize  %u\n", req.nr_memsize);
+	printf("nr_memsize  %zu\n", req.nr_memsize);
 	printf("nr_tx_slots %u\n", req.nr_tx_slots);
 	printf("nr_rx_slots %u\n", req.nr_rx_slots);
 	printf("nr_tx_rings %u\n", req.nr_tx_rings);
