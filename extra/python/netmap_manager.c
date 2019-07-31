@@ -154,7 +154,7 @@ NetmapManager_repr(NetmapManager *self)
             "dev_name:  '%s'\n"
             "if_name:   '%s'\n"
             "version:   %d\n"
-            "memsize:   %u KiB\n"
+            "memsize:   %zu KiB\n"
             "offset:    %u\n"
             "tx_slots:  %d\n"
             "rx_slots:  %d\n"
