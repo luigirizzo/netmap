@@ -599,6 +599,10 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 #endif /* HAVE_RX_REGISTER */
 }
 
+#ifndef NETMAP_LINUX_SELECT_QUEUE_PARM3
+#define NETMAP_LINUX_SELECT_QUEUE_PARM3 void*
+#endif /*! NETMAP_LINUX_SELECT_QUEUE_PARM3 */
+
 #ifdef NETMAP_LINUX_SELECT_QUEUE
 static u16
 generic_ndo_select_queue(struct ifnet *ifp, struct mbuf *m

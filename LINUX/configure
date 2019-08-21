@@ -1155,7 +1155,8 @@ EOF
   done
 
   # type of the 3rd param of ndo_select_queue
-  add_test 'define SELECT_QUEUE_PARM3 "struct net_device*"' 'define SELECT_QUEUE_PARM3 "void*"' <<EOF
+  # defaults to void* if not defined
+  add_test 'define SELECT_QUEUE_PARM3 "struct net_device*"' <<EOF
 	#include <linux/netdevice.h>
 
 	static u16 myselect(struct net_device *dev, struct sk_buff *skb,
@@ -1165,6 +1166,24 @@ EOF
 		(void)skb;
 		(void)sb_dev;
 		(void)fallback;
+		return 0;
+	}
+	struct net_device_ops ndo = {
+		.ndo_select_queue = myselect,
+	};
+EOF
+
+  # type of the 3rd param of ndo_select_queue
+  # defaults to void* if not defined
+  add_test 'define SELECT_QUEUE_PARM3 "struct net_device*"' <<EOF
+	#include <linux/netdevice.h>
+
+	static u16 myselect(struct net_device *dev, struct sk_buff *skb,
+		struct net_device *sb_dev)
+	{
+		(void)dev;
+		(void)skb;
+		(void)sb_dev;
 		return 0;
 	}
 	struct net_device_ops ndo = {
