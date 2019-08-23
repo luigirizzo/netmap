@@ -42,6 +42,32 @@
 #include <libgen.h>	/* basename */
 #include <stdlib.h>	/* atoi, free */
 
+/* Text/UI versions of VALE port types to display. Type NaN is if
+ * we get a response type from the kernel outside the range we know
+ * how to interpret.
+ */
+
+static const char TXT_VALE_PORT_T_ERROR[] = "ERR";
+static const char TXT_VALE_PORT_T_PHYS[] = "PHYS";
+static const char TXT_VALE_PORT_T_STACK[] = "STACK";
+static const char TXT_VALE_PORT_T_VIRT[] = "VIRT";
+static const char TXT_VALE_PORT_T_NAN[] = "NaN";
+
+static const char* vale_port_type_to_text(uint port_type) {
+	switch (port_type) {
+	case VALE_PORT_T_ERROR:
+		return TXT_VALE_PORT_T_ERROR;
+	case VALE_PORT_T_PHYS:
+		return TXT_VALE_PORT_T_PHYS;
+	case VALE_PORT_T_STACK:
+		return TXT_VALE_PORT_T_STACK;
+	case VALE_PORT_T_VIRT:
+		return TXT_VALE_PORT_T_VIRT;
+	default:
+		return TXT_VALE_PORT_T_NAN;
+	}
+}
+
 /* XXX cut and paste from pkt-gen.c because I'm not sure whether this
  * program may include nm_util.h
  */
@@ -137,16 +163,16 @@ bdg_ctl(const char *name, int nr_cmd, int nr_arg, char *nmr_config, int nr_arg2)
 				ND("Unable to obtain info for %s", name);
 				perror(name);
 			} else
-				D("%s at bridge:%d port:%d", name, nmr.nr_arg1,
-				    nmr.nr_arg2);
+				D("%s at bridge:%d port:%d type:%s", name, nmr.nr_arg1,
+				    nmr.nr_arg2, vale_port_type_to_text(nmr.nr_arg3));
 			break;
 		}
 
 		/* scan all the bridges and ports */
 		nmr.nr_arg1 = nmr.nr_arg2 = 0;
 		for (; !ioctl(fd, NIOCGINFO, &nmr); nmr.nr_arg2++) {
-			D("bridge:%d port:%d %s", nmr.nr_arg1, nmr.nr_arg2,
-			    nmr.nr_name);
+			D("bridge:%d port:%d type:%s %s", nmr.nr_arg1, nmr.nr_arg2,
+			    vale_port_type_to_text(nmr.nr_arg3), nmr.nr_name);
 			nmr.nr_name[0] = '\0';
 		}
 

@@ -685,11 +685,24 @@ struct nmreq_vale_detach {
  * nr_reqtype: NETMAP_REQ_VALE_LIST
  * List the ports of a VALE switch.
  */
+
+/* Use the following port type values to indicate the type of port attached to
+ * the vale bridge
+ */
+enum {
+	VALE_PORT_T_ERROR = 0,
+	VALE_PORT_T_PHYS = 1,
+	VALE_PORT_T_STACK = 2,
+	VALE_PORT_T_VIRT = 3,
+};
+
 struct nmreq_vale_list {
 	/* Name of the VALE port (valeXXX:YYY) or empty. */
 	uint16_t	nr_bridge_idx;
 	uint16_t	pad1;
 	uint32_t	nr_port_idx;
+	/* Type of the VALE port */
+	uint8_t		nr_port_type;
 };
 
 /*

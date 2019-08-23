@@ -328,6 +328,7 @@ nmreq_to_legacy(struct nmreq_header *hdr, struct nmreq *nmr)
 		strlcpy(nmr->nr_name, hdr->nr_name, sizeof(nmr->nr_name));
 		nmr->nr_arg1 = req->nr_bridge_idx;
 		nmr->nr_arg2 = req->nr_port_idx;
+		nmr->nr_arg3 = req->nr_port_type;
 		break;
 	}
 	case NETMAP_REQ_PORT_HDR_SET:

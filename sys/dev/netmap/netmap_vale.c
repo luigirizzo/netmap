@@ -348,6 +348,28 @@ netmap_vale_list(struct nmreq_header *hdr)
 			 */
 			if (!strcmp(vpna->up.name, hdr->nr_name)) {
 				req->nr_port_idx = i; /* port index */
+				/* VALE port type logic */
+				if (vpna->up.pdev &&
+				    vpna->up.na_hostvp &&
+				    vpna->up.na_vp) {
+					req->nr_port_type = VALE_PORT_T_PHYS;
+				} else if (!vpna->up.pdev &&
+				           vpna->up.na_hostvp &&
+				           vpna->up.na_vp) {
+					if (vpna->up.na_flags & NAF_HOST_RINGS)
+						req->nr_port_type = VALE_PORT_T_PHYS;
+					else
+						req->nr_port_type = VALE_PORT_T_STACK;
+				} else if (!vpna->up.pdev &&
+					   !vpna->up.na_hostvp &&
+					   vpna->up.na_vp) {
+					req->nr_port_type = VALE_PORT_T_VIRT;
+				} else {
+					D("Unknown VALE port %s with pdev: %p, hvp: %p, na_vp: %p",
+					  vpna->up.name, vpna->up.pdev, vpna->up.na_hostvp,
+					  vpna->up.na_vp);
+					  req->nr_port_type = VALE_PORT_T_ERROR;
+				}
 				break;
 			}
 		}
@@ -373,6 +395,28 @@ netmap_vale_list(struct nmreq_header *hdr)
 				/* write back the VALE switch name */
 				strlcpy(hdr->nr_name, vpna->up.name,
 					sizeof(hdr->nr_name));
+				/* VALE port type logic */
+				if (vpna->up.pdev &&
+				    vpna->up.na_hostvp &&
+				    vpna->up.na_vp) {
+					req->nr_port_type = VALE_PORT_T_PHYS;
+				} else if (!vpna->up.pdev &&
+				           vpna->up.na_hostvp &&
+				           vpna->up.na_vp) {
+					if (vpna->up.na_flags & NAF_HOST_RINGS)
+						req->nr_port_type = VALE_PORT_T_PHYS;
+					else
+						req->nr_port_type = VALE_PORT_T_STACK;
+				} else if (!vpna->up.pdev &&
+					   !vpna->up.na_hostvp &&
+					   vpna->up.na_vp) {
+					req->nr_port_type = VALE_PORT_T_VIRT;
+				} else {
+					D("Unknown VALE port %s with pdev: %p, hvp: %p, na_vp: %p",
+					  vpna->up.name, vpna->up.pdev, vpna->up.na_hostvp,
+					  vpna->up.na_vp);
+					  req->nr_port_type = VALE_PORT_T_ERROR;
+				}
 				error = 0;
 				goto out;
 			}
