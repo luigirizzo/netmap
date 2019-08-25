@@ -652,7 +652,7 @@ int main(int argc, char **argv)
 	/* extract the base name */
 	char *nscan = strncmp(glob_arg.ifname, "netmap:", 7) ?
 			glob_arg.ifname : glob_arg.ifname + 7;
-	strncpy(glob_arg.base_name, nscan, MAX_IFNAMELEN-1);
+	strncpy(glob_arg.base_name, nscan, MAX_IFNAMELEN);
 	for (nscan = glob_arg.base_name; *nscan && !index("-*^{}/@", *nscan); nscan++)
 		;
 	*nscan = '\0';
