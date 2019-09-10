@@ -633,10 +633,21 @@ generic_ndo_start_xmit(struct mbuf *m, struct ifnet *ifp)
 		(struct netmap_generic_adapter *)NA(ifp);
 
 	if (likely(m->priority == NM_MAGIC_PRIORITY_TX)) {
+		netdev_tx_t ret;
+
 		/* Reset priority, so that generic_netmap_tx_clean()
 		 * knows that it can reclaim this mbuf. */
 		m->priority = 0;
-		return gna->save_start_xmit(m, ifp); /* To the driver. */
+		ret = gna->save_start_xmit(m, ifp); /* To the driver. */
+		if (unlikely(ret == NETDEV_TX_BUSY)) {
+			/* The driver is busy, so the packet has not
+			 * been consumed and will be resubmitted
+			 * later. Set the priority again to our
+			 * magic value, so that it hits again
+			 * this code path. */
+			m->priority = NM_MAGIC_PRIORITY_TX;
+		}
+		return ret;
 	}
 
 	/* To a netmap RX ring. */
