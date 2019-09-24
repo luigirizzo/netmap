@@ -1270,7 +1270,11 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	err = -EIO;
+#ifdef __arm__
+	pr_info("%s: IO BAR (registers): start 0x%x, len %u, flags 0x%lx\n",
+#else
 	pr_info("%s: IO BAR (registers): start 0x%llx, len %llu, flags 0x%lx\n",
+#endif
 		__func__, pci_resource_start(pdev, PTNETMAP_IO_PCI_BAR),
 		pci_resource_len(pdev, PTNETMAP_IO_PCI_BAR),
 		pci_resource_flags(pdev, PTNETMAP_IO_PCI_BAR));
@@ -1352,14 +1356,18 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		/* CSB allocation protocol. Write to GH_BAH first, then
 		 * to GH_BAL. Same for HG_BAH and HG_BAL. */
 		phys_addr_t paddr = virt_to_phys(pi->csb_gh);
+#ifndef __arm__
 		iowrite32((paddr >> 32) & 0xffffffff,
-				ioaddr + PTNET_IO_CSB_GH_BAH);
+		        ioaddr + PTNET_IO_CSB_GH_BAH);
+#endif
 		iowrite32(paddr & 0xffffffff,
 				ioaddr + PTNET_IO_CSB_GH_BAL);
 
 		paddr = virt_to_phys(pi->csb_hg);
+#ifndef __arm__
 		iowrite32((paddr >> 32) & 0xffffffff,
 				ioaddr + PTNET_IO_CSB_HG_BAH);
+#endif
 		iowrite32(paddr & 0xffffffff,
 				ioaddr + PTNET_IO_CSB_HG_BAL);
 	}

@@ -1824,8 +1824,11 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
 	*mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_HI);
 	*mem_size = ioread32(ptn_dev->pci_io + PTNET_MDEV_IO_MEMSIZE_LO) |
 		(*mem_size << 32);
-
+#ifdef __arm__
+	nm_prinf("=== BAR %d start %x len %x mem_size %lx ===",
+#else
 	nm_prinf("=== BAR %d start %llx len %llx mem_size %lx ===",
+#endif
 			PTNETMAP_MEM_PCI_BAR,
 			pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
 			pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
