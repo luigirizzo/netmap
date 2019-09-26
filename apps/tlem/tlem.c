@@ -886,11 +886,13 @@ arpq_get_cmd(struct arp_cmd_q *a)
 static inline void
 arpq_release(struct arp_cmd_q *a)
 {
-    if (likely(a->q[a->toclean].valid != 2))
+    int c = a->toclean & (ARP_CMD_QSIZE - 1);
+    if (likely(a->q[c].valid != 2))
         return;
-    while (a->q[a->toclean].valid == 2) {
-        a->q[a->toclean].valid = 0;
+    while (a->q[c].valid == 2) {
+        a->q[c].valid = 0;
         a->toclean++;
+	c = a->toclean & (ARP_CMD_QSIZE - 1);
     }
 }
 
