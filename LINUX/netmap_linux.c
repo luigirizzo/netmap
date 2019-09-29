@@ -26,6 +26,7 @@
 #include "bsd_glue.h"
 #include <linux/file.h>   /* fget(int fd) */
 
+#include <asm/types.h>
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 #include <net/netmap_virt.h>
@@ -1826,10 +1827,10 @@ nm_os_pt_memdev_iomap(struct ptnetmap_memdev *ptn_dev, vm_paddr_t *nm_paddr,
 		(*mem_size << 32);
 
 	nm_prinf("=== BAR %d start %llx len %llx mem_size %lx ===",
-			PTNETMAP_MEM_PCI_BAR,
-			pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
-			pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
-			(unsigned long)(*mem_size));
+	    PTNETMAP_MEM_PCI_BAR,
+	    (unsigned long long)pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR),
+	    (unsigned long long)pci_resource_len(pdev, PTNETMAP_MEM_PCI_BAR),
+	    (unsigned long)(*mem_size));
 
 	/* map memory allocator */
 	mem_paddr = pci_resource_start(pdev, PTNETMAP_MEM_PCI_BAR);
