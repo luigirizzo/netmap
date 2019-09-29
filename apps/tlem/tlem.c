@@ -1644,6 +1644,8 @@ cons_update_dst(struct pipe_args *pa, void *pkt)
     //uint8_t *d = (uint8_t *)&dst;
 
     ND("dst %u.%u.%u.%u", d[0], d[1], d[2], d[3]);
+    if (unlikely((ntohs(eh->ether_type) < 0x600)))
+	return -2; /* ignore 802.3 packets */
     if (unlikely(!(ntohs(eh->ether_type) == ETHERTYPE_IP)))
         return -1; /* drop */
     if (unlikely(dst == ipv4->ip_bcast || dst == 0xffffffff))
@@ -1776,7 +1778,10 @@ cons(void *_pa)
                 /* drop this packet. Any pending arp message
                  * will be sent in the next iteration
                  */
-                q->rxstats->drop_packets++;
+		if (injected == -1) {
+		    q->rxstats->drop_packets++;
+		    q->rxstats->drop_bytes += p->pktlen;
+		}
                 goto next;
             }
             pending += injected;
