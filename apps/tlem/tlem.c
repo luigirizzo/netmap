@@ -1644,7 +1644,7 @@ cons_update_dst(struct pipe_args *pa, void *pkt)
     //uint8_t *d = (uint8_t *)&dst;
 
     ND("dst %u.%u.%u.%u", d[0], d[1], d[2], d[3]);
-    if (unlikely(!(eh->ether_type == ntohs(ETHERTYPE_IP))))
+    if (unlikely(!(ntohs(eh->ether_type) == ETHERTYPE_IP)))
         return -1; /* drop */
     if (unlikely(dst == ipv4->ip_bcast || dst == 0xffffffff))
         return -1; /* drop */
