@@ -931,7 +931,17 @@ struct ipv4_info {
 	in_addr_t	ip_subnet;
 	in_addr_t	ip_bcast;
 	in_addr_t	ip_gw;
-	uint8_t		ether_addr[6];
+	union {
+		struct {
+		    uint8_t  pad1[2];
+		    uint8_t  ether_addr[6];
+		};
+		struct {
+		    uint16_t pad2;
+		    uint16_t eth1;
+		    uint32_t eth2;
+		};
+	};
 	/* pre-formatted arp messages */
 	union {
 		uint8_t pkt[60];
@@ -1626,13 +1636,14 @@ cons_handle_arp(struct pipe_args *pa, struct arp_cmd *c)
     return rv;
 }
 
-/* change the ethernet target address according to the local ARP table.
+/* change the ethernet target address according to the local ARP table
+ * and set the source address to the local MAC.
  * may send an ARP request.
  * returns the number of packets injected, or < 0 if the packet
  * needs to be dropped
  */
 static inline int
-cons_update_dst(struct pipe_args *pa, void *pkt)
+cons_update_macs(struct pipe_args *pa, void *pkt)
 {
     struct ether_header *eh = pkt;
     struct ip *iph = (struct ip *)(eh + 1);
@@ -1679,6 +1690,9 @@ cons_update_dst(struct pipe_args *pa, void *pkt)
     /* copy negated dst into eh (either brodcast or unicast) */
     *(uint32_t *)eh = ~e->eth1;
     *(uint16_t *)((char *)eh + 4) = ~e->eth2;
+    /* copy local MAC address into source */
+    *(uint16_t *)((char *)eh + 6) = ipv4->eth1;
+    *(uint32_t *)((char *)eh + 8) = ipv4->eth2;
     return injected;
 }
 
@@ -1773,7 +1787,7 @@ cons(void *_pa)
         ND(5, "drain len %ld now %ld tx %ld h %ld t %ld next %ld",
                 p->pktlen, q->cons_now, p->pt_tx, h, t, p->next);
         if (pa->route_mode && !retrying) {
-            int injected = cons_update_dst(pa, p + 1);
+            int injected = cons_update_macs(pa, p + 1);
             if (unlikely(injected < 0)) {
                 /* drop this packet. Any pending arp message
                  * will be sent in the next iteration
