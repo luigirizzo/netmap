@@ -3490,7 +3490,7 @@ const_reorder_parse(struct _qs *q, struct _cfg *dst, int ac, char *av[])
     uint64_t delay, *d;
     int err;
 
-    if (strcmp(av[0], "const") != 0 && ac > 2)
+    if (strcmp(av[0], "const") != 0 && ac != 2)
         return 2; /* not recognized */
     if (ac > 3)
         return 1; /* error */
