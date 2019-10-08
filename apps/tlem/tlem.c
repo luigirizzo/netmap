@@ -450,8 +450,7 @@ struct _qs { /* shared queue */
 	/* parameters for reading from the netmap port */
 	struct nmport_d *src_port;		/* netmap descriptor */
 	const char *	prod_ifname;	/* interface name */
-	struct netmap_ring *rxring;	/* current ring being handled */
-	uint32_t	si;		/* ring index */
+	struct netmap_ring *rxring;	/* source netmap ring */
 	int		burst;
 	uint32_t	rx_qmax;	/* stats on max queued */
 
@@ -1191,20 +1190,6 @@ enq(struct _qs *q)
 }
 
 
-static int
-rx_queued(struct nmport_d *d)
-{
-    u_int tot = 0, i;
-    for (i = d->first_rx_ring; i <= d->last_rx_ring; i++) {
-        struct netmap_ring *rxr = NETMAP_RXRING(d->nifp, i);
-
-        ND(5, "ring %d h %d cur %d tail %d", i,
-                rxr->head, rxr->cur, rxr->tail);
-        tot += nm_ring_space(rxr);
-    }
-    return tot;
-}
-
 static inline int
 hold_update_release(struct _qs *q)
 {
@@ -1231,7 +1216,7 @@ wait_for_packets(struct _qs *q)
     while (!do_abort) {
         if (hold_update_release(q))
             break;
-        n0 = rx_queued(q->src_port);
+        n0 = nm_ring_space(q->rxring);
         if (n0 > (int)q->rx_qmax) {
             q->rx_qmax = n0;
         }
@@ -1282,43 +1267,16 @@ static void
 scan_ring(struct _qs *q, int next /* bool */)
 {
     struct netmap_slot *rs;
-    struct netmap_ring *rxr = q->rxring; /* invalid if next == 0 */
-    struct nmport_d *pa = q->src_port;
+    struct netmap_ring *rxr = q->rxring;
     int nfrags;
 
-    /* fast path for the first two */
-    if (likely(next != 0)) { /* current ring */
-        ND(10, "scan next");
+    if (likely(next != 0)) {
         /* advance */
         rxr->head = rxr->cur = nm_ring_next(rxr, rxr->cur);
-        if (!nm_ring_empty(rxr)) /* good one */
-            goto got_one;
-        q->si++;	/* otherwise update and fallthrough */
-    } else { /* scan from beginning */
-        q->si = pa->first_rx_ring;
-        ND(10, "scanning first ring %d", q->si);
+        if (nm_ring_empty(rxr)) /* no more packets */
+            return;
     }
-    while (q->si <= pa->last_rx_ring) {
-        q->rxring = rxr = NETMAP_RXRING(pa->nifp, q->si);
-        if (!nm_ring_empty(rxr))
-            break;
-        q->si++;
-        continue;
-    }
-    if (q->si > pa->last_rx_ring) { /* no data, cur == tail */
-        ND(5, "no more pkts on %s", q->prod_ifname);
-        return;
-    }
-got_one:
     rs = &rxr->slot[rxr->cur];
-    if (unlikely(rs->buf_idx < 2)) {
-        D("wrong index rx[%d] = %d", rxr->cur, rs->buf_idx);
-        sleep(2);
-    }
-    if (unlikely(rs->len > MAX_PKT)) { // XXX
-        D("wrong len rx[%d] len %d", rxr->cur, rs->len);
-        rs->len = 0;
-    }
     /* netmap makes sure that we do not receive incomplete packets */
     nfrags = 0;
     q->cur_len = 0;
@@ -1333,10 +1291,6 @@ got_one:
         rxr->cur = nm_ring_next(rxr, rxr->cur);
         rs = &rxr->slot[rxr->cur];
     } while (nfrags < MAX_FRAGS);
-    if (unlikely(nfrags >= MAX_FRAGS)) {
-        RD(5, "WARNING: too many fragments: truncating packet");
-        // XXX do something here
-    }
     q->cur_pkt = q->cur_frags[0].buf;
     q->cur_nfrags = nfrags;
     rxr->head = rxr->cur;
@@ -2661,6 +2615,11 @@ skip_args:
             D("cannot open %s", a->q.prod_ifname);
 	    exit(1);
         }
+	if (a->pa->first_rx_ring != a->pa->last_rx_ring) {
+	    D("%s has more than one rx ring", a->q.prod_ifname);
+	    exit(1);
+	}
+	a->q.rxring = NETMAP_RXRING(a->pa->nifp, a->pa->first_rx_ring);
         a->pb = nmport_open(a->q.cons_ifname);
         if (a->pb == NULL) {
             D("cannot open %s", a->q.cons_ifname);
