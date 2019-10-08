@@ -1920,10 +1920,11 @@ retry2:
         q->hold_buflen = need - (sizeof(struct h_pkt) + MAX_PKT);
     }
 
-    ED("----\n\t%s -> %s :  bps %lld delay %s loss %s queue %lld bytes"
+    ED("----\n\t%s -> %s :  bps %lld delay %s loss %s reorder %s queue %lld bytes"
             "\n\tbuffer   %s bytes\n\thold-buf %s bytes",
             q->prod_ifname, q->cons_ifname,
             (long long)q->ec->max_bps, q->c_delay.optarg, q->c_loss.optarg,
+	    q->c_reorder.optarg,
             (long long)q->qsize, b1,
             b2);
 
