@@ -971,6 +971,168 @@ ipv4_dump(const struct ipv4_info *i)
 
 struct ipv4_info ipv4[2];
 
+static void usage();
+void
+route_mode_init(const char *ifname[], const char *gateways[])
+{
+    int fd, i;
+    struct ifreq ifr;
+#ifdef __FreeBSD__
+    struct ifaddrs *ifap, *p;
+
+    if (getifaddrs(&ifap) < 0) {
+	ED("failed to get interface list: %s", strerror(errno));
+	usage();
+    }
+#endif /* __FreeBSD__ */
+
+    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+
+    if (fd < 0) {
+	ED("failed to open SOCK_DGRAM socket: %s", strerror(errno));
+	usage();
+    }
+
+    for (i = 0; i < 2; i++) {
+	struct ipv4_info *ip = &ipv4[i];
+	char *dst = ip->name;
+	const char *scan;
+	struct ether_header *eh;
+	struct ether_arp *ah;
+	void *hwaddr = NULL;
+
+	/* try to extract the port name */
+	if (!strncmp("vale", ifname[i], 4)) {
+	    ED("route mode not supported for VALE port %s", ifname[i]);
+	    usage();
+	}
+	if (strncmp("netmap:", ifname[i], 7)) {
+	    ED("missing netmap: prefix in %s", ifname[i]);
+	    usage();
+	}
+	scan = ifname[i] + 7;
+	if (strlen(scan) >= IFNAMSIZ) {
+	    ED("name too long: %s", scan);
+	    usage();
+	}
+	while (*scan && isalnum(*scan))
+	    *dst++ = *scan++;
+	*dst = '\0';
+	ED("trying to get configuration for %s", ip->name);
+
+	/* MAC address */
+#ifdef linux
+	memset(&ifr, 0, sizeof(ifr));
+	strcpy(ifr.ifr_name, ip->name);
+	if (ioctl(fd, SIOCGIFHWADDR, &ifr) >= 0) {
+	    hwaddr = ifr.ifr_addr.sa_data;
+	}
+#elif defined (__FreeBSD__)
+	errno = ENOENT;
+	for (p = ifap; p; p = p->ifa_next) {
+
+	    if (!strcmp(p->ifa_name, ip->name) &&
+		    p->ifa_addr != NULL &&
+		    p->ifa_addr->sa_family == AF_LINK)
+	    {
+		struct sockaddr_dl *sdp =
+		    (struct sockaddr_dl *)p->ifa_addr;
+		hwaddr = sdp->sdl_data + sdp->sdl_nlen;
+		break;
+	    }
+	}
+#endif /* __FreeBSD__ */
+	if (hwaddr == NULL) {
+	    ED("failed to get MAC address for %s: %s",
+		    ip->name, strerror(errno));
+	    usage();
+	}
+	memcpy(ip->ether_addr, hwaddr, 6);
+
+#define get_ip_info(_c, _f, _m) 						\
+	memset(&ifr, 0, sizeof(ifr));						\
+	strcpy(ifr.ifr_name, ip->name);						\
+	ifr.ifr_addr.sa_family = AF_INET;					\
+	if (ioctl(fd, _c, &ifr) < 0) {						\
+	    ED("failed to get IPv4 " _m " for %s: %s",				\
+		    ip->name, strerror(errno));					\
+	    usage();								\
+	}									\
+	memcpy(&ip->_f, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);	\
+
+
+	/* IP address */
+	get_ip_info(SIOCGIFADDR, ip_addr, "address");
+	/* netmask */
+	get_ip_info(SIOCGIFNETMASK, ip_mask, "netmask");
+	/* broadcast */
+	get_ip_info(SIOCGIFBRDADDR, ip_bcast, "broadcast");
+#undef get_ip_info
+
+	/* do we have an IP address? */
+	if (ip->ip_addr == 0) {
+	    ED("no IPv4 address found for %s", ip->name);
+	    usage();
+	}
+
+	/* cache the subnet */
+	ip->ip_subnet = ip->ip_addr & ip->ip_mask;
+
+	/* default gateway, if any */
+	if (gateways[i]) {
+	    const char *gw = gateways[i];
+	    struct ipv4_info *ip = &ipv4[i];
+	    struct in_addr a;
+	    if (!inet_aton(gw, &a)) {
+		ED("not a valid IP address: %s", gw);
+		usage();
+	    }
+	    if ((a.s_addr & ip->ip_mask) != ip->ip_subnet) {
+		ED("gateway %s unreachable", gw);
+		usage();
+	    }
+	    ip->ip_gw = a.s_addr;
+	}
+
+	ipv4_dump(ip);
+
+	/* precompute the arp reply for this interface */
+	eh = &ip->arp_reply.arp.eh;
+	ah = &ip->arp_reply.arp.ah;
+	memset(&ip->arp_reply, 0, sizeof(ip->arp_reply));
+	memcpy(eh->ether_shost, ip->ether_addr, 6);
+	eh->ether_type = htons(ETHERTYPE_ARP);
+	ah->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
+	ah->ea_hdr.ar_pro = htons(ETHERTYPE_IP);
+	ah->ea_hdr.ar_hln = 6;
+	ah->ea_hdr.ar_pln = 4;
+	ah->ea_hdr.ar_op = htons(ARPOP_REPLY);
+	memcpy(ah->arp_sha, ip->ether_addr, 6);
+	memcpy(ah->arp_spa, &ip->ip_addr, 4);
+
+	/* precompute the arp request for this interface */
+	eh = &ip->arp_request.arp.eh;
+	ah = &ip->arp_request.arp.ah;
+	memcpy(&ip->arp_request, &ip->arp_reply,
+		sizeof(ip->arp_reply));
+	memset(eh->ether_dhost, 0xff, 6);
+	ah->ea_hdr.ar_op = htons(ARPOP_REQUEST);
+
+	/* allocate the arp table */
+	ip->arp_table = arp_table_new(ip->ip_mask);
+	if (ip->arp_table == NULL) {
+	    ED("failed to allocate the arp table for %s: %s", ip->name,
+		    strerror(errno));
+	    usage();
+	}
+    }
+
+    close(fd);
+#ifdef __FreeBSD__
+    freeifaddrs(ifap);
+#endif /* __FreeBSD__ */
+}
+
 struct pipe_args {
 	int		zerocopy;
 	int		wait_link;
@@ -2302,162 +2464,8 @@ main(int argc, char **argv)
         }
 
         if (bp[0].route_mode) {
-            int fd;
-            struct ifreq ifr;
-#ifdef __FreeBSD__
-            struct ifaddrs *ifap, *p;
-
-            if (getifaddrs(&ifap) < 0) {
-                ED("failed to get interface list: %s", strerror(errno));
-                usage();
-            }
-#endif /* __FreeBSD__ */
-
-            fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-
-            if (fd < 0) {
-                ED("failed to open SOCK_DGRAM socket: %s", strerror(errno));
-                usage();
-            }
-
-            for (i = 0; i < 2; i++) {
-                struct ipv4_info *ip = &ipv4[i];
-                char *dst = ip->name;
-                const char *scan;
-                struct ether_header *eh;
-                struct ether_arp *ah;
-                void *hwaddr = NULL;
-
-                /* try to extract the port name */
-                if (!strncmp("vale", ifname[i], 4)) {
-                    ED("route mode not supported for VALE port %s", ifname[i]);
-                    usage();
-                }
-                if (strncmp("netmap:", ifname[i], 7)) {
-                    ED("missing netmap: prefix in %s", ifname[i]);
-                    usage();
-                }
-                scan = ifname[i] + 7;
-                if (strlen(scan) >= IFNAMSIZ) {
-                    ED("name too long: %s", scan);
-                    usage();
-                }
-                while (*scan && isalnum(*scan))
-                    *dst++ = *scan++;
-                *dst = '\0';
-                ED("trying to get configuration for %s", ip->name);
-
-                /* MAC address */
-#ifdef linux
-                memset(&ifr, 0, sizeof(ifr));
-                strcpy(ifr.ifr_name, ip->name);
-                if (ioctl(fd, SIOCGIFHWADDR, &ifr) >= 0) {
-                    hwaddr = ifr.ifr_addr.sa_data;
-                }
-#elif defined (__FreeBSD__)
-                errno = ENOENT;
-                for (p = ifap; p; p = p->ifa_next) {
-
-                    if (!strcmp(p->ifa_name, ip->name) &&
-                            p->ifa_addr != NULL &&
-                            p->ifa_addr->sa_family == AF_LINK)
-                    {
-                        struct sockaddr_dl *sdp =
-                            (struct sockaddr_dl *)p->ifa_addr;
-                        hwaddr = sdp->sdl_data + sdp->sdl_nlen;
-                        break;
-                    }
-                }
-#endif /* __FreeBSD__ */
-                if (hwaddr == NULL) {
-                    ED("failed to get MAC address for %s: %s",
-                            ip->name, strerror(errno));
-                    usage();
-                }
-                memcpy(ip->ether_addr, hwaddr, 6);
-
-#define get_ip_info(_c, _f, _m) 								\
-                memset(&ifr, 0, sizeof(ifr));						\
-                strcpy(ifr.ifr_name, ip->name);						\
-                ifr.ifr_addr.sa_family = AF_INET;					\
-                if (ioctl(fd, _c, &ifr) < 0) {						\
-                    ED("failed to get IPv4 " _m " for %s: %s",			\
-                            ip->name, strerror(errno));			\
-                    usage();							\
-                }									\
-                memcpy(&ip->_f, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, 4);	\
-
-
-                /* IP address */
-                get_ip_info(SIOCGIFADDR, ip_addr, "address");
-                /* netmask */
-                get_ip_info(SIOCGIFNETMASK, ip_mask, "netmask");
-                /* broadcast */
-                get_ip_info(SIOCGIFBRDADDR, ip_bcast, "broadcast");
-#undef get_ip_info
-
-                /* do we have an IP address? */
-                if (ip->ip_addr == 0) {
-                    ED("no IPv4 address found for %s", ip->name);
-                    usage();
-                }
-
-                /* cache the subnet */
-                ip->ip_subnet = ip->ip_addr & ip->ip_mask;
-
-                /* default gateway, if any */
-                if (invdopt['G']->arg[i]) {
-                    const char *gw = invdopt['G']->arg[i];
-                    struct ipv4_info *ip = &ipv4[i];
-                    struct in_addr a;
-                    if (!inet_aton(gw, &a)) {
-                        ED("not a valid IP address: %s", gw);
-                        usage();
-                    }
-                    if ((a.s_addr & ip->ip_mask) != ip->ip_subnet) {
-                        ED("gateway %s unreachable", gw);
-                        usage();
-                    }
-                    ip->ip_gw = a.s_addr;
-                }
-
-                ipv4_dump(ip);
-
-                /* precompute the arp reply for this interface */
-                eh = &ip->arp_reply.arp.eh;
-                ah = &ip->arp_reply.arp.ah;
-                memset(&ip->arp_reply, 0, sizeof(ip->arp_reply));
-                memcpy(eh->ether_shost, ip->ether_addr, 6);
-                eh->ether_type = htons(ETHERTYPE_ARP);
-                ah->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
-                ah->ea_hdr.ar_pro = htons(ETHERTYPE_IP);
-                ah->ea_hdr.ar_hln = 6;
-                ah->ea_hdr.ar_pln = 4;
-                ah->ea_hdr.ar_op = htons(ARPOP_REPLY);
-                memcpy(ah->arp_sha, ip->ether_addr, 6);
-                memcpy(ah->arp_spa, &ip->ip_addr, 4);
-
-                /* precompute the arp request for this interface */
-                eh = &ip->arp_request.arp.eh;
-                ah = &ip->arp_request.arp.ah;
-                memcpy(&ip->arp_request, &ip->arp_reply,
-                        sizeof(ip->arp_reply));
-                memset(eh->ether_dhost, 0xff, 6);
-                ah->ea_hdr.ar_op = htons(ARPOP_REQUEST);
-
-                /* allocate the arp table */
-                ip->arp_table = arp_table_new(ip->ip_mask);
-                if (ip->arp_table == NULL) {
-                    ED("failed to allocate the arp table for %s: %s", ip->name,
-                            strerror(errno));
-                    usage();
-                }
-            }
-
-            close(fd);
-#ifdef __FreeBSD__
-            freeifaddrs(ifap);
-#endif /* __FreeBSD__ */
+	    const char *gateways[] = { invdopt['G']->arg[0], invdopt['G']->arg[1] };
+	    route_mode_init(ifname, gateways);
         }
 
         bp[1] = bp[0]; /* copy parameters, but swap interfaces */
