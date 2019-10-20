@@ -1052,13 +1052,11 @@ netmap_dev_pager_fault(vm_object_t object, vm_ooffset_t offset,
 		VM_OBJECT_WUNLOCK(object);
 		page = vm_page_getfake(paddr, memattr);
 		VM_OBJECT_WLOCK(object);
-		vm_page_lock(*mres);
 		vm_page_free(*mres);
-		vm_page_unlock(*mres);
 		*mres = page;
 		vm_page_insert(page, object, pidx);
 	}
-	page->valid = VM_PAGE_BITS_ALL;
+	vm_page_valid(page);
 	return (VM_PAGER_OK);
 }
 
