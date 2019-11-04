@@ -1252,6 +1252,7 @@ linux_netmap_fault(struct vm_fault *vmf)
 	if (!pfn_valid(pfn))
 		return VM_FAULT_SIGBUS;
 	page = pfn_to_page(pfn);
+	SetPageSwapBacked(page);
 	get_page(page);
 	vmf->page = page;
 	return 0;
