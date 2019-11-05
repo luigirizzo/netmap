@@ -541,6 +541,8 @@ get_if_mtu(const struct glob_arg *g)
 			D("ioctl(SIOCGIFMTU) failed: %s", strerror(errno));
 		}
 
+		close(s);
+
 		return ifreq.ifr_mtu;
 	}
 
