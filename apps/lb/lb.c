@@ -90,8 +90,8 @@ struct compact_ipv6_hdr {
 #define STAT_MSG_MAXSIZE 1024
 
 struct {
-	char ifname[MAX_IFNAMELEN];
-	char base_name[MAX_IFNAMELEN];
+	char ifname[MAX_IFNAMELEN + 1];
+	char base_name[MAX_IFNAMELEN + 1];
 	int netmap_fd;
 	uint16_t output_rings;
 	uint16_t num_groups;
@@ -652,7 +652,11 @@ int main(int argc, char **argv)
 	/* extract the base name */
 	char *nscan = strncmp(glob_arg.ifname, "netmap:", 7) ?
 			glob_arg.ifname : glob_arg.ifname + 7;
-	strncpy(glob_arg.base_name, nscan, MAX_IFNAMELEN - 1);
+	if (strlen(nscan) > MAX_IFNAMELEN) {
+		D("name too long: %s (max %d)", nscan, MAX_IFNAMELEN);
+		return 1;
+	}
+	strncpy(glob_arg.base_name, nscan, MAX_IFNAMELEN);
 	for (nscan = glob_arg.base_name; *nscan && !index("-*^{}/@", *nscan); nscan++)
 		;
 	*nscan = '\0';
