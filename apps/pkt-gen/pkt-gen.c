@@ -47,7 +47,7 @@
 #include <unistd.h>	// sysconf()
 #include <sys/poll.h>
 #include <arpa/inet.h>	/* ntohs */
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(linux)
 #include <sys/sysctl.h>	/* sysctl */
 #endif
 #include <ifaddrs.h>	/* getifaddrs */
