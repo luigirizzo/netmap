@@ -22,14 +22,14 @@ pipe="pipeA"
 
 # Pre-open netmap ports for the test. This is needed to avoid a race
 # condition between the sending and receiving ports.
-functional $verbosity -i "netmap:${pipe}{1"
+$FUNCTIONAL $verbosity -i "netmap:${pipe}{1"
 check_success $? "pre-open netmap:${pipe}{1"
-functional $verbosity -i "netmap:${pipe}}1"
+$FUNCTIONAL $verbosity -i "netmap:${pipe}}1"
 check_success $? "pre-open netmap:${pipe}}1"
 
-functional $verbosity -i "netmap:${pipe}{1" -r "${len}:${fill}:${num_recv}" $seq &
+$FUNCTIONAL $verbosity -i "netmap:${pipe}{1" -r "${len}:${fill}:${num_recv}" $seq &
 p1=$!
-functional $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}" $seq
+$FUNCTIONAL $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}" $seq
 e2=$?
 wait $p1
 e1=$?
@@ -63,5 +63,5 @@ fi
 check_exit $pending_transmissions $pending_packets "pending_transmissions=pending_packets"
 
 num_send="$(($avail_packets + 1))"
-functional $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}" $seq
+$FUNCTIONAL $verbosity -i "netmap:${pipe}}1" -t "${len}:${fill}:${num_send}" $seq
 check_failure $? "send-${num_send} netmap:${pipe}}1"

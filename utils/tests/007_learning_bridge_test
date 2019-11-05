@@ -20,19 +20,19 @@ d_MAC="FF:FF:FF:FF:FF:FF"
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-functional $verbosity -i vale0:v0
+$FUNCTIONAL $verbosity -i vale0:v0
 check_success $? "pre-open vale0:v0"
-functional $verbosity -i vale0:v1
+$FUNCTIONAL $verbosity -i vale0:v1
 check_success $? "pre-open vale0:v1"
-functional $verbosity -i vale0:v2
+$FUNCTIONAL $verbosity -i vale0:v2
 check_success $? "pre-open vale0:v2"
 
 # First send, every port should receive the frame.
-functional $verbosity -i vale0:v0 -r "${len}:${fill}" -s "$s_MAC" -d "$d_MAC" &
+$FUNCTIONAL $verbosity -i vale0:v0 -r "${len}:${fill}" -s "$s_MAC" -d "$d_MAC" &
 p1=$!
-functional $verbosity -i vale0:v1 -r "${len}:${fill}" -s "$s_MAC" -d "$d_MAC" &
+$FUNCTIONAL $verbosity -i vale0:v1 -r "${len}:${fill}" -s "$s_MAC" -d "$d_MAC" &
 p2=$!
-functional $verbosity -i vale0:v2 -t "${len}:${fill}" -s "$s_MAC" -d "$d_MAC"
+$FUNCTIONAL $verbosity -i vale0:v2 -t "${len}:${fill}" -s "$s_MAC" -d "$d_MAC"
 e3=$?
 wait $p1
 e1=$?
@@ -43,11 +43,11 @@ check_success $e2 "receive vale0:v1"
 check_success $e3 "send vale0:v2"
 
 # Second send, only v2 should receive the frame.
-functional $verbosity -i vale0:v2 -r "${len}:${fill}" -d "$s_MAC"    &
+$FUNCTIONAL $verbosity -i vale0:v2 -r "${len}:${fill}" -d "$s_MAC"    &
 p4=$!
-functional $verbosity -i vale0:v1 -r "${len}:${fill}" -d "$s_MAC" -n &
+$FUNCTIONAL $verbosity -i vale0:v1 -r "${len}:${fill}" -d "$s_MAC" -n &
 p5=$!
-functional $verbosity -i vale0:v0 -t "${len}:${fill}" -d "$s_MAC"
+$FUNCTIONAL $verbosity -i vale0:v0 -t "${len}:${fill}" -d "$s_MAC"
 e6=$?
 wait $p4
 e4=$?

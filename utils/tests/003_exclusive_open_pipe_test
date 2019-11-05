@@ -11,14 +11,14 @@ verbosity="${verbosity:-}"
 pipe="pipeA{1"
 
 # We open pipeA{1 with the exclusive flag from the file descriptor.
-functional $verbosity -i "netmap:${pipe}/x"
+$FUNCTIONAL $verbosity -i "netmap:${pipe}/x"
 check_success $? "exclusive-open netmap:${pipe}/x"
 
 # Then we open the same interface again, this time without requesting it from
 # the file descriptor, causing a second nm_open().
-functional $verbosity -I "netmap:${pipe}"
+$FUNCTIONAL $verbosity -I "netmap:${pipe}"
 check_failure $? "no-open netmap:${pipe}"
 
 # Check that another exclusive open request fails.
-functional $verbosity -I "netmap:${pipe}/x"
+$FUNCTIONAL $verbosity -I "netmap:${pipe}/x"
 check_failure $? "no-open netmap:${pipe}/x"

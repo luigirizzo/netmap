@@ -5,7 +5,7 @@
 #include <net/if.h>
 #include <net/netmap.h>
 
-#define SOCKET_NAME "/tmp/netmap-fdserver"
+#define SOCKET_NAME "/tmp/netmap-fdserver-legacy"
 
 struct fd_request {
 #define FD_GET 1
@@ -18,8 +18,7 @@ struct fd_request {
 
 struct fd_response {
 	int32_t result;
-	struct nmreq_header hdr;
-	struct nmreq_register reg;
+	struct nmreq req;
 };
 
 int send_fd(int socket, int fd, void *buf, size_t buf_size);

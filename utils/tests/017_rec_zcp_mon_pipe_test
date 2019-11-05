@@ -20,18 +20,18 @@ seq="${seq:-}"
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-functional $verbosity -i "netmap:pipe{1"
+$FUNCTIONAL $verbosity -i "netmap:pipe{1"
 check_success $? "pre-open netmap:pipe{1"
-functional $verbosity -i "netmap:pipe{1/z"
+$FUNCTIONAL $verbosity -i "netmap:pipe{1/z"
 check_success $? "pre-open netmap:pipe{1/z"
-functional $verbosity -i "netmap:pipe}1"
+$FUNCTIONAL $verbosity -i "netmap:pipe}1"
 check_success $? "pre-open netmap:pipe}1"
 
 # Initially we don't receive with the monitored pipe pipe{1, therefore the
 # monitor should not receive the frame.
-functional $verbosity -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" $seq -n &
+$FUNCTIONAL $verbosity -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" $seq -n &
 p1=$!
-functional $verbosity -i "netmap:pipe}1"   -t "${len}:${fill}:${num}" $seq
+$FUNCTIONAL $verbosity -i "netmap:pipe}1"   -t "${len}:${fill}:${num}" $seq
 e2=$?
 wait $p1
 e1=$?
@@ -40,9 +40,9 @@ check_success $e2 "send-${num} netmap:pipe{1"
 
 # Now we receive with the monitored pipe pipe{1, therefore the monitor should
 # receive the frame.
-functional $verbosity -i "netmap:pipe{1"   -r "${len}:${fill}:${num}" $seq &
+$FUNCTIONAL $verbosity -i "netmap:pipe{1"   -r "${len}:${fill}:${num}" $seq &
 p3=$!
-functional $verbosity -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" $seq
+$FUNCTIONAL $verbosity -i "netmap:pipe{1/z" -r "${len}:${fill}:${num}" $seq
 e4=$?
 wait $p3
 e3=$?
