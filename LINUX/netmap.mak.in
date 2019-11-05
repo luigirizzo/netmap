@@ -158,7 +158,7 @@ clean-utils:
 	$(MAKE) -C build-utils clean SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR)
 
 intest: utils
-	$(SRCDIR)/../utils/randomized_tests
+	PATH=$(BUILDDIR)/build-utils:$$PATH $(SRCDIR)/../utils/randomized_tests
 unitest: utils
 	build-utils/ctrl-api-test
 endif
