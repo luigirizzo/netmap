@@ -17,7 +17,7 @@
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
 
-#include "fd_server.h"
+#include "fd_server-legacy.h"
 
 struct nmd_entry {
 	char if_name[NETMAP_REQ_IFNAMSIZ];
