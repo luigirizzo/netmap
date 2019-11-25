@@ -388,6 +388,7 @@ function build-prep()
 \
 KBUILD_CFLAGS += $(call cc-option, -fno-pie)\
 KBUILD_CFLAGS += $(call cc-option, -no-pie)\
+KBUILD_CFLAGS += $(call cc-option, -fcf-protection=none)\
 KBUILD_AFLAGS += $(call cc-option, -fno-pie)\
 KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 		if [ -f $LINUX_CONFIGS/config-$version ]; then
@@ -396,6 +397,11 @@ KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 		else
 			make allmodconfig
 		fi
+		# old kernels' selinux causes compilation failures with gcc >= 9
+		echo "CONFIG_SECURITY_SELINUX=n" >> .config
+		yes '' | make oldconfig
+		# some tools do not compile with -Werror and gcc >= 9
+		sed -i 's/-Werror/-Wno-error/g' $(grep -Rl -- -Werror tools)
 		make modules_prepare
 		touch .build-prep
 	) >$dst.log 2>&1 || error "build-prep failed for linux $version. Please check $dst.log"
