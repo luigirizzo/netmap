@@ -982,7 +982,7 @@ EOF
 
   add_test true broken_buildsystem < /dev/null
 
-DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned stringop-truncation"
+DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned stringop-truncation missing-attributes"
 REC_DISABLED_WARNINGS=
 disable_warning() {
 	REC_DISABLED_WARNINGS="$1 $REC_DISABLED_WARNINGS"
