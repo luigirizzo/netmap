@@ -543,7 +543,6 @@ st_prestack(struct netmap_kring *kring)
 		kring->nkr_hwlease = rhead; // skip loop below
 	for (k = kring->nkr_hwlease; k != rhead; k = nm_next(k, lim_tx)) {
 		struct netmap_slot *slot = &kring->ring->slot[k];
-		struct nmcb *cb;
 		char *nmb = NMB(na, slot);
 		int err;
 
@@ -555,8 +554,7 @@ st_prestack(struct netmap_kring *kring)
 		if (unlikely(tx && slot->len < VHLEN(na) + slot->offset)) {
 			continue;
 		}
-		cb = NMCB_BUF(nmb);
-		nmcbw(cb, kring, slot);
+		nmcbw(NMCB_BUF(nmb), kring, slot);
 		err = tx ? nm_os_st_tx(kring, slot) : nm_os_st_rx(kring, slot);
 		if (unlikely(err)) {
 			/*
@@ -730,15 +728,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	int mismatch;
 	const u_int bufsize = NETMAP_BUF_SIZE(na);
 
-#ifdef linux
-	/* txsync-ing TX packets are always frags */
-	if (!MBUF_NONLINEAR(m)) {
-		csum_transmit(na, m);
-		return 0;
-	}
-
-	cb = NMCB_EXT(m, 0, bufsize);
-#else
+#ifdef __FreeBSD__
 	struct mbuf *md = m;
 
 	/* M_EXT or multiple mbufs (i.e., chain) */
@@ -752,11 +742,19 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		}
 		md = m->m_next;
 	}
+#elif defined(linux)
+	/* txsync-ing TX packets are always frags */
+	if (!MBUF_NONLINEAR(m)) {
+		csum_transmit(na, m);
+		return 0;
+	}
+
+	cb = NMCB_EXT(m, 0, bufsize);
+#endif /* __FreeBSD__ */
 	if (!(cb && nmcb_valid(cb))) {
 		csum_transmit(na, m);
 		return 0;
 	}
-#endif /* linux */
 
 	if (unlikely(nmcb_rstate(cb) != MB_STACK) ||
 	    /* FreeBSD ARP reply recycles the request mbuf */
