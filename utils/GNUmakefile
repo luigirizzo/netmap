@@ -1,6 +1,7 @@
 # For multiple programs using a single source file each,
 # we can just define 'progs' and create custom targets.
 PROGS	  = test_select testmmap test_nm functional ctrl-api-test fd_server
+PROGS	 += functional-legacy fd_server-legacy
 PROGS    += get_avail_tx_packets get_max_tx_packets extmem-example sync_kloop_test
 X86PROGS  = testlock testcsum producer
 LIBNETMAP =

@@ -28,11 +28,13 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <signal.h>
 #include <syslog.h>
+#include <unistd.h>
 
-#define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
+#include <libnetmap.h>
 #include <sys/poll.h>
+#include <sys/ioctl.h>
 
 #include <netinet/in.h>		/* htonl */
 
@@ -90,8 +92,8 @@ struct compact_ipv6_hdr {
 #define STAT_MSG_MAXSIZE 1024
 
 struct {
-	char ifname[MAX_IFNAMELEN];
-	char base_name[MAX_IFNAMELEN];
+	char ifname[MAX_IFNAMELEN + 1];
+	char base_name[MAX_IFNAMELEN + 1];
 	int netmap_fd;
 	uint16_t output_rings;
 	uint16_t num_groups;
@@ -173,7 +175,7 @@ struct port_des {
 	unsigned int last_sync;
 	uint32_t last_tail;
 	struct overflow_queue *oq;
-	struct nm_desc *nmd;
+	struct nmport_d *nmd;
 	struct netmap_ring *ring;
 	struct group_des *group;
 };
@@ -375,7 +377,7 @@ free_buffers(void)
 	D("added %d buffers to netmap free list", tot);
 
 	for (i = 0; i < glob_arg.output_rings + 1; ++i) {
-		nm_close(ports[i].nmd);
+		nmport_close(ports[i].nmd);
 	}
 }
 
@@ -649,14 +651,6 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	/* extract the base name */
-	char *nscan = strncmp(glob_arg.ifname, "netmap:", 7) ?
-			glob_arg.ifname : glob_arg.ifname + 7;
-	strncpy(glob_arg.base_name, nscan, MAX_IFNAMELEN-1);
-	for (nscan = glob_arg.base_name; *nscan && !index("-*^{}/@", *nscan); nscan++)
-		;
-	*nscan = '\0';
-
 	if (glob_arg.num_groups == 0)
 		parse_pipes("");
 
@@ -676,6 +670,15 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	struct port_des *rxport = &ports[npipes];
+
+	rxport->nmd = nmport_prepare(glob_arg.ifname);
+	if (rxport->nmd == NULL) {
+		D("cannot parse %s", glob_arg.ifname);
+		return (1);
+	}
+	/* extract the base name */
+	strncpy(glob_arg.base_name, rxport->nmd->hdr.nr_name, MAX_IFNAMELEN);
+
 	init_groups();
 
 	memset(&counters_buf, 0, sizeof(counters_buf));
@@ -685,24 +688,15 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	/* we need base_req to specify pipes and extra bufs */
-	struct nmreq base_req;
-	memset(&base_req, 0, sizeof(base_req));
+	rxport->nmd->reg.nr_extra_bufs = glob_arg.extra_bufs;
 
-	base_req.nr_arg1 = npipes;
-	base_req.nr_arg3 = glob_arg.extra_bufs;
-
-	rxport->nmd = nm_open(glob_arg.ifname, &base_req, 0, NULL);
-
-	if (rxport->nmd == NULL) {
+	if (nmport_open_desc(rxport->nmd) < 0) {
 		D("cannot open %s", glob_arg.ifname);
 		return (1);
-	} else {
-		D("successfully opened %s (tx rings: %u)", glob_arg.ifname,
-		  rxport->nmd->req.nr_tx_slots);
 	}
+	D("successfully opened %s", glob_arg.ifname);
 
-	uint32_t extra_bufs = rxport->nmd->req.nr_arg3;
+	uint32_t extra_bufs = rxport->nmd->reg.nr_extra_bufs;
 	struct overflow_queue *oq = NULL;
 	/* reference ring to access the buffers */
 	rxport->ring = NETMAP_RXRING(rxport->nmd->nifp, 0);
@@ -770,15 +764,15 @@ run:
 			snprintf(p->interface, MAX_PORTNAMELEN, "%s%s{%d/xT@%d",
 					(strncmp(g->pipename, "vale", 4) ? "netmap:" : ""),
 					g->pipename, g->first_id + k,
-					rxport->nmd->req.nr_arg2);
+					rxport->nmd->reg.nr_mem_id);
 			D("opening pipe named %s", p->interface);
 
-			p->nmd = nm_open(p->interface, NULL, 0, rxport->nmd);
+			p->nmd = nmport_open(p->interface);
 
 			if (p->nmd == NULL) {
 				D("cannot open %s", p->interface);
 				return (1);
-			} else if (p->nmd->req.nr_arg2 != rxport->nmd->req.nr_arg2) {
+			} else if (p->nmd->mem != rxport->nmd->mem) {
 				D("failed to open pipe #%d in zero-copy mode, "
 					"please close any application that uses either pipe %s}%d, "
 				        "or %s{%d, and retry",
@@ -786,7 +780,7 @@ run:
 				return (1);
 			} else {
 				D("successfully opened pipe #%d %s (tx slots: %d)",
-				  k + 1, p->interface, p->nmd->req.nr_tx_slots);
+				  k + 1, p->interface, p->nmd->reg.nr_tx_slots);
 				p->ring = NETMAP_TXRING(p->nmd->nifp, 0);
 				p->last_tail = nm_ring_next(p->ring, p->ring->tail);
 			}

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+
+FUNCTIONAL=${FUNCTIONAL:-functional}
+export FUNCTIONAL
+
 ################################################################################
 # Creates the new file descriptor "3" and redirects it to stdout, then redirects
 # stderr e stdout to /dev/null. This way only the stuff we redirect to fd 3 is
@@ -28,7 +32,7 @@ function stdout_echo() {
 #   None
 ################################################################################
 function close_fd_server() {
-	functional -c
+	$FUNCTIONAL -c
 	check_success "$?" "close_fd_server"
 }
 
@@ -38,7 +42,7 @@ function close_fd_server() {
 #   None
 ################################################################################
 function start_fd_server() {
-	functional -o
+	$FUNCTIONAL -o
 	check_success "$?" "start_fd_server"
 }
 

@@ -11,10 +11,11 @@ VPATH = $(SRCDIR)/apps/nmreplay
 NO_MAN=
 CFLAGS = -O2 # -pipe -g
 CFLAGS += -Werror -Wall -Wunused-function
-CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include
+CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include -I $(SRCDIR)/libnetmap
 CFLAGS += -Wextra
 
-LDLIBS += -lpthread
+LDFLAGS += -L $(BUILDDIR)/build-libnetmap
+LDLIBS += -lnetmap -lpthread
 ifeq ($(shell uname),Linux)
 	LDLIBS += -lrt	# on linux
 endif

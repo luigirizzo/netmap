@@ -1036,11 +1036,11 @@ do_nmr_legacy_dump()
 	printf("name:      %s\n", nmr_name);
 	printf("version:   %d\n", curr_nmr.nr_version);
 	printf("offset:    %d\n", curr_nmr.nr_offset);
-	printf("memsize:   %d [", curr_nmr.nr_memsize);
+	printf("memsize:   %u [", curr_nmr.nr_memsize);
 	if (curr_nmr.nr_memsize < (1 << 20)) {
-		printf("%d KiB", curr_nmr.nr_memsize >> 10);
+		printf("%u KiB", curr_nmr.nr_memsize >> 10);
 	} else {
-		printf("%d MiB", curr_nmr.nr_memsize >> 20);
+		printf("%u MiB", curr_nmr.nr_memsize >> 20);
 	}
 	printf("]\n");
 	printf("tx_slots:  %d\n", curr_nmr.nr_tx_slots);

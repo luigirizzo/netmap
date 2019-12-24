@@ -17,15 +17,15 @@ seq="${seq:-}"
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-functional $verbosity -i "netmap:pipeA{1"
+$FUNCTIONAL $verbosity -i "netmap:pipeA{1"
 check_success $? "pre-open netmap:pipeA{1"
-functional $verbosity -i "netmap:pipeA}1"
+$FUNCTIONAL $verbosity -i "netmap:pipeA}1"
 check_success $? "pre-open netmap:pipeA}1"
 
 # pipeA}1 ---> pipeA{1
-functional $verbosity -i "netmap:pipeA{1" -r "${len}:${fill}:${num}" $seq &
+$FUNCTIONAL $verbosity -i "netmap:pipeA{1" -r "${len}:${fill}:${num}" $seq &
 p1=$!
-functional $verbosity -i "netmap:pipeA}1" -t "${len}:${fill}:${num}" $seq
+$FUNCTIONAL $verbosity -i "netmap:pipeA}1" -t "${len}:${fill}:${num}" $seq
 e2=$?
 wait $p1
 e1=$?
@@ -33,9 +33,9 @@ check_success $e1 "receive-${num} netmap:pipeA{1"
 check_success $e2 "send-${num} netmap:pipeA}1"
 
 # pipeA{1 ---> pipeA}1
-functional $verbosity -i "netmap:pipeA}1" -r "${len}:${fill}:${num}" $seq &
+$FUNCTIONAL $verbosity -i "netmap:pipeA}1" -r "${len}:${fill}:${num}" $seq &
 p3=$!
-functional $verbosity -i "netmap:pipeA{1" -t "${len}:${fill}:${num}" $seq
+$FUNCTIONAL $verbosity -i "netmap:pipeA{1" -t "${len}:${fill}:${num}" $seq
 e4=$?
 wait $p3
 e2=$?

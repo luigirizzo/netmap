@@ -20,18 +20,18 @@ seq="${seq:-}"
 
 # Pre-opening interface that will be needed. This is needed to avoid a race
 # condition between the sending and receiving ports.
-functional $verbosity -i "vale0:v0"
+$FUNCTIONAL $verbosity -i "vale0:v0"
 check_success $? "pre-open vale0:v0"
-functional $verbosity -i "vale0:v0/z"
+$FUNCTIONAL $verbosity -i "vale0:v0/z"
 check_success $? "pre-open vale0:v0/z"
-functional $verbosity -i "vale0:v1"
+$FUNCTIONAL $verbosity -i "vale0:v1"
 check_success $? "pre-open vale0:v1"
 
 # Initially we don't receive with the monitored VALE port v0, therefore the
 # monitor should not receive the frame.
-functional $verbosity -i vale0:v0/z -r "${len}:${fill}:${num}" $seq -n &
+$FUNCTIONAL $verbosity -i vale0:v0/z -r "${len}:${fill}:${num}" $seq -n &
 p1=$!
-functional $verbosity -i vale0:v1   -t "${len}:${fill}:${num}" $seq
+$FUNCTIONAL $verbosity -i vale0:v1   -t "${len}:${fill}:${num}" $seq
 e2=$?
 wait $p1
 e1=$?
@@ -40,9 +40,9 @@ check_success $e2 "send-${num} vale0:v0"
 
 # Now we receive with the monitored VALE port v0, therefore the monitor should
 # receive the frame.
-functional $verbosity -i "vale0:v0"   -r "${len}:${fill}:${num}" $seq &
+$FUNCTIONAL $verbosity -i "vale0:v0"   -r "${len}:${fill}:${num}" $seq &
 p3=$!
-functional $verbosity -i "vale0:v0/z" -r "${len}:${fill}:${num}" $seq
+$FUNCTIONAL $verbosity -i "vale0:v0/z" -r "${len}:${fill}:${num}" $seq
 e4=$?
 wait $p3
 e3=$?

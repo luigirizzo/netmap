@@ -63,9 +63,9 @@ $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz || wget https://sour
 $(1)@src 	:= tar xf @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz && ln -s $(1)-$(2)/src $(1)
 $(1)@patch 	:= patches/intel--$(1)--$(2)
 $(1)@prepare	:=
-$(1)@build 	:= make -C $(1) CFLAGS_EXTRA="$($(1)@cflags) $(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
-$(1)@install 	:= make -C $(1) install INSTALL_MOD_PATH=@MODPATH@ CFLAGS_EXTRA="$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
-$(1)@clean 	:= if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
+$(1)@build 	 = make -C $(1) CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
+$(1)@install 	 = make -C $(1) install INSTALL_MOD_PATH=@MODPATH@ CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
+$(1)@clean 	 = if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
 $(1)@distclean	:= rm -rf $(1)-$(2)
 $(1)@force	:= 1
 endef
@@ -78,6 +78,7 @@ endef
 # some additional, driver-specific CFLAGS (used in the @build variable above)
 e1000e@cflags := -fno-pie
 igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
+ixgbe@cflags := @REC_DISABLED_WARNINGS@
 
 # set all the default versions (can be overrided by --select-version=)
 $(eval $(call default,ixgbe,5.3.8))

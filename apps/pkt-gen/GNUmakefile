@@ -11,10 +11,11 @@ VPATH = $(SRCDIR)/apps/pkt-gen
 NO_MAN=
 CFLAGS = -O2 -pipe
 CFLAGS += -Werror -Wall -Wunused-function
-CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include
-CFLAGS += -Wextra
+CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include -I $(SRCDIR)/libnetmap
+CFLAGS += -Wextra -Wno-address-of-packed-member
 
-LDLIBS += -lpthread -lm
+LDFLAGS = -L $(BUILDDIR)/build-libnetmap
+LDLIBS += -lpthread -lm -lnetmap
 ifeq ($(shell uname),Linux)
 	LDLIBS += -lrt	# on linux
 endif

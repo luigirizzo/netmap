@@ -12,12 +12,15 @@ randomized_tests:
 	-j ID		Run only the test specified by ID
 	-l		List available tests and exit
 	-v		Increase verbosity of the tests
+	-L		Skip legacy API
 EOF
 }
 
+functionals="functional functional-legacy"
+
 # Option parsing
 OUTPUT="/dev/null"
-while getopts "hlvj:" opt; do
+while getopts "hlvj:L" opt; do
 	case $opt in
 	"h")
 		usage
@@ -48,6 +51,9 @@ while getopts "hlvj:" opt; do
 		fi
 		VERB="${VERB}v"
 		OUTPUT="/dev/stdout"
+		;;
+	"L")
+		functionals="functional"
 		;;
 
 	\?)
@@ -130,25 +136,30 @@ netmap_load
 
 RET=0
 i=0
-for t in tests/* ; do
-	i=$((i + 1))
+for f in $functionals; do
+	export FUNCTIONAL=$f
+	echo -e "${ORANGE}>>> Running tests using $FUNCTIONAL"
+	for t in tests/* ; do
+		i=$((i + 1))
 
-	# Possibly filter tests by TESTID
-	[ -n "$TESTID" ] && [ "$i" != "$TESTID" ] && continue
+		# Possibly filter tests by TESTID
+		[ -n "$TESTID" ] && [ "$i" != "$TESTID" ] && continue
 
-	# Run this test
-	echo -e "${ORANGE}>>> Running test #${i}: ${CYAN}\"${t}\"${NOC}"
-	restart_fd_server
-	$t $VERB -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>${OUTPUT}
-	res="$?"
-	close_fd_server
-	if [ "$res" == 0 ]; then
-		echo -e "${GREEN}>>> Test #${i} PASSED${NOC}"
-	else
-		echo -e "${RED}>>> Test #${i} FAILED${NOC}"
-		RET="1"
-		break
-	fi
+		# Run this test
+		echo -e "${ORANGE}>>> Running test #${i}: ${CYAN}\"${t}\"${NOC}"
+		restart_fd_server
+		$t $VERB -n $random_packet_num -l $random_len -f $random_fill "$seq_check" 2>${OUTPUT}
+		res="$?"
+		close_fd_server
+		if [ "$res" == 0 ]; then
+			echo -e "${GREEN}>>> Test #${i} PASSED${NOC}"
+		else
+			echo -e "${RED}>>> Test #${i} FAILED${NOC}"
+			RET="1"
+			break
+		fi
+	done
+	[ "$RET" == 0 ] || break
 done
 
 # Wait for the fd_server to terminate and release its references

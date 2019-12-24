@@ -280,6 +280,7 @@ replace_vars()
 		-e "s|@DESTDIR@|$DESTDIR|g" \
 		-e "s|@DEBUG@|$DEBUG|g" \
 		-e "s|@UTILS@|$UTILS|g" \
+		-e "s|@REC_DISABLED_WARNINGS@|$REC_DISABLED_WARNINGS|g" \
 		$1
 }
 
@@ -983,7 +984,7 @@ EOF
 
   add_test true broken_buildsystem < /dev/null
 
-DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned"
+DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned stringop-truncation missing-attributes"
 REC_DISABLED_WARNINGS=
 disable_warning() {
 	REC_DISABLED_WARNINGS="$1 $REC_DISABLED_WARNINGS"
@@ -1156,7 +1157,8 @@ EOF
   done
 
   # type of the 3rd param of ndo_select_queue
-  add_test 'define SELECT_QUEUE_PARM3 "struct net_device*"' 'define SELECT_QUEUE_PARM3 "void*"' <<EOF
+  # defaults to void* if not defined
+  add_test 'define SELECT_QUEUE_PARM3 "struct net_device*"' <<EOF
 	#include <linux/netdevice.h>
 
 	static u16 myselect(struct net_device *dev, struct sk_buff *skb,
@@ -1166,6 +1168,24 @@ EOF
 		(void)skb;
 		(void)sb_dev;
 		(void)fallback;
+		return 0;
+	}
+	struct net_device_ops ndo = {
+		.ndo_select_queue = myselect,
+	};
+EOF
+
+  # type of the 3rd param of ndo_select_queue
+  # defaults to void* if not defined
+  add_test 'define SELECT_QUEUE_PARM3 "struct net_device*"' <<EOF
+	#include <linux/netdevice.h>
+
+	static u16 myselect(struct net_device *dev, struct sk_buff *skb,
+		struct net_device *sb_dev)
+	{
+		(void)dev;
+		(void)skb;
+		(void)sb_dev;
 		return 0;
 	}
 	struct net_device_ops ndo = {

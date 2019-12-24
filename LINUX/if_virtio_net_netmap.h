@@ -807,7 +807,6 @@ virtio_net_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	virtqueue_disable_cb(vq);
 
-	rmb();
 	/*
 	 * First part: import newly received packets.
 	 * Only accept our own buffers (matching the token). We should only get
