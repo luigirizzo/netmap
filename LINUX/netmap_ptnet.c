@@ -1477,7 +1477,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	return 0;
 
-	pr_info("%s: failed to probe device\n", __func__);
+	
 err_netreg:
 	ptnet_irqs_fini(pi);
 err_irqs:
@@ -1490,6 +1490,7 @@ err_iomap:
 	pci_release_selected_regions(pdev, bars);
 err_pci_reg:
 	pci_disable_device(pdev);
+	pr_info("%s: failed to probe device\n", __func__);
 	return err;
 }
 
