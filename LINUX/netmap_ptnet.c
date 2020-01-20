@@ -1477,7 +1477,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	return 0;
 
-	
+
 err_netreg:
 	ptnet_irqs_fini(pi);
 err_irqs:
