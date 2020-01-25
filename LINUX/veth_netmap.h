@@ -81,6 +81,7 @@ veth_netmap_dtor(struct netmap_adapter *na)
 		(struct netmap_veth_adapter *)na;
 	if (vna->peer_ref) {
 		vna->peer_ref = 0;
+		vna->peer->peer = NULL;
 		netmap_adapter_put(&vna->peer->up.up);
 	}
 }
@@ -211,6 +212,11 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 	}
 
 	netmap_pipe_krings_delete_both(na, peer_na);
+
+	netmap_adapter_put(&vna->peer->up.up);
+	vna->peer_ref = 0;
+	vna->peer->peer = NULL;
+	vna->peer = NULL;
 }
 
 static void
