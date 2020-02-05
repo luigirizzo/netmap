@@ -1224,7 +1224,7 @@ main(int argc, char **argv)
     /*
      * consistency checks for common arguments
      */
-    if (!ifname[0] || !ifname[0]) {
+    if (!ifname[0] || !ifname[1]) {
         ED("missing interface(s)");
         usage();
     }
