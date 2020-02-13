@@ -96,7 +96,7 @@ specified once (in which case they affect both directions),
 or twice (once per direction).
 .Bl -tag -width Ds
 .It Fl i Ar port
-Name of the netmap port. It must be supplied exactly twice to indentify
+Name of the netmap port. It must be supplied exactly twice to identify
 the two ports that must be interconnected.
 Any netmap port type (physical interface, VALE switch, pipe, monitor port...)
 can be used.
@@ -136,7 +136,7 @@ the loss and delay arguments.
 .It Fl Q Ar size
 Queue size,
 .Ar size
-is a number optionally folllowed by k, K, m, M, g, G to specify
+is a number optionally followed by k, K, m, M, g, G to specify
 the queue size in bytes, Kilobytes, Megabytes, Gigabytes.
 The queue is used to buffer incoming packets before bandwidth
 limitations are applied.
@@ -158,11 +158,11 @@ becomes the server. Other
 .Nm
 instances that use the same
 .Ar session-file
-do not start new emulations, but rather send their emulation parameters
+do not start new emulations, but rather send their parameters
 to the server. This feature can be used to dynamically change the
 emulation parameters of a running emulation. Please note that the
 internal buffers are not re-allocated, and therefore the dynamic emulated
-delay and bandwidth can never exceed the values used initially be the
+delay and bandwidth can never exceed the values used initially by the
 server. Alternatively, the
 .Fl M
 option can be used when starting the server to set the maximum bandwidth, delay
@@ -185,7 +185,7 @@ Enable route-mode.
 .It Fl M Ar max-bw Ns Cm , Ns Ar max-delay Ns Cm , Ns Ar max-hold
 
 Set the maximum bandwidth, delay and packet-reordering
-hold-time. The paramethers are only meaningful for the
+hold-time. The parameters are only meaningful for the
 server process when operating in client/server mode (see the
 .Fl s
 option).
