@@ -2624,8 +2624,8 @@ skip_args:
 	    exit(1);
         }
 	if (a->pa->first_rx_ring != a->pa->last_rx_ring) {
-	    D("%s has more than one rx ring", a->q.prod_ifname);
-	    exit(1);
+	    D("WARNING: %s has more than one rx ring; only ring %d will be used",
+			    a->q.prod_ifname, a->pa->first_rx_ring);
 	}
 	a->q.rxring = NETMAP_RXRING(a->pa->nifp, a->pa->first_rx_ring);
         a->pb = nmport_open(a->q.cons_ifname);
