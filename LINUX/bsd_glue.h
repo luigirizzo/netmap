@@ -576,12 +576,12 @@ void netmap_bns_unregister(void);
 #define	SOCKBUF_UNLOCK(sb)
 
 /* NMCB() is only valid for mbuf populated by nm_os_build_mbuf() */
-#define NMCB(_m) ((struct nmcb *)(_m)->head)
-#define NMCB_BUF(_buf) ((struct nmcb *)(_buf))
-#define NMCB_EXT(_m, _i, _bufsiz) \
-	  NMCB_BUF(page_address(\
-	    skb_frag_page(&skb_shinfo((_m))->frags[_i])) + \
-	    _bufsiz * (skb_frag_off(&skb_shinfo((_m))->frags[_i]) / _bufsiz))
+#define NMCB(_m)		((struct nmcb *)(_m)->head)
+#define NMCB_EXT(_m, _i, _bs) \
+	NMCB_BUF(page_address(skb_frag_page(&skb_shinfo((_m))->frags[_i])) + \
+		 _bs * (skb_frag_off(&skb_shinfo((_m))->frags[_i]) / _bs))
+#define NMCB_BUF(_buf)		((struct nmcb *)(_buf))
+#define NMCB_SLT(_na, _slt)	NMCB_BUF(NMB(_na, (_slt)))
 
 struct nm_ubuf_info {
 	struct ubuf_info ubuf;
@@ -608,20 +608,6 @@ intr_restore(register_t intr)
 	local_bh_enable();
 }
 
-
-static inline void
-nm_set_mbuf_data_destructor(struct mbuf *m,
-	struct nm_ubuf_info *ui, void *cb)
-{
-	ui->ubuf.callback = cb;
-	if (cb != NULL) {
-		skb_shinfo(m)->destructor_arg = ui;
-		skb_shinfo(m)->tx_flags |= SKBTX_DEV_ZEROCOPY;
-	} else {
-		skb_shinfo(m)->destructor_arg = NULL;
-		skb_shinfo(m)->tx_flags &= ~SKBTX_DEV_ZEROCOPY;
-	}
-}
 
 static inline struct st_so_adapter *
 st_so(NM_SOCK_T *sk)
@@ -680,5 +666,8 @@ struct sockopt {
 
 #ifndef NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE
 #define netif_receive_skb_core	netif_receive_skb
+#endif /* NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE */
+#ifndef NETMAP_LINUX_HAVE_SKB_FRAG_OFF
+#define skb_frag_off(_f)	(_f)->page_offset
 #endif /* NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE */
 #endif /* NETMAP_BSD_GLUE_H */

@@ -96,7 +96,7 @@ rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 
 		if (unlikely(!slot->len))
 			continue;
-		cb = NMCB_BUF(NMB(na, slot));
+		cb = NMCB_SLT(na, slot);
 		if (nmcb_valid(cb) && nmcb_rstate(cb) != MB_NOREF)
 			break;
 	}
@@ -163,7 +163,7 @@ struct st_extra_pool {
 };
 
 #define NM_EXT_NULL	((uint16_t)~0)
-#define EXTRA_APPEND(name) \
+#define EXTRA_APPEND(name, pool, xtra, slots, pos) \
 	do {							\
 		xtra->next = NM_EXT_NULL;			\
 		if (pool->name == NM_EXT_NULL) {		\
@@ -223,7 +223,7 @@ st_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 	else
 		slots[xtra->prev].next = xtra->next; // might be NM_EXT_NULL
 	/* append to free list */
-	EXTRA_APPEND(free);
+	EXTRA_APPEND(free, pool, xtra, slots, pos);
 }
 
 int
@@ -248,9 +248,9 @@ st_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 	else
 		slots[xtra->prev].next = NM_EXT_NULL;
 	/* append to busy list */
-	EXTRA_APPEND(busy);
+	EXTRA_APPEND(busy, pool, xtra, slots, pos);
 
-	cb = NMCB_BUF(NMB(na, slot));
+	cb = NMCB_SLT(na, slot);
 	nm_swap_reset(slot, &xtra->slot);
 	nmcbw(cb, kring, &xtra->slot);
 
@@ -302,21 +302,19 @@ st_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
 {
 	struct netmap_slot *slot = nmcb_slot(cb);
 	struct st_fdtable *ft = st_fdt(kring);
-	uint32_t fd = slot->fd;
-	struct st_fdt_q *fde = ft->fde + fd;
-	int i = slot->buf_idx;
+	struct st_fdt_q *fde = ft->fde + slot->fd;
 
 	cb->next = NM_FDT_NULL;
-	nm_prdis("kring %p ft %p fde %p fd %d", kring, ft, fde, fd);
+	nm_prdis("kring %p ft %p fde %p fd %d", kring, ft, fde, slot->fd);
 	if (fde->fq_head == NM_FDT_NULL) {
-		fde->fq_head = fde->fq_tail = i;
-		ft->fds[ft->nfds++] = fd;
+		fde->fq_head = fde->fq_tail = slot->buf_idx;
+		ft->fds[ft->nfds++] = slot->fd;
 	} else {
-		struct netmap_slot s = { fde->fq_tail };
-		struct nmcb *prev = NMCB_BUF(NMB(kring->na, &s));
+		struct netmap_slot tmp = { fde->fq_tail };
+		struct nmcb *prev = NMCB_SLT(kring->na, &tmp);
 
 		/* invalid prev is not seen */
-		prev->next = fde->fq_tail = i;
+		prev->next = fde->fq_tail = slot->buf_idx;
 	}
 	ft->npkts++;
 }
@@ -473,7 +471,7 @@ st_poststack(struct netmap_kring *kring)
 				rs = &rxr->ring->slot[j];
 				__builtin_prefetch(rs);
 				tmp.buf_idx = next;
-				cb = NMCB_BUF(NMB(na, &tmp));
+				cb = NMCB_SLT(na, &tmp);
 				if (unlikely(!nmcb_valid(cb))) {
 					next = NM_FDT_NULL;
 				}
@@ -830,7 +828,8 @@ csum_done:
 	nmcb_wstate(cb, MB_TXREF);
 #ifdef linux
 	/* for FreeBSD mbuf comes from our code */
-	nm_set_mbuf_data_destructor(m, &cb->ui, nm_os_st_mbuf_data_destructor);
+	nm_os_set_mbuf_data_destructor(m, &cb->ui,
+			nm_os_st_mbuf_data_dtor);
 #endif /* linux */
 	m_freem(m);
 	return 0;
@@ -860,7 +859,7 @@ st_extra_free(struct netmap_adapter *na)
 			j = extra->busy;
 			while (j != NM_EXT_NULL) {
 				struct st_extra_slot *e = &extra->slots[j];
-				struct nmcb *cb = NMCB_BUF(NMB(na, &e->slot));
+				struct nmcb *cb = NMCB_SLT(na, &e->slot);
 				nmcb_set_gone(cb);
 				j = e->next;
 			}
@@ -874,7 +873,7 @@ st_extra_free(struct netmap_adapter *na)
 			for (j = 0; j < kring->nkr_num_slots; j++) {
 				struct nmcb *cb;
 
-				cb = NMCB_BUF(NMB(na, &ring->slot[j]));
+				cb = NMCB_SLT(na, &ring->slot[j]);
 				if (nmcb_valid(cb)) {
 					nmcb_set_gone(cb);
 				}

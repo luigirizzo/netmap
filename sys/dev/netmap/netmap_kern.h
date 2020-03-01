@@ -1297,10 +1297,11 @@ int nm_os_st_sbdrain(struct netmap_adapter *, NM_SOCK_T *);
 #ifdef linux
 void nm_os_st_upcall(NM_SOCK_T *);
 netdev_tx_t linux_st_start_xmit(struct mbuf *, struct ifnet *);
-void nm_os_st_mbuf_data_destructor(struct ubuf_info *, bool);
+void nm_os_st_mbuf_data_dtor(struct ubuf_info *, bool);
+void nm_os_set_mbuf_data_destructor(struct mbuf *, struct nm_ubuf_info *, void *);
 #else /* linux */
 int nm_os_st_upcall(NM_SOCK_T *, void *, int);
-void nm_os_st_mbuf_data_destructor(struct mbuf *);
+void nm_os_st_mbuf_data_dtor(struct mbuf *);
 #include <sys/socketvar.h> /* struct socket */
 #define NMCB(_m) ((struct nmcb *)M_START(_m))
 #define NMCB_BUF(_buf) ((struct nmcb *)(_buf))

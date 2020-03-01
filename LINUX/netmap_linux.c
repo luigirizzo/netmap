@@ -1090,7 +1090,7 @@ linux_st_start_xmit(struct sk_buff *skb, struct net_device *dev)
  * XXX !zerocopy_success might need to be handled explicitly
  */
 void
-nm_os_st_mbuf_data_destructor(struct ubuf_info *uarg,
+nm_os_st_mbuf_data_dtor(struct ubuf_info *uarg,
 	bool zerocopy_success)
 {
 	struct nmcb *cb;
@@ -1111,10 +1111,26 @@ nm_os_st_mbuf_destructor(struct sk_buff *skb)
 	struct nmcb *cb = NMCB(skb);
 
 	if (likely(nmcb_valid(cb))) {
-		nm_set_mbuf_data_destructor(skb, &cb->ui,
-				nm_os_st_mbuf_data_destructor);
+		nm_os_set_mbuf_data_destructor(skb, &cb->ui,
+				nm_os_st_mbuf_data_dtor);
 	} else {
 		STACK_DBG_LIM("invalid cb in our mbuf destructor");
+	}
+}
+
+void
+nm_os_set_mbuf_data_destructor(struct mbuf *m,
+	struct nm_ubuf_info *ui, void *cb)
+{
+	ui->ubuf.callback = cb;
+	if (cb != NULL) {
+#ifdef NETMAP_LINUX_SKB_ZCOPY_SET_3ARGS
+		skb_zcopy_set(m, (struct ubuf_info *)ui, NULL);
+#else
+		skb_zcopy_set(m, (struct ubuf_info *)ui);
+#endif
+	} else {
+		skb_zcopy_clear(m, 1);
 	}
 }
 
@@ -1147,7 +1163,7 @@ nm_os_st_upcall(NM_SOCK_T *sk)
 			if (unlikely(!kring)) {
 				STACK_DBG_LIM("WARNING: no kring");
 				SET_MBUF_DESTRUCTOR(m, NULL);
-				nm_set_mbuf_data_destructor(m, &cb->ui, NULL);
+				nm_os_set_mbuf_data_destructor(m, &cb->ui, NULL);
 				__skb_unlink(m, queue);
 				__kfree_skb(m);
 				continue;

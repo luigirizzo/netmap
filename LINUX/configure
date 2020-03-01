@@ -1605,6 +1605,28 @@ EOF
 	}
 EOF
 
+  # arguments of skb_zcopy_set (either 2 or 3)
+  add_test 'define SKB_ZCOPY_SET_3ARGS' <<EOF
+	#include <linux/skbuff.h>
+
+	void
+	dummy(struct sk_buff *skb, struct ubuf_info *ui)
+	{
+		skb_zcopy_set(skb, ui, NULL);
+	}
+EOF
+
+  # arguments of skb_zcopy_set (either 2 or 3)
+  add_test 'have SKB_FRAG_OFF' <<EOF
+	#include <linux/skbuff.h>
+
+	unsigned int
+	dummy(struct sk_buff *skb)
+	{
+		return skb_frag_off(&skb_shinfo(skb)->frags[0]);
+	}
+EOF
+
 # check for fault arguments
   add_test 'have FAULT_VMA_ARG' <<EOF
         #include <linux/mm.h>

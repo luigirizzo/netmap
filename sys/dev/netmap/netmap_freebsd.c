@@ -1061,7 +1061,7 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 		nmcb_wstate(cb, MB_TXREF);
 #ifdef STACK_RECYCLE
 		if (likely(!queued)) {
-			nm_os_st_mbuf_data_destructor(m);
+			nm_os_st_mbuf_data_dtor(m);
 			kring->tx_pool[1] = m;
 		} else
 #endif /* STACK_RECYCLE */
@@ -1121,7 +1121,7 @@ nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 }
 
 void
-nm_os_st_mbuf_data_destructor(struct mbuf *m)
+nm_os_st_mbuf_data_dtor(struct mbuf *m)
 {
 	struct nmcb *cb = NMCB(m);
 
@@ -1187,7 +1187,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	}
 	m->m_ext.ext_buf = nmb;
 	m->m_ext.ext_size = slot->len;
-	m->m_ext.ext_free = nm_os_st_mbuf_data_destructor;
+	m->m_ext.ext_free = nm_os_st_mbuf_data_dtor;
 	m->m_ext.ext_arg2 = NULL;
 	m->m_len = m->m_pkthdr.len = slot->len;
 	m->m_pkthdr.flowid = kring->ring_id;
@@ -1258,7 +1258,7 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	}
 	m->m_ext.ext_buf = m->m_data = nmb;
 	m->m_ext.ext_size = slot->len;
-	m->m_ext.ext_free = nm_os_st_mbuf_data_destructor;
+	m->m_ext.ext_free = nm_os_st_mbuf_data_dtor;
 	m->m_len = m->m_pkthdr.len = slot->len - slot->offset - VHLEN(na);
 	m->m_data = nmb + VHLEN(na) + slot->offset;
 
