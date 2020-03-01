@@ -1755,11 +1755,14 @@ EOF
 
 # check for extack in Qdisc_ops init callback
   add_test 'have QDISC_EXTACK' <<EOF
+	#include <linux/netlink.h>
   	#include <net/sch_generic.h>
 
 	int
 	dummy(struct Qdisc_ops *ops, struct netlink_ext_ack *extack) {
 		return ops->init(NULL, NULL, extack);
+
+EOF
 
   # check for SO_TIMESTAMPING in sock
   add_test 'have SO_TIMESTAMPING' <<EOF
