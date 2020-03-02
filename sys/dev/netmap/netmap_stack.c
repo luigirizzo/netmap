@@ -553,13 +553,13 @@ st_prestack(struct netmap_kring *kring)
 			continue;
 		}
 		nmcbw(NMCB_BUF(nmb), kring, slot);
-		err = tx ? nm_os_st_tx(kring, slot) : nm_os_st_rx(kring, slot);
+		err = tx ? nm_os_pst_tx(kring, slot) : nm_os_pst_rx(kring, slot);
 		if (unlikely(err)) {
 			/*
 			 * we stop here as this is likely due to misbehaving
 			 * client, such as providing invalid fd.
 			 * On EBUSY, we advance pointer as the data has been
-			 * processed by the stack. See nm_os_st_tx().
+			 * processed by the stack. See nm_os_pst_tx().
 			 */
 			if (err == -EBUSY)
 				k = nm_next(k, lim_tx);
@@ -829,7 +829,7 @@ csum_done:
 #ifdef linux
 	/* for FreeBSD mbuf comes from our code */
 	nm_os_set_mbuf_data_destructor(m, &cb->ui,
-			nm_os_st_mbuf_data_dtor);
+			nm_os_pst_mbuf_data_dtor);
 #endif /* linux */
 	m_freem(m);
 	return 0;
@@ -1040,7 +1040,7 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 
 		/* na->if_transmit already has backup */
 #ifdef linux
-		hw->nm_ndo.ndo_start_xmit = linux_st_start_xmit;
+		hw->nm_ndo.ndo_start_xmit = linux_pst_start_xmit;
 		/* re-overwrite */
 		hwna->ifp->netdev_ops = &hw->nm_ndo;
 #elif defined (__FreeBSD__)
@@ -1233,12 +1233,12 @@ st_register_fd(struct netmap_adapter *na, int fd)
 	soa->na = na;
 	soa->so = so;
 	soa->fd = fd;
-	SET_SOUPCALL(so, nm_os_st_upcall);
+	SET_SOUPCALL(so, nm_os_pst_upcall);
 	SET_SODTOR(so, st_sodtor);
 	st_wso(soa, so);
 	sna->so_adapters[fd] = soa;
 	SOCKBUF_UNLOCK(&so->so_rcv);
-	error = nm_os_st_sbdrain(na, so);
+	error = nm_os_pst_sbdrain(na, so);
 	NM_SOCK_UNLOCK(so);
 	nm_os_sock_fput(so, file);
 	return error;

@@ -1293,15 +1293,15 @@ nmcb_rstate(struct nmcb *cb)
 
 NM_SOCK_T *nm_os_sock_fget(int, void **);
 void nm_os_sock_fput(NM_SOCK_T *, void *);
-int nm_os_st_sbdrain(struct netmap_adapter *, NM_SOCK_T *);
+int nm_os_pst_sbdrain(struct netmap_adapter *, NM_SOCK_T *);
 #ifdef linux
-void nm_os_st_upcall(NM_SOCK_T *);
-netdev_tx_t linux_st_start_xmit(struct mbuf *, struct ifnet *);
-void nm_os_st_mbuf_data_dtor(struct ubuf_info *, bool);
+void nm_os_pst_upcall(NM_SOCK_T *);
+netdev_tx_t linux_pst_start_xmit(struct mbuf *, struct ifnet *);
+void nm_os_pst_mbuf_data_dtor(struct ubuf_info *, bool);
 void nm_os_set_mbuf_data_destructor(struct mbuf *, struct nm_ubuf_info *, void *);
 #else /* linux */
-int nm_os_st_upcall(NM_SOCK_T *, void *, int);
-void nm_os_st_mbuf_data_dtor(struct mbuf *);
+int nm_os_pst_upcall(NM_SOCK_T *, void *, int);
+void nm_os_pst_mbuf_data_dtor(struct mbuf *);
 #include <sys/socketvar.h> /* struct socket */
 #define NMCB(_m) ((struct nmcb *)M_START(_m))
 #define NMCB_BUF(_buf) ((struct nmcb *)(_buf))
@@ -1329,8 +1329,8 @@ st_wso(struct st_so_adapter *soa, NM_SOCK_T *so)
 #endif
 extern int stack_no_runtocomp;
 /* these functions are non-static just beause netmap_linux.c refers them */
-int nm_os_st_rx(struct netmap_kring *, struct netmap_slot *);
-int nm_os_st_tx(struct netmap_kring *, struct netmap_slot *);
+int nm_os_pst_rx(struct netmap_kring *, struct netmap_slot *);
+int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);
 struct st_so_adapter * st_soa_from_fd(struct netmap_adapter *, int);
 int st_extra_enq(struct netmap_kring *, struct netmap_slot *);
 void st_extra_deq(struct netmap_kring *, struct netmap_slot *);

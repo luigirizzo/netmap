@@ -1079,7 +1079,7 @@ nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 #ifdef WITH_STACK
 
 netdev_tx_t
-linux_st_start_xmit(struct sk_buff *skb, struct net_device *dev)
+linux_pst_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	netmap_stack_transmit(dev, skb);
 	return (NETDEV_TX_OK);
@@ -1090,7 +1090,7 @@ linux_st_start_xmit(struct sk_buff *skb, struct net_device *dev)
  * XXX !zerocopy_success might need to be handled explicitly
  */
 void
-nm_os_st_mbuf_data_dtor(struct ubuf_info *uarg,
+nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 	bool zerocopy_success)
 {
 	struct nmcb *cb;
@@ -1106,13 +1106,13 @@ nm_os_st_mbuf_data_dtor(struct ubuf_info *uarg,
 }
 
 static void
-nm_os_st_mbuf_destructor(struct sk_buff *skb)
+nm_os_pst_mbuf_destructor(struct sk_buff *skb)
 {
 	struct nmcb *cb = NMCB(skb);
 
 	if (likely(nmcb_valid(cb))) {
 		nm_os_set_mbuf_data_destructor(skb, &cb->ui,
-				nm_os_st_mbuf_data_dtor);
+				nm_os_pst_mbuf_data_dtor);
 	} else {
 		STACK_DBG_LIM("invalid cb in our mbuf destructor");
 	}
@@ -1136,7 +1136,7 @@ nm_os_set_mbuf_data_destructor(struct mbuf *m,
 
 extern int stack_no_runtocomp;
 void
-nm_os_st_upcall(NM_SOCK_T *sk)
+nm_os_pst_upcall(NM_SOCK_T *sk)
 {
 	struct sk_buff_head *queue = &sk->sk_receive_queue;
 	struct sk_buff *m, *tmp;
@@ -1226,7 +1226,7 @@ nm_os_sock_fput(NM_SOCK_T *sk, void *dummy)
 }
 
 int
-nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
+nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 {
 	struct mbuf *m;
 
@@ -1237,7 +1237,7 @@ nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 	else if (!nmcb_valid(NMCB(m)))
 		return 0;
 	/* No need for BDG_RLOCK() - we don't move packets to stack na */
-	nm_os_st_upcall(sk);
+	nm_os_pst_upcall(sk);
 	return 0;
 }
 
@@ -1287,7 +1287,7 @@ nm_os_build_mbuf(struct netmap_kring *kring, char *buf, u_int len)
 }
 
 int
-nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
+nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 {
 	struct netmap_adapter *na = kring->na;
 	char *nmb = NMB(na, slot);
@@ -1309,7 +1309,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	}
 	m->protocol = eth_type_trans(m, m->dev);
 	/* have orphan() set data_destructor */
-	SET_MBUF_DESTRUCTOR(m, nm_os_st_mbuf_destructor);
+	SET_MBUF_DESTRUCTOR(m, nm_os_pst_mbuf_destructor);
 #ifdef NETMAP_LINUX_HAVE_IP_RCV
 	if (ntohs(m->protocol) == ETH_P_IP) {
 		skb_reset_network_header(m);
@@ -1335,7 +1335,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 #ifdef STACK_RECYCLE
 	/* XXX avoid refcount_read... */
 	if (nmcb_rstate(cb) == MB_TXREF && likely(!skb_shared(m))) {
-		/* we can recycle this mbuf (see nm_os_st_data_ready) */
+		/* we can recycle this mbuf (see nm_os_pst_data_ready) */
 		struct ubuf_info *uarg = skb_shinfo(m)->destructor_arg;
 
 		if (likely(uarg->callback)) {
@@ -1352,7 +1352,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 }
 
 int
-nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
+nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 {
 	struct netmap_adapter *na = kring->na;
 	struct st_so_adapter *soa;
