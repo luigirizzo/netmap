@@ -24,7 +24,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd February 16, 2016
+.Dd February 13, 2020
 .Dt TLEM 1
 .Os
 .Sh NAME
@@ -38,11 +38,19 @@
 .Op Fl B Ar bandwidth
 .Op Fl D Ar delay
 .Op Fl L Ar loss
-.Op Fl Q Ar queue size
+.Op Fl R Ar reordering
+.Op Fl Q Ar queue-size
 .Op Fl C Ar cpu-placement
-.Op Fl b Ar batch size
+.Op Fl G Ar gateway
+.Op Fl b Ar batch-size
 .Op Fl w Ar wait-link
+.Op Fl s Ar session-name
+.Op Fl a
 .Op Fl v
+.Op Fl q
+.Op Fl r
+.Op Fl M Ar max-bw Ns Cm , Ns Ar max-delay Ns Cm , Ns Ar max-hold
+.El
 .Sh DESCRIPTION
 .Nm
 implements a high speed bidirectional link emulator between netmap ports,
@@ -88,7 +96,7 @@ specified once (in which case they affect both directions),
 or twice (once per direction).
 .Bl -tag -width Ds
 .It Fl i Ar port
-Name of the netmap port. It must be supplied exactly twice to indentify
+Name of the netmap port. It must be supplied exactly twice to identify
 the two ports that must be interconnected.
 Any netmap port type (physical interface, VALE switch, pipe, monitor port...)
 can be used.
@@ -117,28 +125,70 @@ Optional packet or bit error rate, defaults to 0.
 Simulates packet or bit errors, causing offending packets to be dropped.
 .Ar x
 is a floating point number indicating the packet or bit error rate.
+.It Fl R Cm const, Ns Ar p, Ns Ar t
+Optional packet reordering, defaults to none.
+With probability
+.Ar p
+incoming packets are hold for the given
+.Ar t
+amount of time. The probability and time are expressed as in
+the loss and delay arguments.
 .It Fl Q Ar size
 Queue size,
 .Ar size
-is a number optionally folllowed by k, K, m, M, g, G to specify
+is a number optionally followed by k, K, m, M, g, G to specify
 the queue size in bytes, Kilobytes, Megabytes, Gigabytes.
 The queue is used to buffer incoming packets before bandwidth
 limitations are applied.
 .It Fl C Ar a Ns Op , Ns Ar b Ns Op , Ns Ar c,d
 Indicates the cores on which the four threads should be placed.
 One, two or four values can be specified.
+.It Fl G Ar ipv4-address
+Indicates the optional default gateways to be used in route-mode.
 .It Fl w Ar wait-link
 indicates the number of seconds to wait before transmitting.
 It defaults to 2, and may be useful when talking to physical
 ports to let link negotiation complete before starting transmission.
+.It Fl s Ar session-file
+Enables client/server mode. The first instance of
+.Nm
+that successfully creates and/or locks the
+.Ar session-file
+becomes the server. Other
+.Nm
+instances that use the same
+.Ar session-file
+do not start new emulations, but rather send their parameters
+to the server. This feature can be used to dynamically change the
+emulation parameters of a running emulation. Please note that the
+internal buffers are not re-allocated, and therefore the dynamic emulated
+delay and bandwidth can never exceed the values used initially by the
+server. Alternatively, the
+.Fl M
+option can be used when starting the server to set the maximum bandwidth, delay
+and hold-time that can be accepted in client requests.
+.It Fl a
+Only useful in client/server mode. Ask the server to shutdown
+and wait until it terminates.
 .It Fl v
-Enable verbose mode
+Increase verbosity.
+.It Fl q
+Decrease verbosity.
 .It Fl b Ar batch-size
 Maximum batch size to use during transmissions.
 .Nm
 normally transmits packets one at a time, but it may use
 larger batches, up to the value specified with this option,
 when running at high rates.
+.It Fl r
+Enable route-mode.
+.It Fl M Ar max-bw Ns Cm , Ns Ar max-delay Ns Cm , Ns Ar max-hold
+
+Set the maximum bandwidth, delay and packet-reordering
+hold-time. The parameters are only meaningful for the
+server process when operating in client/server mode (see the
+.Fl s
+option).
 .El
 .Sh OPERATION
 .Nm
@@ -156,6 +206,21 @@ computes the transmit time applying the additional delay.
 Packets annotated with their transmit time are copied in
 a large in-memory buffer. The output thread spins on the buffer,
 doing short sleeps, until packets reach their transmit time.
+.Sh ROUTE-MODE
+In route-mode
+.Nm
+operates as an IPv4 router between the two subnets at its ends,
+replying to and sending the necessary ARP messages and updating
+the destination MAC addresses. The IP addresses and subnets are
+obtained from the ports, so this mode cannot be used with
+software-only netmap ports like ephemeral VALE ports and pipes.
+.Pp
+There are some limitations: unresolved destinations are sent as broadcasts
+until resolution; packets destined to the same subnet as their incoming
+port are dropped; TTL is not decremented.  Each subnet may also optionally
+have a default gateway: for each direction, incoming packets not destined
+to either of the two known subnets are sent to the default gateway of
+the output port, if specified, and dropped otherwise.
 .Sh PERFORMANCE
 We have measured speeds in excess of 20 Mpps and 40 Gbit/s per
 direction on a modern i7 CPU with 4 cores.  The accuracy in delays
@@ -163,7 +228,6 @@ is in the order of 30-50us provided that C states higher than C1
 are disabled, and the CPU clock is set to the maximum speed.
 Performance depends heavily on memory speed and suitable
 NICs with native netmap drivers. See the paper below for more details.
-of good network interf
 .Sh SEE ALSO
 .Pa http://info.iet.unipi.it/~luigi/netmap/
 .Pp
@@ -178,7 +242,10 @@ http://info.iet.unipi.it/~luigi/research.html
 has been written by
 .An Luigi Rizzo
 at the Universita` di Pisa, Italy.
+Route mode and client/server operation has been added by Giuseppe Lettieri
+at the Univerista` di Pisa, Italy.
 .Pp
 This work has received funding from the European
 Union's Horizon 2020 research and innovation programme
-2014-2018 under grant agreement No. 644866.
+2014-2018 under grant agreement No. 644866, and from
+East Cost Datacom Inc., Rockledge, FL, USA.

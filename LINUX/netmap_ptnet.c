@@ -284,7 +284,7 @@ ptnet_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 	/* Third step: Copy in the sk_buffs frags. */
 	for (f = 0; f < nfrags; f++) {
-		const struct skb_frag_struct *frag;
+		const skb_frag_t *frag;
 
 		frag = &skb_shinfo(skb)->frags[f];
 		ptnet_copy_to_ring(&a, skb_frag_address(frag),
@@ -1477,7 +1477,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	return 0;
 
-	pr_info("%s: failed to probe device\n", __func__);
+
 err_netreg:
 	ptnet_irqs_fini(pi);
 err_irqs:
@@ -1490,6 +1490,7 @@ err_iomap:
 	pci_release_selected_regions(pdev, bars);
 err_pci_reg:
 	pci_disable_device(pdev);
+	pr_info("%s: failed to probe device\n", __func__);
 	return err;
 }
 
