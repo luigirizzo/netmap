@@ -589,7 +589,7 @@ struct netmap_kring {
 #endif
 
 #ifdef WITH_STACK
-	struct st_extra_pool  *extra;
+	struct pst_extra_pool  *extra;
 #endif /* WITH_STACK */
 
 }
@@ -1172,23 +1172,24 @@ struct netmap_pipe_adapter {
 #endif /* WITH_PIPES */
 
 #ifdef WITH_STACK
-#define	STACK_DBG(format, ...)					\
+#define	PST_DBG(format, ...)					\
 	do {							\
-		if (netmap_debug & NM_DEBUG_STACK) {		\
+		if (netmap_debug & NM_DEBUG_PST) {		\
 			nm_prinf(format, ##__VA_ARGS__);	\
 		}						\
 	} while (0)
-#define	STACK_DBG_LIM(format, ...)				\
+#define	PST_DBG_LIM(format, ...)				\
 	do {							\
-		if (netmap_debug & NM_DEBUG_STACK) {		\
+		if (netmap_debug & NM_DEBUG_PST) {		\
 			nm_prlim(1, format, ##__VA_ARGS__);	\
 		}						\
 	} while (0)
-#define STACK_RECYCLE
+#define PST_ASSERT(format, ...) nm_prinf(format, ##__VA_ARGS__)
+#define PST_MB_RECYCLE
 #define VHLEN(_na)	((_na)->virt_hdr_len)
-struct st_extra_pool;
+struct pst_extra_pool;
 
-struct st_so_adapter {
+struct pst_so_adapter {
 	NM_SOCK_T *so;
 	int32_t fd;
 	/* 32 bit hole */
@@ -1209,7 +1210,7 @@ struct netmap_stack_adapter {
 #ifdef linux
 	struct net_device_ops stack_ndo;
 #endif /* linux */
-	struct st_so_adapter **so_adapters;
+	struct pst_so_adapter **so_adapters;
 #define DEFAULT_SK_ADAPTERS	65535
 	u_int so_adapters_max;
 #ifdef __FreeBSD__
@@ -1315,14 +1316,14 @@ void nm_os_pst_mbuf_data_dtor(struct mbuf *);
 	(cb)->ui.desc = (slot);\
 } while (0)
 
-static inline struct st_so_adapter *
-st_so(NM_SOCK_T *so)
+static inline struct pst_so_adapter *
+pst_so(NM_SOCK_T *so)
 {
-	return (struct st_so_adapter *)so->so_emuldata;
+	return (struct pst_so_adapter *)so->so_emuldata;
 }
 
 static inline void
-st_wso(struct st_so_adapter *soa, NM_SOCK_T *so)
+pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *so)
 {
 	so->so_emuldata = (void *)soa;
 }
@@ -1331,10 +1332,10 @@ extern int stack_no_runtocomp;
 /* these functions are non-static just beause netmap_linux.c refers them */
 int nm_os_pst_rx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);
-struct st_so_adapter * st_soa_from_fd(struct netmap_adapter *, int);
-int st_extra_enq(struct netmap_kring *, struct netmap_slot *);
-void st_extra_deq(struct netmap_kring *, struct netmap_slot *);
-void st_fdtable_add(struct nmcb *, struct netmap_kring *);
+struct pst_so_adapter * pst_soa_from_fd(struct netmap_adapter *, int);
+int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
+void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);
+void pst_fdtable_add(struct nmcb *, struct netmap_kring *);
 int netmap_stack_transmit(struct ifnet *, struct mbuf *);
 
 
@@ -1823,7 +1824,7 @@ enum {                                  /* debug flags */
 	NM_DEBUG_MEM = 0x4000,		/* verbose memory allocations/deallocations */
 	NM_DEBUG_VALE = 0x8000,		/* debug messages from memory allocators */
 	NM_DEBUG_BDG = NM_DEBUG_VALE,
-	NM_DEBUG_STACK = 0x10000,
+	NM_DEBUG_PST = 0x10000,
 };
 
 extern int netmap_txsync_retry;

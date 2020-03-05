@@ -1036,7 +1036,7 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 	for (m = m0; m; m = tmp) {
 		struct nmcb *cb = NMCB(m);
 		struct netmap_slot *slot;
-#ifdef STACK_RECYCLE
+#ifdef PST_MB_RECYCLE
 		int queued = 0;
 #endif
 		tmp = m->m_next;
@@ -1053,18 +1053,18 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 		/* XXX just leave the original ? */
 		slot->len = m->m_len + slot->offset + VHLEN(kring->na);
 		st_fdtable_add(cb, kring);
-#ifdef STACK_RECYCLE
+#ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
 			queued = 1;
 		}
-#endif /* STACK_RECYCLE */
+#endif /* PST_MB_RECYCLE */
 		nmcb_wstate(cb, MB_TXREF);
-#ifdef STACK_RECYCLE
+#ifdef PST_MB_RECYCLE
 		if (likely(!queued)) {
 			nm_os_st_mbuf_data_dtor(m);
 			kring->tx_pool[1] = m;
 		} else
-#endif /* STACK_RECYCLE */
+#endif /* PST_MB_RECYCLE */
 		m_free(m);
 	}
 	return 0;
@@ -1132,14 +1132,14 @@ nm_os_st_mbuf_data_dtor(struct mbuf *m)
 	st_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
 }
 
-#ifdef STACK_RECYCLE
+#ifdef PST_MB_RECYCLE
 static inline int
 nm_os_mbuf_valid(struct mbuf *m)
 {
 	return (likely(m->m_flags & M_EXT) &&
 		likely(m->m_ext.ext_flags & EXT_FLAG_EMBREF));
 }
-#endif /* STACK_RECYCLE */
+#endif /* PST_MB_RECYCLE */
 
 static struct mbuf *
 maybe_new_mbuf(struct netmap_kring *kring)
@@ -1147,7 +1147,7 @@ maybe_new_mbuf(struct netmap_kring *kring)
 	struct netmap_adapter *na = kring->na;
 	struct mbuf *m;
 
-#ifdef STACK_RECYCLE
+#ifdef PST_MB_RECYCLE
 	m = kring->tx_pool[1];
 	if (m) {
 		kring->tx_pool[1] = NULL;
@@ -1157,11 +1157,11 @@ maybe_new_mbuf(struct netmap_kring *kring)
 	m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
 	if (unlikely(!m))
 		return NULL;
-#ifdef STACK_RECYCLE
+#ifdef PST_MB_RECYCLE
 	else if (unlikely(!nm_os_mbuf_valid(kring->tx_pool[0]))) {
 		*kring->tx_pool[0] = *m;
 	}
-#endif /* STACK_RECYCLE */
+#endif /* PST_MB_RECYCLE */
 	return m;
 }
 

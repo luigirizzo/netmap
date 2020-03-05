@@ -609,15 +609,15 @@ intr_restore(register_t intr)
 }
 
 
-static inline struct st_so_adapter *
-st_so(NM_SOCK_T *sk)
+static inline struct pst_so_adapter *
+pst_so(NM_SOCK_T *sk)
 {
-	return (struct st_so_adapter *)sk->sk_user_data;
+	return (struct pst_so_adapter *)sk->sk_user_data;
 }
 
  /* We overwrite sk->sk_cookie as it appear not to be used */
 static inline void
-st_wso(struct st_so_adapter *soa, NM_SOCK_T *sk)
+pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *sk)
 {
 	sk->sk_user_data = soa;
 }

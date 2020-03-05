@@ -126,36 +126,36 @@ is_host(struct netmap_adapter *na)
 	        for ((i) = 0; (i) < (b)->bdg_active_ports; (i)++)
 #define	NETMAP_REQ_BDG_DETACH NETMAP_REQ_VALE_DETACH
 
-#define NM_ST_MAXRINGS	64
-#define NM_ST_RINGSIZE	1024
-#define NM_ST_MAXSLOTS	2048
-#define NM_ST_FD_MAX	65535
-#define NM_ST_BATCH_MAX	2048
+#define NM_PST_MAXRINGS	64
+#define NM_PST_RINGSIZE	1024
+#define NM_PST_MAXSLOTS	2048
+#define NM_PST_FD_MAX	65535
+#define NM_PST_BATCH_MAX	2048
 
 /* Buffers sorted by file descriptors */
-struct st_fdt_q {
+struct pst_fdt_q {
 	uint32_t fq_head;
 	uint32_t fq_tail;
 };
 
-struct st_fdtable {
+struct pst_fdtable {
 	uint16_t nfds;
 	uint16_t npkts;
-	struct st_fdt_q fde[NM_ST_FD_MAX];
-	uint32_t tmp[NM_ST_BATCH_MAX];
-	uint32_t fds[NM_ST_BATCH_MAX * 4];
+	struct pst_fdt_q fde[NM_PST_FD_MAX];
+	uint32_t tmp[NM_PST_BATCH_MAX];
+	uint32_t fds[NM_PST_BATCH_MAX * 4];
 };
 #define NM_FDT_NULL 0	// invalid buf index
 
-struct st_extra_slot {
+struct pst_extra_slot {
 	struct netmap_slot slot;
 	uint16_t prev;
 	uint16_t next;
 };
 
-struct st_extra_pool {
+struct pst_extra_pool {
 	u_int num;
-	struct st_extra_slot *slots;
+	struct pst_extra_slot *slots;
 	uint32_t free;
 	uint32_t free_tail;
 	uint32_t busy;
@@ -175,12 +175,15 @@ struct st_extra_pool {
 		pool->name##_tail = pos;			\
 	} while (0)						\
 
+#define BETWEEN(x, l, h) \
+	((uintptr_t)(x) >= (uintptr_t)(l) && (uintptr_t)(x) < (uintptr_t)(h))
+
 void
-st_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
+pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 {
 	struct netmap_ring *ring;
-	struct st_extra_pool *pool;
-	struct st_extra_slot *slots, *xtra;
+	struct pst_extra_pool *pool;
+	struct pst_extra_slot *slots, *xtra;
 	u_int pos;
 
 	/* XXX raising mbuf might have been orphaned */
@@ -201,16 +204,14 @@ st_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 	slots = pool->slots;
 	ring = kring->ring;
 	/* nothing to do if I am on the ring */
-	if ((uintptr_t)slot >= (uintptr_t)ring->slot &&
-	    (uintptr_t)slot < (uintptr_t)(ring->slot + kring->nkr_num_slots)) {
+	if (BETWEEN(slot, ring->slot, ring->slot + kring->nkr_num_slots)) {
 		return;
-	} else if (!(likely((uintptr_t)slot >= (uintptr_t)slots) &&
-	      likely((uintptr_t)slot < (uintptr_t)(slots + pool->num)))) {
-		STACK_DBG("cannot dequeue slot not in the extra pool");
+	} else if (!(likely(BETWEEN(slot, slots, slots + pool->num)))) {
+		PST_ASSERT("cannot dequeue slot not in the extra pool");
 		return;
 	}
 
-	xtra = (struct st_extra_slot *)slot;
+	xtra = (struct pst_extra_slot *)slot;
 	pos = xtra - slots;
 
 	/* remove from busy list */
@@ -225,13 +226,14 @@ st_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 	/* append to free list */
 	EXTRA_APPEND(free, pool, xtra, slots, pos);
 }
+#undef BETWEEN
 
 int
-st_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
+pst_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 {
 	struct netmap_adapter *na = kring->na;
-	struct st_extra_pool *pool = kring->extra;
-	struct st_extra_slot *slots = pool->slots, *xtra;
+	struct pst_extra_pool *pool = kring->extra;
+	struct pst_extra_slot *slots = pool->slots, *xtra;
 	u_int pos;
 	struct nmcb *cb;
 
@@ -258,14 +260,14 @@ st_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 }
 #undef EXTRA_APPEND
 
-static inline struct st_fdtable *
-st_fdt(struct netmap_kring *kring)
+static inline struct pst_fdtable *
+pst_fdt(struct netmap_kring *kring)
 {
-	return (struct st_fdtable *)kring->nkr_ft;
+	return (struct pst_fdtable *)kring->nkr_ft;
 }
 
 static void
-st_fdtable_free(struct netmap_adapter *na)
+pst_fdtable_free(struct netmap_adapter *na)
 {
 	int i;
 	struct netmap_kring **kring = NMR(na, NR_TX);
@@ -280,29 +282,29 @@ st_fdtable_free(struct netmap_adapter *na)
 }
 
 static int
-st_fdtable_alloc(struct netmap_adapter *na)
+pst_fdtable_alloc(struct netmap_adapter *na)
 {
 	int i;
 
 	NMG_LOCK_ASSERT();
 	for (i = 0; i < netmap_real_rings(na, NR_TX); i++) {
-		struct st_fdtable *ft = nm_os_malloc(sizeof(struct st_fdtable));
+		struct pst_fdtable *ft = nm_os_malloc(sizeof(struct pst_fdtable));
 		if (!ft) {
-			st_fdtable_free(na);
+			pst_fdtable_free(na);
 			return ENOMEM;
 		}
 		NMR(na, NR_TX)[i]->nkr_ft = (struct nm_bdg_fwd *)ft;
-		STACK_DBG("kring %p ft %p", NMR(na, NR_TX)[i], ft);
+		PST_DBG("kring %p ft %p", NMR(na, NR_TX)[i], ft);
 	}
 	return 0;
 }
 
 void
-st_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
+pst_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
 {
 	struct netmap_slot *slot = nmcb_slot(cb);
-	struct st_fdtable *ft = st_fdt(kring);
-	struct st_fdt_q *fde = ft->fde + slot->fd;
+	struct pst_fdtable *ft = pst_fdt(kring);
+	struct pst_fdt_q *fde = ft->fde + slot->fd;
 
 	cb->next = NM_FDT_NULL;
 	nm_prdis("kring %p ft %p fde %p fd %d", kring, ft, fde, slot->fd);
@@ -321,17 +323,17 @@ st_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
 
 /* XXX should go away */
 static void
-st_fdtable_may_reset(struct netmap_kring *kring)
+pst_fdtable_may_reset(struct netmap_kring *kring)
 {
-	struct st_fdtable *ft = st_fdt(kring);
+	struct pst_fdtable *ft = pst_fdt(kring);
 
 	if (unlikely(ft->nfds > 0 && ft->npkts == 0)) {
 		ft->nfds = 0;
 	} else if (unlikely(ft->nfds == 0 && ft->npkts > 0)) {
 		int i;
 
-		for (i = 0; i < NM_ST_FD_MAX; i++) {
-			struct st_fdt_q *fde = ft->fde + i;
+		for (i = 0; i < NM_PST_FD_MAX; i++) {
+			struct pst_fdt_q *fde = ft->fde + i;
 
 			if (unlikely(fde->fq_head != NM_FDT_NULL)) {
 				fde->fq_head = fde->fq_tail = NM_FDT_NULL;
@@ -352,8 +354,8 @@ st_fdtable_may_reset(struct netmap_kring *kring)
  * We do not support INDIRECT as packet movement is done by swapping
  */
 
-struct st_so_adapter *
-st_soa_from_fd(struct netmap_adapter *na, int fd)
+struct pst_so_adapter *
+pst_soa_from_fd(struct netmap_adapter *na, int fd)
 {
 	struct netmap_stack_adapter *sna = (struct netmap_stack_adapter *)na;
 
@@ -364,7 +366,7 @@ st_soa_from_fd(struct netmap_adapter *na, int fd)
 
 /* Differ from nm_kr_space() due to different meaning of the lease */
 static inline uint32_t
-st_kr_rxspace(struct netmap_kring *k)
+pst_kr_rxspace(struct netmap_kring *k)
 {
 	int busy = k->nr_hwtail - k->nkr_hwlease;
 
@@ -374,11 +376,11 @@ st_kr_rxspace(struct netmap_kring *k)
 }
 
 static void
-st_poststack(struct netmap_kring *kring)
+pst_poststack(struct netmap_kring *kring)
 {
 	struct netmap_adapter *na = kring->na, *rxna;
 	struct nm_bridge *b = ((struct netmap_vp_adapter *)na)->na_bdg;
-	struct st_fdtable *ft;
+	struct pst_fdtable *ft;
 	u_int lim_rx, howmany;
 	u_int dst_nr, nrings;
 	struct netmap_kring *rxr;
@@ -391,7 +393,7 @@ st_poststack(struct netmap_kring *kring)
 		return;
 	}
 
-	ft = st_fdt(kring);
+	ft = pst_fdt(kring);
 	nonfree = ft->tmp;
 	if (is_host(na)) {
 		want = kring->rhead - kring->nr_hwcur;
@@ -403,7 +405,7 @@ st_poststack(struct netmap_kring *kring)
 
 	/* XXX perhaps this is handled later? */
 	if (unlikely(b->bdg_active_ports < 3)) {
-		STACK_DBG_LIM("only 1 or 2 active ports");
+		PST_ASSERT("only 1 or 2 active ports");
 		goto runlock;
 	}
 	/* Now, we know how many packets go to the receiver */
@@ -431,7 +433,7 @@ st_poststack(struct netmap_kring *kring)
 		mtx_unlock(&rxr->q_lock);
 		goto runlock;
 	}
-	howmany = st_kr_rxspace(rxr);
+	howmany = pst_kr_rxspace(rxr);
 	if (unlikely(howmany < want)) { // try to reclaim completed buffers
 		u_int n = 0;
 
@@ -461,7 +463,7 @@ st_poststack(struct netmap_kring *kring)
 		int n = 0;
 		while (n < ft->nfds && likely(howmany)) {
 			int fd = ft->fds[n];
-			struct st_fdt_q *fq = ft->fde + fd;
+			struct pst_fdt_q *fq = ft->fde + fd;
 			uint32_t next = fq->fq_head;
 
 			while (next != NM_FDT_NULL && likely(howmany)) {
@@ -478,7 +480,7 @@ st_poststack(struct netmap_kring *kring)
 				next = cb->next;
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
-					STACK_DBG_LIM("null ts nxt %u", next);
+					PST_ASSERT("null ts nxt %u", next);
 					goto skip;
 				}
 				if (nmcb_rstate(cb) == MB_TXREF) {
@@ -498,7 +500,7 @@ skip:
 		ft->nfds -= n;
 		ft->npkts -= sent;
 		memmove(ft->fds, ft->fds + n, sizeof(ft->fds[0]) * ft->nfds);
-		st_fdtable_may_reset(kring);
+		pst_fdtable_may_reset(kring);
 	}
 
 	rxr->nr_hwtail = j; // no update if !sent
@@ -512,7 +514,7 @@ skip:
 	for (j = 0; likely(j < nonfree_num); j++) {
 		struct netmap_slot *slot = &rxr->ring->slot[nonfree[j]];
 
-		if (unlikely(st_extra_enq(rxr, slot))) {
+		if (unlikely(pst_extra_enq(rxr, slot))) {
 			/* Don't reclaim on/after this positon */
 			u_long nm_i = slot - rxr->ring->slot;
 			rxr->nkr_hwlease = nm_i;
@@ -526,14 +528,14 @@ runlock:
 
 /* Form fdtable to be flushed */
 static int
-st_prestack(struct netmap_kring *kring)
+pst_prestack(struct netmap_kring *kring)
 {
 	struct netmap_adapter *na = kring->na;
 	int k = kring->nr_hwcur;
 	u_int lim_tx = kring->nkr_num_slots - 1;
 	const int rhead = kring->rhead;
 	int tx = 0;
-	struct st_fdtable *ft = st_fdt(kring);
+	struct pst_fdtable *ft = pst_fdt(kring);
 
 	if (na == stna(na))
 		tx = 1;
@@ -567,7 +569,7 @@ st_prestack(struct netmap_kring *kring)
 		}
 	}
 	kring->nkr_hwlease = k; // next position to process in the stack
-	st_poststack(kring);
+	pst_poststack(kring);
 	if (ft->npkts) { // we have leftover, cannot report k
 		k = rollup(kring, kring->nr_hwcur, k, NULL);
 	}
@@ -600,8 +602,6 @@ nombq(struct netmap_adapter *na, struct mbuf *m)
 	}
 	hslot = &kring->ring->slot[nm_i];
 	m_copydata(m, 0, len, (char *)NMB(na, hslot) + VHLEN(na));
-	if ((netmap_debug & NM_DEBUG_STACK) && (len > 14 + 40 + 12))
-		nm_prinf("%u bytes", len);
 	hslot->len = len;
 	kring->nr_hwtail = nm_next(nm_i, lim);
 
@@ -789,11 +789,11 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (!mismatch) {
 		/* Length has already been validated */
 		memcpy(nmb + VHLEN(na), MBUF_DATA(m), slot->offset);
-		STACK_DBG_LIM("zero copy tx");
+		PST_DBG_LIM("zero copy tx");
 	} else {
 		m_copydata(m, 0, MBUF_LEN(m), nmb + VHLEN(na));
 		slot->len += mismatch;
-		STACK_DBG_LIM("copy tx");
+		PST_DBG_LIM("copy tx");
 	}
 
 	if (nm_os_mbuf_has_csum_offld(m)) {
@@ -822,7 +822,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 #ifdef linux
 csum_done:
 #endif
-	st_fdtable_add(cb, nmcb_kring(cb));
+	pst_fdtable_add(cb, nmcb_kring(cb));
 
 	/* the stack might hold reference via clone, so let's see */
 	nmcb_wstate(cb, MB_TXREF);
@@ -836,7 +836,7 @@ csum_done:
 }
 
 static void
-st_extra_free(struct netmap_adapter *na)
+pst_extra_free(struct netmap_adapter *na)
 {
 	enum txrx t;
 
@@ -846,7 +846,7 @@ st_extra_free(struct netmap_adapter *na)
 		for (i = 0; i < netmap_real_rings(na, t); i++) {
 			struct netmap_kring *kring = NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
-			struct st_extra_pool *extra;
+			struct pst_extra_pool *extra;
 			uint32_t j;
 
 			/* True on do_unregif() after reg failure
@@ -858,7 +858,7 @@ st_extra_free(struct netmap_adapter *na)
 
 			j = extra->busy;
 			while (j != NM_EXT_NULL) {
-				struct st_extra_slot *e = &extra->slots[j];
+				struct pst_extra_slot *e = &extra->slots[j];
 				struct nmcb *cb = NMCB_SLT(na, &e->slot);
 				nmcb_set_gone(cb);
 				j = e->next;
@@ -883,7 +883,7 @@ st_extra_free(struct netmap_adapter *na)
 }
 
 static int
-st_extra_alloc(struct netmap_adapter *na)
+pst_extra_alloc(struct netmap_adapter *na)
 {
 	enum txrx t;
 
@@ -893,8 +893,8 @@ st_extra_alloc(struct netmap_adapter *na)
 		/* XXX probably we don't need extra on host rings */
 		for (i = 0; i < netmap_real_rings(na, t); i++) {
 			struct netmap_kring *kring = NMR(na, t)[i];
-			struct st_extra_pool *pool;
-			struct st_extra_slot *extra_slots = NULL;
+			struct pst_extra_pool *pool;
+			struct pst_extra_slot *extra_slots = NULL;
 			u_int want = stack_extra, n, j, next;
 
 			pool = nm_os_malloc(sizeof(*kring->extra));
@@ -904,7 +904,7 @@ st_extra_alloc(struct netmap_adapter *na)
 
 			n = netmap_extra_alloc(na, &next, want);
 			if (n < want) {
-				STACK_DBG("allocated only %u bufs", n);
+				PST_ASSERT("allocated only %u bufs", n);
 			}
 			kring->extra->num = n;
 			if (n) {
@@ -915,7 +915,7 @@ st_extra_alloc(struct netmap_adapter *na)
 			}
 
 			for (j = 0; j < n; j++) {
-				struct st_extra_slot *exs;
+				struct pst_extra_slot *exs;
 				struct netmap_slot tmp = {.buf_idx = next};
 
 				exs = &extra_slots[j];
@@ -932,7 +932,7 @@ st_extra_alloc(struct netmap_adapter *na)
 		}
 		/* rollaback on error */
 		if (i < netmap_real_rings(na, t)) {
-			st_extra_free(na);
+			pst_extra_free(na);
 			return ENOMEM;
 		}
 	}
@@ -941,7 +941,7 @@ st_extra_alloc(struct netmap_adapter *na)
 
 /* Create extra buffers and mbuf pool */
 static int
-st_mbufpool_alloc(struct netmap_adapter *na)
+pst_mbufpool_alloc(struct netmap_adapter *na)
 {
 	struct netmap_kring *kring;
 	int i, error = 0;
@@ -951,7 +951,7 @@ st_mbufpool_alloc(struct netmap_adapter *na)
 		kring->tx_pool =
 			nm_os_malloc(na->num_tx_desc * sizeof(struct mbuf *));
 		if (!kring->tx_pool) {
-			STACK_DBG("tx_pool allocation failed");
+			PST_ASSERT("tx_pool allocation failed");
 			error = ENOMEM;
 			break;
 		}
@@ -976,7 +976,7 @@ st_mbufpool_alloc(struct netmap_adapter *na)
 }
 
 static void
-st_mbufpool_free(struct netmap_adapter *na)
+pst_mbufpool_free(struct netmap_adapter *na)
 {
 	int i;
 
@@ -1006,7 +1006,7 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 		int i, error;
 
 		if (bna->up.na_bdg->bdg_active_ports > 3) {
-			STACK_DBG("%s: only one NIC is supported", na->name);
+			PST_ASSERT("%s: only one NIC is supported", na->name);
 			return ENOTSUP;
 		}
 
@@ -1026,14 +1026,14 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 		error = netmap_bwrap_reg(na, onoff);
 		if (error)
 			return error;
-		if (st_extra_alloc(na)) {
-			STACK_DBG("extra_alloc failed for slave");
+		if (pst_extra_alloc(na)) {
+			PST_ASSERT("extra_alloc failed for slave");
 			netmap_bwrap_reg(na, 0);
 			return ENOMEM;
 		}
-		if (st_mbufpool_alloc(na)) {
-			STACK_DBG("mbufpool_alloc failed for slave");
-			st_extra_free(na);
+		if (pst_mbufpool_alloc(na)) {
+			PST_ASSERT("mbufpool_alloc failed for slave");
+			pst_extra_free(na);
 			netmap_bwrap_reg(na, 0);
 			return ENOMEM;
 		}
@@ -1060,8 +1060,8 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 #else
 		hwna->ifp->if_transmit = hwna->if_transmit;
 #endif
-		st_mbufpool_free(na);
-		st_extra_free(na);
+		pst_mbufpool_free(na);
+		pst_extra_free(na);
 		return netmap_bwrap_reg(na, onoff);
 	}
 	return 0;
@@ -1099,30 +1099,30 @@ netmap_stack_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
  * Otherwise our sk->sk_destructor will cleanup stack states
  */
 static void
-st_unregister_socket(struct st_so_adapter *soa)
+pst_unregister_socket(struct pst_so_adapter *soa)
 {
 	NM_SOCK_T *so = soa->so;
 	struct netmap_stack_adapter *sna = (struct netmap_stack_adapter *)soa->na;
 
 	nm_prdis("so %p soa %p fd %d", so, soa, soa->fd);
 	if (!sna) {
-		STACK_DBG("no sna");
+		PST_DBG("no sna");
 		//nm_os_free(soa);
 		return;
 	}
 	if (!soa) {
-		STACK_DBG("no soa");
+		PST_DBG("no soa");
 		return;
 	}
 	if (soa->fd >= sna->so_adapters_max) {
-		STACK_DBG("non-registered or invalid fd %d", soa->fd);
+		PST_DBG("non-registered or invalid fd %d", soa->fd);
 	} else {
 		sna->so_adapters[soa->fd] = NULL;
 		NM_SOCK_LOCK(so);
 		SOCKBUF_LOCK(&so->so_rcv);
 		RESTORE_SOUPCALL(so, soa);
 		RESTORE_SODTOR(so, soa);
-		st_wso(NULL, so);
+		pst_wso(NULL, so);
 		SOCKBUF_UNLOCK(&so->so_rcv);
 		NM_SOCK_UNLOCK(so);
 	}
@@ -1130,15 +1130,15 @@ st_unregister_socket(struct st_so_adapter *soa)
 }
 
 static void
-st_sodtor(NM_SOCK_T *so)
+pst_sodtor(NM_SOCK_T *so)
 {
-	struct st_so_adapter *soa = st_so(so);
+	struct pst_so_adapter *soa = pst_so(so);
 
 	if (soa->so != so) {
-		st_wso(NULL, so);
+		pst_wso(NULL, so);
 		return;
 	}
-	st_unregister_socket(soa);
+	pst_unregister_socket(soa);
 	if (so->so_dtor) {
 		so->so_dtor(so);
 	}
@@ -1156,9 +1156,9 @@ netmap_stack_bdg_dtor(const struct netmap_vp_adapter *vpna)
 
 	sna = (struct netmap_stack_adapter *)(void *)(uintptr_t)vpna;
 	for (i = 0; i < sna->so_adapters_max; i++) {
-		struct st_so_adapter *soa = sna->so_adapters[i];
+		struct pst_so_adapter *soa = sna->so_adapters[i];
 		if (soa) {
-			st_unregister_socket(soa);
+			pst_unregister_socket(soa);
 		}
 	}
 	bzero(sna->so_adapters, sizeof(uintptr_t) * sna->so_adapters_max);
@@ -1168,29 +1168,29 @@ netmap_stack_bdg_dtor(const struct netmap_vp_adapter *vpna)
 }
 
 static int
-st_register_fd(struct netmap_adapter *na, int fd)
+pst_register_fd(struct netmap_adapter *na, int fd)
 {
 	NM_SOCK_T *so;
 	void *file;
-	struct st_so_adapter *soa;
+	struct pst_so_adapter *soa;
 	struct netmap_stack_adapter *sna = (struct netmap_stack_adapter *)na;
 	int on = 1;
 	struct sockopt sopt;
 	int error;
 
-	if (unlikely(fd > NM_ST_FD_MAX)) {
+	if (unlikely(fd > NM_PST_FD_MAX)) {
 		return ENOMEM;
 	}
 	NMG_LOCK();
 	/* first check table size */
 	if (fd >= sna->so_adapters_max) {
-		struct st_so_adapter **old = sna->so_adapters, **new;
+		struct pst_so_adapter **old = sna->so_adapters, **new;
 		int oldsize = sna->so_adapters_max;
 		int newsize = oldsize ? oldsize * 2 : DEFAULT_SK_ADAPTERS;
 
 		new = nm_os_malloc(sizeof(new) * newsize);
 		if (!new) {
-			STACK_DBG("failed to extend fdtable");
+			PST_ASSERT("failed to extend fdtable");
 			NMG_UNLOCK();
 			return ENOMEM;
 		}
@@ -1212,11 +1212,11 @@ st_register_fd(struct netmap_adapter *na, int fd)
 	sopt.sopt_val = &on;
 	sopt.sopt_valsize = sizeof(on);
 	if (sosetopt(so, &sopt) < 0) {
-		STACK_DBG_LIM("failed to set TCP_NODELAY");
+		PST_DBG_LIM("failed to set TCP_NODELAY");
 	}
 	/*serialize simultaneous accept/config */
 	NM_SOCK_LOCK(so); // sosetopt() internally locks socket
-	if (st_so(so)) {
+	if (pst_so(so)) {
 		NM_SOCK_UNLOCK(so);
 		nm_os_sock_fput(so, file);
 		return EBUSY;
@@ -1234,8 +1234,8 @@ st_register_fd(struct netmap_adapter *na, int fd)
 	soa->so = so;
 	soa->fd = fd;
 	SET_SOUPCALL(so, nm_os_pst_upcall);
-	SET_SODTOR(so, st_sodtor);
-	st_wso(soa, so);
+	SET_SODTOR(so, pst_sodtor);
+	pst_wso(soa, so);
 	sna->so_adapters[fd] = soa;
 	SOCKBUF_UNLOCK(&so->so_rcv);
 	error = nm_os_pst_sbdrain(na, so);
@@ -1257,7 +1257,7 @@ netmap_stack_bdg_config(struct nm_ifreq *ifr)
 	error = netmap_get_stack_na(&hdr, &na, NULL, 0);
 	NMG_UNLOCK();
 	if (!error && na != NULL) {
-		error = st_register_fd(na, fd);
+		error = pst_register_fd(na, fd);
 	}
 	if (na) {
 		NMG_LOCK();
@@ -1278,7 +1278,7 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 		if (na->active_fds > 0) {
 			return 0;
 		}
-		err = st_extra_alloc(na);
+		err = pst_extra_alloc(na);
 		if (err) {
 			return err;
 		}
@@ -1310,7 +1310,7 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 			}
 			netmap_adapter_put(slvna);
 		}
-		st_extra_free(na);
+		pst_extra_free(na);
 	}
 	return netmap_vp_reg(na, onoff);
 }
@@ -1326,7 +1326,7 @@ netmap_stack_txsync(struct netmap_kring *kring, int flags)
 		done = head;
 		return 0;
 	}
-	done = st_prestack(kring);
+	done = pst_prestack(kring);
 
 	kring->nr_hwcur = done;
 	kring->nr_hwtail = nm_prev(done, kring->nkr_num_slots - 1);
@@ -1381,8 +1381,8 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 			 * held. Thus, if we have some packets originated by
 			 * this NIC ring, just drain it without NIC's rxsync.
 			 */
-			if (st_fdt(bk)->npkts > 0) {
-				st_poststack(bk);
+			if (pst_fdt(bk)->npkts > 0) {
+				pst_poststack(bk);
 			} else {
 				netmap_bwrap_intr_notify(hwk, 0);
 				if (stack_host_batch) {
@@ -1412,7 +1412,7 @@ netmap_stack_dtor(struct netmap_adapter *na)
 static void
 netmap_stack_krings_delete(struct netmap_adapter *na)
 {
-	st_fdtable_free(na);
+	pst_fdtable_free(na);
 	netmap_krings_delete(na);
 }
 
@@ -1423,7 +1423,7 @@ netmap_stack_krings_create(struct netmap_adapter *na)
 
 	if (error)
 		return error;
-	error = st_fdtable_alloc(na);
+	error = pst_fdtable_alloc(na);
 	if (error)
 		netmap_krings_delete(na);
 	return error;
@@ -1475,16 +1475,16 @@ netmap_stack_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	na->ifp = ifp;
 	strncpy(na->name, hdr->nr_name, sizeof(na->name));
 	na->num_tx_rings = req->nr_tx_rings;
-	nm_bound_var(&na->num_tx_rings, 1, 1, NM_ST_MAXRINGS, NULL);
+	nm_bound_var(&na->num_tx_rings, 1, 1, NM_PST_MAXRINGS, NULL);
 	req->nr_tx_rings = na->num_tx_rings; /* write back */
 	na->num_rx_rings = req->nr_rx_rings;
-	nm_bound_var(&na->num_rx_rings, 1, 1, NM_ST_MAXRINGS, NULL);
+	nm_bound_var(&na->num_rx_rings, 1, 1, NM_PST_MAXRINGS, NULL);
 	req->nr_rx_rings = na->num_rx_rings; /* write back */
-	nm_bound_var(&req->nr_tx_slots, NM_ST_RINGSIZE,
-			1, NM_ST_MAXSLOTS, NULL);
+	nm_bound_var(&req->nr_tx_slots, NM_PST_RINGSIZE,
+			1, NM_PST_MAXSLOTS, NULL);
 	na->num_tx_desc = req->nr_tx_slots;
-	nm_bound_var(&req->nr_rx_slots, NM_ST_RINGSIZE,
-			1, NM_ST_MAXSLOTS, NULL);
+	nm_bound_var(&req->nr_rx_slots, NM_PST_RINGSIZE,
+			1, NM_PST_MAXSLOTS, NULL);
 	nm_bound_var(&npipes, 2, 1, NM_MAXPIPES, NULL); /* do we need this? */
 
 	/* XXX should we check extra bufs? */
