@@ -534,7 +534,7 @@ pst_prestack(struct netmap_kring *kring)
 		if (unlikely(slot->len == 0))
 			continue;
 		/* validate user-supplied data */
-		if (unlikely(tx && slot->len < VHLEN(na) + slot->offset))
+		if (unlikely(tx && slot->len < slot->offset))
 			continue;
 		nmcbw(NMCB_BUF(nmb), kring, slot);
 		err = tx ? nm_os_pst_tx(kring, slot) :
@@ -791,7 +791,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 #endif
 		check = &tcph->check;
 		*check = 0;
-		len = slot->len - v - MBUF_TRANSPORT_OFFSET(m);
+		len = slot->len - MBUF_TRANSPORT_OFFSET(m);
 		nm_os_csum_tcpudp_ipv4(iph, tcph, len, check);
 	}
 #ifdef linux

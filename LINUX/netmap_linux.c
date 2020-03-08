@@ -1180,8 +1180,8 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			continue;
 		}
 		slot->fd = pst_so(sk)->fd;
-		slot->len = skb_headroom(m) + skb_headlen(m);
 		slot->offset = skb_headroom(m) - VHLEN(kring->na); // XXX
+		slot->len = skb_headlen(m) + slot->offset;
 		/*
 		 * We might have leftover for the previous connection with
 		 * the same fd value. Overwrite it if this is new connection.
@@ -1294,9 +1294,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct mbuf *m;
 	int ret = 0;
 
-	slot->len += VHLEN(na); // Ugly to do here...
-
-	m = nm_os_build_mbuf(kring, nmb, slot->len);
+	m = nm_os_build_mbuf(kring, nmb, VHLEN(na) + slot->len);
 	if (unlikely(!m))
 		return 0; // drop and skip
 
@@ -1374,7 +1372,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	get_page(page); // survive __kfree_skb()
 	pageref = page_ref_count(page);
 	poff = nmb - page_to_virt(page) + VHLEN(na) + slot->offset;
-	len = slot->len - VHLEN(na) - slot->offset;
+	len = slot->len - slot->offset;
 	cb = NMCB_BUF(nmb);
 	nmcb_wstate(cb, MB_STACK);
 

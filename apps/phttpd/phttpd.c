@@ -163,23 +163,19 @@ copy_to_nm(struct netmap_ring *ring, int virt_header, const char *data,
 		return -1;
 	}
 
-	/* XXX adjust to real offset */
-	off0 += virt_header;
-	off += virt_header;
-
 	while (likely(cur != tail) && copied < len) {
 		struct netmap_slot *slot = &ring->slot[cur];
-		char *p = NETMAP_BUF(ring, slot->buf_idx) + off0;
+		char *p = NETMAP_BUF(ring, slot->buf_idx) + virt_header + off0;
 		/* off0 contains some payload */
 		int l = min(MAX_PAYLOAD - (off0 - off), len - copied);
 
 		if (data) {
 			nm_pkt_copy(data + copied, p, l);
 		}
-		slot->len = off0 + l;
 		if (slot->len == 110)
 			D("off0 %d l %d", off0, l);
-		slot->offset = off - virt_header; // XXX change API...
+		slot->len = off0 + l;
+		slot->offset = off;
 		slot->fd = fd;
 		copied += l;
 		off0 = off;
@@ -725,7 +721,7 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 
 				txs = set_to_nm(txr, s);
 				txs->fd = rxs->fd;
-				txs->len = _off + _len; // XXX
+				txs->len = _off + _len - IPV4TCP_HDRLEN; // XXX
 				embed(txs, _buf + _off);
 				hlen = generate_httphdr(_len, _buf + off);
 				if (unlikely(hlen != _off - off)) {
@@ -767,7 +763,7 @@ phttpd_data(struct nm_msg *m)
 #endif
 	off = g->virt_header + rxs->offset;
 	rxbuf = NETMAP_BUF(rxr, rxs->buf_idx) + off;
-	len = rxs->len - off;
+	len = rxs->len - rxs->offset;
 	if (unlikely(len == 0)) {
 		close(rxs->fd);
 		return 0;

@@ -716,7 +716,7 @@ netmap_sendmsg (struct nm_msg *msgp, void *data, size_t len)
 	char *p = NETMAP_BUF(ring, slot->buf_idx) + virt_header + IPV4TCP_HDRLEN;
 
 	memcpy (p, data, len);
-	slot->len = virt_header + IPV4TCP_HDRLEN + len;
+	slot->len = IPV4TCP_HDRLEN + len;
     	slot->fd = msgp->slot->fd;
     	slot->offset = IPV4TCP_HDRLEN;
 	ND("slot->buf_idx %u slot->len %u slot->fd %u", slot->buf_idx, slot->len, slot->fd);
