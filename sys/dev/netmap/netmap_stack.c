@@ -86,9 +86,7 @@ nm_swap_reset(struct netmap_slot *s, struct netmap_slot *d)
 static inline u_int
 rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 {
-	struct netmap_adapter *na = kring->na;
-	u_int i, m = 0;
-	u_int lim = kring->nkr_num_slots - 1;
+	u_int i, m = 0, lim = kring->nkr_num_slots - 1;
 
 	for (i = from; i != to; i = nm_next(i, lim), m++) {
 		struct netmap_slot *slot = &kring->ring->slot[i];
@@ -96,7 +94,7 @@ rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 
 		if (unlikely(!slot->len))
 			continue;
-		cb = NMCB_SLT(na, slot);
+		cb = NMCB_SLT(kring->na, slot);
 		if (nmcb_valid(cb) && nmcb_rstate(cb) != MB_NOREF)
 			break;
 	}
@@ -108,12 +106,16 @@ rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 struct netmap_adapter *
 stna(const struct netmap_adapter *slave)
 {
-	const struct netmap_vp_adapter *vpna;
+	const struct netmap_vp_adapter *vpna =
+		(const struct netmap_vp_adapter *)slave;
 
-	if (unlikely(!slave))
-		return NULL;
-	vpna = (const struct netmap_vp_adapter *)slave;
-	return &vpna->na_bdg->bdg_ports[0]->up;
+	return likely(vpna) ? &vpna->na_bdg->bdg_ports[0]->up : NULL;
+}
+
+static inline struct netmap_stack_adapter *
+tosna(struct netmap_adapter *na)
+{
+	return (struct netmap_stack_adapter *)na;
 }
 
 static inline int
@@ -166,11 +168,10 @@ struct pst_extra_pool {
 #define EXTRA_APPEND(name, pool, xtra, slots, pos) \
 	do {							\
 		xtra->next = NM_EXT_NULL;			\
-		if (pool->name == NM_EXT_NULL) {		\
+		if (pool->name == NM_EXT_NULL)			\
 			pool->name = pos;			\
-		} else {					\
+		else						\
 			slots[pool->name##_tail].next = pos;	\
-		}						\
 		xtra->prev = pool->name##_tail;			\
 		pool->name##_tail = pos;			\
 	} while (0)						\
@@ -187,19 +188,15 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 	u_int pos;
 
 	/* XXX raising mbuf might have been orphaned */
-	if (unlikely(kring == NULL)) {
+	if (unlikely(kring == NULL))
 		return;
-	}
-	if (unlikely(kring->nr_mode != NKR_NETMAP_ON)) {
+	if (unlikely(kring->nr_mode != NKR_NETMAP_ON))
 		return;
-	}
 	pool = kring->extra;
-	if (unlikely(!pool)) {
+	if (unlikely(!pool))
 		return;
-	}
-	if (unlikely(!pool->num)) {
+	if (unlikely(!pool->num))
 		return;
-	}
 
 	slots = pool->slots;
 	ring = kring->ring;
@@ -270,13 +267,13 @@ static void
 pst_fdtable_free(struct netmap_adapter *na)
 {
 	int i;
-	struct netmap_kring **kring = NMR(na, NR_TX);
 
 	NMG_LOCK_ASSERT();
 	for (i = 0; i < netmap_real_rings(na, NR_TX); i++) {
-		if (kring[i]->nkr_ft) {
-			nm_os_free(kring[i]->nkr_ft);
-			kring[i]->nkr_ft = NULL;
+		struct netmap_kring *kring = NMR(na, NR_TX)[i];
+		if (kring->nkr_ft) {
+			nm_os_free(kring->nkr_ft);
+			kring->nkr_ft = NULL;
 		}
 	}
 }
@@ -357,7 +354,7 @@ pst_fdtable_may_reset(struct netmap_kring *kring)
 struct pst_so_adapter *
 pst_soa_from_fd(struct netmap_adapter *na, int fd)
 {
-	struct netmap_stack_adapter *sna = (struct netmap_stack_adapter *)na;
+	struct netmap_stack_adapter *sna = tosna(na);
 
 	if (unlikely(fd >= sna->so_adapters_max))
 		return NULL;
@@ -380,21 +377,17 @@ pst_poststack(struct netmap_kring *kring)
 {
 	struct netmap_adapter *na = kring->na, *rxna;
 	struct nm_bridge *b = ((struct netmap_vp_adapter *)na)->na_bdg;
-	struct pst_fdtable *ft;
-	u_int lim_rx, howmany;
-	u_int dst_nr, nrings;
+	struct pst_fdtable *ft = pst_fdt(kring);
+	uint32_t *nonfree = ft->tmp;
+	u_int lim_rx, howmany, nrings;
 	struct netmap_kring *rxr;
 	int j, want, sent = 0, nonfree_num = 0;
-	uint32_t *nonfree;
 
-	if (na->na_flags & NAF_BDG_MAYSLEEP) {
+	if (na->na_flags & NAF_BDG_MAYSLEEP)
 		BDG_RLOCK(b);
-	} else if (!BDG_RTRYLOCK(b)) {
+	else if (!BDG_RTRYLOCK(b))
 		return;
-	}
 
-	ft = pst_fdt(kring);
-	nonfree = ft->tmp;
 	if (is_host(na)) {
 		want = kring->rhead - kring->nr_hwcur;
 		if (want < 0)
@@ -405,24 +398,20 @@ pst_poststack(struct netmap_kring *kring)
 
 	/* XXX perhaps this is handled later? */
 	if (unlikely(b->bdg_active_ports < 3)) {
-		PST_ASSERT("only 1 or 2 active ports");
+		PST_ASSERT("active ports %d", b->bdg_active_ports);
 		goto runlock;
 	}
 	/* Now, we know how many packets go to the receiver */
-
-	if (na == stna(na) || is_host(na)) {
+	if (na == stna(na) || is_host(na))
 		rxna = &b->bdg_ports[1]->up; /* XXX */
-	} else {
+	else
 		rxna = stna(na);
-	}
 
-	if (unlikely(!nm_netmap_on(rxna))) {
+	if (unlikely(!nm_netmap_on(rxna)))
 		panic("receiver na off");
-	}
 	/* XXX Ugly but we cannot use ring_id on host rings */
 	nrings = nma_get_nrings(rxna, NR_RX);
-	dst_nr = (kring - NMR(na, NR_TX)[0]) % nrings;
-	rxr = NMR(rxna, NR_RX)[dst_nr];
+	rxr = NMR(rxna, NR_RX)[(kring - NMR(na, NR_TX)[0]) % nrings];
 	lim_rx = rxr->nkr_num_slots - 1;
 	j = rxr->nr_hwtail;
 
@@ -436,7 +425,6 @@ pst_poststack(struct netmap_kring *kring)
 	howmany = pst_kr_rxspace(rxr);
 	if (unlikely(howmany < want)) { // try to reclaim completed buffers
 		u_int n = 0;
-
 		rxr->nkr_hwlease =
 			rollup(rxr, rxr->nkr_hwlease, rxr->nr_hwtail, &n);
 		howmany += n;
@@ -448,9 +436,8 @@ pst_poststack(struct netmap_kring *kring)
 		u_int k = kring->nr_hwcur, lim_tx = kring->nkr_num_slots - 1;
 
 		while (howmany--) {
-			struct netmap_slot *ts, *rs;
+			struct netmap_slot *rs, *ts = &kring->ring->slot[k];
 
-			ts = &kring->ring->slot[k];
 			__builtin_prefetch(ts);
 			rs = &rxr->ring->slot[j];
 			__builtin_prefetch(rs);
@@ -467,25 +454,22 @@ pst_poststack(struct netmap_kring *kring)
 			uint32_t next = fq->fq_head;
 
 			while (next != NM_FDT_NULL && likely(howmany)) {
-				struct netmap_slot tmp, *ts, *rs;
+				const struct netmap_slot tmp = { next };
+				struct netmap_slot *ts, *rs;
 				struct nmcb *cb;
 
 				rs = &rxr->ring->slot[j];
 				__builtin_prefetch(rs);
-				tmp.buf_idx = next;
 				cb = NMCB_SLT(na, &tmp);
-				if (unlikely(!nmcb_valid(cb))) {
-					next = NM_FDT_NULL;
-				}
-				next = cb->next;
+				next = unlikely(!nmcb_valid(cb)) ?
+					NM_FDT_NULL : cb->next;
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
 					PST_ASSERT("null ts nxt %u", next);
 					goto skip;
 				}
-				if (nmcb_rstate(cb) == MB_TXREF) {
+				if (nmcb_rstate(cb) == MB_TXREF)
 					nonfree[nonfree_num++] = j;
-				}
 				nmcbw(cb, rxr, rs);
 				nm_swap_reset(ts, rs);
 skip:
@@ -547,21 +531,19 @@ pst_prestack(struct netmap_kring *kring)
 		int err;
 
 		__builtin_prefetch(nmb);
-		if (unlikely(slot->len == 0)) {
+		if (unlikely(slot->len == 0))
 			continue;
-		}
 		/* validate user-supplied data */
-		if (unlikely(tx && slot->len < VHLEN(na) + slot->offset)) {
+		if (unlikely(tx && slot->len < VHLEN(na) + slot->offset))
 			continue;
-		}
 		nmcbw(NMCB_BUF(nmb), kring, slot);
-		err = tx ? nm_os_pst_tx(kring, slot) : nm_os_pst_rx(kring, slot);
+		err = tx ? nm_os_pst_tx(kring, slot) :
+			   nm_os_pst_rx(kring, slot);
 		if (unlikely(err)) {
 			/*
-			 * we stop here as this is likely due to misbehaving
-			 * client, such as providing invalid fd.
-			 * On EBUSY, we advance pointer as the data has been
-			 * processed by the stack. See nm_os_pst_tx().
+			 * EBUSY advances the pointer as the stack has consumed
+			 * data (see nm_os_pst_tx()). Other errors stops it as
+			 * the client is likely misbehaving.
 			 */
 			if (err == -EBUSY)
 				k = nm_next(k, lim_tx);
@@ -570,9 +552,8 @@ pst_prestack(struct netmap_kring *kring)
 	}
 	kring->nkr_hwlease = k; // next position to process in the stack
 	pst_poststack(kring);
-	if (ft->npkts) { // we have leftover, cannot report k
+	if (ft->npkts) // we have leftover, cannot report k
 		k = rollup(kring, kring->nr_hwcur, k, NULL);
-	}
 	return k;
 }
 
@@ -606,12 +587,10 @@ nombq(struct netmap_adapter *na, struct mbuf *m)
 	kring->nr_hwtail = nm_next(nm_i, lim);
 
 	nm_i = kring->nr_hwcur;
-	if (likely(nm_i != head)) {
+	if (likely(nm_i != head))
 		kring->nr_hwcur = head;
-	}
-	if (!stack_host_batch) {
+	if (!stack_host_batch)
 		netmap_bwrap_intr_notify(kring, 0);
-	}
 	/* as if netmap_transmit + rxsync_from_host done */
 	m_freem(m);
 	return 0;
@@ -697,13 +676,12 @@ csum_transmit(struct netmap_adapter *na, struct mbuf *m)
 		mbuf_proto_headers(m);
 		iph = (struct nm_iphdr *)MBUF_NETWORK_HEADER(m);
 		th = MBUF_TRANSPORT_HEADER(m);
-		if (iph->protocol == IPPROTO_UDP) {
+		if (iph->protocol == IPPROTO_UDP)
 			check = &((struct nm_udphdr *)th)->check;
-		} else if (likely(iph->protocol == IPPROTO_TCP)) {
+		else if (likely(iph->protocol == IPPROTO_TCP))
 			check = &((struct nm_tcphdr *)th)->check;
-		} else {
+		else
 			panic("bad proto %u w/ offld", iph->protocol);
-		}
 		/* With ethtool -K eth1 tx-checksum-ip-generic on, we
 		 * see HWCSUM/IP6CSUM in dev and ip_sum PARTIAL on m.
 		 */
@@ -730,9 +708,8 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct mbuf *md = m;
 
 	/* M_EXT or multiple mbufs (i.e., chain) */
-	if ((m->m_flags & M_EXT)) { // not TCP case
+	if ((m->m_flags & M_EXT)) // not TCP case
 		cb = NMCB_EXT(m, 0, bufsize);
-	}
 	if (!(cb && nmcb_valid(cb))) { // TCP case
 		if (MBUF_NONLINEAR(m) && (m->m_next->m_flags & M_EXT)) {
 			(void)bufsize;
@@ -771,10 +748,8 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 #ifdef linux
 		int i, n = MBUF_CLUSTERS(m);
 
-		for (i = 0; i < n; i++) {
-			struct nmcb *cb2 = NMCB_EXT(m, i, bufsize);
-			nmcb_wstate(cb2, MB_NOREF);
-		}
+		for (i = 0; i < n; i++)
+			nmcb_wstate(NMCB_EXT(m, i, bufsize), MB_NOREF);
 #else
 		/* To be done */
 #endif /* linux */
@@ -1013,9 +988,8 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 		/* DMA offset */
 		VHLEN(na) = VHLEN(&bna->up.na_bdg->bdg_ports[0]->up);
 		VHLEN(hwna) = VHLEN(na);
-		if (hwna->na_flags & NAF_HOST_RINGS) {
+		if (hwna->na_flags & NAF_HOST_RINGS)
 			VHLEN(&bna->host.up) = VHLEN(hwna);
-		}
 		if (hwna->na_flags & NAF_CSUM) {
 			struct netmap_adapter *mna = stna(na);
 			if (!mna)
@@ -1102,7 +1076,7 @@ static void
 pst_unregister_socket(struct pst_so_adapter *soa)
 {
 	NM_SOCK_T *so = soa->so;
-	struct netmap_stack_adapter *sna = (struct netmap_stack_adapter *)soa->na;
+	struct netmap_stack_adapter *sna = tosna(soa->na);
 
 	nm_prdis("so %p soa %p fd %d", so, soa, soa->fd);
 	if (!sna) {
@@ -1157,9 +1131,8 @@ netmap_stack_bdg_dtor(const struct netmap_vp_adapter *vpna)
 	sna = (struct netmap_stack_adapter *)(void *)(uintptr_t)vpna;
 	for (i = 0; i < sna->so_adapters_max; i++) {
 		struct pst_so_adapter *soa = sna->so_adapters[i];
-		if (soa) {
+		if (soa)
 			pst_unregister_socket(soa);
-		}
 	}
 	bzero(sna->so_adapters, sizeof(uintptr_t) * sna->so_adapters_max);
 	sna->so_adapters_max = 0;
@@ -1173,7 +1146,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	NM_SOCK_T *so;
 	void *file;
 	struct pst_so_adapter *soa;
-	struct netmap_stack_adapter *sna = (struct netmap_stack_adapter *)na;
+	struct netmap_stack_adapter *sna = tosna(na);
 	int on = 1;
 	struct sockopt sopt;
 	int error;
@@ -1217,15 +1190,13 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	/*serialize simultaneous accept/config */
 	NM_SOCK_LOCK(so); // sosetopt() internally locks socket
 	if (pst_so(so)) {
-		NM_SOCK_UNLOCK(so);
-		nm_os_sock_fput(so, file);
-		return EBUSY;
+		error = EBUSY;
+		goto unlock_return;
 	}
 	soa = nm_os_malloc(sizeof(*soa));
 	if (!soa) {
-		NM_SOCK_UNLOCK(so);
-		nm_os_sock_fput(so, file);
-		return ENOMEM;
+		error = ENOMEM;
+		goto unlock_return;
 	}
 	SOCKBUF_LOCK(&so->so_rcv);
 	SAVE_SOUPCALL(so, soa);
@@ -1239,6 +1210,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	sna->so_adapters[fd] = soa;
 	SOCKBUF_UNLOCK(&so->so_rcv);
 	error = nm_os_pst_sbdrain(na, so);
+unlock_return:
 	NM_SOCK_UNLOCK(so);
 	nm_os_sock_fput(so, file);
 	return error;
@@ -1275,13 +1247,11 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 	if (onoff) {
 		int err;
 
-		if (na->active_fds > 0) {
+		if (na->active_fds > 0)
 			return 0;
-		}
 		err = pst_extra_alloc(na);
-		if (err) {
+		if (err)
 			return err;
-		}
 		VHLEN(na) = sizeof(struct nmcb);
 	}
 	if (!onoff) {
@@ -1337,8 +1307,7 @@ netmap_stack_txsync(struct netmap_kring *kring, int flags)
 static int
 netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 {
-	struct netmap_stack_adapter *sna =
-		(struct netmap_stack_adapter *)kring->na;
+	struct netmap_stack_adapter *sna = tosna(kring->na);
 	struct nm_bridge *b = sna->up.na_bdg;
 	int i, err;
 	register_t	intr;
@@ -1356,7 +1325,7 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 		struct netmap_vp_adapter *vpna = b->bdg_ports[i];
 		struct netmap_adapter *na = &vpna->up;
 		struct netmap_adapter *hwna;
-		u_int first, stride, last, j;
+		u_int first, last, j;
 	
 		if (netmap_bdg_idx(vpna) == netmap_bdg_idx(&sna->up))
 			continue;
@@ -1366,9 +1335,8 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 
 		/* hw ring(s) to scan */
 		first = kring->na->num_rx_rings > 1 ? kring->ring_id : 0;
-		stride = kring->na->num_rx_rings;
 		last = na->num_rx_rings;
-		for (j = first; j < last; j += stride) {
+		for (j = first; j < last; j += kring->na->num_rx_rings) {
 			struct netmap_kring *hwk, *bk, *hk;
 		       
 			hwk = NMR(hwna, NR_RX)[j];

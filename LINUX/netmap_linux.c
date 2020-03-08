@@ -1110,12 +1110,11 @@ nm_os_pst_mbuf_destructor(struct sk_buff *skb)
 {
 	struct nmcb *cb = NMCB(skb);
 
-	if (likely(nmcb_valid(cb))) {
+	if (likely(nmcb_valid(cb)))
 		nm_os_set_mbuf_data_destructor(skb, &cb->ui,
 				nm_os_pst_mbuf_data_dtor);
-	} else {
+	else
 		PST_DBG_LIM("invalid cb in our mbuf destructor");
-	}
 }
 
 void
@@ -1139,14 +1138,14 @@ void
 nm_os_pst_upcall(NM_SOCK_T *sk)
 {
 	struct sk_buff_head *queue = &sk->sk_receive_queue;
-	struct sk_buff *m, *tmp;
+	struct sk_buff *m;
 //	unsigned long cpu_flags;
 	struct netmap_kring *kring = NULL;
 
 	//if (stack_no_runtocomp)
 	//	spin_lock_irqsave(&queue->lock, cpu_flags);
 	/* OOO segment(s) might have been enqueued in the same rxsync round */
-	skb_queue_walk_safe(queue, m, tmp) {
+	while ((m = skb_peek(queue)) != NULL) {
 		struct nmcb *cb = NMCB(m);
 		struct netmap_slot *slot;
 		int queued = 0;
@@ -1156,7 +1155,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 //				nmcb, m, skb_headlen(m), smp_processor_id());
 //			goto ignore;
 //		}
-		if (unlikely(!kring)) {
+		if (!kring) {
 			kring = nmcb_kring(cb);
 			/* XXX this happens when stack goes away.
 			 * We need better workaround */
@@ -1176,7 +1175,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			continue;
 		}
 		if (unlikely(m->sk == NULL || pst_so(m->sk) == NULL)) {
-			PST_DBG_LIM("m->sk %p soa %p",
+			PST_ASSERT("m->sk %p soa %p",
 					m->sk, m->sk ? pst_so(m->sk) : NULL);
 			continue;
 		}
