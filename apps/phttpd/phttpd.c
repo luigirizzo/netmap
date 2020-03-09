@@ -172,8 +172,6 @@ copy_to_nm(struct netmap_ring *ring, int virt_header, const char *data,
 		if (data) {
 			nm_pkt_copy(data + copied, p, l);
 		}
-		if (slot->len == 110)
-			D("off0 %d l %d", off0, l);
 		slot->len = off0 + l;
 		slot->offset = off;
 		slot->fd = fd;
