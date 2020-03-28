@@ -120,6 +120,14 @@ fail:
 	return -1;
 }
 
+struct nmreq_pools_info*
+nmport_extmem_getinfo(struct nmport_d *d)
+{
+	if (d->extmem == NULL)
+		return NULL;
+	return &d->extmem->nro_info;
+}
+
 void
 nmport_undo_extmem(struct nmport_d *d)
 {

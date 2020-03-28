@@ -386,6 +386,17 @@ int nmport_extmem(struct nmport_d *d, void *base, size_t size);
  */
 int nmport_extmem_from_file(struct nmport_d *d, const char *fname);
 
+/* nmport_extmem_getinfo - opbtai a pointer to the extmem configuration
+ * @d		the port we want to obtain the pointer from
+ *
+ * Returns a pointer to the nmreq_pools_info structure containing the
+ * configuration of the extmem attached to port @d, or NULL if no extmem
+ * is attached. This can be used to set the desired configuration before
+ * registering the port, or to read the actual configuration after
+ * registration.
+ */
+struct nmreq_pools_info* nmport_extmem_getinfo(struct nmport_d *d);
+
 /* nmport_undo_extmem - remove the extmem option, if any
  * @d		the port we want to remove the extmem from
  *
