@@ -51,7 +51,7 @@ nmport_delete(struct nmport_d *d)
 }
 
 int
-nmport_extmem_from_mem(struct nmport_d *d, void *base, size_t size)
+nmport_extmem(struct nmport_d *d, void *base, size_t size)
 {
 	struct nmctx *ctx = d->ctx;
 
@@ -106,7 +106,7 @@ nmport_extmem_from_file(struct nmport_d *d, const char *fname)
 	}
 	d->extmem_autounmap = 1;
 
-	if (nmport_extmem_from_mem(d, p, mapsize) < 0)
+	if (nmport_extmem(d, p, mapsize) < 0)
 		goto fail;
 
 	close(fd);
