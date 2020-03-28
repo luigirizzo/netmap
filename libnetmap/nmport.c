@@ -142,6 +142,7 @@ static struct nmreq_opt_parser *nmport_opt_parsers;
 
 #define NPOPT_PARSER(o)		nmport_opt_##o##_parser
 #define NPOPT_DESC(o)		nmport_opt_##o##_desc
+#define NPOPT_NRKEYS(o)		(NPOPT_DESC(o).nr_keys)
 #define NPOPT_DECL(o, f)						\
 static int NPOPT_PARSER(o)(struct nmreq_parse_ctx *);			\
 static struct nmreq_opt_parser NPOPT_DESC(o) = {			\
@@ -252,7 +253,7 @@ NPOPT_PARSER(extmem)(struct nmreq_parse_ctx *p)
 
 	pi = &d->extmem->nro_info;
 
-	for  (i = 1; i < 7; i++) {
+	for  (i = 0; i < NPOPT_NRKEYS(extmem); i++) {
 		const char *k = p->keys[i];
 		uint32_t v;
 
