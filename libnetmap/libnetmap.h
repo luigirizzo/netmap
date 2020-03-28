@@ -372,7 +372,7 @@ struct nmport_d *nmport_clone(struct nmport_d *);
  */
 int nmport_extmem(struct nmport_d *d, void *base, size_t size);
 
-/* nmport_extmem - use the extmem obtained by mapping a file
+/* nmport_extmem_from_file - use the extmem obtained by mapping a file
  * @d		the port we want to use the extmem for
  * @fname	path of the file we want to map
  *
