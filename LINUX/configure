@@ -1740,6 +1740,18 @@ EOF
 	}
 EOF
 
+  # is struct timeval defined?
+  add_test 'have STRUCT_TIMEVAL' << EOF
+	#include <linux/time.h>
+
+	void
+	dummy(struct timeval *tv) {
+		tv->tv_sec = 0;
+		tv->tv_usec = 0;
+		return;
+	}
+EOF
+
   add_test 'have DO_GETTIMEOFDAY' <<EOF
 	#include <linux/time.h>
 

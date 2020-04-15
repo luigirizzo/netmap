@@ -440,6 +440,13 @@ struct nm_linux_selrecord_t;
 
 #define	tsleep(a, b, c, t)	msleep(10)
 
+#ifndef NETMAP_LINUX_HAVE_STRUCT_TIMEVAL
+struct timeval {
+	long	tv_sec;		/* seconds */
+	long	tv_usec;	/* microseconds */
+};
+#endif /* !NETMAP_LINUX_HAVE_STRUCT_TIMEVAL */
+
 #define microtime		do_gettimeofday		/* debugging */
 #ifndef NETMAP_LINUX_HAVE_DO_GETTIMEOFDAY
 #define do_gettimeofday(tv_)					\
