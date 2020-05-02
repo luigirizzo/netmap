@@ -228,24 +228,16 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 }
 
 static int
-i40e_netmap_bufcfg(struct netmap_kring *kring, int flags)
+i40e_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
 	struct netmap_adapter *na = kring->na;
-	struct ifnet *ifp = na->ifp;
-	uint64_t target, maxframe, incr;
-
-	target = NETMAP_BUF_SIZE(na) - kring->offset_max;
+	uint64_t incr;
 
 	kring->buf_align = 0;
 
 	if (kring->tx == NR_TX) {
 		kring->hwbuf_len = target;
 		return 0;
-	}
-
-	maxframe = ifp->mtu + ETH_HLEN + ETH_FCS_LEN + VLAN_HLEN;
-	if (maxframe < target) {
-		target = NETMAP_BUF_SIZE(na);
 	}
 
 	incr = 1UL << I40E_RXQ_CTX_DBUFF_SHIFT;

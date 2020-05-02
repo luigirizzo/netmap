@@ -558,7 +558,7 @@ struct netmap_kring {
 	uint64_t buf_align;
 
 	/* harware specific logic for the selection of the hwbuf_len */
-	int (*nm_bufcfg)(struct netmap_kring *kring, int flags);
+	int (*nm_bufcfg)(struct netmap_kring *kring, uint64_t target);
 
 	int (*save_notify)(struct netmap_kring *kring, int flags);
 
@@ -852,7 +852,7 @@ struct netmap_adapter {
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
 	int (*nm_notify)(struct netmap_kring *kring, int flags);
-	int (*nm_bufcfg)(struct netmap_kring *kring, int flags);
+	int (*nm_bufcfg)(struct netmap_kring *kring, uint64_t target);
 #define NAF_FORCE_READ      1
 #define NAF_FORCE_RECLAIM   2
 #define NAF_CAN_FORWARD_DOWN 4

@@ -863,24 +863,16 @@ ixgbe_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 }
 
 static int
-ixgbe_netmap_bufcfg(struct netmap_kring *kring, int flags)
+ixgbe_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
 	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
-	uint64_t target, maxframe;
-
-	target = NETMAP_BUF_SIZE(na) - kring->offset_max;
 
 	kring->buf_align = 0;
 
 	if (kring->tx == NR_TX) {
 		kring->hwbuf_len = target;
 		return 0;
-	}
-
-	maxframe = ifp->mtu + ETH_HLEN + ETH_FCS_LEN;
-	if (maxframe < target) {
-		target = NETMAP_BUF_SIZE(na);
 	}
 
 	target >>= 10;

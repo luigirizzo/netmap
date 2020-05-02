@@ -432,21 +432,11 @@ igb_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 }
 
 static int
-igb_netmap_bufcfg(struct netmap_kring *kring, int flags)
+igb_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
-	struct netmap_adapter *na = kring->na;
-	uint64_t target, maxframe;
-
-	target = NETMAP_BUF_SIZE(na) - kring->offset_max;
-
 	if (kring->tx == NR_TX) {
 		kring->hwbuf_len = target;
 		return 0;
-	}
-	maxframe = na->ifp->mtu + ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN;
-	if (maxframe < target) {
-		/* we can ignore the offset */
-		target = NETMAP_BUF_SIZE(na);
 	}
 
 	target >>= 10;

@@ -799,13 +799,9 @@ static int netmap_txsync_to_host(struct netmap_kring *kring, int flags);
 static int netmap_rxsync_from_host(struct netmap_kring *kring, int flags);
 
 static int
-netmap_default_bufcfg(struct netmap_kring *kring, int flags)
+netmap_default_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
-	struct netmap_adapter *na = kring->na;
-
-	(void)flags;
-
-	kring->hwbuf_len = NETMAP_BUF_SIZE(na) - kring->offset_max;
+	kring->hwbuf_len = target;
 	kring->buf_align = 0; /* no alignment */
 	return 0;
 }
@@ -2368,6 +2364,7 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 	int error = 0;
 	unsigned mtu = 0;
 	struct netmap_adapter *na = priv->np_na;
+	uint64_t target, maxframe;
 
 	if (na->ifp != NULL)
 		mtu = nm_os_ifnet_mtu(na->ifp);
@@ -2377,7 +2374,18 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 		if (kring->users > 1)
 			continue;
 
-		error = kring->nm_bufcfg(kring, 0);
+		target = NETMAP_BUF_SIZE(kring->na) -
+			kring->offset_max;
+
+		if (mtu) {
+			maxframe = mtu + ETH_HLEN +
+				ETH_FCS_LEN + 4; /* VLAN_HLEN */
+			if (maxframe < target) {
+				target = NETMAP_BUF_SIZE(kring->na);
+			}
+		}
+
+		error = kring->nm_bufcfg(kring, target);
 		if (error)
 			goto out;
 
