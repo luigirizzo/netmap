@@ -960,6 +960,7 @@ struct nmreq_opt_offsets {
 	uint64_t		nro_initial_offset;
 	uint32_t		nro_offset_bits;
 	uint32_t		nro_tx_align;
+	uint64_t		nro_min_gap;
 };
 
 #endif /* _NET_NETMAP_H_ */

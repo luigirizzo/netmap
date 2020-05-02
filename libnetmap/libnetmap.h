@@ -417,9 +417,10 @@ struct nmreq_pools_info* nmport_extmem_getinfo(struct nmport_d *d);
  * @initial	the initial offset for all the slots
  * @maxoff	the maximum offset
  * @bits	the number of bits of slot->ptr to use for the offsets
+ * @mingap	the minimum gap betwen offsets (in shared buffers)
  */
 int nmport_offset(struct nmport_d *d, uint64_t initial, uint64_t maxoff,
-		uint64_t bits);
+		uint64_t bits, uint64_t mingap);
 
 /* enable/disable options
  *

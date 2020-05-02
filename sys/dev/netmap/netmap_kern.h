@@ -542,6 +542,12 @@ struct netmap_kring {
 	 * Larger offset requests will be silently capped to offset_max.
 	 */
 	uint64_t offset_max;
+	/* minimum gap between two consecutive offsets into the same
+	 * buffer, as stipulated at bind time. This is used to choose
+	 * the hwbuf_len, but is not otherwise checked for compliance
+	 * at runtime.
+	 */
+	uint64_t offset_gap;
 
 	/* size of hardware buffer. This may be less than the size of
 	 * the netmap buffers because of non-zero offsets, or because

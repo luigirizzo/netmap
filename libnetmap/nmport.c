@@ -217,7 +217,8 @@ nmport_extmem_getinfo(struct nmport_d *d)
 }
 
 int
-nmport_offset(struct nmport_d *d, uint64_t initial, uint64_t maxoff, uint64_t bits)
+nmport_offset(struct nmport_d *d, uint64_t initial,
+		uint64_t maxoff, uint64_t bits, uint64_t mingap)
 {
 	struct nmctx *ctx = d->ctx;
 	struct nmreq_opt_offsets *opt;
@@ -233,6 +234,7 @@ nmport_offset(struct nmport_d *d, uint64_t initial, uint64_t maxoff, uint64_t bi
 	opt->nro_offset_bits = bits;
 	opt->nro_initial_offset = initial;
 	opt->nro_max_offset = maxoff;
+	opt->nro_min_gap = mingap;
 	nmreq_push_option(&d->hdr, &opt->nro_opt);
 	return 0;
 }
@@ -437,7 +439,7 @@ NPOPT_PARSER(offset)(struct nmreq_parse_ctx *p)
 	if (nmport_key(p, offset, bits) != NULL)
 		bits = atoi(nmport_key(p, offset, bits));
 
-	return nmport_offset(d, initial, initial, bits);
+	return nmport_offset(d, initial, initial, bits, 0);
 }
 
 

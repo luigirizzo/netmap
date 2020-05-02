@@ -2240,7 +2240,7 @@ netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	struct netmap_adapter *na = priv->np_na;
 	struct netmap_kring *kring;
 	uint64_t mask = 0, bits = 0, maxbits = sizeof(uint64_t) * 8,
-		 max_offset = 0, initial_offset = 0;
+		 max_offset = 0, initial_offset = 0, min_gap = 0;
 	u_int i;
 	enum txrx t;
 	int error = 0;
@@ -2260,6 +2260,7 @@ netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 
 	/* check sanity of the opt values */
 	max_offset = opt->nro_max_offset;
+	min_gap = opt->nro_min_gap;
 	initial_offset = opt->nro_initial_offset;
 	bits = opt->nro_offset_bits;
 
@@ -2328,6 +2329,7 @@ netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			kring->offset_mask = mask;
 			*(uint64_t *)&ring->offset_mask = mask;
 			kring->offset_max = max_offset;
+			kring->offset_gap = min_gap;
 		}
 
 		/* if there is an initial offset, put it into
@@ -2376,12 +2378,17 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 
 		target = NETMAP_BUF_SIZE(kring->na) -
 			kring->offset_max;
+		if (!kring->offset_gap)
+			kring->offset_gap =
+				NETMAP_BUF_SIZE(kring->na);
+		if (kring->offset_gap < target)
+			target = kring->offset_gap;
 
 		if (mtu) {
 			maxframe = mtu + ETH_HLEN +
 				ETH_FCS_LEN + 4; /* VLAN_HLEN */
 			if (maxframe < target) {
-				target = NETMAP_BUF_SIZE(kring->na);
+				target = kring->offset_gap;
 			}
 		}
 
