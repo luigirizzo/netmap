@@ -954,12 +954,28 @@ struct nmreq_opt_csb {
 	uint64_t		csb_ktoa;
 };
 
+/* option NETMAP_REQ_OPT_OFFSETS */
 struct nmreq_opt_offsets {
 	struct nmreq_option	nro_opt;
+	/* the user must declare the maximum offset value that she is
+	 * going to put into the offset slot-fields. Any larger value
+	 * found at runtime will be cropped. On output the (possibly
+	 * higher) effective max value is returned.
+	 */
 	uint64_t		nro_max_offset;
+	/* optional initial offset value, to be set in all slots. */
 	uint64_t		nro_initial_offset;
+	/* number of bits in the lower part of the 'ptr' field to be
+	 * used as the offset field. On output the (possibily larger)
+	 * effective number of bits is returned.
+	 * 0 means: use the whole ptr field.
+	 */
 	uint32_t		nro_offset_bits;
+	/* required alignment for the beginning of the packets
+	 * (base of the buffer plus offset) in the TX slots.
+	 */
 	uint32_t		nro_tx_align;
+	/* Reserved: set to zero. */
 	uint64_t		nro_min_gap;
 };
 
