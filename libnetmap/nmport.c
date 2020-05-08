@@ -216,16 +216,41 @@ nmport_extmem_getinfo(struct nmport_d *d)
 	return &d->extmem->nro_info;
 }
 
+struct nmport_offset_cleanup_d {
+	struct nmport_cleanup_d up;
+	struct nmreq_opt_offsets *opt;
+};
+
+static void
+nmport_offset_cleanup(struct nmport_cleanup_d *c,
+		struct nmport_d *d)
+{
+	struct nmport_offset_cleanup_d *cc =
+		(struct nmport_offset_cleanup_d *)c;
+
+	nmreq_remove_option(&d->hdr, cc->opt);
+	nmctx_free(d->ctx, cc->opt);
+}
+
 int
 nmport_offset(struct nmport_d *d, uint64_t initial,
 		uint64_t maxoff, uint64_t bits, uint64_t mingap)
 {
 	struct nmctx *ctx = d->ctx;
 	struct nmreq_opt_offsets *opt;
+	struct nmport_offset_cleanup_d *clnup = NULL;
+
+	clnup = nmctx_malloc(ctx, sizeof(*clnup));
+	if (clnup == NULL) {
+		nmctx_ferror(ctx, "cannot allocate cleanup descriptor");
+		errno = ENOMEM;
+		return -1;
+	}
 
 	opt = nmctx_malloc(ctx, sizeof(*opt));
 	if (opt == NULL) {
 		nmctx_ferror(ctx, "%s: cannot allocate offset option", d->hdr.nr_name);
+		nmctx_free(ctx, clnup);
 		errno = ENOMEM;
 		return -1;
 	}
@@ -236,6 +261,11 @@ nmport_offset(struct nmport_d *d, uint64_t initial,
 	opt->nro_max_offset = maxoff;
 	opt->nro_min_gap = mingap;
 	nmreq_push_option(&d->hdr, &opt->nro_opt);
+
+	clnup->up.cleanup = nmport_offset_cleanup;
+	clnup->opt = opt;
+	nmport_push_cleanup(d, clnup);
+
 	return 0;
 }
 
