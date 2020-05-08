@@ -186,6 +186,9 @@ struct nmport_d {
 	uint16_t last_rx_ring;
 	uint16_t cur_tx_ring;		/* used by nmport_inject */
 	uint16_t cur_rx_ring;
+
+	/* LIFO list of cleanup functions (used internally) */
+	struct nmport_cleanup_d *clist;
 };
 
 /* nmport_open - opens a port from a portspec

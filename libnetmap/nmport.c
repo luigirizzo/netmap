@@ -14,6 +14,36 @@
 #define LIBNETMAP_NOTHREADSAFE
 #include "libnetmap.h"
 
+struct nmport_cleanup_d {
+	struct nmport_cleanup_d *next;
+	void (*cleanup)(struct nmport_cleanup_d *, struct nmport_d *);
+};
+
+static void
+nmport_push_cleanup(struct nmport_d *d, struct nmport_cleanup_d *c)
+{
+	c->next = d->clist;
+	d->clist = c;
+}
+
+static void
+nmport_pop_cleanup(struct nmport_d *d)
+{
+	struct nmport_cleanup_d *top;
+
+	top = d->clist;
+	d->clist = d->clist->next;
+	(*top->cleanup)(top, d);
+	nmctx_free(d->ctx, top);
+}
+
+void nmport_do_cleanup(struct nmport_d *d)
+{
+	while (d->clist != NULL) {
+		nmport_pop_cleanup(d);
+	}
+}
+
 static struct nmport_d *
 nmport_new_with_ctx(struct nmctx *ctx)
 {
@@ -387,6 +417,7 @@ void
 nmport_undo_parse(struct nmport_d *d)
 {
 	nmport_undo_extmem(d);
+	nmport_do_cleanup(d);
 	memset(&d->reg, 0, sizeof(d->reg));
 	memset(&d->hdr, 0, sizeof(d->hdr));
 }
