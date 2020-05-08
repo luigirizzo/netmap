@@ -495,11 +495,21 @@ nmport_register(struct nmport_d *d)
 	}
 
 	if (ioctl(d->fd, NIOCCTRL, &d->hdr) < 0) {
-		nmctx_ferror(ctx, "%s: %s", d->hdr.nr_name, strerror(errno));
-		if (d->extmem != NULL && d->extmem->nro_opt.nro_status) {
-			nmctx_ferror(ctx, "failed to allocate extmem: %s",
-					strerror(d->extmem->nro_opt.nro_status));
+		struct nmreq_option *o;
+		int option_errors = 0;
+
+		nmreq_foreach_option(&d->hdr, o) {
+			if (o->nro_status) {
+				nmctx_ferror(ctx, "%s: option %s: %s",
+						d->hdr.nr_name,
+						nmreq_option_name(o->nro_reqtype),
+						strerror(o->nro_status));
+				option_errors++;
+			}
+
 		}
+		if (!option_errors)
+			nmctx_ferror(ctx, "%s: %s", d->hdr.nr_name, strerror(errno));
 		goto err;
 	}
 
