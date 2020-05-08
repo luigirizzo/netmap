@@ -365,9 +365,6 @@ struct nmport_d *nmport_clone(struct nmport_d *);
  * between nmport_parse() and nmport_register() (or between nmport_prepare()
  * and nmport_open_desc()).
  *
- * If @d was already using extmem the function fails. The previous extmem
- * can be removed with nmport_extmem_undo(), if necessary.
- *
  * It returns 0 on success. On failure it returns -1, sets errno to an error
  * value and sends an error message to the error() method of the context used
  * when @d was created. Moreover, *@d is left unchanged.
@@ -378,9 +375,8 @@ int nmport_extmem(struct nmport_d *d, void *base, size_t size);
  * @d		the port we want to use the extmem for
  * @fname	path of the file we want to map
  *
- * This works like nmport_extmem, but the extmem memory is obtained
- * by mmap()ping @fname. netmap_undo_extmem() and nmport_close()
- * will also automatically munmap() the file.
+ * This works like nmport_extmem, but the extmem memory is obtained by
+ * mmap()ping @fname. nmport_close() will also automatically munmap() the file.
  *
  * It returns 0 on success. On failure it returns -1, sets errno to an error
  * value and sends an error message to the error() method of the context used
@@ -398,14 +394,6 @@ int nmport_extmem_from_file(struct nmport_d *d, const char *fname);
  * registration.
  */
 struct nmreq_pools_info* nmport_extmem_getinfo(struct nmport_d *d);
-
-/* nmport_undo_extmem - remove the extmem option, if any
- * @d		the port we want to remove the extmem from
- *
- * Removes the extmem option, if any was used in @d. It also munmap the
- * extmem region if that was obtained via nmport_extmem_from_file().
- */
-void nmport_undo_extmem(struct nmport_d *);
 
 /* enable/disable options
  *

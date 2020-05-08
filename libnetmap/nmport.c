@@ -80,10 +80,25 @@ nmport_delete(struct nmport_d *d)
 	nmctx_free(d->ctx, d);
 }
 
+void
+nmport_extmem_cleanup(struct nmport_cleanup_d *c, struct nmport_d *d)
+{
+	(void)c;
+
+	if (d->extmem == NULL)
+		return;
+
+	nmreq_remove_option(&d->hdr, &d->extmem->nro_opt);
+	nmctx_free(d->ctx, d->extmem);
+	d->extmem = NULL;
+}
+
+
 int
 nmport_extmem(struct nmport_d *d, void *base, size_t size)
 {
 	struct nmctx *ctx = d->ctx;
+	struct nmport_cleanup_d *clnup = NULL;
 
 	if (d->register_done) {
 		nmctx_ferror(ctx, "%s: cannot set extmem of an already registered port", d->hdr.nr_name);
@@ -97,9 +112,17 @@ nmport_extmem(struct nmport_d *d, void *base, size_t size)
 		return -1;
 	}
 
+	clnup = (struct nmport_cleanup_d *)nmctx_malloc(ctx, sizeof(*clnup));
+	if (clnup == NULL) {
+		nmctx_ferror(ctx, "failed to allocate cleanup descriptor");
+		errno = ENOMEM;
+		return -1;
+	}
+
 	d->extmem = nmctx_malloc(ctx, sizeof(*d->extmem));
 	if (d->extmem == NULL) {
 		nmctx_ferror(ctx, "%s: cannot allocate extmem option", d->hdr.nr_name);
+		nmctx_free(ctx, clnup);
 		errno = ENOMEM;
 		return -1;
 	}
@@ -108,6 +131,10 @@ nmport_extmem(struct nmport_d *d, void *base, size_t size)
 	d->extmem->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
 	d->extmem->nro_info.nr_memsize = size;
 	nmreq_push_option(&d->hdr, &d->extmem->nro_opt);
+
+	clnup->cleanup = nmport_extmem_cleanup;
+	nmport_push_cleanup(d, clnup);
+
 	return 0;
 }
 
@@ -187,17 +214,6 @@ nmport_extmem_getinfo(struct nmport_d *d)
 	if (d->extmem == NULL)
 		return NULL;
 	return &d->extmem->nro_info;
-}
-
-void
-nmport_undo_extmem(struct nmport_d *d)
-{
-	if (d->extmem == NULL)
-		return;
-
-	nmreq_remove_option(&d->hdr, &d->extmem->nro_opt);
-	nmctx_free(d->ctx, d->extmem);
-	d->extmem = NULL;
 }
 
 /* head of the list of options */
@@ -441,7 +457,6 @@ err:
 void
 nmport_undo_parse(struct nmport_d *d)
 {
-	nmport_undo_extmem(d);
 	nmport_do_cleanup(d);
 	memset(&d->reg, 0, sizeof(d->reg));
 	memset(&d->hdr, 0, sizeof(d->hdr));
