@@ -561,6 +561,7 @@ void nmreq_push_option(struct nmreq_header *, struct nmreq_option *);
 void nmreq_remove_option(struct nmreq_header *, struct nmreq_option *);
 struct nmreq_option *nmreq_find_option(struct nmreq_header *, uint32_t);
 void nmreq_free_options(struct nmreq_header *);
+const char* nmreq_option_name(uint32_t);
 
 /* nmctx manipulation */
 
