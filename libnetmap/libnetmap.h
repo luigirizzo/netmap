@@ -175,7 +175,6 @@ struct nmport_d {
 	int mmap_done;		/* nmport_mmap() has been called */
 	/* pointer to the extmem option contained in the hdr options, if any */
 	struct nmreq_opt_extmem *extmem;
-	int extmem_autounmap;	/* 1 if nmport_undo_extmem should also munmap */
 
 	/* the fields below are compatible with nm_open() */
 	int fd;				/* "/dev/netmap", -1 if not open */

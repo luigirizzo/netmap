@@ -111,6 +111,21 @@ nmport_extmem(struct nmport_d *d, void *base, size_t size)
 	return 0;
 }
 
+struct nmport_extmem_from_file_cleanup_d {
+	struct nmport_cleanup_d up;
+	void *p;
+	size_t size;
+};
+
+void nmport_extmem_from_file_cleanup(struct nmport_cleanup_d *c,
+		struct nmport_d *d)
+{
+	struct nmport_extmem_from_file_cleanup_d *cc =
+		(struct nmport_extmem_from_file_cleanup_d *)c;
+
+	munmap(cc->p, cc->size);
+}
+
 int
 nmport_extmem_from_file(struct nmport_d *d, const char *fname)
 {
@@ -118,6 +133,14 @@ nmport_extmem_from_file(struct nmport_d *d, const char *fname)
 	int fd = -1;
 	off_t mapsize;
 	void *p;
+	struct nmport_extmem_from_file_cleanup_d *clnup = NULL;
+
+	clnup = nmctx_malloc(ctx, sizeof(*clnup));
+	if (clnup == NULL) {
+		nmctx_ferror(ctx, "cannot allocate cleanup descriptor");
+		errno = ENOMEM;
+		goto fail;
+	}
 
 	fd = open(fname, O_RDWR);
 	if (fd < 0) {
@@ -134,19 +157,27 @@ nmport_extmem_from_file(struct nmport_d *d, const char *fname)
 		nmctx_ferror(ctx, "cannot mmap '%s': %s", fname, strerror(errno));
 		goto fail;
 	}
-	d->extmem_autounmap = 1;
+	close(fd);
+
+	clnup->p = p;
+	clnup->size = mapsize;
+	clnup->up.cleanup = nmport_extmem_from_file_cleanup;
+	nmport_push_cleanup(d, &clnup->up);
 
 	if (nmport_extmem(d, p, mapsize) < 0)
 		goto fail;
-
-	close(fd);
 
 	return 0;
 
 fail:
 	if (fd >= 0)
 		close(fd);
-	nmport_undo_extmem(d);
+	if (clnup != NULL) {
+		if (clnup->p != MAP_FAILED)
+			nmport_pop_cleanup(d);
+		else
+			nmctx_free(ctx, clnup);
+	}
 	return -1;
 }
 
@@ -161,18 +192,12 @@ nmport_extmem_getinfo(struct nmport_d *d)
 void
 nmport_undo_extmem(struct nmport_d *d)
 {
-	void *p;
-
 	if (d->extmem == NULL)
 		return;
 
-	p = (void *)d->extmem->nro_usrptr;
-	if (p != MAP_FAILED && d->extmem_autounmap)
-		munmap(p, d->extmem->nro_info.nr_memsize);
 	nmreq_remove_option(&d->hdr, &d->extmem->nro_opt);
 	nmctx_free(d->ctx, d->extmem);
 	d->extmem = NULL;
-	d->extmem_autounmap = 0;
 }
 
 /* head of the list of options */
@@ -704,7 +729,6 @@ nmport_clone(struct nmport_d *d)
 	c->register_done = 0;
 	c->mem = NULL;
 	c->extmem = NULL;
-	c->extmem_autounmap = 0;
 	c->mmap_done = 0;
 	c->first_tx_ring = 0;
 	c->last_tx_ring = 0;
