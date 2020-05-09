@@ -146,8 +146,8 @@ struct netmap_mem_ops {
 
 	vm_paddr_t (*nmd_ofstophys)(struct netmap_mem_d *, vm_ooffset_t);
 	int (*nmd_config)(struct netmap_mem_d *);
-	int (*nmd_finalize)(struct netmap_mem_d *);
-	void (*nmd_deref)(struct netmap_mem_d *);
+	int (*nmd_finalize)(struct netmap_mem_d *, struct netmap_adapter *);
+	void (*nmd_deref)(struct netmap_mem_d *, struct netmap_adapter *);
 	ssize_t  (*nmd_if_offset)(struct netmap_mem_d *, const void *vaddr);
 	void (*nmd_delete)(struct netmap_mem_d *);
 
@@ -370,7 +370,7 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 
 	nmd->active++;
 
-	nmd->lasterr = nmd->ops->nmd_finalize(nmd);
+	nmd->lasterr = nmd->ops->nmd_finalize(nmd, na);
 
 	if (!nmd->lasterr && na->pdev) {
 		nmd->lasterr = netmap_mem_map(&nmd->pools[NETMAP_BUF_POOL], na);
@@ -487,7 +487,7 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 		 */
 		netmap_mem_init_bitmaps(nmd);
 	}
-	nmd->ops->nmd_deref(nmd);
+	nmd->ops->nmd_deref(nmd, na);
 
 	nmd->active--;
 	if (last_user) {
@@ -1805,7 +1805,7 @@ out:
 }
 
 static int
-netmap_mem2_finalize(struct netmap_mem_d *nmd)
+netmap_mem2_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	if (nmd->flags & NETMAP_MEM_FINALIZED)
 		goto out;
@@ -2066,7 +2066,7 @@ netmap_mem2_if_delete(struct netmap_mem_d *nmd,
 }
 
 static void
-netmap_mem2_deref(struct netmap_mem_d *nmd)
+netmap_mem2_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 
 	if (netmap_debug & NM_DEBUG_MEM)
@@ -2518,7 +2518,7 @@ netmap_mem_pt_guest_config(struct netmap_mem_d *nmd)
 }
 
 static int
-netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd)
+netmap_mem_pt_guest_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 	uint64_t mem_size;
@@ -2591,7 +2591,7 @@ out:
 }
 
 static void
-netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd)
+netmap_mem_pt_guest_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	struct netmap_mem_ptg *ptnmd = (struct netmap_mem_ptg *)nmd;
 
