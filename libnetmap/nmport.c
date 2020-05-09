@@ -228,7 +228,7 @@ nmport_offset_cleanup(struct nmport_cleanup_d *c,
 	struct nmport_offset_cleanup_d *cc =
 		(struct nmport_offset_cleanup_d *)c;
 
-	nmreq_remove_option(&d->hdr, cc->opt);
+	nmreq_remove_option(&d->hdr, &cc->opt->nro_opt);
 	nmctx_free(d->ctx, cc->opt);
 }
 
@@ -264,7 +264,7 @@ nmport_offset(struct nmport_d *d, uint64_t initial,
 
 	clnup->up.cleanup = nmport_offset_cleanup;
 	clnup->opt = opt;
-	nmport_push_cleanup(d, clnup);
+	nmport_push_cleanup(d, &clnup->up);
 
 	return 0;
 }
